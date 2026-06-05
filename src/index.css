@@ -1,0 +1,85 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  
+  /* Soft dark slate palette to eliminate high-contrast white border fallbacks */
+  --color-slate-805: #0f172a;
+  --color-slate-850: #1e293b;
+  --color-slate-855: #2c3e50;
+  
+  @keyframes ecgSweep {
+    0% { stroke-dashoffset: 1000; }
+    100% { stroke-dashoffset: 0; }
+  }
+}
+
+@media print {
+  @page {
+    size: auto;
+    margin: 0 !important;
+  }
+  @page :left {
+    margin: 0 !important;
+  }
+  @page :right {
+    margin: 0 !important;
+  }
+  @page :first {
+    margin: 0 !important;
+  }
+  
+  /* Override default dark background for printing and clear default browser margins */
+  html, body {
+    background-color: #ffffff !important;
+    background-image: none !important;
+    color: #000000 !important;
+    font-family: 'Arial', 'Times New Roman', sans-serif !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    height: auto !important;
+    min-height: auto !important;
+  }
+
+  /* Hide the entire interactive dark web portal */
+  .no-print {
+    display: none !important;
+  }
+
+  /* Expose and expand the printable clinical canvas */
+  .print-only {
+    display: block !important;
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 20mm !important; /* Proper medical page margin */
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  /* Force browsers to print layout colors (like gray-50 tables and icons) */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+}
+
+/* Custom fade-in animation for panel updates */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.2s ease-out forwards;
+}
+
+/* Hide print elements by default on screen */
+.print-only {
+  display: none;
+}

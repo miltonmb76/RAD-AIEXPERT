@@ -1,0 +1,6 @@
+{
+  "name": "Asistente Radiológico Experto",
+  "description": "Generador de reportes clínicos y analizador de imágenes médicas con plantillas e instrucciones personalizables.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
