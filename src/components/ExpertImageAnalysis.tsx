@@ -626,9 +626,17 @@ export default function ExpertImageAnalysis({
   const [desc2, setDesc2] = useState<string>("Estudio Control / Comparativo");
   const [modality2, setModality2] = useState<string>("X-Ray");
 
+  // Image 3 state (optional)
+  const [image3, setImage3] = useState<string | null>(null);
+  const [imagePreviewUrl3, setImagePreviewUrl3] = useState<string | null>(null);
+  const [mimeType3, setMimeType3] = useState<string>("");
+  const [desc3, setDesc3] = useState<string>("Estudio Adicional / Detalle");
+  const [modality3, setModality3] = useState<string>("X-Ray");
+
   // DICOM Meta States
   const [dicomMeta1, setDicomMeta1] = useState<DicomMetadata | null>(null);
   const [dicomMeta2, setDicomMeta2] = useState<DicomMetadata | null>(null);
+  const [dicomMeta3, setDicomMeta3] = useState<DicomMetadata | null>(null);
 
   // Synchronize exported image from generator
   React.useEffect(() => {
@@ -661,6 +669,9 @@ export default function ExpertImageAnalysis({
   const [zoom2, setZoom2] = useState<number>(1);
   const [rotation2, setRotation2] = useState<number>(0);
   const [annotations2, setAnnotations2] = useState<any[]>([]);
+  const [zoom3, setZoom3] = useState<number>(1);
+  const [rotation3, setRotation3] = useState<number>(0);
+  const [annotations3, setAnnotations3] = useState<any[]>([]);
 
   // Annotation mode
   const [isAnnotating, setIsAnnotating] = useState<boolean>(false);
@@ -674,12 +685,17 @@ export default function ExpertImageAnalysis({
   const [contrast2, setContrast2] = useState<number>(100);
   const [invert2, setInvert2] = useState<boolean>(false);
 
+  const [brightness3, setBrightness3] = useState<number>(100);
+  const [contrast3, setContrast3] = useState<number>(100);
+  const [invert3, setInvert3] = useState<boolean>(false);
+
   // Dynamic Calibrated Radiological (GSDF) Mode states
   const [isCalibrated1, setIsCalibrated1] = useState<boolean>(false);
   const [isCalibrated2, setIsCalibrated2] = useState<boolean>(false);
+  const [isCalibrated3, setIsCalibrated3] = useState<boolean>(false);
 
   // Active Workspace Modal Key
-  const [workspaceImgKey, setWorkspaceImgKey] = useState<"image1" | "image2" | null>(null);
+  const [workspaceImgKey, setWorkspaceImgKey] = useState<"image1" | "image2" | "image3" | null>(null);
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null);
 
   // Annotation editing preset tools
@@ -711,6 +727,7 @@ export default function ExpertImageAnalysis({
   // Refs for file triggers
   const fileInputRef1 = useRef<HTMLInputElement>(null);
   const fileInputRef2 = useRef<HTMLInputElement>(null);
+  const fileInputRef3 = useRef<HTMLInputElement>(null);
 
   // Modality presets
   const modalities = [
@@ -723,7 +740,8 @@ export default function ExpertImageAnalysis({
   ];
 
   // Process loaded DICOM or regular files as image state or binary parse
-  const processMedicalFile = (file: File, isSecond: boolean) => {
+  const processMedicalFile = (file: File, slotParam: boolean | 1 | 2 | 3) => {
+    const slot = typeof slotParam === "boolean" ? (slotParam ? 2 : 1) : slotParam;
     const isDicomFile = file.name.endsWith(".dcm") || file.name.endsWith(".dicom") || file.type === "application/dicom";
     
     if (!file.type.startsWith("image/") && !isDicomFile) {
@@ -733,7 +751,12 @@ export default function ExpertImageAnalysis({
 
     if (!isDicomFile) {
       const objectUrl = URL.createObjectURL(file);
-      if (isSecond) {
+      if (slot === 3) {
+        if (imagePreviewUrl3 && imagePreviewUrl3.startsWith("blob:")) {
+          try { URL.revokeObjectURL(imagePreviewUrl3); } catch (_) {}
+        }
+        setImagePreviewUrl3(objectUrl);
+      } else if (slot === 2) {
         if (imagePreviewUrl2 && imagePreviewUrl2.startsWith("blob:")) {
           try { URL.revokeObjectURL(imagePreviewUrl2); } catch (_) {}
         }
@@ -747,7 +770,12 @@ export default function ExpertImageAnalysis({
     }
 
     if (isDicomFile) {
-      if (isSecond) {
+      if (slot === 3) {
+        if (imagePreviewUrl3 && imagePreviewUrl3.startsWith("blob:")) {
+          try { URL.revokeObjectURL(imagePreviewUrl3); } catch (_) {}
+        }
+        setImagePreviewUrl3(null);
+      } else if (slot === 2) {
         if (imagePreviewUrl2 && imagePreviewUrl2.startsWith("blob:")) {
           try { URL.revokeObjectURL(imagePreviewUrl2); } catch (_) {}
         }
@@ -781,7 +809,29 @@ export default function ExpertImageAnalysis({
             
             const base64Data = visualUrl.split(",")[1] || "";
             
-            if (isSecond) {
+            if (slot === 3) {
+              setImage3(base64Data);
+              setMimeType3(mimeType);
+              setDicomMeta3(metadata);
+              
+              // Automatically adjust modality and descriptions
+              const matchedMod = modalities.find(m => m.value.toUpperCase().includes(metadata.modality.toUpperCase()) || metadata.modality.toUpperCase().includes(m.value.toUpperCase()));
+              if (matchedMod) {
+                setModality3(matchedMod.value);
+              } else if (metadata.modality.toUpperCase().includes("MR") || metadata.modality.toUpperCase().includes("RM")) {
+                setModality3("MRI");
+              } else if (metadata.modality.toUpperCase().includes("CT") || metadata.modality.toUpperCase().includes("TC")) {
+                setModality3("CT");
+              } else {
+                setModality3("X-Ray");
+              }
+              
+              if (metadata.studyDescription && metadata.studyDescription !== "N/A") {
+                setDesc3(metadata.studyDescription);
+              } else {
+                setDesc3(`Estudio DICOM: ${metadata.modality}`);
+              }
+            } else if (slot === 2) {
               setImage2(base64Data);
               setMimeType2(mimeType);
               setDicomMeta2(metadata);
@@ -838,7 +888,11 @@ export default function ExpertImageAnalysis({
         const result = event.target?.result as string;
         if (result) {
           const base64Data = result.split(",")[1] || "";
-          if (isSecond) {
+          if (slot === 3) {
+            setImage3(base64Data);
+            setMimeType3(file.type);
+            setDicomMeta3(null);
+          } else if (slot === 2) {
             setImage2(base64Data);
             setMimeType2(file.type);
             setDicomMeta2(null);
@@ -854,7 +908,8 @@ export default function ExpertImageAnalysis({
   };
 
   // High fidelity quick load simulated DICOM files helper 
-  const loadSampleDicom = (type: "MR" | "CT" | "RX", isSecond: boolean) => {
+  const loadSampleDicom = (type: "MR" | "CT" | "RX", slotParam: boolean | 1 | 2 | 3) => {
+    const slot = typeof slotParam === "boolean" ? (slotParam ? 2 : 1) : slotParam;
     let mockMeta: DicomMetadata = {
       patientName: "Sofia Alarcon Ruiz",
       patientId: `DCM-${Math.floor(100000 + Math.random() * 900000)}`,
@@ -906,7 +961,18 @@ export default function ExpertImageAnalysis({
     const mockupBase64 = generateDicomVisualMockup(mockMeta);
     const base64Only = mockupBase64.split(",")[1] || "";
 
-    if (isSecond) {
+    if (slot === 3) {
+      setImage3(base64Only);
+      setMimeType3("image/svg+xml");
+      setDicomMeta3(mockMeta);
+      setDesc3(mockMeta.studyDescription);
+      setModality3(type === "MR" ? "MRI" : type === "CT" ? "CT" : "X-Ray");
+      setAnnotations3([]);
+      if (imagePreviewUrl3 && imagePreviewUrl3.startsWith("blob:")) {
+        try { URL.revokeObjectURL(imagePreviewUrl3); } catch (_) {}
+      }
+      setImagePreviewUrl3(null);
+    } else if (slot === 2) {
       setImage2(base64Only);
       setMimeType2("image/svg+xml");
       setDicomMeta2(mockMeta);
@@ -932,10 +998,10 @@ export default function ExpertImageAnalysis({
   };
 
   // Raw Image Loader callbacks
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, isSecond: boolean) => {
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, slotParam: boolean | 1 | 2 | 3) => {
     const file = e.target.files?.[0];
     if (file) {
-      processMedicalFile(file, isSecond);
+      processMedicalFile(file, slotParam);
     }
   };
 
@@ -943,16 +1009,26 @@ export default function ExpertImageAnalysis({
     e.preventDefault();
   };
 
-  const handleDrop = (e: React.DragEvent, isSecond: boolean) => {
+  const handleDrop = (e: React.DragEvent, slotParam: boolean | 1 | 2 | 3) => {
     e.preventDefault();
     const file = e.dataTransfer.files?.[0];
     if (file) {
-      processMedicalFile(file, isSecond);
+      processMedicalFile(file, slotParam);
     }
   };
 
-  const handleRemoveImage = (isSecond: boolean) => {
-    if (isSecond) {
+  const handleRemoveImage = (slotParam: boolean | 1 | 2 | 3) => {
+    const slot = typeof slotParam === "boolean" ? (slotParam ? 2 : 1) : slotParam;
+    if (slot === 3) {
+      setImage3(null);
+      setMimeType3("");
+      setAnnotations3([]);
+      setDicomMeta3(null);
+      if (imagePreviewUrl3 && imagePreviewUrl3.startsWith("blob:")) {
+        try { URL.revokeObjectURL(imagePreviewUrl3); } catch (_) {}
+      }
+      setImagePreviewUrl3(null);
+    } else if (slot === 2) {
       setImage2(null);
       setMimeType2("");
       setAnnotations2([]);
@@ -973,8 +1049,9 @@ export default function ExpertImageAnalysis({
     }
   };
 
-  const handleAddAnnotation = (e: React.MouseEvent<HTMLDivElement>, isSecond: boolean) => {
+  const handleAddAnnotation = (e: React.MouseEvent<HTMLDivElement>, slotParam: boolean | 1 | 2 | 3) => {
     if (!isAnnotating) return;
+    const slot = typeof slotParam === "boolean" ? (slotParam ? 2 : 1) : slotParam;
     const rect = e.currentTarget.getBoundingClientRect();
     const x = Math.round((((e.clientX - rect.left) / rect.width) * 100) * 10) / 10;
     const y = Math.round((((e.clientY - rect.top) / rect.height) * 100) * 10) / 10;
@@ -988,7 +1065,9 @@ export default function ExpertImageAnalysis({
       label: "Foco"
     };
 
-    if (isSecond) {
+    if (slot === 3) {
+      setAnnotations3(prev => [...prev, newAnn]);
+    } else if (slot === 2) {
       setAnnotations2(prev => [...prev, newAnn]);
     } else {
       setAnnotations1(prev => [...prev, newAnn]);
@@ -1006,15 +1085,18 @@ export default function ExpertImageAnalysis({
 
     try {
       // Lazy high-fidelity compression before network transit to ensure Gemini stability and payload constraints
-      const [img1Compressed, img2Compressed] = await Promise.all([
+      const [img1Compressed, img2Compressed, img3Compressed] = await Promise.all([
         image1 ? resizeAndCompressImage(getImgSrc(image1, mimeType1)) : Promise.resolve(null),
         image2 ? resizeAndCompressImage(getImgSrc(image2, mimeType2)) : Promise.resolve(null),
+        image3 ? resizeAndCompressImage(getImgSrc(image3, mimeType3)) : Promise.resolve(null),
       ]);
 
       const finalImage1 = img1Compressed ? img1Compressed.base64 : image1;
       const finalMimeType1 = img1Compressed ? img1Compressed.mimeType : mimeType1;
       const finalImage2 = img2Compressed ? img2Compressed.base64 : (image2 || undefined);
       const finalMimeType2 = img2Compressed ? img2Compressed.mimeType : (mimeType2 || undefined);
+      const finalImage3 = img3Compressed ? img3Compressed.base64 : (image3 || undefined);
+      const finalMimeType3 = img3Compressed ? img3Compressed.mimeType : (mimeType3 || undefined);
 
       const response = await fetch("/api/expert-image-analysis", {
         method: "POST",
@@ -1031,6 +1113,11 @@ export default function ExpertImageAnalysis({
           desc2: image2 ? desc2 : undefined,
           modality2: image2 ? modality2 : undefined,
           annotations2: (image2 && annotations2.length > 0) ? annotations2 : undefined,
+          image3: finalImage3,
+          mimeType3: finalMimeType3,
+          desc3: image3 ? desc3 : undefined,
+          modality3: image3 ? modality3 : undefined,
+          annotations3: (image3 && annotations3.length > 0) ? annotations3 : undefined,
           clinicalSuspicion,
           radiologicalQuestions,
           patientInfo
@@ -1057,15 +1144,18 @@ export default function ExpertImageAnalysis({
 
     try {
       // Lazy high-fidelity compression before network transit to ensure Gemini stability and payload constraints
-      const [img1Compressed, img2Compressed] = await Promise.all([
+      const [img1Compressed, img2Compressed, img3Compressed] = await Promise.all([
         image1 ? resizeAndCompressImage(getImgSrc(image1, mimeType1)) : Promise.resolve(null),
         image2 ? resizeAndCompressImage(getImgSrc(image2, mimeType2)) : Promise.resolve(null),
+        image3 ? resizeAndCompressImage(getImgSrc(image3, mimeType3)) : Promise.resolve(null),
       ]);
 
       const finalImage1 = img1Compressed ? img1Compressed.base64 : image1;
       const finalMimeType1 = img1Compressed ? img1Compressed.mimeType : mimeType1;
       const finalImage2 = img2Compressed ? img2Compressed.base64 : (image2 || undefined);
       const finalMimeType2 = img2Compressed ? img2Compressed.mimeType : (mimeType2 || undefined);
+      const finalImage3 = img3Compressed ? img3Compressed.base64 : (image3 || undefined);
+      const finalMimeType3 = img3Compressed ? img3Compressed.mimeType : (mimeType3 || undefined);
 
       const response = await fetch("/api/expert-image-followup", {
         method: "POST",
@@ -1076,6 +1166,8 @@ export default function ExpertImageAnalysis({
           mimeType1: finalMimeType1,
           image2: finalImage2,
           mimeType2: finalMimeType2,
+          image3: finalImage3,
+          mimeType3: finalMimeType3,
           previousAnalysis: analysisResult,
           queryText: followUpQuery,
           patientInfo,
@@ -1134,8 +1226,10 @@ export default function ExpertImageAnalysis({
       if (response.ok && data.success && data.extractedText) {
         // Combine into structured findings for the report generator
         const combinedHistory = `Paciente: ${patientInfo || "S/D"}. Sospecha: ${clinicalSuspicion || "S/D"}. Dudas solicitadas: ${radiologicalQuestions || "S/D"}`;
-        const studyTitleCombined = image2 
-          ? `Estudio Avanzado Comparativo: 1. ${desc1} (${modality1}) vs 2. ${desc2} (${modality2})`
+        const studyTitleCombined = (image2 || image3)
+          ? `Estudio Avanzado Comparativo: 1. ${desc1} (${modality1})` + 
+            (image2 ? ` vs 2. ${desc2} (${modality2})` : "") + 
+            (image3 ? ` vs 3. ${desc3} (${modality3})` : "")
           : `Valoración Experta de Imagen: ${desc1} (${modality1})`;
 
         onIncorporateToReport(data.extractedText, studyTitleCombined, combinedHistory);
@@ -1163,7 +1257,7 @@ export default function ExpertImageAnalysis({
               Doble Valoración & Opinión Experta de Imagen
             </h2>
             <p className="text-xs text-slate-400 max-w-2xl font-medium">
-              Módulo premium dedicado al análisis de alta especificidad radiológica, preparado para contrastar hasta 2 imágenes simultáneas (estudios evolutivos, bilaterales o proyecciones comparativas) con el máximo razonamiento clínico de Gemini.
+              Módulo premium dedicado al análisis de alta especificidad radiológica, preparado para contrastar hasta 3 imágenes simultáneas (estudios evolutivos, bilaterales o proyecciones comparativas) con el máximo razonamiento clínico de Gemini.
             </p>
           </div>
           <span className="text-[10px] bg-indigo-950/40 border border-indigo-700/30 text-indigo-300 font-mono py-1.5 px-3 rounded-full shrink-0 text-center uppercase tracking-widest">
@@ -1234,7 +1328,7 @@ export default function ExpertImageAnalysis({
               </button>
             </h3>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
               {/* Image 1 Column */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between text-[11px] font-bold text-slate-400">
@@ -1648,6 +1742,214 @@ export default function ExpertImageAnalysis({
                   </div>
                 )}
               </div>
+
+              {/* Image 3 Column */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-[11px] font-bold text-slate-400">
+                  <span className="uppercase tracking-widest">Imagen #3 (Opcional - Adicional)</span>
+                  {image3 && (
+                    <div className="flex gap-2">
+                        <button 
+                          onClick={() => setAnnotations3([])}
+                          className="text-amber-400 hover:text-amber-300 transition-colors flex items-center gap-1 font-mono text-[9px] bg-slate-900 border border-slate-700 px-2 py-1 rounded select-none shadow-sm cursor-pointer"
+                        >
+                          BORRAR SEÑALES
+                        </button>
+                        <button 
+                          onClick={() => handleRemoveImage(3)}
+                          className="text-red-400 hover:text-red-300 transition-colors flex items-center gap-1 font-mono text-[9px] bg-slate-900 border border-slate-700 px-2 py-1 rounded select-none shadow-sm cursor-pointer"
+                        >
+                          <Trash2 className="h-3 w-3" /> QUITAR
+                        </button>
+                    </div>
+                  )}
+                </div>
+
+                {!image3 ? (
+                  <div className="space-y-3 w-full">
+                    <div 
+                      onClick={() => fileInputRef3.current?.click()}
+                      onDragOver={handleDragOver}
+                      onDrop={(e) => handleDrop(e, 3)}
+                      className="border-2 border-dashed border-slate-800 hover:border-indigo-500/40 bg-slate-950/60 rounded-xl p-6 text-center cursor-pointer transition-all hover:bg-slate-900/50 flex flex-col items-center justify-center min-h-[160px] group select-none shadow-inner"
+                    >
+                      <Upload className="h-8 w-8 text-slate-600 group-hover:text-indigo-400 transition-colors mb-2" />
+                      <span className="text-xs font-bold text-slate-400 group-hover:text-slate-300 transition-colors uppercase tracking-widest font-mono">Cargar Tercera Imagen (Opcional PACS)</span>
+                      <span className="text-[10px] text-slate-500 font-mono mt-1">Soporta reales .dcm, .dicom, png, jpeg</span>
+                      <input 
+                        type="file" 
+                        ref={fileInputRef3} 
+                        onChange={(e) => handleImageUpload(e, 3)} 
+                        accept="image/*,.dcm,.dicom,application/dicom" 
+                        className="hidden" 
+                      />
+                    </div>
+                    <div className="bg-indigo-950/20 border border-indigo-500/10 rounded-xl p-2.5 text-center space-y-1.5 shadow-[inset_0_1px_3px_rgba(0,0,0,0.4)]">
+                      <div className="text-[9px] font-black text-indigo-400 uppercase tracking-widest font-mono">Cargar Muestra PACS Adicional:</div>
+                      <div className="flex flex-wrap justify-center gap-1.5">
+                        <button 
+                          type="button"
+                          onClick={() => loadSampleDicom("MR", 3)}
+                          className="bg-[#0b0f19] hover:bg-slate-800 border border-slate-800/80 hover:border-indigo-500/30 text-indigo-300 hover:text-white px-2.5 py-1 rounded text-[9.5px] font-semibold font-mono cursor-pointer transition-all active:scale-97 select-none"
+                        >
+                          🧠 RMN Cerebro
+                        </button>
+                        <button 
+                          type="button"
+                          onClick={() => loadSampleDicom("CT", 3)}
+                          className="bg-[#0b0f19] hover:bg-slate-800 border border-slate-800/80 hover:border-cyan-500/30 text-cyan-300 hover:text-white px-2.5 py-1 rounded text-[9.5px] font-semibold font-mono cursor-pointer transition-all active:scale-97 select-none"
+                        >
+                          🫁 Tomografía (TC)
+                        </button>
+                        <button 
+                          type="button"
+                          onClick={() => loadSampleDicom("RX", 3)}
+                          className="bg-[#0b0f19] hover:bg-slate-800 border border-slate-800/80 hover:border-emerald-500/30 text-emerald-300 hover:text-white px-2.5 py-1 rounded text-[9.5px] font-semibold font-mono cursor-pointer transition-all active:scale-97 select-none"
+                        >
+                          🩻 Radiografía (Rx)
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3 bg-slate-950 p-3 rounded-xl border border-slate-800 shadow-xl">
+                    <div 
+                      onClick={(e) => handleAddAnnotation(e, 3)}
+                      className="relative overflow-hidden rounded-lg bg-black flex items-center justify-center border border-slate-900 min-h-[160px] max-h-[220px] cursor-crosshair group-hover:border-indigo-500/55 transition-all select-none"
+                    >
+                      <img 
+                        src={imagePreviewUrl3 || getImgSrc(image3, mimeType3)} 
+                        alt="Estudio 3" 
+                        style={{ 
+                          transform: `scale(${zoom3}) rotate(${rotation3}deg)`,
+                          filter: `brightness(${brightness3}%) contrast(${contrast3}%) ${invert3 ? 'invert(1) hue-rotate(180deg)' : ''}`
+                        }}
+                        className="max-h-[160px] object-contain transition-all duration-200"
+                        referrerPolicy="no-referrer"
+                      />
+                      {/* Render markers */}
+                      {annotations3.map((a: any, i) => {
+                        const color = a.color || "#EF4444";
+                        if (a.type === "circle") {
+                          const r = a.radius || 6;
+                          return (
+                            <div 
+                              key={a.id || i}
+                              className="absolute rounded-full border-2 transform -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+                              style={{ 
+                                left: `${a.x}%`, 
+                                top: `${a.y}%`, 
+                                borderColor: color, 
+                                backgroundColor: `${color}15`, 
+                                width: `${r * 2}%`, 
+                                height: `${r * 2}%` 
+                              }}
+                            />
+                          );
+                        }
+                        if (a.type === "rectangle") {
+                          const w = a.width || 12;
+                          const h = a.height || 8;
+                          return (
+                            <div 
+                              key={a.id || i}
+                              className="absolute border-2 transform -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+                              style={{ 
+                                left: `${a.x}%`, 
+                                top: `${a.y}%`, 
+                                borderColor: color, 
+                                backgroundColor: `${color}15`, 
+                                width: `${w}%`, 
+                                height: `${h}%` 
+                              }}
+                            />
+                          );
+                        }
+                        return (
+                          <div 
+                            key={a.id || i}
+                            className="absolute w-3 h-3 rounded-full border-2 transform -translate-x-1/2 -translate-y-1/2 pointer-events-none flex items-center justify-center"
+                            style={{ borderColor: color, backgroundColor: `${color}40` }}
+                          />
+                        );
+                      })}
+                      <div className="absolute top-2 left-2 px-1.5 py-0.5 bg-slate-900/80 text-[8px] font-mono font-black border border-slate-850 text-indigo-400 rounded font-sans">
+                        Z: {zoom3.toFixed(1)}x | R: {rotation3}°
+                      </div>
+                    </div>
+
+                    {/* Integrated custom triggers */}
+                    <div className="pt-0.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setWorkspaceImgKey("image3");
+                          setActiveAnnotationId(annotations3[0]?.id || null);
+                        }}
+                        className="w-full py-1.5 bg-indigo-500/10 hover:bg-indigo-600/20 text-indigo-300 hover:text-white border border-indigo-500/25 rounded-lg text-[9.5px] font-black uppercase tracking-widest transition-all duration-200 flex items-center justify-center gap-1.5 shadow-sm cursor-pointer select-none"
+                      >
+                        <Maximize2 className="h-3 w-3 text-indigo-400" />
+                        Workspace de Marcaje Ampliado
+                      </button>
+                    </div>
+
+                    {/* Controls */}
+                    <div className="flex items-center justify-center gap-2 bg-slate-900 p-2 rounded-lg">
+                      <button 
+                        onClick={() => setZoom3(prev => Math.max(0.5, prev - 0.25))}
+                        className="p-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded transition-all select-none shadow-sm cursor-pointer"
+                        title="Reducir Zoom"
+                      >
+                        <ZoomOut className="h-3.5 w-3.5" />
+                      </button>
+                      <button 
+                        onClick={() => setZoom3(prev => Math.min(3, prev + 0.25))}
+                        className="p-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded transition-all select-none shadow-sm cursor-pointer"
+                        title="Aumentar Zoom"
+                      >
+                        <ZoomIn className="h-3.5 w-3.5" />
+                      </button>
+                      <button 
+                        onClick={() => setRotation3(prev => (prev + 90) % 360)}
+                        className="p-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded transition-all select-none shadow-sm cursor-pointer"
+                        title="Rotar 90°"
+                      >
+                        <RotateCw className="h-3.5 w-3.5" />
+                      </button>
+                      <button 
+                        onClick={() => { setZoom3(1); setRotation3(0); setBrightness3(100); setContrast3(100); setInvert3(false); }}
+                        className="text-[9px] text-indigo-400 font-mono hover:text-indigo-300 font-black px-2 py-0.5 hover:bg-slate-800 rounded transition-all ml-auto uppercase select-none shadow-sm cursor-pointer"
+                      >
+                        REAJUSTE
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-black text-slate-500 uppercase font-sans">Título / Referencia:</label>
+                        <input 
+                          type="text" 
+                          value={desc3}
+                          onChange={(e) => setDesc3(e.target.value)}
+                          className="w-full bg-[#0c0814] border border-slate-800 rounded-lg px-2 py-1 text-[11px] text-white focus:outline-none focus:border-indigo-500/50"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-black text-slate-500 uppercase font-sans">Modalidad:</label>
+                        <select 
+                          value={modality3}
+                          onChange={(e) => setModality3(e.target.value)}
+                          className="w-full bg-[#0c0814] border border-slate-800 text-slate-300 rounded-lg px-2 py-1 text-[11px] focus:outline-none focus:border-indigo-500/50"
+                        >
+                          {modalities.map(m => (
+                            <option key={m.value} value={m.value}>{m.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Call to action analysis button */}
@@ -1935,28 +2237,28 @@ export default function ExpertImageAnalysis({
       <AnimatePresence>
         {workspaceImgKey && (() => {
           const isImg1 = workspaceImgKey === "image1";
-          const imageSrc = isImg1 ? image1 : image2;
-          const previewUrl = isImg1 ? imagePreviewUrl1 : imagePreviewUrl2;
-          const mimeType = isImg1 ? mimeType1 : mimeType2;
-          const title = isImg1 ? desc1 : desc2;
+          const imageSrc = workspaceImgKey === "image1" ? image1 : (workspaceImgKey === "image2" ? image2 : image3);
+          const previewUrl = workspaceImgKey === "image1" ? imagePreviewUrl1 : (workspaceImgKey === "image2" ? imagePreviewUrl2 : imagePreviewUrl3);
+          const mimeType = workspaceImgKey === "image1" ? mimeType1 : (workspaceImgKey === "image2" ? mimeType2 : mimeType3);
+          const title = workspaceImgKey === "image1" ? desc1 : (workspaceImgKey === "image2" ? desc2 : desc3);
           
-          const zoom = isImg1 ? zoom1 : zoom2;
-          const setZoom = isImg1 ? setZoom1 : setZoom2;
-          const rotation = isImg1 ? rotation1 : rotation2;
-          const setRotation = isImg1 ? setRotation1 : setRotation2;
+          const zoom = workspaceImgKey === "image1" ? zoom1 : (workspaceImgKey === "image2" ? zoom2 : zoom3);
+          const setZoom = workspaceImgKey === "image1" ? setZoom1 : (workspaceImgKey === "image2" ? setZoom2 : setZoom3);
+          const rotation = workspaceImgKey === "image1" ? rotation1 : (workspaceImgKey === "image2" ? rotation2 : rotation3);
+          const setRotation = workspaceImgKey === "image1" ? setRotation1 : (workspaceImgKey === "image2" ? setRotation2 : setRotation3);
 
-          const brightness = isImg1 ? brightness1 : brightness2;
-          const setBrightness = isImg1 ? setBrightness1 : setBrightness2;
-          const contrast = isImg1 ? contrast1 : contrast2;
-          const setContrast = isImg1 ? setContrast1 : setContrast2;
-          const invert = isImg1 ? invert1 : invert2;
-          const setInvert = isImg1 ? setInvert1 : setInvert2;
-          const isCalibrated = isImg1 ? isCalibrated1 : isCalibrated2;
-          const setIsCalibrated = isImg1 ? setIsCalibrated1 : setIsCalibrated2;
+          const brightness = workspaceImgKey === "image1" ? brightness1 : (workspaceImgKey === "image2" ? brightness2 : brightness3);
+          const setBrightness = workspaceImgKey === "image1" ? setBrightness1 : (workspaceImgKey === "image2" ? setBrightness2 : setBrightness3);
+          const contrast = workspaceImgKey === "image1" ? contrast1 : (workspaceImgKey === "image2" ? contrast2 : contrast3);
+          const setContrast = workspaceImgKey === "image1" ? setContrast1 : (workspaceImgKey === "image2" ? setContrast2 : setContrast3);
+          const invert = workspaceImgKey === "image1" ? invert1 : (workspaceImgKey === "image2" ? invert2 : invert3);
+          const setInvert = workspaceImgKey === "image1" ? setInvert1 : (workspaceImgKey === "image2" ? setInvert2 : setInvert3);
+          const isCalibrated = workspaceImgKey === "image1" ? isCalibrated1 : (workspaceImgKey === "image2" ? isCalibrated2 : isCalibrated3);
+          const setIsCalibrated = workspaceImgKey === "image1" ? setIsCalibrated1 : (workspaceImgKey === "image2" ? setIsCalibrated2 : setIsCalibrated3);
 
-          const annotations = isImg1 ? annotations1 : annotations2;
-          const setAnnotations = isImg1 ? setAnnotations1 : setAnnotations2;
-          const dicomMeta = isImg1 ? dicomMeta1 : dicomMeta2;
+          const annotations = workspaceImgKey === "image1" ? annotations1 : (workspaceImgKey === "image2" ? annotations2 : annotations3);
+          const setAnnotations = workspaceImgKey === "image1" ? setAnnotations1 : (workspaceImgKey === "image2" ? setAnnotations2 : setAnnotations3);
+          const dicomMeta = workspaceImgKey === "image1" ? dicomMeta1 : (workspaceImgKey === "image2" ? dicomMeta2 : dicomMeta3);
 
           const selectedAnnotation = annotations.find(a => a.id === activeAnnotationId);
 
@@ -2218,7 +2520,7 @@ export default function ExpertImageAnalysis({
                   model: selectedModel,
                   image: base64ToSend,
                   mimeType: mimeToSend,
-                  studyType: isImg1 ? modality1 : modality2,
+                  studyType: workspaceImgKey === "image1" ? modality1 : (workspaceImgKey === "image2" ? modality2 : modality3),
                   clinicalHistory: clinicalSuspicion || "",
                   annotation: {
                     type: targetAnn.type === "point" ? "point" : "box",

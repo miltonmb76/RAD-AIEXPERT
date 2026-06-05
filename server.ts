@@ -981,6 +981,7 @@ app.post("/api/expert-image-analysis", async (req: express.Request, res: express
       model,
       image1, mimeType1, desc1, modality1, annotations1,
       image2, mimeType2, desc2, modality2, annotations2,
+      image3, mimeType3, desc3, modality3, annotations3,
       clinicalSuspicion, radiologicalQuestions, patientInfo 
     } = req.body;
 
@@ -1026,6 +1027,16 @@ app.post("/api/expert-image-analysis", async (req: express.Request, res: express
       });
     }
 
+    const img3Supported = image3 && mimeType3 && checkImageSupport(mimeType3);
+    if (image3 && mimeType3 && img3Supported) {
+      parts.push({
+        inlineData: {
+          data: image3,
+          mimeType: mimeType3,
+        },
+      });
+    }
+
     let promptText = `
 Eres un radiólogo académico senior con subespecialidad en diagnóstico avanzado de alta complejidad y el consultor de máxima precisión clínica.
 Este módulo ("Doble Valoración IA") es el estándar de oro de exactitud visual y clínica disponible. Tu análisis debe ser extremadamente minucioso, cuidadoso y exacto. Realiza una inspección microscópica pixel por pixel de cada imagen, analizando todas las áreas y reparos anatómicos. Los pequeños detalles, por más sutiles, iniciales, tenues o milimétricos que sean (como micro-fisuras, asimetrías de densidad leves, calcificaciones incipientes, reacciones corticales tempranas, engrosamientos pericorticales mínimos, opacidades de vidrio esmerilado incipiente, o distorsiones sutiles de la arquitectura normal), NO deben pasarse por alto bajo ninguna circunstancia.
@@ -1057,7 +1068,7 @@ Para lograr la máxima exactitud científica equilibrada, debes operar bajo un r
    - Antes de considerar descartada, normal, preservada o negativa cualquier alteración anatómica relevante o signo cardinal (especialmente reducción de espacios femorotibiales o articulares, osteofitosis o fracturas), debes obligatoriamente citar de forma breve la evidencia física, médica o métrica observable en la imagen (por ejemplo, simetría del espacio intercondíleo, preservación de márgenes óseos lisos, continuidad cortical sin discontinuidades abruptas, etc.) que fundamentan con precisión científica dicha exclusión. No se permite descartar hallazgos importantes sin citar su evidencia visual correlativa.
 `;
 
-    if (!img1Supported || (image2 && !img2Supported)) {
+    if (!img1Supported || (image2 && !img2Supported) || (image3 && !img3Supported)) {
       promptText += `\n[Nota del sistema: Al menos uno de los estudios provistos es una representación/maqueta vectorial SVG o metadatos construidos clínicamente. Por favor, realiza la valoración de máxima fidelidad y rigor científico basándose en los metadatos de diagnóstico provistos, de forma sumamente académica].\n`;
     }
 
@@ -1072,6 +1083,10 @@ Para lograr la máxima exactitud científica equilibrada, debes operar bajo un r
 
     if (image2 && mimeType2) {
       promptText += `- **Imagen 2 (Opcional)**: ${desc2 || "Segundo plano / Control / Comparativo"} - **Modalidad**: ${modality2 || "No especificada"}\n`;
+    }
+
+    if (image3 && mimeType3) {
+      promptText += `- **Imagen 3 (Opcional)**: ${desc3 || "Tercer plano / Adicional"} - **Modalidad**: ${modality3 || "No especificada"}\n`;
     }
 
     const formatAnnotationsForPrompt = (anns: any[] | undefined, name: string) => {
@@ -1095,6 +1110,9 @@ Para lograr la máxima exactitud científica equilibrada, debes operar bajo un r
     }
     if (annotations2 && annotations2.length > 0) {
       promptText += formatAnnotationsForPrompt(annotations2, `Imagen 2 (${desc2 || "Comparativo"})`);
+    }
+    if (annotations3 && annotations3.length > 0) {
+      promptText += formatAnnotationsForPrompt(annotations3, `Imagen 3 (${desc3 || "Adicional"})`);
     }
 
     promptText += `
@@ -1122,9 +1140,20 @@ Proporciona una valoración de máxima exactitud científica estructurada bajo l
       promptText += `
 ## 2. EVALUACIÓN DETALLADA DE LA IMAGEN 2: ${desc2 || "Estudio Comparativo"} (${modality2 || "S/M"})
 (Describe la calidad, plano/proyección de la segunda imagen, hallazgos identificables y anomalías de manera aislada.)
+`;
+    }
 
-## 3. ANÁLISIS COMPARATIVO / DINÁMICO-EVOLUTIVO
-(Contrasta el estudio 1 con el estudio 2. ¿Existe progresión, estabilidad, cambios temporales, correlaciones espaciales en múltiples planos o diferencias críticas de señal/densidad? Se extremadamente explícito.)
+    if (image3 && mimeType3) {
+      promptText += `
+## 3. EVALUACIÓN DETALLADA DE LA IMAGEN 3: ${desc3 || "Estudio Adicional"} (${modality3 || "S/M"})
+(Describe la calidad, plano/proyección de la tercera imagen, hallazgos identificables y anomalías de manera aislada.)
+`;
+    }
+
+    if ((image2 && mimeType2) || (image3 && mimeType3)) {
+      promptText += `
+## COMPARATIVA DINÁMICA / ESTUDIOS EVOLUTIVOS
+(Contrasta los estudios provistos de forma evolutiva o comparativa. ¿Existe progresión, estabilidad, cambios temporales, correlaciones espaciales en múltiples planos o diferencias críticas de señal/densidad? Sé extremadamente explícito.)
 `;
     }
 
@@ -1258,6 +1287,7 @@ app.post("/api/expert-image-followup", async (req: express.Request, res: express
       model,
       image1, mimeType1,
       image2, mimeType2,
+      image3, mimeType3,
       previousAnalysis,
       queryText,
       patientInfo,
@@ -1309,8 +1339,18 @@ app.post("/api/expert-image-followup", async (req: express.Request, res: express
       });
     }
 
+    const img3Supported = image3 && mimeType3 && checkImageSupport(mimeType3);
+    if (image3 && mimeType3 && img3Supported) {
+      parts.push({
+        inlineData: {
+          data: image3,
+          mimeType: mimeType3,
+        },
+      });
+    }
+
     let promptNote = "";
-    if (!img1Supported || (image2 && !img2Supported)) {
+    if (!img1Supported || (image2 && !img2Supported) || (image3 && !img3Supported)) {
       promptNote = `\n[Nota del sistema: Los archivos provistos son representaciones vectoriales/metadatos sin imagen rasterizada binaria. Por favor, genera tu respuesta basándose en los metadatos de diagnóstico y la descripción provista de manera altamente coherente].\n`;
     }
 
