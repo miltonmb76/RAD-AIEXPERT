@@ -1039,6 +1039,9 @@ Ejemplo:
   const [caseAnalysis, setCaseAnalysis] = useState<string>("");
   const [isAnalyzingCase, setIsAnalyzingCase] = useState<boolean>(false);
   const [caseAnalysisError, setCaseAnalysisError] = useState<string | null>(null);
+  const [isIncorporatingDiffs, setIsIncorporatingDiffs] = useState<boolean>(false);
+  const [diffsIncorporated, setDiffsIncorporated] = useState<boolean>(false);
+  const [diffsError, setDiffsError] = useState<string | null>(null);
 
   const [bibliography, setBibliography] = useState<string>("");
   const [isSearchingBibliography, setIsSearchingBibliography] = useState<boolean>(false);
@@ -1764,6 +1767,8 @@ Ejemplo:
     setIsAnalyzingCase(true);
     setCaseAnalysisError(null);
     setCaseAnalysis("");
+    setDiffsIncorporated(false);
+    setDiffsError(null);
     try {
       const response = await fetch("/api/analyze-case", {
         method: "POST",
@@ -1787,6 +1792,40 @@ Ejemplo:
       setCaseAnalysisError(err?.message || String(err));
     } finally {
       setIsAnalyzingCase(false);
+    }
+  };
+
+  // ACTION: INCORPORATE ENRICHED DIFFERENTIAL DIAGNOSTICS SYNTHESIS TO REPORT
+  const handleIncorporateDifferentialDiagnostics = async () => {
+    if (!generatedReport || !caseAnalysis) return;
+    setIsIncorporatingDiffs(true);
+    setDiffsError(null);
+    try {
+      const response = await fetch("/api/incorporate-differentials", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: selectedModel,
+          currentReport: generatedReport,
+          caseAnalysis: caseAnalysis,
+        }),
+      });
+      const data = await response.json();
+      if (data.success && data.report) {
+        if (generatedReport) {
+          setReportHistory((prev) => [...prev, generatedReport]);
+          setReportRedoHistory([]);
+        }
+        setGeneratedReport(data.report);
+        setDiffsIncorporated(true);
+      } else {
+        setDiffsError(data.error || "Error al incorporar los diagnósticos diferenciales sintetizados.");
+      }
+    } catch (err: any) {
+      console.error("Error al incorporar diagnósticos diferenciales:", err);
+      setDiffsError(err?.message || String(err));
+    } finally {
+      setIsIncorporatingDiffs(false);
     }
   };
 
@@ -3749,8 +3788,84 @@ Ejemplo:
 
           if (elem.type === "list") {
             return (
-              <div key={elem.id} className="space-y-1.5">
+              <div key={elem.id} className="space-y-1.5 font-sans">
                 {elem.items?.map((item, itemIdx) => {
+                  // Detect recommendation buttons within list items
+                  const itemRecMatch = item.trim().match(/(?:\[RECOMENDACI[OÓ]N\]|RECOMENDACI[OÓ]N)[:*\-\s\]]*(.*)/i);
+                  if (itemRecMatch) {
+                    let content = itemRecMatch[1].trim();
+                    content = content.replace(/^\*\*|\*\*$/g, "").trim();
+                    content = content.replace(/^[:*\-\s\]]+/, "").trim();
+                    content = content.replace(/^\*\*|\*\*$/g, "").trim();
+                    content = content.replace(/^["']|["']$/g, "").trim();
+                    
+                    const isPending = pendingRecText === content;
+                    const isAdded = !!incorporatedAuditRecs[content];
+                    
+                    return (
+                      <div 
+                        key={`rec-item-${idx}-${itemIdx}`}
+                        className={`w-full p-4.5 rounded-xl border transition-all duration-300 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-md my-2.5 ${
+                          isAdded 
+                            ? "bg-emerald-950/20 border-emerald-500/25 text-emerald-200 shadow-[0_2px_12px_rgba(16,185,129,0.06)]" 
+                            : isPending
+                            ? "bg-indigo-950/35 border-indigo-550/45 text-indigo-150 animate-pulse"
+                            : "bg-slate-900/40 border-slate-800 hover:border-indigo-500/25 text-slate-300 hover:bg-slate-900/60"
+                        }`}
+                      >
+                        <div className="flex items-start gap-3 flex-1 min-w-0">
+                          {isAdded ? (
+                            <div className="p-2 shrink-0 bg-emerald-955/60 border border-emerald-500/30 rounded-lg text-emerald-400">
+                              <Check className="h-4 w-4" />
+                            </div>
+                          ) : (
+                            <div className={`p-2 shrink-0 rounded-lg border font-black text-xs ${isPending ? 'bg-indigo-950/80 border-indigo-500/35 text-indigo-400' : 'bg-slate-950 border-slate-800 text-slate-400'}`}>
+                              💡
+                            </div>
+                          )}
+                          <div className="space-y-1">
+                            <span className={`text-[9px] font-black uppercase tracking-widest font-mono flex items-center gap-1.5 ${isAdded ? 'text-emerald-400' : 'text-indigo-400'}`}>
+                              Recomendación de Auditoría
+                            </span>
+                            <p className="text-xs font-semibold leading-relaxed text-slate-200">
+                              {content}
+                            </p>
+                          </div>
+                        </div>
+                        
+                        <button
+                          type="button"
+                          onClick={() => handleIncorporateRecommendation(content)}
+                          disabled={isModifyingReport || isAdded}
+                          className={`text-[9.5px] font-black uppercase tracking-widest px-4 py-2.5 rounded-xl border transition-all flex items-center justify-center gap-2 font-mono w-full sm:w-auto shrink-0 select-none cursor-pointer duration-250 ${
+                            isAdded
+                              ? "bg-emerald-905/10 border-emerald-500/25 text-emerald-450 cursor-not-allowed"
+                              : isPending
+                              ? "bg-indigo-955/20 border-indigo-505/30 text-indigo-405 cursor-wait"
+                              : "bg-indigo-600/10 hover:bg-indigo-600 hover:text-white text-indigo-300 border-indigo-500/20 hover:border-transparent active:scale-[0.98]"
+                          }`}
+                        >
+                          {isPending ? (
+                            <>
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              <span>Incorporando...</span>
+                            </>
+                          ) : isAdded ? (
+                            <>
+                              <Check className="h-3.5 w-3.5" />
+                              <span>Incorporado</span>
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="h-3.5 w-3.5 animate-pulse" />
+                              <span>Incorporar</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    );
+                  }
+
                   let cleanItem = item.trim();
                   let isNumbered = /^\d+\.\s+/.test(cleanItem);
                   let bulletSpan: React.ReactNode = <span className={`h-1.5 w-1.5 rounded-full ${accentColorClass} mt-1.5 shrink-0`} />;
@@ -6334,6 +6449,57 @@ Ejemplo:
                                   Copiar Análisis
                                 </button>
                               </div>
+
+                              {diffsError && (
+                                <div className="p-3 bg-rose-950/20 border border-rose-500/30 rounded-xl text-rose-200 text-[10.5px] font-semibold leading-relaxed font-sans select-none">
+                                  ⚠️ Error al incorporar: {diffsError}
+                                </div>
+                              )}
+
+                              {/* Interactive Action Card to Synthesize and Incorporate Differential Diagnostics */}
+                              <div className="bg-[#05110d] border border-emerald-500/25 rounded-xl p-4.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-md transition-all duration-300">
+                                <div className="space-y-1.5 flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <Sparkles className="h-4 w-4 text-emerald-450 animate-pulse" />
+                                    <span className="text-[10px] font-black uppercase tracking-widest font-mono text-emerald-400">
+                                      🔍 SÍNTESIS DE DIAGNÓSTICOS DIFERENCIALES
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px] text-slate-300 font-medium leading-relaxed">
+                                    Extrae de manera inteligente los diagnósticos diferenciales discutidos en este análisis e integra una síntesis formal y estructurada directamente en la discusión clínica de tu reporte activo.
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={handleIncorporateDifferentialDiagnostics}
+                                  disabled={isIncorporatingDiffs || diffsIncorporated}
+                                  className={`text-[9.5px] font-mono font-black uppercase tracking-widest px-4 py-2.5 rounded-xl border transition-all duration-250 flex items-center justify-center gap-2 w-full sm:w-auto shrink-0 select-none cursor-pointer ${
+                                    diffsIncorporated
+                                      ? "bg-emerald-950/20 border-emerald-500/25 text-emerald-400 cursor-not-allowed font-semibold text-xs"
+                                      : isIncorporatingDiffs
+                                      ? "bg-indigo-950/40 border-indigo-500/30 text-indigo-400 cursor-wait animate-pulse"
+                                      : "bg-emerald-500/10 hover:bg-emerald-600 hover:text-white text-emerald-300 border-emerald-500/30 hover:border-transparent active:scale-[0.98]"
+                                  }`}
+                                >
+                                  {isIncorporatingDiffs ? (
+                                    <>
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-400" />
+                                      <span>Incorporando...</span>
+                                    </>
+                                  ) : diffsIncorporated ? (
+                                    <>
+                                      <Check className="h-3.5 w-3.5 text-emerald-400" />
+                                      <span>Incorporado</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Sparkles className="h-3.5 w-3.5 text-emerald-400 animate-pulse" />
+                                      <span>Incorporar al Reporte</span>
+                                    </>
+                                  )}
+                                </button>
+                              </div>
+
                               <div className="bg-[#05090b] p-6 rounded-xl border border-slate-850 shadow-inner overflow-x-auto max-h-[500px] overflow-y-auto">
                                 {renderElegantResponse(caseAnalysis, "text-emerald-400")}
                               </div>

@@ -772,6 +772,74 @@ Devuelve únicamente el reporte modificado en formato Markdown, sin notas aclara
 });
 
 /**
+ * API: INCORPORATE DIFFERENTIAL DIAGNOSTICS SYNTHESIS
+ * POST /api/incorporate-differentials
+ * Payload: {
+ *   model: string
+ *   currentReport: string
+ *   caseAnalysis: string
+ * }
+ */
+app.post("/api/incorporate-differentials", async (req: express.Request, res: express.Response) => {
+  try {
+    const { model, currentReport, caseAnalysis } = req.body;
+    if (!currentReport || !caseAnalysis) {
+      return res.status(400).json({ success: false, error: "Se requiere el 'currentReport' y el 'caseAnalysis' para procesar." });
+    }
+
+    const ai = getGeminiClient();
+    const selectedModel = getModelName(model);
+
+    const promptText = `
+Tienes un reporte radiológico activo en formato Markdown:
+"""
+${currentReport}
+"""
+
+Y tienes un análisis clínico avanzado exhaustivo que tiene diagnósticos diferenciales y discusión clínica:
+"""
+${caseAnalysis}
+"""
+
+Misión:
+1. Extrae y genera una SÍNTESIS EXTREMADAMENTE CORTA Y CONCISA (MÁXIMO 1 o 2 oraciones, o hasta 3 líneas como límite absoluto) de los diagnósticos diferenciales y de sospecha clave discutidos en el análisis. Debe ser ultra directa y de alta densidad de información clínica, sin rodeos.
+2. Integra esta breve síntesis de forma totalmente fluida, asertiva y natural dentro del reporte activo.
+3. El destino ideal para esta pequeña integración es insertarla en una sección dedicada si ya existe (por ejemplo, "DISCUSIÓN DE DIAGNÓSTICOS DIFERENCIALES", "CORRELACIÓN CLÍNICA", "IMPRESIÓN DIAGNÓSTICA", etc.) o agregarla de forma compacta al final antes de la firma.
+4. REQUISITO CRÍTICO DE DISEÑO, BREVEDAD Y LENGUAJE:
+   - Está ESTRICTAMENTE PROHIBIDO usar lenguaje generativo u aclarativo (ej. evita "Se sugiere diagnóstico...", "Síntesis de diferencial...", "El modelo propone..."). Escribe de manera directa, asertiva y formal, simulando que fue redactado desde el inicio por el radiólogo principal de forma muy sucinta.
+   - La síntesis debe ser breve para no sobrecargar el informe. Máximo un párrafo ultra corto o dos oraciones condensadas en total.
+   - Conserva todo el resto del informe (técnica, hallazgos, estructura) intacto.
+
+Devuelve de manera estricta y exclusiva el reporte radiológico COMPLETO resultante en formato Markdown. No agregues observaciones, de lo contrario fallará.
+`;
+
+    const systemInstruction = 
+      "Eres un médico radiólogo académico senior. Te especializas en redactar informes de nivel hospitalario docente, integrando de forma natural e impecable la correlación y discusión de diagnósticos diferenciales sin preámbulos aclaratorios.";
+
+    const response = await ai.models.generateContent({
+      model: selectedModel,
+      contents: promptText,
+      config: {
+        systemInstruction: systemInstruction,
+        temperature: 0.1,
+      },
+    });
+
+    res.json({
+      success: true,
+      report: response.text,
+    });
+  } catch (error: any) {
+    console.error("Error en /api/incorporate-differentials:", error);
+    const friendlyError = handleGeminiError(error);
+    res.status(500).json({
+      success: false,
+      error: friendlyError,
+    });
+  }
+});
+
+/**
  * NEW API: GENERATE PATIENT INFOGRAPHIC
  * POST /api/generate-infographic
  * Payload: {
@@ -982,7 +1050,11 @@ app.post("/api/expert-image-analysis", async (req: express.Request, res: express
       image1, mimeType1, desc1, modality1, annotations1,
       image2, mimeType2, desc2, modality2, annotations2,
       image3, mimeType3, desc3, modality3, annotations3,
-      clinicalSuspicion, radiologicalQuestions, patientInfo 
+      clinicalSuspicion, radiologicalQuestions, patientInfo,
+      fractureProtocol,
+      pulmonaryProtocol,
+      osteoarthritisProtocol,
+      prosthesisMetalProtocol
     } = req.body;
 
     if (!image1 || !mimeType1) {
@@ -992,6 +1064,34 @@ app.post("/api/expert-image-analysis", async (req: express.Request, res: express
     const ai = getGeminiClient();
     const selectedModel = getModelName(model);
     const parts: any[] = [];
+
+    const isFractureCase = !!fractureProtocol || 
+      [clinicalSuspicion, radiologicalQuestions, desc1, desc2, desc3]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .match(/(fractur|trazo|trazos|desplazam|fisura|compromiso articular|luxac|subluxac|fx|fémur|peroné|tibia|radio|cúbito|húmero)/);
+
+    const isPulmonaryCase = !!pulmonaryProtocol || 
+      [clinicalSuspicion, radiologicalQuestions, desc1, desc2, desc3, modality1, modality2, modality3]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .match(/(torax|tórax|chest|pulm|pulmonar|hilio|hiliar|intersticial|alveolar|infiltrado|masa|cavitac|atelectas|mediastin|pleur|neumon|consolida|parénquima|parenquima)/);
+
+    const isOsteoarthritisCase = !!osteoarthritisProtocol || 
+      [clinicalSuspicion, radiologicalQuestions, desc1, desc2, desc3, modality1, modality2, modality3]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .match(/(artros|degenerat|osteofit|escleros|subcondral|pinzam|geoda|espolon|espolón|espondilo|gonartros|coxartros|kellgren|lawrence|facetaria|discopat)/);
+
+    const isMetalCase = !!prosthesisMetalProtocol ||
+      [clinicalSuspicion, radiologicalQuestions, desc1, desc2, desc3, modality1, modality2, modality3]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .match(/(protesis|prótesis|metalico|metálico|metalicos|metálicos|osteosintesis|osteosíntesis|placa|tornillo|clavo|cerclaje|vástago|vastago|artroplastia)/);
 
     const checkImageSupport = (mime: string) => {
       if (!mime) return false;
@@ -1066,6 +1166,13 @@ Para lograr la máxima exactitud científica equilibrada, debes operar bajo un r
 
 6. **FUNCIÓN DE VALIDACIÓN DE CONFIANZA Y CITA DE EVIDENCIA VISUAL PARA EXCLUSIÓN**:
    - Antes de considerar descartada, normal, preservada o negativa cualquier alteración anatómica relevante o signo cardinal (especialmente reducción de espacios femorotibiales o articulares, osteofitosis o fracturas), debes obligatoriamente citar de forma breve la evidencia física, médica o métrica observable en la imagen (por ejemplo, simetría del espacio intercondíleo, preservación de márgenes óseos lisos, continuidad cortical sin discontinuidades abruptas, etc.) que fundamentan con precisión científica dicha exclusión. No se permite descartar hallazgos importantes sin citar su evidencia visual correlativa.
+
+7. **PROTOCOLO DE MÁXIMA EXACTITUD PARA FRACTURAS (MÚLTIPLE VALORACIÓN EXPERTA)**:
+   - Ante cualquier sospecha, mención o hallazgo visual de fractura, se dispara obligatoriamente este protocolo especial:
+     * **Número y dirección de trazos**: Identifica de forma sumamente precisa si hay trazo único, doble, conminuta y la trayectoria geométrica exacta (transversa, oblicua corta/larga, espiroidea, espiroideo helicoidal, longitudinal, con tercer fragmento en ala de mariposa, etc.).
+     * **Compromiso articular**: Determina rigurosamente si el trazo se extiende hasta la corteza de la carilla o carillas articulares comprometidas. Reporta si existe escalón articular o diástasis intraarticular y su estimación milimétrica.
+     * **Desplazamiento de fragmentos**: Detalla si hay diástasis de los fragmentos, cabalgamiento (acortamiento en mm), rotación o angulación (ej. en varo/valgo, antecurvatum/recurvatum).
+     * **Evidencia absoluta**: No inventes trazos inexistentes debidos a artificios normales de superposición, ni minimices o pases por alto trazos sutiles reales. Basa tu informe 100% en la estricta evidencia visual observable.
 `;
 
     if (!img1Supported || (image2 && !img2Supported) || (image3 && !img3Supported)) {
@@ -1154,6 +1261,64 @@ Proporciona una valoración de máxima exactitud científica estructurada bajo l
       promptText += `
 ## COMPARATIVA DINÁMICA / ESTUDIOS EVOLUTIVOS
 (Contrasta los estudios provistos de forma evolutiva o comparativa. ¿Existe progresión, estabilidad, cambios temporales, correlaciones espaciales en múltiples planos o diferencias críticas de señal/densidad? Sé extremadamente explícito.)
+`;
+    }
+
+    if (isFractureCase) {
+      promptText += `
+## ⚡️ PROTOCOLO ESPECIAL DE MÁXIMA EXACTITUD PARA FRACTURAS (MUTIPLE VALORACIÓN BIOMECÁNICA) ⚡️
+(Este apartado especial se ha disparado obligatoriamente por sospecha, mención o hallazgo visual de fractura. Debes caracterizar microscómicamente los hallazgos con máxima precisión traumatológica, basándote rigurosamente en la evidencia física y real de la imagen):
+- **1. Presencia, Densidad y Localización Anatomopatológica Precisa**: (Identifica con exactitud diagnóstica la localización anatómica: diáfisis, metáfisis, epífisis, cuello, cabeza, etc., describiendo la discontinuidad cortical).
+- **2. Número y Dirección Tridimensional de Trazos**: (Describe el número exacto de trazos óseos identificados. Clasifica rigurosamente su orientación geométrica: transverso, oblicuo corto/largo, espiroideo o helicoidal, longitudinal, ala de mariposa, conminuto con múltiples fragmentos libres, etc.)
+- **3. Extensión y Compromiso Articular Estricto**: (Especificar de forma obligatoria e inflexible si existe afección, interrupción o extensión del trazo hacia la carilla, cavidad o cartílago articular. Detalla si hay escalón o hundimiento articular en milímetros estimados, pérdida de congruencia o diástasis intraarticular.)
+- **4. Desplazamiento Espacial de Fragmentos y Alineación**: (Describe minuciosamente la dirección y grado de desplazamiento óseo: diástasis o separación en mm, cabalgamiento con acortamiento longitudinal, luxación o subluxación articular, desviación angular en varo/valgo o antero/retrocurvatum, o rotación fragmentaria.)
+- **5. Cita de Evidencia Visual de Integridad Científica**: (Proporciona la confirmación estricta de cada hallazgo con correlato clínico directo. ¡No tolerar alucinación de líneas vasculares normales ni subestimación de trazos corticales sutiles!)
+`;
+    }
+
+    if (isPulmonaryCase) {
+      promptText += `
+## 🫁 PROTOCOLO ESPECIAL DE MÁXIMA EXACTITUD PARA PARÉNQUIMA PULMONAR E HILIOS (VALORACIÓN SISTEMÁTICA) 🫁
+(Este apartado especial se ha disparado obligatoriamente por tratarse de una radiografía de tórax o por sospecha de patología pulmonar. Debes evaluar minuciosamente el parénquima pulmonar y las estructuras hiliares con máxima precisión clínica, basándote estrictamente en hallazgos verdaderos y reales visibles en la imagen):
+- **1. Evaluación del Parénquima Pulmonar (Patrones e Infiltrados)**:
+  * **Infiltrados Intersticiales**: (Evalúa con extremo detalle fino la presencia de patrones reticulares, nodulares, reticulonodulares o de vidrio esmerilado sutiles. Especifica si son difusos, localizados, bilaterales o de distribución periférica/basal, sin omitir opacidades lineales o septales tenues o incipientes).
+  * **Infiltrados Alveolares (Consolidaciones)**: (Evalúa signos de consolidación del espacio aéreo, presencia de broncograma aéreo, límites e infiltrados algodonosos focales, multifocales o lobares. Detalla con exactitud su localización anatómica).
+- **2. Masas y Cavitaciones**:
+  * (Busca nódulos solitarios o múltiples, masas pulmonares sospechosas describiendo sus bordes -netos, lobulados, espiculados- y dimensiones aproximadas. Evalúa exhaustivamente la presencia de cavitaciones pulmonares, paredes engrosadas, niveles hidroaéreos concomitantes o bronquiectasias de carácter quístico).
+- **3. Atelectasias y Pérdida de Volumen o Colapso**:
+  * (Valora signos de colapso pulmonar, atelectasias laminares, segmentarias o lobares. Describe signos indirectos como la desviación de cisuras, desviación mediastinal, o la elevación diafragmática ipsilateral por sutil que sea).
+- **4. Hilios Pulmonares y Ensanchamientos Mediastinales**:
+  * **Valoración Hiliar**: (Analiza críticamente la simetría, densidad y tamaño de ambos hilios pulmonares. Discrimina con agudeza si hay adenopatías hiliares, prominencia vascular/arterial o masas hiliares verdaderas vs. superposición normal de estructuras).
+  * **Valoración Mediastinal**: (Mide o estima el perfil mediastínico para descartar de manera confiable o reportar ensanchamiento mediastinal patológico, alteraciones del botón aórtico, masas mediastinales o neumomediastino).
+- **5. Espacio Pleural e Integridad Costodiafragmática**:
+  * (Evalúa con lupa digital los ángulos costofrénicos y cardiofrénicos bilaterales en búsqueda de borramientos sutiles que sugieran derrame pleural inicial, engrosamientos pleurales, calcificaciones o signos de neumotórax apical sutil -línea pleural visceral desprovista de trama pulmonar periférica-).
+- **6. Evidencia Absoluta y Agudeza Anti-Alucilación**:
+  * (Somete cada hallazgo al protocolo de veracidad: ¡no inventes opacidades por superposición normal de escápulas, pezones, costillas o pliegues cutáneos, pero mantén un nivel máximo de sospecha ante cambios sutiles reales!)
+`;
+    }
+
+    if (isOsteoarthritisCase) {
+      promptText += `
+## 🦴 PROTOCOLO ESPECIAL DE MÁXIMA EXACTITUD PARA ARTROSIS Y ENFERMEDAD DEGENERATIVA (VALORACIÓN ARTICULAR Y COLUMNA) 🦴
+(Este apartado especial se ha disparado obligatoriamente por sospecha, mención o hallazgo de enfermedad degenerativa. Debes buscar y describir minuciosamente los cambios degenerativos o artrósicos en articulaciones o columna con el mayor rigor, basándote rígidamente en la evidencia física visible sin inventar ni pasar por alto hallazgos sutiles):
+- **1. Disminución / Pinzamiento de Espacios Articulares o Discales**: (Evalúa con precisión micrométrica la anchura del espacio articular o intervertebral. Especifica si el compromiso es simétrico o asimétrico -ej. medial vs. lateral en rodilla- y estima su reducción porcentual o milimétrica).
+- **2. Presencia, Medida y Distribución de Osteofitos**: (Identifica y detalla la localización exacta de osteofitos marginales, espolones u osteofitos de tracción en platillos, carillas, márgenes óseos o cuerpos vertebrales. No pases por alto osteofitos incipientes pero evita alucinar excrecencias normales o superposiciones estructurales).
+- **3. Esclerosis Ósea Subcondral e Integridad del Hueso**: (Analiza el aumento focalizado de la densidad ósea -esclerosis- debajo del cartílago articular o en las plataformas vertebrales, indicando las zonas de máxima sobrecarga mecánica).
+- **4. Geodas o Quistes Subcondrales**: (Busca con alta magnificación visual sutiles geodas de presión o quistes subcondrales degenerativos, reportando su presencia, diámetro y localización precisa).
+- **5. Clasificación y Gradación Internacional Rigurosa**: (Aplica con absoluto rigor las escalas internacionales correspondientes según la región estudiada: por ejemplo, la clasificación de Kellgren-Lawrence para rodilla/cadera -de Grado 1 sutil a Grado 4 severo-, escalas de severidad para artrosis facetaria, o de discopatía degenerativa en columna. Fundamenta científicamente cada grado asignado).
+- **6. Coherencia y Sinergia Diagnóstica Ampliada**: 
+  * *NOTA CRÍTICA*: La activación de este protocolo específico NO debe disminuir de ninguna manera la eficiencia o detalle del resto de la valoración diagnóstica anatomopatológica general (tejidos blandos, estructuras óseas no degenerativas u órganos visibles). Al contrario, debe potenciar y enriquecer el análisis integral cruzando los datos mecánicos/degenerativos con el resto de los hallazgos para una valoración diagnóstica holística de máxima potencia clínica.
+`;
+    }
+
+    if (isMetalCase) {
+      promptText += `
+## 🔩 PROTOCOLO ESPECIAL DE MÁXIMA EXACTITUD PARA PRÓTESIS Y ELEMENTOS METÁLICOS DE OSTEOSÍNTESIS (INTEGRIDAD Y ALINEACIÓN) 🔩
+(Este apartado especial se ha disparado obligatoriamente por sospecha, mención o hallazgo de implantes metálicos, prótesis o material de osteosíntesis. Debes realizar una evaluación técnica y de imagen de alta especificidad, describiendo adecuadamente su composición y valorando con el mayor rigor su integridad estructural y estabilidad, basándote en la evidencia física real visible en la imagen):
+- **1. Tipo, Localización Anatomopatológica y Componentes del Implante**: (Describe con propiedad los componentes de osteosíntesis o prótesis identificados: vástagos, placas de compresión/reconstrucción, tornillos corticales/esponjosos, clavos endomedulares, alambres, cerclajes, cúpulas acetabulares, liners, etc. Especifica con precisión los segmentos óseos o articulaciones involucrados).
+- **2. Valoración de la Estructura Metálica e Integridad**: (Evalúa con minuciosa agudeza visual si existe evidencia de fatiga, doblamiento, fractura o alteración del material. Detalla de forma explícita la integridad de cada uno de los elementos metálicos y valora su integridad y estabilidad).
+- **3. Interfaz Hueso-Implante (Margen Periprotésico / Peri-implante)**: (Inspecciona la presencia de bandas radiolúcidas -osteólisis peri-implante u osteólisis periprotésica sutil-, aflojamiento aséptico, hundimiento de componentes, reabsorción ósea circundante o reacción periosteal anormal).
+- **4. Orientación, Alineación Espacial y Relación Anatómica**: (Describe si la orientación de la prótesis o del material de osteosíntesis es anatómica y funcional. Si es una prótesis articular, valora si existe luxación, subluxación, asimetría de componentes o desalineación).
 `;
     }
 
@@ -1291,7 +1456,11 @@ app.post("/api/expert-image-followup", async (req: express.Request, res: express
       previousAnalysis,
       queryText,
       patientInfo,
-      clinicalSuspicion
+      clinicalSuspicion,
+      fractureProtocol,
+      pulmonaryProtocol,
+      osteoarthritisProtocol,
+      prosthesisMetalProtocol
     } = req.body;
 
     if (!image1 || !mimeType1) {
@@ -1354,6 +1523,75 @@ app.post("/api/expert-image-followup", async (req: express.Request, res: express
       promptNote = `\n[Nota del sistema: Los archivos provistos son representaciones vectoriales/metadatos sin imagen rasterizada binaria. Por favor, genera tu respuesta basándose en los metadatos de diagnóstico y la descripción provista de manera altamente coherente].\n`;
     }
 
+    const isFractureCase = !!fractureProtocol || 
+      [clinicalSuspicion, queryText, previousAnalysis]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .match(/(fractur|trazo|trazos|desplazam|fisura|compromiso articular|luxac|subluxac|fx|fémur|peroné|tibia|radio|cúbito|húmero)/);
+
+    const isPulmonaryCase = !!pulmonaryProtocol || 
+      [clinicalSuspicion, queryText, previousAnalysis]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .match(/(torax|tórax|chest|pulm|pulmonar|hilio|hiliar|intersticial|alveolar|infiltrado|masa|cavitac|atelectas|mediastin|pleur|neumon|consolida|parénquima|parenquima)/);
+
+    const isOsteoarthritisCase = !!osteoarthritisProtocol || 
+      [clinicalSuspicion, queryText, previousAnalysis]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .match(/(artros|degenerat|osteofit|escleros|subcondral|pinzam|geoda|espolon|espolón|espondilo|gonartros|coxartros|kellgren|lawrence|facetaria|discopat)/);
+
+    const isMetalCase = !!prosthesisMetalProtocol || 
+      [clinicalSuspicion, queryText, previousAnalysis]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .match(/(protesis|prótesis|metalico|metálico|metalicos|metálicos|osteosintesis|osteosíntesis|placa|tornillo|clavo|cerclaje|vástago|vastago|artroplastia)/);
+
+    let protocolInstructions = "";
+    if (isFractureCase) {
+      protocolInstructions += `
+⚠️ RECORDATORIO PROTOCOLO DE FRACTURAS DE ALTA EXACTITUD:
+- Caracteriza microscópicamente el número y dirección tridimensional de los trazos.
+- Especifica rigurosamente el compromiso de carillas articulares (escalón articular/diástasis).
+- Detalla grado de desplazamiento espacial (cabalgamiento, diástasis, angulación).
+- Basa tus conclusiones únicamente en la evidencia visual real sin omitir ni alucinar.
+`;
+    }
+
+    if (isPulmonaryCase) {
+      protocolInstructions += `
+⚠️ RECORDATORIO PROTOCOLO DE PARÉNQUIMA PULMONAR E HILIOS:
+- Evalúa minuciosamente el parénquima para diferenciar infiltrados intersticiales y alveolares densos.
+- Busca o descarta exhaustivamente masas discretas, cavitaciones y atelectasias/colapsos.
+- Analiza con agudeza la simetría y densidad de ambos hilios, y descarta o reporta ensanchamiento mediastinal patológico.
+- Mantén el máximo nivel de sospecha diagnóstica ante hallazgos sumamente sutiles, basándote rigurosamente en la evidencia visual científica real.
+`;
+    }
+
+    if (isOsteoarthritisCase) {
+      protocolInstructions += `
+⚠️ RECORDATORIO PROTOCOLO DE ARTROSIS Y ENFERMEDAD DEGENERATIVA:
+- Evalúa con precisión el pinzamiento de espacios articulares, diferenciando áreas de carga simétricas vs. asimétricas.
+- Detalla la presencia de osteofitos marginales, esclerosis subcondral focal o geodas óseas.
+- Emplea criterios sistemáticos internacionales de severidad (v.g., Kellgren-Lawrence para articulaciones mayores o discopatía).
+- Toda valoración de cambios degenerativos debe optimizar la exactitud e integrarse armónicamente para potenciar el resto del diagnóstico clínico general sin demeritar su calidad.
+`;
+    }
+
+    if (isMetalCase) {
+      protocolInstructions += `
+⚠️ RECORDATORIO PROTOCOLO DE PRÓTESIS Y ELEMENTOS METÁLICOS DE OSTEOSÍNTESIS:
+- Describe con adecuado nivel técnico cada implante articular o material de osteosíntesis visible (placas, tornillos, clavos, etc.).
+- Evalúa de forma obligatoria y rigurosa la integridad del material buscando signos de fractura, fatiga estructural, doblamiento o aflojamiento.
+- Valora y reporta la interfaz hueso-implante en busca de lisis peri-implante, aflojamiento aséptico o hundimiento.
+- Describe la orientación y alineación de los componentes respecto a las estructuras anatómicas.
+`;
+    }
+
     const promptText = `
 Eres un radiólogo académico senior con subespecialidad en diagnóstico avanzado de alta complejidad.
 ${promptNote}
@@ -1369,6 +1607,7 @@ ${queryText}
 === DATOS GENERALES DEL CASO ===
 - **Paciente**: ${patientInfo || "S/D"}
 - **Sospecha Clínica**: ${clinicalSuspicion || "S/D"}
+${protocolInstructions}
  
 Misión:
 1. Responde con un rigor clínico impecable, extremadamente detallado, minucioso y exacto, promoviendo un equilibrio científico perfecto.

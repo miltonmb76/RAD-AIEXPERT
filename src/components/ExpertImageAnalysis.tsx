@@ -709,6 +709,113 @@ export default function ExpertImageAnalysis({
   const [isAutoLabeling, setIsAutoLabeling] = useState<boolean>(false);
   const [autoLabelError, setAutoLabelError] = useState<string | null>(null);
 
+  // Fracture high accuracy protocol states & detection keywords
+  const [forceFractureProtocol, setForceFractureProtocol] = useState<boolean>(false);
+  const isFractureProtocolActive = React.useMemo(() => {
+    if (forceFractureProtocol) return true;
+    const keywords = [
+      "fractura", "fractur", "trazos", "trazo", "desplazamiento", "fisura", "compromiso articular", 
+      "luxación", "subluxación", "fx", "fémur", "peroné", "tibia", "radio", "cúbito", "húmero", "fissure"
+    ];
+    const textToSearch = [
+      patientInfo,
+      clinicalSuspicion,
+      radiologicalQuestions,
+      desc1,
+      desc2,
+      desc3,
+      ...annotations1.map(a => a.label || ""),
+      ...annotations2.map(a => a.label || ""),
+      ...annotations3.map(a => a.label || "")
+    ].join(" ").toLowerCase();
+
+    return keywords.some(kw => textToSearch.includes(kw));
+  }, [forceFractureProtocol, patientInfo, clinicalSuspicion, radiologicalQuestions, desc1, desc2, desc3, annotations1, annotations2, annotations3]);
+
+  // Pulmonary parenchyma & Hila high accuracy protocol states & detection keywords
+  const [forcePulmonaryProtocol, setForcePulmonaryProtocol] = useState<boolean>(false);
+  const isPulmonaryProtocolActive = React.useMemo(() => {
+    if (forcePulmonaryProtocol) return true;
+    const keywords = [
+      "torax", "tórax", "chest", "pulmón", "pulmon", "pulmonar", "hilio", "hilios", "hiliar",
+      "intersticial", "alveolar", "infiltrado", "masa", "cavitación", "cavitacion", "atelectasia",
+      "mediastino", "mediastinal", "pleura", "pleural", "derrame", "neumonia", "neumonía", "consolida",
+      "parénquima", "parenquima"
+    ];
+    const textToSearch = [
+      patientInfo,
+      clinicalSuspicion,
+      radiologicalQuestions,
+      desc1,
+      desc2,
+      desc3,
+      modality1,
+      modality2,
+      modality3,
+      ...annotations1.map(a => a.label || ""),
+      ...annotations2.map(a => a.label || ""),
+      ...annotations3.map(a => a.label || "")
+    ].join(" ").toLowerCase();
+
+    return keywords.some(kw => textToSearch.includes(kw));
+  }, [forcePulmonaryProtocol, patientInfo, clinicalSuspicion, radiologicalQuestions, desc1, desc2, desc3, modality1, modality2, modality3, annotations1, annotations2, annotations3]);
+
+  // Osteoarthritis & Degenerative Joint/Spine Disease (Artrosis / Enfermedad Degenerativa) high accuracy protocol states & detection keywords
+  const [forceOsteoarthritisProtocol, setForceOsteoarthritisProtocol] = useState<boolean>(false);
+  const isOsteoarthritisProtocolActive = React.useMemo(() => {
+    if (forceOsteoarthritisProtocol) return true;
+    const keywords = [
+      "artrosis", "degenerativa", "degenerativo", "degenerativ", "osteofito", "osteofitos", "osteofitosis",
+      "esclerosis", "subcondral", "pinzamiento", "geoda", "geodas", "espolon", "espolón", "espondiloartrosis",
+      "cervicoartrosis", "dorsoartrosis", "lumbartrosis", "lumbar", "sacrolumbar", "gonartrosis", "coxartrosis",
+      "kellgren", "lawrence", "facetaria", "reducido", "reducción", "reduccion", "discopatía", "discopatia"
+    ];
+    const textToSearch = [
+      patientInfo,
+      clinicalSuspicion,
+      radiologicalQuestions,
+      desc1,
+      desc2,
+      desc3,
+      modality1,
+      modality2,
+      modality3,
+      ...annotations1.map(a => a.label || ""),
+      ...annotations2.map(a => a.label || ""),
+      ...annotations3.map(a => a.label || "")
+    ].join(" ").toLowerCase();
+
+    return keywords.some(kw => textToSearch.includes(kw));
+  }, [forceOsteoarthritisProtocol, patientInfo, clinicalSuspicion, radiologicalQuestions, desc1, desc2, desc3, modality1, modality2, modality3, annotations1, annotations2, annotations3]);
+
+  // Prosthesis & Metal Osteosynthesis (Prótesis y Material de Osteosíntesis) high accuracy protocol states & detection keywords
+  const [forceMetalProtocol, setForceMetalProtocol] = useState<boolean>(false);
+  const isMetalProtocolActive = React.useMemo(() => {
+    if (forceMetalProtocol) return true;
+    const keywords = [
+      "protesis", "prótesis", "metalico", "metálico", "metalicos", "metálicos", "osteosintesis", "osteosíntesis",
+      "placa", "placas", "tornillo", "tornillos", "clavo", "clavos", "cerclaje", "cerclajes", "vástago", "vastago",
+      "artroplastia", "osteosintese", "reemplazo articular", "fijador metalico", "implante metálico", "implante metalico",
+      "alambre", "alambres"
+    ];
+    const textToSearch = [
+      patientInfo,
+      clinicalSuspicion,
+      radiologicalQuestions,
+      desc1,
+      desc2,
+      desc3,
+      modality1,
+      modality2,
+      modality3,
+      ...annotations1.map(a => a.label || ""),
+      ...annotations2.map(a => a.label || ""),
+      ...annotations3.map(a => a.label || "")
+    ].join(" ").toLowerCase();
+
+    return keywords.some(kw => textToSearch.includes(kw));
+  }, [forceMetalProtocol, patientInfo, clinicalSuspicion, radiologicalQuestions, desc1, desc2, desc3, modality1, modality2, modality3, annotations1, annotations2, annotations3]);
+
   // Status & Output
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [analysisResult, setAnalysisResult] = useState<string>("");
@@ -1120,7 +1227,11 @@ export default function ExpertImageAnalysis({
           annotations3: (image3 && annotations3.length > 0) ? annotations3 : undefined,
           clinicalSuspicion,
           radiologicalQuestions,
-          patientInfo
+          patientInfo,
+          fractureProtocol: isFractureProtocolActive,
+          pulmonaryProtocol: isPulmonaryProtocolActive,
+          osteoarthritisProtocol: isOsteoarthritisProtocolActive,
+          prosthesisMetalProtocol: isMetalProtocolActive
         }),
       });
 
@@ -1172,6 +1283,10 @@ export default function ExpertImageAnalysis({
           queryText: followUpQuery,
           patientInfo,
           clinicalSuspicion,
+          fractureProtocol: isFractureProtocolActive,
+          pulmonaryProtocol: isPulmonaryProtocolActive,
+          osteoarthritisProtocol: isOsteoarthritisProtocolActive,
+          prosthesisMetalProtocol: isMetalProtocolActive
         }),
       });
 
@@ -1313,6 +1428,137 @@ export default function ExpertImageAnalysis({
                 onChange={(e) => setRadiologicalQuestions(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 hover:border-slate-700 focus:border-indigo-600 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none transition-all font-mono"
               />
+            </div>
+
+            {/* High Precision Protocol Section */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 col-span-1 md:col-span-1">
+              {/* Fracture Protocol Trigger/Banner */}
+              {isFractureProtocolActive ? (
+                <div className="bg-[#1c140d] border border-amber-500/30 rounded-xl p-3.5 space-y-1.5 shadow-sm">
+                  <div className="flex items-center gap-2 text-amber-300">
+                    <Activity className="h-4 w-4 animate-pulse text-amber-400" />
+                    <span className="text-[10px] font-black uppercase tracking-widest font-mono">⚡ PROTOCOLO FRACTURAS ACTIVADO ⚡</span>
+                  </div>
+                  <p className="text-[10.5px] text-amber-200/90 leading-relaxed font-sans">
+                    Se valorará óptimamente el <strong>número y dirección de los trazos de fractura</strong>, presencia o ausencia de <strong>compromiso articular</strong> y el grado de <strong>desplazamiento de fragmentos</strong> sin especulaciones ni subestimaciones basados en la evidencia visual.
+                  </p>
+                  <div className="flex justify-end pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setForceFractureProtocol(false)}
+                      className="text-[8.5px] font-black font-mono text-amber-400/80 hover:text-amber-300 bg-[#1e1510] hover:bg-[#2e2017] border border-amber-800/60 px-2 py-0.5 rounded transition cursor-pointer select-none"
+                    >
+                      X DESACTIVAR
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex justify-start w-full">
+                  <button
+                    type="button"
+                    onClick={() => setForceFractureProtocol(true)}
+                    className="w-full text-left text-[8.5px] font-black font-mono text-slate-400 hover:text-amber-400 bg-slate-900/60 hover:bg-slate-950/80 border border-slate-850 p-2.5 rounded-lg cursor-pointer transition flex items-center gap-1.5 shadow-sm active:scale-97 select-none uppercase tracking-widest"
+                  >
+                    <Activity className="h-3.5 w-3.5 text-amber-500" /> ACTIVAR PROTOCOLO DE FRACTURAS
+                  </button>
+                </div>
+              )}
+
+              {/* Pulmonary/Chest Protocol Trigger/Banner */}
+              {isPulmonaryProtocolActive ? (
+                <div className="bg-[#0b1c21] border border-cyan-500/30 rounded-xl p-3.5 space-y-1.5 shadow-sm">
+                  <div className="flex items-center gap-2 text-cyan-300">
+                    <Activity className="h-4 w-4 animate-pulse text-cyan-400" />
+                    <span className="text-[10px] font-black uppercase tracking-widest font-mono">🫁 PROTOCOLO PARÉNQUIMA E HILIOS ACTIVADO 🫁</span>
+                  </div>
+                  <p className="text-[10.5px] text-cyan-200/90 leading-relaxed font-sans">
+                    Análisis exhaustivo del <strong>parénquima pulmonar y de ambos hilios</strong> para discriminar con precisión científica <strong>infiltrados intersticiales y alveolares, masas, cavitaciones, atelectasias</strong> y <strong>ensanchamiento mediastinal</strong> guiado por hallazgos verdaderos sin pasar por alto cambios sutiles.
+                  </p>
+                  <div className="flex justify-end pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setForcePulmonaryProtocol(false)}
+                      className="text-[8.5px] font-black font-mono text-cyan-400/80 hover:text-cyan-300 bg-[#0d1e25] hover:bg-[#122e38] border border-cyan-800/60 px-2 py-0.5 rounded transition cursor-pointer select-none"
+                    >
+                      X DESACTIVAR
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex justify-start w-full">
+                  <button
+                    type="button"
+                    onClick={() => setForcePulmonaryProtocol(true)}
+                    className="w-full text-left text-[8.5px] font-black font-mono text-slate-400 hover:text-cyan-400 bg-slate-900/60 hover:bg-slate-950/80 border border-slate-850 p-2.5 rounded-lg cursor-pointer transition flex items-center gap-1.5 shadow-sm active:scale-97 select-none uppercase tracking-widest"
+                  >
+                    <Activity className="h-3.5 w-3.5 text-cyan-500" /> ACTIVAR PROTOCOLO PULMONAR (PARÉNQUIMA E HILIOS)
+                  </button>
+                </div>
+              )}
+
+              {/* Osteoarthritis (Artrosis / Degenerativa) Protocol Trigger/Banner */}
+              {isOsteoarthritisProtocolActive ? (
+                <div className="bg-[#0b1c14] border border-emerald-500/30 rounded-xl p-3.5 space-y-1.5 shadow-sm">
+                  <div className="flex items-center gap-2 text-emerald-300">
+                    <Activity className="h-4 w-4 animate-pulse text-emerald-400" />
+                    <span className="text-[10px] font-black uppercase tracking-widest font-mono">🦴 PROTOCOLO ARTROSIS ACTIVADO 🦴</span>
+                  </div>
+                  <p className="text-[10.5px] text-emerald-200/90 leading-relaxed font-sans">
+                    Valoración milimétrica y sistemática de <strong>enfermedad degenerativa articular y vertebral</strong>: osteofitosis, pinzamientos de espacios (K-L sutil), esclerosis subcondral y geodas sin subestimar ni inventar hallazgos.
+                  </p>
+                  <div className="flex justify-end pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setForceOsteoarthritisProtocol(false)}
+                      className="text-[8.5px] font-black font-mono text-emerald-400/80 hover:text-emerald-300 bg-[#06150e] hover:bg-[#0c1f15] border border-emerald-800/60 px-2 py-0.5 rounded transition cursor-pointer select-none"
+                    >
+                      X DESACTIVAR
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex justify-start w-full">
+                  <button
+                    type="button"
+                    onClick={() => setForceOsteoarthritisProtocol(true)}
+                    className="w-full text-left text-[8.5px] font-black font-mono text-slate-400 hover:text-emerald-400 bg-slate-900/60 hover:bg-slate-950/80 border border-slate-850 p-2.5 rounded-lg cursor-pointer transition flex items-center gap-1.5 shadow-sm active:scale-97 select-none uppercase tracking-widest"
+                  >
+                    <Activity className="h-3.5 w-3.5 text-emerald-400" /> ACTIVAR PROTOCOLO DE ARTROSIS
+                  </button>
+                </div>
+              )}
+
+              {/* Prosthesis & Metal Osteosynthesis Protocol Trigger/Banner */}
+              {isMetalProtocolActive ? (
+                <div className="bg-[#11111e] border border-violet-500/30 rounded-xl p-3.5 space-y-1.5 shadow-sm">
+                  <div className="flex items-center gap-2 text-violet-300">
+                    <Activity className="h-4 w-4 animate-pulse text-violet-400" />
+                    <span className="text-[10px] font-black uppercase tracking-widest font-mono font-sans flex items-center gap-1">🔩 PROTOCOLO METALES/PRÓTESIS AC ACTIVO 🔩</span>
+                  </div>
+                  <p className="text-[10.5px] text-violet-200/90 leading-relaxed font-sans">
+                    Análisis específico de <strong>prótesis e implantes metálicos</strong>: descripción de componentes, alineación y una estricta <strong>valoración de su integridad estructural</strong> buscando fatigas o aflojamientos.
+                  </p>
+                  <div className="flex justify-end pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setForceMetalProtocol(false)}
+                      className="text-[8.5px] font-black font-mono text-violet-400/80 hover:text-violet-300 bg-[#141423] hover:bg-[#202035] border border-violet-800/60 px-2 py-0.5 rounded transition cursor-pointer select-none"
+                    >
+                      X DESACTIVAR
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex justify-start w-full">
+                  <button
+                    type="button"
+                    onClick={() => setForceMetalProtocol(true)}
+                    className="w-full text-left text-[8.5px] font-black font-mono text-slate-400 hover:text-violet-400 bg-slate-900/60 hover:bg-slate-950/80 border border-slate-850 p-2.5 rounded-lg cursor-pointer transition flex items-center gap-1.5 shadow-sm active:scale-97 select-none uppercase tracking-widest"
+                  >
+                    <Activity className="h-3.5 w-3.5 text-violet-500" /> ACTIVAR PROTOCOLO METALES/PRÓTESIS
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
