@@ -2514,6 +2514,165 @@ REGLAS DE RESPUESTA:
   }
 });
 
+app.post("/api/analyze-vascular", async (req: express.Request, res: express.Response) => {
+  try {
+    const { model, reportText, studyType } = req.body;
+    if (!reportText) {
+      return res.status(400).json({ success: false, error: "Se requiere el 'reportText' para realizar el análisis vascular." });
+    }
+
+    const ai = getGeminiClient();
+    const selectedModel = getModelName(model);
+
+    const isCarotidas = studyType === "Doppler de carótidas" || reportText.toLowerCase().includes("carotid");
+    const isVenoso = studyType === "Doppler venoso de miembro inferior" || reportText.toLowerCase().includes("venoso");
+
+    let variablesPromptDesc = "";
+    if (isCarotidas) {
+      variablesPromptDesc = `
+  Analiza los siguientes vasos carotídeos para el lado derecho e izquierdo:
+  - acc_der (Arteria Carótida Común Derecha)
+  - aci_der (Arteria Carótida Interna Derecha)
+  - ace_der (Arteria Carótida Externa Derecha)
+  - vert_der (Arteria Vertebral Derecha)
+  - acc_izq (Arteria Carótida Común Izquierda)
+  - aci_izq (Arteria Carótida Interna Izquierda)
+  - ace_izq (Arteria Carótida Externa Izquierda)
+  - vert_izq (Arteria Vertebral Izquierda)
+  
+  Determina el estado de cada una como uno de los siguientes valores exactos:
+  - "normal" (si el flujo es laminar, sin estenosis ni placas significativas, o normal)
+  - "mild" (si hay presencia de placas ateromatosas con estenosis hemodinámicamente no significativa o leve <50%)
+  - "severe" (si hay estenosis crítica/severa >=50% o está ocluida)
+  `;
+    } else if (isVenoso) {
+      variablesPromptDesc = `
+  Analiza los siguientes segmentos venosos de miembros inferiores para extremidad derecha e izquierda:
+  - vfc_der (Vena Femoral Común Derecha)
+  - vfs_der (Vena Femoral Superficial Derecha)
+  - vp_der (Vena Poplítea Derecha)
+  - vsm_der (Vena Safena Magna Derecha)
+  - vsp_der (Vena Safena Parva Derecha)
+  - sfj_der (Unión Safenofemoral Derecha)
+  - vfc_izq (Vena Femoral Común Izquierda)
+  - vfs_izq (Vena Femoral Superficial Izquierda)
+  - vp_izq (Vena Poplítea Izquierda)
+  - vsm_izq (Vena Safena Magna Izquierda)
+  - vsp_izq (Vena Safena Parva Izquierda)
+  - sfj_izq (Unión Safenofemoral Izquierda)
+  
+  Determina el estado de cada una como uno de los siguientes valores exactos:
+  - "normal" (permeable, completamente colapsable, flujo normal, sin insuficiencia ni reflujo)
+  - "reflux" (si hay insuficiencia valvular, reflujo provocado/espontáneo o incompetencia)
+  - "thrombosis" (si hay trombosis venosa profunda o superficial, no compresible, trombo visible, o ausencia de flujo)
+  `;
+    } else {
+      variablesPromptDesc = `
+  Analiza los siguientes segmentos arteriales de miembros inferiores para extremidad derecha e izquierda:
+  - aic_der (Arteria Ilíaca Común Derecha)
+  - afc_der (Arteria Femoral Común Derecha)
+  - afs_der (Arteria Femoral Superficial Derecha)
+  - ap_der (Arteria Poplítea Derecha)
+  - ata_der (Arteria Tibial Anterior Derecha)
+  - atp_der (Arteria Tibial Posterior Derecha)
+  - aper_der (Arteria Peronea Derecha)
+  - aic_izq (Arteria Ilíaca Común Izquierda)
+  - afc_izq (Arteria Femoral Común Izquierda)
+  - afs_izq (Arteria Femoral Superficial Izquierda)
+  - ap_izq (Arteria Poplítea Izquierda)
+  - ata_izq (Arteria Tibial Anterior Izquierda)
+  - atp_izq (Arteria Tibial Posterior Izquierda)
+  - aper_izq (Arteria Peronea Izquierda)
+  
+  Determina el estado de cada una como uno de los siguientes valores exactos:
+  - "normal" (flujo trifásico normal, sin placas ni estenosis hemodinámica)
+  - "mild" (flujo bifásico, estenosis <50% o placas difusas con velocidades conservadas)
+  - "severe" (flujo monofásico o amortiguado "tardus-parvus", oclusión vascular, o estenosis >=50% con velocidades elevadas)
+  `;
+    }
+
+    const promptText = `
+Estudio Vascular Analizado: ${studyType || "Doppler Vascular"}
+Texto del Reporte Médico:
+"""
+${reportText}
+"""
+
+Tu misión es analizar el texto de este reporte y generar:
+1. Un cuadro de hallazgos principales en formato de tabla de Markdown.
+2. Un objeto JSON estructurado que asigne un estado y una breve descripción a cada segmento vascular clave.
+
+Instrucciones para el Cuadro (Markdown):
+- Debe ser una tabla de Markdown impecable y elegante con encabezados claros.
+- Debe resumir con brevedad y excelente lenguaje médico los hallazgos para cada segmento/vaso de interés (ej: simetría de velocidades, flujo, presencia de placas, etc.).
+- Ejemplo de encabezado para Carótidas:
+  | Segmento | Lado Derecho | Lado Izquierdo |
+- Ejemplo para Miembros:
+  | Vasos / Región | Miembro Derecho | Miembro Izquierdo |
+
+Instrucciones para la Estructura de Datos (JSON):
+${variablesPromptDesc}
+
+Por favor, formatea la respuesta de manera estricta y exclusiva como un objeto JSON válido que contenga cuatro atributos primarios: "table", "states", "descriptions" y "subLocations".
+- En "table" coloca el formato string de la tabla Markdown generada.
+- En "states" coloca el mapeo de ID del segmento a su estado detectado ("normal", "mild", "severe", "reflux", o "thrombosis" exactamente).
+- En "descriptions" coloca una explicación muy breve (máximo un renglón, ej: "Flujo laminar, sin placas", "Placa lipídica con estenosis de 35%", "Ausencia de flujo, trombo obstructivo", etc.) correspondiente a cada ID.
+- En "subLocations" asigna a cada ID de segmento detectado con alteración ("mild", "severe", "reflux", o "thrombosis") su ubicación anatómica exacta basándote en la descripción física indicada en el reporte (por ejemplo: si es proximal, medio, distal, en la bifurcación, etc.). Los valores válidos que debes mapear son exactamente uno de: "proximal", "medio", "distal", "bifurcacion", "origen", o "general". Si es normal o no se detalla un punto específico, usa "general".
+
+IMPORTANTE: Devuelve ÚNICAMENTE el objeto de JSON bien formateado, sin rodeos, preámbulos, explicaciones ni etiquetas externas como marcas de bloque de código \`\`\`json. Comienza directamente con { y finaliza con }.
+`;
+
+    const systemInstruction = "Eres un especialista clínico experto en radiología y Doppler vascular avanzado. Tu tarea es extraer de forma precisa cuadros diagnósticos estructurados y catalogar anatomopatológicamente cada segmento vascular en base al reporte indicado.";
+
+    const response = await ai.models.generateContent({
+      model: selectedModel,
+      contents: promptText,
+      config: {
+        systemInstruction: systemInstruction,
+        temperature: 0.1,
+      },
+    });
+
+    const botText = response.text || "";
+    // Clean potential markdown codeblock wrappers if any
+    let cleanedJsonText = botText.trim();
+    if (cleanedJsonText.startsWith("```json")) {
+      cleanedJsonText = cleanedJsonText.replace(/^```json/, "").replace(/```$/, "").trim();
+    } else if (cleanedJsonText.startsWith("```")) {
+      cleanedJsonText = cleanedJsonText.replace(/^```/, "").replace(/```$/, "").trim();
+    }
+
+    let parsedResult;
+    try {
+      parsedResult = JSON.parse(cleanedJsonText);
+    } catch (jsonErr) {
+      console.warn("Could not directly parse JSON from Gemini, attempting regex cleanup...", jsonErr);
+      const tableMatch = botText.match(/\|[\s\S]+\|/);
+      const extractedTable = tableMatch ? tableMatch[0] : "";
+      
+      parsedResult = {
+        table: extractedTable || "No se pudo formatear el cuadro directamente.",
+        states: {},
+        descriptions: {},
+        subLocations: {}
+      };
+    }
+
+    res.json({
+      success: true,
+      table: parsedResult.table,
+      states: parsedResult.states || {},
+      descriptions: parsedResult.descriptions || {},
+      subLocations: parsedResult.subLocations || {}
+    });
+
+  } catch (error: any) {
+    console.error("Error en /api/analyze-vascular:", error);
+    const friendlyError = handleGeminiError(error);
+    res.status(500).json({ success: false, error: friendlyError });
+  }
+});
+
 // --- VITE DEV SERVER OR STATIC SERVING ---
 
 async function startServer() {

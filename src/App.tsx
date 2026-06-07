@@ -3,6 +3,7 @@ import { jsPDF } from "jspdf";
 import BibliographySearch from "./components/BibliographySearch";
 import ImageSearch from "./components/ImageSearch";
 import ExpertImageAnalysis from "./components/ExpertImageAnalysis";
+import VascularAnatomyViewer from "./components/VascularAnatomyViewer";
 import { 
   Activity, 
 
@@ -1058,6 +1059,16 @@ Ejemplo:
   const [patientSummaryError, setPatientSummaryError] = useState<string | null>(null);
   const [expandedFindings, setExpandedFindings] = useState<Record<number, boolean>>({});
 
+  // States for Advanced Vascular Analysis & Schematic Drawing
+  const [vascularTable, setVascularTable] = useState<string>("");
+  const [vascularStates, setVascularStates] = useState<Record<string, string>>({});
+  const [vascularDescriptions, setVascularDescriptions] = useState<Record<string, string>>({});
+  const [vascularSubLocations, setVascularSubLocations] = useState<Record<string, string>>({});
+  const [isAnalyzingVascular, setIsAnalyzingVascular] = useState<boolean>(false);
+  const [vascularError, setVascularError] = useState<string | null>(null);
+  const [includeVascularSchemaInReport, setIncludeVascularSchemaInReport] = useState<boolean>(true);
+  const [activeVascularIdHover, setActiveVascularIdHover] = useState<string | null>(null);
+
   // States for Dynamic Medical Glossary on current report
   const [dynamicGlossary, setDynamicGlossary] = useState<any | null>(null);
   const [isGeneratingDynamicGlossary, setIsGeneratingDynamicGlossary] = useState<boolean>(false);
@@ -1795,6 +1806,118 @@ Ejemplo:
     }
   };
 
+  // ACTIONS FOR ADVANCED VASCULAR ANALYSIS & DIAGRAMS
+  const handleAnalyzeVascular = async () => {
+    if (!generatedReport) return;
+    setIsAnalyzingVascular(true);
+    setVascularError(null);
+    try {
+      const response = await fetch("/api/analyze-vascular", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: selectedModel,
+          reportText: generatedReport,
+          studyType: specificStudy
+        }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        setVascularTable(data.table || "");
+        setVascularStates(data.states || {});
+        setVascularDescriptions(data.descriptions || {});
+        setVascularSubLocations(data.subLocations || {});
+      } else {
+        setVascularError(data.error || "No se pudieron analizar los hallazgos vasculares del informe.");
+      }
+    } catch (err: any) {
+      console.error("Error al realizar el análisis vascular:", err);
+      setVascularError(err?.message || String(err));
+    } finally {
+      setIsAnalyzingVascular(false);
+    }
+  };
+
+  const handleToggleVascularSegment = (segId: string) => {
+    const isVenoso = specificStudy === "Doppler venoso de miembro inferior" || generatedReport.toLowerCase().includes("venoso");
+    const current = vascularStates[segId] || "normal";
+    
+    let nextState = "normal";
+    if (isVenoso) {
+      // venous levels: normal -> reflux -> thrombosis -> normal
+      if (current === "normal") nextState = "reflux";
+      else if (current === "reflux") nextState = "thrombosis";
+    } else {
+      // arterial & carotid levels: normal -> mild -> severe -> normal
+      if (current === "normal") nextState = "mild";
+      else if (current === "mild") nextState = "severe";
+    }
+
+    setVascularStates(prev => ({
+      ...prev,
+      [segId]: nextState
+    }));
+
+    // Sutil prefilled description matching the manually edited state
+    let label = "Normal / Conservado";
+    if (nextState === "mild") label = "Placas ateromatosas con estenosis leve (<50%)";
+    else if (nextState === "severe") label = "Estenosis hemodinámicamente significativa / severa (>=50%)";
+    else if (nextState === "reflux") label = "Insuficiencia valvular con reflujo retrógrado";
+    else if (nextState === "thrombosis") label = "Obstrucción trombótica patente / No colapsable";
+
+    setVascularDescriptions(prev => ({
+      ...prev,
+      [segId]: label
+    }));
+  };
+
+  const handleExportVascularTableToReport = () => {
+    if (!vascularTable) return;
+    setReportHistory((prev) => [...prev, generatedReport]);
+    const separator = "\n\n";
+    const title = "### CUADRO DE HALLAZGOS VASCULARES (SÍNTESIS DIAGNÓSTICA)\n";
+    
+    // Avoid double inclusion if already exists
+    if (generatedReport.includes("### CUADRO DE HALLAZGOS VASCULARES")) {
+      // Replace existing
+      const regex = /### CUADRO DE HALLAZGOS VASCULARES[\s\S]+/g;
+      const cleanReportText = generatedReport.replace(regex, "").trim();
+      const nextReport = cleanReportText + separator + title + vascularTable;
+      setGeneratedReport(nextReport);
+      setEditedReportText(nextReport);
+    } else {
+      const nextReport = generatedReport + separator + title + vascularTable;
+      setGeneratedReport(nextReport);
+      setEditedReportText(nextReport);
+    }
+  };
+
+  const handleExportVascularBlocksToReport = (blocksText: string) => {
+    if (!blocksText) return;
+    setReportHistory((prev) => [...prev, generatedReport]);
+    const separator = "\n\n";
+    const title = "### SÍNTESIS DE ANATOMÍA VASCULAR DOPPLER\n";
+    
+    // Format blocksText inside triple backticks so it gets parsed perfectly as standard code in markdown and PDF
+    const formattedBlocks = blocksText.trim().startsWith("```") 
+      ? blocksText 
+      : "```text\n" + blocksText.trim() + "\n```";
+    
+    // Avoid double inclusion if already exists
+    if (generatedReport.includes("### SÍNTESIS DE ANATOMÍA VASCULAR DOPPLER")) {
+      // Replace existing
+      const regex = /### SÍNTESIS DE ANATOMÍA VASCULAR DOPPLER[\s\S]+/g;
+      const cleanReportText = generatedReport.replace(regex, "").trim();
+      const nextReport = cleanReportText + separator + title + formattedBlocks;
+      setGeneratedReport(nextReport);
+      setEditedReportText(nextReport);
+    } else {
+      const nextReport = generatedReport + separator + title + formattedBlocks;
+      setGeneratedReport(nextReport);
+      setEditedReportText(nextReport);
+    }
+  };
+
   // ACTION: INCORPORATE ENRICHED DIFFERENTIAL DIAGNOSTICS SYNTHESIS TO REPORT
   const handleIncorporateDifferentialDiagnostics = async () => {
     if (!generatedReport || !caseAnalysis) return;
@@ -2008,16 +2131,19 @@ Ejemplo:
   const handleAppendSchemeToReport = () => {
     if (!schematicSummary) return;
     
+    // Choose active text source (manual draft may be currently in edit)
+    const activeText = isEditingReportManual ? editedReportText : (generatedReport || "");
+
     // Save history
-    if (generatedReport) {
-      setReportHistory((prev) => [...prev, generatedReport]);
+    if (activeText) {
+      setReportHistory((prev) => [...prev, activeText]);
     }
     
     const contentToAppend = getSelectedSchematicContent();
     if (!contentToAppend) return;
 
     const separator = "\n\n---\n\n";
-    const newReportText = generatedReport + separator + contentToAppend;
+    const newReportText = activeText + separator + contentToAppend;
     setGeneratedReport(newReportText);
     setEditedReportText(newReportText);
     alert(`¡Esquema de hallazgos clínico (${schematicFormat === "blocks" ? "en Bloques" : "en Tabla"}) insertado con éxito al final de tu informe!`);
@@ -2443,7 +2569,44 @@ Ejemplo:
     }
   };
 
-  const handleDownloadNativePDF = (openInNewTab: boolean = false) => {
+  const convertSvgToPng = (svgElement: SVGElement): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      try {
+        const serializer = new XMLSerializer();
+        const svgString = serializer.serializeToString(svgElement);
+        const svgBlob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
+        const url = URL.createObjectURL(svgBlob);
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          // Multi-pixel supersampling for perfect clarity on tiny vascular label notes (size matching 1.42 aspect ratio)
+          canvas.width = 1280;
+          canvas.height = 900;
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            const dataUrl = canvas.toDataURL("image/png");
+            URL.revokeObjectURL(url);
+            resolve(dataUrl);
+          } else {
+            URL.revokeObjectURL(url);
+            reject(new Error("No 2D context"));
+          }
+        };
+        img.onerror = (err) => {
+          URL.revokeObjectURL(url);
+          reject(err);
+        };
+        img.src = url;
+      } catch (e) {
+        reject(e);
+      }
+    });
+  };
+
+  const handleDownloadNativePDF = async (openInNewTab: boolean = false) => {
     if (!generatedReport) return;
     
     try {
@@ -2745,7 +2908,47 @@ Ejemplo:
         const trimmedBlock = block.trim();
         if (!trimmedBlock) return;
 
-        // 1. Check if the block is a separator/divider
+        // 1. Check if the block is a code block (starts/ends with triple backticks, or is a raw EMR segment)
+        const isCodeBlockSegment = trimmedBlock.startsWith("```") || (trimmedBlock.startsWith("===") && (trimmedBlock.includes("SÍNTESIS VASCULAR") || trimmedBlock.includes("SÍNTESIS DE ANATOMÍA")));
+
+        if (isCodeBlockSegment) {
+          const linesOfBlock = trimmedBlock.split("\n");
+          // Filter out the opening/closing backtick lines
+          const codeBlockLines = linesOfBlock.filter(line => !line.trim().startsWith("```"));
+          
+          // Allocate height for the spacing
+          const lineSpacing = 4.2;
+          const neededHeight = (codeBlockLines.length * lineSpacing) + 7;
+          checkPageBreak(neededHeight);
+
+          // Draw a clean background box
+          doc.setFillColor(248, 250, 252); // slate-50 / light gray
+          doc.rect(marginX, yCoord, contentWidth, neededHeight - 2, "F");
+          doc.setDrawColor(226, 232, 240); // slate-200 border
+          doc.setLineWidth(0.3);
+          doc.rect(marginX, yCoord, contentWidth, neededHeight - 2, "D");
+
+          // Set monospace font Courier (built-in)
+          doc.setFont("courier", "normal");
+          doc.setFontSize(8.5);
+          doc.setTextColor(30, 41, 59);
+
+          let relativeY = yCoord + 4.5;
+          codeBlockLines.forEach((line) => {
+            doc.text(line, marginX + 4, relativeY);
+            relativeY += lineSpacing;
+          });
+
+          yCoord = relativeY + 1.5;
+          
+          // Re-set default font settings for the next paragraphs
+          doc.setFont("times", "normal");
+          doc.setFontSize(10.5);
+          doc.setTextColor(30, 41, 59);
+          return;
+        }
+
+        // 2. Check if the block is a separator/divider
         if (trimmedBlock === "---") {
           checkPageBreak(8);
           yCoord += 4;
@@ -2763,7 +2966,67 @@ Ejemplo:
         const isTable = hasPipe && (isTableDivider || linesOfBlock.length >= 2);
 
         if (isTable) {
-          const cleanTableRows = linesOfBlock
+          const nonTableLinesAtTop: string[] = [];
+          const tableOnlyLines: string[] = [];
+          let foundTableStart = false;
+
+          linesOfBlock.forEach(line => {
+            const trimmedLine = line.trim();
+            if (trimmedLine.includes("|")) {
+              foundTableStart = true;
+            }
+            if (foundTableStart) {
+              tableOnlyLines.push(line);
+            } else {
+              nonTableLinesAtTop.push(line);
+            }
+          });
+
+          // Draw any non-table heading lines from the top (e.g., table titles/headings)
+          nonTableLinesAtTop.forEach((line) => {
+            let trimmed = line.trim();
+            if (!trimmed) return;
+
+            let isMarkdownHeading = false;
+            if (trimmed.startsWith("# ")) {
+              isMarkdownHeading = true;
+              trimmed = trimmed.replace(/^#\s+/, "");
+            } else if (trimmed.startsWith("## ")) {
+              isMarkdownHeading = true;
+              trimmed = trimmed.replace(/^##\s+/, "");
+            } else if (trimmed.startsWith("### ")) {
+              isMarkdownHeading = true;
+              trimmed = trimmed.replace(/^###\s+/, "");
+            } else if (trimmed.startsWith("#### ")) {
+              isMarkdownHeading = true;
+              trimmed = trimmed.replace(/^####\s+/, "");
+            }
+
+            const isHeader = isMarkdownHeading || (trimmed.startsWith("**") && trimmed.endsWith("**"));
+            const cleanHeaderTxt = trimmed.replace(/\*\*/g, "");
+
+            checkPageBreak(10);
+            if (isHeader) {
+              doc.setFont("times", "bold");
+              doc.setFontSize(11);
+              doc.setTextColor(15, 23, 42); // slate-900
+              doc.text(cleanHeaderTxt, marginX, yCoord);
+              yCoord += 6;
+            } else {
+              doc.setFont("times", "normal");
+              doc.setFontSize(10.5);
+              doc.setTextColor(51, 65, 85);
+              const lines = doc.splitTextToSize(trimmed, contentWidth);
+              lines.forEach((l: string) => {
+                checkPageBreak(5);
+                doc.text(l, marginX, yCoord);
+                yCoord += 4.5;
+              });
+              yCoord += 2;
+            }
+          });
+
+          const cleanTableRows = tableOnlyLines
             .map(line => line.trim())
             .filter(line => {
               const rowHasPipe = line.includes("|");
@@ -2793,9 +3056,9 @@ Ejemplo:
               colWidths.push(contentWidth * 0.4);
               colWidths.push(contentWidth * 0.6);
             } else if (colCount === 3) {
-              colWidths.push(contentWidth * 0.35);
-              colWidths.push(contentWidth * 0.25);
-              colWidths.push(contentWidth * 0.4);
+              colWidths.push(contentWidth * 0.15); // ID col (compact)
+              colWidths.push(contentWidth * 0.35); // Structure / Site Name
+              colWidths.push(contentWidth * 0.50); // Detailed Main Findings
             } else if (colCount === 4) {
               colWidths.push(contentWidth * 0.12); // ID Column (e.g. H1, H2, H3)
               colWidths.push(contentWidth * 0.28); // Estructura / Sitio
@@ -3052,6 +3315,37 @@ Ejemplo:
         });
       });
 
+      // 🛠️ DRAW VASCULAR DIAGRAM IN THE PROGRAMMATIC PDF
+      const isDopplerStudy = specificStudy === "Doppler de carótidas" || 
+                             specificStudy === "Doppler venoso de miembro inferior" || 
+                             specificStudy === "Doppler arterial de miembro inferior";
+
+      if (includeVascularSchemaInReport && isDopplerStudy) {
+        const svgElement = document.getElementById("print-vascular-svg") || document.querySelector("svg[viewBox='-120 0 640 450']");
+        if (svgElement) {
+          try {
+            const imgData = await convertSvgToPng(svgElement as any);
+            
+            // Check page break for 95mm (82mm diagram + header/footer gaps)
+            checkPageBreak(95);
+            yCoord += 4;
+
+            // Header for the diagram
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8.5);
+            doc.setTextColor(148, 163, 184);
+            doc.text("ANEXO: ESQUEMA ANATÓMICO DOPPLER VASCULAR", pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 4.5;
+
+            // Draw high resolution diagram centered
+            doc.addImage(imgData, "PNG", (pageWidth - 116) / 2, yCoord, 116, 82);
+            yCoord += 86;
+          } catch (err) {
+            console.error("No se pudo insertar el esquema vascular en el PDF descargado:", err);
+          }
+        }
+      }
+
       // Signature / Sign-off block
       if (doctorName || customSignatureUrl) {
         checkPageBreak(30);
@@ -3213,7 +3507,7 @@ Ejemplo:
   };
 
   interface ReportElement {
-    type: "text" | "heading" | "list" | "table" | "divider";
+    type: "text" | "heading" | "list" | "table" | "divider" | "code";
     id: string;
     level?: number;
     text?: string;
@@ -3231,6 +3525,8 @@ Ejemplo:
     let currentTableLines: string[] = [];
     let currentListItems: string[] = [];
     let currentParagraphLines: string[] = [];
+    let currentCodeLines: string[] = [];
+    let inCodeBlock = false;
 
     const flushParagraph = () => {
       if (currentParagraphLines.length > 0) {
@@ -3292,6 +3588,75 @@ Ejemplo:
     for (let i = 0; i < lines.length; i++) {
       const rawLine = lines[i];
       const trimmed = rawLine.trim();
+
+      // Standard markdown code block handling (triple backticks)
+      if (trimmed.startsWith("```")) {
+        if (inCodeBlock) {
+          elements.push({
+            type: "code",
+            id: `${uniquePrefix}-code-${elements.length}`,
+            lines: [...currentCodeLines]
+          });
+          currentCodeLines = [];
+          inCodeBlock = false;
+        } else {
+          flushParagraph();
+          flushList();
+          flushTable();
+          inCodeBlock = true;
+          currentCodeLines = [];
+        }
+        continue;
+      }
+
+      if (inCodeBlock) {
+        currentCodeLines.push(rawLine);
+        continue;
+      }
+
+      // Safe raw-block fallback: detect raw EMR equal-sign borders if not wrapped in triple backticks
+      if (trimmed.startsWith("==========") && trimmed.length > 15) {
+        if (currentCodeLines.length > 0) {
+          currentCodeLines.push(rawLine);
+          elements.push({
+            type: "code",
+            id: `${uniquePrefix}-code-${elements.length}`,
+            lines: [...currentCodeLines]
+          });
+          currentCodeLines = [];
+        } else {
+          flushParagraph();
+          flushList();
+          flushTable();
+          currentCodeLines = [rawLine];
+        }
+        continue;
+      }
+
+      if (currentCodeLines.length > 0) {
+        currentCodeLines.push(rawLine);
+        // Look ahead to check if we can skip the concluding divider if there's any
+        const nextLineTrimmed = (i < lines.length - 1) ? lines[i+1].trim() : "";
+        if (nextLineTrimmed.startsWith("----------") && nextLineTrimmed.length > 15) {
+          currentCodeLines.push(lines[i+1]);
+          i++; // skip next line
+          elements.push({
+            type: "code",
+            id: `${uniquePrefix}-code-${elements.length}`,
+            lines: [...currentCodeLines]
+          });
+          currentCodeLines = [];
+        } else if (i === lines.length - 1) {
+          // Flush code block at end of document if unclosed
+          elements.push({
+            type: "code",
+            id: `${uniquePrefix}-code-${elements.length}`,
+            lines: [...currentCodeLines]
+          });
+          currentCodeLines = [];
+        }
+        continue;
+      }
 
       if (trimmed === "---") {
         flushParagraph();
@@ -3368,6 +3733,14 @@ Ejemplo:
     flushList();
     flushTable();
 
+    if (currentCodeLines.length > 0 || inCodeBlock) {
+      elements.push({
+        type: "code",
+        id: `${uniquePrefix}-code-${elements.length}`,
+        lines: [...currentCodeLines]
+      });
+    }
+
     return elements;
   };
 
@@ -3423,6 +3796,500 @@ Ejemplo:
     return parts.length > 0 ? parts : text;
   };
 
+  const renderPrintVascularSchema = () => {
+    if (!includeVascularSchemaInReport) return null;
+    const studyLower = (specificStudy || "").toLowerCase();
+    const isCarotidas = studyLower.includes("carót") || studyLower.includes("carot");
+    const isVenoso = studyLower.includes("venoso");
+    const isArterial = studyLower.includes("arterial");
+
+    const isVascular = isCarotidas || isVenoso || isArterial;
+
+    if (!isVascular) return null;
+
+    const carotidMidpoints: Record<string, { x: number, y: number, textX: number, textY: number, align: "start" | "end" | "middle" }> = {
+      vert_der: { x: 125, y: 300, textX: 60, textY: 280, align: "end" },
+      acc_der:  { x: 160, y: 320, textX: 70, textY: 340, align: "end" },
+      aci_der:  { x: 142, y: 110, textX: 55, textY: 100, align: "end" },
+      ace_der:  { x: 173, y: 125, textX: 200, textY: 115, align: "start" },
+      
+      vert_izq: { x: 275, y: 300, textX: 340, textY: 280, align: "start" },
+      acc_izq:  { x: 240, y: 320, textX: 330, textY: 340, align: "start" },
+      aci_izq:  { x: 258, y: 110, textX: 345, textY: 100, align: "start" },
+      ace_izq:  { x: 227, y: 125, textX: 200, textY: 145, align: "end" },
+    };
+
+    const venousMidpoints: Record<string, { x: number, y: number, textX: number, textY: number, align: "start" | "end" | "middle" }> = {
+      vfc_der: { x: 140, y: 95, textX: 60, textY: 85, align: "end" },
+      sfj_der: { x: 153, y: 92, textX: 195, textY: 70, align: "start" },
+      vfs_der: { x: 135, y: 200, textX: 52, textY: 180, align: "end" },
+      vp_der:  { x: 125, y: 300, textX: 45, textY: 300, align: "end" },
+      vsm_der: { x: 170, y: 240, textX: 195, textY: 210, align: "start" },
+      vsp_der: { x: 108, y: 340, textX: 30, textY: 340, align: "end" },
+
+      vfc_izq: { x: 260, y: 95, textX: 340, textY: 85, align: "start" },
+      sfj_izq: { x: 247, y: 92, textX: 205, textY: 70, align: "end" },
+      vfs_izq: { x: 265, y: 200, textX: 348, textY: 180, align: "start" },
+      vp_izq:  { x: 275, y: 300, textX: 355, textY: 300, align: "start" },
+      vsm_izq: { x: 230, y: 240, textX: 205, textY: 210, align: "end" },
+      vsp_izq: { x: 292, y: 340, textX: 370, textY: 340, align: "start" },
+    };
+
+    const arterialMidpoints: Record<string, { x: number, y: number, textX: number, textY: number, align: "start" | "end" | "middle" }> = {
+      aic_der:  { x: 155, y: 78, textX: 70, textY: 70, align: "end" },
+      afc_der:  { x: 140, y: 130, textX: 60, textY: 125, align: "end" },
+      afs_der:  { x: 135, y: 210, textX: 50, textY: 195, align: "end" },
+      ap_der:   { x: 127, y: 290, textX: 45, textY: 290, align: "end" },
+      ata_der:  { x: 118, y: 365, textX: 52, textY: 365, align: "end" },
+      atp_der:  { x: 123, y: 375, textX: 145, textY: 385, align: "start" },
+      aper_der: { x: 132, y: 370, textX: 180, textY: 395, align: "start" },
+
+      aic_izq:  { x: 245, y: 78, textX: 335, textY: 70, align: "start" },
+      afc_izq:  { x: 260, y: 130, textX: 340, textY: 125, align: "start" },
+      afs_izq:  { x: 265, y: 210, textX: 350, textY: 195, align: "start" },
+      ap_izq:   { x: 273, y: 290, textX: 355, textY: 290, align: "start" },
+      ata_izq:  { x: 282, y: 365, textX: 345, textY: 365, align: "start" },
+      atp_izq:  { x: 277, y: 375, textX: 255, textY: 385, align: "end" },
+      aper_izq: { x: 268, y: 370, textX: 220, textY: 395, align: "end" },
+    };
+
+    const isLimbEvaluated = (side: "der" | "izq") => {
+      if (isCarotidas) return true;
+
+      const latLower = (laterality || "").toLowerCase();
+      if (latLower === "derecha" || latLower === "derecho") {
+        return side === "der";
+      }
+      if (latLower === "izquierda" || latLower === "izquierdo") {
+        return side === "izq";
+      }
+      if (latLower === "bilateral") {
+        return true;
+      }
+
+      const studyLower = (specificStudy || "").toLowerCase();
+      const reportLower = (generatedReport || "").toLowerCase();
+
+      const hasDerechoInStudy = studyLower.includes("derech") || studyLower.includes(" unilateral d") || studyLower.includes("der.");
+      const hasIzquierdoInStudy = studyLower.includes("izquierd") || studyLower.includes(" unilateral i") || studyLower.includes("izq.");
+
+      const hasDerechoInReport = reportLower.includes("miembro inferior derecho") || reportLower.includes("m.i. derecho") || reportLower.includes("unilateral derecho");
+      const hasIzquierdoInReport = reportLower.includes("miembro inferior izquierdo") || reportLower.includes("m.i. izquierdo") || reportLower.includes("unilateral izquierdo");
+
+      if (hasDerechoInStudy && !hasIzquierdoInStudy) {
+        return side === "der";
+      }
+      if (hasIzquierdoInStudy && !hasDerechoInStudy) {
+        return side === "izq";
+      }
+
+      if (hasDerechoInReport && !hasIzquierdoInReport) {
+        return side === "der";
+      }
+      if (hasIzquierdoInReport && !hasDerechoInReport) {
+        return side === "izq";
+      }
+
+      return true; // default to bilateral
+    };
+
+    const getSegColor = (id: string) => {
+      const isRightSegment = id.endsWith("_der");
+      const isLeftSegment = id.endsWith("_izq");
+
+      if (isRightSegment && !isLimbEvaluated("der")) {
+        return "#94a3b8"; // soft slate gray for non-evaluated Right
+      }
+      if (isLeftSegment && !isLimbEvaluated("izq")) {
+        return "#94a3b8"; // soft slate gray for non-evaluated Left
+      }
+
+      const s = vascularStates[id] || "normal";
+      if (s === "normal") return "#059669"; // Emerald (slightly darker for print contrast)
+      if (s === "mild" || s === "reflux") return "#d97706"; // Amber (darker for print)
+      return "#dc2626"; // Red (darker for print)
+    };
+
+    const getSegLabel = (id: string) => {
+      const isRightSegment = id.endsWith("_der");
+      const isLeftSegment = id.endsWith("_izq");
+
+      if (isRightSegment && !isLimbEvaluated("der")) {
+        return "No evaluado";
+      }
+      if (isLeftSegment && !isLimbEvaluated("izq")) {
+        return "No evaluado";
+      }
+
+      const s = vascularStates[id] || "normal";
+      if (s === "normal") return isVenoso ? "Permeable" : "Normal";
+
+      const descText = (vascularDescriptions[id] || "").toLowerCase().trim();
+
+      // 1. flujo no detectable
+      if (
+        descText.includes("flujo no detectable") || 
+        descText.includes("no detectable") || 
+        descText.includes("flujo ausente") || 
+        descText.includes("ausencia de flujo") || 
+        descText.includes("onda no detectable") || 
+        descText.includes("señal no detectable")
+      ) {
+        return "Flujo no detectable";
+      }
+
+      // 2. oclusión
+      if (
+        descText.includes("oclusión") || 
+        descText.includes("oclusion") || 
+        descText.includes("ocluido") || 
+        descText.includes("ocluida") || 
+        descText.includes("obstrucción completa") || 
+        descText.includes("obstruccion completa") || 
+        descText.includes("obstrucción total") || 
+        descText.includes("obstruccion total") || 
+        descText.includes("obturado") ||
+        descText.includes("oclusión completa") ||
+        descText.includes("oclusion completa")
+      ) {
+        return "Oclusión";
+      }
+
+      // 3. estenosis focal
+      if (
+        descText.includes("estenosis focal") || 
+        descText.includes("focal") || 
+        descText.includes("zona específica de estenosis") ||
+        descText.includes("zona especifica de estenosis") ||
+        descText.includes("lesión de estenosis") ||
+        descText.includes("lesion de estenosis")
+      ) {
+        return "Estenosis focal";
+      }
+
+      // 4. estenosis difusa
+      if (
+        descText.includes("estenosis difusa") || 
+        descText.includes("difusa") || 
+        descText.includes("difuso")
+      ) {
+        return "Estenosis difusa";
+      }
+
+      // 5. ateromatosis
+      if (
+        descText.includes("ateromatosis") || 
+        descText.includes("placa") || 
+        descText.includes("placas") || 
+        descText.includes("ateroma") || 
+        descText.includes("ateromatosa") || 
+        descText.includes("ateromatosas") || 
+        descText.includes("engrosamiento miointimal") ||
+        descText.includes("gim") || 
+        descText.includes("miointimal") ||
+        s === "mild"
+      ) {
+        return "Ateromatosis";
+      }
+
+      // Fallbacks
+      if (s === "severe") {
+        return "Estenosis focal";
+      }
+      if (s === "reflux") {
+        return "Reflujo";
+      }
+      if (s === "thrombosis") {
+        return "Trombosis";
+      }
+
+      return "Normal";
+    };
+
+    const getPrintShortExplanationText = (id: string) => {
+      const isRightSegment = id.endsWith("_der");
+      const isLeftSegment = id.endsWith("_izq");
+
+      if (isRightSegment && !isLimbEvaluated("der")) {
+        return "no evaluado";
+      }
+      if (isLeftSegment && !isLimbEvaluated("izq")) {
+        return "no evaluado";
+      }
+
+      const s = vascularStates[id] || "normal";
+      if (s === "normal") return "";
+
+      const label = getSegLabel(id);
+      if (label === "Normal" || label === "Permeable") return "";
+      return label.toLowerCase();
+    };
+
+    const getCoordinateWithOffset = (id: string, pt: { x: number, y: number }) => {
+      const subLoc = vascularSubLocations[id] || "general";
+      if (subLoc === "general" || subLoc === "medio") {
+        return pt;
+      }
+
+      let offsetX = 0;
+      let offsetY = 0;
+
+      if (isCarotidas) {
+        if (id.startsWith("acc_")) {
+          if (subLoc === "proximal" || subLoc === "origen") offsetY = 40;
+          if (subLoc === "distal" || subLoc === "bifurcacion") offsetY = -40;
+        } else if (id.startsWith("aci_") || id.startsWith("ace_")) {
+          if (subLoc === "proximal" || subLoc === "origen" || subLoc === "bifurcacion") {
+            offsetY = 30;
+            offsetX = id.startsWith("aci_") ? 5 : -5;
+          }
+          if (subLoc === "distal") offsetY = -30;
+        } else if (id.startsWith("vert_")) {
+          if (subLoc === "proximal") offsetY = 40;
+          if (subLoc === "distal") offsetY = -40;
+        }
+      } else if (isVenoso) {
+        if (id.startsWith("vfc_")) {
+          if (subLoc === "proximal") offsetY = -15;
+          if (subLoc === "distal") offsetY = 15;
+        } else if (id.startsWith("vfs_")) {
+          if (subLoc === "proximal") offsetY = -40;
+          if (subLoc === "distal") offsetY = 40;
+        } else if (id.startsWith("vp_")) {
+          if (subLoc === "proximal") offsetY = -30;
+          if (subLoc === "distal") offsetY = 30;
+        } else if (id.startsWith("vsm_") || id.startsWith("vsp_")) {
+          if (subLoc === "proximal") offsetY = -45;
+          if (subLoc === "distal") offsetY = 45;
+        }
+      } else {
+        if (id.startsWith("aic_")) {
+          if (subLoc === "proximal" || subLoc === "origen") offsetY = -15;
+          if (subLoc === "distal") offsetY = 15;
+        } else if (id.startsWith("afc_")) {
+          if (subLoc === "proximal") offsetY = -15;
+          if (subLoc === "distal" || subLoc === "bifurcacion") offsetY = 15;
+        } else if (id.startsWith("afs_")) {
+          if (subLoc === "proximal" || subLoc === "origen") offsetY = -45;
+          if (subLoc === "distal") offsetY = 45;
+        } else if (id.startsWith("ap_")) {
+          if (subLoc === "proximal") offsetY = -30;
+          if (subLoc === "distal") offsetY = 30;
+        } else if (id.startsWith("at") || id.startsWith("aper_")) {
+          if (subLoc === "proximal") offsetY = -15;
+          if (subLoc === "distal") offsetY = 15;
+        }
+      }
+
+      return { x: pt.x + offsetX, y: pt.y + offsetY };
+    };
+
+    const renderPrintOverlayAnomalies = (midpoints: Record<string, { x: number, y: number, textX: number, textY: number, align: "start" | "end" | "middle" }>) => {
+      return Object.entries(vascularStates).map(([id, state]) => {
+        if (state === "normal") return null;
+        const basePt = midpoints[id];
+        if (!basePt) return null;
+
+        const pt = getCoordinateWithOffset(id, basePt);
+        const color = state === "severe" || state === "thrombosis" ? "#dc2626" : "#d97706";
+        
+        let indicator = null;
+        if (state === "mild") {
+          indicator = (
+            <g>
+              <circle cx={pt.x} cy={pt.y} r="6" fill="#f59e0b" opacity="0.3" />
+              <circle cx={pt.x} cy={pt.y} r="3.5" fill="#d97706" stroke="#ffffff" strokeWidth="0.8" />
+              <path d={`M ${pt.x - 2} ${pt.y - 2} Q ${pt.x + 2} ${pt.y} ${pt.x - 2} ${pt.y + 2}`} fill="none" stroke="#b45309" strokeWidth="1" />
+            </g>
+          );
+        } else if (state === "severe") {
+          indicator = (
+            <g>
+              <circle cx={pt.x} cy={pt.y} r="8" fill="#dc2626" opacity="0.3" />
+              <circle cx={pt.x} cy={pt.y} r="4.5" fill="#dc2626" stroke="#ffffff" strokeWidth="0.8" />
+              <path d={`M ${pt.x - 3} ${pt.y - 3} Q ${pt.x + 3} ${pt.y} ${pt.x - 3} ${pt.y + 3}`} fill="none" stroke="#7f1d1d" strokeWidth="1.2" />
+            </g>
+          );
+        } else if (state === "reflux") {
+          indicator = (
+            <g transform={`translate(${pt.x}, ${pt.y})`}>
+              <circle cx="0" cy="0" r="5" fill="#f59e0b" opacity="0.25" />
+              <path d="M-3,-1.5 A3,3 0 0,0 3,1.5" fill="none" stroke="#d97706" strokeWidth="1.2" />
+            </g>
+          );
+        } else if (state === "thrombosis") {
+          indicator = (
+            <g transform={`translate(${pt.x}, ${pt.y})`}>
+              <rect x="-6" y="-3.5" width="12" height="7" rx="1" fill="#7f1d1d" stroke="#fca5a5" strokeWidth="0.8" />
+              <line x1="-3.5" y1="-2" x2="3.5" y2="2" stroke="#f87171" strokeWidth="0.8" />
+              <line x1="3.5" y1="-2" x2="-3.5" y2="2" stroke="#f87171" strokeWidth="0.8" />
+            </g>
+          );
+        }
+
+        const subLoc = vascularSubLocations[id] || "general";
+        const subLocLabel = subLoc !== "general" ? ` (${subLoc.toUpperCase()})` : "";
+        const baseLabel = id.replace("_der", " R").replace("_izq", " L").toUpperCase();
+        
+        const shortEx = getPrintShortExplanationText(id);
+        const croppedDesc = `${baseLabel}${subLocLabel}: ${shortEx || "Normal"}`;
+
+        return (
+          <g key={`print-anon-${id}`}>
+            <line x1={pt.x} y1={pt.y} x2={basePt.textX} y2={basePt.textY} stroke={color} strokeWidth="0.8" strokeDasharray="1.5 1.5" />
+            {indicator}
+            <g transform={`translate(${basePt.textX}, ${basePt.textY})`}>
+              <rect 
+                x={basePt.align === "end" ? -154 : basePt.align === "middle" ? -78 : -2} 
+                y="-8" 
+                width="156" 
+                height="16" 
+                rx="3" 
+                fill="#ffffff" 
+                stroke={color} 
+                strokeWidth="1" 
+              />
+              <text 
+                x={basePt.align === "end" ? -78 : basePt.align === "middle" ? 0 : 78} 
+                y="2.5" 
+                fill="#0f172a" 
+                fontSize="6" 
+                fontWeight="black" 
+                textAnchor="middle"
+                className="font-sans font-extrabold"
+              >
+                {croppedDesc}
+              </text>
+            </g>
+          </g>
+        );
+      });
+    };
+
+    return (
+      <div className="mt-8 border-t-2 border-dashed border-gray-300 pt-6 font-sans" style={{ breakInside: "avoid", pageBreakInside: "avoid" }}>
+        <div className="text-center font-bold text-xs uppercase tracking-wider mb-2 text-slate-800">
+          Esquema Clínico Doppler Vascular - Mapeo de Hallazgos
+        </div>
+        <p className="text-center text-[10px] text-gray-400 uppercase font-mono tracking-wide mb-4">
+          Esquema anatómico personalizado según los hallazgos descritos en el informe clínico.
+        </p>
+        
+        <div className="flex flex-col sm:flex-row items-center justify-around gap-6 max-w-2xl mx-auto">
+          {/* SVG representation */}
+          <div className="w-[410px] h-[290px] border border-gray-200 rounded-lg p-2 bg-white flex items-center justify-center">
+            {isCarotidas && (
+              <svg id="print-vascular-svg" viewBox="-120 0 640 450" className="w-full h-full font-mono text-[9px]">
+                <line x1="200" y1="20" x2="200" y2="430" stroke="#d1d5db" strokeWidth="1" strokeDasharray="3 3" />
+                <text x="70" y="30" fill="#4B5563" fontWeight="bold" textAnchor="middle" className="text-[10px]">DERECHO (R)</text>
+                <text x="330" y="30" fill="#4B5563" fontWeight="bold" textAnchor="middle" className="text-[10px]">IZQUIERDO (L)</text>
+                
+                {/* R-Vert */}
+                <path d="M 125 430 L 125 150 Q 125 100 135 70" fill="none" stroke={getSegColor("vert_der")} strokeWidth="5" />
+                {/* R-ACC */}
+                <path d="M 160 430 L 160 220" fill="none" stroke={getSegColor("acc_der")} strokeWidth="10" />
+                {/* R-ACI */}
+                <path d="M 160 220 C 160 200, 145 190, 145 170" fill="none" stroke={getSegColor("aci_der")} strokeWidth="8" />
+                <path d="M 145 175 L 140 60" fill="none" stroke={getSegColor("aci_der")} strokeWidth="8" />
+                {/* R-ACE */}
+                <path d="M 160 220 C 160 200, 175 190, 175 170 L 180 80" fill="none" stroke={getSegColor("ace_der")} strokeWidth="6" />
+                
+                {/* L-Vert */}
+                <path d="M 275 430 L 275 150 Q 275 100 265 70" fill="none" stroke={getSegColor("vert_izq")} strokeWidth="5" />
+                {/* L-ACC */}
+                <path d="M 240 430 L 240 220" fill="none" stroke={getSegColor("acc_izq")} strokeWidth="10" />
+                {/* L-ACI */}
+                <path d="M 240 220 C 240 200, 255 190, 255 170" fill="none" stroke={getSegColor("aci_izq")} strokeWidth="8" />
+                <path d="M 255 175 L 260 60" fill="none" stroke={getSegColor("aci_izq")} strokeWidth="8" />
+                {/* L-ACE */}
+                <path d="M 240 220 C 240 200, 225 190, 225 170 L 220 80" fill="none" stroke={getSegColor("ace_izq")} strokeWidth="6" />
+
+                {/* Print overlays */}
+                {renderPrintOverlayAnomalies(carotidMidpoints)}
+              </svg>
+            )}
+            {isVenoso && (
+              <svg id="print-vascular-svg" viewBox="-120 0 640 450" className="w-full h-full font-mono text-[9px]">
+                <line x1="200" y1="20" x2="200" y2="430" stroke="#d1d5db" strokeWidth="1" strokeDasharray="3 3" />
+                <text x="70" y="30" fill="#4B5563" fontWeight="bold" textAnchor="middle" className="text-[10px]">DERECHO (R)</text>
+                <text x="330" y="30" fill="#4B5563" fontWeight="bold" textAnchor="middle" className="text-[10px]">IZQUIERDO (L)</text>
+                
+                {/* Venous Right */}
+                <path d="M 140 50 L 140 140" fill="none" stroke={getSegColor("vfc_der")} strokeWidth="10" />
+                <path d="M 140 80 Q 155 80, 160 110" fill="none" stroke={getSegColor("sfj_der")} strokeWidth="7" />
+                <path d="M 140 140 L 130 260" fill="none" stroke={getSegColor("vfs_der")} strokeWidth="8" />
+                <path d="M 130 260 L 120 340" fill="none" stroke={getSegColor("vp_der")} strokeWidth="7" />
+                <path d="M 160 110 L 175 220 Q 185 310, 160 410" fill="none" stroke={getSegColor("vsm_der")} strokeWidth="6" />
+                <path d="M 120 280 Q 95 300, 105 400" fill="none" stroke={getSegColor("vsp_der")} strokeWidth="5" />
+
+                {/* Venous Left */}
+                <path d="M 260 50 L 260 140" fill="none" stroke={getSegColor("vfc_izq")} strokeWidth="10" />
+                <path d="M 260 80 Q 245 80, 240 110" fill="none" stroke={getSegColor("sfj_izq")} strokeWidth="7" />
+                <path d="M 260 140 L 270 260" fill="none" stroke={getSegColor("vfs_izq")} strokeWidth="8" />
+                <path d="M 270 260 L 280 340" fill="none" stroke={getSegColor("vp_izq")} strokeWidth="7" />
+                <path d="M 240 110 L 225 220 Q 215 310, 240 410" fill="none" stroke={getSegColor("vsm_izq")} strokeWidth="6" />
+                <path d="M 280 280 Q 305 300, 295 400" fill="none" stroke={getSegColor("vsp_izq")} strokeWidth="5" />
+
+                {/* Print overlays */}
+                {renderPrintOverlayAnomalies(venousMidpoints)}
+              </svg>
+            )}
+            {isArterial && (
+              <svg id="print-vascular-svg" viewBox="-120 0 640 450" className="w-full h-full font-mono text-[9px]">
+                <line x1="200" y1="20" x2="200" y2="430" stroke="#d1d5db" strokeWidth="1" strokeDasharray="3 3" />
+                <text x="70" y="30" fill="#4B5563" fontWeight="bold" textAnchor="middle" className="text-[10px]">DERECHO (R)</text>
+                <text x="330" y="30" fill="#4B5563" fontWeight="bold" textAnchor="middle" className="text-[10px]">IZQUIERDO (L)</text>
+                
+                {/* Arterial Right */}
+                <path d="M 180 50 Q 150 70, 140 100" fill="none" stroke={getSegColor("aic_der")} strokeWidth="8" />
+                <path d="M 140 100 L 140 160" fill="none" stroke={getSegColor("afc_der")} strokeWidth="10" />
+                <path d="M 140 160 L 130 260" fill="none" stroke={getSegColor("afs_der")} strokeWidth="8" />
+                <path d="M 130 260 L 125 320" fill="none" stroke={getSegColor("ap_der")} strokeWidth="7" />
+                <path d="M 125 320 L 110 410" fill="none" stroke={getSegColor("ata_der")} strokeWidth="5" />
+                <path d="M 125 320 L 122 410" fill="none" stroke={getSegColor("atp_der")} strokeWidth="5" />
+                <path d="M 125 335 L 140 405" fill="none" stroke={getSegColor("aper_der")} strokeWidth="4.5" />
+
+                {/* Arterial Left */}
+                <path d="M 220 50 Q 250 70, 260 100" fill="none" stroke={getSegColor("aic_izq")} strokeWidth="8" />
+                <path d="M 260 100 L 260 160" fill="none" stroke={getSegColor("afc_izq")} strokeWidth="10" />
+                <path d="M 260 160 L 270 260" fill="none" stroke={getSegColor("afs_izq")} strokeWidth="8" />
+                <path d="M 270 260 L 275 320" fill="none" stroke={getSegColor("ap_izq")} strokeWidth="7" />
+                <path d="M 275 320 L 290 410" fill="none" stroke={getSegColor("ata_izq")} strokeWidth="5" />
+                <path d="M 275 320 L 278 410" fill="none" stroke={getSegColor("atp_izq")} strokeWidth="5" />
+                <path d="M 275 335 L 260 405" fill="none" stroke={getSegColor("aper_izq")} strokeWidth="4.5" />
+
+                {/* Print overlays */}
+                {renderPrintOverlayAnomalies(arterialMidpoints)}
+              </svg>
+            )}
+          </div>
+
+          {/* Details table / text list */}
+          <div className="flex-1 text-[11px] font-sans text-gray-700 space-y-1.5 max-w-sm">
+            <div className="font-bold border-b pb-1 text-slate-800 uppercase tracking-widest text-[9.5px]">Leyenda de Hallazgos:</div>
+            <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-[9.5px]">
+              {Object.entries(vascularStates)
+                .filter(([id]) => {
+                  const isRight = id.endsWith("_der");
+                  const isLeft = id.endsWith("_izq");
+                  if (isRight && !isLimbEvaluated("der")) return false;
+                  if (isLeft && !isLimbEvaluated("izq")) return false;
+                  return true;
+                })
+                .map(([id, val]) => (
+                  <div key={id} className="flex items-center gap-1.5 py-0.5">
+                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: getSegColor(id) }} />
+                    <span className="font-bold text-[9px] uppercase text-gray-800 truncate">{id.replace("_der", "-R").replace("_izq", "-L")}:</span>
+                    <span className="text-[9px] text-gray-600 shrink-0">{getSegLabel(id)}</span>
+                  </div>
+                ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderPrintReportBody = (reportText: string) => {
     if (!reportText) return null;
 
@@ -3433,6 +4300,20 @@ Ejemplo:
         {elements.map((elem, idx) => {
           if (elem.type === "divider") {
             return <hr key={elem.id} className={`my-6 border-t ${adaptivePDFContrast ? "border-black border-base" : "border-slate-300"}`} />;
+          }
+
+          if (elem.type === "code") {
+            return (
+              <div 
+                key={elem.id} 
+                className={`my-4 border ${adaptivePDFContrast ? "border-black bg-gray-50/60" : "border-slate-300 bg-slate-50/70"} rounded-lg p-3 font-mono text-[10px] md:text-[10.5px]`}
+                style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
+              >
+                <pre className={`whitespace-pre-wrap font-mono font-medium leading-relaxed ${adaptivePDFContrast ? "text-black" : "text-slate-850"}`}>
+                  {elem.lines?.join("\n")}
+                </pre>
+              </div>
+            );
           }
 
           if (elem.type === "heading") {
@@ -3597,7 +4478,7 @@ Ejemplo:
                 if (!trimmedLine) return null;
 
                 const isHeader = (trimmedLine.startsWith("**") && trimmedLine.endsWith("**"));
-                const cleanHeaderTxt = trimmedLine.replace(/\*\*/g, "");
+                const cleanHeaderTxt = trimmedLine.replace(/\*\"/g, ""); // safe cleaning
                 
                 const isMainTitle = idx === 0 && lIdx === 0 && /REPORTE|INFORME|ESTUDIO|DIAGNÓSTICO|VALORACIÓN/i.test(trimmedLine);
 
@@ -3626,6 +4507,9 @@ Ejemplo:
             </div>
           );
         })}
+
+        {/* Printable vascular schematic map attachment */}
+        {renderPrintVascularSchema()}
       </div>
     );
   };
@@ -4059,6 +4943,16 @@ Ejemplo:
         {elements.map((elem, idx) => {
           if (elem.type === "divider") {
             return <hr key={elem.id} className="border-slate-800/80 my-5" />;
+          }
+
+          if (elem.type === "code") {
+            return (
+              <div key={elem.id} className="my-4 border border-slate-800/85 rounded-xl bg-slate-950/90 shadow-lg overflow-x-auto p-4 select-all font-mono text-[11px] md:text-xs">
+                <pre className="text-slate-300 leading-relaxed font-semibold whitespace-pre-wrap font-mono">
+                  {elem.lines?.join("\n")}
+                </pre>
+              </div>
+            );
           }
 
           if (elem.type === "heading") {
@@ -6167,6 +7061,34 @@ Ejemplo:
                               {renderClinicalReport(generatedReport)}
                             </div>
                           )}
+
+                          {/* === VASCULAR DOPPLER ANALYZER & SCHEMATIC HUD === */}
+                          {(specificStudy === "Doppler de carótidas" || 
+                            specificStudy === "Doppler venoso de miembro inferior" || 
+                            specificStudy === "Doppler arterial de miembro inferior") && (
+                            <div className="my-6">
+                              <VascularAnatomyViewer
+                                studyType={specificStudy || "Doppler de carótidas"}
+                                states={vascularStates}
+                                descriptions={vascularDescriptions}
+                                subLocations={vascularSubLocations}
+                                onToggleSegment={handleToggleVascularSegment}
+                                activeHover={activeVascularIdHover}
+                                setActiveHover={setActiveVascularIdHover}
+                                table={vascularTable}
+                                isAnalyzing={isAnalyzingVascular}
+                                error={vascularError}
+                                onAnalyze={handleAnalyzeVascular}
+                                onExportTable={handleExportVascularTableToReport}
+                                onExportBlocks={handleExportVascularBlocksToReport}
+                                includeInReport={includeVascularSchemaInReport}
+                                setIncludeInReport={setIncludeVascularSchemaInReport}
+                                generatedReport={generatedReport || ""}
+                                laterality={laterality}
+                              />
+                            </div>
+                          )}
+
                           {/* --- NUEVA SECCIÓN DE ANÁLISIS DE CASO Y BÚSQUEDA DE BIBLIOGRAFÍA --- */}
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {/* Card 1: Caso Clínico completo */}
