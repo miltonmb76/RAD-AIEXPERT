@@ -49,6 +49,8 @@ import {
   Database,
   BookOpenText
 } from "lucide-react";
+import { initAuth, googleSignIn, logout as googleLogout } from "./firebaseAuth";
+import { Mail, LogOut } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   STUDY_PRESETS, 
@@ -183,6 +185,7 @@ export default function App() {
   
   // 1b. Patient & Corporate Header customization states for PDF/Print
   const [patientName, setPatientName] = useState<string>("");
+  const [patientEmail, setPatientEmail] = useState<string>(() => localStorage.getItem("rad_patient_email") || "");
   const [reportDate, setReportDate] = useState<string>(() => {
     const today = new Date();
     const yyyy = today.getFullYear();
@@ -252,6 +255,20 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("rad_selected_model", selectedModel);
   }, [selectedModel]);
+
+  useEffect(() => {
+    const unsubscribe = initAuth(
+      (user, token) => {
+        setGmailUser(user);
+        setGmailAccessToken(token);
+      },
+      () => {
+        setGmailUser(null);
+        setGmailAccessToken(null);
+      }
+    );
+    return () => unsubscribe();
+  }, []);
 
   const handleCustomLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -347,6 +364,27 @@ export default function App() {
   const [showPatientDetails, setShowPatientDetails] = useState<boolean>(false);
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
   const [adaptivePDFContrast, setAdaptivePDFContrast] = useState<boolean>(false);
+  
+  // WhatsApp Share States
+  const [showWhatsAppModal, setShowWhatsAppModal] = useState<boolean>(false);
+  const [whatsappShareType, setWhatsappShareType] = useState<'report_pdf' | 'patient_infographic' | 'patient_summary'>('report_pdf');
+  const [whatsappPhone, setWhatsappPhone] = useState<string>(() => localStorage.getItem("rad_whatsapp_phone") || "");
+  
+  // Gmail Share States
+  const [showGmailModal, setShowGmailModal] = useState<boolean>(false);
+  const [gmailTo, setGmailTo] = useState<string>("");
+  const [gmailSubject, setGmailSubject] = useState<string>("");
+  const [gmailBody, setGmailBody] = useState<string>("");
+  const [gmailAttachedType, setGmailAttachedType] = useState<'report_pdf' | 'patient_summary' | 'both_pdfs'>('patient_summary');
+  const [gmailAttachReport, setGmailAttachReport] = useState<boolean>(false);
+  const [gmailAttachSummary, setGmailAttachSummary] = useState<boolean>(true);
+  const [gmailAttachInfographic, setGmailAttachInfographic] = useState<boolean>(false);
+  const [gmailSuccessMessage, setGmailSuccessMessage] = useState<string | null>(null);
+  const [gmailErrorMessage, setGmailErrorMessage] = useState<string | null>(null);
+  const [gmailUser, setGmailUser] = useState<any | null>(null);
+  const [gmailAccessToken, setGmailAccessToken] = useState<string | null>(null);
+  const [isLoggingInGmail, setIsLoggingInGmail] = useState<boolean>(false);
+  const [isSendingGmail, setIsSendingGmail] = useState<boolean>(false);
   
   // Real-time voice dictation states using Web Speech API
   const [isListening, setIsListening] = useState<boolean>(false);
@@ -1062,6 +1100,17 @@ Ejemplo:
   // States for Advanced Vascular Analysis & Schematic Drawing
   const [vascularTable, setVascularTable] = useState<string>("");
   const [vascularStates, setVascularStates] = useState<Record<string, string>>({});
+  
+  // States for attached images / DICOM captures
+  const [attachedImages, setAttachedImages] = useState<{
+    id: string;
+    name: string;
+    url: string;
+    base64: string;
+    caption: string;
+    isDicom: boolean;
+    dicomMetaData?: Record<string, string>;
+  }[]>([]);
   const [vascularDescriptions, setVascularDescriptions] = useState<Record<string, string>>({});
   const [vascularSubLocations, setVascularSubLocations] = useState<Record<string, string>>({});
   const [isAnalyzingVascular, setIsAnalyzingVascular] = useState<boolean>(false);
@@ -2019,6 +2068,428 @@ Ejemplo:
     }
   };
 
+  // Gmail API Integrated Share Handlers (Google Workspace Integration)
+  const handleOpenGmailShare = (type: 'report_pdf' | 'patient_summary' | 'patient_infographic' | 'both_pdfs') => {
+    setGmailAttachedType(type as any);
+    setGmailTo(patientEmail || "");
+    setGmailSuccessMessage(null);
+    setGmailErrorMessage(null);
+
+    // Auto-select files that have been generated and are ready for download
+    const hasReport = type === 'report_pdf' || type === 'both_pdfs' || !!generatedReport;
+    const hasSummary = type === 'patient_summary' || type === 'both_pdfs' || !!patientSummary;
+    const hasInfographic = type === 'patient_infographic' || !!infographicUrl;
+
+    setGmailAttachReport(hasReport);
+    setGmailAttachSummary(hasSummary);
+    setGmailAttachInfographic(hasInfographic);
+    
+    // Construct default subject & email body nicely
+    const clientName = patientName || "Paciente";
+    let subject = `Información de su Estudio - ${clientName}`;
+    let body = `Estimado(a) ${clientName},\n\nLe enviamos adjunto a este correo los siguientes documentos del estudio realizado:\n\n`;
+
+    const attachedLines: string[] = [];
+    if (hasReport) {
+      attachedLines.push(`- 📄 Reporte de Estudio Clínico Oficial`);
+    }
+    if (hasSummary) {
+      attachedLines.push(`- 🗣 Explicación Sencilla y Traducción Empática (analogías claras)`);
+    }
+    if (hasInfographic) {
+      attachedLines.push(`- 🎨 Infografía de Bienestar y Salud (formato visual para imprimir)`);
+    }
+
+    if (attachedLines.length > 0) {
+      body += attachedLines.join("\n") + "\n\n";
+    } else {
+      body += `Los archivos de su consulta de bienestar.\n\n`;
+    }
+
+    if (hasReport && hasSummary && hasInfographic) {
+      subject = `Resultados Completos de su Estudio (Reporte, Explicación e Infografía) - ${clientName}`;
+    } else if (hasReport && hasSummary) {
+      subject = `Reporte Clínico y Traducción Explicativa - ${clientName}`;
+    } else if (hasReport) {
+      subject = `Reporte de Estudio Oficial - ${clientName}`;
+    } else if (hasSummary) {
+      subject = `Traducción y Explicación Explicativa de Estudio - ${clientName}`;
+    } else if (hasInfographic) {
+      subject = `Infografía de Bienestar y Salud del Estudio - ${clientName}`;
+    }
+
+    body += `Quedamos a su entera disposición para cualquier aclaración o consulta adicional.\n\nAtentamente,\n${doctorName || "Médico Especialista"}`;
+    
+    setGmailSubject(subject);
+    setGmailBody(body);
+    setShowGmailModal(true);
+  };
+
+  const handleGmailLogin = async () => {
+    setIsLoggingInGmail(true);
+    setGmailErrorMessage(null);
+    try {
+      const result = await googleSignIn();
+      if (result) {
+        setGmailUser(result.user);
+        setGmailAccessToken(result.accessToken);
+        if (patientEmail && !gmailTo) {
+          setGmailTo(patientEmail);
+        }
+      }
+    } catch (err: any) {
+      console.error("Gmail authorization failed:", err);
+      setGmailErrorMessage("Error al autorizar con Google: " + (err.message || String(err)));
+    } finally {
+      setIsLoggingInGmail(false);
+    }
+  };
+
+  const handleGmailLogout = async () => {
+    try {
+      await googleLogout();
+      setGmailUser(null);
+      setGmailAccessToken(null);
+    } catch (err) {
+      console.error("Logout failed:", err);
+    }
+  };
+
+  const handleSendGmailAction = async () => {
+    if (!gmailAccessToken) {
+      setGmailErrorMessage("Debes iniciar sesión con Google antes de realizar el envío.");
+      return;
+    }
+    if (!gmailTo) {
+      setGmailErrorMessage("Por favor, especifica el correo electrónico del destinatario.");
+      return;
+    }
+    if (!gmailAttachReport && !gmailAttachSummary && !gmailAttachInfographic) {
+      setGmailErrorMessage("Por favor, selecciona al menos un archivo para adjuntar.");
+      return;
+    }
+    
+    setIsSendingGmail(true);
+    setGmailSuccessMessage(null);
+    setGmailErrorMessage(null);
+
+    try {
+      // Helper to chunk base64 strings into 76-character blocks as required by standard MIME (RFC 2045)
+      // and strictly enforced by intermediate SMTP servers/receivers (RFC 5321 line length limits of 1000 chars)
+      const chunkBase64WithCRLF = (base64Str: string): string => {
+        const chunks: string[] = [];
+        for (let i = 0; i < base64Str.length; i += 76) {
+          chunks.push(base64Str.substring(i, i + 76));
+        }
+        return chunks.join("\r\n");
+      };
+
+      let explanationPDFBase64 = "";
+      let reportPDFBase64 = "";
+      let infographicBase64 = "";
+      let infographicContentType = "image/png";
+
+      // 1. Generate PDFs in-memory as Base64 strings if selected/checked
+      if (gmailAttachSummary) {
+        if (!patientSummary) {
+          throw new Error("Debe generar primero la 'Traducción Empática y Explicación' para poder adjuntarla.");
+        }
+        const rawSummaryB64 = await handleDownloadPatientSummaryPDF(false, false, true) || "";
+        explanationPDFBase64 = chunkBase64WithCRLF(rawSummaryB64);
+      }
+
+      if (gmailAttachReport) {
+        if (!generatedReport) {
+          throw new Error("Debe generar primero el 'Reporte de Estudio' para poder adjuntarlo.");
+        }
+        const rawReportB64 = await handleDownloadNativePDF(false, false, true) || "";
+        reportPDFBase64 = chunkBase64WithCRLF(rawReportB64);
+      }
+
+      // 2. Fetch and convert infographic image if selected/checked
+      if (gmailAttachInfographic) {
+        if (!infographicUrl) {
+          throw new Error("Debe generar primero la 'Infografía' para poder adjuntarla.");
+        }
+        try {
+          let plainInfographicBase64 = "";
+          if (infographicUrl.startsWith("data:")) {
+            const match = infographicUrl.match(/^data:([^;]+);base64,(.+)$/);
+            if (match) {
+              infographicContentType = match[1];
+              plainInfographicBase64 = match[2];
+            } else {
+              throw new Error("Formato de URL de datos de infografía no reconocido.");
+            }
+          } else {
+            const res = await fetch(infographicUrl);
+            const blob = await res.blob();
+            infographicContentType = blob.type || "image/png";
+            
+            const arrayBuf = await blob.arrayBuffer();
+            const bytesList = new Uint8Array(arrayBuf);
+            let binaryStr = "";
+            for (let i = 0; i < bytesList.length; i++) {
+              binaryStr += String.fromCharCode(bytesList[i]);
+            }
+            plainInfographicBase64 = window.btoa(binaryStr);
+          }
+          infographicBase64 = chunkBase64WithCRLF(plainInfographicBase64);
+        } catch (imageErr: any) {
+          throw new Error("Error al preparar la imagen de la infografía: " + (imageErr.message || String(imageErr)));
+        }
+      }
+
+      // 3. Build RFC 2822 Multipart MIME Message cleanly
+      const boundary = "boundary_part_medico_reporte_" + Math.random().toString(36).substring(2);
+
+      // Helper to strip accents & restrict to safe ASCII characters for MIME headers
+      const sanitizeMimeFilename = (nameStr: string): string => {
+        return nameStr
+          .trim()
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(/ñ/gi, "n")
+          .replace(/[^a-zA-Z0-9_\.-]/g, "_")
+          .replace(/\s+/g, "_");
+      };
+
+      const cleanPatientName = patientName ? sanitizeMimeFilename(patientName) : "paciente";
+      const filenameSummary = `Explicacion_${cleanPatientName}.pdf`;
+      const filenameReport = `Reporte_${cleanPatientName}.pdf`;
+      const fileExt = infographicContentType === "image/jpeg" ? "jpg" : "png";
+      const filenameInfographic = `Infografia_${cleanPatientName}.${fileExt}`;
+
+      const formattedBody = gmailBody.replace(/\n/g, "<br/>");
+      const htmlBodyContent = `<div style="font-family: sans-serif; font-size: 14px; color: #1e293b; line-height: 1.6;">${formattedBody}</div>`;
+      const htmlBodyBase64Raw = window.btoa(unescape(encodeURIComponent(htmlBodyContent)));
+      const htmlBodyBase64 = chunkBase64WithCRLF(htmlBodyBase64Raw);
+
+      // Set UTF-8 encoded subject to guarantee character sets are preserved
+      const b64Subject = window.btoa(unescape(encodeURIComponent(gmailSubject)));
+
+      const parts: string[] = [];
+      parts.push(`MIME-Version: 1.0`);
+      parts.push(`To: ${gmailTo}`);
+      parts.push(`Subject: =?utf-8?B?${b64Subject}?=`);
+      parts.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
+      parts.push(``); // Blank line separating headers from standard multipart payload
+
+      // Email text content part (Base64 encoded to safely preserve all Spanish characters/accents)
+      parts.push(`--${boundary}`);
+      parts.push(`Content-Type: text/html; charset="UTF-8"`);
+      parts.push(`Content-Transfer-Encoding: base64`);
+      parts.push(``); // Blank line separating part headers from content
+      parts.push(htmlBodyBase64);
+      parts.push(``); // Safe spacer
+
+      // Native Report Attachment
+      if (gmailAttachReport && reportPDFBase64) {
+        parts.push(`--${boundary}`);
+        parts.push(`Content-Type: application/pdf; name="${filenameReport}"`);
+        parts.push(`Content-Disposition: attachment; filename="${filenameReport}"`);
+        parts.push(`Content-Transfer-Encoding: base64`);
+        parts.push(``); // Blank line separating part headers from content
+        parts.push(reportPDFBase64);
+        parts.push(``); // Safe spacer
+      }
+
+      // Patient Summary/Explanation Attachment
+      if (gmailAttachSummary && explanationPDFBase64) {
+        parts.push(`--${boundary}`);
+        parts.push(`Content-Type: application/pdf; name="${filenameSummary}"`);
+        parts.push(`Content-Disposition: attachment; filename="${filenameSummary}"`);
+        parts.push(`Content-Transfer-Encoding: base64`);
+        parts.push(``); // Blank line separating part headers from content
+        parts.push(explanationPDFBase64);
+        parts.push(``); // Safe spacer
+      }
+
+      // Infographic Image Attachment
+      if (gmailAttachInfographic && infographicBase64) {
+        parts.push(`--${boundary}`);
+        parts.push(`Content-Type: ${infographicContentType}; name="${filenameInfographic}"`);
+        parts.push(`Content-Disposition: attachment; filename="${filenameInfographic}"`);
+        parts.push(`Content-Transfer-Encoding: base64`);
+        parts.push(``); // Blank line separating part headers from content
+        parts.push(infographicBase64);
+        parts.push(``); // Safe spacer
+      }
+
+      // End boundary
+      parts.push(`--${boundary}--`);
+
+      // Combine parts with exact standard CRLF
+      const emailRaw = parts.join("\r\n");
+      
+      // Base64URL encode MIME message safely
+      const utf8Encoder = new TextEncoder();
+      const bytes = utf8Encoder.encode(emailRaw);
+      let binary = "";
+      const len = bytes.byteLength;
+      for (let i = 0; i < len; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      const base64 = window.btoa(binary);
+      const base64Url = base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+      // 4. Post to Google Gmail API send endpoint
+      const response = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${gmailAccessToken}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          raw: base64Url
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Gmail API reportó un error de envío: ${errorText}`);
+      }
+
+      setGmailSuccessMessage("¡Correo electrónico enviado con éxito vía Gmail!");
+    } catch (err: any) {
+      console.error("Failed to send email via Gmail:", err);
+      setGmailErrorMessage("Error al enviar el correo: " + (err.message || String(err)));
+    } finally {
+      setIsSendingGmail(false);
+    }
+  };
+
+  // WhatsApp Share Handlers
+  const handleOpenWhatsAppShare = (type: 'report_pdf' | 'patient_infographic' | 'patient_summary') => {
+    setWhatsappShareType(type);
+    setShowWhatsAppModal(true);
+  };
+
+  const getWhatsAppTextPreview = () => {
+    if (whatsappShareType === 'patient_summary') {
+      if (!patientSummary) return "Por favor, genera primero el 'Acompañamiento para el Paciente'.";
+      let text = `*ACOMPAÑAMIENTO EXPLICATIVO DE SU ESTUDIO* 🩺\n\n`;
+      if (patientName) {
+        text += `*Paciente:* ${patientName}\n`;
+      }
+      if (studyType) {
+        text += `*Estudio:* ${studyType}\n`;
+      }
+      if (reportDate) {
+        text += `*Fecha del Estudio:* ${reportDate}\n`;
+      }
+      text += `\nEstimado paciente, adjunto le comparto una explicación médica de su estudio radiológico traducida a un lenguaje sencillo y comprensible en formato digital PDF.\n\n`;
+      text += `Este documento está redactado de forma objetiva y didáctica para ayudarle a comprender los hallazgos para su próxima consulta de seguimiento.`;
+      return text;
+    }
+
+    if (whatsappShareType === 'patient_infographic') {
+      let text = `*INFOGRAFÍA EXPLICATIVA PARA EL PACIENTE* 🎨\n\n`;
+      if (patientName) {
+        text += `*Paciente:* ${patientName}\n\n`;
+      }
+      text += `Estimado paciente, le comparto una infografía visual y amigable especialmente diseñada para explicar de forma muy sencilla los resultados de su estudio.\n\n`;
+      if (infographicUrl) {
+        text += `Puede visualizarla e imprimirla en alta definición ingresando al siguiente enlace:\n🔗 ${infographicUrl}\n\n`;
+      } else {
+        text += `(La infografía se está procesando; puede descargarla y enviarla directamente desde el panel principal).\n\n`;
+      }
+      text += `Quedo a su disposición para cualquier consulta de seguimiento.`;
+      return text;
+    }
+
+    // Default: 'report_pdf'
+    let text = `*INFORME CLÍNICO OFICIAL DE ESTUDIO RADIOLÓGICO* 📄\n\n`;
+    if (patientName) {
+      text += `*Paciente:* ${patientName}\n`;
+    }
+    if (studyType) {
+      text += `*Estudio:* ${studyType}\n`;
+    }
+    if (reportDate) {
+      text += `*Fecha del Estudio:* ${reportDate}\n`;
+    }
+    text += `\nEstimado paciente, adjunto le comparto el reporte oficial del estudio en formato digital PDF, verificado por el médico especialista y con firma digital autónoma.\n\n`;
+    text += `Le sugiero conservarlo y presentarlo impreso o digital en su próxima consulta de seguimiento con su médico de cabecera.`;
+    return text;
+  };
+
+  const handleSendWhatsAppAction = async () => {
+    const text = getWhatsAppTextPreview();
+    const cleanPhone = whatsappPhone ? whatsappPhone.replace(/\D/g, "") : "";
+    const urlEncoded = encodeURIComponent(text);
+    
+    // Construct WhatsApp Send URL
+    const url = cleanPhone 
+      ? `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${urlEncoded}`
+      : `https://api.whatsapp.com/send?text=${urlEncoded}`;
+
+    // 1. OPEN WHATSAPP ENTIRELY SYNCHRONOUSLY!
+    // This is the absolute key to bypass the browser's popup blocker.
+    try {
+      window.open(url, "_blank");
+    } catch (popupErr) {
+      console.error("Popup blocker prevented opening WhatsApp:", popupErr);
+    }
+
+    // 2. Perform the heavy pdf/infographic processing in the background
+    if (whatsappShareType === 'report_pdf') {
+      // First, trigger automatic PDF download for convenience on desktop
+      try {
+        handleDownloadNativePDF(false);
+      } catch (err) {
+        console.warn("Direct PDF download background call failed:", err);
+      }
+      
+      // Try native share on mobile/tablets asynchronously
+      if (navigator.share) {
+        try {
+          handleDownloadNativePDF(false, true);
+        } catch (err) {
+          console.warn("Native file sharing failed or not supported. Falling back to text message link.");
+        }
+      }
+    } else if (whatsappShareType === 'patient_summary') {
+      // First, trigger automatic companion explanation PDF download for convenience on desktop
+      try {
+        handleDownloadPatientSummaryPDF(false);
+      } catch (err) {
+        console.warn("Direct patient summary PDF download background call failed:", err);
+      }
+      
+      // Try native share on mobile/tablets asynchronously
+      if (navigator.share) {
+        try {
+          handleDownloadPatientSummaryPDF(false, true);
+        } catch (err) {
+          console.warn("Native file sharing failed or not supported. Falling back to text message link.");
+        }
+      }
+    } else if (whatsappShareType === 'patient_infographic') {
+      if (infographicUrl && (infographicUrl.startsWith("data:") || infographicUrl.startsWith("blob:") || infographicUrl.startsWith("http"))) {
+        try {
+          const response = await fetch(infographicUrl);
+          const blob = await response.blob();
+          const format = infographicUrl.includes("image/png") ? "png" : "jpeg";
+          const file = new File([blob], `infografia_paciente.${format}`, { type: blob.type });
+          if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+            navigator.share({
+              files: [file],
+              title: "Infografía Paciente",
+              text: `Infografía de ${patientName || "Paciente"}`
+            }).catch(err => {
+              console.warn("Native Share failed for infographic image:", err);
+            });
+          }
+        } catch (err) {
+          console.warn("Could not share infographic image as file:", err);
+        }
+      }
+    }
+
+    setShowWhatsAppModal(false);
+  };
+
   // ACTION: GENERATE DEMOCRATIZED AND SIMPLIFIED PATIENT KEY FINDINGS & SUMMARY
   const handleGeneratePatientSummary = async () => {
     if (!generatedReport) return;
@@ -2206,19 +2677,19 @@ Ejemplo:
     
     const findingsHtml = patientSummary.keyFindings.map((finding: any) => `
       <div style="margin-bottom: 22px; padding: 18px; border: 1px solid #e5e7eb; border-radius: 8px; page-break-inside: avoid; background-color: #fafafa;">
-        <h3 style="margin: 0 0 6px 0; color: #ea580c; font-family: system-ui, sans-serif; font-size: 16px; font-weight: 700;">${finding.title}</h3>
+        <h3 style="margin: 0 0 6px 0; color: #1e3a8a; font-family: system-ui, sans-serif; font-size: 16px; font-weight: 700;">${finding.title}</h3>
         <p style="margin: 0 0 12px 0; font-size: 11px; font-style: italic; color: #4b5563; font-family: monospace;">Término original en informe técnico: "${finding.originalTerm}"</p>
-        <p style="margin: 0 0 12px 0; font-size: 13.5px; font-family: system-ui, sans-serif; color: #1f2937; line-height: 1.55;"><strong>Explicación amigable:</strong> ${finding.simplifiedExplanation}</p>
-        <p style="margin: 0 0 8px 0; font-size: 12.5px; font-family: system-ui, sans-serif; color: #78350f; background-gradient: linear-gradient(to right, #fef3c7, #fffbeb); background-color: #fef3c7; padding: 10px; border-radius: 6px; border-left: 3px solid #f59e0b;">💡 <strong>Analogía cotidiana:</strong> ${finding.analogy}</p>
-        <p style="margin: 0; font-size: 12.5px; font-family: system-ui, sans-serif; color: #065f46; font-weight: 600; background-color: #ecfdf5; padding: 10px; border-radius: 6px; border-left: 3px solid #10b981;">🛡️ <strong>Mensaje de Alivio Profesional:</strong> ${finding.reassurance}</p>
+        <p style="margin: 0 0 12px 0; font-size: 13.5px; font-family: system-ui, sans-serif; color: #1f2937; line-height: 1.55;"><strong>Explicación:</strong> ${finding.simplifiedExplanation}</p>
+        <p style="margin: 0 0 8px 0; font-size: 12.5px; font-family: system-ui, sans-serif; color: #7c2d12; background-color: #fff7ed; padding: 10px; border-radius: 6px; border-left: 3px solid #f97316;">🔍 <strong>Analogía de comprensión:</strong> ${finding.analogy}</p>
+        <p style="margin: 0; font-size: 12.5px; font-family: system-ui, sans-serif; color: #1e3a8a; font-weight: 600; background-color: #eff6ff; padding: 10px; border-radius: 6px; border-left: 3px solid #3b82f6;">🩺 <strong>Contexto Clínico y Perspectiva Médica:</strong> ${finding.reassurance}</p>
       </div>
     `).join("");
 
-    const carePointsHtml = patientSummary.carePoints.map((point: string) => `
+    const carePointsHtml = (patientSummary.carePoints || []).map((point: string) => `
       <li style="margin-bottom: 10px; font-size: 13.5px; font-family: system-ui, sans-serif; color: #374151; line-height: 1.5;">${point}</li>
     `).join("");
 
-    const questionsHtml = patientSummary.suggestedQuestions.map((q: string) => `
+    const questionsHtml = (patientSummary.suggestedQuestions || []).map((q: string) => `
       <li style="margin-bottom: 12px; font-size: 13.5px; font-family: system-ui, sans-serif; color: #111827; line-height: 1.4; font-weight: 600;">"${q}"</li>
     `).join("");
 
@@ -2569,6 +3040,577 @@ Ejemplo:
     }
   };
 
+  const ensureCompatibleImageFormat = (src: string): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const canvas = document.createElement("canvas");
+          canvas.width = img.naturalWidth || img.width || 640;
+          canvas.height = img.naturalHeight || img.height || 480;
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0);
+            resolve(canvas.toDataURL("image/jpeg", 0.9));
+            return;
+          }
+        } catch (err) {
+          console.warn("Error converting image to compatible format:", err);
+        }
+        resolve(src);
+      };
+      img.onerror = () => {
+        resolve(src);
+      };
+      img.src = src;
+    });
+  };
+
+  const decodeDicom = (arrayBuffer: ArrayBuffer) => {
+    const view = new DataView(arrayBuffer);
+    const uint8 = new Uint8Array(arrayBuffer);
+    
+    // Fast, non-blocking chunked base64 encoder
+    const uint8ToBase64 = (arr: Uint8Array): string => {
+      let binary = "";
+      const len = arr.byteLength;
+      const chunkSize = 0x4000; // 16KB chunks
+      for (let i = 0; i < len; i += chunkSize) {
+        const subset = arr.subarray(i, i + chunkSize);
+        binary += String.fromCharCode.apply(null, subset as any);
+      }
+      return btoa(binary);
+    };
+
+    let jpegStart = -1;
+    // scan from 0 to capture preamble-less encapsulated JPEGs
+    for (let i = 0; i < uint8.length - 10; i++) {
+      if (uint8[i] === 0xFF && uint8[i+1] === 0xD8 && uint8[i+2] === 0xFF) {
+        jpegStart = i;
+        break;
+      }
+    }
+    
+    let base64 = "";
+    if (jpegStart !== -1) {
+      let jpegEnd = -1;
+      for (let i = uint8.length - 2; i > jpegStart; i--) {
+        if (uint8[i] === 0xFF && uint8[i+1] === 0xD9) {
+          jpegEnd = i + 2;
+          break;
+        }
+      }
+      if (jpegEnd === -1) {
+        jpegEnd = uint8.length;
+      }
+      
+      const slice = uint8.subarray(jpegStart, jpegEnd);
+      base64 = "data:image/jpeg;base64," + uint8ToBase64(slice);
+    }
+    
+    let rows = 0;
+    let cols = 0;
+    let bitsAllocated = 8;
+    let samplesPerPixel = 1;
+    let planarConfiguration = 0;
+    let photometricInterpretation = "";
+    let pixelDataOffset = -1;
+    let pixelDataLength = 0;
+    
+    const meta: Record<string, string> = {};
+    try {
+      const textDecoder = new TextDecoder("utf-8");
+      
+      // Auto-detect preamble or raw start
+      let hasPreamble = false;
+      if (uint8.length > 132 && uint8[128] === 68 && uint8[129] === 73 && uint8[130] === 67 && uint8[131] === 77) {
+        hasPreamble = true;
+      }
+      
+      const startOffsets = hasPreamble ? [132] : [0, 132];
+      
+      for (const startPos of startOffsets) {
+        let pos = startPos;
+        rows = 0;
+        cols = 0;
+        bitsAllocated = 8;
+        samplesPerPixel = 1;
+        planarConfiguration = 0;
+        photometricInterpretation = "";
+        pixelDataOffset = -1;
+        pixelDataLength = 0;
+        
+        while (pos < arrayBuffer.byteLength - 8) {
+          const group = view.getUint16(pos, true);
+          const element = view.getUint16(pos + 2, true);
+          pos += 4;
+          
+          let vr = "";
+          try {
+            vr = String.fromCharCode(uint8[pos], uint8[pos+1]);
+          } catch {
+            vr = "";
+          }
+          
+          let length = 0;
+          let isLongVR = false;
+          if (["OB", "OW", "OF", "SQ", "UT", "UN"].includes(vr)) {
+            isLongVR = true;
+            length = view.getUint32(pos + 4, true);
+            pos += 8;
+          } else {
+            if (uint8[pos] >= 65 && uint8[pos] <= 90 && uint8[pos+1] >= 65 && uint8[pos+1] <= 90) {
+              length = view.getUint16(pos + 2, true);
+              pos += 4;
+            } else {
+              // Implicit VR: length is 32-bit field right after group and element
+              length = view.getUint32(pos, true);
+              pos += 4;
+            }
+          }
+          
+          if (length === 0xFFFFFFFF) {
+            // Sequence of undefined length
+            if ((group === 0x7fe0 && element === 0x0010) || (group === 0x7FE0 && element === 0x0010)) {
+              pixelDataOffset = pos;
+              pixelDataLength = uint8.length - pos;
+              break;
+            } else {
+              // It's a metadata sequence (SQ) of undefined length.
+              // Skip it by finding the Sequence Delimitation Item (FFFE, E0DD)
+              let foundDelimiter = false;
+              for (let i = pos; i < uint8.length - 8; i++) {
+                if (
+                  (uint8[i] === 0xFE && uint8[i+1] === 0xFF && uint8[i+2] === 0xDD && uint8[i+3] === 0xE0) ||
+                  (uint8[i] === 0xFF && uint8[i+1] === 0xFE && uint8[i+2] === 0xE0 && uint8[i+3] === 0xDD)
+                ) {
+                  // Skip FFFE E0DD and its 4-byte length field (usually 0x00000000)
+                  pos = i + 8;
+                  foundDelimiter = true;
+                  break;
+                }
+              }
+              if (!foundDelimiter) {
+                break;
+              }
+              continue;
+            }
+          }
+          
+          if (length > 0 && pos + length <= arrayBuffer.byteLength) {
+            if (group === 0x0010 && element === 0x0010) {
+              meta["paciente"] = textDecoder.decode(uint8.subarray(pos, pos + length)).replace(/\^/g, " ").trim();
+            } else if (group === 0x0010 && element === 0x0020) {
+              meta["id"] = textDecoder.decode(uint8.subarray(pos, pos + length)).trim();
+            } else if (group === 0x0008 && element === 0x0060) {
+              meta["modalidad"] = textDecoder.decode(uint8.subarray(pos, pos + length)).trim();
+            } else if (group === 0x0008 && element === 0x0080) {
+              meta["institucion"] = textDecoder.decode(uint8.subarray(pos, pos + length)).trim();
+            } else if (group === 0x0008 && element === 0x1030) {
+              meta["estudio"] = textDecoder.decode(uint8.subarray(pos, pos + length)).trim();
+            } else if (group === 0x0028 && element === 0x0010) {
+              try {
+                if (length === 2) rows = view.getUint16(pos, true);
+                else if (length === 4) rows = view.getUint32(pos, true);
+              } catch {}
+            } else if (group === 0x0028 && element === 0x0011) {
+              try {
+                if (length === 2) cols = view.getUint16(pos, true);
+                else if (length === 4) cols = view.getUint32(pos, true);
+              } catch {}
+            } else if (group === 0x0028 && element === 0x0100) {
+              try {
+                if (length === 2) bitsAllocated = view.getUint16(pos, true);
+              } catch {}
+            } else if (group === 0x0028 && element === 0x0002) {
+              try {
+                if (length === 2) samplesPerPixel = view.getUint16(pos, true);
+              } catch {}
+            } else if (group === 0x0028 && element === 0x0006) {
+              try {
+                if (length === 2) planarConfiguration = view.getUint16(pos, true);
+              } catch {}
+            } else if (group === 0x0028 && element === 0x0004) {
+              try {
+                photometricInterpretation = textDecoder.decode(uint8.subarray(pos, pos + length)).trim().toUpperCase();
+              } catch {}
+            } else if ((group === 0x7fe0 && element === 0x0010) || (group === 0x7FE0 && element === 0x0010)) {
+              pixelDataOffset = pos;
+              pixelDataLength = length;
+            }
+            pos += length;
+          } else {
+            if (length === 0) {
+              // skip empty tag
+            } else {
+              break;
+            }
+          }
+        }
+        
+        if (pixelDataOffset !== -1 && rows > 0 && cols > 0) {
+          break;
+        }
+      }
+    } catch (err) {
+      console.warn("Could not extract metadata tags from DICOM file", err);
+    }
+    
+    // Natively decode raw, uncompressed pixels if there's no embedded JPEG
+    if (base64 === "" && pixelDataOffset !== -1 && rows > 0 && cols > 0) {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = cols;
+        canvas.height = rows;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          const imgData = ctx.createImageData(cols, rows);
+          const data = imgData.data;
+          
+          if (samplesPerPixel === 3) {
+            const rawBytes = uint8.subarray(pixelDataOffset, pixelDataOffset + Math.min(pixelDataLength, rows * cols * 3));
+            const numPixels = rows * cols;
+            if (planarConfiguration === 1) {
+              const rPlane = 0;
+              const gPlane = numPixels;
+              const bPlane = numPixels * 2;
+              
+              if (photometricInterpretation.startsWith("YBR")) {
+                for (let i = 0; i < numPixels; i++) {
+                  if (bPlane + i < rawBytes.length) {
+                    const Y = rawBytes[rPlane + i];
+                    const Cb = rawBytes[gPlane + i];
+                    const Cr = rawBytes[bPlane + i];
+                    
+                    let r = Y + 1.402 * (Cr - 128);
+                    let g = Y - 0.344136 * (Cb - 128) - 0.714136 * (Cr - 128);
+                    let b = Y + 1.772 * (Cb - 128);
+                    
+                    const idx = i * 4;
+                    data[idx] = Math.max(0, Math.min(255, Math.floor(r)));
+                    data[idx+1] = Math.max(0, Math.min(255, Math.floor(g)));
+                    data[idx+2] = Math.max(0, Math.min(255, Math.floor(b)));
+                    data[idx+3] = 255;
+                  }
+                }
+              } else {
+                for (let i = 0; i < numPixels; i++) {
+                  if (bPlane + i < rawBytes.length) {
+                    const idx = i * 4;
+                    data[idx] = rawBytes[rPlane + i];     // R
+                    data[idx+1] = rawBytes[gPlane + i];   // G
+                    data[idx+2] = rawBytes[bPlane + i];   // B
+                    data[idx+3] = 255;                   // A
+                  }
+                }
+              }
+            } else {
+              // Interleaved (Planar Configuration = 0)
+              if (photometricInterpretation.startsWith("YBR")) {
+                for (let i = 0; i < numPixels; i++) {
+                  const rIdx = i * 3;
+                  if (rIdx + 2 < rawBytes.length) {
+                    const Y = rawBytes[rIdx];
+                    const Cb = rawBytes[rIdx + 1];
+                    const Cr = rawBytes[rIdx + 2];
+                    
+                    let r = Y + 1.402 * (Cr - 128);
+                    let g = Y - 0.344136 * (Cb - 128) - 0.714136 * (Cr - 128);
+                    let b = Y + 1.772 * (Cb - 128);
+                    
+                    const idx = i * 4;
+                    data[idx] = Math.max(0, Math.min(255, Math.floor(r)));
+                    data[idx+1] = Math.max(0, Math.min(255, Math.floor(g)));
+                    data[idx+2] = Math.max(0, Math.min(255, Math.floor(b)));
+                    data[idx+3] = 255;
+                  }
+                }
+              } else {
+                for (let i = 0; i < numPixels; i++) {
+                  const rIdx = i * 3;
+                  if (rIdx + 2 < rawBytes.length) {
+                    const idx = i * 4;
+                    data[idx] = rawBytes[rIdx];     // R
+                    data[idx+1] = rawBytes[rIdx+1]; // G
+                    data[idx+2] = rawBytes[rIdx+2]; // B
+                    data[idx+3] = 255;             // A
+                  }
+                }
+              }
+            }
+          } else {
+            // Monochrome / Grayscale (or single channel)
+            if (bitsAllocated === 8) {
+              const rawBytes = uint8.subarray(pixelDataOffset, pixelDataOffset + Math.min(pixelDataLength, rows * cols));
+              const isInverted = photometricInterpretation === "MONOCHROME1";
+              for (let i = 0; i < rawBytes.length; i++) {
+                const val = isInverted ? 255 - rawBytes[i] : rawBytes[i];
+                const idx = i * 4;
+                data[idx] = val;     // R
+                data[idx+1] = val;   // G
+                data[idx+2] = val;   // B
+                data[idx+3] = 255;   // A
+              }
+            } else if (bitsAllocated === 16) {
+              const numPixels = rows * cols;
+              const wordsNeeded = Math.min(Math.floor(pixelDataLength / 2), numPixels);
+              const rawWords = new Uint16Array(wordsNeeded);
+              for (let i = 0; i < wordsNeeded; i++) {
+                rawWords[i] = view.getUint16(pixelDataOffset + i * 2, true);
+              }
+              
+              let min = 65535;
+              let max = 0;
+              for (let i = 0; i < rawWords.length; i++) {
+                const v = rawWords[i];
+                if (v < min) min = v;
+                if (v > max) max = v;
+              }
+              const range = max - min || 1;
+              const isInverted = photometricInterpretation === "MONOCHROME1";
+              
+              for (let i = 0; i < rawWords.length; i++) {
+                let val = Math.floor(((rawWords[i] - min) / range) * 255);
+                if (isInverted) val = 255 - val;
+                const idx = i * 4;
+                data[idx] = val;
+                data[idx+1] = val;
+                data[idx+2] = val;
+                data[idx+3] = 255;
+              }
+            }
+          }
+          
+          ctx.putImageData(imgData, 0, 0);
+          base64 = canvas.toDataURL("image/jpeg");
+        }
+      } catch (decodeErr) {
+        console.warn("Could not decode raw pixel data natively: ", decodeErr);
+      }
+    }
+    
+    const hasSuccessfulImage = (base64 !== "" || (pixelDataOffset !== -1 && rows > 0 && cols > 0));
+    return { base64, meta, success: hasSuccessfulImage };
+  };
+
+  const generateDicomCanvasFallback = (filename: string, meta?: Record<string, string>) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 640;
+    canvas.height = 480;
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      ctx.fillStyle = "#020617";
+      ctx.fillRect(0, 0, 640, 480);
+      
+      ctx.strokeStyle = "rgba(71, 85, 105, 0.12)";
+      ctx.lineWidth = 1;
+      for (let x = 0; x < 640; x += 40) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 480); ctx.stroke();
+      }
+      for (let y = 0; y < 480; y += 40) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(640, y); ctx.stroke();
+      }
+      
+      ctx.strokeStyle = "rgba(100, 116, 139, 0.25)";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(320, 30, 420, Math.PI * 0.35, Math.PI * 0.65);
+      ctx.stroke();
+      
+      ctx.beginPath();
+      ctx.arc(320, 30, 220, Math.PI * 0.35, Math.PI * 0.65);
+      ctx.stroke();
+      
+      ctx.font = "bold 9px monospace";
+      ctx.fillStyle = "rgba(100, 116, 139, 0.15)";
+      ctx.fillText("SECTOR PROBE AREA", 270, 150);
+      
+      ctx.beginPath();
+      ctx.moveTo(110, 390);
+      for (let x = 110; x < 530; x++) {
+        const y = 340 + 35 * Math.sin((x / 35) + Math.cos(x / 13)) * Math.exp(-Math.pow((x - 290) / 130, 2));
+        ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = "#0ea5e9";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      
+      ctx.fillStyle = "#38bdf8";
+      ctx.font = "bold 10px monospace";
+      ctx.fillText("PW doppler: +114.5 cm/s", 90, 290);
+      ctx.fillText("V_diastolic: -22.4 cm/s", 90, 305);
+      ctx.fillText("RI (Índice Resist.): 0.70", 90, 320);
+      
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 11px monospace";
+      ctx.fillText((meta?.paciente || "PACIENTE GENERAL").toUpperCase(), 30, 45);
+      
+      ctx.fillStyle = "#38bdf8";
+      ctx.font = "bold 9px monospace";
+      ctx.fillText("MOD: US (ECOGRAFÍA DOPPLER)", 30, 60);
+      if (meta?.institucion) {
+        ctx.fillStyle = "#94a3b8";
+        ctx.fillText("HOSPITAL: " + meta.institucion.toUpperCase(), 30, 75);
+      }
+      ctx.fillStyle = "#94a3b8";
+      ctx.fillText("REG: " + filename, 30, 90);
+      
+      ctx.fillStyle = "#e2e8f0";
+      ctx.fillText("ULTRASOUND DICOM RAW CAPTURE", 430, 45);
+      const dateStr = new Date().toLocaleDateString();
+      ctx.fillText("FECHA: " + dateStr, 430, 60);
+      ctx.fillText("ESTADO: ENCAPSULADO", 430, 75);
+    }
+    return canvas.toDataURL("image/png");
+  };
+
+  const handleAttachedFiles = async (filesList: FileList | File[] | null) => {
+    if (!filesList) return;
+    const filesArray = Array.from(filesList);
+    const loaded: {
+      id: string;
+      name: string;
+      url: string;
+      base64: string;
+      caption: string;
+      isDicom: boolean;
+      dicomMetaData?: Record<string, string>;
+    }[] = [];
+    
+    const promises = filesArray.map((file) => {
+      if (file.size === 0) return Promise.resolve();
+      
+      const nameLower = file.name.toLowerCase();
+      // Skip Mac OS metadata files, DICOMDIR metadata records, thumbs.db, and XML files
+      if (
+        nameLower.startsWith(".") || 
+        nameLower.startsWith("_") || 
+        nameLower === "thumbs.db" || 
+        nameLower === "dicomdir" || 
+        nameLower.endsWith(".xml")
+      ) {
+        return Promise.resolve();
+      }
+      
+      const fileExt = file.name.split('.').pop()?.toLowerCase() || "";
+      const isKnownImage = file.type.startsWith("image/") || ["jpg", "jpeg", "png", "webp", "gif"].includes(fileExt);
+      const isDicomExt = ["dcm", "dicom"].includes(fileExt);
+      
+      return new Promise<void>((resolve) => {
+        const reader = new FileReader();
+        
+        if (isKnownImage) {
+          reader.onload = (e) => {
+            const base64Str = e.target?.result as string;
+            if (base64Str) {
+               ensureCompatibleImageFormat(base64Str).then((compatibleBase64) => {
+                loaded.push({
+                  id: "attached-" + Math.random().toString(36).substring(2, 11),
+                  name: file.name,
+                  url: compatibleBase64,
+                  base64: compatibleBase64,
+                  caption: "", // Starts completely empty as requested by the user
+                  isDicom: false
+                });
+                resolve();
+              });
+            } else {
+              resolve();
+            }
+          };
+          reader.readAsDataURL(file);
+        } else if (isDicomExt || file.size >= 132) {
+          // Candidates for DICOM (try to check tags or fallback by extension / header)
+          reader.onload = (e) => {
+            const buf = e.target?.result as ArrayBuffer;
+            if (buf) {
+              const uint8 = new Uint8Array(buf);
+              let isRealDicom = isDicomExt;
+              if (uint8.length > 132) {
+                if (uint8[128] === 68 && uint8[129] === 73 && uint8[130] === 67 && uint8[131] === 77) {
+                  isRealDicom = true;
+                }
+              }
+              
+              if (isRealDicom) {
+                const parsed = decodeDicom(buf);
+                let finalBase64 = parsed.base64;
+                if (!finalBase64) {
+                  finalBase64 = generateDicomCanvasFallback(file.name, parsed.meta);
+                }
+                
+                ensureCompatibleImageFormat(finalBase64).then((compatibleBase64) => {
+                  loaded.push({
+                    id: "attached-" + Math.random().toString(36).substring(2, 11),
+                    name: file.name,
+                    url: compatibleBase64,
+                    base64: compatibleBase64,
+                    caption: "", // Starts completely empty as requested by the user
+                    isDicom: true,
+                    dicomMetaData: parsed.meta
+                  });
+                  resolve();
+                });
+              } else {
+                resolve();
+              }
+            } else {
+              resolve();
+            }
+          };
+          reader.readAsArrayBuffer(file);
+        } else {
+          resolve();
+        }
+      });
+    });
+    
+    await Promise.all(promises);
+    
+    if (loaded.length > 0) {
+      setAttachedImages((prev) => [...prev, ...loaded]);
+    }
+  };
+
+  // Clipboard Paste (Ctrl+V) handler for screenshot or diagnostic images mapping
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      const activeEl = document.activeElement;
+      if (activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA")) {
+        if (!e.clipboardData || !e.clipboardData.files || e.clipboardData.files.length === 0) {
+          return;
+        }
+      }
+
+      if (e.clipboardData && e.clipboardData.files && e.clipboardData.files.length > 0) {
+        handleAttachedFiles(e.clipboardData.files);
+      } else if (e.clipboardData && e.clipboardData.items) {
+        const files: File[] = [];
+        for (let i = 0; i < e.clipboardData.items.length; i++) {
+          const item = e.clipboardData.items[i];
+          if (item.type.indexOf("image") !== -1 || item.kind === "file") {
+            const blob = item.getAsFile();
+            if (blob) {
+              const ext = blob.type.split("/")[1] || "png";
+              const file = new File([blob], `pasted_capture_${Date.now()}.${ext}`, { type: blob.type });
+              files.push(file);
+            }
+          }
+        }
+        if (files.length > 0) {
+          handleAttachedFiles(files);
+        }
+      }
+    };
+
+    window.addEventListener("paste", handlePaste);
+    return () => {
+      window.removeEventListener("paste", handlePaste);
+    };
+  }, [attachedImages]);
+
   const convertSvgToPng = (svgElement: SVGElement): Promise<string> => {
     return new Promise((resolve, reject) => {
       try {
@@ -2606,7 +3648,7 @@ Ejemplo:
     });
   };
 
-  const handleDownloadNativePDF = async (openInNewTab: boolean = false) => {
+  const handleDownloadNativePDF = async (openInNewTab: boolean = false, shareViaWebShare: boolean = false, returnBase64: boolean = false): Promise<string | undefined> => {
     if (!generatedReport) return;
     
     try {
@@ -3340,6 +4382,234 @@ Ejemplo:
             // Draw high resolution diagram centered
             doc.addImage(imgData, "PNG", (pageWidth - 116) / 2, yCoord, 116, 82);
             yCoord += 86;
+
+            // --- DRAW LEYENDA DE HALLAZGOS IN PROGRAMMATIC PDF ---
+            const isVenosoForPDF = specificStudy.toLowerCase().includes("venoso");
+
+            const isLimbEvaluatedForPDF = (side: "der" | "izq") => {
+              const isCarotidas = specificStudy.toLowerCase().includes("carót") || specificStudy.toLowerCase().includes("carot");
+              if (isCarotidas) return true;
+
+              const latLower = (laterality || "").toLowerCase();
+              if (latLower === "derecha" || latLower === "derecho") {
+                return side === "der";
+              }
+              if (latLower === "izquierda" || latLower === "izquierdo") {
+                return side === "izq";
+              }
+              if (latLower === "bilateral") {
+                return true;
+              }
+
+              const studyLower = (specificStudy || "").toLowerCase();
+              const reportLower = (generatedReport || "").toLowerCase();
+
+              const hasDerechoInStudy = studyLower.includes("derech") || studyLower.includes(" unilateral d") || studyLower.includes("der.");
+              const hasIzquierdoInStudy = studyLower.includes("izquierd") || studyLower.includes(" unilateral i") || studyLower.includes("izq.");
+
+              const hasDerechoInReport = reportLower.includes("miembro inferior derecho") || reportLower.includes("m.i. derecho") || reportLower.includes("unilateral derecho");
+              const hasIzquierdoInReport = reportLower.includes("miembro inferior izquierdo") || reportLower.includes("m.i. izquierdo") || reportLower.includes("unilateral izquierdo");
+
+              if (hasDerechoInStudy && !hasIzquierdoInStudy) {
+                return side === "der";
+              }
+              if (hasIzquierdoInStudy && !hasDerechoInStudy) {
+                return side === "izq";
+              }
+              if (hasDerechoInReport && !hasIzquierdoInReport) {
+                return side === "der";
+              }
+              if (hasIzquierdoInReport && !hasDerechoInReport) {
+                return side === "izq";
+              }
+              return true;
+            };
+
+            const getSegColorForPDF = (id: string) => {
+              const isRightSegment = id.endsWith("_der");
+              const isLeftSegment = id.endsWith("_izq");
+
+              if (isRightSegment && !isLimbEvaluatedForPDF("der")) {
+                return "#94a3b8";
+              }
+              if (isLeftSegment && !isLimbEvaluatedForPDF("izq")) {
+                return "#94a3b8";
+              }
+
+              const s = vascularStates[id] || "normal";
+              if (s === "normal") return "#059669";
+              if (s === "mild" || s === "reflux") return "#d97706";
+              return "#dc2626";
+            };
+
+            const getSegLabelForPDF = (id: string) => {
+              const isRightSegment = id.endsWith("_der");
+              const isLeftSegment = id.endsWith("_izq");
+
+              if (isRightSegment && !isLimbEvaluatedForPDF("der")) {
+                return "No evaluado";
+              }
+              if (isLeftSegment && !isLimbEvaluatedForPDF("izq")) {
+                return "No evaluado";
+              }
+
+              const s = vascularStates[id] || "normal";
+              if (s === "normal") return isVenosoForPDF ? "Permeable" : "Normal";
+
+              const descText = (vascularDescriptions[id] || "").toLowerCase().trim();
+
+              if (
+                descText.includes("flujo no detectable") || 
+                descText.includes("no detectable") || 
+                descText.includes("flujo ausente") || 
+                descText.includes("ausencia de flujo") || 
+                descText.includes("onda no detectable") || 
+                descText.includes("señal no detectable")
+              ) {
+                return "Flujo no detectable";
+              }
+
+              if (
+                descText.includes("oclusión") || 
+                descText.includes("oclusion") || 
+                descText.includes("ocluido") || 
+                descText.includes("ocluida") || 
+                descText.includes("obstrucción completa") || 
+                descText.includes("obstruccion completa") || 
+                descText.includes("obstrucción total") || 
+                descText.includes("obstruccion total") || 
+                descText.includes("obturado") ||
+                descText.includes("oclusión completa") ||
+                descText.includes("oclusion completa")
+              ) {
+                return "Oclusión";
+              }
+
+              // 2.5 aterosclerosis prioritized check
+              if (
+                descText.includes("enfermedad aterosclerótica") ||
+                descText.includes("enfermedad aterosclerotica") ||
+                descText.includes("aterosclerosis") ||
+                descText.includes("aterosclerótica") ||
+                descText.includes("aterosclerotica")
+              ) {
+                return "Aterosclerosis";
+              }
+
+              if (
+                descText.includes("estenosis focal") || 
+                descText.includes("focal") || 
+                descText.includes("zona específica de estenosis") ||
+                descText.includes("zona especifica de estenosis") ||
+                descText.includes("lesión de estenosis") ||
+                descText.includes("lesion de estenosis")
+              ) {
+                return "Estenosis focal";
+              }
+
+              if (
+                descText.includes("estenosis difusa") || 
+                descText.includes("estenosis difuso") ||
+                descText.includes("estenosis difusas")
+              ) {
+                return "Estenosis difusa";
+              }
+
+              if (
+                descText.includes("ateromatosis") || 
+                descText.includes("placa") || 
+                descText.includes("placas") || 
+                descText.includes("ateroma") || 
+                descText.includes("ateromatosa") || 
+                descText.includes("ateromatosas") || 
+                descText.includes("engrosamiento miointimal") ||
+                descText.includes("gim") || 
+                descText.includes("miointimal") ||
+                s === "mild"
+              ) {
+                return "Ateromatosis";
+              }
+
+              if (s === "severe") {
+                return "Estenosis focal";
+              }
+              if (s === "reflux") {
+                return "Reflujo";
+              }
+              if (s === "thrombosis") {
+                return "Trombosis";
+              }
+              return "Normal";
+            };
+
+            const activeVessels = Object.keys(vascularStates).filter((id) => {
+              const isRight = id.endsWith("_der");
+              const isLeft = id.endsWith("_izq");
+              if (isRight && !isLimbEvaluatedForPDF("der")) return false;
+              if (isLeft && !isLimbEvaluatedForPDF("izq")) return false;
+              return true;
+            });
+
+            checkPageBreak(25);
+            yCoord += 4;
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8);
+            doc.setTextColor(30, 41, 59);
+            doc.text("LEYENDA DE HALLAZGOS VASCULARES:", marginX, yCoord);
+            yCoord += 4.5;
+
+            if (activeVessels.length > 0) {
+              const colWidth = (pageWidth - (2 * marginX)) / 2; // 85mm each column
+              let colX = marginX;
+              let rowY = yCoord;
+              
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(7.5);
+
+              activeVessels.forEach((id, idx) => {
+                if (idx > 0 && idx % 2 === 0) {
+                  rowY += 4.2;
+                  colX = marginX;
+                } else if (idx > 0 && idx % 2 === 1) {
+                  colX = marginX + colWidth;
+                }
+
+                if (rowY > pageHeight - 20) {
+                  doc.addPage();
+                  rowY = 20;
+                  yCoord = rowY;
+                }
+
+                const labelText = getSegLabelForPDF(id) || "Normal";
+                const sideLabel = id.replace("_der", "-R").replace("_izq", "-L").toUpperCase();
+                const colorHex = getSegColorForPDF(id);
+
+                let r = 5, g = 150, b = 105;
+                if (colorHex === "#d97706") { r = 217; g = 119; b = 6; }
+                else if (colorHex === "#dc2626") { r = 220; g = 38; b = 38; }
+                else if (colorHex === "#94a3b8") { r = 148; g = 163; b = 184; }
+
+                doc.setFillColor(r, g, b);
+                doc.circle(colX + 1.5, rowY - 1, 0.8, "F");
+
+                doc.setFont("helvetica", "bold");
+                doc.setTextColor(30, 41, 59);
+                doc.text(`${sideLabel}:`, colX + 3.5, rowY);
+                
+                doc.setFont("helvetica", "normal");
+                doc.setTextColor(71, 85, 105);
+                const textOffset = doc.getTextWidth(`${sideLabel}: `) + 4.5;
+                doc.text(labelText, colX + textOffset, rowY);
+              });
+
+              yCoord = rowY + 6;
+            } else {
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(7.5);
+              doc.setTextColor(148, 163, 184);
+              doc.text("No se registraron hallazgos vasculares específicos de interés.", marginX, yCoord);
+              yCoord += 4.5;
+            }
           } catch (err) {
             console.error("No se pudo insertar el esquema vascular en el PDF descargado:", err);
           }
@@ -3408,8 +4678,109 @@ Ejemplo:
         doc.text(titleText, pageWidth - marginX - titleTextWidth, yCoord + 8);
       }
 
+      // --- APPEND ATTACHED ULTRASOUND/DICOM IMAGES TO THE END OF PDF ---
+      if (attachedImages.length > 0) {
+        doc.addPage();
+        yCoord = 20;
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(15, 23, 42); // slate 900
+        doc.text("ANEXO: IMÁGENES Y CAPTURAS DE ULTRASONIDO", marginX, yCoord);
+
+        // Simple divider
+        yCoord += 4;
+        doc.setDrawColor(203, 213, 225); // slate 300
+        doc.setLineWidth(0.4);
+        doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
+        yCoord += 11;
+
+        // Arrange images in a beautiful 2-column grid:
+        const colWidth = (pageWidth - (marginX * 2) - 8) / 2; // 81mm each column
+        const imgHeight = colWidth * 0.75; // Maintain aspect ratio of 4:3
+        
+        let currentCol = 0; // 0 or 1
+        for (const imgItem of attachedImages) {
+          if (yCoord + imgHeight + 17 > pageHeight - 20) {
+            doc.addPage();
+            yCoord = 20;
+            currentCol = 0;
+            
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(9);
+            doc.setTextColor(100, 116, 139);
+            doc.text("ANEXO: CAPTURAS DE ULTRASONIDO (CONT...)", marginX, yCoord);
+            yCoord += 4;
+            doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
+            yCoord += 11;
+          }
+
+          const posX = marginX + currentCol * (colWidth + 8);
+          
+          try {
+            let format = "JPEG";
+            if (imgItem.base64.includes("image/png")) format = "PNG";
+            else if (imgItem.base64.includes("image/gif")) format = "GIF";
+            else if (imgItem.base64.includes("image/webp")) format = "WEBP";
+
+            doc.addImage(imgItem.base64, format, posX, yCoord, colWidth, imgHeight);
+
+            doc.setDrawColor(241, 245, 249); // slate 50
+            doc.setLineWidth(0.25);
+            doc.rect(posX, yCoord, colWidth, imgHeight);
+
+            if (imgItem.caption) {
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(8.5);
+              doc.setTextColor(51, 65, 85); // slate 700
+              const textLines = doc.splitTextToSize(imgItem.caption, colWidth - 2);
+              let offsetTextY = yCoord + imgHeight + 4.5;
+              textLines.forEach((lineText: string) => {
+                doc.text(lineText, posX, offsetTextY);
+                offsetTextY += 3.5;
+              });
+            }
+
+          } catch (imgErr) {
+            console.error("Could not append attached image in jsPDF: ", imgErr);
+            doc.setDrawColor(226, 232, 240);
+            doc.rect(posX, yCoord, colWidth, imgHeight);
+            doc.setFont("helvetica", "italic");
+            doc.setFontSize(8);
+            doc.setTextColor(148, 163, 184);
+            doc.text("No se pudo renderizar la imagen", posX + 5, yCoord + (imgHeight/2));
+          }
+
+          if (currentCol === 0) {
+            currentCol = 1;
+          } else {
+            currentCol = 0;
+            yCoord += imgHeight + 20; // vertical step
+          }
+        }
+      }
+
+      if (returnBase64) {
+        const dataUri = doc.output("datauristring");
+        return dataUri.split(",")[1];
+      }
+
       // Output either as file download or Blob URL opened in a new clean screen
-      if (openInNewTab) {
+      if (shareViaWebShare) {
+        const blob = doc.output("blob");
+        const filename = patientName ? `${patientName.trim().replace(/\s+/gi, "_")}_reporte.pdf` : "reporte_radiologico.pdf";
+        const file = new File([blob], filename, { type: "application/pdf" });
+        if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: "Reporte de Estudio",
+            text: `Le comparto el Reporte de Estudio Doppler de ${patientName || "Paciente"}`
+          });
+        } else {
+          // Automatic physical browser download as backup
+          doc.save(filename);
+        }
+      } else if (openInNewTab) {
         const blob = doc.output("blob");
         const blobUrl = URL.createObjectURL(blob);
         window.open(blobUrl, "_blank");
@@ -3420,6 +4791,524 @@ Ejemplo:
     } catch (err) {
       console.error("Error generating native PDF through jsPDF:", err);
       alert("Ocurrió un error al generar el PDF: " + String(err));
+    }
+  };
+
+  const handleDownloadPatientSummaryPDF = async (openInNewTab: boolean = false, shareViaWebShare: boolean = false, returnBase64: boolean = false): Promise<string | undefined> => {
+    if (!patientSummary) return;
+
+    try {
+      const doc = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4",
+      });
+
+      let yCoord = 20;
+      const marginX = 20;
+      const pageWidth = 210;
+      const pageHeight = 297;
+      const contentWidth = pageWidth - (2 * marginX); // 170mm
+
+      // Helper function to check space and add page if needed
+      const checkPageBreak = (neededHeight: number) => {
+        if (yCoord + neededHeight > pageHeight - 20) {
+          doc.addPage();
+          yCoord = 20;
+        }
+      };
+
+      // Strip emojis helper to prevent visual square errors in default fonts
+      const stripEmojis = (str: string): string => {
+        if (!str) return "";
+        return str
+          .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "")
+          .replace(/[\u2600-\u27BF]|[\u2300-\u23FF]|[\u2B50]|[\u2190-\u21FF]/g, "");
+      };
+
+      // Header Brand/Clinic Logo & Name
+      if (customLogoUrl) {
+        if (customLogoStyle === "banner") {
+          const bannerImgEl = document.querySelector('img[alt="Membrete de la Clínica"]') as HTMLImageElement | null;
+          let bannerWidth = 140;
+          let bannerHeight = 28;
+          if (bannerImgEl && bannerImgEl.naturalWidth && bannerImgEl.naturalHeight) {
+            const aspect = bannerImgEl.naturalWidth / bannerImgEl.naturalHeight;
+            const maxWidth = contentWidth;
+            const maxHeight = 30;
+            if (aspect > maxWidth / maxHeight) {
+              bannerWidth = maxWidth;
+              bannerHeight = maxWidth / aspect;
+            } else {
+              bannerHeight = maxHeight;
+              bannerWidth = maxHeight * aspect;
+            }
+          }
+          
+          try {
+            const format = customLogoUrl.toLowerCase().includes("image/png") ? "PNG" : "JPEG";
+            doc.addImage(customLogoUrl, format, (pageWidth - bannerWidth) / 2, yCoord, bannerWidth, bannerHeight);
+            yCoord += bannerHeight + 5;
+          } catch (err) {
+            console.warn("Could not draw banner image inside jsPDF", err);
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(14);
+            doc.setTextColor(15, 23, 42);
+            doc.text(clinicName ? clinicName.toUpperCase() : "ACOMPAÑAMIENTO EXPLICATIVO", pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 6;
+          }
+
+          if (clinicName) {
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(10);
+            doc.setTextColor(15, 23, 42);
+            doc.text(clinicName.toUpperCase(), pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 5;
+          }
+        } else {
+          const logoImgEl = document.querySelector('img[alt="Logo"]') as HTMLImageElement | null;
+          let logoWidth = 22;
+          let logoHeight = 22;
+          if (logoImgEl && logoImgEl.naturalWidth && logoImgEl.naturalHeight) {
+            const aspect = logoImgEl.naturalWidth / logoImgEl.naturalHeight;
+            const maxWidth = 25;
+            const maxHeight = 25;
+            if (aspect > maxWidth / maxHeight) {
+              logoWidth = maxWidth;
+              logoHeight = maxWidth / aspect;
+            } else {
+              logoHeight = maxHeight;
+              logoWidth = maxHeight * aspect;
+            }
+          }
+          
+          try {
+            const format = customLogoUrl.toLowerCase().includes("image/png") ? "PNG" : "JPEG";
+            doc.addImage(customLogoUrl, format, marginX, yCoord, logoWidth, logoHeight);
+          } catch (err) {
+            console.warn("Could not draw logo image inside left header", err);
+          }
+          
+          const textX = marginX + logoWidth + 6;
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(14);
+          doc.setTextColor(15, 23, 42);
+          doc.text(clinicName ? clinicName.toUpperCase() : "ACOMPAÑAMIENTO EXPLICATIVO", textX, yCoord + (logoHeight / 2) - 1.5);
+          
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(9);
+          doc.setTextColor(100, 116, 139);
+          doc.text("EXPLICACIÓN MÉDICA COMPRENSIBLE PARA EL PACIENTE", textX, yCoord + (logoHeight / 2) + 4);
+          
+          yCoord += Math.max(logoHeight, 15) + 6;
+        }
+      } else {
+        let symbolWidth = 0;
+        if (selectedLogo === "medical-cross") {
+          symbolWidth = 14;
+          doc.setDrawColor(220, 38, 38);
+          doc.setFillColor(220, 38, 38);
+          doc.rect(marginX + 5, yCoord, 4, 12, "F");
+          doc.rect(marginX + 1, yCoord + 4, 12, 4, "F");
+        } else if (selectedLogo === "heart-pulse") {
+          symbolWidth = 14;
+          doc.setDrawColor(244, 63, 94);
+          doc.setFillColor(244, 63, 94);
+          doc.rect(marginX + 5, yCoord, 4, 12, "F");
+          doc.rect(marginX + 1, yCoord + 4, 12, 4, "F");
+        } else if (selectedLogo === "dna" || selectedLogo === "shield-check") {
+          symbolWidth = 14;
+          doc.setDrawColor(79, 70, 229);
+          doc.setFillColor(79, 70, 229);
+          doc.rect(marginX + 5, yCoord, 4, 12, "F");
+          doc.rect(marginX + 1, yCoord + 4, 12, 4, "F");
+        }
+
+        if (symbolWidth > 0) {
+          const textX = marginX + symbolWidth + 4;
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(14);
+          doc.setTextColor(15, 23, 42);
+          doc.text(clinicName ? clinicName.toUpperCase() : "ACOMPAÑAMIENTO EXPLICATIVO", textX, yCoord + 5);
+          
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(9);
+          doc.setTextColor(100, 116, 139);
+          doc.text("EXPLICACIÓN MÉDICA COMPRENSIBLE PARA EL PACIENTE", textX, yCoord + 10.5);
+          
+          yCoord += 18;
+        } else {
+          if (clinicName) {
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(14);
+            doc.setTextColor(15, 23, 42);
+            doc.text(clinicName.toUpperCase(), pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 6;
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(9);
+            doc.setTextColor(100, 116, 139);
+            doc.text("EXPLICACIÓN MÉDICA COMPRENSIBLE PARA EL PACIENTE", pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 8;
+          } else {
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(14);
+            doc.setTextColor(15, 23, 42);
+            doc.text("EXPLICACIÓN COMPRENSIBLE DE ESTUDIO RADIOLÓGICO", pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 11;
+          }
+        }
+      }
+
+      // Add a line under header
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.4);
+      doc.line(marginX, yCoord - 2, pageWidth - marginX, yCoord - 2);
+      yCoord += 2;
+
+      // Patient Metadata Block
+      if (patientName || reportDate) {
+        doc.setFillColor(248, 250, 252);
+        doc.rect(marginX, yCoord, contentWidth, 12, "F");
+        doc.setDrawColor(226, 232, 240);
+        doc.rect(marginX, yCoord, contentWidth, 12, "S");
+
+        let xOffset = marginX + 4;
+        let totalDateWidth = 0;
+        
+        if (reportDate) {
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8.5);
+          const dateLabel = "FECHA DEL ESTUDIO: ";
+          totalDateWidth = doc.getTextWidth(dateLabel) + doc.getTextWidth(reportDate);
+        }
+
+        if (patientName) {
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8.5);
+          doc.setTextColor(100, 116, 139);
+          doc.text("PACIENTE: ", xOffset, yCoord + 7.5);
+          const labelWidth = doc.getTextWidth("PACIENTE: ");
+          doc.setFont("helvetica", "bold");
+          doc.setTextColor(15, 23, 42);
+          
+          let patientText = patientName.toUpperCase();
+          const maxNameWidth = (contentWidth - 8 - totalDateWidth) - labelWidth - 4;
+          if (doc.getTextWidth(patientText) > maxNameWidth) {
+            while (patientText.length > 5 && doc.getTextWidth(patientText + "...") > maxNameWidth) {
+              patientText = patientText.slice(0, -1);
+            }
+            patientText += "...";
+          }
+          doc.text(patientText, xOffset + labelWidth, yCoord + 7.5);
+        }
+
+        if (reportDate) {
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8.5);
+          doc.setTextColor(100, 116, 139);
+          const dateLabel = "FECHA DEL ESTUDIO: ";
+          const rightX = marginX + contentWidth - 4 - totalDateWidth;
+          
+          doc.text(dateLabel, rightX, yCoord + 7.5);
+          const dateLabelWidth = doc.getTextWidth(dateLabel);
+          doc.setFont("helvetica", "bold");
+          doc.setTextColor(15, 23, 42);
+          doc.text(reportDate, rightX + dateLabelWidth, yCoord + 7.5);
+        }
+
+        yCoord += 19;
+      }
+
+      // Title of the Document
+      checkPageBreak(12);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(12);
+      doc.setTextColor(15, 23, 42);
+      doc.text("INFORME DE ACOMPAÑAMIENTO Y EXPLICACIÓN SIMPLIFICADA", pageWidth / 2, yCoord, { align: "center" });
+      yCoord += 8;
+
+      // Introduction Summary
+      if (patientSummary.summary) {
+        const cleanSummary = stripEmojis(patientSummary.summary);
+        doc.setFont("times", "normal");
+        doc.setFontSize(10.5);
+        doc.setTextColor(51, 65, 85);
+        
+        const splitSummary = doc.splitTextToSize(cleanSummary, contentWidth);
+        splitSummary.forEach((line: string) => {
+          checkPageBreak(5.5);
+          doc.text(line, marginX, yCoord);
+          yCoord += 5.5;
+        });
+        yCoord += 4;
+      }
+
+      // Key Findings section
+      if (patientSummary.keyFindings && patientSummary.keyFindings.length > 0) {
+        checkPageBreak(15);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(15, 23, 42);
+        doc.text("HALLAZGOS IDENTIFICADOS Y TRADUCIDOS:", marginX, yCoord);
+        yCoord += 7;
+
+        patientSummary.keyFindings.forEach((finding: any) => {
+          const title = stripEmojis(finding.title || "");
+          const originalTerm = stripEmojis(finding.originalTerm || "");
+          const simplifiedExplanation = stripEmojis(finding.simplifiedExplanation || "");
+          const analogy = stripEmojis(finding.analogy || "");
+          const reassurance = stripEmojis(finding.reassurance || "");
+
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(10);
+          const splitTitle = doc.splitTextToSize(title, contentWidth - 10);
+          
+          doc.setFont("times", "italic");
+          doc.setFontSize(9);
+          const splitOrig = doc.splitTextToSize(`Término original en informe técnico: "${originalTerm}"`, contentWidth - 10);
+          
+          doc.setFont("times", "normal");
+          doc.setFontSize(10);
+          const splitExp = doc.splitTextToSize(`Explicación: ${simplifiedExplanation}`, contentWidth - 14);
+
+          doc.setFont("times", "normal");
+          doc.setFontSize(9.5);
+          const splitAnalogy = doc.splitTextToSize(`Analogía de comprensión: ${analogy}`, contentWidth - 14);
+
+          const splitReassurance = doc.splitTextToSize(`Contexto Clínico y Perspectiva Médica: ${reassurance}`, contentWidth - 14);
+
+          const neededHeight = (splitTitle.length * 5) + 
+                               (splitOrig.length * 4) + 
+                               (splitExp.length * 5) + 
+                               (splitAnalogy.length * 4.5) + 
+                               (splitReassurance.length * 4.5) + 20;
+
+          checkPageBreak(neededHeight);
+
+          doc.setFillColor(250, 250, 250);
+          doc.rect(marginX, yCoord, contentWidth, neededHeight - 4, "F");
+          doc.setDrawColor(229, 231, 235);
+          doc.setLineWidth(0.35);
+          doc.rect(marginX, yCoord, contentWidth, neededHeight - 4, "D");
+
+          let interiorY = yCoord + 6;
+
+          // Title
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(10);
+          doc.setTextColor(30, 58, 138); 
+          splitTitle.forEach((line: string) => {
+            doc.text(line, marginX + 5, interiorY);
+            interiorY += 5;
+          });
+
+          // Original term
+          doc.setFont("times", "italic");
+          doc.setFontSize(9);
+          doc.setTextColor(75, 85, 99); 
+          splitOrig.forEach((line: string) => {
+            doc.text(line, marginX + 5, interiorY);
+            interiorY += 4.5;
+          });
+          interiorY += 2;
+
+          // Explanation
+          doc.setFont("times", "normal");
+          doc.setFontSize(10);
+          doc.setTextColor(15, 23, 42); 
+          splitExp.forEach((line: string) => {
+            doc.text(line, marginX + 7, interiorY);
+            interiorY += 4.8;
+          });
+          interiorY += 2;
+
+          // Analogy (orange border bar)
+          const analogyHeight = (splitAnalogy.length * 4.2) + 4;
+          doc.setFillColor(255, 247, 237); 
+          doc.rect(marginX + 5, interiorY - 3, contentWidth - 10, analogyHeight, "F");
+          doc.setDrawColor(249, 115, 22); 
+          doc.setLineWidth(0.5);
+          doc.line(marginX + 5, interiorY - 3, marginX + 5, interiorY - 3 + analogyHeight);
+
+          doc.setFont("times", "normal");
+          doc.setFontSize(9.5);
+          doc.setTextColor(124, 45, 18); 
+          splitAnalogy.forEach((line: string) => {
+            doc.text(line, marginX + 8, interiorY);
+            interiorY += 4.2;
+          });
+          interiorY += 4;
+
+          // Context (blue border bar)
+          const contextHeight = (splitReassurance.length * 4.2) + 4;
+          doc.setFillColor(239, 246, 255); 
+          doc.rect(marginX + 5, interiorY - 3, contentWidth - 10, contextHeight, "F");
+          doc.setDrawColor(59, 130, 246); 
+          doc.setLineWidth(0.5);
+          doc.line(marginX + 5, interiorY - 3, marginX + 5, interiorY - 3 + contextHeight);
+
+          doc.setFont("times", "normal");
+          doc.setFontSize(9.5);
+          doc.setTextColor(30, 58, 138); 
+          splitReassurance.forEach((line: string) => {
+            doc.text(line, marginX + 8, interiorY);
+            interiorY += 4.2;
+          });
+
+          yCoord += neededHeight + 2;
+        });
+        yCoord += 4;
+      }
+
+      // Care Points Section
+      if (patientSummary.carePoints && patientSummary.carePoints.length > 0) {
+        checkPageBreak(22);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(15, 23, 42);
+        doc.text("PAUTAS Y RECOMENDACIONES DE BIENESTAR:", marginX, yCoord);
+        yCoord += 7;
+
+        patientSummary.carePoints.forEach((point: string) => {
+          const cleanPoint = stripEmojis(point);
+          const splitPoint = doc.splitTextToSize(cleanPoint, contentWidth - 8);
+          
+          checkPageBreak((splitPoint.length * 5) + 3);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(10.5);
+          doc.setTextColor(15, 23, 42);
+          doc.text("•", marginX + 2, yCoord);
+
+          doc.setFont("times", "normal");
+          doc.setFontSize(10.5);
+          doc.setTextColor(51, 65, 85);
+
+          splitPoint.forEach((line: string, i: number) => {
+            doc.text(line, marginX + 6, yCoord + (i * 4.8));
+          });
+          yCoord += (splitPoint.length * 4.8) + 2.5;
+        });
+        yCoord += 4;
+      }
+
+      // Suggested Questions Section
+      if (patientSummary.suggestedQuestions && patientSummary.suggestedQuestions.length > 0) {
+        checkPageBreak(22);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(15, 23, 42);
+        doc.text("PREGUNTAS SUGERIDAS PARA SU CONSULTA MÉDICA:", marginX, yCoord);
+        yCoord += 7;
+
+        patientSummary.suggestedQuestions.forEach((q: string, idx: number) => {
+          const cleanQ = stripEmojis(q);
+          const splitQ = doc.splitTextToSize(`"${cleanQ}"`, contentWidth - 8);
+
+          checkPageBreak((splitQ.length * 5) + 3);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(10);
+          doc.setTextColor(15, 23, 42);
+          doc.text(`${idx + 1}.`, marginX + 2, yCoord);
+
+          doc.setFont("times", "bold");
+          doc.setFontSize(10);
+          doc.setTextColor(30, 41, 59);
+
+          splitQ.forEach((line: string, i: number) => {
+            doc.text(line, marginX + 7, yCoord + (i * 4.8));
+          });
+          yCoord += (splitQ.length * 4.8) + 3;
+        });
+      }
+
+      // Signature / Sign-off block
+      if (doctorName || customSignatureUrl) {
+        checkPageBreak(30);
+        yCoord += 15;
+
+        doc.setDrawColor(226, 232, 240);
+        doc.setLineWidth(0.3);
+        doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
+        yCoord += 6;
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(7.5);
+        doc.setTextColor(148, 163, 184);
+        doc.text("VERIFICADO POR:", marginX, yCoord);
+        doc.setFont("helvetica", "normal");
+        doc.text("Firma Digital Autónoma", marginX, yCoord + 4);
+
+        if (customSignatureUrl) {
+          try {
+            let sigWidth = 40;
+            let sigHeight = 12;
+            const sigImgEl = document.querySelector('img[alt="Firma"]') as HTMLImageElement | null;
+            if (sigImgEl && sigImgEl.naturalWidth && sigImgEl.naturalHeight) {
+              const aspect = sigImgEl.naturalWidth / sigImgEl.naturalHeight;
+              const maxWidth = 55;
+              const maxHeight = 16;
+              if (aspect > maxWidth / maxHeight) {
+                sigWidth = maxWidth;
+                sigHeight = maxWidth / aspect;
+              } else {
+                sigHeight = maxHeight;
+                sigWidth = maxHeight * aspect;
+              }
+            }
+            const sigX = pageWidth - marginX - sigWidth - 8;
+            const sigY = (yCoord - 6) - sigHeight - 1;
+            const format = customSignatureUrl.toLowerCase().includes("image/png") ? "PNG" : "JPEG";
+            doc.addImage(customSignatureUrl, format, sigX, sigY, sigWidth, sigHeight);
+          } catch (imgError) {
+            console.warn("Could not render custom signature image inside jsPDF", imgError);
+          }
+        }
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9.5);
+        doc.setTextColor(15, 23, 42);
+        const docText = (doctorName || "MÉDICO ESPECIALISTA").toUpperCase();
+        const docTextWidth = doc.getTextWidth(docText);
+        doc.text(docText, pageWidth - marginX - docTextWidth, yCoord + 4);
+
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8);
+        doc.setTextColor(100, 116, 139);
+        const titleText = "Médico Especialista en Radiodiagnóstico";
+        const titleTextWidth = doc.getTextWidth(titleText);
+        doc.text(titleText, pageWidth - marginX - titleTextWidth, yCoord + 8);
+      }
+
+      if (returnBase64) {
+        const dataUri = doc.output("datauristring");
+        return dataUri.split(",")[1];
+      }
+
+      if (shareViaWebShare) {
+        const blob = doc.output("blob");
+        const filename = patientName ? `${patientName.trim().replace(/\s+/gi, "_")}_explicacion.pdf` : "explicacion_paciente.pdf";
+        const file = new File([blob], filename, { type: "application/pdf" });
+        if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: "Explicación del Estudio",
+            text: `Explicación amigable del estudio para ${patientName || "Paciente"}`
+          });
+        } else {
+          doc.save(filename);
+        }
+      } else if (openInNewTab) {
+        const blob = doc.output("blob");
+        const blobUrl = URL.createObjectURL(blob);
+        window.open(blobUrl, "_blank");
+      } else {
+        const filename = patientName ? `Explicacion_${patientName.trim().replace(/\s+/gi, "_")}.pdf` : "explicacion_paciente.pdf";
+        doc.save(filename);
+      }
+    } catch (err) {
+      console.error("Error generating native explanation PDF through jsPDF:", err);
+      alert("Ocurrió un error al generar el PDF explicativo: " + String(err));
     }
   };
 
@@ -3955,6 +5844,17 @@ Ejemplo:
         return "Oclusión";
       }
 
+      // 2.5 aterosclerosis (prioritized check to prevent fallback to estenosis difusa)
+      if (
+        descText.includes("enfermedad aterosclerótica") ||
+        descText.includes("enfermedad aterosclerotica") ||
+        descText.includes("aterosclerosis") ||
+        descText.includes("aterosclerótica") ||
+        descText.includes("aterosclerotica")
+      ) {
+        return "Aterosclerosis";
+      }
+
       // 3. estenosis focal
       if (
         descText.includes("estenosis focal") || 
@@ -3970,8 +5870,8 @@ Ejemplo:
       // 4. estenosis difusa
       if (
         descText.includes("estenosis difusa") || 
-        descText.includes("difusa") || 
-        descText.includes("difuso")
+        descText.includes("estenosis difuso") ||
+        descText.includes("estenosis difusas")
       ) {
         return "Estenosis difusa";
       }
@@ -6243,6 +8143,20 @@ Ejemplo:
                           </div>
 
                           <div className="space-y-1.5 sm:col-span-2">
+                            <label className="text-[9px] font-black text-slate-500 block uppercase tracking-widest leading-none">Correo Electrónico del Paciente (Opcional):</label>
+                            <input
+                              type="email"
+                              value={patientEmail}
+                              onChange={(e) => {
+                                setPatientEmail(e.target.value);
+                                localStorage.setItem("rad_patient_email", e.target.value);
+                              }}
+                              placeholder="Ej: paciente@correo.com"
+                              className="w-full bg-slate-950 border border-slate-800 focus:border-indigo-500 rounded-lg py-2 px-3 text-xs font-bold text-slate-100 focus:outline-none placeholder-slate-650 transition-all"
+                            />
+                          </div>
+
+                          <div className="space-y-1.5 sm:col-span-2">
                             <label className="text-[9px] font-black text-slate-500 block uppercase tracking-widest leading-none">Fecha del Estudio / Reporte:</label>
                             <input
                               type="date"
@@ -6425,44 +8339,150 @@ Ejemplo:
 
                             {/* Additional display options for active custom logo */}
                             {customLogoUrl && (
-                              <div className="bg-slate-900/40 border border-slate-850 rounded-xl p-3 mt-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-left">
-                                <div className="flex items-center gap-2">
-                                  <img 
-                                    src={customLogoUrl} 
-                                    alt="Logotipo Activo" 
-                                    className="h-9 max-w-[90px] bg-white rounded border border-slate-700 object-contain p-0.5 shrink-0" 
-                                    referrerPolicy="no-referrer"
-                                  />
-                                  <div className="space-y-0.5">
-                                    <span className="text-[8.5px] font-black text-indigo-400 uppercase tracking-widest block leading-none">Estilo en el PDF:</span>
-                                    <span className="text-[8px] text-slate-500 font-bold block">Ajusta cómo se proyecta tu logotipo</span>
+                              <div className="space-y-3 mt-2">
+                                <div className="bg-slate-900/40 border border-slate-850 rounded-xl p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-left">
+                                  <div className="flex items-center gap-2">
+                                    <img 
+                                      src={customLogoUrl} 
+                                      alt="Logotipo Activo" 
+                                      className="h-9 max-w-[90px] bg-white rounded border border-slate-700 object-contain p-0.5 shrink-0" 
+                                      referrerPolicy="no-referrer"
+                                    />
+                                    <div className="space-y-0.5">
+                                      <span className="text-[8.5px] font-black text-indigo-400 uppercase tracking-widest block leading-none">Estilo en el PDF:</span>
+                                      <span className="text-[8px] text-slate-500 font-bold block">Ajusta cómo se proyecta tu logotipo</span>
+                                    </div>
+                                  </div>
+                                  
+                                  <div className="flex gap-1.5 shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleChangeCustomLogoStyle("left")}
+                                      className={`px-3 py-1 rounded-lg text-[8.5px] font-black uppercase border select-none transition-all cursor-pointer ${
+                                        customLogoStyle === "left"
+                                          ? "bg-indigo-900 border-indigo-700 text-white"
+                                          : "bg-slate-950 border-slate-800 text-slate-500 hover:text-slate-300"
+                                      }`}
+                                    >
+                                      Izquierda
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleChangeCustomLogoStyle("banner")}
+                                      className={`px-3 py-1 rounded-lg text-[8.5px] font-black uppercase border select-none transition-all cursor-pointer ${
+                                        customLogoStyle === "banner"
+                                          ? "bg-indigo-900 border-indigo-700 text-white"
+                                          : "bg-slate-950 border-slate-800 text-slate-500 hover:text-slate-300"
+                                      }`}
+                                      title="Membrete completo estilo Banner horizontal"
+                                    >
+                                      Banner Ancho
+                                    </button>
                                   </div>
                                 </div>
-                                
-                                <div className="flex gap-1.5 shrink-0">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleChangeCustomLogoStyle("left")}
-                                    className={`px-3 py-1 rounded-lg text-[8.5px] font-black uppercase border select-none transition-all cursor-pointer ${
-                                      customLogoStyle === "left"
-                                        ? "bg-indigo-900 border-indigo-700 text-white"
-                                        : "bg-slate-950 border-slate-800 text-slate-500 hover:text-slate-300"
-                                    }`}
-                                  >
-                                    Izquierda
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleChangeCustomLogoStyle("banner")}
-                                    className={`px-3 py-1 rounded-lg text-[8.5px] font-black uppercase border select-none transition-all cursor-pointer ${
-                                      customLogoStyle === "banner"
-                                        ? "bg-indigo-900 border-indigo-700 text-white"
-                                        : "bg-slate-950 border-slate-800 text-slate-500 hover:text-slate-300"
-                                    }`}
-                                    title="Membrete completo estilo Banner horizontal"
-                                  >
-                                    Banner Ancho
-                                  </button>
+
+                                {/* Interactive real-time A4 printable document limits mockup */}
+                                <div className="bg-slate-900/30 border border-slate-850/60 rounded-xl p-3.5 space-y-2.5 text-left">
+                                  <div className="flex justify-between items-center">
+                                    <span className="text-[8.5px] font-black text-indigo-400 uppercase tracking-widest font-mono block">Margen de Impresión A4 de Referencia:</span>
+                                    <span className="text-[7.5px] text-slate-400 font-bold block bg-slate-950 px-1.5 py-0.5 rounded border border-slate-850">Previsualización Física</span>
+                                  </div>
+
+                                  <div className="flex justify-center py-2 bg-slate-950/40 rounded-lg">
+                                    <div 
+                                      className="relative bg-white border border-gray-200 shadow-md p-2 flex flex-col justify-between select-none overflow-hidden"
+                                      style={{ width: "130px", height: "184px" }}
+                                    >
+                                      {/* Margen A4 Guías de Esquina / Trim Marks */}
+                                      <div className="absolute top-2 left-0 w-2 h-[0.5px] bg-red-400/60"></div>
+                                      <div className="absolute top-0 left-2 w-[0.5px] h-2 bg-red-400/60"></div>
+                                      <div className="absolute top-2 right-0 w-2 h-[0.5px] bg-red-400/60"></div>
+                                      <div className="absolute top-0 right-2 w-[0.5px] h-2 bg-red-400/60"></div>
+                                      <div className="absolute bottom-2 left-0 w-2 h-[0.5px] bg-red-400/60"></div>
+                                      <div className="absolute bottom-0 left-2 w-[0.5px] h-2 bg-red-400/60"></div>
+                                      <div className="absolute bottom-2 right-0 w-2 h-[0.5px] bg-red-400/60"></div>
+                                      <div className="absolute bottom-0 right-2 w-[0.5px] h-2 bg-red-400/60"></div>
+
+                                      {/* Guías de regla de margen de impresión lateral y superior */}
+                                      <div className="absolute left-2 top-0 bottom-0 border-l border-dashed border-rose-200/50 pointer-events-none"></div>
+                                      <div className="absolute right-2 top-0 bottom-0 border-r border-dashed border-rose-200/50 pointer-events-none"></div>
+                                      <div className="absolute top-2 left-0 right-0 border-t border-dashed border-rose-200/50 pointer-events-none"></div>
+                                      <div className="absolute bottom-2 left-0 right-0 border-b border-dashed border-rose-200/50 pointer-events-none"></div>
+
+                                      {/* Indicador de Límites de impresión */}
+                                      <div className="absolute top-0.5 left-2.5 text-[3.5px] font-black text-rose-500 font-mono leading-none pointer-events-none scale-75 origin-left">
+                                        MARGEN 15mm
+                                      </div>
+
+                                      {/* Outer dotted layout boundary lines indicating standard print margins constraint */}
+                                      <div className="absolute inset-2 border border-dashed border-sky-450/40 rounded pointer-events-none flex flex-col justify-between p-1.5">
+                                        
+                                        {/* Dynamic Header logo position based on current choice */}
+                                        <div className="w-full flex flex-col gap-1">
+                                          {customLogoStyle === "banner" ? (
+                                            /* Banner Style: Centered Horizontal full-width image placeholder block */
+                                            <div className="w-full h-5 bg-slate-50 border border-slate-200/80 rounded flex items-center justify-center p-0.5 overflow-hidden">
+                                              <img 
+                                                src={customLogoUrl} 
+                                                alt="Banner Prueba A4" 
+                                                className="h-full w-full object-contain" 
+                                                referrerPolicy="no-referrer"
+                                              />
+                                            </div>
+                                          ) : (
+                                            /* Left Style: Corner-anchored Logo with medical tags simulator */
+                                            <div className="flex items-start gap-1">
+                                              <div className="w-5 h-5 bg-slate-50 border border-slate-200/80 rounded p-0.5 shrink-0 overflow-hidden">
+                                                <img 
+                                                  src={customLogoUrl} 
+                                                  alt="Logo Izquierda Prueba A4" 
+                                                  className="h-full w-full object-contain" 
+                                                  referrerPolicy="no-referrer"
+                                                />
+                                              </div>
+                                              <div className="flex-1 space-y-0.5 pt-0.5">
+                                                <div className="h-1 bg-slate-400 rounded w-10"></div>
+                                                <div className="h-[2.5px] bg-slate-300 rounded w-12"></div>
+                                                <div className="h-[2px] bg-slate-200 rounded w-8"></div>
+                                              </div>
+                                            </div>
+                                          )}
+
+                                          {/* Dividing line corresponding to header limits */}
+                                          <div className="h-[0.5px] bg-slate-200 w-full mt-0.5"></div>
+                                        </div>
+
+                                        {/* Representative sample technical text lines mimicking the findings section */}
+                                        <div className="flex-1 my-2 flex flex-col justify-start gap-1">
+                                          <div className="space-y-0.5">
+                                            <div className="h-[2.5px] bg-slate-350 rounded w-full"></div>
+                                            <div className="h-[2.5px] bg-slate-200 rounded w-11/12"></div>
+                                            <div className="h-[2.5px] bg-slate-200 rounded w-10/12"></div>
+                                          </div>
+                                          <div className="space-y-0.5 pt-1">
+                                            <div className="h-[3.5px] bg-slate-400 rounded w-1/3"></div>
+                                            <div className="h-[2.5px] bg-slate-200 rounded w-full"></div>
+                                            <div className="h-[2.5px] bg-slate-150 rounded w-11/12"></div>
+                                          </div>
+                                        </div>
+
+                                        {/* Safe document bottom signature block */}
+                                        <div className="w-full flex justify-between items-center border-t border-slate-100 pt-0.5 text-[3.5px] text-slate-300 tracking-tight">
+                                          <span>Reporte Clínico</span>
+                                          <span>Pág. 1 de 1</span>
+                                        </div>
+
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="text-[7.5px] text-slate-450 leading-relaxed font-mono">
+                                    {customLogoStyle === "banner" ? (
+                                      <p>🌐 <strong className="text-slate-300">Formato Centrado Horizontal:</strong> El logotipo ocupará de forma equilibrada la posición de membrete ancho, alineando toda la documentación exactamente debajo del separador del encabezado.</p>
+                                    ) : (
+                                      <p>📌 <strong className="text-slate-300">Formato Esquina Superior Izquierda:</strong> El logotipo respetará el margen de encuadre técnico lateral, liberando espacio para las líneas secundarias del destinatario y datos del paciente.</p>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
                             )}
@@ -6718,6 +8738,20 @@ Ejemplo:
                             <Download className="h-3.5 w-3.5 text-indigo-400" /> Descargar PDF
                           </button>
                           <button
+                            onClick={() => handleOpenWhatsAppShare('report_pdf')}
+                            className="px-3 md:px-4 py-1.5 md:py-2 bg-emerald-600 hover:bg-emerald-550 border-2 border-emerald-500/30 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider text-white transition-all flex items-center gap-1.5 md:gap-2 shadow-lg select-none whitespace-nowrap cursor-pointer"
+                            title="Enviar reporte PDF firmado directamente a WhatsApp"
+                          >
+                            <MessageSquare className="h-3.5 w-3.5 text-white" /> WhatsApp PDF
+                          </button>
+                          <button
+                            onClick={() => handleOpenGmailShare('report_pdf')}
+                            className="px-3 md:px-4 py-1.5 md:py-2 bg-red-700 hover:bg-red-650 border-2 border-red-500/30 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider text-white transition-all flex items-center gap-1.5 md:gap-2 shadow-lg select-none whitespace-nowrap cursor-pointer"
+                            title="Enviar reporte PDF firmado directamente por Correo usando Gmail"
+                          >
+                            <Mail className="h-3.5 w-3.5 text-white" /> Gmail PDF
+                          </button>
+                          <button
                             onClick={() => copyToClipboard(generatedReport, true)}
                             className="px-3 md:px-4 py-1.5 md:py-2 bg-emerald-600 hover:bg-emerald-550 border-2 border-emerald-500/30 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider text-white transition-all flex items-center gap-1.5 md:gap-2 shadow-lg select-none whitespace-nowrap cursor-pointer"
                           >
@@ -6741,6 +8775,23 @@ Ejemplo:
                           <div className="mb-6 p-4 bg-slate-800 rounded-xl border border-pink-600/30">
                              <h4 className="text-sm font-bold text-pink-300 mb-2">Infografía Generada:</h4>
                              <img src={infographicUrl} alt="Infografía Paciente" className="w-full rounded-lg" referrerPolicy="no-referrer" />
+                             <div className="mt-3 flex justify-end gap-2">
+                               <button
+                                 onClick={() => handleOpenWhatsAppShare('patient_infographic')}
+                                 className="px-4 py-2 bg-emerald-600 hover:bg-emerald-550 border-2 border-emerald-500/30 rounded-xl text-xs font-black uppercase tracking-wider text-white transition-all flex items-center gap-2 shadow-lg cursor-pointer"
+                                 title="Compartir infografía visual por WhatsApp directamente"
+                               >
+                                 <MessageSquare className="h-4 w-4" /> Enviar por WhatsApp
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenGmailShare('patient_infographic')}
+                                  className="px-4 py-2 bg-red-750 hover:bg-red-700 border-2 border-red-500/30 rounded-xl text-xs font-black uppercase tracking-wider text-white transition-all flex items-center gap-2 shadow-lg cursor-pointer animate-fadeIn"
+                                  title="Compartir infografía visual por Correo Electrónico usando Gmail"
+                                >
+                                  <Mail className="h-4 w-4 text-white" /> Enviar por Gmail
+                                </button>
+                             </div>
                           </div>
                         )}
                         {infographicError && (
@@ -7059,8 +9110,213 @@ Ejemplo:
                           ) : (
                             <div className="bg-slate-950 p-6 sm:p-8 rounded-2xl border-2 border-slate-850 shadow-inner overflow-x-auto select-text text-slate-100 selection:bg-indigo-900 selection:text-white">
                               {renderClinicalReport(generatedReport)}
+                              
+                              {/* Visual On-Screen Gallery of Attached Images */}
+                              {attachedImages.length > 0 && (
+                                <div className="mt-8 pt-8 border-t border-slate-850 animate-fadeIn">
+                                  <div className="flex items-center gap-2 mb-4">
+                                    <FileImage className="h-4 w-4 text-indigo-400" />
+                                    <h3 className="text-xs font-black uppercase tracking-widest text-slate-200">
+                                      Anexo: Registro de Capturas Diagnósticas ({attachedImages.length})
+                                    </h3>
+                                  </div>
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {attachedImages.map((img) => (
+                                      <div key={img.id} className="bg-slate-900/60 p-3 rounded-xl border border-slate-800 flex flex-col gap-2">
+                                        <img src={img.url} alt={img.name} className="w-full aspect-[4/3] object-cover rounded bg-black border border-slate-950" />
+                                        {img.caption && (
+                                          <div className="text-xs font-semibold text-slate-300 italic text-center mt-1">“{img.caption}”</div>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           )}
+
+                          {/* Interactive Attachment Manager Panel */}
+                          <div className="bg-slate-900 border-2 border-slate-850 rounded-2xl p-5 shadow-xl space-y-4">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <FileImage className="h-4.5 w-4.5 text-cyan-400" />
+                                <h3 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
+                                  Anexar Imágenes e Informes de Ultrasonido / DICOM
+                                </h3>
+                              </div>
+                              <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-cyan-950 text-cyan-400 border border-cyan-900/30 px-2 py-0.5 rounded">
+                                LOCAL E INTERNO
+                              </span>
+                            </div>
+                            
+                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
+                              Selecciona archivos individuales o una carpeta completa de imágenes DICOM/ultrasonido de tu computadora. Las acomodaremos al final del reporte y se añadirán de forma automática en tu PDF final para exportar todo el archivo.
+                            </p>
+
+                            {/* Drag and Drop Zone and File Input Triggers */}
+                            <div 
+                              className="border-2 border-dashed border-slate-800 hover:border-indigo-500 bg-slate-950 p-6 rounded-xl flex flex-col items-center justify-center gap-3 transition-colors cursor-pointer group"
+                              onDragOver={(e) => {
+                                e.preventDefault();
+                              }}
+                              onDrop={(e) => {
+                                e.preventDefault();
+                                if (e.dataTransfer && e.dataTransfer.files) {
+                                  handleAttachedFiles(e.dataTransfer.files);
+                                }
+                              }}
+                            >
+                              <div className="p-3 bg-slate-900 rounded-full border border-slate-800 group-hover:border-indigo-500 group-hover:text-indigo-400 text-slate-500 transition-colors">
+                                <Upload className="h-6 w-6" />
+                              </div>
+                              <div className="text-center space-y-1">
+                                <p className="text-[11px] font-bold text-slate-350 uppercase tracking-wider">
+                                  Arrastra tus imágenes o archivos DICOM aquí
+                                </p>
+                                <p className="text-[9px] font-mono text-slate-500">
+                                  O utiliza una de las opciones de selección directa de abajo
+                                </p>
+                              </div>
+                              
+                              {/* File Selection Buttons */}
+                              <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+                                <label className="px-3 py-2 bg-indigo-600/10 hover:bg-indigo-600/20 border border-indigo-500/20 hover:border-indigo-500/40 rounded-lg text-[9px] font-black uppercase tracking-wider text-indigo-400 transition-all cursor-pointer flex items-center gap-1.5 shadow-md">
+                                  <Plus className="h-3 w-3" />
+                                  Elegir Archivos
+                                  <input 
+                                    type="file" 
+                                    multiple 
+                                    accept="image/*,.dcm,.DCM" 
+                                    onChange={(e) => handleAttachedFiles(e.target.files)} 
+                                    className="hidden" 
+                                  />
+                                </label>
+                                
+                                <label className="px-3 py-2 bg-slate-900 hover:bg-slate-850 border border-slate-800 rounded-lg text-[9px] font-black uppercase tracking-wider text-slate-300 transition-all cursor-pointer flex items-center gap-1.5 shadow-md">
+                                  <Layers className="h-3 w-3 text-cyan-400" />
+                                  Elegir Carpeta Completa
+                                  <input 
+                                    type="file" 
+                                    {...({
+                                      webkitdirectory: "",
+                                      directory: "",
+                                      multiple: true
+                                    } as any)}
+                                    onChange={(e) => handleAttachedFiles(e.target.files)} 
+                                    className="hidden" 
+                                  />
+                                </label>
+                              </div>
+                            </div>
+
+                            {/* List/Grid of Thumbnails with caption modification & reorder & delete */}
+                            {attachedImages.length > 0 && (
+                              <div className="space-y-3 pt-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] font-mono text-slate-450 uppercase font-black tracking-wider">
+                                    Imágenes Cargadas ({attachedImages.length})
+                                  </span>
+                                  <button 
+                                    onClick={() => setAttachedImages([])}
+                                    className="px-2 py-1 bg-rose-955/20 hover:bg-rose-950/60 border border-rose-900/30 text-rose-400 text-[9px] font-black uppercase tracking-widest rounded transition-all flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Trash2 className="h-3 w-3" /> Limpiar Todo
+                                  </button>
+                                </div>
+                                
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                  {attachedImages.map((img, idx) => (
+                                    <div key={img.id} className="bg-slate-950 p-3 rounded-xl border border-slate-850 flex flex-col gap-2.5 relative group">
+                                      {/* Delete Corner Button */}
+                                      <button 
+                                        onClick={() => {
+                                          setAttachedImages(prev => prev.filter(item => item.id !== img.id));
+                                        }}
+                                        className="absolute top-2 right-2 p-1.5 bg-slate-900 hover:bg-rose-950 border border-slate-800 hover:border-rose-800 text-slate-400 hover:text-rose-450 rounded-lg transition-all opacity-0 group-hover:opacity-100 cursor-pointer"
+                                        title="Eliminar de los anexos del estudio"
+                                      >
+                                        <X className="h-3.5 w-3.5" />
+                                      </button>
+
+                                      <div className="relative aspect-[4/3] bg-black rounded overflow-hidden border border-slate-900">
+                                        <img src={img.url} alt={img.name} className="w-full h-full object-cover" />
+                                        {img.isDicom && (
+                                          <span className="absolute bottom-1 right-1 px-1.5 py-0.5 bg-cyan-600 text-white font-mono text-[8px] font-extrabold rounded select-none tracking-wider">
+                                            DICOM
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      <div className="space-y-2">
+                                        <div className="text-[9px] font-mono text-slate-500 truncate" title={img.name}>
+                                          {img.name}
+                                        </div>
+                                        
+                                        {/* Edit Caption Input Box */}
+                                        <div className="space-y-1">
+                                          <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest block font-mono">
+                                            Descripción / Hallazgo:
+                                          </label>
+                                          <input 
+                                            type="text"
+                                            value={img.caption}
+                                            onChange={(e) => {
+                                              const val = e.target.value;
+                                              setAttachedImages(prev => prev.map(item => item.id === img.id ? { ...item, caption: val } : item));
+                                            }}
+                                            className="w-full bg-slate-900 border border-slate-800 focus:border-indigo-500 px-2 py-1 text-[11px] font-medium text-slate-200 outline-none rounded"
+                                            placeholder="p. ej. Bifurcación Carotídea con placa hiperecogénica"
+                                          />
+                                        </div>
+
+                                        {/* Rearrange buttons */}
+                                        <div className="flex items-center justify-between pt-1">
+                                          <span className="text-[8px] font-mono text-slate-600">
+                                            Posición: {idx + 1} de {attachedImages.length}
+                                          </span>
+                                          
+                                          <div className="flex gap-1">
+                                            <button 
+                                              disabled={idx === 0}
+                                              onClick={() => {
+                                                setAttachedImages(prev => {
+                                                  const next = [...prev];
+                                                  const temp = next[idx];
+                                                  next[idx] = next[idx - 1];
+                                                  next[idx - 1] = temp;
+                                                  return next;
+                                                });
+                                              }}
+                                              className="p-1 bg-slate-900 hover:bg-slate-800 disabled:opacity-20 border border-slate-800 text-slate-350 rounded transition-all cursor-pointer text-[10px]"
+                                              title="Mover Anterior"
+                                            >
+                                              ←
+                                            </button>
+                                            <button 
+                                              disabled={idx === attachedImages.length - 1}
+                                              onClick={() => {
+                                                setAttachedImages(prev => {
+                                                  const next = [...prev];
+                                                  const temp = next[idx];
+                                                  next[idx] = next[idx + 1];
+                                                  next[idx + 1] = temp;
+                                                  return next;
+                                                });
+                                              }}
+                                              className="p-1 bg-slate-900 hover:bg-slate-800 disabled:opacity-20 border border-slate-800 text-slate-350 rounded transition-all cursor-pointer text-[10px]"
+                                              title="Mover Siguiente"
+                                            >
+                                              →
+                                            </button>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
 
                           {/* === VASCULAR DOPPLER ANALYZER & SCHEMATIC HUD === */}
                           {(specificStudy === "Doppler de carótidas" || 
@@ -7537,7 +9793,7 @@ Ejemplo:
                               {/* Background ambient light */}
                               <div className="absolute top-0 right-0 w-48 h-48 bg-orange-500/5 rounded-full blur-3xl pointer-events-none" />
                               
-                              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-orange-950/40 pb-4 font-sans">
+                              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 border-b border-orange-950/40 pb-4 font-sans">
                                 <div className="flex items-center gap-2">
                                   <User className="h-5 w-5 text-orange-400" />
                                   <div className="text-left">
@@ -7549,13 +9805,38 @@ Ejemplo:
                                     </p>
                                   </div>
                                 </div>
-                                <div className="flex items-center gap-2">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <button
+                                    onClick={() => handleDownloadPatientSummaryPDF(false)}
+                                    className="text-[9px] font-black text-[#0f100e] hover:bg-orange-300 border border-orange-400 px-3 py-1.5 rounded-xl bg-orange-400 uppercase tracking-wider font-mono transition-all flex items-center gap-1.5 cursor-pointer"
+                                    title="Descargar el PDF explicativo para el paciente en formato impreso/digital de alta definición"
+                                  >
+                                    <Download className="h-3 w-3" />
+                                    Descargar PDF Explicación
+                                  </button>
                                   <button
                                     onClick={handlePrintPatientSummary}
-                                    className="text-[9px] font-black text-slate-150 hover:text-orange-400 border-2 border-orange-500/25 hover:border-orange-500/50 px-3 py-1.5 rounded-xl bg-orange-950/20 uppercase tracking-wider font-mono transition-all flex items-center gap-1.5 cursor-pointer"
+                                    className="text-[9px] font-black text-slate-150 hover:text-orange-400 border border-orange-500/25 hover:border-orange-500/50 px-3 py-1.5 rounded-xl bg-orange-950/20 uppercase tracking-wider font-mono transition-all flex items-center gap-1.5 cursor-pointer"
+                                    title="Imprimir formato de visualización web"
                                   >
                                     <Printer className="h-3 w-3" />
-                                    Imprimir/Guardar PDF
+                                    Imprimir Formato
+                                  </button>
+                                  <button
+                                    onClick={() => handleOpenWhatsAppShare('patient_summary')}
+                                    className="text-[9px] font-black text-white hover:text-emerald-400 border-2 border-emerald-500/25 hover:border-emerald-500/50 px-3 py-1.5 rounded-xl bg-slate-950/40 uppercase tracking-wider font-mono transition-all flex items-center gap-1.5 cursor-pointer"
+                                    title="Enviar explicación estructurada y amigable al paciente por WhatsApp con descarga de PDF"
+                                  >
+                                    <MessageSquare className="h-3 w-3 text-emerald-400" />
+                                    WhatsApp Explicación (PDF)
+                                  </button>
+                                  <button
+                                    onClick={() => handleOpenGmailShare('patient_summary')}
+                                    className="text-[9px] font-black text-white hover:text-red-400 border-2 border-red-500/25 hover:border-red-500/50 px-3 py-1.5 rounded-xl bg-slate-950/40 uppercase tracking-wider font-mono transition-all flex items-center gap-1.5 cursor-pointer"
+                                    title="Enviar explicación estructurada y amigable al paciente por Correo Electrónico usando Gmail"
+                                  >
+                                    <Mail className="h-3 w-3 text-red-400" />
+                                    Gmail Explicación (PDF)
                                   </button>
                                   <button
                                     onClick={() => copyToClipboard(JSON.stringify(patientSummary, null, 2), false)}
@@ -7622,11 +9903,11 @@ Ejemplo:
                                               </p>
                                             </div>
 
-                                            <div className="p-3.5 bg-emerald-950/10 border-l-2 border-emerald-500/30 rounded-r-xl space-y-1">
-                                              <p className="text-[8px] font-black text-emerald-450 uppercase tracking-widest font-mono flex items-center gap-1.5">
-                                                <span>🛡️</span> Orientación y Alivio Clínico:
+                                            <div className="p-3.5 bg-blue-950/20 border-l-2 border-blue-500/40 rounded-r-xl space-y-1">
+                                              <p className="text-[8px] font-black text-blue-400 uppercase tracking-widest font-mono flex items-center gap-1.5">
+                                                <span>🩺</span> Contexto Clínico y Perspectiva Médica:
                                               </p>
-                                              <p className="text-[11px] text-emerald-250 leading-relaxed font-sans">
+                                              <p className="text-[11px] text-blue-200 leading-relaxed font-sans">
                                                 {finding.reassurance}
                                               </p>
                                             </div>
@@ -9155,6 +11436,366 @@ Ejemplo:
                 <Printer className="h-4 w-4" />
                 <span>Ejecutar Impresión</span>
               </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* 🟢 MODAL DE COMPARTIDO POR WHATSAPP (REPORTES, INFOGRAFÍA Y RESUMEN) */}
+      {showWhatsAppModal && (
+        <div className="no-print fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="bg-slate-900 border-2 border-slate-800 rounded-3xl w-full max-w-xl overflow-hidden flex flex-col shadow-2xl"
+          >
+            {/* Header */}
+            <div className="bg-slate-950 px-6 py-4 border-b border-slate-850 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">🟢</span>
+                <h3 className="text-sm font-black text-white uppercase tracking-wider font-mono">
+                  Compartir vía WhatsApp (Pacientes)
+                </h3>
+              </div>
+              <button 
+                onClick={() => setShowWhatsAppModal(false)}
+                className="text-slate-400 hover:text-white p-1 bg-slate-900 rounded-lg border border-slate-800 hover:border-slate-700 transition-colors cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 space-y-4 overflow-y-auto text-left">
+              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">
+                Estás a punto de enviar {
+                  whatsappShareType === 'report_pdf' 
+                    ? "el Reporte Clínico Oficial (PDF)" 
+                    : whatsappShareType === 'patient_infographic' 
+                      ? "la Infografía Visual Explicativa" 
+                      : "el Resumen Científico Simplificado"
+                } correspondiente a: <span className="text-indigo-400">{patientName || "Paciente sin registrar"}</span>.
+              </p>
+
+              {/* Celular Input */}
+              <div className="space-y-1.5">
+                <label className="text-[9px] font-black text-slate-300 uppercase tracking-widest font-mono">
+                  Número de Celular del Paciente (Opcional):
+                </label>
+                <div className="flex gap-2">
+                  <span className="flex items-center justify-center px-3 bg-slate-950 border-2 border-slate-850 rounded-xl text-xs text-slate-400 font-mono font-bold">
+                    +
+                  </span>
+                  <input
+                    type="tel"
+                    placeholder="Ej: 5491100000000 (con código de país sin + ni espacios)"
+                    value={whatsappPhone}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/[^0-9]/g, "");
+                      setWhatsappPhone(val);
+                      localStorage.setItem("rad_whatsapp_phone", val);
+                    }}
+                    className="flex-1 px-4 py-2 bg-slate-950 hover:bg-slate-900 border-2 border-slate-850 focus:border-emerald-500 rounded-xl text-xs font-mono text-white placeholder-slate-600 focus:outline-none transition-all"
+                  />
+                </div>
+                <p className="text-[9px] text-slate-500 leading-relaxed uppercase font-mono tracking-wider">
+                  Si dejas el número vacío, WhatsApp te permitirá seleccionar cualquier contacto o grupo al abrir la aplicación.
+                </p>
+              </div>
+
+              {/* Message Preview */}
+              <div className="space-y-1.5">
+                <label className="text-[9px] font-black text-slate-300 uppercase tracking-widest font-mono">
+                  Vista Previa del Mensaje a Enviar:
+                </label>
+                <div className="p-4 bg-slate-950 border-2 border-slate-850 rounded-2xl max-h-48 overflow-y-auto font-mono text-[10px] md:text-xs text-slate-300 whitespace-pre-wrap leading-relaxed select-text font-sans">
+                  {getWhatsAppTextPreview()}
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                <button
+                  onClick={handleSendWhatsAppAction}
+                  className="w-full p-3 bg-emerald-600 hover:bg-emerald-550 border-2 border-emerald-500/10 rounded-xl text-xs font-black text-white uppercase tracking-wider transition-all shadow-md active:scale-95 text-center cursor-pointer flex items-center justify-center gap-2 font-mono"
+                >
+                  <Send className="h-4 w-4" />
+                  <span>Enviar por WhatsApp</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    const text = getWhatsAppTextPreview();
+                    copyToClipboard(text, false);
+                    alert("¡Mensaje copiado al portapapeles con éxito! Puedes pegarlo directamente en cualquier chat.");
+                  }}
+                  className="w-full p-3 bg-slate-950 hover:bg-slate-900/60 border-2 border-slate-850 hover:border-slate-700/50 rounded-xl text-xs font-bold text-slate-300 uppercase tracking-wider transition-all shadow-md active:scale-95 text-center cursor-pointer flex items-center justify-center gap-2 font-mono"
+                >
+                  <Copy className="h-4 w-4 text-emerald-400" />
+                  <span>Copiar Mensaje</span>
+                </button>
+              </div>
+
+              {/* Advisory details */}
+              <div className="p-3 bg-indigo-950/20 border border-indigo-900/30 rounded-xl text-[9px] text-slate-400 leading-relaxed font-mono uppercase tracking-wide">
+                {whatsappShareType === 'report_pdf' && (
+                  <p>
+                    💡 <strong>Consejo para ordenadores:</strong> Al hacer clic en "Enviar", se abrirá WhatsApp Web/Escritorio con el mensaje pre-redactado. El PDF oficial del informe clínico se descargará de manera automática para que puedas arrastrarlo y enviarlo al mismo chat. En teléfonos móviles o tabletas, se activará el panel nativo para enviar el documento en un solo paso.
+                  </p>
+                )}
+                {whatsappShareType === 'patient_infographic' && (
+                  <p>
+                    💡 <strong>Consejo de imagen:</strong> La infografía se enviará como un enlace de visualización en alta definición. En teléfonos móviles compatibles, el dispositivo también intentará adjuntar la imagen original de forma directa al chat seleccionado.
+                  </p>
+                )}
+                {whatsappShareType === 'patient_summary' && (
+                  <p>
+                    💡 <strong>Consejo del resumen:</strong> El mensaje contiene todo el texto estructurado, analogías y recomendaciones adaptadas para el paciente. Se formateará con los estilos nativos de WhatsApp (*Negritas* e _Itálicas_) para una lectura cómoda.
+                  </p>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* 🔴 MODAL DE COMPARTIDO POR CORREO ELECTRÓNICO (GMAIL INTEGRATOR) */}
+      {showGmailModal && (
+        <div className="no-print fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="bg-slate-900 border-2 border-slate-800 rounded-3xl w-full max-w-xl overflow-hidden flex flex-col shadow-2xl"
+          >
+            {/* Header */}
+            <div className="bg-slate-950 px-6 py-4 border-b border-slate-850 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Mail className="h-5 w-5 text-red-555 animate-pulse" />
+                <h3 className="text-sm font-black text-white uppercase tracking-wider font-mono">
+                  Compartir vía Gmail Integrado
+                </h3>
+              </div>
+              <button 
+                onClick={() => setShowGmailModal(false)}
+                className="text-slate-400 hover:text-white p-1 bg-slate-900 rounded-lg border border-slate-800 hover:border-slate-700 transition-colors cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Content body */}
+            <div className="p-6 space-y-4 overflow-y-auto text-left max-h-[80vh]">
+              {/* Authenticated user banner or Sign in call */}
+              {!gmailAccessToken ? (
+                <div className="p-5 border border-indigo-500/20 bg-indigo-950/10 rounded-2xl flex flex-col items-center justify-center text-center space-y-3.5">
+                  <div className="w-12 h-12 bg-indigo-500/10 text-indigo-400 rounded-full flex items-center justify-center">
+                    <Mail className="h-6 w-6" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="text-xs font-black text-slate-100 uppercase tracking-widest font-mono">
+                      Inicia Sesión con Google
+                    </h4>
+                    <p className="text-[10px] text-slate-400 font-sans tracking-wide leading-relaxed uppercase">
+                      Para enviar correos en tu nombre a través del servicio seguro de Gmail, se requiere iniciar sesión.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleGmailLogin}
+                    disabled={isLoggingInGmail}
+                    className="px-5 py-2.5 bg-red-600 hover:bg-red-550 disabled:opacity-50 text-white font-mono font-black text-[10px] uppercase tracking-widest rounded-xl transition-all cursor-pointer flex items-center gap-2"
+                  >
+                    {isLoggingInGmail ? (
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <span>Iniciar Sesión con Google</span>
+                    )}
+                  </button>
+                </div>
+              ) : (
+                <div className="p-3 bg-emerald-950/20 border border-emerald-900/30 rounded-2xl flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-full border border-emerald-500/30 bg-emerald-950 flex items-center justify-center text-emerald-400 font-black font-mono text-[10px] uppercase">
+                      {gmailUser?.displayName?.charAt(0) || "U"}
+                    </div>
+                    <div className="text-left font-sans">
+                      <p className="text-[10px] font-black text-slate-200 uppercase tracking-wide leading-tight">
+                        Autorizado como:
+                      </p>
+                      <p className="text-[9px] font-medium text-slate-400 leading-normal">
+                        {gmailUser?.email || "Cuenta de Google"}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleGmailLogout}
+                    className="text-[8.5px] font-black text-slate-400 hover:text-rose-400 uppercase tracking-wider font-mono px-2 py-1 bg-slate-950 border border-slate-850 hover:border-rose-950 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+                    title="Cerrar la sesión de Gmail actual"
+                  >
+                    <LogOut className="h-3 w-3" />
+                    <span>Cerrar Sesión</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Status alerts */}
+              {gmailSuccessMessage && (
+                <div className="p-3 bg-emerald-950/20 border border-emerald-800/40 rounded-xl text-emerald-400 text-[10px] font-mono font-bold uppercase tracking-wide text-left flex items-start gap-2 animate-fadeIn">
+                  <Check className="h-4 w-4 shrink-0 mt-0.5" />
+                  <span>{gmailSuccessMessage}</span>
+                </div>
+              )}
+
+              {gmailErrorMessage && (
+                <div className="p-3 bg-rose-950/25 border border-rose-900/30 rounded-xl text-rose-400 text-[10px] font-mono font-bold uppercase tracking-wide text-left flex items-start gap-2 animate-fadeIn">
+                  <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                  <span>{gmailErrorMessage}</span>
+                </div>
+              )}
+
+              {gmailAccessToken && !gmailSuccessMessage && (
+                <div className="space-y-4 animate-fadeIn">
+                  {/* To recipient */}
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black text-slate-300 uppercase tracking-widest font-mono">
+                      Correo Destinatario (Paciente):
+                    </label>
+                    <input
+                      type="email"
+                      placeholder="Ej: paciente@correo.com"
+                      value={gmailTo}
+                      onChange={(e) => setGmailTo(e.target.value)}
+                      className="w-full px-4 py-2 bg-slate-950 hover:bg-slate-900 border-2 border-slate-850 focus:border-red-500 rounded-xl text-xs font-sans font-bold text-white placeholder-slate-600 focus:outline-none transition-all"
+                    />
+                  </div>
+
+                  {/* Subject */}
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black text-slate-300 uppercase tracking-widest font-mono">
+                      Asunto del Correo:
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Asunto"
+                      value={gmailSubject}
+                      onChange={(e) => setGmailSubject(e.target.value)}
+                      className="w-full px-4 py-2 bg-slate-950 hover:bg-slate-900 border-2 border-slate-850 focus:border-red-500 rounded-xl text-xs font-sans font-bold text-white placeholder-slate-600 focus:outline-none transition-all"
+                    />
+                  </div>
+
+                  {/* Selectores de Adjuntos (Checkboxes Avanzados) */}
+                  <div className="space-y-2">
+                    <label className="text-[9px] font-black text-slate-300 uppercase tracking-widest font-mono">
+                      Seleccionar Archivos para Adjuntar:
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      {/* Adjunto 1: Reporte Médico */}
+                      <button
+                        type="button"
+                        onClick={() => setGmailAttachReport(!gmailAttachReport)}
+                        disabled={!generatedReport}
+                        className={`p-3 border-2 rounded-xl text-[9px] font-bold uppercase tracking-wider font-mono transition-all cursor-pointer flex flex-col items-center justify-center gap-1.5 min-h-[64px] ${
+                          !generatedReport
+                            ? "opacity-40 cursor-not-allowed bg-slate-950 border-slate-900 text-slate-650"
+                            : gmailAttachReport
+                              ? "bg-red-950/20 border-red-500 text-red-500"
+                              : "bg-slate-950 border-slate-850 hover:border-slate-800 text-slate-500"
+                        }`}
+                        title={!generatedReport ? "Debe generar primero el reporte de estudio" : "Adjuntar el reporte de estudio en PDF"}
+                      >
+                        <span className="text-[10px] font-black">📄 Reporte de Estudio</span>
+                        <span className="text-[8px] font-normal tracking-normal text-slate-400 uppercase leading-none">
+                          {generatedReport ? (gmailAttachReport ? "✓ Seleccionado" : "Haga clic para adjuntar") : "No Generado"}
+                        </span>
+                      </button>
+
+                      {/* Adjunto 2: Traducción Explicativa */}
+                      <button
+                        type="button"
+                        onClick={() => setGmailAttachSummary(!gmailAttachSummary)}
+                        disabled={!patientSummary}
+                        className={`p-3 border-2 rounded-xl text-[9px] font-bold uppercase tracking-wider font-mono transition-all cursor-pointer flex flex-col items-center justify-center gap-1.5 min-h-[64px] ${
+                          !patientSummary
+                            ? "opacity-40 cursor-not-allowed bg-slate-950 border-slate-900 text-slate-650"
+                            : gmailAttachSummary
+                              ? "bg-red-950/20 border-red-500 text-red-500"
+                              : "bg-slate-950 border-slate-850 hover:border-slate-800 text-slate-500"
+                        }`}
+                        title={!patientSummary ? "Debe generar la Traducción Empática" : "Adjuntar la Traducción Empática en PDF"}
+                      >
+                        <span className="text-[10px] font-black">🗣 Explicación</span>
+                        <span className="text-[8px] font-normal tracking-normal text-slate-400 uppercase leading-none">
+                          {patientSummary ? (gmailAttachSummary ? "✓ Seleccionado" : "Haga clic para adjuntar") : "No Generada"}
+                        </span>
+                      </button>
+
+                      {/* Adjunto 3: Infografía */}
+                      <button
+                        type="button"
+                        onClick={() => setGmailAttachInfographic(!gmailAttachInfographic)}
+                        disabled={!infographicUrl}
+                        className={`p-3 border-2 rounded-xl text-[9px] font-bold uppercase tracking-wider font-mono transition-all cursor-pointer flex flex-col items-center justify-center gap-1.5 min-h-[64px] ${
+                          !infographicUrl
+                            ? "opacity-40 cursor-not-allowed bg-slate-950 border-slate-900 text-slate-650"
+                            : gmailAttachInfographic
+                              ? "bg-red-950/20 border-red-500 text-red-500"
+                              : "bg-slate-950 border-slate-850 hover:border-slate-800 text-slate-500"
+                        }`}
+                        title={!infographicUrl ? "Debe generar la Infografía de paciente" : "Adjuntar la Infografía en formato de imagen"}
+                      >
+                        <span className="text-[10px] font-black">🎨 Infografía</span>
+                        <span className="text-[8px] font-normal tracking-normal text-slate-400 uppercase leading-none">
+                          {infographicUrl ? (gmailAttachInfographic ? "✓ Seleccionado" : "Haga clic para adjuntar") : "No Generada"}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Body text */}
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black text-slate-300 uppercase tracking-widest font-mono">
+                      Mensaje Escrito (Cuerpo del correo):
+                    </label>
+                    <textarea
+                      placeholder="Redacta el mensaje..."
+                      value={gmailBody}
+                      onChange={(e) => setGmailBody(e.target.value)}
+                      rows={5}
+                      className="w-full px-4 py-3 bg-slate-950 border-2 border-slate-850 focus:border-red-500 rounded-2xl text-xs font-sans font-medium text-slate-300 placeholder-slate-605 focus:outline-none transition-all resize-none leading-relaxed"
+                    />
+                  </div>
+
+                  {/* Main Actions dispatch */}
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={handleSendGmailAction}
+                      disabled={isSendingGmail || !gmailTo.trim() || !gmailSubject.trim()}
+                      className="w-full p-3 bg-red-600 hover:bg-red-550 disabled:opacity-50 border-2 border-red-500/10 rounded-xl text-xs font-black text-white uppercase tracking-wider transition-all shadow-md active:scale-95 text-center cursor-pointer flex items-center justify-center gap-2 font-mono"
+                    >
+                      {isSendingGmail ? (
+                        <>
+                          <RefreshCw className="h-4 w-4 animate-spin text-white" />
+                          <span>Preparando Adjuntos y Enviando Correo...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send className="h-4 w-4" />
+                          <span>Enviar Correo vía Gmail</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            {/* Footer */}
+            <div className="bg-slate-950 p-4 border-t border-slate-850 text-center font-mono text-[8px] text-slate-500 uppercase tracking-widest">
+              Conexión Encriptada SSL • Google Secure OAuth API
             </div>
           </motion.div>
         </div>

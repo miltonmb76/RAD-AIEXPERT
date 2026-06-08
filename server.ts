@@ -664,7 +664,8 @@ Instrucciones:
 3. Si la clasificación aplicada o los resultados calculados involucran valores de QUS (Quantitative Ultrasound) o ELASTOGRAFÍA, asegúrate de que el título del informe o en la descripción técnica se mencione explícitamente "realizado con QUS" o "realizado con Elastografía" SOLAMENTE si realmente se realizó dicha técnica en ese estudio específico. No asumas que ambas técnicas se hicieron si solo una se menciona.
 4. Inserta y fusiona esta clasificación ya calculada (incluyendo su grado/conducta sugerida y su sustento clínico rápido) adecuadamente dentro del reporte. Lo ideal es integrarlo de manera estructurada en la sección de "IMPRESIÓN DIAGNÓSTICA" o agregar un apartado fino titulado "CLASIFICACIÓN" o "ESCALA APLICADA" sin desconfigurar el resto del reporte.
 5. **IMPORTANTE**: No pegues la escala completa con todas sus variantes ni plantillas genéricas sin rellenar. Solo debes aplicar la categoría o escala específica de este paciente.
-6. Devuelve EXCLUSIVAMENTE el reporte médico radiológico modificado al completo en español, manteniendo el mismo formato limpio, espaciado y profesional. No agregues saludos, explicaciones, ni notas fuera del informe.
+6. **REGLA ESTRICTA DE MAYÚSCULAS/MINÚSCULAS (CASING)**: No escribas los textos de los cambios ni la escala o clasificación completamente en mayúsculas (ALL CAPS / All-uppercase). Debes escribir en minúsculas estándar, respetando el uso correcto de mayúsculas iniciales para nombres de secciones o clasificaciones y el formato circundante o preexistente de la sección del reporte. La incorporación debe hacerse usando el formato gramatical regular ordinario de mayúsculas y minúsculas (ej: escribiendo 'Grado II según Bosniak' en lugar de 'GRADO II SEGÚN BOSNIAK').
+7. Devuelve EXCLUSIVAMENTE el reporte médico radiológico modificado al completo en español, manteniendo el mismo formato limpio, espaciado y profesional. No agregues saludos, explicaciones, ni notas fuera del informe.
 `;
 
     const response = await ai.models.generateContent({
@@ -739,6 +740,7 @@ Por favor, reescribe el reporte manteniendo exactamente el mismo formato estruct
 4. NUNCA utilices justificaciones didácticas o meta-comentarios como: "Se incluye la clasificación para...", "Con el fin de facilitar el manejo por urología/clínicos...", "Al clasificar esto...", "Se sugiere agregar...", "Recomendación de auditoría:".
 5. Integra la clasificación o hallazgo de forma directa y sobria. Por ejemplo: si la recomendación es "Agregar clasificación Bosniak", escribe directamente el grado correspondiente (ej: "Quiste renal izquierdo Bosniak I") en la descripción de los hallazgos o impresión diagnóstica, sin dar explicaciones ni preámbulos de por qué se hace.
 6. Nunca inventes hallazgos no sustentados, pero desarrolla la redacción académica y formal al máximo nivel.
+7. **REGLA ESTRICTA DE MAYÚSCULAS/MINÚSCULAS (CASING)**: Bajo ninguna circunstancia debes escribir el texto nuevo, los cambios o la síntesis completamente en mayúsculas (ALL CAPS / All-uppercase). Debes escribir en minúsculas estándar, respetando el uso correcto de mayúsculas iniciales y adaptándote perfectamente al formato y caja (casing) del reporte original y del texto circundante. La incorporación debe hacerse usando el formato gramatical regular ordinario de mayúsculas y minúsculas (ej: escribiendo 'Dolor en la fosa ilíaca' en lugar de 'DOLOR EN LA FOSA ILÍACA'). No alteres el casing original de las secciones que no fueron editadas.
 
 Devuelve únicamente el reporte modificado en formato Markdown, sin notas aclaratorias antes o después coordinadas en el exterior.
 `;
@@ -808,6 +810,7 @@ Misión:
 4. REQUISITO CRÍTICO DE DISEÑO, BREVEDAD Y LENGUAJE:
    - Está ESTRICTAMENTE PROHIBIDO usar lenguaje generativo u aclarativo (ej. evita "Se sugiere diagnóstico...", "Síntesis de diferencial...", "El modelo propone..."). Escribe de manera directa, asertiva y formal, simulando que fue redactado desde el inicio por el radiólogo principal de forma muy sucinta.
    - La síntesis debe ser breve para no sobrecargar el informe. Máximo un párrafo ultra corto o dos oraciones condensadas en total.
+   - **REGLA ESTRICTA DE MAYÚSCULAS/MINÚSCULAS (CASING)**: No escribas esta síntesis o los cambios completamente en mayúsculas (ALL CAPS / All-uppercase). Debes escribirla en minúsculas estándar, respetando el uso correcto de mayúsculas iniciales y adaptándote perfectamente al formato y caja del reporte original.
    - Conserva todo el resto del informe (técnica, hallazgos, estructura) intacto.
 
 Devuelve de manera estricta y exclusiva el reporte radiológico COMPLETO resultante en formato Markdown. No agregues observaciones, de lo contrario fallará.
@@ -2135,29 +2138,33 @@ app.post("/api/generate-patient-summary", async (req: express.Request, res: expr
 
     const promptText = `
 Estudio clínico / tipo de estudio: ${studyType || "No especificado"}
-Indicación clínica / Sospecha: ${clinicalHistory || "No especificada"}
+Indicación clínica / Sospecha: ${clinicalHistory || "No específica"}
 
 Reporte Radiológico formal:
 """
 ${report}
 """
 
-Por favor, traduce este reporte radiológico formal de alta complejidad médica en un objeto JSON estructurado diseñado para el paciente.
-La información debe explicarse con una empatía humana excepcional, un tono sumamente tranquilizador, cálido, optimista, libre de jerga científica aterradora pero con rigurosa honestidad física.
+Por favor, traduce este reporte radiológico formal de alta complejidad médica en un objeto JSON estructurado diseñado para el paciente. 
+
+PAUTAS DE TONO Y ESTILO REDACCIONAL (CRÍTICAS):
+- Tono neutral y profesional: Toda la información debe ser explicada con claridad y precisión clínica elemental, pero con un tono estrictamente neutro, objetivo y profesional. 
+- Evita el paternalismo y la condescendencia: No intentes "tranquilizar", "calmar" o "consolar" de manera activa ni forzada. El objetivo es que el paciente entienda sus hallazgos anatómicos concretos, no disminuir su percepción del reporte restándole seriedad.
+- Vocabulario sencillo pero formal: Utiliza términos accesibles y de fácil lectura pero evita a toda costa expresiones que resulten innecesariamente coloquiales, infantiles o informales. 
+- Honestidad y veracidad científica: Transmite la realidad de las descripciones médicas de manera directa, clara y sobria.
+- Omisión de Recomendaciones: NO se debe incluir ningún tipo de recomendación práctica de salud, ejercicio, hábitos, postura o bienestar que sugiera al paciente qué debe hacer. Concéntrate EXCLUSIVAMENTE en la explicación objetiva de los hallazgos ya descritos.
 
 Devuelve un objeto JSON con las siguientes propiedades:
-1. "summary": Una introducción amena de 2 a 3 párrafos explicando qué tipo de estudio se le realizó, qué estructuras se observan sanas (¡muy importante destacar lo sano para calmar al paciente!), y un resumen descriptivo pero tranquilizador y alentador sobre los hallazgos principales identificados.
-2. "keyFindings": Una lista de los hallazgos clave identificados, donde para cada uno se entrega:
-   - "title": Nombre amigable del hallazgo o región anatómica (ej: "Zonas bajas del Pulmón" o "Hueso del Hombro").
-   - "originalTerm": El término radiológico técnico original que aparece en el informe (ej: "Opacidad basal", "Osteonecosis", o "Rotura parcial").
-   - "simplifiedExplanation": Una explicación clara, llana e intuitiva de qué significa físicamente (ej: "Hay una pequeña zona donde el aire normal del pulmón no pasa libremente, similar a una esponja húmeda. Esto es sumamente común en resfriados o procesos de inflamación normal, no implica peligro inmediato").
-   - "analogy": Una analogía de la vida cotidiana ingeniosa, cálida y comprensible (ej: "Imagínate un filtro de cafetera ligeramente obstruido; el agua sigue fluyendo pero un poco más despacio. Tu cuerpo está resolviendo esa mínima acumulación de líquido de forma natural").
-   - "reassurance": Mensaje explícito de alivio o tranquilidad (ej: "Muchos de estos hallazgos son descubrimientos incidentales normales de la edad o variaciones saludables de tu cuerpo que ocurren sin causar dolor ni enfermedad real").
-3. "carePoints": Entre 3 y 4 puntos formativos de cuidado saludable en casa y hábitos saludables generales para potenciar el alivio práctico (no prescribas medicamentos específicos, prefiere recomendaciones generales del bienestar).
-4. "suggestedQuestions": 3 sugerencias de preguntas proactivas y constructivas que el paciente puede realizarle a su médico familiar o especialista clínico en su consulta de seguimiento.
+1. "summary": Una descripción objetiva de 2 a 3 párrafos explicando qué tipo de estudio se le realizó, qué estructuras principales se detallan o resultan normales, y una síntesis descriptiva y neutral de los hallazgos principales identificados. NO debe contener recomendaciones, sugerencias de preguntas, pautas de conducta ni consejos de ningún tipo.
+2. "keyFindings": Una lista de los hallazgos identificados, donde para cada uno se entrega:
+   - "title": Nombre claro o región anatómica afectada en lenguaje accesible (ej: "Articulación del Hombro" o "Zonas inferiores del Pulmón").
+   - "originalTerm": El término radiológico técnico original tal cual aparece en el informe (ej: "Opacidad basal", "Osteonecrosis", o "Rotura parcial").
+   - "simplifiedExplanation": Una explicación clara, objetiva e intuitiva de qué significa físicamente a nivel anatómico, expresada de manera comprensible pero formal (sin adjetivos tranquilizadores redundantes, sugerencias ni recomendaciones).
+   - "analogy": Una analogía física, estructural u operativa de la vida diaria estrictamente con fines ilustrativos y didácticos (por ejemplo: filtros, conductos, elasticidad de cables, desgaste de componentes) que facilite la comprensión mecánica sin caer en términos infantiles o excesivamente coloquiales.
+   - "reassurance": Contexto clínico objetivo y neutral sobre el hallazgo. Describe la perspectiva médica estándar para este hallazgo (por ejemplo, si se asocia comúnmente con cambios crónicos, hallazgos incidentales típicos o si requiere una revisión cronológica simple, redactado de forma neutral y absolutamente libre de indicaciones, recomendaciones terapéuticas, pautas o preguntas sugeridas).
 `;
 
-    const systemInstruction = "Eres un especialista en comunicación médica empática, medicina familiar y traducción de informes diagnósticos de nivel experto. Tu meta es guiar al paciente para que entienda perfectamente sus hallazgos de forma amigable, positiva y alentadora, disipando la ansiedad clásica de la lectura de reportes y destacando un camino claro hacia la salud.";
+    const systemInstruction = "Eres un especialista en comunicación médica institucional, traducción clínica orientada al paciente y radiodiagnóstico. Tu meta es transcribir informes complejos en términos comprensibles pero formales, manteniendo un tono completamente neutro, científico, maduro y objetivo. Evitas por completo el paternalismo, frases de alivio auto-complacientes, consuelos, rodeos coloquiales innecesarios, preguntas sugeridas o recomendaciones de salud o bienestar de cualquier índole. REQUISITO CRÍTICO: El JSON de salida solo debe contener la explicación descriptiva y científica simplificada de los hallazgos, libre de cualquier tipo de recomendación o sugerencia de preguntas para la consulta.";
 
     const response = await ai.models.generateContent({
       model: selectedModel,
@@ -2183,17 +2190,9 @@ Devuelve un objeto JSON con las siguientes propiedades:
                 },
                 required: ["title", "originalTerm", "simplifiedExplanation", "analogy", "reassurance"]
               }
-            },
-            carePoints: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING }
-            },
-            suggestedQuestions: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING }
             }
           },
-          required: ["summary", "keyFindings", "carePoints", "suggestedQuestions"]
+          required: ["summary", "keyFindings"]
         }
       }
     });

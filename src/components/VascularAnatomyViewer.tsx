@@ -207,6 +207,17 @@ export default function VascularAnatomyViewer({
       return "Oclusión";
     }
 
+    // 2.5 aterosclerosis (prioritized check to prevent fallback to estenosis difusa)
+    if (
+      descText.includes("enfermedad aterosclerótica") ||
+      descText.includes("enfermedad aterosclerotica") ||
+      descText.includes("aterosclerosis") ||
+      descText.includes("aterosclerótica") ||
+      descText.includes("aterosclerotica")
+    ) {
+      return "Aterosclerosis";
+    }
+
     // 3. estenosis focal
     if (
       descText.includes("estenosis focal") || 
@@ -222,8 +233,8 @@ export default function VascularAnatomyViewer({
     // 4. estenosis difusa
     if (
       descText.includes("estenosis difusa") || 
-      descText.includes("difusa") || 
-      descText.includes("difuso")
+      descText.includes("estenosis difuso") ||
+      descText.includes("estenosis difusas")
     ) {
       return "Estenosis difusa";
     }
