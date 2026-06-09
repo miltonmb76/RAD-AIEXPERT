@@ -8,11 +8,12 @@ import { motion, AnimatePresence } from "motion/react";
 
 interface ExpertImageAnalysisProps {
   selectedModel?: string;
-  onIncorporateToReport: (analysisText: string, studyTitle: string, medicalHistoryCombined: string) => void;
+  onIncorporateToReport: (analysisText: string, studyTitle: string, medicalHistoryCombined: string, isAutoSync?: boolean) => void;
   renderElegantResponse: (text: string, accentColor?: string) => React.ReactNode;
   exportedImage?: string | null;
   exportedMimeType?: string;
   clearExportedImage?: () => void;
+  findings?: string;
 }
 
 // Helper to determine accurate image source path or base64 structure
@@ -610,7 +611,8 @@ export default function ExpertImageAnalysis({
   renderElegantResponse,
   exportedImage = null,
   exportedMimeType = "",
-  clearExportedImage
+  clearExportedImage,
+  findings = ""
 }: ExpertImageAnalysisProps) {
   // Image 1 state
   const [image1, setImage1] = useState<string | null>(null);
@@ -823,6 +825,7 @@ export default function ExpertImageAnalysis({
   const [copied, setCopied] = useState<boolean>(false);
   const [incorporated, setIncorporated] = useState<boolean>(false);
   const [isExtracting, setIsExtracting] = useState<boolean>(false);
+  const [isAutoSyncing, setIsAutoSyncing] = useState<boolean>(false);
   const [extractError, setExtractError] = useState<string | null>(null);
 
   // Interactive follow-up consultations & aspect suggest state
@@ -1292,11 +1295,18 @@ export default function ExpertImageAnalysis({
 
       const data = await response.json();
       if (response.ok && data.success && data.newMessage) {
-        setConsultationHistory((prev) => [
-          ...prev,
+        const nextHistory = [
+          ...consultationHistory,
           { query: followUpQuery, answer: data.newMessage },
-        ]);
+        ];
+        setConsultationHistory(nextHistory);
         setFollowUpQuery("");
+
+        // If previously injected, auto-sync back with the parent findings representation
+        const hasBeenInjected = findings && findings.includes("=== VALORACIÓN EXPERTA DE IMAGEN ANEXADA ===");
+        if (hasBeenInjected) {
+          handleIncorporateToGenerator(true, nextHistory);
+        }
       } else {
         setFollowUpError(data.error || "No se pudo procesar la consulta por el radiólogo especialista AI.");
       }
@@ -1314,17 +1324,22 @@ export default function ExpertImageAnalysis({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleIncorporateToGenerator = async () => {
+  const handleIncorporateToGenerator = async (isAutoSync = false, overrideHistory?: Array<{ query: string; answer: string }>) => {
     if (!analysisResult) return;
     
-    setIsExtracting(true);
+    if (!isAutoSync) {
+      setIsExtracting(true);
+    } else {
+      setIsAutoSyncing(true);
+    }
     setExtractError(null);
     try {
       // Build a consolidated text showing the initial result followed by the sequence of consultations to prioritize latest corrections
       let consolidatedContext = `ANÁLISIS INICIAL:\n${analysisResult}`;
-      if (consultationHistory.length > 0) {
+      const historyToUse = overrideHistory || consultationHistory;
+      if (historyToUse.length > 0) {
         consolidatedContext += `\n\n=== HISTORIAL DE COMPLEMENTOS Y CORRECCIONES POSTERIORES (CHAT ACTIVO) ===`;
-        consultationHistory.forEach((item, index) => {
+        historyToUse.forEach((item, index) => {
           consolidatedContext += `\n\n[Consulta #${index + 1} del Especialista]: ${item.query}\n[Respuesta / Corrección del Radiólogo AI]: ${item.answer}`;
         });
       }
@@ -1347,16 +1362,26 @@ export default function ExpertImageAnalysis({
             (image3 ? ` vs 3. ${desc3} (${modality3})` : "")
           : `Valoración Experta de Imagen: ${desc1} (${modality1})`;
 
-        onIncorporateToReport(data.extractedText, studyTitleCombined, combinedHistory);
-        setIncorporated(true);
-        setTimeout(() => setIncorporated(false), 2500);
+        onIncorporateToReport(data.extractedText, studyTitleCombined, combinedHistory, isAutoSync);
+        if (!isAutoSync) {
+          setIncorporated(true);
+          setTimeout(() => setIncorporated(false), 2500);
+        }
       } else {
-        setExtractError(data.error || "No se pudo extraer los hallazgos esenciales.");
+        if (!isAutoSync) {
+          setExtractError(data.error || "No se pudo extraer los hallazgos esenciales.");
+        }
       }
     } catch (err: any) {
-      setExtractError("Error de comunicación/red al estructurar los hallazgos.");
+      if (!isAutoSync) {
+        setExtractError("Error de comunicación/red al estructurar los hallazgos.");
+      }
     } finally {
-      setIsExtracting(false);
+      if (!isAutoSync) {
+        setIsExtracting(false);
+      } else {
+        setIsAutoSyncing(false);
+      }
     }
   };
 
@@ -2436,6 +2461,13 @@ export default function ExpertImageAnalysis({
                         <p className="text-[10px] text-red-400 font-mono font-bold uppercase tracking-wider">
                           ⚠️ {followUpError}
                         </p>
+                      )}
+                      
+                      {isAutoSyncing && (
+                        <div className="flex items-center gap-1.5 text-[10px] text-indigo-400 font-mono animate-pulse mt-1">
+                          <Loader2 className="h-3 w-3 animate-spin text-indigo-400" />
+                          <span>Actualizando y sincronizando correcciones de forma automática en el Generador...</span>
+                        </div>
                       )}
                       
                       <p className="text-[9px] text-slate-500 font-mono italic">

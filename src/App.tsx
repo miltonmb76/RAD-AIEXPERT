@@ -1778,13 +1778,30 @@ Ejemplo:
     }
   };
 
-  const handleIncorporateToReport = (analysisText: string, studyTitle: string, medicalHistoryCombined: string) => {
+  const handleIncorporateToReport = (analysisText: string, studyTitle: string, medicalHistoryCombined: string, isAutoSync: boolean = false) => {
+    const wrappedContent = `=== VALORACIÓN EXPERTA DE IMAGEN ANEXADA ===\n${analysisText}\n=== FIN DE VALORACIÓN EXPERTA ===`;
+    
     setFindings(prev => {
-      const header = `=== VALORACIÓN EXPERTA DE IMAGEN ANEXADA ===\n${analysisText}\n\n`;
-      if (!prev) return header;
-      return `${header}\n${prev}`;
+      if (!prev) return `${wrappedContent}\n\n`;
+      
+      const regex = /=== VALORACIÓN EXPERTA DE IMAGEN ANEXADA ===[\s\S]*?=== FIN DE VALORACIÓN EXPERTA ===/;
+      if (regex.test(prev)) {
+        return prev.replace(regex, wrappedContent);
+      }
+      
+      if (prev.includes("=== VALORACIÓN EXPERTA DE IMAGEN ANEXADA ===")) {
+        const splitted = prev.split("=== VALORACIÓN EXPERTA DE IMAGEN ANEXADA ===");
+        const afterPart = splitted.slice(1).join(" ");
+        const cleanedAfter = afterPart.replace(/^[\s\S]*?\n\n/, "");
+        return `${wrappedContent}\n\n${splitted[0]}${cleanedAfter}`;
+      }
+      
+      return `${wrappedContent}\n\n${prev}`;
     });
-    setActiveTab("generator");
+
+    if (!isAutoSync) {
+      setActiveTab("generator");
+    }
   };
 
   // ACTION: REQUEST ADDITIONAL OR SECOND VIEW CLINICAL EVALUATION OF THE IMAGE
@@ -11104,6 +11121,7 @@ Ejemplo:
                   exportedImage={exportedImage}
                   exportedMimeType={exportedMimeType}
                   clearExportedImage={clearExportedImage}
+                  findings={findings}
                 />
               </motion.div>
             )}
