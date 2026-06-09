@@ -6,7 +6,9 @@ import {
   ExternalLink, 
   GraduationCap, 
   Sparkles, 
-  RotateCcw
+  RotateCcw,
+  Maximize2,
+  Minimize2
 } from "lucide-react";
 
 interface BibliographySearchProps {
@@ -20,6 +22,7 @@ export default function BibliographySearch({ renderElegantResponse }: Bibliograp
   const [sources, setSources] = useState<Array<{ uri: string; title: string; summary?: string }>>([]);
   const [error, setError] = useState<string | null>(null);
   const [activePreset, setActivePreset] = useState<string | null>(null);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   const handleSearch = async (overrideQuery?: string) => {
     const searchQuery = overrideQuery || query;
@@ -158,7 +161,10 @@ export default function BibliographySearch({ renderElegantResponse }: Bibliograp
       {results && !isSearching && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 text-left animate-fade-in-up">
           {/* Main response panel */}
-          <div className="lg:col-span-8 bg-[#04060C]/95 border-2 border-slate-850 p-6 rounded-3xl shadow-2xl relative overflow-hidden space-y-5">
+          <div className={isExpanded 
+            ? "fixed inset-4 md:inset-10 z-50 bg-[#04060C]/98 backdrop-blur-2xl border-2 border-indigo-500/40 p-6 md:p-8 rounded-3xl shadow-2xl flex flex-col space-y-5 overflow-y-auto animate-fade-in"
+            : "lg:col-span-8 bg-[#04060C]/95 border-2 border-slate-850 p-6 rounded-3xl shadow-2xl relative overflow-hidden space-y-5"
+          }>
             <div className="absolute top-0 right-0 w-80 h-80 bg-indigo-500/2 rounded-full blur-3xl -z-10" />
             
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
@@ -168,14 +174,32 @@ export default function BibliographySearch({ renderElegantResponse }: Bibliograp
                   SÍNTESIS BIBLIOGRÁFICA Y RECOMENDACIÓN LITERARIA
                 </h3>
               </div>
-              {activePreset && (
-                <span className="text-[8px] font-black uppercase font-mono bg-indigo-950 text-indigo-300 border border-indigo-900/40 px-2 py-0.5 rounded">
-                  Preset: {activePreset}
-                </span>
-              )}
+              <div className="flex items-center gap-2">
+                {activePreset && (
+                  <span className="text-[8px] font-black uppercase font-mono bg-indigo-950 text-indigo-300 border border-indigo-900/40 px-2 py-0.5 rounded">
+                    Preset: {activePreset}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setIsExpanded(p => !p)}
+                  className={`p-1.5 rounded-xl border transition-all duration-200 cursor-pointer flex items-center justify-center ${
+                    isExpanded
+                      ? "bg-indigo-950/90 border-indigo-500/50 text-indigo-300 ring-1 ring-indigo-500/30"
+                      : "bg-slate-950 hover:bg-slate-900 border-slate-850 text-slate-400 hover:text-slate-100"
+                  }`}
+                  title={isExpanded ? "Restaurar tamaño estándar de componente" : "Maximizar área de lectura (Modo Expandido)"}
+                >
+                  {isExpanded ? (
+                    <Minimize2 className="h-4 w-4" />
+                  ) : (
+                    <Maximize2 className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
             </div>
 
-            <div className="prose prose-invert max-w-none text-slate-200">
+            <div className={`prose prose-invert max-w-none text-slate-200 ${isExpanded ? "flex-1 overflow-y-auto pr-1" : ""}`}>
               {renderElegantResponse(results, "text-indigo-400")}
             </div>
           </div>

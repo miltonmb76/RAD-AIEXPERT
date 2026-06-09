@@ -47,7 +47,9 @@ import {
   Brain,
   Languages,
   Database,
-  BookOpenText
+  BookOpenText,
+  Maximize2,
+  Minimize2
 } from "lucide-react";
 import { initAuth, googleSignIn, logout as googleLogout } from "./firebaseAuth";
 import { Mail, LogOut } from "lucide-react";
@@ -1129,6 +1131,19 @@ Ejemplo:
   const [isGeneratingSchematicSummary, setIsGeneratingSchematicSummary] = useState<boolean>(false);
   const [schematicSummaryError, setSchematicSummaryError] = useState<string | null>(null);
   const [schematicFormat, setSchematicFormat] = useState<"blocks" | "table">("blocks");
+
+  // States for expanding sections (maximizing read size)
+  const [isMainReportExpanded, setIsMainReportExpanded] = useState<boolean>(false);
+  const [isSmartChatExpanded, setIsSmartChatExpanded] = useState<boolean>(false);
+  const [isVascularExpanded, setIsVascularExpanded] = useState<boolean>(false);
+  const [isCaseAnalysisExpanded, setIsCaseAnalysisExpanded] = useState<boolean>(false);
+  const [isReportEvaluationExpanded, setIsReportEvaluationExpanded] = useState<boolean>(false);
+  const [isBibliographyExpanded, setIsBibliographyExpanded] = useState<boolean>(false);
+  const [isPatientSummaryExpanded, setIsPatientSummaryExpanded] = useState<boolean>(false);
+  const [isGlossaryExpanded, setIsGlossaryExpanded] = useState<boolean>(false);
+  const [isSchematicSummaryExpanded, setIsSchematicSummaryExpanded] = useState<boolean>(false);
+  const [isImageEvaluationExpanded, setIsImageEvaluationExpanded] = useState<boolean>(false);
+  const [isAdditionalEvaluationExpanded, setIsAdditionalEvaluationExpanded] = useState<boolean>(false);
 
   // States for Image Annotations / Marking regions
   const [annotations, setAnnotations] = useState<ImageAnnotation[]>([]);
@@ -8542,7 +8557,10 @@ Ejemplo:
                   </div>
 
                   {/* 💬 CHAT INTELIGENTE MÉDICO-RADIOLÓGICO */}
-                  <div className="bg-[#090D1A] border-2 border-slate-855 rounded-3xl p-5 shadow-2xl space-y-4 flex flex-col h-[520px] justify-between">
+                  <div className={isSmartChatExpanded
+                    ? "fixed inset-4 md:inset-10 z-50 bg-[#090D1A]/98 backdrop-blur-2xl border-2 border-indigo-500/40 rounded-3xl p-6 md:p-8 flex flex-col space-y-4 shadow-2xl overflow-hidden transition-all duration-355"
+                    : "bg-[#090D1A] border-2 border-slate-855 rounded-3xl p-5 shadow-2xl space-y-4 flex flex-col h-[520px] justify-between transition-all duration-355"
+                  }>
                     <div className="flex items-center justify-between border-b border-slate-800/40 pb-3">
                       <div className="flex flex-col gap-0.5">
                         <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest font-mono flex items-center gap-1.5 select-none">
@@ -8553,27 +8571,47 @@ Ejemplo:
                           Consulta clasificaciones, dosis, nomenclatura y patologías
                         </span>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSmartChatMessages([
-                            {
-                              id: "welcome",
-                              role: "model",
-                              text: "¡Hola! Soy tu **Asistente Inteligente Médico-Radiológico**. Consulta clasificaciones (ej. Neer o Bosniak), dosis de contraste o términos. Te brindaré resúmenes exportables para inyectarlos directo en el reporte."
-                            }
-                          ]);
-                          setSmartChatError(null);
-                        }}
-                        className="text-[9px] font-black text-slate-500 hover:text-rose-400 uppercase tracking-wider font-mono transition-colors"
-                        title="Resetear el chat a la bienvenida original"
-                      >
-                        Reiniciar
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setIsSmartChatExpanded(p => !p)}
+                          className={`p-1.5 rounded-xl border transition-all duration-200 cursor-pointer flex items-center justify-center ${
+                            isSmartChatExpanded
+                              ? "bg-indigo-950/90 border-indigo-500/50 text-indigo-300 ring-1 ring-indigo-500/30"
+                              : "bg-slate-900 hover:bg-slate-850 border-slate-800 text-slate-400 hover:text-slate-100"
+                          }`}
+                          title={isSmartChatExpanded ? "Restaurar tamaño estándar de chat" : "Maximizar área de chat (Modo Expandido)"}
+                        >
+                          {isSmartChatExpanded ? (
+                            <Minimize2 className="h-4 w-4" />
+                          ) : (
+                            <Maximize2 className="h-4 w-4" />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSmartChatMessages([
+                              {
+                                id: "welcome",
+                                role: "model",
+                                text: "¡Hola! Soy tu **Asistente Inteligente Médico-Radiológico**. Consulta clasificaciones (ej. Neer o Bosniak), dosis de contraste o términos. Te brindaré resúmenes exportables para inyectarlos directo en el reporte."
+                              }
+                            ]);
+                            setSmartChatError(null);
+                          }}
+                          className="text-[9px] font-black text-slate-500 hover:text-rose-400 uppercase tracking-wider font-mono transition-colors"
+                          title="Resetear el chat a la bienvenida original"
+                        >
+                          Reiniciar
+                        </button>
+                      </div>
                     </div>
 
                     {/* Chat Bubble Area */}
-                    <div className="flex-1 overflow-y-auto space-y-4 pr-1 scrollbar-thin max-h-[420px]">
+                    <div className={`flex-1 overflow-y-auto space-y-4 pr-1 scrollbar-thin ${
+                      isSmartChatExpanded ? "max-h-[calc(100vh-240px)]" : "max-h-[420px]"
+                    }`}>
                       {smartChatMessages.map((msg) => (
                         <div
                           key={msg.id}
@@ -8715,13 +8753,34 @@ Ejemplo:
 
                 {/* Report Generation Output Display */}
                 <div className="xl:col-span-7 flex flex-col min-h-[520px]">
-                  <div className="flex-1 bg-slate-900 border-2 border-slate-850 rounded-2xl flex flex-col overflow-hidden shadow-2xl">
+                  <div className={isMainReportExpanded
+                    ? "fixed inset-4 md:inset-10 z-50 bg-[#090D1A]/98 backdrop-blur-2xl border-2 border-slate-700 rounded-3xl flex flex-col overflow-hidden shadow-2xl transition-all duration-355"
+                    : "flex-1 bg-slate-900 border-2 border-slate-850 rounded-2xl flex flex-col overflow-hidden shadow-2xl transition-all duration-355"
+                  }>
                     
                     {/* Header Panel */}
-                    <div className="bg-slate-950 px-4 md:px-6 py-3.5 border-b border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
-                      <div className="flex items-center gap-2 shrink-0">
-                        <FileText className="h-4 w-4 text-indigo-400" />
-                        <span className="text-xs font-black text-slate-300 font-mono tracking-widest uppercase">WORKSPACE_DRAFT.TXT</span>
+                    <div className="bg-slate-950 px-4 md:px-6 py-3.5 border-b border-slate-800 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+                      <div className="flex items-center justify-between w-full md:w-auto gap-4 shrink-0">
+                        <div className="flex items-center gap-2">
+                          <FileText className="h-4 w-4 text-indigo-400" />
+                          <span className="text-xs font-black text-slate-300 font-mono tracking-widest uppercase">WORKSPACE_DRAFT.TXT</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setIsMainReportExpanded(p => !p)}
+                          className={`p-1.5 rounded-xl border transition-all duration-200 cursor-pointer flex items-center justify-center ${
+                            isMainReportExpanded
+                              ? "bg-indigo-950/90 border-indigo-500/50 text-indigo-300 ring-1 ring-indigo-500/30"
+                              : "bg-slate-900 hover:bg-slate-850 border-slate-800 text-slate-400 hover:text-slate-100"
+                          }`}
+                          title={isMainReportExpanded ? "Restaurar tamaño estándar de componente" : "Maximizar área de lectura (Modo Expandido)"}
+                        >
+                          {isMainReportExpanded ? (
+                            <Minimize2 className="h-4 w-4" />
+                          ) : (
+                            <Maximize2 className="h-4 w-4" />
+                          )}
+                        </button>
                       </div>
                       
                        {generatedReport && (
@@ -9120,7 +9179,9 @@ Ejemplo:
                                 id="textarea-manual-report-edit"
                                 value={editedReportText}
                                 onChange={(e) => setEditedReportText(e.target.value)}
-                                className="w-full h-96 bg-slate-950 border-2 border-slate-850 hover:border-slate-800 focus:border-indigo-600 rounded-2xl p-6 text-xs sm:text-sm font-semibold text-slate-100 placeholder:text-slate-650 outline-none transition-all resize-y font-mono leading-relaxed"
+                                className={`w-full bg-slate-950 border-2 border-slate-850 hover:border-slate-800 focus:border-indigo-600 rounded-2xl p-6 text-xs sm:text-sm font-semibold text-slate-100 placeholder:text-slate-650 outline-none transition-all resize-y font-mono leading-relaxed ${
+                                  isMainReportExpanded ? "h-[calc(100vh-340px)] min-h-[450px]" : "h-96"
+                                }`}
                                 placeholder="Escribe o modifica el informe médico aquí..."
                               />
                             </div>
@@ -9339,7 +9400,35 @@ Ejemplo:
                           {(specificStudy === "Doppler de carótidas" || 
                             specificStudy === "Doppler venoso de miembro inferior" || 
                             specificStudy === "Doppler arterial de miembro inferior") && (
-                            <div className="my-6">
+                            <div className={isVascularExpanded
+                              ? "fixed inset-4 md:inset-10 z-50 bg-[#061111]/95 backdrop-blur-2xl border-2 border-emerald-500/40 rounded-3xl p-6 md:p-8 flex flex-col space-y-5 shadow-2xl overflow-y-auto transition-all duration-355"
+                              : "my-6 relative bg-slate-950/20 border border-slate-850/60 rounded-3xl p-4 transition-all duration-355"
+                            }>
+                              <div className="flex items-center justify-between border-b border-emerald-950 pb-3 mb-4 font-sans">
+                                <div className="flex items-center gap-2">
+                                  <Activity className="h-4 w-4 text-emerald-400 font-bold" />
+                                  <h4 className="text-xs font-black text-emerald-400 uppercase tracking-widest font-mono">
+                                    ESQUEMA DE CONTROL VASCULAR Y MAPA INTERACTIVO
+                                  </h4>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setIsVascularExpanded(p => !p)}
+                                  className={`p-2 rounded-xl border transition-all duration-200 cursor-pointer flex items-center justify-center ${
+                                    isVascularExpanded
+                                      ? "bg-slate-900 border-emerald-500/40 text-emerald-300 ring-1 ring-emerald-500/30"
+                                      : "bg-slate-950 hover:bg-slate-900 border-slate-850 text-slate-400 hover:text-slate-100"
+                                  }`}
+                                  title={isVascularExpanded ? "Restaurar tamaño estándar de componente" : "Maximizar sección vascular (Modo Expandido)"}
+                                >
+                                  {isVascularExpanded ? (
+                                    <Minimize2 className="h-4.5 w-4.5" />
+                                  ) : (
+                                    <Maximize2 className="h-4.5 w-4.5" />
+                                  )}
+                                </button>
+                              </div>
+
                               <VascularAnatomyViewer
                                 studyType={specificStudy || "Doppler de carótidas"}
                                 states={vascularStates}
@@ -9565,7 +9654,10 @@ Ejemplo:
                           )}
 
                           {reportEvaluation && (
-                            <div className="bg-[#0f0b16] border-2 border-violet-500/10 rounded-2xl p-6 space-y-4 shadow-2xl relative overflow-hidden animate-fade-in">
+                            <div className={isReportEvaluationExpanded 
+                              ? "fixed inset-4 md:inset-10 z-50 bg-[#0f0b16]/95 backdrop-blur-2xl border-2 border-violet-500/40 rounded-3xl p-6 md:p-8 flex flex-col space-y-4 shadow-2xl overflow-y-auto transition-all duration-350"
+                              : "bg-[#0f0b16] border-2 border-violet-500/10 rounded-2xl p-6 space-y-4 shadow-2xl relative overflow-hidden animate-fade-in transition-all duration-350"
+                            }>
                               <div className="flex items-center justify-between border-b border-violet-950/60 pb-3 font-sans">
                                 <div className="flex items-center gap-2">
                                   <CheckCircle2 className="h-4 w-4 text-violet-450" />
@@ -9573,12 +9665,30 @@ Ejemplo:
                                     INFORME DE EVALUACIÓN Y AUDITORÍA CLÍNICA
                                   </h4>
                                 </div>
-                                <button
-                                  onClick={() => copyToClipboard(reportEvaluation, false)}
-                                  className="text-[9px] font-black text-slate-400 hover:text-violet-400 border border-slate-800 hover:border-violet-500/20 px-2.5 py-1 rounded bg-slate-950/40 uppercase tracking-wider font-mono transition-all"
-                                >
-                                  Copiar Evaluación
-                                </button>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setIsReportEvaluationExpanded(p => !p)}
+                                    className={`p-2 rounded-xl border transition-all duration-200 cursor-pointer flex items-center justify-center ${
+                                      isReportEvaluationExpanded
+                                        ? "bg-violet-950/90 border-violet-500/50 text-violet-300 ring-1 ring-violet-500/30"
+                                        : "bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-100"
+                                    }`}
+                                    title={isReportEvaluationExpanded ? "Restaurar tamaño estándar de componente" : "Maximizar área de lectura (Modo Expandido)"}
+                                  >
+                                    {isReportEvaluationExpanded ? (
+                                      <Minimize2 className="h-4.5 w-4.5" />
+                                    ) : (
+                                      <Maximize2 className="h-4.5 w-4.5" />
+                                    )}
+                                  </button>
+                                  <button
+                                    onClick={() => copyToClipboard(reportEvaluation, false)}
+                                    className="text-[9px] font-black text-slate-400 hover:text-violet-400 border border-slate-800 hover:border-violet-500/20 px-3 py-2 rounded-xl bg-slate-950/40 uppercase tracking-wider font-mono transition-all cursor-pointer"
+                                  >
+                                    Copiar Evaluación
+                                  </button>
+                                </div>
                               </div>
 
                               {modifyError && (
@@ -9603,7 +9713,9 @@ Ejemplo:
                                 </div>
                               )}
 
-                              <div className="bg-[#0c0814] p-6 rounded-xl border border-violet-950/30 shadow-inner overflow-x-auto max-h-[500px] overflow-y-auto">
+                              <div className={`bg-[#0c0814] p-6 rounded-xl border border-violet-950/30 shadow-inner overflow-x-auto overflow-y-auto ${
+                                isReportEvaluationExpanded ? "flex-1 max-h-none" : "max-h-[500px]"
+                              }`}>
                                 {renderElegantResponse(reportEvaluation, "text-violet-400")}
                               </div>
                             </div>
@@ -9629,7 +9741,10 @@ Ejemplo:
                           )}
 
                           {caseAnalysis && (
-                            <div className="bg-[#0a1114] border-2 border-emerald-500/10 rounded-2xl p-6 space-y-4 shadow-2xl relative overflow-hidden animate-fade-in">
+                            <div className={isCaseAnalysisExpanded
+                              ? "fixed inset-4 md:inset-10 z-50 bg-[#0a1114]/95 backdrop-blur-2xl border-2 border-emerald-500/40 rounded-3xl p-6 md:p-8 flex flex-col space-y-4 shadow-2xl overflow-y-auto transition-all duration-355"
+                              : "bg-[#0a1114] border-2 border-emerald-500/10 rounded-2xl p-6 space-y-4 shadow-2xl relative overflow-hidden animate-fade-in transition-all duration-355"
+                            }>
                               <div className="flex items-center justify-between border-b border-slate-850 pb-3 font-sans">
                                 <div className="flex items-center gap-2">
                                   <Activity className="h-4 w-4 text-emerald-400" />
@@ -9637,12 +9752,30 @@ Ejemplo:
                                     INFORME DE ANÁLISIS DE CASO COMPLETO
                                   </h4>
                                 </div>
-                                <button
-                                  onClick={() => copyToClipboard(caseAnalysis, false)}
-                                  className="text-[9px] font-black text-slate-400 hover:text-emerald-400 border border-slate-800 hover:border-emerald-500/20 px-2.5 py-1 rounded bg-slate-950/40 uppercase tracking-wider font-mono transition-all"
-                                >
-                                  Copiar Análisis
-                                </button>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setIsCaseAnalysisExpanded(p => !p)}
+                                    className={`p-2 rounded-xl border transition-all duration-200 cursor-pointer flex items-center justify-center ${
+                                      isCaseAnalysisExpanded
+                                        ? "bg-emerald-950/90 border-emerald-500/50 text-emerald-300 ring-1 ring-emerald-500/30"
+                                        : "bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-100"
+                                    }`}
+                                    title={isCaseAnalysisExpanded ? "Restaurar tamaño estándar de componente" : "Maximizar área de lectura (Modo Expandido)"}
+                                  >
+                                    {isCaseAnalysisExpanded ? (
+                                      <Minimize2 className="h-4.5 w-4.5" />
+                                    ) : (
+                                      <Maximize2 className="h-4.5 w-4.5" />
+                                    )}
+                                  </button>
+                                  <button
+                                    onClick={() => copyToClipboard(caseAnalysis, false)}
+                                    className="text-[9px] font-black text-slate-400 hover:text-emerald-400 border border-slate-800 hover:border-emerald-500/20 px-2.5 py-1 rounded bg-slate-950/40 uppercase tracking-wider font-mono transition-all cursor-pointer"
+                                  >
+                                    Copiar Análisis
+                                  </button>
+                                </div>
                               </div>
 
                               {diffsError && (
@@ -9695,7 +9828,9 @@ Ejemplo:
                                 </button>
                               </div>
 
-                              <div className="bg-[#05090b] p-6 rounded-xl border border-slate-850 shadow-inner overflow-x-auto max-h-[500px] overflow-y-auto">
+                              <div className={`bg-[#05090b] p-6 rounded-xl border border-slate-850 shadow-inner overflow-x-auto overflow-y-auto ${
+                                isCaseAnalysisExpanded ? "flex-1 max-h-none" : "max-h-[500px]"
+                              }`}>
                                 {renderElegantResponse(caseAnalysis, "text-emerald-400")}
                               </div>
                             </div>
@@ -9721,7 +9856,10 @@ Ejemplo:
                           )}
 
                           {bibliography && (
-                            <div className="bg-[#071111] border-2 border-teal-500/10 rounded-2xl p-6 space-y-5 shadow-2xl relative overflow-hidden animate-fade-in">
+                            <div className={isBibliographyExpanded
+                              ? "fixed inset-4 md:inset-10 z-50 bg-[#071111]/95 backdrop-blur-2xl border-2 border-teal-500/40 rounded-3xl p-6 md:p-8 flex flex-col space-y-5 shadow-2xl overflow-y-auto transition-all duration-355"
+                              : "bg-[#071111] border-2 border-teal-500/10 rounded-2xl p-6 space-y-5 shadow-2xl relative overflow-hidden animate-fade-in transition-all duration-355"
+                            }>
                               <div className="flex items-center justify-between border-b border-teal-950/60 pb-3 font-sans">
                                 <div className="flex items-center gap-2">
                                   <BookOpen className="h-4 w-4 text-teal-400" />
@@ -9729,15 +9867,35 @@ Ejemplo:
                                     BÚSQUEDA BIBLIOGRÁFICA Y GUÍAS CLÍNICAS
                                   </h4>
                                 </div>
-                                <button
-                                  onClick={() => copyToClipboard(bibliography, false)}
-                                  className="text-[9px] font-black text-slate-400 hover:text-teal-400 border border-slate-800 hover:border-teal-500/20 px-2.5 py-1 rounded bg-slate-950/40 uppercase tracking-wider font-mono transition-all"
-                                >
-                                  Copiar Bibliografía
-                                </button>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setIsBibliographyExpanded(p => !p)}
+                                    className={`p-2 rounded-xl border transition-all duration-200 cursor-pointer flex items-center justify-center ${
+                                      isBibliographyExpanded
+                                        ? "bg-teal-950/90 border-teal-500/50 text-teal-300 ring-1 ring-teal-500/30"
+                                        : "bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-100"
+                                    }`}
+                                    title={isBibliographyExpanded ? "Restaurar tamaño estándar de componente" : "Maximizar área de lectura (Modo Expandido)"}
+                                  >
+                                    {isBibliographyExpanded ? (
+                                      <Minimize2 className="h-4.5 w-4.5" />
+                                    ) : (
+                                      <Maximize2 className="h-4.5 w-4.5" />
+                                    )}
+                                  </button>
+                                  <button
+                                    onClick={() => copyToClipboard(bibliography, false)}
+                                    className="text-[9px] font-black text-slate-400 hover:text-teal-400 border border-slate-800 hover:border-teal-500/20 px-3 py-2 rounded-xl bg-slate-950/40 uppercase tracking-wider font-mono transition-all cursor-pointer"
+                                  >
+                                    Copiar Bibliografía
+                                  </button>
+                                </div>
                               </div>
 
-                              <div className="bg-[#030606] p-6 rounded-xl border border-teal-950/60 shadow-inner overflow-x-auto max-h-[500px] overflow-y-auto">
+                              <div className={`bg-[#030606] p-6 rounded-xl border border-teal-950/60 shadow-inner overflow-x-auto overflow-y-auto ${
+                                isBibliographyExpanded ? "flex-1 max-h-none" : "max-h-[500px]"
+                              }`}>
                                 {renderElegantResponse(bibliography, "text-teal-400")}
                               </div>
 
@@ -9806,7 +9964,10 @@ Ejemplo:
                           )}
 
                           {patientSummary && (
-                            <div className="bg-[#0f100e] border-2 border-orange-500/15 rounded-2xl p-6 space-y-6 shadow-2xl relative overflow-hidden animate-fade-in my-4">
+                            <div className={isPatientSummaryExpanded
+                              ? "fixed inset-4 md:inset-10 z-50 bg-[#0f100e]/95 backdrop-blur-2xl border-2 border-orange-500/40 rounded-3xl p-6 md:p-8 flex flex-col space-y-6 shadow-2xl overflow-y-auto transition-all duration-355 my-0"
+                              : "bg-[#0f100e] border-2 border-orange-500/15 rounded-2xl p-6 space-y-6 shadow-2xl relative overflow-hidden animate-fade-in my-4 transition-all duration-355"
+                            }>
                               {/* Background ambient light */}
                               <div className="absolute top-0 right-0 w-48 h-48 bg-orange-500/5 rounded-full blur-3xl pointer-events-none" />
                               
@@ -9823,6 +9984,22 @@ Ejemplo:
                                   </div>
                                 </div>
                                 <div className="flex flex-wrap items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setIsPatientSummaryExpanded(p => !p)}
+                                    className={`p-2 rounded-xl border transition-all duration-200 cursor-pointer flex items-center justify-center ${
+                                      isPatientSummaryExpanded
+                                        ? "bg-orange-950/90 border-orange-500/50 text-orange-300 ring-1 ring-orange-500/30"
+                                        : "bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-100"
+                                    }`}
+                                    title={isPatientSummaryExpanded ? "Restaurar tamaño estándar de componente" : "Maximizar área de lectura (Modo Expandido)"}
+                                  >
+                                    {isPatientSummaryExpanded ? (
+                                      <Minimize2 className="h-4.5 w-4.5" />
+                                    ) : (
+                                      <Maximize2 className="h-4.5 w-4.5" />
+                                    )}
+                                  </button>
                                   <button
                                     onClick={() => handleDownloadPatientSummaryPDF(false)}
                                     className="text-[9px] font-black text-[#0f100e] hover:bg-orange-300 border border-orange-400 px-3 py-1.5 rounded-xl bg-orange-400 uppercase tracking-wider font-mono transition-all flex items-center gap-1.5 cursor-pointer"
@@ -9960,7 +10137,10 @@ Ejemplo:
                           )}
 
                           {dynamicGlossary && (
-                            <div className="bg-[#110e12] border-2 border-pink-500/15 rounded-2xl p-6 space-y-5 shadow-2xl relative overflow-hidden animate-fade-in my-4">
+                            <div className={isGlossaryExpanded
+                              ? "fixed inset-4 md:inset-10 z-50 bg-[#110e12]/95 backdrop-blur-2xl border-2 border-pink-500/40 rounded-3xl p-6 md:p-8 flex flex-col space-y-5 shadow-2xl overflow-y-auto transition-all duration-355 my-0"
+                              : "bg-[#110e12] border-2 border-pink-500/15 rounded-2xl p-6 space-y-5 shadow-2xl relative overflow-hidden animate-fade-in my-4 transition-all duration-355"
+                            }>
                               {/* Background ambient light */}
                               <div className="absolute top-0 right-0 w-48 h-48 bg-pink-500/5 rounded-full blur-3xl pointer-events-none" />
 
@@ -9976,12 +10156,30 @@ Ejemplo:
                                     </p>
                                   </div>
                                 </div>
-                                <button
-                                  onClick={() => copyToClipboard(JSON.stringify(dynamicGlossary.terms, null, 2), false)}
-                                  className="text-[9px] font-black text-slate-400 hover:text-pink-400 border border-slate-850 px-3 py-1.5 rounded-xl bg-slate-950/40 uppercase tracking-wider font-mono transition-all shrink-0 cursor-pointer"
-                                >
-                                  Copiar Glosario JSON
-                                </button>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setIsGlossaryExpanded(p => !p)}
+                                    className={`p-2 rounded-xl border transition-all duration-200 cursor-pointer flex items-center justify-center ${
+                                      isGlossaryExpanded
+                                        ? "bg-pink-950/90 border-pink-500/50 text-pink-300 ring-1 ring-pink-500/30"
+                                        : "bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-100"
+                                    }`}
+                                    title={isGlossaryExpanded ? "Restaurar tamaño estándar de componente" : "Maximizar área de lectura (Modo Expandido)"}
+                                  >
+                                    {isGlossaryExpanded ? (
+                                      <Minimize2 className="h-4.5 w-4.5" />
+                                    ) : (
+                                      <Maximize2 className="h-4.5 w-4.5" />
+                                    )}
+                                  </button>
+                                  <button
+                                    onClick={() => copyToClipboard(JSON.stringify(dynamicGlossary.terms, null, 2), false)}
+                                    className="text-[9px] font-black text-slate-400 hover:text-pink-400 border border-slate-850 px-3 py-1.5 rounded-xl bg-slate-950/40 uppercase tracking-wider font-mono transition-all shrink-0 cursor-pointer"
+                                  >
+                                    Copiar Glosario JSON
+                                  </button>
+                                </div>
                               </div>
 
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -10128,7 +10326,10 @@ Ejemplo:
                           )}
 
                           {schematicSummary && (
-                            <div className="bg-[#0f0c08] border-2 border-amber-500/15 rounded-2xl p-6 space-y-5 shadow-2xl relative overflow-hidden animate-fade-in my-4">
+                            <div className={isSchematicSummaryExpanded
+                              ? "fixed inset-4 md:inset-10 z-50 bg-[#0f0c08]/95 backdrop-blur-2xl border-2 border-amber-500/40 rounded-3xl p-6 md:p-8 flex flex-col space-y-5 shadow-2xl overflow-y-auto transition-all duration-355 my-0"
+                              : "bg-[#0f0c08] border-2 border-amber-500/15 rounded-2xl p-6 space-y-5 shadow-2xl relative overflow-hidden animate-fade-in my-4 transition-all duration-355"
+                            }>
                               {/* Ambient highlight background blur */}
                               <div className="absolute top-0 right-0 w-48 h-48 bg-amber-500/5 rounded-full blur-3xl pointer-events-none" />
 
@@ -10170,6 +10371,23 @@ Ejemplo:
                                       Opción 2: Tabla
                                     </button>
                                   </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => setIsSchematicSummaryExpanded(p => !p)}
+                                    className={`p-2 rounded-xl border transition-all duration-200 cursor-pointer flex items-center justify-center ${
+                                      isSchematicSummaryExpanded
+                                        ? "bg-amber-950/90 border-amber-500/50 text-amber-300 ring-1 ring-amber-500/30"
+                                        : "bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-100"
+                                    }`}
+                                    title={isSchematicSummaryExpanded ? "Restaurar tamaño estándar de componente" : "Maximizar área de lectura (Modo Expandido)"}
+                                  >
+                                    {isSchematicSummaryExpanded ? (
+                                      <Minimize2 className="h-4.5 w-4.5" />
+                                    ) : (
+                                      <Maximize2 className="h-4.5 w-4.5" />
+                                    )}
+                                  </button>
 
                                   <button
                                     onClick={() => {
@@ -10315,6 +10533,7 @@ Ejemplo:
                                   disabled={isModifyingReport}
                                 />
                                 <button
+                                  type="button"
                                   onClick={() => handleModifyReport(currentModInstruction)}
                                   disabled={isModifyingReport || !currentModInstruction.trim()}
                                   className="px-5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-550 hover:to-indigo-600 disabled:from-slate-850 disabled:to-slate-850 disabled:opacity-50 border-2 border-indigo-500/20 disabled:border-transparent text-white text-xs font-black uppercase tracking-widest rounded-xl transition-all shadow-lg flex flex-col items-center justify-center gap-1.5 shrink-0 font-mono w-32"
@@ -10330,7 +10549,7 @@ Ejemplo:
                                 </button>
                               </div>
                               {modifyError && (
-                                <div className="p-3 bg-rose-950/10 border border-rose-900/30 rounded-xl text-rose-400 text-[10px] font-mono font-bold uppercase tracking-tight">
+                                <div className="p-3 bg-rose-955/20 border border-rose-900/30 rounded-xl text-rose-400 text-[10px] font-mono font-bold uppercase tracking-tight">
                                   {modifyError}
                                 </div>
                               )}
@@ -10368,8 +10587,46 @@ Ejemplo:
 
                               {/* Image Valuation Content box */}
                               {imageEvaluation && (
-                                <div className="space-y-4">
-                                  <div className="bg-[#060812] p-6 rounded-xl border border-slate-850 shadow-inner overflow-x-auto max-h-[450px] overflow-y-auto">
+                                <div className={isImageEvaluationExpanded
+                                  ? "fixed inset-4 md:inset-10 z-50 bg-[#060812]/95 backdrop-blur-2xl border-2 border-blue-500/40 rounded-3xl p-6 md:p-8 flex flex-col space-y-4 shadow-2xl overflow-y-auto transition-all duration-355 my-0 animate-fade-in"
+                                  : "space-y-4 transition-all duration-355"
+                                }>
+                                  <div className="flex items-center justify-between border-b border-blue-950 pb-3 font-sans">
+                                    <div className="flex items-center gap-2">
+                                      <FileImage className="h-4 w-4 text-blue-400" />
+                                      <h4 className="text-xs font-black text-blue-400 uppercase tracking-widest font-mono">
+                                        VALORACIÓN DE IMAGEN Y HALLAZGOS ANATÓMICOS
+                                      </h4>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => setIsImageEvaluationExpanded(p => !p)}
+                                        className={`p-1.5 rounded-xl border transition-all duration-200 cursor-pointer flex items-center justify-center ${
+                                          isImageEvaluationExpanded
+                                            ? "bg-blue-950/90 border-blue-500/50 text-blue-300 ring-1 ring-blue-500/30"
+                                            : "bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-100"
+                                        }`}
+                                        title={isImageEvaluationExpanded ? "Restaurar tamaño estándar de componente" : "Maximizar área de lectura (Modo Expandido)"}
+                                      >
+                                        {isImageEvaluationExpanded ? (
+                                          <Minimize2 className="h-4 w-4" />
+                                        ) : (
+                                          <Maximize2 className="h-4 w-4" />
+                                        )}
+                                      </button>
+                                      <button
+                                        onClick={() => copyToClipboard(imageEvaluation, false)}
+                                        className="text-[9px] font-black text-slate-400 hover:text-blue-400 border border-slate-800 hover:border-blue-500/20 px-3 py-1.5 rounded-xl bg-slate-950/40 uppercase tracking-wider font-mono transition-all cursor-pointer"
+                                      >
+                                        Copiar Valoración
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  <div className={`bg-[#060812] p-6 rounded-xl border border-slate-850 shadow-inner overflow-x-auto overflow-y-auto ${
+                                    isImageEvaluationExpanded ? "flex-1 max-h-none" : "max-h-[450px]"
+                                  }`}>
                                     {renderElegantResponse(imageEvaluation, "text-blue-400")}
                                   </div>
 
@@ -10403,21 +10660,52 @@ Ejemplo:
                               )}
 
                               {additionalEvalError && (
-                                <div className="p-3 bg-rose-950/10 border border-rose-900/30 rounded-xl text-rose-400 text-[10px] font-mono font-bold uppercase tracking-tight">
+                                <div className="p-3 bg-rose-955/20 border border-rose-900/30 rounded-xl text-rose-400 text-[10px] font-mono font-bold uppercase tracking-tight">
                                   {additionalEvalError}
                                 </div>
                               )}
 
                               {/* Additional Evaluation Display panel */}
                               {additionalEvaluation && (
-                                <div className="bg-[#0e142b] border border-indigo-900/40 rounded-xl p-5.5 space-y-3.5 shadow-md">
-                                  <div className="flex items-center gap-2 border-b border-indigo-950 pb-2">
-                                    <Sparkles className="h-3.5 w-3.5 text-indigo-450" />
-                                    <h4 className="text-[10px] font-black text-indigo-300 uppercase tracking-widest font-mono">
-                                      Valoración Diagnóstica Adicional (Segunda Opinión Experta)
-                                    </h4>
+                                <div className={isAdditionalEvaluationExpanded
+                                  ? "fixed inset-4 md:inset-10 z-50 bg-[#0e142b]/95 backdrop-blur-2xl border-2 border-indigo-500/40 rounded-3xl p-6 md:p-8 flex flex-col space-y-4 shadow-2xl overflow-y-auto transition-all duration-355 my-0 animate-fade-in"
+                                  : "bg-[#0e142b] border border-indigo-900/40 rounded-xl p-5.5 space-y-3.5 shadow-md transition-all duration-355"
+                                }>
+                                  <div className="flex items-center justify-between border-b border-indigo-950 pb-3 font-sans">
+                                    <div className="flex items-center gap-2">
+                                      <Sparkles className="h-3.5 w-3.5 text-indigo-400" />
+                                      <h4 className="text-[10px] font-black text-indigo-300 uppercase tracking-widest font-mono">
+                                        VALORACIÓN DIAGNÓSTICA ADICIONAL (SEGUNDA OPINIÓN EXPERTA)
+                                      </h4>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => setIsAdditionalEvaluationExpanded(p => !p)}
+                                        className={`p-1.5 rounded-xl border transition-all duration-200 cursor-pointer flex items-center justify-center ${
+                                          isAdditionalEvaluationExpanded
+                                            ? "bg-indigo-950/90 border-indigo-500/50 text-indigo-300 ring-1 ring-indigo-500/30"
+                                            : "bg-slate-950 hover:bg-slate-900 border-slate-850 text-slate-400 hover:text-slate-100"
+                                        }`}
+                                        title={isAdditionalEvaluationExpanded ? "Restaurar tamaño estándar de componente" : "Maximizar área de lectura (Modo Expandido)"}
+                                      >
+                                        {isAdditionalEvaluationExpanded ? (
+                                          <Minimize2 className="h-4 w-4" />
+                                        ) : (
+                                          <Maximize2 className="h-4 w-4" />
+                                        )}
+                                      </button>
+                                      <button
+                                        onClick={() => copyToClipboard(additionalEvaluation, false)}
+                                        className="text-[9px] font-black text-slate-400 hover:text-indigo-400 border border-slate-805 hover:border-indigo-500/20 px-3 py-1.5 rounded-xl bg-slate-950/40 uppercase tracking-wider font-mono transition-all cursor-pointer"
+                                      >
+                                        Copiar Segunda Opinión
+                                      </button>
+                                    </div>
                                   </div>
-                                  <div className="bg-[#060a17] p-6 rounded-xl border border-indigo-950 shadow-inner overflow-x-auto max-h-[350px] overflow-y-auto font-sans space-y-3">
+                                  <div className={`bg-[#060a17] p-6 rounded-xl border border-indigo-950 shadow-inner overflow-x-auto overflow-y-auto font-sans space-y-3 ${
+                                    isAdditionalEvaluationExpanded ? "flex-grow max-h-none" : "max-h-[350px]"
+                                  }`}>
                                     <div className="bg-emerald-950/20 border border-emerald-500/25 rounded-xl p-3 flex items-start gap-2.5 text-left animate-fade-in mb-3">
                                       <span className="text-emerald-400 text-xs font-black mt-0.5">✓</span>
                                       <div className="space-y-0.5">

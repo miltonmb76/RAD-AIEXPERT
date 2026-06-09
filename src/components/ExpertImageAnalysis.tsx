@@ -2,7 +2,8 @@ import React, { useState, useRef } from "react";
 import { 
   FileImage, Upload, Trash2, ShieldAlert, Sparkles, Loader2, 
   Columns, ZoomIn, ZoomOut, RotateCw, Copy, Check, ArrowRightLeft, Send, CheckCircle2,
-  MessageSquare, Sliders, X, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Eye, RefreshCw, Maximize2, Compass, Activity
+  MessageSquare, Sliders, X, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Eye, RefreshCw, Maximize2, Compass, Activity,
+  History, Contrast, LayoutGrid, Scale, Split, Moon, Sun
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -14,6 +15,37 @@ interface ExpertImageAnalysisProps {
   exportedMimeType?: string;
   clearExportedImage?: () => void;
   findings?: string;
+}
+
+interface ImageAnalysisSession {
+  id: string;
+  timestamp: number;
+  patientInfo: string;
+  clinicalSuspicion: string;
+  radiologicalQuestions: string;
+  desc1: string;
+  modality1: string;
+  image1: string | null;
+  mimeType1: string;
+  imagePreviewUrl1: string | null;
+  annotations1: any[];
+  desc2: string;
+  modality2: string;
+  image2: string | null;
+  mimeType2: string;
+  imagePreviewUrl2: string | null;
+  annotations2: any[];
+  desc3: string;
+  modality3: string;
+  image3: string | null;
+  mimeType3: string;
+  imagePreviewUrl3: string | null;
+  annotations3: any[];
+  analysisResult: string;
+  comparisonMode: boolean;
+  analysisResultFlash: string;
+  analysisResultPro: string;
+  consultationHistory: { query: string; answer: string }[];
 }
 
 // Helper to determine accurate image source path or base64 structure
@@ -614,6 +646,227 @@ export default function ExpertImageAnalysis({
   clearExportedImage,
   findings = ""
 }: ExpertImageAnalysisProps) {
+  // Session History State
+  const [sessions, setSessions] = useState<ImageAnalysisSession[]>(() => {
+    try {
+      const saved = localStorage.getItem("rad_expert_sessions");
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  const safeSaveSessionsToLocalStorage = (sessionsList: ImageAnalysisSession[]) => {
+    try {
+      localStorage.setItem("rad_expert_sessions", JSON.stringify(sessionsList));
+    } catch (error) {
+      console.warn("Storage quota exceeded on saving sessions, pruning base64 images from older entries:", error);
+      try {
+        // Prune base64 images from all but the most recent session to save memory space
+        const pruned = sessionsList.map((s, idx) => {
+          if (idx > 0) {
+            return {
+              ...s,
+              image1: null,
+              image2: null,
+              image3: null,
+              imagePreviewUrl1: null,
+              imagePreviewUrl2: null,
+              imagePreviewUrl3: null,
+            };
+          }
+          return s;
+        });
+        localStorage.setItem("rad_expert_sessions", JSON.stringify(pruned));
+      } catch (innerError) {
+        console.error("Even after pruning layout, quota is exceeded. Saving only most recent 3 sessions texts:", innerError);
+        try {
+          // Keep only 3 sessions texts and strip images
+          const superPruned = sessionsList.slice(0, 3).map(s => ({
+            ...s,
+            image1: null,
+            image2: null,
+            image3: null,
+            imagePreviewUrl1: null,
+            imagePreviewUrl2: null,
+            imagePreviewUrl3: null,
+          }));
+          localStorage.setItem("rad_expert_sessions", JSON.stringify(superPruned));
+        } catch (finalErr) {
+          console.error("Unable to save to localStorage at all:", finalErr);
+        }
+      }
+    }
+  };
+
+  const handleDeleteSession = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSessions(prev => {
+      const updated = prev.filter(s => s.id !== id);
+      safeSaveSessionsToLocalStorage(updated);
+      return updated;
+    });
+  };
+
+  const [comparisonMode, setComparisonMode] = useState<boolean>(false);
+  const [analysisResultFlash, setAnalysisResultFlash] = useState<string>("");
+  const [analysisResultPro, setAnalysisResultPro] = useState<string>("");
+  const [isAnalyzingFlash, setIsAnalyzingFlash] = useState<boolean>(false);
+  const [isAnalyzingPro, setIsAnalyzingPro] = useState<boolean>(false);
+  const [flashError, setFlashError] = useState<string | null>(null);
+  const [proError, setProError] = useState<string | null>(null);
+  const [activeComparisonTab, setActiveComparisonTab] = useState<"side" | "flash" | "pro">("side");
+  const [comparisonLayout, setComparisonLayout] = useState<"columns" | "stacked">("columns");
+  const [isConsoleExpanded, setIsConsoleExpanded] = useState<boolean>(false);
+
+  // Custom session evaluation / selection states
+  const [isEvaluatingDual, setIsEvaluatingDual] = useState<boolean>(false);
+  const [dualEvaluationError, setDualEvaluationError] = useState<string | null>(null);
+  const [activeReportSource, setActiveReportSource] = useState<string>("Básica / Estándar");
+
+  const [isContrastModeActive, setIsContrastModeActive] = useState<boolean>(false);
+  const [contrastTheme, setContrastTheme] = useState<"amber" | "green" | "white">("amber");
+
+  const handleSelectReport = (source: "flash" | "pro", text: string) => {
+    setAnalysisResult(text);
+    setActiveReportSource(source === "flash" ? "Dual: Gemini Flash 3.5" : "Dual: Gemini Pro 3.1");
+    setComparisonMode(false);
+    setConsultationHistory([]);
+  };
+
+  const handleRunDualEvaluation = async () => {
+    if (!analysisResultFlash || !analysisResultPro) return;
+    setIsEvaluatingDual(true);
+    setDualEvaluationError(null);
+    setAnalysisError(null);
+
+    try {
+      const [img1Compressed, img2Compressed, img3Compressed] = await Promise.all([
+        image1 ? resizeAndCompressImage(getImgSrc(image1, mimeType1)) : Promise.resolve(null),
+        image2 ? resizeAndCompressImage(getImgSrc(image2, mimeType2)) : Promise.resolve(null),
+        image3 ? resizeAndCompressImage(getImgSrc(image3, mimeType3)) : Promise.resolve(null),
+      ]);
+
+      const finalImage1 = img1Compressed ? img1Compressed.base64 : image1;
+      const finalMimeType1 = img1Compressed ? img1Compressed.mimeType : mimeType1;
+      const finalImage2 = img2Compressed ? img2Compressed.base64 : (image2 || undefined);
+      const finalMimeType2 = img2Compressed ? img2Compressed.mimeType : (mimeType2 || undefined);
+      const finalImage3 = img3Compressed ? img3Compressed.base64 : (image3 || undefined);
+      const finalMimeType3 = img3Compressed ? img3Compressed.mimeType : (mimeType3 || undefined);
+
+      const response = await fetch("/api/expert-evaluate-dual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: selectedModel,
+          image1: finalImage1,
+          mimeType1: finalMimeType1,
+          image2: finalImage2,
+          mimeType2: finalMimeType2,
+          image3: finalImage3,
+          mimeType3: finalMimeType3,
+          reportAlpha: analysisResultFlash,
+          reportBeta: analysisResultPro,
+          patientInfo,
+          clinicalSuspicion,
+          radiologicalQuestions,
+          fractureProtocol: isFractureProtocolActive,
+          pulmonaryProtocol: isPulmonaryProtocolActive,
+          osteoarthritisProtocol: isOsteoarthritisProtocolActive,
+          prosthesisMetalProtocol: isMetalProtocolActive
+        }),
+      });
+
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setAnalysisResult(data.evaluation);
+        setActiveReportSource("Sesión de Tribunal (Radiólogo Jefe)");
+        setComparisonMode(false);
+        setConsultationHistory([]);
+
+        // Save session
+        const newSession: ImageAnalysisSession = {
+          id: Math.random().toString(36).substr(2, 9),
+          timestamp: Date.now(),
+          patientInfo,
+          clinicalSuspicion,
+          radiologicalQuestions,
+          desc1,
+          modality1,
+          image1,
+          mimeType1,
+          imagePreviewUrl1,
+          annotations1,
+          desc2,
+          modality2,
+          image2,
+          mimeType2,
+          imagePreviewUrl2,
+          annotations2,
+          desc3,
+          modality3,
+          image3,
+          mimeType3,
+          imagePreviewUrl3,
+          annotations3,
+          analysisResult: data.evaluation,
+          comparisonMode: false,
+          analysisResultFlash,
+          analysisResultPro,
+          consultationHistory: []
+        };
+        setSessions(prev => {
+          const updated = [newSession, ...prev].slice(0, 30);
+          safeSaveSessionsToLocalStorage(updated);
+          return updated;
+        });
+      } else {
+        setDualEvaluationError(data.error || "No se pudo completar la sesión de evaluación del Tribunal Médico.");
+      }
+    } catch (err) {
+      setDualEvaluationError("Fallo de red o tiempo de espera al realizar la evaluación ciega en paralelo.");
+    } finally {
+      setIsEvaluatingDual(false);
+    }
+  };
+
+  const handleRestoreSession = (s: ImageAnalysisSession) => {
+    setPatientInfo(s.patientInfo || "");
+    setClinicalSuspicion(s.clinicalSuspicion || "");
+    setRadiologicalQuestions(s.radiologicalQuestions || "");
+    setDesc1(s.desc1 || "Estudio Inicial / Referencia");
+    setModality1(s.modality1 || "X-Ray");
+    setImage1(s.image1);
+    setMimeType1(s.mimeType1 || "");
+    setImagePreviewUrl1(s.imagePreviewUrl1);
+    setAnnotations1(s.annotations1 || []);
+
+    setDesc2(s.desc2 || "Estudio Control / Comparativo");
+    setModality2(s.modality2 || "X-Ray");
+    setImage2(s.image2);
+    setMimeType2(s.mimeType2 || "");
+    setImagePreviewUrl2(s.imagePreviewUrl2);
+    setAnnotations2(s.annotations2 || []);
+
+    setDesc3(s.desc3 || "Estudio Adicional / Detalle");
+    setModality3(s.modality3 || "X-Ray");
+    setImage3(s.image3);
+    setMimeType3(s.mimeType3 || "");
+    setImagePreviewUrl3(s.imagePreviewUrl3);
+    setAnnotations3(s.annotations3 || []);
+
+    setAnalysisResult(s.analysisResult || "");
+    setComparisonMode(s.comparisonMode || false);
+    setAnalysisResultFlash(s.analysisResultFlash || "");
+    setAnalysisResultPro(s.analysisResultPro || "");
+    setConsultationHistory(s.consultationHistory || []);
+    
+    setAnalysisError(null);
+    setExtractError(null);
+    setFlashError(null);
+    setProError(null);
+  };
+
   // Image 1 state
   const [image1, setImage1] = useState<string | null>(null);
   const [imagePreviewUrl1, setImagePreviewUrl1] = useState<string | null>(null);
@@ -1193,6 +1446,15 @@ export default function ExpertImageAnalysis({
     setAnalysisResult("");
     setIncorporated(false);
 
+    if (comparisonMode) {
+      setIsAnalyzingFlash(true);
+      setIsAnalyzingPro(true);
+      setAnalysisResultFlash("");
+      setAnalysisResultPro("");
+      setFlashError(null);
+      setProError(null);
+    }
+
     try {
       // Lazy high-fidelity compression before network transit to ensure Gemini stability and payload constraints
       const [img1Compressed, img2Compressed, img3Compressed] = await Promise.all([
@@ -1208,46 +1470,189 @@ export default function ExpertImageAnalysis({
       const finalImage3 = img3Compressed ? img3Compressed.base64 : (image3 || undefined);
       const finalMimeType3 = img3Compressed ? img3Compressed.mimeType : (mimeType3 || undefined);
 
-      const response = await fetch("/api/expert-image-analysis", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: selectedModel,
-          image1: finalImage1,
-          mimeType1: finalMimeType1,
-          desc1,
-          modality1,
-          annotations1,
-          image2: finalImage2,
-          mimeType2: finalMimeType2,
-          desc2: image2 ? desc2 : undefined,
-          modality2: image2 ? modality2 : undefined,
-          annotations2: (image2 && annotations2.length > 0) ? annotations2 : undefined,
-          image3: finalImage3,
-          mimeType3: finalMimeType3,
-          desc3: image3 ? desc3 : undefined,
-          modality3: image3 ? modality3 : undefined,
-          annotations3: (image3 && annotations3.length > 0) ? annotations3 : undefined,
-          clinicalSuspicion,
-          radiologicalQuestions,
-          patientInfo,
-          fractureProtocol: isFractureProtocolActive,
-          pulmonaryProtocol: isPulmonaryProtocolActive,
-          osteoarthritisProtocol: isOsteoarthritisProtocolActive,
-          prosthesisMetalProtocol: isMetalProtocolActive
-        }),
-      });
+      const requestPayload = {
+        image1: finalImage1,
+        mimeType1: finalMimeType1,
+        desc1,
+        modality1,
+        annotations1,
+        image2: finalImage2,
+        mimeType2: finalMimeType2,
+        desc2: image2 ? desc2 : undefined,
+        modality2: image2 ? modality2 : undefined,
+        annotations2: (image2 && annotations2.length > 0) ? annotations2 : undefined,
+        image3: finalImage3,
+        mimeType3: finalMimeType3,
+        desc3: image3 ? desc3 : undefined,
+        modality3: image3 ? modality3 : undefined,
+        annotations3: (image3 && annotations3.length > 0) ? annotations3 : undefined,
+        clinicalSuspicion,
+        radiologicalQuestions,
+        patientInfo,
+        fractureProtocol: isFractureProtocolActive,
+        pulmonaryProtocol: isPulmonaryProtocolActive,
+        osteoarthritisProtocol: isOsteoarthritisProtocolActive,
+        prosthesisMetalProtocol: isMetalProtocolActive
+      };
 
-      const data = await response.json();
-      if (response.ok && data.success) {
-        setAnalysisResult(data.analysis);
+      if (!comparisonMode) {
+        const response = await fetch("/api/expert-image-analysis", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: selectedModel,
+            ...requestPayload
+          }),
+        });
+
+        const data = await response.json();
+        if (response.ok && data.success) {
+          setAnalysisResult(data.analysis);
+          
+          // Save standard session
+          const newSession: ImageAnalysisSession = {
+            id: Math.random().toString(36).substr(2, 9),
+            timestamp: Date.now(),
+            patientInfo,
+            clinicalSuspicion,
+            radiologicalQuestions,
+            desc1,
+            modality1,
+            image1,
+            mimeType1,
+            imagePreviewUrl1,
+            annotations1,
+            desc2,
+            modality2,
+            image2,
+            mimeType2,
+            imagePreviewUrl2,
+            annotations2,
+            desc3,
+            modality3,
+            image3,
+            mimeType3,
+            imagePreviewUrl3,
+            annotations3,
+            analysisResult: data.analysis,
+            comparisonMode: false,
+            analysisResultFlash: data.analysis,
+            analysisResultPro: data.analysis,
+            consultationHistory: []
+          };
+          setSessions(prev => {
+            const updated = [newSession, ...prev].slice(0, 30);
+            safeSaveSessionsToLocalStorage(updated);
+            return updated;
+          });
+        } else {
+          setAnalysisError(data.error || "No se pudo completar el análisis clínico experto.");
+        }
       } else {
-        setAnalysisError(data.error || "No se pudo completar el análisis clínico experto.");
+        // Parallel model comparison
+        const fetchFlash = async () => {
+          try {
+            const res = await fetch("/api/expert-image-analysis", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                model: "gemini-3.5-flash",
+                ...requestPayload
+              }),
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+              setAnalysisResultFlash(data.analysis);
+              return data.analysis;
+            } else {
+              setFlashError(data.error || "No se pudo completar la valoración del modelo Flash.");
+              return "";
+            }
+          } catch (err) {
+            setFlashError("Error de comunicación en modelo Flash (tiempo excedido o red).");
+            return "";
+          } finally {
+            setIsAnalyzingFlash(false);
+          }
+        };
+
+        const fetchPro = async () => {
+          try {
+            const res = await fetch("/api/expert-image-analysis", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                model: "gemini-3.1-pro-preview",
+                ...requestPayload
+              }),
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+              setAnalysisResultPro(data.analysis);
+              return data.analysis;
+            } else {
+              setProError(data.error || "No se pudo completar la valoración del modelo Pro.");
+              return "";
+            }
+          } catch (err) {
+            setProError("Error de comunicación en modelo Pro (tiempo excedido o red).");
+            return "";
+          } finally {
+            setIsAnalyzingPro(false);
+          }
+        };
+
+        const [flashRes, proRes] = await Promise.all([fetchFlash(), fetchPro()]);
+        
+        // Choose Pro as main, fallback to flash
+        const mainRes = proRes || flashRes || "Error al generar valoración en ambos modelos.";
+        setAnalysisResult(mainRes);
+
+        if (flashRes || proRes) {
+          // Save comparison session
+          const newSession: ImageAnalysisSession = {
+            id: Math.random().toString(36).substr(2, 9),
+            timestamp: Date.now(),
+            patientInfo,
+            clinicalSuspicion,
+            radiologicalQuestions,
+            desc1,
+            modality1,
+            image1,
+            mimeType1,
+            imagePreviewUrl1,
+            annotations1,
+            desc2,
+            modality2,
+            image2,
+            mimeType2,
+            imagePreviewUrl2,
+            annotations2,
+            desc3,
+            modality3,
+            image3,
+            mimeType3,
+            imagePreviewUrl3,
+            annotations3,
+            analysisResult: mainRes,
+            comparisonMode: true,
+            analysisResultFlash: flashRes,
+            analysisResultPro: proRes,
+            consultationHistory: []
+          };
+          setSessions(prev => {
+            const updated = [newSession, ...prev].slice(0, 30);
+            safeSaveSessionsToLocalStorage(updated);
+            return updated;
+          });
+        }
       }
     } catch (err: any) {
       setAnalysisError("Fallo de red o tiempo de espera agotado al conectar con el servidor médico central.");
     } finally {
       setIsAnalyzing(false);
+      setIsAnalyzingFlash(false);
+      setIsAnalyzingPro(false);
     }
   };
 
@@ -1408,7 +1813,79 @@ export default function ExpertImageAnalysis({
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
         {/* Left Side: Inputs, Uploads and Comparisons */}
-        <div className="xl:col-span-7 space-y-6">
+        <div className={`${isConsoleExpanded ? "hidden xl:hidden" : "xl:col-span-7"} space-y-6`}>
+          {/* Session History Stream */}
+          {sessions.length > 0 && (
+            <div className="bg-[#0f172a] border border-slate-800 rounded-2xl p-4 shadow-md">
+              <div className="flex items-center justify-between mb-3 border-b border-slate-800 pb-2">
+                <h4 className="text-[10px] font-black uppercase text-indigo-400 tracking-widest flex items-center gap-1.5 font-mono">
+                  <History className="h-3.5 w-3.5 text-indigo-400" /> Historial de Valoraciones Guardadas ({sessions.length})
+                </h4>
+                <span className="text-[9px] font-mono text-slate-500">Haz clic en una sesión previa para restaurar imágenes y datos</span>
+              </div>
+              <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
+                {sessions.map(s => (
+                  <div
+                    key={s.id}
+                    onClick={() => handleRestoreSession(s)}
+                    className="flex-shrink-0 w-64 bg-slate-950/60 hover:bg-slate-950 border border-slate-850 hover:border-slate-700/60 rounded-xl p-3 cursor-pointer transition-all duration-150 relative group"
+                  >
+                    <button
+                      onClick={(e) => handleDeleteSession(s.id, e)}
+                      className="absolute top-2 right-2 p-1 bg-slate-900 border border-slate-800 rounded text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity z-10 cursor-pointer"
+                      title="Eliminar del Historial"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-emerald-400 font-bold font-mono uppercase tracking-wider">
+                          {s.modality1 || "DICOM / Rx"}
+                        </span>
+                        <span className="text-[8px] text-slate-500 font-mono font-semibold">
+                          {new Date(s.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric' })} {new Date(s.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      <div className="space-y-0.5">
+                        <p className="text-[11px] font-black text-slate-200 truncate pr-4">
+                          {s.patientInfo || "Paciente no especificado"}
+                        </p>
+                        <p className="text-[9px] text-slate-450 font-mono truncate">
+                          {s.clinicalSuspicion || "Sin sospechas ingresadas"}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1.5 pt-1">
+                        {s.image1 ? (
+                          <div className="h-7 w-7 rounded bg-slate-900 border border-slate-800 overflow-hidden flex items-center justify-center">
+                            <img 
+                              src={getImgSrc(s.image1, s.mimeType1)} 
+                              alt="preview" 
+                              className="h-full w-full object-cover"
+                              referrerPolicy="no-referrer"
+                            />
+                          </div>
+                        ) : (
+                          <div className="h-7 w-7 rounded bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-600 text-[8px] font-mono">
+                            S/D
+                          </div>
+                        )}
+                        {s.comparisonMode ? (
+                          <span className="text-[8px] bg-indigo-950/60 text-indigo-300 border border-indigo-900/30 px-1 py-0.5 rounded font-black uppercase font-mono shrink-0">
+                            Dual Flash & Pro
+                          </span>
+                        ) : (
+                          <span className="text-[8px] bg-slate-900 text-slate-400 border border-slate-850 px-1 py-0.5 rounded font-black uppercase font-mono shrink-0">
+                            Estándar Single
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Patient Metadata Fields */}
           <div className="bg-[#0f172a] border border-slate-800 rounded-2xl p-5 space-y-4 shadow-md">
             <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b border-slate-800/80 pb-2 flex items-center gap-2">
@@ -2223,6 +2700,30 @@ export default function ExpertImageAnalysis({
               </div>
             </div>
 
+            {/* Advanced Analysis Settings with Comparison Mode Toggle */}
+            <div className="pt-4 pb-4 border-t border-slate-800/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-2.5">
+                <div className="p-1.5 bg-indigo-950/40 border border-indigo-500/20 rounded-lg text-indigo-400">
+                  <Split className="h-4 w-4" />
+                </div>
+                <div className="text-left">
+                  <p className="text-[10.5px] font-black text-slate-200 uppercase tracking-wider font-mono">Comparativa Dual Multi-Modelo</p>
+                  <p className="text-[9px] text-slate-550 font-mono">Ejecuta Gemini Flash 3.5 y Pro 3.1 en paralelo para contrastar diagnósticos</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setComparisonMode(prev => !prev)}
+                className={`px-3 py-1.5 rounded-xl border font-mono text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+                  comparisonMode
+                    ? "bg-indigo-900 border-indigo-500/40 text-white shadow-[0_2px_8px_rgba(99,102,241,0.3)] hover:bg-indigo-800"
+                    : "bg-slate-950 border-slate-805 text-slate-400 hover:text-slate-200 hover:border-slate-700"
+                }`}
+              >
+                {comparisonMode ? "⚡ ACTIVO (Flash vs Pro)" : "Estándar Single"}
+              </button>
+            </div>
+
             {/* Call to action analysis button */}
             <div className="pt-2 border-t border-slate-800">
               <button
@@ -2233,12 +2734,22 @@ export default function ExpertImageAnalysis({
                 {isAnalyzing ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin text-white" />
-                    <span>Analizando Imágenes Médicas con Alta Especificidad...</span>
+                    <span>
+                      {comparisonMode 
+                        ? `Analizando en ambos modelos (Flash + Pro)...`
+                        : `Analizando Imágenes Médicas con Alta Especificidad...`
+                      }
+                    </span>
                   </>
                 ) : (
                   <>
                     <Sparkles className="h-4 w-4 text-amber-300" />
-                    <span>Ejecutar Análisis de Alta Especificidad (Consultora Académica AI)</span>
+                    <span>
+                      {comparisonMode
+                        ? `Ejecutar Comparativa Dual (Flash + Pro)`
+                        : `Ejecutar Análisis de Alta Especificidad (Consultora Académica AI)`
+                      }
+                    </span>
                   </>
                 )}
               </button>
@@ -2247,48 +2758,128 @@ export default function ExpertImageAnalysis({
         </div>
 
         {/* Right Side: Advanced Diagnostic Report / Output Console */}
-        <div className="xl:col-span-5 space-y-6">
+        <div className={`${isConsoleExpanded ? "xl:col-span-12" : "xl:col-span-5"} space-y-6 transition-all duration-300`}>
           <div className="bg-[#0f172a]/90 backdrop-blur-md border-2 border-slate-800 rounded-2xl p-6 shadow-xl min-h-[500px] flex flex-col">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
-              <h3 className="text-xs font-black text-indigo-400 uppercase tracking-widest flex items-center gap-1.5">
-                <ArrowRightLeft className="h-4 w-4 shrink-0" /> Consola de Opinión Experta
-              </h3>
-              
-              {analysisResult && (
-                <div className="flex items-center gap-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3 mb-4">
+              <div className="space-y-1">
+                <h3 className="text-xs font-black text-indigo-400 uppercase tracking-widest flex items-center gap-1.5 flex-wrap">
+                  <ArrowRightLeft className="h-4 w-4 shrink-0" /> Consola de Opinión Experta
+                  {analysisResult && !comparisonMode && (
+                    <span className="ml-2 text-[9px] bg-slate-950 border border-indigo-700/50 text-indigo-300 font-mono font-black px-2 py-0.5 rounded-lg uppercase tracking-wider">
+                      REPORTE: {activeReportSource}
+                    </span>
+                  )}
+                </h3>
+                <div className="flex items-center gap-2 mt-1">
                   <button
-                    onClick={handleCopyToClipboard}
-                    className="p-2 bg-slate-950 hover:bg-slate-900 border border-slate-800 rounded-xl text-slate-400 hover:text-slate-200 transition-all"
-                    title="Copiar Análisis"
+                    onClick={() => setIsContrastModeActive(prev => !prev)}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 border rounded-xl text-[10px] font-mono uppercase tracking-wider transition-all duration-200 cursor-pointer shadow-sm relative group ${
+                      isContrastModeActive
+                        ? "bg-amber-950/50 border-amber-500/50 text-amber-300 ring-1 ring-amber-500/30"
+                        : "bg-slate-900/90 border-slate-700/60 text-slate-300 hover:border-slate-500 hover:text-white"
+                    }`}
+                    title="Alternar Modo de Lectura de Contraste PACS (Ideal para salas de radiología con poca luz)"
                   >
-                    {copied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
+                    <span className="relative flex h-2 w-2">
+                      {isContrastModeActive ? (
+                        <>
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-indigo-400/40 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-500/80"></span>
+                        </>
+                      )}
+                    </span>
+                    <Contrast className="h-3 w-3 text-indigo-400 group-hover:rotate-45 transition-transform" />
+                    <span className="font-bold">Contraste PACS: {isContrastModeActive ? "ACTIVO" : "DESACTIVO"}</span>
                   </button>
-
-                  <button
-                    onClick={handleIncorporateToGenerator}
-                    disabled={isExtracting}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-950/40 hover:bg-indigo-950 text-indigo-300 border border-indigo-500/35 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all disabled:opacity-50"
-                    title="Suministrar datos esenciales a generador"
-                  >
-                    {isExtracting ? (
-                      <>
-                        <Loader2 className="h-3 w-3 animate-spin text-indigo-400" />
-                        <span>Inyectando...</span>
-                      </>
-                    ) : incorporated ? (
-                      <>
-                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
-                        <span>¡Suministrado!</span>
-                      </>
-                    ) : (
-                      <>
-                        <Send className="h-3.5 w-3.5" />
-                        <span>Suministrar a Reporte</span>
-                      </>
-                    )}
-                  </button>
+                  {isContrastModeActive && (
+                    <motion.div 
+                      initial={{ scale: 0.9, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      className="flex bg-slate-950 p-0.5 rounded-lg border border-slate-800 text-[8px] font-mono leading-none shadow-inner"
+                    >
+                      <button
+                        onClick={() => setContrastTheme("amber")}
+                        className={`px-2 py-1 rounded font-black cursor-pointer transition-colors ${contrastTheme === "amber" ? "bg-amber-500/15 text-amber-400" : "text-slate-500 hover:text-slate-450"}`}
+                      >
+                        ÁMBAR
+                      </button>
+                      <button
+                        onClick={() => setContrastTheme("green")}
+                        className={`px-2 py-1 rounded font-black cursor-pointer transition-colors ${contrastTheme === "green" ? "bg-emerald-500/15 text-emerald-400" : "text-slate-500 hover:text-slate-450"}`}
+                      >
+                        VERDE
+                      </button>
+                      <button
+                        onClick={() => setContrastTheme("white")}
+                        className={`px-2 py-1 rounded font-black cursor-pointer transition-colors ${contrastTheme === "white" ? "bg-slate-800 text-white" : "text-slate-500"}`}
+                      >
+                        W/B
+                      </button>
+                    </motion.div>
+                  )}
                 </div>
-              )}
+              </div>
+              
+              <div className="flex items-center gap-2 self-end sm:self-auto">
+                {/* Expand / Minimize Console Layout Toggle */}
+                <button
+                  type="button"
+                  onClick={() => setIsConsoleExpanded(prev => !prev)}
+                  className={`p-2 rounded-xl border transition-all duration-200 cursor-pointer flex items-center justify-center ${
+                    isConsoleExpanded
+                      ? "bg-indigo-950/90 border-indigo-500/50 text-indigo-300 ring-1 ring-indigo-500/30"
+                      : "bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-100"
+                  }`}
+                  title={isConsoleExpanded ? "Restaurar tamaño estándar de consola" : "Maximizar área de lectura (Modo Expandido)"}
+                >
+                  {isConsoleExpanded ? (
+                    <LayoutGrid className="h-4.5 w-4.5" />
+                  ) : (
+                    <Maximize2 className="h-4.5 w-4.5" />
+                  )}
+                </button>
+
+                {analysisResult && (
+                  <>
+                    <button
+                      onClick={handleCopyToClipboard}
+                      className="p-2 bg-slate-950 hover:bg-slate-900 border border-slate-800 rounded-xl text-slate-400 hover:text-slate-200 transition-all cursor-pointer"
+                      title="Copiar Análisis"
+                    >
+                      {copied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
+                    </button>
+
+                    <button
+                      onClick={() => handleIncorporateToGenerator(false)}
+                      disabled={isExtracting}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-950/40 hover:bg-indigo-950 text-indigo-300 border border-indigo-500/35 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all disabled:opacity-50 cursor-pointer"
+                      title="Suministrar datos esenciales a generador"
+                    >
+                      {isExtracting ? (
+                        <>
+                          <Loader2 className="h-3 w-3 animate-spin text-indigo-400" />
+                          <span>Inyectando...</span>
+                        </>
+                      ) : incorporated ? (
+                        <>
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                          <span>¡Suministrado!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send className="h-3.5 w-3.5" />
+                          <span>Suministrar a Reporte</span>
+                        </>
+                      )}
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
 
             {/* Error Message if Any */}
@@ -2385,18 +2976,303 @@ export default function ExpertImageAnalysis({
                   </div>
                 </div>
               ) : (
-                <div className="flex-grow max-h-[550px] overflow-y-auto pr-1 space-y-4">
-                  {analysisResult && (
-                    <div className="bg-emerald-950/20 border border-emerald-500/25 rounded-xl p-3 flex items-start gap-2.5 text-left animate-fade-in mb-3">
-                      <span className="text-emerald-400 text-xs font-black mt-0.5">✓</span>
-                      <div className="space-y-0.5">
-                        <p className="text-[9px] font-black font-sans uppercase text-emerald-400 tracking-wider">Protocolo de Validación de Confianza Clínico Secuencial</p>
-                        <p className="text-[9px] font-mono text-slate-400 leading-relaxed font-semibold">Gemini está obligado a citar rigurosamente la evidencia radiológica visual que descarta o confirma de forma concluyente cualquier disminución de espacios articulares u otros hallazgos mayores.</p>
+                <div className={`flex-grow overflow-y-auto pr-1 space-y-4 transition-all duration-300 ${isConsoleExpanded ? "max-h-[850px]" : "max-h-[550px]"}`}>
+                  {comparisonMode ? (
+                    /* Multi-model comparison sub-routing block */
+                    <div className="space-y-4">
+                      {/* Tab Switcher with Layout Controls */}
+                      <div className="flex border-b border-sidebar-border pb-2 gap-2 flex-wrap items-center justify-between">
+                        <div className="flex gap-1.5 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => setActiveComparisonTab("side")}
+                            className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all border cursor-pointer ${
+                              activeComparisonTab === "side"
+                                ? "bg-indigo-950/80 border-indigo-700/60 text-indigo-300"
+                                : "bg-transparent border-transparent text-slate-500 hover:text-slate-300"
+                            }`}
+                          >
+                            Lado a Lado (Flash & Pro)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setActiveComparisonTab("flash")}
+                            className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all border cursor-pointer ${
+                              activeComparisonTab === "flash"
+                                ? "bg-amber-950/60 border-amber-800/40 text-amber-300"
+                                : "bg-transparent border-transparent text-slate-500 hover:text-slate-300"
+                            }`}
+                          >
+                            Gemini Flash 3.5
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setActiveComparisonTab("pro")}
+                            className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all border cursor-pointer ${
+                              activeComparisonTab === "pro"
+                                ? "bg-purple-900/30 border-purple-800/40 text-purple-300"
+                                : "bg-transparent border-transparent text-slate-500 hover:text-slate-300"
+                            }`}
+                          >
+                            Gemini Pro 3.1
+                          </button>
+                        </div>
+
+                        {/* Disposición control (only visible if tab is side-by-side) */}
+                        {activeComparisonTab === "side" && (
+                          <div className="flex items-center gap-1 bg-[#0b0c16] border border-slate-800 p-1 rounded-xl text-[9px] font-sans shadow-inner">
+                            <span className="text-[8px] uppercase font-black text-slate-500 mx-2 tracking-wider">Disposición:</span>
+                            <button
+                              type="button"
+                              onClick={() => setComparisonLayout("columns")}
+                              className={`px-2 py-1 rounded-lg font-bold text-[8.5px] uppercase tracking-wider cursor-pointer duration-150 transition-all border ${
+                                comparisonLayout === "columns"
+                                  ? "bg-indigo-950 text-indigo-300 border-indigo-900/40 shadow-sm"
+                                  : "bg-transparent border-transparent text-slate-500 hover:text-slate-300"
+                              }`}
+                              title="Mostrar reportes en columnas lado a lado"
+                            >
+                              Paralelo
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setComparisonLayout("stacked")}
+                              className={`px-2 py-1 rounded-lg font-bold text-[8.5px] uppercase tracking-wider cursor-pointer duration-150 transition-all border ${
+                                comparisonLayout === "stacked"
+                                  ? "bg-indigo-950 text-indigo-300 border-indigo-900/40 shadow-sm"
+                                  : "bg-transparent border-transparent text-slate-500 hover:text-slate-300"
+                              }`}
+                              title="Mostrar reportes apilados uno encima de otro a pantalla completa"
+                            >
+                              Apilado
+                            </button>
+                          </div>
+                        )}
                       </div>
+
+                      {/* Advanced Evaluation Session Card (Radiólogo Jefe) */}
+                      {analysisResultFlash && analysisResultPro && (
+                        <div className="bg-gradient-to-r from-purple-950/30 via-[#0a0f1d] to-indigo-950/25 border-2 border-purple-900/35 rounded-2xl p-4 md:p-5 space-y-4 shadow-[0_4px_24px_rgba(147,51,234,0.08)] text-left animate-fade-in">
+                          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-purple-900/20 pb-3">
+                            <div className="flex items-center gap-2.5">
+                              <div className="p-2 bg-purple-950/40 border border-purple-500/30 rounded-xl text-purple-400">
+                                <Scale className="h-4 w-4 text-purple-400" />
+                              </div>
+                              <div>
+                                <h4 className="text-xs font-black text-slate-100 uppercase tracking-widest font-mono">Tribunal Radiólogo Jefe (Análisis Ciego Dual)</h4>
+                                <p className="text-[9px] text-slate-400 font-mono">Sesión interactiva: evalúa ambos modelos de forma ciega y redacta un diagnóstico definitivo para el chat.</p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleRunDualEvaluation}
+                              disabled={isEvaluatingDual}
+                              className="px-4 py-2.5 bg-purple-600 hover:bg-purple-500 disabled:bg-slate-900 text-white disabled:text-slate-500 border border-purple-500/20 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 shrink-0 self-start md:self-auto shadow-md"
+                            >
+                              {isEvaluatingDual ? (
+                                <>
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin text-purple-400" />
+                                  <span>Evaluando a Ciegas...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Sparkles className="h-3.5 w-3.5 text-purple-200" />
+                                  <span>Iniciar Sesión de Evaluación Dual</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+
+                          {dualEvaluationError && (
+                            <div className="p-2.5 bg-red-950/40 border border-red-500/20 rounded-lg text-xs text-red-300 font-mono">
+                              ⚠️ Error: {dualEvaluationError}
+                            </div>
+                          )}
+
+                          <p className="text-[8.5px] text-slate-500 font-mono leading-relaxed">
+                            * Los informes de los residentes son tratados como independientes (sin conocer el nombre del modelo receptor) para garantizar objetividad. El dictamen consolidará y potenciará la interpretación general, y podrá ser complementado de forma conversacional.
+                          </p>
+                        </div>
+                      )}
+
+                      {activeComparisonTab === "side" ? (
+                        <div className={`grid gap-4 transition-all duration-300 ${comparisonLayout === "columns" ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1"}`}>
+                          {/* Flash Column */}
+                          <div className={`bg-slate-950/50 border rounded-xl p-4 space-y-2.5 text-left transition-all ${
+                            isContrastModeActive
+                              ? contrastTheme === "amber"
+                                ? "bg-black border-amber-900/40 text-amber-400 font-mono"
+                                : contrastTheme === "green"
+                                  ? "bg-black border-emerald-900/40 text-emerald-400 font-mono"
+                                  : "bg-black border-slate-700 text-slate-100 font-mono"
+                              : "border-slate-850"
+                          }`}>
+                            <div className="flex items-center justify-between border-b border-slate-800/50 pb-1.5 gap-2 flex-wrap">
+                              <span className="text-[10px] font-black text-amber-400 font-mono uppercase tracking-widest">⚡ Flash 3.5</span>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {analysisResultFlash && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSelectReport("flash", analysisResultFlash)}
+                                    className="px-2 py-0.5 bg-amber-950/80 hover:bg-amber-900 text-amber-300 rounded text-[8px] font-black uppercase tracking-wider font-mono border border-amber-900/50 cursor-pointer"
+                                    title="Elegir este informe para chatear y realizar sugerencias/modificaciones"
+                                  >
+                                    Elegir Reporte
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setAnalysisResult(analysisResultFlash);
+                                    handleIncorporateToGenerator(true);
+                                  }}
+                                  className="px-2 py-0.5 bg-indigo-950 hover:bg-indigo-900 text-indigo-300 rounded text-[8px] font-black uppercase tracking-wider font-mono border border-indigo-900 cursor-pointer"
+                                >
+                                  Suministrar
+                                </button>
+                              </div>
+                            </div>
+                            {isAnalyzingFlash ? (
+                              <div className="py-20 flex flex-col items-center justify-center gap-2">
+                                <Loader2 className="h-6 w-6 animate-spin text-amber-400" />
+                                <p className="text-[9px] font-mono uppercase text-slate-500 animate-pulse">Consultando Flash...</p>
+                              </div>
+                            ) : flashError ? (
+                              <p className="text-xs text-red-400 font-mono font-semibold">{flashError}</p>
+                            ) : (
+                              <div className={`overflow-y-auto text-xs leading-relaxed space-y-2 pr-1 transition-all duration-300 ${
+                                isConsoleExpanded ? "max-h-[650px]" : "max-h-[380px]"
+                              }`}>
+                                {renderElegantResponse(analysisResultFlash || "Sin hallazgos cargados.", "text-amber-450")}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Pro Column */}
+                          <div className={`bg-slate-950/50 border rounded-xl p-4 space-y-2.5 text-left transition-all ${
+                            isContrastModeActive
+                              ? contrastTheme === "amber"
+                                ? "bg-black border-amber-900/40 text-amber-400 font-mono"
+                                : contrastTheme === "green"
+                                  ? "bg-black border-emerald-900/40 text-emerald-400 font-mono"
+                                  : "bg-black border-slate-700 text-slate-100 font-mono"
+                              : "border-slate-850"
+                          }`}>
+                            <div className="flex items-center justify-between border-b border-slate-800/50 pb-1.5 gap-2 flex-wrap">
+                              <span className="text-[10px] font-black text-purple-400 font-mono uppercase tracking-widest">🧠 Pro 3.1</span>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {analysisResultPro && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSelectReport("pro", analysisResultPro)}
+                                    className="px-2 py-0.5 bg-purple-950/80 hover:bg-purple-900 text-purple-300 rounded text-[8px] font-black uppercase tracking-wider font-mono border border-purple-900/50 cursor-pointer"
+                                    title="Elegir este informe para chatear y realizar sugerencias/modificaciones"
+                                  >
+                                    Elegir Reporte
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setAnalysisResult(analysisResultPro);
+                                    handleIncorporateToGenerator(true);
+                                  }}
+                                  className="px-2 py-0.5 bg-indigo-950 hover:bg-indigo-900 text-indigo-300 rounded text-[8px] font-black uppercase tracking-wider font-mono border border-indigo-900 cursor-pointer"
+                                >
+                                  Suministrar
+                                </button>
+                              </div>
+                            </div>
+                            {isAnalyzingPro ? (
+                              <div className="py-20 flex flex-col items-center justify-center gap-2">
+                                <Loader2 className="h-6 w-6 animate-spin text-purple-400" />
+                                <p className="text-[9px] font-mono uppercase text-slate-500 animate-pulse">Consultando Pro...</p>
+                              </div>
+                            ) : proError ? (
+                              <p className="text-xs text-red-400 font-mono font-semibold">{proError}</p>
+                            ) : (
+                              <div className={`overflow-y-auto text-xs leading-relaxed space-y-2 pr-1 transition-all duration-300 ${
+                                isConsoleExpanded ? "max-h-[650px]" : "max-h-[380px]"
+                              }`}>
+                                {renderElegantResponse(analysisResultPro || "Sin hallazgos cargados.", "text-purple-400")}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ) : activeComparisonTab === "flash" ? (
+                        <div className={`text-left p-4 rounded-xl border space-y-3 ${
+                          isContrastModeActive
+                            ? contrastTheme === "amber"
+                              ? "bg-black border-amber-800 text-amber-400 font-mono"
+                              : contrastTheme === "green"
+                                ? "bg-black border-emerald-800 text-emerald-400 font-mono"
+                                : "bg-black border-slate-705 text-slate-100 font-mono"
+                            : "bg-slate-950/40 border-slate-850 text-slate-200"
+                        }`}>
+                          <div className="flex items-center justify-between border-b border-slate-800/40 pb-2">
+                            <p className="text-[10px] font-black text-amber-400 uppercase font-mono tracking-widest border-0 leading-none">⚡ Valoración Gemini 3.5 Flash</p>
+                            {analysisResultFlash && (
+                              <button
+                                type="button"
+                                onClick={() => handleSelectReport("flash", analysisResultFlash)}
+                                className="px-2 py-1 bg-amber-950 hover:bg-amber-900 text-amber-300 rounded text-[8.5px] font-black uppercase tracking-wider font-mono border border-amber-900/50 cursor-pointer animate-fade-in"
+                              >
+                                Elegir como Reporte de Trabajo
+                              </button>
+                            )}
+                          </div>
+                          {renderElegantResponse(analysisResultFlash || "Cargue imágenes para renderizar opinión.", "text-amber-550")}
+                        </div>
+                      ) : (
+                        <div className={`text-left p-4 rounded-xl border space-y-3 ${
+                          isContrastModeActive
+                            ? contrastTheme === "amber"
+                              ? "bg-black border-amber-800 text-amber-400 font-mono"
+                              : contrastTheme === "green"
+                                ? "bg-black border-emerald-800 text-emerald-400 font-mono"
+                                : "bg-black border-slate-705 text-slate-100 font-mono"
+                            : "bg-slate-950/40 border-slate-850 text-slate-200"
+                        }`}>
+                          <div className="flex items-center justify-between border-b border-slate-800/40 pb-2">
+                            <p className="text-[10px] font-black text-purple-400 uppercase font-mono tracking-widest border-0 leading-none">🧠 Valoración Gemini 3.1 Pro (Clínica Avanzada)</p>
+                            {analysisResultPro && (
+                              <button
+                                type="button"
+                                onClick={() => handleSelectReport("pro", analysisResultPro)}
+                                className="px-2 py-1 bg-purple-950 hover:bg-purple-900 text-purple-300 rounded text-[8.5px] font-black uppercase tracking-wider font-mono border border-purple-900/50 cursor-pointer animate-fade-in"
+                              >
+                                Elegir como Reporte de Trabajo
+                              </button>
+                            )}
+                          </div>
+                          {renderElegantResponse(analysisResultPro || "Cargue imágenes para renderizar opinión.", "text-purple-400")}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    /* Standard output visual block with custom Contrast theme injection */
+                    <div className={`space-y-4 ${
+                      isContrastModeActive
+                        ? contrastTheme === "amber"
+                          ? "bg-black text-amber-400 border border-amber-900/60 p-4 rounded-xl font-mono"
+                          : contrastTheme === "green"
+                            ? "bg-black text-emerald-400 border border-emerald-900/60 p-4 rounded-xl font-mono"
+                            : "bg-black text-slate-100 border border-slate-705 p-4 rounded-xl font-mono"
+                        : ""
+                    }`}>
+                      {analysisResult && !isContrastModeActive && (
+                        <div className="bg-emerald-950/20 border border-emerald-500/25 rounded-xl p-3 flex items-start gap-2.5 text-left animate-fade-in mb-3">
+                          <span className="text-emerald-400 text-xs font-black mt-0.5">✓</span>
+                          <div className="space-y-0.5">
+                            <p className="text-[9px] font-black font-sans uppercase text-emerald-400 tracking-wider">Protocolo de Validación de Confianza Clínico Secuencial</p>
+                            <p className="text-[9px] font-mono text-slate-400 leading-relaxed font-semibold">Gemini está obligado a citar rigurosamente la evidencia radiológica visual que descarta o confirma de forma concluyente cualquier disminución de espacios articulares u otros hallazgos mayores.</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {renderElegantResponse(analysisResult, "text-indigo-400")}
                     </div>
                   )}
-
-                  {renderElegantResponse(analysisResult, "text-indigo-400")}
 
                   {/* Interactive dialogue / follow-up queries */}
                   <div className="mt-6 border-t border-slate-800/80 pt-6 space-y-4">

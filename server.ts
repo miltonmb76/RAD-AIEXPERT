@@ -1650,6 +1650,141 @@ Escribe tu respuesta directamente en formato Markdown limpio, estructurado, sin 
 });
 
 /**
+ * NEW API: BLIND DOUBLE-MODEL CLINICAL TRIBUNAL & EVALUATION (RADIÓLOGO JEFE)
+ * POST /api/expert-evaluate-dual
+ */
+app.post("/api/expert-evaluate-dual", async (req: express.Request, res: express.Response) => {
+  try {
+    const { 
+      model,
+      image1, mimeType1,
+      image2, mimeType2,
+      image3, mimeType3,
+      reportAlpha,
+      reportBeta,
+      patientInfo,
+      clinicalSuspicion,
+      radiologicalQuestions,
+      fractureProtocol,
+      pulmonaryProtocol,
+      osteoarthritisProtocol,
+      prosthesisMetalProtocol
+    } = req.body;
+
+    if (!reportAlpha || !reportBeta) {
+      return res.status(400).json({ success: false, error: "Se requieren ambos reportes preliminares (Alpha y Beta) para iniciar la sesión de evaluación del Tribunal Médico." });
+    }
+
+    const ai = getGeminiClient();
+    // Use Pro model as default for advanced academic appraisal
+    const selectedModel = "gemini-3.1-pro-preview";
+    const parts: any[] = [];
+
+    const checkImageSupport = (mime: string) => {
+      if (!mime) return false;
+      const m = mime.toLowerCase();
+      return (
+        m.includes("png") ||
+        m.includes("jpeg") ||
+        m.includes("jpg") ||
+        m.includes("webp") ||
+        m.includes("heic") ||
+        m.includes("heif") ||
+        m.includes("pdf")
+      );
+    };
+
+    if (image1 && mimeType1 && checkImageSupport(mimeType1)) {
+      parts.push({
+        inlineData: {
+          data: image1,
+          mimeType: mimeType1,
+        },
+      });
+    }
+
+    if (image2 && mimeType2 && checkImageSupport(mimeType2)) {
+      parts.push({
+        inlineData: {
+          data: image2,
+          mimeType: mimeType2,
+        },
+      });
+    }
+
+    if (image3 && mimeType3 && checkImageSupport(mimeType3)) {
+      parts.push({
+        inlineData: {
+          data: image3,
+          mimeType: mimeType3,
+        },
+      });
+    }
+
+    const promptText = `
+Sospecha Clínica e Datos de Entrada del Paciente:
+- Paciente: ${patientInfo || "No especificado"}
+- Sospecha Clínica / Motivo de Estudio: ${clinicalSuspicion || "No especificado"}
+- Preguntas Radiológicas Interesantes: ${radiologicalQuestions || "No especificados"}
+
+Protocolos de Validación Técnicos Activos:
+- Fracturas: ${fractureProtocol ? "SÍ" : "NO"}
+- Pulmonar: ${pulmonaryProtocol ? "SÍ" : "NO"}
+- Artrosis/Osteoartrosis: ${osteoarthritisProtocol ? "SÍ" : "NO"}
+- Prótesis/Metal de Apoyo: ${prosthesisMetalProtocol ? "SÍ" : "NO"}
+
+A continuación se presentan DOS reportes preliminares independientes generados para este caso radiológico.
+Ambos fueron sometidos de manera ciega (tú no sabes que modelo redactó cada uno para evitar favoritismos y self-bias). Analízalos críticamente y de forma objetiva de acuerdo con las imágenes:
+
+=== [INFORME DIAGNÓSTICO ALPHA] ===
+${reportAlpha}
+
+=== [INFORME DIAGNÓSTICO BETA] ===
+${reportBeta}
+
+Como el RADIÓLOGO JEFE, Director de la Unidad y Representante del Tribunal de Especialización, realiza una EVALUACIÓN CLÍNICA TUTORIAL de acuerdo a las siguientes pautas detalladas:
+
+1. **ANÁLISIS DE RESIDENTES (FORTALEZAS Y DEBILIDADES A CIEGAS)**:
+   - Identifica y califica sistemáticamente las virtudes críticas de observación y redacción en el [INFORME DIAGNÓSTICO ALPHA]. Explica qué áreas interpretó de manera magistral basadas en los píxeles anatómicos de los estudios y si incurrió en imprecisiones, sobre-diagnósticos de artefactos técnicos, u omisiones de micro-marcardores.
+   - Realiza la misma evaluación forense minuciosa para el [INFORME DIAGNÓSTICO BETA].
+   - Compara de forma directa el rigor conceptual, adherencia a terminología internacional estandarizada y coherencia diagnóstica general de ambos borradores preliminares.
+
+2. **CONCLUSIÓN MAGISTRAL DEL RADIÓLOGO JEFE**:
+   - Elabora el informe y DICTAMEN INTEGRAL DEFINITIVO consolidando los hallazgos reales. Corrige cualquier sesgo, confusión o alucinación técnica presente en los borradores preliminares.
+   - Describe de manera ultra-detallada las anomalías observadas, su cuantificación clínica (grados de compromiso, dimensiones, extensiones focales) y las conclusiones finales con rigor científico internacional de subespecialidad.
+
+Escribe tu respuesta con tono académico del más alto nivel, sin rodeos corteses. Tu dictamen debe ser la palabra final resolutiva del caso, lista para ser inyectada al generador oficial.
+`;
+
+    parts.push({ text: promptText });
+
+    const systemInstruction = 
+      "Eres el Radiólogo Jefe y Director Clínico de un prestigioso centro PACS universitario. Diriges las sesiones generales de interconsulta y examen de casos diagnósticos más complejos. Tu palabra es la norma definitiva en el hospital y destacas por un impecable nivel científico.";
+
+    const response = await ai.models.generateContent({
+      model: selectedModel,
+      contents: { parts },
+      config: {
+        systemInstruction: systemInstruction,
+        temperature: 0.15,
+      },
+    });
+
+    res.json({
+      success: true,
+      evaluation: response.text,
+    });
+  } catch (error: any) {
+    console.error("Error en /api/expert-evaluate-dual:", error);
+    const friendlyError = handleGeminiError(error);
+    res.status(500).json({
+      success: false,
+      error: friendlyError,
+    });
+  }
+});
+
+/**
  * NEW API: EXTRACT VITAL FINDINGS, CLASSIFICATION, AND DIAGNOSIS FROM DOUBLE ASSESSMENT
  * POST /api/extract-essential-findings
  * Payload: {
