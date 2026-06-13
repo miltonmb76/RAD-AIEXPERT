@@ -320,6 +320,347 @@ export default function VascularAnatomyViewer({
     );
   };
 
+  const renderClinicalBentoDashboard = () => {
+    // Determine the focused segment ID (the hovered, or first pathology matched, or fallback)
+    const getFocusedSegment = () => {
+      if (activeHover && states[activeHover]) {
+        return activeHover;
+      }
+      // Find first critical
+      const criticalSeg = Object.keys(states).find(k => states[k] === "critical");
+      if (criticalSeg) return criticalSeg;
+      
+      // Find first mild
+      const mildSeg = Object.keys(states).find(k => states[k] === "mild" || states[k] === "reflux");
+      if (mildSeg) return mildSeg;
+      
+      // Fallback to first available in states
+      const firstSeg = Object.keys(states)[0];
+      if (firstSeg) return firstSeg;
+      
+      // Hard fallback
+      return isCarotidas ? "aci_der" : (isVenoso ? "vfc_der" : "afs_der");
+    };
+
+    const focusedId = getFocusedSegment();
+    const state = states[focusedId] || "normal";
+    const desc = descriptions[focusedId] || "Segmento con hemodinámica e integridad parietal conservadas.";
+    
+    // Parse percentage of obstruction/stenosis from description or state
+    let percentage = 0;
+    if (state === "normal") {
+      percentage = 12; // normal visual baseline (10-15% intimal thickening)
+    } else if (state === "mild" || state === "reflux") {
+      percentage = 40; // mild plaque (30-49%)
+    } else {
+      percentage = 85; // critical stenosis (70-99%)
+    }
+
+    // Try parsing actual number from description
+    const percentMatches = desc.match(/(\d{1,3})\s*%/);
+    if (percentMatches) {
+      const parsedVal = parseInt(percentMatches[1], 10);
+      if (!isNaN(parsedVal) && parsedVal <= 100) {
+        percentage = parsedVal;
+      }
+    }
+
+    const friendlyName = focusedId
+      .replace("_der", " Derecho")
+      .replace("_izq", " Izquierdo")
+      .replace("acc", "Carótida Común (ACC)")
+      .replace("aci", "Carótida Interna (ACI)")
+      .replace("ace", "Carótida Externa (ACE)")
+      .replace("vert", "Arteria Vertebral")
+      .replace("vfc", "Femoral Común (VFC)")
+      .replace("vfs", "Femoral Superficial (VFS)")
+      .replace("vp", "Vena Poplítea (VP)")
+      .replace("vsm", "Safena Magna (VSM)")
+      .replace("vsp", "Safena Parva (VSP)")
+      .replace("sfj", "Unión SFJ")
+      .replace("aic", "Ilíaca Común (AIC)")
+      .replace("afc", "Femoral Común (AFC)")
+      .replace("afs", "Femoral Superficial (AFS)")
+      .replace("ap", "Arteria Poplítea (AP)")
+      .replace("ata", "Arteria Tibial Anterior")
+      .replace("atp", "Arteria Tibial Posterior")
+      .replace("aper", "Arteria Peronea");
+
+    const needleRotation = -90 + (percentage * 1.8);
+
+    // Color theme according to severity
+    let statusBadgeColor = "bg-emerald-950/40 text-emerald-400 border-emerald-900/30";
+    let statusText = isVenoso ? "Completamente Permeable" : "Flujo Fisiológico Normal";
+    if (state === "mild" || state === "reflux") {
+      statusBadgeColor = "bg-amber-950/40 text-amber-400 border-amber-900/30";
+      statusText = isVenoso ? "Insuficiencia Valvular / Reflujo" : "Ateromatosis / Estenosis Leve";
+    } else if (state === "critical") {
+      statusBadgeColor = "bg-red-950/40 text-red-400 border-red-900/30";
+      statusText = isVenoso ? "Trombosis Venosa Profunda (TVP)" : "Estenosis Crítica o Flujo Ausente";
+    }
+
+    // Clinical Guidelines & Medical Recommendations depending on state + study type
+    let consensusTitle = "Criterios de Consenso SRU (Society of Radiologists in Ultrasound)";
+    let recommendation = "Control ecográfico periódico anual. Mantener estilo de vida cardiosaludable.";
+    
+    if (isCarotidas) {
+      consensusTitle = "Criterios SRU para Estenosis de Carótida Interna (ACI)";
+      if (percentage < 50) {
+        recommendation = "Estenosis insignificante (<50%). PSV <125 cm/s. Sin necesidad de intervención quirúrgica. Manejo conservador según AHA/ASA.";
+      } else if (percentage >= 50 && percentage < 70) {
+        recommendation = "Estenosis Moderada (50-69%). Vel. PSV 125-230 cm/s. Optimizar terapia de estatinas y antiplaquetarios. Seguimiento en 6 meses.";
+      } else if (percentage >= 70 && percentage < 100) {
+        recommendation = "Estenosis Severa/Crítica (70-99%). Vel. PSV >230 cm/s con pérdida de ventana espectral. Considerar Endarterectomía o Angioplastia con stent.";
+      } else {
+        recommendation = "Oclusión Completa (100%). Flujo no detectable distal. La endarterectomía no suele estar indicada para oclusiones crónicas.";
+      }
+    } else if (isVenoso) {
+      consensusTitle = "Clasificación Clínica CEAP para Insuficiencia Venosa Crónica";
+      if (state === "normal") {
+        recommendation = "Permeabilidad normal. Válvulas competentes. Compresibilidad venosa al 100% sin signos de trombosis aguda ni crónica.";
+      } else if (state === "reflux") {
+        recommendation = "Reflujo detectado (>0.5s en vena femoral/poplítea o >1s en uniones safenas). Considerar uso de medias de compresión graduada clase II. Evitar bipedestación prolongada.";
+      } else {
+        recommendation = "SOSPECHA DE TVP AGUDA. Ausencia de compresibilidad con transductor, trombo focal/difuso. Anticoagulación terapéutica inmediata o derivación a urgencias hemodinámicas.";
+      }
+    } else {
+      // Arterial
+      consensusTitle = "Directrices TASC II para Enfermedad Arterial de Miembros Inferiores";
+      if (percentage < 50) {
+        recommendation = "Flujo trifásico normal o atenuación leve. Sin claudicación intermitente relevante. Fomentar caminatas guiadas de 30 minutos diarios.";
+      } else if (percentage >= 50 && percentage < 70) {
+        recommendation = "Estenosis hemodinámicamente significativa. Pérdida del componente diastólico (onda bifásica). Indice Tobillo-Brazo (ITB) esperable entre 0.6 y 0.9.";
+      } else {
+        recommendation = "Estenosis crítica (>70%) con onda monofásica amortiguada (Tardus-Parvus). Riesgo de claudicación severa o isquemia crítica de miembro. Valorar revascularización.";
+      }
+    }
+
+    // Dynamic wave path SVG data based on hemodynamic alteration
+    let pulseWavePath = "";
+    let waveLabel = "";
+    let waveDescription = "";
+
+    if (state === "normal") {
+      // Triphasic regular clean system wave
+      pulseWavePath = "M 5,50 C 15,50 18,10 22,10 C 26,10 28,75 32,75 C 34,75 37,42 41,42 C 45,42 48,50 55,50 L 70,50 C 80,50 83,10 87,10 C 91,10 93,75 97,75 C 99,75 102,42 106,42 C 110,42 113,50 120,50 L 135,50 C 145,50 148,10 152,10 C 156,10 158,75 162,75 C 164,75 167,42 171,42 C 175,42 178,50 185,50 L 200,50 C 210,50 213,10 217,10 C 221,10 223,75 227,75 C 229,75 232,42 236,42 C 240,42 243,50 250,50 L 270,50";
+      waveLabel = isVenoso ? "Onda Venosa Fásica con la Respiración" : "Onda Arterial Trifásica de Alta Resistencia";
+      waveDescription = isVenoso ? "Flujo modulado por respiración sin reflujo." : "Flujo rápida velocidad sistólica, inversión diastólica rápida por resistencia normal periférica y deflexión elástica tardía.";
+    } else if (state === "mild" || state === "reflux") {
+      if (isVenoso) {
+        // Continuous retrograde broad spectral wave representing incompetence
+        pulseWavePath = "M 5,55 C 15,55 25,68 35,68 C 45,68 55,42 65,42 C 75,42 85,68 95,68 C 105,68 115,42 125,42 C 135,42 145,68 155,68 C 165,68 175,42 185,42 C 195,42 205,68 215,68 L 270,55";
+        waveLabel = "Onda Espectral de Reflujo Patológico";
+        waveDescription = "Inversión prolongada de flujo valvular (>1.5 segundos) gatillado tras maniobra de Valsalva o compresión distal.";
+      } else {
+        // Biphasic moderate flow wave (loss of third component)
+        pulseWavePath = "M 5,50 C 15,50 18,18 22,18 C 26,18 30,68 34,68 C 38,68 45,50 50,50 L 70,50 C 80,50 83,18 87,18 C 91,18 95,68 99,68 C 103,68 110,50 115,50 L 135,50 C 145,50 148,18 152,18 C 156,18 160,68 164,68 C 168,68 175,50 180,50 L 200,50 C 210,50 213,18 217,18 C 221,18 225,68 229,68 C 233,68 240,50 245,50 L 270,50";
+        waveLabel = "Onda Espectral Bifásica de Resistencia Moderada";
+        waveDescription = "Pérdida del componente elástico terciario por atenuación de rebote arterial elástico. Indica placas iniciales.";
+      }
+    } else {
+      // Critical Stenosis or Thrombosis
+      if (isVenoso) {
+        // Flatline (no compression, no flow)
+        pulseWavePath = "M 5,50 L 25,50 Q 30,51 35,49 T 45,50 Q 55,49 65,51 T 75,50 L 270,50";
+        waveLabel = "Ausencia Total de Señal Espectral Venosa (Aplanada)";
+        waveDescription = "Flujo nulo o restrictivo compatible con proceso trombótico luminal oclusivo agudo.";
+      } else {
+        // Monophasic rounded Tardus-Parvus wave (severe downstream stenosis)
+        pulseWavePath = "M 5,50 C 18,50 25,32 30,32 C 35,32 45,50 55,50 L 70,50 C 83,50 90,32 95,32 C 100,32 110,50 120,50 C 135,50 148,50 155,32 160,32 C 165,32 175,50 185,50 L 200,50 C 213,50 220,32 225,32 C 230,32 240,50 250,50 L 270,50";
+        waveLabel = "Onda Monofásica Amortiguada (Tipo Tardus-Parvus)";
+        waveDescription = "Tiempo de aceleración sistólica sumamente prolongado con velocidades extremadamente bajas por estenosis severa proximal.";
+      }
+    }
+
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4.5 mb-5 select-none font-sans">
+        
+        {/* BENTO CARD 1: VELOCÍMETRO CLÍNICO / GAUGE DE ESTENOSIS */}
+        <div className="bg-slate-950/80 rounded-2xl p-4 border border-indigo-950/70 shadow-lg flex flex-col justify-between relative overflow-hidden group transition-all duration-300 hover:border-indigo-500/30">
+          <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/5 rounded-full blur-2xl pointer-events-none" />
+          
+          <div className="flex items-center justify-between mb-2 pb-1.5 border-b border-indigo-950/40">
+            <span className="text-[9px] font-black font-mono text-indigo-400 uppercase tracking-widest">
+              Velocímetro Clínico
+            </span>
+            <span className={`text-[8px] font-black font-mono uppercase px-2 py-0.5 rounded-full border ${statusBadgeColor}`}>
+              {state === "normal" ? "Normal" : state === "mild" || state === "reflux" ? "Moderado" : "Severo / Crítico"}
+            </span>
+          </div>
+
+          <div className="flex flex-col items-center justify-center my-1.5">
+            <div className="relative w-full max-w-[170px] aspect-[17/10]">
+              <svg viewBox="0 0 200 120" className="w-full h-full">
+                {/* Gray empty background track */}
+                <path 
+                  d="M 30,100 A 70,70 0 0,1 170,100" 
+                  fill="none" 
+                  stroke="#121a2e" 
+                  strokeWidth="11" 
+                  strokeLinecap="round" 
+                />
+                
+                {/* Colored visual reference sectors */}
+                <path 
+                  d="M 30,100 A 70,70 0 0,1 100,30" 
+                  fill="none" 
+                  stroke="#10b981" 
+                  strokeWidth="11" 
+                  strokeDasharray="40 100"
+                  opacity="0.2"
+                />
+                <path 
+                  d="M 100,30 A 70,70 0 0,1 170,100" 
+                  fill="none" 
+                  stroke="#ef4444" 
+                  strokeWidth="11" 
+                  strokeDasharray="60 100"
+                  opacity="0.2"
+                />
+
+                {/* Active Colored Level Track (smooth neon stroke) */}
+                <path 
+                  d="M 30,100 A 70,70 0 0,1 170,100" 
+                  fill="none" 
+                  stroke={state === "normal" ? "#10b981" : state === "mild" || state === "reflux" ? "#f59e0b" : "#ef4444"} 
+                  strokeWidth="11" 
+                  strokeLinecap="round"
+                  strokeDasharray={`${(percentage / 100) * 220} 220`}
+                  className="transition-all duration-500 ease-out"
+                />
+
+                {/* Needle base pivot pin */}
+                <circle cx="100" cy="100" r="14" fill="#0c111d" />
+                
+                {/* Gauge Needle Hand */}
+                <path
+                  d="M 97,100 L 99,35 A 2,2 0 0,1 101,35 L 103,100 Z"
+                  fill="#818cf8"
+                  transform={`rotate(${needleRotation} 100 100)`}
+                  className="transition-all duration-500 ease-out origin-[100px_100px]"
+                />
+                <circle cx="100" cy="100" r="5" fill="#818cf8" />
+              </svg>
+
+              {/* Central Text HUD label overlaying the gauge */}
+              <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 text-center">
+                <span className="text-[21px] font-black text-slate-100 font-mono tracking-tighter block leading-none">
+                  {percentage}%
+                </span>
+                <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest font-mono">
+                  {isVenoso ? "Afectación" : "Estenosis"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="text-center mt-1 space-y-0.5">
+            <span className="text-[9.5px] font-extrabold text-slate-200 uppercase block truncate max-w-full font-mono">
+              {friendlyName}
+            </span>
+            <p className="text-[8.5px] text-slate-500 leading-relaxed font-semibold uppercase tracking-wider">
+              {statusText}
+            </p>
+          </div>
+        </div>
+
+        {/* BENTO CARD 2: HEMODYNAMIC SPECTRAL PULSE WAVE */}
+        <div className="bg-slate-950/80 rounded-2xl p-4 border border-indigo-950/70 shadow-lg flex flex-col justify-between overflow-hidden relative group transition-all duration-300 hover:border-indigo-500/30">
+          <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full blur-2xl pointer-events-none" />
+
+          <div className="flex items-center justify-between mb-2 pb-1.5 border-b border-indigo-950/40">
+            <span className="text-[9px] font-black font-mono text-indigo-400 uppercase tracking-widest">
+              Hemodinámica Doppler Estructural
+            </span>
+            <Activity className="h-3.5 w-3.5 text-indigo-400 animate-pulse" />
+          </div>
+
+          {/* WAVELENGTH CANVAS */}
+          <div className="bg-slate-900/60 rounded-xl p-2.5 border border-indigo-950/50 my-1 relative">
+            <svg viewBox="0 0 280 90" className="w-full h-[70px] overflow-hidden">
+              <line x1="5" y1="50" x2="275" y2="50" stroke="#1f2937" strokeWidth="1" strokeDasharray="3 3" />
+              <line x1="5" y1="20" x2="275" y2="20" stroke="#111827" strokeWidth="0.8" />
+              <line x1="5" y1="75" x2="275" y2="75" stroke="#111827" strokeWidth="0.8" />
+
+              {/* Dynamic waveform outline path */}
+              <path 
+                d={pulseWavePath} 
+                fill="none" 
+                stroke={state === "normal" ? "#10b981" : state === "mild" || state === "reflux" ? "#f59e0b" : "#ef4444"} 
+                strokeWidth="2.2" 
+                strokeLinecap="round"
+                className="transition-all duration-500 ease-out"
+              />
+
+              {/* Shaded area for hemodynamics */}
+              <path 
+                d={`${pulseWavePath} L 270,85 L 5,85 Z`} 
+                fill={state === "normal" ? "url(#grad-normal)" : state === "mild" || state === "reflux" ? "url(#grad-reflux)" : "url(#grad-critical)"} 
+                opacity="0.1"
+                className="transition-all duration-500 ease-out"
+              />
+
+              <defs>
+                <linearGradient id="grad-normal" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#10b981" />
+                  <stop offset="100%" stopColor="#10b981" stopOpacity="0" />
+                </linearGradient>
+                <linearGradient id="grad-reflux" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#f59e0b" />
+                  <stop offset="100%" stopColor="#f59e0b" stopOpacity="0" />
+                </linearGradient>
+                <linearGradient id="grad-critical" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#ef4444" />
+                  <stop offset="100%" stopColor="#ef4444" stopOpacity="0" />
+                </linearGradient>
+              </defs>
+            </svg>
+            
+            <span className="absolute bottom-1 right-2 text-[6.5px] font-mono text-slate-500 font-bold uppercase">
+              SEÑAL DE FLUJO ESPECTRAL ACTIVA
+            </span>
+          </div>
+
+          <div className="space-y-0.5 mt-1.5">
+            <span className="text-[9.5px] font-extrabold text-slate-200 uppercase block truncate font-mono">
+              {waveLabel}
+            </span>
+            <p className="text-[8.5px] text-slate-500 leading-relaxed font-semibold italic truncate">
+              {waveDescription}
+            </p>
+          </div>
+        </div>
+
+        {/* BENTO CARD 3: MEDICINE CONSENSUS DIRECTIVES */}
+        <div className="bg-slate-950/80 rounded-2xl p-4 border border-indigo-950/70 shadow-lg flex flex-col justify-between overflow-hidden relative group transition-all duration-300 hover:border-indigo-500/30">
+          <div className="absolute bottom-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full blur-2xl pointer-events-none" />
+
+          <div className="flex items-center justify-between mb-2 pb-1.5 border-b border-indigo-950/40">
+            <span className="text-[9px] font-black font-mono text-indigo-400 uppercase tracking-widest">
+              Directrices de Consenso Clínico
+            </span>
+            <Sparkles className="h-3.5 w-3.5 text-indigo-400 animate-pulse" />
+          </div>
+
+          <div className="flex-1 flex flex-col justify-center py-1">
+            <span className="text-[9px] font-black text-indigo-350 uppercase tracking-wide font-mono block leading-snug mb-1">
+              {consensusTitle}:
+            </span>
+            <p className="text-[9.5px] text-slate-300 font-medium leading-relaxed font-sans border-l-2 border-indigo-600 pl-2">
+              {recommendation}
+            </p>
+          </div>
+
+          <div className="mt-2.5 pt-1.5 border-t border-slate-900 flex justify-between items-center text-[7.5px] font-bold text-slate-500 uppercase font-mono">
+            <span>SOCIEDAD DE ECOGRAFÍA</span>
+            <span>AHA / TASC II / CEAP</span>
+          </div>
+        </div>
+
+      </div>
+    );
+  };
+
   const [displayFormat, setDisplayFormat] = React.useState<"table" | "blocks">("table");
   const [copiedBlocksFeedback, setCopiedBlocksFeedback] = React.useState(false);
 
@@ -1446,6 +1787,7 @@ export default function VascularAnatomyViewer({
           {/* Table display & editable list */}
           {table ? (
             <div className="space-y-4">
+              {renderClinicalBentoDashboard()}
               <div className="bg-slate-950/80 rounded-2xl p-4 border border-indigo-950/60 shadow-inner">
                 <div className="flex items-center justify-between border-b border-indigo-950/70 pb-2 mb-3">
                   <div className="flex items-center gap-1.5">

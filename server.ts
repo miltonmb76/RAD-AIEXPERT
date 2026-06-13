@@ -318,7 +318,7 @@ Por favor, estructura tu respuesta de la siguiente forma EXACTA (usa formato Mar
 
 **TIPO DE ESTUDIO:** ${studyType || "Estudio de Imagen"}
 
-**HISTORIA CLÍNICA / INDICACIONES:** ${clinicalHistory || "No especificada"}
+**HISTORIA CLÍNICA / INDICACIONES:** ${clinicalHistory ? `(Pula, redacte adecuadamente, corrija ortográficamente y formatee de manera fluida y académica la indicación del estudio provista por el usuario: "${clinicalHistory}". REGLA DE CASING OBLIGATORIA: Si está escrita completa o parcialmente en mayúsculas sostenidas, debe convertirla obligatoriamente a minúsculas estándar/mixtas con su primera letra mayúscula para que guarde perfecta coherencia estética con el resto del reporte. No use mayúsculas sostenidas ni abreviaciones informales bajo ninguna circunstancia, y redáctela con impecable terminología médica en español, sin inventar síntomas o hallazgos).` : "No especificada"}
 
 
 **TÉCNICA DEL EXAMEN:**
@@ -341,6 +341,7 @@ REGLAS DE FORMATO CRÍTICAS PARA COMPATIBILIDAD CON MICROSOFT WORD:
 3. Asegura que TODO el texto, puntos, listas y recomendaciones bajo la sección 'IMPRESIÓN DIAGNÓSTICA' esté renderizado enteramente en negrita (ej: **1. Hallazgo...** y **2. Recomendación...**).
 4. El título principal (basado en el estudio especificado) debe estar exactamente en esa línea y se centrará automáticamente al copiarlo o visualizarlo.
 5. El tono debe ser de un radiólogo experto de nivel de subespecialidad.
+6. ASISTENCIA Y REDACCIÓN DE LA INDICACIÓN / HISTORIA CLÍNICA: Debes pulir, refinar ortográficamente y redactar de forma clínicamente óptima el texto provisto para la indicación o historia clínica. Si la indicación fue ingresada completa o parcialmente en mayúsculas sostenidas (ALL CAPS) o con ortografía informal, tradúcela obligatoriamente a una redacción fluida, técnica, académica y formal usando minúsculas con mayúscula inicial (caja mixta). Nunca la dejes en mayúsculas sostenidas, para mantener absoluta uniformidad estética y profesional con el resto de la redacción del reporte.
 `;
 
     parts.push({ text: promptText });
@@ -361,6 +362,62 @@ REGLAS DE FORMATO CRÍTICAS PARA COMPATIBILIDAD CON MICROSOFT WORD:
     });
   } catch (error: any) {
     console.error("Error en /api/analyze:", error);
+    const friendlyError = handleGeminiError(error);
+    res.status(500).json({
+      success: false,
+      error: friendlyError,
+    });
+  }
+});
+
+/**
+ * NEW API: ASSIST AND POLISH CLINICAL HISTORY / INDICATION (CASING & SPELLING ASSISTANCE)
+ * POST /api/assist-clinical-history
+ * Payload: {
+ *   model?: string (e.g. "gemini-3.5-flash")
+ *   clinicalHistory: string
+ *   studyType?: string
+ * }
+ */
+app.post("/api/assist-clinical-history", async (req: express.Request, res: express.Response) => {
+  try {
+    const { model, clinicalHistory, studyType } = req.body;
+    if (!clinicalHistory) {
+      return res.status(400).json({ success: false, error: "Se requiere el parámetro 'clinicalHistory' para asistir." });
+    }
+
+    const ai = getGeminiClient();
+    const selectedModel = getModelName(model);
+
+    const promptText = `
+Eres un asistente de redacción médica especialista en radiología. El usuario te ha proporcionado el motivo o indicación clínica para una prueba de imagen radiológica.
+
+Estudio realizado o solicitado: "${studyType || "No especificado"}"
+Texto original provisto por el usuario: "${clinicalHistory}"
+
+Por favor, reescribe, pule, corrige ortográficamente y mejora de manera formal esta indicación médica en español clínico/radiológico.
+
+REGLAS CRÍTICAS DE FORMATO Y CONTENIDO (SÍGUELAS DE MANERA ESTRICTA):
+1. REGLA DE CASING ABSOLUTA: Si el texto provisto tiene palabras o frases enteras escritas en mayúsculas sostenidas (ALL CAPS) o con mayúsculas informales, debes traducirlas y convertirlas COMPLETAMENTE al formato estándar de minúsculas con su primera letra mayúscula (caja normal/mixta). Bajo ninguna circunstancia respondas con un texto completamente en mayúsculas sostenidas.
+2. RIGOR CLÍNICO: Corrige cualquier error ortográfico, faltas de acentuación o sintaxis. No inventes antecedentes o síntomas clínicos nuevos que el usuario no describió, simplemente dale una redacción formal, impecable, técnica, elegante y profesional (por ejemplo: "DOLOR SEVERO EN CODO DERECHO" -> "Dolor severo en la articulación del codo derecho").
+3. MÁXIMA CONCISIÓN: Devuelve SÓLO el texto plano de la indicación médica ya corregida y asistida, sin preámbulos, sin notas aclaratorias, sin comentarios, sin comillas adicionales en la salida. Debe ser legible e inyectable directamente.
+`;
+
+    const response = await ai.models.generateContent({
+      model: selectedModel,
+      contents: [{ text: promptText }],
+      config: {
+        systemInstruction: "Eres un redactor médico de radiología de élite. Tu función es corregir, pulir sintáctica y ortográficamente, y formatear a mayúsculas/minúsculas correctas las indicaciones de estudio, garantizando que nunca se produzcan textos en mayúsculas sostenidas y dotándolos de un lenguaje técnico formal y fluido.",
+        temperature: 0.1,
+      },
+    });
+
+    res.json({
+      success: true,
+      polishedText: response.text ? response.text.trim() : clinicalHistory,
+    });
+  } catch (error: any) {
+    console.error("Error en /api/assist-clinical-history:", error);
     const friendlyError = handleGeminiError(error);
     res.status(500).json({
       success: false,

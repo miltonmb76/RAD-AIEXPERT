@@ -400,6 +400,7 @@ export default function App() {
   const [isRecordingAudio, setIsRecordingAudio] = useState<boolean>(false);
   const [recordingDuration, setRecordingDuration] = useState<number>(0);
   const [transcribing, setTranscribing] = useState<boolean>(false);
+  const [isAssistingHistory, setIsAssistingHistory] = useState<boolean>(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<any>(null);
@@ -883,6 +884,16 @@ export default function App() {
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [generationSteps, setGenerationSteps] = useState<string>("");
   const [generatedReport, setGeneratedReport] = useState<string>("");
+
+  // --- INTERACTIVE SYNTACTIC HIGHLIGHTING AND DYNAMIC AESTHETIC STATES ---
+  const [isSyntacticHighlightingActive, setIsSyntacticHighlightingActive] = useState<boolean>(true);
+  const [reportTheme, setReportTheme] = useState<string>("slate-dark"); // 'slate-dark' | 'academic-light' | 'clinical-minimal' | 'retro-glowing'
+  const [reportFont, setReportFont] = useState<string>("sans"); // 'sans' | 'serif' | 'mono'
+  const [reportDensity, setReportDensity] = useState<string>("airy"); // 'compact' | 'airy'
+  const [showPathology, setShowPathology] = useState<boolean>(true);
+  const [showAnatomy, setShowAnatomy] = useState<boolean>(true);
+  const [showNormal, setShowNormal] = useState<boolean>(true);
+  const [showTechnical, setShowTechnical] = useState<boolean>(true);
 
   // --- VERSION HISTORY AND MANUAL REPORT EDIT STATE ---
   const [originalBaseReport, setOriginalBaseReport] = useState<string>("");
@@ -1708,6 +1719,33 @@ Ejemplo:
       console.error("Error auto-evaluating image:", e);
     } finally {
       setIsEvaluatingImage(false);
+    }
+  };
+
+  // ACTION: ASSIST AND POLISH STUDY INDICATION (CASING & SPELLING ORTHOGRAPHY)
+  const handleAssistClinicalHistory = async () => {
+    if (!clinicalHistory.trim() || isAssistingHistory) return;
+    setIsAssistingHistory(true);
+    try {
+      const response = await fetch("/api/assist-clinical-history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: selectedModel,
+          clinicalHistory,
+          studyType,
+        }),
+      });
+      const data = await response.json();
+      if (data.success && data.polishedText) {
+        setClinicalHistory(data.polishedText);
+      } else {
+        console.error("No se pudo pulir la indicación:", data.error);
+      }
+    } catch (e) {
+      console.error("Error al asistir con la indicación clínica:", e);
+    } finally {
+      setIsAssistingHistory(false);
     }
   };
 
@@ -5694,12 +5732,13 @@ Ejemplo:
   const renderBoldTextSafe = (text: string, keyPrefix: string) => {
     if (!text) return "";
     const parts: React.ReactNode[] = [];
-    const boldRegex = /\*\*(.*?)\*\*/g;
+    const boldRegex = /\*\*(.*?)\*\"/g; // Wait, actually standard bold regex is /\*\*(.*?)\*\*/g
+    const realBoldRegex = /\*\*(.*?)\*\*/g;
     let match;
     let lastIndex = 0;
     let keyCounter = 0;
 
-    while ((match = boldRegex.exec(text)) !== null) {
+    while ((match = realBoldRegex.exec(text)) !== null) {
       const matchIndex = match.index;
       if (matchIndex > lastIndex) {
         parts.push(text.substring(lastIndex, matchIndex));
@@ -5709,11 +5748,170 @@ Ejemplo:
           {match[1]}
         </strong>
       );
-      lastIndex = boldRegex.lastIndex;
+      lastIndex = realBoldRegex.lastIndex;
     }
     if (lastIndex < text.length) {
       parts.push(text.substring(lastIndex));
     }
+    return parts.length > 0 ? parts : text;
+  };
+
+  const highlightRadiologicalText = (text: string, keyPrefix: string) => {
+    if (!text) return "";
+    if (!isSyntacticHighlightingActive) {
+      return renderBoldTextSafe(text, keyPrefix);
+    }
+
+    const boldRegex = /\*\*(.*?)\*\*/g;
+    const parts: React.ReactNode[] = [];
+    let lastIndex = 0;
+    let keyCounter = 0;
+    let match;
+
+    const getHighlightCategory = (word: string) => {
+      const w = word.toLowerCase();
+      
+      // Pathologies / Anomalies
+      const pathologies = [
+        "fractura", "fractur", "trazos", "trazo", "desplazamiento", "fisura", "compromiso articular", 
+        "luxación", "subluxación", "fx", "reducción", "rediccion", "pinzamiento", "osteofito", "osteofitos", 
+        "osteofitosis", "esclerosis", "derrame", "nódulo", "nodulo", "infiltrado", "estenosis", "hernia", 
+        "protusión", "desgarro", "tendinopatía", "disminuido", "disminución", "patológico", "anómalo", 
+        "ruptura", "calcificación", "lesión", "lesion", "inflamación"
+      ];
+      if (showPathology && pathologies.some(p => w.includes(p) || p.includes(w) && w.length > 4)) {
+        return {
+          category: "Patología / Alteración",
+          colorClass: "text-rose-450 bg-rose-500/10 hover:bg-rose-500/20 border-b border-rose-500/50",
+          indicator: "🔴",
+          description: "Hallazgo patológico o alteración estructural detectada en el estudio."
+        };
+      }
+
+      // Anatomy
+      const anatomy = [
+        "fémur", "femur", "tibia", "peroné", "perone", "rótula", "rotula", "patelar", "codo", "húmero", "humero", 
+        "radio", "cúbito", "cubito", "carótida", "carotida", "menisco", "ligamento", "pulmón", "pulmon", 
+        "pulmonar", "hilio", "hiliar", "mediastino", "columna", "vértebra", "vertebra", "cervical", 
+        "lumbar", "dorsal", "articulación", "articulacion", "muscular", "esquelético", "femoral", 
+        "femorotibial", "tíbioperonea", "tibiofibular", "meniscos", "pulmones", "carotídeo"
+      ];
+      if (showAnatomy && anatomy.some(a => w.includes(a) || a.includes(w) && w.length > 4)) {
+        return {
+          category: "Anatomía",
+          colorClass: "text-cyan-400 bg-cyan-500/10 hover:bg-cyan-500/20 border-b border-cyan-500/50",
+          indicator: "🔵",
+          description: "Mención de estructura anatómica o región evaluada."
+        };
+      }
+
+      // Normal findings
+      const normals = [
+        "conservado", "conservada", "sin hallazgos", "normal", "respetado", "respetada", "adecuado", 
+        "adecuada", "libre", "no se aprecia", "no se observa", "negativo", "integro", "íntegro", 
+        "estables", "preservada", "preservado", "uniforme", "homogéneo", "homogénea"
+      ];
+      if (showNormal && normals.some(n => w.includes(n) || n.includes(w) && w.length > 5)) {
+        return {
+          category: "Normalidad / Conservado",
+          colorClass: "text-emerald-450 bg-emerald-500/10 hover:bg-emerald-500/20 border-b border-emerald-500/50",
+          indicator: "🟢",
+          description: "Signo o estructura anatómica con morfología conservada o normal."
+        };
+      }
+
+      // Measurements / parameters / scales / technical
+      const technical = [
+        "mm", "cm", "grados", "kv", "mas", "secuencia", "t1", "t2", "axial", "sagital", 
+        "coronal", "escala", "criterio", "clasificación", "clasificacion", "cie-10", "icd-10"
+      ];
+      if (showTechnical && technical.some(t => w === t || w.includes(t) && w.length > 2)) {
+        return {
+          category: "Técnica / Medida",
+          colorClass: "text-purple-450 bg-purple-500/10 hover:bg-purple-500/20 border-b border-purple-500/50",
+          indicator: "🟣",
+          description: "Métrica, escala clínica, clasificación o parámetro de adquisición."
+        };
+      }
+
+      return null;
+    };
+
+    const processTextSegment = (plainText: string, isBold: boolean, segmentKey: string) => {
+      const wordPattern = /([a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\d-]+)/g;
+      const subParts: React.ReactNode[] = [];
+      let lastSubIndex = 0;
+      let subMatch;
+      let subCounter = 0;
+
+      while ((subMatch = wordPattern.exec(plainText)) !== null) {
+        const matchIndex = subMatch.index;
+        if (matchIndex > lastSubIndex) {
+          subParts.push(plainText.substring(lastSubIndex, matchIndex));
+        }
+        
+        const matchedWord = subMatch[1];
+        const matchDetails = getHighlightCategory(matchedWord);
+
+        if (matchDetails) {
+          subParts.push(
+            <span 
+              key={`${segmentKey}-word-${subCounter++}`} 
+              className={`cursor-help px-0.5 rounded transition-all inline relative group select-all ${matchDetails.colorClass}`}
+            >
+              {isBold ? (
+                <strong className={`font-extrabold ${reportTheme === 'academic-light' || reportTheme === 'clinical-minimal' ? 'text-black' : 'text-white'}`}>
+                  {matchedWord}
+                </strong>
+              ) : matchedWord}
+              {/* Tooltip dynamic styling */}
+              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-52 bg-slate-900 border border-slate-700 text-slate-100 p-2 rounded-xl shadow-2xl text-[10px] leading-relaxed z-[999] pointer-events-none select-none font-sans font-medium text-center">
+                <span className="flex items-center gap-1 mb-1 font-black justify-center">
+                  <span>{matchDetails.indicator}</span>
+                  <span className="uppercase text-[8px] tracking-wider text-white">{matchDetails.category}</span>
+                </span>
+                {matchDetails.description}
+              </span>
+            </span>
+          );
+        } else {
+          subParts.push(
+            isBold ? (
+              <strong key={`${segmentKey}-plain-${subCounter++}`} className={`font-bold ${reportTheme === 'academic-light' || reportTheme === 'clinical-minimal' ? 'text-slate-950 font-black' : 'text-white'}`}>
+                {matchedWord}
+              </strong>
+            ) : matchedWord
+          );
+        }
+        lastSubIndex = wordPattern.lastIndex;
+      }
+      
+      if (lastSubIndex < plainText.length) {
+        subParts.push(
+          isBold ? (
+            <strong key={`${segmentKey}-plain-last`} className={`font-bold ${reportTheme === 'academic-light' || reportTheme === 'clinical-minimal' ? 'text-slate-950 font-black' : 'text-white'}`}>
+              {plainText.substring(lastSubIndex)}
+            </strong>
+          ) : plainText.substring(lastSubIndex)
+        );
+      }
+      return subParts;
+    };
+
+    while ((match = boldRegex.exec(text)) !== null) {
+      const matchIndex = match.index;
+      if (matchIndex > lastIndex) {
+        parts.push(...processTextSegment(text.substring(lastIndex, matchIndex), false, `${keyPrefix}-p-${keyCounter}`));
+      }
+      parts.push(...processTextSegment(match[1], true, `${keyPrefix}-b-${keyCounter}`));
+      lastIndex = boldRegex.lastIndex;
+      keyCounter++;
+    }
+    
+    if (lastIndex < text.length) {
+      parts.push(...processTextSegment(text.substring(lastIndex), false, `${keyPrefix}-p-last`));
+    }
+
     return parts.length > 0 ? parts : text;
   };
 
@@ -7592,7 +7790,30 @@ Ejemplo:
 
                     {/* Indicación */}
                     <div className="space-y-2">
-                      <label className="text-[10px] font-black text-slate-500 block uppercase tracking-widest">Indicación:</label>
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-black text-slate-500 block uppercase tracking-widest">Indicación:</label>
+                        {clinicalHistory.trim() && (
+                          <button
+                            type="button"
+                            onClick={handleAssistClinicalHistory}
+                            disabled={isAssistingHistory}
+                            className="text-[9px] font-black text-indigo-400 hover:text-indigo-300 uppercase tracking-widest font-mono cursor-pointer flex items-center gap-1 bg-indigo-950/40 hover:bg-indigo-950/80 border border-indigo-900/30 hover:border-indigo-500/30 px-2 py-0.5 rounded transition-all select-none active:scale-95"
+                            title="Pulir indicación: corregir ortografía, redactar profesionalmente y arreglar mayúsculas/minúsculas"
+                          >
+                            {isAssistingHistory ? (
+                              <>
+                                <Loader2 className="h-2.5 w-2.5 animate-spin text-indigo-400" />
+                                <span>Asistiendo...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Sparkles className="h-2.5 w-2.5 text-indigo-400 animate-pulse" />
+                                <span>Asistir con IA (Casing & Redacción)</span>
+                              </>
+                            )}
+                          </button>
+                        )}
+                      </div>
                       <textarea
                         value={clinicalHistory}
                         onChange={(e) => setClinicalHistory(e.target.value)}
@@ -9186,30 +9407,32 @@ Ejemplo:
                               />
                             </div>
                           ) : (
-                            <div className="bg-slate-950 p-6 sm:p-8 rounded-2xl border-2 border-slate-850 shadow-inner overflow-x-auto select-text text-slate-100 selection:bg-indigo-900 selection:text-white">
-                              {renderClinicalReport(generatedReport)}
-                              
-                              {/* Visual On-Screen Gallery of Attached Images */}
-                              {attachedImages.length > 0 && (
-                                <div className="mt-8 pt-8 border-t border-slate-850 animate-fadeIn">
-                                  <div className="flex items-center gap-2 mb-4">
-                                    <FileImage className="h-4 w-4 text-indigo-400" />
-                                    <h3 className="text-xs font-black uppercase tracking-widest text-slate-200">
-                                      Anexo: Registro de Capturas Diagnósticas ({attachedImages.length})
-                                    </h3>
+                            <div className="space-y-4 animate-fadeIn">
+                              <div className="p-6 sm:p-8 rounded-2xl border-2 bg-slate-950 border-slate-850 text-slate-100 selection:bg-indigo-900 selection:text-white shadow-inner overflow-x-auto select-text">
+                                {renderClinicalReport(generatedReport)}
+                                
+                                {/* Visual On-Screen Gallery of Attached Images */}
+                                {attachedImages.length > 0 && (
+                                  <div className="mt-8 pt-8 border-t border-slate-800/80 animate-fadeIn">
+                                    <div className="flex items-center gap-2 mb-4">
+                                      <FileImage className="h-4 w-4 text-indigo-400" />
+                                      <h3 className="text-xs font-black uppercase tracking-widest text-slate-205">
+                                        Anexo: Registro de Capturas Diagnósticas ({attachedImages.length})
+                                      </h3>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                      {attachedImages.map((img) => (
+                                        <div key={img.id} className="bg-slate-900/60 p-3 rounded-xl border border-slate-800 flex flex-col gap-2">
+                                          <img src={img.url} alt={img.name} className="w-full aspect-[4/3] object-cover rounded bg-black border border-slate-950" />
+                                          {img.caption && (
+                                            <div className="text-xs font-semibold text-slate-300 italic text-center mt-1">“{img.caption}”</div>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
                                   </div>
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    {attachedImages.map((img) => (
-                                      <div key={img.id} className="bg-slate-900/60 p-3 rounded-xl border border-slate-800 flex flex-col gap-2">
-                                        <img src={img.url} alt={img.name} className="w-full aspect-[4/3] object-cover rounded bg-black border border-slate-950" />
-                                        {img.caption && (
-                                          <div className="text-xs font-semibold text-slate-300 italic text-center mt-1">“{img.caption}”</div>
-                                        )}
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
+                                )}
+                              </div>
                             </div>
                           )}
 
