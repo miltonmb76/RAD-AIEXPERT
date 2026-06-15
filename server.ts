@@ -2864,6 +2864,122 @@ IMPORTANTE: Devuelve ÚNICAMENTE el objeto de JSON bien formateado, sin rodeos, 
   }
 });
 
+/**
+ * NEW API: ANALYZE SPECIFIC ANATOMICAL STRUCTURES FROM THE REPORT WITH HIGH FIDELITY
+ * POST /api/analyze-anatomy
+ */
+app.post("/api/analyze-anatomy", async (req: express.Request, res: express.Response) => {
+  try {
+    const { model, reportText, studyType, structures } = req.body;
+    if (!reportText) {
+      return res.status(400).json({ success: false, error: "Se requiere el reporte médico para realizar el análisis." });
+    }
+    if (!structures || !Array.isArray(structures) || structures.length === 0) {
+      return res.status(400).json({ success: false, error: "Se requiere una lista de estructuras anatómicas para evaluar." });
+    }
+
+    const ai = getGeminiClient();
+    const selectedModel = getModelName(model);
+
+    // Build the instruction list showing each structure, its human label, and its allowed status values
+    let structuresPrompt = "";
+    structures.forEach((struc: any) => {
+      structuresPrompt += `- ID: "${struc.id}" (${struc.label}). Estados clínicos permitidos: [${struc.allowedStates.map((s: string) => `"${s}"`).join(", ")}]\n`;
+    });
+
+    const promptText = `
+Estudio clínico / Región: ${studyType || "No especificado"}
+
+Reporte Radiológico formal:
+"""
+${reportText}
+"""
+
+Tu misión es analizar detenidamente el reporte clínico anterior y mapear los hallazgos correspondientes a las siguientes estructuras anatómicas:
+${structuresPrompt}
+
+Para cada una de estas estructuras en la lista:
+1. "state": Determina cuál es su estado clínico concreto de entre sus opciones permitidas.
+   - Analiza con sumo cuidado la negación de hallazgos (ej: "sin desgarros", "no se observa rotura", "patrón fibrilar conservado" significan estado normal).
+   - Elige exactamente uno de los valores indicados en "Estados clínicos permitidos" para esa estructura. No uses otros términos ni inventes estados. En caso de duda, prefiere "normal".
+   - Si la estructura ni siquiera se menciona en el reporte, entonces elige obligatoriamente "no_descrito".
+
+2. "description": Genera un resumen clínico del hallazgo que sea extremadamente COMPACTO, BREVE y DIRECTO para esa estructura (en español).
+   - IMPORTANTE: Si la estructura es normal (estado "normal"), la descripción DEBE ser EXACTAMENTE: "Dentro de límites normales."
+   - Si la estructura NO está descrita en el reporte (estado "no_descrito"), responde: "No mencionado / No descrito."
+   - Si la estructura tiene una anomalía o hallazgo patológico, genera un micro-resumen ultra-concreto de solo 2 a 7 palabras (ej: "Tendinosis leve sin desgarros", "Desgarro parcial intrasustancia de 5mm", "Bursitis SAD moderada", "Adenopatía reactiva aislada"). Evita explicaciones largas, rodeos, oraciones completas extensas o redundancias, para asegurar que la descripción quepa perfectamente en una sola línea del cuadro sinóptico.
+   - No alucines escalas, grados ni dimensiones que no figuren explícitamente en el reporte.
+
+Devuelve la lista "results" con el análisis de cada estructura solicitada.
+`;
+
+    const systemInstruction = `Eres un radiólogo experto. Analizas reportes médicos y extraes hallazgos muy específicos y resumidos para cada estructura anatómica solicitada, sin inventar nada. Evita alucinar detalles que no están en el texto original.`;
+
+    const response = await ai.models.generateContent({
+      model: selectedModel,
+      contents: promptText,
+      config: {
+        systemInstruction: systemInstruction,
+        temperature: 0.1,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            results: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  id: { type: Type.STRING, description: "ID de la estructura anatómica." },
+                  state: { type: Type.STRING, description: "Estado clínico extraído exactamente de las opciones permitidas." },
+                  description: { type: Type.STRING, description: "Resumen clínico sintetizado, muy cuidadoso y veraz, sin inventar o alucinar grados/medidas." }
+                },
+                required: ["id", "state", "description"]
+              }
+            }
+          },
+          required: ["results"]
+        }
+      }
+    });
+
+    let botText = response.text || "{}";
+    botText = botText.trim();
+    if (botText.startsWith("```")) {
+      const firstLineEnd = botText.indexOf("\n");
+      if (firstLineEnd !== -1) {
+        botText = botText.substring(firstLineEnd).trim();
+      }
+      if (botText.endsWith("```")) {
+        botText = botText.substring(0, botText.length - 3).trim();
+      }
+    }
+
+    const parsedData = JSON.parse(botText);
+    const finalStates: Record<string, string> = {};
+    const finalDescriptions: Record<string, string> = {};
+
+    if (parsedData.results && Array.isArray(parsedData.results)) {
+      parsedData.results.forEach((r: any) => {
+        if (r.id && r.state) {
+          finalStates[r.id] = r.state;
+          finalDescriptions[r.id] = r.description || "No descrito.";
+        }
+      });
+    }
+
+    res.json({
+      success: true,
+      states: finalStates,
+      descriptions: finalDescriptions
+    });
+
+  } catch (error: any) {
+    console.error("Error en /api/analyze-anatomy:", error);
+    res.status(500).json({ success: false, error: handleGeminiError(error) });
+  }
+});
+
 // --- VITE DEV SERVER OR STATIC SERVING ---
 
 async function startServer() {

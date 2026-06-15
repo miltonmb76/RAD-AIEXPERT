@@ -4,6 +4,17 @@ import BibliographySearch from "./components/BibliographySearch";
 import ImageSearch from "./components/ImageSearch";
 import ExpertImageAnalysis from "./components/ExpertImageAnalysis";
 import VascularAnatomyViewer from "./components/VascularAnatomyViewer";
+import ShoulderAnatomyViewer from "./components/ShoulderAnatomyViewer";
+import KneeAnatomyViewer from "./components/KneeAnatomyViewer";
+import AnkleAnatomyViewer from "./components/AnkleAnatomyViewer";
+import ThighAnatomyViewer from "./components/ThighAnatomyViewer";
+import ThighPosteriorAnatomyViewer from "./components/ThighPosteriorAnatomyViewer";
+import NeckAnatomyViewer from "./components/NeckAnatomyViewer";
+import UrinaryAnatomyViewer from "./components/UrinaryAnatomyViewer";
+import ElbowAnatomyViewer from "./components/ElbowAnatomyViewer";
+import AbdomenAnatomyViewer from "./components/AbdomenAnatomyViewer";
+import ScrotumAnatomyViewer from "./components/ScrotumAnatomyViewer";
+import WristAnatomyViewer from "./components/WristAnatomyViewer";
 import { 
   Activity, 
 
@@ -349,6 +360,9 @@ export default function App() {
     reader.onload = (event) => {
         const result = event.target?.result as string;
         setUploadedReportContent(result);
+        if (!file.type.startsWith('image/')) {
+            autoDetectSpecificStudyAndModality(result, file.name);
+        }
     };
     
     if (file.type.startsWith('image/')) {
@@ -787,6 +801,8 @@ export default function App() {
       "Rodilla",
       "Hombro",
       "Tobillo",
+      "Muslo Anterior",
+      "Muslo Posterior",
       "Muñeca",
       "Mano",
       "Pie",
@@ -809,7 +825,11 @@ export default function App() {
 
     for (const study of studies) {
       const cleanStudy = study.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-      if (cleanFull.includes(cleanStudy)) {
+      if (
+        cleanFull.includes(cleanStudy) || 
+        (study === "Muslo Posterior" && cleanFull.includes("muslo posterior")) ||
+        (study === "Muslo Anterior" && cleanFull.includes("muslo") && !cleanFull.includes("posterior"))
+      ) {
         foundSpecific = study;
         break;
       }
@@ -869,10 +889,241 @@ export default function App() {
     setProjections(detectedProjections);
   };
 
+  // Auto-detect and active clinical study block based on keywords in inputted text or generated reports
+  const autoDetectSpecificStudyAndModality = (reportText: string, currentStudyType: string) => {
+    const combined = `${currentStudyType || ""} ${reportText || ""}`.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+    // 1. Detect Codo (Prioritized to avoid conflicts, e.g. "bicep" in elbow reports triggering shoulder)
+    if (
+      combined.includes("codo") ||
+      combined.includes("epicondilo") ||
+      combined.includes("epitroclea") ||
+      combined.includes("epicondilitis") ||
+      combined.includes("epitrocleitis") ||
+      combined.includes("colateral radial") ||
+      combined.includes("colateral cubital") ||
+      combined.includes("nervio cubital") ||
+      combined.includes("nervio ulnar")
+    ) {
+      setSpecificStudy("Codo");
+      setModality("Ultrasonido");
+      return;
+    }
+
+    // 2. Detect Muslo Posterior (biceps femoral, semitendinous, semimembranoso, sciatic/ciatico, isquiotibiales)
+    if (
+      combined.includes("muslo posterior") ||
+      combined.includes("isquiotibial") ||
+      combined.includes("isquio") ||
+      combined.includes("biceps femo") ||
+      combined.includes("biceps femoral") ||
+      combined.includes("semitendinoso") ||
+      combined.includes("semimembranoso") ||
+      combined.includes("ciatico")
+    ) {
+      setSpecificStudy("Muslo Posterior");
+      setModality("Ultrasonido");
+      return;
+    }
+
+    // 2. Detect Muslo Anterior (recto femoral, quadriceps, sartorio, vasto lateral/medial)
+    if (
+      combined.includes("muslo anterior") ||
+      combined.includes("recto femoral") ||
+      combined.includes("cuadriceps") ||
+      combined.includes("sartorio") ||
+      combined.includes("vasto medial") ||
+      combined.includes("vasto lateral") ||
+      (combined.includes("muslo") && !combined.includes("posterior") && !combined.includes("isquio"))
+    ) {
+      setSpecificStudy("Muslo Anterior");
+      setModality("Ultrasonido");
+      return;
+    }
+
+    // 3. Detect Hombro
+    if (
+      combined.includes("hombro") ||
+      combined.includes("supraespinoso") ||
+      combined.includes("infraespinoso") ||
+      combined.includes("subescapular") ||
+      combined.includes("bicep") ||
+      combined.includes("glenohumeral") ||
+      combined.includes("acromioclavicular")
+    ) {
+      setSpecificStudy("Hombro");
+      setModality("Ultrasonido");
+      return;
+    }
+
+    // 4. Detect Rodilla
+    if (
+      combined.includes("rodilla") ||
+      combined.includes("patela") ||
+      combined.includes("rotula") ||
+      combined.includes("menisco") ||
+      combined.includes("ligamento cruzado") ||
+      combined.includes("femorotibial")
+    ) {
+      setSpecificStudy("Rodilla");
+      setModality("Ultrasonido");
+      return;
+    }
+
+    // 5. Detect Tobillo
+    if (
+      combined.includes("tobillo") ||
+      combined.includes("talo") ||
+      combined.includes("aquiles") ||
+      combined.includes("peroneo") ||
+      combined.includes("calcaneo")
+    ) {
+      setSpecificStudy("Tobillo");
+      setModality("Ultrasonido");
+      return;
+    }
+
+    // 6. Detect Doppler Venoso
+    if (
+      combined.includes("doppler venoso") ||
+      combined.includes("venas del miembro") ||
+      combined.includes("safena") ||
+      combined.includes("trombosis venosa")
+    ) {
+      setSpecificStudy("Doppler venoso de miembro inferior");
+      setModality("Ultrasonido");
+      return;
+    }
+
+    // 7. Detect Doppler Arterial
+    if (
+      combined.includes("doppler arterial") ||
+      combined.includes("indice tobillo brazo") ||
+      combined.includes("arterias del miembro") ||
+      combined.includes("enfermedad arterial")
+    ) {
+      setSpecificStudy("Doppler arterial de miembro inferior");
+      setModality("Ultrasonido");
+      return;
+    }
+
+    // 7.5 Detect Muñeca
+    if (
+      combined.includes("muneca") ||
+      combined.includes("muñeca") ||
+      combined.includes("carpo") ||
+      combined.includes("carpiano") ||
+      combined.includes("nervio mediano") ||
+      combined.includes("canal de guyon") ||
+      combined.includes("de quervain") ||
+      combined.includes("extensor carpi ulnaris") ||
+      combined.includes("fibrocartilago triangular")
+    ) {
+      setSpecificStudy("Muñeca");
+      setModality("Ultrasonido");
+      return;
+    }
+
+    // 8. Detect Cuello / Tiroides
+    if (
+      combined.includes("tiroides") ||
+      combined.includes("tiroideo") ||
+      combined.includes("tiroidea") ||
+      combined.includes("istmo tiroideo") ||
+      combined.includes("lobulo tiroideo") ||
+      combined.includes("parotida") ||
+      combined.includes("parotideo") ||
+      combined.includes("submandibular") ||
+      combined.includes("ganglios cervicales") ||
+      (combined.includes("cuello") && !combined.includes("doppler de carotidas") && !combined.includes("doppler carotideo") && !combined.includes("doppler de carotida") && !combined.includes("doppler carotidas"))
+    ) {
+      setSpecificStudy("Cuello");
+      setModality("Ultrasonido");
+      return;
+    }
+
+    // 9. Detect Doppler Carótidas
+    if (
+      combined.includes("carotida") ||
+      combined.includes("carotideo") ||
+      combined.includes("carotidas") ||
+      combined.includes("doppler de carotidas")
+    ) {
+      setSpecificStudy("Doppler de carótidas");
+      setModality("Ultrasonido");
+      return;
+    }
+
+    // 9.5 Detect Escroto
+    if (
+      combined.includes("escroto") ||
+      combined.includes("escrotal") ||
+      combined.includes("testiculo") ||
+      combined.includes("testicular") ||
+      combined.includes("testiculos") ||
+      combined.includes("testiculares") ||
+      combined.includes("epididimo") ||
+      combined.includes("epididimos") ||
+      combined.includes("varicocele") ||
+      combined.includes("hidrocele") ||
+      combined.includes("orquitis")
+    ) {
+      setSpecificStudy("Escroto");
+      setModality("Ultrasonido");
+      return;
+    }
+
+    // 10. Detect Vías Urinarias (Renal and Urinary Tract)
+    const pointsToUrinaryOnly = 
+      combined.includes("vias urinarias") || 
+      combined.includes("vias urinaria") || 
+      combined.includes("renal y vias") || 
+      combined.includes("urologico") ||
+      combined.includes("us renal") || 
+      combined.includes("ecografia renal") ||
+      combined.includes("urosonido");
+      
+    const mentionsAbdomenTitle = 
+      combined.includes("abdomen completo") || 
+      combined.includes("abdomen superior") || 
+      combined.includes("ecografia de abdomen") || 
+      combined.includes("ultrasonido de abdomen") ||
+      combined.includes("abdomen inferior") ||
+      combined.includes("abdomen");
+
+    if (pointsToUrinaryOnly && !mentionsAbdomenTitle) {
+      setSpecificStudy("Vias urinarias");
+      setModality("Ultrasonido");
+      
+      if (combined.includes("prostata") || combined.includes("prostatic")) {
+        setUrinaryGenderMode("hombre");
+      } else {
+        setUrinaryGenderMode("mujer");
+      }
+      return;
+    }
+
+    if (mentionsAbdomenTitle) {
+      setSpecificStudy("Abdomen");
+      setModality("Ultrasonido");
+      return;
+    }
+  };
+
   useEffect(() => {
     const computed = buildStudyTypeString(modality, specificStudy, laterality, customStudy, projections, customProjection);
     setStudyType(computed);
   }, [modality, specificStudy, laterality, customStudy, projections, customProjection]);
+
+  // Auto-detect specific study from pasted/draft report, findings, or clinical history if specificStudy is the default "Tórax"
+  useEffect(() => {
+    if (specificStudy === "Tórax") {
+      const combinedText = `${inputReport || ""} ${findings || ""} ${clinicalHistory || ""}`;
+      if (combinedText.trim()) {
+        autoDetectSpecificStudyAndModality(combinedText, "");
+      }
+    }
+  }, [inputReport, findings, clinicalHistory]);
   
   // Image input
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -1129,6 +1380,40 @@ Ejemplo:
   const [isAnalyzingVascular, setIsAnalyzingVascular] = useState<boolean>(false);
   const [vascularError, setVascularError] = useState<string | null>(null);
   const [includeVascularSchemaInReport, setIncludeVascularSchemaInReport] = useState<boolean>(true);
+  const [includeShoulderSchemaInReport, setIncludeShoulderSchemaInReport] = useState<boolean>(true);
+  const [shoulderStates, setShoulderStates] = useState<Record<string, string>>({});
+  const [shoulderDescriptions, setShoulderDescriptions] = useState<Record<string, string>>({});
+  const [includeKneeSchemaInReport, setIncludeKneeSchemaInReport] = useState<boolean>(true);
+  const [kneeStates, setKneeStates] = useState<Record<string, string>>({});
+  const [kneeDescriptions, setKneeDescriptions] = useState<Record<string, string>>({});
+  const [includeAnkleSchemaInReport, setIncludeAnkleSchemaInReport] = useState<boolean>(true);
+  const [ankleStates, setAnkleStates] = useState<Record<string, string>>({});
+  const [ankleDescriptions, setAnkleDescriptions] = useState<Record<string, string>>({});
+  const [includeThighSchemaInReport, setIncludeThighSchemaInReport] = useState<boolean>(true);
+  const [thighStates, setThighStates] = useState<Record<string, string>>({});
+  const [thighDescriptions, setThighDescriptions] = useState<Record<string, string>>({});
+  const [includeThighPosteriorSchemaInReport, setIncludeThighPosteriorSchemaInReport] = useState<boolean>(true);
+  const [thighPosteriorStates, setThighPosteriorStates] = useState<Record<string, string>>({});
+  const [thighPosteriorDescriptions, setThighPosteriorDescriptions] = useState<Record<string, string>>({});
+  const [includeNeckSchemaInReport, setIncludeNeckSchemaInReport] = useState<boolean>(true);
+  const [neckStates, setNeckStates] = useState<Record<string, string>>({});
+  const [neckDescriptions, setNeckDescriptions] = useState<Record<string, string>>({});
+  const [includeUrinarySchemaInReport, setIncludeUrinarySchemaInReport] = useState<boolean>(true);
+  const [urinaryStates, setUrinaryStates] = useState<Record<string, string>>({});
+  const [urinaryDescriptions, setUrinaryDescriptions] = useState<Record<string, string>>({});
+  const [urinaryGenderMode, setUrinaryGenderMode] = useState<"hombre" | "mujer">("mujer");
+  const [includeElbowSchemaInReport, setIncludeElbowSchemaInReport] = useState<boolean>(true);
+  const [elbowStates, setElbowStates] = useState<Record<string, string>>({});
+  const [elbowDescriptions, setElbowDescriptions] = useState<Record<string, string>>({});
+  const [includeAbdomenSchemaInReport, setIncludeAbdomenSchemaInReport] = useState<boolean>(true);
+  const [abdomenStates, setAbdomenStates] = useState<Record<string, string>>({});
+  const [abdomenDescriptions, setAbdomenDescriptions] = useState<Record<string, string>>({});
+  const [includeScrotumSchemaInReport, setIncludeScrotumSchemaInReport] = useState<boolean>(true);
+  const [scrotumStates, setScrotumStates] = useState<Record<string, string>>({});
+  const [scrotumDescriptions, setScrotumDescriptions] = useState<Record<string, string>>({});
+  const [includeWristSchemaInReport, setIncludeWristSchemaInReport] = useState<boolean>(true);
+  const [wristStates, setWristStates] = useState<Record<string, string>>({});
+  const [wristDescriptions, setWristDescriptions] = useState<Record<string, string>>({});
   const [activeVascularIdHover, setActiveVascularIdHover] = useState<string | null>(null);
 
   // States for Dynamic Medical Glossary on current report
@@ -1652,6 +1937,9 @@ Ejemplo:
         }
         setGeneratedReport(data.report);
         setOriginalBaseReport(data.report);
+
+        // Auto-detect specific study protocol (e.g. Muslo Posterior, Hombro, Rodilla, etc.) and switch active components
+        autoDetectSpecificStudyAndModality(data.report, studyType);
         
         // Save to History Log
         const newReport: SavedReport = {
@@ -3684,6 +3972,15 @@ Ejemplo:
   const convertSvgToPng = (svgElement: SVGElement): Promise<string> => {
     return new Promise((resolve, reject) => {
       try {
+        // Read the viewBox or size of the SVG to determine the dynamic aspect ratio
+        const viewBox = svgElement.getAttribute("viewBox") || "";
+        const parts = viewBox.split(/[\s,]+/).map(parseFloat);
+        let aspectRatio = 1.42; // standard for vascular schema
+        
+        if (parts.length === 4 && parts[2] > 0 && parts[3] > 0) {
+          aspectRatio = parts[2] / parts[3];
+        }
+
         const serializer = new XMLSerializer();
         const svgString = serializer.serializeToString(svgElement);
         const svgBlob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
@@ -3691,9 +3988,17 @@ Ejemplo:
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement("canvas");
-          // Multi-pixel supersampling for perfect clarity on tiny vascular label notes (size matching 1.42 aspect ratio)
-          canvas.width = 1280;
-          canvas.height = 900;
+          
+          if (Math.abs(aspectRatio - 1) < 0.15) {
+            // Square aspect ratio (for example, the shoulder diagram)
+            canvas.width = 1000;
+            canvas.height = 1000;
+          } else {
+            // Wide aspect ratio (for example, the vascular diagram)
+            canvas.width = 1280;
+            canvas.height = 900;
+          }
+
           const ctx = canvas.getContext("2d");
           if (ctx) {
             ctx.fillStyle = "#ffffff";
@@ -4078,6 +4383,11 @@ Ejemplo:
         const isTable = hasPipe && (isTableDivider || linesOfBlock.length >= 2);
 
         if (isTable) {
+          if (!isFirstBlock) {
+            yCoord += 16; // Elegant, clear vertical gap between preceding diagnostic text and table
+          } else {
+            isFirstBlock = false;
+          }
           const nonTableLinesAtTop: string[] = [];
           const tableOnlyLines: string[] = [];
           let foundTableStart = false;
@@ -4122,8 +4432,12 @@ Ejemplo:
               doc.setFont("times", "bold");
               doc.setFontSize(11);
               doc.setTextColor(15, 23, 42); // slate-900
-              doc.text(cleanHeaderTxt, marginX, yCoord);
-              yCoord += 6;
+              const wrappedHeaders = doc.splitTextToSize(cleanHeaderTxt, contentWidth);
+              wrappedHeaders.forEach((lineText: string) => {
+                checkPageBreak(5.5);
+                doc.text(lineText, marginX, yCoord);
+                yCoord += 5.5;
+              });
             } else {
               doc.setFont("times", "normal");
               doc.setFontSize(10.5);
@@ -4236,7 +4550,12 @@ Ejemplo:
             doc.setTextColor(15, 23, 42); // slate-900
 
             headers.forEach((headerTxt, hIdx) => {
-              const hClean = headerTxt.replace(/\*\*/g, "");
+              let hClean = headerTxt.replace(/\*\*/g, "");
+              if (colCount === 2) {
+                // Force headers to read exactly "Estructura" and "Hallazgos"
+                if (hIdx === 0) hClean = "Estructura";
+                if (hIdx === 1) hClean = "Hallazgos";
+              }
               doc.text(hClean, currentX + 3, yCoord + 1);
               currentX += colWidths[hIdx] || (contentWidth / colCount);
             });
@@ -4427,6 +4746,2384 @@ Ejemplo:
         });
       });
 
+      // 🛠️ DRAW SHOULDER DIAGRAM IN THE PROGRAMMATIC PDF
+      if (includeShoulderSchemaInReport && specificStudy === "Hombro") {
+        const svgElement = document.getElementById("shoulder-anatomy-svg");
+        if (svgElement) {
+          try {
+            // Create a deep clone to customize SVG styling specifically for beautiful, print-friendly white-background rendering
+            const clonedSvg = svgElement.cloneNode(true) as SVGElement;
+            
+            // 1. Force background and clean outline colors on gradient stops
+            const stops = clonedSvg.querySelectorAll("linearGradient stop");
+            stops.forEach(stop => {
+              const curColor = stop.getAttribute("stop-color") || stop.getAttribute("stopColor") || "";
+              if (curColor === "#1e293b" || curColor === "#2e3d52") stop.setAttribute("stop-color", "#f1f5f9");
+              if (curColor === "#0f172a" || curColor === "#111827") stop.setAttribute("stop-color", "#cbd5e1");
+              if (curColor === "#334155" || curColor === "#3d4e66") stop.setAttribute("stop-color", "#cbd5e1");
+            });
+
+            // 2. Adjust paths fill/stroke colors for paper print
+            const paths = clonedSvg.querySelectorAll("path");
+            paths.forEach(p => {
+              const fill = p.getAttribute("fill") || "";
+              const stroke = p.getAttribute("stroke") || "";
+              
+              if (fill === "#1e293b") p.setAttribute("fill", "#f8fafc");
+              if (fill === "#451a03") p.setAttribute("fill", "#fef3c7");
+              if (fill === "#500730") p.setAttribute("fill", "#fce7f3");
+              if (fill === "#7f1d1d") p.setAttribute("fill", "#fee2e2");
+
+              if (stroke === "#ef4444") p.setAttribute("stroke", "#dc2626");
+              if (stroke === "#ec4899") p.setAttribute("stroke", "#db2777");
+              if (stroke === "#f59e0b") p.setAttribute("stroke", "#d97706");
+              if (stroke === "#334155") p.setAttribute("stroke", "#475569");
+              if (stroke === "#475569") p.setAttribute("stroke", "#64748b");
+            });
+
+            // 3. Adjust text colors
+            const texts = clonedSvg.querySelectorAll("text");
+            texts.forEach(t => {
+              const fill = t.getAttribute("fill") || "";
+              if (fill === "#64748b") t.setAttribute("fill", "#475569");
+              if (fill === "#475569") t.setAttribute("fill", "#1e293b");
+            });
+
+            // 4. Adjust custom guides/circles in background
+            const circles = clonedSvg.querySelectorAll("circle");
+            circles.forEach(c => {
+              const stroke = c.getAttribute("stroke") || "";
+              if (stroke === "#1e293b") c.setAttribute("stroke", "#e2e8f0");
+            });
+            const lines = clonedSvg.querySelectorAll("line");
+            lines.forEach(l => {
+              const stroke = l.getAttribute("stroke") || "";
+              if (stroke === "#1e293b") l.setAttribute("stroke", "#e2e8f0");
+            });
+
+            const imgData = await convertSvgToPng(clonedSvg);
+            
+            // Check page break for 95mm (75mm content + margins/header)
+            const willPageBreak = (yCoord + 95 > pageHeight - 20);
+            checkPageBreak(95);
+            if (!willPageBreak) {
+              yCoord += 18; // Generous space/gap from the diagnostic impression above
+            } else {
+              yCoord += 6;  // Normal small spacing at the top of a fresh page
+            }
+
+            // Header for the diagram
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8.0);
+            doc.setTextColor(30, 41, 59);
+            doc.text("ANEXO: ESQUEMA DE HALLAZGOS Y SINOPSIS DE HOMBRO", pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 3.5;
+
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(6.3);
+            doc.setTextColor(148, 163, 184);
+            doc.text("MAPEO ANATÓMICO Y SINOPSIS ESTRUCTURADA DEL MANGUITO ROTADOR Y ESTRUCTURAS ADYACENTES", pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 4.5;
+
+            // --- DRAW SIDE-BY-SIDE LAYOUT ---
+            const yStart = yCoord;
+
+            // 1. Draw Left Diagram Box (Border + Background)
+            doc.setFillColor(255, 255, 255);
+            doc.setDrawColor(229, 231, 235);
+            doc.roundedRect(20, yStart, 75, 75, 3, 3, "FD");
+
+            // Draw SVG diagram image inside
+            doc.addImage(imgData, "PNG", 22.5, yStart + 2.5, 70, 70);
+
+            // 2. Draw Right Findings Container (Slate Background)
+            doc.setFillColor(248, 250, 252);
+            doc.setDrawColor(229, 231, 235);
+            doc.roundedRect(100, yStart, 90, 75, 3, 3, "FD");
+
+            // Header of findings: ESTRUCTURA and HALLAZGOS
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5);
+            doc.setTextColor(67, 56, 202); // indigo-700
+            doc.text("ESTRUCTURA", 104, yStart + 5.5);
+            doc.text("HALLAZGOS", 136, yStart + 5.5);
+
+            // Draw horizontal divider line
+            doc.setDrawColor(229, 231, 235);
+            doc.setLineWidth(0.2);
+            doc.line(104, yStart + 7.5, 186, yStart + 7.5);
+
+            // 8 shoulder structures to map
+            const pdfStructures = [
+              { id: "supraspinatus", label: "Supraespinoso" },
+              { id: "infraspinatus", label: "Infraespinoso" },
+              { id: "subscapularis", label: "Subescapular" },
+              { id: "biceps", label: "PL Bíceps" },
+              { id: "bursa", label: "Bursa SAD" },
+              { id: "glenohumeral", label: "Derrame GH" },
+              { id: "acromioclavicular", label: "Artic. A.C." },
+              { id: "dynamic_assessment", label: "Val. Dinámica" }
+            ].filter(struct => {
+              const s = shoulderStates[struct.id] || "no_descrito";
+              return s !== "no_descrito";
+            });
+
+            const getPDFSimplifiedDescription = (id: string, state: string) => {
+              if (!state || state === "no_descrito") {
+                return "No descrito en el reporte.";
+              }
+              if (state === "normal") {
+                return "Entre límites normales.";
+              }
+              
+              switch (id) {
+                case "supraspinatus":
+                  if (state === "tendinosis") return "Tendinosis del supraespinoso (engrosamiento difuso e hipoecogenicidad).";
+                  if (state === "desgarro_parcial") return "Ruptura de espesor parcial de la inserción.";
+                  if (state === "desgarro_completo") return "Ruptura de espesor completo del tendón supraespinoso.";
+                  break;
+                case "infraspinatus":
+                  if (state === "tendinosis") return "Tendinosis distal del infraespinoso (mínimo engrosamiento).";
+                  if (state === "desgarro_parcial") return "Ruptura de espesor parcial focal en inserción.";
+                  if (state === "desgarro_completo") return "Ruptura de espesor completo del infraespinoso.";
+                  break;
+                case "subscapularis":
+                  if (state === "tendinosis") return "Tendinosis en inserción de subescapular (pérdida patrón fibrilar).";
+                  if (state === "desgarro_parcial") return "Ruptura de espesor parcial del subescapular superior.";
+                  if (state === "desgarro_completo") return "Ruptura completa del tendón subescapular.";
+                  break;
+                case "biceps":
+                  if (state === "tendinitis") return "Tenosinovitis de porción larga (líquido libre en corredera).";
+                  if (state === "subluxacion") return "Subluxación medial dinámica del bíceps.";
+                  if (state === "desgarro_parcial") return "Ruptura parcial longitudinal de fibras del bíceps.";
+                  break;
+                case "bursa":
+                  if (state === "bursitis_leve") return "Bursitis subacromiodeltoidea (SAD) laminar leve.";
+                  if (state === "bursitis_severa") return "Bursitis subacromiodeltoidea (SAD) franca/severa.";
+                  break;
+                case "glenohumeral":
+                  if (state === "derrame_leve") return "Derrame articular glenohumeral laminar leve.";
+                  if (state === "derrame_moderado") return "Derrame articular glenohumeral franco en recesos.";
+                  break;
+                case "acromioclavicular":
+                  if (state === "artrosis") return "Cambios degenerativos / artrosis acromioclavicular.";
+                  if (state === "hipertrofia") return "Hipertrofia articular con prominencia osteofitaria.";
+                  break;
+                case "dynamic_assessment":
+                  if (state === "normal") return "Deslizamiento conservado bajo maniobras dinámicas.";
+                  if (state === "pinzamiento") return "Signos dinámicos positivos para pinzamiento.";
+                  break;
+              }
+              return "Sin hallazgos.";
+            };
+
+            pdfStructures.forEach((struct, index) => {
+              const rowY = yStart + 8.5 + (index * 7.7);
+              const s = shoulderStates[struct.id] || "no_descrito";
+              const description = getPDFSimplifiedDescription(struct.id, s);
+
+              // Left column: Structure label (ESTRUCTURA)
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(6.2);
+              doc.setTextColor(30, 41, 59);
+              const wrappedLabel = doc.splitTextToSize(struct.label, 28);
+              if (wrappedLabel[0]) doc.text(wrappedLabel[0], 104, rowY + 3.2);
+              if (wrappedLabel[1]) doc.text(wrappedLabel[1], 104, rowY + 5.7);
+
+              // Right column: Description (HALLAZGOS)
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(5.8);
+              doc.setTextColor(100, 116, 139);
+              const wrappedDesc = doc.splitTextToSize(description, 50);
+              if (wrappedDesc[0]) doc.text(wrappedDesc[0], 136, rowY + 3.2);
+              if (wrappedDesc[1]) doc.text(wrappedDesc[1], 136, rowY + 5.7);
+
+              // Draw a tiny light divider line under each row except the last one
+              if (index < pdfStructures.length - 1) {
+                doc.setDrawColor(241, 245, 249);
+                doc.setLineWidth(0.15);
+                doc.line(103, rowY + 6.8, 187, rowY + 6.8);
+              }
+            });
+
+            // Footnote at the bottom of the findings card
+            doc.setFont("helvetica", "italic");
+            doc.setFontSize(6.2);
+            doc.setTextColor(148, 163, 184);
+            doc.text("Mapa anatómico y lista sinóptica correspondientes al reporte físico.", 145, yStart + 72, { align: "center" });
+
+            yCoord += 80;
+          } catch (err) {
+            console.warn("Could not draw shoulder diagram inside jsPDF", err);
+          }
+        }
+      }
+
+      // 🛠️ DRAW KNEE DIAGRAM IN THE PROGRAMMATIC PDF
+      if (includeKneeSchemaInReport && specificStudy === "Rodilla") {
+        const svgElement = document.getElementById("knee-anatomy-svg");
+        if (svgElement) {
+          try {
+            // Create a deep clone to customize SVG styling specifically for beautiful, print-friendly white-background rendering
+            const clonedSvg = svgElement.cloneNode(true) as SVGElement;
+            
+            // 1. Force background and clean outline colors on gradient stops
+            const stops = clonedSvg.querySelectorAll("linearGradient stop");
+            stops.forEach(stop => {
+              const curColor = stop.getAttribute("stop-color") || stop.getAttribute("stopColor") || "";
+              if (curColor === "#1e293b" || curColor === "#2e3d52") stop.setAttribute("stop-color", "#f1f5f9");
+              if (curColor === "#0f172a" || curColor === "#111827") stop.setAttribute("stop-color", "#cbd5e1");
+              if (curColor === "#334155" || curColor === "#3d4e66") stop.setAttribute("stop-color", "#cbd5e1");
+            });
+
+            // 2. Adjust paths fill/stroke colors for paper print
+            const paths = clonedSvg.querySelectorAll("path");
+            paths.forEach(p => {
+              const fill = p.getAttribute("fill") || "";
+              const stroke = p.getAttribute("stroke") || "";
+              
+              if (fill === "#1e293b") p.setAttribute("fill", "#f8fafc");
+              if (fill === "#451a03") p.setAttribute("fill", "#fef3c7");
+              if (fill === "#500730") p.setAttribute("fill", "#fce7f3");
+              if (fill === "#7f1d1d") p.setAttribute("fill", "#fee2e2");
+
+              if (stroke === "#ef4444") p.setAttribute("stroke", "#dc2626");
+              if (stroke === "#ec4899") p.setAttribute("stroke", "#db2777");
+              if (stroke === "#f59e0b") p.setAttribute("stroke", "#d97706");
+              if (stroke === "#334155") p.setAttribute("stroke", "#475569");
+              if (stroke === "#475569") p.setAttribute("stroke", "#64748b");
+            });
+
+            // 3. Adjust text colors
+            const texts = clonedSvg.querySelectorAll("text");
+            texts.forEach(t => {
+              const fill = t.getAttribute("fill") || "";
+              if (fill === "#64748b") t.setAttribute("fill", "#475569");
+              if (fill === "#475569") t.setAttribute("fill", "#1e293b");
+            });
+
+            // 4. Adjust custom guides/circles in background
+            const circles = clonedSvg.querySelectorAll("circle");
+            circles.forEach(c => {
+              const stroke = c.getAttribute("stroke") || "";
+              if (stroke === "#1e293b") c.setAttribute("stroke", "#e2e8f0");
+            });
+            const lines = clonedSvg.querySelectorAll("line");
+            lines.forEach(l => {
+              const stroke = l.getAttribute("stroke") || "";
+              if (stroke === "#1e293b") l.setAttribute("stroke", "#e2e8f0");
+            });
+
+            const imgData = await convertSvgToPng(clonedSvg);
+            
+            // Check page break for 95mm (75mm content + margins/header)
+            const willPageBreak = (yCoord + 95 > pageHeight - 20);
+            checkPageBreak(95);
+            if (!willPageBreak) {
+              yCoord += 18; // Generous space/gap from the diagnostic impression above
+            } else {
+              yCoord += 6;  // Normal small spacing at the top of a fresh page
+            }
+
+            // Header for the diagram
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8.0);
+            doc.setTextColor(30, 41, 59);
+            doc.text("ANEXO: ESQUEMA DE HALLAZGOS Y SINOPSIS DE RODILLA", pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 3.5;
+
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(6.3);
+            doc.setTextColor(148, 163, 184);
+            doc.text("MAPEO ANATÓMICO Y SINOPSIS ESTRUCTURADA DE LA ARTICULACIÓN DE ROTULA Y COMPLEMENTOS", pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 4.5;
+
+            // --- DRAW SIDE-BY-SIDE LAYOUT ---
+            const yStart = yCoord;
+
+            // 1. Draw Left Diagram Box (Border + Background)
+            doc.setFillColor(255, 255, 255);
+            doc.setDrawColor(229, 231, 235);
+            doc.roundedRect(20, yStart, 75, 75, 3, 3, "FD");
+
+            // Draw SVG diagram image inside
+            doc.addImage(imgData, "PNG", 22.5, yStart + 2.5, 70, 70);
+
+            // 2. Draw Right Findings Container (Slate Background)
+            doc.setFillColor(248, 250, 252);
+            doc.setDrawColor(229, 231, 235);
+            doc.roundedRect(100, yStart, 90, 75, 3, 3, "FD");
+
+            // Header of findings: ESTRUCTURA and HALLAZGOS
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5);
+            doc.setTextColor(67, 56, 202); // indigo-700
+            doc.text("ESTRUCTURA", 104, yStart + 5.5);
+            doc.text("HALLAZGOS", 136, yStart + 5.5);
+
+            // Draw horizontal divider line
+            doc.setDrawColor(229, 231, 235);
+            doc.setLineWidth(0.2);
+            doc.line(104, yStart + 7.5, 186, yStart + 7.5);
+
+            // 8 knee structures to map
+            const pdfKneeStructures = [
+              { id: "quadriceps", label: "T. Cuadricipital" },
+              { id: "patellar", label: "T. Rotuliano" },
+              { id: "lcm", label: "Lig. C. Medial" },
+              { id: "lce", label: "Lig. C. Lateral" },
+              { id: "medial_meniscus", label: "Menisco Medial" },
+              { id: "lateral_meniscus", label: "Menisco Lateral" },
+              { id: "joint_effusion", label: "Derrame Artic." },
+              { id: "baker_cyst", label: "Quiste de Baker" }
+            ].filter(struct => {
+              const s = kneeStates[struct.id] || "no_descrito";
+              return s !== "no_descrito";
+            });
+
+            const getKneePDFSimplifiedDescription = (id: string, state: string) => {
+              if (!state || state === "no_descrito") {
+                return "No descrito en el reporte.";
+              }
+              if (state === "normal") {
+                return "Entre límites normales.";
+              }
+              
+              switch (id) {
+                case "quadriceps":
+                  if (state === "tendinosis") return "Tendinosis del tendón cuadricipital (engrosado e hipoecoico).";
+                  if (state === "desgarro_parcial") return "Ruptura de espesor parcial focal de la inserción anterior.";
+                  if (state === "desgarro_completo") return "Ruptura completa del tendón cuadricipital proximal.";
+                  break;
+                case "patellar":
+                  if (state === "tendinosis") return "Tendinopatía distal del rotuliano (pérdida de ecogenicidad).";
+                  if (state === "desgarro_parcial") return "Microrupturas longitudinales con discontinuidad fibrilar.";
+                  if (state === "desgarro_completo") return "Ruptura completa del tendón rotuliano media/distal.";
+                  break;
+                case "lcm":
+                  if (state === "esguince_leve") return "Esguince grado I/II del ligamento colateral medial.";
+                  if (state === "desgarro_parcial") return "Ruptura parcial focal del LCM sin inestabilidad.";
+                  if (state === "desgarro_completo") return "Ruptura ligamentaria completa y transfixiante del LCM.";
+                  break;
+                case "lce":
+                  if (state === "esguince_leve") return "Esguince grado I/II del ligamento colateral lateral.";
+                  if (state === "desgarro_parcial") return "Ruptura de espesor parcial proximal del LCE.";
+                  if (state === "desgarro_completo") return "Ruptura total e inestabilidad del LCE.";
+                  break;
+                case "medial_meniscus":
+                  if (state === "meniscosis") return "Meniscosis interna (degeneración mixoide intrasustancia).";
+                  if (state === "rotura") return "Fisura oblicua/transversa en cuerno posterior interno.";
+                  break;
+                case "lateral_meniscus":
+                  if (state === "meniscosis") return "Meniscosis externa / cambios desestructurantes.";
+                  if (state === "rotura") return "Desgarro o rotura compleja del menisco externo.";
+                  break;
+                case "joint_effusion":
+                  if (state === "derrame_leve") return "Derrame articular discreto en receso suprapatelar.";
+                  if (state === "derrame_moderado") return "Derrame intraarticular moderado/abundante con sinovitis.";
+                  break;
+                case "baker_cyst":
+                  if (state === "quiste_leve") return "Quiste de Baker incidental de tamaño pequeño.";
+                  if (state === "quiste_severo") return "Quiste de Baker voluminoso delimitado en fosa poplítea.";
+                  break;
+              }
+              return "Sin hallazgos.";
+            };
+
+            pdfKneeStructures.forEach((struct, index) => {
+              const rowY = yStart + 8.5 + (index * 7.7);
+              const s = kneeStates[struct.id] || "no_descrito";
+              const description = getKneePDFSimplifiedDescription(struct.id, s);
+
+              // Left column: Structure label (ESTRUCTURA)
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(6.2);
+              doc.setTextColor(30, 41, 59);
+              const wrappedLabel = doc.splitTextToSize(struct.label, 28);
+              if (wrappedLabel[0]) doc.text(wrappedLabel[0], 104, rowY + 3.2);
+              if (wrappedLabel[1]) doc.text(wrappedLabel[1], 104, rowY + 5.7);
+
+              // Right column: Description (HALLAZGOS)
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(5.8);
+              doc.setTextColor(100, 116, 139);
+              const wrappedDesc = doc.splitTextToSize(description, 50);
+              if (wrappedDesc[0]) doc.text(wrappedDesc[0], 136, rowY + 3.2);
+              if (wrappedDesc[1]) doc.text(wrappedDesc[1], 136, rowY + 5.7);
+
+              // Draw a tiny light divider line under each row except the last one
+              if (index < pdfKneeStructures.length - 1) {
+                doc.setDrawColor(241, 245, 249);
+                doc.setLineWidth(0.15);
+                doc.line(103, rowY + 6.8, 187, rowY + 6.8);
+              }
+            });
+
+            // Footnote at the bottom of the findings card
+            doc.setFont("helvetica", "italic");
+            doc.setFontSize(6.2);
+            doc.setTextColor(148, 163, 184);
+            doc.text("Mapa anatómico y lista sinóptica correspondientes al reporte físico.", 145, yStart + 72, { align: "center" });
+
+            yCoord += 80;
+          } catch (err) {
+            console.warn("Could not draw knee diagram inside jsPDF", err);
+          }
+        }
+      }
+
+      // 🛠️ DRAW ANKLE DIAGRAM IN THE PROGRAMMATIC PDF
+      if (includeAnkleSchemaInReport && specificStudy === "Tobillo") {
+        const svgLateral = document.getElementById("ankle-anatomy-svg-lateral");
+        const svgMedial = document.getElementById("ankle-anatomy-svg-medial");
+
+        if (svgLateral || svgMedial) {
+          try {
+            const processAnkleSvg = async (svgEl: HTMLElement) => {
+              const rect = svgEl.getBoundingClientRect();
+              const clonedSvg = svgEl.cloneNode(true) as SVGElement;
+              
+              // 1. Force background and clean outline colors on gradient stops
+              const stops = clonedSvg.querySelectorAll("linearGradient stop");
+              stops.forEach(stop => {
+                const curColor = stop.getAttribute("stop-color") || stop.getAttribute("stopColor") || "";
+                if (curColor === "#1e293b" || curColor === "#2e3d52") stop.setAttribute("stop-color", "#f1f5f9");
+                if (curColor === "#0f172a" || curColor === "#111827") stop.setAttribute("stop-color", "#cbd5e1");
+                if (curColor === "#334155" || curColor === "#3d4e66") stop.setAttribute("stop-color", "#cbd5e1");
+              });
+
+              // 2. Adjust paths fill/stroke colors for paper print
+              const paths = clonedSvg.querySelectorAll("path");
+              paths.forEach(p => {
+                const fill = p.getAttribute("fill") || "";
+                const stroke = p.getAttribute("stroke") || "";
+                
+                if (fill === "#1e293b") p.setAttribute("fill", "#f8fafc");
+                if (fill === "#451a03") p.setAttribute("fill", "#fef3c7");
+                if (fill === "#500730") p.setAttribute("fill", "#fce7f3");
+                if (fill === "#7f1d1d") p.setAttribute("fill", "#fee2e2");
+
+                if (stroke === "#ef4444") p.setAttribute("stroke", "#dc2626");
+                if (stroke === "#ec4899") p.setAttribute("stroke", "#db2777");
+                if (stroke === "#f59e0b") p.setAttribute("stroke", "#d97706");
+                if (stroke === "#334155") p.setAttribute("stroke", "#475569");
+                if (stroke === "#475569") p.setAttribute("stroke", "#64748b");
+              });
+
+              // 3. Adjust text colors
+              const texts = clonedSvg.querySelectorAll("text");
+              texts.forEach(t => {
+                const fill = t.getAttribute("fill") || "";
+                if (fill === "#64748b") t.setAttribute("fill", "#475569");
+                if (fill === "#475569") t.setAttribute("fill", "#1e293b");
+              });
+
+              // 4. Adjust custom guides/circles in background
+              const circles = clonedSvg.querySelectorAll("circle");
+              circles.forEach(c => {
+                const stroke = c.getAttribute("stroke") || "";
+                if (stroke === "#1e293b") c.setAttribute("stroke", "#e2e8f0");
+              });
+              const lines = clonedSvg.querySelectorAll("line");
+              lines.forEach(l => {
+                const stroke = l.getAttribute("stroke") || "";
+                if (stroke === "#1e293b") l.setAttribute("stroke", "#e2e8f0");
+              });
+
+              return await convertSvgToPng(clonedSvg);
+            };
+
+            const imgLateral = svgLateral ? await processAnkleSvg(svgLateral) : null;
+            const imgMedial = svgMedial ? await processAnkleSvg(svgMedial) : null;
+
+            // Check page break for 95mm (75mm content + margins/header)
+            const willPageBreak = (yCoord + 95 > pageHeight - 20);
+            checkPageBreak(95);
+            if (!willPageBreak) {
+              yCoord += 18; // Generous space/gap from the diagnostic impression above
+            } else {
+              yCoord += 6;  // Normal small spacing at the top of a fresh page
+            }
+
+            // Header for the diagram
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8.0);
+            doc.setTextColor(30, 41, 59);
+            doc.text("ANEXO: ESQUEMA DE HALLAZGOS Y SINOPSIS DE TOBILLO", pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 3.5;
+
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(6.3);
+            doc.setTextColor(148, 163, 184);
+            doc.text("MAPEO ANATÓMICO Y SINOPSIS ESTRUCTURADA DE LA ARTICULACIÓN DE TOBILLO Y SUS TENDONES", pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 4.5;
+
+            // --- DRAW SIDE-BY-SIDE LAYOUT ---
+            const yStart = yCoord;
+
+            // 1. Draw Left Diagram Box (Cara Lateral)
+            doc.setFillColor(255, 255, 255);
+            doc.setDrawColor(229, 231, 235);
+            doc.roundedRect(20, yStart, 43, 78, 3, 3, "FD");
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(6.5);
+            doc.setTextColor(71, 85, 105);
+            doc.text("CARA LATERAL", 41.5, yStart + 5.5, { align: "center" });
+
+            if (imgLateral) {
+              doc.addImage(imgLateral, "PNG", 21.5, yStart + 8, 40, 40);
+            } else {
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(7);
+              doc.setTextColor(148, 163, 184);
+              doc.text("No disponible", 41.5, yStart + 35, { align: "center" });
+            }
+
+            // 2. Draw Second Diagram Box (Cara Medial)
+            doc.setFillColor(255, 255, 255);
+            doc.setDrawColor(229, 231, 235);
+            doc.roundedRect(65, yStart, 43, 78, 3, 3, "FD");
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(6.5);
+            doc.setTextColor(71, 85, 105);
+            doc.text("CARA MEDIAL", 86.5, yStart + 5.5, { align: "center" });
+
+            if (imgMedial) {
+              doc.addImage(imgMedial, "PNG", 66.5, yStart + 8, 40, 40);
+            } else {
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(7);
+              doc.setTextColor(148, 163, 184);
+              doc.text("No disponible", 86.5, yStart + 35, { align: "center" });
+            }
+
+            // 3. Draw Right Findings Container (Slate Background)
+            doc.setFillColor(248, 250, 252);
+            doc.setDrawColor(229, 231, 235);
+            doc.roundedRect(111, yStart, 79, 78, 3, 3, "FD");
+
+            // Header of findings: ESTRUCTURA and HALLAZGOS
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5);
+            doc.setTextColor(67, 56, 202); // indigo-700
+            doc.text("ESTRUCTURA", 114, yStart + 5.5);
+            doc.text("HALLAZGOS", 142, yStart + 5.5);
+
+            // Draw horizontal divider line
+            doc.setDrawColor(229, 231, 235);
+            doc.setLineWidth(0.2);
+            doc.line(114, yStart + 7.5, 186, yStart + 7.5);
+
+            // Ankle structures to map (9 structures in total)
+            const pdfAnkleStructures = [
+              { id: "achilles", label: "T. Aquiles" },
+              { id: "plantar_fascia", label: "Fascia Plantar" },
+              { id: "lpaa", label: "LPAA" },
+              { id: "lpc", label: "LPC" },
+              { id: "peroneal_tendons", label: "T. Peroneos" },
+              { id: "tibial_posterior", label: "T. Tibial Post." },
+              { id: "tibial_anterior", label: "T. Tibial Ant." },
+              { id: "joint_effusion", label: "Derrame Artic." },
+              { id: "deltoid", label: "Lig. Deltoideo" }
+            ].filter(struct => {
+              const s = ankleStates[struct.id] || "no_descrito";
+              return s !== "no_descrito";
+            });
+
+            const getAnklePDFSimplifiedDescription = (id: string, state: string) => {
+              if (!state || state === "no_descrito") {
+                return "No descrito en el reporte.";
+              }
+              if (state === "normal") {
+                return "Entre límites normales.";
+              }
+              
+              switch (id) {
+                case "achilles":
+                  if (state === "tendinosis") return "Tendinosis de Aquiles (engrosamiento del tendón medio distal).";
+                  if (state === "desgarro_parcial") return "Ruptura de espesor parcial focal de fibras.";
+                  if (state === "desgarro_completo") return "Ruptura completa y transfixiante con retracción.";
+                  break;
+                case "plantar_fascia":
+                  if (state === "fascitis") return "Fascitis plantar (engrosamiento con edema adyacente).";
+                  if (state === "desgarro_parcial") return "Microdesgarros parciales proximales.";
+                  if (state === "desgarro_completo") return "Ruptura completa de la aponeurosis plantar.";
+                  break;
+                case "lpaa":
+                  if (state === "esguince_leve") return "Esguince grado I/II del LPAA anterior colateral.";
+                  if (state === "desgarro_parcial") return "Ruptura de espesor parcial ligamentaria.";
+                  if (state === "desgarro_completo") return "Discontinuidad anatómica completa del LPAA.";
+                  break;
+                case "lpc":
+                  if (state === "esguince_leve") return "Esguince grado I/II del ligamento peroneocalcáneo.";
+                  if (state === "desgarro_parcial") return "Defecto de continuidad parcial con adelgazamiento.";
+                  if (state === "desgarro_completo") return "Ruptura ligamentaria completa de fibras del LPC.";
+                  break;
+                case "peroneal_tendons":
+                  if (state === "tenosinovitis") return "Tenosinovitis con distensión líquida de la vaina.";
+                  if (state === "desgarro_parcial") return "Desgarro longitudinal/fisura del peroneo corto.";
+                  if (state === "desgarro_completo") return "Ruptura de espesor total con retracción.";
+                  break;
+                case "tibial_posterior":
+                  if (state === "tenosinovitis") return "Tenosinovitis del tibial posterior con presencia de líquido.";
+                  if (state === "desgarro_parcial") return "Rotura parcial o fisura longitudinal.";
+                  if (state === "desgarro_completo") return "Ruptura completa transfixiante con retracción.";
+                  break;
+                case "tibial_anterior":
+                  if (state === "tenosinovitis") return "Tenosinovitis del tibial anterior con colección líquida.";
+                  if (state === "desgarro_parcial") return "Rotura de espesor parcial focal distal.";
+                  if (state === "desgarro_completo") return "Discontinuidad total fibrilar del tibial anterior.";
+                  break;
+                case "joint_effusion":
+                  if (state === "derrame_leve") return "Derrame articular discreto de aspecto laminar.";
+                  if (state === "derrame_moderado") return "Derrame articular tibiotarsiano moderado.";
+                  break;
+                case "deltoid":
+                  if (state === "esguince_leve") return "Esguince grado I/II del ligamento colateral medial.";
+                  if (state === "desgarro_parcial") return "Defecto o ruptura parcial de fibras del ligamento deltoideo.";
+                  if (state === "desgarro_completo") return "Ruptura colateral completa con desorganización.";
+                  break;
+              }
+              return "Sin hallazgos.";
+            };
+
+            pdfAnkleStructures.forEach((struct, index) => {
+              const rowY = yStart + 8.5 + (index * 7.0);
+              const s = ankleStates[struct.id] || "no_descrito";
+              const description = getAnklePDFSimplifiedDescription(struct.id, s);
+
+              // Left column: Structure label (ESTRUCTURA)
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(6.2);
+              doc.setTextColor(30, 41, 59);
+              const wrappedLabel = doc.splitTextToSize(struct.label, 25);
+              if (wrappedLabel[0]) doc.text(wrappedLabel[0], 114, rowY + 3.2);
+              if (wrappedLabel[1]) doc.text(wrappedLabel[1], 114, rowY + 5.7);
+
+              // Right column: Description (HALLAZGOS)
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(5.8);
+              doc.setTextColor(100, 116, 139);
+              const wrappedDesc = doc.splitTextToSize(description, 44);
+              if (wrappedDesc[0]) doc.text(wrappedDesc[0], 142, rowY + 3.2);
+              if (wrappedDesc[1]) doc.text(wrappedDesc[1], 142, rowY + 5.7);
+
+              // Draw a tiny light divider line under each row except the last one
+              if (index < pdfAnkleStructures.length - 1) {
+                doc.setDrawColor(241, 245, 249);
+                doc.setLineWidth(0.15);
+                doc.line(113, rowY + 6.3, 187, rowY + 6.3);
+              }
+            });
+
+            // Footnote at the bottom of the findings card
+            doc.setFont("helvetica", "italic");
+            doc.setFontSize(6.2);
+            doc.setTextColor(148, 163, 184);
+            doc.text("Mapa anatómico dual y lista sinóptica correspondientes al reporte clínico.", 150.5, yStart + 75, { align: "center" });
+
+            yCoord += 83;
+          } catch (err) {
+            console.warn("Could not draw ankle diagram inside jsPDF", err);
+          }
+        }
+      }
+
+      // 🛠️ DRAW THIGH DIAGRAM IN THE PROGRAMMATIC PDF
+      if (includeThighSchemaInReport && specificStudy === "Muslo Anterior") {
+        const svgSuperficial = document.getElementById("thigh-superficial-svg");
+        const svgDeep = document.getElementById("thigh-deep-svg");
+
+        if (svgSuperficial || svgDeep) {
+          try {
+            const processThighSvg = async (svgEl: HTMLElement) => {
+              const clonedSvg = svgEl.cloneNode(true) as SVGElement;
+              
+              // 1. Force background and clean outline colors on gradient stops
+              const stops = clonedSvg.querySelectorAll("linearGradient stop");
+              stops.forEach(stop => {
+                const curColor = stop.getAttribute("stop-color") || stop.getAttribute("stopColor") || "";
+                if (curColor === "#1e293b" || curColor === "#2e3d52") stop.setAttribute("stop-color", "#f1f5f9");
+                if (curColor === "#0f172a" || curColor === "#111827") stop.setAttribute("stop-color", "#cbd5e1");
+                if (curColor === "#334155" || curColor === "#3d4e66") stop.setAttribute("stop-color", "#cbd5e1");
+              });
+
+              // 2. Adjust paths fill/stroke colors for paper print
+              const paths = clonedSvg.querySelectorAll("path");
+              paths.forEach(p => {
+                const fill = p.getAttribute("fill") || "";
+                const stroke = p.getAttribute("stroke") || "";
+                
+                if (fill === "#1e293b") p.setAttribute("fill", "#f8fafc");
+                if (fill === "#451a03") p.setAttribute("fill", "#fef3c7");
+                if (fill === "#500730") p.setAttribute("fill", "#fce7f3");
+                if (fill === "#7f1d1d") p.setAttribute("fill", "#fee2e2");
+
+                if (stroke === "#ef4444") p.setAttribute("stroke", "#dc2626");
+                if (stroke === "#ec4899") p.setAttribute("stroke", "#db2777");
+                if (stroke === "#f59e0b") p.setAttribute("stroke", "#d97706");
+                if (stroke === "#334155") p.setAttribute("stroke", "#475569");
+                if (stroke === "#475569") p.setAttribute("stroke", "#64748b");
+              });
+
+              // 3. Adjust text colors
+              const texts = clonedSvg.querySelectorAll("text");
+              texts.forEach(t => {
+                const fill = t.getAttribute("fill") || "";
+                if (fill === "#64748b") t.setAttribute("fill", "#475569");
+                if (fill === "#475569") t.setAttribute("fill", "#1e293b");
+              });
+
+              // 4. Adjust custom guides/circles in background
+              const circles = clonedSvg.querySelectorAll("circle");
+              circles.forEach(c => {
+                const stroke = c.getAttribute("stroke") || "";
+                if (stroke === "#1e293b") c.setAttribute("stroke", "#e2e8f0");
+              });
+              const lines = clonedSvg.querySelectorAll("line");
+              lines.forEach(l => {
+                const stroke = l.getAttribute("stroke") || "";
+                if (stroke === "#1e293b") l.setAttribute("stroke", "#e2e8f0");
+              });
+
+              return await convertSvgToPng(clonedSvg);
+            };
+
+            const imgSuperficial = svgSuperficial ? await processThighSvg(svgSuperficial) : null;
+            const imgDeep = svgDeep ? await processThighSvg(svgDeep) : null;
+
+            // Check page break for 95mm (75mm content + margins/header)
+            const willPageBreak = (yCoord + 95 > pageHeight - 20);
+            checkPageBreak(95);
+            if (!willPageBreak) {
+              yCoord += 18; // Generous space/gap from the diagnostic impression above
+            } else {
+              yCoord += 6;  // Normal small spacing at the top of a fresh page
+            }
+
+            // Header for the diagram
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8.0);
+            doc.setTextColor(30, 41, 59);
+            doc.text("ANEXO: ESQUEMA DE HALLAZGOS Y SINOPSIS DE MUSLO ANTERIOR", pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 3.5;
+
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(6.3);
+            doc.setTextColor(148, 163, 184);
+            doc.text("MAPEO DE CAPAS MUSCULARES SUPERFICIALES Y PROFUNDAS DEL MUSLO ANTERIOR EN ECOGRAFÍA", pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 4.5;
+
+            // --- DRAW SIDE-BY-SIDE LAYOUT ---
+            const yStart = yCoord;
+
+            // 1. Draw Left Diagram Box (Plano Superficial)
+            doc.setFillColor(255, 255, 255);
+            doc.setDrawColor(229, 231, 235);
+            doc.roundedRect(20, yStart, 43, 75, 3, 3, "FD");
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(6.5);
+            doc.setTextColor(71, 85, 105);
+            doc.text("PLANO SUPERFICIAL", 41.5, yStart + 5.5, { align: "center" });
+
+            if (imgSuperficial) {
+              doc.addImage(imgSuperficial, "PNG", 21.5, yStart + 8, 40, 40);
+            } else {
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(7);
+              doc.setTextColor(148, 163, 184);
+              doc.text("No disponible", 41.5, yStart + 35, { align: "center" });
+            }
+
+            // 2. Draw Second Diagram Box (Plano Profundo)
+            doc.setFillColor(255, 255, 255);
+            doc.setDrawColor(229, 231, 235);
+            doc.roundedRect(65, yStart, 43, 75, 3, 3, "FD");
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(6.5);
+            doc.setTextColor(71, 85, 105);
+            doc.text("PLANO PROFUNDO", 86.5, yStart + 5.5, { align: "center" });
+
+            if (imgDeep) {
+              doc.addImage(imgDeep, "PNG", 66.5, yStart + 8, 40, 40);
+            } else {
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(7);
+              doc.setTextColor(148, 163, 184);
+              doc.text("No disponible", 86.5, yStart + 35, { align: "center" });
+            }
+
+            // 3. Draw Right Findings Container (Slate Background)
+            doc.setFillColor(248, 250, 252);
+            doc.setDrawColor(229, 231, 235);
+            doc.roundedRect(111, yStart, 79, 75, 3, 3, "FD");
+
+            // Header of findings columns: ESTRUCTURA and HALLAZGOS
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5);
+            doc.setTextColor(67, 56, 202); // indigo-700
+            doc.text("ESTRUCTURA", 114, yStart + 5.5);
+            doc.text("HALLAZGOS", 142, yStart + 5.5);
+
+            // Draw horizontal divider line
+            doc.setDrawColor(229, 231, 235);
+            doc.setLineWidth(0.2);
+            doc.line(114, yStart + 7.5, 186, yStart + 7.5);
+
+            // Filter out structures that are NOT described in the report
+            const pdfThighStructures = [
+              { id: "rectus_femoris", label: "Recto Femoral" },
+              { id: "sartorius", label: "M. Sartorio" },
+              { id: "iliotibial_band", label: "T. Iliotibial" },
+              { id: "vastus_medialis", label: "M. Vasto Med." },
+              { id: "vastus_lateralis", label: "M. Vasto Lat." },
+              { id: "vastus_intermedius", label: "M. Vasto Interm." }
+            ].filter(struct => {
+              const s = thighStates[struct.id] || "no_descrito";
+              return s !== "no_descrito";
+            });
+
+            const translateThighStateForPDF = (id: string, s: string) => {
+              if (!s || s === "no_descrito") return "No descrito";
+              if (s === "normal") return "Sin lesiones";
+              if (s === "desgarro_miofascial") return "D. Miofascial";
+              if (s === "desgarro_intramuscular") return "D. Intramusc.";
+              if (s === "desgarro_completo") return "D. Completo";
+              if (s === "tendinopatia") return "Tendinopatía";
+              if (s === "desgarro") return "Desgarro";
+              if (s === "friccion") return "Fricción";
+              if (s === "contusion") return "Contusión";
+              if (s === "desgarro_parcial") return "D. Parcial";
+              if (s === "hernia_muscular") return "Hernia Fasc.";
+              return s;
+            };
+
+            const getThighPDFSimplifiedDescription = (id: string, state: string) => {
+              if (thighDescriptions && thighDescriptions[id]) {
+                return thighDescriptions[id];
+              }
+              if (state === "normal") {
+                return "Entre límites normales.";
+              }
+              switch (id) {
+                case "rectus_femoris":
+                  if (state === "desgarro_miofascial") return "Desgarro miofascial con microcolección laminar.";
+                  if (state === "desgarro_intramuscular") return "Foco de desgarro intramuscular localizado.";
+                  if (state === "desgarro_completo") return "Ruptura completa con retracción de extremos.";
+                  break;
+                case "sartorius":
+                  if (state === "tendinopatia") return "Signos ecográficos de tendinopatía de tracción.";
+                  if (state === "desgarro") return "Pérdida parcial de la ecogenia del fuste.";
+                  break;
+                case "iliotibial_band":
+                  if (state === "friccion") return "Líquido y edema reactivo interfacial lateral.";
+                  if (state === "desgarro") return "Discontinuidad fibrosa de espesor parcial.";
+                  break;
+                case "vastus_medialis":
+                case "vastus_lateralis":
+                  if (state === "contusion") return "Edema difuso sin desestructuración de fibras.";
+                  if (state === "desgarro_parcial") return "Desgarro parcial con infiltrado hemático ligero.";
+                  if (state === "desgarro_completo") return "Ruptura total con defecto contráctil evidente.";
+                  break;
+                case "vastus_intermedius":
+                  if (state === "hernia_muscular") return "Defecto fascial con herniación muscular dinámica.";
+                  if (state === "desgarro") return "Foco profundo de rotura fibrilar adyacente a cortical.";
+                  break;
+              }
+              return "Alteración focal.";
+            };
+
+            pdfThighStructures.forEach((struct, index) => {
+              const rowY = yStart + 8.5 + (index * 9.8);
+              const s = thighStates[struct.id] || "no_descrito";
+              const description = getThighPDFSimplifiedDescription(struct.id, s);
+
+              // Left column: Structure label (ESTRUCTURA)
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(6.2);
+              doc.setTextColor(30, 41, 59);
+              const wrappedLabel = doc.splitTextToSize(struct.label, 25);
+              if (wrappedLabel[0]) doc.text(wrappedLabel[0], 114, rowY + 3.2);
+              if (wrappedLabel[1]) doc.text(wrappedLabel[1], 114, rowY + 5.7);
+
+              // Right column: Description (HALLAZGO)
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(5.8);
+              doc.setTextColor(100, 116, 139);
+              const wrappedDesc = doc.splitTextToSize(description, 44);
+              if (wrappedDesc[0]) doc.text(wrappedDesc[0], 142, rowY + 3.2);
+              if (wrappedDesc[1]) doc.text(wrappedDesc[1], 142, rowY + 5.7);
+
+              // Draw a tiny light divider line under each row except the last one
+              if (index < pdfThighStructures.length - 1) {
+                doc.setDrawColor(241, 245, 249);
+                doc.setLineWidth(0.15);
+                doc.line(113, rowY + 8.8, 187, rowY + 8.8);
+              }
+            });
+
+            // Footnote at the bottom of the findings card
+            doc.setFont("helvetica", "italic");
+            doc.setFontSize(6.2);
+            doc.setTextColor(148, 163, 184);
+            doc.text("Mapa anatómico dual y lista sinóptica correspondientes al reporte clínico.", 150.5, yStart + 72, { align: "center" });
+
+            yCoord += 80;
+          } catch (err) {
+            console.warn("Could not draw thigh diagram inside jsPDF", err);
+          }
+        }
+      }
+
+      // 🛠️ DRAW THIGH POSTERIOR DIAGRAM IN THE PROGRAMMATIC PDF
+      if (includeThighPosteriorSchemaInReport && specificStudy === "Muslo Posterior") {
+        const svgSuperficial = document.getElementById("thigh-posterior-superficial-svg");
+        const svgDeep = document.getElementById("thigh-posterior-deep-svg");
+
+        if (svgSuperficial || svgDeep) {
+          try {
+            const processThighPosteriorSvg = async (svgEl: HTMLElement) => {
+              const clonedSvg = svgEl.cloneNode(true) as SVGElement;
+              
+              // 1. Force background and clean outline colors on gradient stops
+              const stops = clonedSvg.querySelectorAll("linearGradient stop");
+              stops.forEach(stop => {
+                const curColor = stop.getAttribute("stop-color") || stop.getAttribute("stopColor") || "";
+                if (curColor === "#1e293b" || curColor === "#2e3d52") stop.setAttribute("stop-color", "#f1f5f9");
+                if (curColor === "#0f172a" || curColor === "#111827") stop.setAttribute("stop-color", "#cbd5e1");
+                if (curColor === "#334155" || curColor === "#3d4e66") stop.setAttribute("stop-color", "#cbd5e1");
+              });
+
+              // 2. Adjust paths fill/stroke colors for paper print
+              const paths = clonedSvg.querySelectorAll("path");
+              paths.forEach(p => {
+                const fill = p.getAttribute("fill") || "";
+                const stroke = p.getAttribute("stroke") || "";
+                
+                if (fill === "#1e293b") p.setAttribute("fill", "#f8fafc");
+                if (fill === "#451a03") p.setAttribute("fill", "#fef3c7");
+                if (fill === "#500730") p.setAttribute("fill", "#fce7f3");
+                if (fill === "#7f1d1d") p.setAttribute("fill", "#fee2e2");
+
+                if (stroke === "#ef4444") p.setAttribute("stroke", "#dc2626");
+                if (stroke === "#ec4899") p.setAttribute("stroke", "#db2777");
+                if (stroke === "#f59e0b") p.setAttribute("stroke", "#d97706");
+                if (stroke === "#334155") p.setAttribute("stroke", "#475569");
+                if (stroke === "#475569") p.setAttribute("stroke", "#64748b");
+              });
+
+              // 3. Adjust text colors
+              const texts = clonedSvg.querySelectorAll("text");
+              texts.forEach(t => {
+                const fill = t.getAttribute("fill") || "";
+                if (fill === "#64748b") t.setAttribute("fill", "#475569");
+                if (fill === "#475569") t.setAttribute("fill", "#1e293b");
+              });
+
+              // 4. Adjust custom guides/circles in background
+              const circles = clonedSvg.querySelectorAll("circle");
+              circles.forEach(c => {
+                const stroke = c.getAttribute("stroke") || "";
+                if (stroke === "#1e293b") c.setAttribute("stroke", "#e2e8f0");
+              });
+              const lines = clonedSvg.querySelectorAll("line");
+              lines.forEach(l => {
+                const stroke = l.getAttribute("stroke") || "";
+                if (stroke === "#1e293b") l.setAttribute("stroke", "#e2e8f0");
+              });
+
+              return await convertSvgToPng(clonedSvg);
+            };
+
+            const imgSuperficial = svgSuperficial ? await processThighPosteriorSvg(svgSuperficial) : null;
+            const imgDeep = svgDeep ? await processThighPosteriorSvg(svgDeep) : null;
+
+            // Check page break for 95mm (75mm content + margins/header)
+            const willPageBreak = (yCoord + 95 > pageHeight - 20);
+            checkPageBreak(95);
+            if (!willPageBreak) {
+              yCoord += 18; // Generous space/gap from the diagnostic impression above
+            } else {
+              yCoord += 6;  // Normal small spacing at the top of a fresh page
+            }
+
+            // Header for the diagram
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8.0);
+            doc.setTextColor(30, 41, 59);
+            doc.text("ANEXO: ESQUEMA DE HALLAZGOS Y SINOPSIS DE MUSLO POSTERIOR", pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 3.5;
+
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(6.3);
+            doc.setTextColor(148, 163, 184);
+            doc.text("MAPEO DE CAPAS MUSCULARES SUPERFICIALES Y PROFUNDAS DEL MUSLO POSTERIOR EN ECOGRAFÍA", pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 4.5;
+
+            // --- DRAW SIDE-BY-SIDE LAYOUT ---
+            const yStart = yCoord;
+
+            // 1. Draw Left Diagram Box (Plano Superficial)
+            doc.setFillColor(255, 255, 255);
+            doc.setDrawColor(229, 231, 235);
+            doc.roundedRect(20, yStart, 43, 75, 3, 3, "FD");
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(6.5);
+            doc.setTextColor(71, 85, 105);
+            doc.text("PLANO SUPERFICIAL", 41.5, yStart + 5.5, { align: "center" });
+
+            if (imgSuperficial) {
+              doc.addImage(imgSuperficial, "PNG", 21.5, yStart + 8, 40, 40);
+            } else {
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(7);
+              doc.setTextColor(148, 163, 184);
+              doc.text("No disponible", 41.5, yStart + 35, { align: "center" });
+            }
+
+            // 2. Draw Second Diagram Box (Plano Profundo)
+            doc.setFillColor(255, 255, 255);
+            doc.setDrawColor(229, 231, 235);
+            doc.roundedRect(65, yStart, 43, 75, 3, 3, "FD");
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(6.5);
+            doc.setTextColor(71, 85, 105);
+            doc.text("PLANO PROFUNDO", 86.5, yStart + 5.5, { align: "center" });
+
+            if (imgDeep) {
+              doc.addImage(imgDeep, "PNG", 66.5, yStart + 8, 40, 40);
+            } else {
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(7);
+              doc.setTextColor(148, 163, 184);
+              doc.text("No disponible", 86.5, yStart + 35, { align: "center" });
+            }
+
+            // 3. Draw Right Findings Container (Slate Background)
+            doc.setFillColor(248, 250, 252);
+            doc.setDrawColor(229, 231, 235);
+            doc.roundedRect(111, yStart, 79, 75, 3, 3, "FD");
+
+            // Header of findings columns: ESTRUCTURA and HALLAZGOS
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5);
+            doc.setTextColor(67, 56, 202); // indigo-700
+            doc.text("ESTRUCTURA", 114, yStart + 5.5);
+            doc.text("HALLAZGOS", 142, yStart + 5.5);
+
+            // Draw horizontal divider line
+            doc.setDrawColor(229, 231, 235);
+            doc.setLineWidth(0.2);
+            doc.line(114, yStart + 7.5, 186, yStart + 7.5);
+
+            // Filter out structures that are NOT described in the report
+            const pdfThighPosteriorStructures = [
+              { id: "biceps_femoris_lh", label: "Bíceps Fem. LH" },
+              { id: "biceps_femoris_sh", label: "Bíceps Fem. SH" },
+              { id: "semitendinosus", label: "M. Semitend." },
+              { id: "semimembranosus", label: "M. Semimemb." },
+              { id: "sciatic_nerve", label: "Nervio Ciático" },
+              { id: "adductor_magnus", label: "M. Aductor May." }
+            ].filter(struct => {
+              const s = thighPosteriorStates[struct.id] || "no_descrito";
+              return s !== "no_descrito";
+            });
+
+            const translateThighPosteriorStateForPDF = (id: string, s: string) => {
+              if (!s || s === "no_descrito") return "No descrito";
+              if (s === "normal") return "Sin lesiones";
+              if (s === "desgarro_miofascial") return "D. Miofascial";
+              if (s === "desgarro_intramuscular") return "D. Intramusc.";
+              if (s === "desgarro_completo") return "D. Completo";
+              if (s === "neuropatia") return "Neuropatía";
+              if (s === "engrosamiento") return "Engrosamiento";
+              if (s === "contusion") return "Contusión";
+              if (s === "desgarro_parcial") return "D. Parcial";
+              return s;
+            };
+
+            const getThighPosteriorPDFSimplifiedDescription = (id: string, state: string) => {
+              if (thighPosteriorDescriptions && thighPosteriorDescriptions[id]) {
+                return thighPosteriorDescriptions[id];
+              }
+              if (state === "normal") {
+                return "Entre límites normales.";
+              }
+              switch (id) {
+                case "biceps_femoris_lh":
+                  if (state === "desgarro_miofascial") return "Desgarro miofascial periférico con líquido laminar.";
+                  if (state === "desgarro_intramuscular") return "Desgarro intramuscular grado II en fuste distal.";
+                  if (state === "desgarro_completo") return "Ruptura completa de cabeza larga con retracción.";
+                  break;
+                case "biceps_femoris_sh":
+                  if (state === "desgarro_miofascial") return "Foco desgarro miofascial con líquido interfacial.";
+                  if (state === "desgarro_intramuscular") return "Foco de desgarro grado II en el vientre muscular.";
+                  if (state === "desgarro_completo") return "Brecha líquida de espesor completo con retracción.";
+                  break;
+                case "semitendinosus":
+                  if (state === "desgarro_miofascial") return "Desgarro miofascial periférico medial leve.";
+                  if (state === "desgarro_intramuscular") return "Foco de desgarro grado II en fuste medio carnoso.";
+                  if (state === "desgarro_completo") return "Ruptura completa fibrilar con hematoma interposicional.";
+                  break;
+                case "semimembranosus":
+                  if (state === "desgarro_miofascial") return "Desgarro miofascial grado I con edema laminar.";
+                  if (state === "desgarro_intramuscular") return "Foco de desgarro profundo grado II miotendinoso.";
+                  if (state === "desgarro_completo") return "Rotura completa miotendinosa con retracción manifiesta.";
+                  break;
+                case "sciatic_nerve":
+                  if (state === "neuropatia") return "Pérdida de patrón fascicular y edema perineural.";
+                  if (state === "engrosamiento") return "Engrosamiento reactivo de los fascículos cilíndricos.";
+                  break;
+                case "adductor_magnus":
+                  if (state === "contusion") return "Edema reactivo difuso celular por foco contusivo.";
+                  if (state === "desgarro_parcial") return "Desgarro de fuste muscular espesor parcial grado II.";
+                  if (state === "desgarro_completo") return "Rotura posterior completa con brecha anecóica.";
+                  break;
+              }
+              return "Alteración focal.";
+            };
+
+            pdfThighPosteriorStructures.forEach((struct, index) => {
+              const rowY = yStart + 8.5 + (index * 9.8);
+              const s = thighPosteriorStates[struct.id] || "no_descrito";
+              const description = getThighPosteriorPDFSimplifiedDescription(struct.id, s);
+
+              // Left column: Structure label (ESTRUCTURA)
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(6.2);
+              doc.setTextColor(30, 41, 59);
+              const wrappedLabel = doc.splitTextToSize(struct.label, 25);
+              if (wrappedLabel[0]) doc.text(wrappedLabel[0], 114, rowY + 3.2);
+              if (wrappedLabel[1]) doc.text(wrappedLabel[1], 114, rowY + 5.7);
+
+              // Right column: Description (HALLAZGO)
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(5.8);
+              doc.setTextColor(100, 116, 139);
+              const wrappedDesc = doc.splitTextToSize(description, 44);
+              if (wrappedDesc[0]) doc.text(wrappedDesc[0], 142, rowY + 3.2);
+              if (wrappedDesc[1]) doc.text(wrappedDesc[1], 142, rowY + 5.7);
+
+              // Draw a tiny light divider line under each row except the last one
+              if (index < pdfThighPosteriorStructures.length - 1) {
+                doc.setDrawColor(241, 245, 249);
+                doc.setLineWidth(0.15);
+                doc.line(113, rowY + 8.8, 187, rowY + 8.8);
+              }
+            });
+
+            // Footnote at the bottom of the findings card
+            doc.setFont("helvetica", "italic");
+            doc.setFontSize(6.2);
+            doc.setTextColor(148, 163, 184);
+            doc.text("Mapa anatómico dual y lista sinóptica correspondientes al reporte clínico.", 150.5, yStart + 72, { align: "center" });
+
+            yCoord += 80;
+          } catch (err) {
+            console.warn("Could not draw thigh posterior diagram inside jsPDF", err);
+          }
+        }
+      }
+
+      // 🛠️ DRAW NECK / THYROID DIAGRAM IN THE PROGRAMMATIC PDF
+      if (includeNeckSchemaInReport && specificStudy === "Cuello") {
+        const svgThyroid = document.getElementById("neck-anatomy-svg-thyroid");
+        const svgGlands = document.getElementById("neck-anatomy-svg-glands");
+
+        if (svgThyroid || svgGlands) {
+          try {
+            const processNeckSvg = async (svgEl: HTMLElement) => {
+              const clonedSvg = svgEl.cloneNode(true) as SVGElement;
+              
+              // 1. Force background and clean outline colors on gradient stops
+              const stops = clonedSvg.querySelectorAll("linearGradient stop");
+              stops.forEach(stop => {
+                const curColor = stop.getAttribute("stop-color") || stop.getAttribute("stopColor") || "";
+                if (curColor === "#1e293b" || curColor === "#2e3d52") stop.setAttribute("stop-color", "#f1f5f9");
+                if (curColor === "#0f172a" || curColor === "#111827") stop.setAttribute("stop-color", "#cbd5e1");
+                if (curColor === "#334155" || curColor === "#3d4e66") stop.setAttribute("stop-color", "#cbd5e1");
+              });
+
+              // 2. Adjust paths fill/stroke colors for paper print
+              const paths = clonedSvg.querySelectorAll("path");
+              paths.forEach(p => {
+                const fill = p.getAttribute("fill") || "";
+                const stroke = p.getAttribute("stroke") || "";
+                
+                if (fill === "#1e293b") p.setAttribute("fill", "#f8fafc");
+                if (fill === "#451a03") p.setAttribute("fill", "#fef3c7");
+                if (fill === "#500730") p.setAttribute("fill", "#fce7f3");
+                if (fill === "#1e1b4b" || fill === "#311005") p.setAttribute("fill", "#e0e7ff");
+                if (fill === "#7f1d1d") p.setAttribute("fill", "#fee2e2");
+
+                if (stroke === "#ef4444") p.setAttribute("stroke", "#dc2626");
+                if (stroke === "#ec4899") p.setAttribute("stroke", "#db2777");
+                if (stroke === "#f59e0b") p.setAttribute("stroke", "#d97706");
+                if (stroke === "#334155") p.setAttribute("stroke", "#475569");
+                if (stroke === "#475569") p.setAttribute("stroke", "#64748b");
+              });
+
+              // 3. Adjust text colors
+              const texts = clonedSvg.querySelectorAll("text");
+              texts.forEach(t => {
+                const fill = t.getAttribute("fill") || "";
+                if (fill === "#64748b") t.setAttribute("fill", "#475569");
+                if (fill === "#475569") t.setAttribute("fill", "#1e293b");
+              });
+
+              // 4. Adjust custom guides/circles in background
+              const circles = clonedSvg.querySelectorAll("circle");
+              circles.forEach(c => {
+                const stroke = c.getAttribute("stroke") || "";
+                if (stroke === "#1e293b") c.setAttribute("stroke", "#e2e8f0");
+              });
+              const lines = clonedSvg.querySelectorAll("line");
+              lines.forEach(l => {
+                const stroke = l.getAttribute("stroke") || "";
+                if (stroke === "#1e293b") l.setAttribute("stroke", "#e2e8f0");
+              });
+
+              return await convertSvgToPng(clonedSvg);
+            };
+
+            const imgThyroid = svgThyroid ? await processNeckSvg(svgThyroid) : null;
+            const imgGlands = svgGlands ? await processNeckSvg(svgGlands) : null;
+
+            // Check page break for 95mm (75mm content + margins/header)
+            const willPageBreak = (yCoord + 95 > pageHeight - 20);
+            checkPageBreak(95);
+            if (!willPageBreak) {
+              yCoord += 18; // Generous space/gap from the diagnostic impression above
+            } else {
+              yCoord += 6;  // Normal small spacing at the top of a fresh page
+            }
+
+            // Header for the diagram
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8.0);
+            doc.setTextColor(30, 41, 59);
+            doc.text("ANEXO: ESQUEMA DE HALLAZGOS Y SINOPSIS DE CUELLO Y TIROIDES", pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 3.5;
+
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(6.3);
+            doc.setTextColor(148, 163, 184);
+            doc.text("MAPEO ANATÓMICO ULTRAESTRUCTURAL DE GLÁNDULA TIROIDES, REGIONES GANGLIONARES Y GLÁNDULAS SALIVALES", pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 4.5;
+
+            // --- DRAW SIDE-BY-SIDE LAYOUT ---
+            const yStart = yCoord;
+
+            // 1. Draw Left Diagram Box (Plano Tiroides)
+            doc.setFillColor(255, 255, 255);
+            doc.setDrawColor(229, 231, 235);
+            doc.roundedRect(20, yStart, 43, 75, 3, 3, "FD");
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(6.5);
+            doc.setTextColor(71, 85, 105);
+            doc.text("PLANO TIROIDES", 41.5, yStart + 5.5, { align: "center" });
+
+            if (imgThyroid) {
+              doc.addImage(imgThyroid, "PNG", 21.5, yStart + 8, 40, 40);
+            } else {
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(7);
+              doc.setTextColor(148, 163, 184);
+              doc.text("No disponible", 41.5, yStart + 35, { align: "center" });
+            }
+
+            // 2. Draw Second Diagram Box (Plano Cervical / Salival)
+            doc.setFillColor(255, 255, 255);
+            doc.setDrawColor(229, 231, 235);
+            doc.roundedRect(65, yStart, 43, 75, 3, 3, "FD");
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(6.5);
+            doc.setTextColor(71, 85, 105);
+            doc.text("PLANO CERVICAL / SALIVAL", 86.5, yStart + 5.5, { align: "center" });
+
+            if (imgGlands) {
+              doc.addImage(imgGlands, "PNG", 66.5, yStart + 8, 40, 40);
+            } else {
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(7);
+              doc.setTextColor(148, 163, 184);
+              doc.text("No disponible", 86.5, yStart + 35, { align: "center" });
+            }
+
+            // 3. Draw Right Findings Container (Slate Background)
+            doc.setFillColor(248, 250, 252);
+            doc.setDrawColor(229, 231, 235);
+            doc.roundedRect(111, yStart, 79, 75, 3, 3, "FD");
+
+            // Header of findings columns: ESTRUCTURA and HALLAZGOS
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5);
+            doc.setTextColor(67, 56, 202); // indigo-700
+            doc.text("ESTRUCTURA", 114, yStart + 5.5);
+            doc.text("HALLAZGOS", 142, yStart + 5.5);
+
+            // Draw horizontal divider line
+            doc.setDrawColor(229, 231, 235);
+            doc.setLineWidth(0.2);
+            doc.line(114, yStart + 7.5, 186, yStart + 7.5);
+
+            // Filter out structures that are NOT described in the report
+            const pdfNeckStructures = [
+              { id: "thyroid_right_lobe", label: "Lóbulo Der. Tiroides" },
+              { id: "thyroid_left_lobe", label: "Lóbulo Izq. Tiroides" },
+              { id: "thyroid_isthmus", label: "Istmo Tiroideo" },
+              { id: "parotid_right", label: "Glán. Parótida Der." },
+              { id: "parotid_left", label: "Glán. Parótida Izq." },
+              { id: "submandibular_right", label: "Glán. Submand. Der." },
+              { id: "submandibular_left", label: "Glán. Submand. Izq." },
+              { id: "nodes_right", label: "Ganglios Cervicales D." },
+              { id: "nodes_left", label: "Ganglios Cervicales I." },
+              { id: "major_vessels", label: "Vasos Principales" },
+              { id: "muscles_soft_tissues", label: "Músculos/Tej. Blandos" }
+            ].filter(struct => {
+              const s = neckStates[struct.id] || "no_descrito";
+              return s !== "no_descrito";
+            });
+
+            const getNeckPDFSimplifiedDescription = (id: string, state: string) => {
+              if (neckDescriptions && neckDescriptions[id]) {
+                return neckDescriptions[id];
+              }
+              if (state === "normal") {
+                return "Dentro de límites normales.";
+              }
+              return "Alteración focal.";
+            };
+
+            const neckRowSpacing = pdfNeckStructures.length > 7 ? (62 / pdfNeckStructures.length) : 9.5;
+
+            pdfNeckStructures.forEach((struct, index) => {
+              const rowY = yStart + 8.5 + (index * neckRowSpacing);
+              const s = neckStates[struct.id] || "no_descrito";
+              const description = getNeckPDFSimplifiedDescription(struct.id, s);
+
+              // Left column: Structure label (ESTRUCTURA)
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(6.2);
+              doc.setTextColor(30, 41, 59);
+              const wrappedLabel = doc.splitTextToSize(struct.label, 25);
+              if (wrappedLabel[0]) doc.text(wrappedLabel[0], 114, rowY + 3.2);
+              if (wrappedLabel[1]) doc.text(wrappedLabel[1], 114, rowY + 5.7);
+
+              // Right column: Description (HALLAZGO)
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(5.8);
+              doc.setTextColor(100, 116, 139);
+              const wrappedDesc = doc.splitTextToSize(description, 44);
+              if (wrappedDesc[0]) doc.text(wrappedDesc[0], 142, rowY + 3.2);
+              if (wrappedDesc[1]) doc.text(wrappedDesc[1], 142, rowY + 5.7);
+
+              // Draw a tiny light divider line under each row except the last one
+              if (index < pdfNeckStructures.length - 1) {
+                doc.setDrawColor(241, 245, 249);
+                doc.setLineWidth(0.15);
+                doc.line(113, rowY + neckRowSpacing, 187, rowY + neckRowSpacing);
+              }
+            });
+
+            // Footnote at the bottom of the findings card
+            doc.setFont("helvetica", "italic");
+            doc.setFontSize(6.2);
+            doc.setTextColor(148, 163, 184);
+            doc.text("Mapa anatómico dual y lista sinóptica correspondientes al reporte clínico.", 150.5, yStart + 72, { align: "center" });
+
+            yCoord += 80;
+          } catch (err) {
+            console.warn("Could not draw neck diagram inside jsPDF", err);
+          }
+        }
+      }
+
+      // 🛠️ DRAW URINARY / RENAL DIAGRAM IN THE PROGRAMMATIC PDF
+      if (includeUrinarySchemaInReport && specificStudy === "Vias urinarias") {
+        const svgRenal = document.getElementById("urinary-anatomy-svg-renal");
+        const svgVesical = document.getElementById("urinary-anatomy-svg-vesical");
+
+        if (svgRenal || svgVesical) {
+          try {
+            const processUrinarySvg = async (svgEl: HTMLElement) => {
+              const clonedSvg = svgEl.cloneNode(true) as SVGElement;
+              
+              // 1. Force background and clean outline colors on gradient stops
+              const stops = clonedSvg.querySelectorAll("linearGradient stop");
+              stops.forEach(stop => {
+                const curColor = stop.getAttribute("stop-color") || stop.getAttribute("stopColor") || "";
+                if (curColor === "#1e293b" || curColor === "#2e3d52") stop.setAttribute("stop-color", "#f1f5f9");
+                if (curColor === "#0f172a" || curColor === "#111827") stop.setAttribute("stop-color", "#cbd5e1");
+                if (curColor === "#334155" || curColor === "#3d4e66") stop.setAttribute("stop-color", "#cbd5e1");
+              });
+
+              // 2. Adjust paths fill/stroke colors for paper print
+              const paths = clonedSvg.querySelectorAll("path");
+              paths.forEach(p => {
+                const fill = p.getAttribute("fill") || "";
+                const stroke = p.getAttribute("stroke") || "";
+                
+                if (fill === "#1e293b") p.setAttribute("fill", "#f8fafc");
+                if (fill === "#451a03") p.setAttribute("fill", "#fef3c7");
+                if (fill === "#500730") p.setAttribute("fill", "#fce7f3");
+                if (fill === "#1e1b4b" || fill === "#311005") p.setAttribute("fill", "#e0e7ff");
+                if (fill === "#7f1d1d") p.setAttribute("fill", "#fee2e2");
+
+                if (stroke === "#ef4444") p.setAttribute("stroke", "#dc2626");
+                if (stroke === "#ec4899") p.setAttribute("stroke", "#db2777");
+                if (stroke === "#f59e0b") p.setAttribute("stroke", "#d97706");
+                if (stroke === "#334155") p.setAttribute("stroke", "#475569");
+                if (stroke === "#475569") p.setAttribute("stroke", "#64748b");
+              });
+
+              // 3. Adjust text colors
+              const texts = clonedSvg.querySelectorAll("text");
+              texts.forEach(t => {
+                const fill = t.getAttribute("fill") || "";
+                if (fill === "#64748b") t.setAttribute("fill", "#475569");
+                if (fill === "#475569") t.setAttribute("fill", "#1e293b");
+              });
+
+              // 4. Adjust other primitives
+              const circles = clonedSvg.querySelectorAll("circle");
+              circles.forEach(c => {
+                const stroke = c.getAttribute("stroke") || "";
+                if (stroke === "#1e293b") c.setAttribute("stroke", "#e2e8f0");
+              });
+              const lines = clonedSvg.querySelectorAll("line");
+              lines.forEach(l => {
+                const stroke = l.getAttribute("stroke") || "";
+                if (stroke === "#1e293b") l.setAttribute("stroke", "#e2e8f0");
+              });
+
+              return await convertSvgToPng(clonedSvg);
+            };
+
+            const imgRenal = svgRenal ? await processUrinarySvg(svgRenal) : null;
+            const imgVesical = svgVesical ? await processUrinarySvg(svgVesical) : null;
+
+            // Check page break for 95mm
+            const willPageBreak = (yCoord + 95 > pageHeight - 20);
+            checkPageBreak(95);
+            if (!willPageBreak) {
+              yCoord += 18;
+            } else {
+              yCoord += 6;
+            }
+
+            // Header for the diagram
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8.0);
+            doc.setTextColor(30, 41, 59);
+            doc.text("ANEXO: ESQUEMA DE HALLAZGOS Y SINOPSIS DE VÍAS URINARIAS", pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 3.5;
+
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(6.3);
+            doc.setTextColor(148, 163, 184);
+            const subTitleGender = urinaryGenderMode === "hombre" ? "HOMBRE (CON EVALUACIÓN PROSTÁTICA)" : "MUJER";
+            doc.text(`MAPEO ANATÓMICO ECOGRÁFICO DEL APARATO RENAL Y TRACTO URINARIO - ${subTitleGender}`, pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 4.5;
+
+            const yStart = yCoord;
+
+            // 1. Draw Left Diagram Box (Plano Renal)
+            doc.setFillColor(255, 255, 255);
+            doc.setDrawColor(229, 231, 235);
+            doc.roundedRect(20, yStart, 43, 75, 3, 3, "FD");
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(6.5);
+            doc.setTextColor(71, 85, 105);
+            doc.text("PLANO RENAL", 41.5, yStart + 5.5, { align: "center" });
+
+            if (imgRenal) {
+              doc.addImage(imgRenal, "PNG", 21.5, yStart + 8, 40, 40);
+            } else {
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(7);
+              doc.setTextColor(148, 163, 184);
+              doc.text("No disponible", 41.5, yStart + 35, { align: "center" });
+            }
+
+            // 2. Draw Second Diagram Box (Plano Vesical)
+            doc.setFillColor(255, 255, 255);
+            doc.setDrawColor(229, 231, 235);
+            doc.roundedRect(65, yStart, 43, 75, 3, 3, "FD");
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(6.5);
+            doc.setTextColor(71, 85, 105);
+            const vesicalLabel = urinaryGenderMode === "hombre" ? "PLANO VESICO-PROSTÁTICO" : "PLANO VESICAL";
+            doc.text(vesicalLabel, 86.5, yStart + 5.5, { align: "center" });
+
+            if (imgVesical) {
+              doc.addImage(imgVesical, "PNG", 66.5, yStart + 8, 40, 40);
+            } else {
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(7);
+              doc.setTextColor(148, 163, 184);
+              doc.text("No disponible", 86.5, yStart + 35, { align: "center" });
+            }
+
+            // 3. Draw Right Findings Container (Slate Background)
+            doc.setFillColor(248, 250, 252);
+            doc.setDrawColor(229, 231, 235);
+            doc.roundedRect(111, yStart, 79, 75, 3, 3, "FD");
+
+            // Header of findings columns: ESTRUCTURA and HALLAZGOS
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5);
+            doc.setTextColor(67, 56, 202); // indigo-700
+            doc.text("ESTRUCTURA", 114, yStart + 5.5);
+            doc.text("HALLAZGOS", 142, yStart + 5.5);
+
+            // Draw horizontal divider line
+            doc.setDrawColor(229, 231, 235);
+            doc.setLineWidth(0.2);
+            doc.line(114, yStart + 7.5, 186, yStart + 7.5);
+
+            // Filter structures that are not described
+            const allowedUrinaryKeys = [
+              { id: "right_kidney", label: "Riñón Derecho" },
+              { id: "left_kidney", label: "Riñón Izquierdo" },
+              { id: "right_ureter", label: "Uréter Derecho" },
+              { id: "left_ureter", label: "Uréter Izquierdo" },
+              { id: "bladder", label: "Vejiga Urinaria" }
+            ];
+            if (urinaryGenderMode === "hombre") {
+              allowedUrinaryKeys.push({ id: "prostate", label: "Próstata" });
+            }
+
+            const pdfUrinaryStructures = allowedUrinaryKeys.filter(struct => {
+              const s = urinaryStates[struct.id] || "no_descrito";
+              return s !== "no_descrito";
+            });
+
+            const getUrinaryPDFDescription = (id: string, state: string) => {
+              if (urinaryDescriptions && urinaryDescriptions[id]) {
+                return urinaryDescriptions[id];
+              }
+              if (state === "normal") {
+                return "Dentro de límites normales.";
+              }
+              return "Alteración focal.";
+            };
+
+            const urinaryRowSpacing = pdfUrinaryStructures.length > 5 ? (62 / pdfUrinaryStructures.length) : 11;
+
+            pdfUrinaryStructures.forEach((struct, index) => {
+              const rowY = yStart + 8.5 + (index * urinaryRowSpacing);
+              const s = urinaryStates[struct.id] || "no_descrito";
+              const description = getUrinaryPDFDescription(struct.id, s);
+
+              // Left column: Structure label
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(6.2);
+              doc.setTextColor(30, 41, 59);
+              const wrappedLabel = doc.splitTextToSize(struct.label, 25);
+              if (wrappedLabel[0]) doc.text(wrappedLabel[0], 114, rowY + 3.2);
+              if (wrappedLabel[1]) doc.text(wrappedLabel[1], 114, rowY + 5.7);
+
+              // Right column: Description
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(5.8);
+              doc.setTextColor(100, 116, 139);
+              const wrappedDesc = doc.splitTextToSize(description, 44);
+              if (wrappedDesc[0]) doc.text(wrappedDesc[0], 142, rowY + 3.2);
+              if (wrappedDesc[1]) doc.text(wrappedDesc[1], 142, rowY + 5.7);
+
+              // Tiny line
+              if (index < pdfUrinaryStructures.length - 1) {
+                doc.setDrawColor(241, 245, 249);
+                doc.setLineWidth(0.15);
+                doc.line(113, rowY + urinaryRowSpacing, 187, rowY + urinaryRowSpacing);
+              }
+            });
+
+            doc.setFont("helvetica", "italic");
+            doc.setFontSize(6.2);
+            doc.setTextColor(148, 163, 184);
+            doc.text("Mapa anatómico renal y de vías urinarias con sinopsis clínica.", 150.5, yStart + 72, { align: "center" });
+
+            yCoord += 80;
+          } catch (err) {
+            console.warn("Could not draw urinary diagram inside jsPDF", err);
+          }
+        }
+      }
+
+      // 🛠️ DRAW SCROTUM DIAGRAM IN THE PROGRAMMATIC PDF
+      if (includeScrotumSchemaInReport && specificStudy === "Escroto") {
+        const svgScrotum = document.getElementById("scrotum-anatomy-svg");
+
+        if (svgScrotum) {
+          try {
+            const processScrotumSvgForPdf = async (svgEl: HTMLElement) => {
+              const clonedSvg = svgEl.cloneNode(true) as SVGElement;
+              
+              // Set appropriate dimensions
+              clonedSvg.setAttribute("width", "300px");
+              clonedSvg.setAttribute("height", "300px");
+              clonedSvg.style.backgroundColor = "transparent";
+              
+              // Lighten text for contrast
+              clonedSvg.querySelectorAll("text").forEach((txt: any) => {
+                const fill = txt.getAttribute("fill");
+                if (fill === "#64748b" || fill === "#cbd5e1" || fill === "#a1a1aa" || !fill) {
+                  txt.setAttribute("fill", "#0f172a"); // Dark slate for readable PDFs
+                  txt.setAttribute("font-family", "helvetica");
+                }
+              });
+
+              clonedSvg.querySelectorAll("path, ellipse, circle, line").forEach((el: any) => {
+                const fill = el.getAttribute("fill");
+                const stroke = el.getAttribute("stroke");
+                
+                if (fill === "#1e293b") {
+                  el.setAttribute("fill", "#f1f5f9");
+                } else if (fill === "rgba(16, 185, 129, 0.22)") {
+                  el.setAttribute("fill", "#d1fae5");
+                } else if (fill === "rgba(245, 158, 11, 0.28)") {
+                  el.setAttribute("fill", "#fef3c7");
+                } else if (fill === "rgba(244, 63, 94, 0.35)") {
+                  el.setAttribute("fill", "#ffe4e6");
+                }
+                
+                if (stroke === "#475569" || stroke === "#64748b") {
+                  el.setAttribute("stroke", "#94a3b8");
+                }
+              });
+
+              const svgData = new XMLSerializer().serializeToString(clonedSvg);
+              const svgBlob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
+              const url = URL.createObjectURL(svgBlob);
+              
+              return new Promise<string>((resolve) => {
+                const img = new Image();
+                img.onload = () => {
+                  const canvas = document.createElement("canvas");
+                  canvas.width = 600;
+                  canvas.height = 600;
+                  const ctx = canvas.getContext("2d");
+                  if (ctx) {
+                    ctx.drawImage(img, 0, 0, 600, 600);
+                  }
+                  resolve(canvas.toDataURL("image/png"));
+                  URL.revokeObjectURL(url);
+                };
+                img.src = url;
+              });
+            };
+
+            const imgScrotum = await processScrotumSvgForPdf(svgScrotum);
+            
+            // Check page positioning
+            if (yCoord > 210) {
+              doc.addPage();
+              yCoord = 32;
+            }
+
+            const yStart = yCoord;
+            
+            // Outer frame block
+            doc.setDrawColor(229, 231, 235);
+            doc.setFillColor(248, 250, 252);
+            doc.rect(20, yStart, 170, 77, "FD");
+
+            // Frame headers
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8.5);
+            doc.setTextColor(30, 41, 59);
+            doc.text("ANEXO: ESQUEMA DE HALLAZGOS Y SINOPSIS ESCROTAL", 24, yStart + 5.5);
+
+            // Divider lines
+            doc.setDrawColor(226, 232, 240);
+            doc.line(20, yStart + 7.5, 190, yStart + 7.5);
+            doc.line(111, yStart + 7.5, 111, yStart + 77);
+
+            // Left side label
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(6.5);
+            doc.setTextColor(148, 163, 184);
+            doc.text("MAPEO CLÍNICO - ECOGRAFÍA ESCROTAL Y TESTICULAR", 34, yStart + 11.5);
+
+            // Draw scrotum image
+            if (imgScrotum) {
+              doc.addImage(imgScrotum, "PNG", 35, yStart + 13, 56, 56);
+            }
+
+            // Right side table headers
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5);
+            doc.setTextColor(67, 56, 202); // indigo-700
+            doc.text("ESTRUCTURA", 114, yStart + 11.5);
+            doc.text("HALLAZGOS", 142, yStart + 11.5);
+
+            // Divider line
+            doc.setDrawColor(229, 231, 235);
+            doc.line(114, yStart + 13.5, 186, yStart + 13.5);
+
+            const allowedKeys = [
+              { id: "testiculo_derecho", label: "Testículo Derecho" },
+              { id: "testiculo_izquierdo", label: "Testículo Izquierdo" },
+              { id: "epididimo_derecho", label: "Epidídimo Derecho" },
+              { id: "epididimo_izquierdo", label: "Epidídimo Izquierdo" },
+              { id: "hemiescroto_derecho", label: "Hemiescroto Derecho" },
+              { id: "hemiescroto_izquierdo", label: "Hemiescroto Izquierdo" }
+            ];
+
+            const pdfStructures = allowedKeys.filter(struct => {
+              const s = scrotumStates[struct.id] || "no_descrito";
+              return s !== "no_descrito";
+            });
+
+            const getPDFDescription = (id: string, s: string) => {
+              if (scrotumDescriptions && scrotumDescriptions[id]) {
+                return scrotumDescriptions[id];
+              }
+              if (s === "normal") {
+                return "Dentro de límites normales.";
+              }
+              return "Hallazgo ecográfico.";
+            };
+
+            const rowSpacing = pdfStructures.length > 5 ? (58 / pdfStructures.length) : 10;
+
+            pdfStructures.forEach((struct, index) => {
+              const rowY = yStart + 14.5 + (index * rowSpacing);
+              const s = scrotumStates[struct.id] || "no_descrito";
+              const description = getPDFDescription(struct.id, s);
+
+              // Left col
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(6.2);
+              doc.setTextColor(30, 41, 59);
+              const wrappedLabel = doc.splitTextToSize(struct.label, 25);
+              if (wrappedLabel[0]) doc.text(wrappedLabel[0], 114, rowY + 3);
+              if (wrappedLabel[1]) doc.text(wrappedLabel[1], 114, rowY + 5.5);
+
+              // Right col
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(5.8);
+              doc.setTextColor(100, 116, 139);
+              const wrappedDesc = doc.splitTextToSize(description, 44);
+              if (wrappedDesc[0]) doc.text(wrappedDesc[0], 142, rowY + 3);
+              if (wrappedDesc[1]) doc.text(wrappedDesc[1], 142, rowY + 5.5);
+
+              // Row lines
+              if (index < pdfStructures.length - 1) {
+                doc.setDrawColor(241, 245, 249);
+                doc.setLineWidth(0.15);
+                doc.line(113, rowY + rowSpacing, 187, rowY + rowSpacing);
+              }
+            });
+
+            doc.setFont("helvetica", "italic");
+            doc.setFontSize(6.2);
+            doc.setTextColor(148, 163, 184);
+            doc.text("Mapa sinóptico escrotal correlacionado con el reporte.", 150.5, yStart + 74, { align: "center" });
+
+            yCoord += 80;
+          } catch (err) {
+            console.warn("Could not draw scrotum diagram inside jsPDF", err);
+          }
+        }
+      }
+
+      // 🛠️ DRAW WRIST DIAGRAMS IN THE PROGRAMMATIC PDF
+      if (includeWristSchemaInReport && specificStudy === "Muñeca") {
+        const svgAnterior = document.getElementById("wrist-anatomy-anterior-svg");
+        const svgPosterior = document.getElementById("wrist-anatomy-posterior-svg");
+
+        if (svgAnterior || svgPosterior) {
+          try {
+            const processWristSvgForPdf = async (svgEl: HTMLElement) => {
+              const clonedSvg = svgEl.cloneNode(true) as SVGElement;
+              
+              // Set appropriate dimensions
+              clonedSvg.setAttribute("width", "300px");
+              clonedSvg.setAttribute("height", "300px");
+              clonedSvg.style.backgroundColor = "transparent";
+              
+              // Lighten text for contrast
+              clonedSvg.querySelectorAll("text").forEach((txt: any) => {
+                const fill = txt.getAttribute("fill");
+                if (fill === "#64748b" || fill === "#cbd5e1" || fill === "#a1a1aa" || !fill) {
+                  txt.setAttribute("fill", "#0f172a"); // Dark slate for readable PDFs
+                  txt.setAttribute("font-family", "helvetica");
+                }
+              });
+
+              clonedSvg.querySelectorAll("path, ellipse, circle, line, rect, polygon").forEach((el: any) => {
+                const fill = el.getAttribute("fill");
+                const stroke = el.getAttribute("stroke");
+                
+                if (fill === "#0b0f19" || fill === "#1e293b") {
+                  el.setAttribute("fill", "#f8fafc");
+                } else if (fill === "rgba(16, 185, 129, 0.22)") {
+                  el.setAttribute("fill", "#d1fae5");
+                } else if (fill === "rgba(245, 158, 11, 0.28)") {
+                  el.setAttribute("fill", "#fef3c7");
+                } else if (fill === "rgba(244, 63, 94, 0.35)") {
+                  el.setAttribute("fill", "#ffe4e6");
+                }
+                
+                if (stroke === "#334155" || stroke === "#475569" || stroke === "#64748b") {
+                  el.setAttribute("stroke", "#94a3b8");
+                }
+              });
+
+              const svgData = new XMLSerializer().serializeToString(clonedSvg);
+              const svgBlob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
+              const url = URL.createObjectURL(svgBlob);
+              
+              return new Promise<string>((resolve) => {
+                const img = new Image();
+                img.onload = () => {
+                  const canvas = document.createElement("canvas");
+                  canvas.width = 600;
+                  canvas.height = 600;
+                  const ctx = canvas.getContext("2d");
+                  if (ctx) {
+                    ctx.drawImage(img, 0, 0, 600, 600);
+                  }
+                  resolve(canvas.toDataURL("image/png"));
+                  URL.revokeObjectURL(url);
+                };
+                img.src = url;
+              });
+            };
+
+            const imgAnt = svgAnterior ? await processWristSvgForPdf(svgAnterior) : null;
+            const imgPost = svgPosterior ? await processWristSvgForPdf(svgPosterior) : null;
+            
+            // Check page positioning
+            if (yCoord > 210) {
+              doc.addPage();
+              yCoord = 32;
+            }
+
+            const yStart = yCoord;
+            
+            // Outer frame block
+            doc.setDrawColor(229, 231, 235);
+            doc.setFillColor(248, 250, 252);
+            doc.rect(20, yStart, 170, 77, "FD");
+
+            // Frame headers
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8.5);
+            doc.setTextColor(30, 41, 59);
+            doc.text("ANEXO: ESQUEMA DE HALLAZGOS Y SINOPSIS DE MUÑECA", 24, yStart + 5.5);
+
+            // Divider lines
+            doc.setDrawColor(226, 232, 240);
+            doc.line(20, yStart + 7.5, 190, yStart + 7.5);
+            doc.line(111, yStart + 7.5, 111, yStart + 77);
+
+            // Left side label
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(6.5);
+            doc.setTextColor(148, 163, 184);
+            doc.text("MAPEO CLÍNICO - ECOGRAFÍA DE MUÑECA", 24, yStart + 11.5);
+
+            // Draw wrist images side-by-side on the left side
+            if (imgAnt) {
+              doc.addImage(imgAnt, "PNG", 22, yStart + 14, 42, 42); // Volar face
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(5);
+              doc.setTextColor(100, 116, 139);
+              doc.text("CARA ANTERIOR", 43, yStart + 58, { align: "center" });
+            }
+            if (imgPost) {
+              doc.addImage(imgPost, "PNG", 66, yStart + 14, 42, 42); // Dorsal face
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(5);
+              doc.setTextColor(100, 116, 139);
+              doc.text("CARA POSTERIOR", 87, yStart + 58, { align: "center" });
+            }
+
+            // Right side table headers
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5);
+            doc.setTextColor(67, 56, 202); // indigo-700
+            doc.text("ESTRUCTURA", 114, yStart + 11.5);
+            doc.text("HALLAZGOS", 142, yStart + 11.5);
+
+            // Divider line
+            doc.setDrawColor(229, 231, 235);
+            doc.line(114, yStart + 13.5, 186, yStart + 13.5);
+
+            const allowedKeys = [
+              { id: "nervio_mediano", label: "Nervio Mediano" },
+              { id: "tendones_flexores", label: "Tendones Flexores" },
+              { id: "flexor_carpi_radialis", label: "FCR" },
+              { id: "arteria_radial", label: "Arteria Radial" },
+              { id: "receso_radiocarpiano_anterior", label: "Receso Volar" },
+              { id: "canal_de_guyon", label: "Canal de Guyon" },
+              { id: "receso_radiocarpiano_posterior", label: "Receso Dorsal" },
+              { id: "articulacion_radiocubital_distal", label: "ARCD" },
+              { id: "tendones_extensores_compartimentos", label: "Extensores" },
+              { id: "fibrocartilago_triangular", label: "Fibrocartílago" },
+              { id: "extensor_carpi_ulnaris", label: "ECU" }
+            ];
+
+            const pdfStructures = allowedKeys.filter(struct => {
+              const s = wristStates[struct.id] || "no_descrito";
+              return s !== "no_descrito";
+            });
+
+            const getPDFDescription = (id: string, s: string) => {
+              if (wristDescriptions && wristDescriptions[id]) {
+                return wristDescriptions[id];
+              }
+              if (s === "normal") {
+                return "Dentro de límites normales.";
+              }
+              return "Hallazgo ecográfico de muñeca.";
+            };
+
+            const rowSpacing = pdfStructures.length > 5 ? (58 / pdfStructures.length) : 10;
+
+            pdfStructures.forEach((struct, index) => {
+              const rowY = yStart + 14.5 + (index * rowSpacing);
+              const s = wristStates[struct.id] || "no_descrito";
+              const description = getPDFDescription(struct.id, s);
+
+              // Left col
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(6.2);
+              doc.setTextColor(30, 41, 59);
+              const wrappedLabel = doc.splitTextToSize(struct.label, 25);
+              if (wrappedLabel[0]) doc.text(wrappedLabel[0], 114, rowY + 3);
+              if (wrappedLabel[1]) doc.text(wrappedLabel[1], 114, rowY + 5.5);
+
+              // Right col
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(5.8);
+              doc.setTextColor(100, 116, 139);
+              const wrappedDesc = doc.splitTextToSize(description, 44);
+              if (wrappedDesc[0]) doc.text(wrappedDesc[0], 142, rowY + 3);
+              if (wrappedDesc[1]) doc.text(wrappedDesc[1], 142, rowY + 5.5);
+
+              // Row lines
+              if (index < pdfStructures.length - 1) {
+                doc.setDrawColor(241, 245, 249);
+                doc.setLineWidth(0.15);
+                doc.line(113, rowY + rowSpacing, 187, rowY + rowSpacing);
+              }
+            });
+
+            doc.setFont("helvetica", "italic");
+            doc.setFontSize(6.2);
+            doc.setTextColor(148, 163, 184);
+            doc.text("Mapa bilateral de muñeca correlacionado con el reporte.", 150.5, yStart + 74, { align: "center" });
+
+            yCoord += 80;
+          } catch (err) {
+            console.warn("Could not draw wrist diagrams inside jsPDF", err);
+          }
+        }
+      }
+
+      // 🛠️ DRAW ELBOW DIAGRAM IN THE PROGRAMMATIC PDF
+      if (includeElbowSchemaInReport && specificStudy === "Codo") {
+        const svgLateral = document.getElementById("elbow-anatomy-svg-lateral");
+        const svgMedial = document.getElementById("elbow-anatomy-svg-medial");
+
+        if (svgLateral || svgMedial) {
+          try {
+            const processElbowSvgForPdf = async (svgEl: HTMLElement) => {
+              const clonedSvg = svgEl.cloneNode(true) as SVGElement;
+              
+              const stops = clonedSvg.querySelectorAll("linearGradient stop");
+              stops.forEach(stop => {
+                const curColor = stop.getAttribute("stop-color") || stop.getAttribute("stopColor") || "";
+                if (curColor === "#1e293b" || curColor === "#2e3d52") stop.setAttribute("stop-color", "#f1f5f9");
+                if (curColor === "#0f172a" || curColor === "#111827") stop.setAttribute("stop-color", "#cbd5e1");
+                if (curColor === "#334155" || curColor === "#3d4e66") stop.setAttribute("stop-color", "#cbd5e1");
+              });
+
+              const paths = clonedSvg.querySelectorAll("path");
+              paths.forEach(p => {
+                const fill = p.getAttribute("fill") || "";
+                const stroke = p.getAttribute("stroke") || "";
+                
+                if (fill === "#1e293b") p.setAttribute("fill", "#f8fafc");
+                if (fill === "#ec4899" || fill === "#db2777" || fill === "#e0e7ff") p.setAttribute("fill", "#fce7f3");
+                
+                if (stroke === "#ef4444") p.setAttribute("stroke", "#dc2626");
+                if (stroke === "#ec4899") p.setAttribute("stroke", "#db2777");
+                if (stroke === "#f59e0b") p.setAttribute("stroke", "#d97706");
+                if (stroke === "#334155") p.setAttribute("stroke", "#475569");
+                if (stroke === "#475569") p.setAttribute("stroke", "#64748b");
+              });
+
+              const texts = clonedSvg.querySelectorAll("text");
+              texts.forEach(t => {
+                const fill = t.getAttribute("fill") || "";
+                if (fill === "#64748b") t.setAttribute("fill", "#475569");
+                if (fill === "#475569") t.setAttribute("fill", "#1e293b");
+              });
+
+              const circles = clonedSvg.querySelectorAll("circle");
+              circles.forEach(c => {
+                const stroke = c.getAttribute("stroke") || "";
+                if (stroke === "#1e293b") c.setAttribute("stroke", "#e2e8f0");
+              });
+              
+              const lines = clonedSvg.querySelectorAll("line");
+              lines.forEach(l => {
+                const stroke = l.getAttribute("stroke") || "";
+                if (stroke === "#1e293b") l.setAttribute("stroke", "#e2e8f0");
+              });
+
+              return await convertSvgToPng(clonedSvg);
+            };
+
+            const imgLateral = svgLateral ? await processElbowSvgForPdf(svgLateral) : null;
+            const imgMedial = svgMedial ? await processElbowSvgForPdf(svgMedial) : null;
+
+            // Check page break for 95mm
+            const willPageBreak = (yCoord + 95 > pageHeight - 20);
+            checkPageBreak(95);
+            if (!willPageBreak) {
+              yCoord += 18;
+            } else {
+              yCoord += 6;
+            }
+
+            // Header for the diagram
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8.0);
+            doc.setTextColor(30, 41, 59);
+            doc.text("ANEXO: ESQUEMA DE HALLAZGOS Y SINOPSIS DE CODO", pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 3.5;
+
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(6.3);
+            doc.setTextColor(148, 163, 184);
+            doc.text("MAPEO ANATÓMICO ECOGRÁFICO DEL CODO (CARA LATERAL Y CARA MEDIAL)", pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 4.5;
+
+            const yStart = yCoord;
+
+            // 1. Draw Left Diagram Box (Cara Lateral)
+            doc.setFillColor(255, 255, 255);
+            doc.setDrawColor(229, 231, 235);
+            doc.roundedRect(20, yStart, 43, 75, 3, 3, "FD");
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(6.5);
+            doc.setTextColor(71, 85, 105);
+            doc.text("CARA LATERAL", 41.5, yStart + 5.5, { align: "center" });
+
+            if (imgLateral) {
+              doc.addImage(imgLateral, "PNG", 21.5, yStart + 8, 40, 40);
+            } else {
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(7);
+              doc.setTextColor(148, 163, 184);
+              doc.text("No disponible", 41.5, yStart + 35, { align: "center" });
+            }
+
+            // 2. Draw Second Diagram Box (Cara Medial)
+            doc.setFillColor(255, 255, 255);
+            doc.setDrawColor(229, 231, 235);
+            doc.roundedRect(65, yStart, 43, 75, 3, 3, "FD");
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(6.5);
+            doc.setTextColor(71, 85, 105);
+            doc.text("CARA MEDIAL", 86.5, yStart + 5.5, { align: "center" });
+
+            if (imgMedial) {
+              doc.addImage(imgMedial, "PNG", 66.5, yStart + 8, 40, 40);
+            } else {
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(7);
+              doc.setTextColor(148, 163, 184);
+              doc.text("No disponible", 86.5, yStart + 35, { align: "center" });
+            }
+
+            // 3. Draw Right Findings Container (Slate Background)
+            doc.setFillColor(248, 250, 252);
+            doc.setDrawColor(229, 231, 235);
+            doc.roundedRect(111, yStart, 79, 75, 3, 3, "FD");
+
+            // Header of findings columns: ESTRUCTURA and HALLAZGOS
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5);
+            doc.setTextColor(67, 56, 202); // indigo-700
+            doc.text("ESTRUCTURA", 114, yStart + 5.5);
+            doc.text("HALLAZGOS", 142, yStart + 5.5);
+
+            // Draw horizontal divider line
+            doc.setDrawColor(229, 231, 235);
+            doc.setLineWidth(0.2);
+            doc.line(114, yStart + 7.5, 186, yStart + 7.5);
+
+            const allowedElbowKeys = [
+              { id: "common_extensor", label: "T. Extensor Común" },
+              { id: "radial_collateral", label: "Lig. Colateral Rad." },
+              { id: "humeroradial_joint", label: "Art. Humerorradial" },
+              { id: "common_flexor", label: "T. Flexor Común" },
+              { id: "ulnar_collateral", label: "Lig. Colateral Cub." },
+              { id: "ulnar_nerve", label: "Nervio Cubital" }
+            ];
+
+            const pdfElbowStructures = allowedElbowKeys.filter(struct => {
+              const s = elbowStates[struct.id] || "no_descrito";
+              return s !== "no_descrito";
+            });
+
+            const getElbowPDFDescription = (id: string, state: string) => {
+              if (elbowDescriptions && elbowDescriptions[id]) {
+                return elbowDescriptions[id];
+              }
+              if (state === "normal") {
+                return "Dentro de límites normales.";
+              }
+              return "Alteración focal.";
+            };
+
+            const elbowRowSpacing = pdfElbowStructures.length > 5 ? (62 / pdfElbowStructures.length) : 11;
+
+            pdfElbowStructures.forEach((struct, index) => {
+              const rowY = yStart + 8.5 + (index * elbowRowSpacing);
+              const s = elbowStates[struct.id] || "no_descrito";
+              const description = getElbowPDFDescription(struct.id, s);
+
+              // Left column: Structure label
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(6.2);
+              doc.setTextColor(30, 41, 59);
+              const wrappedLabel = doc.splitTextToSize(struct.label, 25);
+              if (wrappedLabel[0]) doc.text(wrappedLabel[0], 114, rowY + 3.2);
+              if (wrappedLabel[1]) doc.text(wrappedLabel[1], 114, rowY + 5.7);
+
+              // Right column: Description
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(5.8);
+              doc.setTextColor(100, 116, 139);
+              const wrappedDesc = doc.splitTextToSize(description, 45);
+              if (wrappedDesc[0]) doc.text(wrappedDesc[0], 142, rowY + 3.2);
+              if (wrappedDesc[1]) doc.text(wrappedDesc[1], 142, rowY + 5.7);
+
+              if (index < pdfElbowStructures.length - 1) {
+                doc.setDrawColor(241, 245, 249);
+                doc.setLineWidth(0.15);
+                doc.line(113, rowY + elbowRowSpacing, 187, rowY + elbowRowSpacing);
+              }
+            });
+
+            doc.setFont("helvetica", "italic");
+            doc.setFontSize(6.2);
+            doc.setTextColor(148, 163, 184);
+            doc.text("Mapa anatómico del codo correspondiente al reporte redactado.", 150, yStart + 72, { align: "center" });
+
+            yCoord += 80;
+          } catch (err) {
+            console.warn("Could not draw elbow diagram inside jsPDF", err);
+          }
+        }
+      }
+
+      // 🛠️ DRAW ABDOMEN DIAGRAM IN THE PROGRAMMATIC PDF
+      if (includeAbdomenSchemaInReport && specificStudy === "Abdomen") {
+        const svgAbdomen = document.getElementById("abdomen-anatomy-svg");
+
+        if (svgAbdomen) {
+          try {
+            const processAbdomenSvgForPdf = async (svgEl: HTMLElement) => {
+              const clonedSvg = svgEl.cloneNode(true) as SVGElement;
+              
+              const stops = clonedSvg.querySelectorAll("linearGradient stop");
+              stops.forEach(stop => {
+                const curColor = stop.getAttribute("stop-color") || stop.getAttribute("stopColor") || "";
+                if (curColor === "#1e293b" || curColor === "#2e3d52") stop.setAttribute("stop-color", "#f1f5f9");
+                if (curColor === "#0f172a" || curColor === "#111827") stop.setAttribute("stop-color", "#cbd5e1");
+                if (curColor === "#334155" || curColor === "#3d4e66") stop.setAttribute("stop-color", "#cbd5e1");
+              });
+
+              const paths = clonedSvg.querySelectorAll("path");
+              paths.forEach(p => {
+                const fill = p.getAttribute("fill") || "";
+                const stroke = p.getAttribute("stroke") || "";
+                
+                if (fill === "#1e293b") p.setAttribute("fill", "#f8fafc");
+                if (fill === "#ec4899" || fill === "#db2777" || fill === "#e0e7ff") p.setAttribute("fill", "#fce7f3");
+                
+                if (stroke === "#ef4444") p.setAttribute("stroke", "#dc2626");
+                if (stroke === "#ec4899") p.setAttribute("stroke", "#db2777");
+                if (stroke === "#f59e0b") p.setAttribute("stroke", "#d97706");
+                if (stroke === "#334155") p.setAttribute("stroke", "#475569");
+                if (stroke === "#475569") p.setAttribute("stroke", "#64748b");
+              });
+
+              const texts = clonedSvg.querySelectorAll("text");
+              texts.forEach(t => {
+                const fill = t.getAttribute("fill") || "";
+                if (fill === "#64748b") t.setAttribute("fill", "#475569");
+                if (fill === "#475569") t.setAttribute("fill", "#1e293b");
+                if (fill === "#ffffff" || fill === "#cbd5e1") t.setAttribute("fill", "#0f172a");
+              });
+
+              const rects = clonedSvg.querySelectorAll("rect");
+              rects.forEach(r => {
+                const fill = r.getAttribute("fill") || "";
+                if (fill === "#1e293b") r.setAttribute("fill", "#e2e8f0");
+              });
+
+              return await convertSvgToPng(clonedSvg);
+            };
+
+            const imgAbdomen = await processAbdomenSvgForPdf(svgAbdomen);
+
+            // Check page break for 95mm
+            const willPageBreak = (yCoord + 95 > pageHeight - 20);
+            checkPageBreak(95);
+            if (!willPageBreak) {
+              yCoord += 18;
+            } else {
+              yCoord += 6;
+            }
+
+            // Header for the diagram
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8.0);
+            doc.setTextColor(30, 41, 59);
+            doc.text("ANEXO: ESQUEMA DE HALLAZGOS Y SINOPSIS DE ABDOMEN", pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 3.5;
+
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(6.3);
+            doc.setTextColor(148, 163, 184);
+            doc.text("MAPEO ANATÓMICO ECOGRÁFICO COMPLETO DEL ABDOMEN", pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 4.5;
+
+            const yStart = yCoord;
+
+            // 1. Draw Left Diagram Box (Esquema Abdomen)
+            doc.setFillColor(255, 255, 255);
+            doc.setDrawColor(229, 231, 235);
+            doc.roundedRect(20, yStart, 88, 75, 3, 3, "FD");
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(6.5);
+            doc.setTextColor(71, 85, 105);
+            doc.text("ÓRGANOS SÓLIDOS ABDOMINALES", 64, yStart + 5.5, { align: "center" });
+
+            if (imgAbdomen) {
+              doc.addImage(imgAbdomen, "PNG", 34, yStart + 8, 60, 60);
+            } else {
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(7);
+              doc.setTextColor(148, 163, 184);
+              doc.text("No disponible", 64, yStart + 35, { align: "center" });
+            }
+
+            // 3. Draw Right Findings Container (Slate Background)
+            doc.setFillColor(248, 250, 252);
+            doc.setDrawColor(229, 231, 235);
+            doc.roundedRect(111, yStart, 79, 75, 3, 3, "FD");
+
+            // Header of findings columns: ESTRUCTURA and HALLAZGOS
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5);
+            doc.setTextColor(67, 56, 202); // indigo-700
+            doc.text("ESTRUCTURA", 114, yStart + 5.5);
+            doc.text("HALLAZGOS(SINOPSIS)", 142, yStart + 5.5);
+
+            // Draw horizontal divider line
+            doc.setDrawColor(229, 231, 235);
+            doc.setLineWidth(0.2);
+            doc.line(114, yStart + 7.5, 186, yStart + 7.5);
+
+            const allowedAbdomenKeys = [
+              { id: "higado", label: "Hígado" },
+              { id: "vesicula", label: "Vesícula Biliar" },
+              { id: "pancreas", label: "Páncreas" },
+              { id: "bazo", label: "Bazo" },
+              { id: "rinon_derecho", label: "Riñón Derecho" },
+              { id: "rinon_izquierdo", label: "Riñón Izquierdo" },
+              { id: "vejiga", label: "Vejiga" },
+              { id: "prostata", label: "Próstata" },
+              { id: "utero", label: "Útero" },
+              { id: "ovarios", label: "Ovarios" },
+              { id: "psoas", label: "Músculo Psoas" },
+              { id: "colon", label: "Colon" }
+            ];
+
+            const pdfAbdomenStructures = allowedAbdomenKeys.filter(struct => {
+              const s = abdomenStates[struct.id] || "no_descrito";
+              return s !== "no_descrito";
+            });
+
+            const getAbdomenPDFDescription = (id: string, state: string) => {
+              if (abdomenDescriptions && abdomenDescriptions[id]) {
+                return abdomenDescriptions[id];
+              }
+              if (state === "normal") {
+                return "Dentro de límites normales.";
+              }
+              return "Alteración descrita.";
+            };
+
+            const abdomenRowSpacing = pdfAbdomenStructures.length > 5 ? (62 / pdfAbdomenStructures.length) : 10.5;
+
+            pdfAbdomenStructures.forEach((struct, index) => {
+              const rowY = yStart + 8.5 + (index * abdomenRowSpacing);
+              const s = abdomenStates[struct.id] || "no_descrito";
+              const description = getAbdomenPDFDescription(struct.id, s);
+
+              // Left column: Structure label
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(6.2);
+              doc.setTextColor(30, 41, 59);
+              const wrappedLabel = doc.splitTextToSize(struct.label, 25);
+              if (wrappedLabel[0]) doc.text(wrappedLabel[0], 114, rowY + 3.2);
+              if (wrappedLabel[1]) doc.text(wrappedLabel[1], 114, rowY + 5.7);
+
+              // Right column: Description
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(5.8);
+              doc.setTextColor(100, 116, 139);
+              const wrappedDesc = doc.splitTextToSize(description, 45);
+              if (wrappedDesc[0]) doc.text(wrappedDesc[0], 142, rowY + 3.2);
+              if (wrappedDesc[1]) doc.text(wrappedDesc[1], 142, rowY + 5.7);
+
+              if (index < pdfAbdomenStructures.length - 1) {
+                doc.setDrawColor(241, 245, 249);
+                doc.setLineWidth(0.15);
+                doc.line(113, rowY + abdomenRowSpacing, 187, rowY + abdomenRowSpacing);
+              }
+            });
+
+            doc.setFont("helvetica", "italic");
+            doc.setFontSize(6.2);
+            doc.setTextColor(148, 163, 184);
+            doc.text("Mapa sinóptico de abdomen correspondiente al reporte redactado.", 150, yStart + 72, { align: "center" });
+
+            yCoord += 80;
+          } catch (err) {
+            console.warn("Could not draw abdomen diagram inside jsPDF", err);
+          }
+        }
+      }
+
+
+
       // 🛠️ DRAW VASCULAR DIAGRAM IN THE PROGRAMMATIC PDF
       const isDopplerStudy = specificStudy === "Doppler de carótidas" || 
                              specificStudy === "Doppler venoso de miembro inferior" || 
@@ -4438,20 +7135,24 @@ Ejemplo:
           try {
             const imgData = await convertSvgToPng(svgElement as any);
             
-            // Check page break for 95mm (82mm diagram + header/footer gaps)
-            checkPageBreak(95);
+            // Check page break for 98mm (75mm diagram/findings + header/footer gaps)
+            checkPageBreak(98);
             yCoord += 4;
 
             // Header for the diagram
             doc.setFont("helvetica", "bold");
-            doc.setFontSize(8.5);
+            doc.setFontSize(8.0);
+            doc.setTextColor(30, 41, 59);
+            doc.text("ANEXO: ESQUEMA DE HALLAZGOS Y SINOPSIS VASCULAR", pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 3.5;
+
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(6.3);
             doc.setTextColor(148, 163, 184);
-            doc.text("ANEXO: ESQUEMA ANATÓMICO DOPPLER VASCULAR", pageWidth / 2, yCoord, { align: "center" });
+            doc.text("MAPEO ANATÓMICO Y DINÁMICA DE FLUJO DE LA EVALUACIÓN ECO-DOPPLER", pageWidth / 2, yCoord, { align: "center" });
             yCoord += 4.5;
 
-            // Draw high resolution diagram centered
-            doc.addImage(imgData, "PNG", (pageWidth - 116) / 2, yCoord, 116, 82);
-            yCoord += 86;
+            const yStart = yCoord;
 
             // --- DRAW LEYENDA DE HALLAZGOS IN PROGRAMMATIC PDF ---
             const isVenosoForPDF = specificStudy.toLowerCase().includes("venoso");
@@ -4612,6 +7313,60 @@ Ejemplo:
               return "Normal";
             };
 
+            const getVesselLabelForPDF = (id: string) => {
+              const baseId = id.replace("_der", "").replace("_izq", "");
+              switch (baseId) {
+                case "acc": return "ACC";
+                case "aci": return "ACI";
+                case "ace": return "ACE";
+                case "vert": return "Vert.";
+                case "vfc": return "VFC";
+                case "sfj": return "USF";
+                case "vfs": return "VFS";
+                case "vp": return "V. Poplítea";
+                case "vsm": return "VSM";
+                case "vsp": return "VSP";
+                case "aic": return "AIC";
+                case "afc": return "AFC";
+                case "afs": return "AFS";
+                case "ap": return "A. Poplítea";
+                case "ata": return "ATA";
+                case "atp": return "ATP";
+                case "aper": return "A. Peronea";
+                default: return baseId.toUpperCase();
+              }
+            };
+
+            // 1. Draw Left Diagram Box (Biolateral/Unilateral Diagram)
+            doc.setFillColor(255, 255, 255);
+            doc.setDrawColor(229, 231, 235);
+            doc.roundedRect(20, yStart, 88, 75, 3, 3, "FD");
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(6.5);
+            doc.setTextColor(71, 85, 105);
+            doc.text("ESQUEMA ANATÓMICO VASCULAR", 64, yStart + 5.5, { align: "center" });
+
+            doc.addImage(imgData, "PNG", 24, yStart + 11, 80, 56);
+
+            // 2. Draw Right Findings Container (Slate Background)
+            doc.setFillColor(248, 250, 252);
+            doc.setDrawColor(229, 231, 235);
+            doc.roundedRect(111, yStart, 79, 75, 3, 3, "FD");
+
+            // Header of findings: ESTRUCTURA and HALLAZGOS
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5);
+            doc.setTextColor(67, 56, 202); // indigo-700
+            doc.text("ESTRUCTURA", 114, yStart + 5.5);
+            doc.text("HALLAZGOS", 142, yStart + 5.5);
+
+            // Divider Line
+            doc.setDrawColor(229, 231, 235);
+            doc.setLineWidth(0.2);
+            doc.line(114, yStart + 7.5, 186, yStart + 7.5);
+
+            // Calculate active vessels
             const activeVessels = Object.keys(vascularStates).filter((id) => {
               const isRight = id.endsWith("_der");
               const isLeft = id.endsWith("_izq");
@@ -4620,66 +7375,89 @@ Ejemplo:
               return true;
             });
 
-            checkPageBreak(25);
-            yCoord += 4;
-            doc.setFont("helvetica", "bold");
-            doc.setFontSize(8);
-            doc.setTextColor(30, 41, 59);
-            doc.text("LEYENDA DE HALLAZGOS VASCULARES:", marginX, yCoord);
-            yCoord += 4.5;
-
-            if (activeVessels.length > 0) {
-              const colWidth = (pageWidth - (2 * marginX)) / 2; // 85mm each column
-              let colX = marginX;
-              let rowY = yCoord;
+            let segmentsToUse = [...activeVessels];
+            if (segmentsToUse.length === 0) {
+              const isCarotidas = specificStudy.toLowerCase().includes("carót") || specificStudy.toLowerCase().includes("carot");
+              const isVenoso = specificStudy.toLowerCase().includes("venoso");
+              const isArterial = specificStudy.toLowerCase().includes("arterial");
               
-              doc.setFont("helvetica", "normal");
-              doc.setFontSize(7.5);
-
-              activeVessels.forEach((id, idx) => {
-                if (idx > 0 && idx % 2 === 0) {
-                  rowY += 4.2;
-                  colX = marginX;
-                } else if (idx > 0 && idx % 2 === 1) {
-                  colX = marginX + colWidth;
-                }
-
-                if (rowY > pageHeight - 20) {
-                  doc.addPage();
-                  rowY = 20;
-                  yCoord = rowY;
-                }
-
-                const labelText = getSegLabelForPDF(id) || "Normal";
-                const sideLabel = id.replace("_der", "-R").replace("_izq", "-L").toUpperCase();
-                const colorHex = getSegColorForPDF(id);
-
-                let r = 5, g = 150, b = 105;
-                if (colorHex === "#d97706") { r = 217; g = 119; b = 6; }
-                else if (colorHex === "#dc2626") { r = 220; g = 38; b = 38; }
-                else if (colorHex === "#94a3b8") { r = 148; g = 163; b = 184; }
-
-                doc.setFillColor(r, g, b);
-                doc.circle(colX + 1.5, rowY - 1, 0.8, "F");
-
-                doc.setFont("helvetica", "bold");
-                doc.setTextColor(30, 41, 59);
-                doc.text(`${sideLabel}:`, colX + 3.5, rowY);
-                
-                doc.setFont("helvetica", "normal");
-                doc.setTextColor(71, 85, 105);
-                const textOffset = doc.getTextWidth(`${sideLabel}: `) + 4.5;
-                doc.text(labelText, colX + textOffset, rowY);
-              });
-
-              yCoord = rowY + 6;
-            } else {
-              doc.setFont("helvetica", "italic");
-              doc.setFontSize(7.5);
-              doc.setTextColor(148, 163, 184);
-              doc.text("No se registraron hallazgos vasculares específicos de interés.", marginX, yCoord);
-              yCoord += 4.5;
+              if (isCarotidas) {
+                segmentsToUse = [
+                  "acc_der", "acc_izq", "aci_der", "aci_izq",
+                  "ace_der", "ace_izq", "vert_der", "vert_izq"
+                ];
+              } else if (isVenoso) {
+                const list: string[] = [];
+                if (isLimbEvaluatedForPDF("der")) list.push("vfc_der", "sfj_der", "vfs_der", "vp_der", "vsm_der", "vsp_der");
+                if (isLimbEvaluatedForPDF("izq")) list.push("vfc_izq", "sfj_izq", "vfs_izq", "vp_izq", "vsm_izq", "vsp_izq");
+                segmentsToUse = list;
+              } else if (isArterial) {
+                const list: string[] = [];
+                if (isLimbEvaluatedForPDF("der")) list.push("aic_der", "afc_der", "afs_der", "ap_der", "ata_der", "atp_der", "aper_der");
+                if (isLimbEvaluatedForPDF("izq")) list.push("aic_izq", "afc_izq", "afs_izq", "ap_izq", "ata_izq", "atp_izq", "aper_izq");
+                segmentsToUse = list;
+              }
             }
+
+            // Sort so abnormal segments appear first
+            const getPriorityOrder = (id: string) => {
+              const s = vascularStates[id] || "normal";
+              return s !== "normal" ? 0 : 1;
+            };
+            segmentsToUse.sort((a, b) => getPriorityOrder(a) - getPriorityOrder(b));
+
+            // Populate the rows (max 8)
+            segmentsToUse.slice(0, 8).forEach((id, index) => {
+              const rowY = yStart + 8.5 + (index * 7.7);
+              const s = vascularStates[id] || "normal";
+              
+              const vesselText = getVesselLabelForPDF(id);
+              const sideSuffix = id.endsWith("_der") ? "-R" : id.endsWith("_izq") ? "-L" : "";
+              const finalLabelText = `${vesselText}${sideSuffix}`;
+
+              const fullDesc = vascularDescriptions[id] || "";
+              let description = "";
+              if (fullDesc && fullDesc.trim().length > 0) {
+                description = fullDesc.trim();
+              } else {
+                if (s === "normal") {
+                  description = isVenosoForPDF ? "Permeable, sin signos de trombosis." : "Calibre conservado, sin estenosis ni placas.";
+                } else {
+                  description = `Alteración hemodinámica compatible con ${getSegLabelForPDF(id).toLowerCase()}.`;
+                }
+              }
+
+              // Left column: Structure label (ESTRUCTURA)
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(6.2);
+              doc.setTextColor(30, 41, 59);
+              const wrappedLabel = doc.splitTextToSize(finalLabelText, 25);
+              if (wrappedLabel[0]) doc.text(wrappedLabel[0], 114, rowY + 3.2);
+              if (wrappedLabel[1]) doc.text(wrappedLabel[1], 114, rowY + 5.7);
+
+              // Right column: Description (HALLAZGOS)
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(5.8);
+              doc.setTextColor(100, 116, 139);
+              const wrappedDesc = doc.splitTextToSize(description, 44);
+              if (wrappedDesc[0]) doc.text(wrappedDesc[0], 142, rowY + 3.2);
+              if (wrappedDesc[1]) doc.text(wrappedDesc[1], 142, rowY + 5.7);
+
+              // Draw a tiny light divider line under each row except the last one
+              if (index < Math.min(segmentsToUse.length, 8) - 1) {
+                doc.setDrawColor(241, 245, 249);
+                doc.setLineWidth(0.15);
+                doc.line(113, rowY + 6.8, 187, rowY + 6.8);
+              }
+            });
+
+            // Footnote
+            doc.setFont("helvetica", "italic");
+            doc.setFontSize(6.2);
+            doc.setTextColor(148, 163, 184);
+            doc.text("Esquema representativo de hemodinámica vascular y su correlación clínica.", 150.5, yStart + 72, { align: "center" });
+
+            yCoord = yStart + 76;
           } catch (err) {
             console.error("No se pudo insertar el esquema vascular en el PDF descargado:", err);
           }
@@ -6420,6 +9198,1558 @@ Ejemplo:
     );
   };
 
+  const renderPrintShoulderSchema = () => {
+    if (!includeShoulderSchemaInReport || specificStudy !== "Hombro") return null;
+
+    const svgElement = document.getElementById("shoulder-anatomy-svg");
+    if (!svgElement) return null;
+
+    let outerSvg = svgElement.outerHTML;
+
+    // 1. Force background and clean outline colors on gradient stops
+    outerSvg = outerSvg
+      .replaceAll('stop-color="#1e293b"', 'stop-color="#f1f5f9"')
+      .replaceAll('stopColor="#1e293b"', 'stopColor="#f1f5f9"')
+      .replaceAll('stop-color="#2e3d52"', 'stop-color="#f1f5f9"')
+      .replaceAll('stopColor="#2e3d52"', 'stopColor="#f1f5f9"')
+      .replaceAll('stop-color="#0f172a"', 'stop-color="#cbd5e1"')
+      .replaceAll('stopColor="#0f172a"', 'stopColor="#cbd5e1"')
+      .replaceAll('stop-color="#111827"', 'stop-color="#cbd5e1"')
+      .replaceAll('stopColor="#111827"', 'stopColor="#cbd5e1"')
+      .replaceAll('stop-color="#334155"', 'stop-color="#cbd5e1"')
+      .replaceAll('stopColor="#334155"', 'stopColor="#cbd5e1"')
+      .replaceAll('stop-color="#3d4e66"', 'stop-color="#cbd5e1"')
+      .replaceAll('stopColor="#3d4e66"', 'stopColor="#cbd5e1"');
+
+    // 2. Adjust paths fill/stroke colors for paper print
+    outerSvg = outerSvg
+      .replaceAll('fill="#1e293b"', 'fill="#f8fafc"')
+      .replaceAll('fill="#451a03"', 'fill="#fef3c7"')
+      .replaceAll('fill="#500730"', 'fill="#fce7f3"')
+      .replaceAll('fill="#7f1d1d"', 'fill="#fee2e2"')
+      .replaceAll('stroke="#ef4444"', 'stroke="#dc2626"')
+      .replaceAll('stroke="#ec4899"', 'stroke="#db2777"')
+      .replaceAll('stroke="#f59e0b"', 'stroke="#d97706"')
+      .replaceAll('stroke="#334155"', 'stroke="#475569"')
+      .replaceAll('stroke="#475569"', 'stroke="#64748b"');
+
+    // 3. Adjust text colors
+    outerSvg = outerSvg
+      .replaceAll('fill="#64748b"', 'fill="#475569"')
+      .replaceAll('fill="#475569"', 'fill="#1e293b"');
+
+    // 4. Adjust custom guides/circles in background
+    outerSvg = outerSvg
+      .replaceAll('stroke="#1e293b"', 'stroke="#e2e8f0"');
+
+    const translateShoulderStateForPrint = (id: string, s: string) => {
+      if (!s || s === "no_descrito") return "No descrito";
+      if (s === "normal") return "Sin lesiones";
+      if (s === "tendinosis") return "Tendinosis";
+      if (s === "desgarro_parcial") return "Rup. Parcial";
+      if (s === "desgarro_completo") return "Rup. Completa";
+      if (s === "tendinitis") return "Tenosinovitis";
+      if (s === "subluxacion") return "Subluxación";
+      if (s === "bursitis_leve") return "Bursitis Leve";
+      if (s === "bursitis_severa") return "Bursitis Severa";
+      if (s === "derrame_leve") return "Derrame Leve";
+      if (s === "derrame_moderado") return "Derrame Franco";
+      if (s === "artrosis") return "Artrosis A.C.";
+      if (s === "hipertrofia") return "Hipertrofia";
+      if (s === "pinzamiento") return "Pinzamiento";
+      return s;
+    };
+
+    const getPrintSimplifiedDescription = (id: string, state: string) => {
+      if (!state || state === "no_descrito") {
+        return "No descrito en el reporte.";
+      }
+      if (state === "normal") {
+        return "Dentro de límites normales.";
+      }
+      
+      switch (id) {
+        case "supraspinatus":
+          if (state === "tendinosis") return "Tendinosis del supraespinoso (engrosamiento difuso e hipoecogenicidad, sin rotura).";
+          if (state === "desgarro_parcial") return "Ruptura de espesor parcial de la inserción del supraespinoso.";
+          if (state === "desgarro_completo") return "Ruptura de espesor completo del tendón supraespinoso transfixiante.";
+          break;
+        case "infraspinatus":
+          if (state === "tendinosis") return "Tendinosis distal del infraespinoso (mínimo engrosamiento sin rotura).";
+          if (state === "desgarro_parcial") return "Ruptura de espesor parcial focal en la inserción del infraespinoso.";
+          if (state === "desgarro_completo") return "Ruptura de espesor completo del infraespinoso en inserción distal.";
+          break;
+        case "subscapularis":
+          if (state === "tendinosis") return "Tendinosis en inserción del subescapular (pérdida de patrón fibrilar fino).";
+          if (state === "desgarro_parcial") return "Ruptura de espesor parcial del subescapular (fibras de porción superior).";
+          if (state === "desgarro_completo") return "Ruptura completa del tendón subescapular con extensión total.";
+          break;
+        case "biceps":
+          if (state === "tendinitis") return "Tenosinovitis de la porción larga del bíceps (líquido libre en corredera).";
+          if (state === "subluxacion") return "Subluxación medial dinámica del bíceps con lesión de ligamento transverso.";
+          if (state === "desgarro_parcial") return "Ruptura parcial longitudinal con signos de fibrilación y defecto de fibras.";
+          break;
+        case "bursa":
+          if (state === "bursitis_leve") return "Bursitis subacromiodeltoidea (SAD) laminar leve (<1.5 mm de líquido).";
+          if (state === "bursitis_severa") return "Bursitis subacromiodeltoidea (SAD) franca/severa con colección líquida.";
+          break;
+        case "glenohumeral":
+          if (state === "derrame_leve") return "Derrame articular glenohumeral laminar leve persistente.";
+          if (state === "derrame_moderado") return "Derrame articular glenohumeral franco con acumulación en recesos.";
+          break;
+        case "acromioclavicular":
+          if (state === "artrosis") return "Cambios degenerativos / artrosis acromioclavicular discreta.";
+          if (state === "hipertrofia") return "Hipertrofia articular acromioclavicular con prominencia osteofitaria marginal.";
+          break;
+        case "dynamic_assessment":
+          if (state === "normal") return "Deslizamiento conservado bajo maniobras clínicas dinámicas.";
+          if (state === "pinzamiento") return "Signos dinámicos positivos para pinzamiento subacromial.";
+          break;
+      }
+      return "Sin hallazgos.";
+    };
+
+    return (
+      <div 
+        className="mt-8 pt-6 border-t-2 border-dashed border-gray-300 font-sans"
+        style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
+      >
+        <div className="w-full text-center mb-3">
+          <div className="text-[10px] uppercase font-bold tracking-wider text-slate-800 mb-0.5 block font-sans">
+            Anexo: Esquema de Hallazgos y Sinopsis de Hombro
+          </div>
+          <p className="text-[9px] uppercase font-mono tracking-wide text-gray-400">
+            Mapeo anatómico y sinopsis estructurada del manguito rotador y estructuras adyacentes
+          </p>
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-stretch justify-center gap-6 max-w-3xl mx-auto">
+          {/* Left Element: Diagram Box */}
+          <div className="w-[300px] h-[300px] bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex items-center justify-center shrink-0">
+            <div 
+              className="w-full"
+              dangerouslySetInnerHTML={{ __html: outerSvg }}
+            />
+          </div>
+
+          {/* Right Element: Mapa de Hallazgos list */}
+          <div className="flex-1 bg-slate-50 border border-gray-200 p-3 rounded-xl flex flex-col justify-between">
+            <div>
+              <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5 mb-2">
+                <span className="text-[9.5px] font-bold text-indigo-700 font-sans uppercase tracking-widest block">
+                  📍 Mapa de Hallazgos Clínicos
+                </span>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+                {[
+                  { id: "supraspinatus", label: "Supraespinoso" },
+                  { id: "infraspinatus", label: "Infraespinoso" },
+                  { id: "subscapularis", label: "Subescapular" },
+                  { id: "biceps", label: "PL Bíceps" },
+                  { id: "bursa", label: "Bursa SAD" },
+                  { id: "glenohumeral", label: "Derrame GH" },
+                  { id: "acromioclavicular", label: "Artic. Acromioclav." },
+                  { id: "dynamic_assessment", label: "Val. Dinámica" }
+                ].filter(struct => shoulderStates[struct.id] !== "no_descrito").map((struct) => {
+                  const s = shoulderStates[struct.id] || "no_descrito";
+                  
+                  let dotColor = "bg-gray-400";
+                  let isNoDescrito = s === "no_descrito";
+                  
+                  if (s === "normal") {
+                    dotColor = "bg-emerald-600";
+                  } else if (s === "tendinosis" || s === "tendinitis" || s === "bursitis_leve" || s === "derrame_leve" || s === "artrosis") {
+                    dotColor = "bg-amber-500";
+                  } else if (s === "desgarro_parcial" || s === "subluxacion" || s === "hipertrofia" || s === "pinzamiento") {
+                    dotColor = "bg-pink-500";
+                  } else if (s === "desgarro_completo" || s === "bursitis_severa" || s === "derrame_moderado") {
+                    dotColor = "bg-rose-600";
+                  }
+
+                  const description = shoulderDescriptions[struct.id] || getPrintSimplifiedDescription(struct.id, s);
+
+                  return (
+                    <div key={struct.id} className="text-left py-1 px-1.5 bg-white border border-gray-150 rounded-lg">
+                      <div className="flex items-center justify-between gap-1 leading-none">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${dotColor}`}></span>
+                          <span className="text-[8.5px] font-bold uppercase tracking-wide text-gray-800 truncate">
+                            {struct.label}
+                          </span>
+                        </div>
+                        <span className="text-[7px] font-semibold uppercase text-gray-400 max-w-[50px] truncate shrink-0">
+                          {translateShoulderStateForPrint(struct.id, s)}
+                        </span>
+                      </div>
+                      <p className="text-[7.5px] text-gray-500 mt-0.5 leading-snug line-clamp-2">
+                        {isNoDescrito ? "No descrito / omitido" : description}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            
+            <div className="text-[7.5px] uppercase text-gray-400 text-center mt-3 pt-2 border-t border-gray-150 leading-relaxed font-sans font-medium">
+              Diagrama interactivo de hombro y lista anexa correspondientes a la evaluación integrada descrita en el reporte físico del paciente.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderPrintKneeSchema = () => {
+    if (!includeKneeSchemaInReport || specificStudy !== "Rodilla") return null;
+
+    const svgElement = document.getElementById("knee-anatomy-svg");
+    if (!svgElement) return null;
+
+    let outerSvg = svgElement.outerHTML;
+
+    // 1. Force background and clean outline colors on gradient stops
+    outerSvg = outerSvg
+      .replaceAll('stop-color="#1e293b"', 'stop-color="#f1f5f9"')
+      .replaceAll('stopColor="#1e293b"', 'stopColor="#f1f5f9"')
+      .replaceAll('stop-color="#2e3d52"', 'stop-color="#f1f5f9"')
+      .replaceAll('stopColor="#2e3d52"', 'stopColor="#f1f5f9"')
+      .replaceAll('stop-color="#0f172a"', 'stop-color="#cbd5e1"')
+      .replaceAll('stopColor="#0f172a"', 'stopColor="#cbd5e1"')
+      .replaceAll('stop-color="#111827"', 'stop-color="#cbd5e1"')
+      .replaceAll('stopColor="#111827"', 'stopColor="#cbd5e1"')
+      .replaceAll('stop-color="#334155"', 'stop-color="#cbd5e1"')
+      .replaceAll('stopColor="#334155"', 'stopColor="#cbd5e1"')
+      .replaceAll('stop-color="#3d4e66"', 'stop-color="#cbd5e1"')
+      .replaceAll('stopColor="#3d4e66"', 'stopColor="#cbd5e1"');
+
+    // 2. Adjust paths fill/stroke colors for paper print
+    outerSvg = outerSvg
+      .replaceAll('fill="#1e293b"', 'fill="#f8fafc"')
+      .replaceAll('fill="#451a03"', 'fill="#fef3c7"')
+      .replaceAll('fill="#500730"', 'fill="#fce7f3"')
+      .replaceAll('fill="#7f1d1d"', 'fill="#fee2e2"')
+      .replaceAll('stroke="#ef4444"', 'stroke="#dc2626"')
+      .replaceAll('stroke="#ec4899"', 'stroke="#db2777"')
+      .replaceAll('stroke="#f59e0b"', 'stroke="#d97706"')
+      .replaceAll('stroke="#334155"', 'stroke="#475569"')
+      .replaceAll('stroke="#475569"', 'stroke="#64748b"');
+
+    // 3. Adjust text colors
+    outerSvg = outerSvg
+      .replaceAll('fill="#64748b"', 'fill="#475569"')
+      .replaceAll('fill="#475569"', 'fill="#1e293b"');
+
+    // 4. Adjust custom guides/circles in background
+    outerSvg = outerSvg
+      .replaceAll('stroke="#1e293b"', 'stroke="#e2e8f0"');
+
+    const translateKneeStateForPrint = (id: string, s: string) => {
+      if (!s || s === "no_descrito") return "No descrito";
+      if (s === "normal") return "Sin lesiones";
+      if (s === "tendinosis") return "Tendinosis";
+      if (s === "desgarro_parcial") return "Rup. Parcial";
+      if (s === "desgarro_completo") return "Rup. Completa";
+      if (s === "esguince_leve") return "Esguince Leve";
+      if (s === "meniscosis") return "Meniscosis";
+      if (s === "rotura") return "Ruptura";
+      if (s === "derrame_leve") return "Derrame Leve";
+      if (s === "derrame_moderado") return "Derrame Fr.";
+      if (s === "quiste_leve") return "Quiste L.";
+      if (s === "quiste_severo") return "Quiste G.";
+      return s;
+    };
+
+    const getPrintSimplifiedKneeDescription = (id: string, state: string) => {
+      if (!state || state === "no_descrito") {
+        return "No descrito en el reporte.";
+      }
+      if (state === "normal") {
+        return "Dentro de límites normales.";
+      }
+      
+      switch (id) {
+        case "quadriceps":
+          if (state === "tendinosis") return "Tendinosis del tendón cuadricipital (engrosado e hipoecoico sin rotura).";
+          if (state === "desgarro_parcial") return "Ruptura de espesor parcial focal de la inserción.";
+          if (state === "desgarro_completo") return "Ruptura completa del tendón cuadricipital proximal.";
+          break;
+        case "patellar":
+          if (state === "tendinosis") return "Tendinopatía distal del rotuliano (mínimo engrosamiento sin rotura).";
+          if (state === "desgarro_parcial") return "Microrupturas longitudinales con discontinuidad de fibras.";
+          if (state === "desgarro_completo") return "Ruptura completa del tendón rotuliano media/distal.";
+          break;
+        case "lcm":
+          if (state === "esguince_leve") return "Esguince grado I/II del ligamento colateral medial.";
+          if (state === "desgarro_parcial") return "Ruptura de espesor parcial proximal del LCM.";
+          if (state === "desgarro_completo") return "Ruptura ligamentaria completa de fibras del LCM.";
+          break;
+        case "lce":
+          if (state === "esguince_leve") return "Esguince grado I/II del ligamento colateral lateral.";
+          if (state === "desgarro_parcial") return "Ruptura de espesor parcial proximal del LCE.";
+          if (state === "desgarro_completo") return "Ruptura ligamentaria completa de fibras del LCE.";
+          break;
+        case "medial_meniscus":
+          if (state === "meniscosis") return "Meniscosis interna (degeneración mixoide intrasustancia).";
+          if (state === "rotura") return "Fisura oblicua/transversa en cuerno posterior interno.";
+          break;
+        case "lateral_meniscus":
+          if (state === "meniscosis") return "Meniscosis externa / cambios desestructurantes.";
+          if (state === "rotura") return "Desgarro o rotura compleja del menisco externo.";
+          break;
+        case "joint_effusion":
+          if (state === "derrame_leve") return "Derrame articular discreto en receso suprapatelar.";
+          if (state === "derrame_moderado") return "Derrame intraarticular moderado/abundante con sinovitis.";
+          break;
+        case "baker_cyst":
+          if (state === "quiste_leve") return "Quiste de Baker incidental de tamaño pequeño.";
+          if (state === "quiste_severo") return "Quiste de Baker voluminoso delimitado en fosa poplítea.";
+          break;
+      }
+      return "Sin hallazgos.";
+    };
+
+    return (
+      <div 
+        className="mt-8 pt-6 border-t-2 border-dashed border-gray-300 font-sans mt-8 pt-6"
+        style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
+      >
+        <div className="w-full text-center mb-3">
+          <div className="text-[10px] uppercase font-bold tracking-wider text-slate-800 mb-0.5 block font-sans">
+            Anexo: Esquema de Hallazgos y Sinopsis de Rodilla
+          </div>
+          <p className="text-[9px] uppercase font-mono tracking-wide text-gray-400">
+            Mapeo anatómico y sinopsis estructurada de la articulación de rodilla y sus ligamentos
+          </p>
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-stretch justify-center gap-6 max-w-3xl mx-auto">
+          {/* Left Element: Diagram Box */}
+          <div className="w-[300px] h-[300px] bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex items-center justify-center shrink-0">
+            <div 
+              className="w-full font-sans text-center"
+              dangerouslySetInnerHTML={{ __html: outerSvg }} 
+            />
+          </div>
+
+          {/* Right Element: Mapa de Hallazgos list */}
+          <div className="flex-1 bg-slate-50 border border-gray-200 p-3 rounded-xl flex flex-col justify-between">
+            <div>
+              <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5 mb-2">
+                <span className="text-[9.5px] font-bold text-indigo-700 font-sans uppercase tracking-widest block">
+                  📍 Mapa de Hallazgos Clínicos
+                </span>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+                {[
+                  { id: "quadriceps", label: "T. Cuadricipital" },
+                  { id: "patellar", label: "T. Rotuliano" },
+                  { id: "lcm", label: "Lig. Colat. Medial" },
+                  { id: "lce", label: "Lig. Colat. Lateral" },
+                  { id: "medial_meniscus", label: "Menisco Medial" },
+                  { id: "lateral_meniscus", label: "Menisco Lateral" },
+                  { id: "joint_effusion", label: "Derrame Artic." },
+                  { id: "baker_cyst", label: "Quiste Baker" }
+                ].filter(struct => kneeStates[struct.id] !== "no_descrito").map((struct) => {
+                  const s = kneeStates[struct.id] || "no_descrito";
+                  
+                  let dotColor = "bg-gray-400";
+                  let isNoDescrito = s === "no_descrito";
+                  
+                  if (s === "normal") {
+                    dotColor = "bg-emerald-600";
+                  } else if (s === "tendinosis" || s === "esguince_leve" || s === "meniscosis" || s === "derrame_leve" || s === "quiste_leve") {
+                    dotColor = "bg-amber-500";
+                  } else if (s === "desgarro_parcial") {
+                    dotColor = "bg-pink-500";
+                  } else if (s === "desgarro_completo" || s === "rotura" || s === "derrame_moderado" || s === "quiste_severo") {
+                    dotColor = "bg-rose-600";
+                  }
+
+                  const description = kneeDescriptions[struct.id] || getPrintSimplifiedKneeDescription(struct.id, s);
+
+                  return (
+                    <div key={struct.id} className="text-left py-1 px-1.5 bg-white border border-gray-150 rounded-lg">
+                      <div className="flex items-center justify-between gap-1 leading-none">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${dotColor}`}></span>
+                          <span className="text-[8.5px] font-bold uppercase tracking-wide text-gray-800 truncate">
+                            {struct.label}
+                          </span>
+                        </div>
+                        <span className="text-[7px] font-semibold uppercase text-gray-400 max-w-[50px] truncate shrink-0">
+                          {translateKneeStateForPrint(struct.id, s)}
+                        </span>
+                      </div>
+                      <p className="text-[7.5px] text-gray-500 mt-0.5 leading-snug line-clamp-2">
+                        {isNoDescrito ? "No descrito / omitido" : description}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            
+            <div className="text-[7.5px] uppercase text-gray-400 text-center mt-3 pt-2 border-t border-gray-150 leading-relaxed font-sans font-medium">
+              Diagrama interactivo de rodilla y lista anexa correspondientes a la evaluación integrada descrita en el reporte físico del paciente.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderPrintAnkleSchema = () => {
+    if (!includeAnkleSchemaInReport || specificStudy !== "Tobillo") return null;
+
+    const preprocessSvgForPrint = (svgElement: HTMLElement) => {
+      let outerSvg = svgElement.outerHTML;
+
+      // 1. Force background and clean outline colors on gradient stops
+      outerSvg = outerSvg
+        .replaceAll('stop-color="#1e293b"', 'stop-color="#f1f5f9"')
+        .replaceAll('stopColor="#1e293b"', 'stopColor="#f1f5f9"')
+        .replaceAll('stop-color="#2e3d52"', 'stop-color="#f1f5f9"')
+        .replaceAll('stopColor="#2e3d52"', 'stopColor="#f1f5f9"')
+        .replaceAll('stop-color="#0f172a"', 'stop-color="#cbd5e1"')
+        .replaceAll('stopColor="#0f172a"', 'stopColor="#cbd5e1"')
+        .replaceAll('stop-color="#111827"', 'stop-color="#cbd5e1"')
+        .replaceAll('stopColor="#111827"', 'stopColor="#cbd5e1"')
+        .replaceAll('stop-color="#334155"', 'stop-color="#cbd5e1"')
+        .replaceAll('stopColor="#334155"', 'stopColor="#cbd5e1"')
+        .replaceAll('stop-color="#3d4e66"', 'stop-color="#cbd5e1"')
+        .replaceAll('stopColor="#3d4e66"', 'stopColor="#cbd5e1"');
+
+      // 2. Adjust paths fill/stroke colors for paper print
+      outerSvg = outerSvg
+        .replaceAll('fill="#1e293b"', 'fill="#f8fafc"')
+        .replaceAll('fill="#451a03"', 'fill="#fef3c7"')
+        .replaceAll('fill="#500730"', 'fill="#fce7f3"')
+        .replaceAll('fill="#7f1d1d"', 'fill="#fee2e2"')
+        .replaceAll('stroke="#ef4444"', 'stroke="#dc2626"')
+        .replaceAll('stroke="#ec4899"', 'stroke="#db2777"')
+        .replaceAll('stroke="#f59e0b"', 'stroke="#d97706"')
+        .replaceAll('stroke="#334155"', 'stroke="#475569"')
+        .replaceAll('stroke="#475569"', 'stroke="#64748b"');
+
+      // 3. Adjust text colors
+      outerSvg = outerSvg
+        .replaceAll('fill="#64748b"', 'fill="#475569"')
+        .replaceAll('fill="#475569"', 'fill="#1e293b"');
+
+      // 4. Adjust custom guides/circles in background
+      outerSvg = outerSvg
+        .replaceAll('stroke="#1e293b"', 'stroke="#e2e8f0"');
+
+      return outerSvg;
+    };
+
+    const svgLateral = document.getElementById("ankle-anatomy-svg-lateral");
+    const svgMedial = document.getElementById("ankle-anatomy-svg-medial");
+
+    let processedLateral = "";
+    let processedMedial = "";
+
+    if (svgLateral) {
+      processedLateral = preprocessSvgForPrint(svgLateral);
+    }
+    if (svgMedial) {
+      processedMedial = preprocessSvgForPrint(svgMedial);
+    }
+
+    // Backwards compatibility fallback if only single container exists
+    if (!processedLateral && !processedMedial) {
+      const svgElement = document.getElementById("ankle-anatomy-svg");
+      if (svgElement) {
+        processedLateral = preprocessSvgForPrint(svgElement);
+      } else {
+        return null;
+      }
+    }
+
+    const translateAnkleStateForPrint = (id: string, s: string) => {
+      if (!s || s === "no_descrito") return "No descrito";
+      if (s === "normal") return "Sin lesiones";
+      if (s === "tendinosis") return "Tendinosis";
+      if (s === "tenosinovitis") return "Tenosinovitis";
+      if (s === "fascitis") return "Fascitis";
+      if (s === "esguince_leve") return "Esguince Leve";
+      if (s === "derrame_leve") return "Derrame L.";
+      if (s === "derrame_moderado") return "Derrame Mod.";
+      if (s === "desgarro_parcial") return "Rup. Parcial";
+      if (s === "desgarro_completo") return "Rup. Completa";
+      return s;
+    };
+
+    const getPrintSimplifiedAnkleDescription = (id: string, state: string) => {
+      if (!state || state === "no_descrito") {
+        return "No descrito en el reporte.";
+      }
+      if (state === "normal") {
+        return "Dentro de límites normales.";
+      }
+      
+      switch (id) {
+        case "achilles":
+          if (state === "tendinosis") return "Tendinosis de Aquiles (engrosamiento del tendón medio distal).";
+          if (state === "desgarro_parcial") return "Desgarro parcial o fisura longitudinal de fibras.";
+          if (state === "desgarro_completo") return "Ruptura completa y transfixiante con retracción.";
+          break;
+        case "plantar_fascia":
+          if (state === "fascitis") return "Fascitis plantar (engrosamiento de inserción calcánea con edema).";
+          if (state === "desgarro_parcial") return "Desgarro de espesor parcial proximal.";
+          if (state === "desgarro_completo") return "Ruptura completa con retracción de fascia.";
+          break;
+        case "lpaa":
+          if (state === "esguince_leve") return "Esguince grado I/II del ligamento colateral anterior (LPAA).";
+          if (state === "desgarro_parcial") return "Desgarro de espesor parcial focales.";
+          if (state === "desgarro_completo") return "Ruptura completa ligamentaria del LPAA.";
+          break;
+        case "lpc":
+          if (state === "esguince_leve") return "Esguince grado I de fibras profundas del LPC.";
+          if (state === "desgarro_parcial") return "Ruptura parcial o deshilachamiento focal del LPC.";
+          if (state === "desgarro_completo") return "Ruptura completa profunda del LPC.";
+          break;
+        case "peroneal_tendons":
+          if (state === "tenosinovitis") return "Tenosinovitis con distensión líquida moderada de la vaina común.";
+          if (state === "desgarro_parcial") return "Desgarro parcial longitudinal o fisura del peroneo corto.";
+          if (state === "desgarro_completo") return "Ruptura transfixiante con retracción proximal.";
+          break;
+        case "tibial_posterior":
+          if (state === "tenosinovitis") return "Tenosinovitis del tibial posterior con presencia de líquido.";
+          if (state === "desgarro_parcial") return "Fisura o rotura longitudinal parcial del tendón.";
+          if (state === "desgarro_completo") return "Ruptura de espesor total y retracción distal.";
+          break;
+        case "tibial_anterior":
+          if (state === "tenosinovitis") return "Tenosinovitis del tibial anterior con colección líquida laminar.";
+          if (state === "desgarro_parcial") return "Ruptura parcial y pérdida fibrilar focal.";
+          if (state === "desgarro_completo") return "Discontinuidad total fibrilar del tendón anterior.";
+          break;
+        case "joint_effusion":
+          if (state === "derrame_leve") return "Derrame articular discreto en receso articular anterior.";
+          if (state === "derrame_moderado") return "Derrame articular tibiotarsiano moderado con distensión.";
+          break;
+      }
+      return "Alteración estructural.";
+    };
+
+    return (
+      <div 
+        className="mt-8 pt-6 border-t-2 border-dashed border-gray-300 font-sans"
+        style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
+      >
+        <div className="w-full text-center mb-3">
+          <div className="text-[10px] uppercase font-bold tracking-wider text-slate-800 mb-0.5 block font-sans">
+            Anexo: Esquema de Hallazgos y Sinopsis de Tobillo
+          </div>
+          <p className="text-[9px] uppercase font-mono tracking-wide text-gray-400">
+            Mapeo anatómico y sinopsis estructurada de la articulación de tobillo y sus tendones
+          </p>
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-stretch justify-center gap-6 max-w-3xl mx-auto">
+          {/* Left Element: Dual Diagrams Box */}
+          <div className="w-[320px] h-[300px] bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between items-center shrink-0 animate-fade-in">
+            <div className="w-full flex-1 flex items-center justify-around gap-2">
+              {processedLateral ? (
+                <div className="flex flex-col items-center flex-1">
+                  <span className="text-[7.5px] uppercase font-bold text-indigo-600 mb-1 font-mono tracking-wider">Cara Lateral</span>
+                  <div 
+                    className="w-full max-w-[130px] font-sans text-center"
+                    dangerouslySetInnerHTML={{ __html: processedLateral }} 
+                  />
+                </div>
+              ) : null}
+              {processedMedial ? (
+                <div className="flex flex-col items-center flex-1">
+                  <span className="text-[7.5px] uppercase font-bold text-emerald-600 mb-1 font-mono tracking-wider">Cara Medial</span>
+                  <div 
+                    className="w-full max-w-[130px] font-sans text-center"
+                    dangerouslySetInnerHTML={{ __html: processedMedial }} 
+                  />
+                </div>
+              ) : null}
+            </div>
+            <div className="text-[7px] text-gray-400 font-semibold tracking-wider uppercase mt-1">Estructura Malleolar Dinámica</div>
+          </div>
+
+          {/* Right Element: Mapa de Hallazgos list */}
+          <div className="flex-1 bg-slate-50 border border-gray-200 p-3 rounded-xl flex flex-col justify-between">
+            <div>
+              <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5 mb-2">
+                <span className="text-[9.5px] font-bold text-indigo-700 font-sans uppercase tracking-widest block">
+                  📍 Mapa de Hallazgos Clínicos (Tobillo)
+                </span>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+                {[
+                  { id: "achilles", label: "T. Aquiles" },
+                  { id: "plantar_fascia", label: "Fascia Plantar" },
+                  { id: "lpaa", label: "LPAA" },
+                  { id: "lpc", label: "LPC" },
+                  { id: "peroneal_tendons", label: "T. Peroneos" },
+                  { id: "tibial_posterior", label: "T. Tibial Post." },
+                  { id: "tibial_anterior", label: "T. Tibial Ant." },
+                  { id: "joint_effusion", label: "Derrame Artic." },
+                  { id: "deltoid", label: "Lig. Deltoideo" }
+                ].filter(struct => ankleStates[struct.id] !== "no_descrito").map((struct) => {
+                  const s = ankleStates[struct.id] || "no_descrito";
+                  
+                  let dotColor = "bg-gray-400";
+                  let isNoDescrito = s === "no_descrito";
+                  
+                  if (s === "normal") {
+                    dotColor = "bg-emerald-600";
+                  } else if (s === "tendinosis" || s === "tenosinovitis" || s === "fascitis" || s === "esguince_leve" || s === "derrame_leve") {
+                    dotColor = "bg-amber-500";
+                  } else if (s === "desgarro_parcial") {
+                    dotColor = "bg-pink-500";
+                  } else if (s === "desgarro_completo" || s === "derrame_moderado") {
+                    dotColor = "bg-rose-600";
+                  }
+
+                  const description = ankleDescriptions[struct.id] || getPrintSimplifiedAnkleDescription(struct.id, s);
+
+                  return (
+                    <div key={struct.id} className="text-left py-1 px-1.5 bg-white border border-gray-150 rounded-lg">
+                      <div className="flex items-center justify-between gap-1 leading-none">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${dotColor}`}></span>
+                          <span className="text-[8.5px] font-bold uppercase tracking-wide text-gray-800 truncate">
+                            {struct.label}
+                          </span>
+                        </div>
+                        <span className="text-[7px] font-semibold uppercase text-gray-400 max-w-[50px] truncate shrink-0">
+                          {translateAnkleStateForPrint(struct.id, s)}
+                        </span>
+                      </div>
+                      <p className="text-[7.5px] text-gray-500 mt-0.5 leading-snug line-clamp-2">
+                        {isNoDescrito ? "No descrito / omitido" : description}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            
+            <div className="text-[7.5px] uppercase text-gray-400 text-center mt-3 pt-2 border-t border-gray-150 leading-relaxed font-sans font-medium">
+              Diagrama interactivo de tobillo y lista anexa correspondientes a la evaluación integrada descrita en el reporte físico del paciente.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderPrintThighSchema = () => {
+    if (!includeThighSchemaInReport || specificStudy !== "Muslo Anterior") return null;
+
+    const preprocessSvgForPrint = (svgElement: HTMLElement) => {
+      let outerSvg = svgElement.outerHTML;
+
+      // 1. Force background and clean outline colors on gradient stops
+      outerSvg = outerSvg
+        .replaceAll('stop-color="#1e293b"', 'stop-color="#f1f5f9"')
+        .replaceAll('stopColor="#1e293b"', 'stopColor="#f1f5f9"')
+        .replaceAll('stop-color="#2e3d52"', 'stop-color="#f1f5f9"')
+        .replaceAll('stopColor="#2e3d52"', 'stopColor="#f1f5f9"')
+        .replaceAll('stop-color="#0f172a"', 'stop-color="#cbd5e1"')
+        .replaceAll('stopColor="#0f172a"', 'stopColor="#cbd5e1"')
+        .replaceAll('stop-color="#111827"', 'stop-color="#cbd5e1"')
+        .replaceAll('stopColor="#111827"', 'stopColor="#cbd5e1"')
+        .replaceAll('stop-color="#334155"', 'stop-color="#cbd5e1"')
+        .replaceAll('stopColor="#334155"', 'stopColor="#cbd5e1"')
+        .replaceAll('stop-color="#3d4e66"', 'stop-color="#cbd5e1"')
+        .replaceAll('stopColor="#3d4e66"', 'stopColor="#cbd5e1"');
+
+      // 2. Adjust paths fill/stroke colors for paper print
+      outerSvg = outerSvg
+        .replaceAll('fill="#1e293b"', 'fill="#f8fafc"')
+        .replaceAll('fill="#451a03"', 'fill="#fef3c7"')
+        .replaceAll('fill="#500730"', 'fill="#fce7f3"')
+        .replaceAll('fill="#7f1d1d"', 'fill="#fee2e2"')
+        .replaceAll('stroke="#ef4444"', 'stroke="#dc2626"')
+        .replaceAll('stroke="#ec4899"', 'stroke="#db2777"')
+        .replaceAll('stroke="#f59e0b"', 'stroke="#d97706"')
+        .replaceAll('stroke="#334155"', 'stroke="#475569"')
+        .replaceAll('stroke="#475569"', 'stroke="#64748b"');
+
+      // 3. Adjust text colors
+      outerSvg = outerSvg
+        .replaceAll('fill="#64748b"', 'fill="#475569"')
+        .replaceAll('fill="#475569"', 'fill="#1e293b"');
+
+      // 4. Adjust custom guides/circles in background
+      outerSvg = outerSvg
+        .replaceAll('stroke="#1e293b"', 'stroke="#e2e8f0"');
+
+      return outerSvg;
+    };
+
+    const svgSuperficial = document.getElementById("thigh-superficial-svg");
+    const svgDeep = document.getElementById("thigh-deep-svg");
+
+    let processedSuperficial = "";
+    let processedDeep = "";
+
+    if (svgSuperficial) {
+      processedSuperficial = preprocessSvgForPrint(svgSuperficial);
+    }
+    if (svgDeep) {
+      processedDeep = preprocessSvgForPrint(svgDeep);
+    }
+
+    if (!processedSuperficial && !processedDeep) return null;
+
+    const translateThighStateForPrint = (id: string, s: string) => {
+      if (!s || s === "no_descrito") return "No descrito";
+      if (s === "normal") return "Sin lesiones";
+      if (s === "desgarro_miofascial") return "D. Miofascial";
+      if (s === "desgarro_intramuscular") return "D. Intramusc.";
+      if (s === "desgarro_completo") return "D. Completo";
+      if (s === "tendinopatia") return "Tendinopatía";
+      if (s === "desgarro") return "Desgarro";
+      if (s === "friccion") return "Fricción";
+      if (s === "contusion") return "Contusión";
+      if (s === "desgarro_parcial") return "D. Parcial";
+      if (s === "hernia_muscular") return "Hernia Fasc.";
+      return s;
+    };
+
+    const getPrintSimplifiedThighDescription = (id: string, state: string) => {
+      if (thighDescriptions && thighDescriptions[id]) {
+        return thighDescriptions[id];
+      }
+      if (state === "normal") {
+        return "Dentro de límites normales.";
+      }
+      switch (id) {
+        case "rectus_femoris":
+          if (state === "desgarro_miofascial") return "Desgarro miofascial con microcolección laminar.";
+          if (state === "desgarro_intramuscular") return "Foco de desgarro intramuscular localizado.";
+          if (state === "desgarro_completo") return "Ruptura completa con retracción de extremos.";
+          break;
+        case "sartorius":
+          if (state === "tendinopatia") return "Signos ecográficos de tendinopatía de tracción.";
+          if (state === "desgarro") return "Pérdida parcial de la ecogenia del fuste.";
+          break;
+        case "iliotibial_band":
+          if (state === "friccion") return "Líquido y edema reactivo interfacial lateral.";
+          if (state === "desgarro") return "Discontinuidad fibrosa de espesor parcial.";
+          break;
+        case "vastus_medialis":
+        case "vastus_lateralis":
+          if (state === "contusion") return "Edema difuso sin desestructuración de fibras.";
+          if (state === "desgarro_parcial") return "Desgarro parcial con infiltrado hemático ligero.";
+          if (state === "desgarro_completo") return "Ruptura total con defecto contráctil evidente.";
+          break;
+        case "vastus_intermedius":
+          if (state === "hernia_muscular") return "Defecto fascial con herniación muscular dinámica.";
+          if (state === "desgarro") return "Foco profundo de rotura fibrilar adyacente a cortical.";
+          break;
+      }
+      return "Alteración focal.";
+    };
+
+    return (
+      <div 
+        className="mt-8 pt-6 border-t-2 border-dashed border-gray-300 font-sans"
+        style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
+      >
+        <div className="w-full text-center mb-3">
+          <div className="text-[10px] uppercase font-bold tracking-wider text-slate-800 mb-0.5 block font-sans">
+            Anexo: Esquema de Hallazgos y Sinopsis de Muslo Anterior
+          </div>
+          <p className="text-[9px] uppercase font-mono tracking-wide text-gray-400">
+            Mapeo de capas musculares superficiales y profundas del muslo anterior en ecografía
+          </p>
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-stretch justify-center gap-6 max-w-3xl mx-auto">
+          {/* Left Element: Dual Diagrams Box */}
+          <div className="w-[320px] h-[300px] bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between items-center shrink-0 animate-fade-in">
+            <div className="w-full flex-1 flex items-center justify-around gap-2">
+              {processedSuperficial ? (
+                <div className="flex flex-col items-center flex-1">
+                  <span className="text-[7.5px] uppercase font-bold text-indigo-600 mb-1 font-mono tracking-wider">Plano Superficial</span>
+                  <div 
+                    className="w-full max-w-[130px] font-sans text-center"
+                    dangerouslySetInnerHTML={{ __html: processedSuperficial }} 
+                  />
+                </div>
+              ) : null}
+              {processedDeep ? (
+                <div className="flex flex-col items-center flex-1">
+                  <span className="text-[7.5px] uppercase font-bold text-emerald-600 mb-1 font-mono tracking-wider">Plano Profundo</span>
+                  <div 
+                    className="w-full max-w-[130px] font-sans text-center"
+                    dangerouslySetInnerHTML={{ __html: processedDeep }} 
+                  />
+                </div>
+              ) : null}
+            </div>
+            <div className="text-[7px] text-gray-400 font-semibold tracking-wider uppercase mt-1">Estructura Muscular Multicapa</div>
+          </div>
+
+          {/* Right Element: Findings list */}
+          <div className="flex-1 bg-slate-50 border border-gray-200 p-3 rounded-xl flex flex-col justify-between">
+            <div>
+              <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5 mb-2">
+                <span className="text-[9.5px] font-bold text-indigo-700 font-sans uppercase tracking-widest block">
+                  📍 Mapa de Hallazgos Clínicos (Muslo Anterior)
+                </span>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+                {[
+                  { id: "rectus_femoris", label: "Recto Femoral" },
+                  { id: "sartorius", label: "M. Sartorio" },
+                  { id: "iliotibial_band", label: "T. Iliotibial" },
+                  { id: "vastus_medialis", label: "M. Vasto Med." },
+                  { id: "vastus_lateralis", label: "M. Vasto Lat." },
+                  { id: "vastus_intermedius", label: "M. Vasto Interm." }
+                ].filter(struct => {
+                  const s = thighStates[struct.id] || "no_descrito";
+                  return s !== "no_descrito";
+                }).filter(struct => thighStates[struct.id] !== "no_descrito").map((struct) => {
+                  const s = thighStates[struct.id] || "no_descrito";
+                  
+                  let dotColor = "bg-emerald-600";
+                  if (s === "tendinopatia" || s === "friccion" || s === "contusion" || s === "hernia_muscular" || s === "desgarro_miofascial") {
+                    dotColor = "bg-amber-500";
+                  } else if (s === "desgarro" || s === "desgarro_parcial" || s === "desgarro_intramuscular") {
+                    dotColor = "bg-pink-500";
+                  } else if (s === "desgarro_completo") {
+                    dotColor = "bg-rose-600";
+                  }
+
+                  const description = thighDescriptions[struct.id] || getPrintSimplifiedThighDescription(struct.id, s);
+
+                  return (
+                    <div key={struct.id} className="text-left py-1 px-1.5 bg-white border border-gray-150 rounded-lg">
+                      <div className="flex items-center justify-between gap-1 leading-none">
+                        <span className="text-[8.5px] font-bold uppercase tracking-wide text-gray-800 truncate">
+                          {struct.label}
+                        </span>
+                      </div>
+                      <p className="text-[7.5px] text-gray-500 mt-0.5 leading-snug line-clamp-2">
+                        {description}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            
+            <div className="text-[7.5px] uppercase text-gray-400 text-center mt-3 pt-2 border-t border-gray-150 leading-relaxed font-sans font-medium">
+              Diagrama interactivo de muslo anterior y lista anexa correspondientes a la evaluación integrada descrita en el reporte físico del paciente.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderPrintThighPosteriorSchema = () => {
+    if (!includeThighPosteriorSchemaInReport || specificStudy !== "Muslo Posterior") return null;
+
+    const preprocessSvgForPrint = (svgElement: HTMLElement) => {
+      let outerSvg = svgElement.outerHTML;
+
+      // 1. Force background and clean outline colors on gradient stops
+      outerSvg = outerSvg
+        .replaceAll('stop-color="#1e293b"', 'stop-color="#f1f5f9"')
+        .replaceAll('stopColor="#1e293b"', 'stopColor="#f1f5f9"')
+        .replaceAll('stop-color="#2e3d52"', 'stop-color="#f1f5f9"')
+        .replaceAll('stopColor="#2e3d52"', 'stopColor="#f1f5f9"')
+        .replaceAll('stop-color="#0f172a"', 'stop-color="#cbd5e1"')
+        .replaceAll('stopColor="#0f172a"', 'stopColor="#cbd5e1"')
+        .replaceAll('stop-color="#111827"', 'stop-color="#cbd5e1"')
+        .replaceAll('stopColor="#111827"', 'stopColor="#cbd5e1"')
+        .replaceAll('stop-color="#334155"', 'stop-color="#cbd5e1"')
+        .replaceAll('stopColor="#334155"', 'stopColor="#cbd5e1"')
+        .replaceAll('stop-color="#3d4e66"', 'stop-color="#cbd5e1"')
+        .replaceAll('stopColor="#3d4e66"', 'stopColor="#cbd5e1"');
+
+      // 2. Adjust paths fill/stroke colors for paper print
+      outerSvg = outerSvg
+        .replaceAll('fill="#1e293b"', 'fill="#f8fafc"')
+        .replaceAll('fill="#451a03"', 'fill="#fef3c7"')
+        .replaceAll('fill="#500730"', 'fill="#fce7f3"')
+        .replaceAll('fill="#7f1d1d"', 'fill="#fee2e2"')
+        .replaceAll('stroke="#ef4444"', 'stroke="#dc2626"')
+        .replaceAll('stroke="#ec4899"', 'stroke="#db2777"')
+        .replaceAll('stroke="#f59e0b"', 'stroke="#d97706"')
+        .replaceAll('stroke="#334155"', 'stroke="#475569"')
+        .replaceAll('stroke="#475569"', 'stroke="#64748b"');
+
+      // 3. Adjust text colors
+      outerSvg = outerSvg
+        .replaceAll('fill="#64748b"', 'fill="#475569"')
+        .replaceAll('fill="#475569"', 'fill="#1e293b"');
+
+      // 4. Adjust custom guides/circles in background
+      outerSvg = outerSvg
+        .replaceAll('stroke="#1e293b"', 'stroke="#e2e8f0"');
+
+      return outerSvg;
+    };
+
+    const svgSuperficial = document.getElementById("thigh-posterior-superficial-svg");
+    const svgDeep = document.getElementById("thigh-posterior-deep-svg");
+
+    let processedSuperficial = "";
+    let processedDeep = "";
+
+    if (svgSuperficial) {
+      processedSuperficial = preprocessSvgForPrint(svgSuperficial);
+    }
+    if (svgDeep) {
+      processedDeep = preprocessSvgForPrint(svgDeep);
+    }
+
+    if (!processedSuperficial && !processedDeep) return null;
+
+    const translateThighPosteriorStateForPrint = (id: string, s: string) => {
+      if (!s || s === "no_descrito") return "No descrito";
+      if (s === "normal") return "Sin lesiones";
+      if (s === "desgarro_miofascial") return "D. Miofascial";
+      if (s === "desgarro_intramuscular") return "D. Intramusc.";
+      if (s === "desgarro_completo") return "D. Completo";
+      if (s === "neuropatia") return "Neuropatía";
+      if (s === "engrosamiento") return "Engrosamiento";
+      if (s === "contusion") return "Contusión";
+      if (s === "desgarro_parcial") return "D. Parcial";
+      return s;
+    };
+
+    const getPrintSimplifiedThighPosteriorDescription = (id: string, state: string) => {
+      if (thighPosteriorDescriptions && thighPosteriorDescriptions[id]) {
+        return thighPosteriorDescriptions[id];
+      }
+      if (state === "normal") {
+        return "Dentro de límites normales.";
+      }
+      switch (id) {
+        case "biceps_femoris_lh":
+          if (state === "desgarro_miofascial") return "Desgarro miofascial periférico con líquido laminar.";
+          if (state === "desgarro_intramuscular") return "Desgarro intramuscular grado II en fuste distal.";
+          if (state === "desgarro_completo") return "Ruptura completa de cabeza larga con retracción.";
+          break;
+        case "biceps_femoris_sh":
+          if (state === "desgarro_miofascial") return "Foco desgarro miofascial con líquido interfacial.";
+          if (state === "desgarro_intramuscular") return "Foco de desgarro grado II en el vientre muscular.";
+          if (state === "desgarro_completo") return "Brecha líquida de espesor completo con retracción.";
+          break;
+        case "semitendinosus":
+          if (state === "desgarro_miofascial") return "Desgarro miofascial periférico medial leve.";
+          if (state === "desgarro_intramuscular") return "Foco de desgarro grado II en fuste medio carnoso.";
+          if (state === "desgarro_completo") return "Ruptura completa fibrilar con hematoma interposicional.";
+          break;
+        case "semimembranosus":
+          if (state === "desgarro_miofascial") return "Desgarro miofascial grado I con edema laminar.";
+          if (state === "desgarro_intramuscular") return "Foco de desgarro profundo grado II miotendinoso.";
+          if (state === "desgarro_completo") return "Rotura completa miotendinosa con retracción manifiesta.";
+          break;
+        case "sciatic_nerve":
+          if (state === "neuropatia") return "Pérdida de patrón fascicular y edema perineural.";
+          if (state === "engrosamiento") return "Engrosamiento reactivo de los fascículos cilíndricos.";
+          break;
+        case "adductor_magnus":
+          if (state === "contusion") return "Edema reactivo difuso celular por foco contusivo.";
+          if (state === "desgarro_parcial") return "Desgarro de fuste muscular espesor parcial grado II.";
+          if (state === "desgarro_completo") return "Rotura posterior completa con brecha anecóica.";
+          break;
+      }
+      return "Alteración focal.";
+    };
+
+    return (
+      <div 
+        className="mt-8 pt-6 border-t-2 border-dashed border-gray-300 font-sans"
+        style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
+      >
+        <div className="w-full text-center mb-3">
+          <div className="text-[10px] uppercase font-bold tracking-wider text-slate-800 mb-0.5 block font-sans">
+            Anexo: Esquema de Hallazgos y Sinopsis de Muslo Posterior
+          </div>
+          <p className="text-[9px] uppercase font-mono tracking-wide text-gray-400">
+            Mapeo de capas musculares superficiales y profundas del muslo posterior en ecografía
+          </p>
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-stretch justify-center gap-6 max-w-3xl mx-auto">
+          {/* Left Element: Dual Diagrams Box */}
+          <div className="w-[320px] h-[300px] bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between items-center shrink-0 animate-fade-in">
+            <div className="w-full flex-1 flex items-center justify-around gap-2">
+              {processedSuperficial ? (
+                <div className="flex flex-col items-center flex-1">
+                  <span className="text-[7.5px] uppercase font-bold text-indigo-600 mb-1 font-mono tracking-wider">Plano Superficial</span>
+                  <div 
+                    className="w-full max-w-[130px] font-sans text-center"
+                    dangerouslySetInnerHTML={{ __html: processedSuperficial }} 
+                  />
+                </div>
+              ) : null}
+              {processedDeep ? (
+                <div className="flex flex-col items-center flex-1">
+                  <span className="text-[7.5px] uppercase font-bold text-emerald-600 mb-1 font-mono tracking-wider">Plano Profundo</span>
+                  <div 
+                    className="w-full max-w-[130px] font-sans text-center"
+                    dangerouslySetInnerHTML={{ __html: processedDeep }} 
+                  />
+                </div>
+              ) : null}
+            </div>
+            <div className="text-[7px] text-gray-400 font-semibold tracking-wider uppercase mt-1">Estructura Muscular Isquiotibial</div>
+          </div>
+
+          {/* Right Element: Findings list */}
+          <div className="flex-1 bg-slate-50 border border-gray-200 p-3 rounded-xl flex flex-col justify-between">
+            <div>
+              <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5 mb-2">
+                <span className="text-[9.5px] font-bold text-indigo-700 font-sans uppercase tracking-widest block">
+                  📍 Mapa de Hallazgos Clínicos (Muslo Posterior)
+                </span>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+                {[
+                  { id: "biceps_femoris_lh", label: "Bíceps Fem. LH" },
+                  { id: "biceps_femoris_sh", label: "Bíceps Fem. SH" },
+                  { id: "semitendinosus", label: "M. Semitend." },
+                  { id: "semimembranosus", label: "M. Semimemb." },
+                  { id: "sciatic_nerve", label: "Nervio Ciático" },
+                  { id: "adductor_magnus", label: "M. Aductor May." }
+                ].filter(struct => {
+                  const s = thighPosteriorStates[struct.id] || "no_descrito";
+                  return s !== "no_descrito";
+                }).map((struct) => {
+                  const s = thighPosteriorStates[struct.id] || "no_descrito";
+                  
+                  let dotColor = "bg-emerald-600";
+                  if (s === "neuropatia" || s === "engrosamiento" || s === "contusion" || s === "desgarro_miofascial" || s === "desgarro_parcial") {
+                    dotColor = "bg-amber-500";
+                  } else if (s === "desgarro" || s === "desgarro_intramuscular") {
+                    dotColor = "bg-pink-500";
+                  } else if (s === "desgarro_completo") {
+                    dotColor = "bg-rose-600";
+                  }
+
+                  const description = thighPosteriorDescriptions[struct.id] || getPrintSimplifiedThighPosteriorDescription(struct.id, s);
+
+                  return (
+                    <div key={struct.id} className="text-left py-1 px-1.5 bg-white border border-gray-150 rounded-lg">
+                      <div className="flex items-center justify-between gap-1 leading-none">
+                        <span className="text-[8.5px] font-bold uppercase tracking-wide text-gray-800 truncate">
+                          {struct.label}
+                        </span>
+                      </div>
+                      <p className="text-[7.5px] text-gray-400 mt-0.5 leading-snug line-clamp-2">
+                        {description}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            
+            <div className="text-[7.5px] uppercase text-gray-400 text-center mt-3 pt-2 border-t border-gray-150 leading-relaxed font-sans font-medium">
+              Diagrama interactivo de muslo posterior y lista anexa correspondientes a la evaluación integrada descrita en el reporte físico del paciente.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderPrintElbowSchema = () => {
+    if (!includeElbowSchemaInReport || specificStudy !== "Codo") return null;
+
+    const preprocessSvgForPrint = (svgElement: HTMLElement) => {
+      let outerSvg = svgElement.outerHTML;
+
+      // 1. Force background and clean outline colors on gradient stops
+      outerSvg = outerSvg
+        .replaceAll('stop-color="#1e293b"', 'stop-color="#f1f5f9"')
+        .replaceAll('stopColor="#1e293b"', 'stopColor="#f1f5f9"')
+        .replaceAll('stop-color="#2e3d52"', 'stop-color="#f1f5f9"')
+        .replaceAll('stopColor="#2e3d52"', 'stopColor="#f1f5f9"')
+        .replaceAll('stop-color="#0f172a"', 'stop-color="#cbd5e1"')
+        .replaceAll('stopColor="#0f172a"', 'stopColor="#cbd5e1"')
+        .replaceAll('stop-color="#111827"', 'stop-color="#cbd5e1"')
+        .replaceAll('stopColor="#111827"', 'stopColor="#cbd5e1"')
+        .replaceAll('stop-color="#334155"', 'stop-color="#cbd5e1"')
+        .replaceAll('stopColor="#334155"', 'stopColor="#cbd5e1"')
+        .replaceAll('stop-color="#3d4e66"', 'stop-color="#cbd5e1"')
+        .replaceAll('stopColor="#3d4e66"', 'stopColor="#cbd5e1"');
+
+      // 2. Adjust paths fill/stroke colors for paper print
+      outerSvg = outerSvg
+        .replaceAll('fill="#1e293b"', 'fill="#f8fafc"')
+        .replaceAll('fill="#451a03"', 'fill="#fef3c7"')
+        .replaceAll('fill="#500730"', 'fill="#fce7f3"')
+        .replaceAll('fill="#7f1d1d"', 'fill="#fee2e2"')
+        .replaceAll('stroke="#ef4444"', 'stroke="#dc2626"')
+        .replaceAll('stroke="#ec4899"', 'stroke="#db2777"')
+        .replaceAll('stroke="#f59e0b"', 'stroke="#d97706"')
+        .replaceAll('stroke="#334155"', 'stroke="#475569"')
+        .replaceAll('stroke="#475569"', 'stroke="#64748b"');
+
+      // 3. Adjust text colors
+      outerSvg = outerSvg
+        .replaceAll('fill="#64748b"', 'fill="#475569"')
+        .replaceAll('fill="#475569"', 'fill="#1e293b"');
+
+      // 4. Adjust custom guides/circles in background
+      outerSvg = outerSvg
+        .replaceAll('stroke="#1e293b"', 'stroke="#e2e8f0"');
+
+      return outerSvg;
+    };
+
+    const svgLateral = document.getElementById("elbow-anatomy-svg-lateral");
+    const svgMedial = document.getElementById("elbow-anatomy-svg-medial");
+
+    let processedLateral = "";
+    let processedMedial = "";
+
+    if (svgLateral) {
+      processedLateral = preprocessSvgForPrint(svgLateral);
+    }
+    if (svgMedial) {
+      processedMedial = preprocessSvgForPrint(svgMedial);
+    }
+
+    const translateElbowStateForPrint = (id: string, s: string) => {
+      if (!s || s === "no_descrito") return "No descrito";
+      if (s === "normal") return "Sin lesiones";
+      if (s === "tendinosis") return "Tendinosis";
+      if (s === "epicondilitis") return "Epicondilitis";
+      if (s === "epitrocleitis") return "Epitrocleitis";
+      if (s === "derrame_leve") return "Derrame L.";
+      if (s === "derrame_moderado") return "Derrame Mod.";
+      if (s === "esguince_leve") return "Esguince L.";
+      if (s === "esguince_moderado") return "Esguince M.";
+      if (s === "neuritis") return "Neuritis";
+      if (s === "subluxacion") return "Subluxación";
+      return s;
+    };
+
+    const getPrintSimplifiedElbowDescription = (id: string, state: string) => {
+      if (!state || state === "no_descrito") {
+        return "No descrito en el reporte.";
+      }
+      if (state === "normal") {
+        return "Patrón fibrilar y espesor conservado.";
+      }
+
+      switch (id) {
+        case "common_extensor":
+          if (state === "tendinosis") return "Tendinosis del extensor común con discreto engrosamiento.";
+          if (state === "epicondilitis") return "Epicondilitis lateral con alteración fibrilar franca.";
+          break;
+        case "radial_collateral":
+          if (state === "esguince_leve") return "Esguince leve con engrosamiento y edema periligamentoso.";
+          if (state === "esguince_moderado") return "Esguince moderado con microrruptura de fibras.";
+          break;
+        case "humeroradial_joint":
+          if (state === "derrame_leve") return "Mínimo incremento de líquido intraarticular.";
+          if (state === "derrame_moderado") return "Derrame articular moderado en recesos.";
+          break;
+        case "common_flexor":
+          if (state === "tendinosis") return "Cambios de tendinosis focal del flexor común.";
+          if (state === "epitrocleitis") return "Epitrocleitis medial con marcado engrosamiento de inserción.";
+          break;
+        case "ulnar_collateral":
+          if (state === "esguince_leve") return "Grosor discretamente aumentado de fibras profundas.";
+          if (state === "esguince_moderado") return "Ruptura intraligamentosa parcial del fascículo anterior.";
+          break;
+        case "ulnar_nerve":
+          if (state === "neuritis") return "Hipertrofia e hipoecogenicidad del nervio cubital compatible con neuritis.";
+          if (state === "subluxacion") return "Subluxación dinámica del nervio sobre el epicóndilo medial.";
+          break;
+      }
+      return "Sin hallazgos significativos.";
+    };
+
+    return (
+      <div className="mt-8 page-break-inside-avoid print-section-container text-black">
+        <hr className="my-6 border-t border-gray-300" />
+        <div className="text-center mb-4">
+          <h3 className="text-xs font-black uppercase tracking-wider text-gray-800">
+            Anexo: Esquema de Hallazgos y Sinopsis de Codo
+          </h3>
+          <p className="text-[7.5px] text-gray-400 font-semibold tracking-wider uppercase mt-1 leading-none">
+            Anatomía Ecográfica e Integración Sinóptica de Cara Lateral y Medial
+          </p>
+        </div>
+
+        <div className="flex flex-row gap-4">
+          {/* Left Element: SVGs */}
+          <div className="w-[200px] border border-gray-200 p-2 rounded-xl bg-white flex flex-col justify-center items-center gap-2">
+            <div className="flex flex-row gap-1 w-full justify-around">
+              {processedLateral ? (
+                <div className="flex flex-col items-center flex-1">
+                  <span className="text-[7.5px] uppercase font-bold text-indigo-600 mb-1 font-mono tracking-wider">Cara Lateral</span>
+                  <div 
+                    className="w-full max-w-[90px] font-sans text-center"
+                    dangerouslySetInnerHTML={{ __html: processedLateral }} 
+                  />
+                </div>
+              ) : null}
+              {processedMedial ? (
+                <div className="flex flex-col items-center flex-1">
+                  <span className="text-[7.5px] uppercase font-bold text-pink-600 mb-1 font-mono tracking-wider">Cara Medial</span>
+                  <div 
+                    className="w-full max-w-[90px] font-sans text-center"
+                    dangerouslySetInnerHTML={{ __html: processedMedial }} 
+                  />
+                </div>
+              ) : null}
+            </div>
+            <div className="text-[7px] text-gray-400 font-semibold tracking-wider uppercase mt-1">Esquema Anatómico del Codo</div>
+          </div>
+
+          {/* Right Element: Findings list */}
+          <div className="flex-1 bg-slate-50 border border-gray-200 p-3 rounded-xl flex flex-col justify-between">
+            <div>
+              <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5 mb-2">
+                <span className="text-[9.5px] font-bold text-indigo-700 font-sans uppercase tracking-widest block">
+                  📍 Mapa de Hallazgos Clínicos (Codo)
+                </span>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+                {[
+                  { id: "common_extensor", label: "T. Extensor Común" },
+                  { id: "radial_collateral", label: "Lig. Colateral Rad." },
+                  { id: "humeroradial_joint", label: "Art. Humerorradial" },
+                  { id: "common_flexor", label: "T. Flexor Común" },
+                  { id: "ulnar_collateral", label: "Lig. Colateral Cub." },
+                  { id: "ulnar_nerve", label: "Nervio Cubital" }
+                ].filter(struct => elbowStates[struct.id] !== "no_descrito").map((struct) => {
+                  const s = elbowStates[struct.id] || "no_descrito";
+                  
+                  let dotColor = "bg-gray-400";
+                  let isNoDescrito = s === "no_descrito";
+                  
+                  if (s === "normal") {
+                    dotColor = "bg-emerald-600";
+                  } else if (s === "tendinosis" || s === "esguince_leve" || s === "derrame_leve") {
+                    dotColor = "bg-amber-500";
+                  } else if (s === "epicondilitis" || s === "epitrocleitis" || s === "esguince_moderado" || s === "derrame_moderado" || s === "neuritis" || s === "subluxacion") {
+                    dotColor = "bg-rose-600";
+                  }
+
+                  const description = elbowDescriptions[struct.id] || getPrintSimplifiedElbowDescription(struct.id, s);
+
+                  return (
+                    <div key={struct.id} className="text-left py-1 px-1.5 bg-white border border-gray-150 rounded-lg">
+                      <div className="flex items-center justify-between gap-1 leading-none">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${dotColor}`}></span>
+                          <span className="text-[8.5px] font-bold uppercase tracking-wide text-gray-800 truncate">
+                            {struct.label}
+                          </span>
+                        </div>
+                        <span className="text-[7px] font-semibold uppercase text-gray-400 max-w-[50px] truncate shrink-0">
+                          {translateElbowStateForPrint(struct.id, s)}
+                        </span>
+                      </div>
+                      <p className="text-[7.5px] text-gray-500 mt-0.5 leading-snug line-clamp-2">
+                        {isNoDescrito ? "No descrito / omitido" : description}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            
+            <div className="text-[7.5px] uppercase text-gray-400 text-center mt-3 pt-2 border-t border-gray-150 leading-relaxed font-sans font-medium">
+              Diagrama interactivo de codo y lista anexa correspondientes a la evaluación integrada descrita en el reporte de ultrasonido.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+
+
+  const renderPrintScrotumSchema = () => {
+    if (!includeScrotumSchemaInReport || specificStudy !== "Escroto") return null;
+
+    const preprocessSvgForPrint = (svgElement: HTMLElement) => {
+      let outerSvg = svgElement.outerHTML;
+
+      outerSvg = outerSvg
+        .replaceAll('fill="#1e293b"', 'fill="#f8fafc"')
+        .replaceAll('fill="rgba(16, 185, 129, 0.22)"', 'fill="#d1fae5"')
+        .replaceAll('fill="rgba(245, 158, 11, 0.28)"', 'fill="#fef3c7"')
+        .replaceAll('fill="rgba(244, 63, 94, 0.35)"', 'fill="#ffe4e6"')
+        .replaceAll('stroke="#10b981"', 'stroke="#047857"')
+        .replaceAll('stroke="#f59e0b"', 'stroke="#b45309"')
+        .replaceAll('stroke="#f43f5e"', 'stroke="#be123c"')
+        .replaceAll('stroke="#475569"', 'stroke="#94a3b8"')
+        .replaceAll('stroke="#64748b"', 'stroke="#475569"');
+
+      // Adjust text colors
+      outerSvg = outerSvg
+        .replaceAll('fill="#cbd5e1"', 'fill="#1e293b"')
+        .replaceAll('fill="#a1a1aa"', 'fill="#475569"')
+        .replaceAll('fill="#64748b"', 'fill="#334155"');
+
+      return outerSvg;
+    };
+
+    const svgScrotum = document.getElementById("scrotum-anatomy-svg");
+    let processedScrotum = "";
+
+    if (svgScrotum) {
+      processedScrotum = preprocessSvgForPrint(svgScrotum);
+    }
+
+    const testKeys = [
+      { id: "testiculo_derecho", label: "Testículo D." },
+      { id: "testiculo_izquierdo", label: "Testículo I." },
+      { id: "epididimo_derecho", label: "Epidídimo D." },
+      { id: "epididimo_izquierdo", label: "Epidídimo I." },
+      { id: "hemiescroto_derecho", label: "Hemiescroto D." },
+      { id: "hemiescroto_izquierdo", label: "Hemiescroto I." }
+    ];
+
+    const activePrintKeys = testKeys.filter(struct => scrotumStates[struct.id] !== "no_descrito");
+
+    const getPrintDescription = (id: string) => {
+      const s = scrotumStates[id] || "no_descrito";
+      if (scrotumDescriptions && scrotumDescriptions[id]) {
+        return scrotumDescriptions[id];
+      }
+      if (s === "normal") {
+        return "Dentro de límites normales.";
+      }
+      return "Estudio focal.";
+    };
+
+    return (
+      <div className="mt-8 page-break-inside-avoid print-section-container text-black">
+        <hr className="my-6 border-t border-gray-300" />
+        <div className="text-center mb-4">
+          <h3 className="text-xs font-black uppercase tracking-wider text-gray-800">
+            Anexo: Esquema de Hallazgos y Sinopsis de Escroto
+          </h3>
+          <p className="text-[7.5px] text-gray-400 font-semibold tracking-wider uppercase mt-1 leading-none">
+            Anatomía Ecográfica e Integración Sinóptica Escrotal y Testicular
+          </p>
+        </div>
+
+        <div className="flex flex-row gap-4">
+          {/* Left Element: SVG */}
+          <div className="w-[180px] border border-gray-205 p-2 rounded-xl bg-white flex flex-col justify-center items-center gap-2 shrink-0">
+            {processedScrotum ? (
+              <div 
+                className="w-full max-w-[150px] font-sans text-center"
+                dangerouslySetInnerHTML={{ __html: processedScrotum }} 
+              />
+            ) : null}
+            <div className="text-[7px] text-gray-400 font-semibold tracking-wider uppercase mt-1">Esquema Escrotal Bilateral</div>
+          </div>
+
+          {/* Right Element: Findings list */}
+          <div className="flex-1 bg-slate-50 border border-gray-200 p-3 rounded-xl flex flex-col justify-between">
+            <div>
+              <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5 mb-2">
+                <span className="text-[9.5px] font-bold text-indigo-700 font-sans uppercase tracking-widest block">
+                  📍 Mapa de Hallazgos Clínicos (Escroto)
+                </span>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+                {activePrintKeys.map((struct) => {
+                  const s = scrotumStates[struct.id] || "no_descrito";
+                  const desc = getPrintDescription(struct.id);
+                  const isNormal = s === "normal";
+                  
+                  return (
+                    <div key={struct.id} className="text-left py-1 text-[7.5px] bg-white border border-gray-150 rounded-lg p-1.5">
+                      <div className="font-bold text-gray-800 uppercase tracking-wide flex items-center justify-between gap-1 leading-none">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className={`w-1.5 h-1.5 rounded-full inline-block shrink-0 ${isNormal ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                          <span className="truncate">{struct.label}</span>
+                        </div>
+                        <span className="text-[6.5px] text-gray-400 uppercase truncate shrink-0">{s === "normal" ? "Normal" : s}</span>
+                      </div>
+                      <div className="text-gray-500 mt-0.5 leading-normal italic font-medium">{desc}</div>
+                    </div>
+                  );
+                })}
+                {activePrintKeys.length === 0 ? (
+                  <div className="text-[7.5px] text-gray-400 italic col-span-2">Sin estructuras ecográficas descritas en el anexo de examen.</div>
+                ) : null}
+              </div>
+            </div>
+            
+            <div className="text-[6.5px] text-gray-400 font-semibold tracking-wider uppercase text-right mt-1.5 border-t border-gray-150 pt-1">
+              * Datos calculados en base a síntesis clínica del reporte actual.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+
+
+  const renderPrintWristSchema = () => {
+    if (!includeWristSchemaInReport || specificStudy !== "Muñeca") return null;
+
+    const preprocessSvgForPrint = (svgElement: HTMLElement) => {
+      let outerSvg = svgElement.outerHTML;
+
+      outerSvg = outerSvg
+        .replaceAll('fill="#0b0f19"', 'fill="#f8fafc"')
+        .replaceAll('fill="#1e293b"', 'fill="#f8fafc"')
+        .replaceAll('fill="rgba(16, 185, 129, 0.22)"', 'fill="#d1fae5"')
+        .replaceAll('fill="rgba(245, 158, 11, 0.28)"', 'fill="#fef3c7"')
+        .replaceAll('fill="rgba(244, 63, 94, 0.35)"', 'fill="#ffe4e6"')
+        .replaceAll('stroke="#10b981"', 'stroke="#047857"')
+        .replaceAll('stroke="#f59e0b"', 'stroke="#b45309"')
+        .replaceAll('stroke="#f43f5e"', 'stroke="#be123c"')
+        .replaceAll('stroke="#334155"', 'stroke="#94a3b8"')
+        .replaceAll('stroke="#475569"', 'stroke="#94a3b8"')
+        .replaceAll('stroke="#64748b"', 'stroke="#475569"');
+
+      // Adjust text colors
+      outerSvg = outerSvg
+        .replaceAll('fill="#cbd5e1"', 'fill="#1e293b"')
+        .replaceAll('fill="#a1a1aa"', 'fill="#475569"')
+        .replaceAll('fill="#64748b"', 'fill="#334155"');
+
+      return outerSvg;
+    };
+
+    const svgAnterior = document.getElementById("wrist-anatomy-anterior-svg");
+    const svgPosterior = document.getElementById("wrist-anatomy-posterior-svg");
+    let processedAnterior = "";
+    let processedPosterior = "";
+
+    if (svgAnterior) {
+      processedAnterior = preprocessSvgForPrint(svgAnterior);
+    }
+    if (svgPosterior) {
+      processedPosterior = preprocessSvgForPrint(svgPosterior);
+    }
+
+    const testKeys = [
+      { id: "nervio_mediano", label: "Nervio Mediano" },
+      { id: "tendones_flexores", label: "Tendones Flexores" },
+      { id: "flexor_carpi_radialis", label: "FCR" },
+      { id: "arteria_radial", label: "Arteria Radial" },
+      { id: "receso_radiocarpiano_anterior", label: "Receso Volar" },
+      { id: "canal_de_guyon", label: "Canal de Guyon" },
+      { id: "receso_radiocarpiano_posterior", label: "Receso Dorsal" },
+      { id: "articulacion_radiocubital_distal", label: "ARCD" },
+      { id: "tendones_extensores_compartimentos", label: "Extensores" },
+      { id: "fibrocartilago_triangular", label: "Fibrocartílago" },
+      { id: "extensor_carpi_ulnaris", label: "ECU" }
+    ];
+
+    const activePrintKeys = testKeys.filter(struct => wristStates[struct.id] && wristStates[struct.id] !== "no_descrito");
+
+    const getPrintDescription = (id: string) => {
+      const s = wristStates[id] || "no_descrito";
+      if (wristDescriptions && wristDescriptions[id]) {
+        return wristDescriptions[id];
+      }
+      if (s === "normal") {
+        return "Dentro de límites normales.";
+      }
+      return "Estudio focal de muñeca.";
+    };
+
+    return (
+      <div className="mt-8 page-break-inside-avoid print-section-container text-black">
+        <hr className="my-6 border-t border-gray-300" />
+        <div className="text-center mb-4">
+          <h3 className="text-xs font-black uppercase tracking-wider text-gray-800">
+            Anexo: Esquema de Hallazgos y Sinopsis de Muñeca
+          </h3>
+          <p className="text-[7.5px] text-gray-400 font-semibold tracking-wider uppercase mt-1 leading-none">
+            Mapeo Bilateral Volar & Dorsal e Integración de Muñeca
+          </p>
+        </div>
+
+        <div className="flex flex-row gap-4">
+          {/* Left Element: SVGs */}
+          <div className="w-[220px] border border-gray-205 p-2 rounded-xl bg-white flex flex-row justify-center items-center gap-2 shrink-0">
+            {processedAnterior ? (
+              <div className="flex-1 flex flex-col items-center">
+                <div 
+                  className="w-full max-w-[95px] font-sans text-center"
+                  dangerouslySetInnerHTML={{ __html: processedAnterior }} 
+                />
+                <div className="text-[5.5px] text-gray-400 font-bold uppercase mt-1">Volar</div>
+              </div>
+            ) : null}
+            {processedPosterior ? (
+              <div className="flex-1 flex flex-col items-center">
+                <div 
+                  className="w-full max-w-[95px] font-sans text-center"
+                  dangerouslySetInnerHTML={{ __html: processedPosterior }} 
+                />
+                <div className="text-[5.5px] text-gray-400 font-bold uppercase mt-1">Dorsal</div>
+              </div>
+            ) : null}
+          </div>
+
+          {/* Right Element: Findings list */}
+          <div className="flex-1 bg-slate-50 border border-gray-200 p-3 rounded-xl flex flex-col justify-between">
+            <div>
+              <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5 mb-2">
+                <span className="text-[9.5px] font-bold text-indigo-700 font-sans uppercase tracking-widest block">
+                  📍 Mapa de Hallazgos Clínicos (Muñeca)
+                </span>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+                {activePrintKeys.map((struct) => {
+                  const s = wristStates[struct.id] || "no_descrito";
+                  const desc = getPrintDescription(struct.id);
+                  const isNormal = s === "normal";
+                  
+                  return (
+                    <div key={struct.id} className="text-left py-1 text-[7.5px] bg-white border border-gray-150 rounded-lg p-1.5">
+                      <div className="font-bold text-gray-800 uppercase tracking-wide flex items-center justify-between gap-1 leading-none">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className={`w-1.5 h-1.5 rounded-full inline-block shrink-0 ${isNormal ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                          <span className="truncate">{struct.label}</span>
+                        </div>
+                        <span className="text-[6.5px] text-gray-400 uppercase truncate shrink-0">{s === "normal" ? "Normal" : s}</span>
+                      </div>
+                      <div className="text-gray-500 mt-0.5 leading-normal italic font-medium">{desc}</div>
+                    </div>
+                  );
+                })}
+                {activePrintKeys.length === 0 ? (
+                  <div className="text-[7.5px] text-gray-400 italic col-span-2">Sin estructuras ecográficas de muñeca descritas.</div>
+                ) : null}
+              </div>
+            </div>
+            
+            <div className="text-[6.5px] text-gray-400 font-semibold tracking-wider uppercase text-right mt-1.5 border-t border-gray-150 pt-1">
+              * Mapeo de muñeca correlacionado a demanda.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+
+
   const renderPrintReportBody = (reportText: string) => {
     if (!reportText) return null;
 
@@ -6640,6 +10970,22 @@ Ejemplo:
 
         {/* Printable vascular schematic map attachment */}
         {renderPrintVascularSchema()}
+
+        {/* Printable shoulder schematic map attachment */}
+        {renderPrintShoulderSchema()}
+
+        {/* Printable knee schematic map attachment */}
+        {renderPrintKneeSchema()}
+
+        {/* Printable ankle schematic map attachment */}
+        {renderPrintAnkleSchema()}
+
+        {/* Printable thigh schematic map attachment */}
+        {renderPrintThighSchema()}
+        {renderPrintThighPosteriorSchema()}
+        {renderPrintElbowSchema()}
+        {renderPrintScrotumSchema()}
+        {renderPrintWristSchema()}
       </div>
     );
   };
@@ -7653,10 +11999,13 @@ Ejemplo:
                             <option value="Rodilla">Rodilla</option>
                             <option value="Hombro">Hombro</option>
                             <option value="Tobillo">Tobillo</option>
+                            <option value="Muslo Anterior">Muslo Anterior</option>
+                            <option value="Muslo Posterior">Muslo Posterior</option>
                             <option value="Muñeca">Muñeca</option>
                             <option value="Mano">Mano</option>
                             <option value="Pie">Pie</option>
                             <option value="Cadera">Cadera</option>
+                            <option value="Codo">Codo</option>
                             <option value="Doppler de carótidas">Doppler de carótidas</option>
                             <option value="Doppler venoso de miembro inferior">Doppler venoso de miembro inferior</option>
                             <option value="Doppler arterial de miembro inferior">Doppler arterial de miembro inferior</option>
@@ -7686,7 +12035,7 @@ Ejemplo:
                       )}
 
                       {/* 4. Lateralidad (conditional) */}
-                      {["Mamas", "Momografía", "Rodilla", "Hombro", "Tobillo", "Muñeca", "Mano", "Pie", "Cadera", "Codo", "Mamografía y Ultrasonido de Mamas", "Doppler venoso de miembro inferior", "Doppler arterial de miembro inferior", "Otro"].includes(specificStudy) || modality === "Mamografía y Ultrasonido de Mamas" ? (
+                      {["Mamas", "Momografía", "Rodilla", "Hombro", "Tobillo", "Muslo Anterior", "Muslo Posterior", "Muñeca", "Mano", "Pie", "Cadera", "Codo", "Mamografía y Ultrasonido de Mamas", "Doppler venoso de miembro inferior", "Doppler arterial de miembro inferior", "Otro"].includes(specificStudy) || modality === "Mamografía y Ultrasonido de Mamas" ? (
                         <div className="space-y-2 animate-fadeIn">
                           <label className="text-[10px] font-black text-slate-500 block uppercase tracking-widest">Lateralidad:</label>
                           <div className="grid grid-cols-4 gap-2">
@@ -9673,6 +14022,668 @@ Ejemplo:
                               />
                             </div>
                           )}
+
+                          {/* === SHOULDER ANATOMY VIEWER AND SYNOPIS HUD === */}
+                          {specificStudy === "Hombro" && (
+                            <div className="my-6 relative bg-slate-950/20 border border-slate-850/60 rounded-3xl p-4 transition-all duration-355">
+                              <ShoulderAnatomyViewer
+                                selectedModel={selectedModel}
+                                generatedReport={isEditingReportManual ? editedReportText : (generatedReport || "")}
+                                onChangeReport={(nextReport) => {
+                                  if (isEditingReportManual) {
+                                    setEditedReportText(nextReport);
+                                  } else {
+                                    setGeneratedReport(nextReport);
+                                    setEditedReportText(nextReport);
+                                  }
+                                }}
+                                onExportTable={(tableText) => {
+                                  const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
+                                  setReportHistory((prev) => [...prev, activeReport]);
+                                  const separator = "\n\n";
+                                  const title = "### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE HOMBRO\n";
+                                  
+                                  if (activeReport.includes("### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE HOMBRO")) {
+                                    const regex = /### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE HOMBRO[\s\S]+/g;
+                                    const cleanReportText = activeReport.replace(regex, "").trim();
+                                    const nextReport = cleanReportText + separator + title + tableText;
+                                    if (isEditingReportManual) {
+                                      setEditedReportText(nextReport);
+                                    } else {
+                                      setGeneratedReport(nextReport);
+                                      setEditedReportText(nextReport);
+                                    }
+                                  } else {
+                                    const nextReport = activeReport + separator + title + tableText;
+                                    if (isEditingReportManual) {
+                                      setEditedReportText(nextReport);
+                                    } else {
+                                      setGeneratedReport(nextReport);
+                                      setEditedReportText(nextReport);
+                                    }
+                                  }
+                                }}
+                                onExportNarrative={(narrativeText) => {
+                                  const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
+                                  setReportHistory((prev) => [...prev, activeReport]);
+                                  const separator = "\n\n";
+                                  const title = "### SINOPSIS DE LESIONES DE HOMBRO (RESUMEN ANATOMOPATOLÓGICO)\n";
+                                  
+                                  if (activeReport.includes("### SINOPSIS DE LESIONES DE HOMBRO (RESUMEN ANATOMOPATOLÓGICO)")) {
+                                    const regex = /### SINOPSIS DE LESIONES DE HOMBRO (RESUMEN ANATOMOPATOLÓGICO)[\s\S]+/g;
+                                    const cleanReportText = activeReport.replace(regex, "").trim();
+                                    const nextReport = cleanReportText + separator + title + narrativeText;
+                                    if (isEditingReportManual) {
+                                      setEditedReportText(nextReport);
+                                    } else {
+                                      setGeneratedReport(nextReport);
+                                      setEditedReportText(nextReport);
+                                    }
+                                  } else {
+                                    const nextReport = activeReport + separator + title + narrativeText;
+                                    if (isEditingReportManual) {
+                                      setEditedReportText(nextReport);
+                                    } else {
+                                      setGeneratedReport(nextReport);
+                                      setEditedReportText(nextReport);
+                                    }
+                                  }
+                                }}
+                                includeInReport={includeShoulderSchemaInReport}
+                                setIncludeInReport={setIncludeShoulderSchemaInReport}
+                                onChangeStates={(nextStates) => setShoulderStates(nextStates)}
+                                onChangeDescriptions={(nextDescriptions) => setShoulderDescriptions(nextDescriptions)}
+                              />
+                            </div>
+                          )}
+
+                          {/* === KNEE ANATOMY VIEWER AND SYNOPSIS HUD === */}
+                          {specificStudy === "Rodilla" && (
+                            <div className="my-6 relative bg-slate-950/20 border border-slate-850/60 rounded-3xl p-4 transition-all duration-355">
+                              <KneeAnatomyViewer
+                                selectedModel={selectedModel}
+                                generatedReport={isEditingReportManual ? editedReportText : (generatedReport || "")}
+                                onChangeReport={(nextReport) => {
+                                  if (isEditingReportManual) {
+                                    setEditedReportText(nextReport);
+                                  } else {
+                                    setGeneratedReport(nextReport);
+                                    setEditedReportText(nextReport);
+                                  }
+                                }}
+                                onExportTable={(tableText) => {
+                                  const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
+                                  setReportHistory((prev) => [...prev, activeReport]);
+                                  const separator = "\n\n";
+                                  const title = "### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE RODILLA\n";
+                                  
+                                  if (activeReport.includes("### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE RODILLA")) {
+                                    const regex = /### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE RODILLA[\s\S]+/g;
+                                    const cleanReportText = activeReport.replace(regex, "").trim();
+                                    const nextReport = cleanReportText + separator + title + tableText;
+                                    if (isEditingReportManual) {
+                                      setEditedReportText(nextReport);
+                                    } else {
+                                      setGeneratedReport(nextReport);
+                                      setEditedReportText(nextReport);
+                                    }
+                                  } else {
+                                    const nextReport = activeReport + separator + title + tableText;
+                                    if (isEditingReportManual) {
+                                      setEditedReportText(nextReport);
+                                    } else {
+                                      setGeneratedReport(nextReport);
+                                      setEditedReportText(nextReport);
+                                    }
+                                  }
+                                }}
+                                onExportNarrative={(narrativeText) => {
+                                  const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
+                                  setReportHistory((prev) => [...prev, activeReport]);
+                                  const separator = "\n\n";
+                                  const title = "### SINOPSIS DE LESIONES DE RODILLA (RESUMEN ANATOMOPATOLÓGICO)\n";
+                                  
+                                  if (activeReport.includes("### SINOPSIS DE LESIONES DE RODILLA (RESUMEN ANATOMOPATOLÓGICO)")) {
+                                    const regex = /### SINOPSIS DE LESIONES DE RODILLA (RESUMEN ANATOMOPATOLÓGICO)[\s\S]+/g;
+                                    const cleanReportText = activeReport.replace(regex, "").trim();
+                                    const nextReport = cleanReportText + separator + title + narrativeText;
+                                    if (isEditingReportManual) {
+                                      setEditedReportText(nextReport);
+                                    } else {
+                                      setGeneratedReport(nextReport);
+                                      setEditedReportText(nextReport);
+                                    }
+                                  } else {
+                                    const nextReport = activeReport + separator + title + narrativeText;
+                                    if (isEditingReportManual) {
+                                      setEditedReportText(nextReport);
+                                    } else {
+                                      setGeneratedReport(nextReport);
+                                      setEditedReportText(nextReport);
+                                    }
+                                  }
+                                }}
+                                includeInReport={includeKneeSchemaInReport}
+                                setIncludeInReport={setIncludeKneeSchemaInReport}
+                                onChangeStates={(nextStates) => setKneeStates(nextStates)}
+                                onChangeDescriptions={(nextDescriptions) => setKneeDescriptions(nextDescriptions)}
+                              />
+                            </div>
+                          )}
+
+                          {/* === ANKLE ANATOMY VIEWER AND SYNOPSIS HUD === */}
+                          {specificStudy === "Tobillo" && (
+                            <div className="my-6 relative bg-slate-950/20 border border-slate-850/60 rounded-3xl p-4 transition-all duration-355">
+                              <AnkleAnatomyViewer
+                                selectedModel={selectedModel}
+                                generatedReport={isEditingReportManual ? editedReportText : (generatedReport || "")}
+                                onChangeReport={(nextReport) => {
+                                  if (isEditingReportManual) {
+                                    setEditedReportText(nextReport);
+                                  } else {
+                                    setGeneratedReport(nextReport);
+                                    setEditedReportText(nextReport);
+                                  }
+                                }}
+                                onExportTable={(tableText) => {
+                                  const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
+                                  setReportHistory((prev) => [...prev, activeReport]);
+                                  const separator = "\n\n";
+                                  const title = "### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE TOBILLO\n";
+                                  
+                                  if (activeReport.includes("### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE TOBILLO")) {
+                                    const regex = /### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE TOBILLO[\s\S]+/g;
+                                    const cleanReportText = activeReport.replace(regex, "").trim();
+                                    const nextReport = cleanReportText + separator + title + tableText;
+                                    if (isEditingReportManual) {
+                                      setEditedReportText(nextReport);
+                                    } else {
+                                      setGeneratedReport(nextReport);
+                                      setEditedReportText(nextReport);
+                                    }
+                                  } else {
+                                    const nextReport = activeReport + separator + title + tableText;
+                                    if (isEditingReportManual) {
+                                      setEditedReportText(nextReport);
+                                    } else {
+                                      setGeneratedReport(nextReport);
+                                      setEditedReportText(nextReport);
+                                    }
+                                  }
+                                }}
+                                onExportNarrative={(narrativeText) => {
+                                  const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
+                                  setReportHistory((prev) => [...prev, activeReport]);
+                                  const separator = "\n\n";
+                                  const title = "### SINOPSIS DE LESIONES DE TOBILLO (RESUMEN ANATOMOPATOLÓGICO)\n";
+                                  
+                                  if (activeReport.includes("### SINOPSIS DE LESIONES DE TOBILLO (RESUMEN ANATOMOPATOLÓGICO)")) {
+                                    const regex = /### SINOPSIS DE LESIONES DE TOBILLO (RESUMEN ANATOMOPATOLÓGICO)[\s\S]+/g;
+                                    const cleanReportText = activeReport.replace(regex, "").trim();
+                                    const nextReport = cleanReportText + separator + title + narrativeText;
+                                    if (isEditingReportManual) {
+                                      setEditedReportText(nextReport);
+                                    } else {
+                                      setGeneratedReport(nextReport);
+                                      setEditedReportText(nextReport);
+                                    }
+                                  } else {
+                                    const nextReport = activeReport + separator + title + narrativeText;
+                                    if (isEditingReportManual) {
+                                      setEditedReportText(nextReport);
+                                    } else {
+                                      setGeneratedReport(nextReport);
+                                      setEditedReportText(nextReport);
+                                    }
+                                  }
+                                }}
+                                includeInReport={includeAnkleSchemaInReport}
+                                setIncludeInReport={setIncludeAnkleSchemaInReport}
+                                onChangeStates={(nextStates) => setAnkleStates(nextStates)}
+                                onChangeDescriptions={(nextDescriptions) => setAnkleDescriptions(nextDescriptions)}
+                              />
+                            </div>
+                          )}
+
+                          {/* === THIGH ANATOMY VIEWER AND SYNOPSIS HUD === */}
+                          {specificStudy === "Muslo Anterior" && (
+                            <div className="my-6 relative bg-slate-950/20 border border-slate-850/60 rounded-3xl p-4 transition-all duration-355">
+                              <ThighAnatomyViewer
+                                selectedModel={selectedModel}
+                                generatedReport={isEditingReportManual ? editedReportText : (generatedReport || "")}
+                                onChangeReport={(nextReport) => {
+                                  if (isEditingReportManual) {
+                                    setEditedReportText(nextReport);
+                                  } else {
+                                    setGeneratedReport(nextReport);
+                                    setEditedReportText(nextReport);
+                                  }
+                                }}
+                                onExportTable={(tableText) => {
+                                  const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
+                                  setReportHistory((prev) => [...prev, activeReport]);
+                                  const separator = "\n\n";
+                                  const title = "### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE MUSLO ANTERIOR\n";
+                                  
+                                  if (activeReport.includes("### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE MUSLO ANTERIOR")) {
+                                    const regex = /### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE MUSLO ANTERIOR[\s\S]+/g;
+                                    const cleanReportText = activeReport.replace(regex, "").trim();
+                                    const nextReport = cleanReportText + separator + title + tableText;
+                                    if (isEditingReportManual) {
+                                      setEditedReportText(nextReport);
+                                    } else {
+                                      setGeneratedReport(nextReport);
+                                      setEditedReportText(nextReport);
+                                    }
+                                  } else {
+                                    const nextReport = activeReport + separator + title + tableText;
+                                    if (isEditingReportManual) {
+                                      setEditedReportText(nextReport);
+                                    } else {
+                                      setGeneratedReport(nextReport);
+                                      setEditedReportText(nextReport);
+                                    }
+                                  }
+                                }}
+                                onExportNarrative={(narrativeText) => {
+                                  const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
+                                  setReportHistory((prev) => [...prev, activeReport]);
+                                  const separator = "\n\n";
+                                  const title = "### SINOPSIS DE LESIONES DE MUSLO ANTERIOR (RESUMEN ANATOMOPATOLÓGICO)\n";
+                                  
+                                  if (activeReport.includes("### SINOPSIS DE LESIONES DE MUSLO ANTERIOR (RESUMEN ANATOMOPATOLÓGICO)")) {
+                                    const regex = /### SINOPSIS DE LESIONES DE MUSLO ANTERIOR (RESUMEN ANATOMOPATOLÓGICO)[\s\S]+/g;
+                                    const cleanReportText = activeReport.replace(regex, "").trim();
+                                    const nextReport = cleanReportText + separator + title + narrativeText;
+                                    if (isEditingReportManual) {
+                                      setEditedReportText(nextReport);
+                                    } else {
+                                      setGeneratedReport(nextReport);
+                                      setEditedReportText(nextReport);
+                                    }
+                                  } else {
+                                    const nextReport = activeReport + separator + title + narrativeText;
+                                    if (isEditingReportManual) {
+                                      setEditedReportText(nextReport);
+                                    } else {
+                                      setGeneratedReport(nextReport);
+                                      setEditedReportText(nextReport);
+                                    }
+                                  }
+                                }}
+                                includeInReport={includeThighSchemaInReport}
+                                setIncludeInReport={setIncludeThighSchemaInReport}
+                                onChangeStates={(nextStates) => setThighStates(nextStates)}
+                                onChangeDescriptions={(nextDescriptions) => setThighDescriptions(nextDescriptions)}
+                              />
+                            </div>
+                          )}
+
+                          {/* === THIGH POSTERIOR ANATOMY VIEWER AND SYNOPSIS HUD === */}
+                          {specificStudy === "Muslo Posterior" && (
+                            <div className="my-6 relative bg-slate-950/20 border border-slate-850/60 rounded-3xl p-4 transition-all duration-355">
+                              <ThighPosteriorAnatomyViewer
+                                selectedModel={selectedModel}
+                                generatedReport={isEditingReportManual ? editedReportText : (generatedReport || "")}
+                                onChangeReport={(nextReport) => {
+                                  if (isEditingReportManual) {
+                                    setEditedReportText(nextReport);
+                                  } else {
+                                    setGeneratedReport(nextReport);
+                                    setEditedReportText(nextReport);
+                                  }
+                                }}
+                                onExportTable={(tableText) => {
+                                  const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
+                                  setReportHistory((prev) => [...prev, activeReport]);
+                                  const separator = "\n\n";
+                                  const title = "### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE MUSLO POSTERIOR\n";
+                                  
+                                  if (activeReport.includes("### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE MUSLO POSTERIOR")) {
+                                    const regex = /### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE MUSLO POSTERIOR[\s\S]+/g;
+                                    const cleanReportText = activeReport.replace(regex, "").trim();
+                                    const nextReport = cleanReportText + separator + title + tableText;
+                                    if (isEditingReportManual) {
+                                      setEditedReportText(nextReport);
+                                    } else {
+                                      setGeneratedReport(nextReport);
+                                      setEditedReportText(nextReport);
+                                    }
+                                  } else {
+                                    const nextReport = activeReport + separator + title + tableText;
+                                    if (isEditingReportManual) {
+                                      setEditedReportText(nextReport);
+                                    } else {
+                                      setGeneratedReport(nextReport);
+                                      setEditedReportText(nextReport);
+                                    }
+                                  }
+                                }}
+                                onExportNarrative={(narrativeText) => {
+                                  const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
+                                  setReportHistory((prev) => [...prev, activeReport]);
+                                  const separator = "\n\n";
+                                  const title = "### SINOPSIS DE LESIONES DE MUSLO POSTERIOR (RESUMEN ANATOMOPATOLÓGICO)\n";
+                                  
+                                  if (activeReport.includes("### SINOPSIS DE LESIONES DE MUSLO POSTERIOR (RESUMEN ANATOMOPATOLÓGICO)")) {
+                                    const regex = /### SINOPSIS DE LESIONES DE MUSLO POSTERIOR (RESUMEN ANATOMOPATOLÓGICO)[\s\S]+/g;
+                                    const cleanReportText = activeReport.replace(regex, "").trim();
+                                    const nextReport = cleanReportText + separator + title + narrativeText;
+                                    if (isEditingReportManual) {
+                                      setEditedReportText(nextReport);
+                                    } else {
+                                      setGeneratedReport(nextReport);
+                                      setEditedReportText(nextReport);
+                                    }
+                                  } else {
+                                    const nextReport = activeReport + separator + title + narrativeText;
+                                    if (isEditingReportManual) {
+                                      setEditedReportText(nextReport);
+                                    } else {
+                                      setGeneratedReport(nextReport);
+                                      setEditedReportText(nextReport);
+                                    }
+                                  }
+                                }}
+                                includeInReport={includeThighPosteriorSchemaInReport}
+                                setIncludeInReport={setIncludeThighPosteriorSchemaInReport}
+                                onChangeStates={(nextStates) => setThighPosteriorStates(nextStates)}
+                                onChangeDescriptions={(nextDescriptions) => setThighPosteriorDescriptions(nextDescriptions)}
+                              />
+                            </div>
+                          )}
+
+                          {/* === NECK / THYROID US ANATOMY VIEWER AND SYNOPSIS HUD === */}
+                          {specificStudy === "Cuello" && (
+                            <div className="my-6 relative bg-slate-950/20 border border-slate-850/65 rounded-3xl p-4 transition-all duration-355">
+                              <NeckAnatomyViewer
+                                selectedModel={selectedModel}
+                                generatedReport={isEditingReportManual ? editedReportText : (generatedReport || "")}
+                                onChangeReport={(nextReport) => {
+                                  if (isEditingReportManual) {
+                                    setEditedReportText(nextReport);
+                                  } else {
+                                    setGeneratedReport(nextReport);
+                                    setEditedReportText(nextReport);
+                                  }
+                                }}
+                                onExportTable={(tableText) => {
+                                  const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
+                                  setReportHistory((prev) => [...prev, activeReport]);
+                                  const separator = "\n\n";
+                                  const title = "### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE CUELLO Y TIROIDES\n";
+                                  
+                                  if (activeReport.includes("### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE CUELLO Y TIROIDES")) {
+                                    const regex = /### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE CUELLO Y TIROIDES[\s\S]+/g;
+                                    const cleanReportText = activeReport.replace(regex, "").trim();
+                                    const nextReport = cleanReportText + separator + title + tableText;
+                                    if (isEditingReportManual) {
+                                      setEditedReportText(nextReport);
+                                    } else {
+                                      setGeneratedReport(nextReport);
+                                      setEditedReportText(nextReport);
+                                    }
+                                  } else {
+                                    const nextReport = activeReport + separator + title + tableText;
+                                    if (isEditingReportManual) {
+                                      setEditedReportText(nextReport);
+                                    } else {
+                                      setGeneratedReport(nextReport);
+                                      setEditedReportText(nextReport);
+                                    }
+                                  }
+                                }}
+                                includeInReport={includeNeckSchemaInReport}
+                                setIncludeInReport={setIncludeNeckSchemaInReport}
+                                onChangeStates={(nextStates) => setNeckStates(nextStates)}
+                                onChangeDescriptions={(nextDescriptions) => setNeckDescriptions(nextDescriptions)}
+                              />
+                            </div>
+                          )}
+
+                          {/* === VÍAS URINARIAS US ANATOMY VIEWER AND SYNOPSIS HUD === */}
+                          {specificStudy === "Vias urinarias" && (
+                            <div className="my-6 relative bg-slate-950/20 border border-slate-850/60 rounded-3xl p-4 transition-all duration-355">
+                              <UrinaryAnatomyViewer
+                                selectedModel={selectedModel}
+                                generatedReport={isEditingReportManual ? editedReportText : (generatedReport || "")}
+                                onChangeReport={(nextReport) => {
+                                  if (isEditingReportManual) {
+                                    setEditedReportText(nextReport);
+                                  } else {
+                                    setGeneratedReport(nextReport);
+                                    setEditedReportText(nextReport);
+                                  }
+                                }}
+                                onExportTable={(tableText) => {
+                                  const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
+                                  setReportHistory((prev) => [...prev, activeReport]);
+                                  const separator = "\n\n";
+                                  const title = "### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE VÍAS URINARIAS\n";
+                                  
+                                  if (activeReport.includes("### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE VÍAS URINARIAS")) {
+                                    const regex = /### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE VÍAS URINARIAS[\s\S]+/g;
+                                    const cleanReportText = activeReport.replace(regex, "").trim();
+                                    const nextReport = cleanReportText + separator + title + tableText;
+                                    if (isEditingReportManual) {
+                                      setEditedReportText(nextReport);
+                                    } else {
+                                      setGeneratedReport(nextReport);
+                                      setEditedReportText(nextReport);
+                                    }
+                                  } else {
+                                    const nextReport = activeReport + separator + title + tableText;
+                                    if (isEditingReportManual) {
+                                      setEditedReportText(nextReport);
+                                    } else {
+                                      setGeneratedReport(nextReport);
+                                      setEditedReportText(nextReport);
+                                    }
+                                  }
+                                }}
+                                includeInReport={includeUrinarySchemaInReport}
+                                setIncludeInReport={setIncludeUrinarySchemaInReport}
+                                onChangeStates={(nextStates) => setUrinaryStates(nextStates)}
+                                onChangeDescriptions={(nextDescriptions) => setUrinaryDescriptions(nextDescriptions)}
+                                genderMode={urinaryGenderMode}
+                                onChangeGenderMode={(nextGender) => setUrinaryGenderMode(nextGender)}
+                              />
+                            </div>
+                          )}
+
+                          {/* === CODO US ANATOMY VIEWER AND SYNOPSIS HUD === */}
+                          {specificStudy === "Codo" && (
+                            <div className="my-6 relative bg-slate-950/20 border border-slate-850/60 rounded-3xl p-4 transition-all duration-355">
+                              <ElbowAnatomyViewer
+                                selectedModel={selectedModel}
+                                generatedReport={isEditingReportManual ? editedReportText : (generatedReport || "")}
+                                onChangeReport={(nextReport) => {
+                                  if (isEditingReportManual) {
+                                    setEditedReportText(nextReport);
+                                  } else {
+                                    setGeneratedReport(nextReport);
+                                    setEditedReportText(nextReport);
+                                  }
+                                }}
+                                onExportTable={(tableText) => {
+                                  const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
+                                  setReportHistory((prev) => [...prev, activeReport]);
+                                  const separator = "\n\n";
+                                  const title = "### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE CODO\n";
+                                  
+                                  if (activeReport.includes("### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE CODO")) {
+                                    const regex = /### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE CODO[\s\S]+/g;
+                                    const cleanReportText = activeReport.replace(regex, "").trim();
+                                    const nextReport = cleanReportText + separator + title + tableText;
+                                    if (isEditingReportManual) {
+                                      setEditedReportText(nextReport);
+                                    } else {
+                                      setGeneratedReport(nextReport);
+                                      setEditedReportText(nextReport);
+                                    }
+                                  } else {
+                                    const nextReport = activeReport + separator + title + tableText;
+                                    if (isEditingReportManual) {
+                                      setEditedReportText(nextReport);
+                                    } else {
+                                      setGeneratedReport(nextReport);
+                                      setEditedReportText(nextReport);
+                                    }
+                                  }
+                                }}
+                                includeInReport={includeElbowSchemaInReport}
+                                setIncludeInReport={setIncludeElbowSchemaInReport}
+                                onChangeStates={(nextStates) => setElbowStates(nextStates)}
+                                onChangeDescriptions={(nextDescriptions) => setElbowDescriptions(nextDescriptions)}
+                              />
+                            </div>
+                          )}
+
+                          {/* === ABDOMEN US ANATOMY VIEWER AND SYNOPSIS HUD === */}
+                          {specificStudy === "Abdomen" && (
+                            <div className="my-6 relative bg-slate-950/20 border border-slate-850/60 rounded-3xl p-4 transition-all duration-355">
+                              <AbdomenAnatomyViewer
+                                selectedModel={selectedModel}
+                                generatedReport={isEditingReportManual ? editedReportText : (generatedReport || "")}
+                                onChangeReport={(nextReport) => {
+                                  if (isEditingReportManual) {
+                                    setEditedReportText(nextReport);
+                                  } else {
+                                    setGeneratedReport(nextReport);
+                                    setEditedReportText(nextReport);
+                                  }
+                                }}
+                                onExportTable={(tableText) => {
+                                  const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
+                                  setReportHistory((prev) => [...prev, activeReport]);
+                                  const separator = "\n\n";
+                                  const title = "### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE ABDOMEN\n";
+                                  
+                                  if (activeReport.includes("### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE ABDOMEN")) {
+                                    const regex = /### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE ABDOMEN[\s\S]+/g;
+                                    const cleanReportText = activeReport.replace(regex, "").trim();
+                                    const nextReport = cleanReportText + separator + title + tableText;
+                                    if (isEditingReportManual) {
+                                      setEditedReportText(nextReport);
+                                    } else {
+                                      setGeneratedReport(nextReport);
+                                      setEditedReportText(nextReport);
+                                    }
+                                  } else {
+                                    const nextReport = activeReport + separator + title + tableText;
+                                    if (isEditingReportManual) {
+                                      setEditedReportText(nextReport);
+                                    } else {
+                                      setGeneratedReport(nextReport);
+                                      setEditedReportText(nextReport);
+                                    }
+                                  }
+                                }}
+                                includeInReport={includeAbdomenSchemaInReport}
+                                setIncludeInReport={setIncludeAbdomenSchemaInReport}
+                                onChangeStates={(nextStates) => setAbdomenStates(nextStates)}
+                                onChangeDescriptions={(nextDescriptions) => setAbdomenDescriptions(nextDescriptions)}
+                              />
+                            </div>
+                          )}
+
+                          {/* === ESCROTO US ANATOMY VIEWER AND SYNOPSIS HUD === */}
+                          {specificStudy === "Escroto" && (
+                            <div className="my-6 relative bg-slate-950/20 border border-slate-850/60 rounded-3xl p-4 transition-all duration-355">
+                              <ScrotumAnatomyViewer
+                                selectedModel={selectedModel}
+                                generatedReport={isEditingReportManual ? editedReportText : (generatedReport || "")}
+                                onChangeReport={(nextReport) => {
+                                  if (isEditingReportManual) {
+                                    setEditedReportText(nextReport);
+                                  } else {
+                                    setGeneratedReport(nextReport);
+                                    setEditedReportText(nextReport);
+                                  }
+                                }}
+                                onExportTable={(tableText) => {
+                                  const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
+                                  setReportHistory((prev) => [...prev, activeReport]);
+                                  const separator = "\n\n";
+                                  const title = "### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE ESCROTO\n";
+                                  
+                                  if (activeReport.includes("### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE ESCROTO")) {
+                                    const regex = /### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE ESCROTO[\s\S]+/g;
+                                    const cleanReportText = activeReport.replace(regex, "").trim();
+                                    const nextReport = cleanReportText + separator + title + tableText;
+                                    if (isEditingReportManual) {
+                                      setEditedReportText(nextReport);
+                                    } else {
+                                      setGeneratedReport(nextReport);
+                                      setEditedReportText(nextReport);
+                                    }
+                                  } else {
+                                    const nextReport = activeReport + separator + title + tableText;
+                                    if (isEditingReportManual) {
+                                      setEditedReportText(nextReport);
+                                    } else {
+                                      setGeneratedReport(nextReport);
+                                      setEditedReportText(nextReport);
+                                    }
+                                  }
+                                }}
+                                includeInReport={includeScrotumSchemaInReport}
+                                setIncludeInReport={setIncludeScrotumSchemaInReport}
+                                onChangeStates={(nextStates) => setScrotumStates(nextStates)}
+                                onChangeDescriptions={(nextDescriptions) => setScrotumDescriptions(nextDescriptions)}
+                              />
+                            </div>
+                          )}
+
+                          {/* === WRIST US ANATOMY VIEWER AND SYNOPSIS HUD === */}
+                          {specificStudy === "Muñeca" && (
+                            <div className="my-6 relative bg-slate-950/20 border border-slate-850/60 rounded-3xl p-4 transition-all duration-355">
+                              <WristAnatomyViewer
+                                selectedModel={selectedModel}
+                                generatedReport={isEditingReportManual ? editedReportText : (generatedReport || "")}
+                                onChangeReport={(nextReport) => {
+                                  if (isEditingReportManual) {
+                                    setEditedReportText(nextReport);
+                                  } else {
+                                    setGeneratedReport(nextReport);
+                                    setEditedReportText(nextReport);
+                                  }
+                                }}
+                                onExportTable={(tableText) => {
+                                  const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
+                                  setReportHistory((prev) => [...prev, activeReport]);
+                                  const separator = "\n\n";
+                                  const title = "### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE MUÑECA\n";
+                                  
+                                  if (activeReport.includes("### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE MUÑECA")) {
+                                    const regex = /### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE MUÑECA[\s\S]+/g;
+                                    const cleanReportText = activeReport.replace(regex, "").trim();
+                                    const nextReport = cleanReportText + separator + title + tableText;
+                                    if (isEditingReportManual) {
+                                      setEditedReportText(nextReport);
+                                    } else {
+                                      setGeneratedReport(nextReport);
+                                      setEditedReportText(nextReport);
+                                    }
+                                  } else {
+                                    const nextReport = activeReport + separator + title + tableText;
+                                    if (isEditingReportManual) {
+                                      setEditedReportText(nextReport);
+                                    } else {
+                                      setGeneratedReport(nextReport);
+                                      setEditedReportText(nextReport);
+                                    }
+                                  }
+                                }}
+                                includeInReport={includeWristSchemaInReport}
+                                setIncludeInReport={setIncludeWristSchemaInReport}
+                                onChangeStates={(nextStates) => setWristStates(nextStates)}
+                                onChangeDescriptions={(nextDescriptions) => setWristDescriptions(nextDescriptions)}
+                              />
+                            </div>
+                          )}
+
+
 
                           {/* --- NUEVA SECCIÓN DE ANÁLISIS DE CASO Y BÚSQUEDA DE BIBLIOGRAFÍA --- */}
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

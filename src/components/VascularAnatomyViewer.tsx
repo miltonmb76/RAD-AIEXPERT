@@ -737,10 +737,10 @@ export default function VascularAnatomyViewer({
       result += `\n`;
     }
 
-    result += `◆ SEGMENTOS CON FLUJOS Y PAREDES DENTRO DE LÍMITES CONSERVADOS:\n`;
+    result += `◆ SEGMENTOS CON FLUJOS Y PAREDES DENTRO DE LÍMITES NORMALES:\n`;
     if (normals.length > 0) {
       normals.forEach(s => {
-        const label = isVenoso ? "Permeable, sin reflujo" : "Normal, flujo conservado";
+        const label = isVenoso ? "Permeable, sin reflujo" : "Dentro de límites normales";
         result += `  • ${s.name}: ${label}\n`;
       });
     } else {
