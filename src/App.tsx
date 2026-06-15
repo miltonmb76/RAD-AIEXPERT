@@ -15,6 +15,7 @@ import ElbowAnatomyViewer from "./components/ElbowAnatomyViewer";
 import AbdomenAnatomyViewer from "./components/AbdomenAnatomyViewer";
 import ScrotumAnatomyViewer from "./components/ScrotumAnatomyViewer";
 import WristAnatomyViewer from "./components/WristAnatomyViewer";
+import BreastAnatomyViewer from "./components/BreastAnatomyViewer";
 import { 
   Activity, 
 
@@ -1414,6 +1415,9 @@ Ejemplo:
   const [includeWristSchemaInReport, setIncludeWristSchemaInReport] = useState<boolean>(true);
   const [wristStates, setWristStates] = useState<Record<string, string>>({});
   const [wristDescriptions, setWristDescriptions] = useState<Record<string, string>>({});
+  const [includeBreastSchemaInReport, setIncludeBreastSchemaInReport] = useState<boolean>(true);
+  const [breastStates, setBreastStates] = useState<Record<string, string>>({});
+  const [breastDescriptions, setBreastDescriptions] = useState<Record<string, string>>({});
   const [activeVascularIdHover, setActiveVascularIdHover] = useState<string | null>(null);
 
   // States for Dynamic Medical Glossary on current report
@@ -6736,6 +6740,218 @@ Ejemplo:
         }
       }
 
+      // 🛠️ DRAW BREAST DIAGRAMS IN THE PROGRAMMATIC PDF
+      if (includeBreastSchemaInReport && specificStudy === "Mamas") {
+        const svgRight = document.getElementById("breast-anatomy-right-svg");
+        const svgLeft = document.getElementById("breast-anatomy-left-svg");
+
+        if (svgRight || svgLeft) {
+          try {
+            const processBreastSvgForPdf = async (svgEl: HTMLElement) => {
+              const clonedSvg = svgEl.cloneNode(true) as SVGElement;
+              clonedSvg.setAttribute("width", "300px");
+              clonedSvg.setAttribute("height", "300px");
+              clonedSvg.style.backgroundColor = "transparent";
+              
+              clonedSvg.querySelectorAll("path, ellipse, circle, line, rect, polygon").forEach((el: any) => {
+                const idAttr = el.getAttribute("id") || "";
+                if (idAttr.endsWith("-svg-path")) {
+                  const baseId = idAttr.replace("-svg-path", "");
+                  const stateVal = breastStates[baseId] || "no_descrito";
+                  
+                  if (stateVal === "normal") {
+                    el.setAttribute("fill", "#d1fae5");
+                    el.setAttribute("stroke", "#10b981");
+                    el.setAttribute("stroke-width", "1.5");
+                  } else if (stateVal === "hallazgo") {
+                    el.setAttribute("fill", "#ffe4e6");
+                    el.setAttribute("stroke", "#f43f5e");
+                    el.setAttribute("stroke-width", "1.5");
+                  } else {
+                    // no_descrito
+                    el.setAttribute("fill", "#f8fafc");
+                    el.setAttribute("stroke", "#cbd5e1");
+                    el.setAttribute("stroke-width", "1");
+                  }
+                } else {
+                  const classNameAttr = el.getAttribute("class") || "";
+                  if (classNameAttr.includes("fill-none") || classNameAttr.includes("fill-transparent")) {
+                    el.setAttribute("fill", "none");
+                  } else if (el.tagName.toLowerCase() === "path" || el.tagName.toLowerCase() === "circle" || el.tagName.toLowerCase() === "ellipse") {
+                    el.setAttribute("fill", "#f8fafc");
+                  }
+                  if (classNameAttr.includes("stroke-slate-800") || classNameAttr.includes("stroke-slate-700") || classNameAttr.includes("stroke-slate-500")) {
+                    el.setAttribute("stroke", "#cbd5e1");
+                  }
+                }
+              });
+
+              clonedSvg.querySelectorAll("text").forEach((txt: any) => {
+                txt.setAttribute("fill", "#1e293b");
+                txt.setAttribute("font-family", "helvetica");
+                txt.setAttribute("font-weight", "bold");
+              });
+
+              const svgData = new XMLSerializer().serializeToString(clonedSvg);
+              const svgBlob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
+              const url = URL.createObjectURL(svgBlob);
+              
+              return new Promise<string>((resolve) => {
+                const img = new Image();
+                img.onload = () => {
+                  const canvas = document.createElement("canvas");
+                  canvas.width = 600;
+                  canvas.height = 600;
+                  const ctx = canvas.getContext("2d");
+                  if (ctx) {
+                    ctx.drawImage(img, 0, 0, 600, 600);
+                  }
+                  resolve(canvas.toDataURL("image/png"));
+                  URL.revokeObjectURL(url);
+                };
+                img.src = url;
+              });
+            };
+
+            const imgRight = svgRight ? await processBreastSvgForPdf(svgRight) : null;
+            const imgLeft = svgLeft ? await processBreastSvgForPdf(svgLeft) : null;
+            
+            if (yCoord > 210) {
+              doc.addPage();
+              yCoord = 32;
+            }
+
+            const yStart = yCoord;
+            
+            doc.setDrawColor(229, 231, 235);
+            doc.setFillColor(248, 250, 252);
+            doc.rect(20, yStart, 170, 77, "FD");
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8.5);
+            doc.setTextColor(30, 41, 59);
+            doc.text("ANEXO: ESQUEMA DE HALLAZGOS DE ECOGRAFÍA DE MAMAS", 24, yStart + 5.5);
+
+            doc.setDrawColor(226, 232, 240);
+            doc.line(20, yStart + 7.5, 190, yStart + 7.5);
+            doc.line(111, yStart + 7.5, 111, yStart + 77);
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(6.5);
+            doc.setTextColor(148, 163, 184);
+            doc.text("MAPEO CLÍNICO - ECOGRAFÍA BILATERAL DE MAMAS", 24, yStart + 11.5);
+
+            if (imgRight) {
+              doc.addImage(imgRight, "PNG", 22, yStart + 14, 42, 42);
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(5);
+              doc.setTextColor(100, 116, 139);
+              doc.text("MAMA DERECHA (MD)", 43, yStart + 58, { align: "center" });
+            }
+            if (imgLeft) {
+              doc.addImage(imgLeft, "PNG", 66, yStart + 14, 42, 42);
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(5);
+              doc.setTextColor(100, 116, 139);
+              doc.text("MAMA IZQUIERDA (MI)", 87, yStart + 58, { align: "center" });
+            }
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5);
+            doc.setTextColor(190, 24, 74); // rose-700
+            doc.text("REGIÓN", 114, yStart + 11.5);
+            doc.text("HALLAZGO", 142, yStart + 11.5);
+
+            doc.setDrawColor(229, 231, 235);
+            doc.line(114, yStart + 13.5, 186, yStart + 13.5);
+
+            const breastAllowedKeys = [
+              { id: "md_eje1", label: "MD - Eje 1" },
+              { id: "md_eje2", label: "MD - Eje 2" },
+              { id: "md_eje3", label: "MD - Eje 3" },
+              { id: "md_eje4", label: "MD - Eje 4" },
+              { id: "md_eje5", label: "MD - Eje 5" },
+              { id: "md_eje6", label: "MD - Eje 6" },
+              { id: "md_eje7", label: "MD - Eje 7" },
+              { id: "md_eje8", label: "MD - Eje 8" },
+              { id: "md_eje9", label: "MD - Eje 9" },
+              { id: "md_eje10", label: "MD - Eje 10" },
+              { id: "md_eje11", label: "MD - Eje 11" },
+              { id: "md_eje12", label: "MD - Eje 12" },
+              { id: "md_retroareolar", label: "MD - Retroareolar" },
+              { id: "md_cola_spence", label: "MD - Cola de Spence" },
+              { id: "md_axila", label: "MD - Axilar" },
+              { id: "mi_eje1", label: "MI - Eje 1" },
+              { id: "mi_eje2", label: "MI - Eje 2" },
+              { id: "mi_eje3", label: "MI - Eje 3" },
+              { id: "mi_eje4", label: "MI - Eje 4" },
+              { id: "mi_eje5", label: "MI - Eje 5" },
+              { id: "mi_eje6", label: "MI - Eje 6" },
+              { id: "mi_eje7", label: "MI - Eje 7" },
+              { id: "mi_eje8", label: "MI - Eje 8" },
+              { id: "mi_eje9", label: "MI - Eje 9" },
+              { id: "mi_eje10", label: "MI - Eje 10" },
+              { id: "mi_eje11", label: "MI - Eje 11" },
+              { id: "mi_eje12", label: "MI - Eje 12" },
+              { id: "mi_retroareolar", label: "MI - Retroareolar" },
+              { id: "mi_cola_spence", label: "MI - Cola de Spence" },
+              { id: "mi_axila", label: "MI - Axilar" }
+            ];
+
+            const pdfBreastStructures = breastAllowedKeys.filter(struct => {
+              return breastStates[struct.id] === "hallazgo";
+            });
+
+            if (pdfBreastStructures.length === 0) {
+              pdfBreastStructures.push({ id: "all_normal", label: "Examen Bilateral" });
+            }
+
+            const getPDFBreastDesc = (id: string) => {
+              if (id === "all_normal") {
+                return "No se describen hallazgos patológicos ni nódulos sospechosos en los ejes explorados.";
+              }
+              return breastDescriptions[id] || "Alteración ecográfica descrita.";
+            };
+
+            const rowSpacing = pdfBreastStructures.length > 5 ? (58 / pdfBreastStructures.length) : 10;
+
+            pdfBreastStructures.forEach((struct, index) => {
+              const rowY = yStart + 14.5 + (index * rowSpacing);
+              const description = getPDFBreastDesc(struct.id);
+
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(6.2);
+              doc.setTextColor(30, 41, 59);
+              const wrappedLabel = doc.splitTextToSize(struct.label, 25);
+              if (wrappedLabel[0]) doc.text(wrappedLabel[0], 114, rowY + 3);
+              if (wrappedLabel[1]) doc.text(wrappedLabel[1], 114, rowY + 5.5);
+
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(5.8);
+              doc.setTextColor(100, 116, 139);
+              const wrappedDesc = doc.splitTextToSize(description, 44);
+              if (wrappedDesc[0]) doc.text(wrappedDesc[0], 142, rowY + 3);
+              if (wrappedDesc[1]) doc.text(wrappedDesc[1], 142, rowY + 5.5);
+
+              if (index < pdfBreastStructures.length - 1) {
+                doc.setDrawColor(241, 245, 249);
+                doc.setLineWidth(0.15);
+                doc.line(113, rowY + rowSpacing, 187, rowY + rowSpacing);
+              }
+            });
+
+            doc.setFont("helvetica", "italic");
+            doc.setFontSize(6.2);
+            doc.setTextColor(148, 163, 184);
+            doc.text("Mapa de hallazgos clínico-ecográficos estructurados por segmento clock-eje.", 150.5, yStart + 74, { align: "center" });
+
+            yCoord += 80;
+          } catch (err) {
+            console.warn("Could not draw breast diagrams inside jsPDF", err);
+          }
+        }
+      }
+
       // 🛠️ DRAW ELBOW DIAGRAM IN THE PROGRAMMATIC PDF
       if (includeElbowSchemaInReport && specificStudy === "Codo") {
         const svgLateral = document.getElementById("elbow-anatomy-svg-lateral");
@@ -10750,6 +10966,176 @@ Ejemplo:
 
 
 
+  const renderPrintBreastSchema = () => {
+    if (!includeBreastSchemaInReport || specificStudy !== "Mamas") return null;
+
+    const preprocessSvgForPrint = (svgElement: HTMLElement) => {
+      const clonedSvg = svgElement.cloneNode(true) as SVGElement;
+      
+      clonedSvg.querySelectorAll("path, ellipse, circle, line, rect, polygon").forEach((el: any) => {
+        const idAttr = el.getAttribute("id") || "";
+        if (idAttr.endsWith("-svg-path")) {
+          const baseId = idAttr.replace("-svg-path", "");
+          const stateVal = breastStates[baseId] || "no_descrito";
+          
+          if (stateVal === "normal") {
+            el.setAttribute("fill", "#d1fae5");
+            el.setAttribute("stroke", "#10b981");
+            el.setAttribute("stroke-width", "1.5");
+          } else if (stateVal === "hallazgo") {
+            el.setAttribute("fill", "#ffe4e6");
+            el.setAttribute("stroke", "#f43f5e");
+            el.setAttribute("stroke-width", "1.5");
+          } else {
+            // no_descrito
+            el.setAttribute("fill", "#f8fafc");
+            el.setAttribute("stroke", "#cbd5e1");
+            el.setAttribute("stroke-width", "1");
+          }
+        } else {
+          const classNameAttr = el.getAttribute("class") || "";
+          if (classNameAttr.includes("fill-none") || classNameAttr.includes("fill-transparent")) {
+            el.setAttribute("fill", "none");
+          } else if (el.tagName.toLowerCase() === "path" || el.tagName.toLowerCase() === "circle" || el.tagName.toLowerCase() === "ellipse") {
+            el.setAttribute("fill", "#f8fafc");
+          }
+          if (classNameAttr.includes("stroke-slate-800") || classNameAttr.includes("stroke-slate-700") || classNameAttr.includes("stroke-slate-500")) {
+            el.setAttribute("stroke", "#cbd5e1");
+          }
+        }
+      });
+
+      clonedSvg.querySelectorAll("text").forEach((txt: any) => {
+        txt.setAttribute("fill", "#1e293b");
+        txt.setAttribute("font-family", "helvetica");
+        txt.setAttribute("font-weight", "bold");
+      });
+
+      return clonedSvg.outerHTML;
+    };
+
+    const svgRightEl = document.getElementById("breast-anatomy-right-svg");
+    const svgLeftEl = document.getElementById("breast-anatomy-left-svg");
+
+    const processedRight = svgRightEl ? preprocessSvgForPrint(svgRightEl) : null;
+    const processedLeft = svgLeftEl ? preprocessSvgForPrint(svgLeftEl) : null;
+
+    const breastAllowedKeys = [
+      { id: "md_eje1", label: "MD - Eje 1" },
+      { id: "md_eje2", label: "MD - Eje 2" },
+      { id: "md_eje3", label: "MD - Eje 3" },
+      { id: "md_eje4", label: "MD - Eje 4" },
+      { id: "md_eje5", label: "MD - Eje 5" },
+      { id: "md_eje6", label: "MD - Eje 6" },
+      { id: "md_eje7", label: "MD - Eje 7" },
+      { id: "md_eje8", label: "MD - Eje 8" },
+      { id: "md_eje9", label: "MD - Eje 9" },
+      { id: "md_eje10", label: "MD - Eje 10" },
+      { id: "md_eje11", label: "MD - Eje 11" },
+      { id: "md_eje12", label: "MD - Eje 12" },
+      { id: "md_retroareolar", label: "MD - Retroareolar" },
+      { id: "md_cola_spence", label: "MD - Cola de Spence" },
+      { id: "md_axila", label: "MD - Región Axilar" },
+      { id: "mi_eje1", label: "MI - Eje 1" },
+      { id: "mi_eje2", label: "MI - Eje 2" },
+      { id: "mi_eje3", label: "MI - Eje 3" },
+      { id: "mi_eje4", label: "MI - Eje 4" },
+      { id: "mi_eje5", label: "MI - Eje 5" },
+      { id: "mi_eje6", label: "MI - Eje 6" },
+      { id: "mi_eje7", label: "MI - Eje 7" },
+      { id: "mi_eje8", label: "MI - Eje 8" },
+      { id: "mi_eje9", label: "MI - Eje 9" },
+      { id: "mi_eje10", label: "MI - Eje 10" },
+      { id: "mi_eje11", label: "MI - Eje 11" },
+      { id: "mi_eje12", label: "MI - Eje 12" },
+      { id: "mi_retroareolar", label: "MI - Retroareolar" },
+      { id: "mi_cola_spence", label: "MI - Cola de Spence" },
+      { id: "mi_axila", label: "MI - Región Axilar" }
+    ];
+
+    const activePrintKeys = breastAllowedKeys.filter(struct => breastStates[struct.id] === "hallazgo");
+
+    return (
+      <div className="mt-8 page-break-inside-avoid print-section-container text-black">
+        <hr className="my-6 border-t border-gray-300" />
+        <div className="text-center mb-4">
+          <h3 className="text-xs font-black uppercase tracking-wider text-gray-800">
+            Anexo: Esquema de Hallazgos de Ultrasonido de Mamas
+          </h3>
+          <p className="text-[7.5px] text-gray-400 font-semibold tracking-wider uppercase mt-1 leading-none">
+            Mapeo de Segmentos por Eje y Regiones de Mama Bilateral
+          </p>
+        </div>
+
+        <div className="flex flex-row gap-4">
+          {/* Left Element: SVGs */}
+          <div className="w-[220px] border border-gray-200 p-2 rounded-xl bg-white flex flex-row justify-center items-center gap-2 shrink-0">
+            {processedRight ? (
+              <div className="flex-1 flex flex-col items-center">
+                <div 
+                  className="w-full max-w-[95px] font-sans text-center"
+                  dangerouslySetInnerHTML={{ __html: processedRight }} 
+                />
+                <div className="text-[5.5px] text-gray-400 font-bold uppercase mt-1">MD</div>
+              </div>
+            ) : null}
+            {processedLeft ? (
+              <div className="flex-1 flex flex-col items-center">
+                <div 
+                  className="w-full max-w-[95px] font-sans text-center"
+                  dangerouslySetInnerHTML={{ __html: processedLeft }} 
+                />
+                <div className="text-[5.5px] text-gray-400 font-bold uppercase mt-1">MI</div>
+              </div>
+            ) : null}
+          </div>
+
+          {/* Right Element: Findings list */}
+          <div className="flex-1 bg-slate-50 border border-gray-200 p-3 rounded-xl flex flex-col justify-between">
+            <div>
+              <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5 mb-2">
+                <span className="text-[9.5px] font-bold text-rose-700 font-sans uppercase tracking-widest block">
+                  📍 Registro de Hallazgos Bilaterales
+                </span>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+                {activePrintKeys.map((struct) => {
+                  const s = breastStates[struct.id] || "no_descrito";
+                  const desc = breastDescriptions[struct.id] || "Alteración descrita.";
+                  
+                  return (
+                    <div key={struct.id} className="text-left py-1 text-[7.5px] bg-white border border-gray-150 rounded-lg p-1.5">
+                      <div className="font-bold text-gray-800 uppercase tracking-wide flex items-center justify-between gap-1 leading-none">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className="w-1.5 h-1.5 rounded-full inline-block shrink-0 bg-rose-500" />
+                          <span className="truncate">{struct.label}</span>
+                        </div>
+                        <span className="text-[6.5px] text-gray-400 uppercase truncate shrink-0">Hallazgo</span>
+                      </div>
+                      <div className="text-gray-500 mt-0.5 leading-normal italic font-medium">{desc}</div>
+                    </div>
+                  );
+                })}
+                {activePrintKeys.length === 0 ? (
+                  <div className="text-[7.5px] text-gray-450 italic col-span-2 py-2 text-center bg-white border border-gray-150 rounded-lg">
+                    No se describen hallazgos patológicos ni nódulos sospechosos en los ejes explorados.
+                  </div>
+                ) : null}
+              </div>
+            </div>
+            
+            <div className="text-[6.5px] text-gray-400 font-semibold tracking-wider uppercase text-right mt-1.5 border-t border-gray-150 pt-1">
+              * Hallazgos específicos del protocolo de mamas.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+
+
   const renderPrintReportBody = (reportText: string) => {
     if (!reportText) return null;
 
@@ -10986,6 +11372,7 @@ Ejemplo:
         {renderPrintElbowSchema()}
         {renderPrintScrotumSchema()}
         {renderPrintWristSchema()}
+        {renderPrintBreastSchema()}
       </div>
     );
   };
@@ -14682,6 +15069,56 @@ Ejemplo:
                               />
                             </div>
                           )}
+
+
+
+                           {/* === BREAST US ANATOMY VIEWER AND SYNOPSIS HUD === */}
+                           {specificStudy === "Mamas" && (
+                             <div className="my-6 relative bg-slate-950/20 border border-slate-850/60 rounded-3xl p-4 transition-all duration-355">
+                               <BreastAnatomyViewer
+                                 selectedModel={selectedModel}
+                                 generatedReport={isEditingReportManual ? editedReportText : (generatedReport || "")}
+                                 onChangeReport={(nextReport) => {
+                                   if (isEditingReportManual) {
+                                     setEditedReportText(nextReport);
+                                   } else {
+                                     setGeneratedReport(nextReport);
+                                     setEditedReportText(nextReport);
+                                   }
+                                 }}
+                                 onExportTable={(tableText) => {
+                                   const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
+                                   setReportHistory((prev) => [...prev, activeReport]);
+                                   const separator = "\n\n";
+                                   const title = "### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE MAMAS\n";
+                                   
+                                   if (activeReport.includes("### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE MAMAS")) {
+                                     const regex = /### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE MAMAS[\s\S]+/g;
+                                     const cleanReportText = activeReport.replace(regex, "").trim();
+                                     const nextReport = cleanReportText + separator + title + tableText;
+                                     if (isEditingReportManual) {
+                                       setEditedReportText(nextReport);
+                                     } else {
+                                       setGeneratedReport(nextReport);
+                                       setEditedReportText(nextReport);
+                                     }
+                                   } else {
+                                     const nextReport = activeReport + separator + title + tableText;
+                                     if (isEditingReportManual) {
+                                       setEditedReportText(nextReport);
+                                     } else {
+                                       setGeneratedReport(nextReport);
+                                       setEditedReportText(nextReport);
+                                     }
+                                   }
+                                 }}
+                                 includeInReport={includeBreastSchemaInReport}
+                                 setIncludeInReport={setIncludeBreastSchemaInReport}
+                                 onChangeStates={(nextStates) => setBreastStates(nextStates)}
+                                 onChangeDescriptions={(nextDescriptions) => setBreastDescriptions(nextDescriptions)}
+                               />
+                             </div>
+                           )}
 
 
 
