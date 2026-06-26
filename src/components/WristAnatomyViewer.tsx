@@ -4,6 +4,8 @@ import {
   RefreshCw, 
   Sparkles, 
   Check, 
+  Layers,
+  Download,
   HelpCircle, 
   RotateCcw
 } from "lucide-react";
@@ -18,6 +20,9 @@ interface WristAnatomyViewerProps {
   setIncludeInReport?: (val: boolean) => void;
   onChangeStates?: (states: Record<string, string>) => void;
   onChangeDescriptions?: (descriptions: Record<string, string>) => void;
+  externalStates?: Record<string, string>;
+  externalDescriptions?: Record<string, string>;
+  additionalFindings?: Array<{ id: string; structureName: string; state: string; description: string }>;
 }
 
 export default function WristAnatomyViewer({
@@ -29,7 +34,10 @@ export default function WristAnatomyViewer({
   includeInReport = true,
   setIncludeInReport,
   onChangeStates,
-  onChangeDescriptions
+  onChangeDescriptions,
+  externalStates,
+  externalDescriptions,
+  additionalFindings = []
 }: WristAnatomyViewerProps) {
   
   // Wrist structures state:
@@ -72,6 +80,24 @@ export default function WristAnatomyViewer({
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncLogs, setSyncLogs] = useState<string[]>([]);
   const [lastSyncedReport, setLastSyncedReport] = useState<string>("");
+
+  useEffect(() => {
+    if (externalStates && Object.keys(externalStates).length > 0) {
+      setStates(prev => {
+        const changed = Object.keys(externalStates).some(key => externalStates[key] !== prev[key]);
+        return changed ? { ...prev, ...externalStates } : prev;
+      });
+    }
+  }, [externalStates]);
+
+  useEffect(() => {
+    if (externalDescriptions && Object.keys(externalDescriptions).length > 0) {
+      setCustomDescriptions(prev => {
+        const changed = Object.keys(externalDescriptions).some(key => externalDescriptions[key] !== prev[key]);
+        return changed ? { ...prev, ...externalDescriptions } : prev;
+      });
+    }
+  }, [externalDescriptions]);
 
   useEffect(() => {
     if (onChangeStates) {
@@ -138,11 +164,20 @@ export default function WristAnatomyViewer({
 
   const getSimplifiedDescription = (id: string, stateInput?: string): string => {
     const s = stateInput || states[id] || "no_descrito";
-    if (s === "no_descrito") {
+    if (!s || s === "no_descrito") {
       return "No descrito.";
     }
     if (s === "normal") {
       return "Dentro de límites normales.";
+    }
+    const standardStates = [
+      "normal", "no_descrito", "edematizado", "comprimido", "tenosinovitis", "desgarro", "tendinosis",
+      "tendinopatía", "aneurisma", "trombosis", "calcificación", "derrame", "sinovitis", "quiste_espinoso",
+      "compresion_nerviosa", "quiste_sinovial", "subluxacion", "artrosis", "de_quervain", "tendinitis_intersticial",
+      "perforacion", "degenerativo"
+    ];
+    if (!standardStates.includes(s)) {
+      return `Se describe hallazgo: ${s.charAt(0).toUpperCase() + s.slice(1)}.`;
     }
 
     switch (id) {
@@ -558,7 +593,7 @@ export default function WristAnatomyViewer({
 
     let hasRows = false;
     list.forEach(item => {
-      if (states[item.id] !== "no_descrito") {
+      if (states[item.id] !== "no_descrito" && states[item.id] !== "normal") {
         const desc = customDescriptions[item.id]?.trim() || getSimplifiedDescription(item.id);
         md += `| **${item.label}** | ${desc} |\n`;
         hasRows = true;
@@ -566,7 +601,7 @@ export default function WristAnatomyViewer({
     });
 
     if (!hasRows) {
-      md += `| *Sin hallazgos descritos* | *Consulte el texto completo del reporte* |\n`;
+      md += `| *Sin hallazgos patológicos* | *Todas las estructuras de la muñeca se reportan de características normales.* |\n`;
     }
 
     onExportTable(md);
@@ -627,7 +662,7 @@ export default function WristAnatomyViewer({
   };
 
   useEffect(() => {
-    exportTableData();
+    // Only automatically sync narrative description, table is manual
     exportNarrative();
   }, [states, customDescriptions]);
 
@@ -1128,6 +1163,33 @@ export default function WristAnatomyViewer({
               </svg>
             </div>
           </div>
+
+          {additionalFindings && additionalFindings.length > 0 && (
+            <div className="w-full bg-slate-900/10 border border-slate-850 p-3 rounded-2xl mt-4">
+              <h5 className="text-[9px] uppercase font-black text-indigo-400 font-mono tracking-wider mb-2 text-left select-none">
+                📍 Hallazgos Adicionales Detectados
+              </h5>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[120px] overflow-y-auto pr-1">
+                {additionalFindings.map((item) => {
+                  const s = item.state || "Alterado";
+                  return (
+                    <div 
+                      key={item.id}
+                      className="p-2 rounded-xl bg-slate-950/40 border border-slate-900 flex flex-col justify-between text-left"
+                    >
+                      <div className="flex items-center justify-between gap-1 leading-none select-none">
+                        <span className="text-[9.5px] font-black uppercase text-slate-200 truncate">{item.structureName}</span>
+                        <span className="text-[7.5px] px-1 bg-rose-950/40 text-rose-450 border border-rose-900/40 rounded scale-90 font-mono font-black uppercase shrink-0">
+                          {s}
+                        </span>
+                      </div>
+                      <p className="text-[8.5px] leading-relaxed text-slate-400 mt-1 max-w-full truncate leading-tight">{item.description}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* RIGHT COLUMN: DETAILED EDITOR PANEL */}
@@ -1168,31 +1230,58 @@ export default function WristAnatomyViewer({
               </select>
             </div>
 
-            {/* Finding State Dropdown */}
-            <div className="mt-3">
-              <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Estado de la Estructura:</label>
-              <div className="flex gap-2">
-                <select
-                  value={states[selectedStructure] || "no_descrito"}
-                  onChange={(e) => handleStateChange(selectedStructure, e.target.value)}
-                  className="flex-1 bg-slate-900 border border-slate-800 text-slate-250 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-indigo-500 cursor-pointer font-medium"
-                >
-                  {getStructureOptions(selectedStructure).map((opt) => (
-                    <option key={opt.val} value={opt.val}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-
-                {states[selectedStructure] !== "no_descrito" && (
+            {/* Custom State Input */}
+            <div className="mt-3 space-y-1">
+              <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block">
+                Diagnóstico / Hallazgo Clínico (Sinopsis):
+              </label>
+              <div className="flex flex-col gap-2">
+                <input
+                  type="text"
+                  value={
+                    states[selectedStructure] === "no_descrito" 
+                      ? "" 
+                      : states[selectedStructure] === "normal" 
+                        ? "Normal" 
+                        : states[selectedStructure]
+                  }
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    let nextVal = val;
+                    if (val.trim().toLowerCase() === "normal" || val.trim().toLowerCase() === "sin lesiones") {
+                      nextVal = "normal";
+                    } else if (val.trim() === "") {
+                      nextVal = "no_descrito";
+                    }
+                    handleStateChange(selectedStructure, nextVal);
+                  }}
+                  placeholder="Escriba el diagnóstico del hallazgo (ej: Tenosinovitis, Desgarro, etc.)"
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 font-mono focus:outline-none focus:border-indigo-500/50"
+                />
+                <div className="flex gap-2">
                   <button
-                    onClick={() => handleStateChange(selectedStructure, "no_descrito")}
-                    title="Restablecer a Omitido"
-                    className="p-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg text-slate-400 hover:text-rose-450 cursor-pointer"
+                    type="button"
+                    onClick={() => handleStateChange(selectedStructure, "normal")}
+                    className={`flex-1 py-1 px-3 text-[10px] rounded border transition-all cursor-pointer ${
+                      states[selectedStructure] === "normal"
+                        ? "bg-emerald-950 text-emerald-300 border-emerald-700 font-medium"
+                        : "bg-slate-900 hover:bg-slate-850 border-slate-800 text-slate-400"
+                    }`}
                   >
-                    <RotateCcw className="h-4 w-4" />
+                    ✓ Cons. Normal
                   </button>
-                )}
+                  <button
+                    type="button"
+                    onClick={() => handleStateChange(selectedStructure, "no_descrito")}
+                    className={`flex-1 py-1 px-3 text-[10px] rounded border transition-all cursor-pointer ${
+                      states[selectedStructure] === "no_descrito"
+                        ? "bg-slate-850 border-slate-600 text-slate-100 font-medium"
+                        : "bg-slate-900 hover:bg-slate-850 border-slate-800 text-slate-400"
+                    }`}
+                  >
+                    ⚪ No Descrito
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -1219,19 +1308,131 @@ export default function WristAnatomyViewer({
               <Check className="h-3.5 w-3.5 text-indigo-400" />
               <span>Criterio de Inclusión de Muñeca:</span>
             </div>
-            Las estructuras marcadas como <strong className="text-emerald-400">Normales</strong> o <strong className="text-amber-400 font-black">Patológicas</strong> se incrustan automáticamente en el anexo del documento. Aquellas que resten <strong className="text-slate-500">Omisas ("no mencionadas")</strong> quedarán completamente excluidas para evitar falsas asunciones clínicas.
+            Únicamente las estructuras marcadas como <strong className="text-amber-400 font-black">Patológicas</strong> se incrustan de forma estructurada en la tabla de hallazgos del reporte. Las estructuras marcadas como <strong className="text-emerald-400">Normales</strong> u <strong className="text-slate-500">Omisas</strong> quedan excluidas de la tabla para optimizar la visualización de datos clínicos de interés.
           </div>
 
-          {/* Action Button: Export/Integrate Annex Findings to Report Text */}
-          <div className="mt-2 flex gap-2">
-            <button
-              onClick={() => {
-                exportTableData();
-              }}
-              className="flex-1 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-650 text-slate-100 border border-indigo-500/40 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-200 active:scale-97 cursor-pointer text-center"
-            >
-              Exportar Tabla de Hallazgos a Reporte
-            </button>
+          {/* Mapeo de Hallazgos Clínicos Sintonizados (aligned anatomical cards) */}
+          <div className="bg-slate-900/10 border border-slate-800/50 rounded-2xl p-4 flex flex-col gap-3 mt-3">
+            <label className="text-[11px] font-black text-indigo-400 uppercase tracking-wider font-mono flex items-center gap-1.5 leading-none mb-1">
+              <Layers className="h-3.5 w-3.5 text-indigo-400" />
+              Mapeo de Hallazgos Clínicos Sintonizados (Muñeca)
+            </label>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[160px] overflow-y-auto pr-1">
+              {Object.keys(states).filter(id => states[id] !== "no_descrito" && states[id] !== "normal").map(id => {
+                const s = states[id];
+                const isSelected = selectedStructure === id;
+                const transLabel = id === "nervio_mediano" ? "Nervio Mediano" : 
+                                   id === "nervio_cubital" ? "Nervio Cubital" : 
+                                   id === "tendones_flexores" ? "Tendones Flexores" : 
+                                   id === "tendones_extensores" ? "Tendones Extensores" : 
+                                   id === "tunel_carpiano" ? "Túnel Carpiano" : 
+                                   id === "canal_guyon" ? "Canal de Guyon" : 
+                                   id === "tfcc_complejo" ? "Complejo TFCC (FCT)" : 
+                                   id === "artes_carpo" ? "Articulaciones del Carpo" : 
+                                   id === "bainas_sinoviales" ? "Vainas Sinoviales" : id;
+                const simplified = customDescriptions[id]?.trim() || (s === "normal" ? "Dentro de límites normales" : s);
+                
+                let dotColor = "bg-slate-500";
+                let badgeBg = "bg-slate-950/60 text-slate-400 border-slate-800";
+                
+                if (s === "normal") {
+                  dotColor = "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.4)]";
+                  badgeBg = "bg-emerald-950/40 text-emerald-450 border-emerald-900/30";
+                } else if (s.includes("leve") || s.includes("derrame_leve") || s.includes("sinovitis_l") || s.includes("quiste") || s.includes("engrosamiento_l")) {
+                  dotColor = "bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.4)]";
+                  badgeBg = "bg-amber-950/40 text-amber-400 border-amber-900/30";
+                } else if (s.includes("desgarro") || s.includes("ruptura") || s.includes("compresion_severa") || s.includes("sinovitis_severa") || s.includes("artrosis")) {
+                  dotColor = "bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.4)]";
+                  badgeBg = "bg-rose-950/40 text-rose-455 border-rose-900/30";
+                } else {
+                  dotColor = "bg-pink-500 shadow-[0_0_6px_rgba(236,72,153,0.4)]";
+                  badgeBg = "bg-pink-950/40 text-pink-400 border-pink-900/30";
+                }
+
+                return (
+                  <button
+                    type="button"
+                    key={id}
+                    onClick={() => setSelectedStructure(id)}
+                    className={`p-2.5 rounded-xl border text-left transition-all flex flex-col gap-1 relative overflow-hidden group cursor-pointer ${
+                      isSelected 
+                        ? "bg-slate-900 border-indigo-500 text-indigo-400 shadow-md scale-[1.01]" 
+                        : "bg-slate-950/60 hover:bg-slate-950/80 border-slate-850/40 text-slate-350"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-1.5 leading-none w-full select-none">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className={`h-2 w-2 rounded-full shrink-0 ${dotColor} transition-transform group-hover:scale-110`} />
+                        <span className={`text-[10px] font-black uppercase tracking-wide truncate ${isSelected ? "text-indigo-400" : "text-slate-200"}`}>
+                          {transLabel}
+                        </span>
+                      </div>
+                      <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded border tracking-wider shrink-0 font-mono scale-95 ${badgeBg}`}>
+                        {s.replace("_", " ")}
+                      </span>
+                    </div>
+                    <p className="text-[9px] leading-relaxed text-slate-450 truncate mt-0.5 max-w-full">
+                      {simplified}
+                    </p>
+                  </button>
+                );
+              })}
+
+              {additionalFindings && additionalFindings.map((item) => {
+                const s = item.state || "Alterado";
+                const dotColor = "bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.4)]";
+                const badgeBg = "bg-rose-950/40 text-rose-450 border-rose-900/30";
+                return (
+                  <div
+                    key={item.id}
+                    className="p-2.5 rounded-xl border border-slate-850 bg-slate-950/60 text-left transition-all hover:bg-slate-950/80 hover:border-slate-800 flex flex-col gap-1 relative overflow-hidden group cursor-default"
+                  >
+                    <div className="flex items-center justify-between gap-1.5 leading-none select-none">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className={`h-2 w-2 rounded-full shrink-0 ${dotColor} transition-transform group-hover:scale-110`} />
+                        <span className="text-[10px] font-black uppercase tracking-wide truncate text-slate-200">
+                          {item.structureName}
+                        </span>
+                      </div>
+                      <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded border tracking-wider shrink-0 font-mono scale-95 ${badgeBg}`}>
+                        {s}
+                      </span>
+                    </div>
+                    <p className="text-[9px] leading-relaxed text-slate-400 truncate mt-0.5 max-w-full">
+                      {item.description}
+                    </p>
+                  </div>
+                );
+              })}
+
+              {Object.keys(states).filter(id => states[id] !== "no_descrito" && states[id] !== "normal").length === 0 && (!additionalFindings || additionalFindings.length === 0) && (
+                <div className="col-span-full py-4 text-center text-slate-500 italic text-xs">
+                  Sin hallazgos patológicos relevantes detectados.
+                </div>
+              )}
+            </div>
+
+            {/* Export buttons */}
+            <div className="grid grid-cols-2 gap-2 mt-2">
+              <button
+                type="button"
+                onClick={exportTableData}
+                className="py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 font-mono cursor-pointer border border-indigo-400/20"
+                title="Inyecta una tabla formal de hallazgos médicos estructurados al final del informe actual"
+              >
+                <Download className="h-3 w-3" />
+                Insertar Tabla
+              </button>
+              <button
+                type="button"
+                onClick={exportNarrative}
+                className="py-2.5 bg-slate-900 hover:bg-slate-850 text-indigo-400 text-[10px] font-black uppercase tracking-widest rounded-xl border border-indigo-950 transition-all shadow-md flex items-center justify-center gap-1.5 font-mono cursor-pointer"
+                title="Inyecta un resumen narrativo de hallazgos al reporte"
+              >
+                📥 Insertar Viñetas
+              </button>
+            </div>
           </div>
         </div>
       </div>

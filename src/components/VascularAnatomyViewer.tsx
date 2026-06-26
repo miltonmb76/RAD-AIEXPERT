@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { 
   Activity, 
   RefreshCw, 
@@ -31,6 +31,11 @@ interface VascularAnatomyViewerProps {
   setIncludeInReport: (val: boolean) => void;
   generatedReport: string;
   laterality?: string;
+  additionalFindings?: Array<{ id: string; structureName: string; state: string; description: string }>;
+  carotidPlaques?: any[];
+  onSetCarotidPlaques?: (plaques: any[]) => void;
+  includeCarotidBifurcations?: boolean;
+  onSetIncludeCarotidBifurcations?: (v: boolean) => void;
 }
 
 const carotidMidpoints: Record<string, { x: number, y: number, textX: number, textY: number, align: "start" | "end" | "middle" }> = {
@@ -50,6 +55,9 @@ const venousMidpoints: Record<string, { x: number, y: number, textX: number, tex
   sfj_der: { x: 153, y: 92, textX: 195, textY: 70, align: "start" },
   vfs_der: { x: 135, y: 200, textX: 52, textY: 180, align: "end" },
   vp_der:  { x: 125, y: 300, textX: 45, textY: 300, align: "end" },
+  vta_der: { x: 112, y: 375, textX: 47, textY: 375, align: "end" },
+  vtp_der: { x: 118, y: 385, textX: 140, textY: 395, align: "start" },
+  vper_der: { x: 126, y: 380, textX: 175, textY: 405, align: "start" },
   vsm_der: { x: 170, y: 240, textX: 195, textY: 210, align: "start" },
   vsp_der: { x: 108, y: 340, textX: 30, textY: 340, align: "end" },
 
@@ -57,6 +65,9 @@ const venousMidpoints: Record<string, { x: number, y: number, textX: number, tex
   sfj_izq: { x: 247, y: 92, textX: 205, textY: 70, align: "end" },
   vfs_izq: { x: 265, y: 200, textX: 348, textY: 180, align: "start" },
   vp_izq:  { x: 275, y: 300, textX: 355, textY: 300, align: "start" },
+  vta_izq: { x: 288, y: 375, textX: 353, textY: 375, align: "start" },
+  vtp_izq: { x: 282, y: 385, textX: 260, textY: 395, align: "end" },
+  vper_izq: { x: 274, y: 380, textX: 225, textY: 405, align: "end" },
   vsm_izq: { x: 230, y: 240, textX: 205, textY: 210, align: "end" },
   vsp_izq: { x: 292, y: 340, textX: 370, textY: 340, align: "start" },
 };
@@ -96,16 +107,296 @@ export default function VascularAnatomyViewer({
   includeInReport,
   setIncludeInReport,
   generatedReport,
-  laterality = ""
+  laterality = "",
+  additionalFindings = [],
+  carotidPlaques = [],
+  onSetCarotidPlaques = () => {},
+  includeCarotidBifurcations = true,
+  onSetIncludeCarotidBifurcations = () => {}
 }: VascularAnatomyViewerProps) {
   
   const isCarotidas = studyType === "Doppler de carótidas" || generatedReport.toLowerCase().includes("carot");
   const isVenoso = studyType === "Doppler venoso de miembro inferior" || generatedReport.toLowerCase().includes("venoso");
   const isArterial = !isCarotidas && !isVenoso;
 
+  // Bilateral and side tracking
+  const [activeSide, setActiveSide] = useState<"derecho" | "izquierdo">("derecho");
+
+  // Selected segment for plaque editing
+  const [selectedPlaqueSegment, setSelectedPlaqueSegment] = useState<{
+    side: "derecho" | "izquierdo";
+    vessel: "acc" | "bulbo" | "aci" | "ace";
+  } | null>(null);
+
+  // Editing values
+  const [plaqueType, setPlaqueType] = useState<"I" | "II" | "III" | "IV">("II");
+  const [plaqueStenosis, setPlaqueStenosis] = useState<number>(30);
+  const [plaqueSize, setPlaqueSize] = useState<string>("3.0 mm");
+  const [plaqueDesc, setPlaqueDesc] = useState<string>("");
+
+  const handleSelectPlaqueSegment = (side: "derecho" | "izquierdo", vessel: "acc" | "bulbo" | "aci" | "ace") => {
+    setSelectedPlaqueSegment({ side, vessel });
+    
+    // Check if there is an existing plaque
+    const existing = carotidPlaques.find(p => p.side === side && p.vessel === vessel);
+    if (existing) {
+      setPlaqueType(existing.type || "II");
+      setPlaqueStenosis(existing.stenosis || 30);
+      setPlaqueSize(existing.size || "3.0 mm");
+      setPlaqueDesc(existing.description || "");
+    } else {
+      setPlaqueType("II");
+      setPlaqueStenosis(25);
+      setPlaqueSize("3.0 mm");
+      setPlaqueDesc("");
+    }
+  };
+
+  const handleSavePlaque = () => {
+    if (!selectedPlaqueSegment) return;
+    const { side, vessel } = selectedPlaqueSegment;
+    
+    const existingIndex = carotidPlaques.findIndex(p => p.side === side && p.vessel === vessel);
+    const updated = [...carotidPlaques];
+    const plaqueData = {
+      id: existingIndex >= 0 ? carotidPlaques[existingIndex].id : `plaque-${Date.now()}`,
+      side,
+      vessel,
+      type: plaqueType,
+      size: plaqueSize || "3.0 mm",
+      stenosis: plaqueStenosis,
+      description: plaqueDesc || `Placa de ateroma Tipo ${plaqueType} de ${plaqueSize} (${plaqueStenosis}% estenosis) en carótida ${vessel.toUpperCase()}`
+    };
+
+    if (existingIndex >= 0) {
+      updated[existingIndex] = plaqueData;
+    } else {
+      updated.push(plaqueData);
+    }
+    onSetCarotidPlaques(updated);
+    setSelectedPlaqueSegment(null);
+  };
+
+  const handleDeletePlaque = (side: "derecho" | "izquierdo", vessel: "acc" | "bulbo" | "aci" | "ace") => {
+    const updated = carotidPlaques.filter(p => !(p.side === side && p.vessel === vessel));
+    onSetCarotidPlaques(updated);
+    if (selectedPlaqueSegment && selectedPlaqueSegment.side === side && selectedPlaqueSegment.vessel === vessel) {
+      setSelectedPlaqueSegment(null);
+    }
+  };
+
+  const drawPlaqueSvgPath = (plaque: any, sideStr: "der" | "izq", isPrint: boolean, idx?: number) => {
+    const { vessel, type, stenosis, size } = plaque;
+    
+    const parsePlaqueSize = (szStr: any): number => {
+      if (!szStr) return 1.0;
+      const num = parseFloat(String(szStr).replace(/,/g, '.').replace(/[^\d.]/g, ''));
+      if (isNaN(num)) {
+        const s = String(szStr).toLowerCase();
+        if (s.includes("pequeñ") || s.includes("leve")) return 0.7;
+        if (s.includes("median") || s.includes("modera")) return 1.0;
+        if (s.includes("grand") || s.includes("sever") || s.includes("criti")) return 1.4;
+        return 1.0;
+      }
+      return num / 3.0; // 3mm is default/middle size
+    };
+
+    const sizeMult = Math.min(2.0, Math.max(0.4, parsePlaqueSize(size)));
+    
+    // Width of the vessel lumen (luz del vaso) at each branch
+    const lumenWidth = vessel === "bulbo" ? 31 : (vessel === "aci" ? 29 : 30);
+    
+    // stenosis S% (clamp between minor visibility limit of 15% and 100% full limit)
+    const S = Math.min(100, Math.max(15, stenosis || 15));
+    
+    // Proportional peak protrusion. The drawn curve peak will block exactly S% of the lumen.
+    // Since quadratic bezier peak is at exactly 0.5 * control point offset, bulge must be 2 * target peak.
+    const bulge = (S / 100) * lumenWidth * 2;
+
+    let pathData = "";
+    let cx = 100, cy = 120;
+
+    let halfH = 15;
+    if (vessel === "acc") {
+      halfH = Math.min(24, Math.max(8, (12 + (S / 100) * 12) * sizeMult));
+      const yStart = 207 - halfH;
+      const yEnd = 207 + halfH;
+      cy = 207;
+
+      if (sideStr === "der") {
+        cx = 85 + bulge / 2;
+        pathData = `M 85 ${yStart} Q ${85 + bulge} 207 85 ${yEnd} Z`;
+      } else {
+        cx = 115 - bulge / 2;
+        pathData = `M 115 ${yStart} Q ${115 - bulge} 207 115 ${yEnd} Z`;
+      }
+    } else if (vessel === "bulbo") {
+      halfH = Math.min(22, Math.max(6, (10 + (S / 100) * 10) * sizeMult));
+      const yStart = 142.5 - halfH;
+      const yEnd = 142.5 + halfH;
+      cy = 142.5;
+
+      if (sideStr === "der") {
+        const getXDerBulbe = (y: number) => 73 + (y - 125) * (9 / 35);
+        const xStart = getXDerBulbe(yStart);
+        const xEnd = getXDerBulbe(yEnd);
+        cx = getXDerBulbe(142.5) + bulge * 0.5;
+        pathData = `M ${xStart} ${yStart} Q ${getXDerBulbe(142.5) + bulge} 142.5 ${xEnd} ${yEnd} Z`;
+      } else {
+        const getXIzqBulbe = (y: number) => 127 - (y - 125) * (9 / 35);
+        const xStart = getXIzqBulbe(yStart);
+        const xEnd = getXIzqBulbe(yEnd);
+        cx = getXIzqBulbe(142.5) - bulge * 0.5;
+        pathData = `M ${xStart} ${yStart} Q ${getXIzqBulbe(142.5) - bulge} 142.5 ${xEnd} ${yEnd} Z`;
+      }
+    } else if (vessel === "aci") {
+      halfH = Math.min(24, Math.max(6, (12 + (S / 100) * 12) * sizeMult));
+      const yStart = 65 - halfH;
+      const yEnd = 65 + halfH;
+      cy = 65;
+
+      if (sideStr === "der") {
+        const getXDerACI = (y: number) => 50 + (y - 40) * 0.24;
+        const xStart = getXDerACI(yStart);
+        const xEnd = getXDerACI(yEnd);
+        cx = getXDerACI(65) + bulge * 0.5;
+        pathData = `M ${xStart} ${yStart} Q ${getXDerACI(65) + bulge} 65 ${xEnd} ${yEnd} Z`;
+      } else {
+        const getXIzqACI = (y: number) => 150 - (y - 40) * 0.24;
+        const xStart = getXIzqACI(yStart);
+        const xEnd = getXIzqACI(yEnd);
+        cx = getXIzqACI(65) - bulge * 0.5;
+        pathData = `M ${xStart} ${yStart} Q ${getXIzqACI(65) - bulge} 65 ${xEnd} ${yEnd} Z`;
+      }
+    } else if (vessel === "ace") {
+      halfH = Math.min(22, Math.max(6, (11 + (S / 100) * 9) * sizeMult));
+      const yStart = 85 - halfH;
+      const yEnd = 85 + halfH;
+      cy = 85;
+
+      if (sideStr === "der") {
+        const getXDerACE = (y: number) => 143 - (y - 60) * 0.3;
+        const xStart = getXDerACE(yStart);
+        const xEnd = getXDerACE(yEnd);
+        cx = getXDerACE(85) - bulge * 0.5;
+        pathData = `M ${xStart} ${yStart} Q ${getXDerACE(85) - bulge} 85 ${xEnd} ${yEnd} Z`;
+      } else {
+        const getXIzqACE = (y: number) => 57 + (y - 60) * 0.3;
+        const xStart = getXIzqACE(yStart);
+        const xEnd = getXIzqACE(yEnd);
+        cx = getXIzqACE(85) + bulge * 0.5;
+        pathData = `M ${xStart} ${yStart} Q ${getXIzqACE(85) + bulge} 85 ${xEnd} ${yEnd} Z`;
+      }
+    }
+
+    let fillCol = "";
+    let strokeCol = "";
+    let patternCircles: any[] = [];
+
+    if (type === "I") {
+      fillCol = isPrint ? "#374151" : "#7f1d1d";
+      strokeCol = isPrint ? "#1f2937" : "#ef4444";
+    } else if (type === "II") {
+      fillCol = isPrint ? "#4b5563" : "#451a03";
+      strokeCol = isPrint ? "#111827" : "#fbbf24";
+      patternCircles = [
+        { cx: -2 * sizeMult, cy: -2 * sizeMult, r: 1.1 * sizeMult, fill: "#fbbf24" },
+        { cx: 2 * sizeMult, cy: 3 * sizeMult, r: 0.9 * sizeMult, fill: "#fef08a" }
+      ];
+    } else if (type === "III") {
+      fillCol = isPrint ? "#9ca3af" : "#1e293b";
+      strokeCol = isPrint ? "#374151" : "#fef08a";
+      patternCircles = [
+        { cx: -3 * sizeMult, cy: -2 * sizeMult, r: 1.4 * sizeMult, fill: "#eab308" },
+        { cx: 0, cy: 3 * sizeMult, r: 1.1 * sizeMult, fill: "#ffffff" },
+        { cx: 3 * sizeMult, cy: -3 * sizeMult, r: 1.5 * sizeMult, fill: "#fef08a" }
+      ];
+    } else {
+      fillCol = "#eab308";
+      strokeCol = "#ca8a04";
+      patternCircles = [
+        { cx: -1 * sizeMult, cy: -2 * sizeMult, r: 1.6 * sizeMult, fill: "#ffffff" },
+        { cx: 2 * sizeMult, cy: 2 * sizeMult, r: 1.2 * sizeMult, fill: "#fef08a" }
+      ];
+    }
+
+    const uniqueKey = plaque.id || `plaque-${sideStr}-${vessel}-${idx ?? 0}`;
+
+    return (
+      <g key={uniqueKey}>
+        <path 
+          d={pathData} 
+          fill={fillCol} 
+          stroke={strokeCol} 
+          strokeWidth="1.5" 
+          fillOpacity={type === "I" ? 0.45 : type === "II" ? 0.75 : 0.95} 
+          strokeDasharray={type === "I" ? "2,2" : undefined}
+        />
+        {patternCircles.map((circle: any, idx: number) => (
+          <circle 
+            key={idx}
+            cx={cx + circle.cx}
+            cy={cy + circle.cy}
+            r={circle.r}
+            fill={circle.fill}
+            opacity={0.9}
+          />
+        ))}
+      </g>
+    );
+  };
+
+  const isBilateralActive = () => {
+    if (!isVenoso && !isArterial) return false;
+
+    const latLower = (laterality || "").toLowerCase();
+    if (latLower === "bilateral" || latLower === "co-bilateral") return true;
+    if (latLower === "derecha" || latLower === "derecho" || latLower === "izquierda" || latLower === "izquierdo") return false;
+
+    const studyLower = (studyType || "").toLowerCase();
+    if (studyLower.includes("bilateral") || 
+        studyLower.includes("miembros inferiores") || 
+        studyLower.includes("m.i. bi") ||
+        (studyLower.includes("derech") && studyLower.includes("izquierd"))) {
+      return true;
+    }
+
+    const reportLower = (generatedReport || "").toLowerCase();
+    let diagnosticText = reportLower;
+    
+    const headings = [
+      "impresión diagnóstica",
+      "impresion diagnostica",
+      "conclusiones",
+      "conclusión",
+      "conclusion",
+      "diagnóstico",
+      "diagnostico"
+    ];
+    
+    for (const heading of headings) {
+      const idx = reportLower.lastIndexOf(heading);
+      if (idx !== -1) {
+        diagnosticText = reportLower.substring(idx);
+        break;
+      }
+    }
+
+    const mentionsRight = diagnosticText.includes("derech") || diagnosticText.includes("m.i.d") || diagnosticText.includes("mid") || diagnosticText.includes("m.i. derecho");
+    const mentionsLeft = diagnosticText.includes("izquierd") || diagnosticText.includes("m.i.i") || diagnosticText.includes("mii") || diagnosticText.includes("m.i. izquierdo");
+    const mentionsBoth = diagnosticText.includes("ambos") || diagnosticText.includes("bilateral") || diagnosticText.includes("miembros inferiores") || diagnosticText.includes("miembros inferiores");
+
+    if (mentionsBoth || (mentionsRight && mentionsLeft)) {
+      return true;
+    }
+
+    return false;
+  };
+
   // Check if a limb was evaluated
   const isLimbEvaluated = (side: "der" | "izq") => {
     if (isCarotidas) return true;
+    if (isBilateralActive()) return true;
 
     const latLower = (laterality || "").toLowerCase();
     if (latLower === "derecha" || latLower === "derecho") {
@@ -113,9 +404,6 @@ export default function VascularAnatomyViewer({
     }
     if (latLower === "izquierda" || latLower === "izquierdo") {
       return side === "izq";
-    }
-    if (latLower === "bilateral") {
-      return true;
     }
 
     const studyLower = (studyType || "").toLowerCase();
@@ -141,7 +429,26 @@ export default function VascularAnatomyViewer({
       return side === "izq";
     }
 
-    return true; // default to bilateral
+    return true; // default to bilateral fallback
+  };
+
+  const getVascularViewBox = () => {
+    if (isCarotidas) return "-120 0 640 450";
+    
+    if (isBilateralActive()) {
+      return activeSide === "derecho" ? "-10 0 220 450" : "195 0 220 450";
+    }
+
+    // Unilateral
+    if (isLimbEvaluated("der") && !isLimbEvaluated("izq")) {
+      return "-10 0 220 450"; // Right Leg is at viewer's Left (coordinates around 140)
+    }
+    if (isLimbEvaluated("izq") && !isLimbEvaluated("der")) {
+      return "195 0 220 450"; // Left Leg is at viewer's Right (coordinates around 260)
+    }
+
+    // Default fallback
+    return "-120 0 640 450";
   };
 
   // Segment colors based on state
@@ -158,7 +465,7 @@ export default function VascularAnatomyViewer({
 
     const s = states[id] || "normal";
     if (s === "normal") return "#10b981"; // Emerald Green (Normal)
-    if (s === "mild" || s === "reflux") return "#f59e0b"; // Amber (Mild Plaque / Reflux)
+    if (s === "mild" || s === "reflux") return "#f97316"; // Orange (Mild Plaque / Reflux / Insuficiencia)
     return "#ef4444"; // Red (Critical Stenosis / Thrombosis)
   };
 
@@ -260,7 +567,7 @@ export default function VascularAnatomyViewer({
       return "Estenosis focal";
     }
     if (s === "reflux") {
-      return "Reflujo";
+      return "Insuficiencia";
     }
     if (s === "thrombosis") {
       return "Trombosis";
@@ -373,14 +680,17 @@ export default function VascularAnatomyViewer({
       .replace("ace", "Carótida Externa (ACE)")
       .replace("vert", "Arteria Vertebral")
       .replace("vfc", "Femoral Común (VFC)")
-      .replace("vfs", "Femoral Superficial (VFS)")
+      .replace("vfs", "Vena Femoral (VF)")
       .replace("vp", "Vena Poplítea (VP)")
       .replace("vsm", "Safena Magna (VSM)")
       .replace("vsp", "Safena Parva (VSP)")
       .replace("sfj", "Unión SFJ")
+      .replace("vta", "Vena Tibial Anterior (VTA)")
+      .replace("vtp", "Vena Tibial Posterior (VTP)")
+      .replace("vper", "Vena Peronea (VPer)")
       .replace("aic", "Ilíaca Común (AIC)")
       .replace("afc", "Femoral Común (AFC)")
-      .replace("afs", "Femoral Superficial (AFS)")
+      .replace("afs", "Arteria Femoral (AF)")
       .replace("ap", "Arteria Poplítea (AP)")
       .replace("ata", "Arteria Tibial Anterior")
       .replace("atp", "Arteria Tibial Posterior")
@@ -692,14 +1002,20 @@ export default function VascularAnatomyViewer({
       : isVenoso 
       ? [
           { id: "vfc_der", name: "VFC Derecho (Vena Femoral Común)" },
-          { id: "vfs_der", name: "VFS Derecha (Vena Femoral Superf.)" },
+          { id: "vfs_der", name: "VF Derecha (Vena Femoral)" },
           { id: "vp_der", name: "VP Derecha (Vena Poplítea)" },
+          { id: "vta_der", name: "VTA Derecha (Vena Tibial Anterior)" },
+          { id: "vtp_der", name: "VTP Derecha (Vena Tibial Posterior)" },
+          { id: "vper_der", name: "VPer Derecha (Vena Peronea)" },
           { id: "vsm_der", name: "VSM Derecha (Vena Safena Magna)" },
           { id: "vsp_der", name: "VSP Derecha (Vena Safena Parva)" },
           { id: "sfj_der", name: "SFJ Derecha (Unión Safenofemoral)" },
           { id: "vfc_izq", name: "VFC Izquierdo (Vena Femoral Común)" },
-          { id: "vfs_izq", name: "VFS Izquierda (Vena Femoral Superf.)" },
+          { id: "vfs_izq", name: "VF Izquierda (Vena Femoral)" },
           { id: "vp_izq", name: "VP Izquierda (Vena Poplítea)" },
+          { id: "vta_izq", name: "VTA Izquierda (Vena Tibial Anterior)" },
+          { id: "vtp_izq", name: "VTP Izquierda (Vena Tibial Posterior)" },
+          { id: "vper_izq", name: "VPer Izquierda (Vena Peronea)" },
           { id: "vsm_izq", name: "VSM Izquierda (Vena Safena Magna)" },
           { id: "vsp_izq", name: "VSP Izquierda (Vena Safena Parva)" },
           { id: "sfj_izq", name: "SFJ Izquierda (Unión Safenofemoral)" }
@@ -707,14 +1023,14 @@ export default function VascularAnatomyViewer({
       : [
           { id: "aic_der", name: "AIC Derecha (Art. Ilíaca Común)" },
           { id: "afc_der", name: "AFC Derecha (Art. Femoral Común)" },
-          { id: "afs_der", name: "AFS Derecha (Art. Femoral Superf.)" },
+          { id: "afs_der", name: "AF Derecha (Arteria Femoral)" },
           { id: "ap_der", name: "AP Derecha (Arteria Poplítea)" },
           { id: "ata_der", name: "ATA Derecha (Arteria Tibial Ant.)" },
           { id: "atp_der", name: "ATP Derecha (Arteria Tibial Post.)" },
           { id: "aper_der", name: "APer Derecha (Arteria Peronea)" },
           { id: "aic_izq", name: "AIC Izquierda (Art. Ilíaca Común)" },
           { id: "afc_izq", name: "AFC Izquierda (Art. Femoral Común)" },
-          { id: "afs_izq", name: "AFS Izquierda (Art. Femoral Superf.)" },
+          { id: "afs_izq", name: "AF Izquierda (Arteria Femoral)" },
           { id: "ap_izq", name: "AP Izquierda (Arteria Poplítea)" },
           { id: "ata_izq", name: "ATA Izquierda (Arteria Tibial Ant.)" },
           { id: "atp_izq", name: "ATP Izquierda (Arteria Tibial Post.)" },
@@ -875,7 +1191,7 @@ export default function VascularAnatomyViewer({
       let cleanDesc = desc
         .replace(/Placas ateromatosas con estenosis/, "Placa")
         .replace(/Estenosis hemodinámicamente significativa \//, "Estenosis")
-        .replace(/Insuficiencia valvular con reflujo retrógrado/, "Reflujo val.")
+        .replace(/Insuficiencia valvular con reflujo retrógrado/, "Insuficiencia")
         .replace(/Obstrucción trombótica patente/, "Trombo")
         .replace(/Normal \/ Conservado/, "Normal")
         .trim();
@@ -1119,16 +1435,25 @@ export default function VascularAnatomyViewer({
   };
 
   const renderVenousSVG = () => {
+    const viewBoxVal = getVascularViewBox();
     return (
-      <svg viewBox="-120 0 640 450" className="w-full max-w-[420px] h-auto mx-auto select-none font-mono">
+      <svg viewBox={viewBoxVal} className="w-full max-w-[420px] h-auto mx-auto select-none font-mono">
         {/* Background legs outline */}
         <path d="M 80 430 L 110 50 L 195 50 L 170 430 Z" fill="#1e293b" opacity="0.15" stroke="#334155" strokeWidth="1" />
         <path d="M 320 430 L 290 50 L 205 50 L 230 430 Z" fill="#1e293b" opacity="0.15" stroke="#334155" strokeWidth="1" />
         
         {/* Anatomical Line dividers / L/R Labels */}
-        <line x1="200" y1="20" x2="200" y2="430" stroke="#1f2937" strokeWidth="1" strokeDasharray="4 4" />
-        <text x="70" y="30" fill="#6b7280" fontSize="11" fontWeight="bold" textAnchor="middle" className="uppercase tracking-widest">Derecho (R)</text>
-        <text x="330" y="30" fill="#6b7280" fontSize="11" fontWeight="bold" textAnchor="middle" className="uppercase tracking-widest">Izquierdo (L)</text>
+        {viewBoxVal === "-120 0 640 450" ? (
+          <>
+            <line x1="200" y1="20" x2="200" y2="430" stroke="#1f2937" strokeWidth="1" strokeDasharray="4 4" />
+            <text x="70" y="30" fill="#6b7280" fontSize="11" fontWeight="bold" textAnchor="middle" className="uppercase tracking-widest">Derecho (R)</text>
+            <text x="330" y="30" fill="#6b7280" fontSize="11" fontWeight="bold" textAnchor="middle" className="uppercase tracking-widest">Izquierdo (L)</text>
+          </>
+        ) : viewBoxVal === "-10 0 220 450" ? (
+          <text x="100" y="30" fill="#818cf8" fontSize="11" fontWeight="bold" textAnchor="middle" className="uppercase tracking-widest font-sans">Derecho (R)</text>
+        ) : (
+          <text x="305" y="30" fill="#818cf8" fontSize="11" fontWeight="bold" textAnchor="middle" className="uppercase tracking-widest font-sans">Izquierdo (L)</text>
+        )}
         
         {/* === VENOUS TREE - RIGHT LEG === */}
         {/* VFC - Vena Femoral Común */}
@@ -1182,7 +1507,7 @@ export default function VascularAnatomyViewer({
             strokeLinecap="round"
             className="transition-all duration-300"
           />
-          {renderRotulo("vfs_der", "VFS Der", "120", "190", "end")}
+          {renderRotulo("vfs_der", "VF Der", "120", "190", "end")}
         </g>
 
         {/* VP - Vena Poplítea */}
@@ -1201,6 +1526,60 @@ export default function VascularAnatomyViewer({
             className="transition-all duration-300"
           />
           {renderRotulo("vp_der", "V. Poplítea Der", "110", "290", "end")}
+        </g>
+
+        {/* VTA - Vena Tibial Anterior */}
+        <g 
+          className="cursor-pointer group" 
+          onClick={() => onToggleSegment("vta_der")}
+          onMouseEnter={() => setActiveHover("vta_der")}
+          onMouseLeave={() => setActiveHover(null)}
+        >
+          <path 
+            d="M 120 340 L 105 410" 
+            fill="none" 
+            stroke={getSegmentColor("vta_der", true)} 
+            strokeWidth={activeHover === "vta_der" ? "10" : "6"} 
+            strokeLinecap="round"
+            className="transition-all duration-300"
+          />
+          {renderRotulo("vta_der", "VTA Der", "100", "380", "end")}
+        </g>
+
+        {/* VTP - Vena Tibial Posterior */}
+        <g 
+          className="cursor-pointer group" 
+          onClick={() => onToggleSegment("vtp_der")}
+          onMouseEnter={() => setActiveHover("vtp_der")}
+          onMouseLeave={() => setActiveHover(null)}
+        >
+          <path 
+            d="M 120 340 L 117 410" 
+            fill="none" 
+            stroke={getSegmentColor("vtp_der", true)} 
+            strokeWidth={activeHover === "vtp_der" ? "10" : "6"} 
+            strokeLinecap="round"
+            className="transition-all duration-300"
+          />
+          {renderRotulo("vtp_der", "VTP Der", "130", "390", "start")}
+        </g>
+
+        {/* VPer - Vena Peronea */}
+        <g 
+          className="cursor-pointer group" 
+          onClick={() => onToggleSegment("vper_der")}
+          onMouseEnter={() => setActiveHover("vper_der")}
+          onMouseLeave={() => setActiveHover(null)}
+        >
+          <path 
+            d="M 120 345 L 132 405" 
+            fill="none" 
+            stroke={getSegmentColor("vper_der", true)} 
+            strokeWidth={activeHover === "vper_der" ? "10" : "6"} 
+            strokeLinecap="round"
+            className="transition-all duration-300"
+          />
+          {renderRotulo("vper_der", "VPer Der", "150", "400", "start")}
         </g>
 
         {/* VSM - Vena Safena Magna (Superficial long medial branch) */}
@@ -1292,7 +1671,7 @@ export default function VascularAnatomyViewer({
             strokeLinecap="round"
             className="transition-all duration-300"
           />
-          {renderRotulo("vfs_izq", "VFS Izq", "280", "190", "start")}
+          {renderRotulo("vfs_izq", "VF Izq", "280", "190", "start")}
         </g>
 
         {/* VP - Vena Poplítea */}
@@ -1311,6 +1690,60 @@ export default function VascularAnatomyViewer({
             className="transition-all duration-300"
           />
           {renderRotulo("vp_izq", "V. Poplítea Izq", "290", "290", "start")}
+        </g>
+
+        {/* VTA - Vena Tibial Anterior */}
+        <g 
+          className="cursor-pointer group" 
+          onClick={() => onToggleSegment("vta_izq")}
+          onMouseEnter={() => setActiveHover("vta_izq")}
+          onMouseLeave={() => setActiveHover(null)}
+        >
+          <path 
+            d="M 280 340 L 295 410" 
+            fill="none" 
+            stroke={getSegmentColor("vta_izq", true)} 
+            strokeWidth={activeHover === "vta_izq" ? "10" : "6"} 
+            strokeLinecap="round"
+            className="transition-all duration-300"
+          />
+          {renderRotulo("vta_izq", "VTA Izq", "300", "380", "start")}
+        </g>
+
+        {/* VTP - Vena Tibial Posterior */}
+        <g 
+          className="cursor-pointer group" 
+          onClick={() => onToggleSegment("vtp_izq")}
+          onMouseEnter={() => setActiveHover("vtp_izq")}
+          onMouseLeave={() => setActiveHover(null)}
+        >
+          <path 
+            d="M 280 340 L 278 410" 
+            fill="none" 
+            stroke={getSegmentColor("vtp_izq", true)} 
+            strokeWidth={activeHover === "vtp_izq" ? "10" : "6"} 
+            strokeLinecap="round"
+            className="transition-all duration-300"
+          />
+          {renderRotulo("vtp_izq", "VTP Izq", "270", "390", "end")}
+        </g>
+
+        {/* VPer - Vena Peronea */}
+        <g 
+          className="cursor-pointer group" 
+          onClick={() => onToggleSegment("vper_izq")}
+          onMouseEnter={() => setActiveHover("vper_izq")}
+          onMouseLeave={() => setActiveHover(null)}
+        >
+          <path 
+            d="M 280 345 L 268 405" 
+            fill="none" 
+            stroke={getSegmentColor("vper_izq", true)} 
+            strokeWidth={activeHover === "vper_izq" ? "10" : "6"} 
+            strokeLinecap="round"
+            className="transition-all duration-300"
+          />
+          {renderRotulo("vper_izq", "VPer Izq", "250", "400", "end")}
         </g>
 
         {/* VSM - Vena Safena Magna */}
@@ -1365,16 +1798,25 @@ export default function VascularAnatomyViewer({
   };
 
   const renderArterialSVG = () => {
+    const viewBoxVal = getVascularViewBox();
     return (
-      <svg viewBox="-120 0 640 450" className="w-full max-w-[420px] h-auto mx-auto select-none font-mono">
+      <svg viewBox={viewBoxVal} className="w-full max-w-[420px] h-auto mx-auto select-none font-mono">
         {/* Background legs outline */}
         <path d="M 80 430 L 110 50 L 195 50 L 170 430 Z" fill="#1a1111" opacity="0.15" stroke="#371818" strokeWidth="1" />
         <path d="M 320 430 L 290 50 L 205 50 L 230 430 Z" fill="#1a1111" opacity="0.15" stroke="#371818" strokeWidth="1" />
         
         {/* Anatomical Line dividers / L/R Labels */}
-        <line x1="200" y1="20" x2="200" y2="430" stroke="#1f2937" strokeWidth="1" strokeDasharray="4 4" />
-        <text x="70" y="30" fill="#6b7280" fontSize="11" fontWeight="bold" textAnchor="middle" className="uppercase tracking-widest">Derecho (R)</text>
-        <text x="330" y="30" fill="#6b7280" fontSize="11" fontWeight="bold" textAnchor="middle" className="uppercase tracking-widest">Izquierdo (L)</text>
+        {viewBoxVal === "-120 0 640 450" ? (
+          <>
+            <line x1="200" y1="20" x2="200" y2="430" stroke="#1f2937" strokeWidth="1" strokeDasharray="4 4" />
+            <text x="70" y="30" fill="#6b7280" fontSize="11" fontWeight="bold" textAnchor="middle" className="uppercase tracking-widest">Derecho (R)</text>
+            <text x="330" y="30" fill="#6b7280" fontSize="11" fontWeight="bold" textAnchor="middle" className="uppercase tracking-widest">Izquierdo (L)</text>
+          </>
+        ) : viewBoxVal === "-10 0 220 450" ? (
+          <text x="100" y="30" fill="#818cf8" fontSize="11" fontWeight="bold" textAnchor="middle" className="uppercase tracking-widest font-sans">Derecho (R)</text>
+        ) : (
+          <text x="305" y="30" fill="#818cf8" fontSize="11" fontWeight="bold" textAnchor="middle" className="uppercase tracking-widest font-sans">Izquierdo (L)</text>
+        )}
         
         {/* === ARTERIAL TREE - RIGHT LEG === */}
         {/* AIC - Arteria Ilíaca Común */}
@@ -1694,6 +2136,33 @@ export default function VascularAnatomyViewer({
             Haz clic en vasos para cambiar estado
           </span>
 
+          {isBilateralActive() && (
+            <div className="flex gap-1.5 p-1.5 bg-slate-900/90 border border-slate-800 rounded-xl w-full max-w-[280px] mt-8 mb-2 shadow-inner select-none">
+              <button
+                type="button"
+                onClick={() => setActiveSide("derecho")}
+                className={`flex-1 py-1 px-2.5 text-[9px] font-bold rounded-lg transition-all cursor-pointer font-mono ${
+                  activeSide === "derecho"
+                    ? "bg-indigo-600 text-white shadow-md border border-indigo-400/20"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                M. DERECHO (ATA-R)
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveSide("izquierdo")}
+                className={`flex-1 py-1 px-2.5 text-[9px] font-bold rounded-lg transition-all cursor-pointer font-mono ${
+                  activeSide === "izquierdo"
+                    ? "bg-indigo-600 text-white shadow-md border border-indigo-400/20"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                M. IZQUIERDO (ATA-L)
+              </button>
+            </div>
+          )}
+
           <div className="relative pt-6">
             {isCarotidas && renderCarotidSVG()}
             {isVenoso && renderVenousSVG()}
@@ -1707,8 +2176,8 @@ export default function VascularAnatomyViewer({
               <div className="text-[8px] font-bold text-slate-400 uppercase">Verde: Normal</div>
             </div>
             <div className="space-y-1">
-              <div className="h-1.5 w-8 mx-auto bg-amber-500 rounded" />
-              <div className="text-[8px] font-bold text-slate-400 uppercase">{isVenoso ? "Amarillo: Reflujo" : "Amarillo: Leve"}</div>
+              <div className={`h-1.5 w-8 mx-auto ${isVenoso ? "bg-orange-500" : "bg-amber-500"} rounded`} />
+              <div className="text-[8px] font-bold text-slate-400 uppercase">{isVenoso ? "Anaranjado: Insuficiencia" : "Amarillo: Leve"}</div>
             </div>
             <div className="space-y-1">
               <div className="h-1.5 w-8 mx-auto bg-red-500 rounded" />
@@ -1721,6 +2190,33 @@ export default function VascularAnatomyViewer({
               </div>
             )}
           </div>
+
+          {additionalFindings && additionalFindings.length > 0 && (
+            <div className="w-full bg-slate-900/10 border border-slate-855/60 p-3 rounded-2xl mt-4 text-left">
+              <h5 className="text-[9px] uppercase font-black text-indigo-400 font-mono tracking-wider mb-2 select-none">
+                📍 Hallazgos Adicionales Detectados
+              </h5>
+              <div className="grid grid-cols-1 gap-2 max-h-[140px] overflow-y-auto pr-1">
+                {additionalFindings.map((item) => {
+                  const s = item.state || "Alterado";
+                  return (
+                    <div 
+                      key={item.id}
+                      className="p-2 rounded-xl bg-slate-950/40 border border-slate-900 flex flex-col justify-between"
+                    >
+                      <div className="flex items-center justify-between gap-1 leading-none select-none">
+                        <span className="text-[9.5px] font-black uppercase text-slate-200 truncate">{item.structureName}</span>
+                        <span className="text-[7.5px] px-1 bg-rose-950/40 text-rose-450 border border-rose-900/40 rounded scale-90 font-mono font-black uppercase shrink-0">
+                          {s}
+                        </span>
+                      </div>
+                      <p className="text-[8.5px] leading-relaxed text-slate-400 mt-1 max-w-full truncate leading-tight">{item.description}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Right Column: AI Extraction HUD & Table representation */}
@@ -1860,7 +2356,7 @@ export default function VascularAnatomyViewer({
                       <div key={id} className="py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 hover:bg-slate-900/10 rounded px-1 group">
                         <div className="space-y-0.5">
                           <span className="text-[9.5px] font-black text-slate-300 uppercase tracking-wide">
-                            {id.replace("_der", " Derecho (R)").replace("_izq", " Izquierdo (L)").replace("acc", "Carótida Común (ACC)").replace("aci", "Carótida Interna (ACI)").replace("ace", "Carótida Externa (ACE)").replace("vert", "Vert. Artery").replace("vfc", "Femoral Común (VFC)").replace("vfs", "Femoral Superficial (VFS)").replace("vp", "Vena Poplítea (VP)").replace("vsm", "Safena Magna (VSM)").replace("vsp", "Safena Parva (VSP)").replace("sfj", "Unión SFJ").replace("aic", "Ilíaca Común (AIC)").replace("afc", "Femoral Común (AFC)").replace("afs", "Femoral Superficial (AFS)").replace("ap", "Arteria Poplítea (AP)").replace("ata", "Arteria Tibial Ant. (ATA)").replace("atp", "Arteria Tibial Post. (ATP)").replace("aper", "Arteria Peronea (APer)")}
+                            {id.replace("_der", " Derecho (R)").replace("_izq", " Izquierdo (L)").replace("acc", "Carótida Común (ACC)").replace("aci", "Carótida Interna (ACI)").replace("ace", "Carótida Externa (ACE)").replace("vert", "Vert. Artery").replace("vfc", "Femoral Común (VFC)").replace("vfs", "Vena Femoral (VF)").replace("vp", "Vena Poplítea (VP)").replace("vta", "Vena Tibial Anterior (VTA)").replace("vtp", "Vena Tibial Posterior (VTP)").replace("vper", "Vena Peronea (VPer)").replace("vsm", "Safena Magna (VSM)").replace("vsp", "Safena Parva (VSP)").replace("sfj", "Unión SFJ").replace("aic", "Ilíaca Común (AIC)").replace("afc", "Femoral Común (AFC)").replace("afs", "Arteria Femoral (AF)").replace("ap", "Arteria Poplítea (AP)").replace("ata", "Arteria Tibial Ant. (ATA)").replace("atp", "Arteria Tibial Post. (ATP)").replace("aper", "Arteria Peronea (APer)")}
                           </span>
                           <p className="text-[9px] text-slate-500 font-medium">
                             {descriptions[id] || "Flujo conservado sin alteraciones notables mapeadas."}
@@ -1899,6 +2395,361 @@ export default function VascularAnatomyViewer({
         </div>
 
       </div>
+
+      {isCarotidas && (
+        <div id="carotid-bifurcation-editor" className="bg-slate-950/80 border border-slate-900 rounded-3xl p-6 mt-6 shadow-2xl backdrop-blur-md">
+          <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-slate-900 pb-4 mb-6 gap-3">
+            <div>
+              <h3 className="text-sm font-black text-slate-100 uppercase tracking-widest font-mono flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                Mapeo Detallado de Placas Carotídeas (Clasificación de Gray-Weale)
+              </h3>
+              <p className="text-[10px] text-slate-400 font-medium mt-1">
+                Haz clic en cualquier segmento de las bifurcaciones ampliadas para agregar, ajustar o eliminar placas ateromatosas.
+              </p>
+            </div>
+            
+            <div className="flex items-center gap-3">
+              <label className="text-[10px] font-extrabold text-slate-300 uppercase tracking-wider flex items-center gap-2 cursor-pointer bg-[#020617] px-3 py-2 rounded-xl border border-slate-900">
+                <input 
+                  type="checkbox" 
+                  checked={includeCarotidBifurcations} 
+                  onChange={(e) => onSetIncludeCarotidBifurcations(e.target.checked)}
+                  className="rounded text-indigo-600 bg-slate-900 border-slate-700 h-3.5 w-3.5 cursor-pointer accent-indigo-500"
+                />
+                Incluir Bifurcaciones en PDF
+              </label>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            {/* Left Side: SVGs Side by Side */}
+            <div className="lg:col-span-7 grid grid-cols-1 md:grid-cols-2 gap-6 bg-[#020617] p-4 rounded-2xl border border-slate-900/40">
+              
+              {/* Derecho (R) */}
+              <div className="flex flex-col items-center select-none p-3 border border-slate-900/60 rounded-xl bg-slate-950/20">
+                <div className="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-3 font-mono">
+                  Bifurcación Derecha (Lado R)
+                </div>
+                <div className="relative">
+                  <svg viewBox="0 0 200 240" className="w-[180px] h-[210px]">
+                    {/* ACC segment interactive overlay */}
+                    <path 
+                      onClick={() => handleSelectPlaqueSegment("derecho", "acc")}
+                      d="M 85 240 L 85 170 C 85 140, 70 135, 70 120 L 45 20 L 70 20 L 100 110 L 130 20 L 155 20 L 115 170 L 115 240 Z" 
+                      fill={selectedPlaqueSegment?.side === "derecho" ? "#fef08a1a" : "#fee2e20b"} 
+                      stroke={selectedPlaqueSegment?.side === "derecho" && selectedPlaqueSegment?.vessel === "acc" ? "#eab308" : "#dc2626"} 
+                      strokeWidth="2.5" 
+                      strokeLinecap="round" 
+                      strokeLinejoin="round" 
+                      className="transition-all"
+                    />
+
+                    {/* Interactive Clickable Hotzones with styled hover/glow */}
+                    {/* ACC hotzone */}
+                    <rect 
+                      onClick={() => handleSelectPlaqueSegment("derecho", "acc")}
+                      onMouseEnter={() => setActiveHover("acc_der_detail")}
+                      onMouseLeave={() => setActiveHover(null)}
+                      x="83" y="170" width="34" height="70" 
+                      fill={activeHover === "acc_der_detail" ? "rgba(239,68,68,0.15)" : "transparent"} 
+                      className="cursor-pointer transition-colors"
+                    />
+                    {/* Bulbo hotzone */}
+                    <rect 
+                      onClick={() => handleSelectPlaqueSegment("derecho", "bulbo")}
+                      onMouseEnter={() => setActiveHover("bulbo_der_detail")}
+                      onMouseLeave={() => setActiveHover(null)}
+                      x="73" y="115" width="54" height="55" 
+                      fill={activeHover === "bulbo_der_detail" ? "rgba(239,68,68,0.15)" : "transparent"} 
+                      className="cursor-pointer transition-colors"
+                    />
+                    {/* ACI hotzone (Internal) - Left Branch slanted */}
+                    <polygon 
+                      onClick={() => handleSelectPlaqueSegment("derecho", "aci")}
+                      onMouseEnter={() => setActiveHover("aci_der_detail")}
+                      onMouseLeave={() => setActiveHover(null)}
+                      points="40,15 75,15 97,110 65,110" 
+                      fill={activeHover === "aci_der_detail" ? "rgba(239,68,68,0.15)" : "transparent"} 
+                      className="cursor-pointer transition-colors"
+                    />
+                    {/* ACE hotzone (External) - Right Branch slanted */}
+                    <polygon 
+                      onClick={() => handleSelectPlaqueSegment("derecho", "ace")}
+                      onMouseEnter={() => setActiveHover("ace_der_detail")}
+                      onMouseLeave={() => setActiveHover(null)}
+                      points="103,110 135,15 160,15 125,110" 
+                      fill={activeHover === "ace_der_detail" ? "rgba(239,68,68,0.15)" : "transparent"} 
+                      className="cursor-pointer transition-colors"
+                    />
+
+                    {/* Anatomical Texts */}
+                    <text x="56" y="12" fill="#ef4444" fontSize="9" fontWeight="extrabold" textAnchor="middle" className="font-mono select-none">ACI</text>
+                    <text x="142" y="12" fill="#ef4444" fontSize="9" fontWeight="extrabold" textAnchor="middle" className="font-mono select-none">ACE</text>
+                    <text x="100" y="235" fill="#ef4444" fontSize="9" fontWeight="extrabold" textAnchor="middle" className="font-mono select-none">ACC</text>
+                    <text x="73" y="150" fill="#f87171" fontSize="8" fontWeight="bold" textAnchor="end" className="font-mono select-none">BULBO</text>
+
+                    {/* Render plaques registered for Right side */}
+                    {carotidPlaques
+                      .filter(p => p.side === "derecho")
+                      .map((p, idx) => drawPlaqueSvgPath(p, "der", false, idx))}
+                  </svg>
+                </div>
+              </div>
+
+              {/* Izquierdo (L) */}
+              <div className="flex flex-col items-center select-none p-3 border border-slate-900/60 rounded-xl bg-slate-950/20">
+                <div className="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-3 font-mono">
+                  Bifurcación Izquierda (Lado L)
+                </div>
+                <div className="relative">
+                  <svg viewBox="0 0 200 240" className="w-[180px] h-[210px]">
+                    <path 
+                      onClick={() => handleSelectPlaqueSegment("izquierdo", "acc")}
+                      d="M 115 240 L 115 170 C 115 140, 130 135, 130 120 L 155 20 L 130 20 L 100 110 L 70 20 L 45 20 L 85 170 L 85 240 Z" 
+                      fill={selectedPlaqueSegment?.side === "izquierdo" ? "#fef08a1a" : "#fee2e20b"} 
+                      stroke={selectedPlaqueSegment?.side === "izquierdo" && selectedPlaqueSegment?.vessel === "acc" ? "#eab308" : "#dc2626"} 
+                      strokeWidth="2.5" 
+                      strokeLinecap="round" 
+                      strokeLinejoin="round" 
+                      className="transition-all"
+                    />
+
+                    {/* Interactive Clickable Hotzones */}
+                    {/* ACC hotzone */}
+                    <rect 
+                      onClick={() => handleSelectPlaqueSegment("izquierdo", "acc")}
+                      onMouseEnter={() => setActiveHover("acc_izq_detail")}
+                      onMouseLeave={() => setActiveHover(null)}
+                      x="83" y="170" width="34" height="70" 
+                      fill={activeHover === "acc_izq_detail" ? "rgba(239,68,68,0.15)" : "transparent"} 
+                      className="cursor-pointer transition-colors"
+                    />
+                    {/* Bulbo hotzone */}
+                    <rect 
+                      onClick={() => handleSelectPlaqueSegment("izquierdo", "bulbo")}
+                      onMouseEnter={() => setActiveHover("bulbo_izq_detail")}
+                      onMouseLeave={() => setActiveHover(null)}
+                      x="73" y="115" width="54" height="55" 
+                      fill={activeHover === "bulbo_izq_detail" ? "rgba(239,68,68,0.15)" : "transparent"} 
+                      className="cursor-pointer transition-colors"
+                    />
+                    {/* ACI hotzone (Internal) */}
+                    <polygon 
+                      onClick={() => handleSelectPlaqueSegment("izquierdo", "aci")}
+                      onMouseEnter={() => setActiveHover("aci_izq_detail")}
+                      onMouseLeave={() => setActiveHover(null)}
+                      points="125,110 160,15 130,15 97,110" 
+                      fill={activeHover === "aci_izq_detail" ? "rgba(239,68,68,0.15)" : "transparent"} 
+                      className="cursor-pointer transition-colors"
+                    />
+                    {/* ACE hotzone (External) */}
+                    <polygon 
+                      onClick={() => handleSelectPlaqueSegment("izquierdo", "ace")}
+                      onMouseEnter={() => setActiveHover("ace_izq_detail")}
+                      onMouseLeave={() => setActiveHover(null)}
+                      points="65,110 97,110 75,15 40,15" 
+                      fill={activeHover === "ace_izq_detail" ? "rgba(239,68,68,0.15)" : "transparent"} 
+                      className="cursor-pointer transition-colors"
+                    />
+
+                    <text x="142" y="12" fill="#ef4444" fontSize="9" fontWeight="extrabold" textAnchor="middle" className="font-mono select-none">ACI</text>
+                    <text x="56" y="12" fill="#ef4444" fontSize="9" fontWeight="extrabold" textAnchor="middle" className="font-mono select-none">ACE</text>
+                    <text x="100" y="235" fill="#ef4444" fontSize="9" fontWeight="extrabold" textAnchor="middle" className="font-mono select-none">ACC</text>
+                    <text x="127" y="150" fill="#f87171" fontSize="8" fontWeight="bold" textAnchor="start" className="font-mono select-none">BULBO</text>
+
+                    {carotidPlaques
+                      .filter(p => p.side === "izquierdo")
+                      .map((p, idx) => drawPlaqueSvgPath(p, "izq", false, idx))}
+                  </svg>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Right Side: Configuration HUD Panel */}
+            <div className="lg:col-span-5 space-y-4">
+              {selectedPlaqueSegment ? (
+                <div className="p-4 bg-slate-900/60 rounded-2xl border border-slate-800/80 space-y-4 shadow-xl">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+                    <div className="text-[10px] font-black uppercase text-indigo-400 font-mono tracking-wider">
+                      Ajustar Placa: {selectedPlaqueSegment.side.toUpperCase()} / {selectedPlaqueSegment.vessel.toUpperCase()}
+                    </div>
+                    <button 
+                      onClick={() => setSelectedPlaqueSegment(null)}
+                      className="text-slate-500 hover:text-slate-300 font-mono text-xs font-black p-1 cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  {/* Form fields */}
+                  <div className="space-y-3">
+                    {/* Plaque Type */}
+                    <div>
+                      <label className="block text-[8px] font-black uppercase text-slate-400 font-mono tracking-wider mb-2">
+                        Tipo de Placa (Morfología de Gray-Weale)
+                      </label>
+                      <div className="grid grid-cols-4 gap-1.55">
+                        {(["I", "II", "III", "IV"] as const).map((t) => (
+                          <button
+                            key={t}
+                            onClick={() => setPlaqueType(t)}
+                            className={`py-2 text-[10px] font-black rounded-lg border transition-all cursor-pointer ${
+                              plaqueType === t 
+                                ? "bg-indigo-900/30 border-indigo-500 text-indigo-300 shadow-md shadow-indigo-950/40" 
+                                : "bg-slate-950 border-slate-850 hover:border-slate-705 text-slate-400"
+                            }`}
+                          >
+                            Tipo {t}
+                          </button>
+                        ))}
+                      </div>
+                      <span className="text-[8px] text-slate-500 font-medium leading-normal block mt-1">
+                        {plaqueType === "I" && "I: Uniformemente Hipoecoica / grasa / blanda (vulnerable)."}
+                        {plaqueType === "II" && "II: Mixta con predominio Hipoecoico (mayor inestabilidad)."}
+                        {plaqueType === "III" && "III: Mixta con predominio Hiperecoico (fibrosa/dura)."}
+                        {plaqueType === "IV" && "IV: Uniformemente ecogénica/calcificada (estable)."}
+                      </span>
+                    </div>
+
+                    {/* Stenosis Percentage */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[8px] font-black uppercase text-slate-400 font-mono tracking-wider">
+                          Porcentaje de Estenosis (%)
+                        </label>
+                        <span className="text-[10px] font-mono font-black text-indigo-400">
+                          {plaqueStenosis}%
+                        </span>
+                      </div>
+                      <input 
+                        type="range"
+                        min="5"
+                        max="100"
+                        step="5"
+                        value={plaqueStenosis}
+                        onChange={(e) => setPlaqueStenosis(parseInt(e.target.value))}
+                        className="w-full h-1 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                      />
+                      <div className="flex justify-between items-center text-[7.5px] font-mono font-bold text-slate-500 mt-1 uppercase select-none">
+                        <span>Leve (&lt;50%)</span>
+                        <span>Mod. (50-69%)</span>
+                        <span>Mod-Sev (&gt;70%)</span>
+                      </div>
+                    </div>
+
+                    {/* Size and dimension */}
+                    <div className="grid grid-cols-2 gap-3.5">
+                      <div>
+                        <label className="block text-[8px] font-black uppercase text-slate-400 font-mono tracking-wider mb-1">
+                          Espesor / Tamaño (mm)
+                        </label>
+                        <input 
+                          type="text"
+                          placeholder="e.g. 3.2 mm"
+                          value={plaqueSize}
+                          onChange={(e) => setPlaqueSize(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-850 rounded-xl px-2.5 py-1.5 text-[9px] text-slate-200 font-mono focus:border-indigo-500/50 outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[8px] font-black uppercase text-slate-400 font-mono tracking-wider mb-1">
+                          Estado clínico
+                        </label>
+                        <span className={`block w-full text-[8.5px] font-extrabold uppercase py-1.5 px-2 rounded-xl text-center border mr-2 select-none ${
+                          plaqueStenosis < 50 
+                            ? "bg-emerald-950/20 border-emerald-900/40 text-emerald-450" 
+                            : plaqueStenosis < 70 
+                              ? "bg-amber-950/20 border-amber-900/40 text-amber-400" 
+                              : "bg-red-950/20 border-red-900/40 text-red-500"
+                        }`}>
+                          {plaqueStenosis < 50 ? "Est. No Signif." : plaqueStenosis < 70 ? "Est. Moderada" : "Est. Severa / Obstr."}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Customized description */}
+                    <div>
+                      <label className="block text-[8px] font-black uppercase text-slate-400 font-mono tracking-wider mb-1">
+                        Descripción (Se incluirá en el reporte)
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={plaqueDesc}
+                        onChange={(e) => setPlaqueDesc(e.target.value)}
+                        placeholder={`Placa de ateroma Tipo ${plaqueType} de ${plaqueSize} que ocasiona estenosis del ${plaqueStenosis}%`}
+                        className="w-full bg-slate-950 border border-slate-850 rounded-xl px-2.5 py-2 text-[9px] text-slate-200 focus:border-indigo-500/50 outline-none resize-none leading-relaxed"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleSavePlaque}
+                      className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-[9.5px] font-black uppercase tracking-widest rounded-xl shadow-md transition-all cursor-pointer text-center"
+                    >
+                      Guardar Placa
+                    </button>
+                    {carotidPlaques.some(p => p.side === selectedPlaqueSegment.side && p.vessel === selectedPlaqueSegment.vessel) && (
+                      <button
+                        onClick={() => handleDeletePlaque(selectedPlaqueSegment.side, selectedPlaqueSegment.vessel)}
+                        className="py-2.5 px-4 bg-rose-950/40 hover:bg-rose-950/70 text-rose-400 hover:text-rose-300 border border-rose-900/40 text-[9.5px] font-black uppercase tracking-widest rounded-xl transition-all cursor-pointer"
+                      >
+                        Eliminar
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="p-5 border-2 border-dashed border-slate-900/80 rounded-2xl flex flex-col items-center justify-center text-center gap-3 bg-slate-950/10 min-h-[220px]">
+                  <div className="p-2.5 bg-slate-900/40 border border-slate-850 rounded-xl text-slate-500">
+                    <Activity className="h-5 w-5" />
+                  </div>
+                  <div className="space-y-1">
+                    <h5 className="text-[9.5px] font-black uppercase tracking-widest font-mono text-slate-400">
+                      Editor Sin Selección
+                    </h5>
+                    <p className="text-[8.5px] leading-relaxed text-slate-500 uppercase tracking-widest max-w-[240px] mx-auto font-mono">
+                      Haz clic sobre el ACC, Bulbo, ACI o ACE en los diagramas de la izquierda para configurar o registrar hallazgos de placas localizadas.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Saved plaque list summary */}
+              <div className="p-4 bg-slate-950 border border-slate-900 rounded-2xl space-y-3">
+                <h4 className="text-[9.5px] font-black uppercase tracking-widest text-slate-300 font-mono">
+                  Placas Registradas ({carotidPlaques.length})
+                </h4>
+                {carotidPlaques.length === 0 ? (
+                  <p className="text-[8px] uppercase tracking-widest text-slate-500 italic">No se han registrado placas carotídeas.</p>
+                ) : (
+                  <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
+                    {carotidPlaques.map((p, idx) => (
+                      <div key={p.id || `plaque-list-${p.side}-${p.vessel}-${idx}`} className="p-2 rounded-xl bg-slate-900 border border-slate-850/40 flex items-center justify-between gap-1">
+                        <div className="space-y-0.5">
+                          <span className="text-[9px] font-black text-slate-300 uppercase font-mono">
+                            {p.side.toUpperCase()} - {p.vessel.toUpperCase()} (TIPO {p.type})
+                          </span>
+                          <p className="text-[8.5px] text-slate-400 leading-normal line-clamp-2 italic">{p.description}</p>
+                        </div>
+                        <button
+                          onClick={() => handleSelectPlaqueSegment(p.side as any, p.vessel as any)}
+                          className="px-2 py-1 bg-slate-950 hover:bg-slate-900 text-indigo-400 text-[8px] font-black uppercase rounded-lg border border-indigo-950/80 transition-all shrink-0 cursor-pointer"
+                        >
+                          Ajustar
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

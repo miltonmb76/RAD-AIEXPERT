@@ -27,6 +27,9 @@ interface UrinaryAnatomyViewerProps {
   onChangeDescriptions?: (descriptions: Record<string, string>) => void;
   genderMode?: "hombre" | "mujer";
   onChangeGenderMode?: (gender: "hombre" | "mujer") => void;
+  externalStates?: Record<string, string>;
+  externalDescriptions?: Record<string, string>;
+  additionalFindings?: Array<{ id: string; structureName: string; state: string; description: string }>;
 }
 
 export default function UrinaryAnatomyViewer({
@@ -40,7 +43,10 @@ export default function UrinaryAnatomyViewer({
   onChangeStates,
   onChangeDescriptions,
   genderMode = "mujer",
-  onChangeGenderMode
+  onChangeGenderMode,
+  externalStates,
+  externalDescriptions,
+  additionalFindings = []
 }: UrinaryAnatomyViewerProps) {
   
   // Current local states of kidney and urinary structures:
@@ -53,7 +59,10 @@ export default function UrinaryAnatomyViewer({
     right_ureter: "no_descrito",
     left_ureter: "no_descrito",
     bladder: "no_descrito",
-    prostate: "no_descrito"
+    prostate: "no_descrito",
+    right_uvj: "no_descrito",
+    left_uvj: "no_descrito",
+    include_uuv: "true"
   });
 
   const [customDescriptions, setCustomDescriptions] = useState<Record<string, string>>({
@@ -62,7 +71,9 @@ export default function UrinaryAnatomyViewer({
     right_ureter: "",
     left_ureter: "",
     bladder: "",
-    prostate: ""
+    prostate: "",
+    right_uvj: "",
+    left_uvj: ""
   });
 
   const [activeHover, setActiveHover] = useState<string | null>(null);
@@ -100,6 +111,24 @@ export default function UrinaryAnatomyViewer({
   };
 
   useEffect(() => {
+    if (externalStates && Object.keys(externalStates).length > 0) {
+      setStates(prev => {
+        const changed = Object.keys(externalStates).some(key => externalStates[key] !== prev[key]);
+        return changed ? { ...prev, ...externalStates } : prev;
+      });
+    }
+  }, [externalStates]);
+
+  useEffect(() => {
+    if (externalDescriptions && Object.keys(externalDescriptions).length > 0) {
+      setCustomDescriptions(prev => {
+        const changed = Object.keys(externalDescriptions).some(key => externalDescriptions[key] !== prev[key]);
+        return changed ? { ...prev, ...externalDescriptions } : prev;
+      });
+    }
+  }, [externalDescriptions]);
+
+  useEffect(() => {
     if (onChangeStates) {
       onChangeStates(states);
     }
@@ -129,6 +158,14 @@ export default function UrinaryAnatomyViewer({
         return [
           "ureter izquierdo", "ureter i", "meato izquierdo", "via excretora izquierda", "via urinaria izquierda"
         ];
+      case "right_uvj":
+        return [
+          "union ureterovesical derecha", "uuv derecha", "uuvd", "meato derecho", "meato ureteral derecho"
+        ];
+      case "left_uvj":
+        return [
+          "union ureterovesical izquierda", "uuv izquierda", "uuvi", "meato izquierdo", "meato ureteral izquierdo"
+        ];
       case "bladder":
         return [
           "vejiga", "vejiga urinaria", "repletion vesical", "replecion vesical", "paredes vesicales", "volumen pre-miccional", "residuo post-miccional"
@@ -150,6 +187,14 @@ export default function UrinaryAnatomyViewer({
     if (state === "normal") {
       return "Dentro de límites normales.";
     }
+    const standardStates = [
+      "normal", "no_descrito", "litiasis", "quiste_simple", "hidronefrosis", "quiste_complejo", "masa_solida",
+      "ectasia_leve", "hidroureteronefrosis", "litiasis_ureteral", "cistitis", "litiasis_vesical", "sedimento",
+      "diverticulos", "neoplasia", "Hiperplasia", "calcificaciones", "prostatitis", "hiperplasia", "residuo_postmiccional", "ureterocele"
+    ];
+    if (state && !standardStates.includes(state)) {
+      return `Se describe hallazgo: ${state.charAt(0).toUpperCase() + state.slice(1)}.`;
+    }
 
     switch (id) {
       case "right_kidney":
@@ -165,6 +210,14 @@ export default function UrinaryAnatomyViewer({
         if (state === "ectasia_leve") return "Ectasia ureteral proximal leve.";
         if (state === "hidroureteronefrosis") return "ECTASIA PIELOUreteral severa.";
         if (state === "litiasis_ureteral") return "Litiasis obstructiva en trayecto.";
+        break;
+      case "right_uvj":
+        if (state === "litiasis") return "Lito enclavado en unión ureterovesical derecha.";
+        if (state === "ureterocele") return "Uréterocele derecho.";
+        break;
+      case "left_uvj":
+        if (state === "litiasis") return "Lito enclavado en unión ureterovesical izquierda.";
+        if (state === "ureterocele") return "Uréterocele izquierdo.";
         break;
       case "bladder":
         if (state === "cistitis") return "Engrosamiento parietal inflamatorio (cistitis).";
@@ -196,7 +249,7 @@ export default function UrinaryAnatomyViewer({
     const nextStates = { ...states };
     const nextDescriptions = { ...customDescriptions };
 
-    const keys = ["right_kidney", "left_kidney", "right_ureter", "left_ureter", "bladder"];
+    const keys = ["right_kidney", "left_kidney", "right_ureter", "left_ureter", "bladder", "right_uvj", "left_uvj"];
     if (activeGender === "hombre") {
       keys.push("prostate");
     }
@@ -263,6 +316,16 @@ export default function UrinaryAnatomyViewer({
         } else if (textLower.includes("ectasia leve") || textLower.includes("dilatacion leve") || textLower.includes("dilatado")) {
           detectedState = "ectasia_leve";
           desc = "Ectasia ureteral proximal leve.";
+        }
+      } else if (id === "right_uvj" || id === "left_uvj") {
+        const side = id === "right_uvj" ? "derecha" : "izquierda";
+        const adj = id === "right_uvj" ? "derecho" : "izquierdo";
+        if (textLower.includes("ureterocele")) {
+          detectedState = "ureterocele";
+          desc = `Uréterocele ${adj}.`;
+        } else if (textLower.includes("lito") || textLower.includes("calculo") || textLower.includes("litiasis")) {
+          detectedState = "litiasis";
+          desc = `Lito enclavado en unión ureterovesical ${side}.`;
         }
       } else if (id === "bladder") {
         if (textLower.includes("residuo postmiccional") || textLower.includes("residuo post-miccional") || textLower.includes("postmiccional")) {
@@ -344,6 +407,16 @@ export default function UrinaryAnatomyViewer({
         id: "left_ureter",
         label: "Uréter Izquierdo",
         allowedStates: ["no_descrito", "normal", "ectasia_leve", "hidroureteronefrosis", "litiasis_ureteral"]
+      },
+      {
+        id: "right_uvj",
+        label: "Unión Ureterovesical Derecha",
+        allowedStates: ["no_descrito", "normal", "litiasis", "ureterocele"]
+      },
+      {
+        id: "left_uvj",
+        label: "Unión Ureterovesical Izquierda",
+        allowedStates: ["no_descrito", "normal", "litiasis", "ureterocele"]
       },
       {
         id: "bladder",
@@ -457,13 +530,46 @@ export default function UrinaryAnatomyViewer({
     setCustomDescriptions(prev => ({ ...prev, [id]: text }));
   };
 
+  const handleUuvInReportChange = (val: boolean) => {
+    setStates(prev => ({ ...prev, include_uuv: val ? "true" : "false" }));
+  };
+
+  const handleUuvStateChange = (side: "right" | "left", s: string) => {
+    const key = side === "right" ? "right_uvj" : "left_uvj";
+    setStates(prev => ({ ...prev, [key]: s }));
+    
+    // Fill text description
+    let desc = "";
+    if (s === "normal") {
+      desc = "Dentro de límites normales.";
+    } else if (s === "no_descrito") {
+      desc = "";
+    } else if (s === "litiasis") {
+      desc = `Lito enclavado en unión ureterovesical ${side === "right" ? "derecha" : "izquierda"}.`;
+    } else if (s === "ureterocele") {
+      desc = `Uréterocele ${side === "right" ? "derecho" : "izquierdo"}.`;
+    }
+
+    setCustomDescriptions(prev => ({ ...prev, [key]: desc }));
+  };
+
+  const handleUuvManualTextChange = (side: "right" | "left", text: string) => {
+    const key = side === "right" ? "right_uvj" : "left_uvj";
+    setCustomDescriptions(prev => ({ ...prev, [key]: text }));
+    
+    // If the text has content, ensure standard state is marked accordingly or kept as is
+    if (text.trim() !== "" && states[key] === "no_descrito") {
+      setStates(prev => ({ ...prev, [key]: "custom" }));
+    } else if (text.trim() === "") {
+      setStates(prev => ({ ...prev, [key]: "no_descrito" }));
+    }
+  };
+
   const syncAvailable = generatedReport && generatedReport !== lastSyncedReport;
 
-  // Render trigger sync if report changes
+  // Render trigger sync if report changes disabled per user request
   useEffect(() => {
-    if (generatedReport && generatedReport !== lastSyncedReport && lastSyncedReport === "") {
-      handleScanReportText(false);
-    }
+    // Disabled auto-sync to ensure everything is strictly manual and saves resources as requested.
   }, [generatedReport, lastSyncedReport]);
 
   const exportTableData = () => {
@@ -484,15 +590,29 @@ export default function UrinaryAnatomyViewer({
 
     let hasRows = false;
     list.forEach(item => {
-      if (states[item.id] !== "no_descrito") {
+      if (states[item.id] !== "no_descrito" && states[item.id] !== "normal") {
         const desc = customDescriptions[item.id]?.trim() || getSimplifiedDescription(item.id);
         md += `| **${item.label}** | ${desc} |\n`;
         hasRows = true;
       }
     });
 
+    // Indepedent UVJ section inclusion control
+    if (states.include_uuv === "true") {
+      if (states.right_uvj !== "no_descrito" && states.right_uvj !== "normal") {
+        const desc = customDescriptions.right_uvj?.trim() || getSimplifiedDescription("right_uvj");
+        md += `| **UUV Derecha** | ${desc} |\n`;
+        hasRows = true;
+      }
+      if (states.left_uvj !== "no_descrito" && states.left_uvj !== "normal") {
+        const desc = customDescriptions.left_uvj?.trim() || getSimplifiedDescription("left_uvj");
+        md += `| **UUV Izquierda** | ${desc} |\n`;
+        hasRows = true;
+      }
+    }
+
     if (!hasRows) {
-      md += `| *Sin hallazgos descritos* | *Consulte el texto completo del reporte* |\n`;
+      md += `| *Sin hallazgos patológicos* | *Todas las estructuras de aparato renal se reportan normales.* |\n`;
     }
 
     onExportTable(md);
@@ -505,6 +625,9 @@ export default function UrinaryAnatomyViewer({
     if (localGender === "hombre") {
       keys.push("prostate");
     }
+    if (states.include_uuv === "true") {
+      keys.push("right_uvj", "left_uvj");
+    }
 
     const pathologicalItems: string[] = [];
     const normalItems: string[] = [];
@@ -516,6 +639,8 @@ export default function UrinaryAnatomyViewer({
                     id === "left_kidney" ? "Riñón Izquierdo" :
                     id === "right_ureter" ? "Uréter Derecho" :
                     id === "left_ureter" ? "Uréter Izquierdo" :
+                    id === "right_uvj" ? "UUV Derecha" :
+                    id === "left_uvj" ? "UUV Izquierda" :
                     id === "bladder" ? "Vejiga" : "Próstata";
 
       if (s !== "no_descrito") {
@@ -547,7 +672,7 @@ export default function UrinaryAnatomyViewer({
   };
 
   useEffect(() => {
-    exportTableData();
+    // Only sync narrative findings automatically, table is manual
     exportNarrativeNarratolog();
   }, [states, customDescriptions, localGender]);
 
@@ -589,6 +714,7 @@ export default function UrinaryAnatomyViewer({
     Object.keys(states).forEach(key => {
       // Skip prostate if female
       if (localGender === "mujer" && key === "prostate") return;
+      if (key === "include_uuv") return; // Skip the inclusion control key
 
       const st = states[key];
       if (st === "no_descrito") notInReport++;
@@ -620,6 +746,14 @@ export default function UrinaryAnatomyViewer({
           { val: "ectasia_leve", label: "Ectasia ureteral proximal leve" },
           { val: "hidroureteronefrosis", label: "Hidrouréter / Ectasia moderada-severa" },
           { val: "litiasis_ureteral", label: "Litiasis ureteral obstructiva" }
+        ];
+      case "right_uvj":
+      case "left_uvj":
+        return [
+          { val: "no_descrito", label: "No mencionado en el reporte" },
+          { val: "normal", label: "Dentro de límites normales" },
+          { val: "litiasis", label: "Lito / Cálculo" },
+          { val: "ureterocele", label: "Uréterocele" }
         ];
       case "bladder":
         return [
@@ -653,11 +787,22 @@ export default function UrinaryAnatomyViewer({
       case "left_kidney": return "Riñón Izquierdo";
       case "right_ureter": return "Uréter Derecho";
       case "left_ureter": return "Uréter Izquierdo";
+      case "right_uvj": return "UUV Derecha";
+      case "left_uvj": return "UUV Izquierda";
       case "bladder": return "Vejiga Urinaria";
       case "prostate": return "Próstata";
       default: return "";
     }
   };
+
+  const hasRightUUVStone = states.right_uvj === "litiasis";
+  const hasLeftUUVStone = states.left_uvj === "litiasis";
+
+  const includeUuvInReport = states.include_uuv === "true";
+  const rightUuvState = states.right_uvj || "no_descrito";
+  const leftUuvState = states.left_uvj || "no_descrito";
+  const rightUuvManualText = customDescriptions.right_uvj || "";
+  const leftUuvManualText = customDescriptions.left_uvj || "";
 
   return (
     <div className="w-full bg-slate-900/60 backdrop-blur-md rounded-2xl border-2 border-slate-800/80 p-5 shadow-2xl flex flex-col gap-5">
@@ -895,6 +1040,153 @@ export default function UrinaryAnatomyViewer({
                 <line x1="85" y1="20" x2="105" y2="78" stroke="#334155" strokeWidth="0.8" strokeDasharray="2,2" opacity="0.4" />
                 <line x1="155" y1="20" x2="135" y2="78" stroke="#334155" strokeWidth="0.8" strokeDasharray="2,2" opacity="0.4" />
 
+                {/* Unión Ureterovesical (UUV) */}
+                <g opacity="0.85">
+                  {/* Unión Ureterovesical Derecha */}
+                  <g 
+                    className="cursor-pointer transition-all duration-200"
+                    onClick={() => setSelectedStructure("right_uvj")}
+                    onMouseEnter={() => setActiveHover("right_uvj")}
+                    onMouseLeave={() => setActiveHover(null)}
+                    opacity={selectedStructure === "right_uvj" || activeHover === "right_uvj" ? 1 : 0.8}
+                  >
+                    <circle cx="105" cy="78" r="6" fill={selectedStructure === "right_uvj" ? "rgba(99, 102, 241, 0.5)" : "rgba(99, 102, 241, 0.25)"} stroke={selectedStructure === "right_uvj" ? "#818cf8" : "#6366f1"} strokeWidth={selectedStructure === "right_uvj" ? 1.5 : 1} />
+                    <circle cx="105" cy="78" r="2" fill="#a5b4fc" />
+                    <text x="97" y="76" fill="#a5b4fc" fontSize="4.5" textAnchor="end" fontWeight={selectedStructure === "right_uvj" ? "black" : "bold"}>UUV Derecha</text>
+                  </g>
+
+                  {/* Unión Ureterovesical Izquierda */}
+                  <g 
+                    className="cursor-pointer transition-all duration-200"
+                    onClick={() => setSelectedStructure("left_uvj")}
+                    onMouseEnter={() => setActiveHover("left_uvj")}
+                    onMouseLeave={() => setActiveHover(null)}
+                    opacity={selectedStructure === "left_uvj" || activeHover === "left_uvj" ? 1 : 0.8}
+                  >
+                    <circle cx="135" cy="78" r="6" fill={selectedStructure === "left_uvj" ? "rgba(99, 102, 241, 0.5)" : "rgba(99, 102, 241, 0.25)"} stroke={selectedStructure === "left_uvj" ? "#818cf8" : "#6366f1"} strokeWidth={selectedStructure === "left_uvj" ? 1.5 : 1} />
+                    <circle cx="135" cy="78" r="2" fill="#a5b4fc" />
+                    <text x="143" y="76" fill="#a5b4fc" fontSize="4.5" textAnchor="start" fontWeight={selectedStructure === "left_uvj" ? "black" : "bold"}>UUV Izquierda</text>
+                  </g>
+                </g>
+
+                {/* Lito Enclavado en UUV Derecha */}
+                {hasRightUUVStone && (
+                  <g>
+                    {/* Sombra acústica posterior */}
+                    <path
+                      d="M 102,78 L 98,155 L 112,155 L 108,78 Z"
+                      fill="rgba(15, 23, 42, 0.45)"
+                      stroke="none"
+                      opacity="0.75"
+                    />
+                    {/* Halo de advertencia pulsante */}
+                    <circle
+                      cx="105"
+                      cy="78"
+                      r="6"
+                      fill="none"
+                      stroke="#f59e0b"
+                      strokeWidth="1"
+                      strokeDasharray="2,2"
+                      opacity="0.8"
+                    >
+                      <animate attributeName="r" values="3.5;7.5;3.5" dur="3s" repeatCount="indefinite" />
+                    </circle>
+                    {/* Cuerpo del cálculo */}
+                    <polygon
+                      points="105,74 108.5,76.5 107.5,80.5 104,81.5 102,79.5 101.5,76"
+                      fill="#f59e0b"
+                      stroke="#78350f"
+                      strokeWidth="0.7"
+                    />
+                    {/* Facetas de brillo interno */}
+                    <polygon points="105,74 105,78 108.5,76.5" fill="#fef3c7" opacity="0.8" />
+                    <polygon points="105,74 102,76.5 105,78" fill="#fbbf24" opacity="0.8" />
+                    {/* Texto indicativo */}
+                    <text x="96" y="86" fill="#fbbf24" fontSize="4.5" textAnchor="end" fontWeight="black" letterSpacing="0.2">LITO ENCLAVADO</text>
+                  </g>
+                )}
+
+                {/* Ureterocele en UUV Derecha */}
+                {states.right_uvj === "ureterocele" && (
+                  <g>
+                    {/* Pulsing cystic ballooning */}
+                    <circle
+                      cx="105"
+                      cy="78"
+                      r="11"
+                      fill="rgba(99, 102, 241, 0.4)"
+                      stroke="#818cf8"
+                      strokeWidth="1.5"
+                    >
+                      <animate attributeName="r" values="9;12;9" dur="4s" repeatCount="indefinite" />
+                    </circle>
+                    {/* Inner meatal slit */}
+                    <ellipse cx="105" cy="78" rx="1" ry="3" fill="none" stroke="#e0e7ff" strokeWidth="0.8" opacity="0.9" />
+                    {/* Indicative label */}
+                    <text x="96" y="93" fill="#a5b4fc" fontSize="4.5" textAnchor="end" fontWeight="black" letterSpacing="0.2">URÉTEROCELE</text>
+                  </g>
+                )}
+
+                {/* Lito Enclavado en UUV Izquierda */}
+                {hasLeftUUVStone && (
+                  <g>
+                    {/* Sombra acústica posterior */}
+                    <path
+                      d="M 132,78 L 128,155 L 142,155 L 138,78 Z"
+                      fill="rgba(15, 23, 42, 0.45)"
+                      stroke="none"
+                      opacity="0.75"
+                    />
+                    {/* Halo de advertencia pulsante */}
+                    <circle
+                      cx="135"
+                      cy="78"
+                      r="6"
+                      fill="none"
+                      stroke="#f59e0b"
+                      strokeWidth="1"
+                      strokeDasharray="2,2"
+                      opacity="0.8"
+                    >
+                      <animate attributeName="r" values="3.5;7.5;3.5" dur="3s" repeatCount="indefinite" />
+                    </circle>
+                    {/* Cuerpo del cálculo */}
+                    <polygon
+                      points="135,74 138.5,76.5 137.5,80.5 134,81.5 132,79.5 131.5,76"
+                      fill="#f59e0b"
+                      stroke="#78350f"
+                      strokeWidth="0.7"
+                    />
+                    {/* Facetas de brillo interno */}
+                    <polygon points="135,74 135,78 138.5,76.5" fill="#fef3c7" opacity="0.8" />
+                    <polygon points="135,74 132,76.5 135,78" fill="#fbbf24" opacity="0.8" />
+                    {/* Texto indicativo */}
+                    <text x="144" y="86" fill="#fbbf24" fontSize="4.5" textAnchor="start" fontWeight="black" letterSpacing="0.2">LITO ENCLAVADO</text>
+                  </g>
+                )}
+
+                {/* Ureterocele en UUV Izquierda */}
+                {states.left_uvj === "ureterocele" && (
+                  <g>
+                    {/* Pulsing cystic ballooning */}
+                    <circle
+                      cx="135"
+                      cy="78"
+                      r="11"
+                      fill="rgba(99, 102, 241, 0.4)"
+                      stroke="#818cf8"
+                      strokeWidth="1.5"
+                    >
+                      <animate attributeName="r" values="9;12;9" dur="4s" repeatCount="indefinite" />
+                    </circle>
+                    {/* Inner meatal slit */}
+                    <ellipse cx="135" cy="78" rx="1" ry="3" fill="none" stroke="#e0e7ff" strokeWidth="0.8" opacity="0.9" />
+                    {/* Indicative label */}
+                    <text x="144" y="93" fill="#a5b4fc" fontSize="4.5" textAnchor="start" fontWeight="black" letterSpacing="0.2">URÉTEROCELE</text>
+                  </g>
+                )}
+
                 {/* BLADDER (VEJIGA URINARIA) */}
                 <g 
                   className="cursor-pointer transition-all duration-200"
@@ -953,6 +1245,33 @@ export default function UrinaryAnatomyViewer({
               Haz clic en cualquier órgano del plano arriba para cambiar su estado clínico y redactar su resumen sinóptico.
             </p>
           </div>
+
+          {additionalFindings && additionalFindings.length > 0 && (
+            <div className="w-full bg-slate-900/10 border border-slate-850 p-3 rounded-2xl mt-4">
+              <h5 className="text-[9px] uppercase font-black text-indigo-400 font-mono tracking-wider mb-2 text-left select-none">
+                📍 Hallazgos Adicionales Detectados
+              </h5>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[120px] overflow-y-auto pr-1">
+                {additionalFindings.map((item) => {
+                  const s = item.state || "Alterado";
+                  return (
+                    <div 
+                      key={item.id}
+                      className="p-2 rounded-xl bg-slate-950/40 border border-slate-900 flex flex-col justify-between text-left"
+                    >
+                      <div className="flex items-center justify-between gap-1 leading-none select-none">
+                        <span className="text-[9.5px] font-black uppercase text-slate-200 truncate">{item.structureName}</span>
+                        <span className="text-[7.5px] px-1 bg-rose-950/40 text-rose-450 border border-rose-900/40 rounded scale-90 font-mono font-black uppercase shrink-0">
+                          {s}
+                        </span>
+                      </div>
+                      <p className="text-[8.5px] leading-relaxed text-slate-400 mt-1 max-w-full truncate leading-tight">{item.description}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* RIGHT COLUMN: DETAILED EDITOR PANEL */}
@@ -968,7 +1287,7 @@ export default function UrinaryAnatomyViewer({
                 value={selectedStructure}
                 onChange={(e) => {
                   setSelectedStructure(e.target.value);
-                  const relatedPlan = (e.target.value === "bladder" || e.target.value === "prostate") ? "vesical" : "renal";
+                  const relatedPlan = (e.target.value === "bladder" || e.target.value === "prostate" || e.target.value === "right_uvj" || e.target.value === "left_uvj") ? "vesical" : "renal";
                   setActivePlan(relatedPlan);
                 }}
                 className="w-full bg-slate-950 border-2 border-slate-800 rounded-xl py-2 px-3 text-xs font-bold text-slate-100 focus:outline-none focus:border-indigo-500 cursor-pointer"
@@ -977,11 +1296,195 @@ export default function UrinaryAnatomyViewer({
                 <option value="left_kidney">Riñón Izquierdo</option>
                 <option value="right_ureter">Uréter Derecho</option>
                 <option value="left_ureter">Uréter Izquierdo</option>
+                <option value="right_uvj">Unión Ureterovesical Derecha (UUV D)</option>
+                <option value="left_uvj">Unión Ureterovesical Izquierda (UUV I)</option>
                 <option value="bladder">Vejiga Urinaria</option>
                 {localGender === "hombre" && (
                   <option value="prostate">Próstata</option>
                 )}
               </select>
+            </div>
+          </div>
+
+          {/* APARTADO INDEPENDIENTE: UNIÓN URÉTERO VESICAL (UUV) */}
+          <div className="bg-slate-950/60 border-2 border-indigo-950/40 p-4 rounded-xl flex flex-col gap-3 shadow-lg">
+            <div className="flex items-center justify-between border-b border-indigo-900/30 pb-2">
+              <div className="flex items-center gap-2">
+                <span className="p-1 rounded bg-indigo-950 text-indigo-400">
+                  <Activity className="h-3.5 w-3.5" />
+                </span>
+                <span className="text-xs uppercase font-black text-slate-100 tracking-wider">
+                  Unión Urétero Vesical (UUV)
+                </span>
+              </div>
+              
+              {/* CUADRO PARA DECIDIR SI SE INCLUYE EN EL REPORTEO O NO */}
+              <label className="flex items-center gap-1.5 cursor-pointer bg-slate-900 px-2 py-1 rounded border border-slate-850 select-none hover:border-slate-700">
+                <input
+                  type="checkbox"
+                  checked={includeUuvInReport}
+                  onChange={(e) => handleUuvInReportChange(e.target.checked)}
+                  className="rounded border-slate-800 text-indigo-600 bg-slate-950 focus:ring-0 focus:ring-offset-0 h-3.5 w-3.5 cursor-pointer"
+                />
+                <span className="text-[9px] font-black text-indigo-400 uppercase tracking-wider">
+                  Incluir en Reporte
+                </span>
+              </label>
+            </div>
+
+            <p className="text-[10px] text-slate-400 leading-normal">
+              Selecciona lito o ureterocele para las uniones uréterovesicales. Puedes escribir detalles o cambiarlos manualmente abajo.
+            </p>
+
+            {/* SECTIONS FOR RIGHT AND LEFT UVJ */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* UUV DERECHA */}
+              <div className="p-3 rounded-lg bg-slate-900/30 border border-slate-850 flex flex-col gap-2">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wide">UUV Derecha</span>
+                  <span className={`text-[8.5px] font-mono px-1.5 py-0.5 rounded uppercase font-bold border ${
+                    rightUuvState === "no_descrito" ? "bg-slate-950 text-slate-500 border-slate-900" :
+                    rightUuvState === "normal" ? "bg-emerald-950/40 text-emerald-400 border-emerald-900/20" :
+                    "bg-amber-950/40 text-amber-400 border-amber-900/20"
+                  }`}>
+                    {rightUuvState === "litiasis" ? "lito" : rightUuvState.replace("_", " ")}
+                  </span>
+                </div>
+
+                {/* Predefined toggles */}
+                <div className="grid grid-cols-2 gap-1">
+                  <button
+                    type="button"
+                    onClick={() => handleUuvStateChange("right", "normal")}
+                    className={`py-1 px-1.5 text-[9px] rounded font-bold border transition-all cursor-pointer truncate ${
+                      rightUuvState === "normal"
+                        ? "bg-emerald-950 text-emerald-300 border-emerald-700"
+                        : "bg-slate-950 border-slate-850 hover:bg-slate-800/30 text-slate-400"
+                    }`}
+                  >
+                    Normal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleUuvStateChange("right", "litiasis")}
+                    className={`py-1 px-1.5 text-[9px] rounded font-bold border transition-all cursor-pointer truncate ${
+                      rightUuvState === "litiasis"
+                        ? "bg-amber-950 text-amber-300 border-amber-700"
+                        : "bg-slate-950 border-slate-850 hover:bg-slate-800/30 text-slate-400"
+                    }`}
+                  >
+                    Lito / Cálculo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleUuvStateChange("right", "ureterocele")}
+                    className={`py-1 px-1.5 text-[9px] rounded font-bold border transition-all cursor-pointer truncate ${
+                      rightUuvState === "ureterocele"
+                        ? "bg-indigo-950 text-indigo-300 border-indigo-700"
+                        : "bg-slate-950 border-slate-850 hover:bg-slate-800/30 text-slate-400"
+                    }`}
+                  >
+                    Uréterocele
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleUuvStateChange("right", "no_descrito")}
+                    className={`py-1 px-1.5 text-[9px] rounded font-bold border transition-all cursor-pointer truncate ${
+                      rightUuvState === "no_descrito"
+                        ? "bg-slate-800 border-slate-750 text-slate-200"
+                        : "bg-slate-950 border-slate-850 hover:bg-slate-800/30 text-slate-400"
+                    }`}
+                  >
+                    No Descrito
+                  </button>
+                </div>
+
+                {/* Manual control */}
+                <div className="mt-1 flex flex-col gap-1">
+                  <span className="text-[8px] uppercase font-mono font-bold text-slate-500">Descripción manual:</span>
+                  <input
+                    type="text"
+                    value={rightUuvManualText}
+                    onChange={(e) => handleUuvManualTextChange("right", e.target.value)}
+                    placeholder="Ej. Lito enclavado de 3.5mm..."
+                    className="w-full bg-slate-950 border border-slate-850 rounded px-2 py-1 text-[9.5px] text-slate-250 focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              {/* UUV IZQUIERDA */}
+              <div className="p-3 rounded-lg bg-slate-900/30 border border-slate-850 flex flex-col gap-2">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wide">UUV Izquierda</span>
+                  <span className={`text-[8.5px] font-mono px-1.5 py-0.5 rounded uppercase font-bold border ${
+                    leftUuvState === "no_descrito" ? "bg-slate-950 text-slate-500 border-slate-900" :
+                    leftUuvState === "normal" ? "bg-emerald-950/40 text-emerald-400 border-emerald-900/20" :
+                    "bg-amber-950/40 text-amber-400 border-amber-900/20"
+                  }`}>
+                    {leftUuvState === "litiasis" ? "lito" : leftUuvState.replace("_", " ")}
+                  </span>
+                </div>
+
+                {/* Predefined toggles */}
+                <div className="grid grid-cols-2 gap-1">
+                  <button
+                    type="button"
+                    onClick={() => handleUuvStateChange("left", "normal")}
+                    className={`py-1 px-1.5 text-[9px] rounded font-bold border transition-all cursor-pointer truncate ${
+                      leftUuvState === "normal"
+                        ? "bg-emerald-950 text-emerald-300 border-emerald-700"
+                        : "bg-slate-950 border-slate-850 hover:bg-slate-800/30 text-slate-400"
+                    }`}
+                  >
+                    Normal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleUuvStateChange("left", "litiasis")}
+                    className={`py-1 px-1.5 text-[9px] rounded font-bold border transition-all cursor-pointer truncate ${
+                      leftUuvState === "litiasis"
+                        ? "bg-amber-950 text-amber-300 border-amber-700"
+                        : "bg-slate-950 border-slate-850 hover:bg-slate-800/30 text-slate-400"
+                    }`}
+                  >
+                    Lito / Cálculo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleUuvStateChange("left", "ureterocele")}
+                    className={`py-1 px-1.5 text-[9px] rounded font-bold border transition-all cursor-pointer truncate ${
+                      leftUuvState === "ureterocele"
+                        ? "bg-indigo-950 text-indigo-300 border-indigo-700"
+                        : "bg-slate-950 border-slate-850 hover:bg-slate-800/30 text-slate-400"
+                    }`}
+                  >
+                    Uréterocele
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleUuvStateChange("left", "no_descrito")}
+                    className={`py-1 px-1.5 text-[9px] rounded font-bold border transition-all cursor-pointer truncate ${
+                      leftUuvState === "no_descrito"
+                        ? "bg-slate-800 border-slate-750 text-slate-200"
+                        : "bg-slate-950 border-slate-850 hover:bg-slate-800/30 text-slate-400"
+                    }`}
+                  >
+                    No Descrito
+                  </button>
+                </div>
+
+                {/* Manual control */}
+                <div className="mt-1 flex flex-col gap-1">
+                  <span className="text-[8px] uppercase font-mono font-bold text-slate-500">Descripción manual:</span>
+                  <input
+                    type="text"
+                    value={leftUuvManualText}
+                    onChange={(e) => handleUuvManualTextChange("left", e.target.value)}
+                    placeholder="Ej. Lito enclavado de 3.5mm..."
+                    className="w-full bg-slate-950 border border-slate-850 rounded px-2 py-1 text-[9.5px] text-slate-250 focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
             </div>
           </div>
 
@@ -999,25 +1502,59 @@ export default function UrinaryAnatomyViewer({
                 </span>
               </div>
 
-              {/* RADIO BUTTONS STYLE SELECTORS */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2.5">
-                {getStructureOptions(selectedStructure).map((opt) => (
-                  <button
-                    key={opt.val}
-                    type="button"
-                    onClick={() => handleStateChange(selectedStructure, opt.val)}
-                    className={`text-left p-2 rounded-xl text-[10.5px] border font-medium transition-all duration-150 flex items-center justify-between ${
-                      states[selectedStructure] === opt.val
-                        ? "bg-indigo-600/10 border-indigo-500 text-indigo-300 font-extrabold shadow-inner"
-                        : "bg-slate-950/40 border-slate-850 text-slate-400 hover:border-slate-700 hover:text-slate-200"
-                    }`}
-                  >
-                    <span className="truncate pr-1">{opt.label}</span>
-                    {states[selectedStructure] === opt.val && (
-                      <Check className="h-3 w-3 text-indigo-400 flex-shrink-0" />
-                    )}
-                  </button>
-                ))}
+              {/* Custom State Input */}
+              <div className="flex flex-col gap-2 mt-3">
+                <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider font-mono">
+                  Diagnóstico / Hallazgo Clínico (Sinopsis):
+                </label>
+                <div className="flex flex-col gap-2">
+                  <input
+                    type="text"
+                    value={
+                      states[selectedStructure] === "no_descrito" 
+                        ? "" 
+                        : states[selectedStructure] === "normal" 
+                          ? "Normal" 
+                          : states[selectedStructure]
+                    }
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      let nextVal = val;
+                      if (val.trim().toLowerCase() === "normal" || val.trim().toLowerCase() === "sin lesiones") {
+                        nextVal = "normal";
+                      } else if (val.trim() === "") {
+                        nextVal = "no_descrito";
+                      }
+                      handleStateChange(selectedStructure, nextVal);
+                    }}
+                    placeholder="Escriba el diagnóstico del hallazgo (ej: Litiasis, Quiste, etc.)"
+                    className="w-full bg-slate-950 border border-slate-850 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 font-mono focus:outline-none focus:border-indigo-550"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleStateChange(selectedStructure, "normal")}
+                      className={`flex-1 py-1.5 px-3 text-[10px] rounded-lg border transition-all cursor-pointer ${
+                        states[selectedStructure] === "normal"
+                          ? "bg-emerald-950 text-emerald-300 border-emerald-700 font-medium"
+                          : "bg-slate-900 hover:bg-slate-850 border-slate-800 text-slate-400"
+                      }`}
+                    >
+                      ✓ Cons. Normal
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleStateChange(selectedStructure, "no_descrito")}
+                      className={`flex-1 py-1.5 px-3 text-[10px] rounded-lg border transition-all cursor-pointer ${
+                        states[selectedStructure] === "no_descrito"
+                          ? "bg-slate-850 border-slate-600 text-slate-100 font-medium"
+                          : "bg-slate-900 hover:bg-slate-850 border-slate-800 text-slate-400"
+                      }`}
+                    >
+                      ⚪ No Descrito
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -1047,6 +1584,133 @@ export default function UrinaryAnatomyViewer({
                 </p>
               </div>
             )}
+          </div>
+
+          {/* Mapeo de Hallazgos Clínicos Sintonizados (aligned anatomical cards) */}
+          <div className="bg-slate-900/10 border border-slate-800/50 rounded-2xl p-4 flex flex-col gap-3">
+            <label className="text-[11px] font-black text-indigo-400 uppercase tracking-wider font-mono flex items-center gap-1.5 leading-none">
+              <Layers className="h-3.5 w-3.5 text-indigo-400" />
+              Mapeo de Hallazgos Clínicos Sintonizados (Vías Urinarias)
+            </label>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[160px] overflow-y-auto pr-1">
+              {Object.keys(states).filter(id => states[id] !== "no_descrito" && states[id] !== "normal" && id !== "include_uuv").map(id => {
+                const s = states[id];
+                const isSelected = selectedStructure === id;
+                const transLabel = id === "right_kidney" ? "Riñón Derecho" : 
+                                   id === "left_kidney" ? "Riñón Izquierdo" : 
+                                   id === "right_ureter" ? "Uréter Derecho" : 
+                                   id === "left_ureter" ? "Uréter Izquierdo" : 
+                                   id === "right_uvj" ? "UUV Derecha" :
+                                   id === "left_uvj" ? "UUV Izquierda" :
+                                   id === "bladder" ? "Vejiga Urinaria" : 
+                                   id === "prostate" ? "Próstata" : id;
+                const simplified = customDescriptions[id]?.trim() || (s === "normal" ? "Dentro de límites normales" : s);
+                
+                let dotColor = "bg-slate-500";
+                let badgeBg = "bg-slate-950/60 text-slate-400 border-slate-800";
+                
+                if (s === "normal") {
+                  dotColor = "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.4)]";
+                  badgeBg = "bg-emerald-950/40 text-emerald-450 border-emerald-900/30";
+                } else if (s.includes("leve") || s.includes("quiste_simple") || s.includes("ectasia_leve") || s.includes("calcificaciones") || s.includes("residuo_postmiccional")) {
+                  dotColor = "bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.4)]";
+                  badgeBg = "bg-amber-950/40 text-amber-400 border-amber-900/30";
+                } else if (s.includes("ruptura") || s.includes("litiasis_impactada") || s.includes("ectasia_severa") || s.includes("neoplasia") || s.includes("hematuria")) {
+                  dotColor = "bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.4)]";
+                  badgeBg = "bg-rose-950/40 text-rose-455 border-rose-900/30";
+                } else {
+                  dotColor = "bg-pink-500 shadow-[0_0_6px_rgba(236,72,153,0.4)]";
+                  badgeBg = "bg-pink-950/40 text-pink-400 border-pink-905/35";
+                }
+ 
+                return (
+                  <button
+                    type="button"
+                    key={id}
+                    onClick={() => {
+                      setSelectedStructure(id);
+                      const relatedPlan = (id === "bladder" || id === "prostate" || id === "right_uvj" || id === "left_uvj") ? "vesical" : "renal";
+                      setActivePlan(relatedPlan);
+                    }}
+                    className={`p-2.5 rounded-xl border text-left transition-all flex flex-col gap-1 relative overflow-hidden group cursor-pointer ${
+                      isSelected 
+                        ? "bg-slate-900 border-indigo-500 text-indigo-400 shadow-md scale-[1.01]" 
+                        : "bg-slate-950/60 hover:bg-slate-950/80 border-slate-850/40 text-slate-350"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-1.5 leading-none w-full select-none">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className={`h-2 w-2 rounded-full shrink-0 ${dotColor} transition-transform group-hover:scale-110`} />
+                        <span className={`text-[10px] font-black uppercase tracking-wide truncate ${isSelected ? "text-indigo-400" : "text-slate-200"}`}>
+                          {transLabel}
+                        </span>
+                      </div>
+                      <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded border tracking-wider shrink-0 font-mono scale-95 ${badgeBg}`}>
+                        {s.replace("_", " ")}
+                      </span>
+                    </div>
+                    <p className="text-[9px] leading-relaxed text-slate-450 truncate mt-0.5 max-w-full">
+                      {simplified}
+                    </p>
+                  </button>
+                );
+              })}
+
+              {additionalFindings && additionalFindings.map((item) => {
+                const s = item.state || "Alterado";
+                const dotColor = "bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.4)]";
+                const badgeBg = "bg-rose-950/40 text-rose-450 border-rose-900/30";
+                return (
+                  <div
+                    key={item.id}
+                    className="p-2.5 rounded-xl border border-slate-850 bg-slate-950/60 text-left transition-all hover:bg-slate-950/80 hover:border-slate-800 flex flex-col gap-1 relative overflow-hidden group cursor-default"
+                  >
+                    <div className="flex items-center justify-between gap-1.5 leading-none select-none">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className={`h-2 w-2 rounded-full shrink-0 ${dotColor} transition-transform group-hover:scale-110`} />
+                        <span className="text-[10px] font-black uppercase tracking-wide truncate text-slate-200">
+                          {item.structureName}
+                        </span>
+                      </div>
+                      <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded border tracking-wider shrink-0 font-mono scale-95 ${badgeBg}`}>
+                        {s}
+                      </span>
+                    </div>
+                    <p className="text-[9px] leading-relaxed text-slate-400 truncate mt-0.5 max-w-full">
+                      {item.description}
+                    </p>
+                  </div>
+                );
+              })}
+
+              {Object.keys(states).filter(id => states[id] !== "no_descrito" && states[id] !== "normal").length === 0 && (!additionalFindings || additionalFindings.length === 0) && (
+                <div className="col-span-full py-4 text-center text-slate-500 italic text-xs">
+                  Sin hallazgos patológicos relevantes detectados.
+                </div>
+              )}
+            </div>
+
+            {/* Export buttons */}
+            <div className="grid grid-cols-2 gap-2 mt-2">
+              <button
+                type="button"
+                onClick={exportTableData}
+                className="py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 font-mono cursor-pointer border border-indigo-400/20"
+                title="Inyecta una tabla formal de hallazgos médicos estructurados al final del informe actual"
+              >
+                <Download className="h-3 w-3" />
+                Insertar Tabla
+              </button>
+              <button
+                type="button"
+                onClick={exportNarrativeNarratolog}
+                className="py-2.5 bg-slate-900 hover:bg-slate-850 text-indigo-400 text-[10px] font-black uppercase tracking-widest rounded-xl border border-indigo-950 transition-all shadow-md flex items-center justify-center gap-1.5 font-mono cursor-pointer"
+                title="Inyecta un resumen narrativo de hallazgos al reporte"
+              >
+                📥 Insertar Viñetas
+              </button>
+            </div>
           </div>
 
           {/* RECENT SYNC LOGS OR LOGS CONSOLE */}

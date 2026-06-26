@@ -25,6 +25,9 @@ interface ThighPosteriorAnatomyViewerProps {
   onChangeStates?: (states: Record<string, string>) => void;
   onChangeDescriptions?: (descriptions: Record<string, string>) => void;
   selectedModel?: string;
+  externalStates?: Record<string, string>;
+  externalDescriptions?: Record<string, string>;
+  additionalFindings?: Array<{ id: string; structureName: string; state: string; description: string }>;
 }
 
 interface ThighPosteriorStructure {
@@ -42,7 +45,10 @@ export default function ThighPosteriorAnatomyViewer({
   setIncludeInReport,
   onChangeStates,
   onChangeDescriptions,
-  selectedModel
+  selectedModel,
+  externalStates,
+  externalDescriptions,
+  additionalFindings = []
 }: ThighPosteriorAnatomyViewerProps) {
   
   // Structures states:
@@ -76,6 +82,24 @@ export default function ThighPosteriorAnatomyViewer({
   const [syncLogs, setSyncLogs] = useState<string[]>([]);
   const [lastSyncedReport, setLastSyncedReport] = useState<string>("");
   const [useOriginalReportText, setUseOriginalReportText] = useState<boolean>(true);
+
+  useEffect(() => {
+    if (externalStates && Object.keys(externalStates).length > 0) {
+      setStates(prev => {
+        const changed = Object.keys(externalStates).some(key => externalStates[key] !== prev[key]);
+        return changed ? { ...prev, ...externalStates } : prev;
+      });
+    }
+  }, [externalStates]);
+
+  useEffect(() => {
+    if (externalDescriptions && Object.keys(externalDescriptions).length > 0) {
+      setCustomDescriptions(prev => {
+        const changed = Object.keys(externalDescriptions).some(key => externalDescriptions[key] !== prev[key]);
+        return changed ? { ...prev, ...externalDescriptions } : prev;
+      });
+    }
+  }, [externalDescriptions]);
 
   // Sync to parent
   useEffect(() => {
@@ -268,6 +292,14 @@ export default function ThighPosteriorAnatomyViewer({
   const getSimplifiedDescriptionByState = (id: string, state: string): string => {
     if (state === "no_descrito") return "No mencionado / No descrito.";
     if (state === "normal") return "Dentro de límites normales.";
+
+    const standardStates = [
+      "normal", "no_descrito", "desgarro_miofascial", "desgarro_intramuscular", "desgarro_completo",
+      "neuropatia", "engrosamiento", "contusion", "desgarro_parcial", "desgarro"
+    ];
+    if (state && !standardStates.includes(state)) {
+      return `Se describe hallazgo: ${state.charAt(0).toUpperCase() + state.slice(1)}.`;
+    }
 
     switch (id) {
       case "biceps_femoris_lh":
@@ -504,8 +536,15 @@ export default function ThighPosteriorAnatomyViewer({
   };
 
   const getDefaultDescription = (id: string, state: string): string => {
-    if (state === "no_descrito") return "Estructura no descrita.";
+    if (!state || state === "no_descrito") return "Estructura no descrita.";
     if (state === "normal") return "Dentro de límites normales.";
+    const standardStates = [
+      "normal", "no_descrito", "desgarro_miofascial", "desgarro_intramuscular", "desgarro_completo",
+      "neuropatia", "engrosamiento", "contusion", "desgarro"
+    ];
+    if (!standardStates.includes(state)) {
+      return `Se describe hallazgo: ${state.charAt(0).toUpperCase() + state.slice(1)}.`;
+    }
 
     switch (id) {
       case "biceps_femoris_lh":
@@ -554,12 +593,18 @@ export default function ThighPosteriorAnatomyViewer({
       { id: "adductor_magnus", label: "Compartimento Posterior Aductor Mayor" }
     ];
 
+    let hasRows = false;
     list.forEach(item => {
-      if (states[item.id] !== "no_descrito") {
+      if (states[item.id] !== "no_descrito" && states[item.id] !== "normal") {
         const desc = customDescriptions[item.id]?.trim() || getSimplifiedDescription(item.id);
         md += `| **${item.label}** | ${desc} |\n`;
+        hasRows = true;
       }
     });
+
+    if (!hasRows) {
+      md += `| *Sin hallazgos patológicos* | *Todas las estructuras de compartimento posterior se reportan normales.* |\n`;
+    }
 
     return md;
   };
@@ -638,7 +683,11 @@ export default function ThighPosteriorAnatomyViewer({
         stroke: "#f43f5e"
       };
     }
-    return { fill: "none", stroke: "#475569" };
+    // Fallback pathological styling for custom findings
+    return {
+      fill: activeHover === id ? "rgba(244, 63, 94, 0.65)" : "rgba(244, 63, 94, 0.35)",
+      stroke: "#f43f5e"
+    };
   };
 
   return (
@@ -909,47 +958,56 @@ export default function ThighPosteriorAnatomyViewer({
               </select>
             </div>
 
-            {/* STATUS SELECT */}
-            <div className="mb-4">
-              <label className="text-[9px] text-slate-500 font-bold uppercase tracking-widest block mb-1">Estado de Hallazgo:</label>
-              <div className="grid grid-cols-2 gap-1.5">
-                {[
-                  { val: "no_descrito", label: "No Descrito" },
-                  { val: "normal", label: "Normal (Sin Lesión)" },
-                  
-                  // Conditionals for muscle structures
-                  ...(selectedStructure === "biceps_femoris_lh" || selectedStructure === "biceps_femoris_sh" || selectedStructure === "semitendinosus" || selectedStructure === "semimembranosus" ? [
-                    { val: "desgarro_miofascial", label: "Miofascial (Leve)" },
-                    { val: "desgarro_intramuscular", label: "Intramuscular" },
-                    { val: "desgarro_completo", label: "Brecha Completa" },
-                  ] : []),
-
-                  // Conditionals for Sciatic nerve
-                  ...(selectedStructure === "sciatic_nerve" ? [
-                    { val: "neuropatia", label: "Neuropatía" },
-                    { val: "engrosamiento", label: "Engrosamiento" },
-                  ] : []),
-
-                  // Conditionals for Adductor Magnus
-                  ...(selectedStructure === "adductor_magnus" ? [
-                    { val: "contusion", label: "Contusión" },
-                    { val: "desgarro_parcial", label: "Desgarro Parcial" },
-                    { val: "desgarro_completo", label: "Completo" },
-                  ] : []),
-
-                ].map((st) => (
+            {/* Custom State Input */}
+            <div className="mb-4 space-y-1">
+              <label className="text-[9px] text-slate-500 font-bold uppercase tracking-widest block">Diagnóstico / Hallazgo Clínico (Sinopsis):</label>
+              <div className="flex flex-col gap-2">
+                <input
+                  type="text"
+                  value={
+                    states[selectedStructure] === "no_descrito" 
+                      ? "" 
+                      : states[selectedStructure] === "normal" 
+                        ? "Normal" 
+                        : states[selectedStructure]
+                  }
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    let nextVal = val;
+                    if (val.trim().toLowerCase() === "normal" || val.trim().toLowerCase() === "sin lesiones") {
+                      nextVal = "normal";
+                    } else if (val.trim() === "") {
+                      nextVal = "no_descrito";
+                    }
+                    handleUpdateStructureState(selectedStructure, nextVal);
+                  }}
+                  placeholder="Escriba el diagnóstico del hallazgo (ej: Desgarro, Contusión, etc.)"
+                  className="w-full bg-slate-955 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 font-mono focus:outline-none focus:border-violet-500/50"
+                />
+                <div className="flex gap-2">
                   <button
-                    key={st.val}
-                    onClick={() => handleUpdateStructureState(selectedStructure, st.val)}
-                    className={`py-2 px-2.5 rounded-lg border text-[10px] font-bold uppercase text-left transition-all ${
-                      states[selectedStructure] === st.val
-                        ? "bg-violet-650/20 border-violet-500 text-violet-450 shadow-inner"
-                        : "bg-slate-900 hover:bg-slate-850 border-slate-850 text-slate-400"
+                    type="button"
+                    onClick={() => handleUpdateStructureState(selectedStructure, "normal")}
+                    className={`flex-1 py-1 px-3 text-[10px] rounded border transition-all cursor-pointer ${
+                      states[selectedStructure] === "normal"
+                        ? "bg-emerald-950 text-emerald-300 border-emerald-700 font-medium"
+                        : "bg-slate-905 hover:bg-slate-900 text-slate-400 border-slate-850"
                     }`}
                   >
-                    {st.label}
+                    ✓ Cons. Normal
                   </button>
-                ))}
+                  <button
+                    type="button"
+                    onClick={() => handleUpdateStructureState(selectedStructure, "no_descrito")}
+                    className={`flex-1 py-1 px-3 text-[10px] rounded border transition-all cursor-pointer ${
+                      states[selectedStructure] === "no_descrito"
+                        ? "bg-slate-850 border-slate-600 text-slate-100 font-medium"
+                        : "bg-slate-905 hover:bg-slate-900 text-slate-405 border-slate-850"
+                    }`}
+                  >
+                    ⚪ No Descrito
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -1013,27 +1071,76 @@ export default function ThighPosteriorAnatomyViewer({
             <h5 className="text-[10px] text-slate-400 font-black uppercase tracking-wider font-mono mb-2.5">
               Sinopsis de Hallazgos Sincronizados
             </h5>
-            <div className="grid grid-cols-2 gap-2 max-h-[160px] overflow-y-auto pr-1">
-              {Object.entries(states).filter(([_, sVal]) => sVal !== "no_descrito").map(([id, sVal]) => {
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[160px] overflow-y-auto pr-1">
+              {Object.entries(states).filter(([_, sVal]) => sVal !== "no_descrito" && sVal !== "normal").map(([id, sVal]) => {
                 const s = sVal as string;
                 const label = translateStructureLabelInBrief(id);
                 const simplified = customDescriptions[id]?.trim() || getSimplifiedDescription(id);
+                
+                let dotColor = "bg-slate-500";
+                if (s === "normal") dotColor = "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.4)]";
+                else if (s === "tendinosis" || s === "esguince_leve" || s.includes("leve") || s.includes("bursitis_l") || s.includes("derrame_l") || s.includes("meniscosis")) {
+                  dotColor = "bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.4)]";
+                } else {
+                  dotColor = "bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.4)]";
+                }
+
                 return (
                   <div 
                     key={id} 
                     onClick={() => setSelectedStructure(id)}
-                    className="p-2 rounded-xl bg-slate-950/40 border border-slate-900 flex flex-col justify-between hover:bg-slate-900/40 hover:border-slate-800 transition-all cursor-pointer"
+                    className="p-2.5 rounded-xl border border-slate-850/40 bg-slate-950/60 text-left transition-all hover:bg-slate-950/80 hover:border-slate-850 flex flex-col gap-1 relative overflow-hidden group cursor-pointer animate-fade-in"
                   >
-                    <div className="flex items-center justify-between gap-1 mb-1">
-                      <span className="text-[10px] font-bold text-slate-350 truncate">{label}</span>
-                      <span className={`text-[8.5px] font-mono font-black uppercase px-1.5 py-0.2 rounded border ${getSeverityBadge(s)}`}>
+                    <div className="flex items-center justify-between gap-1.5 leading-none select-none w-full">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className={`h-2 w-2 rounded-full shrink-0 ${dotColor} transition-transform group-hover:scale-110`} />
+                        <span className="text-[10px] font-black uppercase tracking-wide truncate text-slate-200">
+                          {label}
+                        </span>
+                      </div>
+                      <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded border tracking-wider shrink-0 font-mono scale-95 ${getSeverityBadge(s)}`}>
                         {s === "normal" ? "normal" : s.replace("desgarro_", "").replace("_", " ")}
                       </span>
                     </div>
-                    <span className="text-[8.5px] leading-relaxed text-slate-500 line-clamp-2">{simplified}</span>
+                    <p className="text-[9px] leading-relaxed text-slate-450 truncate mt-0.5 max-w-full">
+                      {simplified}
+                    </p>
                   </div>
                 );
               })}
+
+              {additionalFindings && additionalFindings.map((item) => {
+                const s = item.state || "Alterado";
+                const dotColor = "bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.4)]";
+                const badgeBg = "bg-rose-950/40 text-rose-450 border-rose-900/30";
+                return (
+                  <div
+                    key={item.id}
+                    className="p-2.5 rounded-xl border border-slate-850 bg-slate-950/60 text-left transition-all hover:bg-slate-950/80 hover:border-slate-800 flex flex-col gap-1 relative overflow-hidden group cursor-default"
+                  >
+                    <div className="flex items-center justify-between gap-1.5 leading-none select-none">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className={`h-2 w-2 rounded-full shrink-0 ${dotColor} transition-transform group-hover:scale-110`} />
+                        <span className="text-[10px] font-black uppercase tracking-wide truncate text-slate-200">
+                          {item.structureName}
+                        </span>
+                      </div>
+                      <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded border tracking-wider shrink-0 font-mono scale-95 ${badgeBg}`}>
+                        {s}
+                      </span>
+                    </div>
+                    <p className="text-[9px] leading-relaxed text-slate-400 truncate mt-0.5 max-w-full">
+                      {item.description}
+                    </p>
+                  </div>
+                );
+              })}
+
+              {Object.values(states).every(s => s === "no_descrito" || s === "normal") && (!additionalFindings || additionalFindings.length === 0) && (
+                <div className="col-span-2 py-4 text-center text-slate-500 italic text-xs font-mono">
+                  Sin hallazgos patológicos relevantes detectados.
+                </div>
+              )}
             </div>
           </div>
         </div>

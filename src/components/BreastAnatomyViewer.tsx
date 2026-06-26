@@ -4,6 +4,8 @@ import {
   RefreshCw, 
   Sparkles, 
   Check, 
+  Layers,
+  Download,
   HelpCircle, 
   AlertTriangle,
   RotateCcw
@@ -19,6 +21,12 @@ interface BreastAnatomyViewerProps {
   setIncludeInReport?: (val: boolean) => void;
   onChangeStates?: (states: Record<string, string>) => void;
   onChangeDescriptions?: (descriptions: Record<string, string>) => void;
+  externalStates?: Record<string, string>;
+  externalDescriptions?: Record<string, string>;
+  additionalFindings?: Array<{ id: string; structureName: string; state: string; description: string }>;
+  externalBilateralOverride?: boolean | null;
+  externalBilateralType?: "quistes" | "fibroadenomas" | null;
+  onChangeBilateralOverride?: (override: boolean | null, type: "quistes" | "fibroadenomas" | null) => void;
 }
 
 export default function BreastAnatomyViewer({
@@ -30,7 +38,13 @@ export default function BreastAnatomyViewer({
   includeInReport = true,
   setIncludeInReport,
   onChangeStates,
-  onChangeDescriptions
+  onChangeDescriptions,
+  externalStates,
+  externalDescriptions,
+  additionalFindings = [],
+  externalBilateralOverride = null,
+  externalBilateralType = null,
+  onChangeBilateralOverride
 }: BreastAnatomyViewerProps) {
   
   // Breast structures state:
@@ -70,6 +84,503 @@ export default function BreastAnatomyViewer({
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncLogs, setSyncLogs] = useState<string[]>([]);
   const [lastSyncedReport, setLastSyncedReport] = useState<string>("");
+
+  useEffect(() => {
+    if (externalStates && Object.keys(externalStates).length > 0) {
+      setStates(prev => {
+        const changed = Object.keys(externalStates).some(key => externalStates[key] !== prev[key]);
+        return changed ? { ...prev, ...externalStates } : prev;
+      });
+    }
+  }, [externalStates]);
+
+  useEffect(() => {
+    if (externalDescriptions && Object.keys(externalDescriptions).length > 0) {
+      setCustomDescriptions(prev => {
+        const changed = Object.keys(externalDescriptions).some(key => externalDescriptions[key] !== prev[key]);
+        return changed ? { ...prev, ...externalDescriptions } : prev;
+      });
+    }
+  }, [externalDescriptions]);
+
+  const [manualBilateralOverride, setManualBilateralOverride] = useState<boolean | null>(externalBilateralOverride);
+  const [manualBilateralType, setManualBilateralType] = useState<"quistes" | "fibroadenomas" | null>(externalBilateralType);
+
+  useEffect(() => {
+    setManualBilateralOverride(externalBilateralOverride);
+  }, [externalBilateralOverride]);
+
+  useEffect(() => {
+    setManualBilateralType(externalBilateralType);
+  }, [externalBilateralType]);
+
+  const textNorm = (generatedReport || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+  // Detect bilateral benign conditions STRICTLY (must explicitly mention "multiple"/"multiples" AND "bilateral"/"bilaterales")
+  const autoHasQuistesBilaterales = 
+    (textNorm.includes("quiste") && 
+     (textNorm.includes("bilateral") || textNorm.includes("bilaterales")) && 
+     (textNorm.includes("multiple") || textNorm.includes("multiples") || textNorm.includes("multip") || textNorm.includes("varios") || textNorm.includes("diversos")));
+
+  const autoHasFibroadenomasBilaterales = 
+    (textNorm.includes("fibroadenoma") && 
+     (textNorm.includes("bilateral") || textNorm.includes("bilaterales")) && 
+     (textNorm.includes("multiple") || textNorm.includes("multiples") || textNorm.includes("multip") || textNorm.includes("varios") || textNorm.includes("diversos")));
+
+  const autoBilateralActive = autoHasQuistesBilaterales || autoHasFibroadenomasBilaterales;
+
+  const isBilateralBenignActive = manualBilateralOverride !== null 
+    ? manualBilateralOverride 
+    : autoBilateralActive;
+
+  const hasQuistesBilaterales = isBilateralBenignActive 
+    ? (manualBilateralOverride !== null 
+        ? (manualBilateralType === "quistes")
+        : autoHasQuistesBilaterales)
+    : false;
+
+  const hasFibroadenomasBilaterales = isBilateralBenignActive 
+    ? (manualBilateralOverride !== null 
+        ? (manualBilateralType === "fibroadenomas")
+        : autoHasFibroadenomasBilaterales)
+    : false;
+
+  // Dedicated breast implant schema states - Bilateral support
+  const [breastImplantForceActive, setBreastImplantForceActive] = useState<boolean>(false);
+  const [implantActiveSide, setImplantActiveSide] = useState<"MD" | "MI">("MD");
+
+  // Right Side (MD) Implant states
+  const [breastImplantRuptureIntraMD, setBreastImplantRuptureIntraMD] = useState<boolean>(false);
+  const [breastImplantRuptureExtraMD, setBreastImplantRuptureExtraMD] = useState<boolean>(false);
+  const [breastImplantFluidMD, setBreastImplantFluidMD] = useState<boolean>(false);
+  const [breastImplantFoldsMD, setBreastImplantFoldsMD] = useState<boolean>(false);
+  const [breastImplantCapsuleMD, setBreastImplantCapsuleMD] = useState<boolean>(false);
+
+  // Left Side (MI) Implant states
+  const [breastImplantRuptureIntraMI, setBreastImplantRuptureIntraMI] = useState<boolean>(false);
+  const [breastImplantRuptureExtraMI, setBreastImplantRuptureExtraMI] = useState<boolean>(false);
+  const [breastImplantFluidMI, setBreastImplantFluidMI] = useState<boolean>(false);
+  const [breastImplantFoldsMI, setBreastImplantFoldsMI] = useState<boolean>(false);
+  const [breastImplantCapsuleMI, setBreastImplantCapsuleMI] = useState<boolean>(false);
+
+  const isImplantImpressionActive = (): boolean => {
+    if (!generatedReport) return false;
+    const normalized = generatedReport.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const keywords = [
+      "implante", "implantes", "protesis", "prótesis", "protesico", "protésico", "silicona", "mamoplastia"
+    ];
+    return keywords.some(kw => normalized.includes(kw));
+  };
+
+  const isImplantActive = isImplantImpressionActive() || breastImplantForceActive;
+
+  const updateReportTextWithImplantFinding = (
+    currentText: string,
+    side: "MD" | "MI",
+    findingType: "intra" | "extra" | "fluid" | "folds" | "capsule",
+    checked: boolean
+  ): string => {
+    if (!currentText) return currentText;
+
+    const sentencesMap: Record<"MD" | "MI", Record<string, string>> = {
+      MD: {
+        intra: "En la mama derecha se evidencian signos de ruptura intracapsular de la prótesis, con colapso de la cubierta y signo de linguini.",
+        extra: "En la mama derecha se evidencian signos de ruptura extracapsular con presencia de siliconoma extracapsular e infiltración.",
+        fluid: "Se aprecia una colección líquida anecoica periprotésica compatible con seroma periprotésico reactivo en la mama derecha.",
+        folds: "Se identifican pliegues radiales pronunciados de la cubierta de silicona en la prótesis de la mama derecha.",
+        capsule: "Se observa engrosamiento de la cápsula con signos de contractura y calcificación capsular reactiva en la mama derecha."
+      },
+      MI: {
+        intra: "En la mama izquierda se evidencian signos de ruptura intracapsular de la prótesis, con colapso de la cubierta y signo de linguini.",
+        extra: "En la mama izquierda se evidencian signos de ruptura extracapsular con presencia de siliconoma extracapsular e infiltración.",
+        fluid: "Se aprecia una colección líquida anecoica periprotésica compatible con seroma periprotésico reactivo en la mama izquierda.",
+        folds: "Se identifican pliegues radiales pronunciados de la cubierta de silicona en la prótesis de la mama izquierda.",
+        capsule: "Se observa engrosamiento de la cápsula con signos de contractura y calcificación capsular reactiva en la mama izquierda."
+      }
+    };
+
+    const sentenceToInsert = sentencesMap[side][findingType];
+    const keywords: Record<string, string[]> = {
+      intra: ["ruptura intracapsular", "rotura intracapsular", "linguini"],
+      extra: ["ruptura extracapsular", "rotura extracapsular", "siliconoma", "extracapsular"],
+      fluid: ["seroma", "colección líquida", "coleccion liquida", "líquido periprotesico", "liquido periprotesico"],
+      folds: ["pliegues radiales", "pliegue radial", "pliegues de la cubierta"],
+      capsule: ["contractura capsular", "calcificación capsular", "calcificacion capsular", "engrosamiento capsular", "capsula engrosada"]
+    };
+
+    const sideKeywords = side === "MD" 
+      ? ["mama derecha", "derecha", "der.", "md", "m.d."] 
+      : ["mama izquierda", "izquierda", "izq.", "mi", "m.i."];
+
+    const norm = (str: string) => str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+    if (checked) {
+      const hasFinding = () => {
+        const sentencesList = currentText.split(/[.\n]/);
+        return sentencesList.some(s => {
+          const sNorm = norm(s);
+          const hasPath = keywords[findingType].some(kw => sNorm.includes(norm(kw)));
+          const hasSide = sideKeywords.some(sw => sNorm.includes(sw));
+          return hasPath && (hasSide || sNorm.includes("bilateral"));
+        });
+      };
+
+      if (hasFinding()) {
+        return currentText;
+      }
+
+      const targetHeader = side === "MD" ? "MAMA DERECHA" : "MAMA IZQUIERDA";
+      const paragraphs = currentText.split("\n");
+      let headerIdx = -1;
+
+      for (let i = 0; i < paragraphs.length; i++) {
+        if (norm(paragraphs[i]).includes(norm(targetHeader))) {
+          headerIdx = i;
+          break;
+        }
+      }
+
+      if (headerIdx !== -1) {
+        paragraphs.splice(headerIdx + 1, 0, sentenceToInsert);
+        return paragraphs.join("\n");
+      } else {
+        let impIdx = -1;
+        for (let i = 0; i < paragraphs.length; i++) {
+          if (paragraphs[i].toUpperCase().includes("IMPRESIÓN DIAGNÓSTICA") || paragraphs[i].toUpperCase().includes("CONCLUSION")) {
+            impIdx = i;
+            break;
+          }
+        }
+        if (impIdx !== -1) {
+          paragraphs.splice(impIdx, 0, sentenceToInsert);
+          return paragraphs.join("\n");
+        } else {
+          return currentText.trim() + "\n\n" + sentenceToInsert;
+        }
+      }
+    } else {
+      const lines = currentText.split("\n");
+      const filteredLines = lines.map(line => {
+        const clauses = line.split(/[.;]/);
+        const filteredClauses = clauses.filter(cl => {
+          const clNorm = norm(cl);
+          const hasPath = keywords[findingType].some(kw => clNorm.includes(norm(kw)));
+          const hasSide = sideKeywords.some(sw => clNorm.includes(sw));
+          const isBilateral = clNorm.includes("bilateral");
+          if (hasPath && (hasSide || isBilateral)) {
+            return false;
+          }
+          return true;
+        });
+        return filteredClauses.join(".");
+      });
+
+      return filteredLines.join("\n").replace(/[.]{2,}/g, ".").trim();
+    }
+  };
+
+  const handleToggleImplantFinding = (
+    side: "MD" | "MI",
+    findingType: "intra" | "extra" | "fluid" | "folds" | "capsule",
+    checked: boolean
+  ) => {
+    if (side === "MD") {
+      if (findingType === "intra") setBreastImplantRuptureIntraMD(checked);
+      if (findingType === "extra") setBreastImplantRuptureExtraMD(checked);
+      if (findingType === "fluid") setBreastImplantFluidMD(checked);
+      if (findingType === "folds") setBreastImplantFoldsMD(checked);
+      if (findingType === "capsule") setBreastImplantCapsuleMD(checked);
+    } else {
+      if (findingType === "intra") setBreastImplantRuptureIntraMI(checked);
+      if (findingType === "extra") setBreastImplantRuptureExtraMI(checked);
+      if (findingType === "fluid") setBreastImplantFluidMI(checked);
+      if (findingType === "folds") setBreastImplantFoldsMI(checked);
+      if (findingType === "capsule") setBreastImplantCapsuleMI(checked);
+    }
+
+    if (onChangeReport && generatedReport) {
+      const updatedReport = updateReportTextWithImplantFinding(generatedReport, side, findingType, checked);
+      onChangeReport(updatedReport);
+    }
+  };
+
+  useEffect(() => {
+    if (!generatedReport) {
+      if (!breastImplantForceActive) {
+        setBreastImplantRuptureIntraMD(false);
+        setBreastImplantRuptureExtraMD(false);
+        setBreastImplantFluidMD(false);
+        setBreastImplantFoldsMD(false);
+        setBreastImplantCapsuleMD(false);
+
+        setBreastImplantRuptureIntraMI(false);
+        setBreastImplantRuptureExtraMI(false);
+        setBreastImplantFluidMI(false);
+        setBreastImplantFoldsMI(false);
+        setBreastImplantCapsuleMI(false);
+      }
+      return;
+    }
+    const normalized = generatedReport.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    
+    if (isImplantActive) {
+      // Split text into Right (MD) and Left (MI) spheres if possible to parse individually
+      let mdSegment = normalized;
+      let miSegment = normalized;
+
+      const mdMarkers = [
+        "mama derecha", "mama d.", "m.d.", "m. derecha", "derecha:", "mamas derecha", "cse md", "csi md", "cie md", "cii md", "mama der"
+      ];
+      const miMarkers = [
+        "mama izquierda", "mama i.", "m.i.", "m. izquierda", "izquierda:", "mamas izquierda", "cse mi", "csi mi", "cie mi", "cii mi", "mama izq"
+      ];
+
+      let firstMdIdx = -1;
+      for (const marker of mdMarkers) {
+        const idx = normalized.indexOf(marker);
+        if (idx !== -1 && (firstMdIdx === -1 || idx < firstMdIdx)) {
+          firstMdIdx = idx;
+        }
+      }
+
+      let firstMiIdx = -1;
+      for (const marker of miMarkers) {
+        const idx = normalized.indexOf(marker);
+        if (idx !== -1 && (firstMiIdx === -1 || idx < firstMiIdx)) {
+          firstMiIdx = idx;
+        }
+      }
+
+      if (firstMdIdx !== -1 && firstMiIdx !== -1) {
+        if (firstMdIdx < firstMiIdx) {
+          mdSegment = normalized.substring(firstMdIdx, firstMiIdx);
+          miSegment = normalized.substring(firstMiIdx);
+        } else {
+          miSegment = normalized.substring(firstMiIdx, firstMdIdx);
+          mdSegment = normalized.substring(firstMdIdx);
+        }
+      } else if (firstMdIdx !== -1) {
+        mdSegment = normalized;
+        miSegment = "";
+      } else if (firstMiIdx !== -1) {
+        miSegment = normalized;
+        mdSegment = "";
+      }
+
+      // Helper function to check if any specified term is present, and ensure it is not negated in the respective segment.
+      const checkPathology = (segment: string, positives: string[]) => {
+        if (!segment) return false;
+        const foundIdx = positives.findIndex(p => segment.includes(p));
+        if (foundIdx === -1) return false;
+        
+        const matched = positives[foundIdx];
+        const matchPos = segment.indexOf(matched);
+        // Look up to 45 characters before the matched term
+        const excerpt = segment.substring(Math.max(0, matchPos - 45), matchPos);
+        
+        const negations = [
+          "sin ", "no se ", "ausencia de ", "negativo ", "normal ", "integro ", "integra ", 
+          "normales ", "integros ", "integras ", "sin signos de ", "sin evidencia de ", 
+          "descartar ", "sin ruptura ", "descartando ", "falsos ", "no evidencian ", "no muestra ", "no muestran "
+        ];
+        return !negations.some(neg => excerpt.includes(neg));
+      };
+
+      // Helper function to scan the entire report (including diagnostic impression) for findings with correct side affinity
+      const scanFullReportForSidePathology = (positives: string[], side: "MD" | "MI") => {
+        const segments = normalized.split(/[.\n;•*]|\b\d+\b/);
+        
+        for (const rawSeg of segments) {
+          const segClean = rawSeg.trim();
+          if (!segClean) continue;
+          
+          const foundIdx = positives.findIndex(p => segClean.includes(p));
+          if (foundIdx !== -1) {
+            const matched = positives[foundIdx];
+            const matchPos = segClean.indexOf(matched);
+            const excerptBefore = segClean.substring(Math.max(0, matchPos - 45), matchPos);
+            
+            const negations = [
+              "sin ", "no se ", "ausencia de ", "negativo ", "normal ", "integro ", "integra ", 
+              "normales ", "integros ", "integras ", "sin signos de ", "sin evidencia de ", 
+              "descartar ", "sin ruptura ", "descartando ", "falsos ", "no evidencian ", "no muestra ", "no muestran "
+            ];
+            
+            const isNegated = negations.some(neg => excerptBefore.includes(neg));
+            if (!isNegated) {
+              const mdAffinity = /\b(derecha|derecho|der|md|m\.d)\b/gi.test(segClean);
+              const miAffinity = /\b(izquierda|izquierdo|izq|mi|m\.i)\b/gi.test(segClean);
+
+              if (side === "MD" && mdAffinity && !miAffinity) {
+                return true;
+              }
+              if (side === "MI" && miAffinity && !mdAffinity) {
+                return true;
+              }
+              if ((mdAffinity && miAffinity) || (!mdAffinity && !miAffinity)) {
+                const isBilateral = ["bilateral", "bilaterales", "ambas", "ambos", "protesis bilat", "implantes bilat"].some(b => segClean.includes(b));
+                if (isBilateral) return true;
+              }
+            }
+          }
+        }
+        return false;
+      };
+
+      // Right Side (MD) Findings Checks
+      const hasIntraMD = checkPathology(mdSegment, [
+        "ruptura intracapsular", "rotura intracapsular", "linguini", 
+        "cerradura de llave", "no integrada", "colapsado", "signo de la cerradura"
+      ]) || scanFullReportForSidePathology([
+        "ruptura intracapsular", "rotura intracapsular", "linguini", 
+        "cerradura de llave", "no integrada", "colapsado", "signo de la cerradura"
+      ], "MD");
+
+      const hasExtraMD = checkPathology(mdSegment, [
+        "ruptura extracapsular", "rotura extracapsular", "silicona libre", 
+        "siliconoma", "leaking", "tormenta de nieve", "extracapsular"
+      ]) || scanFullReportForSidePathology([
+        "ruptura extracapsular", "rotura extracapsular", "silicona libre", 
+        "siliconoma", "leaking", "tormenta de nieve", "extracapsular"
+      ], "MD");
+
+      const hasFluidMD = checkPathology(mdSegment, [
+        "seroma", "coleccion peri", "coleccion liquida", "liquido peri", 
+        "liquido alrededor", "acumulacion de liquido", "liquido periprotesico", "seroma periprotesico"
+      ]) || scanFullReportForSidePathology([
+        "seroma", "coleccion peri", "coleccion liquida", "liquido peri", 
+        "liquido alrededor", "acumulacion de liquido", "liquido periprotesico", "seroma periprotesico"
+      ], "MD");
+
+      const hasFoldsMD = checkPathology(mdSegment, [
+        "pliegue radial", "pliegues radiales", "pliegues de la cubierta", "pliegue de cubierta", "ondulacion"
+      ]) || scanFullReportForSidePathology([
+        "pliegue radial", "pliegues radiales", "pliegues de la cubierta", "pliegue de cubierta", "ondulacion"
+      ], "MD");
+
+      const hasCapsuleMD = checkPathology(mdSegment, [
+        "contractura capsular", "calcificacion capsular", "capsular calcificada", 
+        "engrosamiento capsular", "capsula engrosada"
+      ]) || scanFullReportForSidePathology([
+        "contractura capsular", "calcificacion capsular", "capsular calcificada", 
+        "engrosamiento capsular", "capsula engrosada"
+      ], "MD");
+
+      // Left Side (MI) Findings Checks
+      const hasIntraMI = checkPathology(miSegment, [
+        "ruptura intracapsular", "rotura intracapsular", "linguini", 
+        "cerradura de llave", "no integrada", "colapsado", "signo de la cerradura"
+      ]) || scanFullReportForSidePathology([
+        "ruptura intracapsular", "rotura intracapsular", "linguini", 
+        "cerradura de llave", "no integrada", "colapsado", "signo de la cerradura"
+      ], "MI");
+
+      const hasExtraMI = checkPathology(miSegment, [
+        "ruptura extracapsular", "rotura extracapsular", "silicona libre", 
+        "siliconoma", "leaking", "tormenta de nieve", "extracapsular"
+      ]) || scanFullReportForSidePathology([
+        "ruptura extracapsular", "rotura extracapsular", "silicona libre", 
+        "siliconoma", "leaking", "tormenta de nieve", "extracapsular"
+      ], "MI");
+
+      const hasFluidMI = checkPathology(miSegment, [
+        "seroma", "coleccion peri", "coleccion liquida", "liquido peri", 
+        "liquido alrededor", "acumulacion de liquido", "liquido periprotesico", "seroma periprotesico"
+      ]) || scanFullReportForSidePathology([
+        "seroma", "coleccion peri", "coleccion liquida", "liquido peri", 
+        "liquido alrededor", "acumulacion de liquido", "liquido periprotesico", "seroma periprotesico"
+      ], "MI");
+
+      const hasFoldsMI = checkPathology(miSegment, [
+        "pliegue radial", "pliegues radiales", "pliegues de la cubierta", "pliegue de cubierta", "ondulacion"
+      ]) || scanFullReportForSidePathology([
+        "pliegue radial", "pliegues radiales", "pliegues de la cubierta", "pliegue de cubierta", "ondulacion"
+      ], "MI");
+
+      const hasCapsuleMI = checkPathology(miSegment, [
+        "contractura capsular", "calcificacion capsular", "capsular calcificada", 
+        "engrosamiento capsular", "capsula engrosada"
+      ]) || scanFullReportForSidePathology([
+        "contractura capsular", "calcificacion capsular", "capsular calcificada", 
+        "engrosamiento capsular", "capsula engrosada"
+      ], "MI");
+
+      // Assign Side MD
+      const isOverallNormalMD = 
+        (mdSegment.includes("normal") || 
+         mdSegment.includes("integro") || 
+         mdSegment.includes("integros") || 
+         mdSegment.includes("conservado") || 
+         mdSegment.includes("sin alteraciones") || 
+         mdSegment.includes("sin hallazgos") ||
+         mdSegment.includes("sin signos de ruptura") ||
+         mdSegment.includes("normales") ||
+         mdSegment.includes("correcta") ||
+         mdSegment.includes("correctos")) &&
+        !mdSegment.includes("pero") &&
+        !mdSegment.includes("sin embargo") &&
+        !mdSegment.includes("excepto");
+
+      if (isOverallNormalMD && !hasIntraMD && !hasExtraMD && !hasFluidMD && !hasFoldsMD && !hasCapsuleMD) {
+        setBreastImplantRuptureIntraMD(false);
+        setBreastImplantRuptureExtraMD(false);
+        setBreastImplantFluidMD(false);
+        setBreastImplantFoldsMD(false);
+        setBreastImplantCapsuleMD(false);
+      } else {
+        setBreastImplantRuptureIntraMD(hasIntraMD);
+        setBreastImplantRuptureExtraMD(hasExtraMD);
+        setBreastImplantFluidMD(hasFluidMD);
+        setBreastImplantFoldsMD(hasFoldsMD);
+        setBreastImplantCapsuleMD(hasCapsuleMD);
+      }
+
+      // Assign Side MI
+      const isOverallNormalMI = 
+        (miSegment.includes("normal") || 
+         miSegment.includes("integro") || 
+         miSegment.includes("integros") || 
+         miSegment.includes("conservado") || 
+         miSegment.includes("sin alteraciones") || 
+         miSegment.includes("sin hallazgos") ||
+         miSegment.includes("sin signos de ruptura") ||
+         miSegment.includes("normales") ||
+         miSegment.includes("correcta") ||
+         miSegment.includes("correctos")) &&
+        !miSegment.includes("pero") &&
+        !miSegment.includes("sin embargo") &&
+        !miSegment.includes("excepto");
+
+      if (isOverallNormalMI && !hasIntraMI && !hasExtraMI && !hasFluidMI && !hasFoldsMI && !hasCapsuleMI) {
+        setBreastImplantRuptureIntraMI(false);
+        setBreastImplantRuptureExtraMI(false);
+        setBreastImplantFluidMI(false);
+        setBreastImplantFoldsMI(false);
+        setBreastImplantCapsuleMI(false);
+      } else {
+        setBreastImplantRuptureIntraMI(hasIntraMI);
+        setBreastImplantRuptureExtraMI(hasExtraMI);
+        setBreastImplantFluidMI(hasFluidMI);
+        setBreastImplantFoldsMI(hasFoldsMI);
+        setBreastImplantCapsuleMI(hasCapsuleMI);
+      }
+    } else {
+      setBreastImplantRuptureIntraMD(false);
+      setBreastImplantRuptureExtraMD(false);
+      setBreastImplantFluidMD(false);
+      setBreastImplantFoldsMD(false);
+      setBreastImplantCapsuleMD(false);
+
+      setBreastImplantRuptureIntraMI(false);
+      setBreastImplantRuptureExtraMI(false);
+      setBreastImplantFluidMI(false);
+      setBreastImplantFoldsMI(false);
+      setBreastImplantCapsuleMI(false);
+    }
+  }, [generatedReport, breastImplantForceActive, isImplantActive]);
+
+  // AUTO-SYNC ON MOUNT / PROP CHANGE HAS BEEN DISABLED PER USER REQUEST TO SAVE RESOURCES.
+  // Synchronization will only execute manually when the user explicitly clicks the "Sincronizar MD / MI" button.
 
   useEffect(() => {
     if (onChangeStates) {
@@ -134,11 +645,15 @@ export default function BreastAnatomyViewer({
 
   const getSimplifiedDescription = (id: string, stateInput?: string): string => {
     const s = stateInput || states[id] || "no_descrito";
-    if (s === "no_descrito") {
+    if (!s || s === "no_descrito") {
       return "No descrito en el reporte.";
     }
     if (s === "normal") {
       return "Ecosonográficamente normal, sin alteraciones discretas.";
+    }
+    const standardStates = ["normal", "no_descrito", "hallazgo"];
+    if (!standardStates.includes(s)) {
+      return `Se describe hallazgo: ${s.charAt(0).toUpperCase() + s.slice(1)}.`;
     }
     
     const isRight = id.startsWith("md_");
@@ -162,10 +677,30 @@ export default function BreastAnatomyViewer({
     md += `| :--- | :--- |\n`;
 
     let hasFindings = false;
+
+    if (isBilateralBenignActive) {
+      const label = hasQuistesBilaterales ? "quistes simples bilaterales" : "fibroadenomas múltiples bilaterales";
+      md += `| **Ambas Mamas** | Presencia de ${label}. |\n`;
+      hasFindings = true;
+    }
+
     initialKeys.forEach(k => {
       const s = states[k];
       if (s === "hallazgo") {
         const desc = customDescriptions[k]?.trim() || getSimplifiedDescription(k);
+
+        if (isBilateralBenignActive) {
+          const descNorm = desc.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+          const isBenignRelated = 
+            (hasQuistesBilaterales && (descNorm.includes("quiste") || descNorm.includes("quistic"))) ||
+            (hasFibroadenomasBilaterales && (descNorm.includes("fibroadenoma") || descNorm.includes("nodulo") || descNorm.includes("nódulo")));
+          
+          if (isBenignRelated || !descNorm) {
+            // Skip individual listing since it is summarized under "Ambas Mamas"
+            return;
+          }
+        }
+
         md += `| **${getStructureLabel(k)}** | ${desc} |\n`;
         hasFindings = true;
       }
@@ -395,19 +930,35 @@ export default function BreastAnatomyViewer({
   };
 
   // Status-based colors
-  const getColorsForState = (stateValue: string, isCurrentHover: boolean, isCurrentSelected: boolean) => {
+  const getColorsForState = (stateValue: string, isCurrentHover: boolean, isCurrentSelected: boolean, id: string) => {
+    let effectiveState = stateValue;
+
+    if (isBilateralBenignActive) {
+      if (effectiveState === "no_descrito" || effectiveState === "normal") {
+        effectiveState = "normal";
+      } else if (effectiveState === "hallazgo") {
+        const desc = (customDescriptions[id] || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const isBenignRelated = 
+          (hasQuistesBilaterales && (desc.includes("quiste") || desc.includes("quistic"))) ||
+          (hasFibroadenomasBilaterales && (desc.includes("fibroadenoma") || desc.includes("nodulo") || desc.includes("nódulo")));
+        if (isBenignRelated || !desc) {
+          effectiveState = "normal";
+        }
+      }
+    }
+
     let baseFill = "fill-slate-900/10";
     let baseStroke = "stroke-slate-700/40";
     let glow = "";
 
-    if (stateValue === "normal") {
+    if (effectiveState === "normal") {
       baseFill = "fill-emerald-500/15";
       baseStroke = "stroke-emerald-500/80";
       if (isCurrentHover) {
         baseFill = "fill-emerald-500/35";
         baseStroke = "stroke-emerald-400";
       }
-    } else if (stateValue === "hallazgo") {
+    } else if (effectiveState !== "no_descrito") {
       baseFill = "fill-rose-500/25";
       baseStroke = "stroke-rose-500";
       glow = "drop-shadow-[0_0_4px_rgba(239,68,68,0.4)]";
@@ -425,7 +976,7 @@ export default function BreastAnatomyViewer({
 
     if (isCurrentSelected) {
       baseStroke = "stroke-indigo-400 stroke-[2.5]";
-      if (stateValue === "no_descrito") {
+      if (effectiveState === "no_descrito") {
         baseFill = "fill-indigo-500/25";
       }
     }
@@ -451,7 +1002,7 @@ export default function BreastAnatomyViewer({
       const isSelected = selectedStructure === id;
       const isHovered = activeHover === id;
       const stateVal = states[id] || "no_descrito";
-      const { baseFill, baseStroke, glow } = getColorsForState(stateVal, isHovered, isSelected);
+      const { baseFill, baseStroke, glow } = getColorsForState(stateVal, isHovered, isSelected, id);
 
       // Midpoint coordinate for label placing
       const midAngleRad = ((startAngle + endAngle) / 2 * Math.PI) / 180;
@@ -474,24 +1025,35 @@ export default function BreastAnatomyViewer({
     const isRetSelected = selectedStructure === retId;
     const isRetHovered = activeHover === retId;
     const retState = states[retId] || "no_descrito";
-    const retColors = getColorsForState(retState, isRetHovered, isRetSelected);
+    const retColors = getColorsForState(retState, isRetHovered, isRetSelected, retId);
 
     // Cola de Spence
     const spenceId = `${prefix}cola_spence`;
     const isSpenceSelected = selectedStructure === spenceId;
     const isSpenceHovered = activeHover === spenceId;
     const spenceState = states[spenceId] || "no_descrito";
-    const spenceColors = getColorsForState(spenceState, isSpenceHovered, isSpenceSelected);
+    const spenceColors = getColorsForState(spenceState, isSpenceHovered, isSpenceSelected, spenceId);
 
     // Axila
     const axId = `${prefix}axila`;
     const isAxSelected = selectedStructure === axId;
     const isAxHovered = activeHover === axId;
     const axState = states[axId] || "no_descrito";
-    const axColors = getColorsForState(axState, isAxHovered, isAxSelected);
+    const axColors = getColorsForState(axState, isAxHovered, isAxSelected, axId);
 
     return (
       <svg id={`breast-anatomy-${isRight ? "right" : "left"}-svg`} viewBox="0 0 320 220" className="w-full h-auto drop-shadow-xl bg-slate-950/40 border border-slate-900 rounded-2xl p-2 select-none">
+        {/* Bilateral Benign Finding Badge */}
+        {isBilateralBenignActive && (
+          <g>
+            <rect id="breast-bilateral-badge-rect" x="75" y="8" width="170" height="15" rx="5" fill="#0b1329" stroke="#10b981" strokeWidth="0.8" />
+            <circle cx="85" cy="15.5" r="2.5" fill="#10b981" className="fill-emerald-400 animate-pulse" />
+            <text id="breast-bilateral-badge-text" x="94" y="18" fill="#10b981" className="fill-emerald-400 font-sans font-extrabold text-[6.5px] uppercase tracking-wider" style={{ fontSize: "6.5px", fontWeight: "extrabold" }}>
+              {hasQuistesBilaterales ? "Quistes simples bilaterales" : "Fibroadenomas múltiples bilaterales"}
+            </text>
+          </g>
+        )}
+
         {/* Background anatomical reference bounds */}
         <text x="160" y="210" textAnchor="middle" className="fill-slate-500 font-sans font-black tracking-widest text-[9px]">
           {isRight ? "MAMA DERECHA (MD)" : "MAMA IZQUIERDA (MI)"}
@@ -564,6 +1126,375 @@ export default function BreastAnatomyViewer({
     );
   };
 
+  const renderImplantDiagram = () => {
+    if (!isImplantActive) return null;
+
+    const renderSingleImplantSide = (side: "MD" | "MI") => {
+      const isRight = side === "MD";
+      const intra = isRight ? breastImplantRuptureIntraMD : breastImplantRuptureIntraMI;
+      const extra = isRight ? breastImplantRuptureExtraMD : breastImplantRuptureExtraMI;
+      const fluid = isRight ? breastImplantFluidMD : breastImplantFluidMI;
+      const folds = isRight ? breastImplantFoldsMD : breastImplantFoldsMI;
+      const capsule = isRight ? breastImplantCapsuleMD : breastImplantCapsuleMI;
+
+      const setIntra = isRight ? setBreastImplantRuptureIntraMD : setBreastImplantRuptureIntraMI;
+      const setExtra = isRight ? setBreastImplantRuptureExtraMD : setBreastImplantRuptureExtraMI;
+      const setFluid = isRight ? setBreastImplantFluidMD : setBreastImplantFluidMI;
+      const setFolds = isRight ? setBreastImplantFoldsMD : setBreastImplantFoldsMI;
+      const setCapsule = isRight ? setBreastImplantCapsuleMD : setBreastImplantCapsuleMI;
+
+      const toggleIntra = () => handleToggleImplantFinding(side, "intra", !intra);
+      const toggleExtra = () => handleToggleImplantFinding(side, "extra", !extra);
+      const toggleFluid = () => handleToggleImplantFinding(side, "fluid", !fluid);
+      const toggleFolds = () => handleToggleImplantFinding(side, "folds", !folds);
+      const toggleCapsule = () => handleToggleImplantFinding(side, "capsule", !capsule);
+
+      const hasAnyAlteration = intra || extra || fluid || folds || capsule;
+
+      return (
+        <div className="flex flex-col gap-4 bg-slate-900/10 border border-slate-900/60 p-4 rounded-2xl relative overflow-hidden">
+          {/* Header for this side */}
+          <div className="flex items-center justify-between border-b border-slate-900/85 pb-2 mb-1">
+            <span className={`text-[11px] font-black uppercase tracking-wider flex items-center gap-1.5 font-sans ${isRight ? "text-cyan-400" : "text-sky-400"}`}>
+              <span className={`w-2 h-2 rounded-full ${isRight ? "bg-cyan-500 animate-pulse" : "bg-sky-500"}`}></span>
+              {isRight ? "MAMA DERECHA (MD)" : "MAMA IZQUIERDA (MI)"}
+            </span>
+            {hasAnyAlteration ? (
+              <span className="text-[8px] px-1.5 py-0.5 bg-rose-950/60 text-rose-450 border border-rose-900/50 rounded-md font-bold uppercase tracking-wider font-mono">
+                con alteraciones
+              </span>
+            ) : (
+              <span className="text-[8px] px-1.5 py-0.5 bg-emerald-950/60 text-emerald-455 border border-emerald-900/50 rounded-md font-bold uppercase tracking-wider font-mono">
+                aspecto normal
+              </span>
+            )}
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-5 items-center sm:items-start text-left">
+            {/* SVG Illustration Column */}
+            <div className="w-full sm:w-1/2 flex flex-col items-center justify-center p-2 rounded-xl border border-slate-900 bg-slate-950/50 relative">
+              <svg 
+                id={`breast-implant-svg-${side}`} 
+                viewBox="0 0 320 220" 
+                className="w-full h-auto select-none"
+                data-intra={intra ? "true" : "false"}
+                data-extra={extra ? "true" : "false"}
+                data-fluid={fluid ? "true" : "false"}
+                data-folds={folds ? "true" : "false"}
+                data-capsule={capsule ? "true" : "false"}
+              >
+                <defs>
+                  <linearGradient id={`muscleGrad-${side}`} x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#f43f5e" stopOpacity="0.25" />
+                    <stop offset="100%" stopColor="#be123c" stopOpacity="0.1" />
+                  </linearGradient>
+                  <linearGradient id={`gelGrad-${side}`} x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#06b6d4" stopOpacity="0.3" />
+                    <stop offset="100%" stopColor="#0891b2" stopOpacity="0.1" />
+                  </linearGradient>
+                  <linearGradient id={`fluidGrad-${side}`} x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.45" />
+                    <stop offset="100%" stopColor="#0284c7" stopOpacity="0.1" />
+                  </linearGradient>
+                </defs>
+
+                {/* Pectoral Muscle / Chest Wall */}
+                <path d="M 10 10 C 25 10, 45 70, 45 110 C 45 150, 25 210, 10 210 Z" fill={`url(#muscleGrad-${side})`} stroke="#f43f5e" strokeWidth="1" strokeOpacity="0.4" />
+                <path d="M 15 25 L 35 110 L 15 195" stroke="#f43f5e" strokeWidth="1" strokeOpacity="0.2" strokeDasharray="3,3" />
+
+                {/* Capsule Outer Boundary */}
+                <circle cx="150" cy="110" r="65" 
+                  fill="transparent" 
+                  stroke={capsule ? "#f59e0b" : "#334155"} 
+                  strokeWidth={capsule ? "3.5" : "1.8"}
+                  strokeDasharray={capsule ? "4,4" : "none"}
+                  className="transition-all duration-200 cursor-pointer hover:stroke-amber-400"
+                  onClick={toggleCapsule}
+                />
+
+                {/* Peri-implant fluid / Seroma layer */}
+                {fluid && (
+                  <path 
+                    d="M 92 80 A 61 61 0 0 1 208 80 A 56 56 0 0 0 92 80 Z" 
+                    fill={`url(#fluidGrad-${side})`} 
+                    stroke="#38bdf8" 
+                    strokeWidth="1"
+                    className="animate-pulse cursor-pointer hover:opacity-80"
+                    onClick={toggleFluid}
+                  />
+                )}
+
+                {/* Gel Body (Prosthesis) */}
+                <circle cx="150" cy="110" r="54" 
+                  fill={`url(#gelGrad-${side})`} 
+                  stroke={folds ? "#22d3ee" : "#0891b2"} 
+                  strokeWidth="1.8"
+                  className="transition-all duration-200 cursor-pointer hover:stroke-cyan-400"
+                  onClick={toggleIntra}
+                />
+
+                {/* Pliegues radiales (radial envelope folding) */}
+                {folds && (
+                  <g stroke="#22d3ee" strokeWidth="1.8" className="cursor-pointer" onClick={toggleFolds}>
+                    <path d="M 190 74 C 180 82, 175 92, 170 95" fill="none" />
+                    <path d="M 110 146 C 122 138, 128 132, 135 125" fill="none" />
+                    <path d="M 140 58 C 144 70, 148 80, 150 90" fill="none" />
+                  </g>
+                )}
+
+                {/* Ruptura Intracapsular (Linguini sign) */}
+                {intra && (
+                  <g stroke="#ffffff" strokeWidth="1.6" fill="none" className="cursor-pointer" onClick={toggleIntra}>
+                    <path d="M 110 95 C 125 110, 135 75, 150 90 C 165 105, 175 75, 190 95" className="animate-pulse" />
+                    <path d="M 105 115 C 120 135, 140 100, 155 125 C 170 150, 180 115, 195 110" />
+                    <path d="M 120 135 C 130 145, 150 140, 160 145" />
+                    <path d="M 130 85 C 135 90, 145 80, 150 85 C 155 90, 165 80, 170 85" opacity="0.6" />
+                  </g>
+                )}
+
+                {/* Ruptura Extracapsular (snowstorm droplets) */}
+                {extra && (
+                  <g className="cursor-pointer" onClick={toggleExtra}>
+                    <circle cx="225" cy="85" r="4.5" fill="#22d3ee" className="fill-cyan-400 animate-bounce" />
+                    <circle cx="232" cy="115" r="3.2" fill="#22d3ee" className="fill-cyan-400" />
+                    <circle cx="218" cy="140" r="4.8" fill="#22d3ee" className="fill-cyan-400" />
+                    <g transform="translate(242, 122)">
+                      <circle cx="10" cy="10" r="14" fill="#ec4899" fillOpacity="0.12" stroke="#ec4899" strokeWidth="0.8" strokeDasharray="2,2" />
+                      <ellipse cx="10" cy="10" rx="9" ry="9" fill="#0891b2" fillOpacity="0.22" />
+                      <text x="10" y="13" textAnchor="middle" fill="#ffffff" className="font-sans font-black text-[5px]" style={{ fontSize: "5px" }}>LNP</text>
+                    </g>
+                    <path d="M 210 95 L 215 115" stroke="#f43f5e" strokeWidth="2.5" />
+                  </g>
+                )}
+
+                {/* Labels and Leader lines */}
+                <g className="pointer-events-none select-none animate-fadeIn" style={{ fontSize: "4.8px", fontFamily: "sans-serif" }}>
+                  <text x="15" y="25" fill="#ec4899" className="font-sans font-black" textAnchor="start" style={{ fontSize: "5px", fontWeight: 900 }}>PARED TORÁCICA</text>
+                  
+                  <text x="295" y="28" fill="#cbd5e1" className="font-sans font-bold" textAnchor="end" style={{ fontSize: "4.6px", fontWeight: 700 }}>CÁPSULA RETRACTIL</text>
+                  <line x1="225" y1="26" x2="168" y2="48" stroke="#475569" strokeWidth="0.5" />
+
+                  <text x="295" y="195" fill="#22d3ee" className="font-sans font-bold" textAnchor="end" style={{ fontSize: "4.6px", fontWeight: 700 }}>PRÓTESIS DE SILICONA</text>
+                  <line x1="210" y1="192" x2="178" y2="148" stroke="#0891b2" strokeWidth="0.5" />
+
+                  {capsule && (
+                    <g>
+                      <text x="15" y="190" fill="#ea580c" className="font-sans font-black" textAnchor="start" style={{ fontSize: "4.6px", fontWeight: 900 }}>CONTRACTURA / CALCIFICACIÓN</text>
+                      <line x1="120" y1="184" x2="95" y2="145" stroke="#ea580c" strokeWidth="0.5" />
+                    </g>
+                  )}
+
+                  {fluid && (
+                    <g>
+                      <text x="150" y="32" fill="#38bdf8" className="font-sans font-black text-center" textAnchor="middle" style={{ fontSize: "4.8px", fontWeight: 900 }}>SEROMA PERIPROTÉCICO</text>
+                      <line x1="150" y1="36" x2="150" y2="52" stroke="#38bdf8" strokeWidth="0.5" />
+                    </g>
+                  )}
+
+                  {intra && (
+                    <g>
+                      <line x1="88" y1="110" x2="114" y2="110" stroke="#ffffff" strokeWidth="0.5" />
+                      <text x="82" y="112" fill="#ffffff" className="font-sans font-black" textAnchor="end" style={{ fontSize: "4.6px", fontWeight: 900 }}>RUPTURA INTRACAPSULAR</text>
+                    </g>
+                  )}
+
+                  {extra && (
+                    <g>
+                      <line x1="225" y1="140" x2="215" y2="155" stroke="#ec4899" strokeWidth="0.5" />
+                      <text x="295" y="157" fill="#ec4899" className="font-sans font-black" textAnchor="end" style={{ fontSize: "4.6px", fontWeight: 900 }}>RUPTURA EXTRACAPSULAR</text>
+                    </g>
+                  )}
+                </g>
+              </svg>
+              <div className="text-[8.5px] text-slate-500 font-semibold uppercase mt-2 tracking-widest text-center italic font-sans select-none pointer-events-none">
+                Sección Sagital de Prótesis - {side}
+              </div>
+            </div>
+
+            {/* Checkboxes List Column */}
+            <div className="w-full sm:w-1/2 flex flex-col gap-2">
+              <label className={`flex gap-2.5 items-start p-2.5 bg-slate-900/40 hover:bg-slate-900/80 rounded-xl border transition-all cursor-pointer select-none ${
+                intra 
+                  ? "border-white/30 bg-slate-900 shadow-sm shadow-white/5 text-white" 
+                  : "border-slate-850/60 text-slate-400"
+              }`}>
+                <input 
+                  type="checkbox" 
+                  checked={intra} 
+                  onChange={(e) => handleToggleImplantFinding(side, "intra", e.target.checked)} 
+                  className="rounded border-slate-800 text-cyan-500 focus:ring-cyan-500 mt-0.5"
+                />
+                <div className="leading-tight text-left font-sans">
+                  <div className="text-[11px] font-black uppercase flex items-center gap-1 font-sans">
+                    🟢 Ruptura Intracapsular
+                  </div>
+                  <p className="text-[9.5px] text-slate-500 mt-0.5 leading-tight font-sans">
+                    Colapso de cubierta (linguini sign).
+                  </p>
+                </div>
+              </label>
+
+              <label className={`flex gap-2.5 items-start p-2.5 bg-slate-900/40 hover:bg-slate-900/80 rounded-xl border transition-all cursor-pointer select-none ${
+                extra 
+                  ? "border-pink-500/30 bg-slate-900 shadow-sm shadow-pink-500/5 text-white" 
+                  : "border-slate-850/60 text-slate-400"
+              }`}>
+                <input 
+                  type="checkbox" 
+                  checked={extra} 
+                  onChange={(e) => handleToggleImplantFinding(side, "extra", e.target.checked)} 
+                  className="rounded border-slate-800 text-pink-500 focus:ring-pink-500 mt-0.5"
+                />
+                <div className="leading-tight text-left font-sans">
+                  <div className="text-[11px] font-black uppercase flex items-center gap-1 font-sans">
+                    🔴 Ruptura Extracapsular
+                  </div>
+                  <p className="text-[9.5px] text-slate-500 mt-0.5 leading-tight font-sans">
+                    Fuga de gel (snowstorm appearance).
+                  </p>
+                </div>
+              </label>
+
+              <label className={`flex gap-2.5 items-start p-2.5 bg-slate-900/40 hover:bg-slate-900/80 rounded-xl border transition-all cursor-pointer select-none ${
+                fluid 
+                  ? "border-cyan-500/30 bg-slate-900 shadow-sm shadow-cyan-500/5 text-white" 
+                  : "border-slate-850/60 text-slate-400"
+              }`}>
+                <input 
+                  type="checkbox" 
+                  checked={fluid} 
+                  onChange={(e) => handleToggleImplantFinding(side, "fluid", e.target.checked)} 
+                  className="rounded border-slate-800 text-cyan-500 focus:ring-cyan-500 mt-0.5"
+                />
+                <div className="leading-tight text-left font-sans">
+                  <div className="text-[11px] font-black uppercase flex items-center gap-1 font-sans">
+                    💧 Seroma Periprotésico
+                  </div>
+                  <p className="text-[9.5px] text-slate-500 mt-0.5 leading-tight font-sans">
+                    Colección líquida anecoica periprotésica.
+                  </p>
+                </div>
+              </label>
+
+              <label className={`flex gap-2.5 items-start p-2.5 bg-slate-900/40 hover:bg-slate-900/80 rounded-xl border transition-all cursor-pointer select-none ${
+                folds 
+                  ? "border-teal-500/30 bg-slate-900 shadow-sm shadow-teal-500/5 text-white" 
+                  : "border-slate-850/60 text-slate-400"
+              }`}>
+                <input 
+                  type="checkbox" 
+                  checked={folds} 
+                  onChange={(e) => handleToggleImplantFinding(side, "folds", e.target.checked)} 
+                  className="rounded border-slate-800 text-teal-500 focus:ring-teal-500 mt-0.5"
+                />
+                <div className="leading-tight text-left font-sans">
+                  <div className="text-[11px] font-black uppercase flex items-center gap-1 font-sans">
+                    〰️ Pliegues Radiales
+                  </div>
+                  <p className="text-[9.5px] text-slate-500 mt-0.5 leading-tight font-sans">
+                    Pliegues pronunciados de la envoltura.
+                  </p>
+                </div>
+              </label>
+
+              <label className={`flex gap-2.5 items-start p-2.5 bg-slate-900/40 hover:bg-slate-900/80 rounded-xl border transition-all cursor-pointer select-none ${
+                capsule 
+                  ? "border-amber-500/30 bg-slate-900 shadow-sm shadow-amber-500/5 text-white" 
+                  : "border-slate-850/60 text-slate-400"
+              }`}>
+                <input 
+                  type="checkbox" 
+                  checked={capsule} 
+                  onChange={(e) => handleToggleImplantFinding(side, "capsule", e.target.checked)} 
+                  className="rounded border-slate-800 text-amber-500 focus:ring-amber-500 mt-0.5"
+                />
+                <div className="leading-tight text-left font-sans">
+                  <div className="text-[11px] font-black uppercase flex items-center gap-1 font-sans">
+                    ⚠️ Contractura / Calcificación
+                  </div>
+                  <p className="text-[9.5px] text-slate-500 mt-0.5 leading-tight font-sans">
+                    Engrosamiento capsular denso o calcificación.
+                  </p>
+                </div>
+              </label>
+
+              <button
+                type="button"
+                onClick={() => {
+                  handleToggleImplantFinding(side, "intra", false);
+                  handleToggleImplantFinding(side, "extra", false);
+                  handleToggleImplantFinding(side, "fluid", false);
+                  handleToggleImplantFinding(side, "folds", false);
+                  handleToggleImplantFinding(side, "capsule", false);
+                }}
+                className="w-full py-1 text-[9px] font-bold border border-slate-850/40 hover:border-slate-800 text-slate-400 hover:text-white rounded-lg bg-slate-950/20 hover:bg-slate-950/40 transition-colors cursor-pointer mt-1"
+              >
+                Limpiar {side}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    return (
+      <div className="w-full bg-slate-950/60 border border-slate-900 rounded-3xl p-5 mt-4 transition-all duration-300 animate-fadeIn text-left col-span-12">
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-900 pb-3 mb-4">
+          <div>
+            <span className="p-1 px-2 bg-gradient-to-r from-cyan-950 to-indigo-950 border border-cyan-850 text-cyan-400 text-[8px] font-black uppercase rounded-full tracking-wider">
+              Evaluación Bilateral Simultánea
+            </span>
+            <h4 className="text-sm font-black text-white mt-1 uppercase tracking-tight flex items-center gap-1.5 font-sans">
+              🔬 EVALUACIÓN DE PRÓTESIS MAMARIAS BILATERALES
+            </h4>
+            <p className="text-[10px] text-slate-400 font-medium leading-relaxed mt-0.5 font-sans">
+              Alteraciones de la envoltura e interacciones tisulares para ambas mamas representadas simultáneamente en corte sagital.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => {
+                handleToggleImplantFinding("MD", "intra", false);
+                handleToggleImplantFinding("MD", "extra", false);
+                handleToggleImplantFinding("MD", "fluid", false);
+                handleToggleImplantFinding("MD", "folds", false);
+                handleToggleImplantFinding("MD", "capsule", false);
+
+                handleToggleImplantFinding("MI", "intra", false);
+                handleToggleImplantFinding("MI", "extra", false);
+                handleToggleImplantFinding("MI", "fluid", false);
+                handleToggleImplantFinding("MI", "folds", false);
+                handleToggleImplantFinding("MI", "capsule", false);
+              }}
+              className="px-2.5 py-1 text-[9.5px] font-bold border border-slate-850 hover:border-slate-800 text-slate-400 hover:text-white rounded-lg bg-slate-900/60 transition-colors cursor-pointer"
+            >
+              Reiniciar Ambas Prótesis
+            </button>
+          </div>
+        </div>
+
+        {/* Dynamic side-by-side grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {renderSingleImplantSide("MD")}
+          {renderSingleImplantSide("MI")}
+        </div>
+
+        {/* Shared Clinical Guidelines Footer */}
+        <div className="bg-slate-900/40 border border-slate-900 p-3.5 rounded-2xl flex flex-col gap-1 text-[11px] leading-relaxed text-slate-450 font-sans mt-4">
+          <span className="font-extrabold text-white text-[10px] uppercase tracking-wider flex items-center gap-1 text-cyan-400 font-sans">
+            💡 GUÍA CLÍNICA DE COMPLICACIONES PROTÉSICAS RECURRENTES:
+          </span>
+          <span>
+            • La <strong>ruptura intracapsular</strong> ecográfica es altamente sugestiva al presenciar líneas ecogénicas paralelas onduladas internas en gel de silicona (<strong>linguini sign</strong>) correspondientes a la cubierta colapsada flotando de forma libre.
+          </span>
+          <span>
+            • La <strong>ruptura extracapsular</strong> se sospecha fuertemente al observar tejido circundante altamente ecogénico con sombra sónica "en tormenta de nieve" (<strong>snowstorm appearance</strong>) secundaria a microgotas de silicona extracapsulares.
+          </span>
+        </div>
+      </div>
+    );
+  };
+
   const syncAvailable = generatedReport && generatedReport !== lastSyncedReport;
 
   const getActiveFindingsCount = () => {
@@ -612,37 +1543,143 @@ export default function BreastAnatomyViewer({
       </div>
 
       {/* DETECTOR / SCAN GENERATOR */}
-      <div className="bg-slate-950 border border-slate-900 p-4 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h4 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-rose-400 animate-pulse" /> Sincronización Ecográfica de Mamas
-          </h4>
-          <p className="text-[11px] text-slate-400 font-medium leading-relaxed mt-1 max-w-xl">
-            Sincroniza y pobla automáticamente los hallazgos descritos en el informe escrito. No se asume normalidad automática de las áreas no mencionadas.
-          </p>
+      <div className="bg-slate-950 border border-slate-900 p-4 rounded-2xl flex flex-col gap-4">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div>
+            <h4 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-rose-400 animate-pulse" /> Sincronización Ecográfica de Mamas
+            </h4>
+            <p className="text-[11px] text-slate-400 font-medium leading-relaxed mt-1 max-w-xl">
+              Sincroniza y pobla automáticamente los hallazgos descritos en el informe escrito. No se asume normalidad automática de las áreas no mencionadas.
+            </p>
+          </div>
+
+          <button
+            onClick={() => handleScanReportText(true)}
+            disabled={isSyncing || !generatedReport}
+            className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap active:scale-97 border ${
+              syncAvailable 
+                ? "bg-rose-600 text-white border-rose-500 hover:bg-rose-500 hover:border-rose-400 animate-pulse" 
+                : "bg-slate-900 text-slate-350 border-slate-800 hover:bg-slate-850 hover:text-white"
+            } disabled:opacity-50 disabled:cursor-not-allowed`}
+          >
+            {isSyncing ? (
+              <>
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                <span>Sincronizando...</span>
+              </>
+            ) : (
+              <>
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Sincronizar MD / MI</span>
+              </>
+            )}
+          </button>
         </div>
 
-        <button
-          onClick={() => handleScanReportText(true)}
-          disabled={isSyncing || !generatedReport}
-          className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap active:scale-97 border ${
-            syncAvailable 
-              ? "bg-rose-600 text-white border-rose-500 hover:bg-rose-500 hover:border-rose-400 animate-pulse" 
-              : "bg-slate-900 text-slate-350 border-slate-800 hover:bg-slate-850 hover:text-white"
-          } disabled:opacity-50 disabled:cursor-not-allowed`}
-        >
-          {isSyncing ? (
-            <>
-              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-              <span>Sincronizando...</span>
-            </>
-          ) : (
-            <>
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>Sincronizar MD / MI</span>
-            </>
-          )}
-        </button>
+        {/* CONTROLES MANUALES PARA PROTOCOLO DE LESIONES BENIGNAS MÚLTIPLES BILATERALES */}
+        <div className="border-t border-slate-900 pt-3 flex flex-wrap gap-x-6 gap-y-2 items-center text-xs">
+          <span className="font-bold text-slate-400 uppercase text-[10px] tracking-wider">
+            Protocolo Lesiones Benignas Múltiples:
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                const nextOverride = manualBilateralOverride === true && manualBilateralType === "quistes" ? null : true;
+                const nextType = manualBilateralOverride === true && manualBilateralType === "quistes" ? null : "quistes";
+                setManualBilateralOverride(nextOverride);
+                setManualBilateralType(nextType);
+                if (onChangeBilateralOverride) {
+                  onChangeBilateralOverride(nextOverride, nextType);
+                }
+              }}
+              className={`px-3 py-1 rounded-lg text-[10.5px] font-bold border transition-colors cursor-pointer ${
+                isBilateralBenignActive && (manualBilateralOverride === null ? autoHasQuistesBilaterales : manualBilateralType === "quistes")
+                  ? "bg-emerald-950/80 text-emerald-400 border-emerald-500/50"
+                  : "bg-slate-900 text-slate-400 border-slate-850 hover:bg-slate-850 hover:text-white"
+              }`}
+            >
+              👁️ Activar: Quistes Múltiples
+            </button>
+            
+            <button
+              onClick={() => {
+                const nextOverride = manualBilateralOverride === true && manualBilateralType === "fibroadenomas" ? null : true;
+                const nextType = manualBilateralOverride === true && manualBilateralType === "fibroadenomas" ? null : "fibroadenomas";
+                setManualBilateralOverride(nextOverride);
+                setManualBilateralType(nextType);
+                if (onChangeBilateralOverride) {
+                  onChangeBilateralOverride(nextOverride, nextType);
+                }
+              }}
+              className={`px-3 py-1 rounded-lg text-[10.5px] font-bold border transition-colors cursor-pointer ${
+                isBilateralBenignActive && (manualBilateralOverride === null ? autoHasFibroadenomasBilaterales : manualBilateralType === "fibroadenomas")
+                  ? "bg-emerald-950/80 text-emerald-400 border-emerald-500/50"
+                  : "bg-slate-900 text-slate-400 border-slate-850 hover:bg-slate-850 hover:text-white"
+              }`}
+            >
+              👁️ Activar: Fibroadenomas Múltiples
+            </button>
+
+            {manualBilateralOverride !== null && (
+              <button
+                onClick={() => {
+                  setManualBilateralOverride(null);
+                  setManualBilateralType(null);
+                  if (onChangeBilateralOverride) {
+                    onChangeBilateralOverride(null, null);
+                  }
+                }}
+                className="text-[10px] text-rose-400 hover:text-rose-300 underline font-semibold transition-colors ml-1 cursor-pointer"
+              >
+                Restablecer Automático {autoBilateralActive ? "(Detectado)" : "(No detectado)"}
+              </button>
+            )}
+
+            <button
+              onClick={() => {
+                const nextOverride = manualBilateralOverride === false ? null : false;
+                setManualBilateralOverride(nextOverride);
+                setManualBilateralType(null);
+                if (onChangeBilateralOverride) {
+                  onChangeBilateralOverride(nextOverride, null);
+                }
+              }}
+              className={`px-3 py-1 rounded-lg text-[10.5px] font-bold border transition-colors cursor-pointer ${
+                manualBilateralOverride === false
+                  ? "bg-rose-950/80 text-rose-400 border-rose-500/50"
+                  : "bg-slate-900 text-slate-400 border-slate-850 hover:bg-slate-850 hover:text-white"
+              }`}
+            >
+              🚫 Forzar Desactivación Manual
+            </button>
+          </div>
+        </div>
+
+        {/* CONTROLES MANUALES PARA IMPLANTES MAMARIOS */}
+        <div className="border-t border-slate-900 pt-3 flex flex-wrap gap-x-6 gap-y-2 items-center text-xs">
+          <span className="font-bold text-slate-400 uppercase text-[10px] tracking-wider font-mono">
+            Evaluación de Implantes Mamarios:
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setBreastImplantForceActive(!breastImplantForceActive)}
+              className={`px-3 py-1 rounded-lg text-[10.5px] font-bold border transition-all duration-200 cursor-pointer flex items-center gap-1.5 ${
+                isImplantActive
+                  ? "bg-cyan-950/80 text-cyan-400 border-cyan-500/50 hover:bg-cyan-900/60"
+                  : "bg-slate-900 text-slate-400 border-slate-850 hover:bg-slate-850 hover:text-white"
+              }`}
+            >
+              <Layers className="h-3.5 w-3.5" />
+              <span>{isImplantActive ? "✨ Estudio de Implantes Activo" : "👁️ Activar Estudio de Implantes"}</span>
+              {isImplantImpressionActive() && (
+                <span className="px-1.5 py-0.5 bg-cyan-900/60 text-cyan-300 rounded text-[7px] uppercase font-black tracking-wider border border-cyan-700/30 scale-95 ml-1">
+                  (Auto)
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* SYNC CONTEXT LOGS */}
@@ -660,17 +1697,61 @@ export default function BreastAnatomyViewer({
       {/* MAIN LAYOUT: SVGs SIDE BY SIDE & EDIT SIDEBAR */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
         {/* SVGS VIEWPORT */}
-        <div className="xl:col-span-8 grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="flex flex-col gap-2">
-            {renderBreastSvg(true)}
+        <div className="xl:col-span-8 flex flex-col gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="flex flex-col gap-2">
+              {renderBreastSvg(true)}
+            </div>
+            <div className="flex flex-col gap-2">
+              {renderBreastSvg(false)}
+            </div>
           </div>
-          <div className="flex flex-col gap-2">
-            {renderBreastSvg(false)}
-          </div>
+
+          {additionalFindings && additionalFindings.length > 0 && (
+            <div className="w-full bg-slate-900/10 border border-slate-850 p-3 rounded-2xl mt-2 text-left">
+              <h5 className="text-[9px] uppercase font-black text-indigo-400 font-mono tracking-wider mb-2 select-none">
+                📍 Hallazgos Adicionales Detectados
+              </h5>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[120px] overflow-y-auto pr-1">
+                {additionalFindings.map((item) => {
+                  const s = item.state || "Alterado";
+                  return (
+                    <div 
+                      key={item.id}
+                      className="p-2 rounded-xl bg-slate-950/40 border border-slate-900 flex flex-col justify-between"
+                    >
+                      <div className="flex items-center justify-between gap-1 leading-none select-none">
+                        <span className="text-[9.5px] font-black uppercase text-slate-200 truncate">{item.structureName}</span>
+                        <span className="text-[7.5px] px-1 bg-rose-950/40 text-rose-450 border border-rose-900/40 rounded scale-90 font-mono font-black uppercase shrink-0">
+                          {s}
+                        </span>
+                      </div>
+                      <p className="text-[8.5px] leading-relaxed text-slate-400 mt-1 max-w-full truncate leading-tight">{item.description}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* DIAGRAMA ESPECIAL EN CORTE SAGITAL PARA IMPLANTES MAMARIOS */}
+          {renderImplantDiagram()}
         </div>
 
         {/* SIDEBAR DETAILED HANDLER */}
         <div className="xl:col-span-4 bg-slate-950/60 border border-slate-900 rounded-2xl p-4 flex flex-col gap-3 min-h-[300px]">
+          {isBilateralBenignActive && (
+            <div className="p-3 border border-emerald-900/40 bg-emerald-950/30 rounded-xl space-y-1">
+              <div className="text-[9px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                Sincronización Bilateral Activa
+              </div>
+              <p className="text-[10.5px] text-emerald-300 leading-snug">
+                Se detectó: <strong className="text-white">{hasQuistesBilaterales ? "Quistes simples bilaterales" : "Fibroadenomas múltiples bilaterales"}</strong>. Ambas mamas se marcan como hallazgo benigno (verde).
+              </p>
+            </div>
+          )}
+
           <div>
             <div className="text-[8px] font-black text-rose-400 uppercase tracking-widest">
               Anotador Estructural
@@ -680,48 +1761,76 @@ export default function BreastAnatomyViewer({
             </h3>
           </div>
 
-          {/* CHOOSE STATE */}
+          {/* Custom State Input */}
           <div className="space-y-1">
             <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block">
-              Estado Clínico de este Eje:
+              Diagnóstico / Hallazgo Clínico (Sinopsis):
             </label>
-            <div className="grid grid-cols-3 gap-1.5">
-              {[
-                { val: "no_descrito", label: "No Descrito", color: "border-slate-800 text-slate-450 hover:bg-slate-900" },
-                { val: "normal", label: "Normal", color: "border-emerald-950/50 text-emerald-450 hover:bg-emerald-950/30" },
-                { val: "hallazgo", label: "Hallazgo", color: "border-rose-950/50 text-rose-400 hover:bg-rose-950/30" }
-              ].map((opt) => {
-                const isActive = states[selectedStructure] === opt.val;
-                return (
-                  <button
-                    key={opt.val}
-                    onClick={() => {
-                      setStates(prev => ({ ...prev, [selectedStructure]: opt.val }));
-                      if (opt.val === "no_descrito" || opt.val === "normal") {
-                        setCustomDescriptions(prev => ({ ...prev, [selectedStructure]: "" }));
-                      } else if (!customDescriptions[selectedStructure]) {
-                        setCustomDescriptions(prev => ({ ...prev, [selectedStructure]: getSimplifiedDescription(selectedStructure, opt.val) }));
-                      }
-                    }}
-                    className={`py-1.5 px-2 text-[9px] font-black uppercase tracking-wider border rounded-lg cursor-pointer transition-all ${
-                      isActive 
-                        ? opt.val === "normal" 
-                          ? "bg-emerald-500 border-emerald-400 text-white" 
-                          : opt.val === "hallazgo"
-                            ? "bg-rose-500 border-rose-400 text-white"
-                            : "bg-slate-800 border-slate-650 text-white"
-                        : opt.color
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
+            <div className="flex flex-col gap-2">
+              <input
+                type="text"
+                value={
+                  states[selectedStructure] === "no_descrito" 
+                    ? "" 
+                    : states[selectedStructure] === "normal" 
+                      ? "Normal" 
+                      : states[selectedStructure]
+                }
+                onChange={(e) => {
+                  const val = e.target.value;
+                  let nextVal = val;
+                  if (val.trim().toLowerCase() === "normal" || val.trim().toLowerCase() === "sin lesiones") {
+                    nextVal = "normal";
+                  } else if (val.trim() === "") {
+                    nextVal = "no_descrito";
+                  }
+                  setStates(prev => ({ ...prev, [selectedStructure]: nextVal }));
+                  if (nextVal !== "no_descrito" && nextVal !== "normal") {
+                    if (!customDescriptions[selectedStructure]) {
+                      setCustomDescriptions(prev => ({ ...prev, [selectedStructure]: getSimplifiedDescription(selectedStructure, nextVal) }));
+                    }
+                  } else {
+                    setCustomDescriptions(prev => ({ ...prev, [selectedStructure]: "" }));
+                  }
+                }}
+                placeholder="Escriba el diagnóstico del hallazgo (ej: Nódulo, Quiste simple, etc.)"
+                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 font-mono focus:outline-none focus:border-indigo-500/50"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStates(prev => ({ ...prev, [selectedStructure]: "normal" }));
+                    setCustomDescriptions(prev => ({ ...prev, [selectedStructure]: "" }));
+                  }}
+                  className={`flex-1 py-1 px-3 text-[10px] rounded border transition-all cursor-pointer ${
+                    states[selectedStructure] === "normal"
+                      ? "bg-emerald-950 text-emerald-300 border-emerald-700 font-medium"
+                      : "bg-slate-900 hover:bg-slate-850 border-slate-800 text-slate-400"
+                  }`}
+                >
+                  ✓ Cons. Normal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStates(prev => ({ ...prev, [selectedStructure]: "no_descrito" }));
+                    setCustomDescriptions(prev => ({ ...prev, [selectedStructure]: "" }));
+                  }}
+                  className={`flex-1 py-1 px-3 text-[10px] rounded border transition-all cursor-pointer ${
+                    states[selectedStructure] === "no_descrito"
+                      ? "bg-slate-850 border-slate-600 text-slate-100 font-medium"
+                      : "bg-slate-900 hover:bg-slate-850 border-slate-800 text-slate-400"
+                  }`}
+                >
+                  ⚪ No Descrito
+                </button>
+              </div>
             </div>
           </div>
 
           {/* EDIT FINDING DESCRIPTION */}
-          {states[selectedStructure] === "hallazgo" && (
+          {states[selectedStructure] !== "no_descrito" && states[selectedStructure] !== "normal" && (
             <div className="mt-1 animate-fadeIn">
               <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-1">
                 Hallazgo Clínico Específico (Editable):
@@ -748,21 +1857,112 @@ export default function BreastAnatomyViewer({
             </div>
           )}
 
-          {/* STATS AREA */}
-          <div className="border-t border-slate-900 pt-3 mt-auto flex flex-col gap-2">
-            <div className="bg-slate-950/80 border border-slate-900 p-2.5 rounded-xl flex items-center justify-between text-[10px] font-bold">
-              <span className="text-slate-400 uppercase tracking-wider">Hallazgos Activos:</span>
-              <span className={`px-2 py-0.5 rounded font-black ${getActiveFindingsCount() > 0 ? 'bg-rose-950/50 border border-rose-900 text-rose-400' : 'bg-slate-900 text-slate-400'}`}>
-                {getActiveFindingsCount()} ejes marcados
-              </span>
+          {/* Mapeo de Hallazgos Clínicos Sintonizados (aligned anatomical cards) */}
+          <div className="bg-slate-900/10 border border-slate-800/50 rounded-2xl p-4 flex flex-col gap-3 mt-3">
+            <label className="text-[11px] font-black text-rose-400 uppercase tracking-wider font-mono flex items-center gap-1.5 leading-none mb-1">
+              <Layers className="h-3.5 w-3.5 text-rose-400" />
+              Mapeo de Hallazgos Clínicos Sintonizados (Mamas)
+            </label>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[160px] overflow-y-auto pr-1">
+              {Object.keys(states).filter(id => states[id] !== "no_descrito" && states[id] !== "normal").map(id => {
+                const s = states[id];
+                const isSelected = selectedStructure === id;
+                const transLabel = getStructureLabel(id);
+                const simplified = customDescriptions[id]?.trim() || (s === "normal" ? "Dentro de límites normales" : s);
+                
+                let dotColor = "bg-slate-500";
+                let badgeBg = "bg-slate-950/60 text-slate-400 border-slate-800";
+                
+                if (s === "normal") {
+                  dotColor = "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.4)]";
+                  badgeBg = "bg-emerald-950/40 text-emerald-450 border-emerald-900/30";
+                } else if (s.includes("leve") || s.includes("quiste_simple") || s.includes("ectasia") || s.includes("benigno")) {
+                  dotColor = "bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.4)]";
+                  badgeBg = "bg-amber-950/40 text-amber-400 border-amber-900/30";
+                } else if (s.includes("masa") || s.includes("suspicious") || s.includes("sospecha") || s.includes("nodulo") || s.includes("birads")) {
+                  dotColor = "bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.4)]";
+                  badgeBg = "bg-rose-950/40 text-rose-455 border-rose-900/30";
+                } else {
+                  dotColor = "bg-pink-500 shadow-[0_0_6px_rgba(236,72,153,0.4)]";
+                  badgeBg = "bg-pink-950/40 text-pink-400 border-pink-900/30";
+                }
+
+                return (
+                  <button
+                    type="button"
+                    key={id}
+                    onClick={() => setSelectedStructure(id)}
+                    className={`p-2.5 rounded-xl border text-left transition-all flex flex-col gap-1 relative overflow-hidden group cursor-pointer ${
+                      isSelected 
+                        ? "bg-slate-900 border-rose-500 text-rose-450 shadow-md scale-[1.01]" 
+                        : "bg-slate-950/60 hover:bg-slate-950/80 border-slate-850/40 text-slate-350"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-1.5 leading-none w-full select-none">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className={`h-2 w-2 rounded-full shrink-0 ${dotColor} transition-transform group-hover:scale-110`} />
+                        <span className={`text-[10px] font-black uppercase tracking-wide truncate ${isSelected ? "text-rose-400" : "text-slate-200"}`}>
+                          {transLabel}
+                        </span>
+                      </div>
+                      <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded border tracking-wider shrink-0 font-mono scale-95 ${badgeBg}`}>
+                        {s.replace("_", " ")}
+                      </span>
+                    </div>
+                    <p className="text-[9px] leading-relaxed text-slate-450 truncate mt-0.5 max-w-full">
+                      {simplified}
+                    </p>
+                  </button>
+                );
+              })}
+
+              {additionalFindings && additionalFindings.map((item) => {
+                const s = item.state || "Alterado";
+                const dotColor = "bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.4)]";
+                const badgeBg = "bg-rose-950/40 text-rose-455 border-rose-900/30";
+                return (
+                  <div
+                    key={item.id}
+                    className="p-2.5 rounded-xl border border-slate-850 bg-slate-950/60 text-left transition-all hover:bg-slate-950/80 hover:border-slate-800 flex flex-col gap-1 relative overflow-hidden group cursor-default"
+                  >
+                    <div className="flex items-center justify-between gap-1.5 leading-none select-none">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className={`h-2 w-2 rounded-full shrink-0 ${dotColor} transition-transform group-hover:scale-110`} />
+                        <span className="text-[10px] font-black uppercase tracking-wide truncate text-slate-200">
+                          {item.structureName}
+                        </span>
+                      </div>
+                      <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded border tracking-wider shrink-0 font-mono scale-95 ${badgeBg}`}>
+                        {s}
+                      </span>
+                    </div>
+                    <p className="text-[9px] leading-relaxed text-slate-400 truncate mt-0.5 max-w-full">
+                      {item.description}
+                    </p>
+                  </div>
+                );
+              })}
+
+              {Object.keys(states).filter(id => states[id] !== "no_descrito" && states[id] !== "normal").length === 0 && (!additionalFindings || additionalFindings.length === 0) && (
+                <div className="col-span-full py-4 text-center text-slate-500 italic text-xs">
+                  Sin hallazgos patológicos relevantes detectados.
+                </div>
+              )}
             </div>
 
-            <button
-              onClick={exportTableData}
-              className="w-full bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-650 text-slate-100 border border-rose-500/40 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-200 active:scale-97 cursor-pointer text-center"
-            >
-              Generar Tabla de Hallazgos a Reporte
-            </button>
+            {/* Export button */}
+            <div className="mt-2">
+              <button
+                type="button"
+                onClick={exportTableData}
+                className="w-full py-2.5 bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 font-mono cursor-pointer border border-rose-400/20"
+                title="Inyecta una tabla formal de hallazgos médicos estructurados al final del informe actual"
+              >
+                <Download className="h-3 w-3" />
+                Insertar Tabla al Reporte
+              </button>
+            </div>
           </div>
         </div>
       </div>

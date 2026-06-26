@@ -25,6 +25,9 @@ interface ElbowAnatomyViewerProps {
   setIncludeInReport?: (val: boolean) => void;
   onChangeStates?: (states: Record<string, string>) => void;
   onChangeDescriptions?: (descriptions: Record<string, string>) => void;
+  externalStates?: Record<string, string>;
+  externalDescriptions?: Record<string, string>;
+  additionalFindings?: Array<{ id: string; structureName: string; state: string; description: string }>;
 }
 
 // Structure identifier of the elbow
@@ -53,7 +56,10 @@ export default function ElbowAnatomyViewer({
   includeInReport = true,
   setIncludeInReport,
   onChangeStates,
-  onChangeDescriptions
+  onChangeDescriptions,
+  externalStates,
+  externalDescriptions,
+  additionalFindings = []
 }: ElbowAnatomyViewerProps) {
   
   // States of each structure:
@@ -89,6 +95,24 @@ export default function ElbowAnatomyViewer({
   const [lastSyncedReport, setLastSyncedReport] = useState<string>("");
   const [useOriginalReportText, setUseOriginalReportText] = useState<boolean>(true);
   const [subViewMode, setSubViewMode] = useState<"lateral" | "medial" | "dual">("dual");
+
+  useEffect(() => {
+    if (externalStates && Object.keys(externalStates).length > 0) {
+      setStates(prev => {
+        const changed = Object.keys(externalStates).some(key => externalStates[key] !== prev[key]);
+        return changed ? { ...prev, ...externalStates } : prev;
+      });
+    }
+  }, [externalStates]);
+
+  useEffect(() => {
+    if (externalDescriptions && Object.keys(externalDescriptions).length > 0) {
+      setCustomDescriptions(prev => {
+        const changed = Object.keys(externalDescriptions).some(key => externalDescriptions[key] !== prev[key]);
+        return changed ? { ...prev, ...externalDescriptions } : prev;
+      });
+    }
+  }, [externalDescriptions]);
 
   // Synchronize states to parent if callbacks are provided
   useEffect(() => {
@@ -474,6 +498,9 @@ export default function ElbowAnatomyViewer({
             if (newState === "subluxacion") recommended = "Inestabilidad dinámica con subluxación del nervio cubital en flexión codo.";
             break;
         }
+        if (!recommended) {
+          recommended = `Se describe hallazgo: ${newState.charAt(0).toUpperCase() + newState.slice(1)}.`;
+        }
         next[id] = recommended;
       }
       return next;
@@ -524,16 +551,16 @@ export default function ElbowAnatomyViewer({
     let hasEntries = false;
     ELBOW_STRUCTURES.forEach(struc => {
       const s = states[struc.id];
-      if (s !== "no_descrito") {
+      if (s !== "no_descrito" && s !== "normal") {
         hasEntries = true;
         const stateLabel = s.toUpperCase().replaceAll("_", " ");
-        const desc = customDescriptions[struc.id] || "Dentro de límites normales.";
+        const desc = customDescriptions[struc.id] || "Alteración ecográfica descrita.";
         cleanTable += `| **${struc.name}** | \`${stateLabel}\` | ${desc} |\n`;
       }
     });
 
     if (!hasEntries) {
-      cleanTable = "\n*(No se han seleccionado ni detectado estructuras para el mapa sinóptico de codo)*\n";
+      cleanTable = "\n| ESTRUCTURA / ELEMENTO | ESTADO CLÍNICO | SINOPSIS ECOGRÁFICA Y OBSERVACIONES |\n| :--- | :--- | :--- |\n| *Sin hallazgos patológicos* | `NORMAL` | Todas las estructuras evaluadas del codo se reportan de características normales. |\n";
     }
 
     onExportTable(cleanTable);
@@ -908,36 +935,33 @@ export default function ElbowAnatomyViewer({
         </div>
 
         {/* RIGHT COMPARTMENT: DETAILS & CONTROL PANEL */}
-        <div className="lg:col-span-5 flex flex-col gap-4">
+        <div className="lg:col-span-12 flex flex-col gap-4">
           
           {/* HUD OVERVIEW badges */}
           <div className="bg-slate-900/10 border border-slate-800/50 rounded-2xl p-3 flex flex-col gap-2">
-            <label className="text-[10px] font-bold text-slate-300 uppercase tracking-widest font-mono flex items-center gap-1.5 leading-none mb-1">
+            <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider font-mono flex items-center gap-1.5 leading-none mb-1">
               <Layers className="h-3 w-3 text-indigo-400" />
-              Inspección de Órganos y Estructuras
+              Mapeo de Hallazgos Clínicos Sintonizados
             </label>
-            <div className="grid grid-cols-2 gap-1.5">
-              {ELBOW_STRUCTURES.map(item => {
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {ELBOW_STRUCTURES.filter(item => states[item.id] !== "no_descrito" && states[item.id] !== "normal").map(item => {
                 const s = states[item.id];
                 const isSelected = selectedStructure === item.id;
+                let dotColor = "bg-slate-500";
+                let badgeBg = "bg-slate-950/60 text-slate-400 border-slate-800";
                 
-                let bgBadge = "bg-slate-800/30 border-slate-800/80 text-slate-400 hover:bg-slate-850/50";
                 if (s === "normal") {
-                  bgBadge = isSelected
-                    ? "bg-emerald-950/70 border-emerald-500 text-emerald-200 font-bold"
-                    : "bg-emerald-950/20 border-emerald-900/40 text-emerald-400 hover:bg-emerald-900/10";
-                } else if (s === "desgarro_completo") {
-                  bgBadge = isSelected
-                    ? "bg-red-950/80 border-red-500 text-red-200 font-bold"
-                    : "bg-red-950/20 border-red-900/40 text-red-400 hover:bg-red-900/10";
-                } else if (s !== "no_descrito") {
-                  bgBadge = isSelected
-                    ? "bg-amber-950/70 border-amber-500 text-amber-200 font-bold"
-                    : "bg-amber-950/20 border-amber-900/40 text-amber-400 hover:bg-amber-900/10";
+                  dotColor = "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.4)]";
+                  badgeBg = "bg-emerald-950/40 text-emerald-450 border-emerald-900/30";
+                } else if (s === "desgarro_completo" || s === "rotura") {
+                  dotColor = "bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.4)]";
+                  badgeBg = "bg-rose-950/40 text-rose-455 border-rose-900/30";
+                } else if (s === "tendinosis" || s === "tendinitis" || s.includes("leve") || s.includes("bursitis_l") || s.includes("derrame_l") || s.includes("meniscosis")) {
+                  dotColor = "bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.4)]";
+                  badgeBg = "bg-amber-950/40 text-amber-400 border-amber-900/30";
                 } else {
-                  if (isSelected) {
-                    bgBadge = "bg-slate-800 border-indigo-500 text-slate-100 font-bold";
-                  }
+                  dotColor = "bg-pink-500 shadow-[0_0_6px_rgba(236,72,153,0.4)]";
+                  badgeBg = "bg-pink-950/40 text-pink-400 border-pink-900/30";
                 }
 
                 return (
@@ -946,16 +970,65 @@ export default function ElbowAnatomyViewer({
                     type="button"
                     onClick={() => {
                       setSelectedStructure(item.id);
-                      // Auto toggle aspect tab if selected is from another tab
                       if (item.aspect === "lateral" && subViewMode === "medial") setSubViewMode("lateral");
                       if (item.aspect === "medial" && subViewMode === "lateral") setSubViewMode("medial");
                     }}
-                    className={`px-2 py-1.5 text-[10px] rounded-lg border text-left truncate transition-all ${bgBadge}`}
+                    className={`p-2.5 rounded-xl border text-left transition-all flex flex-col gap-1 relative overflow-hidden group cursor-pointer ${
+                      isSelected 
+                        ? "bg-slate-900 border-indigo-500 text-indigo-400 shadow-md scale-[1.01]" 
+                        : "bg-slate-950/60 hover:bg-slate-950/80 border-slate-850/40 text-slate-350"
+                    }`}
                   >
-                    {item.name}
+                    <div className="flex items-center justify-between gap-1.5 leading-none select-none w-full">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className={`h-2 w-2 rounded-full shrink-0 ${dotColor} transition-transform group-hover:scale-110`} />
+                        <span className={`text-[10px] font-black uppercase tracking-wide truncate ${isSelected ? "text-indigo-400" : "text-slate-200"}`}>
+                          {item.name}
+                        </span>
+                      </div>
+                      <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded border tracking-wider shrink-0 font-mono scale-95 ${badgeBg}`}>
+                        {s.replace("_", " ")}
+                      </span>
+                    </div>
+                    <p className="text-[9px] leading-relaxed text-slate-455 truncate mt-0.5 max-w-full">
+                      {customDescriptions[item.id] || "Sin hallazgos clínicos descritos."}
+                    </p>
                   </button>
                 );
               })}
+
+              {additionalFindings && additionalFindings.map((item) => {
+                const s = item.state || "Alterado";
+                const dotColor = "bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.4)]";
+                const badgeBg = "bg-rose-950/40 text-rose-455 border-rose-900/30";
+                return (
+                  <div
+                    key={item.id}
+                    className="p-2.5 rounded-xl border border-slate-850 bg-slate-950/60 text-left transition-all hover:bg-slate-950/80 hover:border-slate-800 flex flex-col gap-1 relative overflow-hidden group cursor-default"
+                  >
+                    <div className="flex items-center justify-between gap-1.5 leading-none select-none">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className={`h-2 w-2 rounded-full shrink-0 ${dotColor} transition-transform group-hover:scale-110`} />
+                        <span className="text-[10px] font-black uppercase tracking-wide truncate text-slate-200">
+                          {item.structureName}
+                        </span>
+                      </div>
+                      <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded border tracking-wider shrink-0 font-mono scale-95 ${badgeBg}`}>
+                        {s}
+                      </span>
+                    </div>
+                    <p className="text-[9px] leading-relaxed text-slate-400 truncate mt-0.5 max-w-full">
+                      {item.description}
+                    </p>
+                  </div>
+                );
+              })}
+
+              {ELBOW_STRUCTURES.filter(item => states[item.id] !== "no_descrito" && states[item.id] !== "normal").length === 0 && (!additionalFindings || additionalFindings.length === 0) && (
+                <div className="col-span-full py-4 text-center text-slate-500 italic text-xs">
+                  Sin hallazgos patológicos relevantes detectados.
+                </div>
+              )}
             </div>
           </div>
 
@@ -985,218 +1058,58 @@ export default function ElbowAnatomyViewer({
                   </span>
                 </div>
 
-                {/* Status selector radio controls */}
+                {/* Custom State Input */}
                 <div className="flex flex-col gap-2">
                   <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest font-mono">
-                    Alterar Estado en Diagramas y Tabla:
+                    Diagnóstico / Hallazgo Clínico (Sinopsis):
                   </label>
-                  
-                  <div className="grid grid-cols-2 gap-1.5">
-                    
-                    {/* Baseline / No_descrito */}
-                    <button
-                      type="button"
-                      onClick={() => handleUpdateStructureState(selectedStructure, "no_descrito")}
-                      className={`px-2 py-1 text-[10px] rounded border transition-all ${
-                        state === "no_descrito"
-                          ? "bg-slate-850 border-slate-600 text-slate-100 font-bold"
-                          : "bg-slate-950/40 border-slate-900 text-slate-500 hover:text-slate-300"
-                      }`}
-                    >
-                      No Descrito
-                    </button>
-
-                    {/* Normal */}
-                    <button
-                      type="button"
-                      onClick={() => handleUpdateStructureState(selectedStructure, "normal")}
-                      className={`px-2 py-1 text-[10px] rounded border transition-all ${
-                        state === "normal"
-                          ? "bg-emerald-950 text-emerald-300 border-emerald-700 font-bold"
-                          : "bg-slate-950/40 border-slate-900 text-emerald-600/70 hover:text-emerald-500"
-                      }`}
-                    >
-                      🟢 Normal
-                    </button>
-
-                    {/* Render pathologies depending on structure ID */}
-                    {(() => {
-                      if (selectedStructure === "common_extensor") {
-                        return (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => handleUpdateStructureState(selectedStructure, "epicondilitis")}
-                              className={`px-2 py-1 text-[10px] rounded border transition-all ${
-                                state === "epicondilitis"
-                                  ? "bg-amber-950 text-amber-300 border-amber-700 font-bold"
-                                  : "bg-slate-950/40 border-slate-900 text-amber-550/70 hover:text-amber-500"
-                              }`}
-                            >
-                              🟡 Epicondilitis
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleUpdateStructureState(selectedStructure, "desgarro_parcial")}
-                              className={`px-2 py-1 text-[10px] rounded border transition-all ${
-                                state === "desgarro_parcial"
-                                  ? "bg-amber-950 text-amber-300 border-amber-700 font-bold"
-                                  : "bg-slate-950/40 border-slate-900 text-amber-550/70 hover:text-amber-500"
-                              }`}
-                            >
-                              🟠 Desg. Parcial
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleUpdateStructureState(selectedStructure, "desgarro_completo")}
-                              className={`px-2 py-1 text-[10px] rounded border transition-all span-2 col-span-2 ${
-                                state === "desgarro_completo"
-                                  ? "bg-red-950 text-red-300 border-red-705 font-bold"
-                                  : "bg-slate-950/40 border-slate-900 text-red-500/70 hover:text-red-500"
-                              }`}
-                            >
-                              🔴 Desg. Completo
-                            </button>
-                          </>
-                        );
+                  <div className="flex flex-col gap-2">
+                    <input
+                      type="text"
+                      value={
+                        state === "no_descrito" 
+                          ? "" 
+                          : state === "normal" 
+                            ? "Normal" 
+                            : state
                       }
-                      if (selectedStructure === "common_flexor") {
-                        return (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => handleUpdateStructureState(selectedStructure, "epitrocleitis")}
-                              className={`px-2 py-1 text-[10px] rounded border transition-all ${
-                                state === "epitrocleitis"
-                                  ? "bg-amber-950 text-amber-300 border-amber-700 font-bold"
-                                  : "bg-slate-950/40 border-slate-900 text-amber-550/70 hover:text-amber-500"
-                              }`}
-                            >
-                              🟡 Epitrocleitis
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleUpdateStructureState(selectedStructure, "desgarro_parcial")}
-                              className={`px-2 py-1 text-[10px] rounded border transition-all ${
-                                state === "desgarro_parcial"
-                                  ? "bg-amber-950 text-amber-300 border-amber-700 font-bold"
-                                  : "bg-slate-950/40 border-slate-900 text-amber-550/70 hover:text-amber-500"
-                              }`}
-                            >
-                              🟠 Desg. Parcial
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleUpdateStructureState(selectedStructure, "desgarro_completo")}
-                              className={`px-2 py-1 text-[10px] rounded border transition-all span-2 col-span-2 ${
-                                state === "desgarro_completo"
-                                  ? "bg-red-950 text-red-300 border-red-705 font-bold"
-                                  : "bg-slate-950/40 border-slate-900 text-red-500/70 hover:text-red-500"
-                              }`}
-                            >
-                              🔴 Desg. Completo
-                            </button>
-                          </>
-                        );
-                      }
-                      if (selectedStructure === "radial_collateral" || selectedStructure === "ulnar_collateral") {
-                        return (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => handleUpdateStructureState(selectedStructure, "esguince_leve")}
-                              className={`px-2 py-1 text-[10px] rounded border transition-all ${
-                                state === "esguince_leve"
-                                  ? "bg-amber-950 text-amber-300 border-amber-700 font-bold"
-                                  : "bg-slate-950/40 border-slate-900 text-amber-500/70 hover:text-amber-550"
-                              }`}
-                            >
-                              🟡 Esguince
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleUpdateStructureState(selectedStructure, "desgarro_parcial")}
-                              className={`px-2 py-1 text-[10px] rounded border transition-all ${
-                                state === "desgarro_parcial"
-                                  ? "bg-amber-950 text-amber-300 border-amber-700 font-bold"
-                                  : "bg-slate-950/40 border-slate-900 text-amber-550/70 hover:text-amber-500"
-                              }`}
-                            >
-                              🟠 Desg. Parcial
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleUpdateStructureState(selectedStructure, "desgarro_completo")}
-                              className={`px-2 py-1 text-[10px] rounded border transition-all col-span-2 ${
-                                state === "desgarro_completo"
-                                  ? "bg-red-950 text-red-300 border-red-700 font-bold"
-                                  : "bg-slate-950/40 border-slate-900 text-red-500/70 hover:text-red-505"
-                              }`}
-                            >
-                              🔴 Desg. Completo
-                            </button>
-                          </>
-                        );
-                      }
-                      if (selectedStructure === "humeroradial_joint") {
-                        return (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => handleUpdateStructureState(selectedStructure, "derrame_leve")}
-                              className={`px-2 py-1 text-[10px] rounded border transition-all ${
-                                state === "derrame_leve"
-                                  ? "bg-amber-950 text-amber-300 border-amber-700 font-bold"
-                                  : "bg-slate-950/40 border-slate-900 text-amber-500/70 hover:text-amber-500"
-                              }`}
-                            >
-                              🟡 Derrame Leve
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleUpdateStructureState(selectedStructure, "derrame_moderado")}
-                              className={`px-2 py-1 text-[10px] rounded border transition-all ${
-                                state === "derrame_moderado"
-                                  ? "bg-amber-950 text-amber-300 border-amber-700 font-bold"
-                                  : "bg-slate-950/40 border-slate-900 text-amber-500/70 hover:text-amber-500"
-                              }`}
-                            >
-                              🟠 Derrame Mod.
-                            </button>
-                          </>
-                        );
-                      }
-                      if (selectedStructure === "ulnar_nerve") {
-                        return (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => handleUpdateStructureState(selectedStructure, "neuritis")}
-                              className={`px-2 py-1 text-[10px] rounded border transition-all ${
-                                state === "neuritis"
-                                  ? "bg-amber-950 text-amber-300 border-amber-700 font-bold"
-                                  : "bg-slate-950/40 border-slate-900 text-amber-550/70 hover:text-amber-500"
-                              }`}
-                            >
-                              🟡 Neuritis
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleUpdateStructureState(selectedStructure, "subluxacion")}
-                              className={`px-2 py-1 text-[10px] rounded border transition-all ${
-                                state === "subluxacion"
-                                  ? "bg-amber-950 text-amber-300 border-amber-700 font-bold"
-                                  : "bg-slate-950/40 border-slate-900 text-amber-500/70 hover:text-amber-500"
-                              }`}
-                            >
-                              🟠 Subluxación
-                            </button>
-                          </>
-                        );
-                      }
-                      return null;
-                    })()}
-
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        let nextVal = val;
+                        if (val.trim().toLowerCase() === "normal" || val.trim().toLowerCase() === "sin lesiones") {
+                          nextVal = "normal";
+                        } else if (val.trim() === "") {
+                          nextVal = "no_descrito";
+                        }
+                        handleUpdateStructureState(selectedStructure, nextVal);
+                      }}
+                      placeholder="Escriba el diagnóstico del hallazgo (ej: Epicondilitis, Desgarro, etc.)"
+                      className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 font-mono focus:outline-none focus:border-indigo-500/50"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateStructureState(selectedStructure, "normal")}
+                        className={`flex-1 py-1 px-3 text-[10px] rounded border transition-all cursor-pointer ${
+                          state === "normal"
+                            ? "bg-emerald-950 text-emerald-300 border-emerald-700 font-bold"
+                            : "bg-slate-950/40 border-slate-900 text-slate-500 hover:text-slate-300"
+                        }`}
+                      >
+                        ✓ Cons. Normal
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateStructureState(selectedStructure, "no_descrito")}
+                        className={`flex-1 py-1 px-3 text-[10px] rounded border transition-all cursor-pointer ${
+                          state === "no_descrito"
+                            ? "bg-slate-850 border-slate-600 text-slate-100 font-bold"
+                            : "bg-slate-950/40 border-slate-900 text-slate-500 hover:text-slate-300"
+                        }`}
+                      >
+                        ⚪ No Descrito
+                      </button>
+                    </div>
                   </div>
                 </div>
 

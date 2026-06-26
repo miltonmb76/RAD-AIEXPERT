@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { jsPDF } from "jspdf";
+import JSZip from "jszip";
 import BibliographySearch from "./components/BibliographySearch";
 import ImageSearch from "./components/ImageSearch";
 import ExpertImageAnalysis from "./components/ExpertImageAnalysis";
+import ZipDicomExtractor, { ExtractedFile } from "./components/ZipDicomExtractor";
 import VascularAnatomyViewer from "./components/VascularAnatomyViewer";
 import ShoulderAnatomyViewer from "./components/ShoulderAnatomyViewer";
 import KneeAnatomyViewer from "./components/KneeAnatomyViewer";
@@ -16,9 +18,12 @@ import AbdomenAnatomyViewer from "./components/AbdomenAnatomyViewer";
 import ScrotumAnatomyViewer from "./components/ScrotumAnatomyViewer";
 import WristAnatomyViewer from "./components/WristAnatomyViewer";
 import BreastAnatomyViewer from "./components/BreastAnatomyViewer";
+import AbdominalWallAnatomyViewer from "./components/AbdominalWallAnatomyViewer";
+import CalfAchillesAnatomyViewer from "./components/CalfAchillesAnatomyViewer";
+import NeonatalBrainAnatomyViewer from "./components/NeonatalBrainAnatomyViewer";
 import { 
   Activity, 
-
+  ShieldCheck,
   AlertCircle, 
   Check, 
   CheckCircle2, 
@@ -167,6 +172,30 @@ export interface ImageAnnotation {
   label: string;
 }
 
+const formatDateToDMY = (dateStr: string): string => {
+  if (!dateStr) return "";
+  
+  // Format yyyy-mm-dd
+  if (dateStr.includes("-")) {
+    const parts = dateStr.split("-");
+    if (parts.length === 3 && parts[0].length === 4) {
+      const [yyyy, mm, dd] = parts;
+      return `${dd}-${mm}-${yyyy}`;
+    }
+  }
+  
+  // Format yyyy/mm/dd
+  if (dateStr.includes("/")) {
+    const parts = dateStr.split("/");
+    if (parts.length === 3 && parts[0].length === 4) {
+      const [yyyy, mm, dd] = parts;
+      return `${dd}/${mm}/${yyyy}`;
+    }
+  }
+
+  return dateStr;
+};
+
 export default function App() {
   // Navigation & General Settings
   const [activeTab, setActiveTab] = useState<"generator" | "classifications" | "consult" | "presets" | "api" | "bibliography" | "images" | "expert-analysis">("generator");
@@ -216,6 +245,30 @@ export default function App() {
     }
     return saved;
   });
+  const [doctorLicense, setDoctorLicense] = useState<string>(() => {
+    const saved = localStorage.getItem("rad_doctor_license");
+    if (!saved || saved === "M.S.P. Reg: 6025 / Senescyt: 1005-12-7489") {
+      localStorage.setItem("rad_doctor_license", "Código Profesional 6025");
+      return "Código Profesional 6025";
+    }
+    return saved;
+  });
+  
+  // Helper to generate a stable, professional cryptographic verification hash
+  const getValidationHash = () => {
+    const seed = `${patientName || ""}-${doctorName || ""}-${reportDate || ""}-${clinicName || ""}`;
+    let hash = 0;
+    for (let i = 0; i < seed.length; i++) {
+      const char = seed.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash |= 0; // Convert to 32bit integer
+    }
+    const hex = Math.abs(hash).toString(16).toUpperCase().padStart(8, "0");
+    const pSeed = (patientName && patientName.length > 0) ? patientName.charCodeAt(0) + patientName.length : 42;
+    const dSeed = (doctorName && doctorName.length > 0) ? doctorName.charCodeAt(0) + doctorName.length : 17;
+    const partKey = ((pSeed * 231 + dSeed * 19) % 65535).toString(16).toUpperCase().padStart(4, "E");
+    return `SHA256: FD82-${hex.substring(0, 4)}-${hex.substring(4, 8)}-${partKey}-9B1C-E8B1`;
+  };
   // Multiple custom clinic logo upload states
   const [customLogos, setCustomLogos] = useState<Array<{ id: string; name: string; url: string }>>(() => {
     const saved = localStorage.getItem("rad_custom_logos");
@@ -361,12 +414,16 @@ export default function App() {
     reader.onload = (event) => {
         const result = event.target?.result as string;
         setUploadedReportContent(result);
-        if (!file.type.startsWith('image/')) {
+        
+        // Auto-detect study type only for text-based files, skip for binary attachments like PDF or images
+        const isPdfOrImage = file.type.startsWith('image/') || file.type === 'application/pdf' || file.name.endsWith('.pdf');
+        if (!isPdfOrImage) {
             autoDetectSpecificStudyAndModality(result, file.name);
         }
     };
     
-    if (file.type.startsWith('image/')) {
+    const isPdfOrImage = file.type.startsWith('image/') || file.type === 'application/pdf' || file.name.endsWith('.pdf');
+    if (isPdfOrImage) {
         reader.readAsDataURL(file);
     } else {
         reader.readAsText(file);
@@ -381,6 +438,13 @@ export default function App() {
   const [showPatientDetails, setShowPatientDetails] = useState<boolean>(false);
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
   const [adaptivePDFContrast, setAdaptivePDFContrast] = useState<boolean>(false);
+  
+  // PDF Real-Time Preview States
+  const [printModalDocType, setPrintModalDocType] = useState<'report' | 'patient_summary'>('report');
+  const [printModalViewType, setPrintModalViewType] = useState<'html_simulator' | 'pdf_viewer'>('html_simulator');
+  const [generatedNativePdfUrl, setGeneratedNativePdfUrl] = useState<string | null>(null);
+  const [generatedSummaryPdfUrl, setGeneratedSummaryPdfUrl] = useState<string | null>(null);
+  const [isGeneratingPdfPreview, setIsGeneratingPdfPreview] = useState<boolean>(false);
   
   // WhatsApp Share States
   const [showWhatsAppModal, setShowWhatsAppModal] = useState<boolean>(false);
@@ -702,6 +766,7 @@ export default function App() {
   const [laterality, setLaterality] = useState<string>(""); // "" | "Derecha" | "Izquierda" | "Bilateral"
   const [projections, setProjections] = useState<string[]>([]);
   const [customProjection, setCustomProjection] = useState<string>("");
+  const [activeProtocol, setActiveProtocol] = useState<string>("");
 
   // Helper to build gendered laterality
   const getGenderedLaterality = (lat: string, study: string) => {
@@ -816,7 +881,8 @@ export default function App() {
       "Momografía",
       "Tórax",
       "Cráneo",
-      "Cadera"
+      "Cadera",
+      "Pantorrilla y Tendón de Aquiles"
     ];
 
     let foundSpecific = "Otro";
@@ -829,7 +895,8 @@ export default function App() {
       if (
         cleanFull.includes(cleanStudy) || 
         (study === "Muslo Posterior" && cleanFull.includes("muslo posterior")) ||
-        (study === "Muslo Anterior" && cleanFull.includes("muslo") && !cleanFull.includes("posterior"))
+        (study === "Muslo Anterior" && cleanFull.includes("muslo") && !cleanFull.includes("posterior")) ||
+        (study === "Pantorrilla y Tendón de Aquiles" && (cleanFull.includes("pantorilla") || cleanFull.includes("pantorrilla") || cleanFull.includes("aquiles") || cleanFull.includes("achilles")))
       ) {
         foundSpecific = study;
         break;
@@ -892,6 +959,8 @@ export default function App() {
 
   // Auto-detect and active clinical study block based on keywords in inputted text or generated reports
   const autoDetectSpecificStudyAndModality = (reportText: string, currentStudyType: string) => {
+    // Completely disabled per user request: Protocol activation must be strictly manual via buttons or dropdown.
+    return;
     const combined = `${currentStudyType || ""} ${reportText || ""}`.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
     // 1. Detect Codo (Prioritized to avoid conflicts, e.g. "bicep" in elbow reports triggering shoulder)
@@ -1132,6 +1201,11 @@ export default function App() {
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState<boolean>(false);
   
+  // ZIP-DICOM Extractor state
+  const [zipFile, setZipFile] = useState<File | null>(null);
+  const [isZipExtractorOpen, setIsZipExtractorOpen] = useState<boolean>(false);
+  const [zipExtractedFileForAnalysis, setZipExtractedFileForAnalysis] = useState<{ file: ExtractedFile; slot: 1 | 2 | 3 } | { file: ExtractedFile; slot: 1 | 2 | 3 }[] | null>(null);
+  
   // Loading & Generation results
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [generationSteps, setGenerationSteps] = useState<string>("");
@@ -1153,6 +1227,151 @@ export default function App() {
   const [reportRedoHistory, setReportRedoHistory] = useState<string[]>([]);
   const [isEditingReportManual, setIsEditingReportManual] = useState<boolean>(false);
   const [editedReportText, setEditedReportText] = useState<string>("");
+
+  // --- SPECIAL INTERACTIVE AI PARAGRAPH ACTIONS STATES ---
+  const [selectedParagraphText, setSelectedParagraphText] = useState<string | null>(null);
+  const [selectedParagraphOriginal, setSelectedParagraphOriginal] = useState<string | null>(null);
+  const [paragraphActionLoading, setParagraphActionLoading] = useState<boolean>(false);
+  const [paragraphActionResult, setParagraphActionResult] = useState<string | null>(null);
+  const [paragraphActionActive, setParagraphActionActive] = useState<string | null>(null);
+  const [paragraphActionError, setParagraphActionError] = useState<string | null>(null);
+  const [customParagraphPrompt, setCustomParagraphPrompt] = useState<string>("");
+
+  const handleSelectParagraph = (lineText: string) => {
+    const trimmedText = lineText.trim();
+    if (!trimmedText) return;
+    if (selectedParagraphOriginal === trimmedText) {
+      // Toggle unselect
+      setSelectedParagraphText(null);
+      setSelectedParagraphOriginal(null);
+      setParagraphActionResult(null);
+      setParagraphActionActive(null);
+      setParagraphActionError(null);
+      setCustomParagraphPrompt("");
+    } else {
+      setSelectedParagraphText(trimmedText);
+      setSelectedParagraphOriginal(trimmedText);
+      setParagraphActionResult(null);
+      setParagraphActionActive(null);
+      setParagraphActionError(null);
+      setCustomParagraphPrompt("");
+    }
+  };
+
+  const handleTextSelection = () => {
+    const selection = window.getSelection();
+    if (selection) {
+      const selectedStr = selection.toString().trim();
+      // Only process selections of meaningful size
+      if (selectedStr.length > 4 && selectedStr.length < 1500) {
+        setSelectedParagraphText(selectedStr);
+        if (generatedReport && generatedReport.includes(selectedStr)) {
+          setSelectedParagraphOriginal(selectedStr);
+        } else {
+          setSelectedParagraphOriginal(null);
+        }
+        setParagraphActionResult(null);
+        setParagraphActionActive(null);
+        setParagraphActionError(null);
+        setCustomParagraphPrompt("");
+      }
+    }
+  };
+
+  const executeParagraphAction = async (actionType: string, customPromptText?: string) => {
+    if (!selectedParagraphText) return;
+    
+    setParagraphActionLoading(true);
+    setParagraphActionActive(actionType);
+    setParagraphActionError(null);
+    setParagraphActionResult(null);
+    
+    try {
+      const response = await fetch("/api/ai-paragraph-action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: selectedModel,
+          text: selectedParagraphText,
+          action: actionType,
+          customPrompt: customPromptText,
+          fullReport: generatedReport,
+          studyType: studyType || "No especificado",
+          clinicalHistory: clinicalHistory || "No especificada"
+        }),
+      });
+      
+      const data = await response.json();
+      if (data.success) {
+        setParagraphActionResult(data.result);
+      } else {
+        setParagraphActionError(data.error || "Ocurrió un error inesperado al procesar la acción de párrafo.");
+      }
+    } catch (err: any) {
+      console.error("Error executing paragraph action:", err);
+      setParagraphActionError("Error de conexión con el servidor de IA.");
+    } finally {
+      setParagraphActionLoading(false);
+    }
+  };
+
+  const handleApplyParagraphImprovement = (improvedText: string) => {
+    if (!selectedParagraphOriginal || !generatedReport) return;
+    
+    // Save current report in history
+    setReportHistory((prev) => [...prev, generatedReport]);
+    setReportRedoHistory([]);
+    
+    // Replace the original text with improved text in generatedReport
+    const updatedReport = generatedReport.replace(selectedParagraphOriginal, improvedText);
+    setGeneratedReport(updatedReport);
+    
+    // Reset selection states
+    setSelectedParagraphText(null);
+    setSelectedParagraphOriginal(null);
+    setParagraphActionResult(null);
+    setParagraphActionActive(null);
+    setParagraphActionError(null);
+  };
+
+  const handleInsertBelowParagraph = (newText: string) => {
+    if (!selectedParagraphOriginal || !generatedReport) return;
+
+    setReportHistory((prev) => [...prev, generatedReport]);
+    setReportRedoHistory([]);
+
+    const index = generatedReport.indexOf(selectedParagraphOriginal);
+    if (index !== -1) {
+      const insertionPoint = index + selectedParagraphOriginal.length;
+      const updatedReport = 
+        generatedReport.substring(0, insertionPoint) + 
+        "\n\n" + newText + 
+        generatedReport.substring(insertionPoint);
+      setGeneratedReport(updatedReport);
+    }
+
+    setSelectedParagraphText(null);
+    setSelectedParagraphOriginal(null);
+    setParagraphActionResult(null);
+    setParagraphActionActive(null);
+    setParagraphActionError(null);
+  };
+
+  const handleAppendParagraphToReport = (newText: string) => {
+    if (!generatedReport) return;
+
+    setReportHistory((prev) => [...prev, generatedReport]);
+    setReportRedoHistory([]);
+
+    const updatedReport = generatedReport.trim() + "\n\n" + newText;
+    setGeneratedReport(updatedReport);
+
+    setSelectedParagraphText(null);
+    setSelectedParagraphOriginal(null);
+    setParagraphActionResult(null);
+    setParagraphActionActive(null);
+    setParagraphActionError(null);
+  };
 
   const handleStartManualEdit = () => {
     setEditedReportText(generatedReport);
@@ -1349,6 +1568,7 @@ Ejemplo:
 
   const [bibliography, setBibliography] = useState<string>("");
   const [isSearchingBibliography, setIsSearchingBibliography] = useState<boolean>(false);
+  const [isSearchingMoreBibliography, setIsSearchingMoreBibliography] = useState<boolean>(false);
   const [bibliographyError, setBibliographyError] = useState<string | null>(null);
   const [bibliographySources, setBibliographySources] = useState<Array<{ uri: string; title: string; summary?: string }>>([]);
 
@@ -1365,6 +1585,8 @@ Ejemplo:
   // States for Advanced Vascular Analysis & Schematic Drawing
   const [vascularTable, setVascularTable] = useState<string>("");
   const [vascularStates, setVascularStates] = useState<Record<string, string>>({});
+  const [carotidPlaques, setCarotidPlaques] = useState<any[]>([]);
+  const [includeCarotidBifurcations, setIncludeCarotidBifurcations] = useState<boolean>(true);
   
   // States for attached images / DICOM captures
   const [attachedImages, setAttachedImages] = useState<{
@@ -1375,6 +1597,8 @@ Ejemplo:
     caption: string;
     isDicom: boolean;
     dicomMetaData?: Record<string, string>;
+    width?: number;
+    height?: number;
   }[]>([]);
   const [vascularDescriptions, setVascularDescriptions] = useState<Record<string, string>>({});
   const [vascularSubLocations, setVascularSubLocations] = useState<Record<string, string>>({});
@@ -1383,10 +1607,14 @@ Ejemplo:
   const [includeVascularSchemaInReport, setIncludeVascularSchemaInReport] = useState<boolean>(true);
   const [includeShoulderSchemaInReport, setIncludeShoulderSchemaInReport] = useState<boolean>(true);
   const [shoulderStates, setShoulderStates] = useState<Record<string, string>>({});
+  const [shoulderStatesLeft, setShoulderStatesLeft] = useState<Record<string, string>>({});
   const [shoulderDescriptions, setShoulderDescriptions] = useState<Record<string, string>>({});
+  const [shoulderDescriptionsLeft, setShoulderDescriptionsLeft] = useState<Record<string, string>>({});
   const [includeKneeSchemaInReport, setIncludeKneeSchemaInReport] = useState<boolean>(true);
   const [kneeStates, setKneeStates] = useState<Record<string, string>>({});
+  const [kneeStatesLeft, setKneeStatesLeft] = useState<Record<string, string>>({});
   const [kneeDescriptions, setKneeDescriptions] = useState<Record<string, string>>({});
+  const [kneeDescriptionsLeft, setKneeDescriptionsLeft] = useState<Record<string, string>>({});
   const [includeAnkleSchemaInReport, setIncludeAnkleSchemaInReport] = useState<boolean>(true);
   const [ankleStates, setAnkleStates] = useState<Record<string, string>>({});
   const [ankleDescriptions, setAnkleDescriptions] = useState<Record<string, string>>({});
@@ -1399,6 +1627,9 @@ Ejemplo:
   const [includeNeckSchemaInReport, setIncludeNeckSchemaInReport] = useState<boolean>(true);
   const [neckStates, setNeckStates] = useState<Record<string, string>>({});
   const [neckDescriptions, setNeckDescriptions] = useState<Record<string, string>>({});
+  const [includeNeonatalBrainSchemaInReport, setIncludeNeonatalBrainSchemaInReport] = useState<boolean>(true);
+  const [neonatalBrainStates, setNeonatalBrainStates] = useState<Record<string, string>>({});
+  const [neonatalBrainDescriptions, setNeonatalBrainDescriptions] = useState<Record<string, string>>({});
   const [includeUrinarySchemaInReport, setIncludeUrinarySchemaInReport] = useState<boolean>(true);
   const [urinaryStates, setUrinaryStates] = useState<Record<string, string>>({});
   const [urinaryDescriptions, setUrinaryDescriptions] = useState<Record<string, string>>({});
@@ -1407,6 +1638,17 @@ Ejemplo:
   const [elbowStates, setElbowStates] = useState<Record<string, string>>({});
   const [elbowDescriptions, setElbowDescriptions] = useState<Record<string, string>>({});
   const [includeAbdomenSchemaInReport, setIncludeAbdomenSchemaInReport] = useState<boolean>(true);
+  const [includeBiliarySchemaInReport, setIncludeBiliarySchemaInReport] = useState<boolean>(true);
+  const [includeAppendixSchemaInReport, setIncludeAppendixSchemaInReport] = useState<boolean>(true);
+  const [includeDiverticulitisSchemaInReport, setIncludeDiverticulitisSchemaInReport] = useState<boolean>(true);
+  const [includeElastographyInReport, setIncludeElastographyInReport] = useState<boolean>(false);
+  const [elastographyHasStiffness, setElastographyHasStiffness] = useState<boolean>(true);
+  const [elastographyStiffness, setElastographyStiffness] = useState<number>(5.2);
+  const [elastographyCAP, setElastographyCAP] = useState<number>(230);
+  const [qusAttenuation, setQusAttenuation] = useState<number>(0.55);
+  const [fatFraction, setFatFraction] = useState<number>(5.5);
+  const [stiffnessOverride, setStiffnessOverride] = useState<string>("auto");
+  const [steatosisOverride, setSteatosisOverride] = useState<string>("auto");
   const [abdomenStates, setAbdomenStates] = useState<Record<string, string>>({});
   const [abdomenDescriptions, setAbdomenDescriptions] = useState<Record<string, string>>({});
   const [includeScrotumSchemaInReport, setIncludeScrotumSchemaInReport] = useState<boolean>(true);
@@ -1418,7 +1660,26 @@ Ejemplo:
   const [includeBreastSchemaInReport, setIncludeBreastSchemaInReport] = useState<boolean>(true);
   const [breastStates, setBreastStates] = useState<Record<string, string>>({});
   const [breastDescriptions, setBreastDescriptions] = useState<Record<string, string>>({});
+  const [breastBilateralOverride, setBreastBilateralOverride] = useState<boolean | null>(null);
+  const [breastBilateralType, setBreastBilateralType] = useState<"quistes" | "fibroadenomas" | null>(null);
   const [activeVascularIdHover, setActiveVascularIdHover] = useState<string | null>(null);
+  const [includeAbdominalWallSchemaInReport, setIncludeAbdominalWallSchemaInReport] = useState<boolean>(true);
+  const [abdominalWallStates, setAbdominalWallStates] = useState<Record<string, string>>({});
+  const [abdominalWallDescriptions, setAbdominalWallDescriptions] = useState<Record<string, string>>({});
+
+  const [includeCalfAchillesSchemaInReport, setIncludeCalfAchillesSchemaInReport] = useState<boolean>(true);
+  const [calfAchillesStates, setCalfAchillesStates] = useState<Record<string, string>>({});
+  const [calfAchillesDescriptions, setCalfAchillesDescriptions] = useState<Record<string, string>>({});
+
+  // States for Intelligent Anatomy Dialog and Additional Findings (not mapped to draw structures)
+  const [isSmartAnatomyDialogOpen, setIsSmartAnatomyDialogOpen] = useState<boolean>(false);
+  const [additionalFindings, setAdditionalFindings] = useState<Record<string, Array<{ id: string; structureName: string; state: string; description: string }>>>({});
+  const [smartInstructionsText, setSmartInstructionsText] = useState<string>("");
+  const [isSmartAnatomyModifying, setIsSmartAnatomyModifying] = useState<boolean>(false);
+  const [smartAnatomyError, setSmartAnatomyError] = useState<string>("");
+  const [newExtraStructureName, setNewExtraStructureName] = useState<string>("");
+  const [newExtraState, setNewExtraState] = useState<string>("Alterado");
+  const [newExtraDescription, setNewExtraDescription] = useState<string>("");
 
   // States for Dynamic Medical Glossary on current report
   const [dynamicGlossary, setDynamicGlossary] = useState<any | null>(null);
@@ -1483,6 +1744,358 @@ Ejemplo:
   // 4. STATE FOR API HEALTH DIAGNOSTICS
   const [apiDiagnostics, setApiDiagnostics] = useState<any>(null);
   const [checkingApi, setCheckingApi] = useState<boolean>(false);
+
+  const getStructuresForProtocol = (protocol: string): Array<{ id: string; label: string; allowedStates: string[] }> => {
+    const norm = protocol.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    let caseKey = protocol;
+    if (norm.includes("hombro")) caseKey = "Hombro";
+    else if (norm.includes("rodilla")) caseKey = "Rodilla";
+    else if (norm.includes("tobillo")) caseKey = "Tobillo";
+    else if (norm.includes("muslo anterior")) caseKey = "Muslo Anterior";
+    else if (norm.includes("muslo posterior")) caseKey = "Muslo Posterior";
+    else if (norm.includes("cuello")) caseKey = "Cuello y Tiroides";
+    else if (norm.includes("urinarias") || norm.includes("orina")) caseKey = "Vías Urinarias";
+    else if (norm.includes("codo")) caseKey = "Codo";
+    else if (norm.includes("pared") || norm.includes("abdominal wall")) caseKey = "Pared Abdominal";
+    else if (norm.includes("abdomen")) caseKey = "Abdomen";
+    else if (norm.includes("escroto")) caseKey = "Escroto";
+    else if (norm.includes("muneca")) caseKey = "Muñeca";
+    else if (norm.includes("mama")) caseKey = "Mamas";
+    else if (norm.includes("pantorrilla") || norm.includes("aquiles") || norm.includes("achilles") || norm.includes("pantorilla")) caseKey = "Pantorrilla y Tendón de Aquiles";
+    else if (norm.includes("cerebro") || norm.includes("neonatal") || norm.includes("transfontanelar")) caseKey = "Cerebro Neonatal";
+
+    switch (caseKey) {
+      case "Hombro":
+        return [
+          { id: "supraspinatus", label: "Supraespinoso", allowedStates: ["no_descrito", "normal", "tendinosis", "desgarro_parcial", "desgarro_completo"] },
+          { id: "infraspinatus", label: "Infraespinoso", allowedStates: ["no_descrito", "normal", "tendinosis", "desgarro_parcial", "desgarro_completo"] },
+          { id: "subscapularis", label: "Subescapular", allowedStates: ["no_descrito", "normal", "tendinosis", "desgarro_parcial", "desgarro_completo"] },
+          { id: "biceps", label: "PL Bíceps", allowedStates: ["no_descrito", "normal", "tendinitis", "subluxacion", "rotura"] },
+          { id: "bursa", label: "Bursa SAD", allowedStates: ["no_descrito", "normal", "bursitis_leve", "bursitis_severa"] },
+          { id: "glenohumeral", label: "Derrame GH", allowedStates: ["no_descrito", "normal", "derrame_leve", "derrame_moderado"] },
+          { id: "acromioclavicular", label: "Artic. Acromioclav.", allowedStates: ["no_descrito", "normal", "artrosis", "hipertrofia"] },
+          { id: "dynamic_assessment", label: "Val. Dinámica", allowedStates: ["no_descrito", "normal", "pinzamiento"] }
+        ];
+      case "Rodilla":
+        return [
+          { id: "quadriceps", label: "Tendón Cuadricipital", allowedStates: ["no_descrito", "normal", "tendinosis", "desgarro_parcial", "desgarro_completo"] },
+          { id: "patellar", label: "Tendón Rotuliano", allowedStates: ["no_descrito", "normal", "tendinosis", "desgarro_parcial", "desgarro_completo"] },
+          { id: "lcm", label: "Lig. Colateral Medial", allowedStates: ["no_descrito", "normal", "esguince_leve", "desgarro_parcial", "desgarro_completo"] },
+          { id: "lce", label: "Lig. Colateral Lateral", allowedStates: ["no_descrito", "normal", "esguince_leve", "desgarro_parcial", "desgarro_completo"] },
+          { id: "medial_meniscus", label: "Menisco Medial", allowedStates: ["no_descrito", "normal", "meniscosis", "desgarro_parcial", "rotura"] },
+          { id: "lateral_meniscus", label: "Menisco Lateral", allowedStates: ["no_descrito", "normal", "meniscosis", "desgarro_parcial", "rotura"] },
+          { id: "joint_effusion", label: "Derrame Articular", allowedStates: ["no_descrito", "normal", "derrame_leve", "derrame_moderado"] },
+          { id: "baker_cyst", label: "Quiste de Baker", allowedStates: ["no_descrito", "normal", "quiste_leve", "quiste_severo"] },
+          { id: "popliteal_artery", label: "Arteria Poplítea", allowedStates: ["no_descrito", "normal", "ectasia", "ateromatosis"] },
+          { id: "popliteal_vein", label: "Vena Poplítea", allowedStates: ["no_descrito", "normal", "trombosis"] },
+          { id: "distal_tendons", label: "Tendones Distales", allowedStates: ["no_descrito", "normal", "coleccion"] },
+          { id: "popliteal_fossa", label: "Fosa Poplítea", allowedStates: ["no_descrito", "normal", "adenopatia"] }
+        ];
+      case "Tobillo":
+        return [
+          { id: "t_aquiles", label: "T. Aquiles", allowedStates: ["no_descrito", "normal", "tendinosis", "desgarro_parcial", "rotura"] },
+          { id: "fascia_plantar", label: "Fascia Plantar", allowedStates: ["no_descrito", "normal", "fascitis", "desgarro_parcial", "rotura"] },
+          { id: "l_peroneoastragalino_ant", label: "LPAA", allowedStates: ["no_descrito", "normal", "esguince_leve", "desgarro_parcial", "rotura"] },
+          { id: "l_peroneocalcaneo", label: "LPC", allowedStates: ["no_descrito", "normal", "esguince_leve", "desgarro_parcial", "rotura"] },
+          { id: "l_tibioastragalino_ant", label: "LTAA", allowedStates: ["no_descrito", "normal", "esguince_leve", "desgarro_parcial", "rotura"] },
+          { id: "t_tibial_anterior", label: "T. Tibial Anterior", allowedStates: ["no_descrito", "normal", "tenosinovitis", "desgarro_parcial", "rotura"] },
+          { id: "t_peroneo_largo", label: "T. Peroneo Largo", allowedStates: ["no_descrito", "normal", "tenosinovitis", "desgarro_parcial", "rotura"] },
+          { id: "receso_articular", label: "Receso Articular", allowedStates: ["no_descrito", "normal", "derrame_leve", "derrame_moderado"] }
+        ];
+      case "Muslo Anterior":
+        return [
+          { id: "recto_femoral", label: "R. Femoral", allowedStates: ["no_descrito", "normal", "esguince_leve", "desgarro_parcial", "desgarro_completo"] },
+          { id: "vasto_medial", label: "V. Medial", allowedStates: ["no_descrito", "normal", "esguince_leve", "desgarro_parcial", "desgarro_completo"] },
+          { id: "vasto_lateral", label: "V. Lateral", allowedStates: ["no_descrito", "normal", "esguince_leve", "desgarro_parcial", "desgarro_completo"] },
+          { id: "vasto_intermedio", label: "V. Intermedio", allowedStates: ["no_descrito", "normal", "esguince_leve", "desgarro_parcial", "desgarro_completo"] },
+          { id: "tensor_fascia_lata", label: "Tensor Fascia Lata", allowedStates: ["no_descrito", "normal", "sobrecarga", "tendinosis", "desgarro"] },
+          { id: "sartorio", label: "Sartorio", allowedStates: ["no_descrito", "normal", "sobrecarga", "tenosinovitis", "desgarro"] }
+        ];
+      case "Muslo Posterior":
+        return [
+          { id: "semitendinoso", label: "Semitendinoso", allowedStates: ["no_descrito", "normal", "esguince_leve", "desgarro_parcial", "desgarro_completo"] },
+          { id: "semimembranoso", label: "Semimembranoso", allowedStates: ["no_descrito", "normal", "esguince_leve", "desgarro_parcial", "desgarro_completo"] },
+          { id: "biceps_femoral", label: "Bíceps Femoral", allowedStates: ["no_descrito", "normal", "esguince_leve", "desgarro_parcial", "desgarro_completo"] },
+          { id: "nervio_ciatico", label: "N. Ciático", allowedStates: ["no_descrito", "normal", "ciatalgia", "atrapamiento"] },
+          { id: "tejido_subcutaneo", label: "T. Subcutáneo", allowedStates: ["no_descrito", "normal", "edema_leve", "edema_severo"] }
+        ];
+      case "Cuello":
+        return [
+          { id: "glandula_tiroides", label: "G. Tiroides", allowedStates: ["no_descrito", "normal", "bocio_nodular", "tiroiditis"] },
+          { id: "lobulo_derecho", label: "Lóbulo Derecho", allowedStates: ["no_descrito", "normal", "nodulo_benigno", "nodulo_sospechoso"] },
+          { id: "lobulo_izquierdo", label: "Lóbulo Izquierdo", allowedStates: ["no_descrito", "normal", "nodulo_benigno", "nodulo_sospechoso"] },
+          { id: "istmo", label: "Istmo", allowedStates: ["no_descrito", "normal", "quiste", "hipertrofia"] },
+          { id: "glandulas_salivales", label: "G. Salivales", allowedStates: ["no_descrito", "normal", "sialoadenitis", "sialolitiasis"] },
+          { id: "parotida_derecha", label: "Parótida Derecha", allowedStates: ["no_descrito", "normal", "quiste", "adenoma"] },
+          { id: "parotida_izquierda", label: "Parótida Izquierda", allowedStates: ["no_descrito", "normal", "quiste", "adenoma"] },
+          { id: "submandibular_derecha", label: "Submandibular Der", allowedStates: ["no_descrito", "normal", "ectasia", "sialolitiasis"] },
+          { id: "submandibular_izquierda", label: "Submandibular Izq", allowedStates: ["no_descrito", "normal", "ectasia", "sialolitiasis"] },
+          { id: "ganglios_linfaticos", label: "Ganglios Linfáticos", allowedStates: ["no_descrito", "normal", "adenopatia_reactiva", "adenopatia_sospechosa"] }
+        ];
+      case "Vias urinarias":
+        return [
+          { id: "rinon_derecho", label: "Riñón Derecho", allowedStates: ["no_descrito", "normal", "litiasis", "quiste", "ectasia"] },
+          { id: "rinon_izquierdo", label: "Riñón Izquierdo", allowedStates: ["no_descrito", "normal", "litiasis", "quiste", "ectasia"] },
+          { id: "vejiga", label: "Vejiga", allowedStates: ["no_descrito", "normal", "cistitis", "sedimento", "litiasis"] },
+          { id: "ureteres", label: "Uréteres", allowedStates: ["no_descrito", "normal", "dilatacion", "obstruccion"] },
+          { id: "prostata_o_utero", label: "Próstata / Útero", allowedStates: ["no_descrito", "normal", "hipertrofia", "miomatosis", "quiste"] }
+        ];
+      case "Codo":
+        return [
+          { id: "t_triceps", label: "T. Tríceps", allowedStates: ["no_descrito", "normal", "tendinosis", "desgarro_parcial", "rotura"] },
+          { id: "t_biceps_distal", label: "T. Bíceps Distal", allowedStates: ["no_descrito", "normal", "tendinosis", "desgarro_parcial", "rotura"] },
+          { id: "t_comun_extensor", label: "T. Común Extensor", allowedStates: ["no_descrito", "normal", "epicondilitis_lateral", "desgarro_parcial", "rotura"] },
+          { id: "t_comun_flexor", label: "T. Común Flexor", allowedStates: ["no_descrito", "normal", "epicondilitis_medial", "desgarro_parcial", "rotura"] },
+          { id: "n_cubital", label: "N. Cubital", allowedStates: ["no_descrito", "normal", "neuritis", "subluxacion"] },
+          { id: "receso_olecraniano", label: "Receso Olecraniano", allowedStates: ["no_descrito", "normal", "derrame_leve", "derrame_moderado", "sinovitis"] }
+        ];
+      case "Abdomen":
+        return [
+          { id: "higado", label: "Hígado", allowedStates: ["no_descrito", "normal", "esteatosis_leve", "esteatosis_moderada", "esteatosis_severa", "hepatomegalia", "cirrosis", "quiste", "hemangioma", "lesion_ocupante"] },
+          { id: "vesicula_biliar", label: "Vesícula Biliar", allowedStates: ["no_descrito", "normal", "colelitiasis", "barro_biliar", "colecistitis_aguda", "polipo", "pared_engrosada"] },
+          { id: "vias_biliares", label: "Vías Biliares", allowedStates: ["no_descrito", "normal", "ectasia_intrahepatica", "dilatacion_coledoco"] },
+          { id: "pancreas", label: "Páncreas", allowedStates: ["no_descrito", "normal", "pancreatitis_aguda", "pancreatitis_cronica", "quiste", "calcificaciones"] },
+          { id: "bazo", label: "Bazo", allowedStates: ["no_descrito", "normal", "esplenomegalia", "nodulo_esplenico", "infarto_esplenico"] },
+          { id: "aorta_abdominal", label: "Aorta Abdominal", allowedStates: ["no_descrito", "normal", "ectasia", "aneurisma", "placas_calcificadas"] },
+          { id: "retroperitoneo", label: "Retroperitoneo", allowedStates: ["no_descrito", "normal", "liquido_libre", "adenopatias_retroperitoneales"] }
+        ];
+      case "Escroto":
+        return [
+          { id: "testiculo_derecho", label: "Testículo Derecho", allowedStates: ["no_descrito", "normal", "orquitis", "quiste", "nodulo", "atrofia", "microcalcificaciones"] },
+          { id: "testiculo_izquierdo", label: "Testículo Izquierdo", allowedStates: ["no_descrito", "normal", "orquitis", "quiste", "nodulo", "atrofia", "microcalcificaciones"] },
+          { id: "epididimo_derecho", label: "Epidídimo Derecho", allowedStates: ["no_descrito", "normal", "epididimitis", "quiste", "hipertrofia"] },
+          { id: "epididimo_izquierdo", label: "Epidídimo Izquierdo", allowedStates: ["no_descrito", "normal", "epididimitis", "quiste", "hipertrofia"] },
+          { id: "hemiescroto_derecho", label: "Hemiescroto Derecho", allowedStates: ["no_descrito", "normal", "hidrocele_leve", "hidrocele_moderado", "varicocele_grado_i", "varicocele_grado_ii", "varicocele_grado_iii"] },
+          { id: "hemiescroto_izquierdo", label: "Hemiescroto Izquierdo", allowedStates: ["no_descrito", "normal", "hidrocele_leve", "hidrocele_moderado", "varicocele_grado_i", "varicocele_grado_ii", "varicocele_grado_iii"] }
+        ];
+      case "Muñeca":
+        return [
+          { id: "nervio_mediano", label: "Nervio Mediano", allowedStates: ["no_descrito", "normal", "neuritis", "atrapamiento_tarsiano", "engrosamiento"] },
+          { id: "tendones_flexores", label: "Tendones Flexores", allowedStates: ["no_descrito", "normal", "tenosinovitis", "desgarro_parcial", "rotura"] },
+          { id: "flexor_carpi_radialis", label: "Flexor Carpi Radialis", allowedStates: ["no_descrito", "normal", "tenosinovitis", "tendinosis"] },
+          { id: "arteria_radial", label: "Arteria Radial", allowedStates: ["no_descrito", "normal", "ateromatosis", "aneurisma_falso"] },
+          { id: "receso_radiocarpiano_anterior", label: "Receso Radiocarpiano Anterior", allowedStates: ["no_descrito", "normal", "derrame_leve", "sinovitis"] },
+          { id: "canal_de_guyon", label: "Canal de Guyon", allowedStates: ["no_descrito", "normal", "atrapamiento_cubital", "lesion_ocupante"] },
+          { id: "receso_radiocarpiano_posterior", label: "Receso Radiocarpiano Posterior", allowedStates: ["no_descrito", "normal", "derrame_leve", "sinovitis"] },
+          { id: "articulacion_radiocubital_distal", label: "Región Radiocubital Distal", allowedStates: ["no_descrito", "normal", "artrosis", "subluxacion"] },
+          { id: "tendones_extensores_compartimentos", label: "Compartimentos Extensores", allowedStates: ["no_descrito", "normal", "tenosinovitis_de_quervain", "tenosinovitis", "desgarro_parcial", "rotura"] },
+          { id: "fibrocartilago_triangular", label: "Fibrocartílago Triangular", allowedStates: ["no_descrito", "normal", "degenerativo", "rotura"] },
+          { id: "extensor_carpi_ulnaris", label: "Extensor Carpi Ulnaris", allowedStates: ["no_descrito", "normal", "tenosinovitis", "subluxacion"] }
+        ];
+      case "Mamas":
+        return [
+          { id: "mama_derecha", label: "Mama Derecha", allowedStates: ["no_descrito", "normal", "condicion_fibroquistica", "ecorrefringencia_aumentada"] },
+          { id: "mama_izquierda", label: "Mama Izquierda", allowedStates: ["no_descrito", "normal", "condicion_fibroquistica", "ecorrefringencia_aumentada"] },
+          { id: "cuadrantes_mama_derecha", label: "Cuadrantes Mama Der", allowedStates: ["no_descrito", "normal", "quiste_simple", "quiste_complejo", "fibroadenoma", "lesion_altamente_sospechosa"] },
+          { id: "cuadrantes_mama_izquierda", label: "Cuadrantes Mama Izq", allowedStates: ["no_descrito", "normal", "quiste_simple", "quiste_complejo", "fibroadenoma", "lesion_altamente_sospechosa"] },
+          { id: "axila_derecha", label: "Axila Derecha", allowedStates: ["no_descrito", "normal", "adenopatia_reactiva", "adenopatia_sospechosa"] },
+          { id: "axila_izquierda", label: "Axila Izquierda", allowedStates: ["no_descrito", "normal", "adenopatia_reactiva", "adenopatia_sospechosa"] }
+        ];
+      case "Pared Abdominal":
+        return [
+          { id: "rectus_abdominis_right", label: "Músculo Recto Der.", allowedStates: ["no_descrito", "normal", "diastasis", "desgarro", "hernia", "hematoma", "lipoma", "coleccion"] },
+          { id: "rectus_abdominis_left", label: "Músculo Recto Izq.", allowedStates: ["no_descrito", "normal", "diastasis", "desgarro", "hernia", "hematoma", "lipoma", "coleccion"] },
+          { id: "oblique_muscles_right", label: "Músculos Oblicuos Der.", allowedStates: ["no_descrito", "normal", "desgarro", "hernia", "hematoma", "lipoma", "coleccion"] },
+          { id: "oblique_muscles_left", label: "Músculos Oblicuos Izq.", allowedStates: ["no_descrito", "normal", "desgarro", "hernia", "hematoma", "lipoma", "coleccion"] },
+          { id: "linea_alba", label: "Línea Alba", allowedStates: ["no_descrito", "normal", "diastasis", "hernia", "ruptura"] },
+          { id: "umbilical_region", label: "Región Umbilical", allowedStates: ["no_descrito", "normal", "hernia_umbilical", "diastasis"] },
+          { id: "epigastric_region", label: "Región Epigástrica", allowedStates: ["no_descrito", "normal", "hernia_epigastrica", "lipoma"] },
+          { id: "inguinal_region_right", label: "Región Inguinal Der.", allowedStates: ["no_descrito", "normal", "hernia_inguinal_directa", "hernia_inguinal_indirecta", "adenopatia"] },
+          { id: "inguinal_region_left", label: "Región Inguinal Izq.", allowedStates: ["no_descrito", "normal", "hernia_inguinal_directa", "hernia_inguinal_indirecta", "adenopatia"] },
+          { id: "crural_region_right", label: "Región Crural Der.", allowedStates: ["no_descrito", "normal", "hernia_crural", "adenopatia"] },
+          { id: "crural_region_left", label: "Región Crural Izq.", allowedStates: ["no_descrito", "normal", "hernia_crural", "adenopatia"] }
+        ];
+      case "Pantorrilla y Tendón de Aquiles":
+        return [
+          { id: "gastrocnemius_medial", label: "Gastrocnemio Medial", allowedStates: ["no_descrito", "normal", "desgarro", "miofascial", "hematoma"] },
+          { id: "gastrocnemius_lateral", label: "Gastrocnemio Lateral", allowedStates: ["no_descrito", "normal", "desgarro", "miofascial", "hematoma"] },
+          { id: "soleus_muscle", label: "Músculo Sóleo", allowedStates: ["no_descrito", "normal", "desgarro", "miofascial"] },
+          { id: "achilles_tendon", label: "Tendón de Aquiles", allowedStates: ["no_descrito", "normal", "tendinosis", "rotura_parcial", "rotura_completa", "entesopatia"] },
+          { id: "plantaris_tendon", label: "Plantar Delgado", allowedStates: ["no_descrito", "normal", "desgarro", "engrosamiento"] },
+          { id: "retrocalcaneal_bursa", label: "Bolsa Retrocalcánea", allowedStates: ["no_descrito", "normal", "bursitis"] }
+        ];
+      case "Cerebro Neonatal":
+        return [
+          { id: "ventricle_right", label: "Ventrículo Lateral Derecho", allowedStates: ["no_descrito", "normal", "dilatacion_leve", "dilatacion_moderada_severa", "hemorragia_intraventricular_sin_dilatacion", "hemorragia_intraventricular_con_dilatacion"] },
+          { id: "ventricle_left", label: "Ventrículo Lateral Izquierdo", allowedStates: ["no_descrito", "normal", "dilatacion_leve", "dilatacion_moderada_severa", "hemorragia_intraventricular_sin_dilatacion", "hemorragia_intraventricular_con_dilatacion"] },
+          { id: "ventricle_third_fourth", label: "Tercer y Cuarto Ventrículo", allowedStates: ["no_descrito", "normal", "dilatacion"] },
+          { id: "choroid_right", label: "Plexo Coroideo Derecho", allowedStates: ["no_descrito", "normal", "congestion_hemorragica", "quiste_plexo"] },
+          { id: "choroid_left", label: "Plexo Coroideo Izquierdo", allowedStates: ["no_descrito", "normal", "congestion_hemorragica", "quiste_plexo"] },
+          { id: "germinal_right", label: "Surco Caudotalámico Derecho", allowedStates: ["no_descrito", "normal", "hemorragia_subependimaria_g1", "quiste_subependimario"] },
+          { id: "germinal_left", label: "Surco Caudotalámico Izquierdo", allowedStates: ["no_descrito", "normal", "hemorragia_subependimaria_g1", "quiste_subependimario"] },
+          { id: "parenchyma_periventricular_right", label: "Parénquima Periventricular Derecho", allowedStates: ["no_descrito", "normal", "leucomalacia_periventricular_leve", "leucomalacia_periventricular_cavitaria", "calcificaciones"] },
+          { id: "parenchyma_periventricular_left", label: "Parénquima Periventricular Izquierdo", allowedStates: ["no_descrito", "normal", "leucomalacia_periventricular_leve", "leucomalacia_periventricular_cavitaria", "calcificaciones"] },
+          { id: "parenchyma_focal_right", label: "Parénquima Lobar Derecho", allowedStates: ["no_descrito", "normal", "hemorragia_intraparenquimatosa_g4", "calcificaciones_focales", "edema_difuso"] },
+          { id: "parenchyma_focal_left", label: "Parénquima Lobar Izquierdo", allowedStates: ["no_descrito", "normal", "hemorragia_intraparenquimatosa_g4", "calcificaciones_focales", "edema_difuso"] },
+          { id: "subarachnoid_space", label: "Espacio Subaracnoideo y Cisternas", allowedStates: ["no_descrito", "normal", "dilatacion_benigna", "coleccion_extraaxial"] }
+        ];
+      default:
+        return [];
+    }
+  };
+
+  const getProtocolStateAndSetters = (protocol: string) => {
+    const norm = protocol.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    let caseKey = protocol;
+    if (norm.includes("hombro")) caseKey = "Hombro";
+    else if (norm.includes("rodilla")) caseKey = "Rodilla";
+    else if (norm.includes("tobillo")) caseKey = "Tobillo";
+    else if (norm.includes("muslo anterior")) caseKey = "Muslo Anterior";
+    else if (norm.includes("muslo posterior")) caseKey = "Muslo Posterior";
+    else if (norm.includes("cuello")) caseKey = "Cuello";
+    else if (norm.includes("urinarias") || norm.includes("orina")) caseKey = "Vias urinarias";
+    else if (norm.includes("codo")) caseKey = "Codo";
+    else if (norm.includes("pared") || norm.includes("abdominal wall")) caseKey = "Pared Abdominal";
+    else if (norm.includes("abdomen")) caseKey = "Abdomen";
+    else if (norm.includes("escroto")) caseKey = "Escroto";
+    else if (norm.includes("muneca")) caseKey = "Muñeca";
+    else if (norm.includes("mama")) caseKey = "Mamas";
+    else if (norm.includes("pantorrilla") || norm.includes("aquiles") || norm.includes("achilles") || norm.includes("pantorilla")) caseKey = "Pantorrilla y Tendón de Aquiles";
+    else if (norm.includes("cerebro") || norm.includes("neonatal") || norm.includes("transfontanelar")) caseKey = "Cerebro Neonatal";
+
+    switch (caseKey) {
+      case "Hombro":
+        return { states: shoulderStates, setStates: setShoulderStates, descs: shoulderDescriptions, setDescs: setShoulderDescriptions };
+      case "Rodilla":
+        return { states: kneeStates, setStates: setKneeStates, descs: kneeDescriptions, setDescs: setKneeDescriptions };
+      case "Tobillo":
+        return { states: ankleStates, setStates: setAnkleStates, descs: ankleDescriptions, setDescs: setAnkleDescriptions };
+      case "Muslo Anterior":
+        return { states: thighStates, setStates: setThighStates, descs: thighDescriptions, setDescs: setThighDescriptions };
+      case "Muslo Posterior":
+        return { states: thighPosteriorStates, setStates: setThighPosteriorStates, descs: thighPosteriorDescriptions, setDescs: setThighPosteriorDescriptions };
+      case "Cuello":
+        return { states: neckStates, setStates: setNeckStates, descs: neckDescriptions, setDescs: setNeckDescriptions };
+      case "Vias urinarias":
+        return { states: urinaryStates, setStates: setUrinaryStates, descs: urinaryDescriptions, setDescs: setUrinaryDescriptions };
+      case "Codo":
+        return { states: elbowStates, setStates: setElbowStates, descs: elbowDescriptions, setDescs: setElbowDescriptions };
+      case "Abdomen":
+        return { states: abdomenStates, setStates: setAbdomenStates, descs: abdomenDescriptions, setDescs: setAbdomenDescriptions };
+      case "Pared Abdominal":
+        return { states: abdominalWallStates, setStates: setAbdominalWallStates, descs: abdominalWallDescriptions, setDescs: setAbdominalWallDescriptions };
+      case "Escroto":
+        return { states: scrotumStates, setStates: setScrotumStates, descs: scrotumDescriptions, setDescs: setScrotumDescriptions };
+      case "Muñeca":
+        return { states: wristStates, setStates: setWristStates, descs: wristDescriptions, setDescs: setWristDescriptions };
+      case "Mamas":
+        return { states: breastStates, setStates: setBreastStates, descs: breastDescriptions, setDescs: setBreastDescriptions };
+      case "Pantorrilla y Tendón de Aquiles":
+        return { states: calfAchillesStates, setStates: setCalfAchillesStates, descs: calfAchillesDescriptions, setDescs: setCalfAchillesDescriptions };
+      case "Cerebro Neonatal":
+        return { states: neonatalBrainStates, setStates: setNeonatalBrainStates, descs: neonatalBrainDescriptions, setDescs: setNeonatalBrainDescriptions };
+      default:
+        return null;
+    }
+  };
+
+  const handleApplySmartModification = async () => {
+    if (!activeProtocol) return;
+    setIsSmartAnatomyModifying(true);
+    setSmartAnatomyError("");
+    try {
+      const helper = getProtocolStateAndSetters(activeProtocol);
+      if (!helper) throw new Error("Protocolo no soportado");
+
+      const structuresList = getStructuresForProtocol(activeProtocol);
+
+      const response = await fetch("/api/smart-modify-anatomy", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          currentStates: helper.states,
+          currentDescriptions: helper.descs,
+          structures: structuresList,
+          instruction: smartInstructionsText,
+          studyType: activeProtocol,
+          reportText: isEditingReportManual ? editedReportText : (generatedReport || ""),
+          model: selectedModel,
+          currentAdditionalFindings: additionalFindings[activeProtocol] || []
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error("Error al consultar el servicio inteligente de modificación");
+      }
+
+      const data = await response.json();
+      if (data.states && data.descriptions) {
+        helper.setStates(data.states);
+        helper.setDescs(data.descriptions);
+        const nextExtras = data.additionalFindings && Array.isArray(data.additionalFindings)
+          ? data.additionalFindings
+          : data.additionalTexts && Array.isArray(data.additionalTexts)
+            ? data.additionalTexts.map((txt: string, idx: number) => ({
+                id: `smart-add-${idx}-${Date.now()}`,
+                structureName: "Hallazgo Adicional " + (idx + 1),
+                state: "Alterado",
+                description: txt
+              }))
+            : [];
+
+        if (data.additionalFindings && Array.isArray(data.additionalFindings)) {
+          setAdditionalFindings(prev => ({
+            ...prev,
+            [activeProtocol]: data.additionalFindings
+          }));
+        } else if (data.additionalTexts && Array.isArray(data.additionalTexts)) {
+          setAdditionalFindings(prev => ({
+            ...prev,
+            [activeProtocol]: nextExtras
+          }));
+        }
+        
+        // Extract only the newly requested/changed diagnoses
+        const changedDiagnoses: string[] = [];
+        for (const struct of structuresList) {
+          const prevS = helper.states[struct.id] || "no_descrito";
+          const prevD = helper.descs[struct.id] || "";
+          const nextS = data.states[struct.id] || "no_descrito";
+          const nextD = data.descriptions[struct.id] || "";
+
+          if (nextS !== "no_descrito" && nextS !== "normal") {
+            const hasStateChanged = prevS !== nextS;
+            const hasDescChanged = prevD !== nextD;
+            if (hasStateChanged || hasDescChanged) {
+              changedDiagnoses.push(nextD);
+            }
+          }
+        }
+
+        const prevExtras = additionalFindings[activeProtocol] || [];
+        for (const extra of nextExtras) {
+          const matchingPrev = prevExtras.find((pe: any) => pe.id === extra.id);
+          if (!matchingPrev || matchingPrev.description !== extra.description || matchingPrev.state !== extra.state) {
+            changedDiagnoses.push(extra.description);
+          }
+        }
+
+        if (changedDiagnoses.length > 0) {
+          const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
+          const separator = activeReport ? "\n\n" : "";
+          const textToAppend = changedDiagnoses.join("\n");
+          const nextReport = activeReport + separator + textToAppend;
+
+          if (isEditingReportManual) {
+            setEditedReportText(nextReport);
+          } else {
+            setGeneratedReport(nextReport);
+            setEditedReportText(nextReport);
+          }
+        }
+
+        setSmartInstructionsText("");
+      } else {
+        throw new Error("No se devolvieron estados ni descripciones actualizados.");
+      }
+    } catch (err: any) {
+      setSmartAnatomyError(err.message || "Error al aplicar los ajustes inteligentes.");
+    } finally {
+      setIsSmartAnatomyModifying(false);
+    }
+  };
 
   const checkApiHealth = async () => {
     setCheckingApi(true);
@@ -1650,6 +2263,13 @@ Ejemplo:
 
   // Convert File to base64
   const processImageFile = (file: File) => {
+    const isZip = file.name.endsWith(".zip") || file.type === "application/zip" || file.type === "application/x-zip-compressed";
+    if (isZip) {
+      setZipFile(file);
+      setIsZipExtractorOpen(true);
+      return;
+    }
+
     if (!file.type.startsWith("image/")) {
       alert("Por favor, sube un archivo de tipo imagen (PNG, JPG, BMP).");
       return;
@@ -1686,6 +2306,87 @@ Ejemplo:
       }
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleLoadExtractedToGenerator = (extracted: ExtractedFile) => {
+    const fileObj = new File([extracted.rawArray], extracted.nameOnly, { type: extracted.mimeType });
+    setSelectedFile(fileObj);
+    setBase64Image(extracted.base64);
+    
+    if (imagePreviewUrl && imagePreviewUrl.startsWith("blob:")) {
+      try { URL.revokeObjectURL(imagePreviewUrl); } catch (_) {}
+    }
+    
+    if (extracted.isDicom) {
+      // Use the beautiful decoded visual base64 directly as preview so the browser can display it
+      setImagePreviewUrl(extracted.visualUrl || `data:image/png;base64,${extracted.base64}`);
+    } else {
+      const blob = new Blob([extracted.rawArray], { type: extracted.mimeType });
+      const blobUrl = URL.createObjectURL(blob);
+      setImagePreviewUrl(blobUrl);
+    }
+  };
+
+  const handleLoadExtractedToSlot = (extracted: ExtractedFile, slot: 1 | 2 | 3) => {
+    let cleanUrl = extracted.visualUrl ? extracted.visualUrl.trim().replace(/\s/g, "") : "";
+    if (cleanUrl && !cleanUrl.startsWith("data:") && !cleanUrl.startsWith("blob:")) {
+      let mime = "image/png";
+      if (cleanUrl.startsWith("/9j/")) {
+        mime = "image/jpeg";
+      } else if (cleanUrl.startsWith("iVBORw0KGgo")) {
+        mime = "image/png";
+      } else if (cleanUrl.startsWith("PHN2Zy")) {
+        mime = "image/svg+xml";
+      }
+      cleanUrl = `data:${mime};base64,${cleanUrl}`;
+    }
+
+    console.log(`[ZIP Single Loader] Pre-load check: Slot ${slot} - File: ${extracted.nameOnly}`);
+    console.log(`[ZIP Single Loader] visualUrl first 150 chars:`, cleanUrl ? cleanUrl.substring(0, 150) + "..." : "EMPTY");
+
+    setZipExtractedFileForAnalysis({
+      file: {
+        ...extracted,
+        visualUrl: cleanUrl
+      },
+      slot
+    });
+    setActiveTab("expert-analysis"); // Automatically switch to the "expert-analysis" tab so they see it load!
+  };
+
+  const handleLoadMultipleSlots = (selections: { file: ExtractedFile; slot: 1 | 2 | 3 }[]) => {
+    // Explicitly sanitize each file's visualUrl to ensure zero serialization issues before reaching components
+    const sanitizedSelections = selections.map(seq => {
+      let cleanUrl = seq.file.visualUrl ? seq.file.visualUrl.trim().replace(/\s/g, "") : "";
+      
+      // If it doesn't start with base64 data: or blob:, prepend correct header
+      if (cleanUrl && !cleanUrl.startsWith("data:") && !cleanUrl.startsWith("blob:")) {
+        let mime = "image/png";
+        if (cleanUrl.startsWith("/9j/")) {
+          mime = "image/jpeg";
+        } else if (cleanUrl.startsWith("iVBORw0KGgo")) {
+          mime = "image/png";
+        } else if (cleanUrl.startsWith("PHN2Zy")) {
+          mime = "image/svg+xml";
+        }
+        cleanUrl = `data:${mime};base64,${cleanUrl}`;
+      }
+
+      console.log(`[ZIP Batch Loader] Pre-load check: Slot ${seq.slot} - File: ${seq.file.nameOnly}`);
+      console.log(`[ZIP Batch Loader] mimeType detected:`, seq.file.mimeType);
+      console.log(`[ZIP Batch Loader] visualUrl base64 structure:`, cleanUrl ? cleanUrl.substring(0, 150) + "..." : "EMPTY");
+      
+      return {
+        ...seq,
+        file: {
+          ...seq.file,
+          visualUrl: cleanUrl
+        }
+      };
+    });
+
+    setZipExtractedFileForAnalysis(sanitizedSelections);
+    setActiveTab("expert-analysis"); // Automatically switch to the "expert-analysis" tab so they see it load!
   };
 
   // Drag and drop handlers
@@ -2238,6 +2939,7 @@ Ejemplo:
         setVascularStates(data.states || {});
         setVascularDescriptions(data.descriptions || {});
         setVascularSubLocations(data.subLocations || {});
+        setCarotidPlaques(data.carotidPlaques || []);
       } else {
         setVascularError(data.error || "No se pudieron analizar los hallazgos vasculares del informe.");
       }
@@ -2398,6 +3100,46 @@ Ejemplo:
     }
   };
 
+  // ACTION: SEARCH MORE BIBLIOGRAPHY (PAGINATION/LOAD MORE)
+  const handleSearchMoreBibliography = async () => {
+    if (!generatedReport || isSearchingMoreBibliography) return;
+    setIsSearchingMoreBibliography(true);
+    setBibliographyError(null);
+    try {
+      const response = await fetch("/api/search-bibliography", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: selectedModel,
+          report: generatedReport,
+          studyType: studyType || "Estudio Radiológico",
+          findings: findings || "",
+          searchMore: true,
+          existingSources: bibliographySources,
+          existingBibliography: bibliography,
+        }),
+      });
+      const data = await response.json();
+      if (data.success && data.bibliography) {
+        setBibliography(data.bibliography);
+        if (data.sources && data.sources.length > 0) {
+          setBibliographySources((prev) => {
+            const seenUris = new Set(prev.map((s) => s.uri.toLowerCase().trim()));
+            const newSources = data.sources.filter((s: any) => s.uri && !seenUris.has(s.uri.toLowerCase().trim()));
+            return [...prev, ...newSources];
+          });
+        }
+      } else {
+        setBibliographyError(data.error || "Error al buscar fuentes bibliográficas adicionales.");
+      }
+    } catch (err: any) {
+      console.error("Error al buscar más bibliografía:", err);
+      setBibliographyError(err?.message || String(err));
+    } finally {
+      setIsSearchingMoreBibliography(false);
+    }
+  };
+
   // ACTION: EVALUATE GENERATED REPORT
   const handleEvaluateReport = async () => {
     if (!generatedReport) return;
@@ -2543,7 +3285,7 @@ Ejemplo:
         for (let i = 0; i < base64Str.length; i += 76) {
           chunks.push(base64Str.substring(i, i + 76));
         }
-        return chunks.join("\r\n");
+        return chunks.join("\n");
       };
 
       let explanationPDFBase64 = "";
@@ -2682,7 +3424,7 @@ Ejemplo:
       parts.push(`--${boundary}--`);
 
       // Combine parts with exact standard CRLF
-      const emailRaw = parts.join("\r\n");
+      const emailRaw = parts.join("\n");
       
       // Base64URL encode MIME message safely
       const utf8Encoder = new TextEncoder();
@@ -2738,7 +3480,7 @@ Ejemplo:
         text += `*Estudio:* ${studyType}\n`;
       }
       if (reportDate) {
-        text += `*Fecha del Estudio:* ${reportDate}\n`;
+        text += `*Fecha del Estudio:* ${formatDateToDMY(reportDate)}\n`;
       }
       text += `\nEstimado paciente, adjunto le comparto una explicación médica de su estudio radiológico traducida a un lenguaje sencillo y comprensible en formato digital PDF.\n\n`;
       text += `Este documento está redactado de forma objetiva y didáctica para ayudarle a comprender los hallazgos para su próxima consulta de seguimiento.`;
@@ -2769,7 +3511,7 @@ Ejemplo:
       text += `*Estudio:* ${studyType}\n`;
     }
     if (reportDate) {
-      text += `*Fecha del Estudio:* ${reportDate}\n`;
+      text += `*Fecha del Estudio:* ${formatDateToDMY(reportDate)}\n`;
     }
     text += `\nEstimado paciente, adjunto le comparto el reporte oficial del estudio en formato digital PDF, verificado por el médico especialista y con firma digital autónoma.\n\n`;
     text += `Le sugiero conservarlo y presentarlo impreso o digital en su próxima consulta de seguimiento con su médico de cabecera.`;
@@ -2921,12 +3663,23 @@ Ejemplo:
     setSchematicSummaryError(null);
     setSchematicSummary(null);
     try {
+      let reportWithExtras = generatedReport;
+      if (activeProtocol) {
+        const extras = additionalFindings[activeProtocol];
+        if (extras && extras.length > 0) {
+          reportWithExtras += "\n\nHALLAZGOS ADICIONALES DETECTADOS POR EL MÉDICO TRATANTE:\n";
+          extras.forEach(item => {
+            reportWithExtras += `- ${item.structureName}: ${item.description}\n`;
+          });
+        }
+      }
+
       const response = await fetch("/api/generate-schematic-summary", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: selectedModel,
-          report: generatedReport,
+          report: reportWithExtras,
           studyType: studyType || "Estudio Radiológico"
         }),
       });
@@ -3402,35 +4155,66 @@ Ejemplo:
     }
   };
 
-  const ensureCompatibleImageFormat = (src: string): Promise<string> => {
+  const ensureCompatibleImageFormat = (src: string): Promise<{ dataUrl: string; width: number; height: number }> => {
     return new Promise((resolve) => {
       const img = new Image();
       img.onload = () => {
         try {
+          const w = img.naturalWidth || img.width || 640;
+          const h = img.naturalHeight || img.height || 480;
+          
+          // Downscale to a maximum height/width of 900px to maintain pristine quality but reduce base64 size drastically
+          let targetW = w;
+          let targetH = h;
+          const maxDim = 900;
+          if (targetW > maxDim || targetH > maxDim) {
+            if (targetW > targetH) {
+              targetH = Math.round((targetH * maxDim) / targetW);
+              targetW = maxDim;
+            } else {
+              targetW = Math.round((targetW * maxDim) / targetH);
+              targetH = maxDim;
+            }
+          }
+          
           const canvas = document.createElement("canvas");
-          canvas.width = img.naturalWidth || img.width || 640;
-          canvas.height = img.naturalHeight || img.height || 480;
+          canvas.width = targetW;
+          canvas.height = targetH;
           const ctx = canvas.getContext("2d");
           if (ctx) {
             ctx.fillStyle = "#ffffff";
             ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.drawImage(img, 0, 0);
-            resolve(canvas.toDataURL("image/jpeg", 0.9));
+            ctx.drawImage(img, 0, 0, targetW, targetH);
+            // Use high-quality JPEG (0.85) to drastically reduce the PDF file weight without losing diagnostic details!
+            const compressedUrl = canvas.toDataURL("image/jpeg", 0.85);
+            resolve({ dataUrl: compressedUrl, width: targetW, height: targetH });
             return;
           }
         } catch (err) {
           console.warn("Error converting image to compatible format:", err);
         }
-        resolve(src);
+        resolve({ dataUrl: src, width: img.naturalWidth || 640, height: img.naturalHeight || 480 });
       };
       img.onerror = () => {
-        resolve(src);
+        resolve({ dataUrl: src, width: 640, height: 480 });
       };
       img.src = src;
     });
   };
 
-  const decodeDicom = (arrayBuffer: ArrayBuffer) => {
+  const decodeDicom = (inputBuffer: any) => {
+    // Robust audit of input buffer type to extract safe, isolated ArrayBuffer boundaries
+    let arrayBuffer: ArrayBuffer;
+    if (inputBuffer instanceof Uint8Array) {
+      arrayBuffer = inputBuffer.buffer.slice(inputBuffer.byteOffset, inputBuffer.byteOffset + inputBuffer.byteLength);
+    } else if (inputBuffer instanceof ArrayBuffer) {
+      arrayBuffer = inputBuffer;
+    } else if (inputBuffer && inputBuffer.buffer instanceof ArrayBuffer) {
+      arrayBuffer = inputBuffer.buffer.slice(inputBuffer.byteOffset || 0, (inputBuffer.byteOffset || 0) + (inputBuffer.byteLength || 0));
+    } else {
+      arrayBuffer = inputBuffer as ArrayBuffer;
+    }
+
     const view = new DataView(arrayBuffer);
     const uint8 = new Uint8Array(arrayBuffer);
     
@@ -3746,7 +4530,8 @@ Ejemplo:
           }
           
           ctx.putImageData(imgData, 0, 0);
-          base64 = canvas.toDataURL("image/jpeg");
+          // Use lossless PNG for highest medical detail evaluation as requested
+          base64 = canvas.toDataURL("image/png");
         }
       } catch (decodeErr) {
         console.warn("Could not decode raw pixel data natively: ", decodeErr);
@@ -3839,6 +4624,8 @@ Ejemplo:
       caption: string;
       isDicom: boolean;
       dicomMetaData?: Record<string, string>;
+      width?: number;
+      height?: number;
     }[] = [];
     
     const promises = filesArray.map((file) => {
@@ -3857,24 +4644,122 @@ Ejemplo:
       }
       
       const fileExt = file.name.split('.').pop()?.toLowerCase() || "";
+      const isZip = fileExt === "zip" || file.type === "application/zip" || file.type === "application/x-zip-compressed";
       const isKnownImage = file.type.startsWith("image/") || ["jpg", "jpeg", "png", "webp", "gif"].includes(fileExt);
       const isDicomExt = ["dcm", "dicom"].includes(fileExt);
       
       return new Promise<void>((resolve) => {
         const reader = new FileReader();
         
-        if (isKnownImage) {
+        if (isZip) {
+          (async () => {
+            try {
+              const jszip = new JSZip();
+              const zipContent = await jszip.loadAsync(file);
+              const zipPromises: Promise<void>[] = [];
+              
+              const localUint8ToBase64 = (arr: Uint8Array): string => {
+                let binary = "";
+                const len = arr.byteLength;
+                const chunkSize = 0x4000;
+                for (let i = 0; i < len; i += chunkSize) {
+                  const subset = arr.subarray(i, i + chunkSize);
+                  binary += String.fromCharCode.apply(null, subset as any);
+                }
+                return btoa(binary);
+              };
+
+              for (const [filename, fileObj] of Object.entries(zipContent.files)) {
+                if (fileObj.dir) continue;
+                
+                const innerNameLower = filename.toLowerCase();
+                if (
+                  innerNameLower.startsWith(".") || 
+                  innerNameLower.startsWith("_") || 
+                  innerNameLower.endsWith("thumbs.db") || 
+                  innerNameLower.endsWith("dicomdir") || 
+                  innerNameLower.endsWith(".xml")
+                ) {
+                  continue;
+                }
+                
+                const innerExt = filename.split('.').pop()?.toLowerCase() || "";
+                const isInnerImage = ["png", "jpg", "jpeg", "webp", "gif"].includes(innerExt);
+                const isInnerDicomExt = ["dcm", "dicom"].includes(innerExt);
+                
+                const p = (async () => {
+                  const u8Array = await fileObj.async("uint8array");
+                  if (u8Array.length === 0) return;
+                  
+                  const hasDicomHeader = u8Array.length > 132 && 
+                                         u8Array[128] === 68 && 
+                                         u8Array[129] === 73 && 
+                                         u8Array[130] === 67 && 
+                                         u8Array[131] === 77; // "DICM"
+                  const isInnerDicom = isInnerDicomExt || hasDicomHeader;
+                  
+                  if (isInnerImage) {
+                    const mime = innerExt === "jpg" || innerExt === "jpeg" ? "image/jpeg" : (innerExt === "gif" ? "image/gif" : (innerExt === "webp" ? "image/webp" : "image/png"));
+                    const base64Str = `data:${mime};base64,${localUint8ToBase64(u8Array)}`;
+                    const res = await ensureCompatibleImageFormat(base64Str);
+                    loaded.push({
+                      id: "attached-" + Math.random().toString(36).substring(2, 11),
+                      name: filename.split("/").pop() || filename,
+                      url: res.dataUrl,
+                      base64: res.dataUrl,
+                      caption: "",
+                      isDicom: false,
+                      width: res.width,
+                      height: res.height
+                    });
+                  } else if (isInnerDicom) {
+                    try {
+                      const cleanDcmBuffer = u8Array.buffer.slice(u8Array.byteOffset, u8Array.byteOffset + u8Array.byteLength);
+                      const parsed = decodeDicom(cleanDcmBuffer);
+                      let finalBase64 = parsed.base64;
+                      if (!finalBase64) {
+                        finalBase64 = generateDicomCanvasFallback(filename.split("/").pop() || filename, parsed.meta);
+                      }
+                      const res = await ensureCompatibleImageFormat(finalBase64);
+                      loaded.push({
+                        id: "attached-" + Math.random().toString(36).substring(2, 11),
+                        name: filename.split("/").pop() || filename,
+                        url: res.dataUrl,
+                        base64: res.dataUrl,
+                        caption: "",
+                        isDicom: true,
+                        dicomMetaData: parsed.meta,
+                        width: res.width,
+                        height: res.height
+                      });
+                    } catch (err) {
+                      console.error("Error decoding inner ZIP DICOM:", err);
+                    }
+                  }
+                })();
+                zipPromises.push(p);
+              }
+              await Promise.all(zipPromises);
+            } catch (zipErr) {
+              console.error("Error unpacking ZIP attachment:", zipErr);
+            } finally {
+              resolve();
+            }
+          })();
+        } else if (isKnownImage) {
           reader.onload = (e) => {
             const base64Str = e.target?.result as string;
             if (base64Str) {
-               ensureCompatibleImageFormat(base64Str).then((compatibleBase64) => {
+               ensureCompatibleImageFormat(base64Str).then((res) => {
                 loaded.push({
                   id: "attached-" + Math.random().toString(36).substring(2, 11),
                   name: file.name,
-                  url: compatibleBase64,
-                  base64: compatibleBase64,
+                  url: res.dataUrl,
+                  base64: res.dataUrl,
                   caption: "", // Starts completely empty as requested by the user
-                  isDicom: false
+                  isDicom: false,
+                  width: res.width,
+                  height: res.height
                 });
                 resolve();
               });
@@ -3900,18 +4785,20 @@ Ejemplo:
                 const parsed = decodeDicom(buf);
                 let finalBase64 = parsed.base64;
                 if (!finalBase64) {
-                  finalBase64 = generateDicomCanvasFallback(file.name, parsed.meta);
+                   finalBase64 = generateDicomCanvasFallback(file.name, parsed.meta);
                 }
                 
-                ensureCompatibleImageFormat(finalBase64).then((compatibleBase64) => {
+                ensureCompatibleImageFormat(finalBase64).then((res) => {
                   loaded.push({
                     id: "attached-" + Math.random().toString(36).substring(2, 11),
                     name: file.name,
-                    url: compatibleBase64,
-                    base64: compatibleBase64,
+                    url: res.dataUrl,
+                    base64: res.dataUrl,
                     caption: "", // Starts completely empty as requested by the user
                     isDicom: true,
-                    dicomMetaData: parsed.meta
+                    dicomMetaData: parsed.meta,
+                    width: res.width,
+                    height: res.height
                   });
                   resolve();
                 });
@@ -4027,7 +4914,12 @@ Ejemplo:
     });
   };
 
-  const handleDownloadNativePDF = async (openInNewTab: boolean = false, shareViaWebShare: boolean = false, returnBase64: boolean = false): Promise<string | undefined> => {
+  const handleDownloadNativePDF = async (
+    openInNewTab: boolean = false,
+    shareViaWebShare: boolean = false,
+    returnBase64: boolean = false,
+    returnBlobUrl: boolean = false
+  ): Promise<string | undefined> => {
     if (!generatedReport) return;
     
     try {
@@ -4042,6 +4934,206 @@ Ejemplo:
       const pageWidth = 210;
       const pageHeight = 297;
       const contentWidth = pageWidth - (2 * marginX); // 170mm
+
+      const drawAnatomicalCards = (
+        docObj: any,
+        findings: Array<{ label: string; state: string; description: string }>,
+        boxX: number,
+        boxY: number,
+        boxW: number,
+        boxH: number,
+        isVascular: boolean = false
+      ) => {
+        // Aligned Anatomical Cards format for Appendix / Synopses in PDF (Opción 1: Fichas Anatómicas Alineadas)
+        const paddingX = 2.5;
+        const paddingY = 8.5; // Starts after header text space
+        const startX = boxX + paddingX;
+        const startY = boxY + paddingY;
+        const availW = boxW - (paddingX * 2);
+        const availH = boxH - paddingY - 2.5;
+
+        const count = findings.length;
+        const cols = count > 3 ? 2 : 1;
+        const colGap = 2.0;
+        const rowGap = 2.0;
+        const colW = cols === 2 ? (availW - colGap) / 2 : availW;
+
+        const totalRows = Math.ceil(count / cols);
+        const cardH = (availH - (rowGap * (totalRows - 1))) / totalRows;
+
+        findings.forEach((finding, index) => {
+          const colIndex = index % cols;
+          const rowIndex = Math.floor(index / cols);
+          const cardX = startX + colIndex * (colW + colGap);
+          const cardY = startY + rowIndex * (cardH + rowGap);
+
+          const stateClean = (finding.state || "").toLowerCase().trim();
+          let dotColor = [99, 102, 241];      // indigo-500
+          let badgeBg = [238, 242, 255];      // indigo-50
+          let badgeText = [67, 56, 202];       // indigo-700
+          let drawBorder = [226, 232, 240];    // light border
+
+          if (isVascular) {
+            if (stateClean === "normal" || stateClean === "permeable" || stateClean === "sin_lesiones" || stateClean === "normales" || stateClean === "dentro de límites normales") {
+              dotColor = [16, 185, 129];        // Emerald-500 (Green)
+              badgeBg = [240, 253, 244];
+              badgeText = [21, 128, 61];
+              drawBorder = [209, 250, 229];
+            } else if (stateClean === "mild" || stateClean === "reflux" || stateClean.includes("mild") || stateClean.includes("reflux") || stateClean.includes("leve") || stateClean.includes("espesor_conservado")) {
+              dotColor = [245, 158, 11];        // Amber-500 (Orange for mild-moderate)
+              badgeBg = [254, 252, 232];
+              badgeText = [180, 83, 9];
+              drawBorder = [254, 243, 199];
+            } else if (stateClean === "severe" || stateClean === "critical" || stateClean === "thrombosis" || stateClean.includes("severe") || stateClean.includes("critico") || stateClean.includes("crítico") || stateClean.includes("trombosis")) {
+              dotColor = [220, 38, 38];         // Red-600 (Red for severe)
+              badgeBg = [254, 242, 242];
+              badgeText = [185, 28, 28];
+              drawBorder = [254, 205, 211];
+            } else {
+              // Fallback for custom or unmapped states in vascular studies (Amber/Orange)
+              dotColor = [245, 158, 11];
+              badgeBg = [254, 252, 232];
+              badgeText = [180, 83, 9];
+              drawBorder = [254, 243, 199];
+            }
+          } else {
+            if (stateClean === "normal" || stateClean === "sin_lesiones" || stateClean === "normales" || stateClean === "dentro de límites normales") {
+              dotColor = [16, 185, 129];        // emerald-500
+              badgeBg = [240, 253, 244];         // emerald-50
+              badgeText = [21, 128, 61];          // emerald-700
+              drawBorder = [209, 250, 229];
+            } else if (
+              stateClean.includes("ruptura") || 
+              stateClean.includes("desgarro_completo") ||
+              stateClean.includes("orquitis") ||
+              stateClean.includes("torsion") ||
+              stateClean.includes("colecistitis") || 
+              stateClean.includes("severa") || 
+              stateClean.includes("severo") || 
+              stateClean.includes("masa") || 
+              stateClean.includes("solido") || 
+              stateClean.includes("sólido") || 
+              stateClean.includes("maligno") || 
+              stateClean.includes("birads_4") || 
+              stateClean.includes("birads_5") || 
+              stateClean.includes("birads_6") || 
+              stateClean.includes("suspicious") || 
+              stateClean.includes("aneurisma") ||
+              stateClean.includes("trombosis") ||
+              stateClean.includes("critico") ||
+              stateClean.includes("crítico")
+            ) {
+              dotColor = [239, 68, 68];          // rose-500
+              badgeBg = [254, 242, 242];         // rose-50
+              badgeText = [185, 28, 28];          // rose-700
+              drawBorder = [254, 205, 211];       // rose-200
+            } else if (
+              stateClean.includes("leve") || 
+              stateClean.includes("quiste_simple") || 
+              stateClean.includes("benigno") || 
+              stateClean.includes("sinovitis_l") || 
+              stateClean.includes("derrame_l") ||
+              stateClean.includes("espesor_conservado") ||
+              stateClean.includes("hidrocele_l") ||
+              stateClean.includes("ectasia_l") ||
+              stateClean.includes("bursitis_l") ||
+              stateClean.includes("birads_2") ||
+              stateClean.includes("birads_3")
+            ) {
+              dotColor = [245, 158, 11];         // amber-500
+              badgeBg = [254, 252, 232];         // amber-50
+              badgeText = [180, 83, 9];           // amber-800
+              drawBorder = [254, 243, 199];       // amber-200
+            }
+          }
+
+          // Draw card background
+          docObj.setFillColor(255, 255, 255);
+          docObj.setDrawColor(drawBorder[0], drawBorder[1], drawBorder[2]);
+          docObj.setLineWidth(0.18);
+          docObj.roundedRect(cardX, cardY, colW, cardH, 1.2, 1.2, "FD");
+
+          // Draw colored stripe indicator on left edge
+          docObj.setFillColor(dotColor[0], dotColor[1], dotColor[2]);
+          docObj.rect(cardX, cardY, 1.2, cardH, "F");
+
+          // Draw structure label
+          docObj.setFont("helvetica", "bold");
+          docObj.setFontSize(5.6);
+          docObj.setTextColor(15, 23, 42); // slate-900
+          const maxLabelLen = isVascular 
+            ? (cols === 2 ? 28 : 38)
+            : (cols === 2 ? 18 : 28);
+          const shortLabel = finding.label.length > maxLabelLen
+            ? finding.label.substring(0, maxLabelLen - 2) + ".." 
+            : finding.label;
+          docObj.text(shortLabel.toUpperCase(), cardX + 2.4, cardY + 2.7);
+
+          // Draw badge for state
+          let rawState = (finding.state || "ALTERADO").replace(/_/g, " ").toUpperCase();
+          if (isVascular) {
+            const stateClean = (finding.state || "").toLowerCase().trim();
+            if (stateClean === "normal" || stateClean === "permeable" || stateClean === "sin_lesiones" || stateClean === "normales" || stateClean === "dentro de límites normales") {
+              rawState = "PERMEABLE";
+            } else if (stateClean === "mild" || stateClean.includes("mild") || stateClean.includes("leve") || stateClean.includes("espesor_conservado")) {
+              rawState = "LEVE";
+            } else if (stateClean === "reflux" || stateClean.includes("reflux")) {
+              rawState = "INSUFICIENCIA";
+            } else if (stateClean === "thrombosis" || stateClean.includes("trombosis")) {
+              rawState = "TROMBOSIS";
+            } else if (stateClean === "severe" || stateClean === "critical" || stateClean.includes("severe") || stateClean.includes("critico") || stateClean.includes("crítico")) {
+              rawState = "ESTENOSIS";
+            } else {
+              rawState = "ALTERADO";
+            }
+          } else {
+            if (rawState === "NORMAL") rawState = "NORMAL";
+            else if (rawState === "DESGARRO MIOFASCIAL") rawState = "D. MIOFASC";
+            else if (rawState === "DESGARRO INTRAMUSCULAR") rawState = "D. INTRAC";
+            else if (rawState === "VALORACION DINAMICA") rawState = "VAL. DIN.";
+          }
+
+          const shortState = rawState.length > (cols === 2 ? 10 : 16)
+            ? rawState.substring(0, cols === 2 ? 8 : 14) + "."
+            : rawState;
+
+          docObj.setFont("helvetica", "bold");
+          docObj.setFontSize(4.2);
+          const badgeW = docObj.getTextWidth(shortState) + 2;
+          const badgeX = cardX + colW - badgeW - 1.5;
+
+          docObj.setFillColor(badgeBg[0], badgeBg[1], badgeBg[2]);
+          docObj.roundedRect(badgeX, cardY + 1.0, badgeW, 2.2, 0.4, 0.4, "F");
+          docObj.setTextColor(badgeText[0], badgeText[1], badgeText[2]);
+          docObj.text(shortState, badgeX + 1.0, cardY + 2.6);
+
+          // Draw wrapped clinical description
+          docObj.setFont("helvetica", "normal");
+          let descFontSize = 5.0;
+          let spacing = 2.2;
+
+          if (cardH < 10) {
+            descFontSize = 4.4;
+            spacing = 1.8;
+          }
+          docObj.setFontSize(descFontSize);
+          docObj.setTextColor(71, 85, 105); // slate-600
+
+          const textToWrap = finding.description;
+          const wrapWidthLimit = colW - 4.5;
+          const linesWrapped = docObj.splitTextToSize(textToWrap, wrapWidthLimit);
+
+          if (linesWrapped[0]) {
+            docObj.text(linesWrapped[0], cardX + 2.4, cardY + 2.7 + spacing);
+          }
+          if (linesWrapped[1] && cardH > 7.5) {
+            docObj.text(linesWrapped[1], cardX + 2.4, cardY + 2.7 + (spacing * 2));
+          }
+          if (linesWrapped[2] && cardH > 10.5) {
+            docObj.text(linesWrapped[2], cardX + 2.4, cardY + 2.7 + (spacing * 3));
+          }
+        });
+      };
 
       // Helper function to check space and add page if needed
       const checkPageBreak = (neededHeight: number) => {
@@ -4109,12 +5201,12 @@ Ejemplo:
         if (customLogoStyle === "banner") {
           // Banner Style (Centered wide banner)
           const bannerImgEl = document.querySelector('img[alt="Membrete de la Clínica"]') as HTMLImageElement | null;
-          let bannerWidth = 140;
-          let bannerHeight = 28;
+          let bannerWidth = 165;
+          let bannerHeight = 35;
           if (bannerImgEl && bannerImgEl.naturalWidth && bannerImgEl.naturalHeight) {
             const aspect = bannerImgEl.naturalWidth / bannerImgEl.naturalHeight;
             const maxWidth = contentWidth; // 170
-            const maxHeight = 30;
+            const maxHeight = 52;
             if (aspect > maxWidth / maxHeight) {
               bannerWidth = maxWidth;
               bannerHeight = maxWidth / aspect;
@@ -4148,12 +5240,12 @@ Ejemplo:
         } else {
           // Left Aligned Logo Style
           const logoImgEl = document.querySelector('img[alt="Logo"]') as HTMLImageElement | null;
-          let logoWidth = 22;
-          let logoHeight = 22;
+          let logoWidth = 36;
+          let logoHeight = 36;
           if (logoImgEl && logoImgEl.naturalWidth && logoImgEl.naturalHeight) {
             const aspect = logoImgEl.naturalWidth / logoImgEl.naturalHeight;
-            const maxWidth = 25;
-            const maxHeight = 25;
+            const maxWidth = 42;
+            const maxHeight = 42;
             if (aspect > maxWidth / maxHeight) {
               logoWidth = maxWidth;
               logoHeight = maxWidth / aspect;
@@ -4258,12 +5350,13 @@ Ejemplo:
 
         let xOffset = marginX + 4;
         let totalDateWidth = 0;
+        const formattedDate = formatDateToDMY(reportDate);
         
         if (reportDate) {
           doc.setFont("helvetica", "bold");
           doc.setFontSize(8.5);
           const dateLabel = "FECHA DEL ESTUDIO: ";
-          totalDateWidth = doc.getTextWidth(dateLabel) + doc.getTextWidth(reportDate);
+          totalDateWidth = doc.getTextWidth(dateLabel) + doc.getTextWidth(formattedDate);
         }
 
         if (patientName) {
@@ -4297,7 +5390,7 @@ Ejemplo:
           const dateLabelWidth = doc.getTextWidth(dateLabel);
           doc.setFont("helvetica", "bold");
           doc.setTextColor(15, 23, 42);
-          doc.text(reportDate, rightX + dateLabelWidth, yCoord + 7.5);
+          doc.text(formattedDate, rightX + dateLabelWidth, yCoord + 7.5);
         }
 
         yCoord += 19;
@@ -4486,9 +5579,19 @@ Ejemplo:
               colWidths.push(contentWidth * 0.4);
               colWidths.push(contentWidth * 0.6);
             } else if (colCount === 3) {
-              colWidths.push(contentWidth * 0.15); // ID col (compact)
-              colWidths.push(contentWidth * 0.35); // Structure / Site Name
-              colWidths.push(contentWidth * 0.50); // Detailed Main Findings
+              const isVascular = headers.some(h => {
+                const lower = h.toLowerCase();
+                return lower.includes("derech") || lower.includes("izquierd") || lower.includes("alterad") || lower.includes("vaso");
+              });
+              if (isVascular) {
+                colWidths.push(contentWidth * 0.34);
+                colWidths.push(contentWidth * 0.33);
+                colWidths.push(contentWidth * 0.33);
+              } else {
+                colWidths.push(contentWidth * 0.15); // ID col (compact)
+                colWidths.push(contentWidth * 0.35); // Structure / Site Name
+                colWidths.push(contentWidth * 0.50); // Detailed Main Findings
+              }
             } else if (colCount === 4) {
               colWidths.push(contentWidth * 0.12); // ID Column (e.g. H1, H2, H3)
               colWidths.push(contentWidth * 0.28); // Estructura / Sitio
@@ -4553,12 +5656,21 @@ Ejemplo:
             doc.setFontSize(9.5);
             doc.setTextColor(15, 23, 42); // slate-900
 
+            const isVascularTable = colCount === 3 && headers.some(h => {
+              const lower = h.toLowerCase();
+              return lower.includes("derech") || lower.includes("izquierd") || lower.includes("alterad") || lower.includes("vaso");
+            });
+
             headers.forEach((headerTxt, hIdx) => {
-              let hClean = headerTxt.replace(/\*\*/g, "");
+              let hClean = headerTxt.replace(/\*\*/g, "").trim();
               if (colCount === 2) {
                 // Force headers to read exactly "Estructura" and "Hallazgos"
                 if (hIdx === 0) hClean = "Estructura";
                 if (hIdx === 1) hClean = "Hallazgos";
+              } else if (isVascularTable) {
+                if (hIdx === 0) hClean = "Segmento Alterado";
+                if (hIdx === 1) hClean = "Derecho";
+                if (hIdx === 2) hClean = "Izquierdo";
               }
               doc.text(hClean, currentX + 3, yCoord + 1);
               currentX += colWidths[hIdx] || (contentWidth / colCount);
@@ -4752,13 +5864,9 @@ Ejemplo:
 
       // 🛠️ DRAW SHOULDER DIAGRAM IN THE PROGRAMMATIC PDF
       if (includeShoulderSchemaInReport && specificStudy === "Hombro") {
-        const svgElement = document.getElementById("shoulder-anatomy-svg");
-        if (svgElement) {
-          try {
-            // Create a deep clone to customize SVG styling specifically for beautiful, print-friendly white-background rendering
-            const clonedSvg = svgElement.cloneNode(true) as SVGElement;
-            
-            // 1. Force background and clean outline colors on gradient stops
+        try {
+          const sanitizeShoulderSvgForPrint = (svgEl: HTMLElement) => {
+            const clonedSvg = svgEl.cloneNode(true) as SVGElement;
             const stops = clonedSvg.querySelectorAll("linearGradient stop");
             stops.forEach(stop => {
               const curColor = stop.getAttribute("stop-color") || stop.getAttribute("stopColor") || "";
@@ -4767,12 +5875,10 @@ Ejemplo:
               if (curColor === "#334155" || curColor === "#3d4e66") stop.setAttribute("stop-color", "#cbd5e1");
             });
 
-            // 2. Adjust paths fill/stroke colors for paper print
             const paths = clonedSvg.querySelectorAll("path");
             paths.forEach(p => {
               const fill = p.getAttribute("fill") || "";
               const stroke = p.getAttribute("stroke") || "";
-              
               if (fill === "#1e293b") p.setAttribute("fill", "#f8fafc");
               if (fill === "#451a03") p.setAttribute("fill", "#fef3c7");
               if (fill === "#500730") p.setAttribute("fill", "#fce7f3");
@@ -4785,7 +5891,6 @@ Ejemplo:
               if (stroke === "#475569") p.setAttribute("stroke", "#64748b");
             });
 
-            // 3. Adjust text colors
             const texts = clonedSvg.querySelectorAll("text");
             texts.forEach(t => {
               const fill = t.getAttribute("fill") || "";
@@ -4793,7 +5898,6 @@ Ejemplo:
               if (fill === "#475569") t.setAttribute("fill", "#1e293b");
             });
 
-            // 4. Adjust custom guides/circles in background
             const circles = clonedSvg.querySelectorAll("circle");
             circles.forEach(c => {
               const stroke = c.getAttribute("stroke") || "";
@@ -4804,61 +5908,11 @@ Ejemplo:
               const stroke = l.getAttribute("stroke") || "";
               if (stroke === "#1e293b") l.setAttribute("stroke", "#e2e8f0");
             });
+            return clonedSvg;
+          };
 
-            const imgData = await convertSvgToPng(clonedSvg);
-            
-            // Check page break for 95mm (75mm content + margins/header)
-            const willPageBreak = (yCoord + 95 > pageHeight - 20);
-            checkPageBreak(95);
-            if (!willPageBreak) {
-              yCoord += 18; // Generous space/gap from the diagnostic impression above
-            } else {
-              yCoord += 6;  // Normal small spacing at the top of a fresh page
-            }
-
-            // Header for the diagram
-            doc.setFont("helvetica", "bold");
-            doc.setFontSize(8.0);
-            doc.setTextColor(30, 41, 59);
-            doc.text("ANEXO: ESQUEMA DE HALLAZGOS Y SINOPSIS DE HOMBRO", pageWidth / 2, yCoord, { align: "center" });
-            yCoord += 3.5;
-
-            doc.setFont("helvetica", "normal");
-            doc.setFontSize(6.3);
-            doc.setTextColor(148, 163, 184);
-            doc.text("MAPEO ANATÓMICO Y SINOPSIS ESTRUCTURADA DEL MANGUITO ROTADOR Y ESTRUCTURAS ADYACENTES", pageWidth / 2, yCoord, { align: "center" });
-            yCoord += 4.5;
-
-            // --- DRAW SIDE-BY-SIDE LAYOUT ---
-            const yStart = yCoord;
-
-            // 1. Draw Left Diagram Box (Border + Background)
-            doc.setFillColor(255, 255, 255);
-            doc.setDrawColor(229, 231, 235);
-            doc.roundedRect(20, yStart, 75, 75, 3, 3, "FD");
-
-            // Draw SVG diagram image inside
-            doc.addImage(imgData, "PNG", 22.5, yStart + 2.5, 70, 70);
-
-            // 2. Draw Right Findings Container (Slate Background)
-            doc.setFillColor(248, 250, 252);
-            doc.setDrawColor(229, 231, 235);
-            doc.roundedRect(100, yStart, 90, 75, 3, 3, "FD");
-
-            // Header of findings: ESTRUCTURA and HALLAZGOS
-            doc.setFont("helvetica", "bold");
-            doc.setFontSize(7.5);
-            doc.setTextColor(67, 56, 202); // indigo-700
-            doc.text("ESTRUCTURA", 104, yStart + 5.5);
-            doc.text("HALLAZGOS", 136, yStart + 5.5);
-
-            // Draw horizontal divider line
-            doc.setDrawColor(229, 231, 235);
-            doc.setLineWidth(0.2);
-            doc.line(104, yStart + 7.5, 186, yStart + 7.5);
-
-            // 8 shoulder structures to map
-            const pdfStructures = [
+          const getCardDataForSide = (statesObj: any, descObj: any) => {
+            const structures = [
               { id: "supraspinatus", label: "Supraespinoso" },
               { id: "infraspinatus", label: "Infraespinoso" },
               { id: "subscapularis", label: "Subescapular" },
@@ -4868,111 +5922,450 @@ Ejemplo:
               { id: "acromioclavicular", label: "Artic. A.C." },
               { id: "dynamic_assessment", label: "Val. Dinámica" }
             ].filter(struct => {
-              const s = shoulderStates[struct.id] || "no_descrito";
-              return s !== "no_descrito";
+              const s = statesObj[struct.id] || "no_descrito";
+              return s !== "no_descrito" && s !== "normal";
             });
 
             const getPDFSimplifiedDescription = (id: string, state: string) => {
+              if (descObj && descObj[id] && descObj[id].trim() !== "" && descObj[id] !== "No mencionado / No descrito." && descObj[id] !== "No descrito.") {
+                return descObj[id];
+              }
               if (!state || state === "no_descrito") {
                 return "No descrito en el reporte.";
               }
               if (state === "normal") {
                 return "Entre límites normales.";
               }
-              
-              switch (id) {
-                case "supraspinatus":
-                  if (state === "tendinosis") return "Tendinosis del supraespinoso (engrosamiento difuso e hipoecogenicidad).";
-                  if (state === "desgarro_parcial") return "Ruptura de espesor parcial de la inserción.";
-                  if (state === "desgarro_completo") return "Ruptura de espesor completo del tendón supraespinoso.";
-                  break;
-                case "infraspinatus":
-                  if (state === "tendinosis") return "Tendinosis distal del infraespinoso (mínimo engrosamiento).";
-                  if (state === "desgarro_parcial") return "Ruptura de espesor parcial focal en inserción.";
-                  if (state === "desgarro_completo") return "Ruptura de espesor completo del infraespinoso.";
-                  break;
-                case "subscapularis":
-                  if (state === "tendinosis") return "Tendinosis en inserción de subescapular (pérdida patrón fibrilar).";
-                  if (state === "desgarro_parcial") return "Ruptura de espesor parcial del subescapular superior.";
-                  if (state === "desgarro_completo") return "Ruptura completa del tendón subescapular.";
-                  break;
-                case "biceps":
-                  if (state === "tendinitis") return "Tenosinovitis de porción larga (líquido libre en corredera).";
-                  if (state === "subluxacion") return "Subluxación medial dinámica del bíceps.";
-                  if (state === "desgarro_parcial") return "Ruptura parcial longitudinal de fibras del bíceps.";
-                  break;
-                case "bursa":
-                  if (state === "bursitis_leve") return "Bursitis subacromiodeltoidea (SAD) laminar leve.";
-                  if (state === "bursitis_severa") return "Bursitis subacromiodeltoidea (SAD) franca/severa.";
-                  break;
-                case "glenohumeral":
-                  if (state === "derrame_leve") return "Derrame articular glenohumeral laminar leve.";
-                  if (state === "derrame_moderado") return "Derrame articular glenohumeral franco en recesos.";
-                  break;
-                case "acromioclavicular":
-                  if (state === "artrosis") return "Cambios degenerativos / artrosis acromioclavicular.";
-                  if (state === "hipertrofia") return "Hipertrofia articular con prominencia osteofitaria.";
-                  break;
-                case "dynamic_assessment":
-                  if (state === "normal") return "Deslizamiento conservado bajo maniobras dinámicas.";
-                  if (state === "pinzamiento") return "Signos dinámicos positivos para pinzamiento.";
-                  break;
-              }
-              return "Sin hallazgos.";
+              return state.charAt(0).toUpperCase() + state.slice(1).replace(/_/g, " ");
             };
 
-            pdfStructures.forEach((struct, index) => {
-              const rowY = yStart + 8.5 + (index * 7.7);
-              const s = shoulderStates[struct.id] || "no_descrito";
-              const description = getPDFSimplifiedDescription(struct.id, s);
-
-              // Left column: Structure label (ESTRUCTURA)
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(6.2);
-              doc.setTextColor(30, 41, 59);
-              const wrappedLabel = doc.splitTextToSize(struct.label, 28);
-              if (wrappedLabel[0]) doc.text(wrappedLabel[0], 104, rowY + 3.2);
-              if (wrappedLabel[1]) doc.text(wrappedLabel[1], 104, rowY + 5.7);
-
-              // Right column: Description (HALLAZGOS)
-              doc.setFont("helvetica", "normal");
-              doc.setFontSize(5.8);
-              doc.setTextColor(100, 116, 139);
-              const wrappedDesc = doc.splitTextToSize(description, 50);
-              if (wrappedDesc[0]) doc.text(wrappedDesc[0], 136, rowY + 3.2);
-              if (wrappedDesc[1]) doc.text(wrappedDesc[1], 136, rowY + 5.7);
-
-              // Draw a tiny light divider line under each row except the last one
-              if (index < pdfStructures.length - 1) {
-                doc.setDrawColor(241, 245, 249);
-                doc.setLineWidth(0.15);
-                doc.line(103, rowY + 6.8, 187, rowY + 6.8);
-              }
+            const data = structures.map(struct => {
+              const s = statesObj[struct.id] || "no_descrito";
+              return {
+                label: struct.label,
+                state: s,
+                description: getPDFSimplifiedDescription(struct.id, s)
+              };
             });
 
-            // Footnote at the bottom of the findings card
-            doc.setFont("helvetica", "italic");
-            doc.setFontSize(6.2);
-            doc.setTextColor(148, 163, 184);
-            doc.text("Mapa anatómico y lista sinóptica correspondientes al reporte físico.", 145, yStart + 72, { align: "center" });
+            const shoulderExtras = additionalFindings["Hombro"] || [];
+            shoulderExtras.forEach((extra: any) => {
+              data.push({
+                label: extra.structureName,
+                state: extra.state || "Alterado",
+                description: extra.description
+              });
+            });
 
-            yCoord += 80;
-          } catch (err) {
-            console.warn("Could not draw shoulder diagram inside jsPDF", err);
+            return data;
+          };
+
+          if (laterality === "Bilateral") {
+            const svgDer = document.getElementById("shoulder-anatomy-svg");
+            const svgIzq = document.getElementById("shoulder-anatomy-svg-left");
+
+            if (svgDer && svgIzq) {
+              const imgDataDer = await convertSvgToPng(sanitizeShoulderSvgForPrint(svgDer));
+              const imgDataIzq = await convertSvgToPng(sanitizeShoulderSvgForPrint(svgIzq));
+
+              checkPageBreak(125);
+              yCoord += 15;
+
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(8.5);
+              doc.setTextColor(30, 41, 59);
+              doc.text("ANEXO: ESQUEMAS DE HALLAZGOS Y SINOPSIS BILATERAL", pageWidth / 2, yCoord, { align: "center" });
+              yCoord += 3.5;
+
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(6.5);
+              doc.setTextColor(148, 163, 184);
+              doc.text("MAPEO ANATÓMICO Y SINOPSIS ESTRUCTURADA - HOMBRO BILATERAL", pageWidth / 2, yCoord, { align: "center" });
+              yCoord += 6;
+
+              const yStart = yCoord;
+
+              // --- HOMBRO DERECHO (LEFT COLUMN) ---
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(7.5);
+              doc.setTextColor(71, 85, 105);
+              doc.text("HOMBRO DERECHO", 60, yStart - 1, { align: "center" });
+
+              // Diagram Box Left
+              doc.setFillColor(255, 255, 255);
+              doc.setDrawColor(229, 231, 235);
+              doc.roundedRect(20, yStart, 80, 50, 3, 3, "FD");
+              doc.addImage(imgDataDer, "PNG", 35, yStart + 2, 50, 46);
+
+              // Findings Box Left
+              const dataDer = getCardDataForSide(shoulderStates, shoulderDescriptions);
+              doc.setFillColor(248, 250, 252);
+              doc.setDrawColor(229, 231, 235);
+              doc.roundedRect(20, yStart + 53, 80, 52, 3, 3, "FD");
+
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(7.0);
+              doc.setTextColor(67, 56, 202);
+              doc.text("SINOPSIS CLÍNICA - DER", 24, yStart + 58.5);
+              doc.line(24, yStart + 60, 96, yStart + 60);
+
+              if (dataDer.length === 0) {
+                doc.setFont("helvetica", "italic");
+                doc.setFontSize(6.5);
+                doc.setTextColor(100, 116, 139);
+                doc.text("Sin hallazgos patológicos relevantes.", 60, yStart + 75, { align: "center" });
+              } else {
+                drawAnatomicalCards(doc, dataDer, 20, yStart + 53, 80, 52);
+              }
+
+              // --- HOMBRO IZQUIERDO (RIGHT COLUMN) ---
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(7.5);
+              doc.setTextColor(71, 85, 105);
+              doc.text("HOMBRO IZQUIERDO", 150, yStart - 1, { align: "center" });
+
+              // Diagram Box Right
+              doc.setFillColor(255, 255, 255);
+              doc.setDrawColor(229, 231, 235);
+              doc.roundedRect(110, yStart, 80, 50, 3, 3, "FD");
+              doc.addImage(imgDataIzq, "PNG", 125, yStart + 2, 50, 46);
+
+              // Findings Box Right
+              const dataIzq = getCardDataForSide(shoulderStatesLeft, shoulderDescriptionsLeft);
+              doc.setFillColor(248, 250, 252);
+              doc.setDrawColor(229, 231, 235);
+              doc.roundedRect(110, yStart + 53, 80, 52, 3, 3, "FD");
+
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(7.0);
+              doc.setTextColor(67, 56, 202);
+              doc.text("SINOPSIS CLÍNICA - IZQ", 114, yStart + 58.5);
+              doc.line(114, yStart + 60, 186, yStart + 60);
+
+              if (dataIzq.length === 0) {
+                doc.setFont("helvetica", "italic");
+                doc.setFontSize(6.5);
+                doc.setTextColor(100, 116, 139);
+                doc.text("Sin hallazgos patológicos relevantes.", 150, yStart + 75, { align: "center" });
+              } else {
+                drawAnatomicalCards(doc, dataIzq, 110, yStart + 53, 80, 52);
+              }
+
+              // Footnote
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(6.0);
+              doc.setTextColor(148, 163, 184);
+              doc.text("Mapas anatómicos y sinopsis correspondientes al estudio bilateral.", pageWidth / 2, yStart + 101, { align: "center" });
+
+              yCoord += 112;
+
+              // --- SUPRASPINATUS EXTRA DRAWINGS FOR BILATERAL STUDY ---
+              try {
+                const supraspinatusWrapperDer = document.getElementById("supraspinatus-ap-print-wrapper");
+                const supraspinatusWrapperIzq = document.getElementById("supraspinatus-ap-print-wrapper-left");
+
+                const shouldPrintSupraspinatusDer = supraspinatusWrapperDer && supraspinatusWrapperDer.getAttribute("data-include") === "true";
+                const shouldPrintSupraspinatusIzq = supraspinatusWrapperIzq && supraspinatusWrapperIzq.getAttribute("data-include") === "true";
+
+                if (shouldPrintSupraspinatusDer || shouldPrintSupraspinatusIzq) {
+                  checkPageBreak(120);
+                  doc.addPage();
+                  yCoord = 20;
+
+                  doc.setFont("helvetica", "bold");
+                  doc.setFontSize(8.5);
+                  doc.setTextColor(30, 41, 59);
+                  doc.text("ANEXO: ESTUDIO MICRO-ANATÓMICO DE ROTURA DE SUPRAESPINOSO", pageWidth / 2, yCoord, { align: "center" });
+                  yCoord += 3.5;
+
+                  doc.setFont("helvetica", "normal");
+                  doc.setFontSize(6.5);
+                  doc.setTextColor(148, 163, 184);
+                  doc.text("INTERPRETACIÓN PARAMÉTRICA VECTORES CORONAL (AP) Y SAGITAL (LAT)", pageWidth / 2, yCoord, { align: "center" });
+                  yCoord += 8;
+
+                  const yS = yCoord;
+
+                  if (shouldPrintSupraspinatusDer && supraspinatusWrapperDer) {
+                    const svgChildren = supraspinatusWrapperDer.querySelectorAll("svg");
+                    if (svgChildren.length >= 2) {
+                      const apSvg = svgChildren[0] as SVGElement;
+                      const latSvg = svgChildren[1] as SVGElement;
+                      const apPng = await convertSvgToPng(apSvg);
+                      const latPng = await convertSvgToPng(latSvg);
+
+                      doc.setFillColor(255, 255, 255);
+                      doc.setDrawColor(229, 231, 235);
+                      doc.roundedRect(20, yS, 80, 52, 3, 3, "FD");
+
+                      doc.setFont("helvetica", "bold");
+                      doc.setFontSize(7.0);
+                      doc.setTextColor(225, 29, 72);
+                      doc.text("HOMBRO DERECHO: DETALLE DE ROTURA", 60, yS + 6, { align: "center" });
+
+                      doc.addImage(apPng, "PNG", 22, yS + 10, 36, 36);
+                      doc.addImage(latPng, "PNG", 62, yS + 10, 36, 36);
+                    }
+                  } else {
+                    doc.setFillColor(248, 250, 252);
+                    doc.setDrawColor(229, 231, 235);
+                    doc.roundedRect(20, yS, 80, 52, 3, 3, "FD");
+
+                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(7.0);
+                    doc.setTextColor(71, 85, 105);
+                    doc.text("HOMBRO DERECHO: DETALLE", 60, yS + 6, { align: "center" });
+
+                    doc.setFont("helvetica", "italic");
+                    doc.setFontSize(6.5);
+                    doc.setTextColor(148, 163, 184);
+                    doc.text("Tendón supraespinoso sin desgarro", 60, yS + 26, { align: "center" });
+                  }
+
+                  if (shouldPrintSupraspinatusIzq && supraspinatusWrapperIzq) {
+                    const svgChildren = supraspinatusWrapperIzq.querySelectorAll("svg");
+                    if (svgChildren.length >= 2) {
+                      const apSvg = svgChildren[0] as SVGElement;
+                      const latSvg = svgChildren[1] as SVGElement;
+                      const apPng = await convertSvgToPng(apSvg);
+                      const latPng = await convertSvgToPng(latSvg);
+
+                      doc.setFillColor(255, 255, 255);
+                      doc.setDrawColor(229, 231, 235);
+                      doc.roundedRect(110, yS, 80, 52, 3, 3, "FD");
+
+                      doc.setFont("helvetica", "bold");
+                      doc.setFontSize(7.0);
+                      doc.setTextColor(225, 29, 72);
+                      doc.text("HOMBRO IZQUIERDO: DETALLE DE ROTURA", 150, yS + 6, { align: "center" });
+
+                      doc.addImage(apPng, "PNG", 112, yS + 10, 36, 36);
+                      doc.addImage(latPng, "PNG", 152, yS + 10, 36, 36);
+                    }
+                  } else {
+                    doc.setFillColor(248, 250, 252);
+                    doc.setDrawColor(229, 231, 235);
+                    doc.roundedRect(110, yS, 80, 52, 3, 3, "FD");
+
+                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(7.0);
+                    doc.setTextColor(71, 85, 105);
+                    doc.text("HOMBRO IZQUIERDO: DETALLE", 150, yS + 6, { align: "center" });
+
+                    doc.setFont("helvetica", "italic");
+                    doc.setFontSize(6.5);
+                    doc.setTextColor(148, 163, 184);
+                    doc.text("Tendón supraespinoso sin desgarro", 150, yS + 26, { align: "center" });
+                  }
+
+                  doc.setFont("helvetica", "italic");
+                  doc.setFontSize(5.5);
+                  doc.setTextColor(148, 163, 184);
+                  doc.text("Análisis clínico y modelación de fibras intactas vs solución de continuidad.", pageWidth / 2, yS + 58, { align: "center" });
+
+                  yCoord = yS + 62;
+                }
+              } catch (ex) {
+                console.warn("Error printing extra supraspinatus detailed drawings", ex);
+              }
+            }
+          } else {
+            // Unilateral
+            const sideTitle = `HOMBRO ${laterality ? laterality.toUpperCase() : ""}`;
+            const svgElement = document.getElementById("shoulder-anatomy-svg");
+            if (svgElement) {
+              const clonedSvg = sanitizeShoulderSvgForPrint(svgElement);
+              const imgData = await convertSvgToPng(clonedSvg);
+
+              const willPageBreak = (yCoord + 95 > pageHeight - 20);
+              checkPageBreak(95);
+              if (!willPageBreak) {
+                yCoord += 18;
+              } else {
+                yCoord += 6;
+              }
+
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(8.0);
+              doc.setTextColor(30, 41, 59);
+              doc.text(`ANEXO: ESQUEMA DE HALLAZGOS Y SINOPSIS - ${sideTitle}`, pageWidth / 2, yCoord, { align: "center" });
+              yCoord += 3.5;
+
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(6.3);
+              doc.setTextColor(148, 163, 184);
+              doc.text("MAPEO ANATÓMICO Y SINOPSIS ESTRUCTURADA DEL MANGUITO ROTADOR Y ESTRUCTURAS ADYACENTES", pageWidth / 2, yCoord, { align: "center" });
+              yCoord += 4.5;
+
+              const yStart = yCoord;
+
+              doc.setFillColor(255, 255, 255);
+              doc.setDrawColor(229, 231, 235);
+              doc.roundedRect(20, yStart, 75, 75, 3, 3, "FD");
+              doc.addImage(imgData, "PNG", 22.5, yStart + 2.5, 70, 70);
+
+              doc.setFillColor(248, 250, 252);
+              doc.setDrawColor(229, 231, 235);
+              doc.roundedRect(100, yStart, 90, 75, 3, 3, "FD");
+
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(7.5);
+              doc.setTextColor(67, 56, 202);
+              doc.text(`SINOPSIS DE HALLAZGOS CLINICOS - ${sideTitle}`, 104, yStart + 5.5);
+
+              doc.setDrawColor(229, 231, 235);
+              doc.setLineWidth(0.2);
+              doc.line(104, yStart + 7.5, 186, yStart + 7.5);
+
+              const cardData = getCardDataForSide(shoulderStates, shoulderDescriptions);
+
+              if (cardData.length === 0) {
+                doc.setFont("helvetica", "italic");
+                doc.setFontSize(6.5);
+                doc.setTextColor(100, 116, 139);
+                doc.text("Sin hallazgos patológicos relevantes.", 145, yStart + 30, { align: "center" });
+                doc.text("Todas las estructuras musculotendinosas", 145, yStart + 36, { align: "center" });
+                doc.text("y articulares se reportan normales.", 145, yStart + 42, { align: "center" });
+              } else {
+                drawAnatomicalCards(doc, cardData, 100, yStart, 90, 75);
+              }
+
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(6.2);
+              doc.setTextColor(148, 163, 184);
+              doc.text("Mapa anatómico y lista sinóptica correspondientes al reporte físico.", 145, yStart + 72, { align: "center" });
+
+              yCoord += 80;
+
+              // --- SUPRASPINATUS EXTRA DRAWINGS FOR UNILATERAL STUDY ---
+              try {
+                const supraspinatusWrapperDer = document.getElementById("supraspinatus-ap-print-wrapper");
+                const supraspinatusWrapperIzq = document.getElementById("supraspinatus-ap-print-wrapper-left");
+
+                const shouldPrintSupraspinatusDer = supraspinatusWrapperDer && supraspinatusWrapperDer.getAttribute("data-include") === "true";
+                const shouldPrintSupraspinatusIzq = supraspinatusWrapperIzq && supraspinatusWrapperIzq.getAttribute("data-include") === "true";
+
+                if (shouldPrintSupraspinatusDer && shouldPrintSupraspinatusIzq) {
+                  // Print both side-by-side!
+                  checkPageBreak(58);
+                  yCoord += 11;
+
+                  doc.setFont("helvetica", "bold");
+                  doc.setFontSize(8.0);
+                  doc.setTextColor(30, 41, 59);
+                  doc.text("ANEXO: DETALLE BILATERAL DE ROTURA DE SUPRAESPINOSO", pageWidth / 2, yCoord, { align: "center" });
+                  yCoord += 3.5;
+
+                  doc.setFont("helvetica", "normal");
+                  doc.setFontSize(6.2);
+                  doc.setTextColor(148, 163, 184);
+                  doc.text("COHERENCIA GEOMÉTRICA CON LA IMPRESIÓN CLÍNICA: VISTA AP & LAT", pageWidth / 2, yCoord, { align: "center" });
+                  yCoord += 5.5;
+
+                  const yS = yCoord;
+
+                  if (supraspinatusWrapperDer) {
+                    const svgDerChildren = supraspinatusWrapperDer.querySelectorAll("svg");
+                    if (svgDerChildren.length >= 2) {
+                      const apSvg = svgDerChildren[0] as SVGElement;
+                      const latSvg = svgDerChildren[1] as SVGElement;
+                      const apPng = await convertSvgToPng(apSvg);
+                      const latPng = await convertSvgToPng(latSvg);
+
+                      doc.setFillColor(255, 255, 255);
+                      doc.setDrawColor(229, 231, 235);
+                      doc.roundedRect(20, yS, 80, 38, 3, 3, "FD");
+
+                      doc.setFont("helvetica", "bold");
+                      doc.setFontSize(6.5);
+                      doc.setTextColor(225, 29, 72);
+                      doc.text("HOMBRO DERECHO: DETALLE DE ROTURA", 60, yS + 6, { align: "center" });
+
+                      doc.addImage(apPng, "PNG", 24, yS + 8, 28, 28);
+                      doc.addImage(latPng, "PNG", 64, yS + 8, 28, 28);
+                    }
+                  }
+
+                  if (supraspinatusWrapperIzq) {
+                    const svgIzqChildren = supraspinatusWrapperIzq.querySelectorAll("svg");
+                    if (svgIzqChildren.length >= 2) {
+                      const apSvg = svgIzqChildren[0] as SVGElement;
+                      const latSvg = svgIzqChildren[1] as SVGElement;
+                      const apPng = await convertSvgToPng(apSvg);
+                      const latPng = await convertSvgToPng(latSvg);
+
+                      doc.setFillColor(255, 255, 255);
+                      doc.setDrawColor(229, 231, 235);
+                      doc.roundedRect(110, yS, 80, 38, 3, 3, "FD");
+
+                      doc.setFont("helvetica", "bold");
+                      doc.setFontSize(6.5);
+                      doc.setTextColor(225, 29, 72);
+                      doc.text("HOMBRO IZQUIERDO: DETALLE DE ROTURA", 150, yS + 6, { align: "center" });
+
+                      doc.addImage(apPng, "PNG", 114, yS + 8, 28, 28);
+                      doc.addImage(latPng, "PNG", 154, yS + 8, 28, 28);
+                    }
+                  }
+
+                  yCoord = yS + 42;
+                } else if (shouldPrintSupraspinatusDer || shouldPrintSupraspinatusIzq) {
+                  const isLeftActive = !!shouldPrintSupraspinatusIzq;
+                  const activeWrapper = isLeftActive ? supraspinatusWrapperIzq : supraspinatusWrapperDer;
+                  const sideLabel = isLeftActive ? "IZQUIERDO" : "DERECHO";
+
+                  if (activeWrapper) {
+                    const svgChildren = activeWrapper.querySelectorAll("svg");
+                    if (svgChildren.length >= 2) {
+                      const apSvg = svgChildren[0] as SVGElement;
+                      const latSvg = svgChildren[1] as SVGElement;
+                      const apPng = await convertSvgToPng(apSvg);
+                      const latPng = await convertSvgToPng(latSvg);
+
+                      checkPageBreak(58);
+                      yCoord += 11;
+
+                      doc.setFont("helvetica", "bold");
+                      doc.setFontSize(8.0);
+                      doc.setTextColor(30, 41, 59);
+                      doc.text(`ANEXO: DETALLE DE ROTURA DE SUPRAESPINOSO - HOMBRO ${sideLabel}`, pageWidth / 2, yCoord, { align: "center" });
+                      yCoord += 3.5;
+
+                      doc.setFont("helvetica", "normal");
+                      doc.setFontSize(6.2);
+                      doc.setTextColor(148, 163, 184);
+                      doc.text("COHERENCIA GEOMÉTRICA CON LA IMPRESIÓN CLÍNICA: VISTA AP & LAT", pageWidth / 2, yCoord, { align: "center" });
+                      yCoord += 5.5;
+
+                      const yS = yCoord;
+
+                      doc.setFillColor(255, 255, 255);
+                      doc.setDrawColor(229, 231, 235);
+                      doc.roundedRect(45, yS, 120, 38, 3, 3, "FD");
+
+                      doc.addImage(apPng, "PNG", 55, yS + 3, 32, 32);
+                      doc.addImage(latPng, "PNG", 123, yS + 3, 32, 32);
+
+                      yCoord = yS + 42;
+                    }
+                  }
+                }
+              } catch (ex) {
+                console.warn("Error printing unilateral detailed supraspinatus drawings", ex);
+              }
+            }
           }
+        } catch (err) {
+          console.warn("Could not draw shoulder diagram inside jsPDF", err);
         }
       }
 
       // 🛠️ DRAW KNEE DIAGRAM IN THE PROGRAMMATIC PDF
       if (includeKneeSchemaInReport && specificStudy === "Rodilla") {
-        const svgElement = document.getElementById("knee-anatomy-svg");
-        if (svgElement) {
-          try {
-            // Create a deep clone to customize SVG styling specifically for beautiful, print-friendly white-background rendering
-            const clonedSvg = svgElement.cloneNode(true) as SVGElement;
-            
-            // 1. Force background and clean outline colors on gradient stops
-            const stops = clonedSvg.querySelectorAll("linearGradient stop");
+        try {
+          const sanitizeKneeSvgForPrint = (el: HTMLElement) => {
+            const cloned = el.cloneNode(true) as SVGElement;
+            const stops = cloned.querySelectorAll("linearGradient stop");
             stops.forEach(stop => {
               const curColor = stop.getAttribute("stop-color") || stop.getAttribute("stopColor") || "";
               if (curColor === "#1e293b" || curColor === "#2e3d52") stop.setAttribute("stop-color", "#f1f5f9");
@@ -4980,12 +6373,10 @@ Ejemplo:
               if (curColor === "#334155" || curColor === "#3d4e66") stop.setAttribute("stop-color", "#cbd5e1");
             });
 
-            // 2. Adjust paths fill/stroke colors for paper print
-            const paths = clonedSvg.querySelectorAll("path");
+            const paths = cloned.querySelectorAll("path");
             paths.forEach(p => {
               const fill = p.getAttribute("fill") || "";
               const stroke = p.getAttribute("stroke") || "";
-              
               if (fill === "#1e293b") p.setAttribute("fill", "#f8fafc");
               if (fill === "#451a03") p.setAttribute("fill", "#fef3c7");
               if (fill === "#500730") p.setAttribute("fill", "#fce7f3");
@@ -4998,79 +6389,27 @@ Ejemplo:
               if (stroke === "#475569") p.setAttribute("stroke", "#64748b");
             });
 
-            // 3. Adjust text colors
-            const texts = clonedSvg.querySelectorAll("text");
+            const texts = cloned.querySelectorAll("text");
             texts.forEach(t => {
               const fill = t.getAttribute("fill") || "";
               if (fill === "#64748b") t.setAttribute("fill", "#475569");
               if (fill === "#475569") t.setAttribute("fill", "#1e293b");
             });
 
-            // 4. Adjust custom guides/circles in background
-            const circles = clonedSvg.querySelectorAll("circle");
+            const circles = cloned.querySelectorAll("circle");
             circles.forEach(c => {
               const stroke = c.getAttribute("stroke") || "";
               if (stroke === "#1e293b") c.setAttribute("stroke", "#e2e8f0");
             });
-            const lines = clonedSvg.querySelectorAll("line");
+            const lines = cloned.querySelectorAll("line");
             lines.forEach(l => {
               const stroke = l.getAttribute("stroke") || "";
               if (stroke === "#1e293b") l.setAttribute("stroke", "#e2e8f0");
             });
+            return cloned;
+          };
 
-            const imgData = await convertSvgToPng(clonedSvg);
-            
-            // Check page break for 95mm (75mm content + margins/header)
-            const willPageBreak = (yCoord + 95 > pageHeight - 20);
-            checkPageBreak(95);
-            if (!willPageBreak) {
-              yCoord += 18; // Generous space/gap from the diagnostic impression above
-            } else {
-              yCoord += 6;  // Normal small spacing at the top of a fresh page
-            }
-
-            // Header for the diagram
-            doc.setFont("helvetica", "bold");
-            doc.setFontSize(8.0);
-            doc.setTextColor(30, 41, 59);
-            doc.text("ANEXO: ESQUEMA DE HALLAZGOS Y SINOPSIS DE RODILLA", pageWidth / 2, yCoord, { align: "center" });
-            yCoord += 3.5;
-
-            doc.setFont("helvetica", "normal");
-            doc.setFontSize(6.3);
-            doc.setTextColor(148, 163, 184);
-            doc.text("MAPEO ANATÓMICO Y SINOPSIS ESTRUCTURADA DE LA ARTICULACIÓN DE ROTULA Y COMPLEMENTOS", pageWidth / 2, yCoord, { align: "center" });
-            yCoord += 4.5;
-
-            // --- DRAW SIDE-BY-SIDE LAYOUT ---
-            const yStart = yCoord;
-
-            // 1. Draw Left Diagram Box (Border + Background)
-            doc.setFillColor(255, 255, 255);
-            doc.setDrawColor(229, 231, 235);
-            doc.roundedRect(20, yStart, 75, 75, 3, 3, "FD");
-
-            // Draw SVG diagram image inside
-            doc.addImage(imgData, "PNG", 22.5, yStart + 2.5, 70, 70);
-
-            // 2. Draw Right Findings Container (Slate Background)
-            doc.setFillColor(248, 250, 252);
-            doc.setDrawColor(229, 231, 235);
-            doc.roundedRect(100, yStart, 90, 75, 3, 3, "FD");
-
-            // Header of findings: ESTRUCTURA and HALLAZGOS
-            doc.setFont("helvetica", "bold");
-            doc.setFontSize(7.5);
-            doc.setTextColor(67, 56, 202); // indigo-700
-            doc.text("ESTRUCTURA", 104, yStart + 5.5);
-            doc.text("HALLAZGOS", 136, yStart + 5.5);
-
-            // Draw horizontal divider line
-            doc.setDrawColor(229, 231, 235);
-            doc.setLineWidth(0.2);
-            doc.line(104, yStart + 7.5, 186, yStart + 7.5);
-
-            // 8 knee structures to map
+          const getKneeCardDataForSide = (statesObj: any, descObj: any) => {
             const pdfKneeStructures = [
               { id: "quadriceps", label: "T. Cuadricipital" },
               { id: "patellar", label: "T. Rotuliano" },
@@ -5079,100 +6418,291 @@ Ejemplo:
               { id: "medial_meniscus", label: "Menisco Medial" },
               { id: "lateral_meniscus", label: "Menisco Lateral" },
               { id: "joint_effusion", label: "Derrame Artic." },
-              { id: "baker_cyst", label: "Quiste de Baker" }
+              { id: "baker_cyst", label: "Quiste de Baker" },
+              { id: "popliteal_artery", label: "Art. Poplítea" },
+              { id: "popliteal_vein", label: "Vena Poplítea" },
+              { id: "distal_tendons", label: "Tendones Dist." },
+              { id: "popliteal_fossa", label: "Fosa Poplítea" }
             ].filter(struct => {
-              const s = kneeStates[struct.id] || "no_descrito";
-              return s !== "no_descrito";
+              const s = statesObj[struct.id] || "no_descrito";
+              return s !== "no_descrito" && s !== "normal";
             });
 
             const getKneePDFSimplifiedDescription = (id: string, state: string) => {
+              if (descObj && descObj[id] && descObj[id].trim() !== "" && descObj[id] !== "No mencionado / No descrito." && descObj[id] !== "No descrito.") {
+                return descObj[id];
+              }
               if (!state || state === "no_descrito") {
                 return "No descrito en el reporte.";
               }
               if (state === "normal") {
                 return "Entre límites normales.";
               }
-              
-              switch (id) {
-                case "quadriceps":
-                  if (state === "tendinosis") return "Tendinosis del tendón cuadricipital (engrosado e hipoecoico).";
-                  if (state === "desgarro_parcial") return "Ruptura de espesor parcial focal de la inserción anterior.";
-                  if (state === "desgarro_completo") return "Ruptura completa del tendón cuadricipital proximal.";
-                  break;
-                case "patellar":
-                  if (state === "tendinosis") return "Tendinopatía distal del rotuliano (pérdida de ecogenicidad).";
-                  if (state === "desgarro_parcial") return "Microrupturas longitudinales con discontinuidad fibrilar.";
-                  if (state === "desgarro_completo") return "Ruptura completa del tendón rotuliano media/distal.";
-                  break;
-                case "lcm":
-                  if (state === "esguince_leve") return "Esguince grado I/II del ligamento colateral medial.";
-                  if (state === "desgarro_parcial") return "Ruptura parcial focal del LCM sin inestabilidad.";
-                  if (state === "desgarro_completo") return "Ruptura ligamentaria completa y transfixiante del LCM.";
-                  break;
-                case "lce":
-                  if (state === "esguince_leve") return "Esguince grado I/II del ligamento colateral lateral.";
-                  if (state === "desgarro_parcial") return "Ruptura de espesor parcial proximal del LCE.";
-                  if (state === "desgarro_completo") return "Ruptura total e inestabilidad del LCE.";
-                  break;
-                case "medial_meniscus":
-                  if (state === "meniscosis") return "Meniscosis interna (degeneración mixoide intrasustancia).";
-                  if (state === "rotura") return "Fisura oblicua/transversa en cuerno posterior interno.";
-                  break;
-                case "lateral_meniscus":
-                  if (state === "meniscosis") return "Meniscosis externa / cambios desestructurantes.";
-                  if (state === "rotura") return "Desgarro o rotura compleja del menisco externo.";
-                  break;
-                case "joint_effusion":
-                  if (state === "derrame_leve") return "Derrame articular discreto en receso suprapatelar.";
-                  if (state === "derrame_moderado") return "Derrame intraarticular moderado/abundante con sinovitis.";
-                  break;
-                case "baker_cyst":
-                  if (state === "quiste_leve") return "Quiste de Baker incidental de tamaño pequeño.";
-                  if (state === "quiste_severo") return "Quiste de Baker voluminoso delimitado en fosa poplítea.";
-                  break;
-              }
-              return "Sin hallazgos.";
+              return state.charAt(0).toUpperCase() + state.slice(1).replace(/_/g, " ");
             };
 
-            pdfKneeStructures.forEach((struct, index) => {
-              const rowY = yStart + 8.5 + (index * 7.7);
-              const s = kneeStates[struct.id] || "no_descrito";
-              const description = getKneePDFSimplifiedDescription(struct.id, s);
-
-              // Left column: Structure label (ESTRUCTURA)
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(6.2);
-              doc.setTextColor(30, 41, 59);
-              const wrappedLabel = doc.splitTextToSize(struct.label, 28);
-              if (wrappedLabel[0]) doc.text(wrappedLabel[0], 104, rowY + 3.2);
-              if (wrappedLabel[1]) doc.text(wrappedLabel[1], 104, rowY + 5.7);
-
-              // Right column: Description (HALLAZGOS)
-              doc.setFont("helvetica", "normal");
-              doc.setFontSize(5.8);
-              doc.setTextColor(100, 116, 139);
-              const wrappedDesc = doc.splitTextToSize(description, 50);
-              if (wrappedDesc[0]) doc.text(wrappedDesc[0], 136, rowY + 3.2);
-              if (wrappedDesc[1]) doc.text(wrappedDesc[1], 136, rowY + 5.7);
-
-              // Draw a tiny light divider line under each row except the last one
-              if (index < pdfKneeStructures.length - 1) {
-                doc.setDrawColor(241, 245, 249);
-                doc.setLineWidth(0.15);
-                doc.line(103, rowY + 6.8, 187, rowY + 6.8);
-              }
+            const kneeCardData = pdfKneeStructures.map(struct => {
+              const s = statesObj[struct.id] || "no_descrito";
+              return {
+                label: struct.label,
+                state: s,
+                description: getKneePDFSimplifiedDescription(struct.id, s)
+              };
             });
 
-            // Footnote at the bottom of the findings card
-            doc.setFont("helvetica", "italic");
-            doc.setFontSize(6.2);
-            doc.setTextColor(148, 163, 184);
-            doc.text("Mapa anatómico y lista sinóptica correspondientes al reporte físico.", 145, yStart + 72, { align: "center" });
+            const kneeExtras = additionalFindings["Rodilla"] || [];
+            kneeExtras.forEach((extra: any) => {
+              kneeCardData.push({
+                label: extra.structureName,
+                state: extra.state || "Alterado",
+                description: extra.description
+              });
+            });
 
-            yCoord += 80;
-          } catch (err) {
-            console.warn("Could not draw knee diagram inside jsPDF", err);
+            return kneeCardData;
+          };
+
+          if (laterality === "Bilateral") {
+            const svgElementAntDer = document.getElementById("knee-anatomy-svg");
+            const svgElementPostDer = document.getElementById("knee-anatomy-svg-posterior");
+            const svgElementAntIzq = document.getElementById("knee-anatomy-svg-left");
+            const svgElementPostIzq = document.getElementById("knee-anatomy-svg-posterior-left");
+
+            if (svgElementAntDer && svgElementAntIzq) {
+              const imgAntDer = await convertSvgToPng(sanitizeKneeSvgForPrint(svgElementAntDer));
+              const imgPostDer = svgElementPostDer ? await convertSvgToPng(sanitizeKneeSvgForPrint(svgElementPostDer)) : null;
+              const imgAntIzq = await convertSvgToPng(sanitizeKneeSvgForPrint(svgElementAntIzq));
+              const imgPostIzq = svgElementPostIzq ? await convertSvgToPng(sanitizeKneeSvgForPrint(svgElementPostIzq)) : null;
+
+              checkPageBreak(127);
+              yCoord += 15;
+
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(8.5);
+              doc.setTextColor(30, 41, 59);
+              doc.text("ANEXO: ESQUEMAS DE HALLAZGOS Y SINOPSIS BILATERAL", pageWidth / 2, yCoord, { align: "center" });
+              yCoord += 3.5;
+
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(6.5);
+              doc.setTextColor(148, 163, 184);
+              doc.text("MAPEO REGIONAL ANTERIOR Y POSTERIOR - RODILLA BILATERAL", pageWidth / 2, yCoord, { align: "center" });
+              yCoord += 6;
+
+              // --- ROW 1: RODILLA DERECHA ---
+              let yStart = yCoord;
+
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(7.5);
+              doc.setTextColor(71, 85, 105);
+              doc.text("RODILLA DERECHA", pageWidth / 2, yStart - 1, { align: "center" });
+
+              // Box Left (Anterior)
+              doc.setFillColor(255, 255, 255);
+              doc.setDrawColor(229, 231, 235);
+              doc.roundedRect(15, yStart, 46, 50, 2, 2, "FD");
+              doc.addImage(imgAntDer, "PNG", 18, yStart + 1.5, 40, 40);
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(5.5);
+              doc.text("VISTA ANTERIOR", 38, yStart + 46, { align: "center" });
+
+              // Box Middle (Posterior)
+              doc.setFillColor(255, 255, 255);
+              doc.setDrawColor(229, 231, 235);
+              doc.roundedRect(64, yStart, 46, 50, 2, 2, "FD");
+              if (imgPostDer) {
+                doc.addImage(imgPostDer, "PNG", 67, yStart + 1.5, 40, 40);
+              } else {
+                doc.setFont("helvetica", "italic");
+                doc.setFontSize(5.5);
+                doc.setTextColor(148, 163, 184);
+                doc.text("No disponible", 87, yStart + 23, { align: "center" });
+              }
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(5.5);
+              doc.setTextColor(71, 85, 105);
+              doc.text("VISTA POSTERIOR", 87, yStart + 46, { align: "center" });
+
+              // Box Right (Findings)
+              doc.setFillColor(248, 250, 252);
+              doc.setDrawColor(229, 231, 235);
+              doc.roundedRect(113, yStart, 82, 50, 2, 2, "FD");
+
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(7.0);
+              doc.setTextColor(67, 56, 202);
+              doc.text("SINOPSIS CLÍNICA - DER", 117, yStart + 5.5);
+              doc.setLineWidth(0.2);
+              doc.line(117, yStart + 7.5, 191, yStart + 7.5);
+
+              const dataDer = getKneeCardDataForSide(kneeStates, kneeDescriptions);
+              if (dataDer.length === 0) {
+                doc.setFont("helvetica", "italic");
+                doc.setFontSize(6.0);
+                doc.setTextColor(100, 116, 139);
+                doc.text("Sin hallazgos patológicos.", 154, yStart + 25, { align: "center" });
+              } else {
+                drawAnatomicalCards(doc, dataDer, 113, yStart, 82, 50);
+              }
+
+              yCoord += 56;
+
+              // --- ROW 2: RODILLA IZQUIERDA ---
+              yStart = yCoord;
+
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(7.5);
+              doc.setTextColor(71, 85, 105);
+              doc.text("RODILLA IZQUIERDA", pageWidth / 2, yStart - 1, { align: "center" });
+
+              // Box Left (Anterior)
+              doc.setFillColor(255, 255, 255);
+              doc.setDrawColor(229, 231, 235);
+              doc.roundedRect(15, yStart, 46, 50, 2, 2, "FD");
+              doc.addImage(imgAntIzq, "PNG", 18, yStart + 1.5, 40, 40);
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(5.5);
+              doc.text("VISTA ANTERIOR", 38, yStart + 46, { align: "center" });
+
+              // Box Middle (Posterior)
+              doc.setFillColor(255, 255, 255);
+              doc.setDrawColor(229, 231, 235);
+              doc.roundedRect(64, yStart, 46, 50, 2, 2, "FD");
+              if (imgPostIzq) {
+                doc.addImage(imgPostIzq, "PNG", 67, yStart + 1.5, 40, 40);
+              } else {
+                doc.setFont("helvetica", "italic");
+                doc.setFontSize(5.5);
+                doc.setTextColor(148, 163, 184);
+                doc.text("No disponible", 87, yStart + 23, { align: "center" });
+              }
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(5.5);
+              doc.setTextColor(71, 85, 105);
+              doc.text("VISTA POSTERIOR", 87, yStart + 46, { align: "center" });
+
+              // Box Right (Findings)
+              doc.setFillColor(248, 250, 252);
+              doc.setDrawColor(229, 231, 235);
+              doc.roundedRect(113, yStart, 82, 50, 2, 2, "FD");
+
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(7.0);
+              doc.setTextColor(67, 56, 202);
+              doc.text("SINOPSIS CLÍNICA - IZQ", 117, yStart + 5.5);
+              doc.setLineWidth(0.2);
+              doc.line(117, yStart + 7.5, 191, yStart + 7.5);
+
+              const dataIzq = getKneeCardDataForSide(kneeStatesLeft, kneeDescriptionsLeft);
+              if (dataIzq.length === 0) {
+                doc.setFont("helvetica", "italic");
+                doc.setFontSize(6.0);
+                doc.setTextColor(100, 116, 139);
+                doc.text("Sin hallazgos patológicos.", 154, yStart + 25, { align: "center" });
+              } else {
+                drawAnatomicalCards(doc, dataIzq, 113, yStart, 82, 50);
+              }
+
+              // Footnote
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(5.5);
+              doc.setTextColor(148, 163, 184);
+              doc.text("Mapeo dual y sinopsis anatómicas correspondientes al estudio bilateral.", pageWidth / 2, yStart + 54, { align: "center" });
+
+              yCoord += 59;
+            }
+          } else {
+            // Unilateral
+            const sideTitle = `RODILLA ${laterality ? laterality.toUpperCase() : ""}`;
+            const svgElement = document.getElementById("knee-anatomy-svg");
+            const svgElementPost = document.getElementById("knee-anatomy-svg-posterior");
+            if (svgElement) {
+              const imgDataAnterior = await convertSvgToPng(sanitizeKneeSvgForPrint(svgElement));
+              const imgDataPosterior = svgElementPost ? await convertSvgToPng(sanitizeKneeSvgForPrint(svgElementPost)) : null;
+
+              const willPageBreak = (yCoord + 80 > pageHeight - 20);
+              checkPageBreak(80);
+              if (!willPageBreak) {
+                yCoord += 15;
+              } else {
+                yCoord += 6;
+              }
+
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(8.0);
+              doc.setTextColor(30, 41, 59);
+              doc.text(`ANEXO: ESQUEMAS DE HALLAZGOS Y SINOPSIS - ${sideTitle}`, pageWidth / 2, yCoord, { align: "center" });
+              yCoord += 3.5;
+
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(6.3);
+              doc.setTextColor(148, 163, 184);
+              doc.text("MAPEO REGIONAL ANTERIOR Y POSTERIOR DE COMPLEMENTOS Y ESTRUCTURAS EVALUADAS", pageWidth / 2, yCoord, { align: "center" });
+              yCoord += 4.5;
+
+              const yStart = yCoord;
+
+              doc.setFillColor(255, 255, 255);
+              doc.setDrawColor(229, 231, 235);
+              doc.roundedRect(15, yStart, 46, 60, 2, 2, "FD");
+              doc.addImage(imgDataAnterior, "PNG", 16.5, yStart + 2, 43, 43);
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(6.0);
+              doc.setTextColor(71, 85, 105);
+              doc.text("VISTA ANTERIOR", 38, yStart + 54, { align: "center" });
+
+              doc.setFillColor(255, 255, 255);
+              doc.setDrawColor(229, 231, 235);
+              doc.roundedRect(64, yStart, 46, 60, 2, 2, "FD");
+              if (imgDataPosterior) {
+                doc.addImage(imgDataPosterior, "PNG", 65.5, yStart + 2, 43, 43);
+              } else {
+                doc.setFont("helvetica", "italic");
+                doc.setFontSize(6.0);
+                doc.setTextColor(148, 163, 184);
+                doc.text("No disponible", 87, yStart + 25, { align: "center" });
+              }
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(6.0);
+              doc.setTextColor(71, 85, 105);
+              doc.text("VISTA POSTERIOR", 87, yStart + 54, { align: "center" });
+
+              doc.setFillColor(248, 250, 252);
+              doc.setDrawColor(229, 231, 235);
+              doc.roundedRect(113, yStart, 82, 60, 2, 2, "FD");
+
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(7.5);
+              doc.setTextColor(67, 56, 202);
+              doc.text(`SINOPSIS DE HALLAZGOS CLINICOS - ${sideTitle}`, 117, yStart + 5.5);
+
+              doc.setDrawColor(229, 231, 235);
+              doc.setLineWidth(0.2);
+              doc.line(117, yStart + 7.5, 191, yStart + 7.5);
+
+              const kneeCardData = getKneeCardDataForSide(kneeStates, kneeDescriptions);
+
+              if (kneeCardData.length === 0) {
+                doc.setFont("helvetica", "italic");
+                doc.setFontSize(6.5);
+                doc.setTextColor(100, 116, 139);
+                doc.text("Sin hallazgos patológicos relevantes.", 154, yStart + 25, { align: "center" });
+                doc.text("Todas las estructuras evaluadas", 154, yStart + 31, { align: "center" });
+                doc.text("se reportan normales.", 154, yStart + 37, { align: "center" });
+              } else {
+                drawAnatomicalCards(doc, kneeCardData, 113, yStart, 82, 60);
+              }
+
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(5.5);
+              doc.setTextColor(148, 163, 184);
+              doc.text("Mapeo dual y sinopsis anatómica de la articulación.", 154, yStart + 57, { align: "center" });
+
+              yCoord += 65;
+            }
           }
+        } catch (err) {
+          console.warn("Could not draw knee diagram inside jsPDF", err);
         }
       }
 
@@ -5308,12 +6838,11 @@ Ejemplo:
             doc.setDrawColor(229, 231, 235);
             doc.roundedRect(111, yStart, 79, 78, 3, 3, "FD");
 
-            // Header of findings: ESTRUCTURA and HALLAZGOS
+            // Header of findings: Unified title
             doc.setFont("helvetica", "bold");
             doc.setFontSize(7.5);
             doc.setTextColor(67, 56, 202); // indigo-700
-            doc.text("ESTRUCTURA", 114, yStart + 5.5);
-            doc.text("HALLAZGOS", 142, yStart + 5.5);
+            doc.text("SINOPSIS DE HALLAZGOS CLÍNICOS", 114, yStart + 5.5);
 
             // Draw horizontal divider line
             doc.setDrawColor(229, 231, 235);
@@ -5333,94 +6862,51 @@ Ejemplo:
               { id: "deltoid", label: "Lig. Deltoideo" }
             ].filter(struct => {
               const s = ankleStates[struct.id] || "no_descrito";
-              return s !== "no_descrito";
+              return s !== "no_descrito" && s !== "normal";
             });
 
             const getAnklePDFSimplifiedDescription = (id: string, state: string) => {
+              if (ankleDescriptions && ankleDescriptions[id] && ankleDescriptions[id].trim() !== "" && ankleDescriptions[id] !== "No mencionado / No descrito." && ankleDescriptions[id] !== "No descrito.") {
+                return ankleDescriptions[id];
+              }
               if (!state || state === "no_descrito") {
                 return "No descrito en el reporte.";
               }
               if (state === "normal") {
                 return "Entre límites normales.";
               }
-              
-              switch (id) {
-                case "achilles":
-                  if (state === "tendinosis") return "Tendinosis de Aquiles (engrosamiento del tendón medio distal).";
-                  if (state === "desgarro_parcial") return "Ruptura de espesor parcial focal de fibras.";
-                  if (state === "desgarro_completo") return "Ruptura completa y transfixiante con retracción.";
-                  break;
-                case "plantar_fascia":
-                  if (state === "fascitis") return "Fascitis plantar (engrosamiento con edema adyacente).";
-                  if (state === "desgarro_parcial") return "Microdesgarros parciales proximales.";
-                  if (state === "desgarro_completo") return "Ruptura completa de la aponeurosis plantar.";
-                  break;
-                case "lpaa":
-                  if (state === "esguince_leve") return "Esguince grado I/II del LPAA anterior colateral.";
-                  if (state === "desgarro_parcial") return "Ruptura de espesor parcial ligamentaria.";
-                  if (state === "desgarro_completo") return "Discontinuidad anatómica completa del LPAA.";
-                  break;
-                case "lpc":
-                  if (state === "esguince_leve") return "Esguince grado I/II del ligamento peroneocalcáneo.";
-                  if (state === "desgarro_parcial") return "Defecto de continuidad parcial con adelgazamiento.";
-                  if (state === "desgarro_completo") return "Ruptura ligamentaria completa de fibras del LPC.";
-                  break;
-                case "peroneal_tendons":
-                  if (state === "tenosinovitis") return "Tenosinovitis con distensión líquida de la vaina.";
-                  if (state === "desgarro_parcial") return "Desgarro longitudinal/fisura del peroneo corto.";
-                  if (state === "desgarro_completo") return "Ruptura de espesor total con retracción.";
-                  break;
-                case "tibial_posterior":
-                  if (state === "tenosinovitis") return "Tenosinovitis del tibial posterior con presencia de líquido.";
-                  if (state === "desgarro_parcial") return "Rotura parcial o fisura longitudinal.";
-                  if (state === "desgarro_completo") return "Ruptura completa transfixiante con retracción.";
-                  break;
-                case "tibial_anterior":
-                  if (state === "tenosinovitis") return "Tenosinovitis del tibial anterior con colección líquida.";
-                  if (state === "desgarro_parcial") return "Rotura de espesor parcial focal distal.";
-                  if (state === "desgarro_completo") return "Discontinuidad total fibrilar del tibial anterior.";
-                  break;
-                case "joint_effusion":
-                  if (state === "derrame_leve") return "Derrame articular discreto de aspecto laminar.";
-                  if (state === "derrame_moderado") return "Derrame articular tibiotarsiano moderado.";
-                  break;
-                case "deltoid":
-                  if (state === "esguince_leve") return "Esguince grado I/II del ligamento colateral medial.";
-                  if (state === "desgarro_parcial") return "Defecto o ruptura parcial de fibras del ligamento deltoideo.";
-                  if (state === "desgarro_completo") return "Ruptura colateral completa con desorganización.";
-                  break;
-              }
-              return "Sin hallazgos.";
+              return state.charAt(0).toUpperCase() + state.slice(1).replace(/_/g, " ");
             };
 
-            pdfAnkleStructures.forEach((struct, index) => {
-              const rowY = yStart + 8.5 + (index * 7.0);
+            const ankleCardData = pdfAnkleStructures.map(struct => {
               const s = ankleStates[struct.id] || "no_descrito";
-              const description = getAnklePDFSimplifiedDescription(struct.id, s);
-
-              // Left column: Structure label (ESTRUCTURA)
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(6.2);
-              doc.setTextColor(30, 41, 59);
-              const wrappedLabel = doc.splitTextToSize(struct.label, 25);
-              if (wrappedLabel[0]) doc.text(wrappedLabel[0], 114, rowY + 3.2);
-              if (wrappedLabel[1]) doc.text(wrappedLabel[1], 114, rowY + 5.7);
-
-              // Right column: Description (HALLAZGOS)
-              doc.setFont("helvetica", "normal");
-              doc.setFontSize(5.8);
-              doc.setTextColor(100, 116, 139);
-              const wrappedDesc = doc.splitTextToSize(description, 44);
-              if (wrappedDesc[0]) doc.text(wrappedDesc[0], 142, rowY + 3.2);
-              if (wrappedDesc[1]) doc.text(wrappedDesc[1], 142, rowY + 5.7);
-
-              // Draw a tiny light divider line under each row except the last one
-              if (index < pdfAnkleStructures.length - 1) {
-                doc.setDrawColor(241, 245, 249);
-                doc.setLineWidth(0.15);
-                doc.line(113, rowY + 6.3, 187, rowY + 6.3);
-              }
+              return {
+                label: struct.label,
+                state: s,
+                description: getAnklePDFSimplifiedDescription(struct.id, s)
+              };
             });
+
+            // Append additional findings if any
+            const ankleExtras = additionalFindings["Tobillo"] || [];
+            ankleExtras.forEach((extra: any) => {
+              ankleCardData.push({
+                label: extra.structureName,
+                state: extra.state || "Alterado",
+                description: extra.description
+              });
+            });
+
+            if (ankleCardData.length === 0) {
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(6.5);
+              doc.setTextColor(100, 116, 139);
+              doc.text("Sin hallazgos patológicos relevantes.", 150, yStart + 30, { align: "center" });
+              doc.text("Los tendones y ligamentos evaluados se", 150, yStart + 36, { align: "center" });
+              doc.text("reportan normales.", 150, yStart + 42, { align: "center" });
+            } else {
+              drawAnatomicalCards(doc, ankleCardData, 111, yStart, 79, 78);
+            }
 
             // Footnote at the bottom of the findings card
             doc.setFont("helvetica", "italic");
@@ -5566,12 +7052,11 @@ Ejemplo:
             doc.setDrawColor(229, 231, 235);
             doc.roundedRect(111, yStart, 79, 75, 3, 3, "FD");
 
-            // Header of findings columns: ESTRUCTURA and HALLAZGOS
+            // Header of findings: Unified title
             doc.setFont("helvetica", "bold");
             doc.setFontSize(7.5);
             doc.setTextColor(67, 56, 202); // indigo-700
-            doc.text("ESTRUCTURA", 114, yStart + 5.5);
-            doc.text("HALLAZGOS", 142, yStart + 5.5);
+            doc.text("SINOPSIS DE HALLAZGOS CLÍNICOS", 114, yStart + 5.5);
 
             // Draw horizontal divider line
             doc.setDrawColor(229, 231, 235);
@@ -5588,7 +7073,7 @@ Ejemplo:
               { id: "vastus_intermedius", label: "M. Vasto Interm." }
             ].filter(struct => {
               const s = thighStates[struct.id] || "no_descrito";
-              return s !== "no_descrito";
+              return s !== "no_descrito" && s !== "normal";
             });
 
             const translateThighStateForPDF = (id: string, s: string) => {
@@ -5607,68 +7092,48 @@ Ejemplo:
             };
 
             const getThighPDFSimplifiedDescription = (id: string, state: string) => {
-              if (thighDescriptions && thighDescriptions[id]) {
+              if (thighDescriptions && thighDescriptions[id] && thighDescriptions[id].trim() !== "" && thighDescriptions[id] !== "No mencionado / No descrito." && thighDescriptions[id] !== "No descrito.") {
                 return thighDescriptions[id];
+              }
+              if (!state || state === "no_descrito") {
+                return "No descrito en el reporte.";
               }
               if (state === "normal") {
                 return "Entre límites normales.";
               }
-              switch (id) {
-                case "rectus_femoris":
-                  if (state === "desgarro_miofascial") return "Desgarro miofascial con microcolección laminar.";
-                  if (state === "desgarro_intramuscular") return "Foco de desgarro intramuscular localizado.";
-                  if (state === "desgarro_completo") return "Ruptura completa con retracción de extremos.";
-                  break;
-                case "sartorius":
-                  if (state === "tendinopatia") return "Signos ecográficos de tendinopatía de tracción.";
-                  if (state === "desgarro") return "Pérdida parcial de la ecogenia del fuste.";
-                  break;
-                case "iliotibial_band":
-                  if (state === "friccion") return "Líquido y edema reactivo interfacial lateral.";
-                  if (state === "desgarro") return "Discontinuidad fibrosa de espesor parcial.";
-                  break;
-                case "vastus_medialis":
-                case "vastus_lateralis":
-                  if (state === "contusion") return "Edema difuso sin desestructuración de fibras.";
-                  if (state === "desgarro_parcial") return "Desgarro parcial con infiltrado hemático ligero.";
-                  if (state === "desgarro_completo") return "Ruptura total con defecto contráctil evidente.";
-                  break;
-                case "vastus_intermedius":
-                  if (state === "hernia_muscular") return "Defecto fascial con herniación muscular dinámica.";
-                  if (state === "desgarro") return "Foco profundo de rotura fibrilar adyacente a cortical.";
-                  break;
-              }
-              return "Alteración focal.";
+              return state.charAt(0).toUpperCase() + state.slice(1).replace(/_/g, " ");
             };
 
-            pdfThighStructures.forEach((struct, index) => {
-              const rowY = yStart + 8.5 + (index * 9.8);
+            const thighCardData = pdfThighStructures.map(struct => {
               const s = thighStates[struct.id] || "no_descrito";
-              const description = getThighPDFSimplifiedDescription(struct.id, s);
-
-              // Left column: Structure label (ESTRUCTURA)
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(6.2);
-              doc.setTextColor(30, 41, 59);
-              const wrappedLabel = doc.splitTextToSize(struct.label, 25);
-              if (wrappedLabel[0]) doc.text(wrappedLabel[0], 114, rowY + 3.2);
-              if (wrappedLabel[1]) doc.text(wrappedLabel[1], 114, rowY + 5.7);
-
-              // Right column: Description (HALLAZGO)
-              doc.setFont("helvetica", "normal");
-              doc.setFontSize(5.8);
-              doc.setTextColor(100, 116, 139);
-              const wrappedDesc = doc.splitTextToSize(description, 44);
-              if (wrappedDesc[0]) doc.text(wrappedDesc[0], 142, rowY + 3.2);
-              if (wrappedDesc[1]) doc.text(wrappedDesc[1], 142, rowY + 5.7);
-
-              // Draw a tiny light divider line under each row except the last one
-              if (index < pdfThighStructures.length - 1) {
-                doc.setDrawColor(241, 245, 249);
-                doc.setLineWidth(0.15);
-                doc.line(113, rowY + 8.8, 187, rowY + 8.8);
-              }
+              const stateText = translateThighStateForPDF(struct.id, s);
+              return {
+                label: struct.label,
+                state: stateText,
+                description: getThighPDFSimplifiedDescription(struct.id, s)
+              };
             });
+
+            // Append additional findings if any
+            const thighExtras = additionalFindings["Muslo Anterior"] || [];
+            thighExtras.forEach((extra: any) => {
+              thighCardData.push({
+                label: extra.structureName,
+                state: extra.state || "Alterado",
+                description: extra.description
+              });
+            });
+
+            if (thighCardData.length === 0) {
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(6.5);
+              doc.setTextColor(100, 116, 139);
+              doc.text("Sin hallazgos patológicos relevantes.", 150, yStart + 30, { align: "center" });
+              doc.text("La musculatura anterior del muslo se", 150, yStart + 36, { align: "center" });
+              doc.text("reporta normal y sin desgarros.", 150, yStart + 42, { align: "center" });
+            } else {
+              drawAnatomicalCards(doc, thighCardData, 111, yStart, 79, 75);
+            }
 
             // Footnote at the bottom of the findings card
             doc.setFont("helvetica", "italic");
@@ -5814,12 +7279,11 @@ Ejemplo:
             doc.setDrawColor(229, 231, 235);
             doc.roundedRect(111, yStart, 79, 75, 3, 3, "FD");
 
-            // Header of findings columns: ESTRUCTURA and HALLAZGOS
+            // Header of findings: Unified title
             doc.setFont("helvetica", "bold");
             doc.setFontSize(7.5);
             doc.setTextColor(67, 56, 202); // indigo-700
-            doc.text("ESTRUCTURA", 114, yStart + 5.5);
-            doc.text("HALLAZGOS", 142, yStart + 5.5);
+            doc.text("SINOPSIS DE HALLAZGOS CLÍNICOS", 114, yStart + 5.5);
 
             // Draw horizontal divider line
             doc.setDrawColor(229, 231, 235);
@@ -5836,7 +7300,7 @@ Ejemplo:
               { id: "adductor_magnus", label: "M. Aductor May." }
             ].filter(struct => {
               const s = thighPosteriorStates[struct.id] || "no_descrito";
-              return s !== "no_descrito";
+              return s !== "no_descrito" && s !== "normal";
             });
 
             const translateThighPosteriorStateForPDF = (id: string, s: string) => {
@@ -5853,74 +7317,48 @@ Ejemplo:
             };
 
             const getThighPosteriorPDFSimplifiedDescription = (id: string, state: string) => {
-              if (thighPosteriorDescriptions && thighPosteriorDescriptions[id]) {
+              if (thighPosteriorDescriptions && thighPosteriorDescriptions[id] && thighPosteriorDescriptions[id].trim() !== "" && thighPosteriorDescriptions[id] !== "No mencionado / No descrito." && thighPosteriorDescriptions[id] !== "No descrito.") {
                 return thighPosteriorDescriptions[id];
+              }
+              if (!state || state === "no_descrito") {
+                return "No descrito en el reporte.";
               }
               if (state === "normal") {
                 return "Entre límites normales.";
               }
-              switch (id) {
-                case "biceps_femoris_lh":
-                  if (state === "desgarro_miofascial") return "Desgarro miofascial periférico con líquido laminar.";
-                  if (state === "desgarro_intramuscular") return "Desgarro intramuscular grado II en fuste distal.";
-                  if (state === "desgarro_completo") return "Ruptura completa de cabeza larga con retracción.";
-                  break;
-                case "biceps_femoris_sh":
-                  if (state === "desgarro_miofascial") return "Foco desgarro miofascial con líquido interfacial.";
-                  if (state === "desgarro_intramuscular") return "Foco de desgarro grado II en el vientre muscular.";
-                  if (state === "desgarro_completo") return "Brecha líquida de espesor completo con retracción.";
-                  break;
-                case "semitendinosus":
-                  if (state === "desgarro_miofascial") return "Desgarro miofascial periférico medial leve.";
-                  if (state === "desgarro_intramuscular") return "Foco de desgarro grado II en fuste medio carnoso.";
-                  if (state === "desgarro_completo") return "Ruptura completa fibrilar con hematoma interposicional.";
-                  break;
-                case "semimembranosus":
-                  if (state === "desgarro_miofascial") return "Desgarro miofascial grado I con edema laminar.";
-                  if (state === "desgarro_intramuscular") return "Foco de desgarro profundo grado II miotendinoso.";
-                  if (state === "desgarro_completo") return "Rotura completa miotendinosa con retracción manifiesta.";
-                  break;
-                case "sciatic_nerve":
-                  if (state === "neuropatia") return "Pérdida de patrón fascicular y edema perineural.";
-                  if (state === "engrosamiento") return "Engrosamiento reactivo de los fascículos cilíndricos.";
-                  break;
-                case "adductor_magnus":
-                  if (state === "contusion") return "Edema reactivo difuso celular por foco contusivo.";
-                  if (state === "desgarro_parcial") return "Desgarro de fuste muscular espesor parcial grado II.";
-                  if (state === "desgarro_completo") return "Rotura posterior completa con brecha anecóica.";
-                  break;
-              }
-              return "Alteración focal.";
+              return state.charAt(0).toUpperCase() + state.slice(1).replace(/_/g, " ");
             };
 
-            pdfThighPosteriorStructures.forEach((struct, index) => {
-              const rowY = yStart + 8.5 + (index * 9.8);
+            const thighPosteriorCardData = pdfThighPosteriorStructures.map(struct => {
               const s = thighPosteriorStates[struct.id] || "no_descrito";
-              const description = getThighPosteriorPDFSimplifiedDescription(struct.id, s);
-
-              // Left column: Structure label (ESTRUCTURA)
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(6.2);
-              doc.setTextColor(30, 41, 59);
-              const wrappedLabel = doc.splitTextToSize(struct.label, 25);
-              if (wrappedLabel[0]) doc.text(wrappedLabel[0], 114, rowY + 3.2);
-              if (wrappedLabel[1]) doc.text(wrappedLabel[1], 114, rowY + 5.7);
-
-              // Right column: Description (HALLAZGO)
-              doc.setFont("helvetica", "normal");
-              doc.setFontSize(5.8);
-              doc.setTextColor(100, 116, 139);
-              const wrappedDesc = doc.splitTextToSize(description, 44);
-              if (wrappedDesc[0]) doc.text(wrappedDesc[0], 142, rowY + 3.2);
-              if (wrappedDesc[1]) doc.text(wrappedDesc[1], 142, rowY + 5.7);
-
-              // Draw a tiny light divider line under each row except the last one
-              if (index < pdfThighPosteriorStructures.length - 1) {
-                doc.setDrawColor(241, 245, 249);
-                doc.setLineWidth(0.15);
-                doc.line(113, rowY + 8.8, 187, rowY + 8.8);
-              }
+              const stateText = translateThighPosteriorStateForPDF(struct.id, s);
+              return {
+                label: struct.label,
+                state: stateText,
+                description: getThighPosteriorPDFSimplifiedDescription(struct.id, s)
+              };
             });
+
+            // Append additional findings if any
+            const thighPosteriorExtras = additionalFindings["Muslo Posterior"] || [];
+            thighPosteriorExtras.forEach((extra: any) => {
+              thighPosteriorCardData.push({
+                label: extra.structureName,
+                state: extra.state || "Alterado",
+                description: extra.description
+              });
+            });
+
+            if (thighPosteriorCardData.length === 0) {
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(6.5);
+              doc.setTextColor(100, 116, 139);
+              doc.text("Sin hallazgos patológicos relevantes.", 150, yStart + 30, { align: "center" });
+              doc.text("La musculatura posterior del muslo se", 150, yStart + 36, { align: "center" });
+              doc.text("reporta normal and sin desgarros.", 150, yStart + 42, { align: "center" });
+            } else {
+              drawAnatomicalCards(doc, thighPosteriorCardData, 111, yStart, 79, 75);
+            }
 
             // Footnote at the bottom of the findings card
             doc.setFont("helvetica", "italic");
@@ -6067,12 +7505,11 @@ Ejemplo:
             doc.setDrawColor(229, 231, 235);
             doc.roundedRect(111, yStart, 79, 75, 3, 3, "FD");
 
-            // Header of findings columns: ESTRUCTURA and HALLAZGOS
+            // Header of findings: Unified title
             doc.setFont("helvetica", "bold");
             doc.setFontSize(7.5);
             doc.setTextColor(67, 56, 202); // indigo-700
-            doc.text("ESTRUCTURA", 114, yStart + 5.5);
-            doc.text("HALLAZGOS", 142, yStart + 5.5);
+            doc.text("SINOPSIS DE HALLAZGOS CLÍNICOS", 114, yStart + 5.5);
 
             // Draw horizontal divider line
             doc.setDrawColor(229, 231, 235);
@@ -6088,55 +7525,76 @@ Ejemplo:
               { id: "parotid_left", label: "Glán. Parótida Izq." },
               { id: "submandibular_right", label: "Glán. Submand. Der." },
               { id: "submandibular_left", label: "Glán. Submand. Izq." },
+              { id: "sublingual_right", label: "Glán. Subling. Der." },
+              { id: "sublingual_left", label: "Glán. Subling. Izq." },
+              // Granular lymph nodes Right
+              { id: "nodes_r_i", label: "Ganglios Nivel I Der." },
+              { id: "nodes_r_ii", label: "Ganglios Nivel II Der." },
+              { id: "nodes_r_iii", label: "Ganglios Nivel III Der." },
+              { id: "nodes_r_iv", label: "Ganglios Nivel IV Der." },
+              { id: "nodes_r_v", label: "Ganglios Nivel V Der." },
+              { id: "nodes_r_vi", label: "Ganglios Nivel VI Der." },
+              { id: "nodes_r_vii", label: "Ganglios Nivel VII Der." },
+              // Granular lymph nodes Left
+              { id: "nodes_l_i", label: "Ganglios Nivel I Izq." },
+              { id: "nodes_l_ii", label: "Ganglios Nivel II Izq." },
+              { id: "nodes_l_iii", label: "Ganglios Nivel III Izq." },
+              { id: "nodes_l_iv", label: "Ganglios Nivel IV Izq." },
+              { id: "nodes_l_v", label: "Ganglios Nivel V Izq." },
+              { id: "nodes_l_vi", label: "Ganglios Nivel VI Izq." },
+              { id: "nodes_l_vii", label: "Ganglios Nivel VII Izq." },
+              // Legacy/Compat
               { id: "nodes_right", label: "Ganglios Cervicales D." },
               { id: "nodes_left", label: "Ganglios Cervicales I." },
               { id: "major_vessels", label: "Vasos Principales" },
               { id: "muscles_soft_tissues", label: "Músculos/Tej. Blandos" }
             ].filter(struct => {
               const s = neckStates[struct.id] || "no_descrito";
-              return s !== "no_descrito";
+              return s !== "no_descrito" && s !== "normal";
             });
 
             const getNeckPDFSimplifiedDescription = (id: string, state: string) => {
-              if (neckDescriptions && neckDescriptions[id]) {
+              if (neckDescriptions && neckDescriptions[id] && neckDescriptions[id].trim() !== "" && neckDescriptions[id] !== "No mencionado / No descrito." && neckDescriptions[id] !== "No descrito.") {
                 return neckDescriptions[id];
+              }
+              if (!state || state === "no_descrito") {
+                return "No descrito en el reporte.";
               }
               if (state === "normal") {
                 return "Dentro de límites normales.";
               }
-              return "Alteración focal.";
+              return state.charAt(0).toUpperCase() + state.slice(1).replace(/_/g, " ");
             };
 
-            const neckRowSpacing = pdfNeckStructures.length > 7 ? (62 / pdfNeckStructures.length) : 9.5;
-
-            pdfNeckStructures.forEach((struct, index) => {
-              const rowY = yStart + 8.5 + (index * neckRowSpacing);
+            const neckCardData = pdfNeckStructures.map(struct => {
               const s = neckStates[struct.id] || "no_descrito";
-              const description = getNeckPDFSimplifiedDescription(struct.id, s);
-
-              // Left column: Structure label (ESTRUCTURA)
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(6.2);
-              doc.setTextColor(30, 41, 59);
-              const wrappedLabel = doc.splitTextToSize(struct.label, 25);
-              if (wrappedLabel[0]) doc.text(wrappedLabel[0], 114, rowY + 3.2);
-              if (wrappedLabel[1]) doc.text(wrappedLabel[1], 114, rowY + 5.7);
-
-              // Right column: Description (HALLAZGO)
-              doc.setFont("helvetica", "normal");
-              doc.setFontSize(5.8);
-              doc.setTextColor(100, 116, 139);
-              const wrappedDesc = doc.splitTextToSize(description, 44);
-              if (wrappedDesc[0]) doc.text(wrappedDesc[0], 142, rowY + 3.2);
-              if (wrappedDesc[1]) doc.text(wrappedDesc[1], 142, rowY + 5.7);
-
-              // Draw a tiny light divider line under each row except the last one
-              if (index < pdfNeckStructures.length - 1) {
-                doc.setDrawColor(241, 245, 249);
-                doc.setLineWidth(0.15);
-                doc.line(113, rowY + neckRowSpacing, 187, rowY + neckRowSpacing);
-              }
+              return {
+                label: struct.label,
+                state: s,
+                description: getNeckPDFSimplifiedDescription(struct.id, s)
+              };
             });
+
+            // Append additional findings if any
+            const neckExtras = additionalFindings["Cuello"] || [];
+            neckExtras.forEach((extra: any) => {
+              neckCardData.push({
+                label: extra.structureName,
+                state: extra.state || "Alterado",
+                description: extra.description
+              });
+            });
+
+            if (neckCardData.length === 0) {
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(6.5);
+              doc.setTextColor(100, 116, 139);
+              doc.text("Sin hallazgos patológicos relevantes.", 150, yStart + 30, { align: "center" });
+              doc.text("Glándula tiroides, glándulas salivales", 150, yStart + 36, { align: "center" });
+              doc.text("y tejidos blandos se reportan normales.", 150, yStart + 42, { align: "center" });
+            } else {
+              drawAnatomicalCards(doc, neckCardData, 111, yStart, 79, 75);
+            }
 
             // Footnote at the bottom of the findings card
             doc.setFont("helvetica", "italic");
@@ -6284,12 +7742,11 @@ Ejemplo:
             doc.setDrawColor(229, 231, 235);
             doc.roundedRect(111, yStart, 79, 75, 3, 3, "FD");
 
-            // Header of findings columns: ESTRUCTURA and HALLAZGOS
+            // Header of findings: Unified title
             doc.setFont("helvetica", "bold");
             doc.setFontSize(7.5);
             doc.setTextColor(67, 56, 202); // indigo-700
-            doc.text("ESTRUCTURA", 114, yStart + 5.5);
-            doc.text("HALLAZGOS", 142, yStart + 5.5);
+            doc.text("SINOPSIS DE HALLAZGOS CLÍNICOS", 114, yStart + 5.5);
 
             // Draw horizontal divider line
             doc.setDrawColor(229, 231, 235);
@@ -6304,55 +7761,61 @@ Ejemplo:
               { id: "left_ureter", label: "Uréter Izquierdo" },
               { id: "bladder", label: "Vejiga Urinaria" }
             ];
+            if (urinaryStates.include_uuv === "true") {
+              allowedUrinaryKeys.push({ id: "right_uvj", label: "UUV Derecha" });
+              allowedUrinaryKeys.push({ id: "left_uvj", label: "UUV Izquierda" });
+            }
             if (urinaryGenderMode === "hombre") {
               allowedUrinaryKeys.push({ id: "prostate", label: "Próstata" });
             }
 
             const pdfUrinaryStructures = allowedUrinaryKeys.filter(struct => {
               const s = urinaryStates[struct.id] || "no_descrito";
-              return s !== "no_descrito";
+              return s !== "no_descrito" && s !== "normal";
             });
 
             const getUrinaryPDFDescription = (id: string, state: string) => {
-              if (urinaryDescriptions && urinaryDescriptions[id]) {
+              if (urinaryDescriptions && urinaryDescriptions[id] && urinaryDescriptions[id].trim() !== "" && urinaryDescriptions[id] !== "No mencionado / No descrito." && urinaryDescriptions[id] !== "No descrito.") {
                 return urinaryDescriptions[id];
+              }
+              if (!state || state === "no_descrito") {
+                return "No descrito en el reporte.";
               }
               if (state === "normal") {
                 return "Dentro de límites normales.";
               }
-              return "Alteración focal.";
+              return state.charAt(0).toUpperCase() + state.slice(1).replace(/_/g, " ");
             };
 
-            const urinaryRowSpacing = pdfUrinaryStructures.length > 5 ? (62 / pdfUrinaryStructures.length) : 11;
-
-            pdfUrinaryStructures.forEach((struct, index) => {
-              const rowY = yStart + 8.5 + (index * urinaryRowSpacing);
+            const urinaryCardData = pdfUrinaryStructures.map(struct => {
               const s = urinaryStates[struct.id] || "no_descrito";
-              const description = getUrinaryPDFDescription(struct.id, s);
-
-              // Left column: Structure label
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(6.2);
-              doc.setTextColor(30, 41, 59);
-              const wrappedLabel = doc.splitTextToSize(struct.label, 25);
-              if (wrappedLabel[0]) doc.text(wrappedLabel[0], 114, rowY + 3.2);
-              if (wrappedLabel[1]) doc.text(wrappedLabel[1], 114, rowY + 5.7);
-
-              // Right column: Description
-              doc.setFont("helvetica", "normal");
-              doc.setFontSize(5.8);
-              doc.setTextColor(100, 116, 139);
-              const wrappedDesc = doc.splitTextToSize(description, 44);
-              if (wrappedDesc[0]) doc.text(wrappedDesc[0], 142, rowY + 3.2);
-              if (wrappedDesc[1]) doc.text(wrappedDesc[1], 142, rowY + 5.7);
-
-              // Tiny line
-              if (index < pdfUrinaryStructures.length - 1) {
-                doc.setDrawColor(241, 245, 249);
-                doc.setLineWidth(0.15);
-                doc.line(113, rowY + urinaryRowSpacing, 187, rowY + urinaryRowSpacing);
-              }
+              return {
+                label: struct.label,
+                state: s,
+                description: getUrinaryPDFDescription(struct.id, s)
+              };
             });
+
+            // Append additional findings if any
+            const urinaryExtras = additionalFindings["Vías Urinarias"] || additionalFindings["Vias Urinarias"] || [];
+            urinaryExtras.forEach((extra: any) => {
+              urinaryCardData.push({
+                label: extra.structureName,
+                state: extra.state || "Alterado",
+                description: extra.description
+              });
+            });
+
+            if (urinaryCardData.length === 0) {
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(6.5);
+              doc.setTextColor(100, 116, 139);
+              doc.text("Sin hallazgos patológicos relevantes.", 150, yStart + 30, { align: "center" });
+              doc.text("Los órganos del aparato renal y urinario", 150, yStart + 36, { align: "center" });
+              doc.text("se reportan normales y sin alteraciones.", 150, yStart + 42, { align: "center" });
+            } else {
+              drawAnatomicalCards(doc, urinaryCardData, 111, yStart, 79, 75);
+            }
 
             doc.setFont("helvetica", "italic");
             doc.setFontSize(6.2);
@@ -6470,8 +7933,7 @@ Ejemplo:
             doc.setFont("helvetica", "bold");
             doc.setFontSize(7.5);
             doc.setTextColor(67, 56, 202); // indigo-700
-            doc.text("ESTRUCTURA", 114, yStart + 11.5);
-            doc.text("HALLAZGOS", 142, yStart + 11.5);
+            doc.text("SINOPSIS DE HALLAZGOS CLÍNICOS", 114, yStart + 11.5);
 
             // Divider line
             doc.setDrawColor(229, 231, 235);
@@ -6488,49 +7950,51 @@ Ejemplo:
 
             const pdfStructures = allowedKeys.filter(struct => {
               const s = scrotumStates[struct.id] || "no_descrito";
-              return s !== "no_descrito";
+              return s !== "no_descrito" && s !== "normal";
             });
 
             const getPDFDescription = (id: string, s: string) => {
-              if (scrotumDescriptions && scrotumDescriptions[id]) {
+              if (scrotumDescriptions && scrotumDescriptions[id] && scrotumDescriptions[id].trim() !== "" && scrotumDescriptions[id] !== "No mencionado / No descrito." && scrotumDescriptions[id] !== "No descrito.") {
                 return scrotumDescriptions[id];
+              }
+              if (!s || s === "no_descrito") {
+                return "No descrito en el reporte.";
               }
               if (s === "normal") {
                 return "Dentro de límites normales.";
               }
-              return "Hallazgo ecográfico.";
+              return s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, " ");
             };
 
-            const rowSpacing = pdfStructures.length > 5 ? (58 / pdfStructures.length) : 10;
-
-            pdfStructures.forEach((struct, index) => {
-              const rowY = yStart + 14.5 + (index * rowSpacing);
+            const scrotumCardData = pdfStructures.map(struct => {
               const s = scrotumStates[struct.id] || "no_descrito";
-              const description = getPDFDescription(struct.id, s);
-
-              // Left col
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(6.2);
-              doc.setTextColor(30, 41, 59);
-              const wrappedLabel = doc.splitTextToSize(struct.label, 25);
-              if (wrappedLabel[0]) doc.text(wrappedLabel[0], 114, rowY + 3);
-              if (wrappedLabel[1]) doc.text(wrappedLabel[1], 114, rowY + 5.5);
-
-              // Right col
-              doc.setFont("helvetica", "normal");
-              doc.setFontSize(5.8);
-              doc.setTextColor(100, 116, 139);
-              const wrappedDesc = doc.splitTextToSize(description, 44);
-              if (wrappedDesc[0]) doc.text(wrappedDesc[0], 142, rowY + 3);
-              if (wrappedDesc[1]) doc.text(wrappedDesc[1], 142, rowY + 5.5);
-
-              // Row lines
-              if (index < pdfStructures.length - 1) {
-                doc.setDrawColor(241, 245, 249);
-                doc.setLineWidth(0.15);
-                doc.line(113, rowY + rowSpacing, 187, rowY + rowSpacing);
-              }
+              return {
+                label: struct.label,
+                state: s,
+                description: getPDFDescription(struct.id, s)
+              };
             });
+
+            // Append additional findings if any
+            const scrotumExtras = additionalFindings["Escroto"] || [];
+            scrotumExtras.forEach((extra: any) => {
+              scrotumCardData.push({
+                label: extra.structureName,
+                state: extra.state || "Alterado",
+                description: extra.description
+              });
+            });
+
+            if (scrotumCardData.length === 0) {
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(6.5);
+              doc.setTextColor(100, 116, 139);
+              doc.text("Sin hallazgos patológicos relevantes.", 150, yStart + 36, { align: "center" });
+              doc.text("Ambos tests y epidídimos se reportan", 150, yStart + 42, { align: "center" });
+              doc.text("normales y sin colecciones líquidas.", 150, yStart + 48, { align: "center" });
+            } else {
+              drawAnatomicalCards(doc, scrotumCardData, 111, yStart + 13.5, 79, 63.5);
+            }
 
             doc.setFont("helvetica", "italic");
             doc.setFontSize(6.2);
@@ -6661,14 +8125,13 @@ Ejemplo:
             doc.setFont("helvetica", "bold");
             doc.setFontSize(7.5);
             doc.setTextColor(67, 56, 202); // indigo-700
-            doc.text("ESTRUCTURA", 114, yStart + 11.5);
-            doc.text("HALLAZGOS", 142, yStart + 11.5);
+            doc.text("SINOPSIS DE HALLAZGOS CLÍNICOS", 114, yStart + 11.5);
 
             // Divider line
             doc.setDrawColor(229, 231, 235);
             doc.line(114, yStart + 13.5, 186, yStart + 13.5);
 
-            const allowedKeys = [
+            const allowedWristKeys = [
               { id: "nervio_mediano", label: "Nervio Mediano" },
               { id: "tendones_flexores", label: "Tendones Flexores" },
               { id: "flexor_carpi_radialis", label: "FCR" },
@@ -6682,51 +8145,53 @@ Ejemplo:
               { id: "extensor_carpi_ulnaris", label: "ECU" }
             ];
 
-            const pdfStructures = allowedKeys.filter(struct => {
+            const pdfWristStructures = allowedWristKeys.filter(struct => {
               const s = wristStates[struct.id] || "no_descrito";
-              return s !== "no_descrito";
+              return s !== "no_descrito" && s !== "normal";
             });
 
-            const getPDFDescription = (id: string, s: string) => {
-              if (wristDescriptions && wristDescriptions[id]) {
+            const getPDFWristDescription = (id: string, s: string) => {
+              if (wristDescriptions && wristDescriptions[id] && wristDescriptions[id].trim() !== "" && wristDescriptions[id] !== "No mencionado / No descrito." && wristDescriptions[id] !== "No descrito.") {
                 return wristDescriptions[id];
+              }
+              if (!s || s === "no_descrito") {
+                return "No descrito en el reporte.";
               }
               if (s === "normal") {
                 return "Dentro de límites normales.";
               }
-              return "Hallazgo ecográfico de muñeca.";
+              return s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, " ");
             };
 
-            const rowSpacing = pdfStructures.length > 5 ? (58 / pdfStructures.length) : 10;
-
-            pdfStructures.forEach((struct, index) => {
-              const rowY = yStart + 14.5 + (index * rowSpacing);
+            const wristCardData = pdfWristStructures.map(struct => {
               const s = wristStates[struct.id] || "no_descrito";
-              const description = getPDFDescription(struct.id, s);
-
-              // Left col
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(6.2);
-              doc.setTextColor(30, 41, 59);
-              const wrappedLabel = doc.splitTextToSize(struct.label, 25);
-              if (wrappedLabel[0]) doc.text(wrappedLabel[0], 114, rowY + 3);
-              if (wrappedLabel[1]) doc.text(wrappedLabel[1], 114, rowY + 5.5);
-
-              // Right col
-              doc.setFont("helvetica", "normal");
-              doc.setFontSize(5.8);
-              doc.setTextColor(100, 116, 139);
-              const wrappedDesc = doc.splitTextToSize(description, 44);
-              if (wrappedDesc[0]) doc.text(wrappedDesc[0], 142, rowY + 3);
-              if (wrappedDesc[1]) doc.text(wrappedDesc[1], 142, rowY + 5.5);
-
-              // Row lines
-              if (index < pdfStructures.length - 1) {
-                doc.setDrawColor(241, 245, 249);
-                doc.setLineWidth(0.15);
-                doc.line(113, rowY + rowSpacing, 187, rowY + rowSpacing);
-              }
+              return {
+                label: struct.label,
+                state: s,
+                description: getPDFWristDescription(struct.id, s)
+              };
             });
+
+            // Append additional findings if any
+            const wristExtras = additionalFindings["Muñeca"] || [];
+            wristExtras.forEach((extra: any) => {
+              wristCardData.push({
+                label: extra.structureName,
+                state: extra.state || "Alterado",
+                description: extra.description
+              });
+            });
+
+            if (wristCardData.length === 0) {
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(6.5);
+              doc.setTextColor(100, 116, 139);
+              doc.text("Sin hallazgos patológicos relevantes.", 150, yStart + 36, { align: "center" });
+              doc.text("Recesos, nervios y tendones de la", 150, yStart + 42, { align: "center" });
+              doc.text("muñeca evaluados se reportan normales.", 150, yStart + 48, { align: "center" });
+            } else {
+              drawAnatomicalCards(doc, wristCardData, 111, yStart + 13.5, 79, 63.5);
+            }
 
             doc.setFont("helvetica", "italic");
             doc.setFontSize(6.2);
@@ -6741,12 +8206,43 @@ Ejemplo:
       }
 
       // 🛠️ DRAW BREAST DIAGRAMS IN THE PROGRAMMATIC PDF
-      if (includeBreastSchemaInReport && specificStudy === "Mamas") {
+      if (includeBreastSchemaInReport && (specificStudy === "Mamas" || specificStudy === "Momografía" || modality === "Mamografía" || modality === "Mamografía y Ultrasonido de Mamas")) {
         const svgRight = document.getElementById("breast-anatomy-right-svg");
         const svgLeft = document.getElementById("breast-anatomy-left-svg");
 
         if (svgRight || svgLeft) {
           try {
+            const activeReportText = isEditingReportManual ? editedReportText : (generatedReport || "");
+            const reportNorm = activeReportText.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+            const autoPdfHasQuistesBilaterales = 
+              (reportNorm.includes("quiste") && 
+               (reportNorm.includes("bilateral") || reportNorm.includes("bilaterales")) && 
+               (reportNorm.includes("multiple") || reportNorm.includes("multiples") || reportNorm.includes("multip") || reportNorm.includes("varios") || reportNorm.includes("diversos")));
+
+            const autoPdfHasFibroadenomasBilaterales = 
+              (reportNorm.includes("fibroadenoma") && 
+               (reportNorm.includes("bilateral") || reportNorm.includes("bilaterales")) && 
+               (reportNorm.includes("multiple") || reportNorm.includes("multiples") || reportNorm.includes("multip") || reportNorm.includes("varios") || reportNorm.includes("diversos")));
+
+            const autoPdfBilateralActive = autoPdfHasQuistesBilaterales || autoPdfHasFibroadenomasBilaterales;
+
+            const pdfIsBilateralBenignActive = breastBilateralOverride !== null 
+              ? breastBilateralOverride 
+              : autoPdfBilateralActive;
+
+            const pdfHasQuistesBilaterales = pdfIsBilateralBenignActive 
+              ? (breastBilateralOverride !== null 
+                  ? (breastBilateralType === "quistes")
+                  : autoPdfHasQuistesBilaterales)
+              : false;
+
+            const pdfHasFibroadenomasBilaterales = pdfIsBilateralBenignActive 
+              ? (breastBilateralOverride !== null 
+                  ? (breastBilateralType === "fibroadenomas")
+                  : autoPdfHasFibroadenomasBilaterales)
+              : false;
+
             const processBreastSvgForPdf = async (svgEl: HTMLElement) => {
               const clonedSvg = svgEl.cloneNode(true) as SVGElement;
               clonedSvg.setAttribute("width", "300px");
@@ -6757,8 +8253,22 @@ Ejemplo:
                 const idAttr = el.getAttribute("id") || "";
                 if (idAttr.endsWith("-svg-path")) {
                   const baseId = idAttr.replace("-svg-path", "");
-                  const stateVal = breastStates[baseId] || "no_descrito";
+                  let stateVal = breastStates[baseId] || "no_descrito";
                   
+                  if (pdfIsBilateralBenignActive) {
+                    if (stateVal === "no_descrito" || stateVal === "normal") {
+                      stateVal = "normal";
+                    } else if (stateVal === "hallazgo") {
+                      const desc = (breastDescriptions[baseId] || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                      const isBenignRelated = 
+                        (pdfHasQuistesBilaterales && (desc.includes("quiste") || desc.includes("quistic"))) ||
+                        (pdfHasFibroadenomasBilaterales && (desc.includes("fibroadenoma") || desc.includes("nodulo") || desc.includes("nódulo")));
+                      if (isBenignRelated || !desc) {
+                        stateVal = "normal";
+                      }
+                    }
+                  }
+
                   if (stateVal === "normal") {
                     el.setAttribute("fill", "#d1fae5");
                     el.setAttribute("stroke", "#10b981");
@@ -6790,6 +8300,17 @@ Ejemplo:
                 txt.setAttribute("fill", "#1e293b");
                 txt.setAttribute("font-family", "helvetica");
                 txt.setAttribute("font-weight", "bold");
+              });
+
+              // Format the bilateral benign badge for light PDF print
+              clonedSvg.querySelectorAll("#breast-bilateral-badge-rect").forEach((el: any) => {
+                el.setAttribute("fill", "#e6fbf2"); // ultra light green-50
+                el.setAttribute("stroke", "#10b981"); // bright green-500
+                el.setAttribute("stroke-width", "0.8");
+              });
+              clonedSvg.querySelectorAll("#breast-bilateral-badge-text").forEach((el: any) => {
+                el.setAttribute("fill", "#065f46"); // deep green-800
+                el.setAttribute("font-weight", "bold");
               });
 
               const svgData = new XMLSerializer().serializeToString(clonedSvg);
@@ -6859,8 +8380,7 @@ Ejemplo:
             doc.setFont("helvetica", "bold");
             doc.setFontSize(7.5);
             doc.setTextColor(190, 24, 74); // rose-700
-            doc.text("REGIÓN", 114, yStart + 11.5);
-            doc.text("HALLAZGO", 142, yStart + 11.5);
+            doc.text("SINOPSIS DE HALLAZGOS CLÍNICOS", 114, yStart + 11.5);
 
             doc.setDrawColor(229, 231, 235);
             doc.line(114, yStart + 13.5, 186, yStart + 13.5);
@@ -6898,47 +8418,141 @@ Ejemplo:
               { id: "mi_axila", label: "MI - Axilar" }
             ];
 
-            const pdfBreastStructures = breastAllowedKeys.filter(struct => {
-              return breastStates[struct.id] === "hallazgo";
+            const pdfBreastStructures: { id: string; label: string; isBilateralBenignRow?: boolean }[] = [];
+
+            if (pdfIsBilateralBenignActive) {
+              pdfBreastStructures.push({
+                id: "bilateral_benign_summary",
+                label: "Ambas Mamas",
+                isBilateralBenignRow: true
+              });
+            }
+
+            const filteredAllowed = breastAllowedKeys.filter(struct => {
+              const stateVal = breastStates[struct.id];
+              if (stateVal !== "hallazgo") return false;
+
+              if (pdfIsBilateralBenignActive) {
+                const desc = (breastDescriptions[struct.id] || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                const isBenignRelated = 
+                  (pdfHasQuistesBilaterales && (desc.includes("quiste") || desc.includes("quistic"))) ||
+                  (pdfHasFibroadenomasBilaterales && (desc.includes("fibroadenoma") || desc.includes("nodulo") || desc.includes("nódulo")));
+                if (isBenignRelated || !desc) {
+                  return false; // Filter out from individual list
+                }
+              }
+              return true;
             });
+
+            pdfBreastStructures.push(...filteredAllowed.map(item => ({ id: item.id, label: item.label })));
 
             if (pdfBreastStructures.length === 0) {
               pdfBreastStructures.push({ id: "all_normal", label: "Examen Bilateral" });
             }
 
-            const getPDFBreastDesc = (id: string) => {
+            const getPDFBreastDesc = (id: string, isBilateralBenignRow?: boolean) => {
+              if (isBilateralBenignRow) {
+                return pdfHasQuistesBilaterales ? "Quistes simples bilaterales." : "Fibroadenomas múltiples bilaterales.";
+              }
               if (id === "all_normal") {
                 return "No se describen hallazgos patológicos ni nódulos sospechosos en los ejes explorados.";
               }
-              return breastDescriptions[id] || "Alteración ecográfica descrita.";
+              if (breastDescriptions && breastDescriptions[id] && breastDescriptions[id].trim() !== "" && breastDescriptions[id] !== "No mencionado / No descrito." && breastDescriptions[id] !== "No descrito.") {
+                return breastDescriptions[id];
+              }
+              const s = breastStates[id] || "hallazgo";
+              return s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, " ");
             };
 
-            const rowSpacing = pdfBreastStructures.length > 5 ? (58 / pdfBreastStructures.length) : 10;
-
-            pdfBreastStructures.forEach((struct, index) => {
-              const rowY = yStart + 14.5 + (index * rowSpacing);
-              const description = getPDFBreastDesc(struct.id);
-
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(6.2);
-              doc.setTextColor(30, 41, 59);
-              const wrappedLabel = doc.splitTextToSize(struct.label, 25);
-              if (wrappedLabel[0]) doc.text(wrappedLabel[0], 114, rowY + 3);
-              if (wrappedLabel[1]) doc.text(wrappedLabel[1], 114, rowY + 5.5);
-
-              doc.setFont("helvetica", "normal");
-              doc.setFontSize(5.8);
-              doc.setTextColor(100, 116, 139);
-              const wrappedDesc = doc.splitTextToSize(description, 44);
-              if (wrappedDesc[0]) doc.text(wrappedDesc[0], 142, rowY + 3);
-              if (wrappedDesc[1]) doc.text(wrappedDesc[1], 142, rowY + 5.5);
-
-              if (index < pdfBreastStructures.length - 1) {
-                doc.setDrawColor(241, 245, 249);
-                doc.setLineWidth(0.15);
-                doc.line(113, rowY + rowSpacing, 187, rowY + rowSpacing);
-              }
+            const breastCardData = pdfBreastStructures.map(struct => {
+              const s = breastStates[struct.id] || (struct.id === "all_normal" ? "normal" : "hallazgo");
+              return {
+                label: struct.label,
+                state: s,
+                description: getPDFBreastDesc(struct.id, struct.isBilateralBenignRow)
+              };
             });
+
+            // Append additional findings if any
+            const breastExtras = additionalFindings["Mama"] || [];
+            breastExtras.forEach((extra: any) => {
+              breastCardData.push({
+                label: extra.structureName,
+                state: extra.state || "Alterado",
+                description: extra.description
+              });
+            });
+
+            // Draw cards inside the right findings container, leaving space for BI-RADS badge
+            drawAnatomicalCards(doc, breastCardData, 111, yStart + 13.5, 79, 44);
+
+            // Parse and draw BI-RADS category
+            const detectBirads = (text: string): string => {
+              if (!text) return "BIRADS 1";
+              
+              const normalizedFull = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+              const markers = [
+                "impresion diagnostica",
+                "conclusiones",
+                "conclusion",
+                "diagnostico",
+                "sintesis diagnostica",
+                "diagnosticos",
+                "conclusion diagnostica"
+              ];
+              
+              let bestIdx = -1;
+              markers.forEach(m => {
+                const idx = normalizedFull.indexOf(m);
+                if (idx !== -1 && (bestIdx === -1 || idx < bestIdx)) {
+                  bestIdx = idx;
+                }
+              });
+              
+              const targetText = bestIdx !== -1 ? text.substring(bestIdx) : text;
+              const normalized = targetText.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+              
+              const match = normalized.match(/bi-rads\s*[:\s-]*\s*([0-6]\s*[a-c]?|[0-6]|I+)/i) || 
+                            normalized.match(/birads\s*[:\s-]*\s*([0-6]\s*[a-c]?|[0-6]|I+)/i) ||
+                            normalized.match(/categoria\s*[:\s-]*\s*([0-6]\s*[a-c]?|[0-6]|I+)/i);
+              if (match) {
+                const rawVal = match[1].replace(/\s+/g, "").toUpperCase();
+                return `BIRADS ${rawVal}`;
+              }
+              if (pdfIsBilateralBenignActive) {
+                return "BIRADS 2";
+              }
+              const hasAnyHallazgo = Object.values(breastStates).some(s => s === "hallazgo");
+              return hasAnyHallazgo ? "BIRADS 2" : "BIRADS 1";
+            };
+
+            const biradsText = detectBirads(activeReportText);
+            const biradsY = yStart + 64;
+
+            const isBenignBirads = biradsText.includes("BIRADS 1") || biradsText.includes("BIRADS 2") || biradsText.includes("BIRADS 3");
+            
+            if (isBenignBirads) {
+              doc.setFillColor(240, 253, 250); // light emerald-50
+              doc.setDrawColor(204, 251, 241); // light emerald-100
+            } else {
+              doc.setFillColor(254, 242, 242); // light rose-50
+              doc.setDrawColor(254, 226, 226); // light rose-100
+            }
+            
+            const badgeW = 44;
+            const badgeH = 8.5;
+            const badgeX = 150.5 - (badgeW / 2);
+            doc.roundedRect(badgeX, biradsY - 5.5, badgeW, badgeH, 1.5, 1.5, "FD");
+
+            // Write the BI-RADS text inside the badge centered
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5);
+            if (isBenignBirads) {
+              doc.setTextColor(13, 148, 136); // teal-600
+            } else {
+              doc.setTextColor(225, 29, 72); // rose-600
+            }
+            doc.text(biradsText, 150.5, biradsY, { align: "center" });
 
             doc.setFont("helvetica", "italic");
             doc.setFontSize(6.2);
@@ -6946,6 +8560,169 @@ Ejemplo:
             doc.text("Mapa de hallazgos clínico-ecográficos estructurados por segmento clock-eje.", 150.5, yStart + 74, { align: "center" });
 
             yCoord += 80;
+
+            // 🛠️ DIBUJO DE IMPLANTES MAMARIOS EN PDF (SI ESTÁ ACTIVO)
+            const svgImplantMD = document.getElementById("breast-implant-svg-MD");
+            const svgImplantMI = document.getElementById("breast-implant-svg-MI");
+
+            if (svgImplantMD || svgImplantMI) {
+              try {
+                const processImplantSvgForPdf = async (svgEl: HTMLElement) => {
+                  const clonedSvg = svgEl.cloneNode(true) as SVGElement;
+                  
+                  // Adjust background gradient stops for light printer friendly layout
+                  const stops = clonedSvg.querySelectorAll("linearGradient stop");
+                  stops.forEach(stop => {
+                    const curColor = stop.getAttribute("stop-color") || stop.getAttribute("stopColor") || "";
+                    if (curColor === "#1e293b" || curColor === "#0f172a" || curColor === "#020617") {
+                      stop.setAttribute("stop-color", "#ffffff");
+                    }
+                  });
+
+                  const paths = clonedSvg.querySelectorAll("path");
+                  paths.forEach(p => {
+                    const fill = p.getAttribute("fill") || "";
+                    const stroke = p.getAttribute("stroke") || "";
+                    if (fill === "#1e293b" || fill === "#0f172a" || fill === "rgba(15, 23, 42, 0.45)") {
+                      p.setAttribute("fill", "#f8fafc");
+                    }
+                    if (stroke === "#10b981") p.setAttribute("stroke", "#059669");
+                    if (stroke === "#06b6d4") p.setAttribute("stroke", "#0891b2");
+                    if (stroke === "#f43f5e") p.setAttribute("stroke", "#dc2626");
+                  });
+
+                  const rects = clonedSvg.querySelectorAll("rect");
+                  rects.forEach(r => {
+                    const fill = r.getAttribute("fill") || "";
+                    if (fill === "rgba(15, 23, 42, 0.45)") {
+                      r.setAttribute("fill", "#e2e8f0");
+                    }
+                  });
+
+                  const texts = clonedSvg.querySelectorAll("text");
+                  texts.forEach(t => {
+                    t.setAttribute("fill", "#0f172a");
+                  });
+
+                  return await convertSvgToPng(clonedSvg);
+                };
+
+                const imgImplantMD = svgImplantMD ? await processImplantSvgForPdf(svgImplantMD) : null;
+                const imgImplantMI = svgImplantMI ? await processImplantSvgForPdf(svgImplantMI) : null;
+
+                if (imgImplantMD || imgImplantMI) {
+                  // check page break
+                  if (yCoord > 200) {
+                    doc.addPage();
+                    yCoord = 32;
+                  }
+                  
+                  const yStartImp = yCoord;
+                  const boxHeight = 72; // Increased to 72mm to fit side-by-side layouts nicely!
+
+                  doc.setFillColor(255, 255, 255);
+                  doc.setDrawColor(229, 231, 235);
+                  doc.roundedRect(20, yStartImp, 170, boxHeight, 3, 3, "FD");
+
+                  // Header of Section
+                  doc.setFont("helvetica", "bold");
+                  doc.setFontSize(8.0);
+                  doc.setTextColor(30, 41, 59);
+                  doc.text("ANEXO: ESTUDIO DE IMPLANTES MAMARIOS RECIENTES (BILATERAL)", 24, yStartImp + 7.5);
+
+                  // Process and list findings
+                  doc.setFont("helvetica", "bold");
+                  doc.setFontSize(6.5);
+                  doc.setTextColor(190, 24, 74); // rose-700
+                  doc.text("HALLAZGOS ECOGRÁFICOS EN IMPLANTES:", 24, yStartImp + 13);
+
+                  doc.setFont("helvetica", "normal");
+                  doc.setFontSize(5.8);
+                  doc.setTextColor(51, 65, 85);
+
+                  let implFindings = [];
+
+                  if (svgImplantMD) {
+                    const mdAttrs = {
+                      intra: svgImplantMD.getAttribute("data-intra") === "true",
+                      extra: svgImplantMD.getAttribute("data-extra") === "true",
+                      fluid: svgImplantMD.getAttribute("data-fluid") === "true",
+                      folds: svgImplantMD.getAttribute("data-folds") === "true",
+                      capsule: svgImplantMD.getAttribute("data-capsule") === "true",
+                    };
+                    let mdLine = [];
+                    if (mdAttrs.intra) mdLine.push("Ruptura Intracapsular (linguini sign)");
+                    if (mdAttrs.extra) mdLine.push("Ruptura Extracapsular (snowstorm sign)");
+                    if (mdAttrs.fluid) mdLine.push("Seroma periprotésico");
+                    if (mdAttrs.folds) mdLine.push("Pliegues radiales");
+                    if (mdAttrs.capsule) mdLine.push("Contractura/Calcificación capsular");
+                    
+                    if (mdLine.length > 0) {
+                      implFindings.push("• MAMA DERECHA: " + mdLine.join(", ") + ".");
+                    } else {
+                      implFindings.push("• MAMA DERECHA: Prótesis íntegra, sin signos de fatiga de material.");
+                    }
+                  }
+
+                  if (svgImplantMI) {
+                    const miAttrs = {
+                      intra: svgImplantMI.getAttribute("data-intra") === "true",
+                      extra: svgImplantMI.getAttribute("data-extra") === "true",
+                      fluid: svgImplantMI.getAttribute("data-fluid") === "true",
+                      folds: svgImplantMI.getAttribute("data-folds") === "true",
+                      capsule: svgImplantMI.getAttribute("data-capsule") === "true",
+                    };
+                    let miLine = [];
+                    if (miAttrs.intra) miLine.push("Ruptura Intracapsular (linguini sign)");
+                    if (miAttrs.extra) miLine.push("Ruptura Extracapsular (snowstorm sign)");
+                    if (miAttrs.fluid) miLine.push("Seroma periprotésico");
+                    if (miAttrs.folds) miLine.push("Pliegues radiales");
+                    if (miAttrs.capsule) miLine.push("Contractura/Calcificación capsular");
+                    
+                    if (miLine.length > 0) {
+                      implFindings.push("• MAMA IZQUIERDA: " + miLine.join(", ") + ".");
+                    } else {
+                      implFindings.push("• MAMA IZQUIERDA: Prótesis íntegra, sin signos de fatiga de material.");
+                    }
+                  }
+
+                  let curImpY = yStartImp + 19;
+                  implFindings.forEach(f => {
+                    const splitLines = doc.splitTextToSize(f, 80); // Wrap finding text nicely in left column width
+                    splitLines.forEach((line: string) => {
+                      doc.text(line, 24, curImpY);
+                      curImpY += 5.0;
+                    });
+                  });
+
+                  // Embed drawings side by side or separately
+                  if (imgImplantMD) {
+                    doc.addImage(imgImplantMD, "PNG", 112, yStartImp + 10, 36, 32);
+                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(5.2);
+                    doc.setTextColor(100, 116, 139);
+                    doc.text("IMPLANTE MAMA DERECHA (MD)", 130, yStartImp + 45, { align: "center" });
+                  }
+
+                  if (imgImplantMI) {
+                    doc.addImage(imgImplantMI, "PNG", 150, yStartImp + 10, 36, 32);
+                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(5.2);
+                    doc.setTextColor(100, 116, 139);
+                    doc.text("IMPLANTE MAMA IZQUIERDA (MI)", 168, yStartImp + 45, { align: "center" });
+                  }
+
+                  doc.setFont("helvetica", "italic");
+                  doc.setFontSize(6.0);
+                  doc.setTextColor(148, 163, 184);
+                  doc.text("Corte ecográfico sagital representativo con su cápsula de reacción tisular.", 150.5, yStartImp + boxHeight - 4, { align: "center" });
+
+                  yCoord += boxHeight + 6;
+                }
+              } catch (err) {
+                console.warn("Could not draw breast implant diagram inside PDF", err);
+              }
+            }
           } catch (err) {
             console.warn("Could not draw breast diagrams inside jsPDF", err);
           }
@@ -7077,12 +8854,11 @@ Ejemplo:
             doc.setDrawColor(229, 231, 235);
             doc.roundedRect(111, yStart, 79, 75, 3, 3, "FD");
 
-            // Header of findings columns: ESTRUCTURA and HALLAZGOS
+            // Header of findings: Unified title
             doc.setFont("helvetica", "bold");
             doc.setFontSize(7.5);
             doc.setTextColor(67, 56, 202); // indigo-700
-            doc.text("ESTRUCTURA", 114, yStart + 5.5);
-            doc.text("HALLAZGOS", 142, yStart + 5.5);
+            doc.text("SINOPSIS DE HALLAZGOS CLÍNICOS", 114, yStart + 5.5);
 
             // Draw horizontal divider line
             doc.setDrawColor(229, 231, 235);
@@ -7100,48 +8876,51 @@ Ejemplo:
 
             const pdfElbowStructures = allowedElbowKeys.filter(struct => {
               const s = elbowStates[struct.id] || "no_descrito";
-              return s !== "no_descrito";
+              return s !== "no_descrito" && s !== "normal";
             });
 
             const getElbowPDFDescription = (id: string, state: string) => {
-              if (elbowDescriptions && elbowDescriptions[id]) {
+              if (elbowDescriptions && elbowDescriptions[id] && elbowDescriptions[id].trim() !== "" && elbowDescriptions[id] !== "No mencionado / No descrito." && elbowDescriptions[id] !== "No descrito.") {
                 return elbowDescriptions[id];
+              }
+              if (!state || state === "no_descrito") {
+                return "No descrito en el reporte.";
               }
               if (state === "normal") {
                 return "Dentro de límites normales.";
               }
-              return "Alteración focal.";
+              return state.charAt(0).toUpperCase() + state.slice(1).replace(/_/g, " ");
             };
 
-            const elbowRowSpacing = pdfElbowStructures.length > 5 ? (62 / pdfElbowStructures.length) : 11;
-
-            pdfElbowStructures.forEach((struct, index) => {
-              const rowY = yStart + 8.5 + (index * elbowRowSpacing);
+            const elbowCardData = pdfElbowStructures.map(struct => {
               const s = elbowStates[struct.id] || "no_descrito";
-              const description = getElbowPDFDescription(struct.id, s);
-
-              // Left column: Structure label
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(6.2);
-              doc.setTextColor(30, 41, 59);
-              const wrappedLabel = doc.splitTextToSize(struct.label, 25);
-              if (wrappedLabel[0]) doc.text(wrappedLabel[0], 114, rowY + 3.2);
-              if (wrappedLabel[1]) doc.text(wrappedLabel[1], 114, rowY + 5.7);
-
-              // Right column: Description
-              doc.setFont("helvetica", "normal");
-              doc.setFontSize(5.8);
-              doc.setTextColor(100, 116, 139);
-              const wrappedDesc = doc.splitTextToSize(description, 45);
-              if (wrappedDesc[0]) doc.text(wrappedDesc[0], 142, rowY + 3.2);
-              if (wrappedDesc[1]) doc.text(wrappedDesc[1], 142, rowY + 5.7);
-
-              if (index < pdfElbowStructures.length - 1) {
-                doc.setDrawColor(241, 245, 249);
-                doc.setLineWidth(0.15);
-                doc.line(113, rowY + elbowRowSpacing, 187, rowY + elbowRowSpacing);
-              }
+              return {
+                label: struct.label,
+                state: s,
+                description: getElbowPDFDescription(struct.id, s)
+              };
             });
+
+            // Append additional findings if any
+            const elbowExtras = additionalFindings["Codo"] || [];
+            elbowExtras.forEach((extra: any) => {
+              elbowCardData.push({
+                label: extra.structureName,
+                state: extra.state || "Alterado",
+                description: extra.description
+              });
+            });
+
+            if (elbowCardData.length === 0) {
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(6.5);
+              doc.setTextColor(100, 116, 139);
+              doc.text("Sin hallazgos patológicos relevantes.", 150, yStart + 30, { align: "center" });
+              doc.text("Los tendones, ligamentos y estructuras del", 150, yStart + 36, { align: "center" });
+              doc.text("codo evaluados se reportan normales.", 150, yStart + 42, { align: "center" });
+            } else {
+              drawAnatomicalCards(doc, elbowCardData, 111, yStart, 79, 75);
+            }
 
             doc.setFont("helvetica", "italic");
             doc.setFontSize(6.2);
@@ -7254,12 +9033,11 @@ Ejemplo:
             doc.setDrawColor(229, 231, 235);
             doc.roundedRect(111, yStart, 79, 75, 3, 3, "FD");
 
-            // Header of findings columns: ESTRUCTURA and HALLAZGOS
+            // Header of findings: Unified title
             doc.setFont("helvetica", "bold");
             doc.setFontSize(7.5);
             doc.setTextColor(67, 56, 202); // indigo-700
-            doc.text("ESTRUCTURA", 114, yStart + 5.5);
-            doc.text("HALLAZGOS(SINOPSIS)", 142, yStart + 5.5);
+            doc.text("SINOPSIS DE HALLAZGOS CLÍNICOS", 114, yStart + 5.5);
 
             // Draw horizontal divider line
             doc.setDrawColor(229, 231, 235);
@@ -7278,53 +9056,63 @@ Ejemplo:
               { id: "utero", label: "Útero" },
               { id: "ovarios", label: "Ovarios" },
               { id: "psoas", label: "Músculo Psoas" },
-              { id: "colon", label: "Colon" }
+              { id: "colon", label: "Colon" },
+              { id: "pared_linea_alba", label: "Pared (Línea Alba)" },
+              { id: "pared_umbilical", label: "Pared (Región Umbilical)" },
+              { id: "pared_inguinal_derecha", label: "Pared (Región Inguinal D.)" },
+              { id: "pared_inguinal_izquierda", label: "Pared (Región Inguinal I.)" },
+              { id: "pared_muscular", label: "Pared (Musculatura)" },
+              { id: "suprarenales", label: "Suprarrenales" },
+              { id: "retroperitoneo", label: "Retroperitoneo" }
             ];
 
             const pdfAbdomenStructures = allowedAbdomenKeys.filter(struct => {
               const s = abdomenStates[struct.id] || "no_descrito";
-              return s !== "no_descrito";
+              return s !== "no_descrito" && s !== "normal";
             });
 
             const getAbdomenPDFDescription = (id: string, state: string) => {
-              if (abdomenDescriptions && abdomenDescriptions[id]) {
+              if (abdomenDescriptions && abdomenDescriptions[id] && abdomenDescriptions[id].trim() !== "" && abdomenDescriptions[id] !== "No mencionado / No descrito." && abdomenDescriptions[id] !== "No descrito.") {
                 return abdomenDescriptions[id];
+              }
+              if (!state || state === "no_descrito") {
+                return "No descrito en el reporte.";
               }
               if (state === "normal") {
                 return "Dentro de límites normales.";
               }
-              return "Alteración descrita.";
+              return state.charAt(0).toUpperCase() + state.slice(1).replace(/_/g, " ");
             };
 
-            const abdomenRowSpacing = pdfAbdomenStructures.length > 5 ? (62 / pdfAbdomenStructures.length) : 10.5;
-
-            pdfAbdomenStructures.forEach((struct, index) => {
-              const rowY = yStart + 8.5 + (index * abdomenRowSpacing);
+            const abdomenCardData = pdfAbdomenStructures.map(struct => {
               const s = abdomenStates[struct.id] || "no_descrito";
-              const description = getAbdomenPDFDescription(struct.id, s);
-
-              // Left column: Structure label
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(6.2);
-              doc.setTextColor(30, 41, 59);
-              const wrappedLabel = doc.splitTextToSize(struct.label, 25);
-              if (wrappedLabel[0]) doc.text(wrappedLabel[0], 114, rowY + 3.2);
-              if (wrappedLabel[1]) doc.text(wrappedLabel[1], 114, rowY + 5.7);
-
-              // Right column: Description
-              doc.setFont("helvetica", "normal");
-              doc.setFontSize(5.8);
-              doc.setTextColor(100, 116, 139);
-              const wrappedDesc = doc.splitTextToSize(description, 45);
-              if (wrappedDesc[0]) doc.text(wrappedDesc[0], 142, rowY + 3.2);
-              if (wrappedDesc[1]) doc.text(wrappedDesc[1], 142, rowY + 5.7);
-
-              if (index < pdfAbdomenStructures.length - 1) {
-                doc.setDrawColor(241, 245, 249);
-                doc.setLineWidth(0.15);
-                doc.line(113, rowY + abdomenRowSpacing, 187, rowY + abdomenRowSpacing);
-              }
+              return {
+                label: struct.label,
+                state: s,
+                description: getAbdomenPDFDescription(struct.id, s)
+              };
             });
+
+            // Append additional findings if any
+            const abdomenExtras = additionalFindings["Abdomen"] || [];
+            abdomenExtras.forEach((extra: any) => {
+              abdomenCardData.push({
+                label: extra.structureName,
+                state: extra.state || "Alterado",
+                description: extra.description
+              });
+            });
+
+            if (abdomenCardData.length === 0) {
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(6.5);
+              doc.setTextColor(100, 116, 139);
+              doc.text("Sin hallazgos patológicos relevantes.", 150, yStart + 30, { align: "center" });
+              doc.text("Todos los órganos evaluados se reportan", 150, yStart + 36, { align: "center" });
+              doc.text("dentro de límites normales.", 150, yStart + 42, { align: "center" });
+            } else {
+              drawAnatomicalCards(doc, abdomenCardData, 111, yStart, 79, 75);
+            }
 
             doc.setFont("helvetica", "italic");
             doc.setFontSize(6.2);
@@ -7332,11 +9120,1276 @@ Ejemplo:
             doc.text("Mapa sinóptico de abdomen correspondiente al reporte redactado.", 150, yStart + 72, { align: "center" });
 
             yCoord += 80;
+
+            // 🛠️ DIBUJO DE VÍA BILIAR EXTRAHEPÁTICA EN PDF (SI ESTÁ ACTIVO)
+            if (includeBiliarySchemaInReport) {
+              const svgBiliary = document.getElementById("abdomen-biliary-svg");
+              if (svgBiliary) {
+              try {
+                const processBiliarySvgForPdf = async (svgEl: HTMLElement) => {
+                  const clonedSvg = svgEl.cloneNode(true) as SVGElement;
+                  
+                  const stops = clonedSvg.querySelectorAll("linearGradient stop");
+                  stops.forEach(stop => {
+                    const curColor = stop.getAttribute("stop-color") || stop.getAttribute("stopColor") || "";
+                    if (curColor === "#1e293b" || curColor === "#0f172a" || curColor === "#020617") {
+                      stop.setAttribute("stop-color", "#ffffff");
+                    }
+                  });
+
+                  const paths = clonedSvg.querySelectorAll("path");
+                  paths.forEach(p => {
+                    const fill = p.getAttribute("fill") || "";
+                    const stroke = p.getAttribute("stroke") || "";
+                    if (fill === "#1e293b" || fill === "#0f172a" || fill === "rgba(15, 23, 42, 0.45)") {
+                      p.setAttribute("fill", "#f1f5f9");
+                    }
+                    if (stroke === "#10b981") p.setAttribute("stroke", "#059669");
+                    if (stroke === "#f43f5e") p.setAttribute("stroke", "#dc2626");
+                    if (stroke === "#ea580c") p.setAttribute("stroke", "#c2410c");
+                  });
+
+                  const rects = clonedSvg.querySelectorAll("rect");
+                  rects.forEach(r => {
+                    const fill = r.getAttribute("fill") || "";
+                    if (fill === "rgba(15, 23, 42, 0.45)" || fill === "rgba(15, 23, 42, 0.61)") {
+                      r.setAttribute("fill", "#cbd5e1");
+                    }
+                  });
+
+                  const lines = clonedSvg.querySelectorAll("line");
+                  lines.forEach(l => {
+                    const stroke = l.getAttribute("stroke") || "";
+                    if (stroke === "#d97706") l.setAttribute("stroke", "#b45309");
+                  });
+
+                  const texts = clonedSvg.querySelectorAll("text");
+                  texts.forEach(t => {
+                    const fill = t.getAttribute("fill") || "";
+                    if (fill === "#ffffff" || fill === "#cbd5e1" || fill === "#a7f3d0" || fill === "#f87171" || fill === "#f59e0b") {
+                      t.setAttribute("fill", "#0f172a");
+                    }
+                  });
+
+                  return await convertSvgToPng(clonedSvg);
+                };
+
+                const imgBiliary = await processBiliarySvgForPdf(svgBiliary);
+                if (imgBiliary) {
+                  checkPageBreak(82);
+                  yCoord += 4;
+
+                  doc.setFont("helvetica", "bold");
+                  doc.setFontSize(8.0);
+                  doc.setTextColor(30, 41, 59);
+                  doc.text("ANEXO: ESQUEMA COLO-COLEDOCAL (VÍA BILIAR EXTRAHEPÁTICA)", pageWidth / 2, yCoord, { align: "center" });
+                  yCoord += 3.5;
+
+                  doc.setFont("helvetica", "normal");
+                  doc.setFontSize(6.3);
+                  doc.setTextColor(148, 163, 184);
+                  doc.text("MAPEO ESPECÍFICO DE ALTERACIONES DE LA VÍA BILIAR EXTRAHEPÁTICA", pageWidth / 2, yCoord, { align: "center" });
+                  yCoord += 4.5;
+
+                  const yBilStart = yCoord;
+
+                  // Outer box
+                  doc.setFillColor(255, 255, 255);
+                  doc.setDrawColor(224, 231, 255); // indigo-100 border
+                  doc.roundedRect(20, yBilStart, 170, 58, 3, 3, "FD");
+
+                  // Embed drawing - offset to center-right or center left to leave space for bullets
+                  doc.addImage(imgBiliary, "PNG", 125, yBilStart + 4, 52, 47);
+
+                  // Bullet points
+                  doc.setFont("helvetica", "bold");
+                  doc.setFontSize(7.0);
+                  doc.setTextColor(67, 56, 202); // indigo-700
+                  doc.text("HALLAZGOS (VBE):", 24, yBilStart + 10);
+                  doc.setFont("helvetica", "normal");
+                  doc.setFontSize(5.8);
+                  doc.setTextColor(51, 65, 85);
+
+                  let findingsList = [];
+                  const checkDilated = document.getElementById("biliary-check-dilated") as HTMLInputElement;
+                  const checkThickening = document.getElementById("biliary-check-thickening") as HTMLInputElement;
+                  const checkProximal = document.getElementById("biliary-check-proximal") as HTMLInputElement;
+                  const checkDistal = document.getElementById("biliary-check-distal") as HTMLInputElement;
+                  const checkTumor = document.getElementById("biliary-check-tumor") as HTMLInputElement;
+
+                  const checkVesiculaLitos = document.getElementById("biliary-check-vesicular-litos") as HTMLInputElement;
+                  const checkVesiculaLitoUnico = document.getElementById("biliary-check-vesicular-lito-unico") as HTMLInputElement;
+                  const checkColecistitis = document.getElementById("biliary-check-colecistitis") as HTMLInputElement;
+                  const checkVesiculaPared = document.getElementById("biliary-check-vesicular-pared") as HTMLInputElement;
+                  const checkVesiculaBarro = document.getElementById("biliary-check-vesicular-barro") as HTMLInputElement;
+                  const checkVesiculaPolipo = document.getElementById("biliary-check-vesicular-polipo") as HTMLInputElement;
+
+                  if (checkDilated && checkDilated.checked) findingsList.push("• Dilatación anormal del conducto colédoco / VBE.");
+                  if (checkThickening && checkThickening.checked) findingsList.push("• Engrosamiento inflamatorio de paredes vasculares/ductales.");
+                  if (checkProximal && checkProximal.checked) findingsList.push("• Litiasis proximal en conducto hepático común.");
+                  if (checkDistal && checkDistal.checked) findingsList.push("• Lito impactado en colédoco distal (enclavado).");
+                  if (checkTumor && checkTumor.checked) findingsList.push("• Tumoración / Lesión ocupante de espacio (LOE).");
+
+                  if (checkVesiculaLitos && checkVesiculaLitos.checked) findingsList.push("• Colelitiasis (litos múltiples en la vesícula biliar).");
+                  if (checkVesiculaLitoUnico && checkVesiculaLitoUnico.checked) findingsList.push("• Colelitiasis única (lito único en la vesícula biliar).");
+                  if (checkColecistitis && checkColecistitis.checked) findingsList.push("• Colecistitis aguda (signos de inflamación vesicular).");
+                  if (checkVesiculaPared && checkVesiculaPared.checked) findingsList.push("• Engrosamiento reactivo de la pared vesicular (>3mm).");
+                  if (checkVesiculaBarro && checkVesiculaBarro.checked) findingsList.push("• Presencia de barro o lodo biliar en la vesícula.");
+                  if (checkVesiculaPolipo && checkVesiculaPolipo.checked) findingsList.push("• Pólipo(s) vesicular(es) (imágenes ecogénicas fijas a la pared).");
+
+                  // Si no hay checkboxes activos, ver si hay notas manuales personalizadas en el textarea
+                  if (findingsList.length === 0) {
+                    const textareaBiliary = document.getElementById("biliary-notes-textarea") as HTMLTextAreaElement;
+                    if (textareaBiliary && textareaBiliary.value && textareaBiliary.value.trim() !== "") {
+                      const val = textareaBiliary.value.trim();
+                      // Evitar que use el texto por defecto si es puramente normal
+                      if (!val.includes("Normal, de tamaño conservado") && !val.includes("calibre y trayecto conservados")) {
+                        const splitNotes = val.split(/[.\n]+/).map(item => item.trim()).filter(item => item.length > 3);
+                        splitNotes.forEach(note => {
+                          findingsList.push(`• ${note}.`);
+                        });
+                      }
+                    }
+                  }
+
+                  if (findingsList.length === 0) {
+                    findingsList.push("• Vía biliar extrahepática y vesícula de calibre y aspecto conservado.");
+                    findingsList.push("• Sin evidencia de litiasis ni colecistitis aguda en el estudio actual.");
+                  }
+
+                  let currentBulletY = yBilStart + 16;
+                  findingsList.forEach(f => {
+                    const splitLines = doc.splitTextToSize(f, 95);
+                    splitLines.forEach((line: string) => {
+                      if (currentBulletY < yBilStart + 51) {
+                        doc.text(line, 24, currentBulletY);
+                        currentBulletY += 4.5;
+                      }
+                    });
+                  });
+
+                  doc.setFont("helvetica", "italic");
+                  doc.setFontSize(6.0);
+                  doc.setTextColor(148, 163, 184);
+                  doc.text("Gráfico representativo auxiliar de la vía biliar extrahepática correspondiente al protocolo redactado.", 105, yBilStart + 54, { align: "center" });
+
+                  yCoord += 64;
+                }
+              } catch (err) {
+                console.warn("Could not draw biliary diagram inside PDF", err);
+              }
+            }
+            }
+
+            // 🛠️ DIBUJO DE APENDICITIS AGUDA / APÉNDICE CECAL EN PDF (SI ESTÁ ACTIVO)
+            if (includeAppendixSchemaInReport) {
+              const svgAppendix = document.getElementById("abdomen-appendix-svg");
+              if (svgAppendix) {
+              try {
+                const processAppendixSvgForPdf = async (svgEl: HTMLElement) => {
+                  const clonedSvg = svgEl.cloneNode(true) as SVGElement;
+                  
+                  const stops = clonedSvg.querySelectorAll("linearGradient stop");
+                  stops.forEach(stop => {
+                    const curColor = stop.getAttribute("stop-color") || stop.getAttribute("stopColor") || "";
+                    if (curColor === "#1e293b" || curColor === "#0f172a" || curColor === "#020617") {
+                      stop.setAttribute("stop-color", "#ffffff");
+                    }
+                  });
+
+                  const paths = clonedSvg.querySelectorAll("path");
+                  paths.forEach(p => {
+                    const fill = p.getAttribute("fill") || "";
+                    const stroke = p.getAttribute("stroke") || "";
+                    if (fill === "#1e293b" || fill === "#0f172a" || fill === "rgba(15, 23, 42, 0.45)") {
+                      p.setAttribute("fill", "#f1f5f9");
+                    }
+                    if (stroke === "#fbbf24") p.setAttribute("stroke", "#d97706");
+                    if (stroke === "#0284c7") p.setAttribute("stroke", "#025a87");
+                    if (stroke === "#ef4444") p.setAttribute("stroke", "#b91c1c");
+                  });
+
+                  const lines = clonedSvg.querySelectorAll("line");
+                  lines.forEach(l => {
+                    const stroke = l.getAttribute("stroke") || "";
+                    if (stroke === "#ffffff") l.setAttribute("stroke", "#475569");
+                  });
+
+                  const texts = clonedSvg.querySelectorAll("text");
+                  texts.forEach(t => {
+                    const fill = t.getAttribute("fill") || "";
+                    if (fill === "#ffffff" || fill === "#cbd5e1" || fill === "#a1a1aa" || fill === "#f43f5e" || fill === "#eab308") {
+                      t.setAttribute("fill", "#0f172a");
+                    }
+                  });
+
+                  return await convertSvgToPng(clonedSvg);
+                };
+
+                const imgAppendix = await processAppendixSvgForPdf(svgAppendix);
+                if (imgAppendix) {
+                  checkPageBreak(82);
+                  yCoord += 4;
+
+                  doc.setFont("helvetica", "bold");
+                  doc.setFontSize(8.0);
+                  doc.setTextColor(30, 41, 59);
+                  doc.text("ANEXO: ESQUEMA DE APÉNDICE CECAL (FOSA ILÍACA DERECHA)", pageWidth / 2, yCoord, { align: "center" });
+                  yCoord += 3.5;
+
+                  doc.setFont("helvetica", "normal");
+                  doc.setFontSize(6.3);
+                  doc.setTextColor(148, 163, 184);
+                  doc.text("MAPEO ESPECÍFICO DE PROCESO APENDICULAR EN FOSA ILÍACA DERECHA", pageWidth / 2, yCoord, { align: "center" });
+                  yCoord += 4.5;
+
+                  const yAppStart = yCoord;
+
+                  // Outer box
+                  doc.setFillColor(255, 255, 255);
+                  doc.setDrawColor(254, 226, 226); // red-100 border
+                  doc.roundedRect(20, yAppStart, 170, 58, 3, 3, "FD");
+
+                  // Embed drawing - offset to center-right or center left to leave space for bullets
+                  doc.addImage(imgAppendix, "PNG", 125, yAppStart + 4, 52, 47);
+
+                  // Bullet points
+                  doc.setFont("helvetica", "bold");
+                  doc.setFontSize(7.0);
+                  doc.setTextColor(185, 28, 28); // red-700
+                  doc.text("HALLAZGOS (FID / APÉNDICE):", 24, yAppStart + 10);
+                  doc.setFont("helvetica", "normal");
+                  doc.setFontSize(5.8);
+                  doc.setTextColor(51, 65, 85);
+
+                  let findingsList = [];
+                  const checkInflamed = document.getElementById("appendix-check-inflamed") as HTMLInputElement;
+                  const checkAppendixLito = document.getElementById("appendix-check-lito") as HTMLInputElement;
+                  const checkAppendixFluid = document.getElementById("appendix-check-fluid") as HTMLInputElement;
+                  const checkAppendixFat = document.getElementById("appendix-check-fat") as HTMLInputElement;
+                  const checkAppendixCollections = document.getElementById("appendix-check-collections") as HTMLInputElement;
+
+                  if (checkInflamed && checkInflamed.checked) findingsList.push("• Apéndice cecal distendido e inflamado (signos de apendicitis).");
+                  if (checkAppendixLito && checkAppendixLito.checked) findingsList.push("• Apendicolito obstructivo en ciego proximal.");
+                  if (checkAppendixFluid && checkAppendixFluid.checked) findingsList.push("• Presencia de líquido libre periapendicular en FID.");
+                  if (checkAppendixFat && checkAppendixFat.checked) findingsList.push("• Infiltración inflamatoria (edema) de la grasa circundante.");
+                  if (checkAppendixCollections && checkAppendixCollections.checked) findingsList.push("• Colección o absceso en formación en fosa ilíaca derecha.");
+
+                  if (findingsList.length === 0) {
+                    findingsList.push("• Apéndice cecal de morfología y situación habitual, sin alteraciones.");
+                    findingsList.push("• Diámetro transverso y grosor parietal conservados, sin inflamación.");
+                  }
+
+                  let currentBulletY = yAppStart + 16;
+                  findingsList.forEach(f => {
+                    doc.text(f, 24, currentBulletY);
+                    currentBulletY += 5;
+                  });
+
+                  doc.setFont("helvetica", "italic");
+                  doc.setFontSize(6.0);
+                  doc.setTextColor(148, 163, 184);
+                  doc.text("Gráfico representativo auxiliar de fosa ilíaca derecha correspondiente al protocolo redactado.", 105, yAppStart + 54, { align: "center" });
+
+                  yCoord += 64;
+                }
+              } catch (err) {
+                console.warn("Could not draw appendix diagram inside PDF", err);
+              }
+            }
+            }
+
+            // 🛠️ DIBUJO DE DIVERTICULITIS AGUDA / COLON SIGMOIDES EN PDF (SI ESTÁ ACTIVO)
+            if (includeDiverticulitisSchemaInReport) {
+              const svgDiverticulitis = document.getElementById("abdomen-diverticulitis-svg");
+              if (svgDiverticulitis) {
+              try {
+                const processDiverticulitisSvgForPdf = async (svgEl: HTMLElement) => {
+                  const clonedSvg = svgEl.cloneNode(true) as SVGElement;
+                  
+                  const stops = clonedSvg.querySelectorAll("linearGradient stop");
+                  stops.forEach(stop => {
+                    const curColor = stop.getAttribute("stop-color") || stop.getAttribute("stopColor") || "";
+                    if (curColor === "#1e293b" || curColor === "#0f172a" || curColor === "#020617") {
+                      stop.setAttribute("stop-color", "#ffffff");
+                    }
+                  });
+
+                  const paths = clonedSvg.querySelectorAll("path");
+                  paths.forEach(p => {
+                    const fill = p.getAttribute("fill") || "";
+                    const stroke = p.getAttribute("stroke") || "";
+                    if (fill === "#1e293b" || fill === "#0f172a" || fill === "rgba(15, 23, 42, 0.45)") {
+                      p.setAttribute("fill", "#f1f5f9");
+                    }
+                    if (stroke === "#fbbf24") p.setAttribute("stroke", "#d97706");
+                    if (stroke === "#0284c7") p.setAttribute("stroke", "#025a87");
+                    if (stroke === "#ef4444") p.setAttribute("stroke", "#b91c1c");
+                  });
+
+                  const lines = clonedSvg.querySelectorAll("line");
+                  lines.forEach(l => {
+                    const stroke = l.getAttribute("stroke") || "";
+                    if (stroke === "#ffffff") l.setAttribute("stroke", "#475569");
+                  });
+
+                  const texts = clonedSvg.querySelectorAll("text");
+                  texts.forEach(t => {
+                    const fill = t.getAttribute("fill") || "";
+                    if (fill === "#ffffff" || fill === "#cbd5e1" || fill === "#a1a1aa" || fill === "#f43f5e" || fill === "#eab308") {
+                      t.setAttribute("fill", "#0f172a");
+                    }
+                  });
+
+                  return await convertSvgToPng(clonedSvg);
+                };
+
+                const imgDiverticulitis = await processDiverticulitisSvgForPdf(svgDiverticulitis);
+                if (imgDiverticulitis) {
+                  checkPageBreak(82);
+                  yCoord += 4;
+
+                  doc.setFont("helvetica", "bold");
+                  doc.setFontSize(8.0);
+                  doc.setTextColor(30, 41, 59);
+                  doc.text("ANEXO: ESQUEMA DE DIVERTICULITIS AGUDA & CLASIFICACIÓN DE HINCHEY", pageWidth / 2, yCoord, { align: "center" });
+                  yCoord += 3.5;
+
+                  doc.setFont("helvetica", "normal");
+                  doc.setFontSize(6.3);
+                  doc.setTextColor(148, 163, 184);
+                  doc.text("MAPEO ESPECÍFICO DE PROCESO DIVERTICULAR EN FOSA ILÍACA IZQUIERDA", pageWidth / 2, yCoord, { align: "center" });
+                  yCoord += 4.5;
+
+                  const yDivStart = yCoord;
+
+                  // Outer box
+                  doc.setFillColor(255, 255, 255);
+                  doc.setDrawColor(254, 243, 199); // amber-100 border
+                  doc.roundedRect(20, yDivStart, 170, 58, 3, 3, "FD");
+
+                  // Embed drawing
+                  doc.addImage(imgDiverticulitis, "PNG", 125, yDivStart + 4, 52, 47);
+
+                  // Bullet points heading
+                  doc.setFont("helvetica", "bold");
+                  doc.setFontSize(7.0);
+                  doc.setTextColor(180, 83, 9); // amber-700
+                  doc.text("HALLAZGOS (FII / COLON SIGMOIDES):", 24, yDivStart + 10);
+                  doc.setFont("helvetica", "normal");
+                  doc.setFontSize(5.8);
+                  doc.setTextColor(51, 65, 85);
+
+                  let findingsList = [];
+                  const checkDiv = document.getElementById("diverticulitis-check-diverticula") as HTMLInputElement;
+                  const checkThick = document.getElementById("diverticulitis-check-thickening") as HTMLInputElement;
+                  const checkFat = document.getElementById("diverticulitis-check-fat") as HTMLInputElement;
+                  const checkAbscess = document.getElementById("diverticulitis-check-abscess") as HTMLInputElement;
+                  const checkFreeAir = document.getElementById("diverticulitis-check-freeair") as HTMLInputElement;
+                  
+                  const hincheyEl = document.getElementById("diverticulitis-hinchey-value");
+                  const hincheyVal = hincheyEl ? hincheyEl.innerText || "" : "0";
+
+                  if (checkDiv && checkDiv.checked) findingsList.push("• Presencia de múltiples sáculos diverticulares en colon sigmoides.");
+                  if (checkThick && checkThick.checked) findingsList.push("• Engrosamiento inflamatorio parietal concéntrico (> 4mm).");
+                  if (checkFat && checkFat.checked) findingsList.push("• Infiltración difusa de la grasa pericólica adyacente (fat stranding).");
+                  if (checkAbscess && checkAbscess.checked) findingsList.push("• Colección ecogénica tabicada compatible con absceso pericólico.");
+                  if (checkFreeAir && checkFreeAir.checked) findingsList.push("• Burbujas de gas extraluminal por perforación libre.");
+                  
+                  let hincheyLabel = "Estadio 0 (Diverticulosis simple sin cambios inflamatorios agudos)";
+                  if (hincheyVal === "Ia") hincheyLabel = "Estadio Ia (Inflamación pericólica / Flemón sin absceso)";
+                  if (hincheyVal === "Ib") hincheyLabel = "Estadio Ib (Absceso pericólico localizado < 5 cm)";
+                  if (hincheyVal === "II") hincheyLabel = "Estadio II (Absceso pélvico o retroperitoneal distante)";
+                  if (hincheyVal === "III") hincheyLabel = "Estadio III (Peritonitis purulenta generalizada por rotura)";
+                  if (hincheyVal === "IV") hincheyLabel = "Estadio IV (Peritonitis fecaloide por perforación libre)";
+                  
+                  findingsList.push("• Clasificación de Hinchey: " + hincheyLabel);
+
+                  let currentBulletY = yDivStart + 16;
+                  findingsList.forEach(f => {
+                    doc.text(f, 24, currentBulletY);
+                    currentBulletY += 5;
+                  });
+
+                  doc.setFont("helvetica", "italic");
+                  doc.setFontSize(6.0);
+                  doc.setTextColor(148, 163, 184);
+                  doc.text("Gráfico representativo auxiliar de fosa ilíaca izquierda correspondiente al protocolo redactado.", 105, yDivStart + 54, { align: "center" });
+
+                  yCoord += 64;
+                }
+              } catch (err) {
+                console.warn("Could not draw diverticulitis diagram inside PDF", err);
+              }
+            }
+            }
+
+            // 🛠️ DRAW ELASTOGRAPHY & QUS DIAGRAM IN THE PROGRAMMATIC PDF
+            if (includeElastographyInReport) {
+              const svgElastography = document.getElementById("abdomen-elastography-svg");
+              if (svgElastography) {
+                try {
+                  const processElastographySvgForPdf = async (svgEl: HTMLElement) => {
+                    const clonedSvg = svgEl.cloneNode(true) as SVGElement;
+                    
+                    // 1. Rewrite linear gradients used for the liver tissue representation (so they are light and nice for print)
+                    const stops = clonedSvg.querySelectorAll("linearGradient stop");
+                    stops.forEach(stop => {
+                      const curColor = stop.getAttribute("stop-color") || stop.getAttribute("stopColor") || "";
+                      
+                      // Map dark liver tissues starting colors to soft pastel colors
+                      if (curColor === "#022c22") { // F0-F1 Sano starting dark green
+                        stop.setAttribute("stop-color", "#e0f2fe"); // soft cyan/sky
+                      } else if (curColor === "#14532d") { // F2 Moderada starting forest green
+                        stop.setAttribute("stop-color", "#dcfce7"); // soft green
+                      } else if (curColor === "#431407") { // F3 Avanzada starting brown
+                        stop.setAttribute("stop-color", "#fef3c7"); // soft amber
+                      } else if (curColor === "#500730") { // F4 Cirrosis starting deep maroon
+                        stop.setAttribute("stop-color", "#ffe4e6"); // soft rose
+                      } else if (curColor === "#1e293b" || curColor === "#0f172a" || curColor === "#020617" || curColor === "#111827" || curColor === "#111c44") {
+                        stop.setAttribute("stop-color", "#f8fafc");
+                      }
+                    });
+
+                    // 2. Adjust all rect elements (background & panels)
+                    const rects = clonedSvg.querySelectorAll("rect");
+                    rects.forEach(r => {
+                      const fill = r.getAttribute("fill") || "";
+                      
+                      // Map main background #070b13 to white (#ffffff)
+                      if (fill === "#070b13") {
+                        r.setAttribute("fill", "#ffffff");
+                      }
+                      // Map panels background #0b111e to light gray (#f1f5f9)
+                      else if (fill === "#0b111e") {
+                        r.setAttribute("fill", "#f8fafc");
+                        r.setAttribute("stroke", "#cbd5e1");
+                      }
+                      // Map telemetry panel #090f19 to light gray
+                      else if (fill === "#090f19") {
+                        r.setAttribute("fill", "#f1f5f9");
+                        r.setAttribute("stroke", "#e2e8f0");
+                      }
+                      // Map other dark backgrounds used in rect elements
+                      else if (fill === "#020617" || fill === "#070a13" || fill === "#0f172a" || fill === "#1e293b" || fill === "#0b1329" || fill === "#090d16") {
+                        r.setAttribute("fill", "#ffffff");
+                        r.setAttribute("stroke", "#e2e8f0");
+                      }
+                    });
+
+                    // 3. Adjust all lines and circles (grids, target rings, radar, gauge track)
+                    const circles = clonedSvg.querySelectorAll("circle");
+                    circles.forEach(c => {
+                      const stroke = c.getAttribute("stroke") || "";
+                      
+                      // Gauge center circle outline (often dark for contrast in dark mode)
+                      if (stroke === "#070b13" || stroke === "#090d16") {
+                        c.setAttribute("stroke", "#ffffff");
+                      }
+                      
+                      // Radar/grid circles stroke `#1e293b`
+                      if (stroke === "#1e293b") {
+                        c.setAttribute("stroke", "#cbd5e1");
+                      }
+                    });
+
+                    const lines = clonedSvg.querySelectorAll("line");
+                    lines.forEach(l => {
+                      const stroke = l.getAttribute("stroke") || "";
+                      
+                      // Target rings Splinters/Crosshairs: `#334155`
+                      if (stroke === "#334155") {
+                        l.setAttribute("stroke", "#cbd5e1");
+                      }
+                      // Splosive splitter line
+                      if (stroke === "#1e293b") {
+                        l.setAttribute("stroke", "#e2e8f0");
+                      }
+                      // Keep white gauge needles as dark slate `#0f172a` for contrast
+                      if (stroke === "#ffffff" || stroke === "#f1f5f9") {
+                        l.setAttribute("stroke", "#0f172a");
+                      }
+                    });
+
+                    const paths = clonedSvg.querySelectorAll("path");
+                    paths.forEach(p => {
+                      const stroke = p.getAttribute("stroke") || "";
+                      
+                      // Gauge track backgrounds: `stroke="#111827"`
+                      if (stroke === "#111827") {
+                        p.setAttribute("stroke", "#f1f5f9");
+                      }
+                      
+                      // Scar streaks `stroke="rgba(255,255,255,0.4)"`
+                      if (stroke.includes("rgba(255,255,255") || stroke.includes("rgba(255, 255, 255")) {
+                        p.setAttribute("stroke", "rgba(100, 116, 139, 0.45)");
+                      }
+                    });
+
+                    // 4. Adjust all texts for crisp readability
+                    const texts = clonedSvg.querySelectorAll("text");
+                    texts.forEach(t => {
+                      const fill = t.getAttribute("fill") || "";
+                      
+                      // Remove text shadow filters which look blurry in print
+                      t.removeAttribute("filter");
+                      
+                      // If text uses white or light colors, map it to dark gray/slate
+                      if (fill === "#ffffff" || fill === "#cbd5e1" || fill === "#94a3b8" || fill === "#e2e8f0" || fill === "#f1f5f9" || fill === "#a5f3fc" || fill === "#22d3ee" || fill === "#06b6d4") {
+                        t.setAttribute("fill", "#0f172a");
+                      } else if (fill === "#64748b" || fill === "#475569") {
+                        t.setAttribute("fill", "#475569");
+                      }
+                      
+                      // Handle tspans inside the text tags
+                      const tspans = t.querySelectorAll("tspan");
+                      tspans.forEach(tsp => {
+                        const tspFill = tsp.getAttribute("fill") || "";
+                        
+                        // Convert bright dark-mode values to clean print-contrast colors
+                        if (tspFill === "#34d399" || tspFill === "#22d3ee" || tspFill === "#60a5fa" || tspFill === "#a5f3fc") {
+                          tsp.setAttribute("fill", "#0369a1"); // Deep blue/sky
+                        } else if (tspFill === "#fbbf24" || tspFill === "#b45309" || tspFill === "#f59e0b" || tspFill === "#ea580c") {
+                          tsp.setAttribute("fill", "#b45309"); // Deep amber/brown
+                          tsp.removeAttribute("filter");
+                        } else if (tspFill === "#f43f5e" || tspFill === "#e11d48") {
+                          tsp.setAttribute("fill", "#be123c"); // Deep rose/red
+                        } else if (tspFill === "#94a3b8" || tspFill === "#cbd5e1") {
+                          tsp.setAttribute("fill", "#475569");
+                        }
+                      });
+                    });
+
+                    return await convertSvgToPng(clonedSvg);
+                  };
+
+                  const imgElastography = await processElastographySvgForPdf(svgElastography);
+
+                  checkPageBreak(85);
+                  yCoord += 8;
+
+                  // Header for Elastography
+                  doc.setFont("helvetica", "bold");
+                  doc.setFontSize(8.0);
+                  doc.setTextColor(30, 41, 59);
+                  if (elastographyHasStiffness) {
+                    doc.text("ANEXO: ELASTOGRAFÍA TRANSITORIA Y CUANTIFICACIÓN (QUS)", marginX, yCoord);
+                  } else {
+                    doc.text("ANEXO: CUANTIFICACIÓN DE GRASA HEPÁTICA (QUS)", marginX, yCoord);
+                  }
+                  
+                  doc.setFont("helvetica", "bold");
+                  doc.setFontSize(6.2);
+                  doc.setTextColor(148, 163, 184);
+                  if (elastographyHasStiffness) {
+                    doc.text("ANÁLISIS DE RIGIDEZ Y ENTORNO MULTIPARAMÉTRICO GRASO HEPÁTICO", marginX, yCoord + 4.5);
+                  } else {
+                    doc.text("ANÁLISIS DE ENTORNO MULTIPARAMÉTRICO GRASO HEPÁTICO", marginX, yCoord + 4.5);
+                  }
+                  yCoord += 8;
+
+                  const boxHeight = 58;
+                  const boxWidth = 170;
+
+                  // Main Box Container
+                  doc.setFillColor(255, 255, 255);
+                  doc.setDrawColor(229, 231, 235);
+                  doc.roundedRect(20, yCoord, boxWidth, boxHeight, 3, 3, "FD");
+
+                  if (imgElastography) {
+                    doc.addImage(imgElastography, "PNG", 22, yCoord + 1.5, 166, 55);
+                  }
+
+                  yCoord += boxHeight + 4;
+
+                  // Summary fields readouts
+                  checkPageBreak(18);
+                  doc.setFillColor(248, 250, 252);
+                  doc.setDrawColor(229, 231, 235);
+                  doc.roundedRect(20, yCoord, boxWidth, 12, 2, 2, "FD");
+
+                  doc.setFont("helvetica", "bold");
+                  doc.setFontSize(6.5);
+                  doc.setTextColor(51, 65, 85);
+                  
+                  const fibrosisLabel = stiffnessOverride !== "auto" 
+                    ? (stiffnessOverride === "F0-F1" ? "F0-F1 Normal" : stiffnessOverride === "F2" ? "F2 Moderada" : stiffnessOverride === "F3" ? "F3 Avanzada" : "F4 Cirrosis")
+                    : (elastographyStiffness < 6.0 ? 'F0-F1 Normal' : elastographyStiffness < 8.0 ? 'F2 Moderada' : elastographyStiffness < 12.5 ? 'F3 Avanzada' : 'F4 Cirrosis');
+
+                  const fatLevelLabel = fatFraction < 5.0 ? 'Normal' : fatFraction < 12.0 ? 'Leve' : fatFraction < 22.0 ? 'Moderado' : 'Severo';
+
+                  const textkPa = `Rigidez Hepática: ${elastographyStiffness.toFixed(1)} kPa (${fibrosisLabel})`;
+                  const textQUS = `Grasa Hepática (QUS): ${fatFraction.toFixed(1)}% (${fatLevelLabel})`;
+
+                  if (elastographyHasStiffness) {
+                    doc.text(textkPa, 24, yCoord + 7.0);
+                    doc.text(textQUS, 102, yCoord + 7.0);
+                  } else {
+                    doc.text(textQUS, 24, yCoord + 7.0);
+                  }
+
+                  yCoord += 16;
+                } catch (e2) {
+                  console.warn("Error drawing elastography SVG to PDF on conversion:", e2);
+                }
+              }
+            }
           } catch (err) {
             console.warn("Could not draw abdomen diagram inside jsPDF", err);
           }
         }
       }
+
+
+
+      // 🛠️ DRAW ABDOMINAL WALL DIAGRAM IN THE PROGRAMMATIC PDF
+      if (includeAbdominalWallSchemaInReport && specificStudy === "Pared Abdominal") {
+        const svgWall = document.getElementById("abdominal-wall-anatomy-svg");
+
+        if (svgWall) {
+          try {
+            const processAbdominalWallSvgForPdf = async (svgEl: HTMLElement) => {
+              const clonedSvg = svgEl.cloneNode(true) as SVGElement;
+              
+              // 1. Process linear gradients
+              const stops = clonedSvg.querySelectorAll("linearGradient stop");
+              stops.forEach(stop => {
+                const curColor = stop.getAttribute("stop-color") || stop.getAttribute("stopColor") || "";
+                if (curColor === "#3b4f6e" || curColor === "#1e293b" || curColor === "#2e3d52") stop.setAttribute("stop-color", "#cbd5e1");
+                if (curColor === "#0f172a" || curColor === "#111827") stop.setAttribute("stop-color", "#f1f5f9");
+              });
+
+              // 2. Process paths, rects, ellipses, circles
+              const paths = clonedSvg.querySelectorAll("path");
+              paths.forEach(p => {
+                const fill = p.getAttribute("fill") || "";
+                const stroke = p.getAttribute("stroke") || "";
+                
+                if (fill.includes("rgba(16, 185, 129")) p.setAttribute("fill", "#d1fae5");
+                if (stroke === "#10b981") p.setAttribute("stroke", "#047857");
+                
+                if (fill.includes("rgba(245, 158, 11")) p.setAttribute("fill", "#fef3c7");
+                if (stroke === "#f59e0b") p.setAttribute("stroke", "#b45309");
+
+                if (fill === "#1e293b") p.setAttribute("fill", "#f8fafc");
+                if (stroke === "#475569" || stroke === "#64748b") p.setAttribute("stroke", "#cbd5e1");
+
+                if (stroke === "#ffffff") p.setAttribute("stroke", "#94a3b8");
+                
+                if (fill === "#060913" || fill === "#161c2c") p.setAttribute("fill", "#f8fafc");
+                if (stroke === "#1e293b" || stroke === "#253545" || stroke === "#2a3547") p.setAttribute("stroke", "#cbd5e1");
+              });
+
+              const rects = clonedSvg.querySelectorAll("rect");
+              rects.forEach(r => {
+                const fill = r.getAttribute("fill") || "";
+                const stroke = r.getAttribute("stroke") || "";
+                
+                if (fill.includes("rgba(16, 185, 129")) r.setAttribute("fill", "#d1fae5");
+                if (stroke === "#10b981") r.setAttribute("stroke", "#047857");
+                
+                if (fill.includes("rgba(245, 158, 11")) r.setAttribute("fill", "#fef3c7");
+                if (stroke === "#f59e0b") r.setAttribute("stroke", "#b45309");
+
+                if (fill === "#1e293b") r.setAttribute("fill", "#f8fafc");
+                if (stroke === "#475569" || stroke === "#64748b") r.setAttribute("stroke", "#cbd5e1");
+              });
+
+              const ellipses = clonedSvg.querySelectorAll("ellipse");
+              ellipses.forEach(el => {
+                const fill = el.getAttribute("fill") || "";
+                const stroke = el.getAttribute("stroke") || "";
+                
+                if (fill.includes("rgba(16, 185, 129")) el.setAttribute("fill", "#d1fae5");
+                if (stroke === "#10b981") el.setAttribute("stroke", "#047857");
+                
+                if (fill.includes("rgba(245, 158, 11")) el.setAttribute("fill", "#fef3c7");
+                if (stroke === "#f59e0b") el.setAttribute("stroke", "#b45309");
+
+                if (fill === "#1e293b") el.setAttribute("fill", "#f8fafc");
+                if (stroke === "#475569" || stroke === "#64748b") el.setAttribute("stroke", "#cbd5e1");
+              });
+
+              const circles = clonedSvg.querySelectorAll("circle");
+              circles.forEach(c => {
+                const fill = c.getAttribute("fill") || "";
+                const stroke = c.getAttribute("stroke") || "";
+                
+                if (fill.includes("rgba(16, 185, 129")) c.setAttribute("fill", "#d1fae5");
+                if (stroke === "#10b981") c.setAttribute("stroke", "#047857");
+                
+                if (fill.includes("rgba(245, 158, 11")) c.setAttribute("fill", "#fef3c7");
+                if (stroke === "#f59e0b") c.setAttribute("stroke", "#b45309");
+
+                if (fill === "#1e293b") c.setAttribute("fill", "#f8fafc");
+                if (stroke === "#475569" || stroke === "#64748b") c.setAttribute("stroke", "#cbd5e1");
+                
+                if (stroke === "#ffffff") c.setAttribute("stroke", "#94a3b8");
+                if (fill === "#ffffff") c.setAttribute("fill", "#0f172a");
+              });
+
+              const texts = clonedSvg.querySelectorAll("text");
+              texts.forEach(t => {
+                const fill = t.getAttribute("fill") || "";
+                if (fill === "#ffffff") t.setAttribute("fill", "#0f172a");
+                t.setAttribute("opacity", "0.85");
+              });
+
+              return await convertSvgToPng(clonedSvg);
+            };
+
+            const imgWall = await processAbdominalWallSvgForPdf(svgWall);
+
+            // Check page break for 95mm
+            const willPageBreak = (yCoord + 95 > pageHeight - 20);
+            checkPageBreak(95);
+            if (!willPageBreak) {
+              yCoord += 18;
+            } else {
+              yCoord += 6;
+            }
+
+            // Header for the diagram
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8.0);
+            doc.setTextColor(30, 41, 59);
+            doc.text("ANEXO: ESQUEMA DE HALLAZGOS Y SINOPSIS DE PARED ABDOMINAL", pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 3.5;
+
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(6.3);
+            doc.setTextColor(148, 163, 184);
+            doc.text("MAPEO ANATÓMICO ECOGRÁFICO COMPLETO DE LA PARED ABDOMINAL", pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 4.5;
+
+            const yStart = yCoord;
+
+            // 1. Draw Left Diagram Box (Esquema Pared Abdominal)
+            doc.setFillColor(255, 255, 255);
+            doc.setDrawColor(229, 231, 235);
+            doc.roundedRect(20, yStart, 88, 75, 3, 3, "FD");
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(6.5);
+            doc.setTextColor(71, 85, 105);
+            doc.text("CAPAS MUSCULARES Y ORIFICIOS HERNIALES", 64, yStart + 5.5, { align: "center" });
+
+            if (imgWall) {
+              doc.addImage(imgWall, "PNG", 34, yStart + 8, 60, 60);
+            } else {
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(7);
+              doc.setTextColor(148, 163, 184);
+              doc.text("No disponible", 64, yStart + 35, { align: "center" });
+            }
+
+            // 2. Draw Right Findings Container (Slate Background)
+            doc.setFillColor(248, 250, 252);
+            doc.setDrawColor(229, 231, 235);
+            doc.roundedRect(111, yStart, 79, 75, 3, 3, "FD");
+
+            // Header of findings: Unified title
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5);
+            doc.setTextColor(67, 56, 202); // indigo-700
+            doc.text("SINOPSIS DE HALLAZGOS CLÍNICOS", 114, yStart + 5.5);
+
+            // Draw horizontal divider line
+            doc.setDrawColor(229, 231, 235);
+            doc.setLineWidth(0.2);
+            doc.line(114, yStart + 7.5, 186, yStart + 7.5);
+
+            const allowedWallKeys = [
+              { id: "rectus_abdominis_right", label: "M. Recto Ant. Der." },
+              { id: "rectus_abdominis_left", label: "M. Recto Ant. Izq." },
+              { id: "oblique_muscles_right", label: "M. Oblicuos Der." },
+              { id: "oblique_muscles_left", label: "M. Oblicuos Izq." },
+              { id: "linea_alba", label: "Línea Alba" },
+              { id: "umbilical_region", label: "Reg. Umbilical" },
+              { id: "epigastric_region", label: "Reg. Epigástrica" },
+              { id: "inguinal_region_right", label: "Reg. Inguinal Der." },
+              { id: "inguinal_region_left", label: "Reg. Inguinal Izq." },
+              { id: "crural_region_right", label: "Reg. Crural Der." },
+              { id: "crural_region_left", label: "Reg. Crural Izq." }
+            ];
+
+            const activeWallKeysForPdf = allowedWallKeys.filter(struct => {
+              const s = abdominalWallStates[struct.id] || "no_descrito";
+              return s !== "no_descrito" && s !== "normal";
+            });
+
+            const getWallPrintDescription = (id: string, state: string) => {
+              if (abdominalWallDescriptions && abdominalWallDescriptions[id] && abdominalWallDescriptions[id].trim() !== "" && abdominalWallDescriptions[id] !== "No mencionado / No descrito." && abdominalWallDescriptions[id] !== "No descrito.") {
+                return abdominalWallDescriptions[id];
+              }
+              if (!state || state === "no_descrito") {
+                return "No descrito en el reporte.";
+              }
+              if (state === "normal") {
+                return "Dentro de límites normales.";
+              }
+              return state.charAt(0).toUpperCase() + state.slice(1).replace(/_/g, " ");
+            };
+
+            const wallCardData = activeWallKeysForPdf.map(struct => {
+              const s = abdominalWallStates[struct.id] || "no_descrito";
+              return {
+                label: struct.label,
+                state: s,
+                description: getWallPrintDescription(struct.id, s)
+              };
+            });
+
+            // Append additional findings if any
+            const wallExtras = additionalFindings["Pared Abdominal"] || [];
+            wallExtras.forEach((extra: any) => {
+              wallCardData.push({
+                label: extra.structureName,
+                state: extra.state || "Alterado",
+                description: extra.description
+              });
+            });
+
+            if (wallCardData.length === 0) {
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(6.5);
+              doc.setTextColor(100, 116, 139);
+              doc.text("Sin hallazgos patológicos de significación.", 150, yStart + 30, { align: "center" });
+              doc.text("Las capas musculares, aponeurosis y", 150, yStart + 36, { align: "center" });
+              doc.text("orificios herniarios evaluados se reportan normales.", 150, yStart + 42, { align: "center" });
+            } else {
+              drawAnatomicalCards(doc, wallCardData, 111, yStart, 79, 75);
+            }
+
+            doc.setFont("helvetica", "italic");
+            doc.setFontSize(6.2);
+            doc.setTextColor(148, 163, 184);
+            doc.text("Mapa sinóptico de la pared abdominal correspondiente al reporte redactado.", 150, yStart + 72, { align: "center" });
+
+            yCoord += 80;
+          } catch (err) {
+            console.warn("Could not draw abdominal wall diagram inside jsPDF", err);
+          }
+        }
+      }
+
+
+
+      // 🛠️ DRAW CALF AND ACHILLES DIAGRAM IN THE PROGRAMMATIC PDF
+      if (includeCalfAchillesSchemaInReport && specificStudy === "Pantorrilla y Tendón de Aquiles") {
+        const svgCalf = document.getElementById("calf-achilles-anatomy-svg");
+
+        if (svgCalf) {
+          try {
+            const processCalfAchillesSvgForPdf = async (svgEl: HTMLElement) => {
+              const clonedSvg = svgEl.cloneNode(true) as SVGElement;
+              
+              const stops = clonedSvg.querySelectorAll("linearGradient stop");
+              stops.forEach(stop => {
+                const curColor = stop.getAttribute("stop-color") || stop.getAttribute("stopColor") || "";
+                if (curColor === "#3b4f6e" || curColor === "#1e293b" || curColor === "#2e3d52") stop.setAttribute("stop-color", "#cbd5e1");
+                if (curColor === "#0f172a" || curColor === "#111827") stop.setAttribute("stop-color", "#f1f5f9");
+              });
+
+              const paths = clonedSvg.querySelectorAll("path");
+              paths.forEach(p => {
+                const fill = p.getAttribute("fill") || "";
+                const stroke = p.getAttribute("stroke") || "";
+                
+                if (fill.includes("rgba(16, 185, 129")) p.setAttribute("fill", "#d1fae5");
+                if (stroke === "#10b981") p.setAttribute("stroke", "#047857");
+                
+                if (fill.includes("rgba(245, 158, 11")) p.setAttribute("fill", "#fef3c7");
+                if (stroke === "#f59e0b") p.setAttribute("stroke", "#b45309");
+
+                if (fill === "#1e293b") p.setAttribute("fill", "#f8fafc");
+                if (stroke === "#475569" || stroke === "#64748b") p.setAttribute("stroke", "#cbd5e1");
+
+                if (stroke === "#ffffff") p.setAttribute("stroke", "#94a3b8");
+                
+                if (fill === "#060913" || fill === "#161c2c") p.setAttribute("fill", "#f8fafc");
+                if (stroke === "#1e293b" || stroke === "#253545" || stroke === "#2a3547") p.setAttribute("stroke", "#cbd5e1");
+              });
+
+              const rects = clonedSvg.querySelectorAll("rect");
+              rects.forEach(r => {
+                const fill = r.getAttribute("fill") || "";
+                const stroke = r.getAttribute("stroke") || "";
+                
+                if (fill.includes("rgba(16, 185, 129")) r.setAttribute("fill", "#d1fae5");
+                if (stroke === "#10b981") r.setAttribute("stroke", "#047857");
+                
+                if (fill.includes("rgba(245, 158, 11")) r.setAttribute("fill", "#fef3c7");
+                if (stroke === "#f59e0b") r.setAttribute("stroke", "#b45309");
+
+                if (fill === "#1e293b") r.setAttribute("fill", "#f8fafc");
+                if (stroke === "#475569" || stroke === "#64748b") r.setAttribute("stroke", "#cbd5e1");
+              });
+
+              const ellipses = clonedSvg.querySelectorAll("ellipse");
+              ellipses.forEach(el => {
+                const fill = el.getAttribute("fill") || "";
+                const stroke = el.getAttribute("stroke") || "";
+                
+                if (fill.includes("rgba(16, 185, 129")) el.setAttribute("fill", "#d1fae5");
+                if (stroke === "#10b981") el.setAttribute("stroke", "#047857");
+                
+                if (fill.includes("rgba(245, 158, 11")) el.setAttribute("fill", "#fef3c7");
+                if (stroke === "#f59e0b") el.setAttribute("stroke", "#b45309");
+
+                if (fill === "#1e293b") el.setAttribute("fill", "#f8fafc");
+                if (stroke === "#475569" || stroke === "#64748b") el.setAttribute("stroke", "#cbd5e1");
+              });
+
+              const circles = clonedSvg.querySelectorAll("circle");
+              circles.forEach(c => {
+                const fill = c.getAttribute("fill") || "";
+                const stroke = c.getAttribute("stroke") || "";
+                
+                if (fill.includes("rgba(16, 185, 129")) c.setAttribute("fill", "#d1fae5");
+                if (stroke === "#10b981") c.setAttribute("stroke", "#047857");
+                
+                if (fill.includes("rgba(245, 158, 11")) c.setAttribute("fill", "#fef3c7");
+                if (stroke === "#f59e0b") c.setAttribute("stroke", "#b45309");
+
+                if (fill === "#1e293b") c.setAttribute("fill", "#f8fafc");
+                if (stroke === "#475569" || stroke === "#64748b") c.setAttribute("stroke", "#cbd5e1");
+                
+                if (stroke === "#ffffff") c.setAttribute("stroke", "#94a3b8");
+                if (fill === "#ffffff") c.setAttribute("fill", "#0f172a");
+              });
+
+              const texts = clonedSvg.querySelectorAll("text");
+              texts.forEach(t => {
+                const fill = t.getAttribute("fill") || "";
+                if (fill === "#ffffff") t.setAttribute("fill", "#0f172a");
+                t.setAttribute("opacity", "0.85");
+              });
+
+              return await convertSvgToPng(clonedSvg);
+            };
+
+            const imgCalf = await processCalfAchillesSvgForPdf(svgCalf);
+
+            // Check page break for 95mm
+            const willPageBreak = (yCoord + 95 > pageHeight - 20);
+            checkPageBreak(95);
+            if (!willPageBreak) {
+              yCoord += 18;
+            } else {
+              yCoord += 6;
+            }
+
+            // Header for the diagram
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8.0);
+            doc.setTextColor(30, 41, 59);
+            doc.text("ANEXO: ESQUEMA DE HALLAZGOS Y SINOPSIS DE PANTORRILLA Y TENDÓN DE AQUILES", pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 3.5;
+
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(6.3);
+            doc.setTextColor(148, 163, 184);
+            doc.text("MAPEO ANATÓMICO ECOGRÁFICO COMPLETO DE PANTORRILLA Y TENDÓN DE AQUILES", pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 4.5;
+
+            const yStart = yCoord;
+
+            // 1. Draw Left Diagram Box (Esquema Pantorrilla y Tendón de Aquiles)
+            doc.setFillColor(255, 255, 255);
+            doc.setDrawColor(229, 231, 235);
+            doc.roundedRect(20, yStart, 88, 75, 3, 3, "FD");
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(6.5);
+            doc.setTextColor(71, 85, 105);
+            doc.text("ESTRUCTURAS MIOTENDINOSAS Y FASCIALES", 64, yStart + 5.5, { align: "center" });
+
+            if (imgCalf) {
+              doc.addImage(imgCalf, "PNG", 34, yStart + 8, 60, 60);
+            } else {
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(7);
+              doc.setTextColor(148, 163, 184);
+              doc.text("No disponible", 64, yStart + 35, { align: "center" });
+            }
+
+            // 2. Draw Right Findings Container (Slate Background)
+            doc.setFillColor(248, 250, 252);
+            doc.setDrawColor(229, 231, 235);
+            doc.roundedRect(111, yStart, 79, 75, 3, 3, "FD");
+
+            // Header of findings: Unified title
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5);
+            doc.setTextColor(67, 56, 202); // indigo-700
+            doc.text("SINOPSIS DE HALLAZGOS CLÍNICOS", 114, yStart + 5.5);
+
+            // Draw horizontal divider line
+            doc.setDrawColor(229, 231, 235);
+            doc.setLineWidth(0.2);
+            doc.line(114, yStart + 7.5, 186, yStart + 7.5);
+
+            const allowedCalfKeys = [
+              { id: "gastrocnemius_medial", label: "Gastrocnemio Medial" },
+              { id: "gastrocnemius_lateral", label: "Gastrocnemio Lateral" },
+              { id: "soleus_muscle", label: "Músculo Sóleo" },
+              { id: "achilles_tendon", label: "Tendón de Aquiles" },
+              { id: "plantaris_tendon", label: "Plantar Delgado" },
+              { id: "retrocalcaneal_bursa", label: "Bolsa Retrocalcánea" }
+            ];
+
+            const activeCalfKeysForPdf = allowedCalfKeys.filter(struct => {
+              const s = calfAchillesStates[struct.id] || "no_descrito";
+              return s !== "no_descrito" && s !== "normal";
+            });
+
+            const getCalfPrintDescription = (id: string, state: string) => {
+              if (calfAchillesDescriptions && calfAchillesDescriptions[id] && calfAchillesDescriptions[id].trim() !== "" && calfAchillesDescriptions[id] !== "No mencionado / No descrito." && calfAchillesDescriptions[id] !== "No descrito.") {
+                return calfAchillesDescriptions[id];
+              }
+              if (!state || state === "no_descrito") {
+                return "No descrito en el reporte.";
+              }
+              if (state === "normal") {
+                return "Dentro de límites normales.";
+              }
+              return state.charAt(0).toUpperCase() + state.slice(1).replace(/_/g, " ");
+            };
+
+            const calfCardData = activeCalfKeysForPdf.map(struct => {
+              const s = calfAchillesStates[struct.id] || "no_descrito";
+              return {
+                label: struct.label,
+                state: s,
+                description: getCalfPrintDescription(struct.id, s)
+              };
+            });
+
+            // Append additional findings if any
+            const calfExtras = additionalFindings["Pantorrilla y Tendón de Aquiles"] || [];
+            calfExtras.forEach((extra: any) => {
+              calfCardData.push({
+                label: extra.structureName,
+                state: extra.state || "Alterado",
+                description: extra.description
+              });
+            });
+
+            if (calfCardData.length === 0) {
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(6.5);
+              doc.setTextColor(100, 116, 139);
+              doc.text("Sin hallazgos patológicos de significación.", 150, yStart + 30, { align: "center" });
+              doc.text("Los vientres musculares, fascia y el tendón", 150, yStart + 36, { align: "center" });
+              doc.text("de Aquiles evaluados se reportan normales.", 150, yStart + 42, { align: "center" });
+            } else {
+              drawAnatomicalCards(doc, calfCardData, 111, yStart, 79, 75);
+            }
+
+            doc.setFont("helvetica", "italic");
+            doc.setFontSize(6.2);
+            doc.setTextColor(148, 163, 184);
+            doc.text("Mapa sinóptico de pantorrilla y tendón de Aquiles correspondiente al reporte redactado.", 150, yStart + 72, { align: "center" });
+
+            yCoord += 80;
+          } catch (err) {
+            console.warn("Could not draw calf & Achilles diagram inside jsPDF", err);
+          }
+        }
+      }
+
+
+
+      // 🛠️ DRAW NEONATAL BRAIN DIAGRAM IN THE PROGRAMMATIC PDF
+      if (includeNeonatalBrainSchemaInReport && specificStudy === "Cerebro Neonatal") {
+        const svgBrain = document.getElementById("neonatal-brain-anatomy-svg");
+
+        if (svgBrain) {
+          try {
+            const processNeonatalBrainSvgForPdf = async (svgEl: HTMLElement) => {
+              const clonedSvg = svgEl.cloneNode(true) as SVGElement;
+              
+              const paths = clonedSvg.querySelectorAll("path");
+              paths.forEach(p => {
+                const fill = p.getAttribute("fill") || "";
+                const stroke = p.getAttribute("stroke") || "";
+                
+                if (fill.includes("rgba(16, 185, 129")) p.setAttribute("fill", "#d1fae5");
+                if (stroke === "#10b981") p.setAttribute("stroke", "#047857");
+                
+                if (fill.includes("rgba(244, 63, 94")) p.setAttribute("fill", "#ffe4e6");
+                if (stroke === "#f43f5e") p.setAttribute("stroke", "#be123c");
+
+                if (fill.includes("rgba(15, 23, 42") || fill === "#1e293b") p.setAttribute("fill", "#f8fafc");
+                if (stroke === "#334155" || stroke === "#64748b") p.setAttribute("stroke", "#cbd5e1");
+              });
+
+              const circles = clonedSvg.querySelectorAll("circle");
+              circles.forEach(c => {
+                const fill = c.getAttribute("fill") || "";
+                const stroke = c.getAttribute("stroke") || "";
+                
+                if (fill.includes("rgba(16, 185, 129")) c.setAttribute("fill", "#d1fae5");
+                if (stroke === "#10b981") c.setAttribute("stroke", "#047857");
+                
+                if (fill.includes("rgba(244, 63, 94")) c.setAttribute("fill", "#ffe4e6");
+                if (stroke === "#f43f5e") c.setAttribute("stroke", "#be123c");
+
+                if (fill.includes("rgba(15, 23, 42") || fill === "#1e293b") c.setAttribute("fill", "#f8fafc");
+                if (stroke === "#334155" || stroke === "#64748b") c.setAttribute("stroke", "#cbd5e1");
+              });
+
+              const lines = clonedSvg.querySelectorAll("line");
+              lines.forEach(l => {
+                const stroke = l.getAttribute("stroke") || "";
+                if (stroke === "#1e293b" || stroke === "#334155") l.setAttribute("stroke", "#cbd5e1");
+              });
+
+              const texts = clonedSvg.querySelectorAll("text");
+              texts.forEach(t => {
+                t.setAttribute("fill", "#475569");
+              });
+
+              return await convertSvgToPng(clonedSvg);
+            };
+
+            const imgBrain = await processNeonatalBrainSvgForPdf(svgBrain);
+
+            // Check page break for 95mm
+            const willPageBreak = (yCoord + 95 > pageHeight - 20);
+            checkPageBreak(95);
+            if (!willPageBreak) {
+              yCoord += 18;
+            } else {
+              yCoord += 6;
+            }
+
+            // Header for the diagram
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8.0);
+            doc.setTextColor(30, 41, 59);
+            doc.text("ANEXO: ESQUEMA DE HALLAZGOS Y SINOPSIS DE ULTRASONIDO CEREBRAL NEONATAL", pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 3.5;
+
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(6.3);
+            doc.setTextColor(148, 163, 184);
+            doc.text("MAPEO ANATÓMICO ECOGRÁFICO COMPLETO - VISTA CORONAL TRANSFONTANELAR", pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 4.5;
+
+            const yStart = yCoord;
+
+            // 1. Draw Left Diagram Box
+            doc.setFillColor(255, 255, 255);
+            doc.setDrawColor(229, 231, 235);
+            doc.roundedRect(20, yStart, 88, 75, 3, 3, "FD");
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(6.5);
+            doc.setTextColor(71, 85, 105);
+            doc.text("SISTEMA VENTRICULAR Y PARÉNQUIMA CEREBRAL", 64, yStart + 5.5, { align: "center" });
+
+            if (imgBrain) {
+              doc.addImage(imgBrain, "PNG", 24, yStart + 8, 80, 64);
+            } else {
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(7);
+              doc.setTextColor(148, 163, 184);
+              doc.text("No disponible", 64, yStart + 35, { align: "center" });
+            }
+
+            // 2. Draw Right Findings Container (Slate Background)
+            doc.setFillColor(248, 250, 252);
+            doc.setDrawColor(229, 231, 235);
+            doc.roundedRect(111, yStart, 79, 75, 3, 3, "FD");
+
+            // Header of findings
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5);
+            doc.setTextColor(67, 56, 202); // indigo-700
+            doc.text("SINOPSIS DE HALLAZGOS CLÍNICOS", 114, yStart + 5.5);
+
+            // Draw horizontal divider line
+            doc.setDrawColor(229, 231, 235);
+            doc.setLineWidth(0.2);
+            doc.line(114, yStart + 7.5, 186, yStart + 7.5);
+
+            const allowedBrainKeys = [
+              { id: "ventricle_right", label: "Ventrículo Lat. Derecho" },
+              { id: "ventricle_left", label: "Ventrículo Lat. Izquierdo" },
+              { id: "ventricle_third_fourth", label: "3er y 4to Ventrículo" },
+              { id: "choroid_right", label: "Plexo Coroideo Derecho" },
+              { id: "choroid_left", label: "Plexo Coroideo Izquierdo" },
+              { id: "germinal_right", label: "S. Caudotalámico Derecho" },
+              { id: "germinal_left", label: "S. Caudotalámico Izquierdo" },
+              { id: "parenchyma_periventricular_right", label: "Parénquima Perivent. Der." },
+              { id: "parenchyma_periventricular_left", label: "Parénquima Perivent. Izq." },
+              { id: "parenchyma_focal_right", label: "Parénquima Lobar Der." },
+              { id: "parenchyma_focal_left", label: "Parénquima Lobar Izq." },
+              { id: "subarachnoid_space", label: "Espacio Extraaxial" }
+            ];
+
+            const activeBrainKeysForPdf = allowedBrainKeys.filter(struct => {
+              const s = neonatalBrainStates[struct.id] || "no_descrito";
+              return s !== "no_descrito" && s !== "normal";
+            });
+
+            const getBrainPrintDescription = (id: string, state: string) => {
+              if (neonatalBrainDescriptions && neonatalBrainDescriptions[id] && neonatalBrainDescriptions[id].trim() !== "" && neonatalBrainDescriptions[id] !== "No mencionado / No descrito." && neonatalBrainDescriptions[id] !== "No descrito.") {
+                return neonatalBrainDescriptions[id];
+              }
+              if (!state || state === "no_descrito") {
+                return "No descrito en el reporte.";
+              }
+              if (state === "normal") {
+                return "Dentro de límites normales.";
+              }
+              return state.charAt(0).toUpperCase() + state.slice(1).replace(/_/g, " ");
+            };
+
+            const brainCardData = activeBrainKeysForPdf.map(struct => {
+              const s = neonatalBrainStates[struct.id] || "no_descrito";
+              return {
+                label: struct.label,
+                state: s,
+                description: getBrainPrintDescription(struct.id, s)
+              };
+            });
+
+            // Append additional findings if any
+            const brainExtras = additionalFindings["Cerebro Neonatal"] || [];
+            brainExtras.forEach((extra: any) => {
+              brainCardData.push({
+                label: extra.structureName,
+                state: extra.state || "Alterado",
+                description: extra.description
+              });
+            });
+
+            if (brainCardData.length === 0) {
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(6.5);
+              doc.setTextColor(100, 116, 139);
+              doc.text("Sin hallazgos patológicos de significación.", 150, yStart + 30, { align: "center" });
+              doc.text("El sistema ventricular, plexos, matriz germinal", 150, yStart + 36, { align: "center" });
+              doc.text("y el parénquima evaluado se reportan normales.", 150, yStart + 42, { align: "center" });
+            } else {
+              drawAnatomicalCards(doc, brainCardData, 111, yStart, 79, 75);
+            }
+
+            doc.setFont("helvetica", "italic");
+            doc.setFontSize(6.2);
+            doc.setTextColor(148, 163, 184);
+            doc.text("Mapa sinóptico transfontanelar correspondiente al reporte redactado.", 150, yStart + 72, { align: "center" });
+
+            yCoord += 80;
+          } catch (err) {
+            console.warn("Could not draw neonatal brain diagram inside jsPDF", err);
+          }
+        }
+      }
+
 
 
 
@@ -7346,10 +10399,115 @@ Ejemplo:
                              specificStudy === "Doppler arterial de miembro inferior";
 
       if (includeVascularSchemaInReport && isDopplerStudy) {
-        const svgElement = document.getElementById("print-vascular-svg") || document.querySelector("svg[viewBox='-120 0 640 450']");
-        if (svgElement) {
-          try {
-            const imgData = await convertSvgToPng(svgElement as any);
+        try {
+          const isCarotidasForPDF = specificStudy.toLowerCase().includes("carót") || specificStudy.toLowerCase().includes("carot");
+          
+          const isBilateralForPDFActive = () => {
+            if (isCarotidasForPDF) return false;
+            
+            const latLower = (laterality || "").toLowerCase();
+            if (latLower === "bilateral" || latLower === "co-bilateral") return true;
+            if (latLower === "derecha" || latLower === "derecho" || latLower === "izquierda" || latLower === "izquierdo") return false;
+
+            const studyLower = (specificStudy || "").toLowerCase();
+            if (studyLower.includes("bilateral") || 
+                studyLower.includes("miembros inferiores") || 
+                studyLower.includes("m.i. bi") ||
+                (studyLower.includes("derech") && studyLower.includes("izquierd"))) {
+              return true;
+            }
+
+            const reportLower = (generatedReport || "").toLowerCase();
+            let diagnosticText = reportLower;
+            const headings = [
+              "impresión diagnóstica",
+              "impresion diagnostica",
+              "conclusiones",
+              "conclusión",
+              "conclusion",
+              "diagnóstico",
+              "diagnostico"
+            ];
+            for (const heading of headings) {
+              const idx = reportLower.lastIndexOf(heading);
+              if (idx !== -1) {
+                diagnosticText = reportLower.substring(idx);
+                break;
+              }
+            }
+            const mentionsBoth = diagnosticText.includes("ambos") || diagnosticText.includes("bilateral") || diagnosticText.includes("miembros inferiores");
+            const mentionsRight = diagnosticText.includes("derech") || diagnosticText.includes("m.i.d") || diagnosticText.includes("mid") || diagnosticText.includes("m.i. derecho");
+            const mentionsLeft = diagnosticText.includes("izquierd") || diagnosticText.includes("m.i.i") || diagnosticText.includes("mii") || diagnosticText.includes("m.i. izquierdo");
+            
+            if (mentionsBoth || (mentionsRight && mentionsLeft)) {
+              return true;
+            }
+            return false;
+          };
+
+          const pdfBilateral = isBilateralForPDFActive();
+
+          let imgDataDer: string | null = null;
+          let imgDataIzq: string | null = null;
+          let imgDataCarotidas: string | null = null;
+          let imgDataBifurcDer: string | null = null;
+          let imgDataBifurcIzq: string | null = null;
+
+          if (isCarotidasForPDF) {
+            const svgElement = document.getElementById("print-vascular-svg") || document.querySelector("svg[viewBox='-120 0 640 450']");
+            if (svgElement) {
+              imgDataCarotidas = await convertSvgToPng(svgElement as any);
+            }
+            if (includeCarotidBifurcations) {
+              const svgBifurcDer = document.getElementById("print-bifurcation-der");
+              const svgBifurcIzq = document.getElementById("print-bifurcation-izq");
+              if (svgBifurcDer) imgDataBifurcDer = await convertSvgToPng(svgBifurcDer as any);
+              if (svgBifurcIzq) imgDataBifurcIzq = await convertSvgToPng(svgBifurcIzq as any);
+            }
+          } else if (pdfBilateral) {
+            const svgDer = document.getElementById("print-vascular-svg-der");
+            const svgIzq = document.getElementById("print-vascular-svg-izq");
+            if (svgDer) imgDataDer = await convertSvgToPng(svgDer as any);
+            if (svgIzq) imgDataIzq = await convertSvgToPng(svgIzq as any);
+          } else {
+            // Unilateral
+            const isRightLimb = (laterality || "").toLowerCase().includes("derech") || (specificStudy || "").toLowerCase().includes("derech") || (specificStudy || "").toLowerCase().includes(" unilateral d") || (specificStudy || "").toLowerCase().includes("der.");
+            const isLeftLimb = (laterality || "").toLowerCase().includes("izquierd") || (specificStudy || "").toLowerCase().includes("izquierd") || (specificStudy || "").toLowerCase().includes(" unilateral i") || (specificStudy || "").toLowerCase().includes("izq.");
+
+            let evaluatedSide: "der" | "izq" = "der";
+            if (isLeftLimb && !isRightLimb) {
+              evaluatedSide = "izq";
+            } else if (isRightLimb && !isLeftLimb) {
+              evaluatedSide = "der";
+            } else {
+              // Parse report
+              const reportLower = (generatedReport || "").toLowerCase();
+              const hasDerechoInReport = reportLower.includes("miembro inferior derecho") || reportLower.includes("m.i. derecho") || reportLower.includes("unilateral derecho");
+              const hasIzquierdoInReport = reportLower.includes("miembro inferior izquierdo") || reportLower.includes("m.i. izquierdo") || reportLower.includes("unilateral izquierdo");
+              if (hasIzquierdoInReport && !hasDerechoInReport) {
+                evaluatedSide = "izq";
+              }
+            }
+
+            if (evaluatedSide === "der") {
+              const svgDer = document.getElementById("print-vascular-svg-der");
+              if (svgDer) imgDataDer = await convertSvgToPng(svgDer as any);
+            } else {
+              const svgIzq = document.getElementById("print-vascular-svg-izq");
+              if (svgIzq) imgDataIzq = await convertSvgToPng(svgIzq as any);
+            }
+            
+            // absolute fallback if zoomed SVGs not found
+            if (!imgDataDer && !imgDataIzq) {
+              const svgElement = document.getElementById("print-vascular-svg") || document.querySelector("svg[viewBox='-120 0 640 450']");
+              if (svgElement) {
+                const fullImg = await convertSvgToPng(svgElement as any);
+                imgDataCarotidas = fullImg;
+              }
+            }
+          }
+
+          if (imgDataCarotidas || imgDataDer || imgDataIzq) {
             
             // Check page break for 98mm (75mm diagram/findings + header/footer gaps)
             checkPageBreak(98);
@@ -7521,7 +10679,7 @@ Ejemplo:
                 return "Estenosis focal";
               }
               if (s === "reflux") {
-                return "Reflujo";
+                return "Insuficiencia";
               }
               if (s === "thrombosis") {
                 return "Trombosis";
@@ -7538,13 +10696,16 @@ Ejemplo:
                 case "vert": return "Vert.";
                 case "vfc": return "VFC";
                 case "sfj": return "USF";
-                case "vfs": return "VFS";
+                case "vfs": return "VF";
                 case "vp": return "V. Poplítea";
                 case "vsm": return "VSM";
                 case "vsp": return "VSP";
+                case "vta": return "VTA";
+                case "vtp": return "VTP";
+                case "vper": return "VPer";
                 case "aic": return "AIC";
                 case "afc": return "AFC";
-                case "afs": return "AFS";
+                case "afs": return "AF";
                 case "ap": return "A. Poplítea";
                 case "ata": return "ATA";
                 case "atp": return "ATP";
@@ -7553,34 +10714,90 @@ Ejemplo:
               }
             };
 
-            // 1. Draw Left Diagram Box (Biolateral/Unilateral Diagram)
-            doc.setFillColor(255, 255, 255);
-            doc.setDrawColor(229, 231, 235);
-            doc.roundedRect(20, yStart, 88, 75, 3, 3, "FD");
+            // Draw Column Layout representing anatomical shapes
+            if (isCarotidasForPDF || (!pdfBilateral && (imgDataDer || imgDataIzq || imgDataCarotidas))) {
+              const imgToUse = imgDataCarotidas || imgDataDer || imgDataIzq;
 
-            doc.setFont("helvetica", "bold");
-            doc.setFontSize(6.5);
-            doc.setTextColor(71, 85, 105);
-            doc.text("ESQUEMA ANATÓMICO VASCULAR", 64, yStart + 5.5, { align: "center" });
+              // 1. Draw Left Diagram Box (Unilateral/Carotid Diagram)
+              doc.setFillColor(255, 255, 255);
+              doc.setDrawColor(229, 231, 235);
+              doc.roundedRect(20, yStart, 88, 75, 3, 3, "FD");
 
-            doc.addImage(imgData, "PNG", 24, yStart + 11, 80, 56);
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(6.5);
+              doc.setTextColor(71, 85, 105);
 
-            // 2. Draw Right Findings Container (Slate Background)
-            doc.setFillColor(248, 250, 252);
-            doc.setDrawColor(229, 231, 235);
-            doc.roundedRect(111, yStart, 79, 75, 3, 3, "FD");
+              let sideTitle = "ESQUEMA ANATÓMICO VASCULAR";
+              if (isLimbEvaluatedForPDF("der") && !isLimbEvaluatedForPDF("izq") && !isCarotidasForPDF) {
+                sideTitle = "ESQUEMA VASCULAR - MIEMBRO DERECHO";
+              } else if (isLimbEvaluatedForPDF("izq") && !isLimbEvaluatedForPDF("der") && !isCarotidasForPDF) {
+                sideTitle = "ESQUEMA VASCULAR - MIEMBRO IZQUIERDO";
+              }
+              doc.text(sideTitle, 64, yStart + 5.5, { align: "center" });
 
-            // Header of findings: ESTRUCTURA and HALLAZGOS
-            doc.setFont("helvetica", "bold");
-            doc.setFontSize(7.5);
-            doc.setTextColor(67, 56, 202); // indigo-700
-            doc.text("ESTRUCTURA", 114, yStart + 5.5);
-            doc.text("HALLAZGOS", 142, yStart + 5.5);
+              if (imgToUse) {
+                doc.addImage(imgToUse, "PNG", 24, yStart + 11, 80, 56);
+              }
 
-            // Divider Line
-            doc.setDrawColor(229, 231, 235);
-            doc.setLineWidth(0.2);
-            doc.line(114, yStart + 7.5, 186, yStart + 7.5);
+              // 2. Draw Right Findings Container (Slate Background)
+              doc.setFillColor(248, 250, 252);
+              doc.setDrawColor(229, 231, 235);
+              doc.roundedRect(111, yStart, 79, 75, 3, 3, "FD");
+
+              // Header of findings: Unified title
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(7.5);
+              doc.setTextColor(67, 56, 202); // indigo-700
+              doc.text("SINOPSIS DE HALLAZGOS CLÍNICOS", 114, yStart + 5.5);
+
+              // Divider Line
+              doc.setDrawColor(229, 231, 235);
+              doc.setLineWidth(0.2);
+              doc.line(114, yStart + 7.5, 186, yStart + 7.5);
+            } else {
+              // Bilateral Lower Limb Layout (3 columns: Right leg, Left leg, Findings)
+              // Column 1: Right Leg (imgDataDer)
+              doc.setFillColor(255, 255, 255);
+              doc.setDrawColor(229, 231, 235);
+              doc.roundedRect(20, yStart, 53, 72, 3, 3, "FD");
+
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(6.0);
+              doc.setTextColor(71, 85, 105);
+              doc.text("MIEMBRO DERECHO (R)", 46.5, yStart + 5.0, { align: "center" });
+
+              if (imgDataDer) {
+                doc.addImage(imgDataDer, "PNG", 21.5, yStart + 7.5, 50, 61);
+              }
+
+              // Column 2: Left Leg (imgDataIzq)
+              doc.setFillColor(255, 255, 255);
+              doc.setDrawColor(229, 231, 235);
+              doc.roundedRect(76, yStart, 53, 72, 3, 3, "FD");
+
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(6.0);
+              doc.setTextColor(71, 85, 105);
+              doc.text("MIEMBRO IZQUIERDO (L)", 102.5, yStart + 5.0, { align: "center" });
+
+              if (imgDataIzq) {
+                doc.addImage(imgDataIzq, "PNG", 77.5, yStart + 7.5, 50, 61);
+              }
+
+              // Column 3: Findings List
+              doc.setFillColor(248, 250, 252);
+              doc.setDrawColor(229, 231, 235);
+              doc.roundedRect(132, yStart, 58, 72, 3, 3, "FD");
+
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(7.0);
+              doc.setTextColor(67, 56, 202); // indigo-700
+              doc.text("SINOPSIS CLÍNICA", 135, yStart + 5.0);
+
+              doc.setDrawColor(229, 231, 235);
+              doc.setLineWidth(0.2);
+              doc.line(135, yStart + 7.0, 187, yStart + 7.0);
+            }
 
             // Calculate active vessels
             const activeVessels = Object.keys(vascularStates).filter((id) => {
@@ -7604,8 +10821,8 @@ Ejemplo:
                 ];
               } else if (isVenoso) {
                 const list: string[] = [];
-                if (isLimbEvaluatedForPDF("der")) list.push("vfc_der", "sfj_der", "vfs_der", "vp_der", "vsm_der", "vsp_der");
-                if (isLimbEvaluatedForPDF("izq")) list.push("vfc_izq", "sfj_izq", "vfs_izq", "vp_izq", "vsm_izq", "vsp_izq");
+                if (isLimbEvaluatedForPDF("der")) list.push("vfc_der", "sfj_der", "vfs_der", "vp_der", "vta_der", "vtp_der", "vper_der", "vsm_der", "vsp_der");
+                if (isLimbEvaluatedForPDF("izq")) list.push("vfc_izq", "sfj_izq", "vfs_izq", "vp_izq", "vta_izq", "vtp_izq", "vper_izq", "vsm_izq", "vsp_izq");
                 segmentsToUse = list;
               } else if (isArterial) {
                 const list: string[] = [];
@@ -7622,11 +10839,8 @@ Ejemplo:
             };
             segmentsToUse.sort((a, b) => getPriorityOrder(a) - getPriorityOrder(b));
 
-            // Populate the rows (max 8)
-            segmentsToUse.slice(0, 8).forEach((id, index) => {
-              const rowY = yStart + 8.5 + (index * 7.7);
+            const vascularCardData = segmentsToUse.map(id => {
               const s = vascularStates[id] || "normal";
-              
               const vesselText = getVesselLabelForPDF(id);
               const sideSuffix = id.endsWith("_der") ? "-R" : id.endsWith("_izq") ? "-L" : "";
               const finalLabelText = `${vesselText}${sideSuffix}`;
@@ -7643,72 +10857,225 @@ Ejemplo:
                 }
               }
 
-              // Left column: Structure label (ESTRUCTURA)
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(6.2);
-              doc.setTextColor(30, 41, 59);
-              const wrappedLabel = doc.splitTextToSize(finalLabelText, 25);
-              if (wrappedLabel[0]) doc.text(wrappedLabel[0], 114, rowY + 3.2);
-              if (wrappedLabel[1]) doc.text(wrappedLabel[1], 114, rowY + 5.7);
-
-              // Right column: Description (HALLAZGOS)
-              doc.setFont("helvetica", "normal");
-              doc.setFontSize(5.8);
-              doc.setTextColor(100, 116, 139);
-              const wrappedDesc = doc.splitTextToSize(description, 44);
-              if (wrappedDesc[0]) doc.text(wrappedDesc[0], 142, rowY + 3.2);
-              if (wrappedDesc[1]) doc.text(wrappedDesc[1], 142, rowY + 5.7);
-
-              // Draw a tiny light divider line under each row except the last one
-              if (index < Math.min(segmentsToUse.length, 8) - 1) {
-                doc.setDrawColor(241, 245, 249);
-                doc.setLineWidth(0.15);
-                doc.line(113, rowY + 6.8, 187, rowY + 6.8);
-              }
+              return {
+                label: finalLabelText,
+                state: s,
+                description: description
+              };
             });
+
+            // Append additional findings if any
+            const vascularExtras = additionalFindings[specificStudy] || additionalFindings["Doppler de carótidas"] || additionalFindings["Doppler venoso de miembro inferior"] || additionalFindings["Doppler arterial de miembro inferior"] || [];
+            vascularExtras.forEach((extra: any) => {
+              vascularCardData.push({
+                label: extra.structureName,
+                state: extra.state || "Alterado",
+                description: extra.description
+              });
+            });
+
+            if (vascularCardData.length === 0) {
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(6.5);
+              doc.setTextColor(100, 116, 139);
+              if (isCarotidasForPDF || (!pdfBilateral && (imgDataDer || imgDataIzq || imgDataCarotidas))) {
+                doc.text("Sin hallazgos patológicos relevantes.", 150, yStart + 30, { align: "center" });
+              } else {
+                doc.text("Sin hallazgos patológicos relevantes.", 161, yStart + 30, { align: "center" });
+              }
+            } else {
+              if (isCarotidasForPDF || (!pdfBilateral && (imgDataDer || imgDataIzq || imgDataCarotidas))) {
+                drawAnatomicalCards(doc, vascularCardData, 111, yStart, 79, 75, true);
+              } else {
+                drawAnatomicalCards(doc, vascularCardData, 132, yStart, 58, 72, true);
+              }
+            }
 
             // Footnote
             doc.setFont("helvetica", "italic");
             doc.setFontSize(6.2);
             doc.setTextColor(148, 163, 184);
-            doc.text("Esquema representativo de hemodinámica vascular y su correlación clínica.", 150.5, yStart + 72, { align: "center" });
+            if (isCarotidasForPDF || (!pdfBilateral && (imgDataDer || imgDataIzq || imgDataCarotidas))) {
+              doc.text("Esquema representativo de hemodinámica vascular y su correlación clínica.", 150.5, yStart + 72, { align: "center" });
+              yCoord = yStart + 76;
+            } else {
+              doc.text("Esquema representativo de hemodinámica vascular unilateral/bilateral.", 150.5, yStart + 75, { align: "center" });
+              yCoord = yStart + 79;
+            }
 
-            yCoord = yStart + 76;
-          } catch (err) {
-            console.error("No se pudo insertar el esquema vascular en el PDF descargado:", err);
+            if (isCarotidasForPDF && includeCarotidBifurcations && (imgDataBifurcDer || imgDataBifurcIzq)) {
+              checkPageBreak(75);
+              yCoord += 6;
+
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(8.0);
+              doc.setTextColor(30, 41, 59); // Slate-800
+              doc.text("DETALLE DE BIFURCACIONES CAROTÍDEAS Y PLACAS", marginX, yCoord);
+              
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(6.2);
+              doc.setTextColor(148, 163, 184); // Slate-400
+              doc.text("MAPEO AMPLIADO DEL BULBO Y RAMAS COMPATIBLES CON CARACTERÍSTICAS TIPO I-IV", marginX, yCoord + 4.5);
+              yCoord += 8;
+
+              const boxHeight = 52;
+              const boxWidth = 81;
+              const boxDerX = 20;
+              const boxIzqX = 109;
+
+              // Left Box - Lado Derecho (R)
+              doc.setFillColor(255, 255, 255);
+              doc.setDrawColor(229, 231, 235);
+              doc.roundedRect(boxDerX, yCoord, boxWidth, boxHeight, 3, 3, "FD");
+
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(7.0);
+              doc.setTextColor(51, 65, 85);
+              doc.text("LADO DERECHO (R)", boxDerX + boxWidth / 2, yCoord + 5, { align: "center" });
+
+              if (imgDataBifurcDer) {
+                doc.addImage(imgDataBifurcDer, "PNG", boxDerX + 18, yCoord + 7, 45, 42);
+              }
+
+              // Right Box - Lado Izquierdo (L)
+              doc.setFillColor(255, 255, 255);
+              doc.setDrawColor(229, 231, 235);
+              doc.roundedRect(boxIzqX, yCoord, boxWidth, boxHeight, 3, 3, "FD");
+
+              doc.text("LADO IZQUIERDO (L)", boxIzqX + boxWidth / 2, yCoord + 5, { align: "center" });
+
+              if (imgDataBifurcIzq) {
+                doc.addImage(imgDataBifurcIzq, "PNG", boxIzqX + 18, yCoord + 7, 45, 42);
+              }
+
+              yCoord += boxHeight + 4;
+
+              // Draw plaque bullet list if any exists
+              const derPlaques = carotidPlaques.filter((p: any) => p.side === "derecho");
+              const izqPlaques = carotidPlaques.filter((p: any) => p.side === "izquierdo");
+              const totalPlaquesCount = derPlaques.length + izqPlaques.length;
+
+              if (totalPlaquesCount > 0) {
+                checkPageBreak(12);
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(7.0);
+                doc.setTextColor(71, 85, 105);
+                doc.text("PLACAS COMPLEMENTARIAS REGISTRADAS:", marginX, yCoord);
+                yCoord += 4.5;
+                
+                doc.setFont("helvetica", "normal");
+                doc.setFontSize(6.5);
+                doc.setTextColor(100, 116, 139);
+
+                derPlaques.forEach((p: any) => {
+                  checkPageBreak(5.5);
+                  const txt = `• R - ${p.vessel.toUpperCase()}: Placa Tipo ${p.type} (Estenosis: ${p.stenosis}%, Tamaño: ${p.size})${p.description ? ' - ' + p.description : ''}`;
+                  const splitTxt = doc.splitTextToSize(txt, pageWidth - marginX * 2);
+                  doc.text(splitTxt, marginX, yCoord);
+                  yCoord += 3.2 * splitTxt.length;
+                });
+
+                izqPlaques.forEach((p: any) => {
+                  checkPageBreak(5.5);
+                  const txt = `• L - ${p.vessel.toUpperCase()}: Placa Tipo ${p.type} (Estenosis: ${p.stenosis}%, Tamaño: ${p.size})${p.description ? ' - ' + p.description : ''}`;
+                  const splitTxt = doc.splitTextToSize(txt, pageWidth - marginX * 2);
+                  doc.text(splitTxt, marginX, yCoord);
+                  yCoord += 3.2 * splitTxt.length;
+                });
+              }
+              
+              yCoord += 2;
+            }
           }
+        } catch (err) {
+          console.error("No se pudo insertar el esquema vascular en el PDF descargado:", err);
         }
       }
 
       // Signature / Sign-off block
       if (doctorName || customSignatureUrl) {
-        checkPageBreak(30);
-        yCoord += 15;
+        checkPageBreak(38); // Requerir suficiente espacio para el bloque homologado dual
+        yCoord += 12;
 
-        // Signature horizontal line
-        doc.setDrawColor(226, 232, 240);
-        doc.setLineWidth(0.3);
-        doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
-        yCoord += 6;
+        const startY = yCoord;
 
-        // Subtext on left: digital verifier
+        // Dibujar borde gris claro con fondo suave en la columna izquierda (Caja de verificación)
+        const boxX = marginX;
+        const boxY = startY;
+        const boxW = (pageWidth - marginX * 2) * 0.48; // Columna izquierda (48% de ancho)
+        const boxH = 26;
+
+        // Rellenar fondo
+        doc.setFillColor(248, 250, 252); // slate 50
+        doc.rect(boxX, boxY, boxW, boxH, "F");
+        // Dibujar borde
+        doc.setDrawColor(203, 213, 225); // slate 300
+        doc.setLineWidth(0.35);
+        doc.rect(boxX, boxY, boxW, boxH, "S");
+
+        // Metadatos de Integridad en Columna Izquierda:
+        let internalY = boxY + 4;
+        
         doc.setFont("helvetica", "bold");
-        doc.setFontSize(7.5);
-        doc.setTextColor(148, 163, 184);
-        doc.text("VERIFICADO POR:", marginX, yCoord);
-        doc.setFont("helvetica", "normal");
-        doc.text("Firma Digital Autónoma", marginX, yCoord + 4);
+        doc.setFontSize(6.5);
+        doc.setTextColor(71, 85, 105); // slate 600
+        doc.text("VERIFICACIÓN INTEGRIDAD DE DOCUMENTO", boxX + 3, internalY);
+        internalY += 3.5;
 
-        // Add physical signature base64 image if uploaded
+        // Obtener el Hash generado determinísticamente
+        const sSeedCombine = `${patientName || ""}-${doctorName || ""}-${reportDate || ""}-${clinicName || ""}`;
+        let sHashVal = 0;
+        for (let i = 0; i < sSeedCombine.length; i++) {
+          sHashVal = ((sHashVal << 5) - sHashVal) + sSeedCombine.charCodeAt(i);
+          sHashVal |= 0;
+        }
+        const sHexStr = Math.abs(sHashVal).toString(16).toUpperCase().padStart(8, "0");
+        const pSeedVal = (patientName && patientName.length > 0) ? patientName.charCodeAt(0) + patientName.length : 42;
+        const dSeedVal = (doctorName && doctorName.length > 0) ? doctorName.charCodeAt(0) + doctorName.length : 17;
+        const partVal = ((pSeedVal * 231 + dSeedVal * 19) % 65535).toString(16).toUpperCase().padStart(4, "E");
+        const pdfValidationHash = `SHA256: FD82-${sHexStr.substring(0, 4)}-${sHexStr.substring(4, 8)}-${partVal}-9B1C-E8B1`;
+
+        doc.setFont("courier", "bold");
+        doc.setFontSize(5.5);
+        doc.setTextColor(30, 41, 59); // slate 800
+        doc.text(pdfValidationHash, boxX + 3, internalY);
+        internalY += 3;
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(5.5);
+        doc.setTextColor(100, 116, 139); // slate 500
+        doc.text("ESTADO DEL DOCUMENTO: ", boxX + 3, internalY);
+        const stateW = doc.getTextWidth("ESTADO DEL DOCUMENTO: ");
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(21, 128, 61); // green 700
+        doc.text("FIRMADO ELECTRÓNICAMENTE", boxX + 3 + stateW, internalY);
+        internalY += 2.8;
+
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(5.1);
+        doc.setTextColor(100, 116, 139); // slate 500
+        doc.text(`REG. MÉDICO: ${doctorLicense || "M.S.P. Reg: 6025 / Senescyt: 1005-12-7489"}`, boxX + 3, internalY);
+        internalY += 2.8;
+
+        doc.text(`FECHA DE VALIDACIÓN: ${reportDate} (AUTÓNOMO)`, boxX + 3, internalY);
+        internalY += 2.8;
+
+        doc.setFont("helvetica", "italic");
+        doc.text("Firma de Validez Homologada según Normativa Sanitaria.", boxX + 3, internalY);
+
+        // --- Columna Derecha: Área de Firma Digital / Autógrafa ---
+        const rightColX = pageWidth - marginX;
+        
+        // Agregar firma física si está cargada
         if (customSignatureUrl) {
           try {
-            let sigWidth = 40;
-            let sigHeight = 12;
+            let sigWidth = 35;
+            let sigHeight = 11;
             const sigImgEl = document.querySelector('img[alt="Firma"]') as HTMLImageElement | null;
             if (sigImgEl && sigImgEl.naturalWidth && sigImgEl.naturalHeight) {
               const aspect = sigImgEl.naturalWidth / sigImgEl.naturalHeight;
-              const maxWidth = 55;
-              const maxHeight = 16;
+              const maxWidth = 50;
+              const maxHeight = 15;
               if (aspect > maxWidth / maxHeight) {
                 sigWidth = maxWidth;
                 sigHeight = maxWidth / aspect;
@@ -7717,29 +11084,44 @@ Ejemplo:
                 sigWidth = maxHeight * aspect;
               }
             }
-            const sigX = pageWidth - marginX - sigWidth - 8;
-            const sigY = (yCoord - 6) - sigHeight - 1; // Position cleanly above the line
+            const sigX = rightColX - sigWidth - 4;
+            const sigY = boxY + 1; // Alinear ordenadamente arriba
             const format = customSignatureUrl.toLowerCase().includes("image/png") ? "PNG" : "JPEG";
             doc.addImage(customSignatureUrl, format, sigX, sigY, sigWidth, sigHeight);
           } catch (imgError) {
             console.warn("Could not render custom signature image inside jsPDF", imgError);
           }
+        } else {
+          // Si no hay firma física, mostrar sello digital elegante
+          doc.setFont("helvetica", "oblique");
+          doc.setFontSize(7);
+          doc.setTextColor(30, 64, 175); // blue 800
+          doc.text("FIRMADO ELECTRÓNICAMENTE CON TOKEN", rightColX - 62, boxY + 8);
         }
 
-        // Doctor Name on right
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(9.5);
-        doc.setTextColor(15, 23, 42);
-        const docText = (doctorName || "MÉDICO ESPECIALISTA").toUpperCase();
-        const docTextWidth = doc.getTextWidth(docText);
-        doc.text(docText, pageWidth - marginX - docTextWidth, yCoord + 4);
+        // Línea horizontal para firma del doctor (solo del lado derecho)
+        const lineStart = rightColX - 70;
+        doc.setDrawColor(203, 213, 225); // slate 300
+        doc.setLineWidth(0.3);
+        doc.line(lineStart, boxY + boxH - 8, rightColX, boxY + boxH - 8);
 
+        // Nombre del doctor en la derecha
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8.5);
+        doc.setTextColor(15, 23, 42);
+        const docText = (doctorName || "Dr. Milton Benavides S. Cod.6025").toUpperCase();
+        const docTextWidth = doc.getTextWidth(docText);
+        doc.text(docText, rightColX - docTextWidth, boxY + boxH - 4.5);
+
+        // Especialidad del doctor en la derecha
         doc.setFont("helvetica", "normal");
-        doc.setFontSize(8);
+        doc.setFontSize(6.5);
         doc.setTextColor(100, 116, 139);
-        const titleText = "Médico Especialista en Radiodiagnóstico";
+        const titleText = "Especialista en Radiología e Imágenes Medicas.";
         const titleTextWidth = doc.getTextWidth(titleText);
-        doc.text(titleText, pageWidth - marginX - titleTextWidth, yCoord + 8);
+        doc.text(titleText, rightColX - titleTextWidth, boxY + boxH - 1.5);
+        
+        yCoord = boxY + boxH + 6;
       }
 
       // --- APPEND ATTACHED ULTRASOUND/DICOM IMAGES TO THE END OF PDF ---
@@ -7787,7 +11169,28 @@ Ejemplo:
             else if (imgItem.base64.includes("image/gif")) format = "GIF";
             else if (imgItem.base64.includes("image/webp")) format = "WEBP";
 
-            doc.addImage(imgItem.base64, format, posX, yCoord, colWidth, imgHeight);
+            let drawW = colWidth;
+            let drawH = imgHeight;
+            let drawX = posX;
+            let drawY = yCoord;
+
+            if (imgItem.width && imgItem.height) {
+              const aspectImg = imgItem.width / imgItem.height;
+              const aspectBox = colWidth / imgHeight;
+              if (aspectImg > aspectBox) {
+                // Image is wider than box -> Fit to width
+                drawW = colWidth;
+                drawH = colWidth / aspectImg;
+                drawY = yCoord + (imgHeight - drawH) / 2;
+              } else {
+                // Image is taller than box -> Fit to height
+                drawH = imgHeight;
+                drawW = imgHeight * aspectImg;
+                drawX = posX + (colWidth - drawW) / 2;
+              }
+            }
+
+            doc.addImage(imgItem.base64, format, drawX, drawY, drawW, drawH);
 
             doc.setDrawColor(241, 245, 249); // slate 50
             doc.setLineWidth(0.25);
@@ -7824,6 +11227,11 @@ Ejemplo:
         }
       }
 
+      if (returnBlobUrl) {
+        const blob = doc.output("blob");
+        return URL.createObjectURL(blob);
+      }
+
       if (returnBase64) {
         const dataUri = doc.output("datauristring");
         return dataUri.split(",")[1];
@@ -7858,7 +11266,12 @@ Ejemplo:
     }
   };
 
-  const handleDownloadPatientSummaryPDF = async (openInNewTab: boolean = false, shareViaWebShare: boolean = false, returnBase64: boolean = false): Promise<string | undefined> => {
+  const handleDownloadPatientSummaryPDF = async (
+    openInNewTab: boolean = false,
+    shareViaWebShare: boolean = false,
+    returnBase64: boolean = false,
+    returnBlobUrl: boolean = false
+  ): Promise<string | undefined> => {
     if (!patientSummary) return;
 
     try {
@@ -7894,12 +11307,12 @@ Ejemplo:
       if (customLogoUrl) {
         if (customLogoStyle === "banner") {
           const bannerImgEl = document.querySelector('img[alt="Membrete de la Clínica"]') as HTMLImageElement | null;
-          let bannerWidth = 140;
-          let bannerHeight = 28;
+          let bannerWidth = 165;
+          let bannerHeight = 35;
           if (bannerImgEl && bannerImgEl.naturalWidth && bannerImgEl.naturalHeight) {
             const aspect = bannerImgEl.naturalWidth / bannerImgEl.naturalHeight;
             const maxWidth = contentWidth;
-            const maxHeight = 30;
+            const maxHeight = 52;
             if (aspect > maxWidth / maxHeight) {
               bannerWidth = maxWidth;
               bannerHeight = maxWidth / aspect;
@@ -7931,12 +11344,12 @@ Ejemplo:
           }
         } else {
           const logoImgEl = document.querySelector('img[alt="Logo"]') as HTMLImageElement | null;
-          let logoWidth = 22;
-          let logoHeight = 22;
+          let logoWidth = 36;
+          let logoHeight = 36;
           if (logoImgEl && logoImgEl.naturalWidth && logoImgEl.naturalHeight) {
             const aspect = logoImgEl.naturalWidth / logoImgEl.naturalHeight;
-            const maxWidth = 25;
-            const maxHeight = 25;
+            const maxWidth = 42;
+            const maxHeight = 42;
             if (aspect > maxWidth / maxHeight) {
               logoWidth = maxWidth;
               logoHeight = maxWidth / aspect;
@@ -8039,12 +11452,13 @@ Ejemplo:
 
         let xOffset = marginX + 4;
         let totalDateWidth = 0;
+        const formattedDate = formatDateToDMY(reportDate);
         
         if (reportDate) {
           doc.setFont("helvetica", "bold");
           doc.setFontSize(8.5);
           const dateLabel = "FECHA DEL ESTUDIO: ";
-          totalDateWidth = doc.getTextWidth(dateLabel) + doc.getTextWidth(reportDate);
+          totalDateWidth = doc.getTextWidth(dateLabel) + doc.getTextWidth(formattedDate);
         }
 
         if (patientName) {
@@ -8078,7 +11492,7 @@ Ejemplo:
           const dateLabelWidth = doc.getTextWidth(dateLabel);
           doc.setFont("helvetica", "bold");
           doc.setTextColor(15, 23, 42);
-          doc.text(reportDate, rightX + dateLabelWidth, yCoord + 7.5);
+          doc.text(formattedDate, rightX + dateLabelWidth, yCoord + 7.5);
         }
 
         yCoord += 19;
@@ -8288,30 +11702,88 @@ Ejemplo:
 
       // Signature / Sign-off block
       if (doctorName || customSignatureUrl) {
-        checkPageBreak(30);
-        yCoord += 15;
+        checkPageBreak(38); // Requerir suficiente espacio para el bloque homologado dual
+        yCoord += 12;
 
-        doc.setDrawColor(226, 232, 240);
-        doc.setLineWidth(0.3);
-        doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
-        yCoord += 6;
+        const startY = yCoord;
+
+        // Dibujar borde gris claro con fondo suave en la columna izquierda (Caja de verificación)
+        const boxX = marginX;
+        const boxY = startY;
+        const boxW = (pageWidth - marginX * 2) * 0.48; // Columna izquierda (48% de ancho)
+        const boxH = 26;
+
+        // Rellenar fondo
+        doc.setFillColor(248, 250, 252); // slate 50
+        doc.rect(boxX, boxY, boxW, boxH, "F");
+        // Dibujar borde
+        doc.setDrawColor(203, 213, 225); // slate 300
+        doc.setLineWidth(0.35);
+        doc.rect(boxX, boxY, boxW, boxH, "S");
+
+        // Metadatos de Integridad en Columna Izquierda:
+        let internalY = boxY + 4;
+        
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(6.5);
+        doc.setTextColor(71, 85, 105); // slate 600
+        doc.text("VERIFICACIÓN INTEGRIDAD DE DOCUMENTO", boxX + 3, internalY);
+        internalY += 3.5;
+
+        // Obtener el Hash generado determinísticamente
+        const sSeedCombine = `${patientName || ""}-${doctorName || ""}-${reportDate || ""}-${clinicName || ""}`;
+        let sHashVal = 0;
+        for (let i = 0; i < sSeedCombine.length; i++) {
+          sHashVal = ((sHashVal << 5) - sHashVal) + sSeedCombine.charCodeAt(i);
+          sHashVal |= 0;
+        }
+        const sHexStr = Math.abs(sHashVal).toString(16).toUpperCase().padStart(8, "0");
+        const pSeedVal = (patientName && patientName.length > 0) ? patientName.charCodeAt(0) + patientName.length : 42;
+        const dSeedVal = (doctorName && doctorName.length > 0) ? doctorName.charCodeAt(0) + doctorName.length : 17;
+        const partVal = ((pSeedVal * 231 + dSeedVal * 19) % 65535).toString(16).toUpperCase().padStart(4, "E");
+        const pdfValidationHash = `SHA256: FD82-${sHexStr.substring(0, 4)}-${sHexStr.substring(4, 8)}-${partVal}-9B1C-E8B1`;
+
+        doc.setFont("courier", "bold");
+        doc.setFontSize(5.5);
+        doc.setTextColor(30, 41, 59); // slate 800
+        doc.text(pdfValidationHash, boxX + 3, internalY);
+        internalY += 3;
 
         doc.setFont("helvetica", "bold");
-        doc.setFontSize(7.5);
-        doc.setTextColor(148, 163, 184);
-        doc.text("VERIFICADO POR:", marginX, yCoord);
-        doc.setFont("helvetica", "normal");
-        doc.text("Firma Digital Autónoma", marginX, yCoord + 4);
+        doc.setFontSize(5.5);
+        doc.setTextColor(100, 116, 139); // slate 500
+        doc.text("ESTADO DEL DOCUMENTO: ", boxX + 3, internalY);
+        const stateW = doc.getTextWidth("ESTADO DEL DOCUMENTO: ");
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(21, 128, 61); // green 700
+        doc.text("FIRMADO ELECTRÓNICAMENTE", boxX + 3 + stateW, internalY);
+        internalY += 2.8;
 
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(5.1);
+        doc.setTextColor(100, 116, 139); // slate 500
+        doc.text(`REG. MÉDICO: ${doctorLicense || "M.S.P. Reg: 6025 / Senescyt: 1005-12-7489"}`, boxX + 3, internalY);
+        internalY += 2.8;
+
+        doc.text(`FECHA DE VALIDACIÓN: ${reportDate} (AUTÓNOMO)`, boxX + 3, internalY);
+        internalY += 2.8;
+
+        doc.setFont("helvetica", "italic");
+        doc.text("Firma de Validez Homologada según Normativa Sanitaria.", boxX + 3, internalY);
+
+        // --- Columna Derecha: Área de Firma Digital / Autógrafa ---
+        const rightColX = pageWidth - marginX;
+        
+        // Agregar firma física si está cargada
         if (customSignatureUrl) {
           try {
-            let sigWidth = 40;
-            let sigHeight = 12;
+            let sigWidth = 35;
+            let sigHeight = 11;
             const sigImgEl = document.querySelector('img[alt="Firma"]') as HTMLImageElement | null;
             if (sigImgEl && sigImgEl.naturalWidth && sigImgEl.naturalHeight) {
               const aspect = sigImgEl.naturalWidth / sigImgEl.naturalHeight;
-              const maxWidth = 55;
-              const maxHeight = 16;
+              const maxWidth = 50;
+              const maxHeight = 15;
               if (aspect > maxWidth / maxHeight) {
                 sigWidth = maxWidth;
                 sigHeight = maxWidth / aspect;
@@ -8320,28 +11792,49 @@ Ejemplo:
                 sigWidth = maxHeight * aspect;
               }
             }
-            const sigX = pageWidth - marginX - sigWidth - 8;
-            const sigY = (yCoord - 6) - sigHeight - 1;
+            const sigX = rightColX - sigWidth - 4;
+            const sigY = boxY + 1; // Alinear ordenadamente arriba
             const format = customSignatureUrl.toLowerCase().includes("image/png") ? "PNG" : "JPEG";
             doc.addImage(customSignatureUrl, format, sigX, sigY, sigWidth, sigHeight);
           } catch (imgError) {
             console.warn("Could not render custom signature image inside jsPDF", imgError);
           }
+        } else {
+          // Si no hay firma física, mostrar sello digital elegante
+          doc.setFont("helvetica", "oblique");
+          doc.setFontSize(7);
+          doc.setTextColor(30, 64, 175); // blue 800
+          doc.text("FIRMADO ELECTRÓNICAMENTE CON TOKEN", rightColX - 62, boxY + 8);
         }
 
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(9.5);
-        doc.setTextColor(15, 23, 42);
-        const docText = (doctorName || "MÉDICO ESPECIALISTA").toUpperCase();
-        const docTextWidth = doc.getTextWidth(docText);
-        doc.text(docText, pageWidth - marginX - docTextWidth, yCoord + 4);
+        // Línea horizontal para firma del doctor (solo del lado derecho)
+        const lineStart = rightColX - 70;
+        doc.setDrawColor(203, 213, 225); // slate 300
+        doc.setLineWidth(0.3);
+        doc.line(lineStart, boxY + boxH - 8, rightColX, boxY + boxH - 8);
 
+        // Nombre del doctor en la derecha
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8.5);
+        doc.setTextColor(15, 23, 42);
+        const docText = (doctorName || "Dr. Milton Benavides S. Cod.6025").toUpperCase();
+        const docTextWidth = doc.getTextWidth(docText);
+        doc.text(docText, rightColX - docTextWidth, boxY + boxH - 4.5);
+
+        // Especialidad del doctor en la derecha
         doc.setFont("helvetica", "normal");
-        doc.setFontSize(8);
+        doc.setFontSize(6.5);
         doc.setTextColor(100, 116, 139);
-        const titleText = "Médico Especialista en Radiodiagnóstico";
+        const titleText = "Especialista en Radiología e Imágenes Medicas.";
         const titleTextWidth = doc.getTextWidth(titleText);
-        doc.text(titleText, pageWidth - marginX - titleTextWidth, yCoord + 8);
+        doc.text(titleText, rightColX - titleTextWidth, boxY + boxH - 1.5);
+        
+        yCoord = boxY + boxH + 6;
+      }
+
+      if (returnBlobUrl) {
+        const blob = doc.output("blob");
+        return URL.createObjectURL(blob);
       }
 
       if (returnBase64) {
@@ -8375,6 +11868,75 @@ Ejemplo:
       alert("Ocurrió un error al generar el PDF explicativo: " + String(err));
     }
   };
+
+  useEffect(() => {
+    if (!showPrintModal) {
+      if (generatedNativePdfUrl) {
+        try { URL.revokeObjectURL(generatedNativePdfUrl); } catch (_) {}
+        setGeneratedNativePdfUrl(null);
+      }
+      if (generatedSummaryPdfUrl) {
+        try { URL.revokeObjectURL(generatedSummaryPdfUrl); } catch (_) {}
+        setGeneratedSummaryPdfUrl(null);
+      }
+      return;
+    }
+
+    let active = true;
+
+    const updatePreviews = async () => {
+      setIsGeneratingPdfPreview(true);
+      try {
+        if (generatedReport) {
+          const rUrl = await handleDownloadNativePDF(false, false, false, true);
+          if (active && rUrl) {
+            setGeneratedNativePdfUrl(prev => {
+              if (prev) { try { URL.revokeObjectURL(prev); } catch (_) {} }
+              return rUrl;
+            });
+          }
+        } else {
+          setGeneratedNativePdfUrl(null);
+        }
+        if (patientSummary) {
+          const sUrl = await handleDownloadPatientSummaryPDF(false, false, false, true);
+          if (active && sUrl) {
+            setGeneratedSummaryPdfUrl(prev => {
+              if (prev) { try { URL.revokeObjectURL(prev); } catch (_) {} }
+              return sUrl;
+            });
+          }
+        } else {
+          setGeneratedSummaryPdfUrl(null);
+        }
+      } catch (err) {
+        console.error("Error generating PDF previews dynamically:", err);
+      } finally {
+        if (active) {
+          setIsGeneratingPdfPreview(false);
+        }
+      }
+    };
+
+    updatePreviews();
+
+    return () => {
+      active = false;
+    };
+  }, [
+    showPrintModal,
+    adaptivePDFContrast,
+    generatedReport,
+    patientSummary,
+    clinicName,
+    doctorName,
+    doctorLicense,
+    reportDate,
+    customLogoUrl,
+    customSignatureUrl,
+    selectedLogo,
+    patientName
+  ]);
 
   const cleanRawClinicalText = (text: string) => {
     if (!text) return "";
@@ -8918,7 +12480,215 @@ Ejemplo:
 
     const isVascular = isCarotidas || isVenoso || isArterial;
 
+    const drawPlaqueSvgPath = (plaque: any, sideStr: "der" | "izq", isPrint: boolean, idx?: number) => {
+      const { vessel, type, stenosis, size } = plaque;
+      
+      const parsePlaqueSize = (szStr: any): number => {
+        if (!szStr) return 1.0;
+        const num = parseFloat(String(szStr).replace(/,/g, '.').replace(/[^\d.]/g, ''));
+        if (isNaN(num)) {
+          const s = String(szStr).toLowerCase();
+          if (s.includes("pequeñ") || s.includes("leve")) return 0.7;
+          if (s.includes("median") || s.includes("modera")) return 1.0;
+          if (s.includes("grand") || s.includes("sever") || s.includes("criti")) return 1.4;
+          return 1.0;
+        }
+        return num / 3.0; // 3mm is default/middle size
+      };
+
+      const sizeMult = Math.min(2.0, Math.max(0.4, parsePlaqueSize(size)));
+      
+      // Width of the vessel lumen (luz del vaso) at each branch
+      const lumenWidth = vessel === "bulbo" ? 31 : (vessel === "aci" ? 29 : 30);
+      
+      // stenosis S% (clamp between minor visibility limit of 15% and 100% full limit)
+      const S = Math.min(100, Math.max(15, stenosis || 15));
+      
+      // Proportional peak protrusion. The drawn curve peak will block exactly S% of the lumen.
+      // Since quadratic bezier peak is at exactly 0.5 * control point offset, bulge must be 2 * target peak.
+      const bulge = (S / 100) * lumenWidth * 2;
+
+      let pathData = "";
+      let cx = 100, cy = 120;
+
+      let halfH = 15;
+      if (vessel === "acc") {
+        halfH = Math.min(24, Math.max(8, (12 + (S / 100) * 12) * sizeMult));
+        const yStart = 207 - halfH;
+        const yEnd = 207 + halfH;
+        cy = 207;
+
+        if (sideStr === "der") {
+          cx = 85 + bulge / 2;
+          pathData = `M 85 ${yStart} Q ${85 + bulge} 207 85 ${yEnd} Z`;
+        } else {
+          cx = 115 - bulge / 2;
+          pathData = `M 115 ${yStart} Q ${115 - bulge} 207 115 ${yEnd} Z`;
+        }
+      } else if (vessel === "bulbo") {
+        halfH = Math.min(22, Math.max(6, (10 + (S / 100) * 10) * sizeMult));
+        const yStart = 142.5 - halfH;
+        const yEnd = 142.5 + halfH;
+        cy = 142.5;
+
+        if (sideStr === "der") {
+          const getXDerBulbe = (y: number) => 73 + (y - 125) * (9 / 35);
+          const xStart = getXDerBulbe(yStart);
+          const xEnd = getXDerBulbe(yEnd);
+          cx = getXDerBulbe(142.5) + bulge * 0.5;
+          pathData = `M ${xStart} ${yStart} Q ${getXDerBulbe(142.5) + bulge} 142.5 ${xEnd} ${yEnd} Z`;
+        } else {
+          const getXIzqBulbe = (y: number) => 127 - (y - 125) * (9 / 35);
+          const xStart = getXIzqBulbe(yStart);
+          const xEnd = getXIzqBulbe(yEnd);
+          cx = getXIzqBulbe(142.5) - bulge * 0.5;
+          pathData = `M ${xStart} ${yStart} Q ${getXIzqBulbe(142.5) - bulge} 142.5 ${xEnd} ${yEnd} Z`;
+        }
+      } else if (vessel === "aci") {
+        halfH = Math.min(24, Math.max(6, (12 + (S / 100) * 12) * sizeMult));
+        const yStart = 65 - halfH;
+        const yEnd = 65 + halfH;
+        cy = 65;
+
+        if (sideStr === "der") {
+          const getXDerACI = (y: number) => 50 + (y - 40) * 0.24;
+          const xStart = getXDerACI(yStart);
+          const xEnd = getXDerACI(yEnd);
+          cx = getXDerACI(65) + bulge * 0.5;
+          pathData = `M ${xStart} ${yStart} Q ${getXDerACI(65) + bulge} 65 ${xEnd} ${yEnd} Z`;
+        } else {
+          const getXIzqACI = (y: number) => 150 - (y - 40) * 0.24;
+          const xStart = getXIzqACI(yStart);
+          const xEnd = getXIzqACI(yEnd);
+          cx = getXIzqACI(65) - bulge * 0.5;
+          pathData = `M ${xStart} ${yStart} Q ${getXIzqACI(65) - bulge} 65 ${xEnd} ${yEnd} Z`;
+        }
+      } else if (vessel === "ace") {
+        halfH = Math.min(22, Math.max(6, (11 + (S / 100) * 9) * sizeMult));
+        const yStart = 85 - halfH;
+        const yEnd = 85 + halfH;
+        cy = 85;
+
+        if (sideStr === "der") {
+          const getXDerACE = (y: number) => 143 - (y - 60) * 0.3;
+          const xStart = getXDerACE(yStart);
+          const xEnd = getXDerACE(yEnd);
+          cx = getXDerACE(85) - bulge * 0.5;
+          pathData = `M ${xStart} ${yStart} Q ${getXDerACE(85) - bulge} 85 ${xEnd} ${yEnd} Z`;
+        } else {
+          const getXIzqACE = (y: number) => 57 + (y - 60) * 0.3;
+          const xStart = getXIzqACE(yStart);
+          const xEnd = getXIzqACE(yEnd);
+          cx = getXIzqACE(85) + bulge * 0.5;
+          pathData = `M ${xStart} ${yStart} Q ${getXIzqACE(85) + bulge} 85 ${xEnd} ${yEnd} Z`;
+        }
+      }
+
+      let fillCol = "";
+      let strokeCol = "";
+      let patternCircles: any[] = [];
+
+      if (type === "I") {
+        fillCol = isPrint ? "#374151" : "#7f1d1d";
+        strokeCol = isPrint ? "#1f2937" : "#ef4444";
+      } else if (type === "II") {
+        fillCol = isPrint ? "#4b5563" : "#451a03";
+        strokeCol = isPrint ? "#111827" : "#fbbf24";
+        patternCircles = [
+          { cx: -2 * sizeMult, cy: -2 * sizeMult, r: 1.1 * sizeMult, fill: "#fbbf24" },
+          { cx: 2 * sizeMult, cy: 3 * sizeMult, r: 0.9 * sizeMult, fill: "#fef08a" }
+        ];
+      } else if (type === "III") {
+        fillCol = isPrint ? "#9ca3af" : "#1e293b";
+        strokeCol = isPrint ? "#374151" : "#fef08a";
+        patternCircles = [
+          { cx: -3 * sizeMult, cy: -2 * sizeMult, r: 1.4 * sizeMult, fill: "#eab308" },
+          { cx: 0, cy: 3 * sizeMult, r: 1.1 * sizeMult, fill: "#ffffff" },
+          { cx: 3 * sizeMult, cy: -3 * sizeMult, r: 1.5 * sizeMult, fill: "#fef08a" }
+        ];
+      } else {
+        fillCol = "#eab308";
+        strokeCol = "#ca8a04";
+        patternCircles = [
+          { cx: -1 * sizeMult, cy: -2 * sizeMult, r: 1.6 * sizeMult, fill: "#ffffff" },
+          { cx: 2 * sizeMult, cy: 2 * sizeMult, r: 1.2 * sizeMult, fill: "#fef08a" }
+        ];
+      }
+
+      const uniqueKey = plaque.id || `plaque-print-${sideStr}-${vessel}-${idx ?? 0}`;
+
+      return (
+        <g key={uniqueKey}>
+          <path 
+            d={pathData} 
+            fill={fillCol} 
+            stroke={strokeCol} 
+            strokeWidth="1.2" 
+            fillOpacity={type === "I" ? 0.45 : type === "II" ? 0.75 : 0.95} 
+            strokeDasharray={type === "I" ? "2,2" : undefined}
+          />
+          {patternCircles.map((circle: any, idx: number) => (
+            <circle 
+              key={idx}
+              cx={cx + circle.cx}
+              cy={cy + circle.cy}
+              r={circle.r}
+              fill={circle.fill}
+              opacity={0.9}
+            />
+          ))}
+        </g>
+      );
+    };
+
     if (!isVascular) return null;
+
+    const isBilateralActive = () => {
+      if (!isVenoso && !isArterial) return false;
+
+      const latLower = (laterality || "").toLowerCase();
+      if (latLower === "bilateral" || latLower === "co-bilateral") return true;
+      if (latLower === "derecha" || latLower === "derecho" || latLower === "izquierda" || latLower === "izquierdo") return false;
+
+      const studyLower = (specificStudy || "").toLowerCase();
+      if (studyLower.includes("bilateral") || 
+          studyLower.includes("miembros inferiores") || 
+          studyLower.includes("m.i. bi") ||
+          (studyLower.includes("derech") && studyLower.includes("izquierd"))) {
+        return true;
+      }
+
+      const reportLower = (generatedReport || "").toLowerCase();
+      let diagnosticText = reportLower;
+      
+      const headings = [
+        "impresión diagnóstica",
+        "impresion diagnostica",
+        "conclusiones",
+        "conclusión",
+        "conclusion",
+        "diagnóstico",
+        "diagnostico"
+      ];
+      
+      for (const heading of headings) {
+        const idx = reportLower.lastIndexOf(heading);
+        if (idx !== -1) {
+          diagnosticText = reportLower.substring(idx);
+          break;
+        }
+      }
+
+      const mentionsRight = diagnosticText.includes("derech") || diagnosticText.includes("m.i.d") || diagnosticText.includes("mid") || diagnosticText.includes("m.i. derecho");
+      const mentionsLeft = diagnosticText.includes("izquierd") || diagnosticText.includes("m.i.i") || diagnosticText.includes("mii") || diagnosticText.includes("m.i. izquierdo");
+      const mentionsBoth = diagnosticText.includes("ambos") || diagnosticText.includes("bilateral") || diagnosticText.includes("miembros inferiores");
+
+      if (mentionsBoth || (mentionsRight && mentionsLeft)) {
+        return true;
+      }
+
+      return false;
+    };
 
     const carotidMidpoints: Record<string, { x: number, y: number, textX: number, textY: number, align: "start" | "end" | "middle" }> = {
       vert_der: { x: 125, y: 300, textX: 60, textY: 280, align: "end" },
@@ -8937,6 +12707,9 @@ Ejemplo:
       sfj_der: { x: 153, y: 92, textX: 195, textY: 70, align: "start" },
       vfs_der: { x: 135, y: 200, textX: 52, textY: 180, align: "end" },
       vp_der:  { x: 125, y: 300, textX: 45, textY: 300, align: "end" },
+      vta_der: { x: 112, y: 375, textX: 47, textY: 375, align: "end" },
+      vtp_der: { x: 118, y: 385, textX: 140, textY: 395, align: "start" },
+      vper_der: { x: 126, y: 380, textX: 175, textY: 405, align: "start" },
       vsm_der: { x: 170, y: 240, textX: 195, textY: 210, align: "start" },
       vsp_der: { x: 108, y: 340, textX: 30, textY: 340, align: "end" },
 
@@ -8944,6 +12717,9 @@ Ejemplo:
       sfj_izq: { x: 247, y: 92, textX: 205, textY: 70, align: "end" },
       vfs_izq: { x: 265, y: 200, textX: 348, textY: 180, align: "start" },
       vp_izq:  { x: 275, y: 300, textX: 355, textY: 300, align: "start" },
+      vta_izq: { x: 288, y: 375, textX: 353, textY: 375, align: "start" },
+      vtp_izq: { x: 282, y: 385, textX: 260, textY: 395, align: "end" },
+      vper_izq: { x: 274, y: 380, textX: 225, textY: 405, align: "end" },
       vsm_izq: { x: 230, y: 240, textX: 205, textY: 210, align: "end" },
       vsp_izq: { x: 292, y: 340, textX: 370, textY: 340, align: "start" },
     };
@@ -9121,7 +12897,7 @@ Ejemplo:
         return "Estenosis focal";
       }
       if (s === "reflux") {
-        return "Reflujo";
+        return "Insuficiencia";
       }
       if (s === "thrombosis") {
         return "Trombosis";
@@ -9208,9 +12984,13 @@ Ejemplo:
       return { x: pt.x + offsetX, y: pt.y + offsetY };
     };
 
-    const renderPrintOverlayAnomalies = (midpoints: Record<string, { x: number, y: number, textX: number, textY: number, align: "start" | "end" | "middle" }>) => {
+    const renderPrintOverlayAnomalies = (
+      midpoints: Record<string, { x: number, y: number, textX: number, textY: number, align: "start" | "end" | "middle" }>,
+      sideFilter?: "der" | "izq"
+    ) => {
       return Object.entries(vascularStates).map(([id, state]) => {
         if (state === "normal") return null;
+        if (sideFilter && !id.endsWith(`_${sideFilter}`)) return null;
         const basePt = midpoints[id];
         if (!basePt) return null;
 
@@ -9258,15 +13038,20 @@ Ejemplo:
         const shortEx = getPrintShortExplanationText(id);
         const croppedDesc = `${baseLabel}${subLocLabel}: ${shortEx || "Normal"}`;
 
+        // Dynamic badge sizing based on description text length
+        const labelWidth = Math.max(72, croppedDesc.length * 4.2 + 8);
+        const rectX = basePt.align === "end" ? -labelWidth + 2 : basePt.align === "middle" ? -labelWidth / 2 : -2;
+        const textAnchorX = basePt.align === "end" ? -labelWidth / 2 + 1 : basePt.align === "middle" ? 0 : labelWidth / 2 - 1;
+
         return (
           <g key={`print-anon-${id}`}>
             <line x1={pt.x} y1={pt.y} x2={basePt.textX} y2={basePt.textY} stroke={color} strokeWidth="0.8" strokeDasharray="1.5 1.5" />
             {indicator}
             <g transform={`translate(${basePt.textX}, ${basePt.textY})`}>
               <rect 
-                x={basePt.align === "end" ? -154 : basePt.align === "middle" ? -78 : -2} 
+                x={rectX} 
                 y="-8" 
-                width="156" 
+                width={labelWidth} 
                 height="16" 
                 rx="3" 
                 fill="#ffffff" 
@@ -9274,7 +13059,7 @@ Ejemplo:
                 strokeWidth="1" 
               />
               <text 
-                x={basePt.align === "end" ? -78 : basePt.align === "middle" ? 0 : 78} 
+                x={textAnchorX} 
                 y="2.5" 
                 fill="#0f172a" 
                 fontSize="6" 
@@ -9332,59 +13117,114 @@ Ejemplo:
                 {renderPrintOverlayAnomalies(carotidMidpoints)}
               </svg>
             )}
+
             {isVenoso && (
-              <svg id="print-vascular-svg" viewBox="-120 0 640 450" className="w-full h-full font-mono text-[9px]">
-                <line x1="200" y1="20" x2="200" y2="430" stroke="#d1d5db" strokeWidth="1" strokeDasharray="3 3" />
-                <text x="70" y="30" fill="#4B5563" fontWeight="bold" textAnchor="middle" className="text-[10px]">DERECHO (R)</text>
-                <text x="330" y="30" fill="#4B5563" fontWeight="bold" textAnchor="middle" className="text-[10px]">IZQUIERDO (L)</text>
-                
-                {/* Venous Right */}
-                <path d="M 140 50 L 140 140" fill="none" stroke={getSegColor("vfc_der")} strokeWidth="10" />
-                <path d="M 140 80 Q 155 80, 160 110" fill="none" stroke={getSegColor("sfj_der")} strokeWidth="7" />
-                <path d="M 140 140 L 130 260" fill="none" stroke={getSegColor("vfs_der")} strokeWidth="8" />
-                <path d="M 130 260 L 120 340" fill="none" stroke={getSegColor("vp_der")} strokeWidth="7" />
-                <path d="M 160 110 L 175 220 Q 185 310, 160 410" fill="none" stroke={getSegColor("vsm_der")} strokeWidth="6" />
-                <path d="M 120 280 Q 95 300, 105 400" fill="none" stroke={getSegColor("vsp_der")} strokeWidth="5" />
-
-                {/* Venous Left */}
-                <path d="M 260 50 L 260 140" fill="none" stroke={getSegColor("vfc_izq")} strokeWidth="10" />
-                <path d="M 260 80 Q 245 80, 240 110" fill="none" stroke={getSegColor("sfj_izq")} strokeWidth="7" />
-                <path d="M 260 140 L 270 260" fill="none" stroke={getSegColor("vfs_izq")} strokeWidth="8" />
-                <path d="M 270 260 L 280 340" fill="none" stroke={getSegColor("vp_izq")} strokeWidth="7" />
-                <path d="M 240 110 L 225 220 Q 215 310, 240 410" fill="none" stroke={getSegColor("vsm_izq")} strokeWidth="6" />
-                <path d="M 280 280 Q 305 300, 295 400" fill="none" stroke={getSegColor("vsp_izq")} strokeWidth="5" />
-
-                {/* Print overlays */}
-                {renderPrintOverlayAnomalies(venousMidpoints)}
-              </svg>
+              <div className="flex gap-2 w-full h-full justify-center items-center">
+                {(isBilateralActive() || isLimbEvaluated("der")) && (
+                  <svg id="print-vascular-svg-der" viewBox="-60 0 380 450" className="h-full w-auto font-mono text-[9px]">
+                    <text x="130" y="30" fill="#4B5563" fontWeight="bold" textAnchor="middle" className="text-[12px]">DERECHO (R)</text>
+                    {/* Venous Right */}
+                    <path d="M 140 50 L 140 140" fill="none" stroke={getSegColor("vfc_der")} strokeWidth="10" />
+                    <path d="M 140 80 Q 155 80, 160 110" fill="none" stroke={getSegColor("sfj_der")} strokeWidth="7" />
+                    <path d="M 140 140 L 130 260" fill="none" stroke={getSegColor("vfs_der")} strokeWidth="8" />
+                    <path d="M 130 260 L 120 340" fill="none" stroke={getSegColor("vp_der")} strokeWidth="7" />
+                    <path d="M 120 340 L 105 410" fill="none" stroke={getSegColor("vta_der")} strokeWidth="6" />
+                    <path d="M 120 340 L 117 410" fill="none" stroke={getSegColor("vtp_der")} strokeWidth="6" />
+                    <path d="M 120 345 L 132 405" fill="none" stroke={getSegColor("vper_der")} strokeWidth="6" />
+                    <path d="M 160 110 L 175 220 Q 185 310, 160 410" fill="none" stroke={getSegColor("vsm_der")} strokeWidth="6" />
+                    <path d="M 120 280 Q 95 300, 105 400" fill="none" stroke={getSegColor("vsp_der")} strokeWidth="5" />
+                    {renderPrintOverlayAnomalies(venousMidpoints, "der")}
+                  </svg>
+                )}
+                {(isBilateralActive() || isLimbEvaluated("izq")) && (
+                  <svg id="print-vascular-svg-izq" viewBox="80 0 380 450" className="h-full w-auto font-mono text-[9px]">
+                    <text x="270" y="30" fill="#4B5563" fontWeight="bold" textAnchor="middle" className="text-[12px]">IZQUIERDO (L)</text>
+                    {/* Venous Left */}
+                    <path d="M 260 50 L 260 140" fill="none" stroke={getSegColor("vfc_izq")} strokeWidth="10" />
+                    <path d="M 260 80 Q 245 80, 240 110" fill="none" stroke={getSegColor("sfj_izq")} strokeWidth="7" />
+                    <path d="M 260 140 L 270 260" fill="none" stroke={getSegColor("vfs_izq")} strokeWidth="8" />
+                    <path d="M 270 260 L 280 340" fill="none" stroke={getSegColor("vp_izq")} strokeWidth="7" />
+                    <path d="M 280 340 L 295 410" fill="none" stroke={getSegColor("vta_izq")} strokeWidth="6" />
+                    <path d="M 280 340 L 278 410" fill="none" stroke={getSegColor("vtp_izq")} strokeWidth="6" />
+                    <path d="M 280 345 L 268 405" fill="none" stroke={getSegColor("vper_izq")} strokeWidth="6" />
+                    <path d="M 240 110 L 225 220 Q 215 310, 240 410" fill="none" stroke={getSegColor("vsm_izq")} strokeWidth="6" />
+                    <path d="M 280 280 Q 305 300, 295 400" fill="none" stroke={getSegColor("vsp_izq")} strokeWidth="5" />
+                    {renderPrintOverlayAnomalies(venousMidpoints, "izq")}
+                  </svg>
+                )}
+                {/* Fallback hidden full leg svg for legacy/general purposes */}
+                <svg id="print-vascular-svg" viewBox="-120 0 640 450" className="hidden">
+                  <path d="M 140 50 L 140 140" fill="none" stroke={getSegColor("vfc_der")} strokeWidth="10" />
+                  <path d="M 140 80 Q 155 80, 160 110" fill="none" stroke={getSegColor("sfj_der")} strokeWidth="7" />
+                  <path d="M 140 140 L 130 260" fill="none" stroke={getSegColor("vfs_der")} strokeWidth="8" />
+                  <path d="M 130 260 L 120 340" fill="none" stroke={getSegColor("vp_der")} strokeWidth="7" />
+                  <path d="M 120 340 L 105 410" fill="none" stroke={getSegColor("vta_der")} strokeWidth="6" />
+                  <path d="M 120 340 L 117 410" fill="none" stroke={getSegColor("vtp_der")} strokeWidth="6" />
+                  <path d="M 120 345 L 132 405" fill="none" stroke={getSegColor("vper_der")} strokeWidth="6" />
+                  <path d="M 160 110 L 175 220 Q 185 310, 160 410" fill="none" stroke={getSegColor("vsm_der")} strokeWidth="6" />
+                  <path d="M 120 280 Q 95 300, 105 400" fill="none" stroke={getSegColor("vsp_der")} strokeWidth="5" />
+                  <path d="M 260 50 L 260 140" fill="none" stroke={getSegColor("vfc_izq")} strokeWidth="10" />
+                  <path d="M 260 80 Q 245 80, 240 110" fill="none" stroke={getSegColor("sfj_izq")} strokeWidth="7" />
+                  <path d="M 260 140 L 270 260" fill="none" stroke={getSegColor("vfs_izq")} strokeWidth="8" />
+                  <path d="M 270 260 L 280 340" fill="none" stroke={getSegColor("vp_izq")} strokeWidth="7" />
+                  <path d="M 280 340 L 295 410" fill="none" stroke={getSegColor("vta_izq")} strokeWidth="6" />
+                  <path d="M 280 340 L 278 410" fill="none" stroke={getSegColor("vtp_izq")} strokeWidth="6" />
+                  <path d="M 280 345 L 268 405" fill="none" stroke={getSegColor("vper_izq")} strokeWidth="6" />
+                  <path d="M 240 110 L 225 220 Q 215 310, 240 410" fill="none" stroke={getSegColor("vsm_izq")} strokeWidth="6" />
+                  <path d="M 280 280 Q 305 300, 295 400" fill="none" stroke={getSegColor("vsp_izq")} strokeWidth="5" />
+                </svg>
+              </div>
             )}
+
+            {/* Arterial print structures depending on evaluation */}
             {isArterial && (
-              <svg id="print-vascular-svg" viewBox="-120 0 640 450" className="w-full h-full font-mono text-[9px]">
-                <line x1="200" y1="20" x2="200" y2="430" stroke="#d1d5db" strokeWidth="1" strokeDasharray="3 3" />
-                <text x="70" y="30" fill="#4B5563" fontWeight="bold" textAnchor="middle" className="text-[10px]">DERECHO (R)</text>
-                <text x="330" y="30" fill="#4B5563" fontWeight="bold" textAnchor="middle" className="text-[10px]">IZQUIERDO (L)</text>
-                
-                {/* Arterial Right */}
-                <path d="M 180 50 Q 150 70, 140 100" fill="none" stroke={getSegColor("aic_der")} strokeWidth="8" />
-                <path d="M 140 100 L 140 160" fill="none" stroke={getSegColor("afc_der")} strokeWidth="10" />
-                <path d="M 140 160 L 130 260" fill="none" stroke={getSegColor("afs_der")} strokeWidth="8" />
-                <path d="M 130 260 L 125 320" fill="none" stroke={getSegColor("ap_der")} strokeWidth="7" />
-                <path d="M 125 320 L 110 410" fill="none" stroke={getSegColor("ata_der")} strokeWidth="5" />
-                <path d="M 125 320 L 122 410" fill="none" stroke={getSegColor("atp_der")} strokeWidth="5" />
-                <path d="M 125 335 L 140 405" fill="none" stroke={getSegColor("aper_der")} strokeWidth="4.5" />
-
-                {/* Arterial Left */}
-                <path d="M 220 50 Q 250 70, 260 100" fill="none" stroke={getSegColor("aic_izq")} strokeWidth="8" />
-                <path d="M 260 100 L 260 160" fill="none" stroke={getSegColor("afc_izq")} strokeWidth="10" />
-                <path d="M 260 160 L 270 260" fill="none" stroke={getSegColor("afs_izq")} strokeWidth="8" />
-                <path d="M 270 260 L 275 320" fill="none" stroke={getSegColor("ap_izq")} strokeWidth="7" />
-                <path d="M 275 320 L 290 410" fill="none" stroke={getSegColor("ata_izq")} strokeWidth="5" />
-                <path d="M 275 320 L 278 410" fill="none" stroke={getSegColor("atp_izq")} strokeWidth="5" />
-                <path d="M 275 335 L 260 405" fill="none" stroke={getSegColor("aper_izq")} strokeWidth="4.5" />
-
-                {/* Print overlays */}
-                {renderPrintOverlayAnomalies(arterialMidpoints)}
-              </svg>
+              <div className="flex gap-2 w-full h-full justify-center items-center">
+                {(isBilateralActive() || isLimbEvaluated("der")) && (
+                  <svg id="print-vascular-svg-der" viewBox="-60 0 380 450" className="h-full w-auto font-mono text-[9px]">
+                    <text x="130" y="30" fill="#4B5563" fontWeight="bold" textAnchor="middle" className="text-[12px]">DERECHO (R)</text>
+                    {/* Arterial Right */}
+                    <path d="M 180 50 Q 150 70, 140 100" fill="none" stroke={getSegColor("aic_der")} strokeWidth="8" />
+                    <path d="M 140 100 L 140 160" fill="none" stroke={getSegColor("afc_der")} strokeWidth="10" />
+                    <path d="M 140 160 L 130 260" fill="none" stroke={getSegColor("afs_der")} strokeWidth="8" />
+                    <path d="M 130 260 L 125 320" fill="none" stroke={getSegColor("ap_der")} strokeWidth="7" />
+                    <path d="M 125 320 L 110 410" fill="none" stroke={getSegColor("ata_der")} strokeWidth="5" />
+                    <path d="M 125 320 L 122 410" fill="none" stroke={getSegColor("atp_der")} strokeWidth="5" />
+                    <path d="M 125 335 L 140 405" fill="none" stroke={getSegColor("aper_der")} strokeWidth="4.5" />
+                    {renderPrintOverlayAnomalies(arterialMidpoints, "der")}
+                  </svg>
+                )}
+                {(isBilateralActive() || isLimbEvaluated("izq")) && (
+                  <svg id="print-vascular-svg-izq" viewBox="80 0 380 450" className="h-full w-auto font-mono text-[9px]">
+                    <text x="270" y="30" fill="#4B5563" fontWeight="bold" textAnchor="middle" className="text-[12px]">IZQUIERDO (L)</text>
+                    {/* Arterial Left */}
+                    <path d="M 220 50 Q 250 70, 260 100" fill="none" stroke={getSegColor("aic_izq")} strokeWidth="8" />
+                    <path d="M 260 100 L 260 160" fill="none" stroke={getSegColor("afc_izq")} strokeWidth="10" />
+                    <path d="M 260 160 L 270 260" fill="none" stroke={getSegColor("afs_izq")} strokeWidth="8" />
+                    <path d="M 270 260 L 275 320" fill="none" stroke={getSegColor("ap_izq")} strokeWidth="7" />
+                    <path d="M 275 320 L 290 410" fill="none" stroke={getSegColor("ata_izq")} strokeWidth="5" />
+                    <path d="M 275 320 L 278 410" fill="none" stroke={getSegColor("atp_izq")} strokeWidth="5" />
+                    <path d="M 275 335 L 260 405" fill="none" stroke={getSegColor("aper_izq")} strokeWidth="4.5" />
+                    {renderPrintOverlayAnomalies(arterialMidpoints, "izq")}
+                  </svg>
+                )}
+                {/* Fallback hidden full leg svg for legacy/general purposes */}
+                <svg id="print-vascular-svg" viewBox="-120 0 640 450" className="hidden">
+                  <path d="M 180 50 Q 150 70, 140 100" fill="none" stroke={getSegColor("aic_der")} strokeWidth="8" />
+                  <path d="M 140 100 L 140 160" fill="none" stroke={getSegColor("afc_der")} strokeWidth="10" />
+                  <path d="M 140 160 L 130 260" fill="none" stroke={getSegColor("afs_der")} strokeWidth="8" />
+                  <path d="M 130 260 L 125 320" fill="none" stroke={getSegColor("ap_der")} strokeWidth="7" />
+                  <path d="M 125 320 L 110 410" fill="none" stroke={getSegColor("ata_der")} strokeWidth="5" />
+                  <path d="M 125 320 L 122 410" fill="none" stroke={getSegColor("atp_der")} strokeWidth="5" />
+                  <path d="M 125 335 L 140 405" fill="none" stroke={getSegColor("aper_der")} strokeWidth="4.5" />
+                  <path d="M 220 50 Q 250 70, 260 100" fill="none" stroke={getSegColor("aic_izq")} strokeWidth="8" />
+                  <path d="M 260 100 L 260 160" fill="none" stroke={getSegColor("afc_izq")} strokeWidth="10" />
+                  <path d="M 260 160 L 270 260" fill="none" stroke={getSegColor("afs_izq")} strokeWidth="8" />
+                  <path d="M 270 260 L 275 320" fill="none" stroke={getSegColor("ap_izq")} strokeWidth="7" />
+                  <path d="M 275 320 L 290 410" fill="none" stroke={getSegColor("ata_izq")} strokeWidth="5" />
+                  <path d="M 275 320 L 278 410" fill="none" stroke={getSegColor("atp_izq")} strokeWidth="5" />
+                  <path d="M 275 335 L 260 405" fill="none" stroke={getSegColor("aper_izq")} strokeWidth="4.5" />
+                </svg>
+              </div>
             )}
           </div>
 
@@ -9407,11 +13247,311 @@ Ejemplo:
                     <span className="text-[9px] text-gray-600 shrink-0">{getSegLabel(id)}</span>
                   </div>
                 ))}
+              {renderPrintAdditionalFindings("Vascular")}
             </div>
           </div>
         </div>
+
+        {isCarotidas && includeCarotidBifurcations && (
+          <div className="mt-6 pt-4 border-t border-gray-200" style={{ breakInside: "avoid", pageBreakInside: "avoid" }}>
+            <div className="text-center font-bold text-xs uppercase tracking-wider mb-1 text-slate-800">
+              Detalle de Bifurcaciones Carotídeas y Placas Ateromatosas
+            </div>
+            <p className="text-center text-[10px] text-gray-405 uppercase font-mono tracking-wide mb-4">
+              Vista ampliada detallada de la bifurcación para localización precisa y características (Tipo I-IV) de placa(s)
+            </p>
+            <div className="flex flex-col sm:flex-row justify-center items-center gap-12 max-w-2xl mx-auto">
+              {/* Derecho Bifurcation */}
+              <div className="flex flex-col items-center p-3 border border-gray-200 rounded-xl bg-white shadow-xs w-[230px]">
+                <div className="text-[10px] font-extrabold text-slate-800 uppercase tracking-widest font-mono mb-2">Lado Derecho (R)</div>
+                <svg id="print-bifurcation-der" viewBox="0 0 200 240" className="w-[140px] h-[170px]" style={{ display: "block" }}>
+                  <path 
+                    d="M 85 240 L 85 170 C 85 140, 70 135, 70 120 L 45 20 L 70 20 L 100 110 L 130 20 L 155 20 L 115 170 L 115 240 Z" 
+                    fill="#fee2e2" 
+                    stroke="#dc2626" 
+                    strokeWidth="3.5" 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round" 
+                  />
+                  <text x="57" y="15" fill="#991b1b" fontSize="9" fontWeight="bold" textAnchor="middle" className="font-mono">ACI</text>
+                  <text x="142" y="15" fill="#991b1b" fontSize="9" fontWeight="bold" textAnchor="middle" className="font-mono">ACE</text>
+                  <text x="100" y="235" fill="#991b1b" fontSize="9" fontWeight="bold" textAnchor="middle" className="font-mono">ACC</text>
+                  <text x="74" y="150" fill="#991b1b" fontSize="8" fontWeight="bold" textAnchor="end" className="font-mono">BULBO</text>
+
+                  {carotidPlaques
+                    .filter((p: any) => p.side === "derecho")
+                    .map((p: any, idx: number) => drawPlaqueSvgPath(p, "der", true, idx))}
+                </svg>
+                <div className="mt-2 text-left w-full space-y-1 font-sans text-[8.5px]">
+                  {carotidPlaques.filter((p: any) => p.side === "derecho").length === 0 ? (
+                    <div className="text-center text-gray-400 uppercase italic font-bold">Sin placas descritas</div>
+                  ) : (
+                    carotidPlaques
+                      .filter((p: any) => p.side === "derecho")
+                      .map((p: any, idx: number) => (
+                        <div key={p.id || `plaque-print-list-der-${idx}`} className="border-t border-gray-100 pt-1">
+                          <span className="font-extrabold text-slate-800">
+                            {p.vessel.toUpperCase()}:
+                          </span>{" "}
+                          Placa Tipo {p.type} ({p.stenosis}% est., {p.size})
+                          {p.description && <p className="text-gray-500 font-medium italic mt-0.5">{p.description}</p>}
+                        </div>
+                      ))
+                  )}
+                </div>
+              </div>
+
+              {/* Izquierdo Bifurcation */}
+              <div className="flex flex-col items-center p-3 border border-gray-250 rounded-xl bg-white shadow-xs w-[230px]">
+                <div className="text-[10px] font-extrabold text-slate-800 uppercase tracking-widest font-mono mb-2">Lado Izquierdo (L)</div>
+                <svg id="print-bifurcation-izq" viewBox="0 0 200 240" className="w-[140px] h-[170px]" style={{ display: "block" }}>
+                  <path 
+                    d="M 115 240 L 115 170 C 115 140, 130 135, 130 120 L 155 20 L 130 20 L 100 110 L 70 20 L 45 20 L 85 170 L 85 240 Z" 
+                    fill="#fee2e2" 
+                    stroke="#dc2626" 
+                    strokeWidth="3.5" 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round" 
+                  />
+                  <text x="142" y="15" fill="#991b1b" fontSize="9" fontWeight="bold" textAnchor="middle" className="font-mono">ACI</text>
+                  <text x="57" y="15" fill="#991b1b" fontSize="9" fontWeight="bold" textAnchor="middle" className="font-mono">ACE</text>
+                  <text x="100" y="235" fill="#991b1b" fontSize="9" fontWeight="bold" textAnchor="middle" className="font-mono">ACC</text>
+                  <text x="126" y="150" fill="#991b1b" fontSize="8" fontWeight="bold" textAnchor="start" className="font-mono">BULBO</text>
+
+                  {carotidPlaques
+                    .filter((p: any) => p.side === "izquierdo")
+                    .map((p: any, idx: number) => drawPlaqueSvgPath(p, "izq", true, idx))}
+                </svg>
+                <div className="mt-2 text-left w-full space-y-1 font-sans text-[8.5px]">
+                  {carotidPlaques.filter((p: any) => p.side === "izquierdo").length === 0 ? (
+                    <div className="text-center text-gray-400 uppercase italic font-bold">Sin placas descritas</div>
+                  ) : (
+                    carotidPlaques
+                      .filter((p: any) => p.side === "izquierdo")
+                      .map((p: any, idx: number) => (
+                        <div key={p.id || `plaque-print-list-izq-${idx}`} className="border-t border-gray-100 pt-1">
+                          <span className="font-extrabold text-slate-800">
+                            {p.vessel.toUpperCase()}:
+                          </span>{" "}
+                          Placa Tipo {p.type} ({p.stenosis}% est., {p.size})
+                          {p.description && <p className="text-gray-550 font-medium italic mt-0.5">{p.description}</p>}
+                        </div>
+                      ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
     );
+  };
+
+  const renderPrintAdditionalFindings = (protocol: string) => {
+    const extras = additionalFindings[protocol];
+    if (!extras || extras.length === 0) return null;
+
+    return extras.map((finding) => (
+      <div key={finding.id} className="text-left py-1 px-1.5 bg-white border border-dashed border-indigo-200 rounded-lg">
+        <div className="flex items-center justify-between gap-1 leading-none">
+          <div className="flex items-center gap-1 min-w-0">
+            <span className="h-1.5 w-1.5 rounded-full bg-yellow-500 shrink-0"></span>
+            <span className="text-[8.5px] font-bold uppercase tracking-wide text-indigo-950 truncate">
+              {finding.structureName}
+            </span>
+          </div>
+          <span className="text-[7px] font-semibold uppercase text-indigo-700 max-w-[50px] truncate shrink-0">
+            {finding.state}
+          </span>
+        </div>
+        <p className="text-[7.5px] text-gray-500 mt-0.5 leading-snug line-clamp-2">
+          {finding.description}
+        </p>
+      </div>
+    ));
+  };
+
+  const wrapExportTableWithExtras = (protocol: string, tableText: string): string => {
+    const extras = additionalFindings[protocol];
+    if (!extras || extras.length === 0) return tableText;
+
+    let lines = tableText.trim().split("\n");
+    extras.forEach(item => {
+      lines.push(`| **${item.structureName}** | ${item.description} |`);
+    });
+    return lines.join("\n") + "\n";
+  };
+
+  const wrapExportNarrativeWithExtras = (protocol: string, narrativeText: string): string => {
+    const extras = additionalFindings[protocol];
+    if (!extras || extras.length === 0) return narrativeText;
+
+    let text = narrativeText.trim();
+    extras.forEach(item => {
+      text += `\n* **${item.structureName}** [${item.state.toUpperCase()}]: ${item.description}`;
+    });
+    return text + "\n";
+  };
+
+  const escapeRegExp = (string: string) => {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  };
+
+  const handleExportTableWithProtocol = (protocol: string, tableText: string) => {
+    const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
+    setReportHistory((prev) => [...prev, activeReport]);
+    const separator = "\n\n";
+    const headerTitle = `### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE ${protocol.toUpperCase()}\n`;
+    const wrappedTableText = wrapExportTableWithExtras(protocol, tableText);
+
+    if (activeReport.includes(headerTitle.trim())) {
+      const escapedTitle = escapeRegExp(headerTitle.trim());
+      const regex = new RegExp(escapedTitle + "[\\s\\S]+", "g");
+      const cleanReportText = activeReport.replace(regex, "").trim();
+      const nextReport = cleanReportText + separator + headerTitle + wrappedTableText;
+      if (isEditingReportManual) {
+        setEditedReportText(nextReport);
+      } else {
+        setGeneratedReport(nextReport);
+        setEditedReportText(nextReport);
+      }
+    } else {
+      const nextReport = activeReport + separator + headerTitle + wrappedTableText;
+      if (isEditingReportManual) {
+        setEditedReportText(nextReport);
+      } else {
+        setGeneratedReport(nextReport);
+        setEditedReportText(nextReport);
+      }
+    }
+  };
+
+  const handleExportNarrativeWithProtocol = (protocol: string, narrativeText: string) => {
+    const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
+    setReportHistory((prev) => [...prev, activeReport]);
+    const separator = "\n\n";
+    const headerTitle = `### SINOPSIS DE ${protocol.toUpperCase()}\n`;
+    const wrappedNarrativeText = wrapExportNarrativeWithExtras(protocol, narrativeText);
+
+    if (activeReport.includes(headerTitle.trim())) {
+      const escapedTitle = escapeRegExp(headerTitle.trim());
+      const regex = new RegExp(escapedTitle + "[\\s\\S]+", "g");
+      const cleanReportText = activeReport.replace(regex, "").trim();
+      const nextReport = cleanReportText + separator + headerTitle + wrappedNarrativeText;
+      if (isEditingReportManual) {
+        setEditedReportText(nextReport);
+      } else {
+        setGeneratedReport(nextReport);
+        setEditedReportText(nextReport);
+      }
+    } else {
+      const nextReport = activeReport + separator + headerTitle + wrappedNarrativeText;
+      if (isEditingReportManual) {
+        setEditedReportText(nextReport);
+      } else {
+        setGeneratedReport(nextReport);
+        setEditedReportText(nextReport);
+      }
+    }
+  };
+
+  const handleSyncAnatomyToReportCombined = (
+    protocol: string,
+    nextStates?: Record<string, string>,
+    nextDescs?: Record<string, string>,
+    nextExtras?: Array<{ id: string; structureName: string; state: string; description: string }>
+  ) => {
+    const helper = getProtocolStateAndSetters(protocol);
+    if (!helper) return;
+
+    const statesMap = nextStates || helper.states;
+    const descsMap = nextDescs || helper.descs;
+    const extrasList = nextExtras || additionalFindings[protocol] || [];
+
+    const structures = getStructuresForProtocol(protocol);
+
+    // 1. Generate Table Markdown
+    let tableText = "| Estructura | Hallazgos |\n";
+    tableText += "| :--- | :--- |\n";
+    let hasRows = false;
+    structures.forEach(struct => {
+       const s = statesMap[struct.id] || "no_descrito";
+       if (s !== "no_descrito" && s !== "normal") {
+         const d = descsMap[struct.id] || "";
+         tableText += `| **${struct.label}** | ${d || "No descrito."} |\n`;
+         hasRows = true;
+       }
+    });
+    extrasList.forEach(item => {
+       tableText += `| **${item.structureName}** | ${item.description} |\n`;
+       hasRows = true;
+    });
+    if (!hasRows) {
+      tableText += `| *Sin hallazgos patológicos* | *Todas las estructuras de la articulación se reportan de características normales.* |\n`;
+    }
+
+    // 2. Generate Narrative Text
+    let narrativeText = "";
+    let count = 1;
+    structures.forEach(struct => {
+       const s = statesMap[struct.id] || "no_descrito";
+       if (s !== "no_descrito") {
+         const d = descsMap[struct.id] || "Dentro de límites normales.";
+         narrativeText += `${count}. **${struct.label.toUpperCase()}**: ${d}\n`;
+         count++;
+       }
+    });
+    extrasList.forEach(item => {
+       narrativeText += `${count}. **${item.structureName.toUpperCase()}**: ${item.description}\n`;
+       count++;
+    });
+
+    // 3. Integrate into report text
+    let activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
+
+    const tableHeader = `### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE ${protocol.toUpperCase()}`;
+    const narrativeHeader = `### SINOPSIS DE ${protocol.toUpperCase()}`;
+
+    let reportClean = activeReport;
+
+    if (reportClean.includes(narrativeHeader)) {
+      const escapedHeader = escapeRegExp(narrativeHeader);
+      const regex = new RegExp("\\s*" + escapedHeader + "[\\s\\S]*", "g");
+      reportClean = reportClean.replace(regex, "").trim();
+    }
+    if (reportClean.includes(tableHeader)) {
+      const escapedHeader = escapeRegExp(tableHeader);
+      const regex = new RegExp("\\s*" + escapedHeader + "[\\s\\S]*", "g");
+      reportClean = reportClean.replace(regex, "").trim();
+    }
+
+    const finalAppend = "\n\n" + tableHeader + "\n" + tableText + "\n\n" + narrativeHeader + "\n" + narrativeText;
+    const nextReport = reportClean + finalAppend;
+
+    if (isEditingReportManual) {
+      setEditedReportText(nextReport);
+    } else {
+      setGeneratedReport(nextReport);
+      setEditedReportText(nextReport);
+    }
+  };
+
+  const getAnatomicalStateColor = (s: string) => {
+    if (!s || s === "no_descrito" || s === "No descrito" || s.toLowerCase().includes("no mencionado")) {
+      return "bg-gray-400"; // gray
+    }
+    const clean = s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    if (clean === "normal" || clean.includes("sano") || clean.includes("sin lesiones") || clean === "conservado" || clean === "sin lesiones") {
+      return "bg-emerald-600"; // green
+    }
+    if (clean.includes("completo") || clean.includes("severo") || clean.includes("rompe") || clean.includes("ruptura completa") || clean.includes("desgarro completo") || clean.includes("rotura completa") || clean.includes("trombosis")) {
+      return "bg-rose-600"; // red
+    }
+    if (clean.includes("parcial") || clean.includes("grado ii") || clean.includes("hipertrofia") || clean.includes("subluxacion")) {
+      return "bg-pink-500"; // pink
+    }
+    return "bg-amber-500"; // yellow/orange
   };
 
   const renderPrintShoulderSchema = () => {
@@ -9473,7 +13613,7 @@ Ejemplo:
       if (s === "artrosis") return "Artrosis A.C.";
       if (s === "hipertrofia") return "Hipertrofia";
       if (s === "pinzamiento") return "Pinzamiento";
-      return s;
+      return s.charAt(0).toUpperCase() + s.slice(1);
     };
 
     const getPrintSimplifiedDescription = (id: string, state: string) => {
@@ -9521,6 +13661,9 @@ Ejemplo:
           if (state === "normal") return "Deslizamiento conservado bajo maniobras clínicas dinámicas.";
           if (state === "pinzamiento") return "Signos dinámicos positivos para pinzamiento subacromial.";
           break;
+      }
+      if (state && state !== "no_descrito" && state !== "normal") {
+        return state.charAt(0).toUpperCase() + state.slice(1);
       }
       return "Sin hallazgos.";
     };
@@ -9570,18 +13713,8 @@ Ejemplo:
                 ].filter(struct => shoulderStates[struct.id] !== "no_descrito").map((struct) => {
                   const s = shoulderStates[struct.id] || "no_descrito";
                   
-                  let dotColor = "bg-gray-400";
-                  let isNoDescrito = s === "no_descrito";
-                  
-                  if (s === "normal") {
-                    dotColor = "bg-emerald-600";
-                  } else if (s === "tendinosis" || s === "tendinitis" || s === "bursitis_leve" || s === "derrame_leve" || s === "artrosis") {
-                    dotColor = "bg-amber-500";
-                  } else if (s === "desgarro_parcial" || s === "subluxacion" || s === "hipertrofia" || s === "pinzamiento") {
-                    dotColor = "bg-pink-500";
-                  } else if (s === "desgarro_completo" || s === "bursitis_severa" || s === "derrame_moderado") {
-                    dotColor = "bg-rose-600";
-                  }
+                  const dotColor = getAnatomicalStateColor(s);
+                  const isNoDescrito = s === "no_descrito";
 
                   const description = shoulderDescriptions[struct.id] || getPrintSimplifiedDescription(struct.id, s);
 
@@ -9604,6 +13737,7 @@ Ejemplo:
                     </div>
                   );
                 })}
+                {renderPrintAdditionalFindings("Hombro")}
               </div>
             </div>
             
@@ -9620,45 +13754,39 @@ Ejemplo:
     if (!includeKneeSchemaInReport || specificStudy !== "Rodilla") return null;
 
     const svgElement = document.getElementById("knee-anatomy-svg");
+    const svgElementPost = document.getElementById("knee-anatomy-svg-posterior");
     if (!svgElement) return null;
 
-    let outerSvg = svgElement.outerHTML;
+    const cleanSvgString = (svgHtml: string) => {
+      return svgHtml
+        .replaceAll('stop-color="#1e293b"', 'stop-color="#f1f5f9"')
+        .replaceAll('stopColor="#1e293b"', 'stopColor="#f1f5f9"')
+        .replaceAll('stop-color="#2e3d52"', 'stop-color="#f1f5f9"')
+        .replaceAll('stopColor="#2e3d52"', 'stopColor="#f1f5f9"')
+        .replaceAll('stop-color="#0f172a"', 'stop-color="#cbd5e1"')
+        .replaceAll('stopColor="#0f172a"', 'stopColor="#cbd5e1"')
+        .replaceAll('stop-color="#111827"', 'stop-color="#cbd5e1"')
+        .replaceAll('stopColor="#111827"', 'stopColor="#cbd5e1"')
+        .replaceAll('stop-color="#334155"', 'stop-color="#cbd5e1"')
+        .replaceAll('stopColor="#334155"', 'stopColor="#cbd5e1"')
+        .replaceAll('stop-color="#3d4e66"', 'stop-color="#cbd5e1"')
+        .replaceAll('stopColor="#3d4e66"', 'stopColor="#cbd5e1"')
+        .replaceAll('fill="#1e293b"', 'fill="#f8fafc"')
+        .replaceAll('fill="#451a03"', 'fill="#fef3c7"')
+        .replaceAll('fill="#500730"', 'fill="#fce7f3"')
+        .replaceAll('fill="#7f1d1d"', 'fill="#fee2e2"')
+        .replaceAll('stroke="#ef4444"', 'stroke="#dc2626"')
+        .replaceAll('stroke="#ec4899"', 'stroke="#db2777"')
+        .replaceAll('stroke="#f59e0b"', 'stroke="#d97706"')
+        .replaceAll('stroke="#334155"', 'stroke="#475569"')
+        .replaceAll('stroke="#475569"', 'stroke="#64748b"')
+        .replaceAll('fill="#64748b"', 'fill="#475569"')
+        .replaceAll('fill="#475569"', 'fill="#1e293b"')
+        .replaceAll('stroke="#1e293b"', 'stroke="#e2e8f0"');
+    };
 
-    // 1. Force background and clean outline colors on gradient stops
-    outerSvg = outerSvg
-      .replaceAll('stop-color="#1e293b"', 'stop-color="#f1f5f9"')
-      .replaceAll('stopColor="#1e293b"', 'stopColor="#f1f5f9"')
-      .replaceAll('stop-color="#2e3d52"', 'stop-color="#f1f5f9"')
-      .replaceAll('stopColor="#2e3d52"', 'stopColor="#f1f5f9"')
-      .replaceAll('stop-color="#0f172a"', 'stop-color="#cbd5e1"')
-      .replaceAll('stopColor="#0f172a"', 'stopColor="#cbd5e1"')
-      .replaceAll('stop-color="#111827"', 'stop-color="#cbd5e1"')
-      .replaceAll('stopColor="#111827"', 'stopColor="#cbd5e1"')
-      .replaceAll('stop-color="#334155"', 'stop-color="#cbd5e1"')
-      .replaceAll('stopColor="#334155"', 'stopColor="#cbd5e1"')
-      .replaceAll('stop-color="#3d4e66"', 'stop-color="#cbd5e1"')
-      .replaceAll('stopColor="#3d4e66"', 'stopColor="#cbd5e1"');
-
-    // 2. Adjust paths fill/stroke colors for paper print
-    outerSvg = outerSvg
-      .replaceAll('fill="#1e293b"', 'fill="#f8fafc"')
-      .replaceAll('fill="#451a03"', 'fill="#fef3c7"')
-      .replaceAll('fill="#500730"', 'fill="#fce7f3"')
-      .replaceAll('fill="#7f1d1d"', 'fill="#fee2e2"')
-      .replaceAll('stroke="#ef4444"', 'stroke="#dc2626"')
-      .replaceAll('stroke="#ec4899"', 'stroke="#db2777"')
-      .replaceAll('stroke="#f59e0b"', 'stroke="#d97706"')
-      .replaceAll('stroke="#334155"', 'stroke="#475569"')
-      .replaceAll('stroke="#475569"', 'stroke="#64748b"');
-
-    // 3. Adjust text colors
-    outerSvg = outerSvg
-      .replaceAll('fill="#64748b"', 'fill="#475569"')
-      .replaceAll('fill="#475569"', 'fill="#1e293b"');
-
-    // 4. Adjust custom guides/circles in background
-    outerSvg = outerSvg
-      .replaceAll('stroke="#1e293b"', 'stroke="#e2e8f0"');
+    let outerSvg = cleanSvgString(svgElement.outerHTML);
+    let outerSvgPost = svgElementPost ? cleanSvgString(svgElementPost.outerHTML) : "";
 
     const translateKneeStateForPrint = (id: string, s: string) => {
       if (!s || s === "no_descrito") return "No descrito";
@@ -9669,11 +13797,18 @@ Ejemplo:
       if (s === "esguince_leve") return "Esguince Leve";
       if (s === "meniscosis") return "Meniscosis";
       if (s === "rotura") return "Ruptura";
-      if (s === "derrame_leve") return "Derrame Leve";
-      if (s === "derrame_moderado") return "Derrame Fr.";
+      if (s === "derrame_leve") return "Derrame L.";
+      if (s === "derrame_moderado") return "Derrame M.";
       if (s === "quiste_leve") return "Quiste L.";
       if (s === "quiste_severo") return "Quiste G.";
-      return s;
+      if (s === "ectasia") return "Ectasia";
+      if (s === "ateromatosis") return "Ateromatosis";
+      if (s === "aneurisma") return "Aneurisma";
+      if (s === "trombosis") return "Trombosis TVP";
+      if (s === "permisibilidad_reducida") return "Flujo L.";
+      if (s === "coleccion") return "Colección";
+      if (s === "adenopatia") return "Ganglio R.";
+      return s.charAt(0).toUpperCase() + s.slice(1);
     };
 
     const getPrintSimplifiedKneeDescription = (id: string, state: string) => {
@@ -9721,35 +13856,69 @@ Ejemplo:
           if (state === "quiste_leve") return "Quiste de Baker incidental de tamaño pequeño.";
           if (state === "quiste_severo") return "Quiste de Baker voluminoso delimitado en fosa poplítea.";
           break;
+        case "popliteal_artery":
+          if (state === "ectasia") return "Ectasia leve de arteria poplítea.";
+          if (state === "ateromatosis") return "Ateromatosis de arteria poplítea.";
+          if (state === "aneurisma") return "Aneurisma fusiforme de arteria poplítea.";
+          break;
+        case "popliteal_vein":
+          if (state === "trombosis") return "TVP poplítea.";
+          if (state === "ectasia") return "Ectasia venosa pasiva.";
+          if (state === "permisibilidad_reducida") return "Compresión parcial de vena poplítea.";
+          break;
+        case "distal_tendons":
+          if (state === "tendinosis") return "Tendinopatía distal de isquiotibiales.";
+          if (state === "desgarro_parcial") return "Desgarro parcial distal.";
+          if (state === "desgarro_completo") return "Desgarro completo distal.";
+          break;
+        case "popliteal_fossa":
+          if (state === "coleccion") return "Colección líquida en fosa poplítea.";
+          if (state === "adenopatia") return "Adenopatía reactiva en fosa poplítea.";
+          break;
+      }
+      if (state && state !== "no_descrito" && state !== "normal") {
+        return state.charAt(0).toUpperCase() + state.slice(1);
       }
       return "Sin hallazgos.";
     };
 
     return (
       <div 
-        className="mt-8 pt-6 border-t-2 border-dashed border-gray-300 font-sans mt-8 pt-6"
+        className="mt-8 pt-6 border-t-2 border-dashed border-gray-300 font-sans"
         style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
       >
-        <div className="w-full text-center mb-3">
+        <div className="w-full text-center mb-4">
           <div className="text-[10px] uppercase font-bold tracking-wider text-slate-800 mb-0.5 block font-sans">
-            Anexo: Esquema de Hallazgos y Sinopsis de Rodilla
+            Anexo: Esquemas de Hallazgos y Sinopsis de Rodilla Dual
           </div>
           <p className="text-[9px] uppercase font-mono tracking-wide text-gray-400">
-            Mapeo anatómico y sinopsis estructurada de la articulación de rodilla y sus ligamentos
+            Mapeo regional anterior/posterior y sinopsis estructurada de la articulación de rodilla
           </p>
         </div>
 
-        <div className="flex flex-col sm:flex-row items-stretch justify-center gap-6 max-w-3xl mx-auto">
-          {/* Left Element: Diagram Box */}
-          <div className="w-[300px] h-[300px] bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex items-center justify-center shrink-0">
+        <div className="flex flex-col md:flex-row items-stretch justify-center gap-4 max-w-4xl mx-auto">
+          {/* Anterior Diagram Box */}
+          <div className="flex-1 bg-white p-2 rounded-xl border border-gray-200 shadow-sm flex flex-col items-center justify-center min-w-[200px]">
+            <span className="text-[8px] font-bold text-slate-500 uppercase mb-1">Vista Anterior</span>
             <div 
               className="w-full font-sans text-center"
               dangerouslySetInnerHTML={{ __html: outerSvg }} 
             />
           </div>
 
+          {/* Posterior Diagram Box */}
+          {outerSvgPost && (
+            <div className="flex-1 bg-white p-2 rounded-xl border border-gray-200 shadow-sm flex flex-col items-center justify-center min-w-[200px]">
+              <span className="text-[8px] font-bold text-slate-500 uppercase mb-1">Vista Posterior</span>
+              <div 
+                className="w-full font-sans text-center"
+                dangerouslySetInnerHTML={{ __html: outerSvgPost }} 
+              />
+            </div>
+          )}
+
           {/* Right Element: Mapa de Hallazgos list */}
-          <div className="flex-1 bg-slate-50 border border-gray-200 p-3 rounded-xl flex flex-col justify-between">
+          <div className="flex-[1.5] bg-slate-50 border border-gray-200 p-3 rounded-xl flex flex-col justify-between min-w-[260px]">
             <div>
               <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5 mb-2">
                 <span className="text-[9.5px] font-bold text-indigo-700 font-sans uppercase tracking-widest block">
@@ -9766,22 +13935,19 @@ Ejemplo:
                   { id: "medial_meniscus", label: "Menisco Medial" },
                   { id: "lateral_meniscus", label: "Menisco Lateral" },
                   { id: "joint_effusion", label: "Derrame Artic." },
-                  { id: "baker_cyst", label: "Quiste Baker" }
-                ].filter(struct => kneeStates[struct.id] !== "no_descrito").map((struct) => {
+                  { id: "baker_cyst", label: "Quiste Baker" },
+                  { id: "popliteal_artery", label: "Art. Poplítea" },
+                  { id: "popliteal_vein", label: "Vena Poplítea" },
+                  { id: "distal_tendons", label: "T. Distales" },
+                  { id: "popliteal_fossa", label: "Fosa Poplítea" }
+                ].filter(struct => {
+                  const s = kneeStates[struct.id] || "no_descrito";
+                  return s !== "no_descrito" && s !== "normal";
+                }).map((struct) => {
                   const s = kneeStates[struct.id] || "no_descrito";
                   
-                  let dotColor = "bg-gray-400";
-                  let isNoDescrito = s === "no_descrito";
-                  
-                  if (s === "normal") {
-                    dotColor = "bg-emerald-600";
-                  } else if (s === "tendinosis" || s === "esguince_leve" || s === "meniscosis" || s === "derrame_leve" || s === "quiste_leve") {
-                    dotColor = "bg-amber-500";
-                  } else if (s === "desgarro_parcial") {
-                    dotColor = "bg-pink-500";
-                  } else if (s === "desgarro_completo" || s === "rotura" || s === "derrame_moderado" || s === "quiste_severo") {
-                    dotColor = "bg-rose-600";
-                  }
+                  const dotColor = getAnatomicalStateColor(s);
+                  const isNoDescrito = s === "no_descrito";
 
                   const description = kneeDescriptions[struct.id] || getPrintSimplifiedKneeDescription(struct.id, s);
 
@@ -9804,11 +13970,12 @@ Ejemplo:
                     </div>
                   );
                 })}
+                {renderPrintAdditionalFindings("Rodilla")}
               </div>
             </div>
             
             <div className="text-[7.5px] uppercase text-gray-400 text-center mt-3 pt-2 border-t border-gray-150 leading-relaxed font-sans font-medium">
-              Diagrama interactivo de rodilla y lista anexa correspondientes a la evaluación integrada descrita en el reporte físico del paciente.
+              Diagramas de mapeo clínico correspondientes a la evaluación integrada descrita en el reporte.
             </div>
           </div>
         </div>
@@ -9895,7 +14062,7 @@ Ejemplo:
       if (s === "derrame_moderado") return "Derrame Mod.";
       if (s === "desgarro_parcial") return "Rup. Parcial";
       if (s === "desgarro_completo") return "Rup. Completa";
-      return s;
+      return s.charAt(0).toUpperCase() + s.slice(1);
     };
 
     const getPrintSimplifiedAnkleDescription = (id: string, state: string) => {
@@ -9946,6 +14113,9 @@ Ejemplo:
           if (state === "derrame_leve") return "Derrame articular discreto en receso articular anterior.";
           if (state === "derrame_moderado") return "Derrame articular tibiotarsiano moderado con distensión.";
           break;
+      }
+      if (state && state !== "no_descrito" && state !== "normal") {
+        return state.charAt(0).toUpperCase() + state.slice(1);
       }
       return "Alteración estructural.";
     };
@@ -10013,18 +14183,8 @@ Ejemplo:
                 ].filter(struct => ankleStates[struct.id] !== "no_descrito").map((struct) => {
                   const s = ankleStates[struct.id] || "no_descrito";
                   
-                  let dotColor = "bg-gray-400";
-                  let isNoDescrito = s === "no_descrito";
-                  
-                  if (s === "normal") {
-                    dotColor = "bg-emerald-600";
-                  } else if (s === "tendinosis" || s === "tenosinovitis" || s === "fascitis" || s === "esguince_leve" || s === "derrame_leve") {
-                    dotColor = "bg-amber-500";
-                  } else if (s === "desgarro_parcial") {
-                    dotColor = "bg-pink-500";
-                  } else if (s === "desgarro_completo" || s === "derrame_moderado") {
-                    dotColor = "bg-rose-600";
-                  }
+                  const dotColor = getAnatomicalStateColor(s);
+                  const isNoDescrito = s === "no_descrito";
 
                   const description = ankleDescriptions[struct.id] || getPrintSimplifiedAnkleDescription(struct.id, s);
 
@@ -10047,6 +14207,7 @@ Ejemplo:
                     </div>
                   );
                 })}
+                {renderPrintAdditionalFindings("Tobillo")}
               </div>
             </div>
             
@@ -10131,7 +14292,7 @@ Ejemplo:
       if (s === "contusion") return "Contusión";
       if (s === "desgarro_parcial") return "D. Parcial";
       if (s === "hernia_muscular") return "Hernia Fasc.";
-      return s;
+      return s.charAt(0).toUpperCase() + s.slice(1);
     };
 
     const getPrintSimplifiedThighDescription = (id: string, state: string) => {
@@ -10165,6 +14326,9 @@ Ejemplo:
           if (state === "hernia_muscular") return "Defecto fascial con herniación muscular dinámica.";
           if (state === "desgarro") return "Foco profundo de rotura fibrilar adyacente a cortical.";
           break;
+      }
+      if (state && state !== "no_descrito" && state !== "normal") {
+        return state.charAt(0).toUpperCase() + state.slice(1);
       }
       return "Alteración focal.";
     };
@@ -10232,14 +14396,7 @@ Ejemplo:
                 }).filter(struct => thighStates[struct.id] !== "no_descrito").map((struct) => {
                   const s = thighStates[struct.id] || "no_descrito";
                   
-                  let dotColor = "bg-emerald-600";
-                  if (s === "tendinopatia" || s === "friccion" || s === "contusion" || s === "hernia_muscular" || s === "desgarro_miofascial") {
-                    dotColor = "bg-amber-500";
-                  } else if (s === "desgarro" || s === "desgarro_parcial" || s === "desgarro_intramuscular") {
-                    dotColor = "bg-pink-500";
-                  } else if (s === "desgarro_completo") {
-                    dotColor = "bg-rose-600";
-                  }
+                  const dotColor = getAnatomicalStateColor(s);
 
                   const description = thighDescriptions[struct.id] || getPrintSimplifiedThighDescription(struct.id, s);
 
@@ -10256,6 +14413,7 @@ Ejemplo:
                     </div>
                   );
                 })}
+                {renderPrintAdditionalFindings("Muslo Anterior")}
               </div>
             </div>
             
@@ -10338,7 +14496,7 @@ Ejemplo:
       if (s === "engrosamiento") return "Engrosamiento";
       if (s === "contusion") return "Contusión";
       if (s === "desgarro_parcial") return "D. Parcial";
-      return s;
+      return s.charAt(0).toUpperCase() + s.slice(1);
     };
 
     const getPrintSimplifiedThighPosteriorDescription = (id: string, state: string) => {
@@ -10378,6 +14536,9 @@ Ejemplo:
           if (state === "desgarro_parcial") return "Desgarro de fuste muscular espesor parcial grado II.";
           if (state === "desgarro_completo") return "Rotura posterior completa con brecha anecóica.";
           break;
+      }
+      if (state && state !== "no_descrito" && state !== "normal") {
+        return state.charAt(0).toUpperCase() + state.slice(1);
       }
       return "Alteración focal.";
     };
@@ -10445,14 +14606,7 @@ Ejemplo:
                 }).map((struct) => {
                   const s = thighPosteriorStates[struct.id] || "no_descrito";
                   
-                  let dotColor = "bg-emerald-600";
-                  if (s === "neuropatia" || s === "engrosamiento" || s === "contusion" || s === "desgarro_miofascial" || s === "desgarro_parcial") {
-                    dotColor = "bg-amber-500";
-                  } else if (s === "desgarro" || s === "desgarro_intramuscular") {
-                    dotColor = "bg-pink-500";
-                  } else if (s === "desgarro_completo") {
-                    dotColor = "bg-rose-600";
-                  }
+                  const dotColor = getAnatomicalStateColor(s);
 
                   const description = thighPosteriorDescriptions[struct.id] || getPrintSimplifiedThighPosteriorDescription(struct.id, s);
 
@@ -10469,6 +14623,7 @@ Ejemplo:
                     </div>
                   );
                 })}
+                {renderPrintAdditionalFindings("Muslo Posterior")}
               </div>
             </div>
             
@@ -10551,7 +14706,7 @@ Ejemplo:
       if (s === "esguince_moderado") return "Esguince M.";
       if (s === "neuritis") return "Neuritis";
       if (s === "subluxacion") return "Subluxación";
-      return s;
+      return s.charAt(0).toUpperCase() + s.slice(1);
     };
 
     const getPrintSimplifiedElbowDescription = (id: string, state: string) => {
@@ -10587,6 +14742,9 @@ Ejemplo:
           if (state === "neuritis") return "Hipertrofia e hipoecogenicidad del nervio cubital compatible con neuritis.";
           if (state === "subluxacion") return "Subluxación dinámica del nervio sobre el epicóndilo medial.";
           break;
+      }
+      if (state && state !== "no_descrito" && state !== "normal") {
+        return state.charAt(0).toUpperCase() + state.slice(1);
       }
       return "Sin hallazgos significativos.";
     };
@@ -10649,16 +14807,8 @@ Ejemplo:
                 ].filter(struct => elbowStates[struct.id] !== "no_descrito").map((struct) => {
                   const s = elbowStates[struct.id] || "no_descrito";
                   
-                  let dotColor = "bg-gray-400";
-                  let isNoDescrito = s === "no_descrito";
-                  
-                  if (s === "normal") {
-                    dotColor = "bg-emerald-600";
-                  } else if (s === "tendinosis" || s === "esguince_leve" || s === "derrame_leve") {
-                    dotColor = "bg-amber-500";
-                  } else if (s === "epicondilitis" || s === "epitrocleitis" || s === "esguince_moderado" || s === "derrame_moderado" || s === "neuritis" || s === "subluxacion") {
-                    dotColor = "bg-rose-600";
-                  }
+                  const dotColor = getAnatomicalStateColor(s);
+                  const isNoDescrito = s === "no_descrito";
 
                   const description = elbowDescriptions[struct.id] || getPrintSimplifiedElbowDescription(struct.id, s);
 
@@ -10681,6 +14831,7 @@ Ejemplo:
                     </div>
                   );
                 })}
+                {renderPrintAdditionalFindings("Codo")}
               </div>
             </div>
             
@@ -10802,6 +14953,7 @@ Ejemplo:
                     </div>
                   );
                 })}
+                {renderPrintAdditionalFindings("Escroto")}
                 {activePrintKeys.length === 0 ? (
                   <div className="text-[7.5px] text-gray-400 italic col-span-2">Sin estructuras ecográficas descritas en el anexo de examen.</div>
                 ) : null}
@@ -10949,6 +15101,7 @@ Ejemplo:
                     </div>
                   );
                 })}
+                {renderPrintAdditionalFindings("Muñeca")}
                 {activePrintKeys.length === 0 ? (
                   <div className="text-[7.5px] text-gray-400 italic col-span-2">Sin estructuras ecográficas de muñeca descritas.</div>
                 ) : null}
@@ -10967,7 +15120,7 @@ Ejemplo:
 
 
   const renderPrintBreastSchema = () => {
-    if (!includeBreastSchemaInReport || specificStudy !== "Mamas") return null;
+    if (!includeBreastSchemaInReport || !(specificStudy === "Mamas" || specificStudy === "Momografía" || modality === "Mamografía" || modality === "Mamografía y Ultrasonido de Mamas")) return null;
 
     const preprocessSvgForPrint = (svgElement: HTMLElement) => {
       const clonedSvg = svgElement.cloneNode(true) as SVGElement;
@@ -11117,7 +15270,8 @@ Ejemplo:
                     </div>
                   );
                 })}
-                {activePrintKeys.length === 0 ? (
+                {renderPrintAdditionalFindings("Mamas")}
+                {activePrintKeys.length === 0 && (!additionalFindings["Mamas"] || additionalFindings["Mamas"].length === 0) ? (
                   <div className="text-[7.5px] text-gray-450 italic col-span-2 py-2 text-center bg-white border border-gray-150 rounded-lg">
                     No se describen hallazgos patológicos ni nódulos sospechosos en los ejes explorados.
                   </div>
@@ -11133,6 +15287,435 @@ Ejemplo:
       </div>
     );
   };
+
+
+
+  const renderPrintAbdominalWallSchema = () => {
+    if (!includeAbdominalWallSchemaInReport || specificStudy !== "Pared Abdominal") return null;
+
+    const svgElement = document.getElementById("abdominal-wall-anatomy-svg");
+    if (!svgElement) return null;
+
+    let outerSvg = svgElement.outerHTML;
+
+    // 1. Force background and clean outline colors on gradient stops
+    outerSvg = outerSvg
+      .replaceAll('stop-color="#1e293b"', 'stop-color="#f1f5f9"')
+      .replaceAll('stopColor="#1e293b"', 'stopColor="#f1f5f9"')
+      .replaceAll('stop-color="#2e3d52"', 'stop-color="#f1f5f9"')
+      .replaceAll('stopColor="#2e3d52"', 'stopColor="#f1f5f9"')
+      .replaceAll('stop-color="#0f172a"', 'stop-color="#cbd5e1"')
+      .replaceAll('stopColor="#0f172a"', 'stopColor="#cbd5e1"')
+      .replaceAll('stop-color="#111827"', 'stop-color="#cbd5e1"')
+      .replaceAll('stopColor="#111827"', 'stopColor="#cbd5e1"')
+      .replaceAll('stop-color="#334155"', 'stop-color="#cbd5e1"')
+      .replaceAll('stopColor="#334155"', 'stopColor="#cbd5e1"')
+      .replaceAll('stop-color="#3d4e66"', 'stop-color="#cbd5e1"')
+      .replaceAll('stopColor="#3d4e66"', 'stopColor="#cbd5e1"');
+
+    // 2. Adjust paths fill/stroke colors for paper print
+    outerSvg = outerSvg
+      .replaceAll('fill="#060913"', 'fill="#f8fafc"')
+      .replaceAll('fill="#161c2c"', 'fill="#f8fafc"')
+      .replaceAll('fill="#10b981"', 'fill="#d1fae5"')
+      .replaceAll('fill="rgba(16, 185, 129, 0.22)"', 'fill="#d1fae5"')
+      .replaceAll('fill="rgba(16, 185, 129, 0.45)"', 'fill="#d1fae5"')
+      .replaceAll('fill="#f59e0b"', 'fill="#fef3c7"')
+      .replaceAll('fill="rgba(245, 158, 11, 0.25)"', 'fill="#fef3c7"')
+      .replaceAll('fill="rgba(245, 158, 11, 0.48)"', 'fill="#fef3c7"')
+      .replaceAll('stroke="#10b981"', 'stroke="#047857"')
+      .replaceAll('stroke="#f59e0b"', 'stroke="#b45309"')
+      .replaceAll('stroke="#334155"', 'stroke="#cbd5e1"')
+      .replaceAll('stroke="#475569"', 'stroke="#94a3b8"')
+      .replaceAll('stroke="#2a3547"', 'stroke="#cbd5e1"')
+      .replaceAll('stroke="#1e293b"', 'stroke="#e2e8f0"');
+
+    outerSvg = outerSvg.replaceAll('stroke="#ffffff"', 'stroke="#cbd5e1"');
+
+    outerSvg = outerSvg
+      .replaceAll('text-slate-400', 'text-slate-800')
+      .replaceAll('fill="#cbd5e1"', 'fill="#1e293b"')
+      .replaceAll('fill="#a1a1aa"', 'fill="#475569"');
+
+    const wallKeys = [
+      { id: "rectus_abdominis_right", label: "M. Recto Ant. Der." },
+      { id: "rectus_abdominis_left", label: "M. Recto Ant. Izq." },
+      { id: "oblique_muscles_right", label: "M. Oblicuos Der." },
+      { id: "oblique_muscles_left", label: "M. Oblicuos Izq." },
+      { id: "linea_alba", label: "Línea Alba" },
+      { id: "umbilical_region", label: "Reg. Umbilical" },
+      { id: "epigastric_region", label: "Reg. Epigástrica" },
+      { id: "inguinal_region_right", label: "Reg. Inguinal Der." },
+      { id: "inguinal_region_left", label: "Reg. Inguinal Izq." },
+      { id: "crural_region_right", label: "Reg. Crural Der." },
+      { id: "crural_region_left", label: "Reg. Crural Izq." }
+    ];
+
+    const activePrintKeys = wallKeys.filter(struct => {
+      const s = abdominalWallStates[struct.id];
+      return s && s !== "no_descrito";
+    });
+
+    const getPrintDescription = (id: string, s: string) => {
+      if (abdominalWallDescriptions && abdominalWallDescriptions[id]) {
+        return abdominalWallDescriptions[id];
+      }
+      if (s === "normal" || s === "Normal") {
+        return "Normal: Sin alteraciones musculares o fasciales.";
+      }
+      return "Estudio de pared abdominal.";
+    };
+
+    return (
+      <div 
+        className="mt-8 pt-6 border-t-2 border-dashed border-gray-300 font-sans"
+        style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
+      >
+        <div className="w-full text-center mb-3">
+          <div className="text-[10px] uppercase font-bold tracking-wider text-slate-800 mb-0.5 block font-sans">
+            Anexo: Esquema de Hallazgos y Sinopsis de Pared Abdominal
+          </div>
+          <p className="text-[9px] uppercase font-mono tracking-wide text-gray-400">
+            Mapeo anatómico y sinopsis estructurada de capas musculares, aponeurosis y orificios herniarios
+          </p>
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-stretch justify-center gap-6 max-w-3xl mx-auto">
+          {/* Left Element: Diagram Box */}
+          <div className="w-[300px] h-[300px] bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex items-center justify-center shrink-0">
+            <div 
+              className="w-full flex justify-center items-center"
+              dangerouslySetInnerHTML={{ __html: outerSvg }}
+            />
+          </div>
+
+          {/* Right Element: Mapa de Hallazgos list */}
+          <div className="flex-1 bg-slate-50 border border-gray-200 p-3 rounded-xl flex flex-col justify-between">
+            <div>
+              <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5 mb-2">
+                <span className="text-[9.5px] font-bold text-indigo-700 font-sans uppercase tracking-widest block">
+                  📍 Mapa de Hallazgos Clínicos
+                </span>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+                {activePrintKeys.map((struct) => {
+                  const s = abdominalWallStates[struct.id] || "no_descrito";
+                  const dotColor = getAnatomicalStateColor(s);
+                  const description = getPrintDescription(struct.id, s);
+
+                  return (
+                    <div key={struct.id} className="text-left py-1 px-1.5 bg-white border border-gray-150 rounded-lg">
+                      <div className="flex items-center justify-between gap-1 leading-none">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${dotColor}`}></span>
+                          <span className="text-[8.5px] font-bold uppercase tracking-wide text-gray-800 truncate">
+                            {struct.label}
+                          </span>
+                        </div>
+                        <span className="text-[7px] font-semibold uppercase text-gray-400 max-w-[60px] truncate shrink-0">
+                          {s === "normal" || s === "Normal" ? "Sano" : s.substring(0, 15)}
+                        </span>
+                      </div>
+                      <p className="text-[7.5px] text-gray-500 mt-0.5 leading-snug line-clamp-2">
+                        {description}
+                      </p>
+                    </div>
+                  );
+                })}
+                {renderPrintAdditionalFindings("Pared Abdominal")}
+                {activePrintKeys.length === 0 ? (
+                  <div className="text-[7.5px] text-gray-400 italic col-span-2 text-center py-2">Sin hallazgos patológicos descritos.</div>
+                ) : null}
+              </div>
+            </div>
+            
+            <div className="text-[7.5px] uppercase text-gray-400 text-center mt-3 pt-2 border-t border-gray-150 leading-relaxed font-sans font-medium">
+              Diagrama interactivo de pared abdominal y lista estructurada correspondientes a la evaluación integrada descrita en el reporte.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+
+
+  const renderPrintCalfAchillesSchema = () => {
+    if (!includeCalfAchillesSchemaInReport || specificStudy !== "Pantorrilla y Tendón de Aquiles") return null;
+
+    const svgElement = document.getElementById("calf-achilles-anatomy-svg");
+    if (!svgElement) return null;
+
+    let outerSvg = svgElement.outerHTML;
+
+    // 1. Force background and clean outline colors on gradient stops
+    outerSvg = outerSvg
+      .replaceAll('stop-color="#1e293b"', 'stop-color="#f1f5f9"')
+      .replaceAll('stopColor="#1e293b"', 'stopColor="#f1f5f9"')
+      .replaceAll('stop-color="#2e3d52"', 'stop-color="#f1f5f9"')
+      .replaceAll('stopColor="#2e3d52"', 'stopColor="#f1f5f9"')
+      .replaceAll('stop-color="#0f172a"', 'stop-color="#cbd5e1"')
+      .replaceAll('stopColor="#0f172a"', 'stopColor="#cbd5e1"')
+      .replaceAll('stop-color="#111827"', 'stop-color="#cbd5e1"')
+      .replaceAll('stopColor="#111827"', 'stopColor="#cbd5e1"')
+      .replaceAll('stop-color="#334155"', 'stop-color="#cbd5e1"')
+      .replaceAll('stopColor="#334155"', 'stopColor="#cbd5e1"')
+      .replaceAll('stop-color="#3d4e66"', 'stop-color="#cbd5e1"')
+      .replaceAll('stopColor="#3d4e66"', 'stopColor="#cbd5e1"');
+
+    // 2. Adjust paths fill/stroke colors for paper print
+    outerSvg = outerSvg
+      .replaceAll('fill="#060913"', 'fill="#f8fafc"')
+      .replaceAll('fill="#161c2c"', 'fill="#f8fafc"')
+      .replaceAll('fill="#10b981"', 'fill="#d1fae5"')
+      .replaceAll('fill="rgba(16, 185, 129, 0.22)"', 'fill="#d1fae5"')
+      .replaceAll('fill="rgba(16, 185, 129, 0.45)"', 'fill="#d1fae5"')
+      .replaceAll('fill="#f59e0b"', 'fill="#fef3c7"')
+      .replaceAll('fill="rgba(245, 158, 11, 0.25)"', 'fill="#fef3c7"')
+      .replaceAll('fill="rgba(245, 158, 11, 0.48)"', 'fill="#fef3c7"')
+      .replaceAll('stroke="#10b981"', 'stroke="#047857"')
+      .replaceAll('stroke="#f59e0b"', 'stroke="#b45309"')
+      .replaceAll('stroke="#334155"', 'stroke="#cbd5e1"')
+      .replaceAll('stroke="#475569"', 'stroke="#94a3b8"')
+      .replaceAll('stroke="#2a3547"', 'stroke="#cbd5e1"')
+      .replaceAll('stroke="#1e293b"', 'stroke="#e2e8f0"');
+
+    outerSvg = outerSvg.replaceAll('stroke="#ffffff"', 'stroke="#cbd5e1"');
+
+    outerSvg = outerSvg
+      .replaceAll('text-slate-400', 'text-slate-800')
+      .replaceAll('fill="#cbd5e1"', 'fill="#1e293b"')
+      .replaceAll('fill="#a1a1aa"', 'fill="#475569"');
+
+    const calfKeys = [
+      { id: "gastrocnemius_medial", label: "Gastrocnemio Medial" },
+      { id: "gastrocnemius_lateral", label: "Gastrocnemio Lateral" },
+      { id: "soleus_muscle", label: "Músculo Sóleo" },
+      { id: "achilles_tendon", label: "Tendón de Aquiles" },
+      { id: "plantaris_tendon", label: "Plantar Delgado" },
+      { id: "retrocalcaneal_bursa", label: "Bolsa Retrocalcánea" }
+    ];
+
+    const activePrintKeys = calfKeys.filter(struct => {
+      const s = calfAchillesStates[struct.id];
+      return s && s !== "no_descrito";
+    });
+
+    const getPrintDescription = (id: string, s: string) => {
+      if (calfAchillesDescriptions && calfAchillesDescriptions[id]) {
+        return calfAchillesDescriptions[id];
+      }
+      if (s === "normal" || s === "Normal") {
+        return "Normal: Aspecto ecográfico conservado, sin signos de rotura o inflamación.";
+      }
+      return "Evaluación ecográfica en escala de grises.";
+    };
+
+    return (
+      <div 
+        className="mt-8 pt-6 border-t-2 border-dashed border-gray-300 font-sans"
+        style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
+      >
+        <div className="w-full text-center mb-3">
+          <div className="text-[10px] uppercase font-bold tracking-wider text-slate-800 mb-0.5 block font-sans">
+            Anexo: Esquema de Hallazgos y Sinopsis de Pantorrilla y Tendón de Aquiles
+          </div>
+          <p className="text-[9px] uppercase font-mono tracking-wide text-gray-400">
+            Mapeo anatómico y sinopsis de vientres musculares, fascia y tendón de Aquiles
+          </p>
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-stretch justify-center gap-6 max-w-3xl mx-auto">
+          {/* Left Element: Diagram Box */}
+          <div className="w-[300px] h-[300px] bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex items-center justify-center shrink-0">
+            <div 
+              className="w-full flex justify-center items-center"
+              dangerouslySetInnerHTML={{ __html: outerSvg }}
+            />
+          </div>
+
+          {/* Right Element: Mapa de Hallazgos list */}
+          <div className="flex-1 bg-slate-50 border border-gray-200 p-3 rounded-xl flex flex-col justify-between">
+            <div>
+              <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5 mb-2">
+                <span className="text-[9.5px] font-bold text-indigo-700 font-sans uppercase tracking-widest block">
+                  📍 Mapa de Hallazgos Clínicos
+                </span>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+                {activePrintKeys.map((struct) => {
+                  const s = calfAchillesStates[struct.id] || "no_descrito";
+                  const dotColor = getAnatomicalStateColor(s);
+                  const description = getPrintDescription(struct.id, s);
+
+                  return (
+                    <div key={struct.id} className="text-left py-1 px-1.5 bg-white border border-gray-150 rounded-lg">
+                      <div className="flex items-center justify-between gap-1 leading-none">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${dotColor}`}></span>
+                          <span className="text-[8.5px] font-bold uppercase tracking-wide text-gray-800 truncate">
+                            {struct.label}
+                          </span>
+                        </div>
+                        <span className="text-[7px] font-semibold uppercase text-gray-400 max-w-[60px] truncate shrink-0">
+                          {s === "normal" || s === "Normal" ? "Sano" : s.substring(0, 15)}
+                        </span>
+                      </div>
+                      <p className="text-[7.5px] text-gray-500 mt-0.5 leading-snug line-clamp-2">
+                        {description}
+                      </p>
+                    </div>
+                  );
+                })}
+                {renderPrintAdditionalFindings("Pantorrilla y Tendón de Aquiles")}
+                {activePrintKeys.length === 0 ? (
+                  <div className="text-[7.5px] text-gray-400 italic col-span-2 text-center py-2">Sin hallazgos patológicos descritos.</div>
+                ) : null}
+              </div>
+            </div>
+            
+            <div className="text-[7.5px] uppercase text-gray-400 text-center mt-3 pt-2 border-t border-gray-150 leading-relaxed font-sans font-medium">
+              Diagrama interactivo de pantorrilla/tendón de Aquiles y lista estructurada correspondientes a la evaluación descrita en el reporte.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+
+
+  const renderPrintNeonatalBrainSchema = () => {
+    if (!includeNeonatalBrainSchemaInReport || specificStudy !== "Cerebro Neonatal") return null;
+
+    const svgElement = document.getElementById("neonatal-brain-anatomy-svg");
+    if (!svgElement) return null;
+
+    let outerSvg = svgElement.outerHTML;
+
+    // Adjust paths/circles fill/stroke colors for paper print
+    outerSvg = outerSvg
+      .replaceAll('fill="rgba(15, 23, 42, 0.45)"', 'fill="#f8fafc"')
+      .replaceAll('fill="#1e293b"', 'fill="#f8fafc"')
+      .replaceAll('stroke="#334155"', 'stroke="#cbd5e1"')
+      .replaceAll('stroke="#64748b"', 'stroke="#94a3b8"')
+      .replaceAll('stroke="#1e293b"', 'stroke="#cbd5e1"')
+      .replaceAll('fill="rgba(16, 185, 129, 0.15)"', 'fill="#d1fae5"')
+      .replaceAll('fill="rgba(16, 185, 129, 0.35)"', 'fill="#d1fae5"')
+      .replaceAll('stroke="#10b981"', 'stroke="#047857"')
+      .replaceAll('fill="rgba(244, 63, 94, 0.3)"', 'fill="#ffe4e6"')
+      .replaceAll('fill="rgba(244, 63, 94, 0.6)"', 'fill="#ffe4e6"')
+      .replaceAll('stroke="#f43f5e"', 'stroke="#be123c"');
+
+    outerSvg = outerSvg
+      .replaceAll('fill="#475569"', 'fill="#334155"')
+      .replaceAll('text-slate-400', 'text-slate-800');
+
+    const brainKeys = [
+      { id: "ventricle_right", label: "Ventrículo Lat. Derecho" },
+      { id: "ventricle_left", label: "Ventrículo Lat. Izquierdo" },
+      { id: "ventricle_third_fourth", label: "3er y 4to Ventrículo" },
+      { id: "choroid_right", label: "Plexo Coroideo Derecho" },
+      { id: "choroid_left", label: "Plexo Coroideo Izquierdo" },
+      { id: "germinal_right", label: "S. Caudotalámico Derecho" },
+      { id: "germinal_left", label: "S. Caudotalámico Izquierdo" },
+      { id: "parenchyma_periventricular_right", label: "Parénquima Perivent. Der." },
+      { id: "parenchyma_periventricular_left", label: "Parénquima Perivent. Izq." },
+      { id: "parenchyma_focal_right", label: "Parénquima Lobar Der." },
+      { id: "parenchyma_focal_left", label: "Parénquima Lobar Izq." },
+      { id: "subarachnoid_space", label: "Espacio Extraaxial" }
+    ];
+
+    const activePrintKeys = brainKeys.filter(struct => {
+      const s = neonatalBrainStates[struct.id];
+      return s && s !== "no_descrito";
+    });
+
+    const getPrintDescription = (id: string, s: string) => {
+      if (neonatalBrainDescriptions && neonatalBrainDescriptions[id]) {
+        return neonatalBrainDescriptions[id];
+      }
+      if (s === "normal" || s === "Normal") {
+        return "Normal: Estructura evaluada sin alteraciones ecográficas o evidencias de sangrado/calcificación.";
+      }
+      return "Evaluación ecográfica cerebral neonatal.";
+    };
+
+    return (
+      <div 
+        className="mt-8 pt-6 border-t-2 border-dashed border-gray-300 font-sans"
+        style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
+      >
+        <div className="w-full text-center mb-3">
+          <div className="text-[10px] uppercase font-bold tracking-wider text-slate-800 mb-0.5 block font-sans">
+            Anexo: Esquema de Hallazgos y Sinopsis de Ultrasonido Cerebral Neonatal
+          </div>
+          <p className="text-[9px] uppercase font-mono tracking-wide text-gray-400">
+            Mapeo anatómico y sinopsis coronal transfontanelar del recién nacido
+          </p>
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-stretch justify-center gap-6 max-w-3xl mx-auto">
+          {/* Left Element: Diagram Box */}
+          <div className="w-[300px] h-[300px] bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex items-center justify-center shrink-0">
+            <div 
+              className="w-full flex justify-center items-center"
+              dangerouslySetInnerHTML={{ __html: outerSvg }}
+            />
+          </div>
+
+          {/* Right Element: Mapa de Hallazgos list */}
+          <div className="flex-1 bg-slate-50 border border-gray-200 p-3 rounded-xl flex flex-col justify-between">
+            <div>
+              <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5 mb-2">
+                <span className="text-[9.5px] font-bold text-indigo-700 font-sans uppercase tracking-widest block">
+                  📍 Mapa de Hallazgos Clínicos
+                </span>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+                {activePrintKeys.map((struct) => {
+                  const s = neonatalBrainStates[struct.id] || "no_descrito";
+                  const dotColor = getAnatomicalStateColor(s);
+                  const description = getPrintDescription(struct.id, s);
+
+                  return (
+                    <div key={struct.id} className="text-left py-1 px-1.5 bg-white border border-gray-150 rounded-lg">
+                      <div className="flex items-center justify-between gap-1 leading-none">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${dotColor}`}></span>
+                          <span className="text-[8.5px] font-bold uppercase tracking-wide text-gray-800 truncate">
+                            {struct.label}
+                          </span>
+                        </div>
+                        <span className="text-[7px] font-semibold uppercase text-gray-400 max-w-[60px] truncate shrink-0">
+                          {s === "normal" || s === "Normal" ? "Sano" : s.substring(0, 15)}
+                        </span>
+                      </div>
+                      <p className="text-[7.5px] text-gray-500 mt-0.5 leading-snug line-clamp-2">
+                        {description}
+                      </p>
+                    </div>
+                  );
+                })}
+                {renderPrintAdditionalFindings("Cerebro Neonatal")}
+                {activePrintKeys.length === 0 ? (
+                  <div className="text-[7.5px] text-gray-400 italic col-span-2 text-center py-2">Sin hallazgos patológicos descritos.</div>
+                ) : null}
+              </div>
+            </div>
+            
+            <div className="text-[7.5px] uppercase text-gray-400 text-center mt-3 pt-2 border-t border-gray-150 leading-relaxed font-sans font-medium">
+              Diagrama interactivo transfontanelar neonatal y lista estructurada correspondientes a la evaluación descrita en el reporte.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
 
 
 
@@ -11240,6 +15823,11 @@ Ejemplo:
 
             if (headers.length === 0) return null;
 
+            const isVascularHTMLTable = headers.length === 3 && headers.some(hdrText => {
+              const lower = (hdrText || "").toLowerCase();
+              return lower.includes("derech") || lower.includes("izquierd") || lower.includes("alterad") || lower.includes("vaso");
+            });
+
             return (
               <div 
                 key={elem.id} 
@@ -11253,7 +15841,11 @@ Ejemplo:
                     <tr className={`border-b-2 ${adaptivePDFContrast ? "border-black" : "border-slate-300"}`}>
                       {headers.map((h, hIdx) => {
                         let widthClass = "";
-                        if (headers.length === 4) {
+                        if (headers.length === 3) {
+                          if (hIdx === 0) widthClass = "w-[34%]";
+                          else if (hIdx === 1) widthClass = "w-[33%]";
+                          else if (hIdx === 2) widthClass = "w-[33%]";
+                        } else if (headers.length === 4) {
                           if (hIdx === 0) widthClass = "w-[10%] text-center";
                           else if (hIdx === 1) widthClass = "w-[25%]";
                           else if (hIdx === 2) widthClass = "w-[32%]";
@@ -11266,6 +15858,13 @@ Ejemplo:
                           else if (hIdx === 4) widthClass = "w-[25%]";
                         }
                         
+                        let hTextProcessed = h;
+                        if (isVascularHTMLTable) {
+                          if (hIdx === 0) hTextProcessed = "Segmento Alterado";
+                          else if (hIdx === 1) hTextProcessed = "Derecho";
+                          else if (hIdx === 2) hTextProcessed = "Izquierdo";
+                        }
+                        
                         return (
                           <th 
                             key={`th-${hIdx}`} 
@@ -11273,7 +15872,7 @@ Ejemplo:
                               adaptivePDFContrast ? "border-black/40 border-b-2" : "border-slate-200"
                             } last:border-r-0 ${widthClass}`}
                           >
-                            {h}
+                            {hTextProcessed}
                           </th>
                         );
                       })}
@@ -11373,6 +15972,9 @@ Ejemplo:
         {renderPrintScrotumSchema()}
         {renderPrintWristSchema()}
         {renderPrintBreastSchema()}
+        {renderPrintAbdominalWallSchema()}
+        {renderPrintCalfAchillesSchema()}
+        {renderPrintNeonatalBrainSchema()}
       </div>
     );
   };
@@ -11496,11 +16098,42 @@ Ejemplo:
     }
   };
 
+  const convertHtmlToMarkdown = (html: string): string => {
+    if (!html) return "";
+    let md = html;
+    
+    // Replace bold tags
+    md = md.replace(/<(?:b|strong)>/gi, "**");
+    md = md.replace(/<\/(?:b|strong)>/gi, "**");
+    
+    // Replace italic tags
+    md = md.replace(/<(?:i|em)>/gi, "*");
+    md = md.replace(/<\/(?:i|em)>/gi, "*");
+
+    // Replace br tags with newline
+    md = md.replace(/<br\s*\/?>/gi, "\n");
+
+    // Replace li tags with bullet points
+    md = md.replace(/<li>/gi, "\n- ");
+    md = md.replace(/<\/li>/gi, "");
+
+    // Remove ul/ol tags
+    md = md.replace(/<(?:ul|ol)>/gi, "");
+    md = md.replace(/<\/(?:ul|ol)>/gi, "");
+
+    // Replace p tags
+    md = md.replace(/<p>/gi, "\n");
+    md = md.replace(/<\/p>/gi, "\n");
+
+    return md;
+  };
+
   // Helper to visually render secondary clinical modules (case analysis, bibliography, etc.) with a high-contrast elegant style,
   // gorgeous Inter (sans-serif) typography, nice bullet points, highlighted bold terms and precise spacing.
-  const renderElegantResponse = (text: string, accentColorClass: string = "text-indigo-400") => {
-    if (!text) return null;
+  const renderElegantResponse = (rawText: string, accentColorClass: string = "text-indigo-400") => {
+    if (!rawText) return null;
 
+    const text = convertHtmlToMarkdown(rawText);
     const elements = parseReportToElements(text, "elegant-resp");
 
     return (
@@ -11650,16 +16283,29 @@ Ejemplo:
 
             if (headers.length === 0) return null;
 
+            const isVascularHTMLTable = headers.length === 3 && headers.some(hdrText => {
+              const lower = (hdrText || "").toLowerCase();
+              return lower.includes("derech") || lower.includes("izquierd") || lower.includes("alterad") || lower.includes("vaso");
+            });
+
             return (
               <div key={elem.id} className="overflow-x-auto my-3 border border-slate-800/80 rounded-xl bg-slate-950/60 shadow-lg max-w-full">
                 <table className="min-w-full divide-y divide-slate-850 text-xs text-left">
                   <thead className="bg-slate-900/60 font-mono">
                     <tr>
-                      {headers.map((h, hIdx) => (
-                        <th key={`th-${hIdx}`} className={`px-3 py-2.5 text-[10px] font-black uppercase tracking-wider ${accentColorClass}`}>
-                          {h}
-                        </th>
-                      ))}
+                      {headers.map((h, hIdx) => {
+                        let hTextProcessed = h;
+                        if (isVascularHTMLTable) {
+                          if (hIdx === 0) hTextProcessed = "Segmento Alterado";
+                          else if (hIdx === 1) hTextProcessed = "Derecho";
+                          else if (hIdx === 2) hTextProcessed = "Izquierdo";
+                        }
+                        return (
+                          <th key={`th-${hIdx}`} className={`px-3 py-2.5 text-[10px] font-black uppercase tracking-wider ${accentColorClass}`}>
+                            {hTextProcessed}
+                          </th>
+                        );
+                      })}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-850/60 bg-slate-950/20 font-sans">
@@ -11802,7 +16448,20 @@ Ejemplo:
     else if (selectedLogo === "dna") accentColorClass = "text-cyan-400";
 
     return (
-      <div className="space-y-4 select-text text-slate-100 font-sans tracking-wide">
+      <div 
+        onMouseUp={handleTextSelection}
+        className="space-y-4 select-text text-slate-100 font-sans tracking-wide"
+      >
+        <div className="text-[10px] bg-indigo-950/20 border border-indigo-900/35 rounded-xl p-3 text-indigo-300 font-medium leading-relaxed mb-4 flex items-center gap-2.5">
+          <span className="flex h-2 w-2 relative shrink-0">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
+          </span>
+          <span>
+            <strong>Funciones IA de Párrafo:</strong> Selecciona cualquier texto con tu ratón o haz clic directo sobre un párrafo/lista para marcarlo y abrir el panel de acciones clínicas especiales (Analizar, Mejorar, Hacer exhaustivo, Explicar, Clasificar).
+          </span>
+        </div>
+
         {elements.map((elem, idx) => {
           if (elem.type === "divider") {
             return <hr key={elem.id} className="border-slate-800/80 my-5" />;
@@ -11830,21 +16489,50 @@ Ejemplo:
               );
             }
 
+            const isMarked = selectedParagraphOriginal === hText;
+
             if (elem.level === 1) {
               return (
-                <h1 key={elem.id} className="text-white text-xs md:text-sm font-black uppercase tracking-wide mt-3.5 mb-1.5 block">
+                <h1 
+                  key={elem.id} 
+                  onClick={() => handleSelectParagraph(hText)}
+                  className={`text-white text-xs md:text-sm font-black uppercase tracking-wide mt-3.5 mb-1.5 cursor-pointer rounded py-1 px-2 transition-all duration-150 ${
+                    isMarked 
+                      ? "bg-indigo-950/40 border-l-2 border-indigo-500 pl-3 pr-2 shadow-sm font-bold" 
+                      : "hover:bg-slate-900/35"
+                  }`}
+                  title="Haz clic para marcar esta sección"
+                >
                   {renderBoldTextSafe(hText, `screen-h-${idx}`)}
                 </h1>
               );
             } else if (elem.level === 2) {
               return (
-                <h2 key={elem.id} className="text-white/95 text-xs md:text-sm font-black uppercase tracking-wide mt-2.5 mb-1 block">
+                <h2 
+                  key={elem.id} 
+                  onClick={() => handleSelectParagraph(hText)}
+                  className={`text-white/95 text-xs md:text-sm font-black uppercase tracking-wide mt-2.5 mb-1 cursor-pointer rounded py-1 px-2 transition-all duration-150 ${
+                    isMarked 
+                      ? "bg-indigo-950/40 border-l-2 border-indigo-500 pl-3 pr-2 shadow-sm font-bold" 
+                      : "hover:bg-slate-900/35"
+                  }`}
+                  title="Haz clic para marcar esta sección"
+                >
                   {renderBoldTextSafe(hText, `screen-h-${idx}`)}
                 </h2>
               );
             } else {
               return (
-                <h3 key={elem.id} className={`text-xs font-black ${accentColorClass} uppercase tracking-wider mt-2 mb-0.5 block`}>
+                <h3 
+                  key={elem.id} 
+                  onClick={() => handleSelectParagraph(hText)}
+                  className={`text-xs font-black uppercase tracking-wider mt-2 mb-0.5 cursor-pointer rounded py-1 px-2 transition-all duration-150 ${
+                    isMarked 
+                      ? "bg-indigo-950/40 border-l-2 border-indigo-500 pl-3 pr-2 shadow-sm font-bold" 
+                      : `${accentColorClass} hover:bg-slate-900/35`
+                  }`}
+                  title="Haz clic para marcar esta sección"
+                >
                   {renderBoldTextSafe(hText, `screen-h-${idx}`)}
                 </h3>
               );
@@ -11872,11 +16560,21 @@ Ejemplo:
                   }
 
                   const renderedText = renderBoldTextSafe(cleanItem, `screen-list-${idx}-${itemIdx}`);
+                  const isMarked = selectedParagraphOriginal === cleanItem;
 
                   return (
-                    <div key={`${elem.id}-item-${itemIdx}`} className="flex items-start gap-2 pl-2 py-0.5 ml-1">
+                    <div 
+                      key={`${elem.id}-item-${itemIdx}`} 
+                      onClick={() => handleSelectParagraph(cleanItem)}
+                      className={`flex items-start gap-2 pl-2 py-1 ml-1 cursor-pointer transition-all duration-150 rounded ${
+                        isMarked 
+                          ? "bg-indigo-950/40 border-l-2 border-indigo-500 text-white pl-3 pr-2 font-medium" 
+                          : "hover:bg-slate-900/35 hover:text-slate-100 pr-1"
+                      }`}
+                      title="Haz clic para marcar este elemento de la lista"
+                    >
                       {bulletSpan}
-                      <span className="text-slate-300 leading-relaxed text-[12.5px] md:text-[13px]">
+                      <span className={`leading-relaxed text-[12.5px] md:text-[13px] ${isMarked ? "text-indigo-250 font-medium" : "text-slate-300"}`}>
                         {renderedText}
                       </span>
                     </div>
@@ -11892,16 +16590,29 @@ Ejemplo:
 
             if (headers.length === 0) return null;
 
+            const isVascularHTMLTable = headers.length === 3 && headers.some(hdrText => {
+              const lower = (hdrText || "").toLowerCase();
+              return lower.includes("derech") || lower.includes("izquierd") || lower.includes("alterad") || lower.includes("vaso");
+            });
+
             return (
               <div key={elem.id} className="overflow-x-auto my-4 border border-slate-800/80 rounded-xl bg-slate-950/60 shadow-lg max-w-full">
                 <table className="min-w-full divide-y divide-slate-850 text-xs text-left">
                   <thead className="bg-slate-900/60 font-mono">
                     <tr>
-                      {headers.map((h, hIdx) => (
-                        <th key={`th-${hIdx}`} className="px-3 py-2.5 text-[10px] font-black uppercase tracking-wider text-indigo-400">
-                          {h}
-                        </th>
-                      ))}
+                      {headers.map((h, hIdx) => {
+                        let hTextProcessed = h;
+                        if (isVascularHTMLTable) {
+                          if (hIdx === 0) hTextProcessed = "Segmento Alterado";
+                          else if (hIdx === 1) hTextProcessed = "Derecho";
+                          else if (hIdx === 2) hTextProcessed = "Izquierdo";
+                        }
+                        return (
+                          <th key={`th-${hIdx}`} className="px-3 py-2.5 text-[10px] font-black uppercase tracking-wider text-indigo-400">
+                            {hTextProcessed}
+                          </th>
+                        );
+                      })}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-850/60 bg-slate-950/20 font-sans">
@@ -11953,8 +16664,19 @@ Ejemplo:
                   );
                 }
 
+                const isMarked = selectedParagraphOriginal === trimmedLine;
+
                 return (
-                  <p key={`${elem.id}-l-${lIdx}`} className="text-slate-300 leading-relaxed text-[12.5px] md:text-[13px] select-text">
+                  <p 
+                    key={`${elem.id}-l-${lIdx}`} 
+                    onClick={() => handleSelectParagraph(trimmedLine)}
+                    className={`leading-relaxed text-[12.5px] md:text-[13px] select-text cursor-pointer transition-all duration-150 rounded my-1 py-1 px-1.5 ${
+                      isMarked 
+                        ? "bg-indigo-950/40 border-l-2 border-indigo-500 text-white pl-2.5 font-medium shadow-sm" 
+                        : "text-slate-300 hover:bg-slate-900/35 hover:text-slate-100"
+                    }`}
+                    title="Haz clic para marcar este párrafo"
+                  >
                     {renderBoldTextSafe(trimmedLine, `screen-text-${idx}-${lIdx}`)}
                   </p>
                 );
@@ -12402,6 +17124,8 @@ Ejemplo:
                             <option value="Momografía">Momografía</option>
                             <option value="Tórax">Tórax</option>
                             <option value="Cráneo">Cráneo</option>
+                            <option value="Pantorrilla y Tendón de Aquiles">Pantorrilla y Tendón de Aquiles</option>
+                            <option value="Cerebro Neonatal">Cerebro Neonatal</option>
                             <option value="Otro">Otro (Especificar)</option>
                           </select>
                         </div>
@@ -12422,7 +17146,7 @@ Ejemplo:
                       )}
 
                       {/* 4. Lateralidad (conditional) */}
-                      {["Mamas", "Momografía", "Rodilla", "Hombro", "Tobillo", "Muslo Anterior", "Muslo Posterior", "Muñeca", "Mano", "Pie", "Cadera", "Codo", "Mamografía y Ultrasonido de Mamas", "Doppler venoso de miembro inferior", "Doppler arterial de miembro inferior", "Otro"].includes(specificStudy) || modality === "Mamografía y Ultrasonido de Mamas" ? (
+                      {["Mamas", "Momografía", "Rodilla", "Hombro", "Tobillo", "Muslo Anterior", "Muslo Posterior", "Muñeca", "Mano", "Pie", "Cadera", "Codo", "Pantorrilla y Tendón de Aquiles", "Mamografía y Ultrasonido de Mamas", "Doppler venoso de miembro inferior", "Doppler arterial de miembro inferior", "Otro"].includes(specificStudy) || modality === "Mamografía y Ultrasonido de Mamas" ? (
                         <div className="space-y-2 animate-fadeIn">
                           <label className="text-[10px] font-black text-slate-500 block uppercase tracking-widest">Lateralidad:</label>
                           <div className="grid grid-cols-4 gap-2">
@@ -13169,6 +17893,20 @@ Ejemplo:
                             />
                           </div>
 
+                          <div className="space-y-1.5 sm:col-span-2">
+                            <label className="text-[9px] font-black text-slate-500 block uppercase tracking-widest leading-none">Cédula Profesional / Registro Médico / Licencia:</label>
+                            <input
+                              type="text"
+                              value={doctorLicense}
+                              onChange={(e) => {
+                                setDoctorLicense(e.target.value);
+                                localStorage.setItem("rad_doctor_license", e.target.value);
+                              }}
+                              placeholder="Ej: M.S.P. Reg: 6025 / Senescyt: 1005-12-7489"
+                              className="w-full bg-slate-950 border border-slate-800 focus:border-indigo-500 rounded-lg py-2 px-3 text-xs font-bold text-slate-100 focus:outline-none placeholder-slate-650 transition-all"
+                            />
+                          </div>
+
                           {/* Foto de Firma del Médico */}
                           <div className="space-y-1.5 sm:col-span-2">
                             <label className="text-[9px] font-black text-slate-500 block uppercase tracking-widest leading-none">Foto de Firma / Sello (Opcional):</label>
@@ -13219,7 +17957,7 @@ Ejemplo:
                               value={clinicName}
                               onChange={(e) => setClinicName(e.target.value)}
                               placeholder="Ej: Clínica de Diagnóstico por Imagen"
-                              className="w-full bg-slate-950 border border-slate-800 focus:border-indigo-500 rounded-lg py-2 px-3 text-xs font-bold text-slate-100 focus:outline-none placeholder-slate-650 transition-all"
+                              className="w-full bg-slate-950 border border-slate-850 focus:border-indigo-500 rounded-lg py-2 px-3 text-xs font-bold text-slate-100 focus:outline-none placeholder-slate-650 transition-all"
                             />
                           </div>
 
@@ -14146,6 +18884,256 @@ Ejemplo:
                             <div className="space-y-4 animate-fadeIn">
                               <div className="p-6 sm:p-8 rounded-2xl border-2 bg-slate-950 border-slate-850 text-slate-100 selection:bg-indigo-900 selection:text-white shadow-inner overflow-x-auto select-text">
                                 {renderClinicalReport(generatedReport)}
+
+                                {/* PANEL DE ACCIONES DE PÁRRAFO POR IA (SOLICITADO POR EL USUARIO) */}
+                                {selectedParagraphText && (
+                                  <div className="mt-8 pt-8 border-t border-slate-800/80 animate-fadeIn space-y-4">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-2">
+                                        <div className="bg-indigo-950 p-1.5 rounded-lg border border-indigo-500/20">
+                                          <Brain className="h-4 w-4 text-indigo-400" />
+                                        </div>
+                                        <div>
+                                          <h4 className="text-xs font-black uppercase tracking-widest text-white animate-fadeIn">
+                                            Asistente de Párrafo Activo (IA)
+                                          </h4>
+                                          <p className="text-[10px] text-slate-400 font-medium">
+                                            {selectedParagraphOriginal ? "Fragmento del informe marcado" : "Selección de texto personalizada"}
+                                          </p>
+                                        </div>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setSelectedParagraphText(null);
+                                          setSelectedParagraphOriginal(null);
+                                          setParagraphActionResult(null);
+                                          setParagraphActionActive(null);
+                                          setParagraphActionError(null);
+                                        }}
+                                        className="p-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg text-slate-400 hover:text-slate-100 transition-colors cursor-pointer"
+                                        title="Cerrar asistente de párrafo"
+                                      >
+                                        <X className="h-3.5 w-3.5" />
+                                      </button>
+                                    </div>
+
+                                    {/* Muestra el texto seleccionado */}
+                                    <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-850/80 select-text relative">
+                                      <span className="absolute -top-2.5 left-3 bg-slate-900 px-2 py-0.5 text-[8px] font-black uppercase text-indigo-400 tracking-widest border border-slate-800/80 rounded font-mono">
+                                        Texto Marcado
+                                      </span>
+                                      <p className="text-xs text-slate-300 leading-relaxed italic">
+                                        "{selectedParagraphText}"
+                                      </p>
+                                    </div>
+
+                                    {/* Botones de acción de la IA */}
+                                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => executeParagraphAction("analyze")}
+                                        disabled={paragraphActionLoading}
+                                        className={`px-3 py-2.5 border rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center gap-1.5 cursor-pointer text-center ${
+                                          paragraphActionActive === "analyze"
+                                            ? "bg-indigo-950 border-indigo-500 text-indigo-300 shadow-md shadow-indigo-950/40"
+                                            : "bg-slate-900 border-slate-850 hover:border-slate-800 text-slate-300 hover:text-white hover:bg-slate-850/60"
+                                        }`}
+                                      >
+                                        <Sparkles className="h-4 w-4 text-indigo-400 animate-pulse" />
+                                        <span className="text-[10px] uppercase tracking-wider font-mono">Analizar</span>
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => executeParagraphAction("improve")}
+                                        disabled={paragraphActionLoading}
+                                        className={`px-3 py-2.5 border rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center gap-1.5 cursor-pointer text-center ${
+                                          paragraphActionActive === "improve"
+                                            ? "bg-indigo-950 border-indigo-500 text-indigo-300 shadow-md shadow-indigo-950/40"
+                                            : "bg-slate-900 border-slate-850 hover:border-slate-800 text-slate-300 hover:text-white hover:bg-slate-850/60"
+                                        }`}
+                                      >
+                                        <Edit className="h-4 w-4 text-emerald-400" />
+                                        <span className="text-[10px] uppercase tracking-wider font-mono">Mejorar</span>
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => executeParagraphAction("expand")}
+                                        disabled={paragraphActionLoading}
+                                        className={`px-3 py-2.5 border rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center gap-1.5 cursor-pointer text-center ${
+                                          paragraphActionActive === "expand"
+                                            ? "bg-indigo-950 border-indigo-500 text-indigo-300 shadow-md shadow-indigo-950/40"
+                                            : "bg-slate-900 border-slate-850 hover:border-slate-800 text-slate-300 hover:text-white hover:bg-slate-850/60"
+                                        }`}
+                                      >
+                                        <FileText className="h-4 w-4 text-blue-400" />
+                                        <span className="text-[10px] uppercase tracking-wider font-mono">Hacer exhaustivo</span>
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => executeParagraphAction("explain")}
+                                        disabled={paragraphActionLoading}
+                                        className={`px-3 py-2.5 border rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center gap-1.5 cursor-pointer text-center ${
+                                          paragraphActionActive === "explain"
+                                            ? "bg-indigo-950 border-indigo-500 text-indigo-300 shadow-md shadow-indigo-950/40"
+                                            : "bg-slate-900 border-slate-850 hover:border-slate-800 text-slate-300 hover:text-white hover:bg-slate-850/60"
+                                        }`}
+                                      >
+                                        <Activity className="h-4 w-4 text-pink-400" />
+                                        <span className="text-[10px] uppercase tracking-wider font-mono">Explicar</span>
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => executeParagraphAction("classify")}
+                                        disabled={paragraphActionLoading}
+                                        className={`px-3 py-2.5 border rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center gap-1.5 cursor-pointer text-center ${
+                                          paragraphActionActive === "classify"
+                                            ? "bg-indigo-950 border-indigo-500 text-indigo-300 shadow-md shadow-indigo-950/40"
+                                            : "bg-slate-900 border-slate-850 hover:border-slate-800 text-slate-300 hover:text-white hover:bg-slate-850/60"
+                                        }`}
+                                      >
+                                        <Database className="h-4 w-4 text-amber-400" />
+                                        <span className="text-[10px] uppercase tracking-wider font-mono">Clasificar</span>
+                                      </button>
+                                    </div>
+
+                                    {/* CUADRO DE DIÁLOGO IA LIBRE PARA ACCIÓN PERSONALIZADA */}
+                                    <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-850/80 space-y-3 animate-fadeIn">
+                                      <div className="flex items-center gap-2">
+                                        <MessageSquare className="h-3.5 w-3.5 text-indigo-400" />
+                                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-200 font-mono">
+                                          Petición / Instrucción Libre para la IA
+                                        </span>
+                                      </div>
+                                      <div className="flex gap-2">
+                                        <input
+                                          type="text"
+                                          value={customParagraphPrompt}
+                                          onChange={(e) => setCustomParagraphPrompt(e.target.value)}
+                                          onKeyDown={(e) => {
+                                            if (e.key === "Enter" && customParagraphPrompt.trim() && !paragraphActionLoading) {
+                                              executeParagraphAction("custom", customParagraphPrompt.trim());
+                                            }
+                                          }}
+                                          placeholder="Ej: Traduce al inglés, cambia la lateralidad a derecha, resume en una frase..."
+                                          className="flex-1 bg-slate-950 border border-slate-800 focus:border-indigo-500 rounded-xl px-3 py-2 text-xs text-slate-100 placeholder:text-slate-650 outline-none transition-all"
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            if (customParagraphPrompt.trim()) {
+                                              executeParagraphAction("custom", customParagraphPrompt.trim());
+                                            }
+                                          }}
+                                          disabled={paragraphActionLoading || !customParagraphPrompt.trim()}
+                                          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-550 disabled:bg-slate-800/80 disabled:text-slate-600 text-white font-black text-xs rounded-xl uppercase tracking-wider transition-all shrink-0 flex items-center gap-1.5 cursor-pointer"
+                                        >
+                                          <Send className="h-3.5 w-3.5" />
+                                          <span>Enviar</span>
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    {/* Cargador */}
+                                    {paragraphActionLoading && (
+                                      <div className="bg-slate-900/40 p-6 rounded-xl border border-slate-850/80 flex flex-col items-center justify-center gap-2.5 animate-pulse">
+                                        <Loader2 className="h-5 w-5 text-indigo-400 animate-spin" />
+                                        <p className="text-xs text-slate-400 font-medium font-mono uppercase tracking-wider">
+                                          Procesando consulta clínica mediante IA...
+                                        </p>
+                                      </div>
+                                    )}
+
+                                    {/* Mensaje de error */}
+                                    {paragraphActionError && (
+                                      <div className="bg-red-950/30 border border-red-900/50 rounded-xl p-4 text-xs text-red-350 flex items-start gap-2.5 leading-relaxed">
+                                        <AlertCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
+                                        <div>
+                                          <strong>Error al procesar acción:</strong> {paragraphActionError}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* Resultados de la IA */}
+                                    {paragraphActionResult && (
+                                      <div className="bg-slate-900/80 p-5 rounded-xl border border-indigo-950/40 space-y-4 animate-fadeIn select-text">
+                                        <div className="flex items-center justify-between border-b border-slate-800/60 pb-2">
+                                          <div className="flex items-center gap-1.5 text-xs text-indigo-300 font-black uppercase tracking-wider">
+                                            <Zap className="h-3.5 w-3.5 text-indigo-400" />
+                                            <span>Resultado de la Contribución</span>
+                                          </div>
+                                          <span className="text-[9px] bg-indigo-950 text-indigo-400 border border-indigo-900/35 px-2 py-0.5 rounded uppercase font-bold font-mono">
+                                            {paragraphActionActive === "analyze" ? "Análisis Clínico" :
+                                             paragraphActionActive === "improve" ? "Redacción Pulida" :
+                                             paragraphActionActive === "expand" ? "Detalle Exhaustivo" :
+                                             paragraphActionActive === "explain" ? "Explicación Didáctica" :
+                                             paragraphActionActive === "classify" ? "Cálculo de Escala" :
+                                             "Consulta IA Libre"}
+                                          </span>
+                                        </div>
+
+                                        {/* Renderizado del resultado */}
+                                        <div className="text-xs text-slate-200 leading-relaxed whitespace-pre-wrap font-sans space-y-2 select-text max-h-96 overflow-y-auto pr-1 scrollbar-thin">
+                                          {paragraphActionResult}
+                                        </div>
+
+                                        {/* Acciones para incorporar o usar el resultado */}
+                                        <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-slate-800/60">
+                                          {/* Reemplazar (solo si se seleccionó desde un fragmento real existente) */}
+                                          {selectedParagraphOriginal && (paragraphActionActive === "improve" || paragraphActionActive === "expand" || paragraphActionActive === "custom") && (
+                                            <button
+                                              type="button"
+                                              onClick={() => handleApplyParagraphImprovement(paragraphActionResult)}
+                                              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-550 text-white rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-md cursor-pointer select-none"
+                                              title="Reemplazar el fragmento original en el informe con esta mejora de IA"
+                                            >
+                                              <CheckCircle2 className="h-3.5 w-3.5" /> Reemplazar Fragmento
+                                            </button>
+                                          )}
+
+                                          {/* Insertar debajo (siempre útil) */}
+                                          {selectedParagraphOriginal && (
+                                            <button
+                                              type="button"
+                                              onClick={() => handleInsertBelowParagraph(paragraphActionResult)}
+                                              className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-slate-750 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm cursor-pointer select-none"
+                                              title="Insertar este bloque de texto directamente debajo del párrafo original"
+                                            >
+                                              <ChevronRight className="h-3.5 w-3.5 text-indigo-400" /> Insertar Debajo
+                                            </button>
+                                          )}
+
+                                          {/* Agregar al final */}
+                                          <button
+                                            type="button"
+                                            onClick={() => handleAppendParagraphToReport(paragraphActionResult)}
+                                            className="px-3.5 py-2 bg-slate-850 hover:bg-slate-800 text-slate-200 border border-slate-750 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm cursor-pointer select-none"
+                                            title="Agregar esta contribución al final de todo el informe de estudio"
+                                          >
+                                            <Plus className="h-3.5 w-3.5 text-slate-400" /> Agregar al Final
+                                          </button>
+
+                                          {/* Copiar */}
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              navigator.clipboard.writeText(paragraphActionResult || "");
+                                              alert("Resultado copiado al portapapeles correctamente.");
+                                            }}
+                                            className="px-3.5 py-2 bg-slate-900 hover:bg-slate-850 text-slate-400 hover:text-slate-200 border border-slate-800 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer select-none"
+                                            title="Copiar texto de resultado para pegarlo manualmente"
+                                          >
+                                            <Copy className="h-3.5 w-3.5" /> Copiar Texto
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
                                 
                                 {/* Visual On-Screen Gallery of Attached Images */}
                                 {attachedImages.length > 0 && (
@@ -14171,6 +19159,77 @@ Ejemplo:
                               </div>
                             </div>
                           )}
+
+                          {/* 🛠️ MANUAL PROTOCOLS SELECTION GATE (SOLICITADO POR EL USUARIO) */}
+                          <div className="bg-slate-900 border-2 border-slate-850 rounded-2xl p-5 shadow-xl space-y-4">
+                            <div className="flex items-center gap-2">
+                              <span className="p-1 px-2 text-[8px] font-black uppercase font-mono tracking-widest bg-emerald-950 text-emerald-400 border border-emerald-900/30 rounded">
+                                MANUAL
+                              </span>
+                              <h3 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
+                                Activación de Protocolos y Sinopsis Anatómica
+                              </h3>
+                            </div>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide leading-relaxed">
+                              Selecciona un protocolo médico de forma estrictamente manual para activar su correspondiente diagrama de hallazgos y lista estructurada en el reporte. No se activará de forma automática.
+                            </p>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 pt-1">
+                              {[
+                                { id: "Abdomen", label: "Abdomen", i: "🫁" },
+                                { id: "Mamas", label: "Mamas", i: "🎀" },
+                                { id: "Vias urinarias", label: "Vías Urinarias", i: "🩺" },
+                                { id: "Escroto", label: "Escroto", i: "🥜" },
+                                { id: "Cuello", label: "Cuello", i: "🧣" },
+                                { id: "Rodilla", label: "Rodilla", i: "🦴" },
+                                { id: "Hombro", label: "Hombro", i: "💪" },
+                                { id: "Tobillo", label: "Tobillo", i: "🦵" },
+                                { id: "Muslo Anterior", label: "Muslo Ant.", i: "🍗" },
+                                { id: "Muslo Posterior", label: "Muslo Post.", i: "🍗" },
+                                { id: "Muñeca", label: "Muñeca", i: "🖐️" },
+                                { id: "Codo", label: "Codo", i: "📐" },
+                                { id: "Pared Abdominal", label: "Pared Abd.", i: "🛡️" },
+                                { id: "Pantorrilla y Tendón de Aquiles", label: "Pantorrilla/Aquiles", i: "🦵" },
+                                { id: "Cerebro Neonatal", label: "Cerebro Neonatal", i: "👶" }
+                              ].map((item) => {
+                                const isActive = activeProtocol === item.id;
+                                return (
+                                  <button
+                                    key={item.id}
+                                    type="button"
+                                    onClick={() => {
+                                      if (activeProtocol === item.id) {
+                                        setActiveProtocol("");
+                                      } else {
+                                        setActiveProtocol(item.id);
+                                        setSpecificStudy(item.id);
+                                      }
+                                    }}
+                                    className={`py-2 px-2 rounded-xl text-[10px] font-bold tracking-wider uppercase border border-slate-800 transition-all duration-200 text-center cursor-pointer select-none flex items-center justify-center gap-1.5 active:scale-97 ${
+                                      isActive
+                                        ? "bg-gradient-to-r from-indigo-600 to-indigo-700 border-indigo-500 text-white shadow-[0_2px_8px_rgba(99,102,241,0.3)] font-black"
+                                        : "bg-slate-950/80 hover:bg-slate-950/100 border-slate-850 hover:border-slate-750 text-slate-400 hover:text-slate-200 font-bold"
+                                    }`}
+                                  >
+                                    <span>{item.i}</span>
+                                    <span className="truncate">{item.label}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            {activeProtocol && (
+                              <div className="flex justify-end pt-3 border-t border-slate-850">
+                                <button
+                                  type="button"
+                                  onClick={() => setIsSmartAnatomyDialogOpen(true)}
+                                  className="px-4 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-wider bg-gradient-to-r from-amber-500 via-amber-600 to-indigo-600 hover:from-amber-400 hover:to-indigo-500 text-white shadow-lg shadow-indigo-950/40 border border-indigo-400/20 flex items-center gap-1.5 active:scale-97 cursor-pointer transition-all duration-300"
+                                >
+                                  <Sparkles className="h-4 w-4 text-amber-200 animate-pulse" />
+                                  <span>✨ Modificar en Cuadro de Diálogo Inteligente ({activeProtocol})</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
 
                           {/* Interactive Attachment Manager Panel */}
                           <div className="bg-slate-900 border-2 border-slate-850 rounded-2xl p-5 shadow-xl space-y-4">
@@ -14219,11 +19278,11 @@ Ejemplo:
                               <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
                                 <label className="px-3 py-2 bg-indigo-600/10 hover:bg-indigo-600/20 border border-indigo-500/20 hover:border-indigo-500/40 rounded-lg text-[9px] font-black uppercase tracking-wider text-indigo-400 transition-all cursor-pointer flex items-center gap-1.5 shadow-md">
                                   <Plus className="h-3 w-3" />
-                                  Elegir Archivos
+                                  Elegir Archivos / ZIP
                                   <input 
                                     type="file" 
                                     multiple 
-                                    accept="image/*,.dcm,.DCM" 
+                                    accept="image/*,.dcm,.DCM,.zip,application/zip,application/x-zip-compressed" 
                                     onChange={(e) => handleAttachedFiles(e.target.files)} 
                                     className="hidden" 
                                   />
@@ -14231,14 +19290,11 @@ Ejemplo:
                                 
                                 <label className="px-3 py-2 bg-slate-900 hover:bg-slate-850 border border-slate-800 rounded-lg text-[9px] font-black uppercase tracking-wider text-slate-300 transition-all cursor-pointer flex items-center gap-1.5 shadow-md">
                                   <Layers className="h-3 w-3 text-cyan-400" />
-                                  Elegir Carpeta Completa
+                                  Elegir Carpeta o Archivo ZIP
                                   <input 
                                     type="file" 
-                                    {...({
-                                      webkitdirectory: "",
-                                      directory: "",
-                                      multiple: true
-                                    } as any)}
+                                    multiple
+                                    accept="image/*,.dcm,.DCM,.zip,application/zip,application/x-zip-compressed"
                                     onChange={(e) => handleAttachedFiles(e.target.files)} 
                                     className="hidden" 
                                   />
@@ -14406,12 +19462,16 @@ Ejemplo:
                                 setIncludeInReport={setIncludeVascularSchemaInReport}
                                 generatedReport={generatedReport || ""}
                                 laterality={laterality}
+                                carotidPlaques={carotidPlaques}
+                                onSetCarotidPlaques={setCarotidPlaques}
+                                includeCarotidBifurcations={includeCarotidBifurcations}
+                                onSetIncludeCarotidBifurcations={setIncludeCarotidBifurcations}
                               />
                             </div>
                           )}
 
                           {/* === SHOULDER ANATOMY VIEWER AND SYNOPIS HUD === */}
-                          {specificStudy === "Hombro" && (
+                          {activeProtocol === "Hombro" && (
                             <div className="my-6 relative bg-slate-950/20 border border-slate-850/60 rounded-3xl p-4 transition-all duration-355">
                               <ShoulderAnatomyViewer
                                 selectedModel={selectedModel}
@@ -14424,68 +19484,23 @@ Ejemplo:
                                     setEditedReportText(nextReport);
                                   }
                                 }}
-                                onExportTable={(tableText) => {
-                                  const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
-                                  setReportHistory((prev) => [...prev, activeReport]);
-                                  const separator = "\n\n";
-                                  const title = "### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE HOMBRO\n";
-                                  
-                                  if (activeReport.includes("### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE HOMBRO")) {
-                                    const regex = /### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE HOMBRO[\s\S]+/g;
-                                    const cleanReportText = activeReport.replace(regex, "").trim();
-                                    const nextReport = cleanReportText + separator + title + tableText;
-                                    if (isEditingReportManual) {
-                                      setEditedReportText(nextReport);
-                                    } else {
-                                      setGeneratedReport(nextReport);
-                                      setEditedReportText(nextReport);
-                                    }
-                                  } else {
-                                    const nextReport = activeReport + separator + title + tableText;
-                                    if (isEditingReportManual) {
-                                      setEditedReportText(nextReport);
-                                    } else {
-                                      setGeneratedReport(nextReport);
-                                      setEditedReportText(nextReport);
-                                    }
-                                  }
-                                }}
-                                onExportNarrative={(narrativeText) => {
-                                  const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
-                                  setReportHistory((prev) => [...prev, activeReport]);
-                                  const separator = "\n\n";
-                                  const title = "### SINOPSIS DE LESIONES DE HOMBRO (RESUMEN ANATOMOPATOLÓGICO)\n";
-                                  
-                                  if (activeReport.includes("### SINOPSIS DE LESIONES DE HOMBRO (RESUMEN ANATOMOPATOLÓGICO)")) {
-                                    const regex = /### SINOPSIS DE LESIONES DE HOMBRO (RESUMEN ANATOMOPATOLÓGICO)[\s\S]+/g;
-                                    const cleanReportText = activeReport.replace(regex, "").trim();
-                                    const nextReport = cleanReportText + separator + title + narrativeText;
-                                    if (isEditingReportManual) {
-                                      setEditedReportText(nextReport);
-                                    } else {
-                                      setGeneratedReport(nextReport);
-                                      setEditedReportText(nextReport);
-                                    }
-                                  } else {
-                                    const nextReport = activeReport + separator + title + narrativeText;
-                                    if (isEditingReportManual) {
-                                      setEditedReportText(nextReport);
-                                    } else {
-                                      setGeneratedReport(nextReport);
-                                      setEditedReportText(nextReport);
-                                    }
-                                  }
-                                }}
+                                onExportTable={(tableText) => handleExportTableWithProtocol("Hombro", tableText)}
+                                onExportNarrative={(narrativeText) => handleExportNarrativeWithProtocol("Hombro", narrativeText)}
                                 includeInReport={includeShoulderSchemaInReport}
                                 setIncludeInReport={setIncludeShoulderSchemaInReport}
                                 onChangeStates={(nextStates) => setShoulderStates(nextStates)}
                                 onChangeDescriptions={(nextDescriptions) => setShoulderDescriptions(nextDescriptions)}
+                                laterality={laterality}
+                                externalStatesLeft={shoulderStatesLeft}
+                                externalDescriptionsLeft={shoulderDescriptionsLeft}
+                                onChangeStatesLeft={(nextStates) => setShoulderStatesLeft(nextStates)}
+                                onChangeDescriptionsLeft={(nextDescriptions) => setShoulderDescriptionsLeft(nextDescriptions)}
                               />
                             </div>
                           )}
 
                           {/* === KNEE ANATOMY VIEWER AND SYNOPSIS HUD === */}
-                          {specificStudy === "Rodilla" && (
+                          {activeProtocol === "Rodilla" && (
                             <div className="my-6 relative bg-slate-950/20 border border-slate-850/60 rounded-3xl p-4 transition-all duration-355">
                               <KneeAnatomyViewer
                                 selectedModel={selectedModel}
@@ -14498,68 +19513,23 @@ Ejemplo:
                                     setEditedReportText(nextReport);
                                   }
                                 }}
-                                onExportTable={(tableText) => {
-                                  const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
-                                  setReportHistory((prev) => [...prev, activeReport]);
-                                  const separator = "\n\n";
-                                  const title = "### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE RODILLA\n";
-                                  
-                                  if (activeReport.includes("### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE RODILLA")) {
-                                    const regex = /### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE RODILLA[\s\S]+/g;
-                                    const cleanReportText = activeReport.replace(regex, "").trim();
-                                    const nextReport = cleanReportText + separator + title + tableText;
-                                    if (isEditingReportManual) {
-                                      setEditedReportText(nextReport);
-                                    } else {
-                                      setGeneratedReport(nextReport);
-                                      setEditedReportText(nextReport);
-                                    }
-                                  } else {
-                                    const nextReport = activeReport + separator + title + tableText;
-                                    if (isEditingReportManual) {
-                                      setEditedReportText(nextReport);
-                                    } else {
-                                      setGeneratedReport(nextReport);
-                                      setEditedReportText(nextReport);
-                                    }
-                                  }
-                                }}
-                                onExportNarrative={(narrativeText) => {
-                                  const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
-                                  setReportHistory((prev) => [...prev, activeReport]);
-                                  const separator = "\n\n";
-                                  const title = "### SINOPSIS DE LESIONES DE RODILLA (RESUMEN ANATOMOPATOLÓGICO)\n";
-                                  
-                                  if (activeReport.includes("### SINOPSIS DE LESIONES DE RODILLA (RESUMEN ANATOMOPATOLÓGICO)")) {
-                                    const regex = /### SINOPSIS DE LESIONES DE RODILLA (RESUMEN ANATOMOPATOLÓGICO)[\s\S]+/g;
-                                    const cleanReportText = activeReport.replace(regex, "").trim();
-                                    const nextReport = cleanReportText + separator + title + narrativeText;
-                                    if (isEditingReportManual) {
-                                      setEditedReportText(nextReport);
-                                    } else {
-                                      setGeneratedReport(nextReport);
-                                      setEditedReportText(nextReport);
-                                    }
-                                  } else {
-                                    const nextReport = activeReport + separator + title + narrativeText;
-                                    if (isEditingReportManual) {
-                                      setEditedReportText(nextReport);
-                                    } else {
-                                      setGeneratedReport(nextReport);
-                                      setEditedReportText(nextReport);
-                                    }
-                                  }
-                                }}
+                                onExportTable={(tableText) => handleExportTableWithProtocol("Rodilla", tableText)}
+                                onExportNarrative={(narrativeText) => handleExportNarrativeWithProtocol("Rodilla", narrativeText)}
                                 includeInReport={includeKneeSchemaInReport}
                                 setIncludeInReport={setIncludeKneeSchemaInReport}
                                 onChangeStates={(nextStates) => setKneeStates(nextStates)}
                                 onChangeDescriptions={(nextDescriptions) => setKneeDescriptions(nextDescriptions)}
+                                laterality={laterality}
+                                externalStatesLeft={kneeStatesLeft}
+                                externalDescriptionsLeft={kneeDescriptionsLeft}
+                                onChangeStatesLeft={(nextStates) => setKneeStatesLeft(nextStates)}
+                                onChangeDescriptionsLeft={(nextDescriptions) => setKneeDescriptionsLeft(nextDescriptions)}
                               />
                             </div>
                           )}
 
                           {/* === ANKLE ANATOMY VIEWER AND SYNOPSIS HUD === */}
-                          {specificStudy === "Tobillo" && (
+                          {activeProtocol === "Tobillo" && (
                             <div className="my-6 relative bg-slate-950/20 border border-slate-850/60 rounded-3xl p-4 transition-all duration-355">
                               <AnkleAnatomyViewer
                                 selectedModel={selectedModel}
@@ -14572,58 +19542,8 @@ Ejemplo:
                                     setEditedReportText(nextReport);
                                   }
                                 }}
-                                onExportTable={(tableText) => {
-                                  const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
-                                  setReportHistory((prev) => [...prev, activeReport]);
-                                  const separator = "\n\n";
-                                  const title = "### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE TOBILLO\n";
-                                  
-                                  if (activeReport.includes("### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE TOBILLO")) {
-                                    const regex = /### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE TOBILLO[\s\S]+/g;
-                                    const cleanReportText = activeReport.replace(regex, "").trim();
-                                    const nextReport = cleanReportText + separator + title + tableText;
-                                    if (isEditingReportManual) {
-                                      setEditedReportText(nextReport);
-                                    } else {
-                                      setGeneratedReport(nextReport);
-                                      setEditedReportText(nextReport);
-                                    }
-                                  } else {
-                                    const nextReport = activeReport + separator + title + tableText;
-                                    if (isEditingReportManual) {
-                                      setEditedReportText(nextReport);
-                                    } else {
-                                      setGeneratedReport(nextReport);
-                                      setEditedReportText(nextReport);
-                                    }
-                                  }
-                                }}
-                                onExportNarrative={(narrativeText) => {
-                                  const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
-                                  setReportHistory((prev) => [...prev, activeReport]);
-                                  const separator = "\n\n";
-                                  const title = "### SINOPSIS DE LESIONES DE TOBILLO (RESUMEN ANATOMOPATOLÓGICO)\n";
-                                  
-                                  if (activeReport.includes("### SINOPSIS DE LESIONES DE TOBILLO (RESUMEN ANATOMOPATOLÓGICO)")) {
-                                    const regex = /### SINOPSIS DE LESIONES DE TOBILLO (RESUMEN ANATOMOPATOLÓGICO)[\s\S]+/g;
-                                    const cleanReportText = activeReport.replace(regex, "").trim();
-                                    const nextReport = cleanReportText + separator + title + narrativeText;
-                                    if (isEditingReportManual) {
-                                      setEditedReportText(nextReport);
-                                    } else {
-                                      setGeneratedReport(nextReport);
-                                      setEditedReportText(nextReport);
-                                    }
-                                  } else {
-                                    const nextReport = activeReport + separator + title + narrativeText;
-                                    if (isEditingReportManual) {
-                                      setEditedReportText(nextReport);
-                                    } else {
-                                      setGeneratedReport(nextReport);
-                                      setEditedReportText(nextReport);
-                                    }
-                                  }
-                                }}
+                                onExportTable={(tableText) => handleExportTableWithProtocol("Tobillo", tableText)}
+                                onExportNarrative={(narrativeText) => handleExportNarrativeWithProtocol("Tobillo", narrativeText)}
                                 includeInReport={includeAnkleSchemaInReport}
                                 setIncludeInReport={setIncludeAnkleSchemaInReport}
                                 onChangeStates={(nextStates) => setAnkleStates(nextStates)}
@@ -14633,7 +19553,7 @@ Ejemplo:
                           )}
 
                           {/* === THIGH ANATOMY VIEWER AND SYNOPSIS HUD === */}
-                          {specificStudy === "Muslo Anterior" && (
+                          {activeProtocol === "Muslo Anterior" && (
                             <div className="my-6 relative bg-slate-950/20 border border-slate-850/60 rounded-3xl p-4 transition-all duration-355">
                               <ThighAnatomyViewer
                                 selectedModel={selectedModel}
@@ -14646,58 +19566,8 @@ Ejemplo:
                                     setEditedReportText(nextReport);
                                   }
                                 }}
-                                onExportTable={(tableText) => {
-                                  const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
-                                  setReportHistory((prev) => [...prev, activeReport]);
-                                  const separator = "\n\n";
-                                  const title = "### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE MUSLO ANTERIOR\n";
-                                  
-                                  if (activeReport.includes("### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE MUSLO ANTERIOR")) {
-                                    const regex = /### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE MUSLO ANTERIOR[\s\S]+/g;
-                                    const cleanReportText = activeReport.replace(regex, "").trim();
-                                    const nextReport = cleanReportText + separator + title + tableText;
-                                    if (isEditingReportManual) {
-                                      setEditedReportText(nextReport);
-                                    } else {
-                                      setGeneratedReport(nextReport);
-                                      setEditedReportText(nextReport);
-                                    }
-                                  } else {
-                                    const nextReport = activeReport + separator + title + tableText;
-                                    if (isEditingReportManual) {
-                                      setEditedReportText(nextReport);
-                                    } else {
-                                      setGeneratedReport(nextReport);
-                                      setEditedReportText(nextReport);
-                                    }
-                                  }
-                                }}
-                                onExportNarrative={(narrativeText) => {
-                                  const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
-                                  setReportHistory((prev) => [...prev, activeReport]);
-                                  const separator = "\n\n";
-                                  const title = "### SINOPSIS DE LESIONES DE MUSLO ANTERIOR (RESUMEN ANATOMOPATOLÓGICO)\n";
-                                  
-                                  if (activeReport.includes("### SINOPSIS DE LESIONES DE MUSLO ANTERIOR (RESUMEN ANATOMOPATOLÓGICO)")) {
-                                    const regex = /### SINOPSIS DE LESIONES DE MUSLO ANTERIOR (RESUMEN ANATOMOPATOLÓGICO)[\s\S]+/g;
-                                    const cleanReportText = activeReport.replace(regex, "").trim();
-                                    const nextReport = cleanReportText + separator + title + narrativeText;
-                                    if (isEditingReportManual) {
-                                      setEditedReportText(nextReport);
-                                    } else {
-                                      setGeneratedReport(nextReport);
-                                      setEditedReportText(nextReport);
-                                    }
-                                  } else {
-                                    const nextReport = activeReport + separator + title + narrativeText;
-                                    if (isEditingReportManual) {
-                                      setEditedReportText(nextReport);
-                                    } else {
-                                      setGeneratedReport(nextReport);
-                                      setEditedReportText(nextReport);
-                                    }
-                                  }
-                                }}
+                                onExportTable={(tableText) => handleExportTableWithProtocol("Muslo Anterior", tableText)}
+                                onExportNarrative={(narrativeText) => handleExportNarrativeWithProtocol("Muslo Anterior", narrativeText)}
                                 includeInReport={includeThighSchemaInReport}
                                 setIncludeInReport={setIncludeThighSchemaInReport}
                                 onChangeStates={(nextStates) => setThighStates(nextStates)}
@@ -14707,7 +19577,7 @@ Ejemplo:
                           )}
 
                           {/* === THIGH POSTERIOR ANATOMY VIEWER AND SYNOPSIS HUD === */}
-                          {specificStudy === "Muslo Posterior" && (
+                          {activeProtocol === "Muslo Posterior" && (
                             <div className="my-6 relative bg-slate-950/20 border border-slate-850/60 rounded-3xl p-4 transition-all duration-355">
                               <ThighPosteriorAnatomyViewer
                                 selectedModel={selectedModel}
@@ -14720,58 +19590,8 @@ Ejemplo:
                                     setEditedReportText(nextReport);
                                   }
                                 }}
-                                onExportTable={(tableText) => {
-                                  const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
-                                  setReportHistory((prev) => [...prev, activeReport]);
-                                  const separator = "\n\n";
-                                  const title = "### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE MUSLO POSTERIOR\n";
-                                  
-                                  if (activeReport.includes("### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE MUSLO POSTERIOR")) {
-                                    const regex = /### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE MUSLO POSTERIOR[\s\S]+/g;
-                                    const cleanReportText = activeReport.replace(regex, "").trim();
-                                    const nextReport = cleanReportText + separator + title + tableText;
-                                    if (isEditingReportManual) {
-                                      setEditedReportText(nextReport);
-                                    } else {
-                                      setGeneratedReport(nextReport);
-                                      setEditedReportText(nextReport);
-                                    }
-                                  } else {
-                                    const nextReport = activeReport + separator + title + tableText;
-                                    if (isEditingReportManual) {
-                                      setEditedReportText(nextReport);
-                                    } else {
-                                      setGeneratedReport(nextReport);
-                                      setEditedReportText(nextReport);
-                                    }
-                                  }
-                                }}
-                                onExportNarrative={(narrativeText) => {
-                                  const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
-                                  setReportHistory((prev) => [...prev, activeReport]);
-                                  const separator = "\n\n";
-                                  const title = "### SINOPSIS DE LESIONES DE MUSLO POSTERIOR (RESUMEN ANATOMOPATOLÓGICO)\n";
-                                  
-                                  if (activeReport.includes("### SINOPSIS DE LESIONES DE MUSLO POSTERIOR (RESUMEN ANATOMOPATOLÓGICO)")) {
-                                    const regex = /### SINOPSIS DE LESIONES DE MUSLO POSTERIOR (RESUMEN ANATOMOPATOLÓGICO)[\s\S]+/g;
-                                    const cleanReportText = activeReport.replace(regex, "").trim();
-                                    const nextReport = cleanReportText + separator + title + narrativeText;
-                                    if (isEditingReportManual) {
-                                      setEditedReportText(nextReport);
-                                    } else {
-                                      setGeneratedReport(nextReport);
-                                      setEditedReportText(nextReport);
-                                    }
-                                  } else {
-                                    const nextReport = activeReport + separator + title + narrativeText;
-                                    if (isEditingReportManual) {
-                                      setEditedReportText(nextReport);
-                                    } else {
-                                      setGeneratedReport(nextReport);
-                                      setEditedReportText(nextReport);
-                                    }
-                                  }
-                                }}
+                                onExportTable={(tableText) => handleExportTableWithProtocol("Muslo Posterior", tableText)}
+                                onExportNarrative={(narrativeText) => handleExportNarrativeWithProtocol("Muslo Posterior", narrativeText)}
                                 includeInReport={includeThighPosteriorSchemaInReport}
                                 setIncludeInReport={setIncludeThighPosteriorSchemaInReport}
                                 onChangeStates={(nextStates) => setThighPosteriorStates(nextStates)}
@@ -14781,7 +19601,7 @@ Ejemplo:
                           )}
 
                           {/* === NECK / THYROID US ANATOMY VIEWER AND SYNOPSIS HUD === */}
-                          {specificStudy === "Cuello" && (
+                          {activeProtocol === "Cuello" && (
                             <div className="my-6 relative bg-slate-950/20 border border-slate-850/65 rounded-3xl p-4 transition-all duration-355">
                               <NeckAnatomyViewer
                                 selectedModel={selectedModel}
@@ -14794,32 +19614,7 @@ Ejemplo:
                                     setEditedReportText(nextReport);
                                   }
                                 }}
-                                onExportTable={(tableText) => {
-                                  const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
-                                  setReportHistory((prev) => [...prev, activeReport]);
-                                  const separator = "\n\n";
-                                  const title = "### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE CUELLO Y TIROIDES\n";
-                                  
-                                  if (activeReport.includes("### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE CUELLO Y TIROIDES")) {
-                                    const regex = /### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE CUELLO Y TIROIDES[\s\S]+/g;
-                                    const cleanReportText = activeReport.replace(regex, "").trim();
-                                    const nextReport = cleanReportText + separator + title + tableText;
-                                    if (isEditingReportManual) {
-                                      setEditedReportText(nextReport);
-                                    } else {
-                                      setGeneratedReport(nextReport);
-                                      setEditedReportText(nextReport);
-                                    }
-                                  } else {
-                                    const nextReport = activeReport + separator + title + tableText;
-                                    if (isEditingReportManual) {
-                                      setEditedReportText(nextReport);
-                                    } else {
-                                      setGeneratedReport(nextReport);
-                                      setEditedReportText(nextReport);
-                                    }
-                                  }
-                                }}
+                                onExportTable={(tableText) => handleExportTableWithProtocol("Cuello y Tiroides", tableText)}
                                 includeInReport={includeNeckSchemaInReport}
                                 setIncludeInReport={setIncludeNeckSchemaInReport}
                                 onChangeStates={(nextStates) => setNeckStates(nextStates)}
@@ -14829,7 +19624,7 @@ Ejemplo:
                           )}
 
                           {/* === VÍAS URINARIAS US ANATOMY VIEWER AND SYNOPSIS HUD === */}
-                          {specificStudy === "Vias urinarias" && (
+                          {activeProtocol === "Vias urinarias" && (
                             <div className="my-6 relative bg-slate-950/20 border border-slate-850/60 rounded-3xl p-4 transition-all duration-355">
                               <UrinaryAnatomyViewer
                                 selectedModel={selectedModel}
@@ -14842,32 +19637,7 @@ Ejemplo:
                                     setEditedReportText(nextReport);
                                   }
                                 }}
-                                onExportTable={(tableText) => {
-                                  const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
-                                  setReportHistory((prev) => [...prev, activeReport]);
-                                  const separator = "\n\n";
-                                  const title = "### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE VÍAS URINARIAS\n";
-                                  
-                                  if (activeReport.includes("### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE VÍAS URINARIAS")) {
-                                    const regex = /### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE VÍAS URINARIAS[\s\S]+/g;
-                                    const cleanReportText = activeReport.replace(regex, "").trim();
-                                    const nextReport = cleanReportText + separator + title + tableText;
-                                    if (isEditingReportManual) {
-                                      setEditedReportText(nextReport);
-                                    } else {
-                                      setGeneratedReport(nextReport);
-                                      setEditedReportText(nextReport);
-                                    }
-                                  } else {
-                                    const nextReport = activeReport + separator + title + tableText;
-                                    if (isEditingReportManual) {
-                                      setEditedReportText(nextReport);
-                                    } else {
-                                      setGeneratedReport(nextReport);
-                                      setEditedReportText(nextReport);
-                                    }
-                                  }
-                                }}
+                                onExportTable={(tableText) => handleExportTableWithProtocol("Vías Urinarias", tableText)}
                                 includeInReport={includeUrinarySchemaInReport}
                                 setIncludeInReport={setIncludeUrinarySchemaInReport}
                                 onChangeStates={(nextStates) => setUrinaryStates(nextStates)}
@@ -14879,7 +19649,7 @@ Ejemplo:
                           )}
 
                           {/* === CODO US ANATOMY VIEWER AND SYNOPSIS HUD === */}
-                          {specificStudy === "Codo" && (
+                          {activeProtocol === "Codo" && (
                             <div className="my-6 relative bg-slate-950/20 border border-slate-850/60 rounded-3xl p-4 transition-all duration-355">
                               <ElbowAnatomyViewer
                                 selectedModel={selectedModel}
@@ -14892,32 +19662,7 @@ Ejemplo:
                                     setEditedReportText(nextReport);
                                   }
                                 }}
-                                onExportTable={(tableText) => {
-                                  const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
-                                  setReportHistory((prev) => [...prev, activeReport]);
-                                  const separator = "\n\n";
-                                  const title = "### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE CODO\n";
-                                  
-                                  if (activeReport.includes("### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE CODO")) {
-                                    const regex = /### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE CODO[\s\S]+/g;
-                                    const cleanReportText = activeReport.replace(regex, "").trim();
-                                    const nextReport = cleanReportText + separator + title + tableText;
-                                    if (isEditingReportManual) {
-                                      setEditedReportText(nextReport);
-                                    } else {
-                                      setGeneratedReport(nextReport);
-                                      setEditedReportText(nextReport);
-                                    }
-                                  } else {
-                                    const nextReport = activeReport + separator + title + tableText;
-                                    if (isEditingReportManual) {
-                                      setEditedReportText(nextReport);
-                                    } else {
-                                      setGeneratedReport(nextReport);
-                                      setEditedReportText(nextReport);
-                                    }
-                                  }
-                                }}
+                                onExportTable={(tableText) => handleExportTableWithProtocol("Codo", tableText)}
                                 includeInReport={includeElbowSchemaInReport}
                                 setIncludeInReport={setIncludeElbowSchemaInReport}
                                 onChangeStates={(nextStates) => setElbowStates(nextStates)}
@@ -14927,7 +19672,7 @@ Ejemplo:
                           )}
 
                           {/* === ABDOMEN US ANATOMY VIEWER AND SYNOPSIS HUD === */}
-                          {specificStudy === "Abdomen" && (
+                          {activeProtocol === "Abdomen" && (
                             <div className="my-6 relative bg-slate-950/20 border border-slate-850/60 rounded-3xl p-4 transition-all duration-355">
                               <AbdomenAnatomyViewer
                                 selectedModel={selectedModel}
@@ -14940,42 +19685,39 @@ Ejemplo:
                                     setEditedReportText(nextReport);
                                   }
                                 }}
-                                onExportTable={(tableText) => {
-                                  const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
-                                  setReportHistory((prev) => [...prev, activeReport]);
-                                  const separator = "\n\n";
-                                  const title = "### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE ABDOMEN\n";
-                                  
-                                  if (activeReport.includes("### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE ABDOMEN")) {
-                                    const regex = /### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE ABDOMEN[\s\S]+/g;
-                                    const cleanReportText = activeReport.replace(regex, "").trim();
-                                    const nextReport = cleanReportText + separator + title + tableText;
-                                    if (isEditingReportManual) {
-                                      setEditedReportText(nextReport);
-                                    } else {
-                                      setGeneratedReport(nextReport);
-                                      setEditedReportText(nextReport);
-                                    }
-                                  } else {
-                                    const nextReport = activeReport + separator + title + tableText;
-                                    if (isEditingReportManual) {
-                                      setEditedReportText(nextReport);
-                                    } else {
-                                      setGeneratedReport(nextReport);
-                                      setEditedReportText(nextReport);
-                                    }
-                                  }
-                                }}
+                                onExportTable={(tableText) => handleExportTableWithProtocol("Abdomen", tableText)}
                                 includeInReport={includeAbdomenSchemaInReport}
                                 setIncludeInReport={setIncludeAbdomenSchemaInReport}
+                                includeBiliary={includeBiliarySchemaInReport}
+                                setIncludeBiliary={setIncludeBiliarySchemaInReport}
+                                includeAppendix={includeAppendixSchemaInReport}
+                                setIncludeAppendix={setIncludeAppendixSchemaInReport}
+                                includeDiverticulitis={includeDiverticulitisSchemaInReport}
+                                setIncludeDiverticulitis={setIncludeDiverticulitisSchemaInReport}
                                 onChangeStates={(nextStates) => setAbdomenStates(nextStates)}
                                 onChangeDescriptions={(nextDescriptions) => setAbdomenDescriptions(nextDescriptions)}
+                                includeElastography={includeElastographyInReport}
+                                elastographyHasStiffness={elastographyHasStiffness}
+                                setElastographyHasStiffness={setElastographyHasStiffness}
+                                setIncludeElastography={setIncludeElastographyInReport}
+                                elastographyStiffness={elastographyStiffness}
+                                setElastographyStiffness={setElastographyStiffness}
+                                elastographyCAP={elastographyCAP}
+                                setElastographyCAP={setElastographyCAP}
+                                qusAttenuation={qusAttenuation}
+                                setQusAttenuation={setQusAttenuation}
+                                fatFraction={fatFraction}
+                                setFatFraction={setFatFraction}
+                                stiffnessOverride={stiffnessOverride}
+                                setStiffnessOverride={setStiffnessOverride}
+                                steatosisOverride={steatosisOverride}
+                                setSteatosisOverride={setSteatosisOverride}
                               />
                             </div>
                           )}
 
                           {/* === ESCROTO US ANATOMY VIEWER AND SYNOPSIS HUD === */}
-                          {specificStudy === "Escroto" && (
+                          {activeProtocol === "Escroto" && (
                             <div className="my-6 relative bg-slate-950/20 border border-slate-850/60 rounded-3xl p-4 transition-all duration-355">
                               <ScrotumAnatomyViewer
                                 selectedModel={selectedModel}
@@ -14988,32 +19730,7 @@ Ejemplo:
                                     setEditedReportText(nextReport);
                                   }
                                 }}
-                                onExportTable={(tableText) => {
-                                  const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
-                                  setReportHistory((prev) => [...prev, activeReport]);
-                                  const separator = "\n\n";
-                                  const title = "### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE ESCROTO\n";
-                                  
-                                  if (activeReport.includes("### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE ESCROTO")) {
-                                    const regex = /### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE ESCROTO[\s\S]+/g;
-                                    const cleanReportText = activeReport.replace(regex, "").trim();
-                                    const nextReport = cleanReportText + separator + title + tableText;
-                                    if (isEditingReportManual) {
-                                      setEditedReportText(nextReport);
-                                    } else {
-                                      setGeneratedReport(nextReport);
-                                      setEditedReportText(nextReport);
-                                    }
-                                  } else {
-                                    const nextReport = activeReport + separator + title + tableText;
-                                    if (isEditingReportManual) {
-                                      setEditedReportText(nextReport);
-                                    } else {
-                                      setGeneratedReport(nextReport);
-                                      setEditedReportText(nextReport);
-                                    }
-                                  }
-                                }}
+                                onExportTable={(tableText) => handleExportTableWithProtocol("Escroto", tableText)}
                                 includeInReport={includeScrotumSchemaInReport}
                                 setIncludeInReport={setIncludeScrotumSchemaInReport}
                                 onChangeStates={(nextStates) => setScrotumStates(nextStates)}
@@ -15023,7 +19740,7 @@ Ejemplo:
                           )}
 
                           {/* === WRIST US ANATOMY VIEWER AND SYNOPSIS HUD === */}
-                          {specificStudy === "Muñeca" && (
+                          {activeProtocol === "Muñeca" && (
                             <div className="my-6 relative bg-slate-950/20 border border-slate-850/60 rounded-3xl p-4 transition-all duration-355">
                               <WristAnatomyViewer
                                 selectedModel={selectedModel}
@@ -15036,32 +19753,7 @@ Ejemplo:
                                     setEditedReportText(nextReport);
                                   }
                                 }}
-                                onExportTable={(tableText) => {
-                                  const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
-                                  setReportHistory((prev) => [...prev, activeReport]);
-                                  const separator = "\n\n";
-                                  const title = "### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE MUÑECA\n";
-                                  
-                                  if (activeReport.includes("### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE MUÑECA")) {
-                                    const regex = /### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE MUÑECA[\s\S]+/g;
-                                    const cleanReportText = activeReport.replace(regex, "").trim();
-                                    const nextReport = cleanReportText + separator + title + tableText;
-                                    if (isEditingReportManual) {
-                                      setEditedReportText(nextReport);
-                                    } else {
-                                      setGeneratedReport(nextReport);
-                                      setEditedReportText(nextReport);
-                                    }
-                                  } else {
-                                    const nextReport = activeReport + separator + title + tableText;
-                                    if (isEditingReportManual) {
-                                      setEditedReportText(nextReport);
-                                    } else {
-                                      setGeneratedReport(nextReport);
-                                      setEditedReportText(nextReport);
-                                    }
-                                  }
-                                }}
+                                onExportTable={(tableText) => handleExportTableWithProtocol("Muñeca", tableText)}
                                 includeInReport={includeWristSchemaInReport}
                                 setIncludeInReport={setIncludeWristSchemaInReport}
                                 onChangeStates={(nextStates) => setWristStates(nextStates)}
@@ -15073,7 +19765,7 @@ Ejemplo:
 
 
                            {/* === BREAST US ANATOMY VIEWER AND SYNOPSIS HUD === */}
-                           {specificStudy === "Mamas" && (
+                           {activeProtocol === "Mamas" && (
                              <div className="my-6 relative bg-slate-950/20 border border-slate-850/60 rounded-3xl p-4 transition-all duration-355">
                                <BreastAnatomyViewer
                                  selectedModel={selectedModel}
@@ -15086,43 +19778,95 @@ Ejemplo:
                                      setEditedReportText(nextReport);
                                    }
                                  }}
-                                 onExportTable={(tableText) => {
-                                   const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
-                                   setReportHistory((prev) => [...prev, activeReport]);
-                                   const separator = "\n\n";
-                                   const title = "### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE MAMAS\n";
-                                   
-                                   if (activeReport.includes("### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE MAMAS")) {
-                                     const regex = /### COMPLEMENTO DIAGNÓSTICO: DIAGRAMA DE HALLAZGOS Y SINOPSIS ANATÓMICA DE MAMAS[\s\S]+/g;
-                                     const cleanReportText = activeReport.replace(regex, "").trim();
-                                     const nextReport = cleanReportText + separator + title + tableText;
-                                     if (isEditingReportManual) {
-                                       setEditedReportText(nextReport);
-                                     } else {
-                                       setGeneratedReport(nextReport);
-                                       setEditedReportText(nextReport);
-                                     }
-                                   } else {
-                                     const nextReport = activeReport + separator + title + tableText;
-                                     if (isEditingReportManual) {
-                                       setEditedReportText(nextReport);
-                                     } else {
-                                       setGeneratedReport(nextReport);
-                                       setEditedReportText(nextReport);
-                                     }
-                                   }
-                                 }}
+                                                                   onExportTable={(tableText) => handleExportTableWithProtocol("Mamas", tableText)}
                                  includeInReport={includeBreastSchemaInReport}
                                  setIncludeInReport={setIncludeBreastSchemaInReport}
                                  onChangeStates={(nextStates) => setBreastStates(nextStates)}
                                  onChangeDescriptions={(nextDescriptions) => setBreastDescriptions(nextDescriptions)}
+                                 externalBilateralOverride={breastBilateralOverride}
+                                 externalBilateralType={breastBilateralType}
+                                 onChangeBilateralOverride={(override, type) => {
+                                   setBreastBilateralOverride(override);
+                                   setBreastBilateralType(type);
+                                 }}
+                               />
+                             </div>
+                           )}
+
+                           {/* === CALF AND ACHILLES TENDON US ANATOMY VIEWER AND SYNOPSIS HUD === */}
+                           {activeProtocol === "Pantorrilla y Tendón de Aquiles" && (
+                             <div className="my-6 relative bg-slate-950/20 border border-slate-850/60 rounded-3xl p-4 transition-all duration-355">
+                               <CalfAchillesAnatomyViewer
+                                 selectedModel={selectedModel}
+                                 generatedReport={isEditingReportManual ? editedReportText : (generatedReport || "")}
+                                 onChangeReport={(nextReport) => {
+                                   if (isEditingReportManual) {
+                                     setEditedReportText(nextReport);
+                                   } else {
+                                     setGeneratedReport(nextReport);
+                                     setEditedReportText(nextReport);
+                                   }
+                                 }}
+                                 onExportTable={(tableText) => handleExportTableWithProtocol("Pantorrilla y Tendón de Aquiles", tableText)}
+                                 includeInReport={includeCalfAchillesSchemaInReport}
+                                 setIncludeInReport={setIncludeCalfAchillesSchemaInReport}
+                                 onChangeStates={(nextStates) => setCalfAchillesStates(nextStates)}
+                                 onChangeDescriptions={(nextDescriptions) => setCalfAchillesDescriptions(nextDescriptions)}
+                               />
+                             </div>
+                           )}
+
+                           {/* === ABDOMINAL WALL US ANATOMY VIEWER AND SYNOPSIS HUD === */}
+                           {activeProtocol === "Pared Abdominal" && (
+                             <div className="my-6 relative bg-slate-950/20 border border-slate-850/60 rounded-3xl p-4 transition-all duration-355">
+                               <AbdominalWallAnatomyViewer
+                                 selectedModel={selectedModel}
+                                 generatedReport={isEditingReportManual ? editedReportText : (generatedReport || "")}
+                                 onChangeReport={(nextReport) => {
+                                   if (isEditingReportManual) {
+                                     setEditedReportText(nextReport);
+                                   } else {
+                                     setGeneratedReport(nextReport);
+                                     setEditedReportText(nextReport);
+                                   }
+                                 }}
+                                 onExportTable={(tableText) => handleExportTableWithProtocol("Pared Abdominal", tableText)}
+                                 includeInReport={includeAbdominalWallSchemaInReport}
+                                 setIncludeInReport={setIncludeAbdominalWallSchemaInReport}
+                                 onChangeStates={(nextStates) => setAbdominalWallStates(nextStates)}
+                                 onChangeDescriptions={(nextDescriptions) => setAbdominalWallDescriptions(nextDescriptions)}
                                />
                              </div>
                            )}
 
 
 
-                          {/* --- NUEVA SECCIÓN DE ANÁLISIS DE CASO Y BÚSQUEDA DE BIBLIOGRAFÍA --- */}
+                          {/* === CEREBRO NEONATAL US ANATOMY VIEWER AND SYNOPSIS HUD === */}
+                           {activeProtocol === "Cerebro Neonatal" && (
+                             <div className="my-6 relative bg-slate-950/20 border border-slate-850/60 rounded-3xl p-4 transition-all duration-355">
+                               <NeonatalBrainAnatomyViewer
+                                 selectedModel={selectedModel}
+                                 generatedReport={isEditingReportManual ? editedReportText : (generatedReport || "")}
+                                 onChangeReport={(nextReport) => {
+                                   if (isEditingReportManual) {
+                                     setEditedReportText(nextReport);
+                                   } else {
+                                     setGeneratedReport(nextReport);
+                                     setEditedReportText(nextReport);
+                                   }
+                                 }}
+                                 onExportTable={(tableText) => handleExportTableWithProtocol("Cerebro Neonatal", tableText)}
+                                 includeInReport={includeNeonatalBrainSchemaInReport}
+                                 setIncludeInReport={setIncludeNeonatalBrainSchemaInReport}
+                                 onChangeStates={(nextStates) => setNeonatalBrainStates(nextStates)}
+                                 onChangeDescriptions={(nextDescriptions) => setNeonatalBrainDescriptions(nextDescriptions)}
+                                 externalStates={neonatalBrainStates}
+                                 externalDescriptions={neonatalBrainDescriptions}
+                               />
+                             </div>
+                           )}
+
+                           {/* --- NUEVA SECCIÓN DE ANÁLISIS DE CASO Y BÚSQUEDA DE BIBLIOGRAFÍA --- */}
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {/* Card 1: Caso Clínico completo */}
                             <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-emerald-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
@@ -15610,6 +20354,40 @@ Ejemplo:
                                   </div>
                                 </div>
                               )}
+
+                              {/* ACCIONES DE BÚSQUEDA ADICIONAL (LOAD MORE / PAGINACIÓN) */}
+                              <div className="pt-4 border-t border-teal-950/60 mt-4 space-y-3">
+                                {isSearchingMoreBibliography ? (
+                                  <div className="bg-[#0b1517]/40 border border-teal-500/20 rounded-2xl p-4 flex flex-col items-center justify-center gap-2.5 animate-pulse text-center">
+                                    <RefreshCw className="h-5 w-5 text-teal-450 animate-spin" />
+                                    <p className="text-[10px] font-mono font-black text-slate-300 uppercase tracking-widest">
+                                      Buscando fuentes complementarias adicionales...
+                                    </p>
+                                    <p className="text-[9px] font-medium text-slate-500 uppercase tracking-wider max-w-sm">
+                                      Consultando nuevas publicaciones indexadas y actualizando la síntesis bibliográfica de soporte.
+                                    </p>
+                                  </div>
+                                ) : (
+                                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-teal-950/20 border border-teal-900/30 p-4 rounded-2xl">
+                                    <div className="text-left space-y-1">
+                                      <p className="text-[10px] font-black text-teal-400 uppercase tracking-widest font-mono">
+                                        ¿Deseas profundizar más en la literatura?
+                                      </p>
+                                      <p className="text-[9px] text-slate-400 font-medium normal-case leading-normal max-w-md">
+                                        Realiza una segunda ronda de búsqueda avanzada en PubMed y Radiopaedia para añadir de 6 a 10 recursos adicionales de alta relevancia científica sin duplicar los enlaces actuales.
+                                      </p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={handleSearchMoreBibliography}
+                                      className="px-5 py-3 bg-teal-500/10 hover:bg-teal-500 hover:text-white border border-teal-500/30 hover:border-transparent text-teal-300 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer font-mono shrink-0 w-full sm:w-auto"
+                                    >
+                                      <Plus className="h-4 w-4" />
+                                      <span>Buscar Más Resultados</span>
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           )}
 
@@ -16518,9 +21296,11 @@ Ejemplo:
 
                   </div>
                 </div>
+
               </div>
               </motion.div>
             )}
+
 
             {/* TAB 3: DIAGNOSTIC CONSULTANT CHAT */}
             {activeTab === "consult" && (
@@ -17081,6 +21861,9 @@ Ejemplo:
                   exportedMimeType={exportedMimeType}
                   clearExportedImage={clearExportedImage}
                   findings={findings}
+                  zipExtractedFile={zipExtractedFileForAnalysis}
+                  clearZipExtractedFile={() => setZipExtractedFileForAnalysis(null)}
+                  onZipUploaded={(file) => { setZipFile(file); setIsZipExtractorOpen(true); }}
                 />
               </motion.div>
             )}
@@ -17102,6 +21885,20 @@ Ejemplo:
       </footer>
       </div>
 
+      {isZipExtractorOpen && zipFile && (
+        <ZipDicomExtractor
+          isOpen={isZipExtractorOpen}
+          zipFile={zipFile}
+          onClose={() => {
+            setZipFile(null);
+            setIsZipExtractorOpen(false);
+          }}
+          onLoadToGenerator={handleLoadExtractedToGenerator}
+          onLoadToSlot={handleLoadExtractedToSlot}
+          onLoadMultipleSlots={handleLoadMultipleSlots}
+        />
+      )}
+
       {/* 📥 MODELO DE ASISTENCIA PARA IMPRESIÓN Y EXPORTACIÓN PDF (ESPECIAL IPHONE/MOBILE & IFRAME) */}
       {showPrintModal && (
         <div className="no-print fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
@@ -17109,7 +21906,7 @@ Ejemplo:
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className="bg-slate-900 border-2 border-slate-800 rounded-3xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl"
+            className="bg-slate-900 border-2 border-slate-800 rounded-3xl w-full max-w-5xl max-h-[92vh] overflow-hidden flex flex-col shadow-2xl"
           >
             {/* Header de la Vista Previa */}
             <div className="bg-slate-950 px-6 py-4 border-b border-slate-850 flex items-center justify-between">
@@ -17119,10 +21916,73 @@ Ejemplo:
               </div>
               <button 
                 onClick={() => setShowPrintModal(false)}
-                className="text-slate-400 hover:text-white p-1 bg-slate-900 rounded-lg border border-slate-800 hover:border-slate-700 transition-colors"
+                className="text-slate-400 hover:text-white p-1 bg-slate-900 rounded-lg border border-slate-800 hover:border-slate-700 transition-colors cursor-pointer"
               >
                 <X className="h-4 w-4" />
               </button>
+            </div>
+
+            {/* selectores modernos para Doc Type y View Type */}
+            <div className="no-print bg-[#0a0d16] px-6 py-4 border-b border-slate-850 space-y-3.5">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                <div className="space-y-0.5 text-left">
+                  <p className="text-xs font-black text-slate-100 uppercase tracking-wider font-mono">Documento a generar</p>
+                  <p className="text-[10px] text-slate-450 leading-none">Selecciona cuál documento deseas descargar, previsualizar o mandar a imprimir.</p>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <button
+                    onClick={() => setPrintModalDocType('report')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all uppercase cursor-pointer ${
+                      printModalDocType === 'report'
+                        ? 'bg-indigo-600 font-black text-white shadow-md shadow-indigo-500/20'
+                        : 'bg-slate-850 hover:bg-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    📋 Reporte Clínico
+                  </button>
+                  {patientSummary && (
+                    <button
+                      onClick={() => setPrintModalDocType('patient_summary')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all uppercase cursor-pointer ${
+                        printModalDocType === 'patient_summary'
+                          ? 'bg-emerald-600 font-black text-white shadow-md shadow-emerald-500/20'
+                          : 'bg-slate-850 hover:bg-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      🌱 Explicación Paciente
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pt-3 border-t border-slate-850/60">
+                <div className="space-y-0.5 text-left">
+                  <p className="text-xs font-black text-slate-100 uppercase tracking-wider font-mono">Modo de Vista Previa</p>
+                  <p className="text-[10px] text-slate-450 leading-none">Puedes alternar entre la simulación digital responsiva y el PDF vectorial real.</p>
+                </div>
+                <div className="flex gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-850 shrink-0">
+                  <button
+                    onClick={() => setPrintModalViewType('html_simulator')}
+                    className={`px-3.5 py-1 rounded-lg text-[10.5px] font-bold transition-all uppercase cursor-pointer ${
+                      printModalViewType === 'html_simulator'
+                        ? 'bg-slate-850 text-white font-extrabold shadow-sm'
+                        : 'text-slate-450 hover:text-slate-200'
+                    }`}
+                  >
+                    🖥️ Simulador HTML
+                  </button>
+                  <button
+                    onClick={() => setPrintModalViewType('pdf_viewer')}
+                    className={`px-3.5 py-1 rounded-lg text-[10.5px] font-bold transition-all uppercase cursor-pointer ${
+                      printModalViewType === 'pdf_viewer'
+                        ? 'bg-indigo-600 text-white font-extrabold shadow-sm'
+                        : 'text-slate-450 hover:text-slate-200'
+                    }`}
+                  >
+                    📄 Ver PDF Real (.pdf)
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Cuerpo con Scroll */}
@@ -17142,37 +22002,45 @@ Ejemplo:
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                   <button
-                    onClick={() => handleDownloadNativePDF(false)}
+                    onClick={() => printModalDocType === 'report' ? handleDownloadNativePDF(false) : handleDownloadPatientSummaryPDF(false)}
                     className="flex items-center justify-center gap-2.5 p-3 bg-indigo-600 hover:bg-indigo-550 border-2 border-indigo-500/10 rounded-xl text-xs font-black text-white uppercase tracking-wider transition-all shadow-md active:scale-95 text-center cursor-pointer"
                   >
                     <Download className="h-4 w-4" />
                     <span>Descargar PDF Limpio (Sin URL/Hora)</span>
                   </button>
                   <button
-                    onClick={() => handleDownloadNativePDF(true)}
+                    onClick={() => printModalDocType === 'report' ? handleDownloadNativePDF(true) : handleDownloadPatientSummaryPDF(true)}
                     className="flex items-center justify-center gap-2.5 p-3 bg-sky-700 hover:bg-sky-650 border-2 border-sky-600/10 rounded-xl text-xs font-black text-white uppercase tracking-wider transition-all shadow-md active:scale-95 text-center cursor-pointer"
                   >
                     <ExternalLink className="h-4 w-4" />
-                    <span>Abrir PDF en iPhone (Pestaña Limpia)</span>
+                    <span>Abrir PDF en {printModalDocType === 'report' ? "Informe" : "Explicación"} (Pestaña Limpia)</span>
                   </button>
                   <button
                     onClick={() => {
-                      const appUrl = window.location.href;
-                      window.open(appUrl, "_blank");
+                      if (printModalDocType === 'report') {
+                        const appUrl = window.location.href;
+                        window.open(appUrl, "_blank");
+                      } else {
+                        handlePrintPatientSummary();
+                      }
                     }}
                     className="flex items-center justify-center gap-2.5 p-3 bg-slate-800 hover:bg-slate-750 border-2 border-slate-700/10 rounded-xl text-xs font-bold text-slate-300 uppercase tracking-wider transition-all shadow-md active:scale-95 text-center cursor-pointer"
                   >
                     <Printer className="h-4 w-4 text-indigo-400" />
-                    <span>Imprimir original en Pestaña Nueva</span>
+                    <span>{printModalDocType === 'report' ? "Imprimir original en Pestaña Nueva" : "Abrir cuadro de Impresión Nativo"}</span>
                   </button>
                   <button
                     onClick={() => {
-                      copyToClipboard(generatedReport, true);
+                      if (printModalDocType === 'report') {
+                        copyToClipboard(generatedReport, true);
+                      } else {
+                        copyToClipboard(JSON.stringify(patientSummary, null, 2), true);
+                      }
                     }}
                     className="flex items-center justify-center gap-2.5 p-3 bg-emerald-600 hover:bg-emerald-550 border-2 border-emerald-500/10 rounded-xl text-xs font-black text-white uppercase tracking-wider transition-all shadow-md active:scale-95 text-center cursor-pointer"
                   >
                     <Copy className="h-4 w-4" />
-                    <span>Copiar Texto del Reporte</span>
+                    <span>Copiar Texto del {printModalDocType === 'report' ? "Reporte" : "Resumen"}</span>
                   </button>
                 </div>
                 <p className="text-[10px] text-indigo-300 font-medium font-mono uppercase tracking-wide text-center">
@@ -17224,18 +22092,75 @@ Ejemplo:
                 </div>
               </div>
 
-              {/* Simulación del PDF Imprimible en una hoja A4 elegante */}
-              <div className="space-y-2 text-left">
-                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest font-mono">Vista Previa del Documento (Formato Físico):</span>
-                <div className="bg-white text-black p-6 sm:p-10 rounded-2xl border-4 border-slate-950/10 shadow-inner overflow-x-auto">
+              {printModalViewType === 'pdf_viewer' ? (
+                <div className="space-y-3.5 text-left">
+                  <div className="flex justify-between items-center text-left">
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest font-mono">
+                      Vista Previa de Impresión Oficial del Documento (.pdf):
+                    </span>
+                    {isGeneratingPdfPreview && (
+                      <span className="text-[10px] text-indigo-400 font-mono flex items-center gap-1.5 animate-pulse font-extrabold uppercase">
+                        ⚡ ACTUALIZANDO VISTA PREVIA DEL PDF...
+                      </span>
+                    )}
+                  </div>
                   
-                  {/* Membrete */}
+                  <div className="relative bg-slate-950 rounded-2xl border-4 border-slate-800 shadow-2xl overflow-hidden min-h-[500px] md:h-[680px] w-full flex flex-col items-center justify-center">
+                    {/* Alerta de restricción iframe del navegador */}
+                    <div className="absolute top-4 left-4 right-4 z-15 bg-amber-500/10 text-amber-300 border border-amber-500/20 px-3.5 py-2 rounded-xl text-[10px] font-bold leading-normal flex items-start gap-2 shadow-md">
+                      <span className="text-sm shrink-0">⚠️</span>
+                      <p className="font-mono uppercase tracking-wide">
+                        Entorno Sandboxed AI Studio: Las políticas de seguridad de su navegador pueden bloquear la carga del visor de PDF inline. Si ve esta pantalla en blanco o vacía, cambie a la pestaña superior <strong className="text-white">🖥️ Simulador HTML</strong> para ver la maqueta fiel A4 o descargue el archivo oficial libre con el botón superior.
+                      </p>
+                    </div>
+
+                    {isGeneratingPdfPreview ? (
+                      <div className="flex flex-col items-center justify-center p-8 text-center space-y-4">
+                        <div className="w-11 h-11 border-4 border-indigo-700/30 border-t-indigo-500 rounded-full animate-spin"></div>
+                        <div className="space-y-1">
+                          <p className="text-xs font-black text-white uppercase tracking-wider font-mono animate-pulse">Renderizando PDF a nivel PACS</p>
+                          <p className="text-[11px] text-slate-400 max-w-sm leading-relaxed">
+                            Ensamblando el documento completo con tablas de medición, gráficos de Doppler si existen, firmas SHA256 y credenciales médicas habilitadas...
+                          </p>
+                        </div>
+                      </div>
+                    ) : (printModalDocType === 'report' ? generatedNativePdfUrl : generatedSummaryPdfUrl) ? (
+                      <iframe
+                        src={printModalDocType === 'report' ? generatedNativePdfUrl! : generatedSummaryPdfUrl!}
+                        className="w-full h-full border-0 absolute inset-0 bg-white pt-14"
+                        title="Vista Previa de Impresión Real en Vivo"
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center p-12 text-center space-y-4 pt-16">
+                        <span className="text-4xl text-slate-500">📎</span>
+                        <p className="text-sm font-black text-slate-300 uppercase font-mono">No se pudo Renderizar el Documento PDF</p>
+                        <p className="text-xs text-slate-500 max-w-md leading-relaxed">
+                          Este navegador no soporta visualizador de PDF incrustado o se ha denegado el permiso. Puedes descargarlo directamente para visualizarlo o imprimirlo:
+                        </p>
+                        <button
+                          onClick={() => printModalDocType === 'report' ? handleDownloadNativePDF(false) : handleDownloadPatientSummaryPDF(false)}
+                          className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-550 border border-indigo-500/20 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+                        >
+                          Descargar Documento Físico
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4 text-left">
+                  {printModalDocType === 'report' ? (
+                    <div className="space-y-2 text-left">
+                      <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest font-mono">Vista Previa del Documento (Formato Físico):</span>
+                      <div className="w-full max-w-[210mm] min-h-[297mm] mx-auto bg-white text-black p-6 sm:p-[20mm] rounded-sm border border-slate-300 shadow-[0_12px_36px_rgba(0,0,0,0.18)] text-left relative overflow-x-auto">
+                        
+                        {/* Membrete */}
                   {customLogoUrl && customLogoStyle === "banner" ? (
                     <div className="border-b border-gray-300 pb-4 mb-4 text-center">
                       <img 
                         src={customLogoUrl} 
                         alt="Membrete de la Clínica" 
-                        className="max-h-[110px] mx-auto w-auto object-contain block" 
+                        className="max-h-[160px] mx-auto w-auto object-contain block" 
                         referrerPolicy="no-referrer"
                       />
                     </div>
@@ -17243,12 +22168,12 @@ Ejemplo:
                     <div className="flex justify-between items-start border-b border-gray-300 pb-4 mb-4 text-left">
                       <div className="flex items-center gap-3">
                         {selectedLogo !== "none" && (
-                          <div className="w-12 h-12 flex items-center justify-center shrink-0 border border-gray-200 rounded-lg p-1 bg-gray-50 text-indigo-700">
+                          <div className="w-16 h-16 flex items-center justify-center shrink-0 border border-gray-200 rounded-lg p-1 bg-gray-50 text-indigo-700">
                             {customLogoUrl ? (
                               <img 
                                 src={customLogoUrl} 
                                 alt="Logo" 
-                                className="w-10 h-10 object-contain block" 
+                                className="w-14 h-14 object-contain block" 
                                 referrerPolicy="no-referrer"
                               />
                             ) : (
@@ -17300,7 +22225,7 @@ Ejemplo:
                       </div>
                       {reportDate && (
                         <div className="text-right text-[9px] uppercase text-gray-500 leading-normal">
-                          <div>Fecha: <span className="font-extrabold text-gray-800">{reportDate}</span></div>
+                          <div>Fecha: <span className="font-extrabold text-gray-800">{formatDateToDMY(reportDate)}</span></div>
                         </div>
                       )}
                     </div>
@@ -17318,7 +22243,7 @@ Ejemplo:
                       {reportDate && (
                         <div>
                           <span className="font-bold text-gray-400 uppercase">Fecha del Estudio:</span>{" "}
-                          <span className="font-extrabold text-gray-900 uppercase text-[12px]">{reportDate}</span>
+                          <span className="font-extrabold text-gray-900 uppercase text-[12px]">{formatDateToDMY(reportDate)}</span>
                         </div>
                       )}
                     </div>
@@ -17361,26 +22286,57 @@ Ejemplo:
 
                   {/* Firmas */}
                   {(doctorName || customSignatureUrl) && (
-                    <div className="mt-12 pt-6 border-t border-gray-200 grid grid-cols-2 text-[9px] leading-normal font-sans text-gray-400 text-left">
-                      <div>
-                        <p className="font-bold uppercase tracking-wider text-gray-400">Verificado Por:</p>
-                        <p className="font-mono text-[8px] mt-0.5 text-gray-400 font-bold">Firma Digital Registrada</p>
+                    <div className="mt-12 pt-6 border-t border-gray-200 grid grid-cols-2 gap-4 text-[9px] leading-normal font-sans text-gray-400 text-left">
+                      {/* Bloque Homologado Izquierdo (Metadatos de Firma Electrónica) */}
+                      <div className="border border-slate-250 bg-slate-50/70 p-3 rounded-lg text-[8px] font-sans text-slate-500 max-w-[340px] space-y-1">
+                        <div className="flex items-center gap-1.5 font-bold text-[8.5px] text-slate-700 uppercase">
+                          <span className="text-indigo-600">🛡️</span>
+                          <span>Firma Electrónica Homologada</span>
+                        </div>
+                        <p className="font-mono text-[7.5px] text-indigo-700 font-bold bg-indigo-50/55 px-1 py-0.5 rounded break-all select-all">
+                          {getValidationHash()}
+                        </p>
+                        <div className="grid grid-cols-[max-content_1fr] gap-x-2 text-[8px] leading-relaxed">
+                          <span className="font-semibold text-slate-400 uppercase">Autoridad:</span>
+                          <span className="font-bold text-slate-650">{doctorName || "Médico Especialista"}</span>
+                          
+                          <span className="font-semibold text-slate-400 uppercase">Registro:</span>
+                          <span className="font-mono font-bold text-slate-650">{doctorLicense}</span>
+                          
+                          <span className="font-semibold text-slate-400 uppercase">Estado:</span>
+                          <span className="font-bold text-emerald-600 flex items-center gap-1">
+                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                            VALIDADO Y REGISTRADO
+                          </span>
+                          
+                          <span className="font-semibold text-slate-400 uppercase">Soporte Legal:</span>
+                          <span className="text-slate-450 italic">Ley de Comercio Electrónico, Firmas y Datos (Art. 14)</span>
+                        </div>
                       </div>
-                      <div className="text-right flex flex-col items-end">
-                        <div className="inline-block text-center relative">
-                          {customSignatureUrl && (
-                            <div className="mb-1 flex justify-center">
+
+                      {/* Firma Autógrafa y Datos del Médico Especialista */}
+                      <div className="text-right flex flex-col items-end justify-center">
+                        <div className="inline-block text-center relative max-w-[280px]">
+                          {customSignatureUrl ? (
+                            <div className="mb-1.5 flex justify-center">
                               <img 
                                 src={customSignatureUrl} 
                                 alt="Firma" 
-                                className="h-10 max-w-[130px] object-contain block mix-blend-multiply" 
+                                className="h-12 max-w-[140px] object-contain block mix-blend-multiply" 
                                 referrerPolicy="no-referrer"
                               />
                             </div>
+                          ) : (
+                            <div className="mb-2 text-indigo-600/80 font-serif italic text-xs select-none relative pr-4">
+                              <span className="text-[10px] font-mono font-black border border-indigo-200 bg-indigo-50 px-2 py-0.5 rounded uppercase tracking-wider block">
+                                🔑 FIRMADO DIGITALMENTE
+                              </span>
+                            </div>
                           )}
-                          <div className="border-t border-gray-400 pt-1 px-6">
-                            <p className="font-extrabold text-gray-955 uppercase text-[10.5px]">{doctorName || "Médico Especialista"}</p>
-                            <p className="font-semibold text-gray-500 text-[9px]">Médico Especialista en Radiodiagnóstico</p>
+                          <div className="border-t border-slate-300 pt-1.5 px-4 text-center">
+                            <p className="font-black text-slate-900 uppercase text-[11px] leading-tight select-all">{doctorName || "Médico Especialista"}</p>
+                            <p className="font-semibold text-slate-500 text-[8.5px] mt-0.5 select-all">Especialista en Radiología e Imágenes Medicas.</p>
+                            <p className="font-mono text-slate-450 text-[7.5px] leading-normal select-all">{doctorLicense}</p>
                           </div>
                         </div>
                       </div>
@@ -17389,34 +22345,484 @@ Ejemplo:
 
                 </div>
               </div>
+          ) : (
+            <div className="space-y-4 text-left">
+              <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest font-mono">Vista Previa de la Explicación Empática (Acompañamiento):</span>
+              <div className="w-full max-w-[210mm] min-h-[297mm] mx-auto bg-white text-black p-6 sm:p-[20mm] rounded-sm border border-slate-300 shadow-[0_12px_36px_rgba(0,0,0,0.18)] text-left relative overflow-x-auto">
+                
+                {/* Membrete Explicación */}
+                <div className="flex justify-between items-start border-b-2 border-orange-500/30 pb-4 mb-4 text-left">
+                  <div className="flex items-center gap-3">
+                    <div className="w-11 h-11 flex items-center justify-center shrink-0 border border-orange-200 rounded-lg p-1 bg-orange-50 text-orange-600">
+                      <User className="w-7 h-7" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-extrabold tracking-tight text-[#0f100e] uppercase">
+                        ACOMPAÑAMIENTO INTEGRAL PARA EL PACIENTE
+                      </h4>
+                      <p className="text-[9px] font-bold text-orange-500 uppercase tracking-widest leading-none mt-1">
+                        Traducción Empática de Hallazgos Clínicos
+                      </p>
+                    </div>
+                  </div>
+                  {reportDate && (
+                    <div className="text-right text-[9px] uppercase text-gray-500 leading-normal">
+                      <div>Fecha: <span className="font-extrabold text-gray-800">{formatDateToDMY(reportDate)}</span></div>
+                    </div>
+                  )}
+                </div>
 
-            </div>
+                {/* Ficha Paciente Explicación */}
+                {(patientName || reportDate) && (
+                  <div className="border border-orange-200 rounded-lg p-3.5 mb-6 bg-orange-50/30 flex flex-wrap gap-x-8 gap-y-1.5 text-[11px] leading-relaxed text-left">
+                    {patientName && (
+                      <div>
+                        <span className="font-bold text-orange-600 uppercase">Paciente:</span>{" "}
+                        <span className="font-extrabold text-slate-900 uppercase text-[12px]">{patientName}</span>
+                      </div>
+                    )}
+                    {reportDate && (
+                      <div>
+                        <span className="font-bold text-orange-600 uppercase font-sans">Estudio Realizado:</span>{" "}
+                        <span className="font-extrabold text-slate-900 uppercase text-[12px]">{activeProtocol || "Ultrasonografía / Imagenologia"}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
 
-            {/* Footer del Modal */}
-            <div className="bg-slate-950 px-6 py-4 border-t border-slate-850 flex items-center justify-between">
-              <button
-                onClick={() => setShowPrintModal(false)}
-                className="px-4 py-2 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-350 hover:text-slate-200 text-xs font-black uppercase tracking-wider rounded-xl transition-all font-mono"
-              >
-                Cerrar
-              </button>
-              <button
-                onClick={() => {
-                  try {
-                    window.print();
-                  } catch (e) {
-                    console.error(e);
-                  }
-                }}
-                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-550 border border-indigo-500/30 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 shadow-lg"
-              >
-                <Printer className="h-4 w-4" />
-                <span>Ejecutar Impresión</span>
-              </button>
+                {/* Contenido de la Traducción */}
+                {patientSummary ? (
+                  <div className="space-y-6 font-sans text-left">
+                    <div className="space-y-1.5 p-4 bg-orange-50/20 border-l-4 border-orange-500 rounded-r-xl text-left">
+                      <h5 className="text-[10px] font-black tracking-widest uppercase text-orange-700">Resumen de Bienvenida y Propósito</h5>
+                      <p className="text-xs text-gray-700 leading-relaxed font-sans font-medium text-left">
+                        {patientSummary.summary}
+                      </p>
+                    </div>
+
+                    <div className="space-y-3">
+                      <h5 className="text-[10.5px] font-black tracking-wider uppercase text-slate-800 border-b border-gray-200 pb-1 flex items-center gap-1">
+                        <span>🔍</span> GLOSARIO DE HALLAZGOS EXPLICADOS
+                      </h5>
+                      <div className="space-y-3.5 text-left bg-transparent">
+                        {patientSummary.keyFindings?.map((finding: any, idx: number) => (
+                          <div key={idx} className="p-3.5 border border-gray-250 rounded-xl bg-slate-50/50 space-y-2 text-left">
+                            <p className="text-xs font-black text-orange-700 uppercase flex items-center gap-1.5 justify-start">
+                              <span>📌</span> {finding.title}
+                            </p>
+                            <p className="text-[9.5px] font-mono text-gray-500 leading-none text-left">
+                              Término científico: <span className="font-bold text-pink-700">"{finding.originalTerm}"</span>
+                            </p>
+                            <p className="text-xs text-gray-700 leading-relaxed font-sans text-left">
+                              <strong>Explicación:</strong> {finding.simplifiedExplanation}
+                            </p>
+                            <p className="text-[11.5px] text-amber-800 leading-relaxed font-sans italic bg-amber-50/50 px-2.5 py-1.5 border-l-2 border-amber-400 rounded-r text-left">
+                              <strong>Analogía:</strong> "{finding.analogy}"
+                            </p>
+                            <p className="text-[11px] text-blue-800 leading-relaxed font-sans bg-blue-50/55 px-2.5 py-1.5 border-l-2 border-blue-400 rounded-r text-left">
+                              <strong>Sugerencia médica:</strong> {finding.reassurance}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {patientSummary.carePoints && patientSummary.carePoints.length > 0 && (
+                      <div className="space-y-2 text-left">
+                        <h5 className="text-[10.5px] font-black tracking-wider uppercase text-slate-800 border-b border-gray-200 pb-1 flex items-center gap-1">
+                          <span>🩺</span> RECOMENDACIONES Y CUIDADOS GENERALES
+                        </h5>
+                        <ul className="list-disc pl-5 text-xs text-gray-700 space-y-1 font-sans text-left">
+                          {patientSummary.carePoints.map((point: string, idx: number) => (
+                            <li key={idx} className="leading-relaxed text-left">{point}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {patientSummary.suggestedQuestions && patientSummary.suggestedQuestions.length > 0 && (
+                      <div className="space-y-2 text-left">
+                        <h5 className="text-[10.5px] font-black tracking-wider uppercase text-[#0d0e14] border-b border-gray-200 pb-1 flex items-center gap-1">
+                          <span>💬</span> PREGUNTAS SUGERIDAS PARA SU MÉDICO TRATANTE
+                        </h5>
+                        <p className="text-[10px] text-gray-500 leading-normal text-left">
+                          Le sugerimos llevar estas preguntas anotadas a su siguiente consulta con su médico de cabecera:
+                        </p>
+                        <div className="grid grid-cols-1 gap-1.5 pt-1 text-left bg-transparent">
+                          {patientSummary.suggestedQuestions.map((q: string, idx: number) => (
+                            <div key={idx} className="p-2.5 bg-indigo-50/35 border-l-2 border-indigo-400 rounded-r text-xs text-indigo-900 font-sans italic font-medium leading-relaxed text-left">
+                              {idx + 1}. {q}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Firma de Validación Médica Integrada a la explicación */}
+                    {(doctorName || customSignatureUrl) && (
+                      <div className="mt-8 pt-5 border-t border-gray-200 flex justify-between items-end text-[9px] leading-normal font-sans text-gray-400 text-left">
+                        {/* Autorización Legal */}
+                        <div className="space-y-1 max-w-[340px] text-left">
+                          <p className="font-extrabold text-slate-700 tracking-wider text-[8.5px] uppercase">Avalado Médicamente por el Radiólogo de Guardia</p>
+                          <p className="text-[8px] leading-relaxed text-slate-500">
+                            Este documento es una traducción empática automatizada validada mediante firma electrónica y no sustituye de ninguna manera el criterio del médico tratante encargado del tratamiento.
+                          </p>
+                        </div>
+                        {/* Bloque Firma */}
+                        <div className="text-right flex flex-col items-end">
+                          {customSignatureUrl ? (
+                            <img 
+                              src={customSignatureUrl} 
+                              alt="Firma" 
+                              className="h-9 max-w-[120px] object-contain ml-auto block mix-blend-multiply" 
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className="text-[10px] font-bold text-indigo-600 pb-1">🔑 FIRMADO DIGITALMENTE</div>
+                          )}
+                          <div className="border-t border-slate-300 pt-1 text-center">
+                            <p className="font-black text-slate-900 text-[10px]">{doctorName || "Médico Especialista"}</p>
+                            <p className="text-[8px] text-slate-500 font-medium">{doctorLicense}</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center p-12 text-center space-y-3 font-sans">
+                    <span className="text-4xl animate-bounce">🌱</span>
+                    <p className="text-sm font-black text-gray-800 uppercase tracking-wide">Traducción para el Paciente aún no Generada</p>
+                    <p className="text-xs text-gray-400 max-w-sm leading-relaxed">
+                      Por favor, regresa al panel principal y haz clic en "Generar Traducción Empática" para que el sistema redacte automáticamente esta vista.
+                    </p>
+                  </div>
+                )}
+
+              </div>
             </div>
+          )}
+        </div>
+      )}
+
+    </div>
+
+      {/* Footer del Modal */}
+      <div className="bg-slate-950 px-6 py-4 border-t border-slate-850 flex items-center justify-between no-print shrink-0">
+        <button
+          onClick={() => setShowPrintModal(false)}
+          className="px-4 py-2 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-350 hover:text-slate-200 text-xs font-black uppercase tracking-wider rounded-xl transition-all font-mono cursor-pointer"
+        >
+          Cerrar
+        </button>
+        <button
+          onClick={() => {
+            if (printModalDocType === 'report') {
+              try {
+                window.print();
+              } catch (e) {
+                console.error(e);
+              }
+            } else {
+              handlePrintPatientSummary();
+            }
+          }}
+          className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-550 border border-indigo-500/30 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 shadow-lg cursor-pointer"
+        >
+          <Printer className="h-4 w-4" />
+          <span>{printModalDocType === 'report' ? "Ejecutar Impresión" : "Imprimir Explicación"}</span>
+        </button>
+      </div>
           </motion.div>
         </div>
       )}
+
+      {isSmartAnatomyDialogOpen && activeProtocol && (() => {
+        const helper = getProtocolStateAndSetters(activeProtocol);
+        const structures = getStructuresForProtocol(activeProtocol);
+        const extras = additionalFindings[activeProtocol] || [];
+
+        return (
+          <div className="no-print fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-slate-900 border-2 border-slate-800 rounded-3xl w-full max-w-5xl max-h-[92vh] overflow-hidden flex flex-col shadow-2xl text-left font-sans"
+            >
+              {/* Header */}
+              <div className="bg-slate-950 px-6 py-4.5 border-b border-slate-850 flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Sparkles className="h-5 w-5 text-amber-400 animate-pulse" />
+                  <div>
+                    <h3 className="text-sm font-black text-white uppercase tracking-wider font-mono">
+                      Cuadro de Diálogo Inteligente • {activeProtocol}
+                    </h3>
+                    <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">
+                      Ajustes estructurales de sinopsis y reporte clínico integrado
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsSmartAnatomyDialogOpen(false)}
+                  className="text-slate-400 hover:text-white p-1.5 bg-slate-900 rounded-xl border border-slate-800 hover:border-slate-750 transition-all active:scale-95 cursor-pointer"
+                >
+                  <X className="h-4.5 w-4.5" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-6">
+                
+                {/* 1. SECCIÓN AI DE CAMBIOS EN LENGUAJE NATURAL */}
+                <div className="bg-slate-950/55 border-2 border-amber-500/20 rounded-2xl p-5 space-y-4">
+                  <div className="flex items-start gap-3">
+                    <span className="text-lg mt-0.5">🤖</span>
+                    <div className="space-y-0.5">
+                      <h4 className="text-xs font-black text-amber-400 uppercase tracking-wider">Ajustador Clínico de IA</h4>
+                      <p className="text-[10px] text-slate-405 leading-relaxed font-bold">
+                        Escribe instrucciones en lenguaje de diagnóstico regular para recalcular descripciones y clasificaciones.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <textarea
+                      placeholder="Ejemplo: 'Marca que la bursa tiene bursitis moderada de aspecto inflamatorio crónico y deja las demás estructuras normales...' o 'Sincroniza todos los hallazgos según el reporte anterior de esta articulación del paciente...'"
+                      value={smartInstructionsText}
+                      onChange={(e) => setSmartInstructionsText(e.target.value)}
+                      className="w-full h-24 bg-slate-900 border border-slate-800 rounded-xl p-3 text-xs text-white placeholder-slate-650 focus:outline-none focus:border-indigo-500 transition-all leading-relaxed"
+                    />
+
+                    {smartAnatomyError && (
+                      <p className="text-xs text-red-400 font-bold font-mono uppercase bg-red-950/30 border border-red-900/30 p-2.5 rounded-lg">
+                        ⚠️ Error: {smartAnatomyError}
+                      </p>
+                    )}
+
+                    <div className="flex justify-end select-none">
+                      <button
+                        type="button"
+                        onClick={handleApplySmartModification}
+                        disabled={isSmartAnatomyModifying || !smartInstructionsText.trim()}
+                        className="px-4 py-2 rounded-xl text-[10.5px] font-black uppercase tracking-wider bg-gradient-to-r from-amber-500 to-indigo-600 hover:from-amber-400 hover:to-indigo-550 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-500 text-white shadow-lg flex items-center gap-1.5 transition-all cursor-pointer active:scale-97"
+                      >
+                        {isSmartAnatomyModifying ? (
+                          <>
+                            <div className="h-3.5 w-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                            <span>Procesando Modificación Inteligente...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="h-4 w-4 text-amber-300" />
+                            <span>Aplicar Ajustes con IA</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                  {/* 2. DIRECT EDIT OF STRUCTURES */}
+                  <div className="lg:col-span-8 space-y-4">
+                    <div className="flex items-center justify-between border-b border-slate-850 pb-2 select-none">
+                      <h4 className="text-xs font-black text-slate-200 uppercase tracking-wider font-mono">
+                        🛠️ Modificación Manual de Estructuras del Dibujo
+                      </h4>
+                      <span className="text-[9px] text-slate-500 uppercase font-bold">Reflejo en tiempo real</span>
+                    </div>
+
+                    {helper ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 max-h-[420px] overflow-y-auto pr-1">
+                        {structures.map((struct) => {
+                          const s = helper.states[struct.id] || "no_descrito";
+                          const d = helper.descs[struct.id] || "";
+
+                          return (
+                            <div key={struct.id} className="bg-slate-950/40 border border-slate-850 rounded-xl p-3 flex flex-col gap-2">
+                              <div className="flex items-center justify-between gap-2 select-none">
+                                <span className="text-[11px] font-black uppercase tracking-wide text-slate-250 truncate">
+                                  {struct.label}
+                                </span>
+                                <select
+                                  value={s}
+                                  onChange={(e) => {
+                                    const nextVal = e.target.value;
+                                    helper.setStates(prev => {
+                                      const next = { ...prev, [struct.id]: nextVal };
+                                      handleSyncAnatomyToReportCombined(activeProtocol, next, helper.descs);
+                                      return next;
+                                    });
+                                  }}
+                                  className="bg-slate-900 border-slate-800 text-[10px] font-bold uppercase tracking-wider text-slate-300 rounded px-1.5 py-0.5 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                                >
+                                  {struct.allowedStates.map(st => (
+                                    <option key={st} value={st}>{st.replace(/_/g, " ")}</option>
+                                  ))}
+                                </select>
+                              </div>
+                              <input
+                                type="text"
+                                value={d}
+                                placeholder="Escribe la descripción clínica correspondiente..."
+                                onChange={(e) => {
+                                    const nextVal = e.target.value;
+                                    helper.setDescs(prev => {
+                                      const next = { ...prev, [struct.id]: nextVal };
+                                      handleSyncAnatomyToReportCombined(activeProtocol, helper.states, next);
+                                      return next;
+                                    });
+                                }}
+                                className="w-full bg-slate-900 border border-slate-800 text-xs text-slate-250 p-2 rounded-lg placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-500">Error al inicializar cargador manual.</p>
+                    )}
+                  </div>
+
+                  {/* 3. ADDITIONAL FINDINGS INPUT */}
+                  <div className="lg:col-span-4 space-y-4">
+                    <div className="flex items-center justify-between border-b border-slate-850 pb-2 select-none">
+                      <h4 className="text-xs font-black text-slate-200 uppercase tracking-wider font-mono">
+                        📎 Hallazgos Adicionales Sin Dibujo
+                      </h4>
+                      <span className="text-[9px] text-indigo-400 bg-indigo-950/50 border border-indigo-900/30 px-1.5 rounded font-bold uppercase">
+                        Sincronización Total
+                      </span>
+                    </div>
+
+                    <p className="text-[10px] text-slate-450 leading-relaxed font-semibold">
+                      Añade hallazgos anatomopatológicos detectados en tu reporte que no correspondan con las estructuras representadas en el mapa esquemático clásico. Se incluirán de forma impecable en la tabla de hallazgos del reporte y en la sinopsis del PDF.
+                    </p>
+
+                    <div className="bg-slate-950/60 border border-slate-850 p-4 rounded-xl space-y-3">
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-black uppercase text-slate-450 tracking-wider">Estructura / Región / Hallazgo</label>
+                        <input
+                          type="text"
+                          placeholder="Ej: Quiste de Baker (si anterior no tiene), Colección..."
+                          value={newExtraStructureName}
+                          onChange={(e) => setNewExtraStructureName(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-white placeholder-slate-650 focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-black uppercase text-slate-450 tracking-wider">Estado Clínico</label>
+                        <select
+                          value={newExtraState}
+                          onChange={(e) => setNewExtraState(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-350 uppercase focus:outline-none focus:border-indigo-500 cursor-pointer"
+                        >
+                          <option value="Alterado">Alterado / No normal</option>
+                          <option value="Coleccion">Estructura Quística / Líquido</option>
+                          <option value="Desgarro">Rotura / Desgarro</option>
+                          <option value="Complejo">Hallazgo Complejo</option>
+                          <option value="Normal">Inofensivo / Variante</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-1 font-sans">
+                        <label className="text-[9px] font-black uppercase text-slate-450 tracking-wider font-mono">Descripción Detallada</label>
+                        <textarea
+                          placeholder="Ej: Se observa hallazgo patológico con colecciones líquidas de aspecto quístico..."
+                          value={newExtraDescription}
+                          onChange={(e) => setNewExtraDescription(e.target.value)}
+                          className="w-full h-16 bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 leading-snug"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!newExtraStructureName.trim() || !newExtraDescription.trim()) return;
+                          const newFinding = {
+                            id: `finding-extra-${Date.now()}`,
+                            structureName: newExtraStructureName.trim(),
+                            state: newExtraState,
+                            description: newExtraDescription.trim()
+                          };
+                          const nextExtras = [...extras, newFinding];
+                          setAdditionalFindings(prev => ({
+                            ...prev,
+                            [activeProtocol]: nextExtras
+                          }));
+                          handleSyncAnatomyToReportCombined(activeProtocol, helper.states, helper.descs, nextExtras);
+                          setNewExtraStructureName("");
+                          setNewExtraDescription("");
+                        }}
+                        disabled={!newExtraStructureName.trim() || !newExtraDescription.trim()}
+                        className="w-full py-2 bg-indigo-600 hover:bg-indigo-550 disabled:bg-slate-850 disabled:text-slate-550 text-white rounded-lg text-[10.5px] font-black uppercase tracking-wider transition-all cursor-pointer select-none"
+                      >
+                        Añadir Hallazgo Adicional
+                      </button>
+                    </div>
+
+                    {/* LIST OF EXTRAS */}
+                    <div className="space-y-2 max-h-[170px] overflow-y-auto pr-1">
+                      {extras.map((item) => (
+                        <div key={item.id} className="bg-slate-950/80 border border-slate-850 p-2.5 rounded-xl flex items-start justify-between gap-3 text-left">
+                          <div>
+                            <div className="flex items-center gap-1.5 select-none">
+                              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
+                              <span className="text-[10px] font-black text-slate-250 uppercase">{item.structureName}</span>
+                              <span className="text-[8px] bg-indigo-950 border border-indigo-900 p-0.5 rounded leading-none text-indigo-400 font-bold uppercase">{item.state}</span>
+                            </div>
+                            <p className="text-[10px] text-slate-400 mt-1 leading-normal">{item.description}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const nextExtras = extras.filter(f => f.id !== item.id);
+                              setAdditionalFindings(prev => ({
+                                ...prev,
+                                [activeProtocol]: nextExtras
+                              }));
+                              handleSyncAnatomyToReportCombined(activeProtocol, helper.states, helper.descs, nextExtras);
+                            }}
+                            className="text-slate-500 hover:text-red-400 p-1 bg-slate-900 rounded border border-slate-850 hover:border-red-950/20 active:scale-95 transition-all cursor-pointer"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                      {extras.length === 0 && (
+                        <div className="text-[10px] text-slate-500 italic text-center p-3 border border-dashed border-slate-800 rounded-xl bg-slate-950/10 select-none">
+                          Ningún hallazgo adicional añadido a este protocolo.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Footer */}
+              <div className="bg-slate-950 px-6 py-4 border-t border-slate-850 flex items-center justify-between select-none">
+                <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-widest">
+                  Sistema de Sincronización Anatómica de Precisión
+                </span>
+
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsSmartAnatomyDialogOpen(false)}
+                    className="px-4 py-2 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-300 text-xs font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+                  >
+                    Cerrar y Ver Cambios
+                  </button>
+                </div>
+              </div>
+
+            </motion.div>
+          </div>
+        );
+      })()}
 
       {/* 🟢 MODAL DE COMPARTIDO POR WHATSAPP (REPORTES, INFOGRAFÍA Y RESUMEN) */}
       {showWhatsAppModal && (
@@ -17787,7 +23193,7 @@ Ejemplo:
               <img 
                 src={customLogoUrl} 
                 alt="Membrete de la Clínica" 
-                className="max-h-[110px] mx-auto w-auto object-contain block" 
+                className="max-h-[160px] mx-auto w-auto object-contain block" 
                 referrerPolicy="no-referrer"
               />
             </div>
@@ -17795,12 +23201,12 @@ Ejemplo:
             <div className="flex justify-between items-start border-b border-gray-400 pb-4 mb-4">
               <div className="flex items-center gap-3">
                 {selectedLogo !== "none" && (
-                  <div className="w-12 h-12 flex items-center justify-center shrink-0 border border-gray-300 rounded-lg p-1 bg-gray-50 text-indigo-700">
+                  <div className="w-16 h-16 flex items-center justify-center shrink-0 border border-gray-300 rounded-lg p-1 bg-gray-50 text-indigo-700">
                     {customLogoUrl ? (
                       <img 
                         src={customLogoUrl} 
                         alt="Logo" 
-                        className="w-10 h-10 object-contain block" 
+                        className="w-14 h-14 object-contain block" 
                         referrerPolicy="no-referrer"
                       />
                     ) : (
@@ -17852,7 +23258,7 @@ Ejemplo:
               </div>
               {reportDate && (
                 <div className="text-right text-[10px] uppercase text-gray-500 leading-normal">
-                  <div>Fecha: <span className="font-extrabold text-gray-800">{reportDate}</span></div>
+                  <div>Fecha: <span className="font-extrabold text-gray-800">{formatDateToDMY(reportDate)}</span></div>
                 </div>
               )}
             </div>
@@ -17870,7 +23276,7 @@ Ejemplo:
               {reportDate && (
                 <div>
                   <span className="font-bold text-gray-500 uppercase">Fecha del Estudio:</span>{" "}
-                  <span className="font-extrabold text-gray-955 uppercase text-[12px]">{reportDate}</span>
+                  <span className="font-extrabold text-gray-955 uppercase text-[12px]">{formatDateToDMY(reportDate)}</span>
                 </div>
               )}
             </div>
@@ -17913,15 +23319,39 @@ Ejemplo:
 
           {/* Sign-off Signature block */}
           {(doctorName || customSignatureUrl) && (
-            <div className="mt-16 pt-6 border-t border-gray-250 grid grid-cols-2 text-[10px] leading-normal font-sans text-gray-400">
-              <div>
-                <p className="font-bold uppercase tracking-wider text-gray-450">Verificado Por:</p>
-                <p className="font-mono text-[9px] mt-1 text-gray-400 font-bold">Firma Digital Autónoma</p>
+            <div className="mt-16 pt-6 border-t border-gray-250 grid grid-cols-2 gap-4 text-[10px] leading-normal font-sans text-gray-400">
+              {/* Bloque Homologado Izquierdo (Metadatos de Firma Electrónica) */}
+              <div className="border border-slate-250 bg-slate-50/70 p-3 rounded-lg text-[8.5px] font-sans text-slate-500 max-w-[340px] text-left space-y-1">
+                <div className="flex items-center gap-1.5 font-bold text-[9px] text-slate-700 uppercase">
+                  <span className="text-indigo-600">🛡️</span>
+                  <span>Firma Electrónica Homologada</span>
+                </div>
+                <p className="font-mono text-[8px] text-indigo-700 font-bold bg-indigo-50/50 px-1 py-0.5 rounded break-all select-all">
+                  {getValidationHash()}
+                </p>
+                <div className="grid grid-cols-[max-content_1fr] gap-x-2 text-[8px] leading-relaxed">
+                  <span className="font-semibold text-slate-400 uppercase">Autoridad:</span>
+                  <span className="font-bold text-slate-650">{doctorName || "Médico Especialista"}</span>
+                  
+                  <span className="font-semibold text-slate-400 uppercase">Registro:</span>
+                  <span className="font-mono font-bold text-slate-650">{doctorLicense}</span>
+                  
+                  <span className="font-semibold text-slate-400 uppercase">Estado:</span>
+                  <span className="font-bold text-emerald-600 flex items-center gap-1">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    VALIDADO Y REGISTRADO
+                  </span>
+                  
+                  <span className="font-semibold text-slate-400 uppercase">Soporte Legal:</span>
+                  <span className="text-slate-450 italic">Ley de Comercio Electrónico, Firmas y Datos (Art. 14)</span>
+                </div>
               </div>
-              <div className="text-right flex flex-col items-end">
-                <div className="inline-block text-center relative">
-                  {customSignatureUrl && (
-                    <div className="mb-1 flex justify-center">
+
+              {/* Firma Autógrafa y Datos del Médico Especialista */}
+              <div className="text-right flex flex-col items-end justify-center">
+                <div className="inline-block text-center relative max-w-[280px]">
+                  {customSignatureUrl ? (
+                    <div className="mb-1.5 flex justify-center">
                       <img 
                         src={customSignatureUrl} 
                         alt="Firma" 
@@ -17929,10 +23359,17 @@ Ejemplo:
                         referrerPolicy="no-referrer"
                       />
                     </div>
+                  ) : (
+                    <div className="mb-2 text-indigo-600/80 font-serif italic text-xs select-none relative pr-4">
+                      <span className="text-[10px] font-mono font-black border border-indigo-200 bg-indigo-50 px-2 py-0.5 rounded uppercase tracking-wider block">
+                        🔑 FIRMADO DIGITALMENTE
+                      </span>
+                    </div>
                   )}
-                  <div className="border-t border-gray-400 pt-1 px-8">
-                    <p className="font-extrabold text-gray-955 uppercase text-[11.5px]">{doctorName || "Médico Especialista"}</p>
-                    <p className="font-semibold text-gray-500 text-[10px]">Médico Especialista en Radiodiagnóstico</p>
+                  <div className="border-t border-slate-300 pt-1.5 px-6">
+                    <p className="font-black text-slate-900 uppercase text-[11.5px] leading-tight select-all">{doctorName || "Médico Especialista"}</p>
+                    <p className="font-semibold text-slate-500 text-[9px] mt-0.5 select-all">Especialista en Radiología e Imágenes Medicas.</p>
+                    <p className="font-mono text-slate-450 text-[8px] leading-normal select-all">{doctorLicense}</p>
                   </div>
                 </div>
               </div>

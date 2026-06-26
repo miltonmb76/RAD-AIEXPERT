@@ -6,6 +6,7 @@ import {
   History, Contrast, LayoutGrid, Scale, Split, Moon, Sun
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import { ExtractedFile } from "./ZipDicomExtractor";
 
 interface ExpertImageAnalysisProps {
   selectedModel?: string;
@@ -15,6 +16,15 @@ interface ExpertImageAnalysisProps {
   exportedMimeType?: string;
   clearExportedImage?: () => void;
   findings?: string;
+  zipExtractedFile?: {
+    file: ExtractedFile;
+    slot: 1 | 2 | 3;
+  } | {
+    file: ExtractedFile;
+    slot: 1 | 2 | 3;
+  }[] | null;
+  clearZipExtractedFile?: () => void;
+  onZipUploaded?: (file: File) => void;
 }
 
 interface ImageAnalysisSession {
@@ -150,7 +160,7 @@ const resizeAndCompressImage = (dataUrl: string, maxW = 1200, maxH = 1200): Prom
       }
       
       ctx.drawImage(img, 0, 0, width, height);
-      const compressedDataUrl = canvas.toDataURL("image/jpeg", 0.85);
+      const compressedDataUrl = canvas.toDataURL("image/jpeg", 0.98);
       const parts = compressedDataUrl.split(",");
       resolve({
         base64: parts[1] || "",
@@ -644,7 +654,10 @@ export default function ExpertImageAnalysis({
   exportedImage = null,
   exportedMimeType = "",
   clearExportedImage,
-  findings = ""
+  findings = "",
+  zipExtractedFile = null,
+  clearZipExtractedFile,
+  onZipUploaded
 }: ExpertImageAnalysisProps) {
   // Session History State
   const [sessions, setSessions] = useState<ImageAnalysisSession[]>(() => {
@@ -912,6 +925,124 @@ export default function ExpertImageAnalysis({
     }
   }, [exportedImage, exportedMimeType, clearExportedImage]);
 
+  // Synchronize zip extracted files into active slots
+  React.useEffect(() => {
+    if (zipExtractedFile) {
+      const items = Array.isArray(zipExtractedFile) ? zipExtractedFile : [zipExtractedFile];
+      
+      items.forEach(({ file, slot }) => {
+        // Cleanly extract base64 from visualUrl or base64
+        let base64Data = file.base64;
+        if (file.visualUrl && file.visualUrl.includes(",")) {
+          base64Data = file.visualUrl.split(",")[1];
+        }
+        
+        // Accurately extract the absolute mime type directly from the visual URL, falling back dynamically
+        let visualMime = file.mimeType;
+        if (file.visualUrl) {
+          const mimeMatch = file.visualUrl.match(/^data:([^;]+);/);
+          if (mimeMatch) {
+            visualMime = mimeMatch[1];
+          }
+        } else if (file.isDicom) {
+          visualMime = (base64Data.startsWith("PHN2Zy") || base64Data.includes("<svg") ? "image/svg+xml" : (base64Data.startsWith("/9j/") ? "image/jpeg" : "image/png"));
+        }
+
+        if (slot === 1) {
+          if (imagePreviewUrl1 && imagePreviewUrl1.startsWith("blob:")) {
+            try { URL.revokeObjectURL(imagePreviewUrl1); } catch (_) {}
+          }
+          setImage1(base64Data);
+          setMimeType1(visualMime);
+          // Use the actual working browser-renderable visualUrl for preview, ensuring instant rendering
+          setImagePreviewUrl1(file.visualUrl || null);
+          if (file.isDicom) {
+            setDicomMeta1(file.metadata || null);
+            setDesc1(file.metadata?.studyDescription && file.metadata.studyDescription !== "N/A" ? file.metadata.studyDescription : `Estudio DICOM: ${file.metadata?.modality || "RX"}`);
+            
+            const matchedMod = modalities.find(m => m.value.toUpperCase().includes((file.metadata?.modality || "").toUpperCase()) || (file.metadata?.modality || "").toUpperCase().includes(m.value.toUpperCase()));
+            if (matchedMod) {
+              setModality1(matchedMod.value);
+            } else if ((file.metadata?.modality || "").toUpperCase().includes("MR") || (file.metadata?.modality || "").toUpperCase().includes("RM")) {
+              setModality1("MRI");
+            } else if ((file.metadata?.modality || "").toUpperCase().includes("CT") || (file.metadata?.modality || "").toUpperCase().includes("TC")) {
+              setModality1("CT");
+            } else {
+              setModality1("X-Ray");
+            }
+          } else {
+            setDicomMeta1(null);
+            setDesc1(file.nameOnly);
+            setModality1("X-Ray");
+          }
+        } else if (slot === 2) {
+          if (imagePreviewUrl2 && imagePreviewUrl2.startsWith("blob:")) {
+            try { URL.revokeObjectURL(imagePreviewUrl2); } catch (_) {}
+          }
+          setImage2(base64Data);
+          setMimeType2(visualMime);
+          // Use the actual working browser-renderable visualUrl for preview, ensuring instant rendering
+          setImagePreviewUrl2(file.visualUrl || null);
+          if (file.isDicom) {
+            setDicomMeta2(file.metadata || null);
+            setDesc2(file.metadata?.studyDescription && file.metadata.studyDescription !== "N/A" ? file.metadata.studyDescription : `Estudio DICOM: ${file.metadata?.modality || "RX"}`);
+            
+            const matchedMod = modalities.find(m => m.value.toUpperCase().includes((file.metadata?.modality || "").toUpperCase()) || (file.metadata?.modality || "").toUpperCase().includes(m.value.toUpperCase()));
+            if (matchedMod) {
+              setModality2(matchedMod.value);
+            } else if ((file.metadata?.modality || "").toUpperCase().includes("MR") || (file.metadata?.modality || "").toUpperCase().includes("RM")) {
+              setModality2("MRI");
+            } else if ((file.metadata?.modality || "").toUpperCase().includes("CT") || (file.metadata?.modality || "").toUpperCase().includes("TC")) {
+              setModality2("CT");
+            } else {
+              setModality2("X-Ray");
+            }
+          } else {
+            setDicomMeta2(null);
+            setDesc2(file.nameOnly);
+            setModality2("X-Ray");
+          }
+        } else if (slot === 3) {
+          if (imagePreviewUrl3 && imagePreviewUrl3.startsWith("blob:")) {
+            try { URL.revokeObjectURL(imagePreviewUrl3); } catch (_) {}
+          }
+          setImage3(base64Data);
+          setMimeType3(visualMime);
+          // Use the actual working browser-renderable visualUrl for preview, ensuring instant rendering
+          setImagePreviewUrl3(file.visualUrl || null);
+          if (file.isDicom) {
+            setDicomMeta3(file.metadata || null);
+            setDesc3(file.metadata?.studyDescription && file.metadata.studyDescription !== "N/A" ? file.metadata.studyDescription : `Estudio DICOM: ${file.metadata?.modality || "RX"}`);
+            
+            const matchedMod = modalities.find(m => m.value.toUpperCase().includes((file.metadata?.modality || "").toUpperCase()) || (file.metadata?.modality || "").toUpperCase().includes(m.value.toUpperCase()));
+            if (matchedMod) {
+              setModality3(matchedMod.value);
+            } else if ((file.metadata?.modality || "").toUpperCase().includes("MR") || (file.metadata?.modality || "").toUpperCase().includes("RM")) {
+              setModality3("MRI");
+            } else if ((file.metadata?.modality || "").toUpperCase().includes("CT") || (file.metadata?.modality || "").toUpperCase().includes("TC")) {
+              setModality3("CT");
+            } else {
+              setModality3("X-Ray");
+            }
+          } else {
+            setDicomMeta3(null);
+            setDesc3(file.nameOnly);
+            setModality3("X-Ray");
+          }
+        }
+      });
+
+      // Execute clearZipExtractedFile after a small timeout to clear parent prop outside mount commit phase (avoids race condition)
+      const clearTimer = setTimeout(() => {
+        if (clearZipExtractedFile) {
+          clearZipExtractedFile();
+        }
+      }, 100);
+
+      return () => clearTimeout(clearTimer);
+    }
+  }, [zipExtractedFile, clearZipExtractedFile]);
+
   // General Metadata
   const [patientInfo, setPatientInfo] = useState<string>("");
   const [clinicalSuspicion, setClinicalSuspicion] = useState<string>("");
@@ -1109,7 +1240,23 @@ export default function ExpertImageAnalysis({
   // Process loaded DICOM or regular files as image state or binary parse
   const processMedicalFile = (file: File, slotParam: boolean | 1 | 2 | 3) => {
     const slot = typeof slotParam === "boolean" ? (slotParam ? 2 : 1) : slotParam;
-    const isDicomFile = file.name.endsWith(".dcm") || file.name.endsWith(".dicom") || file.type === "application/dicom";
+    
+    const isZip = file.name.endsWith(".zip") || file.type === "application/zip" || file.type === "application/x-zip-compressed";
+    if (isZip) {
+      if (onZipUploaded) {
+        onZipUploaded(file);
+      } else {
+        setAnalysisError("Este slot soporta archivos comprimidos .ZIP si los procesa el Extractor global.");
+      }
+      return;
+    }
+
+    const filenameLower = file.name.toLowerCase();
+    const isDicomFile = filenameLower.endsWith(".dcm") || 
+                        filenameLower.endsWith(".dicom") || 
+                        filenameLower.includes(".dcm") || 
+                        filenameLower.includes(".dicom") || 
+                        file.type === "application/dicom";
     
     if (!file.type.startsWith("image/") && !isDicomFile) {
       setAnalysisError("Por favor, sube únicamente formatos de imagen médica (PNG, JPEG, DICOM o .dcm).");
@@ -2182,7 +2329,7 @@ export default function ExpertImageAnalysis({
                         type="file" 
                         ref={fileInputRef1} 
                         onChange={(e) => handleImageUpload(e, false)} 
-                        accept="image/*,.dcm,.dicom,application/dicom" 
+                        accept="image/*,.dcm,.dicom,application/dicom,.zip,application/zip,application/x-zip-compressed" 
                         className="hidden" 
                       />
                     </div>
@@ -2391,7 +2538,7 @@ export default function ExpertImageAnalysis({
                         type="file" 
                         ref={fileInputRef2} 
                         onChange={(e) => handleImageUpload(e, true)} 
-                        accept="image/*,.dcm,.dicom,application/dicom" 
+                        accept="image/*,.dcm,.dicom,application/dicom,.zip,application/zip,application/x-zip-compressed" 
                         className="hidden" 
                       />
                     </div>
@@ -2596,7 +2743,7 @@ export default function ExpertImageAnalysis({
                         type="file" 
                         ref={fileInputRef3} 
                         onChange={(e) => handleImageUpload(e, 3)} 
-                        accept="image/*,.dcm,.dicom,application/dicom" 
+                        accept="image/*,.dcm,.dicom,application/dicom,.zip,application/zip,application/x-zip-compressed" 
                         className="hidden" 
                       />
                     </div>

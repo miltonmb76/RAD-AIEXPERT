@@ -25,6 +25,14 @@ interface KneeAnatomyViewerProps {
   onChangeStates?: (states: Record<string, string>) => void;
   onChangeDescriptions?: (descriptions: Record<string, string>) => void;
   selectedModel?: string;
+  externalStates?: Record<string, string>;
+  externalDescriptions?: Record<string, string>;
+  additionalFindings?: Array<{ id: string; structureName: string; state: string; description: string }>;
+  laterality?: string;
+  externalStatesLeft?: Record<string, string>;
+  externalDescriptionsLeft?: Record<string, string>;
+  onChangeStatesLeft?: (states: Record<string, string>) => void;
+  onChangeDescriptionsLeft?: (descriptions: Record<string, string>) => void;
 }
 
 // Structure Types
@@ -43,7 +51,15 @@ export default function KneeAnatomyViewer({
   setIncludeInReport,
   onChangeStates,
   onChangeDescriptions,
-  selectedModel
+  selectedModel,
+  externalStates,
+  externalDescriptions,
+  additionalFindings = [],
+  laterality = "Derecho",
+  externalStatesLeft,
+  externalDescriptionsLeft,
+  onChangeStatesLeft,
+  onChangeDescriptionsLeft
 }: KneeAnatomyViewerProps) {
   
   // States of each structure:
@@ -55,6 +71,10 @@ export default function KneeAnatomyViewer({
   // - lateral_meniscus: normal | meniscosis | rotura
   // - joint_effusion: normal | derrame_leve | derrame_moderado
   // - baker_cyst: normal | quiste_leve | quiste_severo
+  // - popliteal_artery: normal | ectasia | ateromatosis | aneurisma
+  // - popliteal_vein: normal | trombosis | ectasia | permisibilidad_reducida
+  // - distal_tendons: normal | tendinosis | desgarro_parcial | desgarro_completo
+  // - popliteal_fossa: normal | coleccion | adenopatia
   const [states, setStates] = useState<Record<string, string>>({
     quadriceps: "no_descrito",
     patellar: "no_descrito",
@@ -63,7 +83,11 @@ export default function KneeAnatomyViewer({
     medial_meniscus: "no_descrito",
     lateral_meniscus: "no_descrito",
     joint_effusion: "no_descrito",
-    baker_cyst: "no_descrito"
+    baker_cyst: "no_descrito",
+    popliteal_artery: "no_descrito",
+    popliteal_vein: "no_descrito",
+    distal_tendons: "no_descrito",
+    popliteal_fossa: "no_descrito"
   });
 
   // Manual or custom descriptive text override
@@ -75,15 +99,93 @@ export default function KneeAnatomyViewer({
     medial_meniscus: "",
     lateral_meniscus: "",
     joint_effusion: "",
-    baker_cyst: ""
+    baker_cyst: "",
+    popliteal_artery: "",
+    popliteal_vein: "",
+    distal_tendons: "",
+    popliteal_fossa: ""
   });
 
+  const [activeTab, setActiveTab] = useState<"anterior" | "posterior">("anterior");
   const [activeHover, setActiveHover] = useState<string | null>(null);
   const [selectedStructure, setSelectedStructure] = useState<string>("quadriceps");
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncLogs, setSyncLogs] = useState<string[]>([]);
   const [lastSyncedReport, setLastSyncedReport] = useState<string>("");
   const [useOriginalReportText, setUseOriginalReportText] = useState<boolean>(true);
+
+  // Left-side states and custom descriptions for Bilateral studies
+  const [statesLeft, setStatesLeft] = useState<Record<string, string>>({
+    quadriceps: "no_descrito",
+    patellar: "no_descrito",
+    lcm: "no_descrito",
+    lce: "no_descrito",
+    medial_meniscus: "no_descrito",
+    lateral_meniscus: "no_descrito",
+    joint_effusion: "no_descrito",
+    baker_cyst: "no_descrito",
+    popliteal_artery: "no_descrito",
+    popliteal_vein: "no_descrito",
+    distal_tendons: "no_descrito",
+    popliteal_fossa: "no_descrito"
+  });
+
+  const [customDescriptionsLeft, setCustomDescriptionsLeft] = useState<Record<string, string>>({
+    quadriceps: "",
+    patellar: "",
+    lcm: "",
+    lce: "",
+    medial_meniscus: "",
+    lateral_meniscus: "",
+    joint_effusion: "",
+    baker_cyst: "",
+    popliteal_artery: "",
+    popliteal_vein: "",
+    distal_tendons: "",
+    popliteal_fossa: ""
+  });
+
+  const [activeSide, setActiveSide] = useState<"derecho" | "izquierdo">("derecho");
+
+  const activeSts = laterality === "Bilateral" && activeSide === "izquierdo" ? statesLeft : states;
+  const activeDescs = laterality === "Bilateral" && activeSide === "izquierdo" ? customDescriptionsLeft : customDescriptions;
+
+  useEffect(() => {
+    if (externalStates && Object.keys(externalStates).length > 0) {
+      setStates(prev => {
+        const changed = Object.keys(externalStates).some(key => externalStates[key] !== prev[key]);
+        return changed ? { ...prev, ...externalStates } : prev;
+      });
+    }
+  }, [externalStates]);
+
+  useEffect(() => {
+    if (externalDescriptions && Object.keys(externalDescriptions).length > 0) {
+      setCustomDescriptions(prev => {
+        const changed = Object.keys(externalDescriptions).some(key => externalDescriptions[key] !== prev[key]);
+        return changed ? { ...prev, ...externalDescriptions } : prev;
+      });
+    }
+  }, [externalDescriptions]);
+
+  // Synchronize left-side props with statesLeft
+  useEffect(() => {
+    if (externalStatesLeft && Object.keys(externalStatesLeft).length > 0) {
+      setStatesLeft(prev => {
+        const changed = Object.keys(externalStatesLeft).some(key => externalStatesLeft[key] !== prev[key]);
+        return changed ? { ...prev, ...externalStatesLeft } : prev;
+      });
+    }
+  }, [externalStatesLeft]);
+
+  useEffect(() => {
+    if (externalDescriptionsLeft && Object.keys(externalDescriptionsLeft).length > 0) {
+      setCustomDescriptionsLeft(prev => {
+        const changed = Object.keys(externalDescriptionsLeft).some(key => externalDescriptionsLeft[key] !== prev[key]);
+        return changed ? { ...prev, ...externalDescriptionsLeft } : prev;
+      });
+    }
+  }, [externalDescriptionsLeft]);
 
   // Synchronize states to parent if callback is provided
   useEffect(() => {
@@ -97,6 +199,19 @@ export default function KneeAnatomyViewer({
       onChangeDescriptions(customDescriptions);
     }
   }, [customDescriptions, onChangeDescriptions]);
+
+  // Synchronize left-side states to parent
+  useEffect(() => {
+    if (onChangeStatesLeft) {
+      onChangeStatesLeft(statesLeft);
+    }
+  }, [statesLeft, onChangeStatesLeft]);
+
+  useEffect(() => {
+    if (onChangeDescriptionsLeft) {
+      onChangeDescriptionsLeft(customDescriptionsLeft);
+    }
+  }, [customDescriptionsLeft, onChangeDescriptionsLeft]);
 
   // Unified helper that supports Spanish spelling variations, abbreviations, and common typos
   const getStructureKeywords = (id: string): string[] => {
@@ -152,6 +267,14 @@ export default function KneeAnatomyViewer({
           "quiste en fosa poplítea", "colección líquida en fosa poplítea",
           "semimembranoso-gemelo"
         ];
+      case "popliteal_artery":
+        return ["arteria poplitea", "arteria poplítea", "a. poplitea", "luz arterial poplitea"];
+      case "popliteal_vein":
+        return ["vena poplitea", "vena poplítea", "v. poplitea", "permeabilidad venosa poplitea", "trombosis venosa poplitea"];
+      case "distal_tendons":
+        return ["tendones distales", "tendon semitendinoso", "semimembranoso", "biceps femoral distal", "semitendinoso distal", "semimembranoso distal", "biceps distal"];
+      case "popliteal_fossa":
+        return ["fosa poplitea", "fosa poplítea", "hueco popliteo", "hueco poplíteo", "quiste popliteo"];
       default:
         return [];
     }
@@ -556,6 +679,10 @@ export default function KneeAnatomyViewer({
       case "lateral_meniscus": return "Menisco Lateral";
       case "joint_effusion": return "Derrame Articular";
       case "baker_cyst": return "Quiste de Baker";
+      case "popliteal_artery": return "Arteria Poplítea";
+      case "popliteal_vein": return "Vena Poplítea";
+      case "distal_tendons": return "Tendones Distales del Muslo";
+      case "popliteal_fossa": return "Fosa Poplítea";
       default: return id;
     }
   };
@@ -564,7 +691,10 @@ export default function KneeAnatomyViewer({
     const updatedStates: Record<string, string> = { ...states };
     const updatedDescriptions: Record<string, string> = { ...customDescriptions };
 
-    const structureKeys = ["quadriceps", "patellar", "lcm", "lce", "medial_meniscus", "lateral_meniscus", "joint_effusion", "baker_cyst"];
+    const structureKeys = [
+      "quadriceps", "patellar", "lcm", "lce", "medial_meniscus", "lateral_meniscus", "joint_effusion", "baker_cyst",
+      "popliteal_artery", "popliteal_vein", "distal_tendons", "popliteal_fossa"
+    ];
     
     let parsedCount = 0;
     let foundPathologies = 0;
@@ -591,6 +721,10 @@ export default function KneeAnatomyViewer({
 
     setStates(updatedStates);
     setCustomDescriptions(updatedDescriptions);
+    if (laterality === "Bilateral") {
+      setStatesLeft(updatedStates);
+      setCustomDescriptionsLeft(updatedDescriptions);
+    }
     setLastSyncedReport(generatedReport);
   };
 
@@ -647,8 +781,107 @@ export default function KneeAnatomyViewer({
         id: "baker_cyst",
         label: "Quiste de Baker",
         allowedStates: ["no_descrito", "normal", "quiste_leve", "quiste_severo"]
+      },
+      {
+        id: "popliteal_artery",
+        label: "Arteria Poplítea",
+        allowedStates: ["no_descrito", "normal", "ectasia", "ateromatosis", "aneurisma"]
+      },
+      {
+        id: "popliteal_vein",
+        label: "Vena Poplítea",
+        allowedStates: ["no_descrito", "normal", "trombosis", "ectasia", "permisibilidad_reducida"]
+      },
+      {
+        id: "distal_tendons",
+        label: "Tendones Distales del Muslo",
+        allowedStates: ["no_descrito", "normal", "tendinosis", "desgarro_parcial", "desgarro_completo"]
+      },
+      {
+        id: "popliteal_fossa",
+        label: "Fosa Poplítea",
+        allowedStates: ["no_descrito", "normal", "coleccion", "adenopatia"]
       }
     ];
+
+    if (laterality === "Bilateral") {
+      logs.push("Estudio Bilateral detectado en Rodilla. Analizando LADO DERECHO...");
+      try {
+        const responseD = await fetch("/api/analyze-anatomy", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: selectedModel || "gemini-3.5-flash",
+            reportText: generatedReport,
+            studyType: "Rodilla",
+            structures: structures,
+            side: "Derecho"
+          })
+        });
+
+        const dataD = await responseD.json();
+        if (dataD.success && dataD.states && dataD.descriptions) {
+          const finalStatesD = { ...states };
+          const finalDescriptionsD = { ...customDescriptions };
+
+          structures.forEach(struc => {
+            const apiState = dataD.states[struc.id] || "no_descrito";
+            const apiDesc = dataD.descriptions[struc.id] || "No mencionado / No descrito.";
+            finalStatesD[struc.id] = apiState;
+            finalDescriptionsD[struc.id] = apiDesc;
+            if (apiState !== "no_descrito") {
+              logs.push(`[Derecho - ${struc.label}]: ${apiState.toUpperCase()}`);
+            }
+          });
+
+          setStates(finalStatesD);
+          setCustomDescriptions(finalDescriptionsD);
+        }
+      } catch (err: any) {
+        logs.push(`Error analizando lado derecho: ${err.message || String(err)}`);
+      }
+
+      logs.push("Analizando LADO IZQUIERDO...");
+      try {
+        const responseI = await fetch("/api/analyze-anatomy", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: selectedModel || "gemini-3.5-flash",
+            reportText: generatedReport,
+            studyType: "Rodilla",
+            structures: structures,
+            side: "Izquierdo"
+          })
+        });
+
+        const dataI = await responseI.json();
+        if (dataI.success && dataI.states && dataI.descriptions) {
+          const finalStatesI = { ...statesLeft };
+          const finalDescriptionsI = { ...customDescriptionsLeft };
+
+          structures.forEach(struc => {
+            const apiState = dataI.states[struc.id] || "no_descrito";
+            const apiDesc = dataI.descriptions[struc.id] || "No mencionado / No descrito.";
+            finalStatesI[struc.id] = apiState;
+            finalDescriptionsI[struc.id] = apiDesc;
+            if (apiState !== "no_descrito") {
+              logs.push(`[Izquierdo - ${struc.label}]: ${apiState.toUpperCase()}`);
+            }
+          });
+
+          setStatesLeft(finalStatesI);
+          setCustomDescriptionsLeft(finalDescriptionsI);
+        }
+      } catch (err: any) {
+        logs.push(`Error analizando lado izquierdo: ${err.message || String(err)}`);
+      }
+
+      setIsSyncing(false);
+      setSyncLogs(prev => [...prev, ...logs]);
+      setLastSyncedReport(generatedReport);
+      return;
+    }
 
     try {
       const response = await fetch("/api/analyze-anatomy", {
@@ -689,7 +922,7 @@ export default function KneeAnatomyViewer({
         setStates(finalStates);
         setCustomDescriptions(finalDescriptions);
         setLastSyncedReport(generatedReport);
-        logs.push(`Análisis finalizado con IA. Sincronizadas ${parsedCount} estructuras cumpliendo fidelidad de reporte clínica (${foundPathologies} patologías detectadas).`);
+        logs.push(`Análisis finalizado con IA. Sincronizadas ${parsedCount} estructuras (${foundPathologies} patologías detectadas).`);
       } else {
         logs.push(`[Error API] No se pudo obtener el análisis estructurado. Espere un momento e intente nuevamente.`);
       }
@@ -709,34 +942,68 @@ export default function KneeAnatomyViewer({
   }, [generatedReport]);
 
   const handleUpdateStructureState = (id: string, nextState: string) => {
-    setStates(prev => {
-      const next = { ...prev, [id]: nextState };
-      setSyncLogs(log => [...log, `Cambio manual en ${translateStructureLabelInBrief(id)} -> ${nextState.toUpperCase()}`]);
-      return next;
-    });
+    if (laterality === "Bilateral" && activeSide === "izquierdo") {
+      setStatesLeft(prev => {
+        const next = { ...prev, [id]: nextState };
+        setSyncLogs(log => [...log, `Cambio manual en [Izquierdo] ${translateStructureLabelInBrief(id)} -> ${nextState.toUpperCase()}`]);
+        return next;
+      });
 
-    if (useOriginalReportText) {
-      const currentDesc = customDescriptions[id] || getDefaultDescription(id, nextState);
-      const updatedReportText = updateReportTextWithStructure(id, generatedReport, currentDesc);
-      if (onChangeReport) {
-        onChangeReport(updatedReportText);
+      if (useOriginalReportText) {
+        const currentDesc = customDescriptionsLeft[id] || getDefaultDescription(id, nextState);
+        const updatedReportText = updateReportTextWithStructure(id, generatedReport, currentDesc);
+        if (onChangeReport) {
+          onChangeReport(updatedReportText);
+        }
+      }
+    } else {
+      setStates(prev => {
+        const next = { ...prev, [id]: nextState };
+        setSyncLogs(log => [...log, `Cambio manual en El Derecho ${translateStructureLabelInBrief(id)} -> ${nextState.toUpperCase()}`]);
+        return next;
+      });
+
+      if (useOriginalReportText) {
+        const currentDesc = customDescriptions[id] || getDefaultDescription(id, nextState);
+        const updatedReportText = updateReportTextWithStructure(id, generatedReport, currentDesc);
+        if (onChangeReport) {
+          onChangeReport(updatedReportText);
+        }
       }
     }
   };
 
   const handleUpdateCustomDescription = (id: string, text: string) => {
-    setCustomDescriptions(prev => ({ ...prev, [id]: text }));
-    if (useOriginalReportText) {
-      const updatedReportText = updateReportTextWithStructure(id, generatedReport, text);
-      if (onChangeReport) {
-        onChangeReport(updatedReportText);
+    if (laterality === "Bilateral" && activeSide === "izquierdo") {
+      setCustomDescriptionsLeft(prev => ({ ...prev, [id]: text }));
+      if (useOriginalReportText) {
+        const updatedReportText = updateReportTextWithStructure(id, generatedReport, text);
+        if (onChangeReport) {
+          onChangeReport(updatedReportText);
+        }
+      }
+    } else {
+      setCustomDescriptions(prev => ({ ...prev, [id]: text }));
+      if (useOriginalReportText) {
+        const updatedReportText = updateReportTextWithStructure(id, generatedReport, text);
+        if (onChangeReport) {
+          onChangeReport(updatedReportText);
+        }
       }
     }
   };
 
   const getDefaultDescription = (id: string, state: string): string => {
-    if (state === "no_descrito") return "Estructura no descrita.";
+    if (!state || state === "no_descrito") return "Estructura no descrita.";
     if (state === "normal") return "Dentro de límites normales.";
+    const standardStates = [
+      "normal", "no_descrito", "tendinosis", "desgarro_parcial", "desgarro_completo", "esguince_leve",
+      "meniscosis", "rotura", "derrame_leve", "derrame_moderado", "quiste_leve", "quiste_severo",
+      "ectasia", "ateromatosis", "aneurisma", "trombosis", "permisibilidad_reducida", "coleccion", "adenopatia"
+    ];
+    if (!standardStates.includes(state)) {
+      return `Se describe hallazgo: ${state.charAt(0).toUpperCase() + state.slice(1)}.`;
+    }
 
     switch (id) {
       case "quadriceps":
@@ -775,17 +1042,45 @@ export default function KneeAnatomyViewer({
         if (state === "quiste_leve") return "Pequeña colección fluida lobulada delimitada en el espacio poplíteo profundo.";
         if (state === "quiste_severo") return "Quiste de Baker voluminoso con distensión de los límites y riesgo de ruptura.";
         break;
+      case "popliteal_artery":
+        if (state === "ectasia") return "Dilatación focal leve del calibre de la arteria poplítea sin evidencia de trombo mural.";
+        if (state === "ateromatosis") return "Presencia de placas de ateroma calcificadas/blandas en la pared de la arteria poplítea con flujo conservado.";
+        if (state === "aneurisma") return "Focalización aneurismática mayor de 2cm con riesgo tromboembólico en fosa poplítea.";
+        break;
+      case "popliteal_vein":
+        if (state === "trombosis") return "Defecto de llenado intraluminal completo con ausencia de señal Doppler e incompresibilidad venosa poplítea.";
+        if (state === "ectasia") return "Dilatación pasiva del vaso venoso poplíteo con conservación de válvulas y flujo fásico lento.";
+        if (state === "permisibilidad_reducida") return "Compresión extrínseca o estrechamiento intraluminal parcial con flujo Doppler amortiguado.";
+        break;
+      case "distal_tendons":
+        if (state === "tendinosis") return "Engrosamiento e hipoecogenicidad insercional de los tendones distales de la corva.";
+        if (state === "desgarro_parcial") return "Pérdida focal de patrón fibrilar con colección fluida laminar peritendinosa.";
+        if (state === "desgarro_completo") return "Ruptura insercional distal completa del bíceps femoral / semitendinoso.";
+        break;
+      case "popliteal_fossa":
+        if (state === "coleccion") return "Colección hipoecoica/anecoica organizada en los planos grasos profundos de la fosa poplítea.";
+        if (state === "adenopatia") return "Presencia de ganglios linfáticos aumentados de tamaño con pérdida de hilio graso fisiológico.";
+        break;
     }
     return "Alteración estructural.";
   };
 
   const getSimplifiedDescription = (id: string, forcedState?: string): string => {
-    const state = forcedState !== undefined ? forcedState : (states[id] || "no_descrito");
+    const state = forcedState !== undefined ? forcedState : (activeSts[id] || "no_descrito");
     if (state === "no_descrito") {
       return "No mencionado / No descrito en el reporte.";
     }
     if (state === "normal") {
       return "Dentro de límites normales.";
+    }
+
+    const standardStates = [
+      "normal", "no_descrito", "tendinosis", "desgarro_parcial", "desgarro_completo", "esguince_leve",
+      "meniscosis", "rotura", "derrame_leve", "derrame_moderado", "quiste_leve", "quiste_severo",
+      "ectasia", "ateromatosis", "aneurisma", "trombosis", "permisibilidad_reducida", "coleccion", "adenopatia"
+    ];
+    if (state && !standardStates.includes(state)) {
+      return `Se describe hallazgo: ${state.charAt(0).toUpperCase() + state.slice(1)}.`;
     }
 
     switch (id) {
@@ -872,10 +1167,33 @@ export default function KneeAnatomyViewer({
           return "Quiste de Baker voluminoso delimitado en fosa poplítea profunda.";
         }
         break;
+
+      case "popliteal_artery":
+        if (state === "ectasia") return "Dilatación leve de la arteria poplítea.";
+        if (state === "ateromatosis") return "Ateromatosis parietal en la arteria poplítea sin estenosis hemodinámica.";
+        if (state === "aneurisma") return "Aneurisma fusiforme de la arteria poplítea.";
+        break;
+
+      case "popliteal_vein":
+        if (state === "trombosis") return "Trombosis venosa profunda (TVP) en vena poplítea con incompresibilidad de la luz.";
+        if (state === "ectasia") return "Ectasia pasiva / dilatación venosa poplítea.";
+        if (state === "permisibilidad_reducida") return "Flujo venoso poplíteo disminuido por compresión o parcial alteración intraluminal.";
+        break;
+
+      case "distal_tendons":
+        if (state === "tendinosis") return "Tendinosis/tendinopatía de la inserción distal de los isquiotibiales.";
+        if (state === "desgarro_parcial") return "Desgarro de espesor parcial proximal/de la unión de tendones isquiotibiales distales.";
+        if (state === "desgarro_completo") return "Desgarro completo y ruptura insercional del tendón del semimembranoso / bíceps distal.";
+        break;
+
+      case "popliteal_fossa":
+        if (state === "coleccion") return "Colección líquida inflamatoria organizada en la fosa poplítea.";
+        if (state === "adenopatia") return "Ganglio linfático / adenopatía reactiva en fosa poplítea.";
+        break;
     }
 
     // Fallback block if any other custom description exists, we capitalize and clean it
-    const rawDesc = customDescriptions[id];
+    const rawDesc = activeDescs[id];
     if (!rawDesc || rawDesc.trim() === "") {
       return "Dentro de límites normales.";
     }
@@ -889,8 +1207,9 @@ export default function KneeAnatomyViewer({
     return desc;
   };
 
-  const getColorForSVG = (id: string) => {
-    const s = states[id] || "no_descrito";
+  const getColorForSVGOuter = (id: string, side?: "derecho" | "izquierdo") => {
+    const sideSts = laterality === "Bilateral" && (side || activeSide) === "izquierdo" ? statesLeft : states;
+    const s = sideSts[id] || "no_descrito";
     
     if (s === "no_descrito") {
       return {
@@ -923,13 +1242,17 @@ export default function KneeAnatomyViewer({
       };
     }
 
-    return { fill: "#1e293b", stroke: "#475569" };
+    // Fallback pathological styling for custom findings
+    return {
+      fill: activeHover === id ? "rgba(244, 63, 94, 0.65)" : "rgba(244, 63, 94, 0.35)",
+      stroke: "#f43f5e"
+    };
   };
 
   // Compile 2-Column Markdown table for inclusion in active reports
   const generateTableMarkdown = () => {
-    let md = "| Estructura | Hallazgos |\n";
-    md += "| :--- | :--- |\n";
+    let md = "| Estructura | Lado | Hallazgos |\n";
+    md += "| :--- | :---| :--- |\n";
 
     const rows = [
       { id: "quadriceps", label: "Tendón Cuadricipital" },
@@ -939,20 +1262,41 @@ export default function KneeAnatomyViewer({
       { id: "medial_meniscus", label: "Menisco Medial" },
       { id: "lateral_meniscus", label: "Menisco Lateral" },
       { id: "joint_effusion", label: "Derrame Articular" },
-      { id: "baker_cyst", label: "Quiste de Baker" }
+      { id: "baker_cyst", label: "Quiste de Baker" },
+      { id: "popliteal_artery", label: "Arteria Poplítea" },
+      { id: "popliteal_vein", label: "Vena Poplítea" },
+      { id: "distal_tendons", label: "Tendones Distales" },
+      { id: "popliteal_fossa", label: "Fosa Poplítea" }
     ];
 
     let hasRows = false;
-    rows.forEach(row => {
-      if (states[row.id] !== "no_descrito") {
-        const desc = customDescriptions[row.id]?.trim() || getSimplifiedDescription(row.id);
-        md += `| **${row.label}** | ${desc} |\n`;
-        hasRows = true;
-      }
-    });
+    if (laterality === "Bilateral") {
+      rows.forEach(row => {
+        if (states[row.id] !== "no_descrito" && states[row.id] !== "normal") {
+          const desc = customDescriptions[row.id]?.trim() || getSimplifiedDescription(row.id, states[row.id]);
+          md += `| **${row.label}** | Derecho | ${desc} |\n`;
+          hasRows = true;
+        }
+      });
+      rows.forEach(row => {
+        if (statesLeft[row.id] !== "no_descrito" && statesLeft[row.id] !== "normal") {
+          const desc = customDescriptionsLeft[row.id]?.trim() || getSimplifiedDescription(row.id, statesLeft[row.id]);
+          md += `| **${row.label}** | Izquierdo | ${desc} |\n`;
+          hasRows = true;
+        }
+      });
+    } else {
+      rows.forEach(row => {
+        if (states[row.id] !== "no_descrito" && states[row.id] !== "normal") {
+          const desc = customDescriptions[row.id]?.trim() || getSimplifiedDescription(row.id, states[row.id]);
+          md += `| **${row.label}** | - | ${desc} |\n`;
+          hasRows = true;
+        }
+      });
+    }
 
     if (!hasRows) {
-      md += `| *Sin hallazgos descritos* | *Consulte el texto completo del reporte* |\n`;
+      md = "| Estructura | Hallazgos |\n| :--- | :--- |\n| *Sin hallazgos patológicos* | *Todas las estructuras de la rodilla se reportan de características normales.* |\n";
     }
 
     return md;
@@ -962,22 +1306,52 @@ export default function KneeAnatomyViewer({
     const list = [
       { id: "quadriceps", label: "Tendón Cuadricipital" },
       { id: "patellar", label: "Tendón Rotuliano" },
-      { id: "lcm", label: "Ligamento Colateral Medial (LCM)" },
-      { id: "lce", label: "Ligamento Colateral Lateral (LCE)" },
+      { id: "lcm", label: "Ligamento Colateral Medial" },
+      { id: "lce", label: "Ligamento Colateral Lateral" },
       { id: "medial_meniscus", label: "Menisco Medial" },
       { id: "lateral_meniscus", label: "Menisco Lateral" },
-      { id: "joint_effusion", label: "Derrame Receso Suprapatelar" },
-      { id: "baker_cyst", label: "Quiste de Baker" }
+      { id: "joint_effusion", label: "Derrame Articular" },
+      { id: "baker_cyst", label: "Quiste de Baker" },
+      { id: "popliteal_artery", label: "Arteria Poplítea" },
+      { id: "popliteal_vein", label: "Vena Poplítea" },
+      { id: "distal_tendons", label: "Tendones Distales" },
+      { id: "popliteal_fossa", label: "Fosa Poplítea" }
     ];
 
     let md = "";
-    list.forEach(item => {
-      if (states[item.id] !== "no_descrito") {
-        const statusText = states[item.id] === "normal" ? "Normal" : "Alterado / Lesión";
-        const desc = customDescriptions[item.id]?.trim() || getSimplifiedDescription(item.id);
-        md += `* **${item.label}** [${statusText.toUpperCase()}]: ${desc}\n`;
-      }
-    });
+    if (laterality === "Bilateral") {
+      md += "##### LADO DERECHO:\n";
+      let hasD = false;
+      list.forEach(item => {
+        if (states[item.id] !== "no_descrito") {
+          const statusText = states[item.id] === "normal" ? "Normal" : "Alterado/Lesión";
+          const desc = customDescriptions[item.id]?.trim() || getSimplifiedDescription(item.id, states[item.id]);
+          md += `* **${item.label}** [${statusText.toUpperCase()}]: ${desc}\n`;
+          hasD = true;
+        }
+      });
+      if (!hasD) md += "* Sin anomalías descritas.\n";
+
+      md += "\n##### LADO IZQUIERDO:\n";
+      let hasI = false;
+      list.forEach(item => {
+        if (statesLeft[item.id] !== "no_descrito") {
+          const statusText = statesLeft[item.id] === "normal" ? "Normal" : "Alterado/Lesión";
+          const desc = customDescriptionsLeft[item.id]?.trim() || getSimplifiedDescription(item.id, statesLeft[item.id]);
+          md += `* **${item.label}** [${statusText.toUpperCase()}]: ${desc}\n`;
+          hasI = true;
+        }
+      });
+      if (!hasI) md += "* Sin anomalías descritas.\n";
+    } else {
+      list.forEach(item => {
+        if (states[item.id] !== "no_descrito") {
+          const statusText = states[item.id] === "normal" ? "Normal" : "Alterado/Lesión";
+          const desc = customDescriptions[item.id]?.trim() || getSimplifiedDescription(item.id, states[item.id]);
+          md += `* **${item.label}** [${statusText.toUpperCase()}]: ${desc}\n`;
+        }
+      });
+    }
 
     if (!md) {
       md = "* *No se han configurado hallazgos o anatomía específica.*";
@@ -989,11 +1363,11 @@ export default function KneeAnatomyViewer({
   const getSeverityBadge = (s: string) => {
     if (s === "no_descrito") return "bg-slate-900 text-slate-500 border-slate-850";
     if (s === "normal") return "bg-emerald-950/40 text-emerald-400 border-emerald-900/30";
-    if (s === "tendinosis" || s === "esguince_leve" || s === "meniscosis" || s === "derrame_leve" || s === "quiste_leve") {
+    if (s === "tendinosis" || s === "esguince_leve" || s === "meniscosis" || s === "derrame_leve" || s === "quiste_leve" || s === "ectasia" || s === "ateromatosis") {
       return "bg-amber-950/40 text-amber-500 border-amber-900/40";
     }
-    if (s === "desgarro_parcial") return "bg-pink-950/40 text-pink-500 border-pink-900/40";
-    if (s === "desgarro_completo" || s === "rotura" || s === "derrame_moderado" || s === "quiste_severo") {
+    if (s === "desgarro_parcial" || s === "permisibilidad_reducida" || s === "coleccion" || s === "adenopatia") return "bg-pink-950/40 text-pink-500 border-pink-900/40";
+    if (s === "desgarro_completo" || s === "rotura" || s === "derrame_moderado" || s === "quiste_severo" || s === "trombosis" || s === "aneurisma") {
       return "bg-rose-950/50 text-rose-500 border-rose-900/50";
     }
     return "bg-slate-900 text-slate-400 border-slate-800";
@@ -1002,9 +1376,9 @@ export default function KneeAnatomyViewer({
   const getClinicalImpact = (s: string) => {
     if (s === "no_descrito") return "Presencia no especificada.";
     if (s === "normal") return "Sin impacto clínico";
-    if (s === "tendinosis" || s === "esguince_leve" || s === "meniscosis" || s === "derrame_leve" || s === "quiste_leve") return "Leve / Moderado";
-    if (s === "desgarro_parcial") return "Significativo";
-    if (s === "desgarro_completo" || s === "rotura" || s === "derrame_moderado" || s === "quiste_severo") return "Severo / Clínicamente Crítico";
+    if (s === "tendinosis" || s === "esguince_leve" || s === "meniscosis" || s === "derrame_leve" || s === "quiste_leve" || s === "ectasia" || s === "ateromatosis") return "Leve / Moderado";
+    if (s === "desgarro_parcial" || s === "permisibilidad_reducida" || s === "coleccion" || s === "adenopatia") return "Significativo";
+    if (s === "desgarro_completo" || s === "rotura" || s === "derrame_moderado" || s === "quiste_severo" || s === "trombosis" || s === "aneurisma") return "Severo / Clínicamente Crítico";
     return "Moderado";
   };
 
@@ -1019,7 +1393,11 @@ export default function KneeAnatomyViewer({
         medial_meniscus: "no_descrito",
         lateral_meniscus: "no_descrito",
         joint_effusion: "no_descrito",
-        baker_cyst: "no_descrito"
+        baker_cyst: "no_descrito",
+        popliteal_artery: "no_descrito",
+        popliteal_vein: "no_descrito",
+        distal_tendons: "no_descrito",
+        popliteal_fossa: "no_descrito"
       });
       setCustomDescriptions({
         quadriceps: "",
@@ -1029,10 +1407,394 @@ export default function KneeAnatomyViewer({
         medial_meniscus: "",
         lateral_meniscus: "",
         joint_effusion: "",
-        baker_cyst: ""
+        baker_cyst: "",
+        popliteal_artery: "",
+        popliteal_vein: "",
+        distal_tendons: "",
+        popliteal_fossa: ""
       });
       setSyncLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: Restablecidos todos los mapeos de rodilla`]);
     }
+  };
+
+  const renderKneeSvg = (side: "derecho" | "izquierdo", tab: "anterior" | "posterior") => {
+    const isIzqui = side === "izquierdo";
+    const localStates = laterality === "Bilateral" && side === "izquierdo" ? statesLeft : states;
+    const getColorForSVG = (id: string) => getColorForSVGOuter(id, side);
+
+    const renderWithContext = (states: any) => {
+      if (tab === "anterior") {
+        return (
+        <svg 
+          id={isIzqui ? "knee-anatomy-svg-left" : "knee-anatomy-svg"}
+          viewBox="0 0 350 350" 
+          className="w-full max-w-[300px] h-auto drop-shadow-2xl mx-auto"
+          style={{ maxHeight: "310px" }}
+        >
+          <defs>
+            <linearGradient id={`boneKneeGrad-${side}`} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#2e3d52" />
+              <stop offset="100%" stopColor="#111827" />
+            </linearGradient>
+            <linearGradient id={`patellaGrad-${side}`} x1="0%" y1="0%" x2="100%" y2="50%">
+              <stop offset="0%" stopColor="#3d4e66" />
+              <stop offset="100%" stopColor="#1e293b" />
+            </linearGradient>
+            <pattern id={`stripeKneePattern-${side}`} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+              <line x1="0" y1="0" x2="0" y2="6" stroke="#f43f5e" strokeWidth="2.5" />
+            </pattern>
+          </defs>
+
+          {/* Background structural guidelines - Grid/Circle */}
+          <circle cx="175" cy="175" r="145" fill="none" stroke="#1e293b" strokeWidth="1" strokeDasharray="3,6" />
+          <line x1="175" y1="20" x2="175" y2="330" stroke="#1e293b" strokeWidth="1" strokeDasharray="2,8" />
+          <line x1="20" y1="175" x2="330" y2="175" stroke="#1e293b" strokeWidth="1" strokeDasharray="2,8" />
+
+          {/* BONES BLOCK */}
+          {/* Femur (Distal) */}
+          <path 
+            d="M 125,30 L 125,120 C 125,130 110,135 110,150 C 110,168 135,178 155,172 C 165,168 175,158 175,158 C 175,158 185,168 195,172 C 215,178 240,168 240,150 C 240,135 225,130 225,120 L 225,30 Z" 
+            fill={`url(#boneKneeGrad-${side})`} 
+            stroke="#334155" 
+            strokeWidth="1.5" 
+          />
+          <text x="175" y="55" fill="#475569" fontSize="8" fontWeight="bold" textAnchor="middle">FÉMUR</text>
+
+          {/* Tibia (Proximal) */}
+          <path 
+            d="M 130,320 L 130,225 C 130,215 120,210 120,198 C 120,192 135,188 152,192 C 160,194 175,200 175,200 C 175,200 190,194 198,192 C 215,188 230,192 230,198 C 230,210 220,215 220,225 L 220,320 Z" 
+            fill={`url(#boneKneeGrad-${side})`} 
+            stroke="#334155" 
+            strokeWidth="1.5" 
+          />
+          <text x="175" y="295" fill="#475569" fontSize="8" fontWeight="bold" textAnchor="middle">TIBIA</text>
+
+          {/* Fibula / Peroné (Lateral is shown on the Left side visually for the right knee, active side X<175 is medial) */}
+          {/* Let's place it on the Right side visually (X > 220) */}
+          <path 
+            d="M 233,230 L 243,222 C 248,222 254,228 254,236 L 252,320 L 235,320 Z" 
+            fill={`url(#boneKneeGrad-${side})`} 
+            stroke="#334155" 
+            strokeWidth="1.2" 
+          />
+          <text x="245" y="275" fill="#3b4b5e" fontSize="7" fontStyle="italic" textAnchor="middle">Peroné</text>
+
+          {/* ACTIVE PATHWAYS / EVAL KEYS */}
+
+          {/* 1. Receso Suprapatelar / Derrame Articular */}
+          <g 
+            className="cursor-pointer transition-all duration-200"
+            onClick={() => setSelectedStructure("joint_effusion")}
+            onMouseEnter={() => setActiveHover("joint_effusion")}
+            onMouseLeave={() => setActiveHover(null)}
+          >
+            <path 
+              d="M 148,65 C 160,50 190,50 202,65 C 206,75 204,95 195,100 C 185,105 165,105 155,100 C 146,95 144,75 148,65 Z" 
+              fill={getColorForSVG("joint_effusion").fill} 
+              stroke={getColorForSVG("joint_effusion").stroke} 
+              strokeWidth={states.joint_effusion !== "normal" ? "3" : "1"}
+              fillOpacity={states.joint_effusion !== "normal" ? "0.6" : "0.15"}
+              strokeDasharray={states.joint_effusion === "derrame_leve" ? "3,3" : "none"}
+            />
+            <line x1="175" y1="62" x2="115" y2="62" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
+            <circle cx="175" cy="62" r="2" fill="#81a1c1" />
+          </g>
+
+          {/* 2. Tendón Cuadricipital */}
+          <g 
+            className="cursor-pointer transition-all duration-200"
+            onClick={() => setSelectedStructure("quadriceps")}
+            onMouseEnter={() => setActiveHover("quadriceps")}
+            onMouseLeave={() => setActiveHover(null)}
+          >
+            <path 
+              d="M 154,40 L 196,40 L 193,86 L 157,86 Z" 
+              fill={getColorForSVG("quadriceps").fill} 
+              stroke={getColorForSVG("quadriceps").stroke} 
+              strokeWidth={states.quadriceps !== "normal" ? "3.5" : "1.5"}
+              fillOpacity={states.quadriceps !== "normal" ? "0.6" : "0.2"}
+              strokeDasharray={states.quadriceps === "tendinosis" ? "2,2" : "none"}
+            />
+            <line x1="175" y1="50" x2="230" y2="50" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
+            <circle cx="175" cy="50" r="2" fill="#81a1c1" />
+          </g>
+
+          {/* 3. Rótula / Patella (Neutral / Reference) */}
+          <path 
+            d="M 152,88 C 165,83 185,83 198,88 C 206,102 206,122 196,134 C 185,142 165,142 154,134 C 144,122 144,102 152,88 Z" 
+            fill={`url(#patellaGrad-${side})`} 
+            stroke="#475569" 
+            strokeWidth="1.5" 
+          />
+          <text x="175" y="114" fill="#cbd5e1" fontSize="7.5" fontWeight="bold" textAnchor="middle">RÓTULA</text>
+
+          {/* 4. Meniscos (Interpuestos en el espacio articular) */}
+          {/* Menisco Medial (Left visually X < 175) */}
+          <g 
+            className="cursor-pointer transition-all duration-200"
+            onClick={() => setSelectedStructure("medial_meniscus")}
+            onMouseEnter={() => setActiveHover("medial_meniscus")}
+            onMouseLeave={() => setActiveHover(null)}
+          >
+            <path 
+              d="M 124,175 C 138,175 148,177 151,182 C 144,185 132,185 124,181 C 120,180 120,177 124,175 Z" 
+              fill={getColorForSVG("medial_meniscus").fill} 
+              stroke={getColorForSVG("medial_meniscus").stroke} 
+              strokeWidth={states.medial_meniscus !== "normal" ? "2.5" : "1.2"}
+            />
+            <line x1="135" y1="178" x2="90" y2="178" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
+            <circle cx="135" cy="178" r="2" fill="#81a1c1" />
+          </g>
+
+          {/* Menisco Lateral (Right visually X > 175) */}
+          <g 
+            className="cursor-pointer transition-all duration-200"
+            onClick={() => setSelectedStructure("lateral_meniscus")}
+            onMouseEnter={() => setActiveHover("lateral_meniscus")}
+            onMouseLeave={() => setActiveHover(null)}
+          >
+            <path 
+              d="M 226,175 C 212,175 202,177 199,182 C 206,185 218,185 226,181 C 230,180 230,177 226,175 Z" 
+              fill={getColorForSVG("lateral_meniscus").fill} 
+              stroke={getColorForSVG("lateral_meniscus").stroke} 
+              strokeWidth={states.lateral_meniscus !== "normal" ? "2.5" : "1.2"}
+            />
+            <line x1="215" y1="178" x2="265" y2="178" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
+            <circle cx="215" cy="178" r="2" fill="#81a1c1" />
+          </g>
+
+          {/* 5. Tendón Rotuliano */}
+          <g 
+            className="cursor-pointer transition-all duration-200"
+            onClick={() => setSelectedStructure("patellar")}
+            onMouseEnter={() => setActiveHover("patellar")}
+            onMouseLeave={() => setActiveHover(null)}
+          >
+            <path 
+              d="M 164,136 L 186,136 C 184,166 182,194 179,206 L 171,206 C 168,194 166,166 164,136 Z" 
+              fill={getColorForSVG("patellar").fill} 
+              stroke={getColorForSVG("patellar").stroke} 
+              strokeWidth={states.patellar !== "normal" ? "3.5" : "1.5"}
+              fillOpacity={states.patellar !== "normal" ? "0.6" : "0.2"}
+              strokeDasharray={states.patellar === "tendinosis" ? "2,2" : "none"}
+            />
+            <line x1="175" y1="165" x2="230" y2="165" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
+            <circle cx="175" cy="165" r="2" fill="#81a1c1" />
+          </g>
+
+          {/* 6. Ligamento Colateral Medial (LCM) */}
+          <g 
+            className="cursor-pointer transition-all duration-200"
+            onClick={() => setSelectedStructure("lcm")}
+            onMouseEnter={() => setActiveHover("lcm")}
+            onMouseLeave={() => setActiveHover(null)}
+          >
+            <path 
+              d="M 112,125 C 114,145 116,165 121,215 L 126,215 C 122,165 119,145 117,125 Z" 
+              fill={getColorForSVG("lcm").fill} 
+              stroke={getColorForSVG("lcm").stroke} 
+              strokeWidth={states.lcm !== "normal" ? "3" : "1.2"}
+              fillOpacity={states.lcm !== "normal" ? "0.6" : "0.2"}
+            />
+            <line x1="115" y1="155" x2="80" y2="155" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
+            <circle cx="115" cy="155" r="2" fill="#81a1c1" />
+          </g>
+
+          {/* 7. Ligamento Colateral Lateral */}
+          <g 
+            className="cursor-pointer transition-all duration-200"
+            onClick={() => setSelectedStructure("lce")}
+            onMouseEnter={() => setActiveHover("lce")}
+            onMouseLeave={() => setActiveHover(null)}
+          >
+            <path 
+              d="M 235,125 C 238,150 241,175 247,222 L 252,221 C 246,175 243,150 240,125 Z" 
+              fill={getColorForSVG("lce").fill} 
+              stroke={getColorForSVG("lce").stroke} 
+              strokeWidth={states.lce !== "normal" ? "3" : "1.2"}
+              fillOpacity={states.lce !== "normal" ? "0.6" : "0.2"}
+            />
+            <line x1="243" y1="155" x2="280" y2="155" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
+            <circle cx="243" cy="155" r="2" fill="#81a1c1" />
+          </g>
+
+          {/* LABELS TEXT GUIDES ON GRAPH */}
+          <text x="55" y="65" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="end">Derrame suprapatelar</text>
+          <text x="52" y="157" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="end">Colateral Medial (LCM)</text>
+          <text x="85" y="181" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="end">Menisco Medial</text>
+
+          <text x="248" y="53" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="start">T. Cuadricipital</text>
+          <text x="286" y="157" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="start">Colateral Lateral (LCE)</text>
+          <text x="248" y="168" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="start">T. Rotuliano</text>
+          <text x="270" y="181" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="start">Menisco Lateral</text>
+
+        </svg>
+      );
+    } else {
+      return (
+        <svg 
+          id={isIzqui ? "knee-anatomy-svg-posterior-left" : "knee-anatomy-svg-posterior"}
+          viewBox="0 0 350 350" 
+          className="w-full max-w-[300px] h-auto drop-shadow-2xl mx-auto"
+          style={{ maxHeight: "310px" }}
+        >
+          <defs>
+            <linearGradient id={`boneKneeGradPost-${side}`} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#2e3d52" />
+              <stop offset="100%" stopColor="#111827" />
+            </linearGradient>
+            <linearGradient id={`veinGrad-${side}`} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#1d4ed8" />
+              <stop offset="100%" stopColor="#1e3a8a" />
+            </linearGradient>
+            <linearGradient id={`arteryGrad-${side}`} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#ef4444" />
+              <stop offset="100%" stopColor="#b91c1c" />
+            </linearGradient>
+          </defs>
+
+          {/* Background structural guidelines */}
+          <circle cx="175" cy="175" r="145" fill="none" stroke="#1e293b" strokeWidth="1" strokeDasharray="3,6" />
+
+          {/* BONES BLOCK (POSTERIOR VIEW) */}
+          {/* Femur (Distal) */}
+          <path 
+            d="M 125,30 L 125,115 C 125,125 110,130 110,145 C 110,165 130,172 145,172 C 160,172 170,160 175,160 C 180,160 190,172 205,172 C 220,172 240,165 240,145 C 240,130 225,125 225,115 L 225,30 Z" 
+            fill={`url(#boneKneeGradPost-${side})`} 
+            stroke="#334155" 
+            strokeWidth="1.5" 
+          />
+          <text x="175" y="55" fill="#475569" fontSize="8" fontWeight="bold" textAnchor="middle">FÉMUR (POSTERIOR)</text>
+
+          {/* Tibia (Proximal) */}
+          <path 
+            d="M 130,320 L 130,225 C 130,212 120,208 120,195 C 120,190 140,188 155,190 C 165,192 175,198 175,198 C 175,198 185,192 195,190 C 210,188 230,190 230,195 C 230,208 220,212 220,225 L 220,320 Z" 
+            fill={`url(#boneKneeGradPost-${side})`} 
+            stroke="#334155" 
+            strokeWidth="1.5" 
+          />
+          <text x="175" y="295" fill="#475569" fontSize="8" fontWeight="bold" textAnchor="middle">TIBIA</text>
+
+          {/* Peroné / Fibula */}
+          <path 
+            d="M 97,230 L 107,222 C 112,222 118,228 118,236 L 116,320 L 99,320 Z" 
+            fill={`url(#boneKneeGradPost-${side})`} 
+            stroke="#334155" 
+            strokeWidth="1.2" 
+          />
+
+          {/* Fosa Poplítea (Diamond-shaped region) */}
+          <g 
+            className="cursor-pointer transition-all duration-200"
+            onClick={() => setSelectedStructure("popliteal_fossa")}
+            onMouseEnter={() => setActiveHover("popliteal_fossa")}
+            onMouseLeave={() => setActiveHover(null)}
+          >
+            <polygon 
+              points="175,125 215,175 175,225 135,175" 
+              fill={getColorForSVG("popliteal_fossa").fill} 
+              stroke={getColorForSVG("popliteal_fossa").stroke} 
+              strokeWidth={states.popliteal_fossa !== "normal" ? "2.5" : "1"}
+              fillOpacity={states.popliteal_fossa !== "normal" ? "0.5" : "0.15"}
+              strokeDasharray={states.popliteal_fossa === "no_descrito" ? "3,3" : "none"}
+            />
+          </g>
+
+          {/* Distal Tendons */}
+          <g 
+            className="cursor-pointer transition-all duration-200"
+            onClick={() => setSelectedStructure("distal_tendons")}
+            onMouseEnter={() => setActiveHover("distal_tendons")}
+            onMouseLeave={() => setActiveHover(null)}
+          >
+            <path 
+              d="M 105,30 Q 115,85 135,140" 
+              fill="none" 
+              stroke={getColorForSVG("distal_tendons").stroke} 
+              strokeWidth={states.distal_tendons !== "normal" ? "6" : "4"} 
+              strokeLinecap="round"
+              opacity={states.distal_tendons === "no_descrito" ? "0.3" : "1"}
+            />
+            <path 
+              d="M 245,30 Q 235,85 215,130" 
+              fill="none" 
+              stroke={getColorForSVG("distal_tendons").stroke} 
+              strokeWidth={states.distal_tendons !== "normal" ? "6" : "4"} 
+              strokeLinecap="round"
+              opacity={states.distal_tendons === "no_descrito" ? "0.3" : "1"}
+            />
+          </g>
+
+          {/* Arteria Poplítea */}
+          <g 
+            className="cursor-pointer transition-all duration-200"
+            onClick={() => setSelectedStructure("popliteal_artery")}
+            onMouseEnter={() => setActiveHover("popliteal_artery")}
+            onMouseLeave={() => setActiveHover(null)}
+          >
+            <path 
+              d="M 170,30 L 170,320" 
+              fill="none" 
+              stroke={states.popliteal_artery === "no_descrito" ? "#ef4444" : getColorForSVG("popliteal_artery").stroke} 
+              strokeWidth={states.popliteal_artery !== "normal" && states.popliteal_artery !== "no_descrito" ? "6" : "3.5"} 
+              opacity={states.popliteal_artery === "no_descrito" ? "0.2" : "0.95"}
+            />
+            {states.popliteal_artery === "aneurisma" && (
+              <circle cx="170" cy="175" r="14" fill="#ef4444" fillOpacity="0.75" stroke="#b91c1c" strokeWidth="2" />
+            )}
+          </g>
+
+          {/* Vena Poplítea */}
+          <g 
+            className="cursor-pointer transition-all duration-200"
+            onClick={() => setSelectedStructure("popliteal_vein")}
+            onMouseEnter={() => setActiveHover("popliteal_vein")}
+            onMouseLeave={() => setActiveHover(null)}
+          >
+            <path 
+              d="M 182,30 L 182,320" 
+              fill="none" 
+              stroke={states.popliteal_vein === "no_descrito" ? "#3b82f6" : getColorForSVG("popliteal_vein").stroke} 
+              strokeWidth={states.popliteal_vein !== "normal" && states.popliteal_vein !== "no_descrito" ? "6" : "3.5"} 
+              opacity={states.popliteal_vein === "no_descrito" ? "0.2" : "0.95"}
+            />
+            {states.popliteal_vein === "trombosis" && (
+              <rect x="178" y="150" width="8" height="30" fill="#1e3a8a" stroke="#ef4444" strokeWidth="1" />
+            )}
+          </g>
+
+          {/* Baker's Cyst */}
+          <g 
+            className="cursor-pointer transition-all duration-200"
+            onClick={() => setSelectedStructure("baker_cyst")}
+            onMouseEnter={() => setActiveHover("baker_cyst")}
+            onMouseLeave={() => setActiveHover(null)}
+          >
+            <path 
+              d="M 182,185 C 195,178 205,170 215,185 C 225,195 230,225 210,230 C 192,232 182,210 182,185 Z" 
+              fill={getColorForSVG("baker_cyst").fill} 
+              stroke={getColorForSVG("baker_cyst").stroke} 
+              strokeWidth={states.baker_cyst !== "normal" ? "3" : "1"}
+              fillOpacity={states.baker_cyst !== "normal" ? "0.6" : "0.1"}
+            />
+            <line x1="220" y1="210" x2="255" y2="210" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
+            <circle cx="220" cy="210" r="2" fill="#81a1c1" />
+          </g>
+
+          {/* Text labels for posterior view */}
+          <text x="95" y="100" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="end">T. Isquiotibiales</text>
+          <text x="125" y="160" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="end">Fosa Poplítea</text>
+          <text x="145" y="270" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="end">Art. Poplítea</text>
+
+          <text x="210" y="270" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="start">Vena Poplítea</text>
+          <text x="258" y="213" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="start">Quiste de Baker</text>
+
+        </svg>
+      );
+    }
+    };
+
+    return renderWithContext(localStates);
   };
 
   return (
@@ -1072,13 +1834,63 @@ export default function KneeAnatomyViewer({
         </div>
       </div>
 
+      {laterality === "Bilateral" && (
+        <div className="flex gap-1.5 p-1 bg-slate-900/90 border border-slate-800 rounded-xl justify-around self-stretch shadow-inner">
+          <button
+            onClick={() => setActiveSide("derecho")}
+            className={`flex-1 py-1.5 px-3 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+              activeSide === "derecho"
+                ? "bg-indigo-600 text-white shadow-md border border-indigo-400/20"
+                : "text-slate-450 hover:text-slate-200 hover:bg-slate-850"
+            }`}
+          >
+            LADO DERECHO (Derecho)
+          </button>
+          <button
+            onClick={() => setActiveSide("izquierdo")}
+            className={`flex-1 py-1.5 px-3 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+              activeSide === "izquierdo"
+                ? "bg-indigo-600 text-white shadow-md border border-indigo-400/20"
+                : "text-slate-450 hover:text-slate-200 hover:bg-slate-850"
+            }`}
+          >
+            LADO IZQUIERDO (Izquierdo)
+          </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         
         {/* LEFT COLUMN: INTERACTIVE DRAWING (5 cols) */}
         <div className="lg:col-span-5 bg-slate-950/40 rounded-2xl border border-slate-850 p-4 flex flex-col items-center justify-between min-h-[380px] relative">
           
-          <div className="absolute top-3 left-3 bg-slate-900/80 px-2.5 py-1 rounded-lg border border-slate-800 text-[8px] font-black text-indigo-400 uppercase tracking-widest font-mono">
-            VISTA ANTERIOR DE LA RODILLA
+          <div className="absolute top-2.5 left-2.5 bg-slate-950/90 p-1 rounded-xl border border-slate-800 flex gap-1 z-10">
+            <button
+              onClick={() => {
+                setActiveTab("anterior");
+                setSelectedStructure("quadriceps");
+              }}
+              className={`px-2.5 py-1 text-[8px] uppercase tracking-wider font-extrabold rounded-lg font-mono transition-all cursor-pointer ${
+                activeTab === "anterior" 
+                  ? "bg-indigo-600 text-white shadow-md border border-indigo-400/20" 
+                  : "text-slate-400 hover:bg-slate-900"
+              }`}
+            >
+              Anterior
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab("posterior");
+                setSelectedStructure("popliteal_artery");
+              }}
+              className={`px-2.5 py-1 text-[8px] uppercase tracking-wider font-extrabold rounded-lg font-mono transition-all cursor-pointer ${
+                activeTab === "posterior" 
+                  ? "bg-indigo-600 text-white shadow-md border border-indigo-400/20" 
+                  : "text-slate-400 hover:bg-slate-900"
+              }`}
+            >
+              Posterior
+            </button>
           </div>
 
           <div className="absolute top-3 right-3 flex items-center gap-1 bg-slate-900/85 px-2 py-0.5 rounded border border-slate-800 text-[8px] font-bold text-slate-500 uppercase font-mono">
@@ -1087,230 +1899,42 @@ export default function KneeAnatomyViewer({
           </div>
 
           {/* Interactive Workspace */}
-          <div className="w-full flex items-center justify-center py-2 mt-7">
-            <svg 
-              id="knee-anatomy-svg"
-              viewBox="0 0 350 350" 
-              className="w-full max-w-[300px] h-auto drop-shadow-2xl"
-              style={{ maxHeight: "310px" }}
-            >
-              <defs>
-                <linearGradient id="boneKneeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#2e3d52" />
-                  <stop offset="100%" stopColor="#111827" />
-                </linearGradient>
-                <linearGradient id="patellaGrad" x1="0%" y1="0%" x2="100%" y2="50%">
-                  <stop offset="0%" stopColor="#3d4e66" />
-                  <stop offset="100%" stopColor="#1e293b" />
-                </linearGradient>
-                <pattern id="stripeKneePattern" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-                  <line x1="0" y1="0" x2="0" y2="6" stroke="#f43f5e" strokeWidth="2.5" />
-                </pattern>
-              </defs>
-
-              {/* Background structural guidelines - Grid/Circle */}
-              <circle cx="175" cy="175" r="145" fill="none" stroke="#1e293b" strokeWidth="1" strokeDasharray="3,6" />
-              <line x1="175" y1="20" x2="175" y2="330" stroke="#1e293b" strokeWidth="1" strokeDasharray="2,8" />
-              <line x1="20" y1="175" x2="330" y2="175" stroke="#1e293b" strokeWidth="1" strokeDasharray="2,8" />
-
-              {/* BONES BLOCK */}
-              {/* Femur (Distal) */}
-              <path 
-                d="M 125,30 L 125,120 C 125,130 110,135 110,150 C 110,168 135,178 155,172 C 165,168 175,158 175,158 C 175,158 185,168 195,172 C 215,178 240,168 240,150 C 240,135 225,130 225,120 L 225,30 Z" 
-                fill="url(#boneKneeGrad)" 
-                stroke="#334155" 
-                strokeWidth="1.5" 
-              />
-              <text x="175" y="55" fill="#475569" fontSize="8" fontWeight="bold" textAnchor="middle">FÉMUR</text>
-
-              {/* Tibia (Proximal) */}
-              <path 
-                d="M 130,320 L 130,225 C 130,215 120,210 120,198 C 120,192 135,188 152,192 C 160,194 175,200 175,200 C 175,200 190,194 198,192 C 215,188 230,192 230,198 C 230,210 220,215 220,225 L 220,320 Z" 
-                fill="url(#boneKneeGrad)" 
-                stroke="#334155" 
-                strokeWidth="1.5" 
-              />
-              <text x="175" y="295" fill="#475569" fontSize="8" fontWeight="bold" textAnchor="middle">TIBIA</text>
-
-              {/* Fibula / Peroné (Lateral is shown on the Left side visually for the right knee, active side X<175 is medial) */}
-              {/* Let's place it on the Right side visually (X > 220) */}
-              <path 
-                d="M 233,230 L 243,222 C 248,222 254,228 254,236 L 252,320 L 235,320 Z" 
-                fill="url(#boneKneeGrad)" 
-                stroke="#334155" 
-                strokeWidth="1.2" 
-              />
-              <text x="245" y="275" fill="#3b4b5e" fontSize="7" fontStyle="italic" textAnchor="middle">Peroné</text>
-
-              {/* ACTIVE PATHWAYS / EVAL KEYS */}
-
-              {/* 1. Receso Suprapatelar / Derrame Articular */}
-              <g 
-                className="cursor-pointer transition-all duration-200"
-                onClick={() => setSelectedStructure("joint_effusion")}
-                onMouseEnter={() => setActiveHover("joint_effusion")}
-                onMouseLeave={() => setActiveHover(null)}
-              >
-                <path 
-                  d="M 148,65 C 160,50 190,50 202,65 C 206,75 204,95 195,100 C 185,105 165,105 155,100 C 146,95 144,75 148,65 Z" 
-                  fill={getColorForSVG("joint_effusion").fill} 
-                  stroke={getColorForSVG("joint_effusion").stroke} 
-                  strokeWidth={states.joint_effusion !== "normal" ? "3" : "1"}
-                  fillOpacity={states.joint_effusion !== "normal" ? "0.6" : "0.15"}
-                  strokeDasharray={states.joint_effusion === "derrame_leve" ? "3,3" : "none"}
-                />
-                <line x1="175" y1="62" x2="115" y2="62" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-                <circle cx="175" cy="62" r="2" fill="#81a1c1" />
-              </g>
-
-              {/* 2. Tendón Cuadricipital */}
-              <g 
-                className="cursor-pointer transition-all duration-200"
-                onClick={() => setSelectedStructure("quadriceps")}
-                onMouseEnter={() => setActiveHover("quadriceps")}
-                onMouseLeave={() => setActiveHover(null)}
-              >
-                <path 
-                  d="M 154,40 L 196,40 L 193,86 L 157,86 Z" 
-                  fill={getColorForSVG("quadriceps").fill} 
-                  stroke={getColorForSVG("quadriceps").stroke} 
-                  strokeWidth={states.quadriceps !== "normal" ? "3.5" : "1.5"}
-                  fillOpacity={states.quadriceps !== "normal" ? "0.6" : "0.2"}
-                  strokeDasharray={states.quadriceps === "tendinosis" ? "2,2" : "none"}
-                />
-                <line x1="175" y1="50" x2="230" y2="50" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-                <circle cx="175" cy="50" r="2" fill="#81a1c1" />
-              </g>
-
-              {/* 3. Rótula / Patella (Neutral / Reference) */}
-              <path 
-                d="M 152,88 C 165,83 185,83 198,88 C 206,102 206,122 196,134 C 185,142 165,142 154,134 C 144,122 144,102 152,88 Z" 
-                fill="url(#patellaGrad)" 
-                stroke="#475569" 
-                strokeWidth="1.5" 
-              />
-              <text x="175" y="114" fill="#cbd5e1" fontSize="7.5" fontWeight="bold" textAnchor="middle">RÓTULA</text>
-
-              {/* 4. Meniscos (Interpuestos en el espacio articular) */}
-              {/* Menisco Medial (Left visually X < 175) */}
-              <g 
-                className="cursor-pointer transition-all duration-200"
-                onClick={() => setSelectedStructure("medial_meniscus")}
-                onMouseEnter={() => setActiveHover("medial_meniscus")}
-                onMouseLeave={() => setActiveHover(null)}
-              >
-                <path 
-                  d="M 124,175 C 138,175 148,177 151,182 C 144,185 132,185 124,181 C 120,180 120,177 124,175 Z" 
-                  fill={getColorForSVG("medial_meniscus").fill} 
-                  stroke={getColorForSVG("medial_meniscus").stroke} 
-                  strokeWidth={states.medial_meniscus !== "normal" ? "2.5" : "1.2"}
-                />
-                <line x1="135" y1="178" x2="90" y2="178" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-                <circle cx="135" cy="178" r="2" fill="#81a1c1" />
-              </g>
-
-              {/* Menisco Lateral (Right visually X > 175) */}
-              <g 
-                className="cursor-pointer transition-all duration-200"
-                onClick={() => setSelectedStructure("lateral_meniscus")}
-                onMouseEnter={() => setActiveHover("lateral_meniscus")}
-                onMouseLeave={() => setActiveHover(null)}
-              >
-                <path 
-                  d="M 226,175 C 212,175 202,177 199,182 C 206,185 218,185 226,181 C 230,180 230,177 226,175 Z" 
-                  fill={getColorForSVG("lateral_meniscus").fill} 
-                  stroke={getColorForSVG("lateral_meniscus").stroke} 
-                  strokeWidth={states.lateral_meniscus !== "normal" ? "2.5" : "1.2"}
-                />
-                <line x1="215" y1="178" x2="265" y2="178" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-                <circle cx="215" cy="178" r="2" fill="#81a1c1" />
-              </g>
-
-              {/* 5. Tendón Rotuliano */}
-              <g 
-                className="cursor-pointer transition-all duration-200"
-                onClick={() => setSelectedStructure("patellar")}
-                onMouseEnter={() => setActiveHover("patellar")}
-                onMouseLeave={() => setActiveHover(null)}
-              >
-                <path 
-                  d="M 164,136 L 186,136 C 184,166 182,194 179,206 L 171,206 C 168,194 166,166 164,136 Z" 
-                  fill={getColorForSVG("patellar").fill} 
-                  stroke={getColorForSVG("patellar").stroke} 
-                  strokeWidth={states.patellar !== "normal" ? "3.5" : "1.5"}
-                  fillOpacity={states.patellar !== "normal" ? "0.6" : "0.2"}
-                  strokeDasharray={states.patellar === "tendinosis" ? "2,2" : "none"}
-                />
-                <line x1="175" y1="165" x2="230" y2="165" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-                <circle cx="175" cy="165" r="2" fill="#81a1c1" />
-              </g>
-
-              {/* 6. Ligamento Colateral Medial (Slender on the Medial/Left side) */}
-              <g 
-                className="cursor-pointer transition-all duration-200"
-                onClick={() => setSelectedStructure("lcm")}
-                onMouseEnter={() => setActiveHover("lcm")}
-                onMouseLeave={() => setActiveHover(null)}
-              >
-                <path 
-                  d="M 112,125 C 114,145 116,165 121,215 L 126,215 C 122,165 119,145 117,125 Z" 
-                  fill={getColorForSVG("lcm").fill} 
-                  stroke={getColorForSVG("lcm").stroke} 
-                  strokeWidth={states.lcm !== "normal" ? "3" : "1.2"}
-                  fillOpacity={states.lcm !== "normal" ? "0.6" : "0.2"}
-                />
-                <line x1="115" y1="155" x2="80" y2="155" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-                <circle cx="115" cy="155" r="2" fill="#81a1c1" />
-              </g>
-
-              {/* 7. Ligamento Colateral Lateral (Lateral/Right side visually) */}
-              <g 
-                className="cursor-pointer transition-all duration-200"
-                onClick={() => setSelectedStructure("lce")}
-                onMouseEnter={() => setActiveHover("lce")}
-                onMouseLeave={() => setActiveHover(null)}
-              >
-                <path 
-                  d="M 235,125 C 238,150 241,175 247,222 L 252,221 C 246,175 243,150 240,125 Z" 
-                  fill={getColorForSVG("lce").fill} 
-                  stroke={getColorForSVG("lce").stroke} 
-                  strokeWidth={states.lce !== "normal" ? "3" : "1.2"}
-                  fillOpacity={states.lce !== "normal" ? "0.6" : "0.2"}
-                />
-                <line x1="243" y1="155" x2="280" y2="155" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-                <circle cx="243" cy="155" r="2" fill="#81a1c1" />
-              </g>
-
-              {/* 8. Quiste de Baker / Fosa Poplítea (Protrusion left deep side) */}
-              <g 
-                className="cursor-pointer transition-all duration-200"
-                onClick={() => setSelectedStructure("baker_cyst")}
-                onMouseEnter={() => setActiveHover("baker_cyst")}
-                onMouseLeave={() => setActiveHover(null)}
-              >
-                <path 
-                  d="M 90,215 C 75,230 75,260 92,265 C 108,268 114,248 109,235 C 105,220 98,210 90,215 Z" 
-                  fill={getColorForSVG("baker_cyst").fill} 
-                  stroke={getColorForSVG("baker_cyst").stroke} 
-                  strokeWidth={states.baker_cyst !== "normal" ? "3" : "1"}
-                  fillOpacity={states.baker_cyst !== "normal" ? "0.6" : "0.1"}
-                />
-                <line x1="95" y1="235" x2="60" y2="235" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-                <circle cx="95" cy="235" r="2" fill="#81a1c1" />
-              </g>
-
-              {/* LABELS TEXT GUIDES ON GRAPH */}
-              <text x="55" y="65" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="end">Derrame suprapatelar</text>
-              <text x="52" y="157" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="end">Colateral Medial (LCM)</text>
-              <text x="52" y="238" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="end">Quiste de Baker</text>
-              <text x="85" y="181" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="end">Menisco Medial</text>
-
-              <text x="248" y="53" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="start">T. Cuadricipital</text>
-              <text x="286" y="157" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="start">Colateral Lateral (LCE)</text>
-              <text x="248" y="168" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="start">T. Rotuliano</text>
-              <text x="270" y="181" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="start">Menisco Lateral</text>
-
-            </svg>
+          <div className="w-full flex items-center justify-center py-2 mt-7 min-h-[310px]">
+            {laterality === "Bilateral" ? (
+              <>
+                <div 
+                  className="w-full"
+                  style={activeSide === "derecho" ? { display: "block" } : { display: "none" }}
+                >
+                  <div style={activeTab === "anterior" ? { display: "block" } : { display: "none" }}>
+                    {renderKneeSvg("derecho", "anterior")}
+                  </div>
+                  <div style={activeTab === "posterior" ? { display: "block" } : { display: "none" }}>
+                    {renderKneeSvg("derecho", "posterior")}
+                  </div>
+                </div>
+                <div 
+                  className="w-full"
+                  style={activeSide === "izquierdo" ? { display: "block" } : { display: "none" }}
+                >
+                  <div style={activeTab === "anterior" ? { display: "block" } : { display: "none" }}>
+                    {renderKneeSvg("izquierdo", "anterior")}
+                  </div>
+                  <div style={activeTab === "posterior" ? { display: "block" } : { display: "none" }}>
+                    {renderKneeSvg("izquierdo", "posterior")}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={activeTab === "anterior" ? { display: "block" } : { display: "none" }}>
+                  {renderKneeSvg("derecho", "anterior")}
+                </div>
+                <div style={activeTab === "posterior" ? { display: "block" } : { display: "none" }}>
+                  {renderKneeSvg("derecho", "posterior")}
+                </div>
+              </>
+            )}
           </div>
 
           <div className="w-full text-center py-1 mt-1 border-t border-slate-900/40">
@@ -1327,8 +1951,8 @@ export default function KneeAnatomyViewer({
           {/* Active Selection Block */}
           <div className="bg-slate-950/20 rounded-2xl border border-slate-850 p-4 relative">
             <div className="absolute top-3.5 right-4">
-              <span className={`px-2.5 py-0.5 rounded-full border text-[9px] font-black uppercase font-mono ${getSeverityBadge(states[selectedStructure])}`}>
-                {states[selectedStructure].replace("_", " ")}
+              <span className={`px-2.5 py-0.5 rounded-full border text-[9px] font-black uppercase font-mono ${getSeverityBadge(activeSts[selectedStructure])}`}>
+                {activeSts[selectedStructure].replace("_", " ")}
               </span>
             </div>
 
@@ -1339,107 +1963,58 @@ export default function KneeAnatomyViewer({
               </h4>
             </div>
 
-            {/* Quick State Toggle */}
-            <div className="mt-3.5">
-              <p className="text-[10px] text-indigo-300 font-bold uppercase tracking-widest font-mono mb-2">
-                Nivel / Estado Clínico detectado:
-              </p>
-
-              <div className="flex flex-wrap gap-2">
-                {["no_descrito", "normal"].map(st => (
+            {/* Custom State Input */}
+            <div className="mt-4 space-y-1">
+              <label className="text-[10px] text-indigo-300 font-bold uppercase tracking-widest font-mono block">
+                Diagnóstico / Hallazgo Clínico (Sinopsis):
+              </label>
+              <div className="flex flex-col gap-2">
+                <input
+                  type="text"
+                  value={
+                    activeSts[selectedStructure] === "no_descrito" 
+                      ? "" 
+                      : activeSts[selectedStructure] === "normal" 
+                        ? "Normal" 
+                        : activeSts[selectedStructure]
+                  }
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    let nextVal = val;
+                    if (val.trim().toLowerCase() === "normal" || val.trim().toLowerCase() === "sin lesiones") {
+                      nextVal = "normal";
+                    } else if (val.trim() === "") {
+                      nextVal = "no_descrito";
+                    }
+                    handleUpdateStructureState(selectedStructure, nextVal);
+                  }}
+                  placeholder="Escriba el diagnóstico del hallazgo (ej: Tendinosis leve, Ruptura, etc.)"
+                  className="w-full bg-slate-955 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 font-mono focus:outline-none focus:border-indigo-500/50"
+                />
+                <div className="flex gap-2">
                   <button
-                    key={st}
-                    onClick={() => handleUpdateStructureState(selectedStructure, st)}
-                    className={`px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider border rounded-xl transition-all cursor-pointer ${
-                      states[selectedStructure] === st
-                        ? "bg-slate-955 border-indigo-500/50 text-indigo-300 shadow-[0_0_8px_rgba(99,102,241,0.2)]"
-                        : "bg-slate-950 hover:bg-slate-900 border-slate-850 text-slate-400"
+                    type="button"
+                    onClick={() => handleUpdateStructureState(selectedStructure, "normal")}
+                    className={`flex-1 py-1.5 px-3 text-[9px] font-bold uppercase tracking-wider border rounded-xl transition-all cursor-pointer ${
+                      activeSts[selectedStructure] === "normal"
+                        ? "bg-emerald-650 border-emerald-500 text-white shadow"
+                        : "bg-slate-950 hover:bg-slate-900 text-slate-400 border-slate-855"
                     }`}
                   >
-                    {st === "no_descrito" ? "No descrito" : "Sin lesiones / Normal"}
+                    ✓ Cons. Normal
                   </button>
-                ))}
-
-                {/* Pathology States based on structure */}
-                {(selectedStructure === "quadriceps" || selectedStructure === "patellar") && 
-                  ["tendinosis", "desgarro_parcial", "desgarro_completo"].map(st => (
-                    <button
-                      key={st}
-                      onClick={() => handleUpdateStructureState(selectedStructure, st)}
-                      className={`px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider border rounded-xl transition-all cursor-pointer ${
-                        states[selectedStructure] === st
-                          ? "bg-rose-950/20 border-rose-500/50 text-rose-300 shadow-[0_0_8px_rgba(244,63,94,0.2)]"
-                          : "bg-slate-950 hover:bg-slate-900 border-slate-850 text-slate-400"
-                      }`}
-                    >
-                      {st.replace("_", " ")}
-                    </button>
-                  ))
-                }
-
-                {(selectedStructure === "lcm" || selectedStructure === "lce") && 
-                  ["esguince_leve", "desgarro_parcial", "desgarro_completo"].map(st => (
-                    <button
-                      key={st}
-                      onClick={() => handleUpdateStructureState(selectedStructure, st)}
-                      className={`px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider border rounded-xl transition-all cursor-pointer ${
-                        states[selectedStructure] === st
-                          ? "bg-rose-950/20 border-rose-500/50 text-rose-300 shadow-[0_0_8px_rgba(244,63,94,0.2)]"
-                          : "bg-slate-950 hover:bg-slate-900 border-slate-850 text-slate-400"
-                      }`}
-                    >
-                      {st.replace("_", " ")}
-                    </button>
-                  ))
-                }
-
-                {(selectedStructure === "medial_meniscus" || selectedStructure === "lateral_meniscus") && 
-                  ["meniscosis", "rotura"].map(st => (
-                    <button
-                      key={st}
-                      onClick={() => handleUpdateStructureState(selectedStructure, st)}
-                      className={`px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider border rounded-xl transition-all cursor-pointer ${
-                        states[selectedStructure] === st
-                          ? "bg-rose-950/20 border-rose-500/50 text-rose-300 shadow-[0_0_8px_rgba(244,63,94,0.2)]"
-                          : "bg-slate-950 hover:bg-slate-900 border-slate-850 text-slate-400"
-                      }`}
-                    >
-                      {st.replace("_", " ")}
-                    </button>
-                  ))
-                }
-
-                {selectedStructure === "joint_effusion" && 
-                  ["derrame_leve", "derrame_moderado"].map(st => (
-                    <button
-                      key={st}
-                      onClick={() => handleUpdateStructureState(selectedStructure, st)}
-                      className={`px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider border rounded-xl transition-all cursor-pointer ${
-                        states[selectedStructure] === st
-                          ? "bg-rose-950/20 border-rose-500/50 text-rose-300 shadow-[0_0_8px_rgba(244,63,94,0.2)]"
-                          : "bg-slate-950 hover:bg-slate-900 border-slate-850 text-slate-400"
-                      }`}
-                    >
-                      {st.replace("_", " ")}
-                    </button>
-                  ))
-                }
-
-                {selectedStructure === "baker_cyst" && 
-                  ["quiste_leve", "quiste_severo"].map(st => (
-                    <button
-                      key={st}
-                      onClick={() => handleUpdateStructureState(selectedStructure, st)}
-                      className={`px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider border rounded-xl transition-all cursor-pointer ${
-                        states[selectedStructure] === st
-                          ? "bg-rose-950/20 border-rose-500/50 text-rose-300 shadow-[0_0_8px_rgba(244,63,94,0.2)]"
-                          : "bg-slate-950 hover:bg-slate-900 border-slate-850 text-slate-400"
-                      }`}
-                    >
-                      {st.replace("_", " ")}
-                    </button>
-                  ))
-                }
+                  <button
+                    type="button"
+                    onClick={() => handleUpdateStructureState(selectedStructure, "no_descrito")}
+                    className={`flex-1 py-1.5 px-3 text-[9px] font-bold uppercase tracking-wider border rounded-xl transition-all cursor-pointer ${
+                      activeSts[selectedStructure] === "no_descrito"
+                        ? "bg-slate-800 border-slate-700 text-slate-300 shadow"
+                        : "bg-slate-955 hover:bg-slate-900 text-slate-400 border-slate-855"
+                    }`}
+                  >
+                    ⚪ No Descrito
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -1450,11 +2025,11 @@ export default function KneeAnatomyViewer({
               </label>
 
               <textarea
-                value={customDescriptions[selectedStructure] || getDefaultDescription(selectedStructure, states[selectedStructure])}
+                value={activeDescs[selectedStructure] || getDefaultDescription(selectedStructure, activeSts[selectedStructure])}
                 onChange={(e) => handleUpdateCustomDescription(selectedStructure, e.target.value)}
-                placeholder="Introduzca o modifique la redacción médica para esta estructura..."
+                placeholder="Introduzada o modifique la redacción médica para esta estructura..."
                 className="w-full bg-slate-955 border border-slate-850 rounded-xl px-3 py-2 text-slate-300 text-xs focus:outline-none focus:border-indigo-500/55 min-h-[64px] font-mono leading-relaxed"
-                disabled={states[selectedStructure] === "no_descrito"}
+                disabled={activeSts[selectedStructure] === "no_descrito"}
               />
               <span className="text-[9px] text-slate-500">
                 La redacción modificada se inyectará bidireccionalmente en la sección de Hallazgos del informe médico activo.
@@ -1508,15 +2083,28 @@ export default function KneeAnatomyViewer({
               Estado de Estructuras Clínicas de Rodilla
             </h5>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {Object.keys(states).filter(id => states[id] !== "no_descrito").map((id) => {
-                const s = states[id];
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {Object.keys(activeSts).filter(id => activeSts[id] !== "no_descrito" && activeSts[id] !== "normal").map((id) => {
+                const s = activeSts[id];
                 const isSelected = selectedStructure === id;
                 let dotColor = "bg-slate-500";
-                if (s === "normal") dotColor = "bg-emerald-500";
-                else if (s === "tendinosis" || s === "esguince_leve" || s === "meniscosis" || s === "derrame_leve" || s === "quiste_leve") dotColor = "bg-amber-500";
-                else if (s === "desgarro_parcial") dotColor = "bg-pink-500";
-                else if (s === "desgarro_completo" || s === "rotura" || s === "derrame_moderado" || s === "quiste_severo") dotColor = "bg-rose-500";
+                let badgeBg = "bg-slate-950/60 text-slate-400 border-slate-800";
+                
+                if (s === "no_descrito") {
+                  dotColor = "bg-slate-500 shadow-[0_0_6px_rgba(100,116,139,0.4)]";
+                } else if (s === "normal") {
+                  dotColor = "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.4)]";
+                  badgeBg = "bg-emerald-950/40 text-emerald-400 border-emerald-900/30";
+                } else if (s === "tendinosis" || s === "esguince_leve" || s === "meniscosis" || s === "derrame_leve" || s === "quiste_leve" || s === "ectasia" || s === "ateromatosis") {
+                  dotColor = "bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.4)]";
+                  badgeBg = "bg-amber-950/40 text-amber-400 border-amber-900/30";
+                } else if (s === "desgarro_parcial" || s === "permisibilidad_reducida" || s === "coleccion" || s === "adenopatia") {
+                  dotColor = "bg-pink-500 shadow-[0_0_6px_rgba(236,72,153,0.4)]";
+                  badgeBg = "bg-pink-950/40 text-pink-400 border-pink-900/30";
+                } else {
+                  dotColor = "bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.4)]";
+                  badgeBg = "bg-rose-950/40 text-rose-450 border-rose-900/30";
+                }
 
                 return (
                   <button
@@ -1524,22 +2112,63 @@ export default function KneeAnatomyViewer({
                     onClick={() => setSelectedStructure(id)}
                     onMouseEnter={() => setActiveHover(id)}
                     onMouseLeave={() => setActiveHover(null)}
-                    className={`p-2 rounded-xl border transition-all text-left flex flex-col justify-between cursor-pointer ${
+                    type="button"
+                    className={`p-2.5 rounded-xl border text-left transition-all flex flex-col gap-1 relative overflow-hidden group cursor-pointer ${
                       isSelected
-                        ? "bg-slate-900 border-indigo-500 text-indigo-400"
-                        : "bg-slate-950 hover:bg-slate-900 border-slate-850 text-slate-350"
+                        ? "bg-slate-900 border-indigo-500 text-indigo-400 shadow-md scale-[1.01]"
+                        : "bg-slate-950/60 hover:bg-slate-950/80 border-slate-850/40 text-slate-350"
                     }`}
                   >
-                    <span className="text-[9px] font-black truncate block uppercase tracking-tight">{translateStructureLabelInBrief(id)}</span>
-                    <div className="flex items-center gap-1.5 mt-2">
-                      <span className={`h-1.5 w-1.5 rounded-full ${dotColor}`} />
-                      <span className="text-[8px] text-slate-500 font-mono truncate uppercase">
+                    <div className="flex items-center justify-between gap-1.5 leading-none select-none w-full">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className={`h-2 w-2 rounded-full shrink-0 ${dotColor} transition-transform group-hover:scale-110`} />
+                        <span className={`text-[10px] font-black uppercase tracking-wide truncate ${isSelected ? "text-indigo-400" : "text-slate-200"}`}>
+                          {translateStructureLabelInBrief(id)}
+                        </span>
+                      </div>
+                      <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded border tracking-wider shrink-0 font-mono scale-95 ${badgeBg}`}>
                         {s.replace("_", " ")}
                       </span>
                     </div>
+                    <p className="text-[9px] leading-relaxed text-slate-400 truncate mt-0.5 max-w-full">
+                      {activeDescs[id] || "Sin hallazgos clínicos descritos."}
+                    </p>
                   </button>
                 );
               })}
+
+              {additionalFindings && additionalFindings.map((item) => {
+                const s = item.state || "Alterado";
+                const dotColor = "bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.4)]";
+                const badgeBg = "bg-rose-950/40 text-rose-450 border-rose-900/30";
+                return (
+                  <div
+                    key={item.id}
+                    className="p-2.5 rounded-xl border border-slate-850 bg-slate-950/60 text-left transition-all hover:bg-slate-950/80 hover:border-slate-800 flex flex-col gap-1 relative overflow-hidden group cursor-default"
+                  >
+                    <div className="flex items-center justify-between gap-1.5 leading-none select-none">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className={`h-2 w-2 rounded-full shrink-0 ${dotColor} transition-transform group-hover:scale-110`} />
+                        <span className="text-[10px] font-black uppercase tracking-wide truncate text-slate-200">
+                          {item.structureName}
+                        </span>
+                      </div>
+                      <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded border tracking-wider shrink-0 font-mono scale-95 ${badgeBg}`}>
+                        {s}
+                      </span>
+                    </div>
+                    <p className="text-[9px] leading-relaxed text-slate-400 truncate mt-0.5 max-w-full">
+                      {item.description}
+                    </p>
+                  </div>
+                );
+              })}
+
+              {Object.keys(activeSts).filter(id => activeSts[id] !== "no_descrito" && activeSts[id] !== "normal").length === 0 && (!additionalFindings || additionalFindings.length === 0) && (
+                <div className="col-span-full py-4 text-center text-slate-500 italic text-xs">
+                  Sin hallazgos patológicos relevantes detectados.
+                </div>
+              )}
             </div>
           </div>
 
