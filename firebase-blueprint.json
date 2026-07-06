@@ -1,0 +1,24 @@
+{
+  "collections": {
+    "clinical_studies": {
+      "schema": {
+        "id": "string",
+        "userId": "string",
+        "userEmail": "string",
+        "timestamp": "string",
+        "createdAt": "timestamp",
+        "patientName": "string",
+        "patientEmail": "string",
+        "reportDate": "string",
+        "doctorName": "string",
+        "doctorLicense": "string",
+        "clinicName": "string",
+        "studyType": "string",
+        "clinicalHistory": "string",
+        "findings": "string",
+        "reportText": "string",
+        "pdfBase64": "string"
+      }
+    }
+  }
+}

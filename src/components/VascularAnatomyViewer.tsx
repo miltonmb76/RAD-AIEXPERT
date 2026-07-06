@@ -1492,7 +1492,7 @@ export default function VascularAnatomyViewer({
           {renderRotulo("sfj_der", "Unión SFJ", "165", "130", "start")}
         </g>
 
-        {/* VFS - Vena Femoral Superficial */}
+        {/* VF - Vena Femoral */}
         <g 
           className="cursor-pointer group" 
           onClick={() => onToggleSegment("vfs_der")}
@@ -1656,7 +1656,7 @@ export default function VascularAnatomyViewer({
           {renderRotulo("sfj_izq", "Unión SFJ", "235", "130", "end")}
         </g>
 
-        {/* VFS - Vena Femoral Superficial */}
+        {/* VF - Vena Femoral */}
         <g 
           className="cursor-pointer group" 
           onClick={() => onToggleSegment("vfs_izq")}
@@ -1855,7 +1855,7 @@ export default function VascularAnatomyViewer({
           {renderRotulo("afc_der", "AFC R", "130", "130", "end")}
         </g>
 
-        {/* AFS - Arteria Femoral Superficial */}
+        {/* AF - Arteria Femoral */}
         <g 
           className="cursor-pointer group" 
           onClick={() => onToggleSegment("afs_der")}
@@ -1870,7 +1870,7 @@ export default function VascularAnatomyViewer({
             strokeLinecap="round"
             className="transition-all duration-300"
           />
-          {renderRotulo("afs_der", "AFS R", "120", "210", "end")}
+          {renderRotulo("afs_der", "AF Der", "120", "210", "end")}
         </g>
 
         {/* AP - Arteria Poplítea */}
@@ -1983,7 +1983,7 @@ export default function VascularAnatomyViewer({
           {renderRotulo("afc_izq", "AFC L", "270", "130", "start")}
         </g>
 
-        {/* AFS - Arteria Femoral Superficial */}
+        {/* AF - Arteria Femoral */}
         <g 
           className="cursor-pointer group" 
           onClick={() => onToggleSegment("afs_izq")}
@@ -1998,7 +1998,7 @@ export default function VascularAnatomyViewer({
             strokeLinecap="round"
             className="transition-all duration-300"
           />
-          {renderRotulo("afs_izq", "AFS L", "280", "210", "start")}
+          {renderRotulo("afs_izq", "AF Izq", "280", "210", "start")}
         </g>
 
         {/* AP - Arteria Poplítea */}

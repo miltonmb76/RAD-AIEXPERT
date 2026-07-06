@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { 
   Activity, 
   RefreshCw, 
@@ -85,21 +85,32 @@ export default function BreastAnatomyViewer({
   const [syncLogs, setSyncLogs] = useState<string[]>([]);
   const [lastSyncedReport, setLastSyncedReport] = useState<string>("");
 
+  const lastReceivedStates = useRef<string>("");
+  const lastReceivedDescriptions = useRef<string>("");
+
   useEffect(() => {
     if (externalStates && Object.keys(externalStates).length > 0) {
-      setStates(prev => {
-        const changed = Object.keys(externalStates).some(key => externalStates[key] !== prev[key]);
-        return changed ? { ...prev, ...externalStates } : prev;
-      });
+      const extStr = JSON.stringify(externalStates);
+      if (extStr !== lastReceivedStates.current) {
+        lastReceivedStates.current = extStr;
+        setStates(prev => {
+          const changed = Object.keys(externalStates).some(key => externalStates[key] !== prev[key]);
+          return changed ? { ...prev, ...externalStates } : prev;
+        });
+      }
     }
   }, [externalStates]);
 
   useEffect(() => {
     if (externalDescriptions && Object.keys(externalDescriptions).length > 0) {
-      setCustomDescriptions(prev => {
-        const changed = Object.keys(externalDescriptions).some(key => externalDescriptions[key] !== prev[key]);
-        return changed ? { ...prev, ...externalDescriptions } : prev;
-      });
+      const extStr = JSON.stringify(externalDescriptions);
+      if (extStr !== lastReceivedDescriptions.current) {
+        lastReceivedDescriptions.current = extStr;
+        setCustomDescriptions(prev => {
+          const changed = Object.keys(externalDescriptions).some(key => externalDescriptions[key] !== prev[key]);
+          return changed ? { ...prev, ...externalDescriptions } : prev;
+        });
+      }
     }
   }, [externalDescriptions]);
 
@@ -173,6 +184,112 @@ export default function BreastAnatomyViewer({
   };
 
   const isImplantActive = isImplantImpressionActive() || breastImplantForceActive;
+
+  const getImpressionTextSection = (text: string): string => {
+    if (!text) return "";
+    const lower = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const rawHeaders = [
+      "impresion diagnostica",
+      "impresion clinica",
+      "conclusiones",
+      "conclusion",
+      "diagnosticos",
+      "diagnostico",
+      "sintesis diagnostica",
+      "sintesis"
+    ];
+    
+    const headers = rawHeaders.map(h => h.normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
+    
+    let lastIdx = -1;
+    let matchedHeaderLength = 0;
+    
+    for (const header of headers) {
+      const idx = lower.lastIndexOf(header);
+      if (idx > lastIdx) {
+        lastIdx = idx;
+        matchedHeaderLength = header.length;
+      }
+    }
+    
+    if (lastIdx !== -1) {
+      let offset = matchedHeaderLength;
+      while (offset < 20 && lastIdx + offset < text.length) {
+        const char = text.charAt(lastIdx + offset);
+        if (char === ":" || char === " " || char === "\n" || char === "\r" || char === "-") {
+          offset++;
+        } else {
+          break;
+        }
+      }
+      return text.substring(lastIdx + offset);
+    }
+    return text;
+  };
+
+  const extractSentenceForBreast = (reportText: string, id: string, fallback: string): string => {
+    if (!reportText) return fallback;
+    const isRight = id.startsWith("md_");
+    const { primary } = getStructureKeywords(id);
+    if (primary.length === 0) return fallback;
+
+    const section = getImpressionTextSection(reportText);
+
+    const findMatchInText = (text: string, prioritizeSideAffinity: boolean): string => {
+      if (!text) return "";
+      const sentences = text.split(/(?:\.|\n|\r|;|\n\n)+/);
+      for (const sentence of sentences) {
+        const trimmed = sentence.trim();
+        if (!trimmed) continue;
+        
+        const normalizedSentence = trimmed.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const matchesPrimary = primary.some(kw => {
+          const normalizedKw = kw.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+          return normalizedSentence.includes(normalizedKw);
+        });
+        
+        if (matchesPrimary) {
+          const hasRightAffinity = /\b(derecha|derecho|der|md|m\.d|m\. derecho|m. derecho|mama d)\b/gi.test(trimmed);
+          const hasLeftAffinity = /\b(izquierda|izquierdo|izq|mi|m\.i|m\. izquierdo|m. izquierdo|mama i)\b/gi.test(trimmed);
+          
+          if (prioritizeSideAffinity) {
+            if (isRight && hasLeftAffinity && !hasRightAffinity) continue;
+            if (!isRight && hasRightAffinity && !hasLeftAffinity) continue;
+          }
+
+          let cleanStr = trimmed;
+          // Clean list bullet symbols and spaces
+          cleanStr = cleanStr.replace(/^[\s*\-|#\d.?+•\t]+/g, "").trim();
+          // Clear prefix labels e.g. "MAMA DERECHA: " or "**MAMA IZQUIERDA**:" or "M.D - EJE 12:"
+          cleanStr = cleanStr.replace(/^(?:\*\*[^*]+\*\*|[^*:]+):\s*/g, "").trim();
+
+          if (cleanStr.length > 0) {
+            cleanStr = cleanStr.charAt(0).toUpperCase() + cleanStr.slice(1);
+          } else {
+            cleanStr = trimmed;
+          }
+
+          if (!cleanStr.endsWith(".")) {
+            cleanStr = `${cleanStr}.`;
+          }
+          return cleanStr;
+        }
+      }
+      return "";
+    };
+
+    let match = findMatchInText(section, true);
+    if (match) return match;
+
+    match = findMatchInText(reportText, true);
+    if (match) return match;
+
+    match = findMatchInText(section, false);
+    if (match) return match;
+
+    match = findMatchInText(reportText, false);
+    return match || fallback;
+  };
 
   const updateReportTextWithImplantFinding = (
     currentText: string,
@@ -321,13 +438,10 @@ export default function BreastAnatomyViewer({
       }
       return;
     }
+
     const normalized = generatedReport.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     
     if (isImplantActive) {
-      // Split text into Right (MD) and Left (MI) spheres if possible to parse individually
-      let mdSegment = normalized;
-      let miSegment = normalized;
-
       const mdMarkers = [
         "mama derecha", "mama d.", "m.d.", "m. derecha", "derecha:", "mamas derecha", "cse md", "csi md", "cie md", "cii md", "mama der"
       ];
@@ -351,219 +465,117 @@ export default function BreastAnatomyViewer({
         }
       }
 
-      if (firstMdIdx !== -1 && firstMiIdx !== -1) {
-        if (firstMdIdx < firstMiIdx) {
-          mdSegment = normalized.substring(firstMdIdx, firstMiIdx);
-          miSegment = normalized.substring(firstMiIdx);
-        } else {
-          miSegment = normalized.substring(firstMiIdx, firstMdIdx);
-          mdSegment = normalized.substring(firstMdIdx);
-        }
-      } else if (firstMdIdx !== -1) {
-        mdSegment = normalized;
-        miSegment = "";
-      } else if (firstMiIdx !== -1) {
-        miSegment = normalized;
-        mdSegment = "";
-      }
+      const impressionSection = getImpressionTextSection(generatedReport);
 
-      // Helper function to check if any specified term is present, and ensure it is not negated in the respective segment.
-      const checkPathology = (segment: string, positives: string[]) => {
-        if (!segment) return false;
-        const foundIdx = positives.findIndex(p => segment.includes(p));
-        if (foundIdx === -1) return false;
-        
-        const matched = positives[foundIdx];
-        const matchPos = segment.indexOf(matched);
-        // Look up to 45 characters before the matched term
-        const excerpt = segment.substring(Math.max(0, matchPos - 45), matchPos);
-        
-        const negations = [
-          "sin ", "no se ", "ausencia de ", "negativo ", "normal ", "integro ", "integra ", 
-          "normales ", "integros ", "integras ", "sin signos de ", "sin evidencia de ", 
-          "descartar ", "sin ruptura ", "descartando ", "falsos ", "no evidencian ", "no muestra ", "no muestran "
-        ];
-        return !negations.some(neg => excerpt.includes(neg));
-      };
+      const checkImplantFinding = (findingKws: string[], side: "MD" | "MI"): boolean => {
+        const checkSentence = (sentence: string): boolean | null => {
+          const sNorm = sentence.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+          const foundKw = findingKws.find(kw => sNorm.includes(kw));
+          if (!foundKw) return null;
 
-      // Helper function to scan the entire report (including diagnostic impression) for findings with correct side affinity
-      const scanFullReportForSidePathology = (positives: string[], side: "MD" | "MI") => {
-        const segments = normalized.split(/[.\n;•*]|\b\d+\b/);
-        
-        for (const rawSeg of segments) {
-          const segClean = rawSeg.trim();
-          if (!segClean) continue;
+          const kwIdx = sNorm.indexOf(foundKw);
+          const beforeKw = sNorm.substring(0, kwIdx);
           
-          const foundIdx = positives.findIndex(p => segClean.includes(p));
-          if (foundIdx !== -1) {
-            const matched = positives[foundIdx];
-            const matchPos = segClean.indexOf(matched);
-            const excerptBefore = segClean.substring(Math.max(0, matchPos - 45), matchPos);
-            
-            const negations = [
-              "sin ", "no se ", "ausencia de ", "negativo ", "normal ", "integro ", "integra ", 
-              "normales ", "integros ", "integras ", "sin signos de ", "sin evidencia de ", 
-              "descartar ", "sin ruptura ", "descartando ", "falsos ", "no evidencian ", "no muestra ", "no muestran "
-            ];
-            
-            const isNegated = negations.some(neg => excerptBefore.includes(neg));
-            if (!isNegated) {
-              const mdAffinity = /\b(derecha|derecho|der|md|m\.d)\b/gi.test(segClean);
-              const miAffinity = /\b(izquierda|izquierdo|izq|mi|m\.i)\b/gi.test(segClean);
+          const negations = [
+            "sin ", "no se ", "ausencia de ", "negativo ", "normal ", "integro ", "integra ", 
+            "normales ", "integros ", "integras ", "sin signos de ", "sin evidencia de ", 
+            "descartar ", "sin ruptura ", "descartando ", "falsos ", "no evidencian ", 
+            "no muestra ", "no muestran ", "no se observa ", "no se observan ", "libre de "
+          ];
+          
+          const isNegated = negations.some(neg => beforeKw.includes(neg));
+          if (isNegated) return false;
 
-              if (side === "MD" && mdAffinity && !miAffinity) {
-                return true;
-              }
-              if (side === "MI" && miAffinity && !mdAffinity) {
-                return true;
-              }
-              if ((mdAffinity && miAffinity) || (!mdAffinity && !miAffinity)) {
-                const isBilateral = ["bilateral", "bilaterales", "ambas", "ambos", "protesis bilat", "implantes bilat"].some(b => segClean.includes(b));
-                if (isBilateral) return true;
-              }
+          const hasRight = /\b(derecha|derecho|der|md|m\.d|m\. derecho|m. derecho|mama d)\b/gi.test(sentence);
+          const hasLeft = /\b(izquierda|izquierdo|izq|mi|m\.i|m\. izquierdo|m. izquierdo|mama i)\b/gi.test(sentence);
+          const isBilateral = /\b(bilateral|bilaterales|ambas|ambos|ambas mamas)\b/gi.test(sentence);
+
+          if (isBilateral) return true;
+          if (side === "MD" && hasRight && !hasLeft) return true;
+          if (side === "MI" && hasLeft && !hasRight) return true;
+          if (!hasRight && !hasLeft) {
+            const idxInDoc = normalized.indexOf(sNorm);
+            if (idxInDoc !== -1) {
+              const insideMD = firstMdIdx !== -1 && firstMiIdx !== -1 
+                ? (firstMdIdx < firstMiIdx ? (idxInDoc >= firstMdIdx && idxInDoc < firstMiIdx) : (idxInDoc >= firstMdIdx))
+                : (firstMdIdx !== -1 ? idxInDoc >= firstMdIdx : false);
+                
+              const insideMI = firstMdIdx !== -1 && firstMiIdx !== -1
+                ? (firstMdIdx < firstMiIdx ? (idxInDoc >= firstMiIdx) : (idxInDoc >= firstMiIdx && idxInDoc < firstMdIdx))
+                : (firstMiIdx !== -1 ? idxInDoc >= firstMiIdx : false);
+
+              if (side === "MD" && insideMD) return true;
+              if (side === "MI" && insideMI) return true;
             }
           }
+          return null;
+        };
+
+        if (impressionSection) {
+          const sentences = impressionSection.split(/(?:\.|\n|\r|;|\n\n)+/);
+          for (const s of sentences) {
+            const res = checkSentence(s);
+            if (res === true) return true;
+            if (res === false) return false;
+          }
         }
+
+        const allSentences = normalized.split(/(?:\.|\n|\r|;|\n\n)+/);
+        for (const s of allSentences) {
+          const res = checkSentence(s);
+          if (res === true) return true;
+        }
+
         return false;
       };
 
-      // Right Side (MD) Findings Checks
-      const hasIntraMD = checkPathology(mdSegment, [
+      setBreastImplantRuptureIntraMD(checkImplantFinding([
         "ruptura intracapsular", "rotura intracapsular", "linguini", 
         "cerradura de llave", "no integrada", "colapsado", "signo de la cerradura"
-      ]) || scanFullReportForSidePathology([
+      ], "MD"));
+
+      setBreastImplantRuptureExtraMD(checkImplantFinding([
+        "ruptura extracapsular", "rotura extracapsular", "silicona libre", 
+        "siliconoma", "leaking", "tormenta de nieve", "extracapsular"
+      ], "MD"));
+
+      setBreastImplantFluidMD(checkImplantFinding([
+        "seroma", "coleccion peri", "coleccion liquida", "liquido peri", 
+        "liquido alrededor", "acumulacion de liquido", "liquido periprotesico", "seroma periprotesico"
+      ], "MD"));
+
+      setBreastImplantFoldsMD(checkImplantFinding([
+        "pliegue radial", "pliegues radiales", "pliegues de la cubierta", "pliegue de cubierta", "ondulacion"
+      ], "MD"));
+
+      setBreastImplantCapsuleMD(checkImplantFinding([
+        "contractura capsular", "calcificacion capsular", "capsular calcificada", 
+        "engrosamiento capsular", "capsula engrosada"
+      ], "MD"));
+
+      setBreastImplantRuptureIntraMI(checkImplantFinding([
         "ruptura intracapsular", "rotura intracapsular", "linguini", 
         "cerradura de llave", "no integrada", "colapsado", "signo de la cerradura"
-      ], "MD");
+      ], "MI"));
 
-      const hasExtraMD = checkPathology(mdSegment, [
+      setBreastImplantRuptureExtraMI(checkImplantFinding([
         "ruptura extracapsular", "rotura extracapsular", "silicona libre", 
         "siliconoma", "leaking", "tormenta de nieve", "extracapsular"
-      ]) || scanFullReportForSidePathology([
-        "ruptura extracapsular", "rotura extracapsular", "silicona libre", 
-        "siliconoma", "leaking", "tormenta de nieve", "extracapsular"
-      ], "MD");
+      ], "MI"));
 
-      const hasFluidMD = checkPathology(mdSegment, [
+      setBreastImplantFluidMI(checkImplantFinding([
         "seroma", "coleccion peri", "coleccion liquida", "liquido peri", 
         "liquido alrededor", "acumulacion de liquido", "liquido periprotesico", "seroma periprotesico"
-      ]) || scanFullReportForSidePathology([
-        "seroma", "coleccion peri", "coleccion liquida", "liquido peri", 
-        "liquido alrededor", "acumulacion de liquido", "liquido periprotesico", "seroma periprotesico"
-      ], "MD");
+      ], "MI"));
 
-      const hasFoldsMD = checkPathology(mdSegment, [
+      setBreastImplantFoldsMI(checkImplantFinding([
         "pliegue radial", "pliegues radiales", "pliegues de la cubierta", "pliegue de cubierta", "ondulacion"
-      ]) || scanFullReportForSidePathology([
-        "pliegue radial", "pliegues radiales", "pliegues de la cubierta", "pliegue de cubierta", "ondulacion"
-      ], "MD");
+      ], "MI"));
 
-      const hasCapsuleMD = checkPathology(mdSegment, [
+      setBreastImplantCapsuleMI(checkImplantFinding([
         "contractura capsular", "calcificacion capsular", "capsular calcificada", 
         "engrosamiento capsular", "capsula engrosada"
-      ]) || scanFullReportForSidePathology([
-        "contractura capsular", "calcificacion capsular", "capsular calcificada", 
-        "engrosamiento capsular", "capsula engrosada"
-      ], "MD");
-
-      // Left Side (MI) Findings Checks
-      const hasIntraMI = checkPathology(miSegment, [
-        "ruptura intracapsular", "rotura intracapsular", "linguini", 
-        "cerradura de llave", "no integrada", "colapsado", "signo de la cerradura"
-      ]) || scanFullReportForSidePathology([
-        "ruptura intracapsular", "rotura intracapsular", "linguini", 
-        "cerradura de llave", "no integrada", "colapsado", "signo de la cerradura"
-      ], "MI");
-
-      const hasExtraMI = checkPathology(miSegment, [
-        "ruptura extracapsular", "rotura extracapsular", "silicona libre", 
-        "siliconoma", "leaking", "tormenta de nieve", "extracapsular"
-      ]) || scanFullReportForSidePathology([
-        "ruptura extracapsular", "rotura extracapsular", "silicona libre", 
-        "siliconoma", "leaking", "tormenta de nieve", "extracapsular"
-      ], "MI");
-
-      const hasFluidMI = checkPathology(miSegment, [
-        "seroma", "coleccion peri", "coleccion liquida", "liquido peri", 
-        "liquido alrededor", "acumulacion de liquido", "liquido periprotesico", "seroma periprotesico"
-      ]) || scanFullReportForSidePathology([
-        "seroma", "coleccion peri", "coleccion liquida", "liquido peri", 
-        "liquido alrededor", "acumulacion de liquido", "liquido periprotesico", "seroma periprotesico"
-      ], "MI");
-
-      const hasFoldsMI = checkPathology(miSegment, [
-        "pliegue radial", "pliegues radiales", "pliegues de la cubierta", "pliegue de cubierta", "ondulacion"
-      ]) || scanFullReportForSidePathology([
-        "pliegue radial", "pliegues radiales", "pliegues de la cubierta", "pliegue de cubierta", "ondulacion"
-      ], "MI");
-
-      const hasCapsuleMI = checkPathology(miSegment, [
-        "contractura capsular", "calcificacion capsular", "capsular calcificada", 
-        "engrosamiento capsular", "capsula engrosada"
-      ]) || scanFullReportForSidePathology([
-        "contractura capsular", "calcificacion capsular", "capsular calcificada", 
-        "engrosamiento capsular", "capsula engrosada"
-      ], "MI");
-
-      // Assign Side MD
-      const isOverallNormalMD = 
-        (mdSegment.includes("normal") || 
-         mdSegment.includes("integro") || 
-         mdSegment.includes("integros") || 
-         mdSegment.includes("conservado") || 
-         mdSegment.includes("sin alteraciones") || 
-         mdSegment.includes("sin hallazgos") ||
-         mdSegment.includes("sin signos de ruptura") ||
-         mdSegment.includes("normales") ||
-         mdSegment.includes("correcta") ||
-         mdSegment.includes("correctos")) &&
-        !mdSegment.includes("pero") &&
-        !mdSegment.includes("sin embargo") &&
-        !mdSegment.includes("excepto");
-
-      if (isOverallNormalMD && !hasIntraMD && !hasExtraMD && !hasFluidMD && !hasFoldsMD && !hasCapsuleMD) {
-        setBreastImplantRuptureIntraMD(false);
-        setBreastImplantRuptureExtraMD(false);
-        setBreastImplantFluidMD(false);
-        setBreastImplantFoldsMD(false);
-        setBreastImplantCapsuleMD(false);
-      } else {
-        setBreastImplantRuptureIntraMD(hasIntraMD);
-        setBreastImplantRuptureExtraMD(hasExtraMD);
-        setBreastImplantFluidMD(hasFluidMD);
-        setBreastImplantFoldsMD(hasFoldsMD);
-        setBreastImplantCapsuleMD(hasCapsuleMD);
-      }
-
-      // Assign Side MI
-      const isOverallNormalMI = 
-        (miSegment.includes("normal") || 
-         miSegment.includes("integro") || 
-         miSegment.includes("integros") || 
-         miSegment.includes("conservado") || 
-         miSegment.includes("sin alteraciones") || 
-         miSegment.includes("sin hallazgos") ||
-         miSegment.includes("sin signos de ruptura") ||
-         miSegment.includes("normales") ||
-         miSegment.includes("correcta") ||
-         miSegment.includes("correctos")) &&
-        !miSegment.includes("pero") &&
-        !miSegment.includes("sin embargo") &&
-        !miSegment.includes("excepto");
-
-      if (isOverallNormalMI && !hasIntraMI && !hasExtraMI && !hasFluidMI && !hasFoldsMI && !hasCapsuleMI) {
-        setBreastImplantRuptureIntraMI(false);
-        setBreastImplantRuptureExtraMI(false);
-        setBreastImplantFluidMI(false);
-        setBreastImplantFoldsMI(false);
-        setBreastImplantCapsuleMI(false);
-      } else {
-        setBreastImplantRuptureIntraMI(hasIntraMI);
-        setBreastImplantRuptureExtraMI(hasExtraMI);
-        setBreastImplantFluidMI(hasFluidMI);
-        setBreastImplantFoldsMI(hasFoldsMI);
-        setBreastImplantCapsuleMI(hasCapsuleMI);
-      }
+      ], "MI"));
     } else {
       setBreastImplantRuptureIntraMD(false);
       setBreastImplantRuptureExtraMD(false);
@@ -582,14 +594,23 @@ export default function BreastAnatomyViewer({
   // AUTO-SYNC ON MOUNT / PROP CHANGE HAS BEEN DISABLED PER USER REQUEST TO SAVE RESOURCES.
   // Synchronization will only execute manually when the user explicitly clicks the "Sincronizar MD / MI" button.
 
+  const lastPropagatedStates = useRef<string>("");
+  const lastPropagatedDescriptions = useRef<string>("");
+
   useEffect(() => {
-    if (onChangeStates) {
+    const statesStr = JSON.stringify(states);
+    if (onChangeStates && statesStr !== lastPropagatedStates.current) {
+      lastPropagatedStates.current = statesStr;
+      lastReceivedStates.current = statesStr; // update this to prevent re-triggering from external prop
       onChangeStates(states);
     }
   }, [states, onChangeStates]);
 
   useEffect(() => {
-    if (onChangeDescriptions) {
+    const descsStr = JSON.stringify(customDescriptions);
+    if (onChangeDescriptions && descsStr !== lastPropagatedDescriptions.current) {
+      lastPropagatedDescriptions.current = descsStr;
+      lastReceivedDescriptions.current = descsStr; // update this to prevent re-triggering from external prop
       onChangeDescriptions(customDescriptions);
     }
   }, [customDescriptions, onChangeDescriptions]);
@@ -689,18 +710,6 @@ export default function BreastAnatomyViewer({
       if (s === "hallazgo") {
         const desc = customDescriptions[k]?.trim() || getSimplifiedDescription(k);
 
-        if (isBilateralBenignActive) {
-          const descNorm = desc.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-          const isBenignRelated = 
-            (hasQuistesBilaterales && (descNorm.includes("quiste") || descNorm.includes("quistic"))) ||
-            (hasFibroadenomasBilaterales && (descNorm.includes("fibroadenoma") || descNorm.includes("nodulo") || descNorm.includes("nódulo")));
-          
-          if (isBenignRelated || !descNorm) {
-            // Skip individual listing since it is summarized under "Ambas Mamas"
-            return;
-          }
-        }
-
         md += `| **${getStructureLabel(k)}** | ${desc} |\n`;
         hasFindings = true;
       }
@@ -771,9 +780,14 @@ export default function BreastAnatomyViewer({
 
       // Locate sentence around this keyword to verify normal vs finding
       const kwIdx = targetBlock.indexOf(foundKeyword);
-      const startContext = Math.max(0, kwIdx - 40);
-      const endContext = Math.min(targetBlock.length, kwIdx + 85);
-      const contextText = targetBlock.slice(startContext, endContext);
+      const targetBlockOffset = isRight 
+        ? (idxMD !== -1 ? idxMD : 0) 
+        : (idxMI !== -1 ? idxMI : 0);
+      const kwIdxInTextLower = targetBlockOffset + kwIdx;
+
+      const startContext = Math.max(0, kwIdxInTextLower - 40);
+      const endContext = Math.min(textLower.length, kwIdxInTextLower + 85);
+      const contextText = textLower.slice(startContext, endContext);
 
       // Check if normal/negated
       const isNormal = [
@@ -791,26 +805,29 @@ export default function BreastAnatomyViewer({
         nextStates[id] = "hallazgo";
         
         // Extract a clinical synopsis around the found keyword
-        // Let's grab the actual sentence from the original (non-normalized) case text
-        const keywordInOriginal = textOriginal.slice(startContext, endContext);
+        const exactSentence = extractSentenceForBreast(textOriginal, id, "");
         
         let customDesc = "Alteración ecográfica descrita.";
-        
-        // Let's isolate the sentence
-        const sentences = keywordInOriginal.split(/[.;:]/);
-        const relatedSentence = sentences.find(s => {
-          const sNorm = s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-          return primary.some(kw => sNorm.includes(kw));
-        });
+        if (exactSentence) {
+          customDesc = exactSentence;
+        } else {
+          // Fallback to corrected offset context parsing
+          const keywordInOriginal = textOriginal.slice(startContext, endContext);
+          const sentences = keywordInOriginal.split(/[.;:]/);
+          const relatedSentence = sentences.find(s => {
+            const sNorm = s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            return primary.some(kw => sNorm.includes(kw));
+          });
 
-        if (relatedSentence && relatedSentence.trim().length > 6) {
-          customDesc = relatedSentence.trim()
-            .replace(/^, -/, "")
-            .replace(/\s+/g, " ");
-          
-          if (customDesc.length > 80) {
-            customDesc = customDesc.substring(0, 77) + "...";
+          if (relatedSentence && relatedSentence.trim().length > 6) {
+            customDesc = relatedSentence.trim()
+              .replace(/^, -/, "")
+              .replace(/\s+/g, " ");
           }
+        }
+
+        if (customDesc.length > 120) {
+          customDesc = customDesc.substring(0, 117) + "...";
         }
 
         nextDescriptions[id] = customDesc;
@@ -936,14 +953,6 @@ export default function BreastAnatomyViewer({
     if (isBilateralBenignActive) {
       if (effectiveState === "no_descrito" || effectiveState === "normal") {
         effectiveState = "normal";
-      } else if (effectiveState === "hallazgo") {
-        const desc = (customDescriptions[id] || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-        const isBenignRelated = 
-          (hasQuistesBilaterales && (desc.includes("quiste") || desc.includes("quistic"))) ||
-          (hasFibroadenomasBilaterales && (desc.includes("fibroadenoma") || desc.includes("nodulo") || desc.includes("nódulo")));
-        if (isBenignRelated || !desc) {
-          effectiveState = "normal";
-        }
       }
     }
 

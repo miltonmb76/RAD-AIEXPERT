@@ -762,7 +762,6 @@ export default function ElbowAnatomyViewer({
                       fillOpacity={states.humeroradial_joint !== "normal" && states.humeroradial_joint !== "no_descrito" ? "0.8" : "0.3"}
                     />
                     <line x1="85" y1="141" x2="165" y2="135" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-                    <circle cx="85" cy="141" r="2" fill="#81a1c1" />
                   </g>
 
                   {/* RADIAL COLLATERAL LIGAMENT */}
@@ -781,7 +780,6 @@ export default function ElbowAnatomyViewer({
                       fillOpacity={states.radial_collateral !== "normal" && states.radial_collateral !== "no_descrito" ? "0.95" : "0.5"}
                     />
                     <line x1="72" y1="130" x2="25" y2="110" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-                    <circle cx="72" cy="130" r="2" fill="#81a1c1" />
                   </g>
 
                   {/* COMMON EXTENSOR TENDON */}
@@ -801,7 +799,6 @@ export default function ElbowAnatomyViewer({
                       strokeDasharray={states.common_extensor === "epicondilitis" ? "3,2" : "none"}
                     />
                     <line x1="53" y1="110" x2="20" y2="175" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-                    <circle cx="53" cy="110" r="2" fill="#81a1c1" />
                   </g>
 
                   {/* Outer Labels */}
@@ -871,7 +868,6 @@ export default function ElbowAnatomyViewer({
                       fillOpacity={states.ulnar_collateral !== "normal" && states.ulnar_collateral !== "no_descrito" ? "0.95" : "0.5"}
                     />
                     <line x1="90" y1="126" x2="165" y2="105" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-                    <circle cx="90" cy="126" r="2" fill="#81a1c1" />
                   </g>
 
                   {/* COMMON FLEXOR TENDON */}
@@ -891,7 +887,6 @@ export default function ElbowAnatomyViewer({
                       strokeDasharray={states.common_flexor === "epitrocleitis" ? "3,2" : "none"}
                     />
                     <line x1="103" y1="110" x2="165" y2="165" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-                    <circle cx="103" cy="110" r="2" fill="#81a1c1" />
                   </g>
 
                   {/* ULNAR NERVE */}
@@ -912,7 +907,6 @@ export default function ElbowAnatomyViewer({
                       strokeDasharray={states.ulnar_nerve === "subluxacion" ? "4,3" : "none"}
                     />
                     <line x1="120" y1="130" x2="25" y2="140" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-                    <circle cx="120" cy="130" r="2" fill="#81a1c1" />
                   </g>
 
                   {/* Outer Labels */}

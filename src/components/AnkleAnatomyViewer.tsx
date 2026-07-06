@@ -523,7 +523,7 @@ export default function AnkleAnatomyViewer({
           updated = true;
           return `${prefix} ${newDescription}`;
         } else {
-          const bulletMatch = line.match(/^[\s*-|#\d.?+•\t]+/);
+          const bulletMatch = line.match(/^[\s*|#\d.?+•\t\-]+/);
           const bullet = bulletMatch ? bulletMatch[0] : "";
           const structLabel = translateStructureLabelInBrief(id);
           updated = true;
@@ -1274,7 +1274,6 @@ export default function AnkleAnatomyViewer({
                       strokeDasharray={states.lpaa === "esguince_leve" ? "3,2" : "none"}
                     />
                     <line x1="112" y1="209" x2="138" y2="135" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-                    <circle cx="112" cy="209" r="2" fill="#81a1c1" />
                   </g>
 
                   {/* 4. LPC */}
@@ -1293,7 +1292,6 @@ export default function AnkleAnatomyViewer({
                       strokeDasharray={states.lpc === "esguince_leve" ? "3,2" : "none"}
                     />
                     <line x1="154" y1="226" x2="255" y2="221" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-                    <circle cx="154" cy="226" r="2" fill="#81a1c1" />
                   </g>
 
                   {/* 5. Tendones Peroneos */}
@@ -1312,7 +1310,6 @@ export default function AnkleAnatomyViewer({
                       strokeDasharray={states.peroneal_tendons === "tenosinovitis" ? "3,2" : "none"}
                     />
                     <line x1="160" y1="110" x2="255" y2="110" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-                    <circle cx="160" cy="110" r="2" fill="#81a1c1" />
                   </g>
 
                   {/* 6. Tendón Tibial Anterior (Lateral aspect) */}
@@ -1331,7 +1328,6 @@ export default function AnkleAnatomyViewer({
                       strokeDasharray={states.tibial_anterior === "tenosinovitis" ? "3,2" : "none"}
                     />
                     <line x1="97" y1="115" x2="45" y2="115" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-                    <circle cx="97" cy="115" r="2" fill="#81a1c1" />
                   </g>
 
                   {/* 7. Receso Articular Anterior (Lateral aspect) */}
@@ -1350,7 +1346,6 @@ export default function AnkleAnatomyViewer({
                       strokeDasharray={states.joint_effusion === "derrame_leve" ? "3,2" : "none"}
                     />
                     <line x1="95" y1="203" x2="45" y2="194" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-                    <circle cx="95" cy="203" r="2" fill="#81a1c1" />
                   </g>
 
                   {/* 8. Tendón de Aquiles (Lateral aspect) */}
@@ -1369,7 +1364,6 @@ export default function AnkleAnatomyViewer({
                       strokeDasharray={states.achilles === "tendinosis" ? "3,2" : "none"}
                     />
                     <line x1="178" y1="120" x2="255" y2="140" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-                    <circle cx="178" cy="120" r="2" fill="#81a1c1" />
                   </g>
 
                   {/* 9. Fascia Plantar (Lateral aspect) */}
@@ -1388,7 +1382,6 @@ export default function AnkleAnatomyViewer({
                       strokeDasharray={states.plantar_fascia === "fascitis" ? "3,2" : "none"}
                     />
                     <line x1="110" y1="275" x2="50" y2="288" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-                    <circle cx="110" cy="275" r="2" fill="#81a1c1" />
                   </g>
 
                   {/* Labels Cara Lateral */}
@@ -1490,7 +1483,6 @@ export default function AnkleAnatomyViewer({
                       strokeDasharray={states.deltoid === "esguince_leve" ? "3,2" : "none"}
                     />
                     <line x1="168" y1="222" x2="130" y2="220" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-                    <circle cx="168" cy="222" r="2" fill="#81a1c1" />
                   </g>
 
                   {/* 4. Tendón Tibial Posterior (Cara Medial) */}
@@ -1509,7 +1501,6 @@ export default function AnkleAnatomyViewer({
                       strokeDasharray={states.tibial_posterior === "tenosinovitis" ? "3,2" : "none"}
                     />
                     <line x1="165" y1="120" x2="255" y2="120" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-                    <circle cx="165" cy="120" r="2" fill="#81a1c1" />
                   </g>
 
                   {/* 5. Tendón Tibial Anterior (Cara Medial) */}
@@ -1528,7 +1519,6 @@ export default function AnkleAnatomyViewer({
                       strokeDasharray={states.tibial_anterior === "tenosinovitis" ? "3,2" : "none"}
                     />
                     <line x1="216" y1="105" x2="265" y2="85" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-                    <circle cx="216" cy="105" r="2" fill="#81a1c1" />
                   </g>
 
                   {/* 6. Receso Articular Anterior (Medial aspect) */}
@@ -1547,7 +1537,6 @@ export default function AnkleAnatomyViewer({
                       strokeDasharray={states.joint_effusion === "derrame_leve" ? "3,2" : "none"}
                     />
                     <line x1="208" y1="198" x2="255" y2="170" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-                    <circle cx="208" cy="198" r="2" fill="#81a1c1" />
                   </g>
 
                   {/* 7. Tendón de Aquiles (Medial aspect) */}
@@ -1566,7 +1555,6 @@ export default function AnkleAnatomyViewer({
                       strokeDasharray={states.achilles === "tendinosis" ? "3,2" : "none"}
                     />
                     <line x1="136" y1="120" x2="60" y2="140" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-                    <circle cx="136" cy="120" r="2" fill="#81a1c1" />
                   </g>
 
                   {/* 8. Fascia Plantar (Medial aspect) */}
@@ -1585,7 +1573,6 @@ export default function AnkleAnatomyViewer({
                       strokeDasharray={states.plantar_fascia === "fascitis" ? "3,2" : "none"}
                     />
                     <line x1="210" y1="275" x2="270" y2="288" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-                    <circle cx="210" cy="275" r="2" fill="#81a1c1" />
                   </g>
 
                   {/* Labels Cara Medial */}

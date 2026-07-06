@@ -469,7 +469,7 @@ export default function ShoulderAnatomyViewer({
       const matches = keywords.some(kw => lowerLine.includes(kw));
       if (matches) {
         // Clear style markers like dashes, lists, asterisk, numbers or headers
-        let clean = line.replace(/^[\s*-|#\d.?+•\t]+\s*/g, "");
+        let clean = line.replace(/^[\s*\-|#\d.?+•\t]+\s*/g, "");
         
         if (clean.length > 20) {
           candidates.push(clean.trim());
@@ -577,7 +577,7 @@ export default function ShoulderAnatomyViewer({
           return `${prefix} ${newDescription}`;
         } else {
           // Keep bullet / decoration prefixes
-          const bulletMatch = line.match(/^[\s*-|#\d.?+•\t]+/);
+          const bulletMatch = line.match(/^[\s*|#\d.?+•\t\-]+/);
           const bullet = bulletMatch ? bulletMatch[0] : "";
           const structLabel = translateStructureLabelInBrief(id);
           updated = true;
@@ -1231,6 +1231,29 @@ export default function ShoulderAnatomyViewer({
                            (laterality === "Left");
     const shouldMirror = !isLeftShoulder;
 
+    const shoulderHotspots = [
+      { id: "glenohumeral", x: 152, y: 165, name: "Receso Glenohumeral" },
+      { id: "subscapularis", x: 149, y: 162, name: "Tendón Subescapular" },
+      { id: "biceps", x: 187, y: 200, name: "Porción Larga del Bíceps" },
+      { id: "supraspinatus", x: 185, y: 106, name: "Tendón Supraespinoso" },
+      { id: "infraspinatus", x: 228, y: 142, name: "Tendón Infraespinoso" },
+      { id: "bursa", x: 191, y: 86, name: "Bursa Subacromiodeltoidea" },
+      { id: "acromioclavicular", x: 208, y: 54, name: "Articulación Acromioclavicular" }
+    ];
+
+    const getHotspotColor = (id: string, sideStates: Record<string, string>) => {
+      const s = sideStates[id] || "no_descrito";
+      if (s === "no_descrito") return "#475569"; // slate-600
+      if (s === "normal") return "#10b981"; // emerald-500
+      if (s === "tendinosis" || s === "tendinitis" || s === "bursitis_leve" || s === "derrame_leve" || s === "artrosis") {
+        return "#f59e0b"; // amber-500
+      }
+      if (s === "desgarro_parcial" || s === "subluxacion" || s === "hipertrofia") {
+        return "#ec4899"; // pink-500
+      }
+      return "#ef4444"; // red-500
+    };
+
     return (
       <svg 
         id={isIzqui ? "shoulder-anatomy-svg-left" : "shoulder-anatomy-svg"}
@@ -1325,7 +1348,6 @@ export default function ShoulderAnatomyViewer({
               strokeDasharray={sideStates.glenohumeral === "derrame_leve" ? "3,3" : "none"}
             />
             <line x1="152" y1="165" x2="110" y2="165" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-            <circle cx="152" cy="165" r="2" fill="#81a1c1" />
           </g>
 
           {/* 2. Subscapularis Tendon */}
@@ -1450,6 +1472,47 @@ export default function ShoulderAnatomyViewer({
               <path d="M 201,48 L 205,45 M 216,56 L 212,60" stroke="#f59e0b" strokeWidth="1.5" />
             )}
           </g>
+
+          {/* 🇨🇭 INTERACTIVE HOTSPOTS SYSTEM OVERLAY (Pulsing Glow Markers) */}
+          {shoulderHotspots.map((hot) => {
+            const hColor = getHotspotColor(hot.id, sideStates);
+            const isSelected = selectedStructure === hot.id;
+            return (
+              <g
+                key={hot.id}
+                className="cursor-pointer group/hotspot"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedStructure(hot.id);
+                  setActiveSide(side);
+                }}
+                onMouseEnter={() => setActiveHover(hot.id)}
+                onMouseLeave={() => setActiveHover(null)}
+              >
+                {/* Outer animated glow pulse ring */}
+                <circle cx={hot.x} cy={hot.y} r="5" fill="none" stroke={hColor} strokeWidth="1.8" opacity="0.8">
+                  <animate attributeName="r" values="5;14" dur="2s" repeatCount="indefinite" />
+                  <animate attributeName="opacity" values="0.8;0" dur="2s" repeatCount="indefinite" />
+                </circle>
+
+                {/* Additional Selection Guideline Outer Circle */}
+                {isSelected && (
+                  <circle cx={hot.x} cy={hot.y} r="9" fill="none" stroke="#6366f1" strokeWidth="1.2" strokeDasharray="2,2" />
+                )}
+
+                {/* Inner central solid button dot */}
+                <circle
+                  cx={hot.x}
+                  cy={hot.y}
+                  r={isSelected ? "5" : "3.5"}
+                  fill={hColor}
+                  stroke="#ffffff"
+                  strokeWidth="1"
+                  className="transition-all duration-200 group-hover/hotspot:stroke-indigo-300"
+                />
+              </g>
+            );
+          })}
         </g>
 
         {/* Text labels outside the mirrored group to avoid reversed text */}

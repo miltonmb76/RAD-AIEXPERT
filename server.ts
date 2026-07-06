@@ -131,6 +131,164 @@ function handleGeminiError(error: any): string {
   return (errorMsg || "Error de comunicación con Gemini AI. Por favor, revisa la configuración.") + rawDetails;
 }
 
+function getBaseAndSide(name: string): { baseName: string, side: 'der' | 'izq' } | null {
+  const nameLower = name.toLowerCase();
+  
+  let side: 'der' | 'izq' | null = null;
+  if (/\b(derecho|derecha|der|dch|right)\b/i.test(nameLower)) {
+    side = 'der';
+  } else if (/\b(izquierdo|izquierda|izq|left)\b/i.test(nameLower)) {
+    side = 'izq';
+  } else if (nameLower.includes(" der ") || nameLower.endsWith(" der") || nameLower.startsWith("der ")) {
+    side = 'der';
+  } else if (nameLower.includes(" izq ") || nameLower.endsWith(" izq") || nameLower.startsWith("izq ")) {
+    side = 'izq';
+  }
+
+  if (!side) return null;
+
+  const baseName = nameLower
+    .replace(/\b(derecho|derecha|der|dch|right|izquierdo|izquierda|izq|left)\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return { baseName, side };
+}
+
+function varyValueString(valStr: string, structureName: string): string {
+  const match = valStr.trim().match(/^([\d.]+)\s*(.*)$/);
+  if (!match) return valStr;
+
+  const numStr = match[1];
+  const unit = match[2] ? match[2].trim() : "";
+  const num = parseFloat(numStr);
+  if (isNaN(num)) return valStr;
+
+  let hash = 0;
+  for (let i = 0; i < structureName.length; i++) {
+    hash = (hash << 5) - hash + structureName.charCodeAt(i);
+    hash |= 0;
+  }
+  const isPositive = hash % 2 === 0;
+
+  let delta = 0;
+  let decimals = 0;
+
+  if (numStr.includes(".") || (num > 0 && num < 1) || unit.toLowerCase() === "cm" || unit.toLowerCase() === "") {
+    if (num > 0 && num < 1) {
+      delta = isPositive ? 0.03 : -0.03;
+      decimals = 2;
+    } else if (unit.toLowerCase() === "cm") {
+      delta = isPositive ? 0.3 : -0.3;
+      decimals = 1;
+    } else {
+      delta = isPositive ? 0.2 : -0.2;
+      decimals = 1;
+    }
+  } else {
+    if (num >= 80) {
+      delta = isPositive ? 4 : -4;
+    } else if (num >= 40) {
+      delta = isPositive ? 3 : -3;
+    } else if (num >= 15) {
+      delta = isPositive ? 2 : -2;
+    } else if (num >= 5) {
+      delta = isPositive ? 1 : -1;
+    } else {
+      delta = isPositive ? 0.5 : -0.5;
+      decimals = 1;
+    }
+  }
+
+  const newValue = num + delta;
+  const formattedNewValue = decimals > 0 ? newValue.toFixed(decimals) : Math.round(newValue).toString();
+  return unit ? `${formattedNewValue} ${unit}` : formattedNewValue;
+}
+
+function parseRangeLimits(rangeStr: string, defaultVal: number): { min: number, max: number } {
+  const cleanRange = rangeStr.toLowerCase().replace(/,/g, ".").trim();
+  
+  // Try to match "MIN - MAX" (e.g., "90 - 120", "37 - 44", "50 - 100")
+  const rangeMatch = cleanRange.match(/([\d.]+)\s*[-–—]\s*([\d.]+)/);
+  if (rangeMatch) {
+    const min = parseFloat(rangeMatch[1]);
+    const max = parseFloat(rangeMatch[2]);
+    if (!isNaN(min) && !isNaN(max)) {
+      return { min, max };
+    }
+  }
+
+  // Try to match "hasta MAX" or "< MAX" or "<= MAX"
+  const maxMatch = cleanRange.match(/(?:hasta|<|<=)\s*([\d.]+)/);
+  if (maxMatch) {
+    const max = parseFloat(maxMatch[1]);
+    if (!isNaN(max)) {
+      const min = defaultVal > 1 ? Math.floor(defaultVal * 0.7) : defaultVal * 0.75;
+      return { min, max };
+    }
+  }
+
+  // Try to match "> MIN" or ">= MIN"
+  const minMatch = cleanRange.match(/(?:>|>=)\s*([\d.]+)/);
+  if (minMatch) {
+    const min = parseFloat(minMatch[1]);
+    if (!isNaN(min)) {
+      const max = defaultVal * 1.3;
+      return { min, max };
+    }
+  }
+
+  // Fallback: use defaultVal +/- 15%
+  return {
+    min: defaultVal * 0.85,
+    max: defaultVal * 1.15
+  };
+}
+
+function randomizeNormalValue(defaultValStr: string, rangeStr: string, structureName: string): string {
+  const valTrimmed = defaultValStr.trim();
+  
+  // Skip if not a numeric/standard starting string
+  const match = valTrimmed.match(/^([\d.,]+)\s*(.*)$/);
+  if (!match) return defaultValStr;
+
+  const numStr = match[1].replace(",", ".");
+  const unit = match[2] ? match[2].trim() : "";
+  const num = parseFloat(numStr);
+  if (isNaN(num)) return defaultValStr;
+
+  const nameLower = structureName.toLowerCase();
+  const isIR = nameLower.includes("ir") || nameLower.includes("índice de resistencia") || nameLower.includes("indice de resistencia") || nameLower.includes("índice resistencia") || nameLower.includes("indice resistencia");
+
+  if (isIR && (nameLower.includes("renal") || nameLower.includes("riñón") || nameLower.includes("riñon") || nameLower.includes("izquierdo") || nameLower.includes("derecho") || rangeStr.includes("0."))) {
+    // Generate randomized renal IR between 0,56 and 0,68 with 2 decimals
+    const randomIR = 0.56 + Math.random() * (0.68 - 0.56);
+    return randomIR.toFixed(2).replace(".", ",");
+  }
+
+  const { min, max } = parseRangeLimits(rangeStr, num);
+
+  // Apply a 10% safety margin to stay within range borders
+  const margin = (max - min) * 0.1;
+  const safeMin = min + margin;
+  const safeMax = max - margin;
+
+  let randomVal = safeMin + Math.random() * (safeMax - safeMin);
+  if (safeMax <= safeMin) {
+    randomVal = min + Math.random() * (max - min);
+  }
+
+  let formattedVal = "";
+  if (numStr.includes(".") || (num > 0 && num < 1) || (max - min < 5 && !Number.isInteger(num))) {
+    const decimals = numStr.split(".")[1]?.length || 1;
+    formattedVal = randomVal.toFixed(decimals);
+  } else {
+    formattedVal = Math.round(randomVal).toString();
+  }
+
+  return unit ? `${formattedVal} ${unit}` : formattedVal;
+}
+
 const app = express();
 const PORT = 3000;
 
@@ -690,6 +848,80 @@ Por cada recomendación, rellena los campos requeridos en el esquema JSON, espec
 });
 
 /**
+ * NEW API: SEMANTIC PARAGRAPH CLASSIFIER FOR REPORT HIGHLIGHTING
+ * POST /api/analyze-paragraphs
+ * Payload: {
+ *   paragraphs: string[]
+ *   model?: string
+ * }
+ */
+app.post("/api/analyze-paragraphs", async (req: express.Request, res: express.Response) => {
+  try {
+    const { model, paragraphs } = req.body;
+    if (!paragraphs || !Array.isArray(paragraphs) || paragraphs.length === 0) {
+      return res.json({ success: true, results: {} });
+    }
+
+    const ai = getGeminiClient();
+    const selectedModel = getModelName(model);
+
+    const systemInstruction = 
+      "Eres un médico radiólogo de élite experto en análisis semántico de reportes médicos. " +
+      "Tu tarea es analizar cada uno de los fragmentos de texto (párrafos, oraciones o elementos de lista) de un informe radiológico provistos, " +
+      "y clasificarlos con precisión médica real en una de estas tres categorías de severidad clínica:\n" +
+      "1. 'normal': El texto describe estructuras normales, hallazgos esperados para la edad, técnicas del examen, títulos, datos de identificación, o la ausencia de patología de forma explícita (por ejemplo: 'sin hallazgos patológicos', 'silueta cardíaca normal', 'estructuras conservadas', 'parénquima pulmonar normal').\n" +
+      "2. 'altered': El texto describe un hallazgo patológico activo, lesión, alteración anatómica, inflamación, degeneración o anormalidad de severidad estándar, moderada o leve (por ejemplo: 'presencia de nódulo de 5mm', 'bursitis', 'esteatosis leve', 'quiste cortical renal', 'desgarro parcial', 'osteofitos', 'derrame articular leve').\n" +
+      "3. 'critical': El texto describe un hallazgo patológico crítico, agudo, potencialmente mortal o de máxima urgencia clínica (por ejemplo: 'trombosis venosa profunda', 'desgarro/ruptura completa de tendón', 'apendicitis aguda', 'aneurisma gigante', 'neumotórax a tensión', 'infarto esplénico', 'masa de sospecha altamente maligna BI-RADS 5').\n\n" +
+      "REGLAS CRÍTICAS:\n" +
+      "- Debes entender el contexto clínico real. Si se niega un hallazgo (ej. 'Sin evidencia de derrame' o 'No se aprecian fracturas'), es un hallazgo NORMAL ('normal').\n" +
+      "- Si hay duda de si es altered o critical, clasifícalo como 'altered' a menos que sea una emergencia de alta urgencia o una ruptura completa.\n" +
+      "- No uses palabras clave de forma robótica, entiende la semántica médica real.";
+
+    const promptText = `Analiza cada uno de los siguientes textos y clasifícalos según su severidad radiológica/clínica. Retorna un objeto JSON con la clasificación de cada texto de manera exacta.
+
+La estructura de salida debe ser un objeto JSON plano donde las llaves sean los textos originales exactos y los valores sean la clasificación correspondiente: "normal", "altered" o "critical".
+
+Ejemplo de salida esperada:
+{
+  "Silueta cardíaca de tamaño normal.": "normal",
+  "Se observa un nódulo pulmonar sólido de 8 mm en el lóbulo superior derecho.": "altered",
+  "Trombosis venosa profunda aguda de la vena femoral común derecha.": "critical"
+}
+
+Textos a clasificar:
+${JSON.stringify(paragraphs, null, 2)}`;
+
+    const response = await ai.models.generateContent({
+      model: selectedModel,
+      contents: promptText,
+      config: {
+        systemInstruction: systemInstruction,
+        temperature: 0.1,
+        responseMimeType: "application/json",
+      },
+    });
+
+    let results = {};
+    try {
+      results = JSON.parse(response.text || "{}");
+    } catch (e) {
+      console.warn("Falla de parseo en JSON devuelto por Gemini en analyze-paragraphs:", response?.text);
+    }
+
+    res.json({
+      success: true,
+      results,
+    });
+  } catch (error: any) {
+    console.error("Error en /api/analyze-paragraphs:", error);
+    res.status(500).json({
+      success: false,
+      error: error?.message || String(error),
+    });
+  }
+});
+
+/**
  * 4b. API: INCORPORATE CLASSIFICATION INTELLIGENTLY INTO THE REPORT
  * POST /api/incorporate-classification
  * Payload: {
@@ -1079,7 +1311,7 @@ Devuelve este informe en un formato de caja clínica estructurado con títulos l
     parts.push({ text: queryPrompt });
 
     const systemInstruction = 
-      "Eres un consultor radiólogo internacional senior. Eres extremadamente meticuloso y exacto al valorar imágenes médicas, explicando de forma transparente y didáctica el proceso de valoración visual de las anomalías radiológicas para la educación o validación médica. ATENCIÓN DE CONSISTENCIA DIAGNÓSTICA: Es imperativo que identifiques de forma consistente y transparente cualquier alteración estructural obvia o conspicua detectable (como una marcada disminución del espacio articular femorotibial, estrechamiento del espacio articular, osteofitos, esclerosis ósea subcondral, deformidades, luxaciones o líneas de fractura claras). Nunca subestimes ni califiques de dudosa la presencia de estas patologías evidentes; lístalas de forma directa y califícalas con su debido nivel de gravedad clínica.";
+      "Eres un consultor radiólogo internacional senior. Eres extremadamente meticuloso y exacto al valorar imágenes médicas, explicando de forma transparente y didáctica el proceso de valoración visual de las anomalías radiológicas para la educación o validación médica. ATENCIÓN DE CONSISTENCIA DIAGNÓSTICA Y EVITACIÓN DE ALUCINACIONES: Es imperativo que identifiques de forma consistente y transparente cualquier alteración estructural obvia o conspicua detectable (como una marcada disminución del espacio articular femorotibial, estrechamiento del espacio articular, osteofitos, esclerosis ósea subcondral, deformidades, luxaciones o líneas de fractura claras) sin minimizarlas. Al mismo tiempo, debes mantener una adherencia absoluta a la verdad física de la imagen: está estrictamente prohibido alucinar, inventar o reportar material de osteosíntesis (placas, tornillos transindesmales), fracturas, o disminuciones de espacio de la mortaja o espacios articulares que no existan en la imagen real, basando tu veredicto 100% en la evidencia de los píxeles anatómicos observables.";
 
     const response = await ai.models.generateContent({
       model: selectedModel,
@@ -1356,13 +1588,14 @@ Proporciona una valoración de máxima exactitud científica estructurada bajo l
 
     if (isFractureCase) {
       promptText += `
-## ⚡️ PROTOCOLO ESPECIAL DE MÁXIMA EXACTITUD PARA FRACTURAS (MUTIPLE VALORACIÓN BIOMECÁNICA) ⚡️
-(Este apartado especial se ha disparado obligatoriamente por sospecha, mención o hallazgo visual de fractura. Debes caracterizar microscómicamente los hallazgos con máxima precisión traumatológica, basándote rigurosamente en la evidencia física y real de la imagen):
+## ⚡️ PROTOCOLO ESPECIAL DE MÁXIMA EXACTITUD PARA FRACTURAS (MÚLTIPLE VALORACIÓN BIOMECÁNICA) ⚡️
+(Este apartado especial se ha disparado obligatoriamente por sospecha, mención o hallazgo visual de fractura en la indicación o consulta. Debes caracterizar los hallazgos con máxima precisión, basándote rigurosamente en la evidencia física real visible de la imagen):
+*   **⚠️ REGLA DE PRESENCIA OBLIGATORIA (CONTROL ANTI-ALUCINACIÓN):** Si tras un escaneo cuidadoso de la imagen confirmas que NO existe fractura, fisura ni trazo de discontinuidad cortical, DEBES declararlo categóricamente en el primer párrafo: *"NO SE OBSERVAN TRAZOS DE FRACTURA NI DISCONTINUIDADES CORTICALES EN LOS SEGMENTOS EVALUADOS. Estructuras óseas íntegras y conservadas."* En este caso, marca todos los sub-puntos siguientes como "No aplicable". Queda terminantemente prohibido inventar trazos de fractura por complacer la sospecha clínica.
 - **1. Presencia, Densidad y Localización Anatomopatológica Precisa**: (Identifica con exactitud diagnóstica la localización anatómica: diáfisis, metáfisis, epífisis, cuello, cabeza, etc., describiendo la discontinuidad cortical).
-- **2. Número y Dirección Tridimensional de Trazos**: (Describe el número exacto de trazos óseos identificados. Clasifica rigurosamente su orientación geométrica: transverso, oblicuo corto/largo, espiroideo o helicoidal, longitudinal, ala de mariposa, conminuto con múltiples fragmentos libres, etc.)
-- **3. Extensión y Compromiso Articular Estricto**: (Especificar de forma obligatoria e inflexible si existe afección, interrupción o extensión del trazo hacia la carilla, cavidad o cartílago articular. Detalla si hay escalón o hundimiento articular en milímetros estimados, pérdida de congruencia o diástasis intraarticular.)
-- **4. Desplazamiento Espacial de Fragmentos y Alineación**: (Describe minuciosamente la dirección y grado de desplazamiento óseo: diástasis o separación en mm, cabalgamiento con acortamiento longitudinal, luxación o subluxación articular, desviación angular en varo/valgo o antero/retrocurvatum, o rotación fragmentaria.)
-- **5. Cita de Evidencia Visual de Integridad Científica**: (Proporciona la confirmación estricta de cada hallazgo con correlato clínico directo. ¡No tolerar alucinación de líneas vasculares normales ni subestimación de trazos corticales sutiles!)
+- **2. Número y Dirección Tridimensional de Trazos**: (Describe el número exacto de trazos óseos identificados. Clasifica rigurosamente su orientación geométrica: transverso, oblicuo corto/largo, espiroideo o helicoidal, longitudinal, ala de mariposa, conminuto con múltiples fragmentos libres, etc. Si no hay fractura, reportar 'No aplicable').
+- **3. Extensión y Compromiso Articular Estricto**: (Especificar de forma obligatoria e inflexible si existe afección, interrupción o extensión del trazo hacia la carilla, cavidad o cartílago articular. Detalla si hay escalón o hundimiento articular en milímetros estimados, pérdida de congruencia o diástasis intraarticular. Si no hay fractura, reportar 'No aplicable').
+- **4. Desplazamiento Espacial de Fragmentos y Alineación**: (Describe minuciosamente la dirección y grado de desplazamiento óseo: diástasis o separación en mm, cabalgamiento con acortamiento longitudinal, luxación o subluxación articular, desviación angular en varo/valgo o antero/retrocurvatum, o rotación fragmentaria. Si no hay fractura, reportar 'No aplicable').
+- **5. Cita de Evidencia Visual de Integridad**: (Proporciona la confirmación estricta de cada hallazgo con correlato clínico directo. ¡No tolerar alucinación de líneas vasculares normales ni subestimación de trazos corticales sutiles!)
 `;
     }
 
@@ -1390,12 +1623,13 @@ Proporciona una valoración de máxima exactitud científica estructurada bajo l
     if (isOsteoarthritisCase) {
       promptText += `
 ## 🦴 PROTOCOLO ESPECIAL DE MÁXIMA EXACTITUD PARA ARTROSIS Y ENFERMEDAD DEGENERATIVA (VALORACIÓN ARTICULAR Y COLUMNA) 🦴
-(Este apartado especial se ha disparado obligatoriamente por sospecha, mención o hallazgo de enfermedad degenerativa. Debes buscar y describir minuciosamente los cambios degenerativos o artrósicos en articulaciones o columna con el mayor rigor, basándote rígidamente en la evidencia física visible sin inventar ni pasar por alto hallazgos sutiles):
-- **1. Disminución / Pinzamiento de Espacios Articulares o Discales**: (Evalúa con precisión micrométrica la anchura del espacio articular o intervertebral. Especifica si el compromiso es simétrico o asimétrico -ej. medial vs. lateral en rodilla- y estima su reducción porcentual o milimétrica).
-- **2. Presencia, Medida y Distribución de Osteofitos**: (Identifica y detalla la localización exacta de osteofitos marginales, espolones u osteofitos de tracción en platillos, carillas, márgenes óseos o cuerpos vertebrales. No pases por alto osteofitos incipientes pero evita alucinar excrecencias normales o superposiciones estructurales).
+(Este apartado especial se ha disparado por sospecha, mención o hallazgo de enfermedad degenerativa. Debes buscar y describir minuciosamente los cambios degenerativos, basándote rígidamente en la evidencia física visible sin inventar desgaste ni disminución del espacio articular que no existan):
+*   **⚠️ REGLA DE PRESENCIA OBLIGATORIA (CONTROL ANTI-ALUCINACIÓN):** Si los espacios articulares (interlínea articular, mortaja del tobillo, espacio femorotibial, coxofemoral o intervertebral) están perfectamente conservados, normales y simétricos, DEBES reportarlo con total honestidad: *"Espacio articular conservado, de amplitud normal y simétrica, sin pinzamiento ni esclerosis subcondral."* No inventes disminuciones severas de la mortaja o espacios articulares si están conservados.
+- **1. Disminución / Pinzamiento de Espacios Articulares o Discales**: (Evalúa con precisión micrométrica la anchura del espacio articular o intervertebral. Especifica si el compromiso es simétrico o asimétrico -ej. medial vs. lateral en rodilla- y estima su reducción porcentual o milimétrica. Si es normal, reportar 'Espacio articular conservado').
+- **2. Presencia, Medida y Distribución de Osteofitos**: (Identifica y detalla la localización exacta de osteofitos marginales, espolones u osteofitos de tracción en platillos, carillas, márgenes óseos o cuerpos vertebrales. No pases por alto osteofitos incipientes pero evita alucinar excrecencias normales o superposiciones estructurales. Si no hay, declara: 'Sin evidencia de osteofitosis').
 - **3. Esclerosis Ósea Subcondral e Integridad del Hueso**: (Analiza el aumento focalizado de la densidad ósea -esclerosis- debajo del cartílago articular o en las plataformas vertebrales, indicando las zonas de máxima sobrecarga mecánica).
-- **4. Geodas o Quistes Subcondrales**: (Busca con alta magnificación visual sutiles geodas de presión o quistes subcondrales degenerativos, reportando su presencia, diámetro y localización precisa).
-- **5. Clasificación y Gradación Internacional Rigurosa**: (Aplica con absoluto rigor las escalas internacionales correspondientes según la región estudiada: por ejemplo, la clasificación de Kellgren-Lawrence para rodilla/cadera -de Grado 1 sutil a Grado 4 severo-, escalas de severidad para artrosis facetaria, o de discopatía degenerativa en columna. Fundamenta científicamente cada grado asignado).
+- **4. Geodas o Quistes Subcondrales**: (Busca con alta magnificación visual sutiles geodas de presión o quistes subcondrales degenerativos, reportando su presencia, diámetro y localización precisa. Si no hay, reportar como ausentes).
+- **5. Clasificación y Gradación Internacional Rigurosa**: (Aplica con absoluto rigor las escalas internacionales correspondientes según la región estudiada: por ejemplo, la clasificación de Kellgren-Lawrence para rodilla/cadera -de Grado 1 sutil a Grado 4 severo-, escalas de severidad para artrosis facetaria, o de discopatía degenerativa en columna, sólo si existe artrosis real comprobable).
 - **6. Coherencia y Sinergia Diagnóstica Ampliada**: 
   * *NOTA CRÍTICA*: La activación de este protocolo específico NO debe disminuir de ninguna manera la eficiencia o detalle del resto de la valoración diagnóstica anatomopatológica general (tejidos blandos, estructuras óseas no degenerativas u órganos visibles). Al contrario, debe potenciar y enriquecer el análisis integral cruzando los datos mecánicos/degenerativos con el resto de los hallazgos para una valoración diagnóstica holística de máxima potencia clínica.
 `;
@@ -1404,11 +1638,12 @@ Proporciona una valoración de máxima exactitud científica estructurada bajo l
     if (isMetalCase) {
       promptText += `
 ## 🔩 PROTOCOLO ESPECIAL DE MÁXIMA EXACTITUD PARA PRÓTESIS Y ELEMENTOS METÁLICOS DE OSTEOSÍNTESIS (INTEGRIDAD Y ALINEACIÓN) 🔩
-(Este apartado especial se ha disparado obligatoriamente por sospecha, mención o hallazgo de implantes metálicos, prótesis o material de osteosíntesis. Debes realizar una evaluación técnica y de imagen de alta especificidad, describiendo adecuadamente su composición y valorando con el mayor rigor su integridad estructural y estabilidad, basándote en la evidencia física real visible en la imagen):
-- **1. Tipo, Localización Anatomopatológica y Componentes del Implante**: (Describe con propiedad los componentes de osteosíntesis o prótesis identificados: vástagos, placas de compresión/reconstrucción, tornillos corticales/esponjosos, clavos endomedulares, alambres, cerclajes, cúpulas acetabulares, liners, etc. Especifica con precisión los segmentos óseos o articulaciones involucrados).
-- **2. Valoración de la Estructura Metálica e Integridad**: (Evalúa con minuciosa agudeza visual si existe evidencia de fatiga, doblamiento, fractura o alteración del material. Detalla de forma explícita la integridad de cada uno de los elementos metálicos y valora su integridad y estabilidad).
-- **3. Interfaz Hueso-Implante (Margen Periprotésico / Peri-implante)**: (Inspecciona la presencia de bandas radiolúcidas -osteólisis peri-implante u osteólisis periprotésica sutil-, aflojamiento aséptico, hundimiento de componentes, reabsorción ósea circundante o reacción periosteal anormal).
-- **4. Orientación, Alineación Espacial y Relación Anatómica**: (Describe si la orientación de la prótesis o del material de osteosíntesis es anatómica y funcional. Si es una prótesis articular, valora si existe luxación, subluxación, asimetría de componentes o desalineación).
+(Este apartado especial se ha disparado por sospecha, mención o hallazgo de implantes metálicos o material de osteosíntesis. Debes realizar una evaluación técnica sumamente rigurosa de su presencia real):
+*   **⚠️ REGLA DE PRESENCIA OBLIGATORIA (CONTROL ANTI-ALUCINACIÓN):** Si tras un escaneo cuidadoso confirmas que NO existen implantes metálicos, prótesis, placas de osteosíntesis, ni tornillos (como tornillos transindesmales) en las imágenes, DEBES declarar categóricamente al inicio del apartado: *"NO SE IDENTIFICAN IMPLANTES METÁLICOS NI MATERIAL DE OSTEOSÍNTESIS EN NINGUNA DE LAS IMÁGENES EVALUADAS."* En este caso, marca todos los sub-puntos siguientes como "No aplicable". Queda estrictamente prohibido alucinar o inventar placas o tornillos inexistentes por complacer el motivo de consulta o la sospecha clínica.
+- **1. Tipo, Localización Anatomopatológica y Componentes del Implante**: (Describe los componentes identificados: vástagos, placas de compresión/reconstrucción, tornillos corticales/esponjosos, clavos endomedulares, alambres, cerclajes, cúpulas acetabulares, liners, etc. Especifica con precisión los segmentos óseos o articulaciones involucrados. Si no hay ninguno, marcar como no aplicable/inexistente).
+- **2. Valoración de la Estructura Metálica e Integridad**: (Evalúa con minuciosa agudeza visual si existe evidencia de fatiga, doblamiento, fractura o alteración del material. Detalla de forma explícita la integridad de cada uno de los elementos metálicos y valora su integridad y estabilidad. Si no hay material, marcar como no aplicable).
+- **3. Interfaz Hueso-Implante (Margen Periprotésico / Peri-implante)**: (Inspecciona la presencia de bandas radiolúcidas -osteólisis peri-implante u osteólisis periprotésica sutil-, aflojamiento aséptico, hundimiento de componentes, reabsorción ósea circundante o reacción periosteal anormal. Si no hay implante, marcar como no aplicable).
+- **4. Orientación, Alineación Espacial y Relación Anatómica**: (Describe si la orientación de la prótesis o del material de osteosíntesis es anatómica y funcional. Si es una prótesis articular, valora si existe luxación, subluxación, asimetría de componentes o desalineación. Si no hay implante, marcar como no aplicable).
 `;
     }
 
@@ -1430,7 +1665,10 @@ Mantén un lenguaje impecable, sumamente formal y científico, digno de un comit
     parts.push({ text: promptText });
 
     const systemInstruction = 
-      "Eres un consultor radiólogo internacional senior de diagnóstico, y el estándar supremo de precisión diagnóstica clínica de esta plataforma. Este módulo ('Doble Valoración') exige un equilibrio científico idóneo: requiere registrar de manera consistente y con total exactitud cualquier hallazgo o alteración estructural evidente (por ejemplo, marcada disminución del espacio articular en proyección femorotibial, esclerosis subcondral o severo desgaste marginal), asegurando que las patologías macroscópicas y conspicuas no sean subestimadas ni clasificadas como dudosas. Al mismo tiempo, mantiene un alto nivel de sensibilidad para documentar de forma honesta micro-detalles o anomalías sutiles de forma analítica, protegiendo al informe contra alucinaciones de micro-lesiones inexistentes basando tu veredicto estrictamente en la evidencia física real de la imagen.";
+      "Eres un consultor radiólogo internacional senior de diagnóstico, y el estándar supremo de precisión diagnóstica clínica de esta plataforma. Este módulo ('Doble Valoración') exige un equilibrio científico idóneo:\n" +
+      "1. EXACTITUD SIN SUBESTIMACIONES: Registra de manera consistente y con total exactitud cualquier hallazgo o alteración estructural real y evidente (por ejemplo, marcada disminución del espacio articular en proyección femorotibial, esclerosis subcondral o severo desgaste marginal, fractura real), asegurando que las patologías macroscópicas y conspicuas no sean subestimadas ni clasificadas como dudosas.\n" +
+      "2. ADHERENCIA ESTRICTA A LA VERDAD FÍSICA (CERO ALUCINACIONES): Está terminantemente prohibido inventar o alucinar hallazgos que no existan en la imagen, especialmente material de osteosíntesis (placas, tornillos transindesmales), fracturas, o disminuciones de espacio de la mortaja o espacios articulares que estén preservados. Si la sospecha clínica o las preguntas del paciente mencionan un término (ej. 'fractura', 'placa', 'tornillos transindesmales') pero en la imagen real no hay material de osteosíntesis ni trazos de fractura, debes ser taxativo, riguroso y declarar que no existen, en lugar de inventarlos por complacer la sospecha o el protocolo.\n" +
+      "3. VARIANTES DE LA NORMALIDAD: No confundas variantes anatómicas normales (canales nutricios, suturas) o superposiciones óseas y artefactos de imagen con fracturas, placas o tornillos. Tu veredicto debe fundamentarse 100% en la evidencia física y observable de los píxeles de la imagen.";
 
     const response = await ai.models.generateContent({
       model: selectedModel,
@@ -1850,7 +2088,7 @@ Escribe tu respuesta con tono académico del más alto nivel, sin rodeos cortese
     parts.push({ text: promptText });
 
     const systemInstruction = 
-      "Eres el Radiólogo Jefe y Director Clínico de un prestigioso centro PACS universitario. Diriges las sesiones generales de interconsulta, resolución de contradicciones diagnósticas y examen de casos altamente complejos. Eres un experto supremo impasible ante sesgos y tu principal dogma es la veracidad empírica basada estrictamente en la evidencia visual de la imagen.";
+      "Eres el Radiólogo Jefe y Director Clínico de un prestigioso centro PACS universitario. Diriges las sesiones generales de interconsulta, resolución de contradicciones diagnósticas y arbitraje clínico. Tu principal dogma es la veracidad empírica basada estrictamente en la evidencia visual real de la imagen. Debes eliminar activamente y con mano de hierro cualquier falsa interpretación, alucinación de material de osteosíntesis (placas, tornillos transindesmales), fracturas inexistentes o falsos positivos (como reducciones de espacio articular/mortaja que no existen) introducidos por borradores preliminares o sugeridos por textos de sospecha clínica, dictaminando únicamente lo que se observa de forma fidedigna y empírica en las imágenes.";
 
     const response = await ai.models.generateContent({
       model: selectedModel,
@@ -2965,19 +3203,6 @@ app.post("/api/analyze-anatomy", async (req: express.Request, res: express.Respo
       structuresPrompt += `- ID: "${struc.id}" (${struc.label})\n`;
     });
 
-    // Extract the "Impresión Diagnóstica", "Conclusión" or "Diagnóstico" section from reportText
-    // to search strictly and exclusively within the conclusions section as explicitly requested.
-    let targetText = reportText;
-    const lowerReport = reportText.toLowerCase();
-    
-    // We match 'impresión diagnóstica', ' conclusion', 'conclusiones', 'diagnóstico', 'síntesis diagnóstica' and variations
-    const conclusionIndex = lowerReport.search(/(impresi[oó]n diagn[oó]stica|conclusi[oó]n|conclusiones|diagn[oó]stico|s[ií]ntesis diagn[oó]stica)/);
-    let sectionDetected = false;
-    if (conclusionIndex !== -1) {
-      targetText = reportText.substring(conclusionIndex);
-      sectionDetected = true;
-    }
-
     let sidePrompt = "";
     if (side) {
       sidePrompt = `
@@ -2990,39 +3215,43 @@ app.post("/api/analyze-anatomy", async (req: express.Request, res: express.Respo
     }
 
     let specialInstruction = `
-[REGLA DE CONGRUENCIA EXCLUSIVA - IMPRESIÓN DIAGNÓSTICA / CONCLUSIÓN]:
-- DEBES basar tu análisis e identificación de hallazgos EXCLUSIVAMENTE en el texto de la IMPRESIÓN DIAGNÓSTICA (Conclusión/Síntesis Diagnóstica) proporcionado.
-- Ignora cualquier hallazgo patológico que se describa en el cuerpo general del estudio si no se confirma y reitera de forma explícita en la Impresión Diagnóstica o Conclusión.
-- Si una estructura o región no se menciona o no presenta ninguna alteración patológica confirmada en la Impresión Diagnóstica/Conclusión, debes clasificarla estrictamente como "Normal" o elegir "no_descrito" si no figura en absoluto en la conclusión.
-- NO utilices términos predeterminados del sistema ni asumas defaults/hallazgos clásicos. El estado ("state") debe describir de forma muy concisa (de 1 a 3 palabras) el diagnóstico patológico real escrito en el texto de la Conclusión (por ejemplo: "Ruptura Completa", "Desgarro Miofascial", "Bursitis", "Hernia umbilical", "Normal", "no_descrito").
-- Está terminantemente prohibido alucinar niveles de severidad, medidas, escalas, desgarros o patologías que no estén explícitamente escritas en el texto.
+[REGLA DE CONGRUENCIA Y SINCERIDAD ESTRICTA]:
+- Analiza con sumo cuidado TODO el texto del reporte médico (tanto el cuerpo general "Hallazgos" como las conclusiones "Impresión Diagnóstica / Conclusión").
+- NO inventes ni asumas ningún hallazgo patológico que no esté explícitamente escrito en el texto.
+- Si una estructura se describe como "Normal", "Sin alteraciones", "Conservado", "Homogéneo", "Límites normales", "No muestra alteraciones" o similar, su "state" DEBE ser estrictamente "Normal" y su "description" DEBE ser EXACTAMENTE "Dentro de límites normales.".
+- Si la estructura no se menciona en ninguna parte de todo el reporte, su "state" DEBE ser "no_descrito" y su "description" DEBE ser "No mencionado / No descrito.".
+
+- EN PARTICULAR PARA LA ASCITIS / LÍQUIDO LIBRE ("ascitis"):
+  * Si el reporte menciona "no se observa líquido libre", "sin líquido libre", "no se evidencia líquido", "recesos libres", "douglas sin líquido", "sin colecciones", o no describe ninguna acumulación de líquido libre o ascitis, el "state" DEBE ser "Normal" (o "no_descrito" si no se menciona en absoluto).
+  * BAJO NINGUNA CIRCUNSTANCIA debes asignarle un nivel patológico como "leve", "moderada", "severa" o "líquido libre" si el reporte indica que no hay líquido o que la cavidad está libre/limpia. Sé sumamente riguroso con esto: no inventar ascitis.
+- NO utilices términos predeterminados del sistema ni asumas defaults/hallazgos clásicos. El estado ("state") debe describir de forma muy concisa (de 1 a 3 palabras) el diagnóstico patológico real escrito en el texto (por ejemplo: "Ruptura Completa", "Desgarro", "Bursitis", "Hernia umbilical", "Normal", "no_descrito").
+- Está terminantemente prohibido alucinar niveles de severidad, medidas, escalas, o patologías que no estén explícitamente escritas en el texto.
 ${sidePrompt}
-${sectionDetected ? "- NOTA: El texto que vas a analizar ya ha sido recortado previamente para contener SOLAMENTE la sección de Impresión Diagnóstica/Conclusión." : "- NOTA: No se localizó una etiqueta explícita de Impresión Diagnóstica/Conclusión. Analiza con sumo cuidado los párrafos finales o concluyentes para extraer de allí la información real, ignorando incidentalidades del cuerpo anterior."}
 `;
 
     const promptText = `
 Estudio clínico / Región: ${studyType || "No especificado"}
 
-Sección de Impresión Diagnóstica / Conclusión del Reporte Radiológico:
+Reporte Radiológico Completo:
 """
-${targetText}
+${reportText}
 """
 
-Tu misión es analizar detenidamente el reporte anterior y extraer los hallazgos correspondientes a las siguientes estructuras anatómicas, basándote exclusivamente en esa sección de Impresión Diagnóstica:
+Tu misión es analizar detenidamente el reporte anterior y extraer los hallazgos reales correspondientes a las siguientes estructuras anatómicas, sin inventar nada:
 ${structuresPrompt}
 
 ${specialInstruction}
 
 Para cada una de estas estructuras en la lista:
-1. "state": Determina el estado o diagnóstico clínico corto de la estructura derivado directamente de la sección del reporte (en español, ej: "Normal", "Tendinosis", "Derrame articular", "Desgarro", "Bursitis", "Hernia umbilical", "Normal", "no_descrito" etc.). No te limites a una lista fija de opciones. Genera un término médico conciso (de 1 a 3 palabras) del hallazgo en lenguaje natural (ej: "Ruptura Completa", "Bursitis", "Desgarro").
-   - Analiza con sumo cuidado la negación de hallazgos (ej: "sin desgarros", "no se observa rotura", "patrón fibrilar conservado" significan estado normal).
-   - Si la estructura está sana o no indica lesión en la sección analizada, usa exactamente "Normal".
-   - Si la estructura ni siquiera se menciona o sugiere en esa sección analizada, entonces elige obligatoriamente "no_descrito".
+1. "state": Determina el estado o diagnóstico clínico corto de la estructura derivado directamente del reporte (en español, ej: "Normal", "Tendinosis", "Derrame articular", "Desgarro", "Bursitis", "Hernia umbilical", "Normal", "no_descrito" etc.). Genera un término médico conciso (de 1 a 3 palabras) del hallazgo en lenguaje natural (ej: "Litiasis vesicular", "Esteatosis leve", "Normal", "no_descrito").
+   - Analiza con sumo cuidado la negación de hallazgos (ej: "sin líquido libre", "no se observa líquido libre", "sin litiasis" significan estado normal o libre).
+   - Si la estructura está sana o indica un aspecto normal, usa exactamente "Normal".
+   - Si la estructura no se describe ni se menciona en absoluto, entonces elige obligatoriamente "no_descrito".
 
 2. "description": Genera un resumen clínico del hallazgo que sea extremadamente COMPACTO, BREVE y DIRECTO para esa estructura (en español).
    - IMPORTANTE: Si la estructura es normal o sana (estado "Normal"), la descripción DEBE ser EXACTAMENTE: "Dentro de límites normales."
-   - Si la estructura NO está descrita en el reporte para esa sección de conclusiones (estado "no_descrito"), responde: "No mencionado / No descrito."
-   - Si tiene una anomalía o hallazgo patológico, genera un micro-resumen ultra-concreto de solo 2 a 7 palabras (ej: "Tendinosis sin desgarros", "Desgarro intrasustancia de 5mm", "Bursitis SAD", "Adenopatía reactiva"). Evita explicaciones largas, rodeos, oraciones completas extensas o redundancias, para asegurar que la descripción quepa perfectamente en una sola línea del cuadro sinóptico.
+   - Si la estructura NO está descrita en el reporte (estado "no_descrito"), responde: "No mencionado / No descrito."
+   - Si tiene una anomalía o hallazgo patológico, genera un micro-resumen ultra-concreto de solo 2 a 7 palabras (ej: "Litiasis de 15mm", "Esteatosis hepática leve", "Paredes engrosadas", "Hernia reducible"). Evita explicaciones largas, rodeos o redundancias para asegurar que la descripción quepa perfectamente en el cuadro.
    - No alucines escalas, grados ni dimensiones que no figuren explícitamente en el texto.
 
 Devuelve la lista "results" con el análisis de cada estructura solicitada.
@@ -3431,6 +3660,1674 @@ Sigue estrictamente las pautas que ha especificado el usuario. Si la instrucció
     });
   } catch (error: any) {
     console.error("Error en /api/ai-paragraph-action:", error);
+    res.status(500).json({ success: false, error: handleGeminiError(error) });
+  }
+});
+
+/**
+ * 23. API: ANALYZE MEASUREMENTS IN REPORT (Asistente de Medidas)
+ * POST /api/analyze-measurements
+ * Payload: {
+ *   report: string,
+ *   model?: string
+ * }
+ */
+app.post("/api/analyze-measurements", async (req: express.Request, res: express.Response) => {
+  try {
+    const { model, report } = req.body;
+    if (!report) {
+      return res.status(400).json({ success: false, error: "Se requiere el 'report' para analizar las medidas." });
+    }
+
+    const ai = getGeminiClient();
+    const selectedModel = getModelName(model);
+
+    const systemInstruction = 
+      "Eres un radiólogo senior y experto en anatometría clínica y hemodinámica vascular. Tu tarea es analizar rigurosamente el informe radiológico proporcionado para:\n" +
+      "1. Determinar con la máxima precisión posible el tipo de estudio radiológico realizado basándote en el contenido del reporte (por ejemplo: 'Doppler de Carótidas', 'Ultrasonido Abdominal Completo', 'Doppler Renal', 'Doppler Venoso de Miembros Inferiores', 'Ultrasonido de Tiroides', 'Ultrasonido Pélvico', 'Ultrasonido de Partes Blandas', etc.) y guardarlo en el campo 'detectedStudyType'.\n" +
+      "2. Identificar de manera dinámica todas las estructuras anatómicas, vasos sanguíneos, velocidades o parámetros que son típicamente susceptibles de medición clínica e indispensables para ese tipo de estudio específico:\n" +
+      "   - Si detectas que es un DOPPLER DE CARÓTIDAS o DOPPLER CAROTÍDEO: Debes incluir de forma obligatoria y exhaustiva las siguientes 22 mediciones y parámetros bilateralmente, buscando sus valores reales en el reporte, o sugiriendo sus valores normales por defecto correspondientes si no se mencionan:\n" +
+      "     1. Arteria Carótida Común Derecha (VPS) [Rango: 50 - 100 cm/s, Default: 75 cm/s]\n" +
+      "     2. Arteria Carótida Común Derecha (VED) [Rango: < 35 cm/s, Default: 20 cm/s]\n" +
+      "     3. Arteria Carótida Interna Derecha (VPS) [Rango: < 125 cm/s, Default: 70 cm/s]\n" +
+      "     4. Arteria Carótida Interna Derecha (VED) [Rango: < 40 cm/s, Default: 25 cm/s]\n" +
+      "     5. Arteria Carótida Externa Derecha (VPS) [Rango: < 115 cm/s, Default: 65 cm/s]\n" +
+      "     6. Arteria Carótida Externa Derecha (VED) [Rango: < 30 cm/s, Default: 15 cm/s]\n" +
+      "     7. Arteria Carótida Común Izquierda (VPS) [Rango: 50 - 100 cm/s, Default: 75 cm/s]\n" +
+      "     8. Arteria Carótida Común Izquierda (VED) [Rango: < 35 cm/s, Default: 20 cm/s]\n" +
+      "     9. Arteria Carótida Interna Izquierda (VPS) [Rango: < 125 cm/s, Default: 70 cm/s]\n" +
+      "     10. Arteria Carótida Interna Izquierda (VED) [Rango: < 40 cm/s, Default: 25 cm/s]\n" +
+      "     11. Arteria Carótida Externa Izquierda (VPS) [Rango: < 115 cm/s, Default: 65 cm/s]\n" +
+      "     12. Arteria Carótida Externa Izquierda (VED) [Rango: < 30 cm/s, Default: 15 cm/s]\n" +
+      "     13. Grosor Miointimal Derecho (GIM) [Rango: < 0.9 mm, Default: 0.6 mm]\n" +
+      "     14. Grosor Miointimal Izquierdo (GIM) [Rango: < 0.9 mm, Default: 0.6 mm]\n" +
+      "     15. Presencia de Placas (Derecha) [Rango: Sin placas, Default: Sin placas]\n" +
+      "     16. Presencia de Placas (Izquierda) [Rango: Sin placas, Default: Sin placas]\n" +
+      "     17. Arteria Vertebral Derecha (VPS) [Rango: 20 - 60 cm/s, Default: 35 cm/s]\n" +
+      "     18. Arteria Vertebral Derecha (Dirección) [Rango: Anterógrado, Default: Anterógrado]\n" +
+      "     19. Arteria Vertebral Izquierda (VPS) [Rango: 20 - 60 cm/s, Default: 35 cm/s]\n" +
+      "     20. Arteria Vertebral Izquierda (Dirección) [Rango: Anterógrado, Default: Anterógrado]\n" +
+      "     21. Relación ACC/ACI Derecha [Rango: < 2.0, Default: 1.2]\n" +
+      "     22. Relación ACC/ACI Izquierda [Rango: < 2.0, Default: 1.2]\n" +
+      "   - Si detectas que es un DOPPLER ARTERIAL DE MIEMBROS INFERIORES: Debes analizar de manera exhaustiva el reporte para extraer las características de flujo, velocidades y forma de onda de cada uno de los vasos principales de forma bilateral o unilateral según corresponda. Los vasos son: Arteria Ilíaca Común (AIC), Arteria Femoral Común (AFC), Arteria Femoral (AF) [¡NUNCA uses el término Femoral Superficial, usa únicamente Arteria Femoral o AF!], Arteria Poplítea (AP), Arteria Tibial Anterior (ATA), Arteria Tibial Posterior (ATP), Arteria Peronea (APer) y Arteria Pedia (APed). Realiza una evaluación inteligente del estado de cada vaso y su concordancia con el reporte de la siguiente manera:\n" +
+      "     * ¡ATENCIÓN CLÍNICA DETALLADA!: Para determinar el estado exacto de un vaso, debes leer con cuidado tanto el cuerpo del reporte como la **IMPRESIÓN DIAGNÓSTICA** o **CONCLUSIÓN** al final. Si la conclusión/impresión diagnóstica señala que un vaso tiene una patología o alteración (ej. estenosis, oclusión, flujo monofásico, flujo filiforme o flujo atenuado), debes priorizar esta conclusión diagnóstica definitiva para marcar el estado del vaso como 'altered' y describir la alteración con total exactitud, incluso si en el cuerpo parecía no registrarse. No ignores la conclusión bajo ninguna circunstancia.\n" +
+      "     * ¡IMPORTANTE!: Si el estudio es unilateral (por ejemplo, solo menciona miembro inferior izquierdo 'izq' o solo miembro inferior derecho 'der'), debes reportar 'detectedSide' como 'izq' o 'der' y reportar ÚNICAMENTE los 8 vasos de ese miembro. ¡NO inventes datos para el miembro contralateral y NO lo menciones bajo ningún concepto en el listado de estructuras! Si es bilateral, reporta 'both' y los 16 vasos.\n" +
+      "     * Para cada vaso analizado, busca en el reporte la velocidad (ej. '75 cm/s') y la forma de onda. Debes respetar rigurosamente la nomenclatura del reporte y mapearla a estas categorías exactas sin contradicciones:\n" +
+      "       1. 'Trifásico' o 'Flujo trifásico' -> Status: 'normal'. Interpretation: 'Flujo normal (Onda Trifásica)'.\n" +
+      "       2. 'Atenuado' o 'Flujo atenuado' o 'Atenuada' -> Status: 'altered'. Interpretation: 'Estenosis leve'.\n" +
+      "       3. 'Ensanchamiento espectral' -> Status: 'altered'. Interpretation: 'Estenosis moderada'.\n" +
+      "       4. 'Monofásico' o 'Flujo monofásico' -> Status: 'altered'. Interpretation: 'Estenosis severa'.\n" +
+      "       5. 'Flujo no detectable' o 'Flujo filiforme' o 'Oclusión' -> Status: 'altered'. Interpretation: 'Estenosis muy severa/oclusión'.\n" +
+      "       6. Si se menciona 'Estenosis focal' con un porcentaje específico (ej. 'Estenosis focal del 50%' o 'Estenosis focal del 70%'), usa el término exacto 'Estenosis focal de X%' en la interpretación, y detalla la velocidad si se describe (ej. '120 cm/s, Estenosis focal (50%)').\n" +
+      "     * Para cada vaso, asocia un rango de referencia normal sugerido (ej. 'Trifásico, VPS 50 - 90 cm/s' o 'Trifásico, VPS 20 - 50 cm/s' para la pedia) y un 'defaultNormalValue' saludable representativo (ej. '80 cm/s, Trifásico').\n" +
+      "   - Si detectas que es un DOPPLER RENAL: Incluye velocidades pico sistólicas y los Índices de Resistencia (IR) renales arteriales principales.\n" +
+      "   - Si detectas que es un ULTRASONIDO DE ABDOMEN (o riñón/vías urinarias está involucrado) o ULTRASONIDO ABDOMINAL COMPLETO: Debes incluir de manera obligatoria las 8 mediciones renales específicas (Riñón Derecho Largo, Ancho, Grosor Cortical e IR; Riñón Izquierdo Largo, Ancho, Grosor Cortical e IR) con sus rangos de referencia estándares. Además, para los estudios de abdomen, debes incluir de manera obligatoria los siguientes parámetros con sus rangos y valores predeterminados exactos:\n" +
+      "     * Hígado [Rango: 120 - 154 mm, Default: 135 mm]\n" +
+      "     * Bazo [Rango: 9 - 11,8 mm, Default: 10,5 mm]\n" +
+      "     * Rigidez Hepática (Elastografía) [Rango: 4 - 5,4 kPa, Default: 4,7 kPa]\n" +
+      "   - Si detectas que es un ULTRASONIDO DE TIROIDES o US DE CUELLO / ULTRASONIDO DE CUELLO: Incluye medidas de lóbulos (ej. 'Lóbulo Derecho (Longitudinal)', 'Lóbulo Derecho (Anteroposterior)', 'Lóbulo Derecho (Transverso)', 'Lóbulo Izquierdo...', 'Istmo (Espesor)'). Rango normal de espesor de istmo: < 3 mm, lóbulos longitud: 37 - 44 mm. Está ESTRICTAMENTE PROHIBIDO incluir vasos sanguíneos o parámetros del sistema carotídeo (Arterias Carótidas Comunes, Internas, Externas, Arterias Vertebrales, Grosor Miointimal (GIM), o Relación ACC/ACI) en este estudio, ya que esas estructuras corresponden única y exclusivamente al Doppler de Carótidas.\n" +
+      "   - Si detectas que es un ULTRASONIDO PÉLVICO/GINECOLÓGICO: Incluye 'Útero (Longitudinal)', 'Útero (Anteroposterior)', 'Útero (Transversal)', 'Endometrio (Espesor)', 'Ovario Derecho (Volumen)', 'Ovario Izquierdo (Volumen)'.\n" +
+      "3. Para cada estructura o parámetro:\n" +
+      "   - Indicar su rango o límite normal estándar aceptado en medicina clínica con unidades (ej: 'Hasta 150 mm', 'Pared hasta 3 mm', '90 - 120 mm', '< 125 cm/s').\n" +
+      "   - Buscar si el informe ya menciona alguna medición para esa estructura (ej. 'hígado de 165 mm', 'VPS de 85 cm/s', etc.). Si se menciona, extraer la medida exacta encontrada. Si no se menciona ninguna medida, dejarlo vacío ('').\n" +
+      "   - Determinar el estado ('status'): 'normal' si hay medida y está en rango normal; 'altered' si hay medida y se desvía del rango; 'not_found' si no se menciona ninguna medida en el reporte.\n" +
+      "   - Ofrecer una interpretación o sugerencia diagnóstica concisa en base a su estado (ej: 'Flujo hemodinámicamente normal', 'Estenosis significativa', 'Hepatomegalia', 'Sin medir').\n" +
+      "   - Proponer un valor normal por defecto representativo y saludable ('defaultNormalValue') con unidades (ej. '105 mm', '12 mm', '75 cm/s', '0.60', etc.) que cumpla el rango normal y se pueda asignar directamente si el usuario lo desea.\n" +
+      "Debes estructurar la respuesta exclusivamente como un objeto JSON con tres propiedades: 'detectedStudyType', 'detectedSide' y 'structures'.";
+
+    const promptText = `Analiza detenidamente este informe radiológico para el Asistente de Medidas:
+
+"""
+${report}
+"""
+
+Detecta el tipo de estudio médico, el lado analizado si es unilateral (der, izq, both), identifica todas las estructuras, vasos o parámetros relevantes a medir para dicho estudio, indica sus rangos normales, busca si el reporte ya contiene medidas para ellos, califica su estado e interpretación, y sugiere un valor normal predeterminado saludable.
+Devuelve el JSON estructurado según el esquema solicitado.`;
+
+    const response = await ai.models.generateContent({
+      model: selectedModel,
+      contents: promptText,
+      config: {
+        systemInstruction: systemInstruction,
+        temperature: 0.1,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            detectedStudyType: {
+              type: Type.STRING,
+              description: "Tipo de estudio médico detectado a partir del informe (ej. 'Doppler de Carótidas', 'Ultrasonido Abdominal Completo', 'Doppler Venoso de Miembros Inferiores', 'Ultrasonido de Tiroides', etc.)."
+            },
+            detectedSide: {
+              type: Type.STRING,
+              description: "Lado analizado en el reporte si el estudio es unilateral de extremidades o de un solo lado (ej. 'der' para derecho, 'izq' para izquierdo, 'both' para ambos/bilateral)."
+            },
+            structures: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  structure: { 
+                    type: Type.STRING, 
+                    description: "Nombre de la estructura, vaso o parámetro anatómico en español (ej. Hígado, Vesícula Biliar, Arteria Carótida Interna Derecha (VPS), Lóbulo Derecho de Tiroides (Longitudinal), etc.)." 
+                  },
+                  normalRange: { 
+                    type: Type.STRING, 
+                    description: "Rango normal sugerido clínicamente con sus unidades (ej. 'Hasta 150 mm', 'Pared hasta 3 mm', '50 - 100 cm/s', etc.)." 
+                  },
+                  measuredValue: { 
+                    type: Type.STRING, 
+                    description: "Medida exacta encontrada en el reporte para esta estructura/parámetro (ej. '138 mm', '75 cm/s', '4 mm'). Si no se encuentra ninguna medida para ella, debe ser una cadena vacía ''." 
+                  },
+                  status: { 
+                    type: Type.STRING, 
+                    description: "Estado de la estructura. Debe ser exactamente uno de estos tres valores: 'normal' (si tiene medida y está dentro del rango normal), 'altered' (si tiene medida y está fuera del rango), o 'not_found' (si no se especifica ninguna medida en el reporte)." 
+                  },
+                  interpretation: { 
+                    type: Type.STRING, 
+                    description: "Breve interpretación o diagnóstico clínico sugerido si está alterado (ej. 'Hepatomegalia leve', 'Estenosis carotídea leve', etc.) o confirmación de normalidad (ej. 'Flujo normal') o 'Sin medición registrada'." 
+                  },
+                  defaultNormalValue: { 
+                    type: Type.STRING, 
+                    description: "Un valor típico normal, saludable y estándar (con unidades, ej. '105 mm', '75 cm/s', '0.60', etc.) representativo de esa estructura para poder asignarlo directamente al reporte." 
+                  }
+                },
+                required: ["structure", "normalRange", "measuredValue", "status", "interpretation", "defaultNormalValue"]
+              }
+            }
+          },
+          required: ["detectedStudyType", "detectedSide", "structures"]
+        }
+      }
+    });
+
+    const parsedData = JSON.parse(response.text!);
+
+    // Post-processing to enforce the 22 mandatory carotid doppler parameters
+    let isCarotidas = false;
+    const studyLower = (parsedData.detectedStudyType || "").toLowerCase();
+    const reportLower = (report || "").toLowerCase();
+    if (studyLower.includes("carot") || reportLower.includes("carot") || reportLower.includes("carótida")) {
+      isCarotidas = true;
+    }
+
+    if (isCarotidas) {
+      if (!studyLower.includes("carot")) {
+        parsedData.detectedStudyType = "Doppler de Carótidas";
+      }
+
+      const mandatoryCarotid = [
+        {
+          key: "acc_der_vps",
+          name: "Arteria Carótida Común Derecha (VPS)",
+          range: "50 - 100 cm/s",
+          defaultVal: "72 cm/s",
+          matchRegex: /com[uú]n.*der|acc.*der|der.*(com[uú]n|acc)/i,
+          matchSub: /vps|vmax|sist[oó]l/i,
+          negativeSub: /ved|vmin|diast[oó]l/i
+        },
+        {
+          key: "acc_der_ved",
+          name: "Arteria Carótida Común Derecha (VED)",
+          range: "< 35 cm/s",
+          defaultVal: "18 cm/s",
+          matchRegex: /com[uú]n.*der|acc.*der|der.*(com[uú]n|acc)/i,
+          matchSub: /ved|vmin|diast[oó]l/i,
+          negativeSub: /vps|vmax|sist[oó]l/i
+        },
+        {
+          key: "aci_der_vps",
+          name: "Arteria Carótida Interna Derecha (VPS)",
+          range: "< 125 cm/s",
+          defaultVal: "68 cm/s",
+          matchRegex: /interna.*der|aci.*der|der.*(interna|aci)/i,
+          matchSub: /vps|vmax|sist[oó]l/i,
+          negativeSub: /ved|vmin|diast[oó]l/i
+        },
+        {
+          key: "aci_der_ved",
+          name: "Arteria Carótida Interna Derecha (VED)",
+          range: "< 40 cm/s",
+          defaultVal: "22 cm/s",
+          matchRegex: /interna.*der|aci.*der|der.*(interna|aci)/i,
+          matchSub: /ved|vmin|diast[oó]l/i,
+          negativeSub: /vps|vmax|sist[oó]l/i
+        },
+        {
+          key: "ace_der_vps",
+          name: "Arteria Carótida Externa Derecha (VPS)",
+          range: "< 115 cm/s",
+          defaultVal: "64 cm/s",
+          matchRegex: /externa.*der|ace.*der|der.*(externa|ace)/i,
+          matchSub: /vps|vmax|sist[oó]l/i,
+          negativeSub: /ved|vmin|diast[oó]l/i
+        },
+        {
+          key: "ace_der_ved",
+          name: "Arteria Carótida Externa Derecha (VED)",
+          range: "< 30 cm/s",
+          defaultVal: "14 cm/s",
+          matchRegex: /externa.*der|ace.*der|der.*(externa|ace)/i,
+          matchSub: /ved|vmin|diast[oó]l/i,
+          negativeSub: /vps|vmax|sist[oó]l/i
+        },
+        {
+          key: "acc_izq_vps",
+          name: "Arteria Carótida Común Izquierda (VPS)",
+          range: "50 - 100 cm/s",
+          defaultVal: "76 cm/s",
+          matchRegex: /com[uú]n.*izq|acc.*izq|izq.*(com[uú]n|acc)/i,
+          matchSub: /vps|vmax|sist[oó]l/i,
+          negativeSub: /ved|vmin|diast[oó]l/i
+        },
+        {
+          key: "acc_izq_ved",
+          name: "Arteria Carótida Común Izquierda (VED)",
+          range: "< 35 cm/s",
+          defaultVal: "21 cm/s",
+          matchRegex: /com[uú]n.*izq|acc.*izq|izq.*(com[uú]n|acc)/i,
+          matchSub: /ved|vmin|diast[oó]l/i,
+          negativeSub: /vps|vmax|sist[oó]l/i
+        },
+        {
+          key: "aci_izq_vps",
+          name: "Arteria Carótida Interna Izquierda (VPS)",
+          range: "< 125 cm/s",
+          defaultVal: "72 cm/s",
+          matchRegex: /interna.*izq|aci.*izq|izq.*(interna|aci)/i,
+          matchSub: /vps|vmax|sist[oó]l/i,
+          negativeSub: /ved|vmin|diast[oó]l/i
+        },
+        {
+          key: "aci_izq_ved",
+          name: "Arteria Carótida Interna Izquierda (VED)",
+          range: "< 40 cm/s",
+          defaultVal: "26 cm/s",
+          matchRegex: /interna.*izq|aci.*izq|izq.*(interna|aci)/i,
+          matchSub: /ved|vmin|diast[oó]l/i,
+          negativeSub: /vps|vmax|sist[oó]l/i
+        },
+        {
+          key: "ace_izq_vps",
+          name: "Arteria Carótida Externa Izquierda (VPS)",
+          range: "< 115 cm/s",
+          defaultVal: "66 cm/s",
+          matchRegex: /externa.*izq|ace.*izq|izq.*(externa|ace)/i,
+          matchSub: /vps|vmax|sist[oó]l/i,
+          negativeSub: /ved|vmin|diast[oó]l/i
+        },
+        {
+          key: "ace_izq_ved",
+          name: "Arteria Carótida Externa Izquierda (VED)",
+          range: "< 30 cm/s",
+          defaultVal: "16 cm/s",
+          matchRegex: /externa.*izq|ace.*izq|izq.*(externa|ace)/i,
+          matchSub: /ved|vmin|diast[oó]l/i,
+          negativeSub: /vps|vmax|sist[oó]l/i
+        },
+        {
+          key: "gim_der",
+          name: "Grosor Miointimal Derecho (GIM)",
+          range: "< 0.9 mm",
+          defaultVal: "0.6 mm",
+          matchRegex: /(grosor|gim|intima|miointimal).*der|der.*(grosor|gim|intima|miointimal)/i,
+          matchSub: /grosor|miointimal|gim|íntima-media/i
+        },
+        {
+          key: "gim_izq",
+          name: "Grosor Miointimal Izquierdo (GIM)",
+          range: "< 0.9 mm",
+          defaultVal: "0.6 mm",
+          matchRegex: /(grosor|gim|intima|miointimal).*izq|izq.*(grosor|gim|intima|miointimal)/i,
+          matchSub: /grosor|miointimal|gim|íntima-media/i
+        },
+        {
+          key: "placas_der",
+          name: "Presencia de Placas (Derecha)",
+          range: "Sin placas",
+          defaultVal: "Sin placas",
+          matchRegex: /placa.*der|der.*placa/i,
+          matchSub: /placa/i
+        },
+        {
+          key: "placas_izq",
+          name: "Presencia de Placas (Izquierda)",
+          range: "Sin placas",
+          defaultVal: "Sin placas",
+          matchRegex: /placa.*izq|izq.*placa/i,
+          matchSub: /placa/i
+        },
+        {
+          key: "vert_der_vps",
+          name: "Arteria Vertebral Derecha (VPS)",
+          range: "20 - 60 cm/s",
+          defaultVal: "32 cm/s",
+          matchRegex: /vertebral.*der|der.*vertebral/i,
+          matchSub: /vps|vmax|sist[oó]l|velocidad/i,
+          negativeSub: /dirección|flujo|sentido/i
+        },
+        {
+          key: "vert_der_dir",
+          name: "Arteria Vertebral Derecha (Dirección)",
+          range: "Anterógrado",
+          defaultVal: "Anterógrado",
+          matchRegex: /vertebral.*der|der.*vertebral/i,
+          matchSub: /dirección|flujo|sentido/i,
+          negativeSub: /vps|vmax|sist[oó]l|velocidad/i
+        },
+        {
+          key: "vert_izq_vps",
+          name: "Arteria Vertebral Izquierda (VPS)",
+          range: "20 - 60 cm/s",
+          defaultVal: "36 cm/s",
+          matchRegex: /vertebral.*izq|izq.*vertebral/i,
+          matchSub: /vps|vmax|sist[oó]l|velocidad/i,
+          negativeSub: /dirección|flujo|sentido/i
+        },
+        {
+          key: "vert_izq_dir",
+          name: "Arteria Vertebral Izquierda (Dirección)",
+          range: "Anterógrado",
+          defaultVal: "Anterógrado",
+          matchRegex: /vertebral.*izq|izq.*vertebral/i,
+          matchSub: /dirección|flujo|sentido/i,
+          negativeSub: /vps|vmax|sist[oó]l|velocidad/i
+        },
+        {
+          key: "rel_der",
+          name: "Relación ACC/ACI Derecha",
+          range: "< 2.0",
+          defaultVal: "1.2",
+          matchRegex: /(relación|ratio|índice).*der|der.*(relación|ratio|índice)/i,
+          matchSub: /acc\/aci|aci\/acc|carotíde/i
+        },
+        {
+          key: "rel_izq",
+          name: "Relación ACC/ACI Izquierda",
+          range: "< 2.0",
+          defaultVal: "1.2",
+          matchRegex: /(relación|ratio|índice).*izq|izq.*(relación|ratio|índice)/i,
+          matchSub: /acc\/aci|aci\/acc|carotíde/i
+        }
+      ];
+
+      const currentStructures = parsedData.structures || [];
+      const updatedStructures: any[] = [];
+      const matchedKeys = new Set<string>();
+
+      // Try matching existing structures first
+      currentStructures.forEach((s: any) => {
+        const sName = (s.structure || "").toLowerCase();
+        let matchedKey: string | null = null;
+
+        for (const m of mandatoryCarotid) {
+          if (matchedKeys.has(m.key)) continue;
+
+          let isMatch = m.matchRegex.test(sName);
+          if (isMatch && m.matchSub) {
+            isMatch = m.matchSub.test(sName);
+          }
+          if (isMatch && m.negativeSub) {
+            isMatch = !m.negativeSub.test(sName);
+          }
+
+          if (isMatch) {
+            matchedKey = m.key;
+            s.structure = m.name;
+            if (!s.normalRange) s.normalRange = m.range;
+            if (!s.defaultNormalValue) s.defaultNormalValue = m.defaultVal;
+            break;
+          }
+        }
+
+        if (matchedKey) {
+          matchedKeys.add(matchedKey);
+        }
+        updatedStructures.push(s);
+      });
+
+      // Add missing ones
+      mandatoryCarotid.forEach(m => {
+        if (!matchedKeys.has(m.key)) {
+          const isVelocity = m.name.includes("(VPS)") || m.name.includes("(VED)");
+          updatedStructures.push({
+            structure: m.name,
+            normalRange: m.range,
+            measuredValue: isVelocity ? m.defaultVal : "",
+            status: isVelocity ? "normal" : "not_found",
+            interpretation: isVelocity ? "Flujo normal" : "Sin medición registrada",
+            defaultNormalValue: m.defaultVal
+          });
+        }
+      });
+
+      // Enforce pre-filling and formatting of velocities in cm/s for carotid doppler
+      updatedStructures.forEach((s: any) => {
+        const nameLower = (s.structure || "").toLowerCase();
+        const isVelocity = nameLower.includes("(vps)") || nameLower.includes("(ved)");
+        
+        if (isVelocity) {
+          // If empty, blank, or not_found, pre-fill with defaultNormalValue
+          if (!s.measuredValue || s.measuredValue.trim() === "" || s.status === "not_found") {
+            s.measuredValue = s.defaultNormalValue || "";
+            s.status = "normal";
+            s.interpretation = "Flujo normal";
+          } else {
+            // It has a measured value, make sure it ends with " cm/s"
+            let val = s.measuredValue.trim();
+            // Match any number
+            const numMatch = val.match(/(\d+(?:[.,]\d+)?)/);
+            if (numMatch) {
+              const numStr = numMatch[1];
+              if (!val.includes("cm/s")) {
+                val = `${numStr} cm/s`;
+              }
+              s.measuredValue = val;
+            }
+          }
+        }
+      });
+
+      // Ensure that left and right carotid velocities are never identical
+      const carotidPairs = [
+        { der: "Arteria Carótida Común Derecha (VPS)", izq: "Arteria Carótida Común Izquierda (VPS)" },
+        { der: "Arteria Carótida Común Derecha (VED)", izq: "Arteria Carótida Común Izquierda (VED)" },
+        { der: "Arteria Carótida Interna Derecha (VPS)", izq: "Arteria Carótida Interna Izquierda (VPS)" },
+        { der: "Arteria Carótida Interna Derecha (VED)", izq: "Arteria Carótida Interna Izquierda (VED)" },
+        { der: "Arteria Carótida Externa Derecha (VPS)", izq: "Arteria Carótida Externa Izquierda (VPS)" },
+        { der: "Arteria Carótida Externa Derecha (VED)", izq: "Arteria Carótida Externa Izquierda (VED)" },
+        { der: "Arteria Vertebral Derecha (VPS)", izq: "Arteria Vertebral Izquierda (VPS)" }
+      ];
+
+      carotidPairs.forEach(pair => {
+        const structDer = updatedStructures.find(s => s.structure === pair.der);
+        const structIzq = updatedStructures.find(s => s.structure === pair.izq);
+
+        if (structDer && structIzq && structDer.measuredValue && structIzq.measuredValue) {
+          const matchDer = structDer.measuredValue.match(/(\d+(?:[.,]\d+)?)/);
+          const matchIzq = structIzq.measuredValue.match(/(\d+(?:[.,]\d+)?)/);
+
+          if (matchDer && matchIzq) {
+            const numDerStr = matchDer[1].replace(",", ".");
+            const numIzqStr = matchIzq[1].replace(",", ".");
+            const numDer = parseFloat(numDerStr);
+            const numIzq = parseFloat(numIzqStr);
+
+            if (!isNaN(numDer) && !isNaN(numIzq) && numDer === numIzq) {
+              const isVPS = pair.der.includes("(VPS)");
+              const adjustment = isVPS ? 4 : 2;
+              let newNum = numIzq + adjustment;
+              
+              if (!isVPS && newNum > 40) {
+                newNum = numIzq - adjustment;
+              } else if (isVPS && newNum > 120) {
+                newNum = numIzq - adjustment;
+              }
+              
+              if (newNum < 0) newNum = numIzq + adjustment;
+
+              const newNumStr = Number.isInteger(newNum) ? newNum.toString() : newNum.toFixed(1).replace(".", ",");
+              structIzq.measuredValue = structIzq.measuredValue.replace(matchIzq[1], newNumStr);
+            }
+          }
+        }
+      });
+
+      parsedData.structures = updatedStructures;
+    }
+
+    // Post-processing to enforce the 14 mandatory lower limb arterial Doppler parameters
+    let isArterialMiembrosInferiores = false;
+    if (
+      (studyLower.includes("arterial") && (studyLower.includes("miembro") || studyLower.includes("pierna") || studyLower.includes("inferior") || studyLower.includes("extre"))) ||
+      (reportLower.includes("doppler") && reportLower.includes("arterial") && (reportLower.includes("miembro") || reportLower.includes("pierna") || reportLower.includes("inferior") || reportLower.includes("extremidad") || reportLower.includes("femoral") || reportLower.includes("poplítea") || reportLower.includes("pedio")))
+    ) {
+      isArterialMiembrosInferiores = true;
+    }
+
+    if (isArterialMiembrosInferiores) {
+      // Determine if study is unilateral (and which side) or bilateral
+      let sideToKeep: "der" | "izq" | "both" = "both";
+      if (parsedData.detectedSide === "der" || parsedData.detectedSide === "izq" || parsedData.detectedSide === "both") {
+        sideToKeep = parsedData.detectedSide;
+      } else {
+        const containsDer = reportLower.includes("derech") || reportLower.includes(" dch") || reportLower.includes(" mid") || reportLower.includes("m.i.d");
+        const containsIzq = reportLower.includes("izquierd") || reportLower.includes(" izq") || reportLower.includes(" mii") || reportLower.includes("m.i.i");
+        const containsUnilateral = reportLower.includes("unilateral") || studyLower.includes("unilateral");
+
+        if (containsUnilateral || (containsDer && !containsIzq) || (containsIzq && !containsDer)) {
+          if (containsDer && !containsIzq) {
+            sideToKeep = "der";
+          } else if (containsIzq && !containsDer) {
+            sideToKeep = "izq";
+          } else {
+            const derCount = (reportLower.match(/derech|dch|mid|m\.i\.d/g) || []).length;
+            const izqCount = (reportLower.match(/izquierd|izq|mii|m\.i\.i/g) || []).length;
+            if (derCount > izqCount) {
+              sideToKeep = "der";
+            } else if (izqCount > derCount) {
+              sideToKeep = "izq";
+            }
+          }
+        }
+      }
+
+      if (sideToKeep === "der") {
+        parsedData.detectedStudyType = "Doppler Arterial de Miembro Inferior Derecho (Unilateral)";
+      } else if (sideToKeep === "izq") {
+        parsedData.detectedStudyType = "Doppler Arterial de Miembro Inferior Izquierdo (Unilateral)";
+      } else {
+        parsedData.detectedStudyType = "Doppler Arterial de Miembros Inferiores (Bilateral)";
+      }
+
+      // Locate where the derecho and izquierdo sections start in report
+      let derIdx = -1;
+      let izqIdx = -1;
+
+      const derHeaderRegex = /(?:miembro|extremidad|lado|arterias|miembros|extremidades)\s+(?:inferior\s+)?(?:derech|dch|mid|m\.i\.d)/i;
+      const izqHeaderRegex = /(?:miembro|extremidad|lado|arterias|miembros|extremidades)\s+(?:inferior\s+)?(?:izquierd|izq|mii|m\.i\.i)/i;
+
+      const derMatch = report.match(derHeaderRegex);
+      const izqMatch = report.match(izqHeaderRegex);
+
+      if (derMatch) derIdx = derMatch.index || -1;
+      if (izqMatch) izqIdx = izqMatch.index || -1;
+
+      // Locate where the conclusion/impression section starts in the report
+      const conclusionRegex = /(?:impresi[oó]n|conclusi[oó]n|conclusiones|diagn[oó]stico|dx:)/i;
+      const conclusionMatch = report.match(conclusionRegex);
+      const conclusionIdx = conclusionMatch ? conclusionMatch.index : -1;
+
+      let conclusionText = "";
+      if (conclusionIdx !== -1) {
+        conclusionText = report.substring(conclusionIdx);
+      }
+
+      let bodyTextForDer = "";
+      let bodyTextForIzq = "";
+
+      if (derIdx !== -1 && izqIdx !== -1) {
+        if (derIdx < izqIdx) {
+          // Right is before Left
+          bodyTextForDer = report.substring(derIdx, izqIdx);
+          if (conclusionIdx !== -1 && conclusionIdx > izqIdx) {
+            bodyTextForIzq = report.substring(izqIdx, conclusionIdx);
+          } else {
+            bodyTextForIzq = report.substring(izqIdx);
+          }
+        } else {
+          // Left is before Right
+          bodyTextForIzq = report.substring(izqIdx, derIdx);
+          if (conclusionIdx !== -1 && conclusionIdx > derIdx) {
+            bodyTextForDer = report.substring(derIdx, conclusionIdx);
+          } else {
+            bodyTextForDer = report.substring(derIdx);
+          }
+        }
+      } else if (derIdx !== -1) {
+        if (conclusionIdx !== -1 && conclusionIdx > derIdx) {
+          bodyTextForDer = report.substring(derIdx, conclusionIdx);
+        } else {
+          bodyTextForDer = report.substring(derIdx);
+        }
+        bodyTextForIzq = report;
+      } else if (izqIdx !== -1) {
+        if (conclusionIdx !== -1 && conclusionIdx > izqIdx) {
+          bodyTextForIzq = report.substring(izqIdx, conclusionIdx);
+        } else {
+          bodyTextForIzq = report.substring(izqIdx);
+        }
+        bodyTextForDer = report;
+      } else {
+        if (conclusionIdx !== -1) {
+          bodyTextForDer = report.substring(0, conclusionIdx);
+          bodyTextForIzq = report.substring(0, conclusionIdx);
+        } else {
+          bodyTextForDer = report;
+          bodyTextForIzq = report;
+        }
+      }
+
+      // 16 Possible lower limb vessels including Arteria Pedia (APed)
+      const allArterialVessels = [
+        // DERECHOS
+        {
+          key: "aic_der",
+          side: "der" as const,
+          name: "Arteria Ilíaca Común Derecha (AIC)",
+          range: "Trifásico, VPS > 50 cm/s",
+          baseVel: 80,
+          modVel: 15,
+          leftOff: -3,
+          vesselKeywords: ["ilíaca común", "iliaca comun", "aic"],
+          sideKeywords: ["derech", "der", "dch", "mid"]
+        },
+        {
+          key: "afc_der",
+          side: "der" as const,
+          name: "Arteria Femoral Común Derecha (AFC)",
+          range: "Trifásico, VPS 50 - 100 cm/s",
+          baseVel: 75,
+          modVel: 15,
+          leftOff: 4,
+          vesselKeywords: ["femoral común", "femoral comun", "afc"],
+          sideKeywords: ["derech", "der", "dch", "mid"]
+        },
+        {
+          key: "afs_der",
+          side: "der" as const,
+          name: "Arteria Femoral Derecha (AF)",
+          range: "Trifásico, VPS 50 - 90 cm/s",
+          baseVel: 70,
+          modVel: 15,
+          leftOff: -2,
+          vesselKeywords: ["femoral superficial", "afs", "femoral", "af"],
+          sideKeywords: ["derech", "der", "dch", "mid"]
+        },
+        {
+          key: "ap_der",
+          side: "der" as const,
+          name: "Arteria Poplítea Derecha (AP)",
+          range: "Trifásico, VPS 40 - 80 cm/s",
+          baseVel: 60,
+          modVel: 15,
+          leftOff: 3,
+          vesselKeywords: ["poplítea", "poplitea", "ap"],
+          sideKeywords: ["derech", "der", "dch", "mid"]
+        },
+        {
+          key: "ata_der",
+          side: "der" as const,
+          name: "Arteria Tibial Anterior Derecha (ATA)",
+          range: "Trifásico, VPS 30 - 60 cm/s",
+          baseVel: 40,
+          modVel: 12,
+          leftOff: -2,
+          vesselKeywords: ["tibial anterior", "ata"],
+          sideKeywords: ["derech", "der", "dch", "mid"]
+        },
+        {
+          key: "atp_der",
+          side: "der" as const,
+          name: "Arteria Tibial Posterior Derecha (ATP)",
+          range: "Trifásico, VPS 30 - 60 cm/s",
+          baseVel: 40,
+          modVel: 12,
+          leftOff: 3,
+          vesselKeywords: ["tibial posterior", "atp"],
+          sideKeywords: ["derech", "der", "dch", "mid"]
+        },
+        {
+          key: "aper_der",
+          side: "der" as const,
+          name: "Arteria Peronea Derecha (APer)",
+          range: "Trifásico, VPS 30 - 60 cm/s",
+          baseVel: 35,
+          modVel: 12,
+          leftOff: -1,
+          vesselKeywords: ["peronea", "aper"],
+          sideKeywords: ["derech", "der", "dch", "mid"]
+        },
+        {
+          key: "aped_der",
+          side: "der" as const,
+          name: "Arteria Pedia Derecha (APed)",
+          range: "Trifásico, VPS 20 - 50 cm/s",
+          baseVel: 30,
+          modVel: 10,
+          leftOff: -1,
+          vesselKeywords: ["pedia", "aped", "pedio"],
+          sideKeywords: ["derech", "der", "dch", "mid"]
+        },
+        // IZQUIERDOS
+        {
+          key: "aic_izq",
+          side: "izq" as const,
+          name: "Arteria Ilíaca Común Izquierda (AIC)",
+          range: "Trifásico, VPS > 50 cm/s",
+          baseVel: 80,
+          modVel: 15,
+          leftOff: -3,
+          vesselKeywords: ["ilíaca común", "iliaca comun", "aic"],
+          sideKeywords: ["izquierd", "izq", "mii"]
+        },
+        {
+          key: "afc_izq",
+          side: "izq" as const,
+          name: "Arteria Femoral Común Izquierda (AFC)",
+          range: "Trifásico, VPS 50 - 100 cm/s",
+          baseVel: 75,
+          modVel: 15,
+          leftOff: 4,
+          vesselKeywords: ["femoral común", "femoral comun", "afc"],
+          sideKeywords: ["izquierd", "izq", "mii"]
+        },
+        {
+          key: "afs_izq",
+          side: "izq" as const,
+          name: "Arteria Femoral Izquierda (AF)",
+          range: "Trifásico, VPS 50 - 90 cm/s",
+          baseVel: 70,
+          modVel: 15,
+          leftOff: -2,
+          vesselKeywords: ["femoral superficial", "afs", "femoral", "af"],
+          sideKeywords: ["izquierd", "izq", "mii"]
+        },
+        {
+          key: "ap_izq",
+          side: "izq" as const,
+          name: "Arteria Poplítea Izquierda (AP)",
+          range: "Trifásico, VPS 40 - 80 cm/s",
+          baseVel: 60,
+          modVel: 15,
+          leftOff: 3,
+          vesselKeywords: ["poplítea", "poplitea", "ap"],
+          sideKeywords: ["izquierd", "izq", "mii"]
+        },
+        {
+          key: "ata_izq",
+          side: "izq" as const,
+          name: "Arteria Tibial Anterior Izquierda (ATA)",
+          range: "Trifásico, VPS 30 - 60 cm/s",
+          baseVel: 40,
+          modVel: 12,
+          leftOff: -2,
+          vesselKeywords: ["tibial anterior", "ata"],
+          sideKeywords: ["izquierd", "izq", "mii"]
+        },
+        {
+          key: "atp_izq",
+          side: "izq" as const,
+          name: "Arteria Tibial Posterior Izquierda (ATP)",
+          range: "Trifásico, VPS 30 - 60 cm/s",
+          baseVel: 40,
+          modVel: 12,
+          leftOff: 3,
+          vesselKeywords: ["tibial posterior", "atp"],
+          sideKeywords: ["izquierd", "izq", "mii"]
+        },
+        {
+          key: "aper_izq",
+          side: "izq" as const,
+          name: "Arteria Peronea Izquierda (APer)",
+          range: "Trifásico, VPS 30 - 60 cm/s",
+          baseVel: 35,
+          modVel: 12,
+          leftOff: -1,
+          vesselKeywords: ["peronea", "aper"],
+          sideKeywords: ["izquierd", "izq", "mii"]
+        },
+        {
+          key: "aped_izq",
+          side: "izq" as const,
+          name: "Arteria Pedia Izquierda (APed)",
+          range: "Trifásico, VPS 20 - 50 cm/s",
+          baseVel: 30,
+          modVel: 10,
+          leftOff: -1,
+          vesselKeywords: ["pedia", "aped", "pedio"],
+          sideKeywords: ["izquierd", "izq", "mii"]
+        }
+      ];
+
+      // Filter based on unilateral vs bilateral
+      const mandatoryArterial = allArterialVessels.filter(v => {
+        if (sideToKeep === "both") return true;
+        return v.side === sideToKeep;
+      });
+
+      const currentStructures = parsedData.structures || [];
+      const updatedStructures: any[] = [];
+      const matchedKeys = new Set<string>();
+
+      // Intelligent evaluation helper
+      const analyzeVessel = (key: string, side: "der" | "izq", vKeywords: string[], baseVel: number, modVel: number, leftOff: number) => {
+        const sideText = side === "der" ? bodyTextForDer.toLowerCase() : bodyTextForIzq.toLowerCase();
+        const conclusionTextLower = conclusionText.toLowerCase();
+
+        const matchesKeywordSafe = (sentenceLower: string, keyword: string) => {
+          if (keyword.length <= 3) {
+            const escaped = keyword.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+            const regex = new RegExp(`(?:^|[^a-záéíóúüñ])${escaped}(?:$|[^a-záéíóúüñ])`, 'i');
+            return regex.test(sentenceLower);
+          }
+          return sentenceLower.includes(keyword.toLowerCase());
+        };
+
+        // 1. Get sentences from side-specific body text
+        const sideSentences = sideText.split(/[.\n;]/);
+        const matchedSideSentences = sideSentences.filter(s => {
+          const sLower = s.toLowerCase();
+          const matchesVessel = vKeywords.some(k => matchesKeywordSafe(sLower, k));
+          if (!matchesVessel) return false;
+
+          // If side-specific headers were NOT found, check that the sentence itself matches the correct side or is bilateral
+          if (derIdx === -1 || izqIdx === -1) {
+            const sideKws = side === "der" 
+              ? ["derech", "der", "dch", "mid", "m.i.d", "ambas", "ambos", "bilateral", "bilaterales"] 
+              : ["izquierd", "izq", "mii", "m.i.i", "ambas", "ambos", "bilateral", "bilaterales"];
+            const matchesSide = sideKws.some(k => sLower.includes(k));
+            if (!matchesSide) return false;
+          }
+          return true;
+        });
+
+        // 2. Get sentences from the diagnostic impression/conclusion
+        const conclusionSentences = conclusionTextLower.split(/[.\n;]/);
+        const matchedConclusionSentences = conclusionSentences.filter(s => {
+          const sLower = s.toLowerCase();
+          const matchesVessel = vKeywords.some(k => matchesKeywordSafe(sLower, k));
+          if (!matchesVessel) return false;
+
+          // Since the conclusion is global, we must be extra careful:
+          // Check if the sentence mentions this side, or refers to "both" sides/bilateral, or if the whole study is unilateral to that side.
+          const sideKws = side === "der" 
+            ? ["derech", "der", "dch", "mid", "m.i.d", "ambas", "ambos", "bilateral", "bilaterales"] 
+            : ["izquierd", "izq", "mii", "m.i.i", "ambas", "ambos", "bilateral", "bilaterales"];
+          
+          const matchesSide = sideKws.some(k => sLower.includes(k));
+          
+          // If the study itself is unilateral for this side, then any mention of the vessel in the conclusion belongs to this side!
+          if (sideToKeep === side) {
+            return true;
+          }
+
+          return matchesSide;
+        });
+
+        // Combine findings from body and conclusion
+        const allMatched = [...matchedSideSentences, ...matchedConclusionSentences];
+        const context = allMatched.join(" ").toLowerCase().trim();
+
+        const charSum = key.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
+        let normalSpeed = baseVel + (charSum % modVel);
+        if (key.endsWith("_izq")) {
+          normalSpeed += leftOff;
+        }
+
+        const defaultNormalValue = `${normalSpeed} cm/s, Trifásico`;
+
+        if (!context) {
+          return {
+            status: "not_found" as const,
+            measuredValue: "",
+            interpretation: "Sin medición registrada",
+            defaultNormalValue
+          };
+        }
+
+        // 0. ESTENOSIS FOCAL CON PORCENTAJE
+        const focalMatch = context.match(/(?:estenosis|obstrucción|obstruccion)\s+(?:focal\s+)?(?:de|del|de un)?\s*(\d+)\s*%/i) || context.match(/(\d+)\s*%\s*(?:de\s+)?(?:estenosis|obstrucción|obstruccion)/i);
+
+        if (focalMatch) {
+          const percent = focalMatch[1];
+          const speedMatch = context.match(/(\d+(?:[.,]\d+)?)\s*(?:cm\/s|m\/s)/) || context.match(/(?:vps|velocidad)\D*(\d+(?:[.,]\d+)?)/);
+          const velStr = speedMatch ? `${speedMatch[1].replace(",", ".")} cm/s, ` : "";
+          const interpretation = `Estenosis focal del ${percent}%`;
+          const pctVal = parseInt(percent, 10);
+          let term = `Estenosis focal (${percent}%)`;
+          if (pctVal >= 70) {
+            term = `${velStr}Flujo monofásico, Estenosis focal (${percent}%)`;
+          } else if (pctVal >= 50) {
+            term = `${velStr}Ensanchamiento espectral, Estenosis focal (${percent}%)`;
+          } else {
+            term = `${velStr}Flujo atenuado, Estenosis focal (${percent}%)`;
+          }
+          return {
+            status: "altered" as const,
+            measuredValue: term,
+            interpretation: interpretation,
+            defaultNormalValue: velStr ? `${velStr}Trifásico` : `${normalSpeed} cm/s, Trifásico`
+          };
+        }
+
+        // 1. OCLUSION / SIN FLUJO DETECTABLE / FILIFORME
+        const isNoFlow = context.includes("oclusi") || context.includes("ocluido") || context.includes("ocluida") || 
+                         context.includes("no detectable") || context.includes("sin flujo") || context.includes("ausencia de flujo") || 
+                         context.includes("no se detecta") || context.includes("obstruccion total") || context.includes("obstrucción total") || 
+                         context.includes("flujo no medible") || context.includes("filiforme");
+
+        // 2. MONOFÁSICO / ESTENOSIS SEVERA
+        const isSevere = context.includes("monofasico") || context.includes("monofásica") || context.includes("monofasica") || 
+                         context.includes("severa") || context.includes("severo") || context.includes("estenosis severa") || 
+                         context.includes("obstruccion severa") || context.includes("obstrucción severa") || 
+                         context.includes("tardus") || context.includes("parvus") || context.includes("amortiguado") || 
+                         context.includes("baja resistencia");
+
+        // 3. ENSANCHAMIENTO ESPECTRAL / ESTENOSIS MODERADA
+        const isModerate = context.includes("ensanchamiento") || context.includes("espectral") || context.includes("turbulencia") ||
+                           context.includes("moderada") || context.includes("moderado") || context.includes("estenosis moderada");
+
+        // 4. ATENUADO / ESTENOSIS LEVE
+        const isLeve = context.includes("atenuado") || context.includes("atenuada") || context.includes("atenuad") ||
+                       context.includes("bifasico") || context.includes("bifásica") || context.includes("bifasica") ||
+                       context.includes("leve") || context.includes("estenosis leve");
+
+        if (isNoFlow) {
+          const isFiliforme = context.includes("filiforme");
+          const term = isFiliforme ? "Flujo filiforme" : "Flujo no detectable";
+          return {
+            status: "altered" as const,
+            measuredValue: term,
+            interpretation: "Estenosis muy severa/oclusión",
+            defaultNormalValue: "Flujo no detectable"
+          };
+        }
+
+        if (isSevere) {
+          const speedMatch = context.match(/(\d+(?:[.,]\d+)?)\s*(?:cm\/s|m\/s)/) || context.match(/(?:vps|velocidad)\D*(\d+(?:[.,]\d+)?)/);
+          const velStr = speedMatch ? `${speedMatch[1].replace(",", ".")} cm/s, ` : "";
+          const term = "Flujo monofásico";
+          return {
+            status: "altered" as const,
+            measuredValue: `${velStr}${term}`,
+            interpretation: "Estenosis severa",
+            defaultNormalValue: velStr ? `${velStr}${term}` : `15 cm/s, ${term}`
+          };
+        }
+
+        if (isModerate) {
+          const speedMatch = context.match(/(\d+(?:[.,]\d+)?)\s*(?:cm\/s|m\/s)/) || context.match(/(?:vps|velocidad)\D*(\d+(?:[.,]\d+)?)/);
+          const velStr = speedMatch ? `${speedMatch[1].replace(",", ".")} cm/s, ` : "";
+          const term = "Ensanchamiento espectral";
+          return {
+            status: "altered" as const,
+            measuredValue: `${velStr}${term}`,
+            interpretation: "Estenosis moderada",
+            defaultNormalValue: velStr ? `${velStr}${term}` : `35 cm/s, ${term}`
+          };
+        }
+
+        if (isLeve) {
+          const speedMatch = context.match(/(\d+(?:[.,]\d+)?)\s*(?:cm\/s|m\/s)/) || context.match(/(?:vps|velocidad)\D*(\d+(?:[.,]\d+)?)/);
+          const velStr = speedMatch ? `${speedMatch[1].replace(",", ".")} cm/s, ` : "";
+          const term = "Flujo atenuado";
+          return {
+            status: "altered" as const,
+            measuredValue: `${velStr}${term}`,
+            interpretation: "Estenosis leve",
+            defaultNormalValue: velStr ? `${velStr}${term}` : `45 cm/s, ${term}`
+          };
+        }
+
+        const speedMatch = context.match(/(\d+(?:[.,]\d+)?)\s*(?:cm\/s|m\/s)/) || context.match(/(?:vps|velocidad)\D*(\d+(?:[.,]\d+)?)/);
+        const hasTrifasico = context.includes("trifasico") || context.includes("trifásica") || context.includes("trifasica") || context.includes("normal") || context.includes("conservado");
+
+        if (speedMatch || hasTrifasico) {
+          const vel = speedMatch ? `${speedMatch[1].replace(",", ".")} cm/s` : `${normalSpeed} cm/s`;
+          return {
+            status: "normal" as const,
+            measuredValue: `${vel}, Trifásico`,
+            interpretation: "Flujo normal (Onda Trifásica)",
+            defaultNormalValue
+          };
+        }
+
+        return {
+          status: "not_found" as const,
+          measuredValue: "",
+          interpretation: "Sin medición registrada",
+          defaultNormalValue
+        };
+      };
+
+      // Match existing structures or build them smartly
+      currentStructures.forEach((s: any) => {
+        const sName = (s.structure || "").toLowerCase();
+        let matchedKey: string | null = null;
+        let matchedVessel: typeof mandatoryArterial[0] | null = null;
+
+        for (const m of mandatoryArterial) {
+          if (matchedKeys.has(m.key)) continue;
+
+          let isMatch = m.vesselKeywords.some(kw => sName.includes(kw)) && m.sideKeywords.some(skw => sName.includes(skw));
+
+          if (isMatch) {
+            matchedKey = m.key;
+            matchedVessel = m;
+            break;
+          }
+        }
+
+        if (matchedKey && matchedVessel) {
+          matchedKeys.add(matchedKey);
+          
+          const analysis = analyzeVessel(
+            matchedVessel.key,
+            matchedVessel.side,
+            matchedVessel.vesselKeywords,
+            matchedVessel.baseVel,
+            matchedVessel.modVel,
+            matchedVessel.leftOff
+          );
+
+          s.structure = matchedVessel.name;
+          s.normalRange = matchedVessel.range;
+          s.defaultNormalValue = analysis.defaultNormalValue;
+          
+          // If Gemini successfully found the vessel status (normal/altered), we trust Gemini's status.
+          // If Gemini missed it (status is not_found) or returned an empty value, we fallback to our local parser.
+          const geminiFound = s.status !== "not_found" && s.measuredValue && s.measuredValue.trim() !== "";
+          
+          let statusToUse = geminiFound ? s.status : analysis.status;
+          let valueToUse = geminiFound ? (s.measuredValue || "") : (analysis.measuredValue || "");
+          let interpToUse = geminiFound ? (s.interpretation || "") : (analysis.interpretation || "");
+
+          if (statusToUse === "altered") {
+            s.status = "altered";
+            
+            // Post-process the selected value to ensure beautiful, consistent terminology
+            const valLower = valueToUse.toLowerCase();
+            const preFocalMatch = valLower.match(/(?:estenosis|obstrucción|obstruccion)\s+(?:focal\s+)?(?:de|del)?\s*(\d+)\s*%/i) || valLower.match(/(\d+)\s*%\s*(?:de\s+)?(?:estenosis|obstrucción|obstruccion)/i);
+
+            const speedMatch = valueToUse.match(/(\d+(?:[.,]\d+)?)\s*(?:cm\/s|m\/s)/i);
+            const velStr = speedMatch ? `${speedMatch[1].replace(",", ".")} cm/s, ` : "";
+
+            if (preFocalMatch) {
+              const percent = preFocalMatch[1];
+              s.interpretation = `Estenosis focal del ${percent}%`;
+              const pctVal = parseInt(percent, 10);
+              if (pctVal >= 70) {
+                s.measuredValue = `${velStr}Flujo monofásico, Estenosis focal (${percent}%)`;
+              } else if (pctVal >= 50) {
+                s.measuredValue = `${velStr}Ensanchamiento espectral, Estenosis focal (${percent}%)`;
+              } else {
+                s.measuredValue = `${velStr}Flujo atenuado, Estenosis focal (${percent}%)`;
+              }
+            } else {
+              const preNoFlow = valLower.includes("no detect") || valLower.includes("sin flujo") || valLower.includes("oclu") || valLower.includes("ausen") || valLower.includes("filiform");
+              const preMonofasico = valLower.includes("monofas") || valLower.includes("monofás");
+              const preEspectral = valLower.includes("ensanch") || valLower.includes("espectr") || valLower.includes("turbu") || valLower.includes("moderad");
+              const preLeve = valLower.includes("atenuad") || valLower.includes("bifas") || valLower.includes("leve");
+
+              if (preNoFlow) {
+                const isFiliforme = valLower.includes("filiform");
+                s.measuredValue = isFiliforme ? "Flujo filiforme" : "Flujo no detectable";
+                s.interpretation = "Estenosis muy severa/oclusión";
+              } else if (preMonofasico) {
+                s.measuredValue = `${velStr}Flujo monofásico`;
+                s.interpretation = "Estenosis severa";
+              } else if (preEspectral) {
+                s.measuredValue = `${velStr}Ensanchamiento espectral`;
+                s.interpretation = "Estenosis moderada";
+              } else if (preLeve) {
+                s.measuredValue = `${velStr}Flujo atenuado`;
+                s.interpretation = "Estenosis leve";
+              } else {
+                s.measuredValue = valueToUse || "Flujo atenuado";
+                s.interpretation = interpToUse || "Estenosis leve";
+              }
+            }
+          } else if (statusToUse === "normal") {
+            s.status = "normal";
+            if (!valueToUse.includes("Trifásico") && !valueToUse.includes("Trifásica") && !valueToUse.includes("onda") && !valueToUse.includes(" detectable")) {
+              s.measuredValue = `${valueToUse.replace(/\s*cm\/s/g, "").trim()} cm/s, Trifásico`;
+            } else {
+              s.measuredValue = valueToUse;
+            }
+            s.interpretation = "Flujo normal (Onda Trifásica)";
+          } else {
+            s.status = "not_found";
+            s.measuredValue = "";
+            s.interpretation = "Sin medición registrada";
+          }
+          updatedStructures.push(s);
+        } else {
+          const isLowerLimbDup = allArterialVessels.some(v => v.vesselKeywords.some(kw => sName.includes(kw)));
+          if (!isLowerLimbDup) {
+            updatedStructures.push(s);
+          }
+        }
+      });
+
+      // Add missing ones
+      mandatoryArterial.forEach(m => {
+        if (!matchedKeys.has(m.key)) {
+          const analysis = analyzeVessel(
+            m.key,
+            m.side,
+            m.vesselKeywords,
+            m.baseVel,
+            m.modVel,
+            m.leftOff
+          );
+
+          updatedStructures.push({
+            structure: m.name,
+            normalRange: m.range,
+            measuredValue: analysis.measuredValue,
+            status: analysis.status,
+            interpretation: analysis.interpretation,
+            defaultNormalValue: analysis.defaultNormalValue
+          });
+        }
+      });
+
+      parsedData.structures = updatedStructures;
+    }
+
+    // --- CUELLO / TIROIDES POST-PROCESSING ---
+    let isCarotidStudy = (parsedData.detectedStudyType || "").toLowerCase().includes("carot");
+    let isNeckOrThyroidStudy = (parsedData.detectedStudyType || "").toLowerCase().includes("cuello") || 
+                               (parsedData.detectedStudyType || "").toLowerCase().includes("tiroides") || 
+                               (parsedData.detectedStudyType || "").toLowerCase().includes("neck") || 
+                               (parsedData.detectedStudyType || "").toLowerCase().includes("thyroid") ||
+                               (report || "").toLowerCase().includes("tiroides") ||
+                               (report || "").toLowerCase().includes("cuello");
+
+    if (isNeckOrThyroidStudy && !isCarotidStudy) {
+      // Exclude carotid system structures from neck/thyroid ultrasound
+      const carotidKeywords = [
+        "carótida", "carotida", "gim", "miointimal", "vertebral", "acc/aci", "acc", "aci", "ace", "grosor miointimal", "relación acc"
+      ];
+      if (parsedData.structures && Array.isArray(parsedData.structures)) {
+        parsedData.structures = parsedData.structures.filter((s: any) => {
+          const nameLower = (s.structure || "").toLowerCase();
+          return !carotidKeywords.some(keyword => nameLower.includes(keyword));
+        });
+      }
+    }
+
+    // --- ABDOMEN POST-PROCESSING ---
+    let isAbdomenStudy = 
+      (parsedData.detectedStudyType || "").toLowerCase().includes("abdomen") ||
+      (parsedData.detectedStudyType || "").toLowerCase().includes("abdominal") ||
+      (report || "").toLowerCase().includes("abdomen") ||
+      (report || "").toLowerCase().includes("abdominal") ||
+      (report || "").toLowerCase().includes("hígado") ||
+      (report || "").toLowerCase().includes("higado") ||
+      (report || "").toLowerCase().includes("bazo") ||
+      (report || "").toLowerCase().includes("hepática") ||
+      (report || "").toLowerCase().includes("hepatica");
+
+    if (isAbdomenStudy) {
+      const mandatoryAbdomen = [
+        {
+          key: "higado",
+          name: "Hígado",
+          range: "120 - 154 mm",
+          defaultVal: "135 mm",
+          matchRegex: /h[íi]gado/i,
+          negativeRegex: /rigidez|elastograf|porta|suprahep[áa]t|arteria|vena/i
+        },
+        {
+          key: "bazo",
+          name: "Bazo",
+          range: "9 - 11,8 mm",
+          defaultVal: "10,5 mm",
+          matchRegex: /bazo/i,
+          negativeRegex: /arteria|vena|espl[eé]nic/i
+        },
+        {
+          key: "rigidez",
+          name: "Rigidez Hepática (Elastografía)",
+          range: "4 - 5,4 kPa",
+          defaultVal: "4,7 kPa",
+          matchRegex: /rigidez|elastograf/i,
+          negativeRegex: /$^/
+        }
+      ];
+
+      const currentStructures = parsedData.structures || [];
+      const updatedStructures: any[] = [];
+      const matchedKeys = new Set<string>();
+
+      // Try matching existing structures first
+      currentStructures.forEach((s: any) => {
+        const sName = (s.structure || "").toLowerCase();
+        let matchedKey: string | null = null;
+
+        for (const m of mandatoryAbdomen) {
+          if (matchedKeys.has(m.key)) continue;
+
+          const isMatch = m.matchRegex.test(sName) && !m.negativeRegex.test(sName);
+          if (isMatch) {
+            matchedKey = m.key;
+            s.structure = m.name;
+            s.normalRange = m.range;
+            s.defaultNormalValue = m.defaultVal;
+
+            // Recalculate status if measuredValue is present
+            if (s.measuredValue && s.measuredValue.trim() !== "") {
+              const numMatch = s.measuredValue.replace(",", ".").match(/(\d+(?:\.\d+)?)/);
+              if (numMatch) {
+                let numVal = parseFloat(numMatch[1]);
+                // Convert cm to mm for Liver/Spleen if needed
+                const valLower = s.measuredValue.toLowerCase();
+                if (valLower.includes("cm") && m.key !== "rigidez") {
+                  numVal = numVal * 10;
+                }
+
+                let isNormal = false;
+                if (m.key === "higado") {
+                  isNormal = numVal >= 120 && numVal <= 154;
+                } else if (m.key === "bazo") {
+                  isNormal = numVal >= 9 && numVal <= 11.8;
+                } else if (m.key === "rigidez") {
+                  isNormal = numVal >= 4 && numVal <= 5.4;
+                }
+
+                if (isNormal) {
+                  s.status = "normal";
+                  s.interpretation = "Características normales";
+                } else {
+                  s.status = "altered";
+                  if (m.key === "higado") {
+                    s.interpretation = numVal < 120 ? "Hígado disminuido de tamaño" : "Hepatomegalia";
+                  } else if (m.key === "bazo") {
+                    s.interpretation = numVal < 9 ? "Bazo disminuido de tamaño" : "Esplenomegalia";
+                  } else {
+                    s.interpretation = numVal < 4 ? "Rigidez hepática disminuida" : "Rigidez hepática aumentada (Sugerente de Fibrosis)";
+                  }
+                }
+              }
+            }
+            break;
+          }
+        }
+
+        if (matchedKey) {
+          matchedKeys.add(matchedKey);
+        }
+        updatedStructures.push(s);
+      });
+
+      // Add missing ones
+      mandatoryAbdomen.forEach(m => {
+        if (!matchedKeys.has(m.key)) {
+          updatedStructures.push({
+            structure: m.name,
+            normalRange: m.range,
+            measuredValue: "",
+            status: "not_found",
+            interpretation: "Sin medición registrada",
+            defaultNormalValue: m.defaultVal
+          });
+        }
+      });
+
+      parsedData.structures = updatedStructures;
+    }
+
+    // Enforce normal longitudinal range for thyroid (37 - 44 mm) and recalculate status if present
+    if (parsedData.structures && Array.isArray(parsedData.structures)) {
+      parsedData.structures = parsedData.structures.map((s: any) => {
+        const nameLower = (s.structure || "").toLowerCase();
+        const isThyroid = nameLower.includes("lóbulo") || nameLower.includes("lobulo") || nameLower.includes("tiroides") || nameLower.includes("tiroidea");
+        const isLongitudinal = nameLower.includes("longitudinal") || nameLower.includes("longitud") || nameLower.includes("largo");
+        
+        if (isThyroid && isLongitudinal) {
+          s.normalRange = "37 - 44 mm";
+          s.defaultNormalValue = "40 mm";
+          
+          if (s.measuredValue && s.measuredValue.trim() !== "") {
+            const numMatch = s.measuredValue.match(/(\d+(?:[.,]\d+)?)/);
+            if (numMatch) {
+              const numVal = parseFloat(numMatch[1].replace(",", "."));
+              if (numVal >= 37 && numVal <= 44) {
+                s.status = "normal";
+                s.interpretation = "Características normales";
+              } else {
+                s.status = "altered";
+                if (numVal < 37) {
+                  s.interpretation = "Lóbulo tiroideo disminuido de tamaño";
+                } else {
+                  s.interpretation = "Bocio / Lóbulo tiroideo aumentado de tamaño";
+                }
+              }
+            }
+          }
+        }
+        return s;
+      });
+    }
+
+    // Randomize default normal values to ensure clinical variability
+    if (parsedData.structures && Array.isArray(parsedData.structures)) {
+      parsedData.structures.forEach((s: any) => {
+        if (s.defaultNormalValue && s.normalRange) {
+          s.defaultNormalValue = randomizeNormalValue(s.defaultNormalValue, s.normalRange, s.structure);
+        }
+
+        // Specifically format Renal IR (Indices de Resistencia) with exactly 2 decimal places and a comma
+        const nameLower = (s.structure || "").toLowerCase();
+        const isIR = nameLower.includes("ir") || nameLower.includes("índice de resistencia") || nameLower.includes("indice de resistencia") || nameLower.includes("índice resistencia") || nameLower.includes("indice resistencia");
+        const studyLower = (parsedData.detectedStudyType || "").toLowerCase();
+        const isRenalIR = isIR && (nameLower.includes("renal") || nameLower.includes("riñón") || nameLower.includes("riñon") || nameLower.includes("izquierdo") || nameLower.includes("derecho") || studyLower.includes("renal") || studyLower.includes("abdomen"));
+
+        if (isRenalIR) {
+          // Format measuredValue with 2 decimals and comma if present
+          if (s.measuredValue && s.measuredValue.trim() !== "") {
+            const numMatch = s.measuredValue.match(/(\d+[\.,]\d+|\d+)/);
+            if (numMatch) {
+              const rawNumStr = numMatch[1].replace(",", ".");
+              const numVal = parseFloat(rawNumStr);
+              if (!isNaN(numVal)) {
+                s.measuredValue = numVal.toFixed(2).replace(".", ",");
+              }
+            }
+          }
+          // Format defaultNormalValue with 2 decimals and comma
+          if (s.defaultNormalValue && s.defaultNormalValue.trim() !== "") {
+            const numMatch = s.defaultNormalValue.match(/(\d+[\.,]\d+|\d+)/);
+            if (numMatch) {
+              const rawNumStr = numMatch[1].replace(",", ".");
+              const numVal = parseFloat(rawNumStr);
+              if (!isNaN(numVal)) {
+                s.defaultNormalValue = numVal.toFixed(2).replace(".", ",");
+              }
+            } else {
+              // Fallback
+              const randomIR = 0.56 + Math.random() * (0.68 - 0.56);
+              s.defaultNormalValue = randomIR.toFixed(2).replace(".", ",");
+            }
+          }
+        }
+      });
+    }
+
+    // Ensure that bilateral structures (kidneys, testicles, ovaries, thyroid lobes, etc.)
+    // do not have identical defaultNormalValue when they are not supplied.
+    if (parsedData.structures && Array.isArray(parsedData.structures)) {
+      const visitedPairs = new Set<number>();
+      for (let i = 0; i < parsedData.structures.length; i++) {
+        if (visitedPairs.has(i)) continue;
+        const s1 = parsedData.structures[i];
+        const norm1 = getBaseAndSide(s1.structure);
+        if (!norm1) continue;
+
+        for (let j = i + 1; j < parsedData.structures.length; j++) {
+          if (visitedPairs.has(j)) continue;
+          const s2 = parsedData.structures[j];
+          const norm2 = getBaseAndSide(s2.structure);
+          if (!norm2) continue;
+
+          // Same base structure but different sides (e.g. "Riñón Derecho Largo" and "Riñón Izquierdo Largo")
+          if (norm1.side !== norm2.side && norm1.baseName === norm2.baseName) {
+            visitedPairs.add(i);
+            visitedPairs.add(j);
+
+            const val1 = (s1.defaultNormalValue || "").trim();
+            const val2 = (s2.defaultNormalValue || "").trim();
+
+            if (val1 && val2) {
+              const numMatch1 = val1.match(/^([\d.,]+)/);
+              const numMatch2 = val2.match(/^([\d.,]+)/);
+
+              if (numMatch1 && numMatch2) {
+                const num1 = parseFloat(numMatch1[1].replace(",", "."));
+                const num2 = parseFloat(numMatch2[1].replace(",", "."));
+
+                if (!isNaN(num1) && !isNaN(num2) && num1 === num2) {
+                  // If they are identical, apply a slight clinical variation to the left side structure's default value
+                  const targetStruct = norm2.side === 'izq' ? s2 : s1;
+                  targetStruct.defaultNormalValue = varyValueString(targetStruct.defaultNormalValue, targetStruct.structure);
+                }
+              }
+            }
+            break;
+          }
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      detectedStudyType: parsedData.detectedStudyType || "Ultrasonido General",
+      structures: parsedData.structures
+    });
+  } catch (error: any) {
+    console.error("Error en /api/analyze-measurements:", error);
+    res.status(500).json({ success: false, error: handleGeminiError(error) });
+  }
+});
+
+/**
+ * 24. API: ASSIGN MEASUREMENTS TO REPORT (Asistente de Medidas)
+ * POST /api/assign-measurements
+ * Payload: {
+ *   currentReport: string,
+ *   measurementsToAssign: Array<{structure: string, value: string}>,
+ *   model?: string
+ * }
+ */
+app.post("/api/assign-measurements", async (req: express.Request, res: express.Response) => {
+  try {
+    const { model, currentReport, measurementsToAssign } = req.body;
+    if (!currentReport || !measurementsToAssign || !Array.isArray(measurementsToAssign)) {
+      return res.status(400).json({ success: false, error: "Se requieren los parámetros 'currentReport' y un arreglo 'measurementsToAssign'." });
+    }
+
+    if (measurementsToAssign.length === 0) {
+      return res.json({ success: true, modifiedReport: currentReport });
+    }
+
+    const ai = getGeminiClient();
+    const selectedModel = getModelName(model);
+
+    const measurementsText = measurementsToAssign.map(m => `- **${m.structure}**: ${m.value}`).join("\n");
+
+    const systemInstruction = 
+      "Eres un médico radiólogo experto en redacción clínica. Tu tarea es incorporar mediciones de manera totalmente natural, profesional " +
+      "y fluida en las descripciones de las estructuras anatómicas correspondientes dentro de un informe radiológico de ultrasonido o tomografía. " +
+      "Debes integrar las medidas solicitadas directamente en las frases existentes o reformularlas ligeramente para que suene como redactado de forma nativa por el médico en una sola sesión. " +
+      "Está estrictamente prohibido crear secciones de 'Medidas añadidas' o preámbulos didácticos del estilo 'Se asignan las medidas...'. " +
+      "Debe fluir de manera perfecta con el tono y estilo clínico senior.";
+
+    const promptText = `
+Tienes este informe radiológico en formato Markdown:
+
+"""
+${currentReport}
+"""
+
+Por favor, incorpora de forma nativa y fluida las siguientes mediciones normales en sus respectivas estructuras descritas en los hallazgos:
+
+${measurementsText}
+
+⚠️ REGLAS DE INTEGRACIÓN:
+1. Localiza cada estructura en la sección de HALLAZGOS (por ejemplo, si se pide Hígado de 135 mm, agrégalo de manera natural en la descripción del Hígado: 'Hígado de tamaño conservado, que mide 135 mm de diámetro bipolar...').
+2. Si la estructura no se describe de forma específica pero pertenece al estudio o hay un texto estándar, agrégala de forma elegante respetando el formato del reporte.
+3. No alteres otras patologías o hallazgos descritos, mantén el rigor del diagnóstico intacto.
+4. **REGLA DE CASING ESTRICTA**: No uses mayúsculas sostenidas (ALL CAPS) para el texto nuevo o modificado. Escribe en minúsculas normales respetando las mayúsculas iniciales.
+5. Devuelve ÚNICAMENTE el informe modificado completo en formato Markdown, sin preámbulos, explicaciones ni comentarios de ningún tipo.
+`;
+
+    const response = await ai.models.generateContent({
+      model: selectedModel,
+      contents: promptText,
+      config: {
+        systemInstruction: systemInstruction,
+        temperature: 0.1,
+      },
+    });
+
+    res.json({
+      success: true,
+      modifiedReport: response.text
+    });
+  } catch (error: any) {
+    console.error("Error en /api/assign-measurements:", error);
+    res.status(500).json({ success: false, error: handleGeminiError(error) });
+  }
+});
+
+/**
+ * 25. API: GENERATE FOOTNOTES SUGGESTIONS (Creador de Notas de Pie de Página)
+ * POST /api/generate-footnotes
+ * Payload: {
+ *   report: string,
+ *   model?: string
+ * }
+ */
+app.post("/api/generate-footnotes", async (req: express.Request, res: express.Response) => {
+  try {
+    const { model, report } = req.body;
+    if (!report) {
+      return res.status(400).json({ success: false, error: "Se requiere el 'report' para generar las notas de pie de página." });
+    }
+
+    const ai = getGeminiClient();
+    const selectedModel = getModelName(model);
+
+    const systemInstruction = 
+      "Eres un médico radiólogo senior experto en auditoría de informes ecográficos y redactores de notas de pie de página.\n" +
+      "Tu tarea es analizar de forma íntegra el reporte clínico proporcionado y elaborar sugerencias de notas de pie de página con información altamente relevante y de alto valor para el médico tratante o para el paciente.\n" +
+      "Debes generar exactamente 4 sugerencias diferentes y bien redactadas en español, cada una clasificada en una de estas categorías:\n" +
+      "1. 'Médico Tratante': Recomendaciones clínicas técnicas, sugerencias de laboratorios complementarios, correlaciones histológicas, perfiles hepáticos/tiroideos, etc. Si detectas hallazgos patológicos específicos, integra la cita científica correspondiente (ej. 'Estratificación de riesgo estimada mediante criterios ACR TI-RADS 2017' para nódulos tiroideos; o 'Criterios hemodinámicos basados en el Consenso de la Society of Radiologists in Ultrasound (SRU)' para estenosis carotídea o esteatosis hepática; 'Clasificación de Bosniak' para quistes renales; o 'BI-RADS' para hallazgos en mamas).\n" +
+      "2. 'Paciente': Explicaciones empáticas o recomendaciones amigables sobre control de síntomas, aclaraciones generales que disipen dudas comunes, etc.\n" +
+      "3. 'Control': Sugerencias específicas de temporalidad para estudios de control (ej: repetir en 6 meses, control anual, control inmediato según evolución clínica).\n" +
+      "4. 'Técnico / General': Notas de calidad del estudio, limitaciones técnicas del examen (ej: interposición de gas intestinal, panículo adiposo, colaboración del paciente, transductor utilizado).\n\n" +
+      "REGLAS IMPORTANTES:\n" +
+      "- Adapta las notas de forma estrictamente personalizada a los hallazgos reales del reporte (por ejemplo, si hay hepatomegalia, sugiera perfil hepático; si hay bocio, sugiera TSH; si todo es normal, sugiera controles rutinarios de prevención y comente las excelentes condiciones de la ventana acústica).\n" +
+      "- Las notas deben ser breves, sumamente profesionales y elegantes (máximo 150 caracteres por sugerencia).\n" +
+      "- Devuelve ÚNICAMENTE un objeto JSON válido con la estructura descrita abajo, sin backticks ni explicaciones externas.";
+
+    const promptText = `
+Analiza este reporte clínico:
+
+"""
+${report}
+"""
+
+Genera las 4 sugerencias personalizadas en formato JSON estructurado exactamente así:
+{
+  "footnotes": [
+    {
+      "id": "fn_1",
+      "category": "Médico Tratante",
+      "text": "Sugerencia personalizada de pie de página para el médico"
+    },
+    {
+      "id": "fn_2",
+      "category": "Paciente",
+      "text": "Sugerencia amigable personalizada de pie de página para el paciente"
+    },
+    {
+      "id": "fn_3",
+      "category": "Control",
+      "text": "Sugerencia personalizada de control y seguimiento"
+    },
+    {
+      "id": "fn_4",
+      "category": "Técnico / General",
+      "text": "Sugerencia técnica sobre limitaciones o calidad del estudio"
+    }
+  ]
+}
+`;
+
+    const response = await ai.models.generateContent({
+      model: selectedModel,
+      contents: promptText,
+      config: {
+        systemInstruction: systemInstruction,
+        temperature: 0.3,
+        responseMimeType: "application/json"
+      },
+    });
+
+    let data;
+    try {
+      const cleanText = response.text.trim().replace(/^```json/, "").replace(/```$/, "").trim();
+      data = JSON.parse(cleanText);
+    } catch (e) {
+      console.error("Error parsing footnotes JSON from Gemini:", response.text);
+      data = {
+        footnotes: [
+          {
+            id: "fn_1",
+            category: "Médico Tratante",
+            text: "Se sugiere correlación clínica con antecedentes y exámenes de laboratorio complementarios."
+          },
+          {
+            id: "fn_2",
+            category: "Paciente",
+            text: "Recuerde consultar los resultados de este examen con su médico tratante para una interpretación integral."
+          },
+          {
+            id: "fn_3",
+            category: "Control",
+            text: "Se recomienda control ecográfico periódico según indicación médica y evolución clínica."
+          },
+          {
+            id: "fn_4",
+            category: "Técnico / General",
+            text: "Examen realizado bajo condiciones técnicas adecuadas con transductor multifrecuencial de alta resolución."
+          }
+        ]
+      };
+    }
+
+    res.json({
+      success: true,
+      footnotes: data.footnotes || []
+    });
+  } catch (error: any) {
+    console.error("Error en /api/generate-footnotes:", error);
+    res.status(500).json({ success: false, error: handleGeminiError(error) });
+  }
+});
+
+/**
+ * 26. API: DETECT EXTERNAL CLINICAL GUIDELINES AND FRACTURE CLASSIFICATIONS
+ * POST /api/detect-external-guideline
+ * Payload: {
+ *   report: string,
+ *   model?: string
+ * }
+ */
+app.post("/api/detect-external-guideline", async (req: express.Request, res: express.Response) => {
+  try {
+    const { model, report } = req.body;
+    if (!report) {
+      return res.status(400).json({ success: false, error: "Se requiere el 'report' para escanear guías clínicas." });
+    }
+
+    const ai = getGeminiClient();
+    const selectedModel = getModelName(model);
+
+    const systemInstruction = 
+      "Eres un médico radiólogo, traumatólogo y auditor clínico senior experto en consensos científicos, guías de práctica clínica internacionales y sistemas de clasificación.\n" +
+      "Tu tarea es analizar detalladamente el reporte médico proporcionado y determinar qué guías y consensos de práctica clínica han sido REALMENTE APLICADOS o son directamente pertinentes según los hallazgos patológicos reales descritos en el informe.\n" +
+      "REGLAS CRÍTICAS DE AUDITORÍA (PROHIBIDO EL EMPAREJAMIENTO DE PALABRAS CLAVE AISLADAS):\n" +
+      "- Debes entender el contexto clínico real de manera íntegra. No uses atajos como recomendar una guía solo porque aparezca un término anatómico si el órgano o estructura es normal.\n" +
+      "- No sugieras 'gpc-bosniak' (Clasificación de Bosniak) si no hay mención explícita de quistes o lesiones quísticas renales complejas con tabiques o calcificaciones.\n" +
+      "- No sugieras 'gpc-ti-rads' (ACR TI-RADS) si la tiroides es normal o no se describen nódulos tiroideos.\n" +
+      "- No sugieras 'gpc-bi-rads' (ACR BI-RADS) si no hay hallazgos patológicos o sospechas reales en mamas.\n" +
+      "- No sugieras 'gpc-sru-esteatosis' (Consenso SRU Hígado) si el hígado tiene ecogenicidad normal o si se niega explícitamente la esteatosis hepática (por ejemplo, 'hígado de tamaño y ecogenicidad normal, sin esteatosis').\n" +
+      "- No sugieras 'gpc-sru-carotidas' (Consenso SRU Carótidas) o 'gpc-mannheim' (Consenso de Mannheim GIM) si no se describe patología carotídea, placas de ateroma o alteración del grosor íntima-media.\n" +
+      "- No sugieras 'gpc-kellgren' (Kellgren & Lawrence) si no se describe artrosis, osteofitos o pinzamiento articular en la rodilla.\n" +
+      "- No sugieras 'gpc-sru-tvp' (Consenso SRU de TVP) si no hay signos de trombosis venosa profunda.\n" +
+      "- No sugieras 'gpc-tasc-ii' (Consenso TASC II Arterial) si no hay enfermedad arterial periférica, estenosis o flujos alterados descritos.\n" +
+      "- No sugieras 'gpc-or-ads' (Clasificación O-RADS) o 'gpc-iota' (Reglas Simples IOTA) si no hay masas anexiales, quistes ováricos o hallazgos ginecológicos patológicos relevantes.\n" +
+      "- No sugieras 'gpc-tokio-tg18' (Guías de Tokio TG18) si no se describe colecistitis aguda o sospecha de inflamación vesicular.\n" +
+      "- No sugieras 'gpc-apendice-acr' (Criterios Apendicitis ACR) si el apéndice es normal o no hay sospecha de apendicitis aguda.\n" +
+      "Debes responder ÚNICAMENTE con un objeto JSON con la estructura descrita abajo, sin comillas invertidas (backticks) ni explicaciones de texto adicionales.";
+
+    const promptText = `
+Analiza el siguiente reporte clínico para auditar y extraer guías o consensos aplicados o pertinentes según el contexto real:
+
+"""
+${report}
+"""
+
+Las guías estándar disponibles y sus condiciones son:
+- "gpc-ti-rads": Aplicada si hay nódulos tiroideos.
+- "gpc-sru-carotidas": Aplicada si hay estenosis o placas carotídeas.
+- "gpc-bi-rads": Aplicada si hay lesiones mamarias (nódulos, microcalcificaciones, asimetrías) o BI-RADS explícito.
+- "gpc-bosniak": Aplicada si hay quistes renales con tabiques, calcificaciones o complejidad.
+- "gpc-sru-esteatosis": Aplicada si hay esteatosis hepática (hígado graso, infiltración grasa).
+- "gpc-kellgren": Aplicada si hay artrosis o pinzamiento articular en rodilla.
+- "gpc-sru-tvp": Aplicada si hay trombosis venosa profunda o sospecha de TVP.
+- "gpc-tasc-ii": Aplicada si hay estenosis o flujos alterados en Doppler arterial de miembros inferiores.
+- "gpc-mannheim": Aplicada si hay medición del grosor íntima-media (GIM) carotídeo o Mannheim.
+- "gpc-or-ads": Aplicada si hay masas anexiales u ováricas bajo O-RADS.
+- "gpc-iota": Aplicada si hay masas anexiales valoradas con reglas IOTA.
+- "gpc-tokio-tg18": Aplicada si hay colecistitis aguda o sospecha de inflamación de vesícula.
+- "gpc-apendice-acr": Aplicada si hay sospecha de apendicitis aguda.
+
+Retorna el resultado en formato JSON estructurado exactamente así:
+{
+  "matchedStandardIds": ["gpc-ti-rads", "gpc-bi-rads"], // Arreglo de IDs de guías estándar de la lista que realmente aplican según el contexto. Si ninguna aplica, dejar vacío [].
+  "detected": [
+    {
+      "id": "guideline_id_unico",
+      "title": "Nombre de la Clasificación (ej: Clasificación de Gustilo-Anderson o Clasificación de Schatzker)",
+      "description": "Qué evalúa en la lesión específica descrita en el informe.",
+      "text": "Texto formal de pie de página para incrustar.",
+      "source": "Entidad emisora de la guía"
+    }
+  ] // Arreglo de clasificaciones dinámicas detectadas (especialmente de fracturas u ortopedia descritas en el informe). Si ninguna aplica, dejar vacío [].
+}
+`;
+
+    const response = await ai.models.generateContent({
+      model: selectedModel,
+      contents: promptText,
+      config: {
+        systemInstruction: systemInstruction,
+        temperature: 0.1,
+        responseMimeType: "application/json"
+      },
+    });
+
+    let data;
+    try {
+      const cleanText = response.text.trim().replace(/^```json/, "").replace(/```$/, "").trim();
+      data = JSON.parse(cleanText);
+    } catch (e) {
+      console.error("Error parsing detected guidelines JSON from Gemini:", response.text);
+      data = { matchedStandardIds: [], detected: [] };
+    }
+
+    res.json({
+      success: true,
+      matchedStandardIds: data.matchedStandardIds || [],
+      detected: data.detected || []
+    });
+  } catch (error: any) {
+    console.error("Error en /api/detect-external-guideline:", error);
     res.status(500).json({ success: false, error: handleGeminiError(error) });
   }
 });

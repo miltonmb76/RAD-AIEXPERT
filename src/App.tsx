@@ -18,6 +18,8 @@ import AbdomenAnatomyViewer from "./components/AbdomenAnatomyViewer";
 import ScrotumAnatomyViewer from "./components/ScrotumAnatomyViewer";
 import WristAnatomyViewer from "./components/WristAnatomyViewer";
 import BreastAnatomyViewer from "./components/BreastAnatomyViewer";
+import { AsistenteMedidas } from "./components/AsistenteMedidas";
+import { CreadorNotasPie } from "./components/CreadorNotasPie";
 import AbdominalWallAnatomyViewer from "./components/AbdominalWallAnatomyViewer";
 import CalfAchillesAnatomyViewer from "./components/CalfAchillesAnatomyViewer";
 import NeonatalBrainAnatomyViewer from "./components/NeonatalBrainAnatomyViewer";
@@ -66,9 +68,14 @@ import {
   Database,
   BookOpenText,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Columns,
+  Eye,
+  Ruler,
+  Bookmark
 } from "lucide-react";
 import { initAuth, googleSignIn, logout as googleLogout } from "./firebaseAuth";
+import { CloudStudy, saveStudyToCloud, getStudiesFromCloud, deleteStudyFromCloud } from "./firebaseDb";
 import { Mail, LogOut } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
@@ -198,7 +205,7 @@ const formatDateToDMY = (dateStr: string): string => {
 
 export default function App() {
   // Navigation & General Settings
-  const [activeTab, setActiveTab] = useState<"generator" | "classifications" | "consult" | "presets" | "api" | "bibliography" | "images" | "expert-analysis">("generator");
+  const [activeTab, setActiveTab] = useState<"generator" | "classifications" | "consult" | "presets" | "api" | "bibliography" | "images" | "expert-analysis" | "measurements" | "cloud-db">("generator");
   
   // Synchronized export states from medical image generator
   const [exportedImage, setExportedImage] = useState<string | null>(null);
@@ -228,6 +235,10 @@ export default function App() {
   
   // 1b. Patient & Corporate Header customization states for PDF/Print
   const [patientName, setPatientName] = useState<string>("");
+  const [patientAge, setPatientAge] = useState<string>("");
+  const [patientGender, setPatientGender] = useState<string>("");
+  const [patientId, setPatientId] = useState<string>("");
+  const [dicomNotification, setDicomNotification] = useState<string | null>(null);
   const [patientEmail, setPatientEmail] = useState<string>(() => localStorage.getItem("rad_patient_email") || "");
   const [reportDate, setReportDate] = useState<string>(() => {
     const today = new Date();
@@ -438,6 +449,7 @@ export default function App() {
   const [showPatientDetails, setShowPatientDetails] = useState<boolean>(false);
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
   const [adaptivePDFContrast, setAdaptivePDFContrast] = useState<boolean>(false);
+  const [pdfLayoutType, setPdfLayoutType] = useState<"classic" | "clinical_slate" | "executive_medical">("classic");
   
   // PDF Real-Time Preview States
   const [printModalDocType, setPrintModalDocType] = useState<'report' | 'patient_summary'>('report');
@@ -445,6 +457,7 @@ export default function App() {
   const [generatedNativePdfUrl, setGeneratedNativePdfUrl] = useState<string | null>(null);
   const [generatedSummaryPdfUrl, setGeneratedSummaryPdfUrl] = useState<string | null>(null);
   const [isGeneratingPdfPreview, setIsGeneratingPdfPreview] = useState<boolean>(false);
+  const [isSplitPdfActive, setIsSplitPdfActive] = useState<boolean>(true);
   
   // WhatsApp Share States
   const [showWhatsAppModal, setShowWhatsAppModal] = useState<boolean>(false);
@@ -462,8 +475,17 @@ export default function App() {
   const [gmailAttachInfographic, setGmailAttachInfographic] = useState<boolean>(false);
   const [gmailSuccessMessage, setGmailSuccessMessage] = useState<string | null>(null);
   const [gmailErrorMessage, setGmailErrorMessage] = useState<string | null>(null);
-  const [gmailUser, setGmailUser] = useState<any | null>(null);
-  const [gmailAccessToken, setGmailAccessToken] = useState<string | null>(null);
+  const [gmailUser, setGmailUser] = useState<any | null>(() => {
+    try {
+      const stored = localStorage.getItem("rad_cached_user");
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [gmailAccessToken, setGmailAccessToken] = useState<string | null>(() => {
+    return localStorage.getItem("rad_gmail_access_token");
+  });
   const [isLoggingInGmail, setIsLoggingInGmail] = useState<boolean>(false);
   const [isSendingGmail, setIsSendingGmail] = useState<boolean>(false);
   
@@ -1213,6 +1235,93 @@ export default function App() {
 
   // --- INTERACTIVE SYNTACTIC HIGHLIGHTING AND DYNAMIC AESTHETIC STATES ---
   const [isSyntacticHighlightingActive, setIsSyntacticHighlightingActive] = useState<boolean>(true);
+  const [manualSeverityOverrides, setManualSeverityOverrides] = useState<Record<string, "critical" | "altered" | "normal">>({});
+  const [aiSeverityCache, setAiSeverityCache] = useState<Record<string, "critical" | "altered" | "normal">>({});
+  const [isAnalyzingParagraphs, setIsAnalyzingParagraphs] = useState<boolean>(false);
+
+  // Cloud studies states
+  const [cloudStudies, setCloudStudies] = useState<CloudStudy[]>([]);
+  const [isLoadingCloudStudies, setIsLoadingCloudStudies] = useState<boolean>(false);
+  const [cloudStudiesError, setCloudStudiesError] = useState<string | null>(null);
+  const [cloudStudiesSuccess, setCloudStudiesSuccess] = useState<string | null>(null);
+  const [isSavingToCloud, setIsSavingToCloud] = useState<boolean>(false);
+  const [cloudSearch, setCloudSearch] = useState<string>("");
+  const [viewingCloudStudy, setViewingCloudStudy] = useState<CloudStudy | null>(null);
+
+  useEffect(() => {
+    if (!generatedReport) return;
+
+    // Parse elements to get all unique paragraphs and list items
+    const elements = parseReportToElements(generatedReport, "temp");
+    const paragraphsToAnalyze: string[] = [];
+
+    elements.forEach(elem => {
+      if (elem.type === "list") {
+        elem.items?.forEach(item => {
+          let cleanItem = item.trim();
+          const isNumbered = /^\d+\.\s+/.test(cleanItem);
+          if (isNumbered) {
+            const match = cleanItem.match(/^(\d+\.)\s+/);
+            if (match) {
+              cleanItem = cleanItem.substring(match[0].length);
+            }
+          } else if (cleanItem.startsWith("- ") || cleanItem.startsWith("* ")) {
+            cleanItem = cleanItem.substring(2);
+          }
+          cleanItem = cleanItem.trim();
+          const cleanItemLower = cleanItem.toLowerCase();
+
+          if (cleanItem && !aiSeverityCache[cleanItem] && !aiSeverityCache[cleanItemLower] && !paragraphsToAnalyze.includes(cleanItem)) {
+            paragraphsToAnalyze.push(cleanItem);
+          }
+        });
+      } else if (elem.type === "text" || !elem.type) {
+        elem.lines?.forEach(line => {
+          const trimmedLine = line.trim();
+          const trimmedLineLower = trimmedLine.toLowerCase();
+          if (trimmedLine && !aiSeverityCache[trimmedLine] && !aiSeverityCache[trimmedLineLower] && !paragraphsToAnalyze.includes(trimmedLine)) {
+            paragraphsToAnalyze.push(trimmedLine);
+          }
+        });
+      }
+    });
+
+    if (paragraphsToAnalyze.length === 0) return;
+
+    const timeoutId = setTimeout(async () => {
+      setIsAnalyzingParagraphs(true);
+      try {
+        const response = await fetch("/api/analyze-paragraphs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: selectedModel,
+            paragraphs: paragraphsToAnalyze
+          })
+        });
+        const data = await response.json();
+        if (data.success && data.results) {
+          const normalizedResults: Record<string, "critical" | "altered" | "normal"> = {};
+          Object.entries(data.results).forEach(([key, value]) => {
+            const trimmedKey = key.trim();
+            normalizedResults[trimmedKey] = value as "critical" | "altered" | "normal";
+            normalizedResults[trimmedKey.toLowerCase()] = value as "critical" | "altered" | "normal";
+          });
+          setAiSeverityCache(prev => ({
+            ...prev,
+            ...normalizedResults
+          }));
+        }
+      } catch (e) {
+        console.error("Error calling analyze-paragraphs:", e);
+      } finally {
+        setIsAnalyzingParagraphs(false);
+      }
+    }, 1200);
+
+    return () => clearTimeout(timeoutId);
+  }, [generatedReport, selectedModel]);
+
   const [reportTheme, setReportTheme] = useState<string>("slate-dark"); // 'slate-dark' | 'academic-light' | 'clinical-minimal' | 'retro-glowing'
   const [reportFont, setReportFont] = useState<string>("sans"); // 'sans' | 'serif' | 'mono'
   const [reportDensity, setReportDensity] = useState<string>("airy"); // 'compact' | 'airy'
@@ -1256,6 +1365,16 @@ export default function App() {
       setParagraphActionError(null);
       setCustomParagraphPrompt("");
     }
+  };
+
+  const handleToggleManualSeverity = (severity: "critical" | "altered" | "normal") => {
+    if (!selectedParagraphOriginal) return;
+    const trimmed = selectedParagraphOriginal.trim();
+    setManualSeverityOverrides(prev => ({
+      ...prev,
+      [trimmed]: severity,
+      [selectedParagraphOriginal]: severity
+    }));
   };
 
   const handleTextSelection = () => {
@@ -1581,6 +1700,8 @@ Ejemplo:
   const [isGeneratingPatientSummary, setIsGeneratingPatientSummary] = useState<boolean>(false);
   const [patientSummaryError, setPatientSummaryError] = useState<string | null>(null);
   const [expandedFindings, setExpandedFindings] = useState<Record<number, boolean>>({});
+  const [isAsistenteMedidasOpen, setIsAsistenteMedidasOpen] = useState<boolean>(false);
+  const [isCreadorNotasOpen, setIsCreadorNotasOpen] = useState<boolean>(false);
 
   // States for Advanced Vascular Analysis & Schematic Drawing
   const [vascularTable, setVascularTable] = useState<string>("");
@@ -1641,6 +1762,7 @@ Ejemplo:
   const [includeBiliarySchemaInReport, setIncludeBiliarySchemaInReport] = useState<boolean>(true);
   const [includeAppendixSchemaInReport, setIncludeAppendixSchemaInReport] = useState<boolean>(true);
   const [includeDiverticulitisSchemaInReport, setIncludeDiverticulitisSchemaInReport] = useState<boolean>(true);
+  const [includeSmallBowelSchemaInReport, setIncludeSmallBowelSchemaInReport] = useState<boolean>(true);
   const [includeElastographyInReport, setIncludeElastographyInReport] = useState<boolean>(false);
   const [elastographyHasStiffness, setElastographyHasStiffness] = useState<boolean>(true);
   const [elastographyStiffness, setElastographyStiffness] = useState<number>(5.2);
@@ -2195,6 +2317,131 @@ Ejemplo:
       window.removeEventListener("afterprint", handleAfterPrint);
     };
   }, []);
+
+  // Auto-sync breast states using local heuristics to ensure PDF and UI are always populated
+  useEffect(() => {
+    const activeReportText = isEditingReportManual ? editedReportText : (generatedReport || "");
+    if (!activeReportText) return;
+
+    // Check if the report mentions breast/mama keywords to see if it is a breast study
+    const normText = activeReportText.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const isBreastStudy = normText.includes("mama") || normText.includes("mamas") || normText.includes("mamografia") || normText.includes("ultrasonido de mamas") || activeProtocol === "Mamas";
+    
+    if (!isBreastStudy) return;
+
+    // Only auto-populate if the current breastStates is empty or doesn't have any 'hallazgo'
+    const hasAnyHallazgo = Object.values(breastStates).some(s => s !== "no_descrito" && s !== "normal");
+    if (hasAnyHallazgo) return; // Respect user's manual states/clicks if they already exist!
+
+    const initialKeys = [
+      "md_eje1", "md_eje2", "md_eje3", "md_eje4", "md_eje5", "md_eje6", 
+      "md_eje7", "md_eje8", "md_eje9", "md_eje10", "md_eje11", "md_eje12",
+      "md_retroareolar", "md_cola_spence", "md_axila",
+      "mi_eje1", "mi_eje2", "mi_eje3", "mi_eje4", "mi_eje5", "mi_eje6", 
+      "mi_eje7", "mi_eje8", "mi_eje9", "mi_eje10", "mi_eje11", "mi_eje12",
+      "mi_retroareolar", "mi_cola_spence", "mi_axila"
+    ];
+
+    let rightBlock = "";
+    let leftBlock = "";
+
+    const idxMD = Math.max(normText.indexOf("mama derecha"), normText.indexOf("m. derecha"), normText.indexOf("md:"));
+    const idxMI = Math.max(normText.indexOf("mama izquierda"), normText.indexOf("m. izquierda"), normText.indexOf("mi:"));
+
+    if (idxMD !== -1 && idxMI !== -1) {
+      if (idxMD < idxMI) {
+        rightBlock = normText.slice(idxMD, idxMI);
+        leftBlock = normText.slice(idxMI);
+      } else {
+        leftBlock = normText.slice(idxMI, idxMD);
+        rightBlock = normText.slice(idxMD);
+      }
+    } else if (idxMD !== -1) {
+      rightBlock = normText.slice(idxMD);
+      leftBlock = normText;
+    } else if (idxMI !== -1) {
+      leftBlock = normText.slice(idxMI);
+      rightBlock = normText;
+    } else {
+      rightBlock = normText;
+      leftBlock = normText;
+    }
+
+    const nextStates: Record<string, string> = { ...breastStates };
+    const nextDescriptions: Record<string, string> = { ...breastDescriptions };
+    let changed = false;
+
+    initialKeys.forEach(id => {
+      const isRight = id.startsWith("md_");
+      const name = id.replace("md_", "").replace("mi_", "");
+      
+      let primary: string[] = [];
+      if (name.startsWith("eje")) {
+        const num = name.replace("eje", "");
+        primary = [`eje ${num}`, `eje de las ${num}`, `hora ${num}`, `sector ${num}`, `posicion ${num}`];
+      } else if (name === "retroareolar") {
+        primary = ["retroareolar", "retro del pezon", "detras del pezon", "areolar", "retro-areolar"];
+      } else if (name === "cola_spence") {
+        primary = ["cola de spence", "prolongacion axilar", "cola spence"];
+      } else if (name === "axila") {
+        primary = ["axilar", "axila", "ganglio axilar", "hueco axilar"];
+      }
+
+      const targetBlock = isRight ? rightBlock : leftBlock;
+      if (!targetBlock) return;
+
+      const foundKeyword = primary.find(kw => targetBlock.includes(kw));
+      if (foundKeyword) {
+        const kwIdx = targetBlock.indexOf(foundKeyword);
+        const startContext = Math.max(0, kwIdx - 40);
+        const endContext = Math.min(targetBlock.length, kwIdx + 85);
+        const contextText = targetBlock.slice(startContext, endContext);
+
+        const isNormal = [
+          "normal", "conservado", "conservada", "homogeneo", "homogenea", "habitual", "negativo",
+          "sin hallazgos", "sin alteraciones", "sin nodulos", "sin lesiones", "no se observan masas",
+          "sin masas", "sin quistes", "no hay quistes", "libre de", "adenopatia reactiva de aspecto habitual"
+        ].some(p => contextText.includes(p));
+
+        const computedState = isNormal ? "normal" : "hallazgo";
+        
+        if (nextStates[id] !== computedState) {
+          nextStates[id] = computedState;
+          changed = true;
+        }
+
+        if (!isNormal) {
+          const keywordInOriginal = activeReportText.slice(startContext, endContext);
+          let customDesc = "Alteración ecográfica descrita.";
+          const sentences = keywordInOriginal.split(/[.;:]/);
+          const relatedSentence = sentences.find(s => {
+            const sNorm = s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            return primary.some(kw => sNorm.includes(kw));
+          });
+          if (relatedSentence && relatedSentence.trim().length > 6) {
+            customDesc = relatedSentence.trim().replace(/^, -/, "").replace(/\s+/g, " ");
+            if (customDesc.length > 80) {
+              customDesc = customDesc.substring(0, 77) + "...";
+            }
+          }
+          if (nextDescriptions[id] !== customDesc) {
+            nextDescriptions[id] = customDesc;
+            changed = true;
+          }
+        } else {
+          if (nextDescriptions[id] !== "Dentro de límites normales.") {
+            nextDescriptions[id] = "Dentro de límites normales.";
+            changed = true;
+          }
+        }
+      }
+    });
+
+    if (changed) {
+      setBreastStates(nextStates);
+      setBreastDescriptions(nextDescriptions);
+    }
+  }, [generatedReport, editedReportText, isEditingReportManual, activeProtocol]);
 
   // Set defaults or modify states based on active preset selection
   const applyPreset = (preset: Presets) => {
@@ -3437,7 +3684,7 @@ Ejemplo:
       const base64 = window.btoa(binary);
       const base64Url = base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
-      // 4. Post to Google Gmail API send endpoint
+       // 4. Post to Google Gmail API send endpoint
       const response = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
         method: "POST",
         headers: {
@@ -3450,6 +3697,11 @@ Ejemplo:
       });
 
       if (!response.ok) {
+        if (response.status === 401) {
+          setGmailAccessToken(null);
+          localStorage.removeItem("rad_gmail_access_token");
+          throw new Error("Su sesión de Gmail ha expirado por seguridad (las sesiones de Google duran 1 hora). Como hemos habilitado el acceso rápido, simplemente haga clic en 'Autorizar Gmail' para renovarla en 1 segundo sin tener que volver a elegir su cuenta ni ingresar sus datos.");
+        }
         const errorText = await response.text();
         throw new Error(`Gmail API reportó un error de envío: ${errorText}`);
       }
@@ -4350,6 +4602,12 @@ Ejemplo:
               meta["paciente"] = textDecoder.decode(uint8.subarray(pos, pos + length)).replace(/\^/g, " ").trim();
             } else if (group === 0x0010 && element === 0x0020) {
               meta["id"] = textDecoder.decode(uint8.subarray(pos, pos + length)).trim();
+            } else if (group === 0x0010 && element === 0x1010) {
+              meta["edad"] = textDecoder.decode(uint8.subarray(pos, pos + length)).trim();
+            } else if (group === 0x0010 && element === 0x0040) {
+              meta["sexo"] = textDecoder.decode(uint8.subarray(pos, pos + length)).trim();
+            } else if (group === 0x0008 && element === 0x0020) {
+              meta["fechaEstudio"] = textDecoder.decode(uint8.subarray(pos, pos + length)).trim();
             } else if (group === 0x0008 && element === 0x0060) {
               meta["modalidad"] = textDecoder.decode(uint8.subarray(pos, pos + length)).trim();
             } else if (group === 0x0008 && element === 0x0080) {
@@ -4820,6 +5078,47 @@ Ejemplo:
     
     if (loaded.length > 0) {
       setAttachedImages((prev) => [...prev, ...loaded]);
+
+      // Auto-extract and populate metadata if a DICOM file was loaded
+      const dicomWithMeta = loaded.find((img) => img.isDicom && img.dicomMetaData);
+      if (dicomWithMeta && dicomWithMeta.dicomMetaData) {
+        const meta = dicomWithMeta.dicomMetaData;
+        const extracted: string[] = [];
+        
+        if (meta.paciente && meta.paciente.trim() !== "") {
+          setPatientName(meta.paciente.trim());
+          extracted.push(`Paciente: ${meta.paciente.trim()}`);
+        }
+        if (meta.id && meta.id.trim() !== "") {
+          setPatientId(meta.id.trim());
+          extracted.push(`ID: ${meta.id.trim()}`);
+        }
+        if (meta.edad && meta.edad.trim() !== "") {
+          setPatientAge(meta.edad.trim());
+          extracted.push(`Edad: ${meta.edad.trim()}`);
+        }
+        if (meta.sexo && meta.sexo.trim() !== "") {
+          setPatientGender(meta.sexo.trim());
+          extracted.push(`Sexo: ${meta.sexo.trim()}`);
+        }
+        if (meta.fechaEstudio && meta.fechaEstudio.trim() !== "") {
+          const rawDate = meta.fechaEstudio.trim();
+          if (rawDate.length === 8 && /^\d+$/.test(rawDate)) {
+            const formattedDate = `${rawDate.substring(0, 4)}-${rawDate.substring(4, 6)}-${rawDate.substring(6, 8)}`;
+            setReportDate(formattedDate);
+            extracted.push(`Fecha: ${formattedDate}`);
+          }
+        }
+        
+        if (extracted.length > 0) {
+          setDicomNotification(
+            `¡Metadatos DICOM detectados en "${dicomWithMeta.name}"! Se han auto-completado: ${extracted.join(", ")}.`
+          );
+          setTimeout(() => {
+            setDicomNotification(null);
+          }, 9000);
+        }
+      }
     }
   };
 
@@ -4914,6 +5213,112 @@ Ejemplo:
     });
   };
 
+  const getParagraphSeverity = (text: string): "critical" | "altered" | "normal" => {
+    if (!text) return "normal";
+    const trimmed = text.trim();
+    const trimmedLower = trimmed.toLowerCase();
+
+    // Check manual overrides first
+    if (manualSeverityOverrides[trimmed]) {
+      return manualSeverityOverrides[trimmed];
+    }
+    if (manualSeverityOverrides[trimmedLower]) {
+      return manualSeverityOverrides[trimmedLower];
+    }
+    if (manualSeverityOverrides[text]) {
+      return manualSeverityOverrides[text];
+    }
+
+    // Check AI semantic cache second
+    if (aiSeverityCache[trimmed]) {
+      return aiSeverityCache[trimmed];
+    }
+    if (aiSeverityCache[trimmedLower]) {
+      return aiSeverityCache[trimmedLower];
+    }
+    if (aiSeverityCache[text]) {
+      return aiSeverityCache[text];
+    }
+
+    const blockClean = text.toLowerCase();
+    const sentences = blockClean.split(/[.:;]/);
+    let severity: "critical" | "altered" | "normal" = "normal";
+
+    for (const sentence of sentences) {
+      const s = sentence.trim();
+      if (!s) continue;
+      
+      const cleanText = s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      
+      const criticalKeywords = [
+        "ruptura", "desgarro completo", "trombosis", "oclusion", "maligno", "malignidad",
+        "birads 4", "birads 5", "birads 6", "birads_4", "birads_5", "birads_6", "aneurisma",
+        "colecistitis", "apendicitis", "isquemia", "infarto", "critico", "critica", "criticos", "criticas",
+        "trombosis venosa profunda", "tvp", "oclusion total"
+      ];
+
+      const alteredKeywords = [
+        "desgarro parcial", "desgarro", "alteracion", "alterado", "alterada", "disminuid", "disminucion",
+        "aumentad", "aumento", "engrosad", "engrosamiento", "bursitis", "sinovitis", "derrame",
+        "quiste", "quistica", "quisticos", "quisticas", "quistes", "calcificacion", "calcificaciones",
+        "ectasia", "bocio", "nodulo", "nodulos", "fibrosis", "esteatosis", "hepatomegalia",
+        "esplenomegalia", "colelitiasis", "lodo biliar", "adenopatia", "adenopatias",
+        "heterogeneo", "heterogenea", "moderado", "moderada", "leve", "litiasis", "lesion", "lesiones",
+        "insuficiencia", "insuficiente", "insuficiencias", "reflujo", "reflujos", "incompetente", "incompetentes",
+        "incompetencia", "retrogado", "retrógrado", "retrogrado", "dilatado", "dilatada", "dilataciones", "dilatacion",
+        "ectasico", "ectasica", "tortuoso", "tortuosa"
+      ];
+
+      const hasActiveKeyword = (keywords: string[]) => {
+        for (const kw of keywords) {
+          const kwClean = kw.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+          const idx = cleanText.indexOf(kwClean);
+          if (idx !== -1) {
+            // Context before key covers the whole sentence up to the keyword
+            const contextBefore = cleanText.substring(0, idx);
+            
+            const negationPatterns = [
+              /\bsin\b/,
+              /\bno\s+se\b/,
+              /\bno\s+aprec\w*/,
+              /\bno\s+evid\w*/,
+              /\bno\s+observa\w*/,
+              /\bno\s+detecta\w*/,
+              /\bno\s+visualiza\w*/,
+              /\bno\s+hay\b/,
+              /\bausencia\b/,
+              /\blibre\s+de\b/,
+              /\bnegativ\w*/,
+              /\bnormal\b/,
+              /\bconservad\w*/,
+              /\bdescarta\w*/,
+              /\bpermeable\b/,
+              /\bcolapsable\b/,
+              /\bcompresible\b/,
+              /\bno\s+muestra\b/,
+              /\bno\s+revela\b/
+            ];
+
+            const isNegated = negationPatterns.some(pattern => pattern.test(contextBefore));
+            if (!isNegated) {
+              return true;
+            }
+          }
+        }
+        return false;
+      };
+
+      if (hasActiveKeyword(criticalKeywords)) {
+        severity = "critical";
+        break;
+      } else if (hasActiveKeyword(alteredKeywords)) {
+        severity = "altered";
+      }
+    }
+
+    return severity;
+  };
+
   const handleDownloadNativePDF = async (
     openInNewTab: boolean = false,
     shareViaWebShare: boolean = false,
@@ -4930,10 +5335,112 @@ Ejemplo:
       });
 
       let yCoord = 20;
-      const marginX = 20;
+      let marginX = 20;
       const pageWidth = 210;
       const pageHeight = 297;
-      const contentWidth = pageWidth - (2 * marginX); // 170mm
+      let contentWidth = pageWidth - (2 * marginX); // 170mm
+
+      const drawAsymmetricSidebar = (docObj: any, pageNum: number, startY: number = 20) => {
+        if (pdfLayoutType !== "asymmetric") return;
+        
+        // Draw elegant vertical dividing line at x = 70
+        docObj.setDrawColor(226, 232, 240); // slate-200
+        docObj.setLineWidth(0.35);
+        docObj.line(70, startY, 70, pageHeight - 20);
+
+        if (pageNum === 1) {
+          // Draw a very elegant Swiss-style slate background card for patient info
+          const cardY = startY + 2;
+          const cardW = 46;
+          const cardH = 75; // slightly taller to fit everything nicely
+          
+          docObj.setFillColor(248, 250, 252); // slate-50
+          docObj.setDrawColor(226, 232, 240); // slate-200
+          docObj.setLineWidth(0.2);
+          docObj.roundedRect(20, cardY, cardW, cardH, 2, 2, "FD");
+
+          // Red/blue minimalist Swiss accent bar at the top of the sidebar card
+          docObj.setFillColor(79, 70, 229); // Indigo accent
+          docObj.rect(20, cardY, cardW, 1.8, "F");
+
+          let textY = cardY + 7;
+          
+          // SIDEBAR HEADER
+          docObj.setFont("helvetica", "bold");
+          docObj.setFontSize(7.5);
+          docObj.setTextColor(100, 116, 139); // slate-500
+          docObj.text("INFORMACIÓN", 24, textY);
+          textY += 4.5;
+
+          // PACIENTE
+          docObj.setFont("helvetica", "bold");
+          docObj.setFontSize(7);
+          docObj.setTextColor(148, 163, 184); // slate-400
+          docObj.text("PACIENTE", 24, textY);
+          textY += 3.5;
+
+          docObj.setFont("helvetica", "bold");
+          docObj.setFontSize(8.5);
+          docObj.setTextColor(15, 23, 42); // slate-900
+          const pName = (patientName || "NO ESPECIFICADO").toUpperCase();
+          const pNameLines = docObj.splitTextToSize(pName, cardW - 8);
+          pNameLines.forEach((l: string) => {
+            docObj.text(l, 24, textY);
+            textY += 4;
+          });
+          textY += 2;
+
+          // FECHA
+          docObj.setFont("helvetica", "bold");
+          docObj.setFontSize(7);
+          docObj.setTextColor(148, 163, 184);
+          docObj.text("FECHA DEL ESTUDIO", 24, textY);
+          textY += 3.5;
+
+          docObj.setFont("helvetica", "bold");
+          docObj.setFontSize(8.5);
+          docObj.setTextColor(15, 23, 42);
+          docObj.text(formatDateToDMY(reportDate), 24, textY);
+          textY += 5.5;
+
+          // ESTUDIO
+          docObj.setFont("helvetica", "bold");
+          docObj.setFontSize(7);
+          docObj.setTextColor(148, 163, 184);
+          docObj.text("ESTUDIO / EXAMEN", 24, textY);
+          textY += 3.5;
+
+          docObj.setFont("helvetica", "bold");
+          docObj.setFontSize(8);
+          docObj.setTextColor(15, 23, 42);
+          const studyClean = (specificStudy || "ECOGRAFÍA").toUpperCase();
+          const studyLines = docObj.splitTextToSize(studyClean, cardW - 8);
+          studyLines.forEach((l: string) => {
+            docObj.text(l, 24, textY);
+            textY += 3.8;
+          });
+          textY += 2;
+
+          // MÉDICO
+          if (doctorName) {
+            docObj.setFont("helvetica", "bold");
+            docObj.setFontSize(7);
+            docObj.setTextColor(148, 163, 184);
+            docObj.text("MÉDICO", 24, textY);
+            textY += 3.5;
+
+            docObj.setFont("helvetica", "bold");
+            docObj.setFontSize(8);
+            docObj.setTextColor(15, 23, 42);
+            const drText = doctorName.toUpperCase();
+            const drLines = docObj.splitTextToSize(drText, cardW - 8);
+            drLines.forEach((l: string) => {
+              docObj.text(l, 24, textY);
+              textY += 3.8;
+            });
+          }
+        }
+      };
 
       const drawAnatomicalCards = (
         docObj: any,
@@ -5140,6 +5647,9 @@ Ejemplo:
         if (yCoord + neededHeight > pageHeight - 20) {
           doc.addPage();
           yCoord = 20;
+          if (pdfLayoutType === "asymmetric") {
+            drawAsymmetricSidebar(doc, doc.getNumberOfPages(), 20);
+          }
         }
       };
 
@@ -5336,17 +5846,176 @@ Ejemplo:
       }
 
       // Add a line under header
-      doc.setDrawColor(226, 232, 240); // slate-200
-      doc.setLineWidth(0.4);
-      doc.line(marginX, yCoord - 2, pageWidth - marginX, yCoord - 2);
+      if (pdfLayoutType === "clinical_slate") {
+        doc.setDrawColor(71, 85, 105); // slate-600
+        doc.setLineWidth(0.65);
+        doc.line(marginX, yCoord - 2, pageWidth - marginX, yCoord - 2);
+      } else if (pdfLayoutType === "executive_medical") {
+        doc.setDrawColor(15, 23, 42); // Navy
+        doc.setLineWidth(0.6);
+        doc.line(marginX, yCoord - 2.5, pageWidth - marginX, yCoord - 2.5);
+        doc.setDrawColor(197, 160, 89); // Gold
+        doc.setLineWidth(0.35);
+        doc.line(marginX, yCoord - 1.5, pageWidth - marginX, yCoord - 1.5);
+      } else {
+        doc.setDrawColor(226, 232, 240); // slate-200
+        doc.setLineWidth(0.4);
+        doc.line(marginX, yCoord - 2, pageWidth - marginX, yCoord - 2);
+      }
       yCoord += 2;
 
       // Patient Metadata Block
-      if (patientName || reportDate) {
+      if (pdfLayoutType === "clinical_slate" && (patientName || reportDate)) {
+        const hasExtraMeta = !!(patientId || patientAge || patientGender);
+        const cardHeight = hasExtraMeta ? 22 : 13;
+
+        // Draw elegant Clinical Slate metadata card
+        doc.setFillColor(241, 245, 249); // slate-100
+        doc.setDrawColor(148, 163, 184); // slate-400
+        doc.setLineWidth(0.35);
+        doc.roundedRect(marginX, yCoord, contentWidth, cardHeight, 1.5, 1.5, "FD");
+
+        // Vertical divider inside the card
+        doc.setDrawColor(203, 213, 225); // slate-300
+        doc.setLineWidth(0.25);
+        doc.line(marginX + (contentWidth / 2), yCoord, marginX + (contentWidth / 2), yCoord + cardHeight);
+
+        if (hasExtraMeta) {
+          // Horizontal divider
+          doc.line(marginX, yCoord + 12, marginX + contentWidth, yCoord + 12);
+        }
+
+        const formattedDate = formatDateToDMY(reportDate);
+
+        // Column 1: PACIENTE
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(7.5);
+        doc.setTextColor(71, 85, 105); // slate-600
+        doc.text("PACIENTE", marginX + 4, yCoord + 4.5);
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9.5);
+        doc.setTextColor(15, 23, 42); // slate-900
+        doc.text((patientName || "NO ESPECIFICADO").toUpperCase(), marginX + 4, yCoord + 9.5);
+
+        // Column 2: FECHA DEL ESTUDIO
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(7.5);
+        doc.setTextColor(71, 85, 105); // slate-600
+        doc.text("FECHA DEL ESTUDIO", marginX + (contentWidth / 2) + 4, yCoord + 4.5);
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9.5);
+        doc.setTextColor(15, 23, 42); // slate-900
+        doc.text(formattedDate || "NO ESPECIFICADO", marginX + (contentWidth / 2) + 4, yCoord + 9.5);
+
+        if (hasExtraMeta) {
+          // Row 2 Col 1: ID / HISTORIA CLÍNICA
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(7.5);
+          doc.setTextColor(71, 85, 105);
+          doc.text("ID / HISTORIA CLÍNICA", marginX + 4, yCoord + 15.5);
+
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(9.5);
+          doc.setTextColor(15, 23, 42);
+          doc.text((patientId || "NO REGISTRADO").toUpperCase(), marginX + 4, yCoord + 19.5);
+
+          // Row 2 Col 2: EDAD / SEXO
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(7.5);
+          doc.setTextColor(71, 85, 105);
+          doc.text("EDAD / SEXO", marginX + (contentWidth / 2) + 4, yCoord + 15.5);
+
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(9.5);
+          doc.setTextColor(15, 23, 42);
+          const ageSexText = `${patientAge || "N/E"} / ${patientGender || "N/E"}`;
+          doc.text(ageSexText.toUpperCase(), marginX + (contentWidth / 2) + 4, yCoord + 19.5);
+        }
+
+        yCoord += cardHeight + 6;
+      } else if (pdfLayoutType === "executive_medical" && (patientName || reportDate)) {
+        const hasExtraMeta = !!(patientId || patientAge || patientGender);
+        const cardHeight = hasExtraMeta ? 22 : 13;
+
+        // Draw elegant Executive Medical metadata card (Cream & Gold style)
+        doc.setFillColor(253, 251, 247); // Sophisticated cream
+        doc.setDrawColor(197, 160, 89); // Metallic Gold
+        doc.setLineWidth(0.4);
+        doc.roundedRect(marginX, yCoord, contentWidth, cardHeight, 1.5, 1.5, "FD");
+
+        // Vertical gold divider inside the card
+        doc.line(marginX + (contentWidth / 2), yCoord, marginX + (contentWidth / 2), yCoord + cardHeight);
+
+        if (hasExtraMeta) {
+          // Horizontal divider
+          doc.line(marginX, yCoord + 12, marginX + contentWidth, yCoord + 12);
+        }
+
+        const formattedDate = formatDateToDMY(reportDate);
+
+        // Column 1: PACIENTE
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(7.5);
+        doc.setTextColor(197, 160, 89); // Gold
+        doc.text("PACIENTE", marginX + 4, yCoord + 4.5);
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9.5);
+        doc.setTextColor(15, 23, 42); // Dark Navy / Slate-900
+        doc.text((patientName || "NO ESPECIFICADO").toUpperCase(), marginX + 4, yCoord + 9.5);
+
+        // Column 2: FECHA DEL ESTUDIO
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(7.5);
+        doc.setTextColor(197, 160, 89); // Gold
+        doc.text("FECHA DEL ESTUDIO", marginX + (contentWidth / 2) + 4, yCoord + 4.5);
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9.5);
+        doc.setTextColor(15, 23, 42); // Dark Navy / Slate-900
+        doc.text(formattedDate || "NO ESPECIFICADO", marginX + (contentWidth / 2) + 4, yCoord + 9.5);
+
+        if (hasExtraMeta) {
+          // Row 2 Col 1: ID / HISTORIA CLÍNICA
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(7.5);
+          doc.setTextColor(197, 160, 89);
+          doc.text("ID / HISTORIA CLÍNICA", marginX + 4, yCoord + 15.5);
+
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(9.5);
+          doc.setTextColor(15, 23, 42);
+          doc.text((patientId || "NO REGISTRADO").toUpperCase(), marginX + 4, yCoord + 19.5);
+
+          // Row 2 Col 2: EDAD / SEXO
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(7.5);
+          doc.setTextColor(197, 160, 89);
+          doc.text("EDAD / SEXO", marginX + (contentWidth / 2) + 4, yCoord + 15.5);
+
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(9.5);
+          doc.setTextColor(15, 23, 42);
+          const ageSexText = `${patientAge || "N/E"} / ${patientGender || "N/E"}`;
+          doc.text(ageSexText.toUpperCase(), marginX + (contentWidth / 2) + 4, yCoord + 19.5);
+        }
+
+        yCoord += cardHeight + 6;
+      } else if (pdfLayoutType === "asymmetric") {
+        drawAsymmetricSidebar(doc, 1, yCoord);
+        yCoord += 4;
+        marginX = 74;
+        contentWidth = 116;
+      } else if (patientName || reportDate) {
+        const hasExtraMeta = !!(patientId || patientAge || patientGender);
+        const cardHeight = hasExtraMeta ? 21 : 12;
+
         doc.setFillColor(248, 250, 252); // greyish background
-        doc.rect(marginX, yCoord, contentWidth, 12, "F");
+        doc.rect(marginX, yCoord, contentWidth, cardHeight, "F");
         doc.setDrawColor(226, 232, 240);
-        doc.rect(marginX, yCoord, contentWidth, 12, "S");
+        doc.rect(marginX, yCoord, contentWidth, cardHeight, "S");
 
         let xOffset = marginX + 4;
         let totalDateWidth = 0;
@@ -5355,7 +6024,7 @@ Ejemplo:
         if (reportDate) {
           doc.setFont("helvetica", "bold");
           doc.setFontSize(8.5);
-          const dateLabel = "FECHA DEL ESTUDIO: ";
+          const dateLabel = "FECHA: ";
           totalDateWidth = doc.getTextWidth(dateLabel) + doc.getTextWidth(formattedDate);
         }
 
@@ -5383,7 +6052,7 @@ Ejemplo:
           doc.setFont("helvetica", "bold");
           doc.setFontSize(8.5);
           doc.setTextColor(100, 116, 139);
-          const dateLabel = "FECHA DEL ESTUDIO: ";
+          const dateLabel = "FECHA: ";
           const rightX = marginX + contentWidth - 4 - totalDateWidth;
           
           doc.text(dateLabel, rightX, yCoord + 7.5);
@@ -5393,7 +6062,220 @@ Ejemplo:
           doc.text(formattedDate, rightX + dateLabelWidth, yCoord + 7.5);
         }
 
-        yCoord += 19;
+        if (hasExtraMeta) {
+          // Draw a small line divider
+          doc.setDrawColor(226, 232, 240);
+          doc.line(marginX, yCoord + 11.5, marginX + contentWidth, yCoord + 11.5);
+
+          // ID
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8);
+          doc.setTextColor(100, 116, 139);
+          doc.text("ID: ", xOffset, yCoord + 16.5);
+          const idLabelWidth = doc.getTextWidth("ID: ");
+          doc.setFont("helvetica", "bold");
+          doc.setTextColor(15, 23, 42);
+          doc.text((patientId || "N/R").toUpperCase(), xOffset + idLabelWidth, yCoord + 16.5);
+
+          // Edad y Sexo a la derecha
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8);
+          doc.setTextColor(100, 116, 139);
+          const extraLabel = "EDAD/SEXO: ";
+          const extraVal = `${patientAge || "N/E"} / ${patientGender || "N/E"}`.toUpperCase();
+          const totalExtraWidth = doc.getTextWidth(extraLabel) + doc.getTextWidth(extraVal);
+          const rightX = marginX + contentWidth - 4 - totalExtraWidth;
+
+          doc.text(extraLabel, rightX, yCoord + 16.5);
+          doc.setFont("helvetica", "bold");
+          doc.setTextColor(15, 23, 42);
+          doc.text(extraVal, rightX + doc.getTextWidth(extraLabel), yCoord + 16.5);
+        }
+
+        yCoord += cardHeight + 7;
+      }
+
+      // --- DYNAMIC PAGE BUDGET & COMPLETE WIDOW/ORPHAN CONTROL ---
+      const isVascularStudy = specificStudy === "Doppler de carótidas" || 
+                              specificStudy === "Doppler venoso de miembro inferior" || 
+                              specificStudy === "Doppler arterial de miembro inferior";
+      const isCarotidasForPDF = specificStudy.toLowerCase().includes("carót") || specificStudy.toLowerCase().includes("carot");
+      const hasBifurcDer = !!document.getElementById("print-bifurcation-der");
+      const hasBifurcIzq = !!document.getElementById("print-bifurcation-izq");
+
+      let factor = 1.0;
+      let estimatedHeight = 20; // Start at top margin
+
+      // 1. Header height estimation
+      if (customLogoUrl) {
+        if (customLogoStyle === "banner") {
+          let bannerHeight = 35;
+          const bannerImgEl = document.querySelector('img[alt="Membrete de la Clínica"]') as HTMLImageElement | null;
+          if (bannerImgEl && bannerImgEl.naturalWidth && bannerImgEl.naturalHeight) {
+            const aspect = bannerImgEl.naturalWidth / bannerImgEl.naturalHeight;
+            const maxWidth = contentWidth;
+            const maxHeight = 52;
+            bannerHeight = aspect > maxWidth / maxHeight ? maxWidth / aspect : maxHeight;
+          }
+          estimatedHeight += bannerHeight + 5;
+          if (clinicName) estimatedHeight += 5;
+        } else {
+          let logoHeight = 36;
+          const logoImgEl = document.querySelector('img[alt="Logo"]') as HTMLImageElement | null;
+          if (logoImgEl && logoImgEl.naturalWidth && logoImgEl.naturalHeight) {
+            const aspect = logoImgEl.naturalWidth / logoImgEl.naturalHeight;
+            const maxWidth = 42;
+            const maxHeight = 42;
+            logoHeight = aspect > maxWidth / maxHeight ? maxWidth / aspect : maxHeight;
+          }
+          estimatedHeight += Math.max(logoHeight, 15) + 6;
+        }
+      } else {
+        estimatedHeight += 18;
+      }
+      estimatedHeight += 2; // Underline
+
+      // 2. Patient metadata block estimation
+      if (pdfLayoutType !== "asymmetric" && (patientName || reportDate)) {
+        estimatedHeight += 19;
+      }
+
+      // 3. Estimate text blocks (paragraphs) and tables
+      try {
+        const stripEmojisLocal = (str: string): string => {
+          if (!str) return "";
+          return str.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "").replace(/[\u2600-\u27BF]|[\u2300-\u23FF]|[\u2B50]|[\u2190-\u21FF]/g, "");
+        };
+        const reportToRenderLocal = isEditingReportManual ? editedReportText : generatedReport;
+        const emojiFreeReportLocal = stripEmojisLocal(reportToRenderLocal || "");
+        const cleanReportLocal = cleanRawClinicalText(emojiFreeReportLocal);
+        const normalizedReportLocal = cleanReportLocal.replace(/\n+\s*(\s*(?:##+|#|\*\*)\s*(?:conclusi[oó]n(?:es)?|impresi[oó]n(?:es)?\s+diagn[oó]stica(?:s)?|diagn[oó]stico(?:s)?|hallazgos)\b)/gi, "\n\n$1");
+        const rawParagraphsLocal = normalizedReportLocal.split(/\n\n+/);
+        const paragraphsLocal: string[] = [];
+        let inConclusionLocal = false;
+        let conclusionBufferLocal: string[] = [];
+
+        rawParagraphsLocal.forEach((p) => {
+          const trimmed = p.trim();
+          if (!trimmed) return;
+
+          const isConclusionHeader = /^\s*(?:#+|\*+|-|_|\d+\.)*\s*(?:conclusión|conclusiones|conclusion|impresión\s+diagnóstica|impresion\s+diagnostica|impresiones\s+diagnósticas|impresiones\s+diagnosticas|diagnósticos|diagnóstico|diagnostico|diagnosticos)\b/i.test(trimmed);
+
+          const isOtherSectionHeader = /^\s*(?:##+|#)\s+/i.test(trimmed) || /^\s*\*\*(?:hallazgos|estudio|técnica|tecnica|método|metodo|exploración|exploracion|motivo|comparación|comparacion|datos\s+clínicos|indicación|indicacion|antecedentes|pie\s+de\s+página|nota\s+de\s+pie)\b/i.test(trimmed);
+
+          if (isConclusionHeader) {
+            if (inConclusionLocal && conclusionBufferLocal.length > 0) {
+              paragraphsLocal.push(conclusionBufferLocal.join("\n\n"));
+              conclusionBufferLocal = [];
+            }
+            inConclusionLocal = true;
+            conclusionBufferLocal.push(trimmed);
+          } else if (isOtherSectionHeader) {
+            if (inConclusionLocal && conclusionBufferLocal.length > 0) {
+              paragraphsLocal.push(conclusionBufferLocal.join("\n\n"));
+              conclusionBufferLocal = [];
+            }
+            inConclusionLocal = false;
+            paragraphsLocal.push(trimmed);
+          } else {
+            if (inConclusionLocal) {
+              conclusionBufferLocal.push(trimmed);
+            } else {
+              paragraphsLocal.push(trimmed);
+            }
+          }
+        });
+
+        if (inConclusionLocal && conclusionBufferLocal.length > 0) {
+          paragraphsLocal.push(conclusionBufferLocal.join("\n\n"));
+        }
+
+        const tempDoc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+        let isFirstBlockLocal = true;
+        const estContentWidth = pdfLayoutType === "asymmetric" ? 116 : contentWidth;
+
+        paragraphsLocal.forEach((block) => {
+          const trimmedBlock = block.trim();
+          if (!trimmedBlock) return;
+
+          if (!isFirstBlockLocal) {
+            estimatedHeight += 4.5;
+          } else {
+            isFirstBlockLocal = false;
+          }
+
+          if (trimmedBlock.startsWith("|") && trimmedBlock.includes("-|-")) {
+            // Table block
+            const rows = trimmedBlock.split("\n").filter(r => r.trim() !== "");
+            const bodyRows = rows.slice(2);
+            estimatedHeight += 16;
+            bodyRows.forEach((r) => {
+              const cells = r.split("|").map(c => c.trim());
+              let maxLinesLocal = 1;
+              cells.forEach((cellText) => {
+                const wrapped = tempDoc.splitTextToSize(cellText.replace(/\*\*/g, ""), (estContentWidth / cells.length) - 6);
+                if (wrapped.length > maxLinesLocal) maxLinesLocal = wrapped.length;
+              });
+              estimatedHeight += (maxLinesLocal * 5) + 4;
+            });
+            estimatedHeight += 4;
+          } else {
+            // Standard block
+            const linesOfBlock = trimmedBlock.split("\n");
+            linesOfBlock.forEach((line) => {
+              let trimmed = line.trim();
+              if (!trimmed) {
+                estimatedHeight += 2.5;
+                return;
+              }
+              const isHeader = trimmed.startsWith("#") || (
+                trimmed.startsWith("**") && (
+                  trimmed.endsWith("**") || 
+                  trimmed.replace(/[:\s]+$/, "").endsWith("**")
+                )
+              );
+              if (isHeader) {
+                estimatedHeight += 5.5;
+              } else {
+                const wrappedLines = tempDoc.splitTextToSize(trimmed.replace(/\*\*/g, ""), estContentWidth);
+                estimatedHeight += wrappedLines.length * 5.0;
+              }
+            });
+          }
+        });
+      } catch (estError) {
+        console.warn("Error estimating paragraph heights:", estError);
+      }
+
+      // 4. Clinical schematics / Diagram estimation
+      if (includeShoulderSchemaInReport && specificStudy === "Hombro") {
+        estimatedHeight += 95;
+      } else if (includeVascularSchemaInReport && isVascularStudy) {
+        estimatedHeight += 85;
+        if (isCarotidasForPDF && includeCarotidBifurcations && (hasBifurcDer || hasBifurcIzq)) {
+          estimatedHeight += 75;
+        }
+      }
+
+      // 5. Signature block estimation
+      estimatedHeight += 38;
+
+      // 6. Calculate pages and remainder for widow/orphan detection
+      const usablePageHeight = 255;
+      const estTotalPages = Math.ceil(estimatedHeight / usablePageHeight);
+      const estRemainder = estimatedHeight % usablePageHeight;
+
+      // If we spill onto a new page, and that new page has less than 48mm of content (orphaned signature/conclusion!),
+      // we reduce spacing to pull it back onto the previous page elegantly!
+      if (estTotalPages > 1 && estRemainder < 48) {
+        factor = 0.84; // 16% spacing compression
+      } else if (estTotalPages > 1 && estRemainder < 60) {
+        factor = 0.88; // 12% spacing compression
+      }
+
+      // Adjust starting patient offset with factor
+      if (patientName || reportDate) {
+        yCoord = yCoord - 19 + (19 * factor);
       }
 
       // Strip emojis from the generated report
@@ -5406,9 +6288,49 @@ Ejemplo:
           .replace(/[\u2600-\u27BF]|[\u2300-\u23FF]|[\u2B50]|[\u2190-\u21FF]/g, "");
       };
 
-      const emojiFreeReport = stripEmojis(generatedReport);
+      const reportToRender = isEditingReportManual ? editedReportText : generatedReport;
+      const emojiFreeReport = stripEmojis(reportToRender);
       const cleanReport = cleanRawClinicalText(emojiFreeReport);
-      const paragraphs = cleanReport.split(/\n\n+/);
+      const normalizedReport = cleanReport.replace(/\n+\s*(\s*(?:##+|#|\*\*)\s*(?:conclusi[oó]n(?:es)?|impresi[oó]n(?:es)?\s+diagn[oó]stica(?:s)?|diagn[oó]stico(?:s)?|hallazgos)\b)/gi, "\n\n$1");
+      const rawParagraphs = normalizedReport.split(/\n\n+/);
+      const paragraphs: string[] = [];
+      let inConclusion = false;
+      let conclusionBuffer: string[] = [];
+
+      rawParagraphs.forEach((p) => {
+        const trimmed = p.trim();
+        if (!trimmed) return;
+
+        const isConclusionHeader = /^\s*(?:#+|\*+|-|_|\d+\.)*\s*(?:conclusión|conclusiones|conclusion|impresión\s+diagnóstica|impresion\s+diagnostica|impresiones\s+diagnósticas|impresiones\s+diagnosticas|diagnósticos|diagnóstico|diagnostico|diagnosticos)\b/i.test(trimmed);
+
+        const isOtherSectionHeader = /^\s*(?:##+|#)\s+/i.test(trimmed) || /^\s*\*\*(?:hallazgos|estudio|técnica|tecnica|método|metodo|exploración|exploracion|motivo|comparación|comparacion|datos\s+clínicos|indicación|indicacion|antecedentes|pie\s+de\s+página|nota\s+de\s+pie)\b/i.test(trimmed);
+
+        if (isConclusionHeader) {
+          if (inConclusion && conclusionBuffer.length > 0) {
+            paragraphs.push(conclusionBuffer.join("\n\n"));
+            conclusionBuffer = [];
+          }
+          inConclusion = true;
+          conclusionBuffer.push(trimmed);
+        } else if (isOtherSectionHeader) {
+          if (inConclusion && conclusionBuffer.length > 0) {
+            paragraphs.push(conclusionBuffer.join("\n\n"));
+            conclusionBuffer = [];
+          }
+          inConclusion = false;
+          paragraphs.push(trimmed);
+        } else {
+          if (inConclusion) {
+            conclusionBuffer.push(trimmed);
+          } else {
+            paragraphs.push(trimmed);
+          }
+        }
+      });
+
+      if (inConclusion && conclusionBuffer.length > 0) {
+        paragraphs.push(conclusionBuffer.join("\n\n"));
+      }
 
       // Set standard font settings
       doc.setFont("times", "normal");
@@ -5417,12 +6339,262 @@ Ejemplo:
 
       let isFirstLine = true;
       let isFirstBlock = true;
+      let inFootnoteSection = false;
 
       paragraphs.forEach((block) => {
         const trimmedBlock = block.trim();
         if (!trimmedBlock) return;
 
-        // 1. Check if the block is a code block (starts/ends with triple backticks, or is a raw EMR segment)
+        // Check if the block is a footnote (for Creador de Notas de Pie de Página)
+        const blockLower = trimmedBlock.toLowerCase();
+        const isFootnote = inFootnoteSection ||
+                            blockLower.startsWith("*pie de página:") || 
+                            blockLower.startsWith("pie de página:") ||
+                            blockLower.startsWith("*nota de pie:") ||
+                            blockLower.startsWith("nota de pie:") ||
+                            blockLower.startsWith("*nota de pie de página:") ||
+                            blockLower.startsWith("nota de pie de página:");
+
+        if (isFootnote) {
+          checkPageBreak(8 * factor);
+          doc.setFont("times", "italic");
+          doc.setFontSize(8.5);
+          doc.setTextColor(115, 125, 140); // Slate-500 (dim gray)
+          
+          let cleanTxt = trimmedBlock;
+          // Strip "Pie de página: " or similar prefixes if they exist
+          const prefixRegex = /^\s*(?:\*+)?\s*(?:pie de página|nota de pie|nota de pie de página)\s*(?:\*+)?\s*:\s*(?:\*+)?\s*/i;
+          cleanTxt = cleanTxt.replace(prefixRegex, "");
+
+          if (cleanTxt.startsWith("*")) {
+            cleanTxt = cleanTxt.replace(/^\*\s*/, "").replace(/\*$/, "");
+          }
+          cleanTxt = cleanTxt.replace(/\*\*/g, "");
+
+          const lines = doc.splitTextToSize(cleanTxt, contentWidth);
+          lines.forEach((l: string) => {
+            checkPageBreak(4.5 * factor);
+            doc.text(l, marginX, yCoord);
+            yCoord += 4.5 * factor;
+          });
+          yCoord += 2 * factor; // subtle gap
+          
+          // Reset default font styles
+          doc.setFont("times", "normal");
+          doc.setFontSize(10.5);
+          doc.setTextColor(30, 41, 59);
+          return;
+        }
+
+        // 1. Check if the block is a conclusion/diagnostic impression block (Sugerencia 1: Cuadro de Conclusión)
+        const isConclusionBlock = /^\s*(?:#+|\*+|-|_|\d+\.)*\s*(?:conclusión|conclusiones|conclusion|impresión\s+diagnóstica|impresion\s+diagnostica|impresiones\s+diagnósticas|impresiones\s+diagnosticas|diagnósticos|diagnóstico|diagnostico|diagnosticos)\b/i.test(trimmedBlock);
+
+        if (isConclusionBlock) {
+          const blockLines = trimmedBlock.split("\n");
+          
+          let totalBlockHeight = 0;
+          const parsedLines: {
+            isHeader: boolean;
+            isBulleted: boolean;
+            bulletToken?: string;
+            wrappedLines: { text: string; isBold: boolean }[][];
+          }[] = [];
+          
+          // Padding dentro del bloque de sombreado sutil
+          const boxPaddingLeft = 6;
+          const boxPaddingRight = 6;
+          const boxPaddingTop = 5;
+          const boxPaddingBottom = 5;
+          
+          const boxContentWidth = contentWidth - boxPaddingLeft - boxPaddingRight;
+          let headerTitle = "";
+
+          blockLines.forEach((line) => {
+            let lineTrimmed = line.trim();
+            if (!lineTrimmed) {
+              totalBlockHeight += 2.5 * factor;
+              parsedLines.push({ isHeader: false, isBulleted: false, wrappedLines: [] });
+              return;
+            }
+            
+            let isMarkdownHeading = false;
+            if (lineTrimmed.startsWith("# ")) { isMarkdownHeading = true; lineTrimmed = lineTrimmed.replace(/^#\s+/, ""); }
+            else if (lineTrimmed.startsWith("## ")) { isMarkdownHeading = true; lineTrimmed = lineTrimmed.replace(/^##\s+/, ""); }
+            else if (lineTrimmed.startsWith("### ")) { isMarkdownHeading = true; lineTrimmed = lineTrimmed.replace(/^###\s+/, ""); }
+            else if (lineTrimmed.startsWith("#### ")) { isMarkdownHeading = true; lineTrimmed = lineTrimmed.replace(/^####\s+/, ""); }
+
+            const lineLower = lineTrimmed.toLowerCase();
+            const isHeader = isMarkdownHeading || 
+              (lineTrimmed.startsWith("**") && lineTrimmed.includes("**")) ||
+              lineLower.startsWith("conclusión") ||
+              lineLower.startsWith("conclusiones") ||
+              lineLower.startsWith("conclusion") ||
+              lineLower.startsWith("impresión diagnóstica") ||
+              lineLower.startsWith("impresion diagnostica") ||
+              lineLower.startsWith("impresiones diagnósticas") ||
+              lineLower.startsWith("impresiones diagnosticas") ||
+              lineLower.startsWith("diagnósticos") ||
+              lineLower.startsWith("diagnóstico") ||
+              lineLower.startsWith("diagnostico") ||
+              lineLower.startsWith("diagnosticos");
+            
+            if (isHeader && !headerTitle) {
+              let cleanHeading = lineTrimmed;
+              cleanHeading = cleanHeading.replace(/^#+\s*/, "");
+              cleanHeading = cleanHeading.replace(/\*\*/g, "");
+              cleanHeading = cleanHeading.replace(/\*/g, "");
+              cleanHeading = cleanHeading.replace(/:$/, ""); // Remover dos puntos finales
+              cleanHeading = cleanHeading.trim();
+              headerTitle = cleanHeading;
+            } else {
+              const isBulleted = lineTrimmed.startsWith("- ") || lineTrimmed.startsWith("* ") || /^\d+\.\s+/.test(lineTrimmed);
+              let bulletToken = "•";
+              let cleanText = lineTrimmed;
+              
+              if (isBulleted) {
+                if (/^\d+\.\s+/.test(cleanText)) {
+                  const numMatch = cleanText.match(/^(\d+\.)\s+/);
+                  if (numMatch) {
+                    bulletToken = numMatch[1];
+                    cleanText = cleanText.substring(numMatch[0].length);
+                  }
+                } else if (cleanText.startsWith("- ") || cleanText.startsWith("* ")) {
+                  cleanText = cleanText.substring(2);
+                }
+              }
+              
+              const wrapped = wrapMarkdown(doc, cleanText, isBulleted ? (boxContentWidth - 6) : boxContentWidth);
+              totalBlockHeight += (wrapped.length * 5.0) * factor;
+              
+              parsedLines.push({
+                isHeader: false,
+                isBulleted,
+                bulletToken,
+                wrappedLines: wrapped
+              });
+            }
+          });
+          
+          // Calcular la altura para el título de la cabecera si existe
+          let wrappedHeaderLines: string[] = [];
+          let headerHeight = 0;
+          if (headerTitle) {
+            wrappedHeaderLines = doc.splitTextToSize(headerTitle.toUpperCase(), boxContentWidth);
+            headerHeight = (wrappedHeaderLines.length * 5.5 + 3.0) * factor; // Altura de línea + espaciado debajo
+          }
+          
+          const finalBoxHeight = totalBlockHeight + headerHeight + (boxPaddingTop + boxPaddingBottom) * factor;
+          
+          // Margen de seguridad para evitar saltos huérfanos
+          checkPageBreak(finalBoxHeight + 6);
+          
+          // Colores de Opción 3 (Sombreado Clínico Sutil sin bordes laterales)
+          let bgColor = [248, 250, 252]; // Tono pizarra extremadamente sutil (slate-50)
+          let lineAccentColor = [148, 163, 184]; // Delicada línea pizarra (slate-400)
+          let textColor = [30, 41, 59]; // slate-800
+          let headerColor = [15, 23, 42]; // slate-900 para el título interno
+          
+          if (pdfLayoutType === "clinical_slate") {
+            bgColor = [241, 245, 249]; // slate-100
+            lineAccentColor = [100, 116, 139]; // slate-500
+            textColor = [15, 23, 42];
+            headerColor = [71, 85, 105];
+          } else if (pdfLayoutType === "executive_medical") {
+            bgColor = [253, 251, 247]; // Crema sutil (warm white)
+            lineAccentColor = [197, 160, 89]; // Línea dorada de cierre
+            textColor = [15, 23, 42];
+            headerColor = [141, 110, 50]; // Bronce profundo
+          } else if (pdfLayoutType === "asymmetric") {
+            bgColor = [249, 250, 254]; // Índigo extremadamente sutil
+            lineAccentColor = [129, 140, 248]; // Índigo suave (indigo-400)
+            textColor = [15, 23, 42];
+            headerColor = [79, 70, 229];
+          }
+          
+          // Dibujar el sombreado de fondo sin bordes perimetrales rígidos
+          doc.setFillColor(bgColor[0], bgColor[1], bgColor[2]);
+          doc.rect(marginX, yCoord, contentWidth, finalBoxHeight, "F");
+          
+          // Dibujar la delgada línea horizontal superior para abrir el bloque
+          doc.setDrawColor(lineAccentColor[0], lineAccentColor[1], lineAccentColor[2]);
+          doc.setLineWidth(0.35); // Grosor fino y elegante (0.35mm)
+          doc.line(marginX, yCoord, marginX + contentWidth, yCoord);
+          
+          // Dibujar la delgada línea horizontal inferior para cerrar el bloque
+          doc.line(marginX, yCoord + finalBoxHeight, marginX + contentWidth, yCoord + finalBoxHeight);
+          
+          let currentY = yCoord + boxPaddingTop * factor;
+          
+          // Renderizar el título de la cabecera si existe
+          if (headerTitle) {
+            doc.setFont("times", "bold");
+            doc.setFontSize(10.5);
+            doc.setTextColor(headerColor[0], headerColor[1], headerColor[2]);
+            
+            wrappedHeaderLines.forEach((wLine) => {
+              doc.text(wLine, marginX + boxPaddingLeft, currentY);
+              currentY += 5.5 * factor;
+            });
+            currentY += 3.0 * factor; // Espaciado elegante bajo el título
+          }
+          
+          parsedLines.forEach((pLine) => {
+            if (pLine.wrappedLines.length === 0) {
+              currentY += 2.5 * factor;
+              return;
+            }
+            
+            doc.setFont("times", "normal");
+            doc.setFontSize(10.5);
+            doc.setTextColor(textColor[0], textColor[1], textColor[2]);
+            
+            if (pLine.isBulleted) {
+              let isFirstLineOfBullet = true;
+              pLine.wrappedLines.forEach((wLineArr) => {
+                if (isFirstLineOfBullet) {
+                  doc.setFont("times", "bold");
+                  doc.text(pLine.bulletToken || "•", marginX + boxPaddingLeft + 1.5, currentY);
+                  isFirstLineOfBullet = false;
+                }
+                
+                let currentX = marginX + boxPaddingLeft + 6;
+                wLineArr.forEach((span) => {
+                  if (span.isBold) {
+                    doc.setFont("times", "bold");
+                  } else {
+                    doc.setFont("times", "normal");
+                  }
+                  doc.text(span.text, currentX, currentY);
+                  currentX += doc.getTextWidth(span.text);
+                });
+                currentY += 5.0 * factor;
+              });
+            } else {
+              pLine.wrappedLines.forEach((wLineArr) => {
+                let currentX = marginX + boxPaddingLeft;
+                wLineArr.forEach((span) => {
+                  if (span.isBold) {
+                    doc.setFont("times", "bold");
+                  } else {
+                    doc.setFont("times", "normal");
+                  }
+                  doc.text(span.text, currentX, currentY);
+                  currentX += doc.getTextWidth(span.text);
+                });
+                currentY += 5.0 * factor;
+              });
+            }
+          });
+          
+          yCoord = yCoord + finalBoxHeight + 3 * factor;
+          
+          doc.setFont("times", "normal");
+          doc.setFontSize(10.5);
+          doc.setTextColor(30, 41, 59);
+          return;
+        }
+
+        // 2. Check if the block is a code block (starts/ends with triple backticks, or is a raw EMR segment)
         const isCodeBlockSegment = trimmedBlock.startsWith("```") || (trimmedBlock.startsWith("===") && (trimmedBlock.includes("SÍNTESIS VASCULAR") || trimmedBlock.includes("SÍNTESIS DE ANATOMÍA")));
 
         if (isCodeBlockSegment) {
@@ -5431,29 +6603,29 @@ Ejemplo:
           const codeBlockLines = linesOfBlock.filter(line => !line.trim().startsWith("```"));
           
           // Allocate height for the spacing
-          const lineSpacing = 4.2;
-          const neededHeight = (codeBlockLines.length * lineSpacing) + 7;
+          const lineSpacing = 4.2 * factor;
+          const neededHeight = (codeBlockLines.length * lineSpacing) + 7 * factor;
           checkPageBreak(neededHeight);
 
           // Draw a clean background box
           doc.setFillColor(248, 250, 252); // slate-50 / light gray
-          doc.rect(marginX, yCoord, contentWidth, neededHeight - 2, "F");
+          doc.rect(marginX, yCoord, contentWidth, neededHeight - 2 * factor, "F");
           doc.setDrawColor(226, 232, 240); // slate-200 border
           doc.setLineWidth(0.3);
-          doc.rect(marginX, yCoord, contentWidth, neededHeight - 2, "D");
+          doc.rect(marginX, yCoord, contentWidth, neededHeight - 2 * factor, "D");
 
           // Set monospace font Courier (built-in)
           doc.setFont("courier", "normal");
           doc.setFontSize(8.5);
           doc.setTextColor(30, 41, 59);
 
-          let relativeY = yCoord + 4.5;
+          let relativeY = yCoord + 4.5 * factor;
           codeBlockLines.forEach((line) => {
             doc.text(line, marginX + 4, relativeY);
             relativeY += lineSpacing;
           });
 
-          yCoord = relativeY + 1.5;
+          yCoord = relativeY + 1.5 * factor;
           
           // Re-set default font settings for the next paragraphs
           doc.setFont("times", "normal");
@@ -5464,12 +6636,13 @@ Ejemplo:
 
         // 2. Check if the block is a separator/divider
         if (trimmedBlock === "---") {
-          checkPageBreak(8);
-          yCoord += 4;
+          inFootnoteSection = true;
+          checkPageBreak(8 * factor);
+          yCoord += 4 * factor;
           doc.setDrawColor(226, 232, 240); // slate-200
           doc.setLineWidth(0.4);
           doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
-          yCoord += 6;
+          yCoord += 6 * factor;
           return;
         }
 
@@ -5481,7 +6654,7 @@ Ejemplo:
 
         if (isTable) {
           if (!isFirstBlock) {
-            yCoord += 16; // Elegant, clear vertical gap between preceding diagnostic text and table
+            yCoord += 16 * factor; // Elegant, clear vertical gap between preceding diagnostic text and table
           } else {
             isFirstBlock = false;
           }
@@ -5498,54 +6671,6 @@ Ejemplo:
               tableOnlyLines.push(line);
             } else {
               nonTableLinesAtTop.push(line);
-            }
-          });
-
-          // Draw any non-table heading lines from the top (e.g., table titles/headings)
-          nonTableLinesAtTop.forEach((line) => {
-            let trimmed = line.trim();
-            if (!trimmed) return;
-
-            let isMarkdownHeading = false;
-            if (trimmed.startsWith("# ")) {
-              isMarkdownHeading = true;
-              trimmed = trimmed.replace(/^#\s+/, "");
-            } else if (trimmed.startsWith("## ")) {
-              isMarkdownHeading = true;
-              trimmed = trimmed.replace(/^##\s+/, "");
-            } else if (trimmed.startsWith("### ")) {
-              isMarkdownHeading = true;
-              trimmed = trimmed.replace(/^###\s+/, "");
-            } else if (trimmed.startsWith("#### ")) {
-              isMarkdownHeading = true;
-              trimmed = trimmed.replace(/^####\s+/, "");
-            }
-
-            const isHeader = isMarkdownHeading || (trimmed.startsWith("**") && trimmed.endsWith("**"));
-            const cleanHeaderTxt = trimmed.replace(/\*\*/g, "");
-
-            checkPageBreak(10);
-            if (isHeader) {
-              doc.setFont("times", "bold");
-              doc.setFontSize(11);
-              doc.setTextColor(15, 23, 42); // slate-900
-              const wrappedHeaders = doc.splitTextToSize(cleanHeaderTxt, contentWidth);
-              wrappedHeaders.forEach((lineText: string) => {
-                checkPageBreak(5.5);
-                doc.text(lineText, marginX, yCoord);
-                yCoord += 5.5;
-              });
-            } else {
-              doc.setFont("times", "normal");
-              doc.setFontSize(10.5);
-              doc.setTextColor(51, 65, 85);
-              const lines = doc.splitTextToSize(trimmed, contentWidth);
-              lines.forEach((l: string) => {
-                checkPageBreak(5);
-                doc.text(l, marginX, yCoord);
-                yCoord += 4.5;
-              });
-              yCoord += 2;
             }
           });
 
@@ -5625,7 +6750,7 @@ Ejemplo:
                 }
               });
 
-              const rowHeight = (maxLines * 5) + 4;
+              const rowHeight = (maxLines * 5 * factor) + 4 * factor;
               calculatedRowsHeightSum += rowHeight;
               cachedRowsData.push({
                 cellSpansLines: cellSpansLinesList,
@@ -5635,26 +6760,174 @@ Ejemplo:
 
             // The header takes 12 units baseline check, then yCoord is advanced by 9.
             // So total calculated height for table is roughly: header (12) + rows + extra gap (4)
-            const totalTableNeededHeight = 12 + calculatedRowsHeightSum + 4;
+            const totalTableNeededHeight = (12 * factor) + calculatedRowsHeightSum + (4 * factor);
 
-            // Check page break for the entire table. If it's too long to fit on a single page anyway,
-            // Math.min(totalTableNeededHeight, pageHeight - 40) will push it to the next page so it starts on a clean page.
+            // Estimate the height of any non-table lines/titles at the top
+            let estimatedHeadingsHeight = 0;
+            nonTableLinesAtTop.forEach((line) => {
+              let trimmed = line.trim();
+              if (!trimmed) return;
+
+              let isMarkdownHeading = false;
+              if (trimmed.startsWith("# ")) {
+                isMarkdownHeading = true;
+                trimmed = trimmed.replace(/^#\s+/, "");
+              } else if (trimmed.startsWith("## ")) {
+                isMarkdownHeading = true;
+                trimmed = trimmed.replace(/^##\s+/, "");
+              } else if (trimmed.startsWith("### ")) {
+                isMarkdownHeading = true;
+                trimmed = trimmed.replace(/^###\s+/, "");
+              } else if (trimmed.startsWith("#### ")) {
+                isMarkdownHeading = true;
+                trimmed = trimmed.replace(/^####\s+/, "");
+              }
+
+              const isHeader = isMarkdownHeading || (
+                trimmed.startsWith("**") && (
+                  trimmed.endsWith("**") || 
+                  trimmed.replace(/[:\s]+$/, "").endsWith("**")
+                )
+              );
+              const cleanHeaderTxt = trimmed.replace(/\*\*/g, "");
+
+              if (isHeader) {
+                const wrappedHeaders = doc.splitTextToSize(cleanHeaderTxt, contentWidth);
+                estimatedHeadingsHeight += (wrappedHeaders.length * 5.5 + 4) * factor;
+              } else {
+                const lines = doc.splitTextToSize(trimmed, contentWidth);
+                estimatedHeadingsHeight += (lines.length * 4.5 + 4) * factor;
+              }
+            });
+
+            // We want to make sure that the headings AND the table header + at least the first row of the table
+            // can fit together on the current page to avoid orphans!
+            const firstRowHeight = cachedRowsData[0]?.rowHeight || (15 * factor);
+            const minimumCombinedHeight = estimatedHeadingsHeight + (12 * factor) + firstRowHeight + (4 * factor);
+
+            // Check combined page break before printing anything (including headings)!
+            checkPageBreak(Math.min(minimumCombinedHeight, pageHeight - 40));
+
+            // Draw any non-table heading lines from the top (e.g., table titles/headings)
+            nonTableLinesAtTop.forEach((line) => {
+              let trimmed = line.trim();
+              if (!trimmed) return;
+
+              let isMarkdownHeading = false;
+              if (trimmed.startsWith("# ")) {
+                isMarkdownHeading = true;
+                trimmed = trimmed.replace(/^#\s+/, "");
+              } else if (trimmed.startsWith("## ")) {
+                isMarkdownHeading = true;
+                trimmed = trimmed.replace(/^##\s+/, "");
+              } else if (trimmed.startsWith("### ")) {
+                isMarkdownHeading = true;
+                trimmed = trimmed.replace(/^###\s+/, "");
+              } else if (trimmed.startsWith("#### ")) {
+                isMarkdownHeading = true;
+                trimmed = trimmed.replace(/^####\s+/, "");
+              }
+
+              const isHeader = isMarkdownHeading || (
+                trimmed.startsWith("**") && (
+                  trimmed.endsWith("**") || 
+                  trimmed.replace(/[:\s]+$/, "").endsWith("**")
+                )
+              );
+              const cleanHeaderTxt = trimmed.replace(/\*\*/g, "");
+
+              checkPageBreak(10 * factor);
+              if (isHeader) {
+                doc.setFont("times", "bold");
+                doc.setFontSize(11);
+                
+                if (pdfLayoutType === "clinical_slate") {
+                  doc.setTextColor(30, 41, 59); // slate-800
+                } else if (pdfLayoutType === "executive_medical") {
+                  doc.setTextColor(15, 23, 42); // Navy
+                } else {
+                  doc.setTextColor(15, 23, 42);
+                }
+
+                const wrappedHeaders = doc.splitTextToSize(cleanHeaderTxt, contentWidth);
+                wrappedHeaders.forEach((lineText: string) => {
+                  checkPageBreak(5.5 * factor);
+                  
+                  if (pdfLayoutType === "clinical_slate") {
+                    // Left vertical slate bar
+                    doc.setFillColor(71, 85, 105);
+                    doc.rect(marginX - 3, yCoord - 3.8 * factor, 1.0, 4.5 * factor, "F");
+                  }
+                  
+                  doc.text(lineText, marginX, yCoord);
+                  yCoord += 5.5 * factor;
+                });
+
+                // Underlines for headings
+                if (pdfLayoutType === "clinical_slate") {
+                  doc.setDrawColor(226, 232, 240); // slate-200
+                  doc.setLineWidth(0.25);
+                  doc.line(marginX, yCoord - 1.5 * factor, marginX + contentWidth, yCoord - 1.5 * factor);
+                  yCoord += 1.5 * factor;
+                } else if (pdfLayoutType === "executive_medical") {
+                  doc.setDrawColor(197, 160, 89); // Gold
+                  doc.setLineWidth(0.35);
+                  doc.line(marginX, yCoord - 1.5 * factor, marginX + contentWidth, yCoord - 1.5 * factor);
+                  yCoord += 1.5 * factor;
+                }
+              } else {
+                doc.setFont("times", "normal");
+                doc.setFontSize(10.5);
+                doc.setTextColor(51, 65, 85);
+                const lines = doc.splitTextToSize(trimmed, contentWidth);
+                lines.forEach((l: string) => {
+                  checkPageBreak(5 * factor);
+                  doc.text(l, marginX, yCoord);
+                  yCoord += 4.5 * factor;
+                });
+                yCoord += 2 * factor;
+              }
+            });
+
+            // Now, check page break for the table itself. If the remaining table height doesn't fit on the page,
+            // we'll push it, but we already ensured the headers and start of the table fit on the same page initially!
             checkPageBreak(Math.min(totalTableNeededHeight, pageHeight - 40));
 
             // Header Render
-            checkPageBreak(12);
+            checkPageBreak(12 * factor);
             
-            doc.setFillColor(241, 245, 249); // slate-100 / cool grey background
-            doc.rect(marginX, yCoord - 4, contentWidth, 8, "F");
-            doc.setDrawColor(203, 213, 225); // slate-300 border
-            doc.setLineWidth(0.3);
-            doc.line(marginX, yCoord - 4, marginX + contentWidth, yCoord - 4);
-            doc.line(marginX, yCoord + 4, marginX + contentWidth, yCoord + 4);
+            if (pdfLayoutType === "clinical_slate") {
+              doc.setFillColor(71, 85, 105); // slate-600
+              doc.rect(marginX, yCoord - 4 * factor, contentWidth, 8 * factor, "F");
+              doc.setDrawColor(51, 65, 85); // slate-700
+              doc.setLineWidth(0.35);
+              doc.line(marginX, yCoord - 4 * factor, marginX + contentWidth, yCoord - 4 * factor);
+              doc.line(marginX, yCoord + 4 * factor, marginX + contentWidth, yCoord + 4 * factor);
+            } else if (pdfLayoutType === "executive_medical") {
+              doc.setFillColor(15, 23, 42); // Navy-900
+              doc.rect(marginX, yCoord - 4 * factor, contentWidth, 8 * factor, "F");
+              doc.setDrawColor(197, 160, 89); // Gold
+              doc.setLineWidth(0.4);
+              doc.line(marginX, yCoord - 4 * factor, marginX + contentWidth, yCoord - 4 * factor);
+              doc.line(marginX, yCoord + 4 * factor, marginX + contentWidth, yCoord + 4 * factor);
+            } else {
+              doc.setFillColor(241, 245, 249); // slate-100 / cool grey background
+              doc.rect(marginX, yCoord - 4 * factor, contentWidth, 8 * factor, "F");
+              doc.setDrawColor(203, 213, 225); // slate-300 border
+              doc.setLineWidth(0.3);
+              doc.line(marginX, yCoord - 4 * factor, marginX + contentWidth, yCoord - 4 * factor);
+              doc.line(marginX, yCoord + 4 * factor, marginX + contentWidth, yCoord + 4 * factor);
+            }
 
             let currentX = marginX;
             doc.setFont("times", "bold");
             doc.setFontSize(9.5);
-            doc.setTextColor(15, 23, 42); // slate-900
+            
+            if (pdfLayoutType === "clinical_slate" || pdfLayoutType === "executive_medical") {
+              doc.setTextColor(255, 255, 255); // white text
+            } else {
+              doc.setTextColor(15, 23, 42); // slate-900
+            }
 
             const isVascularTable = colCount === 3 && headers.some(h => {
               const lower = h.toLowerCase();
@@ -5676,7 +6949,7 @@ Ejemplo:
               currentX += colWidths[hIdx] || (contentWidth / colCount);
             });
             
-            yCoord += 9;
+            yCoord += 9 * factor;
 
             // Rows Render
             bodyRows.forEach((row, rIdx) => {
@@ -5687,13 +6960,27 @@ Ejemplo:
               checkPageBreak(rowHeight);
 
               if (rIdx % 2 === 1) {
-                doc.setFillColor(248, 250, 252); // grey alternate backgrounds
-                doc.rect(marginX, yCoord - 4, contentWidth, rowHeight, "F");
+                if (pdfLayoutType === "clinical_slate") {
+                  doc.setFillColor(241, 245, 249); // slate-100
+                } else if (pdfLayoutType === "executive_medical") {
+                  doc.setFillColor(253, 251, 247); // Cream-50
+                } else {
+                  doc.setFillColor(248, 250, 252); // standard grey alternate background
+                }
+                doc.rect(marginX, yCoord - 4 * factor, contentWidth, rowHeight, "F");
               }
 
-              doc.setDrawColor(226, 232, 240); // slate-200 border
-              doc.setLineWidth(0.2);
-              doc.line(marginX, yCoord - 4 + rowHeight, marginX + contentWidth, yCoord - 4 + rowHeight);
+              if (pdfLayoutType === "clinical_slate") {
+                doc.setDrawColor(203, 213, 225); // slate-300
+                doc.setLineWidth(0.25);
+              } else if (pdfLayoutType === "executive_medical") {
+                doc.setDrawColor(220, 210, 195); // light gold-gray
+                doc.setLineWidth(0.25);
+              } else {
+                doc.setDrawColor(226, 232, 240); // slate-200 border
+                doc.setLineWidth(0.2);
+              }
+              doc.line(marginX, yCoord - 4 * factor + rowHeight, marginX + contentWidth, yCoord - 4 * factor + rowHeight);
 
               let startRowX = marginX;
               row.forEach((_, cIdx) => {
@@ -5714,7 +7001,7 @@ Ejemplo:
                     doc.text(span.text, cellX, tempY + 1);
                     cellX += doc.getTextWidth(span.text);
                   });
-                  tempY += 5;
+                  tempY += 5 * factor;
                 });
 
                 startRowX += colW;
@@ -5723,22 +7010,24 @@ Ejemplo:
               yCoord += rowHeight;
             });
 
-            yCoord += 4; // margin after table completes
+            yCoord += 4 * factor; // margin after table completes
             return;
           }
         }
 
         // 3. Render as standard block with paragraphs and line spacing
         if (!isFirstBlock) {
-          yCoord += 4.5;
+          yCoord += 4.5 * factor;
         } else {
           isFirstBlock = false;
         }
 
-        linesOfBlock.forEach((line) => {
+        const blockSeverity = getParagraphSeverity(trimmedBlock);
+
+        linesOfBlock.forEach((line, lineIdx) => {
           let trimmed = line.trim();
           if (!trimmed) {
-            yCoord += 2.5;
+            yCoord += 2.5 * factor;
             return;
           }
 
@@ -5758,7 +7047,12 @@ Ejemplo:
             trimmed = trimmed.replace(/^####\s+/, "");
           }
 
-          const isHeader = isMarkdownHeading || (trimmed.startsWith("**") && trimmed.endsWith("**"));
+          const isHeader = isMarkdownHeading || (
+            trimmed.startsWith("**") && (
+              trimmed.endsWith("**") || 
+              trimmed.replace(/[:\s]+$/, "").endsWith("**")
+            )
+          );
           const cleanHeaderTxt = trimmed.replace(/\*\*/g, "");
 
           // Determine if first visual line is the main title of study
@@ -5772,9 +7066,9 @@ Ejemplo:
             doc.setTextColor(15, 23, 42);
             const wrappedTitle = doc.splitTextToSize(cleanHeaderTxt.toUpperCase(), contentWidth);
             wrappedTitle.forEach((lineText: string) => {
-              checkPageBreak(7);
+              checkPageBreak(7 * factor);
               doc.text(lineText, pageWidth / 2, yCoord, { align: "center" });
-              yCoord += 6;
+              yCoord += 6 * factor;
             });
             return;
           }
@@ -5784,16 +7078,138 @@ Ejemplo:
           }
 
           if (isHeader) {
-            checkPageBreak(8);
+            // Let's estimate the height of the header + next few lines to avoid orphans!
+            let lookAheadHeight = 12 * factor; // space for header + spacing
+            let countLinesLookedAt = 0;
+            
+            // 1. Look ahead in the remaining lines of the current block
+            for (let nextIdx = lineIdx + 1; nextIdx < linesOfBlock.length; nextIdx++) {
+              const nextLine = linesOfBlock[nextIdx].trim();
+              if (!nextLine) continue;
+              
+              // If we hit another header, stop look-ahead
+              const isNextHeader = nextLine.startsWith("#") || (
+                nextLine.startsWith("**") && (
+                  nextLine.endsWith("**") || 
+                  nextLine.replace(/[:\s]+$/, "").endsWith("**")
+                )
+              );
+              if (isNextHeader) break;
+              
+              const isNextBulleted = nextLine.startsWith("- ") || nextLine.startsWith("* ") || /^\d+\.\s+/.test(nextLine);
+              let cleanNext = nextLine;
+              if (isNextBulleted) {
+                if (/^\d+\.\s+/.test(cleanNext)) {
+                  cleanNext = cleanNext.substring(cleanNext.indexOf(".") + 1).trim();
+                } else {
+                  cleanNext = cleanNext.substring(2).trim();
+                }
+              }
+              
+              const wrappedNext = wrapMarkdown(doc, cleanNext, isNextBulleted ? contentWidth - 6 : contentWidth);
+              lookAheadHeight += (wrappedNext.length * 5) * factor;
+              
+              countLinesLookedAt++;
+              if (countLinesLookedAt >= 2) break;
+            }
+            
+            // 2. If we haven't found enough content lines yet, look at the next paragraph blocks!
+            if (countLinesLookedAt < 2) {
+              const currentBlockIdx = paragraphs.indexOf(block);
+              if (currentBlockIdx !== -1) {
+                for (let nextBlockIdx = currentBlockIdx + 1; nextBlockIdx < paragraphs.length; nextBlockIdx++) {
+                  const nextBlock = paragraphs[nextBlockIdx].trim();
+                  if (!nextBlock) continue;
+                  
+                  if (nextBlock.startsWith("```") || nextBlock.startsWith("|") || (nextBlock.startsWith("===") && (nextBlock.includes("SÍNTESIS VASCULAR") || nextBlock.includes("SÍNTESIS DE ANATOMÍA")))) {
+                    lookAheadHeight += 15 * factor;
+                    countLinesLookedAt += 2;
+                    break;
+                  }
+                  
+                  const nextBlockLines = nextBlock.split("\n");
+                  let hitHeaderInNextBlock = false;
+                  
+                  for (let i = 0; i < nextBlockLines.length; i++) {
+                    const nextLine = nextBlockLines[i].trim();
+                    if (!nextLine) continue;
+                    
+                    const isNextHeader = nextLine.startsWith("#") || (
+                      nextLine.startsWith("**") && (
+                        nextLine.endsWith("**") || 
+                        nextLine.replace(/[:\s]+$/, "").endsWith("**")
+                      )
+                    );
+                    if (isNextHeader) {
+                      hitHeaderInNextBlock = true;
+                      break;
+                    }
+                    
+                    const isNextBulleted = nextLine.startsWith("- ") || nextLine.startsWith("* ") || /^\d+\.\s+/.test(nextLine);
+                    let cleanNext = nextLine;
+                    if (isNextBulleted) {
+                      if (/^\d+\.\s+/.test(cleanNext)) {
+                        cleanNext = cleanNext.substring(cleanNext.indexOf(".") + 1).trim();
+                      } else {
+                        cleanNext = cleanNext.substring(2).trim();
+                      }
+                    }
+                    
+                    const wrappedNext = wrapMarkdown(doc, cleanNext, isNextBulleted ? contentWidth - 6 : contentWidth);
+                    lookAheadHeight += (wrappedNext.length * 5) * factor;
+                    
+                    countLinesLookedAt++;
+                    if (countLinesLookedAt >= 2) break;
+                  }
+                  
+                  if (hitHeaderInNextBlock || countLinesLookedAt >= 2) {
+                    break;
+                  }
+                }
+              }
+            }
+            
+            // Avoid heading orphans by requiring at least 25mm of space, up to calculated lookahead
+            const minRequiredHeight = Math.max(25 * factor, lookAheadHeight);
+            checkPageBreak(minRequiredHeight);
+            
             doc.setFont("times", "bold");
             doc.setFontSize(11);
-            doc.setTextColor(15, 23, 42);
+            
+            if (pdfLayoutType === "clinical_slate") {
+              doc.setTextColor(30, 41, 59); // slate-800
+            } else if (pdfLayoutType === "executive_medical") {
+              doc.setTextColor(15, 23, 42); // Navy
+            } else {
+              doc.setTextColor(15, 23, 42);
+            }
+
             const wrappedHeaders = doc.splitTextToSize(cleanHeaderTxt, contentWidth);
             wrappedHeaders.forEach((lineText: string) => {
-              checkPageBreak(5.5);
+              checkPageBreak(5.5 * factor);
+              
+              if (pdfLayoutType === "clinical_slate") {
+                // Draw elegant vertical slate bar on the left of header
+                doc.setFillColor(71, 85, 105); // slate-600
+                doc.rect(marginX - 3, yCoord - 3.8 * factor, 1.0, 4.5 * factor, "F");
+              }
+              
               doc.text(lineText, marginX, yCoord);
-              yCoord += 5.5;
+              yCoord += 5.5 * factor;
             });
+
+            // Underlines for headings
+            if (pdfLayoutType === "clinical_slate") {
+              doc.setDrawColor(226, 232, 240); // slate-200
+              doc.setLineWidth(0.25);
+              doc.line(marginX, yCoord - 1.5 * factor, marginX + contentWidth, yCoord - 1.5 * factor);
+              yCoord += 1.5 * factor;
+            } else if (pdfLayoutType === "executive_medical") {
+              doc.setDrawColor(197, 160, 89); // Gold
+              doc.setLineWidth(0.35);
+              doc.line(marginX, yCoord - 1.5 * factor, marginX + contentWidth, yCoord - 1.5 * factor);
+              yCoord += 1.5 * factor;
+            }
           } else {
             // Is it a bullet/list item in original design?
             const isBulleted = trimmed.startsWith("- ") || trimmed.startsWith("* ") || /^\d+\.\s+/.test(trimmed);
@@ -5815,15 +7231,28 @@ Ejemplo:
               const indent = 6;
               const textWidth = contentWidth - indent;
               
-              checkPageBreak(6);
+              checkPageBreak(6 * factor);
               doc.setFont("times", "bold");
               doc.setFontSize(10.5);
               doc.setTextColor(15, 23, 42);
               doc.text(bulletToken, marginX + 1.5, yCoord);
-
+ 
               const lines = wrapMarkdown(doc, cleanItem, textWidth);
+              const itemSeverity = getParagraphSeverity(cleanItem);
               lines.forEach((lineVal) => {
-                checkPageBreak(5);
+                checkPageBreak(5 * factor);
+                
+                // Fine continuous left chromatic accent based on severity of findings
+                if (isSyntacticHighlightingActive) {
+                  if (itemSeverity === "critical") {
+                    doc.setFillColor(251, 113, 133); // soft coral rose-400
+                    doc.rect(marginX - 3.5, yCoord - 3.8 * factor, 0.4, 5 * factor, "F"); // Left accent only (fine continuous line)
+                  } else if (itemSeverity === "altered") {
+                    doc.setFillColor(245, 158, 11); // amber-500
+                    doc.rect(marginX - 3.5, yCoord - 3.8 * factor, 0.4, 5 * factor, "F"); // Left accent only (fine continuous line)
+                  }
+                }
+ 
                 let currentX = marginX + indent;
                 lineVal.forEach((span) => {
                   if (span.isBold) {
@@ -5836,13 +7265,26 @@ Ejemplo:
                   doc.text(span.text, currentX, yCoord);
                   currentX += doc.getTextWidth(span.text);
                 });
-                yCoord += 5;
+                yCoord += 5 * factor;
               });
             } else {
               // Wrap markdown formatted lines (bold and normal text mixed) safely and beautifully
               const lines = wrapMarkdown(doc, trimmed, contentWidth);
+              const itemSeverity = getParagraphSeverity(trimmed);
               lines.forEach((lineVal) => {
-                checkPageBreak(5);
+                checkPageBreak(5 * factor);
+ 
+                // Fine continuous left chromatic accent based on severity of findings
+                if (isSyntacticHighlightingActive) {
+                  if (itemSeverity === "critical") {
+                    doc.setFillColor(251, 113, 133); // soft coral rose-400
+                    doc.rect(marginX - 3.5, yCoord - 3.8 * factor, 0.4, 5 * factor, "F"); // Left accent only (fine continuous line)
+                  } else if (itemSeverity === "altered") {
+                    doc.setFillColor(245, 158, 11); // amber-500
+                    doc.rect(marginX - 3.5, yCoord - 3.8 * factor, 0.4, 5 * factor, "F"); // Left accent only (fine continuous line)
+                  }
+                }
+ 
                 let currentX = marginX;
                 lineVal.forEach((span) => {
                   if (span.isBold) {
@@ -5855,12 +7297,16 @@ Ejemplo:
                   doc.text(span.text, currentX, yCoord);
                   currentX += doc.getTextWidth(span.text);
                 });
-                yCoord += 5;
+                yCoord += 5 * factor;
               });
             }
           }
         });
       });
+
+      // Restore standard margins and content widths for any diagrams, annexes, and signature block
+      marginX = 20;
+      contentWidth = pageWidth - (2 * marginX);
 
       // 🛠️ DRAW SHOULDER DIAGRAM IN THE PROGRAMMATIC PDF
       if (includeShoulderSchemaInReport && specificStudy === "Hombro") {
@@ -8258,14 +9704,6 @@ Ejemplo:
                   if (pdfIsBilateralBenignActive) {
                     if (stateVal === "no_descrito" || stateVal === "normal") {
                       stateVal = "normal";
-                    } else if (stateVal === "hallazgo") {
-                      const desc = (breastDescriptions[baseId] || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-                      const isBenignRelated = 
-                        (pdfHasQuistesBilaterales && (desc.includes("quiste") || desc.includes("quistic"))) ||
-                        (pdfHasFibroadenomasBilaterales && (desc.includes("fibroadenoma") || desc.includes("nodulo") || desc.includes("nódulo")));
-                      if (isBenignRelated || !desc) {
-                        stateVal = "normal";
-                      }
                     }
                   }
 
@@ -8273,7 +9711,7 @@ Ejemplo:
                     el.setAttribute("fill", "#d1fae5");
                     el.setAttribute("stroke", "#10b981");
                     el.setAttribute("stroke-width", "1.5");
-                  } else if (stateVal === "hallazgo") {
+                  } else if (stateVal !== "no_descrito") {
                     el.setAttribute("fill", "#ffe4e6");
                     el.setAttribute("stroke", "#f43f5e");
                     el.setAttribute("stroke-width", "1.5");
@@ -8430,18 +9868,7 @@ Ejemplo:
 
             const filteredAllowed = breastAllowedKeys.filter(struct => {
               const stateVal = breastStates[struct.id];
-              if (stateVal !== "hallazgo") return false;
-
-              if (pdfIsBilateralBenignActive) {
-                const desc = (breastDescriptions[struct.id] || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-                const isBenignRelated = 
-                  (pdfHasQuistesBilaterales && (desc.includes("quiste") || desc.includes("quistic"))) ||
-                  (pdfHasFibroadenomasBilaterales && (desc.includes("fibroadenoma") || desc.includes("nodulo") || desc.includes("nódulo")));
-                if (isBenignRelated || !desc) {
-                  return false; // Filter out from individual list
-                }
-              }
-              return true;
+              return stateVal && stateVal !== "no_descrito" && stateVal !== "normal";
             });
 
             pdfBreastStructures.push(...filteredAllowed.map(item => ({ id: item.id, label: item.label })));
@@ -8522,7 +9949,7 @@ Ejemplo:
               if (pdfIsBilateralBenignActive) {
                 return "BIRADS 2";
               }
-              const hasAnyHallazgo = Object.values(breastStates).some(s => s === "hallazgo");
+              const hasAnyHallazgo = Object.values(breastStates).some(s => s !== "no_descrito" && s !== "normal");
               return hasAnyHallazgo ? "BIRADS 2" : "BIRADS 1";
             };
 
@@ -9063,7 +10490,9 @@ Ejemplo:
               { id: "pared_inguinal_izquierda", label: "Pared (Región Inguinal I.)" },
               { id: "pared_muscular", label: "Pared (Musculatura)" },
               { id: "suprarenales", label: "Suprarrenales" },
-              { id: "retroperitoneo", label: "Retroperitoneo" }
+              { id: "retroperitoneo", label: "Retroperitoneo" },
+              { id: "intestino_delgado", label: "Intestino Delgado" },
+              { id: "ascitis", label: "Líquido Libre / Ascitis" }
             ];
 
             const pdfAbdomenStructures = allowedAbdomenKeys.filter(struct => {
@@ -9520,6 +10949,144 @@ Ejemplo:
                 }
               } catch (err) {
                 console.warn("Could not draw diverticulitis diagram inside PDF", err);
+              }
+            }
+            }
+
+            // 🛠️ DIBUJO DE INTESTINO DELGADO Y ASCITIS EN PDF (SI ESTÁ ACTIVO)
+            if (includeSmallBowelSchemaInReport) {
+              const svgSmallBowel = document.getElementById("abdomen-smallbowel-svg");
+              if (svgSmallBowel) {
+              try {
+                const processSmallBowelSvgForPdf = async (svgEl: HTMLElement) => {
+                  const clonedSvg = svgEl.cloneNode(true) as SVGElement;
+                  
+                  const stops = clonedSvg.querySelectorAll("linearGradient stop");
+                  stops.forEach(stop => {
+                    const curColor = stop.getAttribute("stop-color") || stop.getAttribute("stopColor") || "";
+                    if (curColor === "#1e293b" || curColor === "#0f172a" || curColor === "#020617") {
+                      stop.setAttribute("stop-color", "#ffffff");
+                    }
+                  });
+
+                  const paths = clonedSvg.querySelectorAll("path");
+                  paths.forEach(p => {
+                    const fill = p.getAttribute("fill") || "";
+                    const stroke = p.getAttribute("stroke") || "";
+                    if (fill === "#1e293b" || fill === "#0f172a" || fill === "rgba(15, 23, 42, 0.45)") {
+                      p.setAttribute("fill", "#f1f5f9");
+                    }
+                    if (stroke === "#10b981") p.setAttribute("stroke", "#059669");
+                    if (stroke === "#f59e0b") p.setAttribute("stroke", "#d97706");
+                    if (stroke === "#f43f5e") p.setAttribute("stroke", "#b91c1c");
+                  });
+
+                  const rects = clonedSvg.querySelectorAll("rect");
+                  rects.forEach(r => {
+                    const fill = r.getAttribute("fill") || "";
+                    const stroke = r.getAttribute("stroke") || "";
+                    if (fill === "none" && stroke === "#334155") {
+                      r.setAttribute("stroke", "#94a3b8");
+                    }
+                    if (stroke === "#3b82f6") {
+                      r.setAttribute("stroke", "#2563eb");
+                    }
+                  });
+
+                  const texts = clonedSvg.querySelectorAll("text");
+                  texts.forEach(t => {
+                    const fill = t.getAttribute("fill") || "";
+                    if (fill === "#cbd5e1" || fill === "#64748b" || fill === "#ffffff" || fill === "#f43f5e" || fill === "#3b82f6" || fill === "#93c5fd") {
+                      t.setAttribute("fill", "#0f172a");
+                    }
+                  });
+
+                  return await convertSvgToPng(clonedSvg);
+                };
+
+                const imgSmallBowel = await processSmallBowelSvgForPdf(svgSmallBowel);
+                if (imgSmallBowel) {
+                  checkPageBreak(82);
+                  yCoord += 4;
+
+                  doc.setFont("helvetica", "bold");
+                  doc.setFontSize(8.0);
+                  doc.setTextColor(30, 41, 59);
+                  doc.text("ANEXO: ESQUEMA DE ASAS INTESTINALES Y LÍQUIDO LIBRE", pageWidth / 2, yCoord, { align: "center" });
+                  yCoord += 3.5;
+
+                  doc.setFont("helvetica", "normal");
+                  doc.setFontSize(6.3);
+                  doc.setTextColor(148, 163, 184);
+                  doc.text("MAPEO ESPECÍFICO DE ASAS DE INTESTINO DELGADO Y LÍQUIDO LIBRE (ASCITIS)", pageWidth / 2, yCoord, { align: "center" });
+                  yCoord += 4.5;
+
+                  const yBowelStart = yCoord;
+
+                  // Outer box
+                  doc.setFillColor(255, 255, 255);
+                  doc.setDrawColor(219, 234, 254); // blue-100 border
+                  doc.roundedRect(20, yBowelStart, 170, 58, 3, 3, "FD");
+
+                  // Embed drawing
+                  doc.addImage(imgSmallBowel, "PNG", 125, yBowelStart + 4, 52, 47);
+
+                  // Bullet points
+                  doc.setFont("helvetica", "bold");
+                  doc.setFontSize(7.0);
+                  doc.setTextColor(29, 78, 216); // blue-700
+                  doc.text("HALLAZGOS (INTESTINO DELGADO / ASCITIS):", 24, yBowelStart + 10);
+                  doc.setFont("helvetica", "normal");
+                  doc.setFontSize(5.8);
+                  doc.setTextColor(51, 65, 85);
+
+                  let findingsList = [];
+                  const bowelState = abdomenStates["intestino_delgado"] || "no_descrito";
+                  const ascitesState = abdomenStates["ascitis"] || "no_descrito";
+
+                  if (bowelState !== "no_descrito" && bowelState !== "normal") {
+                    const desc = abdomenDescriptions["intestino_delgado"];
+                    if (desc) {
+                      findingsList.push(`Intestino Delgado: ${desc}`);
+                    }
+                  } else if (bowelState === "normal") {
+                    findingsList.push("Asas de intestino delgado de calibre y peristaltismo conservado, sin signos de obstrucción ni edema parietal.");
+                  }
+
+                  if (ascitesState !== "no_descrito" && ascitesState !== "normal") {
+                    const desc = abdomenDescriptions["ascitis"];
+                    if (desc) {
+                      findingsList.push(`Líquido Libre / Ascitis: ${desc}`);
+                    }
+                  } else if (ascitesState === "normal") {
+                    findingsList.push("No se observa líquido libre intraabdominal ni pélvico.");
+                  }
+
+                  if (findingsList.length === 0) {
+                    findingsList.push("Intestino delgado y cavidad peritoneal de aspecto conservado, sin líquido libre.");
+                  }
+
+                  let currentBulletY = yBowelStart + 16;
+                  findingsList.forEach(f => {
+                    const fullText = `• ${f}`;
+                    const splitLines = doc.splitTextToSize(fullText, 95);
+                    splitLines.forEach((line: string) => {
+                      if (currentBulletY < yBowelStart + 51) {
+                        doc.text(line, 24, currentBulletY);
+                        currentBulletY += 4.5;
+                      }
+                    });
+                  });
+
+                  doc.setFont("helvetica", "italic");
+                  doc.setFontSize(6.0);
+                  doc.setTextColor(148, 163, 184);
+                  doc.text("Gráfico representativo auxiliar de asas de intestino delgado y líquido libre correspondiente al protocolo redactado.", 105, yBowelStart + 54, { align: "center" });
+
+                  yCoord += 64;
+                }
+              } catch (err) {
+                console.warn("Could not draw small bowel diagram inside PDF", err);
               }
             }
             }
@@ -11227,6 +12794,66 @@ Ejemplo:
         }
       }
 
+      // Add running headers on pages 2+ and page numbers on all pages (Format Editorial)
+      const totalPages = doc.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        
+        // Footer: draw page number at the bottom.
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7.5);
+        if (pdfLayoutType === "clinical_slate") {
+          doc.setTextColor(100, 116, 139); // slate-500
+        } else if (pdfLayoutType === "executive_medical") {
+          doc.setTextColor(197, 160, 89); // Gold
+        } else {
+          doc.setTextColor(148, 163, 184); // slate-400
+        }
+        const footerPageStr = `Pág. ${i} de ${totalPages}`;
+        doc.text(footerPageStr, pageWidth - marginX - doc.getTextWidth(footerPageStr), pageHeight - 10);
+        
+        // Faint, small watermark or clinic name on the left of footer
+        const footerLeftText = clinicName ? clinicName.toUpperCase() : "REPORTE RADIOLÓGICO";
+        doc.text(footerLeftText, marginX, pageHeight - 10);
+
+        // Header for page 2 onwards (Running Header)
+        if (i >= 2) {
+          // Draw thin horizontal line
+          if (pdfLayoutType === "clinical_slate") {
+            doc.setDrawColor(148, 163, 184); // slate-400
+            doc.setLineWidth(0.35);
+          } else if (pdfLayoutType === "executive_medical") {
+            doc.setDrawColor(197, 160, 89); // Gold
+            doc.setLineWidth(0.35);
+          } else {
+            doc.setDrawColor(226, 232, 240); // slate-200
+            doc.setLineWidth(0.2);
+          }
+          doc.line(marginX, 14, pageWidth - marginX, 14);
+
+          // Draw study name on the left of the header
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(7);
+          if (pdfLayoutType === "clinical_slate") {
+            doc.setTextColor(71, 85, 105); // slate-600
+          } else if (pdfLayoutType === "executive_medical") {
+            doc.setTextColor(15, 23, 42); // Navy
+          } else {
+            doc.setTextColor(100, 116, 139); // slate-500
+          }
+          
+          let studyLabel = studyType ? studyType.toUpperCase() : "REPORTE DE RADIODIAGNÓSTICO";
+          
+          doc.text(studyLabel, marginX, 11);
+
+          // Draw pagination aligned to the right inside the running header
+          doc.setFont("helvetica", "normal");
+          const runningHeaderPageStr = `Pág. ${i} de ${totalPages}`;
+          const rWidth = doc.getTextWidth(runningHeaderPageStr);
+          doc.text(runningHeaderPageStr, pageWidth - marginX - rWidth, 11);
+        }
+      }
+
       if (returnBlobUrl) {
         const blob = doc.output("blob");
         return URL.createObjectURL(blob);
@@ -11287,20 +12914,130 @@ Ejemplo:
       const pageHeight = 297;
       const contentWidth = pageWidth - (2 * marginX); // 170mm
 
-      // Helper function to check space and add page if needed
-      const checkPageBreak = (neededHeight: number) => {
-        if (yCoord + neededHeight > pageHeight - 20) {
-          doc.addPage();
-          yCoord = 20;
-        }
-      };
-
       // Strip emojis helper to prevent visual square errors in default fonts
       const stripEmojis = (str: string): string => {
         if (!str) return "";
         return str
           .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "")
           .replace(/[\u2600-\u27BF]|[\u2300-\u23FF]|[\u2B50]|[\u2190-\u21FF]/g, "");
+      };
+
+      // --- DYNAMIC PAGE BUDGET & COMPLETE WIDOW/ORPHAN CONTROL (ALGORITMO DE CORRECCIÓN DE VIUDAS Y HUÉRFANOS) ---
+      let factor = 1.0;
+      let estimatedHeight = 20; // Start at top margin
+
+      // 1. Header height estimation
+      if (customLogoUrl) {
+        if (customLogoStyle === "banner") {
+          let bannerHeight = 35;
+          const bannerImgEl = document.querySelector('img[alt="Membrete de la Clínica"]') as HTMLImageElement | null;
+          if (bannerImgEl && bannerImgEl.naturalWidth && bannerImgEl.naturalHeight) {
+            const aspect = bannerImgEl.naturalWidth / bannerImgEl.naturalHeight;
+            const maxWidth = contentWidth;
+            const maxHeight = 52;
+            bannerHeight = aspect > maxWidth / maxHeight ? maxWidth / aspect : maxHeight;
+          }
+          estimatedHeight += bannerHeight + 5;
+          if (clinicName) estimatedHeight += 5;
+        } else {
+          let logoHeight = 36;
+          const logoImgEl = document.querySelector('img[alt="Logo"]') as HTMLImageElement | null;
+          if (logoImgEl && logoImgEl.naturalWidth && logoImgEl.naturalHeight) {
+            const aspect = logoImgEl.naturalWidth / logoImgEl.naturalHeight;
+            const maxWidth = 42;
+            const maxHeight = 42;
+            logoHeight = aspect > maxWidth / maxHeight ? maxWidth / aspect : maxHeight;
+          }
+          estimatedHeight += Math.max(logoHeight, 15) + 6;
+        }
+      } else {
+        estimatedHeight += 18;
+      }
+      estimatedHeight += 2; // Underline
+
+      // 2. Patient metadata block estimation
+      if (patientName || reportDate) {
+        estimatedHeight += 19;
+      }
+
+      // 3. Document Title
+      estimatedHeight += 12;
+
+      // 4. Intro Summary
+      const tempDoc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+      if (patientSummary.summary) {
+        const cleanSummaryLocal = stripEmojis(patientSummary.summary);
+        const splitSummaryLocal = tempDoc.splitTextToSize(cleanSummaryLocal, contentWidth);
+        estimatedHeight += splitSummaryLocal.length * 5.5 + 4;
+      }
+
+      // 5. Key Findings
+      if (patientSummary.keyFindings && patientSummary.keyFindings.length > 0) {
+        estimatedHeight += 22;
+        patientSummary.keyFindings.forEach((finding: any) => {
+          const title = stripEmojis(finding.title || "");
+          const originalTerm = stripEmojis(finding.originalTerm || "");
+          const simplifiedExplanation = stripEmojis(finding.simplifiedExplanation || "");
+          const analogy = stripEmojis(finding.analogy || "");
+          const reassurance = stripEmojis(finding.reassurance || "");
+
+          const splitTitle = tempDoc.splitTextToSize(title, contentWidth - 10);
+          const splitOrig = tempDoc.splitTextToSize(`Término original en informe técnico: "${originalTerm}"`, contentWidth - 10);
+          const splitExp = tempDoc.splitTextToSize(`Explicación: ${simplifiedExplanation}`, contentWidth - 14);
+          const splitAnalogy = tempDoc.splitTextToSize(`Analogía de comprensión: ${analogy}`, contentWidth - 14);
+          const splitReassurance = tempDoc.splitTextToSize(`Contexto Clínico y Perspectiva Médica: ${reassurance}`, contentWidth - 14);
+
+          const neededHeight = (splitTitle.length * 5) + 
+                               (splitOrig.length * 4) + 
+                               (splitExp.length * 5) + 
+                               (splitAnalogy.length * 4.5) + 
+                               (splitReassurance.length * 4.5) + 20;
+          estimatedHeight += neededHeight + 2;
+        });
+        estimatedHeight += 4;
+      }
+
+      // 6. Care Points
+      if (patientSummary.carePoints && patientSummary.carePoints.length > 0) {
+        estimatedHeight += 22;
+        patientSummary.carePoints.forEach((point: string) => {
+          const cleanPoint = stripEmojis(point);
+          const splitPoint = tempDoc.splitTextToSize(cleanPoint, contentWidth - 8);
+          estimatedHeight += (splitPoint.length * 4.8) + 2.5;
+        });
+        estimatedHeight += 4;
+      }
+
+      // 7. Suggested Questions
+      if (patientSummary.suggestedQuestions && patientSummary.suggestedQuestions.length > 0) {
+        estimatedHeight += 22;
+        patientSummary.suggestedQuestions.forEach((q: string) => {
+          const cleanQ = stripEmojis(q);
+          const splitQ = tempDoc.splitTextToSize(`"${cleanQ}"`, contentWidth - 8);
+          estimatedHeight += (splitQ.length * 4.8) + 3;
+        });
+      }
+
+      // 8. Sign-off block
+      estimatedHeight += 38;
+
+      // 9. Calculate pages and remainder for widow/orphan detection
+      const usablePageHeight = 255;
+      const estTotalPages = Math.ceil(estimatedHeight / usablePageHeight);
+      const estRemainder = estimatedHeight % usablePageHeight;
+
+      if (estTotalPages > 1 && estRemainder < 48) {
+        factor = 0.84; // 16% spacing and height compression
+      } else if (estTotalPages > 1 && estRemainder < 60) {
+        factor = 0.88; // 12% spacing and height compression
+      }
+
+      // Helper function to check space and add page if needed
+      const checkPageBreak = (neededHeight: number) => {
+        if (yCoord + neededHeight > pageHeight - 20) {
+          doc.addPage();
+          yCoord = 20;
+        }
       };
 
       // Header Brand/Clinic Logo & Name
@@ -11495,16 +13232,16 @@ Ejemplo:
           doc.text(formattedDate, rightX + dateLabelWidth, yCoord + 7.5);
         }
 
-        yCoord += 19;
+        yCoord += 19 * factor;
       }
 
       // Title of the Document
-      checkPageBreak(12);
+      checkPageBreak(12 * factor);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(12);
       doc.setTextColor(15, 23, 42);
       doc.text("INFORME DE ACOMPAÑAMIENTO Y EXPLICACIÓN SIMPLIFICADA", pageWidth / 2, yCoord, { align: "center" });
-      yCoord += 8;
+      yCoord += 8 * factor;
 
       // Introduction Summary
       if (patientSummary.summary) {
@@ -11515,21 +13252,42 @@ Ejemplo:
         
         const splitSummary = doc.splitTextToSize(cleanSummary, contentWidth);
         splitSummary.forEach((line: string) => {
-          checkPageBreak(5.5);
+          checkPageBreak(5.5 * factor);
           doc.text(line, marginX, yCoord);
-          yCoord += 5.5;
+          yCoord += 5.5 * factor;
         });
-        yCoord += 4;
+        yCoord += 4 * factor;
       }
 
       // Key Findings section
       if (patientSummary.keyFindings && patientSummary.keyFindings.length > 0) {
-        checkPageBreak(15);
+        // Calculate the height of the first finding to check combined page break
+        const firstFinding = patientSummary.keyFindings[0];
+        const title0 = stripEmojis(firstFinding.title || "");
+        const originalTerm0 = stripEmojis(firstFinding.originalTerm || "");
+        const simplifiedExplanation0 = stripEmojis(firstFinding.simplifiedExplanation || "");
+        const analogy0 = stripEmojis(firstFinding.analogy || "");
+        const reassurance0 = stripEmojis(firstFinding.reassurance || "");
+
+        const splitTitle0 = doc.splitTextToSize(title0, contentWidth - 10);
+        const splitOrig0 = doc.splitTextToSize(`Término original en informe técnico: "${originalTerm0}"`, contentWidth - 10);
+        const splitExp0 = doc.splitTextToSize(`Explicación: ${simplifiedExplanation0}`, contentWidth - 14);
+        const splitAnalogy0 = doc.splitTextToSize(`Analogía de comprensión: ${analogy0}`, contentWidth - 14);
+        const splitReassurance0 = doc.splitTextToSize(`Contexto Clínico y Perspectiva Médica: ${reassurance0}`, contentWidth - 14);
+
+        const neededHeight0 = ((splitTitle0.length * 5) + 
+                             (splitOrig0.length * 4) + 
+                             (splitExp0.length * 5) + 
+                             (splitAnalogy0.length * 4.5) + 
+                             (splitReassurance0.length * 4.5) + 20) * factor;
+
+        // Ensure title + first item fit on the current page together!
+        checkPageBreak(15 * factor + neededHeight0);
         doc.setFont("helvetica", "bold");
         doc.setFontSize(11);
         doc.setTextColor(15, 23, 42);
         doc.text("HALLAZGOS IDENTIFICADOS Y TRADUCIDOS:", marginX, yCoord);
-        yCoord += 7;
+        yCoord += 7 * factor;
 
         patientSummary.keyFindings.forEach((finding: any) => {
           const title = stripEmojis(finding.title || "");
@@ -11556,21 +13314,21 @@ Ejemplo:
 
           const splitReassurance = doc.splitTextToSize(`Contexto Clínico y Perspectiva Médica: ${reassurance}`, contentWidth - 14);
 
-          const neededHeight = (splitTitle.length * 5) + 
+          const neededHeight = ((splitTitle.length * 5) + 
                                (splitOrig.length * 4) + 
                                (splitExp.length * 5) + 
                                (splitAnalogy.length * 4.5) + 
-                               (splitReassurance.length * 4.5) + 20;
+                               (splitReassurance.length * 4.5) + 20) * factor;
 
           checkPageBreak(neededHeight);
 
           doc.setFillColor(250, 250, 250);
-          doc.rect(marginX, yCoord, contentWidth, neededHeight - 4, "F");
+          doc.rect(marginX, yCoord, contentWidth, neededHeight - 4 * factor, "F");
           doc.setDrawColor(229, 231, 235);
           doc.setLineWidth(0.35);
-          doc.rect(marginX, yCoord, contentWidth, neededHeight - 4, "D");
+          doc.rect(marginX, yCoord, contentWidth, neededHeight - 4 * factor, "D");
 
-          let interiorY = yCoord + 6;
+          let interiorY = yCoord + 6 * factor;
 
           // Title
           doc.setFont("helvetica", "bold");
@@ -11578,7 +13336,7 @@ Ejemplo:
           doc.setTextColor(30, 58, 138); 
           splitTitle.forEach((line: string) => {
             doc.text(line, marginX + 5, interiorY);
-            interiorY += 5;
+            interiorY += 5 * factor;
           });
 
           // Original term
@@ -11587,9 +13345,9 @@ Ejemplo:
           doc.setTextColor(75, 85, 99); 
           splitOrig.forEach((line: string) => {
             doc.text(line, marginX + 5, interiorY);
-            interiorY += 4.5;
+            interiorY += 4.5 * factor;
           });
-          interiorY += 2;
+          interiorY += 2 * factor;
 
           // Explanation
           doc.setFont("times", "normal");
@@ -11597,62 +13355,67 @@ Ejemplo:
           doc.setTextColor(15, 23, 42); 
           splitExp.forEach((line: string) => {
             doc.text(line, marginX + 7, interiorY);
-            interiorY += 4.8;
+            interiorY += 4.8 * factor;
           });
-          interiorY += 2;
+          interiorY += 2 * factor;
 
           // Analogy (orange border bar)
-          const analogyHeight = (splitAnalogy.length * 4.2) + 4;
+          const analogyHeight = (splitAnalogy.length * 4.2 * factor) + 4 * factor;
           doc.setFillColor(255, 247, 237); 
-          doc.rect(marginX + 5, interiorY - 3, contentWidth - 10, analogyHeight, "F");
+          doc.rect(marginX + 5, interiorY - 3 * factor, contentWidth - 10, analogyHeight, "F");
           doc.setDrawColor(249, 115, 22); 
           doc.setLineWidth(0.5);
-          doc.line(marginX + 5, interiorY - 3, marginX + 5, interiorY - 3 + analogyHeight);
+          doc.line(marginX + 5, interiorY - 3 * factor, marginX + 5, interiorY - 3 * factor + analogyHeight);
 
           doc.setFont("times", "normal");
           doc.setFontSize(9.5);
           doc.setTextColor(124, 45, 18); 
           splitAnalogy.forEach((line: string) => {
             doc.text(line, marginX + 8, interiorY);
-            interiorY += 4.2;
+            interiorY += 4.2 * factor;
           });
-          interiorY += 4;
+          interiorY += 4 * factor;
 
           // Context (blue border bar)
-          const contextHeight = (splitReassurance.length * 4.2) + 4;
+          const contextHeight = (splitReassurance.length * 4.2 * factor) + 4 * factor;
           doc.setFillColor(239, 246, 255); 
-          doc.rect(marginX + 5, interiorY - 3, contentWidth - 10, contextHeight, "F");
+          doc.rect(marginX + 5, interiorY - 3 * factor, contentWidth - 10, contextHeight, "F");
           doc.setDrawColor(59, 130, 246); 
           doc.setLineWidth(0.5);
-          doc.line(marginX + 5, interiorY - 3, marginX + 5, interiorY - 3 + contextHeight);
+          doc.line(marginX + 5, interiorY - 3 * factor, marginX + 5, interiorY - 3 * factor + contextHeight);
 
           doc.setFont("times", "normal");
           doc.setFontSize(9.5);
           doc.setTextColor(30, 58, 138); 
           splitReassurance.forEach((line: string) => {
             doc.text(line, marginX + 8, interiorY);
-            interiorY += 4.2;
+            interiorY += 4.2 * factor;
           });
 
-          yCoord += neededHeight + 2;
+          yCoord += neededHeight + 2 * factor;
         });
-        yCoord += 4;
+        yCoord += 4 * factor;
       }
 
       // Care Points Section
       if (patientSummary.carePoints && patientSummary.carePoints.length > 0) {
-        checkPageBreak(22);
+        // Estimate the first point height to avoid orphan header
+        const firstPoint = stripEmojis(patientSummary.carePoints[0]);
+        const splitPoint0 = doc.splitTextToSize(firstPoint, contentWidth - 8);
+        const firstPointHeight = ((splitPoint0.length * 4.8) + 2.5) * factor;
+
+        checkPageBreak(22 * factor + firstPointHeight);
         doc.setFont("helvetica", "bold");
         doc.setFontSize(11);
         doc.setTextColor(15, 23, 42);
         doc.text("PAUTAS Y RECOMENDACIONES DE BIENESTAR:", marginX, yCoord);
-        yCoord += 7;
+        yCoord += 7 * factor;
 
         patientSummary.carePoints.forEach((point: string) => {
           const cleanPoint = stripEmojis(point);
           const splitPoint = doc.splitTextToSize(cleanPoint, contentWidth - 8);
           
-          checkPageBreak((splitPoint.length * 5) + 3);
+          checkPageBreak(((splitPoint.length * 5) + 3) * factor);
           doc.setFont("helvetica", "bold");
           doc.setFontSize(10.5);
           doc.setTextColor(15, 23, 42);
@@ -11663,27 +13426,32 @@ Ejemplo:
           doc.setTextColor(51, 65, 85);
 
           splitPoint.forEach((line: string, i: number) => {
-            doc.text(line, marginX + 6, yCoord + (i * 4.8));
+            doc.text(line, marginX + 6, yCoord + (i * 4.8 * factor));
           });
-          yCoord += (splitPoint.length * 4.8) + 2.5;
+          yCoord += (splitPoint.length * 4.8 * factor) + 2.5 * factor;
         });
-        yCoord += 4;
+        yCoord += 4 * factor;
       }
 
       // Suggested Questions Section
       if (patientSummary.suggestedQuestions && patientSummary.suggestedQuestions.length > 0) {
-        checkPageBreak(22);
+        // Estimate the first question height to avoid orphan header
+        const firstQ = stripEmojis(patientSummary.suggestedQuestions[0]);
+        const splitQ0 = doc.splitTextToSize(`"${firstQ}"`, contentWidth - 8);
+        const firstQHeight = ((splitQ0.length * 4.8) + 3) * factor;
+
+        checkPageBreak(22 * factor + firstQHeight);
         doc.setFont("helvetica", "bold");
         doc.setFontSize(11);
         doc.setTextColor(15, 23, 42);
         doc.text("PREGUNTAS SUGERIDAS PARA SU CONSULTA MÉDICA:", marginX, yCoord);
-        yCoord += 7;
+        yCoord += 7 * factor;
 
         patientSummary.suggestedQuestions.forEach((q: string, idx: number) => {
           const cleanQ = stripEmojis(q);
           const splitQ = doc.splitTextToSize(`"${cleanQ}"`, contentWidth - 8);
 
-          checkPageBreak((splitQ.length * 5) + 3);
+          checkPageBreak(((splitQ.length * 5) + 3) * factor);
           doc.setFont("helvetica", "bold");
           doc.setFontSize(10);
           doc.setTextColor(15, 23, 42);
@@ -11694,9 +13462,9 @@ Ejemplo:
           doc.setTextColor(30, 41, 59);
 
           splitQ.forEach((line: string, i: number) => {
-            doc.text(line, marginX + 7, yCoord + (i * 4.8));
+            doc.text(line, marginX + 7, yCoord + (i * 4.8 * factor));
           });
-          yCoord += (splitQ.length * 4.8) + 3;
+          yCoord += (splitQ.length * 4.8 * factor) + 3 * factor;
         });
       }
 
@@ -11832,6 +13600,46 @@ Ejemplo:
         yCoord = boxY + boxH + 6;
       }
 
+      // Add running headers on pages 2+ and page numbers on all pages (Format Editorial)
+      const totalPages = doc.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        
+        // Footer: draw page number at the bottom.
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7.5);
+        doc.setTextColor(148, 163, 184); // slate-400
+        const footerPageStr = `Pág. ${i} de ${totalPages}`;
+        doc.text(footerPageStr, pageWidth - marginX - doc.getTextWidth(footerPageStr), pageHeight - 10);
+        
+        // Faint, small watermark or clinic name on the left of footer
+        const footerLeftText = clinicName ? clinicName.toUpperCase() : "EXPLICACIÓN DEL ESTUDIO";
+        doc.text(footerLeftText, marginX, pageHeight - 10);
+
+        // Header for page 2 onwards (Running Header)
+        if (i >= 2) {
+          // Draw thin horizontal line
+          doc.setDrawColor(226, 232, 240); // slate-200
+          doc.setLineWidth(0.2);
+          doc.line(marginX, 14, pageWidth - marginX, 14);
+
+          // Draw study name on the left of the header
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(7);
+          doc.setTextColor(100, 116, 139); // slate-500
+          
+          let studyLabel = studyType ? `EXPLICACIÓN PACIENTE - ${studyType.toUpperCase()}` : "EXPLICACIÓN PACIENTE";
+          
+          doc.text(studyLabel, marginX, 11);
+
+          // Draw pagination aligned to the right inside the running header
+          doc.setFont("helvetica", "normal");
+          const runningHeaderPageStr = `Pág. ${i} de ${totalPages}`;
+          const rWidth = doc.getTextWidth(runningHeaderPageStr);
+          doc.text(runningHeaderPageStr, pageWidth - marginX - rWidth, 11);
+        }
+      }
+
       if (returnBlobUrl) {
         const blob = doc.output("blob");
         return URL.createObjectURL(blob);
@@ -11870,7 +13678,7 @@ Ejemplo:
   };
 
   useEffect(() => {
-    if (!showPrintModal) {
+    if (!showPrintModal && !isSplitPdfActive) {
       if (generatedNativePdfUrl) {
         try { URL.revokeObjectURL(generatedNativePdfUrl); } catch (_) {}
         setGeneratedNativePdfUrl(null);
@@ -11883,6 +13691,7 @@ Ejemplo:
     }
 
     let active = true;
+    let timeoutId: any = null;
 
     const updatePreviews = async () => {
       setIsGeneratingPdfPreview(true);
@@ -11891,7 +13700,7 @@ Ejemplo:
           const rUrl = await handleDownloadNativePDF(false, false, false, true);
           if (active && rUrl) {
             setGeneratedNativePdfUrl(prev => {
-              if (prev) { try { URL.revokeObjectURL(prev); } catch (_) {} }
+              if (prev && prev !== rUrl) { try { URL.revokeObjectURL(prev); } catch (_) {} }
               return rUrl;
             });
           }
@@ -11902,7 +13711,7 @@ Ejemplo:
           const sUrl = await handleDownloadPatientSummaryPDF(false, false, false, true);
           if (active && sUrl) {
             setGeneratedSummaryPdfUrl(prev => {
-              if (prev) { try { URL.revokeObjectURL(prev); } catch (_) {} }
+              if (prev && prev !== sUrl) { try { URL.revokeObjectURL(prev); } catch (_) {} }
               return sUrl;
             });
           }
@@ -11918,13 +13727,25 @@ Ejemplo:
       }
     };
 
-    updatePreviews();
+    if (isEditingReportManual) {
+      timeoutId = setTimeout(() => {
+        updatePreviews();
+      }, 400);
+    } else {
+      updatePreviews();
+    }
 
     return () => {
       active = false;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
     };
   }, [
     showPrintModal,
+    isSplitPdfActive,
+    isEditingReportManual,
+    editedReportText,
     adaptivePDFContrast,
     generatedReport,
     patientSummary,
@@ -11935,7 +13756,8 @@ Ejemplo:
     customLogoUrl,
     customSignatureUrl,
     selectedLogo,
-    patientName
+    patientName,
+    pdfLayoutType
   ]);
 
   const cleanRawClinicalText = (text: string) => {
@@ -15135,7 +16957,7 @@ Ejemplo:
             el.setAttribute("fill", "#d1fae5");
             el.setAttribute("stroke", "#10b981");
             el.setAttribute("stroke-width", "1.5");
-          } else if (stateVal === "hallazgo") {
+          } else if (stateVal !== "no_descrito") {
             el.setAttribute("fill", "#ffe4e6");
             el.setAttribute("stroke", "#f43f5e");
             el.setAttribute("stroke-width", "1.5");
@@ -15206,7 +17028,10 @@ Ejemplo:
       { id: "mi_axila", label: "MI - Región Axilar" }
     ];
 
-    const activePrintKeys = breastAllowedKeys.filter(struct => breastStates[struct.id] === "hallazgo");
+    const activePrintKeys = breastAllowedKeys.filter(struct => {
+      const stateVal = breastStates[struct.id];
+      return stateVal && stateVal !== "no_descrito" && stateVal !== "normal";
+    });
 
     return (
       <div className="mt-8 page-break-inside-avoid print-section-container text-black">
@@ -15804,10 +17629,20 @@ Ejemplo:
 
                   const renderedText = renderBoldTextBlackSafe(cleanItem, `print-list-${idx}-${itemIdx}`);
 
+                  let itemClass = "flex items-start gap-2.5 pl-2 py-0.5 ml-1 select-text";
+                  if (isSyntacticHighlightingActive) {
+                    const severity = getParagraphSeverity(cleanItem);
+                    if (severity === "critical") {
+                      itemClass = "flex items-start gap-2.5 ml-1 select-text border-l-[1.5px] border-red-500 bg-red-50/50 pl-3 py-1 my-1.5 rounded-r shadow-sm";
+                    } else if (severity === "altered") {
+                      itemClass = "flex items-start gap-2.5 ml-1 select-text border-l-[1.5px] border-amber-500 bg-amber-50/40 pl-3 py-1 my-1.5 rounded-r shadow-sm";
+                    }
+                  }
+
                   return (
-                    <div key={`${elem.id}-item-${itemIdx}`} className="flex items-start gap-2.5 pl-2 py-0.5 ml-1 select-text">
+                    <div key={`${elem.id}-item-${itemIdx}`} className={itemClass}>
                       {bulletSpan}
-                      <span className="leading-relaxed select-text">
+                      <span className="leading-relaxed select-text font-sans">
                         {renderedText}
                       </span>
                     </div>
@@ -15943,8 +17778,18 @@ Ejemplo:
                   );
                 }
 
+                let printClass = "leading-relaxed select-text";
+                if (isSyntacticHighlightingActive) {
+                  const severity = getParagraphSeverity(trimmedLine);
+                  if (severity === "critical") {
+                    printClass = "leading-relaxed select-text border-l-[1.5px] border-red-500 bg-red-50/50 pl-3 py-1 rounded-r my-1.5 shadow-sm";
+                  } else if (severity === "altered") {
+                    printClass = "leading-relaxed select-text border-l-[1.5px] border-amber-500 bg-amber-50/40 pl-3 py-1 rounded-r my-1.5 shadow-sm";
+                  }
+                }
+
                 return (
-                  <p key={`${elem.id}-l-${lIdx}`} className="leading-relaxed select-text">
+                  <p key={`${elem.id}-l-${lIdx}`} className={printClass}>
                     {renderBoldTextBlackSafe(trimmedLine, `print-text-${idx}-${lIdx}`)}
                   </p>
                 );
@@ -16562,14 +18407,25 @@ Ejemplo:
                   const renderedText = renderBoldTextSafe(cleanItem, `screen-list-${idx}-${itemIdx}`);
                   const isMarked = selectedParagraphOriginal === cleanItem;
 
+                  let bgBorderClass = "hover:bg-slate-900/35 hover:text-slate-100 pr-1";
+                  
+                  if (isSyntacticHighlightingActive && !isMarked) {
+                    const severity = getParagraphSeverity(cleanItem);
+                    if (severity === "critical") {
+                      bgBorderClass = "bg-rose-950/20 border-l-[1.5px] border-rose-500/60 pl-3 text-rose-200 hover:bg-rose-950/30 hover:text-rose-100 font-medium my-1 shadow-sm";
+                    } else if (severity === "altered") {
+                      bgBorderClass = "bg-amber-950/15 border-l-[1.5px] border-amber-500/50 pl-3 text-amber-200 hover:bg-amber-950/25 hover:text-amber-100 font-medium my-1 shadow-sm";
+                    }
+                  }
+
                   return (
                     <div 
                       key={`${elem.id}-item-${itemIdx}`} 
                       onClick={() => handleSelectParagraph(cleanItem)}
                       className={`flex items-start gap-2 pl-2 py-1 ml-1 cursor-pointer transition-all duration-150 rounded ${
                         isMarked 
-                          ? "bg-indigo-950/40 border-l-2 border-indigo-500 text-white pl-3 pr-2 font-medium" 
-                          : "hover:bg-slate-900/35 hover:text-slate-100 pr-1"
+                          ? "bg-indigo-950/30 border-l-[1.5px] border-indigo-500 text-white pl-3 pr-2 font-medium" 
+                          : bgBorderClass
                       }`}
                       title="Haz clic para marcar este elemento de la lista"
                     >
@@ -16665,6 +18521,16 @@ Ejemplo:
                 }
 
                 const isMarked = selectedParagraphOriginal === trimmedLine;
+                let bgBorderClass = "text-slate-300 hover:bg-slate-900/35 hover:text-slate-100";
+                
+                if (isSyntacticHighlightingActive && !isMarked) {
+                  const severity = getParagraphSeverity(trimmedLine);
+                  if (severity === "critical") {
+                    bgBorderClass = "bg-rose-950/20 border-l-[1.5px] border-rose-500/60 pl-2.5 text-rose-200 hover:bg-rose-950/30 hover:text-rose-100 font-medium my-1.5 shadow-sm";
+                  } else if (severity === "altered") {
+                    bgBorderClass = "bg-amber-950/15 border-l-[1.5px] border-amber-500/50 pl-2.5 text-amber-200 hover:bg-amber-950/25 hover:text-amber-100 font-medium my-1.5 shadow-sm";
+                  }
+                }
 
                 return (
                   <p 
@@ -16672,8 +18538,8 @@ Ejemplo:
                     onClick={() => handleSelectParagraph(trimmedLine)}
                     className={`leading-relaxed text-[12.5px] md:text-[13px] select-text cursor-pointer transition-all duration-150 rounded my-1 py-1 px-1.5 ${
                       isMarked 
-                        ? "bg-indigo-950/40 border-l-2 border-indigo-500 text-white pl-2.5 font-medium shadow-sm" 
-                        : "text-slate-300 hover:bg-slate-900/35 hover:text-slate-100"
+                        ? "bg-indigo-950/30 border-l-[1.5px] border-indigo-500 text-white pl-2.5 font-medium shadow-sm" 
+                        : bgBorderClass
                     }`}
                     title="Haz clic para marcar este párrafo"
                   >
@@ -16718,6 +18584,173 @@ Ejemplo:
     if (confirm("¿Deseas vacilar todo el historial local de reportes guardados? (No afectará tu trabajo actual)")) {
       setSavedReports([]);
       localStorage.removeItem("radiology_reports_history");
+    }
+  };
+
+  // --- CLOUD DATABASE SYSTEM SYNC ---
+  const fetchCloudStudies = async (uid: string) => {
+    setIsLoadingCloudStudies(true);
+    setCloudStudiesError(null);
+    try {
+      const studies = await getStudiesFromCloud(uid);
+      setCloudStudies(studies);
+    } catch (e: any) {
+      console.error("Error fetching cloud studies:", e);
+      setCloudStudiesError("No se pudieron cargar los estudios de la nube. Revisa tu conexión.");
+    } finally {
+      setIsLoadingCloudStudies(false);
+    }
+  };
+
+  useEffect(() => {
+    if (gmailUser?.uid) {
+      fetchCloudStudies(gmailUser.uid);
+    } else {
+      setCloudStudies([]);
+    }
+  }, [gmailUser]);
+
+  const downloadPdfFromBase64 = (base64: string, filename: string) => {
+    try {
+      const byteCharacters = atob(base64);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Error downloading PDF from base64:", err);
+      alert("Error al descargar el PDF guardado.");
+    }
+  };
+
+  const downloadPdfForCloudStudy = async (item: CloudStudy) => {
+    try {
+      // 1. Save current active workspace state
+      const prevGeneratedReport = generatedReport;
+      const prevStudyType = studyType;
+      const prevClinicalHistory = clinicalHistory;
+      const prevPatientName = patientName;
+      const prevPatientEmail = patientEmail;
+      const prevReportDate = reportDate;
+      const prevDoctorName = doctorName;
+      const prevDoctorLicense = doctorLicense;
+      const prevClinicName = clinicName;
+      const prevFindings = findings;
+      const prevSpecificStudy = specificStudy;
+      const prevLaterality = laterality;
+
+      // 2. Temporarily set state to the study values so that the PDF generation functions read them
+      setGeneratedReport(item.reportText);
+      setStudyType(item.studyType);
+      setClinicalHistory(item.clinicalHistory || "No especificada");
+      setPatientName(item.patientName || "Paciente Anónimo");
+      setPatientEmail(item.patientEmail || "No especificado");
+      setReportDate(item.reportDate || new Date().toISOString().split('T')[0]);
+      setDoctorName(item.doctorName || "Médico Radiólogo");
+      setDoctorLicense(item.doctorLicense || "No especificada");
+      setClinicName(item.clinicName || "Clínica Privada");
+      setFindings(item.findings || "No especificadas");
+
+      // Give 100ms for state propagation to complete (ensures React rerender happens for the PDF print references)
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      
+      // 3. Generate and download PDF
+      await handleDownloadNativePDF(false, false, false, false);
+
+      // 4. Restore original workspace state
+      setGeneratedReport(prevGeneratedReport);
+      setStudyType(prevStudyType);
+      setClinicalHistory(prevClinicalHistory);
+      setPatientName(prevPatientName);
+      setPatientEmail(prevPatientEmail);
+      setReportDate(prevReportDate);
+      setDoctorName(prevDoctorName);
+      setDoctorLicense(prevDoctorLicense);
+      setClinicName(prevClinicName);
+      setFindings(prevFindings);
+      setSpecificStudy(prevSpecificStudy);
+      setLaterality(prevLaterality);
+    } catch (err) {
+      console.error("Error al generar PDF de la nube:", err);
+      alert("Error al generar el PDF para este estudio.");
+    }
+  };
+
+  const handleSaveToCloud = async (customReport?: SavedReport) => {
+    if (!gmailUser) {
+      setCloudStudiesError("Debe iniciar sesión para guardar estudios en la nube.");
+      return;
+    }
+
+    setIsSavingToCloud(true);
+    setCloudStudiesError(null);
+    setCloudStudiesSuccess(null);
+
+    try {
+      const idToSave = customReport?.id || Math.random().toString(36).substring(2, 11);
+      const studyTypeToSave = customReport?.studyType || studyType || "Estudio General";
+      const clinicalHistoryToSave = customReport?.clinicalHistory || clinicalHistory || "No especificada";
+      const reportTextToSave = customReport?.reportText || generatedReport;
+
+      if (!reportTextToSave) {
+        throw new Error("No hay contenido de reporte para guardar. Primero genera o redacta un reporte.");
+      }
+
+      await saveStudyToCloud(gmailUser.uid, gmailUser.email || "", {
+        id: idToSave,
+        timestamp: customReport?.timestamp || new Date().toLocaleString("es-ES", {
+          hour: "2-digit",
+          minute: "2-digit"
+        }),
+        patientName: patientName || "Paciente Anónimo",
+        patientEmail: patientEmail || "No especificado",
+        reportDate: reportDate || new Date().toISOString().split('T')[0],
+        doctorName: doctorName || "Médico Radiólogo",
+        doctorLicense: doctorLicense || "No especificada",
+        clinicName: clinicName || "Clínica Privada",
+        studyType: studyTypeToSave,
+        clinicalHistory: clinicalHistoryToSave,
+        findings: findings || "No especificadas",
+        reportText: reportTextToSave,
+        pdfBase64: "" // Remove PDF base64 to prevent payload size bloat and huge delay/crashes!
+      });
+
+      setCloudStudiesSuccess("¡Estudio guardado con éxito en tu Base de Datos en la Nube!");
+      await fetchCloudStudies(gmailUser.uid);
+      setTimeout(() => setCloudStudiesSuccess(null), 4500);
+    } catch (e: any) {
+      console.error("Error saving to cloud:", e);
+      setCloudStudiesError("Error al guardar en la nube: " + (e.message || String(e)));
+    } finally {
+      setIsSavingToCloud(false);
+    }
+  };
+
+  const handleDeleteFromCloud = async (studyId: string) => {
+    if (!confirm("¿Estás seguro de que deseas eliminar este estudio de tu base de datos cloud? Esta acción no se puede deshacer.")) return;
+    
+    setCloudStudiesError(null);
+    setCloudStudiesSuccess(null);
+    try {
+      await deleteStudyFromCloud(studyId);
+      setCloudStudiesSuccess("Estudio eliminado de tu Base de Datos en la Nube.");
+      if (gmailUser) {
+        await fetchCloudStudies(gmailUser.uid);
+      }
+      setTimeout(() => setCloudStudiesSuccess(null), 3000);
+    } catch (e: any) {
+      console.error("Error deleting from cloud:", e);
+      setCloudStudiesError("No se pudo eliminar el estudio de la nube: " + (e.message || String(e)));
     }
   };
 
@@ -16932,6 +18965,24 @@ Ejemplo:
             )}
             <ImageIcon className={`h-4 w-4 shrink-0 transition-transform duration-300 group-hover:scale-105 ${activeTab === "images" ? "text-indigo-400 drop-shadow-[0_0_4px_rgba(99,102,241,0.3)]" : "text-slate-500"}`} />
             Imágenes Médicas
+          </button>
+
+          <button
+            onClick={() => setActiveTab("cloud-db")}
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl text-xs uppercase tracking-wider font-bold transition-all duration-300 min-w-[150px] lg:w-full relative overflow-hidden group cursor-pointer border ${
+              activeTab === "cloud-db"
+                ? "bg-emerald-600/10 border-emerald-500/40 text-emerald-200 shadow-[0_0_15px_rgba(16,185,129,0.12)] pl-4.5"
+                : "text-slate-400 hover:bg-slate-900/50 hover:text-slate-200 border-transparent hover:border-slate-800/40"
+            }`}
+          >
+            {activeTab === "cloud-db" && (
+              <span className="absolute left-0 top-1.5 bottom-1.5 w-1 bg-emerald-500 rounded-r-md shadow-[0_0_10px_#10b981]" />
+            )}
+            <Database className={`h-4 w-4 shrink-0 transition-transform duration-300 group-hover:scale-105 ${activeTab === "cloud-db" ? "text-emerald-400 drop-shadow-[0_0_4px_rgba(16,185,129,0.3)]" : "text-slate-500"}`} />
+            Archivo Cloud
+            {gmailUser && (
+              <span className="ml-auto w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Base de Datos en la Nube Conectada" />
+            )}
           </button>
 
           {/* 🧠 SELECTOR DE MODELO OMNIPRESENTE (STATION SIDEBAR) */}
@@ -17855,6 +19906,49 @@ Ejemplo:
                             />
                           </div>
 
+                          <div className="space-y-1.5">
+                            <label className="text-[9px] font-black text-slate-500 block uppercase tracking-widest leading-none">ID / Historia Clínica:</label>
+                            <input
+                              type="text"
+                              value={patientId}
+                              onChange={(e) => setPatientId(e.target.value)}
+                              placeholder="Ej: HC-12345 o C.I."
+                              className="w-full bg-slate-950 border border-slate-800 focus:border-indigo-500 rounded-lg py-2 px-3 text-xs font-bold text-slate-100 focus:outline-none placeholder-slate-650 transition-all"
+                            />
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-[9px] font-black text-slate-500 block uppercase tracking-widest leading-none">Fecha del Estudio / Reporte:</label>
+                            <input
+                              type="date"
+                              value={reportDate}
+                              onChange={(e) => setReportDate(e.target.value)}
+                              className="w-full bg-slate-950 border border-slate-800 focus:border-indigo-500 rounded-lg py-2 px-3 text-xs font-bold text-slate-100 focus:outline-none transition-all"
+                            />
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-[9px] font-black text-slate-500 block uppercase tracking-widest leading-none">Edad del Paciente:</label>
+                            <input
+                              type="text"
+                              value={patientAge}
+                              onChange={(e) => setPatientAge(e.target.value)}
+                              placeholder="Ej: 45 años o 45A"
+                              className="w-full bg-slate-950 border border-slate-800 focus:border-indigo-500 rounded-lg py-2 px-3 text-xs font-bold text-slate-100 focus:outline-none placeholder-slate-650 transition-all"
+                            />
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-[9px] font-black text-slate-500 block uppercase tracking-widest leading-none">Sexo / Género:</label>
+                            <input
+                              type="text"
+                              value={patientGender}
+                              onChange={(e) => setPatientGender(e.target.value)}
+                              placeholder="Ej: Masculino / Femenino / M / F"
+                              className="w-full bg-slate-950 border border-slate-800 focus:border-indigo-500 rounded-lg py-2 px-3 text-xs font-bold text-slate-100 focus:outline-none placeholder-slate-650 transition-all"
+                            />
+                          </div>
+
                           <div className="space-y-1.5 sm:col-span-2">
                             <label className="text-[9px] font-black text-slate-500 block uppercase tracking-widest leading-none">Correo Electrónico del Paciente (Opcional):</label>
                             <input
@@ -17866,16 +19960,6 @@ Ejemplo:
                               }}
                               placeholder="Ej: paciente@correo.com"
                               className="w-full bg-slate-950 border border-slate-800 focus:border-indigo-500 rounded-lg py-2 px-3 text-xs font-bold text-slate-100 focus:outline-none placeholder-slate-650 transition-all"
-                            />
-                          </div>
-
-                          <div className="space-y-1.5 sm:col-span-2">
-                            <label className="text-[9px] font-black text-slate-500 block uppercase tracking-widest leading-none">Fecha del Estudio / Reporte:</label>
-                            <input
-                              type="date"
-                              value={reportDate}
-                              onChange={(e) => setReportDate(e.target.value)}
-                              className="w-full bg-slate-950 border border-slate-800 focus:border-indigo-500 rounded-lg py-2 px-3 text-xs font-bold text-slate-100 focus:outline-none transition-all"
                             />
                           </div>
 
@@ -18456,9 +20540,17 @@ Ejemplo:
                     {/* Header Panel */}
                     <div className="bg-slate-950 px-4 md:px-6 py-3.5 border-b border-slate-800 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
                       <div className="flex items-center justify-between w-full md:w-auto gap-4 shrink-0">
-                        <div className="flex items-center gap-2">
-                          <FileText className="h-4 w-4 text-indigo-400" />
-                          <span className="text-xs font-black text-slate-300 font-mono tracking-widest uppercase">WORKSPACE_DRAFT.TXT</span>
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-2">
+                            <FileText className="h-4 w-4 text-indigo-400" />
+                            <span className="text-xs font-black text-slate-300 font-mono tracking-widest uppercase">WORKSPACE_DRAFT.TXT</span>
+                          </div>
+                          {isAnalyzingParagraphs && (
+                            <div className="flex items-center gap-1.5 bg-indigo-950/40 border border-indigo-800/45 px-2 py-0.5 rounded text-[9px] font-bold text-indigo-300 animate-pulse font-mono uppercase tracking-wider">
+                              <span className="w-1 h-1 rounded-full bg-indigo-400 animate-ping" />
+                              IA Analizando Selección...
+                            </div>
+                          )}
                         </div>
                         <button
                           type="button"
@@ -18495,6 +20587,19 @@ Ejemplo:
                             )}
                           </button>
                           <button
+                            type="button"
+                            onClick={() => setIsSplitPdfActive(p => !p)}
+                            className={`px-3 md:px-4 py-1.5 md:py-2 border-2 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 md:gap-2 shadow-lg select-none whitespace-nowrap cursor-pointer ${
+                              isSplitPdfActive
+                                ? "bg-indigo-650/20 hover:bg-indigo-600/20 border-indigo-500/50 text-indigo-300 ring-1 ring-indigo-500/30"
+                                : "bg-slate-900 border-slate-800 hover:border-slate-700 hover:bg-slate-850 text-slate-400 hover:text-slate-250"
+                            }`}
+                            title={isSplitPdfActive ? "Ocultar Vista de Pantalla Dividida (PDF en Tiempo Real)" : "Mostrar Vista de Pantalla Dividida (PDF en Tiempo Real)"}
+                          >
+                            <Columns className="h-3.5 w-3.5 text-indigo-400" />
+                            {isSplitPdfActive ? "Ocultar PDF (Split)" : "Vista PDF (Split)"}
+                          </button>
+                          <button
                             onClick={handlePrintPDF}
                             className="px-3 md:px-4 py-1.5 md:py-2 bg-indigo-600 hover:bg-indigo-550 border-2 border-indigo-500/30 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider text-white transition-all flex items-center gap-1.5 md:gap-2 shadow-lg select-none whitespace-nowrap cursor-pointer"
                             title="Imprimir o exportar diseño de informe a PDF listo"
@@ -18523,6 +20628,24 @@ Ejemplo:
                             <Mail className="h-3.5 w-3.5 text-white" /> Gmail PDF
                           </button>
                           <button
+                            onClick={() => handleSaveToCloud()}
+                            disabled={isSavingToCloud}
+                            className="px-3 md:px-4 py-1.5 md:py-2 bg-emerald-950/40 hover:bg-emerald-950/80 border-2 border-emerald-500/40 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider text-emerald-300 transition-all flex items-center gap-1.5 md:gap-2 shadow-lg select-none whitespace-nowrap cursor-pointer"
+                            title="Guardar este estudio en tu Base de Datos en la Nube propia"
+                          >
+                            {isSavingToCloud ? (
+                              <>
+                                <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-400" />
+                                <span>Guardando...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Database className="h-3.5 w-3.5 text-emerald-400" />
+                                <span>Guardar Nube</span>
+                              </>
+                            )}
+                          </button>
+                          <button
                             onClick={() => copyToClipboard(generatedReport, true)}
                             className="px-3 md:px-4 py-1.5 md:py-2 bg-emerald-600 hover:bg-emerald-550 border-2 border-emerald-500/30 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider text-white transition-all flex items-center gap-1.5 md:gap-2 shadow-lg select-none whitespace-nowrap cursor-pointer"
                           >
@@ -18540,8 +20663,10 @@ Ejemplo:
                       )}
                     </div>
 
-                    {/* Main Text Content */}
-                    <div className="flex-1 p-6 overflow-y-auto leading-relaxed text-sm select-text text-slate-300 relative bg-[#090D1A]">
+                    {/* Main Text Content / Split Screen Container */}
+                    <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative bg-[#090D1A]">
+                      {/* Left Column: Report content, editor, and tools */}
+                      <div className={`flex-1 p-6 overflow-y-auto leading-relaxed text-sm select-text text-slate-300 relative scrollbar-thin ${isSplitPdfActive && generatedReport ? "md:border-r md:border-slate-800" : ""}`}>
                         {infographicUrl && (
                           <div className="mb-6 p-4 bg-slate-800 rounded-xl border border-pink-600/30">
                              <h4 className="text-sm font-bold text-pink-300 mb-2">Infografía Generada:</h4>
@@ -18928,6 +21053,91 @@ Ejemplo:
                                       </p>
                                     </div>
 
+                                    {selectedParagraphOriginal && (
+                                      <div className="bg-slate-900/35 p-4 rounded-xl border border-slate-800/65 space-y-3 animate-fadeIn">
+                                        <div className="flex items-center justify-between">
+                                          <div className="flex items-center gap-1.5">
+                                            <Sliders className="h-3.5 w-3.5 text-indigo-400" />
+                                            <span className="text-[10.5px] font-black uppercase tracking-wider text-slate-200 font-mono">
+                                              Resaltado Sintáctico Manual
+                                            </span>
+                                          </div>
+                                          {selectedParagraphOriginal in manualSeverityOverrides || selectedParagraphOriginal.trim() in manualSeverityOverrides ? (
+                                            <span className="text-[9px] bg-amber-955/60 text-amber-400 border border-amber-900/40 px-2 py-0.5 rounded font-black font-mono tracking-wider uppercase">
+                                              Ajuste Manual
+                                            </span>
+                                          ) : (
+                                            <span className="text-[9px] bg-emerald-950/40 text-emerald-400 border border-emerald-900/40 px-2.5 py-0.5 rounded font-black font-mono tracking-wider uppercase flex items-center gap-1">
+                                              <span className="w-1 h-1 rounded-full bg-emerald-450 animate-ping" />
+                                              IA Médica Activa
+                                            </span>
+                                          )}
+                                        </div>
+                                        
+                                        <p className="text-[11px] text-slate-400 leading-normal font-medium">
+                                          ¿No estás de acuerdo con la clasificación automática de esta línea? Puedes cambiar o quitar su contraste cromático bilateral (se aplicará inmediatamente en pantalla y en la exportación PDF):
+                                        </p>
+
+                                        <div className="grid grid-cols-3 gap-2">
+                                          <button
+                                            type="button"
+                                            onClick={() => handleToggleManualSeverity("normal")}
+                                            className={`px-2 py-2 border rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none ${
+                                              (manualSeverityOverrides[selectedParagraphOriginal] || manualSeverityOverrides[selectedParagraphOriginal.trim()] || getParagraphSeverity(selectedParagraphOriginal)) === "normal"
+                                                ? "bg-slate-800 border-slate-600 text-white font-extrabold shadow-sm"
+                                                : "bg-slate-950 border-slate-850/80 text-slate-400 hover:text-slate-200"
+                                            }`}
+                                          >
+                                            <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+                                            <span>Normal / Ninguno</span>
+                                          </button>
+
+                                          <button
+                                            type="button"
+                                            onClick={() => handleToggleManualSeverity("altered")}
+                                            className={`px-2 py-2 border rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none ${
+                                              (manualSeverityOverrides[selectedParagraphOriginal] || manualSeverityOverrides[selectedParagraphOriginal.trim()] || getParagraphSeverity(selectedParagraphOriginal)) === "altered"
+                                                ? "bg-amber-950/40 border-amber-500/85 text-amber-200 font-extrabold shadow-md shadow-amber-950/35"
+                                                : "bg-slate-950 border-slate-850/80 text-slate-400 hover:text-amber-300"
+                                            }`}
+                                          >
+                                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                                            <span>Alterado</span>
+                                          </button>
+
+                                          <button
+                                            type="button"
+                                            onClick={() => handleToggleManualSeverity("critical")}
+                                            className={`px-2 py-2 border rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none ${
+                                              (manualSeverityOverrides[selectedParagraphOriginal] || manualSeverityOverrides[selectedParagraphOriginal.trim()] || getParagraphSeverity(selectedParagraphOriginal)) === "critical"
+                                                ? "bg-rose-955/35 border-rose-500/85 text-rose-250 font-extrabold shadow-md shadow-rose-950/35"
+                                                : "bg-slate-950 border-slate-850/80 text-slate-400 hover:text-rose-400"
+                                            }`}
+                                          >
+                                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                                            <span>Crítico</span>
+                                          </button>
+                                        </div>
+                                        {(selectedParagraphOriginal in manualSeverityOverrides || selectedParagraphOriginal.trim() in manualSeverityOverrides) && (
+                                          <div className="flex justify-end pt-1">
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                const nextOverrides = { ...manualSeverityOverrides };
+                                                delete nextOverrides[selectedParagraphOriginal];
+                                                delete nextOverrides[selectedParagraphOriginal.trim()];
+                                                setManualSeverityOverrides(nextOverrides);
+                                              }}
+                                              className="text-[10px] text-indigo-400 hover:text-indigo-300 font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-colors"
+                                            >
+                                              <RefreshCw className="h-2.5 w-2.5" />
+                                              Restablecer a detección automática
+                                            </button>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+
                                     {/* Botones de acción de la IA */}
                                     <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-2">
                                       <button
@@ -19301,6 +21511,27 @@ Ejemplo:
                                 </label>
                               </div>
                             </div>
+
+                            {/* DICOM Autopopulate Notification Banner */}
+                            {dicomNotification && (
+                              <div className="bg-emerald-950/40 border border-emerald-800/60 p-3 rounded-xl flex items-start gap-2.5 text-emerald-200 animate-fadeIn my-2">
+                                <span className="p-1 bg-emerald-900/50 rounded-lg text-emerald-400">
+                                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
+                                </span>
+                                <div className="flex-1">
+                                  <h4 className="text-[10px] font-black uppercase tracking-wider text-emerald-400">Datos del Paciente Sincronizados</h4>
+                                  <p className="text-[11px] leading-relaxed text-slate-300 mt-0.5">{dicomNotification}</p>
+                                </div>
+                                <button 
+                                  onClick={() => setDicomNotification(null)}
+                                  className="text-slate-400 hover:text-emerald-400 transition-colors cursor-pointer text-xs font-bold px-1"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            )}
 
                             {/* List/Grid of Thumbnails with caption modification & reorder & delete */}
                             {attachedImages.length > 0 && (
@@ -19694,6 +21925,8 @@ Ejemplo:
                                 setIncludeAppendix={setIncludeAppendixSchemaInReport}
                                 includeDiverticulitis={includeDiverticulitisSchemaInReport}
                                 setIncludeDiverticulitis={setIncludeDiverticulitisSchemaInReport}
+                                includeSmallBowel={includeSmallBowelSchemaInReport}
+                                setIncludeSmallBowel={setIncludeSmallBowelSchemaInReport}
                                 onChangeStates={(nextStates) => setAbdomenStates(nextStates)}
                                 onChangeDescriptions={(nextDescriptions) => setAbdomenDescriptions(nextDescriptions)}
                                 includeElastography={includeElastographyInReport}
@@ -19781,6 +22014,8 @@ Ejemplo:
                                                                    onExportTable={(tableText) => handleExportTableWithProtocol("Mamas", tableText)}
                                  includeInReport={includeBreastSchemaInReport}
                                  setIncludeInReport={setIncludeBreastSchemaInReport}
+                                 externalStates={breastStates}
+                                 externalDescriptions={breastDescriptions}
                                  onChangeStates={(nextStates) => setBreastStates(nextStates)}
                                  onChangeDescriptions={(nextDescriptions) => setBreastDescriptions(nextDescriptions)}
                                  externalBilateralOverride={breastBilateralOverride}
@@ -20047,7 +22282,93 @@ Ejemplo:
                                 Generar Esquema de Hallazgos
                               </button>
                             </div>
+
+                            {/* Card 7: Asistente de Medidas Clínicas */}
+                            <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-indigo-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
+                              <div className="flex items-center gap-2 justify-between">
+                                <div className="flex items-center gap-2">
+                                  <Ruler className="h-4 w-4 text-indigo-400" />
+                                  <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
+                                    Asistente de Medidas (IA)
+                                  </h4>
+                                </div>
+                                <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-indigo-950/40 text-indigo-400 border border-indigo-900/30 px-2 py-0.5 rounded">
+                                  MEDIDAS
+                                </span>
+                              </div>
+                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
+                                Analiza el reporte clínico activo para identificar estructuras anatómicas susceptibles de medición e inyecta medidas normales de forma automática.
+                              </p>
+                              <button
+                                onClick={() => setIsAsistenteMedidasOpen(p => !p)}
+                                className={`w-full py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2 font-mono cursor-pointer border-2 ${
+                                  isAsistenteMedidasOpen
+                                    ? "bg-indigo-600/15 border-indigo-500/60 text-indigo-200"
+                                    : "bg-slate-950 border-slate-800 hover:border-indigo-500/30 text-indigo-400"
+                                }`}
+                              >
+                                <Ruler className="h-4 w-4" />
+                                {isAsistenteMedidasOpen ? "Ocultar Asistente" : "Activar Asistente"}
+                              </button>
+                            </div>
+
+                            {/* Card 8: Creador de Notas de Pie de Página (IA) */}
+                            <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-purple-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
+                              <div className="flex items-center gap-2 justify-between">
+                                <div className="flex items-center gap-2">
+                                  <Bookmark className="h-4 w-4 text-purple-400" />
+                                  <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
+                                    Notas de Pie (IA)
+                                  </h4>
+                                </div>
+                                <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-purple-950/40 text-purple-400 border border-purple-900/30 px-2 py-0.5 rounded">
+                                  PIE DE PÁGINA
+                                </span>
+                              </div>
+                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
+                                Audita el reporte de manera íntegra para proponer pies de páginas con guías, controles y aclaraciones de forma personalizada.
+                              </p>
+                              <button
+                                onClick={() => setIsCreadorNotasOpen(p => !p)}
+                                className={`w-full py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2 font-mono cursor-pointer border-2 ${
+                                  isCreadorNotasOpen
+                                    ? "bg-purple-600/15 border-purple-500/60 text-purple-250"
+                                    : "bg-slate-950 border-slate-800 hover:border-purple-500/30 text-purple-400"
+                                }`}
+                              >
+                                <Bookmark className="h-4 w-4" />
+                                {isCreadorNotasOpen ? "Ocultar Notas" : "Crear Notas de Pie"}
+                              </button>
+                            </div>
                           </div>
+
+                          {/* Render Asistente de Medidas Clínicas Panel */}
+                          {isAsistenteMedidasOpen && (
+                            <div className="my-6">
+                              <AsistenteMedidas
+                                selectedModel={selectedModel}
+                                reportText={isEditingReportManual ? editedReportText : generatedReport}
+                                onReportUpdated={(newReportText) => {
+                                  setEditedReportText(newReportText);
+                                  setGeneratedReport(newReportText);
+                                }}
+                              />
+                            </div>
+                          )}
+
+                          {/* Render Creador de Notas de Pie de Página Panel */}
+                          {isCreadorNotasOpen && (
+                            <div className="my-6">
+                              <CreadorNotasPie
+                                selectedModel={selectedModel}
+                                reportText={isEditingReportManual ? editedReportText : generatedReport}
+                                onReportUpdated={(newReportText) => {
+                                  setEditedReportText(newReportText);
+                                  setGeneratedReport(newReportText);
+                                }}
+                              />
+                            </div>
+                          )}
 
                           {/* Render Report Evaluation Panel */}
                           {isEvaluatingReport && (
@@ -21289,10 +23610,127 @@ Ejemplo:
                       )}
                     </div>
 
-                    <div className="bg-slate-950 px-6 py-4 border-t border-slate-800 flex justify-between items-center text-[10px] text-slate-500 font-mono font-black uppercase tracking-wider select-none">
-                      <span>STÁNDAR DE REDACCIÓN: SENIOR RADIOLOGIST G15</span>
-                      <span>UTF-8 SECURE CONNECTION</span>
-                    </div>
+                    {/* Right Column: Real-time interactive PDF preview */}
+                    {isSplitPdfActive && generatedReport && (
+                      <div className="w-full md:w-[45%] xl:w-[48%] shrink-0 flex flex-col bg-slate-950/80 border-t md:border-t-0 border-slate-850 overflow-hidden">
+                        {/* PDF Column Header */}
+                        <div className="p-4 border-b border-slate-800/80 bg-slate-950 flex flex-col gap-3 shrink-0">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              <FileText className="h-4 w-4 text-indigo-400" />
+                              <span className="text-[10px] font-black text-slate-350 font-mono tracking-widest uppercase">
+                                VISTA PREVIA PDF
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {isGeneratingPdfPreview && (
+                                <div className="flex items-center gap-1 text-[9px] font-mono font-black text-indigo-400 animate-pulse uppercase">
+                                  <RefreshCw className="h-3 w-3 animate-spin" />
+                                  Generando...
+                                </div>
+                              )}
+                              <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-indigo-950 text-indigo-400 border border-indigo-900/40 px-2 py-0.5 rounded">
+                                TIEMPO REAL
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            {/* Doc Type Selector */}
+                            <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800/80">
+                              <button
+                                type="button"
+                                onClick={() => setPrintModalDocType('report')}
+                                className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer ${
+                                  printModalDocType === 'report'
+                                    ? 'bg-indigo-600 text-white shadow-md'
+                                    : 'bg-transparent text-slate-400 hover:text-slate-200'
+                                }`}
+                              >
+                                Reporte
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setPrintModalDocType('patient_summary')}
+                                disabled={!patientSummary}
+                                className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer ${
+                                  printModalDocType === 'patient_summary'
+                                    ? 'bg-indigo-600 text-white shadow-md'
+                                    : 'bg-transparent text-slate-400 hover:text-slate-200 disabled:opacity-30'
+                                }`}
+                                title={!patientSummary ? "Primero genera la explicación al paciente abajo" : ""}
+                              >
+                                Explicación Paciente
+                              </button>
+                            </div>
+
+                            {/* Contrast and Action Buttons */}
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setAdaptivePDFContrast(!adaptivePDFContrast)}
+                                className={`px-2 py-1.5 rounded-lg border text-[9px] font-mono font-black uppercase transition-all cursor-pointer ${
+                                  adaptivePDFContrast
+                                    ? 'bg-indigo-950/60 border-indigo-500/40 text-indigo-400'
+                                    : 'bg-slate-900 border-slate-800 text-slate-500 hover:text-slate-400'
+                                }`}
+                                title="Optimización de Contraste Adaptativo PDF"
+                              >
+                                Contraste: {adaptivePDFContrast ? 'ALTO' : 'NORMAL'}
+                              </button>
+                              
+                              <button
+                                type="button"
+                                onClick={() => printModalDocType === 'report' ? handleDownloadNativePDF(true) : handleDownloadPatientSummaryPDF(true)}
+                                className="p-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 rounded-lg text-slate-400 hover:text-slate-200 transition-all cursor-pointer"
+                                title="Abrir PDF en pestaña nueva"
+                              >
+                                <ExternalLink className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* PDF Display IFrame */}
+                        <div className="flex-1 bg-slate-950 p-2 md:p-3 relative flex flex-col">
+                          {isGeneratingPdfPreview && !(printModalDocType === 'report' ? generatedNativePdfUrl : generatedSummaryPdfUrl) ? (
+                            <div className="flex-1 flex flex-col items-center justify-center text-center space-y-3">
+                              <RefreshCw className="h-8 w-8 text-indigo-400 animate-spin" />
+                              <p className="text-[10px] font-mono font-black text-slate-400 uppercase tracking-widest animate-pulse">
+                                Generando Previsualización PDF...
+                              </p>
+                            </div>
+                          ) : (printModalDocType === 'report' ? generatedNativePdfUrl : generatedSummaryPdfUrl) ? (
+                            <div className="w-full h-full flex-1 rounded-xl overflow-hidden border border-slate-850 bg-slate-900/40 relative">
+                              <iframe
+                                src={`${printModalDocType === 'report' ? generatedNativePdfUrl : generatedSummaryPdfUrl}#toolbar=1&navpanes=0`}
+                                className="w-full h-full border-0 rounded-lg"
+                                title="Live PDF Viewer"
+                                referrerPolicy="no-referrer"
+                              />
+                            </div>
+                          ) : (
+                            <div className="flex-1 flex flex-col items-center justify-center text-center p-6 space-y-3">
+                              <AlertCircle className="h-8 w-8 text-amber-500" />
+                              <p className="text-[10px] font-mono font-black text-amber-400 uppercase tracking-widest">
+                                {printModalDocType === 'report' ? 'Reporte no disponible' : 'Explicación de Paciente no disponible'}
+                              </p>
+                              <p className="text-[9px] text-slate-500 max-w-xs leading-relaxed uppercase">
+                                {printModalDocType === 'report' 
+                                  ? 'Genera un reporte clínico para visualizar el PDF' 
+                                  : 'Haz clic en "Explicar para el paciente" en la tarjeta de abajo para generar esta versión'}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="bg-slate-950 px-6 py-4 border-t border-slate-800 flex justify-between items-center text-[10px] text-slate-500 font-mono font-black uppercase tracking-wider select-none">
+                    <span>STÁNDAR DE REDACCIÓN: SENIOR RADIOLOGIST G15</span>
+                    <span>UTF-8 SECURE CONNECTION</span>
+                  </div>
 
                   </div>
                 </div>
@@ -21868,6 +24306,390 @@ Ejemplo:
               </motion.div>
             )}
 
+            {activeTab === "cloud-db" && (
+              <motion.div
+                key="cloud-db"
+                initial={{ opacity: 0, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.98 }}
+                transition={{ duration: 0.15 }}
+                className="max-w-7xl mx-auto space-y-6"
+              >
+                {/* Header card */}
+                <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-[400px] h-[200px] bg-emerald-500/5 rounded-full blur-[80px]" />
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
+                    <div className="flex items-start gap-4">
+                      <div className="w-12 h-12 rounded-xl bg-emerald-950/40 border border-emerald-800/60 flex items-center justify-center text-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.15)] shrink-0">
+                        <Database className="h-6 w-6 animate-pulse" />
+                      </div>
+                      <div>
+                        <h2 className="text-xl font-black text-white tracking-tight uppercase">Base de Datos Cloud Propia</h2>
+                        <p className="text-xs text-slate-400 mt-1 max-w-2xl">
+                          Guarda, sincroniza y accede a todos tus reportes radiológicos y datos clínicos de forma segura en la nube. Tu archivo está encriptado y es accesible instantáneamente desde cualquier equipo con tu cuenta de especialista.
+                        </p>
+                      </div>
+                    </div>
+                    {gmailUser ? (
+                      <div className="flex items-center gap-3 bg-emerald-950/30 border border-emerald-900/40 px-4 py-2 rounded-xl">
+                        {gmailUser.photoURL ? (
+                          <img src={gmailUser.photoURL} alt={gmailUser.displayName || "Especialista"} className="w-8 h-8 rounded-full border border-emerald-500/40" referrerPolicy="no-referrer" />
+                        ) : (
+                          <div className="w-8 h-8 rounded-full bg-emerald-800 flex items-center justify-center text-xs font-bold text-white uppercase">{gmailUser.displayName?.substring(0, 2) || "Dr"}</div>
+                        )}
+                        <div className="text-left">
+                          <div className="text-xs font-black text-white flex items-center gap-1.5 uppercase tracking-wider">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+                            Sincronizado
+                          </div>
+                          <div className="text-[10px] text-slate-400 font-mono truncate max-w-[150px]">{gmailUser.email}</div>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={handleGmailLogin}
+                        disabled={isLoggingInGmail}
+                        className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white font-bold text-xs uppercase tracking-wider px-5 py-3 rounded-xl transition shadow-[0_4px_15px_rgba(99,102,241,0.25)] border border-indigo-500/30 shrink-0"
+                      >
+                        {isLoggingInGmail ? <Loader2 className="h-4 w-4 animate-spin" /> : <Key className="h-4 w-4" />}
+                        Conectar con Google Auth
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Notifications */}
+                {cloudStudiesError && (
+                  <div className="bg-rose-950/20 border border-rose-900/40 text-rose-300 p-4 rounded-xl flex items-center gap-3 text-xs">
+                    <AlertCircle className="h-4 w-4 text-rose-400 shrink-0" />
+                    <div>{cloudStudiesError}</div>
+                  </div>
+                )}
+                {cloudStudiesSuccess && (
+                  <div className="bg-emerald-950/20 border border-emerald-900/40 text-emerald-300 p-4 rounded-xl flex items-center gap-3 text-xs animate-bounce">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+                    <div>{cloudStudiesSuccess}</div>
+                  </div>
+                )}
+
+                {gmailUser ? (
+                  <div className="space-y-6">
+                    {/* Controls & Save Current Report Panel */}
+                    <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-5 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+                      {/* Search bar */}
+                      <div className="relative flex-1">
+                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+                        <input
+                          type="text"
+                          value={cloudSearch}
+                          onChange={(e) => setCloudSearch(e.target.value)}
+                          placeholder="Buscar por paciente, tipo de estudio, fecha o hallazgos..."
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all font-medium"
+                        />
+                      </div>
+
+                      {/* Action buttons */}
+                      <div className="flex items-center gap-3 shrink-0">
+                        <button
+                          onClick={() => fetchCloudStudies(gmailUser.uid)}
+                          disabled={isLoadingCloudStudies}
+                          className="flex items-center gap-2 bg-slate-800 hover:bg-slate-750 text-slate-300 font-bold text-xs uppercase tracking-wider px-4 py-2.5 rounded-xl transition border border-slate-700/60"
+                          title="Actualizar biblioteca"
+                        >
+                          <RefreshCw className={`h-4 w-4 ${isLoadingCloudStudies ? "animate-spin" : ""}`} />
+                          Refrescar
+                        </button>
+
+                        <button
+                          onClick={() => handleSaveToCloud()}
+                          disabled={isSavingToCloud || !generatedReport}
+                          className={`flex items-center gap-2 font-bold text-xs uppercase tracking-wider px-5 py-2.5 rounded-xl transition border ${
+                            generatedReport
+                              ? "bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500/30 shadow-[0_2px_10px_rgba(16,185,129,0.2)]"
+                              : "bg-slate-800/40 text-slate-500 border-slate-800 cursor-not-allowed"
+                          }`}
+                        >
+                          {isSavingToCloud ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              <span>Guardando...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Plus className="h-4 w-4" />
+                              <span>Guardar Estudio Actual</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Studies database view */}
+                    {isLoadingCloudStudies && cloudStudies.length === 0 ? (
+                      <div className="bg-slate-950/40 border border-slate-900 rounded-2xl py-16 flex flex-col items-center justify-center gap-3">
+                        <Loader2 className="h-8 w-8 text-emerald-400 animate-spin" />
+                        <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Cargando base de datos cloud...</p>
+                      </div>
+                    ) : (
+                      (() => {
+                        const filtered = cloudStudies.filter(item => {
+                          const query = cloudSearch.toLowerCase();
+                          return (
+                            item.patientName.toLowerCase().includes(query) ||
+                            item.patientEmail.toLowerCase().includes(query) ||
+                            item.studyType.toLowerCase().includes(query) ||
+                            item.clinicalHistory.toLowerCase().includes(query) ||
+                            item.findings.toLowerCase().includes(query) ||
+                            item.reportText.toLowerCase().includes(query) ||
+                            item.doctorName.toLowerCase().includes(query)
+                          );
+                        });
+
+                        if (filtered.length === 0) {
+                          return (
+                            <div className="bg-slate-950/40 border border-slate-900 rounded-2xl py-16 flex flex-col items-center justify-center gap-3 text-center px-4">
+                              <Database className="h-10 w-10 text-slate-700 mb-1" />
+                              <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider">No se encontraron estudios</h3>
+                              <p className="text-xs text-slate-500 max-w-md mt-1">
+                                {cloudSearch 
+                                  ? "Ningún estudio cloud coincide con los criterios de búsqueda especificados." 
+                                  : "Tu Base de Datos en la Nube propia está vacía. Genera un reporte médico y haz clic en 'Guardar Estudio Actual' para archivar tu primer registro."}
+                              </p>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {filtered.map((item) => (
+                              <div
+                                key={item.id}
+                                className="bg-[#0b1329]/60 hover:bg-[#0c1630] border border-slate-800 hover:border-emerald-800/40 rounded-2xl p-5 flex flex-col justify-between transition-all duration-300 group shadow-lg"
+                              >
+                                <div>
+                                  {/* Header info */}
+                                  <div className="flex items-start justify-between gap-3 border-b border-slate-800/60 pb-3 mb-4">
+                                    <div className="text-left">
+                                      <span className="text-[9px] bg-indigo-950/60 text-indigo-300 border border-indigo-900/30 px-2 py-0.5 rounded font-bold font-mono uppercase tracking-wider">
+                                        {item.studyType}
+                                      </span>
+                                      <h3 className="text-sm font-black text-white mt-1.5 line-clamp-1">{item.patientName}</h3>
+                                      <p className="text-[10px] text-slate-400 font-mono mt-0.5">{item.patientEmail || "Sin correo"}</p>
+                                    </div>
+                                    <div className="text-right shrink-0">
+                                      <span className="text-[10px] text-slate-500 font-mono font-bold">{item.timestamp}</span>
+                                    </div>
+                                  </div>
+
+                                  {/* Body Details */}
+                                  <div className="space-y-3 text-left">
+                                    <div>
+                                      <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest block font-mono">Historia Clínica:</span>
+                                      <p className="text-xs text-slate-300 font-medium line-clamp-2 mt-0.5">{item.clinicalHistory}</p>
+                                    </div>
+                                    {item.findings && (
+                                      <div>
+                                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest block font-mono">Hallazgos Clave:</span>
+                                        <p className="text-xs text-slate-400 font-medium line-clamp-2 mt-0.5">{item.findings}</p>
+                                      </div>
+                                    )}
+                                    <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800/40 text-[10px]">
+                                      <div>
+                                        <span className="text-slate-500 font-mono font-bold block uppercase tracking-wider">Doctor:</span>
+                                        <span className="text-slate-300 font-semibold truncate block">{item.doctorName.replace(/Cod\.\d+/, '')}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-slate-500 font-mono font-bold block uppercase tracking-wider">Centro:</span>
+                                        <span className="text-slate-300 font-semibold truncate block">{item.clinicName || "Privada"}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Action bar */}
+                                <div className="flex items-center gap-2 pt-4 mt-5 border-t border-slate-800/60 shrink-0">
+                                  <button
+                                    onClick={() => setViewingCloudStudy(item)}
+                                    className="flex-1 bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700/60 font-bold text-[10.5px] uppercase tracking-wider py-2 rounded-xl flex items-center justify-center gap-1.5 transition"
+                                  >
+                                    <Eye className="h-3.5 w-3.5 text-indigo-400" />
+                                    Leer
+                                  </button>
+
+                                  <button
+                                    onClick={() => downloadPdfForCloudStudy(item)}
+                                    className="px-3 bg-indigo-950/40 hover:bg-indigo-950/80 text-indigo-300 border border-indigo-900/40 font-bold text-[10.5px] uppercase tracking-wider py-2 rounded-xl flex items-center justify-center gap-1.5 transition"
+                                    title="Descargar PDF de este estudio guardado"
+                                  >
+                                    <Download className="h-3.5 w-3.5 text-indigo-400" />
+                                    PDF
+                                  </button>
+
+                                  <button
+                                    onClick={() => {
+                                      setActiveTab("generator");
+                                      setStudyType(item.studyType);
+                                      handleLoadStudyType(item.studyType);
+                                      setClinicalHistory(item.clinicalHistory);
+                                      setGeneratedReport(item.reportText);
+                                      setOriginalBaseReport(item.reportText);
+                                      if (item.patientName) setPatientName(item.patientName);
+                                      if (item.patientEmail) setPatientEmail(item.patientEmail);
+                                      if (item.reportDate) setReportDate(item.reportDate);
+                                      if (item.doctorName) setDoctorName(item.doctorName);
+                                      if (item.doctorLicense) setDoctorLicense(item.doctorLicense);
+                                      if (item.clinicName) setClinicName(item.clinicName);
+                                      if (item.findings) setFindings(item.findings);
+                                    }}
+                                    className="px-3 bg-emerald-950/40 hover:bg-emerald-950/80 text-emerald-300 border border-emerald-900/40 font-bold text-[10.5px] uppercase tracking-wider py-2 rounded-xl flex items-center justify-center gap-1.5 transition"
+                                    title="Cargar de vuelta en el panel principal"
+                                  >
+                                    <RefreshCw className="h-3.5 w-3.5" />
+                                    Cargar
+                                  </button>
+
+                                  <button
+                                    onClick={() => handleDeleteFromCloud(item.id)}
+                                    className="px-3 bg-rose-950/20 hover:bg-rose-950/60 text-rose-450 border border-rose-900/40 font-bold text-[10.5px] uppercase tracking-wider py-2 rounded-xl flex items-center justify-center transition"
+                                    title="Eliminar de la nube"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()
+                    )}
+                  </div>
+                ) : (
+                  <div className="bg-[#0b101f] border border-slate-800 rounded-2xl py-16 px-6 text-center max-w-2xl mx-auto space-y-6">
+                    <div className="w-16 h-16 rounded-full bg-slate-900 flex items-center justify-center text-slate-500 mx-auto border border-slate-800">
+                      <Database className="h-8 w-8" />
+                    </div>
+                    <div className="space-y-2">
+                      <h3 className="text-lg font-black text-white uppercase tracking-wider">Tu Archivo Clínico Sincronizado</h3>
+                      <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+                        Conéctate usando tu cuenta de Google para activar tu base de datos cloud y sincronizar todos tus estudios radiológicos. Podrás acceder a ellos desde cualquier computador, tablet o celular de forma segura.
+                      </p>
+                    </div>
+                    <button
+                      onClick={handleGmailLogin}
+                      disabled={isLoggingInGmail}
+                      className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white font-bold text-xs uppercase tracking-wider px-6 py-3.5 rounded-xl transition shadow-[0_4px_15px_rgba(99,102,241,0.25)] border border-indigo-500/30 mx-auto"
+                    >
+                      {isLoggingInGmail ? <Loader2 className="h-4 w-4 animate-spin" /> : <Key className="h-4 w-4" />}
+                      Iniciar Sesión e Integrar Nube
+                    </button>
+                  </div>
+                )}
+              </motion.div>
+            )}
+
+            {/* Cloud Study Detail Overlay Modal */}
+            {viewingCloudStudy && (
+              <div className="no-print fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  className="bg-[#0b1329] border border-slate-800 w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] text-left"
+                >
+                  <div className="bg-slate-950 px-6 py-4 border-b border-slate-800 flex items-center justify-between">
+                    <div>
+                      <span className="text-[9px] bg-emerald-950/60 text-emerald-300 border border-emerald-900/30 px-2 py-0.5 rounded font-black font-mono uppercase tracking-wider">
+                        {viewingCloudStudy.studyType}
+                      </span>
+                      <h3 className="text-sm font-black text-white mt-1.5 uppercase tracking-widest">
+                        Informe de {viewingCloudStudy.patientName}
+                      </h3>
+                    </div>
+                    <button 
+                      onClick={() => setViewingCloudStudy(null)}
+                      className="p-1.5 rounded-lg bg-slate-900 text-slate-400 hover:text-white border border-slate-800 transition"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+
+                  <div className="p-6 overflow-y-auto space-y-4 flex-1">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-slate-950/40 border border-slate-900 rounded-xl text-xs">
+                      <div>
+                        <span className="text-slate-500 font-mono font-bold uppercase block tracking-wider text-[9px]">Paciente</span>
+                        <span className="text-white font-semibold block mt-0.5">{viewingCloudStudy.patientName}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 font-mono font-bold uppercase block tracking-wider text-[9px]">Correo Paciente</span>
+                        <span className="text-white font-semibold block mt-0.5 truncate">{viewingCloudStudy.patientEmail || "Sin correo"}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 font-mono font-bold uppercase block tracking-wider text-[9px]">Fecha Informe</span>
+                        <span className="text-white font-semibold block mt-0.5 font-mono">{viewingCloudStudy.reportDate || viewingCloudStudy.timestamp}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 font-mono font-bold uppercase block tracking-wider text-[9px]">Especialista</span>
+                        <span className="text-white font-semibold block mt-0.5">{viewingCloudStudy.doctorName}</span>
+                      </div>
+                    </div>
+
+                    <div className="p-4 bg-slate-950/20 border border-slate-900 rounded-xl text-xs">
+                      <span className="text-slate-500 font-mono font-bold uppercase block tracking-wider text-[9px]">Historia Clínica</span>
+                      <p className="text-slate-200 mt-1 whitespace-pre-wrap">{viewingCloudStudy.clinicalHistory}</p>
+                    </div>
+
+                    <div className="border border-slate-800/80 rounded-xl overflow-hidden">
+                      <div className="bg-slate-950/80 px-4 py-2 border-b border-slate-800/80 flex items-center justify-between">
+                        <span className="text-[10px] font-black text-indigo-400 font-mono uppercase tracking-widest">Contenido del Reporte Clínico Oficial</span>
+                      </div>
+                      <div className="p-6 bg-slate-950/10 text-xs font-mono whitespace-pre-wrap text-slate-300 leading-relaxed overflow-x-auto max-h-[350px]">
+                        {viewingCloudStudy.reportText}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-950 px-6 py-4 border-t border-slate-800 flex items-center justify-end gap-3 shrink-0">
+                    <button
+                      onClick={() => downloadPdfForCloudStudy(viewingCloudStudy)}
+                      className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs uppercase tracking-wider px-4 py-2 rounded-xl transition flex items-center gap-1.5"
+                    >
+                      <Download className="h-4 w-4 text-white" />
+                      Descargar PDF Guardado
+                    </button>
+                    <button
+                      onClick={() => {
+                        setActiveTab("generator");
+                        setStudyType(viewingCloudStudy.studyType);
+                        handleLoadStudyType(viewingCloudStudy.studyType);
+                        setClinicalHistory(viewingCloudStudy.clinicalHistory);
+                        setGeneratedReport(viewingCloudStudy.reportText);
+                        setOriginalBaseReport(viewingCloudStudy.reportText);
+                        if (viewingCloudStudy.patientName) setPatientName(viewingCloudStudy.patientName);
+                        if (viewingCloudStudy.patientEmail) setPatientEmail(viewingCloudStudy.patientEmail);
+                        if (viewingCloudStudy.reportDate) setReportDate(viewingCloudStudy.reportDate);
+                        if (viewingCloudStudy.doctorName) setDoctorName(viewingCloudStudy.doctorName);
+                        if (viewingCloudStudy.doctorLicense) setDoctorLicense(viewingCloudStudy.doctorLicense);
+                        if (viewingCloudStudy.clinicName) setClinicName(viewingCloudStudy.clinicName);
+                        if (viewingCloudStudy.findings) setFindings(viewingCloudStudy.findings);
+                        setViewingCloudStudy(null);
+                      }}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-wider px-4 py-2 rounded-xl transition flex items-center gap-1.5"
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                      Cargar en Workspace
+                    </button>
+                    <button
+                      onClick={() => setViewingCloudStudy(null)}
+                      className="bg-slate-800 hover:bg-slate-750 text-slate-300 font-bold text-xs uppercase tracking-wider px-4 py-2 rounded-xl transition border border-slate-700/60"
+                    >
+                      Cerrar
+                    </button>
+                  </div>
+                </motion.div>
+              </div>
+            )}
+
+
           </AnimatePresence>
         </main>
       </div>
@@ -22053,6 +24875,7 @@ Ejemplo:
                     <Sliders className="h-4 w-4 text-emerald-400" />
                     <h4 className="text-xs font-black uppercase tracking-widest font-mono text-emerald-400">Canales de Optimización de Impresión</h4>
                   </div>
+
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-slate-950/60 p-3 rounded-xl border border-slate-850/80">
                     <div className="space-y-0.5 max-w-[85%]">
                       <p className="text-[11px] font-black text-slate-200 uppercase tracking-wide flex items-center gap-1.5">
@@ -22089,6 +24912,54 @@ Ejemplo:
                     <li>Busca la opción que dice <strong className="text-slate-350 font-black">"Encabezados y pies de página" (Headers and footers)</strong> y <strong className="text-rose-400 font-extrabold">DESMÁRCALA</strong>.</li>
                     <li>Esto forzará al navegador a eliminar completamente el link, el título y la fecha en todos los bordes, dejándote un reporte sumamente pulcro y profesional.</li>
                   </ul>
+                </div>
+              </div>
+
+              {/* 🇨🇭 SELECTOR DE DISEÑO EDITORIAL (ESTÁNDAR VS SUIZO) DIRECTO SOBRE EL VISOR */}
+              <div className="bg-[#0b0f19] p-4.5 rounded-2xl border-2 border-indigo-500/30 flex flex-col md:flex-row items-center justify-between gap-4 text-left shadow-lg">
+                <div className="space-y-1 text-left">
+                  <h4 className="text-xs font-black uppercase tracking-wider font-mono text-indigo-400 flex items-center gap-1.5">
+                    <Columns className="h-4 w-4 text-indigo-400" />
+                    Estilo de Diseño de PDF en Tiempo Real
+                  </h4>
+                  <p className="text-[10.5px] text-slate-400 leading-normal max-w-xl">
+                    Cambia la presentación visual y estructura de su PDF en vivo. Seleccione entre el estilo <strong>Estándar</strong> clásico, el moderno <strong>Clinical Slate</strong> con tonos pizarra, o el refinado y formal <strong>Executive Medical</strong> con acentos en azul marino y oro.
+                  </p>
+                </div>
+                <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-800 shrink-0 select-none w-full md:w-auto justify-center md:justify-start gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setPdfLayoutType("classic")}
+                    className={`flex-1 md:flex-none px-3.5 py-2 rounded-lg text-xs font-black transition-all uppercase cursor-pointer flex items-center justify-center gap-1.5 ${
+                      pdfLayoutType === "classic"
+                        ? "bg-slate-800 text-white font-black shadow-md border border-slate-700"
+                        : "text-slate-400 hover:text-slate-250 hover:bg-slate-850"
+                    }`}
+                  >
+                    <span>📋</span> Estándar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPdfLayoutType("clinical_slate")}
+                    className={`flex-1 md:flex-none px-3.5 py-2 rounded-lg text-xs font-black transition-all uppercase cursor-pointer flex items-center justify-center gap-1.5 ${
+                      pdfLayoutType === "clinical_slate"
+                        ? "bg-slate-700 text-slate-100 font-black shadow-md border border-slate-600"
+                        : "text-slate-400 hover:text-slate-250 hover:bg-slate-850"
+                    }`}
+                  >
+                    <span>🎨</span> Clinical Slate
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPdfLayoutType("executive_medical")}
+                    className={`flex-1 md:flex-none px-3.5 py-2 rounded-lg text-xs font-black transition-all uppercase cursor-pointer flex items-center justify-center gap-1.5 ${
+                      pdfLayoutType === "executive_medical"
+                        ? "bg-amber-600 text-white font-black shadow-md border border-amber-500"
+                        : "text-slate-400 hover:text-slate-250 hover:bg-slate-850"
+                    }`}
+                  >
+                    <span>👑</span> Executive Medical
+                  </button>
                 </div>
               </div>
 

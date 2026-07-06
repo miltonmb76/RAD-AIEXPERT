@@ -542,7 +542,7 @@ export default function ThighAnatomyViewer({
            updated = true;
            return `${prefix} ${newDescription}`;
          } else {
-           const bulletMatch = line.match(/^[\s*-|#\d.?+•\t]+/);
+           const bulletMatch = line.match(/^[\s*|#\d.?+•\t\-]+/);
            const bullet = bulletMatch ? bulletMatch[0] : "";
            const structLabel = translateStructureLabelInBrief(id);
            updated = true;

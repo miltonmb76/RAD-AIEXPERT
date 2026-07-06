@@ -12,7 +12,8 @@ import {
   RotateCcw,
   ChevronDown,
   ChevronUp,
-  Download
+  Download,
+  Image
 } from "lucide-react";
 
 interface CalfAchillesAnatomyViewerProps {
@@ -144,97 +145,212 @@ export default function CalfAchillesAnatomyViewer({
     }
   };
 
+  const isKeywordInCalfContext = (text: string, id: string, kwList: string[]): boolean => {
+    if (!text) return false;
+    const normalized = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const anchors = getStructureKeywords(id);
+    
+    for (const anchor of anchors) {
+      const anchorNorm = anchor.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      let startIdx = 0;
+      while (true) {
+        const idx = normalized.indexOf(anchorNorm, startIdx);
+        if (idx === -1) break;
+        
+        const windowStart = Math.max(0, idx - 110);
+        const windowEnd = Math.min(normalized.length, idx + anchorNorm.length + 110);
+        const windowText = normalized.substring(windowStart, windowEnd);
+        
+        // Check if any of the keywords in kwList are in this window and are not negated in this window
+        const matchesKeyword = kwList.some(kw => {
+          const kwNorm = kw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+          const kwIdx = windowText.indexOf(kwNorm);
+          if (kwIdx === -1) return false;
+          
+          // Check negations within this window
+          const contextStart = Math.max(0, kwIdx - 35);
+          const context = windowText.substring(contextStart, kwIdx);
+          const negations = [
+            "sin ", "no ", "no se ", "no se observa", "no se aprecia", "ausencia de", 
+            "libre de", "descarta", "normal", "conserva", "sin evidencia de", "negativo para",
+            "conservado", "sin coleccion", "sin desgarro", "sin rotura", "sin signos de",
+            "espesor conservado", "normalidad de", "sin alteraciones", "integro", "íntegro"
+          ];
+          const isNegated = negations.some(neg => {
+            const negNorm = neg.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            return context.includes(negNorm);
+          });
+          return !isNegated;
+        });
+        
+        if (matchesKeyword) return true;
+        
+        startIdx = idx + anchorNorm.length;
+      }
+    }
+    return false;
+  };
+
   const parseStateFromText = (id: string, text: string): string => {
     if (!text) return "no_descrito";
-    const lower = text.toLowerCase().trim();
-
-    const hasWord = (words: string[]): boolean => words.some(w => lower.includes(w));
-
-    // Negations list for "normal"
-    const isNormal = hasWord([
-      "normal", "conservado", "sin alteraciones", "integro", "íntegro", 
-      "sin desgarro", "sin rotura", "no muestra desgarros", "sin signos de rotura",
-      "no se observa rotura", "adecuado", "homoge", "espesor conservado", "sin particularidades"
-    ]) && !hasWord(["desgarro de", "rotura de", "ruptura de", "con desgarro", "con rotura", "foco de"]);
-
-    if (isNormal) return "normal";
-
-    const lowercaseText = text.toLowerCase();
     
-    // Search for matching diagnostic keywords to get a clear, concise dynamic synthesis:
-    if (lowercaseText.includes("ruptura completa") || lowercaseText.includes("rotura completa") || lowercaseText.includes("ruptura total") || lowercaseText.includes("rotura total")) {
-      return "Ruptura Completa";
-    }
-    if (lowercaseText.includes("ruptura parcial") || lowercaseText.includes("rotura parcial") || lowercaseText.includes("microdesgarros") || lowercaseText.includes("microdesgarro") || lowercaseText.includes("rotura de espesor parcial")) {
-      return "Ruptura Parcial";
-    }
-    if (lowercaseText.includes("ruptura de tend") || lowercaseText.includes("ruptura del tend") || lowercaseText.includes("rotura de tend") || lowercaseText.includes("rotura del tend") || lowercaseText.includes("rotura") || lowercaseText.includes("ruptura")) {
-      return "Ruptura";
-    }
-    if (lowercaseText.includes("desgarro miofascial") || lowercaseText.includes("lesion miofascial") || lowercaseText.includes("lesión miofascial") || lowercaseText.includes("union miotendinosa") || lowercaseText.includes("unión miotendinosa")) {
-      return "Desgarro Miofascial";
-    }
-    if (lowercaseText.includes("desgarro") || lowercaseText.includes("rotura fibrilar") || lowercaseText.includes("ruptura fibrilar") || lowercaseText.includes("lesion fibrilar") || lowercaseText.includes("lesión fibrilar")) {
-      return "Desgarro Fibrilar";
-    }
-    if (lowercaseText.includes("bursitis")) {
-      return "Bursitis";
-    }
-    if (lowercaseText.includes("tendinosis") || lowercaseText.includes("tendinitis") || lowercaseText.includes("tendinopatia") || lowercaseText.includes("tendinopatía")) {
-      return "Tendinosis";
-    }
-    if (lowercaseText.includes("entesopatia") || lowercaseText.includes("entesopatía") || lowercaseText.includes("espolon") || lowercaseText.includes("espolón")) {
-      return "Entesopatía";
-    }
-    if (lowercaseText.includes("hematoma") || lowercaseText.includes("colección") || lowercaseText.includes("coleccion")) {
-      return "Hematoma";
-    }
-    if (lowercaseText.includes("engrosado") || lowercaseText.includes("engrosamiento")) {
-      return "Engrosamiento";
-    }
-
-    // Default dynamic synthesis: strip bullet, make first letter uppercase
-    let clean = text.replace(/^\s*[-*•\d.+/#\t]+\s*/, "").trim();
-    if (clean.endsWith(".")) clean = clean.slice(0, -1);
-    
-    // If there is a colon, take the part after the colon
-    const colonIdx = clean.indexOf(":");
-    if (colonIdx !== -1) {
-      clean = clean.substring(colonIdx + 1).trim();
-    }
-
-    // Capitalize
-    if (clean.length > 0) {
-      return clean.charAt(0).toUpperCase() + clean.slice(1);
+    if (id === "achilles_tendon") {
+      if (isKeywordInCalfContext(text, id, [
+        "ruptura completa", "rotura completa", "ruptura total", "rotura total", 
+        "rotura de espesor completo", "ruptura de espesor completo", 
+        "seccion completa", "sección completa", "disrupcion completa", "disrupción completa"
+      ])) {
+        return "rotura_completa";
+      }
+      if (isKeywordInCalfContext(text, id, [
+        "ruptura parcial", "rotura parcial", "espesor parcial", "microdesgarro", 
+        "microdesgarros", "rotura de fibras", "ruptura de fibras", "ruptura fibrilar", "rotura fibrilar"
+      ])) {
+        return "rotura_parcial";
+      }
+      if (isKeywordInCalfContext(text, id, [
+        "entesopatia", "entesopatía", "entesofito", "entesofitos", "insercional", 
+        "espolon", "espolón", "calcificante", "calcificacion insercional", "calcificación insercional"
+      ])) {
+        return "entesopatia";
+      }
+      if (isKeywordInCalfContext(text, id, [
+        "tendinosis", "tendinitis", "tendinopatia", "tendinopatía", "engrosado", 
+        "engrosamiento", "hipoecoico", "hipoecogenicidad", "difuso", "fusiforme"
+      ])) {
+        return "tendinosis";
+      }
     }
     
-    return "Alteración";
+    if (id === "gastrocnemius_medial" || id === "gastrocnemius_lateral") {
+      if (isKeywordInCalfContext(text, id, [
+        "desgarro", "rotura fibrilar", "ruptura fibrilar", "rotura de fibras", 
+        "ruptura de fibras", "disrupcion", "disrupción", "ruptura muscular", "rotura muscular", "tennis leg", "tennis-leg"
+      ])) {
+        return "desgarro";
+      }
+      if (isKeywordInCalfContext(text, id, [
+        "hematoma", "coleccion", "colección", "acumulo", "líquido", "liquido", "derrame"
+      ])) {
+        return "hematoma";
+      }
+      if (isKeywordInCalfContext(text, id, [
+        "miofascial", "aponeurosis", "fascial", "distension", "distensión", "edema periférico", "edema periferico"
+      ])) {
+        return "miofascial";
+      }
+    }
+    
+    if (id === "soleus_muscle") {
+      if (isKeywordInCalfContext(text, id, [
+        "desgarro", "rotura fibrilar", "ruptura fibrilar", "rotura de fibras", 
+        "ruptura de fibras", "lesion intramuscular", "lesión intramuscular"
+      ])) {
+        return "desgarro";
+      }
+      if (isKeywordInCalfContext(text, id, [
+        "miofascial", "fascial", "edema interfascicular", "aponeurosis"
+      ])) {
+        return "miofascial";
+      }
+    }
+    
+    if (id === "plantaris_tendon") {
+      if (isKeywordInCalfContext(text, id, [
+        "desgarro", "rotura", "ruptura", "disrupcion", "disrupción", "seccion", "sección"
+      ])) {
+        return "desgarro";
+      }
+      if (isKeywordInCalfContext(text, id, [
+        "engrosado", "engrosamiento", "engrosar"
+      ])) {
+        return "engrosamiento";
+      }
+    }
+    
+    if (id === "retrocalcaneal_bursa") {
+      if (isKeywordInCalfContext(text, id, [
+        "bursitis", "distendida", "distension", "distensión", "liquido", "líquido", "coleccion", "colección", "derrame"
+      ])) {
+        return "bursitis";
+      }
+    }
+    
+    // Default fallback check for normal descriptors
+    const normalized = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    if (normalized.includes("normal") || normalized.includes("conservado") || normalized.includes("integro") || normalized.includes("integra") || normalized.includes("sin alteraciones") || normalized.includes("adecuado")) {
+      return "normal";
+    }
+
+    return "normal"; // default fallback
   };
 
   const extractDescriptionFromReportText = (id: string, reportText: string): string => {
     if (!reportText) return "";
-    const lines = reportText.split("\n");
-    const keywords = getStructureKeywords(id);
-    const candidates: string[] = [];
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
-      const lowerLine = line.toLowerCase();
-      
-      const matches = keywords.some(kw => lowerLine.includes(kw));
+    
+    const keywords = getStructureKeywords(id).map(kw => kw.normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
+    const segments = reportText.split(/(?:\.|\n|;)+/).map(s => s.trim()).filter(Boolean);
+    const matchingSegments: string[] = [];
+    
+    for (let i = 0; i < segments.length; i++) {
+      const segNorm = segments[i].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const matches = keywords.some(kw => segNorm.includes(kw));
       if (matches) {
-        let clean = line.replace(/^\s*[-*•\d.+/#\t]+\s*/, "");
-        const colonIdx = clean.indexOf(":");
-        if (colonIdx !== -1) {
-          clean = clean.substring(colonIdx + 1).trim();
+        let clean = segments[i].replace(/^\s*[-*•\d.+/#\t]+\s*/, "").trim();
+        if (clean.startsWith(":")) {
+          clean = clean.substring(1).trim();
         }
-        candidates.push(clean);
+        matchingSegments.push(clean);
+        
+        // Look ahead to see if the next segment also relates to this (and doesn't talk about another structure)
+        if (i + 1 < segments.length) {
+          const nextSegNorm = segments[i+1].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+          const otherStructureKeywords = [
+            "gastrocnemio", "gemelo", "soleo", "sóleo", "aquiles", "achilles", "plantar", "bursa", "retrocalcanea"
+          ];
+          // Filter out our own keywords from the check
+          const myKeywords = getStructureKeywords(id).map(kw => kw.normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
+          const mentionsOther = otherStructureKeywords.some(okw => {
+            const okwNorm = okw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            const isMine = myKeywords.some(mkw => mkw.includes(okwNorm) || okwNorm.includes(mkw));
+            return nextSegNorm.includes(okwNorm) && !isMine;
+          });
+          
+          if (!mentionsOther && nextSegNorm.length > 3 && nextSegNorm.length < 150) {
+            let nextClean = segments[i+1].replace(/^\s*[-*•\d.+/#\t]+\s*/, "").trim();
+            if (nextClean.startsWith(":")) {
+              nextClean = nextClean.substring(1).trim();
+            }
+            matchingSegments.push(nextClean);
+            i++; // skip next since we consumed it
+          }
+        }
       }
     }
-
-    if (candidates.length === 0) return "";
-    return candidates.sort((a, b) => b.length - a.length)[0];
+    
+    if (matchingSegments.length > 0) {
+      return matchingSegments.join(". ") + ".";
+    }
+    
+    // Fallback: search line-by-line
+    const lines = reportText.split("\n");
+    for (const line of lines) {
+      const lineNorm = line.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const matches = keywords.some(kw => lineNorm.includes(kw));
+      if (matches) {
+        let clean = line.replace(/^\s*[-*•\d.+/#\t]+\s*/, "").trim();
+        const colonIdx = clean.indexOf(":");
+        if (colonIdx !== -1) {
+          const afterColon = clean.substring(colonIdx + 1).trim();
+          if (afterColon.length > 3) {
+            clean = afterColon;
+          }
+        }
+        return clean;
+      }
+    }
+    
+    return "";
   };
 
   const translateStructureLabelInBrief = (id: string): string => {
@@ -317,9 +433,9 @@ export default function CalfAchillesAnatomyViewer({
 
     structureKeys.forEach(id => {
       const keywords = getStructureKeywords(id);
-      const isMentioned = keywords.some(kw => targetText.toLowerCase().includes(kw));
+      const isMentionedInFull = keywords.some(kw => generatedReport.toLowerCase().includes(kw));
 
-      if (isMentioned) {
+      if (isMentionedInFull) {
         // First try to extract description from targeted section, if empty fallback to full text
         let extractedFindings = extractDescriptionFromReportText(id, targetText);
         if (!extractedFindings && targetText !== generatedReport) {
@@ -369,14 +485,12 @@ export default function CalfAchillesAnatomyViewer({
       logs.push(`❌ Error durante el procesamiento: ${(err as Error).message}`);
     } finally {
       setIsSyncing(false);
-      setSyncLogs(logs);
+      if (showFeedBack || logs.some(log => log.startsWith("❌"))) {
+        setSyncLogs(logs);
+      }
     }
   };
 
-  // Run automatically when the generated report changes to keep illustration in sync in real-time
-  useEffect(() => {
-    // Automatic sync is disabled to enforce strict manual synchronization as requested.
-  }, [generatedReport, lastSyncedReport]);
 
   const syncStateColor = (id: string, s: string) => {
     if (s === "no_descrito") return "bg-slate-800 text-slate-400 border-slate-700";
@@ -534,6 +648,35 @@ export default function CalfAchillesAnatomyViewer({
             <RotateCcw className="w-3 h-3" />
             <span>Limpiar</span>
           </button>
+        </div>
+      </div>
+
+      {/* CUADRO PARA AGREGAR EL DIBUJO AL REPORTE */}
+      <div className="mb-5 p-4 rounded-2xl bg-slate-950 border border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="bg-indigo-500/10 text-indigo-400 p-2 rounded-xl">
+            <Image className="w-5 h-5" />
+          </div>
+          <div>
+            <h4 className="text-xs font-bold text-white uppercase tracking-wide">
+              Mapeo Anatómico / Dibujo en el PDF
+            </h4>
+            <p className="text-[10.5px] text-slate-400 mt-0.5 font-medium">
+              Habilite o deshabilite la inclusión del gráfico anatómico y la sinopsis estructurada en el reporte impreso final.
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 bg-slate-900 border border-slate-800 py-2 px-4 rounded-xl shadow-md cursor-pointer hover:bg-slate-850 transition select-none">
+          <input 
+            type="checkbox" 
+            id="checkbox-include-drawing"
+            checked={includeInReport}
+            onChange={(e) => setIncludeInReport && setIncludeInReport(e.target.checked)}
+            className="accent-indigo-500 w-4 h-4 rounded cursor-pointer"
+          />
+          <label htmlFor="checkbox-include-drawing" className="text-xs font-extrabold text-slate-200 cursor-pointer">
+            {includeInReport ? "✅ Incluido en el Reporte PDF" : "❌ Excluido del Reporte PDF"}
+          </label>
         </div>
       </div>
 

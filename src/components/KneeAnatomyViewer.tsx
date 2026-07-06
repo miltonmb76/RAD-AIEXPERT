@@ -536,7 +536,7 @@ export default function KneeAnatomyViewer({
       const matches = keywords.some(kw => lowerLine.includes(kw));
       if (matches) {
         // Clear style markers like dashes, lists, asterisk, numbers or headers
-        let clean = line.replace(/^[\s*-|#\d.?+•\t]+\s*/g, "");
+        let clean = line.replace(/^[\s*\-|#\d.?+•\t]+\s*/g, "");
         
         if (clean.length > 20) {
           candidates.push(clean.trim());
@@ -639,7 +639,7 @@ export default function KneeAnatomyViewer({
           updated = true;
           return `${prefix} ${newDescription}`;
         } else {
-          const bulletMatch = line.match(/^[\s*-|#\d.?+•\t]+/);
+          const bulletMatch = line.match(/^[\s*|#\d.?+•\t\-]+/);
           const bullet = bulletMatch ? bulletMatch[0] : "";
           const structLabel = translateStructureLabelInBrief(id);
           updated = true;
@@ -1497,7 +1497,6 @@ export default function KneeAnatomyViewer({
               strokeDasharray={states.joint_effusion === "derrame_leve" ? "3,3" : "none"}
             />
             <line x1="175" y1="62" x2="115" y2="62" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-            <circle cx="175" cy="62" r="2" fill="#81a1c1" />
           </g>
 
           {/* 2. Tendón Cuadricipital */}
@@ -1516,7 +1515,6 @@ export default function KneeAnatomyViewer({
               strokeDasharray={states.quadriceps === "tendinosis" ? "2,2" : "none"}
             />
             <line x1="175" y1="50" x2="230" y2="50" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-            <circle cx="175" cy="50" r="2" fill="#81a1c1" />
           </g>
 
           {/* 3. Rótula / Patella (Neutral / Reference) */}
@@ -1543,7 +1541,6 @@ export default function KneeAnatomyViewer({
               strokeWidth={states.medial_meniscus !== "normal" ? "2.5" : "1.2"}
             />
             <line x1="135" y1="178" x2="90" y2="178" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-            <circle cx="135" cy="178" r="2" fill="#81a1c1" />
           </g>
 
           {/* Menisco Lateral (Right visually X > 175) */}
@@ -1560,7 +1557,6 @@ export default function KneeAnatomyViewer({
               strokeWidth={states.lateral_meniscus !== "normal" ? "2.5" : "1.2"}
             />
             <line x1="215" y1="178" x2="265" y2="178" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-            <circle cx="215" cy="178" r="2" fill="#81a1c1" />
           </g>
 
           {/* 5. Tendón Rotuliano */}
@@ -1579,7 +1575,6 @@ export default function KneeAnatomyViewer({
               strokeDasharray={states.patellar === "tendinosis" ? "2,2" : "none"}
             />
             <line x1="175" y1="165" x2="230" y2="165" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-            <circle cx="175" cy="165" r="2" fill="#81a1c1" />
           </g>
 
           {/* 6. Ligamento Colateral Medial (LCM) */}
@@ -1597,7 +1592,6 @@ export default function KneeAnatomyViewer({
               fillOpacity={states.lcm !== "normal" ? "0.6" : "0.2"}
             />
             <line x1="115" y1="155" x2="80" y2="155" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-            <circle cx="115" cy="155" r="2" fill="#81a1c1" />
           </g>
 
           {/* 7. Ligamento Colateral Lateral */}
@@ -1615,7 +1609,6 @@ export default function KneeAnatomyViewer({
               fillOpacity={states.lce !== "normal" ? "0.6" : "0.2"}
             />
             <line x1="243" y1="155" x2="280" y2="155" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-            <circle cx="243" cy="155" r="2" fill="#81a1c1" />
           </g>
 
           {/* LABELS TEXT GUIDES ON GRAPH */}
@@ -1778,7 +1771,6 @@ export default function KneeAnatomyViewer({
               fillOpacity={states.baker_cyst !== "normal" ? "0.6" : "0.1"}
             />
             <line x1="220" y1="210" x2="255" y2="210" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-            <circle cx="220" cy="210" r="2" fill="#81a1c1" />
           </g>
 
           {/* Text labels for posterior view */}

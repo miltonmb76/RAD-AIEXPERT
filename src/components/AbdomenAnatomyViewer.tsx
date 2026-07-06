@@ -50,6 +50,8 @@ interface AbdomenAnatomyViewerProps {
   setIncludeAppendix?: (val: boolean) => void;
   includeDiverticulitis?: boolean;
   setIncludeDiverticulitis?: (val: boolean) => void;
+  includeSmallBowel?: boolean;
+  setIncludeSmallBowel?: (val: boolean) => void;
 }
 
 const ABDOMEN_STRUCTURES = [
@@ -147,6 +149,16 @@ const ABDOMEN_STRUCTURES = [
     id: "retroperitoneo",
     name: "Retroperitoneo",
     allowedStates: ["no_descrito", "normal", "adenopatias", "liquido_libre", "masa_retroperitoneal"]
+  },
+  {
+    id: "intestino_delgado",
+    name: "Intestino Delgado",
+    allowedStates: ["no_descrito", "normal", "aumento_motilidad", "obstruccion", "edema_de_pared", "meteorismo", "dilatacion"]
+  },
+  {
+    id: "ascitis",
+    name: "Líquido Libre / Ascitis",
+    allowedStates: ["no_descrito", "normal", "leve", "moderado", "severo"]
   }
 ];
 
@@ -184,7 +196,9 @@ export default function AbdomenAnatomyViewer({
   includeAppendix = true,
   setIncludeAppendix,
   includeDiverticulitis = true,
-  setIncludeDiverticulitis
+  setIncludeDiverticulitis,
+  includeSmallBowel = true,
+  setIncludeSmallBowel
 }: AbdomenAnatomyViewerProps) {
   
   const [states, setStates] = useState<Record<string, string>>({
@@ -206,7 +220,9 @@ export default function AbdomenAnatomyViewer({
     pared_inguinal_izquierda: "no_descrito",
     pared_muscular: "no_descrito",
     suprarenales: "no_descrito",
-    retroperitoneo: "no_descrito"
+    retroperitoneo: "no_descrito",
+    intestino_delgado: "no_descrito",
+    ascitis: "no_descrito"
   });
 
   const [customDescriptions, setCustomDescriptions] = useState<Record<string, string>>({
@@ -228,7 +244,9 @@ export default function AbdomenAnatomyViewer({
     pared_inguinal_izquierda: "",
     pared_muscular: "",
     suprarenales: "",
-    retroperitoneo: ""
+    retroperitoneo: "",
+    intestino_delgado: "",
+    ascitis: ""
   });
 
   const [activeHover, setActiveHover] = useState<string | null>(null);
@@ -248,6 +266,7 @@ export default function AbdomenAnatomyViewer({
   const [localIncludeBiliary, setLocalIncludeBiliary] = useState<boolean>(true);
   const [localIncludeAppendix, setLocalIncludeAppendix] = useState<boolean>(true);
   const [localIncludeDiverticulitis, setLocalIncludeDiverticulitis] = useState<boolean>(true);
+  const [localIncludeSmallBowel, setLocalIncludeSmallBowel] = useState<boolean>(true);
 
   const activeIncludeElastography = setIncludeElastography ? includeElastography : localIncludeElastography;
   const activeHasStiffness = setElastographyHasStiffness ? elastographyHasStiffness : localHasStiffness;
@@ -260,6 +279,7 @@ export default function AbdomenAnatomyViewer({
   const activeIncludeBiliary = setIncludeBiliary ? includeBiliary : localIncludeBiliary;
   const activeIncludeAppendix = setIncludeAppendix ? includeAppendix : localIncludeAppendix;
   const activeIncludeDiverticulitis = setIncludeDiverticulitis ? includeDiverticulitis : localIncludeDiverticulitis;
+  const activeIncludeSmallBowel = setIncludeSmallBowel ? includeSmallBowel : localIncludeSmallBowel;
 
   const handleToggleInclude = (val: boolean) => {
     if (setIncludeElastography) setIncludeElastography(val);
@@ -276,6 +296,10 @@ export default function AbdomenAnatomyViewer({
   const handleToggleIncludeDiverticulitis = (val: boolean) => {
     if (setIncludeDiverticulitis) setIncludeDiverticulitis(val);
     else setLocalIncludeDiverticulitis(val);
+  };
+  const handleToggleIncludeSmallBowel = (val: boolean) => {
+    if (setIncludeSmallBowel) setIncludeSmallBowel(val);
+    else setLocalIncludeSmallBowel(val);
   };
   const handleStiffnessChange = (val: number) => {
     if (setElastographyStiffness) setElastographyStiffness(val);
@@ -348,6 +372,17 @@ export default function AbdomenAnatomyViewer({
   const [diverticulitisFreeAir, setDiverticulitisFreeAir] = useState<boolean>(false);
   const [diverticulitisHinchey, setDiverticulitisHinchey] = useState<string>("0"); // "0", "Ia", "Ib", "II", "III", "IV"
   const [diverticulitisNotes, setDiverticulitisNotes] = useState<string>("");
+
+  // Dedicated small bowel (intestino delgado) and ascites states
+  const [smallBowelForceActive, setSmallBowelForceActive] = useState<boolean>(false);
+  const [smallBowelState, setSmallBowelState] = useState<string>("no_descrito"); // "no_descrito", "normal", "aumento_motilidad", "obstruccion", "edema_de_pared", "dilatacion", "meteorismo"
+  const [smallBowelDiameter, setSmallBowelDiameter] = useState<number>(18); // 15-40 mm
+  const [smallBowelWallThickness, setSmallBowelWallThickness] = useState<number>(1.5); // 1.0-6.0 mm
+  const [smallBowelPeristalsis, setSmallBowelPeristalsis] = useState<string>("conservada"); // "conservada", "aumentada", "disminuida", "ausente"
+  
+  const [ascitesState, setAscitesState] = useState<string>("no_descrito"); // "no_descrito", "normal", "leve", "moderada", "severa"
+  const [ascitesLocation, setAscitesLocation] = useState<string>("pelvis"); // "pelvis", "perihepatico", "periesplenico", "goteras", "generalizada"
+  const [smallBowelNotes, setSmallBowelNotes] = useState<string>("");
 
   const getImpressionTextSection = (text: string): string => {
     if (!text) return "";
@@ -454,9 +489,9 @@ export default function AbdomenAnatomyViewer({
     if (!generatedReport) return false;
     
     const section = getImpressionTextSection(generatedReport);
+    const normalized = section.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     
-    // Solamente se despliega si se menciona explícitamente "apendicitis" o "apendice cecal inflamado"
-    return isBiliaryPathologyActive(section, ["apendicitis", "apendice cecal inflamado", "apendice inflamado"]);
+    return normalized.includes("apendice") || normalized.includes("apendicular") || normalized.includes("apendicitis");
   };
 
   const isAppendixActive = isAppendixImpressionActive() || appendixForceActive;
@@ -471,6 +506,18 @@ export default function AbdomenAnatomyViewer({
   };
 
   const isDiverticulitisActive = isDiverticulitisImpressionActive() || diverticulitisForceActive;
+
+  const isSmallBowelImpressionActive = (): boolean => {
+    if (!generatedReport) return false;
+    const section = getImpressionTextSection(generatedReport);
+    return isBiliaryPathologyActive(section, [
+      "intestino delgado", "yeyuno", "ileon", "íleon", "peristaltismo", "motilidad", 
+      "obstruccion intestinal", "obstruccion de intestino", "edema de pared", "asas delgadas", 
+      "ascitis", "liquido libre", "líquido libre"
+    ]);
+  };
+
+  const isSmallBowelActive = isSmallBowelImpressionActive() || smallBowelForceActive;
 
   const getBiliaryTextFromCheckboxes = (
     dilated: boolean,
@@ -613,7 +660,7 @@ export default function AbdomenAnatomyViewer({
           const prefix = line.substring(0, colonIndex + 1);
           return `${prefix} ${newDesc}`;
         } else {
-          const bulletMatch = line.match(/^[\s*-|#\d.?+•\t]+/);
+          const bulletMatch = line.match(/^[\s*|#\d.?+•\t\-]+/);
           const bullet = bulletMatch ? bulletMatch[0] : "- ";
           return `${bullet}Vía Biliar Extrahepática: ${newDesc}`;
         }
@@ -703,7 +750,7 @@ export default function AbdomenAnatomyViewer({
           const prefix = line.substring(0, colonIndex + 1);
           return `${prefix} ${newDesc}`;
         } else {
-          const bulletMatch = line.match(/^[\s*-|#\d.?+•\t]+/);
+          const bulletMatch = line.match(/^[\s*|#\d.?+•\t\-]+/);
           const bullet = bulletMatch ? bulletMatch[0] : "- ";
           return `${bullet}Apéndice Cecal: ${newDesc}`;
         }
@@ -819,7 +866,7 @@ export default function AbdomenAnatomyViewer({
           const prefix = line.substring(0, colonIndex + 1);
           return `${prefix} ${newDesc}`;
         } else {
-          const bulletMatch = line.match(/^[\s*-|#\d.?+•\t]+/);
+          const bulletMatch = line.match(/^[\s*|#\d.?+•\t\-]+/);
           const bullet = bulletMatch ? bulletMatch[0] : "- ";
           return `${bullet}Diverticulitis Aguda: ${newDesc}`;
         }
@@ -855,6 +902,156 @@ export default function AbdomenAnatomyViewer({
     }
 
     return reportText + `\n- **Diverticulitis Aguda / Sigmoides**: ${newDesc}`;
+  };
+
+  const getSmallBowelAndAscitesDescription = (
+    bowelState: string,
+    diameter: number,
+    thickness: number,
+    peristalsis: string,
+    ascitesState: string,
+    ascitesLoc: string
+  ): string => {
+    let bowelText = "";
+    if (bowelState === "normal") {
+      bowelText = "Asas de intestino delgado de calibre y características normales.";
+    } else if (bowelState === "aumento_motilidad") {
+      bowelText = "Asas de intestino delgado con aumento de peristalsis.";
+    } else if (bowelState === "obstruccion") {
+      bowelText = "Asas de intestino delgado con obstrucción intestinal.";
+    } else if (bowelState === "dilatacion") {
+      bowelText = "Asas de intestino delgado dilatadas.";
+    } else if (bowelState === "edema_de_pared") {
+      bowelText = "Asas de intestino delgado con edema de pared.";
+    } else if (bowelState === "meteorismo") {
+      bowelText = "Asas de intestino delgado con meteorismo abundante.";
+    } else if (bowelState === "no_descrito") {
+      bowelText = "No mencionado / No descrito.";
+    } else {
+      bowelText = "Asas de intestino delgado de calibre y características normales.";
+    }
+
+    let ascitesText = "";
+    if (ascitesState === "normal") {
+      ascitesText = "Sin líquido libre intraabdominal.";
+    } else if (ascitesState === "leve") {
+      ascitesText = "Líquido libre en escasa cantidad.";
+    } else if (ascitesState === "moderado") {
+      ascitesText = "Líquido libre en moderada cantidad (ascitis).";
+    } else if (ascitesState === "severo") {
+      ascitesText = "Abundante líquido libre intraabdominal (ascitis).";
+    } else if (ascitesState === "no_descrito") {
+      ascitesText = "";
+    }
+
+    if (ascitesText) {
+      return `${bowelText} ${ascitesText}`;
+    }
+    return bowelText;
+  };
+
+  const updateReportWithSmallBowelDesc = (reportText: string, newDesc: string): string => {
+    if (!reportText) return reportText;
+    
+    const lines = reportText.split("\n");
+    let updated = false;
+    
+    const keywords = ["intestino delgado", "yeyuno", "ileon", "íleon", "asas delgadas", "peristaltismo", "motilidad", "obstruccion intestinal"];
+    
+    const newLines = lines.map(line => {
+      if (updated) return line;
+      const lowerLine = line.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const hasMatch = keywords.some(kw => {
+        const kwNorm = kw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        return lowerLine.includes(kwNorm);
+      });
+      
+      if (hasMatch) {
+        updated = true;
+        const colonIndex = line.indexOf(":");
+        if (colonIndex !== -1) {
+          const prefix = line.substring(0, colonIndex + 1);
+          return `${prefix} ${newDesc}`;
+        } else {
+          const bulletMatch = line.match(/^[\s*|#\d.?+•\t\-]+/);
+          const bullet = bulletMatch ? bulletMatch[0] : "- ";
+          return `${bullet}Intestino Delgado: ${newDesc}`;
+        }
+      }
+      return line;
+    });
+
+    if (updated) {
+      return newLines.join("\n");
+    }
+
+    let insertIndex = -1;
+    for (let i = 0; i < lines.length; i++) {
+      const lower = lines[i].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      if (lower.includes("colon ") || lower.includes("colon:")) {
+        insertIndex = i + 1;
+      }
+    }
+
+    if (insertIndex !== -1) {
+      const copy = [...lines];
+      copy.splice(insertIndex, 0, `- **Intestino Delgado**: ${newDesc}`);
+      return copy.join("\n");
+    }
+
+    return reportText + `\n- **Intestino Delgado**: ${newDesc}`;
+  };
+
+  const updateReportWithAscitesDesc = (reportText: string, newDesc: string): string => {
+    if (!reportText) return reportText;
+    
+    const lines = reportText.split("\n");
+    let updated = false;
+    
+    const keywords = ["ascitis", "liquido libre", "líquido libre", "cavidad peritoneal", "recesos"];
+    
+    const newLines = lines.map(line => {
+      if (updated) return line;
+      const lowerLine = line.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const hasMatch = keywords.some(kw => {
+        const kwNorm = kw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        return lowerLine.includes(kwNorm);
+      });
+      
+      if (hasMatch) {
+        updated = true;
+        const colonIndex = line.indexOf(":");
+        if (colonIndex !== -1) {
+          const prefix = line.substring(0, colonIndex + 1);
+          return `${prefix} ${newDesc}`;
+        } else {
+          const bulletMatch = line.match(/^[\s*|#\d.?+•\t\-]+/);
+          const bullet = bulletMatch ? bulletMatch[0] : "- ";
+          return `${bullet}Líquido Libre / Ascitis: ${newDesc}`;
+        }
+      }
+      return line;
+    });
+
+    if (updated) {
+      return newLines.join("\n");
+    }
+
+    let insertIndex = -1;
+    for (let i = 0; i < lines.length; i++) {
+      const lower = lines[i].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      if (lower.includes("retroperitoneo") || lower.includes("retroperitoneo:")) {
+        insertIndex = i + 1;
+      }
+    }
+
+    if (insertIndex !== -1) {
+      const copy = [...lines];
+      copy.splice(insertIndex, 0, `- **Líquido Libre / Ascitis**: ${newDesc}`);
+      return copy.join("\n");
+    }
+
+    return reportText + `\n- **Líquido Libre / Ascitis**: ${newDesc}`;
   };
 
   const handleBiliaryCheckboxChange = (
@@ -938,12 +1135,6 @@ export default function AbdomenAnatomyViewer({
     if (value && !appendixForceActive) {
       setAppendixForceActive(true);
     }
-
-    const newDesc = getAppendixDescription(nextInflamed, nextDiameter, nextFluid, nextCollections, nextLito, nextFatStranding);
-    if (onChangeReport && generatedReport) {
-      const updatedReport = updateReportWithAppendixDesc(generatedReport, newDesc);
-      onChangeReport(updatedReport);
-    }
   };
 
   const handleAppendixDiameterChange = (val: number) => {
@@ -958,12 +1149,6 @@ export default function AbdomenAnatomyViewer({
     if (!appendixForceActive) {
       setAppendixForceActive(true);
     }
-
-    const newDesc = getAppendixDescription(val >= 6 ? true : appendixInflamed, val, appendixFluid, appendixCollections, appendixLito, appendixFatStranding);
-    if (onChangeReport && generatedReport) {
-      const updatedReport = updateReportWithAppendixDesc(generatedReport, newDesc);
-      onChangeReport(updatedReport);
-    }
   };
 
   const handleToggleAppendixForceActive = () => {
@@ -977,18 +1162,6 @@ export default function AbdomenAnatomyViewer({
       setAppendixCollections(false);
       setAppendixLito(false);
       setAppendixFatStranding(false);
-
-      const normalDesc = getAppendixDescription(false, 5, false, false, false, false);
-      if (onChangeReport && generatedReport) {
-        const updatedReport = updateReportWithAppendixDesc(generatedReport, normalDesc);
-        onChangeReport(updatedReport);
-      }
-    } else {
-      const currentDesc = getAppendixDescription(appendixInflamed, appendixDiameter, appendixFluid, appendixCollections, appendixLito, appendixFatStranding);
-      if (onChangeReport && generatedReport) {
-        const updatedReport = updateReportWithAppendixDesc(generatedReport, currentDesc);
-        onChangeReport(updatedReport);
-      }
     }
   };
 
@@ -1295,31 +1468,114 @@ export default function AbdomenAnatomyViewer({
     const section = getImpressionTextSection(generatedReport);
     
     if (isAppendixActive) {
-      const hasInflam = isBiliaryPathologyActive(section, ["apendicitis", "inflado", "inflamado", "distendido", "edema", "engrosamiento"]);
-      setAppendixInflamed(hasInflam || isBiliaryPathologyActive(section, ["diametro de 6", "diametro de 7", "diametro de 8", "diametro de 9", "diametro de 10", "diametro de 11", "diametro de 12", "diametro de 13", "diametro de 14", "diametro de 15"]));
-
-      const matches = section.match(/(\d+)\s*mm/);
-      if (matches && matches[1]) {
-        const parsedVal = parseInt(matches[1], 10);
-        if (parsedVal >= 4 && parsedVal <= 18) {
-          setAppendixDiameter(parsedVal);
+      // 1. Helper function to check if a list of keywords exists in a non-negated window around an appendix anchor
+      const isKeywordInAppendixContext = (kwList: string[]): boolean => {
+        const normalized = section.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const anchorKeywords = ["apendice", "apendicular", "apendicitis", "fid", "fosa iliaca"];
+        for (const anchor of anchorKeywords) {
+          let startIdx = 0;
+          while (true) {
+            const idx = normalized.indexOf(anchor, startIdx);
+            if (idx === -1) break;
+            
+            const windowStart = Math.max(0, idx - 65);
+            const windowEnd = Math.min(normalized.length, idx + anchor.length + 65);
+            const windowText = normalized.substring(windowStart, windowEnd);
+            
+            // Check if any of the keywords in kwList are in this window and are not negated in this window
+            const matchesKeyword = kwList.some(kw => {
+              const kwNorm = kw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+              const kwIdx = windowText.indexOf(kwNorm);
+              if (kwIdx === -1) return false;
+              
+              // Check negations within this window
+              const contextStart = Math.max(0, kwIdx - 35);
+              const context = windowText.substring(contextStart, kwIdx);
+              const negations = [
+                "sin ", "no ", "no se ", "no se observa", "no se aprecia", "ausencia de", 
+                "libre de", "descarta", "normal", "conserva", "sin evidencia de", "negativo para",
+                "conservado", "sin coleccion", "sin liquido"
+              ];
+              const isNegated = negations.some(neg => {
+                const negNorm = neg.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                return context.includes(negNorm);
+              });
+              return !isNegated;
+            });
+            
+            if (matchesKeyword) return true;
+            
+            startIdx = idx + anchor.length;
+          }
         }
-      } else {
-        if (hasInflam) {
-          setAppendixDiameter(8);
-        }
-      }
+        return false;
+      };
 
-      const hasFluid = isBiliaryPathologyActive(section, ["liquido libre", "volumen libre", "derrame periapendicular", "pericecal", "liquido en fosa"]);
+      // 2. Intelligent diameter extraction near appendix keywords
+      const extractAppendixDiameter = (): number | null => {
+        const normalized = section.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const anchorKeywords = ["apendice", "apendicular", "apendicitis"];
+        for (const anchor of anchorKeywords) {
+          let startIdx = 0;
+          while (true) {
+            const idx = normalized.indexOf(anchor, startIdx);
+            if (idx === -1) break;
+            
+            const windowStart = Math.max(0, idx - 60);
+            const windowEnd = Math.min(normalized.length, idx + anchor.length + 60);
+            const windowText = normalized.substring(windowStart, windowEnd);
+            
+            const mmRegex = /(?:diametro|mide|calibre|grosor|de)\s*(\d+(?:[\.,]\d+)?)\s*mm/i;
+            const mmMatch = windowText.match(mmRegex);
+            if (mmMatch && mmMatch[1]) {
+              const num = parseFloat(mmMatch[1].replace(",", "."));
+              if (num >= 3 && num <= 25) {
+                return Math.round(num);
+              }
+            }
+            
+            const fallbackRegex = /(\d+(?:[\.,]\d+)?)\s*mm/gi;
+            let match;
+            while ((match = fallbackRegex.exec(windowText)) !== null) {
+              const num = parseFloat(match[1].replace(",", "."));
+              if (num >= 3 && num <= 25) {
+                return Math.round(num);
+              }
+            }
+            
+            startIdx = idx + anchor.length;
+          }
+        }
+        return null;
+      };
+
+      // 3. Evaluate states
+      const detectedDiameter = extractAppendixDiameter();
+      const hasInflam = isKeywordInAppendixContext([
+        "apendicitis", "inflamado", "inflamatoria", "distendido", 
+        "edematoso", "hiperemico", "hiperemia", "engrosado", "engrosamiento"
+      ]);
+
+      const resolvedDiameter = detectedDiameter !== null ? detectedDiameter : (hasInflam ? 8 : 5);
+      setAppendixDiameter(resolvedDiameter);
+
+      // Appendicitis is active/inflamed if mentioned as inflamed OR if its diameter is pathological (>= 6 mm)
+      setAppendixInflamed(hasInflam || resolvedDiameter >= 6);
+
+      const hasFluid = isKeywordInAppendixContext(["liquido", "derrame", "volumen libre", "liquido libre", "coleccion liquida"]);
       setAppendixFluid(hasFluid);
 
-      const hasCollections = isBiliaryPathologyActive(section, ["coleccion", "absceso", "plastron"]);
+      const hasCollections = isKeywordInAppendixContext(["coleccion", "absceso", "plastron"]);
       setAppendixCollections(hasCollections);
 
-      const hasLito = isBiliaryPathologyActive(section, ["apendicolito", "apendicocolito", "lito", "concrecion"]);
+      const hasLito = isKeywordInAppendixContext(["lito", "calculo", "concrecion", "apendicolito", "apendicofito", "coprolito"]);
       setAppendixLito(hasLito);
 
-      const hasFat = isBiliaryPathologyActive(section, ["grasa periapendicular", "infiltracion de la grasa", "engrosamiento de la grasa", "cambios inflamatorios de la grasa", "grasa adyacente"]);
+      const hasFat = isKeywordInAppendixContext([
+        "grasa", "infiltracion de la grasa", "engrosamiento de la grasa", 
+        "cambios inflamatorios de la grasa", "grasa adyacente", "grasa pericecal", 
+        "estriacion de la grasa", "sufrimiento de la grasa"
+      ]);
       setAppendixFatStranding(hasFat);
     } else {
       setAppendixInflamed(false);
@@ -1330,6 +1586,13 @@ export default function AbdomenAnatomyViewer({
       setAppendixFatStranding(false);
     }
   }, [generatedReport, isAppendixActive]);
+
+  // Auto-extraction hook for small bowel and ascites from generated report text
+  useEffect(() => {
+    if (generatedReport) {
+      syncSmallBowelAndAscitesFromReportText(generatedReport);
+    }
+  }, [generatedReport]);
 
   // Auto-extraction hook for diverticulitis from generated report text
   useEffect(() => {
@@ -1383,6 +1646,14 @@ export default function AbdomenAnatomyViewer({
       setDiverticulitisHinchey("0");
     }
   }, [generatedReport, isDiverticulitisActive]);
+
+  // Reset small bowel and ascites states only when the active mode is disabled to avoid auto-extraction on keypresses
+  useEffect(() => {
+    if (!isSmallBowelActive) {
+      setSmallBowelState("no_descrito");
+      setAscitesState("no_descrito");
+    }
+  }, [isSmallBowelActive]);
 
   const getFibrosisLevel = (stiffness: number, override: string): number => {
     if (override && override !== "auto") {
@@ -1486,10 +1757,6 @@ export default function AbdomenAnatomyViewer({
   const extractSentenceForOrgan = (reportText: string, organId: string, fallback: string): string => {
     if (!reportText) return fallback;
     const section = getImpressionTextSection(reportText);
-    if (!section) return fallback;
-    
-    // Split section into sentences/clauses
-    const sentences = section.split(/(?:\.|\n|\r|;)+/);
     
     // Map organId to its main keywords
     const keywordsMap: Record<string, string[]> = {
@@ -1511,31 +1778,50 @@ export default function AbdomenAnatomyViewer({
       pared_inguinal_izquierda: ["inguinal izquierda", "ing_izquierd", "conducto inguinal izquierdo", "hernia inguinal izquierda"],
       pared_muscular: ["pared anterior", "musculo recto", "músculo recto", "recto abdominal", "pared muscular", "oblicuo", "spiegel", "desmoide"],
       suprarenales: ["suprarrenal", "adrenal", "suprarenal", "glandulas suprarrenales"],
-      retroperitoneo: ["retroperitoneo", "retroperitoneal", "adenopatia retroperitoneal", "ganglios retroperitoneales"]
+      retroperitoneo: ["retroperitoneo", "retroperitoneal", "adenopatia retroperitoneal", "ganglios retroperitoneales"],
+      intestino_delgado: ["intestino delgado", "yeyuno", "ileon", "íleon", "peristaltismo", "motilidad", "obstruccion intestinal", "obstruccion de intestino", "edema de pared", "asas delgadas", "asas de intestino delgado"],
+      ascitis: ["ascitis", "liquido libre", "líquido libre", "cavidad peritoneal", "recesos", "fondo de saco", "douglas", "perihepatico", "periesplenico", "goteras"]
     };
     
     const kws = keywordsMap[organId] || [];
     if (kws.length === 0) return fallback;
-    
-    // Find the first sentence that matches any keyword
-    for (const sentence of sentences) {
-      const trimmed = sentence.trim();
-      if (!trimmed) continue;
-      
-      const normalizedSentence = trimmed.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-      const matches = kws.some(kw => {
-        const normalizedKw = kw.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-        return normalizedSentence.includes(normalizedKw);
-      });
-      
-      if (matches) {
-        // Return the clean sentence with a trailing period if it doesn't have one
-        const cleanStr = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
-        return cleanStr.endsWith(".") ? cleanStr : `${cleanStr}.`;
+
+    const findMatchInText = (text: string): string => {
+      if (!text) return "";
+      const sentences = text.split(/(?:\.|\n|\r|;|\n\n)+/);
+      for (const sentence of sentences) {
+        const trimmed = sentence.trim();
+        if (!trimmed) continue;
+        
+        const normalizedSentence = trimmed.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const matches = kws.some(kw => {
+          const normalizedKw = kw.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+          return normalizedSentence.includes(normalizedKw);
+        });
+        
+        if (matches) {
+          let cleanStr = trimmed;
+          cleanStr = cleanStr.replace(/^[\s*\-|#\d.?+•\t]+/g, "").trim();
+          cleanStr = cleanStr.replace(/^(?:\*\*[^*]+\*\*|[^*:]+):\s*/g, "").trim();
+
+          if (cleanStr.length > 0) {
+            cleanStr = cleanStr.charAt(0).toUpperCase() + cleanStr.slice(1);
+          } else {
+            cleanStr = trimmed;
+          }
+
+          return cleanStr.endsWith(".") ? cleanStr : `${cleanStr}.`;
+        }
       }
-    }
-    
-    return fallback;
+      return "";
+    };
+
+    // Try finding in impression section first, then fallback to entire report
+    const impressionMatch = section && section.trim().length > 10 ? findMatchInText(section) : "";
+    if (impressionMatch) return impressionMatch;
+
+    const reportMatch = findMatchInText(reportText);
+    return reportMatch || fallback;
   };
 
   // Transactional Manual Save function of drafts to permanent states
@@ -1599,132 +1885,122 @@ export default function AbdomenAnatomyViewer({
     if (s === "normal") {
       return "Dentro de límites normales.";
     }
-    const standardStates = [
-      "normal", "no_descrito", "esteatosis_leve", "esteatosis_moderada", "esteatosis_severa", "hepatomegalia",
-      "cirrosis", "lesion_ocupante_espacio", "quiste", "litiasis", "litiasis_unica", "barro_biliar", "colecistitis_aguda",
-      "colecistitis_cronica", "polipo", "pared_engrosada", "ectasia_biliar", "dilatacion_coledoco",
-      "quistes_corticales", "perdida_relacion_corticomedular", "nefrolitiasis", "quiste_simple", "hidronefrosis",
-      "esplenomegalia", "lesion_focal", "pancreatitis_aguda", "compromiso_atrofico", "calcificaciones",
-      "derrame_libre", "coleccion_organizada", "adenopatias", "ectasia_aortica", "aneurisma_fusiforme", "placas_calcificadas"
-    ];
-    if (!standardStates.includes(s)) {
-      return `Se describe hallazgo: ${s.charAt(0).toUpperCase() + s.slice(1)}.`;
+
+    // Try to extract the real sentence from the report first to keep the exact phrasing!
+    if (generatedReport) {
+      const exactSentence = extractSentenceForOrgan(generatedReport, id, "");
+      if (exactSentence) {
+        return exactSentence;
+      }
     }
 
-    switch (id) {
-      case "higado":
-        if (s === "esteatosis_leve") return "Infiltración grasa hepática leve.";
-        if (s === "esteatosis_moderada") return "Infiltración grasa hepática moderada, atenuación haz sónico.";
-        if (s === "esteatosis_severa") return "Infiltración grasa hepática severa, mala visualización diafragmática.";
-        if (s === "hepatomegalia") return "Heredo-diámetro longitudinal renal aumentado.";
-        if (s === "cirrosis") return "Bordes lobulados / nodulares y ecotextura heterogénea.";
-        if (s === "lesion_ocupante_espacio") return "Imagen nodular sólida hipo/hiperecogénica sospechosa.";
-        if (s === "quiste") return "Lesión anecoica de paredes finas con refuerzo posterior.";
-        break;
-      case "vesicula":
-        if (s === "litiasis") return "Colelitiasis (litos múltiples).";
-        if (s === "litiasis_unica") return "Colelitiasis única (lito único).";
-        if (s === "barro_biliar") return "Barro biliar.";
-        if (s === "colecistitis_aguda") return "Colecistitis aguda.";
-        if (s === "colecistitis_cronica") return "Colecistitis crónica.";
-        if (s === "polipo") return "Pólipo vesicular.";
-        if (s === "pared_engrosada") return "Pared vesicular engrosada.";
-        break;
-      case "pancreas":
-        if (s === "pancreatitis_aguda") return "Glándula aumentada de tamaño, hipoecoica y difusa.";
-        if (s === "pancreatitis_cronica") return "Fibrosis focal, calcificaciones e irregularidad del conducto de Wirsung.";
-        if (s === "atrofia") return "Tamaño pancreático disminuido, ecogenicidad aumentada por infiltración grasa.";
-        if (s === "lesion_quistica") return "Lesión de contenido líquido en cuerpo/cola hepáticos.";
-        if (s === "no_visible_gas") return "No valorable de forma óptima secundario a interfase gaseosa intestinal.";
-        break;
-      case "bazo":
-        if (s === "esplenomegalia") return "Diámetro mayor a 120-130 mm con ecotextura conservada.";
-        if (s === "nodulo_esplenico") return "Discreta imagen focal hipoecogénica vascularizada.";
-        break;
-      case "rinon_derecho":
-      case "rinon_izquierdo":
-        if (s === "litiasis") return "Nódulo hiperecogénico lobulado con sombra acústica.";
-        if (s === "quiste_simple") return "Quiste cortical asintomático de contornos definidos.";
-        if (s === "hidronefrosis") return "Dilatación del sistema colector renal secundario a obstrucción.";
-        if (s === "quiste_complejo") return "Quiste complejo Bosniak con tabiques o calcificación.";
-        if (s === "masa_solida") return "Lesión ocupante de espacio sólida con vascularización anormal.";
-        break;
-      case "vejiga":
-        if (s === "pared_engrosada") return "Vejiga de paredes gruesas de aspecto inflamatorio crónico.";
-        if (s === "sedimento_urinario") return "Abundante sedimiento vesical móvil en suspensión.";
-        if (s === "litiasis") return "Imagen hiperecogénica móvil con sombra acústica en luz vesical.";
-        if (s === "masa_vesical") return "Lesión sobreelevada vegetante compatible con masa vesical.";
-        break;
-      case "prostata":
-        if (s === "hiperplasia_benigna") return "Aumento difuso de tamaño del volumen prostático sugestivo de HPB.";
-        if (s === "quiste") return "Definido quiste prostático de carácter benigno.";
-        if (s === "calcificaciones") return "Calcificaciones periuretrales de aspecto residual.";
-        break;
-      case "utero":
-        if (s === "miomatosis") return "Miometrio heterogéneo con nódulos miomatosos descritos.";
-        if (s === "endometrio_engrosado") return "Engrosamiento de la línea endometrial para su edad.";
-        if (s === "liquido_libre") return "Líquido libre en escasa cantidad en fondo de saco vaginal posterior.";
-        break;
-      case "ovarios":
-        if (s === "quiste_simple") return "Quiste anecoico simple avascular de paredes delgadas.";
-        if (s === "quiste_complejo") return "Lesión quística compleja con tabiques o septos internos.";
-        if (s === "ovarios_poliquisticos") return "Ovarios aumentados de volumen con microfolículos periféricos.";
-        break;
-      case "psoas":
-        if (s === "hematoma") return "Colección hipoecoica definida en músculo psoas sugestiva de hematoma.";
-        if (s === "absceso") return "Colección fluida compleja retroperitoneal sugestiva de absceso.";
-        if (s === "asimetria") return "Asimetría en espesor de músculos psoas bilaterales.";
-        break;
-      case "colon":
-        if (s === "meteorismo_abundante") return "Importante distensión gaseosa de asas colónicas.";
-        if (s === "diverticulosis") return "Imágenes saculares de adición diverticulares en colon.";
-        if (s === "pared_engrosada") return "Engrosamiento de la pared del colon compatible con colonopatía.";
-        if (s === "fecaloma") return "Masa de retención fecal con sombra acústica en fosa ilíaca izquierda.";
-        break;
-      case "pared_linea_alba":
-        if (s === "diastasis") return "Diástasis de rectos en la línea alba.";
-        if (s === "hernia_epigastrica") return "Hernia epigástrica palpable.";
-        if (s === "lipoma") return "Pequeño lipoma subcutáneo en la línea media.";
-        if (s === "tumor_solido") return "Masa sólida palpable en línea media.";
-        break;
-      case "pared_umbilical":
-        if (s === "hernia_umbilical") return "Hernia umbilical con saco reducible.";
-        if (s === "defecto_aponeurotico") return "Defecto aponeurótico umbilical palpable.";
-        if (s === "tumor") return "Foco nodular denso compatible con masa umbilical.";
-        break;
-      case "pared_inguinal_derecha":
-        if (s === "hernia_inguinal_derecha") return "Hernia inguinal derecha reducible.";
-        if (s === "hernia_crural") return "Defecto compatible con hernia crural derecha.";
-        if (s === "lipoma_canal") return "Lipoma del canal inguinal derecho.";
-        break;
-      case "pared_inguinal_izquierda":
-        if (s === "hernia_inguinal_izquierda") return "Hernia inguinal izquierda reducible.";
-        if (s === "hernia_crural") return "Defecto compatible con hernia crural izquierda.";
-        if (s === "lipoma_canal") return "Lipoma del canal inguinal izquierdo.";
-        break;
-      case "pared_muscular":
-        if (s === "diastasis_de_rectos") return "Separación anormal de vientres de músculos rectos.";
-        if (s === "desgarro_muscular") return "Disrupción fibrilar con hematoma en plano muscular.";
-        if (s === "hematoma") return "Hematoma de la pared muscular abdominal.";
-        if (s === "tumor_desmoide") return "Masa bien delimitada compatible con tumor desmoide.";
-        if (s === "hernia_spiegel") return "Hernia de Spiegel a través de la línea semilunar.";
-        break;
-      case "suprarenales":
-        if (s === "hiperplasia") return "Glandulas suprarrenales con engrosamiento difuso compatible con hiperplasia.";
-        if (s === "adenoma") return "Nódulo suprarrenal de bordes definidos compatible con adenoma.";
-        if (s === "nodulo_sospechoso") return "Nódulo suprarrenal de aspecto sospechoso.";
-        break;
-      case "retroperitoneo":
-        if (s === "adenopatias") return "Adenopatías / Ganglios aumentados retroperitoneales.";
-        if (s === "liquido_libre") return "Líquido libre retroperitoneal.";
-        if (s === "masa_retroperitoneal") return "Masa sólida retroperitoneal.";
-        break;
+    // Force strict simplified descriptions for small bowel and ascites to prevent any pre-defined fabricated text
+    if (id === "intestino_delgado") {
+      if (s === "aumento_motilidad") return "Asas de intestino delgado con aumento de peristalsis.";
+      if (s === "obstruccion") return "Asas de intestino delgado con obstrucción intestinal.";
+      if (s === "edema_de_pared") return "Asas de intestino delgado con edema de pared.";
+      if (s === "meteorismo") return "Asas de intestino delgado con meteorismo abundante.";
+      if (s === "dilatacion") return "Asas de intestino delgado dilatadas.";
+      if (s === "normal") return "Asas de intestino delgado de calibre y características normales.";
+      if (s === "no_descrito") return "No mencionado / No descrito.";
     }
-    return "Alteración focal descrita.";
+    if (id === "ascitis") {
+      if (s === "normal") return "Sin líquido libre intraabdominal.";
+      if (s === "leve") return "Líquido libre en escasa cantidad.";
+      if (s === "moderado") return "Líquido libre en moderada cantidad (ascitis).";
+      if (s === "severo") return "Abundante líquido libre intraabdominal (ascitis).";
+      if (s === "no_descrito") return "No mencionado / No descrito.";
+    }
+
+    // Fallback: If no real sentence is in the report, we MUST NOT use fake/predefined descriptions
+    // with invented medical details. Instead, use the literal label/state name in Spanish.
+    const stateLabels: Record<string, string> = {
+      esteatosis_leve: "Esteatosis hepática leve",
+      esteatosis_moderada: "Esteatosis hepática moderada",
+      esteatosis_severa: "Esteatosis hepática severa",
+      hepatomegalia: "Hepatomegalia",
+      cirrosis: "Cirrosis hepática",
+      lesion_ocupante_espacio: "Lesión ocupante de espacio (LOE) hepática",
+      quiste: "Quiste hepático",
+      litiasis: "Litiasis / Cálculos",
+      litiasis_unica: "Litiasis única",
+      barro_biliar: "Barro biliar",
+      colecistitis_aguda: "Colecistitis aguda",
+      colecistitis_cronica: "Colecistitis crónica litiásica",
+      polipo: "Pólipo vesicular",
+      pared_engrosada: "Pared vesicular engrosada",
+      ectasia_biliar: "Ectasia biliar",
+      dilatacion_coledoco: "Dilatación de colédoco",
+      quistes_corticales: "Quistes corticales",
+      perdida_relacion_corticomedular: "Pérdida de relación corticomedular",
+      nefrolitiasis: "Nefrolitiasis",
+      quiste_simple: "Quiste simple",
+      hidronefrosis: "Hidronefrosis",
+      esplenomegalia: "Esplenomegalia",
+      lesion_focal: "Lesión focal",
+      pancreatitis_aguda: "Pancreatitis aguda",
+      compromiso_atrofico: "Compromiso atrófico",
+      calcificaciones: "Calcificaciones",
+      derrame_libre: "Líquido libre / Derrame",
+      coleccion_organizada: "Colección organizada",
+      adenopatias: "Adenopatías",
+      ectasia_aortica: "Ectasia aórtica",
+      aneurisma_fusiforme: "Aneurisma fusiforme",
+      placas_calcificadas: "Placas calcificadas",
+      no_visible_gas: "No visible por gas",
+      pancreatitis_cronica: "Pancreatitis crónica",
+      atrofia: "Atrofia",
+      lesion_quistica: "Lesión quística",
+      nodulo_esplenico: "Nódulo esplénico",
+      quiste_complejo: "Quiste complejo",
+      masa_solida: "Masa sólida",
+      sedimento_urinario: "Sedimento urinario",
+      masa_vesical: "Masa vesical",
+      hiperplasia_benigna: "Hiperplasia benigna de próstata",
+      miomatosis: "Miomatosis uterina",
+      endometrio_engrosado: "Endometrio engrosado",
+      liquido_libre: "Líquido libre",
+      ovarios_poliquisticos: "Ovarios poliquísticos",
+      hematoma: "Hematoma",
+      absceso: "Absceso",
+      asimetria: "Asimetría muscular",
+      meteorismo_abundante: "Meteorismo abundante",
+      diverticulosis: "Diverticulosis",
+      fecaloma: "Fecaloma",
+      diastasis: "Diástasis de rectos",
+      hernia_epigastrica: "Hernia epigástrica",
+      lipoma: "Lipoma",
+      tumor_solido: "Tumor sólido",
+      hernia_umbilical: "Hernia umbilical",
+      defecto_aponeurotico: "Defecto aponeurótico",
+      tumor: "Tumor",
+      hernia_inguinal_derecha: "Hernia inguinal derecha",
+      hernia_inguinal_izquierda: "Hernia inguinal izquierda",
+      hernia_crural: "Hernia crural",
+      lipoma_canal: "Lipoma de canal",
+      diastasis_de_rectos: "Diástasis de rectos",
+      desgarro_muscular: "Desgarro muscular",
+      tumor_desmoide: "Tumor desmoide",
+      hernia_spiegel: "Hernia de Spiegel",
+      hiperplasia: "Hiperplasia",
+      adenoma: "Adenoma",
+      nodulo_sospechoso: "Nódulo sospechoso",
+      aumento_motilidad: "Aumento de motilidad intestinal (hiperperistaltismo)",
+      obstruccion: "Obstrucción intestinal",
+      edema_de_pared: "Edema de pared intestinal",
+      meteorismo: "Meteorismo / Distensión gaseosa",
+      dilatacion: "Dilatación de asas delgadas",
+      leve: "Líquido libre / Ascitis leve",
+      moderado: "Líquido libre / Ascitis moderada",
+      severo: "Líquido libre / Ascitis severa"
+    };
+
+    const label = stateLabels[s] || s.replace(/_/g, " ");
+    return `Hallazgo: ${label.charAt(0).toUpperCase() + label.slice(1)}.`;
   };
 
   const runLocalHeuristics = (logs: string[]) => {
-    const textLower = generatedReport.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const textLowerOuter = generatedReport.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     const nextStates = { ...states };
     const nextDescriptions = { ...customDescriptions };
 
@@ -1747,13 +2023,19 @@ export default function AbdomenAnatomyViewer({
       pared_inguinal_izquierda: ["inguinal izquierda", "ing_izquierd", "conducto inguinal izquierdo", "hernia inguinal izquierda", "fii"],
       pared_muscular: ["pared anterior", "musculo recto", "músculo recto", "recto abdominal", "pared muscular", "oblicuo", "spiegel", "desmoide"],
       suprarenales: ["suprarrenal", "adrenal", "suprarenal", "glandula suprarrenal", "glandulas suprarrenales", "suprarrenales"],
-      retroperitoneo: ["retroperitoneo", "retroperitoneal", "espacio retroperitoneal", "adenopatia retroperitoneal", "ganglios retroperitoneales"]
+      retroperitoneo: ["retroperitoneo", "retroperitoneal", "espacio retroperitoneal", "adenopatia retroperitoneal", "ganglios retroperitoneales"],
+      intestino_delgado: ["intestino delgado", "yeyuno", "ileon", "íleon", "peristaltismo", "motilidad", "obstruccion intestinal", "obstruccion de intestino", "edema de pared", "asas delgadas", "asas de intestino delgado"],
+      ascitis: ["ascitis", "liquido libre", "líquido libre", "cavidad peritoneal", "recesos", "fondo de saco", "douglas", "perihepatico", "periesplenico", "goteras"]
     };
 
     Object.keys(keywords).forEach(id => {
+      const exactSentence = extractSentenceForOrgan(generatedReport, id, "");
+      const organSentenceLower = exactSentence ? exactSentence.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") : "";
+      
       let isMentioned = false;
       keywords[id].forEach(kw => {
-        if (textLower.includes(kw)) {
+        const kwNorm = kw.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        if (organSentenceLower.includes(kwNorm) || textLowerOuter.includes(kwNorm)) {
           isMentioned = true;
         }
       });
@@ -1764,6 +2046,8 @@ export default function AbdomenAnatomyViewer({
       if (isMentioned) {
         detectedState = "normal";
         desc = "Dentro de límites normales.";
+
+        const textLower = organSentenceLower || textLowerOuter;
 
         // Subpattern search
         if (id === "higado") {
@@ -2012,11 +2296,89 @@ export default function AbdomenAnatomyViewer({
             detectedState = "masa_retroperitoneal";
             desc = "Masa retroperitoneal sospechosa.";
           }
+        } else if (id === "intestino_delgado") {
+          const isNegated = 
+            textLower.includes("sin alteraciones") || 
+            textLower.includes("normal") || 
+            textLower.includes("conservado") || 
+            textLower.includes("dentro de limites normales") || 
+            textLower.includes("no muestra alteraciones") || 
+            textLower.includes("no presenta alteraciones") ||
+            textLower.includes("sin evidencia de obstruccion") ||
+            textLower.includes("sin obstruccion") ||
+            textLower.includes("sin dilatacion");
+
+          if (isNegated) {
+            detectedState = "normal";
+            desc = "Asas de intestino delgado de calibre y características normales.";
+          } else if (textLower.includes("obstruccion") || textLower.includes("obstructivo")) {
+            detectedState = "obstruccion";
+            desc = "Obstrucción intestinal con dilatación de asas.";
+          } else if (textLower.includes("dilatacion") || textLower.includes("dilatadas")) {
+            detectedState = "dilatacion";
+            desc = "Dilatación de asas de intestino delgado.";
+          } else if (textLower.includes("edema de pared") || textLower.includes("engrosamiento parietal") || textLower.includes("doble pared")) {
+            detectedState = "edema_de_pared";
+            desc = "Edema de pared en asas de intestino delgado (signo del halo).";
+          } else if (textLower.includes("motilidad") || textLower.includes("hiperperistaltismo") || textLower.includes("aumento de motilidad")) {
+            detectedState = "aumento_motilidad";
+            desc = "Aumento de la motilidad intestinal (hiperperistaltismo).";
+          } else if (textLower.includes("meteorismo") || textLower.includes("gas")) {
+            detectedState = "meteorismo";
+            desc = "Meteorismo intestinal abundante interasa.";
+          } else {
+            detectedState = "normal";
+            desc = "Asas de intestino delgado de calibre y características normales.";
+          }
+        } else if (id === "ascitis") {
+          const isNegated = 
+            textLower.includes("sin liquido") || 
+            textLower.includes("no se observa") || 
+            textLower.includes("no liquido") || 
+            textLower.includes("no se evidencia") || 
+            textLower.includes("no se aprecia") || 
+            textLower.includes("no se detecta") || 
+            textLower.includes("sin hallazgos") || 
+            textLower.includes("negativo") || 
+            textLower.includes("libre de liquido") || 
+            textLower.includes("recesos libres") || 
+            textLower.includes("sin colecciones") ||
+            textLower.includes("ausencia de liquido") ||
+            textLower.includes("no muestra liquido") ||
+            textLower.includes("no presenta liquido") ||
+            textLower.includes("no se visualiza");
+
+          if (isNegated) {
+            detectedState = "normal";
+            desc = "Sin líquido libre intraabdominal ni pélvico.";
+          } else if (textLower.includes("severo") || textLower.includes("abundante")) {
+            detectedState = "severo";
+            desc = "Abundante líquido libre intraperitoneal (ascitis franca) difuso.";
+          } else if (textLower.includes("moderado") || textLower.includes("moderada")) {
+            detectedState = "moderado";
+            desc = "Moderada cantidad de líquido libre intraperitoneal.";
+          } else if (textLower.includes("leve") || textLower.includes("escaso") || textLower.includes("escasa cantidad")) {
+            detectedState = "leve";
+            desc = "Escasa cantidad de líquido libre en recesos peritoneal.";
+          } else {
+            detectedState = "normal";
+            desc = "Sin líquido libre intraabdominal ni pélvico.";
+          }
         }
       }
 
-      if (detectedState !== "normal" && detectedState !== "no_descrito") {
-        desc = extractSentenceForOrgan(generatedReport, id, desc);
+      // Try to extract exact sentence from report to avoid predefined/invented sentences
+      if (exactSentence) {
+        desc = exactSentence;
+      } else {
+        if (detectedState === "normal") {
+          desc = "Dentro de límites normales.";
+        } else if (detectedState === "no_descrito") {
+          desc = "No mencionado / No descrito.";
+        } else {
+          // Avoid predefined fake sentences, get clean literal description
+          desc = getSimplifiedDescription(id, detectedState);
+        }
       }
 
       nextStates[id] = detectedState;
@@ -2026,6 +2388,183 @@ export default function AbdomenAnatomyViewer({
 
     setStates(nextStates);
     setCustomDescriptions(nextDescriptions);
+
+    // Force-sync visual bowel and ascites states directly from the parsed states
+    if (nextStates.intestino_delgado) {
+      setSmallBowelState(nextStates.intestino_delgado);
+    }
+    if (nextStates.ascitis) {
+      setAscitesState(nextStates.ascitis);
+    }
+  };
+
+  const syncSmallBowelAndAscitesFromReportText = (reportText: string) => {
+    if (!reportText) return;
+
+    // Strict negation and active finding detector at the sentence level
+    const hasActiveFinding = (text: string, keywords: string[]): boolean => {
+      if (!text) return false;
+      const textNorm = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      
+      // Strict list of negative phrases for abdominal findings
+      const explicitNegatives = [
+        "no se observa", "sin evidencia", "sin liquido", "no liquido", "no se evidencia",
+        "sin hallazgos", "negativo", "normal", "dentro de limites normales", "libre", "recesos libres",
+        "no se aprecia", "no se detecta", "sin alteraciones", "no muestra", "no presenta", "no se visualiza", 
+        "sin colecciones", "sin coleccion", "no se observan", "vacios", "vacio", "libre de liquido", "limpios", "limpio"
+      ];
+      
+      if (explicitNegatives.some(neg => textNorm.includes(neg))) {
+        return false;
+      }
+
+      for (const kw of keywords) {
+        const kwNorm = kw.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const idx = textNorm.indexOf(kwNorm);
+        if (idx !== -1) {
+          // Check if there is a negation shortly before the keyword
+          const contextStart = Math.max(0, idx - 25);
+          const context = textNorm.substring(contextStart, idx);
+          const localNegatives = ["sin", "no", "libre", "ni", "negativo", "ausencia", "limpio", "no se"];
+          const isNegatedLocally = localNegatives.some(neg => context.includes(neg));
+          if (!isNegatedLocally) {
+            return true;
+          }
+        }
+      }
+      return false;
+    };
+
+    // Extract exact sentence from report strictly for intestino_delgado and ascitis
+    const exactBowelSentence = extractSentenceForOrgan(reportText, "intestino_delgado", "");
+    const exactAscitesSentence = extractSentenceForOrgan(reportText, "ascitis", "");
+
+    // 1. Bowel State detection
+    let detectedBowelState = "no_descrito";
+    if (exactBowelSentence) {
+      const sentenceLower = exactBowelSentence.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const hasActiveBowel = hasActiveFinding(sentenceLower, [
+        "obstruccion", "obstructivo", "dilatacion", "dilatadas", "dilatada", 
+        "edema de pared", "doble pared", "engrosamiento", "hiperperistaltismo", "aumento de la motilidad", "meteorismo"
+      ]);
+
+      if (hasActiveBowel) {
+        if (hasActiveFinding(sentenceLower, ["obstruccion", "obstructivo"])) {
+          detectedBowelState = "obstruccion";
+        } else if (hasActiveFinding(sentenceLower, ["dilatacion", "dilatadas", "dilatada"])) {
+          detectedBowelState = "dilatacion";
+        } else if (hasActiveFinding(sentenceLower, ["edema de pared", "doble pared", "engrosamiento"])) {
+          detectedBowelState = "edema_de_pared";
+        } else if (hasActiveFinding(sentenceLower, ["aumento de la motilidad", "hiperperistaltismo", "aumento de motilidad"])) {
+          detectedBowelState = "aumento_motilidad";
+        } else if (hasActiveFinding(sentenceLower, ["meteorismo", "abundante gas"])) {
+          detectedBowelState = "meteorismo";
+        } else {
+          detectedBowelState = "normal";
+        }
+      } else {
+        detectedBowelState = "normal";
+      }
+    }
+    setSmallBowelState(detectedBowelState);
+
+    // 2. Peristalsis detection
+    let detectedPeristalsis = "conservada";
+    if (exactBowelSentence) {
+      const sentenceLower = exactBowelSentence.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      if (hasActiveFinding(sentenceLower, ["peristaltismo aumentado", "hiperperistaltismo", "peristaltismo de lucha"])) {
+        detectedPeristalsis = "aumentada";
+      } else if (hasActiveFinding(sentenceLower, ["peristaltismo disminuido", "peristaltismo lento"])) {
+        detectedPeristalsis = "disminuida";
+      } else if (hasActiveFinding(sentenceLower, ["peristaltismo ausente", "peristalsis ausente", "ileo paralitico"])) {
+        detectedPeristalsis = "ausente";
+      }
+    }
+    setSmallBowelPeristalsis(detectedPeristalsis);
+
+    // Try parsing diameter (e.g. "25mm", "28 mm", "32mm")
+    let detectedDiameter = 18;
+    if (exactBowelSentence) {
+      const sentenceLower = exactBowelSentence.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const diameterMatch = sentenceLower.match(/(?:diametro de|calibre de|mide|aproximados)\s*(\d+)\s*(?:mm|milimetros)/);
+      if (diameterMatch) {
+        detectedDiameter = parseInt(diameterMatch[1], 10);
+      } else {
+        if (detectedBowelState === "obstruccion" || detectedBowelState === "dilatacion") {
+          detectedDiameter = 32;
+        }
+      }
+    }
+    setSmallBowelDiameter(detectedDiameter);
+
+    // Try parsing wall thickness (e.g. "4.5mm", "5 mm", "3.2mm")
+    let detectedThickness = 1.5;
+    if (exactBowelSentence) {
+      const sentenceLower = exactBowelSentence.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const thicknessMatch = sentenceLower.match(/(?:espesor de|grosor de|pared de)\s*(\d+(?:\.\d+)?)\s*(?:mm|milimetros)/);
+      if (thicknessMatch) {
+        detectedThickness = parseFloat(thicknessMatch[1]);
+      } else {
+        if (detectedBowelState === "edema_de_pared") {
+          detectedThickness = 4.5;
+        }
+      }
+    }
+    setSmallBowelWallThickness(detectedThickness);
+
+    // 3. Ascites / Líquido Libre detection
+    let detectedAscitesState = "no_descrito";
+    if (exactAscitesSentence) {
+      const sentenceLower = exactAscitesSentence.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const hasActiveAscites = hasActiveFinding(sentenceLower, ["liquido", "ascitis", "coleccion", "derrame"]);
+      
+      if (hasActiveAscites) {
+        if (hasActiveFinding(sentenceLower, ["ascitis abundante", "liquido libre severo", "liquido libre abundante", "ascitis severa", "abundante liquido", "severo", "severa"])) {
+          detectedAscitesState = "severo";
+        } else if (hasActiveFinding(sentenceLower, ["moderada cantidad", "ascitis moderada", "liquido libre moderado", "moderado", "moderada"])) {
+          detectedAscitesState = "moderado";
+        } else {
+          detectedAscitesState = "leve";
+        }
+      } else {
+        detectedAscitesState = "normal";
+      }
+    }
+    setAscitesState(detectedAscitesState);
+
+    // 4. Ascites location detection
+    let detectedAscitesLocation = "pelvis";
+    if (exactAscitesSentence) {
+      const sentenceLower = exactAscitesSentence.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      if (sentenceLower.includes("morison") || sentenceLower.includes("perihepatico") || sentenceLower.includes("subfrenico")) {
+        detectedAscitesLocation = "perihepatico";
+      } else if (sentenceLower.includes("periesplenico")) {
+        detectedAscitesLocation = "periesplenico";
+      } else if (sentenceLower.includes("goteras paracolic") || sentenceLower.includes("flancos") || sentenceLower.includes("goteras")) {
+        detectedAscitesLocation = "goteras";
+      } else if (sentenceLower.includes("douglas") || sentenceLower.includes("pelvis") || sentenceLower.includes("pelvico")) {
+        detectedAscitesLocation = "pelvis";
+      } else if (sentenceLower.includes("generalizada") || sentenceLower.includes("difuso")) {
+        detectedAscitesLocation = "generalizada";
+      }
+    }
+    setAscitesLocation(detectedAscitesLocation);
+
+    // Base findings strictly and exclusively on the report sentences
+    const finalBowelDesc = exactBowelSentence || "No mencionado / No descrito.";
+    const finalAscitesDesc = exactAscitesSentence || "No mencionado / No descrito.";
+
+    setStates(prev => ({
+      ...prev,
+      intestino_delgado: detectedBowelState,
+      ascitis: detectedAscitesState
+    }));
+
+    setCustomDescriptions(prev => ({
+      ...prev,
+      intestino_delgado: finalBowelDesc,
+      ascitis: finalAscitesDesc
+    }));
   };
 
   const handleScanReportText = async (showFeedBack: boolean = false) => {
@@ -2069,11 +2608,18 @@ export default function AbdomenAnatomyViewer({
             let parsedState = data.states[struc.id];
             let rawDesc = data.descriptions[struc.id];
 
-            let finalDesc = rawDesc || "Dentro de límites normales.";
-            if (parsedState === "normal") {
-              finalDesc = "Dentro de límites normales.";
-            } else if (parsedState === "no_descrito") {
-              finalDesc = "No mencionado / No descrito.";
+            // Try extracting the exact sentence from the report first to keep the exact phrasing!
+            const exactSentence = extractSentenceForOrgan(generatedReport, struc.id, "");
+            let finalDesc = exactSentence || rawDesc || "";
+
+            if (!finalDesc) {
+              if (parsedState === "normal") {
+                finalDesc = "Dentro de límites normales.";
+              } else if (parsedState === "no_descrito") {
+                finalDesc = "No mencionado / No descrito.";
+              } else {
+                finalDesc = "Alteración descrita.";
+              }
             }
 
             finalStates[struc.id] = parsedState;
@@ -2089,6 +2635,15 @@ export default function AbdomenAnatomyViewer({
 
         setStates(finalStates);
         setCustomDescriptions(finalDescriptions);
+        
+        // Force-sync visual bowel and ascites states directly from the AI parsed states
+        if (finalStates.intestino_delgado) {
+          setSmallBowelState(finalStates.intestino_delgado);
+        }
+        if (finalStates.ascitis) {
+          setAscitesState(finalStates.ascitis);
+        }
+
         setSyncLogs(prev => [...prev, ...logs, `✔ Sincronización realizada correctamente. Evaluados ${parsedCount} órganos, ${foundPathologies} hallazgos patológicos.`]);
         setLastSyncedReport(generatedReport);
       } else {
@@ -2327,6 +2882,8 @@ export default function AbdomenAnatomyViewer({
       setIsSyncing(false);
       // Forzar la sincronizacion de la via biliar al sincronizar manualmente
       syncBiliaryFromReport(generatedReport, true);
+      // Forzar la sincronización del módulo de asas intestinales al sincronizar manualmente de manera estricta
+      syncSmallBowelAndAscitesFromReportText(generatedReport);
     }
   };
 
@@ -2799,6 +3356,18 @@ export default function AbdomenAnatomyViewer({
           >
             <span className={`h-2 w-2 rounded-full ${diverticulitisForceActive ? "bg-amber-500 shadow-[0_0_8px_#f59e0b]" : "bg-slate-600"} inline-block`} />
             <span>Diverticulitis: {diverticulitisForceActive ? "Sí" : "No"}</span>
+          </button>
+
+          <button
+            onClick={() => setSmallBowelForceActive(prev => !prev)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase tracking-wider transition-all duration-200 cursor-pointer ${
+              smallBowelForceActive 
+                ? "bg-blue-600/30 border-blue-500/50 text-blue-350 shadow-[0_2px_8px_rgba(59,130,246,0.25)] animate-pulse" 
+                : "bg-slate-950 border-slate-850 text-slate-400 hover:text-slate-200 hover:border-slate-705"
+            }`}
+          >
+            <span className={`h-2 w-2 rounded-full ${smallBowelForceActive ? "bg-blue-500 shadow-[0_0_8px_#3b82f6]" : "bg-slate-600"} inline-block`} />
+            <span>Asas/Líquido: {smallBowelForceActive ? "Sí" : "No"}</span>
           </button>
 
           <button
@@ -4971,6 +5540,407 @@ export default function AbdomenAnatomyViewer({
                 <span className="text-[9px] font-black uppercase text-amber-450 tracking-wider block mb-1 font-mono">Texto del Reporte Sincronizado</span>
                 <p className="text-[11px] text-slate-300 italic font-medium leading-relaxed font-sans">
                   "{getDiverticulitisDescription(diverticulitisWallThickening, diverticulitisDiverticula, diverticulitisFatStranding, diverticulitisAbscess, diverticulitisFreeAir, diverticulitisHinchey)}"
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DIAGRAMA INTERACTIVO DE INTESTINO DELGADO Y LÍQUIDO LIBRE */}
+      {isSmallBowelActive && (
+        <div id="smallbowel-section-root" className="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-5 shadow-2xl flex flex-col gap-4 mb-5 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full blur-3xl pointer-events-none" />
+          
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-850 pb-3">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-blue-500/10 rounded-lg border border-blue-500/20 text-blue-400 font-bold">
+                <Activity className="h-4.5 w-4.5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-slate-200 uppercase tracking-widest font-mono">
+                  Esquema: Intestino Delgado y Líquido Libre (Ascitis)
+                </h3>
+                <p className="text-[10px] text-slate-500 font-medium text-left">
+                  Módulo interactivo para simulación de alteraciones motiles, procesos obstructivos, edema de pared, y presencia de líquido libre en recesos abdominales.
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-3 flex-wrap">
+              <button
+                type="button"
+                onClick={() => handleToggleIncludeSmallBowel(!activeIncludeSmallBowel)}
+                className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all cursor-pointer flex items-center gap-2 font-mono ${
+                  activeIncludeSmallBowel
+                    ? "bg-emerald-950/80 text-emerald-400 border-emerald-500/50 shadow-md shadow-emerald-950/20"
+                    : "bg-slate-900 text-slate-500 border-slate-800 hover:text-slate-300"
+                }`}
+              >
+                {activeIncludeSmallBowel ? (
+                  <>
+                    <Check className="h-3.5 w-3.5 text-emerald-400 font-bold" />
+                    <span>Adjuntar al PDF: Sí</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="h-2 w-2 rounded-full bg-slate-600 block" />
+                    <span>Adjuntar al PDF: No</span>
+                  </>
+                )}
+              </button>
+
+              <span className="text-[9px] px-2.5 py-1 rounded-lg font-black uppercase tracking-wider bg-blue-950/30 text-blue-400 border border-blue-900/30 animate-pulse font-mono">
+                Cavidad Peritoneal Evaluada
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
+            {/* COLUMN 1: DYNAMIC SVG VECTOR SCHEMATIC FOR SMALL BOWEL AND ASCITES */}
+            <div className="flex flex-col items-center justify-center bg-slate-900/40 border border-slate-850/60 rounded-xl p-4 min-h-[220px]">
+              <span className="text-[9px] font-extrabold uppercase text-slate-500 tracking-wider mb-2 font-mono">
+                REPRESENTACIÓN DINÁMICA DE ASAS Y FLUIDO
+              </span>
+              
+              <svg
+                id="abdomen-smallbowel-svg"
+                viewBox="0 0 240 240"
+                className="w-full h-auto max-w-[210px] drop-shadow-2xl"
+              >
+                <defs>
+                  <linearGradient id="fluidGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#3b82f6" stopOpacity={ascitesState === "leve" ? 0.15 : ascitesState === "moderado" ? 0.35 : 0.6} />
+                    <stop offset="100%" stopColor="#1e3a8a" stopOpacity={0.05} />
+                  </linearGradient>
+                </defs>
+
+                {/* Ascites Background Layer */}
+                {ascitesState !== "no_descrito" && ascitesState !== "normal" && (
+                  <rect x="10" y="10" width="220" height="220" rx="20" fill="url(#fluidGrad)" stroke="#3b82f6" strokeWidth="1" strokeDasharray="3,3" />
+                )}
+
+                {/* Peritoneal Flanks schematic outline */}
+                <rect x="20" y="20" width="200" height="200" rx="15" fill="none" stroke="#334155" strokeWidth="1" />
+
+                {/* Small Bowel Loops */}
+                <g>
+                  {/* Bowel Loop 1 (Left Loop) */}
+                  <path 
+                    d="M 50,120 C 50,80 110,80 110,120 C 110,160 50,160 50,120" 
+                    fill={smallBowelState === "normal" ? "rgba(16, 185, 129, 0.15)" : smallBowelState === "aumento_motilidad" ? "rgba(245, 158, 11, 0.2)" : "rgba(244, 63, 94, 0.3)"} 
+                    stroke={smallBowelState === "normal" ? "#10b981" : smallBowelState === "aumento_motilidad" ? "#f59e0b" : "#f43f5e"}
+                    strokeWidth={smallBowelWallThickness > 3 ? "4" : "2"} 
+                  />
+                  {/* Bowel Loop 2 (Right Loop) */}
+                  <path 
+                    d="M 110,120 C 110,80 190,80 190,120 C 190,160 110,160 110,120" 
+                    fill={smallBowelState === "normal" ? "rgba(16, 185, 129, 0.15)" : smallBowelState === "aumento_motilidad" ? "rgba(245, 158, 11, 0.2)" : "rgba(244, 63, 94, 0.3)"} 
+                    stroke={smallBowelState === "normal" ? "#10b981" : smallBowelState === "aumento_motilidad" ? "#f59e0b" : "#f43f5e"}
+                    strokeWidth={smallBowelWallThickness > 3 ? "4" : "2"} 
+                  />
+                  {/* Bowel Loop 3 (Center Connecting Loop) */}
+                  <path 
+                    d="M 80,140 C 80,180 160,180 160,140" 
+                    fill={smallBowelState === "normal" ? "rgba(16, 185, 129, 0.15)" : smallBowelState === "aumento_motilidad" ? "rgba(245, 158, 11, 0.2)" : "rgba(244, 63, 94, 0.3)"} 
+                    stroke={smallBowelState === "normal" ? "#10b981" : smallBowelState === "aumento_motilidad" ? "#f59e0b" : "#f43f5e"}
+                    strokeWidth={smallBowelWallThickness > 3 ? "4" : "2"} 
+                  />
+                </g>
+
+                {/* Dynamic motility waves / lines if hyperperistalsis */}
+                {smallBowelState === "aumento_motilidad" && (
+                  <g className="animate-pulse">
+                    <path d="M 40,110 Q 45,100 50,110 T 60,110" fill="none" stroke="#f59e0b" strokeWidth="1.5" />
+                    <path d="M 180,110 Q 185,100 190,110 T 200,110" fill="none" stroke="#f59e0b" strokeWidth="1.5" />
+                    <path d="M 110,170 Q 115,160 120,170 T 130,170" fill="none" stroke="#f59e0b" strokeWidth="1.5" />
+                  </g>
+                )}
+
+                {/* Edema double contour representation */}
+                {smallBowelWallThickness > 3 && (
+                  <g opacity="0.6">
+                    <path d="M 55,120 C 55,90 105,90 105,120 C 105,150 55,150 55,120" fill="none" stroke="#f43f5e" strokeWidth="1" strokeDasharray="2,2" />
+                    <path d="M 115,120 C 115,90 185,90 185,120 C 185,150 115,150 115,120" fill="none" stroke="#f43f5e" strokeWidth="1" strokeDasharray="2,2" />
+                  </g>
+                )}
+
+                {/* Obstruction or dilation representation */}
+                {smallBowelDiameter > 25 && (
+                  <g>
+                    <circle cx="120" cy="120" r="10" fill="none" stroke="#f43f5e" strokeWidth="1.5" strokeDasharray="4,4" className="animate-ping" style={{ animationDuration: '4s' }} />
+                    <text x="120" y="123" fill="#f43f5e" fontSize="8" fontWeight="black" textAnchor="middle" fontFamily="monospace">DILATADA</text>
+                  </g>
+                )}
+
+                {/* Labels */}
+                <text x="120" y="50" fill="#cbd5e1" fontSize="9" fontWeight="bold" textAnchor="middle" fontFamily="monospace">INTESTINO DELGADO</text>
+                <text x="120" y="62" fill="#64748b" fontSize="7" textAnchor="middle" fontFamily="monospace">Diámetro: {smallBowelDiameter} mm | Pared: {smallBowelWallThickness} mm</text>
+                
+                {ascitesState !== "no_descrito" && ascitesState !== "normal" && (
+                  <g>
+                    <text x="120" y="210" fill="#3b82f6" fontSize="9" fontWeight="extrabold" textAnchor="middle" className="animate-pulse" fontFamily="monospace">ASCITIS ({ascitesState.toUpperCase()})</text>
+                    <text x="120" y="219" fill="#93c5fd" fontSize="7.5" textAnchor="middle" fontFamily="monospace">Localización: {ascitesLocation.toUpperCase()}</text>
+                  </g>
+                )}
+              </svg>
+            </div>
+
+            {/* COLUMN 2: INTERACTIVE CONTROLS */}
+            <div className="flex flex-col gap-4 bg-slate-900/10 border border-slate-850/50 p-4 rounded-xl text-left">
+              {/* 1. SMALL BOWEL CONTROLS */}
+              <div className="flex flex-col gap-2.5">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider font-mono">
+                  1. Alteración de Intestino Delgado
+                </span>
+                
+                <div className="grid grid-cols-2 gap-2">
+                  <label htmlFor="small-bowel-state-select" className="text-[10.5px] font-semibold text-slate-300 flex items-center">Hallazgo Base:</label>
+                  <select
+                    id="small-bowel-state-select"
+                    value={smallBowelState}
+                    onChange={(e) => {
+                      const nextVal = e.target.value;
+                      setSmallBowelState(nextVal);
+                      
+                      // Auto adjustments based on clinically consistent features
+                      let nextDiameter = smallBowelDiameter;
+                      let nextThickness = smallBowelWallThickness;
+                      let nextPeristalsis = smallBowelPeristalsis;
+
+                      if (nextVal === "obstruccion" || nextVal === "dilatacion") {
+                        nextDiameter = 32;
+                        nextPeristalsis = "disminuida";
+                        setSmallBowelDiameter(32);
+                        setSmallBowelPeristalsis("disminuida");
+                      } else if (nextVal === "aumento_motilidad") {
+                        nextDiameter = 18;
+                        nextThickness = 1.5;
+                        nextPeristalsis = "aumentada";
+                        setSmallBowelDiameter(18);
+                        setSmallBowelWallThickness(1.5);
+                        setSmallBowelPeristalsis("aumentada");
+                      } else if (nextVal === "edema_de_pared") {
+                        nextThickness = 4.5;
+                        nextDiameter = 22;
+                        setSmallBowelWallThickness(4.5);
+                        setSmallBowelDiameter(22);
+                      } else if (nextVal === "normal") {
+                        nextDiameter = 18;
+                        nextThickness = 1.5;
+                        nextPeristalsis = "conservada";
+                        setSmallBowelDiameter(18);
+                        setSmallBowelWallThickness(1.5);
+                        setSmallBowelPeristalsis("conservada");
+                      }
+
+                      const desc = getSmallBowelAndAscitesDescription(
+                        nextVal,
+                        nextDiameter,
+                        nextThickness,
+                        nextPeristalsis,
+                        ascitesState,
+                        ascitesLocation
+                      );
+                      setStates(prev => ({ ...prev, intestino_delgado: nextVal }));
+                      setCustomDescriptions(prev => ({ ...prev, intestino_delgado: desc }));
+                    }}
+                    className="bg-slate-950 border border-slate-800 rounded-lg p-1.5 text-xs text-slate-200 font-medium focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="no_descrito">No mencionado / No descrito</option>
+                    <option value="normal">Normal</option>
+                    <option value="aumento_motilidad">Aumento de motilidad</option>
+                    <option value="obstruccion">Obstrucción intestinal</option>
+                    <option value="edema_de_pared">Edema de pared (Halo)</option>
+                    <option value="dilatacion">Dilatación de asas</option>
+                    <option value="meteorismo">Meteorismo abundante</option>
+                  </select>
+                </div>
+
+                {/* Slider Diámetro */}
+                <div className="flex flex-col gap-1 mt-1">
+                  <div className="flex justify-between items-center text-[10.5px]">
+                    <span className="font-semibold text-slate-300">Diámetro de Asas:</span>
+                    <span className={`font-mono font-bold ${smallBowelDiameter > 25 ? "text-rose-455" : "text-slate-400"}`}>
+                      {smallBowelDiameter} mm {smallBowelDiameter > 25 && "(Dilatadas)"}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="15"
+                    max="45"
+                    step="1"
+                    value={smallBowelDiameter}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      setSmallBowelDiameter(val);
+                      
+                      let nextState = smallBowelState;
+                      if (val > 25 && smallBowelState === "normal") {
+                        nextState = "dilatacion";
+                        setSmallBowelState("dilatacion");
+                      }
+                      
+                      const desc = getSmallBowelAndAscitesDescription(
+                        nextState,
+                        val,
+                        smallBowelWallThickness,
+                        smallBowelPeristalsis,
+                        ascitesState,
+                        ascitesLocation
+                      );
+                      setStates(prev => ({ ...prev, intestino_delgado: nextState }));
+                      setCustomDescriptions(prev => ({ ...prev, intestino_delgado: desc }));
+                    }}
+                    className="w-full h-1 bg-slate-850 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                  />
+                </div>
+
+                {/* Slider Grosor de Pared */}
+                <div className="flex flex-col gap-1 mt-1">
+                  <div className="flex justify-between items-center text-[10.5px]">
+                    <span className="font-semibold text-slate-300">Grosor de Pared:</span>
+                    <span className={`font-mono font-bold ${smallBowelWallThickness > 3 ? "text-rose-455" : "text-slate-400"}`}>
+                      {smallBowelWallThickness} mm {smallBowelWallThickness > 3 && "(Edema / Inflamatorio)"}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="6"
+                    step="0.1"
+                    value={smallBowelWallThickness}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value);
+                      setSmallBowelWallThickness(val);
+                      
+                      let nextState = smallBowelState;
+                      if (val > 3.0 && smallBowelState === "normal") {
+                        nextState = "edema_de_pared";
+                        setSmallBowelState("edema_de_pared");
+                      }
+                      
+                      const desc = getSmallBowelAndAscitesDescription(
+                        nextState,
+                        smallBowelDiameter,
+                        val,
+                        smallBowelPeristalsis,
+                        ascitesState,
+                        ascitesLocation
+                      );
+                      setStates(prev => ({ ...prev, intestino_delgado: nextState }));
+                      setCustomDescriptions(prev => ({ ...prev, intestino_delgado: desc }));
+                    }}
+                    className="w-full h-1 bg-slate-850 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                  />
+                </div>
+
+                {/* Peristalsis Selection */}
+                <div className="grid grid-cols-2 gap-2 mt-1">
+                  <label htmlFor="small-bowel-peristalsis-select" className="text-[10.5px] font-semibold text-slate-300 flex items-center">Peristaltismo:</label>
+                  <select
+                    id="small-bowel-peristalsis-select"
+                    value={smallBowelPeristalsis}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSmallBowelPeristalsis(val);
+                      
+                      const desc = getSmallBowelAndAscitesDescription(
+                        smallBowelState,
+                        smallBowelDiameter,
+                        smallBowelWallThickness,
+                        val,
+                        ascitesState,
+                        ascitesLocation
+                      );
+                      setStates(prev => ({ ...prev, intestino_delgado: smallBowelState }));
+                      setCustomDescriptions(prev => ({ ...prev, intestino_delgado: desc }));
+                    }}
+                    className="bg-slate-950 border border-slate-800 rounded-lg p-1.5 text-xs text-slate-200 font-medium focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="conservada">Conservado / Normal</option>
+                    <option value="aumentada">Aumentado (Lucha / Motilidad)</option>
+                    <option value="disminuida">Disminuido (Hipoperistalsis)</option>
+                    <option value="ausente">Ausente (Íleo paralítico)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="h-[1px] bg-slate-850 my-1" />
+
+              {/* 2. ASCITES / FREE FLUID CONTROLS */}
+              <div className="flex flex-col gap-2.5">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider font-mono">
+                  2. Líquido Libre / Ascitis
+                </span>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <label htmlFor="ascites-state-select" className="text-[10.5px] font-semibold text-slate-300 flex items-center">Cantidad:</label>
+                  <select
+                    id="ascites-state-select"
+                    value={ascitesState}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setAscitesState(val);
+                      
+                      const desc = getSmallBowelAndAscitesDescription(
+                        smallBowelState,
+                        smallBowelDiameter,
+                        smallBowelWallThickness,
+                        smallBowelPeristalsis,
+                        val,
+                        ascitesLocation
+                      );
+                      setStates(prev => ({ ...prev, ascitis: val }));
+                      setCustomDescriptions(prev => ({ ...prev, ascitis: desc }));
+                    }}
+                    className="bg-slate-950 border border-slate-800 rounded-lg p-1.5 text-xs text-slate-200 font-medium focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="no_descrito">No mencionado / No descrito</option>
+                    <option value="normal">Normal (Sin líquido libre)</option>
+                    <option value="leve">Líquido Libre Leve / Escaso</option>
+                    <option value="moderado">Líquido Libre Moderado / Ascitis</option>
+                    <option value="severo">Líquido Libre Severo / Ascitis abundante</option>
+                  </select>
+                </div>
+
+                {ascitesState !== "no_descrito" && ascitesState !== "normal" && (
+                  <div className="grid grid-cols-2 gap-2 mt-1 animate-fadeIn">
+                    <label htmlFor="ascites-location-select" className="text-[10.5px] font-semibold text-slate-300 flex items-center">Localización:</label>
+                    <select
+                      id="ascites-location-select"
+                      value={ascitesLocation}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setAscitesLocation(val);
+                        
+                        const desc = getSmallBowelAndAscitesDescription(
+                          smallBowelState,
+                          smallBowelDiameter,
+                          smallBowelWallThickness,
+                          smallBowelPeristalsis,
+                          ascitesState,
+                          val
+                        );
+                        setCustomDescriptions(prev => ({ ...prev, ascitis: desc }));
+                      }}
+                      className="bg-slate-950 border border-slate-800 rounded-lg p-1.5 text-xs text-slate-200 font-medium focus:outline-none focus:border-blue-500"
+                    >
+                      <option value="pelvis">Fondo de saco / Pelvis</option>
+                      <option value="perihepatico">Espacio perihepático (Morison)</option>
+                      <option value="periesplenico">Espacio periesplénico</option>
+                      <option value="goteras">Goteras paracólicas</option>
+                      <option value="generalizada">Generalizada / Difusa</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {/* PREVIEW REPORT TEXT */}
+              <div className="bg-blue-950/5 p-3 rounded-xl border border-blue-900/15 text-left mt-2">
+                <span className="text-[9px] font-black uppercase text-blue-450 tracking-wider block mb-1 font-mono">Texto del Reporte Sincronizado</span>
+                <p className="text-[11px] text-slate-300 italic font-medium leading-relaxed font-sans">
+                  "{getSmallBowelAndAscitesDescription(smallBowelState, smallBowelDiameter, smallBowelWallThickness, smallBowelPeristalsis, ascitesState, ascitesLocation)}"
                 </p>
               </div>
             </div>
