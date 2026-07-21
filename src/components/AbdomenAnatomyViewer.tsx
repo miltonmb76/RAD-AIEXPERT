@@ -52,6 +52,10 @@ interface AbdomenAnatomyViewerProps {
   setIncludeDiverticulitis?: (val: boolean) => void;
   includeSmallBowel?: boolean;
   setIncludeSmallBowel?: (val: boolean) => void;
+  includeHepatopatia?: boolean;
+  setIncludeHepatopatia?: (val: boolean) => void;
+  includeAneurisma?: boolean;
+  setIncludeAneurisma?: (val: boolean) => void;
 }
 
 const ABDOMEN_STRUCTURES = [
@@ -198,7 +202,11 @@ export default function AbdomenAnatomyViewer({
   includeDiverticulitis = true,
   setIncludeDiverticulitis,
   includeSmallBowel = true,
-  setIncludeSmallBowel
+  setIncludeSmallBowel,
+  includeHepatopatia = true,
+  setIncludeHepatopatia,
+  includeAneurisma = true,
+  setIncludeAneurisma
 }: AbdomenAnatomyViewerProps) {
   
   const [states, setStates] = useState<Record<string, string>>({
@@ -267,6 +275,8 @@ export default function AbdomenAnatomyViewer({
   const [localIncludeAppendix, setLocalIncludeAppendix] = useState<boolean>(true);
   const [localIncludeDiverticulitis, setLocalIncludeDiverticulitis] = useState<boolean>(true);
   const [localIncludeSmallBowel, setLocalIncludeSmallBowel] = useState<boolean>(true);
+  const [localIncludeHepatopatia, setLocalIncludeHepatopatia] = useState<boolean>(true);
+  const [localIncludeAneurisma, setLocalIncludeAneurisma] = useState<boolean>(true);
 
   const activeIncludeElastography = setIncludeElastography ? includeElastography : localIncludeElastography;
   const activeHasStiffness = setElastographyHasStiffness ? elastographyHasStiffness : localHasStiffness;
@@ -280,6 +290,8 @@ export default function AbdomenAnatomyViewer({
   const activeIncludeAppendix = setIncludeAppendix ? includeAppendix : localIncludeAppendix;
   const activeIncludeDiverticulitis = setIncludeDiverticulitis ? includeDiverticulitis : localIncludeDiverticulitis;
   const activeIncludeSmallBowel = setIncludeSmallBowel ? includeSmallBowel : localIncludeSmallBowel;
+  const activeIncludeHepatopatia = setIncludeHepatopatia ? includeHepatopatia : localIncludeHepatopatia;
+  const activeIncludeAneurisma = setIncludeAneurisma ? includeAneurisma : localIncludeAneurisma;
 
   const handleToggleInclude = (val: boolean) => {
     if (setIncludeElastography) setIncludeElastography(val);
@@ -300,6 +312,14 @@ export default function AbdomenAnatomyViewer({
   const handleToggleIncludeSmallBowel = (val: boolean) => {
     if (setIncludeSmallBowel) setIncludeSmallBowel(val);
     else setLocalIncludeSmallBowel(val);
+  };
+  const handleToggleIncludeHepatopatia = (val: boolean) => {
+    if (setIncludeHepatopatia) setIncludeHepatopatia(val);
+    else setLocalIncludeHepatopatia(val);
+  };
+  const handleToggleIncludeAneurisma = (val: boolean) => {
+    if (setIncludeAneurisma) setIncludeAneurisma(val);
+    else setLocalIncludeAneurisma(val);
   };
   const handleStiffnessChange = (val: number) => {
     if (setElastographyStiffness) setElastographyStiffness(val);
@@ -383,6 +403,28 @@ export default function AbdomenAnatomyViewer({
   const [ascitesState, setAscitesState] = useState<string>("no_descrito"); // "no_descrito", "normal", "leve", "moderada", "severa"
   const [ascitesLocation, setAscitesLocation] = useState<string>("pelvis"); // "pelvis", "perihepatico", "periesplenico", "goteras", "generalizada"
   const [smallBowelNotes, setSmallBowelNotes] = useState<string>("");
+
+  // Dedicated chronic liver disease (hepatopatía crónica) states
+  const [hepatopatiaForceActive, setHepatopatiaForceActive] = useState<boolean>(false);
+  const [hepatopatiaMorfologia, setHepatopatiaMorfologia] = useState<boolean>(false);
+  const [hepatopatiaVenaPorta, setHepatopatiaVenaPorta] = useState<boolean>(false);
+  const [hepatopatiaVenaPortaDiametro, setHepatopatiaVenaPortaDiametro] = useState<number>(11);
+  const [hepatopatiaLigamento, setHepatopatiaLigamento] = useState<boolean>(false);
+  const [hepatopatiaEsplenomegalia, setHepatopatiaEsplenomegalia] = useState<boolean>(false);
+  const [hepatopatiaAscitis, setHepatopatiaAscitis] = useState<boolean>(false);
+  const [hepatopatiaVarices, setHepatopatiaVarices] = useState<boolean>(false);
+
+  // Dedicated Abdominal Aortic Aneurysm (aneurisma aorta abdominal) states
+  const [aneurismaForceActive, setAneurismaForceActive] = useState<boolean>(false);
+  const [aneurismaPosicion, setAneurismaPosicion] = useState<string>("infrarenal"); // "infrarenal", "suprarenal"
+  const [aneurismaDiametro, setAneurismaDiametro] = useState<number>(35); // mm, e.g. 30 to 90 mm
+  const [aneurismaLongitud, setAneurismaLongitud] = useState<number>(50); // mm, e.g. 30 to 120 mm
+  const [aneurismaForma, setAneurismaForma] = useState<string>("fusiforme"); // "fusiforme", "sacular"
+  const [aneurismaExtensionIliacas, setAneurismaExtensionIliacas] = useState<string>("no"); // "no", "derecha", "izquierda", "bilateral"
+  const [aneurismaTrombo, setAneurismaTrombo] = useState<boolean>(false);
+  const [aneurismaEstenosisLuz, setAneurismaEstenosisLuz] = useState<number>(0); // porcentaje (0-100)
+  const [aneurismaDiseccion, setAneurismaDiseccion] = useState<boolean>(false);
+  const [aneurismaRuptura, setAneurismaRuptura] = useState<boolean>(false);
 
   const getImpressionTextSection = (text: string): string => {
     if (!text) return "";
@@ -469,7 +511,36 @@ export default function AbdomenAnatomyViewer({
     
     const hasDil = isBiliaryPathologyActive(section, ["dilatad", "dilatacion", "ectasia"]);
     const hasThick = isBiliaryPathologyActive(section, ["engrosad", "colangitis", "engrosamiento"]);
-    const hasLito = isBiliaryPathologyActive(section, ["lito", "calculo", "concrec", "coledocolitiasis", "enclavado"]);
+    const hasLito = isBiliaryPathologyActive(section, [
+      "coledocolitiasis",
+      "coledoco litiasis",
+      "lito en coledoco",
+      "lito del coledoco",
+      "litos en coledoco",
+      "lito en el coledoco",
+      "litos en el coledoco",
+      "calculo en coledoco",
+      "calculos en coledoco",
+      "calculo coledoco",
+      "calculo del coledoco",
+      "concrecion en coledoco",
+      "concreciones en coledoco",
+      "lito en conducto",
+      "calculo en conducto",
+      "litiasis en coledoco",
+      "lito en via biliar",
+      "calculo en via biliar",
+      "lito distal",
+      "lito proximal",
+      "litos distales",
+      "litos proximales",
+      "calculo distal",
+      "calculo proximal",
+      "calculos distales",
+      "calculos proximales",
+      "lito impactado",
+      "calculo impactado"
+    ]);
     const hasTumor = isBiliaryPathologyActive(section, ["tumor", "masa", "neoformacion", "neoformativ", "colangiocarcinoma", "klatskin"]);
     
     // Gallbladder (Vesícula)
@@ -518,6 +589,40 @@ export default function AbdomenAnatomyViewer({
   };
 
   const isSmallBowelActive = isSmallBowelImpressionActive() || smallBowelForceActive;
+
+  const isHepatopatiaImpressionActive = (): boolean => {
+    if (!generatedReport) return false;
+    
+    const section = getImpressionTextSection(generatedReport);
+    const normalized = section.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    
+    return normalized.includes("hepatopatia cronica") || 
+           normalized.includes("cirrosis") || 
+           normalized.includes("hipertension portal") ||
+           normalized.includes("hepatopatia difusa") ||
+           normalized.includes("dano hepatico cronico") ||
+           normalized.includes("daño hepatico cronico") ||
+           normalized.includes("hepatopatia");
+  };
+
+  const isHepatopatiaActive = isHepatopatiaImpressionActive() || hepatopatiaForceActive;
+
+  const isAneurismaImpressionActive = (): boolean => {
+    if (!generatedReport) return false;
+    
+    const section = getImpressionTextSection(generatedReport);
+    const normalized = section.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    
+    return normalized.includes("aneurisma de aorta") || 
+           normalized.includes("aneurisma aortico") || 
+           normalized.includes("aneurisma de la aorta") ||
+           normalized.includes("dilatacion aneurismatica de la aorta") ||
+           normalized.includes("dilatacion aneurismatica de aorta") ||
+           normalized.includes("aneurisma de aorta abdominal") ||
+           normalized.includes("aaa");
+  };
+
+  const isAneurismaActive = isAneurismaImpressionActive() || aneurismaForceActive;
 
   const getBiliaryTextFromCheckboxes = (
     dilated: boolean,
@@ -1165,6 +1270,38 @@ export default function AbdomenAnatomyViewer({
     }
   };
 
+  const handleToggleHepatopatiaForceActive = () => {
+    const nextForceActive = !hepatopatiaForceActive;
+    setHepatopatiaForceActive(nextForceActive);
+
+    if (!nextForceActive) {
+      setHepatopatiaMorfologia(false);
+      setHepatopatiaVenaPorta(false);
+      setHepatopatiaVenaPortaDiametro(11);
+      setHepatopatiaLigamento(false);
+      setHepatopatiaEsplenomegalia(false);
+      setHepatopatiaAscitis(false);
+      setHepatopatiaVarices(false);
+    }
+  };
+
+  const handleToggleAneurismaForceActive = () => {
+    const nextForceActive = !aneurismaForceActive;
+    setAneurismaForceActive(nextForceActive);
+
+    if (!nextForceActive) {
+      setAneurismaPosicion("infrarenal");
+      setAneurismaDiametro(35);
+      setAneurismaLongitud(50);
+      setAneurismaForma("fusiforme");
+      setAneurismaExtensionIliacas("no");
+      setAneurismaTrombo(false);
+      setAneurismaEstenosisLuz(0);
+      setAneurismaDiseccion(false);
+      setAneurismaRuptura(false);
+    }
+  };
+
   const handleDiverticulitisCheckboxChange = (field: "thickening" | "diverticula" | "fatStranding" | "abscess" | "freeAir", value: boolean) => {
     const nextThickening = field === "thickening" ? value : diverticulitisWallThickening;
     const nextDiverticula = field === "diverticula" ? value : diverticulitisDiverticula;
@@ -1302,7 +1439,36 @@ export default function AbdomenAnatomyViewer({
     // Para ver si es biliar activa en el reporte
     const hasDilTmp = isBiliaryPathologyActive(section, ["dilatad", "dilatacion", "ectasia"]);
     const hasThickTmp = isBiliaryPathologyActive(section, ["engrosad", "colangitis", "engrosamiento"]);
-    const hasLitoTmp = isBiliaryPathologyActive(section, ["lito", "calculo", "concrec", "coledocolitiasis", "enclavado"]);
+    const hasLitoTmp = isBiliaryPathologyActive(section, [
+      "coledocolitiasis",
+      "coledoco litiasis",
+      "lito en coledoco",
+      "lito del coledoco",
+      "litos en coledoco",
+      "lito en el coledoco",
+      "litos en el coledoco",
+      "calculo en coledoco",
+      "calculos en coledoco",
+      "calculo coledoco",
+      "calculo del coledoco",
+      "concrecion en coledoco",
+      "concreciones en coledoco",
+      "lito en conducto",
+      "calculo en conducto",
+      "litiasis en coledoco",
+      "lito en via biliar",
+      "calculo en via biliar",
+      "lito distal",
+      "lito proximal",
+      "litos distales",
+      "litos proximales",
+      "calculo distal",
+      "calculo proximal",
+      "calculos distales",
+      "calculos proximales",
+      "lito impactado",
+      "calculo impactado"
+    ]);
     const hasTumorTmp = isBiliaryPathologyActive(section, ["tumor", "masa", "neoformacion", "neoformativ", "colangiocarcinoma", "klatskin"]);
     const hasVesLitoTmp = isBiliaryPathologyActive(section, ["colelitiasis", "lito en vesicula", "litos en vesicula", "calculo en vesicula", "calculos en vesicula", "litos vesicular", "litiasis vesicular", "lito vesicular", "concreciones en vesicula", "concrecion en vesicula"]);
     const hasVesLitoUnicoTmp = isBiliaryPathologyActive(section, ["lito unico", "calculo unico", "unica imagen litiasica", "litiasis unica", "un solo calculo", "concrecion unica"]);
@@ -1655,6 +1821,354 @@ export default function AbdomenAnatomyViewer({
     }
   }, [isSmallBowelActive]);
 
+  // Auto-extraction hook for chronic liver disease (hepatopatía crónica) from generated report text
+  useEffect(() => {
+    if (!generatedReport) return;
+    const section = getImpressionTextSection(generatedReport);
+    
+    if (isHepatopatiaActive) {
+      const isKeywordInHepatopatiaContext = (kwList: string[]): boolean => {
+        const normalized = section.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const anchorKeywords = ["higado", "hepatic", "cirrosis", "hepatopatia", "porta", "portal", "bazo", "esplen", "ligamento", "ascitis"];
+        for (const anchor of anchorKeywords) {
+          let startIdx = 0;
+          while (true) {
+            const idx = normalized.indexOf(anchor, startIdx);
+            if (idx === -1) break;
+            
+            const windowStart = Math.max(0, idx - 85);
+            const windowEnd = Math.min(normalized.length, idx + anchor.length + 85);
+            const windowText = normalized.substring(windowStart, windowEnd);
+            
+            const matchesKeyword = kwList.some(kw => {
+              const kwNorm = kw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+              const kwIdx = windowText.indexOf(kwNorm);
+              if (kwIdx === -1) return false;
+              
+              const contextStart = Math.max(0, kwIdx - 35);
+              const context = windowText.substring(contextStart, kwIdx);
+              const negations = [
+                "sin ", "no ", "no se ", "no se observa", "no se aprecia", "ausencia de", 
+                "libre de", "descarta", "normal", "conserva", "sin evidencia de", "negativo para",
+                "conservado", "sin colaterales", "sin varices", "sin recanalizacion", "sin revascularizacion"
+              ];
+              const isNegated = negations.some(neg => {
+                const negNorm = neg.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                return context.includes(negNorm);
+              });
+              return !isNegated;
+            });
+            
+            if (matchesKeyword) return true;
+            
+            startIdx = idx + anchor.length;
+          }
+        }
+        return false;
+      };
+
+      const extractPortalDiameter = (): number | null => {
+        const normalized = section.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const anchorKeywords = ["porta", "portal", "vena porta"];
+        for (const anchor of anchorKeywords) {
+          let startIdx = 0;
+          while (true) {
+            const idx = normalized.indexOf(anchor, startIdx);
+            if (idx === -1) break;
+            
+            const windowStart = Math.max(0, idx - 60);
+            const windowEnd = Math.min(normalized.length, idx + anchor.length + 60);
+            const windowText = normalized.substring(windowStart, windowEnd);
+            
+            const mmRegex = /(?:diametro|mide|calibre|grosor|de)\s*(\d+(?:[\.,]\d+)?)\s*mm/i;
+            const mmMatch = windowText.match(mmRegex);
+            if (mmMatch && mmMatch[1]) {
+              const num = parseFloat(mmMatch[1].replace(",", "."));
+              if (num >= 5 && num <= 25) {
+                return Math.round(num);
+              }
+            }
+            
+            const fallbackRegex = /(\d+(?:[\.,]\d+)?)\s*mm/gi;
+            let match;
+            while ((match = fallbackRegex.exec(windowText)) !== null) {
+              const num = parseFloat(match[1].replace(",", "."));
+              if (num >= 5 && num <= 25) {
+                return Math.round(num);
+              }
+            }
+            
+            startIdx = idx + anchor.length;
+          }
+        }
+        return null;
+      };
+
+      const hasMorfologia = isKeywordInHepatopatiaContext([
+        "morfologia", "borde", "bordes", "contorno", "contornos", "lobulado", "lobulados", "irregular", "irregulares", "nodular", "nodularidad", "hipertrofia", "caudado", "disminucion de tamano", "atrofia", "irregularidad"
+      ]);
+      setHepatopatiaMorfologia(hasMorfologia);
+
+      const detectedPortalDiameter = extractPortalDiameter();
+      const hasPortaDil = isKeywordInHepatopatiaContext([
+        "dilatada", "dilatacion", "ectasia", "aumento de calibre", "engrosamiento", "hipertension portal", "porta dilatada", "dilatacion portal"
+      ]);
+      const resolvedPortalDiameter = detectedPortalDiameter !== null ? detectedPortalDiameter : (hasPortaDil ? 14 : 11);
+      setHepatopatiaVenaPortaDiametro(resolvedPortalDiameter);
+      setHepatopatiaVenaPorta(hasPortaDil || resolvedPortalDiameter >= 13);
+
+      const hasLigamento = isKeywordInHepatopatiaContext([
+        "ligamento", "ligamento redondo", "recanaliz", "recanalizacion", "revascularizacion", "permeable", "permeabilizacion", "flujo hepatofugo", "terete", "teres"
+      ]);
+      setHepatopatiaLigamento(hasLigamento);
+
+      const hasEsplenomegalia = isKeywordInHepatopatiaContext([
+        "esplenomegalia", "bazo aumentado", "esplenico aumentado", "esplenomegalia leve", "esplenomegalia moderada"
+      ]);
+      setHepatopatiaEsplenomegalia(hasEsplenomegalia);
+
+      const hasHepatopatiaAscitis = isKeywordInHepatopatiaContext([
+        "ascitis", "liquido libre", "liquido libre perihepatico", "liquido libre generalizado", "liquido libre en cavidad"
+      ]);
+      setHepatopatiaAscitis(hasHepatopatiaAscitis);
+
+      const hasVarices = isKeywordInHepatopatiaContext([
+        "colaterales", "varices", "varices esofagicas", "colaterales gastricas", "colaterales esplenicas", "circulacion colateral", "varices gastricas", "derivacion portosistemica", "shunt", "recanalizado"
+      ]);
+      setHepatopatiaVarices(hasVarices);
+    } else {
+      setHepatopatiaMorfologia(false);
+      setHepatopatiaVenaPorta(false);
+      setHepatopatiaVenaPortaDiametro(11);
+      setHepatopatiaLigamento(false);
+      setHepatopatiaEsplenomegalia(false);
+      setHepatopatiaAscitis(false);
+      setHepatopatiaVarices(false);
+    }
+  }, [generatedReport, isHepatopatiaActive]);
+
+  // Reset chronic liver disease states only when active mode is disabled
+  useEffect(() => {
+    if (!isHepatopatiaActive) {
+      setHepatopatiaMorfologia(false);
+      setHepatopatiaVenaPorta(false);
+      setHepatopatiaVenaPortaDiametro(11);
+      setHepatopatiaLigamento(false);
+      setHepatopatiaEsplenomegalia(false);
+      setHepatopatiaAscitis(false);
+      setHepatopatiaVarices(false);
+    }
+  }, [isHepatopatiaActive]);
+
+  // Automated report text parser for Aortic Aneurysm
+  useEffect(() => {
+    if (isAneurismaActive && generatedReport) {
+      const section = getImpressionTextSection(generatedReport);
+      const normalized = section.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+      const isKeywordInAneurismaContext = (kwList: string[]): boolean => {
+        const anchorKeywords = ["aorta", "aortico", "aneurisma", "aaa", "iliaca", "iliacas", "retroperitoneal"];
+        for (const anchor of anchorKeywords) {
+          let startIdx = 0;
+          while (true) {
+            const idx = normalized.indexOf(anchor, startIdx);
+            if (idx === -1) break;
+            
+            const windowStart = Math.max(0, idx - 85);
+            const windowEnd = Math.min(normalized.length, idx + anchor.length + 85);
+            const windowText = normalized.substring(windowStart, windowEnd);
+            
+            const matchesKeyword = kwList.some(kw => {
+              const kwNorm = kw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+              const kwIdx = windowText.indexOf(kwNorm);
+              if (kwIdx === -1) return false;
+              
+              const contextStart = Math.max(0, kwIdx - 35);
+              const context = windowText.substring(contextStart, kwIdx);
+              const negations = [
+                "sin ", "no ", "no se ", "no se observa", "no se aprecia", "ausencia de", 
+                "libre de", "descarta", "normal", "conserva", "sin evidencia de", "negativo para",
+                "conservado", "sin trombo", "sin trombosis", "sin flap", "sin diseccion", "sin ruptura"
+              ];
+              const isNegated = negations.some(neg => {
+                const negNorm = neg.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                return context.includes(negNorm);
+              });
+              return !isNegated;
+            });
+            
+            if (matchesKeyword) return true;
+            
+            startIdx = idx + anchor.length;
+          }
+        }
+        return false;
+      };
+
+      const extractAneurismaDiameter = (): number | null => {
+        const anchorKeywords = ["aneurisma", "aorta", "diametro", "calibre", "mide"];
+        for (const anchor of anchorKeywords) {
+          let startIdx = 0;
+          while (true) {
+            const idx = normalized.indexOf(anchor, startIdx);
+            if (idx === -1) break;
+            
+            const windowStart = Math.max(0, idx - 60);
+            const windowEnd = Math.min(normalized.length, idx + anchor.length + 60);
+            const windowText = normalized.substring(windowStart, windowEnd);
+            
+            // Match cm or mm
+            const mmRegex = /(?:diametro|mide|calibre|ancho|de)\s*(\d+(?:[\.,]\d+)?)\s*(mm|cm)/i;
+            const mmMatch = windowText.match(mmRegex);
+            if (mmMatch) {
+              let val = parseFloat(mmMatch[1].replace(",", "."));
+              const unit = mmMatch[2].toLowerCase();
+              if (unit === "cm") val *= 10;
+              if (val >= 20 && val <= 100) {
+                return Math.round(val);
+              }
+            }
+            
+            // Fallback for simple number close to the anchor
+            const fallbackRegex = /(\d+(?:[\.,]\d+)?)\s*(mm|cm)/i;
+            let match;
+            const tempText = windowText;
+            if ((match = fallbackRegex.exec(tempText)) !== null) {
+              let num = parseFloat(match[1].replace(",", "."));
+              const unit = match[2].toLowerCase();
+              if (unit === "cm") num *= 10;
+              if (num >= 20 && num <= 100) {
+                return Math.round(num);
+              }
+            }
+            
+            startIdx = idx + anchor.length;
+          }
+        }
+        return null;
+      };
+
+      const extractAneurismaLength = (): number | null => {
+        const anchorKeywords = ["longitud", "largo", "extension", "longitudinal"];
+        for (const anchor of anchorKeywords) {
+          let startIdx = 0;
+          while (true) {
+            const idx = normalized.indexOf(anchor, startIdx);
+            if (idx === -1) break;
+            
+            const windowStart = Math.max(0, idx - 60);
+            const windowEnd = Math.min(normalized.length, idx + anchor.length + 60);
+            const windowText = normalized.substring(windowStart, windowEnd);
+            
+            const mmRegex = /(?:longitud|mide|extension|de)\s*(\d+(?:[\.,]\d+)?)\s*(mm|cm)/i;
+            const mmMatch = windowText.match(mmRegex);
+            if (mmMatch) {
+              let val = parseFloat(mmMatch[1].replace(",", "."));
+              const unit = mmMatch[2].toLowerCase();
+              if (unit === "cm") val *= 10;
+              if (val >= 20 && val <= 150) {
+                return Math.round(val);
+              }
+            }
+            
+            startIdx = idx + anchor.length;
+          }
+        }
+        return null;
+      };
+
+      const extractStenosisPercent = (): number | null => {
+        const anchorKeywords = ["estenosis", "reduccion", "luz"];
+        for (const anchor of anchorKeywords) {
+          let startIdx = 0;
+          while (true) {
+            const idx = normalized.indexOf(anchor, startIdx);
+            if (idx === -1) break;
+            
+            const windowStart = Math.max(0, idx - 50);
+            const windowEnd = Math.min(normalized.length, idx + anchor.length + 50);
+            const windowText = normalized.substring(windowStart, windowEnd);
+            
+            const pctRegex = /(\d+)\s*%/i;
+            const pctMatch = windowText.match(pctRegex);
+            if (pctMatch) {
+              const val = parseInt(pctMatch[1]);
+              if (val >= 0 && val <= 100) {
+                return val;
+              }
+            }
+            
+            startIdx = idx + anchor.length;
+          }
+        }
+        return null;
+      };
+
+      // 1. Posicion
+      if (normalized.includes("suprarenal") || normalized.includes("supra-renal")) {
+        setAneurismaPosicion("suprarenal");
+      } else {
+        setAneurismaPosicion("infrarenal");
+      }
+
+      // 2. Forma
+      if (normalized.includes("sacular") || normalized.includes("excentrico") || normalized.includes("saco")) {
+        setAneurismaForma("sacular");
+      } else {
+        setAneurismaForma("fusiforme");
+      }
+
+      // 3. Extensión a ilíacas
+      if (isKeywordInAneurismaContext(["ambas iliacas", "bilateral", "ambas arterias iliacas"])) {
+        setAneurismaExtensionIliacas("bilateral");
+      } else if (isKeywordInAneurismaContext(["iliaca derecha", "iliaca comun derecha"])) {
+        setAneurismaExtensionIliacas("derecha");
+      } else if (isKeywordInAneurismaContext(["iliaca izquierda", "iliaca comun izquierda"])) {
+        setAneurismaExtensionIliacas("izquierda");
+      } else {
+        setAneurismaExtensionIliacas("no");
+      }
+
+      // 4. Trombo intramural
+      const hasTrombo = isKeywordInAneurismaContext(["trombo", "trombos", "trombosis", "trombo intramural", "trombo mural"]);
+      setAneurismaTrombo(hasTrombo);
+
+      // 5. Complicaciones (disección y ruptura)
+      const hasDiseccion = isKeywordInAneurismaContext(["diseccion", "flap", "flap de intima", "doble luz", "reentrada"]);
+      setAneurismaDiseccion(hasDiseccion);
+
+      const hasRuptura = isKeywordInAneurismaContext(["ruptura", "rotura", "complicado con ruptura", "extravasacion", "hematoma retroperitoneal", "fuga"]);
+      setAneurismaRuptura(hasRuptura);
+
+      // 6. Diámetro
+      const dVal = extractAneurismaDiameter();
+      setAneurismaDiametro(dVal !== null ? dVal : 45);
+
+      // 7. Longitud
+      const lVal = extractAneurismaLength();
+      setAneurismaLongitud(lVal !== null ? lVal : 70);
+
+      // 8. Estenosis
+      const estVal = extractStenosisPercent();
+      setAneurismaEstenosisLuz(estVal !== null ? estVal : (hasTrombo ? 35 : 0));
+    }
+  }, [generatedReport, isAneurismaActive]);
+
+  // Reset states when inactive
+  useEffect(() => {
+    if (!isAneurismaActive) {
+      setAneurismaPosicion("infrarenal");
+      setAneurismaDiametro(35);
+      setAneurismaLongitud(50);
+      setAneurismaForma("fusiforme");
+      setAneurismaExtensionIliacas("no");
+      setAneurismaTrombo(false);
+      setAneurismaEstenosisLuz(0);
+      setAneurismaDiseccion(false);
+      setAneurismaRuptura(false);
+    }
+  }, [isAneurismaActive]);
+
   const getFibrosisLevel = (stiffness: number, override: string): number => {
     if (override && override !== "auto") {
       if (override === "F0-F1") return 1;
@@ -1761,7 +2275,9 @@ export default function AbdomenAnatomyViewer({
     // Map organId to its main keywords
     const keywordsMap: Record<string, string[]> = {
       higado: ["higado", "hepatico", "parenquima", "esteatosis", "hepatomegalia", "cirrosis", "quiste", "solida", "nodulo", "lobulo"],
-      vesicula: ["vesicula", "colecist", "biliar", "litiasis", "lito", "calculo", "barro", "barro biliar", "asiento", "pared vesicular", "pared de vesicula", "sludge", "polipo", "concrecion", "coledoco"],
+      vesicula: ["vesicula", "colecist", "biliar", "litiasis", "lito", "calculo", "barro", "barro biliar", "asiento", "pared vesicular", "pared de vesicula", "sludge", "polipo", "concrecion"],
+      vias_biliares: ["coledoco", "colédoco", "vía biliar", "via biliar", "extrahepática", "extrahepatica", "intrahepática", "intrahepatica", "ectasia biliar", "conducto biliar", "conductos biliares", "vbe", "vbi"],
+      coledoco: ["coledoco", "colédoco", "vía biliar", "via biliar", "extrahepática", "extrahepatica", "intrahepática", "intrahepatica", "ectasia biliar", "conducto biliar", "conductos biliares", "vbe", "vbi"],
       pancreas: ["pancreas", "pancreatico", "pancreatitis", "wirsung", "cabeza", "cuerpo", "cola", "atrofia", "quistica", "gas"],
       bazo: ["bazo", "esplenico", "esplenomegalia", "nodulo"],
       rinon_derecho: ["rinon derecho", "rd ", "renal derecho", "r. derecho"],
@@ -3358,17 +3874,41 @@ export default function AbdomenAnatomyViewer({
             <span>Diverticulitis: {diverticulitisForceActive ? "Sí" : "No"}</span>
           </button>
 
-          <button
-            onClick={() => setSmallBowelForceActive(prev => !prev)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase tracking-wider transition-all duration-200 cursor-pointer ${
-              smallBowelForceActive 
-                ? "bg-blue-600/30 border-blue-500/50 text-blue-350 shadow-[0_2px_8px_rgba(59,130,246,0.25)] animate-pulse" 
-                : "bg-slate-950 border-slate-850 text-slate-400 hover:text-slate-200 hover:border-slate-705"
-            }`}
-          >
-            <span className={`h-2 w-2 rounded-full ${smallBowelForceActive ? "bg-blue-500 shadow-[0_0_8px_#3b82f6]" : "bg-slate-600"} inline-block`} />
-            <span>Asas/Líquido: {smallBowelForceActive ? "Sí" : "No"}</span>
-          </button>
+  <button
+    onClick={() => setSmallBowelForceActive(prev => !prev)}
+    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase tracking-wider transition-all duration-200 cursor-pointer ${
+      smallBowelForceActive 
+        ? "bg-blue-600/30 border-blue-500/50 text-blue-350 shadow-[0_2px_8px_rgba(59,130,246,0.25)] animate-pulse" 
+        : "bg-slate-950 border-slate-850 text-slate-400 hover:text-slate-200 hover:border-slate-705"
+    }`}
+  >
+    <span className={`h-2 w-2 rounded-full ${smallBowelForceActive ? "bg-blue-500 shadow-[0_0_8px_#3b82f6]" : "bg-slate-600"} inline-block`} />
+    <span>Asas/Líquido: {smallBowelForceActive ? "Sí" : "No"}</span>
+  </button>
+
+  <button
+    onClick={handleToggleHepatopatiaForceActive}
+    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase tracking-wider transition-all duration-200 cursor-pointer ${
+      hepatopatiaForceActive 
+        ? "bg-purple-600/30 border-purple-500/50 text-purple-350 shadow-[0_2px_8px_rgba(168,85,247,0.25)] animate-pulse" 
+        : "bg-slate-950 border-slate-850 text-slate-400 hover:text-slate-200 hover:border-slate-705"
+    }`}
+  >
+    <span className={`h-2 w-2 rounded-full ${hepatopatiaForceActive ? "bg-purple-500 shadow-[0_0_8px_#a855f7]" : "bg-slate-600"} inline-block`} />
+    <span>Hepatopatía: {hepatopatiaForceActive ? "Sí" : "No"}</span>
+  </button>
+
+  <button
+    onClick={handleToggleAneurismaForceActive}
+    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase tracking-wider transition-all duration-200 cursor-pointer ${
+      aneurismaForceActive 
+        ? "bg-rose-600/30 border-rose-500/50 text-rose-350 shadow-[0_2px_8px_rgba(244,63,94,0.25)] animate-pulse" 
+        : "bg-slate-950 border-slate-850 text-slate-400 hover:text-slate-200 hover:border-slate-705"
+    }`}
+  >
+    <span className={`h-2 w-2 rounded-full ${aneurismaForceActive ? "bg-rose-500 shadow-[0_0_8px_#f43f5e]" : "bg-slate-600"} inline-block`} />
+    <span>Aorta / Aneurisma: {aneurismaForceActive ? "Sí" : "No"}</span>
+  </button>
 
           <button
             onClick={() => handleScanReportText(true)}
@@ -4904,6 +5444,1090 @@ export default function AbdomenAnatomyViewer({
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* DIAGRAMA INDEPENDIENTE DE HEPATOPATÍA CRÓNICA Y SUS HALLAZGOS */}
+      {isHepatopatiaActive && (
+        <div id="hepatopatia-section-root" className="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-5 shadow-2xl flex flex-col gap-4 mb-5 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/5 rounded-full blur-3xl pointer-events-none" />
+          
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-850 pb-3">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-purple-500/10 rounded-lg border border-purple-500/20 text-purple-400 font-bold">
+                <Activity className="h-4.5 w-4.5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-slate-200 uppercase tracking-widest font-mono">
+                  Esquema: Hepatopatía Crónica & Hipertensión Portal
+                </h3>
+                <p className="text-[10px] text-slate-500 font-medium">
+                  Mapeo avanzado de hallazgos hepáticos crónicos, remodelado morfológico, recanalización y colaterales hemodinámicas.
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-3 flex-wrap">
+              <button
+                type="button"
+                onClick={() => handleToggleIncludeHepatopatia(!activeIncludeHepatopatia)}
+                className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all cursor-pointer flex items-center gap-2 font-mono ${
+                  activeIncludeHepatopatia
+                    ? "bg-emerald-950/80 text-emerald-400 border-emerald-500/50 shadow-md shadow-emerald-950/20"
+                    : "bg-slate-900 text-slate-500 border-slate-800 hover:text-slate-300"
+                }`}
+              >
+                {activeIncludeHepatopatia ? (
+                  <>
+                    <Check className="h-3.5 w-3.5 text-emerald-400 font-bold" />
+                    <span>Adjuntar al PDF: Sí</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="h-2 w-2 rounded-full bg-slate-600 block" />
+                    <span>Adjuntar al PDF: No</span>
+                  </>
+                )}
+              </button>
+
+              <span className="text-[9px] px-2.5 py-1 rounded-lg font-black uppercase tracking-wider bg-purple-950/30 text-purple-450 border border-purple-900/30 animate-pulse">
+                Hepatopatía Sincronizada
+              </span>
+            </div>
+          </div>
+
+          {/* TWO COLUMN SIDE-BY-SIDE GRID */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
+            {/* COLUMN 1: SVG DIBUJO VECTORIAL DE HIGADO */}
+            <div className="flex flex-col items-center justify-center bg-slate-900/40 border border-slate-850/60 rounded-xl p-4 min-h-[260px] relative">
+              <span className="text-[9px] font-extrabold uppercase text-slate-500 tracking-wider mb-2 font-mono">DIBUJO DE HEPATOPATÍA CRÓNICA</span>
+              
+              <svg
+                id="abdomen-hepatopatia-svg"
+                viewBox="0 0 240 240"
+                className="w-full h-auto max-w-[210px] drop-shadow-2xl"
+              >
+                <defs>
+                  <linearGradient id="liverGradNormal" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stopColor="#f87171" />
+                    <stop offset="60%" stopColor="#ef4444" />
+                    <stop offset="100%" stopColor="#991b1b" />
+                  </linearGradient>
+                  <linearGradient id="liverGradCirrhosis" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stopColor="#b45309" />
+                    <stop offset="50%" stopColor="#854d0e" />
+                    <stop offset="100%" stopColor="#451a03" />
+                  </linearGradient>
+                  <linearGradient id="portalGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#38bdf8" />
+                    <stop offset="100%" stopColor="#0284c7" />
+                  </linearGradient>
+                  <linearGradient id="spleenGrad" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stopColor="#c084fc" />
+                    <stop offset="100%" stopColor="#6b21a8" />
+                  </linearGradient>
+                </defs>
+
+                {/* BACKGROUND ELEMENT / SPINE OR MIDLINE */}
+                <rect x="110" y="20" width="20" height="200" fill="#1e293b" opacity="0.05" rx="5" />
+
+                {/* ASCITIS (LÍQUIDO LIBRE) - CAPA DE FONDO */}
+                {hepatopatiaAscitis && (
+                  <g className="transition-opacity duration-300">
+                    <path
+                      d="M 15,200 C 50,230 190,230 225,200 C 235,180 235,140 225,120 C 190,140 50,140 15,120 C 5,140 5,180 15,200 Z"
+                      fill="#0284c7"
+                      fillOpacity="0.12"
+                      stroke="#38bdf8"
+                      strokeWidth="1.5"
+                      strokeDasharray="4,4"
+                      className="animate-pulse"
+                    />
+                    <path d="M 40,205 Q 120,220 200,205" fill="none" stroke="#0ea5e9" strokeWidth="1" strokeOpacity="0.3" />
+                  </g>
+                )}
+
+                {/* BAZO (SPLEEN) */}
+                <g className="transition-all duration-500">
+                  <path
+                    d={hepatopatiaEsplenomegalia 
+                      ? "M 175,120 C 220,120 235,150 225,190 C 215,215 185,210 165,180 C 150,160 155,130 175,120 Z"
+                      : "M 180,140 C 205,140 215,155 210,180 C 200,195 185,190 175,175 C 168,165 170,148 180,140 Z"
+                    }
+                    fill="url(#spleenGrad)"
+                    stroke={hepatopatiaEsplenomegalia ? "#c084fc" : "#a855f7"}
+                    strokeWidth={hepatopatiaEsplenomegalia ? "2.5" : "1"}
+                    className="drop-shadow-lg"
+                  />
+                  <text
+                    x={hepatopatiaEsplenomegalia ? "195" : "192"}
+                    y={hepatopatiaEsplenomegalia ? "165" : "165"}
+                    fill="#e9d5ff"
+                    fontSize="7"
+                    fontWeight="black"
+                    textAnchor="middle"
+                    className="font-mono tracking-wider pointer-events-none"
+                  >
+                    BAZO
+                  </text>
+                  {hepatopatiaEsplenomegalia && (
+                    <text
+                      x="195"
+                      y="175"
+                      fill="#f472b6"
+                      fontSize="6"
+                      fontWeight="bold"
+                      textAnchor="middle"
+                      className="font-mono"
+                    >
+                      (ESPLENOMEGALIA)
+                    </text>
+                  )}
+                </g>
+
+                {/* VENA PORTA (PORTAL VEIN) */}
+                <g className="transition-all duration-500">
+                  <path
+                    d="M 190,165 C 160,165 115,140 95,90"
+                    fill="none"
+                    stroke="url(#portalGrad)"
+                    strokeWidth={hepatopatiaVenaPorta ? "11" : "6"}
+                    strokeLinecap="round"
+                    className="transition-all duration-300"
+                  />
+                  {/* Portal flow arrow */}
+                  <path
+                    d="M 103,110 L 95,90 L 111,97"
+                    fill="none"
+                    stroke="#ffffff"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    opacity="0.8"
+                  />
+                  <text
+                    x="150"
+                    y={hepatopatiaVenaPorta ? "142" : "148"}
+                    fill="#38bdf8"
+                    fontSize="7"
+                    fontWeight="black"
+                    className="font-sans"
+                  >
+                    V. Porta: {hepatopatiaVenaPortaDiametro}mm
+                  </text>
+                </g>
+
+                {/* VÁRICES COLATERALES (COLLATERAL VARICES) */}
+                {hepatopatiaVarices && (
+                  <g className="transition-opacity duration-300">
+                    {/* Gastrosplenic collateral */}
+                    <path
+                      d="M 180,165 C 160,180 140,175 145,210 C 150,225 125,220 115,230"
+                      fill="none"
+                      stroke="#0284c7"
+                      strokeWidth="2.5"
+                      strokeDasharray="2,3"
+                      strokeLinecap="round"
+                    />
+                    {/* Short gastric varices */}
+                    <path
+                      d="M 185,145 C 170,135 155,145 150,130 C 145,115 130,120 120,105"
+                      fill="none"
+                      stroke="#3b82f6"
+                      strokeWidth="2"
+                      strokeDasharray="2,2"
+                    />
+                    <text x="135" y="195" fill="#60a5fa" fontSize="5.5" fontWeight="black" className="font-mono">
+                      VÁRICES
+                    </text>
+                  </g>
+                )}
+
+                {/* LIGAMENTO REDONDO RECANALIZADO (LIGAMENTUM TERES RECANALIZATION) */}
+                <g className="transition-all duration-500">
+                  {hepatopatiaLigamento ? (
+                    <path
+                      d="M 83,85 C 80,115 65,140 55,175"
+                      fill="none"
+                      stroke="#ef4444"
+                      strokeWidth="4"
+                      strokeLinecap="round"
+                      className="animate-pulse"
+                    />
+                  ) : (
+                    <path
+                      d="M 83,85 C 80,110 70,130 65,155"
+                      fill="none"
+                      stroke="#64748b"
+                      strokeWidth="1.5"
+                      strokeDasharray="3,3"
+                      strokeLinecap="round"
+                      opacity="0.6"
+                    />
+                  )}
+                  <text
+                    x="50"
+                    y={hepatopatiaLigamento ? "125" : "135"}
+                    fill={hepatopatiaLigamento ? "#f87171" : "#94a3b8"}
+                    fontSize="6.5"
+                    fontWeight="black"
+                    className="font-mono text-left"
+                  >
+                    {hepatopatiaLigamento ? "LIG. REDONDO RECANALIZADO" : "LIG. REDONDO (CERRADO)"}
+                  </text>
+                </g>
+
+                {/* LÓBULO HEPÁTICO (LIVER LOBE) */}
+                <g className="transition-all duration-500">
+                  <path
+                    d={hepatopatiaMorfologia
+                      ? "M 35,42 Q 42,35 52,32 Q 62,28 72,25 Q 85,22 100,22 Q 115,22 130,25 Q 145,28 160,35 Q 175,42 182,50 Q 188,58 184,65 Q 178,75 165,82 Q 152,88 135,90 Q 118,92 102,88 Q 85,84 72,78 Q 55,70 42,58 Q 32,50 35,42 Z"
+                      : "M 30,40 C 85,15 155,25 195,55 C 205,62 200,80 175,95 C 135,110 95,105 65,90 C 35,75 25,55 30,40 Z"
+                    }
+                    fill={hepatopatiaMorfologia ? "url(#liverGradCirrhosis)" : "url(#liverGradNormal)"}
+                    stroke={hepatopatiaMorfologia ? "#f59e0b" : "#f87171"}
+                    strokeWidth={hepatopatiaMorfologia ? "2.5" : "1.5"}
+                    strokeDasharray={hepatopatiaMorfologia ? "4,1" : "none"}
+                    className="drop-shadow-2xl transition-all duration-500"
+                  />
+                  
+                  {/* MORPHOLOGY OVERLAY NODULES */}
+                  {hepatopatiaMorfologia && (
+                    <g fill="#78350f" opacity="0.45" className="transition-opacity duration-500">
+                      <circle cx="55" cy="45" r="2.5" />
+                      <circle cx="68" cy="42" r="2" />
+                      <circle cx="85" cy="38" r="3" />
+                      <circle cx="102" cy="35" r="2.5" />
+                      <circle cx="120" cy="38" r="3" />
+                      <circle cx="138" cy="42" r="2" />
+                      <circle cx="155" cy="48" r="2.5" />
+                      <circle cx="168" cy="55" r="3" />
+                      <circle cx="150" cy="65" r="2" />
+                      <circle cx="130" cy="72" r="2.5" />
+                      <circle cx="110" cy="74" r="3" />
+                      <circle cx="92" cy="70" r="2.5" />
+                      <circle cx="75" cy="62" r="2" />
+                      <circle cx="55" cy="55" r="3" />
+                      <circle cx="95" cy="50" r="4" />
+                      <circle cx="115" cy="52" r="3" />
+                    </g>
+                  )}
+
+                  <text
+                    x="100"
+                    y="55"
+                    fill="#ffffff"
+                    fontSize="9.5"
+                    fontWeight="black"
+                    textAnchor="middle"
+                    className="font-sans tracking-widest pointer-events-none drop-shadow-md"
+                  >
+                    HÍGADO
+                  </text>
+                  
+                  {hepatopatiaMorfologia ? (
+                    <text
+                      x="100"
+                      y="68"
+                      fill="#fef08a"
+                      fontSize="6.5"
+                      fontWeight="black"
+                      textAnchor="middle"
+                      className="font-mono pointer-events-none drop-shadow"
+                    >
+                      BORDES NODULARES
+                    </text>
+                  ) : (
+                    <text
+                      x="100"
+                      y="66"
+                      fill="#fecaca"
+                      fontSize="6"
+                      fontWeight="bold"
+                      textAnchor="middle"
+                      className="font-mono pointer-events-none opacity-80"
+                    >
+                      CONTORNOS LISOS
+                    </text>
+                  )}
+                </g>
+              </svg>
+
+              {/* FLOATING LEGEND */}
+              <div className="absolute bottom-2 left-2 flex flex-col gap-0.5 bg-slate-950/80 p-1.5 rounded-lg border border-slate-850/60 text-[8px] font-mono leading-none text-slate-400">
+                <div className="flex items-center gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-600" />
+                  <span>Morfología alterada</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-sky-500" />
+                  <span>Vena Porta dilatada</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
+                  <span>Ligamento redondo revascularizado</span>
+                </div>
+              </div>
+            </div>
+
+            {/* COLUMN 2: INTERACTIVE CHECKS */}
+            <div className="flex flex-col justify-between gap-4 bg-slate-900/10 border border-slate-850/40 rounded-xl p-5">
+              <div className="space-y-4">
+                <div className="border-b border-slate-850 pb-2">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-purple-400 font-mono block text-left">
+                    Parámetros del Esquema Hepatopatía
+                  </span>
+                  <p className="text-[9px] text-slate-500 text-left font-medium">
+                    Personalice visualmente los hallazgos. Al ser sincronización unidireccional, estos cambios visuales no modificarán el reporte escrito.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 gap-2.5 text-left">
+                  {/* Hidden tracking states for PDF reader */}
+                  <input type="checkbox" id="hepatopatia-check-esplenomegalia" checked={hepatopatiaEsplenomegalia} readOnly className="hidden" />
+                  <input type="checkbox" id="hepatopatia-check-ascitis" checked={hepatopatiaAscitis} readOnly className="hidden" />
+                  <input type="checkbox" id="hepatopatia-check-varices" checked={hepatopatiaVarices} readOnly className="hidden" />
+                  <input type="hidden" id="hepatopatia-input-diametro" value={hepatopatiaVenaPortaDiametro} readOnly />
+
+                  {/* Morfologia checkbox */}
+                  <label className="flex items-center gap-2.5 p-2 bg-slate-950/30 hover:bg-slate-950/60 rounded-lg border border-slate-900 transition-all cursor-pointer">
+                    <input
+                      type="checkbox"
+                      id="hepatopatia-check-morfologia"
+                      checked={hepatopatiaMorfologia}
+                      onChange={(e) => setHepatopatiaMorfologia(e.target.checked)}
+                      className="rounded border-slate-800 text-purple-600 focus:ring-purple-500/20 h-4 w-4 bg-slate-950"
+                    />
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold text-slate-200">Alteración de Morfología</span>
+                      <span className="text-[9px] text-slate-500 font-medium">Bordes lobulados / irregulares, nodularidad difusa parenquimatosa</span>
+                    </div>
+                  </label>
+
+                  {/* Vena porta checkbox */}
+                  <label className="flex items-center gap-2.5 p-2 bg-slate-950/30 hover:bg-slate-950/60 rounded-lg border border-slate-900 transition-all cursor-pointer">
+                    <input
+                      type="checkbox"
+                      id="hepatopatia-check-venaporta"
+                      checked={hepatopatiaVenaPorta}
+                      onChange={(e) => {
+                        const val = e.target.checked;
+                        setHepatopatiaVenaPorta(val);
+                        if (val && hepatopatiaVenaPortaDiametro < 13) {
+                          setHepatopatiaVenaPortaDiametro(14);
+                        } else if (!val && hepatopatiaVenaPortaDiametro >= 13) {
+                          setHepatopatiaVenaPortaDiametro(11);
+                        }
+                      }}
+                      className="rounded border-slate-800 text-purple-600 focus:ring-purple-500/20 h-4 w-4 bg-slate-950"
+                    />
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold text-slate-200">Aumento de Diámetro de Vena Porta</span>
+                      <span className="text-[9px] text-slate-500 font-medium">Diámetro portal &gt;= 13 mm (signo de hipertensión portal)</span>
+                    </div>
+                  </label>
+
+                  {/* Vena porta slider */}
+                  <div className="p-2.5 bg-slate-950/40 rounded-lg border border-slate-900 space-y-1.5">
+                    <div className="flex justify-between items-center text-[10px]">
+                      <span className="font-extrabold text-slate-400 font-mono">DIÁMETRO DE VENA PORTA:</span>
+                      <span className="font-black text-sky-400 text-xs font-mono">{hepatopatiaVenaPortaDiametro} mm</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={8}
+                      max={20}
+                      step={1}
+                      value={hepatopatiaVenaPortaDiametro}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value);
+                        setHepatopatiaVenaPortaDiametro(val);
+                        if (val >= 13 && !hepatopatiaVenaPorta) {
+                          setHepatopatiaVenaPorta(true);
+                        } else if (val < 13 && hepatopatiaVenaPorta) {
+                          setHepatopatiaVenaPorta(false);
+                        }
+                      }}
+                      className="w-full accent-sky-500 h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer"
+                    />
+                    <div className="flex justify-between text-[8px] text-slate-600 font-bold font-mono">
+                      <span>8 mm</span>
+                      <span className="text-sky-500/70">13 mm (Límite superior)</span>
+                      <span>20 mm</span>
+                    </div>
+                  </div>
+
+                  {/* Ligamento revascularizado checkbox */}
+                  <label className="flex items-center gap-2.5 p-2 bg-slate-950/30 hover:bg-slate-950/60 rounded-lg border border-slate-900 transition-all cursor-pointer">
+                    <input
+                      type="checkbox"
+                      id="hepatopatia-check-ligamento"
+                      checked={hepatopatiaLigamento}
+                      onChange={(e) => setHepatopatiaLigamento(e.target.checked)}
+                      className="rounded border-slate-800 text-purple-600 focus:ring-purple-500/20 h-4 w-4 bg-slate-950"
+                    />
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold text-slate-200">Revascularización de Ligamento Redondo</span>
+                      <span className="text-[9px] text-slate-500 font-medium">Recanalización de la vena umbilical permeable (shunting)</span>
+                    </div>
+                  </label>
+
+                  {/* Esplenomegalia, ascitis, varices grid */}
+                  <div className="grid grid-cols-3 gap-1.5 pt-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setHepatopatiaEsplenomegalia(prev => !prev)}
+                      className={`py-1.5 rounded-lg text-[9px] font-bold uppercase transition-all border cursor-pointer ${
+                        hepatopatiaEsplenomegalia
+                          ? "bg-purple-950/50 border-purple-500/40 text-purple-300"
+                          : "bg-slate-950/20 border-slate-900 text-slate-500 hover:text-slate-350"
+                      }`}
+                    >
+                      Bazo (+12cm)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setHepatopatiaAscitis(prev => !prev)}
+                      className={`py-1.5 rounded-lg text-[9px] font-bold uppercase transition-all border cursor-pointer ${
+                        hepatopatiaAscitis
+                          ? "bg-sky-950/50 border-sky-500/40 text-sky-300"
+                          : "bg-slate-950/20 border-slate-900 text-slate-500 hover:text-slate-350"
+                      }`}
+                    >
+                      Líq. Libre
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setHepatopatiaVarices(prev => !prev)}
+                      className={`py-1.5 rounded-lg text-[9px] font-bold uppercase transition-all border cursor-pointer ${
+                        hepatopatiaVarices
+                          ? "bg-indigo-950/50 border-indigo-500/40 text-indigo-300"
+                          : "bg-slate-950/20 border-slate-900 text-slate-500 hover:text-slate-350"
+                      }`}
+                    >
+                      Colaterales
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* RECAP OF RESULTS */}
+              <div className="space-y-2">
+                <span className="text-[10px] font-black uppercase tracking-wide text-purple-400 block text-left border-b border-purple-950/30 pb-1 font-mono">
+                  Diagnósticos Sincronizados (Esquema)
+                </span>
+                <div className="bg-slate-950/70 p-3 rounded-xl border border-slate-855/60 flex flex-col gap-1.5 text-left text-xs">
+                  {!hepatopatiaMorfologia && !hepatopatiaVenaPorta && !hepatopatiaLigamento && !hepatopatiaEsplenomegalia && !hepatopatiaAscitis && !hepatopatiaVarices ? (
+                    <div className="flex items-center gap-2 text-slate-400">
+                      <span className="h-2 w-2 rounded-full bg-slate-600" />
+                      <span>Parámetros normales del eje hepatometabólico en el esquema.</span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-1 text-slate-300 font-medium">
+                      {hepatopatiaMorfologia && (
+                        <div className="flex items-center gap-1.5 text-amber-400">
+                          <Check className="h-3.5 w-3.5 shrink-0" />
+                          <span>Hígado de aspecto crónico (Morfología alterada / nodular)</span>
+                        </div>
+                      )}
+                      {hepatopatiaVenaPorta && (
+                        <div className="flex items-center gap-1.5 text-sky-400">
+                          <Check className="h-3.5 w-3.5 shrink-0" />
+                          <span>Vena Porta de calibre aumentado ({hepatopatiaVenaPortaDiametro} mm)</span>
+                        </div>
+                      )}
+                      {hepatopatiaLigamento && (
+                        <div className="flex items-center gap-1.5 text-rose-400 animate-pulse">
+                          <Check className="h-3.5 w-3.5 shrink-0" />
+                          <span>Recanalización del ligamento redondo (Vena umbilical permeable)</span>
+                        </div>
+                      )}
+                      {hepatopatiaEsplenomegalia && (
+                        <div className="flex items-center gap-1.5 text-purple-400">
+                          <Check className="h-3.5 w-3.5 shrink-0" />
+                          <span>Esplenomegalia reactiva asociada</span>
+                        </div>
+                      )}
+                      {hepatopatiaAscitis && (
+                        <div className="flex items-center gap-1.5 text-sky-400">
+                          <Check className="h-3.5 w-3.5 shrink-0" />
+                          <span>Presencia de ascitis / líquido libre</span>
+                        </div>
+                      )}
+                      {hepatopatiaVarices && (
+                        <div className="flex items-center gap-1.5 text-indigo-400">
+                          <Check className="h-3.5 w-3.5 shrink-0" />
+                          <span>Várices colaterales / derivaciones portosistémicas</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DIAGRAMA INDEPENDIENTE DE ANEURISMA DE AORTA ABDOMINAL (AAA) */}
+      {isAneurismaActive && (
+        <div id="aneurisma-section-root" className="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-5 shadow-2xl flex flex-col gap-4 mb-5 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-rose-500/5 rounded-full blur-3xl pointer-events-none" />
+          
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-850 pb-3">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-rose-500/10 rounded-lg border border-rose-500/20 text-rose-450 font-bold">
+                <Activity className="h-4.5 w-4.5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-slate-200 uppercase tracking-widest font-mono">
+                  Esquema: Aneurisma de Aorta Abdominal (AAA)
+                </h3>
+                <p className="text-[10px] text-slate-500 font-medium">
+                  Mapeo longitudinal y transversal de calibre aórtico, trombosis mural, estenosis de luz y complicaciones hemodinámicas.
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-3 flex-wrap">
+              <button
+                type="button"
+                onClick={() => handleToggleIncludeAneurisma(!activeIncludeAneurisma)}
+                className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all cursor-pointer flex items-center gap-2 font-mono ${
+                  activeIncludeAneurisma
+                    ? "bg-emerald-950/80 text-emerald-400 border-emerald-500/50 shadow-md shadow-emerald-950/20"
+                    : "bg-slate-900 text-slate-500 border-slate-800 hover:text-slate-300"
+                }`}
+              >
+                {activeIncludeAneurisma ? (
+                  <>
+                    <Check className="h-3.5 w-3.5 text-emerald-400 font-bold" />
+                    <span>Adjuntar al PDF: Sí</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="h-2 w-2 rounded-full bg-slate-600 block" />
+                    <span>Adjuntar al PDF: No</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+            {/* COLUMN 1: INTERACTIVE SVG DRAWINGS (Longitudinal & Transversal) */}
+            <div className="lg:col-span-5 bg-slate-950/90 border border-slate-900 rounded-2xl p-4 flex flex-col items-center justify-center min-h-[300px] relative">
+              <div className="absolute top-2 left-3 flex gap-2">
+                <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500 font-mono">LONGITUDINAL</span>
+              </div>
+              <div className="absolute top-2 right-3 flex gap-2">
+                <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500 font-mono">TRANSVERSAL</span>
+              </div>
+
+              {/* Render SVG side-by-side */}
+              <div className="w-full max-w-[420px] aspect-[420/220] flex items-center justify-center">
+                <svg
+                  id="abdomen-aneurisma-svg"
+                  viewBox="0 0 420 220"
+                  preserveAspectRatio="xMidYMid meet"
+                  className="w-full h-full select-none"
+                >
+                  <defs>
+                    <linearGradient id="lumen-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                      <stop offset="0%" stopColor="#ef4444" />
+                      <stop offset="100%" stopColor="#b91c1c" />
+                    </linearGradient>
+                    <linearGradient id="thrombus-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#475569" />
+                      <stop offset="100%" stopColor="#1e293b" />
+                    </linearGradient>
+                    <linearGradient id="tissue-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                      <stop offset="0%" stopColor="#020617" />
+                      <stop offset="100%" stopColor="#0f172a" />
+                    </linearGradient>
+                  </defs>
+
+                  {/* Tissue Background */}
+                  <rect width="420" height="220" rx="10" fill="url(#tissue-gradient)" stroke="#1e293b" strokeWidth="1" />
+
+                  {/* Dividing dashed line */}
+                  <line x1="210" y1="10" x2="210" y2="210" stroke="#334155" strokeWidth="1" strokeDasharray="3 3" />
+
+                  {/* LEFT VIEW: LONGITUDINAL */}
+                  {(() => {
+                    const cx = 105;
+                    const isSupra = aneurismaPosicion === "suprarenal";
+                    const isSacular = aneurismaForma === "sacular";
+                    const hasTrombo = aneurismaTrombo;
+                    
+                    // Sizing
+                    const outerD = 18 + (aneurismaDiametro - 30) * 0.7;
+                    const lengthPx = 40 + (aneurismaLongitud - 30) * 0.5;
+                    const yMid = 110;
+                    const yB1 = yMid - lengthPx / 2;
+                    const yB2 = yMid + lengthPx / 2;
+
+                    // Profile calculation
+                    const getProfileX = (y: number, side: "L" | "R") => {
+                      if (y < yB1 || y > yB2) {
+                        return side === "L" ? cx - 8 : cx + 8;
+                      }
+                      
+                      const distToCenter = Math.abs(y - yMid);
+                      const normDist = distToCenter / (lengthPx / 2);
+                      const bulgeFactor = Math.cos(normDist * Math.PI / 2);
+
+                      if (isSacular) {
+                        if (side === "L") {
+                          return cx - 8 - (outerD - 16) * bulgeFactor;
+                        } else {
+                          return cx + 8;
+                        }
+                      } else {
+                        const offset = (outerD / 2) * bulgeFactor + (8 * (1 - bulgeFactor));
+                        return side === "L" ? cx - offset : cx + offset;
+                      }
+                    };
+
+                    const renalY = 50;
+                    const renalXL = getProfileX(renalY, "L");
+                    const renalXR = getProfileX(renalY, "R");
+
+                    let points = [];
+                    for (let y = 10; y <= 170; y += 4) {
+                      points.push({ y, xl: getProfileX(y, "L"), xr: getProfileX(y, "R") });
+                    }
+
+                    const leftOuterPath = points.map(p => `${p.xl},${p.y}`).join(" L ");
+                    const rightOuterPath = [...points].reverse().map(p => `${p.xr},${p.y}`).join(" L ");
+
+                    const iliacWidthR = aneurismaExtensionIliacas === "derecha" || aneurismaExtensionIliacas === "bilateral" ? 14 : 6;
+                    const iliacWidthL = aneurismaExtensionIliacas === "izquierda" || aneurismaExtensionIliacas === "bilateral" ? 14 : 6;
+
+                    return (
+                      <g>
+                        {/* Extravasation if Rupture is active */}
+                        {aneurismaRuptura && (
+                          <g opacity="0.65">
+                            <path
+                              d={`M ${cx - 20},${yMid - 10} Q ${cx - 60},${yMid - 30} ${cx - 50},${yMid + 20} Q ${cx - 70},${yMid + 40} ${cx - 30},${yMid + 35} Z`}
+                              fill="#ef4444"
+                              filter="blur(2px)"
+                              className="animate-pulse"
+                            />
+                            <text x={cx - 50} y={yMid - 35} fill="#f43f5e" fontSize="7" fontWeight="black" fontFamily="monospace" textAnchor="middle">
+                              ¡RUPTURA / HEMATOMA!
+                            </text>
+                          </g>
+                        )}
+
+                        {/* Renal arteries */}
+                        <path d={`M ${renalXL},${renalY - 3} L ${cx - 40},${renalY - 8} L ${cx - 40},${renalY - 2} L ${renalXL},${renalY + 3} Z`} fill="#991b1b" stroke="#f43f5e" strokeWidth="0.5" />
+                        <text x={cx - 45} y={renalY - 11} fill="#cbd5e1" fontSize="6.5" fontFamily="monospace">A. Renal Izq</text>
+                        
+                        <path d={`M ${renalXR},${renalY - 3} L ${cx + 40},${renalY - 8} L ${cx + 40},${renalY - 2} L ${renalXR},${renalY + 3} Z`} fill="#991b1b" stroke="#f43f5e" strokeWidth="0.5" />
+                        <text x={cx + 12} y={renalY - 11} fill="#cbd5e1" fontSize="6.5" fontFamily="monospace">A. Renal Der</text>
+
+                        {/* Aorta Outer Shape */}
+                        <path
+                          d={`M ${points[0].xl},10 L ${leftOuterPath} L 105,170 L ${rightOuterPath} Z`}
+                          fill={hasTrombo ? "url(#thrombus-gradient)" : "url(#lumen-gradient)"}
+                          stroke="#ef4444"
+                          strokeWidth="1.5"
+                        />
+
+                        {/* Patent Lumen */}
+                        {hasTrombo && (() => {
+                          const stenosisFact = 1 - (aneurismaEstenosisLuz / 100);
+                          const getLumenX = (y: number, side: "L" | "R") => {
+                            const xlOuter = getProfileX(y, "L");
+                            const xrOuter = getProfileX(y, "R");
+                            const width = xrOuter - xlOuter;
+                            const center = xlOuter + width / 2;
+
+                            const lumenWidth = Math.max(5, width * stenosisFact);
+                            const offset = isSacular ? -3 : 0;
+                            return side === "L" ? (center + offset) - lumenWidth / 2 : (center + offset) + lumenWidth / 2;
+                          };
+
+                          let lPoints = [];
+                          for (let y = 10; y <= 170; y += 4) {
+                            lPoints.push({ y, xl: getLumenX(y, "L"), xr: getLumenX(y, "R") });
+                          }
+                          const leftLumenPath = lPoints.map(p => `${p.xl},${p.y}`).join(" L ");
+                          const rightLumenPath = [...lPoints].reverse().map(p => `${p.xr},${p.y}`).join(" L ");
+
+                          return (
+                            <path
+                              d={`M ${lPoints[0].xl},10 L ${leftLumenPath} L 105,170 L ${rightLumenPath} Z`}
+                              fill="url(#lumen-gradient)"
+                              stroke="#ef4444"
+                              strokeWidth="0.5"
+                            />
+                          );
+                        })()}
+
+                        {/* Dissection Flap */}
+                        {aneurismaDiseccion && (
+                          <path
+                            d={`M 103,15 Q 107,60 101,110 T 104,165`}
+                            stroke="#ffffff"
+                            strokeWidth="1.2"
+                            strokeDasharray="2 1"
+                            fill="none"
+                          />
+                        )}
+
+                        {/* Iliac branches */}
+                        <path
+                          d={`M 97,170 Q 85,190 ${75 - iliacWidthL/2},210 L ${75 + iliacWidthL/2},210 Q 95,190 105,170 Z`}
+                          fill="url(#lumen-gradient)"
+                          stroke="#ef4444"
+                          strokeWidth="1"
+                        />
+                        <path
+                          d={`M 105,170 Q 115,190 ${135 - iliacWidthR/2},210 L ${135 + iliacWidthR/2},210 Q 125,190 113,170 Z`}
+                          fill="url(#lumen-gradient)"
+                          stroke="#ef4444"
+                          strokeWidth="1"
+                        />
+
+                        {/* Labels */}
+                        <text x={cx} y={20} fill="#f87171" fontSize="6.5" fontWeight="bold" fontFamily="monospace" textAnchor="middle">
+                          {isSupra ? "SUPRARENAL" : "INFRARENAL"}
+                        </text>
+                        {hasTrombo && (
+                          <text x={cx - 15} y={yMid + 25} fill="#94a3b8" fontSize="6" fontFamily="monospace">
+                            Trombo ({aneurismaEstenosisLuz}%)
+                          </text>
+                        )}
+                        {aneurismaDiseccion && (
+                          <text x={cx + 15} y={80} fill="#f1f5f9" fontSize="6" fontWeight="bold" fontFamily="monospace">
+                            FLAP INTÍMA
+                          </text>
+                        )}
+                      </g>
+                    );
+                  })()}
+
+                  {/* RIGHT VIEW: TRANSVERSAL */}
+                  {(() => {
+                    const cx = 310;
+                    const cy = 110;
+                    const rOuter = 22 + (aneurismaDiametro - 30) * 0.45;
+                    const hasTrombo = aneurismaTrombo;
+                    const stenosisFact = 1 - (aneurismaEstenosisLuz / 100);
+                    const shiftX = hasTrombo ? 5 : 0;
+                    const shiftY = hasTrombo ? 4 : 0;
+                    const rInner = hasTrombo ? Math.max(5, (rOuter - 3) * stenosisFact) : rOuter - 3.5;
+
+                    return (
+                      <g>
+                        {/* Extravasation in transverse */}
+                        {aneurismaRuptura && (
+                          <path
+                            d={`M ${cx - rOuter + 5},${cy} C ${cx - rOuter - 30},${cy - 20} ${cx - rOuter - 15},${cy + 30} ${cx - rOuter + 2},${cy + 15} Z`}
+                            fill="#ef4444"
+                            opacity="0.6"
+                            filter="blur(1.5px)"
+                          />
+                        )}
+
+                        {/* Outer wall */}
+                        <circle
+                          cx={cx}
+                          cy={cy}
+                          r={rOuter}
+                          fill={hasTrombo ? "url(#thrombus-gradient)" : "url(#lumen-gradient)"}
+                          stroke="#ef4444"
+                          strokeWidth="2.0"
+                        />
+
+                        {/* Inner patent lumen */}
+                        {hasTrombo && (
+                          <circle
+                            cx={cx + shiftX}
+                            cy={cy + shiftY}
+                            r={rInner}
+                            fill="url(#lumen-gradient)"
+                            stroke="#ef4444"
+                            strokeWidth="0.5"
+                          />
+                        )}
+
+                        {/* Dissection flap line in transverse */}
+                        {aneurismaDiseccion && (
+                          <path
+                            d={`M ${cx + shiftX - rInner + 2},${cy + shiftY - 2} Q ${cx + shiftX},${cy + shiftY + rInner - 4} ${cx + shiftX + rInner - 2},${cy + shiftY + 5}`}
+                            stroke="#ffffff"
+                            strokeWidth="1.2"
+                            strokeDasharray="2 1"
+                            fill="none"
+                          />
+                        )}
+
+                        {/* Labels */}
+                        <text x={cx} y={cy - rOuter - 8} fill="#cbd5e1" fontSize="7.0" fontWeight="bold" fontFamily="monospace" textAnchor="middle">
+                          Aorta: {aneurismaDiametro} mm
+                        </text>
+                        {hasTrombo && (
+                          <g>
+                            <text x={cx - rOuter + 4} y={cy + rOuter + 14} fill="#94a3b8" fontSize="6.0" fontFamily="monospace">
+                              Trombo Mural
+                            </text>
+                            <text x={cx + shiftX} y={cy + shiftY + 2} fill="#ffffff" fontSize="5.5" fontWeight="bold" fontFamily="monospace" textAnchor="middle">
+                              Luz
+                            </text>
+                          </g>
+                        )}
+                        {aneurismaDiseccion && (
+                          <g>
+                            <text x={cx + shiftX - rInner/2} y={cy + shiftY - rInner/3} fill="#fecaca" fontSize="5" fontWeight="bold" fontFamily="monospace" textAnchor="middle">
+                              LV
+                            </text>
+                            <text x={cx + shiftX + rInner/2} y={cy + shiftY + rInner/2} fill="#fca5a5" fontSize="5" fontWeight="bold" fontFamily="monospace" textAnchor="middle">
+                              LF
+                            </text>
+                          </g>
+                        )}
+                      </g>
+                    );
+                  })()}
+                </svg>
+              </div>
+
+              {/* Real-time statistics */}
+              <div className="absolute bottom-2.5 left-3 right-3 flex justify-between gap-2">
+                <div className="px-2 py-0.5 bg-slate-900/90 border border-slate-800 rounded text-[9px] font-mono text-slate-400">
+                  Forma: <span className="text-rose-400 font-bold capitalize">{aneurismaForma}</span>
+                </div>
+                <div className="px-2 py-0.5 bg-slate-900/90 border border-slate-800 rounded text-[9px] font-mono text-slate-400">
+                  Extensión: <span className="text-rose-400 font-bold uppercase">{aneurismaExtensionIliacas === "no" ? "Ninguna" : aneurismaExtensionIliacas}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* COLUMN 2: INTERACTIVE SYNOPTIC SLIDERS AND CONTROLS */}
+            <div className="lg:col-span-7 bg-slate-950/40 border border-slate-900 rounded-2xl p-4 flex flex-col gap-3.5">
+              <span className="text-[10px] font-black uppercase text-rose-500 tracking-wider text-left block border-b border-slate-900 pb-1.5">
+                Tarjetas Sinópticas: Variables del Aneurisma
+              </span>
+
+              {/* Main Attributes */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Posición */}
+                <div className="flex flex-col gap-1 text-left">
+                  <span className="text-[9px] font-black uppercase text-slate-500 font-mono">Posición del Saco:</span>
+                  <div className="grid grid-cols-2 gap-1.5 mt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => { setAneurismaPosicion("infrarenal"); if(!aneurismaForceActive) setAneurismaForceActive(true); }}
+                      className={`px-2 py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer ${
+                        aneurismaPosicion === "infrarenal"
+                          ? "bg-rose-500/20 text-rose-300 border-rose-500/50 shadow-sm"
+                          : "bg-slate-950/60 text-slate-500 border-slate-900 hover:text-slate-350"
+                      }`}
+                    >
+                      Infrarenal
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setAneurismaPosicion("suprarenal"); if(!aneurismaForceActive) setAneurismaForceActive(true); }}
+                      className={`px-2 py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer ${
+                        aneurismaPosicion === "suprarenal"
+                          ? "bg-rose-500/20 text-rose-300 border-rose-500/50 shadow-sm"
+                          : "bg-slate-950/60 text-slate-500 border-slate-900 hover:text-slate-350"
+                      }`}
+                    >
+                      Suprarenal
+                    </button>
+                  </div>
+                </div>
+
+                {/* Forma */}
+                <div className="flex flex-col gap-1 text-left">
+                  <span className="text-[9px] font-black uppercase text-slate-500 font-mono">Morfología / Forma:</span>
+                  <div className="grid grid-cols-2 gap-1.5 mt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => { setAneurismaForma("fusiforme"); if(!aneurismaForceActive) setAneurismaForceActive(true); }}
+                      className={`px-2 py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer ${
+                        aneurismaForma === "fusiforme"
+                          ? "bg-rose-500/20 text-rose-300 border-rose-500/50 shadow-sm"
+                          : "bg-slate-950/60 text-slate-500 border-slate-900 hover:text-slate-350"
+                      }`}
+                    >
+                      Fusiforme
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setAneurismaForma("sacular"); if(!aneurismaForceActive) setAneurismaForceActive(true); }}
+                      className={`px-2 py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer ${
+                        aneurismaForma === "sacular"
+                          ? "bg-rose-500/20 text-rose-300 border-rose-500/50 shadow-sm"
+                          : "bg-slate-950/60 text-slate-500 border-slate-900 hover:text-slate-350"
+                      }`}
+                    >
+                      Sacular
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Sliders for Diameter and Length */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Diámetro máximo */}
+                <div className="flex flex-col gap-1.5 bg-slate-950/50 border border-slate-900 p-2.5 rounded-xl text-left">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[9px] font-black uppercase text-slate-400 font-mono">Diámetro Máximo:</span>
+                    <span className="text-xs font-black text-rose-400 font-mono">{aneurismaDiametro} mm</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="30"
+                    max="90"
+                    step="1"
+                    value={aneurismaDiametro}
+                    onChange={(e) => { setAneurismaDiametro(parseInt(e.target.value)); if(!aneurismaForceActive) setAneurismaForceActive(true); }}
+                    className="w-full accent-rose-500 bg-slate-800 rounded-lg appearance-none h-1.5 cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[8px] font-medium text-slate-600 font-mono">
+                    <span>30 mm (Normal)</span>
+                    <span>90 mm (Crítico)</span>
+                  </div>
+                </div>
+
+                {/* Longitud total */}
+                <div className="flex flex-col gap-1.5 bg-slate-950/50 border border-slate-900 p-2.5 rounded-xl text-left">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[9px] font-black uppercase text-slate-400 font-mono">Longitud Total:</span>
+                    <span className="text-xs font-black text-rose-400 font-mono">{aneurismaLongitud} mm</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="30"
+                    max="120"
+                    step="1"
+                    value={aneurismaLongitud}
+                    onChange={(e) => { setAneurismaLongitud(parseInt(e.target.value)); if(!aneurismaForceActive) setAneurismaForceActive(true); }}
+                    className="w-full accent-rose-500 bg-slate-800 rounded-lg appearance-none h-1.5 cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[8px] font-medium text-slate-600 font-mono">
+                    <span>30 mm</span>
+                    <span>120 mm</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Extension to iliac branches */}
+              <div className="flex flex-col gap-1 text-left">
+                <span className="text-[9px] font-black uppercase text-slate-500 font-mono">Extensión a Ramas Ilíacas:</span>
+                <div className="grid grid-cols-4 gap-1.5 mt-0.5">
+                  {(["no", "derecha", "izquierda", "bilateral"] as const).map((branch) => (
+                    <button
+                      key={branch}
+                      type="button"
+                      onClick={() => { setAneurismaExtensionIliacas(branch); if(!aneurismaForceActive) setAneurismaForceActive(true); }}
+                      className={`px-1 py-1.5 rounded-lg border text-[10px] font-bold transition-all cursor-pointer capitalize ${
+                        aneurismaExtensionIliacas === branch
+                          ? "bg-rose-500/20 text-rose-300 border-rose-500/50 shadow-sm"
+                          : "bg-slate-950/60 text-slate-500 border-slate-900 hover:text-slate-350"
+                      }`}
+                    >
+                      {branch === "no" ? "Sin Extensión" : branch}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Thrombus and Stenosis slider */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start bg-slate-950/30 border border-slate-900/60 p-3 rounded-xl">
+                {/* Trombo Toggle */}
+                <label className="flex items-center gap-2.5 p-2 bg-rose-500/5 hover:bg-rose-500/10 rounded-lg border border-rose-950/20 transition-all cursor-pointer text-xs font-bold text-rose-300 h-10 select-none">
+                  <input
+                    type="checkbox"
+                    checked={aneurismaTrombo}
+                    onChange={(e) => { setAneurismaTrombo(e.target.checked); if(!aneurismaForceActive) setAneurismaForceActive(true); }}
+                    className="rounded border-slate-700 bg-slate-950 text-rose-500 focus:ring-0 h-4 w-4 cursor-pointer"
+                  />
+                  <div className="text-left leading-none">
+                    <span className="block">Trombo Intramural</span>
+                    <span className="text-[8px] font-normal text-slate-500">Mural excéntrico / concéntrico</span>
+                  </div>
+                </label>
+
+                {/* Estenosis slider */}
+                <div className={`flex flex-col gap-1 text-left transition-opacity duration-200 ${aneurismaTrombo ? "opacity-100" : "opacity-40 pointer-events-none"}`}>
+                  <div className="flex justify-between items-center text-[9px] font-black uppercase text-slate-400 font-mono">
+                    <span>Estenosis de la Luz:</span>
+                    <span className="text-xs font-bold text-rose-400 font-mono">{aneurismaEstenosisLuz}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="90"
+                    step="5"
+                    disabled={!aneurismaTrombo}
+                    value={aneurismaEstenosisLuz}
+                    onChange={(e) => { setAneurismaEstenosisLuz(parseInt(e.target.value)); if(!aneurismaForceActive) setAneurismaForceActive(true); }}
+                    className="w-full accent-rose-500 bg-slate-800 rounded-lg appearance-none h-1.5 cursor-pointer"
+                  />
+                </div>
+              </div>
+
+              {/* Complications Checkboxes */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Disección */}
+                <label className="flex items-center gap-2.5 p-2.5 bg-rose-950/10 hover:bg-rose-950/20 rounded-xl border border-rose-550/20 hover:border-rose-500/40 transition-all cursor-pointer text-xs font-bold text-rose-350 select-none">
+                  <input
+                    type="checkbox"
+                    checked={aneurismaDiseccion}
+                    onChange={(e) => { setAneurismaDiseccion(e.target.checked); if(!aneurismaForceActive) setAneurismaForceActive(true); }}
+                    className="rounded border-slate-700 bg-slate-950 text-rose-500 focus:ring-0 h-4 w-4 cursor-pointer"
+                  />
+                  <div className="text-left leading-none">
+                    <span className="block text-rose-300">Disección Aórtica</span>
+                    <span className="text-[8px] font-normal text-rose-500">Presencia de flap íntima-medial</span>
+                  </div>
+                </label>
+
+                {/* Ruptura */}
+                <label className="flex items-center gap-2.5 p-2.5 bg-rose-950/25 hover:bg-rose-950/35 rounded-xl border border-red-500/30 hover:border-red-500/50 transition-all cursor-pointer text-xs font-bold text-rose-350 select-none animate-pulse">
+                  <input
+                    type="checkbox"
+                    checked={aneurismaRuptura}
+                    onChange={(e) => { setAneurismaRuptura(e.target.checked); if(!aneurismaForceActive) setAneurismaForceActive(true); }}
+                    className="rounded border-slate-700 bg-slate-950 text-red-500 focus:ring-0 h-4 w-4 cursor-pointer"
+                  />
+                  <div className="text-left leading-none">
+                    <span className="block text-red-400 font-black">Ruptura Aórtica</span>
+                    <span className="text-[8px] font-black text-rose-500/90 uppercase font-mono">Extravasación retroperitoneal</span>
+                  </div>
+                </label>
+              </div>
+
+            </div>
+          </div>
+
+          {/* BOTTOM QUICK SUMMARY OF AAA FINDINGS */}
+          <div className="border-t border-slate-900 pt-3 flex flex-wrap gap-x-5 gap-y-2 text-[11px] text-slate-400 font-mono text-left">
+            <span className="text-rose-400 font-bold uppercase">Hallazgos Activos:</span>
+            <span>• Aneurisma {aneurismaPosicion} ({aneurismaForma})</span>
+            <span>• Diámetro: {aneurismaDiametro} mm</span>
+            <span>• Longitud: {aneurismaLongitud} mm</span>
+            {aneurismaExtensionIliacas !== "no" && (
+              <span className="text-orange-400 font-bold">• Extensión a ilíaca {aneurismaExtensionIliacas}</span>
+            )}
+            {aneurismaTrombo && (
+              <span className="text-slate-300 font-bold">• Trombo mural ({aneurismaEstenosisLuz}% estenosis)</span>
+            )}
+            {aneurismaDiseccion && (
+              <span className="text-yellow-400 font-black">• Complicado con Disección (Flap de íntima)</span>
+            )}
+            {aneurismaRuptura && (
+              <span className="text-red-400 font-black animate-pulse">• ¡RUPTURA / EXTRAVASACIÓN ACTIVA!</span>
+            )}
           </div>
         </div>
       )}

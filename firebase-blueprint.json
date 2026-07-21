@@ -17,7 +17,18 @@
         "clinicalHistory": "string",
         "findings": "string",
         "reportText": "string",
-        "pdfBase64": "string"
+        "pdfBase64": "string",
+        "attachedImages": "array",
+        "patientSummary": "any"
+      }
+    },
+    "worklists": {
+      "schema": {
+        "id": "string",
+        "userId": "string",
+        "date": "string",
+        "patients": "array",
+        "createdAt": "timestamp"
       }
     }
   }

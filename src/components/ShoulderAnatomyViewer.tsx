@@ -1064,7 +1064,7 @@ export default function ShoulderAnatomyViewer({
   // Compile full Findings Table (Simplified 2-Column format as requested)
   // Excludes any structures that are "no_descrito" (not mentioned in the report)
   const generateTableMarkdown = () => {
-    let md = "| Estructura | Hallazgos |\n";
+    let md = "| INTERPRETACIÓN | Hallazgos |\n";
     md += "| :--- | :--- |\n";
 
     const rows = [

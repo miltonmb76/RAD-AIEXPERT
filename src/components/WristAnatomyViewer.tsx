@@ -18,6 +18,8 @@ interface WristAnatomyViewerProps {
   onExportNarrative?: (narrativeText: string) => void;
   includeInReport?: boolean;
   setIncludeInReport?: (val: boolean) => void;
+  includeDeQuervain?: boolean;
+  setIncludeDeQuervain?: (val: boolean) => void;
   onChangeStates?: (states: Record<string, string>) => void;
   onChangeDescriptions?: (descriptions: Record<string, string>) => void;
   externalStates?: Record<string, string>;
@@ -31,8 +33,10 @@ export default function WristAnatomyViewer({
   onChangeReport,
   onExportTable,
   onExportNarrative,
-  includeInReport = true,
-  setIncludeInReport,
+  includeInReport: propIncludeInReport = true,
+  setIncludeInReport: propSetIncludeInReport,
+  includeDeQuervain: propIncludeDeQuervain = false,
+  setIncludeDeQuervain: propSetIncludeDeQuervain,
   onChangeStates,
   onChangeDescriptions,
   externalStates,
@@ -58,7 +62,13 @@ export default function WristAnatomyViewer({
     articulacion_radiocubital_distal: "no_descrito",
     tendones_extensores_compartimentos: "no_descrito",
     fibrocartilago_triangular: "no_descrito",
-    extensor_carpi_ulnaris: "no_descrito"
+    extensor_carpi_ulnaris: "no_descrito",
+
+    // De Quervain specific (First Extensor Compartment)
+    dq_tendones_apl_epb: "no_descrito",
+    dq_vaina_sinovial_liquido: "no_descrito",
+    dq_retinaculo_extensor: "no_descrito",
+    dq_doppler_hyperemia: "no_descrito"
   });
 
   const [customDescriptions, setCustomDescriptions] = useState<Record<string, string>>({
@@ -72,7 +82,12 @@ export default function WristAnatomyViewer({
     articulacion_radiocubital_distal: "",
     tendones_extensores_compartimentos: "",
     fibrocartilago_triangular: "",
-    extensor_carpi_ulnaris: ""
+    extensor_carpi_ulnaris: "",
+
+    dq_tendones_apl_epb: "",
+    dq_vaina_sinovial_liquido: "",
+    dq_retinaculo_extensor: "",
+    dq_doppler_hyperemia: ""
   });
 
   const [activeHover, setActiveHover] = useState<string | null>(null);
@@ -80,6 +95,25 @@ export default function WristAnatomyViewer({
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncLogs, setSyncLogs] = useState<string[]>([]);
   const [lastSyncedReport, setLastSyncedReport] = useState<string>("");
+
+  const [localIncludeInReport, setLocalIncludeInReport] = useState(true);
+  const [localIncludeDeQuervain, setLocalIncludeDeQuervain] = useState(false);
+
+  const includeInReport = propIncludeInReport !== undefined ? propIncludeInReport : localIncludeInReport;
+  const setIncludeInReport = propSetIncludeInReport !== undefined ? propSetIncludeInReport : setLocalIncludeInReport;
+
+  const includeDeQuervain = propIncludeDeQuervain !== undefined ? propIncludeDeQuervain : localIncludeDeQuervain;
+  const setIncludeDeQuervain = propSetIncludeDeQuervain !== undefined ? propSetIncludeDeQuervain : setLocalIncludeDeQuervain;
+
+  useEffect(() => {
+    const dqKeys = ["dq_tendones_apl_epb", "dq_vaina_sinovial_liquido", "dq_retinaculo_extensor", "dq_doppler_hyperemia"];
+    const isDqSelected = dqKeys.includes(selectedStructure);
+    if (!includeInReport && !isDqSelected) {
+      setSelectedStructure("dq_tendones_apl_epb");
+    } else if (!includeDeQuervain && isDqSelected) {
+      setSelectedStructure("nervio_mediano");
+    }
+  }, [includeInReport, includeDeQuervain, selectedStructure]);
 
   useEffect(() => {
     if (externalStates && Object.keys(externalStates).length > 0) {
@@ -157,6 +191,22 @@ export default function WristAnatomyViewer({
         return [
           "extensor carpi ulnaris", "ecu", "extensor cubital del carpo", "cubital posterior", "sexto compartimento"
         ];
+      case "dq_tendones_apl_epb":
+        return [
+          "apl", "epb", "abductor pollicis longus", "extensor pollicis brevis", "tendon de quervain", "tendones de quervain", "tendon de primer compartimento", "tendon del primer compartimento", "tendones del primer compartimento"
+        ];
+      case "dq_vaina_sinovial_liquido":
+        return [
+          "vaina de quervain", "vaina de primer compartimento", "vaina del primer compartimento", "liquido de quervain", "derrame de quervain", "halo de quervain", "distension de la vaina del primer", "distension de la vaina de quervain"
+        ];
+      case "dq_retinaculo_extensor":
+        return [
+          "retinaculo extensor", "retinaculo de quervain", "retinaculo del primer compartimento", "polea de quervain", "polea del primer compartimento", "engrosamiento del retinaculo extensor"
+        ];
+      case "dq_doppler_hyperemia":
+        return [
+          "doppler de quervain", "hiperemia de quervain", "vascularizacion de quervain", "flujo doppler de quervain", "doppler color de quervain", "hiperemia en el primer compartimento"
+        ];
       default:
         return [];
     }
@@ -174,7 +224,8 @@ export default function WristAnatomyViewer({
       "normal", "no_descrito", "edematizado", "comprimido", "tenosinovitis", "desgarro", "tendinosis",
       "tendinopatía", "aneurisma", "trombosis", "calcificación", "derrame", "sinovitis", "quiste_espinoso",
       "compresion_nerviosa", "quiste_sinovial", "subluxacion", "artrosis", "de_quervain", "tendinitis_intersticial",
-      "perforacion", "degenerativo"
+      "perforacion", "degenerativo", "engrosado", "desgarro_parcial", "derrame_leve", "derrame_severo",
+      "engrosado_fibroso", "sin_flujo", "doppler_leve", "doppler_severo"
     ];
     if (!standardStates.includes(s)) {
       return `Se describe hallazgo: ${s.charAt(0).toUpperCase() + s.slice(1)}.`;
@@ -236,6 +287,22 @@ export default function WristAnatomyViewer({
         if (s === "tenosinovitis") return "Tenosinovitis marcada del ECU (VI compartimento) con distensión de su vaina.";
         if (s === "subluxacion") return "Subluxación o inestabilidad del tendón ECU fuera de la corredera distal cubital.";
         if (s === "desgarro") return "Desgarro parcial intrasustancia o tendinosis severa del ECU.";
+        break;
+      case "dq_tendones_apl_epb":
+        if (s === "engrosado") return "Tendones APL y EPB engrosados e hipoecogénicos, sugestivos de tendinopatía focal.";
+        if (s === "desgarro_parcial") return "Defecto focal intrasustancia compatible con desgarro parcial en el tendón APL o EPB.";
+        break;
+      case "dq_vaina_sinovial_liquido":
+        if (s === "derrame_leve") return "Leve acumulación de líquido rodeando los tendones del primer compartimento extensor.";
+        if (s === "derrame_severo") return "Distensión marcada de la vaina sinovial con halo de líquido, compatible con tenosinovitis severa.";
+        break;
+      case "dq_retinaculo_extensor":
+        if (s === "engrosado_fibroso") return "Engrosamiento del retináculo extensor suprayacente con cambios fibróticos.";
+        break;
+      case "dq_doppler_hyperemia":
+        if (s === "sin_flujo") return "Sin señal Doppler de neovascularización activa.";
+        if (s === "doppler_leve") return "Señal Doppler color leve en la vaina tendinosa, indicando hiperemia activa de bajo grado.";
+        if (s === "doppler_severo") return "Marcada hipervascularización en el estudio Doppler color en el primer compartimento extensor.";
         break;
     }
     return "Alteración descrita.";
@@ -410,12 +477,66 @@ export default function WristAnatomyViewer({
           detectedState = "tenosinovitis";
           desc = "Tenosinovitis marcada del ECU (VI compartimento) con distensión de su vaina.";
         }
+      } else if (id === "dq_tendones_apl_epb") {
+        if (textLower.includes("desgarro") || textLower.includes("rotura") || textLower.includes("ruptura")) {
+          detectedState = "desgarro_parcial";
+          desc = "Defecto focal intrasustancia compatible con desgarro parcial en el tendón APL o EPB.";
+        } else if (textLower.includes("engrosado") || textLower.includes("hipoecogen") || textLower.includes("tendinos") || textLower.includes("tendinopat")) {
+          detectedState = "engrosado";
+          desc = "Tendones APL y EPB engrosados e hipoecogénicos, sugestivos de tendinopatía focal.";
+        } else {
+          detectedState = "normal";
+          desc = "Dentro de límites normales.";
+        }
+      } else if (id === "dq_vaina_sinovial_liquido") {
+        if (textLower.includes("tenosinovitis") || textLower.includes("liquido") || textLower.includes("derrame") || textLower.includes("halo")) {
+          if (textLower.includes("severo") || textLower.includes("marcado") || textLower.includes("abundante")) {
+            detectedState = "derrame_severo";
+            desc = "Distensión marcada de la vaina sinovial con halo de líquido, compatible con tenosinovitis severa.";
+          } else {
+            detectedState = "derrame_leve";
+            desc = "Leve acumulación de líquido rodeando los tendones del primer compartimento extensor.";
+          }
+        } else {
+          detectedState = "normal";
+          desc = "Dentro de límites normales.";
+        }
+      } else if (id === "dq_retinaculo_extensor") {
+        if (textLower.includes("retinaculo") && (textLower.includes("engrosado") || textLower.includes("engrosamiento") || textLower.includes("fibro"))) {
+          detectedState = "engrosado_fibroso";
+          desc = "Engrosamiento del retináculo extensor suprayacente con cambios fibróticos.";
+        } else {
+          detectedState = "normal";
+          desc = "Dentro de límites normales.";
+        }
+      } else if (id === "dq_doppler_hyperemia") {
+        if (textLower.includes("doppler") || textLower.includes("hiperemia") || textLower.includes("flujo") || textLower.includes("vasculariz")) {
+          if (textLower.includes("abundante") || textLower.includes("severo") || textLower.includes("marcado") || textLower.includes("alto grado")) {
+            detectedState = "doppler_severo";
+            desc = "Marcada hipervascularización en el estudio Doppler color en el primer compartimento extensor.";
+          } else if (textLower.includes("leve") || textLower.includes("discreto") || textLower.includes("bajo grado")) {
+            detectedState = "doppler_leve";
+            desc = "Señal Doppler color leve en la vaina tendinosa, indicando hiperemia activa de bajo grado.";
+          } else {
+            detectedState = "sin_flujo";
+            desc = "Sin señal Doppler de neovascularización activa.";
+          }
+        } else {
+          detectedState = "normal";
+          desc = "Dentro de límites normales.";
+        }
       }
 
       nextStates[id] = detectedState;
       nextDescriptions[id] = desc;
       logs.push(`[Local] ${id} clasificado como ${detectedState.toUpperCase()}.`);
     });
+
+    const hasDeQuervainKeywords = ["quervain", "de quervain", "apl", "epb", "primer compartimento"].some(kw => textLower.includes(kw));
+    if (hasDeQuervainKeywords && setIncludeDeQuervain) {
+      setIncludeDeQuervain(true);
+      logs.push("[Local] Se detectaron palabras clave de De Quervain. Auto-activando esquema de De Quervain.");
+    }
 
     setStates(nextStates);
     setCustomDescriptions(nextDescriptions);
@@ -488,6 +609,26 @@ export default function WristAnatomyViewer({
         id: "extensor_carpi_ulnaris",
         label: "Extensor Carpi Ulnaris",
         allowedStates: ["no_descrito", "normal", "tenosinovitis", "subluxacion", "desgarro"]
+      },
+      {
+        id: "dq_tendones_apl_epb",
+        label: "Tendones APL y EPB",
+        allowedStates: ["no_descrito", "normal", "engrosado", "desgarro_parcial"]
+      },
+      {
+        id: "dq_vaina_sinovial_liquido",
+        label: "Vaina Sinovial Común",
+        allowedStates: ["no_descrito", "normal", "derrame_leve", "derrame_severo"]
+      },
+      {
+        id: "dq_retinaculo_extensor",
+        label: "Retináculo Extensor (I Comp)",
+        allowedStates: ["no_descrito", "normal", "engrosado_fibroso"]
+      },
+      {
+        id: "dq_doppler_hyperemia",
+        label: "Señal Doppler / Hiperemia",
+        allowedStates: ["no_descrito", "sin_flujo", "doppler_leve", "doppler_severo"]
       }
     ];
 
@@ -498,7 +639,7 @@ export default function WristAnatomyViewer({
         body: JSON.stringify({
           model: selectedModel || "gemini-3.5-flash",
           reportText: generatedReport,
-          studyType: "Ultrasonido de Muñeca (Volar y Dorsal)",
+          studyType: "Ultrasonido de Muñeca (Volar, Dorsal y Compartimento I)",
           structures: structuresList
         })
       });
@@ -532,6 +673,17 @@ export default function WristAnatomyViewer({
             }
           }
         });
+
+        // Check if De Quervain is active or found
+        const dqKeys = ["dq_tendones_apl_epb", "dq_vaina_sinovial_liquido", "dq_retinaculo_extensor", "dq_doppler_hyperemia"];
+        const dqHasPathology = dqKeys.some(k => finalStates[k] && finalStates[k] !== "no_descrito" && finalStates[k] !== "normal");
+        const reportLower = generatedReport.toLowerCase();
+        const hasDqText = ["quervain", "de quervain", "apl", "epb", "primer compartimento"].some(kw => reportLower.includes(kw));
+        
+        if ((dqHasPathology || hasDqText) && setIncludeDeQuervain) {
+          setIncludeDeQuervain(true);
+          logs.push("Se identificó hallazgo de De Quervain vía IA. Auto-activando esquema.");
+        }
 
         setStates(finalStates);
         setCustomDescriptions(finalDescriptions);
@@ -575,7 +727,7 @@ export default function WristAnatomyViewer({
     let md = `\n| Estructura | Hallazgos |\n`;
     md += `| :--- | :--- |\n`;
 
-    const list = [
+    const generalList = [
       // Anterior
       { id: "nervio_mediano", label: "Nervio Mediano" },
       { id: "tendones_flexores", label: "Tendones Flexores" },
@@ -591,6 +743,21 @@ export default function WristAnatomyViewer({
       { id: "extensor_carpi_ulnaris", label: "Extensor Carpi Ulnaris (ECU)" }
     ];
 
+    const dqList = [
+      { id: "dq_tendones_apl_epb", label: "Tendones APL y EPB" },
+      { id: "dq_vaina_sinovial_liquido", label: "Vaina Sinovial (I Comp)" },
+      { id: "dq_retinaculo_extensor", label: "Retináculo Extensor (I Comp)" },
+      { id: "dq_doppler_hyperemia", label: "Señal Doppler / Hiperemia (I Comp)" }
+    ];
+
+    let list: Array<{ id: string; label: string }> = [];
+    if (includeInReport) {
+      list = [...list, ...generalList];
+    }
+    if (includeDeQuervain) {
+      list = [...list, ...dqList];
+    }
+
     let hasRows = false;
     list.forEach(item => {
       if (states[item.id] !== "no_descrito" && states[item.id] !== "normal") {
@@ -601,7 +768,7 @@ export default function WristAnatomyViewer({
     });
 
     if (!hasRows) {
-      md += `| *Sin hallazgos patológicos* | *Todas las estructuras de la muñeca se reportan de características normales.* |\n`;
+      md += `| *Sin hallazgos patológicos* | *Todas las estructuras de la muñeca evaluadas se reportan de características normales.* |\n`;
     }
 
     onExportTable(md);
@@ -625,10 +792,21 @@ export default function WristAnatomyViewer({
       articulacion_radiocubital_distal: "Articulación Radiocubital Distal",
       tendones_extensores_compartimentos: "Tendones Extensores (Compartimentos I-VI)",
       fibrocartilago_triangular: "Fibrocartílago Triangular",
-      extensor_carpi_ulnaris: "Extensor Carpi Ulnaris"
+      extensor_carpi_ulnaris: "Extensor Carpi Ulnaris",
+      
+      dq_tendones_apl_epb: "Tendones APL y EPB (I Compartimento Extensor)",
+      dq_vaina_sinovial_liquido: "Vaina Sinovial Común (I Compartimento)",
+      dq_retinaculo_extensor: "Retináculo Extensor (I Compartimento)",
+      dq_doppler_hyperemia: "Señal Doppler / Hiperemia (I Compartimento)"
     };
 
+    const dqKeys = ["dq_tendones_apl_epb", "dq_vaina_sinovial_liquido", "dq_retinaculo_extensor", "dq_doppler_hyperemia"];
+
     keys.forEach(id => {
+      const isDqKey = dqKeys.includes(id);
+      if (isDqKey && !includeDeQuervain) return;
+      if (!isDqKey && !includeInReport) return;
+
       const s = states[id];
       const desc = customDescriptions[id]?.trim() || getSimplifiedDescription(id);
       const label = labelMapping[id] || id;
@@ -654,7 +832,7 @@ export default function WristAnatomyViewer({
     if (normalItems.length > 0) {
       txt += `### ESTRUCTURAS SIN ALTERACIONES (DENTRO DE LÍMITES NORMALES):\n`;
       txt += `* Se describen íntegras y de características normales: ${normalItems.join(", ")}.\n`;
-    } else {
+    } else if (pathologicalItems.length === 0) {
       txt += `* No se identificaron estructuras completamente normales descritas.\n`;
     }
 
@@ -709,7 +887,13 @@ export default function WristAnatomyViewer({
     let normalCount = 0;
     let notInReport = 0;
 
+    const dqKeys = ["dq_tendones_apl_epb", "dq_vaina_sinovial_liquido", "dq_retinaculo_extensor", "dq_doppler_hyperemia"];
+
     Object.keys(states).forEach(key => {
+      const isDqKey = dqKeys.includes(key);
+      if (isDqKey && !includeDeQuervain) return;
+      if (!isDqKey && !includeInReport) return;
+
       const st = states[key];
       if (st === "no_descrito") notInReport++;
       else if (st === "normal") normalCount++;
@@ -810,6 +994,33 @@ export default function WristAnatomyViewer({
           { val: "subluxacion", label: "Subluxación / Inestabilidad en vaina" },
           { val: "desgarro", label: "Desgarro parcial o tendinosis severa" }
         ];
+      case "dq_tendones_apl_epb":
+        return [
+          { val: "no_descrito", label: "No mencionado en el reporte" },
+          { val: "normal", label: "Dentro de límites normales" },
+          { val: "engrosado", label: "Engrosamiento / Tendinopatía focal" },
+          { val: "desgarro_parcial", label: "Desgarro o rotura parcial" }
+        ];
+      case "dq_vaina_sinovial_liquido":
+        return [
+          { val: "no_descrito", label: "No mencionado en el reporte" },
+          { val: "normal", label: "Dentro de límites normales" },
+          { val: "derrame_leve", label: "Derrame leve (Líquido peritendinoso)" },
+          { val: "derrame_severo", label: "Derrame severo (Tenosinovitis marcada)" }
+        ];
+      case "dq_retinaculo_extensor":
+        return [
+          { val: "no_descrito", label: "No mencionado en el reporte" },
+          { val: "normal", label: "Dentro de límites normales" },
+          { val: "engrosado_fibroso", label: "Retináculo engrosado / Cambios fibrosos" }
+        ];
+      case "dq_doppler_hyperemia":
+        return [
+          { val: "no_descrito", label: "No mencionado en el reporte" },
+          { val: "sin_flujo", label: "Normal (Sin neovascularización activa)" },
+          { val: "doppler_leve", label: "Hiperemia leve (Flujo Doppler bajo)" },
+          { val: "doppler_severo", label: "Hiperemia severa (Flujo Doppler alto)" }
+        ];
       default:
         return [];
     }
@@ -829,7 +1040,11 @@ export default function WristAnatomyViewer({
       articulacion_radiocubital_distal: "Articulación Radiocubital Distal",
       tendones_extensores_compartimentos: "Tendones Extensores (Comps I-VI)",
       fibrocartilago_triangular: "Fibrocartílago Triangular (CFCT)",
-      extensor_carpi_ulnaris: "Extensor Carpi Ulnaris (ECU)"
+      extensor_carpi_ulnaris: "Extensor Carpi Ulnaris (ECU)",
+      dq_tendones_apl_epb: "Tendones APL y EPB",
+      dq_vaina_sinovial_liquido: "Vaina Sinovial Común (Líquido)",
+      dq_retinaculo_extensor: "Retináculo Extensor (I Comp)",
+      dq_doppler_hyperemia: "Señal Doppler / Hiperemia"
     };
     return labels[selectedStructure] || "";
   };
@@ -898,14 +1113,45 @@ export default function WristAnatomyViewer({
         </div>
       </div>
 
+      {/* SELECCIÓN DE ESQUEMAS EN REPORTE */}
+      <div className="flex flex-col sm:flex-row gap-3 bg-slate-950/40 p-3 rounded-xl border border-slate-850/60 text-xs">
+        <div className="text-slate-400 font-bold uppercase tracking-wider text-[10px] self-center mr-2">Incluir en el Reporte:</div>
+        <label className="flex items-center gap-2 cursor-pointer select-none py-1.5 px-3 rounded-lg border border-slate-800 hover:bg-slate-900 transition-colors bg-slate-950/20 flex-1">
+          <input 
+            type="checkbox" 
+            checked={includeInReport} 
+            onChange={(e) => setIncludeInReport && setIncludeInReport(e.target.checked)}
+            className="rounded border-slate-800 bg-slate-900 text-indigo-600 focus:ring-indigo-500 cursor-pointer h-4 w-4"
+          />
+          <div>
+            <span className="font-bold text-slate-200 block text-[11px]">Esquema General de Muñeca</span>
+            <span className="text-[9px] text-slate-400">Diagramas interactivos de caras Anterior (Volar) y Posterior (Dorsal)</span>
+          </div>
+        </label>
+        <label className="flex items-center gap-2 cursor-pointer select-none py-1.5 px-3 rounded-lg border border-slate-800 hover:bg-slate-900 transition-colors bg-slate-950/20 flex-1">
+          <input 
+            type="checkbox" 
+            checked={includeDeQuervain} 
+            onChange={(e) => setIncludeDeQuervain && setIncludeDeQuervain(e.target.checked)}
+            className="rounded border-slate-800 bg-slate-900 text-indigo-600 focus:ring-indigo-500 cursor-pointer h-4 w-4"
+          />
+          <div>
+            <span className="font-bold text-slate-200 block text-[11px]">Esquema de De Quervain</span>
+            <span className="text-[9px] text-slate-400">Diagrama anatómico especializado del I Compartimento Extensor</span>
+          </div>
+        </label>
+      </div>
+
       {/* CENTRAL AREA: TWO DIAGRAMS SIDE-BY-SIDE OR TABBED ON DESKTOP, EDITOR ON RIGHT */}
       <div className="grid grid-cols-1 lg:grid-cols-10 gap-5 items-start">
         
-        {/* LEFT COLUMN: TWO INTERACTIVE SVGs */}
-        <div className="lg:col-span-5 flex flex-col md:flex-row lg:flex-col xl:flex-row gap-4 bg-slate-950/30 p-3 rounded-xl max-w-full">
+        {/* LEFT COLUMN: INTERACTIVE DIAGRAMS */}
+        <div className="lg:col-span-5 flex flex-col gap-4 max-w-full">
           
-          {/* CARA ANTERIOR SVG */}
-          <div className="flex-1 flex flex-col items-center border border-slate-850/60 p-2.5 rounded-xl bg-slate-950/20">
+          {includeInReport && (
+            <div className="flex flex-col md:flex-row lg:flex-col xl:flex-row gap-4 bg-slate-950/30 p-3 rounded-xl max-w-full border border-slate-850/45">
+              {/* CARA ANTERIOR SVG */}
+              <div className="flex-1 flex flex-col items-center border border-slate-850/60 p-2.5 rounded-xl bg-slate-950/20">
             <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest border-b border-slate-850 pb-1 mb-2 w-full text-center">
               Cara Anterior (Volar)
             </span>
@@ -916,14 +1162,65 @@ export default function WristAnatomyViewer({
                 className="w-full max-w-[170px] h-auto drop-shadow-2xl"
                 style={{ maxHeight: "180px" }}
               >
-                {/* Hand Forearm & Carpus Base contour */}
+                {/* Grid de fondo tipo escáner médico */}
+                <path d="M 0,20 L 200,20 M 0,40 L 200,40 M 0,60 L 200,60 M 0,80 L 200,80 M 0,100 L 200,100 M 0,120 L 200,120 M 0,140 L 200,140 M 0,160 L 200,160 M 0,180 L 200,180" stroke="#1e293b" strokeWidth="0.2" opacity="0.3" strokeDasharray="2,2" />
+                <path d="M 20,0 L 20,200 M 40,0 L 40,200 M 60,0 L 60,200 M 80,0 L 80,200 M 100,0 L 100,200 M 120,0 L 120,200 M 140,0 L 140,200 M 160,0 L 160,200 M 180,0 L 180,200" stroke="#1e293b" strokeWidth="0.2" opacity="0.3" strokeDasharray="2,2" />
+
+                {/* Hand Forearm & Carpus Base contour (Sombra de la mano sutil) */}
                 <path 
-                  d="M 50,195 C 48,150 55,110 52,90 C 48,70 30,55 35,40 C 38,20 60,35 70,50 C 90,45 100,50 110,50 C 130,35 152,18 158,35 C 163,50 148,65 145,85 C 142,105 148,150 146,195 Z" 
-                  fill="#0b0f19" 
-                  stroke="#334155" 
-                  strokeWidth="1.5" 
-                  opacity="0.85"
+                  d="M 50,195 C 48,150 55,110 52,90 C 48,70 28,55 32,40 C 35,20 58,32 68,48 C 88,43 102,48 112,48 C 132,32 155,15 160,32 C 165,48 150,62 147,82 C 144,102 148,150 146,195 Z" 
+                  fill="#060913" 
+                  stroke="#1e293b" 
+                  strokeWidth="1" 
+                  opacity="0.8"
                 />
+
+                {/* ANATOMÍA ÓSEA DE FONDO (Radio, Cúbito, Carpo y Metacarpo) */}
+                {/* Radio distal (Izquierda en vista volar anterior) */}
+                <path 
+                  d="M 38,195 L 38,135 C 38,125 42,122 45,119 L 85,119 L 88,132 L 88,195 Z" 
+                  fill="#0e1726" 
+                  stroke="#334155" 
+                  strokeWidth="0.8" 
+                  opacity="0.5" 
+                  title="Radio"
+                />
+                {/* Cúbito distal (Derecha en vista volar anterior) */}
+                <path 
+                  d="M 108,195 L 108,132 L 111,119 L 138,119 C 140,122 142,126 142,135 L 142,195 Z" 
+                  fill="#0e1726" 
+                  stroke="#334155" 
+                  strokeWidth="0.8" 
+                  opacity="0.5" 
+                  title="Cúbito (Ulna)"
+                />
+                {/* Espacio Articular Radiocarpiano (Línea sutil) */}
+                <path d="M 45,119 Q 93,122 138,119" fill="none" stroke="#475569" strokeWidth="0.5" opacity="0.3" />
+
+                {/* Huesos del Carpo de fondo (Estilizados e impecables) */}
+                <g opacity="0.45" stroke="#334155" strokeWidth="0.6" fill="#131d31">
+                  {/* Fila proximal */}
+                  <path d="M 48,114 C 45,106 52,100 58,102 C 60,105 55,112 48,114 Z" title="Escafoides" />
+                  <path d="M 61,112 C 59,103 72,101 75,109 C 71,113 65,114 61,112 Z" title="Semilunar" />
+                  <path d="M 78,111 C 77,105 88,102 91,108 C 88,112 82,113 78,111 Z" title="Piramidal" />
+                  <circle cx="96" cy="112" r="4.5" title="Pisiforme" />
+                  {/* Fila distal */}
+                  <path d="M 50,94 C 47,88 56,84 60,89 C 58,94 54,96 50,94 Z" title="Trapecio" />
+                  <path d="M 63,93 C 61,87 70,85 72,90 C 69,94 66,95 63,93 Z" title="Trapezoide" />
+                  <path d="M 75,91 C 73,81 86,81 88,89 C 84,93 79,93 75,91 Z" title="Grande (Capitate)" />
+                  <path d="M 91,92 C 89,84 102,83 103,90 C 99,94 95,94 91,92 Z" title="Ganchoso (Hamate)" />
+                </g>
+
+                {/* Metacarpianos (Bases de fondo) */}
+                <g opacity="0.3" stroke="#334155" strokeWidth="0.5" fill="#0f172a">
+                  <path d="M 42,75 L 48,65 L 53,75 Z" />
+                  <path d="M 58,74 L 62,55 L 68,74 Z" />
+                  <path d="M 73,73 L 77,50 L 83,73 Z" />
+                  <path d="M 88,74 L 92,52 L 97,74 Z" />
+                  <path d="M 102,76 L 106,58 L 112,76 Z" />
+                </g>
+
+                {/* ESTRUCTURAS INTERACTIVAS (CON ACCIONES CLINICAS E IA PERFECTAMENTE CONSERVADAS) */}
 
                 {/* Receso Radiocarpiano Anterior (Articular Volar) */}
                 <g
@@ -932,54 +1229,14 @@ export default function WristAnatomyViewer({
                   onMouseEnter={() => setActiveHover("receso_radiocarpiano_anterior")}
                   onMouseLeave={() => setActiveHover(null)}
                 >
-                  <ellipse 
-                    cx="98" 
-                    cy="115" 
-                    rx="32" 
-                    ry="10" 
+                  <path 
+                    d="M 43,122 Q 91,126 138,122 Q 138,112 91,114 Q 43,112 43,122 Z"
                     fill={getColorForSVG("receso_radiocarpiano_anterior").fill}
                     stroke={getColorForSVG("receso_radiocarpiano_anterior").stroke}
                     strokeWidth={states.receso_radiocarpiano_anterior !== "normal" && states.receso_radiocarpiano_anterior !== "no_descrito" ? "2.2" : "1"}
                     fillOpacity={states.receso_radiocarpiano_anterior !== "normal" && states.receso_radiocarpiano_anterior !== "no_descrito" ? "0.6" : "0.15"}
                   />
-                  <text x="98" y="117" textAnchor="middle" fill="#cbd5e1" fontSize="6.5" fontWeight="bold" opacity="0.8" className="pointer-events-none select-none">Receso Volar</text>
-                </g>
-
-                {/* Tendones Flexores */}
-                <g
-                  className="cursor-pointer transition-all duration-200"
-                  onClick={() => setSelectedStructure("tendones_flexores")}
-                  onMouseEnter={() => setActiveHover("tendones_flexores")}
-                  onMouseLeave={() => setActiveHover(null)}
-                >
-                  <path 
-                    d="M 94,195 L 94,80 M 100,195 L 100,80 M 106,195 L 106,80" 
-                    fill="none"
-                    stroke={getColorForSVG("tendones_flexores").stroke}
-                    strokeWidth={states.tendones_flexores !== "normal" && states.tendones_flexores !== "no_descrito" ? "5.5" : "3"}
-                    opacity={states.tendones_flexores !== "no_descrito" ? "0.9" : "0.35"}
-                  />
-                  <text x="100" y="160" textAnchor="middle" fill="#94a3b8" fontSize="6" fontWeight="bold" opacity="0.95" className="pointer-events-none select-none">Flexores</text>
-                </g>
-
-                {/* Nervio Mediano */}
-                <g
-                  className="cursor-pointer transition-all duration-200"
-                  onClick={() => setSelectedStructure("nervio_mediano")}
-                  onMouseEnter={() => setActiveHover("nervio_mediano")}
-                  onMouseLeave={() => setActiveHover(null)}
-                >
-                  <line 
-                    x1="84" 
-                    y1="195" 
-                    x2="84" 
-                    y2="78"
-                    stroke={getColorForSVG("nervio_mediano").stroke}
-                    strokeWidth={states.nervio_mediano !== "normal" && states.nervio_mediano !== "no_descrito" ? "4" : "1.8"}
-                    strokeDasharray={states.nervio_mediano === "comprimido" ? "2,2" : undefined}
-                    opacity="0.95"
-                  />
-                  <text x="82" y="145" textAnchor="end" fill="#f43f5e" fontSize="6" fontWeight="extrabold" className="pointer-events-none select-none">N. Mediano</text>
+                  <text x="91" y="120" textAnchor="middle" fill="#94a3b8" fontSize="5" fontWeight="black" letterSpacing="0.5" className="pointer-events-none select-none font-sans uppercase">Receso Volar</text>
                 </g>
 
                 {/* Flexor Carpi Radialis (FCR) */}
@@ -989,14 +1246,34 @@ export default function WristAnatomyViewer({
                   onMouseEnter={() => setActiveHover("flexor_carpi_radialis")}
                   onMouseLeave={() => setActiveHover(null)}
                 >
+                  {/* Trazado elegante y fiel del tendón FCR diagonal */}
                   <path 
-                    d="M 66,195 Q 68,140 64,88" 
+                    d="M 58,195 Q 63,140 59,94 L 56,80" 
                     fill="none"
                     stroke={getColorForSVG("flexor_carpi_radialis").stroke}
                     strokeWidth={states.flexor_carpi_radialis !== "normal" && states.flexor_carpi_radialis !== "no_descrito" ? "3.2" : "1.5"}
-                    opacity={states.flexor_carpi_radialis !== "no_descrito" ? "0.8" : "0.3"}
+                    opacity={states.flexor_carpi_radialis !== "no_descrito" ? "0.9" : "0.35"}
                   />
-                  <text x="56" y="175" fill="#f59e0b" fontSize="5.5" fontWeight="semibold" className="pointer-events-none select-none">FCR</text>
+                  <text x="49" y="172" fill="#f59e0b" fontSize="5" fontWeight="bold" className="pointer-events-none select-none font-mono">FCR</text>
+                </g>
+
+                {/* Tendones Flexores (Múltiples haces anatómicos paralelos del flexor profundo y superficial de los dedos) */}
+                <g
+                  className="cursor-pointer transition-all duration-200"
+                  onClick={() => setSelectedStructure("tendones_flexores")}
+                  onMouseEnter={() => setActiveHover("tendones_flexores")}
+                  onMouseLeave={() => setActiveHover(null)}
+                >
+                  <path 
+                    d="M 88,195 Q 89,140 85,95 L 68,58 M 94,195 Q 95,140 91,95 L 82,55 M 100,195 Q 101,140 97,95 L 96,55 M 106,195 Q 107,140 103,95 L 110,58" 
+                    fill="none"
+                    stroke={getColorForSVG("tendones_flexores").stroke}
+                    strokeWidth={states.tendones_flexores !== "normal" && states.tendones_flexores !== "no_descrito" ? "5" : "2.5"}
+                    opacity={states.tendones_flexores !== "no_descrito" ? "0.9" : "0.3"}
+                  />
+                  {/* Banda del retináculo flexor translúcida de fondo */}
+                  <path d="M 52,106 Q 91,111 130,106 L 130,96 Q 91,101 52,96 Z" fill="#475569" fillOpacity="0.15" stroke="#334155" strokeWidth="0.5" strokeDasharray="1,1" />
+                  <text x="94" y="150" textAnchor="middle" fill="#64748b" fontSize="5" fontWeight="black" className="pointer-events-none select-none font-sans uppercase">Tendones Flexores</text>
                 </g>
 
                 {/* Arteria Radial */}
@@ -1006,43 +1283,61 @@ export default function WristAnatomyViewer({
                   onMouseEnter={() => setActiveHover("arteria_radial")}
                   onMouseLeave={() => setActiveHover(null)}
                 >
+                  {/* Arteria roja elegante y sinuosa con ramitas colaterales */}
                   <path 
-                    d="M 58,195 Q 58,135 52,95" 
+                    d="M 48,195 Q 50,145 44,115 T 40,78" 
                     fill="none"
                     stroke={getColorForSVG("arteria_radial").stroke}
-                    strokeWidth="1.5"
-                    opacity={states.arteria_radial !== "no_descrito" ? "0.95" : "0.35"}
+                    strokeWidth="1.2"
+                    opacity={states.arteria_radial !== "no_descrito" ? "0.95" : "0.3"}
                   />
+                  {/* Indicador de pulso arterial */}
                   <ellipse 
-                    cx="58" 
-                    cy="140" 
-                    rx="3" 
-                    ry="3" 
+                    cx="47.2" 
+                    cy="138" 
+                    rx={states.arteria_radial === "aneurisma" ? "5" : "2.2"} 
+                    ry={states.arteria_radial === "aneurisma" ? "5" : "2.2"} 
                     fill={states.arteria_radial === "trombosis" ? "#475569" : "#ef4444"} 
-                    opacity="0.75"
+                    fillOpacity="0.8"
+                    className={states.arteria_radial !== "trombosis" && states.arteria_radial !== "no_descrito" ? "animate-pulse" : ""}
                   />
-                  <text x="48" y="125" fill="#ef4444" fontSize="5.5" fontWeight="semibold" className="pointer-events-none select-none">Radial Art.</text>
+                  <text x="41" y="130" textAnchor="end" fill="#ef4444" fontSize="4.5" fontWeight="bold" className="pointer-events-none select-none font-sans">A. Radial</text>
                 </g>
 
-                {/* Canal de Guyon */}
+                {/* Nervio Mediano */}
+                <g
+                  className="cursor-pointer transition-all duration-200"
+                  onClick={() => setSelectedStructure("nervio_mediano")}
+                  onMouseEnter={() => setActiveHover("nervio_mediano")}
+                  onMouseLeave={() => setActiveHover(null)}
+                >
+                  {/* Nervio con su discurrir exacto y ramificaciones sensitivas terminales en abanico en la mano */}
+                  <path 
+                    d="M 76,195 Q 78,140 76,102 Q 74,90 68,64 M 76,102 Q 78,88 84,60 M 76,102 L 76,60" 
+                    fill="none"
+                    stroke={getColorForSVG("nervio_mediano").stroke}
+                    strokeWidth={states.nervio_mediano !== "normal" && states.nervio_mediano !== "no_descrito" ? "3.5" : "1.5"}
+                    strokeDasharray={states.nervio_mediano === "comprimido" ? "1.5,1.5" : undefined}
+                    opacity="0.95"
+                  />
+                  <text x="70" y="160" textAnchor="end" fill="#f43f5e" fontSize="5" fontWeight="black" className="pointer-events-none select-none font-sans uppercase">N. Mediano</text>
+                </g>
+
+                {/* Canal de Guyon (Lado cubital, derecho en vista anterior) */}
                 <g
                   className="cursor-pointer transition-all duration-200"
                   onClick={() => setSelectedStructure("canal_de_guyon")}
                   onMouseEnter={() => setActiveHover("canal_de_guyon")}
                   onMouseLeave={() => setActiveHover(null)}
                 >
-                  <rect 
-                    x="124" 
-                    y="110" 
-                    width="14" 
-                    height="20" 
-                    rx="4"
+                  <path 
+                    d="M 115,122 C 112,112 128,112 128,122 L 123,138 C 121,141 113,141 113,138 Z"
                     fill={getColorForSVG("canal_de_guyon").fill}
                     stroke={getColorForSVG("canal_de_guyon").stroke}
                     strokeWidth={states.canal_de_guyon !== "normal" && states.canal_de_guyon !== "no_descrito" ? "2.2" : "1"}
                     fillOpacity={states.canal_de_guyon !== "normal" && states.canal_de_guyon !== "no_descrito" ? "0.6" : "0.15"}
                   />
-                  <text x="131" y="122" textAnchor="middle" fill="#cbd5e1" fontSize="5" fontWeight="bold" className="pointer-events-none select-none">Guyon</text>
+                  <text x="121.5" y="123" textAnchor="middle" fill="#cbd5e1" fontSize="4.5" fontWeight="bold" className="pointer-events-none select-none font-mono uppercase">Guyon</text>
                 </g>
               </svg>
             </div>
@@ -1060,14 +1355,66 @@ export default function WristAnatomyViewer({
                 className="w-full max-w-[170px] h-auto drop-shadow-2xl"
                 style={{ maxHeight: "180px" }}
               >
+                {/* Grid de fondo tipo escáner médico */}
+                <path d="M 0,20 L 200,20 M 0,40 L 200,40 M 0,60 L 200,60 M 0,80 L 200,80 M 0,100 L 200,100 M 0,120 L 200,120 M 0,140 L 200,140 M 0,160 L 200,160 M 0,180 L 200,180" stroke="#1e293b" strokeWidth="0.2" opacity="0.3" strokeDasharray="2,2" />
+                <path d="M 20,0 L 20,200 M 40,0 L 40,200 M 60,0 L 60,200 M 80,0 L 80,200 M 100,0 L 100,200 M 120,0 L 120,200 M 140,0 L 140,200 M 160,0 L 160,200 M 180,0 L 180,200" stroke="#1e293b" strokeWidth="0.2" opacity="0.3" strokeDasharray="2,2" />
+
                 {/* Hand Forearm & Carpus Dorsal Back contour */}
                 <path 
-                  d="M 50,195 C 48,150 55,110 52,90 C 48,70 30,55 35,40 C 38,20 60,35 70,50 C 90,45 100,50 110,50 C 130,35 152,18 158,35 C 163,50 148,65 145,85 C 142,105 148,150 146,195 Z" 
-                  fill="#0b0f19" 
-                  stroke="#475569" 
-                  strokeWidth="1.5" 
-                  opacity="0.85"
+                  d="M 50,195 C 48,150 55,110 52,90 C 48,70 28,55 32,40 C 35,20 58,32 68,48 C 88,43 102,48 112,48 C 132,32 155,15 160,32 C 165,48 150,62 147,82 C 144,102 148,150 146,195 Z" 
+                  fill="#060913" 
+                  stroke="#1e293b" 
+                  strokeWidth="1" 
+                  opacity="0.8"
                 />
+
+                {/* ANATOMÍA ÓSEA DE FONDO (Radio, Cúbito con estiloides, Carpo dorsal) */}
+                {/* Radio distal (Ahora a la derecha en vista dorsal posterior) */}
+                <path 
+                  d="M 112,195 L 112,135 C 112,125 108,122 105,119 L 65,119 L 62,132 L 62,195 Z" 
+                  fill="#0e1726" 
+                  stroke="#334155" 
+                  strokeWidth="0.8" 
+                  opacity="0.5" 
+                  title="Radio con tubérculo de Lister"
+                />
+                {/* Protuberancia estilizada del Tubérculo de Lister (Dorsal) */}
+                <path d="M 88,135 Q 88,131 92,135" fill="none" stroke="#475569" strokeWidth="0.8" />
+                {/* Cúbito distal (Ahora a la izquierda en vista dorsal posterior) */}
+                <path 
+                  d="M 42,195 L 42,132 L 39,119 L 12,119 C 10,122 8,126 8,135 L 8,195 Z" 
+                  fill="#0e1726" 
+                  stroke="#334155" 
+                  strokeWidth="0.8" 
+                  opacity="0.5" 
+                  title="Cúbito"
+                />
+                {/* Espacio articular radiocarpiano posterior */}
+                <path d="M 105,119 Q 57,122 12,119" fill="none" stroke="#475569" strokeWidth="0.5" opacity="0.3" />
+
+                {/* Huesos del carpo dorsal de fondo */}
+                <g opacity="0.45" stroke="#334155" strokeWidth="0.6" fill="#131d31">
+                  {/* Fila proximal */}
+                  <path d="M 102,114 C 105,106 98,100 92,102 C 90,105 95,112 102,114 Z" title="Escafoides" />
+                  <path d="M 89,112 C 91,103 78,101 75,109 C 79,113 85,114 89,112 Z" title="Semilunar" />
+                  <path d="M 72,111 C 73,105 62,102 59,108 C 62,112 68,113 72,111 Z" title="Piramidal" />
+                  {/* Fila distal */}
+                  <path d="M 100,94 C 103,88 94,84 90,89 C 92,94 96,96 100,94 Z" title="Trapecio" />
+                  <path d="M 87,93 C 89,87 80,85 78,90 C 81,94 84,95 87,93 Z" title="Trapezoide" />
+                  <path d="M 75,91 C 77,81 64,81 62,89 C 66,93 71,93 75,91 Z" title="Grande" />
+                  <path d="M 59,92 C 61,84 48,83 47,90 C 51,94 55,94 59,92 Z" title="Ganchoso" />
+                </g>
+
+                {/* Metacarpianos bases */}
+                <g opacity="0.3" stroke="#334155" strokeWidth="0.5" fill="#0f172a">
+                  <path d="M 108,75 L 102,65 L 97,75 Z" />
+                  <path d="M 92,74 L 88,55 L 82,74 Z" />
+                  <path d="M 77,73 L 73,50 L 67,73 Z" />
+                  <path d="M 62,74 L 58,52 L 53,74 Z" />
+                  <path d="M 48,76 L 44,58 L 38,76 Z" />
+                </g>
+
+                {/* ESTRUCTURAS INTERACTIVAS (CON ACCIONES CLINICAS E IA PERFECTAMENTE CONSERVADAS) */}
 
                 {/* Receso Radiocarpiano Posterior (Articular Dorsal) */}
                 <g
@@ -1076,75 +1423,76 @@ export default function WristAnatomyViewer({
                   onMouseEnter={() => setActiveHover("receso_radiocarpiano_posterior")}
                   onMouseLeave={() => setActiveHover(null)}
                 >
-                  <ellipse 
-                    cx="96" 
-                    cy="125" 
-                    rx="28" 
-                    ry="9" 
+                  <path 
+                    d="M 43,124 Q 91,128 138,124 Q 138,114 91,116 Q 43,114 43,124 Z"
                     fill={getColorForSVG("receso_radiocarpiano_posterior").fill}
                     stroke={getColorForSVG("receso_radiocarpiano_posterior").stroke}
                     strokeWidth={states.receso_radiocarpiano_posterior !== "normal" && states.receso_radiocarpiano_posterior !== "no_descrito" ? "2.2" : "1"}
                     fillOpacity={states.receso_radiocarpiano_posterior !== "normal" && states.receso_radiocarpiano_posterior !== "no_descrito" ? "0.6" : "0.15"}
                   />
-                  <text x="96" y="127" textAnchor="middle" fill="#cbd5e1" fontSize="6" fontWeight="bold" opacity="0.8" className="pointer-events-none select-none">Receso Dorsal</text>
+                  <text x="91" y="122" textAnchor="middle" fill="#cbd5e1" fontSize="5" fontWeight="bold" opacity="0.85" className="pointer-events-none select-none font-sans uppercase">Receso Dorsal</text>
                 </g>
 
-                {/* Articulación Radiocubital Distal */}
+                {/* Articulación Radiocubital Distal (ARCD) */}
                 <g
                   className="cursor-pointer transition-all duration-200"
                   onClick={() => setSelectedStructure("articulacion_radiocubital_distal")}
                   onMouseEnter={() => setActiveHover("articulacion_radiocubital_distal")}
                   onMouseLeave={() => setActiveHover(null)}
                 >
+                  {/* Espacio articular vertical preciso */}
                   <rect 
-                    x="114" 
-                    y="142" 
-                    width="8" 
-                    height="28" 
-                    rx="2.5"
+                    x="105" 
+                    y="136" 
+                    width="6.5" 
+                    height="32" 
+                    rx="2"
                     fill={getColorForSVG("articulacion_radiocubital_distal").fill}
                     stroke={getColorForSVG("articulacion_radiocubital_distal").stroke}
                     strokeWidth={states.articulacion_radiocubital_distal !== "normal" && states.articulacion_radiocubital_distal !== "no_descrito" ? "2" : "1"}
                     fillOpacity={states.articulacion_radiocubital_distal !== "normal" && states.articulacion_radiocubital_distal !== "no_descrito" ? "0.6" : "0.15"}
                   />
-                  <text x="111" y="158" textAnchor="end" fill="#a1a1aa" fontSize="5" fontWeight="semibold" className="pointer-events-none select-none">ARCD</text>
+                  <text x="101" y="153" textAnchor="end" fill="#a1a1aa" fontSize="4.5" fontWeight="black" className="pointer-events-none select-none font-mono">ARCD</text>
                 </g>
 
-                {/* Tendones Extensores (Compartimentos I-VI) */}
-                <g
-                  className="cursor-pointer transition-all duration-200"
-                  onClick={() => setSelectedStructure("tendones_extensores_compartimentos")}
-                  onMouseEnter={() => setActiveHover("tendones_extensores_compartimentos")}
-                  onMouseLeave={() => setActiveHover(null)}
-                >
-                  <path 
-                    d="M 65,195 L 85,75 M 82,195 L 102,75 M 98,195 L 118,75" 
-                    fill="none"
-                    stroke={getColorForSVG("tendones_extensores_compartimentos").stroke}
-                    strokeWidth={states.tendones_extensores_compartimentos !== "normal" && states.tendones_extensores_compartimentos !== "no_descrito" ? "4.5" : "2"}
-                    opacity={states.tendones_extensores_compartimentos !== "no_descrito" ? "0.9" : "0.35"}
-                  />
-                  <text x="84" y="174" textAnchor="end" fill="#22c55e" fontSize="5" fontWeight="bold" className="pointer-events-none select-none">Extensores</text>
-                </g>
-
-                {/* Fibrocartílago Triangular (CFCT) */}
+                {/* Fibrocartílago Triangular (CFCT) - Rediseñado de forma anatómica exacta en cuña articular */}
                 <g
                   className="cursor-pointer transition-all duration-200"
                   onClick={() => setSelectedStructure("fibrocartilago_triangular")}
                   onMouseEnter={() => setActiveHover("fibrocartilago_triangular")}
                   onMouseLeave={() => setActiveHover(null)}
                 >
-                  <polygon 
-                    points="123,124 140,124 123,135" 
+                  <path 
+                    d="M 39,122 L 53,122 L 40,136 Z" 
                     fill={getColorForSVG("fibrocartilago_triangular").fill}
                     stroke={getColorForSVG("fibrocartilago_triangular").stroke}
                     strokeWidth={states.fibrocartilago_triangular !== "normal" && states.fibrocartilago_triangular !== "no_descrito" ? "2.2" : "1"}
                     fillOpacity={states.fibrocartilago_triangular !== "normal" && states.fibrocartilago_triangular !== "no_descrito" ? "0.6" : "0.15"}
                   />
-                  <text x="136" y="117" textAnchor="middle" fill="#cbd5e1" fontSize="5" fontWeight="extrabold" className="pointer-events-none select-none">CFCT</text>
+                  <text x="49" y="130" textAnchor="middle" fill="#cbd5e1" fontSize="4.5" fontWeight="black" className="pointer-events-none select-none font-sans">CFCT</text>
                 </g>
 
-                {/* Extensor Carpi Ulnaris (ECU / Sexto Compartimento) */}
+                {/* Tendones Extensores (Compartimentos I-VI) - Hermoso abanico anatómico de tendones */}
+                <g
+                  className="cursor-pointer transition-all duration-200"
+                  onClick={() => setSelectedStructure("tendones_extensores_compartimentos")}
+                  onMouseEnter={() => setActiveHover("tendones_extensores_compartimentos")}
+                  onMouseLeave={() => setActiveHover(null)}
+                >
+                  {/* Múltiples tendones que cruzan el dorso representando los compartimentos */}
+                  <path 
+                    d="M 68,195 Q 67,135 73,92 L 102,52 M 74,195 Q 73,135 79,92 L 88,50 M 80,195 Q 79,135 85,92 L 72,50 M 86,195 Q 85,135 91,92 L 56,54" 
+                    fill="none"
+                    stroke={getColorForSVG("tendones_extensores_compartimentos").stroke}
+                    strokeWidth={states.tendones_extensores_compartimentos !== "normal" && states.tendones_extensores_compartimentos !== "no_descrito" ? "4.5" : "2"}
+                    opacity={states.tendones_extensores_compartimentos !== "no_descrito" ? "0.9" : "0.35"}
+                  />
+                  {/* Banda del retináculo extensor translúcida */}
+                  <path d="M 52,106 Q 91,111 130,106 L 130,96 Q 91,101 52,96 Z" fill="#475569" fillOpacity="0.12" stroke="#334155" strokeWidth="0.5" strokeDasharray="1,1" />
+                  <text x="82" y="165" textAnchor="end" fill="#22c55e" fontSize="5" fontWeight="black" className="pointer-events-none select-none font-sans uppercase">Extensores</text>
+                </g>
+
+                {/* Extensor Carpi Ulnaris (ECU / Sexto Compartimento, sobre el cúbito) */}
                 <g
                   className="cursor-pointer transition-all duration-205"
                   onClick={() => setSelectedStructure("extensor_carpi_ulnaris")}
@@ -1152,20 +1500,172 @@ export default function WristAnatomyViewer({
                   onMouseLeave={() => setActiveHover(null)}
                 >
                   <path 
-                    d="M 134,195 L 134,80" 
+                    d="M 28,195 Q 26,140 31,90 L 34,70" 
                     fill="none"
                     stroke={getColorForSVG("extensor_carpi_ulnaris").stroke}
                     strokeWidth={states.extensor_carpi_ulnaris !== "normal" && states.extensor_carpi_ulnaris !== "no_descrito" ? "3" : "1.5"}
                     opacity={states.extensor_carpi_ulnaris !== "no_descrito" ? "0.85" : "0.35"}
                   />
-                  <text x="140" y="180" textAnchor="start" fill="#f59e0b" fontSize="5.5" fontWeight="semibold" className="pointer-events-none select-none">ECU</text>
+                  <text x="31" y="160" textAnchor="end" fill="#f59e0b" fontSize="5" fontWeight="bold" className="pointer-events-none select-none font-mono">ECU</text>
                 </g>
               </svg>
             </div>
           </div>
+        </div>
+      )}
 
-          {additionalFindings && additionalFindings.length > 0 && (
-            <div className="w-full bg-slate-900/10 border border-slate-850 p-3 rounded-2xl mt-4">
+      {/* DE QUERVAIN SPECIALIZED DIAGRAM CONTAINER */}
+      {includeDeQuervain && (
+        <div className="flex flex-col items-center bg-slate-950/30 p-3 rounded-xl max-w-full border border-slate-850/40">
+          <span className="text-[9px] font-black text-rose-400 uppercase tracking-widest border-b border-slate-850 pb-1 mb-2 w-full text-center">
+            Compartimento I Extensor (Tenosinovitis de De Quervain)
+          </span>
+          <div className="w-full flex items-center justify-center min-h-[190px] relative overflow-hidden">
+            <svg 
+              id="wrist-de-quervain-svg"
+              viewBox="0 0 200 200" 
+              className="w-full max-w-[170px] h-auto drop-shadow-2xl transition-all duration-300"
+              style={{ maxHeight: "180px" }}
+            >
+              {/* Medical scanner background grid */}
+              <path d="M 0,20 L 200,20 M 0,40 L 200,40 M 0,60 L 200,60 M 0,80 L 200,80 M 0,100 L 200,100 M 0,120 L 200,120 M 0,140 L 200,140 M 0,160 L 200,160 M 0,180 L 200,180" stroke="#1e293b" strokeWidth="0.2" opacity="0.3" strokeDasharray="2,2" />
+              <path d="M 20,0 L 20,200 M 40,0 L 40,200 M 60,0 L 60,200 M 80,0 L 80,200 M 100,0 L 100,200 M 120,0 L 120,200 M 140,0 L 140,200 M 160,0 L 160,200 M 180,0 L 180,200" stroke="#1e293b" strokeWidth="0.2" opacity="0.3" strokeDasharray="2,2" />
+
+              {/* Soft background shape representing radial aspect of hand/wrist */}
+              <path 
+                d="M 50,195 C 45,150 55,115 50,90 C 45,65 75,45 105,30 C 120,22 135,32 130,50 C 125,70 115,110 120,150 C 125,170 120,195 120,195 Z" 
+                fill="#060913" 
+                stroke="#1e293b" 
+                strokeWidth="1" 
+                opacity="0.8"
+              />
+
+              {/* Distal Radius Bone with styloid process bump */}
+              <g 
+                onClick={() => setSelectedStructure("dq_retinaculo_extensor")}
+                className="cursor-pointer"
+              >
+                <path 
+                  d="M 60,195 L 60,140 C 60,125 50,122 50,118 L 82,118 C 88,122 92,126 92,140 L 92,195 Z" 
+                  fill="#0e1726" 
+                  stroke="#334155" 
+                  strokeWidth="0.8" 
+                  opacity="0.5" 
+                />
+                <text x="73" y="165" fill="#475569" fontSize="5" fontWeight="bold" className="pointer-events-none select-none font-sans uppercase">Radio</text>
+                <text x="54" y="115" fill="#475569" fontSize="4.5" className="pointer-events-none select-none font-mono">Estiloides</text>
+              </g>
+
+              {/* VAINA SINOVIAL COMÚN / LÍQUIDO */}
+              <g
+                className="cursor-pointer"
+                onClick={() => setSelectedStructure("dq_vaina_sinovial_liquido")}
+                onMouseEnter={() => setActiveHover("dq_vaina_sinovial_liquido")}
+                onMouseLeave={() => setActiveHover(null)}
+              >
+                <path 
+                  d="M 68,175 C 65,155 75,115 70,80 C 74,68 88,68 92,80 C 97,115 107,155 104,175 C 101,185 71,185 68,175 Z"
+                  fill={getColorForSVG("dq_vaina_sinovial_liquido").fill}
+                  stroke={getColorForSVG("dq_vaina_sinovial_liquido").stroke}
+                  strokeWidth={states.dq_vaina_sinovial_liquido !== "normal" && states.dq_vaina_sinovial_liquido !== "no_descrito" ? "2.2" : "1"}
+                  fillOpacity={states.dq_vaina_sinovial_liquido !== "normal" && states.dq_vaina_sinovial_liquido !== "no_descrito" ? "0.55" : "0.15"}
+                />
+                <text x="86" y="152" textAnchor="middle" fill="#cbd5e1" fontSize="4.5" fontWeight="black" className="pointer-events-none select-none font-sans uppercase">Vaina Sinovial</text>
+              </g>
+
+              {/* TENDONES APL & EPB */}
+              <g
+                className="cursor-pointer"
+                onClick={() => setSelectedStructure("dq_tendones_apl_epb")}
+                onMouseEnter={() => setActiveHover("dq_tendones_apl_epb")}
+                onMouseLeave={() => setActiveHover(null)}
+              >
+                {/* APL Tendon */}
+                <path 
+                  d="M 76,195 C 74,155 83,115 79,75 C 80,55 92,40 92,40" 
+                  fill="none"
+                  stroke={getColorForSVG("dq_tendones_apl_epb").stroke}
+                  strokeWidth={states.dq_tendones_apl_epb !== "normal" && states.dq_tendones_apl_epb !== "no_descrito" ? "4.5" : "2"}
+                  opacity={states.dq_tendones_apl_epb !== "no_descrito" ? "0.9" : "0.35"}
+                />
+                {/* EPB Tendon */}
+                <path 
+                  d="M 82,195 C 80,155 89,115 85,75 C 86,55 98,40 98,40" 
+                  fill="none"
+                  stroke={getColorForSVG("dq_tendones_apl_epb").stroke}
+                  strokeWidth={states.dq_tendones_apl_epb !== "normal" && states.dq_tendones_apl_epb !== "no_descrito" ? "3.5" : "1.5"}
+                  opacity={states.dq_tendones_apl_epb !== "no_descrito" ? "0.8" : "0.3"}
+                />
+                {/* Jagged partial tear line if state is desgarro_parcial */}
+                {states.dq_tendones_apl_epb === "desgarro_parcial" && (
+                  <path 
+                    d="M 80,110 L 85,112 L 81,114 L 86,116" 
+                    fill="none" 
+                    stroke="#ef4444" 
+                    strokeWidth="1.8" 
+                  />
+                )}
+                <text x="80" y="52" textAnchor="middle" fill="#22c55e" fontSize="4.5" fontWeight="black" className="pointer-events-none select-none font-mono">APL / EPB</text>
+              </g>
+
+              {/* RETINÁCULO EXTENSOR */}
+              <g
+                className="cursor-pointer"
+                onClick={() => setSelectedStructure("dq_retinaculo_extensor")}
+                onMouseEnter={() => setActiveHover("dq_retinaculo_extensor")}
+                onMouseLeave={() => setActiveHover(null)}
+              >
+                <path 
+                  d="M 54,115 C 72,118 84,118 102,115 L 102,102 C 84,105 72,105 54,102 Z" 
+                  fill={getColorForSVG("dq_retinaculo_extensor").fill}
+                  stroke={getColorForSVG("dq_retinaculo_extensor").stroke}
+                  strokeWidth={states.dq_retinaculo_extensor !== "normal" && states.dq_retinaculo_extensor !== "no_descrito" ? "2.2" : "1"}
+                  fillOpacity={states.dq_retinaculo_extensor !== "normal" && states.dq_retinaculo_extensor !== "no_descrito" ? "0.6" : "0.2"}
+                />
+                <text x="78" y="111" textAnchor="middle" fill="#f59e0b" fontSize="4.2" fontWeight="bold" className="pointer-events-none select-none font-sans uppercase">Retináculo I</text>
+              </g>
+
+              {/* SIGNAL DOPPLER / NEOPLASM HYPEREMIA */}
+              {(states.dq_doppler_hyperemia === "doppler_leve" || states.dq_doppler_hyperemia === "doppler_severo") && (
+                <g
+                  className="cursor-pointer animate-pulse font-mono"
+                  onClick={() => setSelectedStructure("dq_doppler_hyperemia")}
+                  onMouseEnter={() => setActiveHover("dq_doppler_hyperemia")}
+                  onMouseLeave={() => setActiveHover(null)}
+                >
+                  <path 
+                    d="M 69,145 Q 65,135 72,128 T 68,112 M 71,155 Q 67,145 74,138" 
+                    fill="none" 
+                    stroke={states.dq_doppler_hyperemia === "doppler_severo" ? "#ef4444" : "#f59e0b"} 
+                    strokeWidth={states.dq_doppler_hyperemia === "doppler_severo" ? "2" : "1"} 
+                  />
+                  <path 
+                    d="M 100,138 Q 104,128 97,118 T 100,98 M 103,148 Q 107,138 100,128" 
+                    fill="none" 
+                    stroke={states.dq_doppler_hyperemia === "doppler_severo" ? "#ef4444" : "#f59e0b"} 
+                    strokeWidth={states.dq_doppler_hyperemia === "doppler_severo" ? "2" : "1"} 
+                  />
+                  <text x="106" y="128" fill="#ef4444" fontSize="4" fontWeight="black" className="pointer-events-none select-none font-sans">DOPPLER</text>
+                </g>
+              )}
+            </svg>
+          </div>
+        </div>
+      )}
+
+      {/* FALLBACK IF BOTH SCHEMAS ARE DISABLED */}
+      {!includeInReport && !includeDeQuervain && (
+        <div className="flex flex-col items-center justify-center p-8 bg-slate-950/20 border border-dashed border-slate-800 rounded-xl text-center">
+          <Layers className="h-10 w-10 text-slate-600 animate-pulse mb-3" />
+          <p className="text-xs font-bold text-slate-400">Esquemas Visuales Desactivados</p>
+          <p className="text-[10px] text-slate-500 max-w-xs mt-1">
+            Active al menos un esquema (General o De Quervain) para visualizar los esquemas interactivos e incluirlos en el reporte PDF.
+          </p>
+        </div>
+      )}
+
+      {additionalFindings && additionalFindings.length > 0 && (
+        <div className="w-full bg-slate-900/10 border border-slate-850 p-3 rounded-2xl mt-4">
               <h5 className="text-[9px] uppercase font-black text-indigo-400 font-mono tracking-wider mb-2 text-left select-none">
                 📍 Hallazgos Adicionales Detectados
               </h5>

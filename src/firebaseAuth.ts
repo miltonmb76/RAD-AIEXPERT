@@ -1,15 +1,45 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
+import { 
+  getAuth, 
+  signInWithPopup, 
+  GoogleAuthProvider, 
+  onAuthStateChanged, 
+  User,
+  signInAnonymously,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword
+} from 'firebase/auth';
 import firebaseConfig from '../firebase-applet-config.json';
 
+// Helper to load dynamic Firebase configuration
+export function getFirebaseConfig() {
+  if (typeof window !== "undefined") {
+    try {
+      const custom = localStorage.getItem("rad_custom_firebase_config");
+      if (custom) {
+        const parsed = JSON.parse(custom);
+        if (parsed.apiKey && parsed.projectId) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.error("Error loading custom Firebase config:", e);
+    }
+  }
+  return firebaseConfig;
+}
+
+const activeConfig = getFirebaseConfig();
+
 // Initialize Firebase
-export const app = initializeApp(firebaseConfig);
+export const app = initializeApp(activeConfig);
 export const auth = getAuth(app);
 
 // Configure Google OAuth Provider
 export const provider = new GoogleAuthProvider();
-// Request explicit scopes for Gmail
+// Request explicit scopes for Gmail and Drive
 provider.addScope('https://www.googleapis.com/auth/gmail.send');
+provider.addScope('https://www.googleapis.com/auth/drive.file');
 // provider.addScope('https://www.googleapis.com/auth/gmail.readonly'); // only send is strictly required, let's keep what we had
 
 // Do NOT force 'select_account' so that the session can be kept open and re-authorized instantly with 1-click
@@ -107,4 +137,35 @@ export const logout = async () => {
   cachedAccessToken = null;
   localStorage.removeItem("rad_gmail_access_token");
   localStorage.removeItem("rad_cached_user");
+};
+
+export const anonymousSignIn = async (): Promise<{ user: User; accessToken: string } | null> => {
+  try {
+    const result = await signInAnonymously(auth);
+    // Return the user and empty token since there's no Google Access Token for anonymous sessions
+    return { user: result.user, accessToken: "" };
+  } catch (error) {
+    console.error('Error during anonymous sign-in:', error);
+    throw error;
+  }
+};
+
+export const emailSignIn = async (email: string, password: string): Promise<{ user: User; accessToken: string } | null> => {
+  try {
+    const result = await signInWithEmailAndPassword(auth, email, password);
+    return { user: result.user, accessToken: "" };
+  } catch (error) {
+    console.error('Error during email sign-in:', error);
+    throw error;
+  }
+};
+
+export const emailSignUp = async (email: string, password: string): Promise<{ user: User; accessToken: string } | null> => {
+  try {
+    const result = await createUserWithEmailAndPassword(auth, email, password);
+    return { user: result.user, accessToken: "" };
+  } catch (error) {
+    console.error('Error during email sign-up:', error);
+    throw error;
+  }
 };

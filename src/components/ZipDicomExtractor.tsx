@@ -70,9 +70,9 @@ export default function ZipDicomExtractor({
       const tempFiles: ExtractedFile[] = [];
 
       for (const [filename, fileObj] of Object.entries(loadedZip.files)) {
-        if (fileObj.dir) continue; 
+        if ((fileObj as any).dir) continue; 
 
-        const u8Array = await fileObj.async("uint8array");
+        const u8Array = await (fileObj as any).async("uint8array");
         const size = u8Array.length;
 
         // Check if file is a DICOM based on extension or magic header "DICM" at byte 128

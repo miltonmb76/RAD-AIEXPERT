@@ -1,28 +1,32 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { jsPDF } from "jspdf";
 import JSZip from "jszip";
-import BibliographySearch from "./components/BibliographySearch";
-import ImageSearch from "./components/ImageSearch";
-import ExpertImageAnalysis from "./components/ExpertImageAnalysis";
-import ZipDicomExtractor, { ExtractedFile } from "./components/ZipDicomExtractor";
-import VascularAnatomyViewer from "./components/VascularAnatomyViewer";
-import ShoulderAnatomyViewer from "./components/ShoulderAnatomyViewer";
-import KneeAnatomyViewer from "./components/KneeAnatomyViewer";
-import AnkleAnatomyViewer from "./components/AnkleAnatomyViewer";
-import ThighAnatomyViewer from "./components/ThighAnatomyViewer";
-import ThighPosteriorAnatomyViewer from "./components/ThighPosteriorAnatomyViewer";
-import NeckAnatomyViewer from "./components/NeckAnatomyViewer";
-import UrinaryAnatomyViewer from "./components/UrinaryAnatomyViewer";
-import ElbowAnatomyViewer from "./components/ElbowAnatomyViewer";
-import AbdomenAnatomyViewer from "./components/AbdomenAnatomyViewer";
-import ScrotumAnatomyViewer from "./components/ScrotumAnatomyViewer";
-import WristAnatomyViewer from "./components/WristAnatomyViewer";
-import BreastAnatomyViewer from "./components/BreastAnatomyViewer";
-import { AsistenteMedidas } from "./components/AsistenteMedidas";
-import { CreadorNotasPie } from "./components/CreadorNotasPie";
-import AbdominalWallAnatomyViewer from "./components/AbdominalWallAnatomyViewer";
-import CalfAchillesAnatomyViewer from "./components/CalfAchillesAnatomyViewer";
-import NeonatalBrainAnatomyViewer from "./components/NeonatalBrainAnatomyViewer";
+import type { ExtractedFile } from "./components/ZipDicomExtractor";
+
+const BibliographySearch = React.lazy(() => import("./components/BibliographySearch"));
+const ImageSearch = React.lazy(() => import("./components/ImageSearch"));
+const ExpertImageAnalysis = React.lazy(() => import("./components/ExpertImageAnalysis"));
+const ZipDicomExtractor = React.lazy(() => import("./components/ZipDicomExtractor"));
+const VascularAnatomyViewer = React.lazy(() => import("./components/VascularAnatomyViewer"));
+const ShoulderAnatomyViewer = React.lazy(() => import("./components/ShoulderAnatomyViewer"));
+const KneeAnatomyViewer = React.lazy(() => import("./components/KneeAnatomyViewer"));
+const AnkleAnatomyViewer = React.lazy(() => import("./components/AnkleAnatomyViewer"));
+const ThighAnatomyViewer = React.lazy(() => import("./components/ThighAnatomyViewer"));
+const ThighPosteriorAnatomyViewer = React.lazy(() => import("./components/ThighPosteriorAnatomyViewer"));
+const NeckAnatomyViewer = React.lazy(() => import("./components/NeckAnatomyViewer"));
+const UrinaryAnatomyViewer = React.lazy(() => import("./components/UrinaryAnatomyViewer"));
+const ElbowAnatomyViewer = React.lazy(() => import("./components/ElbowAnatomyViewer"));
+const AbdomenAnatomyViewer = React.lazy(() => import("./components/AbdomenAnatomyViewer"));
+const ScrotumAnatomyViewer = React.lazy(() => import("./components/ScrotumAnatomyViewer"));
+const WristAnatomyViewer = React.lazy(() => import("./components/WristAnatomyViewer"));
+const BreastAnatomyViewer = React.lazy(() => import("./components/BreastAnatomyViewer"));
+const AsistenteMedidas = React.lazy(() => import("./components/AsistenteMedidas").then(m => ({ default: m.AsistenteMedidas })));
+const CreadorNotasPie = React.lazy(() => import("./components/CreadorNotasPie").then(m => ({ default: m.CreadorNotasPie })));
+const CreadorCuadroSinoptico = React.lazy(() => import("./components/CreadorCuadroSinoptico").then(m => ({ default: m.CreadorCuadroSinoptico })));
+const CreadorSinopsisFracturas = React.lazy(() => import("./components/CreadorSinopsisFracturas").then(m => ({ default: m.CreadorSinopsisFracturas })));
+const AbdominalWallAnatomyViewer = React.lazy(() => import("./components/AbdominalWallAnatomyViewer"));
+const CalfAchillesAnatomyViewer = React.lazy(() => import("./components/CalfAchillesAnatomyViewer"));
+const NeonatalBrainAnatomyViewer = React.lazy(() => import("./components/NeonatalBrainAnatomyViewer"));
 import { 
   Activity, 
   ShieldCheck,
@@ -64,6 +68,7 @@ import {
   Download,
   Zap,
   Brain,
+  Bone,
   Languages,
   Database,
   BookOpenText,
@@ -74,9 +79,10 @@ import {
   Ruler,
   Bookmark
 } from "lucide-react";
-import { initAuth, googleSignIn, logout as googleLogout } from "./firebaseAuth";
-import { CloudStudy, saveStudyToCloud, getStudiesFromCloud, deleteStudyFromCloud } from "./firebaseDb";
-import { Mail, LogOut } from "lucide-react";
+import { initAuth, googleSignIn, logout as googleLogout, anonymousSignIn, emailSignIn, emailSignUp, getFirebaseConfig } from "./firebaseAuth";
+import { CloudStudy, saveStudyToCloud, getStudiesFromCloud, deleteStudyFromCloud, Worklist, WorklistPatient, saveWorklistToCloud, getWorklistFromCloud, getSingleStudyFromCloud, testFirebaseConfigConnection } from "./firebaseDb";
+import { uploadPdfToDrive } from "./lib/googleDrive";
+import { Mail, LogOut, Clock, Calendar, ListTodo, UserCheck, ImagePlus, Wifi, HelpCircle, Info, Laptop, Network, ChevronDown, Link } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   STUDY_PRESETS, 
@@ -89,6 +95,45 @@ import {
   Presets,
   ClassificationSystem 
 } from "./constants";
+
+// Interceptor global para evitar que se lance un error si se excede la cuota de localStorage (5MB)
+try {
+  if (typeof window !== "undefined" && window.localStorage) {
+    const originalSetItem = window.localStorage.setItem;
+    window.localStorage.setItem = function (key: string, value: string) {
+      try {
+        originalSetItem.call(window.localStorage, key, value);
+      } catch (error: any) {
+        console.warn(`[SafeLocalStorage] Cuota excedida o error al guardar '${key}':`, error);
+        
+        // Intentar liberar espacio eliminando o podando el historial de reportes
+        try {
+          const historyStr = window.localStorage.getItem("radiology_reports_history");
+          if (historyStr) {
+            const history = JSON.parse(historyStr);
+            if (Array.isArray(history) && history.length > 2) {
+              // Dejar solo los últimos 2 reportes para liberar espacio
+              const pruned = history.slice(0, 2);
+              originalSetItem.call(window.localStorage, "radiology_reports_history", JSON.stringify(pruned));
+              console.log("[SafeLocalStorage] Historial de reportes podado para liberar espacio.");
+              
+              // Reintentar la escritura original una vez más
+              originalSetItem.call(window.localStorage, key, value);
+              return;
+            }
+          }
+        } catch (pruneErr) {
+          console.error("[SafeLocalStorage] No se pudo podar el historial de reportes:", pruneErr);
+        }
+        
+        // Si aún así falla, evitamos que la excepción tire el programa
+        console.error(`[SafeLocalStorage] No se pudo guardar la clave '${key}' por límite de espacio. El programa continuará sin crash.`);
+      }
+    };
+  }
+} catch (e) {
+  console.error("[SafeLocalStorage] Error al inicializar el interceptor:", e);
+}
 
 // Structure for historical reports stored in local storage
 interface SavedReport {
@@ -203,7 +248,866 @@ const formatDateToDMY = (dateStr: string): string => {
   return dateStr;
 };
 
+const formatCostaRicaPhone = (rawPhone: string): string => {
+  if (!rawPhone) return "";
+  // Strip all non-numeric characters
+  const clean = rawPhone.replace(/\D/g, "");
+  if (!clean) return "";
+  
+  if (clean.length === 8) {
+    return "506" + clean;
+  }
+  if (clean.startsWith("506") && clean.length > 8) {
+    return clean;
+  }
+  if (clean.length > 8 && !clean.startsWith("506")) {
+    return "506" + clean;
+  }
+  if (clean.length < 8 && !clean.startsWith("506")) {
+    return "506" + clean;
+  }
+  return clean;
+};
+
+const extractSectionContent = (reportText: string, sectionKeywords: string[]): string => {
+  if (!reportText) return "";
+  const lines = reportText.split("\n");
+  
+  const normalizeHeader = (text: string): string => {
+    return text
+      .trim()
+      .toLowerCase()
+      .replace(/^[\s#\-\*]+/, "")
+      .replace(/[\*\_\:]/g, "")
+      .trim();
+  };
+
+  const allHeaders = [
+    "tipo de estudio", "estudio",
+    "historia clínica", "historia clinica", "indicaciones", "historia clínica / indicaciones", "historia clinica / indicaciones",
+    "técnica del examen", "tecnica del examen", "técnica", "tecnica",
+    "hallazgos", "hallazgos principales", "resultados",
+    "impresión diagnóstica", "impresion diagnostica", "impresiones diagnósticas", "impresiones diagnosticas", "impresión", "impresion",
+    "conclusión", "conclusiones", "conclusion",
+    "diagnóstico", "diagnostico",
+    "resumen operacional de hallazgos", "resumen operacional", "resumen ejecutivo", "resumen de hallazgos", "resumen",
+    "fdo", "médico", "medico", "firma"
+  ];
+
+  for (const key of sectionKeywords) {
+    let startIndex = -1;
+    for (let i = 0; i < lines.length; i++) {
+      const norm = normalizeHeader(lines[i]);
+      if (norm === key || norm.startsWith(key + " ")) {
+        startIndex = i;
+        break;
+      }
+    }
+
+    if (startIndex !== -1) {
+      const sectionLines: string[] = [];
+      for (let j = startIndex + 1; j < lines.length; j++) {
+        const currentLine = lines[j];
+        const normCurrent = normalizeHeader(currentLine);
+
+        const isBoundary = allHeaders.some(h => {
+          if (normCurrent === h) return true;
+          if (normCurrent.startsWith(h + ":") || normCurrent.startsWith(h + " ")) return true;
+          return false;
+        });
+        if (isBoundary) {
+          break;
+        }
+        sectionLines.push(currentLine);
+      }
+
+      const extractedText = sectionLines.join("\n").trim();
+      if (extractedText && extractedText.replace(/[\s\-\*\#\:\.]/g, "").length > 0) {
+        return extractedText;
+      }
+    }
+  }
+  return "";
+};
+
+const extractImpresionDiagnostica = (reportText: string): string => {
+  return extractSectionContent(reportText, [
+    "impresión diagnóstica", "impresion diagnostica", "impresión diagnostica", "impresion diagnóstica", 
+    "impresiones diagnósticas", "impresiones diagnosticas", "conclusión", "conclusiones", "conclusion", 
+    "diagnóstico", "diagnostico", "impresión", "impresion"
+  ]);
+};
+
+const extractHallazgos = (reportText: string): string => {
+  return extractSectionContent(reportText, ["hallazgos principales", "hallazgos", "resultados"]);
+};
+
+const extractResumenOperacional = (reportText: string): string => {
+  if (!reportText) return "";
+
+  // 1st Priority: Explicit Resumen Operacional / Resumen Ejecutivo
+  const explicitResumen = extractSectionContent(reportText, [
+    "resumen operacional de hallazgos", "resumen operacional", "resumen ejecutivo", "resumen de hallazgos", "resumen"
+  ]);
+  if (explicitResumen) return explicitResumen;
+
+  // 2nd Priority: Impresión Diagnóstica / Conclusión / Diagnóstico
+  const impresion = extractImpresionDiagnostica(reportText);
+  if (impresion) return impresion;
+
+  // 3rd Priority: Hallazgos Principales / Hallazgos
+  const hallazgos = extractHallazgos(reportText);
+  if (hallazgos) return hallazgos;
+
+  // Fallback 1: let's look for bullet points in the entire report that are NOT part of standard template headers
+  const lines = reportText.split("\n");
+  const normalizeHeader = (text: string): string => {
+    return text
+      .trim()
+      .toLowerCase()
+      .replace(/^[\s#\-\*]+/, "")
+      .replace(/[\*\_\:]/g, "")
+      .trim();
+  };
+
+  const allHeaders = [
+    "tipo de estudio", "estudio",
+    "historia clínica", "historia clinica", "indicaciones", "historia clínica / indicaciones", "historia clinica / indicaciones",
+    "técnica del examen", "tecnica del examen", "técnica", "tecnica",
+    "hallazgos", "hallazgos principales", "resultados",
+    "impresión diagnóstica", "impresion diagnostica", "impresiones diagnósticas", "impresiones diagnosticas", "impresión", "impresion",
+    "conclusión", "conclusiones", "conclusion",
+    "diagnóstico", "diagnostico",
+    "resumen operacional de hallazgos", "resumen operacional", "resumen ejecutivo", "resumen de hallazgos", "resumen",
+    "fdo", "médico", "medico", "firma"
+  ];
+
+  const cleanBulletLines = lines.filter(line => {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("-") && !trimmed.startsWith("*") && !/^\d+\./.test(trimmed)) return false;
+    
+    // Check if the bullet line is just a header
+    const norm = normalizeHeader(trimmed);
+    if (allHeaders.includes(norm)) return false;
+    
+    return true;
+  });
+
+  if (cleanBulletLines.length > 0) {
+    return cleanBulletLines.slice(0, 6).join("\n");
+  }
+
+  // Fallback 2: If we still don't have anything, let's look for the last section of the report that has text
+  let lastNonEmptyBlock: string[] = [];
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    if (line) {
+      // If we hit a known header or potential header line, that starts the block!
+      const norm = normalizeHeader(line);
+      const isHeaderLine = allHeaders.includes(norm) || norm.endsWith(":") || line.startsWith("#");
+      if (isHeaderLine) {
+        lastNonEmptyBlock.unshift(line);
+        // Let's get the content below it
+        let j = i + 1;
+        while (j < lines.length) {
+          const subLine = lines[j].trim();
+          const subNorm = normalizeHeader(subLine);
+          if (allHeaders.some(h => subNorm === h || subNorm.startsWith(h + ":"))) {
+            break;
+          }
+          if (subLine) {
+            lastNonEmptyBlock.push(lines[j]);
+          }
+          j++;
+        }
+        break;
+      }
+    }
+  }
+
+  if (lastNonEmptyBlock.length > 0) {
+    // Remove the header line if it's there
+    const headerLine = lastNonEmptyBlock[0];
+    const normHeader = normalizeHeader(headerLine);
+    if (allHeaders.some(h => normHeader === h || normHeader.startsWith(h + ":"))) {
+      lastNonEmptyBlock.shift();
+    }
+    const fallbackText = lastNonEmptyBlock.join("\n").trim();
+    if (fallbackText) {
+      return fallbackText;
+    }
+  }
+
+  return "";
+};
+
+interface ManualPatientAdderProps {
+  onAdd: (newPatient: { name: string; age: string; gender: string; patientId: string; studyType: string; time: string; phone?: string }) => void;
+}
+
+const ManualPatientAdder: React.FC<ManualPatientAdderProps> = ({ onAdd }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [age, setAge] = useState("");
+  const [gender, setGender] = useState("");
+  const [patientId, setPatientId] = useState("");
+  const [studyType, setStudyType] = useState("");
+  const [time, setTime] = useState("");
+  const [phone, setPhone] = useState("");
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    onAdd({
+      name: name.trim(),
+      age: age.trim(),
+      gender: gender,
+      patientId: patientId.trim(),
+      studyType: studyType.trim(),
+      time: time.trim(),
+      phone: formatCostaRicaPhone(phone.trim())
+    });
+    // Reset form
+    setName("");
+    setAge("");
+    setGender("");
+    setPatientId("");
+    setStudyType("");
+    setTime("");
+    setPhone("");
+    setIsOpen(false);
+  };
+
+  return (
+    <div className="bg-slate-950/20 border border-slate-850 rounded-xl overflow-hidden mt-2">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full px-4 py-2.5 text-left text-[10px] font-black uppercase text-slate-400 hover:text-slate-200 hover:bg-slate-900/30 flex items-center justify-between transition tracking-wider font-mono"
+      >
+        <span className="flex items-center gap-1.5">
+          <Plus className="h-3.5 w-3.5 text-indigo-400" /> Añadir Paciente Manual
+        </span>
+        <ChevronRight className={`h-3 w-3 text-slate-500 transition-transform ${isOpen ? "rotate-90" : ""}`} />
+      </button>
+
+      {isOpen && (
+        <form onSubmit={handleSubmit} className="p-3.5 border-t border-slate-850/40 space-y-2.5 bg-slate-900/5">
+          <div>
+            <label className="text-[8.5px] font-black uppercase text-slate-500 tracking-wider font-mono block mb-1">Nombre Completo *</label>
+            <input
+              type="text"
+              required
+              placeholder="Ej. Carlos Pérez"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full text-xs bg-slate-950 border border-slate-850 rounded-lg px-2.5 py-1.5 text-white focus:outline-none focus:border-indigo-500 font-bold"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[8.5px] font-black uppercase text-slate-500 tracking-wider font-mono block mb-1">Edad</label>
+              <input
+                type="text"
+                placeholder="Ej. 45"
+                value={age}
+                onChange={(e) => setAge(e.target.value)}
+                className="w-full text-xs bg-slate-950 border border-slate-850 rounded-lg px-2.5 py-1.5 text-white focus:outline-none focus:border-indigo-500 font-bold"
+              />
+            </div>
+            <div>
+              <label className="text-[8.5px] font-black uppercase text-slate-500 tracking-wider font-mono block mb-1">Género</label>
+              <select
+                value={gender}
+                onChange={(e) => setGender(e.target.value)}
+                className="w-full text-xs bg-slate-950 border border-slate-850 rounded-lg px-2 py-1.5 text-white focus:outline-none focus:border-indigo-500 font-bold"
+              >
+                <option value="">--</option>
+                <option value="M">M</option>
+                <option value="F">F</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[8.5px] font-black uppercase text-slate-500 tracking-wider font-mono block mb-1">Identificación</label>
+              <input
+                type="text"
+                placeholder="Cédula / ID"
+                value={patientId}
+                onChange={(e) => setPatientId(e.target.value)}
+                className="w-full text-xs bg-slate-950 border border-slate-850 rounded-lg px-2.5 py-1.5 text-white focus:outline-none focus:border-indigo-500 font-mono font-bold"
+              />
+            </div>
+            <div>
+              <label className="text-[8.5px] font-black uppercase text-slate-500 tracking-wider font-mono block mb-1">Hora Turno</label>
+              <input
+                type="text"
+                placeholder="Ej. 08:30"
+                value={time}
+                onChange={(e) => setTime(e.target.value)}
+                className="w-full text-xs bg-slate-950 border border-slate-850 rounded-lg px-2.5 py-1.5 text-white focus:outline-none focus:border-indigo-500 font-mono font-bold"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-[8.5px] font-black uppercase text-slate-500 tracking-wider font-mono block mb-1">Estudio Solicitado</label>
+            <input
+              type="text"
+              placeholder="Ej. Ecografía Renal"
+              value={studyType}
+              onChange={(e) => setStudyType(e.target.value)}
+              className="w-full text-xs bg-slate-950 border border-slate-850 rounded-lg px-2.5 py-1.5 text-white focus:outline-none focus:border-indigo-500 font-bold"
+            />
+          </div>
+
+          <div>
+            <label className="text-[8.5px] font-black uppercase text-slate-500 tracking-wider font-mono block mb-1">Teléfono o Celular (Costa Rica)</label>
+            <input
+              type="text"
+              placeholder="Ej. 8888-8888"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              className="w-full text-xs bg-slate-950 border border-slate-850 rounded-lg px-2.5 py-1.5 text-white focus:outline-none focus:border-indigo-500 font-mono font-bold"
+            />
+          </div>
+
+          <button
+            type="submit"
+            className="w-full bg-slate-800 hover:bg-indigo-600 text-slate-300 hover:text-white font-bold text-[9px] uppercase tracking-wider py-1.5 rounded-lg transition"
+          >
+            Agregar a la Agenda
+          </button>
+        </form>
+      )}
+    </div>
+  );
+};
+
+interface UltrasoundWorklistExporterProps {
+  patients: WorklistPatient[];
+}
+
+const UltrasoundWorklistExporter: React.FC<UltrasoundWorklistExporterProps> = ({ patients }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<"standard_csv" | "samsung_v7_csv" | "ge_csv" | "mindray_xml" | "json_bridge">("samsung_v7_csv");
+  const [copiedScript, setCopiedScript] = useState(false);
+  const [activeTab, setActiveTab] = useState<"export" | "guide">("export");
+
+  const handleExport = () => {
+    if (patients.length === 0) {
+      alert("No hay pacientes en la agenda para exportar.");
+      return;
+    }
+
+    const today = new Date();
+    const dateStr = today.toISOString().split("T")[0];
+
+    if (exportFormat === "standard_csv") {
+      const headers = ["ID Paciente", "Nombre Completo", "Edad", "Genero", "Estudio Solicitado", "Hora Turno", "Estado"];
+      const rows = patients.map(p => [
+        p.patientId || `REG-${p.id.substring(p.id.length - 4)}`,
+        p.name,
+        p.age || "",
+        p.gender || "",
+        p.studyType || "",
+        p.time || "",
+        p.status
+      ]);
+      const csvContent = "\ufeff" + [headers.join(","), ...rows.map(e => e.map(val => `"${val.replace(/"/g, '""')}"`).join(","))].join("\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `agenda_radiologia_${dateStr}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } else if (exportFormat === "samsung_v7_csv") {
+      // Samsung V7 optimized CSV structure with standard DICOM field mappings
+      const headers = ["PatientID", "PatientName", "Gender", "BirthDate", "StudyDescription", "AccessionNumber", "ScheduledDate", "ScheduledTime"];
+      const rows = patients.map(p => {
+        let birthDate = "";
+        if (p.age) {
+          const numericAge = parseInt(p.age.replace(/\D/g, ""));
+          if (!isNaN(numericAge)) {
+            const birthYear = today.getFullYear() - numericAge;
+            birthDate = `${birthYear}0101`; // format YYYYMMDD
+          }
+        }
+        
+        // Para el Samsung V7, exportamos el nombre completo sin delimitadores de careto "^" ni cortes.
+        // Al enviarlo como un solo string continuo, el ecógrafo muestra el nombre completo con todos sus apellidos y nombres.
+        const cleanName = p.name.trim();
+        
+        return [
+          p.patientId || `SS-${p.id.substring(p.id.length - 4)}`,
+          cleanName,
+          p.gender || "O",
+          birthDate,
+          p.studyType || "Ultrasound",
+          `ACC-${p.id.substring(p.id.length - 4)}`,
+          dateStr.replace(/-/g, ""),
+          p.time ? p.time.replace(":", "") + "00" : "080000"
+        ];
+      });
+      const csvContent = [headers.join(","), ...rows.map(e => e.map(val => `"${val.replace(/"/g, '""')}"`).join(","))].join("\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `Samsung_V7_Worklist_${dateStr}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } else if (exportFormat === "ge_csv") {
+      const headers = ["Patient ID", "Patient Name", "Sex", "Birth Date", "Accession Number", "Requested Procedure"];
+      const rows = patients.map(p => {
+        let birthDate = "";
+        if (p.age) {
+          const numericAge = parseInt(p.age.replace(/\D/g, ""));
+          if (!isNaN(numericAge)) {
+            const birthYear = today.getFullYear() - numericAge;
+            birthDate = `${birthYear}0101`;
+          }
+        }
+        return [
+          p.patientId || `GE-${p.id.substring(p.id.length - 4)}`,
+          p.name,
+          p.gender || "",
+          birthDate,
+          `ACC-${p.id.substring(p.id.length - 4)}`,
+          p.studyType || "Ultrasound"
+        ];
+      });
+      const csvContent = [headers.join(","), ...rows.map(e => e.map(val => `"${val.replace(/"/g, '""')}"`).join(","))].join("\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=ascii;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `GE_Worklist_${dateStr}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } else if (exportFormat === "mindray_xml") {
+      let xml = `<?xml version="1.0" encoding="UTF-8"?>\n<PatientList Date="${dateStr}">\n`;
+      patients.forEach(p => {
+        const id = p.patientId || `MR-${p.id.substring(p.id.length - 4)}`;
+        const sex = p.gender === "M" ? "Male" : p.gender === "F" ? "Female" : "Other";
+        xml += `  <Patient>\n`;
+        xml += `    <PatientID>${id}</PatientID>\n`;
+        xml += `    <Name>${p.name}</Name>\n`;
+        xml += `    <Sex>${sex}</Sex>\n`;
+        xml += `    <Age>${p.age || ""}</Age>\n`;
+        xml += `    <ExamType>${p.studyType || "US"}</ExamType>\n`;
+        xml += `    <ScheduledTime>${p.time || ""}</ScheduledTime>\n`;
+        xml += `  </Patient>\n`;
+      });
+      xml += `</PatientList>`;
+      const blob = new Blob([xml], { type: "text/xml;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `mindray_worklist_${dateStr}.xml`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } else if (exportFormat === "json_bridge") {
+      const data = {
+        date: dateStr,
+        patients: patients.map(p => ({
+          name: p.name,
+          patientId: p.patientId || `REG-${p.id.substring(p.id.length - 4)}`,
+          gender: p.gender,
+          age: p.age,
+          studyType: p.studyType,
+          time: p.time
+        }))
+      };
+      const jsonContent = JSON.stringify(data, null, 2);
+      const blob = new Blob([jsonContent], { type: "application/json;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `worklist.json`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  };
+
+  const pythonScript = `# Servidor DICOM Worklist Local (MWL SCP) para Ecografo Samsung V7
+# Corre este script en tu PC (requiere instalar: pip install pynetdicom pydicom)
+import os
+import json
+import re
+import datetime
+from pydicom.dataset import Dataset
+from pynetdicom import AE, evt, debug_logger
+from pynetdicom.sop_class import ModalityWorklistInformationFind
+
+debug_logger() # Imprime conexiones entrantes en la consola
+
+def cargar_pacientes():
+    if os.path.exists("worklist.json"):
+        with open("worklist.json", "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data.get("patients", [])
+    return []
+
+def formatear_nombre_dicom(nombre_completo):
+    if not nombre_completo:
+        return "Paciente^Anonimo"
+    
+    # Limpiamos espacios adicionales
+    palabras = [w for w in nombre_completo.strip().split() if w]
+    if not palabras:
+        return "Paciente^Anonimo"
+        
+    # Heurística robusta de nombres en español para evitar nombres cortados o mal ordenados:
+    # 1 palabra: "Luz" -> "Luz"
+    # 2 palabras: "Milton Maldonado" -> "Maldonado^Milton"
+    # 3 palabras: "Milton Maldonado Brizuela" -> "Maldonado Brizuela^Milton"
+    # 4 o más palabras: "Maria del Carmen Gomez Perez" -> Surnames: "Gomez Perez", GivenNames: "Maria del Carmen"
+    # Esto asegura que el ecógrafo Samsung V7 reciba todos los apellidos y nombres sin recortar nada.
+    
+    if len(palabras) == 1:
+        return palabras[0]
+    elif len(palabras) == 2:
+        return f"{palabras[1]}^{palabras[0]}"
+    elif len(palabras) == 3:
+        # e.g., Milton Maldonado Brizuela -> Apellidos: Maldonado Brizuela, Nombre: Milton
+        return f"{palabras[1]} {palabras[2]}^{palabras[0]}"
+    else:
+        # 4 o más palabras: e.g., Maria del Carmen Gomez Perez -> Apellidos: Gomez Perez, Nombres: Maria del Carmen
+        apellidos = f"{palabras[-2]} {palabras[-1]}"
+        nombres = " ".join(palabras[:-2])
+        return f"{apellidos}^{nombres}"
+
+def parse_patient_age_and_dob(edad_raw):
+    """
+    Intenta extraer la edad y fecha de nacimiento a partir del string ingresado.
+    Retorna (fecha_nacimiento_dicom, edad_dicom)
+    """
+    dob_fallback = "19800101"
+    age_fallback = "040Y"
+    
+    if not edad_raw:
+        return dob_fallback, age_fallback
+        
+    val = str(edad_raw).strip()
+    
+    # 1. Intentar detectar formato fecha de nacimiento: YYYY-MM-DD o DD-MM-YYYY
+    # Patrón YYYY-MM-DD / YYYY/MM/DD
+    match_iso = re.search(r'(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})', val)
+    # Patrón DD-MM-YYYY / DD/MM/YYYY
+    match_lat = re.search(r'(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})', val)
+    
+    dt = None
+    if match_iso:
+        try:
+            dt = datetime.date(int(match_iso.group(1)), int(match_iso.group(2)), int(match_iso.group(3)))
+        except ValueError:
+            pass
+    elif match_lat:
+        try:
+            dt = datetime.date(int(match_lat.group(3)), int(match_lat.group(2)), int(match_lat.group(1)))
+        except ValueError:
+            pass
+            
+    if dt:
+        dob_str = dt.strftime("%Y%m%d")
+        # Calcular edad actual en base a la fecha de nacimiento
+        hoy = datetime.date.today()
+        calculated_age = hoy.year - dt.year - ((hoy.month, hoy.day) < (dt.month, dt.day))
+        calculated_age = max(0, calculated_age)
+        age_str = f"{calculated_age:03d}Y"
+        return dob_str, age_str
+        
+    # 2. Si no es fecha, intentar extraer un número (ej. "45", "45 años", "45a")
+    match_num = re.search(r'\d+', val)
+    if match_num:
+        try:
+            years = int(match_num.group(0))
+            if 0 <= years <= 130:
+                age_str = f"{years:03d}Y"
+                hoy = datetime.date.today()
+                # Estimamos fecha de nacimiento usando el año y un mes/día promedio (06 de junio)
+                birth_year = hoy.year - years
+                dob_str = f"{birth_year}0601"
+                return dob_str, age_str
+        except Exception:
+            pass
+            
+    return dob_fallback, age_fallback
+
+def handle_find(event):
+    print("\\n[+] Consulta DICOM recibida del Samsung V7!")
+    pacientes = cargar_pacientes()
+    for index, p in enumerate(pacientes):
+        ds = Dataset()
+        
+        nombre_original = p.get("name", "").strip()
+        nombre_formateado = formatear_nombre_dicom(nombre_original)
+        ds.PatientName = nombre_formateado
+        
+        print(f"   [-] Paciente original: '{nombre_original}' -> DICOM enviado: '{nombre_formateado}'")
+            
+        ds.PatientID = p.get("patientId") or f"REG-{index+1:04d}"
+        
+        g = p.get("gender", "").upper()
+        ds.PatientSex = g if g in ["M", "F"] else "O"
+        
+        # Calcular edad y fecha de nacimiento de forma dinamica
+        edad_raw = p.get("age", "")
+        dob, age_dicom = parse_patient_age_and_dob(edad_raw)
+        ds.PatientBirthDate = dob
+        ds.PatientAge = age_dicom
+        
+        print(f"       -> Edad: '{edad_raw}' | DICOM DOB: {dob} | DICOM Age: {age_dicom}")
+        
+        step = Dataset()
+        step.ScheduledStationAETitle = "MWL_SERVER"
+        # Usar la fecha actual de hoy para la cita
+        step.ScheduledProcedureStepStartDate = datetime.date.today().strftime("%Y%m%d")
+        step.ScheduledProcedureStepStartTime = p.get("time", "0800").replace(":", "") + "00"
+        step.Modality = "US"
+        step.ScheduledProcedureStepDescription = p.get("studyType", "Ecografia US")
+        step.ScheduledProcedureStepID = f"SPS-{index+1:04d}"
+        
+        ds.ScheduledProcedureStepSequence = [step]
+        ds.RequestedProcedureID = f"RP-{index+1:04d}"
+        ds.RequestedProcedureDescription = p.get("studyType", "Ecografia US")
+        ds.AccessionNumber = f"ACC-{index+1:04d}"
+        
+        yield (0xFF00, ds)
+
+ae = AE(ae_title=b"MWL_SERVER")
+ae.add_supported_context(ModalityWorklistInformationFind)
+
+print("--------------------------------------------------")
+print(" Servidor DICOM Worklist activo para Samsung V7")
+print(" Direccion IP de tu PC: Usa tu IP local (ej. 192.168.1.5)")
+print(" Puerto: 1040")
+print(" AE Title: MWL_SERVER")
+print("--------------------------------------------------")
+
+ae.start_server(("0.0.0.0", 1040), evt_handlers=[(evt.EVT_C_FIND, handle_find)])
+`;
+
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(pythonScript);
+    setCopiedScript(true);
+    setTimeout(() => setCopiedScript(false), 2000);
+  };
+
+  return (
+    <div className="bg-slate-950/40 border border-indigo-500/25 hover:border-indigo-500/40 rounded-xl overflow-hidden mt-3 transition duration-300">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full px-4 py-3 text-left text-[10px] font-black uppercase text-indigo-300 hover:text-indigo-200 hover:bg-indigo-950/10 flex items-center justify-between transition tracking-wider font-mono"
+      >
+        <span className="flex items-center gap-1.5">
+          <Network className="h-4 w-4 text-indigo-400 animate-pulse" /> Sincronizar con Samsung V7
+        </span>
+        <ChevronDown className={`h-3.5 w-3.5 text-indigo-400 transition-transform duration-300 ${isOpen ? "rotate-180" : ""}`} />
+      </button>
+
+      {isOpen && (
+        <div className="p-4 border-t border-slate-850/60 bg-slate-950/20 space-y-3.5">
+          <div className="flex border-b border-slate-850/60 pb-1.5">
+            <button
+              type="button"
+              onClick={() => setActiveTab("export")}
+              className={`flex-1 text-[8.5px] font-black uppercase tracking-wider py-1 text-center transition cursor-pointer ${
+                activeTab === "export"
+                  ? "text-indigo-400 border-b-2 border-indigo-500 pb-2 -mb-2 font-black"
+                  : "text-slate-500 hover:text-slate-300"
+              }`}
+            >
+              1. Exportar Lista
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("guide")}
+              className={`flex-1 text-[8.5px] font-black uppercase tracking-wider py-1 text-center transition cursor-pointer ${
+                activeTab === "guide"
+                  ? "text-indigo-400 border-b-2 border-indigo-500 pb-2 -mb-2 font-black"
+                  : "text-slate-500 hover:text-slate-300"
+              }`}
+            >
+              2. Guía Samsung V7 (Wi-Fi)
+            </button>
+          </div>
+
+          {activeTab === "export" && (
+            <div className="space-y-3.5">
+              <p className="text-[9.5px] text-slate-400 leading-normal">
+                Genera un archivo optimizado para el ecógrafo <strong className="text-indigo-400">Samsung V7</strong>. Descárgalo para transferirlo localmente por USB o cargarlo mediante el puente de red de tu consultorio.
+              </p>
+
+              <div className="space-y-2">
+                <label className="text-[8.5px] font-black uppercase text-slate-500 tracking-wider font-mono block">Selecciona Formato</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setExportFormat("samsung_v7_csv")}
+                    className={`px-2.5 py-2 rounded-lg text-left text-[9px] font-bold border transition cursor-pointer ${
+                      exportFormat === "samsung_v7_csv"
+                        ? "bg-indigo-600/10 border-indigo-500 text-indigo-300 font-black"
+                        : "bg-slate-900/40 border-slate-850 text-slate-400 hover:border-slate-800"
+                    }`}
+                  >
+                    Samsung V7 (.csv)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExportFormat("standard_csv")}
+                    className={`px-2.5 py-2 rounded-lg text-left text-[9px] font-bold border transition cursor-pointer ${
+                      exportFormat === "standard_csv"
+                        ? "bg-indigo-600/10 border-indigo-500 text-indigo-300 font-black"
+                        : "bg-slate-900/40 border-slate-850 text-slate-400 hover:border-slate-800"
+                    }`}
+                  >
+                    CSV Estándar (.csv)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExportFormat("ge_csv")}
+                    className={`px-2.5 py-2 rounded-lg text-left text-[9px] font-bold border transition cursor-pointer ${
+                      exportFormat === "ge_csv"
+                        ? "bg-indigo-600/10 border-indigo-500 text-indigo-300 font-black"
+                        : "bg-slate-900/40 border-slate-850 text-slate-400 hover:border-slate-800"
+                    }`}
+                  >
+                    GE Voluson / Logiq
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExportFormat("mindray_xml")}
+                    className={`px-2.5 py-2 rounded-lg text-left text-[9px] font-bold border transition cursor-pointer ${
+                      exportFormat === "mindray_xml"
+                        ? "bg-indigo-600/10 border-indigo-500 text-indigo-300 font-black"
+                        : "bg-slate-900/40 border-slate-850 text-slate-400 hover:border-slate-800"
+                    }`}
+                  >
+                    Mindray XML (.xml)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExportFormat("json_bridge")}
+                    className={`px-2.5 py-2 rounded-lg text-left text-[9px] font-bold border col-span-2 transition cursor-pointer ${
+                      exportFormat === "json_bridge"
+                        ? "bg-indigo-600/10 border-indigo-500 text-indigo-300 font-black"
+                        : "bg-slate-900/40 border-slate-850 text-slate-400 hover:border-slate-800"
+                    }`}
+                    title="Formato JSON directo para alimentar el servidor de red local"
+                  >
+                    Puente JSON (.json)
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleExport}
+                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-black text-[9.5px] uppercase tracking-wider py-2 rounded-lg transition flex items-center justify-center gap-2 shadow-[0_2px_10px_rgba(99,102,241,0.2)] cursor-pointer"
+              >
+                <Download className="h-3.5 w-3.5" /> Descargar Archivo para Samsung V7
+              </button>
+            </div>
+          )}
+
+          {activeTab === "guide" && (
+            <div className="space-y-3.5 text-left max-h-[350px] overflow-y-auto pr-1">
+              <div className="bg-indigo-500/5 border border-indigo-500/10 rounded-lg p-2.5 flex gap-2">
+                <Wifi className="h-4 w-4 text-indigo-400 shrink-0" />
+                <p className="text-[9px] text-slate-300 leading-relaxed font-bold">
+                  ¡Excelente elección! Tu ecógrafo <span className="text-indigo-400">Samsung V7</span> está en red mediante cable y tu computadora a través de Wi-Fi en el mismo módem. Al estar en el mismo módem, pueden comunicarse de forma inalámbrica y privada.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <div className="border border-slate-850 rounded-lg p-2.5 space-y-1.5 bg-slate-900/10">
+                  <span className="text-[9px] font-black uppercase text-indigo-400 tracking-wider font-mono flex items-center gap-1">
+                    <Laptop className="h-3 w-3" /> Opción A: Carga local rápida por USB
+                  </span>
+                  <p className="text-[9px] text-slate-400 leading-normal">
+                    La forma más sencilla sin instalar nada es utilizar el puerto USB de tu Samsung V7:
+                  </p>
+                  <ol className="list-decimal list-inside text-[9px] text-slate-400 space-y-1">
+                    <li>Selecciona el formato <strong className="text-slate-300">Samsung V7 (.csv)</strong> arriba y descárgalo.</li>
+                    <li>Guárdalo en una memoria USB e insértala en el puerto de la consola del Samsung V7.</li>
+                    <li>En el ecógrafo, presiona la tecla de <strong className="text-slate-300">Patient</strong> en la consola táctil.</li>
+                    <li>Selecciona <strong className="text-slate-300">Import</strong>, selecciona el archivo CSV desde el USB y realiza el mapeo de columnas si es necesario. ¡La lista de pacientes se cargará al instante!</li>
+                  </ol>
+                </div>
+
+                <div className="border border-indigo-500/10 rounded-lg p-2.5 space-y-2 bg-[#090C17]">
+                  <span className="text-[9px] font-black uppercase text-emerald-400 tracking-wider font-mono flex items-center gap-1 animate-pulse">
+                    <Check className="h-3 w-3 text-emerald-500" /> Opción B: Puente DICOM Worklist Activo (Inalámbrico)
+                  </span>
+                  <p className="text-[9px] text-slate-400 leading-relaxed">
+                    Si quieres automatizarlo para que al presionar el botón <strong>"Search/Query"</strong> de tu <strong>Samsung V7</strong> jale la lista automáticamente por Wi-Fi sin usar USB:
+                  </p>
+                  
+                  <ol className="list-decimal list-inside text-[9px] text-slate-400 space-y-1.5">
+                    <li>Descarga la agenda en formato <strong className="text-indigo-300">Puente JSON (.json)</strong> de arriba y colócala en una carpeta de tu PC.</li>
+                    <li>Copia el script de Python de abajo y guárdalo como <code className="text-indigo-300">samsung_mwl.py</code> en esa misma carpeta.</li>
+                    <li>Ejecútalo en tu PC desde una consola con <code className="text-indigo-300">python samsung_mwl.py</code>.</li>
+                    <li>En tu ecógrafo <strong>Samsung V7</strong>:
+                      <ul className="list-disc list-inside pl-3 pt-1 space-y-0.5 text-slate-400">
+                        <li>Presiona el botón <strong className="text-slate-300">Utility</strong> (o Setup) en la consola física.</li>
+                        <li>Ve a la pestaña <strong className="text-slate-300">Connectivity</strong> y luego a <strong className="text-slate-300">DICOM</strong>.</li>
+                        <li>Haz clic en <strong className="text-slate-300">Add</strong> para añadir un servidor.</li>
+                        <li>Configura <strong className="text-indigo-300">Service Type: MWL</strong> (Modality Worklist).</li>
+                        <li>Establece el <strong className="text-indigo-300">AE Title: MWL_SERVER</strong>, la <strong className="text-indigo-300">IP</strong> de tu PC, y el Puerto <strong className="text-indigo-300">1040</strong>.</li>
+                        <li>Haz clic en <strong className="text-slate-300">Test</strong> para verificar la conexión.</li>
+                      </ul>
+                    </li>
+                    <li>¡Listo! Ahora ve a la pantalla de <strong className="text-slate-300">Patient</strong>, presiona <strong className="text-slate-300">Worklist</strong>, y haz clic en <strong className="text-slate-300">Query</strong> para descargar la agenda inalámbricamente.</li>
+                  </ol>
+
+                  <div className="space-y-1.5 pt-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[8.5px] font-black uppercase text-slate-500 font-mono">Script Python Local</span>
+                      <button
+                        type="button"
+                        onClick={copyToClipboard}
+                        className="text-[8px] font-black uppercase tracking-wider bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded flex items-center gap-1 transition cursor-pointer"
+                      >
+                        <Copy className="h-2.5 w-2.5" /> {copiedScript ? "Copiado" : "Copiar Código"}
+                      </button>
+                    </div>
+                    <pre className="text-[8px] font-mono p-2 bg-slate-950 rounded-lg border border-slate-850 max-h-[140px] overflow-y-auto text-indigo-300 whitespace-pre scrollbar-none select-all leading-normal">
+                      {pythonScript}
+                    </pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+
 export default function App() {
+  // Public Patient View System
+  const [currentCloudStudyId, setCurrentCloudStudyId] = useState<string>("");
+  const [isPatientPublicView, setIsPatientPublicView] = useState<boolean>(false);
+  const [isPatientViewLoading, setIsPatientViewLoading] = useState<boolean>(false);
+  const [patientViewError, setPatientViewError] = useState<string | null>(null);
+  const [loadedCloudPdfBase64, setLoadedCloudPdfBase64] = useState<string>("");
+  const [patientLogoUrl, setPatientLogoUrl] = useState<string>("");
+  const [operationalSummaryText, setOperationalSummaryText] = useState<string>("");
+  const [isGeneratingOperationalSummary, setIsGeneratingOperationalSummary] = useState<boolean>(false);
+
   // Navigation & General Settings
   const [activeTab, setActiveTab] = useState<"generator" | "classifications" | "consult" | "presets" | "api" | "bibliography" | "images" | "expert-analysis" | "measurements" | "cloud-db">("generator");
   
@@ -219,6 +1123,7 @@ export default function App() {
   const [isGeneratingInfographic, setIsGeneratingInfographic] = useState<boolean>(false);
   const [infographicUrl, setInfographicUrl] = useState<string | null>(null);
   const [infographicError, setInfographicError] = useState<string | null>(null);
+  const [attachInfographicToOfficialReport, setAttachInfographicToOfficialReport] = useState<boolean>(false);
   // Local storage customizable instructions
   const [systemInstruction, setSystemInstruction] = useState<string>("");
   const [chatInstruction, setChatInstruction] = useState<string>("");
@@ -296,6 +1201,8 @@ export default function App() {
     }
     return [];
   });
+  const [isUploadingToDrive, setIsUploadingToDrive] = useState(false);
+  const [driveUploadStatus, setDriveUploadStatus] = useState("");
 
   const [selectedLogo, setSelectedLogo] = useState<string>(() => {
     const saved = localStorage.getItem("rad_selected_logo");
@@ -318,13 +1225,16 @@ export default function App() {
   }, [selectedLogo]);
 
   const customLogoUrl = useMemo(() => {
+    if (isPatientPublicView && patientLogoUrl) {
+      return patientLogoUrl;
+    }
     const matched = customLogos.find(l => l.id === selectedLogo);
     if (matched) return matched.url;
     if (selectedLogo === "custom" && customLogos.length > 0) {
       return customLogos[0].url;
     }
     return "";
-  }, [selectedLogo, customLogos]);
+  }, [isPatientPublicView, patientLogoUrl, selectedLogo, customLogos]);
 
   const [selectedModel, setSelectedModel] = useState<string>(() => {
     return localStorage.getItem("rad_selected_model") || "gemini-3.5-flash";
@@ -333,6 +1243,166 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("rad_selected_model", selectedModel);
   }, [selectedModel]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const viewStudyId = params.get("view_study");
+    if (viewStudyId) {
+      setIsPatientPublicView(true);
+      setIsPatientViewLoading(true);
+      setPatientViewError(null);
+      
+      // Try to load from local storage rad_local_studies first
+      let localStudy: CloudStudy | null = null;
+      try {
+        const stored = localStorage.getItem("rad_local_studies");
+        if (stored) {
+          const parsed = JSON.parse(stored) as CloudStudy[];
+          const found = parsed.find(s => s.id === viewStudyId);
+          if (found) {
+            localStudy = found;
+          }
+        }
+      } catch (e) {
+        console.error("Error reading local studies in view parameter:", e);
+      }
+
+      if (localStudy) {
+        setCurrentCloudStudyId(localStudy.id);
+        setPatientName(localStudy.patientName || "");
+        setPatientEmail(localStudy.patientEmail || "");
+        setPatientAge(localStudy.patientAge || "");
+        setPatientGender(localStudy.patientGender || "");
+        setPatientId(localStudy.patientId || "");
+        setReportDate(localStudy.reportDate || "");
+        setDoctorName(localStudy.doctorName || "");
+        setDoctorLicense(localStudy.doctorLicense || "");
+        setClinicName(localStudy.clinicName || "");
+        setStudyType(localStudy.studyType || "");
+        setClinicalHistory(localStudy.clinicalHistory || "");
+        setFindings(localStudy.findings || "");
+        setGeneratedReport(localStudy.reportText || "");
+        setLoadedCloudPdfBase64(localStudy.pdfBase64 || "");
+        setPatientLogoUrl(localStudy.customLogoUrl || "");
+        setCustomLogoStyle(localStudy.customLogoStyle || "logo");
+        setCustomSignatureUrl(localStudy.customSignatureUrl || "");
+        setOperationalSummaryText(localStudy.operationalSummaryText || "");
+        if (localStudy.specificStudy) setSpecificStudy(localStudy.specificStudy);
+        if (localStudy.pdfLayoutType) setPdfLayoutType(localStudy.pdfLayoutType as any);
+        if (localStudy.selectedLogo) setSelectedLogo(localStudy.selectedLogo);
+        if (localStudy.attachedImages) setAttachedImages(localStudy.attachedImages);
+        if (localStudy.patientSummary) setPatientSummary(localStudy.patientSummary);
+        setIsPatientViewLoading(false);
+      } else {
+        getSingleStudyFromCloud(viewStudyId)
+          .then((study) => {
+            if (study) {
+              setCurrentCloudStudyId(study.id);
+              setPatientName(study.patientName || "");
+              setPatientEmail(study.patientEmail || "");
+              setPatientAge(study.patientAge || "");
+              setPatientGender(study.patientGender || "");
+              setPatientId(study.patientId || "");
+              setReportDate(study.reportDate || "");
+              setDoctorName(study.doctorName || "");
+              setDoctorLicense(study.doctorLicense || "");
+              setClinicName(study.clinicName || "");
+              setStudyType(study.studyType || "");
+              setClinicalHistory(study.clinicalHistory || "");
+              setFindings(study.findings || "");
+              setGeneratedReport(study.reportText || "");
+              setLoadedCloudPdfBase64(study.pdfBase64 || "");
+              setPatientLogoUrl(study.customLogoUrl || "");
+              setCustomLogoStyle(study.customLogoStyle || "logo");
+              setCustomSignatureUrl(study.customSignatureUrl || "");
+              setOperationalSummaryText(study.operationalSummaryText || "");
+              if (study.specificStudy) setSpecificStudy(study.specificStudy);
+              if (study.pdfLayoutType) setPdfLayoutType(study.pdfLayoutType as any);
+              if (study.selectedLogo) setSelectedLogo(study.selectedLogo);
+              if (study.attachedImages) setAttachedImages(study.attachedImages);
+              if (study.patientSummary) setPatientSummary(study.patientSummary);
+            } else {
+              setPatientViewError("El estudio clínico solicitado no existe o el enlace es incorrecto.");
+            }
+          })
+          .catch((err) => {
+            console.error("Error fetching single study publicly:", err);
+            const isQuota = 
+              err?.message?.toLowerCase().includes("quota") || 
+              String(err).toLowerCase().includes("quota") || 
+              err?.message?.toLowerCase().includes("exceeded") || 
+              String(err).toLowerCase().includes("exceeded");
+            
+            if (isQuota) {
+              setPatientViewError(
+                "El servidor de base de datos temporal ha superado su límite de cuota diaria gratuita de Google Cloud (Plan Free de AI Studio). Por favor, contacte a su especialista de salud o reintente más tarde cuando se reinicie la cuota diaria de Google. Su reporte clínico está guardado de forma 100% segura en la nube."
+              );
+            } else {
+              setPatientViewError("Error de conexión al cargar el estudio clínico. Por favor, reintente.");
+            }
+          })
+          .finally(() => {
+            setIsPatientViewLoading(false);
+          });
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/firebase-config")
+      .then((res) => {
+        if (!res.ok) throw new Error("Could not fetch server config");
+        return res.json();
+      })
+      .then((serverConfig) => {
+        const localCustomStr = localStorage.getItem("rad_custom_firebase_config");
+        let localCustom = null;
+        if (localCustomStr) {
+          try {
+            localCustom = JSON.parse(localCustomStr);
+          } catch (e) {}
+        }
+
+        if (localCustom && localCustom.apiKey && localCustom.projectId) {
+          // El navegador tiene una configuración personalizada en localStorage.
+          if (serverConfig && (serverConfig.projectId === "gen-lang-client-0578019690" || !serverConfig.projectId)) {
+            // El servidor tiene la base de datos predeterminada de AI Studio.
+            // Sincronizamos subiendo nuestra configuración personalizada al servidor.
+            console.log("Detectado Firebase personalizado en localStorage local. Sincronizando con el servidor para fijarlo...");
+            fetch("/api/save-firebase-config", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ config: localCustom })
+            })
+            .then(res => res.json())
+            .then(data => {
+              if (data.success) {
+                console.log("¡Configuración de Firebase personalizada fijada en el servidor!");
+              }
+            })
+            .catch(err => console.error("Error al sincronizar Firebase personalizado con el servidor:", err));
+          } else if (serverConfig && serverConfig.projectId !== localCustom.projectId) {
+            // El servidor tiene una configuración personalizada diferente de la local. El servidor manda.
+            console.log("Sincronizando configuración de Firebase desde el servidor...");
+            localStorage.setItem("rad_custom_firebase_config", JSON.stringify(serverConfig));
+            localStorage.setItem("rad_custom_firebase_config_raw", JSON.stringify(serverConfig, null, 2));
+            window.location.reload();
+          }
+        } else {
+          // El navegador NO tiene una configuración en localStorage.
+          if (serverConfig && serverConfig.projectId && serverConfig.projectId !== "gen-lang-client-0578019690") {
+            // Pero el servidor sí tiene una personalizada. La descargamos y recargamos.
+            console.log("Descargando configuración de Firebase personalizada del servidor...");
+            localStorage.setItem("rad_custom_firebase_config", JSON.stringify(serverConfig));
+            localStorage.setItem("rad_custom_firebase_config_raw", JSON.stringify(serverConfig, null, 2));
+            window.location.reload();
+          }
+        }
+      })
+      .catch((err) => {
+        console.warn("No se pudo sincronizar la configuración de Firebase con el servidor:", err);
+      });
+  }, []);
 
   useEffect(() => {
     const unsubscribe = initAuth(
@@ -348,6 +1418,49 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  const compressImageBase64 = (base64Str: string, maxWidth: number = 400, quality: number = 0.75): Promise<string> => {
+    return new Promise((resolve) => {
+      try {
+        if (!base64Str || !base64Str.startsWith("data:image")) {
+          resolve(base64Str);
+          return;
+        }
+        const img = new Image();
+        img.onload = () => {
+          let width = img.width;
+          let height = img.height;
+          
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+          
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(0, 0, width, height);
+            ctx.drawImage(img, 0, 0, width, height);
+            // Compress to JPEG for high efficiency
+            const compressed = canvas.toDataURL("image/jpeg", quality);
+            resolve(compressed);
+          } else {
+            resolve(base64Str);
+          }
+        };
+        img.onerror = () => {
+          resolve(base64Str);
+        };
+        img.src = base64Str;
+      } catch (e) {
+        console.error("Error compressing image:", e);
+        resolve(base64Str);
+      }
+    });
+  };
+
   const handleCustomLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -356,13 +1469,14 @@ export default function App() {
     const cleanName = originalName.substring(0, originalName.lastIndexOf('.')) || originalName;
     
     const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64 = reader.result as string;
+    reader.onloadend = async () => {
+      const rawBase64 = reader.result as string;
+      const compressedBase64 = await compressImageBase64(rawBase64, 500, 0.75);
       const newLogoId = "custom-logo-" + Date.now();
       const newLogo = {
         id: newLogoId,
         name: cleanName,
-        url: base64
+        url: compressedBase64
       };
       setCustomLogos(prev => [...prev, newLogo]);
       setSelectedLogo(newLogoId);
@@ -406,10 +1520,11 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64 = reader.result as string;
-      setCustomSignatureUrl(base64);
-      localStorage.setItem("rad_custom_signature", base64);
+    reader.onloadend = async () => {
+      const rawBase64 = reader.result as string;
+      const compressedBase64 = await compressImageBase64(rawBase64, 350, 0.75);
+      setCustomSignatureUrl(compressedBase64);
+      localStorage.setItem("rad_custom_signature", compressedBase64);
     };
     reader.readAsDataURL(file);
   };
@@ -463,6 +1578,8 @@ export default function App() {
   const [showWhatsAppModal, setShowWhatsAppModal] = useState<boolean>(false);
   const [whatsappShareType, setWhatsappShareType] = useState<'report_pdf' | 'patient_infographic' | 'patient_summary'>('report_pdf');
   const [whatsappPhone, setWhatsappPhone] = useState<string>(() => localStorage.getItem("rad_whatsapp_phone") || "");
+  const [whatsappIncludePatientSummary, setWhatsappIncludePatientSummary] = useState<boolean>(true);
+  const [whatsappIncludeOperationalSummary, setWhatsappIncludeOperationalSummary] = useState<boolean>(true);
   
   // Gmail Share States
   const [showGmailModal, setShowGmailModal] = useState<boolean>(false);
@@ -487,7 +1604,17 @@ export default function App() {
     return localStorage.getItem("rad_gmail_access_token");
   });
   const [isLoggingInGmail, setIsLoggingInGmail] = useState<boolean>(false);
+  const [authEmail, setAuthEmail] = useState<string>("");
+  const [authPassword, setAuthPassword] = useState<string>("");
+  const [authFormMode, setAuthFormMode] = useState<'google' | 'email_login' | 'email_register'>('google');
   const [isSendingGmail, setIsSendingGmail] = useState<boolean>(false);
+
+  // 1c. WORKLIST ("LISTA DE TRABAJO") STATES
+  const [worklist, setWorklist] = useState<Worklist | null>(null);
+  const [isWorklistSidebarOpen, setIsWorklistSidebarOpen] = useState<boolean>(false);
+  const [isProcessingWorklist, setIsProcessingWorklist] = useState<boolean>(false);
+  const [worklistError, setWorklistError] = useState<string | null>(null);
+  const [selectedWorklistPatientId, setSelectedWorklistPatientId] = useState<string | null>(null);
   
   // Real-time voice dictation states using Web Speech API
   const [isListening, setIsListening] = useState<boolean>(false);
@@ -796,7 +1923,7 @@ export default function App() {
     const masculineStudies = [
       "Hombro", "Tobillo", "Pie", "Doppler venoso de miembro inferior",
       "Doppler arterial de miembro inferior", "Cráneo", "Abdomen",
-      "Escroto", "Cuello", "Tórax", "Codo"
+      "Escroto", "Cuello", "Tórax", "Codo", "Muslo Anterior", "Muslo Posterior"
     ];
 
     if (masculineStudies.map(s => s.toLowerCase()).includes(study.toLowerCase())) {
@@ -1248,6 +2375,29 @@ export default function App() {
   const [cloudSearch, setCloudSearch] = useState<string>("");
   const [viewingCloudStudy, setViewingCloudStudy] = useState<CloudStudy | null>(null);
 
+  const pdfStateRef = useRef<any>({});
+  pdfStateRef.current = {
+    generatedReport,
+    patientName,
+    patientEmail,
+    patientAge,
+    patientGender,
+    patientId,
+    reportDate,
+    doctorName,
+    doctorLicense,
+    clinicName,
+    clinicalHistory,
+    findings,
+    studyType,
+    customLogoUrl,
+    customLogoStyle,
+    customSignatureUrl,
+    specificStudy,
+    pdfLayoutType,
+    selectedLogo,
+  };
+
   useEffect(() => {
     if (!generatedReport) return;
 
@@ -1656,12 +2806,14 @@ Ejemplo:
   const [reportError, setReportError] = useState<string | null>(null);
   const [copiedReportId, setCopiedReportId] = useState<boolean>(false);
   const [presetCopiedId, setPresetCopiedId] = useState<string | null>(null);
+  const [copiedEhrStudyId, setCopiedEhrStudyId] = useState<string | null>(null);
 
   // States for embedded classification recommendations
   const [classRecommendations, setClassRecommendations] = useState<any[] | null>(null);
   const [isRecommendingClassifications, setIsRecommendingClassifications] = useState<boolean>(false);
   const [recommenderError, setRecommenderError] = useState<string | null>(null);
   const [incorporatedRecs, setIncorporatedRecs] = useState<Record<number, boolean>>({});
+  const [includeManagementRecs, setIncludeManagementRecs] = useState<Record<number, boolean>>({});
   const [incorporatingIndex, setIncorporatingIndex] = useState<number | null>(null);
 
   // States for interactive report modification & image valuation
@@ -1700,8 +2852,11 @@ Ejemplo:
   const [isGeneratingPatientSummary, setIsGeneratingPatientSummary] = useState<boolean>(false);
   const [patientSummaryError, setPatientSummaryError] = useState<string | null>(null);
   const [expandedFindings, setExpandedFindings] = useState<Record<number, boolean>>({});
+  const [attachSummaryToOfficialReport, setAttachSummaryToOfficialReport] = useState<boolean>(false);
   const [isAsistenteMedidasOpen, setIsAsistenteMedidasOpen] = useState<boolean>(false);
   const [isCreadorNotasOpen, setIsCreadorNotasOpen] = useState<boolean>(false);
+  const [isCreadorCuadroSinopticoOpen, setIsCreadorCuadroSinopticoOpen] = useState<boolean>(false);
+  const [isCreadorSinopsisFracturasOpen, setIsCreadorSinopsisFracturasOpen] = useState<boolean>(false);
 
   // States for Advanced Vascular Analysis & Schematic Drawing
   const [vascularTable, setVascularTable] = useState<string>("");
@@ -1721,6 +2876,10 @@ Ejemplo:
     width?: number;
     height?: number;
   }[]>([]);
+  const [loadingAiLabelId, setLoadingAiLabelId] = useState<string | null>(null);
+  const [loadingAutocompleteId, setLoadingAutocompleteId] = useState<string | null>(null);
+  const [isLabelingAll, setIsLabelingAll] = useState<boolean>(false);
+  const [isCorrelatingFigures, setIsCorrelatingFigures] = useState<boolean>(false);
   const [vascularDescriptions, setVascularDescriptions] = useState<Record<string, string>>({});
   const [vascularSubLocations, setVascularSubLocations] = useState<Record<string, string>>({});
   const [isAnalyzingVascular, setIsAnalyzingVascular] = useState<boolean>(false);
@@ -1732,6 +2891,7 @@ Ejemplo:
   const [shoulderDescriptions, setShoulderDescriptions] = useState<Record<string, string>>({});
   const [shoulderDescriptionsLeft, setShoulderDescriptionsLeft] = useState<Record<string, string>>({});
   const [includeKneeSchemaInReport, setIncludeKneeSchemaInReport] = useState<boolean>(true);
+  const [includeGonartrosisSchemaInReport, setIncludeGonartrosisSchemaInReport] = useState<boolean>(false);
   const [kneeStates, setKneeStates] = useState<Record<string, string>>({});
   const [kneeStatesLeft, setKneeStatesLeft] = useState<Record<string, string>>({});
   const [kneeDescriptions, setKneeDescriptions] = useState<Record<string, string>>({});
@@ -1763,6 +2923,8 @@ Ejemplo:
   const [includeAppendixSchemaInReport, setIncludeAppendixSchemaInReport] = useState<boolean>(true);
   const [includeDiverticulitisSchemaInReport, setIncludeDiverticulitisSchemaInReport] = useState<boolean>(true);
   const [includeSmallBowelSchemaInReport, setIncludeSmallBowelSchemaInReport] = useState<boolean>(true);
+  const [includeHepatopatiaSchemaInReport, setIncludeHepatopatiaSchemaInReport] = useState<boolean>(true);
+  const [includeAneurismaSchemaInReport, setIncludeAneurismaSchemaInReport] = useState<boolean>(true);
   const [includeElastographyInReport, setIncludeElastographyInReport] = useState<boolean>(false);
   const [elastographyHasStiffness, setElastographyHasStiffness] = useState<boolean>(true);
   const [elastographyStiffness, setElastographyStiffness] = useState<number>(5.2);
@@ -1777,6 +2939,7 @@ Ejemplo:
   const [scrotumStates, setScrotumStates] = useState<Record<string, string>>({});
   const [scrotumDescriptions, setScrotumDescriptions] = useState<Record<string, string>>({});
   const [includeWristSchemaInReport, setIncludeWristSchemaInReport] = useState<boolean>(true);
+  const [includeDeQuervainSchemaInReport, setIncludeDeQuervainSchemaInReport] = useState<boolean>(false);
   const [wristStates, setWristStates] = useState<Record<string, string>>({});
   const [wristDescriptions, setWristDescriptions] = useState<Record<string, string>>({});
   const [includeBreastSchemaInReport, setIncludeBreastSchemaInReport] = useState<boolean>(true);
@@ -1828,6 +2991,14 @@ Ejemplo:
   const [isImageEvaluationExpanded, setIsImageEvaluationExpanded] = useState<boolean>(false);
   const [isAdditionalEvaluationExpanded, setIsAdditionalEvaluationExpanded] = useState<boolean>(false);
 
+  // States for Semiology and Clinical Justification Table
+  const [semiologyData, setSemiologyData] = useState<any | null>(null);
+  const [selectedConfirmedDiagnoses, setSelectedConfirmedDiagnoses] = useState<boolean[]>([]);
+  const [selectedRuledOutPathologies, setSelectedRuledOutPathologies] = useState<boolean[]>([]);
+  const [isGeneratingSemiology, setIsGeneratingSemiology] = useState<boolean>(false);
+  const [semiologyError, setSemiologyError] = useState<string | null>(null);
+  const [isSemiologyExpanded, setIsSemiologyExpanded] = useState<boolean>(false);
+
   // States for Image Annotations / Marking regions
   const [annotations, setAnnotations] = useState<ImageAnnotation[]>([]);
   const [activeAnnotationTool, setActiveAnnotationTool] = useState<"point" | "box">("point");
@@ -1866,6 +3037,17 @@ Ejemplo:
   // 4. STATE FOR API HEALTH DIAGNOSTICS
   const [apiDiagnostics, setApiDiagnostics] = useState<any>(null);
   const [checkingApi, setCheckingApi] = useState<boolean>(false);
+
+  // Dynamic Firebase configuration states
+  const [customFirebaseRaw, setCustomFirebaseRaw] = useState<string>(() => {
+    return localStorage.getItem("rad_custom_firebase_config_raw") || "";
+  });
+  const [firebaseConfigStatus, setFirebaseConfigStatus] = useState<string | null>(null);
+  const [isTestingFirebaseConfig, setIsTestingFirebaseConfig] = useState<boolean>(false);
+  const [firebaseTestResult, setFirebaseTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [isMigratingStudies, setIsMigratingStudies] = useState<boolean>(false);
+  const [migrationProgress, setMigrationProgress] = useState<string | null>(null);
+  const [confirmResetFirebase, setConfirmResetFirebase] = useState<boolean>(false);
 
   const getStructuresForProtocol = (protocol: string): Array<{ id: string; label: string; allowedStates: string[] }> => {
     const norm = protocol.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -2459,6 +3641,7 @@ Ejemplo:
   };
 
   const resetGeneratorForm = () => {
+    setCurrentCloudStudyId("");
     setModality("Radiografía");
     setSpecificStudy("Tórax");
     setCustomStudy("");
@@ -2821,6 +4004,9 @@ Ejemplo:
       return;
     }
 
+    // Reset current cloud study ID for the newly generated report
+    setCurrentCloudStudyId("");
+
     setIsGenerating(true);
     setReportError(null);
     setGeneratedReport("");
@@ -2876,13 +4062,25 @@ Ejemplo:
           uploadedReportMimeType: uploadedReportMimeType || undefined,
           systemInstruction: systemInstruction || undefined,
           annotations: annotations.length > 0 ? annotations : undefined,
+          attachedImages: attachedImages && attachedImages.length > 0 ? attachedImages.map((img, idx) => ({
+            id: img.id,
+            index: idx + 1,
+            caption: img.caption || ""
+          })) : undefined,
         }),
       });
 
-      const data = await response.json();
+      let data: any;
+      try {
+        data = await response.json();
+      } catch (jsonErr) {
+        const textResponse = await response.text().catch(() => "");
+        throw new Error(`La respuesta del servidor no es JSON válido (Código HTTP ${response.status}). Detalle: ${textResponse.slice(0, 200) || "Sin respuesta del servidor"}`);
+      }
+
       clearInterval(stepInterval);
 
-      if (data.success) {
+      if (response.ok && data.success) {
         if (generatedReport) {
           setReportHistory((prev) => [...prev, generatedReport]);
           setReportRedoHistory([]);
@@ -2915,11 +4113,11 @@ Ejemplo:
           triggerAutoImageEvaluation(base64Image, selectedFile?.type, studyType, clinicalHistory, findings, annotations);
         }
       } else {
-        setReportError(data.error || "Ocurrió un error desconocido al comunicarse con el modelo.");
+        setReportError(data.error || `Error del servidor (Código ${response.status}): ${JSON.stringify(data)}`);
       }
     } catch (error: any) {
       clearInterval(stepInterval);
-      setReportError("Falla de red o de servidor. Asegúrate de configurar correctamente tu API Key en la pestaña de Configuración.");
+      setReportError(`Falla de red o de servidor: ${error?.message || String(error)}. Asegúrate de que el servidor está encendido y que tu API Key en la pestaña de Configuración es correcta.`);
       console.error(error);
     } finally {
       setIsGenerating(false);
@@ -3004,6 +4202,11 @@ Ejemplo:
           instruction: instructionText,
           image: base64Image || undefined,
           mimeType: selectedFile?.type || undefined,
+          attachedImages: attachedImages && attachedImages.length > 0 ? attachedImages.map((img, idx) => ({
+            id: img.id,
+            index: idx + 1,
+            caption: img.caption || ""
+          })) : undefined,
         }),
       });
       const data = await response.json();
@@ -3420,60 +4623,36 @@ Ejemplo:
   };
 
   // Gmail API Integrated Share Handlers (Google Workspace Integration)
-  const handleOpenGmailShare = (type: 'report_pdf' | 'patient_summary' | 'patient_infographic' | 'both_pdfs') => {
-    setGmailAttachedType(type as any);
+  const handleOpenGmailShare = async (type: 'report_pdf' | 'patient_summary' | 'patient_infographic' | 'both_pdfs') => {
+    setGmailAttachedType('report_pdf');
     setGmailTo(patientEmail || "");
     setGmailSuccessMessage(null);
     setGmailErrorMessage(null);
 
-    // Auto-select files that have been generated and are ready for download
-    const hasReport = type === 'report_pdf' || type === 'both_pdfs' || !!generatedReport;
-    const hasSummary = type === 'patient_summary' || type === 'both_pdfs' || !!patientSummary;
-    const hasInfographic = type === 'patient_infographic' || !!infographicUrl;
-
-    setGmailAttachReport(hasReport);
-    setGmailAttachSummary(hasSummary);
-    setGmailAttachInfographic(hasInfographic);
+    // Only select the official report PDF (as other elements are now included directly in the report)
+    setGmailAttachReport(true);
+    setGmailAttachSummary(false);
+    setGmailAttachInfographic(false);
     
-    // Construct default subject & email body nicely
+    // Construct default subject & email body nicely for the official report
     const clientName = patientName || "Paciente";
-    let subject = `Información de su Estudio - ${clientName}`;
-    let body = `Estimado(a) ${clientName},\n\nLe enviamos adjunto a este correo los siguientes documentos del estudio realizado:\n\n`;
-
-    const attachedLines: string[] = [];
-    if (hasReport) {
-      attachedLines.push(`- 📄 Reporte de Estudio Clínico Oficial`);
-    }
-    if (hasSummary) {
-      attachedLines.push(`- 🗣 Explicación Sencilla y Traducción Empática (analogías claras)`);
-    }
-    if (hasInfographic) {
-      attachedLines.push(`- 🎨 Infografía de Bienestar y Salud (formato visual para imprimir)`);
-    }
-
-    if (attachedLines.length > 0) {
-      body += attachedLines.join("\n") + "\n\n";
-    } else {
-      body += `Los archivos de su consulta de bienestar.\n\n`;
-    }
-
-    if (hasReport && hasSummary && hasInfographic) {
-      subject = `Resultados Completos de su Estudio (Reporte, Explicación e Infografía) - ${clientName}`;
-    } else if (hasReport && hasSummary) {
-      subject = `Reporte Clínico y Traducción Explicativa - ${clientName}`;
-    } else if (hasReport) {
-      subject = `Reporte de Estudio Oficial - ${clientName}`;
-    } else if (hasSummary) {
-      subject = `Traducción y Explicación Explicativa de Estudio - ${clientName}`;
-    } else if (hasInfographic) {
-      subject = `Infografía de Bienestar y Salud del Estudio - ${clientName}`;
-    }
+    let subject = `Reporte de Estudio Clínico - ${clientName}`;
+    let body = `Estimado(a) ${clientName},\n\nLe enviamos adjunto a este correo el Reporte de Estudio Clínico Oficial realizado.\n\n`;
 
     body += `Quedamos a su entera disposición para cualquier aclaración o consulta adicional.\n\nAtentamente,\n${doctorName || "Médico Especialista"}`;
     
     setGmailSubject(subject);
     setGmailBody(body);
     setShowGmailModal(true);
+
+    // Auto-save/update to cloud if user is logged in to ensure a valid and updated cloud link
+    if (gmailUser && generatedReport) {
+      try {
+        await handleSaveToCloud();
+      } catch (err) {
+        console.error("Auto cloud save error on opening Gmail share:", err);
+      }
+    }
   };
 
   const handleGmailLogin = async () => {
@@ -3491,6 +4670,83 @@ Ejemplo:
     } catch (err: any) {
       console.error("Gmail authorization failed:", err);
       setGmailErrorMessage("Error al autorizar con Google: " + (err.message || String(err)));
+    } finally {
+      setIsLoggingInGmail(false);
+    }
+  };
+
+  const handleAnonymousLogin = async () => {
+    setIsLoggingInGmail(true);
+    setGmailErrorMessage(null);
+    try {
+      const result = await anonymousSignIn();
+      if (result) {
+        setGmailUser(result.user);
+        setGmailAccessToken(result.accessToken);
+      }
+    } catch (err: any) {
+      console.error("Anonymous authentication failed:", err);
+      setGmailErrorMessage("Error al iniciar acceso instantáneo: " + (err.message || String(err)));
+    } finally {
+      setIsLoggingInGmail(false);
+    }
+  };
+
+  const handleEmailLogin = async () => {
+    if (!authEmail || !authPassword) {
+      setGmailErrorMessage("Por favor ingrese correo y contraseña.");
+      return;
+    }
+    setIsLoggingInGmail(true);
+    setGmailErrorMessage(null);
+    try {
+      const result = await emailSignIn(authEmail, authPassword);
+      if (result) {
+        setGmailUser(result.user);
+        setGmailAccessToken(result.accessToken);
+      }
+    } catch (err: any) {
+      console.error("Email authentication failed:", err);
+      let friendlyMsg = err.message || String(err);
+      if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
+        friendlyMsg = "Credenciales incorrectas o usuario no registrado.";
+      } else if (err.code === 'auth/invalid-email') {
+        friendlyMsg = "El formato del correo es inválido.";
+      }
+      setGmailErrorMessage("Error de inicio de sesión: " + friendlyMsg);
+    } finally {
+      setIsLoggingInGmail(false);
+    }
+  };
+
+  const handleEmailRegister = async () => {
+    if (!authEmail || !authPassword) {
+      setGmailErrorMessage("Por favor ingrese correo y contraseña.");
+      return;
+    }
+    if (authPassword.length < 6) {
+      setGmailErrorMessage("La contraseña debe tener al menos 6 caracteres.");
+      return;
+    }
+    setIsLoggingInGmail(true);
+    setGmailErrorMessage(null);
+    try {
+      const result = await emailSignUp(authEmail, authPassword);
+      if (result) {
+        setGmailUser(result.user);
+        setGmailAccessToken(result.accessToken);
+      }
+    } catch (err: any) {
+      console.error("Email registration failed:", err);
+      let friendlyMsg = err.message || String(err);
+      if (err.code === 'auth/email-already-in-use') {
+        friendlyMsg = "Este correo electrónico ya está registrado.";
+      } else if (err.code === 'auth/invalid-email') {
+        friendlyMsg = "El formato del correo es inválido.";
+      } else if (err.code === 'auth/weak-password') {
+        friendlyMsg = "La contraseña es muy débil (mínimo 6 caracteres).";
+      }
+      setGmailErrorMessage("Error al registrar especialista: " + friendlyMsg);
     } finally {
       setIsLoggingInGmail(false);
     }
@@ -3716,62 +4972,91 @@ Ejemplo:
   };
 
   // WhatsApp Share Handlers
-  const handleOpenWhatsAppShare = (type: 'report_pdf' | 'patient_infographic' | 'patient_summary') => {
+  const handleOpenWhatsAppShare = async (type: 'report_pdf' | 'patient_infographic' | 'patient_summary') => {
     setWhatsappShareType(type);
     setShowWhatsAppModal(true);
+
+    if (type === 'patient_summary') {
+      setWhatsappIncludePatientSummary(true);
+      setWhatsappIncludeOperationalSummary(false);
+    } else if (type === 'report_pdf') {
+      setWhatsappIncludeOperationalSummary(operationalSummaryText ? true : false);
+      setWhatsappIncludePatientSummary(false);
+    } else {
+      setWhatsappIncludePatientSummary(patientSummary ? true : false);
+      setWhatsappIncludeOperationalSummary(operationalSummaryText ? true : false);
+    }
   };
 
-  const getWhatsAppTextPreview = () => {
-    if (whatsappShareType === 'patient_summary') {
-      if (!patientSummary) return "Por favor, genera primero el 'Acompañamiento para el Paciente'.";
-      let text = `*ACOMPAÑAMIENTO EXPLICATIVO DE SU ESTUDIO* 🩺\n\n`;
-      if (patientName) {
-        text += `*Paciente:* ${patientName}\n`;
-      }
-      if (studyType) {
-        text += `*Estudio:* ${studyType}\n`;
-      }
-      if (reportDate) {
-        text += `*Fecha del Estudio:* ${formatDateToDMY(reportDate)}\n`;
-      }
-      text += `\nEstimado paciente, adjunto le comparto una explicación médica de su estudio radiológico traducida a un lenguaje sencillo y comprensible en formato digital PDF.\n\n`;
-      text += `Este documento está redactado de forma objetiva y didáctica para ayudarle a comprender los hallazgos para su próxima consulta de seguimiento.`;
-      return text;
+  const getWhatsAppTextPreview = (overrideId?: string) => {
+    let text = `*REPORTE RADIOLÓGICO DIGITAL*\n`;
+    text += `*━━━━━━━━━━━━━━━━━━━━━*\n\n`;
+
+    if (patientName) text += `*Paciente:* ${patientName}\n`;
+    if (patientAge) text += `*Edad:* ${patientAge}\n`;
+    if (patientGender) text += `*Género:* ${patientGender}\n`;
+    if (patientId) text += `*ID/Cédula:* ${patientId}\n`;
+    if (studyType) text += `*Estudio:* ${studyType}\n`;
+    if (reportDate) text += `*Fecha:* ${formatDateToDMY(reportDate)}\n`;
+    if (doctorName) text += `*Especialista:* ${doctorName}\n`;
+    text += `\n`;
+
+    // 1. Resumen Clínico Operativo (Conclusions)
+    if (whatsappIncludeOperationalSummary && operationalSummaryText) {
+      const cleanOperationalSummary = operationalSummaryText
+        .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F900}-\u{1F9FF}\u{1F1E6}-\u{1F1FF}\u{1F191}-\u{1F251}\u{1F004}\u{1F0CF}\u{1F170}-\u{1F171}\u{1F17E}-\u{1F17F}\u{1F18E}\u{3030}\u{2B50}\u{2B55}\u{2934}-\u{2935}\u{2B05}-\u{2B07}\u{2B1B}-\u{2B1C}\u{3297}\u{3299}\u{303D}\u{00A9}\u{00AE}\u{2122}\u{2139}\u{24C2}\u{25AA}-\u{25AB}\u{25B6}\u{25C0}\u{25FB}-\u{25FE}\u{1F000}-\u{1F9FF}]/gu, "")
+        .replace(/\p{Emoji_Presentation}/gu, "")
+        .replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD00-\uDFFF]/g, "")
+        .replace(/  +/g, ' ')
+        .trim();
+
+      text += `*RESUMEN CLÍNICO OPERATIVO*\n`;
+      text += `*━━━━━━━━━━━━━━━━━━━━━*\n`;
+      text += `${cleanOperationalSummary}\n\n`;
     }
 
-    if (whatsappShareType === 'patient_infographic') {
-      let text = `*INFOGRAFÍA EXPLICATIVA PARA EL PACIENTE* 🎨\n\n`;
-      if (patientName) {
-        text += `*Paciente:* ${patientName}\n\n`;
+    // 2. Acompañamiento Explicativo para el Paciente
+    if (whatsappIncludePatientSummary && patientSummary) {
+      text += `*EXPLICACIÓN PARA EL PACIENTE*\n`;
+      text += `_Traducción de hallazgos médicos a un lenguaje claro_\n`;
+      text += `*━━━━━━━━━━━━━━━━━━━━━*\n\n`;
+
+      if (patientSummary.summary) {
+        text += `*Resumen de su estado:*\n${patientSummary.summary.trim()}\n\n`;
       }
-      text += `Estimado paciente, le comparto una infografía visual y amigable especialmente diseñada para explicar de forma muy sencilla los resultados de su estudio.\n\n`;
-      if (infographicUrl) {
-        text += `Puede visualizarla e imprimirla en alta definición ingresando al siguiente enlace:\n🔗 ${infographicUrl}\n\n`;
-      } else {
-        text += `(La infografía se está procesando; puede descargarla y enviarla directamente desde el panel principal).\n\n`;
+
+      if (patientSummary.keyFindings && patientSummary.keyFindings.length > 0) {
+        text += `*Hallazgos Principales:*\n`;
+        patientSummary.keyFindings.forEach((finding: any, idx: number) => {
+          const title = finding.finding || finding.title || "";
+          const desc = finding.explanation || finding.description || "";
+          text += `${idx + 1}. *${title}:* ${desc}\n`;
+        });
+        text += `\n`;
       }
-      text += `Quedo a su disposición para cualquier consulta de seguimiento.`;
-      return text;
     }
 
-    // Default: 'report_pdf'
-    let text = `*INFORME CLÍNICO OFICIAL DE ESTUDIO RADIOLÓGICO* 📄\n\n`;
-    if (patientName) {
-      text += `*Paciente:* ${patientName}\n`;
-    }
-    if (studyType) {
-      text += `*Estudio:* ${studyType}\n`;
-    }
-    if (reportDate) {
-      text += `*Fecha del Estudio:* ${formatDateToDMY(reportDate)}\n`;
-    }
-    text += `\nEstimado paciente, adjunto le comparto el reporte oficial del estudio en formato digital PDF, verificado por el médico especialista y con firma digital autónoma.\n\n`;
-    text += `Le sugiero conservarlo y presentarlo impreso o digital en su próxima consulta de seguimiento con su médico de cabecera.`;
+    text += `*━━━━━━━━━━━━━━━━━━━━━*\n`;
+    text += `_Por favor, descargue y conserve los documentos PDF oficiales adjuntos para presentarlos en su próxima consulta de seguimiento._`;
     return text;
   };
 
   const handleSendWhatsAppAction = async () => {
-    const text = getWhatsAppTextPreview();
+    let studyIdToUse = currentCloudStudyId;
+
+    // Save/update to cloud automatically first to guarantee the link is always generated, saved and up to date! (skip if already saved)
+    if (gmailUser && generatedReport && !currentCloudStudyId) {
+      try {
+        const savedId = await handleSaveToCloud();
+        if (savedId) {
+          studyIdToUse = savedId;
+        }
+      } catch (err) {
+        console.error("Auto cloud save error inside handleSendWhatsAppAction:", err);
+      }
+    }
+
+    const text = getWhatsAppTextPreview(studyIdToUse);
     const cleanPhone = whatsappPhone ? whatsappPhone.replace(/\D/g, "") : "";
     const urlEncoded = encodeURIComponent(text);
     
@@ -3788,40 +5073,8 @@ Ejemplo:
       console.error("Popup blocker prevented opening WhatsApp:", popupErr);
     }
 
-    // 2. Perform the heavy pdf/infographic processing in the background
-    if (whatsappShareType === 'report_pdf') {
-      // First, trigger automatic PDF download for convenience on desktop
-      try {
-        handleDownloadNativePDF(false);
-      } catch (err) {
-        console.warn("Direct PDF download background call failed:", err);
-      }
-      
-      // Try native share on mobile/tablets asynchronously
-      if (navigator.share) {
-        try {
-          handleDownloadNativePDF(false, true);
-        } catch (err) {
-          console.warn("Native file sharing failed or not supported. Falling back to text message link.");
-        }
-      }
-    } else if (whatsappShareType === 'patient_summary') {
-      // First, trigger automatic companion explanation PDF download for convenience on desktop
-      try {
-        handleDownloadPatientSummaryPDF(false);
-      } catch (err) {
-        console.warn("Direct patient summary PDF download background call failed:", err);
-      }
-      
-      // Try native share on mobile/tablets asynchronously
-      if (navigator.share) {
-        try {
-          handleDownloadPatientSummaryPDF(false, true);
-        } catch (err) {
-          console.warn("Native file sharing failed or not supported. Falling back to text message link.");
-        }
-      }
-    } else if (whatsappShareType === 'patient_infographic') {
+    // 2. Perform the heavy infographic processing in the background (No PDF downloads to local device)
+    if (whatsappShareType === 'patient_infographic') {
       if (infographicUrl && (infographicUrl.startsWith("data:") || infographicUrl.startsWith("blob:") || infographicUrl.startsWith("http"))) {
         try {
           const response = await fetch(infographicUrl);
@@ -3908,6 +5161,70 @@ Ejemplo:
     }
   };
 
+  // ACTION: GENERATE OPERATIONAL SUMMARY FOR WHATSAPP
+  const handleGenerateWhatsAppSummary = async () => {
+    const reportContent = isEditingReportManual ? editedReportText : generatedReport;
+    if (!reportContent) return;
+    setIsGeneratingOperationalSummary(true);
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: selectedModel,
+          messages: [{
+            role: "user",
+            text: "Resume de forma muy concisa ÚNICAMENTE los hallazgos clínicos principales de este reporte médico en 3 o 4 viñetas de texto asertivas y claras, redactadas con un lenguaje profesional pero comprensible, apto para ser compartido por WhatsApp y consultado digitalmente por el paciente. NO incluyas ninguna recomendación, sugerencia de manejo ni plan a futuro, limítate estrictamente a los hallazgos de forma asertiva. No agregues preámbulos, saludos, ni comentarios personales, devuelve directamente las viñetas con guiones '-'. Reporte:\n\n" + reportContent
+          }]
+        })
+      });
+      const data = await response.json();
+      if (data.success && data.reply) {
+        const summary = data.reply.trim();
+        setOperationalSummaryText(summary);
+
+        // If currently synced to cloud, update cloud record too so the patient can see it immediately
+        if (currentCloudStudyId && gmailUser?.uid) {
+          let pdfB64 = "";
+          await saveStudyToCloud(gmailUser.uid, gmailUser.email || "", {
+            id: currentCloudStudyId,
+            timestamp: new Date().toLocaleString("es-ES", { hour: "2-digit", minute: "2-digit" }),
+            patientName: patientName || "Paciente Anónimo",
+            patientEmail: patientEmail || "No especificado",
+            patientAge: patientAge || "",
+            patientGender: patientGender || "",
+            patientId: patientId || "",
+            reportDate: reportDate || new Date().toISOString().split('T')[0],
+            doctorName: doctorName || "Médico Radiólogo",
+            doctorLicense: doctorLicense || "No especificada",
+            clinicName: clinicName || "Clínica Privada",
+            studyType: studyType || "Estudio General",
+            clinicalHistory: clinicalHistory || "No especificada",
+            findings: findings || "No especificadas",
+            reportText: reportContent,
+            pdfBase64: pdfB64,
+            operationalSummaryText: summary,
+            customLogoUrl: customLogoUrl || "",
+            customLogoStyle: customLogoStyle || "logo",
+            customSignatureUrl: customSignatureUrl || "",
+            attachedImages: attachedImages || [],
+            patientSummary: patientSummary || null
+          });
+          fetchCloudStudies(gmailUser.uid);
+        }
+      } else {
+        alert("Ocurrió un error al generar el resumen. Por favor, intente de nuevo.");
+      }
+    } catch (error) {
+      console.error("Error generating WhatsApp summary:", error);
+      alert("Error de red al generar el resumen.");
+    } finally {
+      setIsGeneratingOperationalSummary(false);
+    }
+  };
+
   // ACTION: GENERATE SCHEMATIC SUMMARY OF FINDINGS
   const handleGenerateSchematicSummary = async () => {
     if (!generatedReport) return;
@@ -3985,6 +5302,98 @@ Ejemplo:
     setGeneratedReport(newReportText);
     setEditedReportText(newReportText);
     alert(`¡Esquema de hallazgos clínico (${schematicFormat === "blocks" ? "en Bloques" : "en Tabla"}) insertado con éxito al final de tu informe!`);
+  };
+
+  // ACTION: GENERATE SEMIOLOGY AND JUSTIFICATION TABLE
+  const handleGenerateSemiologyTable = async () => {
+    const reportText = isEditingReportManual ? editedReportText : generatedReport;
+    if (!reportText) return;
+    setIsGeneratingSemiology(true);
+    setSemiologyError(null);
+    setSemiologyData(null);
+    setSelectedConfirmedDiagnoses([]);
+    setSelectedRuledOutPathologies([]);
+    try {
+      const response = await fetch("/api/generate-semiology-table", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: selectedModel,
+          report: reportText,
+          studyType: studyType || "Estudio Radiológico"
+        }),
+      });
+      const data = await response.json();
+      if (data.success && data.data) {
+        setSemiologyData(data.data);
+        setSelectedConfirmedDiagnoses(new Array(data.data.confirmedDiagnoses?.length || 0).fill(true));
+        setSelectedRuledOutPathologies(new Array(data.data.ruledOutPathologies?.length || 0).fill(true));
+      } else {
+        setSemiologyError(data.error || "Error al estructurar el cuadro de semiología.");
+      }
+    } catch (err: any) {
+      console.error("Error al construir cuadro de semiología:", err);
+      setSemiologyError(err?.message || String(err));
+    } finally {
+      setIsGeneratingSemiology(false);
+    }
+  };
+
+  // Helper to build markdown dynamically based on user selections
+  const buildDynamicSemiologyMarkdownTable = () => {
+    if (!semiologyData) return "";
+    
+    let md = "### CUADRO DE SEMIOLOGÍA Y JUSTIFICACIÓN RADIOLÓGICA\n\n";
+    
+    const filteredDiagnoses = (semiologyData.confirmedDiagnoses || []).filter((_: any, idx: number) => selectedConfirmedDiagnoses[idx]);
+    const filteredRuledOut = (semiologyData.ruledOutPathologies || []).filter((_: any, idx: number) => selectedRuledOutPathologies[idx]);
+    
+    if (filteredDiagnoses.length > 0) {
+      md += "#### 1. Diagnósticos Confirmados y Justificación Semiológica\n\n";
+      md += "| INTERPRETACIÓN SEMIOLÓGICA | HALLAZGOS |\n";
+      md += "| :--- | :--- |\n";
+      filteredDiagnoses.forEach((d: any) => {
+        md += `| ${d.diagnosis.replace(/\|/g, "\\|")} | ${d.justification.replace(/\|/g, "\\|")} |\n`;
+      });
+      md += "\n";
+    }
+    
+    if (filteredRuledOut.length > 0) {
+      md += "#### 2. Patologías Diferenciales Descartadas y Evidencia de Exclusión\n\n";
+      md += "| INTERPRETACIÓN SEMIOLÓGICA | HALLAZGOS |\n";
+      md += "| :--- | :--- |\n";
+      filteredRuledOut.forEach((r: any) => {
+        md += `| ${r.pathology.replace(/\|/g, "\\|")} | ${r.exclusionCriteria.replace(/\|/g, "\\|")} |\n`;
+      });
+      md += "\n";
+    }
+    
+    return md.trim();
+  };
+
+  // ACTION: APPEND THE GENERATED SEMIOLOGY TABLE DIRECTLY TO THE ACTIVE REPORT
+  const handleAppendSemiologyToReport = () => {
+    if (!semiologyData) return;
+    
+    // Choose active text source (manual draft may be currently in edit)
+    const activeText = isEditingReportManual ? editedReportText : (generatedReport || "");
+
+    // Save history
+    if (activeText) {
+      setReportHistory((prev) => [...prev, activeText]);
+    }
+    
+    const contentToAppend = buildDynamicSemiologyMarkdownTable();
+    if (!contentToAppend) {
+      alert("No has seleccionado ningún punto para insertar.");
+      return;
+    }
+
+    const separator = "\n\n---\n\n";
+    const newReportText = activeText + separator + contentToAppend;
+    setGeneratedReport(newReportText);
+    setEditedReportText(newReportText);
+    alert("¡Cuadro de semiología por imágenes insertado con éxito al final de tu informe para el PDF formal!");
   };
 
   // ACTION: SEARCH TECHNICAL LITERATURE FOR A GLOSSARY TERM DIRECTLY WITHIN PANEL
@@ -4186,6 +5595,7 @@ Ejemplo:
     setRecommenderError(null);
     setClassRecommendations(null);
     setIncorporatedRecs({});
+    setIncludeManagementRecs({});
     try {
       const response = await fetch("/api/recommend-classifications", {
         method: "POST",
@@ -4253,7 +5663,8 @@ Ejemplo:
           classificationName: rec.name,
           whyRecommended: rec.whyRecommended,
           contentToAppend: rec.contentToAppend,
-          studyType: studyType
+          studyType: studyType,
+          includeManagementRecommendation: !!includeManagementRecs[index]
         })
       });
       const data = await response.json();
@@ -4415,10 +5826,10 @@ Ejemplo:
           const w = img.naturalWidth || img.width || 640;
           const h = img.naturalHeight || img.height || 480;
           
-          // Downscale to a maximum height/width of 900px to maintain pristine quality but reduce base64 size drastically
+          // Downscale to a maximum height/width of 750px to maintain pristine quality but reduce base64 size drastically
           let targetW = w;
           let targetH = h;
-          const maxDim = 900;
+          const maxDim = 750;
           if (targetW > maxDim || targetH > maxDim) {
             if (targetW > targetH) {
               targetH = Math.round((targetH * maxDim) / targetW);
@@ -4437,8 +5848,8 @@ Ejemplo:
             ctx.fillStyle = "#ffffff";
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.drawImage(img, 0, 0, targetW, targetH);
-            // Use high-quality JPEG (0.85) to drastically reduce the PDF file weight without losing diagnostic details!
-            const compressedUrl = canvas.toDataURL("image/jpeg", 0.85);
+            // Use JPEG (0.65) to drastically reduce the PDF file weight without losing diagnostic details!
+            const compressedUrl = canvas.toDataURL("image/jpeg", 0.65);
             resolve({ dataUrl: compressedUrl, width: targetW, height: targetH });
             return;
           }
@@ -4458,11 +5869,11 @@ Ejemplo:
     // Robust audit of input buffer type to extract safe, isolated ArrayBuffer boundaries
     let arrayBuffer: ArrayBuffer;
     if (inputBuffer instanceof Uint8Array) {
-      arrayBuffer = inputBuffer.buffer.slice(inputBuffer.byteOffset, inputBuffer.byteOffset + inputBuffer.byteLength);
+      arrayBuffer = (inputBuffer.buffer as ArrayBuffer).slice(inputBuffer.byteOffset, inputBuffer.byteOffset + inputBuffer.byteLength);
     } else if (inputBuffer instanceof ArrayBuffer) {
       arrayBuffer = inputBuffer;
     } else if (inputBuffer && inputBuffer.buffer instanceof ArrayBuffer) {
-      arrayBuffer = inputBuffer.buffer.slice(inputBuffer.byteOffset || 0, (inputBuffer.byteOffset || 0) + (inputBuffer.byteLength || 0));
+      arrayBuffer = (inputBuffer.buffer as ArrayBuffer).slice(inputBuffer.byteOffset || 0, (inputBuffer.byteOffset || 0) + (inputBuffer.byteLength || 0));
     } else {
       arrayBuffer = inputBuffer as ArrayBuffer;
     }
@@ -4602,6 +6013,8 @@ Ejemplo:
               meta["paciente"] = textDecoder.decode(uint8.subarray(pos, pos + length)).replace(/\^/g, " ").trim();
             } else if (group === 0x0010 && element === 0x0020) {
               meta["id"] = textDecoder.decode(uint8.subarray(pos, pos + length)).trim();
+            } else if (group === 0x0010 && element === 0x0030) {
+              meta["fechaNacimiento"] = textDecoder.decode(uint8.subarray(pos, pos + length)).trim();
             } else if (group === 0x0010 && element === 0x1010) {
               meta["edad"] = textDecoder.decode(uint8.subarray(pos, pos + length)).trim();
             } else if (group === 0x0010 && element === 0x0040) {
@@ -4871,6 +6284,176 @@ Ejemplo:
     return canvas.toDataURL("image/png");
   };
 
+  const handleAiLabelImage = async (id: string) => {
+    const imgItem = attachedImages.find(item => item.id === id);
+    if (!imgItem) return;
+    
+    setLoadingAiLabelId(id);
+    try {
+      const response = await fetch("/api/auto-label-us-photo", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          image: imgItem.base64 || imgItem.url,
+          studyType: specificStudy || "Ecografía",
+          clinicalHistory: clinicalHistory || "",
+          findings: findings || inputReport || "",
+        }),
+      });
+      
+      const data = await response.json();
+      if (response.ok && data.success && data.label) {
+        setAttachedImages(prev => prev.map(item => item.id === id ? { ...item, caption: data.label } : item));
+      } else {
+        alert(data.error || "No se pudo generar la rotulación con IA.");
+      }
+    } catch (err) {
+      console.error("Error al rotular con IA:", err);
+      alert("Error de conexión al rotular la foto.");
+    } finally {
+      setLoadingAiLabelId(null);
+    }
+  };
+
+  const handleAutocompleteLabelFromReport = async (id: string) => {
+    const imgItem = attachedImages.find(item => item.id === id);
+    if (!imgItem) return;
+    
+    if (!imgItem.caption || !imgItem.caption.trim()) {
+      alert("Por favor, escribe primero una palabra o frase clave en la descripción (ej. 'vesícula', 'quiste' o 'carótida') para poder buscar y autocompletar desde el reporte.");
+      return;
+    }
+
+    const reportToUse = generatedReport || inputReport || findings;
+    if (!reportToUse) {
+      alert("Por favor, redacta o genera el reporte primero para poder buscar y autocompletar la rotulación.");
+      return;
+    }
+
+    setLoadingAutocompleteId(id);
+    try {
+      const response = await fetch("/api/autocomplete-label-from-report", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: selectedModel,
+          phrase: imgItem.caption,
+          currentReport: reportToUse,
+          studyType: specificStudy || "Ecografía",
+          clinicalHistory: clinicalHistory || "",
+        }),
+      });
+
+      const data = await response.json();
+      if (response.ok && data.success && data.label) {
+        setAttachedImages(prev => prev.map(item => item.id === id ? { ...item, caption: data.label } : item));
+      } else {
+        alert(data.error || "No se pudo autocompletar la rotulación.");
+      }
+    } catch (err) {
+      console.error("Error al autocompletar rotulación:", err);
+      alert("Error de conexión al autocompletar desde el reporte.");
+    } finally {
+      setLoadingAutocompleteId(null);
+    }
+  };
+
+  const handleAiLabelAllImages = async () => {
+    if (attachedImages.length === 0) return;
+    setIsLabelingAll(true);
+    try {
+      const promises = attachedImages.map(async (imgItem) => {
+        try {
+          const response = await fetch("/api/auto-label-us-photo", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              image: imgItem.base64 || imgItem.url,
+              studyType: specificStudy || "Ecografía",
+              clinicalHistory: clinicalHistory || "",
+              findings: findings || inputReport || "",
+            }),
+          });
+          
+          const data = await response.json();
+          if (response.ok && data.success && data.label) {
+            return { id: imgItem.id, label: data.label };
+          }
+        } catch (err) {
+          console.error(`Error labeling image ${imgItem.id}:`, err);
+        }
+        return null;
+      });
+
+      const results = await Promise.all(promises);
+      setAttachedImages(prev => prev.map(item => {
+        const found = results.find(r => r && r.id === item.id);
+        if (found) {
+          return { ...item, caption: found.label };
+        }
+        return item;
+      }));
+    } catch (err) {
+      console.error("Error al rotular todas las imágenes:", err);
+      alert("Error al intentar rotular todas las imágenes.");
+    } finally {
+      setIsLabelingAll(false);
+    }
+  };
+
+  const handleCorrelateFigures = async () => {
+    const reportToUse = generatedReport || inputReport || findings;
+    if (!reportToUse) {
+      alert("Por favor, genera un reporte o redacta un borrador primero para poder correlacionar las figuras.");
+      return;
+    }
+    if (attachedImages.length === 0) {
+      alert("No hay imágenes cargadas para correlacionar. Por favor sube imágenes primero.");
+      return;
+    }
+
+    setIsCorrelatingFigures(true);
+    try {
+      const response = await fetch("/api/correlate-figures-retroactive", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: selectedModel,
+          currentReport: reportToUse,
+          attachedImages: attachedImages.map((img, idx) => ({
+            id: img.id,
+            index: idx + 1,
+            caption: img.caption || ""
+          })),
+        }),
+      });
+
+      const data = await response.json();
+      if (response.ok && data.success && data.report) {
+        if (generatedReport) {
+          setReportHistory(prev => [...prev, generatedReport]);
+          setReportRedoHistory([]);
+        }
+        setGeneratedReport(data.report);
+      } else {
+        alert(data.error || "Ocurrió un error al intentar correlacionar las figuras.");
+      }
+    } catch (err) {
+      console.error("Error al correlacionar figuras:", err);
+      alert("Error de red al intentar correlacionar las figuras.");
+    } finally {
+      setIsCorrelatingFigures(false);
+    }
+  };
+
   const handleAttachedFiles = async (filesList: FileList | File[] | null) => {
     if (!filesList) return;
     const filesArray = Array.from(filesList);
@@ -4928,7 +6511,7 @@ Ejemplo:
               };
 
               for (const [filename, fileObj] of Object.entries(zipContent.files)) {
-                if (fileObj.dir) continue;
+                if ((fileObj as any).dir) continue;
                 
                 const innerNameLower = filename.toLowerCase();
                 if (
@@ -4946,7 +6529,7 @@ Ejemplo:
                 const isInnerDicomExt = ["dcm", "dicom"].includes(innerExt);
                 
                 const p = (async () => {
-                  const u8Array = await fileObj.async("uint8array");
+                  const u8Array = await (fileObj as any).async("uint8array");
                   if (u8Array.length === 0) return;
                   
                   const hasDicomHeader = u8Array.length > 132 && 
@@ -5078,47 +6661,6 @@ Ejemplo:
     
     if (loaded.length > 0) {
       setAttachedImages((prev) => [...prev, ...loaded]);
-
-      // Auto-extract and populate metadata if a DICOM file was loaded
-      const dicomWithMeta = loaded.find((img) => img.isDicom && img.dicomMetaData);
-      if (dicomWithMeta && dicomWithMeta.dicomMetaData) {
-        const meta = dicomWithMeta.dicomMetaData;
-        const extracted: string[] = [];
-        
-        if (meta.paciente && meta.paciente.trim() !== "") {
-          setPatientName(meta.paciente.trim());
-          extracted.push(`Paciente: ${meta.paciente.trim()}`);
-        }
-        if (meta.id && meta.id.trim() !== "") {
-          setPatientId(meta.id.trim());
-          extracted.push(`ID: ${meta.id.trim()}`);
-        }
-        if (meta.edad && meta.edad.trim() !== "") {
-          setPatientAge(meta.edad.trim());
-          extracted.push(`Edad: ${meta.edad.trim()}`);
-        }
-        if (meta.sexo && meta.sexo.trim() !== "") {
-          setPatientGender(meta.sexo.trim());
-          extracted.push(`Sexo: ${meta.sexo.trim()}`);
-        }
-        if (meta.fechaEstudio && meta.fechaEstudio.trim() !== "") {
-          const rawDate = meta.fechaEstudio.trim();
-          if (rawDate.length === 8 && /^\d+$/.test(rawDate)) {
-            const formattedDate = `${rawDate.substring(0, 4)}-${rawDate.substring(4, 6)}-${rawDate.substring(6, 8)}`;
-            setReportDate(formattedDate);
-            extracted.push(`Fecha: ${formattedDate}`);
-          }
-        }
-        
-        if (extracted.length > 0) {
-          setDicomNotification(
-            `¡Metadatos DICOM detectados en "${dicomWithMeta.name}"! Se han auto-completado: ${extracted.join(", ")}.`
-          );
-          setTimeout(() => {
-            setDicomNotification(null);
-          }, 9000);
-        }
-      }
     }
   };
 
@@ -5180,13 +6722,13 @@ Ejemplo:
           const canvas = document.createElement("canvas");
           
           if (Math.abs(aspectRatio - 1) < 0.15) {
-            // Square aspect ratio (for example, the shoulder diagram)
-            canvas.width = 1000;
-            canvas.height = 1000;
+            // Square aspect ratio (for example, the shoulder diagram) - optimized
+            canvas.width = 600;
+            canvas.height = 600;
           } else {
-            // Wide aspect ratio (for example, the vascular diagram)
-            canvas.width = 1280;
-            canvas.height = 900;
+            // Wide aspect ratio (for example, the vascular diagram) - optimized
+            canvas.width = 750;
+            canvas.height = 530;
           }
 
           const ctx = canvas.getContext("2d");
@@ -5194,7 +6736,8 @@ Ejemplo:
             ctx.fillStyle = "#ffffff";
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            const dataUrl = canvas.toDataURL("image/png");
+            // Use compressed JPEG instead of PNG for massive size reduction!
+            const dataUrl = canvas.toDataURL("image/jpeg", 0.75);
             URL.revokeObjectURL(url);
             resolve(dataUrl);
           } else {
@@ -5319,19 +6862,82 @@ Ejemplo:
     return severity;
   };
 
+  const getImageDimensionsVirtual = (url: string): Promise<{ width: number; height: number }> => {
+    return new Promise((resolve) => {
+      if (!url) {
+        resolve({ width: 0, height: 0 });
+        return;
+      }
+      const img = new Image();
+      img.onload = () => {
+        resolve({ width: img.naturalWidth || img.width || 0, height: img.naturalHeight || img.height || 0 });
+      };
+      img.onerror = () => {
+        resolve({ width: 0, height: 0 });
+      };
+      img.src = url;
+    });
+  };
+
   const handleDownloadNativePDF = async (
     openInNewTab: boolean = false,
     shareViaWebShare: boolean = false,
     returnBase64: boolean = false,
-    returnBlobUrl: boolean = false
-  ): Promise<string | undefined> => {
-    if (!generatedReport) return;
+    returnBlobUrl: boolean = false,
+    studyOverride?: Partial<CloudStudy>,
+    returnRawBlob: boolean = false
+  ): Promise<any> => {
+    // Shadow state variables to support optional study overrides gracefully using pdfStateRef.current to avoid TDZ
+    const generatedReportLocal = studyOverride ? studyOverride.reportText : pdfStateRef.current.generatedReport;
+    if (!generatedReportLocal) return;
+
+    const patientNameLocal = studyOverride ? (studyOverride.patientName || "Paciente Anónimo") : (pdfStateRef.current.patientName || "Paciente Anónimo");
+    const patientEmailLocal = studyOverride ? (studyOverride.patientEmail || "No especificado") : (pdfStateRef.current.patientEmail || "No especificado");
+    const patientAgeLocal = studyOverride ? (studyOverride.patientAge || "") : pdfStateRef.current.patientAge;
+    const patientGenderLocal = studyOverride ? (studyOverride.patientGender || "") : pdfStateRef.current.patientGender;
+    const patientIdLocal = studyOverride ? (studyOverride.patientId || "") : pdfStateRef.current.patientId;
+    const reportDateLocal = studyOverride ? (studyOverride.reportDate || "") : pdfStateRef.current.reportDate;
+    const doctorNameLocal = studyOverride ? (studyOverride.doctorName || "Médico Radiólogo") : (pdfStateRef.current.doctorName || "Médico Radiólogo");
+    const doctorLicenseLocal = studyOverride ? (studyOverride.doctorLicense || "No especificada") : (pdfStateRef.current.doctorLicense || "No especificada");
+    const clinicNameLocal = studyOverride ? (studyOverride.clinicName || "Clínica Privada") : (pdfStateRef.current.clinicName || "Clínica Privada");
+    const clinicalHistoryLocal = studyOverride ? (studyOverride.clinicalHistory || "No especificada") : (pdfStateRef.current.clinicalHistory || "No especificada");
+    const findingsLocal = studyOverride ? (studyOverride.findings || "No especificadas") : (pdfStateRef.current.findings || "No especificadas");
+    const studyTypeLocal = studyOverride ? (studyOverride.studyType || "Estudio General") : (pdfStateRef.current.studyType || "Estudio General");
+    const customLogoUrlLocal = studyOverride ? (studyOverride.customLogoUrl || "") : (pdfStateRef.current.customLogoUrl || "");
+    const customLogoStyleLocal = studyOverride ? (studyOverride.customLogoStyle || "logo") : (pdfStateRef.current.customLogoStyle || "logo");
+    const customSignatureUrlLocal = studyOverride ? (studyOverride.customSignatureUrl || "") : (pdfStateRef.current.customSignatureUrl || "");
+    const specificStudyLocal = studyOverride && studyOverride.specificStudy ? studyOverride.specificStudy : pdfStateRef.current.specificStudy;
+    const pdfLayoutTypeLocal = studyOverride && studyOverride.pdfLayoutType ? (studyOverride.pdfLayoutType as any) : pdfStateRef.current.pdfLayoutType;
+    const selectedLogoLocal = studyOverride && studyOverride.selectedLogo ? studyOverride.selectedLogo : pdfStateRef.current.selectedLogo;
+
+    // Now re-assign to local variables with the exact same name as states to shadow them!
+    const generatedReport = generatedReportLocal;
+    const patientName = patientNameLocal;
+    const patientEmail = patientEmailLocal;
+    const patientAge = patientAgeLocal;
+    const patientGender = patientGenderLocal;
+    const patientId = patientIdLocal;
+    const reportDate = reportDateLocal;
+    const doctorName = doctorNameLocal;
+    const doctorLicense = doctorLicenseLocal;
+    const clinicName = clinicNameLocal;
+    const displayClinicName = clinicName && clinicName.trim().toUpperCase() !== "CLÍNICA PRIVADA" && clinicName.trim().toUpperCase() !== "CLINICA PRIVADA" ? clinicName.toUpperCase() : "";
+    const clinicalHistory = clinicalHistoryLocal;
+    const findings = findingsLocal;
+    const studyType = studyTypeLocal;
+    const customLogoUrl = customLogoUrlLocal;
+    const customLogoStyle = customLogoStyleLocal;
+    const customSignatureUrl = customSignatureUrlLocal;
+    const specificStudy = specificStudyLocal || "Tórax";
+    const pdfLayoutType = pdfLayoutTypeLocal || "classic";
+    const selectedLogo = selectedLogoLocal || "none";
     
     try {
       const doc = new jsPDF({
         orientation: "portrait",
         unit: "mm",
         format: "a4",
+        compress: false,
       });
 
       let yCoord = 20;
@@ -5339,6 +6945,10 @@ Ejemplo:
       const pageWidth = 210;
       const pageHeight = 297;
       let contentWidth = pageWidth - (2 * marginX); // 170mm
+
+      // Load virtual image dimensions to prevent any layout distortion on any device
+      const logoDims = await getImageDimensionsVirtual(customLogoUrl);
+      const signatureDims = await getImageDimensionsVirtual(customSignatureUrl);
 
       const drawAsymmetricSidebar = (docObj: any, pageNum: number, startY: number = 20) => {
         if (pdfLayoutType !== "asymmetric") return;
@@ -5710,11 +7320,10 @@ Ejemplo:
       if (customLogoUrl) {
         if (customLogoStyle === "banner") {
           // Banner Style (Centered wide banner)
-          const bannerImgEl = document.querySelector('img[alt="Membrete de la Clínica"]') as HTMLImageElement | null;
           let bannerWidth = 165;
           let bannerHeight = 35;
-          if (bannerImgEl && bannerImgEl.naturalWidth && bannerImgEl.naturalHeight) {
-            const aspect = bannerImgEl.naturalWidth / bannerImgEl.naturalHeight;
+          if (logoDims.width && logoDims.height) {
+            const aspect = logoDims.width / logoDims.height;
             const maxWidth = contentWidth; // 170
             const maxHeight = 52;
             if (aspect > maxWidth / maxHeight) {
@@ -5736,24 +7345,23 @@ Ejemplo:
             doc.setFont("helvetica", "bold");
             doc.setFontSize(14);
             doc.setTextColor(15, 23, 42);
-            doc.text(clinicName ? clinicName.toUpperCase() : "REPORTE DE RADIODIAGNÓSTICO", pageWidth / 2, yCoord, { align: "center" });
+            doc.text(displayClinicName || "REPORTE DE RADIODIAGNÓSTICO", pageWidth / 2, yCoord, { align: "center" });
             yCoord += 6;
           }
 
-          if (clinicName) {
+          if (displayClinicName) {
             doc.setFont("helvetica", "bold");
             doc.setFontSize(10);
             doc.setTextColor(15, 23, 42);
-            doc.text(clinicName.toUpperCase(), pageWidth / 2, yCoord, { align: "center" });
+            doc.text(displayClinicName, pageWidth / 2, yCoord, { align: "center" });
             yCoord += 5;
           }
         } else {
           // Left Aligned Logo Style
-          const logoImgEl = document.querySelector('img[alt="Logo"]') as HTMLImageElement | null;
           let logoWidth = 36;
           let logoHeight = 36;
-          if (logoImgEl && logoImgEl.naturalWidth && logoImgEl.naturalHeight) {
-            const aspect = logoImgEl.naturalWidth / logoImgEl.naturalHeight;
+          if (logoDims.width && logoDims.height) {
+            const aspect = logoDims.width / logoDims.height;
             const maxWidth = 42;
             const maxHeight = 42;
             if (aspect > maxWidth / maxHeight) {
@@ -5776,7 +7384,7 @@ Ejemplo:
           doc.setFont("helvetica", "bold");
           doc.setFontSize(14);
           doc.setTextColor(15, 23, 42);
-          doc.text(clinicName ? clinicName.toUpperCase() : "REPORTE DE RADIODIAGNÓSTICO", textX, yCoord + (logoHeight / 2) - 1.5);
+          doc.text(displayClinicName || "REPORTE DE RADIODIAGNÓSTICO", textX, yCoord + (logoHeight / 2) - 1.5);
           
           doc.setFont("helvetica", "bold");
           doc.setFontSize(9);
@@ -5813,7 +7421,7 @@ Ejemplo:
           doc.setFont("helvetica", "bold");
           doc.setFontSize(14);
           doc.setTextColor(15, 23, 42);
-          doc.text(clinicName ? clinicName.toUpperCase() : "REPORTE DE RADIODIAGNÓSTICO", textX, yCoord + 5);
+          doc.text(displayClinicName || "REPORTE DE RADIODIAGNÓSTICO", textX, yCoord + 5);
           
           doc.setFont("helvetica", "bold");
           doc.setFontSize(9);
@@ -5823,11 +7431,11 @@ Ejemplo:
           yCoord += 18;
         } else {
           // Centered Clinic Name or default heading
-          if (clinicName) {
+          if (displayClinicName) {
             doc.setFont("helvetica", "bold");
             doc.setFontSize(14);
             doc.setTextColor(15, 23, 42); // slate-900 / dark
-            doc.text(clinicName.toUpperCase(), pageWidth / 2, yCoord, { align: "center" });
+            doc.text(displayClinicName, pageWidth / 2, yCoord, { align: "center" });
             yCoord += 6;
 
             doc.setFont("helvetica", "bold");
@@ -5866,7 +7474,35 @@ Ejemplo:
 
       // Patient Metadata Block
       if (pdfLayoutType === "clinical_slate" && (patientName || reportDate)) {
-        const hasExtraMeta = !!(patientId || patientAge || patientGender);
+        const extraCols: { label: string; value: string }[] = [];
+        if (patientId && patientId.trim() !== "") {
+          extraCols.push({
+            label: "ID / HISTORIA CLÍNICA",
+            value: patientId.trim().toUpperCase()
+          });
+        }
+        const agePart = patientAge && patientAge.trim() !== "" ? patientAge.trim() : "";
+        const genderPart = patientGender && patientGender.trim() !== "" ? patientGender.trim() : "";
+        if (agePart || genderPart) {
+          let combinedVal = "";
+          let label = "";
+          if (agePart && genderPart) {
+            label = "EDAD / SEXO";
+            combinedVal = `${agePart} / ${genderPart}`;
+          } else if (agePart) {
+            label = "EDAD";
+            combinedVal = agePart;
+          } else {
+            label = "SEXO / GÉNERO";
+            combinedVal = genderPart;
+          }
+          extraCols.push({
+            label: label,
+            value: combinedVal.toUpperCase()
+          });
+        }
+
+        const hasExtraMeta = extraCols.length > 0;
         const cardHeight = hasExtraMeta ? 22 : 13;
 
         // Draw elegant Clinical Slate metadata card
@@ -5875,14 +7511,19 @@ Ejemplo:
         doc.setLineWidth(0.35);
         doc.roundedRect(marginX, yCoord, contentWidth, cardHeight, 1.5, 1.5, "FD");
 
-        // Vertical divider inside the card
+        // Vertical divider inside the card for Row 1
         doc.setDrawColor(203, 213, 225); // slate-300
         doc.setLineWidth(0.25);
-        doc.line(marginX + (contentWidth / 2), yCoord, marginX + (contentWidth / 2), yCoord + cardHeight);
+        doc.line(marginX + (contentWidth / 2), yCoord, marginX + (contentWidth / 2), yCoord + 12);
 
         if (hasExtraMeta) {
           // Horizontal divider
           doc.line(marginX, yCoord + 12, marginX + contentWidth, yCoord + 12);
+
+          if (extraCols.length === 2) {
+            // Draw vertical divider in Row 2
+            doc.line(marginX + (contentWidth / 2), yCoord + 12, marginX + (contentWidth / 2), yCoord + cardHeight);
+          }
         }
 
         const formattedDate = formatDateToDMY(reportDate);
@@ -5910,33 +7551,73 @@ Ejemplo:
         doc.text(formattedDate || "NO ESPECIFICADO", marginX + (contentWidth / 2) + 4, yCoord + 9.5);
 
         if (hasExtraMeta) {
-          // Row 2 Col 1: ID / HISTORIA CLÍNICA
-          doc.setFont("helvetica", "bold");
-          doc.setFontSize(7.5);
-          doc.setTextColor(71, 85, 105);
-          doc.text("ID / HISTORIA CLÍNICA", marginX + 4, yCoord + 15.5);
+          if (extraCols.length === 1) {
+            const col = extraCols[0];
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5);
+            doc.setTextColor(71, 85, 105);
+            doc.text(col.label, marginX + 4, yCoord + 15.5);
 
-          doc.setFont("helvetica", "bold");
-          doc.setFontSize(9.5);
-          doc.setTextColor(15, 23, 42);
-          doc.text((patientId || "NO REGISTRADO").toUpperCase(), marginX + 4, yCoord + 19.5);
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(9.5);
+            doc.setTextColor(15, 23, 42);
+            doc.text(col.value, marginX + 4, yCoord + 19.5);
+          } else if (extraCols.length === 2) {
+            const col1 = extraCols[0];
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5);
+            doc.setTextColor(71, 85, 105);
+            doc.text(col1.label, marginX + 4, yCoord + 15.5);
 
-          // Row 2 Col 2: EDAD / SEXO
-          doc.setFont("helvetica", "bold");
-          doc.setFontSize(7.5);
-          doc.setTextColor(71, 85, 105);
-          doc.text("EDAD / SEXO", marginX + (contentWidth / 2) + 4, yCoord + 15.5);
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(9.5);
+            doc.setTextColor(15, 23, 42);
+            doc.text(col1.value, marginX + 4, yCoord + 19.5);
 
-          doc.setFont("helvetica", "bold");
-          doc.setFontSize(9.5);
-          doc.setTextColor(15, 23, 42);
-          const ageSexText = `${patientAge || "N/E"} / ${patientGender || "N/E"}`;
-          doc.text(ageSexText.toUpperCase(), marginX + (contentWidth / 2) + 4, yCoord + 19.5);
+            const col2 = extraCols[1];
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5);
+            doc.setTextColor(71, 85, 105);
+            doc.text(col2.label, marginX + (contentWidth / 2) + 4, yCoord + 15.5);
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(9.5);
+            doc.setTextColor(15, 23, 42);
+            doc.text(col2.value, marginX + (contentWidth / 2) + 4, yCoord + 19.5);
+          }
         }
 
         yCoord += cardHeight + 6;
       } else if (pdfLayoutType === "executive_medical" && (patientName || reportDate)) {
-        const hasExtraMeta = !!(patientId || patientAge || patientGender);
+        const extraCols: { label: string; value: string }[] = [];
+        if (patientId && patientId.trim() !== "") {
+          extraCols.push({
+            label: "ID / HISTORIA CLÍNICA",
+            value: patientId.trim().toUpperCase()
+          });
+        }
+        const agePart = patientAge && patientAge.trim() !== "" ? patientAge.trim() : "";
+        const genderPart = patientGender && patientGender.trim() !== "" ? patientGender.trim() : "";
+        if (agePart || genderPart) {
+          let combinedVal = "";
+          let label = "";
+          if (agePart && genderPart) {
+            label = "EDAD / SEXO";
+            combinedVal = `${agePart} / ${genderPart}`;
+          } else if (agePart) {
+            label = "EDAD";
+            combinedVal = agePart;
+          } else {
+            label = "SEXO / GÉNERO";
+            combinedVal = genderPart;
+          }
+          extraCols.push({
+            label: label,
+            value: combinedVal.toUpperCase()
+          });
+        }
+
+        const hasExtraMeta = extraCols.length > 0;
         const cardHeight = hasExtraMeta ? 22 : 13;
 
         // Draw elegant Executive Medical metadata card (Cream & Gold style)
@@ -5945,12 +7626,17 @@ Ejemplo:
         doc.setLineWidth(0.4);
         doc.roundedRect(marginX, yCoord, contentWidth, cardHeight, 1.5, 1.5, "FD");
 
-        // Vertical gold divider inside the card
-        doc.line(marginX + (contentWidth / 2), yCoord, marginX + (contentWidth / 2), yCoord + cardHeight);
+        // Vertical gold divider inside the card for Row 1
+        doc.line(marginX + (contentWidth / 2), yCoord, marginX + (contentWidth / 2), yCoord + 12);
 
         if (hasExtraMeta) {
           // Horizontal divider
           doc.line(marginX, yCoord + 12, marginX + contentWidth, yCoord + 12);
+
+          if (extraCols.length === 2) {
+            // Row 2 divider
+            doc.line(marginX + (contentWidth / 2), yCoord + 12, marginX + (contentWidth / 2), yCoord + cardHeight);
+          }
         }
 
         const formattedDate = formatDateToDMY(reportDate);
@@ -5978,28 +7664,40 @@ Ejemplo:
         doc.text(formattedDate || "NO ESPECIFICADO", marginX + (contentWidth / 2) + 4, yCoord + 9.5);
 
         if (hasExtraMeta) {
-          // Row 2 Col 1: ID / HISTORIA CLÍNICA
-          doc.setFont("helvetica", "bold");
-          doc.setFontSize(7.5);
-          doc.setTextColor(197, 160, 89);
-          doc.text("ID / HISTORIA CLÍNICA", marginX + 4, yCoord + 15.5);
+          if (extraCols.length === 1) {
+            const col = extraCols[0];
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5);
+            doc.setTextColor(197, 160, 89); // Gold
+            doc.text(col.label, marginX + 4, yCoord + 15.5);
 
-          doc.setFont("helvetica", "bold");
-          doc.setFontSize(9.5);
-          doc.setTextColor(15, 23, 42);
-          doc.text((patientId || "NO REGISTRADO").toUpperCase(), marginX + 4, yCoord + 19.5);
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(9.5);
+            doc.setTextColor(15, 23, 42);
+            doc.text(col.value, marginX + 4, yCoord + 19.5);
+          } else if (extraCols.length === 2) {
+            const col1 = extraCols[0];
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5);
+            doc.setTextColor(197, 160, 89); // Gold
+            doc.text(col1.label, marginX + 4, yCoord + 15.5);
 
-          // Row 2 Col 2: EDAD / SEXO
-          doc.setFont("helvetica", "bold");
-          doc.setFontSize(7.5);
-          doc.setTextColor(197, 160, 89);
-          doc.text("EDAD / SEXO", marginX + (contentWidth / 2) + 4, yCoord + 15.5);
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(9.5);
+            doc.setTextColor(15, 23, 42);
+            doc.text(col1.value, marginX + 4, yCoord + 19.5);
 
-          doc.setFont("helvetica", "bold");
-          doc.setFontSize(9.5);
-          doc.setTextColor(15, 23, 42);
-          const ageSexText = `${patientAge || "N/E"} / ${patientGender || "N/E"}`;
-          doc.text(ageSexText.toUpperCase(), marginX + (contentWidth / 2) + 4, yCoord + 19.5);
+            const col2 = extraCols[1];
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5);
+            doc.setTextColor(197, 160, 89); // Gold
+            doc.text(col2.label, marginX + (contentWidth / 2) + 4, yCoord + 15.5);
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(9.5);
+            doc.setTextColor(15, 23, 42);
+            doc.text(col2.value, marginX + (contentWidth / 2) + 4, yCoord + 19.5);
+          }
         }
 
         yCoord += cardHeight + 6;
@@ -6009,7 +7707,34 @@ Ejemplo:
         marginX = 74;
         contentWidth = 116;
       } else if (patientName || reportDate) {
-        const hasExtraMeta = !!(patientId || patientAge || patientGender);
+        const extraCols: { label: string; value: string }[] = [];
+        if (patientId && patientId.trim() !== "") {
+          extraCols.push({
+            label: "ID",
+            value: patientId.trim().toUpperCase()
+          });
+        }
+        const agePart = patientAge && patientAge.trim() !== "" ? patientAge.trim() : "";
+        const genderPart = patientGender && patientGender.trim() !== "" ? patientGender.trim() : "";
+        if (agePart || genderPart) {
+          let combinedVal = "";
+          let label = "";
+          if (agePart && genderPart) {
+            label = "EDAD/SEXO";
+            combinedVal = `${agePart} / ${genderPart}`;
+          } else if (agePart) {
+            label = "EDAD";
+            combinedVal = agePart;
+          } else {
+            label = "SEXO";
+            combinedVal = genderPart;
+          }
+          extraCols.push({
+            label: label,
+            value: combinedVal.toUpperCase()
+          });
+        }
+        const hasExtraMeta = extraCols.length > 0;
         const cardHeight = hasExtraMeta ? 21 : 12;
 
         doc.setFillColor(248, 250, 252); // greyish background
@@ -6067,29 +7792,44 @@ Ejemplo:
           doc.setDrawColor(226, 232, 240);
           doc.line(marginX, yCoord + 11.5, marginX + contentWidth, yCoord + 11.5);
 
-          // ID
-          doc.setFont("helvetica", "bold");
-          doc.setFontSize(8);
-          doc.setTextColor(100, 116, 139);
-          doc.text("ID: ", xOffset, yCoord + 16.5);
-          const idLabelWidth = doc.getTextWidth("ID: ");
-          doc.setFont("helvetica", "bold");
-          doc.setTextColor(15, 23, 42);
-          doc.text((patientId || "N/R").toUpperCase(), xOffset + idLabelWidth, yCoord + 16.5);
+          if (extraCols.length === 1) {
+            const col = extraCols[0];
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8);
+            doc.setTextColor(100, 116, 139);
+            const labelText = `${col.label}: `;
+            doc.text(labelText, xOffset, yCoord + 16.5);
+            const labelW = doc.getTextWidth(labelText);
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(15, 23, 42);
+            doc.text(col.value, xOffset + labelW, yCoord + 16.5);
+          } else if (extraCols.length === 2) {
+            // Col 1 (Left)
+            const col1 = extraCols[0];
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8);
+            doc.setTextColor(100, 116, 139);
+            const label1 = `${col1.label}: `;
+            doc.text(label1, xOffset, yCoord + 16.5);
+            const label1W = doc.getTextWidth(label1);
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(15, 23, 42);
+            doc.text(col1.value, xOffset + label1W, yCoord + 16.5);
 
-          // Edad y Sexo a la derecha
-          doc.setFont("helvetica", "bold");
-          doc.setFontSize(8);
-          doc.setTextColor(100, 116, 139);
-          const extraLabel = "EDAD/SEXO: ";
-          const extraVal = `${patientAge || "N/E"} / ${patientGender || "N/E"}`.toUpperCase();
-          const totalExtraWidth = doc.getTextWidth(extraLabel) + doc.getTextWidth(extraVal);
-          const rightX = marginX + contentWidth - 4 - totalExtraWidth;
-
-          doc.text(extraLabel, rightX, yCoord + 16.5);
-          doc.setFont("helvetica", "bold");
-          doc.setTextColor(15, 23, 42);
-          doc.text(extraVal, rightX + doc.getTextWidth(extraLabel), yCoord + 16.5);
+            // Col 2 (Right)
+            const col2 = extraCols[1];
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8);
+            doc.setTextColor(100, 116, 139);
+            const label2 = `${col2.label}: `;
+            const val2 = col2.value;
+            const totalW2 = doc.getTextWidth(label2) + doc.getTextWidth(val2);
+            const rightX = marginX + contentWidth - 4 - totalW2;
+            doc.text(label2, rightX, yCoord + 16.5);
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(15, 23, 42);
+            doc.text(val2, rightX + doc.getTextWidth(label2), yCoord + 16.5);
+          }
         }
 
         yCoord += cardHeight + 7;
@@ -6110,20 +7850,18 @@ Ejemplo:
       if (customLogoUrl) {
         if (customLogoStyle === "banner") {
           let bannerHeight = 35;
-          const bannerImgEl = document.querySelector('img[alt="Membrete de la Clínica"]') as HTMLImageElement | null;
-          if (bannerImgEl && bannerImgEl.naturalWidth && bannerImgEl.naturalHeight) {
-            const aspect = bannerImgEl.naturalWidth / bannerImgEl.naturalHeight;
+          if (logoDims.width && logoDims.height) {
+            const aspect = logoDims.width / logoDims.height;
             const maxWidth = contentWidth;
             const maxHeight = 52;
             bannerHeight = aspect > maxWidth / maxHeight ? maxWidth / aspect : maxHeight;
           }
           estimatedHeight += bannerHeight + 5;
-          if (clinicName) estimatedHeight += 5;
+          if (displayClinicName) estimatedHeight += 5;
         } else {
           let logoHeight = 36;
-          const logoImgEl = document.querySelector('img[alt="Logo"]') as HTMLImageElement | null;
-          if (logoImgEl && logoImgEl.naturalWidth && logoImgEl.naturalHeight) {
-            const aspect = logoImgEl.naturalWidth / logoImgEl.naturalHeight;
+          if (logoDims.width && logoDims.height) {
+            const aspect = logoDims.width / logoDims.height;
             const maxWidth = 42;
             const maxHeight = 42;
             logoHeight = aspect > maxWidth / maxHeight ? maxWidth / aspect : maxHeight;
@@ -6159,7 +7897,8 @@ Ejemplo:
           const trimmed = p.trim();
           if (!trimmed) return;
 
-          const isConclusionHeader = /^\s*(?:#+|\*+|-|_|\d+\.)*\s*(?:conclusión|conclusiones|conclusion|impresión\s+diagnóstica|impresion\s+diagnostica|impresiones\s+diagnósticas|impresiones\s+diagnosticas|diagnósticos|diagnóstico|diagnostico|diagnosticos)\b/i.test(trimmed);
+          const isSemiologyLineLocal = /semiolog[ií]a|justificaci[oó]n|exclusi[oó]n/i.test(trimmed);
+          const isConclusionHeader = !isSemiologyLineLocal && /^\s*(?:#+|\*+|-|_|\d+\.)*\s*(?:conclusión|conclusiones|conclusion|impresión\s+diagnóstica|impresion\s+diagnostica|impresiones\s+diagnósticas|impresiones\s+diagnosticas|diagnósticos|diagnóstico|diagnostico|diagnosticos)\b/i.test(trimmed);
 
           const isOtherSectionHeader = /^\s*(?:##+|#)\s+/i.test(trimmed) || /^\s*\*\*(?:hallazgos|estudio|técnica|tecnica|método|metodo|exploración|exploracion|motivo|comparación|comparacion|datos\s+clínicos|indicación|indicacion|antecedentes|pie\s+de\s+página|nota\s+de\s+pie)\b/i.test(trimmed);
 
@@ -6204,7 +7943,7 @@ Ejemplo:
             isFirstBlockLocal = false;
           }
 
-          if (trimmedBlock.startsWith("|") && trimmedBlock.includes("-|-")) {
+          if (trimmedBlock.startsWith("|") && (trimmedBlock.includes("-|-") || trimmedBlock.includes("---") || trimmedBlock.includes(":---"))) {
             // Table block
             const rows = trimmedBlock.split("\n").filter(r => r.trim() !== "");
             const bodyRows = rows.slice(2);
@@ -6226,6 +7965,9 @@ Ejemplo:
               let trimmed = line.trim();
               if (!trimmed) {
                 estimatedHeight += 2.5;
+                return;
+              }
+              if (trimmed === "---" || /^---+\s*$/.test(trimmed)) {
                 return;
               }
               const isHeader = trimmed.startsWith("#") || (
@@ -6301,7 +8043,8 @@ Ejemplo:
         const trimmed = p.trim();
         if (!trimmed) return;
 
-        const isConclusionHeader = /^\s*(?:#+|\*+|-|_|\d+\.)*\s*(?:conclusión|conclusiones|conclusion|impresión\s+diagnóstica|impresion\s+diagnostica|impresiones\s+diagnósticas|impresiones\s+diagnosticas|diagnósticos|diagnóstico|diagnostico|diagnosticos)\b/i.test(trimmed);
+        const isSemiologyLine = /semiolog[ií]a|justificaci[oó]n|exclusi[oó]n/i.test(trimmed);
+        const isConclusionHeader = !isSemiologyLine && /^\s*(?:#+|\*+|-|_|\d+\.)*\s*(?:conclusión|conclusiones|conclusion|impresión\s+diagnóstica|impresion\s+diagnostica|impresiones\s+diagnósticas|impresiones\s+diagnosticas|diagnósticos|diagnóstico|diagnostico|diagnosticos)\b/i.test(trimmed);
 
         const isOtherSectionHeader = /^\s*(?:##+|#)\s+/i.test(trimmed) || /^\s*\*\*(?:hallazgos|estudio|técnica|tecnica|método|metodo|exploración|exploracion|motivo|comparación|comparacion|datos\s+clínicos|indicación|indicacion|antecedentes|pie\s+de\s+página|nota\s+de\s+pie)\b/i.test(trimmed);
 
@@ -6347,6 +8090,17 @@ Ejemplo:
 
         // Check if the block is a footnote (for Creador de Notas de Pie de Página)
         const blockLower = trimmedBlock.toLowerCase();
+        
+        const isHeadingOrTableOrCode = trimmedBlock.startsWith("#") || 
+                                       trimmedBlock.startsWith("**") || 
+                                       trimmedBlock.startsWith("|") || 
+                                       trimmedBlock.startsWith("```") || 
+                                       (trimmedBlock.startsWith("===") && (trimmedBlock.includes("SÍNTESIS VASCULAR") || trimmedBlock.includes("SÍNTESIS DE ANATOMÍA")));
+        
+        if (isHeadingOrTableOrCode) {
+          inFootnoteSection = false;
+        }
+
         const isFootnote = inFootnoteSection ||
                             blockLower.startsWith("*pie de página:") || 
                             blockLower.startsWith("pie de página:") ||
@@ -6414,6 +8168,9 @@ Ejemplo:
             if (!lineTrimmed) {
               totalBlockHeight += 2.5 * factor;
               parsedLines.push({ isHeader: false, isBulleted: false, wrappedLines: [] });
+              return;
+            }
+            if (lineTrimmed === "---" || /^---+\s*$/.test(lineTrimmed)) {
               return;
             }
             
@@ -6701,14 +8458,27 @@ Ejemplo:
             if (colCount === 1) {
               colWidths.push(contentWidth);
             } else if (colCount === 2) {
-              colWidths.push(contentWidth * 0.4);
-              colWidths.push(contentWidth * 0.6);
+              const isAsistenteUnilateralNoRef = headers.some(h => h.toLowerCase().includes("estructura")) && 
+                                                 headers.some(h => h.toLowerCase().includes("derecha") || h.toLowerCase().includes("izquierda") || h.toLowerCase().includes("medida"));
+              if (isAsistenteUnilateralNoRef) {
+                colWidths.push(contentWidth * 0.45);
+                colWidths.push(contentWidth * 0.55);
+              } else {
+                colWidths.push(contentWidth * 0.4);
+                colWidths.push(contentWidth * 0.6);
+              }
             } else if (colCount === 3) {
+              const isAsistenteUnilateral = headers.some(h => h.toLowerCase().includes("referencia"));
               const isVascular = headers.some(h => {
                 const lower = h.toLowerCase();
                 return lower.includes("derech") || lower.includes("izquierd") || lower.includes("alterad") || lower.includes("vaso");
               });
-              if (isVascular) {
+              if (isAsistenteUnilateral) {
+                // Column 0: Estructura (30%), Column 1: Derecha/Izquierda (50%), Column 2: Valor de Referencia (20%)
+                colWidths.push(contentWidth * 0.30);
+                colWidths.push(contentWidth * 0.50);
+                colWidths.push(contentWidth * 0.20);
+              } else if (isVascular) {
                 colWidths.push(contentWidth * 0.34);
                 colWidths.push(contentWidth * 0.33);
                 colWidths.push(contentWidth * 0.33);
@@ -6718,10 +8488,28 @@ Ejemplo:
                 colWidths.push(contentWidth * 0.50); // Detailed Main Findings
               }
             } else if (colCount === 4) {
-              colWidths.push(contentWidth * 0.12); // ID Column (e.g. H1, H2, H3)
-              colWidths.push(contentWidth * 0.28); // Estructura / Sitio
-              colWidths.push(contentWidth * 0.22); // Categoría
-              colWidths.push(contentWidth * 0.38); // Hallazgo Principal
+              const isAsistenteBilateral = headers.some(h => {
+                const l = h.toLowerCase();
+                return l.includes("derecha") || l.includes("izquierda");
+              });
+              const isGenericAsistente = headers.some(h => h.toLowerCase().includes("registrada")) || headers.some(h => h.toLowerCase().includes("referencia"));
+
+              if (isAsistenteBilateral) {
+                colWidths.push(contentWidth * 0.25);
+                colWidths.push(contentWidth * 0.30);
+                colWidths.push(contentWidth * 0.30);
+                colWidths.push(contentWidth * 0.15);
+              } else if (isGenericAsistente) {
+                colWidths.push(contentWidth * 0.30);
+                colWidths.push(contentWidth * 0.20);
+                colWidths.push(contentWidth * 0.20);
+                colWidths.push(contentWidth * 0.30);
+              } else {
+                colWidths.push(contentWidth * 0.12); // ID Column (e.g. H1, H2, H3)
+                colWidths.push(contentWidth * 0.28); // Estructura / Sitio
+                colWidths.push(contentWidth * 0.22); // Categoría
+                colWidths.push(contentWidth * 0.38); // Hallazgo Principal
+              }
             } else {
               const equalWidth = contentWidth / colCount;
               for (let i = 0; i < colCount; i++) {
@@ -6929,17 +8717,25 @@ Ejemplo:
               doc.setTextColor(15, 23, 42); // slate-900
             }
 
-            const isVascularTable = colCount === 3 && headers.some(h => {
-              const lower = h.toLowerCase();
-              return lower.includes("derech") || lower.includes("izquierd") || lower.includes("alterad") || lower.includes("vaso");
-            });
+            const isVascularTable = colCount === 3 && 
+              headers.some(h => {
+                const lower = h.toLowerCase();
+                return lower.includes("derech") || lower.includes("izquierd") || lower.includes("alterad") || lower.includes("vaso");
+              }) && 
+              !headers.some(h => {
+                const lower = h.toLowerCase();
+                return lower.includes("referencia") || lower.includes("estructura");
+              });
 
             headers.forEach((headerTxt, hIdx) => {
               let hClean = headerTxt.replace(/\*\*/g, "").trim();
               if (colCount === 2) {
-                // Force headers to read exactly "Estructura" and "Hallazgos"
-                if (hIdx === 0) hClean = "Estructura";
-                if (hIdx === 1) hClean = "Hallazgos";
+                // Force headers to read exactly "INTERPRETACIÓN" and "Hallazgos"
+                const isSynoptic = headers.some(h => h.toLowerCase().includes("aspecto") || h.toLowerCase().includes("detalle") || h.toLowerCase().includes("sinopsis") || h.toLowerCase().includes("evaluado") || h.toLowerCase().includes("clínico"));
+                if (!isSynoptic) {
+                  if (hIdx === 0) hClean = "INTERPRETACIÓN";
+                  if (hIdx === 1) hClean = "Hallazgos";
+                }
               } else if (isVascularTable) {
                 if (hIdx === 0) hClean = "Segmento Alterado";
                 if (hIdx === 1) hClean = "Derecho";
@@ -7617,7 +9413,7 @@ Ejemplo:
             }
           } else {
             // Unilateral
-            const sideTitle = `HOMBRO ${laterality ? laterality.toUpperCase() : ""}`;
+            const sideTitle = `HOMBRO ${laterality ? getGenderedLaterality(laterality, "Hombro").toUpperCase() : ""}`;
             const svgElement = document.getElementById("shoulder-anatomy-svg");
             if (svgElement) {
               const clonedSvg = sanitizeShoulderSvgForPrint(svgElement);
@@ -7807,7 +9603,7 @@ Ejemplo:
       }
 
       // 🛠️ DRAW KNEE DIAGRAM IN THE PROGRAMMATIC PDF
-      if (includeKneeSchemaInReport && specificStudy === "Rodilla") {
+      if ((includeKneeSchemaInReport || includeGonartrosisSchemaInReport) && specificStudy === "Rodilla") {
         try {
           const sanitizeKneeSvgForPrint = (el: HTMLElement) => {
             const cloned = el.cloneNode(true) as SVGElement;
@@ -7856,7 +9652,7 @@ Ejemplo:
           };
 
           const getKneeCardDataForSide = (statesObj: any, descObj: any) => {
-            const pdfKneeStructures = [
+            const pdfKneeStructuresBase = [
               { id: "quadriceps", label: "T. Cuadricipital" },
               { id: "patellar", label: "T. Rotuliano" },
               { id: "lcm", label: "Lig. C. Medial" },
@@ -7869,7 +9665,20 @@ Ejemplo:
               { id: "popliteal_vein", label: "Vena Poplítea" },
               { id: "distal_tendons", label: "Tendones Dist." },
               { id: "popliteal_fossa", label: "Fosa Poplítea" }
-            ].filter(struct => {
+            ];
+
+            if (includeGonartrosisSchemaInReport) {
+              pdfKneeStructuresBase.push(
+                { id: "gon_pinzamiento_artic", label: "Pinzamiento Art." },
+                { id: "gon_osteofitos", label: "Osteofitos" },
+                { id: "gon_esclerosis_sub", label: "Escl. Subcondral" },
+                { id: "gon_geodas_quistes", label: "Geodas/Quistes" },
+                { id: "gon_desgaste_cartilago", label: "Desgaste Cart." },
+                { id: "gon_menisco_deg", label: "Menisco Deg." }
+              );
+            }
+
+            const pdfKneeStructures = pdfKneeStructuresBase.filter(struct => {
               const s = statesObj[struct.id] || "no_descrito";
               return s !== "no_descrito" && s !== "normal";
             });
@@ -7913,13 +9722,17 @@ Ejemplo:
             const svgElementPostDer = document.getElementById("knee-anatomy-svg-posterior");
             const svgElementAntIzq = document.getElementById("knee-anatomy-svg-left");
             const svgElementPostIzq = document.getElementById("knee-anatomy-svg-posterior-left");
+            const svgGonDer = document.getElementById("knee-gonartrosis-svg");
+            const svgGonIzq = document.getElementById("knee-gonartrosis-svg-left");
 
-            if (svgElementAntDer && svgElementAntIzq) {
-              const imgAntDer = await convertSvgToPng(sanitizeKneeSvgForPrint(svgElementAntDer));
-              const imgPostDer = svgElementPostDer ? await convertSvgToPng(sanitizeKneeSvgForPrint(svgElementPostDer)) : null;
-              const imgAntIzq = await convertSvgToPng(sanitizeKneeSvgForPrint(svgElementAntIzq));
-              const imgPostIzq = svgElementPostIzq ? await convertSvgToPng(sanitizeKneeSvgForPrint(svgElementPostIzq)) : null;
+            const imgAntDer = svgElementAntDer ? await convertSvgToPng(sanitizeKneeSvgForPrint(svgElementAntDer)) : null;
+            const imgPostDer = svgElementPostDer ? await convertSvgToPng(sanitizeKneeSvgForPrint(svgElementPostDer)) : null;
+            const imgAntIzq = svgElementAntIzq ? await convertSvgToPng(sanitizeKneeSvgForPrint(svgElementAntIzq)) : null;
+            const imgPostIzq = svgElementPostIzq ? await convertSvgToPng(sanitizeKneeSvgForPrint(svgElementPostIzq)) : null;
+            const imgGonDer = svgGonDer ? await convertSvgToPng(sanitizeKneeSvgForPrint(svgGonDer)) : null;
+            const imgGonIzq = svgGonIzq ? await convertSvgToPng(sanitizeKneeSvgForPrint(svgGonIzq)) : null;
 
+            if (imgAntDer || imgAntIzq || imgGonDer || imgGonIzq) {
               checkPageBreak(127);
               yCoord += 15;
 
@@ -7943,31 +9756,74 @@ Ejemplo:
               doc.setTextColor(71, 85, 105);
               doc.text("RODILLA DERECHA", pageWidth / 2, yStart - 1, { align: "center" });
 
-              // Box Left (Anterior)
-              doc.setFillColor(255, 255, 255);
-              doc.setDrawColor(229, 231, 235);
-              doc.roundedRect(15, yStart, 46, 50, 2, 2, "FD");
-              doc.addImage(imgAntDer, "PNG", 18, yStart + 1.5, 40, 40);
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(5.5);
-              doc.text("VISTA ANTERIOR", 38, yStart + 46, { align: "center" });
+              if (includeKneeSchemaInReport && includeGonartrosisSchemaInReport) {
+                // Anterior Box
+                doc.setFillColor(255, 255, 255);
+                doc.setDrawColor(229, 231, 235);
+                doc.roundedRect(15, yStart, 31, 50, 2, 2, "FD");
+                if (imgAntDer) doc.addImage(imgAntDer, "PNG", 16.5, yStart + 1.5, 28, 28);
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(5.0);
+                doc.setTextColor(71, 85, 105);
+                doc.text("VISTA ANTERIOR", 30.5, yStart + 46, { align: "center" });
 
-              // Box Middle (Posterior)
-              doc.setFillColor(255, 255, 255);
-              doc.setDrawColor(229, 231, 235);
-              doc.roundedRect(64, yStart, 46, 50, 2, 2, "FD");
-              if (imgPostDer) {
-                doc.addImage(imgPostDer, "PNG", 67, yStart + 1.5, 40, 40);
-              } else {
-                doc.setFont("helvetica", "italic");
+                // Posterior Box
+                doc.setFillColor(255, 255, 255);
+                doc.setDrawColor(229, 231, 235);
+                doc.roundedRect(48, yStart, 31, 50, 2, 2, "FD");
+                if (imgPostDer) doc.addImage(imgPostDer, "PNG", 49.5, yStart + 1.5, 28, 28);
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(5.0);
+                doc.setTextColor(71, 85, 105);
+                doc.text("VISTA POSTERIOR", 63.5, yStart + 46, { align: "center" });
+
+                // Gonartrosis Box
+                doc.setFillColor(255, 255, 255);
+                doc.setDrawColor(229, 231, 235);
+                doc.roundedRect(81, yStart, 31, 50, 2, 2, "FD");
+                if (imgGonDer) doc.addImage(imgGonDer, "PNG", 82.5, yStart + 1.5, 28, 28);
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(5.0);
+                doc.setTextColor(71, 85, 105);
+                doc.text("GONARTROSIS", 96.5, yStart + 46, { align: "center" });
+              } else if (includeKneeSchemaInReport) {
+                // Box Left (Anterior)
+                doc.setFillColor(255, 255, 255);
+                doc.setDrawColor(229, 231, 235);
+                doc.roundedRect(15, yStart, 46, 50, 2, 2, "FD");
+                if (imgAntDer) doc.addImage(imgAntDer, "PNG", 18, yStart + 1.5, 40, 40);
+                doc.setFont("helvetica", "bold");
                 doc.setFontSize(5.5);
-                doc.setTextColor(148, 163, 184);
-                doc.text("No disponible", 87, yStart + 23, { align: "center" });
+                doc.setTextColor(71, 85, 105);
+                doc.text("VISTA ANTERIOR", 38, yStart + 46, { align: "center" });
+
+                // Box Middle (Posterior)
+                doc.setFillColor(255, 255, 255);
+                doc.setDrawColor(229, 231, 235);
+                doc.roundedRect(64, yStart, 46, 50, 2, 2, "FD");
+                if (imgPostDer) {
+                  doc.addImage(imgPostDer, "PNG", 67, yStart + 1.5, 40, 40);
+                } else {
+                  doc.setFont("helvetica", "italic");
+                  doc.setFontSize(5.5);
+                  doc.setTextColor(148, 163, 184);
+                  doc.text("No disponible", 87, yStart + 23, { align: "center" });
+                }
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(5.5);
+                doc.setTextColor(71, 85, 105);
+                doc.text("VISTA POSTERIOR", 87, yStart + 46, { align: "center" });
+              } else {
+                // Only Gonartrosis
+                doc.setFillColor(255, 255, 255);
+                doc.setDrawColor(229, 231, 235);
+                doc.roundedRect(15, yStart, 95, 50, 2, 2, "FD");
+                if (imgGonDer) doc.addImage(imgGonDer, "PNG", 42.5, yStart + 1.5, 40, 40);
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(5.5);
+                doc.setTextColor(71, 85, 105);
+                doc.text("ESQUEMA DE GONARTROSIS", 62.5, yStart + 46, { align: "center" });
               }
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(5.5);
-              doc.setTextColor(71, 85, 105);
-              doc.text("VISTA POSTERIOR", 87, yStart + 46, { align: "center" });
 
               // Box Right (Findings)
               doc.setFillColor(248, 250, 252);
@@ -8001,31 +9857,73 @@ Ejemplo:
               doc.setTextColor(71, 85, 105);
               doc.text("RODILLA IZQUIERDA", pageWidth / 2, yStart - 1, { align: "center" });
 
-              // Box Left (Anterior)
-              doc.setFillColor(255, 255, 255);
-              doc.setDrawColor(229, 231, 235);
-              doc.roundedRect(15, yStart, 46, 50, 2, 2, "FD");
-              doc.addImage(imgAntIzq, "PNG", 18, yStart + 1.5, 40, 40);
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(5.5);
-              doc.text("VISTA ANTERIOR", 38, yStart + 46, { align: "center" });
+              if (includeKneeSchemaInReport && includeGonartrosisSchemaInReport) {
+                // Anterior Box
+                doc.setFillColor(255, 255, 255);
+                doc.setDrawColor(229, 231, 235);
+                doc.roundedRect(15, yStart, 31, 50, 2, 2, "FD");
+                if (imgAntIzq) doc.addImage(imgAntIzq, "PNG", 16.5, yStart + 1.5, 28, 28);
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(5.0);
+                doc.setTextColor(71, 85, 105);
+                doc.text("VISTA ANTERIOR", 30.5, yStart + 46, { align: "center" });
 
-              // Box Middle (Posterior)
-              doc.setFillColor(255, 255, 255);
-              doc.setDrawColor(229, 231, 235);
-              doc.roundedRect(64, yStart, 46, 50, 2, 2, "FD");
-              if (imgPostIzq) {
-                doc.addImage(imgPostIzq, "PNG", 67, yStart + 1.5, 40, 40);
-              } else {
-                doc.setFont("helvetica", "italic");
+                // Posterior Box
+                doc.setFillColor(255, 255, 255);
+                doc.setDrawColor(229, 231, 235);
+                doc.roundedRect(48, yStart, 31, 50, 2, 2, "FD");
+                if (imgPostIzq) doc.addImage(imgPostIzq, "PNG", 49.5, yStart + 1.5, 28, 28);
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(5.0);
+                doc.setTextColor(71, 85, 105);
+                doc.text("VISTA POSTERIOR", 63.5, yStart + 46, { align: "center" });
+
+                // Gonartrosis Box
+                doc.setFillColor(255, 255, 255);
+                doc.setDrawColor(229, 231, 235);
+                doc.roundedRect(81, yStart, 31, 50, 2, 2, "FD");
+                if (imgGonIzq) doc.addImage(imgGonIzq, "PNG", 82.5, yStart + 1.5, 28, 28);
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(5.0);
+                doc.setTextColor(71, 85, 105);
+                doc.text("GONARTROSIS", 96.5, yStart + 46, { align: "center" });
+              } else if (includeKneeSchemaInReport) {
+                // Box Left (Anterior)
+                doc.setFillColor(255, 255, 255);
+                doc.setDrawColor(229, 231, 235);
+                doc.roundedRect(15, yStart, 46, 50, 2, 2, "FD");
+                if (imgAntIzq) doc.addImage(imgAntIzq, "PNG", 18, yStart + 1.5, 40, 40);
+                doc.setFont("helvetica", "bold");
                 doc.setFontSize(5.5);
-                doc.setTextColor(148, 163, 184);
-                doc.text("No disponible", 87, yStart + 23, { align: "center" });
+                doc.text("VISTA ANTERIOR", 38, yStart + 46, { align: "center" });
+
+                // Box Middle (Posterior)
+                doc.setFillColor(255, 255, 255);
+                doc.setDrawColor(229, 231, 235);
+                doc.roundedRect(64, yStart, 46, 50, 2, 2, "FD");
+                if (imgPostIzq) {
+                  doc.addImage(imgPostIzq, "PNG", 67, yStart + 1.5, 40, 40);
+                } else {
+                  doc.setFont("helvetica", "italic");
+                  doc.setFontSize(5.5);
+                  doc.setTextColor(148, 163, 184);
+                  doc.text("No disponible", 87, yStart + 23, { align: "center" });
+                }
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(5.5);
+                doc.setTextColor(71, 85, 105);
+                doc.text("VISTA POSTERIOR", 87, yStart + 46, { align: "center" });
+              } else {
+                // Only Gonartrosis
+                doc.setFillColor(255, 255, 255);
+                doc.setDrawColor(229, 231, 235);
+                doc.roundedRect(15, yStart, 95, 50, 2, 2, "FD");
+                if (imgGonIzq) doc.addImage(imgGonIzq, "PNG", 42.5, yStart + 1.5, 40, 40);
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(5.5);
+                doc.setTextColor(71, 85, 105);
+                doc.text("ESQUEMA DE GONARTROSIS", 62.5, yStart + 46, { align: "center" });
               }
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(5.5);
-              doc.setTextColor(71, 85, 105);
-              doc.text("VISTA POSTERIOR", 87, yStart + 46, { align: "center" });
 
               // Box Right (Findings)
               doc.setFillColor(248, 250, 252);
@@ -8059,13 +9957,16 @@ Ejemplo:
             }
           } else {
             // Unilateral
-            const sideTitle = `RODILLA ${laterality ? laterality.toUpperCase() : ""}`;
+            const sideTitle = `RODILLA ${laterality ? getGenderedLaterality(laterality, "Rodilla").toUpperCase() : ""}`;
             const svgElement = document.getElementById("knee-anatomy-svg");
             const svgElementPost = document.getElementById("knee-anatomy-svg-posterior");
-            if (svgElement) {
-              const imgDataAnterior = await convertSvgToPng(sanitizeKneeSvgForPrint(svgElement));
-              const imgDataPosterior = svgElementPost ? await convertSvgToPng(sanitizeKneeSvgForPrint(svgElementPost)) : null;
+            const svgGonDer = document.getElementById("knee-gonartrosis-svg");
 
+            const imgDataAnterior = svgElement ? await convertSvgToPng(sanitizeKneeSvgForPrint(svgElement)) : null;
+            const imgDataPosterior = svgElementPost ? await convertSvgToPng(sanitizeKneeSvgForPrint(svgElementPost)) : null;
+            const imgGonDer = svgGonDer ? await convertSvgToPng(sanitizeKneeSvgForPrint(svgGonDer)) : null;
+
+            if (imgDataAnterior || imgGonDer) {
               const willPageBreak = (yCoord + 80 > pageHeight - 20);
               checkPageBreak(80);
               if (!willPageBreak) {
@@ -8088,30 +9989,72 @@ Ejemplo:
 
               const yStart = yCoord;
 
-              doc.setFillColor(255, 255, 255);
-              doc.setDrawColor(229, 231, 235);
-              doc.roundedRect(15, yStart, 46, 60, 2, 2, "FD");
-              doc.addImage(imgDataAnterior, "PNG", 16.5, yStart + 2, 43, 43);
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(6.0);
-              doc.setTextColor(71, 85, 105);
-              doc.text("VISTA ANTERIOR", 38, yStart + 54, { align: "center" });
+              if (includeKneeSchemaInReport && includeGonartrosisSchemaInReport) {
+                // Anterior Box
+                doc.setFillColor(255, 255, 255);
+                doc.setDrawColor(229, 231, 235);
+                doc.roundedRect(15, yStart, 31, 60, 2, 2, "FD");
+                if (imgDataAnterior) doc.addImage(imgDataAnterior, "PNG", 16.5, yStart + 2, 28, 28);
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(5.0);
+                doc.setTextColor(71, 85, 105);
+                doc.text("VISTA ANTERIOR", 30.5, yStart + 54, { align: "center" });
 
-              doc.setFillColor(255, 255, 255);
-              doc.setDrawColor(229, 231, 235);
-              doc.roundedRect(64, yStart, 46, 60, 2, 2, "FD");
-              if (imgDataPosterior) {
-                doc.addImage(imgDataPosterior, "PNG", 65.5, yStart + 2, 43, 43);
-              } else {
-                doc.setFont("helvetica", "italic");
+                // Posterior Box
+                doc.setFillColor(255, 255, 255);
+                doc.setDrawColor(229, 231, 235);
+                doc.roundedRect(48, yStart, 31, 60, 2, 2, "FD");
+                if (imgDataPosterior) doc.addImage(imgDataPosterior, "PNG", 49.5, yStart + 2, 28, 28);
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(5.0);
+                doc.setTextColor(71, 85, 105);
+                doc.text("VISTA POSTERIOR", 63.5, yStart + 54, { align: "center" });
+
+                // Gonartrosis Box
+                doc.setFillColor(255, 255, 255);
+                doc.setDrawColor(229, 231, 235);
+                doc.roundedRect(81, yStart, 31, 60, 2, 2, "FD");
+                if (imgGonDer) doc.addImage(imgGonDer, "PNG", 82.5, yStart + 2, 28, 28);
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(5.0);
+                doc.setTextColor(71, 85, 105);
+                doc.text("GONARTROSIS", 96.5, yStart + 54, { align: "center" });
+              } else if (includeKneeSchemaInReport) {
+                doc.setFillColor(255, 255, 255);
+                doc.setDrawColor(229, 231, 235);
+                doc.roundedRect(15, yStart, 46, 60, 2, 2, "FD");
+                if (imgDataAnterior) doc.addImage(imgDataAnterior, "PNG", 16.5, yStart + 2, 43, 43);
+                doc.setFont("helvetica", "bold");
                 doc.setFontSize(6.0);
-                doc.setTextColor(148, 163, 184);
-                doc.text("No disponible", 87, yStart + 25, { align: "center" });
+                doc.setTextColor(71, 85, 105);
+                doc.text("VISTA ANTERIOR", 38, yStart + 54, { align: "center" });
+
+                doc.setFillColor(255, 255, 255);
+                doc.setDrawColor(229, 231, 235);
+                doc.roundedRect(64, yStart, 46, 60, 2, 2, "FD");
+                if (imgDataPosterior) {
+                  doc.addImage(imgDataPosterior, "PNG", 65.5, yStart + 2, 43, 43);
+                } else {
+                  doc.setFont("helvetica", "italic");
+                  doc.setFontSize(6.0);
+                  doc.setTextColor(148, 163, 184);
+                  doc.text("No disponible", 87, yStart + 25, { align: "center" });
+                }
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(6.0);
+                doc.setTextColor(71, 85, 105);
+                doc.text("VISTA POSTERIOR", 87, yStart + 54, { align: "center" });
+              } else {
+                // Only Gonartrosis
+                doc.setFillColor(255, 255, 255);
+                doc.setDrawColor(229, 231, 235);
+                doc.roundedRect(15, yStart, 95, 60, 2, 2, "FD");
+                if (imgGonDer) doc.addImage(imgGonDer, "PNG", 42.5, yStart + 2, 43, 43);
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(6.0);
+                doc.setTextColor(71, 85, 105);
+                doc.text("ESQUEMA DE GONARTROSIS", 62.5, yStart + 54, { align: "center" });
               }
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(6.0);
-              doc.setTextColor(71, 85, 105);
-              doc.text("VISTA POSTERIOR", 87, yStart + 54, { align: "center" });
 
               doc.setFillColor(248, 250, 252);
               doc.setDrawColor(229, 231, 235);
@@ -9455,11 +11398,12 @@ Ejemplo:
       }
 
       // 🛠️ DRAW WRIST DIAGRAMS IN THE PROGRAMMATIC PDF
-      if (includeWristSchemaInReport && specificStudy === "Muñeca") {
-        const svgAnterior = document.getElementById("wrist-anatomy-anterior-svg");
-        const svgPosterior = document.getElementById("wrist-anatomy-posterior-svg");
+      if ((includeWristSchemaInReport || includeDeQuervainSchemaInReport) && specificStudy === "Muñeca") {
+        const svgAnterior = includeWristSchemaInReport ? document.getElementById("wrist-anatomy-anterior-svg") : null;
+        const svgPosterior = includeWristSchemaInReport ? document.getElementById("wrist-anatomy-posterior-svg") : null;
+        const svgDeQuervain = includeDeQuervainSchemaInReport ? document.getElementById("wrist-de-quervain-svg") : null;
 
-        if (svgAnterior || svgPosterior) {
+        if (svgAnterior || svgPosterior || svgDeQuervain) {
           try {
             const processWristSvgForPdf = async (svgEl: HTMLElement) => {
               const clonedSvg = svgEl.cloneNode(true) as SVGElement;
@@ -9520,6 +11464,7 @@ Ejemplo:
 
             const imgAnt = svgAnterior ? await processWristSvgForPdf(svgAnterior) : null;
             const imgPost = svgPosterior ? await processWristSvgForPdf(svgPosterior) : null;
+            const imgDQ = svgDeQuervain ? await processWristSvgForPdf(svgDeQuervain) : null;
             
             // Check page positioning
             if (yCoord > 210) {
@@ -9551,20 +11496,55 @@ Ejemplo:
             doc.setTextColor(148, 163, 184);
             doc.text("MAPEO CLÍNICO - ECOGRAFÍA DE MUÑECA", 24, yStart + 11.5);
 
-            // Draw wrist images side-by-side on the left side
-            if (imgAnt) {
-              doc.addImage(imgAnt, "PNG", 22, yStart + 14, 42, 42); // Volar face
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(5);
-              doc.setTextColor(100, 116, 139);
-              doc.text("CARA ANTERIOR", 43, yStart + 58, { align: "center" });
-            }
-            if (imgPost) {
-              doc.addImage(imgPost, "PNG", 66, yStart + 14, 42, 42); // Dorsal face
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(5);
-              doc.setTextColor(100, 116, 139);
-              doc.text("CARA POSTERIOR", 87, yStart + 58, { align: "center" });
+            // Draw wrist images side-by-side or stacked on the left side
+            if (includeWristSchemaInReport && includeDeQuervainSchemaInReport) {
+              // Draw both schemas scaled down
+              if (imgAnt) {
+                doc.addImage(imgAnt, "PNG", 22, yStart + 13, 33, 33);
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(4.5);
+                doc.setTextColor(100, 116, 139);
+                doc.text("CARA ANTERIOR", 38.5, yStart + 47.5, { align: "center" });
+              }
+              if (imgPost) {
+                doc.addImage(imgPost, "PNG", 58, yStart + 13, 33, 33);
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(4.5);
+                doc.setTextColor(100, 116, 139);
+                doc.text("CARA POSTERIOR", 74.5, yStart + 47.5, { align: "center" });
+              }
+              if (imgDQ) {
+                doc.addImage(imgDQ, "PNG", 40, yStart + 49, 30, 30);
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(4.5);
+                doc.setTextColor(100, 116, 139);
+                doc.text("COMPARTIMENTO I", 55, yStart + 75.5, { align: "center" });
+              }
+            } else if (includeWristSchemaInReport) {
+              // Draw only General Wrist schemas
+              if (imgAnt) {
+                doc.addImage(imgAnt, "PNG", 22, yStart + 14, 42, 42); // Volar face
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(5);
+                doc.setTextColor(100, 116, 139);
+                doc.text("CARA ANTERIOR", 43, yStart + 58, { align: "center" });
+              }
+              if (imgPost) {
+                doc.addImage(imgPost, "PNG", 66, yStart + 14, 42, 42); // Dorsal face
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(5);
+                doc.setTextColor(100, 116, 139);
+                doc.text("CARA POSTERIOR", 87, yStart + 58, { align: "center" });
+              }
+            } else if (includeDeQuervainSchemaInReport) {
+              // Draw only De Quervain schema
+              if (imgDQ) {
+                doc.addImage(imgDQ, "PNG", 44, yStart + 14, 42, 42);
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(5);
+                doc.setTextColor(100, 116, 139);
+                doc.text("DE QUERVAIN (COMPARTIMENTO I)", 65, yStart + 58, { align: "center" });
+              }
             }
 
             // Right side table headers
@@ -9577,19 +11557,30 @@ Ejemplo:
             doc.setDrawColor(229, 231, 235);
             doc.line(114, yStart + 13.5, 186, yStart + 13.5);
 
-            const allowedWristKeys = [
-              { id: "nervio_mediano", label: "Nervio Mediano" },
-              { id: "tendones_flexores", label: "Tendones Flexores" },
-              { id: "flexor_carpi_radialis", label: "FCR" },
-              { id: "arteria_radial", label: "Arteria Radial" },
-              { id: "receso_radiocarpiano_anterior", label: "Receso Volar" },
-              { id: "canal_de_guyon", label: "Canal de Guyon" },
-              { id: "receso_radiocarpiano_posterior", label: "Receso Dorsal" },
-              { id: "articulacion_radiocubital_distal", label: "ARCD" },
-              { id: "tendones_extensores_compartimentos", label: "Extensores" },
-              { id: "fibrocartilago_triangular", label: "Fibrocartílago" },
-              { id: "extensor_carpi_ulnaris", label: "ECU" }
-            ];
+            const allowedWristKeys = [];
+            if (includeWristSchemaInReport) {
+              allowedWristKeys.push(
+                { id: "nervio_mediano", label: "Nervio Mediano" },
+                { id: "tendones_flexores", label: "Tendones Flexores" },
+                { id: "flexor_carpi_radialis", label: "FCR" },
+                { id: "arteria_radial", label: "Arteria Radial" },
+                { id: "receso_radiocarpiano_anterior", label: "Receso Volar" },
+                { id: "canal_de_guyon", label: "Canal de Guyon" },
+                { id: "receso_radiocarpiano_posterior", label: "Receso Dorsal" },
+                { id: "articulacion_radiocubital_distal", label: "ARCD" },
+                { id: "tendones_extensores_compartimentos", label: "Extensores" },
+                { id: "fibrocartilago_triangular", label: "Fibrocartílago" },
+                { id: "extensor_carpi_ulnaris", label: "ECU" }
+              );
+            }
+            if (includeDeQuervainSchemaInReport) {
+              allowedWristKeys.push(
+                { id: "dq_tendones_apl_epb", label: "T. APL/EPB (DeQ)" },
+                { id: "dq_vaina_sinovial_liquido", label: "Vaina Sinovial (DeQ)" },
+                { id: "dq_retinaculo_extensor", label: "Retináculo I (DeQ)" },
+                { id: "dq_doppler_hyperemia", label: "Doppler (DeQ)" }
+              );
+            }
 
             const pdfWristStructures = allowedWristKeys.filter(struct => {
               const s = wristStates[struct.id] || "no_descrito";
@@ -9642,7 +11633,7 @@ Ejemplo:
             doc.setFont("helvetica", "italic");
             doc.setFontSize(6.2);
             doc.setTextColor(148, 163, 184);
-            doc.text("Mapa bilateral de muñeca correlacionado con el reporte.", 150.5, yStart + 74, { align: "center" });
+            doc.text("Mapeo de muñeca correlacionado con el reporte.", 150.5, yStart + 74, { align: "center" });
 
             yCoord += 80;
           } catch (err) {
@@ -10828,6 +12819,149 @@ Ejemplo:
             }
             }
 
+            // 🛠️ DIBUJO DE HEPATOPATÍA CRÓNICA EN PDF (SI ESTÁ ACTIVO)
+            if (includeHepatopatiaSchemaInReport) {
+              const svgHepatopatia = document.getElementById("abdomen-hepatopatia-svg");
+              if (svgHepatopatia) {
+                try {
+                  const processHepatopatiaSvgForPdf = async (svgEl: HTMLElement) => {
+                    const clonedSvg = svgEl.cloneNode(true) as SVGElement;
+                    
+                    const stops = clonedSvg.querySelectorAll("linearGradient stop");
+                    stops.forEach(stop => {
+                      const curColor = stop.getAttribute("stop-color") || stop.getAttribute("stopColor") || "";
+                      if (curColor === "#1e293b" || curColor === "#0f172a" || curColor === "#020617") {
+                        stop.setAttribute("stop-color", "#ffffff");
+                      }
+                    });
+
+                    const paths = clonedSvg.querySelectorAll("path");
+                    paths.forEach(p => {
+                      const fill = p.getAttribute("fill") || "";
+                      const stroke = p.getAttribute("stroke") || "";
+                      if (fill === "#1e293b" || fill === "#0f172a" || fill === "rgba(15, 23, 42, 0.45)") {
+                        p.setAttribute("fill", "#f1f5f9");
+                      }
+                      if (stroke === "#fbbf24") p.setAttribute("stroke", "#d97706");
+                      if (stroke === "#0284c7") p.setAttribute("stroke", "#025a87");
+                      if (stroke === "#ef4444") p.setAttribute("stroke", "#b91c1c");
+                    });
+
+                    const rects = clonedSvg.querySelectorAll("rect");
+                    rects.forEach(r => {
+                      const fill = r.getAttribute("fill") || "";
+                      if (fill === "#1e293b") {
+                        r.setAttribute("fill", "#f1f5f9");
+                      }
+                    });
+
+                    const lines = clonedSvg.querySelectorAll("line");
+                    lines.forEach(l => {
+                      const stroke = l.getAttribute("stroke") || "";
+                      if (stroke === "#ffffff") l.setAttribute("stroke", "#475569");
+                    });
+
+                    const texts = clonedSvg.querySelectorAll("text");
+                    texts.forEach(t => {
+                      const fill = t.getAttribute("fill") || "";
+                      if (fill === "#ffffff" || fill === "#cbd5e1" || fill === "#a1a1aa" || fill === "#f43f5e" || fill === "#eab308" || fill === "#e9d5ff" || fill === "#fecaca" || fill === "#fef08a" || fill === "#38bdf8") {
+                        t.setAttribute("fill", "#0f172a");
+                      }
+                    });
+
+                    return await convertSvgToPng(clonedSvg);
+                  };
+
+                  const imgHepatopatia = await processHepatopatiaSvgForPdf(svgHepatopatia);
+                  if (imgHepatopatia) {
+                    checkPageBreak(82);
+                    yCoord += 4;
+
+                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(8.0);
+                    doc.setTextColor(30, 41, 59);
+                    doc.text("ANEXO: ESQUEMA DE HEPATOPATÍA CRÓNICA Y SUS HALLAZGOS", pageWidth / 2, yCoord, { align: "center" });
+                    yCoord += 3.5;
+
+                    doc.setFont("helvetica", "normal");
+                    doc.setFontSize(6.3);
+                    doc.setTextColor(148, 163, 184);
+                    doc.text("MAPEO HEMODINÁMICO Y MORFOLÓGICO DE HIPERTENSIÓN PORTAL", pageWidth / 2, yCoord, { align: "center" });
+                    yCoord += 4.5;
+
+                    const yHepStart = yCoord;
+
+                    // Outer box
+                    doc.setFillColor(255, 255, 255);
+                    doc.setDrawColor(216, 180, 254); // purple-300 border
+                    doc.roundedRect(20, yHepStart, 170, 58, 3, 3, "FD");
+
+                    // Embed drawing
+                    doc.addImage(imgHepatopatia, "PNG", 125, yHepStart + 4, 52, 47);
+
+                    // Bullet points
+                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(7.0);
+                    doc.setTextColor(107, 33, 168); // purple-800
+                    doc.text("HALLAZGOS (HÍGADO Y SISTEMA PORTAL):", 24, yHepStart + 10);
+                    doc.setFont("helvetica", "normal");
+                    doc.setFontSize(5.8);
+                    doc.setTextColor(51, 65, 85);
+
+                    let findingsList = [];
+                    const checkMorfologia = document.getElementById("hepatopatia-check-morfologia") as HTMLInputElement;
+                    const checkVenaPorta = document.getElementById("hepatopatia-check-venaporta") as HTMLInputElement;
+                    const checkLigamento = document.getElementById("hepatopatia-check-ligamento") as HTMLInputElement;
+                    const checkEsplenomegalia = document.getElementById("hepatopatia-check-esplenomegalia") as HTMLInputElement;
+                    const checkAscitis = document.getElementById("hepatopatia-check-ascitis") as HTMLInputElement;
+                    const checkVarices = document.getElementById("hepatopatia-check-varices") as HTMLInputElement;
+                    const inputDiametro = document.getElementById("hepatopatia-input-diametro") as HTMLInputElement;
+
+                    if (checkMorfologia && checkMorfologia.checked) {
+                      findingsList.push("• Alteración en morfología del parénquima hepático con aspecto cirrótico.");
+                    } else {
+                      findingsList.push("• Morfología y contornos del parénquima hepático conservados.");
+                    }
+
+                    const diamVal = inputDiametro ? parseInt(inputDiametro.value) : 11;
+                    if (checkVenaPorta && checkVenaPorta.checked) {
+                      findingsList.push(`• Aumento de calibre de la vena porta (${diamVal} mm): Hipertensión portal.`);
+                    } else {
+                      findingsList.push(`• Diámetro de la vena porta conservado (${diamVal} mm).`);
+                    }
+
+                    if (checkLigamento && checkLigamento.checked) {
+                      findingsList.push("• Revascularización / recanalización del ligamento redondo umbilical.");
+                    }
+                    if (checkEsplenomegalia && checkEsplenomegalia.checked) {
+                      findingsList.push("• Esplenomegalia reactiva asociada.");
+                    }
+                    if (checkAscitis && checkAscitis.checked) {
+                      findingsList.push("• Presencia de ascitis / líquido libre peritoneal.");
+                    }
+                    if (checkVarices && checkVarices.checked) {
+                      findingsList.push("• Várices colaterales y derivaciones portosistémicas.");
+                    }
+
+                    let currentBulletY = yHepStart + 16;
+                    findingsList.forEach(f => {
+                      doc.text(f, 24, currentBulletY);
+                      currentBulletY += 5;
+                    });
+
+                    doc.setFont("helvetica", "italic");
+                    doc.setFontSize(6.0);
+                    doc.setTextColor(148, 163, 184);
+                    doc.text("Gráfico representativo auxiliar del eje hepatoportal correspondiente al protocolo redactado.", 105, yHepStart + 54, { align: "center" });
+
+                    yCoord += 64;
+                  }
+                } catch (err) {
+                  console.warn("Could not draw hepatopatia diagram inside PDF", err);
+                }
+              }
+            }
+
             // 🛠️ DIBUJO DE DIVERTICULITIS AGUDA / COLON SIGMOIDES EN PDF (SI ESTÁ ACTIVO)
             if (includeDiverticulitisSchemaInReport) {
               const svgDiverticulitis = document.getElementById("abdomen-diverticulitis-svg");
@@ -10951,6 +13085,144 @@ Ejemplo:
                 console.warn("Could not draw diverticulitis diagram inside PDF", err);
               }
             }
+            }
+
+            // 🛠️ DIBUJO DE ANEURISMA DE AORTA ABDOMINAL EN PDF (SI ESTÁ ACTIVO)
+            if (includeAneurismaSchemaInReport) {
+              const svgAneurisma = document.getElementById("abdomen-aneurisma-svg");
+              if (svgAneurisma) {
+                try {
+                  const processAneurismaSvgForPdf = async (svgEl: HTMLElement) => {
+                    const clonedSvg = svgEl.cloneNode(true) as SVGElement;
+                    
+                    const stops = clonedSvg.querySelectorAll("linearGradient stop");
+                    stops.forEach(stop => {
+                      const curColor = stop.getAttribute("stop-color") || stop.getAttribute("stopColor") || "";
+                      if (curColor === "#1e293b" || curColor === "#0f172a" || curColor === "#020617") {
+                        stop.setAttribute("stop-color", "#ffffff");
+                      }
+                    });
+
+                    const paths = clonedSvg.querySelectorAll("path");
+                    paths.forEach(p => {
+                      const fill = p.getAttribute("fill") || "";
+                      const stroke = p.getAttribute("stroke") || "";
+                      if (fill === "#1e293b" || fill === "#0f172a" || fill === "rgba(15, 23, 42, 0.45)") {
+                        p.setAttribute("fill", "#f1f5f9");
+                      }
+                      if (stroke === "#fbbf24") p.setAttribute("stroke", "#d97706");
+                      if (stroke === "#0284c7") p.setAttribute("stroke", "#025a87");
+                      if (stroke === "#ef4444") p.setAttribute("stroke", "#b91c1c");
+                    });
+
+                    const circles = clonedSvg.querySelectorAll("circle");
+                    circles.forEach(c => {
+                      const fill = c.getAttribute("fill") || "";
+                      if (fill === "#1e293b" || fill === "#020617" || fill === "#0f172a") {
+                        c.setAttribute("fill", "#f1f5f9");
+                      }
+                    });
+
+                    const rects = clonedSvg.querySelectorAll("rect");
+                    rects.forEach(r => {
+                      const fill = r.getAttribute("fill") || "";
+                      if (fill === "#1e293b" || fill === "#020617") {
+                        r.setAttribute("fill", "#f1f5f9");
+                      }
+                    });
+
+                    const lines = clonedSvg.querySelectorAll("line");
+                    lines.forEach(l => {
+                      const stroke = l.getAttribute("stroke") || "";
+                      if (stroke === "#ffffff") l.setAttribute("stroke", "#475569");
+                    });
+
+                    const texts = clonedSvg.querySelectorAll("text");
+                    texts.forEach(t => {
+                      const fill = t.getAttribute("fill") || "";
+                      if (fill === "#ffffff" || fill === "#cbd5e1" || fill === "#a1a1aa" || fill === "#f43f5e" || fill === "#eab308" || fill === "#94a3b8" || fill === "#f1f5f9") {
+                        t.setAttribute("fill", "#0f172a");
+                      }
+                    });
+
+                    return await convertSvgToPng(clonedSvg);
+                  };
+
+                  const imgAneurisma = await processAneurismaSvgForPdf(svgAneurisma);
+                  if (imgAneurisma) {
+                    checkPageBreak(82);
+                    yCoord += 4;
+
+                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(8.0);
+                    doc.setTextColor(30, 41, 59);
+                    doc.text("ANEXO: ESQUEMA DE ANEURISMA DE AORTA ABDOMINAL (AAA)", pageWidth / 2, yCoord, { align: "center" });
+                    yCoord += 3.5;
+
+                    doc.setFont("helvetica", "normal");
+                    doc.setFontSize(6.3);
+                    doc.setTextColor(148, 163, 184);
+                    doc.text("RECONSTRUCCIÓN LONGITUDINAL Y TRANSVERSAL", pageWidth / 2, yCoord, { align: "center" });
+                    yCoord += 4.5;
+
+                    const yAneStart = yCoord;
+
+                    // Outer box
+                    doc.setFillColor(255, 255, 255);
+                    doc.setDrawColor(244, 63, 94); // rose-500 border
+                    doc.roundedRect(20, yAneStart, 170, 58, 3, 3, "FD");
+
+                    // Embed drawing (preserving the 1.91:1 aspect ratio of the 420x220 SVG)
+                    doc.addImage(imgAneurisma, "PNG", 110, yAneStart + 6, 76, 40);
+
+                    // Bullet points
+                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(7.0);
+                    doc.setTextColor(225, 29, 72); // rose-600
+                    doc.text("HALLAZGOS SINÓPTICOS (AORTA ABDOMINAL):", 24, yAneStart + 10);
+                    doc.setFont("helvetica", "normal");
+                    doc.setFontSize(5.8);
+                    doc.setTextColor(51, 65, 85);
+
+                    let findingsList = [];
+                    
+                    const svgEl = document.getElementById("abdomen-aneurisma-svg");
+                    if (svgEl) {
+                      findingsList.push(`• Dilatación aneurismática del segmento de aorta abdominal.`);
+                    }
+
+                    const textSummary = document.getElementById("aneurisma-section-root");
+                    if (textSummary) {
+                      const spans = textSummary.querySelectorAll(".border-t span");
+                      spans.forEach(span => {
+                        const txt = span.textContent || "";
+                        if (txt.startsWith("•")) {
+                          findingsList.push(txt);
+                        }
+                      });
+                    }
+                    
+                    if (findingsList.length <= 1) {
+                      findingsList.push("• Presencia de aneurisma de aorta abdominal.");
+                    }
+
+                    let currentBulletY = yAneStart + 16;
+                    findingsList.slice(0, 8).forEach(f => {
+                      doc.text(f, 24, currentBulletY);
+                      currentBulletY += 5;
+                    });
+
+                    doc.setFont("helvetica", "italic");
+                    doc.setFontSize(6.0);
+                    doc.setTextColor(148, 163, 184);
+                    doc.text("Gráfico representativo auxiliar del vaso aórtico correspondiente al protocolo redactado.", 105, yAneStart + 54, { align: "center" });
+
+                    yCoord += 64;
+                  }
+                } catch (err) {
+                  console.warn("Could not draw aneurisma diagram inside PDF", err);
+                }
+              }
             }
 
             // 🛠️ DIBUJO DE INTESTINO DELGADO Y ASCITIS EN PDF (SI ESTÁ ACTIVO)
@@ -12638,9 +14910,8 @@ Ejemplo:
           try {
             let sigWidth = 35;
             let sigHeight = 11;
-            const sigImgEl = document.querySelector('img[alt="Firma"]') as HTMLImageElement | null;
-            if (sigImgEl && sigImgEl.naturalWidth && sigImgEl.naturalHeight) {
-              const aspect = sigImgEl.naturalWidth / sigImgEl.naturalHeight;
+            if (signatureDims.width && signatureDims.height) {
+              const aspect = signatureDims.width / signatureDims.height;
               const maxWidth = 50;
               const maxHeight = 15;
               if (aspect > maxWidth / maxHeight) {
@@ -12713,6 +14984,7 @@ Ejemplo:
         const imgHeight = colWidth * 0.75; // Maintain aspect ratio of 4:3
         
         let currentCol = 0; // 0 or 1
+        let imgIdx = 1;
         for (const imgItem of attachedImages) {
           if (yCoord + imgHeight + 17 > pageHeight - 20) {
             doc.addPage();
@@ -12763,17 +15035,23 @@ Ejemplo:
             doc.setLineWidth(0.25);
             doc.rect(posX, yCoord, colWidth, imgHeight);
 
-            if (imgItem.caption) {
-              doc.setFont("helvetica", "normal");
-              doc.setFontSize(8.5);
-              doc.setTextColor(51, 65, 85); // slate 700
-              const textLines = doc.splitTextToSize(imgItem.caption, colWidth - 2);
-              let offsetTextY = yCoord + imgHeight + 4.5;
-              textLines.forEach((lineText: string) => {
-                doc.text(lineText, posX, offsetTextY);
-                offsetTextY += 3.5;
-              });
-            }
+            // Print Figure label (e.g. "Figura 1.") in bold slate-900
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8.5);
+            doc.setTextColor(15, 23, 42); // slate 900
+            doc.text(`Figura ${imgIdx}.`, posX, yCoord + imgHeight + 4.5);
+
+            // Print Caption below the figure title in normal slate-600
+            const captionText = imgItem.caption || "Sin descripción";
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(8.0);
+            doc.setTextColor(71, 85, 105); // slate 600
+            const textLines = doc.splitTextToSize(captionText, colWidth - 2);
+            let offsetTextY = yCoord + imgHeight + 8.0;
+            textLines.forEach((lineText: string) => {
+              doc.text(lineText, posX, offsetTextY);
+              offsetTextY += 3.5;
+            });
 
           } catch (imgErr) {
             console.error("Could not append attached image in jsPDF: ", imgErr);
@@ -12791,6 +15069,321 @@ Ejemplo:
             currentCol = 0;
             yCoord += imgHeight + 20; // vertical step
           }
+          imgIdx++;
+        }
+      }
+
+      // --- APPEND PATIENT SUMMARY TO THE END OF PDF (IF SELECTED) ---
+      if (attachSummaryToOfficialReport && patientSummary) {
+        doc.addPage();
+        yCoord = 20;
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(15, 23, 42); // slate 900
+        doc.text("ANEXO: EXPLICACIÓN DE INFORME PARA EL PACIENTE", marginX, yCoord);
+
+        // Simple divider
+        yCoord += 4;
+        doc.setDrawColor(203, 213, 225); // slate 300
+        doc.setLineWidth(0.4);
+        doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
+        yCoord += 11;
+
+        // Introduction Summary
+        if (patientSummary.summary) {
+          const cleanSummary = stripEmojis(patientSummary.summary);
+          doc.setFont("times", "normal");
+          doc.setFontSize(10.5);
+          doc.setTextColor(51, 65, 85);
+          
+          const splitSummary = doc.splitTextToSize(cleanSummary, contentWidth);
+          splitSummary.forEach((line: string) => {
+            checkPageBreak(5.5 * factor);
+            doc.text(line, marginX, yCoord);
+            yCoord += 5.5 * factor;
+          });
+          yCoord += 4 * factor;
+        }
+
+        // Key Findings section
+        if (patientSummary.keyFindings && patientSummary.keyFindings.length > 0) {
+          // Estimate first finding height
+          const firstFinding = patientSummary.keyFindings[0];
+          const title0 = stripEmojis(firstFinding.title || "");
+          const originalTerm0 = stripEmojis(firstFinding.originalTerm || "");
+          const simplifiedExplanation0 = stripEmojis(firstFinding.simplifiedExplanation || "");
+          const analogy0 = stripEmojis(firstFinding.analogy || "");
+          const reassurance0 = stripEmojis(firstFinding.reassurance || "");
+
+          const splitTitle0 = doc.splitTextToSize(title0, contentWidth - 10);
+          const splitOrig0 = doc.splitTextToSize(`Término original en informe técnico: "${originalTerm0}"`, contentWidth - 10);
+          const splitExp0 = doc.splitTextToSize(`Explicación: ${simplifiedExplanation0}`, contentWidth - 14);
+          const splitAnalogy0 = doc.splitTextToSize(`Analogía de comprensión: ${analogy0}`, contentWidth - 14);
+          const splitReassurance0 = doc.splitTextToSize(`Contexto Clínico y Perspectiva Médica: ${reassurance0}`, contentWidth - 14);
+
+          const neededHeight0 = ((splitTitle0.length * 5) + 
+                               (splitOrig0.length * 4) + 
+                               (splitExp0.length * 5) + 
+                               (splitAnalogy0.length * 4.5) + 
+                               (splitReassurance0.length * 4.5) + 20) * factor;
+
+          checkPageBreak(15 * factor + neededHeight0);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(11);
+          doc.setTextColor(15, 23, 42);
+          doc.text("HALLAZGOS IDENTIFICADOS Y TRADUCIDOS:", marginX, yCoord);
+          yCoord += 7 * factor;
+
+          patientSummary.keyFindings.forEach((finding: any) => {
+            const title = stripEmojis(finding.title || "");
+            const originalTerm = stripEmojis(finding.originalTerm || "");
+            const simplifiedExplanation = stripEmojis(finding.simplifiedExplanation || "");
+            const analogy = stripEmojis(finding.analogy || "");
+            const reassurance = stripEmojis(finding.reassurance || "");
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(10);
+            const splitTitle = doc.splitTextToSize(title, contentWidth - 10);
+            
+            doc.setFont("times", "italic");
+            doc.setFontSize(9);
+            const splitOrig = doc.splitTextToSize(`Término original en informe técnico: "${originalTerm}"`, contentWidth - 10);
+            
+            doc.setFont("times", "normal");
+            doc.setFontSize(10);
+            const splitExp = doc.splitTextToSize(`Explicación: ${simplifiedExplanation}`, contentWidth - 14);
+
+            doc.setFont("times", "normal");
+            doc.setFontSize(9.5);
+            const splitAnalogy = doc.splitTextToSize(analogy, contentWidth - 14);
+
+            const splitReassurance = doc.splitTextToSize(reassurance, contentWidth - 14);
+
+            const neededHeight = ((splitTitle.length * 5) + 
+                                 (splitOrig.length * 4) + 
+                                 (splitExp.length * 5) + 
+                                 (splitAnalogy.length * 4.5) + 
+                                 (splitReassurance.length * 4.5) + 20) * factor;
+
+            checkPageBreak(neededHeight);
+
+            doc.setFillColor(250, 250, 250);
+            doc.rect(marginX, yCoord, contentWidth, neededHeight - 4 * factor, "F");
+            doc.setDrawColor(229, 231, 235);
+            doc.setLineWidth(0.35);
+            doc.rect(marginX, yCoord, contentWidth, neededHeight - 4 * factor, "D");
+
+            let interiorY = yCoord + 6 * factor;
+
+            // Title
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(10);
+            doc.setTextColor(30, 58, 138); 
+            splitTitle.forEach((line: string) => {
+              doc.text(line, marginX + 5, interiorY);
+              interiorY += 5 * factor;
+            });
+
+            // Original term
+            doc.setFont("times", "italic");
+            doc.setFontSize(9);
+            doc.setTextColor(75, 85, 99); 
+            splitOrig.forEach((line: string) => {
+              doc.text(line, marginX + 5, interiorY);
+              interiorY += 4.5 * factor;
+            });
+            interiorY += 2 * factor;
+
+            // Explanation
+            doc.setFont("times", "normal");
+            doc.setFontSize(10);
+            doc.setTextColor(15, 23, 42); 
+            splitExp.forEach((line: string) => {
+              doc.text(line, marginX + 7, interiorY);
+              interiorY += 4.8 * factor;
+            });
+            interiorY += 2 * factor;
+
+            // Analogy
+            const analogyHeight = (splitAnalogy.length * 4.2 * factor) + 4 * factor;
+            doc.setFillColor(255, 247, 237); 
+            doc.rect(marginX + 5, interiorY - 3 * factor, contentWidth - 10, analogyHeight, "F");
+            doc.setDrawColor(249, 115, 22); 
+            doc.setLineWidth(0.5);
+            doc.line(marginX + 5, interiorY - 3 * factor, marginX + 5, interiorY - 3 * factor + analogyHeight);
+
+            doc.setFont("times", "normal");
+            doc.setFontSize(9.5);
+            doc.setTextColor(124, 45, 18); 
+            splitAnalogy.forEach((line: string) => {
+              doc.text(line, marginX + 8, interiorY);
+              interiorY += 4.2 * factor;
+            });
+            interiorY += 4 * factor;
+
+            // Context
+            const contextHeight = (splitReassurance.length * 4.2 * factor) + 4 * factor;
+            doc.setFillColor(239, 246, 255); 
+            doc.rect(marginX + 5, interiorY - 3 * factor, contentWidth - 10, contextHeight, "F");
+            doc.setDrawColor(59, 130, 246); 
+            doc.setLineWidth(0.5);
+            doc.line(marginX + 5, interiorY - 3 * factor, marginX + 5, interiorY - 3 * factor + contextHeight);
+
+            doc.setFont("times", "normal");
+            doc.setFontSize(9.5);
+            doc.setTextColor(30, 58, 138); 
+            splitReassurance.forEach((line: string) => {
+              doc.text(line, marginX + 8, interiorY);
+              interiorY += 4.2 * factor;
+            });
+
+            yCoord += neededHeight + 2 * factor;
+          });
+          yCoord += 4 * factor;
+        }
+
+        // Care Points Section
+        if (patientSummary.carePoints && patientSummary.carePoints.length > 0) {
+          // Estimate first point height
+          const firstPoint = stripEmojis(patientSummary.carePoints[0]);
+          const splitPoint0 = doc.splitTextToSize(firstPoint, contentWidth - 8);
+          const firstPointHeight = ((splitPoint0.length * 4.8) + 2.5) * factor;
+
+          checkPageBreak(22 * factor + firstPointHeight);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(11);
+          doc.setTextColor(15, 23, 42);
+          doc.text("PAUTAS Y RECOMENDACIONES DE BIENESTAR:", marginX, yCoord);
+          yCoord += 7 * factor;
+
+          patientSummary.carePoints.forEach((point: string) => {
+            const cleanPoint = stripEmojis(point);
+            const splitPoint = doc.splitTextToSize(cleanPoint, contentWidth - 8);
+            
+            checkPageBreak(((splitPoint.length * 5) + 3) * factor);
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(10.5);
+            doc.setTextColor(15, 23, 42);
+            doc.text("•", marginX + 2, yCoord);
+
+            doc.setFont("times", "normal");
+            doc.setFontSize(10.5);
+            doc.setTextColor(51, 65, 85);
+
+            splitPoint.forEach((line: string, i: number) => {
+              doc.text(line, marginX + 6, yCoord + (i * 4.8 * factor));
+            });
+            yCoord += (splitPoint.length * 4.8 * factor) + 2.5 * factor;
+          });
+          yCoord += 4 * factor;
+        }
+
+        // Suggested Questions Section
+        if (patientSummary.suggestedQuestions && patientSummary.suggestedQuestions.length > 0) {
+          // Estimate first question height
+          const firstQ = stripEmojis(patientSummary.suggestedQuestions[0]);
+          const splitQ0 = doc.splitTextToSize(`"${firstQ}"`, contentWidth - 8);
+          const firstQHeight = ((splitQ0.length * 4.8) + 3) * factor;
+
+          checkPageBreak(22 * factor + firstQHeight);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(11);
+          doc.setTextColor(15, 23, 42);
+          doc.text("PREGUNTAS SUGERIDAS PARA SU CONSULTA MÉDICA:", marginX, yCoord);
+          yCoord += 7 * factor;
+
+          patientSummary.suggestedQuestions.forEach((q: string, idx: number) => {
+            const cleanQ = stripEmojis(q);
+            const splitQ = doc.splitTextToSize(`"${cleanQ}"`, contentWidth - 8);
+
+            checkPageBreak(((splitQ.length * 5) + 3) * factor);
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(10);
+            doc.setTextColor(15, 23, 42);
+            doc.text(`${idx + 1}.`, marginX + 2, yCoord);
+
+            doc.setFont("times", "bold");
+            doc.setFontSize(10);
+            doc.setTextColor(30, 41, 59);
+
+            splitQ.forEach((line: string, i: number) => {
+              doc.text(line, marginX + 7, yCoord + (i * 4.8 * factor));
+            });
+            yCoord += (splitQ.length * 4.8 * factor) + 3 * factor;
+          });
+        }
+      }
+
+      // --- APPEND Patient Infographic TO THE END OF PDF (IF SELECTED) ---
+      if (attachInfographicToOfficialReport && infographicUrl) {
+        try {
+          let base64Image = infographicUrl;
+          if (!infographicUrl.startsWith("data:")) {
+            // It's a blob or normal URL. Let's fetch it and convert to data URL
+            const response = await fetch(infographicUrl);
+            const blob = await response.blob();
+            base64Image = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.onerror = reject;
+              reader.readAsDataURL(blob);
+            });
+          }
+
+          doc.addPage();
+          yCoord = 20;
+
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(11);
+          doc.setTextColor(15, 23, 42); // slate 900
+          doc.text("ANEXO: INFOGRAFÍA EXPLICATIVA PARA EL PACIENTE", marginX, yCoord);
+
+          // Simple divider
+          yCoord += 4;
+          doc.setDrawColor(203, 213, 225); // slate 300
+          doc.setLineWidth(0.4);
+          doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
+          yCoord += 11;
+
+          // Let's determine format
+          let format = "PNG";
+          if (base64Image.includes("image/jpeg") || base64Image.includes("image/jpg")) {
+            format = "JPEG";
+          } else if (base64Image.includes("image/webp")) {
+            format = "WEBP";
+          }
+
+          // Measure its aspect ratio to fit perfectly without distortion
+          const imgAspect = await new Promise<number>((resolve) => {
+            const tempImg = new Image();
+            tempImg.onload = () => {
+              resolve(tempImg.naturalWidth / tempImg.naturalHeight);
+            };
+            tempImg.onerror = () => {
+              resolve(1.0); // Fallback to square
+            };
+            tempImg.src = base64Image;
+          });
+
+          const maxDrawWidth = contentWidth;
+          const maxDrawHeight = pageHeight - yCoord - 20; // 20mm margin bottom
+
+          let drawW = maxDrawWidth;
+          let drawH = maxDrawWidth / imgAspect;
+
+          if (drawH > maxDrawHeight) {
+            drawH = maxDrawHeight;
+            drawW = maxDrawHeight * imgAspect;
+          }
+
+          // Center horizontally
+          const drawX = marginX + (maxDrawWidth - drawW) / 2;
+          const drawY = yCoord;
+
+          doc.addImage(base64Image, format, drawX, drawY, drawW, drawH);
+        } catch (err) {
+          console.error("Error adding infographic to PDF:", err);
         }
       }
 
@@ -12813,7 +15406,7 @@ Ejemplo:
         doc.text(footerPageStr, pageWidth - marginX - doc.getTextWidth(footerPageStr), pageHeight - 10);
         
         // Faint, small watermark or clinic name on the left of footer
-        const footerLeftText = clinicName ? clinicName.toUpperCase() : "REPORTE RADIOLÓGICO";
+        const footerLeftText = displayClinicName || "REPORTE RADIOLÓGICO";
         doc.text(footerLeftText, marginX, pageHeight - 10);
 
         // Header for page 2 onwards (Running Header)
@@ -12865,6 +15458,7 @@ Ejemplo:
       }
 
       // Output either as file download or Blob URL opened in a new clean screen
+      if (returnRawBlob) { return doc.output("blob"); }
       if (shareViaWebShare) {
         const blob = doc.output("blob");
         const filename = patientName ? `${patientName.trim().replace(/\s+/gi, "_")}_reporte.pdf` : "reporte_radiologico.pdf";
@@ -12897,15 +15491,19 @@ Ejemplo:
     openInNewTab: boolean = false,
     shareViaWebShare: boolean = false,
     returnBase64: boolean = false,
-    returnBlobUrl: boolean = false
-  ): Promise<string | undefined> => {
+    returnBlobUrl: boolean = false,
+    returnRawBlob: boolean = false
+  ): Promise<any> => {
     if (!patientSummary) return;
+
+    const displayClinicName = clinicName && clinicName.trim().toUpperCase() !== "CLÍNICA PRIVADA" && clinicName.trim().toUpperCase() !== "CLINICA PRIVADA" ? clinicName.toUpperCase() : "";
 
     try {
       const doc = new jsPDF({
         orientation: "portrait",
         unit: "mm",
         format: "a4",
+        compress: false,
       });
 
       let yCoord = 20;
@@ -12913,6 +15511,10 @@ Ejemplo:
       const pageWidth = 210;
       const pageHeight = 297;
       const contentWidth = pageWidth - (2 * marginX); // 170mm
+
+      // Load virtual image dimensions to prevent any layout distortion on any device
+      const logoDims = await getImageDimensionsVirtual(customLogoUrl);
+      const signatureDims = await getImageDimensionsVirtual(customSignatureUrl);
 
       // Strip emojis helper to prevent visual square errors in default fonts
       const stripEmojis = (str: string): string => {
@@ -12930,20 +15532,18 @@ Ejemplo:
       if (customLogoUrl) {
         if (customLogoStyle === "banner") {
           let bannerHeight = 35;
-          const bannerImgEl = document.querySelector('img[alt="Membrete de la Clínica"]') as HTMLImageElement | null;
-          if (bannerImgEl && bannerImgEl.naturalWidth && bannerImgEl.naturalHeight) {
-            const aspect = bannerImgEl.naturalWidth / bannerImgEl.naturalHeight;
+          if (logoDims.width && logoDims.height) {
+            const aspect = logoDims.width / logoDims.height;
             const maxWidth = contentWidth;
             const maxHeight = 52;
             bannerHeight = aspect > maxWidth / maxHeight ? maxWidth / aspect : maxHeight;
           }
           estimatedHeight += bannerHeight + 5;
-          if (clinicName) estimatedHeight += 5;
+          if (displayClinicName) estimatedHeight += 5;
         } else {
           let logoHeight = 36;
-          const logoImgEl = document.querySelector('img[alt="Logo"]') as HTMLImageElement | null;
-          if (logoImgEl && logoImgEl.naturalWidth && logoImgEl.naturalHeight) {
-            const aspect = logoImgEl.naturalWidth / logoImgEl.naturalHeight;
+          if (logoDims.width && logoDims.height) {
+            const aspect = logoDims.width / logoDims.height;
             const maxWidth = 42;
             const maxHeight = 42;
             logoHeight = aspect > maxWidth / maxHeight ? maxWidth / aspect : maxHeight;
@@ -13043,11 +15643,10 @@ Ejemplo:
       // Header Brand/Clinic Logo & Name
       if (customLogoUrl) {
         if (customLogoStyle === "banner") {
-          const bannerImgEl = document.querySelector('img[alt="Membrete de la Clínica"]') as HTMLImageElement | null;
           let bannerWidth = 165;
           let bannerHeight = 35;
-          if (bannerImgEl && bannerImgEl.naturalWidth && bannerImgEl.naturalHeight) {
-            const aspect = bannerImgEl.naturalWidth / bannerImgEl.naturalHeight;
+          if (logoDims.width && logoDims.height) {
+            const aspect = logoDims.width / logoDims.height;
             const maxWidth = contentWidth;
             const maxHeight = 52;
             if (aspect > maxWidth / maxHeight) {
@@ -13068,23 +15667,22 @@ Ejemplo:
             doc.setFont("helvetica", "bold");
             doc.setFontSize(14);
             doc.setTextColor(15, 23, 42);
-            doc.text(clinicName ? clinicName.toUpperCase() : "ACOMPAÑAMIENTO EXPLICATIVO", pageWidth / 2, yCoord, { align: "center" });
+            doc.text(displayClinicName || "ACOMPAÑAMIENTO EXPLICATIVO", pageWidth / 2, yCoord, { align: "center" });
             yCoord += 6;
           }
 
-          if (clinicName) {
+          if (displayClinicName) {
             doc.setFont("helvetica", "bold");
             doc.setFontSize(10);
             doc.setTextColor(15, 23, 42);
-            doc.text(clinicName.toUpperCase(), pageWidth / 2, yCoord, { align: "center" });
+            doc.text(displayClinicName, pageWidth / 2, yCoord, { align: "center" });
             yCoord += 5;
           }
         } else {
-          const logoImgEl = document.querySelector('img[alt="Logo"]') as HTMLImageElement | null;
           let logoWidth = 36;
           let logoHeight = 36;
-          if (logoImgEl && logoImgEl.naturalWidth && logoImgEl.naturalHeight) {
-            const aspect = logoImgEl.naturalWidth / logoImgEl.naturalHeight;
+          if (logoDims.width && logoDims.height) {
+            const aspect = logoDims.width / logoDims.height;
             const maxWidth = 42;
             const maxHeight = 42;
             if (aspect > maxWidth / maxHeight) {
@@ -13107,7 +15705,7 @@ Ejemplo:
           doc.setFont("helvetica", "bold");
           doc.setFontSize(14);
           doc.setTextColor(15, 23, 42);
-          doc.text(clinicName ? clinicName.toUpperCase() : "ACOMPAÑAMIENTO EXPLICATIVO", textX, yCoord + (logoHeight / 2) - 1.5);
+          doc.text(displayClinicName || "ACOMPAÑAMIENTO EXPLICATIVO", textX, yCoord + (logoHeight / 2) - 1.5);
           
           doc.setFont("helvetica", "bold");
           doc.setFontSize(9);
@@ -13143,7 +15741,7 @@ Ejemplo:
           doc.setFont("helvetica", "bold");
           doc.setFontSize(14);
           doc.setTextColor(15, 23, 42);
-          doc.text(clinicName ? clinicName.toUpperCase() : "ACOMPAÑAMIENTO EXPLICATIVO", textX, yCoord + 5);
+          doc.text(displayClinicName || "ACOMPAÑAMIENTO EXPLICATIVO", textX, yCoord + 5);
           
           doc.setFont("helvetica", "bold");
           doc.setFontSize(9);
@@ -13152,11 +15750,11 @@ Ejemplo:
           
           yCoord += 18;
         } else {
-          if (clinicName) {
+          if (displayClinicName) {
             doc.setFont("helvetica", "bold");
             doc.setFontSize(14);
             doc.setTextColor(15, 23, 42);
-            doc.text(clinicName.toUpperCase(), pageWidth / 2, yCoord, { align: "center" });
+            doc.text(displayClinicName, pageWidth / 2, yCoord, { align: "center" });
             yCoord += 6;
 
             doc.setFont("helvetica", "bold");
@@ -13547,9 +16145,8 @@ Ejemplo:
           try {
             let sigWidth = 35;
             let sigHeight = 11;
-            const sigImgEl = document.querySelector('img[alt="Firma"]') as HTMLImageElement | null;
-            if (sigImgEl && sigImgEl.naturalWidth && sigImgEl.naturalHeight) {
-              const aspect = sigImgEl.naturalWidth / sigImgEl.naturalHeight;
+            if (signatureDims.width && signatureDims.height) {
+              const aspect = signatureDims.width / signatureDims.height;
               const maxWidth = 50;
               const maxHeight = 15;
               if (aspect > maxWidth / maxHeight) {
@@ -13613,7 +16210,7 @@ Ejemplo:
         doc.text(footerPageStr, pageWidth - marginX - doc.getTextWidth(footerPageStr), pageHeight - 10);
         
         // Faint, small watermark or clinic name on the left of footer
-        const footerLeftText = clinicName ? clinicName.toUpperCase() : "EXPLICACIÓN DEL ESTUDIO";
+        const footerLeftText = displayClinicName || "EXPLICACIÓN DEL ESTUDIO";
         doc.text(footerLeftText, marginX, pageHeight - 10);
 
         // Header for page 2 onwards (Running Header)
@@ -13650,6 +16247,7 @@ Ejemplo:
         return dataUri.split(",")[1];
       }
 
+      if (returnRawBlob) { return doc.output("blob"); }
       if (shareViaWebShare) {
         const blob = doc.output("blob");
         const filename = patientName ? `${patientName.trim().replace(/\s+/gi, "_")}_explicacion.pdf` : "explicacion_paciente.pdf";
@@ -13677,6 +16275,83 @@ Ejemplo:
     }
   };
 
+  const handleSaveToDrive = async () => {
+    try {
+      setIsUploadingToDrive(true);
+      setDriveUploadStatus("Verificando sesión...");
+      
+      const { getAccessToken, googleSignIn } = await import("./firebaseAuth");
+      let token = await getAccessToken();
+      
+      if (!token) {
+        setDriveUploadStatus("Autenticando con Google...");
+        try {
+          const authRes = await googleSignIn();
+          if (authRes) {
+            token = authRes.accessToken;
+          }
+        } catch (e) {
+          console.error(e);
+          setDriveUploadStatus("Error: No se pudo autenticar.");
+          setTimeout(() => setDriveUploadStatus(""), 3000);
+          return;
+        }
+      }
+      
+      if (!token) {
+        setDriveUploadStatus("Error: No autenticado.");
+        setTimeout(() => setDriveUploadStatus(""), 3000);
+        return;
+      }
+      
+      setDriveUploadStatus("Generando Reporte Oficial...");
+      const reportBlob = await handleDownloadNativePDF(false, false, false, false, undefined, true);
+      
+      if (!reportBlob) {
+        setDriveUploadStatus("Error: No se pudo generar el reporte.");
+        setTimeout(() => setDriveUploadStatus(""), 3000);
+        return;
+      }
+      
+      setDriveUploadStatus("Subiendo a Google Drive...");
+      const reportName = patientName ? `${patientName.trim()}_reporte.pdf` : "reporte_radiologico.pdf";
+      
+      try {
+        await uploadPdfToDrive(reportBlob, reportName, token, "BASE DE DATOS");
+      } catch (uploadError: any) {
+        if (uploadError.message && (uploadError.message.includes('401') || uploadError.message.includes('403'))) {
+           setDriveUploadStatus("Permisos insuficientes. Re-autenticando...");
+           const authRes = await googleSignIn();
+           if (authRes && authRes.accessToken) {
+             token = authRes.accessToken;
+             await uploadPdfToDrive(reportBlob, reportName, token, "BASE DE DATOS");
+           } else {
+             throw new Error("No se pudo re-autenticar.");
+           }
+        } else {
+           throw uploadError;
+        }
+      }
+
+      if (patientSummary) {
+        setDriveUploadStatus("Subiendo Explicación a Drive...");
+        const summaryBlob = await handleDownloadPatientSummaryPDF(false, false, false, false, true);
+        if (summaryBlob) {
+          const summaryName = patientName ? `Explicacion_${patientName.trim().replace(/\s+/gi, "_")}.pdf` : "explicacion_paciente.pdf";
+          await uploadPdfToDrive(summaryBlob, summaryName, token, "BASE DE DATOS");
+        }
+      }
+
+      setDriveUploadStatus("¡Guardado Exitosamente en Drive!");
+      setTimeout(() => setDriveUploadStatus(""), 4000);
+    } catch (error) {
+      console.error("Error al subir a Google Drive:", error);
+      setDriveUploadStatus("Error al subir a Google Drive.");
+      setTimeout(() => setDriveUploadStatus(""), 4000);
+    } finally {
+      setIsUploadingToDrive(false);
+    }
+  };
   useEffect(() => {
     if (!showPrintModal && !isSplitPdfActive) {
       if (generatedNativePdfUrl) {
@@ -14107,7 +16782,7 @@ Ejemplo:
     return parts.length > 0 ? parts : text;
   };
 
-  const renderBoldTextSafe = (text: string, keyPrefix: string) => {
+  const renderBoldTextSafe = (text: string, keyPrefix: string, isLightBg: boolean = false) => {
     if (!text) return "";
     const parts: React.ReactNode[] = [];
     const boldRegex = /\*\*(.*?)\*\"/g; // Wait, actually standard bold regex is /\*\*(.*?)\*\*/g
@@ -14122,7 +16797,7 @@ Ejemplo:
         parts.push(text.substring(lastIndex, matchIndex));
       }
       parts.push(
-        <strong key={`${keyPrefix}-${keyCounter++}`} className="font-bold text-white">
+        <strong key={`${keyPrefix}-${keyCounter++}`} className={`font-bold ${isLightBg ? "text-slate-950 font-black" : "text-white"}`}>
           {match[1]}
         </strong>
       );
@@ -15294,7 +17969,7 @@ Ejemplo:
     const structures = getStructuresForProtocol(protocol);
 
     // 1. Generate Table Markdown
-    let tableText = "| Estructura | Hallazgos |\n";
+    let tableText = "| INTERPRETACIÓN | Hallazgos |\n";
     tableText += "| :--- | :--- |\n";
     let hasRows = false;
     structures.forEach(struct => {
@@ -16794,7 +19469,7 @@ Ejemplo:
 
 
   const renderPrintWristSchema = () => {
-    if (!includeWristSchemaInReport || specificStudy !== "Muñeca") return null;
+    if ((!includeWristSchemaInReport && !includeDeQuervainSchemaInReport) || specificStudy !== "Muñeca") return null;
 
     const preprocessSvgForPrint = (svgElement: HTMLElement) => {
       let outerSvg = svgElement.outerHTML;
@@ -16823,29 +19498,49 @@ Ejemplo:
 
     const svgAnterior = document.getElementById("wrist-anatomy-anterior-svg");
     const svgPosterior = document.getElementById("wrist-anatomy-posterior-svg");
+    const svgDeQuervain = document.getElementById("wrist-de-quervain-svg");
+
     let processedAnterior = "";
     let processedPosterior = "";
+    let processedDeQuervain = "";
 
-    if (svgAnterior) {
-      processedAnterior = preprocessSvgForPrint(svgAnterior);
-    }
-    if (svgPosterior) {
-      processedPosterior = preprocessSvgForPrint(svgPosterior);
+    if (includeWristSchemaInReport) {
+      if (svgAnterior) {
+        processedAnterior = preprocessSvgForPrint(svgAnterior);
+      }
+      if (svgPosterior) {
+        processedPosterior = preprocessSvgForPrint(svgPosterior);
+      }
     }
 
-    const testKeys = [
-      { id: "nervio_mediano", label: "Nervio Mediano" },
-      { id: "tendones_flexores", label: "Tendones Flexores" },
-      { id: "flexor_carpi_radialis", label: "FCR" },
-      { id: "arteria_radial", label: "Arteria Radial" },
-      { id: "receso_radiocarpiano_anterior", label: "Receso Volar" },
-      { id: "canal_de_guyon", label: "Canal de Guyon" },
-      { id: "receso_radiocarpiano_posterior", label: "Receso Dorsal" },
-      { id: "articulacion_radiocubital_distal", label: "ARCD" },
-      { id: "tendones_extensores_compartimentos", label: "Extensores" },
-      { id: "fibrocartilago_triangular", label: "Fibrocartílago" },
-      { id: "extensor_carpi_ulnaris", label: "ECU" }
-    ];
+    if (includeDeQuervainSchemaInReport && svgDeQuervain) {
+      processedDeQuervain = preprocessSvgForPrint(svgDeQuervain);
+    }
+
+    const testKeys = [];
+    if (includeWristSchemaInReport) {
+      testKeys.push(
+        { id: "nervio_mediano", label: "Nervio Mediano" },
+        { id: "tendones_flexores", label: "Tendones Flexores" },
+        { id: "flexor_carpi_radialis", label: "FCR" },
+        { id: "arteria_radial", label: "Arteria Radial" },
+        { id: "receso_radiocarpiano_anterior", label: "Receso Volar" },
+        { id: "canal_de_guyon", label: "Canal de Guyon" },
+        { id: "receso_radiocarpiano_posterior", label: "Receso Dorsal" },
+        { id: "articulacion_radiocubital_distal", label: "ARCD" },
+        { id: "tendones_extensores_compartimentos", label: "Extensores" },
+        { id: "fibrocartilago_triangular", label: "Fibrocartílago" },
+        { id: "extensor_carpi_ulnaris", label: "ECU" }
+      );
+    }
+    if (includeDeQuervainSchemaInReport) {
+      testKeys.push(
+        { id: "dq_tendones_apl_epb", label: "T. APL/EPB (DeQ)" },
+        { id: "dq_vaina_sinovial_liquido", label: "Vaina Sinovial (DeQ)" },
+        { id: "dq_retinaculo_extensor", label: "Retináculo I (DeQ)" },
+        { id: "dq_doppler_hyperemia", label: "Señal Doppler (DeQ)" }
+      );
+    }
 
     const activePrintKeys = testKeys.filter(struct => wristStates[struct.id] && wristStates[struct.id] !== "no_descrito");
 
@@ -16868,29 +19563,47 @@ Ejemplo:
             Anexo: Esquema de Hallazgos y Sinopsis de Muñeca
           </h3>
           <p className="text-[7.5px] text-gray-400 font-semibold tracking-wider uppercase mt-1 leading-none">
-            Mapeo Bilateral Volar & Dorsal e Integración de Muñeca
+            {includeWristSchemaInReport && includeDeQuervainSchemaInReport 
+              ? "Mapeo General e I Compartimento de De Quervain Integrados"
+              : includeWristSchemaInReport 
+              ? "Mapeo Volar & Dorsal General de Muñeca"
+              : "Mapeo Especializado de Tenosinovitis de De Quervain (Compartimento I)"}
           </p>
         </div>
 
         <div className="flex flex-row gap-4">
           {/* Left Element: SVGs */}
-          <div className="w-[220px] border border-gray-205 p-2 rounded-xl bg-white flex flex-row justify-center items-center gap-2 shrink-0">
-            {processedAnterior ? (
-              <div className="flex-1 flex flex-col items-center">
-                <div 
-                  className="w-full max-w-[95px] font-sans text-center"
-                  dangerouslySetInnerHTML={{ __html: processedAnterior }} 
-                />
-                <div className="text-[5.5px] text-gray-400 font-bold uppercase mt-1">Volar</div>
+          <div className="w-[220px] border border-gray-200 p-2 rounded-xl bg-white flex flex-col justify-center items-center gap-3 shrink-0">
+            {includeWristSchemaInReport && (processedAnterior || processedPosterior) ? (
+              <div className="flex flex-row justify-center items-center gap-2 w-full border-b border-gray-100 pb-2">
+                {processedAnterior ? (
+                  <div className="flex-1 flex flex-col items-center">
+                    <div 
+                      className="w-full max-w-[95px] font-sans text-center"
+                      dangerouslySetInnerHTML={{ __html: processedAnterior }} 
+                    />
+                    <div className="text-[5.5px] text-gray-400 font-bold uppercase mt-1">Volar</div>
+                  </div>
+                ) : null}
+                {processedPosterior ? (
+                  <div className="flex-1 flex flex-col items-center">
+                    <div 
+                      className="w-full max-w-[95px] font-sans text-center"
+                      dangerouslySetInnerHTML={{ __html: processedPosterior }} 
+                    />
+                    <div className="text-[5.5px] text-gray-400 font-bold uppercase mt-1">Dorsal</div>
+                  </div>
+                ) : null}
               </div>
             ) : null}
-            {processedPosterior ? (
-              <div className="flex-1 flex flex-col items-center">
+
+            {includeDeQuervainSchemaInReport && processedDeQuervain ? (
+              <div className="flex flex-col items-center w-full pt-1">
                 <div 
-                  className="w-full max-w-[95px] font-sans text-center"
-                  dangerouslySetInnerHTML={{ __html: processedPosterior }} 
+                  className="w-full max-w-[110px] font-sans text-center"
+                  dangerouslySetInnerHTML={{ __html: processedDeQuervain }} 
                 />
-                <div className="text-[5.5px] text-gray-400 font-bold uppercase mt-1">Dorsal</div>
+                <div className="text-[5.5px] text-gray-400 font-bold uppercase mt-1">Compartimento I (De Quervain)</div>
               </div>
             ) : null}
           </div>
@@ -18281,6 +20994,291 @@ Ejemplo:
     );
   };
 
+  const renderElegantPatientResumenDark = (rawText: string) => {
+    if (!rawText) {
+      return (
+        <p className="text-slate-500 italic text-xs md:text-sm">
+          Su resumen operacional clínico se está compilando. Por favor, descargue el PDF oficial para consultar la versión final firmada.
+        </p>
+      );
+    }
+
+    const elements = parseReportToElements(rawText, "patient-resumen-dark");
+
+    return (
+      <div className="space-y-4 text-slate-300 font-sans text-xs md:text-[13.5px] leading-relaxed">
+        {elements.map((elem, idx) => {
+          if (elem.type === "divider") {
+            return <hr key={elem.id} className="border-slate-800 my-4" />;
+          }
+
+          if (elem.type === "heading") {
+            const hText = elem.text || "";
+            return (
+              <h3 key={elem.id} className="text-white text-xs md:text-sm font-black uppercase tracking-wider mt-4 mb-2 flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                {renderBoldTextSafe(hText, `patient-res-h-dark-${idx}`, true)}
+              </h3>
+            );
+          }
+
+          if (elem.type === "list") {
+            return (
+              <ul key={elem.id} className="space-y-3.5 pl-1 my-3">
+                {elem.items?.map((item, itemIdx) => {
+                  let cleanItem = item.trim();
+                  let isNumbered = /^\d+[\.\)]\s+/.test(cleanItem);
+                  let bulletSpan: React.ReactNode = (
+                    <span className="text-emerald-400 font-black text-base select-none shrink-0 mt-[-2px] leading-none">
+                      •
+                    </span>
+                  );
+                  let bulletNumber = "";
+
+                  if (isNumbered) {
+                    const match = cleanItem.match(/^(\d+[\.\)])\s+/);
+                    if (match) {
+                      bulletNumber = match[1];
+                      bulletSpan = (
+                        <span className="text-[13px] font-bold font-mono text-emerald-400 min-w-[18px] text-right mt-0.5 shrink-0">
+                          {bulletNumber}
+                        </span>
+                      );
+                      cleanItem = cleanItem.substring(match[0].length);
+                    }
+                  } else {
+                    // Clean up all typical leading bullets/spaces/hyphens to prevent stray markers at start of sentence
+                    cleanItem = cleanItem.replace(/^[\s\-\*\•\▪\o\+\—\u2022\u25E6\u2023\u2043]+/g, "").trim();
+                  }
+
+                  // Capitalize the first letter properly (including cases where there's bold markdown at start like **hallazgo**)
+                  if (cleanItem.startsWith("**")) {
+                    const match = cleanItem.match(/^\*\*(\s*[a-zñáéíóúü])/i);
+                    if (match) {
+                      const firstChar = match[1];
+                      cleanItem = cleanItem.replace(/^\*\*(\s*[a-zñáéíóúü])/i, `**${firstChar.toUpperCase()}`);
+                    }
+                  } else {
+                    cleanItem = cleanItem.charAt(0).toUpperCase() + cleanItem.slice(1);
+                  }
+
+                  const renderedText = renderBoldTextSafe(cleanItem, `patient-res-list-dark-${idx}-${itemIdx}`, true);
+
+                  return (
+                    <li key={`${elem.id}-item-${itemIdx}`} className="flex items-start gap-3 pl-1">
+                      {bulletSpan}
+                      <span className="text-slate-300 leading-relaxed text-[13px] md:text-[14px]">
+                        {renderedText}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            );
+          }
+
+          if (elem.type === "table") {
+            const headers = elem.headers || [];
+            const bodyRows = elem.bodyRows || [];
+
+            if (headers.length === 0) return null;
+
+            return (
+              <div key={elem.id} className="overflow-x-auto my-4 border border-slate-800 rounded-xl bg-slate-900/60 shadow-sm max-w-full">
+                <table className="min-w-full divide-y divide-slate-800 text-xs text-left">
+                  <thead className="bg-slate-950 font-mono">
+                    <tr>
+                      {headers.map((h, hIdx) => (
+                        <th key={`th-dark-${hIdx}`} className="px-3 py-2.5 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800 bg-slate-900/30 font-sans">
+                    {bodyRows.map((r, rIdx) => (
+                      <tr key={`tr-dark-${rIdx}`} className="hover:bg-slate-850 transition-colors">
+                        {r.map((c, cIdx) => (
+                          <td key={`td-dark-${cIdx}`} className="px-3 py-2 text-slate-300 leading-relaxed max-w-xs break-words whitespace-normal font-sans">
+                            {renderBoldTextSafe(c, `cell-patient-res-dark-${idx}-${rIdx}-${cIdx}`, true)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          }
+
+          // Default: "text" type
+          return (
+            <div key={elem.id} className="space-y-2.5 my-2">
+              {elem.lines?.map((line, lIdx) => {
+                const trimmedLine = line.trim();
+                if (!trimmedLine) return null;
+
+                const isHeader = trimmedLine.startsWith("**") && trimmedLine.endsWith("**");
+                const cleanHeaderTxt = trimmedLine.replace(/\*\*/g, "");
+
+                if (isHeader) {
+                  return (
+                    <p key={`${elem.id}-l-${lIdx}`} className="text-white text-xs md:text-sm font-black uppercase tracking-wide mt-3 mb-1 block">
+                      {renderBoldTextSafe(cleanHeaderTxt, `patient-res-bold-header-dark-${idx}-${lIdx}`, true)}
+                    </p>
+                  );
+                }
+
+                return (
+                  <p key={`${elem.id}-l-${lIdx}`} className="text-slate-300 leading-relaxed text-[13px] md:text-[14px] select-text">
+                    {renderBoldTextSafe(trimmedLine, `patient-res-text-dark-${idx}-${lIdx}`, true)}
+                  </p>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderElegantPatientResumen = (rawText: string) => {
+    if (!rawText) {
+      return (
+        <p className="text-slate-400 italic text-xs md:text-sm">
+          Su resumen operacional clínico se está compilando. Por favor, descargue el PDF oficial para consultar la versión final firmada.
+        </p>
+      );
+    }
+
+    const elements = parseReportToElements(rawText, "patient-resumen");
+
+    return (
+      <div className="space-y-4 text-slate-800 font-sans text-xs md:text-[13.5px] leading-relaxed">
+        {elements.map((elem, idx) => {
+          if (elem.type === "divider") {
+            return <hr key={elem.id} className="border-slate-100 my-4" />;
+          }
+
+          if (elem.type === "heading") {
+            const hText = elem.text || "";
+            return (
+              <h3 key={elem.id} className="text-slate-900 text-xs md:text-sm font-black uppercase tracking-wider mt-4 mb-2 flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                {renderBoldTextSafe(hText, `patient-res-h-${idx}`, true)}
+              </h3>
+            );
+          }
+
+          if (elem.type === "list") {
+            return (
+              <ul key={elem.id} className="space-y-3.5 pl-1 my-3">
+                {elem.items?.map((item, itemIdx) => {
+                  let cleanItem = item.trim();
+                  let isNumbered = /^\d+\.\s+/.test(cleanItem);
+                  // Beautiful, clean black bullet point matching the screenshot
+                  let bulletSpan: React.ReactNode = (
+                    <span className="text-slate-900 font-black text-base select-none shrink-0 mt-[-2px] leading-none">
+                      •
+                    </span>
+                  );
+                  let bulletNumber = "";
+
+                  if (isNumbered) {
+                    const match = cleanItem.match(/^(\d+\.)\s+/);
+                    if (match) {
+                      bulletNumber = match[1];
+                      bulletSpan = (
+                        <span className="text-[13px] font-bold font-mono text-slate-900 min-w-[18px] text-right mt-0.5 shrink-0">
+                          {bulletNumber}
+                        </span>
+                      );
+                      cleanItem = cleanItem.substring(match[0].length);
+                    }
+                  } else if (cleanItem.startsWith("- ") || cleanItem.startsWith("* ")) {
+                    cleanItem = cleanItem.substring(2);
+                  }
+
+                  const renderedText = renderBoldTextSafe(cleanItem, `patient-res-list-${idx}-${itemIdx}`, true);
+
+                  return (
+                    <li key={`${elem.id}-item-${itemIdx}`} className="flex items-start gap-3 pl-1">
+                      {bulletSpan}
+                      <span className="text-slate-800 leading-relaxed text-[13px] md:text-[14px]">
+                        {renderedText}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            );
+          }
+
+          if (elem.type === "table") {
+            const headers = elem.headers || [];
+            const bodyRows = elem.bodyRows || [];
+
+            if (headers.length === 0) return null;
+
+            return (
+              <div key={elem.id} className="overflow-x-auto my-4 border border-slate-200 rounded-xl bg-slate-50 shadow-sm max-w-full">
+                <table className="min-w-full divide-y divide-slate-200 text-xs text-left">
+                  <thead className="bg-slate-100 font-mono">
+                    <tr>
+                      {headers.map((h, hIdx) => (
+                        <th key={`th-${hIdx}`} className="px-3 py-2.5 text-[10px] font-black uppercase tracking-wider text-slate-700">
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white font-sans">
+                    {bodyRows.map((r, rIdx) => (
+                      <tr key={`tr-${rIdx}`} className="hover:bg-slate-50 transition-colors">
+                        {r.map((c, cIdx) => (
+                          <td key={`td-${cIdx}`} className="px-3 py-2 text-slate-700 leading-relaxed max-w-xs break-words whitespace-normal font-sans">
+                            {renderBoldTextSafe(c, `cell-patient-res-${idx}-${rIdx}-${cIdx}`, true)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          }
+
+          // Default: "text" type
+          return (
+            <div key={elem.id} className="space-y-2.5 my-2">
+              {elem.lines?.map((line, lIdx) => {
+                const trimmedLine = line.trim();
+                if (!trimmedLine) return null;
+
+                const isHeader = trimmedLine.startsWith("**") && trimmedLine.endsWith("**");
+                const cleanHeaderTxt = trimmedLine.replace(/\*\*/g, "");
+
+                if (isHeader) {
+                  return (
+                    <p key={`${elem.id}-l-${lIdx}`} className="text-slate-950 text-xs md:text-sm font-black uppercase tracking-wide mt-3 mb-1 block">
+                      {renderBoldTextSafe(cleanHeaderTxt, `patient-res-bold-header-${idx}-${lIdx}`, true)}
+                    </p>
+                  );
+                }
+
+                return (
+                  <p key={`${elem.id}-l-${lIdx}`} className="text-slate-800 leading-relaxed text-[13px] md:text-[14px] select-text">
+                    {renderBoldTextSafe(trimmedLine, `patient-res-text-${idx}-${lIdx}`, true)}
+                  </p>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   // Helper to visually render clinical reports on screen with proper bolding and spacing, hiding the asterisks and system boundaries
   const renderClinicalReport = (reportText: string) => {
     if (!reportText) return null;
@@ -18587,27 +21585,463 @@ Ejemplo:
     }
   };
 
+  const handleExportAllData = () => {
+    try {
+      const dataToBackup = {
+        rad_local_studies: localStorage.getItem("rad_local_studies"),
+        radiology_reports_history: localStorage.getItem("radiology_reports_history"),
+        doctorName: localStorage.getItem("radiology_doctor_name"),
+        doctorLicense: localStorage.getItem("radiology_doctor_license"),
+        clinicName: localStorage.getItem("radiology_clinic_name"),
+        customLogos: localStorage.getItem("rad_custom_logos"),
+        selectedLogo: localStorage.getItem("rad_selected_logo"),
+        customLogoStyle: localStorage.getItem("rad_custom_logo_style"),
+        customSignature: localStorage.getItem("rad_custom_signature"),
+        pdfLayoutType: localStorage.getItem("radiology_pdf_layout")
+      };
+      
+      const blob = new Blob([JSON.stringify(dataToBackup, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `respaldo_radiologia_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      alert("Error al exportar los datos: " + err.message);
+    }
+  };
+
+  const handleImportAllData = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const content = e.target?.result as string;
+        const backup = JSON.parse(content);
+        
+        if (backup.rad_local_studies) {
+          localStorage.setItem("rad_local_studies", backup.rad_local_studies);
+        }
+        if (backup.radiology_reports_history) {
+          localStorage.setItem("radiology_reports_history", backup.radiology_reports_history);
+        }
+        if (backup.doctorName) {
+          localStorage.setItem("radiology_doctor_name", backup.doctorName);
+          setDoctorName(backup.doctorName);
+        }
+        if (backup.doctorLicense) {
+          localStorage.setItem("radiology_doctor_license", backup.doctorLicense);
+          setDoctorLicense(backup.doctorLicense);
+        }
+        if (backup.clinicName) {
+          localStorage.setItem("radiology_clinic_name", backup.clinicName);
+          setClinicName(backup.clinicName);
+        }
+        if (backup.customLogos) {
+          localStorage.setItem("rad_custom_logos", backup.customLogos);
+          try {
+            setCustomLogos(JSON.parse(backup.customLogos));
+          } catch (e) {}
+        }
+        if (backup.selectedLogo) {
+          localStorage.setItem("rad_selected_logo", backup.selectedLogo);
+          setSelectedLogo(backup.selectedLogo);
+        }
+        if (backup.customLogoStyle) {
+          localStorage.setItem("rad_custom_logo_style", backup.customLogoStyle);
+          setCustomLogoStyle(backup.customLogoStyle);
+        }
+        if (backup.customSignature) {
+          localStorage.setItem("rad_custom_signature", backup.customSignature);
+          setCustomSignatureUrl(backup.customSignature);
+        }
+        if (backup.pdfLayoutType) {
+          localStorage.setItem("radiology_pdf_layout", backup.pdfLayoutType);
+          setPdfLayoutType(backup.pdfLayoutType as any);
+        }
+
+        alert("¡Éxito! Respaldo de datos importado y restaurado correctamente.");
+        window.location.reload();
+      } catch (err: any) {
+        alert("El archivo de respaldo no es válido o está corrupto: " + err.message);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  // --- DAILY WORKLIST SYSTEM ("LISTA DE TRABAJO") ---
+  const getTodayDateStr = () => {
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  const fetchWorklist = async (userId: string) => {
+    try {
+      const dateStr = getTodayDateStr();
+      const localSaved = localStorage.getItem(`rad_worklist_${userId}_${dateStr}`);
+      if (localSaved) {
+        try {
+          const parsed = JSON.parse(localSaved);
+          setWorklist(parsed);
+        } catch (e) {
+          setWorklist(null);
+        }
+      } else {
+        setWorklist(null);
+      }
+    } catch (e) {
+      console.error("Error loading worklist:", e);
+    }
+  };
+
+  useEffect(() => {
+    fetchWorklist("local");
+  }, []);
+
+  const saveWorklist = async (updatedPatients: WorklistPatient[]) => {
+    const dateStr = getTodayDateStr();
+    const userId = "local";
+    const worklistId = `${userId}_${dateStr}`;
+    const wlData: Worklist = {
+      id: worklistId,
+      userId: userId,
+      date: dateStr,
+      patients: updatedPatients
+    };
+
+    try {
+      setWorklist(wlData);
+      localStorage.setItem(`rad_worklist_${userId}_${dateStr}`, JSON.stringify(wlData));
+    } catch (e: any) {
+      console.error("Error saving worklist:", e);
+      setWorklistError("Error al guardar la lista de trabajo: " + (e.message || String(e)));
+    }
+  };
+
+  const handleWorklistImageUpload = async (file: File, mergeExisting: boolean = false) => {
+    setIsProcessingWorklist(true);
+    setWorklistError(null);
+    try {
+      const base64Data = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          const base64 = result.split(",")[1];
+          resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const response = await fetch("/api/parse-worklist", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          image: base64Data,
+          mimeType: file.type,
+          model: selectedModel
+        })
+      });
+
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.error || "No se pudo procesar la lista.");
+      }
+
+      const parsedPatients = (result.patients || []).map((p: any, idx: number) => ({
+        id: `wl_${Date.now()}_${idx}`,
+        name: p.name || "Paciente Desconocido",
+        age: p.age || "",
+        gender: p.gender || "",
+        patientId: p.patientId || "",
+        studyType: p.studyType || "",
+        time: p.time || "",
+        phone: p.phone ? formatCostaRicaPhone(p.phone) : "",
+        status: 'pending' as const
+      }));
+
+      if (parsedPatients.length === 0) {
+        throw new Error("No se detectaron pacientes legibles en la imagen. Intenta con otra foto.");
+      }
+
+      let updatedList: WorklistPatient[] = [];
+      if (mergeExisting && worklist) {
+        const existingPatients = worklist.patients;
+        
+        // Función para normalizar nombres para la comparación
+        const normalizeName = (name: string) => name.toLowerCase().replace(/[^a-z0-9áéíóúüñ]/g, "").trim();
+        
+        // Mapeo de nombres normalizados de pacientes existentes
+        const existingMap = new Map<string, WorklistPatient>();
+        existingPatients.forEach(p => {
+          const norm = normalizeName(p.name);
+          if (norm) {
+            existingMap.set(norm, p);
+          }
+        });
+
+        // Reconstruimos la lista en el orden de parsedPatients, reutilizando los objetos existentes si coinciden
+        const mergedList: WorklistPatient[] = [];
+        const usedExistingIds = new Set<string>();
+
+        parsedPatients.forEach(pNew => {
+          const normNew = normalizeName(pNew.name);
+          const matchedExisting = normNew ? existingMap.get(normNew) : null;
+
+          if (matchedExisting) {
+            mergedList.push(matchedExisting);
+            usedExistingIds.add(matchedExisting.id);
+          } else {
+            mergedList.push(pNew);
+          }
+        });
+
+        // Para cualquier paciente existente que no se haya detectado en la nueva digitalización,
+        // lo reinsertamos de forma inteligente respetando su orden relativo original para evitar perderlo.
+        const remainingExisting = existingPatients.filter(p => !usedExistingIds.has(p.id));
+        
+        if (remainingExisting.length > 0) {
+          const finalList: WorklistPatient[] = [];
+          let mergedIdx = 0;
+          
+          existingPatients.forEach(pExisting => {
+            if (usedExistingIds.has(pExisting.id)) {
+              while (mergedIdx < mergedList.length) {
+                const curMerged = mergedList[mergedIdx];
+                const isAnotherMatched = existingPatients.some(pe => pe.id === curMerged.id);
+                if (isAnotherMatched && curMerged.id !== pExisting.id) {
+                  break;
+                }
+                if (!finalList.some(pf => pf.id === curMerged.id)) {
+                  finalList.push(curMerged);
+                }
+                mergedIdx++;
+              }
+            } else {
+              finalList.push(pExisting);
+            }
+          });
+          
+          while (mergedIdx < mergedList.length) {
+            const curMerged = mergedList[mergedIdx];
+            if (!finalList.some(pf => pf.id === curMerged.id)) {
+              finalList.push(curMerged);
+            }
+            mergedIdx++;
+          }
+          
+          updatedList = finalList;
+        } else {
+          updatedList = mergedList;
+        }
+      } else {
+        updatedList = parsedPatients;
+      }
+
+      await saveWorklist(updatedList);
+    } catch (err: any) {
+      console.error("Error processing worklist photo:", err);
+      setWorklistError(err.message || String(err));
+    } finally {
+      setIsProcessingWorklist(false);
+    }
+  };
+
+  const handleSelectWorklistPatient = (patient: WorklistPatient) => {
+    if (!worklist) return;
+
+    // Reset current cloud study ID for a new patient
+    setCurrentCloudStudyId("");
+
+    // Update states in the main report generator form
+    setPatientName(patient.name);
+    setPatientAge(patient.age);
+    setPatientGender(patient.gender);
+    setPatientId(patient.patientId);
+    if (patient.studyType) {
+      setStudyType(patient.studyType);
+    }
+    if (patient.phone) {
+      const formatted = formatCostaRicaPhone(patient.phone);
+      setWhatsappPhone(formatted);
+      localStorage.setItem("rad_whatsapp_phone", formatted);
+    }
+
+    // Update statuses
+    const updatedPatients = worklist.patients.map(p => {
+      if (p.id === patient.id) {
+        return { ...p, status: 'current' as const };
+      } else if (p.status === 'current') {
+        return { ...p, status: 'attended' as const };
+      }
+      return p;
+    });
+
+    setSelectedWorklistPatientId(patient.id);
+    saveWorklist(updatedPatients);
+  };
+
+  const handleUpdatePatientStatus = (patientId: string, status: 'pending' | 'attended' | 'current') => {
+    if (!worklist) return;
+
+    const updatedPatients = worklist.patients.map(p => {
+      if (p.id === patientId) {
+        return { ...p, status };
+      }
+      return p;
+    });
+
+    saveWorklist(updatedPatients);
+  };
+
+  const handleDeletePatientFromWorklist = (patientId: string) => {
+    if (!worklist) return;
+
+    const updatedPatients = worklist.patients.filter(p => p.id !== patientId);
+    saveWorklist(updatedPatients);
+  };
+
+  const handleAddPatientToWorklist = (newPatient: Omit<WorklistPatient, "id" | "status">) => {
+    const updatedPatients = worklist 
+      ? [...worklist.patients, { ...newPatient, id: `wl_${Date.now()}`, status: 'pending' as const }]
+      : [{ ...newPatient, id: `wl_${Date.now()}`, status: 'pending' as const }];
+    saveWorklist(updatedPatients);
+  };
+
   // --- CLOUD DATABASE SYSTEM SYNC ---
-  const fetchCloudStudies = async (uid: string) => {
+  const convertLocalReportsToFallbackCloudStudies = (uid: string): CloudStudy[] => {
+    try {
+      const localKey = `fallback_studies_${uid}`;
+      const cached = localStorage.getItem(localKey);
+      let cachedStudies: CloudStudy[] = [];
+      if (cached) {
+        try { cachedStudies = JSON.parse(cached); } catch (e) {}
+      }
+      
+      const storedReports = localStorage.getItem("radiology_reports_history");
+      if (storedReports) {
+        try {
+          const localReports = JSON.parse(storedReports) as SavedReport[];
+          let updated = [...cachedStudies];
+          let changed = false;
+          
+          localReports.forEach(rep => {
+            if (!updated.some(s => s.id === rep.id)) {
+              const newCloudStudy: CloudStudy = {
+                id: rep.id,
+                userId: uid,
+                userEmail: gmailUser?.email || "anon@local.com",
+                timestamp: rep.timestamp,
+                patientName: "Paciente Local (Respaldo)",
+                patientEmail: "No especificado",
+                patientAge: "",
+                patientGender: "",
+                patientId: "",
+                reportDate: new Date().toISOString().split('T')[0],
+                doctorName: doctorName || "Médico Radiólogo",
+                doctorLicense: doctorLicense || "",
+                clinicName: clinicName || "",
+                studyType: rep.studyType,
+                clinicalHistory: rep.clinicalHistory,
+                findings: "Hallazgos guardados localmente.",
+                reportText: rep.reportText,
+                attachedImages: [],
+                operationalSummaryText: "",
+                pdfBase64: "",
+                patientSummary: null,
+                createdAt: new Date().toISOString()
+              };
+              updated.push(newCloudStudy);
+              changed = true;
+              localStorage.setItem(`fallback_single_study_${rep.id}`, JSON.stringify(newCloudStudy));
+            }
+          });
+          
+          if (changed) {
+            localStorage.setItem(localKey, JSON.stringify(updated));
+            return updated;
+          }
+        } catch (e) {
+          console.error("Error parsing local reports history inside conversion:", e);
+        }
+      }
+      return cachedStudies;
+    } catch (err) {
+      console.error("Failed to convert local reports:", err);
+      return [];
+    }
+  };
+
+  const fetchCloudStudies = async (uid?: string) => {
     setIsLoadingCloudStudies(true);
     setCloudStudiesError(null);
     try {
-      const studies = await getStudiesFromCloud(uid);
+      let stored = localStorage.getItem("rad_local_studies");
+      let studies: CloudStudy[] = stored ? JSON.parse(stored) : [];
+      
+      // Auto-import/sync from old radiology_reports_history if local studies is empty
+      if (studies.length === 0) {
+        const storedReports = localStorage.getItem("radiology_reports_history");
+        if (storedReports) {
+          try {
+            const oldReports = JSON.parse(storedReports) as SavedReport[];
+            if (Array.isArray(oldReports) && oldReports.length > 0) {
+              studies = oldReports.map(rep => ({
+                id: rep.id,
+                userId: "local",
+                userEmail: "anon@local.com",
+                timestamp: rep.timestamp,
+                patientName: "Paciente Local",
+                patientEmail: "No especificado",
+                patientAge: "",
+                patientGender: "",
+                patientId: "",
+                reportDate: new Date().toISOString().split('T')[0],
+                doctorName: doctorName || "Médico Radiólogo",
+                doctorLicense: doctorLicense || "No especificada",
+                clinicName: clinicName || "Clínica Privada",
+                studyType: rep.studyType,
+                clinicalHistory: rep.clinicalHistory,
+                findings: "Hallazgos guardados localmente.",
+                reportText: rep.reportText,
+                attachedImages: [],
+                operationalSummaryText: "",
+                pdfBase64: "",
+                patientSummary: null,
+                createdAt: new Date().toISOString()
+              }));
+              localStorage.setItem("rad_local_studies", JSON.stringify(studies));
+            }
+          } catch (e) {
+            console.error("Error migrating old reports:", e);
+          }
+        }
+      }
       setCloudStudies(studies);
     } catch (e: any) {
-      console.error("Error fetching cloud studies:", e);
-      setCloudStudiesError("No se pudieron cargar los estudios de la nube. Revisa tu conexión.");
+      console.error("Error fetching local studies:", e);
+      setCloudStudies([]);
     } finally {
       setIsLoadingCloudStudies(false);
     }
   };
 
+  const migrateBackupStudiesToFirebase = async () => {
+    setMigrationProgress("Sincronización Cloud desactivada. Tus estudios ya están respaldados localmente de forma segura.");
+  };
+
   useEffect(() => {
-    if (gmailUser?.uid) {
-      fetchCloudStudies(gmailUser.uid);
-    } else {
-      setCloudStudies([]);
-    }
+    fetchCloudStudies();
   }, [gmailUser]);
 
   const downloadPdfFromBase64 = (base64: string, filename: string) => {
@@ -18635,51 +22069,14 @@ Ejemplo:
 
   const downloadPdfForCloudStudy = async (item: CloudStudy) => {
     try {
-      // 1. Save current active workspace state
-      const prevGeneratedReport = generatedReport;
-      const prevStudyType = studyType;
-      const prevClinicalHistory = clinicalHistory;
-      const prevPatientName = patientName;
-      const prevPatientEmail = patientEmail;
-      const prevReportDate = reportDate;
-      const prevDoctorName = doctorName;
-      const prevDoctorLicense = doctorLicense;
-      const prevClinicName = clinicName;
-      const prevFindings = findings;
-      const prevSpecificStudy = specificStudy;
-      const prevLaterality = laterality;
+      if (item.pdfBase64) {
+        const cleanName = (item.patientName || "estudio").replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        downloadPdfFromBase64(item.pdfBase64, `informe_${cleanName}_${item.id}.pdf`);
+        return;
+      }
 
-      // 2. Temporarily set state to the study values so that the PDF generation functions read them
-      setGeneratedReport(item.reportText);
-      setStudyType(item.studyType);
-      setClinicalHistory(item.clinicalHistory || "No especificada");
-      setPatientName(item.patientName || "Paciente Anónimo");
-      setPatientEmail(item.patientEmail || "No especificado");
-      setReportDate(item.reportDate || new Date().toISOString().split('T')[0]);
-      setDoctorName(item.doctorName || "Médico Radiólogo");
-      setDoctorLicense(item.doctorLicense || "No especificada");
-      setClinicName(item.clinicName || "Clínica Privada");
-      setFindings(item.findings || "No especificadas");
-
-      // Give 100ms for state propagation to complete (ensures React rerender happens for the PDF print references)
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      
-      // 3. Generate and download PDF
-      await handleDownloadNativePDF(false, false, false, false);
-
-      // 4. Restore original workspace state
-      setGeneratedReport(prevGeneratedReport);
-      setStudyType(prevStudyType);
-      setClinicalHistory(prevClinicalHistory);
-      setPatientName(prevPatientName);
-      setPatientEmail(prevPatientEmail);
-      setReportDate(prevReportDate);
-      setDoctorName(prevDoctorName);
-      setDoctorLicense(prevDoctorLicense);
-      setClinicName(prevClinicName);
-      setFindings(prevFindings);
-      setSpecificStudy(prevSpecificStudy);
-      setLaterality(prevLaterality);
+      // No pdfBase64, generate it on-the-fly using handleDownloadNativePDF with override!
+      await handleDownloadNativePDF(false, false, false, false, item);
     } catch (err) {
       console.error("Error al generar PDF de la nube:", err);
       alert("Error al generar el PDF para este estudio.");
@@ -18687,17 +22084,12 @@ Ejemplo:
   };
 
   const handleSaveToCloud = async (customReport?: SavedReport) => {
-    if (!gmailUser) {
-      setCloudStudiesError("Debe iniciar sesión para guardar estudios en la nube.");
-      return;
-    }
-
     setIsSavingToCloud(true);
     setCloudStudiesError(null);
     setCloudStudiesSuccess(null);
 
     try {
-      const idToSave = customReport?.id || Math.random().toString(36).substring(2, 11);
+      const idToSave = customReport?.id || currentCloudStudyId || Math.random().toString(36).substring(2, 11);
       const studyTypeToSave = customReport?.studyType || studyType || "Estudio General";
       const clinicalHistoryToSave = customReport?.clinicalHistory || clinicalHistory || "No especificada";
       const reportTextToSave = customReport?.reportText || generatedReport;
@@ -18706,14 +22098,38 @@ Ejemplo:
         throw new Error("No hay contenido de reporte para guardar. Primero genera o redacta un reporte.");
       }
 
-      await saveStudyToCloud(gmailUser.uid, gmailUser.email || "", {
+      let pdfB64 = "";
+
+      let compressedLogo = customLogoUrl || "";
+      let compressedSignature = customSignatureUrl || "";
+      if (compressedLogo && compressedLogo.startsWith("data:image")) {
+        try {
+          compressedLogo = await compressImageBase64(compressedLogo, 500, 0.75);
+        } catch (compErr) {
+          console.error("Error compressing logo inside save to cloud:", compErr);
+        }
+      }
+      if (compressedSignature && compressedSignature.startsWith("data:image")) {
+        try {
+          compressedSignature = await compressImageBase64(compressedSignature, 350, 0.75);
+        } catch (compErr) {
+          console.error("Error compressing signature inside save to cloud:", compErr);
+        }
+      }
+
+      const newStudy: CloudStudy = {
         id: idToSave,
+        userId: "local",
+        userEmail: "anon@local.com",
         timestamp: customReport?.timestamp || new Date().toLocaleString("es-ES", {
           hour: "2-digit",
           minute: "2-digit"
         }),
         patientName: patientName || "Paciente Anónimo",
         patientEmail: patientEmail || "No especificado",
+        patientAge: patientAge || "",
+        patientGender: patientGender || "",
+        patientId: patientId || "",
         reportDate: reportDate || new Date().toISOString().split('T')[0],
         doctorName: doctorName || "Médico Radiólogo",
         doctorLicense: doctorLicense || "No especificada",
@@ -18722,37 +22138,466 @@ Ejemplo:
         clinicalHistory: clinicalHistoryToSave,
         findings: findings || "No especificadas",
         reportText: reportTextToSave,
-        pdfBase64: "" // Remove PDF base64 to prevent payload size bloat and huge delay/crashes!
-      });
+        pdfBase64: pdfB64,
+        operationalSummaryText: operationalSummaryText,
+        customLogoUrl: compressedLogo,
+        customLogoStyle: customLogoStyle || "logo",
+        customSignatureUrl: compressedSignature,
+        specificStudy: specificStudy || "Tórax",
+        pdfLayoutType: pdfLayoutType || "classic",
+        selectedLogo: selectedLogo || "none",
+        attachedImages: attachedImages || [],
+        patientSummary: patientSummary || null
+      };
 
-      setCloudStudiesSuccess("¡Estudio guardado con éxito en tu Base de Datos en la Nube!");
-      await fetchCloudStudies(gmailUser.uid);
+      const stored = localStorage.getItem("rad_local_studies");
+      let studiesList: CloudStudy[] = stored ? JSON.parse(stored) : [];
+      
+      const index = studiesList.findIndex(s => s.id === idToSave);
+      if (index >= 0) {
+        studiesList[index] = newStudy;
+      } else {
+        studiesList = [newStudy, ...studiesList];
+      }
+
+      localStorage.setItem("rad_local_studies", JSON.stringify(studiesList));
+
+      setCurrentCloudStudyId(idToSave);
+      setCloudStudiesSuccess("¡Estudio guardado con éxito en tu Archivo Local!");
+      fetchCloudStudies();
       setTimeout(() => setCloudStudiesSuccess(null), 4500);
+      return idToSave;
     } catch (e: any) {
-      console.error("Error saving to cloud:", e);
-      setCloudStudiesError("Error al guardar en la nube: " + (e.message || String(e)));
+      console.error("Error saving to local storage:", e);
+      setCloudStudiesError("No se pudo guardar localmente: " + (e.message || String(e)));
     } finally {
       setIsSavingToCloud(false);
     }
   };
 
   const handleDeleteFromCloud = async (studyId: string) => {
-    if (!confirm("¿Estás seguro de que deseas eliminar este estudio de tu base de datos cloud? Esta acción no se puede deshacer.")) return;
+    if (!confirm("¿Estás seguro de que deseas eliminar este estudio de tu archivo local? Esta acción no se puede deshacer.")) return;
     
     setCloudStudiesError(null);
     setCloudStudiesSuccess(null);
     try {
-      await deleteStudyFromCloud(studyId);
-      setCloudStudiesSuccess("Estudio eliminado de tu Base de Datos en la Nube.");
-      if (gmailUser) {
-        await fetchCloudStudies(gmailUser.uid);
-      }
+      const stored = localStorage.getItem("rad_local_studies");
+      let studiesList: CloudStudy[] = stored ? JSON.parse(stored) : [];
+      studiesList = studiesList.filter(s => s.id !== studyId);
+      localStorage.setItem("rad_local_studies", JSON.stringify(studiesList));
+      setCloudStudiesSuccess("Estudio eliminado de tu Archivo Local.");
+      fetchCloudStudies();
       setTimeout(() => setCloudStudiesSuccess(null), 3000);
     } catch (e: any) {
-      console.error("Error deleting from cloud:", e);
-      setCloudStudiesError("No se pudo eliminar el estudio de la nube: " + (e.message || String(e)));
+      console.error("Error deleting local study:", e);
+      setCloudStudiesError("No se pudo eliminar el estudio: " + (e.message || String(e)));
     }
   };
+
+  const formatDateToDMY = (dateStr: string) => {
+    if (!dateStr) return "";
+    if (dateStr.includes("-")) {
+      const parts = dateStr.split("-");
+      if (parts.length === 3) {
+        return `${parts[2]}/${parts[1]}/${parts[0]}`;
+      }
+    }
+    return dateStr;
+  };
+
+  const handleCopyEhrLinkForStudy = async (item: CloudStudy) => {
+    const shareUrl = `${window.location.origin}/?view_study=${item.id}`;
+
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopiedEhrStudyId(item.id);
+      setTimeout(() => setCopiedEhrStudyId(null), 2500);
+    } catch (err) {
+      console.error("Failed to copy EHR link text:", err);
+      alert("No se pudo copiar el enlace automáticamente: " + shareUrl);
+    }
+  };
+
+  const handleCopyEhrPortalLink = async () => {
+    if (!gmailUser) {
+      alert("Debe iniciar sesión con Google para usar el archivo en la nube y generar enlaces.");
+      return;
+    }
+
+    let activeStudyId = currentCloudStudyId;
+    
+    // If not saved to cloud yet, automatically save it first!
+    if (!activeStudyId) {
+      if (!confirm("El reporte aún no se ha guardado en la nube. ¿Deseas guardarlo automáticamente ahora en tu Archivo Cloud para poder generar su enlace de expediente?")) {
+        return;
+      }
+      try {
+        const savedId = await handleSaveToCloud();
+        if (savedId) {
+          activeStudyId = savedId;
+        } else {
+          return; // failed or canceled
+        }
+      } catch (err) {
+        console.error("Auto-save failed inside EHR copy link:", err);
+        alert("Ocurrió un error al intentar guardar el estudio automáticamente.");
+        return;
+      }
+    }
+
+    if (!activeStudyId) return;
+
+    const shareUrl = `${window.location.origin}/?view_study=${activeStudyId}`;
+
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopiedEhrStudyId("current_active_report");
+      setTimeout(() => setCopiedEhrStudyId(null), 2500);
+    } catch (err) {
+      console.error("Failed to copy EHR link text:", err);
+      alert("No se pudo copiar el enlace automáticamente. El enlace es: " + shareUrl);
+    }
+  };
+
+  if (isPatientPublicView) {
+    if (isPatientViewLoading) {
+      return (
+        <div className="min-h-screen bg-[#070A13] flex flex-col items-center justify-center p-4">
+          <div className="text-center space-y-4">
+            <div className="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+            <p className="text-xs font-black text-slate-400 uppercase tracking-widest font-mono">
+              Cargando Portal de Consulta Digital...
+            </p>
+            <p className="text-[10px] text-slate-500 font-sans">
+              Buscando estudio médico seguro en la nube.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    if (patientViewError) {
+      return (
+        <div className="min-h-screen bg-[#070A13] flex flex-col items-center justify-center p-4">
+          <div className="bg-slate-900 border-2 border-red-500/20 p-8 rounded-3xl max-w-md w-full text-center space-y-6 shadow-2xl">
+            <span className="text-4xl">⚠️</span>
+            <div className="space-y-2">
+              <h2 className="text-sm font-black text-white uppercase tracking-widest font-mono">
+                Error de Acceso
+              </h2>
+              <p className="text-[11px] text-slate-400 font-sans leading-relaxed">
+                {patientViewError}
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                window.location.search = "";
+              }}
+              className="w-full py-3 bg-slate-950 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 rounded-xl text-[10px] font-black font-mono text-slate-350 uppercase tracking-widest transition-all cursor-pointer"
+            >
+              Ir al Inicio de RAD-AI
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    const handleDownloadCloudPDF = () => {
+      if (loadedCloudPdfBase64) {
+        try {
+          const byteCharacters = atob(loadedCloudPdfBase64);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          const blob = new Blob([byteArray], { type: "application/pdf" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `Reporte_Radiologico_${(patientName || "Paciente").replace(/\s+/g, "_")}.pdf`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        } catch (err) {
+          console.error("Error decoding base64 PDF from cloud, falling back:", err);
+          handleDownloadNativePDF(false, false, false, false, {
+            patientName,
+            patientEmail,
+            patientAge,
+            patientGender,
+            patientId,
+            reportDate,
+            doctorName,
+            doctorLicense,
+            clinicName,
+            studyType,
+            clinicalHistory,
+            findings,
+            reportText: generatedReport,
+            customLogoUrl: patientLogoUrl,
+            customLogoStyle,
+            customSignatureUrl,
+            specificStudy,
+            pdfLayoutType,
+            selectedLogo
+          });
+        }
+      } else {
+        handleDownloadNativePDF(false, false, false, false, {
+          patientName,
+          patientEmail,
+          patientAge,
+          patientGender,
+          patientId,
+          reportDate,
+          doctorName,
+          doctorLicense,
+          clinicName,
+          studyType,
+          clinicalHistory,
+          findings,
+          reportText: generatedReport,
+          customLogoUrl: patientLogoUrl,
+          customLogoStyle,
+          customSignatureUrl,
+          specificStudy,
+          pdfLayoutType,
+          selectedLogo
+        });
+      }
+    };
+
+    return (
+      <div className="min-h-screen bg-[#070A13] text-slate-100 font-sans flex flex-col antialiased">
+        {/* Patient Portal Header */}
+        <header className="px-6 py-5 border-b border-slate-850 bg-slate-950/60 backdrop-blur-md flex items-center justify-between shadow-lg">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 bg-gradient-to-tr from-emerald-600 to-teal-500 rounded-lg flex items-center justify-center text-white shrink-0 shadow-lg">
+              <span className="text-sm font-sans">🩺</span>
+            </div>
+            <div>
+              <h1 className="text-xs font-black uppercase tracking-widest text-slate-400 font-mono">
+                Portal de Consulta Digital
+              </h1>
+              <p className="text-[11px] font-black text-white uppercase tracking-tight mt-0.5">
+                {clinicName || "Clínica Radiológica"}
+              </p>
+            </div>
+          </div>
+          <span className="text-[8px] font-black tracking-widest uppercase bg-emerald-950/80 text-emerald-400 border border-emerald-500/20 px-2 py-1 rounded-md font-mono">
+            Conexión Segura SSL
+          </span>
+        </header>
+
+        {/* Portal Content */}
+        <main className="flex-1 max-w-4xl w-full mx-auto p-4 md:p-8 space-y-6">
+          {/* Welcome Banner */}
+          <div className="p-6 bg-gradient-to-r from-indigo-950/30 to-slate-950 border border-indigo-500/10 rounded-3xl flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="text-center md:text-left space-y-1">
+              <h2 className="text-lg font-black text-white tracking-tight leading-tight">
+                ¡Hola, {patientName || "Paciente"}!
+              </h2>
+              <p className="text-xs text-slate-400">
+                Tu reporte de estudio clínico ya está disponible para consulta y descarga digital.
+              </p>
+            </div>
+            <button
+              onClick={handleDownloadCloudPDF}
+              className="shrink-0 px-6 py-3 bg-emerald-600 hover:bg-emerald-550 border border-emerald-500/20 rounded-xl text-xs font-black uppercase tracking-wider font-mono text-white transition-all shadow-md active:scale-95 cursor-pointer flex items-center gap-2"
+            >
+              <span>📥 Descargar PDF Oficial Completo</span>
+            </button>
+          </div>
+
+          {/* Patient Study Details Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-slate-950/40 border border-slate-850 p-4 rounded-2xl text-left">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-mono">Paciente</span>
+              <p className="text-xs font-extrabold text-white mt-1 uppercase text-left">{patientName || "No especificado"}</p>
+              {(patientId || patientAge || patientGender) && (
+                <div className="mt-2 pt-1.5 border-t border-slate-900 space-y-0.5 text-[10px] text-slate-400">
+                  {patientId && <p><span className="font-mono text-[9px] uppercase tracking-wider text-slate-500">ID:</span> <span className="font-semibold text-slate-300 uppercase">{patientId}</span></p>}
+                  {patientAge && <p><span className="font-mono text-[9px] uppercase tracking-wider text-slate-500">Edad:</span> <span className="font-semibold text-slate-300 uppercase">{patientAge}</span></p>}
+                  {patientGender && <p><span className="font-mono text-[9px] uppercase tracking-wider text-slate-500">Género:</span> <span className="font-semibold text-slate-300 uppercase">{patientGender}</span></p>}
+                </div>
+              )}
+            </div>
+            <div className="bg-slate-950/40 border border-slate-850 p-4 rounded-2xl">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-mono">Tipo de Estudio</span>
+              <p className="text-xs font-extrabold text-indigo-300 mt-1 uppercase text-left">{studyType || "No especificado"}</p>
+            </div>
+            <div className="bg-slate-950/40 border border-slate-850 p-4 rounded-2xl">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-mono">Fecha del Reporte</span>
+              <p className="text-xs font-extrabold text-emerald-400 mt-1 font-mono text-left">{formatDateToDMY(reportDate) || "No especificada"}</p>
+            </div>
+            <div className="bg-slate-950/40 border border-slate-850 p-4 rounded-2xl text-left">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-mono">Médico Informante</span>
+              <p className="text-xs font-extrabold text-white mt-1 uppercase">{doctorName || "No especificado"}</p>
+              {doctorLicense && <p className="text-[9px] text-slate-400 font-mono mt-0.5 uppercase">Reg. {doctorLicense}</p>}
+            </div>
+          </div>
+
+          {/* Elegant Black Box Operational Summary */}
+          {operationalSummaryText && (
+            <div className="bg-black border-2 border-slate-850 rounded-3xl overflow-hidden shadow-2xl relative transition-all duration-300 hover:border-emerald-500/35 text-left p-6 md:p-8 space-y-6">
+              <div className="absolute top-0 left-0 w-2 h-full bg-emerald-500"></div>
+              <div className="flex items-center justify-between border-b border-slate-850 pb-4 select-none">
+                <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest font-mono flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  Resumen de Hallazgos Recibido
+                </span>
+                <span className="text-[9px] font-mono font-bold text-slate-500 uppercase tracking-wider">
+                  VERIFICADO
+                </span>
+              </div>
+              <div>
+                <h3 className="text-white font-sans font-black text-base md:text-lg uppercase tracking-wider flex items-center gap-2 select-none">
+                  📋 Resumen Operacional del Estudio
+                </h3>
+                <p className="text-slate-450 text-xs mt-1">
+                  Resumen estructurado de los hallazgos principales y la impresión diagnóstica del estudio clínico para consulta ágil del paciente.
+                </p>
+              </div>
+              <div className="bg-slate-950/80 border border-slate-850 rounded-2xl p-6 text-slate-200 font-sans leading-relaxed text-sm space-y-4">
+                {renderElegantPatientResumenDark(operationalSummaryText)}
+              </div>
+              <p className="text-[9px] text-slate-500 font-mono uppercase tracking-widest text-center select-none pt-2">
+                Generado por el Asistente Clínico de RAD-AI • Verificado por el médico tratante
+              </p>
+            </div>
+          )}
+
+          {/* Patient Explanation / Acompañamiento del Paciente */}
+          {patientSummary && (
+            <div className="bg-slate-950/60 border border-slate-850 rounded-3xl p-6 md:p-8 space-y-6 text-left">
+              <div className="flex items-center gap-2 border-b border-slate-850 pb-4">
+                <span className="p-1 px-2 text-[8px] font-black uppercase font-mono tracking-widest bg-amber-950/40 text-amber-300 border border-amber-500/20 rounded">
+                  PORTAL PACIENTE
+                </span>
+                <h3 className="text-white font-sans font-black text-base md:text-lg uppercase tracking-wider">
+                  🤝 Acompañamiento y Explicación Empática
+                </h3>
+              </div>
+              
+              <div className="p-4 bg-amber-500/5 border-l-4 border-amber-500/70 rounded-r-xl">
+                <h5 className="text-[10px] font-black tracking-widest uppercase text-amber-400">Resumen de Bienvenida y Propósito</h5>
+                <p className="text-xs text-slate-300 leading-relaxed font-sans font-medium mt-1">
+                  {patientSummary.summary}
+                </p>
+              </div>
+
+              {/* Glossary/Findings */}
+              <div className="space-y-4">
+                <h4 className="text-[11px] font-black tracking-wider uppercase text-slate-300 border-b border-slate-850 pb-1.5 flex items-center gap-1.5 font-mono">
+                  <span>🔍</span> GLOSARIO DE HALLAZGOS EXPLICADOS
+                </h4>
+                <div className="grid grid-cols-1 gap-4">
+                  {patientSummary.keyFindings?.map((finding: any, idx: number) => (
+                    <div key={idx} className="p-4 border border-slate-850 rounded-2xl bg-slate-900/40 space-y-3">
+                      <p className="text-xs font-black text-amber-400 uppercase flex items-center gap-1.5 justify-start">
+                        <span>📌</span> {finding.title || finding.originalTerm}
+                      </p>
+                      {finding.originalTerm && (
+                        <p className="text-[9.5px] font-mono text-slate-500 leading-none">
+                          Término científico original: <span className="font-bold text-pink-400">"{finding.originalTerm}"</span>
+                        </p>
+                      )}
+                      <p className="text-xs text-slate-300 leading-relaxed font-sans">
+                        <strong>Explicación:</strong> {finding.simplifiedExplanation}
+                      </p>
+                      {finding.analogy && (
+                        <p className="text-[11.5px] text-amber-300/90 leading-relaxed font-sans italic bg-amber-950/20 px-3 py-2 border-l-2 border-amber-500 rounded-r">
+                          <strong>Analogía sencilla:</strong> "{finding.analogy}"
+                        </p>
+                      )}
+                      {finding.reassurance && (
+                        <p className="text-[11.5px] text-sky-300/90 leading-relaxed font-sans bg-sky-950/20 px-3 py-2 border-l-2 border-sky-500 rounded-r">
+                          <strong>Sugerencia médica:</strong> {finding.reassurance}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Care Points */}
+              {patientSummary.carePoints && patientSummary.carePoints.length > 0 && (
+                <div className="space-y-2">
+                  <h4 className="text-[11px] font-black tracking-wider uppercase text-slate-300 border-b border-slate-850 pb-1.5 flex items-center gap-1.5 font-mono">
+                    <span>🩺</span> RECOMENDACIONES Y CUIDADOS GENERALES
+                  </h4>
+                  <ul className="list-disc pl-5 text-xs text-slate-300 space-y-1.5 font-sans">
+                    {patientSummary.carePoints.map((point: string, idx: number) => (
+                      <li key={idx} className="leading-relaxed">{point}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Suggested Questions */}
+              {patientSummary.suggestedQuestions && patientSummary.suggestedQuestions.length > 0 && (
+                <div className="space-y-3">
+                  <h4 className="text-[11px] font-black tracking-wider uppercase text-slate-300 border-b border-slate-850 pb-1.5 flex items-center gap-1.5 font-mono">
+                    <span>💬</span> PREGUNTAS SUGERIDAS PARA SU MÉDICO TRATANTE
+                  </h4>
+                  <p className="text-[10px] text-slate-500 leading-normal font-mono uppercase tracking-wide">
+                    Le sugerimos llevar estas preguntas anotadas a su siguiente consulta con su médico de cabecera:
+                  </p>
+                  <div className="grid grid-cols-1 gap-2">
+                    {patientSummary.suggestedQuestions.map((q: string, idx: number) => (
+                      <div key={idx} className="p-3 bg-indigo-950/25 border-l-2 border-indigo-500 rounded-r text-xs text-indigo-300 font-sans italic font-medium leading-relaxed">
+                        {idx + 1}. {q}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Diagnostic Images Gallery */}
+          {attachedImages && attachedImages.length > 0 && (
+            <div className="bg-slate-950/60 border border-slate-850 rounded-3xl p-6 md:p-8 space-y-4 text-left">
+              <div className="flex items-center gap-2 border-b border-slate-850 pb-4">
+                <span className="p-1 px-2 text-[8px] font-black uppercase font-mono tracking-widest bg-emerald-950/40 text-emerald-300 border border-emerald-500/20 rounded">
+                  ECOGRAFÍA
+                </span>
+                <h3 className="text-white font-sans font-black text-base md:text-lg uppercase tracking-wider">
+                  🖼️ Registro de Capturas Diagnósticas ({attachedImages.length})
+                </h3>
+              </div>
+              <p className="text-slate-400 text-xs">
+                Imágenes capturadas e integradas por el radiólogo especialista asociadas a este estudio clínico.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                {attachedImages.map((img: any) => (
+                  <div key={img.id} className="bg-slate-900/50 p-3.5 rounded-2xl border border-slate-850 flex flex-col gap-3">
+                    <img src={img.url} alt={img.name} className="w-full aspect-[4/3] object-cover rounded-xl bg-black border border-slate-950" />
+                    {img.caption && (
+                      <div className="text-xs font-semibold text-slate-300 italic text-center">“{img.caption}”</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Quick PDF disclaimer */}
+          <div className="p-4 bg-slate-950/20 border border-slate-850 rounded-2xl text-[10px] text-slate-400 text-left leading-relaxed font-mono uppercase tracking-wide">
+            💡 <strong>Nota de descarga:</strong> El archivo PDF oficial descargado desde este portal se extrae directamente desde su registro en la nube de forma segura. El documento contiene el reporte radiológico formal firmado por el especialista, los esquemas y dibujos explicativos, el acompañamiento para el paciente y las imágenes de ultrasonido asociadas a su estudio.
+          </div>
+        </main>
+
+        <footer className="py-8 border-t border-slate-850/40 bg-slate-950/20 text-center">
+          <p className="text-[9px] text-slate-500 font-mono uppercase tracking-wider">
+            RAD-AI CLOUD DIGITAL VIEWER — SISTEMA DE GESTIÓN CLÍNICA AVANZADO
+          </p>
+        </footer>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#0F172A] text-slate-100 font-sans flex flex-col antialiased">
@@ -18827,6 +22672,25 @@ Ejemplo:
               <Brain className={`h-3.5 w-3.5 ${selectedModel === "gemini-3.1-pro-preview" ? "text-purple-300 animate-pulse" : ""}`} /> Pro 3.1
             </button>
           </div>
+
+          {/* Botón Lista de Trabajo */}
+          <button
+            onClick={() => setIsWorklistSidebarOpen(!isWorklistSidebarOpen)}
+            className={`px-3.5 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase transition-all duration-200 flex items-center gap-2 cursor-pointer border ${
+              isWorklistSidebarOpen
+                ? "bg-indigo-600/20 border-indigo-500/40 text-indigo-300 shadow-[0_0_15px_rgba(99,102,241,0.25)] font-black"
+                : "bg-slate-950/70 border-slate-850/80 text-slate-400 hover:text-slate-200 hover:bg-slate-900/60"
+            }`}
+            title="Abrir / Cerrar Lista de Trabajo Diaria"
+          >
+            <ListTodo className={`h-4 w-4 ${isWorklistSidebarOpen ? "text-indigo-400" : "text-slate-500"}`} />
+            <span>Lista de Trabajo</span>
+            {worklist && worklist.patients.length > 0 && (
+              <span className="inline-flex items-center justify-center bg-indigo-500 text-white font-mono font-black text-[9px] rounded-full px-1.5 py-0.5 ml-1">
+                {worklist.patients.filter(p => p.status === 'pending').length}
+              </span>
+            )}
+          </button>
 
           {/* Active indicator badge */}
           <div className="flex items-center gap-2 px-3.5 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-full shadow-[0_1px_10px_rgba(16,185,129,0.06)] select-none">
@@ -18979,10 +22843,8 @@ Ejemplo:
               <span className="absolute left-0 top-1.5 bottom-1.5 w-1 bg-emerald-500 rounded-r-md shadow-[0_0_10px_#10b981]" />
             )}
             <Database className={`h-4 w-4 shrink-0 transition-transform duration-300 group-hover:scale-105 ${activeTab === "cloud-db" ? "text-emerald-400 drop-shadow-[0_0_4px_rgba(16,185,129,0.3)]" : "text-slate-500"}`} />
-            Archivo Cloud
-            {gmailUser && (
-              <span className="ml-auto w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Base de Datos en la Nube Conectada" />
-            )}
+            Archivo de Estudios
+            <span className="ml-auto w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Almacenamiento Local Seguro Activo" />
           </button>
 
           {/* 🧠 SELECTOR DE MODELO OMNIPRESENTE (STATION SIDEBAR) */}
@@ -19524,362 +23386,6 @@ Ejemplo:
                          </div>
                      </div>
 
-                    {/* Imagen */}
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-slate-500 block uppercase tracking-widest">Imagen:</label>
-                      {!base64Image ? (
-                        <div
-                          onDragOver={handleDragOver}
-                          onDragLeave={handleDragLeave}
-                          onDrop={handleDrop}
-                          className={`border-2 border-dashed rounded-xl p-6 text-center transition-all cursor-pointer flex flex-col items-center justify-center gap-2 ${
-                            dragActive 
-                              ? "border-indigo-500 bg-indigo-950/20" 
-                              : "border-slate-800 hover:border-slate-705 bg-slate-950"
-                          }`}
-                          onClick={() => document.getElementById("file-picker")?.click()}
-                        >
-                          <Upload className="h-6 w-6 text-slate-550" />
-                          <div className="text-[11px] font-black text-slate-300 uppercase tracking-wider">Arrastra tu imagen o haz click</div>
-                          <div className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Formatos PNG, JPG hasta 15MB</div>
-                          <input
-                            id="file-picker"
-                            type="file"
-                            accept="image/*"
-                            onChange={handleFileChange}
-                            className="hidden"
-                          />
-                        </div>
-                      ) : (
-                        <div className="space-y-4">
-                          {/* File info bar */}
-                          <div className="relative border-2 border-slate-850 bg-slate-950 p-3 rounded-xl flex items-center justify-between gap-3 shadow-md">
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 bg-slate-900 rounded-lg border border-slate-800 overflow-hidden flex items-center justify-center">
-                                <img
-                                  src={imagePreviewUrl || `data:${selectedFile?.type || "image/png"};base64,${base64Image}`}
-                                  alt="Miniatura"
-                                  className="w-full h-full object-cover"
-                                  referrerPolicy="no-referrer"
-                                />
-                              </div>
-                              <div className="text-left font-mono text-[10px] uppercase tracking-wider font-bold">
-                                <div className="text-slate-300 max-w-[150px] truncate">{selectedFile?.name || "estudio_radiologico.png"}</div>
-                                <div className="text-slate-500">{(selectedFile?.size ? (selectedFile.size / 1024).toFixed(1) : 0)} KB</div>
-                              </div>
-                            </div>
-                            
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSelectedFile(null);
-                                setBase64Image(null);
-                                setAnnotations([]);
-                                if (imagePreviewUrl && imagePreviewUrl.startsWith("blob:")) {
-                                  try {
-                                    URL.revokeObjectURL(imagePreviewUrl);
-                                  } catch (_) {}
-                                }
-                                setImagePreviewUrl(null);
-                              }}
-                              className="p-1 px-2 text-rose-400 hover:bg-rose-950/20 hover:border-rose-800/80 border border-rose-950 rounded-lg transition-all text-[9.5px] font-black uppercase tracking-wider flex items-center gap-1"
-                            >
-                              <X className="h-3 w-3" /> Quitar Estudio
-                            </button>
-                          </div>
-
-                          {/* Interactive Canvas Workstation Card */}
-                          <div className="border-2 border-slate-850 bg-[#070b13] rounded-xl p-4.5 space-y-4 shadow-xl">
-                            {/* Header & Tools */}
-                            <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between border-b border-slate-900 pb-3">
-                              <div>
-                                <h4 className="text-[10px] font-black text-slate-300 uppercase tracking-widest flex items-center gap-1.5 font-mono">
-                                  <Sparkles className="h-3.5 w-3.5 text-indigo-400" /> Marcaje de Zonas de Interés
-                                </h4>
-                                <p className="text-[8px] font-bold text-slate-500 uppercase tracking-wider mt-0.5">
-                                  Haz clic o arrastra para enmarcar zonas que la IA debe analizar prioritariamente.
-                                </p>
-                              </div>
-
-                              <div className="flex items-center gap-2 w-full sm:w-auto mt-1 sm:mt-0">
-                                {/* Tool Selector Buttons */}
-                                <div className="bg-slate-950 p-1 rounded-lg border border-slate-900 flex gap-1 shrink-0">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setActiveAnnotationTool("point");
-                                      handleCancelPending();
-                                    }}
-                                    className={`px-2.5 py-1 text-[8px] font-extrabold uppercase tracking-wider rounded-md transition-all flex items-center gap-1.5 ${
-                                      activeAnnotationTool === "point"
-                                        ? "bg-indigo-600 text-white shadow-md"
-                                        : "text-slate-400 hover:text-slate-200"
-                                    }`}
-                                  >
-                                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
-                                    Punto (🔴)
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setActiveAnnotationTool("box");
-                                      handleCancelPending();
-                                    }}
-                                    className={`px-2.5 py-1 text-[8px] font-extrabold uppercase tracking-wider rounded-md transition-all flex items-center gap-1.5 ${
-                                      activeAnnotationTool === "box"
-                                        ? "bg-indigo-600 text-white shadow-md"
-                                        : "text-slate-400 hover:text-slate-200"
-                                    }`}
-                                  >
-                                    <div className="w-1.5 h-1.5 border border-indigo-200" />
-                                    Rectángulo (🟦)
-                                  </button>
-                                </div>
-
-                                {annotations.length > 0 && (
-                                  <button
-                                    type="button"
-                                    onClick={handleClearAllAnnotations}
-                                    className="p-1 px-2 hover:bg-slate-900 text-slate-400 hover:text-rose-400 border border-transparent hover:border-slate-800 rounded-lg text-[8px] font-black uppercase tracking-wider transition-all ml-auto sm:ml-0"
-                                  >
-                                    Limpiar [{annotations.length}]
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-
-                            {/* Main Body: Grid showing image monitor & placed marks */}
-                            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-                              {/* Canvas Monitor Section (lg:col-span-8) */}
-                              <div className="lg:col-span-8 space-y-2">
-                                <div 
-                                  className="relative bg-slate-950 border border-slate-900 rounded-xl overflow-hidden max-h-[380px] flex items-center justify-center group"
-                                  style={{ touchAction: "none" }}
-                                >
-                                  {/* Interaction overlay mapping coordinates relative to the image */}
-                                  <div 
-                                    className="relative w-full max-w-sm mx-auto select-none cursor-crosshair overflow-hidden"
-                                    onMouseDown={handleImageMouseDown}
-                                    onMouseMove={handleImageMouseMove}
-                                    onMouseUp={handleImageMouseUp}
-                                  >
-                                    {/* Main Image study */}
-                                    <img
-                                      ref={imageRef}
-                                      src={imagePreviewUrl || `data:${selectedFile?.type || "image/png"};base64,${base64Image}`}
-                                      alt="Estudio Interactivo"
-                                      className="w-full h-auto object-contain block max-h-[360px] pointer-events-none"
-                                      referrerPolicy="no-referrer"
-                                    />
-
-                                    {/* Overlay elements rendering annotations */}
-                                    {annotations.map((ann, idx) => {
-                                      const num = idx + 1;
-                                      if (ann.type === "point") {
-                                        return (
-                                          <div
-                                            key={ann.id}
-                                            className="absolute group/pin -translate-x-1/2 -translate-y-1/2 z-10 select-none pointer-events-auto"
-                                            style={{ left: `${ann.x}%`, top: `${ann.y}%` }}
-                                            title={ann.label}
-                                          >
-                                            {/* Glowing indicator */}
-                                            <div className="w-6 h-6 bg-rose-500/30 border border-rose-500 rounded-full flex items-center justify-center relative cursor-help scale-95 hover:scale-110 active:scale-95 transition-all shadow-lg animate-pulse" />
-                                            {/* Static center dot */}
-                                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-4 bg-rose-700 hover:bg-rose-500 rounded-full flex items-center justify-center text-[8px] font-black text-white shadow font-mono">
-                                              {num}
-                                            </div>
-                                            {/* Hover tooltip */}
-                                            <div className="absolute top-7 left-1/2 -translate-x-1/2 bg-slate-950/95 border border-rose-900/40 text-rose-300 text-[8px] font-mono p-1 px-1.5 rounded uppercase tracking-wider font-bold whitespace-nowrap opacity-0 group-hover/pin:opacity-100 transition-opacity pointer-events-none shadow-xl z-20">
-                                              #{num}: {ann.label}
-                                            </div>
-                                          </div>
-                                        );
-                                      } else if (ann.type === "box") {
-                                        return (
-                                          <div
-                                            key={ann.id}
-                                            className="absolute border-2 border-dashed border-indigo-400 bg-indigo-500/10 pointer-events-auto group/box"
-                                            style={{
-                                              left: `${ann.x}%`,
-                                              top: `${ann.y}%`,
-                                              width: `${ann.w}%`,
-                                              height: `${ann.h}%`,
-                                            }}
-                                            title={ann.label}
-                                          >
-                                            {/* Hot tag corner label */}
-                                            <div className="absolute -top-1.5 -left-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-[7px] font-black w-4 h-4 rounded-full flex items-center justify-center shadow shadow-indigo-950 z-10">
-                                              {num}
-                                            </div>
-                                            <div className="absolute -bottom-5 left-0 bg-slate-950/90 border border-indigo-900/40 text-indigo-300 text-[7px] font-mono p-0.5 px-1 rounded uppercase tracking-wider font-bold whitespace-nowrap opacity-10 group-hover/box:opacity-100 transition-opacity pointer-events-none shadow z-20">
-                                              #{num}: {ann.label}
-                                            </div>
-                                          </div>
-                                        );
-                                      }
-                                      return null;
-                                    })}
-
-                                    {/* Drawing Temporary Box feedback */}
-                                    {isDrawingBox && tempBox && (
-                                      <div
-                                        className="absolute border-2 border-indigo-500/80 bg-indigo-600/15 pointer-events-none"
-                                        style={{
-                                          left: `${tempBox.x}%`,
-                                          top: `${tempBox.y}%`,
-                                          width: `${tempBox.w}%`,
-                                          height: `${tempBox.h}%`,
-                                        }}
-                                      />
-                                    )}
-
-                                    {/* Interactive Floated Dialog (Pending labeling) */}
-                                    {pendingAnnotation && (
-                                      <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-[1px] flex items-center justify-center p-4 z-40 animate-fade-in pointer-events-auto">
-                                        <div className="bg-slate-950 border-2 border-indigo-550/60 p-4.5 rounded-xl max-w-xs w-full shadow-2xl space-y-3.5 relative animate-scale-in">
-                                          <div className="flex items-center gap-1.5 text-indigo-400 font-mono text-[9px] font-black uppercase tracking-wider border-b border-slate-900 pb-1.5">
-                                            <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-ping" />
-                                            {pendingAnnotation.type === "point" ? "Nuevo Punto de Alerta" : "Nueva Región Seleccionada"}
-                                          </div>
-
-                                          <div className="space-y-1.5">
-                                            <div className="flex items-center justify-between">
-                                              <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest font-mono">
-                                                Diagnóstico / Sospecha Médica:
-                                              </label>
-                                              <button
-                                                type="button"
-                                                onClick={handleAutoLabelAnnotation}
-                                                disabled={isAutoLabeling}
-                                                className="text-[8px] font-black uppercase text-indigo-400 hover:text-indigo-300 disabled:text-slate-600 transition-colors flex items-center gap-1 cursor-pointer select-none"
-                                                title="Analizar visualmente la región con IA para sugerir una etiqueta"
-                                              >
-                                                {isAutoLabeling ? (
-                                                  <>
-                                                    <span className="animate-spin inline-block w-2.5 h-2.5 border-2 border-indigo-400 border-t-transparent rounded-full" />
-                                                    Analizando...
-                                                  </>
-                                                ) : (
-                                                  <>
-                                                    <Sparkles className="h-2.5 w-2.5 animate-pulse text-indigo-400" />
-                                                    <span>Sugerir con IA</span>
-                                                  </>
-                                                )}
-                                              </button>
-                                            </div>
-                                            <input
-                                              type="text"
-                                              value={pendingLabel}
-                                              onChange={(e) => setPendingLabel(e.target.value)}
-                                              placeholder={pendingAnnotation.type === "point" ? "Ej. Nódulo apical, Opacidad focal" : "Ej. Posible neumotórax, Cardiomegalia"}
-                                              className="w-full bg-slate-900 border border-slate-800 focus:border-indigo-500 rounded-lg py-2 px-2.5 text-xs font-semibold text-slate-200 outline-none placeholder:text-slate-655 transition-all font-mono"
-                                              autoFocus
-                                              onKeyDown={(e) => {
-                                                if (e.key === "Enter") {
-                                                  handleSaveAnnotation();
-                                                }
-                                              }}
-                                            />
-                                            {autoLabelError && (
-                                              <p className="text-[8px] font-semibold text-rose-400 mt-1 uppercase tracking-wider leading-relaxed">
-                                                ⚠️ {autoLabelError}
-                                              </p>
-                                            )}
-                                          </div>
-
-                                          <div className="flex gap-2 justify-end text-[9px] font-black uppercase tracking-widest font-mono">
-                                            <button
-                                              type="button"
-                                              onClick={handleCancelPending}
-                                              className="px-2.5 py-1.5 text-slate-400 hover:text-slate-200 border border-slate-800 hover:border-slate-700 bg-slate-950 rounded-lg transition-all"
-                                            >
-                                              Cancelar
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={handleSaveAnnotation}
-                                              className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-550 text-white rounded-lg transition-all shadow-md"
-                                            >
-                                              Confirmar Marca
-                                            </button>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* Placed Annotations Panel List (lg:col-span-4) */}
-                              <div className="lg:col-span-4 space-y-2">
-                                <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block font-mono">
-                                  Marcas Registradas ({annotations.length})
-                                </label>
-                                
-                                {annotations.length === 0 ? (
-                                  <div className="border border-dashed border-slate-900/60 bg-slate-950/40 p-6 rounded-xl text-center flex flex-col items-center justify-center gap-1.5 h-[280px]">
-                                    <div className="w-8 h-8 rounded-full bg-slate-900 flex items-center justify-center text-slate-600 border border-slate-850 font-black text-xs font-mono">
-                                      0
-                                    </div>
-                                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest leading-relaxed">
-                                      Ninguno registrado
-                                    </p>
-                                    <p className="text-[8px] font-semibold text-slate-600 uppercase tracking-wider max-w-[150px] leading-relaxed">
-                                      Haz clic sobre la placa para agregar marcas de advertencia médica.
-                                    </p>
-                                  </div>
-                                ) : (
-                                  <div className="space-y-1.5 max-h-[340px] overflow-y-auto pr-0.5 custom-scrollbar h-[280px]">
-                                    {annotations.map((ann, idx) => {
-                                      const num = idx + 1;
-                                      return (
-                                        <div
-                                          key={ann.id}
-                                          className="p-2.5 bg-slate-950/80 hover:bg-[#080d19] border border-slate-900 hover:border-slate-800 rounded-lg flex items-center justify-between gap-2.5 transition-all shadow-sm font-mono animate-fade-in"
-                                        >
-                                          <div className="flex items-start gap-2 overflow-hidden">
-                                            <span className="w-4 h-4 bg-slate-900 border border-slate-800 rounded-full flex items-center justify-center font-black text-[8px] text-indigo-400 shrink-0 mt-0.5">
-                                              {num}
-                                            </span>
-                                            <div className="space-y-0.5 overflow-hidden">
-                                              <p className="text-[9px] font-black text-slate-300 uppercase tracking-wide truncate max-w-[120px]">
-                                                {ann.label}
-                                              </p>
-                                              <p className="text-[7.5px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                                                {ann.type === "point" ? (
-                                                  <span className="text-rose-400 flex items-center gap-0.5">
-                                                    Punto (X:{ann.x.toFixed(0)}% Y:{ann.y.toFixed(0)}%)
-                                                  </span>
-                                                ) : (
-                                                  <span className="text-indigo-400 flex items-center gap-0.5">
-                                                    Región (X:{ann.x.toFixed(0)}% Y:{ann.y.toFixed(0)}%)
-                                                  </span>
-                                                )}
-                                              </p>
-                                            </div>
-                                          </div>
-                                          
-                                          <button
-                                            type="button"
-                                            onClick={() => handleDeleteAnnotation(ann.id)}
-                                            className="p-1.5 text-slate-600 hover:text-rose-400 hover:bg-rose-950/20 rounded-md transition-all shrink-0"
-                                            title="Eliminar marca"
-                                          >
-                                            <Trash2 className="h-3.5 w-3.5" />
-                                          </button>
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
                     {/* Sección Expandible: Datos del Paciente y Personalización del Membrete (PDF) */}
                     <div className="border border-slate-800 bg-slate-950/20 rounded-xl p-4 space-y-4">
                       <div className="flex items-center justify-between cursor-pointer select-none" onClick={() => setShowPatientDetails(!showPatientDetails)}>
@@ -20302,17 +23808,7 @@ Ejemplo:
                       )}
                     </div>
 
-                    {/* Informe */}
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-slate-500 block uppercase tracking-widest">Informe:</label>
-                      <textarea
-                        value={inputReport}
-                        onChange={(e) => setInputReport(e.target.value)}
-                        placeholder="Copia, edita o usa un borrador previo aquí para redactar desde él, u omítelo..."
-                        rows={3}
-                        className="w-full bg-slate-950 border-2 border-slate-800 focus:border-indigo-500 rounded-xl py-3 px-4 text-xs font-bold text-slate-100 focus:outline-none placeholder-slate-650 transition-all resize-none"
-                      />
-                    </div>
+
 
                     {/* Submit Button */}
                     <button
@@ -20631,7 +24127,7 @@ Ejemplo:
                             onClick={() => handleSaveToCloud()}
                             disabled={isSavingToCloud}
                             className="px-3 md:px-4 py-1.5 md:py-2 bg-emerald-950/40 hover:bg-emerald-950/80 border-2 border-emerald-500/40 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider text-emerald-300 transition-all flex items-center gap-1.5 md:gap-2 shadow-lg select-none whitespace-nowrap cursor-pointer"
-                            title="Guardar este estudio en tu Base de Datos en la Nube propia"
+                            title="Archivar este estudio en tu base de datos local"
                           >
                             {isSavingToCloud ? (
                               <>
@@ -20641,7 +24137,7 @@ Ejemplo:
                             ) : (
                               <>
                                 <Database className="h-3.5 w-3.5 text-emerald-400" />
-                                <span>Guardar Nube</span>
+                                <span>Guardar Estudio</span>
                               </>
                             )}
                           </button>
@@ -20659,6 +24155,22 @@ Ejemplo:
                               </>
                             )}
                           </button>
+                          <button
+                            onClick={handleCopyEhrPortalLink}
+                            disabled={isSavingToCloud}
+                            className="px-3 md:px-4 py-1.5 md:py-2 bg-indigo-950/40 hover:bg-indigo-950/80 border-2 border-indigo-500/40 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider text-indigo-300 transition-all flex items-center gap-1.5 md:gap-2 shadow-lg select-none whitespace-nowrap cursor-pointer"
+                            title="Copiar texto con el enlace del reporte en la nube para el expediente clínico"
+                          >
+                            {copiedEhrStudyId === "current_active_report" ? (
+                              <>
+                                <Check className="h-3.5 w-3.5 text-emerald-400" /> ¡Enlace Copiado!
+                              </>
+                            ) : (
+                              <>
+                                <Link className="h-3.5 w-3.5 text-indigo-400" /> Link Expediente (EHR)
+                              </>
+                            )}
+                          </button>
                         </div>
                       )}
                     </div>
@@ -20669,7 +24181,31 @@ Ejemplo:
                       <div className={`flex-1 p-6 overflow-y-auto leading-relaxed text-sm select-text text-slate-300 relative scrollbar-thin ${isSplitPdfActive && generatedReport ? "md:border-r md:border-slate-800" : ""}`}>
                         {infographicUrl && (
                           <div className="mb-6 p-4 bg-slate-800 rounded-xl border border-pink-600/30">
-                             <h4 className="text-sm font-bold text-pink-300 mb-2">Infografía Generada:</h4>
+                             <div className="flex justify-between items-center mb-2 flex-wrap gap-2">
+                               <h4 className="text-sm font-bold text-pink-300">Infografía Generada:</h4>
+                               <button
+                                 type="button"
+                                 onClick={() => setAttachInfographicToOfficialReport(prev => !prev)}
+                                 className={`text-[9px] font-black px-3 py-1.5 rounded-xl uppercase tracking-wider font-mono transition-all flex items-center gap-1.5 cursor-pointer border ${
+                                   attachInfographicToOfficialReport
+                                     ? "bg-emerald-950/80 border-emerald-500/50 text-emerald-350 shadow-[0_2px_8px_rgba(16,185,129,0.2)]"
+                                     : "bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-100"
+                                 }`}
+                                 title={attachInfographicToOfficialReport ? "La infografía se incluirá al final del reporte original como un anexo" : "Adjuntar esta infografía como un anexo al reporte original"}
+                               >
+                                 {attachInfographicToOfficialReport ? (
+                                   <>
+                                     <Check className="h-3 w-3 text-emerald-400" />
+                                     Adjunto a reporte original
+                                   </>
+                                 ) : (
+                                   <>
+                                     <Plus className="h-3 w-3 text-slate-400" />
+                                     Adjuntar a reporte original
+                                   </>
+                                 )}
+                               </button>
+                             </div>
                              <img src={infographicUrl} alt="Infografía Paciente" className="w-full rounded-lg" referrerPolicy="no-referrer" />
                              <div className="mt-3 flex justify-end gap-2">
                                <button
@@ -20903,16 +24439,6 @@ Ejemplo:
                                     title="Traducir reporte a inglés médico ACR estándar"
                                   >
                                     {isModifyingReport ? "Procesando..." : "Inglés Médico 🇺🇸"}
-                                  </button>
-
-                                  <button
-                                    type="button"
-                                    onClick={() => handleModifyReport("Por favor, resume los hallazgos principales en 3 o 4 viñetas muy concisas y asertivas de texto, y agrégalas como una nueva sección final titulada '### RESUMEN OPERACIONAL DE HALLAZGOS'. Mantén intactas todas las demás partes del reporte.")}
-                                    disabled={isModifyingReport}
-                                    className="col-span-2 lg:col-span-1 px-2 py-2 bg-slate-950 hover:bg-slate-850 border border-slate-800 hover:border-indigo-500/45 disabled:opacity-40 text-slate-350 hover:text-indigo-400 text-[8.5px] font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer font-mono"
-                                    title="Inyectar un resumen operacional final"
-                                  >
-                                    {isModifyingReport ? "Procesando..." : "Crear Resumen 📋"}
                                   </button>
                                 </div>
                               </div>
@@ -21540,12 +25066,51 @@ Ejemplo:
                                   <span className="text-[10px] font-mono text-slate-450 uppercase font-black tracking-wider">
                                     Imágenes Cargadas ({attachedImages.length})
                                   </span>
-                                  <button 
-                                    onClick={() => setAttachedImages([])}
-                                    className="px-2 py-1 bg-rose-955/20 hover:bg-rose-950/60 border border-rose-900/30 text-rose-400 text-[9px] font-black uppercase tracking-widest rounded transition-all flex items-center gap-1 cursor-pointer"
-                                  >
-                                    <Trash2 className="h-3 w-3" /> Limpiar Todo
-                                  </button>
+                                  <div className="flex items-center gap-2">
+                                    <button 
+                                      onClick={handleCorrelateFigures}
+                                      disabled={isCorrelatingFigures || attachedImages.length === 0}
+                                      className="px-2.5 py-1 bg-teal-950/40 hover:bg-teal-950/80 border border-teal-500/20 text-teal-400 text-[9px] font-black uppercase tracking-widest rounded-lg transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 select-none"
+                                      title="Inserta de forma retrógrada e inteligente las referencias (ver Figura 1, 2, etc.) en el texto del informe"
+                                    >
+                                      {isCorrelatingFigures ? (
+                                        <>
+                                          <Loader2 className="h-3 w-3 animate-spin text-teal-400" />
+                                          <span>Vinculando...</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Link className="h-3 w-3 text-teal-400" />
+                                          <span>Vincular Figuras en Reporte</span>
+                                        </>
+                                      )}
+                                    </button>
+
+                                    <button 
+                                      onClick={handleAiLabelAllImages}
+                                      disabled={isLabelingAll}
+                                      className="px-2.5 py-1 bg-indigo-950/40 hover:bg-indigo-950/80 border border-indigo-500/20 text-indigo-400 text-[9px] font-black uppercase tracking-widest rounded-lg transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 select-none"
+                                    >
+                                      {isLabelingAll ? (
+                                        <>
+                                          <Loader2 className="h-3 w-3 animate-spin text-indigo-400" />
+                                          <span>Rotulando Todo...</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Sparkles className="h-3 w-3 text-indigo-400" />
+                                          <span>Rotular todas las imágenes</span>
+                                        </>
+                                      )}
+                                    </button>
+                                    
+                                    <button 
+                                      onClick={() => setAttachedImages([])}
+                                      className="px-2 py-1 bg-rose-955/20 hover:bg-rose-950/60 border border-rose-900/30 text-rose-400 text-[9px] font-black uppercase tracking-widest rounded transition-all flex items-center gap-1 cursor-pointer"
+                                    >
+                                      <Trash2 className="h-3 w-3" /> Limpiar Todo
+                                    </button>
+                                  </div>
                                 </div>
                                 
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -21556,13 +25121,16 @@ Ejemplo:
                                         onClick={() => {
                                           setAttachedImages(prev => prev.filter(item => item.id !== img.id));
                                         }}
-                                        className="absolute top-2 right-2 p-1.5 bg-slate-900 hover:bg-rose-950 border border-slate-800 hover:border-rose-800 text-slate-400 hover:text-rose-450 rounded-lg transition-all opacity-0 group-hover:opacity-100 cursor-pointer"
+                                        className="absolute top-2 right-2 p-1.5 bg-slate-900 hover:bg-rose-950 border border-slate-800 hover:border-rose-800 text-slate-400 hover:text-rose-450 rounded-lg transition-all opacity-0 group-hover:opacity-100 cursor-pointer z-20"
                                         title="Eliminar de los anexos del estudio"
                                       >
                                         <X className="h-3.5 w-3.5" />
                                       </button>
 
                                       <div className="relative aspect-[4/3] bg-black rounded overflow-hidden border border-slate-900">
+                                        <div className="absolute top-2 left-2 px-2 py-0.5 bg-indigo-600/90 backdrop-blur-md text-white font-mono text-[8px] font-black rounded border border-indigo-400/30 select-none tracking-wider z-10">
+                                          FIGURA {idx + 1}
+                                        </div>
                                         <img src={img.url} alt={img.name} className="w-full h-full object-cover" />
                                         {img.isDicom && (
                                           <span className="absolute bottom-1 right-1 px-1.5 py-0.5 bg-cyan-600 text-white font-mono text-[8px] font-extrabold rounded select-none tracking-wider">
@@ -21577,10 +25145,51 @@ Ejemplo:
                                         </div>
                                         
                                         {/* Edit Caption Input Box */}
-                                        <div className="space-y-1">
-                                          <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest block font-mono">
-                                            Descripción / Hallazgo:
-                                          </label>
+                                        <div className="space-y-1.5">
+                                          <div className="flex flex-wrap items-center justify-between gap-1.5">
+                                            <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest block font-mono">
+                                              Descripción / Hallazgo:
+                                            </label>
+                                            <div className="flex items-center gap-1">
+                                              <button
+                                                onClick={() => handleAutocompleteLabelFromReport(img.id)}
+                                                disabled={loadingAutocompleteId === img.id}
+                                                className="text-[8px] font-black uppercase tracking-wider text-teal-450 hover:text-teal-300 disabled:opacity-50 transition-all flex items-center gap-1 bg-teal-500/10 hover:bg-teal-500/20 px-1.5 py-0.5 rounded border border-teal-500/15 cursor-pointer select-none"
+                                                title="Escribe una palabra o frase clave (ej. 'vesícula', 'quiste' o 'placa') y haz clic aquí para que la IA la busque en el reporte y complete el rótulo"
+                                              >
+                                                {loadingAutocompleteId === img.id ? (
+                                                  <>
+                                                    <Loader2 className="h-2 w-2 animate-spin text-teal-400" />
+                                                    <span>Completando...</span>
+                                                  </>
+                                                ) : (
+                                                  <>
+                                                    <Link className="h-2 w-2 text-teal-400" />
+                                                    <span>Completar de Reporte</span>
+                                                  </>
+                                                )}
+                                              </button>
+
+                                              <button
+                                                onClick={() => handleAiLabelImage(img.id)}
+                                                disabled={loadingAiLabelId === img.id}
+                                                className="text-[8px] font-black uppercase tracking-wider text-indigo-400 hover:text-indigo-300 disabled:opacity-50 transition-all flex items-center gap-1 bg-indigo-500/10 hover:bg-indigo-500/20 px-1.5 py-0.5 rounded border border-indigo-500/15 cursor-pointer select-none"
+                                                title="Analizar imagen completa con IA"
+                                              >
+                                                {loadingAiLabelId === img.id ? (
+                                                  <>
+                                                    <Loader2 className="h-2 w-2 animate-spin text-indigo-400" />
+                                                    <span>Rotulando...</span>
+                                                  </>
+                                                ) : (
+                                                  <>
+                                                    <Sparkles className="h-2 w-2 text-indigo-400" />
+                                                    <span>Rotular Imagen</span>
+                                                  </>
+                                                )}
+                                              </button>
+                                            </div>
+                                          </div>
                                           <input 
                                             type="text"
                                             value={img.caption}
@@ -21588,8 +25197,8 @@ Ejemplo:
                                               const val = e.target.value;
                                               setAttachedImages(prev => prev.map(item => item.id === img.id ? { ...item, caption: val } : item));
                                             }}
-                                            className="w-full bg-slate-900 border border-slate-800 focus:border-indigo-500 px-2 py-1 text-[11px] font-medium text-slate-200 outline-none rounded"
-                                            placeholder="p. ej. Bifurcación Carotídea con placa hiperecogénica"
+                                            className="w-full bg-slate-900 border border-slate-800 focus:border-indigo-500 px-2.5 py-1.5 text-[11px] font-medium text-slate-200 outline-none rounded-lg transition-all focus:ring-1 focus:ring-indigo-500/30"
+                                            placeholder="Escribe 'vesícula' o 'lito' y haz clic en Completar de Reporte"
                                           />
                                         </div>
 
@@ -21641,6 +25250,13 @@ Ejemplo:
                               </div>
                             )}
                           </div>
+
+                          <React.Suspense fallback={
+                            <div className="my-6 p-10 border border-dashed border-slate-800/50 rounded-3xl text-center bg-slate-950/10 text-slate-400 font-mono text-xs flex flex-col items-center justify-center gap-3 animate-pulse">
+                              <Loader2 className="h-5 w-5 animate-spin text-emerald-500" />
+                              <span className="tracking-wider uppercase text-[10px]">Cargando módulo interactivo...</span>
+                            </div>
+                          }>
 
                           {/* === VASCULAR DOPPLER ANALYZER & SCHEMATIC HUD === */}
                           {(specificStudy === "Doppler de carótidas" || 
@@ -21748,6 +25364,8 @@ Ejemplo:
                                 onExportNarrative={(narrativeText) => handleExportNarrativeWithProtocol("Rodilla", narrativeText)}
                                 includeInReport={includeKneeSchemaInReport}
                                 setIncludeInReport={setIncludeKneeSchemaInReport}
+                                includeGonartrosis={includeGonartrosisSchemaInReport}
+                                setIncludeGonartrosis={setIncludeGonartrosisSchemaInReport}
                                 onChangeStates={(nextStates) => setKneeStates(nextStates)}
                                 onChangeDescriptions={(nextDescriptions) => setKneeDescriptions(nextDescriptions)}
                                 laterality={laterality}
@@ -21927,6 +25545,10 @@ Ejemplo:
                                 setIncludeDiverticulitis={setIncludeDiverticulitisSchemaInReport}
                                 includeSmallBowel={includeSmallBowelSchemaInReport}
                                 setIncludeSmallBowel={setIncludeSmallBowelSchemaInReport}
+                                includeHepatopatia={includeHepatopatiaSchemaInReport}
+                                setIncludeHepatopatia={setIncludeHepatopatiaSchemaInReport}
+                                includeAneurisma={includeAneurismaSchemaInReport}
+                                setIncludeAneurisma={setIncludeAneurismaSchemaInReport}
                                 onChangeStates={(nextStates) => setAbdomenStates(nextStates)}
                                 onChangeDescriptions={(nextDescriptions) => setAbdomenDescriptions(nextDescriptions)}
                                 includeElastography={includeElastographyInReport}
@@ -21989,6 +25611,8 @@ Ejemplo:
                                 onExportTable={(tableText) => handleExportTableWithProtocol("Muñeca", tableText)}
                                 includeInReport={includeWristSchemaInReport}
                                 setIncludeInReport={setIncludeWristSchemaInReport}
+                                includeDeQuervain={includeDeQuervainSchemaInReport}
+                                setIncludeDeQuervain={setIncludeDeQuervainSchemaInReport}
                                 onChangeStates={(nextStates) => setWristStates(nextStates)}
                                 onChangeDescriptions={(nextDescriptions) => setWristDescriptions(nextDescriptions)}
                               />
@@ -22100,6 +25724,8 @@ Ejemplo:
                                />
                              </div>
                            )}
+
+                          </React.Suspense>
 
                            {/* --- NUEVA SECCIÓN DE ANÁLISIS DE CASO Y BÚSQUEDA DE BIBLIOGRAFÍA --- */}
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -22340,6 +25966,140 @@ Ejemplo:
                                 {isCreadorNotasOpen ? "Ocultar Notas" : "Crear Notas de Pie"}
                               </button>
                             </div>
+
+                            {/* Card 8b: Creador de Cuadro Sinóptico de Órgano (IA) */}
+                            <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-indigo-500/25 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
+                              <div className="flex items-center gap-2 justify-between">
+                                <div className="flex items-center gap-2">
+                                  <Sparkles className="h-4 w-4 text-indigo-400 animate-pulse" />
+                                  <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
+                                    Cuadro Sinóptico Órgano (IA)
+                                  </h4>
+                                </div>
+                                <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-indigo-950/40 text-indigo-450 border border-indigo-900/30 px-2 py-0.5 rounded">
+                                  CUADRO ÓRGANO
+                                </span>
+                              </div>
+                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
+                                Audita los hallazgos de un órgano específico para generar un cuadro sinóptico de precisión y redactar frases descriptivas.
+                              </p>
+                              <button
+                                onClick={() => setIsCreadorCuadroSinopticoOpen(p => !p)}
+                                className={`w-full py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2 font-mono cursor-pointer border-2 ${
+                                  isCreadorCuadroSinopticoOpen
+                                    ? "bg-indigo-600/15 border-indigo-500/60 text-indigo-200"
+                                    : "bg-slate-950 border-slate-800 hover:border-indigo-500/30 text-indigo-450"
+                                }`}
+                              >
+                                <Sparkles className="h-4 w-4" />
+                                {isCreadorCuadroSinopticoOpen ? "Ocultar Sinóptico" : "Crear Cuadro Órgano"}
+                              </button>
+                            </div>
+
+                            {/* Card 8b: Sinopsis de Fracturas (IA) */}
+                            <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-emerald-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
+                              <div className="flex items-center gap-2 justify-between">
+                                <div className="flex items-center gap-2">
+                                  <Bone className="h-4 w-4 text-emerald-400" />
+                                  <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
+                                    Sinopsis de Fracturas (IA)
+                                  </h4>
+                                </div>
+                                <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-emerald-950/40 text-emerald-400 border border-emerald-900/30 px-2 py-0.5 rounded">
+                                  FRACTURAS
+                                </span>
+                              </div>
+                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
+                                Detecta automáticamente fracturas descritas para confeccionar su cuadro semiológico completo, clasificaciones y pautas de traumatología.
+                              </p>
+                              <button
+                                onClick={() => setIsCreadorSinopsisFracturasOpen(p => !p)}
+                                className={`w-full py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2 font-mono cursor-pointer border-2 ${
+                                  isCreadorSinopsisFracturasOpen
+                                    ? "bg-emerald-600/15 border-emerald-500/60 text-emerald-200"
+                                    : "bg-slate-950 border-slate-800 hover:border-emerald-500/30 text-emerald-450"
+                                }`}
+                              >
+                                <Bone className="h-4 w-4" />
+                                {isCreadorSinopsisFracturasOpen ? "Ocultar Sinopsis" : "Analizar Fracturas"}
+                              </button>
+                            </div>
+
+                            {/* Card 9: Resumen Operacional para WhatsApp (IA) */}
+                            <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-emerald-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
+                              <div className="flex items-center gap-2 justify-between">
+                                <div className="flex items-center gap-2">
+                                  <ListTodo className="h-4 w-4 text-emerald-400" />
+                                  <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
+                                    Resumen Operacional (IA)
+                                  </h4>
+                                </div>
+                                <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-emerald-950/40 text-emerald-400 border border-emerald-900/30 px-2 py-0.5 rounded">
+                                  WhatsApp
+                                </span>
+                              </div>
+                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
+                                Extrae un resumen de hallazgos del reporte de manera automática para inyectarlo en el WhatsApp y mostrarlo al paciente.
+                              </p>
+                              <button
+                                onClick={handleGenerateWhatsAppSummary}
+                                disabled={isGeneratingOperationalSummary || !(isEditingReportManual ? editedReportText : generatedReport)}
+                                className={`w-full py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2 font-mono cursor-pointer border-2 ${
+                                  operationalSummaryText
+                                    ? "bg-emerald-600/15 border-emerald-500/60 text-emerald-200"
+                                    : "bg-slate-950 border-slate-800 hover:border-emerald-500/30 text-emerald-450"
+                                }`}
+                              >
+                                {isGeneratingOperationalSummary ? (
+                                  <RefreshCw className="h-4 w-4 animate-spin text-emerald-400" />
+                                ) : (
+                                  <ListTodo className="h-4 w-4 text-emerald-450" />
+                                )}
+                                {isGeneratingOperationalSummary
+                                  ? "Generando Resumen..."
+                                  : operationalSummaryText
+                                  ? "Resumen Listo ✓ (Generar de Nuevo)"
+                                  : "Crear Resumen 📋"}
+                              </button>
+                            </div>
+
+                            {/* Card 10: Cuadro de Semiología por Imágenes (IA) */}
+                            <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-cyan-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all animate-fade-in">
+                              <div className="flex items-center gap-2 justify-between">
+                                <div className="flex items-center gap-2">
+                                  <ShieldCheck className="h-4 w-4 text-cyan-400" />
+                                  <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
+                                    Semiología por Imágenes (IA)
+                                  </h4>
+                                </div>
+                                <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-cyan-950/40 text-cyan-400 border border-cyan-900/30 px-2 py-0.5 rounded">
+                                  SEMIOLOGÍA
+                                </span>
+                              </div>
+                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
+                                Realiza un cuadro de semiología por imágenes para justificar clínicamente cada uno de los diagnósticos establecidos y detallar las patologías descartadas.
+                              </p>
+                              <button
+                                onClick={handleGenerateSemiologyTable}
+                                disabled={isGeneratingSemiology || !(isEditingReportManual ? editedReportText : generatedReport)}
+                                className={`w-full py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2 font-mono cursor-pointer border-2 ${
+                                  semiologyData
+                                    ? "bg-cyan-600/15 border-cyan-500/60 text-cyan-200 font-bold"
+                                    : "bg-slate-950 border-slate-800 hover:border-cyan-500/30 text-cyan-450"
+                                }`}
+                              >
+                                {isGeneratingSemiology ? (
+                                  <RefreshCw className="h-4 w-4 animate-spin text-cyan-400" />
+                                ) : (
+                                  <ShieldCheck className="h-4 w-4" />
+                                )}
+                                {isGeneratingSemiology
+                                  ? "Confeccionando Cuadro..."
+                                  : semiologyData
+                                  ? "Cuadro Listo ✓ (Confeccionar Nuevo)"
+                                  : "Confeccionar Cuadro Semiológico"}
+                              </button>
+                            </div>
                           </div>
 
                           {/* Render Asistente de Medidas Clínicas Panel */}
@@ -22348,6 +26108,7 @@ Ejemplo:
                               <AsistenteMedidas
                                 selectedModel={selectedModel}
                                 reportText={isEditingReportManual ? editedReportText : generatedReport}
+                                studyType={specificStudy}
                                 onReportUpdated={(newReportText) => {
                                   setEditedReportText(newReportText);
                                   setGeneratedReport(newReportText);
@@ -22367,6 +26128,210 @@ Ejemplo:
                                   setGeneratedReport(newReportText);
                                 }}
                               />
+                            </div>
+                          )}
+
+                          {/* Render Creador de Cuadro Sinóptico Panel */}
+                          {isCreadorCuadroSinopticoOpen && (
+                            <div className="my-6">
+                              <CreadorCuadroSinoptico
+                                selectedModel={selectedModel}
+                                reportText={isEditingReportManual ? editedReportText : generatedReport}
+                                onReportUpdated={(newReportText) => {
+                                  setEditedReportText(newReportText);
+                                  setGeneratedReport(newReportText);
+                                }}
+                              />
+                            </div>
+                          )}
+
+                          {/* Render Creador de Sinopsis de Fracturas Panel */}
+                          {isCreadorSinopsisFracturasOpen && (
+                            <div className="my-6">
+                              <CreadorSinopsisFracturas
+                                selectedModel={selectedModel}
+                                reportText={isEditingReportManual ? editedReportText : generatedReport}
+                                onReportUpdated={(newReportText) => {
+                                  setEditedReportText(newReportText);
+                                  setGeneratedReport(newReportText);
+                                }}
+                              />
+                            </div>
+                          )}
+
+                          {/* ========================================================== */}
+                          {/* NEW PANEL: IMAGE SEMIOLOGY AND DIAGNOSTICS JUSTIFICATION */}
+                          {/* ========================================================== */}
+                          {isGeneratingSemiology && (
+                            <div className="bg-[#090d16]/60 border-2 border-cyan-500/10 rounded-2xl p-6 flex flex-col items-center justify-center py-10 text-center space-y-3 shadow-lg animate-pulse my-4">
+                              <Loader2 className="h-6 w-6 text-cyan-400 animate-spin" />
+                              <p className="text-[10px] font-mono font-black text-slate-300 uppercase tracking-widest">
+                                Confeccionando cuadro de semiología por imágenes...
+                              </p>
+                              <p className="text-[9px] font-medium text-slate-500 uppercase tracking-wider max-w-sm">
+                                Extrayendo signos radiológicos de soporte, ponderando hallazgos patológicos y deduciendo diagnósticos diferenciales excluidos basados en la evidencia clínica.
+                              </p>
+                            </div>
+                          )}
+
+                          {semiologyError && (
+                            <div className="p-3 bg-rose-950/10 border border-rose-900/30 rounded-xl text-rose-400 text-[10px] font-mono font-bold uppercase tracking-tight my-4">
+                              {semiologyError}
+                            </div>
+                          )}
+
+                          {semiologyData && (
+                            <div className={isSemiologyExpanded
+                              ? "fixed inset-4 md:inset-10 z-50 bg-[#070b12]/95 backdrop-blur-2xl border-2 border-cyan-500/40 rounded-3xl p-6 md:p-8 flex flex-col space-y-5 shadow-2xl overflow-y-auto transition-all duration-350 my-0"
+                              : "bg-[#070b12] border-2 border-cyan-500/15 rounded-2xl p-6 space-y-5 shadow-2xl relative overflow-hidden animate-fade-in my-4 transition-all duration-350"
+                            }>
+                              {/* Ambient highlight background blur */}
+                              <div className="absolute top-0 right-0 w-48 h-48 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none" />
+
+                              <div className="flex flex-col lg:flex-row lg:items-center justify-between border-b border-cyan-950/40 pb-3.5 gap-4 font-sans">
+                                <div className="flex items-center gap-2 text-left">
+                                  <ShieldCheck className="h-5 w-5 text-cyan-400" />
+                                  <div>
+                                    <h4 className="text-xs font-black text-cyan-400 uppercase tracking-widest font-mono">
+                                      Cuadro de Semiología por Imágenes y Justificación
+                                    </h4>
+                                    <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wide mt-0.5">
+                                      Correlación interpretativa formal entre signos radiográficos, confirmación diagnóstica y exclusiones diferenciales. Selecciona los puntos que deseas incluir.
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setIsSemiologyExpanded(p => !p)}
+                                    className={`p-2 rounded-xl border transition-all duration-200 cursor-pointer flex items-center justify-center ${
+                                      isSemiologyExpanded
+                                        ? "bg-cyan-950/90 border-cyan-500/50 text-cyan-300 ring-1 ring-cyan-500/30"
+                                        : "bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-100"
+                                    }`}
+                                    title={isSemiologyExpanded ? "Restaurar tamaño estándar de componente" : "Maximizar área de lectura (Modo Expandido)"}
+                                  >
+                                    {isSemiologyExpanded ? (
+                                      <Minimize2 className="h-4.5 w-4.5" />
+                                    ) : (
+                                      <Maximize2 className="h-4.5 w-4.5" />
+                                    )}
+                                  </button>
+
+                                  <button
+                                    onClick={() => copyToClipboard(buildDynamicSemiologyMarkdownTable(), false)}
+                                    className="text-[9px] font-black text-slate-400 hover:text-cyan-400 border border-slate-850 px-2.5 py-1.5 rounded-xl bg-slate-950/40 uppercase tracking-wider font-mono transition-all cursor-pointer"
+                                  >
+                                    Copiar en Markdown
+                                  </button>
+                                  <button
+                                    onClick={handleAppendSemiologyToReport}
+                                    className="text-[9px] font-black text-slate-950 hover:bg-cyan-400 bg-cyan-400 px-3.5 py-1.5 rounded-xl uppercase tracking-wider font-mono transition-all flex items-center gap-1.5 cursor-pointer font-bold"
+                                  >
+                                    <Plus className="h-3 w-3" />
+                                    Insertar en Reporte PDF
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2 font-sans text-left">
+                                {/* Diagnósticos Confirmados */}
+                                <div className="space-y-3">
+                                  <div className="flex items-center gap-2 text-cyan-400 text-[10px] font-black uppercase tracking-wider font-mono">
+                                    <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
+                                    1. Diagnósticos Confirmados y Justificación
+                                  </div>
+                                  <div className="border border-slate-800/60 rounded-xl overflow-hidden bg-slate-950/20">
+                                    <table className="w-full text-xs border-collapse">
+                                      <thead>
+                                        <tr className="bg-slate-950 border-b border-slate-850/60 text-slate-400 text-[9px] font-bold uppercase tracking-wider">
+                                          <th className="p-3 text-center w-12">Inc.</th>
+                                          <th className="p-3 text-left w-1/3">INTERPRETACIÓN SEMIOLÓGICA</th>
+                                          <th className="p-3 text-left w-2/3 border-l border-slate-850/60">HALLAZGOS</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-850/40">
+                                        {semiologyData.confirmedDiagnoses && semiologyData.confirmedDiagnoses.map((d: any, idx: number) => (
+                                          <tr key={idx} className={`hover:bg-slate-900/10 transition-colors ${!selectedConfirmedDiagnoses[idx] ? 'opacity-45' : ''}`}>
+                                            <td className="p-3 text-center align-middle">
+                                              <input
+                                                type="checkbox"
+                                                checked={!!selectedConfirmedDiagnoses[idx]}
+                                                onChange={(e) => {
+                                                  const updated = [...selectedConfirmedDiagnoses];
+                                                  updated[idx] = e.target.checked;
+                                                  setSelectedConfirmedDiagnoses(updated);
+                                                }}
+                                                className="rounded border-slate-800 text-cyan-500 focus:ring-cyan-500 h-4 w-4 bg-slate-950 cursor-pointer"
+                                              />
+                                            </td>
+                                            <td className="p-3 text-slate-200 font-bold align-top">{d.diagnosis}</td>
+                                            <td className="p-3 text-slate-300 align-top border-l border-slate-850/40 leading-relaxed">{d.justification}</td>
+                                          </tr>
+                                        ))}
+                                        {(!semiologyData.confirmedDiagnoses || semiologyData.confirmedDiagnoses.length === 0) && (
+                                          <tr>
+                                            <td colSpan={3} className="p-4 text-center text-slate-500 italic text-[11px]">No se hallaron diagnósticos confirmados descritos.</td>
+                                          </tr>
+                                        )}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </div>
+
+                                {/* Patologías Descartadas */}
+                                <div className="space-y-3">
+                                  <div className="flex items-center gap-2 text-slate-400 text-[10px] font-black uppercase tracking-wider font-mono">
+                                    <span className="h-1.5 w-1.5 rounded-full bg-slate-500" />
+                                    2. Diagnósticos Diferenciales Descartados
+                                  </div>
+                                  <div className="border border-slate-800/60 rounded-xl overflow-hidden bg-slate-950/20">
+                                    <table className="w-full text-xs border-collapse">
+                                      <thead>
+                                        <tr className="bg-slate-950 border-b border-slate-850/60 text-slate-400 text-[9px] font-bold uppercase tracking-wider">
+                                          <th className="p-3 text-center w-12">Inc.</th>
+                                          <th className="p-3 text-left w-1/3">INTERPRETACIÓN SEMIOLÓGICA</th>
+                                          <th className="p-3 text-left w-2/3 border-l border-slate-850/60">HALLAZGOS</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-850/40">
+                                        {semiologyData.ruledOutPathologies && semiologyData.ruledOutPathologies.map((r: any, idx: number) => (
+                                          <tr key={idx} className={`hover:bg-slate-900/10 transition-colors ${!selectedRuledOutPathologies[idx] ? 'opacity-45' : ''}`}>
+                                            <td className="p-3 text-center align-middle">
+                                              <input
+                                                type="checkbox"
+                                                checked={!!selectedRuledOutPathologies[idx]}
+                                                onChange={(e) => {
+                                                  const updated = [...selectedRuledOutPathologies];
+                                                  updated[idx] = e.target.checked;
+                                                  setSelectedRuledOutPathologies(updated);
+                                                }}
+                                                className="rounded border-slate-800 text-cyan-500 focus:ring-cyan-500 h-4 w-4 bg-slate-950 cursor-pointer"
+                                              />
+                                            </td>
+                                            <td className="p-3 text-slate-300 font-semibold align-top">{r.pathology}</td>
+                                            <td className="p-3 text-slate-400 align-top border-l border-slate-850/40 leading-relaxed">{r.exclusionCriteria}</td>
+                                          </tr>
+                                        ))}
+                                        {(!semiologyData.ruledOutPathologies || semiologyData.ruledOutPathologies.length === 0) && (
+                                          <tr>
+                                            <td colSpan={3} className="p-4 text-center text-slate-500 italic text-[11px]">No se listaron patologías descartadas en el análisis.</td>
+                                          </tr>
+                                        )}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="pt-2 text-left bg-slate-950/40 border border-slate-850/50 rounded-xl p-4 space-y-1.5">
+                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider font-mono">
+                                  Representación en Tabla Formal para PDF (Dinámica):
+                                </span>
+                                <pre className="text-[10px] text-slate-300 font-mono overflow-x-auto whitespace-pre-wrap p-2 bg-slate-950 rounded border border-slate-900 leading-relaxed max-h-40">
+                                  {buildDynamicSemiologyMarkdownTable()}
+                                </pre>
+                              </div>
                             </div>
                           )}
 
@@ -22754,6 +26719,28 @@ Ejemplo:
                                   </div>
                                 </div>
                                 <div className="flex flex-wrap items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setAttachSummaryToOfficialReport(prev => !prev)}
+                                    className={`text-[9px] font-black px-3 py-1.5 rounded-xl uppercase tracking-wider font-mono transition-all flex items-center gap-1.5 cursor-pointer border ${
+                                      attachSummaryToOfficialReport
+                                        ? "bg-emerald-950/80 border-emerald-500/50 text-emerald-350 shadow-[0_2px_8px_rgba(16,185,129,0.2)]"
+                                        : "bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-100"
+                                    }`}
+                                    title={attachSummaryToOfficialReport ? "El resumen se incluirá al final del reporte original como un anexo" : "Adjuntar este resumen como un anexo al reporte original"}
+                                  >
+                                    {attachSummaryToOfficialReport ? (
+                                      <>
+                                        <Check className="h-3 w-3 text-emerald-400" />
+                                        Adjunto a reporte original
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Plus className="h-3 w-3 text-slate-400" />
+                                        Adjuntar a reporte original
+                                      </>
+                                    )}
+                                  </button>
                                   <button
                                     type="button"
                                     onClick={() => setIsPatientSummaryExpanded(p => !p)}
@@ -23564,6 +27551,19 @@ Ejemplo:
                                           <p className="text-[10px] text-slate-450 font-semibold leading-relaxed uppercase tracking-wide">
                                             {rec.whyRecommended}
                                           </p>
+                                          {!isAlreadyAcc && (
+                                            <div className="pt-2 flex items-center">
+                                              <label className="flex items-center gap-2 text-[10px] font-black text-indigo-400 hover:text-indigo-300 uppercase tracking-wider font-mono cursor-pointer select-none">
+                                                <input
+                                                  type="checkbox"
+                                                  checked={!!includeManagementRecs[idx]}
+                                                  onChange={(e) => setIncludeManagementRecs(prev => ({ ...prev, [idx]: e.target.checked }))}
+                                                  className="rounded border-slate-800 bg-slate-950 text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5 cursor-pointer accent-indigo-650"
+                                                />
+                                                <span>Incluir recomendación de manejo / conducta</span>
+                                              </label>
+                                            </div>
+                                          )}
                                         </div>
                                         
                                         <button
@@ -24196,6 +28196,52 @@ Ejemplo:
                     </div>
                   </div>
 
+                  {/* 🔥 ADMINISTRADOR DE RESPALDO Y DATOS LOCALES */}
+                  <div className="bg-[#0b1329]/60 border-2 border-slate-800 rounded-xl p-5 space-y-4 text-left">
+                    <h3 className="text-xs font-black text-indigo-400 uppercase tracking-widest font-mono flex items-center gap-2 border-b border-slate-800 pb-2.5">
+                      <Database className="h-4 w-4 text-indigo-400" /> SEGURIDAD Y RESPALDO DE DATOS LOCALES
+                    </h3>
+
+                    <p className="text-[11px] text-slate-300 leading-relaxed font-sans font-medium">
+                      Para garantizar la máxima velocidad, estabilidad y privacidad de tus reportes médicos, la aplicación ha sido configurada como <strong>100% Local-First</strong>.
+                    </p>
+                    <p className="text-[11px] text-slate-400 leading-relaxed font-sans font-medium">
+                      Todos los datos de tus pacientes, plantillas, firmas, logos e historial de estudios clínicos se guardan de forma instantánea y segura únicamente dentro de la memoria de tu propio navegador web (<code className="bg-[#030612] px-1 py-0.5 rounded text-indigo-300 font-mono text-[10px]">localStorage</code>). Nada de tu información confidencial se sube a nubes externas, cumpliendo al 100% con estándares de privacidad médica.
+                    </p>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                      <div className="p-4 bg-slate-950/60 border border-slate-850 rounded-xl space-y-2">
+                        <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-200">Exportar Todo</h4>
+                        <p className="text-[10px] text-slate-500 leading-normal">Descarga un archivo copia de seguridad (.json) con todo tu historial de estudios, firmas, logos y configuraciones de doctor de forma instantánea.</p>
+                        <button
+                          type="button"
+                          onClick={handleExportAllData}
+                          className="w-full mt-2 px-3 py-2 bg-indigo-950/60 hover:bg-indigo-900/80 text-indigo-300 border border-indigo-900/60 hover:border-indigo-750 rounded-lg text-[9.5px] font-black uppercase tracking-wider transition cursor-pointer select-none flex items-center justify-center gap-1.5"
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                          Exportar Respaldo (.json)
+                        </button>
+                      </div>
+
+                      <div className="p-4 bg-slate-950/60 border border-slate-850 rounded-xl space-y-2">
+                        <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-200">Importar / Restaurar</h4>
+                        <p className="text-[10px] text-slate-500 leading-normal">Restaura todo tu historial de estudios y configuraciones de doctor cargando tu archivo de respaldo previamente exportado.</p>
+                        <label className="block mt-2">
+                          <span className="w-full px-3 py-2 bg-emerald-950/40 hover:bg-emerald-900/30 text-emerald-300 border border-emerald-900/40 hover:border-emerald-700/60 rounded-lg text-[9.5px] font-black uppercase tracking-wider transition cursor-pointer select-none flex items-center justify-center gap-1.5">
+                            <Upload className="h-3.5 w-3.5" />
+                            Cargar Archivo Respaldo
+                          </span>
+                          <input
+                            type="file"
+                            accept=".json"
+                            onChange={handleImportAllData}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="space-y-4">
                     <h3 className="text-xs font-black text-indigo-400 block uppercase tracking-widest font-mono">1. End-point de Análisis e Informes</h3>
                     <div className="bg-slate-950 border-2 border-slate-850 rounded-xl p-5 space-y-3.5 font-mono text-[11px]">
@@ -24360,9 +28406,19 @@ Ejemplo:
 
                 {/* Notifications */}
                 {cloudStudiesError && (
-                  <div className="bg-rose-950/20 border border-rose-900/40 text-rose-300 p-4 rounded-xl flex items-center gap-3 text-xs">
-                    <AlertCircle className="h-4 w-4 text-rose-400 shrink-0" />
-                    <div>{cloudStudiesError}</div>
+                  <div className="bg-rose-950/20 border border-rose-900/40 text-rose-300 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-left">
+                    <div className="flex items-start gap-3">
+                      <AlertCircle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
+                      <div>{cloudStudiesError}</div>
+                    </div>
+                    {(cloudStudiesError.toLowerCase().includes("cuota") || cloudStudiesError.toLowerCase().includes("quota") || cloudStudiesError.toLowerCase().includes("limit")) && (
+                      <button
+                        onClick={() => setActiveTab("api")}
+                        className="text-indigo-400 hover:text-indigo-300 font-bold uppercase tracking-wider shrink-0 underline decoration-indigo-400/40 underline-offset-4 text-[10px] self-start sm:self-center"
+                      >
+                        Configurar Firebase Propio ↗
+                      </button>
+                    )}
                   </div>
                 )}
                 {cloudStudiesSuccess && (
@@ -24389,15 +28445,93 @@ Ejemplo:
                       </div>
 
                       {/* Action buttons */}
-                      <div className="flex items-center gap-3 shrink-0">
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        {/* Import Button */}
+                        <label className="flex items-center gap-1.5 bg-slate-850 hover:bg-slate-800 text-slate-300 font-bold text-[11px] uppercase tracking-wider px-3.5 py-2.5 rounded-xl transition border border-slate-750 cursor-pointer select-none" title="Importar respaldo JSON local para no perder acceso">
+                          <Upload className="h-3.5 w-3.5 text-indigo-400" />
+                          <span>Importar</span>
+                          <input
+                            type="file"
+                            accept=".json"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              try {
+                                const text = await file.text();
+                                const data = JSON.parse(text);
+                                if (Array.isArray(data)) {
+                                  const valid = data.every(s => s && typeof s === 'object' && 'id' in s && 'patientName' in s);
+                                  if (valid) {
+                                    const uid = gmailUser?.uid || "anon";
+                                    const localKey = `fallback_studies_${uid}`;
+                                    const existingStr = localStorage.getItem(localKey);
+                                    let existing: any[] = [];
+                                    if (existingStr) {
+                                      try { existing = JSON.parse(existingStr); } catch(err) {}
+                                    }
+                                    const merged = [...data];
+                                    existing.forEach(ex => {
+                                      if (!merged.some(m => m.id === ex.id)) {
+                                        merged.push(ex);
+                                      }
+                                    });
+                                    localStorage.setItem(localKey, JSON.stringify(merged));
+                                    merged.forEach(s => {
+                                      localStorage.setItem(`fallback_single_study_${s.id}`, JSON.stringify(s));
+                                    });
+                                    setCloudStudies(merged);
+                                    alert(`¡Éxito! Se importaron ${data.length} estudios correctamente.`);
+                                  } else {
+                                    alert("El archivo JSON no tiene un formato compatible de estudios clínicos.");
+                                  }
+                                } else {
+                                  alert("El archivo de respaldo debe contener una lista de estudios.");
+                                }
+                              } catch (err: any) {
+                                alert("Error al leer el archivo de respaldo: " + err.message);
+                              }
+                            }}
+                          />
+                        </label>
+
+                        {/* Export Button */}
+                        <button
+                          onClick={() => {
+                            if (cloudStudies.length === 0) {
+                              alert("No hay estudios cargados para exportar en este navegador.");
+                              return;
+                            }
+                            try {
+                              const dataStr = JSON.stringify(cloudStudies, null, 2);
+                              const blob = new Blob([dataStr], { type: "application/json" });
+                              const url = URL.createObjectURL(blob);
+                              const link = document.createElement("a");
+                              link.href = url;
+                              link.download = `respaldo_estudios_radiologicos_${new Date().toISOString().slice(0,10)}.json`;
+                              document.body.appendChild(link);
+                              link.click();
+                              document.body.removeChild(link);
+                              URL.revokeObjectURL(url);
+                            } catch (err: any) {
+                              alert("Error al exportar respaldo: " + err.message);
+                            }
+                          }}
+                          className="flex items-center gap-1.5 bg-slate-855 hover:bg-slate-800 text-slate-300 font-bold text-[11px] uppercase tracking-wider px-3.5 py-2.5 rounded-xl transition border border-slate-750 cursor-pointer select-none"
+                          title="Descargar respaldo local completo como archivo JSON"
+                        >
+                          <Download className="h-3.5 w-3.5 text-emerald-400" />
+                          <span>Exportar</span>
+                        </button>
+
                         <button
                           onClick={() => fetchCloudStudies(gmailUser.uid)}
                           disabled={isLoadingCloudStudies}
-                          className="flex items-center gap-2 bg-slate-800 hover:bg-slate-750 text-slate-300 font-bold text-xs uppercase tracking-wider px-4 py-2.5 rounded-xl transition border border-slate-700/60"
+                          className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-750 text-slate-300 font-bold text-[11px] uppercase tracking-wider px-3.5 py-2.5 rounded-xl transition border border-slate-700/60 cursor-pointer select-none"
                           title="Actualizar biblioteca"
                         >
-                          <RefreshCw className={`h-4 w-4 ${isLoadingCloudStudies ? "animate-spin" : ""}`} />
-                          Refrescar
+                          <RefreshCw className={`h-3.5 w-3.5 text-indigo-400 ${isLoadingCloudStudies ? "animate-spin" : ""}`} />
+                          <span>Refrescar</span>
                         </button>
 
                         <button
@@ -24445,15 +28579,28 @@ Ejemplo:
                           );
                         });
 
-                        if (filtered.length === 0) {
+                         if (filtered.length === 0) {
+                          const localReportsCount = (() => {
+                            try {
+                              const stored = localStorage.getItem("radiology_reports_history");
+                              if (stored) {
+                                const parsed = JSON.parse(stored);
+                                return Array.isArray(parsed) ? parsed.length : 0;
+                              }
+                            } catch (e) {}
+                            return 0;
+                          })();
+
+                          const isUsingCustomFirebase = !!localStorage.getItem("rad_custom_firebase_config");
+
                           return (
-                            <div className="bg-slate-950/40 border border-slate-900 rounded-2xl py-16 flex flex-col items-center justify-center gap-3 text-center px-4">
-                              <Database className="h-10 w-10 text-slate-700 mb-1" />
+                            <div className="bg-slate-950/40 border border-slate-900 rounded-2xl py-12 flex flex-col items-center justify-center gap-4 text-center px-6">
+                              <Database className="h-12 w-12 text-indigo-400/60 mb-1" />
                               <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider">No se encontraron estudios</h3>
                               <p className="text-xs text-slate-500 max-w-md mt-1">
                                 {cloudSearch 
-                                  ? "Ningún estudio cloud coincide con los criterios de búsqueda especificados." 
-                                  : "Tu Base de Datos en la Nube propia está vacía. Genera un reporte médico y haz clic en 'Guardar Estudio Actual' para archivar tu primer registro."}
+                                  ? "Ningún estudio coincide con los criterios de búsqueda especificados." 
+                                  : "Tu archivo local de estudios está vacío. Genera un reporte médico y haz clic en 'Guardar Estudio' para guardar tu primer registro, o importa un archivo de respaldo."}
                               </p>
                             </div>
                           );
@@ -24526,6 +28673,24 @@ Ejemplo:
                                   </button>
 
                                   <button
+                                    onClick={() => handleCopyEhrLinkForStudy(item)}
+                                    className="px-3 bg-indigo-950/40 hover:bg-indigo-950/80 text-indigo-300 border border-indigo-900/40 font-bold text-[10.5px] uppercase tracking-wider py-2 rounded-xl flex items-center justify-center gap-1.5 transition"
+                                    title="Copiar texto con el enlace del reporte para el expediente clínico (EHR)"
+                                  >
+                                    {copiedEhrStudyId === item.id ? (
+                                      <>
+                                        <Check className="h-3.5 w-3.5 text-emerald-400" />
+                                        <span>Copiado</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Link className="h-3.5 w-3.5 text-indigo-400" />
+                                        <span>Link EHR</span>
+                                      </>
+                                    )}
+                                  </button>
+
+                                  <button
                                     onClick={() => {
                                       setActiveTab("generator");
                                       setStudyType(item.studyType);
@@ -24533,6 +28698,7 @@ Ejemplo:
                                       setClinicalHistory(item.clinicalHistory);
                                       setGeneratedReport(item.reportText);
                                       setOriginalBaseReport(item.reportText);
+                                      setCurrentCloudStudyId(item.id);
                                       if (item.patientName) setPatientName(item.patientName);
                                       if (item.patientEmail) setPatientEmail(item.patientEmail);
                                       if (item.reportDate) setReportDate(item.reportDate);
@@ -24540,6 +28706,8 @@ Ejemplo:
                                       if (item.doctorLicense) setDoctorLicense(item.doctorLicense);
                                       if (item.clinicName) setClinicName(item.clinicName);
                                       if (item.findings) setFindings(item.findings);
+                                      setAttachedImages(item.attachedImages || []);
+                                      setPatientSummary(item.patientSummary || null);
                                     }}
                                     className="px-3 bg-emerald-950/40 hover:bg-emerald-950/80 text-emerald-300 border border-emerald-900/40 font-bold text-[10.5px] uppercase tracking-wider py-2 rounded-xl flex items-center justify-center gap-1.5 transition"
                                     title="Cargar de vuelta en el panel principal"
@@ -24564,24 +28732,121 @@ Ejemplo:
                     )}
                   </div>
                 ) : (
-                  <div className="bg-[#0b101f] border border-slate-800 rounded-2xl py-16 px-6 text-center max-w-2xl mx-auto space-y-6">
-                    <div className="w-16 h-16 rounded-full bg-slate-900 flex items-center justify-center text-slate-500 mx-auto border border-slate-800">
-                      <Database className="h-8 w-8" />
+                  <div className="bg-[#0b101f] border border-slate-850 rounded-3xl p-6 md:p-8 max-w-2xl mx-auto space-y-6 text-left">
+                    <div className="flex items-center gap-3 border-b border-slate-850 pb-4">
+                      <div className="w-10 h-10 rounded-xl bg-indigo-950/40 border border-indigo-800/60 flex items-center justify-center text-indigo-400 shrink-0">
+                        <Database className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-base font-black text-white uppercase tracking-wider">Conectar Base de Datos en la Nube</h3>
+                        <p className="text-[10px] text-slate-500 font-mono uppercase tracking-widest mt-0.5">Sincronización Clínica Segura</p>
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      <h3 className="text-lg font-black text-white uppercase tracking-wider">Tu Archivo Clínico Sincronizado</h3>
-                      <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
-                        Conéctate usando tu cuenta de Google para activar tu base de datos cloud y sincronizar todos tus estudios radiológicos. Podrás acceder a ellos desde cualquier computador, tablet o celular de forma segura.
+
+                    <div className="text-xs text-slate-300 leading-relaxed space-y-3">
+                      <p>
+                        Para habilitar el guardado automático de reportes clínicos y la generación de enlaces de descarga en la nube para tus pacientes, necesitas iniciar sesión o conectar un perfil de especialista.
                       </p>
+                      <div className="p-3 bg-amber-500/5 border-l-2 border-amber-500/60 text-amber-300/90 text-[11px] font-medium leading-relaxed rounded-r-lg">
+                        ⚠️ <strong>Nota sobre compatibilidad:</strong> Si estás usando la vista previa de AI Studio o navegadores con bloqueadores (como Safari/Brave), la autenticación emergente de Google puede ser bloqueada. Te sugerimos usar <strong>Acceso Instantáneo</strong> o <strong>Correo y Contraseña</strong> para conectar sin restricciones de popups.
+                      </div>
                     </div>
-                    <button
-                      onClick={handleGmailLogin}
-                      disabled={isLoggingInGmail}
-                      className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white font-bold text-xs uppercase tracking-wider px-6 py-3.5 rounded-xl transition shadow-[0_4px_15px_rgba(99,102,241,0.25)] border border-indigo-500/30 mx-auto"
-                    >
-                      {isLoggingInGmail ? <Loader2 className="h-4 w-4 animate-spin" /> : <Key className="h-4 w-4" />}
-                      Iniciar Sesión e Integrar Nube
-                    </button>
+
+                    {/* Selector de modo de acceso */}
+                    <div className="grid grid-cols-3 gap-2 border-b border-slate-850 pb-1">
+                      <button
+                        onClick={() => setAuthFormMode('google')}
+                        className={`pb-2.5 text-center font-bold text-[10px] uppercase tracking-wider transition-all border-b-2 cursor-pointer ${
+                          authFormMode === 'google'
+                            ? "border-indigo-500 text-indigo-300"
+                            : "border-transparent text-slate-500 hover:text-slate-400"
+                        }`}
+                      >
+                        Google Auth
+                      </button>
+                      <button
+                        onClick={() => setAuthFormMode('email_login')}
+                        className={`pb-2.5 text-center font-bold text-[10px] uppercase tracking-wider transition-all border-b-2 cursor-pointer ${
+                          authFormMode === 'email_login' || authFormMode === 'email_register'
+                            ? "border-indigo-500 text-indigo-300"
+                            : "border-transparent text-slate-500 hover:text-slate-400"
+                        }`}
+                      >
+                        Correo / Clave
+                      </button>
+                      <button
+                        onClick={handleAnonymousLogin}
+                        disabled={isLoggingInGmail}
+                        className="pb-2.5 text-center font-bold text-[10px] uppercase tracking-wider text-emerald-400 hover:text-emerald-300 transition-all border-b-2 border-transparent hover:border-emerald-500/20 cursor-pointer flex items-center justify-center gap-1"
+                      >
+                        {isLoggingInGmail ? <Loader2 className="h-3 w-3 animate-spin" /> : "⚡ Acceso Rápido"}
+                      </button>
+                    </div>
+
+                    {/* Contenido según modo */}
+                    {authFormMode === 'google' ? (
+                      <div className="space-y-4 pt-2">
+                        <p className="text-[11px] text-slate-400 leading-normal">
+                          Inicia sesión con tu cuenta de Google. Esto también te permitirá integrar la API de Gmail para enviar reportes firmados y de acompañamiento directamente por correo electrónico si así lo deseas.
+                        </p>
+                        <button
+                          onClick={handleGmailLogin}
+                          disabled={isLoggingInGmail}
+                          className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white font-bold text-xs uppercase tracking-wider py-3.5 rounded-xl transition shadow-lg border border-indigo-500/30 cursor-pointer"
+                        >
+                          {isLoggingInGmail ? <Loader2 className="h-4 w-4 animate-spin" /> : <Key className="h-4 w-4" />}
+                          Conectar con Google Cloud
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-4 pt-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider font-mono font-bold">Correo Electrónico:</label>
+                            <input
+                              type="email"
+                              value={authEmail}
+                              onChange={(e) => setAuthEmail(e.target.value)}
+                              placeholder="ejemplo@clinica.com"
+                              className="w-full bg-slate-950 border border-slate-850 hover:border-slate-800 focus:border-indigo-500 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-600 focus:outline-none transition-all"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider font-mono font-bold">Contraseña:</label>
+                            <input
+                              type="password"
+                              value={authPassword}
+                              onChange={(e) => setAuthPassword(e.target.value)}
+                              placeholder="Mínimo 6 caracteres"
+                              className="w-full bg-slate-950 border border-slate-850 hover:border-slate-800 focus:border-indigo-500 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-600 focus:outline-none transition-all"
+                            />
+                          </div>
+                        </div>
+
+                        {gmailErrorMessage && (
+                          <div className="text-[11px] text-rose-400 font-medium bg-rose-950/10 border-l-2 border-rose-500 px-3 py-2 rounded-r">
+                            {gmailErrorMessage}
+                          </div>
+                        )}
+
+                        <div className="flex flex-col sm:flex-row gap-3 pt-1">
+                          <button
+                            onClick={handleEmailLogin}
+                            disabled={isLoggingInGmail}
+                            className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs uppercase tracking-wider py-3 rounded-xl transition cursor-pointer border border-indigo-500/30"
+                          >
+                            {isLoggingInGmail ? <Loader2 className="h-4 w-4 animate-spin" /> : "Iniciar Sesión"}
+                          </button>
+                          <button
+                            onClick={handleEmailRegister}
+                            disabled={isLoggingInGmail}
+                            className="flex-1 flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-850 text-slate-200 font-bold text-xs uppercase tracking-wider py-3 rounded-xl transition cursor-pointer border border-slate-800"
+                          >
+                            Registrar Nuevo Especialista
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </motion.div>
@@ -24619,6 +28884,24 @@ Ejemplo:
                         <span className="text-slate-500 font-mono font-bold uppercase block tracking-wider text-[9px]">Paciente</span>
                         <span className="text-white font-semibold block mt-0.5">{viewingCloudStudy.patientName}</span>
                       </div>
+                      {viewingCloudStudy.patientId && (
+                        <div>
+                          <span className="text-slate-500 font-mono font-bold uppercase block tracking-wider text-[9px]">ID / Cédula</span>
+                          <span className="text-white font-semibold block mt-0.5">{viewingCloudStudy.patientId}</span>
+                        </div>
+                      )}
+                      {viewingCloudStudy.patientAge && (
+                        <div>
+                          <span className="text-slate-500 font-mono font-bold uppercase block tracking-wider text-[9px]">Edad</span>
+                          <span className="text-white font-semibold block mt-0.5">{viewingCloudStudy.patientAge}</span>
+                        </div>
+                      )}
+                      {viewingCloudStudy.patientGender && (
+                        <div>
+                          <span className="text-slate-500 font-mono font-bold uppercase block tracking-wider text-[9px]">Género</span>
+                          <span className="text-white font-semibold block mt-0.5">{viewingCloudStudy.patientGender}</span>
+                        </div>
+                      )}
                       <div>
                         <span className="text-slate-500 font-mono font-bold uppercase block tracking-wider text-[9px]">Correo Paciente</span>
                         <span className="text-white font-semibold block mt-0.5 truncate">{viewingCloudStudy.patientEmail || "Sin correo"}</span>
@@ -24650,6 +28933,22 @@ Ejemplo:
 
                   <div className="bg-slate-950 px-6 py-4 border-t border-slate-800 flex items-center justify-end gap-3 shrink-0">
                     <button
+                      onClick={() => handleCopyEhrLinkForStudy(viewingCloudStudy)}
+                      className="bg-indigo-950/80 hover:bg-indigo-950 border border-indigo-500/40 text-indigo-300 font-bold text-xs uppercase tracking-wider px-4 py-2 rounded-xl transition flex items-center gap-1.5"
+                    >
+                      {copiedEhrStudyId === viewingCloudStudy.id ? (
+                        <>
+                          <Check className="h-4 w-4 text-emerald-400" />
+                          ¡Copiado!
+                        </>
+                      ) : (
+                        <>
+                          <Link className="h-4 w-4 text-indigo-400" />
+                          Copiar Link Expediente (EHR)
+                        </>
+                      )}
+                    </button>
+                    <button
                       onClick={() => downloadPdfForCloudStudy(viewingCloudStudy)}
                       className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs uppercase tracking-wider px-4 py-2 rounded-xl transition flex items-center gap-1.5"
                     >
@@ -24664,13 +28963,19 @@ Ejemplo:
                         setClinicalHistory(viewingCloudStudy.clinicalHistory);
                         setGeneratedReport(viewingCloudStudy.reportText);
                         setOriginalBaseReport(viewingCloudStudy.reportText);
+                        setCurrentCloudStudyId(viewingCloudStudy.id);
                         if (viewingCloudStudy.patientName) setPatientName(viewingCloudStudy.patientName);
                         if (viewingCloudStudy.patientEmail) setPatientEmail(viewingCloudStudy.patientEmail);
+                        if (viewingCloudStudy.patientAge) setPatientAge(viewingCloudStudy.patientAge);
+                        if (viewingCloudStudy.patientGender) setPatientGender(viewingCloudStudy.patientGender);
+                        if (viewingCloudStudy.patientId) setPatientId(viewingCloudStudy.patientId);
                         if (viewingCloudStudy.reportDate) setReportDate(viewingCloudStudy.reportDate);
                         if (viewingCloudStudy.doctorName) setDoctorName(viewingCloudStudy.doctorName);
                         if (viewingCloudStudy.doctorLicense) setDoctorLicense(viewingCloudStudy.doctorLicense);
                         if (viewingCloudStudy.clinicName) setClinicName(viewingCloudStudy.clinicName);
                         if (viewingCloudStudy.findings) setFindings(viewingCloudStudy.findings);
+                        setAttachedImages(viewingCloudStudy.attachedImages || []);
+                        setPatientSummary(viewingCloudStudy.patientSummary || null);
                         setViewingCloudStudy(null);
                       }}
                       className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-wider px-4 py-2 rounded-xl transition flex items-center gap-1.5"
@@ -24692,6 +28997,280 @@ Ejemplo:
 
           </AnimatePresence>
         </main>
+
+        {/* RIGHT SIDEBAR: LISTA DE TRABAJO DIARIA */}
+        <AnimatePresence>
+          {isWorklistSidebarOpen && (
+            <motion.aside
+              initial={{ width: 0, opacity: 0 }}
+              animate={{ width: 340, opacity: 1 }}
+              exit={{ width: 0, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 300, damping: 30 }}
+              className="no-print h-full bg-[#090D1C] border-l border-slate-805 p-0 shrink-0 flex flex-col overflow-hidden relative z-20"
+            >
+              {/* Decorative top border glow */}
+              <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-500 shadow-[0_0_10px_#6366f1]" />
+              
+              {/* Sidebar Header */}
+              <div className="p-4.5 border-b border-slate-805 flex items-center justify-between bg-slate-950/40">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+                    <ListTodo className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-black tracking-wider uppercase text-white font-mono flex items-center gap-1.5">
+                      Lista de Trabajo
+                    </h3>
+                    <p className="text-[9px] font-bold text-indigo-400/80 uppercase tracking-widest font-mono">
+                      Agenda Diaria
+                    </p>
+                  </div>
+                </div>
+                
+                <button
+                  onClick={() => setIsWorklistSidebarOpen(false)}
+                  className="p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-900 transition cursor-pointer"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Sidebar Body */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-none">
+                
+                {/* Upload Section / Agenda Digitizer */}
+                <div className="bg-slate-950/40 p-4 rounded-xl border border-slate-850 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase text-indigo-300/90 tracking-widest font-mono flex items-center gap-1">
+                      <ImagePlus className="h-3 w-3" /> Digitalizar Agenda
+                    </span>
+                    <span className="text-[9px] font-bold text-slate-500 bg-slate-905 px-1.5 py-0.5 rounded font-mono">
+                      IA CORE
+                    </span>
+                  </div>
+                  
+                  <p className="text-[10px] text-slate-400 leading-normal">
+                    Sube una foto de tu lista de pacientes del día para que la IA la digitalice automáticamente.
+                  </p>
+
+                  {/* Drag-n-Drop File Upload Target */}
+                  <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-800 hover:border-indigo-500/50 bg-slate-900/20 hover:bg-indigo-950/5 rounded-xl p-4.5 text-center cursor-pointer transition relative group overflow-hidden">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const mergeCheckbox = document.getElementById("merge-checkbox") as HTMLInputElement;
+                          handleWorklistImageUpload(file, mergeCheckbox?.checked || false);
+                        }
+                      }}
+                      className="hidden"
+                      disabled={isProcessingWorklist}
+                    />
+                    
+                    {isProcessingWorklist ? (
+                      <div className="py-2 flex flex-col items-center justify-center space-y-2">
+                        <Loader2 className="h-6 w-6 text-indigo-400 animate-spin" />
+                        <span className="text-[9.5px] font-bold text-indigo-300 uppercase tracking-wider animate-pulse">Digitalizando Agenda...</span>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center space-y-1.5">
+                        <div className="w-8 h-8 rounded-full bg-slate-900 flex items-center justify-center text-slate-400 group-hover:text-indigo-400 transition group-hover:scale-105 duration-200">
+                          <Upload className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-bold text-slate-300 block">Tomar Foto / Subir Imagen</span>
+                          <span className="text-[8.5px] text-slate-500 font-mono">Soporta PNG, JPG, WEBP</span>
+                        </div>
+                      </div>
+                    )}
+                  </label>
+
+                  {/* Merge Options Checkbox */}
+                  <div className="flex items-center gap-2 pt-1">
+                    <input
+                      type="checkbox"
+                      id="merge-checkbox"
+                      className="rounded border-slate-800 text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5 bg-slate-950 cursor-pointer"
+                      defaultChecked={false}
+                    />
+                    <label htmlFor="merge-checkbox" className="text-[9.5px] font-extrabold text-slate-400 uppercase tracking-wider cursor-pointer select-none hover:text-slate-300">
+                      Combinar con lista actual
+                    </label>
+                  </div>
+                </div>
+
+                {/* Error Banner */}
+                {worklistError && (
+                  <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-xl p-3 text-[10px] leading-relaxed flex gap-2">
+                    <AlertCircle className="h-4 w-4 shrink-0" />
+                    <div>
+                      <span className="font-bold uppercase tracking-wider block mb-0.5">Error de Digitalización</span>
+                      {worklistError}
+                    </div>
+                  </div>
+                )}
+
+                {/* Patient Worklist Tracker */}
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between border-b border-slate-805/40 pb-1.5">
+                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider font-mono">
+                      Pacientes ({worklist?.patients.length || 0})
+                    </span>
+                    {worklist && worklist.patients.length > 0 && (
+                      <button
+                        onClick={() => {
+                          if (confirm("¿Estás seguro de que deseas limpiar la lista de trabajo de hoy?")) {
+                            saveWorklist([]);
+                          }
+                        }}
+                        className="text-[9px] font-extrabold uppercase text-rose-400/80 hover:text-rose-400 hover:underline transition tracking-wider cursor-pointer"
+                      >
+                        Vaciar
+                      </button>
+                    )}
+                  </div>
+
+                  {/* List Container */}
+                  <div className="space-y-2 max-h-[350px] overflow-y-auto pr-1">
+                    {!worklist || worklist.patients.length === 0 ? (
+                      <div className="text-center py-8 px-4 rounded-xl border border-slate-850 bg-slate-900/10">
+                        <Clock className="h-6 w-6 text-slate-650 mx-auto mb-2" />
+                        <span className="text-[10px] font-bold text-slate-500 block uppercase tracking-wider">No hay pacientes</span>
+                        <span className="text-[9px] text-slate-600 block mt-1">Digitaliza una agenda o añade uno manual</span>
+                      </div>
+                    ) : (
+                      worklist.patients.map((patient, index) => {
+                        const isSelected = patient.id === selectedWorklistPatientId || patient.status === 'current';
+                        
+                        let statusColorClass = "border-slate-850 bg-slate-900/15 hover:bg-slate-900/30";
+                        let statusBadgeClass = "bg-slate-800 text-slate-400";
+                        let statusText = "Pendiente";
+
+                        if (patient.status === 'current') {
+                          statusColorClass = "border-indigo-500/50 bg-indigo-950/10 shadow-[0_0_15px_rgba(99,102,241,0.05)]";
+                          statusBadgeClass = "bg-indigo-500/20 text-indigo-300 border border-indigo-500/20";
+                          statusText = "Atendiendo";
+                        } else if (patient.status === 'attended') {
+                          statusColorClass = "border-emerald-500/20 bg-emerald-950/5 opacity-70";
+                          statusBadgeClass = "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20";
+                          statusText = "Atendido";
+                        }
+
+                        // Patient metadata text
+                        const metaParts = [];
+                        if (patient.age) metaParts.push(`${patient.age} a`);
+                        if (patient.gender) metaParts.push(patient.gender.toUpperCase());
+                        if (patient.patientId) metaParts.push(`ID: ${patient.patientId}`);
+                        if (patient.phone) metaParts.push(`📞 ${patient.phone}`);
+                        const metaText = metaParts.join(" • ");
+
+                        return (
+                          <div
+                            key={patient.id}
+                            className={`border rounded-xl p-3 flex flex-col gap-2 transition-all duration-300 relative group/item ${statusColorClass}`}
+                          >
+                            {/* Inner header */}
+                            <div className="flex items-start justify-between gap-1.5">
+                              <div 
+                                className="flex-1 cursor-pointer"
+                                onClick={() => handleSelectWorklistPatient(patient)}
+                              >
+                                <div className="flex items-center gap-1.5">
+                                  {patient.time && (
+                                    <span className="text-[9px] font-black font-mono text-indigo-400 bg-indigo-950/60 px-1 rounded border border-indigo-500/10">
+                                      {patient.time}
+                                    </span>
+                                  )}
+                                  <h4 className="text-xs font-bold text-white group-hover/item:text-indigo-300 transition truncate max-w-[170px]">
+                                    {patient.name}
+                                  </h4>
+                                </div>
+                                {metaText && (
+                                  <p className="text-[9.5px] font-mono font-bold text-slate-500 mt-0.5">
+                                    {metaText}
+                                  </p>
+                                )}
+                              </div>
+
+                              {/* Delete button */}
+                              <button
+                                onClick={() => handleDeletePatientFromWorklist(patient.id)}
+                                className="opacity-0 group-hover/item:opacity-100 p-1 rounded hover:bg-slate-900 text-slate-500 hover:text-rose-400 transition cursor-pointer"
+                                title="Eliminar de la lista"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            </div>
+
+                            {/* Study requested if any */}
+                            {patient.studyType && (
+                              <p className="text-[10px] font-bold text-slate-400 bg-slate-950/30 px-2 py-1 rounded border border-slate-850 font-mono truncate">
+                                {patient.studyType}
+                              </p>
+                            )}
+
+                            {/* Actions and Status */}
+                            <div className="flex items-center justify-between border-t border-slate-850 pt-2 mt-1 gap-1">
+                              {/* Status indicator */}
+                              <span className={`text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded font-mono ${statusBadgeClass}`}>
+                                {statusText}
+                              </span>
+
+                              {/* Toggles */}
+                              <div className="flex items-center gap-1">
+                                {patient.status === 'pending' && (
+                                  <button
+                                    onClick={() => handleSelectWorklistPatient(patient)}
+                                    className="text-[8.5px] font-black uppercase tracking-wider bg-indigo-600 hover:bg-indigo-500 text-white px-2 py-0.5 rounded transition shadow-[0_1px_5px_rgba(99,102,241,0.2)] cursor-pointer"
+                                  >
+                                    Atender
+                                  </button>
+                                )}
+                                {patient.status === 'current' && (
+                                  <button
+                                    onClick={() => handleUpdatePatientStatus(patient.id, 'attended')}
+                                    className="text-[8.5px] font-black uppercase tracking-wider bg-emerald-600 hover:bg-emerald-500 text-white px-2 py-0.5 rounded transition flex items-center gap-0.5 cursor-pointer"
+                                  >
+                                    <Check className="h-2.5 w-2.5" /> Terminar
+                                  </button>
+                                )}
+                                {patient.status === 'attended' && (
+                                  <button
+                                    onClick={() => handleUpdatePatientStatus(patient.id, 'pending')}
+                                    className="text-[8.5px] font-bold uppercase tracking-wider text-slate-500 hover:text-slate-300 px-1 hover:underline transition cursor-pointer"
+                                  >
+                                    Reabrir
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                            
+                            {/* Decorative pulsating active beacon */}
+                            {patient.status === 'current' && (
+                              <div className="absolute top-2.5 right-2.5 flex h-1.5 w-1.5">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-indigo-500"></span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                {/* Manual Patient Adder form */}
+                <ManualPatientAdder onAdd={handleAddPatientToWorklist} />
+
+                {/* Sincronizador de Ecógrafo / Exportador de Lista de Trabajo */}
+                <UltrasoundWorklistExporter patients={worklist ? worklist.patients : []} />
+
+              </div>
+            </motion.aside>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* 🔮 PIE DE PAGINA */}
@@ -25702,14 +30281,14 @@ Ejemplo:
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className="bg-slate-900 border-2 border-slate-800 rounded-3xl w-full max-w-xl overflow-hidden flex flex-col shadow-2xl"
+            className="bg-[#090d1a] border-2 border-slate-800 rounded-3xl w-full max-w-xl overflow-hidden flex flex-col shadow-2xl"
           >
             {/* Header */}
             <div className="bg-slate-950 px-6 py-4 border-b border-slate-850 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="text-xl">🟢</span>
-                <h3 className="text-sm font-black text-white uppercase tracking-wider font-mono">
-                  Compartir vía WhatsApp (Pacientes)
+                <h3 className="text-xs font-black text-white uppercase tracking-widest font-mono">
+                  Compartir vía WhatsApp (Local-First)
                 </h3>
               </div>
               <button 
@@ -25721,16 +30300,17 @@ Ejemplo:
             </div>
 
             {/* Content */}
-            <div className="p-6 space-y-4 overflow-y-auto text-left">
-              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">
-                Estás a punto de enviar {
-                  whatsappShareType === 'report_pdf' 
-                    ? "el Reporte Clínico Oficial (PDF)" 
-                    : whatsappShareType === 'patient_infographic' 
-                      ? "la Infografía Visual Explicativa" 
-                      : "el Resumen Científico Simplificado"
-                } correspondiente a: <span className="text-indigo-400">{patientName || "Paciente sin registrar"}</span>.
-              </p>
+            <div className="p-6 space-y-5 overflow-y-auto text-left max-h-[80vh]">
+              {/* Local-First Header Info */}
+              <div className="p-3.5 bg-emerald-950/20 border border-emerald-900/30 rounded-2xl flex gap-3 items-start">
+                <span className="text-base mt-0.5">🛡️</span>
+                <div className="space-y-1">
+                  <h4 className="text-[10px] font-black text-emerald-400 uppercase tracking-wider font-mono">Privacidad Médica 100% Asegurada</h4>
+                  <p className="text-[10px] text-slate-300 leading-relaxed">
+                    Al ser una aplicación <strong>local-first</strong>, tus informes no se suben a servidores de terceros. Todo se procesa directamente en tu navegador y se envía a través de WhatsApp seguro.
+                  </p>
+                </div>
+              </div>
 
               {/* Celular Input */}
               <div className="space-y-1.5">
@@ -25750,7 +30330,7 @@ Ejemplo:
                       setWhatsappPhone(val);
                       localStorage.setItem("rad_whatsapp_phone", val);
                     }}
-                    className="flex-1 px-4 py-2 bg-slate-950 hover:bg-slate-900 border-2 border-slate-850 focus:border-emerald-500 rounded-xl text-xs font-mono text-white placeholder-slate-600 focus:outline-none transition-all"
+                    className="flex-1 px-4 py-2 bg-slate-950 hover:bg-slate-900 border-2 border-slate-850 focus:border-indigo-500 rounded-xl text-xs font-mono text-white placeholder-slate-600 focus:outline-none transition-all"
                   />
                 </div>
                 <p className="text-[9px] text-slate-500 leading-relaxed uppercase font-mono tracking-wider">
@@ -25758,56 +30338,202 @@ Ejemplo:
                 </p>
               </div>
 
+              {/* PASO 1: CONSTRUCTOR DE MENSAJE */}
+              <div className="space-y-2.5">
+                <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest font-mono border-b border-slate-800 pb-1">
+                  PASO 1: Personalizar Texto del Mensaje
+                </h4>
+                
+                <div className="space-y-2">
+                  {/* Toggle Operational Summary */}
+                  <label className={`flex items-start gap-2.5 p-2.5 rounded-xl border transition-all cursor-pointer select-none ${
+                    !operationalSummaryText 
+                      ? "bg-slate-950/20 border-slate-900 text-slate-600 cursor-not-allowed" 
+                      : whatsappIncludeOperationalSummary 
+                        ? "bg-indigo-950/20 border-indigo-900/60 text-indigo-200" 
+                        : "bg-slate-950/40 border-slate-850 text-slate-400 hover:border-slate-800"
+                  }`}>
+                    <input
+                      type="checkbox"
+                      disabled={!operationalSummaryText}
+                      checked={!!operationalSummaryText && whatsappIncludeOperationalSummary}
+                      onChange={(e) => setWhatsappIncludeOperationalSummary(e.target.checked)}
+                      className="mt-0.5 rounded border-slate-800 text-indigo-555 focus:ring-indigo-600 h-3.5 w-3.5 bg-slate-950"
+                    />
+                    <div className="space-y-0.5">
+                      <span className="text-[10.5px] font-black uppercase tracking-wider block">Incluir Resumen Clínico Operativo</span>
+                      <span className="text-[9px] text-slate-400 leading-normal block">
+                        {operationalSummaryText 
+                          ? "Agrega las conclusiones médicas y hallazgos críticos de forma compacta." 
+                          : "⚠️ Primero genera un informe médico para incluir este bloque."}
+                      </span>
+                    </div>
+                  </label>
+
+                  {/* Toggle Patient Companion */}
+                  <label className={`flex items-start gap-2.5 p-2.5 rounded-xl border transition-all cursor-pointer select-none ${
+                    !patientSummary 
+                      ? "bg-slate-950/20 border-slate-900 text-slate-600 cursor-not-allowed" 
+                      : whatsappIncludePatientSummary 
+                        ? "bg-indigo-950/20 border-indigo-900/60 text-indigo-200" 
+                        : "bg-slate-950/40 border-slate-850 text-slate-400 hover:border-slate-800"
+                  }`}>
+                    <input
+                      type="checkbox"
+                      disabled={!patientSummary}
+                      checked={!!patientSummary && whatsappIncludePatientSummary}
+                      onChange={(e) => setWhatsappIncludePatientSummary(e.target.checked)}
+                      className="mt-0.5 rounded border-slate-800 text-indigo-555 focus:ring-indigo-600 h-3.5 w-3.5 bg-slate-950"
+                    />
+                    <div className="space-y-0.5">
+                      <span className="text-[10.5px] font-black uppercase tracking-wider block">Incluir Explicación para Paciente</span>
+                      <span className="text-[9px] text-slate-400 leading-normal block">
+                        {patientSummary 
+                          ? "Agrega la traducción a palabras sencillas, recomendaciones y dudas sugeridas." 
+                          : "⚠️ Primero genera la 'Explicación del Paciente' (Acompañamiento) abajo."}
+                      </span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* PASO 2: DESCARGAR ARCHIVOS PDF */}
+              <div className="space-y-2.5">
+                <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest font-mono border-b border-slate-800 pb-1">
+                  PASO 2: Descargar Documentos Clínicos (Para Adjuntar)
+                </h4>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Download Report */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleDownloadNativePDF(false);
+                    }}
+                    className="p-3 bg-slate-950/80 hover:bg-slate-900 border border-slate-850 hover:border-slate-750 text-slate-200 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer select-none"
+                    title="Descargar el reporte médico oficial firmado en PDF"
+                  >
+                    <Download className="h-4 w-4 text-indigo-400" />
+                    <div className="text-left">
+                      <span className="text-[10px] font-black uppercase tracking-wider block">1. PDF Reporte Oficial</span>
+                      <span className="text-[8.5px] text-slate-500 font-mono leading-none block uppercase">Formato Clínico Profesional</span>
+                    </div>
+                  </button>
+
+                  {/* Download Explanation */}
+                  <button
+                    type="button"
+                    disabled={!patientSummary}
+                    onClick={() => {
+                      if (patientSummary) handleDownloadPatientSummaryPDF(false);
+                    }}
+                    className={`p-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 select-none ${
+                      patientSummary 
+                        ? "bg-slate-950/80 hover:bg-slate-900 border border-slate-850 hover:border-slate-750 text-slate-200 cursor-pointer" 
+                        : "bg-slate-950/20 border-slate-900 text-slate-500 cursor-not-allowed"
+                    }`}
+                    title={patientSummary ? "Descargar el PDF explicativo en lenguaje sencillo" : "Primero genera la explicación para el paciente"}
+                  >
+                    <Download className="h-4 w-4 text-indigo-400" />
+                    <div className="text-left">
+                      <span className="text-[10px] font-black uppercase tracking-wider block">2. PDF Explicación</span>
+                      <span className="text-[8.5px] text-slate-500 font-mono leading-none block uppercase">Acompañamiento Didáctico</span>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {/* PASO 3: RESPALDAR EN GOOGLE DRIVE */}
+              <div className="space-y-2.5 mt-4">
+                <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest font-mono border-b border-slate-800 pb-1">
+                  PASO 3: RESPALDO AUTOMÁTICO
+                </h4>
+                
+                <div className="grid grid-cols-1 gap-3">
+                  <button
+                    type="button"
+                    onClick={handleSaveToDrive}
+                    disabled={isUploadingToDrive}
+                    className={`p-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 select-none ${
+                      isUploadingToDrive 
+                        ? "bg-slate-900 border-slate-800 text-slate-500 cursor-wait" 
+                        : "bg-indigo-950/40 hover:bg-indigo-900/60 border border-indigo-900/60 hover:border-indigo-800/80 text-indigo-200 cursor-pointer"
+                    }`}
+                    title="Subir PDFs generados directamente a la carpeta BASE DE DATOS en Google Drive"
+                  >
+                    {isUploadingToDrive ? (
+                      <RefreshCw className="h-4 w-4 animate-spin text-indigo-400" />
+                    ) : (
+                      <Layers className="h-4 w-4 text-indigo-400" />
+                    )}
+                    <div className="text-left flex-1">
+                      <span className="text-[10px] font-black uppercase tracking-wider block">Guardar en Google Drive</span>
+                      <span className="text-[8.5px] text-slate-400 font-mono leading-none block uppercase">
+                        {driveUploadStatus || "Carpeta: BASE DE DATOS"}
+                      </span>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
               {/* Message Preview */}
               <div className="space-y-1.5">
                 <label className="text-[9px] font-black text-slate-300 uppercase tracking-widest font-mono">
-                  Vista Previa del Mensaje a Enviar:
+                  Vista Previa del Mensaje Automatizado de WhatsApp:
                 </label>
                 <div className="p-4 bg-slate-950 border-2 border-slate-850 rounded-2xl max-h-48 overflow-y-auto font-mono text-[10px] md:text-xs text-slate-300 whitespace-pre-wrap leading-relaxed select-text font-sans">
                   {getWhatsAppTextPreview()}
                 </div>
               </div>
 
-              {/* Actions */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                <button
-                  onClick={handleSendWhatsAppAction}
-                  className="w-full p-3 bg-emerald-600 hover:bg-emerald-550 border-2 border-emerald-500/10 rounded-xl text-xs font-black text-white uppercase tracking-wider transition-all shadow-md active:scale-95 text-center cursor-pointer flex items-center justify-center gap-2 font-mono"
-                >
-                  <Send className="h-4 w-4" />
-                  <span>Enviar por WhatsApp</span>
-                </button>
+              {/* PASO 3: ENVIAR */}
+              <div className="space-y-2.5 pt-1">
+                <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest font-mono border-b border-slate-800 pb-1">
+                  PASO 3: Lanzar WhatsApp y Pegar Reportes
+                </h4>
 
-                <button
-                  onClick={() => {
-                    const text = getWhatsAppTextPreview();
-                    copyToClipboard(text, false);
-                    alert("¡Mensaje copiado al portapapeles con éxito! Puedes pegarlo directamente en cualquier chat.");
-                  }}
-                  className="w-full p-3 bg-slate-950 hover:bg-slate-900/60 border-2 border-slate-850 hover:border-slate-700/50 rounded-xl text-xs font-bold text-slate-300 uppercase tracking-wider transition-all shadow-md active:scale-95 text-center cursor-pointer flex items-center justify-center gap-2 font-mono"
-                >
-                  <Copy className="h-4 w-4 text-emerald-400" />
-                  <span>Copiar Mensaje</span>
-                </button>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <a
+                    href={(() => {
+                      const text = getWhatsAppTextPreview();
+                      const cleanPhone = whatsappPhone ? whatsappPhone.replace(/\D/g, "") : "";
+                      const urlEncoded = encodeURIComponent(text);
+                      return cleanPhone 
+                        ? `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${urlEncoded}`
+                        : `https://api.whatsapp.com/send?text=${urlEncoded}`;
+                    })()}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-3.5 bg-emerald-600 hover:bg-emerald-550 border-2 border-emerald-500/10 rounded-xl text-xs font-black text-white uppercase tracking-wider transition-all shadow-md active:scale-95 text-center cursor-pointer flex items-center justify-center gap-2 font-mono"
+                  >
+                    <Send className="h-4 w-4" />
+                    <span>Lanzar Chat de WhatsApp</span>
+                  </a>
+
+                  <button
+                    onClick={() => {
+                      const text = getWhatsAppTextPreview();
+                      copyToClipboard(text, false);
+                      alert("¡Mensaje completo copiado al portapapeles! Listo para pegarse (Ctrl+V) en el chat de WhatsApp.");
+                    }}
+                    className="p-3.5 bg-slate-950 hover:bg-slate-900/60 border-2 border-slate-850 hover:border-slate-700/50 rounded-xl text-xs font-bold text-slate-300 uppercase tracking-wider transition-all shadow-md active:scale-95 text-center cursor-pointer flex items-center justify-center gap-2 font-mono"
+                  >
+                    <Copy className="h-4 w-4 text-emerald-400" />
+                    <span>Copiar Todo el Texto</span>
+                  </button>
+                </div>
               </div>
 
-              {/* Advisory details */}
-              <div className="p-3 bg-indigo-950/20 border border-indigo-900/30 rounded-xl text-[9px] text-slate-400 leading-relaxed font-mono uppercase tracking-wide">
-                {whatsappShareType === 'report_pdf' && (
-                  <p>
-                    💡 <strong>Consejo para ordenadores:</strong> Al hacer clic en "Enviar", se abrirá WhatsApp Web/Escritorio con el mensaje pre-redactado. El PDF oficial del informe clínico se descargará de manera automática para que puedas arrastrarlo y enviarlo al mismo chat. En teléfonos móviles o tabletas, se activará el panel nativo para enviar el documento en un solo paso.
-                  </p>
-                )}
-                {whatsappShareType === 'patient_infographic' && (
-                  <p>
-                    💡 <strong>Consejo de imagen:</strong> La infografía se enviará como un enlace de visualización en alta definición. En teléfonos móviles compatibles, el dispositivo también intentará adjuntar la imagen original de forma directa al chat seleccionado.
-                  </p>
-                )}
-                {whatsappShareType === 'patient_summary' && (
-                  <p>
-                    💡 <strong>Consejo del resumen:</strong> El mensaje contiene todo el texto estructurado, analogías y recomendaciones adaptadas para el paciente. Se formateará con los estilos nativos de WhatsApp (*Negritas* e _Itálicas_) para una lectura cómoda.
-                  </p>
-                )}
+              {/* Instructions workflow alert */}
+              <div className="p-4 bg-slate-950 rounded-2xl space-y-2 text-[10px] font-sans text-slate-400 leading-relaxed">
+                <div className="font-black text-slate-200 uppercase tracking-wider font-mono text-[9.5px] flex items-center gap-1.5 text-indigo-400">
+                  <span>💡</span> PROCESO DE COMPARTIDO RECOMENDADO (30 SEGUNDOS):
+                </div>
+                <ol className="list-decimal list-inside space-y-1 text-slate-300 font-medium">
+                  <li>Haz clic en los botones del <span className="text-indigo-400 font-bold">PASO 2</span> para descargar los archivos PDF que quieras enviar.</li>
+                  <li>Haz clic en <span className="text-emerald-400 font-bold">Lanzar Chat de WhatsApp</span>. Esto abrirá el chat con el paciente y cargará el texto explicativo.</li>
+                  <li>Simplemente arrastra los archivos PDF descargados a la ventana del chat de WhatsApp y envíalos. <span className="text-indigo-300 font-semibold">¡Sencillo, profesional y 100% privado!</span></li>
+                </ol>
               </div>
             </div>
           </motion.div>
@@ -25940,71 +30666,26 @@ Ejemplo:
                     />
                   </div>
 
-                  {/* Selectores de Adjuntos (Checkboxes Avanzados) */}
+                  {/* Archivo Adjunto (Fijo al Reporte Clínico Oficial) */}
                   <div className="space-y-2">
                     <label className="text-[9px] font-black text-slate-300 uppercase tracking-widest font-mono">
-                      Seleccionar Archivos para Adjuntar:
+                      Archivo Adjunto:
                     </label>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                      {/* Adjunto 1: Reporte Médico */}
-                      <button
-                        type="button"
-                        onClick={() => setGmailAttachReport(!gmailAttachReport)}
-                        disabled={!generatedReport}
-                        className={`p-3 border-2 rounded-xl text-[9px] font-bold uppercase tracking-wider font-mono transition-all cursor-pointer flex flex-col items-center justify-center gap-1.5 min-h-[64px] ${
-                          !generatedReport
-                            ? "opacity-40 cursor-not-allowed bg-slate-950 border-slate-900 text-slate-650"
-                            : gmailAttachReport
-                              ? "bg-red-950/20 border-red-500 text-red-500"
-                              : "bg-slate-950 border-slate-850 hover:border-slate-800 text-slate-500"
-                        }`}
-                        title={!generatedReport ? "Debe generar primero el reporte de estudio" : "Adjuntar el reporte de estudio en PDF"}
-                      >
-                        <span className="text-[10px] font-black">📄 Reporte de Estudio</span>
-                        <span className="text-[8px] font-normal tracking-normal text-slate-400 uppercase leading-none">
-                          {generatedReport ? (gmailAttachReport ? "✓ Seleccionado" : "Haga clic para adjuntar") : "No Generado"}
-                        </span>
-                      </button>
-
-                      {/* Adjunto 2: Traducción Explicativa */}
-                      <button
-                        type="button"
-                        onClick={() => setGmailAttachSummary(!gmailAttachSummary)}
-                        disabled={!patientSummary}
-                        className={`p-3 border-2 rounded-xl text-[9px] font-bold uppercase tracking-wider font-mono transition-all cursor-pointer flex flex-col items-center justify-center gap-1.5 min-h-[64px] ${
-                          !patientSummary
-                            ? "opacity-40 cursor-not-allowed bg-slate-950 border-slate-900 text-slate-650"
-                            : gmailAttachSummary
-                              ? "bg-red-950/20 border-red-500 text-red-500"
-                              : "bg-slate-950 border-slate-850 hover:border-slate-800 text-slate-500"
-                        }`}
-                        title={!patientSummary ? "Debe generar la Traducción Empática" : "Adjuntar la Traducción Empática en PDF"}
-                      >
-                        <span className="text-[10px] font-black">🗣 Explicación</span>
-                        <span className="text-[8px] font-normal tracking-normal text-slate-400 uppercase leading-none">
-                          {patientSummary ? (gmailAttachSummary ? "✓ Seleccionado" : "Haga clic para adjuntar") : "No Generada"}
-                        </span>
-                      </button>
-
-                      {/* Adjunto 3: Infografía */}
-                      <button
-                        type="button"
-                        onClick={() => setGmailAttachInfographic(!gmailAttachInfographic)}
-                        disabled={!infographicUrl}
-                        className={`p-3 border-2 rounded-xl text-[9px] font-bold uppercase tracking-wider font-mono transition-all cursor-pointer flex flex-col items-center justify-center gap-1.5 min-h-[64px] ${
-                          !infographicUrl
-                            ? "opacity-40 cursor-not-allowed bg-slate-950 border-slate-900 text-slate-650"
-                            : gmailAttachInfographic
-                              ? "bg-red-950/20 border-red-500 text-red-500"
-                              : "bg-slate-950 border-slate-850 hover:border-slate-800 text-slate-500"
-                        }`}
-                        title={!infographicUrl ? "Debe generar la Infografía de paciente" : "Adjuntar la Infografía en formato de imagen"}
-                      >
-                        <span className="text-[10px] font-black">🎨 Infografía</span>
-                        <span className="text-[8px] font-normal tracking-normal text-slate-400 uppercase leading-none">
-                          {infographicUrl ? (gmailAttachInfographic ? "✓ Seleccionado" : "Haga clic para adjuntar") : "No Generada"}
-                        </span>
-                      </button>
+                    <div className="p-4 bg-slate-950/80 border-2 border-red-500/20 rounded-2xl flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="text-[18px]">📄</span>
+                        <div className="text-left">
+                          <p className="text-[11px] font-black text-slate-100 uppercase tracking-wider font-mono">
+                            Reporte Clínico Oficial
+                          </p>
+                          <p className="text-[9px] text-slate-400 font-sans leading-normal">
+                            Documento PDF completo que incluye traducción empática e infografía (según corresponda).
+                          </p>
+                        </div>
+                      </div>
+                      <span className="shrink-0 text-[8px] font-black font-mono text-emerald-400 bg-emerald-950/80 px-2 py-1 rounded-lg border border-emerald-500/30 uppercase tracking-wider">
+                        ✓ Adjunto
+                      </span>
                     </div>
                   </div>
 

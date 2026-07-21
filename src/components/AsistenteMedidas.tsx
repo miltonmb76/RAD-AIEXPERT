@@ -24,18 +24,21 @@ interface MeasurementStructure {
   interpretation: string;
   defaultNormalValue: string;
   customValue?: string; // Client state to override default assigned value
+  wasNotFound?: boolean; // Client state to track if it was originally missing
 }
 
 interface AsistenteMedidasProps {
   selectedModel: string;
   reportText: string;
   onReportUpdated: (newText: string) => void;
+  studyType?: string;
 }
 
 export const AsistenteMedidas: React.FC<AsistenteMedidasProps> = ({
   selectedModel,
   reportText,
-  onReportUpdated
+  onReportUpdated,
+  studyType
 }) => {
   const [structures, setStructures] = useState<MeasurementStructure[]>([]);
   const [detectedStudyType, setDetectedStudyType] = useState<string>("");
@@ -120,6 +123,13 @@ export const AsistenteMedidas: React.FC<AsistenteMedidasProps> = ({
     }));
   }, [defaultUnit, decimalPrecision]);
 
+  // Automatically analyze on mount/load once if a report text is available
+  useEffect(() => {
+    if (reportText && reportText.trim() && !hasAnalyzed && !isLoading && structures.length === 0) {
+      handleAnalyze();
+    }
+  }, [reportText]);
+
   // Re-run analysis if the report text becomes empty or if user wants to reset
   const handleAnalyze = async () => {
     if (!reportText.trim()) {
@@ -135,7 +145,8 @@ export const AsistenteMedidas: React.FC<AsistenteMedidasProps> = ({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: selectedModel,
-          report: reportText
+          report: reportText,
+          studyType: studyType
         })
       });
 
@@ -145,23 +156,65 @@ export const AsistenteMedidas: React.FC<AsistenteMedidasProps> = ({
 
       const data = await response.json();
       if (data.success && data.structures) {
-        setDetectedStudyType(data.detectedStudyType || "Estudio Radiológico");
+        const studyTitle = data.detectedStudyType || "Estudio Radiológico";
+        setDetectedStudyType(studyTitle);
         // Initialize custom values for assigning and setup pre-selected state
         const processed: MeasurementStructure[] = data.structures.map((s: any) => {
           const convertedVal = convertValue(s.defaultNormalValue, defaultUnit, decimalPrecision);
+          const wasNotFound = s.status === "not_found";
+
+          let measuredValue = s.measuredValue;
+          let status = s.status;
+          let interpretation = s.interpretation;
+
+          if (wasNotFound) {
+            measuredValue = convertedVal;
+            status = "normal";
+            const nameLower = s.structure.toLowerCase();
+            if (nameLower.includes("gim") || nameLower.includes("miointimal")) {
+              interpretation = "Grosor miointimal conservado";
+            } else if (nameLower.includes("relación") || nameLower.includes("ratio") || nameLower.includes("acc/aci")) {
+              interpretation = "Relación normal";
+            } else if (nameLower.includes("dirección") || nameLower.includes("flujo")) {
+              interpretation = "Flujo anterógrado normal";
+            } else if (nameLower.includes("placa")) {
+              measuredValue = "Sin placas";
+              interpretation = "Sin placas significativas";
+            } else {
+              interpretation = "Flujo normal";
+            }
+          }
+
           return {
             ...s,
-            customValue: convertedVal
+            measuredValue,
+            status,
+            interpretation,
+            customValue: convertedVal,
+            wasNotFound
           };
         });
         
-        setStructures(processed);
+        const titleLower = studyTitle.toLowerCase();
+        const isUnilateralDer = titleLower.includes("derecho") || titleLower.includes("unilateral derecho") || titleLower.includes("(unilateral d") || titleLower.includes("der.");
+        const isUnilateralIzq = titleLower.includes("izquierdo") || titleLower.includes("unilateral izquierdo") || titleLower.includes("(unilateral i") || titleLower.includes("izq.");
+
+        const isRight = (n: string) => /\b(derecho|derecha|der\.?)\b/i.test(n) || n.includes("derech") || n.includes("der.");
+        const isLeft = (n: string) => /\b(izquierdo|izquierda|izq\.?)\b/i.test(n) || n.includes("izquierd") || n.includes("izq.");
+
+        const finalProcessed = processed.filter(s => {
+          if (isUnilateralDer && isLeft(s.structure.toLowerCase())) return false;
+          if (isUnilateralIzq && isRight(s.structure.toLowerCase())) return false;
+          return true;
+        });
+
+        setStructures(finalProcessed);
         
         // Auto-select structures that are NOT found for convenience
         const initialSelections: Record<string, boolean> = {};
         const initialTableSelections: Record<string, boolean> = {};
-        processed.forEach((s) => {
-          if (s.status === "not_found") {
+        finalProcessed.forEach((s) => {
+          if (s.wasNotFound) {
             initialSelections[s.structure] = true;
           }
           // By default, check all of them to be included in the table. The user can then uncheck whatever they want!
@@ -198,7 +251,7 @@ export const AsistenteMedidas: React.FC<AsistenteMedidasProps> = ({
   const selectAllForAssignment = (val: boolean) => {
     const nextSelections: Record<string, boolean> = {};
     structures.forEach(s => {
-      if (s.status === "not_found") {
+      if (s.wasNotFound) {
         nextSelections[s.structure] = val;
       }
     });
@@ -225,9 +278,9 @@ export const AsistenteMedidas: React.FC<AsistenteMedidasProps> = ({
   const handleAssign = async (assignAll: boolean = false) => {
     // Collect selected measurements and format them nicely according to the rules
     const toAssign = structures
-      .filter(s => s.status === "not_found" && (assignAll || selectedForAssignment[s.structure]))
+      .filter(s => s.wasNotFound && (assignAll || selectedForAssignment[s.structure]))
       .map(s => {
-        let val = (s.customValue || s.defaultNormalValue).trim();
+        let val = (s.measuredValue || s.customValue || s.defaultNormalValue).trim();
         const match = val.replace(",", ".").match(/^([\d.]+)\s*([a-zA-Z/]+)$/);
         if (match) {
           const num = parseFloat(match[1]);
@@ -288,7 +341,8 @@ export const AsistenteMedidas: React.FC<AsistenteMedidasProps> = ({
               ...s,
               status: "normal",
               measuredValue: assigned.value,
-              interpretation: "Normal"
+              interpretation: s.interpretation || "Normal",
+              wasNotFound: false // Mark as no longer missing since it's now in the report text
             };
           }
           return s;
@@ -336,21 +390,48 @@ export const AsistenteMedidas: React.FC<AsistenteMedidasProps> = ({
   };
 
   const generateMarkdownTable = (): string => {
-    const toInclude = structures.filter(s => !!selectedForTable[s.structure]);
+    const isVenous = detectedStudyType.toLowerCase().includes("venoso") || 
+                     detectedStudyType.toLowerCase().includes("venosa") ||
+                     detectedStudyType.toLowerCase().includes("vena");
+
+    // Filter toInclude to ensure NO structures without measurements or with status 'not_found' are in the table
+    const toInclude = structures.filter(s => 
+      !!selectedForTable[s.structure] && 
+      s.status !== "not_found" && 
+      s.measuredValue && 
+      s.measuredValue.trim() !== ""
+    );
     if (toInclude.length === 0) return "";
 
     const isDopplerOrCarotidas = detectedStudyType.toLowerCase().includes("carot") || 
                                  detectedStudyType.toLowerCase().includes("doppler");
 
-    // Let's count elements per side
-    const hasRight = toInclude.some(s => {
-      const n = s.structure.toLowerCase();
-      return /\b(derecho|derecha|der\.?)\b/i.test(n) || n.includes("derech") || n.includes("der.");
-    });
-    const hasLeft = toInclude.some(s => {
-      const n = s.structure.toLowerCase();
-      return /\b(izquierdo|izquierda|izq\.?)\b/i.test(n) || n.includes("izquierd") || n.includes("izq.");
-    });
+    // Let's count elements per side. To avoid showing empty columns for un-evaluated contralateral limbs,
+    // we only consider a side "present" if it has at least one measured/assigned value.
+    const isRight = (n: string) => /\b(derecho|derecha|der\.?)\b/i.test(n) || n.includes("derech") || n.includes("der.");
+    const isLeft = (n: string) => /\b(izquierdo|izquierda|izq\.?)\b/i.test(n) || n.includes("izquierd") || n.includes("izq.");
+
+    let hasRight = toInclude.some(s => isRight(s.structure.toLowerCase()) && s.status !== "not_found");
+    let hasLeft = toInclude.some(s => isLeft(s.structure.toLowerCase()) && s.status !== "not_found");
+
+    // Fallback: if absolutely nothing is measured yet on either side, show columns based on raw presence
+    if (!hasRight && !hasLeft) {
+      hasRight = toInclude.some(s => isRight(s.structure.toLowerCase()));
+      hasLeft = toInclude.some(s => isLeft(s.structure.toLowerCase()));
+    }
+
+    // Force unilateral filtering based on study type if unilateral is detected
+    const titleLower = detectedStudyType.toLowerCase();
+    const isUnilateralDer = titleLower.includes("derecho") || titleLower.includes("unilateral derecho") || titleLower.includes("(unilateral d") || titleLower.includes("der.");
+    const isUnilateralIzq = titleLower.includes("izquierdo") || titleLower.includes("unilateral izquierdo") || titleLower.includes("(unilateral i") || titleLower.includes("izq.");
+
+    if (isUnilateralDer) {
+      hasLeft = false;
+      hasRight = true;
+    } else if (isUnilateralIzq) {
+      hasRight = false;
+      hasLeft = true;
+    }
 
     if (isDopplerOrCarotidas || hasRight || hasLeft) {
       // Group structures by baseName
@@ -414,8 +495,13 @@ export const AsistenteMedidas: React.FC<AsistenteMedidasProps> = ({
 
       if (isBilateral || (!isUnilateralRight && !isUnilateralLeft)) {
         // Bilateral or fallback
-        table += `| Estructura | Derecha | Izquierda | Valor de Referencia |\n`;
-        table += `| :--- | :---: | :---: | :---: |\n`;
+        if (isVenous) {
+          table += `| Estructura | Derecha | Izquierda |\n`;
+          table += `| :--- | :---: | :---: |\n`;
+        } else {
+          table += `| Estructura | Derecha | Izquierda | Valor de Referencia |\n`;
+          table += `| :--- | :---: | :---: | :---: |\n`;
+        }
 
         Object.entries(groups).forEach(([baseName, sides]) => {
           const rightS = sides.right;
@@ -436,38 +522,61 @@ export const AsistenteMedidas: React.FC<AsistenteMedidasProps> = ({
             leftVal = "—"; // Unilateral
           }
 
-          // Handle case where reference ranges may differ slightly per side
-          let range = "—";
-          if (rightS && leftS && rightS.normalRange && leftS.normalRange && rightS.normalRange !== leftS.normalRange) {
-            range = `Der: ${rightS.normalRange.replace(/\.0\b/g, "").replace(/\./g, ",")} / Izq: ${leftS.normalRange.replace(/\.0\b/g, "").replace(/\./g, ",")}`;
+          if (isVenous) {
+            table += `| **${baseName}** | ${rightVal} | ${leftVal} |\n`;
           } else {
-            const refObj = rightS || leftS || noneS;
-            range = refObj && refObj.normalRange ? refObj.normalRange.replace(/\.0\b/g, "").replace(/\./g, ",") : "—";
+            // Handle case where reference ranges may differ slightly per side
+            let range = "—";
+            if (rightS && leftS && rightS.normalRange && leftS.normalRange && rightS.normalRange !== leftS.normalRange) {
+              range = `Der: ${rightS.normalRange.replace(/\.0\b/g, "").replace(/\./g, ",")} / Izq: ${leftS.normalRange.replace(/\.0\b/g, "").replace(/\./g, ",")}`;
+            } else {
+              const refObj = rightS || leftS || noneS;
+              range = refObj && refObj.normalRange ? refObj.normalRange.replace(/\.0\b/g, "").replace(/\./g, ",") : "—";
+            }
+            table += `| **${baseName}** | ${rightVal} | ${leftVal} | ${range} |\n`;
           }
-
-          table += `| **${baseName}** | ${rightVal} | ${leftVal} | ${range} |\n`;
         });
       } else if (isUnilateralRight) {
         // Unilateral Right only
-        table += `| Estructura | Derecha | Valor de Referencia |\n`;
-        table += `| :--- | :---: | :---: |\n`;
+        if (isVenous) {
+          table += `| Estructura | Derecha |\n`;
+          table += `| :--- | :---: |\n`;
+        } else {
+          table += `| Estructura | Derecha | Valor de Referencia |\n`;
+          table += `| :--- | :---: | :---: |\n`;
+        }
 
         Object.entries(groups).forEach(([baseName, sides]) => {
           const rightS = sides.right || sides.none;
+          if (!rightS) return;
           const rightVal = formatCell(rightS);
-          const range = rightS && rightS.normalRange ? rightS.normalRange.replace(/\.0\b/g, "").replace(/\./g, ",") : "—";
-          table += `| **${baseName}** | ${rightVal} | ${range} |\n`;
+          if (isVenous) {
+            table += `| **${baseName}** | ${rightVal} |\n`;
+          } else {
+            const range = rightS && rightS.normalRange ? rightS.normalRange.replace(/\.0\b/g, "").replace(/\./g, ",") : "—";
+            table += `| **${baseName}** | ${rightVal} | ${range} |\n`;
+          }
         });
       } else {
         // Unilateral Left only
-        table += `| Estructura | Izquierda | Valor de Referencia |\n`;
-        table += `| :--- | :---: | :---: |\n`;
+        if (isVenous) {
+          table += `| Estructura | Izquierda |\n`;
+          table += `| :--- | :---: |\n`;
+        } else {
+          table += `| Estructura | Izquierda | Valor de Referencia |\n`;
+          table += `| :--- | :---: | :---: |\n`;
+        }
 
         Object.entries(groups).forEach(([baseName, sides]) => {
           const leftS = sides.left || sides.none;
+          if (!leftS) return;
           const leftVal = formatCell(leftS);
-          const range = leftS && leftS.normalRange ? leftS.normalRange.replace(/\.0\b/g, "").replace(/\./g, ",") : "—";
-          table += `| **${baseName}** | ${leftVal} | ${range} |\n`;
+          if (isVenous) {
+            table += `| **${baseName}** | ${leftVal} |\n`;
+          } else {
+            const range = leftS && leftS.normalRange ? leftS.normalRange.replace(/\.0\b/g, "").replace(/\./g, ",") : "—";
+            table += `| **${baseName}** | ${leftVal} | ${range} |\n`;
+          }
         });
       }
       
@@ -476,8 +585,13 @@ export const AsistenteMedidas: React.FC<AsistenteMedidasProps> = ({
     } else {
       // Standard single-column table for non-bilateral studies
       let table = `### 📊 CUADRO DE MEDICIONES CLÍNICAS\n\n`;
-      table += `| Estructura / Parámetro | Medida Registrada | Rango de Referencia | Estado / Interpretación |\n`;
-      table += `| :--- | :---: | :---: | :--- |\n`;
+      if (isVenous) {
+        table += `| Estructura / Parámetro | Medida Registrada | Estado / Interpretación |\n`;
+        table += `| :--- | :---: | :--- |\n`;
+      } else {
+        table += `| Estructura / Parámetro | Medida Registrada | Rango de Referencia | Estado / Interpretación |\n`;
+        table += `| :--- | :---: | :---: | :--- |\n`;
+      }
       
       toInclude.forEach(s => {
         let val = s.measuredValue || "";
@@ -486,12 +600,16 @@ export const AsistenteMedidas: React.FC<AsistenteMedidasProps> = ({
         } else {
           val = "—";
         }
-        const range = s.normalRange ? s.normalRange.replace(/\.0\b/g, "").replace(/\./g, ",") : "";
         
         const displayInterp = cleanInterpretation(s.interpretation || "", s.status);
         const statusEmoji = s.status === "normal" ? "🟢" : s.status === "altered" ? "🔴" : "🟡";
         
-        table += `| **${s.structure}** | ${val} | ${range} | ${statusEmoji} ${displayInterp} |\n`;
+        if (isVenous) {
+          table += `| **${s.structure}** | ${val} | ${statusEmoji} ${displayInterp} |\n`;
+        } else {
+          const range = s.normalRange ? s.normalRange.replace(/\.0\b/g, "").replace(/\./g, ",") : "";
+          table += `| **${s.structure}** | ${val} | ${range} | ${statusEmoji} ${displayInterp} |\n`;
+        }
       });
       table += `\n`;
       return table;
@@ -526,7 +644,7 @@ export const AsistenteMedidas: React.FC<AsistenteMedidasProps> = ({
   };
 
   // Helper values
-  const hasNotFound = structures.some(s => s.status === "not_found");
+  const hasNotFound = structures.some(s => s.wasNotFound);
   const selectedCount = Object.values(selectedForAssignment).filter(Boolean).length;
 
   const isDopplerArterialMiembroInferior = 
@@ -773,9 +891,9 @@ export const AsistenteMedidas: React.FC<AsistenteMedidasProps> = ({
             </div>
             <div className="p-4 bg-slate-950/80 border border-slate-850 rounded-2xl flex items-center justify-between">
               <div>
-                <p className="text-[9px] font-black text-slate-500 uppercase font-mono">Sin Medición</p>
+                <p className="text-[9px] font-black text-slate-500 uppercase font-mono">Pendientes de Reporte</p>
                 <p className="text-xl font-bold text-slate-400 font-mono mt-1">
-                  {structures.filter(s => s.status === "not_found").length}
+                  {structures.filter(s => s.wasNotFound).length}
                 </p>
               </div>
               <Ruler className="h-5 w-5 text-indigo-400" />
@@ -839,7 +957,7 @@ export const AsistenteMedidas: React.FC<AsistenteMedidasProps> = ({
                   {structures.map((item) => {
                     const isSelected = !!selectedForAssignment[item.structure];
                     const isInTable = !!selectedForTable[item.structure];
-                    const isMissing = item.status === "not_found";
+                    const isMissing = !!item.wasNotFound;
 
                     return (
                       <tr 
@@ -1209,7 +1327,7 @@ export const AsistenteMedidas: React.FC<AsistenteMedidasProps> = ({
                   <button
                     type="button"
                     onClick={() => handleAssign(true)}
-                    disabled={isAssigning || structures.filter(s => s.status === "not_found").length === 0}
+                    disabled={isAssigning || structures.filter(s => s.wasNotFound).length === 0}
                     className="w-full sm:w-auto px-5 py-3 bg-indigo-600 hover:bg-indigo-550 text-white rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg disabled:opacity-30 disabled:pointer-events-none active:scale-95 transition-all cursor-pointer font-mono"
                   >
                     {isAssigning ? (

@@ -22,6 +22,8 @@ interface KneeAnatomyViewerProps {
   onExportNarrative?: (narrativeText: string) => void;
   includeInReport?: boolean;
   setIncludeInReport?: (val: boolean) => void;
+  includeGonartrosis?: boolean;
+  setIncludeGonartrosis?: (val: boolean) => void;
   onChangeStates?: (states: Record<string, string>) => void;
   onChangeDescriptions?: (descriptions: Record<string, string>) => void;
   selectedModel?: string;
@@ -49,6 +51,8 @@ export default function KneeAnatomyViewer({
   onExportNarrative,
   includeInReport = true,
   setIncludeInReport,
+  includeGonartrosis: propIncludeGonartrosis = false,
+  setIncludeGonartrosis,
   onChangeStates,
   onChangeDescriptions,
   selectedModel,
@@ -62,6 +66,9 @@ export default function KneeAnatomyViewer({
   onChangeDescriptionsLeft
 }: KneeAnatomyViewerProps) {
   
+  const [localIncludeGonartrosis, setLocalIncludeGonartrosis] = useState<boolean>(false);
+  const includeGonartrosis = propIncludeGonartrosis !== undefined ? propIncludeGonartrosis : localIncludeGonartrosis;
+
   // States of each structure:
   // - quadriceps: normal | tendinosis | desgarro_parcial | desgarro_completo
   // - patellar: normal | tendinosis | desgarro_parcial | desgarro_completo
@@ -87,7 +94,13 @@ export default function KneeAnatomyViewer({
     popliteal_artery: "no_descrito",
     popliteal_vein: "no_descrito",
     distal_tendons: "no_descrito",
-    popliteal_fossa: "no_descrito"
+    popliteal_fossa: "no_descrito",
+    gon_pinzamiento_artic: "no_descrito",
+    gon_osteofitos: "no_descrito",
+    gon_esclerosis_sub: "no_descrito",
+    gon_geodas_quistes: "no_descrito",
+    gon_desgaste_cartilago: "no_descrito",
+    gon_menisco_deg: "no_descrito"
   });
 
   // Manual or custom descriptive text override
@@ -103,7 +116,13 @@ export default function KneeAnatomyViewer({
     popliteal_artery: "",
     popliteal_vein: "",
     distal_tendons: "",
-    popliteal_fossa: ""
+    popliteal_fossa: "",
+    gon_pinzamiento_artic: "",
+    gon_osteofitos: "",
+    gon_esclerosis_sub: "",
+    gon_geodas_quistes: "",
+    gon_desgaste_cartilago: "",
+    gon_menisco_deg: ""
   });
 
   const [activeTab, setActiveTab] = useState<"anterior" | "posterior">("anterior");
@@ -127,7 +146,13 @@ export default function KneeAnatomyViewer({
     popliteal_artery: "no_descrito",
     popliteal_vein: "no_descrito",
     distal_tendons: "no_descrito",
-    popliteal_fossa: "no_descrito"
+    popliteal_fossa: "no_descrito",
+    gon_pinzamiento_artic: "no_descrito",
+    gon_osteofitos: "no_descrito",
+    gon_esclerosis_sub: "no_descrito",
+    gon_geodas_quistes: "no_descrito",
+    gon_desgaste_cartilago: "no_descrito",
+    gon_menisco_deg: "no_descrito"
   });
 
   const [customDescriptionsLeft, setCustomDescriptionsLeft] = useState<Record<string, string>>({
@@ -142,7 +167,13 @@ export default function KneeAnatomyViewer({
     popliteal_artery: "",
     popliteal_vein: "",
     distal_tendons: "",
-    popliteal_fossa: ""
+    popliteal_fossa: "",
+    gon_pinzamiento_artic: "",
+    gon_osteofitos: "",
+    gon_esclerosis_sub: "",
+    gon_geodas_quistes: "",
+    gon_desgaste_cartilago: "",
+    gon_menisco_deg: ""
   });
 
   const [activeSide, setActiveSide] = useState<"derecho" | "izquierdo">("derecho");
@@ -275,6 +306,18 @@ export default function KneeAnatomyViewer({
         return ["tendones distales", "tendon semitendinoso", "semimembranoso", "biceps femoral distal", "semitendinoso distal", "semimembranoso distal", "biceps distal"];
       case "popliteal_fossa":
         return ["fosa poplitea", "fosa poplítea", "hueco popliteo", "hueco poplíteo", "quiste popliteo"];
+      case "gon_pinzamiento_artic":
+        return ["pinzamiento", "estrechamiento del espacio", "disminución del espacio articular", "pinzamiento articular", "estrechamiento femorotibial", "pinzamiento femorotibial"];
+      case "gon_osteofitos":
+        return ["osteofito", "osteofitos", "osteofitosis", "osteofito marginal", "picos de loro"];
+      case "gon_esclerosis_sub":
+        return ["esclerosis subcondral", "esclerosis ósea", "esclerosis osea", "osteoesclerosis"];
+      case "gon_geodas_quistes":
+        return ["geoda", "geodas", "quistes subcondrales", "quiste subcondral", "quiste de presión"];
+      case "gon_desgaste_cartilago":
+        return ["adelgazamiento del cartílago", "desgaste de cartílago", "desgaste cartilaginoso", "condropatía", "condropatia", "lesión de cartílago", "cartilago"];
+      case "gon_menisco_deg":
+        return ["menisco degenerado", "meniscosis avanzada", "extrusion meniscal", "extrusión meniscal", "menisco extruido"];
       default:
         return [];
     }
@@ -514,6 +557,34 @@ export default function KneeAnatomyViewer({
         return "normal";
       }
 
+      case "gon_pinzamiento_artic":
+      case "gon_osteofitos":
+      case "gon_esclerosis_sub":
+      case "gon_geodas_quistes":
+      case "gon_desgaste_cartilago":
+      case "gon_menisco_deg": {
+        const keywordsMap: Record<string, string[]> = {
+          gon_pinzamiento_artic: ["pinzamiento", "estrechamiento del espacio", "disminución del espacio articular", "pinzamiento articular", "estrechamiento femorotibial", "pinzamiento femorotibial"],
+          gon_osteofitos: ["osteofito", "osteofitos", "osteofitosis", "osteofito marginal", "picos de loro"],
+          gon_esclerosis_sub: ["esclerosis subcondral", "esclerosis ósea", "esclerosis osea", "osteoesclerosis"],
+          gon_geodas_quistes: ["geoda", "geodas", "quistes subcondrales", "quiste subcondral", "quiste de presión"],
+          gon_desgaste_cartilago: ["adelgazamiento del cartílago", "desgaste de cartílago", "desgaste cartilaginoso", "condropatía", "condropatia", "lesión de cartílago", "cartilago"],
+          gon_menisco_deg: ["menisco degenerado", "meniscosis avanzada", "extrusion meniscal", "extrusión meniscal", "menisco extruido"]
+        };
+        const kws = keywordsMap[id] || [];
+        const severeKws = ["grande", "voluminoso", "severo", "complicado", "marcado", "avanzado", "grave", "pronunciado", "grado iv", "grado 4"];
+        const moderateKws = ["moderado", "franco", "evidente", "significativo", "grado ii", "grado iii", "grado 2", "grado 3"];
+
+        if (hasPathology(kws)) {
+          const isSevere = severeKws.some(skw => lower.includes(skw));
+          if (isSevere) return "severo";
+          const isModerate = moderateKws.some(mkw => lower.includes(mkw));
+          if (isModerate) return "moderado";
+          return "leve";
+        }
+        return "normal";
+      }
+
       default:
         return "no_descrito";
     }
@@ -683,6 +754,12 @@ export default function KneeAnatomyViewer({
       case "popliteal_vein": return "Vena Poplítea";
       case "distal_tendons": return "Tendones Distales del Muslo";
       case "popliteal_fossa": return "Fosa Poplítea";
+      case "gon_pinzamiento_artic": return "Pinzamiento Articular";
+      case "gon_osteofitos": return "Osteofitos Marginales";
+      case "gon_esclerosis_sub": return "Esclerosis Subcondral";
+      case "gon_geodas_quistes": return "Geodas o Quistes Subcondrales";
+      case "gon_desgaste_cartilago": return "Desgaste de Cartílago";
+      case "gon_menisco_deg": return "Degeneración/Extrusión Meniscal";
       default: return id;
     }
   };
@@ -693,11 +770,13 @@ export default function KneeAnatomyViewer({
 
     const structureKeys = [
       "quadriceps", "patellar", "lcm", "lce", "medial_meniscus", "lateral_meniscus", "joint_effusion", "baker_cyst",
-      "popliteal_artery", "popliteal_vein", "distal_tendons", "popliteal_fossa"
+      "popliteal_artery", "popliteal_vein", "distal_tendons", "popliteal_fossa",
+      "gon_pinzamiento_artic", "gon_osteofitos", "gon_esclerosis_sub", "gon_geodas_quistes", "gon_desgaste_cartilago", "gon_menisco_deg"
     ];
     
     let parsedCount = 0;
     let foundPathologies = 0;
+    let hasGonartrosisFindings = false;
 
     structureKeys.forEach(id => {
       const keywords = getStructureKeywords(id);
@@ -711,13 +790,22 @@ export default function KneeAnatomyViewer({
         updatedDescriptions[id] = extractedFindings || "";
         
         parsedCount++;
-        if (parsedState !== "normal") foundPathologies++;
+        if (parsedState !== "normal" && parsedState !== "no_descrito") {
+          foundPathologies++;
+          if (id.startsWith("gon_")) {
+            hasGonartrosisFindings = true;
+          }
+        }
         logs.push(`[Sincronización Local] ${translateStructureLabelInBrief(id)}: ${parsedState.toUpperCase()}`);
       } else {
         updatedStates[id] = "no_descrito";
         updatedDescriptions[id] = "";
       }
     });
+
+    if (hasGonartrosisFindings && setIncludeGonartrosis) {
+      setIncludeGonartrosis(true);
+    }
 
     setStates(updatedStates);
     setCustomDescriptions(updatedDescriptions);
@@ -801,8 +889,40 @@ export default function KneeAnatomyViewer({
         id: "popliteal_fossa",
         label: "Fosa Poplítea",
         allowedStates: ["no_descrito", "normal", "coleccion", "adenopatia"]
+      },
+      {
+        id: "gon_pinzamiento_artic",
+        label: "Pinzamiento Articular",
+        allowedStates: ["no_descrito", "normal", "leve", "moderado", "severo"]
+      },
+      {
+        id: "gon_osteofitos",
+        label: "Osteofitos Marginales",
+        allowedStates: ["no_descrito", "normal", "leve", "moderado", "severo"]
+      },
+      {
+        id: "gon_esclerosis_sub",
+        label: "Esclerosis Subcondral",
+        allowedStates: ["no_descrito", "normal", "leve", "moderado", "severo"]
+      },
+      {
+        id: "gon_geodas_quistes",
+        label: "Geodas o Quistes Subcondrales",
+        allowedStates: ["no_descrito", "normal", "leve", "moderado", "severo"]
+      },
+      {
+        id: "gon_desgaste_cartilago",
+        label: "Desgaste de Cartílago",
+        allowedStates: ["no_descrito", "normal", "leve", "moderado", "severo"]
+      },
+      {
+        id: "gon_menisco_deg",
+        label: "Degeneración/Extrusión Meniscal",
+        allowedStates: ["no_descrito", "normal", "leve", "moderado", "severo"]
       }
     ];
+
+    let hasGonartrosisFindings = false;
 
     if (laterality === "Bilateral") {
       logs.push("Estudio Bilateral detectado en Rodilla. Analizando LADO DERECHO...");
@@ -831,6 +951,9 @@ export default function KneeAnatomyViewer({
             finalDescriptionsD[struc.id] = apiDesc;
             if (apiState !== "no_descrito") {
               logs.push(`[Derecho - ${struc.label}]: ${apiState.toUpperCase()}`);
+              if (struc.id.startsWith("gon_") && apiState !== "normal" && apiState !== "no_descrito") {
+                hasGonartrosisFindings = true;
+              }
             }
           });
 
@@ -867,6 +990,9 @@ export default function KneeAnatomyViewer({
             finalDescriptionsI[struc.id] = apiDesc;
             if (apiState !== "no_descrito") {
               logs.push(`[Izquierdo - ${struc.label}]: ${apiState.toUpperCase()}`);
+              if (struc.id.startsWith("gon_") && apiState !== "normal" && apiState !== "no_descrito") {
+                hasGonartrosisFindings = true;
+              }
             }
           });
 
@@ -875,6 +1001,10 @@ export default function KneeAnatomyViewer({
         }
       } catch (err: any) {
         logs.push(`Error analizando lado izquierdo: ${err.message || String(err)}`);
+      }
+
+      if (hasGonartrosisFindings && setIncludeGonartrosis) {
+        setIncludeGonartrosis(true);
       }
 
       setIsSyncing(false);
@@ -913,11 +1043,18 @@ export default function KneeAnatomyViewer({
           parsedCount++;
           if (apiState !== "normal" && apiState !== "no_descrito") {
             foundPathologies++;
+            if (struc.id.startsWith("gon_")) {
+              hasGonartrosisFindings = true;
+            }
           }
           if (apiState !== "no_descrito") {
             logs.push(`[Hallazgo] ${struc.label}: ${apiState.toUpperCase()} \n  ↳ ${apiDesc}`);
           }
         });
+
+        if (hasGonartrosisFindings && setIncludeGonartrosis) {
+          setIncludeGonartrosis(true);
+        }
 
         setStates(finalStates);
         setCustomDescriptions(finalDescriptions);
@@ -948,48 +1085,20 @@ export default function KneeAnatomyViewer({
         setSyncLogs(log => [...log, `Cambio manual en [Izquierdo] ${translateStructureLabelInBrief(id)} -> ${nextState.toUpperCase()}`]);
         return next;
       });
-
-      if (useOriginalReportText) {
-        const currentDesc = customDescriptionsLeft[id] || getDefaultDescription(id, nextState);
-        const updatedReportText = updateReportTextWithStructure(id, generatedReport, currentDesc);
-        if (onChangeReport) {
-          onChangeReport(updatedReportText);
-        }
-      }
     } else {
       setStates(prev => {
         const next = { ...prev, [id]: nextState };
         setSyncLogs(log => [...log, `Cambio manual en El Derecho ${translateStructureLabelInBrief(id)} -> ${nextState.toUpperCase()}`]);
         return next;
       });
-
-      if (useOriginalReportText) {
-        const currentDesc = customDescriptions[id] || getDefaultDescription(id, nextState);
-        const updatedReportText = updateReportTextWithStructure(id, generatedReport, currentDesc);
-        if (onChangeReport) {
-          onChangeReport(updatedReportText);
-        }
-      }
     }
   };
 
   const handleUpdateCustomDescription = (id: string, text: string) => {
     if (laterality === "Bilateral" && activeSide === "izquierdo") {
       setCustomDescriptionsLeft(prev => ({ ...prev, [id]: text }));
-      if (useOriginalReportText) {
-        const updatedReportText = updateReportTextWithStructure(id, generatedReport, text);
-        if (onChangeReport) {
-          onChangeReport(updatedReportText);
-        }
-      }
     } else {
       setCustomDescriptions(prev => ({ ...prev, [id]: text }));
-      if (useOriginalReportText) {
-        const updatedReportText = updateReportTextWithStructure(id, generatedReport, text);
-        if (onChangeReport) {
-          onChangeReport(updatedReportText);
-        }
-      }
     }
   };
 
@@ -999,7 +1108,8 @@ export default function KneeAnatomyViewer({
     const standardStates = [
       "normal", "no_descrito", "tendinosis", "desgarro_parcial", "desgarro_completo", "esguince_leve",
       "meniscosis", "rotura", "derrame_leve", "derrame_moderado", "quiste_leve", "quiste_severo",
-      "ectasia", "ateromatosis", "aneurisma", "trombosis", "permisibilidad_reducida", "coleccion", "adenopatia"
+      "ectasia", "ateromatosis", "aneurisma", "trombosis", "permisibilidad_reducida", "coleccion", "adenopatia",
+      "leve", "moderado", "severo"
     ];
     if (!standardStates.includes(state)) {
       return `Se describe hallazgo: ${state.charAt(0).toUpperCase() + state.slice(1)}.`;
@@ -1061,6 +1171,36 @@ export default function KneeAnatomyViewer({
         if (state === "coleccion") return "Colección hipoecoica/anecoica organizada en los planos grasos profundos de la fosa poplítea.";
         if (state === "adenopatia") return "Presencia de ganglios linfáticos aumentados de tamaño con pérdida de hilio graso fisiológico.";
         break;
+      case "gon_pinzamiento_artic":
+        if (state === "leve") return "Estrechamiento focal leve del espacio articular femorotibial.";
+        if (state === "moderado") return "Disminución moderada y asimétrica del espacio femorotibial con pinzamiento articular evidente.";
+        if (state === "severo") return "Pinzamiento articular severo con colapso del espacio articular y contacto óseo directo.";
+        break;
+      case "gon_osteofitos":
+        if (state === "leve") return "Pequeñas excrecencias óseas marginales (osteofitos) en los márgenes de los cóndilos femorales.";
+        if (state === "moderado") return "Osteofitos marginales francos y definidos en las superficies articulares de fémur, tibia y rótula.";
+        if (state === "severo") return "Osteofitosis marginal voluminosa y severa que limita parcialmente el rango de movilidad articular.";
+        break;
+      case "gon_esclerosis_sub":
+        if (state === "leve") return "Discreto aumento de la ecogenicidad / densidad ósea subcondral en zonas de carga tibial.";
+        if (state === "moderado") return "Esclerosis ósea subcondral moderada y bien delimitada en el platillo tibial medial.";
+        if (state === "severo") return "Esclerosis ósea subcondral severa y extensa con remodelamiento de la superficie articular.";
+        break;
+      case "gon_geodas_quistes":
+        if (state === "leve") return "Pequeñas geodas subcondrales incipientes en fémur o tibia medial.";
+        if (state === "moderado") return "Presencia de quistes subcondrales de presión de tamaño moderado adyacentes a la esclerosis.";
+        if (state === "severo") return "Geodas / quistes de presión subcondrales voluminosos y confluentes que debilitan el soporte óseo subcondral.";
+        break;
+      case "gon_desgaste_cartilago":
+        if (state === "leve") return "Adelgazamiento leve del cartílago hialino de los cóndilos femorales con conservación de su regularidad.";
+        if (state === "moderado") return "Condropatía moderada con adelgazamiento focal significativo y pérdida de la ecogenicidad normal del cartílago.";
+        if (state === "severo") return "Pérdida completa de espesor del cartílago articular (condropatía grado IV) con hueso subcondral expuesto.";
+        break;
+      case "gon_menisco_deg":
+        if (state === "leve") return "Cambios degenerativos intrasustancia leves en el cuerno posterior del menisco medial.";
+        if (state === "moderado") return "Meniscosis moderada con extrusión meniscal lateral/medial discreta (desplazamiento < 3mm).";
+        if (state === "severo") return "Degeneración meniscal severa con extrusión meniscal franca y pérdida completa de su función amortiguadora.";
+        break;
     }
     return "Alteración estructural.";
   };
@@ -1077,7 +1217,8 @@ export default function KneeAnatomyViewer({
     const standardStates = [
       "normal", "no_descrito", "tendinosis", "desgarro_parcial", "desgarro_completo", "esguince_leve",
       "meniscosis", "rotura", "derrame_leve", "derrame_moderado", "quiste_leve", "quiste_severo",
-      "ectasia", "ateromatosis", "aneurisma", "trombosis", "permisibilidad_reducida", "coleccion", "adenopatia"
+      "ectasia", "ateromatosis", "aneurisma", "trombosis", "permisibilidad_reducida", "coleccion", "adenopatia",
+      "leve", "moderado", "severo"
     ];
     if (state && !standardStates.includes(state)) {
       return `Se describe hallazgo: ${state.charAt(0).toUpperCase() + state.slice(1)}.`;
@@ -1190,6 +1331,36 @@ export default function KneeAnatomyViewer({
         if (state === "coleccion") return "Colección líquida inflamatoria organizada en la fosa poplítea.";
         if (state === "adenopatia") return "Ganglio linfático / adenopatía reactiva en fosa poplítea.";
         break;
+      case "gon_pinzamiento_artic":
+        if (state === "leve") return "Pinzamiento articular leve.";
+        if (state === "moderado") return "Pinzamiento femorotibial moderado.";
+        if (state === "severo") return "Pinzamiento femorotibial severo / colapso articular.";
+        break;
+      case "gon_osteofitos":
+        if (state === "leve") return "Osteofitos marginales leves.";
+        if (state === "moderado") return "Osteofitosis moderada femorotibial/femororotuliana.";
+        if (state === "severo") return "Osteofitosis severa / voluminosa.";
+        break;
+      case "gon_esclerosis_sub":
+        if (state === "leve") return "Esclerosis subcondral leve.";
+        if (state === "moderado") return "Esclerosis ósea subcondral franca.";
+        if (state === "severo") return "Esclerosis subcondral severa.";
+        break;
+      case "gon_geodas_quistes":
+        if (state === "leve") return "Geodas subcondrales incipientes.";
+        if (state === "moderado") return "Quistes subcondrales moderados.";
+        if (state === "severo") return "Geodas subcondrales voluminosas / confluentes.";
+        break;
+      case "gon_desgaste_cartilago":
+        if (state === "leve") return "Adelgazamiento cartilaginoso leve.";
+        if (state === "moderado") return "Condropatía / desgaste cartilaginoso moderado.";
+        if (state === "severo") return "Desgaste severo del cartílago con exposición ósea.";
+        break;
+      case "gon_menisco_deg":
+        if (state === "leve") return "Meniscosis leve degenerativa.";
+        if (state === "moderado") return "Meniscosis moderada con extrusión leve.";
+        if (state === "severo") return "Degeneración y extrusión meniscal severa asociada a artrosis.";
+        break;
     }
 
     // Fallback block if any other custom description exists, we capitalize and clean it
@@ -1223,19 +1394,19 @@ export default function KneeAnatomyViewer({
         stroke: "#10b981"
       };
     }
-    if (s === "tendinosis" || s === "esguince_leve" || s === "meniscosis" || s === "derrame_leve" || s === "quiste_leve") {
+    if (s === "tendinosis" || s === "esguince_leve" || s === "meniscosis" || s === "derrame_leve" || s === "quiste_leve" || s === "leve") {
       return {
         fill: activeHover === id ? "rgba(245, 158, 11, 0.5)" : "rgba(245, 158, 11, 0.25)",
         stroke: "#f59e0b"
       };
     }
-    if (s === "desgarro_parcial") {
+    if (s === "desgarro_parcial" || s === "moderado") {
       return {
         fill: activeHover === id ? "rgba(236, 72, 153, 0.55)" : "rgba(236, 72, 153, 0.28)",
         stroke: "#ec4899"
       };
     }
-    if (s === "desgarro_completo" || s === "rotura" || s === "derrame_moderado" || s === "quiste_severo") {
+    if (s === "desgarro_completo" || s === "rotura" || s === "derrame_moderado" || s === "quiste_severo" || s === "severo") {
       return {
         fill: activeHover === id ? "rgba(244, 63, 94, 0.65)" : "rgba(244, 63, 94, 0.35)",
         stroke: "#f43f5e"
@@ -1268,6 +1439,17 @@ export default function KneeAnatomyViewer({
       { id: "distal_tendons", label: "Tendones Distales" },
       { id: "popliteal_fossa", label: "Fosa Poplítea" }
     ];
+
+    if (includeGonartrosis) {
+      rows.push(
+        { id: "gon_pinzamiento_artic", label: "Pinzamiento Articular" },
+        { id: "gon_osteofitos", label: "Osteofitos Marginales" },
+        { id: "gon_esclerosis_sub", label: "Esclerosis Subcondral" },
+        { id: "gon_geodas_quistes", label: "Geodas / Quistes" },
+        { id: "gon_desgaste_cartilago", label: "Desgaste de Cartílago" },
+        { id: "gon_menisco_deg", label: "Menisco Degenerativo/Extruido" }
+      );
+    }
 
     let hasRows = false;
     if (laterality === "Bilateral") {
@@ -1317,6 +1499,17 @@ export default function KneeAnatomyViewer({
       { id: "distal_tendons", label: "Tendones Distales" },
       { id: "popliteal_fossa", label: "Fosa Poplítea" }
     ];
+
+    if (includeGonartrosis) {
+      list.push(
+        { id: "gon_pinzamiento_artic", label: "Pinzamiento Articular" },
+        { id: "gon_osteofitos", label: "Osteofitos Marginales" },
+        { id: "gon_esclerosis_sub", label: "Esclerosis Subcondral" },
+        { id: "gon_geodas_quistes", label: "Geodas o Quistes" },
+        { id: "gon_desgaste_cartilago", label: "Desgaste de Cartílago" },
+        { id: "gon_menisco_deg", label: "Menisco Degenerativo/Extruido" }
+      );
+    }
 
     let md = "";
     if (laterality === "Bilateral") {
@@ -1789,6 +1982,257 @@ export default function KneeAnatomyViewer({
     return renderWithContext(localStates);
   };
 
+  const renderGonartrosisSvg = (side: "derecho" | "izquierdo") => {
+    const isIzqui = side === "izquierdo";
+    const localStates = laterality === "Bilateral" && side === "izquierdo" ? statesLeft : states;
+    const getColorForSVG = (id: string) => getColorForSVGOuter(id, side);
+
+    return (
+      <svg
+        id={isIzqui ? "knee-gonartrosis-svg-left" : "knee-gonartrosis-svg"}
+        viewBox="0 0 350 350"
+        className="w-full max-w-[300px] h-auto drop-shadow-2xl mx-auto"
+        style={{ maxHeight: "310px" }}
+      >
+        <defs>
+          <linearGradient id={`gonBoneGrad-${side}`} x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#2e3d52" />
+            <stop offset="100%" stopColor="#111827" />
+          </linearGradient>
+          <linearGradient id={`sclerosisGrad-${side}`} x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor="#cbd5e1" stopOpacity="0.8" />
+            <stop offset="100%" stopColor="#475569" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+
+        {/* Background grid/circle guidelines */}
+        <circle cx="175" cy="175" r="145" fill="none" stroke="#1e293b" strokeWidth="1" strokeDasharray="3,6" />
+        <line x1="175" y1="20" x2="175" y2="330" stroke="#1e293b" strokeWidth="1" strokeDasharray="2,8" />
+        <line x1="20" y1="175" x2="330" y2="175" stroke="#1e293b" strokeWidth="1" strokeDasharray="2,8" />
+
+        {/* 1. Femur Bone with Marginal Osteophytes */}
+        <path
+          d="M 125,30 L 125,120 C 125,125 118,128 112,132 C 105,136 102,143 103,150 C 104,158 112,165 125,165 C 132,165 142,162 148,168 C 154,174 158,180 175,180 C 192,180 196,174 202,168 C 208,162 218,165 225,165 C 238,165 246,158 247,150 C 248,143 245,136 238,132 C 232,128 225,125 225,120 L 225,30 Z"
+          fill={`url(#gonBoneGrad-${side})`}
+          stroke="#334155"
+          strokeWidth="1.5"
+        />
+        <text x="175" y="55" fill="#475569" fontSize="8" fontWeight="bold" textAnchor="middle">FÉMUR</text>
+
+        {/* 2. Tibia Bone with Narrowed Medial Space and Osteophytes */}
+        <path
+          d="M 130,320 L 130,225 C 130,215 120,210 114,206 C 108,202 108,198 115,196 C 122,194 135,198 150,198 C 160,198 175,200 175,200 C 175,200 190,195 198,192 C 215,186 235,190 242,196 C 249,202 240,208 236,212 C 230,218 220,218 220,225 L 220,320 Z"
+          fill={`url(#gonBoneGrad-${side})`}
+          stroke="#334155"
+          strokeWidth="1.5"
+        />
+        <text x="175" y="295" fill="#475569" fontSize="8" fontWeight="bold" textAnchor="middle">TIBIA</text>
+
+        {/* Fibula / Peroné */}
+        <path
+          d="M 235,235 L 245,227 C 250,227 256,233 256,241 L 254,320 L 237,320 Z"
+          fill={`url(#gonBoneGrad-${side})`}
+          stroke="#334155"
+          strokeWidth="1.2"
+        />
+
+        {/* INTERACTIVE GONARTROSIS PATHOLOGIES */}
+
+        {/* A. Pinzamiento Articular (Joint Space Narrowing) */}
+        <g
+          className="cursor-pointer transition-all duration-200"
+          onClick={() => setSelectedStructure("gon_pinzamiento_artic")}
+          onMouseEnter={() => setActiveHover("gon_pinzamiento_artic")}
+          onMouseLeave={() => setActiveHover(null)}
+        >
+          {/* Medial femorotibial joint space band */}
+          <path
+            d="M 115,168 C 130,168 145,172 155,180"
+            fill="none"
+            stroke={getColorForSVG("gon_pinzamiento_artic").stroke}
+            strokeWidth={localStates.gon_pinzamiento_artic !== "normal" ? "8" : "3"}
+            opacity={localStates.gon_pinzamiento_artic === "no_descrito" ? "0.2" : "0.95"}
+            strokeLinecap="round"
+          />
+          <path
+            d="M 195,180 C 205,172 220,168 235,168"
+            fill="none"
+            stroke={getColorForSVG("gon_pinzamiento_artic").stroke}
+            strokeWidth="3"
+            opacity="0.3"
+            strokeLinecap="round"
+          />
+          <line x1="135" y1="172" x2="80" y2="172" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
+        </g>
+
+        {/* B. Osteofitos Marginales (Marginal Osteophytes) */}
+        <g
+          className="cursor-pointer transition-all duration-200"
+          onClick={() => setSelectedStructure("gon_osteofitos")}
+          onMouseEnter={() => setActiveHover("gon_osteofitos")}
+          onMouseLeave={() => setActiveHover(null)}
+        >
+          {/* Femoral lateral osteophyte */}
+          <path
+            d="M 103,150 L 94,153 L 105,157 Z"
+            fill={getColorForSVG("gon_osteofitos").fill}
+            stroke={getColorForSVG("gon_osteofitos").stroke}
+            strokeWidth="1"
+            opacity={localStates.gon_osteofitos === "no_descrito" ? "0.3" : "1"}
+          />
+          {/* Femoral medial osteophyte */}
+          <path
+            d="M 247,150 L 256,153 L 245,157 Z"
+            fill={getColorForSVG("gon_osteofitos").fill}
+            stroke={getColorForSVG("gon_osteofitos").stroke}
+            strokeWidth="1"
+            opacity={localStates.gon_osteofitos === "no_descrito" ? "0.3" : "1"}
+          />
+          {/* Tibial medial osteophyte */}
+          <path
+            d="M 112,198 L 102,196 L 115,204 Z"
+            fill={getColorForSVG("gon_osteofitos").fill}
+            stroke={getColorForSVG("gon_osteofitos").stroke}
+            strokeWidth="1"
+            opacity={localStates.gon_osteofitos === "no_descrito" ? "0.3" : "1"}
+          />
+          {/* Tibial lateral osteophyte */}
+          <path
+            d="M 238,196 L 248,194 L 235,202 Z"
+            fill={getColorForSVG("gon_osteofitos").fill}
+            stroke={getColorForSVG("gon_osteofitos").stroke}
+            strokeWidth="1"
+            opacity={localStates.gon_osteofitos === "no_descrito" ? "0.3" : "1"}
+          />
+          <line x1="102" y1="153" x2="65" y2="135" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
+        </g>
+
+        {/* C. Esclerosis Subcondral (Subchondral Sclerosis) */}
+        <g
+          className="cursor-pointer transition-all duration-200"
+          onClick={() => setSelectedStructure("gon_esclerosis_sub")}
+          onMouseEnter={() => setActiveHover("gon_esclerosis_sub")}
+          onMouseLeave={() => setActiveHover(null)}
+        >
+          <path
+            d="M 116,200 C 130,201 145,203 158,202"
+            fill="none"
+            stroke={getColorForSVG("gon_esclerosis_sub").stroke}
+            strokeWidth={localStates.gon_esclerosis_sub !== "normal" ? "6.5" : "2"}
+            opacity={localStates.gon_esclerosis_sub === "no_descrito" ? "0.2" : "0.9"}
+          />
+          <path
+            d="M 192,202 C 205,203 220,201 234,200"
+            fill="none"
+            stroke={getColorForSVG("gon_esclerosis_sub").stroke}
+            strokeWidth="2"
+            opacity="0.3"
+          />
+          <line x1="135" y1="202" x2="80" y2="230" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
+        </g>
+
+        {/* D. Geodas / Quistes Subcondrales (Subchondral Cysts/Geodes) */}
+        <g
+          className="cursor-pointer transition-all duration-200"
+          onClick={() => setSelectedStructure("gon_geodas_quistes")}
+          onMouseEnter={() => setActiveHover("gon_geodas_quistes")}
+          onMouseLeave={() => setActiveHover(null)}
+        >
+          <circle
+            cx="130"
+            cy="215"
+            r="5"
+            fill={getColorForSVG("gon_geodas_quistes").fill}
+            stroke={getColorForSVG("gon_geodas_quistes").stroke}
+            strokeWidth="1"
+            opacity={localStates.gon_geodas_quistes === "no_descrito" ? "0.2" : "0.95"}
+          />
+          <circle
+            cx="145"
+            cy="218"
+            r="4"
+            fill={getColorForSVG("gon_geodas_quistes").fill}
+            stroke={getColorForSVG("gon_geodas_quistes").stroke}
+            strokeWidth="1"
+            opacity={localStates.gon_geodas_quistes === "no_descrito" ? "0.2" : "0.95"}
+          />
+          <line x1="130" y1="215" x2="70" y2="255" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
+        </g>
+
+        {/* E. Desgaste de Cartílago (Cartilage Wear) */}
+        <g
+          className="cursor-pointer transition-all duration-200"
+          onClick={() => setSelectedStructure("gon_desgaste_cartilago")}
+          onMouseEnter={() => setActiveHover("gon_desgaste_cartilago")}
+          onMouseLeave={() => setActiveHover(null)}
+        >
+          {/* Medial Femoral Cartilage (worn / bumpy) */}
+          <path
+            d="M 112,154 C 118,154 122,152 126,155 C 130,158 135,152 144,152"
+            fill="none"
+            stroke={getColorForSVG("gon_desgaste_cartilago").stroke}
+            strokeWidth={localStates.gon_desgaste_cartilago !== "normal" ? "4.5" : "2"}
+            opacity={localStates.gon_desgaste_cartilago === "no_descrito" ? "0.2" : "0.95"}
+          />
+          {/* Lateral Femoral Cartilage */}
+          <path
+            d="M 206,152 C 215,152 220,158 238,154"
+            fill="none"
+            stroke={getColorForSVG("gon_desgaste_cartilago").stroke}
+            strokeWidth="2"
+            opacity="0.3"
+          />
+          <line x1="124" y1="154" x2="275" y2="120" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
+        </g>
+
+        {/* F. Menisco Degenerativo/Extruido */}
+        <g
+          className="cursor-pointer transition-all duration-200"
+          onClick={() => setSelectedStructure("gon_menisco_deg")}
+          onMouseEnter={() => setActiveHover("gon_menisco_deg")}
+          onMouseLeave={() => setActiveHover(null)}
+        >
+          {/* Squeezed / extruded medial meniscus */}
+          <path
+            d="M 103,178 C 111,178 116,180 118,185 C 112,187 106,187 103,184 C 101,183 101,180 103,178 Z"
+            fill={getColorForSVG("gon_menisco_deg").fill}
+            stroke={getColorForSVG("gon_menisco_deg").stroke}
+            strokeWidth={localStates.gon_menisco_deg !== "normal" ? "2.5" : "1.2"}
+            opacity={localStates.gon_menisco_deg === "no_descrito" ? "0.2" : "0.95"}
+          />
+          {/* Lateral meniscus */}
+          <path
+            d="M 235,178 C 227,178 222,180 220,185 C 226,187 232,187 235,184 C 237,183 237,180 235,178 Z"
+            fill={getColorForSVG("gon_menisco_deg").fill}
+            stroke={getColorForSVG("gon_menisco_deg").stroke}
+            strokeWidth="1.2"
+            opacity="0.3"
+          />
+          <line x1="108" y1="181" x2="65" y2="195" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
+        </g>
+
+        {/* TEXT LABELS */}
+        <text x="60" y="133" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="end">Osteofito marginal</text>
+        <text x="75" y="170" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="end">Pinzamiento articular</text>
+        <text x="60" y="193" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="end">Menisco extruido</text>
+        <text x="75" y="228" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="end">Esclerosis subcondral</text>
+        <text x="65" y="258" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="end">Geodas / Quistes</text>
+
+        <text x="280" y="118" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="start">Desgaste de cartílago</text>
+      </svg>
+    );
+  };
+
+  useEffect(() => {
+    if (!includeInReport && includeGonartrosis && activeTab !== "gonartrosis") {
+      setActiveTab("gonartrosis");
+      setSelectedStructure("gon_pinzamiento_artic");
+    } else if (includeInReport && !includeGonartrosis && activeTab === "gonartrosis") {
+      setActiveTab("anterior");
+      setSelectedStructure("quadriceps");
+    }
+  }, [includeInReport, includeGonartrosis]);
+
   return (
     <div className="w-full flex flex-col gap-5">
       {/* Header Info HUD */}
@@ -1826,248 +2270,352 @@ export default function KneeAnatomyViewer({
         </div>
       </div>
 
-      {laterality === "Bilateral" && (
-        <div className="flex gap-1.5 p-1 bg-slate-900/90 border border-slate-800 rounded-xl justify-around self-stretch shadow-inner">
-          <button
-            onClick={() => setActiveSide("derecho")}
-            className={`flex-1 py-1.5 px-3 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-              activeSide === "derecho"
-                ? "bg-indigo-600 text-white shadow-md border border-indigo-400/20"
-                : "text-slate-450 hover:text-slate-200 hover:bg-slate-850"
-            }`}
-          >
-            LADO DERECHO (Derecho)
-          </button>
-          <button
-            onClick={() => setActiveSide("izquierdo")}
-            className={`flex-1 py-1.5 px-3 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-              activeSide === "izquierdo"
-                ? "bg-indigo-600 text-white shadow-md border border-indigo-400/20"
-                : "text-slate-450 hover:text-slate-200 hover:bg-slate-850"
-            }`}
-          >
-            LADO IZQUIERDO (Izquierdo)
-          </button>
+      {/* SELECCIÓN DE ESQUEMAS EN REPORTE */}
+      <div className="flex flex-col sm:flex-row gap-3 bg-slate-950/40 p-3 rounded-xl border border-slate-850/60 text-xs">
+        <div className="text-slate-400 font-bold uppercase tracking-wider text-[10px] self-center mr-2">Incluir en el Reporte:</div>
+        <label className="flex items-center gap-2 cursor-pointer select-none py-1.5 px-3 rounded-lg border border-slate-800 hover:bg-slate-900 transition-colors bg-slate-950/20 flex-1">
+          <input 
+            type="checkbox" 
+            checked={includeInReport} 
+            onChange={(e) => setIncludeInReport && setIncludeInReport(e.target.checked)}
+            className="rounded border-slate-800 bg-slate-900 text-indigo-600 focus:ring-indigo-500 cursor-pointer h-4 w-4"
+          />
+          <div>
+            <span className="font-bold text-slate-200 block text-[11px]">Esquema General de Rodilla</span>
+            <span className="text-[9px] text-slate-400">Diagramas interactivos de caras Anterior y Posterior</span>
+          </div>
+        </label>
+        <label className="flex items-center gap-2 cursor-pointer select-none py-1.5 px-3 rounded-lg border border-slate-800 hover:bg-slate-900 transition-colors bg-slate-950/20 flex-1">
+          <input 
+            type="checkbox" 
+            checked={includeGonartrosis} 
+            onChange={(e) => {
+              const val = e.target.checked;
+              if (setIncludeGonartrosis) {
+                setIncludeGonartrosis(val);
+              } else {
+                setLocalIncludeGonartrosis(val);
+              }
+            }}
+            className="rounded border-slate-800 bg-slate-900 text-indigo-600 focus:ring-indigo-500 cursor-pointer h-4 w-4"
+          />
+          <div>
+            <span className="font-bold text-slate-200 block text-[11px]">Esquema de Gonartrosis (Artrosis)</span>
+            <span className="text-[9px] text-slate-400">Hallazgos típicos: pinzamiento, osteofitos, esclerosis y geodas</span>
+          </div>
+        </label>
+      </div>
+
+      {!includeInReport && !includeGonartrosis ? (
+        <div className="bg-slate-950/40 border border-slate-850/60 rounded-2xl p-8 text-center my-4">
+          <AlertTriangle className="h-8 w-8 text-amber-500 mx-auto mb-3 animate-pulse" />
+          <p className="text-slate-300 font-bold text-xs">Ningún esquema de rodilla seleccionado</p>
+          <p className="text-slate-400 text-[10px] mt-1 max-w-md mx-auto leading-relaxed">
+            Active al menos un esquema (General o Gonartrosis) en los selectores superiores para visualizar la anatomía interactiva e incluir los esquemas en el reporte PDF.
+          </p>
         </div>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        
-        {/* LEFT COLUMN: INTERACTIVE DRAWING (5 cols) */}
-        <div className="lg:col-span-5 bg-slate-950/40 rounded-2xl border border-slate-850 p-4 flex flex-col items-center justify-between min-h-[380px] relative">
-          
-          <div className="absolute top-2.5 left-2.5 bg-slate-950/90 p-1 rounded-xl border border-slate-800 flex gap-1 z-10">
-            <button
-              onClick={() => {
-                setActiveTab("anterior");
-                setSelectedStructure("quadriceps");
-              }}
-              className={`px-2.5 py-1 text-[8px] uppercase tracking-wider font-extrabold rounded-lg font-mono transition-all cursor-pointer ${
-                activeTab === "anterior" 
-                  ? "bg-indigo-600 text-white shadow-md border border-indigo-400/20" 
-                  : "text-slate-400 hover:bg-slate-900"
-              }`}
-            >
-              Anterior
-            </button>
-            <button
-              onClick={() => {
-                setActiveTab("posterior");
-                setSelectedStructure("popliteal_artery");
-              }}
-              className={`px-2.5 py-1 text-[8px] uppercase tracking-wider font-extrabold rounded-lg font-mono transition-all cursor-pointer ${
-                activeTab === "posterior" 
-                  ? "bg-indigo-600 text-white shadow-md border border-indigo-400/20" 
-                  : "text-slate-400 hover:bg-slate-900"
-              }`}
-            >
-              Posterior
-            </button>
-          </div>
-
-          <div className="absolute top-3 right-3 flex items-center gap-1 bg-slate-900/85 px-2 py-0.5 rounded border border-slate-800 text-[8px] font-bold text-slate-500 uppercase font-mono">
-            <span className="h-1.5 w-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
-            Dinámico
-          </div>
-
-          {/* Interactive Workspace */}
-          <div className="w-full flex items-center justify-center py-2 mt-7 min-h-[310px]">
-            {laterality === "Bilateral" ? (
-              <>
-                <div 
-                  className="w-full"
-                  style={activeSide === "derecho" ? { display: "block" } : { display: "none" }}
-                >
-                  <div style={activeTab === "anterior" ? { display: "block" } : { display: "none" }}>
-                    {renderKneeSvg("derecho", "anterior")}
-                  </div>
-                  <div style={activeTab === "posterior" ? { display: "block" } : { display: "none" }}>
-                    {renderKneeSvg("derecho", "posterior")}
-                  </div>
-                </div>
-                <div 
-                  className="w-full"
-                  style={activeSide === "izquierdo" ? { display: "block" } : { display: "none" }}
-                >
-                  <div style={activeTab === "anterior" ? { display: "block" } : { display: "none" }}>
-                    {renderKneeSvg("izquierdo", "anterior")}
-                  </div>
-                  <div style={activeTab === "posterior" ? { display: "block" } : { display: "none" }}>
-                    {renderKneeSvg("izquierdo", "posterior")}
-                  </div>
-                </div>
-              </>
-            ) : (
-              <>
-                <div style={activeTab === "anterior" ? { display: "block" } : { display: "none" }}>
-                  {renderKneeSvg("derecho", "anterior")}
-                </div>
-                <div style={activeTab === "posterior" ? { display: "block" } : { display: "none" }}>
-                  {renderKneeSvg("derecho", "posterior")}
-                </div>
-              </>
-            )}
-          </div>
-
-          <div className="w-full text-center py-1 mt-1 border-t border-slate-900/40">
-            <span className="text-[9px] text-slate-500 font-medium font-sans">
-              💡 Haz clic en los marcadores anatómicos del dibujo para interactuar
-            </span>
-          </div>
-
-        </div>
-
-        {/* RIGHT COLUMN: ACTION HUD & CONTROL PANEL (7 cols) */}
-        <div className="lg:col-span-7 flex flex-col gap-4">
-          
-          {/* Active Selection Block */}
-          <div className="bg-slate-950/20 rounded-2xl border border-slate-850 p-4 relative">
-            <div className="absolute top-3.5 right-4">
-              <span className={`px-2.5 py-0.5 rounded-full border text-[9px] font-black uppercase font-mono ${getSeverityBadge(activeSts[selectedStructure])}`}>
-                {activeSts[selectedStructure].replace("_", " ")}
-              </span>
+      ) : (
+        <>
+          {laterality === "Bilateral" && (
+            <div className="flex gap-1.5 p-1 bg-slate-900/90 border border-slate-800 rounded-xl justify-around self-stretch shadow-inner">
+              <button
+                onClick={() => setActiveSide("derecho")}
+                className={`flex-1 py-1.5 px-3 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                  activeSide === "derecho"
+                    ? "bg-indigo-600 text-white shadow-md border border-indigo-400/20"
+                    : "text-slate-450 hover:text-slate-200 hover:bg-slate-850"
+                }`}
+              >
+                LADO DERECHO (Derecho)
+              </button>
+              <button
+                onClick={() => setActiveSide("izquierdo")}
+                className={`flex-1 py-1.5 px-3 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                  activeSide === "izquierdo"
+                    ? "bg-indigo-600 text-white shadow-md border border-indigo-400/20"
+                    : "text-slate-450 hover:text-slate-200 hover:bg-slate-850"
+                }`}
+              >
+                LADO IZQUIERDO (Izquierdo)
+              </button>
             </div>
+          )}
 
-            <div className="flex items-center gap-2 mb-2">
-              <Activity className="h-4 w-4 text-indigo-400" />
-              <h4 className="text-xs font-black text-slate-200 uppercase tracking-wider font-mono">
-                {translateStructureLabelInBrief(selectedStructure)}
-              </h4>
-            </div>
-
-            {/* Custom State Input */}
-            <div className="mt-4 space-y-1">
-              <label className="text-[10px] text-indigo-300 font-bold uppercase tracking-widest font-mono block">
-                Diagnóstico / Hallazgo Clínico (Sinopsis):
-              </label>
-              <div className="flex flex-col gap-2">
-                <input
-                  type="text"
-                  value={
-                    activeSts[selectedStructure] === "no_descrito" 
-                      ? "" 
-                      : activeSts[selectedStructure] === "normal" 
-                        ? "Normal" 
-                        : activeSts[selectedStructure]
-                  }
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    let nextVal = val;
-                    if (val.trim().toLowerCase() === "normal" || val.trim().toLowerCase() === "sin lesiones") {
-                      nextVal = "normal";
-                    } else if (val.trim() === "") {
-                      nextVal = "no_descrito";
-                    }
-                    handleUpdateStructureState(selectedStructure, nextVal);
-                  }}
-                  placeholder="Escriba el diagnóstico del hallazgo (ej: Tendinosis leve, Ruptura, etc.)"
-                  className="w-full bg-slate-955 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 font-mono focus:outline-none focus:border-indigo-500/50"
-                />
-                <div className="flex gap-2">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+            
+            {/* LEFT COLUMN: INTERACTIVE DRAWING (5 cols) */}
+            <div className="lg:col-span-5 bg-slate-950/40 rounded-2xl border border-slate-850 p-4 flex flex-col items-center justify-between min-h-[380px] relative">
+              
+              <div className="absolute top-2.5 left-2.5 bg-slate-950/90 p-1 rounded-xl border border-slate-800 flex gap-1 z-10">
+                {includeInReport && (
+                  <>
+                    <button
+                      onClick={() => {
+                        setActiveTab("anterior");
+                        setSelectedStructure("quadriceps");
+                      }}
+                      className={`px-2.5 py-1 text-[8px] uppercase tracking-wider font-extrabold rounded-lg font-mono transition-all cursor-pointer ${
+                        activeTab === "anterior" 
+                          ? "bg-indigo-600 text-white shadow-md border border-indigo-400/20" 
+                          : "text-slate-400 hover:bg-slate-900"
+                      }`}
+                    >
+                      Anterior
+                    </button>
+                    <button
+                      onClick={() => {
+                        setActiveTab("posterior");
+                        setSelectedStructure("popliteal_artery");
+                      }}
+                      className={`px-2.5 py-1 text-[8px] uppercase tracking-wider font-extrabold rounded-lg font-mono transition-all cursor-pointer ${
+                        activeTab === "posterior" 
+                          ? "bg-indigo-600 text-white shadow-md border border-indigo-400/20" 
+                          : "text-slate-400 hover:bg-slate-900"
+                      }`}
+                    >
+                      Posterior
+                    </button>
+                  </>
+                )}
+                {includeGonartrosis && (
                   <button
-                    type="button"
-                    onClick={() => handleUpdateStructureState(selectedStructure, "normal")}
-                    className={`flex-1 py-1.5 px-3 text-[9px] font-bold uppercase tracking-wider border rounded-xl transition-all cursor-pointer ${
-                      activeSts[selectedStructure] === "normal"
-                        ? "bg-emerald-650 border-emerald-500 text-white shadow"
-                        : "bg-slate-950 hover:bg-slate-900 text-slate-400 border-slate-855"
+                    onClick={() => {
+                      setActiveTab("gonartrosis");
+                      setSelectedStructure("gon_pinzamiento_artic");
+                    }}
+                    className={`px-2.5 py-1 text-[8px] uppercase tracking-wider font-extrabold rounded-lg font-mono transition-all cursor-pointer ${
+                      activeTab === "gonartrosis" 
+                        ? "bg-rose-650 text-white shadow-md border border-rose-400/20" 
+                        : "text-slate-400 hover:bg-slate-900"
                     }`}
                   >
-                    ✓ Cons. Normal
+                    Gonartrosis
                   </button>
+                )}
+              </div>
+
+              <div className="absolute top-3 right-3 flex items-center gap-1 bg-slate-900/85 px-2 py-0.5 rounded border border-slate-800 text-[8px] font-bold text-slate-500 uppercase font-mono">
+                <span className="h-1.5 w-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
+                Dinámico
+              </div>
+
+              {/* Interactive Workspace */}
+              <div className="w-full flex items-center justify-center py-2 mt-7 min-h-[310px]">
+                {laterality === "Bilateral" ? (
+                  <>
+                    <div 
+                      className="w-full"
+                      style={activeSide === "derecho" ? { display: "block" } : { display: "none" }}
+                    >
+                      <div style={activeTab === "gonartrosis" ? { display: "block" } : { display: "none" }}>
+                        {renderGonartrosisSvg("derecho")}
+                      </div>
+                      <div style={activeTab === "anterior" ? { display: "block" } : { display: "none" }}>
+                        {renderKneeSvg("derecho", "anterior")}
+                      </div>
+                      <div style={activeTab === "posterior" ? { display: "block" } : { display: "none" }}>
+                        {renderKneeSvg("derecho", "posterior")}
+                      </div>
+                    </div>
+                    <div 
+                      className="w-full"
+                      style={activeSide === "izquierdo" ? { display: "block" } : { display: "none" }}
+                    >
+                      <div style={activeTab === "gonartrosis" ? { display: "block" } : { display: "none" }}>
+                        {renderGonartrosisSvg("izquierdo")}
+                      </div>
+                      <div style={activeTab === "anterior" ? { display: "block" } : { display: "none" }}>
+                        {renderKneeSvg("izquierdo", "anterior")}
+                      </div>
+                      <div style={activeTab === "posterior" ? { display: "block" } : { display: "none" }}>
+                        {renderKneeSvg("izquierdo", "posterior")}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="w-full">
+                    <div style={activeTab === "gonartrosis" ? { display: "block" } : { display: "none" }}>
+                      {renderGonartrosisSvg("derecho")}
+                    </div>
+                    <div style={activeTab === "anterior" ? { display: "block" } : { display: "none" }}>
+                      {renderKneeSvg("derecho", "anterior")}
+                    </div>
+                    <div style={activeTab === "posterior" ? { display: "block" } : { display: "none" }}>
+                      {renderKneeSvg("derecho", "posterior")}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="w-full text-center py-1 mt-1 border-t border-slate-900/40">
+                <span className="text-[9px] text-slate-500 font-medium font-sans">
+                  💡 Haz clic en los marcadores anatómicos del dibujo para interactuar o usa el selector a la derecha
+                </span>
+              </div>
+
+            </div>
+
+            {/* RIGHT COLUMN: ACTION HUD & CONTROL PANEL (7 cols) */}
+            <div className="lg:col-span-7 flex flex-col gap-4">
+              
+              {/* Active Selection Block */}
+              <div className="bg-slate-950/20 rounded-2xl border border-slate-850 p-4 relative">
+                <div className="absolute top-3.5 right-4">
+                  <span className={`px-2.5 py-0.5 rounded-full border text-[9px] font-black uppercase font-mono ${getSeverityBadge(activeSts[selectedStructure])}`}>
+                    {activeSts[selectedStructure].replace("_", " ")}
+                  </span>
+                </div>
+
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3 pb-2 border-b border-slate-900/60">
+                  <div className="flex items-center gap-2">
+                    <Activity className="h-4 w-4 text-indigo-400" />
+                    <h4 className="text-xs font-black text-slate-200 uppercase tracking-wider font-mono">
+                      {translateStructureLabelInBrief(selectedStructure)}
+                    </h4>
+                  </div>
+                  
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[9px] text-slate-500 uppercase font-bold font-mono">Estructura:</span>
+                    <select
+                      value={selectedStructure}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setSelectedStructure(val);
+                        if (val.startsWith("gon_") && activeTab !== "gonartrosis") {
+                          setActiveTab("gonartrosis");
+                        } else if (!val.startsWith("gon_") && activeTab === "gonartrosis") {
+                          setActiveTab("anterior");
+                        }
+                      }}
+                      className="bg-slate-900 border border-slate-800 text-[10.5px] font-bold text-indigo-400 uppercase rounded-lg px-2.5 py-1 focus:outline-none focus:border-indigo-500/50 cursor-pointer font-sans"
+                    >
+                      <optgroup label="Anatomía General" className="bg-slate-955 text-slate-400 text-[10px]">
+                        <option value="quadriceps">Tendón Cuadricipital</option>
+                        <option value="patellar">Tendón Rotuliano</option>
+                        <option value="lcm">Lig. Colateral Medial (LCM)</option>
+                        <option value="lce">Lig. Colateral Lateral (LCE)</option>
+                        <option value="medial_meniscus">Menisco Medial</option>
+                        <option value="lateral_meniscus">Menisco Lateral</option>
+                        <option value="joint_effusion">Derrame Articular</option>
+                        <option value="baker_cyst">Quiste de Baker</option>
+                        <option value="popliteal_artery">Arteria Poplítea</option>
+                        <option value="popliteal_vein">Vena Poplítea</option>
+                        <option value="distal_tendons">Tendones Distales</option>
+                        <option value="popliteal_fossa">Fosa Poplítea</option>
+                      </optgroup>
+                      {includeGonartrosis && (
+                        <optgroup label="Hallazgos de Gonartrosis" className="bg-slate-955 text-slate-400 text-[10px]">
+                          <option value="gon_pinzamiento_artic">Pinzamiento Articular</option>
+                          <option value="gon_osteofitos">Osteofitos Marginales</option>
+                          <option value="gon_esclerosis_sub">Esclerosis Subcondral</option>
+                          <option value="gon_geodas_quistes">Geodas / Quistes Subcondrales</option>
+                          <option value="gon_desgaste_cartilago">Desgaste de Cartílago</option>
+                          <option value="gon_menisco_deg">Degeneración/Extrusión Meniscal</option>
+                        </optgroup>
+                      )}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Custom State Input */}
+                <div className="mt-4 space-y-1">
+                  <label className="text-[10px] text-indigo-300 font-bold uppercase tracking-widest font-mono block">
+                    Diagnóstico / Hallazgo Clínico (Sinopsis):
+                  </label>
+                  <div className="flex flex-col gap-2">
+                    <input
+                      type="text"
+                      value={
+                        activeSts[selectedStructure] === "no_descrito" 
+                          ? "" 
+                          : activeSts[selectedStructure] === "normal" 
+                            ? "Normal" 
+                            : activeSts[selectedStructure]
+                      }
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        let nextVal = val;
+                        if (val.trim().toLowerCase() === "normal" || val.trim().toLowerCase() === "sin lesiones") {
+                          nextVal = "normal";
+                        } else if (val.trim() === "") {
+                          nextVal = "no_descrito";
+                        }
+                        handleUpdateStructureState(selectedStructure, nextVal);
+                      }}
+                      placeholder="Escriba el diagnóstico del hallazgo (ej: Tendinosis leve, Ruptura, etc.)"
+                      className="w-full bg-slate-955 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 font-mono focus:outline-none focus:border-indigo-500/50"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateStructureState(selectedStructure, "normal")}
+                        className={`flex-1 py-1.5 px-3 text-[9px] font-bold uppercase tracking-wider border rounded-xl transition-all cursor-pointer ${
+                          activeSts[selectedStructure] === "normal"
+                            ? "bg-emerald-650 border-emerald-500 text-white shadow"
+                            : "bg-slate-950 hover:bg-slate-900 text-slate-400 border-slate-855"
+                        }`}
+                      >
+                        ✓ Cons. Normal
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateStructureState(selectedStructure, "no_descrito")}
+                        className={`flex-1 py-1.5 px-3 text-[9px] font-bold uppercase tracking-wider border rounded-xl transition-all cursor-pointer ${
+                          activeSts[selectedStructure] === "no_descrito"
+                            ? "bg-slate-800 border-slate-700 text-slate-300 shadow"
+                            : "bg-slate-955 hover:bg-slate-900 text-slate-400 border-slate-855"
+                        }`}
+                      >
+                        ⚪ No Descrito
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Custom Description Textarea */}
+                <div className="mt-4">
+                  <label className="text-[10px] text-indigo-300 font-bold uppercase tracking-widest font-mono block mb-1">
+                    Hallazgo Clínico detallado (Texto oficial en Reporte):
+                  </label>
+
+                  <textarea
+                    value={activeDescs[selectedStructure] || getDefaultDescription(selectedStructure, activeSts[selectedStructure])}
+                    onChange={(e) => handleUpdateCustomDescription(selectedStructure, e.target.value)}
+                    placeholder="Introduzada o modifique la redacción médica para esta estructura..."
+                    className="w-full bg-slate-955 border border-slate-850 rounded-xl px-3 py-2 text-slate-300 text-xs focus:outline-none focus:border-indigo-500/55 min-h-[64px] font-mono leading-relaxed"
+                    disabled={activeSts[selectedStructure] === "no_descrito"}
+                  />
+                  <span className="text-[9px] text-slate-500">
+                    La redacción modificada se utilizará para generar la tabla y las viñetas.
+                  </span>
+                </div>
+
+              </div>
+
+              {/* Acciones de Exportación */}
+              <div className="bg-slate-950/40 rounded-2xl border border-slate-850/60 p-4">
+                <h5 className="text-[10px] text-slate-400 font-black uppercase tracking-wider font-mono mb-2">
+                  Inyectar en Reporte
+                </h5>
+                <div className="grid grid-cols-2 gap-2">
                   <button
-                    type="button"
-                    onClick={() => handleUpdateStructureState(selectedStructure, "no_descrito")}
-                    className={`flex-1 py-1.5 px-3 text-[9px] font-bold uppercase tracking-wider border rounded-xl transition-all cursor-pointer ${
-                      activeSts[selectedStructure] === "no_descrito"
-                        ? "bg-slate-800 border-slate-700 text-slate-300 shadow"
-                        : "bg-slate-955 hover:bg-slate-900 text-slate-400 border-slate-855"
-                    }`}
+                    onClick={() => onExportTable(generateTableMarkdown())}
+                    className="py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-[9px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 font-mono cursor-pointer border border-indigo-400/20"
+                    title="Inyecta una tabla formal de hallazgos médicos estructurados al final del informe"
                   >
-                    ⚪ No Descrito
+                    <Download className="h-3 w-3" />
+                    Inyectar Tabla
+                  </button>
+
+                  <button
+                    onClick={() => onExportNarrative && onExportNarrative(generateNarrativeText())}
+                    className="py-2 bg-slate-900 hover:bg-slate-850 text-indigo-400 text-[9px] font-black uppercase tracking-widest rounded-xl border border-indigo-950/40 transition-all shadow-md flex items-center justify-center gap-1.5 font-mono cursor-pointer"
+                    title="Inyecta un resumen de hallazgos al final del informe"
+                  >
+                    📥 Inyectar Viñetas
                   </button>
                 </div>
               </div>
-            </div>
-
-            {/* Custom Description Textarea */}
-            <div className="mt-4">
-              <label className="text-[10px] text-indigo-300 font-bold uppercase tracking-widest font-mono block mb-1">
-                Hallazgo Clínico detallado (Texto oficial en Reporte):
-              </label>
-
-              <textarea
-                value={activeDescs[selectedStructure] || getDefaultDescription(selectedStructure, activeSts[selectedStructure])}
-                onChange={(e) => handleUpdateCustomDescription(selectedStructure, e.target.value)}
-                placeholder="Introduzada o modifique la redacción médica para esta estructura..."
-                className="w-full bg-slate-955 border border-slate-850 rounded-xl px-3 py-2 text-slate-300 text-xs focus:outline-none focus:border-indigo-500/55 min-h-[64px] font-mono leading-relaxed"
-                disabled={activeSts[selectedStructure] === "no_descrito"}
-              />
-              <span className="text-[9px] text-slate-500">
-                La redacción modificada se inyectará bidireccionalmente en la sección de Hallazgos del informe médico activo.
-              </span>
-            </div>
-
-          </div>
-
-          {/* Bidirectional Synchronization settings */}
-          <div className="bg-slate-950/40 rounded-2xl border border-slate-850/60 p-4">
-            <h5 className="text-[10px] text-slate-400 font-black uppercase tracking-wider font-mono mb-2">
-              Sincronización Bidireccional
-            </h5>
-
-            <div className="flex items-center justify-between p-2 rounded-xl bg-slate-950/60 border border-slate-900 mb-2">
-              <div className="flex flex-col">
-                <span className="text-slate-300 font-extrabold text-[11px]">Sincronización Interactiva</span>
-                <span className="text-[9px] text-slate-500">Actualizar informe al cambiar estado</span>
-              </div>
-              <input
-                type="checkbox"
-                checked={useOriginalReportText}
-                onChange={(e) => setUseOriginalReportText(e.target.checked)}
-                className="rounded text-indigo-500 focus:ring-transparent h-4 w-4 bg-slate-900 border-slate-800"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 mt-4">
-              <button
-                onClick={() => onExportTable(generateTableMarkdown())}
-                className="py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-[9px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 font-mono cursor-pointer border border-indigo-400/20"
-                title="Inyecta una tabla formal de hallazgos médicos estructurados al final del informe"
-              >
-                <Download className="h-3 w-3" />
-                Inyectar Tabla
-              </button>
-
-              <button
-                onClick={() => onExportNarrative && onExportNarrative(generateNarrativeText())}
-                className="py-2 bg-slate-900 hover:bg-slate-850 text-indigo-400 text-[9px] font-black uppercase tracking-widest rounded-xl border border-indigo-950/40 transition-all shadow-md flex items-center justify-center gap-1.5 font-mono cursor-pointer"
-                title="Inyecta un resumen de hallazgos al final del informe"
-              >
-                📥 Inyectar Viñetas
-              </button>
-            </div>
-          </div>
 
           {/* Quick overview grid of all 8 states */}
           <div className="bg-slate-950/20 rounded-2xl border border-slate-850 p-4">
@@ -2167,6 +2715,8 @@ export default function KneeAnatomyViewer({
         </div>
 
       </div>
+        </>
+      )}
 
       {/* Sync Diagnostic Logs Console */}
       {syncLogs.length > 0 && (

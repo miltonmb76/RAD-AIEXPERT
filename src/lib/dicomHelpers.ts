@@ -308,13 +308,13 @@ export function extractEncapsulatedJpeg(u8: Uint8Array): string | null {
 export function getCleanArrayBuffer(input: any): ArrayBuffer {
   if (!input) return new ArrayBuffer(0);
   if (input instanceof Uint8Array) {
-    return input.buffer.slice(input.byteOffset, input.byteOffset + input.byteLength);
+    return (input.buffer as ArrayBuffer).slice(input.byteOffset, input.byteOffset + input.byteLength);
   } else if (input instanceof ArrayBuffer) {
     return input;
   } else if (input && input.buffer instanceof ArrayBuffer) {
-    return input.buffer.slice(input.byteOffset || 0, (input.byteOffset || 0) + (input.byteLength || 0));
+    return (input.buffer as ArrayBuffer).slice(input.byteOffset || 0, (input.byteOffset || 0) + (input.byteLength || 0));
   }
-  return input;
+  return input as ArrayBuffer;
 }
 
 // Helper to sanitize base64/data URLs against space/linebreak serialization issues
