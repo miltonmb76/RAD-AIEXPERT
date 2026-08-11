@@ -85,6 +85,7 @@ export default function KneeAnatomyViewer({
   const [states, setStates] = useState<Record<string, string>>({
     quadriceps: "no_descrito",
     patellar: "no_descrito",
+    patella: "no_descrito",
     lcm: "no_descrito",
     lce: "no_descrito",
     medial_meniscus: "no_descrito",
@@ -107,6 +108,7 @@ export default function KneeAnatomyViewer({
   const [customDescriptions, setCustomDescriptions] = useState<Record<string, string>>({
     quadriceps: "",
     patellar: "",
+    patella: "",
     lcm: "",
     lce: "",
     medial_meniscus: "",
@@ -137,6 +139,7 @@ export default function KneeAnatomyViewer({
   const [statesLeft, setStatesLeft] = useState<Record<string, string>>({
     quadriceps: "no_descrito",
     patellar: "no_descrito",
+    patella: "no_descrito",
     lcm: "no_descrito",
     lce: "no_descrito",
     medial_meniscus: "no_descrito",
@@ -158,6 +161,7 @@ export default function KneeAnatomyViewer({
   const [customDescriptionsLeft, setCustomDescriptionsLeft] = useState<Record<string, string>>({
     quadriceps: "",
     patellar: "",
+    patella: "",
     lcm: "",
     lce: "",
     medial_meniscus: "",
@@ -258,6 +262,11 @@ export default function KneeAnatomyViewer({
           "rotuliano", "patelar", "rotuliana", "pateliana",
           "tendón rotuliano", "tendon rotuliano", "tendón patelar", "tendon patelar",
           "ligamento rotuliano", "ligamento patelar"
+        ];
+      case "patella":
+        return [
+          "rótula", "rotula", "patela", "hueso rotuliano", "femororotulian", "femoropatela",
+          "superficie rotuliana", "faceta rotuliana", "cartílago rotuliano", "cartilago rotuliano"
         ];
       case "lcm":
         return [
@@ -495,6 +504,19 @@ export default function KneeAnatomyViewer({
         if (hasPathology(completeKws)) return "desgarro_completo";
         if (hasPathology(partialKws)) return "desgarro_parcial";
         if (hasPathology(tendinosisKws)) return "tendinosis";
+        return "normal";
+      }
+
+      case "patella": {
+        const condropatiaKws = ["condropatía", "condropatia", "condromalacia", "cartílago rotuliano", "cartilago rotuliano", "desgaste cartilaginoso"];
+        const osteofitoKws = ["osteofito", "osteofitos", "artrosis", "femororotuliana", "femoropatela", "esclerosis", "pico de loro"];
+        const fxKws = ["fractura", "fisura", "trauma", "bipartita"];
+        const lesionKws = ["lesión", "lesion", "alteración", "alteracion", "irregular", "edema óseo", "edema oseo"];
+
+        if (hasPathology(condropatiaKws)) return "condropatia";
+        if (hasPathology(osteofitoKws)) return "osteofitosis";
+        if (hasPathology(fxKws)) return "fractura";
+        if (hasPathology(lesionKws)) return "lesion";
         return "normal";
       }
 
@@ -744,6 +766,7 @@ export default function KneeAnatomyViewer({
     switch (id) {
       case "quadriceps": return "Tendón Cuadricipital";
       case "patellar": return "Tendón Rotuliano";
+      case "patella": return "Rótula / Patela";
       case "lcm": return "Ligamento Colateral Medial";
       case "lce": return "Ligamento Colateral Lateral";
       case "medial_meniscus": return "Menisco Medial";
@@ -841,6 +864,11 @@ export default function KneeAnatomyViewer({
         allowedStates: ["no_descrito", "normal", "tendinosis", "desgarro_parcial", "desgarro_completo"]
       },
       {
+        id: "patella",
+        label: "Rótula / Patela",
+        allowedStates: ["no_descrito", "normal", "condropatia", "osteofitosis", "fractura", "lesion"]
+      },
+      {
         id: "lcm",
         label: "Ligamento Colateral Medial",
         allowedStates: ["no_descrito", "normal", "esguince_leve", "desgarro_parcial", "desgarro_completo"]
@@ -931,7 +959,7 @@ export default function KneeAnatomyViewer({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            model: selectedModel || "gemini-3.5-flash",
+            model: selectedModel || "gemini-3.6-flash",
             reportText: generatedReport,
             studyType: "Rodilla",
             structures: structures,
@@ -970,7 +998,7 @@ export default function KneeAnatomyViewer({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            model: selectedModel || "gemini-3.5-flash",
+            model: selectedModel || "gemini-3.6-flash",
             reportText: generatedReport,
             studyType: "Rodilla",
             structures: structures,
@@ -1018,7 +1046,7 @@ export default function KneeAnatomyViewer({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: selectedModel || "gemini-3.5-flash",
+          model: selectedModel || "gemini-3.6-flash",
           reportText: generatedReport,
           studyType: "Rodilla",
           structures: structures
@@ -1109,6 +1137,7 @@ export default function KneeAnatomyViewer({
       "normal", "no_descrito", "tendinosis", "desgarro_parcial", "desgarro_completo", "esguince_leve",
       "meniscosis", "rotura", "derrame_leve", "derrame_moderado", "quiste_leve", "quiste_severo",
       "ectasia", "ateromatosis", "aneurisma", "trombosis", "permisibilidad_reducida", "coleccion", "adenopatia",
+      "condropatia", "osteofitosis", "fractura", "lesion",
       "leve", "moderado", "severo"
     ];
     if (!standardStates.includes(state)) {
@@ -1125,6 +1154,12 @@ export default function KneeAnatomyViewer({
         if (state === "tendinosis") return "Tendinopatía distal con aumento de grosor e hipoecogenicidad del tendón proximal.";
         if (state === "desgarro_parcial") return "Presencia de microrupturas intrasustancia con pérdida zonal de fibras.";
         if (state === "desgarro_completo") return "Ruptura completa del tendón con ascenso rotuliano evidente.";
+        break;
+      case "patella":
+        if (state === "condropatia") return "Condropatía / condromalacia rotuliana con irregularidad articular y pérdida focal de espesor del cartílago.";
+        if (state === "osteofitosis") return "Cambios degenerativos / osteofitos en márgenes articular o facetas de la rótula.";
+        if (state === "fractura") return "Línea de discontinuidad ósea / fisura o solución de continuidad en la rótula.";
+        if (state === "lesion") return "Alteración morfológica / estructural o edema en la rótula.";
         break;
       case "lcm":
         if (state === "esguince_leve") return "Engrosamiento leve del ligamento colateral medial con líquido y edema peritendinoso.";
@@ -1218,6 +1253,7 @@ export default function KneeAnatomyViewer({
       "normal", "no_descrito", "tendinosis", "desgarro_parcial", "desgarro_completo", "esguince_leve",
       "meniscosis", "rotura", "derrame_leve", "derrame_moderado", "quiste_leve", "quiste_severo",
       "ectasia", "ateromatosis", "aneurisma", "trombosis", "permisibilidad_reducida", "coleccion", "adenopatia",
+      "condropatia", "osteofitosis", "fractura", "lesion",
       "leve", "moderado", "severo"
     ];
     if (state && !standardStates.includes(state)) {
@@ -1246,6 +1282,21 @@ export default function KneeAnatomyViewer({
         }
         if (state === "desgarro_completo") {
           return "Ruptura completa del tendón rotuliano con ascenso de la rótula.";
+        }
+        break;
+
+      case "patella":
+        if (state === "condropatia") {
+          return "Condropatía / condromalacia rotuliana con adelgazamiento o irregularidad del cartílago articular.";
+        }
+        if (state === "osteofitosis") {
+          return "Osteofitosis / cambios degenerativos femororotulianos en la rótula.";
+        }
+        if (state === "fractura") {
+          return "Fractura o fisura de la rótula.";
+        }
+        if (state === "lesion") {
+          return "Alteración o lesión estructural en la rótula.";
         }
         break;
 
@@ -1428,6 +1479,7 @@ export default function KneeAnatomyViewer({
     const rows = [
       { id: "quadriceps", label: "Tendón Cuadricipital" },
       { id: "patellar", label: "Tendón Rotuliano" },
+      { id: "patella", label: "Rótula / Patela" },
       { id: "lcm", label: "Lig. Colateral Medial" },
       { id: "lce", label: "Lig. Colateral Lateral" },
       { id: "medial_meniscus", label: "Menisco Medial" },
@@ -1488,6 +1540,7 @@ export default function KneeAnatomyViewer({
     const list = [
       { id: "quadriceps", label: "Tendón Cuadricipital" },
       { id: "patellar", label: "Tendón Rotuliano" },
+      { id: "patella", label: "Rótula / Patela" },
       { id: "lcm", label: "Ligamento Colateral Medial" },
       { id: "lce", label: "Ligamento Colateral Lateral" },
       { id: "medial_meniscus", label: "Menisco Medial" },
@@ -1581,6 +1634,7 @@ export default function KneeAnatomyViewer({
       setStates({
         quadriceps: "no_descrito",
         patellar: "no_descrito",
+        patella: "no_descrito",
         lcm: "no_descrito",
         lce: "no_descrito",
         medial_meniscus: "no_descrito",
@@ -1638,181 +1692,191 @@ export default function KneeAnatomyViewer({
             </pattern>
           </defs>
 
-          {/* Background structural guidelines - Grid/Circle */}
-          <circle cx="175" cy="175" r="145" fill="none" stroke="#1e293b" strokeWidth="1" strokeDasharray="3,6" />
-          <line x1="175" y1="20" x2="175" y2="330" stroke="#1e293b" strokeWidth="1" strokeDasharray="2,8" />
-          <line x1="20" y1="175" x2="330" y2="175" stroke="#1e293b" strokeWidth="1" strokeDasharray="2,8" />
+          {/* Graphic paths block (mirrored for Right Knee) */}
+          <g transform={side === "derecho" ? "scale(-1, 1) translate(-350, 0)" : undefined}>
+            {/* Background structural guidelines - Grid/Circle */}
+            <circle cx="175" cy="175" r="145" fill="none" stroke="#1e293b" strokeWidth="1" strokeDasharray="3,6" />
+            <line x1="175" y1="20" x2="175" y2="330" stroke="#1e293b" strokeWidth="1" strokeDasharray="2,8" />
+            <line x1="20" y1="175" x2="330" y2="175" stroke="#1e293b" strokeWidth="1" strokeDasharray="2,8" />
 
-          {/* BONES BLOCK */}
-          {/* Femur (Distal) */}
-          <path 
-            d="M 125,30 L 125,120 C 125,130 110,135 110,150 C 110,168 135,178 155,172 C 165,168 175,158 175,158 C 175,158 185,168 195,172 C 215,178 240,168 240,150 C 240,135 225,130 225,120 L 225,30 Z" 
-            fill={`url(#boneKneeGrad-${side})`} 
-            stroke="#334155" 
-            strokeWidth="1.5" 
-          />
+            {/* BONES BLOCK */}
+            {/* Femur (Distal) */}
+            <path 
+              d="M 125,30 L 125,120 C 125,130 110,135 110,150 C 110,168 135,178 155,172 C 165,168 175,158 175,158 C 175,158 185,168 195,172 C 215,178 240,168 240,150 C 240,135 225,130 225,120 L 225,30 Z" 
+              fill={`url(#boneKneeGrad-${side})`} 
+              stroke="#334155" 
+              strokeWidth="1.5" 
+            />
+
+            {/* Tibia (Proximal) */}
+            <path 
+              d="M 130,320 L 130,225 C 130,215 120,210 120,198 C 120,192 135,188 152,192 C 160,194 175,200 175,200 C 175,200 190,194 198,192 C 215,188 230,192 230,198 C 230,210 220,215 220,225 L 220,320 Z" 
+              fill={`url(#boneKneeGrad-${side})`} 
+              stroke="#334155" 
+              strokeWidth="1.5" 
+            />
+
+            {/* Fibula / Peroné */}
+            <path 
+              d="M 233,230 L 243,222 C 248,222 254,228 254,236 L 252,320 L 235,320 Z" 
+              fill={`url(#boneKneeGrad-${side})`} 
+              stroke="#334155" 
+              strokeWidth="1.2" 
+            />
+
+            {/* ACTIVE PATHWAYS / EVAL KEYS */}
+
+            {/* 1. Receso Suprapatelar / Derrame Articular */}
+            <g 
+              className="cursor-pointer transition-all duration-200"
+              onClick={() => setSelectedStructure("joint_effusion")}
+              onMouseEnter={() => setActiveHover("joint_effusion")}
+              onMouseLeave={() => setActiveHover(null)}
+            >
+              <path 
+                d="M 148,65 C 160,50 190,50 202,65 C 206,75 204,95 195,100 C 185,105 165,105 155,100 C 146,95 144,75 148,65 Z" 
+                fill={getColorForSVG("joint_effusion").fill} 
+                stroke={getColorForSVG("joint_effusion").stroke} 
+                strokeWidth={localStates.joint_effusion !== "normal" && localStates.joint_effusion !== "no_descrito" ? "3" : "1"}
+                fillOpacity={localStates.joint_effusion !== "normal" && localStates.joint_effusion !== "no_descrito" ? "0.6" : "0.15"}
+                strokeDasharray={localStates.joint_effusion === "derrame_leve" ? "3,3" : "none"}
+              />
+              <line x1="175" y1="62" x2="115" y2="62" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
+            </g>
+
+            {/* 2. Tendón Cuadricipital */}
+            <g 
+              className="cursor-pointer transition-all duration-200"
+              onClick={() => setSelectedStructure("quadriceps")}
+              onMouseEnter={() => setActiveHover("quadriceps")}
+              onMouseLeave={() => setActiveHover(null)}
+            >
+              <path 
+                d="M 154,40 L 196,40 L 193,86 L 157,86 Z" 
+                fill={getColorForSVG("quadriceps").fill} 
+                stroke={getColorForSVG("quadriceps").stroke} 
+                strokeWidth={localStates.quadriceps !== "normal" && localStates.quadriceps !== "no_descrito" ? "3.5" : "1.5"}
+                fillOpacity={localStates.quadriceps !== "normal" && localStates.quadriceps !== "no_descrito" ? "0.6" : "0.2"}
+                strokeDasharray={localStates.quadriceps === "tendinosis" ? "2,2" : "none"}
+              />
+              <line x1="175" y1="50" x2="230" y2="50" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
+            </g>
+
+            {/* 3. Rótula / Patella */}
+            <g 
+              className="cursor-pointer transition-all duration-200"
+              onClick={() => setSelectedStructure("patella")}
+              onMouseEnter={() => setActiveHover("patella")}
+              onMouseLeave={() => setActiveHover(null)}
+            >
+              <path 
+                d="M 152,88 C 165,83 185,83 198,88 C 206,102 206,122 196,134 C 185,142 165,142 154,134 C 144,122 144,102 152,88 Z" 
+                fill={localStates.patella && localStates.patella !== "normal" && localStates.patella !== "no_descrito" ? getColorForSVG("patella").fill : `url(#patellaGrad-${side})`} 
+                stroke={localStates.patella && localStates.patella !== "normal" && localStates.patella !== "no_descrito" ? getColorForSVG("patella").stroke : "#475569"} 
+                strokeWidth={localStates.patella && localStates.patella !== "normal" && localStates.patella !== "no_descrito" ? "3" : "1.5"} 
+              />
+            </g>
+
+            {/* 4. Meniscos */}
+            {/* Menisco Medial */}
+            <g 
+              className="cursor-pointer transition-all duration-200"
+              onClick={() => setSelectedStructure("medial_meniscus")}
+              onMouseEnter={() => setActiveHover("medial_meniscus")}
+              onMouseLeave={() => setActiveHover(null)}
+            >
+              <path 
+                d="M 124,175 C 138,175 148,177 151,182 C 144,185 132,185 124,181 C 120,180 120,177 124,175 Z" 
+                fill={getColorForSVG("medial_meniscus").fill} 
+                stroke={getColorForSVG("medial_meniscus").stroke} 
+                strokeWidth={localStates.medial_meniscus !== "normal" && localStates.medial_meniscus !== "no_descrito" ? "2.5" : "1.2"}
+              />
+              <line x1="135" y1="178" x2="90" y2="178" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
+            </g>
+
+            {/* Menisco Lateral */}
+            <g 
+              className="cursor-pointer transition-all duration-200"
+              onClick={() => setSelectedStructure("lateral_meniscus")}
+              onMouseEnter={() => setActiveHover("lateral_meniscus")}
+              onMouseLeave={() => setActiveHover(null)}
+            >
+              <path 
+                d="M 226,175 C 212,175 202,177 199,182 C 206,185 218,185 226,181 C 230,180 230,177 226,175 Z" 
+                fill={getColorForSVG("lateral_meniscus").fill} 
+                stroke={getColorForSVG("lateral_meniscus").stroke} 
+                strokeWidth={localStates.lateral_meniscus !== "normal" && localStates.lateral_meniscus !== "no_descrito" ? "2.5" : "1.2"}
+              />
+              <line x1="215" y1="178" x2="265" y2="178" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
+            </g>
+
+            {/* 5. Tendón Rotuliano */}
+            <g 
+              className="cursor-pointer transition-all duration-200"
+              onClick={() => setSelectedStructure("patellar")}
+              onMouseEnter={() => setActiveHover("patellar")}
+              onMouseLeave={() => setActiveHover(null)}
+            >
+              <path 
+                d="M 164,136 L 186,136 C 184,166 182,194 179,206 L 171,206 C 168,194 166,166 164,136 Z" 
+                fill={getColorForSVG("patellar").fill} 
+                stroke={getColorForSVG("patellar").stroke} 
+                strokeWidth={localStates.patellar !== "normal" && localStates.patellar !== "no_descrito" ? "3.5" : "1.5"}
+                fillOpacity={localStates.patellar !== "normal" && localStates.patellar !== "no_descrito" ? "0.6" : "0.2"}
+                strokeDasharray={localStates.patellar === "tendinosis" ? "2,2" : "none"}
+              />
+              <line x1="175" y1="165" x2="230" y2="165" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
+            </g>
+
+            {/* 6. Ligamento Colateral Medial (LCM) */}
+            <g 
+              className="cursor-pointer transition-all duration-200"
+              onClick={() => setSelectedStructure("lcm")}
+              onMouseEnter={() => setActiveHover("lcm")}
+              onMouseLeave={() => setActiveHover(null)}
+            >
+              <path 
+                d="M 112,125 C 114,145 116,165 121,215 L 126,215 C 122,165 119,145 117,125 Z" 
+                fill={getColorForSVG("lcm").fill} 
+                stroke={getColorForSVG("lcm").stroke} 
+                strokeWidth={localStates.lcm !== "normal" && localStates.lcm !== "no_descrito" ? "3" : "1.2"}
+                fillOpacity={localStates.lcm !== "normal" && localStates.lcm !== "no_descrito" ? "0.6" : "0.2"}
+              />
+              <line x1="115" y1="155" x2="80" y2="155" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
+            </g>
+
+            {/* 7. Ligamento Colateral Lateral */}
+            <g 
+              className="cursor-pointer transition-all duration-200"
+              onClick={() => setSelectedStructure("lce")}
+              onMouseEnter={() => setActiveHover("lce")}
+              onMouseLeave={() => setActiveHover(null)}
+            >
+              <path 
+                d="M 235,125 C 238,150 241,175 247,222 L 252,221 C 246,175 243,150 240,125 Z" 
+                fill={getColorForSVG("lce").fill} 
+                stroke={getColorForSVG("lce").stroke} 
+                strokeWidth={localStates.lce !== "normal" && localStates.lce !== "no_descrito" ? "3" : "1.2"}
+                fillOpacity={localStates.lce !== "normal" && localStates.lce !== "no_descrito" ? "0.6" : "0.2"}
+              />
+              <line x1="243" y1="155" x2="280" y2="155" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
+            </g>
+          </g>
+
+          {/* LABELS TEXT GUIDES ON GRAPH (Un-mirrored) */}
           <text x="175" y="55" fill="#475569" fontSize="8" fontWeight="bold" textAnchor="middle">FÉMUR</text>
-
-          {/* Tibia (Proximal) */}
-          <path 
-            d="M 130,320 L 130,225 C 130,215 120,210 120,198 C 120,192 135,188 152,192 C 160,194 175,200 175,200 C 175,200 190,194 198,192 C 215,188 230,192 230,198 C 230,210 220,215 220,225 L 220,320 Z" 
-            fill={`url(#boneKneeGrad-${side})`} 
-            stroke="#334155" 
-            strokeWidth="1.5" 
-          />
           <text x="175" y="295" fill="#475569" fontSize="8" fontWeight="bold" textAnchor="middle">TIBIA</text>
+          <text x={side === "derecho" ? 105 : 245} y="275" fill="#3b4b5e" fontSize="7" fontStyle="italic" textAnchor="middle">Peroné</text>
+          <text x="175" y="114" fill="#cbd5e1" fontSize="7.5" fontWeight="bold" textAnchor="middle" className="cursor-pointer" onClick={() => setSelectedStructure("patella")}>RÓTULA</text>
 
-          {/* Fibula / Peroné (Lateral is shown on the Left side visually for the right knee, active side X<175 is medial) */}
-          {/* Let's place it on the Right side visually (X > 220) */}
-          <path 
-            d="M 233,230 L 243,222 C 248,222 254,228 254,236 L 252,320 L 235,320 Z" 
-            fill={`url(#boneKneeGrad-${side})`} 
-            stroke="#334155" 
-            strokeWidth="1.2" 
-          />
-          <text x="245" y="275" fill="#3b4b5e" fontSize="7" fontStyle="italic" textAnchor="middle">Peroné</text>
+          <text x={side === "derecho" ? 295 : 55} y="65" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor={side === "derecho" ? "start" : "end"}>Derrame suprapatelar</text>
+          <text x={side === "derecho" ? 298 : 52} y="157" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor={side === "derecho" ? "start" : "end"}>Colateral Medial (LCM)</text>
+          <text x={side === "derecho" ? 265 : 85} y="181" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor={side === "derecho" ? "start" : "end"}>Menisco Medial</text>
 
-          {/* ACTIVE PATHWAYS / EVAL KEYS */}
-
-          {/* 1. Receso Suprapatelar / Derrame Articular */}
-          <g 
-            className="cursor-pointer transition-all duration-200"
-            onClick={() => setSelectedStructure("joint_effusion")}
-            onMouseEnter={() => setActiveHover("joint_effusion")}
-            onMouseLeave={() => setActiveHover(null)}
-          >
-            <path 
-              d="M 148,65 C 160,50 190,50 202,65 C 206,75 204,95 195,100 C 185,105 165,105 155,100 C 146,95 144,75 148,65 Z" 
-              fill={getColorForSVG("joint_effusion").fill} 
-              stroke={getColorForSVG("joint_effusion").stroke} 
-              strokeWidth={states.joint_effusion !== "normal" ? "3" : "1"}
-              fillOpacity={states.joint_effusion !== "normal" ? "0.6" : "0.15"}
-              strokeDasharray={states.joint_effusion === "derrame_leve" ? "3,3" : "none"}
-            />
-            <line x1="175" y1="62" x2="115" y2="62" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-          </g>
-
-          {/* 2. Tendón Cuadricipital */}
-          <g 
-            className="cursor-pointer transition-all duration-200"
-            onClick={() => setSelectedStructure("quadriceps")}
-            onMouseEnter={() => setActiveHover("quadriceps")}
-            onMouseLeave={() => setActiveHover(null)}
-          >
-            <path 
-              d="M 154,40 L 196,40 L 193,86 L 157,86 Z" 
-              fill={getColorForSVG("quadriceps").fill} 
-              stroke={getColorForSVG("quadriceps").stroke} 
-              strokeWidth={states.quadriceps !== "normal" ? "3.5" : "1.5"}
-              fillOpacity={states.quadriceps !== "normal" ? "0.6" : "0.2"}
-              strokeDasharray={states.quadriceps === "tendinosis" ? "2,2" : "none"}
-            />
-            <line x1="175" y1="50" x2="230" y2="50" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-          </g>
-
-          {/* 3. Rótula / Patella (Neutral / Reference) */}
-          <path 
-            d="M 152,88 C 165,83 185,83 198,88 C 206,102 206,122 196,134 C 185,142 165,142 154,134 C 144,122 144,102 152,88 Z" 
-            fill={`url(#patellaGrad-${side})`} 
-            stroke="#475569" 
-            strokeWidth="1.5" 
-          />
-          <text x="175" y="114" fill="#cbd5e1" fontSize="7.5" fontWeight="bold" textAnchor="middle">RÓTULA</text>
-
-          {/* 4. Meniscos (Interpuestos en el espacio articular) */}
-          {/* Menisco Medial (Left visually X < 175) */}
-          <g 
-            className="cursor-pointer transition-all duration-200"
-            onClick={() => setSelectedStructure("medial_meniscus")}
-            onMouseEnter={() => setActiveHover("medial_meniscus")}
-            onMouseLeave={() => setActiveHover(null)}
-          >
-            <path 
-              d="M 124,175 C 138,175 148,177 151,182 C 144,185 132,185 124,181 C 120,180 120,177 124,175 Z" 
-              fill={getColorForSVG("medial_meniscus").fill} 
-              stroke={getColorForSVG("medial_meniscus").stroke} 
-              strokeWidth={states.medial_meniscus !== "normal" ? "2.5" : "1.2"}
-            />
-            <line x1="135" y1="178" x2="90" y2="178" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-          </g>
-
-          {/* Menisco Lateral (Right visually X > 175) */}
-          <g 
-            className="cursor-pointer transition-all duration-200"
-            onClick={() => setSelectedStructure("lateral_meniscus")}
-            onMouseEnter={() => setActiveHover("lateral_meniscus")}
-            onMouseLeave={() => setActiveHover(null)}
-          >
-            <path 
-              d="M 226,175 C 212,175 202,177 199,182 C 206,185 218,185 226,181 C 230,180 230,177 226,175 Z" 
-              fill={getColorForSVG("lateral_meniscus").fill} 
-              stroke={getColorForSVG("lateral_meniscus").stroke} 
-              strokeWidth={states.lateral_meniscus !== "normal" ? "2.5" : "1.2"}
-            />
-            <line x1="215" y1="178" x2="265" y2="178" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-          </g>
-
-          {/* 5. Tendón Rotuliano */}
-          <g 
-            className="cursor-pointer transition-all duration-200"
-            onClick={() => setSelectedStructure("patellar")}
-            onMouseEnter={() => setActiveHover("patellar")}
-            onMouseLeave={() => setActiveHover(null)}
-          >
-            <path 
-              d="M 164,136 L 186,136 C 184,166 182,194 179,206 L 171,206 C 168,194 166,166 164,136 Z" 
-              fill={getColorForSVG("patellar").fill} 
-              stroke={getColorForSVG("patellar").stroke} 
-              strokeWidth={states.patellar !== "normal" ? "3.5" : "1.5"}
-              fillOpacity={states.patellar !== "normal" ? "0.6" : "0.2"}
-              strokeDasharray={states.patellar === "tendinosis" ? "2,2" : "none"}
-            />
-            <line x1="175" y1="165" x2="230" y2="165" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-          </g>
-
-          {/* 6. Ligamento Colateral Medial (LCM) */}
-          <g 
-            className="cursor-pointer transition-all duration-200"
-            onClick={() => setSelectedStructure("lcm")}
-            onMouseEnter={() => setActiveHover("lcm")}
-            onMouseLeave={() => setActiveHover(null)}
-          >
-            <path 
-              d="M 112,125 C 114,145 116,165 121,215 L 126,215 C 122,165 119,145 117,125 Z" 
-              fill={getColorForSVG("lcm").fill} 
-              stroke={getColorForSVG("lcm").stroke} 
-              strokeWidth={states.lcm !== "normal" ? "3" : "1.2"}
-              fillOpacity={states.lcm !== "normal" ? "0.6" : "0.2"}
-            />
-            <line x1="115" y1="155" x2="80" y2="155" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-          </g>
-
-          {/* 7. Ligamento Colateral Lateral */}
-          <g 
-            className="cursor-pointer transition-all duration-200"
-            onClick={() => setSelectedStructure("lce")}
-            onMouseEnter={() => setActiveHover("lce")}
-            onMouseLeave={() => setActiveHover(null)}
-          >
-            <path 
-              d="M 235,125 C 238,150 241,175 247,222 L 252,221 C 246,175 243,150 240,125 Z" 
-              fill={getColorForSVG("lce").fill} 
-              stroke={getColorForSVG("lce").stroke} 
-              strokeWidth={states.lce !== "normal" ? "3" : "1.2"}
-              fillOpacity={states.lce !== "normal" ? "0.6" : "0.2"}
-            />
-            <line x1="243" y1="155" x2="280" y2="155" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-          </g>
-
-          {/* LABELS TEXT GUIDES ON GRAPH */}
-          <text x="55" y="65" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="end">Derrame suprapatelar</text>
-          <text x="52" y="157" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="end">Colateral Medial (LCM)</text>
-          <text x="85" y="181" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="end">Menisco Medial</text>
-
-          <text x="248" y="53" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="start">T. Cuadricipital</text>
-          <text x="286" y="157" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="start">Colateral Lateral (LCE)</text>
-          <text x="248" y="168" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="start">T. Rotuliano</text>
-          <text x="270" y="181" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="start">Menisco Lateral</text>
+          <text x={side === "derecho" ? 102 : 248} y="53" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor={side === "derecho" ? "end" : "start"}>T. Cuadricipital</text>
+          <text x={side === "derecho" ? 64 : 286} y="157" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor={side === "derecho" ? "end" : "start"}>Colateral Lateral (LCE)</text>
+          <text x={side === "derecho" ? 102 : 248} y="168" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor={side === "derecho" ? "end" : "start"}>T. Rotuliano</text>
+          <text x={side === "derecho" ? 80 : 270} y="181" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor={side === "derecho" ? "end" : "start"}>Menisco Lateral</text>
 
         </svg>
       );
@@ -1839,140 +1903,144 @@ export default function KneeAnatomyViewer({
             </linearGradient>
           </defs>
 
-          {/* Background structural guidelines */}
-          <circle cx="175" cy="175" r="145" fill="none" stroke="#1e293b" strokeWidth="1" strokeDasharray="3,6" />
+          {/* Graphic paths block (mirrored for Right Knee) */}
+          <g transform={side === "derecho" ? "scale(-1, 1) translate(-350, 0)" : undefined}>
+            {/* Background structural guidelines */}
+            <circle cx="175" cy="175" r="145" fill="none" stroke="#1e293b" strokeWidth="1" strokeDasharray="3,6" />
 
-          {/* BONES BLOCK (POSTERIOR VIEW) */}
-          {/* Femur (Distal) */}
-          <path 
-            d="M 125,30 L 125,115 C 125,125 110,130 110,145 C 110,165 130,172 145,172 C 160,172 170,160 175,160 C 180,160 190,172 205,172 C 220,172 240,165 240,145 C 240,130 225,125 225,115 L 225,30 Z" 
-            fill={`url(#boneKneeGradPost-${side})`} 
-            stroke="#334155" 
-            strokeWidth="1.5" 
-          />
+            {/* BONES BLOCK (POSTERIOR VIEW) */}
+            {/* Femur (Distal) */}
+            <path 
+              d="M 125,30 L 125,115 C 125,125 110,130 110,145 C 110,165 130,172 145,172 C 160,172 170,160 175,160 C 180,160 190,172 205,172 C 220,172 240,165 240,145 C 240,130 225,125 225,115 L 225,30 Z" 
+              fill={`url(#boneKneeGradPost-${side})`} 
+              stroke="#334155" 
+              strokeWidth="1.5" 
+            />
+
+            {/* Tibia (Proximal) */}
+            <path 
+              d="M 130,320 L 130,225 C 130,212 120,208 120,195 C 120,190 140,188 155,190 C 165,192 175,198 175,198 C 175,198 185,192 195,190 C 210,188 230,190 230,195 C 230,208 220,212 220,225 L 220,320 Z" 
+              fill={`url(#boneKneeGradPost-${side})`} 
+              stroke="#334155" 
+              strokeWidth="1.5" 
+            />
+
+            {/* Peroné / Fibula */}
+            <path 
+              d="M 97,230 L 107,222 C 112,222 118,228 118,236 L 116,320 L 99,320 Z" 
+              fill={`url(#boneKneeGradPost-${side})`} 
+              stroke="#334155" 
+              strokeWidth="1.2" 
+            />
+
+            {/* Fosa Poplítea (Diamond-shaped region) */}
+            <g 
+              className="cursor-pointer transition-all duration-200"
+              onClick={() => setSelectedStructure("popliteal_fossa")}
+              onMouseEnter={() => setActiveHover("popliteal_fossa")}
+              onMouseLeave={() => setActiveHover(null)}
+            >
+              <polygon 
+                points="175,125 215,175 175,225 135,175" 
+                fill={getColorForSVG("popliteal_fossa").fill} 
+                stroke={getColorForSVG("popliteal_fossa").stroke} 
+                strokeWidth={localStates.popliteal_fossa !== "normal" && localStates.popliteal_fossa !== "no_descrito" ? "2.5" : "1"}
+                fillOpacity={localStates.popliteal_fossa !== "normal" && localStates.popliteal_fossa !== "no_descrito" ? "0.5" : "0.15"}
+                strokeDasharray={localStates.popliteal_fossa === "no_descrito" ? "3,3" : "none"}
+              />
+            </g>
+
+            {/* Distal Tendons */}
+            <g 
+              className="cursor-pointer transition-all duration-200"
+              onClick={() => setSelectedStructure("distal_tendons")}
+              onMouseEnter={() => setActiveHover("distal_tendons")}
+              onMouseLeave={() => setActiveHover(null)}
+            >
+              <path 
+                d="M 105,30 Q 115,85 135,140" 
+                fill="none" 
+                stroke={getColorForSVG("distal_tendons").stroke} 
+                strokeWidth={localStates.distal_tendons !== "normal" && localStates.distal_tendons !== "no_descrito" ? "6" : "4"} 
+                strokeLinecap="round"
+                opacity={localStates.distal_tendons === "no_descrito" ? "0.3" : "1"}
+              />
+              <path 
+                d="M 245,30 Q 235,85 215,130" 
+                fill="none" 
+                stroke={getColorForSVG("distal_tendons").stroke} 
+                strokeWidth={localStates.distal_tendons !== "normal" && localStates.distal_tendons !== "no_descrito" ? "6" : "4"} 
+                strokeLinecap="round"
+                opacity={localStates.distal_tendons === "no_descrito" ? "0.3" : "1"}
+              />
+            </g>
+
+            {/* Arteria Poplítea */}
+            <g 
+              className="cursor-pointer transition-all duration-200"
+              onClick={() => setSelectedStructure("popliteal_artery")}
+              onMouseEnter={() => setActiveHover("popliteal_artery")}
+              onMouseLeave={() => setActiveHover(null)}
+            >
+              <path 
+                d="M 170,30 L 170,320" 
+                fill="none" 
+                stroke={localStates.popliteal_artery === "no_descrito" ? "#ef4444" : getColorForSVG("popliteal_artery").stroke} 
+                strokeWidth={localStates.popliteal_artery !== "normal" && localStates.popliteal_artery !== "no_descrito" ? "6" : "3.5"} 
+                opacity={localStates.popliteal_artery === "no_descrito" ? "0.2" : "0.95"}
+              />
+              {localStates.popliteal_artery === "aneurisma" && (
+                <circle cx="170" cy="175" r="14" fill="#ef4444" fillOpacity="0.75" stroke="#b91c1c" strokeWidth="2" />
+              )}
+            </g>
+
+            {/* Vena Poplítea */}
+            <g 
+              className="cursor-pointer transition-all duration-200"
+              onClick={() => setSelectedStructure("popliteal_vein")}
+              onMouseEnter={() => setActiveHover("popliteal_vein")}
+              onMouseLeave={() => setActiveHover(null)}
+            >
+              <path 
+                d="M 182,30 L 182,320" 
+                fill="none" 
+                stroke={localStates.popliteal_vein === "no_descrito" ? "#3b82f6" : getColorForSVG("popliteal_vein").stroke} 
+                strokeWidth={localStates.popliteal_vein !== "normal" && localStates.popliteal_vein !== "no_descrito" ? "6" : "3.5"} 
+                opacity={localStates.popliteal_vein === "no_descrito" ? "0.2" : "0.95"}
+              />
+              {localStates.popliteal_vein === "trombosis" && (
+                <rect x="178" y="150" width="8" height="30" fill="#1e3a8a" stroke="#ef4444" strokeWidth="1" />
+              )}
+            </g>
+
+            {/* Baker's Cyst */}
+            <g 
+              className="cursor-pointer transition-all duration-200"
+              onClick={() => setSelectedStructure("baker_cyst")}
+              onMouseEnter={() => setActiveHover("baker_cyst")}
+              onMouseLeave={() => setActiveHover(null)}
+            >
+              <path 
+                d="M 182,185 C 195,178 205,170 215,185 C 225,195 230,225 210,230 C 192,232 182,210 182,185 Z" 
+                fill={getColorForSVG("baker_cyst").fill} 
+                stroke={getColorForSVG("baker_cyst").stroke} 
+                strokeWidth={localStates.baker_cyst !== "normal" && localStates.baker_cyst !== "no_descrito" ? "3" : "1"}
+                fillOpacity={localStates.baker_cyst !== "normal" && localStates.baker_cyst !== "no_descrito" ? "0.6" : "0.1"}
+              />
+              <line x1="220" y1="210" x2="255" y2="210" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
+            </g>
+          </g>
+
+          {/* Text labels for posterior view (Un-mirrored) */}
           <text x="175" y="55" fill="#475569" fontSize="8" fontWeight="bold" textAnchor="middle">FÉMUR (POSTERIOR)</text>
-
-          {/* Tibia (Proximal) */}
-          <path 
-            d="M 130,320 L 130,225 C 130,212 120,208 120,195 C 120,190 140,188 155,190 C 165,192 175,198 175,198 C 175,198 185,192 195,190 C 210,188 230,190 230,195 C 230,208 220,212 220,225 L 220,320 Z" 
-            fill={`url(#boneKneeGradPost-${side})`} 
-            stroke="#334155" 
-            strokeWidth="1.5" 
-          />
           <text x="175" y="295" fill="#475569" fontSize="8" fontWeight="bold" textAnchor="middle">TIBIA</text>
 
-          {/* Peroné / Fibula */}
-          <path 
-            d="M 97,230 L 107,222 C 112,222 118,228 118,236 L 116,320 L 99,320 Z" 
-            fill={`url(#boneKneeGradPost-${side})`} 
-            stroke="#334155" 
-            strokeWidth="1.2" 
-          />
+          <text x={side === "derecho" ? 255 : 95} y="100" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor={side === "derecho" ? "start" : "end"}>T. Isquiotibiales</text>
+          <text x={side === "derecho" ? 225 : 125} y="160" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor={side === "derecho" ? "start" : "end"}>Fosa Poplítea</text>
+          <text x={side === "derecho" ? 205 : 145} y="270" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor={side === "derecho" ? "start" : "end"}>Art. Poplítea</text>
 
-          {/* Fosa Poplítea (Diamond-shaped region) */}
-          <g 
-            className="cursor-pointer transition-all duration-200"
-            onClick={() => setSelectedStructure("popliteal_fossa")}
-            onMouseEnter={() => setActiveHover("popliteal_fossa")}
-            onMouseLeave={() => setActiveHover(null)}
-          >
-            <polygon 
-              points="175,125 215,175 175,225 135,175" 
-              fill={getColorForSVG("popliteal_fossa").fill} 
-              stroke={getColorForSVG("popliteal_fossa").stroke} 
-              strokeWidth={states.popliteal_fossa !== "normal" ? "2.5" : "1"}
-              fillOpacity={states.popliteal_fossa !== "normal" ? "0.5" : "0.15"}
-              strokeDasharray={states.popliteal_fossa === "no_descrito" ? "3,3" : "none"}
-            />
-          </g>
-
-          {/* Distal Tendons */}
-          <g 
-            className="cursor-pointer transition-all duration-200"
-            onClick={() => setSelectedStructure("distal_tendons")}
-            onMouseEnter={() => setActiveHover("distal_tendons")}
-            onMouseLeave={() => setActiveHover(null)}
-          >
-            <path 
-              d="M 105,30 Q 115,85 135,140" 
-              fill="none" 
-              stroke={getColorForSVG("distal_tendons").stroke} 
-              strokeWidth={states.distal_tendons !== "normal" ? "6" : "4"} 
-              strokeLinecap="round"
-              opacity={states.distal_tendons === "no_descrito" ? "0.3" : "1"}
-            />
-            <path 
-              d="M 245,30 Q 235,85 215,130" 
-              fill="none" 
-              stroke={getColorForSVG("distal_tendons").stroke} 
-              strokeWidth={states.distal_tendons !== "normal" ? "6" : "4"} 
-              strokeLinecap="round"
-              opacity={states.distal_tendons === "no_descrito" ? "0.3" : "1"}
-            />
-          </g>
-
-          {/* Arteria Poplítea */}
-          <g 
-            className="cursor-pointer transition-all duration-200"
-            onClick={() => setSelectedStructure("popliteal_artery")}
-            onMouseEnter={() => setActiveHover("popliteal_artery")}
-            onMouseLeave={() => setActiveHover(null)}
-          >
-            <path 
-              d="M 170,30 L 170,320" 
-              fill="none" 
-              stroke={states.popliteal_artery === "no_descrito" ? "#ef4444" : getColorForSVG("popliteal_artery").stroke} 
-              strokeWidth={states.popliteal_artery !== "normal" && states.popliteal_artery !== "no_descrito" ? "6" : "3.5"} 
-              opacity={states.popliteal_artery === "no_descrito" ? "0.2" : "0.95"}
-            />
-            {states.popliteal_artery === "aneurisma" && (
-              <circle cx="170" cy="175" r="14" fill="#ef4444" fillOpacity="0.75" stroke="#b91c1c" strokeWidth="2" />
-            )}
-          </g>
-
-          {/* Vena Poplítea */}
-          <g 
-            className="cursor-pointer transition-all duration-200"
-            onClick={() => setSelectedStructure("popliteal_vein")}
-            onMouseEnter={() => setActiveHover("popliteal_vein")}
-            onMouseLeave={() => setActiveHover(null)}
-          >
-            <path 
-              d="M 182,30 L 182,320" 
-              fill="none" 
-              stroke={states.popliteal_vein === "no_descrito" ? "#3b82f6" : getColorForSVG("popliteal_vein").stroke} 
-              strokeWidth={states.popliteal_vein !== "normal" && states.popliteal_vein !== "no_descrito" ? "6" : "3.5"} 
-              opacity={states.popliteal_vein === "no_descrito" ? "0.2" : "0.95"}
-            />
-            {states.popliteal_vein === "trombosis" && (
-              <rect x="178" y="150" width="8" height="30" fill="#1e3a8a" stroke="#ef4444" strokeWidth="1" />
-            )}
-          </g>
-
-          {/* Baker's Cyst */}
-          <g 
-            className="cursor-pointer transition-all duration-200"
-            onClick={() => setSelectedStructure("baker_cyst")}
-            onMouseEnter={() => setActiveHover("baker_cyst")}
-            onMouseLeave={() => setActiveHover(null)}
-          >
-            <path 
-              d="M 182,185 C 195,178 205,170 215,185 C 225,195 230,225 210,230 C 192,232 182,210 182,185 Z" 
-              fill={getColorForSVG("baker_cyst").fill} 
-              stroke={getColorForSVG("baker_cyst").stroke} 
-              strokeWidth={states.baker_cyst !== "normal" ? "3" : "1"}
-              fillOpacity={states.baker_cyst !== "normal" ? "0.6" : "0.1"}
-            />
-            <line x1="220" y1="210" x2="255" y2="210" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-          </g>
-
-          {/* Text labels for posterior view */}
-          <text x="95" y="100" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="end">T. Isquiotibiales</text>
-          <text x="125" y="160" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="end">Fosa Poplítea</text>
-          <text x="145" y="270" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="end">Art. Poplítea</text>
-
-          <text x="210" y="270" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="start">Vena Poplítea</text>
-          <text x="258" y="213" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="start">Quiste de Baker</text>
+          <text x={side === "derecho" ? 140 : 210} y="270" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor={side === "derecho" ? "end" : "start"}>Vena Poplítea</text>
+          <text x={side === "derecho" ? 92 : 258} y="213" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor={side === "derecho" ? "end" : "start"}>Quiste de Baker</text>
 
         </svg>
       );
@@ -2005,220 +2073,225 @@ export default function KneeAnatomyViewer({
           </linearGradient>
         </defs>
 
-        {/* Background grid/circle guidelines */}
-        <circle cx="175" cy="175" r="145" fill="none" stroke="#1e293b" strokeWidth="1" strokeDasharray="3,6" />
-        <line x1="175" y1="20" x2="175" y2="330" stroke="#1e293b" strokeWidth="1" strokeDasharray="2,8" />
-        <line x1="20" y1="175" x2="330" y2="175" stroke="#1e293b" strokeWidth="1" strokeDasharray="2,8" />
+        {/* Graphic paths block (mirrored for Right Knee) */}
+        <g transform={side === "derecho" ? "scale(-1, 1) translate(-350, 0)" : undefined}>
+          {/* Background grid/circle guidelines */}
+          <circle cx="175" cy="175" r="145" fill="none" stroke="#1e293b" strokeWidth="1" strokeDasharray="3,6" />
+          <line x1="175" y1="20" x2="175" y2="330" stroke="#1e293b" strokeWidth="1" strokeDasharray="2,8" />
+          <line x1="20" y1="175" x2="330" y2="175" stroke="#1e293b" strokeWidth="1" strokeDasharray="2,8" />
 
-        {/* 1. Femur Bone with Marginal Osteophytes */}
-        <path
-          d="M 125,30 L 125,120 C 125,125 118,128 112,132 C 105,136 102,143 103,150 C 104,158 112,165 125,165 C 132,165 142,162 148,168 C 154,174 158,180 175,180 C 192,180 196,174 202,168 C 208,162 218,165 225,165 C 238,165 246,158 247,150 C 248,143 245,136 238,132 C 232,128 225,125 225,120 L 225,30 Z"
-          fill={`url(#gonBoneGrad-${side})`}
-          stroke="#334155"
-          strokeWidth="1.5"
-        />
-        <text x="175" y="55" fill="#475569" fontSize="8" fontWeight="bold" textAnchor="middle">FÉMUR</text>
+          {/* 1. Femur Bone with Marginal Osteophytes */}
+          <path
+            d="M 125,30 L 125,120 C 125,125 118,128 112,132 C 105,136 102,143 103,150 C 104,158 112,165 125,165 C 132,165 142,162 148,168 C 154,174 158,180 175,180 C 192,180 196,174 202,168 C 208,162 218,165 225,165 C 238,165 246,158 247,150 C 248,143 245,136 238,132 C 232,128 225,125 225,120 L 225,30 Z"
+            fill={`url(#gonBoneGrad-${side})`}
+            stroke="#334155"
+            strokeWidth="1.5"
+          />
 
-        {/* 2. Tibia Bone with Narrowed Medial Space and Osteophytes */}
-        <path
-          d="M 130,320 L 130,225 C 130,215 120,210 114,206 C 108,202 108,198 115,196 C 122,194 135,198 150,198 C 160,198 175,200 175,200 C 175,200 190,195 198,192 C 215,186 235,190 242,196 C 249,202 240,208 236,212 C 230,218 220,218 220,225 L 220,320 Z"
-          fill={`url(#gonBoneGrad-${side})`}
-          stroke="#334155"
-          strokeWidth="1.5"
-        />
-        <text x="175" y="295" fill="#475569" fontSize="8" fontWeight="bold" textAnchor="middle">TIBIA</text>
+          {/* 2. Tibia Bone with Narrowed Medial Space and Osteophytes */}
+          <path
+            d="M 130,320 L 130,225 C 130,215 120,210 114,206 C 108,202 108,198 115,196 C 122,194 135,198 150,198 C 160,198 175,200 175,200 C 175,200 190,195 198,192 C 215,186 235,190 242,196 C 249,202 240,208 236,212 C 230,218 220,218 220,225 L 220,320 Z"
+            fill={`url(#gonBoneGrad-${side})`}
+            stroke="#334155"
+            strokeWidth="1.5"
+          />
 
-        {/* Fibula / Peroné */}
-        <path
-          d="M 235,235 L 245,227 C 250,227 256,233 256,241 L 254,320 L 237,320 Z"
-          fill={`url(#gonBoneGrad-${side})`}
-          stroke="#334155"
-          strokeWidth="1.2"
-        />
-
-        {/* INTERACTIVE GONARTROSIS PATHOLOGIES */}
-
-        {/* A. Pinzamiento Articular (Joint Space Narrowing) */}
-        <g
-          className="cursor-pointer transition-all duration-200"
-          onClick={() => setSelectedStructure("gon_pinzamiento_artic")}
-          onMouseEnter={() => setActiveHover("gon_pinzamiento_artic")}
-          onMouseLeave={() => setActiveHover(null)}
-        >
-          {/* Medial femorotibial joint space band */}
+          {/* Fibula / Peroné */}
           <path
-            d="M 115,168 C 130,168 145,172 155,180"
-            fill="none"
-            stroke={getColorForSVG("gon_pinzamiento_artic").stroke}
-            strokeWidth={localStates.gon_pinzamiento_artic !== "normal" ? "8" : "3"}
-            opacity={localStates.gon_pinzamiento_artic === "no_descrito" ? "0.2" : "0.95"}
-            strokeLinecap="round"
-          />
-          <path
-            d="M 195,180 C 205,172 220,168 235,168"
-            fill="none"
-            stroke={getColorForSVG("gon_pinzamiento_artic").stroke}
-            strokeWidth="3"
-            opacity="0.3"
-            strokeLinecap="round"
-          />
-          <line x1="135" y1="172" x2="80" y2="172" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-        </g>
-
-        {/* B. Osteofitos Marginales (Marginal Osteophytes) */}
-        <g
-          className="cursor-pointer transition-all duration-200"
-          onClick={() => setSelectedStructure("gon_osteofitos")}
-          onMouseEnter={() => setActiveHover("gon_osteofitos")}
-          onMouseLeave={() => setActiveHover(null)}
-        >
-          {/* Femoral lateral osteophyte */}
-          <path
-            d="M 103,150 L 94,153 L 105,157 Z"
-            fill={getColorForSVG("gon_osteofitos").fill}
-            stroke={getColorForSVG("gon_osteofitos").stroke}
-            strokeWidth="1"
-            opacity={localStates.gon_osteofitos === "no_descrito" ? "0.3" : "1"}
-          />
-          {/* Femoral medial osteophyte */}
-          <path
-            d="M 247,150 L 256,153 L 245,157 Z"
-            fill={getColorForSVG("gon_osteofitos").fill}
-            stroke={getColorForSVG("gon_osteofitos").stroke}
-            strokeWidth="1"
-            opacity={localStates.gon_osteofitos === "no_descrito" ? "0.3" : "1"}
-          />
-          {/* Tibial medial osteophyte */}
-          <path
-            d="M 112,198 L 102,196 L 115,204 Z"
-            fill={getColorForSVG("gon_osteofitos").fill}
-            stroke={getColorForSVG("gon_osteofitos").stroke}
-            strokeWidth="1"
-            opacity={localStates.gon_osteofitos === "no_descrito" ? "0.3" : "1"}
-          />
-          {/* Tibial lateral osteophyte */}
-          <path
-            d="M 238,196 L 248,194 L 235,202 Z"
-            fill={getColorForSVG("gon_osteofitos").fill}
-            stroke={getColorForSVG("gon_osteofitos").stroke}
-            strokeWidth="1"
-            opacity={localStates.gon_osteofitos === "no_descrito" ? "0.3" : "1"}
-          />
-          <line x1="102" y1="153" x2="65" y2="135" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-        </g>
-
-        {/* C. Esclerosis Subcondral (Subchondral Sclerosis) */}
-        <g
-          className="cursor-pointer transition-all duration-200"
-          onClick={() => setSelectedStructure("gon_esclerosis_sub")}
-          onMouseEnter={() => setActiveHover("gon_esclerosis_sub")}
-          onMouseLeave={() => setActiveHover(null)}
-        >
-          <path
-            d="M 116,200 C 130,201 145,203 158,202"
-            fill="none"
-            stroke={getColorForSVG("gon_esclerosis_sub").stroke}
-            strokeWidth={localStates.gon_esclerosis_sub !== "normal" ? "6.5" : "2"}
-            opacity={localStates.gon_esclerosis_sub === "no_descrito" ? "0.2" : "0.9"}
-          />
-          <path
-            d="M 192,202 C 205,203 220,201 234,200"
-            fill="none"
-            stroke={getColorForSVG("gon_esclerosis_sub").stroke}
-            strokeWidth="2"
-            opacity="0.3"
-          />
-          <line x1="135" y1="202" x2="80" y2="230" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-        </g>
-
-        {/* D. Geodas / Quistes Subcondrales (Subchondral Cysts/Geodes) */}
-        <g
-          className="cursor-pointer transition-all duration-200"
-          onClick={() => setSelectedStructure("gon_geodas_quistes")}
-          onMouseEnter={() => setActiveHover("gon_geodas_quistes")}
-          onMouseLeave={() => setActiveHover(null)}
-        >
-          <circle
-            cx="130"
-            cy="215"
-            r="5"
-            fill={getColorForSVG("gon_geodas_quistes").fill}
-            stroke={getColorForSVG("gon_geodas_quistes").stroke}
-            strokeWidth="1"
-            opacity={localStates.gon_geodas_quistes === "no_descrito" ? "0.2" : "0.95"}
-          />
-          <circle
-            cx="145"
-            cy="218"
-            r="4"
-            fill={getColorForSVG("gon_geodas_quistes").fill}
-            stroke={getColorForSVG("gon_geodas_quistes").stroke}
-            strokeWidth="1"
-            opacity={localStates.gon_geodas_quistes === "no_descrito" ? "0.2" : "0.95"}
-          />
-          <line x1="130" y1="215" x2="70" y2="255" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-        </g>
-
-        {/* E. Desgaste de Cartílago (Cartilage Wear) */}
-        <g
-          className="cursor-pointer transition-all duration-200"
-          onClick={() => setSelectedStructure("gon_desgaste_cartilago")}
-          onMouseEnter={() => setActiveHover("gon_desgaste_cartilago")}
-          onMouseLeave={() => setActiveHover(null)}
-        >
-          {/* Medial Femoral Cartilage (worn / bumpy) */}
-          <path
-            d="M 112,154 C 118,154 122,152 126,155 C 130,158 135,152 144,152"
-            fill="none"
-            stroke={getColorForSVG("gon_desgaste_cartilago").stroke}
-            strokeWidth={localStates.gon_desgaste_cartilago !== "normal" ? "4.5" : "2"}
-            opacity={localStates.gon_desgaste_cartilago === "no_descrito" ? "0.2" : "0.95"}
-          />
-          {/* Lateral Femoral Cartilage */}
-          <path
-            d="M 206,152 C 215,152 220,158 238,154"
-            fill="none"
-            stroke={getColorForSVG("gon_desgaste_cartilago").stroke}
-            strokeWidth="2"
-            opacity="0.3"
-          />
-          <line x1="124" y1="154" x2="275" y2="120" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
-        </g>
-
-        {/* F. Menisco Degenerativo/Extruido */}
-        <g
-          className="cursor-pointer transition-all duration-200"
-          onClick={() => setSelectedStructure("gon_menisco_deg")}
-          onMouseEnter={() => setActiveHover("gon_menisco_deg")}
-          onMouseLeave={() => setActiveHover(null)}
-        >
-          {/* Squeezed / extruded medial meniscus */}
-          <path
-            d="M 103,178 C 111,178 116,180 118,185 C 112,187 106,187 103,184 C 101,183 101,180 103,178 Z"
-            fill={getColorForSVG("gon_menisco_deg").fill}
-            stroke={getColorForSVG("gon_menisco_deg").stroke}
-            strokeWidth={localStates.gon_menisco_deg !== "normal" ? "2.5" : "1.2"}
-            opacity={localStates.gon_menisco_deg === "no_descrito" ? "0.2" : "0.95"}
-          />
-          {/* Lateral meniscus */}
-          <path
-            d="M 235,178 C 227,178 222,180 220,185 C 226,187 232,187 235,184 C 237,183 237,180 235,178 Z"
-            fill={getColorForSVG("gon_menisco_deg").fill}
-            stroke={getColorForSVG("gon_menisco_deg").stroke}
+            d="M 235,235 L 245,227 C 250,227 256,233 256,241 L 254,320 L 237,320 Z"
+            fill={`url(#gonBoneGrad-${side})`}
+            stroke="#334155"
             strokeWidth="1.2"
-            opacity="0.3"
           />
-          <line x1="108" y1="181" x2="65" y2="195" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
+
+          {/* INTERACTIVE GONARTROSIS PATHOLOGIES */}
+
+          {/* A. Pinzamiento Articular (Joint Space Narrowing) */}
+          <g
+            className="cursor-pointer transition-all duration-200"
+            onClick={() => setSelectedStructure("gon_pinzamiento_artic")}
+            onMouseEnter={() => setActiveHover("gon_pinzamiento_artic")}
+            onMouseLeave={() => setActiveHover(null)}
+          >
+            {/* Medial femorotibial joint space band */}
+            <path
+              d="M 115,168 C 130,168 145,172 155,180"
+              fill="none"
+              stroke={getColorForSVG("gon_pinzamiento_artic").stroke}
+              strokeWidth={localStates.gon_pinzamiento_artic !== "normal" && localStates.gon_pinzamiento_artic !== "no_descrito" ? "8" : "3"}
+              opacity={localStates.gon_pinzamiento_artic === "no_descrito" ? "0.2" : "0.95"}
+              strokeLinecap="round"
+            />
+            <path
+              d="M 195,180 C 205,172 220,168 235,168"
+              fill="none"
+              stroke={getColorForSVG("gon_pinzamiento_artic").stroke}
+              strokeWidth="3"
+              opacity="0.3"
+              strokeLinecap="round"
+            />
+            <line x1="135" y1="172" x2="80" y2="172" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
+          </g>
+
+          {/* B. Osteofitos Marginales (Marginal Osteophytes) */}
+          <g
+            className="cursor-pointer transition-all duration-200"
+            onClick={() => setSelectedStructure("gon_osteofitos")}
+            onMouseEnter={() => setActiveHover("gon_osteofitos")}
+            onMouseLeave={() => setActiveHover(null)}
+          >
+            {/* Femoral lateral osteophyte */}
+            <path
+              d="M 103,150 L 94,153 L 105,157 Z"
+              fill={getColorForSVG("gon_osteofitos").fill}
+              stroke={getColorForSVG("gon_osteofitos").stroke}
+              strokeWidth="1"
+              opacity={localStates.gon_osteofitos === "no_descrito" ? "0.3" : "1"}
+            />
+            {/* Femoral medial osteophyte */}
+            <path
+              d="M 247,150 L 256,153 L 245,157 Z"
+              fill={getColorForSVG("gon_osteofitos").fill}
+              stroke={getColorForSVG("gon_osteofitos").stroke}
+              strokeWidth="1"
+              opacity={localStates.gon_osteofitos === "no_descrito" ? "0.3" : "1"}
+            />
+            {/* Tibial medial osteophyte */}
+            <path
+              d="M 112,198 L 102,196 L 115,204 Z"
+              fill={getColorForSVG("gon_osteofitos").fill}
+              stroke={getColorForSVG("gon_osteofitos").stroke}
+              strokeWidth="1"
+              opacity={localStates.gon_osteofitos === "no_descrito" ? "0.3" : "1"}
+            />
+            {/* Tibial lateral osteophyte */}
+            <path
+              d="M 238,196 L 248,194 L 235,202 Z"
+              fill={getColorForSVG("gon_osteofitos").fill}
+              stroke={getColorForSVG("gon_osteofitos").stroke}
+              strokeWidth="1"
+              opacity={localStates.gon_osteofitos === "no_descrito" ? "0.3" : "1"}
+            />
+            <line x1="102" y1="153" x2="65" y2="135" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
+          </g>
+
+          {/* C. Esclerosis Subcondral (Subchondral Sclerosis) */}
+          <g
+            className="cursor-pointer transition-all duration-200"
+            onClick={() => setSelectedStructure("gon_esclerosis_sub")}
+            onMouseEnter={() => setActiveHover("gon_esclerosis_sub")}
+            onMouseLeave={() => setActiveHover(null)}
+          >
+            <path
+              d="M 116,200 C 130,201 145,203 158,202"
+              fill="none"
+              stroke={getColorForSVG("gon_esclerosis_sub").stroke}
+              strokeWidth={localStates.gon_esclerosis_sub !== "normal" && localStates.gon_esclerosis_sub !== "no_descrito" ? "6.5" : "2"}
+              opacity={localStates.gon_esclerosis_sub === "no_descrito" ? "0.2" : "0.9"}
+            />
+            <path
+              d="M 192,202 C 205,203 220,201 234,200"
+              fill="none"
+              stroke={getColorForSVG("gon_esclerosis_sub").stroke}
+              strokeWidth="2"
+              opacity="0.3"
+            />
+            <line x1="135" y1="202" x2="80" y2="230" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
+          </g>
+
+          {/* D. Geodas / Quistes Subcondrales (Subchondral Cysts/Geodes) */}
+          <g
+            className="cursor-pointer transition-all duration-200"
+            onClick={() => setSelectedStructure("gon_geodas_quistes")}
+            onMouseEnter={() => setActiveHover("gon_geodas_quistes")}
+            onMouseLeave={() => setActiveHover(null)}
+          >
+            <circle
+              cx="130"
+              cy="215"
+              r="5"
+              fill={getColorForSVG("gon_geodas_quistes").fill}
+              stroke={getColorForSVG("gon_geodas_quistes").stroke}
+              strokeWidth="1"
+              opacity={localStates.gon_geodas_quistes === "no_descrito" ? "0.2" : "0.95"}
+            />
+            <circle
+              cx="145"
+              cy="218"
+              r="4"
+              fill={getColorForSVG("gon_geodas_quistes").fill}
+              stroke={getColorForSVG("gon_geodas_quistes").stroke}
+              strokeWidth="1"
+              opacity={localStates.gon_geodas_quistes === "no_descrito" ? "0.2" : "0.95"}
+            />
+            <line x1="130" y1="215" x2="70" y2="255" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
+          </g>
+
+          {/* E. Desgaste de Cartílago (Cartilage Wear) */}
+          <g
+            className="cursor-pointer transition-all duration-200"
+            onClick={() => setSelectedStructure("gon_desgaste_cartilago")}
+            onMouseEnter={() => setActiveHover("gon_desgaste_cartilago")}
+            onMouseLeave={() => setActiveHover(null)}
+          >
+            {/* Medial Femoral Cartilage (worn / bumpy) */}
+            <path
+              d="M 112,154 C 118,154 122,152 126,155 C 130,158 135,152 144,152"
+              fill="none"
+              stroke={getColorForSVG("gon_desgaste_cartilago").stroke}
+              strokeWidth={localStates.gon_desgaste_cartilago !== "normal" && localStates.gon_desgaste_cartilago !== "no_descrito" ? "4.5" : "2"}
+              opacity={localStates.gon_desgaste_cartilago === "no_descrito" ? "0.2" : "0.95"}
+            />
+            {/* Lateral Femoral Cartilage */}
+            <path
+              d="M 206,152 C 215,152 220,158 238,154"
+              fill="none"
+              stroke={getColorForSVG("gon_desgaste_cartilago").stroke}
+              strokeWidth="2"
+              opacity="0.3"
+            />
+            <line x1="124" y1="154" x2="275" y2="120" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
+          </g>
+
+          {/* F. Menisco Degenerativo/Extruido */}
+          <g
+            className="cursor-pointer transition-all duration-200"
+            onClick={() => setSelectedStructure("gon_menisco_deg")}
+            onMouseEnter={() => setActiveHover("gon_menisco_deg")}
+            onMouseLeave={() => setActiveHover(null)}
+          >
+            {/* Squeezed / extruded medial meniscus */}
+            <path
+              d="M 103,178 C 111,178 116,180 118,185 C 112,187 106,187 103,184 C 101,183 101,180 103,178 Z"
+              fill={getColorForSVG("gon_menisco_deg").fill}
+              stroke={getColorForSVG("gon_menisco_deg").stroke}
+              strokeWidth={localStates.gon_menisco_deg !== "normal" && localStates.gon_menisco_deg !== "no_descrito" ? "2.5" : "1.2"}
+              opacity={localStates.gon_menisco_deg === "no_descrito" ? "0.2" : "0.95"}
+            />
+            {/* Lateral meniscus */}
+            <path
+              d="M 235,178 C 227,178 222,180 220,185 C 226,187 232,187 235,184 C 237,183 237,180 235,178 Z"
+              fill={getColorForSVG("gon_menisco_deg").fill}
+              stroke={getColorForSVG("gon_menisco_deg").stroke}
+              strokeWidth="1.2"
+              opacity="0.3"
+            />
+            <line x1="108" y1="181" x2="65" y2="195" stroke="#4c566a" strokeWidth="0.5" strokeDasharray="1,2" />
+          </g>
         </g>
 
-        {/* TEXT LABELS */}
-        <text x="60" y="133" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="end">Osteofito marginal</text>
-        <text x="75" y="170" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="end">Pinzamiento articular</text>
-        <text x="60" y="193" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="end">Menisco extruido</text>
-        <text x="75" y="228" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="end">Esclerosis subcondral</text>
-        <text x="65" y="258" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="end">Geodas / Quistes</text>
+        {/* TEXT LABELS (Un-mirrored) */}
+        <text x="175" y="55" fill="#475569" fontSize="8" fontWeight="bold" textAnchor="middle">FÉMUR</text>
+        <text x="175" y="295" fill="#475569" fontSize="8" fontWeight="bold" textAnchor="middle">TIBIA</text>
+        <text x={side === "derecho" ? 105 : 245} y="275" fill="#3b4b5e" fontSize="7" fontStyle="italic" textAnchor="middle">Peroné</text>
 
-        <text x="280" y="118" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor="start">Desgaste de cartílago</text>
+        <text x={side === "derecho" ? 290 : 60} y="133" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor={side === "derecho" ? "start" : "end"}>Osteofito marginal</text>
+        <text x={side === "derecho" ? 275 : 75} y="170" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor={side === "derecho" ? "start" : "end"}>Pinzamiento articular</text>
+        <text x={side === "derecho" ? 290 : 60} y="193" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor={side === "derecho" ? "start" : "end"}>Menisco extruido</text>
+        <text x={side === "derecho" ? 275 : 75} y="228" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor={side === "derecho" ? "start" : "end"}>Esclerosis subcondral</text>
+        <text x={side === "derecho" ? 285 : 65} y="258" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor={side === "derecho" ? "start" : "end"}>Geodas / Quistes</text>
+
+        <text x={side === "derecho" ? 70 : 280} y="118" fill="#64748b" fontSize="6.5" fontStyle="italic" textAnchor={side === "derecho" ? "end" : "start"}>Desgaste de cartílago</text>
       </svg>
     );
   };
@@ -2492,6 +2565,7 @@ export default function KneeAnatomyViewer({
                       <optgroup label="Anatomía General" className="bg-slate-955 text-slate-400 text-[10px]">
                         <option value="quadriceps">Tendón Cuadricipital</option>
                         <option value="patellar">Tendón Rotuliano</option>
+                        <option value="patella">Rótula / Patela</option>
                         <option value="lcm">Lig. Colateral Medial (LCM)</option>
                         <option value="lce">Lig. Colateral Lateral (LCE)</option>
                         <option value="medial_meniscus">Menisco Medial</option>

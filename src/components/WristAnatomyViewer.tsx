@@ -637,7 +637,7 @@ export default function WristAnatomyViewer({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: selectedModel || "gemini-3.5-flash",
+          model: selectedModel || "gemini-3.6-flash",
           reportText: generatedReport,
           studyType: "Ultrasonido de Muñeca (Volar, Dorsal y Compartimento I)",
           structures: structuresList

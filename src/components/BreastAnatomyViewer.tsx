@@ -645,15 +645,21 @@ export default function BreastAnatomyViewer({
     let primary: string[] = [];
     if (name.startsWith("eje")) {
       const num = name.replace("eje", "");
+      const numPadded = num.length === 1 ? `0${num}` : num;
       primary = [
-        `eje ${num}`, `eje de las ${num}`, `hora ${num}`, `sector ${num}`, `posicion ${num}`
+        `eje ${num}`, `eje ${num}:`, `eje ${num}.`, `eje de las ${num}`, `eje de las ${num}:`,
+        `hora ${num}`, `hora ${num}:`, `hora ${num}h`, `hora ${num} h`, `hora ${num}:00`,
+        `hora ${numPadded}`, `hora ${numPadded}:00`,
+        `${num}:00`, `${numPadded}:00`, `${num}h`, `${num} h`, `${numPadded}h`, `${numPadded} h`,
+        `a las ${num}`, `a las ${numPadded}`,
+        `sector ${num}`, `posicion ${num}`, `posición ${num}`, `radio ${num}`, `radio de las ${num}`
       ];
     } else if (name === "retroareolar") {
-      primary = ["retroareolar", "retro del pezon", "detras del pezon", "areolar", "retro-areolar"];
+      primary = ["retroareolar", "retro del pezon", "detras del pezon", "areolar", "retro-areolar", "pezon", "pezón"];
     } else if (name === "cola_spence") {
-      primary = ["cola de spence", "prolongacion axilar", "cola spence"];
+      primary = ["cola de spence", "prolongacion axilar", "prolongación axilar", "cola spence"];
     } else if (name === "axila") {
-      primary = ["axilar", "axila", "ganglio axilar", "hueco axilar"];
+      primary = ["axilar", "axila", "ganglio axilar", "hueco axilar", "adenopatia axilar", "adenopatía axilar"];
     }
 
     // Breast context headers to prevent bleeding right and left
@@ -670,26 +676,24 @@ export default function BreastAnatomyViewer({
       return "No descrito en el reporte.";
     }
     if (s === "normal") {
-      return "Ecosonográficamente normal, sin alteraciones discretas.";
+      return "Ecosonográficamente normal, sin alterations discretas.";
     }
-    const standardStates = ["normal", "no_descrito", "hallazgo"];
-    if (!standardStates.includes(s)) {
-      return `Se describe hallazgo: ${s.charAt(0).toUpperCase() + s.slice(1)}.`;
-    }
-    
+    const extracted = extractSentenceForBreast(generatedReport, id, "");
+    if (extracted) return extracted;
+
     const isRight = id.startsWith("md_");
     const name = id.replace("md_", "").replace("mi_", "");
 
     if (name === "axila") {
-      return "Linfadenopatía de morfología inespecífica en estudio.";
+      return `Linfadenopatía / hallazgo axilar en ${isRight ? "mama derecha" : "mama izquierda"}.`;
     }
     if (name === "retroareolar") {
-      return "Ectasia de conductos galactóforos.";
+      return `Alteración / ectasia en región retroareolar (${isRight ? "mama derecha" : "mama izquierda"}).`;
     }
     if (name === "cola_spence") {
-      return "Tejido fibroglandular denso de aspecto habitual.";
+      return `Hallazgo en prolongación axilar / cola de Spence (${isRight ? "mama derecha" : "mama izquierda"}).`;
     }
-    return "Nódulo hipoecoico bien delimitado compatible con fibroadenoma.";
+    return `Hallazgo ecográfico focal en ${getStructureLabel(id)}: ${s}.`;
   };
 
   // Generate table markdown
@@ -707,8 +711,12 @@ export default function BreastAnatomyViewer({
 
     initialKeys.forEach(k => {
       const s = states[k];
-      if (s === "hallazgo") {
-        const desc = customDescriptions[k]?.trim() || getSimplifiedDescription(k);
+      if (s && s !== "no_descrito" && s !== "normal") {
+        const descText = customDescriptions[k]?.trim();
+        const isInvalidDesc = !descText || descText.toLowerCase().includes("no descrito") || descText.toLowerCase().includes("no mencionado");
+        const desc = !isInvalidDesc
+          ? descText
+          : extractSentenceForBreast(generatedReport, k, getSimplifiedDescription(k, s));
 
         md += `| **${getStructureLabel(k)}** | ${desc} |\n`;
         hasFindings = true;
@@ -791,9 +799,16 @@ export default function BreastAnatomyViewer({
 
       // Check if normal/negated
       const isNormal = [
-        "normal", "conservado", "conservada", "homogeneo", "homogenea", "habitual", "negativo",
-        "sin hallazgos", "sin alteraciones", "sin nodulos", "sin lesiones", "no se observan masas",
-        "sin masas", "sin quistes", "no hay quistes", "libre de", "adenopatia reactiva de aspecto habitual"
+        "normal", "normales", "conservado", "conservada", "homogeneo", "homogenea", "habitual", "negativo", "negativa",
+        "sin hallazgos", "sin alteraciones", "sin nodulos", "sin lesiones", "no se observan masas", "no se observa masa",
+        "sin masas", "sin quistes", "no hay quistes", "libre de", "adenopatia reactiva de aspecto habitual", "fosa libre",
+        "fosas libres", "hueco libre", "libres", "sin ectasia", "sin ectasias", "sin secrecion", "sin secreciones",
+        "sin deformidad", "sin retraccion", "sin retracciones", "aspecto habitual", "morfologia habitual",
+        "morfologia conservada", "morfologia normal", "simetrico", "simetrica", "planas", "plano", "sin evidencia",
+        "no se evidencia", "no se aprecian", "no se observan", "sin colecciones", "sin distorsion", "sin distorsiones",
+        "sin engrosamiento", "sin dilatacion", "sin dilataciones", "sin adenopatias", "sin adenopatia",
+        "sin linfadenopatia", "sin linfadenopatias", "sin signos", "no sospechoso", "no sospechosa", "sin patologia",
+        "no patologico", "no patologica", "sin lesion", "sin focalidad", "simetricas", "simetricos", "sin secrecion hematica"
       ].some(p => contextText.includes(p));
 
       // Attempt to capture pathology / actual suspicious text
@@ -862,7 +877,7 @@ export default function BreastAnatomyViewer({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: selectedModel || "gemini-3.5-flash",
+          model: selectedModel || "gemini-3.6-flash",
           reportText: generatedReport,
           studyType: "Ultrasonido de Mamas",
           structures: structuresList
@@ -882,7 +897,7 @@ export default function BreastAnatomyViewer({
             nextStates[k] = data.states[k];
             nextDescriptions[k] = data.descriptions[k] || "No descrito.";
             parsedCount++;
-            if (data.states[k] === "hallazgo") {
+            if (data.states[k] && data.states[k] !== "no_descrito" && data.states[k] !== "normal") {
               foundPathologies++;
             }
           }
@@ -1507,7 +1522,7 @@ export default function BreastAnatomyViewer({
   const syncAvailable = generatedReport && generatedReport !== lastSyncedReport;
 
   const getActiveFindingsCount = () => {
-    return Object.values(states).filter(v => v === "hallazgo").length;
+    return Object.values(states).filter(v => v && v !== "no_descrito" && v !== "normal").length;
   };
 
   return (
@@ -1878,7 +1893,11 @@ export default function BreastAnatomyViewer({
                 const s = states[id];
                 const isSelected = selectedStructure === id;
                 const transLabel = getStructureLabel(id);
-                const simplified = customDescriptions[id]?.trim() || (s === "normal" ? "Dentro de límites normales" : s);
+                const descText = customDescriptions[id]?.trim();
+                const isInvalidDesc = !descText || descText.toLowerCase().includes("no descrito") || descText.toLowerCase().includes("no mencionado");
+                const simplified = !isInvalidDesc
+                  ? descText
+                  : extractSentenceForBreast(generatedReport, id, getSimplifiedDescription(id, s));
                 
                 let dotColor = "bg-slate-500";
                 let badgeBg = "bg-slate-950/60 text-slate-400 border-slate-800";

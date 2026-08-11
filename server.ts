@@ -75,7 +75,7 @@ function getModelName(requestedModel?: string): string {
   if (requestedModel === "gemini-3.1-pro-preview" || requestedModel === "gemini-3.1-pro") {
     return "gemini-3.1-pro-preview";
   }
-  return "gemini-3.5-flash";
+  return "gemini-3.6-flash";
 }
 
 function getGeminiClient(): GoogleGenAI {
@@ -497,7 +497,17 @@ app.post("/api/analyze", async (req: express.Request, res: express.Response) => 
 
     // System instruction/guidelines for drafting reports
     const finalSystemInstruction = systemInstruction || 
-      "Eres un médico radiólogo subespecialista experto con más de 20 años de experiencia clínica. Tu nivel de detalle es impecable, sigues estrictos estándares médicos (como BI-RADS, Bosniak, Fleischner, etc.) y formulas reportes radiológicos sumamente precisos, limpios, profesionales y listos para ser copiados y pegados directamente en expedientes clínicos y Microsoft Word (donde las secciones están separadas por doble espacio, los títulos van en negrita normal en vez de encabezados Markdown, y la sección de impresión diagnóstica se redacta enteramente en negrita). Siempre mantienes un vocabulario técnico radiológico riguroso.";
+      "Eres un médico radiólogo subespecialista experto con más de 20 años de experiencia clínica. Tu nivel de detalle es impecable, sigues strictly estándares médicos (como BI-RADS, Bosniak, Fleischner, ACR TI-RADS, etc.) y formulas reportes radiológicos sumamente precisos, limpios, profesionales y listos para ser copiados y pegados directamente en expedientes clínicos y Microsoft Word (donde las secciones están separadas por doble espacio, los títulos van en negrita normal en vez de encabezados Markdown, y la sección de impresión diagnóstica se redacta enteramente en negrita). Siempre mantienes un vocabulario técnico radiológico riguroso. " +
+      "CONVENCIÓN DE LATERALIDAD Y ORIENTACIÓN RADIOLÓGICA OBLIGATORIA (REGLA DE ESPEJO ANATÓMICO Y ALINEACIÓN DE INDICACIÓN CLÍNICA): " +
+      "1. REGLA ANATÓMICA RADIOLÓGICA DE ESPEJO (Proyecciones frontales PA/AP): La DERECHA VISUAL de la pantalla/imagen corresponde al LADO IZQUIERDO ANATÓMICO DEL PACIENTE (Hemitórax / Campo pulmonar izquierdo). La IZQUIERDA VISUAL de la pantalla corresponde al LADO DERECHO ANATÓMICO DEL PACIENTE (Hemitórax / Campo pulmonar derecho). NUNCA confundas la derecha visual de la foto con la derecha del paciente. Un neumotórax, infiltrado o lesión visible en la mitad derecha de la foto/pantalla DEBE ser reportado como IZQUIERDO (Lado del paciente). " +
+      "2. ALINEACIÓN CON LA INDICACIÓN CLÍNICA: Si el médico o consulta indica 'Neumotórax Izquierdo' (o hallazgo en lado izquierdo), examina la mitad VISUAL DERECHA de la imagen médica (hemitórax izquierdo del paciente). Si identificas la línea pleural visceral o avascularidad periférica en la mitad visual derecha de la placa, CONFIRMA Y REPORTA EXPLÍCITAMENTE COMO 'NEUMOTÓRAX IZQUIERDO'. Queda ESTRICTAMENTE PROHIBIDO invertir la lateralidad diciendo 'derecho' por confusión de la matriz de la foto. " +
+      "REGLAS CRÍTICAS DE TERMINOLOGÍA Y RECOMENDACIONES DE TIROIDES (ACR TI-RADS): " +
+      "1. Usa SIEMPRE la sigla BAAF (Biopsia por Aspiración con Aguja Fina) o Punción por Aguja Fina (BAAF). Queda ESTRICTAMENTE PROHIBIDO utilizar la sigla PAAF. " +
+      "2. Umbrales oficiales de la ACR TI-RADS 2017 para recomendación de BAAF y seguimiento ecográfico: " +
+      "- TR1 (Benigno, 0 pts) y TR2 (No sospechoso, 2 pts): No requieren BAAF ni seguimiento ecográfico. " +
+      "- TR3 (Levemente sospechoso, 3 pts): Indicar BAAF ÚNICAMENTE si mide ≥ 2.5 cm (25 mm). Indicar seguimiento ecográfico si mide ≥ 1.5 cm (15 mm) (nódulos TR3 de 15 mm a 24 mm son de seguimiento ecográfico, NUNCA BAAF). " +
+      "- TR4 (Moderadamente sospechoso, 4-6 pts): Indicar BAAF si mide ≥ 1.5 cm (15 mm). Indicar seguimiento ecográfico si mide ≥ 1.0 cm (10 mm) (nódulos TR4 de 10 mm a 14 mm son de seguimiento ecográfico). " +
+      "- TR5 (Altamente sospechoso, ≥ 7 pts): Indicar BAAF si mide ≥ 1.0 cm (10 mm). Indicar seguimiento ecográfico si mide ≥ 0.5 cm (5 mm) (nódulos TR5 de 5 mm a 9 mm son de seguimiento ecográfico).";
 
     // If an image is provided, prepare it for Gemini
     if (image && mimeType) {
@@ -658,7 +668,7 @@ REGLAS DE FORMATO CRÍTICAS PARA COMPATIBILIDAD CON MICROSOFT WORD:
  * NEW API: ASSIST AND POLISH CLINICAL HISTORY / INDICATION (CASING & SPELLING ASSISTANCE)
  * POST /api/assist-clinical-history
  * Payload: {
- *   model?: string (e.g. "gemini-3.5-flash")
+ *   model?: string (e.g. "gemini-3.6-flash")
  *   clinicalHistory: string
  *   studyType?: string
  * }
@@ -728,7 +738,7 @@ app.post("/api/transcribe", async (req: express.Request, res: express.Response) 
     const ai = getGeminiClient();
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-3.6-flash",
       contents: [
         {
           inlineData: {
@@ -880,8 +890,20 @@ app.post("/api/recommend-classifications", async (req: express.Request, res: exp
     const systemInstruction = 
       "Eres un consultor radiológico experto con amplias credenciales internacionales. Tu tarea es examinar con sumo rigor clínico el informe " +
       "radiológico provisto por el usuario, discernir qué clasificaciones, escalas, criterios médicos o scores radiológicos de consenso internacional " +
-      "(ej. BI-RADS, quistes de Bosniak, criterios de Fleischner, LI-RADS, PI-RADS, criterios de Alvarado, criterios de Duke, Balthazar, etc.) " +
-      "son aplicables diagnósticamente para complementar la 'Impresión Diagnóstica' o 'Recomendaciones' de este informe, y estructurar una respuesta en formato JSON exacto.";
+      "(ej. BI-RADS, quistes de Bosniak, criterios de Fleischner, ACR TI-RADS, LI-RADS, PI-RADS, criterios de Alvarado, criterios de Duke, Balthazar, Consenso SRU para Esteatosis Hepática / QUS, etc.) " +
+      "son aplicables diagnósticamente para complementar la 'Impresión Diagnóstica' o 'Recomendaciones' de este informe, y estructurar una respuesta en formato JSON exacto. " +
+      "REGLAS OBLIGATORIAS DE BAAF Y ACR TI-RADS: " +
+      "1. Usa siempre la sigla BAAF (Biopsia por Aspiración con Aguja Fina). Prohibido usar PAAF. " +
+      "2. Criterios exactos ACR TI-RADS 2017 para BAAF y seguimiento: " +
+      "   - TR1 (0 pts) y TR2 (2 pts): No BAAF ni seguimiento. " +
+      "   - TR3 (3 pts): BAAF solo si ≥ 2.5 cm (25 mm). Seguimiento ecográfico si es ≥ 1.5 cm (15 mm) (rango 15-24 mm es para seguimiento ecográfico, NUNCA BAAF). " +
+      "   - TR4 (4-6 pts): BAAF si ≥ 1.5 cm (15 mm). Seguimiento ecográfico si es ≥ 1.0 cm (10 mm) (rango 10-14 mm es seguimiento ecográfico). " +
+      "   - TR5 (≥7 pts): BAAF si ≥ 1.0 cm (10 mm). Seguimiento ecográfico si es ≥ 0.5 cm (5 mm) (rango 5-9 mm es seguimiento ecográfico). " +
+      "3. Criterios para Esteatosis Hepática / Consenso SRU (por porcentaje de grasa QUS): " +
+      "   - Normal: < 5.0% " +
+      "   - Leve: 5.0% a 12.0% " +
+      "   - Moderada: 12.1% a 20.0% " +
+      "   - Severa: > 20.0%.";
 
     const promptText = `Analiza detenidamente este informe radiológico:
 
@@ -1106,6 +1128,238 @@ Instrucciones:
     res.status(500).json({
       success: false,
       error: friendlyError,
+    });
+  }
+});
+
+/**
+ * API: DETECT CLASSIFICATIONS IN REPORT
+ * POST /api/detect-report-classifications
+ * Payload: { report: string, model?: string }
+ */
+app.post("/api/detect-report-classifications", async (req: express.Request, res: express.Response) => {
+  try {
+    const { model, report } = req.body;
+    if (!report) {
+      return res.status(400).json({ success: false, error: "Se requiere el 'report' para analizar." });
+    }
+
+    const ai = getGeminiClient();
+    const selectedModel = getModelName(model);
+
+    const systemInstruction = 
+      "Eres un consultor de radiología diagnóstica de élite con credenciales internacionales. " +
+      "Tu objetivo es examinar minuciosamente el informe radiológico provisto e identificar todas las clasificaciones, " +
+      "escalas, criterios o scores clínicos de consenso internacional (ej. BI-RADS, Bosniak, Fleischner, LI-RADS, PI-RADS, " +
+      "O-RADS, Kellgren-Lawrence, Neer, Rockwood, Garden, Marsh, AO, Balthazar, Alvarado, etc.) que estén explícitamente " +
+      "mencionadas en el texto o que sean directamente aplicables a los hallazgos descritos.";
+
+    const promptText = `Analiza el siguiente informe radiológico:
+
+"""
+${report}
+"""
+
+Identifica todas las clasificaciones, escalas o criterios clínicos presentes o directamente aplicables a los hallazgos descritos.
+Estructura una lista en formato JSON con las clasificaciones encontradas o aplicables.`;
+
+    const response = await ai.models.generateContent({
+      model: selectedModel,
+      contents: promptText,
+      config: {
+        systemInstruction: systemInstruction,
+        temperature: 0.1,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              name: { 
+                type: Type.STRING, 
+                description: "Nombre oficial de la clasificación o escala (ej: BI-RADS, Clasificación de Bosniak, Criterios de Fleischner 2017, Escala de Kellgren-Lawrence)." 
+              },
+              assignedCategory: { 
+                type: Type.STRING, 
+                description: "Categoría, grado, tipo o score asignado en el informe o correspondiente a los hallazgos (ej: BI-RADS 4B, Bosniak II, Grado 3, Tipo II)." 
+              },
+              detectedInText: { 
+                type: Type.BOOLEAN, 
+                description: "true si la escala/categoría está mencionada explícitamente en el texto del informe; false si se deduce clínicamente de los hallazgos descritos." 
+              },
+              whyApplicable: { 
+                type: Type.STRING, 
+                description: "Explicación breve de 1 oración del porqué aplica esta clasificación al informe." 
+              }
+            },
+            required: ["name", "assignedCategory", "detectedInText", "whyApplicable"]
+          }
+        }
+      }
+    });
+
+    let classifications = [];
+    try {
+      classifications = JSON.parse(response.text || "[]");
+    } catch (e) {
+      console.warn("Error parseando respuesta JSON en detect-report-classifications:", response.text);
+    }
+
+    res.json({
+      success: true,
+      classifications
+    });
+  } catch (error: any) {
+    console.error("Error en /api/detect-report-classifications:", error);
+    res.status(500).json({
+      success: false,
+      error: handleGeminiError(error)
+    });
+  }
+});
+
+/**
+ * API: GENERATE CLASSIFICATION BREAKDOWN & JUSTIFICATION (ANEXO INTELECENTE)
+ * POST /api/generate-classification-breakdown
+ * Payload: {
+ *   report: string,
+ *   classificationName: string,
+ *   assignedCategory?: string,
+ *   format: "option_a" | "option_b",
+ *   includeRecommendations: boolean,
+ *   studyType?: string,
+ *   model?: string
+ * }
+ */
+app.post("/api/generate-classification-breakdown", async (req: express.Request, res: express.Response) => {
+  try {
+    const { model, report, classificationName, assignedCategory, format, includeRecommendations, studyType } = req.body;
+    if (!report || !classificationName) {
+      return res.status(400).json({ success: false, error: "Se requiere 'report' y 'classificationName'." });
+    }
+
+    const ai = getGeminiClient();
+    const selectedModel = getModelName(model);
+
+    const isOptionA = format === "option_a"; // Tabla Estructurada / Matriz de Justificación Criterio por Criterio
+    const isOptionB = format === "option_b"; // Ficha Explicativa e Ilustrativa / Tarjeta de Anexo
+
+    const systemInstruction = 
+      "Eres un médico especialista en radiología diagnóstica de nivel internacional. " +
+      "Tu tarea es generar un anexo de justificación diagnóstica SÓLIDO Y MANTENIDO EN EXTENSIÓN EXACTA PARA PÁGINA ÚNICA, que explique de forma concisa y rigurosa los hallazgos del reporte que sustentan la clasificación radiológica y categoría asignada. " +
+      "TODO EL ANEXO DEBE SER EQUILIBRADO Y COMPACTO, GARANTIZANDO QUE QUEPA DE FORMA HOLGADA EN UNA SOLA PÁGINA DEDICADA SIN DESBORDARSE A UNA SEGUNDA PÁGINA. " +
+      "REGLAS ABSOLUTAS PARA TIROIDES Y BIOPSIA: " +
+      "1. Usa SIEMPRE la sigla BAAF (Biopsia por Aspiración con Aguja Fina). Jamás utilices la sigla PAAF. " +
+      "2. Umbrales rigurosos oficiales ACR TI-RADS 2017: TR1 y TR2 no BAAF/no seguimiento; TR3 BAAF si ≥ 2.5 cm (25 mm), seguimiento ecográfico si ≥ 1.5 cm (15 mm) (15 a 24 mm es SOLO seguimiento ecográfico, NUNCA BAAF); TR4 BAAF si ≥ 1.5 cm (15 mm), seguimiento si ≥ 1.0 cm (10 mm); TR5 BAAF si ≥ 1.0 cm (10 mm), seguimiento si ≥ 0.5 cm (5 mm). " +
+      "3. Umbrales para Esteatosis Hepática / Consenso SRU (por porcentaje de grasa QUS): Normal < 5.0%, Leve 5.0% - 12.0%, Moderada 12.1% - 20.0%, Severa > 20.0%.";
+
+    const promptText = `
+Reporte Radiológico Base:
+"""
+${report}
+"""
+
+Estudio: ${studyType || "Estudio Radiológico"}
+Clasificación Seleccionada: ${classificationName} ${assignedCategory ? `(${assignedCategory})` : ""}
+Formato Deseado: ${isOptionA ? "OPCIÓN A: Tabla Estructurada / Matriz de Justificación Criterio por Criterio" : "OPCIÓN B: Ficha Explicativa e Ilustrativa (Tarjeta de Anexo / Infografía Esquemática)"}
+Incluir Recomendaciones de Manejo / Seguimiento Clínico: ${includeRecommendations ? "SÍ (Incluir guías de manejo, seguimiento o pautas clínicas oficiales)" : "NO (ESTRICTAMENTE PROHIBIDO sugerir conductas o tratamientos)"}
+
+REQUISITOS FUNDAMENTALES Y FORMATO PÁGINA ÚNICA:
+1. TÍTULO DEL ANEXO: El título debe indicar explícitamente la clasificación y el estadio/categoría asignado de forma limpia comenzando directamente con 'CLASIFICACIÓN DE...'.
+   - Queda ESTRICTAMENTE PROHIBIDO incluir la frase 'ANEXO DIAGNÓSTICO:' o 'ANEXO:' en el título de la clasificación. Ya se sabe que es un anexo por el encabezado de página.
+   - Si la clasificación es "Clasificación de Rockwood" y la categoría es "Tipo III - V", el título debe ser exactamente:
+     "CLASIFICACIÓN DE ROCKWOOD - TIPO III - V"
+   - Queda ESTRICTAMENTE PROHIBIDO repetir la palabra 'CLASIFICACIÓN' (NO escribir "CLASIFICACIÓN CLASIFICACIÓN...").
+2. REGLA ESTRICTA DE ENCABEZADOS Y PALABRAS PROHIBIDAS:
+   - NO incluyas tablas de 2 columnas ni subtítulos redundantes con las palabras 'Interpretación', 'Interpretación de Hallazgos' ni 'Hallazgos' debajo del título principal. Pasa directamente a Definición y Sustento Diagnóstico Integrador.
+3. MATRIZ CONCISA BASADA EN HALLAZGOS DEL REPORTE (MÁXIMO 3 A 5 FILAS):
+   - Crea una tabla estructurada de ÚNICAMENTE 3 A 5 FILAS MÁXIMO que abarque los criterios y hallazgos clave esenciales.
+   - Incluye los hallazgos principales presentes o ausentes en el reporte que justifican de forma directa la categoría asignada.
+   - Redacta celdas directas, claras y sintéticas (de 5 a 12 palabras por celda máximo) para mantener la tabla compacta.
+4. DEFINICIÓN Y SUSTENTO DIAGNÓSTICO INTEGRADOR CONCISO:
+   - "definitionAndRisk": Definición oficial concisa y riesgo de la categoría asignada (1-2 oraciones claras).
+   - "clinicalSummary": Sustento radiológico integrador de 2-3 oraciones directas que correlacione los hallazgos de imagen con los criterios de la escala.
+5. PASOS Y ALGORITMO DECISIONAL (SI SE SELECCIONA OPCIÓN B O PARA FICHA):
+   - Proporciona entre 3 y 4 pasos sintéticos del algoritmo con descripciones de 1 frase corta.
+6. REGLA DE RECOMENDACIONES:
+   - ${includeRecommendations 
+       ? "Detalla las recomendaciones oficiales de conducta o seguimiento en 1-2 líneas breves. Si aplica a TI-RADS, usa la sigla BAAF (NUNCA PAAF) y respeta estrictamente las guías oficiales ACR TI-RADS 2017: TR3 indica BAAF solo si ≥ 25 mm (2.5 cm) y seguimiento ecográfico si ≥ 15 mm (1.5 cm); TR4 indica BAAF si ≥ 15 mm y seguimiento si ≥ 10 mm; TR5 indica BAAF si ≥ 10 mm y seguimiento si ≥ 5 mm." 
+       : "Si 'includeRecommendations' es false, el campo 'recommendations' DEBE ser una cadena completamente vacía (\"\"). Queda PROHIBIDO agregar cualquier frase aclaratoria, notas de exclusión o disclaimers al final."}
+7. "formattedAnnexMarkdown": Texto completo del Anexo formateado en Markdown estructurado, limpio y compacto. Debe comenzar con un título único e impecable sin palabras duplicadas y garantizando extensión de página única.
+
+Retorna la respuesta en estricto formato JSON según el esquema definido.`;
+
+    const response = await ai.models.generateContent({
+      model: selectedModel,
+      contents: promptText,
+      config: {
+        systemInstruction: systemInstruction,
+        temperature: 0.1,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            classificationName: { type: Type.STRING, description: "Nombre formal de la escala/clasificación" },
+            categoryAssigned: { type: Type.STRING, description: "Categoría o Grado asignado (ej: BI-RADS 4B, Bosniak II, Grado 3)" },
+            definitionAndRisk: { type: Type.STRING, description: "Definición oficial de la categoría y estimación de riesgo o significado clínico." },
+            clinicalSummary: { type: Type.STRING, description: "Resumen integrador del razonamiento diagnóstico radiológico." },
+            criteriaMatrix: {
+              type: Type.ARRAY,
+              description: "Matriz de criterios evaluados vs hallazgos en el reporte y su ponderación/justificación",
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  criterion: { type: Type.STRING, description: "Parámetro o criterio analizado (ej: Márgenes, Densidad, Tamaño, Realce)" },
+                  findingInReport: { type: Type.STRING, description: "Hallazgo específico presente en el informe radiológico" },
+                  weightOrGrade: { type: Type.STRING, description: "Peso o aporte a la escala (ej: Criterio Mayor (+), +2 Puntos, Característica sospechosa)" },
+                  justification: { type: Type.STRING, description: "Justificación médica de por qué este hallazgo respalda la clasificación" }
+                },
+                required: ["criterion", "findingInReport", "weightOrGrade", "justification"]
+              }
+            },
+            decisionSteps: {
+              type: Type.ARRAY,
+              description: "Pasos secuenciales del algoritmo de decisión clínica",
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  stepNumber: { type: Type.INTEGER, description: "Número de paso (1, 2, 3...)" },
+                  title: { type: Type.STRING, description: "Título del paso del algoritmo" },
+                  description: { type: Type.STRING, description: "Explicación del hallazgo y decisión tomada en este paso" },
+                  isMet: { type: Type.BOOLEAN, description: "true si se cumple el criterio en el paciente" }
+                },
+                required: ["stepNumber", "title", "description", "isMet"]
+              }
+            },
+            recommendations: { type: Type.STRING, description: "Recomendaciones de manejo / conducta (si fueron solicitadas) o nota de exclusión." },
+            formattedAnnexMarkdown: { type: Type.STRING, description: "Texto completo del Anexo formateado en Markdown estructurado de alta calidad" },
+            formattedAnnexHtml: { type: Type.STRING, description: "Fragmento HTML con clases limpias y legibles para renderizado directo o impresión" }
+          },
+          required: ["classificationName", "categoryAssigned", "definitionAndRisk", "clinicalSummary", "criteriaMatrix", "decisionSteps", "formattedAnnexMarkdown", "formattedAnnexHtml"]
+        }
+      }
+    });
+
+    let breakdownData = null;
+    try {
+      breakdownData = JSON.parse(response.text || "{}");
+      if (breakdownData && !includeRecommendations) {
+        breakdownData.recommendations = "";
+      }
+    } catch (e) {
+      console.warn("Error parseando respuesta JSON en generate-classification-breakdown:", response.text);
+      throw new Error("No se pudo obtener un JSON estructurado para el desglose. Intenta nuevamente.");
+    }
+
+    res.json({
+      success: true,
+      breakdown: breakdownData
+    });
+  } catch (error: any) {
+    console.error("Error en /api/generate-classification-breakdown:", error);
+    res.status(500).json({
+      success: false,
+      error: handleGeminiError(error)
     });
   }
 });
@@ -1435,7 +1689,11 @@ Devuelve este informe en un formato de caja clínica estructurado con títulos l
     parts.push({ text: queryPrompt });
 
     const systemInstruction = 
-      "Eres un consultor radiólogo internacional senior. Eres extremadamente meticuloso y exacto al valorar imágenes médicas, explicando de forma transparente y didáctica el proceso de valoración visual de las anomalías radiológicas para la educación o validación médica. ATENCIÓN DE CONSISTENCIA DIAGNÓSTICA Y EVITACIÓN DE ALUCINACIONES: Es imperativo que identifiques de forma consistente y transparente cualquier alteración estructural obvia o conspicua detectable (como una marcada disminución del espacio articular femorotibial, estrechamiento del espacio articular, osteofitos, esclerosis ósea subcondral, deformidades, luxaciones o líneas de fractura claras) sin minimizarlas. Al mismo tiempo, debes mantener una adherencia absoluta a la verdad física de la imagen: está estrictamente prohibido alucinar, inventar o reportar material de osteosíntesis (placas, tornillos transindesmales), fracturas, o disminuciones de espacio de la mortaja o espacios articulares que no existan en la imagen real, basando tu veredicto 100% en la evidencia de los píxeles anatómicos observables.";
+      "Eres un consultor radiólogo internacional senior. Eres extremadamente meticuloso y exacto al valorar imágenes médicas, explicando de forma transparente y didáctica el proceso de valoración visual de las anomalías radiológicas para la educación o validación médica. " +
+      "CONVENCIÓN DE LATERALIDAD Y ORIENTACIÓN RADIOLÓGICA (REGLA DE ESPEJO ANATÓMICO): " +
+      "1. En proyecciones frontales (PA/AP), la DERECHA VISUAL de la pantalla es el LADO IZQUIERDO ANATÓMICO DEL PACIENTE (hemitórax/campo pulmonar izquierdo). La IZQUIERDA VISUAL de la pantalla es el LADO DERECHO ANATÓMICO DEL PACIENTE. NUNCA confundas la derecha de la pantalla con el lado derecho del paciente. Un neumotórax o lesión visible en la derecha de la foto es el NEUMOTÓRAX IZQUIERDO del paciente. " +
+      "2. Si la consulta médica o indicación señala 'Neumotórax Izquierdo', evalúa la mitad VISUAL DERECHA de la imagen médica (hemitórax izquierdo del paciente). Si identificas la línea pleural visceral o hiperclaridad avascular, CONFIRMA Y VALIDA COMO 'NEUMOTÓRAX IZQUIERDO'. Queda ESTRICTAMENTE PROHIBIDO cambiar la lateralidad a 'derecho' por confusión de lados de la pantalla. " +
+      "ATENCIÓN DE CONSISTENCIA DIAGNÓSTICA Y EVITACIÓN DE ALUCINACIONES: Es imperativo que reconozcas y valides de forma consistente cualquier alteración o patología evidente o conspicua detectable (como neumotórax extenso o apical, colapso pulmonar, derrames, marcada disminución del espacio articular, esclerosis subcondral, luxaciones o líneas de fractura) sin minimizarlas ni refutarlas por un hiper-escepticismo exagerado. Si el médico señala o consulta por un hallazgo indiscutible, realiza una verificación dirigida de alta sensibilidad. Al mismo tiempo, mantén una adherencia absoluta a la verdad física de la imagen: está estrictamente prohibido alucinar elementos totalmente inexistentes (como material de osteosíntesis o tornillos que no existan en la imagen real), basando tu veredicto 100% en la evidencia de los píxeles anatómicos observables.";
 
     const response = await ai.models.generateContent({
       model: selectedModel,
@@ -1513,7 +1771,7 @@ app.post("/api/expert-image-analysis", async (req: express.Request, res: express
         .filter(Boolean)
         .join(" ")
         .toLowerCase()
-        .match(/(torax|tórax|chest|pulm|pulmonar|hilio|hiliar|intersticial|alveolar|infiltrado|masa|cavitac|atelectas|mediastin|pleur|neumon|consolida|parénquima|parenquima)/);
+        .match(/(torax|tórax|chest|pulm|pulmonar|hilio|hiliar|intersticial|alveolar|infiltrado|masa|cavitac|atelectas|mediastin|pleur|neumon|consolida|parénquima|parenquima|neumotorax|neumotórax|pneumothor|hidroneumo|linea pleural|colapso|aire pleural|hiperclaridad|enfisema)/);
 
     const isOsteoarthritisCase = !!osteoarthritisProtocol || 
       [clinicalSuspicion, radiologicalQuestions, desc1, desc2, desc3, modality1, modality2, modality3]
@@ -1578,30 +1836,36 @@ Eres un radiólogo académico senior con subespecialidad en diagnóstico avanzad
 Este módulo ("Doble Valoración IA") es el estándar de oro de exactitud visual y clínica disponible. Tu análisis debe ser extremadamente minucioso, cuidadoso y exacto. Realiza una inspección microscópica pixel por pixel de cada imagen, analizando todas las áreas y reparos anatómicos. Los pequeños detalles, por más sutiles, iniciales, tenues o milimétricos que sean (como micro-fisuras, asimetrías de densidad leves, calcificaciones incipientes, reacciones corticales tempranas, engrosamientos pericorticales mínimos, opacidades de vidrio esmerilado incipiente, o distorsiones sutiles de la arquitectura normal), NO deben pasarse por alto bajo ninguna circunstancia.
 
 ⚠️ PROTOCOLO DE EXTREMADA ACUIDAD DIAGNÓSTICA Y EQUILIBRIO ANTI-ALUCINACIÓN (EVITACIÓN DE OMISIONES Y SESGO DE SATISFACCIÓN):
-Para lograr la máxima exactitud científica equilibrada, debes operar bajo un riguroso protocolo de cinco niveles de seguridad radiológica:
+Para lograr la máxima exactitud científica equilibrada, debes operar bajo un riguroso protocolo de seguridad radiológica:
 
 1. **ESCENIFICACIÓN EXHAUSTIVA DE REJILLA DE ESCANEO DE 3X3 (Visual Grid Scanning)**:
    - Divide mentalmente cada imagen médica en una rejilla virtual de 3x3 sectores (Superior Izquierdo/Centro/Derecho, Medio Izquierdo/Centro/Derecho, Inferior Izquierdo/Centro/Derecho).
    - Realiza un barrido visual secuencial y obligatorio por cada uno de los 9 sectores. Analiza de forma exhaustiva las corticales óseas, interfaces hiliares, ángulos costofrénicos, y tejidos blandos periféricos en cada sector. Esto evita omisiones típicas de hallazgos en esquinas o zonas marginales de la placa.
 
 2. **PROTECCIÓN CONTRA EL SESGO DE SATISFACCIÓN DE BÚSQUEDA (Satisfaction of Search Shielding)**:
-   - Encontrar un hallazgo conspicuo u obvio (p. ej., una fractura desplazada, una cardiomegalia masiva, o una masa de gran tamaño) NO debe suspender el análisis. Sigue examinando minuciosamente el resto de las estructuras de manera exhaustiva. Registra y describe de forma prioritaria lesiones sutiles asociadas o concomitantes (pequeños derrames pleurales, micro-focos de gas, discontinuidades óseas adicionales, etc.).
+   - Encontrar un hallazgo conspicuo u obvio (p. ej., un neumotórax extenso, una fractura desplazada, una cardiomegalia masiva, o una masa de gran tamaño) NO debe suspender el análisis. Sigue examinando minuciosamente el resto de las estructuras de manera exhaustiva. Registra y describe de forma prioritaria lesiones sutiles asociadas o concomitantes (pequeños derrames pleurales, micro-focos de gas, discontinuidades óseas adicionales, etc.).
 
-3. **DETERMINACIÓN Y MANEJO DE HALLAZGOS SUTILES O BORDERLINE**:
+3. **PROTOCOLOS DE REVISIÓN Y VALIDACIÓN ANTE HALLAZGOS ASEVERADOS O INDICADOS POR EL MÉDICO (VERIFICACIÓN ANATÓMICA DIRIGIDA CON ALTA SENSIBILIDAD)**:
+   - Si el médico tratante, la sospecha clínica o las preguntas del usuario afirman o señalan expresamente la presencia de un hallazgo cardinal o "no discutible" (por ejemplo: "neumotórax extenso", "derrame pleural masivo", "fractura en falange"), NUNCA asumas por defecto que se trata de una trampa o intento de inducción de error.
+   - Ejecuta de inmediato una verificación dirigida de alta sensibilidad en esa región anatómica específica:
+     * Si la evidencia visual física o semiológica confirma la alteración (ej. en neumotórax: línea pleural visceral, hiperclaridad/radiolucidez periférica desprovista de trama vascular, colapso/atelectasia pasiva del parénquima pulmonar, o desviación mediastínica): **CONFIRMA Y VALIDA EL HALLAZGO CON TOTAL NITIDEZ**, detallando su extensión, lateralidad, porcentaje de colapso, medición de la separación pleural en mm y repercusión hemodinámica o mediastínica.
+     * Si tras una revisión exhaustiva no se detecta la patología en las proyecciones cargadas, fundamenta la conclusión objetivamente describiendo la anatomía observada (ej. citando la presencia de trama vascular pulmonar normal que se extiende íntegramente hasta la pared torácica interna) de forma respetuosa y científica.
+
+4. **DETERMINACIÓN Y MANEJO DE HALLAZGOS SUTILES O BORDERLINE**:
    - Está prohibido descartar o ignorar de manera silenciosa cualquier detalle solo por ser pequeño, de bajo contraste, tenue o estar en el límite de la visibilidad clínica.
    - Si detectas una alteración sutil, descríbela indicando honestamente tu nivel de sospecha y certeza visual y proponiendo alternativas de diagnóstico diferencial.
 
-4. **EQUILIBRIO ACTIVO Y PREVENCIÓN DE ALUCINACIONES (Evitación Rigurosa de Falsos Positivos)**:
+5. **EQUILIBRIO ACTIVO Y PREVENCIÓN DE ALUCINACIONES (Evitación Rigurosa de Falsos Positivos)**:
    - No debes sobrediagnosticar ni inventar patologías basándote en artificios técnicos (pliegues cutáneos, líneas de superposición costal o escapular normal), ruidos de la placa, variantes anatómicas sanas (canales nutricios, suturas accesorias) o marcas de posición.
    - Si un hallazgo es compatible con una variante anatómica inofensiva o un artefacto, indícalo con objetividad científica como un diagnóstico diferencial probable ("Variante de la normalidad vs. lesión incipiente").
 
-5. **CONSISTENCIA Y EXACTITUD ABSOLUTA ANTE HALLAZGOS ESTRUCTURALES EVIDENTES**:
-   - Es mandatorio que no suavices ni subestimes alteraciones de alta gravedad técnica observables (reducciones severas de espacio articular, discontinuidades corticales francas, o desviaciones mediastinales marcadas). Deben reportarse con la terminología adecuada y el nivel de gravedad correspondiente.
+6. **CONSISTENCIA Y EXACTITUD ABSOLUTA ANTE HALLAZGOS ESTRUCTURALES EVIDENTES**:
+   - Es mandatorio que no suavices, invisibilices ni subestimes alteraciones reales y patológicas observables (neumotórax extenso, colapso pulmonar, reducciones severas de espacio articular, discontinuidades corticales francas, o desviaciones mediastinales marcadas). Deben reportarse con la terminología adecuada y el nivel de gravedad correspondiente.
 
-6. **FUNCIÓN DE VALIDACIÓN DE CONFIANZA Y CITA DE EVIDENCIA VISUAL PARA EXCLUSIÓN**:
-   - Antes de considerar normal, preservado o negativo cualquier signo, campo o espacio articular principal de riesgo, describe brevemente la evidencia visual directa (continuidad cortical perfecta e ininterrumpida, alineamiento liso, etc.) que ampara de manera objetiva tu conclusión.
+7. **FUNCIÓN DE VALIDACIÓN DE CONFIANZA Y CITA DE EVIDENCIA VISUAL PARA EXCLUSIÓN**:
+   - Antes de considerar normal, preservado o negativo cualquier signo, campo o espacio articular principal de riesgo, describe brevemente la evidencia visual directa (continuidad cortical perfecta e ininterrumpida, trama vascular alcanzando la pared torácica, etc.) que ampara de manera objetiva tu conclusión.
 
-7. **PROTOCOLO DE MÁXIMA EXACTITUD PARA FRACTURAS (MÚLTIPLE VALORACIÓN EXPERTA)**:
+8. **PROTOCOLO DE MÁXIMA EXACTITUD PARA FRACTURAS (MÚLTIPLE VALORACIÓN EXPERTA)**:
    - ALERTA MÁXIMA PARA MANOS Y PIES: Los trazos de fractura en huesos pequeños (falanges, metacarpianos, metatarsianos, escafoides, etc.) suelen ser extremadamente finos. AUMENTA tu sensibilidad visual al 200% al evaluar los bordes corticales de estas áreas buscando escalones milimétricos, líneas radiolúcidas tenues o avulsiones puntiformes.
    - Si el usuario MARCA una región específica, ASUME QUE HAY UNA LESIÓN HASTA DEMOSTRAR LO CONTRARIO. NO LA IGNORES.
    - Ante cualquier sospecha o indicio visual de fractura:
@@ -1609,6 +1873,15 @@ Para lograr la máxima exactitud científica equilibrada, debes operar bajo un r
      * **Compromiso articular**: Determina con total precisión si el trazo alcanza la cortical de la carilla articular intermedia. Evalúa si hay hundimiento, escalón articular u holgura física en milímetros.
      * **Relación y Alineamiento de Fragmentos**: Reporta la presencia de diástasis de bordes, acortamiento/cabalgamiento en mm, angulaciones (varo/valgo, recurvatum/antecurvatum) y rotaciones espaciales.
      * **Evidencia Absoluta vs Falso Positivo**: Asegúrate de que el trazo cruce la cortical o la interrumpa claramente. No confundas líneas articulares superpuestas o canales nutricios (bordes escleróticos finos) con fracturas, pero NUNCA ignores una interrupción cortical real por miedo a alucinar.
+
+9. **CONVENCIÓN CRÍTICA DE LATERALIDAD Y ORIENTACIÓN RADIOLÓGICA (REGLA DE ESPEJO ANATÓMICO Y ALINEACIÓN DE CONSULTA CLÍNICA)**:
+   - **Regla de Espejo Radiológico en Imágenes Frontales (PA/AP)**:
+     * LA MITAD DERECHA DE LA IMAGEN/PANTALLA = LADO IZQUIERDO ANATÓMICO DEL PACIENTE (HEMITÓRAX IZQUIERDO / PARÉNQUIMA PULMONAR IZQUIERDO).
+     * LA MITAD IZQUIERDA DE LA IMAGEN/PANTALLA = LADO DERECHO ANATÓMICO DEL PACIENTE (HEMITÓRAX DERECHO / PARÉNQUIMA PULMONAR DERECHO).
+     * ¡ALERTA MÁXIMA DE LATERALIDAD!: NUNCA confundas la derecha visual de la foto con el lado derecho del paciente. Un neumotórax o alteración visible en la mitad derecha de la foto/pantalla DEBE reportarse explícitamente como "NEUMOTÓRAX IZQUIERDO" (hemitórax izquierdo del paciente).
+   - **Alineación Obligatoria con la Consulta del Usuario**:
+     * Si el médico tratante, la sospecha o las preguntas del usuario afirman o consultan por 'Neumotórax Izquierdo' (o hallazgo en lado izquierdo), dirígete de inmediato a evaluar la MITAD VISUAL DERECHA de la pantalla (hemitórax izquierdo anatómico).
+     * Si allí identificas la línea pleural visceral, hiperclaridad periférica o colapso, CONFIRMA Y REPORTA EL HALLAZGO CATEGÓRICAMENTE COMO "NEUMOTÓRAX IZQUIERDO". Queda ESTRICTAMENTE PROHIBIDO invertir la lateralidad diciendo 'derecho' por confusión de lados de la pantalla.
 
 `;
 
@@ -1793,10 +2066,11 @@ Mantén un lenguaje impecable, sumamente formal y científico, digno de un comit
     parts.push({ text: promptText });
 
     const systemInstruction = 
-      "Eres un consultor radiólogo internacional senior de diagnóstico, y el estándar supremo de precisión diagnóstica clínica de esta plataforma. Este módulo ('Doble Valoración') exige un equilibrio científico idóneo:\n" +
-      "1. EXACTITUD SIN SUBESTIMACIONES: Registra de manera consistente y con total exactitud cualquier hallazgo o alteración estructural real y evidente (por ejemplo, marcada disminución del espacio articular en proyección femorotibial, esclerosis subcondral o severo desgaste marginal, fractura real), asegurando que las patologías macroscópicas y conspicuas no sean subestimadas ni clasificadas como dudosas.\n" +
-      "2. ADHERENCIA ESTRICTA A LA VERDAD FÍSICA (CERO ALUCINACIONES): Está terminantemente prohibido inventar o alucinar hallazgos que no existan en la imagen, especialmente material de osteosíntesis (placas, tornillos transindesmales), fracturas, o disminuciones de espacio de la mortaja o espacios articulares que estén preservados. Si la sospecha clínica o las preguntas del paciente mencionan un término (ej. 'fractura', 'placa', 'tornillos transindesmales') pero en la imagen real no hay material de osteosíntesis ni trazos de fractura, debes ser taxativo, riguroso y declarar que no existen, en lugar de inventarlos por complacer la sospecha o el protocolo.\n" +
-      "3. VARIANTES DE LA NORMALIDAD: No confundas variantes anatómicas normales (canales nutricios, suturas) o superposiciones óseas y artefactos de imagen con fracturas, placas o tornillos. Tu veredicto debe fundamentarse 100% en la evidencia física y observable de los píxeles de la imagen.";
+      "Eres un consultor radiólogo internacional senior de diagnóstico, y el estándar supremo de precisión diagnóstica clínica de esta plataforma. Este módulo ('Doble Valoración') exige un equilibrio científico idóneo entre alta sensibilidad visual ante patologías reales y un riguroso filtro anti-alucinaciones:\n" +
+      "1. RECONOCIMIENTO Y VALIDACIÓN DE PATOLOGÍAS EVIDENTES O ASEVERADAS POR EL CLÍNICO: Es mandatorio que identifiques y confirmes con absoluta precisión cualquier hallazgo o alteración estructural patológica patente, evidente o relevante (por ejemplo, neumotórax extenso o apical, colapso pulmonar, atelectasia, derrame pleural, fractura o fisura, marcada disminución del espacio articular, o masa). Cuando el médico tratante, la sospecha clínica o la consulta indiquen o aseveren que existe un hallazgo específico o 'no discutible' (como 'neumotórax extenso' o 'hallazgo evidente'), NUNCA asumas por defecto que es una trampa o intento de inducción de error. Ejecuta de inmediato una revisión dirigida con el 100% de tu sensibilidad en esa zona anatómica para verificar, caracterizar y describir detalladamente la severidad del hallazgo (ej. en neumotórax: ubicación de la línea pleural visceral, separación en mm, porcentaje de radiolucidez periférica desprovista de trama vascular, colapso pulmonar o desviación mediastínica). NUNCA minimices ni refutes obstinadamente hallazgos patológicos reales por un hiper-escepticismo inapropiado.\n" +
+      "2. FILTRO ANTI-ALUCINACIÓN BASADO EN EVIDENCIA FÍSICA REAL: Mantén una estricta fidelidad a la imagen real. Está prohibido inventar o alucinar elementos totalmente inexistentes (como material de osteosíntesis inexistente o placas/tornillos si la placa no muestra ningún implante metálico). Si tras una verificación exhaustiva y meticulosa un hallazgo sugerido realmente no es identificable en la imagen, explica objetivamente la anatomía observada (ej. citando la presencia de trama vascular normal que se extiende hasta la pared torácica parietal interna) de forma profesional y fundamentada, sin ser agresivo ni prejuzgar al especialista.\n" +
+      "3. VARIANTES DE LA NORMALIDAD: Diferencia con claridad variaciones anatómicas fisiológicas (canales nutricios, suturas, pliegues cutáneos, superposiciones de escápula/costillas) de patologías verdaderas, basando tu dictamen en la evidencia objetiva de los píxeles.\n" +
+      "4. CONVENCIÓN ANATÓMICA DE LATERALIDAD EN ESPEJO Y DERECHA/IZQUIERDA: En proyecciones frontales PA/AP, la DERECHA VISUAL de la pantalla es el HEIMITÓRAX/LADO IZQUIERDO del paciente. La IZQUIERDA VISUAL de la pantalla es el HEIMITÓRAX/LADO DERECHO del paciente. Si la sospecha o indicación del usuario dice 'Neumotórax Izquierdo', evalúa la mitad VISUAL DERECHA de la placa (hemitórax izquierdo del paciente). Si allí se observa la línea pleural visceral y radiolucidez sin trama, CONFIRMA Y VALIDA COMO 'NEUMOTÓRAX IZQUIERDO'. Queda ESTRICTAMENTE PROHIBIDO invertir la lateralidad diciendo 'derecho' por confusión de lados de la pantalla.";
 
     const response = await ai.models.generateContent({
       model: selectedModel,
@@ -1863,7 +2137,8 @@ Mantén un lenguaje extremadamente preciso, profesional, elegante y con rigor ci
 `;
 
     const systemInstruction = 
-      "Eres un consultor de medicina interna y radiología de un hospital universitario de alta complejidad. Te especializas en desglosar casos clínicos complejos mediante correlación anatomo-radiológica detallada.";
+      "Eres un consultor de medicina interna y radiología de un hospital universitario de alta complejidad. Te especializas en desglosar casos clínicos complejos mediante correlación anatomo-radiológica detallada. " +
+      "Cuando evalúes esteatosis hepática o cuantificación de grasa por QUS o ultrasonido cuantitativo, aplica estrictamente los rangos de clasificación del Consenso SRU: Normal (< 5.0%), Leve (5.0% - 12.0%), Moderada (12.1% - 20.0%) y Severa (> 20.0%).";
 
     const response = await ai.models.generateContent({
       model: selectedModel,
@@ -1880,6 +2155,160 @@ Mantén un lenguaje extremadamente preciso, profesional, elegante y con rigor ci
     });
   } catch (error: any) {
     console.error("Error en /api/analyze-case:", error);
+    const friendlyError = handleGeminiError(error);
+    res.status(500).json({
+      success: false,
+      error: friendlyError,
+    });
+  }
+});
+
+/**
+ * API: ADVANCED PATHOLOGY CORRELATION ANALYSIS
+ * POST /api/analyze-pathology-correlation
+ * Payload: {
+ *   report: string
+ *   pathology: string
+ *   studyType?: string
+ *   clinicalHistory?: string
+ *   model?: string
+ * }
+ */
+app.post("/api/analyze-pathology-correlation", async (req: express.Request, res: express.Response) => {
+  try {
+    const { model, report, pathology, studyType, clinicalHistory } = req.body;
+    if (!report || !pathology) {
+      return res.status(400).json({ success: false, error: "Se requiere el 'report' y la 'pathology' a analizar." });
+    }
+
+    const ai = getGeminiClient();
+    const selectedModel = getModelName(model);
+
+    const promptText = `
+Estudio radiológico / tipo: ${studyType || "Estudio Ultrasonográfico"}
+Indicación / Historial clínico: ${clinicalHistory || "No especificada"}
+Patología Específica a Evaluar: "${pathology}"
+
+Reporte Radiológico redactado:
+"""
+${report}
+"""
+
+Por favor, realiza un ANÁLISIS DE CORRELACIÓN Y EVALUACIÓN DE HALLAZGOS para la patología específica: "${pathology}".
+
+REGLAS STRICTAS OBLIGATORIAS:
+1. ENFOCARSE EXCLUSIVAMENTE EN LOS HALLAZGOS PRESENTES EN EL REPORTE QUE REFUERZAN O RESPALDAN EL DIAGNÓSTICO de "${pathology}". Destaca con precisión las imágenes/mediciones/signos descritos que respaldan la condición.
+2. NINGÚN PORCENTAJE DE PROBABILIDAD NI CERTEZA EN PORCENTAJE (%) (ej. NO escribir "85% de certeza", "90% de probabilidad", ni incluir números de porcentaje).
+3. NINGUNA RECOMENDACIÓN DE TRATAMIENTO O MANEJO MÉDICO O QUIRÚRGICO (ej. NO escribir "Se sugiere colecistectomía", "Tratamiento antibiótico", "Intervención quirúrgica" ni "Manejo hospitalario").
+4. INCLUIR AL FINAL UNA DISCUSIÓN Y SÍNTESIS CLÍNICA FINAL limpia, elegante y de rigor académico subespecializado.
+
+Devuelve la respuesta en formato JSON estricto con la siguiente estructura:
+\`\`\`json
+{
+  "format": "esquema_pilares",
+  "title": "CORRELACIÓN ECOGRÁFICA: ${pathology.toUpperCase()}",
+  "elementsConfig": {
+    "includeSonographic": true,
+    "includeSonographicDetails": true,
+    "includeClinicalCorr": true,
+    "includeCertainty": false,
+    "includeDifferentials": true,
+    "includeDiscardedDifferentials": false,
+    "includeManagement": false
+  },
+  "sonographicPillar": {
+    "primaryFinding": "Hallazgo o signo ecográfico principal presente en el reporte que apoya la patología ${pathology}",
+    "details": [
+      "Signo ecográfico confirmatorio 1 observado en el informe con mediciones o características",
+      "Signo ecográfico confirmatorio 2 o hallazgo secundario relevante"
+    ],
+    "severity": "altered"
+  },
+  "clinicalCorrelation": "Correlación fisiopatológica de los hallazgos descritos con el mecanismo de la patología ${pathology}.",
+  "finalDiscussion": "Discusión y síntesis clínica final que sintetiza el respaldo radiológico para ${pathology}, fundamentando el juicio diagnóstico sin incluir porcentajes de certeza ni conductas de manejo.",
+  "diagnostics": [
+    {
+      "name": "${pathology}",
+      "probability": "Respaldo Radiológico Confirmatorio",
+      "supportingCriteria": "Resumen de criterios positivos encontrados en el estudio"
+    }
+  ],
+  "decisionFlow": [
+    { "step": 1, "title": "Hallazgo Ecográfico Clave", "desc": "Descripción del signo primario que orienta el caso" },
+    { "step": 2, "title": "Signos de Soporte Encontrados", "desc": "Detalle de hallazgos ecográficos que refuerzan la sospecha" },
+    { "step": 3, "title": "Discusión & Síntesis Clínica", "desc": "Síntesis diagnóstica final libre de recomendaciones de tratamiento" }
+  ],
+  "semioticMatrix": {
+    "requestingSigns": [
+      "Signo positivo 1 que apoya ${pathology}",
+      "Signo positivo 2 que apoya ${pathology}"
+    ],
+    "exclusiveSigns": [],
+    "discardCriteria": []
+  }
+}
+\`\`\`
+Responde ÚNICAMENTE con el objeto JSON válido en un bloque \`\`\`json ... \`\`\`.
+`;
+
+    const systemInstruction = 
+      "Eres un consultor de radiología de un centro médico de alta complejidad. Tu objetivo es realizar correlaciones semiológicas de precisión sobre reportes ultrasonográficos, destacando únicamente la evidencia que respalda la patología consultada, sin emitir porcentajes probabilísticos ni sugerencias de tratamiento.";
+
+    const response = await ai.models.generateContent({
+      model: selectedModel,
+      contents: promptText,
+      config: {
+        systemInstruction: systemInstruction,
+        temperature: 0.1,
+      },
+    });
+
+    let rawJson = response.text || "";
+    const jsonMatch = rawJson.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    if (jsonMatch) {
+      rawJson = jsonMatch[1];
+    }
+
+    let parsedData;
+    try {
+      parsedData = JSON.parse(rawJson);
+    } catch (e) {
+      parsedData = {
+        format: "esquema_pilares",
+        title: `CORRELACIÓN ECOGRÁFICA: ${pathology.toUpperCase()}`,
+        elementsConfig: {
+          includeSonographic: true,
+          includeSonographicDetails: true,
+          includeClinicalCorr: true,
+          includeCertainty: false,
+          includeDifferentials: true,
+          includeDiscardedDifferentials: false,
+          includeManagement: false
+        },
+        sonographicPillar: {
+          primaryFinding: `Hallazgos compatibles con ${pathology}`,
+          details: ["Hallazgos positivos del reporte analizado."],
+          severity: "altered"
+        },
+        clinicalCorrelation: `Correlación de evidencia ecográfica hallada en el informe para ${pathology}.`,
+        finalDiscussion: response.text,
+        diagnostics: [
+          {
+            name: pathology,
+            probability: "Respaldo Confirmatorio",
+            supportingCriteria: "Hallazgos compatibles en el informe"
+          }
+        ]
+      };
+    }
+
+    res.json({
+      success: true,
+      data: parsedData,
+      rawText: response.text
+    });
+  } catch (error: any) {
+    console.error("Error en /api/analyze-pathology-correlation:", error);
     const friendlyError = handleGeminiError(error);
     res.status(500).json({
       success: false,
@@ -1991,7 +2420,7 @@ app.post("/api/expert-image-followup", async (req: express.Request, res: express
         .filter(Boolean)
         .join(" ")
         .toLowerCase()
-        .match(/(torax|tórax|chest|pulm|pulmonar|hilio|hiliar|intersticial|alveolar|infiltrado|masa|cavitac|atelectas|mediastin|pleur|neumon|consolida|parénquima|parenquima)/);
+        .match(/(torax|tórax|chest|pulm|pulmonar|hilio|hiliar|intersticial|alveolar|infiltrado|masa|cavitac|atelectas|mediastin|pleur|neumon|consolida|parénquima|parenquima|neumotorax|neumotórax|pneumothor|hidroneumo|linea pleural|colapso|aire pleural|hiperclaridad|enfisema)/);
 
     const isOsteoarthritisCase = !!osteoarthritisProtocol || 
       [clinicalSuspicion, queryText, previousAnalysis]
@@ -2020,11 +2449,13 @@ app.post("/api/expert-image-followup", async (req: express.Request, res: express
 
     if (isPulmonaryCase) {
       protocolInstructions += `
-⚠️ RECORDATORIO PROTOCOLO DE PARÉNQUIMA PULMONAR E HILIOS:
-- Evalúa minuciosamente el parénquima para diferenciar infiltrados intersticiales y alveolares densos.
-- Busca o descarta exhaustivamente masas discretas, cavitaciones y atelectasias/colapsos.
-- Analiza con agudeza la simetría y densidad de ambos hilios, y descarta o reporta ensanchamiento mediastinal patológico.
-- Mantén el máximo nivel de sospecha diagnóstica ante hallazgos sumamente sutiles, basándote rigurosamente en la evidencia visual científica real.
+⚠️ RECORDATORIO PROTOCOLO DE PARÉNQUIMA PULMONAR, PLEURA Y NEUMOTÓRAX (ATENCIÓN A REGLA DE LATERALIDAD):
+- CONVENCIÓN DE ESPEJO EN RADIOLOGÍA FRONTAL: La MITAD VISUAL DERECHA de la pantalla = LADO ANATÓMICO IZQUIERDO DEL PACIENTE (hemitórax/campo pulmonar izquierdo). La MITAD VISUAL IZQUIERDA = LADO ANATÓMICO DERECHO DEL PACIENTE.
+- Un neumotórax visible en la mitad derecha de la pantalla DEBE reportarse como "NEUMOTÓRAX IZQUIERDO" (lado del paciente).
+- Evalúa minuciosamente el espacio pleural buscando línea pleural visceral, radiolucidez periférica y pérdida de trama vascular (neumotórax extenso, apical o a tensión).
+- Valora la presencia de colapso pulmonar pasivo ipsilateral y desplazamiento del mediastino/tráquea o aplanamiento diafragmático.
+- Revisa el parénquima para diferenciar infiltrados intersticiales/alveolares, masas, cavitaciones y derrames pleurales.
+- Si el médico consulta o indica un hallazgo específico ("neumotórax izquierdo no discutible"), realiza una verificación dirigida de alta sensibilidad en la mitad visual derecha de la foto, confirmando y caracterizando el hallazgo real. Queda ESTRICTAMENTE PROHIBIDO cambiar la lateralidad a "derecho".
 `;
     }
 
@@ -2077,7 +2508,9 @@ Escribe tu respuesta directamente en formato Markdown limpio, estructurado, sin 
     parts.push({ text: promptText });
  
     const systemInstruction = 
-      "Eres un consultor radiólogo internacional senior de diagnóstico de casos complejos y desafiantes. Tu principal fortaleza es el equilibrio óptimo entre acatamiento meticuloso del detalle (hiper-agudeza de micro-hallazgos reales) y un estricto filtro de seguridad anti-alucinación. Evita falsos positivos distinguiendo claramente ruidos, variaciones normales, y artefactos técnicos de las verdaderas patologías. Responde las aclaraciones de estudios de imagen de forma exacta, infalible y objetiva.";
+      "Eres un consultor radiólogo internacional senior de diagnóstico de casos complejos y desafiantes. Tu principal fortaleza es la combinación de alta sensibilidad para detectar y confirmar patologías reales y evidentes (como neumotórax extenso, colapso pulmonar, derrames pleurales, fracturas o lesiones focales) con un estricto filtro de seguridad anti-alucinación. " +
+      "REGLA DE ESPEJO Y LATERALIDAD ANATÓMICA RADIOLÓGICA: En radiología frontal PA/AP, la DERECHA VISUAL de la pantalla es el LADO ANATÓMICO IZQUIERDO DEL PACIENTE (hemitórax/campo pulmonar izquierdo). Un neumotórax visible en la mitad derecha de la foto/pantalla DEBE reportarse como 'NEUMOTÓRAX IZQUIERDO'. Si la consulta del usuario indica 'Neumotórax Izquierdo', evalúa la mitad visual derecha de la foto (lado izquierdo del paciente) para confirmar el neumotórax con alta sensibilidad. Queda ESTRICTAMENTE PROHIBIDO cambiar la lateralidad diciendo 'derecho'. " +
+      "Cuando el usuario/médico consulte o afirme que existe un hallazgo específico o no discutible, verifica minuciosamente esa región anatómica con máxima sensibilidad para confirmar y caracterizar sus detalles. Evita falsos positivos distinguiendo ruidos y variaciones normales de las verdaderas patologías, pero NUNCA niegues ni refutes hallazgos anatómicos reales y evidentes por un hiper-escepticismo injustificado. Responde con la máxima exactitud y objetividad clínica.";
 
     const response = await ai.models.generateContent({
       model: selectedModel,
@@ -2216,7 +2649,9 @@ Escribe tu respuesta con tono académico del más alto nivel, sin rodeos cortese
     parts.push({ text: promptText });
 
     const systemInstruction = 
-      "Eres el Radiólogo Jefe y Director Clínico de un prestigioso centro PACS universitario. Diriges las sesiones generales de interconsulta, resolución de contradicciones diagnósticas y arbitraje clínico. Tu principal dogma es la veracidad empírica basada estrictamente en la evidencia visual real de la imagen. Debes eliminar activamente y con mano de hierro cualquier falsa interpretación, alucinación de material de osteosíntesis (placas, tornillos transindesmales), fracturas inexistentes o falsos positivos (como reducciones de espacio articular/mortaja que no existen) introducidos por borradores preliminares o sugeridos por textos de sospecha clínica, dictaminando únicamente lo que se observa de forma fidedigna y empírica en las imágenes.";
+      "Eres el Radiólogo Jefe y Director Clínico de un prestigioso centro PACS universitario. Diriges las sesiones generales de interconsulta, resolución de contradicciones diagnósticas y arbitraje clínico. Tu principal dogma es la veracidad empírica basada en la evidencia visual real. " +
+      "REGLA DE ESPEJO Y LATERALIDAD ANATÓMICA RADIOLÓGICA: En proyecciones frontales PA/AP, la DERECHA VISUAL de la imagen es el LADO ANATÓMICO IZQUIERDO del paciente (hemitórax/campo pulmonar izquierdo). Un neumotórax o lesión en la mitad derecha de la foto es un NEUMOTÓRAX IZQUIERDO del paciente. Si la sospecha o indicación del usuario señala 'Neumotórax Izquierdo', evalúa la mitad visual derecha de la foto para confirmar con máxima sensibilidad el hallazgo. Queda ESTRICTAMENTE PROHIBIDO modificar o invertir la lateralidad a 'derecho' por confusión de la matriz de la pantalla. " +
+      "Debes validar de forma prioritaria los hallazgos patológicos reales y evidentes (como neumotórax extenso, colapso pulmonar, fracturas, o masas) sin ignorarlos ni subestimarlos. Al mismo tiempo, elimina cualquier alucinación de elementos inexistentes (como implantes metálicos que no estén en la placa). Tu dictamen debe ser la palabra final resolutiva, justa y precisa del caso.";
 
     const response = await ai.models.generateContent({
       model: selectedModel,
@@ -2250,7 +2685,7 @@ Escribe tu respuesta con tono académico del más alto nivel, sin rodeos cortese
  */
 app.post("/api/extract-essential-findings", async (req: express.Request, res: express.Response) => {
   try {
-    const { model, analysisText } = req.body;
+    const { model, analysisText, requestedFormat, elementsConfig } = req.body;
     if (!analysisText) {
       return res.status(400).json({ success: false, error: "Se requiere el 'analysisText' para extraer los hallazgos esenciales." });
     }
@@ -2258,29 +2693,156 @@ app.post("/api/extract-essential-findings", async (req: express.Request, res: ex
     const ai = getGeminiClient();
     const selectedModel = getModelName(model);
 
-    const promptText = `
-Texto de la Valoración Experta realizada por la IA (puede contener el análisis inicial y un historial de consultas/correcciones posteriores):
+    if (requestedFormat) {
+      const config = elementsConfig || {
+        includeSonographic: true,
+        includeClinicalCorr: true,
+        includeCertainty: false,
+        includeDifferentials: true,
+        includeManagement: true,
+      };
+
+      const casePrompt = `
+Texto del Dictamen o Análisis de Caso Radiológico:
 """
 ${analysisText}
 """
 
-Por favor, extrae de manera extremadamente precisa, concisa y rigurosa únicamente los siguientes elementos indispensables para volcarlos en un generador de reportes médicos, simplificando y depurando todo el resto del texto (como discusiones académicas, recomendaciones técnicas de seguimiento, indicaciones de control, o explicaciones metodológicas, etc., dado que estas NO deben inyectarse en el generador):
+El usuario solicitó estructurar el Análisis de Caso en el formato: "${requestedFormat}".
 
-CRÍTICO: Si el texto contiene un historial de consultas, aclaraciones, sugerencias de aspectos específicos o correcciones adicionales (por ejemplo, bajo encabezados como "HISTORIAL DE COMPLEMENTOS Y CORRECCIONES POSTERIORES" o "Chat Activo"), debes dar PRIORIDAD ABSOLUTA a los hallazgos re-evaluados, clasificaciones ajustadas y diagnósticos corregidos en las aclaraciones y respuestas más recientes. Los hallazgos, interpretaciones o diagnósticos preliminares/antiguos que hayan sido modificados o refinados en las consultas deben ser enteramente reemplazados por sus versiones corregidas definitivas.
+INSTRUCCIONES DE FORMATO:
+Si el formato es "matriz_semiotica" (Matriz Semiótica Comparativa: Signos Peticionantes vs. Signos Exclusivos / Criterios de Descarte):
+- Llena la propiedad "semioticMatrix" con "requestingSigns" (signos a favor o hallazgos que reclaman/exigen la hipótesis principal), "exclusiveSigns" (criterios exclusores o patognomónicos) y "discardCriteria" (signos ausentes o hallazgos que descartan diferenciales).
+- Asegúrate de completar los signos peticionantes clave e inclusivos basados en el dictamen ecográfico.
 
-Saca exactamente el reporte corregido final estructurado bajo estos tres puntos:
-1. **HALLAZGOS PATOLÓGICOS DETECTADOS**: Describe los hallazgos patológicos definitivos con sus consideraciones anatómicas y métricas exactas corregidas tras todas las aclaraciones. Mantén un lenguaje de alta especificidad radiológica.
-2. **CLASIFICACIONES MÉDICAS DE CONSENSO**: Extrae la clasificación final de consenso y su puntaje o estadio corregido (como BI-RADS, Bosniak, Fleischner, LI-RADS, Lung-RADS, PI-RADS, etc.) de acuerdo con la última retroalimentación. Si no aplica ninguna, indícalo brevemente.
-3. **DIAGNÓSTICO FINAL / IMPRESIÓN DIAGNÓSTICA**: La conclusión o diagnóstico principal fundamentado definitivo y revisado.
+Si el formato es "flujograma_semiologico" (Flujograma Semiológico / Ciclo de Pensamiento Radiológico):
+- "sonographicPillar.primaryFinding" debe ser el Hallazgo Ecográfico Principal (Punto de Partida).
+- "sonographicPillar.details" deben ser los Hallazgos Secundarios de Soporte o características específicas de la imagen.
+- "clinicalCorrelation" debe detallar los aspectos clínicos, síntomas o antecedentes relevantes descritos.
+- Cada elemento en "diagnostics" debe incluir criterios de descarte claros en "refutingCriteria" representando los signos clínicos/ecográficos ausentes que permitieron descartar o degradar esa sospecha frente al diagnóstico definitivo.
+- El primer elemento en "diagnostics" debe ser el diagnóstico presuntivo principal final.
+- REGLA ESTRICTA: NO INCLUIR NINGÚN PORCENTAJE DE CERTEZA O PROBABILIDAD (SÍMBOLO %).
 
-IMPORTANTE:
-- Sé sumamente directo, omite protocolos de saludo o intros/outros de conversación.
-- No incluyas explicaciones de cómo hiciste el análisis de la imagen, debates de diagnósticos diferenciales ni la lista de recomendaciones técnicas o de seguimiento, dado que estas alargan y entorpecen la posterior generación técnica del reporte.
-- El formato final del texto debe ser muy limpio, estructurado con títulos en negrita en lugar de encabezados grandes, en Markdown, listo para que el usuario redacte el reporte definitivo a partir de aquí.
+Filtros de elementos a incluir según la preferencia del usuario:
+- Incluir Pilar Sonográfico Principal: ${config.includeSonographic ? "SÍ" : "NO"}
+- Incluir Correlación Clínico-Laboratorial: ${config.includeClinicalCorr ? "SÍ" : "NO"}
+- Incluir Porcentaje de Certeza Diagnóstica: NO (NUNCA incluir porcentajes %)
+- Incluir Diagnósticos Diferenciales: ${config.includeDifferentials ? "SÍ" : "NO"}
+- Incluir Conducta y Manejo Recomendado: ${config.includeManagement ? "SÍ" : "NO"}
+
+Por favor, extrae los datos y responde ÚNICAMENTE con un objeto JSON válido con la siguiente estructura:
+{
+  "format": "${requestedFormat}",
+  "elementsConfig": {
+    "includeSonographic": ${config.includeSonographic},
+    "includeClinicalCorr": ${config.includeClinicalCorr},
+    "includeCertainty": false,
+    "includeDifferentials": ${config.includeDifferentials},
+    "includeManagement": ${config.includeManagement}
+  },
+  "title": "Análisis Integrado de Caso",
+  "sonographicPillar": {
+    "primaryFinding": "Resumen conciso del hallazgo sonográfico clave con sus medidas principales",
+    "details": ["Detalle métrico o morfológico 1", "Detalle vascular o ecogénico 2"],
+    "severity": "altered"
+  },
+  "clinicalCorrelation": "Correlación del hallazgo con los síntomas, antecedente o laboratorio del paciente",
+  "diagnostics": [
+    {
+      "name": "Nombre del Diagnóstico Principal",
+      "supportingCriteria": "Criterios sonográficos clave que lo respaldan",
+      "refutingCriteria": "Signos ausentes o hallazgos en contra",
+      "confirmatoryTest": "Prueba o estudio confirmativo de elección"
+    },
+    {
+      "name": "Diagnóstico Diferencial #2",
+      "supportingCriteria": "Criterios sonográficos secundarios",
+      "refutingCriteria": "Signos atípicos o no visualizados que lo descartan",
+      "confirmatoryTest": "Prueba complementaria"
+    }
+  ],
+  "decisionFlow": [
+    { "step": 1, "title": "Punto de Partida Sonográfico", "desc": "Descripción del hallazgo sonográfico inicial" },
+    { "step": 2, "title": "Signos Secundarios y Doppler", "desc": "Evaluación de vascularización, ecogenicidad y tejidos adyacentes" },
+    { "step": 3, "title": "Integración con Contexto Clínico", "desc": "Correlación clínica/laboratorial" },
+    { "step": 4, "title": "Conclusión Diagnóstica", "desc": "Diagnóstico final y respaldo clínico" },
+    { "step": 5, "title": "Manejo Sugerido", "desc": "Conducta clínica y recomendación" }
+  ],
+  "semioticMatrix": {
+    "requestingSigns": ["Hallazgo sonográfico directo que sustenta la sospecha", "Signo Doppler o métrico clave"],
+    "exclusiveSigns": ["Ausencia de signos de patología compleja/malignidad", "Signo exclusivo confirmativo"],
+    "discardCriteria": ["Criterio no visualizado que descarta diagnóstico diferencial secundario"]
+  },
+  "managementRecommendation": "Recomendación de manejo clínico, seguimiento o interconsulta"
+}
+`;
+
+      const response = await ai.models.generateContent({
+        model: selectedModel,
+        contents: casePrompt,
+        config: {
+          systemInstruction: "Eres un experto redactor radiológico. Analizas casos médicos e ingresas hallazgos estructurados en JSON estricto sin preámbulos ni porcentajes de certeza.",
+          temperature: 0.1,
+          responseMimeType: "application/json",
+        },
+      });
+
+      let jsonParsed: any = null;
+      try {
+        jsonParsed = JSON.parse(response.text || "{}");
+      } catch (e) {
+        console.error("Error parsing case analysis JSON:", e);
+      }
+
+      if (jsonParsed && jsonParsed.format) {
+        delete jsonParsed.certaintyPercent;
+        if (jsonParsed.elementsConfig) {
+          jsonParsed.elementsConfig.includeCertainty = false;
+        }
+        const jsonBlock = `[CASE_ANALYSIS_JSON]\n${JSON.stringify(jsonParsed, null, 2)}\n[/CASE_ANALYSIS_JSON]\n\n`;
+        let textSummary = `**ANÁLISIS INTEGRADO DE CASO (${requestedFormat.toUpperCase().replace("_", " ")})**\n\n`;
+        if (config.includeSonographic && jsonParsed.sonographicPillar) {
+          textSummary += `• **Pilar Sonográfico Fundamental**: ${jsonParsed.sonographicPillar.primaryFinding}\n`;
+        }
+        if (config.includeClinicalCorr && jsonParsed.clinicalCorrelation) {
+          textSummary += `• **Correlación Clínica/Lab**: ${jsonParsed.clinicalCorrelation}\n`;
+        }
+        if (config.includeDifferentials && jsonParsed.diagnostics?.length) {
+          textSummary += `• **Diagnóstico Principal**: ${jsonParsed.diagnostics[0]?.name}\n`;
+        }
+        if (config.includeManagement && jsonParsed.managementRecommendation) {
+          textSummary += `• **Conducta Recomendada**: ${jsonParsed.managementRecommendation}\n`;
+        }
+
+        return res.json({
+          success: true,
+          caseAnalysisData: jsonParsed,
+          extractedText: jsonBlock + textSummary,
+        });
+      }
+    }
+
+    const promptText = `
+Texto de la Valoración Experta de Imagen realizada por la IA en Doble Valoración (puede contener el análisis inicial y un historial de consultas/correcciones posteriores):
+"""
+${analysisText}
+"""
+
+SÍNTESIS PARA EL MÓDULO GENERADOR DE REPORTES RADIOLÓGICOS:
+Por favor, extrae e integra de forma completa, amplia, rigurosa y detallada todos los datos fundamentales y necesarios para alimentarlos directamente al módulo generador de reportes.
+
+REQUISITOS FUNDAMENTALES:
+1. **CONSERVA TODOS LOS HALLAZGOS Y MÉTRICAS DETALLADAS**: Extrae y conserva TODOS los hallazgos anatómicos u orgánicos (normales y patológicos), dimensiones, métricas exactas, ecoestructura/densidad/señal, patrón Doppler, vascularización y relaciones anatómicas. NO omitas las descripciones anatómicas o mediciones detalladas.
+2. **PRIORIDAD A CORRECCIONES Y CHAT ACTIVO**: Si el texto contiene un historial de consultas, aclaraciones o correcciones del chat activo, da PRIORIDAD ABSOLUTA a los hallazgos re-evaluados, clasificaciones ajustadas y diagnósticos corregidos en las aclaraciones y respuestas más recientes.
+3. **INCLUYE CLASIFICACIONES Y CONCLUSIONES**: Incluye íntegramente las clasificaciones clínicas/escalas (p. ej., BI-RADS, Bosniak, TI-RADS, LI-RADS, PI-RADS, Lung-RADS, etc.) con sus estadios, la conclusión o impresión diagnóstica definitiva, diagnósticos diferenciales relevantes y la conducta o recomendación clínica indicada.
+4. **FORMATO LIMPIO Y ESTRUCTURADO EN ESPAÑOL**: Presenta la información en secciones bien organizadas con títulos en negrita en Markdown (p. ej., **CONTEXTO CLÍNICO**, **HALLAZGOS RADIOLÓGICOS DETALLADOS**, **CLASIFICACIONES Y ESCALAS**, **IMPRESIÓN DIAGNÓSTICA Y RECOMENDACIONES**).
+5. **SIN CÓDIGO NI MARCAS JSON**: NO incluyas etiquetas JSON, bloques [CASE_ANALYSIS_JSON], ni estructuras de código. Tampoco incluyas saludos, introducciones de chat o metacomentarios.
+
+Genera una transcripción técnica radiológica exhaustiva y limpia, lista para que el generador redacte el reporte clínico completo a partir de ella.
 `;
 
     const systemInstruction = 
-      "Eres un transcriptor y redactor médico de alta precisión. Tu tarea es analizar un dictamen radiológico complejo de doble valoración y extraer estrictamente los hallazgos patológicos anatómicos detallados, clasificaciones diagnósticas y diagnóstico final.";
+      "Eres un médico radiólogo subespecialista y redactor de informes clínicos de alta precisión. Tu tarea es analizar el dictamen de doble valoración y estructurar una síntesis clínica exhaustiva con todos los hallazgos anatómicos, mediciones, clasificaciones e impresión diagnóstica necesaria para confeccionar un informe radiológico completo.";
 
     const response = await ai.models.generateContent({
       model: selectedModel,
@@ -2335,22 +2897,24 @@ Reporte Radiológico generado:
 ${report}
 """
 
-Por favor, realiza una EVALUACIÓN DEL REPORTE médico interpretado. Tu tarea principal es:
+Por favor, realiza una EVALUACIÓN Y AUDITORÍA DE CALIDAD DEL REPORTE médico interpretado. Tu tarea principal es:
 1. Analizar el informe elaborado de forma meticulosa.
-2. Identificar y recomendar los aspectos clave de gran relevancia diagnóstica o terapéutica que el médico clínico solicitante (clínico) debería saber obligatoriamente.
-3. Diferenciar de manera sumamente clara y visible:
-   - **Aspectos / Datos ya incluidos en el reporte actual** (aquellos que ya están redactados y documentados en el informe).
-   - **Aspectos / Datos que faltarían o podrían recomendarse agregar** (aquellos que no están o podrían complementar y mejorar sustancialmente el manejo clínico o la toma de decisiones).
+2. Identificar y recomendar los aspectos clave de gran relevancia diagnóstica o terapéutica que el médico clínico solicitante debería conocer obligatoriamente.
+3. **Clasificaciones y Escalas Radiológicas Sugeridas**: Identifica de forma activa y explícita qué clasificaciones radiológicas internacionales, escalas de riesgo o sistemas de gradación son pertinentes o requeridos según los hallazgos del reporte (por ejemplo: BI-RADS, O-RADS, LI-RADS, TI-RADS, PI-RADS, Bosniak, Neer, Rockwood, Gartland, Kellgren-Lawrence, AO, Balthazar, Fleischner, Stanford/DeBakey, etc.). Si el reporte ya cuenta con una escala, evalúa si es correcta o precisa; si le falta una escala pertinente, sugiere la categorización o grado exacto a incluir.
+4. Diferenciar de manera sumamente clara y visible:
+   - **Aspectos y Clasificaciones ya incluidos en el reporte actual** (aquellos que ya están redactados y documentados en el informe).
+   - **Aspectos, Recomendaciones y Clasificaciones Sugeridas para agregar** (aquellos que no están o podrían complementar y mejorar sustancialmente el manejo clínico o la toma de decisiones).
 
 Por favor, estructura tu respuesta en español con formato Markdown elegante, limpio y profesional. No agregues notas introductorias ni comentarios fuera del análisis. Clasifica los aspectos en secciones claras y utiliza viñetas o tablas según sea más agradable de leer.
 
 ⚠️ REQUISITO TECNOLÓGICO CRÍTICO:
-Para cada uno de tus puntos de la sección de "Aspectos / Datos que faltarían o podrían recomendarse agregar" (recomendaciones clínicas), DEBES iniciar el punto obligatoriamente con la etiqueta exacta "[RECOMENDACION]: " (en mayúsculas, comillas no, corchetes rígidos exactamente de esta forma: \`[RECOMENDACION]: \`).
-Ejemplo correcto:
-- [RECOMENDACION]: Describir la clasificación de Bosniak para el quiste renal detectado.
-- [RECOMENDACION]: Medir el espesor de la fascia renal si está engrosada.
+Para cada uno de tus puntos de la sección de "Aspectos, Recomendaciones y Clasificaciones Sugeridas para agregar" (tanto recomendaciones clínicas como sugerencias de clasificaciones/escalas radiológicas), DEBES iniciar el punto obligatoriamente con la etiqueta exacta "[RECOMENDACION]: " (en mayúsculas, comillas no, corchetes rígidos exactamente de esta forma: \`[RECOMENDACION]: \`).
+Ejemplos correctos:
+- [RECOMENDACION]: Clasificación BI-RADS Categoría 4A - Sospecha baja de malignidad. Se sugiere correlación histopatológica o biopsia percutánea.
+- [RECOMENDACION]: Clasificación de Bosniak Categoría II - Quiste renal benigno mínimamente complejo sin necesidad de seguimiento quirúrgico.
+- [RECOMENDACION]: Medir el espesor de la fascia renal si está engrosada en la sección de hallazgos.
 
-No agregues cursivas ni negritas dentro de los corchetes. El software lee este identificador exacto de forma automatizada para renderizar un botón en la interfaz de usuario.
+No agregues cursivas ni negritas dentro de los corchetes. El software lee este identificador exacto de forma automatizada para renderizar un botón en la interfaz de usuario que permite al radiólogo incorporar la recomendación o clasificación al informe con un solo clic.
 `;
 
     const systemInstruction = 
@@ -2469,7 +3033,7 @@ CRÍTICO: No inventes URLs bajo ninguna circunstancia. Tampoco intercambies ni m
       "Eres un consultor senior de primer nivel en medicina académica y radiología clínica, bibliotecario médico maestro en recuperación de evidencia científica y editor en jefe de revistas de radiología indexadas. Tu misión es redactar revisiones de literatura clínica sumamente minuciosas, integradas, ricas en detalles y de diversas fuentes académicas de prestigio (como PubMed, Radiopaedia y consorcios de sociedades internacionales), asegurándote de que no exista ninguna discrepancia de temas en tus enlaces de referencia. Devuelve siempre un objeto JSON válido que cumpla estrictamente con el esquema especificado.";
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-3.6-flash",
       contents: promptText,
       config: {
         systemInstruction: systemInstruction,
@@ -3239,6 +3803,104 @@ REGLAS DE RESPUESTA:
   }
 });
 
+app.post("/api/classify-and-label-image", async (req: express.Request, res: express.Response) => {
+  try {
+    const { image, filename, studyType, clinicalHistory, findings } = req.body;
+    if (!image) {
+      return res.status(400).json({ success: false, error: "Se requiere la imagen." });
+    }
+
+    const ai = getGeminiClient();
+    const selectedModel = getModelName("gemini-3.6-flash");
+
+    let mimeType = "image/png";
+    const mimeMatch = image.match(/^data:([^;]+);/);
+    if (mimeMatch) {
+      mimeType = mimeMatch[1];
+    }
+
+    const checkImageSupport = (mime: string) => {
+      if (!mime) return false;
+      const m = mime.toLowerCase();
+      return (
+        m.includes("png") ||
+        m.includes("jpeg") ||
+        m.includes("jpg") ||
+        m.includes("webp") ||
+        m.includes("heic") ||
+        m.includes("heif") ||
+        m.includes("pdf")
+      );
+    };
+
+    const parts: any[] = [];
+    const imgSupported = checkImageSupport(mimeType);
+    if (imgSupported) {
+      parts.push({
+        inlineData: {
+          data: cleanBase64(image),
+          mimeType: mimeType,
+        },
+      });
+    }
+
+    const queryText = `Analiza esta imagen médica y clasifícala.
+Nombre de archivo: ${filename || "Desconocido"}
+Tipo de estudio/Solicitud: ${studyType || "Mamografía y Ultrasonido"}
+Antecedentes/Reporte: ${findings || clinicalHistory || "No especificado"}
+
+INSTRUCCIONES:
+1. Determina la MODALIDAD de la imagen:
+   - "MMG" si es una Mamografía (rayos X de mama, mamograma digital, proyecciones mamográficas en escala de grises sobre fondo negro/oscuro, capturas de proyecciones CC o MLO).
+   - "US" si es una Ecografía / Ultrasonido (imágenes con barridos sonográficos, Doppler color, profundidad, foco, o capturas de ecógrafo).
+2. Si es MMG:
+   - Determina la PROYECCIÓN: "CC" (Proyecciones Cráneo Caudales / Craneocaudales) o "MLO" (Proyecciones Medio Lateral Oblicuas / Mediolateral Oblicuas) u "OTRO".
+   - Determina la LATERALIDAD: "Bilateral" (si muestra ambas mamas / proyecciones pareadas), "Derecha", "Izquierda" o "Bilateral".
+3. Redacta un RÓTULO / LEYENDA CLÍNICA (pie de foto profesional en español, de 12 a 25 palabras) sintetizando la modalidad, proyección y hallazgos clave o estado del tejido fibroglandular/mamas.
+   - Si la proyección es "CC" (Cráneo Caudales): Inicia el rótulo OBLIGATORIAMENTE con "Proyecciones Cráneo Caudales (CC)." seguido de la descripción sintética del tejido, distribución simétrica y ausencia/presencia de lesiones o calcificaciones. Ej: "Proyecciones Cráneo Caudales (CC). Tejido fibroglandular de distribución simétrica sin evidencia de nódulos ni microcalcificaciones sospechosas."
+   - Si la proyección es "MLO" (Medio Lateral Oblicuas): Inicia el rótulo OBLIGATORIAMENTE con "Proyecciones Medio Lateral Oblicuas (MLO)." seguido de la descripción sintética del tejido, región axilar y profundidad pectoral. Ej: "Proyecciones Medio Lateral Oblicuas (MLO). Adecuada visualización de los planos pectorales sin distorsiones ni adenopatías axilares."
+   - Para US: "Ultrasonido mamario, cuadrante superior externo derecho mostrando quiste anecoico simple de 10 mm."
+
+Responde EXCLUSIVAMENTE en formato JSON estricto con la siguiente estructura:
+{
+  "modality": "MMG" o "US",
+  "projection": "MLO" | "CC" | "OTRO",
+  "side": "Bilateral" | "Derecha" | "Izquierda",
+  "label": "texto del rótulo"
+}`;
+
+    parts.push({ text: queryText });
+
+    const response = await ai.models.generateContent({
+      model: selectedModel,
+      contents: parts,
+      config: {
+        responseMimeType: "application/json",
+      }
+    });
+
+    const rawJson = response.text ? response.text.trim() : "{}";
+    let parsed: any = {};
+    try {
+      parsed = JSON.parse(rawJson);
+    } catch (e) {
+      parsed = { modality: "US", projection: "OTRO", side: "No especificado", label: rawJson };
+    }
+
+    res.json({
+      success: true,
+      modality: parsed.modality === "MMG" ? "MMG" : "US",
+      projection: ["MLO", "CC", "OTRO"].includes(parsed.projection) ? parsed.projection : "OTRO",
+      side: ["Derecha", "Izquierda", "Bilateral"].includes(parsed.side) ? parsed.side : "No especificado",
+      label: parsed.label || ""
+    });
+  } catch (error: any) {
+    console.error("Error en /api/classify-and-label-image:", error);
+    const friendlyError = handleGeminiError(error);
+    res.status(500).json({ success: false, error: friendlyError });
+  }
+});
+
 app.post("/api/auto-label-us-photo", async (req: express.Request, res: express.Response) => {
   try {
     const { image, studyType, clinicalHistory, findings } = req.body;
@@ -3248,7 +3910,7 @@ app.post("/api/auto-label-us-photo", async (req: express.Request, res: express.R
     }
 
     const ai = getGeminiClient();
-    const selectedModel = getModelName("gemini-3.5-flash");
+    const selectedModel = getModelName("gemini-3.6-flash");
 
     // Check if image string is SVG or base64
     let mimeType = "image/png";
@@ -3334,7 +3996,7 @@ app.post("/api/autocomplete-label-from-report", async (req: express.Request, res
     }
 
     const ai = getGeminiClient();
-    const selectedModel = getModelName(model || "gemini-3.5-flash");
+    const selectedModel = getModelName(model || "gemini-3.6-flash");
 
     const promptText = `
 Eres un radiólogo clínico experto y editor de artículos científicos de radiología.
@@ -3389,43 +4051,92 @@ app.post("/api/correlate-figures-retroactive", async (req: express.Request, res:
     }
 
     const ai = getGeminiClient();
-    const selectedModel = getModelName(model || "gemini-3.5-flash");
+    const selectedModel = getModelName(model || "gemini-3.6-flash");
 
     let promptText = `
 Eres un radiólogo experto y un editor de informes médicos de alta precisión.
 Se te proporciona un informe de radiología/ecografía estructurado en formato Markdown, y un listado de imágenes/capturas de ultrasonido adjuntas que han sido rotuladas/etiquetadas por el médico o mediante IA.
 
-Tu misión es analizar el texto del informe de forma integral (especialmente las secciones de HALLAZGOS e IMPRESIÓN DIAGNÓSTICA) e insertar de forma RETRÓGRADA y natural la indicación entre paréntesis para el lector, por ejemplo: "(ver Figura 1)" o "(ver Figura 2)", en el lugar preciso donde se describen los hallazgos que corresponden directamente con la descripción de cada imagen.
+TU MISIÓN PASO A PASO:
+1. Lee atentamente el INFORME DE RADIOLOGÍA de principio a fin (especialmente las secciones de HALLAZGOS e IMPRESIÓN DIAGNÓSTICA).
+2. Para cada una de las IMÁGENES ADJUNTAS (identificadas por su "id" y su "caption"), determina en qué lugar del texto del informe se menciona por primera vez el hallazgo, estructura u órgano correspondiente a esa imagen.
+3. REORDENA la lista de imágenes para que queden en el orden exacto de su primera aparición cronológica en el texto del informe (de arriba a abajo):
+   - La imagen cuyo hallazgo se describe PRIMERO en el reporte será la Figura 1.
+   - La imagen cuyo hallazgo se describe SEGUNDO en el reporte será la Figura 2.
+   - La imagen cuyo hallazgo se describe TERCERO será la Figura 3, y así sucesivamente.
+   - Si alguna imagen no coincide claramente con el reporte, colócala al final de la lista conservando su orden relativo.
+4. Una vez determinado el nuevo orden de las imágenes (y por ende su nuevo número de Figura 1, 2, 3...):
+   - Inserta la referencia "(ver Figura 1)", "(ver Figura 2)", etc. en el texto del informe en la ubicación exacta donde se describe dicho hallazgo específico.
+   - Esto garantiza que las menciones "(ver Figura 1)", "(ver Figura 2)", "(ver Figura 3)" dentro del texto del informe aparezcan en ORDEN ESTRICTAMENTE ASCENDENTE (1, 2, 3...) a medida que el lector lee el documento de arriba a abajo.
+5. NO alteres, elimines ni resumas el texto original del reporte. Únicamente debes insertar los paréntesis de referencia como "(ver Figura 1)" en el lugar exacto que corresponda. Mantén intacto el formato de secciones.
 
-ESTE ES EL LISTADO DE IMÁGENES/FIGURAS DISPONIBLES CON SU RESPECTIVO NÚMERO Y RÓTULO:
+LISTADO DE IMÁGENES ADJUNTAS DISPONIBLES:
 `;
 
     attachedImages.forEach((img: any) => {
-      promptText += `- Figura ${img.index}: "${img.caption || "Sin descripción"}"\n`;
+      const modality = img.modality || "US";
+      const proj = img.projection || "";
+      const side = img.side || "";
+      promptText += `- ID: "${img.id}" | Modalidad: "${modality}" | Proyección: "${proj}" | Lado: "${side}" | Rótulo/Descripción: "${img.caption || img.name || "Sin descripción"}"\n`;
     });
 
     promptText += `
-ESTE ES EL INFORME DE RADIOLOGÍA ACTUAL EN EL QUE TRABAJAS:
+INFORME DE RADIOLOGÍA ACTUAL EN EL QUE TRABAJAS:
 """
 ${currentReport}
 """
 
-REGLAS DE INSERCIÓN RETRÓGRADA CRÍTICAS:
-1. Identifica qué parte de los HALLAZGOS o IMPRESIÓN DIAGNÓSTICA describe los órganos, estructuras o lesiones mencionadas en las descripciones de las figuras de arriba.
-2. Inserta la referencia "(ver Figura X)" (donde X es el número de la figura correspondiente) al final de la frase u oración que describe ese hallazgo específico. Hazlo de forma natural y elegante, cuidando la puntuación gramatical (ej. "...se observa un lito de 12 mm en el cuello de la vesícula biliar (ver Figura 1).").
-3. Si la descripción de la figura es genérica (ej. "Riñón Derecho"), insértala donde se describa dicho órgano o estructura.
-4. Si no encuentras una correlación clara para alguna figura, NO fuerces la inserción de esa figura específica. Pero intenta correlacionar todas las que tengan sentido clínicamente.
-5. NO alteres, elimines ni resumas el texto original del reporte. Únicamente debes insertar los paréntesis de referencia como "(ver Figura 1)" en el lugar exacto que corresponda. Mantén intacto el formato de secciones como [INICIO DEL REPORTE] si están presentes.
-6. Devuelve exclusivamente el informe de radiología completo en formato Markdown con las indicaciones insertadas. No incluyas explicaciones previas ni comentarios, solo el reporte.
+Debes devolver un objeto JSON estricto con:
+- "reorderedImageIds": un arreglo con todos los IDs de las imágenes en el nuevo orden cronológico de aparición en el informe (ej: ["id1", "id2", "id3"]).
+- "report": el texto completo del informe con los paréntesis "(ver Figura 1)", "(ver Figura 2)", etc. insertados en orden estrictamente ascendente.
 `;
 
     const response = await ai.models.generateContent({
       model: selectedModel,
       contents: [{ text: promptText }],
+      config: {
+        temperature: 0.1,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            reorderedImageIds: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: "Lista de IDs de imagen reordenados según su primera aparición en el texto del reporte."
+            },
+            report: {
+              type: Type.STRING,
+              description: "Informe en Markdown con referencias (ver Figura 1), (ver Figura 2) insertadas en orden estrictamente ascendente."
+            }
+          },
+          required: ["reorderedImageIds", "report"]
+        }
+      }
     });
 
-    const report = response.text ? response.text.trim() : currentReport;
-    res.json({ success: true, report });
+    let jsonParsed: any = null;
+    if (response.text) {
+      try {
+        jsonParsed = JSON.parse(response.text);
+      } catch (e) {
+        console.error("Error parseando respuesta JSON de correlación de figuras:", e);
+      }
+    }
+
+    if (jsonParsed && jsonParsed.report) {
+      res.json({
+        success: true,
+        report: jsonParsed.report,
+        reorderedImageIds: jsonParsed.reorderedImageIds || []
+      });
+    } else {
+      res.json({
+        success: true,
+        report: response.text ? response.text.trim() : currentReport,
+        reorderedImageIds: []
+      });
+    }
   } catch (error: any) {
     console.error("Error en /api/correlate-figures-retroactive:", error);
     const friendlyError = handleGeminiError(error);
@@ -3709,11 +4420,35 @@ app.post("/api/analyze-anatomy", async (req: express.Request, res: express.Respo
 `;
     }
 
+    let breastInstruction = "";
+    if (studyType && (studyType.toLowerCase().includes("mama") || studyType.toLowerCase().includes("mamograf"))) {
+      breastInstruction = `
+[REGLA ESPECIAL PARA ULTRASONIDO / ESTUDIO DE MAMAS]:
+- Mapea minuciosamente las menciones de los hallazgos por cada eje o hora (1 a 12), región retroareolar, cola de spence y axila de ambas mamas (Mama Derecha "md_" y Mama Izquierda "mi_"):
+  * Ejes horarios ("md_eje1" a "md_eje12", "mi_eje1" a "mi_eje12"): Si el reporte menciona un nódulo, quiste, masa o hallazgo en hora X, eje X, 10:00, 10h, radio X o CSE/CSI/CIE/CII, asígnalo al ID del eje correspondiente.
+  * Región retroareolar ("md_retroareolar", "mi_retroareolar"): Si se describe ectasia, conductos o lesión detrás del pezón.
+  * Prolongación axilar / Cola de Spence ("md_cola_spence", "mi_cola_spence"): Si se menciona tejido o alteración en cola de Spence.
+  * Región axilar ("md_axila", "mi_axila"): Si se mencionan adenopatías, ganglios o hallazgos en fosa axilar.
+- Si una estructura presenta una lesión, asigna un "state" representativo (ej: "Nódulo Hipoecoico", "Quiste Simple", "Fibroadenoma", "Ectasia Ductal", "Adenopatía") y en "description" extrae el resumen del hallazgo con sus medidas y características del reporte.
+- Si el reporte no menciona hallazgos para una hora o región en particular, márcala como "no_descrito".
+`;
+    }
+
+    let neckInstruction = "";
+    if (studyType && (studyType.toLowerCase().includes("cuello") || studyType.toLowerCase().includes("tiroide"))) {
+      neckInstruction = `
+[REGLA ESPECIAL PARA GANGLIOS CERVICALES EN ESTUDIOS DE CUELLO]:
+- Si el reporte describe "adenopatías cervicales de aspecto inflamatorio bilateral", "adenopatías reactivas bilaterales" o hallazgos ganglionares generales SIN especificar un nivel ganglionar individual (Nivel I, Nivel II, Nivel III, Nivel IV, Nivel V, Nivel VI, Nivel VII):
+  * Cada uno de los niveles ganglionares individuales ("nodes_r_i"..."nodes_r_vii", "nodes_l_i"..."nodes_l_vii") DEBE ser asignado a "Normal" (o "no_descrito") para que el esquema los muestre en VERDE.
+  * SÓLO asigna un estado alterado a un nivel ganglionar individual si el reporte hace referencia explícita a dicho nivel específico (ej. "nivel IIa", "nivel III derecho", etc.).
+`;
+    }
+
     let specialInstruction = `
 [REGLA DE CONGRUENCIA Y SINCERIDAD ESTRICTA]:
 - Analiza con sumo cuidado TODO el texto del reporte médico (tanto el cuerpo general "Hallazgos" como las conclusiones "Impresión Diagnóstica / Conclusión").
 - NO inventes ni asumas ningún hallazgo patológico que no esté explícitamente escrito en el texto.
-- Si una estructura se describe como "Normal", "Sin alteraciones", "Conservado", "Homogéneo", "Límites normales", "No muestra alteraciones" o similar, su "state" DEBE ser estrictamente "Normal" y su "description" DEBE ser EXACTAMENTE "Dentro de límites normales.".
+- Si una estructura se describe como "Normal", "Sin alteraciones", "Conservado", "Homogéneo", "Límites normales", "No muestra alteraciones" o similar, su "state" DEBE ser strictly "Normal" y su "description" DEBE ser EXACTAMENTE "Dentro de límites normales.".
 - Si la estructura no se menciona en ninguna parte de todo el reporte, su "state" DEBE ser "no_descrito" y su "description" DEBE ser "No mencionado / No descrito.".
 
 - EN PARTICULAR PARA LA ASCITIS / LÍQUIDO LIBRE ("ascitis"):
@@ -3722,6 +4457,8 @@ app.post("/api/analyze-anatomy", async (req: express.Request, res: express.Respo
 - NO utilices términos predeterminados del sistema ni asumas defaults/hallazgos clásicos. El estado ("state") debe describir de forma muy concisa (de 1 a 3 palabras) el diagnóstico patológico real escrito en el texto (por ejemplo: "Ruptura Completa", "Desgarro", "Bursitis", "Hernia umbilical", "Normal", "no_descrito").
 - Está terminantemente prohibido alucinar niveles de severidad, medidas, escalas, o patologías que no estén explícitamente escritas en el texto.
 ${sidePrompt}
+${breastInstruction}
+${neckInstruction}
 `;
 
     const promptText = `
@@ -6670,7 +7407,7 @@ app.post("/api/detect-external-guideline", async (req: express.Request, res: exp
       "- No sugieras 'gpc-bosniak' (Clasificación de Bosniak) si no hay mención explícita de quistes o lesiones quísticas renales complejas con tabiques o calcificaciones.\n" +
       "- No sugieras 'gpc-ti-rads' (ACR TI-RADS) si la tiroides es normal o no se describen nódulos tiroideos.\n" +
       "- No sugieras 'gpc-bi-rads' (ACR BI-RADS) si no hay hallazgos patológicos o sospechas reales en mamas.\n" +
-      "- No sugieras 'gpc-sru-esteatosis' (Consenso SRU Hígado) si el hígado tiene ecogenicidad normal o si se niega explícitamente la esteatosis hepática (por ejemplo, 'hígado de tamaño y ecogenicidad normal, sin esteatosis').\n" +
+      "- No sugieras 'gpc-sru-esteatosis' (Consenso SRU Hígado) si el hígado tiene ecogenicidad normal o si se niega explícitamente la esteatosis hepática (por ejemplo, 'hígado de tamaño y ecogenicidad normal, sin esteatosis'). Si está presente, los rangos oficiales QUS son: Normal (<5.0%), Leve (5.0-12.0%), Moderada (12.1-20.0%), Severa (>20.0%).\n" +
       "- No sugieras 'gpc-sru-carotidas' (Consenso SRU Carótidas) o 'gpc-mannheim' (Consenso de Mannheim GIM) si no se describe patología carotídea, placas de ateroma o alteración del grosor íntima-media.\n" +
       "- No sugieras 'gpc-kellgren' (Kellgren & Lawrence) si no se describe artrosis, osteofitos o pinzamiento articular en la rodilla.\n" +
       "- No sugieras 'gpc-sru-tvp' (Consenso SRU de TVP) si no hay signos de trombosis venosa profunda.\n" +
@@ -6692,7 +7429,7 @@ Las guías estándar disponibles y sus condiciones son:
 - "gpc-sru-carotidas": Aplicada si hay estenosis o placas carotídeas.
 - "gpc-bi-rads": Aplicada si hay lesiones mamarias (nódulos, microcalcificaciones, asimetrías) o BI-RADS explícito.
 - "gpc-bosniak": Aplicada si hay quistes renales con tabiques, calcificaciones o complejidad.
-- "gpc-sru-esteatosis": Aplicada si hay esteatosis hepática (hígado graso, infiltración grasa).
+- "gpc-sru-esteatosis": Aplicada si hay esteatosis hepática (hígado graso, infiltración grasa). Clasificación QUS: Leve (5.0-12.0%), Moderada (12.1-20.0%), Severa (>20.0%).
 - "gpc-kellgren": Aplicada si hay artrosis o pinzamiento articular en rodilla.
 - "gpc-sru-tvp": Aplicada si hay trombosis venosa profunda o sospecha de TVP.
 - "gpc-tasc-ii": Aplicada si hay estenosis o flujos alterados en Doppler arterial de miembros inferiores.
@@ -7000,6 +7737,88 @@ ${report}
 });
 
 /**
+ * 40b. API: RETROGRADE INJECTION OF ORGAN SYNOPTIC FINDINGS INTO REPORT
+ * POST /api/inject-organ-synoptic-retrograde
+ * Payload: {
+ *   model?: string,
+ *   report: string,
+ *   organ: string,
+ *   sentencesToInject: string[],
+ *   synopticTableMarkdown?: string,
+ *   includeSynopticTable?: boolean
+ * }
+ */
+app.post("/api/inject-organ-synoptic-retrograde", async (req: express.Request, res: express.Response) => {
+  try {
+    const { model, report, organ, sentencesToInject = [], synopticTableMarkdown, includeSynopticTable = true } = req.body;
+    if (!report || !organ) {
+      return res.status(400).json({ success: false, error: "Se requieren los parámetros 'report' y 'organ'." });
+    }
+
+    const ai = getGeminiClient();
+    const modelToUse = getModelName(model);
+
+    const prompt = `Eres un radiólogo subespecialista y editor médico de alta precisión.
+Tu objetivo principal es incrustar e inyectar de manera RETRÓGRADA, INTELIGENTE e IMPERCEPTIBLE las frases/puntos seleccionados del cuadro sinóptico referente al órgano o estructura '${organ}' dentro del texto original del reporte radiológico, de modo que el reporte quede enriquecido y perfectamente redactado.
+
+Órgano / Estructura: '${organ}'
+
+Frases o Puntos Clínicos a Inyectar de forma retrógrada al cuerpo del reporte:
+${sentencesToInject.length > 0 ? sentencesToInject.map((s: string, idx: number) => `${idx + 1}. ${s}`).join("\n") : "(Ninguna frase individual adicional; solo integrar la coherencia del cuadro)"}
+
+Cuadro Sinóptico en Markdown a adjuntar (si procede):
+${synopticTableMarkdown || "Ninguno"}
+
+REGLAS DE ORO PARA LA REDACCIÓN E INSERCIÓN IMPERCEPTIBLE:
+1. Revisa detenidamente el cuerpo del reporte radiológico original (especialmente las secciones 'HALLAZGOS', 'INFORME', u 'ORGANOS').
+2. Localiza la sección o párrafo correspondiente a '${organ}'. Si el órgano ya está descrito en el reporte, integra suavemente las nuevas frases o puntos dentro del mismo párrafo o viñeta de dicho órgano, ajustando la puntuación y conectores gramaticales para que la adición sea fluida y natural.
+3. Evita redundancias o duplicaciones de información. Si el reporte ya tenía un dato similar, amplíalo o refínalo en lugar de pegarlo dos veces.
+4. Si el órgano '${organ}' no figuraba en la descripción narrativa original, agrega su descripción dentro de la sección 'HALLAZGOS' respetando la estructura y estilo del documento (por ejemplo, como un nuevo párrafo o viñeta anatómica coherente).
+5. Si alguna de las frases inyectadas implica un diagnóstico relevante, escala de riesgo (TI-RADS, Bosniak, LI-RADS, etc.) o recomendación clínica, asegúrate de reflejarla o resumirla también de forma armónica en la 'IMPRESIÓN DIAGNÓSTICA' o 'CONCLUSIÓN' si esa sección existe.
+6. ${includeSynopticTable && synopticTableMarkdown ? `INSERCIÓN DEL CUADRO Y RESUMEN INTERPRETATIVO: Adjunta al final del reporte la sección '### SINOPSIS CLÍNICA DE ${organ.toUpperCase()}' incluyendo de manera íntegra tanto la tabla Markdown como el párrafo '**Resumen Interpretativo:** ...' que se proporciona en 'Cuadro Sinóptico y Resumen Interpretativo en Markdown'. Si ya existe la sección de sinopsis de dicho órgano, reemplázala completamente por el nuevo contenido.` : "No incluyas secciones de cuadro sinóptico si no se solicita."}
+7. EL INFORME FINAL DEBE LEERSE IMPECABLE, CONTINUO Y PROFESIONAL, SIN RASTROS DE QUE FUE EDITADO O COMPLEMENTADO A POSTERIORI.
+
+Reporte radiológico original:
+${report}
+`;
+
+    const response = await ai.models.generateContent({
+      model: modelToUse,
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            updatedReport: {
+              type: Type.STRING,
+              description: "El reporte radiológico completo actualizado con la inyección retrógrada inteligente e imperceptible de los hallazgos y el cuadro sinóptico."
+            },
+            summaryOfInjections: {
+              type: Type.STRING,
+              description: "Resumen conciso en una frase de cómo y dónde se incrustaron los puntos en el reporte."
+            }
+          },
+          required: ["updatedReport", "summaryOfInjections"]
+        }
+      }
+    });
+
+    const textOutput = response.text || "{}";
+    const parsedData = JSON.parse(textOutput.trim());
+
+    res.json({
+      success: true,
+      updatedReport: parsedData.updatedReport || report,
+      summaryOfInjections: parsedData.summaryOfInjections || "Inyección retrógrada e imperceptible completada exitosamente."
+    });
+  } catch (error: any) {
+    console.error("Error en /api/inject-organ-synoptic-retrograde:", error);
+    res.status(500).json({ success: false, error: handleGeminiError(error) });
+  }
+});
+
+/**
  * 41. API: GENERATE FRACTURE SYNOPTIC TABLE (Creador de Sinopsis de Fracturas)
  * POST /api/generate-fracture-synoptic
  * Payload: {
@@ -7028,16 +7847,11 @@ REGLAS DE TERMINOLOGÍA Y REDACCIÓN (CRÍTICAS):
 4. Para la clasificación de la fractura, deduce la escala más idónea para esa región anatómica (ej. clasificación AO, Schatzker para meseta tibial, Garden o Pauwels para cuello femoral, Gustilo-Anderson para expuestas, Neer para húmero proximal, etc.) y fundamenta la clasificación clínicamente.
 
 Para cada aspecto clínico del cuadro (debes incluir idealmente estos aspectos: Hueso y Región, Tipo de Trazo, Alineación y Desplazamiento, Angulación, Compromiso Articular, Compromiso de Partes Blandas, Clasificación Sugerida, Recomendación):
-1. 'key': Nombre del aspecto (e.g., 'Hueso y Región', 'Tipo de Trazo', 'Alineación y Desplazamiento', 'Angulación', 'Compromiso Articular', 'Compromiso de Partes Blandas', 'Clasificación Sugerida', 'Recomendación').
-2. 'value': El valor clínico o detalle. Sé específico, profesional y preciso.
-3. 'clinicalSource': 'Hallazgo de Reporte' si se menciona de forma explícita en el reporte, o 'Inferencia Clínica IA' si lo deduces por IA, escalas o según las guías de práctica clínica como complemento.
-4. 'explanation': Breve nota de por qué se incluye este aspecto y su significado clínico en traumatología.
-5. 'narrativeSentence': Una frase en español redactada de forma impecable, fluida, natural y estrictamente profesional en lenguaje médico para ser inyectada en la sección de hallazgos del reporte si se aprueba. No debe sonar robótica. Ej: 'Se observa fractura de trazo oblicuo simple en tercio medio de diáfisis humeral, con desplazamiento lateral del fragmento distal de aproximadamente 5 mm, sin evidencia de angulación ni compromiso de la superficie articular.'.
-
-Reglas estrictas:
-- No inventes fracturas que no existan en el reporte de origen. Si el reporte no describe ninguna fractura, indica en 'fractureFound' el valor false.
-- Mantén un rigor médico y de traumatología intachable.
-- Escribe todo en minúsculas normales respetando mayúsculas iniciales (evita ALL CAPS).
+1. 'key': Nombre del aspecto.
+2. 'value': El valor clínico o detalle.
+3. 'clinicalSource': 'Hallazgo de Reporte' o 'Inferencia Clínica IA'.
+4. 'explanation': Breve nota de por qué se incluye este aspecto.
+5. 'narrativeSentence': Una frase en español redactada de forma impecable en lenguaje médico para ser inyectada en el reporte.
 
 Reporte Clínico:
 ${report}
@@ -7051,19 +7865,18 @@ ${report}
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            fractureFound: { type: Type.BOOLEAN, description: "True if any fracture description was detected in the report text" },
-            bone: { type: Type.STRING, description: "The affected bone or region identified (e.g., Fémur distal, Radio distal, Clavícula)" },
+            fractureFound: { type: Type.BOOLEAN },
+            bone: { type: Type.STRING },
             aspects: {
               type: Type.ARRAY,
-              description: "List of analyzed fracture parameters",
               items: {
                 type: Type.OBJECT,
                 properties: {
-                  key: { type: Type.STRING, description: "The name of the fracture aspect (e.g., Hueso y Región, Tipo de Trazo, Alineación y Desplazamiento, Angulación, Compromiso Articular, Compromiso de Partes Blandas, Clasificación Sugerida, Recomendación)" },
-                  value: { type: Type.STRING, description: "The technical detail. Must be highly precise and based on findings or standard traumatology inference." },
-                  clinicalSource: { type: Type.STRING, description: "Indicates the source: 'Hallazgo de Reporte' or 'Inferencia Clínica IA'." },
-                  explanation: { type: Type.STRING, description: "Brief traumatology explanation of this aspect." },
-                  narrativeSentence: { type: Type.STRING, description: "A beautifully written, fluent medical sentence explaining this aspect that can be inserted directly as a narrative text into the report." }
+                  key: { type: Type.STRING },
+                  value: { type: Type.STRING },
+                  clinicalSource: { type: Type.STRING },
+                  explanation: { type: Type.STRING },
+                  narrativeSentence: { type: Type.STRING }
                 },
                 required: ["key", "value", "clinicalSource", "explanation", "narrativeSentence"]
               }
@@ -7085,6 +7898,189 @@ ${report}
     });
   } catch (error: any) {
     console.error("Error en /api/generate-fracture-synoptic:", error);
+    res.status(500).json({ success: false, error: handleGeminiError(error) });
+  }
+});
+
+/**
+ * 42. API: GENERATE BIOMECHANICAL & INFLAMMATORY RADAR
+ * POST /api/generate-biomechanical-radar
+ * Payload: { model?: string, report: string, studyType?: string, radarMode?: "auto" | "msk" | "visceral" | "oncology" | "rotator_cuff" | "knee_oa" | "cholecystitis" | "hepatic" }
+ */
+app.post("/api/generate-biomechanical-radar", async (req: express.Request, res: express.Response) => {
+  try {
+    const { model, report, studyType, radarMode } = req.body;
+    if (!report) {
+      return res.status(400).json({ success: false, error: "Se requiere el parámetro 'report'." });
+    }
+
+    const ai = getGeminiClient();
+    const modelToUse = getModelName(model);
+
+    const requestedMode = radarMode || "auto";
+
+    const prompt = `Eres un médico radiólogo y especialista en oncología radiológica, ecografía de alta resolución, medicina interna, cirugía general, traumatología, medicina deportiva y patología articular.
+Analiza minuciosamente el reporte radiológico/ecográfico/resonancia proporcionado y calcula un Perfil de Radar Multivectorial en 6 ejes o vectores clave de 0 a 10 (donde 0 es fisiológico/ausente/benigno y 10 es crítico/masivo/severa afectación).
+
+ESTUDIO CLÍNICO: ${studyType || "General / No especificado"}
+MODALIDAD SOLICITADA: ${requestedMode === "auto" ? "Detección Automática por IA" : requestedMode.toUpperCase()}
+
+INSTRUCCIÓN DE MATRIZ VECTORIAL A APLICAR:
+
+${(requestedMode === "rotator_cuff" || (requestedMode === "auto" && /manguito|supraespinoso|infraespinoso|subescapular|bursitis subacrom|hombro|tclb|b[ií]ceps/i.test(report))) ? `
+SI LA MATRIZ ES DE MANGUITO ROTADOR / PATOLOGÍA DE HOMBRO (ROTATOR CUFF 6D):
+Aplica la matriz de 6 vectores específicos para afección del manguito rotador y estructura bicipital:
+1. "ruptura_supraespinoso": Ruptura del Supraespinoso (0-1: Intacto/Fisiológico; 2-4: Desgarro parcial articular/bursal/intratendinoso de bajo grado <50%; 5-6: Desgarro parcial de alto grado >50%; 7-8: Ruptura transfixiante/completa con retracción leve; 9-10: Ruptura masiva con retracción importante o atrofia muscular).
+2. "bursitis": Presencia de Bursitis Subacromiodeltoidea (0-1: Ausente/Líquido fisiológico; 2-4: Mínima efusión/engrosamiento sinovial leve; 5-6: Moderada distensión/sinovitis difusa; 7-8: Severa distensión/reacción exudativa-hemorrágica o septada; 9-10: Distensión masiva/reacción flemónides-adherencial).
+3. "pinzamiento": Pinzamiento Subacromial - Grado de Limitación Funcional (EVALUADO EXCLUSIVAMENTE POR EL GRADO DE LIMITACIÓN FUNCIONAL Y DOLOR EN MANIOBRAS DINÁMICAS: 0-1: Ausente/Sin limitación en maniobras dinámicas; 2-4: Leve dolor al final del arco con maniobras de Neer/Hawkins levemente positivas; 5-6: Moderado compromiso con dolor marcado en arco medio 60°-120° y restricción dinámica; 7-8: Severo compromiso con marcada limitación funcional e incapacidad para maniobras activas; 9-10: Imposibilidad de realizar maniobras por limitación funcional y dolor bloqueante severo).
+4. "otros_tendones": Lesión de Otros Tendones del Manguito (Infraespinoso, Subescapular, Redondo Menor: 0-1: Intactos/Estructura normal; 2-4: Tendinosis o desgarro parcial focal leve; 5-6: Desgarro parcial significativo en 1 tendón asociado; 7-8: Ruptura completa de 1 tendón o compromiso parcial grave de varios tendones; 9-10: Compromiso multitendinoso masivo).
+5. "tendinosis_supraespinoso": Tendinosis del Supraespinoso (0-1: Patrón fibrilar normal; 2-4: Tendinosis focal/heterogeneidad ecogénica leve; 5-6: Tendinosis difusa/engrosamiento moderado o microcalcificaciones; 7-8: Tendinosis severa/heterogeneidad marcada o macrocalcificaciones; 9-10: Tendinosis avanzada degenerativa previo a falla estructural).
+6. "tclb": Tendón Cabeza Larga del Bíceps - TCLB (0-1: Intacto/Centrado en corredera; 2-4: Tenosinovitis leve con líquido peritendinoso; 5-6: Tenosinovitis moderada o subluxación parcial/tendinosis; 7-8: Desgarro parcial significativo o luxación medial fuera de corredera; 9-10: Ruptura completa/tendón ausente o retináculo roto).
+` : ""}
+
+${(requestedMode === "msk" || (requestedMode === "auto" && !/manguito|supraespinoso|infraespinoso|subescapular|bursitis subacrom|hombro|tclb|b[ií]ceps/i.test(report) && !/tumor|oncolog|c[aá]ncer|malign|n[oó]dulo|carcinom|masa|neoplas|metast|adenopat|diverticul|pancreat|apendic|colecist|pielonefr|absceso|flem[oó]n/i.test(report))) ? `
+SI LA MATRIZ ES OSTEOMUSCULAR / ARTICULAR GENERAL (MSK):
+Aplica la matriz de 6 vectores biomecánicos tradicionales:
+- "inflamacion": Inflamación / Edema (Edema tisular, derrame articular, tenosinovitis, colecciones, bursitis).
+- "estructural": Compromiso Estructural (Desgarro, ruptura, erosión, solución de continuidad).
+- "biomecanica": Inestabilidad Biomecánica (Mecanismo lesional, sobrecarga, inestabilidad, pinzamiento/impingement).
+- "vascularizacion": Vascularización / Hiperemia (Doppler color/pulsado, neovasculatura, inflamación vascular).
+- "tension": Tensión / Irritación (Espasmo miotendinoso, contractura, tracción entésica, reactividad fascial).
+- "cronicidad": Cronicidad / Fibrosis (Tendinosis previa, fibrosis, calcificaciones, osteofitos, remodelado).
+` : ""}
+
+${(requestedMode === "visceral" || (requestedMode === "auto" && /diverticul|pancreat|apendic|colecist|pielonefr|absceso|flem[oó]n|mastitis|prostat|adenitis|anex|periton/i.test(report) && !/tumor|oncolog|c[aá]ncer|malign|carcinom|neoplas|metast/i.test(report))) ? `
+SI LA MATRIZ ES VISCERAL / ABDOMINAL / PÉLVICO / TEJIDOS BLANDOS / INFLAMATORIO:
+Aplica la matriz de 6 vectores adaptada a la fisiopatología visceral/parenquimatosa:
+- "inflamacion": Inflamación & Edema Parietal / Parenquimatoso (Engrosamiento edematoso de pared, edema peri-órgano, flemón, líquido libre/inflamatorio).
+- "estructural": Compromiso Tisular / Lisis / Necrosis (Lisis tisular, pérdida de la estratificación de pared, perforación, plastrón o colección purulenta formadora de absceso).
+- "biomecanica": Afectación Perivisceral / Reactividad de Pared (Afectación de la grasa perivisceral/perirrenal/mesentérica, desestructuración del lecho periadjacente, reactividad de órganos vecinos).
+- "vascularizacion": Vascularización / Hiperemia Doppler (Señal Doppler parietal/capsular aumentada, hiperemia reactiva, o zonas de hipoperfusión/isquemia/necrosis).
+- "tension": Irritación Serosa / Peritoneal & Distensión Tensional (Irritación peritoneal/pleural focal, estasis/distensión ductal o ureteral, espasmo visceral, dolor focal provocado al paso del transductor).
+- "cronicidad": Cronicidad / Litiasis & Secuelas Recurrentes (Antecedente de litiasis, cicatrices, estenosis, atrofia parenquimatosa o brote recurrente sobre daño crónico).
+` : ""}
+
+${(requestedMode === "oncology" || (requestedMode === "auto" && /tumor|oncolog|c[aá]ncer|malign|n[oó]dulo|carcinom|masa|neoplas|metast|birads|lirads|bosniak|ti-rads/i.test(report))) ? `
+SI LA MATRIZ ES ONCOLÓGICA / LESIONES TUMORALES & NÓDULOS SOSPECHOSOS (Hígado, Páncreas, Riñón, Mama, Tiroides, Próstata, Tejidos Blandos, etc.):
+Aplica la matriz de 6 vectores tumoral-oncofisiológicos:
+- "estructural": Arquitectura / Heterogeneidad & Bordes (Estructura interna heterogénea/mosaico, bordes espiculados/microlobulados, halo hipoecoico/invasivo, microcalcificaciones sospechosas, sombra acústica/atenuación).
+- "vascularizacion": Neoangiogénesis & Neovasculatura Doppler (Vascularización intralesional central/caótica, vasos tortuosos de alta velocidad, baja resistencia RI, señal Doppler masiva).
+- "biomecanica": Invasión Tisular Local & Cápsula (Infiltración de grasa circundante, abombamiento/interrupción de la cápsula orgánica, invasión de fascias o tejidos contiguos, pérdida de planos de clivaje).
+- "tension": Compromiso Vascular / Ductal / Troncular (Encajonamiento/colapso o trombosis tumoral de vasos principales -v. porta, a. mesentérica, v. renal-, dilatación ductal retrógrada -Wirsung, vía biliar, ureteral-).
+- "inflamacion": Necrosis Tumoral / Degeneración Licuefactiva (Degeneración o lisis central, componentes quísticos/hemorrágicos intratumorales, edema o colecciones pericavitarias).
+- "cronicidad": Adenopatías Regionales & Diseminación (Adenopatías sospechosas -pérdida de hilio graso, redondeamiento, hiperemia-, implantes nodulares peritoneales, ascitis patológica, metástasis).
+` : ""}
+
+SI LA SELECCIÓN ES "AUTO", DETECTA CUÁL DE LAS 7 MATRICES ANTERIORES SE AJUSTA MEJOR AL REPORTE Y APLÍCALA ESTRICTAMENTE.
+
+${(requestedMode === "knee_oa" || (requestedMode === "auto" && /artrosis.*rodilla|rodilla.*artros|gonartros|femorotibial|cart[ií]lago troclear|meniscopat|hidrartrosis|osteofit/i.test(report))) ? `
+SI LA MATRIZ ES DE ARTROSIS DE RODILLA / GONARTROSIS (KNEE OA 6D):
+Aplica la matriz de 6 vectores específicos requeridos para artrosis degenerativa articular de rodilla:
+1. "femorotibial_medial": Disminución Compartimento Femorotibial Medial (0-1: Espacio articular conservado de amplitud normal; 2-4: Pinzamiento leve <25%; 5-6: Pinzamiento moderado 25-50%; 7-8: Pinzamiento severo >50% con esclerosis subcondral; 9-10: Pinzamiento total con contacto óseo/colapso articular).
+2. "femorotibial_lateral": Disminución Compartimento Femorotibial Lateral (0-1: Espacio articular conservado; 2-4: Pinzamiento leve; 5-6: Pinzamiento moderado; 7-8: Pinzamiento severo con esclerosis subcondral; 9-10: Pinzamiento total con contacto óseo/colapso).
+3. "meniscopatia_deg": Meniscopatía Degenerativa (0-1: Meniscos conservados; 2-4: Cambios mucoides o irregularidad/extrusión menor; 5-6: Desgarro degenerativo complejo o extrusión moderada; 7-8: Desgarro severo desinsertado/macerado o extrusión >3mm; 9-10: Maceración meniscal masiva o menisco ausente/destruido).
+4. "cartilago_troclear": Adelgazamiento o Irregularidad del Cartílago Troclear (0-1: Cartílago troclear uniforme de espesor normal; 2-4: Adelgazamiento focal o irregularidad superficial leve; 5-6: Defectos condrales parciales/condromalacia II-III; 7-8: Defecto condral a espesor completo/grado IV focal; 9-10: Denudación cartilaginosa extensa con hueso subcondral expuesto).
+5. "hidrartrosis": Hidrartrosis / Efusión Articular (0-1: Ausente/Líquido fisiológico; 2-4: Distensión leve en receso suprarrotuliano; 5-6: Efusión moderada con sinovitis reactiva; 7-8: Hidrartrosis severa a tensión/quiste de Baker tenso; 9-10: Derramamiento masivo a tensión).
+6. "osteofitos": Osteofitos Marginales & Entesofitos (0-1: Márgenes óseos regulares; 2-4: Osteofitos incipientes marginales femoral/tibial/rotuliano; 5-6: Osteofitos definidos moderados; 7-8: Osteofitosis prominente con deformidad de contornos; 9-10: Osteofitos gigantes puenteantes o deformidad masiva).
+` : ""}
+
+${(requestedMode === "cholecystitis" || (requestedMode === "auto" && /colecist|ves[ií]cula|murphy|hidrocolecisto|hidrops.*vesic|bacinete|coledocolitiasis|c[aá]lculo.*c[ií]stico|coleperitoneo/i.test(report))) ? `
+SI LA MATRIZ ES DE VALORACIÓN DE COLECISTITIS AGUDA (CHOLECYSTITIS 6D):
+Aplica la matriz de 6 vectores específicos para la evaluación ecográfica de colecistitis aguda y complicaciones vesiculobiliares:
+1. "engrosamiento_pared": Engrosamiento y Edema Parietal Vesicular (0-1: Espesor normal ≤3.0mm, pared fina monocapa; 2-4: Engrosamiento leve 3.1-4.5mm; 5-6: Engrosamiento moderado 4.6-6.0mm con signo de doble pared o estriación; 7-8: Engrosamiento severo 6.1-8.0mm edematoso heterogéneo; 9-10: Engrosamiento masivo/destructivo >8.0mm con aspecto acartonado).
+2. "vascularidad": Vascularidad Parietal / Doppler Color (0-1: Señal vascular fisiológica normal; 2-4: Hiperemia sutil focal en cuello o cuerpo; 5-6: Hiperemia moderada difusa en pared vesicular; 7-8: Hiperemia intensa con velocidades elevadas en arteria cística; 9-10: Paro vascular / Isquemia parietal con ausencia focal/difusa de flujo por necrosis o trombosis).
+3. "necrosis_pared": Necrosis Parietal / Gangrena (0-1: Pared continua sin necrosis ni gas; 2-4: Irregularidad intraluminal discreta o membranas focales pequeñas; 5-6: Membranas intraluminales desprendidas / sloughing mucoso; 7-8: Microburbujas intraparietales / foco de discontinuidad parietal; 9-10: Colecistitis Gangrenosa/Enfisematosa establecida con abundante gas parietal/intraluminal o perforación transmural).
+4. "cambios_perivesiculares": Cambios Perivesiculares y Lecho Hepático (0-1: Fosa vesicular limpia sin líquido libre; 2-4: Edema sutil en grasa perivesicular o fina lámina anecoica; 5-6: Líquido perivesicular moderado e hiperemia hepática reactiva adyacente; 7-8: Plastrón perivesicular con colección/absceso perivesicular contenido <3cm; 9-10: Perforación vesicular libre / Absceso grande >3cm / Peritonitis biliar abierta).
+5. "via_biliar": Vía Biliar, Colédoco e Impactación Cística (0-1: Vía biliar normal colédoco ≤6mm, cístico libre; 2-4: Litiasis móvil en cuerpo/fondo sin impactación; 5-6: Cálculo impactado en bacinete/cuello con Murphy ecográfico (+); 7-8: Coledocolitiasis / Colédoco dilatado >8mm / Síndrome de Mirizzi Grado I; 9-10: Colangitis Aguda asociada / Mirizzi avanzado con fístula o coledocolitiasis obstructiva masiva).
+6. "tamano_forma": Tamaño, Distensión y Hidrops Vesicular (0-1: Dimensiones normales AP ≤4.0cm, long ≤8.0cm; 2-4: Distensión leve AP 4.1-4.5cm, long 8.1-9.0cm; 5-6: Hidrops vesicular moderado AP 4.6-5.5cm vesícula a tensión; 7-8: Hidrops severo AP >5.5cm vesícula esférica en "globo"; 9-10: Deformidad cística severa por colapso/perforación focal o vesícula de porcelana masiva).
+` : ""}
+
+${(requestedMode === "hepatic" || (requestedMode === "auto" && /h[ií]gado|hep[aá]tic|elastograf|esteatosis|qus|ati|ugap|vena porta|ascitis|cirros|hepatopat|swe|kpa|hepatomegal|chc|lirads/i.test(report))) ? `
+SI LA MATRIZ ES DE VALORACIÓN HEPÁTICA (HEPATIC 6D):
+Aplica la matriz de 6 vectores cuantitativos hepático-portal:
+1. "morfologia": Morfología y Contornos Hepáticos (0-1: Hígado normal, contornos lisos, ecorrestructura homogénea; 2-4: Hepatomegalia leve, contornos discretamente lobulados; 5-6: Hepatomegalia moderada o atrofia lóbulo derecho/hipertrofia caudado, contornos nodulares; 7-8: Cirrosis establecida con nodularidad y distorsión vascular; 9-10: Hígado cirrótico atrófico masivo o distorsión parenquimatosa severa).
+2. "esteatosis_qus": Esteatosis Hepática Cuantitativa por QUS/ATI/UGAP (0-1: Sin esteatosis, atenuación acústica normal; 2-4: Esteatosis Leve con sutil incremento de ecogenicidad; 5-6: Esteatosis Moderada con atenuación posterior moderada en QUS/ATI; 7-8: Esteatosis Severa con escasa/nula visualización de pared de venas porta y diafragma; 9-10: Esteatosis Masiva/Cirrótica con atenuación acústica extrema).
+3. "elastografia": Rigidez Parenquimática por Elastografía SWE/TE (0-1: F0-F1 rigidez normal <6.0 kPa; 2-4: F1-F2 fibrosis leve/moderada 6.0-8.0 kPa; 5-6: F3 fibrosis avanzada 8.0-12.0 kPa; 7-8: F4 cirrosis hepática 12.0-20.0 kPa; 9-10: F4 Severa/Hipertensión Portal Clínicamente Significativa >20.0 kPa).
+4. "vena_porta": Vena Porta y Hemodinámica Portal (0-1: Calibre portal normal ≤12mm con flujo hepatópeto fásico; 2-4: Calibre en límite superior 12-13mm con flujo fásico; 5-6: Dilatación portal 13-15mm con disminución de velocidad o pérdida de fasicidad; 7-8: Dilatación severa >15mm o flujo alternante/hepatófugo; 9-10: Trombosis de la vena porta, cavernomatosis o flujo hepatófugo reverso).
+5. "lesiones_focales": Lesiones Focales / Nódulos / LOEs (0-1: Parénquima homogéneo sin LOEs; 2-4: Quistes simples o hemangiomas benignos <2cm; 5-6: Múltiples lesiones o nódulo indeterminado a caracterizar CEUS/RM; 7-8: Nódulo de regeneración/displásico sospechoso LIRADS 4; 9-10: Lesión focal altamente sospechosa/confirmada CHC LIRADS 5 o metástasis).
+6. "ascitis": Presencia de Ascitis y Complicaciones de Hipertensión Portal (0-1: Ausencia total de líquido libre peritoneal; 2-4: Escaso líquido/lámina mínima en receso hepatorrenal; 5-6: Ascitis leve-moderada compartimentada; 7-8: Ascitis moderada-severa francamente visible en múltiples compartimentos; 9-10: Ascitis masiva a tensión con compresión abdominal).
+` : ""}
+
+REGLAS DE CALIFICACIÓN (0-10):
+- 0 a 1: Fisiológico / Benigno / Ausente / Sin alteración.
+- 2 a 4: Incipiente / Leve / Afectación focal o leve.
+- 5 a 6: Moderado / Compromiso intermedio o dolor parcial.
+- 7 a 8: Severo / Gran compromiso funcional o desgarro transfixiante.
+- 9 a 10: Masivo / Crítico / Imposibilidad funcional o ruptura masiva.
+
+SE REQUIERE EL SIGUIENTE ESQUEMA JSON:
+- "globalLoadIndex": Categoría de carga/riesgo global ("Baja", "Moderada", "Elevada", "Crítica").
+- "globalScore": Promedio de los 6 puntajes (número flotante redondeado a 1 decimal).
+- "dominantVector": Nombre claro y descriptivo del vector patológico dominante.
+- "radarMode": La matriz efectivamente aplicada ("rotator_cuff", "knee_oa", "cholecystitis", "hepatic", "msk", "visceral", u "oncology").
+- "axes": Array de exactamente 6 objetos con los keys de la matriz seleccionada.
+  Cada objeto contiene:
+  * "key": string de la key.
+  * "label": Nombre legible en español adecuado a la matriz aplicada.
+  * "score": entero entre 0 y 10.
+  * "level": nivel cualitativo ("Fisiológico", "Leve", "Moderado", "Severo", "Masivo / Crítico").
+  * "finding": Fragmento o resumen del hallazgo del reporte que justifica este eje.
+  * "justification": Explicación clínica sucinta que justifica el puntaje asignado.
+- "clinicalSummary": Síntesis clínica integradora de 2 a 3 frases destacando el balance entre hallazgos tisulares, limitación funcional y lesión tendinosa.
+- "recommendation": Recomendación clínica, conducta quirúrgica/conservadora o estudio complementario sugerido.
+
+Reporte Médico a Analizar:
+${report}
+`;
+
+    const response = await ai.models.generateContent({
+      model: modelToUse,
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            globalLoadIndex: { type: Type.STRING },
+            globalScore: { type: Type.NUMBER },
+            dominantVector: { type: Type.STRING },
+            radarMode: { type: Type.STRING },
+            axes: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  key: { type: Type.STRING },
+                  label: { type: Type.STRING },
+                  score: { type: Type.INTEGER },
+                  level: { type: Type.STRING },
+                  finding: { type: Type.STRING },
+                  justification: { type: Type.STRING }
+                },
+                required: ["key", "label", "score", "level", "finding", "justification"]
+              }
+            },
+            clinicalSummary: { type: Type.STRING },
+            recommendation: { type: Type.STRING }
+          },
+          required: ["globalLoadIndex", "globalScore", "dominantVector", "axes", "clinicalSummary", "recommendation"]
+        }
+      }
+    });
+
+    const rawText = response.text || "{}";
+    const parsedData = JSON.parse(rawText);
+
+    if (!parsedData.radarMode) {
+      parsedData.radarMode = requestedMode !== "auto" ? requestedMode : "msk";
+    }
+
+    res.json({
+      success: true,
+      data: parsedData
+    });
+  } catch (error: any) {
+    console.error("Error en /api/generate-biomechanical-radar:", error);
     res.status(500).json({ success: false, error: handleGeminiError(error) });
   }
 });

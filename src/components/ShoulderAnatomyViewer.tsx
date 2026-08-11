@@ -456,7 +456,8 @@ export default function ShoulderAnatomyViewer({
   const extractDescriptionFromReportText = (id: string, reportText: string): string => {
     if (!reportText) return "";
     
-    const lines = reportText.split("\n");
+    const cleanRep = cleanReportForAnatomyScanning(reportText);
+    const lines = cleanRep.split("\n");
     const keywords = getStructureKeywords(id);
     const candidates: string[] = [];
 
@@ -508,7 +509,7 @@ export default function ShoulderAnatomyViewer({
     }
 
     // 2. Gather candidates from sentence-level split for safety / completeness
-    const sentences = reportText.split(/[.·•\n]+/);
+    const sentences = cleanRep.split(/[.·•\n]+/);
     for (const sentence of sentences) {
       const trimmed = sentence.trim();
       if (trimmed.length < 5) continue;
@@ -728,12 +729,13 @@ export default function ShoulderAnatomyViewer({
     try {
       if (laterality === "Bilateral") {
         logs.push(`Estudio Bilateral detectado. Extrayendo hallazgos para Hombro Derecho...`);
+        const cleanRepForScan = cleanReportForAnatomyScanning(generatedReport);
         const resRight = await fetch("/api/analyze-anatomy", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            model: selectedModel || "gemini-3.5-flash",
-            reportText: generatedReport,
+            model: selectedModel || "gemini-3.6-flash",
+            reportText: cleanRepForScan,
             studyType: "Hombro",
             structures: structures,
             side: "Derecho"
@@ -746,8 +748,8 @@ export default function ShoulderAnatomyViewer({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            model: selectedModel || "gemini-3.5-flash",
-            reportText: generatedReport,
+            model: selectedModel || "gemini-3.6-flash",
+            reportText: cleanRepForScan,
             studyType: "Hombro",
             structures: structures,
             side: "Izquierdo"
@@ -790,12 +792,13 @@ export default function ShoulderAnatomyViewer({
           logs.push(`[Error API] No se pudo obtener el análisis estructurado bilateral.`);
         }
       } else {
+        const cleanRepForScan = cleanReportForAnatomyScanning(generatedReport);
         const response = await fetch("/api/analyze-anatomy", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            model: selectedModel || "gemini-3.5-flash",
-            reportText: generatedReport,
+            model: selectedModel || "gemini-3.6-flash",
+            reportText: cleanRepForScan,
             studyType: "Hombro",
             structures: structures
           })
@@ -842,23 +845,72 @@ export default function ShoulderAnatomyViewer({
     }
   };
 
-  // Synchronize incoming report changes quietly in real-time, maintaining bidirectionality and preventing infinite loops
+  // Local real-time text scanner for immediate auto-deployment of shoulder rupture graphics without AI tokens
+  const runLocalTextAutoScan = () => {
+    if (!generatedReport) return;
+
+    const cleanRep = cleanReportForAnatomyScanning(generatedReport);
+    const rightReport = getSideSpecificReport(cleanRep, "derecho");
+    const leftReport = getSideSpecificReport(cleanRep, "izquierdo");
+
+    const parsedRight = parseSupraspinatusRuptureFromText(rightReport || cleanRep, states.supraspinatus, "derecho", cleanRep);
+    const parsedLeft = parseSupraspinatusRuptureFromText(leftReport || cleanRep, statesLeft.supraspinatus, "izquierdo", cleanRep);
+
+    let updatedStatesRight = { ...states };
+    let updatedStatesLeft = { ...statesLeft };
+    let hasRightChange = false;
+    let hasLeftChange = false;
+
+    if (parsedRight.type !== "none") {
+      const newState = parsedRight.type === "partial" ? "desgarro_parcial" : "desgarro_completo";
+      if (updatedStatesRight.supraspinatus !== newState) {
+        updatedStatesRight.supraspinatus = newState;
+        hasRightChange = true;
+      }
+    } else {
+      const parsedStateFromText = parseStateFromText("supraspinatus", rightReport || cleanRep);
+      if ((updatedStatesRight.supraspinatus === "desgarro_parcial" || updatedStatesRight.supraspinatus === "desgarro_completo") && parsedStateFromText !== "desgarro_parcial" && parsedStateFromText !== "desgarro_completo") {
+        updatedStatesRight.supraspinatus = parsedStateFromText;
+        hasRightChange = true;
+      }
+    }
+
+    if (parsedLeft.type !== "none") {
+      const newState = parsedLeft.type === "partial" ? "desgarro_parcial" : "desgarro_completo";
+      if (updatedStatesLeft.supraspinatus !== newState) {
+        updatedStatesLeft.supraspinatus = newState;
+        hasLeftChange = true;
+      }
+    } else {
+      const parsedStateFromTextLeft = parseStateFromText("supraspinatus", leftReport || cleanRep);
+      if ((updatedStatesLeft.supraspinatus === "desgarro_parcial" || updatedStatesLeft.supraspinatus === "desgarro_completo") && parsedStateFromTextLeft !== "desgarro_parcial" && parsedStateFromTextLeft !== "desgarro_completo") {
+        updatedStatesLeft.supraspinatus = parsedStateFromTextLeft;
+        hasLeftChange = true;
+      }
+    }
+
+    if (hasRightChange) {
+      setStates(updatedStatesRight);
+      if (onChangeStates) onChangeStates(updatedStatesRight);
+    }
+    if (hasLeftChange) {
+      setStatesLeft(updatedStatesLeft);
+      if (onChangeStatesLeft) onChangeStatesLeft(updatedStatesLeft);
+    }
+
+    if (parsedRight.type !== "none" || parsedLeft.type !== "none") {
+      setIncludeSupraspinatusInPdf(true);
+    }
+  };
+
+  // Synchronize incoming report changes quietly in real-time
   useEffect(() => {
-    // Disabled auto-sync on mount/report changes to save tokens as requested.
-    // Sync will only occur manually when requested by user.
-  }, [generatedReport]);
+    runLocalTextAutoScan();
+  }, [generatedReport, laterality]);
 
   // Handle manual structure finding change from UI inputs
   const handleStateChange = (id: string, newState: string) => {
-    const newDesc = getDefaultDescription(id, newState);
-    
-    // Automatically propagate the updated finding to the text report
-    if (onChangeReport && generatedReport) {
-      const nextReportText = updateReportTextWithStructure(id, generatedReport, newDesc);
-      setLastSyncedReport(nextReportText);
-      onChangeReport(nextReportText);
-    }
-
+    // Unidirectional sync: UI/schema modifications do NOT alter the report text.
     if (laterality === "Bilateral" && activeSide === "izquierdo") {
       setStatesLeft(prev => ({
         ...prev,
@@ -881,13 +933,7 @@ export default function ShoulderAnatomyViewer({
   };
 
   const handleCustomDescriptionChange = (id: string, text: string) => {
-    // Automatically propagate custom finding text edits to the text report
-    if (onChangeReport && generatedReport) {
-      const nextReportText = updateReportTextWithStructure(id, generatedReport, text);
-      setLastSyncedReport(nextReportText);
-      onChangeReport(nextReportText);
-    }
-
+    // Unidirectional sync: UI/schema modifications do NOT alter the report text.
     if (laterality === "Bilateral" && activeSide === "izquierdo") {
       setCustomDescriptionsLeft(prev => ({
         ...prev,
@@ -2137,10 +2183,11 @@ export default function ShoulderAnatomyViewer({
 
       {/* --- EXCLUSIVE SUPRASPINATUS TEAR MODELING DASHBOARD & DUAL VECTOR DRAWINGS --- */}
       {(() => {
-        const rightReport = getSideSpecificReport(generatedReport, "derecho");
-        const leftReport = getSideSpecificReport(generatedReport, "izquierdo");
-        const parsedRight = parseSupraspinatusRuptureFromText(rightReport || generatedReport, states.supraspinatus, "derecho", generatedReport);
-        const parsedLeft = parseSupraspinatusRuptureFromText(leftReport || generatedReport, statesLeft.supraspinatus, "izquierdo", generatedReport);
+        const cleanRep = cleanReportForAnatomyScanning(generatedReport);
+        const rightReport = getSideSpecificReport(cleanRep, "derecho");
+        const leftReport = getSideSpecificReport(cleanRep, "izquierdo");
+        const parsedRight = parseSupraspinatusRuptureFromText(rightReport || cleanRep, states.supraspinatus, "derecho", cleanRep);
+        const parsedLeft = parseSupraspinatusRuptureFromText(leftReport || cleanRep, statesLeft.supraspinatus, "izquierdo", cleanRep);
 
         const detailsRight = supraspinatusRuptureTypeRight === "manual" ? manualRuptureDetailsRight : parsedRight;
         const detailsLeft = supraspinatusRuptureTypeLeft === "manual" ? manualRuptureDetailsLeft : parsedLeft;
@@ -2156,7 +2203,7 @@ export default function ShoulderAnatomyViewer({
         const syncDetailedTearToReport = (side: "derecho" | "izquierdo", details: SupraspinatusRuptureDetails) => {
           let sentence = "";
           if (details.type === "none") {
-            sentence = "Tendó;n supraespinoso intacto, de espesor y ecogenicidad conservados.";
+            sentence = "Tendón supraespinoso intacto, de espesor y ecogenicidad conservados.";
           } else if (details.type === "partial") {
             const locText = details.location === "anterior" 
               ? "en su cara anterior" 
@@ -2170,7 +2217,7 @@ export default function ShoulderAnatomyViewer({
               : details.location === "posterior" 
                 ? "posteriores" 
                 : "medias";
-            sentence = `Tendón supraespinoso con desgarro de grosor completo y anchura parcial que compromete las fibras ${locTextAbbr} midiendo ${details.ruptureAPSize} mm en el plano AP (diámetro AP total del tendón: ${details.tendonAPSize} mm) con un gap/brecha entre cabos de ${details.gap} mm.`;
+            sentence = `Tendón supraespinoso con desgarro de grosor completo y anchura parcial que compromete las fibras ${locTextAbbr} midiendo ${details.ruptureAPSize} mm en el plano AP (diámetro AP total del tendón: ${details.tendonAPSize} mm), a ${details.distanceFromInsertion} mm de su inserción, con un gap/brecha entre cabos de ${details.gap} mm.`;
           } else if (details.type === "naked_head") {
             sentence = `Desgarro masivo del supraespinoso con retracción del cabo proximal de ${details.retractionDistance} mm, quedando la cabeza humeral desnuda (porción expuesta del footprint cortical).`;
           }
@@ -2187,6 +2234,60 @@ export default function ShoulderAnatomyViewer({
               supraspinatus: details.type === "none" ? "normal" : details.type === "partial" ? "desgarro_parcial" : "desgarro_completo" 
             }));
             setCustomDescriptionsLeft(prev => ({ ...prev, supraspinatus: sentence }));
+          }
+        };
+
+        const handleForceRuptureType = (type: "none" | "partial" | "full_partial_width" | "naked_head") => {
+          setIncludeSupraspinatusInPdf(true);
+
+          const newDetails: SupraspinatusRuptureDetails = {
+            type,
+            surface: "articular",
+            thicknessPercent: type === "partial" ? 50 : 100,
+            distanceFromInsertion: 0,
+            gap: type === "naked_head" ? 20 : 5,
+            tendonAPSize: 32,
+            ruptureAPSize: type === "naked_head" ? 32 : 12,
+            location: "anterior",
+            retractionDistance: type === "naked_head" ? 20 : 15
+          };
+
+          const newClinicalState = type === "none" ? "normal" : type === "partial" ? "desgarro_parcial" : "desgarro_completo";
+
+          if (supraspinatusSideView === "bilateral") {
+            setSupraspinatusRuptureTypeRight("manual");
+            setSupraspinatusRuptureTypeLeft("manual");
+            setManualRuptureDetailsRight(newDetails);
+            setManualRuptureDetailsLeft(newDetails);
+
+            setStates(prev => {
+              const next = { ...prev, supraspinatus: newClinicalState };
+              if (onChangeStates) onChangeStates(next);
+              return next;
+            });
+            setStatesLeft(prev => {
+              const next = { ...prev, supraspinatus: newClinicalState };
+              if (onChangeStatesLeft) onChangeStatesLeft(next);
+              return next;
+            });
+          } else if (activeSupraspinatusEditSide === "derecho") {
+            setSupraspinatusRuptureTypeRight("manual");
+            setManualRuptureDetailsRight(newDetails);
+
+            setStates(prev => {
+              const next = { ...prev, supraspinatus: newClinicalState };
+              if (onChangeStates) onChangeStates(next);
+              return next;
+            });
+          } else {
+            setSupraspinatusRuptureTypeLeft("manual");
+            setManualRuptureDetailsLeft(newDetails);
+
+            setStatesLeft(prev => {
+              const next = { ...prev, supraspinatus: newClinicalState };
+              if (onChangeStatesLeft) onChangeStatesLeft(next);
+              return next;
+            });
           }
         };
 
@@ -2248,6 +2349,82 @@ export default function ShoulderAnatomyViewer({
                     />
                     Incluir Dibujos en PDF 📄
                   </label>
+                </div>
+
+                {/* --- QUICK MANUAL DISPLAY OVERRIDE CONTROL BAR --- */}
+                <div className="w-full mt-3 p-2.5 bg-slate-900/90 border border-slate-800 rounded-xl flex flex-wrap items-center justify-between gap-2.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[9.5px] font-black uppercase text-amber-400 font-mono tracking-wider flex items-center gap-1.5 shrink-0">
+                      <Sparkles className="h-3.5 w-3.5 text-amber-400" />
+                      DESPLIEGUE RÁPIDO DE GRÁFICOS:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleForceRuptureType("partial")}
+                      className={`px-2.5 py-1 text-[9px] font-black uppercase tracking-wider rounded-lg font-mono transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-sm ${
+                        activeRuptureDetails.type === "partial"
+                          ? "bg-amber-500 text-slate-950 border border-amber-400 font-extrabold"
+                          : "bg-amber-950/80 hover:bg-amber-900 border border-amber-750/70 text-amber-300"
+                      }`}
+                      title="Desplegar inmediatamente gráfico de Ruptura de Grosor Parcial"
+                    >
+                      <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse inline-block shrink-0" />
+                      1. Grosor Parcial
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleForceRuptureType("full_partial_width")}
+                      className={`px-2.5 py-1 text-[9px] font-black uppercase tracking-wider rounded-lg font-mono transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-sm ${
+                        activeRuptureDetails.type === "full_partial_width"
+                          ? "bg-rose-500 text-white border border-rose-400 font-extrabold"
+                          : "bg-rose-950/80 hover:bg-rose-900 border border-rose-750/70 text-rose-300"
+                      }`}
+                      title="Desplegar inmediatamente gráfico de Ruptura de Grosor Completo y Anchura Parcial"
+                    >
+                      <span className="h-2 w-2 rounded-full bg-rose-500 animate-pulse inline-block shrink-0" />
+                      2. Grosor Completo / Anchura Parcial
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleForceRuptureType("naked_head")}
+                      className={`px-2.5 py-1 text-[9px] font-black uppercase tracking-wider rounded-lg font-mono transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-sm ${
+                        activeRuptureDetails.type === "naked_head"
+                          ? "bg-purple-600 text-white border border-purple-400 font-extrabold"
+                          : "bg-purple-950/80 hover:bg-purple-900 border border-purple-750/70 text-purple-300"
+                      }`}
+                      title="Desplegar inmediatamente gráfico de Anchura Completa / Cabeza Desnuda"
+                    >
+                      <span className="h-2 w-2 rounded-full bg-purple-400 animate-pulse inline-block shrink-0" />
+                      3. Anchura Completa (Cabeza Desnuda)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleForceRuptureType("none")}
+                      className={`px-2.5 py-1 text-[9px] font-black uppercase tracking-wider rounded-lg font-mono transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-sm ${
+                        activeRuptureDetails.type === "none"
+                          ? "bg-slate-700 text-white border border-slate-600"
+                          : "bg-slate-950 hover:bg-slate-800 border border-slate-750 text-slate-300"
+                      }`}
+                      title="Ocultar gráfico de desgarro / Tendón Sano"
+                    >
+                      <span className="h-2 w-2 rounded-full bg-emerald-400 inline-block shrink-0" />
+                      4. Sin Desgarro / Sano
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (activeSupraspinatusEditSide === "derecho") setSupraspinatusRuptureTypeRight("auto");
+                      else setSupraspinatusRuptureTypeLeft("auto");
+                      runLocalTextAutoScan();
+                    }}
+                    className="px-2.5 py-1 bg-indigo-950/90 hover:bg-indigo-900 border border-indigo-750/70 text-indigo-300 text-[9px] font-black uppercase tracking-wider rounded-lg font-mono transition-all cursor-pointer flex items-center gap-1 shrink-0 active:scale-95"
+                    title="Escanear nuevamente el texto del reporte para desplegar automáticamente según el diagnóstico"
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                    Re-sincronizar Auto 🤖
+                  </button>
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0">
@@ -2655,24 +2832,13 @@ export default function ShoulderAnatomyViewer({
                   </div>
                 </div>
 
-                {/* Sincronización feedback panel */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-2 bg-indigo-950/20 border border-indigo-900/30 rounded-xl mt-2 select-none">
-                  <div className="flex items-start gap-1.5">
-                    <Sparkles className="h-3.5 w-3.5 text-indigo-400 shrink-0 mt-0.5" />
-                    <div className="text-[8.5px] leading-relaxed text-indigo-300">
-                      <span className="font-extrabold uppercase tracking-wider block">Integración con Impresión Diagnóstica</span>
-                      Presiona "Escribir en Reporte" para traducir estas medidas en una frase médica formal e inyectarla de inmediato al texto del examen.
-                    </div>
+                {/* Sincronización info panel */}
+                <div className="flex items-center gap-2 p-2.5 bg-indigo-950/20 border border-indigo-900/30 rounded-xl mt-2 select-none">
+                  <Sparkles className="h-4 w-4 text-indigo-400 shrink-0" />
+                  <div className="text-[9px] leading-relaxed text-indigo-300">
+                    <span className="font-extrabold uppercase tracking-wider block">Sincronización Unidireccional (Reporte → Esquema)</span>
+                    Los datos del informe médico se interpretan y visualizan automáticamente en el diagrama. Ninguna modificación gráfica altera el texto del reporte.
                   </div>
-                  <button
-                    onClick={() => {
-                      syncDetailedTearToReport(activeSupraspinatusEditSide, activeRuptureDetails);
-                    }}
-                    disabled={(activeSupraspinatusEditSide === "derecho" ? supraspinatusRuptureTypeRight : supraspinatusRuptureTypeLeft) !== "manual"}
-                    className="py-1 px-3 bg-indigo-600 hover:bg-slate-800 disabled:bg-slate-950/40 disabled:text-slate-650 disabled:border-slate-850 border border-indigo-500/20 text-white text-[8.5px] font-black uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-1 shrink-0 cursor-pointer"
-                  >
-                    📝 Escribir en Reporte
-                  </button>
                 </div>
               </div>
             </div>
@@ -2682,10 +2848,11 @@ export default function ShoulderAnatomyViewer({
 
       {/* --- HIDDEN PRINT PACKAGE WRAPPERS ENABLING HIGH-QUALITY RASTERIZATION BY App.tsx --- */}
       {(() => {
-        const rightReport = getSideSpecificReport(generatedReport, "derecho");
-        const leftReport = getSideSpecificReport(generatedReport, "izquierdo");
-        const parsedRight = parseSupraspinatusRuptureFromText(rightReport || generatedReport, states.supraspinatus, "derecho", generatedReport);
-        const parsedLeft = parseSupraspinatusRuptureFromText(leftReport || generatedReport, statesLeft.supraspinatus, "izquierdo", generatedReport);
+        const cleanRep = cleanReportForAnatomyScanning(generatedReport);
+        const rightReport = getSideSpecificReport(cleanRep, "derecho");
+        const leftReport = getSideSpecificReport(cleanRep, "izquierdo");
+        const parsedRight = parseSupraspinatusRuptureFromText(rightReport || cleanRep, states.supraspinatus, "derecho", cleanRep);
+        const parsedLeft = parseSupraspinatusRuptureFromText(leftReport || cleanRep, statesLeft.supraspinatus, "izquierdo", cleanRep);
 
         const detailsRight = supraspinatusRuptureTypeRight === "manual" ? manualRuptureDetailsRight : parsedRight;
         const detailsLeft = supraspinatusRuptureTypeLeft === "manual" ? manualRuptureDetailsLeft : parsedLeft;
@@ -2824,9 +2991,62 @@ export interface SupraspinatusRuptureDetails {
   retractionDistance: number; // mm
 }
 
+// Clean raw report text for anatomy scanning to strictly exclude annexes, attachments, page breaks, and extra sections
+export const cleanReportForAnatomyScanning = (text: string): string => {
+  if (!text) return "";
+
+  const lines = text.split("\n");
+  const cleanLines: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    const upper = trimmed.toUpperCase();
+
+    // Stop scanning when reaching annexes, page breaks, spaces, attached images, or semiology blocks
+    if (
+      trimmed.includes("[CASE_ANALYSIS_JSON]") ||
+      trimmed.includes("[SALTO_DE_PAGINA]") ||
+      trimmed.includes("[SALTO_PAGINA]") ||
+      trimmed.includes("<pagebreak>") ||
+      trimmed.startsWith("[ESPACIO") ||
+      trimmed.includes("[ATTACHED_IMAGE") ||
+      trimmed.includes("[ANEXO_IMAGEN]") ||
+      trimmed.includes("[ANEXO") ||
+      trimmed.includes("[SEMIOLOGIA") ||
+      trimmed.includes("[SEMIOLOGÍA") ||
+      trimmed.includes("[CLASIFICACION") ||
+      trimmed.includes("[CLASIFICACIÓN") ||
+      upper.startsWith("ANEXO:") ||
+      upper.startsWith("ANEXO ") ||
+      upper === "ANEXO" ||
+      upper.startsWith("ANEXOS:") ||
+      upper.startsWith("ANEXOS ") ||
+      upper === "ANEXOS" ||
+      upper.includes("ANEXO DIAGNÓSTICO") ||
+      upper.includes("ANEXOS COMPLEMENTARIOS") ||
+      upper.includes("DESGLOSE Y JUSTIFICACIÓN") ||
+      upper.includes("CLASIFICACIÓN DE") ||
+      upper.includes("CUADRO SINÓPTICO") ||
+      upper.includes("MATRIZ SEMIÓTICA") ||
+      upper.includes("SINOPSIS CLÍNICA") ||
+      upper.includes("SINOPSIS POR ÓRGANO") ||
+      upper.includes("SEMIOLOGÍA POR IMÁGENES")
+    ) {
+      break;
+    }
+
+    cleanLines.push(line);
+  }
+
+  const result = cleanLines.join("\n").trim();
+  return result || text.split("\n")[0] || "";
+};
+
 export const getSideSpecificReport = (text: string, side: "derecho" | "izquierdo"): string => {
   if (!text) return "";
-  const lower = text.toLowerCase();
+  const cleanText = cleanReportForAnatomyScanning(text);
+  const lower = cleanText.toLowerCase();
   
   // Look for sections
   const rightIndex = lower.indexOf("hombro derecho");
@@ -2835,15 +3055,15 @@ export const getSideSpecificReport = (text: string, side: "derecho" | "izquierdo
   if (rightIndex !== -1 && leftIndex !== -1) {
     if (side === "derecho") {
       if (rightIndex < leftIndex) {
-        return text.substring(rightIndex, leftIndex);
+        return cleanText.substring(rightIndex, leftIndex);
       } else {
-        return text.substring(rightIndex);
+        return cleanText.substring(rightIndex);
       }
     } else {
       if (leftIndex < rightIndex) {
-        return text.substring(leftIndex, rightIndex);
+        return cleanText.substring(leftIndex, rightIndex);
       } else {
-        return text.substring(leftIndex);
+        return cleanText.substring(leftIndex);
       }
     }
   }
@@ -2853,18 +3073,19 @@ export const getSideSpecificReport = (text: string, side: "derecho" | "izquierdo
   const iIndex = lower.indexOf("izquierdo:");
   if (dIndex !== -1 && iIndex !== -1) {
     if (side === "derecho") {
-      return dIndex < iIndex ? text.substring(dIndex, iIndex) : text.substring(dIndex);
+      return dIndex < iIndex ? cleanText.substring(dIndex, iIndex) : cleanText.substring(dIndex);
     } else {
-      return iIndex < dIndex ? text.substring(iIndex, dIndex) : text.substring(iIndex);
+      return iIndex < dIndex ? cleanText.substring(iIndex, dIndex) : cleanText.substring(iIndex);
     }
   }
   
-  return text;
+  return cleanText;
 };
 
 const extractDiagnosticImpression = (text: string): string => {
   if (!text) return "";
-  const lower = text.toLowerCase();
+  const cleanText = cleanReportForAnatomyScanning(text);
+  const lower = cleanText.toLowerCase();
   const headings = [
     "impresión diagnóstica",
     "impresion diagnostica",
@@ -2891,7 +3112,7 @@ const extractDiagnosticImpression = (text: string): string => {
   for (const heading of headings) {
     const idx = lower.lastIndexOf(heading);
     if (idx !== -1) {
-      return text.substring(idx);
+      return cleanText.substring(idx);
     }
   }
   return "";
@@ -2903,7 +3124,9 @@ export const parseSupraspinatusRuptureFromText = (
   side: "derecho" | "izquierdo" = "derecho",
   fullReport?: string
 ): SupraspinatusRuptureDetails => {
-  const lower = (reportText || "").toLowerCase();
+  const cleanRep = cleanReportForAnatomyScanning(reportText || "");
+  const cleanFull = cleanReportForAnatomyScanning(fullReport || reportText || "");
+  const lower = cleanRep.toLowerCase();
   
   // Default values
   const result: SupraspinatusRuptureDetails = {
@@ -2918,15 +3141,68 @@ export const parseSupraspinatusRuptureFromText = (
     retractionDistance: 15
   };
 
+  // Helper to verify if rupture keywords are present and NOT negated in text
+  const hasNonNegatedRuptureKeyword = (txt: string): boolean => {
+    if (!txt) return false;
+    const lowerTxt = txt.toLowerCase();
+    
+    const keywords = [
+      "desgarro", "ruptura", "rotura", "solución de continuidad", "solucion de continuidad",
+      "discontinuidad", "microruptura", "microrotura", "microdesgarro", "defecto", "avulsión", "avulsion"
+    ];
+    
+    const negations = [
+      "sin", "no se", "no hay", "no presenta", "ausencia de", "descart", 
+      "libre de", "negativo", "negativa", "no evidencia", "sin evidencia", 
+      "no se evidencia", "sin signos", "no presenta signos", "no se observa", 
+      "no se observan", "no se aprecia", "no se aprecian", "no muestra", 
+      "sano", "íntegro", "integro", "conservado", "normal"
+    ];
+
+    for (const kw of keywords) {
+      let index = lowerTxt.indexOf(kw);
+      while (index !== -1) {
+        const priorText = lowerTxt.substring(0, index);
+        const lastBoundary = Math.max(
+          priorText.lastIndexOf("."),
+          priorText.lastIndexOf(";"),
+          priorText.lastIndexOf(":"),
+          priorText.lastIndexOf("-"),
+          priorText.lastIndexOf("•"),
+          priorText.lastIndexOf("\n")
+        );
+        const precedingClause = lastBoundary !== -1 ? priorText.substring(lastBoundary + 1) : priorText;
+        
+        const isNegated = negations.some(neg => {
+          const negIdx = precedingClause.lastIndexOf(neg);
+          if (negIdx !== -1) {
+            const inBetween = precedingClause.substring(negIdx + neg.length);
+            if (inBetween.includes("pero") || inBetween.includes("salvo") || inBetween.includes("excepto")) {
+              return false;
+            }
+            return true;
+          }
+          return false;
+        });
+
+        if (!isNegated) {
+          return true;
+        }
+        index = lowerTxt.indexOf(kw, index + 1);
+      }
+    }
+    return false;
+  };
+
   // Extract and scan the diagnostic impression of the full or side-specific report
   let detectedPartialFromImpression = false;
   let detectedFullFromImpression = false;
   let detectedNakedFromImpression = false;
   let surfaceFromImpression: "bursal" | "articular" | undefined = undefined;
   
-  const targetReport = fullReport || reportText;
+  const targetReport = cleanFull || cleanRep;
   const impressionText = extractDiagnosticImpression(targetReport);
-  if (impressionText) {
+  if (impressionText && hasNonNegatedRuptureKeyword(impressionText)) {
     const impressionLower = impressionText.toLowerCase();
     
     // Isolate section relevant to our side
@@ -2969,16 +3245,7 @@ export const parseSupraspinatusRuptureFromText = (
     }
     
     // Now check the clinical text block of the isolated impression
-    const containsRupture = 
-      relevantImpressionText.includes("rotura") || 
-      relevantImpressionText.includes("ruptura") || 
-      relevantImpressionText.includes("desgarro") || 
-      relevantImpressionText.includes("solución de continuidad") ||
-      relevantImpressionText.includes("parcial") || 
-      relevantImpressionText.includes("completo") ||
-      relevantImpressionText.includes("espesor") ||
-      relevantImpressionText.includes("grosor") ||
-      relevantImpressionText.includes("afectación");
+    const containsRupture = hasNonNegatedRuptureKeyword(relevantImpressionText);
       
     if (containsRupture) {
       const isPartial = 
@@ -3046,10 +3313,7 @@ export const parseSupraspinatusRuptureFromText = (
   const isRupture = 
     clinicalState === "desgarro_parcial" || 
     clinicalState === "desgarro_completo" ||
-    lower.includes("desgarro") || 
-    lower.includes("ruptura") || 
-    lower.includes("rotura") || 
-    lower.includes("solución de continuidad") ||
+    hasNonNegatedRuptureKeyword(cleanRep) ||
     detectedPartialFromImpression ||
     detectedFullFromImpression ||
     detectedNakedFromImpression;
@@ -3089,8 +3353,7 @@ export const parseSupraspinatusRuptureFromText = (
     ) {
       result.type = "naked_head";
     } else if (
-      (lower.includes("completo") || lower.includes("completa") || lower.includes("transfixiante") || lower.includes("espesor total") || lower.includes("grosor completo") || lower.includes("espesor completo") || clinicalState === "desgarro_completo") &&
-      (lower.includes("anchura parcial") || lower.includes("ancho parcial") || lower.includes("ap") || lower.includes("anterior") || lower.includes("posterior") || lower.includes("fascículo") || lower.includes("fibras"))
+      lower.includes("completo") || lower.includes("completa") || lower.includes("transfixiante") || lower.includes("espesor total") || lower.includes("grosor completo") || lower.includes("espesor completo") || lower.includes("grosor total") || clinicalState === "desgarro_completo"
     ) {
       result.type = "full_partial_width";
     } else if (
@@ -3185,7 +3448,7 @@ export const parseSupraspinatusRuptureFromText = (
     /(\d+(?:[.,]\d+)?)\s*mm\s*(?:desde|de|de\s+la|de\s+su)\s*(?:sitio\s+de\s+)?(?:inserci[oó]n|footprint|huella)/i,
 
     // Matches: "distancia al footprint de X mm"
-    /(?:distancia|dista)\s*(?:al|a\s+la\s+huella|al\s+footprint)?\s*(?:de)?\s*(\d+(?:[.,]\d+)?)\s*mm/i,
+    /distancia\s*(?:al|a\s+la|a\s+su|del|de\s+la)?\s*(?:sitio\s+de\s+)?(?:inserci[oó]n|insercion|footprint|huella)\s*(?:es\s+de|de|:)?\s*(\d+(?:[.,]\d+)?)\s*(?:mm|mil[íi]metros)/i,
 
     // Matches: "distancia de la inserción es de X mm"
     /(?:distancia|dista)\s*(?:desde\s+la|de\s+la|a\s+la)?\s*inserci[oó]n\s*(?:es\s+de|de)?\s*(\d+(?:[.,]\d+)?)\s*mm/i,
@@ -3207,8 +3470,8 @@ export const parseSupraspinatusRuptureFromText = (
 
   // 4. Gap / Brecha between fibers
   const gapPatterns = [
-    /(?:gap|brecha|retracci[oó]n|retraccion|distancia entre cabos|separaci[oó]n|separacion)\s*(?:de|del)?\s*(\d+(?:[.,]\d+)?)\s*(?:mm|mil[íi]metros)/,
-    /(\d+(?:[.,]\d+)?)\s*mm\s*(?:de)?\s*(?:gap|brecha|retracci[oó]n|retraccion|separaci[oó]n|separacion)/
+    /(?:gap|brecha|retracci[oó]n|retraccion|distancia entre cabos|separaci[oó]n entre cabos|separaci[oó]n|separacion|intercabo|defecto)\s*(?:de|del|es|es de|:)?\s*(\d+(?:[.,]\d+)?)\s*(?:mm|mil[íi]metros)/i,
+    /(\d+(?:[.,]\d+)?)\s*mm\s*(?:de)?\s*(?:gap|brecha|retracci[oó]n|retraccion|separaci[oó]n|separacion|intercabo|defecto)/i
   ];
 
   for (const pattern of gapPatterns) {
@@ -3597,129 +3860,6 @@ export const renderSupraspinatusAP = (
                   >
                     {details.gap}mm
                   </text>
-
-                  {/* AP Secondary Plane Visualization Card (at the bottom of the SVG) */}
-                  <g>
-                    {/* Dark/White translucent container card */}
-                    <rect
-                      x="20"
-                      y="152"
-                      width="160"
-                      height="38"
-                      rx="6"
-                      fill={isPrint ? "#f8fafc" : "#090d16"}
-                      stroke={isPrint ? "#cbd5e1" : "#1e293b"}
-                      strokeWidth="1.2"
-                    />
-
-                    {/* Title */}
-                    <text
-                      x="100"
-                      y="161"
-                      textAnchor="middle"
-                      fill={isPrint ? "#1e293b" : "#e2e8f0"}
-                      fontSize="5"
-                      fontWeight="black"
-                      className="font-mono tracking-wide"
-                      transform={shouldMirror ? "scale(-1, 1) translate(-200, 0)" : undefined}
-                    >
-                      PLANO SAGITAL / DIÁMETRO AP
-                    </text>
-
-                    {/* ANT/POST markers */}
-                    <text
-                      x="25"
-                      y="172.5"
-                      textAnchor="middle"
-                      fill={textMuted}
-                      fontSize="4"
-                      fontWeight="bold"
-                      className="font-mono"
-                      transform={shouldMirror ? "scale(-1, 1) translate(-50, 0)" : undefined}
-                    >
-                      ANT
-                    </text>
-                    <text
-                      x="175"
-                      y="172.5"
-                      textAnchor="middle"
-                      fill={textMuted}
-                      fontSize="4"
-                      fontWeight="bold"
-                      className="font-mono"
-                      transform={shouldMirror ? "scale(-1, 1) translate(-350, 0)" : undefined}
-                    >
-                      POST
-                    </text>
-
-                    {/* AP Tendon representation slide */}
-                    {(() => {
-                      const tendonAP = details.tendonAPSize;
-                      const ruptureAP = details.ruptureAPSize;
-                      const apRatio = Math.min(1.0, ruptureAP / Math.max(1, tendonAP));
-                      
-                      const barW = 130;
-                      const barX = 35;
-                      const redW = barW * apRatio;
-                      const redX = details.location === "anterior"
-                        ? barX
-                        : details.location === "posterior"
-                          ? barX + barW - redW
-                          : barX + (barW - redW) / 2;
-
-                      return (
-                        <g>
-                          {/* Base grey bar representing entire AP width of tendon */}
-                          <rect
-                            x={barX}
-                            y="168"
-                            width={barW}
-                            height="5.5"
-                            rx="1.5"
-                            fill={isPrint ? "#e2e8f0" : "#1e293b"}
-                          />
-                          {/* Red bar representing active tear portion */}
-                          <rect
-                            x={redX}
-                            y="168"
-                            width={redW}
-                            height="5.5"
-                            rx="1.5"
-                            fill="#f43f5e"
-                          />
-
-                          {/* Dimensions written out */}
-                          <line x1={barX} y1="178" x2={barX + barW} y2="178" stroke={isPrint ? "#cbd5e1" : "#1e293b"} strokeWidth="0.5" strokeDasharray="1,1" />
-
-                          <text
-                            x={barX}
-                            y="184"
-                            textAnchor="start"
-                            fill={isPrint ? "#475569" : "#a1a1aa"}
-                            fontSize="5"
-                            fontWeight="bold"
-                            className="font-mono"
-                            transform={shouldMirror ? `scale(-1, 1) translate(${-2 * barX}, 0)` : undefined}
-                          >
-                            TENDÓN AP: {tendonAP}mm
-                          </text>
-
-                          <text
-                            x={barX + barW}
-                            y="184"
-                            textAnchor="end"
-                            fill="#ef4444"
-                            fontSize="5.5"
-                            fontWeight="black"
-                            className="font-mono"
-                            transform={shouldMirror ? `scale(-1, 1) translate(${-2 * (barX + barW)}, 0)` : undefined}
-                          >
-                            ROTURA AP: {ruptureAP}mm ({details.location === "anterior" ? "ANT" : details.location === "posterior" ? "POST" : "MED"})
-                          </text>
-                        </g>
-                      );
-                    })()}
-                  </g>
                 </g>
               );
             })()}
@@ -3906,6 +4046,131 @@ export const renderSupraspinatusAP = (
               );
             })()}
           </>
+        )}
+
+        {/* Shared AP Secondary Plane Visualization Card for All Active Ruptures */}
+        {details.type !== "none" && (
+          <g>
+            {/* Dark/White translucent container card */}
+            <rect
+              x="20"
+              y="152"
+              width="160"
+              height="38"
+              rx="6"
+              fill={isPrint ? "#f8fafc" : "#090d16"}
+              stroke={isPrint ? "#cbd5e1" : "#1e293b"}
+              strokeWidth="1.2"
+            />
+
+            {/* Title */}
+            <text
+              x="100"
+              y="161"
+              textAnchor="middle"
+              fill={isPrint ? "#1e293b" : "#e2e8f0"}
+              fontSize="5"
+              fontWeight="black"
+              className="font-mono tracking-wide"
+              transform={shouldMirror ? "scale(-1, 1) translate(-200, 0)" : undefined}
+            >
+              PLANO SAGITAL / DIÁMETRO AP
+            </text>
+
+            {/* ANT/POST markers */}
+            <text
+              x="25"
+              y="172.5"
+              textAnchor="middle"
+              fill={textMuted}
+              fontSize="4"
+              fontWeight="bold"
+              className="font-mono"
+              transform={shouldMirror ? "scale(-1, 1) translate(-50, 0)" : undefined}
+            >
+              ANT
+            </text>
+            <text
+              x="175"
+              y="172.5"
+              textAnchor="middle"
+              fill={textMuted}
+              fontSize="4"
+              fontWeight="bold"
+              className="font-mono"
+              transform={shouldMirror ? "scale(-1, 1) translate(-350, 0)" : undefined}
+            >
+              POST
+            </text>
+
+            {/* AP Tendon representation slide */}
+            {(() => {
+              const tendonAP = details.tendonAPSize;
+              const ruptureAP = details.ruptureAPSize;
+              const apRatio = Math.min(1.0, ruptureAP / Math.max(1, tendonAP));
+              
+              const barW = 130;
+              const barX = 35;
+              const redW = barW * apRatio;
+              const redX = details.location === "anterior"
+                ? barX
+                : details.location === "posterior"
+                  ? barX + barW - redW
+                  : barX + (barW - redW) / 2;
+
+              return (
+                <g>
+                  {/* Base grey bar representing entire AP width of tendon */}
+                  <rect
+                    x={barX}
+                    y="168"
+                    width={barW}
+                    height="5.5"
+                    rx="1.5"
+                    fill={isPrint ? "#e2e8f0" : "#1e293b"}
+                  />
+                  {/* Red bar representing active tear portion */}
+                  <rect
+                    x={redX}
+                    y="168"
+                    width={redW}
+                    height="5.5"
+                    rx="1.5"
+                    fill="#f43f5e"
+                  />
+
+                  {/* Dimensions written out */}
+                  <line x1={barX} y1="178" x2={barX + barW} y2="178" stroke={isPrint ? "#cbd5e1" : "#1e293b"} strokeWidth="0.5" strokeDasharray="1,1" />
+
+                  <text
+                    x={barX}
+                    y="184"
+                    textAnchor="start"
+                    fill={isPrint ? "#475569" : "#a1a1aa"}
+                    fontSize="5"
+                    fontWeight="bold"
+                    className="font-mono"
+                    transform={shouldMirror ? `scale(-1, 1) translate(${-2 * barX}, 0)` : undefined}
+                  >
+                    TENDÓN AP: {tendonAP}mm
+                  </text>
+
+                  <text
+                    x={barX + barW}
+                    y="184"
+                    textAnchor="end"
+                    fill="#ef4444"
+                    fontSize="5.5"
+                    fontWeight="black"
+                    className="font-mono"
+                    transform={shouldMirror ? `scale(-1, 1) translate(${-2 * (barX + barW)}, 0)` : undefined}
+                  >
+                    ROTURA AP: {ruptureAP}mm ({details.location === "anterior" ? "ANT" : details.location === "posterior" ? "POST" : "MED"})
+                  </text>
+                </g>
+              );
+            })()}
+          </g>
         )}
       </g>
 
@@ -4119,7 +4384,7 @@ export const renderSupraspinatusLAT = (
                     />
                   </g>
                 );
-              } else {
+              } else if (details.location === "posterior") {
                 const sliceBoundaryX = 155 - cutW;
                 return (
                   <g>
@@ -4142,6 +4407,43 @@ export const renderSupraspinatusLAT = (
                       fill="none"
                       stroke="#ef4444"
                       strokeWidth="2"
+                    />
+                  </g>
+                );
+              } else {
+                // "media" / central fibers
+                const startX = 100 - cutW / 2;
+                const endX = 100 + cutW / 2;
+                return (
+                  <g>
+                    {/* Anterior intact portion */}
+                    <path
+                      d={`M 45,90 A 58,58 0 0,1 ${startX},68 L ${startX + 2},78 A 46,46 0 0,0 55,102 Z`}
+                      fill={tendonFill}
+                      stroke={tendonStroke}
+                      strokeWidth="2"
+                    />
+                    {/* Posterior intact portion */}
+                    <path
+                      d={`M ${endX},68 A 58,58 0 0,1 155,90 L 145,102 A 46,46 0 0,0 ${endX - 2},78 Z`}
+                      fill={tendonFill}
+                      stroke={tendonStroke}
+                      strokeWidth="2"
+                    />
+                    {/* Central cut defect */}
+                    <path
+                      d={`M ${startX},68 A 58,58 0 0,1 ${endX},68 L ${endX - 2},78 A 46,46 0 0,0 ${startX + 2},78 Z`}
+                      fill={isPrint ? "#f8fafc" : "#020617"}
+                      stroke="#ef4444"
+                      strokeWidth="1"
+                      strokeDasharray="3,3"
+                      opacity="0.9"
+                    />
+                    <path
+                      d={`M ${startX},68 A 58,58 0 0,1 ${endX},68`}
+                      fill="none"
+                      stroke="#ef4444"
+                      strokeWidth="2.5"
                     />
                   </g>
                 );
@@ -4184,6 +4486,82 @@ export const renderSupraspinatusLAT = (
               transform={shouldMirror ? "translate(100, 74) scale(-1, 1)" : "translate(100, 74)"}
             >
               HUELLA EXPUESTA
+            </text>
+          </g>
+        )}
+
+        {/* Shared Report Findings Summary Card for Sagittal View */}
+        {details.type !== "none" && (
+          <g>
+            <rect
+              x="20"
+              y="152"
+              width="160"
+              height="38"
+              rx="6"
+              fill={isPrint ? "#f8fafc" : "#090d16"}
+              stroke={isPrint ? "#cbd5e1" : "#1e293b"}
+              strokeWidth="1.2"
+            />
+            <text
+              x="100"
+              y="161"
+              textAnchor="middle"
+              fill={isPrint ? "#1e293b" : "#e2e8f0"}
+              fontSize="5"
+              fontWeight="black"
+              className="font-mono tracking-wide"
+              transform={shouldMirror ? "scale(-1, 1) translate(-200, 0)" : undefined}
+            >
+              HALLAZGOS DEL REPORTE (EJE SAGITAL/AP)
+            </text>
+            <text
+              x="28"
+              y="172"
+              textAnchor="start"
+              fill={textMuted}
+              fontSize="4.8"
+              fontWeight="bold"
+              className="font-mono"
+              transform={shouldMirror ? "scale(-1, 1) translate(-56, 0)" : undefined}
+            >
+              TENDÓN: {details.tendonAPSize}mm AP
+            </text>
+            <text
+              x="172"
+              y="172"
+              textAnchor="end"
+              fill="#ef4444"
+              fontSize="4.8"
+              fontWeight="extrabold"
+              className="font-mono"
+              transform={shouldMirror ? "scale(-1, 1) translate(-344, 0)" : undefined}
+            >
+              ROTURA: {details.ruptureAPSize}mm AP ({details.location === "anterior" ? "Fibras Anteriores" : details.location === "posterior" ? "Fibras Posteriores" : "Región Media"})
+            </text>
+            <text
+              x="28"
+              y="183"
+              textAnchor="start"
+              fill="#ec4899"
+              fontSize="4.8"
+              fontWeight="bold"
+              className="font-mono"
+              transform={shouldMirror ? "scale(-1, 1) translate(-56, 0)" : undefined}
+            >
+              {details.type === "partial" ? `ESPESOR: ${details.thicknessPercent}% (${details.surface})` : `GAP/BRECHA: ${details.gap}mm`}
+            </text>
+            <text
+              x="172"
+              y="183"
+              textAnchor="end"
+              fill={isPrint ? "#334155" : "#cbd5e1"}
+              fontSize="4.8"
+              fontWeight="bold"
+              className="font-mono"
+              transform={shouldMirror ? "scale(-1, 1) translate(-344, 0)" : undefined}
+            >
+              {details.distanceFromInsertion > 0 ? `DIST. INSERCIÓN: ${details.distanceFromInsertion}mm` : `RETRACCIÓN: ${details.retractionDistance}mm`}
             </text>
           </g>
         )}

@@ -554,7 +554,7 @@ export default function AbdomenAnatomyViewer({
     return hasDil || hasThick || hasLito || hasTumor || hasVesiculaLito || hasVesiculaLitoUnico || hasColecistitis || hasVesiculaPared || hasVesiculaBarro || hasVesiculaPolipo;
   };
 
-  const isBiliaryActive = isBiliaryImpressionActive() || biliaryForceActive;
+  const isBiliaryActive = biliaryForceActive;
 
   const isAppendixImpressionActive = (): boolean => {
     if (!generatedReport) return false;
@@ -565,7 +565,7 @@ export default function AbdomenAnatomyViewer({
     return normalized.includes("apendice") || normalized.includes("apendicular") || normalized.includes("apendicitis");
   };
 
-  const isAppendixActive = isAppendixImpressionActive() || appendixForceActive;
+  const isAppendixActive = appendixForceActive;
 
   const isDiverticulitisImpressionActive = (): boolean => {
     if (!generatedReport) return false;
@@ -576,7 +576,7 @@ export default function AbdomenAnatomyViewer({
     return isBiliaryPathologyActive(section, ["diverticulitis"]);
   };
 
-  const isDiverticulitisActive = isDiverticulitisImpressionActive() || diverticulitisForceActive;
+  const isDiverticulitisActive = diverticulitisForceActive;
 
   const isSmallBowelImpressionActive = (): boolean => {
     if (!generatedReport) return false;
@@ -588,7 +588,7 @@ export default function AbdomenAnatomyViewer({
     ]);
   };
 
-  const isSmallBowelActive = isSmallBowelImpressionActive() || smallBowelForceActive;
+  const isSmallBowelActive = smallBowelForceActive;
 
   const isHepatopatiaImpressionActive = (): boolean => {
     if (!generatedReport) return false;
@@ -605,7 +605,7 @@ export default function AbdomenAnatomyViewer({
            normalized.includes("hepatopatia");
   };
 
-  const isHepatopatiaActive = isHepatopatiaImpressionActive() || hepatopatiaForceActive;
+  const isHepatopatiaActive = hepatopatiaForceActive;
 
   const isAneurismaImpressionActive = (): boolean => {
     if (!generatedReport) return false;
@@ -622,7 +622,7 @@ export default function AbdomenAnatomyViewer({
            normalized.includes("aaa");
   };
 
-  const isAneurismaActive = isAneurismaImpressionActive() || aneurismaForceActive;
+  const isAneurismaActive = aneurismaForceActive;
 
   const getBiliaryTextFromCheckboxes = (
     dilated: boolean,
@@ -674,8 +674,6 @@ export default function AbdomenAnatomyViewer({
       
       if (vesiculaSegments.length > 0) {
         segments.push(`Vesícula biliar: ${vesiculaSegments.join(", ")}.`);
-      } else {
-        segments.push("Vesícula biliar: Normal, de tamaño conservado.");
       }
     }
 
@@ -702,8 +700,6 @@ export default function AbdomenAnatomyViewer({
 
       if (ductSegments.length > 0) {
         segments.push(`Vía biliar extrahepática: ${ductSegments.join(", ")}.`);
-      } else {
-        segments.push("Vía biliar extrahepática: Calibre y trayecto conservados.");
       }
     }
 
@@ -2201,19 +2197,19 @@ export default function AbdomenAnatomyViewer({
       cap = 150 + (fat - 1) * (88 / 4);
     } else if (fat <= 12.0) {
       cap = 238 + (fat - 5) * (22 / 7);
-    } else if (fat <= 22.0) {
-      cap = 260 + (fat - 12) * (30 / 10);
+    } else if (fat <= 20.0) {
+      cap = 260 + (fat - 12) * (30 / 8);
     } else {
-      cap = 290 + (fat - 22) * (110 / 18);
+      cap = 290 + (fat - 20) * (110 / 20);
     }
 
     let att = 0.55;
     if (fat <= 5.0) {
       att = 0.30 + (fat - 1) * (0.28 / 4);
-    } else if (fat <= 22.0) {
-      att = 0.58 + (fat - 5) * (0.20 / 17);
+    } else if (fat <= 20.0) {
+      att = 0.58 + (fat - 5) * (0.20 / 15);
     } else {
-      att = 0.78 + (fat - 22) * (0.42 / 18);
+      att = 0.78 + (fat - 20) * (0.42 / 20);
     }
 
     return { cap: Math.round(cap), attenuation: parseFloat(att.toFixed(2)) };
@@ -3100,7 +3096,7 @@ export default function AbdomenAnatomyViewer({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: selectedModel || "gemini-3.5-flash",
+          model: selectedModel || "gemini-3.6-flash",
           reportText: generatedReport,
           studyType: "Abdomen",
           structures: ABDOMEN_STRUCTURES.map(s => ({
@@ -3851,6 +3847,18 @@ export default function AbdomenAnatomyViewer({
           </button>
 
           <button
+            onClick={handleToggleBiliaryForceActive}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase tracking-wider transition-all duration-200 cursor-pointer ${
+              biliaryForceActive 
+                ? "bg-emerald-600/30 border-emerald-500/50 text-emerald-350 shadow-[0_2px_8px_rgba(16,185,129,0.25)] animate-pulse" 
+                : "bg-slate-950 border-slate-850 text-slate-400 hover:text-slate-200 hover:border-slate-700"
+            }`}
+          >
+            <span className={`h-2 w-2 rounded-full ${biliaryForceActive ? "bg-emerald-500 shadow-[0_0_8px_#10b981]" : "bg-slate-600"} inline-block`} />
+            <span>Vesícula / Biliar: {biliaryForceActive ? "Sí" : "No"}</span>
+          </button>
+
+          <button
             onClick={handleToggleAppendixForceActive}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase tracking-wider transition-all duration-200 cursor-pointer ${
               appendixForceActive 
@@ -4307,6 +4315,81 @@ export default function AbdomenAnatomyViewer({
                 </g>
               )}
 
+              {/* APÉNDICE CECAL (Appendix - positioned at the start/cecum of the colon at bottom-left, x=32, y=205) */}
+              <g 
+                className="cursor-pointer transition-all duration-200"
+                onClick={() => {
+                  setAppendixForceActive(true);
+                  setTimeout(() => {
+                    const el = document.getElementById("appendix-section-root");
+                    if (el) el.scrollIntoView({ behavior: "smooth" });
+                  }, 100);
+                }}
+                onMouseEnter={() => setActiveHover("apendice")}
+                onMouseLeave={() => setActiveHover(null)}
+                title={appendixInflamed ? "Apéndice Cecal (APENDICITIS ACTIVA) - Haga clic para ajustar parámetros" : "Apéndice Cecal - Haga clic para activar apendicitis"}
+              >
+                {appendixInflamed && (
+                  <>
+                    {/* Glowing halo indicating local fat stranding / inflammation */}
+                    <path
+                      d="M 32,205 C 28,212 24,218 28,224 C 31,228 36,225 34,218"
+                      fill="none"
+                      stroke="#fbbf24"
+                      strokeWidth="14"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      opacity="0.3"
+                      className="animate-pulse"
+                    />
+                    {/* Swollen red reaction */}
+                    <path
+                      d="M 32,205 C 28,212 24,218 28,224 C 31,228 36,225 34,218"
+                      fill="none"
+                      stroke="#ef4444"
+                      strokeWidth="8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      opacity="0.5"
+                      className="animate-pulse"
+                    />
+                  </>
+                )}
+                {/* Main Appendix outlines (matches style of colon) */}
+                <path
+                  d="M 32,205 C 28,212 24,218 28,224 C 31,228 36,225 34,218"
+                  fill="none"
+                  stroke={appendixInflamed ? "#b91c1c" : "#475569"}
+                  strokeWidth="6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  opacity={appendixInflamed ? "0.9" : "0.38"}
+                  className={appendixInflamed ? "animate-pulse" : ""}
+                />
+                <path
+                  d="M 32,205 C 28,212 24,218 28,224 C 31,228 36,225 34,218"
+                  fill="none"
+                  stroke={appendixInflamed ? "#ef4444" : "#64748b"}
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className={appendixInflamed ? "animate-pulse" : ""}
+                />
+                {/* Appendix text label */}
+                <text 
+                  x="32" 
+                  y="235" 
+                  fill={appendixInflamed ? "#f43f5e" : "#cbd5e1"} 
+                  fontSize="5.5" 
+                  fontWeight="black" 
+                  textAnchor="middle" 
+                  pointerEvents="none"
+                  className={appendixInflamed ? "animate-pulse" : "opacity-75"}
+                >
+                  {appendixInflamed ? "APÉNDICE (APENDICITIS)" : "APÉNDICE"}
+                </text>
+              </g>
+
               {/* 9. VEJIGA */}
               {states.vejiga !== "no_descrito" && (
                 <g 
@@ -4550,7 +4633,7 @@ export default function AbdomenAnatomyViewer({
         <div className="lg:col-span-7 flex flex-col gap-4">
           
           {/* STRUCTURE SELECTOR PILLS */}
-          <div className="flex flex-wrap gap-1.5 p-2 bg-slate-950/40 rounded-xl border border-slate-850/60 max-h-[160px] overflow-y-auto">
+          <div className="flex flex-wrap gap-1.5 p-2 bg-slate-950/40 rounded-xl border border-slate-850/60 max-h-[260px] overflow-y-auto">
             {visibleStructures.map(struc => {
               const currentSt = states[struc.id] || "no_descrito";
               let badgeColor = "border-slate-800 text-slate-400 bg-slate-900/10";
@@ -4590,7 +4673,7 @@ export default function AbdomenAnatomyViewer({
                 >
                   <span className="h-1.5 w-1.5 rounded-full bg-indigo-400" />
                   <span className="font-extrabold">{item.structureName}:</span>
-                  <span className="normal-case font-normal text-slate-400 truncate max-w-[150px]">{item.description}</span>
+                  <span className="normal-case font-normal text-slate-300">{item.description}</span>
                 </div>
               );
             })}
@@ -4722,7 +4805,7 @@ export default function AbdomenAnatomyViewer({
               Mapeo de Hallazgos Clínicos Sintonizados (Abdomen)
             </label>
             
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[160px] overflow-y-auto pr-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[380px] overflow-y-auto pr-1">
               {ABDOMEN_STRUCTURES.filter(item => states[item.id] !== "no_descrito" && states[item.id] !== "normal").map(item => {
                 const s = states[item.id];
                 const isSelected = selectedStructure === item.id;
@@ -4769,7 +4852,7 @@ export default function AbdomenAnatomyViewer({
                         {s.replace("_", " ")}
                       </span>
                     </div>
-                    <p className="text-[9px] leading-relaxed text-slate-450 truncate mt-0.5 max-w-full">
+                    <p className="text-[10px] leading-relaxed text-slate-300 font-normal whitespace-normal break-words mt-1 max-w-full">
                       {simplified}
                     </p>
                   </button>
@@ -4796,7 +4879,7 @@ export default function AbdomenAnatomyViewer({
                         {s}
                       </span>
                     </div>
-                    <p className="text-[9px] leading-relaxed text-slate-400 truncate mt-0.5 max-w-full">
+                    <p className="text-[10px] leading-relaxed text-slate-300 font-normal whitespace-normal break-words mt-1 max-w-full">
                       {item.description}
                     </p>
                   </div>
@@ -7899,7 +7982,7 @@ export default function AbdomenAnatomyViewer({
                   </text>
                   
                   {(() => {
-                    const sLevel = activeFatFraction < 5.0 ? 0 : activeFatFraction < 12.0 ? 1 : activeFatFraction < 22.0 ? 2 : 3;
+                    const sLevel = activeFatFraction < 5.0 ? 0 : activeFatFraction <= 12.0 ? 1 : activeFatFraction <= 20.0 ? 2 : 3;
                     const sColor = sLevel === 0 ? "#34d399" : sLevel === 1 ? "#a3e635" : sLevel === 2 ? "#fbbf24" : "#f97316";
                     const sLabel = sLevel === 0 ? "Normal" : sLevel === 1 ? "Leve" : sLevel === 2 ? "Moderado" : "Severo";
                     return (
@@ -8020,8 +8103,8 @@ export default function AbdomenAnatomyViewer({
               <div className="grid grid-cols-4 text-[8px] font-bold text-slate-500 font-mono leading-none pt-1">
                 <span className="text-left">Normal &lt;5.0%</span>
                 <span className="text-center">Leve (5.0-12.0%)</span>
-                <span className="text-center">Moderado (12.1-22.0%)</span>
-                <span className="text-right">Severo &gt;22.0%</span>
+                <span className="text-center">Moderado (12.1-20.0%)</span>
+                <span className="text-right">Severo &gt;20.0%</span>
               </div>
             </div>
 
@@ -8048,8 +8131,8 @@ export default function AbdomenAnatomyViewer({
                     El contenido graso hepático estimado por QUS es del <strong className="text-emerald-400 font-mono">{activeFatFraction.toFixed(1)}%</strong>, lo cual se asocia a <strong className="text-amber-500">{
                       (() => {
                         if (activeFatFraction < 5.0) return "rango fisiológico normal";
-                        if (activeFatFraction < 12.0) return "infiltración grasa hepática leve";
-                        if (activeFatFraction < 22.0) return "infiltración grasa hepática moderada";
+                        if (activeFatFraction <= 12.0) return "infiltración grasa hepática leve";
+                        if (activeFatFraction <= 20.0) return "infiltración grasa hepática moderada";
                         return "infiltración grasa hepática severa";
                       })()
                     }</strong>.
@@ -8059,8 +8142,8 @@ export default function AbdomenAnatomyViewer({
                     El contenido graso hepático estimado por QUS es del <strong className="text-emerald-400 font-mono">{activeFatFraction.toFixed(1)}%</strong>, lo cual se asocia a <strong className="text-amber-500">{
                       (() => {
                         if (activeFatFraction < 5.0) return "rango fisiológico normal";
-                        if (activeFatFraction < 12.0) return "infiltración grasa hepática leve";
-                        if (activeFatFraction < 22.0) return "infiltración grasa hepática moderada";
+                        if (activeFatFraction <= 12.0) return "infiltración grasa hepática leve";
+                        if (activeFatFraction <= 20.0) return "infiltración grasa hepática moderada";
                         return "infiltración grasa hepática severa";
                       })()
                     }</strong>.

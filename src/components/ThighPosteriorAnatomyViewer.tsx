@@ -425,7 +425,7 @@ export default function ThighPosteriorAnatomyViewer({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: selectedModel || "gemini-3.5-flash",
+          model: selectedModel || "gemini-3.6-flash",
           reportText: generatedReport,
           studyType: "Muslo Posterior",
           structures: structures

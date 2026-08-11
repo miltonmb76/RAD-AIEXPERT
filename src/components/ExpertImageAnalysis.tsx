@@ -3,10 +3,14 @@ import {
   FileImage, Upload, Trash2, ShieldAlert, Sparkles, Loader2, 
   Columns, ZoomIn, ZoomOut, RotateCw, Copy, Check, ArrowRightLeft, Send, CheckCircle2,
   MessageSquare, Sliders, X, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Eye, RefreshCw, Maximize2, Compass, Activity,
-  History, Contrast, LayoutGrid, Scale, Split, Moon, Sun
+  History, Contrast, LayoutGrid, Scale, Split, Moon, Sun, GitCommit, Layers, CheckSquare, Square, Settings2, Table,
+  Plus, Stethoscope, ArrowDown
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { ExtractedFile } from "./ZipDicomExtractor";
+import { CaseAnalysisFormatOption, CaseAnalysisElementsConfig, CaseAnalysisData } from "../types";
+import CaseAnalysisRenderer from "./CaseAnalysisRenderer";
+import InteractiveCaseEditor from "./InteractiveCaseEditor";
 
 interface ExpertImageAnalysisProps {
   selectedModel?: string;
@@ -648,7 +652,7 @@ function generateDicomVisualMockup(metadata: DicomMetadata): string {
 }
 
 export default function ExpertImageAnalysis({ 
-  selectedModel = "gemini-3.5-flash", 
+  selectedModel = "gemini-3.6-flash", 
   onIncorporateToReport, 
   renderElegantResponse,
   exportedImage = null,
@@ -1128,7 +1132,9 @@ export default function ExpertImageAnalysis({
       "torax", "tórax", "chest", "pulmón", "pulmon", "pulmonar", "hilio", "hilios", "hiliar",
       "intersticial", "alveolar", "infiltrado", "masa", "cavitación", "cavitacion", "atelectasia",
       "mediastino", "mediastinal", "pleura", "pleural", "derrame", "neumonia", "neumonía", "consolida",
-      "parénquima", "parenquima"
+      "parénquima", "parenquima", "neumotorax", "neumotórax", "pneumothorax", "hidroneumotorax",
+      "hidroneumotórax", "neumomediastino", "linea pleural", "línea pleural", "colapso", "colapso pulmonar",
+      "aire pleural", "hiperclaridad", "trama vascular", "enfisema", "bullas", "bulla"
     ];
     const textToSearch = [
       patientInfo,
@@ -1707,7 +1713,7 @@ export default function ExpertImageAnalysis({
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                model: "gemini-3.5-flash",
+                model: "gemini-3.6-flash",
                 ...requestPayload
               }),
             });
@@ -1880,7 +1886,161 @@ export default function ExpertImageAnalysis({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleIncorporateToGenerator = async (isAutoSync = false, overrideHistory?: Array<{ query: string; answer: string }>) => {
+  // Advanced Case Analysis Format State
+  const [isCaseModalOpen, setIsCaseModalOpen] = useState<boolean>(false);
+  const [selectedCaseFormat, setSelectedCaseFormat] = useState<CaseAnalysisFormatOption>("flujograma_semiologico");
+  const [caseElements, setCaseElements] = useState<CaseAnalysisElementsConfig>({
+    includeSonographic: true,
+    includeSonographicDetails: true,
+    includeClinicalCorr: true,
+    includeCertainty: false,
+    includeDifferentials: true,
+    includeDiscardedDifferentials: true,
+    includeManagement: true,
+  });
+
+  // State to hold actual case data that is editable in real-time
+  const [editableCaseData, setEditableCaseData] = useState<CaseAnalysisData | null>(null);
+  const [checkedDetails, setCheckedDetails] = useState<boolean[]>([]);
+  const [checkedDifferentials, setCheckedDifferentials] = useState<boolean[]>([]);
+  const [checkedDecisionSteps, setCheckedDecisionSteps] = useState<boolean[]>([]);
+  const [isExtractingCaseData, setIsExtractingCaseData] = useState<boolean>(false);
+  const [caseDataError, setCaseDataError] = useState<string | null>(null);
+
+  // Automatically load the structured Case Analysis components for the current case when the modal opens
+  React.useEffect(() => {
+    if (isCaseModalOpen && analysisResult) {
+      const loadCaseAnalysisData = async () => {
+        setIsExtractingCaseData(true);
+        setCaseDataError(null);
+        try {
+          let consolidatedContext = `ANÁLISIS INICIAL:\n${analysisResult}`;
+          if (consultationHistory.length > 0) {
+            consolidatedContext += `\n\n=== HISTORIAL DE COMPLEMENTOS Y CORRECCIONES POSTERIORES (CHAT ACTIVO) ===`;
+            consultationHistory.forEach((item, index) => {
+              consolidatedContext += `\n\n[Consulta #${index + 1} del Especialista]: ${item.query}\n[Respuesta / Corrección del Radiólogo AI]: ${item.answer}`;
+            });
+          }
+
+          const response = await fetch("/api/extract-essential-findings", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+              model: selectedModel,
+              analysisText: consolidatedContext,
+              requestedFormat: selectedCaseFormat,
+              elementsConfig: caseElements
+            }),
+          });
+          const data = await response.json();
+          if (response.ok && data.success && data.caseAnalysisData) {
+            setEditableCaseData(data.caseAnalysisData);
+            
+            // Initialize sub-level checkmarks
+            if (data.caseAnalysisData.sonographicPillar?.details) {
+              setCheckedDetails(data.caseAnalysisData.sonographicPillar.details.map(() => true));
+            } else {
+              setCheckedDetails([]);
+            }
+            if (data.caseAnalysisData.diagnostics) {
+              setCheckedDifferentials(data.caseAnalysisData.diagnostics.map(() => true));
+            } else {
+              setCheckedDifferentials([]);
+            }
+            if (data.caseAnalysisData.decisionFlow) {
+              setCheckedDecisionSteps(data.caseAnalysisData.decisionFlow.map(() => true));
+            } else {
+              setCheckedDecisionSteps([]);
+            }
+          } else {
+            setCaseDataError(data.error || "No se pudo extraer los componentes estructurados del caso actual.");
+          }
+        } catch (err: any) {
+          setCaseDataError("Error de comunicación/red al estructurar el flujograma.");
+        } finally {
+          setIsExtractingCaseData(false);
+        }
+      };
+
+      loadCaseAnalysisData();
+    } else if (!isCaseModalOpen) {
+      setEditableCaseData(null);
+      setCaseDataError(null);
+      setCheckedDetails([]);
+      setCheckedDifferentials([]);
+      setCheckedDecisionSteps([]);
+    }
+  }, [isCaseModalOpen, selectedCaseFormat]);
+
+  // Client-side instant formatter to build the [CASE_ANALYSIS_JSON] block using the user's live edits
+  const handleIncorporateEditedCase = () => {
+    if (!editableCaseData) return;
+
+    // Clone the editableCaseData to avoid modifying active state before saving
+    const finalCaseData = JSON.parse(JSON.stringify(editableCaseData)) as CaseAnalysisData;
+
+    // 1. Filter sonographic details based on checkedDetails checkbox states
+    if (finalCaseData.sonographicPillar?.details) {
+      finalCaseData.sonographicPillar.details = finalCaseData.sonographicPillar.details.filter((_, i) => checkedDetails[i]);
+    }
+
+    // 2. Filter diagnostics based on checkedDifferentials checkbox states
+    if (finalCaseData.diagnostics) {
+      finalCaseData.diagnostics = finalCaseData.diagnostics.filter((_, i) => checkedDifferentials[i]);
+    }
+
+    // 3. Filter decision flow steps based on checkedDecisionSteps checkbox states
+    if (finalCaseData.decisionFlow) {
+      finalCaseData.decisionFlow = finalCaseData.decisionFlow.filter((_, i) => checkedDecisionSteps[i]);
+    }
+
+    // 4. Update elementsConfig in final data
+    finalCaseData.elementsConfig = {
+      ...caseElements,
+      includeSonographicDetails: caseElements.includeSonographic && (finalCaseData.sonographicPillar?.details?.length ?? 0) > 0,
+      includeDiscardedDifferentials: caseElements.includeDifferentials && (finalCaseData.diagnostics?.filter((d: any) => d.refutingCriteria).length ?? 0) > 0
+    };
+
+    // Construct the standard [CASE_ANALYSIS_JSON] wrapping block
+    const jsonBlock = `[CASE_ANALYSIS_JSON]\n${JSON.stringify(finalCaseData, null, 2)}\n[/CASE_ANALYSIS_JSON]\n\n`;
+
+    // Construct the formatted markdown text summary accompanying the JSON
+    let textSummary = `**ANÁLISIS INTEGRADO DE CASO (${selectedCaseFormat.toUpperCase().replace("_", " ")})**\n\n`;
+    if (caseElements.includeSonographic && finalCaseData.sonographicPillar) {
+      textSummary += `• **Pilar Sonográfico Fundamental**: ${finalCaseData.sonographicPillar.primaryFinding}\n`;
+    }
+    if (caseElements.includeClinicalCorr && finalCaseData.clinicalCorrelation) {
+      textSummary += `• **Correlación Clínica/Lab**: ${finalCaseData.clinicalCorrelation}\n`;
+    }
+    if (caseElements.includeDifferentials && finalCaseData.diagnostics?.length) {
+      textSummary += `• **Diagnóstico Principal**: ${finalCaseData.diagnostics[0]?.name}\n`;
+    }
+    if (caseElements.includeManagement && finalCaseData.managementRecommendation) {
+      textSummary += `• **Conducta Recomendada**: ${finalCaseData.managementRecommendation}\n`;
+    }
+
+    const finalExtractedText = jsonBlock + textSummary;
+
+    // Assemble the title and combined patient history information as before
+    const combinedHistory = `Paciente: ${patientInfo || "S/D"}. Sospecha: ${clinicalSuspicion || "S/D"}. Dudas solicitadas: ${radiologicalQuestions || "S/D"}`;
+    const studyTitleCombined = (image2 || image3)
+      ? `Estudio Avanzado Comparativo: 1. ${desc1} (${modality1})` + 
+        (image2 ? ` vs 2. ${desc2} (${modality2})` : "") + 
+        (image3 ? ` vs 3. ${desc3} (${modality3})` : "")
+      : `Valoración Experta de Imagen: ${desc1} (${modality1})`;
+
+    onIncorporateToReport(finalExtractedText, studyTitleCombined, combinedHistory, false);
+    setIncorporated(true);
+    setIsCaseModalOpen(false);
+    setTimeout(() => setIncorporated(false), 2500);
+  };
+
+  const handleIncorporateToGenerator = async (
+    isAutoSync = false, 
+    overrideHistory?: Array<{ query: string; answer: string }>,
+    formatChoice?: CaseAnalysisFormatOption,
+    elementsChoice?: CaseAnalysisElementsConfig
+  ) => {
     if (!analysisResult) return;
     
     if (!isAutoSync) {
@@ -1900,12 +2060,17 @@ export default function ExpertImageAnalysis({
         });
       }
 
+      const formatToUse = formatChoice;
+      const elementsToUse = formatChoice ? (elementsChoice || caseElements) : undefined;
+
       const response = await fetch("/api/extract-essential-findings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           model: selectedModel,
-          analysisText: consolidatedContext 
+          analysisText: consolidatedContext,
+          requestedFormat: formatToUse,
+          elementsConfig: elementsToUse
         }),
       });
       const data = await response.json();
@@ -1921,6 +2086,7 @@ export default function ExpertImageAnalysis({
         onIncorporateToReport(data.extractedText, studyTitleCombined, combinedHistory, isAutoSync);
         if (!isAutoSync) {
           setIncorporated(true);
+          setIsCaseModalOpen(false);
           setTimeout(() => setIncorporated(false), 2500);
         }
       } else {
@@ -3339,7 +3505,7 @@ export default function ExpertImageAnalysis({
                                   type="button"
                                   onClick={() => {
                                     setAnalysisResult(analysisResultFlash);
-                                    handleIncorporateToGenerator(true);
+                                    handleIncorporateToGenerator(false);
                                   }}
                                   className="px-2 py-0.5 bg-indigo-950 hover:bg-indigo-900 text-indigo-300 rounded text-[8px] font-black uppercase tracking-wider font-mono border border-indigo-900 cursor-pointer"
                                 >
@@ -3390,7 +3556,7 @@ export default function ExpertImageAnalysis({
                                   type="button"
                                   onClick={() => {
                                     setAnalysisResult(analysisResultPro);
-                                    handleIncorporateToGenerator(true);
+                                    handleIncorporateToGenerator(false);
                                   }}
                                   className="px-2 py-0.5 bg-indigo-950 hover:bg-indigo-900 text-indigo-300 rounded text-[8px] font-black uppercase tracking-wider font-mono border border-indigo-900 cursor-pointer"
                                 >
@@ -3568,32 +3734,36 @@ export default function ExpertImageAnalysis({
                   </div>
                   
                   {/* Action guide for supplying */}
-                  <div className="mt-6 p-4 bg-slate-950 border border-indigo-505/15 rounded-xl space-y-3">
-                    <p className="text-[10px] text-slate-400 font-mono">
-                      💡 <strong>Consejo clínico:</strong> Haz clic en <strong>"Suministrar a Reporte"</strong> para exportar los hallazgos patológicos detallados, clasificación diagnóstica y diagnóstico final al generador de reportes.
+                  <div className="mt-6 p-4 bg-slate-950 border border-indigo-500/20 rounded-xl space-y-3 shadow-lg">
+                    <p className="text-[10px] text-slate-300 font-mono">
+                      💡 <strong>Módulo de Diagnóstico Avanzado:</strong> Escoge cómo deseas presentar el análisis en el reporte y PDF. Puedes seleccionar entre las <strong>Opciones 1, 2, 3 y 6</strong> y filtrar sus elementos.
                     </p>
-                    <button
-                      onClick={handleIncorporateToGenerator}
-                      disabled={isExtracting}
-                      className="w-full bg-slate-900 hover:bg-[#13111C]/60 text-indigo-300 border border-indigo-850 hover:border-indigo-500/40 text-[10px] font-black uppercase py-2.5 rounded-lg transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
-                    >
-                      {isExtracting ? (
-                        <>
+                    <div className="flex flex-col sm:flex-row gap-2.5">
+                      <button
+                        onClick={() => setIsCaseModalOpen(true)}
+                        disabled={isExtracting}
+                        className="flex-1 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 hover:from-indigo-500 hover:to-purple-500 text-white border border-indigo-400/40 text-[10px] font-black uppercase py-2.5 px-3 rounded-lg transition-all flex items-center justify-center gap-1.5 shadow-md disabled:opacity-50 cursor-pointer"
+                      >
+                        <Sparkles className="h-3.5 w-3.5 text-amber-300" />
+                        <span>Configurar e Insertar Análisis de Caso (Opciones 1, 2, 3, 6)</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleIncorporateToGenerator(false)}
+                        disabled={isExtracting}
+                        className="bg-slate-900 hover:bg-[#13111C] text-indigo-300 border border-indigo-800/60 hover:border-indigo-500/40 text-[10px] font-black uppercase py-2.5 px-3 rounded-lg transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer shrink-0"
+                        title="Suministrar como texto directo de reporte"
+                      >
+                        {isExtracting ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-400" />
-                          <span>Extrayendo hallazgos esenciales de la valoración...</span>
-                        </>
-                      ) : incorporated ? (
-                        <>
+                        ) : incorporated ? (
                           <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
-                          <span>¡Suministrado al generador!</span>
-                        </>
-                      ) : (
-                        <>
+                        ) : (
                           <Send className="h-3.5 w-3.5" />
-                          <span>Inyectar diagnósticos en el generador</span>
-                        </>
-                      )}
-                    </button>
+                        )}
+                        <span>Suministrar Estándar</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -5044,6 +5214,267 @@ export default function ExpertImageAnalysis({
             </motion.div>
           );
         })()}
+      </AnimatePresence>
+
+      {/* Modal de Selección y Configuración de Análisis de Caso (Opciones 1, 2, 3, 6) */}
+      <AnimatePresence>
+        {isCaseModalOpen && (
+          <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-slate-900 border border-indigo-500/30 w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-2xl shadow-2xl p-6 text-slate-100 flex flex-col space-y-5"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-indigo-950 border border-indigo-500/40 rounded-xl text-indigo-400">
+                    <Sparkles className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-white uppercase tracking-wider">
+                      Inserción Elegante de Análisis de Caso
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Selecciona el formato de presentación para el reporte final y personaliza los elementos a incluir o excluir.
+                    </p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setIsCaseModalOpen(false)}
+                  className="p-2 text-slate-400 hover:text-white bg-slate-800/60 hover:bg-slate-800 rounded-xl transition-all cursor-pointer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* 1. Selector de Formato (Opciones 1, 2, 3, 6) */}
+              <div className="space-y-3">
+                <label className="text-xs font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-2 font-mono">
+                  <LayoutGrid className="h-4 w-4" />
+                  <span>1. Selecciona el Formato de Presentación:</span>
+                </label>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {/* Opción 1 */}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCaseFormat("flujograma_semiologico")}
+                    className={`p-3.5 rounded-xl border text-left transition-all flex items-start gap-3 cursor-pointer ${
+                      selectedCaseFormat === "flujograma_semiologico"
+                        ? "bg-indigo-950/70 border-indigo-500 ring-2 ring-indigo-500/30 text-white"
+                        : "bg-slate-950/60 border-slate-800 hover:border-slate-700 text-slate-300"
+                    }`}
+                  >
+                    <div className={`p-2 rounded-lg shrink-0 mt-0.5 ${selectedCaseFormat === "flujograma_semiologico" ? "bg-indigo-600 text-white" : "bg-slate-900 text-indigo-400"}`}>
+                      <Sparkles className="h-4 w-4" />
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-xs font-bold font-mono block text-indigo-300">
+                        Opción 1: Flujograma Semiológico (Pensamiento Radiológico)
+                      </span>
+                      <p className="text-[11px] text-slate-400 leading-snug">
+                        Ciclo de pensamiento ordenado: hallazgo principal, hallazgos secundarios, descarte de signos y diagnóstico final con aspectos clínicos.
+                      </p>
+                    </div>
+                  </button>
+
+                  {/* Opción 2 */}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCaseFormat("flujograma_algoritmico")}
+                    className={`p-3.5 rounded-xl border text-left transition-all flex items-start gap-3 cursor-pointer ${
+                      selectedCaseFormat === "flujograma_algoritmico"
+                        ? "bg-indigo-950/70 border-indigo-500 ring-2 ring-indigo-500/30 text-white"
+                        : "bg-slate-950/60 border-slate-800 hover:border-slate-700 text-slate-300"
+                    }`}
+                  >
+                    <div className={`p-2 rounded-lg shrink-0 mt-0.5 ${selectedCaseFormat === "flujograma_algoritmico" ? "bg-blue-600 text-white" : "bg-slate-900 text-cyan-400"}`}>
+                      <GitCommit className="h-4 w-4" />
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-xs font-bold font-mono block text-cyan-300">
+                        Opción 2: Flujograma Algorítmico / Árbol de Decisión
+                      </span>
+                      <p className="text-[11px] text-slate-400 leading-snug">
+                        Cadena lógica paso a paso desde el hallazgo inicial hasta el manejo sugerido con conectores visuales.
+                      </p>
+                    </div>
+                  </button>
+
+                  {/* Opción 3 */}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCaseFormat("esquema_pilares")}
+                    className={`p-3.5 rounded-xl border text-left transition-all flex items-start gap-3 cursor-pointer ${
+                      selectedCaseFormat === "esquema_pilares"
+                        ? "bg-indigo-950/70 border-indigo-500 ring-2 ring-indigo-500/30 text-white"
+                        : "bg-slate-950/60 border-slate-800 hover:border-slate-700 text-slate-300"
+                    }`}
+                  >
+                    <div className={`p-2 rounded-lg shrink-0 mt-0.5 ${selectedCaseFormat === "esquema_pilares" ? "bg-emerald-600 text-white" : "bg-slate-900 text-emerald-400"}`}>
+                      <Layers className="h-4 w-4" />
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-xs font-bold font-mono block text-emerald-300">
+                        Opción 3: Esquema Integrador por Pilares
+                      </span>
+                      <p className="text-[11px] text-slate-400 leading-snug">
+                        4 bloques ejecutivos destacados: Pilar Ecografía, Pilar Clínica/Lab, Certeza %, y Conducta Recomendada.
+                      </p>
+                    </div>
+                  </button>
+
+                  {/* Opción 4 */}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCaseFormat("mapa_diferenciales")}
+                    className={`p-3.5 rounded-xl border text-left transition-all flex items-start gap-3 cursor-pointer ${
+                      selectedCaseFormat === "mapa_diferenciales"
+                        ? "bg-indigo-950/70 border-indigo-500 ring-2 ring-indigo-500/30 text-white"
+                        : "bg-slate-950/60 border-slate-800 hover:border-slate-700 text-slate-300"
+                    }`}
+                  >
+                    <div className={`p-2 rounded-lg shrink-0 mt-0.5 ${selectedCaseFormat === "mapa_diferenciales" ? "bg-teal-600 text-white" : "bg-slate-900 text-teal-450"}`}>
+                      <Scale className="h-4 w-4" />
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-xs font-bold font-mono block text-teal-300">
+                        Opción 4: Mapa de Diagnósticos Diferenciales
+                      </span>
+                      <p className="text-[11px] text-slate-400 leading-snug">
+                        Mapa visual ramificado de diagnósticos diferenciales con criterios a favor/en contra, porcentajes de probabilidad y test confirmativo.
+                      </p>
+                    </div>
+                  </button>
+
+                  {/* Opción 5 */}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCaseFormat("matriz_semiotica")}
+                    className={`p-3.5 rounded-xl border text-left transition-all flex items-start gap-3 cursor-pointer ${
+                      selectedCaseFormat === "matriz_semiotica"
+                        ? "bg-indigo-950/70 border-indigo-500 ring-2 ring-indigo-500/30 text-white"
+                        : "bg-slate-950/60 border-slate-800 hover:border-slate-700 text-slate-300"
+                    }`}
+                  >
+                    <div className={`p-2 rounded-lg shrink-0 mt-0.5 ${selectedCaseFormat === "matriz_semiotica" ? "bg-amber-600 text-white" : "bg-slate-900 text-amber-400"}`}>
+                      <Scale className="h-4 w-4" />
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-xs font-bold font-mono block text-amber-300">
+                        Opción 5: Matriz Semiótica Comparativa
+                      </span>
+                      <p className="text-[11px] text-slate-400 leading-snug">
+                        Matriz de confrontación de signos peticionantes (inclusivos/a favor) vs. signos exclusivos y criterios de descarte (refutadores).
+                      </p>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {/* 2. Configuración, Edición e Integración de Componentes */}
+              <div className="space-y-4 pt-3 border-t border-slate-800">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-2 font-mono">
+                    <Sliders className="h-4 w-4 text-indigo-400 animate-pulse" />
+                    <span>2. Configuración y Edición de Componentes en Tiempo Real:</span>
+                  </label>
+                  {editableCaseData && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">
+                      Listo para Edición
+                    </span>
+                  )}
+                </div>
+
+                {isExtractingCaseData ? (
+                  <div className="flex flex-col items-center justify-center py-16 space-y-3 bg-slate-950/40 border border-slate-850 rounded-xl">
+                    <Loader2 className="h-8 w-8 text-indigo-500 animate-spin" />
+                    <p className="text-xs font-black text-indigo-300 font-mono uppercase tracking-wider">
+                      Cargando componentes del Flujograma...
+                    </p>
+                    <p className="text-[11px] text-slate-400">
+                      Analizando el dictamen actual para estructurar de manera óptima el caso clínico.
+                    </p>
+                  </div>
+                ) : caseDataError ? (
+                  <div className="p-6 bg-rose-950/40 border border-rose-900/40 rounded-xl text-center space-y-3">
+                    <p className="text-xs text-rose-300 font-medium">{caseDataError}</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCaseModalOpen(false);
+                        setTimeout(() => setIsCaseModalOpen(true), 100);
+                      }}
+                      className="px-4 py-2 bg-rose-900/50 hover:bg-rose-900/80 text-rose-100 text-xs font-black rounded-lg uppercase tracking-wider transition-all"
+                    >
+                      Reintentar Estructuración
+                    </button>
+                  </div>
+                ) : !editableCaseData ? (
+                  <div className="text-center py-12 text-xs text-slate-500">
+                    Por favor, selecciona una valoración clínica para estructurar el flujograma.
+                  </div>
+                ) : (
+                  <div className="w-full space-y-6">
+                    {/* Visual Information Header */}
+                    <div className="bg-slate-950/60 border border-slate-850 p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-inner">
+                      <div className="space-y-1">
+                        <p className="text-xs font-black text-indigo-400 font-mono uppercase tracking-wider">
+                          EDITOR INTERACTIVO DE FLUJOGRAMA ({selectedCaseFormat === "flujograma_semiologico" ? "VÍA SEMIOLÓGICA" : selectedCaseFormat === "flujograma_algoritmico" ? "ÁRBOL DE DECISIÓN" : selectedCaseFormat === "esquema_pilares" ? "PILARES CLÍNICOS" : selectedCaseFormat === "mapa_diferenciales" ? "MAPA DE DIFERENCIALES" : "MATRIZ SEMIÓTICA"})
+                        </p>
+                        <p className="text-[11px] text-slate-300 leading-normal">
+                          Modifique los enunciados e incluya/excluya cada elemento marcando o desmarcando sus casillas directamente sobre la estructura visual del flujograma.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[10px] font-bold px-2.5 py-1 rounded-md bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-mono">
+                          {selectedCaseFormat.toUpperCase()}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Master Interactive Visual Flow Panel */}
+                    <InteractiveCaseEditor
+                      selectedCaseFormat={selectedCaseFormat}
+                      editableCaseData={editableCaseData}
+                      setEditableCaseData={setEditableCaseData}
+                      caseElements={caseElements}
+                      setCaseElements={setCaseElements}
+                      checkedDetails={checkedDetails}
+                      setCheckedDetails={setCheckedDetails}
+                      checkedDifferentials={checkedDifferentials}
+                      setCheckedDifferentials={setCheckedDifferentials}
+                      checkedDecisionSteps={checkedDecisionSteps}
+                      setCheckedDecisionSteps={setCheckedDecisionSteps}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Footer Actions */}
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setIsCaseModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl border border-slate-700 hover:bg-slate-800 text-slate-300 text-xs font-bold uppercase transition-all cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleIncorporateEditedCase}
+                  disabled={isExtractingCaseData || !editableCaseData}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2 shadow-lg disabled:opacity-40 cursor-pointer"
+                >
+                  <Sparkles className="h-4 w-4 text-amber-300 animate-pulse" />
+                  <span>Insertar Flujograma en Reporte PDF</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
       </AnimatePresence>
     </>
   );

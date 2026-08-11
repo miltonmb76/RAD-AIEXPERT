@@ -102,7 +102,7 @@ const PRACTICE_GUIDELINES: ClinicalGuideline[] = [
   {
     id: "gpc-sru-esteatosis",
     title: "Consenso SRU Hígado",
-    description: "Gradación de esteatosis hepática y pautas de control.",
+    description: "Gradación de esteatosis hepática por QUS (Leve 5.0-12.0%, Moderada 12.1-20.0%, Severa >20.0%) y pautas de control.",
     text: "Grado de esteatosis y pautas de seguimiento ecográfico según los criterios del Consenso de la Society of Radiologists in Ultrasound (SRU).",
     source: "Society of Radiologists in Ultrasound (SRU)",
     requiredAnatomy: ["hígado", "higado", "hepático", "hepatico", "vesícula", "vesicula", "portal", "porta", "suprahepáticas", "suprahepaticas"],
@@ -190,6 +190,77 @@ const PRACTICE_GUIDELINES: ClinicalGuideline[] = [
     excludeAny: ["mama", "mamari", "tiroides", "carótida", "carotida", "vesícula", "vesicula"]
   }
 ];
+
+/**
+ * Helper to split full report text into:
+ * 1. bodyText: The main report content (and its optional footnote section)
+ * 2. annexesText: Any annexes appended after the main report body (e.g. ### CLASIFICACIÓN DE..., ### ANEXO..., ### CUADRO SINÓPTICO...)
+ */
+export const separateReportBodyAndAnnexes = (fullText: string): { bodyText: string; annexesText: string } => {
+  if (!fullText) return { bodyText: "", annexesText: "" };
+
+  const annexPattern = /(?:\n\s*---\s*)?\n(?:\s*(?:#{1,6}\s+|\*\*\s*)(?:ANEXO|DESGLOSE Y JUSTIFICACIÓN|CLASIFICACIÓN DE|ESQUEMA CLÍNICO DE HALLAZGOS|CUADRO SINÓPTICO|MATRIZ SEMIÓTICA|SINOPSIS CLÍNICA|SINOPSIS POR ÓRGANO|SINOPSIS DE ÓRGANO|ASISTENTE DE MEDIDAS|TABLA DE MEDIDAS|MEDICIONES Y PARÁMETROS|PARÁMETROS Y MEDIDAS|SÍNTESIS VASCULAR|SÍNTESIS DE ANATOMÍA|SINOPSIS DE FRACTURAS|EXPLICACIÓN DE INFORME|INFOGRAFÍA EXPLICATIVA)|(?:\s*ANEXO\s*:|\s*ANEXO DIAGNÓSTICO|\s*DESGLOSE Y JUSTIFICACIÓN DE CLASIFICACIÓN))\b/i;
+
+  const match = fullText.match(annexPattern);
+  if (match && match.index !== undefined) {
+    const bodyText = fullText.substring(0, match.index).trimEnd();
+    let annexesText = fullText.substring(match.index);
+    if (!annexesText.startsWith("\n")) {
+      annexesText = "\n\n" + annexesText.trimStart();
+    }
+    return { bodyText, annexesText };
+  }
+
+  return { bodyText: fullText.trimEnd(), annexesText: "" };
+};
+
+/**
+ * Helper to insert or remove footnote lines specifically in the main report body.
+ */
+export const updateFootnotesInReport = (
+  fullText: string,
+  linesToAdd: string[],
+  linesToRemove: string[] = []
+): string => {
+  const { bodyText, annexesText } = separateReportBodyAndAnnexes(fullText);
+
+  // Split bodyText into main content (before ---) and existing footnotes (after --- inside bodyText)
+  let mainContent = bodyText;
+  let existingFootnotes: string[] = [];
+
+  const dashParts = bodyText.split(/\n\s*---\s*\n/);
+  if (dashParts.length > 1) {
+    mainContent = dashParts[0].trimEnd();
+    const footnoteSectionRaw = dashParts.slice(1).join("\n\n");
+    existingFootnotes = footnoteSectionRaw
+      .split(/\n\n+/)
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
+  } else {
+    mainContent = bodyText.trimEnd();
+  }
+
+  // Filter out any footnote that should be removed
+  let updatedFootnotes = existingFootnotes.filter(fn => {
+    return !linesToRemove.some(rem => fn.includes(rem.trim()) || rem.trim().includes(fn));
+  });
+
+  // Add new footnote lines if not already present
+  linesToAdd.forEach(line => {
+    const trimmed = line.trim();
+    if (trimmed && !updatedFootnotes.some(fn => fn.includes(trimmed) || trimmed.includes(fn))) {
+      updatedFootnotes.push(trimmed);
+    }
+  });
+
+  // Reconstruct bodyText
+  let newBodyText = mainContent;
+  if (updatedFootnotes.length > 0) {
+    newBodyText += `\n\n---\n\n${updatedFootnotes.join("\n\n")}`;
+  }
+
+  return newBodyText + annexesText;
+};
 
 export const CreadorNotasPie: React.FC<CreadorNotasPieProps> = ({
   selectedModel,
@@ -279,7 +350,8 @@ export const CreadorNotasPie: React.FC<CreadorNotasPieProps> = ({
     if (!reportText.trim()) return;
 
     const getCoreText = (t: string) => {
-      return t.split("---")[0].trim();
+      const { bodyText } = separateReportBodyAndAnnexes(t);
+      return bodyText.trim();
     };
 
     const currentCore = getCoreText(reportText);
@@ -308,22 +380,7 @@ export const CreadorNotasPie: React.FC<CreadorNotasPieProps> = ({
     });
 
     if (match) {
-      const lines = reportText.split("\n");
-      const cleanLines = lines.filter(line => !line.includes(match.text));
-      let cleanedReport = cleanLines.join("\n").trim();
-
-      if (cleanedReport.endsWith("---")) {
-        cleanedReport = cleanedReport.substring(0, cleanedReport.length - 3).trim();
-      }
-
-      const noteLine = match.text;
-      let finalReport = "";
-      if (cleanedReport.includes("---")) {
-        finalReport = `${cleanedReport}\n\n${noteLine}`;
-      } else {
-        finalReport = `${cleanedReport}\n\n---\n\n${noteLine}`;
-      }
-
+      const finalReport = updateFootnotesInReport(reportText, [match.text], []);
       setAutoInsertedHistory(prev => [...prev, match.id]);
       onReportUpdated(finalReport);
 
@@ -388,12 +445,7 @@ export const CreadorNotasPie: React.FC<CreadorNotasPieProps> = ({
     }
 
     const footnoteTextLines = selectedFns.map(fn => fn.text);
-    
-    // Split by standalone line of three dashes
-    const parts = reportText.split(/\n\s*---\s*\n/);
-    let cleanedReport = parts[0].trim();
-
-    const finalReport = `${cleanedReport}\n\n---\n\n${footnoteTextLines.join("\n\n")}`;
+    const finalReport = updateFootnotesInReport(reportText, footnoteTextLines, []);
     
     onReportUpdated(finalReport);
     setSuccessMsg(`¡Se han incrustado ${selectedFns.length} notas de pie de página al final de su reporte!`);
@@ -403,23 +455,7 @@ export const CreadorNotasPie: React.FC<CreadorNotasPieProps> = ({
   // Manual interactive insertion for a guideline reference
   const handleInsertGuideline = (g: ClinicalGuideline) => {
     if (reportText.includes(g.text)) return;
-
-    const lines = reportText.split("\n");
-    // Strip identical text if it was there already (extra safe)
-    const cleanLines = lines.filter(line => !line.includes(g.text));
-    let cleanedReport = cleanLines.join("\n").trim();
-
-    if (cleanedReport.endsWith("---")) {
-      cleanedReport = cleanedReport.substring(0, cleanedReport.length - 3).trim();
-    }
-
-    const noteLine = g.text;
-    let finalReport = "";
-    if (cleanedReport.includes("---")) {
-      finalReport = `${cleanedReport}\n\n${noteLine}`;
-    } else {
-      finalReport = `${cleanedReport}\n\n---\n\n${noteLine}`;
-    }
+    const finalReport = updateFootnotesInReport(reportText, [g.text], []);
 
     onReportUpdated(finalReport);
     setSuccessMsg(`¡Guía "${g.title}" añadida como nota de pie de página!`);
@@ -428,20 +464,13 @@ export const CreadorNotasPie: React.FC<CreadorNotasPieProps> = ({
 
   // Manual interactive removal of a guideline reference
   const handleRemoveGuideline = (g: ClinicalGuideline) => {
-    const lines = reportText.split("\n");
-    const cleanLines = lines.filter(line => !line.includes(g.text));
-    let cleanedReport = cleanLines.join("\n").trim();
-
-    if (cleanedReport.endsWith("---")) {
-      cleanedReport = cleanedReport.substring(0, cleanedReport.length - 3).trim();
-    }
-
     // Record as dismissed so background autodetect doesn't force re-inserting it immediately
     if (!dismissedGuidelines.includes(g.id)) {
       setDismissedGuidelines(prev => [...prev, g.id]);
     }
 
-    onReportUpdated(cleanedReport);
+    const finalReport = updateFootnotesInReport(reportText, [], [g.text]);
+    onReportUpdated(finalReport);
     setSuccessMsg(`Se ha removido la guía "${g.title}" del pie de página.`);
     setTimeout(() => setSuccessMsg(null), 3000);
   };
@@ -453,22 +482,7 @@ export const CreadorNotasPie: React.FC<CreadorNotasPieProps> = ({
 
   const handleInsertExternalGuideline = (eg: DetectedGuideline) => {
     if (reportText.includes(eg.text)) return;
-
-    const lines = reportText.split("\n");
-    const cleanLines = lines.filter(line => !line.includes(eg.text));
-    let cleanedReport = cleanLines.join("\n").trim();
-
-    if (cleanedReport.endsWith("---")) {
-      cleanedReport = cleanedReport.substring(0, cleanedReport.length - 3).trim();
-    }
-
-    const noteLine = eg.text;
-    let finalReport = "";
-    if (cleanedReport.includes("---")) {
-      finalReport = `${cleanedReport}\n\n${noteLine}`;
-    } else {
-      finalReport = `${cleanedReport}\n\n---\n\n${noteLine}`;
-    }
+    const finalReport = updateFootnotesInReport(reportText, [eg.text], []);
 
     onReportUpdated(finalReport);
     setSuccessMsg(`¡Clasificación "${eg.title}" añadida como nota de pie de página!`);
@@ -476,15 +490,8 @@ export const CreadorNotasPie: React.FC<CreadorNotasPieProps> = ({
   };
 
   const handleRemoveExternalGuideline = (eg: DetectedGuideline) => {
-    const lines = reportText.split("\n");
-    const cleanLines = lines.filter(line => !line.includes(eg.text));
-    let cleanedReport = cleanLines.join("\n").trim();
-
-    if (cleanedReport.endsWith("---")) {
-      cleanedReport = cleanedReport.substring(0, cleanedReport.length - 3).trim();
-    }
-
-    onReportUpdated(cleanedReport);
+    const finalReport = updateFootnotesInReport(reportText, [], [eg.text]);
+    onReportUpdated(finalReport);
     setSuccessMsg(`Se ha removido "${eg.title}" del pie de página.`);
     setTimeout(() => setSuccessMsg(null), 3000);
   };

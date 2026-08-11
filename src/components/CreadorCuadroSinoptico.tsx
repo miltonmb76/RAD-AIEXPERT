@@ -85,6 +85,9 @@ export const CreadorCuadroSinoptico: React.FC<CreadorCuadroSinopticoProps> = ({
   const [aspectsText, setAspectsText] = useState<string>("");
   const [aspects, setAspects] = useState<OrganAspect[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isInjecting, setIsInjecting] = useState<boolean>(false);
+  const [autoRetrogradeInject, setAutoRetrogradeInject] = useState<boolean>(true);
+  const [includeSynopticSection, setIncludeSynopticSection] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [showDirectives, setShowDirectives] = useState<boolean>(true);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -205,127 +208,192 @@ export const CreadorCuadroSinoptico: React.FC<CreadorCuadroSinopticoProps> = ({
     return approvedSentences.join(" ");
   };
 
-  const handleInsertIntoReport = () => {
+  // Build the complete synoptic section block (Markdown Table + Resumen Interpretativo paragraph)
+  const generateFullSynopticBlock = (): string => {
     const mdTable = generateMarkdownTable();
     const narrativeText = generateNarrativeParagraph();
 
-    if (!mdTable && !narrativeText) {
+    if (!mdTable && !narrativeText) return "";
+
+    let block = "";
+    if (mdTable) {
+      block += mdTable + "\n";
+    }
+    if (narrativeText) {
+      block += `\n**Resumen Interpretativo:** ${narrativeText}\n`;
+    }
+    return block.trim();
+  };
+
+  const performLocalInsert = (sentencesToInject: string[], fullSynopticContent: string) => {
+    let current = reportText;
+
+    if (sentencesToInject.length > 0) {
+      const organEscaped = organ.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+      const organRegex = new RegExp(`(\\b${organEscaped}\\b)`, 'i');
+      const lines = current.split("\n");
+      let inserted = false;
+
+      const sentenceBlock = sentencesToInject.join(" ");
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (organRegex.test(line) && !line.toLowerCase().includes("sinopsis") && !line.toLowerCase().includes("cuadro")) {
+          if (line.trim().endsWith(":") || line.trim().startsWith("###") || line.trim().startsWith("**")) {
+            if (lines[i + 1] && lines[i + 1].trim() !== "" && !lines[i + 1].trim().startsWith("###")) {
+              lines[i + 1] = lines[i + 1].trim() + " " + sentenceBlock;
+            } else {
+              lines.splice(i + 1, 0, sentenceBlock);
+            }
+          } else {
+            lines[i] = line.trim() + " " + sentenceBlock;
+          }
+          inserted = true;
+          break;
+        }
+      }
+
+      if (!inserted) {
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i].toLowerCase();
+          if (line.includes("hallazgos") && (line.includes("###") || line.includes(":") || lines[i].trim().startsWith("**"))) {
+            lines.splice(i + 1, 0, `- **${organ}**: ${sentenceBlock}`);
+            inserted = true;
+            break;
+          }
+        }
+      }
+
+      if (!inserted) {
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i].toLowerCase();
+          if (line.includes("conclusión") || line.includes("impresión diagnóstica")) {
+            lines.splice(i, 0, `- **${organ}**: ${sentenceBlock}\n`);
+            inserted = true;
+            break;
+          }
+        }
+      }
+
+      if (!inserted) {
+        current = current.trim() + `\n\n- **${organ}**: ${sentenceBlock}`;
+      } else {
+        current = lines.join("\n");
+      }
+    }
+
+    if (includeSynopticSection && fullSynopticContent) {
+      const sectionHeader = `### SINOPSIS CLÍNICA DE ${organ.toUpperCase()}`;
+      let blockToInsert = `\n\n### SINOPSIS CLÍNICA DE ${organ.toUpperCase()}\n\n${fullSynopticContent}\n`;
+      
+      const escapedHeader = sectionHeader.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+      const regexWithDash = new RegExp(`(\\n*---\\n*${escapedHeader}[\\s\\S]*?)(?=(\\n*---)|\\n*###|$)`, 'i');
+      const regexWithoutDash = new RegExp(`(\\n*${escapedHeader}[\\s\\S]*?)(?=\\n*###|$)`, 'i');
+
+      if (regexWithDash.test(current)) {
+        current = current.replace(regexWithDash, blockToInsert);
+      } else if (regexWithoutDash.test(current)) {
+        current = current.replace(regexWithoutDash, blockToInsert);
+      } else {
+        current = current.trim() + blockToInsert;
+      }
+    }
+
+    onReportUpdated(current);
+    setSuccessMessage(`Se ha insertado la sinopsis con el cuadro y su resumen interpretativo para '${organ}'.`);
+    setAspects(prev => prev.map(a => ({ ...a, retroInserted: true })));
+  };
+
+  const handleInsertIntoReport = async () => {
+    const fullSynopticBlock = generateFullSynopticBlock();
+    const approvedSentences = aspects
+      .filter(a => a.approvedForReportText && a.narrativeSentence.trim())
+      .map(a => a.narrativeSentence.trim());
+
+    if (!fullSynopticBlock && approvedSentences.length === 0) {
       setError("No has aprobado ningún aspecto para insertar.");
       return;
     }
 
-    let current = reportText;
-    const sectionHeader = `### SINOPSIS CLÍNICA DE ${organ.toUpperCase()}`;
+    setIsInjecting(true);
+    setError(null);
+    setSuccessMessage(null);
 
-    // Build the block to insert
-    let blockToInsert = `\n\n### SINOPSIS CLÍNICA DE ${organ.toUpperCase()}\n`;
-    if (mdTable) {
-      blockToInsert += `\n${mdTable}\n`;
+    try {
+      const response = await fetch("/api/inject-organ-synoptic-retrograde", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: selectedModel,
+          report: reportText,
+          organ: organ,
+          sentencesToInject: autoRetrogradeInject ? approvedSentences : [],
+          synopticTableMarkdown: includeSynopticSection ? fullSynopticBlock : "",
+          includeSynopticTable: includeSynopticSection
+        })
+      });
+
+      const data = await response.json();
+      if (data.success && data.updatedReport) {
+        onReportUpdated(data.updatedReport);
+        setSuccessMessage(
+          data.summaryOfInjections ||
+            `Se han inyectado retrógradamente los hallazgos e insertado el cuadro con el resumen interpretativo para '${organ}'.`
+        );
+        setAspects(prev =>
+          prev.map(a => (a.approvedForReportText ? { ...a, retroInserted: true } : a))
+        );
+      } else {
+        performLocalInsert(autoRetrogradeInject ? approvedSentences : [], fullSynopticBlock);
+      }
+    } catch (err) {
+      console.warn("Error en inyección retrógrada por API, usando fallback local:", err);
+      performLocalInsert(autoRetrogradeInject ? approvedSentences : [], fullSynopticBlock);
+    } finally {
+      setIsInjecting(false);
+      setTimeout(() => {
+        setSuccessMessage(null);
+      }, 6000);
     }
-    if (narrativeText) {
-      blockToInsert += `\n**Resumen Interpretativo:** ${narrativeText}\n`;
-    }
-
-    // Check if section already exists and replace it, or append at the end
-    const escapedHeader = sectionHeader.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-    const regexWithDash = new RegExp(`(\\n*---\\n*${escapedHeader}[\\s\\S]*?)(?=(\\n*---)|\\n*###|$)`, 'i');
-    const regexWithoutDash = new RegExp(`(\\n*${escapedHeader}[\\s\\S]*?)(?=\\n*###|$)`, 'i');
-
-    if (regexWithDash.test(current)) {
-      current = current.replace(regexWithDash, blockToInsert);
-      setSuccessMessage(`Se ha actualizado exitosamente la sinopsis clínica de '${organ}' en el reporte.`);
-    } else if (regexWithoutDash.test(current)) {
-      current = current.replace(regexWithoutDash, blockToInsert);
-      setSuccessMessage(`Se ha actualizado exitosamente la sinopsis clínica de '${organ}' en el reporte.`);
-    } else {
-      current = current.trim() + blockToInsert;
-      setSuccessMessage(`Se ha insertado exitosamente la sinopsis clínica de '${organ}' al final del reporte.`);
-    }
-
-    onReportUpdated(current);
-    
-    // Clear message after 4s
-    setTimeout(() => {
-      setSuccessMessage(null);
-    }, 4000);
   };
 
-  const handleRetroactiveInsert = (index: number) => {
+  const handleRetroactiveInsert = async (index: number) => {
     const aspect = aspects[index];
     const sentence = aspect.narrativeSentence.trim();
     if (!sentence) return;
 
-    let current = reportText;
-    const organEscaped = organ.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-    const organRegex = new RegExp(`(\\b${organEscaped}\\b)`, 'i');
-    
-    const lines = current.split("\n");
-    let inserted = false;
-    
-    // Find a section or line containing the organ name to insert next to it
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (organRegex.test(line) && !line.toLowerCase().includes("sinopsis") && !line.toLowerCase().includes("cuadro")) {
-        if (line.trim().startsWith("-") || line.trim().startsWith("*") || line.trim().startsWith("###") || line.trim().endsWith(":") || line.trim().startsWith("**")) {
-          if (lines[i + 1] && lines[i + 1].trim() !== "" && !lines[i + 1].trim().startsWith("###") && !lines[i + 1].trim().startsWith("-")) {
-            lines[i + 1] = lines[i + 1].trim() + " " + sentence;
-          } else {
-            lines.splice(i + 1, 0, sentence);
-          }
-        } else {
-          lines[i] = line.trim() + " " + sentence;
-        }
-        inserted = true;
-        break;
-      }
-    }
+    setIsInjecting(true);
+    setError(null);
 
-    // Fallback 1: Under ### HALLAZGOS or HALLAZGOS:
-    if (!inserted) {
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i].toLowerCase();
-        if (line.includes("hallazgos") && (line.includes("###") || line.includes(":") || lines[i].trim().startsWith("**"))) {
-          lines.splice(i + 1, 0, `- **${organ}**: ${sentence}`);
-          inserted = true;
-          break;
-        }
-      }
-    }
+    try {
+      const response = await fetch("/api/inject-organ-synoptic-retrograde", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: selectedModel,
+          report: reportText,
+          organ: organ,
+          sentencesToInject: [sentence],
+          includeSynopticTable: false
+        })
+      });
 
-    // Fallback 2: Before CONCLUSIÓN or IMPRESIÓN DIAGNÓSTICA
-    if (!inserted) {
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i].toLowerCase();
-        if (line.includes("conclusión") || line.includes("impresión diagnóstica") || line.includes("### conclusión")) {
-          lines.splice(i, 0, `- **${organ}**: ${sentence}\n`);
-          inserted = true;
-          break;
-        }
-      }
-    }
-
-    // Fallback 3: Append right before any existing SINOPSIS CLÍNICA section, or at the very end
-    if (!inserted) {
-      const sinopsisIndex = current.indexOf("### SINOPSIS CLÍNICA");
-      if (sinopsisIndex !== -1) {
-        current = current.slice(0, sinopsisIndex).trim() + `\n\n- **${organ}**: ${sentence}\n\n` + current.slice(sinopsisIndex);
+      const data = await response.json();
+      if (data.success && data.updatedReport) {
+        onReportUpdated(data.updatedReport);
+        setSuccessMessage(`Inyección retrógrada e imperceptible realizada: "${sentence}"`);
+        setAspects(prev => prev.map((asp, idx) => (idx === index ? { ...asp, retroInserted: true } : asp)));
       } else {
-        current = current.trim() + `\n\n- **${organ}**: ${sentence}`;
+        performLocalInsert([sentence], "");
       }
-    } else {
-      current = lines.join("\n");
+    } catch (err) {
+      performLocalInsert([sentence], "");
+    } finally {
+      setIsInjecting(false);
+      setTimeout(() => {
+        setSuccessMessage(null);
+      }, 5000);
     }
-
-    onReportUpdated(current);
-    setSuccessMessage(`Se ha inyectado retrógradamente al informe base: "${sentence}"`);
-    
-    setAspects(prev =>
-      prev.map((asp, idx) => (idx === index ? { ...asp, retroInserted: true } : asp))
-    );
-
-    setTimeout(() => {
-      setSuccessMessage(null);
-    }, 4500);
   };
 
   const selectAllTable = (val: boolean) => {
@@ -746,21 +814,73 @@ export const CreadorCuadroSinoptico: React.FC<CreadorCuadroSinopticoProps> = ({
               </div>
             </div>
 
+            {/* Options Panel for Insertion & Retrograde Injection */}
+            <div className="bg-slate-950/60 p-4 rounded-2xl border border-indigo-900/30 space-y-3">
+              <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400 font-mono block">
+                Configuración de Inserción e Inyección Retrógrada Inteligente:
+              </span>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-slate-300">
+                <label className="flex items-start gap-2.5 cursor-pointer select-none bg-slate-900/80 p-3 rounded-xl border border-slate-800 hover:border-indigo-500/40 transition-all">
+                  <input
+                    type="checkbox"
+                    checked={autoRetrogradeInject}
+                    onChange={e => setAutoRetrogradeInject(e.target.checked)}
+                    className="rounded text-indigo-500 focus:ring-indigo-500 h-4 w-4 bg-slate-950 border-slate-700 cursor-pointer mt-0.5"
+                  />
+                  <div>
+                    <span className="font-bold text-slate-200 block text-[11px]">
+                      Inyección Retrógrada e Imperceptible en el Texto Base
+                    </span>
+                    <span className="text-[9.5px] text-slate-400 font-sans block leading-relaxed mt-0.5">
+                      Incrusta suavemente los puntos aprobados en la sección anatómica correspondiente de {organ || "órgano"} en el cuerpo del informe, fusionándolo de forma fluida e indetectable.
+                    </span>
+                  </div>
+                </label>
+
+                <label className="flex items-start gap-2.5 cursor-pointer select-none bg-slate-900/80 p-3 rounded-xl border border-slate-800 hover:border-indigo-500/40 transition-all">
+                  <input
+                    type="checkbox"
+                    checked={includeSynopticSection}
+                    onChange={e => setIncludeSynopticSection(e.target.checked)}
+                    className="rounded text-indigo-500 focus:ring-indigo-500 h-4 w-4 bg-slate-950 border-slate-700 cursor-pointer mt-0.5"
+                  />
+                  <div>
+                    <span className="font-bold text-slate-200 block text-[11px]">
+                      Adjuntar Sección de Cuadro Sinóptico en Tabla
+                    </span>
+                    <span className="text-[9.5px] text-slate-400 font-sans block leading-relaxed mt-0.5">
+                      Agrega o actualiza la sección <strong>### SINOPSIS CLÍNICA DE {organ ? organ.toUpperCase() : "ÓRGANO"}</strong> con la tabla de datos estructurados al final del informe.
+                    </span>
+                  </div>
+                </label>
+              </div>
+            </div>
+
             {/* Action Panel to apply elements to report */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-5 bg-indigo-950/15 border border-indigo-500/30 rounded-2xl">
               <div className="flex items-start gap-2.5">
                 <Info className="h-5 w-5 text-indigo-400 flex-shrink-0 mt-0.5" />
                 <p className="text-xs text-indigo-200 leading-normal max-w-xl">
-                  Al hacer clic en el botón de la derecha, se creará una sección dedicada <strong>### SINOPSIS CLÍNICA DE {organ.toUpperCase()}</strong> al final del reporte radiológico actual. Si ya existe, se actualizará automáticamente reemplazándola por la nueva configuración aprobada.
+                  Al ejecutar esta acción, los hallazgos aprobados se <strong>incrustarán e inyectarán de manera retrógrada en el cuerpo del reporte original</strong> para que la adición sea totalmente imperceptible y coherente con el estilo radiológico.
                 </p>
               </div>
 
               <button
                 onClick={handleInsertIntoReport}
-                className="w-full sm:w-auto px-6 py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-[11px] font-black uppercase tracking-widest cursor-pointer transition-all flex items-center justify-center gap-2 font-mono shadow-xl border border-indigo-500 shadow-indigo-600/10 hover:scale-[1.02] active:scale-[0.98]"
+                disabled={isInjecting}
+                className="w-full sm:w-auto px-6 py-3.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-900/60 disabled:cursor-not-allowed text-white rounded-xl text-[11px] font-black uppercase tracking-widest cursor-pointer transition-all flex items-center justify-center gap-2 font-mono shadow-xl border border-indigo-500 shadow-indigo-600/10 hover:scale-[1.02] active:scale-[0.98]"
               >
-                <BookmarkCheck className="h-4 w-4" />
-                <span>Insertar al Informe Activo</span>
+                {isInjecting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin text-indigo-200" />
+                    <span>Inyectando al Reporte...</span>
+                  </>
+                ) : (
+                  <>
+                    <BookmarkCheck className="h-4 w-4" />
+                    <span>Inyectar e Incrustar al Informe</span>
+                  </>
+                )}
               </button>
             </div>
           </motion.div>

@@ -47,7 +47,7 @@ export const CreadorSinopsisFracturas: React.FC<CreadorSinopsisFracturasProps> =
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [exportFormat, setExportFormat] = useState<"table" | "blocks">("table");
+  const [exportFormat, setExportFormat] = useState<"table" | "blocks" | "plain">("table");
   const [copied, setCopied] = useState<boolean>(false);
 
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -165,24 +165,29 @@ export const CreadorSinopsisFracturas: React.FC<CreadorSinopsisFracturasProps> =
     return md;
   };
 
-  const generateStructuredBlocks = (): string => {
+  const generateStructuredBlocks = (isPlain: boolean = false): string => {
     const approvedRows = aspects.filter(a => a.approvedForTable);
     if (approvedRows.length === 0) return "";
 
-    let text = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    const divider = isPlain 
+      ? "=================================================="
+      : "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
+    const bullet = isPlain ? "-" : "▶";
+
+    let text = `${divider}\n`;
     text += ` SINOPSIS DE FRACTURA: ${bone.toUpperCase()}\n`;
-    text += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+    text += `${divider}\n\n`;
 
     approvedRows.forEach(row => {
-      text += `▶ [${row.key.toUpperCase()}]\n  ${row.value.replace(/\n/g, "\n  ")}\n\n`;
+      text += `${bullet} [${row.key.toUpperCase()}]\n  ${row.value.replace(/\n/g, "\n  ")}\n\n`;
     });
 
-    text += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+    text += `${divider}`;
     return text;
   };
 
   const handleCopyBlocks = async () => {
-    const textToCopy = generateStructuredBlocks();
+    const textToCopy = generateStructuredBlocks(exportFormat === "plain");
     if (!textToCopy) {
       setError("No hay bloques clínicos seleccionados para copiar.");
       return;
@@ -217,7 +222,7 @@ export const CreadorSinopsisFracturas: React.FC<CreadorSinopsisFracturasProps> =
       const mdTable = generateMarkdownTable();
       blockToInsert = `\n\n### SINOPSIS DE FRACTURA: ${bone.toUpperCase()}\n\n${mdTable}\n`;
     } else {
-      const blocksText = generateStructuredBlocks();
+      const blocksText = generateStructuredBlocks(exportFormat === "plain");
       blockToInsert = `\n\n### SINOPSIS DE FRACTURA: ${bone.toUpperCase()}\n\n${blocksText}\n`;
     }
 
@@ -441,9 +446,22 @@ export const CreadorSinopsisFracturas: React.FC<CreadorSinopsisFracturasProps> =
                       ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
                       : "text-slate-400 hover:text-slate-200"
                   }`}
+                  title="Bloques con caracteres especiales para diseño visual elegante"
                 >
                   <FileText className="h-3 w-3" />
                   Bloques Clínicos
+                </button>
+                <button
+                  onClick={() => setExportFormat("plain")}
+                  className={`px-3 py-1.5 rounded text-[10px] font-bold uppercase font-mono tracking-wider transition-all cursor-pointer flex items-center gap-1.5 ${
+                    exportFormat === "plain"
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      : "text-slate-400 hover:text-slate-200"
+                  }`}
+                  title="Formato de texto plano compatible para sistemas externos y conversión a PDF"
+                >
+                  <FileText className="h-3 w-3" />
+                  Bloques Compatibles
                 </button>
               </div>
             </div>
@@ -631,7 +649,7 @@ export const CreadorSinopsisFracturas: React.FC<CreadorSinopsisFracturasProps> =
               <div className="flex items-center gap-2">
                 <Table className="h-4 w-4 text-emerald-400" />
                 <h4 className="text-[11px] font-black text-slate-200 uppercase tracking-widest font-mono">
-                  Vista Previa del Bloque a Insertar ({exportFormat === "table" ? "Cuadro" : "Bloques"})
+                  Vista Previa del Bloque a Insertar ({exportFormat === "table" ? "Cuadro" : exportFormat === "blocks" ? "Bloques" : "Bloques Compatibles"})
                 </h4>
               </div>
               <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest font-mono">Formato Seleccionado: {exportFormat.toUpperCase()}</span>
@@ -646,7 +664,7 @@ export const CreadorSinopsisFracturas: React.FC<CreadorSinopsisFracturasProps> =
                     {generateMarkdownTable()}
                   </>
                 ) : (
-                  generateStructuredBlocks()
+                  generateStructuredBlocks(exportFormat === "plain")
                 )}
               </pre>
             </div>
@@ -662,26 +680,37 @@ export const CreadorSinopsisFracturas: React.FC<CreadorSinopsisFracturasProps> =
                   Insertar Sinopsis al Reporte Base
                 </button>
               ) : (
-                <button
-                  onClick={handleCopyBlocks}
-                  className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all font-mono flex items-center gap-2 cursor-pointer shadow-lg shadow-emerald-950/40 ${
-                    copied
-                      ? "bg-emerald-500 text-slate-950 hover:bg-emerald-400"
-                      : "bg-emerald-600 hover:bg-emerald-500 text-slate-100"
-                  }`}
-                >
-                  {copied ? (
-                    <>
-                      <Check className="h-4 w-4 animate-bounce" />
-                      ¡Bloques Copiados!
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="h-4 w-4" />
-                      Copiar Bloques Clínicos
-                    </>
+                <div className="flex gap-2">
+                  {exportFormat === "plain" && (
+                    <button
+                      onClick={handleInsertIntoReport}
+                      className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs font-black uppercase tracking-widest rounded-xl transition-all font-mono flex items-center gap-2 cursor-pointer border border-slate-700"
+                    >
+                      <BookmarkCheck className="h-4 w-4" />
+                      Insertar al Reporte Base
+                    </button>
                   )}
-                </button>
+                  <button
+                    onClick={handleCopyBlocks}
+                    className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all font-mono flex items-center gap-2 cursor-pointer shadow-lg shadow-emerald-950/40 ${
+                      copied
+                        ? "bg-emerald-500 text-slate-950 hover:bg-emerald-400"
+                        : "bg-emerald-600 hover:bg-emerald-500 text-slate-100"
+                    }`}
+                  >
+                    {copied ? (
+                      <>
+                        <Check className="h-4 w-4 animate-bounce" />
+                        ¡Bloques Copiados!
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-4 w-4" />
+                        Copiar Bloques Clínicos
+                      </>
+                    )}
+                  </button>
+                </div>
               )}
             </div>
           </div>

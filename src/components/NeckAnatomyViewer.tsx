@@ -455,6 +455,47 @@ export default function NeckAnatomyViewer({
         return;
       }
 
+      // Check for general bilateral inflammatory cervical adenopathy
+      const isGeneralBilateralAdenopathy = [
+        "adenopatías cervicales de aspecto inflamatorio",
+        "adenopatias cervicales de aspecto inflamatorio",
+        "adenopatías de aspecto inflamatorio bilateral",
+        "adenopatias de aspecto inflamatorio bilateral",
+        "adenopatías de aspecto inflamatorio bilaterales",
+        "adenopatias de aspecto inflamatorio bilaterales",
+        "adenopatías cervicales bilaterales",
+        "adenopatias cervicales bilaterales",
+        "adenopatías reactivas bilaterales",
+        "adenopatias reactivas bilaterales",
+        "adenopatías inflamatorias bilaterales",
+        "adenopatias inflamatorias bilaterales"
+      ].some(kw => textLower.includes(kw)) || (
+        (textLower.includes("adenopatía") || textLower.includes("adenopatia") || textLower.includes("ganglio") || textLower.includes("ganglios")) &&
+        (textLower.includes("inflamatori") || textLower.includes("reactiv")) &&
+        (textLower.includes("bilateral") || textLower.includes("ambas cadenas") || textLower.includes("ambos lados"))
+      );
+
+      const checkSpecificLevelMentioned = (nodeId: string, text: string) => {
+        const levelNum = nodeId.split("_").pop()?.toLowerCase();
+        const numMap: Record<string, string[]> = {
+          i: ["nivel i", "nivel 1", "nivel ia", "nivel ib", "submentonian", "submandibular"],
+          ii: ["nivel ii", "nivel 2", "nivel iia", "nivel iib"],
+          iii: ["nivel iii", "nivel 3"],
+          iv: ["nivel iv", "nivel 4"],
+          v: ["nivel v", "nivel 5", "nivel va", "nivel vb"],
+          vi: ["nivel vi", "nivel 6"],
+          vii: ["nivel vii", "nivel 7"]
+        };
+        const kws = numMap[levelNum || ""] || [];
+        return kws.some(kw => text.includes(kw));
+      };
+
+      if (id.startsWith("nodes_") && isGeneralBilateralAdenopathy && !checkSpecificLevelMentioned(id, textLower)) {
+        nextStates[id] = "normal";
+        nextDescriptions[id] = "Dentro de límites normales.";
+        return;
+      }
+
       // Specific checks
       let detectedState = "normal";
       let desc = "Dentro de límites normales.";
@@ -597,7 +638,7 @@ export default function NeckAnatomyViewer({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: selectedModel || "gemini-3.5-flash",
+          model: selectedModel || "gemini-3.6-flash",
           reportText: generatedReport,
           studyType: "Cuello y Tiroides (Completo)",
           structures: structuresList
@@ -629,6 +670,55 @@ export default function NeckAnatomyViewer({
             logs.push(`[Hallazgo] ${struc.label}: ${apiState.toUpperCase()} \n  ↳ ${apiDesc}`);
           }
         });
+
+        // Post-processing for general bilateral inflammatory cervical adenopathies
+        const textLower = generatedReport.toLowerCase();
+        const isGeneralBilateralAdenopathy = [
+          "adenopatías cervicales de aspecto inflamatorio",
+          "adenopatias cervicales de aspecto inflamatorio",
+          "adenopatías de aspecto inflamatorio bilateral",
+          "adenopatias de aspecto inflamatorio bilateral",
+          "adenopatías de aspecto inflamatorio bilaterales",
+          "adenopatias de aspecto inflamatorio bilaterales",
+          "adenopatías cervicales bilaterales",
+          "adenopatias cervicales bilaterales",
+          "adenopatías reactivas bilaterales",
+          "adenopatias reactivas bilaterales",
+          "adenopatías inflamatorias bilaterales",
+          "adenopatias inflamatorias bilaterales"
+        ].some(kw => textLower.includes(kw)) || (
+          (textLower.includes("adenopatía") || textLower.includes("adenopatia") || textLower.includes("ganglio") || textLower.includes("ganglios")) &&
+          (textLower.includes("inflamatori") || textLower.includes("reactiv")) &&
+          (textLower.includes("bilateral") || textLower.includes("ambas cadenas") || textLower.includes("ambos lados"))
+        );
+
+        if (isGeneralBilateralAdenopathy) {
+          const nodeIds = [
+            "nodes_r_i", "nodes_r_ii", "nodes_r_iii", "nodes_r_iv", "nodes_r_v", "nodes_r_vi", "nodes_r_vii",
+            "nodes_l_i", "nodes_l_ii", "nodes_l_iii", "nodes_l_iv", "nodes_l_v", "nodes_l_vi", "nodes_l_vii"
+          ];
+          const checkSpecificLevelMentioned = (nodeId: string, text: string) => {
+            const levelNum = nodeId.split("_").pop()?.toLowerCase();
+            const numMap: Record<string, string[]> = {
+              i: ["nivel i", "nivel 1", "nivel ia", "nivel ib", "submentonian", "submandibular"],
+              ii: ["nivel ii", "nivel 2", "nivel iia", "nivel iib"],
+              iii: ["nivel iii", "nivel 3"],
+              iv: ["nivel iv", "nivel 4"],
+              v: ["nivel v", "nivel 5", "nivel va", "nivel vb"],
+              vi: ["nivel vi", "nivel 6"],
+              vii: ["nivel vii", "nivel 7"]
+            };
+            const kws = numMap[levelNum || ""] || [];
+            return kws.some(kw => text.includes(kw));
+          };
+
+          nodeIds.forEach(nodeId => {
+            if (!checkSpecificLevelMentioned(nodeId, textLower)) {
+              finalStates[nodeId] = "normal";
+              finalDescriptions[nodeId] = "Dentro de límites normales.";
+            }
+          });
+        }
 
         setStates(finalStates);
         setCustomDescriptions(finalDescriptions);

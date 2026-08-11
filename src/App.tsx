@@ -24,18 +24,25 @@ const AsistenteMedidas = React.lazy(() => import("./components/AsistenteMedidas"
 const CreadorNotasPie = React.lazy(() => import("./components/CreadorNotasPie").then(m => ({ default: m.CreadorNotasPie })));
 const CreadorCuadroSinoptico = React.lazy(() => import("./components/CreadorCuadroSinoptico").then(m => ({ default: m.CreadorCuadroSinoptico })));
 const CreadorSinopsisFracturas = React.lazy(() => import("./components/CreadorSinopsisFracturas").then(m => ({ default: m.CreadorSinopsisFracturas })));
+const BiomechanicalRadarModule = React.lazy(() => import("./components/BiomechanicalRadarModule").then(m => ({ default: m.BiomechanicalRadarModule })));
 const AbdominalWallAnatomyViewer = React.lazy(() => import("./components/AbdominalWallAnatomyViewer"));
 const CalfAchillesAnatomyViewer = React.lazy(() => import("./components/CalfAchillesAnatomyViewer"));
 const NeonatalBrainAnatomyViewer = React.lazy(() => import("./components/NeonatalBrainAnatomyViewer"));
+import CaseAnalysisRenderer from "./components/CaseAnalysisRenderer";
+import InteractiveCaseEditor from "./components/InteractiveCaseEditor";
+import { ClassificationBreakdownModule } from "./components/ClassificationBreakdownModule";
+import { CaseAnalysisData, CaseAnalysisFormatOption, CaseAnalysisElementsConfig } from "./types";
 import { 
   Activity, 
   ShieldCheck,
   AlertCircle, 
+  ArrowDown,
   Check, 
   CheckCircle2, 
   ChevronRight, 
   Code, 
   Copy, 
+  FileDown,
   FileImage,
   Image as ImageIcon, 
   FileText, 
@@ -81,6 +88,7 @@ import {
 } from "lucide-react";
 import { initAuth, googleSignIn, logout as googleLogout, anonymousSignIn, emailSignIn, emailSignUp, getFirebaseConfig } from "./firebaseAuth";
 import { CloudStudy, saveStudyToCloud, getStudiesFromCloud, deleteStudyFromCloud, Worklist, WorklistPatient, saveWorklistToCloud, getWorklistFromCloud, getSingleStudyFromCloud, testFirebaseConfigConnection } from "./firebaseDb";
+import { idbSaveWorklist, idbGetWorklist, idbClearWorklist, idbSaveStudy, idbGetAllStudies, idbDeleteStudy, idbSaveHistory, idbGetHistory } from "./localDb";
 import { uploadPdfToDrive } from "./lib/googleDrive";
 import { Mail, LogOut, Clock, Calendar, ListTodo, UserCheck, ImagePlus, Wifi, HelpCircle, Info, Laptop, Network, ChevronDown, Link } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
@@ -96,7 +104,7 @@ import {
   ClassificationSystem 
 } from "./constants";
 
-// Interceptor global para evitar que se lance un error si se excede la cuota de localStorage (5MB)
+// Interceptor global seguro de localStorage (preserva historial y delega datos pesados a IndexedDB)
 try {
   if (typeof window !== "undefined" && window.localStorage) {
     const originalSetItem = window.localStorage.setItem;
@@ -104,30 +112,19 @@ try {
       try {
         originalSetItem.call(window.localStorage, key, value);
       } catch (error: any) {
-        console.warn(`[SafeLocalStorage] Cuota excedida o error al guardar '${key}':`, error);
-        
-        // Intentar liberar espacio eliminando o podando el historial de reportes
-        try {
-          const historyStr = window.localStorage.getItem("radiology_reports_history");
-          if (historyStr) {
-            const history = JSON.parse(historyStr);
-            if (Array.isArray(history) && history.length > 2) {
-              // Dejar solo los últimos 2 reportes para liberar espacio
-              const pruned = history.slice(0, 2);
-              originalSetItem.call(window.localStorage, "radiology_reports_history", JSON.stringify(pruned));
-              console.log("[SafeLocalStorage] Historial de reportes podado para liberar espacio.");
-              
-              // Reintentar la escritura original una vez más
-              originalSetItem.call(window.localStorage, key, value);
-              return;
+        console.warn(`[SafeLocalStorage] Cuota de localStorage excedida para '${key}'. Se usará almacenamiento persistente IndexedDB.`);
+        if (key === "rad_local_studies") {
+          try {
+            // Guardar versión ligera sin PDF base64 pesado para fallback en localStorage
+            const parsed = JSON.parse(value);
+            if (Array.isArray(parsed)) {
+              const light = parsed.map((s: any) => ({ ...s, pdfBase64: "", attachedImages: [] }));
+              originalSetItem.call(window.localStorage, key, JSON.stringify(light));
             }
+          } catch (lightErr) {
+            console.warn("[SafeLocalStorage] No se pudo guardar fallback ligero:", lightErr);
           }
-        } catch (pruneErr) {
-          console.error("[SafeLocalStorage] No se pudo podar el historial de reportes:", pruneErr);
         }
-        
-        // Si aún así falla, evitamos que la excepción tire el programa
-        console.error(`[SafeLocalStorage] No se pudo guardar la clave '${key}' por límite de espacio. El programa continuará sin crash.`);
       }
     };
   }
@@ -1237,7 +1234,7 @@ export default function App() {
   }, [isPatientPublicView, patientLogoUrl, selectedLogo, customLogos]);
 
   const [selectedModel, setSelectedModel] = useState<string>(() => {
-    return localStorage.getItem("rad_selected_model") || "gemini-3.5-flash";
+    return localStorage.getItem("rad_selected_model") || "gemini-3.6-flash";
   });
 
   useEffect(() => {
@@ -1418,13 +1415,14 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  const compressImageBase64 = (base64Str: string, maxWidth: number = 400, quality: number = 0.75): Promise<string> => {
+  const compressImageBase64 = (base64Str: string, maxWidth: number = 2000, quality: number = 0.92): Promise<string> => {
     return new Promise((resolve) => {
       try {
         if (!base64Str || !base64Str.startsWith("data:image")) {
           resolve(base64Str);
           return;
         }
+        const isPng = base64Str.startsWith("data:image/png");
         const img = new Image();
         img.onload = () => {
           let width = img.width;
@@ -1440,11 +1438,17 @@ export default function App() {
           canvas.height = height;
           const ctx = canvas.getContext("2d");
           if (ctx) {
-            ctx.fillStyle = "#ffffff";
-            ctx.fillRect(0, 0, width, height);
+            if (!isPng) {
+              ctx.fillStyle = "#ffffff";
+              ctx.fillRect(0, 0, width, height);
+            }
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = "high";
             ctx.drawImage(img, 0, 0, width, height);
-            // Compress to JPEG for high efficiency
-            const compressed = canvas.toDataURL("image/jpeg", quality);
+            
+            // Preserve PNG format to keep alpha transparency and crisp vector-grade edges
+            const mimeType = isPng ? "image/png" : "image/jpeg";
+            const compressed = canvas.toDataURL(mimeType, quality);
             resolve(compressed);
           } else {
             resolve(base64Str);
@@ -1471,7 +1475,7 @@ export default function App() {
     const reader = new FileReader();
     reader.onloadend = async () => {
       const rawBase64 = reader.result as string;
-      const compressedBase64 = await compressImageBase64(rawBase64, 500, 0.75);
+      const compressedBase64 = await compressImageBase64(rawBase64, 2400, 0.95);
       const newLogoId = "custom-logo-" + Date.now();
       const newLogo = {
         id: newLogoId,
@@ -1522,7 +1526,7 @@ export default function App() {
     const reader = new FileReader();
     reader.onloadend = async () => {
       const rawBase64 = reader.result as string;
-      const compressedBase64 = await compressImageBase64(rawBase64, 350, 0.75);
+      const compressedBase64 = await compressImageBase64(rawBase64, 1600, 0.95);
       setCustomSignatureUrl(compressedBase64);
       localStorage.setItem("rad_custom_signature", compressedBase64);
     };
@@ -1610,8 +1614,39 @@ export default function App() {
   const [isSendingGmail, setIsSendingGmail] = useState<boolean>(false);
 
   // 1c. WORKLIST ("LISTA DE TRABAJO") STATES
-  const [worklist, setWorklist] = useState<Worklist | null>(null);
-  const [isWorklistSidebarOpen, setIsWorklistSidebarOpen] = useState<boolean>(false);
+  const [worklist, setWorklist] = useState<Worklist | null>(() => {
+    if (typeof window === "undefined" || !window.localStorage) return null;
+    try {
+      const isExplicitlyCleared = localStorage.getItem("rad_worklist_explicitly_cleared") === "true";
+      if (isExplicitlyCleared) {
+        return null;
+      }
+      const primaryKeys = ["rad_worklist_current", "rad_worklist_latest"];
+      for (const key of primaryKeys) {
+        const val = localStorage.getItem(key);
+        if (val) {
+          const parsed = JSON.parse(val);
+          if (parsed && Array.isArray(parsed.patients) && parsed.patients.length > 0) {
+            return parsed;
+          }
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  });
+  const [isWorklistSidebarOpen, setIsWorklistSidebarOpen] = useState<boolean>(() => {
+    if (typeof window === "undefined" || !window.localStorage) return false;
+    return localStorage.getItem("rad_worklist_sidebar_open") === "true";
+  });
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.localStorage) {
+      localStorage.setItem("rad_worklist_sidebar_open", String(isWorklistSidebarOpen));
+    }
+  }, [isWorklistSidebarOpen]);
+
   const [isProcessingWorklist, setIsProcessingWorklist] = useState<boolean>(false);
   const [worklistError, setWorklistError] = useState<string | null>(null);
   const [selectedWorklistPatientId, setSelectedWorklistPatientId] = useState<string | null>(null);
@@ -2375,6 +2410,9 @@ export default function App() {
   const [cloudSearch, setCloudSearch] = useState<string>("");
   const [viewingCloudStudy, setViewingCloudStudy] = useState<CloudStudy | null>(null);
 
+  // Biomechanical Radar Data
+  const [biomechanicalRadarData, setBiomechanicalRadarData] = useState<any | null>(null);
+
   const pdfStateRef = useRef<any>({});
   pdfStateRef.current = {
     generatedReport,
@@ -2396,6 +2434,7 @@ export default function App() {
     specificStudy,
     pdfLayoutType,
     selectedLogo,
+    biomechanicalRadarData,
   };
 
   useEffect(() => {
@@ -2822,8 +2861,31 @@ Ejemplo:
   const [currentModInstruction, setCurrentModInstruction] = useState<string>("");
   const [isModifyingReport, setIsModifyingReport] = useState<boolean>(false);
   const [pendingRecText, setPendingRecText] = useState<string | null>(null);
+  const [pendingRecs, setPendingRecs] = useState<Record<string, boolean>>({});
   const [incorporatedAuditRecs, setIncorporatedAuditRecs] = useState<Record<string, boolean>>({});
   const [modifyError, setModifyError] = useState<string | null>(null);
+
+  // Queue references for simultaneous / sequential recommendation processing
+  const recQueueRef = useRef<string[]>([]);
+  const isProcessingRecQueueRef = useRef<boolean>(false);
+
+  const generatedReportRef = useRef(generatedReport);
+  generatedReportRef.current = generatedReport;
+
+  const editedReportTextRef = useRef(editedReportText);
+  editedReportTextRef.current = editedReportText;
+
+  const isEditingReportManualRef = useRef(isEditingReportManual);
+  isEditingReportManualRef.current = isEditingReportManual;
+
+  const selectedModelRef = useRef(selectedModel);
+  selectedModelRef.current = selectedModel;
+
+  const base64ImageRef = useRef(base64Image);
+  base64ImageRef.current = base64Image;
+
+  const selectedFileRef = useRef(selectedFile);
+  selectedFileRef.current = selectedFile;
 
   const [additionalEvaluation, setAdditionalEvaluation] = useState<string>("");
   const [isEvaluatingAdditional, setIsEvaluatingAdditional] = useState<boolean>(false);
@@ -2836,6 +2898,150 @@ Ejemplo:
   const [isIncorporatingDiffs, setIsIncorporatingDiffs] = useState<boolean>(false);
   const [diffsIncorporated, setDiffsIncorporated] = useState<boolean>(false);
   const [diffsError, setDiffsError] = useState<string | null>(null);
+  const [selectedCaseFormat, setSelectedCaseFormat] = useState<CaseAnalysisFormatOption>("flujograma_semiologico");
+  const [caseElements, setCaseElements] = useState<CaseAnalysisElementsConfig>({
+    includeSonographic: true,
+    includeSonographicDetails: true,
+    includeClinicalCorr: true,
+    includeCertainty: false,
+    includeDifferentials: true,
+    includeDiscardedDifferentials: true,
+    includeManagement: true,
+  });
+  const [isFormattingCaseJSON, setIsFormattingCaseJSON] = useState<boolean>(false);
+
+  // States to hold the structured case data editable in real-time on the main screen
+  const [editableCaseData, setEditableCaseData] = useState<CaseAnalysisData | null>(null);
+  const [checkedDetails, setCheckedDetails] = useState<boolean[]>([]);
+  const [checkedDifferentials, setCheckedDifferentials] = useState<boolean[]>([]);
+  const [checkedDecisionSteps, setCheckedDecisionSteps] = useState<boolean[]>([]);
+  const [isExtractingCaseData, setIsExtractingCaseData] = useState<boolean>(false);
+  const [caseDataError, setCaseDataError] = useState<string | null>(null);
+
+  // Automatically load/extract the structured Case Analysis components whenever caseAnalysis is populated or format changes
+  React.useEffect(() => {
+    if (caseAnalysis) {
+      const loadCaseAnalysisData = async () => {
+        setIsExtractingCaseData(true);
+        setCaseDataError(null);
+        try {
+          const response = await fetch("/api/extract-essential-findings", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+              model: selectedModel,
+              analysisText: caseAnalysis,
+              requestedFormat: selectedCaseFormat,
+              elementsConfig: caseElements
+            }),
+          });
+          const data = await response.json();
+          if (response.ok && data.success && data.caseAnalysisData) {
+            setEditableCaseData(data.caseAnalysisData);
+            
+            // Initialize sub-level checkmarks
+            if (data.caseAnalysisData.sonographicPillar?.details) {
+              setCheckedDetails(data.caseAnalysisData.sonographicPillar.details.map(() => true));
+            } else {
+              setCheckedDetails([]);
+            }
+            if (data.caseAnalysisData.diagnostics) {
+              setCheckedDifferentials(data.caseAnalysisData.diagnostics.map(() => true));
+            } else {
+              setCheckedDifferentials([]);
+            }
+            if (data.caseAnalysisData.decisionFlow) {
+              setCheckedDecisionSteps(data.caseAnalysisData.decisionFlow.map(() => true));
+            } else {
+              setCheckedDecisionSteps([]);
+            }
+          } else {
+            setCaseDataError(data.error || "No se pudo extraer los componentes estructurados del caso actual.");
+          }
+        } catch (err: any) {
+          console.error("Error al estructurar el caso:", err);
+          setCaseDataError("Error de comunicación/red al estructurar el flujograma.");
+        } finally {
+          setIsExtractingCaseData(false);
+        }
+      };
+
+      loadCaseAnalysisData();
+    } else {
+      setEditableCaseData(null);
+      setCaseDataError(null);
+      setCheckedDetails([]);
+      setCheckedDifferentials([]);
+      setCheckedDecisionSteps([]);
+    }
+  }, [caseAnalysis, selectedCaseFormat]);
+
+  const handleFormatAndIncorporateCaseAnalysis = () => {
+    if (!editableCaseData) return;
+
+    setIsFormattingCaseJSON(true);
+    setDiffsError(null);
+    try {
+      // Clone the editableCaseData to avoid modifying active state before saving
+      const finalCaseData = JSON.parse(JSON.stringify(editableCaseData)) as CaseAnalysisData;
+
+      // 1. Filter sonographic details based on checkedDetails checkbox states
+      if (finalCaseData.sonographicPillar?.details) {
+        finalCaseData.sonographicPillar.details = finalCaseData.sonographicPillar.details.filter((_, i) => checkedDetails[i]);
+      }
+
+      // 2. Filter diagnostics based on checkedDifferentials checkbox states
+      if (finalCaseData.diagnostics) {
+        finalCaseData.diagnostics = finalCaseData.diagnostics.filter((_, i) => checkedDifferentials[i]);
+      }
+
+      // 3. Filter decision flow steps based on checkedDecisionSteps checkbox states
+      if (finalCaseData.decisionFlow) {
+        finalCaseData.decisionFlow = finalCaseData.decisionFlow.filter((_, i) => checkedDecisionSteps[i]);
+      }
+
+      // 4. Update elementsConfig in final data
+      finalCaseData.elementsConfig = {
+        ...caseElements,
+        includeSonographicDetails: caseElements.includeSonographic && (finalCaseData.sonographicPillar?.details?.length ?? 0) > 0,
+        includeDiscardedDifferentials: caseElements.includeDifferentials && (finalCaseData.diagnostics?.filter((d: any, idx: number) => d.refutingCriteria && idx > 0).length ?? 0) > 0
+      };
+
+      // Construct the standard [CASE_ANALYSIS_JSON] wrapping block
+      const jsonBlock = `[CASE_ANALYSIS_JSON]\n${JSON.stringify(finalCaseData, null, 2)}\n[/CASE_ANALYSIS_JSON]\n\n`;
+
+      // Construct the formatted markdown text summary accompanying the JSON
+      let textSummary = `**ANÁLISIS INTEGRADO DE CASO (${selectedCaseFormat.toUpperCase().replace("_", " ")})**\n\n`;
+      if (caseElements.includeSonographic && finalCaseData.sonographicPillar) {
+        textSummary += `• **Pilar Sonográfico Fundamental**: ${finalCaseData.sonographicPillar.primaryFinding}\n`;
+      }
+      if (caseElements.includeClinicalCorr && finalCaseData.clinicalCorrelation) {
+        textSummary += `• **Correlación Clínica/Lab**: ${finalCaseData.clinicalCorrelation}\n`;
+      }
+      if (caseElements.includeDifferentials && finalCaseData.diagnostics?.length) {
+        textSummary += `• **Diagnóstico Principal**: ${finalCaseData.diagnostics[0]?.name}\n`;
+      }
+      if (caseElements.includeManagement && finalCaseData.managementRecommendation) {
+        textSummary += `• **Conducta Recomendada**: ${finalCaseData.managementRecommendation}\n`;
+      }
+
+      setGeneratedReport(prev => {
+        return mergeCaseAnalysisBlock(prev || "", finalCaseData.format || "custom", jsonBlock, textSummary);
+      });
+      setEditedReportText(prev => {
+        return mergeCaseAnalysisBlock(prev || "", finalCaseData.format || "custom", jsonBlock, textSummary);
+      });
+      setDiffsIncorporated(true);
+      setTimeout(() => {
+        setDiffsIncorporated(false);
+      }, 3000);
+    } catch (err: any) {
+      console.error("Error al formatear e incorporar el análisis:", err);
+      setDiffsError(err?.message || "Error al procesar la inserción de datos.");
+    } finally {
+      setIsFormattingCaseJSON(false);
+    }
+  };
 
   const [bibliography, setBibliography] = useState<string>("");
   const [isSearchingBibliography, setIsSearchingBibliography] = useState<boolean>(false);
@@ -2857,6 +3063,84 @@ Ejemplo:
   const [isCreadorNotasOpen, setIsCreadorNotasOpen] = useState<boolean>(false);
   const [isCreadorCuadroSinopticoOpen, setIsCreadorCuadroSinopticoOpen] = useState<boolean>(false);
   const [isCreadorSinopsisFracturasOpen, setIsCreadorSinopsisFracturasOpen] = useState<boolean>(false);
+  const [isBiomechanicalRadarOpen, setIsBiomechanicalRadarOpen] = useState<boolean>(false);
+
+  // States & Handlers for Sistema de Activación Rápida de Módulos (Procesamiento en Lote)
+  const [selectedBatchModules, setSelectedBatchModules] = useState<Record<string, boolean>>({
+    radar: true,
+    case_analysis: true,
+    quality_eval: true,
+    bibliography: true,
+    operational_summary: false,
+    patient_summary: false,
+    glossary: false,
+    schematic: false,
+    measurements: false,
+    footnotes: false,
+    organ_synoptic: false,
+    fractures: false,
+    classifications: false,
+  });
+  const [isActivatingBatch, setIsActivatingBatch] = useState<boolean>(false);
+  const [batchSuccessMessage, setBatchSuccessMessage] = useState<string | null>(null);
+
+  const handleToggleAllBatchModules = (select: boolean) => {
+    setSelectedBatchModules({
+      radar: select,
+      case_analysis: select,
+      quality_eval: select,
+      bibliography: select,
+      operational_summary: select,
+      patient_summary: select,
+      glossary: select,
+      schematic: select,
+      measurements: select,
+      footnotes: select,
+      organ_synoptic: select,
+      fractures: select,
+      classifications: select,
+    });
+  };
+
+  const handleActivateBatchModules = async () => {
+    const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
+    if (!activeReport) {
+      setModifyError("Genera o redacta un reporte antes de activar los módulos en lote.");
+      return;
+    }
+
+    setIsActivatingBatch(true);
+    setBatchSuccessMessage(null);
+
+    // 1. Activate interactive UI panels immediately
+    if (selectedBatchModules.radar) setIsBiomechanicalRadarOpen(true);
+    if (selectedBatchModules.measurements) setIsAsistenteMedidasOpen(true);
+    if (selectedBatchModules.footnotes) setIsCreadorNotasOpen(true);
+    if (selectedBatchModules.organ_synoptic) setIsCreadorCuadroSinopticoOpen(true);
+    if (selectedBatchModules.fractures) setIsCreadorSinopsisFracturasOpen(true);
+
+    // 2. Trigger async AI generation processes concurrently
+    const promises: Promise<any>[] = [];
+
+    if (selectedBatchModules.case_analysis) promises.push(handleAnalyzeCase());
+    if (selectedBatchModules.quality_eval) promises.push(handleEvaluateReport(activeReport));
+    if (selectedBatchModules.bibliography) promises.push(handleSearchBibliography());
+    if (selectedBatchModules.operational_summary) promises.push(handleGenerateWhatsAppSummary());
+    if (selectedBatchModules.patient_summary) promises.push(handleGeneratePatientSummary());
+    if (selectedBatchModules.glossary) promises.push(handleGenerateDynamicGlossary());
+    if (selectedBatchModules.schematic) promises.push(handleGenerateSchematicSummary());
+
+    try {
+      await Promise.allSettled(promises);
+      const activeCount = Object.values(selectedBatchModules).filter(Boolean).length;
+      setBatchSuccessMessage(`¡Éxito! Se han activado y procesado ${activeCount} módulos seleccionados en lote.`);
+      setTimeout(() => setBatchSuccessMessage(null), 6000);
+    } catch (err) {
+      console.error("Error al procesar módulos en lote:", err);
+    } finally {
+      setIsActivatingBatch(false);
+    }
+  };
 
   // States for Advanced Vascular Analysis & Schematic Drawing
   const [vascularTable, setVascularTable] = useState<string>("");
@@ -2875,6 +3159,9 @@ Ejemplo:
     dicomMetaData?: Record<string, string>;
     width?: number;
     height?: number;
+    modality?: "MMG" | "US";
+    projection?: "MLO" | "CC" | "OTRO";
+    side?: "Derecha" | "Izquierda" | "Bilateral";
   }[]>([]);
   const [loadingAiLabelId, setLoadingAiLabelId] = useState<string | null>(null);
   const [loadingAutocompleteId, setLoadingAutocompleteId] = useState<string | null>(null);
@@ -3458,15 +3745,25 @@ Ejemplo:
       localStorage.setItem("radiology_class_inst", CLASSIFICATION_SYSTEM_INSTRUCTION);
     }
 
-    // Reports log setup
-    const storedReports = localStorage.getItem("radiology_reports_history");
-    if (storedReports) {
-      try {
-        setSavedReports(JSON.parse(storedReports));
-      } catch (e) {
-        setSavedReports([]);
+    // Reports log setup with IndexedDB persistent storage
+    idbGetHistory().then(idbReports => {
+      if (Array.isArray(idbReports) && idbReports.length > 0) {
+        setSavedReports(idbReports);
+      } else {
+        const storedReports = localStorage.getItem("radiology_reports_history");
+        if (storedReports) {
+          try {
+            const parsed = JSON.parse(storedReports);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setSavedReports(parsed);
+              idbSaveHistory(parsed);
+            }
+          } catch (e) {
+            setSavedReports([]);
+          }
+        }
       }
-    }
+    });
   }, []);
 
   // Prevent browser-added default print headers and footers by dynamically stripping title during print
@@ -3500,130 +3797,7 @@ Ejemplo:
     };
   }, []);
 
-  // Auto-sync breast states using local heuristics to ensure PDF and UI are always populated
-  useEffect(() => {
-    const activeReportText = isEditingReportManual ? editedReportText : (generatedReport || "");
-    if (!activeReportText) return;
 
-    // Check if the report mentions breast/mama keywords to see if it is a breast study
-    const normText = activeReportText.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    const isBreastStudy = normText.includes("mama") || normText.includes("mamas") || normText.includes("mamografia") || normText.includes("ultrasonido de mamas") || activeProtocol === "Mamas";
-    
-    if (!isBreastStudy) return;
-
-    // Only auto-populate if the current breastStates is empty or doesn't have any 'hallazgo'
-    const hasAnyHallazgo = Object.values(breastStates).some(s => s !== "no_descrito" && s !== "normal");
-    if (hasAnyHallazgo) return; // Respect user's manual states/clicks if they already exist!
-
-    const initialKeys = [
-      "md_eje1", "md_eje2", "md_eje3", "md_eje4", "md_eje5", "md_eje6", 
-      "md_eje7", "md_eje8", "md_eje9", "md_eje10", "md_eje11", "md_eje12",
-      "md_retroareolar", "md_cola_spence", "md_axila",
-      "mi_eje1", "mi_eje2", "mi_eje3", "mi_eje4", "mi_eje5", "mi_eje6", 
-      "mi_eje7", "mi_eje8", "mi_eje9", "mi_eje10", "mi_eje11", "mi_eje12",
-      "mi_retroareolar", "mi_cola_spence", "mi_axila"
-    ];
-
-    let rightBlock = "";
-    let leftBlock = "";
-
-    const idxMD = Math.max(normText.indexOf("mama derecha"), normText.indexOf("m. derecha"), normText.indexOf("md:"));
-    const idxMI = Math.max(normText.indexOf("mama izquierda"), normText.indexOf("m. izquierda"), normText.indexOf("mi:"));
-
-    if (idxMD !== -1 && idxMI !== -1) {
-      if (idxMD < idxMI) {
-        rightBlock = normText.slice(idxMD, idxMI);
-        leftBlock = normText.slice(idxMI);
-      } else {
-        leftBlock = normText.slice(idxMI, idxMD);
-        rightBlock = normText.slice(idxMD);
-      }
-    } else if (idxMD !== -1) {
-      rightBlock = normText.slice(idxMD);
-      leftBlock = normText;
-    } else if (idxMI !== -1) {
-      leftBlock = normText.slice(idxMI);
-      rightBlock = normText;
-    } else {
-      rightBlock = normText;
-      leftBlock = normText;
-    }
-
-    const nextStates: Record<string, string> = { ...breastStates };
-    const nextDescriptions: Record<string, string> = { ...breastDescriptions };
-    let changed = false;
-
-    initialKeys.forEach(id => {
-      const isRight = id.startsWith("md_");
-      const name = id.replace("md_", "").replace("mi_", "");
-      
-      let primary: string[] = [];
-      if (name.startsWith("eje")) {
-        const num = name.replace("eje", "");
-        primary = [`eje ${num}`, `eje de las ${num}`, `hora ${num}`, `sector ${num}`, `posicion ${num}`];
-      } else if (name === "retroareolar") {
-        primary = ["retroareolar", "retro del pezon", "detras del pezon", "areolar", "retro-areolar"];
-      } else if (name === "cola_spence") {
-        primary = ["cola de spence", "prolongacion axilar", "cola spence"];
-      } else if (name === "axila") {
-        primary = ["axilar", "axila", "ganglio axilar", "hueco axilar"];
-      }
-
-      const targetBlock = isRight ? rightBlock : leftBlock;
-      if (!targetBlock) return;
-
-      const foundKeyword = primary.find(kw => targetBlock.includes(kw));
-      if (foundKeyword) {
-        const kwIdx = targetBlock.indexOf(foundKeyword);
-        const startContext = Math.max(0, kwIdx - 40);
-        const endContext = Math.min(targetBlock.length, kwIdx + 85);
-        const contextText = targetBlock.slice(startContext, endContext);
-
-        const isNormal = [
-          "normal", "conservado", "conservada", "homogeneo", "homogenea", "habitual", "negativo",
-          "sin hallazgos", "sin alteraciones", "sin nodulos", "sin lesiones", "no se observan masas",
-          "sin masas", "sin quistes", "no hay quistes", "libre de", "adenopatia reactiva de aspecto habitual"
-        ].some(p => contextText.includes(p));
-
-        const computedState = isNormal ? "normal" : "hallazgo";
-        
-        if (nextStates[id] !== computedState) {
-          nextStates[id] = computedState;
-          changed = true;
-        }
-
-        if (!isNormal) {
-          const keywordInOriginal = activeReportText.slice(startContext, endContext);
-          let customDesc = "Alteración ecográfica descrita.";
-          const sentences = keywordInOriginal.split(/[.;:]/);
-          const relatedSentence = sentences.find(s => {
-            const sNorm = s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-            return primary.some(kw => sNorm.includes(kw));
-          });
-          if (relatedSentence && relatedSentence.trim().length > 6) {
-            customDesc = relatedSentence.trim().replace(/^, -/, "").replace(/\s+/g, " ");
-            if (customDesc.length > 80) {
-              customDesc = customDesc.substring(0, 77) + "...";
-            }
-          }
-          if (nextDescriptions[id] !== customDesc) {
-            nextDescriptions[id] = customDesc;
-            changed = true;
-          }
-        } else {
-          if (nextDescriptions[id] !== "Dentro de límites normales.") {
-            nextDescriptions[id] = "Dentro de límites normales.";
-            changed = true;
-          }
-        }
-      }
-    });
-
-    if (changed) {
-      setBreastStates(nextStates);
-      setBreastDescriptions(nextDescriptions);
-    }
-  }, [generatedReport, editedReportText, isEditingReportManual, activeProtocol]);
 
   // Set defaults or modify states based on active preset selection
   const applyPreset = (preset: Presets) => {
@@ -4088,6 +4262,9 @@ Ejemplo:
         setGeneratedReport(data.report);
         setOriginalBaseReport(data.report);
 
+        // Activación Automática de Evaluación de Calidad al Generar Reporte
+        handleEvaluateReport(data.report);
+
         // Auto-detect specific study protocol (e.g. Muslo Posterior, Hombro, Rodilla, etc.) and switch active components
         autoDetectSpecificStudyAndModality(data.report, studyType);
         
@@ -4104,9 +4281,56 @@ Ejemplo:
           reportText: data.report
         };
 
-        const updatedHistory = [newReport, ...savedReports.slice(0, 19)]; // Keep last 20 reports
+        const updatedHistory = [newReport, ...savedReports.slice(0, 49)]; // Keep up to 50 reports in history
         setSavedReports(updatedHistory);
         localStorage.setItem("radiology_reports_history", JSON.stringify(updatedHistory));
+        idbSaveHistory(updatedHistory);
+
+        // Auto-save generated report into local studies database (IndexedDB + localStorage)
+        try {
+          const autoStudy: CloudStudy = {
+            id: newReport.id,
+            userId: "local",
+            userEmail: "anon@local.com",
+            timestamp: newReport.timestamp,
+            patientName: patientName || "Paciente Local",
+            patientEmail: patientEmail || "No especificado",
+            patientAge: patientAge || "",
+            patientGender: patientGender || "",
+            patientId: patientId || "",
+            reportDate: reportDate || new Date().toISOString().split('T')[0],
+            doctorName: doctorName || "Médico Radiólogo",
+            doctorLicense: doctorLicense || "No especificada",
+            clinicName: clinicName || "Clínica Privada",
+            studyType,
+            clinicalHistory: clinicalHistory || "No especificada",
+            findings: findings || "Hallazgos guardados automáticamente.",
+            reportText: data.report,
+            attachedImages: attachedImages || [],
+            operationalSummaryText: "",
+            pdfBase64: "",
+            patientSummary: null,
+            createdAt: new Date().toISOString(),
+            specificStudy: specificStudy || "General",
+            pdfLayoutType: pdfLayoutType || "classic",
+            selectedLogo: selectedLogo || "none"
+          };
+
+          // Save into IndexedDB reliably
+          await idbSaveStudy(autoStudy);
+
+          const storedStudies = localStorage.getItem("rad_local_studies");
+          let studiesList: CloudStudy[] = storedStudies ? JSON.parse(storedStudies) : [];
+          studiesList = [autoStudy, ...studiesList.filter(s => s.id !== autoStudy.id)];
+          try {
+            localStorage.setItem("rad_local_studies", JSON.stringify(studiesList));
+          } catch (e) {}
+          
+          // Re-fetch cloud/local studies to update UI
+          fetchCloudStudies();
+        } catch (autoErr) {
+          console.warn("Error auto-saving study to local archive:", autoErr);
+        }
 
         // If base64Image is present, automatically trigger image evaluation
         if (base64Image) {
@@ -4228,72 +4452,139 @@ Ejemplo:
     }
   };
 
-  const handleIncorporateRecommendation = async (recText: string) => {
-    if (!generatedReport) return;
-    
-    // Sanitize input to clean any potential trailing or leading markdown elements or quotes
-    let sanitizedRec = recText.trim();
-    sanitizedRec = sanitizedRec.replace(/^\*\*|\*\*$/g, "").trim();
-    sanitizedRec = sanitizedRec.replace(/^["']|["']$/g, "").trim();
-
-    setPendingRecText(recText);
+  const processRecQueue = async () => {
+    if (isProcessingRecQueueRef.current) return;
+    isProcessingRecQueueRef.current = true;
     setIsModifyingReport(true);
     setModifyError(null);
-    try {
-      const response = await fetch("/api/modify-report", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: selectedModel,
-          currentReport: generatedReport,
-          instruction: `Integra de forma totalmente fluida, nativa y natural, actuando en todo momento como el radiólogo principal que redacta el informe desde el principio, la siguiente clasificación, escala o recomendación clínica: "${sanitizedRec}". REQUISITO CRÍTICO: NO debes justificar la recomendación, ni meter introducciones, explicaciones clínicas de por qué se usa ("para facilitar el manejo...", "se sugiere...", "como recomendación de auditoría..."), ni meta-comentarios. Escribe directo la categoría, el grado o el dato clínico en la sección adecuada del reporte (HALLAZGOS o IMPRESIÓN DIAGNÓSTICA). Conserva intacto todo el resto del reporte.`,
-          image: base64Image || undefined,
-          mimeType: selectedFile?.type || undefined,
-        }),
-      });
-      const data = await response.json();
-      if (data.success && data.report) {
-        if (generatedReport) {
-          setReportHistory((prev) => [...prev, generatedReport]);
-          setReportRedoHistory([]);
-        }
-        setGeneratedReport(data.report);
-        setIncorporatedAuditRecs(prev => ({
-          ...prev,
-          [recText]: true
-        }));
-      } else {
-        setModifyError(data.error || "Ocurrió un error al intentar incorporar de manera inteligente la recomendación.");
+
+    while (recQueueRef.current.length > 0) {
+      const recText = recQueueRef.current[0];
+      const activeReport = isEditingReportManualRef.current ? editedReportTextRef.current : (generatedReportRef.current || "");
+
+      if (!activeReport) {
+        recQueueRef.current.shift();
+        setPendingRecs(prev => {
+          const next = { ...prev };
+          delete next[recText];
+          return next;
+        });
+        continue;
       }
-    } catch (err: any) {
-      console.error("Error al incorporar recomendación de auditoría:", err);
-      setModifyError(err?.message || String(err));
-    } finally {
-      setIsModifyingReport(false);
-      setPendingRecText(null);
+
+      let sanitizedRec = recText.trim();
+      sanitizedRec = sanitizedRec.replace(/^\*\*|\*\*$/g, "").trim();
+      sanitizedRec = sanitizedRec.replace(/^["']|["']$/g, "").trim();
+
+      setPendingRecText(recText);
+
+      try {
+        const response = await fetch("/api/modify-report", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: selectedModelRef.current,
+            currentReport: activeReport,
+            instruction: `Integra de forma totalmente fluida, nativa y natural, actuando en todo momento como el radiólogo principal que redacta el informe desde el principio, la siguiente clasificación, escala o recomendación clínica: "${sanitizedRec}". REQUISITO CRÍTICO: NO debes justificar la recomendación, ni meter introducciones, explicaciones clínicas de por qué se usa ("para facilitar el manejo...", "se sugiere...", "como recomendación de auditoría..."), ni meta-comentarios. Escribe directo la categoría, el grado o el dato clínico en la sección adecuada del reporte (HALLAZGOS o IMPRESIÓN DIAGNÓSTICA). Conserva intacto todo el resto del reporte.`,
+            image: base64ImageRef.current || undefined,
+            mimeType: selectedFileRef.current?.type || undefined,
+          }),
+        });
+        const data = await response.json();
+        if (data.success && data.report) {
+          setReportHistory((prev) => [...prev, activeReport]);
+          setReportRedoHistory([]);
+          setGeneratedReport(data.report);
+          setEditedReportText(data.report);
+          generatedReportRef.current = data.report;
+          editedReportTextRef.current = data.report;
+
+          setIncorporatedAuditRecs(prev => ({
+            ...prev,
+            [recText]: true
+          }));
+        } else {
+          setModifyError(data.error || "Ocurrió un error al intentar incorporar de manera inteligente la recomendación.");
+        }
+      } catch (err: any) {
+        console.error("Error al incorporar recomendación de auditoría:", err);
+        setModifyError(err?.message || String(err));
+      } finally {
+        recQueueRef.current.shift();
+        setPendingRecs(prev => {
+          const next = { ...prev };
+          delete next[recText];
+          return next;
+        });
+        setPendingRecText(null);
+      }
     }
+
+    isProcessingRecQueueRef.current = false;
+    setIsModifyingReport(false);
+  };
+
+  const handleIncorporateRecommendation = (recText: string) => {
+    if (!recText || incorporatedAuditRecs[recText] || pendingRecs[recText]) return;
+
+    setPendingRecs(prev => ({ ...prev, [recText]: true }));
+    recQueueRef.current.push(recText);
+    processRecQueue();
   };
 
   const handleIncorporateToReport = (analysisText: string, studyTitle: string, medicalHistoryCombined: string, isAutoSync: boolean = false) => {
-    const wrappedContent = `=== VALORACIÓN EXPERTA DE IMAGEN ANEXADA ===\n${analysisText}\n=== FIN DE VALORACIÓN EXPERTA ===`;
-    
-    setFindings(prev => {
-      if (!prev) return `${wrappedContent}\n\n`;
-      
-      const regex = /=== VALORACIÓN EXPERTA DE IMAGEN ANEXADA ===[\s\S]*?=== FIN DE VALORACIÓN EXPERTA ===/;
-      if (regex.test(prev)) {
-        return prev.replace(regex, wrappedContent);
+    // Check if it is a structured Case Analysis with JSON
+    const jsonMatch = analysisText.match(/\[CASE_ANALYSIS_JSON\]\s*([\s\S]*?)\s*\[\/CASE_ANALYSIS_JSON\]/);
+    if (jsonMatch && jsonMatch[0]) {
+      const jsonBlock = jsonMatch[0] + "\n\n";
+      const textSummary = analysisText.replace(jsonMatch[0], "").trim();
+      let format = "custom";
+      try {
+        const parsed = JSON.parse(jsonMatch[1]);
+        format = parsed.format || "custom";
+      } catch (e) {
+        console.error(e);
       }
+      setFindings(prev => {
+        return mergeCaseAnalysisBlock(prev || "", format, jsonBlock, textSummary);
+      });
+    } else {
+      const wrappedContent = `=== VALORACIÓN EXPERTA DE IMAGEN ANEXADA ===\n${analysisText}\n=== FIN DE VALORACIÓN EXPERTA ===`;
       
-      if (prev.includes("=== VALORACIÓN EXPERTA DE IMAGEN ANEXADA ===")) {
-        const splitted = prev.split("=== VALORACIÓN EXPERTA DE IMAGEN ANEXADA ===");
-        const afterPart = splitted.slice(1).join(" ");
-        const cleanedAfter = afterPart.replace(/^[\s\S]*?\n\n/, "");
-        return `${wrappedContent}\n\n${splitted[0]}${cleanedAfter}`;
-      }
-      
-      return `${wrappedContent}\n\n${prev}`;
-    });
+      setFindings(prev => {
+        if (!prev) return `${wrappedContent}\n\n`;
+        
+        const regex = /=== VALORACIÓN EXPERTA DE IMAGEN ANEXADA ===[\s\S]*?=== FIN DE VALORACIÓN EXPERTA ===/;
+        if (regex.test(prev)) {
+          return prev.replace(regex, wrappedContent);
+        }
+        
+        if (prev.includes("=== VALORACIÓN EXPERTA DE IMAGEN ANEXADA ===")) {
+          const splitted = prev.split("=== VALORACIÓN EXPERTA DE IMAGEN ANEXADA ===");
+          const afterPart = splitted.slice(1).join(" ");
+          const cleanedAfter = afterPart.replace(/^[\s\S]*?\n\n/, "");
+          return `${wrappedContent}\n\n${splitted[0]}${cleanedAfter}`;
+        }
+        
+        return `${wrappedContent}\n\n${prev}`;
+      });
+    }
+
+    // Auto-sync clinical history and study information into report generator inputs
+    if (medicalHistoryCombined && !medicalHistoryCombined.includes("S/D. Sospecha: S/D")) {
+      setClinicalHistory(prev => {
+        if (!prev || prev.trim() === "") return medicalHistoryCombined;
+        if (prev.includes(medicalHistoryCombined)) return prev;
+        return `${prev}\n\n[Contexto Doble Valoración]: ${medicalHistoryCombined}`;
+      });
+    }
+
+    if (studyTitle) {
+      setSpecificStudy(prev => {
+        if (!prev || prev.trim() === "") return studyTitle;
+        return prev;
+      });
+    }
 
     if (!isAutoSync) {
       setActiveTab("generator");
@@ -4591,8 +4882,9 @@ Ejemplo:
   };
 
   // ACTION: EVALUATE GENERATED REPORT
-  const handleEvaluateReport = async () => {
-    if (!generatedReport) return;
+  const handleEvaluateReport = async (overrideReportText?: string) => {
+    const activeReport = overrideReportText || (isEditingReportManual ? editedReportText : (generatedReport || ""));
+    if (!activeReport) return;
     setIsEvaluatingReport(true);
     setReportEvaluationError(null);
     setReportEvaluation("");
@@ -4602,7 +4894,7 @@ Ejemplo:
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: selectedModel,
-          report: generatedReport,
+          report: activeReport,
           studyType: studyType || "Estudio Radiológico",
           clinicalHistory: clinicalHistory || "",
           findings: findings || "",
@@ -6284,28 +6576,71 @@ Ejemplo:
     return canvas.toDataURL("image/png");
   };
 
+  const detectImageMetaFromFilename = (filename: string, dicomMeta?: Record<string, string>) => {
+    const upper = (filename + " " + JSON.stringify(dicomMeta || {}) + " " + (specificStudy || "")).toUpperCase();
+    let modality: "MMG" | "US" = "US";
+    let projection: "MLO" | "CC" | "OTRO" = "OTRO";
+    let side: "Derecha" | "Izquierda" | "Bilateral" = "Bilateral";
+
+    if (
+      upper.includes("MMG") ||
+      upper.includes("MAMO") ||
+      upper.includes("MX") ||
+      upper.includes("MLO") ||
+      upper.includes("CC") ||
+      upper.includes("MAMOGRAFIA") ||
+      upper.includes("MAMMO") ||
+      dicomMeta?.Modality === "MG"
+    ) {
+      modality = "MMG";
+    }
+
+    if (upper.includes("MLO") || upper.includes("OBLIQ") || upper.includes("OBLIU")) {
+      projection = "MLO";
+    } else if (upper.includes("CC") || upper.includes("CRANEO") || upper.includes("CAUDAL")) {
+      projection = "CC";
+    }
+
+    if (upper.includes("IZQ") || upper.includes("LEFT") || upper.includes("LCC") || upper.includes("LMLO") || upper.includes("L-CC") || upper.includes("L-MLO")) {
+      side = "Izquierda";
+    } else if (upper.includes("DER") || upper.includes("RIGHT") || upper.includes("RCC") || upper.includes("RMLO") || upper.includes("R-CC") || upper.includes("R-MLO")) {
+      side = "Derecha";
+    } else {
+      side = "Bilateral";
+    }
+
+    return { modality, projection, side };
+  };
+
   const handleAiLabelImage = async (id: string) => {
     const imgItem = attachedImages.find(item => item.id === id);
     if (!imgItem) return;
     
     setLoadingAiLabelId(id);
     try {
-      const response = await fetch("/api/auto-label-us-photo", {
+      const response = await fetch("/api/classify-and-label-image", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
           image: imgItem.base64 || imgItem.url,
-          studyType: specificStudy || "Ecografía",
+          filename: imgItem.name,
+          studyType: specificStudy || "Mamografía y Ultrasonido",
           clinicalHistory: clinicalHistory || "",
           findings: findings || inputReport || "",
         }),
       });
       
       const data = await response.json();
-      if (response.ok && data.success && data.label) {
-        setAttachedImages(prev => prev.map(item => item.id === id ? { ...item, caption: data.label } : item));
+      if (response.ok && data.success) {
+        setAttachedImages(prev => prev.map(item => item.id === id ? {
+          ...item,
+          caption: data.label || item.caption,
+          modality: data.modality || item.modality || "US",
+          projection: data.projection || item.projection || "OTRO",
+          side: data.side || item.side || "Derecha"
+        } : item));
       } else {
         alert(data.error || "No se pudo generar la rotulación con IA.");
       }
@@ -6343,7 +6678,7 @@ Ejemplo:
           model: selectedModel,
           phrase: imgItem.caption,
           currentReport: reportToUse,
-          studyType: specificStudy || "Ecografía",
+          studyType: specificStudy || "Mamografía / Ecografía",
           clinicalHistory: clinicalHistory || "",
         }),
       });
@@ -6368,22 +6703,29 @@ Ejemplo:
     try {
       const promises = attachedImages.map(async (imgItem) => {
         try {
-          const response = await fetch("/api/auto-label-us-photo", {
+          const response = await fetch("/api/classify-and-label-image", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
               image: imgItem.base64 || imgItem.url,
-              studyType: specificStudy || "Ecografía",
+              filename: imgItem.name,
+              studyType: specificStudy || "Mamografía y Ultrasonido",
               clinicalHistory: clinicalHistory || "",
               findings: findings || inputReport || "",
             }),
           });
           
           const data = await response.json();
-          if (response.ok && data.success && data.label) {
-            return { id: imgItem.id, label: data.label };
+          if (response.ok && data.success) {
+            return {
+              id: imgItem.id,
+              label: data.label,
+              modality: data.modality,
+              projection: data.projection,
+              side: data.side
+            };
           }
         } catch (err) {
           console.error(`Error labeling image ${imgItem.id}:`, err);
@@ -6395,7 +6737,13 @@ Ejemplo:
       setAttachedImages(prev => prev.map(item => {
         const found = results.find(r => r && r.id === item.id);
         if (found) {
-          return { ...item, caption: found.label };
+          return {
+            ...item,
+            caption: found.label || item.caption,
+            modality: found.modality || item.modality || "US",
+            projection: found.projection || item.projection || "OTRO",
+            side: found.side || item.side || "Derecha"
+          };
         }
         return item;
       }));
@@ -6431,7 +6779,7 @@ Ejemplo:
           attachedImages: attachedImages.map((img, idx) => ({
             id: img.id,
             index: idx + 1,
-            caption: img.caption || ""
+            caption: img.caption || img.name || ""
           })),
         }),
       });
@@ -6443,6 +6791,23 @@ Ejemplo:
           setReportRedoHistory([]);
         }
         setGeneratedReport(data.report);
+
+        if (data.reorderedImageIds && Array.isArray(data.reorderedImageIds) && data.reorderedImageIds.length > 0) {
+          setAttachedImages(prev => {
+            const map = new Map(prev.map(img => [img.id, img]));
+            const reordered: typeof prev = [];
+            data.reorderedImageIds.forEach((id: string) => {
+              const found = map.get(id);
+              if (found) {
+                reordered.push(found);
+                map.delete(id);
+              }
+            });
+            // Append any remaining images not explicitly listed in reorderedImageIds
+            map.forEach(img => reordered.push(img));
+            return reordered;
+          });
+        }
       } else {
         alert(data.error || "Ocurrió un error al intentar correlacionar las figuras.");
       }
@@ -6467,6 +6832,9 @@ Ejemplo:
       dicomMetaData?: Record<string, string>;
       width?: number;
       height?: number;
+      modality?: "MMG" | "US";
+      projection?: "MLO" | "CC" | "OTRO";
+      side?: "Derecha" | "Izquierda" | "Bilateral";
     }[] = [];
     
     const promises = filesArray.map((file) => {
@@ -6543,15 +6911,20 @@ Ejemplo:
                     const mime = innerExt === "jpg" || innerExt === "jpeg" ? "image/jpeg" : (innerExt === "gif" ? "image/gif" : (innerExt === "webp" ? "image/webp" : "image/png"));
                     const base64Str = `data:${mime};base64,${localUint8ToBase64(u8Array)}`;
                     const res = await ensureCompatibleImageFormat(base64Str);
+                    const fname = filename.split("/").pop() || filename;
+                    const meta = detectImageMetaFromFilename(fname);
                     loaded.push({
                       id: "attached-" + Math.random().toString(36).substring(2, 11),
-                      name: filename.split("/").pop() || filename,
+                      name: fname,
                       url: res.dataUrl,
                       base64: res.dataUrl,
                       caption: "",
                       isDicom: false,
                       width: res.width,
-                      height: res.height
+                      height: res.height,
+                      modality: meta.modality,
+                      projection: meta.projection,
+                      side: meta.side
                     });
                   } else if (isInnerDicom) {
                     try {
@@ -6562,16 +6935,21 @@ Ejemplo:
                         finalBase64 = generateDicomCanvasFallback(filename.split("/").pop() || filename, parsed.meta);
                       }
                       const res = await ensureCompatibleImageFormat(finalBase64);
+                      const fname = filename.split("/").pop() || filename;
+                      const meta = detectImageMetaFromFilename(fname, parsed.meta);
                       loaded.push({
                         id: "attached-" + Math.random().toString(36).substring(2, 11),
-                        name: filename.split("/").pop() || filename,
+                        name: fname,
                         url: res.dataUrl,
                         base64: res.dataUrl,
                         caption: "",
                         isDicom: true,
                         dicomMetaData: parsed.meta,
                         width: res.width,
-                        height: res.height
+                        height: res.height,
+                        modality: meta.modality,
+                        projection: meta.projection,
+                        side: meta.side
                       });
                     } catch (err) {
                       console.error("Error decoding inner ZIP DICOM:", err);
@@ -6591,7 +6969,8 @@ Ejemplo:
           reader.onload = (e) => {
             const base64Str = e.target?.result as string;
             if (base64Str) {
-               ensureCompatibleImageFormat(base64Str).then((res) => {
+              ensureCompatibleImageFormat(base64Str).then((res) => {
+                const meta = detectImageMetaFromFilename(file.name);
                 loaded.push({
                   id: "attached-" + Math.random().toString(36).substring(2, 11),
                   name: file.name,
@@ -6600,7 +6979,10 @@ Ejemplo:
                   caption: "", // Starts completely empty as requested by the user
                   isDicom: false,
                   width: res.width,
-                  height: res.height
+                  height: res.height,
+                  modality: meta.modality,
+                  projection: meta.projection,
+                  side: meta.side
                 });
                 resolve();
               });
@@ -6630,6 +7012,7 @@ Ejemplo:
                 }
                 
                 ensureCompatibleImageFormat(finalBase64).then((res) => {
+                  const meta = detectImageMetaFromFilename(file.name, parsed.meta);
                   loaded.push({
                     id: "attached-" + Math.random().toString(36).substring(2, 11),
                     name: file.name,
@@ -6639,7 +7022,10 @@ Ejemplo:
                     isDicom: true,
                     dicomMetaData: parsed.meta,
                     width: res.width,
-                    height: res.height
+                    height: res.height,
+                    modality: meta.modality,
+                    projection: meta.projection,
+                    side: meta.side
                   });
                   resolve();
                 });
@@ -7174,19 +7560,7 @@ Ejemplo:
           docObj.setFillColor(dotColor[0], dotColor[1], dotColor[2]);
           docObj.rect(cardX, cardY, 1.2, cardH, "F");
 
-          // Draw structure label
-          docObj.setFont("helvetica", "bold");
-          docObj.setFontSize(5.6);
-          docObj.setTextColor(15, 23, 42); // slate-900
-          const maxLabelLen = isVascular 
-            ? (cols === 2 ? 28 : 38)
-            : (cols === 2 ? 18 : 28);
-          const shortLabel = finding.label.length > maxLabelLen
-            ? finding.label.substring(0, maxLabelLen - 2) + ".." 
-            : finding.label;
-          docObj.text(shortLabel.toUpperCase(), cardX + 2.4, cardY + 2.7);
-
-          // Draw badge for state
+          // Draw badge for state FIRST
           let rawState = (finding.state || "ALTERADO").replace(/_/g, " ").toUpperCase();
           if (isVascular) {
             const stateClean = (finding.state || "").toLowerCase().trim();
@@ -7208,46 +7582,71 @@ Ejemplo:
             else if (rawState === "DESGARRO MIOFASCIAL") rawState = "D. MIOFASC";
             else if (rawState === "DESGARRO INTRAMUSCULAR") rawState = "D. INTRAC";
             else if (rawState === "VALORACION DINAMICA") rawState = "VAL. DIN.";
+            else if (rawState === "ADENOPATIA REACTIVA") rawState = "INFLAMATORIO";
           }
-
-          const shortState = rawState.length > (cols === 2 ? 10 : 16)
-            ? rawState.substring(0, cols === 2 ? 8 : 14) + "."
-            : rawState;
 
           docObj.setFont("helvetica", "bold");
-          docObj.setFontSize(4.2);
-          const badgeW = docObj.getTextWidth(shortState) + 2;
-          const badgeX = cardX + colW - badgeW - 1.5;
+          docObj.setFontSize(4.0);
+          const stateTextWidth = docObj.getTextWidth(rawState);
+          const badgeW = Math.min(colW * 0.42, stateTextWidth + 2.0);
+          const badgeX = cardX + colW - badgeW - 1.2;
 
           docObj.setFillColor(badgeBg[0], badgeBg[1], badgeBg[2]);
-          docObj.roundedRect(badgeX, cardY + 1.0, badgeW, 2.2, 0.4, 0.4, "F");
+          docObj.roundedRect(badgeX, cardY + 1.0, badgeW, 2.3, 0.4, 0.4, "F");
           docObj.setTextColor(badgeText[0], badgeText[1], badgeText[2]);
-          docObj.text(shortState, badgeX + 1.0, cardY + 2.6);
+          docObj.text(rawState, badgeX + badgeW / 2, cardY + 2.6, { align: "center" });
 
-          // Draw wrapped clinical description
-          docObj.setFont("helvetica", "normal");
-          let descFontSize = 5.0;
-          let spacing = 2.2;
+          // Draw structure label (Title) with auto-scaling font size to avoid truncation
+          let labelFontSize = cardH < 10 ? 5.0 : 5.6;
+          docObj.setFont("helvetica", "bold");
+          docObj.setFontSize(labelFontSize);
+          docObj.setTextColor(15, 23, 42); // slate-900
 
-          if (cardH < 10) {
-            descFontSize = 4.4;
-            spacing = 1.8;
+          const maxTitleWidth = badgeX - (cardX + 2.4) - 1.0;
+          let titleText = finding.label.toUpperCase();
+
+          while (labelFontSize > 3.6 && docObj.getTextWidth(titleText) > maxTitleWidth) {
+            labelFontSize -= 0.3;
+            docObj.setFontSize(labelFontSize);
           }
+          if (docObj.getTextWidth(titleText) > maxTitleWidth) {
+            while (titleText.length > 3 && docObj.getTextWidth(titleText + "..") > maxTitleWidth) {
+              titleText = titleText.slice(0, -1);
+            }
+            titleText += "..";
+          }
+          docObj.text(titleText, cardX + 2.4, cardY + 2.8);
+
+          // Draw wrapped clinical description without cutting off lines
+          docObj.setFont("helvetica", "normal");
+          let descFontSize = cardH < 9 ? 4.2 : (cardH < 13 ? 4.6 : 5.0);
+          let spacing = descFontSize * 0.42;
+
           docObj.setFontSize(descFontSize);
           docObj.setTextColor(71, 85, 105); // slate-600
 
-          const textToWrap = finding.description;
-          const wrapWidthLimit = colW - 4.5;
-          const linesWrapped = docObj.splitTextToSize(textToWrap, wrapWidthLimit);
+          const textToWrap = finding.description || "";
+          const wrapWidthLimit = colW - 4.2;
+          let linesWrapped = docObj.splitTextToSize(textToWrap, wrapWidthLimit);
 
-          if (linesWrapped[0]) {
-            docObj.text(linesWrapped[0], cardX + 2.4, cardY + 2.7 + spacing);
+          const startTextY = cardY + 2.8 + spacing;
+          const maxTextY = cardY + cardH - 0.8;
+          const maxAllowedLines = Math.max(1, Math.floor((maxTextY - startTextY) / spacing) + 1);
+
+          if (linesWrapped.length > maxAllowedLines && descFontSize > 3.8) {
+            descFontSize = 3.8;
+            spacing = descFontSize * 0.40;
+            docObj.setFontSize(descFontSize);
+            linesWrapped = docObj.splitTextToSize(textToWrap, wrapWidthLimit);
           }
-          if (linesWrapped[1] && cardH > 7.5) {
-            docObj.text(linesWrapped[1], cardX + 2.4, cardY + 2.7 + (spacing * 2));
-          }
-          if (linesWrapped[2] && cardH > 10.5) {
-            docObj.text(linesWrapped[2], cardX + 2.4, cardY + 2.7 + (spacing * 3));
+
+          const linesToRender = Math.min(linesWrapped.length, Math.max(1, Math.floor((maxTextY - startTextY) / spacing) + 1));
+          for (let i = 0; i < linesToRender; i++) {
+            let lineStr = linesWrapped[i];
+            if (i === linesToRender - 1 && linesWrapped.length > linesToRender && lineStr.length > 3) {
+              lineStr = lineStr.slice(0, -3) + "...";
+            }
+            docObj.text(lineStr, cardX + 2.4, startTextY + (i * spacing));
           }
         });
       };
@@ -7886,8 +8285,21 @@ Ejemplo:
         };
         const reportToRenderLocal = isEditingReportManual ? editedReportText : generatedReport;
         const emojiFreeReportLocal = stripEmojisLocal(reportToRenderLocal || "");
-        const cleanReportLocal = cleanRawClinicalText(emojiFreeReportLocal);
-        const normalizedReportLocal = cleanReportLocal.replace(/\n+\s*(\s*(?:##+|#|\*\*)\s*(?:conclusi[oó]n(?:es)?|impresi[oó]n(?:es)?\s+diagn[oó]stica(?:s)?|diagn[oó]stico(?:s)?|hallazgos)\b)/gi, "\n\n$1");
+        let cleanReportLocal = cleanRawClinicalText(emojiFreeReportLocal);
+        cleanReportLocal = cleanReportLocal.replace(/\[START_CASE_ANALYSIS:[\s\S]*?\[END_CASE_ANALYSIS:[^\]]+\]/gi, "");
+        const legacyIdxLocal = cleanReportLocal.indexOf("[CASE_ANALYSIS_JSON]");
+        if (legacyIdxLocal !== -1) {
+          cleanReportLocal = cleanReportLocal.substring(0, legacyIdxLocal).trim();
+        }
+        const summaryIdxLocal = cleanReportLocal.indexOf("**ANÁLISIS INTEGRADO DE CASO");
+        if (summaryIdxLocal !== -1) {
+          cleanReportLocal = cleanReportLocal.substring(0, summaryIdxLocal).trim();
+        }
+        cleanReportLocal = cleanReportLocal.trim();
+        const normalizedReportLocal = cleanReportLocal
+          .replace(/\n+\s*(---\s*)/g, "\n\n$1")
+          .replace(/\n+\s*((?:\*+)?\s*(?:pie de página|nota de pie|nota de pie de página|pie de pagina|nota de pie de pagina)\b)/gi, "\n\n$1")
+          .replace(/\n+\s*(\s*(?:##+|#|\*\*)\s*(?:conclusi[oó]n(?:es)?|impresi[oó]n(?:es)?\s+diagn[oó]stica(?:s)?|diagn[oó]stico(?:s)?|hallazgos)\b)/gi, "\n\n$1");
         const rawParagraphsLocal = normalizedReportLocal.split(/\n\n+/);
         const paragraphsLocal: string[] = [];
         let inConclusionLocal = false;
@@ -7900,9 +8312,21 @@ Ejemplo:
           const isSemiologyLineLocal = /semiolog[ií]a|justificaci[oó]n|exclusi[oó]n/i.test(trimmed);
           const isConclusionHeader = !isSemiologyLineLocal && /^\s*(?:#+|\*+|-|_|\d+\.)*\s*(?:conclusión|conclusiones|conclusion|impresión\s+diagnóstica|impresion\s+diagnostica|impresiones\s+diagnósticas|impresiones\s+diagnosticas|diagnósticos|diagnóstico|diagnostico|diagnosticos)\b/i.test(trimmed);
 
-          const isOtherSectionHeader = /^\s*(?:##+|#)\s+/i.test(trimmed) || /^\s*\*\*(?:hallazgos|estudio|técnica|tecnica|método|metodo|exploración|exploracion|motivo|comparación|comparacion|datos\s+clínicos|indicación|indicacion|antecedentes|pie\s+de\s+página|nota\s+de\s+pie)\b/i.test(trimmed);
+          const isFootnoteOrDividerLocal = trimmed === "---" || /^---+\s*$/.test(trimmed) ||
+            /^\s*(?:\*+)?\s*(?:pie de página|nota de pie|nota de pie de página|pie de pagina|nota de pie de pagina)\b/i.test(trimmed);
 
-          if (isConclusionHeader) {
+          const isOtherSectionHeader = /^\s*(?:##+|#)\s+/i.test(trimmed) ||
+            /^\s*\*\*(?:hallazgos|estudio|técnica|tecnica|método|metodo|exploración|exploracion|motivo|comparación|comparacion|datos\s+clínicos|indicación|indicacion|antecedentes|pie\s+de\s+página|nota\s+de\s+pie)\b/i.test(trimmed) ||
+            isFootnoteOrDividerLocal;
+
+          if (isFootnoteOrDividerLocal) {
+            if (inConclusionLocal && conclusionBufferLocal.length > 0) {
+              paragraphsLocal.push(conclusionBufferLocal.join("\n\n"));
+              conclusionBufferLocal = [];
+            }
+            inConclusionLocal = false;
+            paragraphsLocal.push(trimmed);
+          } else if (isConclusionHeader) {
             if (inConclusionLocal && conclusionBufferLocal.length > 0) {
               paragraphsLocal.push(conclusionBufferLocal.join("\n\n"));
               conclusionBufferLocal = [];
@@ -8030,10 +8454,56 @@ Ejemplo:
           .replace(/[\u2600-\u27BF]|[\u2300-\u23FF]|[\u2B50]|[\u2190-\u21FF]/g, "");
       };
 
+      // Clean non-ASCII smart quotes, dashes, bullet symbols, and special unicode symbols that distort jsPDF letter spacing
+      const cleanTextForJSPDF = (text: string): string => {
+        if (!text) return "";
+        return text
+          .replace(/[“”„«»‟]/g, '"')
+          .replace(/[‘’`´′″]/g, "'")
+          .replace(/[—–‒―]/g, "-")
+          .replace(/[\u2022\u25E6\u2023\u2043\u25AA\u25FE\u25C6\u25C7\u25B6\u25B7\u25C0\u25C1]/g, "-")
+          .replace(/[\u00A0\u200B\u2009\u202F\u2000-\u200A]/g, " ")
+          .replace(/…/g, "...");
+      };
+
       const reportToRender = isEditingReportManual ? editedReportText : generatedReport;
       const emojiFreeReport = stripEmojis(reportToRender);
-      const cleanReport = cleanRawClinicalText(emojiFreeReport);
-      const normalizedReport = cleanReport.replace(/\n+\s*(\s*(?:##+|#|\*\*)\s*(?:conclusi[oó]n(?:es)?|impresi[oó]n(?:es)?\s+diagn[oó]stica(?:s)?|diagn[oó]stico(?:s)?|hallazgos)\b)/gi, "\n\n$1");
+      let cleanReport = cleanRawClinicalText(emojiFreeReport);
+
+      // Extract all CASE_ANALYSIS blocks from the report text to draw them in the Annex at the end
+      const caseAnalysisBlocks: CaseAnalysisData[] = [];
+      const caseRegex = /\[CASE_ANALYSIS_JSON\]\s*([\s\S]*?)\s*\[\/CASE_ANALYSIS_JSON\]/g;
+      let caseMatch;
+      while ((caseMatch = caseRegex.exec(cleanReport)) !== null) {
+        if (caseMatch[1]) {
+          try {
+            const parsed = JSON.parse(caseMatch[1]) as CaseAnalysisData;
+            caseAnalysisBlocks.push(parsed);
+          } catch (e) {
+            console.error("Error parsing case data block for PDF annex:", e);
+          }
+        }
+      }
+
+      // Strip all [START_CASE_ANALYSIS:format] ... [END_CASE_ANALYSIS:format] blocks
+      // from the main report content so they do not print as plain text.
+      cleanReport = cleanReport.replace(/\[START_CASE_ANALYSIS:[\s\S]*?\[END_CASE_ANALYSIS:[^\]]+\]/gi, "");
+
+      // Strip the fallback text summary of the case analysis from the PDF text entirely
+      const legacyIdx = cleanReport.indexOf("[CASE_ANALYSIS_JSON]");
+      if (legacyIdx !== -1) {
+        cleanReport = cleanReport.substring(0, legacyIdx).trim();
+      }
+      const summaryIdx = cleanReport.indexOf("**ANÁLISIS INTEGRADO DE CASO");
+      if (summaryIdx !== -1) {
+        cleanReport = cleanReport.substring(0, summaryIdx).trim();
+      }
+      cleanReport = cleanReport.trim();
+
+      const normalizedReport = cleanReport
+        .replace(/\n+\s*(---\s*)/g, "\n\n$1")
+        .replace(/\n+\s*((?:\*+)?\s*(?:pie de página|nota de pie|nota de pie de página|pie de pagina|nota de pie de pagina)\b)/gi, "\n\n$1")
+        .replace(/\n+\s*(\s*(?:##+|#|\*\*)\s*(?:conclusi[oó]n(?:es)?|impresi[oó]n(?:es)?\s+diagn[oó]stica(?:s)?|diagn[oó]stico(?:s)?|hallazgos)\b)/gi, "\n\n$1");
       const rawParagraphs = normalizedReport.split(/\n\n+/);
       const paragraphs: string[] = [];
       let inConclusion = false;
@@ -8043,12 +8513,37 @@ Ejemplo:
         const trimmed = p.trim();
         if (!trimmed) return;
 
+        // If this is a CASE_ANALYSIS_JSON block, do not merge it with the conclusion or any other buffer
+        if (trimmed.includes("[CASE_ANALYSIS_JSON]")) {
+          if (inConclusion && conclusionBuffer.length > 0) {
+            paragraphs.push(conclusionBuffer.join("\n\n"));
+            conclusionBuffer = [];
+          }
+          inConclusion = false;
+          paragraphs.push(trimmed);
+          return;
+        }
+
         const isSemiologyLine = /semiolog[ií]a|justificaci[oó]n|exclusi[oó]n/i.test(trimmed);
         const isConclusionHeader = !isSemiologyLine && /^\s*(?:#+|\*+|-|_|\d+\.)*\s*(?:conclusión|conclusiones|conclusion|impresión\s+diagnóstica|impresion\s+diagnostica|impresiones\s+diagnósticas|impresiones\s+diagnosticas|diagnósticos|diagnóstico|diagnostico|diagnosticos)\b/i.test(trimmed);
 
-        const isOtherSectionHeader = /^\s*(?:##+|#)\s+/i.test(trimmed) || /^\s*\*\*(?:hallazgos|estudio|técnica|tecnica|método|metodo|exploración|exploracion|motivo|comparación|comparacion|datos\s+clínicos|indicación|indicacion|antecedentes|pie\s+de\s+página|nota\s+de\s+pie)\b/i.test(trimmed);
+        const isFootnoteOrDivider = trimmed === "---" || /^---+\s*$/.test(trimmed) ||
+          /^\s*(?:\*+)?\s*(?:pie de página|nota de pie|nota de pie de página|pie de pagina|nota de pie de pagina)\b/i.test(trimmed);
 
-        if (isConclusionHeader) {
+        const isOtherSectionHeader = /^\s*(?:##+|#)\s+/i.test(trimmed) ||
+          /^\s*\*\*(?:hallazgos|estudio|técnica|tecnica|método|metodo|exploración|exploracion|motivo|comparación|comparacion|datos\s+clínicos|indicación|indicacion|antecedentes|pie\s+de\s+página|nota\s+de\s+pie)\b/i.test(trimmed) ||
+          trimmed.includes("ANEXO DIAGNÓSTICO") ||
+          trimmed.includes("DESGLOSE Y JUSTIFICACIÓN") ||
+          isFootnoteOrDivider;
+
+        if (isFootnoteOrDivider) {
+          if (inConclusion && conclusionBuffer.length > 0) {
+            paragraphs.push(conclusionBuffer.join("\n\n"));
+            conclusionBuffer = [];
+          }
+          inConclusion = false;
+          paragraphs.push(trimmed);
+        } else if (isConclusionHeader) {
           if (inConclusion && conclusionBuffer.length > 0) {
             paragraphs.push(conclusionBuffer.join("\n\n"));
             conclusionBuffer = [];
@@ -8083,10 +8578,169 @@ Ejemplo:
       let isFirstLine = true;
       let isFirstBlock = true;
       let inFootnoteSection = false;
+      let hasDrawnSignature = false;
 
-      paragraphs.forEach((block) => {
+      const renderSignatureBlock = () => {
+        if (hasDrawnSignature) return;
+        if (doctorName || customSignatureUrl) {
+          checkPageBreak(38); // Requerir suficiente espacio para el bloque homologado dual
+          yCoord += 12;
+
+          const startY = yCoord;
+
+          // Dibujar borde gris claro con fondo suave en la columna izquierda (Caja de verificación)
+          const boxX = marginX;
+          const boxY = startY;
+          const boxW = (pageWidth - marginX * 2) * 0.48; // Columna izquierda (48% de ancho)
+          const boxH = 26;
+
+          // Rellenar fondo
+          doc.setFillColor(248, 250, 252); // slate 50
+          doc.rect(boxX, boxY, boxW, boxH, "F");
+          // Dibujar borde
+          doc.setDrawColor(203, 213, 225); // slate 300
+          doc.setLineWidth(0.35);
+          doc.rect(boxX, boxY, boxW, boxH, "S");
+
+          // Metadatos de Integridad en Columna Izquierda:
+          let internalY = boxY + 4;
+          
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(6.5);
+          doc.setTextColor(71, 85, 105); // slate 600
+          doc.text("VERIFICACIÓN INTEGRIDAD DE DOCUMENTO", boxX + 3, internalY);
+          internalY += 3.5;
+
+          // Obtener el Hash generado determinísticamente
+          const sSeedCombine = `${patientName || ""}-${doctorName || ""}-${reportDate || ""}-${clinicName || ""}`;
+          let sHashVal = 0;
+          for (let i = 0; i < sSeedCombine.length; i++) {
+            sHashVal = ((sHashVal << 5) - sHashVal) + sSeedCombine.charCodeAt(i);
+            sHashVal |= 0;
+          }
+          const sHexStr = Math.abs(sHashVal).toString(16).toUpperCase().padStart(8, "0");
+          const pSeedVal = (patientName && patientName.length > 0) ? patientName.charCodeAt(0) + patientName.length : 42;
+          const dSeedVal = (doctorName && doctorName.length > 0) ? doctorName.charCodeAt(0) + doctorName.length : 17;
+          const partVal = ((pSeedVal * 231 + dSeedVal * 19) % 65535).toString(16).toUpperCase().padStart(4, "E");
+          const pdfValidationHash = `SHA256: FD82-${sHexStr.substring(0, 4)}-${sHexStr.substring(4, 8)}-${partVal}-9B1C-E8B1`;
+
+          doc.setFont("courier", "bold");
+          doc.setFontSize(5.5);
+          doc.setTextColor(30, 41, 59); // slate 800
+          doc.text(pdfValidationHash, boxX + 3, internalY);
+          internalY += 3;
+
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(5.5);
+          doc.setTextColor(100, 116, 139); // slate 500
+          doc.text("ESTADO DEL DOCUMENTO: ", boxX + 3, internalY);
+          const stateW = doc.getTextWidth("ESTADO DEL DOCUMENTO: ");
+          doc.setFont("helvetica", "bold");
+          doc.setTextColor(21, 128, 61); // green 700
+          doc.text("FIRMADO ELECTRÓNICAMENTE", boxX + 3 + stateW, internalY);
+          internalY += 2.8;
+
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(5.1);
+          doc.setTextColor(100, 116, 139); // slate 500
+          doc.text(`REG. MÉDICO: ${doctorLicense || "M.S.P. Reg: 6025 / Senescyt: 1005-12-7489"}`, boxX + 3, internalY);
+          internalY += 2.8;
+
+          doc.text(`FECHA DE VALIDACIÓN: ${reportDate} (AUTÓNOMO)`, boxX + 3, internalY);
+          internalY += 2.8;
+
+          doc.setFont("helvetica", "italic");
+          doc.text("Firma de Validez Homologada según Normativa Sanitaria.", boxX + 3, internalY);
+
+          // --- Columna Derecha: Área de Firma Digital / Autógrafa ---
+          const rightColX = pageWidth - marginX;
+          
+          // Agregar firma física si está cargada
+          if (customSignatureUrl) {
+            try {
+              let sigWidth = 35;
+              let sigHeight = 11;
+              if (signatureDims.width && signatureDims.height) {
+                const aspect = signatureDims.width / signatureDims.height;
+                const maxWidth = 50;
+                const maxHeight = 15;
+                if (aspect > maxWidth / maxHeight) {
+                  sigWidth = maxWidth;
+                  sigHeight = maxWidth / aspect;
+                } else {
+                  sigHeight = maxHeight;
+                  sigWidth = maxHeight * aspect;
+                }
+              }
+              const sigX = rightColX - sigWidth - 4;
+              const sigY = boxY + 1; // Alinear ordenadamente arriba
+              const format = customSignatureUrl.toLowerCase().includes("image/png") ? "PNG" : "JPEG";
+              doc.addImage(customSignatureUrl, format, sigX, sigY, sigWidth, sigHeight);
+            } catch (imgError) {
+              console.warn("Could not render custom signature image inside jsPDF", imgError);
+            }
+          } else {
+            // Si no hay firma física, mostrar sello digital elegante
+            doc.setFont("helvetica", "oblique");
+            doc.setFontSize(7);
+            doc.setTextColor(30, 64, 175); // blue 800
+            doc.text("FIRMADO ELECTRÓNICAMENTE CON TOKEN", rightColX - 62, boxY + 8);
+          }
+
+          // Línea horizontal para firma del doctor (solo del lado derecho)
+          const lineStart = rightColX - 70;
+          doc.setDrawColor(203, 213, 225); // slate 300
+          doc.setLineWidth(0.3);
+          doc.line(lineStart, boxY + boxH - 8, rightColX, boxY + boxH - 8);
+
+          // Nombre del doctor en la derecha
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8.5);
+          doc.setTextColor(15, 23, 42);
+          const docText = (doctorName || "Dr. Milton Benavides S. Cod.6025").toUpperCase();
+          const docTextWidth = doc.getTextWidth(docText);
+          doc.text(docText, rightColX - docTextWidth, boxY + boxH - 4.5);
+
+          // Especialidad del doctor en la derecha
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(6.5);
+          doc.setTextColor(100, 116, 139);
+          const titleText = "Especialista en Radiología e Imágenes Medicas.";
+          const titleTextWidth = doc.getTextWidth(titleText);
+          doc.text(titleText, rightColX - titleTextWidth, boxY + boxH - 1.5);
+          
+          yCoord = boxY + boxH + 6;
+        }
+        hasDrawnSignature = true;
+      };
+
+      const renderSingleReportBlock = (block: string) => {
         const trimmedBlock = block.trim();
         if (!trimmedBlock) return;
+
+        // Check for explicit page break tag
+        if (/^(?:\[(?:salto(?:_de_p[aá]gina)?|page_break|salto_pagina)\]|<pagebreak>)$/i.test(trimmedBlock)) {
+          doc.addPage();
+          yCoord = 20;
+          if (pdfLayoutType === "asymmetric") {
+            drawAsymmetricSidebar(doc, doc.getNumberOfPages(), 20);
+          }
+          return;
+        }
+
+        // Check for explicit vertical spacing tag (e.g. [ESPACIO] or [ESPACIO_10MM])
+        const spaceMatch = trimmedBlock.match(/^\[ESPACIO(?:_(\d+)MM)?\]$/i);
+        if (spaceMatch) {
+          const mm = spaceMatch[1] ? parseInt(spaceMatch[1], 10) : 10;
+          yCoord += mm * factor;
+          return;
+        }
+
+        // Skip inline Case Analysis JSON blocks as they are rendered in Step 5 (Diagnóstico Avanzado)
+        if (trimmedBlock.includes("[CASE_ANALYSIS_JSON]")) {
+          return;
+        }
+
 
         // Check if the block is a footnote (for Creador de Notas de Pie de Página)
         const blockLower = trimmedBlock.toLowerCase();
@@ -8170,7 +8824,9 @@ Ejemplo:
               parsedLines.push({ isHeader: false, isBulleted: false, wrappedLines: [] });
               return;
             }
-            if (lineTrimmed === "---" || /^---+\s*$/.test(lineTrimmed)) {
+            const isFootnoteLineInBox = lineTrimmed === "---" || /^---+\s*$/.test(lineTrimmed) ||
+              /^\s*(?:\*+)?\s*(?:pie de página|nota de pie|nota de pie de página|pie de pagina|nota de pie de pagina)\b/i.test(lineTrimmed);
+            if (isFootnoteLineInBox) {
               return;
             }
             
@@ -8205,7 +8861,7 @@ Ejemplo:
               headerTitle = cleanHeading;
             } else {
               const isBulleted = lineTrimmed.startsWith("- ") || lineTrimmed.startsWith("* ") || /^\d+\.\s+/.test(lineTrimmed);
-              let bulletToken = "•";
+              let bulletToken = "-";
               let cleanText = lineTrimmed;
               
               if (isBulleted) {
@@ -8310,7 +8966,7 @@ Ejemplo:
               pLine.wrappedLines.forEach((wLineArr) => {
                 if (isFirstLineOfBullet) {
                   doc.setFont("times", "bold");
-                  doc.text(pLine.bulletToken || "•", marginX + boxPaddingLeft + 1.5, currentY);
+                  doc.text(pLine.bulletToken || "-", marginX + boxPaddingLeft + 1.5, currentY);
                   isFirstLineOfBullet = false;
                 }
                 
@@ -8488,13 +9144,22 @@ Ejemplo:
                 colWidths.push(contentWidth * 0.50); // Detailed Main Findings
               }
             } else if (colCount === 4) {
+              const isClassificationTable = headers.some(h => {
+                const l = (h || "").toLowerCase();
+                return l.includes("criterio") || l.includes("pondera") || l.includes("score") || l.includes("justifica") || l.includes("sustento");
+              });
               const isAsistenteBilateral = headers.some(h => {
                 const l = h.toLowerCase();
                 return l.includes("derecha") || l.includes("izquierda");
               });
               const isGenericAsistente = headers.some(h => h.toLowerCase().includes("registrada")) || headers.some(h => h.toLowerCase().includes("referencia"));
 
-              if (isAsistenteBilateral) {
+              if (isClassificationTable) {
+                colWidths.push(contentWidth * 0.24); // Criterio Evaluado
+                colWidths.push(contentWidth * 0.28); // Hallazgo en el Reporte
+                colWidths.push(contentWidth * 0.16); // Ponderación / Score
+                colWidths.push(contentWidth * 0.32); // Justificación Diagnóstica
+              } else if (isAsistenteBilateral) {
                 colWidths.push(contentWidth * 0.25);
                 colWidths.push(contentWidth * 0.30);
                 colWidths.push(contentWidth * 0.30);
@@ -8730,9 +9395,16 @@ Ejemplo:
             headers.forEach((headerTxt, hIdx) => {
               let hClean = headerTxt.replace(/\*\*/g, "").trim();
               if (colCount === 2) {
-                // Force headers to read exactly "INTERPRETACIÓN" and "Hallazgos"
-                const isSynoptic = headers.some(h => h.toLowerCase().includes("aspecto") || h.toLowerCase().includes("detalle") || h.toLowerCase().includes("sinopsis") || h.toLowerCase().includes("evaluado") || h.toLowerCase().includes("clínico"));
-                if (!isSynoptic) {
+                // Force headers to read exactly "INTERPRETACIÓN" and "Hallazgos" ONLY if header explicitly indicates semiology or interpretation
+                const isSynoptic = headers.some(h => {
+                  const l = h.toLowerCase();
+                  return l.includes("aspecto") || l.includes("detalle") || l.includes("sinopsis") || l.includes("evaluado") || l.includes("clínico") || l.includes("sistema") || l.includes("categoría") || l.includes("criterio") || l.includes("paso") || l.includes("parámetro") || l.includes("definición") || l.includes("estadio") || l.includes("ponderación") || l.includes("justificación");
+                });
+                const isExplicitSemiology = headers.some(h => {
+                  const l = h.toLowerCase();
+                  return l.includes("interpretaci") || l.includes("semiol");
+                });
+                if (!isSynoptic && isExplicitSemiology) {
                   if (hIdx === 0) hClean = "INTERPRETACIÓN";
                   if (hIdx === 1) hClean = "Hallazgos";
                 }
@@ -8741,8 +9413,18 @@ Ejemplo:
                 if (hIdx === 1) hClean = "Derecho";
                 if (hIdx === 2) hClean = "Izquierdo";
               }
+
+              const currentColW = colWidths[hIdx] || (contentWidth / colCount);
+              doc.setFont("times", "bold");
+              doc.setFontSize(9.5);
+              if (doc.getTextWidth(hClean) > currentColW - 4) {
+                doc.setFontSize(8.5);
+              }
+              if (doc.getTextWidth(hClean) > currentColW - 4) {
+                doc.setFontSize(7.5);
+              }
               doc.text(hClean, currentX + 3, yCoord + 1);
-              currentX += colWidths[hIdx] || (contentWidth / colCount);
+              currentX += currentColW;
             });
             
             yCoord += 9 * factor;
@@ -8995,7 +9677,14 @@ Ejemplo:
             });
 
             // Underlines for headings
-            if (pdfLayoutType === "clinical_slate") {
+            const isAnnexHeading = cleanHeaderTxt.toUpperCase().includes("ANEXO") || 
+                                   cleanHeaderTxt.toUpperCase().includes("DESGLOSE Y JUSTIFICACIÓN");
+            if (isAnnexHeading) {
+              doc.setDrawColor(203, 213, 225); // slate-300
+              doc.setLineWidth(0.3);
+              doc.line(marginX, yCoord - 1 * factor, marginX + contentWidth, yCoord - 1 * factor);
+              yCoord += 3.5 * factor;
+            } else if (pdfLayoutType === "clinical_slate") {
               doc.setDrawColor(226, 232, 240); // slate-200
               doc.setLineWidth(0.25);
               doc.line(marginX, yCoord - 1.5 * factor, marginX + contentWidth, yCoord - 1.5 * factor);
@@ -9011,7 +9700,7 @@ Ejemplo:
             const isBulleted = trimmed.startsWith("- ") || trimmed.startsWith("* ") || /^\d+\.\s+/.test(trimmed);
             if (isBulleted) {
               let cleanItem = trimmed;
-              let bulletToken = "•";
+              let bulletToken = "-";
               const isNumbered = /^\d+\.\s+/.test(cleanItem);
 
               if (isNumbered) {
@@ -9031,7 +9720,7 @@ Ejemplo:
               doc.setFont("times", "bold");
               doc.setFontSize(10.5);
               doc.setTextColor(15, 23, 42);
-              doc.text(bulletToken, marginX + 1.5, yCoord);
+              doc.text(bulletToken || "-", marginX + 1.5, yCoord);
  
               const lines = wrapMarkdown(doc, cleanItem, textWidth);
               const itemSeverity = getParagraphSeverity(cleanItem);
@@ -9098,11 +9787,112 @@ Ejemplo:
             }
           }
         });
+      };
+
+      // Categorize paragraph blocks according to requested 10-step insertion sequence:
+      // 1. CUERPO DE REPORTE CON FIRMA AL FINAL
+      // 2. CUADRO SINOPTICO
+      // 3. SINOPSIS POR ORGANO
+      // 4. SINOPSIS DE HALLAZGOS CON DIBUJO Y TARJETAS SINOPTICAS
+      // 5. CUADRO DE ASISTENTE DE MEDIDAS
+      // 6. ANEXO DE FOTOS Y CAPTURAS DE ULTRASONIDO
+      // 7. DIAGNOSTICO AVANZADO
+      // 8. DESGLOCE Y JUSTIFICACION DE CLASIFICACIONES
+      // 9. RESUMEN DEL PACIENTE
+      // 10. INFOGRAFIA DEL PACIENTE
+      const mainReportBlocks: string[] = [];
+      const cuadroSinopticoBlocks: string[] = [];
+      const organSynopsisBlocks: string[] = [];
+      const measurementAssistantBlocks: string[] = [];
+      const classificationAnnexBlocks: string[] = [];
+
+      let pdfSectionTarget: "main" | "cuadro" | "organ" | "medidas" | "annex" = "main";
+
+      paragraphs.forEach((block) => {
+        const trimmedBlock = block.trim();
+        if (!trimmedBlock) return;
+
+        if (trimmedBlock.includes("[CASE_ANALYSIS_JSON]")) {
+          return;
+        }
+
+        const upperBlock = trimmedBlock.toUpperCase();
+        if (
+          upperBlock.includes("RADAR BIOMECÁNICO") ||
+          upperBlock.includes("RADAR BIOMECANICO") ||
+          upperBlock.includes("PUNTAJE GLOBAL DE CARGA TISULAR:") ||
+          upperBlock.includes("VECTOR PATOLÓGICO DOMINANTE:") ||
+          upperBlock.includes("MATRIZ DE VECTORES CLAVE:") ||
+          upperBlock.includes("SÍNTESIS BIOMECÁNICO-INFLAMATORIA:") ||
+          upperBlock.includes("RECOMENDACIÓN DINÁMICA:") ||
+          (upperBlock.startsWith("•") && (upperBlock.includes("/10") || upperBlock.includes("[")))
+        ) {
+          return;
+        }
+
+        const isHeaderMarker = /^\s*(?:#{1,6}\s+|\*\*\s*)/.test(trimmedBlock) || trimmedBlock.toUpperCase().startsWith("ANEXO:");
+        const isCuadroHeader = isHeaderMarker && /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:ESQUEMA\s+CLÍNICO\s+DE\s+HALLAZGOS\s+PRINCIPALES|CUADRO\s+SINÓPTICO|MATRIZ\s+SEMIÓTICA)\b/i.test(trimmedBlock);
+        const isOrganHeader = isHeaderMarker && /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:SINOPSIS\s+CLÍNICA|SINOPSIS\s+POR\s+ÓRGANO|SINOPSIS\s+DE\s+ÓRGANO)\b/i.test(trimmedBlock) && !isCuadroHeader;
+        const isMeasurementHeader = isHeaderMarker && /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:ASISTENTE\s+DE\s+MEDIDAS|CUADRO\s+DE\s+ASISTENTE\s+DE\s+MEDIDAS|TABLA\s+DE\s+MEDIDAS|MEDICIONES\s+Y\s+PARÁMETROS|PARÁMETROS\s+Y\s+MEDIDAS)\b/i.test(trimmedBlock) && !isCuadroHeader && !isOrganHeader;
+        const isAnnexHeader = isHeaderMarker && (trimmedBlock.includes("ANEXO DIAGNÓSTICO") || 
+                              trimmedBlock.includes("DESGLOSE Y JUSTIFICACIÓN DE CLASIFICACIÓN") || 
+                              trimmedBlock.includes("DESGLOSE Y JUSTIFICACIÓN") ||
+                              trimmedBlock.includes("CLASIFICACIÓN DE") ||
+                              /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:ANEXO|CLASIFICACI[OÓ]N)\b/i.test(trimmedBlock)) && !isCuadroHeader && !isOrganHeader && !isMeasurementHeader;
+
+        if (isCuadroHeader) {
+          pdfSectionTarget = "cuadro";
+        } else if (isOrganHeader) {
+          pdfSectionTarget = "organ";
+        } else if (isMeasurementHeader) {
+          pdfSectionTarget = "medidas";
+        } else if (isAnnexHeader) {
+          pdfSectionTarget = "annex";
+        }
+
+        if (pdfSectionTarget === "cuadro") {
+          cuadroSinopticoBlocks.push(trimmedBlock);
+        } else if (pdfSectionTarget === "organ") {
+          organSynopsisBlocks.push(trimmedBlock);
+        } else if (pdfSectionTarget === "medidas") {
+          measurementAssistantBlocks.push(trimmedBlock);
+        } else if (pdfSectionTarget === "annex") {
+          classificationAnnexBlocks.push(trimmedBlock);
+        } else {
+          mainReportBlocks.push(trimmedBlock);
+        }
       });
+
+      // --- 1. CUERPO DE REPORTE CON FIRMA AL FINAL ---
+      mainReportBlocks.forEach((block) => {
+        renderSingleReportBlock(block);
+      });
+
+      if (!hasDrawnSignature) {
+        renderSignatureBlock();
+      }
+
+      // --- 2. CUADRO SINÓPTICO ---
+      if (cuadroSinopticoBlocks.length > 0) {
+        checkPageBreak(25 * factor);
+        cuadroSinopticoBlocks.forEach((block) => {
+          renderSingleReportBlock(block);
+        });
+      }
+
+      // --- 3. SINOPSIS POR ÓRGANO ---
+      if (organSynopsisBlocks.length > 0) {
+        checkPageBreak(25 * factor);
+        organSynopsisBlocks.forEach((block) => {
+          renderSingleReportBlock(block);
+        });
+      }
 
       // Restore standard margins and content widths for any diagrams, annexes, and signature block
       marginX = 20;
       contentWidth = pageWidth - (2 * marginX);
+
+      // --- 4. SINOPSIS DE HALLAZGOS CON DIBUJO Y TARJETAS SINÓPTICAS ---
 
       // 🛠️ DRAW SHOULDER DIAGRAM IN THE PROGRAMMATIC PDF
       if (includeShoulderSchemaInReport && specificStudy === "Hombro") {
@@ -10973,6 +11763,42 @@ Ejemplo:
                 description: extra.description
               });
             });
+
+            // Check for general bilateral inflammatory cervical adenopathies in report
+            const activeNeckText = (isEditingReportManual ? editedReportText : generatedReport || "").toLowerCase();
+            const isBilateralNeckAdenopathyInReport = [
+              "adenopatías cervicales de aspecto inflamatorio",
+              "adenopatias cervicales de aspecto inflamatorio",
+              "adenopatías de aspecto inflamatorio bilateral",
+              "adenopatias de aspecto inflamatorio bilateral",
+              "adenopatías de aspecto inflamatorio bilaterales",
+              "adenopatias de aspecto inflamatorio bilaterales",
+              "adenopatías cervicales bilaterales",
+              "adenopatias cervicales bilaterales",
+              "adenopatías reactivas bilaterales",
+              "adenopatias reactivas bilaterales",
+              "adenopatías inflamatorias bilaterales",
+              "adenopatias inflamatorias bilaterales"
+            ].some(kw => activeNeckText.includes(kw)) || (
+              (activeNeckText.includes("adenopatía") || activeNeckText.includes("adenopatia") || activeNeckText.includes("ganglio") || activeNeckText.includes("ganglios")) &&
+              (activeNeckText.includes("inflamatori") || activeNeckText.includes("reactiv")) &&
+              (activeNeckText.includes("bilateral") || activeNeckText.includes("ambas cadenas") || activeNeckText.includes("ambos lados"))
+            );
+
+            if (isBilateralNeckAdenopathyInReport) {
+              const alreadyHasGeneralCard = neckCardData.some(c => 
+                c.label.toLowerCase().includes("adenopatí") || 
+                c.label.toLowerCase().includes("adenopati") || 
+                c.description.toLowerCase().includes("bilateral")
+              );
+              if (!alreadyHasGeneralCard) {
+                neckCardData.push({
+                  label: "Adenopatías Cervicales",
+                  state: "Inflamatorio",
+                  description: "Adenopatías cervicales de aspecto inflamatorio bilaterales."
+                });
+              }
+            }
 
             if (neckCardData.length === 0) {
               doc.setFont("helvetica", "italic");
@@ -13555,7 +14381,7 @@ Ejemplo:
                     ? (stiffnessOverride === "F0-F1" ? "F0-F1 Normal" : stiffnessOverride === "F2" ? "F2 Moderada" : stiffnessOverride === "F3" ? "F3 Avanzada" : "F4 Cirrosis")
                     : (elastographyStiffness < 6.0 ? 'F0-F1 Normal' : elastographyStiffness < 8.0 ? 'F2 Moderada' : elastographyStiffness < 12.5 ? 'F3 Avanzada' : 'F4 Cirrosis');
 
-                  const fatLevelLabel = fatFraction < 5.0 ? 'Normal' : fatFraction < 12.0 ? 'Leve' : fatFraction < 22.0 ? 'Moderado' : 'Severo';
+                  const fatLevelLabel = fatFraction < 5.0 ? 'Normal' : fatFraction <= 12.0 ? 'Leve' : fatFraction <= 20.0 ? 'Moderado' : 'Severo';
 
                   const textkPa = `Rigidez Hepática: ${elastographyStiffness.toFixed(1)} kPa (${fibrosisLabel})`;
                   const textQUS = `Grasa Hepática (QUS): ${fatFraction.toFixed(1)}% (${fatLevelLabel})`;
@@ -14831,249 +15657,1435 @@ Ejemplo:
         }
       }
 
-      // Signature / Sign-off block
-      if (doctorName || customSignatureUrl) {
-        checkPageBreak(38); // Requerir suficiente espacio para el bloque homologado dual
-        yCoord += 12;
-
-        const startY = yCoord;
-
-        // Dibujar borde gris claro con fondo suave en la columna izquierda (Caja de verificación)
-        const boxX = marginX;
-        const boxY = startY;
-        const boxW = (pageWidth - marginX * 2) * 0.48; // Columna izquierda (48% de ancho)
-        const boxH = 26;
-
-        // Rellenar fondo
-        doc.setFillColor(248, 250, 252); // slate 50
-        doc.rect(boxX, boxY, boxW, boxH, "F");
-        // Dibujar borde
-        doc.setDrawColor(203, 213, 225); // slate 300
-        doc.setLineWidth(0.35);
-        doc.rect(boxX, boxY, boxW, boxH, "S");
-
-        // Metadatos de Integridad en Columna Izquierda:
-        let internalY = boxY + 4;
-        
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(6.5);
-        doc.setTextColor(71, 85, 105); // slate 600
-        doc.text("VERIFICACIÓN INTEGRIDAD DE DOCUMENTO", boxX + 3, internalY);
-        internalY += 3.5;
-
-        // Obtener el Hash generado determinísticamente
-        const sSeedCombine = `${patientName || ""}-${doctorName || ""}-${reportDate || ""}-${clinicName || ""}`;
-        let sHashVal = 0;
-        for (let i = 0; i < sSeedCombine.length; i++) {
-          sHashVal = ((sHashVal << 5) - sHashVal) + sSeedCombine.charCodeAt(i);
-          sHashVal |= 0;
-        }
-        const sHexStr = Math.abs(sHashVal).toString(16).toUpperCase().padStart(8, "0");
-        const pSeedVal = (patientName && patientName.length > 0) ? patientName.charCodeAt(0) + patientName.length : 42;
-        const dSeedVal = (doctorName && doctorName.length > 0) ? doctorName.charCodeAt(0) + doctorName.length : 17;
-        const partVal = ((pSeedVal * 231 + dSeedVal * 19) % 65535).toString(16).toUpperCase().padStart(4, "E");
-        const pdfValidationHash = `SHA256: FD82-${sHexStr.substring(0, 4)}-${sHexStr.substring(4, 8)}-${partVal}-9B1C-E8B1`;
-
-        doc.setFont("courier", "bold");
-        doc.setFontSize(5.5);
-        doc.setTextColor(30, 41, 59); // slate 800
-        doc.text(pdfValidationHash, boxX + 3, internalY);
-        internalY += 3;
-
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(5.5);
-        doc.setTextColor(100, 116, 139); // slate 500
-        doc.text("ESTADO DEL DOCUMENTO: ", boxX + 3, internalY);
-        const stateW = doc.getTextWidth("ESTADO DEL DOCUMENTO: ");
-        doc.setFont("helvetica", "bold");
-        doc.setTextColor(21, 128, 61); // green 700
-        doc.text("FIRMADO ELECTRÓNICAMENTE", boxX + 3 + stateW, internalY);
-        internalY += 2.8;
-
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(5.1);
-        doc.setTextColor(100, 116, 139); // slate 500
-        doc.text(`REG. MÉDICO: ${doctorLicense || "M.S.P. Reg: 6025 / Senescyt: 1005-12-7489"}`, boxX + 3, internalY);
-        internalY += 2.8;
-
-        doc.text(`FECHA DE VALIDACIÓN: ${reportDate} (AUTÓNOMO)`, boxX + 3, internalY);
-        internalY += 2.8;
-
-        doc.setFont("helvetica", "italic");
-        doc.text("Firma de Validez Homologada según Normativa Sanitaria.", boxX + 3, internalY);
-
-        // --- Columna Derecha: Área de Firma Digital / Autógrafa ---
-        const rightColX = pageWidth - marginX;
-        
-        // Agregar firma física si está cargada
-        if (customSignatureUrl) {
-          try {
-            let sigWidth = 35;
-            let sigHeight = 11;
-            if (signatureDims.width && signatureDims.height) {
-              const aspect = signatureDims.width / signatureDims.height;
-              const maxWidth = 50;
-              const maxHeight = 15;
-              if (aspect > maxWidth / maxHeight) {
-                sigWidth = maxWidth;
-                sigHeight = maxWidth / aspect;
-              } else {
-                sigHeight = maxHeight;
-                sigWidth = maxHeight * aspect;
-              }
-            }
-            const sigX = rightColX - sigWidth - 4;
-            const sigY = boxY + 1; // Alinear ordenadamente arriba
-            const format = customSignatureUrl.toLowerCase().includes("image/png") ? "PNG" : "JPEG";
-            doc.addImage(customSignatureUrl, format, sigX, sigY, sigWidth, sigHeight);
-          } catch (imgError) {
-            console.warn("Could not render custom signature image inside jsPDF", imgError);
-          }
-        } else {
-          // Si no hay firma física, mostrar sello digital elegante
-          doc.setFont("helvetica", "oblique");
-          doc.setFontSize(7);
-          doc.setTextColor(30, 64, 175); // blue 800
-          doc.text("FIRMADO ELECTRÓNICAMENTE CON TOKEN", rightColX - 62, boxY + 8);
-        }
-
-        // Línea horizontal para firma del doctor (solo del lado derecho)
-        const lineStart = rightColX - 70;
-        doc.setDrawColor(203, 213, 225); // slate 300
-        doc.setLineWidth(0.3);
-        doc.line(lineStart, boxY + boxH - 8, rightColX, boxY + boxH - 8);
-
-        // Nombre del doctor en la derecha
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(8.5);
-        doc.setTextColor(15, 23, 42);
-        const docText = (doctorName || "Dr. Milton Benavides S. Cod.6025").toUpperCase();
-        const docTextWidth = doc.getTextWidth(docText);
-        doc.text(docText, rightColX - docTextWidth, boxY + boxH - 4.5);
-
-        // Especialidad del doctor en la derecha
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(6.5);
-        doc.setTextColor(100, 116, 139);
-        const titleText = "Especialista en Radiología e Imágenes Medicas.";
-        const titleTextWidth = doc.getTextWidth(titleText);
-        doc.text(titleText, rightColX - titleTextWidth, boxY + boxH - 1.5);
-        
-        yCoord = boxY + boxH + 6;
+      // Signature / Sign-off block (only if not already drawn after the main report body)
+      if (!hasDrawnSignature) {
+        renderSignatureBlock();
       }
 
-      // --- APPEND ATTACHED ULTRASOUND/DICOM IMAGES TO THE END OF PDF ---
+      // --- 5. CUADRO DE ASISTENTE DE MEDIDAS ---
+      if (measurementAssistantBlocks.length > 0) {
+        checkPageBreak(25 * factor);
+        measurementAssistantBlocks.forEach((block) => {
+          renderSingleReportBlock(block);
+        });
+      }
+
+      // --- 6. ANEXOS DE IMÁGENES DIAGNÓSTICAS (MAMOGRAFÍA Y ULTRASONIDO) ---
       if (attachedImages.length > 0) {
+        const mmgImages = attachedImages.filter(img => (img.modality || detectImageMetaFromFilename(img.name, img.dicomMetaData).modality) === "MMG");
+        const usImages = attachedImages.filter(img => !mmgImages.includes(img));
+
+        const sortMmg = (list: typeof attachedImages) => {
+          return [...list].sort((a, b) => {
+            const metaA = detectImageMetaFromFilename(a.name, a.dicomMetaData);
+            const metaB = detectImageMetaFromFilename(b.name, b.dicomMetaData);
+            const projA = a.projection || metaA.projection;
+            const projB = b.projection || metaB.projection;
+
+            const scoreA = projA === "CC" ? 1 : (projA === "MLO" ? 2 : 3);
+            const scoreB = projB === "CC" ? 1 : (projB === "MLO" ? 2 : 3);
+            return scoreA - scoreB;
+          });
+        };
+
+        const sortedMmgImages = sortMmg(mmgImages);
+        if (sortedMmgImages.length === 2) {
+          const meta0 = detectImageMetaFromFilename(sortedMmgImages[0].name, sortedMmgImages[0].dicomMetaData);
+          const meta1 = detectImageMetaFromFilename(sortedMmgImages[1].name, sortedMmgImages[1].dicomMetaData);
+          const proj0 = sortedMmgImages[0].projection || meta0.projection;
+          const proj1 = sortedMmgImages[1].projection || meta1.projection;
+          if (proj0 === "OTRO" && proj1 === "OTRO") {
+            sortedMmgImages[0].projection = "CC";
+            sortedMmgImages[1].projection = "MLO";
+          }
+        }
+
+        let globalFigIdx = 1;
+
+        // 6A. ANEXO DE IMÁGENES DE MAMOGRAFÍA (MMG) - OCUPANDO LA HOJA COMPLETA
+        if (sortedMmgImages.length > 0) {
+          doc.addPage();
+          yCoord = 20;
+
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(11);
+          doc.setTextColor(15, 23, 42); // slate 900
+          doc.text("ANEXO: IMÁGENES DE MAMOGRAFÍA (MMG)", marginX, yCoord);
+
+          yCoord += 4;
+          doc.setDrawColor(203, 213, 225); // slate 300
+          doc.setLineWidth(0.4);
+          doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
+          yCoord += 10;
+
+          const boxW = contentWidth; // ~180mm
+          const boxH = sortedMmgImages.length === 1 ? 160 : 88; // Fill page nicely
+          const slotSpacing = sortedMmgImages.length === 1 ? 175 : 122;
+
+          let itemsOnPage = 0;
+
+          for (const imgItem of sortedMmgImages) {
+            if (itemsOnPage >= 2 || yCoord + boxH + 20 > pageHeight - 15) {
+              doc.addPage();
+              yCoord = 20;
+              itemsOnPage = 0;
+
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(9.5);
+              doc.setTextColor(100, 116, 139);
+              doc.text("ANEXO: IMÁGENES DE MAMOGRAFÍA (CONT...)", marginX, yCoord);
+              yCoord += 4;
+              doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
+              yCoord += 10;
+            }
+
+            try {
+              let format = "JPEG";
+              if (imgItem.base64.includes("image/png")) format = "PNG";
+              else if (imgItem.base64.includes("image/gif")) format = "GIF";
+              else if (imgItem.base64.includes("image/webp")) format = "WEBP";
+
+              let drawW = boxW;
+              let drawH = boxH;
+              let drawX = marginX;
+              let drawY = yCoord;
+
+              if (imgItem.width && imgItem.height) {
+                const aspectImg = imgItem.width / imgItem.height;
+                const aspectBox = boxW / boxH;
+                if (aspectImg > aspectBox) {
+                  drawW = boxW;
+                  drawH = boxW / aspectImg;
+                  drawY = yCoord + (boxH - drawH) / 2;
+                } else {
+                  drawH = boxH;
+                  drawW = boxH * aspectImg;
+                  drawX = marginX + (boxW - drawW) / 2;
+                }
+              }
+
+              // Background fill for image frame
+              doc.setFillColor(248, 250, 252);
+              doc.rect(marginX, yCoord, boxW, boxH, "F");
+
+              // Draw MMG Image
+              doc.addImage(imgItem.base64, format, drawX, drawY, drawW, drawH);
+
+              // Border around frame
+              doc.setDrawColor(226, 232, 240);
+              doc.setLineWidth(0.3);
+              doc.rect(marginX, yCoord, boxW, boxH, "D");
+
+              // Projection tag
+              const meta = detectImageMetaFromFilename(imgItem.name, imgItem.dicomMetaData);
+              const proj = imgItem.projection || meta.projection;
+
+              let figTitle = `Figura ${globalFigIdx}. Proyecciones Cráneo Caudales (CC)`;
+              if (proj === "MLO") {
+                figTitle = `Figura ${globalFigIdx}. Proyecciones Medio Lateral Oblicuas (MLO)`;
+              } else if (proj === "OTRO") {
+                figTitle = `Figura ${globalFigIdx}. Proyección Complementaria MMG`;
+              }
+
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(9.5);
+              doc.setTextColor(15, 23, 42);
+              doc.text(figTitle, marginX, yCoord + boxH + 5);
+
+              const defaultCaption = proj === "CC"
+                ? "Proyecciones Cráneo Caudales (CC). Tejido fibroglandular de distribución simétrica sin evidencia de nódulos ni microcalcificaciones de sospecha."
+                : (proj === "MLO"
+                  ? "Proyecciones Medio Lateral Oblicuas (MLO). Adecuada visualización de los planos pectorales sin distorsiones ni adenopatías axilares."
+                  : "Mamografía digital, proyecciones complementarias.");
+
+              const rawCaption = imgItem.caption && imgItem.caption.trim() ? imgItem.caption.trim() : defaultCaption;
+
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(8.5);
+              doc.setTextColor(71, 85, 105);
+              const textLines = doc.splitTextToSize(rawCaption, boxW);
+              let offsetTextY = yCoord + boxH + 9.5;
+              textLines.forEach((lineText: string) => {
+                doc.text(lineText, marginX, offsetTextY);
+                offsetTextY += 3.8;
+              });
+
+            } catch (imgErr) {
+              console.error("Could not append attached MMG image in jsPDF: ", imgErr);
+              doc.setDrawColor(226, 232, 240);
+              doc.rect(marginX, yCoord, boxW, boxH);
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(8.5);
+              doc.setTextColor(148, 163, 184);
+              doc.text("No se pudo renderizar la mamografía", marginX + 10, yCoord + (boxH / 2));
+            }
+
+            itemsOnPage++;
+            yCoord += slotSpacing;
+            globalFigIdx++;
+          }
+        }
+
+        // 6B. ANEXO DE IMÁGENES Y CAPTURAS DE ULTRASONIDO (US)
+        if (usImages.length > 0) {
+          doc.addPage();
+          yCoord = 20;
+
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(11);
+          doc.setTextColor(15, 23, 42); // slate 900
+          doc.text("ANEXO: IMÁGENES Y CAPTURAS DE ULTRASONIDO", marginX, yCoord);
+
+          yCoord += 4;
+          doc.setDrawColor(203, 213, 225); // slate 300
+          doc.setLineWidth(0.4);
+          doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
+          yCoord += 11;
+
+          const colWidth = (pageWidth - (marginX * 2) - 8) / 2;
+          const imgHeight = colWidth * 0.75;
+          
+          let currentCol = 0;
+          for (const imgItem of usImages) {
+            if (yCoord + imgHeight + 17 > pageHeight - 20) {
+              doc.addPage();
+              yCoord = 20;
+              currentCol = 0;
+              
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(9);
+              doc.setTextColor(100, 116, 139);
+              doc.text("ANEXO: CAPTURAS DE ULTRASONIDO (CONT...)", marginX, yCoord);
+              yCoord += 4;
+              doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
+              yCoord += 11;
+            }
+
+            const posX = marginX + currentCol * (colWidth + 8);
+            
+            try {
+              let format = "JPEG";
+              if (imgItem.base64.includes("image/png")) format = "PNG";
+              else if (imgItem.base64.includes("image/gif")) format = "GIF";
+              else if (imgItem.base64.includes("image/webp")) format = "WEBP";
+
+              let drawW = colWidth;
+              let drawH = imgHeight;
+              let drawX = posX;
+              let drawY = yCoord;
+
+              if (imgItem.width && imgItem.height) {
+                const aspectImg = imgItem.width / imgItem.height;
+                const aspectBox = colWidth / imgHeight;
+                if (aspectImg > aspectBox) {
+                  drawW = colWidth;
+                  drawH = colWidth / aspectImg;
+                  drawY = yCoord + (imgHeight - drawH) / 2;
+                } else {
+                  drawH = imgHeight;
+                  drawW = imgHeight * aspectImg;
+                  drawX = posX + (colWidth - drawW) / 2;
+                }
+              }
+
+              doc.addImage(imgItem.base64, format, drawX, drawY, drawW, drawH);
+
+              doc.setDrawColor(241, 245, 249);
+              doc.setLineWidth(0.25);
+              doc.rect(posX, yCoord, colWidth, imgHeight);
+
+              // Print Figure label with continuous globalFigIdx
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(8.5);
+              doc.setTextColor(15, 23, 42);
+              doc.text(`Figura ${globalFigIdx}.`, posX, yCoord + imgHeight + 4.5);
+
+              const captionText = imgItem.caption || "Sin descripción";
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(8.0);
+              doc.setTextColor(71, 85, 105);
+              const textLines = doc.splitTextToSize(captionText, colWidth - 2);
+              let offsetTextY = yCoord + imgHeight + 8.0;
+              textLines.forEach((lineText: string) => {
+                doc.text(lineText, posX, offsetTextY);
+                offsetTextY += 3.5;
+              });
+
+            } catch (imgErr) {
+              console.error("Could not append attached US image in jsPDF: ", imgErr);
+              doc.setDrawColor(226, 232, 240);
+              doc.rect(posX, yCoord, colWidth, imgHeight);
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(8);
+              doc.setTextColor(148, 163, 184);
+              doc.text("No se pudo renderizar la imagen", posX + 5, yCoord + (imgHeight/2));
+            }
+
+            if (currentCol === 0) {
+              currentCol = 1;
+            } else {
+              currentCol = 0;
+              yCoord += imgHeight + 20;
+            }
+            globalFigIdx++;
+          }
+        }
+      }
+
+      // --- 7. DIAGNÓSTICO AVANZADO Y ANÁLISIS DEL CASO ---
+      if (caseAnalysisBlocks.length > 0) {
         doc.addPage();
         yCoord = 20;
 
+        // Title of Annex
         doc.setFont("helvetica", "bold");
-        doc.setFontSize(11);
-        doc.setTextColor(15, 23, 42); // slate 900
-        doc.text("ANEXO: IMÁGENES Y CAPTURAS DE ULTRASONIDO", marginX, yCoord);
-
-        // Simple divider
-        yCoord += 4;
-        doc.setDrawColor(203, 213, 225); // slate 300
+        doc.setFontSize(12 * factor);
+        doc.setTextColor(15, 23, 42); // slate-900
+        doc.text("ANEXO: DIAGNÓSTICO AVANZADO Y ANÁLISIS DEL CASO", marginX, yCoord);
+        yCoord += 4 * factor;
+        doc.setDrawColor(203, 213, 225);
         doc.setLineWidth(0.4);
         doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
-        yCoord += 11;
+        yCoord += 10 * factor;
 
-        // Arrange images in a beautiful 2-column grid:
-        const colWidth = (pageWidth - (marginX * 2) - 8) / 2; // 81mm each column
-        const imgHeight = colWidth * 0.75; // Maintain aspect ratio of 4:3
-        
-        let currentCol = 0; // 0 or 1
-        let imgIdx = 1;
-        for (const imgItem of attachedImages) {
-          if (yCoord + imgHeight + 17 > pageHeight - 20) {
-            doc.addPage();
-            yCoord = 20;
-            currentCol = 0;
-            
-            doc.setFont("helvetica", "bold");
-            doc.setFontSize(9);
-            doc.setTextColor(100, 116, 139);
-            doc.text("ANEXO: CAPTURAS DE ULTRASONIDO (CONT...)", marginX, yCoord);
-            yCoord += 4;
-            doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
-            yCoord += 11;
+        // Resolve active theme palette to match the rest of the report (no "embedded/foreign" look)
+        let activeThemeBg = [248, 250, 252]; // default slate-50
+        let activeThemeHeaderBg = [15, 23, 42]; // default slate-900
+        let activeThemeBorder = [203, 213, 225]; // default slate-300
+        let activeThemeAccent = [79, 70, 229]; // default Indigo
+        let activeThemeTextDark = [15, 23, 42]; // slate-900
+        let activeThemeTextMuted = [71, 85, 105]; // slate-600
+
+        // Determine card styles based on pdfLayoutType to be cohesive with the rest of the report
+        let cardsStyle = {
+          sonographic: { border: [79, 70, 229], bg: [245, 247, 255] },
+          clinical: { border: [16, 185, 129], bg: [240, 253, 244] },
+          differentials: { border: [217, 119, 6], bg: [254, 252, 232] },
+          management: { border: [147, 51, 234], bg: [250, 245, 255] }
+        };
+
+        let pillar1Color = [79, 70, 229];
+        let pillar2Color = [16, 185, 129];
+        let pillar3Color = [217, 119, 6];
+        let pillar4Color = [147, 51, 234];
+
+        if (pdfLayoutType === "clinical_slate") {
+          activeThemeBg = [241, 245, 249]; // slate-100
+          activeThemeHeaderBg = [71, 85, 105]; // slate-600
+          activeThemeBorder = [148, 163, 184]; // slate-400
+          activeThemeAccent = [100, 116, 139]; // slate-500
+          activeThemeTextDark = [15, 23, 42];
+          activeThemeTextMuted = [100, 116, 139];
+
+          cardsStyle = {
+            sonographic: { border: [71, 85, 105], bg: [241, 245, 249] },
+            clinical: { border: [100, 116, 139], bg: [248, 250, 252] },
+            differentials: { border: [148, 163, 184], bg: [241, 245, 249] },
+            management: { border: [71, 85, 105], bg: [248, 250, 252] }
+          };
+
+          pillar1Color = [71, 85, 105];
+          pillar2Color = [100, 116, 139];
+          pillar3Color = [148, 163, 184];
+          pillar4Color = [71, 85, 105];
+        } else if (pdfLayoutType === "executive_medical") {
+          activeThemeBg = [253, 251, 247]; // cream-white
+          activeThemeHeaderBg = [141, 110, 50]; // metallic bronze-gold
+          activeThemeBorder = [220, 201, 159]; // golden-cream border
+          activeThemeAccent = [141, 110, 50]; // Bronze
+          activeThemeTextDark = [15, 23, 42];
+          activeThemeTextMuted = [141, 110, 50];
+
+          cardsStyle = {
+            sonographic: { border: [141, 110, 50], bg: [253, 251, 247] },
+            clinical: { border: [197, 160, 89], bg: [254, 253, 250] },
+            differentials: { border: [141, 110, 50], bg: [253, 251, 247] },
+            management: { border: [197, 160, 89], bg: [254, 253, 250] }
+          };
+
+          pillar1Color = [141, 110, 50];
+          pillar2Color = [197, 160, 89];
+          pillar3Color = [141, 110, 50];
+          pillar4Color = [197, 160, 89];
+        } else if (pdfLayoutType === "asymmetric") {
+          activeThemeBg = [249, 250, 254]; // Soft blue-indigo
+          activeThemeHeaderBg = [79, 70, 229]; // Indigo
+          activeThemeBorder = [165, 180, 252]; // Indigo-300
+          activeThemeAccent = [79, 70, 229]; // Indigo
+          activeThemeTextDark = [15, 23, 42];
+          activeThemeTextMuted = [99, 102, 241];
+
+          cardsStyle = {
+            sonographic: { border: [79, 70, 229], bg: [249, 250, 254] },
+            clinical: { border: [129, 140, 248], bg: [245, 247, 255] },
+            differentials: { border: [79, 70, 229], bg: [249, 250, 254] },
+            management: { border: [129, 140, 248], bg: [245, 247, 255] }
+          };
+
+          pillar1Color = [79, 70, 229];
+          pillar2Color = [129, 140, 248];
+          pillar3Color = [79, 70, 229];
+          pillar4Color = [129, 140, 248];
+        }
+
+        caseAnalysisBlocks.forEach((caseData, blockIdx) => {
+          // If we are on a subsequent block, let's put a page break or a nice spacing
+          if (blockIdx > 0) {
+            checkPageBreak(85 * factor); // require generous space, otherwise break page
           }
 
-          const posX = marginX + currentCol * (colWidth + 8);
-          
-          try {
-            let format = "JPEG";
-            if (imgItem.base64.includes("image/png")) format = "PNG";
-            else if (imgItem.base64.includes("image/gif")) format = "GIF";
-            else if (imgItem.base64.includes("image/webp")) format = "WEBP";
+          const cfg = caseData.elementsConfig || {
+            includeSonographic: true,
+            includeSonographicDetails: true,
+            includeClinicalCorr: true,
+            includeCertainty: true,
+            includeDifferentials: true,
+            includeDiscardedDifferentials: true,
+            includeManagement: true,
+          };
 
-            let drawW = colWidth;
-            let drawH = imgHeight;
-            let drawX = posX;
-            let drawY = yCoord;
+          let formatTitle = caseData.title || "ANÁLISIS DEL CASO";
+          if (!caseData.title) {
+            if (caseData.format === "flujograma_semiologico") {
+              formatTitle = "FLUJOGRAMA SEMIOLÓGICO";
+            } else if (caseData.format === "flujograma_algoritmico") {
+              formatTitle = "FLUJOGRAMA ALGORÍTMICO / ÁRBOL DE DECISIÓN";
+            } else if (caseData.format === "esquema_pilares") {
+              formatTitle = "ESQUEMA INTEGRADOR POR PILARES";
+            } else if (caseData.format === "mapa_diferenciales") {
+              formatTitle = "MAPA DE DIAGNÓSTICOS DIFERENCIALES";
+            } else if (caseData.format === "matriz_semiotica") {
+              formatTitle = "MATRIZ SEMIÓTICA COMPARATIVA";
+            }
+          }
 
-            if (imgItem.width && imgItem.height) {
-              const aspectImg = imgItem.width / imgItem.height;
-              const aspectBox = colWidth / imgHeight;
-              if (aspectImg > aspectBox) {
-                // Image is wider than box -> Fit to width
-                drawW = colWidth;
-                drawH = colWidth / aspectImg;
-                drawY = yCoord + (imgHeight - drawH) / 2;
+          // Header title bar of the format
+          checkPageBreak(25 * factor);
+          doc.setFillColor(activeThemeHeaderBg[0], activeThemeHeaderBg[1], activeThemeHeaderBg[2]);
+          doc.roundedRect(marginX, yCoord, contentWidth, 11 * factor, 1.8, 1.8, "F");
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(10.5 * factor); // Spacious, readable font size in appendix
+          doc.setTextColor(255, 255, 255);
+          doc.text(formatTitle, marginX + 5 * factor, yCoord + 7 * factor);
+
+          yCoord += 16 * factor;
+
+          // --- FORMAT 1: FLUJOGRAMA SEMIOLÓGICO ---
+          if (caseData.format === "flujograma_semiologico") {
+            const semiologyStepsToDraw: Array<{
+              title: string;
+              subtitle: string;
+              content: string;
+              bullets?: string[];
+              accentColor: number[];
+              bgColor: number[];
+            }> = [];
+
+            if (cfg.includeSonographic && caseData.sonographicPillar) {
+              semiologyStepsToDraw.push({
+                title: "HALLAZGO ECOGRÁFICO PRINCIPAL",
+                subtitle: "Punto de Partida Semiológico",
+                content: cleanTextForJSPDF(caseData.sonographicPillar.primaryFinding),
+                bullets: (cfg.includeSonographicDetails !== false && caseData.sonographicPillar.details) ? caseData.sonographicPillar.details.map(cleanTextForJSPDF) : undefined,
+                accentColor: cardsStyle.sonographic.border,
+                bgColor: cardsStyle.sonographic.bg
+              });
+            }
+
+            if (cfg.includeClinicalCorr && caseData.clinicalCorrelation) {
+              semiologyStepsToDraw.push({
+                title: "INTEGRACIÓN CLÍNICO-ANATÓMICA",
+                subtitle: "Correlación de Síntomas y Laboratorio",
+                content: cleanTextForJSPDF(caseData.clinicalCorrelation),
+                accentColor: cardsStyle.clinical.border,
+                bgColor: cardsStyle.clinical.bg
+              });
+            }
+
+            const primaryDiag = caseData.diagnostics && caseData.diagnostics.length > 0 ? caseData.diagnostics[0] : null;
+            const discardedDifferentials = caseData.diagnostics
+              ?.filter(d => d.refutingCriteria && d !== primaryDiag && (!primaryDiag || d.name.toLowerCase() !== primaryDiag.name.toLowerCase()))
+              .map(d => cleanTextForJSPDF(`${d.name}: ${d.refutingCriteria}`)) || [];
+
+            const showDiscarded = cfg.includeDiscardedDifferentials !== false && cfg.includeDifferentials;
+            if (showDiscarded && discardedDifferentials.length > 0) {
+              semiologyStepsToDraw.push({
+                title: "CRITERIOS DESCARTADOS Y EXCLUSIONES",
+                subtitle: "Diferenciales Desestimados",
+                content: "Criterios que permitieron descartar otras sospechas clínicas:",
+                bullets: discardedDifferentials,
+                accentColor: [185, 28, 28], // Red/Rose tone
+                bgColor: [254, 242, 242] // Light Rose bg
+              });
+            }
+
+            if (cfg.includeDifferentials && caseData.diagnostics && caseData.diagnostics.length > 0) {
+              const primaryDiag = caseData.diagnostics[0];
+              let conclusionText = cleanTextForJSPDF(primaryDiag.name);
+              const bulletsArr: string[] = [];
+              if (primaryDiag.supportingCriteria) {
+                bulletsArr.push(cleanTextForJSPDF(`Soporte: ${primaryDiag.supportingCriteria}`));
+              }
+              if (cfg.includeManagement && caseData.managementRecommendation) {
+                bulletsArr.push(cleanTextForJSPDF(`Manejo sugerido: ${caseData.managementRecommendation}`));
+              }
+
+              semiologyStepsToDraw.push({
+                title: "DIAGNÓSTICO PRESUNTIVO DEFINITIVO",
+                subtitle: "Conclusión del Juicio Radiológico",
+                content: conclusionText,
+                bullets: bulletsArr,
+                accentColor: cardsStyle.differentials.border,
+                bgColor: cardsStyle.differentials.bg
+              });
+            }
+
+            semiologyStepsToDraw.forEach((step, idx) => {
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(9.5 * factor);
+              const wrappedContent = doc.splitTextToSize(cleanTextForJSPDF(step.content), contentWidth - 12 * factor);
+              let cardHeight = 14 * factor + (wrappedContent.length * 4.6 * factor); // generous vertical spacing
+
+              let wrappedBullets: string[][] = [];
+              if (step.bullets && step.bullets.length > 0) {
+                doc.setFont("helvetica", "normal");
+                doc.setFontSize(9 * factor);
+                step.bullets.forEach(b => {
+                  const lines = doc.splitTextToSize(`- ${cleanTextForJSPDF(b)}`, contentWidth - 18 * factor);
+                  wrappedBullets.push(lines);
+                  cardHeight += lines.length * 4.2 * factor;
+                });
+              }
+              cardHeight += 3.5 * factor; // Bottom padding
+
+              checkPageBreak(cardHeight + (idx < semiologyStepsToDraw.length - 1 ? 6 * factor : 0));
+
+              // Background card
+              doc.setFillColor(step.bgColor[0], step.bgColor[1], step.bgColor[2]);
+              doc.roundedRect(marginX, yCoord, contentWidth, cardHeight, 1.5, 1.5, "F");
+
+              // Left accent border (thick for step)
+              doc.setFillColor(step.accentColor[0], step.accentColor[1], step.accentColor[2]);
+              doc.rect(marginX, yCoord, 2.5 * factor, cardHeight, "F");
+
+              // Header and Subtitle
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(9 * factor); // Spacious, readable
+              doc.setTextColor(step.accentColor[0], step.accentColor[1], step.accentColor[2]);
+              doc.text(`${idx + 1}. ${step.title}`, marginX + 5 * factor, yCoord + 5.5 * factor);
+
+              doc.setFont("helvetica", "oblique");
+              doc.setFontSize(8 * factor); // Spacious, readable
+              doc.setTextColor(100, 116, 139);
+              doc.text(step.subtitle, marginX + 5 * factor, yCoord + 9 * factor);
+
+              let textY = yCoord + 14 * factor;
+
+              // Main Content text
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(9.5 * factor); // Spacious, readable (increased from 8)
+              doc.setTextColor(30, 41, 59);
+              wrappedContent.forEach((line: string) => {
+                doc.text(line, marginX + 5 * factor, textY);
+                textY += 4.6 * factor;
+              });
+
+              // Bullets if any
+              if (step.bullets && step.bullets.length > 0) {
+                doc.setFont("helvetica", "normal");
+                doc.setFontSize(9 * factor); // Spacious, readable (increased from 7.5)
+                doc.setTextColor(71, 85, 105);
+                wrappedBullets.forEach(lines => {
+                  lines.forEach((line: string) => {
+                    doc.text(line, marginX + 7 * factor, textY);
+                    textY += 4.2 * factor;
+                  });
+                });
+              }
+
+              yCoord += cardHeight;
+
+              // Draw dashed connecting line between steps
+              if (idx < semiologyStepsToDraw.length - 1) {
+                const arrowY = yCoord;
+                doc.setDrawColor(step.accentColor[0], step.accentColor[1], step.accentColor[2]);
+                doc.setLineWidth(0.5 * factor);
+                doc.line(marginX + contentWidth / 2, arrowY, marginX + contentWidth / 2, arrowY + 5 * factor);
+                
+                // Draw a small downwards arrowhead
+                doc.line(marginX + contentWidth / 2 - 1.5 * factor, arrowY + 3.8 * factor, marginX + contentWidth / 2, arrowY + 5 * factor);
+                doc.line(marginX + contentWidth / 2 + 1.5 * factor, arrowY + 3.8 * factor, marginX + contentWidth / 2, arrowY + 5 * factor);
+
+                yCoord += 5 * factor;
+              }
+            });
+
+            yCoord += 6 * factor;
+          }
+
+          // --- FORMAT 2: FLUJOGRAMA ALGORÍTMICO ---
+          else if (caseData.format === "flujograma_algoritmico") {
+            const steps = caseData.decisionFlow || [
+              ...(cfg.includeSonographic && caseData.sonographicPillar ? [{ title: "Punto de Partida Sonográfico", desc: caseData.sonographicPillar.primaryFinding }] : []),
+              ...(cfg.includeClinicalCorr && caseData.clinicalCorrelation ? [{ title: "Integración Clínico-Laboratorial", desc: caseData.clinicalCorrelation }] : []),
+              ...(cfg.includeDifferentials && caseData.diagnostics && caseData.diagnostics.length > 0 ? [{ title: "Conclusión Diagnóstica", desc: `Diagnóstico principal: ${caseData.diagnostics[0].name}.` }] : []),
+              ...(cfg.includeManagement && caseData.managementRecommendation ? [{ title: "Conducta y Manejo Sugerido", desc: caseData.managementRecommendation }] : []),
+            ];
+
+            steps.forEach((st, idx) => {
+              const stepNum = idx + 1;
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(9.5 * factor);
+              const wrappedDesc = doc.splitTextToSize(st.desc, contentWidth - 22 * factor);
+              const boxHeight = (9 * factor) + (wrappedDesc.length * 4.6 * factor);
+
+              checkPageBreak(boxHeight + (idx < steps.length - 1 ? 8 * factor : 0));
+
+              // Draw background box using activeThemeBg
+              doc.setFillColor(activeThemeBg[0], activeThemeBg[1], activeThemeBg[2]);
+              doc.setDrawColor(activeThemeBorder[0], activeThemeBorder[1], activeThemeBorder[2]);
+              doc.setLineWidth(0.3);
+              doc.roundedRect(marginX, yCoord, contentWidth, boxHeight, 1.5, 1.5, "FD");
+
+              // Step Number pill using activeThemeAccent
+              doc.setFillColor(activeThemeAccent[0], activeThemeAccent[1], activeThemeAccent[2]);
+              doc.roundedRect(marginX + 4 * factor, yCoord + 2.5 * factor, 7 * factor, 5 * factor, 0.8, 0.8, "F");
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(8.5 * factor);
+              doc.setTextColor(255, 255, 255);
+              doc.text(`${stepNum}`, marginX + 7.5 * factor, yCoord + 6.1 * factor, { align: "center" });
+
+              // Step Title
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(9 * factor); // Spacious, readable (increased from 8)
+              doc.setTextColor(activeThemeAccent[0], activeThemeAccent[1], activeThemeAccent[2]);
+              doc.text(st.title.toUpperCase(), marginX + 13 * factor, yCoord + 6 * factor);
+
+              // Description
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(9.5 * factor); // Spacious, readable (increased from 8.5)
+              doc.setTextColor(30, 41, 59);
+              let descY = yCoord + 11 * factor;
+              wrappedDesc.forEach((line: string) => {
+                doc.text(line, marginX + 5 * factor, descY);
+                descY += 4.6 * factor;
+              });
+
+              yCoord += boxHeight;
+
+              // Down arrow indicator
+              if (idx < steps.length - 1) {
+                yCoord += 2 * factor;
+                doc.setDrawColor(activeThemeAccent[0], activeThemeAccent[1], activeThemeAccent[2]);
+                doc.setLineWidth(0.5);
+                const midX = marginX + (contentWidth / 2);
+                doc.line(midX, yCoord, midX, yCoord + 6 * factor);
+                doc.line(midX, yCoord + 6 * factor, midX - 1.5 * factor, yCoord + 4.5 * factor);
+                doc.line(midX, yCoord + 6 * factor, midX + 1.5 * factor, yCoord + 4.5 * factor);
+                
+                yCoord += 7 * factor;
               } else {
-                // Image is taller than box -> Fit to height
-                drawH = imgHeight;
-                drawW = imgHeight * aspectImg;
-                drawX = posX + (colWidth - drawW) / 2;
+                yCoord += 4 * factor;
+              }
+            });
+          }
+
+          // --- FORMAT 3: ESQUEMA INTEGRADOR POR PILARES ---
+          else if (caseData.format === "esquema_pilares") {
+            const pillars = [
+              {
+                title: "PILAR 1 — HALLAZGOS ECOGRÁFICOS",
+                content: caseData.sonographicPillar ? caseData.sonographicPillar.primaryFinding : "",
+                subContent: caseData.sonographicPillar?.details ? caseData.sonographicPillar.details.map(cleanTextForJSPDF).join(" - ") : "",
+                borderColor: pillar1Color,
+                included: cfg.includeSonographic && !!caseData.sonographicPillar
+              },
+              {
+                title: "PILAR 2 — CORRELACIÓN CLÍNICO-LAB",
+                content: caseData.clinicalCorrelation || "Sin datos de laboratorio o clínica adicionales.",
+                subContent: "",
+                borderColor: pillar2Color,
+                included: cfg.includeClinicalCorr
+              },
+              {
+                title: "PILAR 3 — CONCLUSIÓN & DIAGNÓSTICO",
+                content: caseData.diagnostics && caseData.diagnostics.length > 0 
+                  ? `Diag. Principal: ${caseData.diagnostics[0].name}` 
+                  : "Diagnóstico diferencial sustentado.",
+                subContent: "",
+                borderColor: pillar3Color,
+                included: cfg.includeDifferentials
+              },
+              {
+                title: "PILAR 4 — CONDUCTA Y MANEJO",
+                content: caseData.managementRecommendation || "Seguimiento ecográfico según evolución clínica.",
+                subContent: "",
+                borderColor: pillar4Color,
+                included: cfg.includeManagement
+              }
+            ].filter(p => p.included);
+
+            pillars.forEach(p => {
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(9.5 * factor);
+              const wrappedContent = doc.splitTextToSize(p.content, contentWidth - 10 * factor);
+              
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(8.5 * factor);
+              const wrappedSub = p.subContent ? doc.splitTextToSize(p.subContent, contentWidth - 10 * factor) : [];
+              
+              const cardHeight = (10 * factor) + (wrappedContent.length * 4.8 * factor) + (wrappedSub.length > 0 ? (wrappedSub.length * 4.2 * factor) + 1.5 * factor : 0);
+
+              checkPageBreak(cardHeight + 10 * factor);
+
+              // Draw card background
+              doc.setFillColor(activeThemeBg[0], activeThemeBg[1], activeThemeBg[2]);
+              doc.setDrawColor(activeThemeBorder[0], activeThemeBorder[1], activeThemeBorder[2]);
+              doc.setLineWidth(0.25);
+              doc.roundedRect(marginX, yCoord, contentWidth, cardHeight, 1.5, 1.5, "FD");
+
+              // Thick top border color
+              doc.setDrawColor(p.borderColor[0], p.borderColor[1], p.borderColor[2]);
+              doc.setLineWidth(1.2 * factor);
+              doc.line(marginX, yCoord + 0.6 * factor, marginX + contentWidth, yCoord + 0.6 * factor);
+
+              // Header title
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(8.5 * factor); // Spacious, readable (increased from 7.5)
+              doc.setTextColor(p.borderColor[0], p.borderColor[1], p.borderColor[2]);
+              doc.text(p.title, marginX + 5 * factor, yCoord + 5.5 * factor);
+
+              let textY = yCoord + 10.5 * factor;
+
+              // Main content
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(9.5 * factor); // Spacious, readable (increased from 8.5)
+              doc.setTextColor(15, 23, 42);
+              wrappedContent.forEach((line: string) => {
+                doc.text(line, marginX + 5 * factor, textY);
+                textY += 4.8 * factor;
+              });
+
+              // Subcontent details
+              if (wrappedSub.length > 0) {
+                textY += 1.5 * factor;
+                doc.setFont("helvetica", "normal");
+                doc.setFontSize(8.5 * factor); // Spacious, readable (increased from 7.5)
+                doc.setTextColor(100, 116, 139);
+                wrappedSub.forEach((line: string) => {
+                  doc.text(line, marginX + 5 * factor, textY);
+                  textY += 4.2 * factor;
+                });
+              }
+
+              yCoord += cardHeight + 4.5 * factor;
+            });
+          }
+
+          // --- FORMAT 4: MAPA DE DIAGNÓSTICOS DIFERENCIALES ---
+          else if (caseData.format === "mapa_diferenciales") {
+            if (cfg.includeSonographic && caseData.sonographicPillar) {
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(9.5 * factor);
+              const wrappedPillar = doc.splitTextToSize(caseData.sonographicPillar.primaryFinding, contentWidth - 40 * factor);
+              const pillarHeight = 10 * factor + (wrappedPillar.length * 4.6 * factor);
+              checkPageBreak(pillarHeight + 12 * factor);
+              
+              // Draw background
+              doc.setFillColor(activeThemeBg[0], activeThemeBg[1], activeThemeBg[2]);
+              doc.setDrawColor(activeThemeBorder[0], activeThemeBorder[1], activeThemeBorder[2]);
+              doc.setLineWidth(0.25);
+              doc.roundedRect(marginX + 15 * factor, yCoord, contentWidth - 30 * factor, pillarHeight, 1.5, 1.5, "FD");
+
+              // Left marker line
+              doc.setFillColor(activeThemeAccent[0], activeThemeAccent[1], activeThemeAccent[2]);
+              doc.rect(marginX + 15 * factor, yCoord, 1.5 * factor, pillarHeight, "F");
+
+              // Title label
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(8 * factor); // Spacious, readable (increased from 7)
+              doc.setTextColor(activeThemeAccent[0], activeThemeAccent[1], activeThemeAccent[2]);
+              doc.text("HALLAZGO SONOGRÁFICO PRIMARIO", marginX + 19 * factor, yCoord + 5 * factor);
+
+              // Text content
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(9.5 * factor); // Spacious, readable (increased from 8)
+              doc.setTextColor(30, 41, 59);
+              let tempY = yCoord + 10 * factor;
+              wrappedPillar.forEach((line: string) => {
+                doc.text(line, marginX + 19 * factor, tempY);
+                tempY += 4.6 * factor;
+              });
+
+              yCoord += pillarHeight + 2 * factor;
+
+              // Draw visual radiating line
+              doc.setDrawColor(activeThemeAccent[0], activeThemeAccent[1], activeThemeAccent[2]);
+              doc.setLineWidth(0.4);
+              doc.line(marginX + contentWidth / 2, yCoord, marginX + contentWidth / 2, yCoord + 5 * factor);
+              yCoord += 6 * factor;
+            }
+
+            if (caseData.diagnostics && caseData.diagnostics.length > 0) {
+              caseData.diagnostics.forEach((diag, idx) => {
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(9.5 * factor);
+                const wrappedName = doc.splitTextToSize(diag.name, contentWidth - 30 * factor);
+                const nameLinesCount = wrappedName.length;
+
+                let cardHeight = 11 * factor + (nameLinesCount > 1 ? (nameLinesCount - 1) * 4.6 * factor : 0);
+                
+                doc.setFont("helvetica", "normal");
+                doc.setFontSize(9 * factor);
+                const wrappedSup = diag.supportingCriteria 
+                  ? doc.splitTextToSize(`- A favor (Sonográfico): ${cleanTextForJSPDF(diag.supportingCriteria)}`, contentWidth - 14 * factor)
+                  : [];
+                const wrappedRef = diag.refutingCriteria 
+                  ? doc.splitTextToSize(`- En contra / Ausente: ${cleanTextForJSPDF(diag.refutingCriteria)}`, contentWidth - 14 * factor)
+                  : [];
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(9 * factor);
+                const wrappedTest = (cfg.includeManagement && diag.confirmatoryTest) 
+                  ? doc.splitTextToSize(`- Test Confirmativo / Conducta: ${cleanTextForJSPDF(diag.confirmatoryTest)}`, contentWidth - 14 * factor)
+                  : [];
+
+                if (wrappedSup.length > 0) cardHeight += 2 * factor + (wrappedSup.length * 4.2 * factor);
+                if (wrappedRef.length > 0) cardHeight += 2 * factor + (wrappedRef.length * 4.2 * factor);
+                if (wrappedTest.length > 0) cardHeight += 2 * factor + (wrappedTest.length * 4.2 * factor);
+                
+                cardHeight += 3 * factor;
+
+                checkPageBreak(cardHeight + 5 * factor);
+
+                // Draw card background
+                doc.setFillColor(activeThemeBg[0], activeThemeBg[1], activeThemeBg[2]);
+                doc.setDrawColor(activeThemeBorder[0], activeThemeBorder[1], activeThemeBorder[2]);
+                doc.setLineWidth(0.25);
+                doc.roundedRect(marginX, yCoord, contentWidth, cardHeight, 1.5, 1.5, "FD");
+
+                // Left number indicator
+                doc.setFillColor(activeThemeAccent[0], activeThemeAccent[1], activeThemeAccent[2]);
+                doc.roundedRect(marginX + 4 * factor, yCoord + 2.5 * factor, 6 * factor, 5 * factor, 0.6, 0.6, "F");
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(8 * factor);
+                doc.setTextColor(255, 255, 255);
+                doc.text(`${idx + 1}`, marginX + 7 * factor, yCoord + 6 * factor, { align: "center" });
+
+                // Title
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(9.5 * factor); // Spacious, readable (increased from 8.5)
+                doc.setTextColor(15, 23, 42);
+                let titleY = yCoord + 6 * factor;
+                wrappedName.forEach((line: string) => {
+                  doc.text(line, marginX + 12 * factor, titleY);
+                  titleY += 4.6 * factor;
+                });
+
+                let textY = yCoord + 11 * factor + (nameLinesCount > 1 ? (nameLinesCount - 1) * 4.6 * factor : 0);
+
+                if (wrappedSup.length > 0) {
+                  doc.setFont("helvetica", "normal");
+                  doc.setFontSize(9 * factor); // Spacious, readable (increased from 7.5)
+                  doc.setTextColor(16, 120, 80);
+                  wrappedSup.forEach((line: string) => {
+                    doc.text(line, marginX + 7 * factor, textY);
+                    textY += 4.2 * factor;
+                  });
+                  textY += 2 * factor;
+                }
+
+                if (wrappedRef.length > 0) {
+                  doc.setFont("helvetica", "normal");
+                  doc.setFontSize(9 * factor); // Spacious, readable (increased from 7.5)
+                  doc.setTextColor(185, 28, 28);
+                  wrappedRef.forEach((line: string) => {
+                    doc.text(line, marginX + 7 * factor, textY);
+                    textY += 4.2 * factor;
+                  });
+                  textY += 2 * factor;
+                }
+
+                if (wrappedTest.length > 0) {
+                  doc.setFont("helvetica", "bold");
+                  doc.setFontSize(9 * factor); // Spacious, readable (increased from 7.5)
+                  doc.setTextColor(109, 40, 217);
+                  wrappedTest.forEach((line: string) => {
+                    doc.text(line, marginX + 7 * factor, textY);
+                    textY += 4.2 * factor;
+                  });
+                }
+
+                yCoord += cardHeight + 4.5 * factor;
+              });
+            }
+          }
+
+          // --- FORMAT 5: MATRIZ SEMIÓTICA COMPARATIVA ---
+          else if (caseData.format === "matriz_semiotica") {
+            const requestingSigns: string[] = [];
+            if (caseData.semioticMatrix?.requestingSigns && caseData.semioticMatrix.requestingSigns.length > 0) {
+              requestingSigns.push(...caseData.semioticMatrix.requestingSigns);
+            } else {
+              if (cfg.includeSonographic && caseData.sonographicPillar?.primaryFinding) {
+                requestingSigns.push(caseData.sonographicPillar.primaryFinding);
+              }
+              if (cfg.includeSonographicDetails !== false && caseData.sonographicPillar?.details) {
+                requestingSigns.push(...caseData.sonographicPillar.details);
               }
             }
 
-            doc.addImage(imgItem.base64, format, drawX, drawY, drawW, drawH);
+            const discardSigns: string[] = [];
+            if (caseData.semioticMatrix?.exclusiveSigns && caseData.semioticMatrix.exclusiveSigns.length > 0) {
+              discardSigns.push(...caseData.semioticMatrix.exclusiveSigns);
+            }
+            if (caseData.semioticMatrix?.discardCriteria && caseData.semioticMatrix.discardCriteria.length > 0) {
+              discardSigns.push(...caseData.semioticMatrix.discardCriteria);
+            }
+            if (discardSigns.length === 0 && caseData.diagnostics) {
+              const pDiag = caseData.diagnostics[0];
+              caseData.diagnostics.forEach(d => {
+                if (d.refutingCriteria && d !== pDiag && (!pDiag || d.name.toLowerCase() !== pDiag.name.toLowerCase())) {
+                  discardSigns.push(`[Exclusión ${d.name}] ${d.refutingCriteria}`);
+                }
+              });
+            }
 
-            doc.setDrawColor(241, 245, 249); // slate 50
-            doc.setLineWidth(0.25);
-            doc.rect(posX, yCoord, colWidth, imgHeight);
+            const colWidth = (contentWidth - 6 * factor) / 2; // more gap
 
-            // Print Figure label (e.g. "Figura 1.") in bold slate-900
-            doc.setFont("helvetica", "bold");
-            doc.setFontSize(8.5);
-            doc.setTextColor(15, 23, 42); // slate 900
-            doc.text(`Figura ${imgIdx}.`, posX, yCoord + imgHeight + 4.5);
-
-            // Print Caption below the figure title in normal slate-600
-            const captionText = imgItem.caption || "Sin descripción";
+            // Column 1: Signos Peticionantes (Inclusivos)
+            let reqHeight = 10 * factor;
+            const wrappedReqLines: string[][] = [];
             doc.setFont("helvetica", "normal");
-            doc.setFontSize(8.0);
-            doc.setTextColor(71, 85, 105); // slate 600
-            const textLines = doc.splitTextToSize(captionText, colWidth - 2);
-            let offsetTextY = yCoord + imgHeight + 8.0;
-            textLines.forEach((lineText: string) => {
-              doc.text(lineText, posX, offsetTextY);
-              offsetTextY += 3.5;
+            doc.setFontSize(9 * factor);
+            requestingSigns.forEach(s => {
+              const wrapped = doc.splitTextToSize(`- ${cleanTextForJSPDF(s)}`, colWidth - 10 * factor);
+              wrappedReqLines.push(wrapped);
+              reqHeight += (wrapped.length * 4.2 * factor) + 2.5 * factor;
             });
 
-          } catch (imgErr) {
-            console.error("Could not append attached image in jsPDF: ", imgErr);
-            doc.setDrawColor(226, 232, 240);
-            doc.rect(posX, yCoord, colWidth, imgHeight);
-            doc.setFont("helvetica", "italic");
-            doc.setFontSize(8);
-            doc.setTextColor(148, 163, 184);
-            doc.text("No se pudo renderizar la imagen", posX + 5, yCoord + (imgHeight/2));
+            // Column 2: Signos Exclusivos / Descarte
+            let discHeight = 10 * factor;
+            const wrappedDiscLines: string[][] = [];
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(9 * factor);
+            discardSigns.forEach(s => {
+              const wrapped = doc.splitTextToSize(`- ${cleanTextForJSPDF(s)}`, colWidth - 10 * factor);
+              wrappedDiscLines.push(wrapped);
+              discHeight += (wrapped.length * 4.2 * factor) + 2.5 * factor;
+            });
+
+            const matrixHeight = Math.max(reqHeight, discHeight, 25 * factor);
+            checkPageBreak(matrixHeight + 15 * factor);
+
+            // Column 1 Box (Emerald)
+            doc.setFillColor(240, 253, 244);
+            doc.setDrawColor(187, 247, 208);
+            doc.setLineWidth(0.25);
+            doc.roundedRect(marginX, yCoord, colWidth, matrixHeight, 1.5, 1.5, "FD");
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8 * factor);
+            doc.setTextColor(16, 120, 80);
+            doc.text("SIGNOS PETICIONANTES (A FAVOR)", marginX + 5 * factor, yCoord + 6 * factor);
+
+            let reqY = yCoord + 11 * factor;
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(9 * factor); // Spacious, readable (increased from 7)
+            doc.setTextColor(30, 41, 59);
+            wrappedReqLines.forEach(wrapped => {
+              wrapped.forEach((line: string) => {
+                doc.text(line, marginX + 5 * factor, reqY);
+                reqY += 4.2 * factor;
+              });
+              reqY += 1.5 * factor;
+            });
+
+            // Column 2 Box (Rose)
+            const col2X = marginX + colWidth + 6 * factor;
+            doc.setFillColor(255, 241, 242);
+            doc.setDrawColor(254, 205, 211);
+            doc.setLineWidth(0.25);
+            doc.roundedRect(col2X, yCoord, colWidth, matrixHeight, 1.5, 1.5, "FD");
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8 * factor);
+            doc.setTextColor(185, 28, 28);
+            doc.text("SIGNOS EXCLUSIVOS Y DESCARTE", col2X + 5 * factor, yCoord + 6 * factor);
+
+            let discY = yCoord + 11 * factor;
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(9 * factor); // Spacious, readable (increased from 7)
+            doc.setTextColor(30, 41, 59);
+            wrappedDiscLines.forEach(wrapped => {
+              wrapped.forEach((line: string) => {
+                doc.text(line, col2X + 5 * factor, discY);
+                discY += 4.2 * factor;
+              });
+              discY += 1.5 * factor;
+            });
+
+            yCoord += matrixHeight + 5 * factor;
+
+            // Bottom Synthesis Box
+            const showMgmt = cfg.includeManagement && !!caseData.managementRecommendation;
+            if (caseData.clinicalCorrelation || showMgmt) {
+              const wrappedCorr = caseData.clinicalCorrelation ? doc.splitTextToSize(`Correlación Clínica: ${caseData.clinicalCorrelation}`, contentWidth - 10 * factor) : [];
+              const wrappedMgmt = showMgmt ? doc.splitTextToSize(`Conducta y Manejo: ${caseData.managementRecommendation}`, contentWidth - 10 * factor) : [];
+              
+              let synthHeight = 9 * factor + (wrappedCorr.length * 4.2 * factor) + (wrappedMgmt.length * 4.2 * factor) + 5 * factor;
+              checkPageBreak(synthHeight + 5 * factor);
+
+              doc.setFillColor(248, 250, 252);
+              doc.setDrawColor(226, 232, 240);
+              doc.setLineWidth(0.25);
+              doc.roundedRect(marginX, yCoord, contentWidth, synthHeight, 1.5, 1.5, "FD");
+
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(8.5 * factor); // Spacious, readable (increased from 7.5)
+              doc.setTextColor(79, 70, 229);
+              doc.text("SÍNTESIS DIAGNÓSTICA Y BALANCE SEMIÓTICO", marginX + 5 * factor, yCoord + 6 * factor);
+
+              let synthY = yCoord + 11 * factor;
+              if (wrappedCorr.length > 0) {
+                doc.setFont("helvetica", "normal");
+                doc.setFontSize(9 * factor); // Spacious, readable (increased from 7)
+                doc.setTextColor(30, 41, 59);
+                wrappedCorr.forEach((line: string) => {
+                  doc.text(line, marginX + 5 * factor, synthY);
+                  synthY += 4.2 * factor;
+                });
+                synthY += 2 * factor;
+              }
+
+              if (wrappedMgmt.length > 0) {
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(9 * factor); // Spacious, readable (increased from 7)
+                doc.setTextColor(67, 56, 202);
+                wrappedMgmt.forEach((line: string) => {
+                  doc.text(line, marginX + 5 * factor, synthY);
+                  synthY += 4.2 * factor;
+                });
+              }
+
+              yCoord += synthHeight + 5 * factor;
+            }
           }
 
-          if (currentCol === 0) {
-            currentCol = 1;
-          } else {
-            currentCol = 0;
-            yCoord += imgHeight + 20; // vertical step
+          yCoord += 6 * factor;
+        });
+      }
+
+      // --- 8. DESGLOSE Y JUSTIFICACIÓN DE CLASIFICACIONES ---
+      if (classificationAnnexBlocks.length > 0) {
+        doc.addPage();
+        yCoord = 20;
+        isFirstBlock = true;
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(12 * factor);
+        doc.setTextColor(15, 23, 42);
+        doc.text("ANEXO: DESGLOSE Y JUSTIFICACIÓN DE CLASIFICACIONES RADIOLÓGICAS", marginX, yCoord);
+        yCoord += 4 * factor;
+        doc.setDrawColor(203, 213, 225);
+        doc.setLineWidth(0.4);
+        doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
+        yCoord += 10 * factor;
+
+        classificationAnnexBlocks.forEach((block) => {
+          renderSingleReportBlock(block);
+        });
+      }
+
+      // --- 8.5 ANEXO: RADAR BIOMECÁNICO E INFLAMATORIO (ANÁLISIS MULTIVECTOR 6D) ---
+      const radarDataToRender = getBiomechanicalRadarDataFromReport(
+        generatedReportLocal,
+        pdfStateRef.current.biomechanicalRadarData || biomechanicalRadarData
+      );
+
+      if (radarDataToRender && radarDataToRender.axes && radarDataToRender.axes.length > 0) {
+        doc.addPage();
+        yCoord = 21 * factor;
+
+        // Header Title (Positioned cleanly below global running header line at 14mm)
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11 * factor);
+        doc.setTextColor(15, 23, 42); // slate 900
+        const headerTitleText = isCholecystitisRadar(radarDataToRender)
+          ? "ANEXO: RADAR MULTIVECTORIAL DE COLECISTITIS AGUDA (ANÁLISIS 6D)"
+          : isHepaticRadar(radarDataToRender)
+          ? "ANEXO: RADAR MULTIVECTORIAL DE VALORACIÓN HEPÁTICA (ANÁLISIS 6D)"
+          : isKneeOaRadar(radarDataToRender)
+          ? "ANEXO: RADAR MULTIVECTORIAL DE ARTROSIS DE RODILLA (ANÁLISIS 6D)"
+          : isRotatorCuffRadar(radarDataToRender)
+          ? "ANEXO: RADAR MULTIVECTORIAL DE MANGUITO ROTADOR (ANÁLISIS 6D)"
+          : isOncologyRadar(radarDataToRender)
+          ? "ANEXO: RADAR MULTIVECTORIAL ONCOLÓGICO Y TUMORAL (ANÁLISIS 6D)"
+          : isVisceralRadar(radarDataToRender)
+          ? "ANEXO: RADAR MULTIVECTORIAL Y VISCERO-INFLAMATORIO (ANÁLISIS 6D)"
+          : "ANEXO: RADAR BIOMECÁNICO E INFLAMATORIO (ANÁLISIS MULTIVECTOR 6D)";
+        doc.text(headerTitleText, marginX, yCoord);
+
+        yCoord += 4 * factor;
+        doc.setDrawColor(203, 213, 225); // slate 300
+        doc.setLineWidth(0.4);
+        doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
+        yCoord += 7 * factor;
+
+        // Spider Chart Geometry Parameters (Optimized scale and safety margin to guarantee zero overlaps with right panel)
+        const chartCenterX = marginX + 37 * factor;
+        const chartCenterY = yCoord + 35 * factor;
+        const maxR = 21 * factor;
+        const numAxes = radarDataToRender.axes.length;
+
+        const getRadarPt = (axisIdx: number, valScore: number) => {
+          const angle = (Math.PI * 2 / numAxes) * axisIdx - Math.PI / 2;
+          const r = (valScore / 10) * maxR;
+          return {
+            x: chartCenterX + r * Math.cos(angle),
+            y: chartCenterY + r * Math.sin(angle),
+            angle
+          };
+        };
+
+        // 1. Concentric Regular Hexagons (scale levels 0.2, 0.4, 0.6, 0.8, 1.0)
+        doc.setDrawColor(226, 232, 240); // slate 200
+        doc.setLineWidth(0.35);
+        [0.2, 0.4, 0.6, 0.8, 1.0].forEach((scale) => {
+          const points: [number, number][] = [];
+          for (let i = 0; i < numAxes; i++) {
+            const pt = getRadarPt(i, scale * 10);
+            points.push([pt.x, pt.y]);
           }
-          imgIdx++;
+          for (let i = 0; i < numAxes; i++) {
+            const p1 = points[i];
+            const p2 = points[(i + 1) % numAxes];
+            doc.line(p1[0], p1[1], p2[0], p2[1]);
+          }
+        });
+
+        // 2. Radial Axis Lines & Outer Labels
+        const rightX = marginX + 94 * factor;
+        const rightWidth = contentWidth - 94 * factor; // 86mm width
+        const rightBoundary = rightX - 3.0 * factor; // Hard boundary limit for spider chart labels
+
+        doc.setDrawColor(148, 163, 184); // slate 400
+        doc.setLineWidth(0.4);
+        radarDataToRender.axes.forEach((axis, i) => {
+          const endPt = getRadarPt(i, 10);
+          doc.line(chartCenterX, chartCenterY, endPt.x, endPt.y);
+
+          const lblPt = getRadarPt(i, 11.0);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(7.0 * factor);
+          doc.setTextColor(30, 41, 59); // slate 800
+
+          const cleanLabel = getShortRadarAxisLabel(axis.label);
+          let textAlign: "left" | "right" | "center" = "center";
+          let labelX = lblPt.x;
+          let labelY = lblPt.y;
+
+          const cosVal = Math.cos(lblPt.angle);
+          const sinVal = Math.sin(lblPt.angle);
+
+          if (cosVal > 0.25) {
+            textAlign = "left";
+            labelX += 1.5 * factor;
+          } else if (cosVal < -0.25) {
+            textAlign = "right";
+            labelX -= 1.5 * factor;
+          }
+
+          if (sinVal < -0.8) {
+            labelY -= 1.8 * factor;
+          } else if (sinVal > 0.8) {
+            labelY += 2.5 * factor;
+          } else {
+            labelY += 0.8 * factor;
+          }
+
+          const fullLabelStr = `${cleanLabel} (${axis.score}/10)`;
+          let textW = doc.getTextWidth(fullLabelStr);
+
+          if (textAlign === "left" && (labelX + textW > rightBoundary)) {
+            // Split onto two stacked lines to avoid right panel overlap
+            doc.setFontSize(6.8 * factor);
+            const line1W = doc.getTextWidth(cleanLabel);
+            if (labelX + line1W > rightBoundary) {
+              const maxAllowedW = Math.max(10 * factor, rightBoundary - labelX);
+              const wrappedLabel = doc.splitTextToSize(cleanLabel, maxAllowedW);
+              doc.text(wrappedLabel, labelX, labelY - 1.2 * factor, { align: "left" });
+            } else {
+              doc.text(cleanLabel, labelX, labelY - 1.2 * factor, { align: "left" });
+            }
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(6.5 * factor);
+            doc.setTextColor(79, 70, 229);
+            doc.text(`(${axis.score}/10)`, labelX, labelY + 2.2 * factor, { align: "left" });
+          } else {
+            doc.text(fullLabelStr, labelX, labelY, { align: textAlign });
+          }
+        });
+
+        // 3. Data Filled Polygon
+        const dataPts: [number, number][] = radarDataToRender.axes.map((a, i) => {
+          const pt = getRadarPt(i, a.score);
+          return [pt.x, pt.y];
+        });
+
+        doc.setFillColor(224, 231, 255); // indigo 100 fill
+        doc.setDrawColor(79, 70, 229);   // indigo 600 border
+        doc.setLineWidth(1.2);
+
+        if ((doc as any).polygon) {
+          (doc as any).polygon(dataPts, 'FD');
+        } else {
+          for (let i = 0; i < numAxes; i++) {
+            const p1 = dataPts[i];
+            const p2 = dataPts[(i + 1) % numAxes];
+            doc.line(p1[0], p1[1], p2[0], p2[1]);
+          }
+        }
+
+        // 4. Vertex Dots
+        dataPts.forEach(([vx, vy]) => {
+          doc.setFillColor(79, 70, 229);
+          doc.circle(vx, vy, 1.5 * factor, 'F');
+        });
+
+        // Spider Chart Footer Caption
+        doc.setFont("helvetica", "italic");
+        doc.setFontSize(7.5 * factor);
+        doc.setTextColor(100, 116, 139);
+        doc.text("Representación gráfica vectorial en araña (0-10)", chartCenterX, chartCenterY + maxR + 9 * factor, { align: "center" });
+
+        // RIGHT SIDE PANEL: Global Load Index & 6-Axis Matrix (Positioned cleanly at marginX + 94mm)
+        let rightY = yCoord;
+
+        // Global Load Index Card
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(7.8 * factor);
+        const cardMaxTextW = rightWidth - 8 * factor;
+        const domVecText = `Vector Dominante: ${radarDataToRender.dominantVector || "No especificado"}`;
+        const domVecLines = doc.splitTextToSize(domVecText, cardMaxTextW);
+        const finalDomVecLines = domVecLines.length > 2 
+          ? [domVecLines[0], domVecLines[1].substring(0, Math.max(0, domVecLines[1].length - 3)) + ".."]
+          : domVecLines;
+
+        const cardH = 23 * factor + (finalDomVecLines.length > 1 ? (finalDomVecLines.length - 1) * 4.0 * factor : 0);
+
+        doc.setFillColor(248, 250, 252);
+        doc.setDrawColor(226, 232, 240);
+        doc.setLineWidth(0.35);
+        doc.roundedRect(rightX, rightY, rightWidth, cardH, 1.5, 1.5, "FD");
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(7.2 * factor);
+        doc.setTextColor(79, 70, 229);
+        doc.text("CARGA TISULAR GLOBAL", rightX + 4 * factor, rightY + 6.0 * factor);
+
+        doc.setFontSize(14 * factor);
+        doc.setTextColor(15, 23, 42);
+        doc.text(`${radarDataToRender.globalScore} / 10.0`, rightX + 4 * factor, rightY + 14.0 * factor);
+
+        doc.setFontSize(7.2 * factor);
+        doc.setTextColor(225, 29, 72); // rose 600
+        doc.text(`Carga: ${(radarDataToRender.globalLoadIndex || "Moderada").toUpperCase()}`, rightX + rightWidth - 4 * factor, rightY + 6.0 * factor, { align: "right" });
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(7.8 * factor);
+        doc.setTextColor(71, 85, 105);
+        finalDomVecLines.forEach((line: string, lIdx: number) => {
+          doc.text(line, rightX + 4 * factor, rightY + 18.5 * factor + (lIdx * 4.0 * factor));
+        });
+
+        rightY += cardH + 5 * factor;
+
+        // Table of 6 Vectors (Compact: Only label and score badge)
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8.8 * factor);
+        doc.setTextColor(15, 23, 42);
+        doc.text("DESGLOSE MULTIVECTORIAL (6D)", rightX, rightY);
+        rightY += 5.2 * factor;
+
+        const colW = (rightWidth - 4 * factor) / 2;
+
+        radarDataToRender.axes.forEach((axis, idx) => {
+          const isSecondCol = idx % 2 === 1;
+          const cardX = isSecondCol ? rightX + colW + 4 * factor : rightX;
+          const cardY = rightY + Math.floor(idx / 2) * 8.5 * factor;
+
+          doc.setFillColor(255, 255, 255);
+          doc.setDrawColor(226, 232, 240);
+          doc.roundedRect(cardX, cardY, colW, 7.8 * factor, 1, 1, "FD");
+
+          doc.setFont("helvetica", "bold");
+          const displayLabel = getShortRadarAxisLabel(axis.label);
+          const maxLabelWidth = colW - 13 * factor;
+          
+          let labelFontSize = 7.5;
+          doc.setFontSize(labelFontSize * factor);
+          while (doc.getTextWidth(displayLabel) > maxLabelWidth && labelFontSize > 4.8) {
+            labelFontSize -= 0.2;
+            doc.setFontSize(labelFontSize * factor);
+          }
+
+          doc.setTextColor(30, 41, 59);
+          doc.text(displayLabel, cardX + 2.5 * factor, cardY + 5.2 * factor);
+
+          let levelColor = [16, 185, 129]; // emerald
+          if (axis.score >= 8) levelColor = [225, 29, 72]; // rose
+          else if (axis.score >= 6) levelColor = [217, 119, 6]; // amber
+          else if (axis.score >= 3) levelColor = [8, 145, 178]; // cyan
+
+          doc.setTextColor(levelColor[0], levelColor[1], levelColor[2]);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(7.8 * factor);
+          doc.text(`${axis.score}/10`, cardX + colW - 2.5 * factor, cardY + 5.2 * factor, { align: "right" });
+        });
+
+        rightY += Math.ceil(radarDataToRender.axes.length / 2) * 8.5 * factor + 4 * factor;
+        yCoord = Math.max(chartCenterY + maxR + 15 * factor, rightY);
+
+        // MIDDLE SECTION: DETALLE Y JUSTIFICACIÓN DE LOS VECTORES
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(10 * factor);
+        doc.setTextColor(15, 23, 42);
+        doc.text("DETALLE Y JUSTIFICACIÓN DE LOS VECTORES (HALLAZGOS Y SOBRECARGA)", marginX, yCoord);
+        yCoord += 6.5 * factor;
+
+        const detailColW = (contentWidth - 5 * factor) / 2;
+        const axesList = radarDataToRender.axes;
+
+        for (let i = 0; i < axesList.length; i += 2) {
+          const axisA = axesList[i];
+          const axisB = axesList[i + 1];
+
+          // Set font size BEFORE splitting text
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(8.0 * factor);
+
+          // Compute lines for axisA
+          const findingA = axisA.finding ? `Hallazgo: ${axisA.finding}` : "";
+          const justA = axisA.justification && axisA.justification !== axisA.finding ? `Justificación: ${axisA.justification}` : "";
+          const textA = [findingA, justA].filter(Boolean).join(" ");
+          const linesA = doc.splitTextToSize(textA, detailColW - 7 * factor);
+
+          let linesB: string[] = [];
+          if (axisB) {
+            const findingB = axisB.finding ? `Hallazgo: ${axisB.finding}` : "";
+            const justB = axisB.justification && axisB.justification !== axisB.finding ? `Justificación: ${axisB.justification}` : "";
+            const textB = [findingB, justB].filter(Boolean).join(" ");
+            linesB = doc.splitTextToSize(textB, detailColW - 7 * factor);
+          }
+
+          const maxLines = Math.max(linesA.length, linesB.length, 1);
+          const cardH = 9.0 * factor + (maxLines * 4.3 * factor) + 4.0 * factor;
+
+          // Render Card A
+          doc.setFillColor(250, 252, 255);
+          doc.setDrawColor(226, 232, 240);
+          doc.setLineWidth(0.3);
+          doc.roundedRect(marginX, yCoord, detailColW, cardH, 1.2, 1.2, "FD");
+
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8.5 * factor);
+
+          const levelStrA = `(${axisA.level})`;
+          const levelWidthA = doc.getTextWidth(levelStrA);
+          const maxTitleWidthA = detailColW - levelWidthA - 7 * factor;
+
+          doc.setTextColor(30, 41, 59);
+          const titleA = doc.splitTextToSize(`${i + 1}. ${axisA.label}`, maxTitleWidthA)[0];
+          doc.text(titleA, marginX + 3.5 * factor, yCoord + 6.0 * factor);
+
+          doc.setTextColor(79, 70, 229);
+          doc.text(levelStrA, marginX + detailColW - 3.5 * factor, yCoord + 6.0 * factor, { align: "right" });
+
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(8.0 * factor);
+          doc.setTextColor(51, 65, 85); // slate 700
+          let textY = yCoord + 10.5 * factor;
+          linesA.forEach((l: string) => {
+            doc.text(l, marginX + 3.5 * factor, textY);
+            textY += 4.3 * factor;
+          });
+
+          // Render Card B (if exists)
+          if (axisB) {
+            const cardBX = marginX + detailColW + 5 * factor;
+            doc.setFillColor(250, 252, 255);
+            doc.setDrawColor(226, 232, 240);
+            doc.setLineWidth(0.3);
+            doc.roundedRect(cardBX, yCoord, detailColW, cardH, 1.2, 1.2, "FD");
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8.5 * factor);
+
+            const levelStrB = `(${axisB.level})`;
+            const levelWidthB = doc.getTextWidth(levelStrB);
+            const maxTitleWidthB = detailColW - levelWidthB - 7 * factor;
+
+            doc.setTextColor(30, 41, 59);
+            const titleB = doc.splitTextToSize(`${i + 2}. ${axisB.label}`, maxTitleWidthB)[0];
+            doc.text(titleB, cardBX + 3.5 * factor, yCoord + 6.0 * factor);
+
+            doc.setTextColor(79, 70, 229);
+            doc.text(levelStrB, cardBX + detailColW - 3.5 * factor, yCoord + 6.0 * factor, { align: "right" });
+
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(8.0 * factor);
+            doc.setTextColor(51, 65, 85);
+            textY = yCoord + 10.5 * factor;
+            linesB.forEach((l: string) => {
+              doc.text(l, cardBX + 3.5 * factor, textY);
+              textY += 4.3 * factor;
+            });
+          }
+
+          yCoord += cardH + 4.0 * factor;
+        }
+
+        yCoord += 4 * factor;
+
+        // BOTTOM SECTION: SÍNTESIS BIOMECÁNICO-INFLAMATORIA FINAL
+        if (radarDataToRender.clinicalSummary) {
+          const innerPadding = 7 * factor;
+          const availableTextWidth = contentWidth - (innerPadding * 2);
+          const synthFontSize = 8.8 * factor;
+          const lineHeight = 4.6 * factor;
+
+          // Set EXACT font size BEFORE splitting text
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(synthFontSize);
+
+          const wrappedSynth = doc.splitTextToSize(radarDataToRender.clinicalSummary, availableTextWidth);
+          const boxH = 11 * factor + (wrappedSynth.length * lineHeight) + 4 * factor;
+
+          doc.setFillColor(248, 250, 252);
+          doc.setDrawColor(199, 210, 254); // indigo 200
+          doc.setLineWidth(0.4);
+          doc.roundedRect(marginX, yCoord, contentWidth, boxH, 1.5, 1.5, "FD");
+
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(9.8 * factor);
+          doc.setTextColor(79, 70, 229); // indigo 600
+          doc.text("SÍNTESIS BIOMECÁNICO-INFLAMATORIA FINAL", marginX + innerPadding, yCoord + 7.5 * factor);
+
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(synthFontSize);
+          doc.setTextColor(30, 41, 59);
+
+          let synthY = yCoord + 13.2 * factor;
+          wrappedSynth.forEach((line: string) => {
+            doc.text(line, marginX + innerPadding, synthY);
+            synthY += lineHeight;
+          });
+
+          yCoord += boxH + 4 * factor;
         }
       }
 
-      // --- APPEND PATIENT SUMMARY TO THE END OF PDF (IF SELECTED) ---
+      // --- 9. RESUMEN DEL PACIENTE (SI CORRESPONDE) ---
       if (attachSummaryToOfficialReport && patientSummary) {
         doc.addPage();
         yCoord = 20;
@@ -15315,7 +17327,7 @@ Ejemplo:
         }
       }
 
-      // --- APPEND Patient Infographic TO THE END OF PDF (IF SELECTED) ---
+      // --- 10. INFOGRAFÍA DEL PACIENTE (SI CORRESPONDE) ---
       if (attachInfographicToOfficialReport && infographicUrl) {
         try {
           let base64Image = infographicUrl;
@@ -16518,8 +18530,48 @@ Ejemplo:
     return clean.trim();
   };
 
+  const mergeCaseAnalysisBlock = (existingText: string, format: string, jsonBlock: string, textSummary: string): string => {
+    const markerStart = `[START_CASE_ANALYSIS:${format}]`;
+    const markerEnd = `[END_CASE_ANALYSIS:${format}]`;
+    const newBlock = `${markerStart}\n${jsonBlock}${textSummary}\n${markerEnd}`;
+
+    let cleanText = existingText || "";
+
+    // If there's an existing block with the exact same format, replace it
+    const startIdx = cleanText.indexOf(markerStart);
+    const endIdx = cleanText.indexOf(markerEnd);
+    if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+      const before = cleanText.substring(0, startIdx).trim();
+      const after = cleanText.substring(endIdx + markerEnd.length).trim();
+      return (before + "\n\n" + newBlock + "\n\n" + after).trim();
+    }
+
+    // Otherwise, if there is a legacy [CASE_ANALYSIS_JSON] block that does NOT have the START marker
+    // and has the same format, replace it.
+    if (!cleanText.includes("[START_CASE_ANALYSIS:")) {
+      const legacyIdx = cleanText.indexOf("[CASE_ANALYSIS_JSON]");
+      if (legacyIdx !== -1) {
+        const legacyMatch = cleanText.match(/\[CASE_ANALYSIS_JSON\]\s*([\s\S]*?)\s*\[\/CASE_ANALYSIS_JSON\]/);
+        if (legacyMatch && legacyMatch[1]) {
+          try {
+            const parsed = JSON.parse(legacyMatch[1]);
+            if (parsed.format === format) {
+              const cutText = cleanText.substring(0, legacyIdx).trim();
+              return (cutText + "\n\n" + newBlock).trim();
+            }
+          } catch (e) {
+            console.error("Error parsing legacy JSON:", e);
+          }
+        }
+      }
+    }
+
+    // If we didn't find the same format, just append it
+    return (cleanText.trim() + "\n\n" + newBlock).trim();
+  };
+
   interface ReportElement {
-    type: "text" | "heading" | "list" | "table" | "divider" | "code";
+    type: "text" | "heading" | "list" | "table" | "divider" | "code" | "case_analysis" | "page_break" | "space";
     id: string;
     level?: number;
     text?: string;
@@ -16527,12 +18579,50 @@ Ejemplo:
     items?: string[];
     headers?: string[];
     bodyRows?: string[][];
+    caseData?: CaseAnalysisData;
   }
 
   const parseReportToElements = (reportText: string, uniquePrefix: string): ReportElement[] => {
-    const clean = cleanRawClinicalText(reportText);
+    let textToParse = reportText || "";
+    const extractedCaseDatas: CaseAnalysisData[] = [];
+
+    // Find all blocks with [CASE_ANALYSIS_JSON]
+    const caseRegex = /\[CASE_ANALYSIS_JSON\]\s*([\s\S]*?)\s*\[\/CASE_ANALYSIS_JSON\]/g;
+    let match;
+    while ((match = caseRegex.exec(textToParse)) !== null) {
+      if (match[1]) {
+        try {
+          const parsed = JSON.parse(match[1]);
+          extractedCaseDatas.push(parsed);
+        } catch (e) {
+          console.error("Error parsing case data in parseReportToElements loop:", e);
+        }
+      }
+    }
+
+    // Now, strip the blocks and text summaries completely from the main clinical text
+    textToParse = textToParse.replace(/\[START_CASE_ANALYSIS:[\s\S]*?\[END_CASE_ANALYSIS:[^\]]+\]/gi, "");
+    
+    // Legacy stripping
+    textToParse = textToParse.replace(/\[CASE_ANALYSIS_JSON\]\s*[\s\S]*?\[\/CASE_ANALYSIS_JSON\]/g, "");
+    const summaryIdx = textToParse.indexOf("**ANÁLISIS INTEGRADO DE CASO");
+    if (summaryIdx !== -1) {
+      textToParse = textToParse.substring(0, summaryIdx).trim();
+    }
+    textToParse = textToParse.trim();
+
+    const clean = cleanRawClinicalText(textToParse);
     const lines = clean.split("\n");
     const elements: ReportElement[] = [];
+
+    // We push all extracted case analyses to the elements
+    extractedCaseDatas.forEach((caseData, idx) => {
+      elements.push({
+        type: "case_analysis",
+        id: `${uniquePrefix}-case-analysis-${idx}`,
+        caseData: caseData
+      });
+    });
 
     let currentTableLines: string[] = [];
     let currentListItems: string[] = [];
@@ -16667,6 +18757,22 @@ Ejemplo:
           });
           currentCodeLines = [];
         }
+        continue;
+      }
+
+      if (/^(?:\[(?:salto(?:_de_p[aá]gina)?|page_break|salto_pagina)\]|<pagebreak>)$/i.test(trimmed)) {
+        flushParagraph();
+        flushList();
+        flushTable();
+        elements.push({ type: "page_break", id: `${uniquePrefix}-pagebreak-${elements.length}` });
+        continue;
+      }
+
+      if (/^\[ESPACIO(?:_\d+MM)?\]$/i.test(trimmed)) {
+        flushParagraph();
+        flushList();
+        flushTable();
+        elements.push({ type: "space", id: `${uniquePrefix}-space-${elements.length}`, text: trimmed });
         continue;
       }
 
@@ -20257,6 +22363,451 @@ Ejemplo:
 
 
 
+const getBiomechanicalRadarDataFromReport = (text: string, stateData: any) => {
+  if (stateData && stateData.axes && stateData.axes.length >= 4) {
+    return stateData;
+  }
+  if (!text || (!text.includes("RADAR BIOMECÁNICO") && !text.includes("RADAR BIOMECANICO"))) return null;
+
+  try {
+    const lines = text.split("\n");
+    let globalScore = 0;
+    let globalLoadIndex = "Moderada";
+    let dominantVector = "Perfil Funcional Tisular";
+    let clinicalSummary = "";
+    const axes: any[] = [];
+
+    let inAxes = false;
+    let inSummary = false;
+
+    lines.forEach(line => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+
+      if (trimmed.includes("PUNTAJE GLOBAL DE CARGA TISULAR:")) {
+        const match = trimmed.match(/(\d+(?:\.\d+)?)\s*\/\s*10(?:\.0)?(?:\s*\(Carga:\s*([^)]+)\))?/i);
+        if (match) {
+          globalScore = parseFloat(match[1]);
+          if (match[2]) globalLoadIndex = match[2].trim();
+        }
+      } else if (trimmed.includes("VECTOR PATOLÓGICO DOMINANTE:")) {
+        dominantVector = trimmed.replace(/.*VECTOR PATOLÓGICO DOMINANTE:\s*/i, "").trim();
+      } else if (trimmed.includes("MATRIZ DE VECTORES CLAVE:")) {
+        inAxes = true;
+        inSummary = false;
+      } else if (trimmed.includes("SÍNTESIS BIOMECÁNICO-INFLAMATORIA:")) {
+        inAxes = false;
+        inSummary = true;
+      } else if (trimmed.includes("RECOMENDACIÓN DINÁMICA:")) {
+        inAxes = false;
+        inSummary = false;
+      } else if (inAxes && trimmed.startsWith("•")) {
+        const match = trimmed.match(/•\s*([^\[]+)\[(\d+)\/10\s*-\s*([^\]]+)\]:\s*([^(]+)(?:\(([^)]+)\))?/);
+        if (match) {
+          const label = match[1].trim();
+          const score = parseInt(match[2], 10);
+          const level = match[3].trim();
+          const finding = match[4].trim();
+          const justification = match[5] ? match[5].trim() : finding;
+          const key = label.toLowerCase().includes("inflamaci") ? "inflamacion" :
+                    label.toLowerCase().includes("estructural") ? "estructural" :
+                    label.toLowerCase().includes("inestabilidad") || label.toLowerCase().includes("biomec") ? "biomecanica" :
+                    label.toLowerCase().includes("vascular") || label.toLowerCase().includes("hiperemia") ? "vascularizacion" :
+                    label.toLowerCase().includes("tensi") || label.toLowerCase().includes("irritaci") ? "tension" : "cronicidad";
+          axes.push({ key, label, score, level, finding, justification });
+        }
+      } else if (inSummary) {
+        clinicalSummary += (clinicalSummary ? " " : "") + trimmed;
+      }
+    });
+
+    if (axes.length >= 4) {
+      return {
+        globalLoadIndex,
+        globalScore: globalScore || +(axes.reduce((a, b) => a + b.score, 0) / axes.length).toFixed(1),
+        dominantVector,
+        axes,
+        clinicalSummary: clinicalSummary || "Síntesis biomecánico-inflamatoria.",
+        recommendation: ""
+      };
+    }
+  } catch (err) {
+    console.warn("Error parsing radar data from report", err);
+  }
+  return null;
+};
+
+const splitReportSections = (text: string) => {
+  if (!text) return { mainReport: "", cuadroSinopticoReport: "", organSynopsisReport: "", annexReport: "" };
+
+  const rawParagraphs = text.split(/\n\n+/);
+  const mainBuf: string[] = [];
+  const cuadroBuf: string[] = [];
+  const organBuf: string[] = [];
+  const annexBuf: string[] = [];
+
+  let currentTarget: "main" | "cuadro" | "organ" | "annex" = "main";
+
+  rawParagraphs.forEach((p) => {
+    const trimmed = p.trim();
+    if (!trimmed) return;
+
+    if (trimmed.includes("[CASE_ANALYSIS_JSON]")) {
+      return;
+    }
+
+    const upper = trimmed.toUpperCase();
+    if (
+      upper.includes("RADAR BIOMECÁNICO") ||
+      upper.includes("RADAR BIOMECANICO") ||
+      upper.includes("PUNTAJE GLOBAL DE CARGA TISULAR:") ||
+      upper.includes("VECTOR PATOLÓGICO DOMINANTE:") ||
+      upper.includes("MATRIZ DE VECTORES CLAVE:") ||
+      upper.includes("SÍNTESIS BIOMECÁNICO-INFLAMATORIA:") ||
+      upper.includes("RECOMENDACIÓN DINÁMICA:") ||
+      (upper.startsWith("•") && (upper.includes("/10") || upper.includes("[")))
+    ) {
+      return;
+    }
+
+    const isHeaderMarker = /^\s*(?:#{1,6}\s+|\*\*\s*|---|—)/.test(trimmed) || upper.startsWith("ANEXO:");
+    const isCuadro = isHeaderMarker && /^\s*(?:#{1,6}\s*|\*\*|---)*\s*(?:ESQUEMA\s+CLÍNICO\s+DE\s+HALLAZGOS\s+PRINCIPALES|CUADRO\s+SINÓPTICO|MATRIZ\s+SEMIÓTICA|SINOPSIS\s+DE\s+FRACTURAS)\b/i.test(trimmed);
+    const isOrgan = isHeaderMarker && /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:SINOPSIS\s+CLÍNICA|SINOPSIS\s+POR\s+ÓRGANO|SINOPSIS\s+DE\s+ÓRGANO)\b/i.test(trimmed) && !isCuadro;
+    const isAnnex = isHeaderMarker && (trimmed.includes("ANEXO DIAGNÓSTICO") || 
+                    trimmed.includes("DESGLOSE Y JUSTIFICACIÓN DE CLASIFICACIÓN") || 
+                    trimmed.includes("DESGLOSE Y JUSTIFICACIÓN") ||
+                    trimmed.includes("CLASIFICACIÓN DE") ||
+                    /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:ANEXO|CLASIFICACI[OÓ]N)\b/i.test(trimmed)) && !isCuadro && !isOrgan;
+
+    if (isCuadro) {
+      currentTarget = "cuadro";
+    } else if (isOrgan) {
+      currentTarget = "organ";
+    } else if (isAnnex) {
+      currentTarget = "annex";
+    }
+
+    if (currentTarget === "cuadro") {
+      cuadroBuf.push(trimmed);
+    } else if (currentTarget === "organ") {
+      organBuf.push(trimmed);
+    } else if (currentTarget === "annex") {
+      annexBuf.push(trimmed);
+    } else {
+      mainBuf.push(trimmed);
+    }
+  });
+
+  return {
+    mainReport: mainBuf.join("\n\n").trim(),
+    cuadroSinopticoReport: cuadroBuf.join("\n\n").trim(),
+    organSynopsisReport: organBuf.join("\n\n").trim(),
+    annexReport: annexBuf.join("\n\n").trim(),
+  };
+};
+
+const isCholecystitisRadar = (data: any) => {
+  if (!data) return false;
+  if (data.radarMode === "cholecystitis" || data.radarMode === "colecistitis") return true;
+  const str = JSON.stringify(data).toLowerCase();
+  return /colecist|ves[ií]cula|murphy|hidrocolecisto|hidrops.*vesic|bacinete|engrosamiento.*pared|vascularidad.*parietal/i.test(str);
+};
+
+const isHepaticRadar = (data: any) => {
+  if (!data) return false;
+  if (data.radarMode === "hepatic" || data.radarMode === "valoracion_hepatica") return true;
+  const str = JSON.stringify(data).toLowerCase();
+  return /h[ií]gado|hep[aá]tic|elastograf|esteatosis|qus|ati|ugap|vena porta|ascitis|cirros|hepatopat|swe|kpa|hepatomegal|chc|lirads/i.test(str);
+};
+
+const isKneeOaRadar = (data: any) => {
+  if (!data) return false;
+  if (data.radarMode === "knee_oa" || data.radarMode === "artrosis_rodilla") return true;
+  const str = JSON.stringify(data).toLowerCase();
+  return /artrosis.*rodilla|rodilla.*artros|gonartros|femorotibial|cart[ií]lago troclear|meniscopat|hidrartrosis|osteofito/i.test(str);
+};
+
+const isRotatorCuffRadar = (data: any) => {
+  if (!data) return false;
+  if (data.radarMode === "rotator_cuff") return true;
+  const str = JSON.stringify(data).toLowerCase();
+  return /manguito|supraespinoso|infraespinoso|subescapular|bursitis subacrom|b[ií]ceps|tclb|pinzamiento/i.test(str);
+};
+
+const isOncologyRadar = (data: any) => {
+  if (!data) return false;
+  if (data.radarMode === "oncology") return true;
+  const str = JSON.stringify(data).toLowerCase();
+  return /oncolog|c[aá]ncer|malign|n[oó]dulo|carcinom|neoplas|metast|birads|lirads|bosniak|ti-rads|neoangiog/i.test(str);
+};
+
+const isVisceralRadar = (data: any) => {
+  if (!data) return false;
+  if (data.radarMode === "visceral") return true;
+  const str = JSON.stringify(data).toLowerCase();
+  return /diverticul|pancreat|apendic|colecist|pielonefr|absceso|mama|viscer|órgano|organo|periton|parenquim|flem[oó]n|digestiv|renal|hep[aá]tic|prostat|ginecol/i.test(str);
+};
+
+const getShortRadarAxisLabel = (label: string) => {
+  if (!label) return "";
+  const clean = label.split(" / ")[0].split(" & ")[0].trim();
+  if (/engrosamiento.*pared|edema.*parietal/i.test(clean)) return "Engrosamiento Pared";
+  if (/vascularidad|doppler.*color/i.test(clean)) return "Vascularidad Parietal";
+  if (/necrosis|gangrena/i.test(clean)) return "Necrosis / Gangrena";
+  if (/perivesicular|cambios.*perives/i.test(clean)) return "Cambios Perivesiculares";
+  if (/v[ií]a.*biliar|col[eé]doco/i.test(clean)) return "Vía Biliar / Colédoco";
+  if (/tama[nñ]o|hidrops|distensi[oó]n/i.test(clean)) return "Tamaño / Hidrops";
+  if (/morfolog[ií]a/i.test(clean)) return "Morfología Hepática";
+  if (/esteatosis/i.test(clean)) return "Esteatosis QUS";
+  if (/elastograf[ií]a|rigidez/i.test(clean)) return "Elastografía SWE";
+  if (/vena.*porta|hemodin[aá]mica/i.test(clean)) return "Vena Porta";
+  if (/lesiones.*focales|l[oó]es|n[oó]dulos/i.test(clean)) return "Lesiones Focales";
+  if (/ascitis|l[ií]quido.*libre/i.test(clean)) return "Ascitis / Líquido";
+  if (/femorotibial.*medial/i.test(clean)) return "Femorotibial Medial";
+  if (/femorotibial.*lateral/i.test(clean)) return "Femorotibial Lateral";
+  if (/meniscopat/i.test(clean)) return "Meniscopatía Deg.";
+  if (/troclear|cart[ií]lago/i.test(clean)) return "Cartílago Troclear";
+  if (/hidrartrosis|efusi[oó]n/i.test(clean)) return "Hidrartrosis";
+  if (/osteofito/i.test(clean)) return "Osteofitos";
+  if (/ruptura.*supraespinoso/i.test(clean)) return "Rup. Supraespinoso";
+  if (/bursitis/i.test(clean)) return "Bursitis Subacromial";
+  if (/pinzamiento/i.test(clean)) return "Pinzamiento Subacromial";
+  if (/otros tendones|lesi[oó]n de otros/i.test(clean)) return "Otros Tendones";
+  if (/tendinosis.*supraespinoso/i.test(clean)) return "Tendinosis Supraesp.";
+  if (/b[ií]ceps|tclb/i.test(clean)) return "Cabeza Larga Bíceps";
+  if (/ruptura/i.test(clean)) return "Ruptura Tendinosa";
+  if (/tendinosis|tendinitis/i.test(clean)) return "Tendinosis/Tendinitis";
+  if (/infraespinoso/i.test(clean)) return "Tendón Infraespinoso";
+  if (/subescapular/i.test(clean)) return "Tendón Subescapular";
+  if (/neoangiog[eé]nesis|neovasculatura/i.test(clean)) return "Neoangiogénesis";
+  if (/arquitectura|heterogeneidad/i.test(clean)) return "Arquitectura";
+  if (/invasi[oó]n/i.test(clean)) return "Invasión Local";
+  if (/compromiso vascular|ductal|troncular/i.test(clean)) return "Comp. Vascular/Ductal";
+  if (/necrosis/i.test(clean)) return "Necrosis Tumoral";
+  if (/adenopat[ií]as|diseminaci[oó]n/i.test(clean)) return "Adenopatías";
+  if (/compromiso|lisis/i.test(clean)) return "Comp. Estructural";
+  if (/inestabilidad/i.test(clean)) return "Inestabilidad";
+  if (/afectaci[oó]n|reactividad|perivisceral|pared/i.test(clean)) return "Afectación Pared";
+  if (/vascularizaci|hiperemia/i.test(clean)) return "Vascularización";
+  if (/inflamaci|edema/i.test(clean)) return "Inflamación";
+  if (/tensi[oó]n/i.test(clean)) return "Tensión";
+  if (/irritaci[oó]n|serosa|periton/i.test(clean)) return "Irritación Serosa";
+  if (/cronicidad|litiasis/i.test(clean)) return "Cronicidad";
+  return clean.length > 18 ? clean.substring(0, 16) + ".." : clean;
+};
+
+const renderPrintBiomechanicalRadarAnnex = (data: any) => {
+  if (!data || !data.axes || data.axes.length === 0) return null;
+
+  const numAxes = data.axes.length;
+  const size = 360;
+  const center = size / 2;
+  const maxR = 76;
+
+  const getPt = (index: number, score: number) => {
+    const angle = (Math.PI * 2 / numAxes) * index - Math.PI / 2;
+    const r = (score / 10) * maxR;
+    return {
+      x: center + r * Math.cos(angle),
+      y: center + r * Math.sin(angle),
+      angle
+    };
+  };
+
+  const scales = [0.2, 0.4, 0.6, 0.8, 1.0];
+  const gridPolygons = scales.map(scale => {
+    return data.axes.map((_: any, i: number) => {
+      const pt = getPt(i, scale * 10);
+      return `${pt.x},${pt.y}`;
+    }).join(" ");
+  });
+
+  const dataPolygon = data.axes.map((a: any, i: number) => {
+    const pt = getPt(i, a.score);
+    return `${pt.x},${pt.y}`;
+  }).join(" ");
+
+  return (
+    <div className="mt-8 pt-6 border-t-2 border-slate-300 print:break-before-page font-sans select-text text-left space-y-6">
+      <div className="w-full text-left pb-2.5 border-b border-slate-200">
+        <h3 className="text-lg font-mono font-bold uppercase tracking-wider text-slate-900 flex items-center gap-2">
+          <span className="text-indigo-600">🎯</span> {isCholecystitisRadar(data) ? "ANEXO: RADAR MULTIVECTORIAL DE COLECISTITIS AGUDA (ANÁLISIS 6D)" : isHepaticRadar(data) ? "ANEXO: RADAR MULTIVECTORIAL DE VALORACIÓN HEPÁTICA (ANÁLISIS 6D)" : isKneeOaRadar(data) ? "ANEXO: RADAR MULTIVECTORIAL DE ARTROSIS DE RODILLA (ANÁLISIS 6D)" : isRotatorCuffRadar(data) ? "ANEXO: RADAR MULTIVECTORIAL DE MANGUITO ROTADOR (ANÁLISIS 6D)" : isOncologyRadar(data) ? "ANEXO: RADAR MULTIVECTORIAL ONCOLÓGICO Y TUMORAL (ANÁLISIS 6D)" : isVisceralRadar(data) ? "ANEXO: RADAR MULTIVECTORIAL Y VISCERO-INFLAMATORIO (ANÁLISIS 6D)" : "ANEXO: RADAR BIOMECÁNICO E INFLAMATORIO (ANÁLISIS MULTIVECTOR 6D)"}
+        </h3>
+        <p className="text-xs text-slate-500 font-mono mt-0.5">
+          Modelado vectorial cuantitativo e índice de carga tisular sistémico-funcional
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
+        {/* Left Column: Spider Graphic (6 cols) */}
+        <div className="md:col-span-6 bg-slate-50 border border-slate-200 rounded-xl p-5 flex flex-col items-center justify-center overflow-hidden">
+          <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="w-full h-auto max-w-[370px]">
+            {/* Concentric Hexagons */}
+            {gridPolygons.map((pts, idx) => (
+              <polygon key={idx} points={pts} fill="none" stroke="#cbd5e1" strokeWidth="1" strokeDasharray={idx === 4 ? "none" : "2 2"} />
+            ))}
+            {/* Radial Lines */}
+            {data.axes.map((_: any, i: number) => {
+              const end = getPt(i, 10);
+              return <line key={i} x1={center} y1={center} x2={end.x} y2={end.y} stroke="#94a3b8" strokeWidth="1.2" />;
+            })}
+            {/* Data Polygon Fill */}
+            <polygon points={dataPolygon} fill="rgba(79, 70, 229, 0.20)" stroke="#4f46e5" strokeWidth="3" />
+            {/* Vertex Dots */}
+            {data.axes.map((a: any, i: number) => {
+              const pt = getPt(i, a.score);
+              return <circle key={i} cx={pt.x} cy={pt.y} r="5.5" fill="#4f46e5" stroke="#ffffff" strokeWidth="2" />;
+            })}
+            {/* Axis Labels */}
+            {data.axes.map((a: any, i: number) => {
+              const lbl = getPt(i, 11.0);
+              const cleanLabel = getShortRadarAxisLabel(a.label);
+              let anchor = "middle";
+              const cosVal = Math.cos(lbl.angle);
+              const sinVal = Math.sin(lbl.angle);
+
+              let lx = lbl.x;
+              let ly = lbl.y;
+
+              if (cosVal > 0.25) {
+                anchor = "start";
+                lx += 4;
+              } else if (cosVal < -0.25) {
+                anchor = "end";
+                lx -= 4;
+              }
+
+              if (sinVal < -0.8) ly -= 4;
+              else if (sinVal > 0.8) ly += 5;
+
+              const isRightSide = cosVal > 0.25;
+
+              return (
+                <text
+                  key={i}
+                  x={lx}
+                  y={ly}
+                  textAnchor={anchor}
+                  dominantBaseline="central"
+                  className="text-[9.5px] font-bold fill-slate-900 font-mono"
+                >
+                  {isRightSide ? (
+                    <>
+                      <tspan x={lx} dy="-0.6em">{cleanLabel}</tspan>
+                      <tspan x={lx} dy="1.3em" className="fill-indigo-600 font-black">({a.score}/10)</tspan>
+                    </>
+                  ) : (
+                    `${cleanLabel} (${a.score}/10)`
+                  )}
+                </text>
+              );
+            })}
+          </svg>
+          <p className="text-[10.5px] font-mono font-medium text-slate-400 mt-2.5 text-center uppercase tracking-wide">
+            Representación vectorial en araña (Escala 0-10)
+          </p>
+        </div>
+
+        {/* Right Column: Global Load Index & Vector Breakdown Matrix (6 cols) */}
+        <div className="md:col-span-6 space-y-4">
+          {/* Global Load Index Card */}
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4.5 flex items-center justify-between">
+            <div>
+              <span className="text-[10.5px] font-mono font-bold uppercase tracking-wider text-indigo-600 block">
+                Puntaje Global de Carga Tisular
+              </span>
+              <div className="text-3xl font-mono font-black text-slate-900 mt-1">
+                {data.globalScore} <span className="text-sm text-slate-400 font-normal">/ 10.0</span>
+              </div>
+              <span className="text-[10.5px] font-sans font-bold text-slate-600 block mt-1.5">
+                Vector Dominante: <span className="text-slate-900">{data.dominantVector}</span>
+              </span>
+            </div>
+            <div className="text-right">
+              <span className="px-3.5 py-1.5 rounded-full text-[10.5px] font-mono font-bold uppercase bg-rose-100 text-rose-700 border border-rose-200 inline-block shadow-2xs">
+                Carga: {data.globalLoadIndex || "Moderada"}
+              </span>
+            </div>
+          </div>
+
+          {/* 6-Axis Matrix */}
+          <div className="space-y-2">
+            <h4 className="text-[10.5px] font-mono font-bold uppercase tracking-wider text-slate-700">
+              Desglose Multivectorial (6D)
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {data.axes.map((axis: any, idx: number) => {
+                let badgeClass = "bg-emerald-50 text-emerald-700 border-emerald-200";
+                if (axis.score >= 8) badgeClass = "bg-rose-50 text-rose-700 border-rose-200";
+                else if (axis.score >= 6) badgeClass = "bg-amber-50 text-amber-700 border-amber-200";
+                else if (axis.score >= 3) badgeClass = "bg-cyan-50 text-cyan-700 border-cyan-200";
+
+                return (
+                  <div key={idx} className="bg-white border border-slate-200 rounded-lg p-3 flex items-center justify-between gap-2 shadow-2xs">
+                    <span className="text-[10.5px] font-bold text-slate-800 font-sans truncate" title={axis.label}>
+                      {getShortRadarAxisLabel(axis.label)}
+                    </span>
+                    <span className={`text-[9.5px] font-mono font-bold px-2 py-0.5 rounded border shrink-0 ${badgeClass}`}>
+                      {axis.score}/10
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Vector Details & Justification Section */}
+      <div className="space-y-2.5 text-left">
+        <h4 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-800 border-b border-slate-200 pb-2">
+          Detalle y Justificación de los Vectores (Hallazgos y Sobrecarga)
+        </h4>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+          {data.axes.map((axis: any, idx: number) => (
+            <div key={idx} className="bg-slate-50 border border-slate-200 rounded-lg p-3.5 space-y-1.5">
+              <div className="flex items-start justify-between gap-2 border-b border-slate-200/80 pb-1.5">
+                <span className="text-[11px] font-bold text-slate-900 font-sans leading-tight min-w-0 flex-1">
+                  {idx + 1}. {axis.label}
+                </span>
+                <span className="text-[9px] font-mono font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded shrink-0 whitespace-nowrap">
+                  ({axis.level})
+                </span>
+              </div>
+              {axis.finding && (
+                <p className="text-[10.5px] text-slate-800 leading-relaxed font-sans">
+                  <strong className="text-slate-900">Hallazgo:</strong> {axis.finding}
+                </p>
+              )}
+              {axis.justification && axis.justification !== axis.finding && (
+                <p className="text-[10px] text-slate-600 italic leading-relaxed font-sans">
+                  <strong className="text-slate-700 not-italic">Justificación:</strong> {axis.justification}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Synthesis Box (Without recommendations) */}
+      {data.clinicalSummary && (
+        <div className="mt-5 bg-indigo-50/60 border border-indigo-200 rounded-xl p-4 text-left w-full max-w-full box-border min-w-0 overflow-hidden">
+          <h4 className="text-xs font-mono font-bold uppercase tracking-wider text-indigo-900 flex items-center gap-1.5 mb-2">
+            <span className="text-indigo-600">⚡</span> Síntesis Biomecánico-Inflamatoria Final
+          </h4>
+          <p className="text-xs text-slate-800 leading-relaxed font-sans w-full max-w-full box-border break-words whitespace-normal overflow-wrap-anywhere m-0">
+            {data.clinicalSummary}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const splitReportAndAnnex = (text: string) => {
+  return splitReportSections(text);
+};
+
   const renderPrintReportBody = (reportText: string) => {
     if (!reportText) return null;
 
@@ -20265,6 +22816,14 @@ Ejemplo:
     return (
       <div className={`space-y-6 text-black select-text ${adaptivePDFContrast ? "font-sans text-[13.5px]" : "font-serif text-[12.5px]"}`}>
         {elements.map((elem, idx) => {
+          if (elem.type === "case_analysis" && elem.caseData) {
+            return (
+              <div key={elem.id} className="my-6" style={{ pageBreakInside: "avoid", breakInside: "avoid" }}>
+                <CaseAnalysisRenderer data={elem.caseData} isDarkTheme={false} />
+              </div>
+            );
+          }
+
           if (elem.type === "divider") {
             return <hr key={elem.id} className={`my-6 border-t ${adaptivePDFContrast ? "border-black border-base" : "border-slate-300"}`} />;
           }
@@ -20286,6 +22845,8 @@ Ejemplo:
           if (elem.type === "heading") {
             const hText = elem.text || "";
             const isMainTitle = idx === 0 && hText && /REPORTE|INFORME|ESTUDIO|DIAGNÓSTICO|VALORACIÓN/i.test(hText);
+            const isAnnexHeading = hText && (hText.toUpperCase().includes("ANEXO") || hText.toUpperCase().includes("DESGLOSE Y JUSTIFICACIÓN"));
+            const pageBreakStyle = isAnnexHeading ? { pageBreakBefore: "always" as const, breakBefore: "page" as const } : undefined;
             
             if (isMainTitle) {
               return (
@@ -20295,27 +22856,37 @@ Ejemplo:
               );
             }
 
+            if (isAnnexHeading) {
+              return (
+                <div key={elem.id} style={pageBreakStyle} className="mt-3 mb-2.5 pb-1.5 border-b border-slate-300">
+                  <h2 className={`text-sm font-black uppercase tracking-wider ${adaptivePDFContrast ? "text-black" : "text-slate-900"}`}>
+                    {renderBoldTextBlackSafe(hText, `print-h-${idx}`)}
+                  </h2>
+                </div>
+              );
+            }
+
             if (elem.level === 1) {
               return (
-                <h1 key={elem.id} className={`text-base font-black uppercase tracking-wide mt-5 mb-2.5 block ${adaptivePDFContrast ? "text-black" : "text-slate-900"}`}>
+                <h1 key={elem.id} style={pageBreakStyle} className={`text-base font-black uppercase tracking-wide mt-5 mb-2.5 block ${adaptivePDFContrast ? "text-black" : "text-slate-900"}`}>
                   {renderBoldTextBlackSafe(hText, `print-h-${idx}`)}
                 </h1>
               );
             } else if (elem.level === 2) {
               return (
-                <h2 key={elem.id} className={`text-[13.5px] font-black uppercase tracking-wide mt-4 mb-2 block ${adaptivePDFContrast ? "text-black" : "text-slate-800"}`}>
+                <h2 key={elem.id} style={pageBreakStyle} className={`text-[13.5px] font-black uppercase tracking-wide mt-4 mb-2 block ${adaptivePDFContrast ? "text-black" : "text-slate-800"}`}>
                   {renderBoldTextBlackSafe(hText, `print-h-${idx}`)}
                 </h2>
               );
             } else if (elem.level === 3) {
               return (
-                <h3 key={elem.id} className={`text-xs font-black uppercase tracking-wider mt-3.5 mb-1.5 block ${adaptivePDFContrast ? "text-black" : "text-slate-700"}`}>
+                <h3 key={elem.id} style={pageBreakStyle} className={`text-xs font-black uppercase tracking-wider mt-3.5 mb-1.5 block ${adaptivePDFContrast ? "text-black" : "text-slate-700"}`}>
                   {renderBoldTextBlackSafe(hText, `print-h-${idx}`)}
                 </h3>
               );
             } else {
               return (
-                <h4 key={elem.id} className={`text-[11.5px] font-bold uppercase tracking-wider mt-3 mb-1 block ${adaptivePDFContrast ? "text-black" : "text-slate-600"}`}>
+                <h4 key={elem.id} style={pageBreakStyle} className={`text-[11.5px] font-bold uppercase tracking-wider mt-3 mb-1 block ${adaptivePDFContrast ? "text-black" : "text-slate-600"}`}>
                   {renderBoldTextBlackSafe(hText, `print-h-${idx}`)}
                 </h4>
               );
@@ -20371,6 +22942,11 @@ Ejemplo:
 
             if (headers.length === 0) return null;
 
+            const isClassificationHTMLTable = headers.some(hdrText => {
+              const lower = (hdrText || "").toLowerCase();
+              return lower.includes("criterio") || lower.includes("pondera") || lower.includes("score") || lower.includes("justifica") || lower.includes("sustento");
+            });
+
             const isVascularHTMLTable = headers.length === 3 && headers.some(hdrText => {
               const lower = (hdrText || "").toLowerCase();
               return lower.includes("derech") || lower.includes("izquierd") || lower.includes("alterad") || lower.includes("vaso");
@@ -20394,10 +22970,17 @@ Ejemplo:
                           else if (hIdx === 1) widthClass = "w-[33%]";
                           else if (hIdx === 2) widthClass = "w-[33%]";
                         } else if (headers.length === 4) {
-                          if (hIdx === 0) widthClass = "w-[10%] text-center";
-                          else if (hIdx === 1) widthClass = "w-[25%]";
-                          else if (hIdx === 2) widthClass = "w-[32%]";
-                          else if (hIdx === 3) widthClass = "w-[33%]";
+                          if (isClassificationHTMLTable) {
+                            if (hIdx === 0) widthClass = "w-[24%]";
+                            else if (hIdx === 1) widthClass = "w-[28%]";
+                            else if (hIdx === 2) widthClass = "w-[16%] text-center";
+                            else if (hIdx === 3) widthClass = "w-[32%]";
+                          } else {
+                            if (hIdx === 0) widthClass = "w-[10%] text-center";
+                            else if (hIdx === 1) widthClass = "w-[25%]";
+                            else if (hIdx === 2) widthClass = "w-[32%]";
+                            else if (hIdx === 3) widthClass = "w-[33%]";
+                          }
                         } else if (headers.length === 5) {
                           if (hIdx === 0) widthClass = "w-[10%] text-center";
                           else if (hIdx === 1) widthClass = "w-[22%]";
@@ -20440,7 +23023,13 @@ Ejemplo:
                           const renderedContent = renderBoldTextBlackSafe(cellText, `cell-print-${idx}-${rIdx}-${cIdx}`);
 
                           let alignAndTypography = "text-left";
-                          if (headers.length === 4 && cIdx === 0) {
+                          if (isClassificationHTMLTable) {
+                            if (cIdx === 0) {
+                              alignAndTypography = "text-left font-bold text-slate-900";
+                            } else if (cIdx === 2) {
+                              alignAndTypography = "text-center font-mono font-bold text-indigo-800 bg-indigo-50/60 rounded px-1.5 py-0.5";
+                            }
+                          } else if (headers.length === 4 && cIdx === 0) {
                             alignAndTypography = "text-center font-mono font-bold text-amber-700";
                           }
 
@@ -20728,16 +23317,22 @@ Ejemplo:
             return (
               <div key={elem.id} className="space-y-1.5 font-sans">
                 {elem.items?.map((item, itemIdx) => {
-                  // Detect recommendation buttons within list items
-                  const itemRecMatch = item.trim().match(/(?:\[RECOMENDACI[OÓ]N\]|RECOMENDACI[OÓ]N)[:*\-\s\]]*(.*)/i);
-                  if (itemRecMatch) {
-                    let content = itemRecMatch[1].trim();
-                    content = content.replace(/^\*\*|\*\*$/g, "").trim();
-                    content = content.replace(/^[:*\-\s\]]+/, "").trim();
-                    content = content.replace(/^\*\*|\*\*$/g, "").trim();
-                    content = content.replace(/^["']|["']$/g, "").trim();
+                  const trimmedItem = item.trim();
+                  // Detect recommendation items within list items
+                  const isRecItem = /(?:\[?RECOMENDACI[OÓ]N|RECOMENDACIONES|SUGERENCIA)/i.test(trimmedItem);
+                  if (isRecItem) {
+                    let content = trimmedItem
+                      .replace(/^[\d\.\*\-\s\•\▪\>]+/, "")
+                      .replace(/^\*\*|\*\*$/g, "")
+                      .replace(/^\[?(?:RECOMENDACI[OÓ]N|RECOMENDACIONES|SUGERENCIA)(?:[^\n\]:]*?)\]?[:*\-\s\]]*/i, "")
+                      .replace(/^\*\*|\*\*$/g, "")
+                      .replace(/^[:*\-\s\]]+/, "")
+                      .replace(/^["']|["']$/g, "")
+                      .trim();
+
+                    if (!content) content = trimmedItem;
                     
-                    const isPending = pendingRecText === content;
+                    const isPending = !!pendingRecs[content] || pendingRecText === content;
                     const isAdded = !!incorporatedAuditRecs[content];
                     
                     return (
@@ -20753,7 +23348,7 @@ Ejemplo:
                       >
                         <div className="flex items-start gap-3 flex-1 min-w-0">
                           {isAdded ? (
-                            <div className="p-2 shrink-0 bg-emerald-955/60 border border-emerald-500/30 rounded-lg text-emerald-400">
+                            <div className="p-2 shrink-0 bg-emerald-950/60 border border-emerald-500/30 rounded-lg text-emerald-400">
                               <Check className="h-4 w-4" />
                             </div>
                           ) : (
@@ -20774,13 +23369,13 @@ Ejemplo:
                         <button
                           type="button"
                           onClick={() => handleIncorporateRecommendation(content)}
-                          disabled={isModifyingReport || isAdded}
+                          disabled={isPending || isAdded}
                           className={`text-[9.5px] font-black uppercase tracking-widest px-4 py-2.5 rounded-xl border transition-all flex items-center justify-center gap-2 font-mono w-full sm:w-auto shrink-0 select-none cursor-pointer duration-250 ${
                             isAdded
-                              ? "bg-emerald-905/10 border-emerald-500/25 text-emerald-450 cursor-not-allowed"
+                              ? "bg-emerald-950/20 border-emerald-500/25 text-emerald-400 cursor-not-allowed"
                               : isPending
-                              ? "bg-indigo-955/20 border-indigo-505/30 text-indigo-405 cursor-wait"
-                              : "bg-indigo-600/10 hover:bg-indigo-600 hover:text-white text-indigo-300 border-indigo-500/20 hover:border-transparent active:scale-[0.98]"
+                              ? "bg-indigo-950/40 border-indigo-500/40 text-indigo-300 cursor-wait"
+                              : "bg-indigo-600/20 hover:bg-indigo-600 hover:text-white text-indigo-300 border-indigo-500/30 hover:border-transparent active:scale-[0.98]"
                           }`}
                         >
                           {isPending ? (
@@ -20895,15 +23490,20 @@ Ejemplo:
                 if (!trimmedLine) return null;
 
                 // Detect recommendation buttons
-                const recMatch = trimmedLine.match(/(?:\[RECOMENDACI[OÓ]N\]|RECOMENDACI[OÓ]N)[:*\-\s\]]*(.*)/i);
-                if (recMatch) {
-                  let content = recMatch[1].trim();
-                  content = content.replace(/^\*\*|\*\*$/g, "").trim();
-                  content = content.replace(/^[:*\-\s\]]+/, "").trim();
-                  content = content.replace(/^\*\*|\*\*$/g, "").trim();
-                  content = content.replace(/^["']|["']$/g, "").trim();
+                const isRecLine = /(?:\[?RECOMENDACI[OÓ]N|RECOMENDACIONES|SUGERENCIA)/i.test(trimmedLine);
+                if (isRecLine) {
+                  let content = trimmedLine
+                    .replace(/^[\d\.\*\-\s\•\▪\>]+/, "")
+                    .replace(/^\*\*|\*\*$/g, "")
+                    .replace(/^\[?(?:RECOMENDACI[OÓ]N|RECOMENDACIONES|SUGERENCIA)(?:[^\n\]:]*?)\]?[:*\-\s\]]*/i, "")
+                    .replace(/^\*\*|\*\*$/g, "")
+                    .replace(/^[:*\-\s\]]+/, "")
+                    .replace(/^["']|["']$/g, "")
+                    .trim();
+
+                  if (!content) content = trimmedLine;
                   
-                  const isPending = pendingRecText === content;
+                  const isPending = !!pendingRecs[content] || pendingRecText === content;
                   const isAdded = !!incorporatedAuditRecs[content];
                   
                   return (
@@ -20919,7 +23519,7 @@ Ejemplo:
                     >
                       <div className="flex items-start gap-3 flex-1 min-w-0">
                         {isAdded ? (
-                          <div className="p-2 shrink-0 bg-emerald-955/60 border border-emerald-500/30 rounded-lg text-emerald-400">
+                          <div className="p-2 shrink-0 bg-emerald-950/60 border border-emerald-500/30 rounded-lg text-emerald-400">
                             <Check className="h-4 w-4" />
                           </div>
                         ) : (
@@ -20940,13 +23540,13 @@ Ejemplo:
                       <button
                         type="button"
                         onClick={() => handleIncorporateRecommendation(content)}
-                        disabled={isModifyingReport || isAdded}
+                        disabled={isPending || isAdded}
                         className={`text-[9.5px] font-black uppercase tracking-widest px-4 py-2.5 rounded-xl border transition-all flex items-center justify-center gap-2 font-mono w-full sm:w-auto shrink-0 select-none cursor-pointer duration-250 ${
                           isAdded
-                            ? "bg-emerald-905/10 border-emerald-500/25 text-emerald-450 cursor-not-allowed"
+                            ? "bg-emerald-950/20 border-emerald-500/25 text-emerald-400 cursor-not-allowed"
                             : isPending
-                            ? "bg-indigo-955/20 border-indigo-505/30 text-indigo-405 cursor-wait"
-                            : "bg-indigo-600/10 hover:bg-indigo-600 hover:text-white text-indigo-300 border-indigo-500/20 hover:border-transparent active:scale-[0.98]"
+                            ? "bg-indigo-950/40 border-indigo-500/40 text-indigo-300 cursor-wait"
+                            : "bg-indigo-600/20 hover:bg-indigo-600 hover:text-white text-indigo-300 border-indigo-500/30 hover:border-transparent active:scale-[0.98]"
                         }`}
                       >
                         {isPending ? (
@@ -21306,6 +23906,40 @@ Ejemplo:
         </div>
 
         {elements.map((elem, idx) => {
+          if (elem.type === "case_analysis" && elem.caseData) {
+            return (
+              <div key={elem.id} className="my-6">
+                <CaseAnalysisRenderer data={elem.caseData} isDarkTheme={true} />
+              </div>
+            );
+          }
+
+          if (elem.type === "page_break") {
+            return (
+              <div key={elem.id} className="my-6 border-y border-dashed border-teal-500/40 bg-teal-950/30 py-2.5 px-4 rounded-xl flex items-center justify-between text-teal-300 font-mono text-[11px] select-none">
+                <span className="flex items-center gap-2 font-bold uppercase tracking-wider">
+                  <FileDown className="h-4 w-4 text-teal-400" />
+                  ─── Salto de Página PDF (Forzado Manual) ───
+                </span>
+                <span className="text-[9px] bg-teal-900/60 px-2 py-0.5 rounded border border-teal-500/30 font-bold text-teal-200">
+                  Inicia Nueva Página PDF
+                </span>
+              </div>
+            );
+          }
+
+          if (elem.type === "space") {
+            return (
+              <div key={elem.id} className="my-3 border border-dotted border-indigo-500/30 bg-indigo-950/20 py-1.5 px-3 rounded-lg flex items-center justify-between text-indigo-300 font-mono text-[10px] select-none">
+                <span className="flex items-center gap-1.5 font-semibold">
+                  <ArrowDown className="h-3.5 w-3.5 text-indigo-400" />
+                  Espacio en Blanco Vertical (Alineación PDF)
+                </span>
+                <span className="text-[9px] text-slate-400 font-mono">{elem.text}</span>
+              </div>
+            );
+          }
+
           if (elem.type === "divider") {
             return <hr key={elem.id} className="border-slate-800/80 my-5" />;
           }
@@ -21576,12 +24210,14 @@ Ejemplo:
     const updated = savedReports.filter(r => r.id !== id);
     setSavedReports(updated);
     localStorage.setItem("radiology_reports_history", JSON.stringify(updated));
+    idbSaveHistory(updated);
   };
 
   const handleClearHistory = () => {
     if (confirm("¿Deseas vacilar todo el historial local de reportes guardados? (No afectará tu trabajo actual)")) {
       setSavedReports([]);
       localStorage.removeItem("radiology_reports_history");
+      idbSaveHistory([]);
     }
   };
 
@@ -21590,6 +24226,7 @@ Ejemplo:
       const dataToBackup = {
         rad_local_studies: localStorage.getItem("rad_local_studies"),
         radiology_reports_history: localStorage.getItem("radiology_reports_history"),
+        rad_worklist_current: localStorage.getItem("rad_worklist_current"),
         doctorName: localStorage.getItem("radiology_doctor_name"),
         doctorLicense: localStorage.getItem("radiology_doctor_license"),
         clinicName: localStorage.getItem("radiology_clinic_name"),
@@ -21629,6 +24266,12 @@ Ejemplo:
         }
         if (backup.radiology_reports_history) {
           localStorage.setItem("radiology_reports_history", backup.radiology_reports_history);
+        }
+        if (backup.rad_worklist_current) {
+          localStorage.setItem("rad_worklist_current", backup.rad_worklist_current);
+          try {
+            setWorklist(JSON.parse(backup.rad_worklist_current));
+          } catch (e) {}
         }
         if (backup.doctorName) {
           localStorage.setItem("radiology_doctor_name", backup.doctorName);
@@ -21683,43 +24326,132 @@ Ejemplo:
     return `${yyyy}-${mm}-${dd}`;
   };
 
-  const fetchWorklist = async (userId: string) => {
+  const fetchWorklist = async (overrideUserId?: string) => {
     try {
+      const activeUserId = overrideUserId || gmailUser?.uid || "local";
       const dateStr = getTodayDateStr();
-      const localSaved = localStorage.getItem(`rad_worklist_${userId}_${dateStr}`);
-      if (localSaved) {
+
+      // 1. Check IndexedDB persistent store first
+      const idbWl = await idbGetWorklist();
+      if (idbWl && Array.isArray(idbWl.patients) && idbWl.patients.length > 0) {
+        setWorklist(idbWl);
+        const jsonStr = JSON.stringify(idbWl);
         try {
-          const parsed = JSON.parse(localSaved);
-          setWorklist(parsed);
-        } catch (e) {
-          setWorklist(null);
-        }
-      } else {
-        setWorklist(null);
+          localStorage.setItem("rad_worklist_current", jsonStr);
+          localStorage.setItem("rad_worklist_latest", jsonStr);
+        } catch (e) {}
+        return;
       }
+
+      // 2. Check if user explicitly cleared the worklist
+      if (localStorage.getItem("rad_worklist_explicitly_cleared") === "true") {
+        setWorklist({
+          id: `${activeUserId}_${dateStr}`,
+          userId: activeUserId,
+          date: dateStr,
+          patients: []
+        });
+        return;
+      }
+
+      // 3. Read from local storage keys in priority order
+      const primaryKeys = [
+        "rad_worklist_current",
+        "rad_worklist_latest",
+        `rad_worklist_${activeUserId}_${dateStr}`,
+        `rad_worklist_local_${dateStr}`,
+        `fallback_worklist_${activeUserId}_${dateStr}`
+      ];
+
+      for (const key of primaryKeys) {
+        const val = localStorage.getItem(key);
+        if (val) {
+          try {
+            const parsed = JSON.parse(val) as Worklist;
+            if (parsed && Array.isArray(parsed.patients) && parsed.patients.length > 0) {
+              setWorklist(parsed);
+              idbSaveWorklist(parsed);
+              const jsonStr = JSON.stringify(parsed);
+              try {
+                localStorage.setItem("rad_worklist_current", jsonStr);
+                localStorage.setItem("rad_worklist_latest", jsonStr);
+              } catch (e) {}
+              return;
+            }
+          } catch (e) {}
+        }
+      }
+
+      // 4. Fallback: preserve existing React state if it already has patients
+      setWorklist(prev => {
+        if (prev && Array.isArray(prev.patients) && prev.patients.length > 0) {
+          idbSaveWorklist(prev);
+          const jsonStr = JSON.stringify(prev);
+          try {
+            localStorage.setItem("rad_worklist_current", jsonStr);
+            localStorage.setItem("rad_worklist_latest", jsonStr);
+          } catch (e) {}
+          return prev;
+        }
+        return {
+          id: `${activeUserId}_${dateStr}`,
+          userId: activeUserId,
+          date: dateStr,
+          patients: []
+        };
+      });
     } catch (e) {
       console.error("Error loading worklist:", e);
     }
   };
 
   useEffect(() => {
-    fetchWorklist("local");
-  }, []);
+    fetchWorklist();
+  }, [gmailUser]);
 
   const saveWorklist = async (updatedPatients: WorklistPatient[]) => {
     const dateStr = getTodayDateStr();
-    const userId = "local";
-    const worklistId = `${userId}_${dateStr}`;
+    const activeUserId = gmailUser?.uid || "local";
+    const worklistId = `${activeUserId}_${dateStr}`;
     const wlData: Worklist = {
       id: worklistId,
-      userId: userId,
+      userId: activeUserId,
       date: dateStr,
       patients: updatedPatients
     };
 
     try {
       setWorklist(wlData);
-      localStorage.setItem(`rad_worklist_${userId}_${dateStr}`, JSON.stringify(wlData));
+      const jsonStr = JSON.stringify(wlData);
+
+      // Clean up legacy fallback keys so old agendas never resurface
+      localStorage.removeItem("rad_worklist_active");
+      localStorage.removeItem("rad_worklist_backup_permanent");
+
+      if (updatedPatients.length === 0) {
+        await idbClearWorklist();
+        localStorage.setItem("rad_worklist_explicitly_cleared", "true");
+        localStorage.removeItem("rad_worklist_current");
+        localStorage.removeItem("rad_worklist_latest");
+        localStorage.removeItem(`rad_worklist_${activeUserId}_${dateStr}`);
+        localStorage.removeItem(`fallback_worklist_${activeUserId}_${dateStr}`);
+      } else {
+        await idbSaveWorklist(wlData);
+        localStorage.removeItem("rad_worklist_explicitly_cleared");
+        try {
+          localStorage.setItem("rad_worklist_current", jsonStr);
+          localStorage.setItem("rad_worklist_latest", jsonStr);
+          localStorage.setItem(`rad_worklist_${activeUserId}_${dateStr}`, jsonStr);
+          localStorage.setItem(`rad_worklist_local_${dateStr}`, jsonStr);
+          localStorage.setItem(`fallback_worklist_${activeUserId}_${dateStr}`, jsonStr);
+        } catch (e) {}
+      }
+
+      if (activeUserId && activeUserId !== "local") {
+        saveWorklistToCloud(activeUserId, wlData).catch(err => {
+          console.warn("Could not sync worklist to cloud:", err);
+        });
+      }
     } catch (e: any) {
       console.error("Error saving worklist:", e);
       setWorklistError("Error al guardar la lista de trabajo: " + (e.message || String(e)));
@@ -21986,47 +24718,68 @@ Ejemplo:
     setIsLoadingCloudStudies(true);
     setCloudStudiesError(null);
     try {
-      let stored = localStorage.getItem("rad_local_studies");
-      let studies: CloudStudy[] = stored ? JSON.parse(stored) : [];
+      // 1. Fetch from IndexedDB persistent storage
+      const idbStudies = await idbGetAllStudies();
       
-      // Auto-import/sync from old radiology_reports_history if local studies is empty
-      if (studies.length === 0) {
-        const storedReports = localStorage.getItem("radiology_reports_history");
-        if (storedReports) {
-          try {
-            const oldReports = JSON.parse(storedReports) as SavedReport[];
-            if (Array.isArray(oldReports) && oldReports.length > 0) {
-              studies = oldReports.map(rep => ({
-                id: rep.id,
-                userId: "local",
-                userEmail: "anon@local.com",
-                timestamp: rep.timestamp,
-                patientName: "Paciente Local",
-                patientEmail: "No especificado",
-                patientAge: "",
-                patientGender: "",
-                patientId: "",
-                reportDate: new Date().toISOString().split('T')[0],
-                doctorName: doctorName || "Médico Radiólogo",
-                doctorLicense: doctorLicense || "No especificada",
-                clinicName: clinicName || "Clínica Privada",
-                studyType: rep.studyType,
-                clinicalHistory: rep.clinicalHistory,
-                findings: "Hallazgos guardados localmente.",
-                reportText: rep.reportText,
-                attachedImages: [],
-                operationalSummaryText: "",
-                pdfBase64: "",
-                patientSummary: null,
-                createdAt: new Date().toISOString()
-              }));
-              localStorage.setItem("rad_local_studies", JSON.stringify(studies));
-            }
-          } catch (e) {
-            console.error("Error migrating old reports:", e);
+      // 2. Fetch from LocalStorage fallback
+      let stored = localStorage.getItem("rad_local_studies");
+      let localStudies: CloudStudy[] = stored ? JSON.parse(stored) : [];
+
+      // Merge IDB studies and LocalStorage studies without duplicates (IDB has rich full data)
+      const studyMap = new Map<string, CloudStudy>();
+      localStudies.forEach(s => studyMap.set(s.id, s));
+      idbStudies.forEach(s => studyMap.set(s.id, s));
+
+      let studies: CloudStudy[] = Array.from(studyMap.values());
+      
+      // Continuous sync from radiology_reports_history so no generated study is ever lost
+      const storedReports = localStorage.getItem("radiology_reports_history");
+      if (storedReports) {
+        try {
+          const oldReports = JSON.parse(storedReports) as SavedReport[];
+          if (Array.isArray(oldReports) && oldReports.length > 0) {
+            oldReports.forEach(rep => {
+              if (!studies.some(s => s.id === rep.id)) {
+                const syncedStudy: CloudStudy = {
+                  id: rep.id,
+                  userId: "local",
+                  userEmail: "anon@local.com",
+                  timestamp: rep.timestamp,
+                  patientName: "Paciente Local",
+                  patientEmail: "No especificado",
+                  patientAge: "",
+                  patientGender: "",
+                  patientId: "",
+                  reportDate: new Date().toISOString().split('T')[0],
+                  doctorName: doctorName || "Médico Radiólogo",
+                  doctorLicense: doctorLicense || "No especificada",
+                  clinicName: clinicName || "Clínica Privada",
+                  studyType: rep.studyType,
+                  clinicalHistory: rep.clinicalHistory,
+                  findings: "Hallazgos guardados localmente.",
+                  reportText: rep.reportText,
+                  attachedImages: [],
+                  operationalSummaryText: "",
+                  pdfBase64: "",
+                  patientSummary: null,
+                  createdAt: new Date().toISOString()
+                };
+                studies.unshift(syncedStudy);
+                idbSaveStudy(syncedStudy);
+              }
+            });
           }
+        } catch (e) {
+          console.error("Error migrating old reports:", e);
         }
       }
+
+      studies.sort((a, b) => {
+        const tA = new Date(a.createdAt || a.timestamp || 0).getTime();
+        const tB = new Date(b.createdAt || b.timestamp || 0).getTime();
+        return tB - tA;
+      });
+
       setCloudStudies(studies);
     } catch (e: any) {
       console.error("Error fetching local studies:", e);
@@ -22104,14 +24857,14 @@ Ejemplo:
       let compressedSignature = customSignatureUrl || "";
       if (compressedLogo && compressedLogo.startsWith("data:image")) {
         try {
-          compressedLogo = await compressImageBase64(compressedLogo, 500, 0.75);
+          compressedLogo = await compressImageBase64(compressedLogo, 2400, 0.95);
         } catch (compErr) {
           console.error("Error compressing logo inside save to cloud:", compErr);
         }
       }
       if (compressedSignature && compressedSignature.startsWith("data:image")) {
         try {
-          compressedSignature = await compressImageBase64(compressedSignature, 350, 0.75);
+          compressedSignature = await compressImageBase64(compressedSignature, 1600, 0.95);
         } catch (compErr) {
           console.error("Error compressing signature inside save to cloud:", compErr);
         }
@@ -22150,17 +24903,24 @@ Ejemplo:
         patientSummary: patientSummary || null
       };
 
-      const stored = localStorage.getItem("rad_local_studies");
-      let studiesList: CloudStudy[] = stored ? JSON.parse(stored) : [];
-      
-      const index = studiesList.findIndex(s => s.id === idToSave);
-      if (index >= 0) {
-        studiesList[index] = newStudy;
-      } else {
-        studiesList = [newStudy, ...studiesList];
-      }
+      // Save full study object into IndexedDB persistent storage
+      await idbSaveStudy(newStudy);
 
-      localStorage.setItem("rad_local_studies", JSON.stringify(studiesList));
+      // Save lightweight copy to LocalStorage fallback
+      try {
+        const stored = localStorage.getItem("rad_local_studies");
+        let studiesList: CloudStudy[] = stored ? JSON.parse(stored) : [];
+        const lightStudy = { ...newStudy, pdfBase64: "", attachedImages: [] };
+        const index = studiesList.findIndex(s => s.id === idToSave);
+        if (index >= 0) {
+          studiesList[index] = lightStudy;
+        } else {
+          studiesList = [lightStudy, ...studiesList];
+        }
+        localStorage.setItem("rad_local_studies", JSON.stringify(studiesList));
+      } catch (lsErr) {
+        console.warn("LocalStorage lleno, estudio completo guardado de forma segura en IndexedDB:", lsErr);
+      }
 
       setCurrentCloudStudyId(idToSave);
       setCloudStudiesSuccess("¡Estudio guardado con éxito en tu Archivo Local!");
@@ -22181,10 +24941,15 @@ Ejemplo:
     setCloudStudiesError(null);
     setCloudStudiesSuccess(null);
     try {
+      await idbDeleteStudy(studyId);
       const stored = localStorage.getItem("rad_local_studies");
-      let studiesList: CloudStudy[] = stored ? JSON.parse(stored) : [];
-      studiesList = studiesList.filter(s => s.id !== studyId);
-      localStorage.setItem("rad_local_studies", JSON.stringify(studiesList));
+      if (stored) {
+        let studiesList: CloudStudy[] = JSON.parse(stored);
+        studiesList = studiesList.filter(s => s.id !== studyId);
+        try {
+          localStorage.setItem("rad_local_studies", JSON.stringify(studiesList));
+        } catch (e) {}
+      }
       setCloudStudiesSuccess("Estudio eliminado de tu Archivo Local.");
       fetchCloudStudies();
       setTimeout(() => setCloudStudiesSuccess(null), 3000);
@@ -22650,15 +25415,15 @@ Ejemplo:
           <div className="flex items-center gap-1 bg-slate-950/70 border border-slate-800/80 rounded-2xl p-1 shadow-2xl relative">
             <span className="text-[8.5px] font-black tracking-widest text-slate-550 uppercase px-2 font-mono">IA Core:</span>
             <button
-              onClick={() => setSelectedModel("gemini-3.5-flash")}
+              onClick={() => setSelectedModel("gemini-3.6-flash")}
               className={`px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${
-                selectedModel === "gemini-3.5-flash"
+                selectedModel === "gemini-3.6-flash"
                   ? "bg-indigo-600 text-white shadow-[0_0_15px_rgba(99,102,241,0.45)]"
                   : "text-slate-400 hover:text-slate-200 hover:bg-slate-900/60"
               }`}
-              title="Gemini 3.5 Flash: Especial para velocidad y reportes de rutina"
+              title="Gemini 3.6 Flash: Especial para velocidad y reportes de rutina"
             >
-              <Zap className={`h-3.5 w-3.5 ${selectedModel === "gemini-3.5-flash" ? "text-amber-300 animate-pulse" : ""}`} /> Flash 3.5
+              <Zap className={`h-3.5 w-3.5 ${selectedModel === "gemini-3.6-flash" ? "text-amber-300 animate-pulse" : ""}`} /> Flash 3.6
             </button>
             <button
               onClick={() => setSelectedModel("gemini-3.1-pro-preview")}
@@ -22699,7 +25464,7 @@ Ejemplo:
               <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500 shadow-[0_0_10px_#10b981]"></span>
             </div>
             <span className="text-[10px] font-black text-emerald-400 tracking-widest uppercase font-mono">
-              {selectedModel === "gemini-3.5-flash" ? "Flash-Active" : "Pro-Active"}
+              {selectedModel === "gemini-3.6-flash" ? "Flash-Active" : "Pro-Active"}
             </span>
           </div>
 
@@ -22835,16 +25600,15 @@ Ejemplo:
             onClick={() => setActiveTab("cloud-db")}
             className={`flex items-center gap-3 px-4 py-3 rounded-xl text-xs uppercase tracking-wider font-bold transition-all duration-300 min-w-[150px] lg:w-full relative overflow-hidden group cursor-pointer border ${
               activeTab === "cloud-db"
-                ? "bg-emerald-600/10 border-emerald-500/40 text-emerald-200 shadow-[0_0_15px_rgba(16,185,129,0.12)] pl-4.5"
+                ? "bg-indigo-600/10 border-indigo-500/40 text-indigo-200 shadow-[0_0_15px_rgba(99,102,241,0.12)] pl-4.5"
                 : "text-slate-400 hover:bg-slate-900/50 hover:text-slate-200 border-transparent hover:border-slate-800/40"
             }`}
           >
             {activeTab === "cloud-db" && (
-              <span className="absolute left-0 top-1.5 bottom-1.5 w-1 bg-emerald-500 rounded-r-md shadow-[0_0_10px_#10b981]" />
+              <span className="absolute left-0 top-1.5 bottom-1.5 w-1 bg-indigo-500 rounded-r-md shadow-[0_0_10px_#6366f1]" />
             )}
-            <Database className={`h-4 w-4 shrink-0 transition-transform duration-300 group-hover:scale-105 ${activeTab === "cloud-db" ? "text-emerald-400 drop-shadow-[0_0_4px_rgba(16,185,129,0.3)]" : "text-slate-500"}`} />
-            Archivo de Estudios
-            <span className="ml-auto w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Almacenamiento Local Seguro Activo" />
+            <History className={`h-4 w-4 shrink-0 transition-transform duration-300 group-hover:scale-105 ${activeTab === "cloud-db" ? "text-indigo-400 drop-shadow-[0_0_4px_rgba(99,102,241,0.3)]" : "text-slate-500"}`} />
+            Historial Local
           </button>
 
           {/* 🧠 SELECTOR DE MODELO OMNIPRESENTE (STATION SIDEBAR) */}
@@ -22857,18 +25621,18 @@ Ejemplo:
             <div className="space-y-1.5 font-sans">
               <button
                 type="button"
-                onClick={() => setSelectedModel("gemini-3.5-flash")}
+                onClick={() => setSelectedModel("gemini-3.6-flash")}
                 className={`w-full text-left px-2.5 py-2 rounded-lg border transition-all flex items-center justify-between ${
-                  selectedModel === "gemini-3.5-flash"
+                  selectedModel === "gemini-3.6-flash"
                     ? "bg-indigo-950/30 border-indigo-500/60 shadow-[0_2px_8px_rgba(99,102,241,0.1)]"
                     : "bg-transparent border-transparent hover:bg-slate-850 hover:border-slate-800"
                 }`}
               >
                 <div className="flex flex-col">
-                  <span className={`text-[10px] font-bold tracking-wide uppercase ${selectedModel === "gemini-3.5-flash" ? "text-indigo-400" : "text-slate-300"}`}>Gemini 3.5 Flash</span>
+                  <span className={`text-[10px] font-bold tracking-wide uppercase ${selectedModel === "gemini-3.6-flash" ? "text-indigo-400" : "text-slate-300"}`}>Gemini 3.6 Flash</span>
                   <span className="text-[8px] text-slate-500 font-medium">Dictados y reportes ágiles</span>
                 </div>
-                {selectedModel === "gemini-3.5-flash" && <Zap className="h-3.5 w-3.5 text-indigo-400 shrink-0" />}
+                {selectedModel === "gemini-3.6-flash" && <Zap className="h-3.5 w-3.5 text-indigo-400 shrink-0" />}
               </button>
 
               <button
@@ -24124,24 +26888,6 @@ Ejemplo:
                             <Mail className="h-3.5 w-3.5 text-white" /> Gmail PDF
                           </button>
                           <button
-                            onClick={() => handleSaveToCloud()}
-                            disabled={isSavingToCloud}
-                            className="px-3 md:px-4 py-1.5 md:py-2 bg-emerald-950/40 hover:bg-emerald-950/80 border-2 border-emerald-500/40 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider text-emerald-300 transition-all flex items-center gap-1.5 md:gap-2 shadow-lg select-none whitespace-nowrap cursor-pointer"
-                            title="Archivar este estudio en tu base de datos local"
-                          >
-                            {isSavingToCloud ? (
-                              <>
-                                <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-400" />
-                                <span>Guardando...</span>
-                              </>
-                            ) : (
-                              <>
-                                <Database className="h-3.5 w-3.5 text-emerald-400" />
-                                <span>Guardar Estudio</span>
-                              </>
-                            )}
-                          </button>
-                          <button
                             onClick={() => copyToClipboard(generatedReport, true)}
                             className="px-3 md:px-4 py-1.5 md:py-2 bg-emerald-600 hover:bg-emerald-550 border-2 border-emerald-500/30 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider text-white transition-all flex items-center gap-1.5 md:gap-2 shadow-lg select-none whitespace-nowrap cursor-pointer"
                           >
@@ -24513,14 +27259,78 @@ Ejemplo:
                             </div>
                           ) : isEditingReportManual ? (
                             <div className="space-y-3">
-                              <div className="flex items-center justify-between">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                                 <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest font-mono">
                                   Editor de Texto Radiológico (Manual)
                                 </label>
                                 <span className="text-[9px] font-mono text-slate-500 uppercase">
                                   Escribe libremente • Los cambios se guardarán en el historial
-                                </span >
+                                </span>
                               </div>
+
+                              {/* BARRA DE BOTONES DE ALINEACIÓN Y SALTO DE PÁGINA PDF */}
+                              <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-900/90 border border-slate-800 rounded-xl p-2.5">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="text-[9.5px] font-black text-slate-400 uppercase tracking-wider font-mono">
+                                    Alineación PDF:
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const tag = "[SALTO_DE_PAGINA]";
+                                      const textarea = document.getElementById("textarea-manual-report-edit") as HTMLTextAreaElement | null;
+                                      if (textarea) {
+                                        const start = textarea.selectionStart || 0;
+                                        const end = textarea.selectionEnd || 0;
+                                        const current = editedReportText || "";
+                                        const newText = current.substring(0, start) + `\n\n${tag}\n\n` + current.substring(end);
+                                        setEditedReportText(newText);
+                                        setTimeout(() => {
+                                          textarea.focus();
+                                          textarea.setSelectionRange(start + tag.length + 4, start + tag.length + 4);
+                                        }, 50);
+                                      } else {
+                                        setEditedReportText(prev => (prev || "") + `\n\n${tag}\n\n`);
+                                      }
+                                    }}
+                                    className="px-2.5 py-1 bg-teal-950/60 hover:bg-teal-900/80 border border-teal-500/40 text-teal-300 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all duration-150 cursor-pointer flex items-center gap-1.5 font-mono"
+                                    title="Fuerza que el texto siguiente comience al inicio de la siguiente página del PDF"
+                                  >
+                                    <FileDown className="h-3 w-3 text-teal-400" />
+                                    + Insertar Salto de Página
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const tag = "[ESPACIO_10MM]";
+                                      const textarea = document.getElementById("textarea-manual-report-edit") as HTMLTextAreaElement | null;
+                                      if (textarea) {
+                                        const start = textarea.selectionStart || 0;
+                                        const end = textarea.selectionEnd || 0;
+                                        const current = editedReportText || "";
+                                        const newText = current.substring(0, start) + `\n\n${tag}\n\n` + current.substring(end);
+                                        setEditedReportText(newText);
+                                        setTimeout(() => {
+                                          textarea.focus();
+                                          textarea.setSelectionRange(start + tag.length + 4, start + tag.length + 4);
+                                        }, 50);
+                                      } else {
+                                        setEditedReportText(prev => (prev || "") + `\n\n${tag}\n\n`);
+                                      }
+                                    }}
+                                    className="px-2.5 py-1 bg-indigo-950/60 hover:bg-indigo-900/80 border border-indigo-500/40 text-indigo-300 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all duration-150 cursor-pointer flex items-center gap-1.5 font-mono"
+                                    title="Inserta un espacio vertical adicional de 10mm en el PDF para empujar títulos huérfanos"
+                                  >
+                                    <ArrowDown className="h-3 w-3 text-indigo-400" />
+                                    + Espacio Blanco (+10mm)
+                                  </button>
+                                </div>
+                                <span className="text-[9px] text-slate-500 font-mono italic">
+                                  Ideal para evitar títulos huérfanos al final de página
+                                </span>
+                              </div>
+
                               <textarea
                                 id="textarea-manual-report-edit"
                                 value={editedReportText}
@@ -25114,7 +27924,12 @@ Ejemplo:
                                 </div>
                                 
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                                  {attachedImages.map((img, idx) => (
+                                  {attachedImages.map((img, idx) => {
+                                    const currentModality = img.modality || detectImageMetaFromFilename(img.name, img.dicomMetaData).modality;
+                                    const currentProj = img.projection || detectImageMetaFromFilename(img.name, img.dicomMetaData).projection;
+                                    const currentSide = img.side || detectImageMetaFromFilename(img.name, img.dicomMetaData).side;
+
+                                    return (
                                     <div key={img.id} className="bg-slate-950 p-3 rounded-xl border border-slate-850 flex flex-col gap-2.5 relative group">
                                       {/* Delete Corner Button */}
                                       <button 
@@ -25128,8 +27943,13 @@ Ejemplo:
                                       </button>
 
                                       <div className="relative aspect-[4/3] bg-black rounded overflow-hidden border border-slate-900">
-                                        <div className="absolute top-2 left-2 px-2 py-0.5 bg-indigo-600/90 backdrop-blur-md text-white font-mono text-[8px] font-black rounded border border-indigo-400/30 select-none tracking-wider z-10">
-                                          FIGURA {idx + 1}
+                                        <div className="absolute top-2 left-2 flex items-center gap-1 z-10">
+                                          <span className="px-2 py-0.5 bg-indigo-600/90 backdrop-blur-md text-white font-mono text-[8px] font-black rounded border border-indigo-400/30 select-none tracking-wider">
+                                            FIGURA {idx + 1}
+                                          </span>
+                                          <span className={`px-1.5 py-0.5 font-mono text-[8px] font-black rounded select-none tracking-wider ${currentModality === "MMG" ? "bg-fuchsia-600/90 text-white border border-fuchsia-400/30" : "bg-cyan-600/90 text-white border border-cyan-400/30"}`}>
+                                            {currentModality === "MMG" ? "MMG" : "US"}
+                                          </span>
                                         </div>
                                         <img src={img.url} alt={img.name} className="w-full h-full object-cover" />
                                         {img.isDicom && (
@@ -25140,8 +27960,53 @@ Ejemplo:
                                       </div>
 
                                       <div className="space-y-2">
-                                        <div className="text-[9px] font-mono text-slate-500 truncate" title={img.name}>
-                                          {img.name}
+                                        <div className="flex items-center justify-between text-[9px] font-mono text-slate-500 gap-1.5">
+                                          <span className="truncate max-w-[100px]" title={img.name}>{img.name}</span>
+                                          
+                                          {/* Modality & Projection Controls */}
+                                          <div className="flex items-center gap-1 shrink-0">
+                                            <select
+                                              value={currentModality}
+                                              onChange={(e) => {
+                                                const val = e.target.value as "MMG" | "US";
+                                                setAttachedImages(prev => prev.map(item => item.id === img.id ? { ...item, modality: val } : item));
+                                              }}
+                                              className="bg-slate-900 text-slate-300 border border-slate-800 text-[8px] font-bold rounded px-1 py-0.5 outline-none cursor-pointer"
+                                            >
+                                              <option value="MMG">MMG</option>
+                                              <option value="US">US</option>
+                                            </select>
+
+                                            {currentModality === "MMG" && (
+                                              <>
+                                                <select
+                                                  value={currentProj}
+                                                  onChange={(e) => {
+                                                    const val = e.target.value as "MLO" | "CC" | "OTRO";
+                                                    setAttachedImages(prev => prev.map(item => item.id === img.id ? { ...item, projection: val } : item));
+                                                  }}
+                                                  className="bg-slate-900 text-slate-300 border border-slate-800 text-[8px] font-bold rounded px-1 py-0.5 outline-none cursor-pointer"
+                                                >
+                                                  <option value="MLO">MLO</option>
+                                                  <option value="CC">CC</option>
+                                                  <option value="OTRO">OTRO</option>
+                                                </select>
+
+                                                <select
+                                                  value={currentSide}
+                                                  onChange={(e) => {
+                                                    const val = e.target.value as "Derecha" | "Izquierda" | "Bilateral";
+                                                    setAttachedImages(prev => prev.map(item => item.id === img.id ? { ...item, side: val } : item));
+                                                  }}
+                                                  className="bg-slate-900 text-slate-300 border border-slate-800 text-[8px] font-bold rounded px-1 py-0.5 outline-none cursor-pointer"
+                                                >
+                                                  <option value="Derecha">DER</option>
+                                                  <option value="Izquierda">IZQ</option>
+                                                  <option value="Bilateral">BIL</option>
+                                                </select>
+                                              </>
+                                            )}
+                                          </div>
                                         </div>
                                         
                                         {/* Edit Caption Input Box */}
@@ -25245,7 +28110,8 @@ Ejemplo:
                                         </div>
                                       </div>
                                     </div>
-                                  ))}
+                                  );
+                                })}
                                 </div>
                               </div>
                             )}
@@ -25727,7 +28593,324 @@ Ejemplo:
 
                           </React.Suspense>
 
-                           {/* --- NUEVA SECCIÓN DE ANÁLISIS DE CASO Y BÚSQUEDA DE BIBLIOGRAFÍA --- */}
+                          {/* --- MÓDULO DE AUDITORÍA Y EVALUACIÓN DE CALIDAD DE REPORTE (UBICACIÓN INMEDIATA POST-GENERACIÓN) --- */}
+                          {isEvaluatingReport && (
+                            <div className="my-6 bg-[#120f1a]/80 border-2 border-violet-500/30 rounded-3xl p-6 flex flex-col items-center justify-center py-10 text-center space-y-3 shadow-2xl animate-pulse">
+                              <CheckCircle2 className="h-7 w-7 text-violet-400 animate-spin" />
+                              <p className="text-xs font-mono font-black text-slate-200 uppercase tracking-widest">
+                                Ejecutando Auditoría Médica y Evaluación de Calidad...
+                              </p>
+                              <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider max-w-md">
+                                Analizando exhaustivamente aspectos redactados, información omitida y clasificaciones o escalas radiológicas sugeridas para adjuntar.
+                              </p>
+                            </div>
+                          )}
+
+                          {reportEvaluationError && (
+                            <div className="my-6 p-4 bg-rose-950/20 border border-rose-900/40 rounded-2xl text-rose-300 text-xs font-mono font-bold uppercase tracking-tight">
+                              🚨 Error en auditoría: {reportEvaluationError}
+                            </div>
+                          )}
+
+                          {reportEvaluation && (
+                            <div className={isReportEvaluationExpanded 
+                              ? "fixed inset-4 md:inset-10 z-50 bg-[#0f0b16]/98 backdrop-blur-2xl border-2 border-violet-500/50 rounded-3xl p-6 md:p-8 flex flex-col space-y-4 shadow-2xl overflow-y-auto transition-all duration-350"
+                              : "my-6 bg-[#0f0b16] border-2 border-violet-500/30 rounded-3xl p-6 space-y-4 shadow-2xl relative overflow-hidden animate-fade-in transition-all duration-350"
+                            }>
+                              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-violet-950/80 pb-4 gap-3 font-sans">
+                                <div className="flex items-center gap-3">
+                                  <div className="p-2 bg-violet-950/80 border border-violet-500/40 rounded-2xl text-violet-400 shrink-0">
+                                    <CheckCircle2 className="h-5 w-5 text-violet-400" />
+                                  </div>
+                                  <div>
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <h4 className="text-xs md:text-sm font-black text-violet-300 uppercase tracking-widest font-mono">
+                                        INFORME DE AUDITORÍA Y EVALUACIÓN DE CALIDAD DE REPORTE
+                                      </h4>
+                                      <span className="text-[8.5px] font-black uppercase tracking-widest bg-violet-950 text-violet-300 border border-violet-500/40 px-2.5 py-0.5 rounded-full font-mono">
+                                        AUDITORÍA ACTIVA
+                                      </span>
+                                    </div>
+                                    <p className="text-[11px] font-medium text-slate-400 mt-0.5">
+                                      Revisa las observaciones y haz clic en &quot;Incorporar&quot; en cualquier recomendación o clasificación sugerida antes de proceder.
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => setIsReportEvaluationExpanded(p => !p)}
+                                    className={`p-2 rounded-xl border transition-all duration-200 cursor-pointer flex items-center justify-center ${
+                                      isReportEvaluationExpanded
+                                        ? "bg-violet-950/90 border-violet-500/50 text-violet-300 ring-1 ring-violet-500/30"
+                                        : "bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-100"
+                                    }`}
+                                    title={isReportEvaluationExpanded ? "Restaurar tamaño estándar de componente" : "Maximizar área de lectura (Modo Expandido)"}
+                                  >
+                                    {isReportEvaluationExpanded ? (
+                                      <Minimize2 className="h-4.5 w-4.5" />
+                                    ) : (
+                                      <Maximize2 className="h-4.5 w-4.5" />
+                                    )}
+                                  </button>
+                                  <button
+                                    onClick={() => copyToClipboard(reportEvaluation, false)}
+                                    className="text-[9px] font-black text-slate-400 hover:text-violet-400 border border-slate-800 hover:border-violet-500/20 px-3 py-2 rounded-xl bg-slate-950/40 uppercase tracking-wider font-mono transition-all cursor-pointer"
+                                  >
+                                    Copiar Evaluación
+                                  </button>
+                                </div>
+                              </div>
+
+                              {modifyError && (
+                                <div className="p-3.5 bg-rose-950/30 border border-rose-500/30 rounded-xl text-rose-200 text-[11px] font-mono leading-relaxed font-semibold flex items-center justify-between gap-3 animate-fade-in">
+                                  <div className="flex items-center gap-2 font-sans">
+                                    <span className="text-rose-450 font-black font-mono">🚨 ERROR DE INTEGRACIÓN:</span>
+                                    <span>{modifyError}</span>
+                                  </div>
+                                  <button
+                                    onClick={() => setModifyError(null)}
+                                    className="px-2 py-1 bg-rose-950/60 hover:bg-rose-900 border border-rose-500/20 text-rose-400 rounded text-[9px] uppercase tracking-wider font-mono shrink-0 cursor-pointer"
+                                  >
+                                    Cerrar
+                                  </button>
+                                </div>
+                              )}
+
+                              {(isModifyingReport || Object.keys(pendingRecs).length > 0) && (
+                                <div className="p-3.5 bg-indigo-950/30 border border-indigo-500/30 rounded-xl text-indigo-200 text-[11px] font-mono leading-relaxed font-semibold flex items-center justify-between gap-2.5 animate-pulse">
+                                  <div className="flex items-center gap-2.5">
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-400 shrink-0" />
+                                    <span>
+                                      {Object.keys(pendingRecs).length > 1
+                                        ? `Incorporando ${Object.keys(pendingRecs).length} recomendaciones seleccionadas en el informe activo...`
+                                        : "Integrando recomendación / clasificación de auditoría en el informe activo de forma automática..."}
+                                    </span>
+                                  </div>
+                                  {Object.keys(pendingRecs).length > 0 && (
+                                    <span className="text-[9px] font-black uppercase tracking-widest bg-indigo-900/60 border border-indigo-500/40 text-indigo-300 px-2.5 py-1 rounded-md shrink-0">
+                                      {Object.keys(pendingRecs).length} EN COLA
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+
+                              <div className={`bg-[#0c0814] p-6 rounded-2xl border border-violet-950/40 shadow-inner overflow-x-auto overflow-y-auto ${
+                                isReportEvaluationExpanded ? "flex-1 max-h-none" : "max-h-[500px]"
+                              }`}>
+                                {renderElegantResponse(reportEvaluation, "text-violet-400")}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* --- SISTEMA DE ACTIVACIÓN RÁPIDA DE MÓDULOS (PROCESAMIENTO EN LOTE) --- */}
+                          <div className="my-6 p-5 sm:p-6 bg-slate-900/70 border-2 border-indigo-500/30 rounded-3xl shadow-2xl space-y-5 transition-all">
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+                              <div className="flex items-center gap-3">
+                                <div className="p-2.5 bg-indigo-950/80 border border-indigo-500/40 rounded-2xl text-indigo-400 shrink-0">
+                                  <Zap className="h-6 w-6 animate-pulse" />
+                                </div>
+                                <div>
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <h3 className="text-sm font-black text-slate-100 uppercase tracking-wider font-mono">
+                                      Sistema de Activación Rápida de Módulos
+                                    </h3>
+                                    <span className="text-[9px] font-black uppercase tracking-widest bg-indigo-950 text-indigo-300 border border-indigo-500/40 px-2.5 py-0.5 rounded-full font-mono">
+                                      PROCESAMIENTO EN LOTE
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px] font-medium text-slate-400 mt-0.5">
+                                    Selecciona los anexos, esquemas y cuadros que deseas calcular o desplegar simultáneamente para el reporte activo.
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Batch Selection Controls */}
+                              <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleAllBatchModules(true)}
+                                  className="text-[9.5px] font-black uppercase tracking-wider px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-750 text-indigo-300 border border-indigo-500/30 transition-all font-mono cursor-pointer"
+                                >
+                                  Marcar Todos
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleAllBatchModules(false)}
+                                  className="text-[9.5px] font-black uppercase tracking-wider px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-400 border border-slate-700 transition-all font-mono cursor-pointer"
+                                >
+                                  Desmarcar Todos
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Catalog Grid */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                              {[
+                                {
+                                  id: "radar",
+                                  label: "🎯 Radar Biomecánico e Inflamatorio (Análisis 6D)",
+                                  badge: "RADAR 6D",
+                                  desc: "Cuantifica 6 vectores biomecánicos, inflamatorios y de sobrecarga.",
+                                  color: "text-indigo-400 border-indigo-500/30 bg-indigo-950/20"
+                                },
+                                {
+                                  id: "case_analysis",
+                                  label: "🩺 Análisis de Caso Clinico / Diagnóstico Avanzado (Anexo de Correlación PDF)",
+                                  badge: "CORRELACIÓN & PDF",
+                                  desc: "Desarrolla correlación fisiopatológica y flujograma para exportar al PDF.",
+                                  color: "text-emerald-400 border-emerald-500/30 bg-emerald-950/20"
+                                },
+                                {
+                                  id: "quality_eval",
+                                  label: "🔍 Evaluación de Calidad del Reporte",
+                                  badge: "AUDITORÍA",
+                                  desc: "Audita el reporte para señalar fortalezas, datos faltantes y recomendaciones.",
+                                  color: "text-violet-400 border-violet-500/30 bg-violet-950/20"
+                                },
+                                {
+                                  id: "bibliography",
+                                  label: "📚 Búsqueda Bibliográfica de Soporte (Grounding)",
+                                  badge: "GROUNDING",
+                                  desc: "Ejecuta búsqueda científica grounded basada en los hallazgos reales.",
+                                  color: "text-teal-400 border-teal-500/30 bg-teal-950/20"
+                                },
+                                {
+                                  id: "operational_summary",
+                                  label: "📋 Resumen Operacional de Hallazgos (WhatsApp / Resumen Clínico)",
+                                  badge: "RESUMEN OPERACIONAL",
+                                  desc: "Sintetiza de forma ejecutiva los hallazgos e impresión diagnóstica para consulta ágil y envío por WhatsApp.",
+                                  color: "text-emerald-400 border-emerald-500/30 bg-emerald-950/20"
+                                },
+                                {
+                                  id: "patient_summary",
+                                  label: "👤 Explicación / Resumen para el Paciente",
+                                  badge: "PACIENTE",
+                                  desc: "Traduce la jerga técnica a lenguaje accesible y comprensible.",
+                                  color: "text-orange-400 border-orange-500/30 bg-orange-950/20"
+                                },
+                                {
+                                  id: "glossary",
+                                  label: "📖 Glosario Dinámico de Términos",
+                                  badge: "GLOSARIO",
+                                  desc: "Identifica y define signos, síndromes y conceptos del reporte.",
+                                  color: "text-pink-400 border-pink-500/30 bg-pink-950/20"
+                                },
+                                {
+                                  id: "schematic",
+                                  label: "📐 Esquema Sinóptico de Hallazgos",
+                                  badge: "SINOPSIS",
+                                  desc: "Organiza los hallazgos en un esquema visual e inyectable al informe.",
+                                  color: "text-amber-400 border-amber-500/30 bg-amber-950/20"
+                                },
+                                {
+                                  id: "measurements",
+                                  label: "📏 Asistente de Medidas Clínicas",
+                                  badge: "MEDIDAS",
+                                  desc: "Identifica estructuras inyectando sus rangos de referencia normales.",
+                                  color: "text-indigo-400 border-indigo-500/30 bg-indigo-950/20"
+                                },
+                                {
+                                  id: "footnotes",
+                                  label: "🔖 Creador de Notas de Pie de Página",
+                                  badge: "PIE DE PÁGINA",
+                                  desc: "Genera aclaraciones y notas al pie para recomendaciones complejas.",
+                                  color: "text-purple-400 border-purple-500/30 bg-purple-950/20"
+                                },
+                                {
+                                  id: "organ_synoptic",
+                                  label: "🫀 Cuadro Sinóptico de Órgano",
+                                  badge: "CUADRO ÓRGANO",
+                                  desc: "Sintetiza la semiología de un órgano específico en tabla sinóptica.",
+                                  color: "text-cyan-400 border-cyan-500/30 bg-cyan-950/20"
+                                },
+                                {
+                                  id: "fractures",
+                                  label: "🦴 Sinopsis de Fracturas y Luxaciones",
+                                  badge: "FRACTURAS",
+                                  desc: "Clasifica y desglosa hallazgos traumatológicos y sus pautas de manejo.",
+                                  color: "text-emerald-400 border-emerald-500/30 bg-emerald-950/20"
+                                },
+                                {
+                                  id: "classifications",
+                                  label: "📊 Desglose de Clasificaciones Radiológicas",
+                                  badge: "CLASIFICACIONES",
+                                  desc: "Desglosa la matriz de criterios para escalas estándar (BI-RADS, O-RADS, etc.).",
+                                  color: "text-blue-400 border-blue-500/30 bg-blue-950/20"
+                                },
+                              ].map((mod) => {
+                                const isChecked = !!selectedBatchModules[mod.id];
+                                return (
+                                  <label
+                                    key={mod.id}
+                                    onClick={() => {
+                                      setSelectedBatchModules((prev) => ({
+                                        ...prev,
+                                        [mod.id]: !prev[mod.id]
+                                      }));
+                                    }}
+                                    className={`p-3.5 rounded-2xl border transition-all cursor-pointer select-none flex flex-col justify-between gap-2.5 ${
+                                      isChecked
+                                        ? `${mod.color} ring-1 ring-indigo-500/50 shadow-lg`
+                                        : "bg-slate-950/60 border-slate-800/80 text-slate-400 hover:border-slate-700 hover:bg-slate-900/50"
+                                    }`}
+                                  >
+                                    <div className="flex items-start justify-between gap-2">
+                                      <span className="text-[11px] font-black leading-tight text-slate-200">
+                                        {mod.label}
+                                      </span>
+                                      <input
+                                        type="checkbox"
+                                        checked={isChecked}
+                                        onChange={() => {}}
+                                        className="mt-0.5 h-4 w-4 rounded bg-slate-950 border-slate-700 text-indigo-500 focus:ring-indigo-500 shrink-0 cursor-pointer"
+                                      />
+                                    </div>
+                                    <div className="flex items-center justify-between gap-2 mt-auto pt-1">
+                                      <p className="text-[9.5px] font-medium text-slate-500 line-clamp-2 leading-relaxed">
+                                        {mod.desc}
+                                      </p>
+                                      <span className="text-[7.5px] font-black uppercase font-mono tracking-widest px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-300 shrink-0">
+                                        {mod.badge}
+                                      </span>
+                                    </div>
+                                  </label>
+                                );
+                              })}
+                            </div>
+
+                            {/* Batch Success Feedback */}
+                            {batchSuccessMessage && (
+                              <div className="p-3.5 bg-emerald-950/40 border border-emerald-500/40 rounded-2xl text-emerald-300 text-xs font-mono font-bold flex items-center gap-2.5 animate-fade-in">
+                                <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+                                <span>{batchSuccessMessage}</span>
+                              </div>
+                            )}
+
+                            {/* Execution Button */}
+                            <div className="pt-2 flex items-center justify-end">
+                              <button
+                                type="button"
+                                onClick={handleActivateBatchModules}
+                                disabled={isActivatingBatch || !Object.values(selectedBatchModules).some(Boolean)}
+                                className="w-full sm:w-auto px-8 py-4 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-black uppercase tracking-widest rounded-2xl transition-all shadow-xl shadow-indigo-950/50 flex items-center justify-center gap-3 font-mono cursor-pointer border border-indigo-400/40"
+                              >
+                                {isActivatingBatch ? (
+                                  <>
+                                    <RefreshCw className="h-4 w-4 animate-spin text-white" />
+                                    <span>Procesando Módulos Seleccionados...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Zap className="h-4 w-4 text-indigo-200" />
+                                    <span>ACTIVAR ({Object.values(selectedBatchModules).filter(Boolean).length} MÓDULOS)</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* --- NUEVA SECCIÓN DE ANÁLISIS DE CASO Y BÚSQUEDA DE BIBLIOGRAFÍA --- */}
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {/* Card 1: Caso Clínico completo */}
                             <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-emerald-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
@@ -25739,12 +28922,43 @@ Ejemplo:
                                   </h4>
                                 </div>
                                 <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-emerald-950 text-emerald-400 border border-emerald-900/30 px-2 py-0.5 rounded">
-                                  CORRELACIÓN
+                                  CORRELACIÓN & FORMATOS PDF
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Desarrolla una correlación fisiopatológica sobre los hallazgos principales, diagnósticos diferenciales sustentados y un plan de acción de seguimiento clínico docente.
+                                Desarrolla una correlación fisiopatológica sobre los hallazgos principales y permite elegir el formato de exportación a PDF (Flujograma Semiológico, Flujograma Algorítmico, Pilares o Mapa).
                               </p>
+
+                              {/* Formats Selection Buttons */}
+                              <div className="space-y-1.5">
+                                <span className="text-[9px] font-mono font-bold text-emerald-400 uppercase tracking-wider block">
+                                  Elegir Formato para Exportar al PDF:
+                                </span>
+                                <div className="grid grid-cols-2 gap-1.5">
+                                  {[
+                                    { id: "flujograma_semiologico", label: "Opción 1: Semiológico", desc: "Ciclo Pensamiento" },
+                                    { id: "flujograma_algoritmico", label: "Opción 2: Flujograma", desc: "Árbol de Decisión" },
+                                    { id: "esquema_pilares", label: "Opción 3: Pilares", desc: "Integración" },
+                                    { id: "mapa_diferenciales", label: "Opción 4: Mapa", desc: "Diferenciales" },
+                                    { id: "matriz_semiotica", label: "Opción 5: Matriz", desc: "Semiótica Comparativa" },
+                                  ].map(fmt => (
+                                    <button
+                                      key={fmt.id}
+                                      type="button"
+                                      onClick={() => setSelectedCaseFormat(fmt.id as CaseAnalysisFormatOption)}
+                                      className={`p-2 rounded-lg border text-left transition-all cursor-pointer ${
+                                        selectedCaseFormat === fmt.id
+                                          ? "bg-emerald-950/80 border-emerald-400 text-emerald-300 ring-1 ring-emerald-500/40"
+                                          : "bg-slate-950/80 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200"
+                                      }`}
+                                    >
+                                      <div className="text-[9.5px] font-mono font-black uppercase tracking-tight">{fmt.label}</div>
+                                      <div className="text-[8px] font-medium text-slate-500 truncate">{fmt.desc}</div>
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+
                               <button
                                 onClick={handleAnalyzeCase}
                                 disabled={isAnalyzingCase}
@@ -25755,7 +28969,7 @@ Ejemplo:
                                 ) : (
                                   <Sparkles className="h-4 w-4 text-emerald-400" />
                                 )}
-                                Análisis de Caso
+                                Análisis de Caso (Generar)
                               </button>
                             </div>
 
@@ -26100,6 +29314,35 @@ Ejemplo:
                                   : "Confeccionar Cuadro Semiológico"}
                               </button>
                             </div>
+
+                            {/* Card 11: Radar Biomecánico e Inflamatorio (IA) */}
+                            <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-indigo-500/30 rounded-2xl p-5 space-y-4 shadow-xl transition-all font-sans">
+                              <div className="flex items-center gap-2 justify-between">
+                                <div className="flex items-center gap-2">
+                                  <Activity className="h-4 w-4 text-indigo-400" />
+                                  <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
+                                    Radar Biomecánico (IA)
+                                  </h4>
+                                </div>
+                                <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-indigo-950/40 text-indigo-400 border border-indigo-900/30 px-2 py-0.5 rounded">
+                                  RADAR 6D
+                                </span>
+                              </div>
+                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
+                                Cuantifica 6 vectores biomecánicos, inflamatorios y de sobrecarga en un diagrama spider interactivo e inyectable al reporte.
+                              </p>
+                              <button
+                                onClick={() => setIsBiomechanicalRadarOpen(p => !p)}
+                                className={`w-full py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2 font-mono cursor-pointer border-2 ${
+                                  isBiomechanicalRadarOpen
+                                    ? "bg-indigo-600/15 border-indigo-500/60 text-indigo-200"
+                                    : "bg-slate-950 border-slate-800 hover:border-indigo-500/30 text-indigo-400"
+                                }`}
+                              >
+                                <Activity className="h-4 w-4" />
+                                {isBiomechanicalRadarOpen ? "Ocultar Radar" : "Abrir Radar Biomecánico"}
+                              </button>
+                            </div>
                           </div>
 
                           {/* Render Asistente de Medidas Clínicas Panel */}
@@ -26155,6 +29398,22 @@ Ejemplo:
                                   setEditedReportText(newReportText);
                                   setGeneratedReport(newReportText);
                                 }}
+                              />
+                            </div>
+                          )}
+
+                          {/* Render Radar Biomecánico Panel */}
+                          {isBiomechanicalRadarOpen && (
+                            <div className="my-6">
+                              <BiomechanicalRadarModule
+                                selectedModel={selectedModel}
+                                reportText={isEditingReportManual ? editedReportText : generatedReport}
+                                studyType={specificStudy}
+                                onReportUpdated={(newReportText) => {
+                                  setEditedReportText(newReportText);
+                                  setGeneratedReport(newReportText);
+                                }}
+                                onRadarDataUpdated={(data) => setBiomechanicalRadarData(data)}
                               />
                             </div>
                           )}
@@ -26335,93 +29594,6 @@ Ejemplo:
                             </div>
                           )}
 
-                          {/* Render Report Evaluation Panel */}
-                          {isEvaluatingReport && (
-                            <div className="bg-[#120f1a]/60 border-2 border-violet-500/10 rounded-2xl p-6 flex flex-col items-center justify-center py-10 text-center space-y-3 shadow-lg animate-pulse">
-                              <CheckCircle2 className="h-6 w-6 text-violet-450 animate-spin" />
-                              <p className="text-[10px] font-mono font-black text-slate-300 uppercase tracking-widest">
-                                Iniciando auditoría y evaluación del reporte...
-                              </p>
-                              <p className="text-[9px] font-medium text-slate-500 uppercase tracking-wider max-w-sm">
-                                Se están analizando minuciosamente los aspectos incluidos, la información faltante y las recomendaciones vitales para el médico clínico.
-                              </p>
-                            </div>
-                          )}
-
-                          {reportEvaluationError && (
-                            <div className="p-3 bg-rose-950/10 border border-rose-900/30 rounded-xl text-rose-400 text-[10px] font-mono font-bold uppercase tracking-tight font-sans">
-                              {reportEvaluationError}
-                            </div>
-                          )}
-
-                          {reportEvaluation && (
-                            <div className={isReportEvaluationExpanded 
-                              ? "fixed inset-4 md:inset-10 z-50 bg-[#0f0b16]/95 backdrop-blur-2xl border-2 border-violet-500/40 rounded-3xl p-6 md:p-8 flex flex-col space-y-4 shadow-2xl overflow-y-auto transition-all duration-350"
-                              : "bg-[#0f0b16] border-2 border-violet-500/10 rounded-2xl p-6 space-y-4 shadow-2xl relative overflow-hidden animate-fade-in transition-all duration-350"
-                            }>
-                              <div className="flex items-center justify-between border-b border-violet-950/60 pb-3 font-sans">
-                                <div className="flex items-center gap-2">
-                                  <CheckCircle2 className="h-4 w-4 text-violet-450" />
-                                  <h4 className="text-xs font-black text-violet-450 uppercase tracking-widest font-mono">
-                                    INFORME DE EVALUACIÓN Y AUDITORÍA CLÍNICA
-                                  </h4>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => setIsReportEvaluationExpanded(p => !p)}
-                                    className={`p-2 rounded-xl border transition-all duration-200 cursor-pointer flex items-center justify-center ${
-                                      isReportEvaluationExpanded
-                                        ? "bg-violet-950/90 border-violet-500/50 text-violet-300 ring-1 ring-violet-500/30"
-                                        : "bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-100"
-                                    }`}
-                                    title={isReportEvaluationExpanded ? "Restaurar tamaño estándar de componente" : "Maximizar área de lectura (Modo Expandido)"}
-                                  >
-                                    {isReportEvaluationExpanded ? (
-                                      <Minimize2 className="h-4.5 w-4.5" />
-                                    ) : (
-                                      <Maximize2 className="h-4.5 w-4.5" />
-                                    )}
-                                  </button>
-                                  <button
-                                    onClick={() => copyToClipboard(reportEvaluation, false)}
-                                    className="text-[9px] font-black text-slate-400 hover:text-violet-400 border border-slate-800 hover:border-violet-500/20 px-3 py-2 rounded-xl bg-slate-950/40 uppercase tracking-wider font-mono transition-all cursor-pointer"
-                                  >
-                                    Copiar Evaluación
-                                  </button>
-                                </div>
-                              </div>
-
-                              {modifyError && (
-                                <div className="p-3.5 bg-rose-950/30 border border-rose-500/30 rounded-xl text-rose-200 text-[11px] font-mono leading-relaxed font-semibold flex items-center justify-between gap-3 animate-fade-in">
-                                  <div className="flex items-center gap-2 font-sans">
-                                    <span className="text-rose-450 font-black font-mono">🚨 ERROR DE INTEGRACIÓN:</span>
-                                    <span>{modifyError}</span>
-                                  </div>
-                                  <button
-                                    onClick={() => setModifyError(null)}
-                                    className="px-2 py-1 bg-rose-950/60 hover:bg-rose-900 border border-rose-500/20 text-rose-400 rounded text-[9px] uppercase tracking-wider font-mono shrink-0 cursor-pointer"
-                                  >
-                                    Cerrar
-                                  </button>
-                                </div>
-                              )}
-
-                              {isModifyingReport && (
-                                <div className="p-3.5 bg-indigo-950/30 border border-indigo-500/10 rounded-xl text-indigo-250 text-[11px] font-mono leading-relaxed font-semibold flex items-center gap-2.5 animate-pulse">
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-400 shrink-0" />
-                                  <span>Integrando la recomendación de auditoría en el informe activo de forma automática...</span>
-                                </div>
-                              )}
-
-                              <div className={`bg-[#0c0814] p-6 rounded-xl border border-violet-950/30 shadow-inner overflow-x-auto overflow-y-auto ${
-                                isReportEvaluationExpanded ? "flex-1 max-h-none" : "max-h-[500px]"
-                              }`}>
-                                {renderElegantResponse(reportEvaluation, "text-violet-400")}
-                              </div>
-                            </div>
-                          )}
-
                           {/* Render Case Analysis Panel */}
                           {isAnalyzingCase && (
                             <div className="bg-[#0b1219]/60 border-2 border-emerald-500/10 rounded-2xl p-6 flex flex-col items-center justify-center py-10 text-center space-y-3 shadow-lg animate-pulse">
@@ -26485,48 +29657,137 @@ Ejemplo:
                                 </div>
                               )}
 
-                              {/* Interactive Action Card to Synthesize and Incorporate Differential Diagnostics */}
-                              <div className="bg-[#05110d] border border-emerald-500/25 rounded-xl p-4.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-md transition-all duration-300">
-                                <div className="space-y-1.5 flex-1">
+                              {/* Format Configurator & PDF Export Inserter Card */}
+                              <div className="bg-[#05110d] border-2 border-emerald-500/30 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
+                                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-emerald-900/40 pb-3">
                                   <div className="flex items-center gap-2">
-                                    <Sparkles className="h-4 w-4 text-emerald-450 animate-pulse" />
-                                    <span className="text-[10px] font-black uppercase tracking-widest font-mono text-emerald-400">
-                                      🔍 SÍNTESIS DE DIAGNÓSTICOS DIFERENCIALES
-                                    </span>
+                                    <Sparkles className="h-4.5 w-4.5 text-emerald-400 animate-pulse" />
+                                    <h5 className="text-xs font-black uppercase font-mono tracking-wider text-emerald-300">
+                                      OPCIONES DE FORMATO E INSERCIÓN PARA PDF Y REPORTE
+                                    </h5>
                                   </div>
-                                  <p className="text-[11px] text-slate-300 font-medium leading-relaxed">
-                                    Extrae de manera inteligente los diagnósticos diferenciales discutidos en este análisis e integra una síntesis formal y estructurada directamente en la discusión clínica de tu reporte activo.
-                                  </p>
+                                  <span className="text-[9px] font-mono text-emerald-400 font-extrabold bg-emerald-950 border border-emerald-800 px-2.5 py-0.5 rounded uppercase tracking-wider">
+                                    FORMATOS EXPORTABLES INTERACTIVOS
+                                  </span>
                                 </div>
-                                <button
-                                  type="button"
-                                  onClick={handleIncorporateDifferentialDiagnostics}
-                                  disabled={isIncorporatingDiffs || diffsIncorporated}
-                                  className={`text-[9.5px] font-mono font-black uppercase tracking-widest px-4 py-2.5 rounded-xl border transition-all duration-250 flex items-center justify-center gap-2 w-full sm:w-auto shrink-0 select-none cursor-pointer ${
-                                    diffsIncorporated
-                                      ? "bg-emerald-950/20 border-emerald-500/25 text-emerald-400 cursor-not-allowed font-semibold text-xs"
-                                      : isIncorporatingDiffs
-                                      ? "bg-indigo-950/40 border-indigo-500/30 text-indigo-400 cursor-wait animate-pulse"
-                                      : "bg-emerald-500/10 hover:bg-emerald-600 hover:text-white text-emerald-300 border-emerald-500/30 hover:border-transparent active:scale-[0.98]"
-                                  }`}
-                                >
-                                  {isIncorporatingDiffs ? (
-                                    <>
-                                      <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-400" />
-                                      <span>Incorporando...</span>
-                                    </>
-                                  ) : diffsIncorporated ? (
-                                    <>
-                                      <Check className="h-3.5 w-3.5 text-emerald-400" />
-                                      <span>Incorporado</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Sparkles className="h-3.5 w-3.5 text-emerald-400 animate-pulse" />
-                                      <span>Incorporar al Reporte</span>
-                                    </>
-                                  )}
-                                </button>
+
+                                <p className="text-[11px] text-slate-300 font-medium leading-relaxed">
+                                  Selecciona el formato deseado para estructurar este análisis de caso. Cada elemento e hipótesis tendrá su propia casilla para que puedas aceptarlo o desecharlo, y podrás ver la representación gráfica del PDF en tiempo real antes de insertarla:
+                                </p>
+
+                                {/* Grid of 4 Formats */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
+                                  {[
+                                    { id: "flujograma_semiologico", label: "Opción 1: Flujograma Semiológico", icon: "✨", desc: "Ciclo de Pensamiento Radiológico" },
+                                    { id: "flujograma_algoritmico", label: "Opción 2: Flujograma", icon: "🔀", desc: "Árbol Algorítmico de Decisión" },
+                                    { id: "esquema_pilares", label: "Opción 3: Esquema por Pilares", icon: "🏛️", desc: "Integración Multidisciplinaria" },
+                                    { id: "mapa_diferenciales", label: "Opción 4: Mapa Diferencial", icon: "🗺️", desc: "Mapa de Diagnósticos" },
+                                    { id: "matriz_semiotica", label: "Opción 5: Matriz Semiótica", icon: "⚖️", desc: "Matriz Semiótica Comparativa" },
+                                  ].map(fmt => (
+                                    <button
+                                      key={fmt.id}
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedCaseFormat(fmt.id as CaseAnalysisFormatOption);
+                                        setDiffsIncorporated(false);
+                                      }}
+                                      className={`p-3 rounded-xl border text-left transition-all flex flex-col justify-between cursor-pointer ${
+                                        selectedCaseFormat === fmt.id
+                                          ? "bg-emerald-950/80 border-emerald-400 text-emerald-200 ring-2 ring-emerald-500/30 shadow-md"
+                                          : "bg-slate-900/60 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200"
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-1.5 mb-1">
+                                        <span className="text-base">{fmt.icon}</span>
+                                        <span className="text-[10px] font-black uppercase font-mono tracking-tight leading-tight">{fmt.label}</span>
+                                      </div>
+                                      <span className="text-[8.5px] font-medium text-slate-400 leading-tight block">{fmt.desc}</span>
+                                    </button>
+                                  ))}
+                                </div>
+
+                                {/* Interactive Editor State Handlers */}
+                                {isExtractingCaseData ? (
+                                  <div className="bg-slate-950/80 border border-emerald-500/10 rounded-2xl p-8 flex flex-col items-center justify-center text-center space-y-3 py-10 animate-pulse">
+                                    <Loader2 className="h-6 w-6 text-emerald-400 animate-spin" />
+                                    <p className="text-[10px] font-mono font-bold uppercase tracking-widest text-emerald-300">Estructurando campos interactivos del formato...</p>
+                                    <p className="text-[9px] font-mono text-slate-500">Separando afirmaciones, criterios y pilares para control total</p>
+                                  </div>
+                                ) : caseDataError ? (
+                                  <div className="p-4 bg-rose-950/10 border border-rose-900/35 rounded-2xl text-rose-400 text-[10px] font-mono font-bold uppercase tracking-tight flex items-center gap-2">
+                                    <span>⚠️</span>
+                                    <span>{caseDataError} (Puedes regenerar el análisis para reintentar)</span>
+                                  </div>
+                                ) : editableCaseData ? (
+                                  <div className="pt-2">
+                                    <InteractiveCaseEditor
+                                      selectedCaseFormat={selectedCaseFormat}
+                                      editableCaseData={editableCaseData}
+                                      setEditableCaseData={setEditableCaseData}
+                                      caseElements={caseElements}
+                                      setCaseElements={setCaseElements}
+                                      checkedDetails={checkedDetails}
+                                      setCheckedDetails={setCheckedDetails}
+                                      checkedDifferentials={checkedDifferentials}
+                                      setCheckedDifferentials={setCheckedDifferentials}
+                                      checkedDecisionSteps={checkedDecisionSteps}
+                                      setCheckedDecisionSteps={setCheckedDecisionSteps}
+                                    />
+                                  </div>
+                                ) : (
+                                  <div className="bg-[#0b1219]/30 border border-slate-800/50 rounded-2xl p-6 text-center text-slate-400 text-[11px] font-medium">
+                                    Genera un análisis completo de caso arriba para habilitar el editor interactivo y la previsualización del PDF.
+                                  </div>
+                                )}
+
+                                {/* Action Buttons */}
+                                <div className="flex flex-col sm:flex-row gap-2 pt-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleFormatAndIncorporateCaseAnalysis()}
+                                    disabled={isFormattingCaseJSON || !editableCaseData || diffsIncorporated}
+                                    className={`flex-1 py-3 px-4 rounded-xl font-mono text-[10.5px] font-black uppercase tracking-widest border transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                                      diffsIncorporated
+                                        ? "bg-emerald-950/40 border-emerald-500/40 text-emerald-300 cursor-not-allowed"
+                                        : isFormattingCaseJSON
+                                        ? "bg-emerald-900/40 border-emerald-500/50 text-emerald-200 animate-pulse cursor-wait"
+                                        : !editableCaseData
+                                        ? "bg-slate-900 border-slate-850 text-slate-600 cursor-not-allowed"
+                                        : "bg-emerald-600 hover:bg-emerald-500 text-slate-950 border-emerald-400 font-extrabold shadow-lg hover:shadow-emerald-500/20 active:scale-[0.99]"
+                                    }`}
+                                  >
+                                    {isFormattingCaseJSON ? (
+                                      <>
+                                        <Loader2 className="h-4 w-4 animate-spin text-slate-950" />
+                                        <span>Insertando en Reporte / PDF...</span>
+                                      </>
+                                    ) : diffsIncorporated ? (
+                                      <>
+                                        <Check className="h-4 w-4 text-emerald-400" />
+                                        <span>Análisis Estructurado Insertado (Para PDF)</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Sparkles className="h-4 w-4 text-slate-950" />
+                                        <span>Insertar Análisis Estructurado en Reporte Activo (PDF)</span>
+                                      </>
+                                    )}
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={handleIncorporateDifferentialDiagnostics}
+                                    disabled={isIncorporatingDiffs || diffsIncorporated}
+                                    className={`py-3 px-4 rounded-xl font-mono text-[10px] font-black uppercase tracking-widest border transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                                      diffsIncorporated
+                                        ? "bg-slate-950 border-slate-800 text-slate-500 cursor-not-allowed"
+                                        : "bg-slate-900 hover:bg-slate-850 text-emerald-300 border-emerald-500/30"
+                                    }`}
+                                  >
+                                    <Sparkles className="h-3.5 w-3.5 text-emerald-400" />
+                                    <span>Texto Plano al Reporte</span>
+                                  </button>
+                                </div>
                               </div>
 
                               <div className={`bg-[#05090b] p-6 rounded-xl border border-slate-850 shadow-inner overflow-x-auto overflow-y-auto ${
@@ -27606,6 +30867,19 @@ Ejemplo:
                               </div>
                             )}
                           </div>
+
+                          {/* --- MÓDULO DE DESGLOSE Y JUSTIFICACIÓN DE CLASIFICACIONES RADIOLÓGICAS --- */}
+                          <ClassificationBreakdownModule
+                            reportText={isEditingReportManual ? editedReportText : generatedReport}
+                            studyType={studyType || specificStudy}
+                            selectedModel={selectedModel}
+                            onAppendToReport={(annexText) => {
+                              const current = generatedReport || editedReportText || "";
+                              const updated = current + annexText;
+                              setGeneratedReport(updated);
+                              setEditedReportText(updated);
+                            }}
+                          />
                         </div>
                       )}
                     </div>
@@ -28127,22 +31401,22 @@ Ejemplo:
                       {/* CARD 1: FLASH */}
                       <button
                         type="button"
-                        onClick={() => setSelectedModel("gemini-3.5-flash")}
+                        onClick={() => setSelectedModel("gemini-3.6-flash")}
                         className={`text-left p-4 rounded-xl border-2 transition-all flex flex-col justify-between ${
-                          selectedModel === "gemini-3.5-flash"
+                          selectedModel === "gemini-3.6-flash"
                             ? "bg-indigo-950/20 border-indigo-500/80 shadow-[0_0_12px_rgba(99,102,241,0.12)]"
                             : "bg-[#070b13] border-slate-850 hover:bg-slate-900/60 hover:border-slate-800"
                         }`}
                       >
                         <div>
                           <div className="flex items-center justify-between mb-2">
-                            <span className="text-xs font-black uppercase tracking-wider text-slate-200">Gemini 3.5 Flash</span>
+                            <span className="text-xs font-black uppercase tracking-wider text-slate-200">Gemini 3.6 Flash</span>
                             <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest ${
-                              selectedModel === "gemini-3.5-flash"
+                              selectedModel === "gemini-3.6-flash"
                                 ? "bg-indigo-500 text-white"
                                 : "bg-slate-800 text-slate-450"
                             }`}>
-                              {selectedModel === "gemini-3.5-flash" ? "ACTIVO" : "RECOMENDADO"}
+                              {selectedModel === "gemini-3.6-flash" ? "ACTIVO" : "RECOMENDADO"}
                             </span>
                           </div>
                           <p className="text-[11px] text-slate-400 leading-relaxed mb-3">
@@ -28267,7 +31541,7 @@ Ejemplo:
 {`{
   "success": true,
   "report": "# REPORTE DE ESTUDIO... (Hallazgos redactados en Markdown)",
-  "model_used": "gemini-3.5-flash"
+  "model_used": "gemini-3.6-flash"
 }`}
                       </pre>
                     </div>
@@ -28362,493 +31636,143 @@ Ejemplo:
                 className="max-w-7xl mx-auto space-y-6"
               >
                 {/* Header card */}
-                <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-[400px] h-[200px] bg-emerald-500/5 rounded-full blur-[80px]" />
+                <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 relative overflow-hidden text-left">
+                  <div className="absolute top-0 right-0 w-[400px] h-[200px] bg-indigo-500/5 rounded-full blur-[80px]" />
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
                     <div className="flex items-start gap-4">
-                      <div className="w-12 h-12 rounded-xl bg-emerald-950/40 border border-emerald-800/60 flex items-center justify-center text-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.15)] shrink-0">
-                        <Database className="h-6 w-6 animate-pulse" />
+                      <div className="w-12 h-12 rounded-xl bg-indigo-950/40 border border-indigo-800/60 flex items-center justify-center text-indigo-400 shadow-[0_0_20px_rgba(99,102,241,0.15)] shrink-0">
+                        <History className="h-6 w-6" />
                       </div>
                       <div>
-                        <h2 className="text-xl font-black text-white tracking-tight uppercase">Base de Datos Cloud Propia</h2>
+                        <h2 className="text-xl font-black text-white tracking-tight uppercase">Historial Local de Reportes</h2>
                         <p className="text-xs text-slate-400 mt-1 max-w-2xl">
-                          Guarda, sincroniza y accede a todos tus reportes radiológicos y datos clínicos de forma segura en la nube. Tu archivo está encriptado y es accesible instantáneamente desde cualquier equipo con tu cuenta de especialista.
+                          Todos los estudios que generes se guardan automáticamente en tu navegador. Puedes abrirlos, copiar su contenido o limpiar el historial cuando lo desees.
                         </p>
                       </div>
                     </div>
-                    {gmailUser ? (
-                      <div className="flex items-center gap-3 bg-emerald-950/30 border border-emerald-900/40 px-4 py-2 rounded-xl">
-                        {gmailUser.photoURL ? (
-                          <img src={gmailUser.photoURL} alt={gmailUser.displayName || "Especialista"} className="w-8 h-8 rounded-full border border-emerald-500/40" referrerPolicy="no-referrer" />
-                        ) : (
-                          <div className="w-8 h-8 rounded-full bg-emerald-800 flex items-center justify-center text-xs font-bold text-white uppercase">{gmailUser.displayName?.substring(0, 2) || "Dr"}</div>
-                        )}
-                        <div className="text-left">
-                          <div className="text-xs font-black text-white flex items-center gap-1.5 uppercase tracking-wider">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
-                            Sincronizado
-                          </div>
-                          <div className="text-[10px] text-slate-400 font-mono truncate max-w-[150px]">{gmailUser.email}</div>
-                        </div>
-                      </div>
-                    ) : (
+                    {savedReports.length > 0 && (
                       <button
-                        onClick={handleGmailLogin}
-                        disabled={isLoggingInGmail}
-                        className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white font-bold text-xs uppercase tracking-wider px-5 py-3 rounded-xl transition shadow-[0_4px_15px_rgba(99,102,241,0.25)] border border-indigo-500/30 shrink-0"
+                        onClick={handleClearHistory}
+                        className="bg-rose-950/30 hover:bg-rose-900/50 text-rose-300 border border-rose-800/60 font-bold text-xs uppercase tracking-wider px-4 py-2.5 rounded-xl transition flex items-center gap-2 cursor-pointer shrink-0"
                       >
-                        {isLoggingInGmail ? <Loader2 className="h-4 w-4 animate-spin" /> : <Key className="h-4 w-4" />}
-                        Conectar con Google Auth
+                        <Trash2 className="h-4 w-4" />
+                        <span>Limpiar Historial</span>
                       </button>
                     )}
                   </div>
                 </div>
 
-                {/* Notifications */}
-                {cloudStudiesError && (
-                  <div className="bg-rose-950/20 border border-rose-900/40 text-rose-300 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-left">
-                    <div className="flex items-start gap-3">
-                      <AlertCircle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
-                      <div>{cloudStudiesError}</div>
-                    </div>
-                    {(cloudStudiesError.toLowerCase().includes("cuota") || cloudStudiesError.toLowerCase().includes("quota") || cloudStudiesError.toLowerCase().includes("limit")) && (
-                      <button
-                        onClick={() => setActiveTab("api")}
-                        className="text-indigo-400 hover:text-indigo-300 font-bold uppercase tracking-wider shrink-0 underline decoration-indigo-400/40 underline-offset-4 text-[10px] self-start sm:self-center"
-                      >
-                        Configurar Firebase Propio ↗
-                      </button>
-                    )}
+                {/* Filter and Search Bar */}
+                <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-4 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+                    <input
+                      type="text"
+                      value={cloudSearch}
+                      onChange={(e) => setCloudSearch(e.target.value)}
+                      placeholder="Buscar por tipo de estudio, historia clínica o texto del reporte..."
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all font-medium"
+                    />
                   </div>
-                )}
-                {cloudStudiesSuccess && (
-                  <div className="bg-emerald-950/20 border border-emerald-900/40 text-emerald-300 p-4 rounded-xl flex items-center gap-3 text-xs animate-bounce">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
-                    <div>{cloudStudiesSuccess}</div>
+                  <div className="text-xs text-slate-400 font-mono font-bold flex items-center gap-2 px-2 shrink-0">
+                    <span>Total guardados: <strong className="text-indigo-400">{savedReports.length}</strong></span>
                   </div>
-                )}
+                </div>
 
-                {gmailUser ? (
-                  <div className="space-y-6">
-                    {/* Controls & Save Current Report Panel */}
-                    <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-5 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
-                      {/* Search bar */}
-                      <div className="relative flex-1">
-                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-                        <input
-                          type="text"
-                          value={cloudSearch}
-                          onChange={(e) => setCloudSearch(e.target.value)}
-                          placeholder="Buscar por paciente, tipo de estudio, fecha o hallazgos..."
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all font-medium"
-                        />
-                      </div>
+                {/* Local History Cards List */}
+                {(() => {
+                  const filtered = savedReports.filter(item => {
+                    const query = cloudSearch.toLowerCase();
+                    return (
+                      item.studyType.toLowerCase().includes(query) ||
+                      item.clinicalHistory.toLowerCase().includes(query) ||
+                      item.reportText.toLowerCase().includes(query)
+                    );
+                  });
 
-                      {/* Action buttons */}
-                      <div className="flex flex-wrap items-center gap-2 shrink-0">
-                        {/* Import Button */}
-                        <label className="flex items-center gap-1.5 bg-slate-850 hover:bg-slate-800 text-slate-300 font-bold text-[11px] uppercase tracking-wider px-3.5 py-2.5 rounded-xl transition border border-slate-750 cursor-pointer select-none" title="Importar respaldo JSON local para no perder acceso">
-                          <Upload className="h-3.5 w-3.5 text-indigo-400" />
-                          <span>Importar</span>
-                          <input
-                            type="file"
-                            accept=".json"
-                            className="hidden"
-                            onChange={async (e) => {
-                              const file = e.target.files?.[0];
-                              if (!file) return;
-                              try {
-                                const text = await file.text();
-                                const data = JSON.parse(text);
-                                if (Array.isArray(data)) {
-                                  const valid = data.every(s => s && typeof s === 'object' && 'id' in s && 'patientName' in s);
-                                  if (valid) {
-                                    const uid = gmailUser?.uid || "anon";
-                                    const localKey = `fallback_studies_${uid}`;
-                                    const existingStr = localStorage.getItem(localKey);
-                                    let existing: any[] = [];
-                                    if (existingStr) {
-                                      try { existing = JSON.parse(existingStr); } catch(err) {}
-                                    }
-                                    const merged = [...data];
-                                    existing.forEach(ex => {
-                                      if (!merged.some(m => m.id === ex.id)) {
-                                        merged.push(ex);
-                                      }
-                                    });
-                                    localStorage.setItem(localKey, JSON.stringify(merged));
-                                    merged.forEach(s => {
-                                      localStorage.setItem(`fallback_single_study_${s.id}`, JSON.stringify(s));
-                                    });
-                                    setCloudStudies(merged);
-                                    alert(`¡Éxito! Se importaron ${data.length} estudios correctamente.`);
-                                  } else {
-                                    alert("El archivo JSON no tiene un formato compatible de estudios clínicos.");
-                                  }
-                                } else {
-                                  alert("El archivo de respaldo debe contener una lista de estudios.");
-                                }
-                              } catch (err: any) {
-                                alert("Error al leer el archivo de respaldo: " + err.message);
-                              }
-                            }}
-                          />
-                        </label>
-
-                        {/* Export Button */}
-                        <button
-                          onClick={() => {
-                            if (cloudStudies.length === 0) {
-                              alert("No hay estudios cargados para exportar en este navegador.");
-                              return;
-                            }
-                            try {
-                              const dataStr = JSON.stringify(cloudStudies, null, 2);
-                              const blob = new Blob([dataStr], { type: "application/json" });
-                              const url = URL.createObjectURL(blob);
-                              const link = document.createElement("a");
-                              link.href = url;
-                              link.download = `respaldo_estudios_radiologicos_${new Date().toISOString().slice(0,10)}.json`;
-                              document.body.appendChild(link);
-                              link.click();
-                              document.body.removeChild(link);
-                              URL.revokeObjectURL(url);
-                            } catch (err: any) {
-                              alert("Error al exportar respaldo: " + err.message);
-                            }
-                          }}
-                          className="flex items-center gap-1.5 bg-slate-855 hover:bg-slate-800 text-slate-300 font-bold text-[11px] uppercase tracking-wider px-3.5 py-2.5 rounded-xl transition border border-slate-750 cursor-pointer select-none"
-                          title="Descargar respaldo local completo como archivo JSON"
-                        >
-                          <Download className="h-3.5 w-3.5 text-emerald-400" />
-                          <span>Exportar</span>
-                        </button>
-
-                        <button
-                          onClick={() => fetchCloudStudies(gmailUser.uid)}
-                          disabled={isLoadingCloudStudies}
-                          className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-750 text-slate-300 font-bold text-[11px] uppercase tracking-wider px-3.5 py-2.5 rounded-xl transition border border-slate-700/60 cursor-pointer select-none"
-                          title="Actualizar biblioteca"
-                        >
-                          <RefreshCw className={`h-3.5 w-3.5 text-indigo-400 ${isLoadingCloudStudies ? "animate-spin" : ""}`} />
-                          <span>Refrescar</span>
-                        </button>
-
-                        <button
-                          onClick={() => handleSaveToCloud()}
-                          disabled={isSavingToCloud || !generatedReport}
-                          className={`flex items-center gap-2 font-bold text-xs uppercase tracking-wider px-5 py-2.5 rounded-xl transition border ${
-                            generatedReport
-                              ? "bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500/30 shadow-[0_2px_10px_rgba(16,185,129,0.2)]"
-                              : "bg-slate-800/40 text-slate-500 border-slate-800 cursor-not-allowed"
-                          }`}
-                        >
-                          {isSavingToCloud ? (
-                            <>
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                              <span>Guardando...</span>
-                            </>
-                          ) : (
-                            <>
-                              <Plus className="h-4 w-4" />
-                              <span>Guardar Estudio Actual</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Studies database view */}
-                    {isLoadingCloudStudies && cloudStudies.length === 0 ? (
-                      <div className="bg-slate-950/40 border border-slate-900 rounded-2xl py-16 flex flex-col items-center justify-center gap-3">
-                        <Loader2 className="h-8 w-8 text-emerald-400 animate-spin" />
-                        <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Cargando base de datos cloud...</p>
-                      </div>
-                    ) : (
-                      (() => {
-                        const filtered = cloudStudies.filter(item => {
-                          const query = cloudSearch.toLowerCase();
-                          return (
-                            item.patientName.toLowerCase().includes(query) ||
-                            item.patientEmail.toLowerCase().includes(query) ||
-                            item.studyType.toLowerCase().includes(query) ||
-                            item.clinicalHistory.toLowerCase().includes(query) ||
-                            item.findings.toLowerCase().includes(query) ||
-                            item.reportText.toLowerCase().includes(query) ||
-                            item.doctorName.toLowerCase().includes(query)
-                          );
-                        });
-
-                         if (filtered.length === 0) {
-                          const localReportsCount = (() => {
-                            try {
-                              const stored = localStorage.getItem("radiology_reports_history");
-                              if (stored) {
-                                const parsed = JSON.parse(stored);
-                                return Array.isArray(parsed) ? parsed.length : 0;
-                              }
-                            } catch (e) {}
-                            return 0;
-                          })();
-
-                          const isUsingCustomFirebase = !!localStorage.getItem("rad_custom_firebase_config");
-
-                          return (
-                            <div className="bg-slate-950/40 border border-slate-900 rounded-2xl py-12 flex flex-col items-center justify-center gap-4 text-center px-6">
-                              <Database className="h-12 w-12 text-indigo-400/60 mb-1" />
-                              <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider">No se encontraron estudios</h3>
-                              <p className="text-xs text-slate-500 max-w-md mt-1">
-                                {cloudSearch 
-                                  ? "Ningún estudio coincide con los criterios de búsqueda especificados." 
-                                  : "Tu archivo local de estudios está vacío. Genera un reporte médico y haz clic en 'Guardar Estudio' para guardar tu primer registro, o importa un archivo de respaldo."}
-                              </p>
-                            </div>
-                          );
-                        }
-
-                        return (
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {filtered.map((item) => (
-                              <div
-                                key={item.id}
-                                className="bg-[#0b1329]/60 hover:bg-[#0c1630] border border-slate-800 hover:border-emerald-800/40 rounded-2xl p-5 flex flex-col justify-between transition-all duration-300 group shadow-lg"
-                              >
-                                <div>
-                                  {/* Header info */}
-                                  <div className="flex items-start justify-between gap-3 border-b border-slate-800/60 pb-3 mb-4">
-                                    <div className="text-left">
-                                      <span className="text-[9px] bg-indigo-950/60 text-indigo-300 border border-indigo-900/30 px-2 py-0.5 rounded font-bold font-mono uppercase tracking-wider">
-                                        {item.studyType}
-                                      </span>
-                                      <h3 className="text-sm font-black text-white mt-1.5 line-clamp-1">{item.patientName}</h3>
-                                      <p className="text-[10px] text-slate-400 font-mono mt-0.5">{item.patientEmail || "Sin correo"}</p>
-                                    </div>
-                                    <div className="text-right shrink-0">
-                                      <span className="text-[10px] text-slate-500 font-mono font-bold">{item.timestamp}</span>
-                                    </div>
-                                  </div>
-
-                                  {/* Body Details */}
-                                  <div className="space-y-3 text-left">
-                                    <div>
-                                      <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest block font-mono">Historia Clínica:</span>
-                                      <p className="text-xs text-slate-300 font-medium line-clamp-2 mt-0.5">{item.clinicalHistory}</p>
-                                    </div>
-                                    {item.findings && (
-                                      <div>
-                                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest block font-mono">Hallazgos Clave:</span>
-                                        <p className="text-xs text-slate-400 font-medium line-clamp-2 mt-0.5">{item.findings}</p>
-                                      </div>
-                                    )}
-                                    <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800/40 text-[10px]">
-                                      <div>
-                                        <span className="text-slate-500 font-mono font-bold block uppercase tracking-wider">Doctor:</span>
-                                        <span className="text-slate-300 font-semibold truncate block">{item.doctorName.replace(/Cod\.\d+/, '')}</span>
-                                      </div>
-                                      <div>
-                                        <span className="text-slate-500 font-mono font-bold block uppercase tracking-wider">Centro:</span>
-                                        <span className="text-slate-300 font-semibold truncate block">{item.clinicName || "Privada"}</span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-
-                                {/* Action bar */}
-                                <div className="flex items-center gap-2 pt-4 mt-5 border-t border-slate-800/60 shrink-0">
-                                  <button
-                                    onClick={() => setViewingCloudStudy(item)}
-                                    className="flex-1 bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700/60 font-bold text-[10.5px] uppercase tracking-wider py-2 rounded-xl flex items-center justify-center gap-1.5 transition"
-                                  >
-                                    <Eye className="h-3.5 w-3.5 text-indigo-400" />
-                                    Leer
-                                  </button>
-
-                                  <button
-                                    onClick={() => downloadPdfForCloudStudy(item)}
-                                    className="px-3 bg-indigo-950/40 hover:bg-indigo-950/80 text-indigo-300 border border-indigo-900/40 font-bold text-[10.5px] uppercase tracking-wider py-2 rounded-xl flex items-center justify-center gap-1.5 transition"
-                                    title="Descargar PDF de este estudio guardado"
-                                  >
-                                    <Download className="h-3.5 w-3.5 text-indigo-400" />
-                                    PDF
-                                  </button>
-
-                                  <button
-                                    onClick={() => handleCopyEhrLinkForStudy(item)}
-                                    className="px-3 bg-indigo-950/40 hover:bg-indigo-950/80 text-indigo-300 border border-indigo-900/40 font-bold text-[10.5px] uppercase tracking-wider py-2 rounded-xl flex items-center justify-center gap-1.5 transition"
-                                    title="Copiar texto con el enlace del reporte para el expediente clínico (EHR)"
-                                  >
-                                    {copiedEhrStudyId === item.id ? (
-                                      <>
-                                        <Check className="h-3.5 w-3.5 text-emerald-400" />
-                                        <span>Copiado</span>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Link className="h-3.5 w-3.5 text-indigo-400" />
-                                        <span>Link EHR</span>
-                                      </>
-                                    )}
-                                  </button>
-
-                                  <button
-                                    onClick={() => {
-                                      setActiveTab("generator");
-                                      setStudyType(item.studyType);
-                                      handleLoadStudyType(item.studyType);
-                                      setClinicalHistory(item.clinicalHistory);
-                                      setGeneratedReport(item.reportText);
-                                      setOriginalBaseReport(item.reportText);
-                                      setCurrentCloudStudyId(item.id);
-                                      if (item.patientName) setPatientName(item.patientName);
-                                      if (item.patientEmail) setPatientEmail(item.patientEmail);
-                                      if (item.reportDate) setReportDate(item.reportDate);
-                                      if (item.doctorName) setDoctorName(item.doctorName);
-                                      if (item.doctorLicense) setDoctorLicense(item.doctorLicense);
-                                      if (item.clinicName) setClinicName(item.clinicName);
-                                      if (item.findings) setFindings(item.findings);
-                                      setAttachedImages(item.attachedImages || []);
-                                      setPatientSummary(item.patientSummary || null);
-                                    }}
-                                    className="px-3 bg-emerald-950/40 hover:bg-emerald-950/80 text-emerald-300 border border-emerald-900/40 font-bold text-[10.5px] uppercase tracking-wider py-2 rounded-xl flex items-center justify-center gap-1.5 transition"
-                                    title="Cargar de vuelta en el panel principal"
-                                  >
-                                    <RefreshCw className="h-3.5 w-3.5" />
-                                    Cargar
-                                  </button>
-
-                                  <button
-                                    onClick={() => handleDeleteFromCloud(item.id)}
-                                    className="px-3 bg-rose-950/20 hover:bg-rose-950/60 text-rose-450 border border-rose-900/40 font-bold text-[10.5px] uppercase tracking-wider py-2 rounded-xl flex items-center justify-center transition"
-                                    title="Eliminar de la nube"
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        );
-                      })()
-                    )}
-                  </div>
-                ) : (
-                  <div className="bg-[#0b101f] border border-slate-850 rounded-3xl p-6 md:p-8 max-w-2xl mx-auto space-y-6 text-left">
-                    <div className="flex items-center gap-3 border-b border-slate-850 pb-4">
-                      <div className="w-10 h-10 rounded-xl bg-indigo-950/40 border border-indigo-800/60 flex items-center justify-center text-indigo-400 shrink-0">
-                        <Database className="h-5 w-5" />
-                      </div>
-                      <div>
-                        <h3 className="text-base font-black text-white uppercase tracking-wider">Conectar Base de Datos en la Nube</h3>
-                        <p className="text-[10px] text-slate-500 font-mono uppercase tracking-widest mt-0.5">Sincronización Clínica Segura</p>
-                      </div>
-                    </div>
-
-                    <div className="text-xs text-slate-300 leading-relaxed space-y-3">
-                      <p>
-                        Para habilitar el guardado automático de reportes clínicos y la generación de enlaces de descarga en la nube para tus pacientes, necesitas iniciar sesión o conectar un perfil de especialista.
-                      </p>
-                      <div className="p-3 bg-amber-500/5 border-l-2 border-amber-500/60 text-amber-300/90 text-[11px] font-medium leading-relaxed rounded-r-lg">
-                        ⚠️ <strong>Nota sobre compatibilidad:</strong> Si estás usando la vista previa de AI Studio o navegadores con bloqueadores (como Safari/Brave), la autenticación emergente de Google puede ser bloqueada. Te sugerimos usar <strong>Acceso Instantáneo</strong> o <strong>Correo y Contraseña</strong> para conectar sin restricciones de popups.
-                      </div>
-                    </div>
-
-                    {/* Selector de modo de acceso */}
-                    <div className="grid grid-cols-3 gap-2 border-b border-slate-850 pb-1">
-                      <button
-                        onClick={() => setAuthFormMode('google')}
-                        className={`pb-2.5 text-center font-bold text-[10px] uppercase tracking-wider transition-all border-b-2 cursor-pointer ${
-                          authFormMode === 'google'
-                            ? "border-indigo-500 text-indigo-300"
-                            : "border-transparent text-slate-500 hover:text-slate-400"
-                        }`}
-                      >
-                        Google Auth
-                      </button>
-                      <button
-                        onClick={() => setAuthFormMode('email_login')}
-                        className={`pb-2.5 text-center font-bold text-[10px] uppercase tracking-wider transition-all border-b-2 cursor-pointer ${
-                          authFormMode === 'email_login' || authFormMode === 'email_register'
-                            ? "border-indigo-500 text-indigo-300"
-                            : "border-transparent text-slate-500 hover:text-slate-400"
-                        }`}
-                      >
-                        Correo / Clave
-                      </button>
-                      <button
-                        onClick={handleAnonymousLogin}
-                        disabled={isLoggingInGmail}
-                        className="pb-2.5 text-center font-bold text-[10px] uppercase tracking-wider text-emerald-400 hover:text-emerald-300 transition-all border-b-2 border-transparent hover:border-emerald-500/20 cursor-pointer flex items-center justify-center gap-1"
-                      >
-                        {isLoggingInGmail ? <Loader2 className="h-3 w-3 animate-spin" /> : "⚡ Acceso Rápido"}
-                      </button>
-                    </div>
-
-                    {/* Contenido según modo */}
-                    {authFormMode === 'google' ? (
-                      <div className="space-y-4 pt-2">
-                        <p className="text-[11px] text-slate-400 leading-normal">
-                          Inicia sesión con tu cuenta de Google. Esto también te permitirá integrar la API de Gmail para enviar reportes firmados y de acompañamiento directamente por correo electrónico si así lo deseas.
+                  if (filtered.length === 0) {
+                    return (
+                      <div className="bg-slate-950/40 border border-slate-900 rounded-2xl py-12 flex flex-col items-center justify-center gap-4 text-center px-6">
+                        <History className="h-12 w-12 text-slate-600 mb-1" />
+                        <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider">
+                          {cloudSearch ? "Sin resultados para la búsqueda" : "Historial Local Vacío"}
+                        </h3>
+                        <p className="text-xs text-slate-500 max-w-md mt-1">
+                          {cloudSearch
+                            ? "Ningún estudio coincide con tu búsqueda."
+                            : "Cuando generes o edites un reporte en la pestaña Generador, se guardará automáticamente en este historial."}
                         </p>
-                        <button
-                          onClick={handleGmailLogin}
-                          disabled={isLoggingInGmail}
-                          className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white font-bold text-xs uppercase tracking-wider py-3.5 rounded-xl transition shadow-lg border border-indigo-500/30 cursor-pointer"
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                      {filtered.map((item) => (
+                        <div
+                          key={item.id}
+                          className="bg-[#0b1329]/60 hover:bg-[#0c1630] border border-slate-800 hover:border-indigo-800/40 rounded-2xl p-5 flex flex-col justify-between transition-all duration-300 group shadow-lg text-left"
                         >
-                          {isLoggingInGmail ? <Loader2 className="h-4 w-4 animate-spin" /> : <Key className="h-4 w-4" />}
-                          Conectar con Google Cloud
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="space-y-4 pt-2">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div className="space-y-1">
-                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider font-mono font-bold">Correo Electrónico:</label>
-                            <input
-                              type="email"
-                              value={authEmail}
-                              onChange={(e) => setAuthEmail(e.target.value)}
-                              placeholder="ejemplo@clinica.com"
-                              className="w-full bg-slate-950 border border-slate-850 hover:border-slate-800 focus:border-indigo-500 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-600 focus:outline-none transition-all"
-                            />
+                          <div>
+                            <div className="flex items-start justify-between gap-3 border-b border-slate-800/60 pb-3 mb-3">
+                              <span className="text-[10px] bg-indigo-950/60 text-indigo-300 border border-indigo-900/40 px-2.5 py-0.5 rounded font-bold uppercase tracking-wider font-mono">
+                                {item.studyType}
+                              </span>
+                              <span className="text-[10px] text-slate-500 font-mono font-bold">{item.timestamp}</span>
+                            </div>
+
+                            <div className="space-y-2.5">
+                              <div>
+                                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest block font-mono">Historia Clínica:</span>
+                                <p className="text-xs text-slate-300 font-medium line-clamp-2 mt-0.5">{item.clinicalHistory}</p>
+                              </div>
+
+                              <div>
+                                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest block font-mono">Extracto del Reporte:</span>
+                                <p className="text-xs text-slate-400 font-mono line-clamp-3 mt-0.5 bg-slate-950/50 p-2 rounded-lg border border-slate-850/60 whitespace-pre-wrap">
+                                  {item.reportText}
+                                </p>
+                              </div>
+                            </div>
                           </div>
-                          <div className="space-y-1">
-                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider font-mono font-bold">Contraseña:</label>
-                            <input
-                              type="password"
-                              value={authPassword}
-                              onChange={(e) => setAuthPassword(e.target.value)}
-                              placeholder="Mínimo 6 caracteres"
-                              className="w-full bg-slate-950 border border-slate-850 hover:border-slate-800 focus:border-indigo-500 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-600 focus:outline-none transition-all"
-                            />
+
+                          <div className="flex items-center gap-2 pt-4 mt-4 border-t border-slate-800/60 shrink-0">
+                            <button
+                              onClick={() => {
+                                setActiveTab("generator");
+                                setStudyType(item.studyType);
+                                handleLoadStudyType(item.studyType);
+                                setClinicalHistory(item.clinicalHistory);
+                                setGeneratedReport(item.reportText);
+                                setOriginalBaseReport(item.reportText);
+                              }}
+                              className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[11px] uppercase tracking-wider py-2 rounded-xl flex items-center justify-center gap-1.5 transition cursor-pointer border border-indigo-500/30"
+                            >
+                              <RefreshCw className="h-3.5 w-3.5" />
+                              <span>Cargar</span>
+                            </button>
+
+                            <button
+                              onClick={() => copyToClipboard(item.reportText, true)}
+                              className="px-3 bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700/60 font-bold text-[11px] uppercase tracking-wider py-2 rounded-xl flex items-center justify-center gap-1.5 transition cursor-pointer"
+                              title="Copiar informe"
+                            >
+                              <Copy className="h-3.5 w-3.5 text-indigo-400" />
+                            </button>
+
+                            <button
+                              onClick={() => handleDeleteReport(item.id)}
+                              className="px-3 bg-rose-950/20 hover:bg-rose-950/60 text-rose-400 border border-rose-900/40 font-bold text-[11px] uppercase tracking-wider py-2 rounded-xl flex items-center justify-center transition cursor-pointer"
+                              title="Eliminar del historial"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
                           </div>
                         </div>
-
-                        {gmailErrorMessage && (
-                          <div className="text-[11px] text-rose-400 font-medium bg-rose-950/10 border-l-2 border-rose-500 px-3 py-2 rounded-r">
-                            {gmailErrorMessage}
-                          </div>
-                        )}
-
-                        <div className="flex flex-col sm:flex-row gap-3 pt-1">
-                          <button
-                            onClick={handleEmailLogin}
-                            disabled={isLoggingInGmail}
-                            className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs uppercase tracking-wider py-3 rounded-xl transition cursor-pointer border border-indigo-500/30"
-                          >
-                            {isLoggingInGmail ? <Loader2 className="h-4 w-4 animate-spin" /> : "Iniciar Sesión"}
-                          </button>
-                          <button
-                            onClick={handleEmailRegister}
-                            disabled={isLoggingInGmail}
-                            className="flex-1 flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-850 text-slate-200 font-bold text-xs uppercase tracking-wider py-3 rounded-xl transition cursor-pointer border border-slate-800"
-                          >
-                            Registrar Nuevo Especialista
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
+                      ))}
+                    </div>
+                  );
+                })()}
               </motion.div>
             )}
 
@@ -29730,68 +32654,108 @@ Ejemplo:
                   )}
 
                   {/* Diagnóstico en Serif */}
-                  <div className="space-y-4 pt-2 text-left leading-relaxed text-[12px] text-gray-900 font-serif">
-                    {renderPrintReportBody(generatedReport)}
-                  </div>
-
-                  {/* Firmas */}
-                  {(doctorName || customSignatureUrl) && (
-                    <div className="mt-12 pt-6 border-t border-gray-200 grid grid-cols-2 gap-4 text-[9px] leading-normal font-sans text-gray-400 text-left">
-                      {/* Bloque Homologado Izquierdo (Metadatos de Firma Electrónica) */}
-                      <div className="border border-slate-250 bg-slate-50/70 p-3 rounded-lg text-[8px] font-sans text-slate-500 max-w-[340px] space-y-1">
-                        <div className="flex items-center gap-1.5 font-bold text-[8.5px] text-slate-700 uppercase">
-                          <span className="text-indigo-600">🛡️</span>
-                          <span>Firma Electrónica Homologada</span>
+                  {(() => {
+                    const activeText = isEditingReportManual ? editedReportText : (generatedReport || "");
+                    const { mainReport, cuadroSinopticoReport, organSynopsisReport, annexReport } = splitReportSections(activeText);
+                    const radarData = getBiomechanicalRadarDataFromReport(activeText, biomechanicalRadarData);
+                    return (
+                      <>
+                        {/* 1. CUERPO DE REPORTE */}
+                        <div className="space-y-4 pt-2 text-left leading-relaxed text-[12px] text-gray-900 font-serif">
+                          {renderPrintReportBody(mainReport)}
                         </div>
-                        <p className="font-mono text-[7.5px] text-indigo-700 font-bold bg-indigo-50/55 px-1 py-0.5 rounded break-all select-all">
-                          {getValidationHash()}
-                        </p>
-                        <div className="grid grid-cols-[max-content_1fr] gap-x-2 text-[8px] leading-relaxed">
-                          <span className="font-semibold text-slate-400 uppercase">Autoridad:</span>
-                          <span className="font-bold text-slate-650">{doctorName || "Médico Especialista"}</span>
-                          
-                          <span className="font-semibold text-slate-400 uppercase">Registro:</span>
-                          <span className="font-mono font-bold text-slate-650">{doctorLicense}</span>
-                          
-                          <span className="font-semibold text-slate-400 uppercase">Estado:</span>
-                          <span className="font-bold text-emerald-600 flex items-center gap-1">
-                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                            VALIDADO Y REGISTRADO
-                          </span>
-                          
-                          <span className="font-semibold text-slate-400 uppercase">Soporte Legal:</span>
-                          <span className="text-slate-450 italic">Ley de Comercio Electrónico, Firmas y Datos (Art. 14)</span>
-                        </div>
-                      </div>
 
-                      {/* Firma Autógrafa y Datos del Médico Especialista */}
-                      <div className="text-right flex flex-col items-end justify-center">
-                        <div className="inline-block text-center relative max-w-[280px]">
-                          {customSignatureUrl ? (
-                            <div className="mb-1.5 flex justify-center">
-                              <img 
-                                src={customSignatureUrl} 
-                                alt="Firma" 
-                                className="h-12 max-w-[140px] object-contain block mix-blend-multiply" 
-                                referrerPolicy="no-referrer"
-                              />
+                        {/* FIRMA AL FINAL DEL CUERPO DEL REPORTE */}
+                        {(doctorName || customSignatureUrl) && (
+                          <div className="mt-12 pt-6 border-t border-gray-200 grid grid-cols-2 gap-4 text-[9px] leading-normal font-sans text-gray-400 text-left">
+                            {/* Bloque Homologado Izquierdo (Metadatos de Firma Electrónica) */}
+                            <div className="border border-slate-250 bg-slate-50/70 p-3 rounded-lg text-[8px] font-sans text-slate-500 max-w-[340px] space-y-1">
+                              <div className="flex items-center gap-1.5 font-bold text-[8.5px] text-slate-700 uppercase">
+                                <span className="text-indigo-600">🛡️</span>
+                                <span>Firma Electrónica Homologada</span>
+                              </div>
+                              <p className="font-mono text-[7.5px] text-indigo-700 font-bold bg-indigo-50/55 px-1 py-0.5 rounded break-all select-all">
+                                {getValidationHash()}
+                              </p>
+                              <div className="grid grid-cols-[max-content_1fr] gap-x-2 text-[8px] leading-relaxed">
+                                <span className="font-semibold text-slate-400 uppercase">Autoridad:</span>
+                                <span className="font-bold text-slate-650">{doctorName || "Médico Especialista"}</span>
+                                
+                                <span className="font-semibold text-slate-400 uppercase">Registro:</span>
+                                <span className="font-mono font-bold text-slate-650">{doctorLicense}</span>
+                                
+                                <span className="font-semibold text-slate-400 uppercase">Estado:</span>
+                                <span className="font-bold text-emerald-600 flex items-center gap-1">
+                                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                  VALIDADO Y REGISTRADO
+                                </span>
+                                
+                                <span className="font-semibold text-slate-400 uppercase">Soporte Legal:</span>
+                                <span className="text-slate-450 italic">Ley de Comercio Electrónico, Firmas y Datos (Art. 14)</span>
+                              </div>
                             </div>
-                          ) : (
-                            <div className="mb-2 text-indigo-600/80 font-serif italic text-xs select-none relative pr-4">
-                              <span className="text-[10px] font-mono font-black border border-indigo-200 bg-indigo-50 px-2 py-0.5 rounded uppercase tracking-wider block">
-                                🔑 FIRMADO DIGITALMENTE
-                              </span>
+
+                            {/* Firma Autógrafa y Datos del Médico Especialista */}
+                            <div className="text-right flex flex-col items-end justify-center">
+                              <div className="inline-block text-center relative max-w-[280px]">
+                                {customSignatureUrl ? (
+                                  <div className="mb-1.5 flex justify-center">
+                                    <img 
+                                      src={customSignatureUrl} 
+                                      alt="Firma" 
+                                      className="h-12 max-w-[140px] object-contain block mix-blend-multiply" 
+                                      referrerPolicy="no-referrer"
+                                    />
+                                  </div>
+                                ) : (
+                                  <div className="mb-2 text-indigo-600/80 font-serif italic text-xs select-none relative pr-4">
+                                    <span className="text-[10px] font-mono font-black border border-indigo-200 bg-indigo-50 px-2 py-0.5 rounded uppercase tracking-wider block">
+                                      🔑 FIRMADO DIGITALMENTE
+                                    </span>
+                                  </div>
+                                )}
+                                <div className="border-t border-slate-300 pt-1.5 px-4 text-center">
+                                  <p className="font-black text-slate-900 uppercase text-[11px] leading-tight select-all">{doctorName || "Médico Especialista"}</p>
+                                  <p className="font-semibold text-slate-500 text-[8.5px] mt-0.5 select-all">Especialista en Radiología e Imágenes Medicas.</p>
+                                  <p className="font-mono text-slate-450 text-[7.5px] leading-normal select-all">{doctorLicense}</p>
+                                </div>
+                              </div>
                             </div>
-                          )}
-                          <div className="border-t border-slate-300 pt-1.5 px-4 text-center">
-                            <p className="font-black text-slate-900 uppercase text-[11px] leading-tight select-all">{doctorName || "Médico Especialista"}</p>
-                            <p className="font-semibold text-slate-500 text-[8.5px] mt-0.5 select-all">Especialista en Radiología e Imágenes Medicas.</p>
-                            <p className="font-mono text-slate-450 text-[7.5px] leading-normal select-all">{doctorLicense}</p>
                           </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                        )}
+
+                        {/* 2. CUADRO SINÓPTICO */}
+                        {cuadroSinopticoReport && (
+                          <div className="mt-8 pt-4 border-t border-gray-200">
+                            <div className="space-y-4 text-left leading-relaxed text-[12px] text-gray-900 font-serif">
+                              {renderPrintReportBody(cuadroSinopticoReport)}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 3. SINOPSIS POR ÓRGANO */}
+                        {organSynopsisReport && (
+                          <div className="mt-8 pt-4 border-t border-gray-200">
+                            <div className="space-y-4 text-left leading-relaxed text-[12px] text-gray-900 font-serif">
+                              {renderPrintReportBody(organSynopsisReport)}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 6. DESGLOSE Y JUSTIFICACIÓN DE CLASIFICACIONES */}
+                        {annexReport && (
+                          <div className="mt-12 pt-6 border-t border-gray-300 print:break-before-page">
+                            <div className="space-y-4 pt-2 text-left leading-relaxed text-[12px] text-gray-900 font-serif">
+                              {renderPrintReportBody(annexReport)}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 7. ANEXO: RADAR BIOMECÁNICO E INFLAMATORIO */}
+                        {renderPrintBiomechanicalRadarAnnex(radarData)}
+                      </>
+                    );
+                  })()}
 
                 </div>
               </div>
@@ -30865,68 +33829,108 @@ Ejemplo:
           )}
 
           {/* Report Medical Content */}
-          <div className="pt-2 leading-relaxed text-[12.5px] text-gray-955 select-text font-serif">
-            {renderPrintReportBody(generatedReport)}
-          </div>
-
-          {/* Sign-off Signature block */}
-          {(doctorName || customSignatureUrl) && (
-            <div className="mt-16 pt-6 border-t border-gray-250 grid grid-cols-2 gap-4 text-[10px] leading-normal font-sans text-gray-400">
-              {/* Bloque Homologado Izquierdo (Metadatos de Firma Electrónica) */}
-              <div className="border border-slate-250 bg-slate-50/70 p-3 rounded-lg text-[8.5px] font-sans text-slate-500 max-w-[340px] text-left space-y-1">
-                <div className="flex items-center gap-1.5 font-bold text-[9px] text-slate-700 uppercase">
-                  <span className="text-indigo-600">🛡️</span>
-                  <span>Firma Electrónica Homologada</span>
+          {(() => {
+            const activeReportText = isEditingReportManual ? editedReportText : (generatedReport || "");
+            const { mainReport, cuadroSinopticoReport, organSynopsisReport, annexReport } = splitReportSections(activeReportText);
+            const radarData = getBiomechanicalRadarDataFromReport(activeReportText, biomechanicalRadarData);
+            return (
+              <>
+                {/* 1. CUERPO DE REPORTE */}
+                <div className="pt-2 leading-relaxed text-[12.5px] text-gray-955 select-text font-serif">
+                  {renderPrintReportBody(mainReport)}
                 </div>
-                <p className="font-mono text-[8px] text-indigo-700 font-bold bg-indigo-50/50 px-1 py-0.5 rounded break-all select-all">
-                  {getValidationHash()}
-                </p>
-                <div className="grid grid-cols-[max-content_1fr] gap-x-2 text-[8px] leading-relaxed">
-                  <span className="font-semibold text-slate-400 uppercase">Autoridad:</span>
-                  <span className="font-bold text-slate-650">{doctorName || "Médico Especialista"}</span>
-                  
-                  <span className="font-semibold text-slate-400 uppercase">Registro:</span>
-                  <span className="font-mono font-bold text-slate-650">{doctorLicense}</span>
-                  
-                  <span className="font-semibold text-slate-400 uppercase">Estado:</span>
-                  <span className="font-bold text-emerald-600 flex items-center gap-1">
-                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                    VALIDADO Y REGISTRADO
-                  </span>
-                  
-                  <span className="font-semibold text-slate-400 uppercase">Soporte Legal:</span>
-                  <span className="text-slate-450 italic">Ley de Comercio Electrónico, Firmas y Datos (Art. 14)</span>
-                </div>
-              </div>
 
-              {/* Firma Autógrafa y Datos del Médico Especialista */}
-              <div className="text-right flex flex-col items-end justify-center">
-                <div className="inline-block text-center relative max-w-[280px]">
-                  {customSignatureUrl ? (
-                    <div className="mb-1.5 flex justify-center">
-                      <img 
-                        src={customSignatureUrl} 
-                        alt="Firma" 
-                        className="h-14 max-w-[170px] object-contain block mix-blend-multiply" 
-                        referrerPolicy="no-referrer"
-                      />
+                {/* FIRMA AL FINAL DEL CUERPO DEL REPORTE */}
+                {(doctorName || customSignatureUrl) && (
+                  <div className="mt-16 pt-6 border-t border-gray-250 grid grid-cols-2 gap-4 text-[10px] leading-normal font-sans text-gray-400">
+                    {/* Bloque Homologado Izquierdo (Metadatos de Firma Electrónica) */}
+                    <div className="border border-slate-250 bg-slate-50/70 p-3 rounded-lg text-[8.5px] font-sans text-slate-500 max-w-[340px] text-left space-y-1">
+                      <div className="flex items-center gap-1.5 font-bold text-[9px] text-slate-700 uppercase">
+                        <span className="text-indigo-600">🛡️</span>
+                        <span>Firma Electrónica Homologada</span>
+                      </div>
+                      <p className="font-mono text-[8px] text-indigo-700 font-bold bg-indigo-50/50 px-1 py-0.5 rounded break-all select-all">
+                        {getValidationHash()}
+                      </p>
+                      <div className="grid grid-cols-[max-content_1fr] gap-x-2 text-[8px] leading-relaxed">
+                        <span className="font-semibold text-slate-400 uppercase">Autoridad:</span>
+                        <span className="font-bold text-slate-650">{doctorName || "Médico Especialista"}</span>
+                        
+                        <span className="font-semibold text-slate-400 uppercase">Registro:</span>
+                        <span className="font-mono font-bold text-slate-650">{doctorLicense}</span>
+                        
+                        <span className="font-semibold text-slate-400 uppercase">Estado:</span>
+                        <span className="font-bold text-emerald-600 flex items-center gap-1">
+                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                          VALIDADO Y REGISTRADO
+                        </span>
+                        
+                        <span className="font-semibold text-slate-400 uppercase">Soporte Legal:</span>
+                        <span className="text-slate-450 italic">Ley de Comercio Electrónico, Firmas y Datos (Art. 14)</span>
+                      </div>
                     </div>
-                  ) : (
-                    <div className="mb-2 text-indigo-600/80 font-serif italic text-xs select-none relative pr-4">
-                      <span className="text-[10px] font-mono font-black border border-indigo-200 bg-indigo-50 px-2 py-0.5 rounded uppercase tracking-wider block">
-                        🔑 FIRMADO DIGITALMENTE
-                      </span>
+
+                    {/* Firma Autógrafa y Datos del Médico Especialista */}
+                    <div className="text-right flex flex-col items-end justify-center">
+                      <div className="inline-block text-center relative max-w-[280px]">
+                        {customSignatureUrl ? (
+                          <div className="mb-1.5 flex justify-center">
+                            <img 
+                              src={customSignatureUrl} 
+                              alt="Firma" 
+                              className="h-14 max-w-[170px] object-contain block mix-blend-multiply" 
+                              referrerPolicy="no-referrer"
+                            />
+                          </div>
+                        ) : (
+                          <div className="mb-2 text-indigo-600/80 font-serif italic text-xs select-none relative pr-4">
+                            <span className="text-[10px] font-mono font-black border border-indigo-200 bg-indigo-50 px-2 py-0.5 rounded uppercase tracking-wider block">
+                              🔑 FIRMADO DIGITALMENTE
+                            </span>
+                          </div>
+                        )}
+                        <div className="border-t border-slate-300 pt-1.5 px-6">
+                          <p className="font-black text-slate-900 uppercase text-[11.5px] leading-tight select-all">{doctorName || "Médico Especialista"}</p>
+                          <p className="font-semibold text-slate-500 text-[9px] mt-0.5 select-all">Especialista en Radiología e Imágenes Medicas.</p>
+                          <p className="font-mono text-slate-450 text-[8px] leading-normal select-all">{doctorLicense}</p>
+                        </div>
+                      </div>
                     </div>
-                  )}
-                  <div className="border-t border-slate-300 pt-1.5 px-6">
-                    <p className="font-black text-slate-900 uppercase text-[11.5px] leading-tight select-all">{doctorName || "Médico Especialista"}</p>
-                    <p className="font-semibold text-slate-500 text-[9px] mt-0.5 select-all">Especialista en Radiología e Imágenes Medicas.</p>
-                    <p className="font-mono text-slate-450 text-[8px] leading-normal select-all">{doctorLicense}</p>
                   </div>
-                </div>
-              </div>
-            </div>
-          )}
+                )}
+
+                {/* 2. CUADRO SINÓPTICO */}
+                {cuadroSinopticoReport && (
+                  <div className="mt-8 pt-4 border-t border-gray-200">
+                    <div className="pt-2 leading-relaxed text-[12.5px] text-gray-955 select-text font-serif">
+                      {renderPrintReportBody(cuadroSinopticoReport)}
+                    </div>
+                  </div>
+                )}
+
+                {/* 3. SINOPSIS POR ÓRGANO */}
+                {organSynopsisReport && (
+                  <div className="mt-8 pt-4 border-t border-gray-200">
+                    <div className="pt-2 leading-relaxed text-[12.5px] text-gray-955 select-text font-serif">
+                      {renderPrintReportBody(organSynopsisReport)}
+                    </div>
+                  </div>
+                )}
+
+                {/* 6. DESGLOSE Y JUSTIFICACIÓN DE CLASIFICACIONES */}
+                {annexReport && (
+                  <div className="mt-12 pt-6 border-t border-gray-300 print:break-before-page">
+                    <div className="pt-2 leading-relaxed text-[12.5px] text-gray-955 select-text font-serif">
+                      {renderPrintReportBody(annexReport)}
+                    </div>
+                  </div>
+                )}
+
+                {/* 7. ANEXO: RADAR BIOMECÁNICO E INFLAMATORIO */}
+                {renderPrintBiomechanicalRadarAnnex(radarData)}
+              </>
+            );
+          })()}
         </div>
       )}
     </div>
