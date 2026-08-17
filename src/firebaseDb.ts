@@ -68,6 +68,7 @@ export interface CloudStudy {
   pdfLayoutType?: string;
   selectedLogo?: string;
   attachedImages?: any[];
+  findings3dRenders?: any[];
   patientSummary?: any;
 }
 
@@ -284,6 +285,7 @@ export const getStudiesFromCloud = async (userId: string): Promise<CloudStudy[]>
         pdfBase64: data.pdfBase64 || "",
         operationalSummaryText: data.operationalSummaryText || "",
         attachedImages: data.attachedImages || [],
+        findings3dRenders: data.findings3dRenders || [],
         patientSummary: data.patientSummary || null
       });
     });
@@ -344,6 +346,7 @@ export const getSingleStudyFromCloud = async (studyId: string): Promise<CloudStu
         pdfBase64: data.pdfBase64 || "",
         operationalSummaryText: data.operationalSummaryText || "",
         attachedImages: data.attachedImages || [],
+        findings3dRenders: data.findings3dRenders || [],
         patientSummary: data.patientSummary || null
       };
 

@@ -295,7 +295,13 @@ export const CreadorCuadroSinoptico: React.FC<CreadorCuadroSinopticoProps> = ({
       } else if (regexWithoutDash.test(current)) {
         current = current.replace(regexWithoutDash, blockToInsert);
       } else {
-        current = current.trim() + blockToInsert;
+        const impMatch = current.match(/(###?\s*(?:IMPRESI[OÓ]N\s+DIAGN[OÓ]STICA|CONCLUSI[OÓ]N|CONCLUSIONES)[\s\S]*?)(?=\n###|\n---|$)/i);
+        if (impMatch) {
+          const impEndIndex = impMatch.index! + impMatch[0].length;
+          current = current.slice(0, impEndIndex) + blockToInsert + current.slice(impEndIndex);
+        } else {
+          current = current.trim() + blockToInsert;
+        }
       }
     }
 

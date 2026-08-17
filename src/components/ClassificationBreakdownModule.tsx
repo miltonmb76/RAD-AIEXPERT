@@ -68,7 +68,7 @@ export const formatClassificationTitle = (sysName: string, catName: string): str
 export const ClassificationBreakdownModule: React.FC<ClassificationBreakdownModuleProps> = ({
   reportText,
   studyType = "Estudio Radiológico",
-  selectedModel = "gemini-2.5-flash",
+  selectedModel = "gemini-3.7-flash",
   onAppendToReport
 }) => {
   // Detection state

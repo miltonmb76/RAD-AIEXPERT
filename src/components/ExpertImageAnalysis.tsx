@@ -652,7 +652,7 @@ function generateDicomVisualMockup(metadata: DicomMetadata): string {
 }
 
 export default function ExpertImageAnalysis({ 
-  selectedModel = "gemini-3.6-flash", 
+  selectedModel = "gemini-3.7-flash", 
   onIncorporateToReport, 
   renderElegantResponse,
   exportedImage = null,
@@ -1713,7 +1713,7 @@ export default function ExpertImageAnalysis({
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                model: "gemini-3.6-flash",
+                model: "gemini-3.7-flash",
                 ...requestPayload
               }),
             });

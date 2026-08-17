@@ -15,7 +15,8 @@ import {
   ChevronRight,
   TrendingUp,
   Zap,
-  Target
+  Target,
+  Trash2
 } from "lucide-react";
 
 export interface BiomechanicalAxis {
@@ -31,7 +32,7 @@ export interface BiomechanicalRadarData {
   globalLoadIndex: string; // "Baja", "Moderada", "Elevada", "Crítica"
   globalScore: number;
   dominantVector: string;
-  radarMode?: string; // "msk" | "visceral" | "oncology" | "rotator_cuff" | "knee_oa" | "cholecystitis" | "hepatic"
+  radarMode?: string; // "msk" | "visceral" | "oncology" | "rotator_cuff" | "knee_oa" | "cholecystitis" | "ankle_trauma" | "hepatic" | "renal" | "scrotal" | "appendicitis" | "thyroid" | "knee_trauma" | "muscle_injury"
   axes: BiomechanicalAxis[];
   clinicalSummary: string;
   recommendation: string;
@@ -43,65 +44,135 @@ interface BiomechanicalRadarModuleProps {
   studyType?: string;
   onReportUpdated: (newText: string) => void;
   onRadarDataUpdated?: (data: BiomechanicalRadarData | null) => void;
+  includeRadarInReport?: boolean;
+  onToggleIncludeRadar?: (include: boolean) => void;
 }
 
-const DEFAULT_AXES: BiomechanicalAxis[] = [
-  {
-    key: "inflamacion",
-    label: "Inflamación / Edema",
-    score: 0,
-    level: "Fisiológico",
-    finding: "Sin efusión o edema significativo.",
-    justification: "Ausencia de fluido anormal o reacción inflamatoria aguda."
-  },
-  {
-    key: "estructural",
-    label: "Compromiso Estructural",
-    score: 0,
-    level: "Fisiológico",
-    finding: "Integridad tisular conservada.",
-    justification: "Sin desgarros, rupturas ni soluciones de continuidad."
-  },
-  {
-    key: "biomecanica",
-    label: "Inestabilidad Biomecánica",
-    score: 0,
-    level: "Fisiológico",
-    finding: "Ejes dinámicos y congruencia conservada.",
-    justification: "Sin signos de sobrecarga ni incongruencia articular."
-  },
-  {
-    key: "vascularizacion",
-    label: "Vascularización / Hiperemia",
-    score: 0,
-    level: "Fisiológico",
-    finding: "Señal Doppler dentro de límites normales.",
-    justification: "Sin hiperemia perilesional ni neovascularización."
-  },
-  {
-    key: "tension",
-    label: "Tensión / Irritación",
-    score: 0,
-    level: "Fisiológico",
-    finding: "Unión miotendinosa sin tracción anómala.",
-    justification: "Sin contractura ni respuesta miofascial reactiva."
-  },
-  {
-    key: "cronicidad",
-    label: "Cronicidad / Fibrosis",
-    score: 0,
-    level: "Fisiológico",
-    finding: "Patrón fibrilar o tisular habitual.",
-    justification: "Sin cambios tendinósicos crónicos ni calcificaciones."
-  }
-];
+const PRESET_MATRICES_AXES: Record<string, BiomechanicalAxis[]> = {
+  rotator_cuff: [
+    { key: "ruptura_supraespinoso", label: "Ruptura del Supraespinoso", score: 0, level: "Fisiológico", finding: "Sin evidencia de desgarro ni solución de continuidad en el supraespinoso.", justification: "Integridad fibrilar conservada." },
+    { key: "bursitis", label: "Bursitis Subacromiodeltoidea", score: 0, level: "Fisiológico", finding: "Bursa subacromial de espesor normal, sin líquido anormal.", justification: "Ausencia de distensión o reacción inflamatoria bursal." },
+    { key: "pinzamiento", label: "Pinzamiento Subacromial", score: 0, level: "Fisiológico", finding: "Dinámica subacromial conservada sin conflicto de espacio.", justification: "Sin fricción ni atrapamiento en maniobras." },
+    { key: "otros_tendones", label: "Lesión de Otros Tendones del Manguito", score: 0, level: "Fisiológico", finding: "Tendones infraespinoso, subescapular y redondo menor intactos.", justification: "Estructura y patrón fibrilar normal en tendones adyacentes." },
+    { key: "tendinosis_supraespinoso", label: "Tendinosis del Supraespinoso", score: 0, level: "Fisiológico", finding: "Ecoestructura y espesor fibrilar habituales.", justification: "Sin cambios tendinósicos crónicos ni calcificaciones." },
+    { key: "tclb", label: "Tendón Cabeza Larga del Bíceps (TCLB)", score: 0, level: "Fisiológico", finding: "TCLB centrado en la corredera bicipital sin tenosinovitis.", justification: "Líquido peritendinoso fisiológico y retináculo intacto." }
+  ],
+  knee_oa: [
+    { key: "femorotibial_medial", label: "Compartimento Femorotibial Medial", score: 0, level: "Fisiológico", finding: "Espacio articular medial de amplitud conservada.", justification: "Sin pinzamiento ni esclerosis subcondral." },
+    { key: "femorotibial_lateral", label: "Compartimento Femorotibial Lateral", score: 0, level: "Fisiológico", finding: "Espacio articular lateral normal.", justification: "Sin disminución de espacio ni cambios osteoartrósicos." },
+    { key: "meniscopatia_deg", label: "Meniscopatía Degenerativa", score: 0, level: "Fisiológico", finding: "Meniscos de morfología y ecogenicidad habituales.", justification: "Sin fisuras degenerativas ni extrusión meniscal." },
+    { key: "cartilago_troclear", label: "Cartílago Troclear / Condromalacia", score: 0, level: "Fisiológico", finding: "Cartílago troclear de espesor uniforme y superficie lisa.", justification: "Sin condromalacia ni defectos condrales." },
+    { key: "hidrartrosis", label: "Hidrartrosis / Efusión Articular", score: 0, level: "Fisiológico", finding: "Receso suprarrotuliano sin derrame significativo.", justification: "Líquido articular dentro de límites fisiológicos." },
+    { key: "osteofitos", label: "Osteofitos Marginales & Entesofitos", score: 0, level: "Fisiológico", finding: "Márgenes óseos articulares regulares.", justification: "Sin osteofitosis marginal ni remodelado hipertrófico." }
+  ],
+  knee_trauma: [
+    { key: "lcm", label: "Ligamento Colateral Medial (LCM)", score: 0, level: "Fisiológico", finding: "LCM de continuidad y espesor conservados.", justification: "Sin signos de esguince o brecha fibrilar." },
+    { key: "lcl", label: "Ligamento Colateral Lateral / CPL", score: 0, level: "Fisiológico", finding: "LCL y complejo posterolateral continuos.", justification: "Sin edema o desgarro periligamentario." },
+    { key: "menisco_interno", label: "Menisco Interno / Medial", score: 0, level: "Fisiológico", finding: "Menisco interno bien configurado sin rupturas.", justification: "Triángulo meniscal ecogénico e íntegro." },
+    { key: "menisco_externo", label: "Menisco Externo / Lateral", score: 0, level: "Fisiológico", finding: "Menisco externo sin líneas de desgarro.", justification: "Puntal meniscal estable y en su sitio." },
+    { key: "hidrartrosis", label: "Hidrartrosis / Hemartrosis", score: 0, level: "Fisiológico", finding: "Sin efusión o hemartrosis traumática.", justification: "Recesos articulares limpios." },
+    { key: "lig_patelar", label: "Ligamento Patelar / Mecanismo Extensor", score: 0, level: "Fisiológico", finding: "Ligamento patelar de espesor y patrón fibrilar normal.", justification: "Mecanismo extensor sin desgarro ni entesopatía." }
+  ],
+  ankle_trauma: [
+    { key: "lpaa", label: "Lig. Peroneo Astragalino Anterior (LPAA)", score: 0, level: "Fisiológico", finding: "LPAA continuo de espesor normal.", justification: "Sin brecha anecoica ni inestabilidad anterolateral." },
+    { key: "lpc", label: "Lig. Peroneo Calcáneo (LPC)", score: 0, level: "Fisiológico", finding: "LPC preservado debajo de tendones peroneos.", justification: "Sin engrosamiento ni compromiso traumático." },
+    { key: "deltoideo", label: "Complejo Ligamentoso Deltoideo", score: 0, level: "Fisiológico", finding: "Ligamento deltoideo medial de fibrilaridad conservada.", justification: "Espacio claro medial normal sin brechas." },
+    { key: "hidrartrosis", label: "Hidrartrosis / Hemartrosis Articular", score: 0, level: "Fisiológico", finding: "Sin efusión articular en receso anterior.", justification: "Líquido intraarticular fisiológico." },
+    { key: "tendones", label: "Tendones Peroneos / Mediales", score: 0, level: "Fisiológico", finding: "Tendones peroneos y tibiales en sus correderas.", justification: "Sin tenosinovitis ni subluxación retinacular." },
+    { key: "oseo", label: "Estructuras Óseas / Sindesmosis", score: 0, level: "Fisiológico", finding: "Corticales óseas continuas y sindesmosis alineada.", justification: "Sin avulsiones óseas ni diástasis sindesmótica." }
+  ],
+  cholecystitis: [
+    { key: "engrosamiento_pared", label: "Engrosamiento / Edema Parietal", score: 0, level: "Fisiológico", finding: "Pared vesicular fina ≤3.0mm.", justification: "Sin edema parietal ni estratificación." },
+    { key: "vascularidad", label: "Vascularidad Parietal (Doppler)", score: 0, level: "Fisiológico", finding: "Señal Doppler parietal normal.", justification: "Sin hiperemia inflamatoria de la pared." },
+    { key: "necrosis_pared", label: "Necrosis Parietal / Gangrena", score: 0, level: "Fisiológico", finding: "Pared vesicular continua e intacta.", justification: "Sin gas intraparietal ni membranas desprendidas." },
+    { key: "cambios_perivesiculares", label: "Cambios Perivesiculares / Lecho", score: 0, level: "Fisiológico", finding: "Grasa perivesicular limpia y libre.", justification: "Sin líquido ni colecciones perivesiculares." },
+    { key: "via_biliar", label: "Vía Biliar / Colédoco", score: 0, level: "Fisiológico", finding: "Vía biliar intra y extrahepática de calibre normal.", justification: "Colédoco no dilatado sin coledocolitiasis." },
+    { key: "tamano_forma", label: "Tamaño / Hidrops Vesicular", score: 0, level: "Fisiológico", finding: "Dimensiones vesiculares normales.", justification: "Sin hidrops ni sobredistensión vesicular." }
+  ],
+  appendicitis: [
+    { key: "diametro_apendice", label: "Diámetro Apendicular", score: 0, level: "Fisiológico", finding: "Diámetro apendicular normal ≤6.0mm.", justification: "Estructura tubular compresible de fondo ciego." },
+    { key: "pared_apendice", label: "Pared / Signo de la Diana", score: 0, level: "Fisiológico", finding: "Pared fina ≤2.0mm con capas conservadas.", justification: "Sin edema submucoso ni signo de la diana." },
+    { key: "vascularidad", label: "Vascularidad Parietal (Doppler)", score: 0, level: "Fisiológico", finding: "Flujo vascular parietal simétrico y fino.", justification: "Sin hiperemia reactiva en anillo." },
+    { key: "cambios_inflamatorios", label: "Grasa Periapendicular / Flemón", score: 0, level: "Fisiológico", finding: "Grasa mesoapendicular de ecogenicidad normal.", justification: "Sin cambios inflamatorios ni flemón." },
+    { key: "liquido_colecciones", label: "Líquido Libre / Colecciones", score: 0, level: "Fisiológico", finding: "Fosa ilíaca derecha libre de líquido.", justification: "Sin colecciones ni abscesos periapendiculares." },
+    { key: "apendicolito", label: "Apendicolito / Fecalito", score: 0, level: "Fisiológico", finding: "Luz apendicular limpia.", justification: "Sin apendicolitos ni obstrucción por fecalito." }
+  ],
+  thyroid: [
+    { key: "tamano_tiroides", label: "Tamaño Glandular / Bocio", score: 0, level: "Fisiológico", finding: "Volumen tiroideo normal en ambos lóbulos.", justification: "Sin bocio ni efecto de masa intratorácica." },
+    { key: "presencia_nodulos", label: "Carga Nodular", score: 0, level: "Fisiológico", finding: "Parénquima homogéneo libre de nódulos.", justification: "Sin imágenes nodulares sólidas ni quísticas." },
+    { key: "nodulos_sospechosos", label: "Sospecha TI-RADS", score: 0, level: "Fisiológico", finding: "Sin nódulos con criterios de sospecha oncogénica.", justification: "Patrón ecográfico TI-RADS 1 / BENIGNO." },
+    { key: "patron_parenquima", label: "Ecoestructura Parenquimatosa", score: 0, level: "Fisiológico", finding: "Ecoestructura glandular homogénea e isoecoica.", justification: "Sin signos de tiroiditis difusa ni septos fibrosos." },
+    { key: "vascularidad", label: "Vascularidad / Inferno Tiroideo", score: 0, level: "Fisiológico", finding: "Patrón Doppler vascular fisiológico escaso.", justification: "Sin hiperemia difusa ni inferno tiroideo." },
+    { key: "adenopatias_atipicas", label: "Adenopatías Cervicales Atípicas", score: 0, level: "Fisiológico", finding: "Cadenas ganglionares cervicales con morfología ovalada normal.", justification: "Ganglios con hilio graso conservado sin rasgos atípicos." }
+  ],
+  muscle_injury: [
+    { key: "desgarro_muscular", label: "Desgarro Muscular / Solución Continuidad", score: 0, level: "Fisiológico", finding: "Arquitectura muscular y patrón en pluma de ave conservado.", justification: "Sin solución de continuidad ni brecha fibrilar." },
+    { key: "hematoma_coleccion", label: "Hematoma / Colección Líquida", score: 0, level: "Fisiológico", finding: "Sin colecciones líquidas intra o interfasciales.", justification: "Ausencia de hematoma a tensión o seroma." },
+    { key: "union_miotendinosa", label: "Unión Miotendinosa (MTJ)", score: 0, level: "Fisiológico", finding: "Unión miotendinosa continua e intacta.", justification: "Sin deslamado ni avulsión en la MTJ." },
+    { key: "tendon_insercion", label: "Tendón e Inserción / Entesis", score: 0, level: "Fisiológico", finding: "Tendón de inserción de calibre y ecogenicidad normal.", justification: "Sin avulsión entésica ni desgarro intratendinoso." },
+    { key: "vascularidad", label: "Vascularidad / Neovascularización", score: 0, level: "Fisiológico", finding: "Vascularización intramuscular baja normal.", justification: "Sin hiperemia perilesional ni neovasculatura." },
+    { key: "cambios_inflamatorios", label: "Edema / Inflamación Intramuscular", score: 0, level: "Fisiológico", finding: "Vientres musculares limpios y simétricos.", justification: "Sin edema perifocal ni miositis reactiva." }
+  ],
+  hepatic: [
+    { key: "tamano_forma", label: "Tamaño y Forma", score: 0, level: "Fisiológico", finding: "Hígado de dimensiones conservadas con borde inferior agudo y contornos lisos.", justification: "Sin hepatomegalia ni nodularidad capsular." },
+    { key: "vascularidad", label: "Vascularidad", score: 0, level: "Fisiológico", finding: "Vena porta de calibre y flujo hepatópeto fásico normal, venas suprahepáticas trifásicas.", justification: "Sin hipertensión portal ni colaterales patológicas." },
+    { key: "elasticidad", label: "Elasticidad", score: 0, level: "Fisiológico", finding: "Elasticidad en rango fisiológico normal (<6.0 kPa / F0-F1).", justification: "Sin rigidez parenquimatosa ni fibrosis significativa." },
+    { key: "apariencia_parenquima", label: "Apariencia del Parénquima", score: 0, level: "Fisiológico", finding: "Ecoestructura parenquimatosa homogénea con patrón granular fino habitual.", justification: "Sin tosquedad ni patrón micronodular difuso." },
+    { key: "infiltracion_grasa", label: "Infiltración Grasa", score: 0, level: "Fisiológico", finding: "Sin esteatosis hepática (Grado 0), gradiente hepatorrenal conservado y buena penetración acústica.", justification: "Atenuación acústica y ecogenicidad fisiológica." },
+    { key: "lesiones_focales", label: "Lesiones Focales", score: 0, level: "Fisiológico", finding: "Parénquima homogéneo libre de lesiones ocupantes de espacio (LOEs).", justification: "Ausencia de nódulos sospechosos, quistes complicados ni masas sólidas." }
+  ],
+  renal: [
+    { key: "tamano_renal", label: "Tamaño Renal", score: 0, level: "Fisiológico", finding: "Eje bipolar longitudinal conservado (100-120mm) con morfología reniforme simétrica.", justification: "Sin nefromegalia ni hipotrofia renal." },
+    { key: "grosor_cortical", label: "Grosor Cortical", score: 0, level: "Fisiológico", finding: "Espesor cortical normal ≥9-10mm con nítida diferenciación córtico-medular.", justification: "Sin adelgazamiento cortical ni hiperecogenicidad médica." },
+    { key: "vascularidad", label: "Vascularidad", score: 0, level: "Fisiológico", finding: "Perfusión periférica completa con índices de resistividad intrarrenal fisiológicos (RI 0.58-0.70).", justification: "Sin defectos segmentarios ni signos de estenosis arterial." },
+    { key: "lesiones_focales", label: "Lesiones Focales", score: 0, level: "Fisiológico", finding: "Parénquima homogéneo sin masas sólidas ni quistes complicados (Bosniak I o libre de LOEs).", justification: "Ausencia de LOEs sospechosas ni angiomiolipomas complejos." },
+    { key: "procesos_obstructivos", label: "Procesos Obstructivos", score: 0, level: "Fisiológico", finding: "Seno renal ecolucente sin ectasia pielocalicial ni litiasis obstructiva.", justification: "Sin hidronefrosis ni uropatía obstructiva." },
+    { key: "cambios_inflamatorios", label: "Cambios Inflamatorios", score: 0, level: "Fisiológico", finding: "Grasa perirrenal homogénea sin colecciones, gas ni áreas de nefronía.", justification: "Ausencia de estigmas de pielonefritis ni perinefritis." }
+  ],
+  scrotal: [
+    { key: "tamano_testicular", label: "Tamaño Testicular", score: 0, level: "Fisiológico", finding: "Volumen y morfología testicular conservada dentro de rango fisiológico (8-25 cc).", justification: "Sin atrofia, hipotrofia ni orquimegalia anormal." },
+    { key: "vascularidad_testicular", label: "Vascularidad Testicular", score: 0, level: "Fisiológico", finding: "Patrón de perfusión Doppler simétrico con índices de resistividad fisiológicos (RI 0.45-0.70).", justification: "Sin hiperemia inflamatoria ni defectos de perfusión / torsión." },
+    { key: "integridad_epididimos", label: "Integridad de Epidídimos", score: 0, level: "Fisiológico", finding: "Epidídimos de grosor, contornos y ecoestructura homogénea habitual.", justification: "Sin signos de epididimitis aguda, espermatocele complicado ni flemón." },
+    { key: "lesiones_focales", label: "Lesiones Focales", score: 0, level: "Fisiológico", finding: "Ecoestructura homogénea sin lesiones ocupantes de espacio ni microlitiasis densa.", justification: "Sin nódulos sólidos intratesticulares ni LOEs sospechosas." },
+    { key: "varicocele", label: "Varicocele", score: 0, level: "Fisiológico", finding: "Plexo pampiniforme de calibre fisiológico (<2 mm) sin reflujo con maniobra de Valsalva.", justification: "Sin ectasia venosa ni reflujo patológico." },
+    { key: "cambios_inflamatorios_hidrocele", label: "Cambios Inflamatorios e Hidrocele", score: 0, level: "Fisiológico", finding: "Líquido en túnica vaginal dentro de rango fisiológico sin engrosamiento parietal.", justification: "Sin hidrocele a tensión, piocele ni paquivaginalitis." }
+  ],
+  msk: [
+    { key: "inflamacion", label: "Inflamación / Edema", score: 0, level: "Fisiológico", finding: "Sin efusión o edema significativo.", justification: "Ausencia de fluido anormal o reacción inflamatoria aguda." },
+    { key: "estructural", label: "Compromiso Estructural", score: 0, level: "Fisiológico", finding: "Integridad tisular conservada.", justification: "Sin desgarros, rupturas ni soluciones de continuidad." },
+    { key: "biomecanica", label: "Inestabilidad Biomecánica", score: 0, level: "Fisiológico", finding: "Estabilidad y mecánica tisular normal.", justification: "Sin sobrecarga, roce o inestabilidad pasiva." },
+    { key: "vascularizacion", label: "Vascularización / Hiperemia", score: 0, level: "Fisiológico", finding: "Señal Doppler dentro de límites normales.", justification: "Sin neoangiogénesis ni hiperemia activa." },
+    { key: "tension", label: "Tensión / Irritación", score: 0, level: "Fisiológico", finding: "Tensión miotendinosa y fascial adecuada.", justification: "Sin espasmo, contractura o tracción dolorosa." },
+    { key: "cronicidad", label: "Cronicidad / Fibrosis", score: 0, level: "Fisiológico", finding: "Patrón fibrilar o tisular habitual.", justification: "Sin cambios tendinósicos crónicos ni calcificaciones." }
+  ],
+  visceral: [
+    { key: "inflamacion", label: "Inflamación & Edema Parietal", score: 0, level: "Fisiológico", finding: "Paredes viscerales de espesor y estrías normales.", justification: "Sin edema edematoso ni engrosamiento parietal." },
+    { key: "estructural", label: "Compromiso Tisular / Lisis", score: 0, level: "Fisiológico", finding: "Estratificación de pared conservada.", justification: "Sin lisis, necrosis ni solución de continuidad." },
+    { key: "biomecanica", label: "Afectación Perivisceral", score: 0, level: "Fisiológico", finding: "Grasa perivisceral respetada e isoecoica.", justification: "Sin desestructuración del plano adjacente." },
+    { key: "vascularizacion", label: "Vascularización / Hiperemia", score: 0, level: "Fisiológico", finding: "Flujo Doppler parietal fisiológico.", justification: "Sin hiperemia reactiva ni áreas de isquemia." },
+    { key: "tension", label: "Irritación Serosa & Distensión", score: 0, level: "Fisiológico", finding: "Serosa sin irritación ni efusión perifocal.", justification: "Sin distensión tensional ni estasis." },
+    { key: "cronicidad", label: "Cronicidad / Litiasis", score: 0, level: "Fisiológico", finding: "Sin litiasis ni secuelas cicatrizales.", justification: "Estructura limpia sin cambios recurrentes." }
+  ],
+  oncology: [
+    { key: "estructural", label: "Arquitectura / Heterogeneidad", score: 0, level: "Fisiológico", finding: "Arquitectura tisular conservada y homogénea.", justification: "Sin masas heterogéneas ni bordes espiculados." },
+    { key: "vascularizacion", label: "Neoangiogénesis & Neovasculatura", score: 0, level: "Fisiológico", finding: "Patrón vascular periférico y central ordenado.", justification: "Sin vasos caóticos de alta velocidad o neovasculatura." },
+    { key: "biomecanica", label: "Invasión Tisular Local", score: 0, level: "Fisiológico", finding: "Planos de clivaje anatómicos preservados.", justification: "Sin infiltración de cápsula o grasa contigua." },
+    { key: "tension", label: "Compromiso Vascular / Ductal", score: 0, level: "Fisiológico", finding: "Vasos principales y ductos permeables.", justification: "Sin encajonamiento ni trombosis tumoral." },
+    { key: "inflamacion", label: "Necrosis Tumoral / Degeneración", score: 0, level: "Fisiológico", finding: "Tejido sólido uniforme sin degeneración quística.", justification: "Sin focos de necrosis ni lisis intratumoral." },
+    { key: "cronicidad", label: "Adenopatías & Diseminación", score: 0, level: "Fisiológico", finding: "Ganglios regionales con morfología preservada.", justification: "Sin adenopatías atípicas ni implantes." }
+  ]
+};
+
+const DEFAULT_AXES: BiomechanicalAxis[] = PRESET_MATRICES_AXES["msk"];
 
 export const BiomechanicalRadarModule: React.FC<BiomechanicalRadarModuleProps> = ({
   selectedModel,
   reportText,
   studyType,
   onReportUpdated,
-  onRadarDataUpdated
+  onRadarDataUpdated,
+  includeRadarInReport,
+  onToggleIncludeRadar
 }) => {
   const [data, setData] = useState<BiomechanicalRadarData | null>(null);
   const [axes, setAxes] = useState<BiomechanicalAxis[]>(DEFAULT_AXES);
@@ -110,9 +181,31 @@ export const BiomechanicalRadarModule: React.FC<BiomechanicalRadarModuleProps> =
   const [copied, setCopied] = useState<boolean>(false);
   const [injected, setInjected] = useState<boolean>(false);
   const [selectedAxisKey, setSelectedAxisKey] = useState<string | null>(null);
-  const [selectedRadarMode, setSelectedRadarMode] = useState<"auto" | "msk" | "visceral" | "oncology" | "rotator_cuff" | "knee_oa" | "cholecystitis" | "hepatic">("auto");
+  const [selectedRadarMode, setSelectedRadarMode] = useState<"auto" | "msk" | "visceral" | "oncology" | "rotator_cuff" | "knee_oa" | "cholecystitis" | "ankle_trauma" | "knee_trauma" | "appendicitis" | "thyroid" | "muscle_injury" | "hepatic" | "renal" | "scrotal">("auto");
 
-  const handleAnalyze = async (modeOverride?: "auto" | "msk" | "visceral" | "oncology" | "rotator_cuff" | "knee_oa" | "cholecystitis" | "hepatic") => {
+  const handleSelectMatrixMode = (mode: "auto" | "msk" | "visceral" | "oncology" | "rotator_cuff" | "knee_oa" | "cholecystitis" | "ankle_trauma" | "knee_trauma" | "appendicitis" | "thyroid" | "muscle_injury" | "hepatic" | "renal" | "scrotal") => {
+    setSelectedRadarMode(mode);
+    if (mode !== "auto" && PRESET_MATRICES_AXES[mode]) {
+      const newAxes = PRESET_MATRICES_AXES[mode];
+      setAxes(newAxes);
+      if (data) {
+        const updatedData = {
+          ...data,
+          radarMode: mode,
+          axes: newAxes
+        };
+        setData(updatedData);
+        if (onRadarDataUpdated) {
+          onRadarDataUpdated(updatedData);
+        }
+      }
+    }
+    if (reportText.trim()) {
+      handleAnalyze(mode);
+    }
+  };
+
+  const handleAnalyze = async (modeOverride?: "auto" | "msk" | "visceral" | "oncology" | "rotator_cuff" | "knee_oa" | "cholecystitis" | "ankle_trauma" | "knee_trauma" | "appendicitis" | "thyroid" | "muscle_injury" | "hepatic" | "renal" | "scrotal") => {
     if (!reportText.trim()) {
       setError("El reporte clínico está vacío. Redacta o genera un informe primero.");
       return;
@@ -121,6 +214,9 @@ export const BiomechanicalRadarModule: React.FC<BiomechanicalRadarModuleProps> =
     const modeToUse = modeOverride || selectedRadarMode;
     if (modeOverride) {
       setSelectedRadarMode(modeOverride);
+      if (modeOverride !== "auto" && PRESET_MATRICES_AXES[modeOverride]) {
+        setAxes(PRESET_MATRICES_AXES[modeOverride]);
+      }
     }
 
     setIsLoading(true);
@@ -236,16 +332,43 @@ export const BiomechanicalRadarModule: React.FC<BiomechanicalRadarModuleProps> =
     if (reportText.includes("--- RADAR BIOMECÁNICO E INFLAMATORIO ---")) {
       const parts = reportText.split("--- RADAR BIOMECÁNICO E INFLAMATORIO ---");
       const before = parts[0].trim();
-      const afterParts = parts[1].split("\n\n");
-      // keep whatever was after the radar if any, or cleanly replace
       const newFull = before + "\n\n" + radarSection;
       onReportUpdated(newFull);
     } else {
       const newFull = reportText.trim() + "\n\n" + radarSection;
       onReportUpdated(newFull);
     }
+    if (onToggleIncludeRadar) {
+      onToggleIncludeRadar(true);
+    }
     setInjected(true);
     setTimeout(() => setInjected(false), 4000);
+  };
+
+  const handleRemoveFromReport = () => {
+    let clean = reportText;
+    if (clean.includes("--- RADAR BIOMECÁNICO E INFLAMATORIO ---")) {
+      const parts = clean.split("--- RADAR BIOMECÁNICO E INFLAMATORIO ---");
+      let before = parts[0].trim();
+      let after = parts[1] || "";
+      const afterMarkerIdx = after.indexOf("\n---\n");
+      if (afterMarkerIdx !== -1) {
+        clean = before + "\n\n" + after.substring(afterMarkerIdx + 1).trim();
+      } else {
+        clean = before;
+      }
+    } else if (clean.includes("### ANEXO: RADAR BIOMECÁNICO")) {
+      const parts = clean.split("### ANEXO: RADAR BIOMECÁNICO");
+      clean = parts[0].trim();
+    }
+    onReportUpdated(clean.trim());
+    if (onRadarDataUpdated) {
+      onRadarDataUpdated(null);
+    }
+    if (onToggleIncludeRadar) {
+      onToggleIncludeRadar(false);
+    }
+    setInjected(false);
   };
 
   const handleCopyText = () => {
@@ -294,11 +417,11 @@ export const BiomechanicalRadarModule: React.FC<BiomechanicalRadarModuleProps> =
                 Radar Multivectorial Adaptativo 6D (IA)
               </h3>
               <span className="text-[9px] font-black uppercase font-mono tracking-widest bg-indigo-950/80 text-indigo-300 border border-indigo-800/60 px-2 py-0.5 rounded-md">
-                7 MATRICES
+                14 MATRICES
               </span>
             </div>
             <p className="text-[11px] text-slate-400 font-medium mt-0.5">
-              Cuantificación multivectorial adaptada: MSK/Osteomuscular, Manguito Rotador, Artrosis Rodilla 6D, Colecistitis Aguda 6D, Valoración Hepática 6D, Visceral e Inflamatorio y Oncológico.
+              Cuantificación multivectorial adaptada: MSK/Osteomuscular, Manguito Rotador, Artrosis Rodilla 6D, Trauma Rodilla 6D, Trauma Tobillo 6D, Colecistitis Aguda 6D, Apendicitis Aguda 6D, Valoración Tiroidea 6D, Lesiones Musculares 6D, Valoración Hepática 6D, Valoración Renal 6D, Valoración Escrotal / Testicular 6D, Visceral e Inflamatorio y Oncológico.
             </p>
           </div>
         </div>
@@ -328,7 +451,7 @@ export const BiomechanicalRadarModule: React.FC<BiomechanicalRadarModuleProps> =
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => handleAnalyze("auto")}
+            onClick={() => handleSelectMatrixMode("auto")}
             disabled={isLoading}
             className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
               selectedRadarMode === "auto"
@@ -343,7 +466,7 @@ export const BiomechanicalRadarModule: React.FC<BiomechanicalRadarModuleProps> =
 
           <button
             type="button"
-            onClick={() => handleAnalyze("rotator_cuff")}
+            onClick={() => handleSelectMatrixMode("rotator_cuff")}
             disabled={isLoading}
             className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
               selectedRadarMode === "rotator_cuff"
@@ -356,7 +479,7 @@ export const BiomechanicalRadarModule: React.FC<BiomechanicalRadarModuleProps> =
 
           <button
             type="button"
-            onClick={() => handleAnalyze("knee_oa")}
+            onClick={() => handleSelectMatrixMode("knee_oa")}
             disabled={isLoading}
             className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
               selectedRadarMode === "knee_oa"
@@ -369,7 +492,33 @@ export const BiomechanicalRadarModule: React.FC<BiomechanicalRadarModuleProps> =
 
           <button
             type="button"
-            onClick={() => handleAnalyze("cholecystitis")}
+            onClick={() => handleSelectMatrixMode("knee_trauma")}
+            disabled={isLoading}
+            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              selectedRadarMode === "knee_trauma"
+                ? "bg-blue-600 text-white shadow-md border border-blue-400/50"
+                : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800 hover:border-slate-700"
+            }`}
+          >
+            <span>💥 Trauma Rodilla 6D</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleSelectMatrixMode("ankle_trauma")}
+            disabled={isLoading}
+            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              selectedRadarMode === "ankle_trauma"
+                ? "bg-cyan-600 text-white shadow-md border border-cyan-400/50"
+                : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800 hover:border-slate-700"
+            }`}
+          >
+            <span>🦶 Trauma de Tobillo</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleSelectMatrixMode("cholecystitis")}
             disabled={isLoading}
             className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
               selectedRadarMode === "cholecystitis"
@@ -382,20 +531,85 @@ export const BiomechanicalRadarModule: React.FC<BiomechanicalRadarModuleProps> =
 
           <button
             type="button"
-            onClick={() => handleAnalyze("hepatic")}
+            onClick={() => handleSelectMatrixMode("appendicitis")}
             disabled={isLoading}
             className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-              selectedRadarMode === "hepatic"
-                ? "bg-amber-600 text-white shadow-md border border-amber-400/50"
+              selectedRadarMode === "appendicitis"
+                ? "bg-red-600 text-white shadow-md border border-red-400/50"
                 : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800 hover:border-slate-700"
             }`}
           >
-            <span>🔬 Valoración Hepática</span>
+            <span>🩺 Apendicitis Aguda</span>
           </button>
 
           <button
             type="button"
-            onClick={() => handleAnalyze("msk")}
+            onClick={() => handleSelectMatrixMode("thyroid")}
+            disabled={isLoading}
+            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              selectedRadarMode === "thyroid"
+                ? "bg-purple-600 text-white shadow-md border border-purple-400/50"
+                : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800 hover:border-slate-700"
+            }`}
+          >
+            <span>🦋 Valoración Tiroidea</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleSelectMatrixMode("muscle_injury")}
+            disabled={isLoading}
+            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              selectedRadarMode === "muscle_injury"
+                ? "bg-amber-600 text-white shadow-md border border-amber-400/50"
+                : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800 hover:border-slate-700"
+            }`}
+          >
+            <span>💪 Lesiones Musculares</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleSelectMatrixMode("hepatic")}
+            disabled={isLoading}
+            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              selectedRadarMode === "hepatic"
+                ? "bg-teal-600 text-white shadow-md border border-teal-400/50"
+                : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800 hover:border-slate-700"
+            }`}
+          >
+            <span>🔬 Hígado Integral 6D</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleSelectMatrixMode("renal")}
+            disabled={isLoading}
+            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              selectedRadarMode === "renal"
+                ? "bg-cyan-600 text-white shadow-md border border-cyan-400/50"
+                : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800 hover:border-slate-700"
+            }`}
+          >
+            <span>🩺 Riñón Integral 6D</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleSelectMatrixMode("scrotal")}
+            disabled={isLoading}
+            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              selectedRadarMode === "scrotal"
+                ? "bg-amber-600 text-white shadow-md border border-amber-400/50"
+                : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800 hover:border-slate-700"
+            }`}
+          >
+            <span>🥚 Escroto / Testicular 6D</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleSelectMatrixMode("msk")}
             disabled={isLoading}
             className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
               selectedRadarMode === "msk"
@@ -408,7 +622,7 @@ export const BiomechanicalRadarModule: React.FC<BiomechanicalRadarModuleProps> =
 
           <button
             type="button"
-            onClick={() => handleAnalyze("visceral")}
+            onClick={() => handleSelectMatrixMode("visceral")}
             disabled={isLoading}
             className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
               selectedRadarMode === "visceral"
@@ -421,7 +635,7 @@ export const BiomechanicalRadarModule: React.FC<BiomechanicalRadarModuleProps> =
 
           <button
             type="button"
-            onClick={() => handleAnalyze("oncology")}
+            onClick={() => handleSelectMatrixMode("oncology")}
             disabled={isLoading}
             className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
               selectedRadarMode === "oncology"
@@ -728,9 +942,11 @@ export const BiomechanicalRadarModule: React.FC<BiomechanicalRadarModuleProps> =
 
       {/* Action Footer Buttons */}
       <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800/80">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
-            onClick={handleInjectToReport}
+            onClick={() => {
+              handleInjectToReport();
+            }}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-mono font-bold uppercase tracking-wider transition-all shadow-md cursor-pointer ${
               injected
                 ? "bg-emerald-600 text-white border border-emerald-400"
@@ -742,6 +958,16 @@ export const BiomechanicalRadarModule: React.FC<BiomechanicalRadarModuleProps> =
           </button>
 
           <button
+            type="button"
+            onClick={handleRemoveFromReport}
+            className="flex items-center gap-1.5 bg-rose-950/60 hover:bg-rose-900 text-rose-200 border border-rose-800/80 px-3.5 py-2.5 rounded-xl text-xs font-mono font-bold transition-all shadow-md cursor-pointer"
+            title="Quitar el anexo del radar del texto del reporte y desactivar su renderizado en PDF e impresión"
+          >
+            <Trash2 className="h-3.5 w-3.5 text-rose-400" />
+            <span>Quitar Anexo</span>
+          </button>
+
+          <button
             onClick={handleCopyText}
             className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 px-3 py-2.5 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer"
           >
@@ -750,9 +976,23 @@ export const BiomechanicalRadarModule: React.FC<BiomechanicalRadarModuleProps> =
           </button>
         </div>
 
-        <span className="text-[10px] text-slate-500 font-mono">
-          Formato homologado para inclusión automática en informes y PDFs oficiales.
-        </span>
+        <label className="flex items-center gap-2 cursor-pointer text-xs font-mono font-bold text-slate-300 hover:text-white bg-slate-900/90 px-3 py-2 rounded-xl border border-slate-800">
+          <input
+            type="checkbox"
+            checked={includeRadarInReport !== false}
+            onChange={(e) => {
+              const checked = e.target.checked;
+              if (onToggleIncludeRadar) onToggleIncludeRadar(checked);
+              if (!checked) {
+                handleRemoveFromReport();
+              } else {
+                handleInjectToReport();
+              }
+            }}
+            className="h-4 w-4 rounded text-indigo-600 focus:ring-indigo-500 bg-slate-950 border-slate-700 cursor-pointer"
+          />
+          <span>Incluir en PDF/Reporte</span>
+        </label>
       </div>
     </div>
   );

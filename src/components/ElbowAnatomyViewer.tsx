@@ -400,7 +400,7 @@ export default function ElbowAnatomyViewer({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: selectedModel || "gemini-3.6-flash",
+          model: selectedModel || "gemini-3.7-flash",
           reportText: generatedReport,
           studyType: "Codo",
           structures: structures

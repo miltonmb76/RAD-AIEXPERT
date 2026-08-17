@@ -959,7 +959,7 @@ export default function KneeAnatomyViewer({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            model: selectedModel || "gemini-3.6-flash",
+            model: selectedModel || "gemini-3.7-flash",
             reportText: generatedReport,
             studyType: "Rodilla",
             structures: structures,
@@ -998,7 +998,7 @@ export default function KneeAnatomyViewer({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            model: selectedModel || "gemini-3.6-flash",
+            model: selectedModel || "gemini-3.7-flash",
             reportText: generatedReport,
             studyType: "Rodilla",
             structures: structures,
@@ -1046,7 +1046,7 @@ export default function KneeAnatomyViewer({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: selectedModel || "gemini-3.6-flash",
+          model: selectedModel || "gemini-3.7-flash",
           reportText: generatedReport,
           studyType: "Rodilla",
           structures: structures

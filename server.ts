@@ -6,6 +6,7 @@ import path from "path";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
+import sharp from "sharp";
 
 // Lazy-loaded GenAI client to prevent crash on startup if API key is missing
 let aiClient: GoogleGenAI | null = null;
@@ -75,7 +76,40 @@ function getModelName(requestedModel?: string): string {
   if (requestedModel === "gemini-3.1-pro-preview" || requestedModel === "gemini-3.1-pro") {
     return "gemini-3.1-pro-preview";
   }
-  return "gemini-3.6-flash";
+  return "gemini-3.7-flash";
+}
+
+// Global sanitizer to strictly enforce BAAF instead of PAAF across all reports, annexes, and modules
+function enforceBaafTerminology(textOrObj: any): any {
+  if (typeof textOrObj === "string") {
+    return textOrObj
+      .replace(/\bPAAF\b/g, "BAAF")
+      .replace(/\bpaaf\b/g, "baaf")
+      .replace(/\bPaaf\b/g, "Baaf")
+      .replace(/P\.A\.A\.F\./gi, "BAAF")
+      .replace(/P\.A\.A\.F/gi, "BAAF")
+      .replace(/Punci[oó]n(?:-|\s+por\s+|\s+)Aspiraci[oó]n\s+con\s+Aguja\s+Fina/gi, "Biopsia por Aspiración con Aguja Fina")
+      .replace(/punci[oó]n(?:-|\s+por\s+|\s+)aspiraci[oó]n\s+con\s+aguja\s+fina/gi, "biopsia por aspiración con aguja fina")
+      .replace(/Punci[oó]n\s+por\s+aguja\s+fina/gi, "Biopsia por aspiración con aguja fina")
+      .replace(/punci[oó]n\s+por\s+aguja\s+fina/gi, "biopsia por aspiración con aguja fina")
+      .replace(/Punci[oó]n\s+con\s+aguja\s+fina/gi, "Biopsia con aguja fina")
+      .replace(/punci[oó]n\s+con\s+aguja\s+fina/gi, "biopsia con aguja fina")
+      .replace(/Punci[oó]n\s+aspirativa\s+con\s+aguja\s+fina/gi, "Biopsia por aspiración con aguja fina")
+      .replace(/punci[oó]n\s+aspirativa\s+con\s+aguja\s+fina/gi, "biopsia por aspiración con aguja fina")
+      .replace(/Punci[oó]n\s+Aspiraci[oó]n/gi, "Biopsia por Aspiración")
+      .replace(/punci[oó]n\s+aspiraci[oó]n/gi, "biopsia por aspiración");
+  }
+  if (Array.isArray(textOrObj)) {
+    return textOrObj.map(enforceBaafTerminology);
+  }
+  if (textOrObj !== null && typeof textOrObj === "object") {
+    const resObj: any = {};
+    for (const key of Object.keys(textOrObj)) {
+      resObj[key] = enforceBaafTerminology(textOrObj[key]);
+    }
+    return resObj;
+  }
+  return textOrObj;
 }
 
 function getGeminiClient(): GoogleGenAI {
@@ -389,6 +423,18 @@ const PORT = 3000;
 app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ limit: "20mb", extended: true }));
 
+// Global response sanitizer: guarantees BAAF is always used and PAAF is never returned in any response
+app.use((req, res, next) => {
+  const originalJson = res.json;
+  res.json = function (body: any) {
+    if (body) {
+      body = enforceBaafTerminology(body);
+    }
+    return originalJson.call(this, body);
+  };
+  next();
+});
+
 // --- API ENDPOINTS ---
 
 // Health Check Endpoint
@@ -502,7 +548,7 @@ app.post("/api/analyze", async (req: express.Request, res: express.Response) => 
       "1. REGLA ANATÓMICA RADIOLÓGICA DE ESPEJO (Proyecciones frontales PA/AP): La DERECHA VISUAL de la pantalla/imagen corresponde al LADO IZQUIERDO ANATÓMICO DEL PACIENTE (Hemitórax / Campo pulmonar izquierdo). La IZQUIERDA VISUAL de la pantalla corresponde al LADO DERECHO ANATÓMICO DEL PACIENTE (Hemitórax / Campo pulmonar derecho). NUNCA confundas la derecha visual de la foto con la derecha del paciente. Un neumotórax, infiltrado o lesión visible en la mitad derecha de la foto/pantalla DEBE ser reportado como IZQUIERDO (Lado del paciente). " +
       "2. ALINEACIÓN CON LA INDICACIÓN CLÍNICA: Si el médico o consulta indica 'Neumotórax Izquierdo' (o hallazgo en lado izquierdo), examina la mitad VISUAL DERECHA de la imagen médica (hemitórax izquierdo del paciente). Si identificas la línea pleural visceral o avascularidad periférica en la mitad visual derecha de la placa, CONFIRMA Y REPORTA EXPLÍCITAMENTE COMO 'NEUMOTÓRAX IZQUIERDO'. Queda ESTRICTAMENTE PROHIBIDO invertir la lateralidad diciendo 'derecho' por confusión de la matriz de la foto. " +
       "REGLAS CRÍTICAS DE TERMINOLOGÍA Y RECOMENDACIONES DE TIROIDES (ACR TI-RADS): " +
-      "1. Usa SIEMPRE la sigla BAAF (Biopsia por Aspiración con Aguja Fina) o Punción por Aguja Fina (BAAF). Queda ESTRICTAMENTE PROHIBIDO utilizar la sigla PAAF. " +
+      "1. Usa SIEMPRE la sigla BAAF (Biopsia por Aspiración con Aguja Fina). Queda ESTRICTAMENTE PROHIBIDO utilizar la sigla PAAF o el término punción por aguja fina. " +
       "2. Umbrales oficiales de la ACR TI-RADS 2017 para recomendación de BAAF y seguimiento ecográfico: " +
       "- TR1 (Benigno, 0 pts) y TR2 (No sospechoso, 2 pts): No requieren BAAF ni seguimiento ecográfico. " +
       "- TR3 (Levemente sospechoso, 3 pts): Indicar BAAF ÚNICAMENTE si mide ≥ 2.5 cm (25 mm). Indicar seguimiento ecográfico si mide ≥ 1.5 cm (15 mm) (nódulos TR3 de 15 mm a 24 mm son de seguimiento ecográfico, NUNCA BAAF). " +
@@ -668,7 +714,7 @@ REGLAS DE FORMATO CRÍTICAS PARA COMPATIBILIDAD CON MICROSOFT WORD:
  * NEW API: ASSIST AND POLISH CLINICAL HISTORY / INDICATION (CASING & SPELLING ASSISTANCE)
  * POST /api/assist-clinical-history
  * Payload: {
- *   model?: string (e.g. "gemini-3.6-flash")
+ *   model?: string (e.g. "gemini-3.7-flash")
  *   clinicalHistory: string
  *   studyType?: string
  * }
@@ -738,7 +784,7 @@ app.post("/api/transcribe", async (req: express.Request, res: express.Response) 
     const ai = getGeminiClient();
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
+      model: "gemini-3.7-flash",
       contents: [
         {
           inlineData: {
@@ -783,7 +829,8 @@ app.post("/api/chat", async (req: express.Request, res: express.Response) => {
     const selectedModel = getModelName(model);
 
     const finalSystemInstruction = systemInstruction || 
-      "Eres un consultor radiológico de élite de nivel académico. Ayudas a otros radiólogos y médicos a resolver casos difíciles, proponer diagnósticos diferenciales detallados basados en signos radiográficos, sugerir estudios de imagen complementarios idóneos para resolver el dilema diagnóstico y explicar la fisiopatología detrás de los hallazgos de imagen. Responde siempre con rigor científico y de forma estructurada.";
+      "Eres un consultor radiológico de élite de nivel académico. Ayudas a otros radiólogos y médicos a resolver casos difíciles, proponer diagnósticos diferenciales detallados basados en signos radiográficos, sugerir estudios de imagen complementarios idóneos para resolver el dilema diagnóstico y explicar la fisiopatología detrás de los hallazgos de imagen. Responde siempre con rigor científico y de forma estructurada. " +
+      "REGLA DE TERMINOLOGÍA: Queda ESTRICTAMENTE PROHIBIDO utilizar la sigla o término PAAF. Utiliza SIEMPRE la sigla BAAF (Biopsia por Aspiración con Aguja Fina).";
 
     // Format chat messages appropriately for the SDK
     // The chats.create or models.generateContent with previous conversation contents
@@ -837,7 +884,8 @@ app.post("/api/classify", async (req: express.Request, res: express.Response) =>
     const selectedModel = getModelName(model);
 
     const finalSystemInstruction = systemInstruction || 
-      "Eres una enciclopedia viva de clasificaciones, escalas y criterios radiológicos (ej. BI-RADS, Bosniak, LI-RADS, PI-RADS, Fleischner, Stanford/DeBakey, Duke, Balthazar, Child-Pugh, etc.). Tu tarea es proveer información estructurada, precisa y actualizada sobre la escala consultada, detallando los estadios/grados, criterios de imagen clave para cada uno y las recomendaciones correspondientes de seguimiento clínico o quirúrgico. Presenta todo con tablas detalladas y listas claras de lectura rápida.";
+      "Eres una enciclopedia viva de clasificaciones, escalas y criterios radiológicos (ej. BI-RADS, Bosniak, LI-RADS, PI-RADS, Fleischner, Stanford/DeBakey, Duke, Balthazar, Child-Pugh, etc.). Tu tarea es proveer información estructurada, precisa y actualizada sobre la escala consultada, detallando los estadios/grados, criterios de imagen clave para cada uno y las recomendaciones correspondientes de seguimiento clínico o quirúrgico. Presenta todo con tablas detalladas y listas claras de lectura rápida. " +
+      "REGLA DE TERMINOLOGÍA: Queda ESTRICTAMENTE PROHIBIDO utilizar la sigla o término PAAF. Utiliza SIEMPRE la sigla BAAF (Biopsia por Aspiración con Aguja Fina).";
 
     const promptText = `Explica a fondo, con criterios precisos y de forma perfectamente organizada la siguiente escala, criterio o clasificación radiológica:
 "${query}"
@@ -1435,7 +1483,8 @@ Devuelve únicamente el reporte modificado en formato Markdown, sin notas aclara
     parts.push({ text: promptText });
 
     const systemInstruction = 
-      "Eres un médico radiólogo subespecialista experto con más de 20 años de experiencia clínica. Reformulas y mejoras informes médicos radiológicos con un vocabulario médico de la más alta precisión y elegancia, integrando hallazgos o clasificaciones de manera totalmente fluida y nativa, sin preámbulos ni justificaciones didácticas externas.";
+      "Eres un médico radiólogo subespecialista experto con más de 20 años de experiencia clínica. Reformulas y mejoras informes médicos radiológicos con un vocabulario médico de la más alta precisión y elegancia, integrando hallazgos o clasificaciones de manera totalmente fluida y nativa, sin preámbulos ni justificaciones didácticas externas. " +
+      "REGLA ESTRICTA DE TERMINOLOGÍA: Queda TERMINANTEMENTE PROHIBIDO utilizar el término o sigla PAAF. Usa SIEMPRE BAAF (Biopsia por Aspiración con Aguja Fina).";
 
     const response = await ai.models.generateContent({
       model: selectedModel,
@@ -3033,7 +3082,7 @@ CRÍTICO: No inventes URLs bajo ninguna circunstancia. Tampoco intercambies ni m
       "Eres un consultor senior de primer nivel en medicina académica y radiología clínica, bibliotecario médico maestro en recuperación de evidencia científica y editor en jefe de revistas de radiología indexadas. Tu misión es redactar revisiones de literatura clínica sumamente minuciosas, integradas, ricas en detalles y de diversas fuentes académicas de prestigio (como PubMed, Radiopaedia y consorcios de sociedades internacionales), asegurándote de que no exista ninguna discrepancia de temas en tus enlaces de referencia. Devuelve siempre un objeto JSON válido que cumpla estrictamente con el esquema especificado.";
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
+      model: "gemini-3.7-flash",
       contents: promptText,
       config: {
         systemInstruction: systemInstruction,
@@ -3590,14 +3639,14 @@ Debes devolver un JSON que represente una tabla o un mapa bento de hallazgos. El
 });
 
 /**
- * NEW API: GENERATE IMAGE SEMIOLOGY AND JUSTIFICATION TABLE
+ * NEW API: GENERATE SEMIOLOGY TABLE
  * POST /api/generate-semiology-table
  */
 app.post("/api/generate-semiology-table", async (req: express.Request, res: express.Response) => {
   try {
     const { model, report, studyType } = req.body;
     if (!report) {
-      return res.status(400).json({ success: false, error: "Se requiere el reporte médico para generar el cuadro de semiología." });
+      return res.status(400).json({ success: false, error: "Se requiere el reporte médico para generar el cuadro semiológico." });
     }
 
     const ai = getGeminiClient();
@@ -3610,14 +3659,10 @@ Reporte Radiológico formal:
 ${report}
 """
 
-Por favor, analiza este reporte clínico y confecciona un cuadro de semiología por imágenes que justifique los diagnósticos realizados y las patologías descartadas, según los hallazgos descritos.
-Debes devolver un JSON estructurado con:
-1. "confirmedDiagnoses": Una lista de los diagnósticos principales que se confirman o sospechan en el reporte, junto con su justificación basada en hallazgos semiológicos específicos descritos en el reporte.
-   - "diagnosis": El diagnóstico o interpretación (ej: "Artrosis femorotibial medial severa"). Esto irá bajo la columna "INTERPRETACIÓN SEMIOLÓGICA".
-   - "justification": Hallazgos que lo amparan y justifican (ej: "Presencia de osteofitos marginales prominentes, pinzamiento severo del espacio articular asimétrico y esclerosis subcondral"). Esto irá bajo la columna "HALLAZGOS".
-2. "ruledOutPathologies": Una lista de patologías diferenciales relevantes que son descartadas por los hallazgos del reporte.
-   - "pathology": La interpretación de exclusión que redacte de forma explícita que NO está presente o que se descarta la patología (ej: "Ausencia de colecistitis aguda", "Se descarta sinovitis aguda exudativa", "Ausencia de fractura intraarticular aguda") para evitar cualquier error de interpretación por parte del lector. Esto irá bajo la columna "INTERPRETACIÓN SEMIOLÓGICA".
-   - "exclusionCriteria": Los hallazgos de imagen o la ausencia de anomalías que justifican la exclusión (ej: "Paredes vesiculares finas, sin líquido pericolecístico, signo de Murphy ecográfico negativo", "Ausencia de derrame articular significativo o distensión capsular", "Continuidad cortical perfectamente preservada"). Esto irá bajo la columna "HALLAZGOS".
+Por favor, analiza este reporte clínico y genera un cuadro semiológico formal de deducción radiológica.
+El JSON debe contener:
+1. "confirmedDiagnoses": Diagnósticos confirmados con su justificación semiológica.
+2. "ruledOutPathologies": Patologías diferenciales descartadas con sus criterios de exclusión.
 3. "markdownTable": Una representación formal en formato Markdown con títulos limpios (sin emojis, ni emoticones, totalmente apta para un reporte en PDF impreso formal). Debe usar títulos de nivel 3 (###) y 4 (####) y contener dos secciones tabulares bien diseñadas:
    - Una sección titulada "### CUADRO DE SEMIOLOGÍA Y JUSTIFICACIÓN RADIOLÓGICA".
    - Bajo esta, un subtítulo "#### 1. Diagnósticos Confirmados y Justificación Semiológica" con una tabla que tenga exactamente las columnas: | INTERPRETACIÓN SEMIOLÓGICA | HALLAZGOS |.
@@ -3685,6 +3730,573 @@ Debes devolver un JSON estructurado con:
   } catch (error: any) {
     console.error("Error en /api/generate-semiology-table:", error);
     res.status(500).json({ success: false, error: handleGeminiError(error) });
+  }
+});
+
+app.post("/api/generate-3d-render", async (req: express.Request, res: express.Response) => {
+  try {
+    const {
+      image,
+      mimeType,
+      findingDescription,
+      studyType,
+      clinicalHistory,
+      anatomicalLocation,
+      renderStyle = "volumetric_glass",
+      customInstructions,
+      dualPerspective = false,
+      laterality: explicitLaterality, // "right" | "left" | "midline" | "auto"
+      targetDigit, // "1" | "2" | "3" | "4" | "5" | "thumb" | "index" | "middle" | "ring" | "pinky"
+      targetJointLevel, // "DIP" | "PIP" | "MCP" | "IFD" | "IFP" | "MCF" | "distal_phalanx" | "middle_phalanx" | "proximal_phalanx"
+      targetAspect, // "volar" | "dorsal" | "flexor" | "extensor" | "radial" | "ulnar"
+      targetOrganSegment, // "segment_I" ... "segment_VIII" | "superior_pole" | "inferior_pole" | etc.
+      specificAnatomicalUnit
+    } = req.body;
+
+    if (!findingDescription && !image) {
+      return res.status(400).json({ success: false, error: "Se requiere una imagen de ultrasonido o una descripción del hallazgo." });
+    }
+
+    const ai = getGeminiClient();
+
+    // Heuristic pre-detection of laterality and anatomical structures from text
+    const fullTextToScan = `${findingDescription || ""} ${studyType || ""} ${clinicalHistory || ""} ${anatomicalLocation || ""} ${customInstructions || ""} ${specificAnatomicalUnit || ""}`.toLowerCase();
+    
+    let detectedLateralityHint = "auto";
+    if (explicitLaterality && explicitLaterality !== "auto") {
+      detectedLateralityHint = explicitLaterality;
+    } else {
+      const hasRight = /\b(derech[ao]s?|der\b|dcha\b|dcho\b|right\b|rt\b|l[oó]bulo derecho|riñ[oó]n derecho|mama derecha|hombro derecho|rodilla derecha|muslo derecho|pierna derecha|brazo derecho|test[ií]culo derecho|ovario derecho|mano derecha|pie derecho|tobillo derecho|codo derecho|muñeca derecha)\b/i.test(fullTextToScan);
+      const hasLeft = /\b(izquierd[ao]s?|izq\b|izda\b|left\b|lt\b|l[oó]bulo izquierdo|riñ[oó]n izquierdo|mama izquierda|hombro izquierdo|rodilla izquierda|muslo izquierdo|pierna izquierda|brazo izquierdo|test[ií]culo izquierdo|ovario izquierdo|mano izquierda|pie izquierdo|tobillo izquierdo|codo izquierdo|muñeca izquierda)\b/i.test(fullTextToScan);
+      if (hasRight && !hasLeft) detectedLateralityHint = "right";
+      else if (hasLeft && !hasRight) detectedLateralityHint = "left";
+      else if (hasRight && hasLeft) detectedLateralityHint = "bilateral";
+      else detectedLateralityHint = "unspecified";
+    }
+
+    // Heuristic pre-detection of digits and joint levels
+    let detectedDigit = targetDigit || "";
+    if (!detectedDigit) {
+      if (/\b(4[°ºto\s]|cuarto|4to|cuarto dedo|dedo anular|ring finger|fourth digit|4th digit|4th finger|iv dedo|dedo iv)\b/i.test(fullTextToScan)) detectedDigit = "4 (Anular / Ring finger)";
+      else if (/\b(3[°ºer\s]|tercer|3er|tercer dedo|dedo medio|dedo mayor|dedo coraz[oó]n|middle finger|third digit|3rd digit|3rd finger|iii dedo|dedo iii)\b/i.test(fullTextToScan)) detectedDigit = "3 (Medio / Middle finger)";
+      else if (/\b(2[°ºdo\s]|segundo|2do|segundo dedo|dedo [ií]ndice|index finger|second digit|2nd digit|2nd finger|ii dedo|dedo ii)\b/i.test(fullTextToScan)) detectedDigit = "2 (Índice / Index finger)";
+      else if (/\b(1[°ºer\s]|primer|1er|primer dedo|pulgar|thumb|first digit|1st digit|1st finger|i dedo|dedo i)\b/i.test(fullTextToScan)) detectedDigit = "1 (Pulgar / Thumb)";
+      else if (/\b(5[°ºto\s]|quinto|5to|quinto dedo|dedo meñique|pinky|little finger|fifth digit|5th digit|5th finger|v dedo|dedo v)\b/i.test(fullTextToScan)) detectedDigit = "5 (Meñique / Little finger)";
+    }
+
+    let detectedJoint = targetJointLevel || "";
+    if (!detectedJoint) {
+      if (/\b(ifd|interfal[aá]ngica distal|dip|distal interphalangeal|articulaci[oó]n interfal[aá]ngica distal|falange distal|ungueal)\b/i.test(fullTextToScan)) detectedJoint = "IFD (Interfalángica Distal / DIP)";
+      else if (/\b(ifp|interfal[aá]ngica proximal|pip|proximal interphalangeal|articulaci[oó]n interfal[aá]ngica proximal|falange media)\b/i.test(fullTextToScan)) detectedJoint = "IFP (Interfalángica Proximal / PIP)";
+      else if (/\b(mcf|metacarpofal[aá]ngica|mcp|metacarpophalangeal|nudillo|base del dedo)\b/i.test(fullTextToScan)) detectedJoint = "MCF (Metacarpofalángica / MCP)";
+    }
+
+    let detectedAspect = targetAspect || "";
+    if (!detectedAspect) {
+      if (/\b(volar|palmar|flexor|flexores|polea|placa volar|cara anterior)\b/i.test(fullTextToScan)) detectedAspect = "Volar / Flexor / Palmar";
+      else if (/\b(dorsal|extensor|extensores|bandaleta|cara posterior)\b/i.test(fullTextToScan)) detectedAspect = "Dorsal / Extensor";
+    }
+
+    // Step 1: Multimodal Vision & Anatomical Reasoning with Pre-Synthesis Anatomical Reference Grounding (Gemini 3.7 Flash)
+    const parts: any[] = [];
+    if (image && mimeType) {
+      const cleanImg = cleanBase64(image);
+      parts.push({
+        inlineData: {
+          data: cleanImg,
+          mimeType: mimeType || "image/jpeg"
+        }
+      });
+    }
+
+    const visionPrompt = `Eres un Catedrático de Anatomía Humana Quirúrgica, Médico Radiólogo Especialista en Ecografía de Alta Resolución y Director de Arte Médico 3D.
+Tu objetivo es analizar la imagen ecográfica 2D aportada y la descripción clínica del hallazgo para:
+
+========================================================================
+1) INVESTIGAR Y CONSULTAR EL MAPA ANATÓMICO QUIRÚRGICO DE REFERENCIA (ANATOMICAL GROUNDING):
+========================================================================
+Antes de sintetizar cualquier imagen, debes consultar y deducir las coordenadas anatómicas exactas y los hitos anatómicos cardinales de la estructura solicitada:
+- Identificar con EXACTITUD ANATÓMICA CARDINAL la estructura diana (ej. bursa olecraneana, quiste de Baker, tendón flexor del 4to dedo a nivel IFD, bursa subacromial-subdeltoidea, placa volar, fascia plantar, nódulo tiroideo en polo superior derecho, ligamento colateral medial, etc.).
+- UBICACIÓN ANATÓMICA EXACTA ("exactAnatomicalLocation"): Especificar en qué cara, plano tisular, relación espacial y coordenadas óseas/musculares exactas se encuentra en la realidad anatómica humana.
+  * Ejemplo para BURSA OLECRANEANA: "Cara POSTERIOR del codo, tejido celular subcutáneo directamente sobre el vértice óseo del olécranon del cúbito, superficial a la inserción distal del tendón del tríceps braquial".
+  * Ejemplo para QUISTE DE BAKER: "Fosa poplítea POSTEROMEDIAL de la rodilla, entre el tendón del semimembranoso y la cabeza medial del músculo gastrocnemio".
+  * Ejemplo para BURSA SUBACROMIAL-SUBDELTOIDEA: "Espacio subacromial del hombro, por debajo del acromion y músculo deltoides, superficial a los tendones del manguito rotador (supraespinoso), extraarticular".
+  * Ejemplo para FASCIA PLANTAR: "Cara PLANTAR del calcáneo, entesis proximal en la tuberosidad medial del calcáneo, plano subcutáneo profundo plantar".
+  * Ejemplo para LESIÓN EN 4º DEDO (ANULAR) IFD: "Cuarto rayo digital (4º dedo / anular), articulación interfalángica distal entre falange media y falange distal, cara volar flexora, adyacente a la placa ungueal".
+- HITOS ÓSEOS Y MUSCULARES DE ANCLAJE ("cardinalLandmarks"): Lista de estructuras vecinas reales obligatorias para anclar el dibujo.
+- LUGARES ERRÓNEOS PROHIBIDOS ("prohibitedMisplacements"): Lista de ubicaciones incorrectas frecuentes donde los generadores de IA suelen cometer errores graves:
+  * Para Bursa Olecraneana: PROHIBIDO dibujarla en la fosa cubital / cara anterior del codo; PROHIBIDO intraarticular en la fosa troclear; PROHIBIDO en el tendón del bíceps braquial.
+  * Para 4º dedo IFD: PROHIBIDO en el 3er dedo (medio); PROHIBIDO en la articulación IFP o MCF.
+- PROFUNDIDAD TISULAR ("tissueLayerDepth"): "Subcutáneo (Suprafascial)" | "Subfascial" | "Intratendinoso" | "Intraarticular" | "Intramuscular" | "Subperióstico" | "Parenquimatoso".
+
+========================================================================
+2) FORMULAR PROMPTS EN INGLÉS RIGUROSAMENTE ANCLADOS A ESTAS COORDENADAS ANATÓMICAS:
+========================================================================
+- Prompt 1 (FOCAL / CLOSE-UP): Vista volumétrica 3D aislada, de gran detalle, anclada explícitamente a los hitos óseos y musculares correctos, con directivas de plano claras (ej. "Posterior subcutaneous aspect of the elbow directly over the ulnar olecranon tip") y restricciones de exclusión negativa de las ubicaciones erróneas.
+- ${dualPerspective ? "Prompt 2 (MACRO / PANORÁMICO TOPOGRÁFICO): Vista de perspectiva regional que muestre la mano/extremidad/órgano completo con referencias anatómicas claras y la lesión resaltada en su posición espacial, lateralidad y coordenadas EXACTAS sin margen de confusión." : ""}
+
+========================================================================
+3) GENERAR TÍTULO, EXPLICACIÓN CLÍNICA Y FICHA DE ATLAS ANATÓMICO EN ESPAÑOL:
+========================================================================
+- Título profesional y elegante en español con la lateralidad y ubicación anatómica exacta.
+- Explicación clínica estructurada (2 a 3 párrafos de alta calidad) que correlacione la vista ecográfica 2D con la anatomía tridimensional ${dualPerspective ? "(incluyendo correlación tisular focal, topografía regional y lateralidad anatómica explícita)" : ""}.
+
+========================================================================
+REGLA SUPREMA 1: EXACTITUD TOPOGRÁFICA SEGMENTARIA Y DE DÍGITOS (CERO TOLERANCIA A ERRORES):
+========================================================================
+Cuando el estudio corresponda a extremidades, manos, pies, dedos, tendones o articulaciones:
+- CONTEO Y NUMERACIÓN DE DEDOS DE LA MANO (de radial a cubital):
+  * 1º Dedo = Pulgar / Thumb (1er rayo)
+  * 2º Dedo = Índice / Index Finger (2do rayo)
+  * 3º Dedo = Medio / Middle Finger (3er rayo)
+  * 4º Dedo = Anular / Ring Finger (4to rayo) -> [CRÍTICO: Si se indica 4º dedo, NUNCA colocarlo en el 3º ni en el 2º].
+  * 5º Dedo = Meñique / Little (Pinky) Finger (5to rayo).
+- NIVELES ARTICULARES Y FALÁNGICOS:
+  * IFD (Interfalángica Distal / DIP): Entre falange media y distal, inmediatamente adyacente al lecho ungueal / uña.
+  * IFP (Interfalángica Proximal / PIP): Entre falange proximal y falange media.
+  * MCF (Metacarpofalángica / MCP): Entre metacarpiano y falange proximal (nudillo).
+
+========================================================================
+REGLA SUPREMA 2: LATERALIDAD RADIOLÓGICA Y ANATÓMICA:
+========================================================================
+1. VISTA ANTERIOR / FRONTAL / PALMAR (el paciente mira de frente / palma hacia el observador):
+   - Lesión DERECHA (Patient's Right): En el lienzo 2D la lesión DEBE dibujarse en el LADO IZQUIERDO DE LA PANTALLA DEL OBSERVADOR (Viewer's Left).
+   - Lesión IZQUIERDA (Patient's Left): En el lienzo 2D la lesión DEBE dibujarse en el LADO DERECHO DE LA PANTALLA DEL OBSERVADOR (Viewer's Right).
+2. VISTA POSTERIOR / DORSAL (dorso de la mano / codo posterior / espalda / gemelos):
+   - Lesión DERECHA (Patient's Right): En el lienzo 2D la extremidad derecha DEBE estar en el LADO DERECHO DE LA PANTALLA (Viewer's Right).
+   - Lesión IZQUIERDA (Patient's Left): En el lienzo 2D la extremidad izquierda DEBE estar en el LADO IZQUIERDO DE LA PANTALLA (Viewer's Left).
+
+DATOS DEL CASO:
+- Descripción del Hallazgo por el Médico: "${findingDescription || "Hallazgo ecográfico relevante"}"
+- Lateralidad Indicada/Detectada: "${detectedLateralityHint.toUpperCase()}"
+- Dígito / Rayo Objetivo: "${detectedDigit || "No especificado / Conforme al texto"}"
+- Nivel Articular / Segmento: "${detectedJoint || "No especificado / Conforme al texto"}"
+- Cara / Compartimento: "${detectedAspect || "No especificado"}"
+- Unidad Anatómica Específica: "${specificAnatomicalUnit || "No especificada"}"
+- Tipo de Estudio: "${studyType || "Ecografía Diagnóstica"}"
+- Historia Clínica: "${clinicalHistory || "No especificada"}"
+- Órgano / Región Anatómica: "${anatomicalLocation || "No especificado"}"
+- Estilo Visual Seleccionado: "${renderStyle}"
+- Instrucciones Adicionales: "${customInstructions || "Ninguna"}"
+- Modo de Perspectiva: "${dualPerspective ? "DOBLE PERSPECTIVA (FOCAL + PANORÁMICA GENERAL)" : "INDIVIDUAL (FOCAL)"}"
+
+DIRECTRICES PARA LOS PROMPTS DE IMAGEN 3D EN INGLÉS:
+- Estilo: Modern 3D medical volumetric cross-section render, clean organic glass and translucent parenchyma cutaway, cinema 4D octane render style, glowing chromatic bioluminescent accents highlighting the pathology/finding, ultra-high fidelity medical visualization, soft studio rim lighting, translucent subsurface scattering.
+- NUNCA incluir texto escrito, palabras, números, marcas de agua ni flechas dentro de la imagen.
+
+RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA EXACTA:
+{
+  "targetStructure": "Nombre de la estructura anatómica patológica (ej: Bursa olecraneana, Tendón flexor profundo 4º dedo, etc.)",
+  "exactAnatomicalLocation": "Detailed anatomical position in English with precise bony and muscular coordinates",
+  "exactAnatomicalLocationEs": "Ubicación anatómica exacta en español con planos, caras y referencias óseas",
+  "cardinalLandmarks": ["Landmark 1 in English", "Landmark 2 in English", "Landmark 3 in English"],
+  "cardinalLandmarksEs": ["Hito de referencia 1 en español", "Hito de referencia 2 en español", "Hito 3 en español"],
+  "prohibitedMisplacements": ["Prohibited location 1 in English", "Prohibited location 2 in English"],
+  "prohibitedMisplacementsEs": ["Ubicación errónea prohibida 1 en español", "Ubicación prohibida 2 en español"],
+  "anatomicalAspect": "POSTERIOR" | "ANTERIOR" | "LATERAL" | "MEDIAL" | "VOLAR" | "DORSAL" | "PLANTAR",
+  "tissueLayerDepth": "Subcutáneo (Suprafascial)" | "Subfascial" | "Intratendinoso" | "Intraarticular" | "Intramuscular" | "Subperióstico" | "Parenquimatoso",
+  "lateralityIdentified": "RIGHT" | "LEFT" | "BILATERAL" | "MIDLINE",
+  "digitOrSegmentIdentified": "4th digit (Ring finger)" | "3rd digit (Middle finger)" | "2nd digit (Index)" | "1st digit (Thumb)" | "5th digit (Pinky)" | "N/A",
+  "jointOrLevelIdentified": "DIP (Distal Interphalangeal)" | "PIP (Proximal Interphalangeal)" | "MCP" | "N/A",
+  "viewOrientation": "POSTERIOR" | "ANTERIOR" | "SAGITTAL" | "AXIAL" | "LATERAL",
+  "spatialScreenRule": "Explicación breve de la posición en pantalla del observador",
+  "title": "Título descriptivo y elegante en español con la lateralidad y ubicación anatómica exacta",
+  "explanation": "Explicación clínica detallada en español estructurada que correlacione la ecografía 2D con la anatomía tridimensional mencionando con claridad la estructura, su localización anatómica exacta, plano y lateralidad del paciente.",
+  "imagePrompt": "Detailed English prompt for the focal/close-up 3D medical volumetric render anchored strictly to exactAnatomicalLocation, cardinalLandmarks, excluding prohibitedMisplacements...",
+  "imagePromptMacro": "${dualPerspective ? "Detailed English prompt for the wider panoramic/regional 3D medical volumetric render showing full limb/region with the lesion situated strictly in the exact anatomical coordinates..." : ""}"
+}`;
+
+    parts.push({ text: visionPrompt });
+
+    const analysisResponse = await ai.models.generateContent({
+      model: "gemini-3.7-flash",
+      contents: parts,
+      config: {
+        responseMimeType: "application/json"
+      }
+    });
+
+    let analysisJson: any = {};
+    try {
+      analysisJson = JSON.parse(analysisResponse.text || "{}");
+    } catch (e) {
+      console.error("Error parseando respuesta JSON de análisis 3D:", e);
+      analysisJson = {
+        title: `Representación Esquemática 3D: ${findingDescription?.slice(0, 40) || "Hallazgo Ecográfico"}`,
+        explanation: `Representación esquemática tridimensional basada en los hallazgos ecográficos observados. Ilustra la correlación volumétrica del tejido y la morfología descrita (${findingDescription || "estudio actual"}).`,
+        imagePrompt: `Medical 3D volumetric render of ${findingDescription || "anatomical ultrasound finding"}, clean anatomical cross-section, translucent organic glass style, octane render, soft studio lighting, high resolution medical illustration, no text.`,
+        imagePromptMacro: `Wide panoramic medical 3D volumetric render of the entire anatomical region of ${findingDescription || "anatomical ultrasound finding"}, showing neighboring organs and muscles, translucent medical illustration, glowing focal finding in place, no text.`
+      };
+    }
+
+    // Step 2: Extract Grounded Anatomical Reference Profile & Constraints
+    const targetStructure = analysisJson.targetStructure || specificAnatomicalUnit || anatomicalLocation || findingDescription || "Estructura ecográfica";
+    const exactAnatomicalLocation = analysisJson.exactAnatomicalLocation || "";
+    const exactAnatomicalLocationEs = analysisJson.exactAnatomicalLocationEs || exactAnatomicalLocation || "";
+    const cardinalLandmarks = Array.isArray(analysisJson.cardinalLandmarks) ? analysisJson.cardinalLandmarks : [];
+    const cardinalLandmarksEs = Array.isArray(analysisJson.cardinalLandmarksEs) ? analysisJson.cardinalLandmarksEs : cardinalLandmarks;
+    const prohibitedMisplacements = Array.isArray(analysisJson.prohibitedMisplacements) ? analysisJson.prohibitedMisplacements : [];
+    const prohibitedMisplacementsEs = Array.isArray(analysisJson.prohibitedMisplacementsEs) ? analysisJson.prohibitedMisplacementsEs : prohibitedMisplacements;
+    const anatomicalAspect = analysisJson.anatomicalAspect || detectedAspect || "";
+    const tissueLayerDepth = analysisJson.tissueLayerDepth || "";
+
+    const finalLaterality = (analysisJson.lateralityIdentified || detectedLateralityHint || "").toUpperCase();
+    const finalDigit = analysisJson.digitOrSegmentIdentified || detectedDigit || "";
+    const finalJoint = analysisJson.jointOrLevelIdentified || detectedJoint || "";
+    const viewOrientation = (analysisJson.viewOrientation || "").toUpperCase();
+
+    let anatomicalConstraintPrefix = "";
+    if (exactAnatomicalLocation) {
+      const landmarksStr = cardinalLandmarks.length > 0 ? ` Anchored to: ${cardinalLandmarks.join(", ")}.` : "";
+      const prohibitedStr = prohibitedMisplacements.length > 0 ? ` STRICT PROHIBITION: DO NOT place in ${prohibitedMisplacements.join(", ")}.` : "";
+      anatomicalConstraintPrefix = `[MANDATORY SURGICAL ANATOMICAL LOCATION: ${exactAnatomicalLocation.toUpperCase()}.${landmarksStr}${prohibitedStr}] `;
+    }
+
+    let lateralityConstraintPrefix = "";
+    if (finalLaterality === "RIGHT" || finalLaterality.includes("DERECH")) {
+      const screenPos = viewOrientation === "POSTERIOR" 
+        ? "on the VIEWER'S RIGHT (screen-right) in dorsal/posterior view"
+        : "on the VIEWER'S LEFT (screen-left) in frontal/coronal view";
+      lateralityConstraintPrefix = `[MANDATORY MEDICAL LATERALITY: PATIENT'S RIGHT ANATOMICAL SIDE ONLY. Position the lesion strictly in the patient's right structure (${screenPos}). Patient's left is normal. DO NOT place on left]. `;
+    } else if (finalLaterality === "LEFT" || finalLaterality.includes("IZQUIERD")) {
+      const screenPos = viewOrientation === "POSTERIOR" 
+        ? "on the VIEWER'S LEFT (screen-left) in dorsal/posterior view"
+        : "on the VIEWER'S RIGHT (screen-right) in frontal/coronal view";
+      lateralityConstraintPrefix = `[MANDATORY MEDICAL LATERALITY: PATIENT'S LEFT ANATOMICAL SIDE ONLY. Position the lesion strictly in the patient's left structure (${screenPos}). Patient's right is normal. DO NOT place on right]. `;
+    }
+
+    let topographyConstraintPrefix = "";
+    if (finalDigit && finalDigit !== "N/A") {
+      topographyConstraintPrefix = `[CRITICAL ANATOMICAL TARGET: STRICTLY ${finalDigit.toUpperCase()}${finalJoint && finalJoint !== "N/A" ? ` AT THE ${finalJoint.toUpperCase()}` : ""}. DO NOT place lesion on any other digit or joint. Other digits are completely normal and intact]. `;
+    }
+
+    // Helper function to flip a base64 image horizontally using sharp
+    const flipBase64Horizontally = async (base64Data: string): Promise<string> => {
+      try {
+        const clean = base64Data.replace(/^data:image\/\w+;base64,/, "");
+        const buf = Buffer.from(clean, "base64");
+        const flippedBuf = await sharp(buf).flop().toBuffer();
+        return flippedBuf.toString("base64");
+      } catch (err) {
+        console.error("Error volteando imagen con sharp:", err);
+        return base64Data;
+      }
+    };
+
+    // Auditoría y auto-corrección multimodal de posición anatómica exacta, lateralidad y topografía
+    const auditAndValidate3dRender = async (
+      imgBase64: string,
+      structureName: string,
+      expectedLocation: string,
+      landmarks: string[],
+      prohibitedAreas: string[],
+      targetLaterality: string,
+      targetDigitOrLoc: string,
+      targetJointOrLevel: string,
+      perspectiveLabel: "FOCAL (Detalle)" | "MACRO (Panorámica)"
+    ): Promise<{
+      finalBase64: string;
+      wasFlipped: boolean;
+      isAnatomicalPositionCorrect: boolean;
+      isTopographyAccurate: boolean;
+      depictedPosition: string;
+      discrepancyReason?: string;
+      detectedSide: string;
+      log: string;
+    }> => {
+      const cleanTarget = (targetLaterality || "").toUpperCase();
+
+      try {
+        const clean = imgBase64.replace(/^data:image\/\w+;base64,/, "");
+        const auditPrompt = `Eres un auditor radiológico perito en anatomía humana quirúrgica de alta precisión.
+El médico solicitó una representación 3D con los siguientes requisitos anatómicos fundamentales:
+- Estructura Solicitada: ${structureName}
+- Ubicación Anatómica Exacta Obligatoria: ${expectedLocation || "Posición fisiológica estándar"}
+- Hitos de Referencia Anatómica: ${landmarks.join(", ") || "Hitos estándar"}
+- Ubicaciones Erróneas Prohibidas (Lugares donde NUNCA debe estar): ${prohibitedAreas.join(", ") || "Ninguna"}
+- Lateralidad Requerida: LADO ${cleanTarget === "RIGHT" ? "DERECHO (Right)" : cleanTarget === "LEFT" ? "IZQUIERDO (Left)" : "Línea media / No especificada"} DEL PACIENTE.
+- Dígito / Segmento Requerido: ${targetDigitOrLoc || "Conforme a la descripción"}
+- Nivel Articular / Falange: ${targetJointOrLevel || "Conforme a la descripción"}
+
+Analiza minuciosamente esta imagen médica 3D generada (${perspectiveLabel}):
+
+1. POSICIÓN ANATÓMICA EXACTA Y PLANO:
+   - ¿En qué ubicación y cara anatómica está realmente dibujada la lesión o estructura? (ej. cara posterior sobre el olécranon vs. fosa cubital anterior).
+   - ¿La estructura patológica está situada en su posición anatómica quirúrgicamente correcta ("isAnatomicalPositionCorrect": true/false)?
+   - Si la estructura se colocó en un lugar erróneo (por ejemplo, una bursa olecraneana dibujada en la cara anterior/fosa cubital del codo, o un quiste de Baker en la cara anterior de la rodilla), debes marcar "isAnatomicalPositionCorrect": false y detallar la discrepancia.
+
+2. LATERALIDAD DEL PACIENTE:
+   - Determina el punto de vista (ANTERIOR/PALMAR vs. POSTERIOR/DORSAL vs. CORTE SAGITAL/FOCAL).
+   - ¿En qué lado DEL PACIENTE está situada la lesión?
+   - Si la lesión quedó en el lado CONTRARIO al solicitado (ej. el médico pidió DERECHO pero quedó en la izquierda del paciente), indica "shouldFlipHorizontally": true para que el sistema invierta el lienzo.
+
+3. TOPOGRAFÍA SEGMENTARIA / DÍGITO / NIVEL:
+   - Si involucra dedos: ¿En qué dedo específico está dibujada la lesión? (1º Pulgar, 2º Índice, 3º Medio, 4º Anular, 5º Meñique).
+   - ¿En qué articulación está dibujada? (IFD distal, IFP proximal, MCF o falange).
+   - Si se solicitó el 4º dedo a nivel IFD pero la imagen la colocó en el 3º dedo o en la IFP, indica "isTopographyAccurate": false.
+
+Responde ESTRICTAMENTE en JSON:
+{
+  "isAnatomicalPositionCorrect": true | false,
+  "depictedAnatomicalPosition": "Descripción exacta de dónde está dibujada la lesión en la imagen",
+  "depictedPatientSide": "RIGHT" | "LEFT" | "MIDLINE",
+  "depictedDigit": "1st (Thumb)" | "2nd (Index)" | "3rd (Middle)" | "4th (Ring)" | "5th (Pinky)" | "N/A",
+  "depictedJoint": "DIP" | "PIP" | "MCP" | "N/A",
+  "isLateralityCorrect": true | false,
+  "shouldFlipHorizontally": true | false,
+  "isTopographyAccurate": true | false,
+  "discrepancyReason": "Explicación concisa si hubo error de posición anatómica, lateralidad o dedo",
+  "reason": "Explicación general de auditoría anatómica"
+}`;
+
+        const auditResponse = await ai.models.generateContent({
+          model: "gemini-3.7-flash",
+          contents: [
+            {
+              inlineData: {
+                data: clean,
+                mimeType: "image/png"
+              }
+            },
+            { text: auditPrompt }
+          ],
+          config: {
+            responseMimeType: "application/json"
+          }
+        });
+
+        const auditJson = JSON.parse(auditResponse.text || "{}");
+        console.log(`[AUDITORÍA ANATÓMICA 3D - ${perspectiveLabel}]`, auditJson);
+
+        let processedBase64 = clean;
+        let wasFlipped = false;
+
+        const sideMismatched = (cleanTarget === "RIGHT" && auditJson.depictedPatientSide === "LEFT") ||
+                              (cleanTarget === "LEFT" && auditJson.depictedPatientSide === "RIGHT");
+
+        if (auditJson.shouldFlipHorizontally || (!auditJson.isLateralityCorrect && sideMismatched)) {
+          console.log(`[AUTOCORRECCIÓN LATERALIDAD 3D] Volteando horizontalmente la imagen ${perspectiveLabel} para alinearse al lado ${cleanTarget} del paciente.`);
+          processedBase64 = await flipBase64Horizontally(clean);
+          wasFlipped = true;
+        }
+
+        return {
+          finalBase64: processedBase64,
+          wasFlipped,
+          isAnatomicalPositionCorrect: auditJson.isAnatomicalPositionCorrect !== false,
+          isTopographyAccurate: auditJson.isTopographyAccurate !== false,
+          depictedPosition: auditJson.depictedAnatomicalPosition || "Posición verificada",
+          discrepancyReason: auditJson.discrepancyReason,
+          detectedSide: auditJson.depictedPatientSide || cleanTarget,
+          log: auditJson.reason || "Auditoría de posición anatómica y topográfica completada."
+        };
+      } catch (auditErr) {
+        console.warn(`[AUDITORÍA ANATÓMICA 3D] Error no bloqueante al auditar imagen ${perspectiveLabel}:`, auditErr);
+        return {
+          finalBase64: imgBase64,
+          wasFlipped: false,
+          isAnatomicalPositionCorrect: true,
+          isTopographyAccurate: true,
+          depictedPosition: "Posición estándar",
+          detectedSide: cleanTarget,
+          log: "Auditoría no concluyente"
+        };
+      }
+    };
+
+    // Helper for image generation with fallback
+    const generateImageHelper = async (promptText: string, extraIsolationPrefix = "") => {
+      const fullReinforcedPrompt = `${extraIsolationPrefix}${anatomicalConstraintPrefix}${lateralityConstraintPrefix}${topographyConstraintPrefix}${promptText}. Medical 3D volumetric cross-section, clean studio render, elegant translucent materials, no text, hyperrealistic medical CGI.`;
+      try {
+        const imageGenResponse = await ai.models.generateContent({
+          model: "gemini-3.1-flash-image",
+          contents: fullReinforcedPrompt,
+          config: {
+            imageConfig: { aspectRatio: "4:3", imageSize: "1K" }
+          }
+        });
+
+        if (imageGenResponse.candidates?.[0]?.content?.parts) {
+          for (const part of imageGenResponse.candidates[0].content.parts) {
+            if (part.inlineData) {
+              return part.inlineData.data;
+            }
+          }
+        }
+      } catch (genErr: any) {
+        console.warn("Fallback a gemini-3.1-flash-lite-image...", genErr);
+        const fallbackResponse = await ai.models.generateContent({
+          model: "gemini-3.1-flash-lite-image",
+          contents: `${extraIsolationPrefix}${anatomicalConstraintPrefix}${lateralityConstraintPrefix}${topographyConstraintPrefix}${promptText}. 3D medical volumetric render, clean anatomy, no text.`,
+          config: {
+            imageConfig: { aspectRatio: "4:3" }
+          }
+        });
+        if (fallbackResponse.candidates?.[0]?.content?.parts) {
+          for (const part of fallbackResponse.candidates[0].content.parts) {
+            if (part.inlineData) {
+              return part.inlineData.data;
+            }
+          }
+        }
+      }
+      return "";
+    };
+
+    // Step 3: Generate Focal Image
+    const focalPrompt = analysisJson.imagePrompt || `Medical 3D volumetric render of ${findingDescription || "ultrasound finding"}`;
+    let rawFocalBase64 = await generateImageHelper(focalPrompt);
+
+    if (!rawFocalBase64) {
+      throw new Error("El modelo de renderizado no devolvió datos para la imagen focal.");
+    }
+
+    // Step 4: Multimodal Vision Audit of Anatomical Position, Laterality & Topography
+    let auditedFocal = await auditAndValidate3dRender(
+      rawFocalBase64,
+      targetStructure,
+      exactAnatomicalLocation,
+      cardinalLandmarks,
+      prohibitedMisplacements,
+      finalLaterality,
+      finalDigit,
+      finalJoint,
+      "FOCAL (Detalle)"
+    );
+
+    // Auto-Recovery 1: If anatomical position is misplaced (e.g. bursa olecraneana in anterior cubital fossa instead of posterior olecranon tip)
+    if (!auditedFocal.isAnatomicalPositionCorrect && exactAnatomicalLocation) {
+      console.log(`[AUTOCORRECCIÓN POSICIÓN ANATÓMICA 3D] Estructura fuera de coordenadas anatómicas (${auditedFocal.discrepancyReason || "desplazamiento"}). Reconstruyendo con anclaje estricto a ${exactAnatomicalLocation}...`);
+      
+      const correctivePrompt = `Surgical close-up 3D medical volumetric cross-section focusing exclusively and strictly on the ${exactAnatomicalLocation}. The target structure (${targetStructure}) MUST be placed directly in the ${exactAnatomicalLocation}, anchored to ${cardinalLandmarks.join(", ")}. The prohibited regions (${prohibitedMisplacements.join(", ")}) are completely excluded. Extreme anatomical precision, clean translucent medical CGI, no text.`;
+      
+      const retryAnatBase64 = await generateImageHelper(
+        correctivePrompt,
+        `[STRICT SURGICAL CORRECTION: POSITION MUST BE EXACTLY AT ${exactAnatomicalLocation.toUpperCase()}. DO NOT DRAW IN ${prohibitedMisplacements.join(", ").toUpperCase()}]. `
+      );
+
+      if (retryAnatBase64) {
+        const reAudited = await auditAndValidate3dRender(
+          retryAnatBase64,
+          targetStructure,
+          exactAnatomicalLocation,
+          cardinalLandmarks,
+          prohibitedMisplacements,
+          finalLaterality,
+          finalDigit,
+          finalJoint,
+          "FOCAL (Detalle)"
+        );
+        auditedFocal = reAudited;
+      }
+    }
+
+    // Auto-Recovery 2: If topographical verification detected digit/joint mismatch (e.g. drawn on 3rd finger instead of 4th)
+    if (!auditedFocal.isTopographyAccurate && finalDigit) {
+      console.log(`[AUTOCORRECCIÓN TOPOGRÁFICA 3D] Regenerando con aislamiento focal estricto para ${finalDigit} en ${finalJoint}...`);
+      const isolatedFocalPrompt = `Close-up isolated medical 3D volumetric cross-section focusing exclusively on the ${finalDigit} ${finalJoint ? `at the ${finalJoint} joint level` : ""}. Clear anatomical magnification of the single target digit showing the tendon pathology in high resolution, with the distal phalanx and nail bed clearly visible. No other digits in primary focus.`;
+      
+      const retryRawBase64 = await generateImageHelper(isolatedFocalPrompt, `[ISOLATED ANATOMICAL UNIT MAGNIFICATION: STRICTLY ${finalDigit.toUpperCase()} ${finalJoint.toUpperCase()} ONLY]. `);
+      if (retryRawBase64) {
+        const reAudited = await auditAndValidate3dRender(
+          retryRawBase64,
+          targetStructure,
+          exactAnatomicalLocation,
+          cardinalLandmarks,
+          prohibitedMisplacements,
+          finalLaterality,
+          finalDigit,
+          finalJoint,
+          "FOCAL (Detalle)"
+        );
+        auditedFocal = reAudited;
+      }
+    }
+
+    const base64RenderFocal = auditedFocal.finalBase64;
+
+    // Step 5: If Dual Perspective requested, generate Macro Panoramic Image
+    let base64RenderMacro = "";
+    if (dualPerspective) {
+      const macroPrompt = analysisJson.imagePromptMacro || `Wide anatomical panoramic 3D volumetric render of ${findingDescription || "ultrasound region"}, showing full muscle group or organ context with all digits and landmarks clearly discernible`;
+      try {
+        const rawMacroBase64 = await generateImageHelper(macroPrompt);
+        if (rawMacroBase64) {
+          // Audit and auto-correct Macro Image laterality, anatomical position and topography
+          const auditedMacro = await auditAndValidate3dRender(
+            rawMacroBase64,
+            targetStructure,
+            exactAnatomicalLocation,
+            cardinalLandmarks,
+            prohibitedMisplacements,
+            finalLaterality,
+            finalDigit,
+            finalJoint,
+            "MACRO (Panorámica)"
+          );
+          base64RenderMacro = auditedMacro.finalBase64;
+        }
+      } catch (macroErr) {
+        console.warn("Fallo al generar imagen panorámica 3D secundaria:", macroErr);
+      }
+    }
+
+    const sanitizedExplanation = enforceBaafTerminology(analysisJson.explanation || "");
+    const sanitizedTitle = enforceBaafTerminology(analysisJson.title || "");
+
+    res.json({
+      success: true,
+      render3dBase64: `data:image/png;base64,${base64RenderFocal}`,
+      render3dMacroBase64: base64RenderMacro ? `data:image/png;base64,${base64RenderMacro}` : undefined,
+      dualPerspective: dualPerspective && !!base64RenderMacro,
+      title: sanitizedTitle,
+      explanation: sanitizedExplanation,
+      promptUsed: focalPrompt,
+      promptMacroUsed: analysisJson.imagePromptMacro,
+      lateralityIdentified: finalLaterality,
+      digitIdentified: finalDigit,
+      jointIdentified: finalJoint,
+      viewOrientation: viewOrientation,
+      focalWasFlipped: auditedFocal.wasFlipped,
+      isTopographyAccurate: auditedFocal.isTopographyAccurate,
+      isAnatomicalPositionCorrect: auditedFocal.isAnatomicalPositionCorrect,
+      anatomicalCoordinates: {
+        targetStructure,
+        exactAnatomicalLocation,
+        exactAnatomicalLocationEs,
+        cardinalLandmarks,
+        cardinalLandmarksEs,
+        prohibitedMisplacements,
+        prohibitedMisplacementsEs,
+        anatomicalAspect,
+        tissueLayerDepth,
+        isAnatomicalPositionCorrect: auditedFocal.isAnatomicalPositionCorrect,
+        depictedPosition: auditedFocal.depictedPosition,
+        anatomicalAuditLog: auditedFocal.log
+      }
+    });
+
+  } catch (error: any) {
+    console.error("Error en /api/generate-3d-render:", error);
+    res.status(500).json({ success: false, error: handleGeminiError(error) });
+  }
+});
+
+// Endpoint to flip an image horizontally on demand
+app.post("/api/flip-image-laterality", async (req: express.Request, res: express.Response) => {
+  try {
+    const { imageBase64 } = req.body;
+    if (!imageBase64) return res.status(400).json({ success: false, error: "Se requiere imageBase64" });
+
+    const clean = imageBase64.replace(/^data:image\/\w+;base64,/, "");
+    const buf = Buffer.from(clean, "base64");
+    const flippedBuf = await sharp(buf).flop().toBuffer();
+    const flippedBase64 = `data:image/png;base64,${flippedBuf.toString("base64")}`;
+
+    res.json({ success: true, flippedImageBase64: flippedBase64 });
+  } catch (err: any) {
+    console.error("Error volteando imagen en /api/flip-image-laterality:", err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
@@ -3811,7 +4423,7 @@ app.post("/api/classify-and-label-image", async (req: express.Request, res: expr
     }
 
     const ai = getGeminiClient();
-    const selectedModel = getModelName("gemini-3.6-flash");
+    const selectedModel = getModelName("gemini-3.7-flash");
 
     let mimeType = "image/png";
     const mimeMatch = image.match(/^data:([^;]+);/);
@@ -3910,7 +4522,7 @@ app.post("/api/auto-label-us-photo", async (req: express.Request, res: express.R
     }
 
     const ai = getGeminiClient();
-    const selectedModel = getModelName("gemini-3.6-flash");
+    const selectedModel = getModelName("gemini-3.7-flash");
 
     // Check if image string is SVG or base64
     let mimeType = "image/png";
@@ -3996,7 +4608,7 @@ app.post("/api/autocomplete-label-from-report", async (req: express.Request, res
     }
 
     const ai = getGeminiClient();
-    const selectedModel = getModelName(model || "gemini-3.6-flash");
+    const selectedModel = getModelName(model || "gemini-3.7-flash");
 
     const promptText = `
 Eres un radiólogo clínico experto y editor de artículos científicos de radiología.
@@ -4051,7 +4663,7 @@ app.post("/api/correlate-figures-retroactive", async (req: express.Request, res:
     }
 
     const ai = getGeminiClient();
-    const selectedModel = getModelName(model || "gemini-3.6-flash");
+    const selectedModel = getModelName(model || "gemini-3.7-flash");
 
     let promptText = `
 Eres un radiólogo experto y un editor de informes médicos de alta precisión.
@@ -4444,6 +5056,35 @@ app.post("/api/analyze-anatomy", async (req: express.Request, res: express.Respo
 `;
     }
 
+    let abdomenInstruction = "";
+    if (studyType && studyType.toLowerCase().includes("abdomen")) {
+      abdomenInstruction = `
+[REGLA ESPECIAL PARA ESTUDIOS DE ABDOMEN Y TARJETAS SINOPSIS DE ÓRGANOS]:
+- Para cada uno de los órganos y estructuras del abdomen (Hígado, Vesícula, Vías biliares / Colédoco, Páncreas, Bazo, Riñón derecho, Riñón izquierdo, Vejiga, Próstata, Útero, Ovarios, Retroperitoneo, Intestino delgado, Ascitis / Líquido libre, Pared abdominal):
+  1. Lee CUIDADOSAMENTE tanto la sección de HALLAZGOS (descripción anatómica detallada) como la IMPRESIÓN DIAGNÓSTICA / CONCLUSIONES del reporte.
+  2. Extrae la SINOPSIS CLÍNICA INTELIGENTE y ESPECÍFICA correspondiente al hallazgo real descrita para ESE ÓRGANO en particular.
+  3. La descripción debe ser EN POCAS PALABRAS (de 3 a 10 palabras), inteligente, directa y libre de introducciones o redundancias, conservando las medidas (mm/cm) o características clave descritas en el reporte.
+     - Ejemplos de sinopsis inteligentes para órganos alterados:
+       * Hígado: "Esteatosis hepática moderada con hepatomegalia (165 mm)."
+       * Vesícula: "Litiasis vesicular múltiple con colecistitis y pared de 4.5 mm."
+       * Vías Biliares: "Coledocolitiasis distal de 6 mm con dilatación del conducto (9 mm)."
+       * Páncreas: "Páncreas de tamaño conservado con dilatación del Wirsung (4 mm)."
+       * Bazo: "Esplenomegalia moderada (142 mm) de aspecto homogéneo."
+       * Riñón Derecho: "Nefrolitiasis derecha de 5 mm en cáliz inferior sin hidronefrosis."
+       * Riñón Izquierdo: "Quiste cortical simple de 20 mm en polo superior."
+       * Vejiga: "Paredes delgadas con abundante sedimento urinario en declive."
+       * Próstata: "Hiperplasia prostática benigna grado II de 45 cc."
+       * Útero: "Miomatosis uterina intramural de 25 mm."
+       * Retroperitoneo: "Adenopatías retroperitoneales interaortocavas de 12 mm."
+       * Intestino Delgado: "Edema de pared intestinal con asas delgadas dilatadas."
+       * Ascitis: "Escasa cantidad de líquido libre en fondo de saco de Douglas."
+       * Pared Abdominal: "Hernia umbilical reducible con defecto aponeurótico de 10 mm."
+  4. Si el órgano o estructura no presenta alteraciones y es normal en el reporte: "Dentro de límites normales."
+  5. Si el órgano o estructura no se menciona ni se describe en ninguna parte del reporte: "No mencionado / No descrito."
+  6. Queda estrictamente prohibido responder "Alteración descrita" o frases genéricas predefinidas cuando hay hallazgos específicos en el texto.
+`;
+    }
+
     let specialInstruction = `
 [REGLA DE CONGRUENCIA Y SINCERIDAD ESTRICTA]:
 - Analiza con sumo cuidado TODO el texto del reporte médico (tanto el cuerpo general "Hallazgos" como las conclusiones "Impresión Diagnóstica / Conclusión").
@@ -4459,6 +5100,7 @@ app.post("/api/analyze-anatomy", async (req: express.Request, res: express.Respo
 ${sidePrompt}
 ${breastInstruction}
 ${neckInstruction}
+${abdomenInstruction}
 `;
 
     const promptText = `
@@ -4582,7 +5224,7 @@ app.post("/api/smart-modify-anatomy", async (req: express.Request, res: express.
     }
 
     const ai = getGeminiClient();
-    const selectedModel = getModelName(model || "gemini-2.5-flash");
+    const selectedModel = getModelName(model || "gemini-3.7-flash");
 
     // Format current states for prompt
     let currentStateStr = "";
@@ -7775,7 +8417,7 @@ REGLAS DE ORO PARA LA REDACCIÓN E INSERCIÓN IMPERCEPTIBLE:
 3. Evita redundancias o duplicaciones de información. Si el reporte ya tenía un dato similar, amplíalo o refínalo en lugar de pegarlo dos veces.
 4. Si el órgano '${organ}' no figuraba en la descripción narrativa original, agrega su descripción dentro de la sección 'HALLAZGOS' respetando la estructura y estilo del documento (por ejemplo, como un nuevo párrafo o viñeta anatómica coherente).
 5. Si alguna de las frases inyectadas implica un diagnóstico relevante, escala de riesgo (TI-RADS, Bosniak, LI-RADS, etc.) o recomendación clínica, asegúrate de reflejarla o resumirla también de forma armónica en la 'IMPRESIÓN DIAGNÓSTICA' o 'CONCLUSIÓN' si esa sección existe.
-6. ${includeSynopticTable && synopticTableMarkdown ? `INSERCIÓN DEL CUADRO Y RESUMEN INTERPRETATIVO: Adjunta al final del reporte la sección '### SINOPSIS CLÍNICA DE ${organ.toUpperCase()}' incluyendo de manera íntegra tanto la tabla Markdown como el párrafo '**Resumen Interpretativo:** ...' que se proporciona en 'Cuadro Sinóptico y Resumen Interpretativo en Markdown'. Si ya existe la sección de sinopsis de dicho órgano, reemplázala completamente por el nuevo contenido.` : "No incluyas secciones de cuadro sinóptico si no se solicita."}
+6. ${includeSynopticTable && synopticTableMarkdown ? `INSERCIÓN DEL CUADRO Y RESUMEN INTERPRETATIVO: Adjunta inmediatamente después de la 'IMPRESIÓN DIAGNÓSTICA' (o 'CONCLUSIÓN') del reporte la sección '### SINOPSIS CLÍNICA DE ${organ.toUpperCase()}' incluyendo de manera íntegra tanto la tabla Markdown como el párrafo '**Resumen Interpretativo:** ...' que se proporciona en 'Cuadro Sinóptico y Resumen Interpretativo en Markdown'. Si ya existe la sección de sinopsis de dicho órgano, reemplázala completamente por el nuevo contenido.` : "No incluyas secciones de cuadro sinóptico si no se solicita."}
 7. EL INFORME FINAL DEBE LEERSE IMPECABLE, CONTINUO Y PROFESIONAL, SIN RASTROS DE QUE FUE EDITADO O COMPLEMENTADO A POSTERIORI.
 
 Reporte radiológico original:
@@ -7905,8 +8547,173 @@ ${report}
 /**
  * 42. API: GENERATE BIOMECHANICAL & INFLAMMATORY RADAR
  * POST /api/generate-biomechanical-radar
- * Payload: { model?: string, report: string, studyType?: string, radarMode?: "auto" | "msk" | "visceral" | "oncology" | "rotator_cuff" | "knee_oa" | "cholecystitis" | "hepatic" }
+ * Payload: { model?: string, report: string, studyType?: string, radarMode?: "auto" | "msk" | "visceral" | "oncology" | "rotator_cuff" | "knee_oa" | "cholecystitis" | "ankle_trauma" | "knee_trauma" | "appendicitis" | "thyroid" | "muscle_injury" | "hepatic" }
  */
+
+const MATRIX_PRESETS: Record<string, { key: string; label: string; finding: string; justification: string }[]> = {
+  rotator_cuff: [
+    { key: "ruptura_supraespinoso", label: "Ruptura del Supraespinoso", finding: "Sin evidencia de desgarro ni solución de continuidad en el supraespinoso.", justification: "Integridad fibrilar conservada." },
+    { key: "bursitis", label: "Bursitis Subacromiodeltoidea", finding: "Bursa subacromial de espesor normal, sin líquido anormal.", justification: "Ausencia de distensión o reacción inflamatoria bursal." },
+    { key: "pinzamiento", label: "Pinzamiento Subacromial", finding: "Dinámica subacromial conservada sin conflicto de espacio.", justification: "Sin fricción ni atrapamiento en maniobras." },
+    { key: "otros_tendones", label: "Lesión de Otros Tendones del Manguito", finding: "Tendones infraespinoso, subescapular y redondo menor intactos.", justification: "Estructura y patrón fibrilar normal en tendones adyacentes." },
+    { key: "tendinosis_supraespinoso", label: "Tendinosis del Supraespinoso", finding: "Ecoestructura y espesor fibrilar habituales.", justification: "Sin cambios tendinósicos crónicos ni calcificaciones." },
+    { key: "tclb", label: "Tendón Cabeza Larga del Bíceps (TCLB)", finding: "TCLB centrado en la corredera bicipital sin tenosinovitis.", justification: "Líquido peritendinoso fisiológico y retináculo intacto." }
+  ],
+  knee_oa: [
+    { key: "femorotibial_medial", label: "Compartimento Femorotibial Medial", finding: "Espacio articular medial de amplitud conservada.", justification: "Sin pinzamiento ni esclerosis subcondral." },
+    { key: "femorotibial_lateral", label: "Compartimento Femorotibial Lateral", finding: "Espacio articular lateral normal.", justification: "Sin disminución de espacio ni cambios osteoartrósicos." },
+    { key: "meniscopatia_deg", label: "Meniscopatía Degenerativa", finding: "Meniscos de morfología y ecogenicidad habituales.", justification: "Sin fisuras degenerativas ni extrusión meniscal." },
+    { key: "cartilago_troclear", label: "Cartílago Troclear / Condromalacia", finding: "Cartílago troclear de espesor uniforme y superficie lisa.", justification: "Sin condromalacia ni defectos condrales." },
+    { key: "hidrartrosis", label: "Hidrartrosis / Efusión Articular", finding: "Receso suprarrotuliano sin derrame significativo.", justification: "Líquido articular dentro de límites fisiológicos." },
+    { key: "osteofitos", label: "Osteofitos Marginales & Entesofitos", finding: "Márgenes óseos articulares regulares.", justification: "Sin osteofitosis marginal ni remodelado hipertrófico." }
+  ],
+  knee_trauma: [
+    { key: "lcm", label: "Ligamento Colateral Medial (LCM)", finding: "LCM de continuidad y espesor conservados.", justification: "Sin signos de esguince o brecha fibrilar." },
+    { key: "lcl", label: "Ligamento Colateral Lateral / CPL", finding: "LCL y complejo posterolateral continuos.", justification: "Sin edema o desgarro periligamentario." },
+    { key: "menisco_interno", label: "Menisco Interno / Medial", finding: "Menisco interno bien configurado sin rupturas.", justification: "Triángulo meniscal ecogénico e íntegro." },
+    { key: "menisco_externo", label: "Menisco Externo / Lateral", finding: "Menisco externo sin líneas de desgarro.", justification: "Puntal meniscal estable y en su sitio." },
+    { key: "hidrartrosis", label: "Hidrartrosis / Hemartrosis", finding: "Sin efusión o hemartrosis traumática.", justification: "Recesos articulares limpios." },
+    { key: "lig_patelar", label: "Ligamento Patelar / Mecanismo Extensor", finding: "Ligamento patelar de espesor y patrón fibrilar normal.", justification: "Mecanismo extensor sin desgarro ni entesopatía." }
+  ],
+  ankle_trauma: [
+    { key: "lpaa", label: "Lig. Peroneo Astragalino Anterior (LPAA)", finding: "LPAA continuo de espesor normal.", justification: "Sin brecha anecoica ni inestabilidad anterolateral." },
+    { key: "lpc", label: "Lig. Peroneo Calcáneo (LPC)", finding: "LPC preservado debajo de tendones peroneos.", justification: "Sin engrosamiento ni compromiso traumático." },
+    { key: "deltoideo", label: "Complejo Ligamentoso Deltoideo", finding: "Ligamento deltoideo medial de fibrilaridad conservada.", justification: "Espacio claro medial normal sin brechas." },
+    { key: "hidrartrosis", label: "Hidrartrosis / Hemartrosis Articular", finding: "Sin efusión articular en receso anterior.", justification: "Líquido intraarticular fisiológico." },
+    { key: "tendones", label: "Tendones Peroneos / Mediales", finding: "Tendones peroneos y tibiales en sus correderas.", justification: "Sin tenosinovitis ni subluxación retinacular." },
+    { key: "oseo", label: "Estructuras Óseas / Sindesmosis", finding: "Corticales óseas continuas y sindesmosis alineada.", justification: "Sin avulsiones óseas ni diástasis sindesmótica." }
+  ],
+  cholecystitis: [
+    { key: "engrosamiento_pared", label: "Engrosamiento / Edema Parietal", finding: "Pared vesicular fina ≤3.0mm.", justification: "Sin edema parietal ni estratificación." },
+    { key: "vascularidad", label: "Vascularidad Parietal (Doppler)", finding: "Señal Doppler parietal normal.", justification: "Sin hiperemia inflamatoria de la pared." },
+    { key: "necrosis_pared", label: "Necrosis Parietal / Gangrena", finding: "Pared vesicular continua e intacta.", justification: "Sin gas intraparietal ni membranas desprendidas." },
+    { key: "cambios_perivesiculares", label: "Cambios Perivesiculares / Lecho", finding: "Grasa perivesicular limpia y libre.", justification: "Sin líquido ni colecciones perivesiculares." },
+    { key: "via_biliar", label: "Vía Biliar / Colédoco", finding: "Vía biliar intra y extrahepática de calibre normal.", justification: "Colédoco no dilatado sin coledocolitiasis." },
+    { key: "tamano_forma", label: "Tamaño / Hidrops Vesicular", finding: "Dimensiones vesiculares normales.", justification: "Sin hidrops ni sobredistensión vesicular." }
+  ],
+  appendicitis: [
+    { key: "diametro_apendice", label: "Diámetro Apendicular", finding: "Diámetro apendicular normal ≤6.0mm.", justification: "Estructura tubular compresible de fondo ciego." },
+    { key: "pared_apendice", label: "Pared / Signo de la Diana", finding: "Pared fina ≤2.0mm con capas conservadas.", justification: "Sin edema submucoso ni signo de la diana." },
+    { key: "vascularidad", label: "Vascularidad Parietal (Doppler)", finding: "Flujo vascular parietal simétrico y fino.", justification: "Sin hiperemia reactiva en anillo." },
+    { key: "cambios_inflamatorios", label: "Grasa Periapendicular / Flemón", finding: "Grasa mesoapendicular de ecogenicidad normal.", justification: "Sin cambios inflamatorios ni flemón." },
+    { key: "liquido_colecciones", label: "Líquido Libre / Colecciones", finding: "Fosa ilíaca derecha libre de líquido.", justification: "Sin colecciones ni abscesos periapendiculares." },
+    { key: "apendicolito", label: "Apendicolito / Fecalito", finding: "Luz apendicular limpia.", justification: "Sin apendicolitos ni obstrucción por fecalito." }
+  ],
+  thyroid: [
+    { key: "tamano_tiroides", label: "Tamaño Glandular / Bocio", finding: "Volumen tiroideo normal en ambos lóbulos.", justification: "Sin bocio ni efecto de masa intratorácica." },
+    { key: "presencia_nodulos", label: "Carga Nodular", finding: "Parénquima homogéneo libre de nódulos.", justification: "Sin imágenes nodulares sólidas ni quísticas." },
+    { key: "nodulos_sospechosos", label: "Sospecha TI-RADS", finding: "Sin nódulos con criterios de sospecha oncogénica.", justification: "Patrón ecográfico TI-RADS 1 / BENIGNO." },
+    { key: "patron_parenquima", label: "Ecoestructura Parenquimatosa", finding: "Ecoestructura glandular homogénea e isoecoica.", justification: "Sin signos de tiroiditis difusa ni septos fibrosos." },
+    { key: "vascularidad", label: "Vascularidad / Inferno Tiroideo", finding: "Patrón Doppler vascular fisiológico escaso.", justification: "Sin hiperemia difusa ni inferno tiroideo." },
+    { key: "adenopatias_atipicas", label: "Adenopatías Cervicales Atípicas", finding: "Cadenas ganglionares cervicales con morfología ovalada normal.", justification: "Ganglios con hilio graso conservado sin rasgos atípicos." }
+  ],
+  muscle_injury: [
+    { key: "desgarro_muscular", label: "Desgarro Muscular / Solución Continuidad", finding: "Arquitectura muscular y patrón en pluma de ave conservado.", justification: "Sin solución de continuidad ni brecha fibrilar." },
+    { key: "hematoma_coleccion", label: "Hematoma / Colección Líquida", finding: "Sin colecciones líquidas intra o interfasciales.", justification: "Ausencia de hematoma a tensión o seroma." },
+    { key: "union_miotendinosa", label: "Unión Miotendinosa (MTJ)", finding: "Unión miotendinosa continua e intacta.", justification: "Sin deslamado ni avulsión en la MTJ." },
+    { key: "tendon_insercion", label: "Tendón e Inserción / Entesis", finding: "Tendón de inserción de calibre y ecogenicidad normal.", justification: "Sin avulsión entésica ni desgarro intratendinoso." },
+    { key: "vascularidad", label: "Vascularidad / Neovascularización", finding: "Vascularización intramuscular baja normal.", justification: "Sin hiperemia perilesional ni neovasculatura." },
+    { key: "cambios_inflamatorios", label: "Edema / Inflamación Intramuscular", finding: "Vientres musculares limpios y simétricos.", justification: "Sin edema perifocal ni miositis reactiva." }
+  ],
+  hepatic: [
+    { key: "tamano_forma", label: "Tamaño y Forma", finding: "Hígado de dimensiones conservadas con borde inferior agudo y contornos lisos.", justification: "Sin hepatomegalia ni nodularidad capsular." },
+    { key: "vascularidad", label: "Vascularidad", finding: "Vena porta de calibre y flujo hepatópeto fásico normal, venas suprahepáticas trifásicas.", justification: "Sin hipertensión portal ni colaterales patológicas." },
+    { key: "elasticidad", label: "Elasticidad", finding: "Elasticidad en rango fisiológico normal (<6.0 kPa / F0-F1).", justification: "Sin rigidez parenquimatosa ni fibrosis significativa." },
+    { key: "apariencia_parenquima", label: "Apariencia del Parénquima", finding: "Ecoestructura parenquimatosa homogénea con patrón granular fino habitual.", justification: "Sin tosquedad ni patrón micronodular difuso." },
+    { key: "infiltracion_grasa", label: "Infiltración Grasa", finding: "Sin esteatosis hepática (Grado 0), gradiente hepatorrenal conservado y buena penetración acústica.", justification: "Atenuación acústica y ecogenicidad fisiológica." },
+    { key: "lesiones_focales", label: "Lesiones Focales", finding: "Parénquima homogéneo libre de lesiones ocupantes de espacio (LOEs).", justification: "Ausencia de nódulos sospechosos, quistes complicados ni masas sólidas." }
+  ],
+  renal: [
+    { key: "tamano_renal", label: "Tamaño Renal", finding: "Eje bipolar longitudinal conservado (100-120mm) con morfología reniforme simétrica.", justification: "Sin nefromegalia ni hipotrofia renal." },
+    { key: "grosor_cortical", label: "Grosor Cortical", finding: "Espesor cortical normal ≥9-10mm con nítida diferenciación córtico-medular.", justification: "Sin adelgazamiento cortical ni hiperecogenicidad médica." },
+    { key: "vascularidad", label: "Vascularidad", finding: "Perfusión periférica completa con índices de resistividad intrarrenal fisiológicos (RI 0.58-0.70).", justification: "Sin defectos segmentarios ni signos de estenosis arterial." },
+    { key: "lesiones_focales", label: "Lesiones Focales", finding: "Parénquima homogéneo sin masas sólidas ni quistes complicados (Bosniak I o libre de LOEs).", justification: "Ausencia de LOEs sospechosas ni angiomiolipomas complejos." },
+    { key: "procesos_obstructivos", label: "Procesos Obstructivos", finding: "Seno renal ecolucente sin ectasia pielocalicial ni litiasis obstructiva.", justification: "Sin hidronefrosis ni uropatía obstructiva." },
+    { key: "cambios_inflamatorios", label: "Cambios Inflamatorios", finding: "Grasa perirrenal homogénea sin colecciones, gas ni áreas de nefronía.", justification: "Ausencia de estigmas de pielonefritis ni perinefritis." }
+  ],
+  scrotal: [
+    { key: "tamano_testicular", label: "Tamaño Testicular", finding: "Volumen y morfología testicular conservada dentro de rango fisiológico (8-25 cc).", justification: "Sin atrofia, hipotrofia ni orquimegalia anormal." },
+    { key: "vascularidad_testicular", label: "Vascularidad Testicular", finding: "Patrón de perfusión Doppler simétrico con índices de resistividad fisiológicos (RI 0.45-0.70).", justification: "Sin hiperemia inflamatoria ni defectos de perfusión / torsión." },
+    { key: "integridad_epididimos", label: "Integridad de Epidídimos", finding: "Epidídimos de grosor, contornos y ecoestructura homogénea habitual.", justification: "Sin signos de epididimitis aguda, espermatocele complicado ni flemón." },
+    { key: "lesiones_focales", label: "Lesiones Focales", finding: "Ecoestructura homogénea sin lesiones ocupantes de espacio ni microlitiasis densa.", justification: "Sin nódulos sólidos intratesticulares ni LOEs sospechosas." },
+    { key: "varicocele", label: "Varicocele", finding: "Plexo pampiniforme de calibre fisiológico (<2 mm) sin reflujo con maniobra de Valsalva.", justification: "Sin ectasia venosa ni reflujo patológico." },
+    { key: "cambios_inflamatorios_hidrocele", label: "Cambios Inflamatorios e Hidrocele", finding: "Líquido en túnica vaginal dentro de rango fisiológico sin engrosamiento parietal.", justification: "Sin hidrocele a tensión, piocele ni paquivaginalitis." }
+  ],
+  msk: [
+    { key: "inflamacion", label: "Inflamación / Edema", finding: "Sin efusión o edema significativo.", justification: "Ausencia de fluido anormal o reacción inflamatoria aguda." },
+    { key: "estructural", label: "Compromiso Estructural", finding: "Integridad tisular conservada.", justification: "Sin desgarros, rupturas ni soluciones de continuidad." },
+    { key: "biomecanica", label: "Inestabilidad Biomecánica", finding: "Estabilidad y mecánica tisular normal.", justification: "Sin sobrecarga, roce o inestabilidad pasiva." },
+    { key: "vascularizacion", label: "Vascularización / Hiperemia", finding: "Señal Doppler dentro de límites normales.", justification: "Sin neoangiogénesis ni hiperemia activa." },
+    { key: "tension", label: "Tensión / Irritación", finding: "Tensión miotendinosa y fascial adecuada.", justification: "Sin espasmo, contractura o tracción dolorosa." },
+    { key: "cronicidad", label: "Cronicidad / Fibrosis", finding: "Patrón fibrilar o tisular habitual.", justification: "Sin cambios tendinósicos crónicos ni calcificaciones." }
+  ],
+  visceral: [
+    { key: "inflamacion", label: "Inflamación & Edema Parietal", finding: "Paredes viscerales de espesor y estrías normales.", justification: "Sin edema edematoso ni engrosamiento parietal." },
+    { key: "estructural", label: "Compromiso Tisular / Lisis", finding: "Estratificación de pared conservada.", justification: "Sin lisis, necrosis ni solución de continuidad." },
+    { key: "biomecanica", label: "Afectación Perivisceral", finding: "Grasa perivisceral respetada e isoecoica.", justification: "Sin desestructuración del plano adjacente." },
+    { key: "vascularizacion", label: "Vascularización / Hiperemia", finding: "Flujo Doppler parietal fisiológico.", justification: "Sin hiperemia reactiva ni áreas de isquemia." },
+    { key: "tension", label: "Irritación Serosa & Distensión", finding: "Serosa sin irritación ni efusión perifocal.", justification: "Sin distensión tensional ni estasis." },
+    { key: "cronicidad", label: "Cronicidad / Litiasis", finding: "Sin litiasis ni secuelas cicatrizales.", justification: "Estructura limpia sin cambios recurrentes." }
+  ],
+  oncology: [
+    { key: "estructural", label: "Arquitectura / Heterogeneidad", finding: "Arquitectura tisular conservada y homogénea.", justification: "Sin masas heterogéneas ni bordes espiculados." },
+    { key: "vascularizacion", label: "Neoangiogénesis & Neovasculatura", finding: "Patrón vascular periférico y central ordenado.", justification: "Sin vasos caóticos de alta velocidad o neovasculatura." },
+    { key: "biomecanica", label: "Invasión Tisular Local", finding: "Planos de clivaje anatómicos preservados.", justification: "Sin infiltración de cápsula o grasa contigua." },
+    { key: "tension", label: "Compromiso Vascular / Ductal", finding: "Vasos principales y ductos permeables.", justification: "Sin encajonamiento ni trombosis tumoral." },
+    { key: "inflamacion", label: "Necrosis Tumoral / Degeneración", finding: "Tejido sólido uniforme sin degeneración quística.", justification: "Sin focos de necrosis ni lisis intratumoral." },
+    { key: "cronicidad", label: "Adenopatías & Diseminación", finding: "Ganglios regionales con morfología preservada.", justification: "Sin adenopatías atípicas ni implantes." }
+  ]
+};
+
+function normalizeAxesForMode(targetMode: string, returnedAxes: any[]): any[] {
+  const presetSpec = MATRIX_PRESETS[targetMode] || MATRIX_PRESETS["msk"];
+  const finalAxes: any[] = [];
+
+  for (const itemSpec of presetSpec) {
+    const found = Array.isArray(returnedAxes)
+      ? returnedAxes.find((a: any) => {
+          if (!a) return false;
+          if (a.key === itemSpec.key) return true;
+          const aLabel = (a.label || "").toLowerCase();
+          const aKey = (a.key || "").toLowerCase();
+          const specLabel = itemSpec.label.toLowerCase();
+          const specKey = itemSpec.key.toLowerCase();
+          return aKey === specKey || aLabel.includes(specKey) || specLabel.includes(aLabel) || aLabel.includes(specLabel.split(" / ")[0]);
+        })
+      : null;
+
+    if (found) {
+      const score = typeof found.score === "number" ? Math.min(10, Math.max(0, Math.round(found.score))) : 0;
+      let level = found.level || "Fisiológico";
+      if (score >= 9) level = "Masivo / Crítico";
+      else if (score >= 7) level = "Severo";
+      else if (score >= 5) level = "Moderado";
+      else if (score >= 2) level = "Leve";
+      else level = "Fisiológico";
+
+      finalAxes.push({
+        key: itemSpec.key,
+        label: itemSpec.label,
+        score,
+        level,
+        finding: found.finding || itemSpec.finding,
+        justification: found.justification || itemSpec.justification
+      });
+    } else {
+      finalAxes.push({
+        key: itemSpec.key,
+        label: itemSpec.label,
+        score: 0,
+        level: "Fisiológico",
+        finding: itemSpec.finding,
+        justification: itemSpec.justification
+      });
+    }
+  }
+
+  return finalAxes;
+}
+
 app.post("/api/generate-biomechanical-radar", async (req: express.Request, res: express.Response) => {
   try {
     const { model, report, studyType, radarMode } = req.body;
@@ -7924,6 +8731,7 @@ Analiza minuciosamente el reporte radiológico/ecográfico/resonancia proporcion
 
 ESTUDIO CLÍNICO: ${studyType || "General / No especificado"}
 MODALIDAD SOLICITADA: ${requestedMode === "auto" ? "Detección Automática por IA" : requestedMode.toUpperCase()}
+${requestedMode !== "auto" ? `\nOBLIGACIÓN STRICTA DE MATRIZ EXCLUSIVA: EL USUARIO HA SELECCIONADO EXPLÍCITAMENTE LA MATRIZ '${requestedMode.toUpperCase()}'. DEBES EVALUAR Y DEVOLVER EXCLUSIVAMENTE LOS 6 VECTORES/KEYS ASIGNADOS A ESTA MATRIZ. DEBES ASIGNAR UN SCORE DE 0 A 10 A CADA UNO DE LOS 6 VECTORES DE DICHA MATRIZ Y DEVOLVERLOS EN EL ARRAY 'axes'. NO MEZCLES VECTORES DE OTRAS MATRICES.\n` : ""}
 
 INSTRUCCIÓN DE MATRIZ VECTORIAL A APLICAR:
 
@@ -7971,9 +8779,53 @@ Aplica la matriz de 6 vectores tumoral-oncofisiológicos:
 - "cronicidad": Adenopatías Regionales & Diseminación (Adenopatías sospechosas -pérdida de hilio graso, redondeamiento, hiperemia-, implantes nodulares peritoneales, ascitis patológica, metástasis).
 ` : ""}
 
-SI LA SELECCIÓN ES "AUTO", DETECTA CUÁL DE LAS 7 MATRICES ANTERIORES SE AJUSTA MEJOR AL REPORTE Y APLÍCALA ESTRICTAMENTE.
+SI LA SELECCIÓN ES "AUTO", DETECTA CUÁL DE LAS 12 MATRICES ANTERIORES SE AJUSTA MEJOR AL REPORTE Y APLÍCALA ESTRICTAMENTE.
 
-${(requestedMode === "knee_oa" || (requestedMode === "auto" && /artrosis.*rodilla|rodilla.*artros|gonartros|femorotibial|cart[ií]lago troclear|meniscopat|hidrartrosis|osteofit/i.test(report))) ? `
+${(requestedMode === "muscle_injury" || (requestedMode === "auto" && /desgarro.*muscular|desgarro.*fibrilar|lesi[oó]n.*muscular|peetrons|hematoma.*intramuscular|uni[oó]n.*miotendinosa|\bmtj\b|rectocuadricipital|isquiotibial|gemelo|s[oó]leo|aductor|b[ií]ceps.*femoral|avulsi[oó]n.*tendinosa|edema.*intramuscular/i.test(report))) ? `
+SI LA MATRIZ ES DE VALORACIÓN DE LESIONES MUSCULARES Y MIOTENDINOSAS (MUSCLE INJURY 6D):
+Aplica la matriz de 6 vectores específicos para la evaluación ecográfica/RM de lesiones musculares:
+1. "desgarro_muscular": Desgarro Muscular Fibrilar y Solución de Continuidad (0-1: Integridad muscular normal; 2-4: Microdesgarro o lesión miofascial Grado I <5mm; 5-6: Desgarro fibrilar parcial Grado II 5-20mm <50% de la sección; 7-8: Desgarro subtotal Grado III >50% de la sección con retracción moderada; 9-10: Desgarro completo Grado IV 100% de disrupción transmural con hernia/retracción masiva).
+2. "hematoma_coleccion": Hematoma Intramuscular / Interfascial y Colección Líquida (0-1: Sin colección líquida; 2-4: Hematoma laminar interfascial fino <1.0 cm³; 5-6: Hematoma intramuscular definido 1.0-5.0 cm³; 7-8: Hematoma voluminoso a tensión 5.0-15.0 cm³; 9-10: Hematoma masivo expansivo >15.0 cm³ con síndrome compartimental incipiente).
+3. "union_miotendinosa": Afectación de la Unión Miotendinosa / MTJ (0-1: MTJ preservada normal; 2-4: Compromiso miofascial periférico leve; 5-6: Deslamado o desgarro parcial MTJ <25%; 7-8: Avulsión aponeurótica severa de MTJ >50%; 9-10: Avulsión / disrupción total de la unión miotendinosa).
+4. "tendon_insercion": Tendón y Entesis de Inserción (0-1: Tendón de inserción intacto normal; 2-4: Entesopatía / tendinopatía postraumática leve; 5-6: Ruptura parcial intratendinosa <50%; 7-8: Avulsión insercional subtotal o ruptura >50%; 9-10: Ruptura completa tendinosa o avulsión ósea insercional total).
+5. "vascularidad": Vascularidad y Neovascularización Doppler Color (0-1: Vascularidad intramuscular fisiológica normal; 2-4: Hiperemia perilesional leve focal; 5-6: Neovascularización reparativa moderada en borde del desgarro; 7-8: Hipervascularización intensa de regeneración; 9-10: Neovascularización caótica extrema / pseudoaneurisma o fístula AV postraumática).
+6. "cambios_inflamatorios": Cambios Inflamatorios Perilesionales y Edema Intramuscular (0-1: Vientre muscular limpio simétrico; 2-4: Edema intramuscular localizado leve "en pluma de ave"; 5-6: Edema inflamatorio extenso >30% del vientre muscular; 7-8: Miositis inflamatoria / edema masivo multicompartimental; 9-10: Mionecrosis / miositis osificante agudizada).
+` : ""}
+
+${(requestedMode === "thyroid" || (requestedMode === "auto" && /tiroides|tiroideo|tirads|tiroiditis|hashimoto|graves|bocio|inferno.*tiroid|n[oó]dulo.*tiroid|ismo.*tiroid|adenopat[ií]a.*cervical/i.test(report))) ? `
+SI LA MATRIZ ES DE VALORACIÓN TIROIDEA (THYROID 6D):
+Aplica la matriz de 6 vectores específicos para la evaluación ecográfica/tomográfica de tiroides:
+1. "tamano_tiroides": Tamaño Glandular y Volumetría / Bocio (0-1: Volumen normal 7-15cc, dimensiones conservadas; 2-4: Bocio leve o volumen 16-22cc; 5-6: Bocio moderado Grado I 23-35cc con compresión sutil; 7-8: Bocio severo Grado II 36-50cc con desviación traqueal; 9-10: Bocio gigante Grado III >50cc o bocio endotorácico/sumergido).
+2. "presencia_nodulos": Carga Nodular y Multinodularidad (0-1: Glándula avascular libre de nódulos, parénquima homogéneo; 2-4: Nódulo único pequeño <10mm o quístico puro; 5-6: Bocio multinodular leve-moderado 2-4 nódulos bilaterales; 7-8: Bocio multinodular prominente >4 nódulos; 9-10: Reemplazo parenquimatoso masivo por nódulos).
+3. "nodulos_sospechosos": Estratificación de Sospecha Oncológica - TI-RADS / EU-TIRADS (0-1: TI-RADS 1-2 completamente benigno; 2-4: TI-RADS 3 baja sospecha; 5-6: TI-RADS 4A sospecha moderada 1 rasgo de sospecha; 7-8: TI-RADS 4B/4C alta sospecha 2+ rasgos microcalcificaciones/taller-than-wide; 9-10: TI-RADS 5 o infiltración extratiroidea a músculo/tráquea).
+4. "patron_parenquima": Ecoestructura Parenquimatosa - Tiroiditis de Hashimoto / Graves (0-1: Parénquima homogéneo normal brillante; 2-4: Parénquima levemente heterogéneo; 5-6: Tiroiditis moderada con patrón pseudonodular y septos fibrosos; 7-8: Tiroiditis avanzada con patrón en panal de abejas o reticulado hipoecoico; 9-10: Tiroiditis atrófica severa o destrucción parenquimatosa).
+5. "vascularidad": Vascularidad Glandular y Intranodular - Doppler Color / Inferno Tiroideo (0-1: Flujo vascular fisiológico normal escaso; 2-4: Incremento vascular sutil; 5-6: Hipervascularización difusa moderada -inferno tiroideo Grado II-; 7-8: Vascularidad intranodular caótica central o PSV >50 cm/s; 9-10: Inferno tiroideo masivo o neovascularización tumoral caótica).
+6. "adenopatias_atipicas": Adenopatías Cervicales Atípicas / Sospechosas - Compartimentos II-VI (0-1: Ganglios cervicales fisiológicos ovalados con hilio graso; 2-4: Adenopatías reactivas inflamatorias; 5-6: Adenopatía dudosamente atípica redondeada; 7-8: Adenopatías sospechosas/atípicas con microcalcificaciones o sustitución quística; 9-10: Adenopatías metastásicas masivas / conglomerado nodal atípico).
+` : ""}
+
+${(requestedMode === "appendicitis" || (requestedMode === "auto" && /apendic|ap[eé]ndice|fecalito|apendicolito|fosa.*il[ií]aca.*derecha|\bfid\b|signo.*diana|target.*sign|mesoap[eé]ndice|flem[oó]n.*apendic|plastr[oó]n.*apendic|mcburney/i.test(report))) ? `
+SI LA MATRIZ ES DE VALORACIÓN DE APENDICITIS AGUDA (APPENDICITIS 6D):
+Aplica la matriz de 6 vectores específicos para la evaluación ecográfica/tomográfica de apendicitis aguda:
+1. "diametro_apendice": Diámetro Transversal Externo Apendicular y Compresibilidad (0-1: Diámetro ≤6.0mm, apéndice compresible de fondo ciego; 2-4: Diámetro 6.1-7.0mm, incompresibilidad parcial o duda diagnóstica; 5-6: Apendicitis incipiente/moderada 7.1-8.5mm, incompresible con dolor a la compresión -Murphy apendicular (+)-; 7-8: Apendicitis severa/distendida 8.6-11.0mm, apéndice tubular aperistáltico y rígido; 9-10: Apendicitis flemónosa/dilatación masiva >11.0mm con riesgo de perforación).
+2. "pared_apendice": Espesor y Estructura Parietal - Signo de la Diana / Target Sign (0-1: Pared ≤2.0mm, capas conservadas; 2-4: Engrosamiento leve 2.1-2.9mm; 5-6: Engrosamiento moderado 3.0-4.0mm, signo de la diana manifiesto; 7-8: Engrosamiento severo >4.0mm con edema submucoso o pérdida focal de estratificación; 9-10: Disrupción parietal / necrosis transmural / apendicitis gangrenosa).
+3. "vascularidad": Vascularidad Parietal / Doppler Color Parietal (0-1: Flujo parietal simétrico fino normal; 2-4: Hiperemia leve con anillo vascular discontinuo sutil; 5-6: Hiperemia moderada difusa -signo del anillo de fuego-; 7-8: Hiperemia intensa con velocidades elevadas; 9-10: Paro vascular parietal / isquemia por necrosis gangrenosa).
+4. "cambios_inflamatorios": Cambios Inflamatorios Locales - Grasa Periapendicular / Flemón (0-1: Grasa mesoapendicular limpia homogénea; 2-4: Hiperdensidad/hiperecogenicidad leve focal; 5-6: Hiperecogenicidad moderada de la grasa / fat stranding; 7-8: Flemón periapendicular / plastrón edematoso; 9-10: Plastrón flemónoso extenso / necrosis grasa).
+5. "liquido_colecciones": Líquido Libre, Colecciones y Perforación (0-1: Sin líquido libre peritoneal; 2-4: Mínima lámina anecoica reactiva <5mm; 5-6: Líquido libre moderado turbio; 7-8: Colección/absceso periapendicular contenido <3cm; 9-10: Absceso grande >3cm / peritonitis purulenta abierta).
+6. "apendicolito": Apendicolito / Fecalito e Impactación Luminal (0-1: Luz limpia sin apendicolito; 2-4: Pequeña densidad intraluminal o microlito <3mm; 5-6: Apendicolito único 3-5mm con sombra acústica clara; 7-8: Apendicolito prominente/obstructivo >5mm con sombra acústica densa; 9-10: Apendicolitos múltiples / fecalito gigante / fecalito extravasado por perforación).
+` : ""}
+
+${(requestedMode === "knee_trauma" || (requestedMode === "auto" && /trauma.*rodilla|esguince.*rodilla|colateral.*medial|lcm|mcl|colateral.*lateral|lcl|fcl|menisco|ligamento.*patelar|rotulian/i.test(report))) ? `
+SI LA MATRIZ ES DE TRAUMA AGUDO DE RODILLA (KNEE TRAUMA 6D):
+Aplica la matriz de 6 vectores específicos para la evaluación de trauma agudo y lesiones capsuloligamentosas/meniscales de rodilla:
+1. "lcm": Ligamento Colateral Medial - LCM/MCL (0-1: Fascículos superficial y profundo continuos normales; 2-4: Esguince Grado I engrosado hipoecoico sin discontinuidad; 5-6: Esguince Grado II ruptura parcial <50% con colección/hematoma; 7-8: Esguince Grado III ruptura completa >50% transmural o valgo estrés positivo; 9-10: Avulsión completa con inestabilidad medial grave o lesión de Stener-like/Pellegrini-Stieda aguda).
+2. "lcl": Ligamento Colateral Lateral y Complejo Posterolateral - LCL/FCL & CPL (0-1: Estructura cordonal delgada en cabeza del peroné continua normal; 2-4: Esguince Grado I engrosamiento edematoso focal; 5-6: Esguince Grado II ruptura parcial con hematoma periligamentario; 7-8: Esguince Grado III ruptura completa del LCL con inestabilidad en varo estrés; 9-10: Disrupción masiva del Complejo Posterolateral CPL LCL+tendón poplíteo+ligamento popliteofibular).
+3. "menisco_interno": Menisco Interno / Medial (0-1: Triángulo meniscal regular de ecogenicidad homogénea conservada; 2-4: Meniscopatía traumática Grado I-II o extrusión menor <2mm; 5-6: Desgarro meniscal parcial longitudinal/radial con edema extrameniscal; 7-8: Ruptura completa / desgarro en "asa de balde" desplazada / lesión de rampa o extrusión >3mm; 9-10: Maceración meniscal traumática masiva o menisco inestable desinsertado).
+4. "menisco_externo": Menisco Externo / Lateral (0-1: Configuración uniforme y ecogénica conservada; 2-4: Fisuración lineal no desplazada; 5-6: Desgarro meniscal lateral definido oblicuo/complejo; 7-8: Desgarro en "asa de balde" lateral o desgarro de raíz posterior meniscal lateral (Root Tear); 9-10: Destrucción/maceración meniscal lateral completa con fragmentación bloqueante).
+5. "hidrartrosis": Hidrartrosis / Hemartrosis Articular (0-1: Ausente o líquido fisiológico <3mm en receso suprarrotuliano; 2-4: Distensión leve 3-5mm; 5-6: Derrame moderado 6-10mm con sinovitis reactiva / hemartrosis incipiente; 7-8: Hemartrosis severa >10mm a tensión o lipohemartrosis con nivel líquido-grasa; 9-10: Hemartrosis masiva a tensión con extravasación capsular).
+6. "lig_patelar": Ligamento Patelar / Tendón Rotuliano (0-1: Espesor uniforme <4.5mm y patrón fibrilar continuo; 2-4: Tendinopatía postraumática / entesopatía leve en polo inferior de rótula o TAT; 5-6: Ruptura parcial <50% con inflamación de grasa de Hoffa; 7-8: Ruptura subtotal/total >50% con rótula alta; 9-10: Disrupción masiva del mecanismo extensor tendón rotuliano + retináculos).
+` : ""}
+
+${(requestedMode === "knee_oa" || (requestedMode === "auto" && /artrosis.*rodilla|rodilla.*artros|gonartros|femorotibial|cart[ií]lago troclear|osteofit/i.test(report))) ? `
 SI LA MATRIZ ES DE ARTROSIS DE RODILLA / GONARTROSIS (KNEE OA 6D):
 Aplica la matriz de 6 vectores específicos requeridos para artrosis degenerativa articular de rodilla:
 1. "femorotibial_medial": Disminución Compartimento Femorotibial Medial (0-1: Espacio articular conservado de amplitud normal; 2-4: Pinzamiento leve <25%; 5-6: Pinzamiento moderado 25-50%; 7-8: Pinzamiento severo >50% con esclerosis subcondral; 9-10: Pinzamiento total con contacto óseo/colapso articular).
@@ -7984,26 +8836,43 @@ Aplica la matriz de 6 vectores específicos requeridos para artrosis degenerativ
 6. "osteofitos": Osteofitos Marginales & Entesofitos (0-1: Márgenes óseos regulares; 2-4: Osteofitos incipientes marginales femoral/tibial/rotuliano; 5-6: Osteofitos definidos moderados; 7-8: Osteofitosis prominente con deformidad de contornos; 9-10: Osteofitos gigantes puenteantes o deformidad masiva).
 ` : ""}
 
+${(requestedMode === "ankle_trauma" || (requestedMode === "auto" && /tobillo|esguince|lpaa|atfl|lpc|cfl|deltoid|tibioastragal|maleolo|peroneo|subluxacion.*peroneo|sindesmosis|cajon.*anterior|osteocondral/i.test(report))) ? `
+SI LA MATRIZ ES DE TRAUMA DISTORSIVO DE TOBILLO (ANKLE TRAUMA 6D):
+Aplica la matriz de 6 vectores específicos para la evaluación de esguince / trauma de tobillo:
+1. "lpaa": Ligamento Peroneo Astragalino Anterior - LPAA/ATFL (0-1: Fisiológico normal con espesor y fibrilaridad conservados; 2-4: Esguince Grado I engrosado hipoecoico focal; 5-6: Esguince Grado II ruptura parcial <50% de fibras o hematoma intraligamentario; 7-8: Esguince Grado III ruptura subtotal/total reciente con brecha anecoica o cajón anterior (+); 9-10: Ruptura total masiva con inestabilidad anterolateral severa o ligamento ausente/avulsionado).
+2. "lpc": Ligamento Peroneo Calcáneo - LPC/CFL (0-1: Fisiológico normal bajo tendones peroneos; 2-4: Esguince Grado I engrosamiento edematoso en inserción calcánea/peronea; 5-6: Esguince Grado II ruptura parcial de fibras subperoneas; 7-8: Esguince Grado III ruptura completa con inestabilidad en varo/inclinación astragalina (+); 9-10: Lesión compleja bicompartimental LPAA+LPC con inestabilidad subastragalina masiva).
+3. "deltoideo": Complejo Ligamentoso Deltoideo - Medial (0-1: Capas superficial y profunda continuas normales; 2-4: Entesopatía postraumática / Esguince Grado I leve sin brecha; 5-6: Ruptura parcial deltoidea con hematoma medial; 7-8: Ruptura completa superficial y profunda con ensanchamiento de espacio claro medial; 9-10: Avulsión deltoidea masiva con diástasis tibioastragalina severa).
+4. "hidrartrosis": Hidrartrosis / Hemartrosis Articular (0-1: Ausente / Líquido fisiológico <2mm; 2-4: Distensión leve 2-4mm en receso anterior; 5-6: Derrame moderado 5-7mm con sinovitis reactiva / hemartrosis incipiente; 7-8: Hemartrosis severa >7mm a tensión con detritos ecogénicos; 9-10: Derramamiento masivo a tensión con extravasación periarticular o ruptura capsular).
+5. "tendones": Tendones Mediales y Laterales - Peroneos / Tibial Posterior / Aquiles (0-1: Retináculos y tendones intactos en correderas; 2-4: Tenosinovitis postraumática leve sin luxación; 5-6: Tenosinovitis moderada con fisuración fibrilar longitudinal; 7-8: Subluxación / Luxación de tendones peroneos por ruptura del RPS o ruptura parcial tendinosa; 9-10: Ruptura tendinosa completa o luxación tendinosa irreductible).
+6. "oseo": Estructuras Óseas, Corticales, Cartílago y Sindesmosis (0-1: Corticales continuas normales sin avulsiones ni defectos; 2-4: Irregularidad cortical leve / Avulsión cortical ínfima <2mm; 5-6: Pequeño fragmento avulsionado 2-4mm o Lesión Osteocondral del Astrágalo LOA/OCD I-II; 7-8: Fragmento avulsionado desplazado >4mm o LOA III-IV inestable; 9-10: Fractura maleolar desplazada o Diástasis sindesmótica abierta / Lesión de sindesmosis).
+` : ""}
+
 ${(requestedMode === "cholecystitis" || (requestedMode === "auto" && /colecist|ves[ií]cula|murphy|hidrocolecisto|hidrops.*vesic|bacinete|coledocolitiasis|c[aá]lculo.*c[ií]stico|coleperitoneo/i.test(report))) ? `
 SI LA MATRIZ ES DE VALORACIÓN DE COLECISTITIS AGUDA (CHOLECYSTITIS 6D):
 Aplica la matriz de 6 vectores específicos para la evaluación ecográfica de colecistitis aguda y complicaciones vesiculobiliares:
 1. "engrosamiento_pared": Engrosamiento y Edema Parietal Vesicular (0-1: Espesor normal ≤3.0mm, pared fina monocapa; 2-4: Engrosamiento leve 3.1-4.5mm; 5-6: Engrosamiento moderado 4.6-6.0mm con signo de doble pared o estriación; 7-8: Engrosamiento severo 6.1-8.0mm edematoso heterogéneo; 9-10: Engrosamiento masivo/destructivo >8.0mm con aspecto acartonado).
 2. "vascularidad": Vascularidad Parietal / Doppler Color (0-1: Señal vascular fisiológica normal; 2-4: Hiperemia sutil focal en cuello o cuerpo; 5-6: Hiperemia moderada difusa en pared vesicular; 7-8: Hiperemia intensa con velocidades elevadas en arteria cística; 9-10: Paro vascular / Isquemia parietal con ausencia focal/difusa de flujo por necrosis o trombosis).
 3. "necrosis_pared": Necrosis Parietal / Gangrena (0-1: Pared continua sin necrosis ni gas; 2-4: Irregularidad intraluminal discreta o membranas focales pequeñas; 5-6: Membranas intraluminales desprendidas / sloughing mucoso; 7-8: Microburbujas intraparietales / foco de discontinuidad parietal; 9-10: Colecistitis Gangrenosa/Enfisematosa establecida con abundante gas parietal/intraluminal o perforación transmural).
-4. "cambios_perivesiculares": Cambios Perivesiculares y Lecho Hepático (0-1: Fosa vesicular limpia sin líquido libre; 2-4: Edema sutil en grasa perivesicular o fina lámina anecoica; 5-6: Líquido perivesicular moderado e hiperemia hepática reactiva adyacente; 7-8: Plastrón perivesicular con colección/absceso perivesicular contenido <3cm; 9-10: Perforación vesicular libre / Absceso grande >3cm / Peritonitis biliar abierta).
-5. "via_biliar": Vía Biliar, Colédoco e Impactación Cística (0-1: Vía biliar normal colédoco ≤6mm, cístico libre; 2-4: Litiasis móvil en cuerpo/fondo sin impactación; 5-6: Cálculo impactado en bacinete/cuello con Murphy ecográfico (+); 7-8: Coledocolitiasis / Colédoco dilatado >8mm / Síndrome de Mirizzi Grado I; 9-10: Colangitis Aguda asociada / Mirizzi avanzado con fístula o coledocolitiasis obstructiva masiva).
-6. "tamano_forma": Tamaño, Distensión y Hidrops Vesicular (0-1: Dimensiones normales AP ≤4.0cm, long ≤8.0cm; 2-4: Distensión leve AP 4.1-4.5cm, long 8.1-9.0cm; 5-6: Hidrops vesicular moderado AP 4.6-5.5cm vesícula a tensión; 7-8: Hidrops severo AP >5.5cm vesícula esférica en "globo"; 9-10: Deformidad cística severa por colapso/perforación focal o vesícula de porcelana masiva).
+4. "cambios_perivesiculares": Cambios Perivesiculares y Lecho Hepá${(requestedMode === "renal" || (requestedMode === "auto" && /ri[nñ][oó]n|renal|corteza renal|hidronefrosis|pielonefritis|ectasia|litiasis renal|c[aá]liz|seno renal|bosniak|angiomiolipoma|nefromegal|uropat[ií]a/i.test(report))) ? `
+SI LA MATRIZ ES DE VALORACIÓN RENAL INTEGRAL (RENAL 6D):
+Aplica la matriz de 6 vectores específicos cuantitativos y cualitativos para valoración renal:
+1. "tamano_renal": Tamaño Renal (0-1: Fisiológico / Eje bipolar longitudinal normal 100-120mm, contornos reniformes simétricos; 2-4: Nefromegalia leve 121-130mm o riñón en límite inferior 90-99mm con asimetría discreta 10-15mm; 5-6: Nefromegalia moderada 131-145mm o hipotrofia renal moderada 75-89mm compatible con nefropatía crónica incipiente; 7-8: Hipotrofia/atrofia renal severa 60-74mm con pérdida de silueta o nefromegalia marcada >145mm; 9-10: Riñón atrófico terminal <60mm escleroatrófico o riñón gigante desestructurado >160mm).
+2. "grosor_cortical": Grosor Cortical (0-1: Corteza normal preservada ≥9-10mm con nítida diferenciación córtico-medular y ecogenicidad normal; 2-4: Adelgazamiento cortical leve 7-8mm, atenuación sutil de diferenciación o ecogenicidad aumentada Grado I; 5-6: Adelgazamiento cortical moderado 5-6mm, ecogenicidad igual al hígado Grado II y pérdida parcial de pirámides medulares; 7-8: Adelgazamiento cortical severo 3-4mm, hiperecogenicidad marcada Grado III y pérdida completa de diferenciación; 9-10: Atrofia cortical extrema <3mm con desdiferenciación total y calcificaciones).
+3. "vascularidad": Vascularidad (0-1: Perfusión cortical periférica completa hasta la cápsula sin áreas avasculares, RI intrarrenal fisiológico 0.58-0.70, vena permeable; 2-4: Perfusión conservada con RI limítrofe 0.71-0.74 o 0.52-0.57; 5-6: Reducción difusa de microvascularización periférica o RI elevado 0.75-0.80 sugestivo de nefropatía médica; 7-8: Defecto de perfusión segmentario / cuña avascular de infarto, RI >0.80-0.85 o patrón tardus-parvus; 9-10: Trombosis de vena renal, oclusión de arteria renal, ausencia total de flujo vascular o inversión diastólica).
+4. "lesiones_focales": Lesiones Focales (0-1: Parénquima homogéneo sin LOEs o quiste cortical simple milimétrico solitario Bosniak I; 2-4: Quistes simples Bosniak I/II o angiomiolipoma típico hiperecogénico <10mm no complicado; 5-6: Quiste complejo Bosniak IIF con septos múltiples o angiomiolipoma 20-40mm; 7-8: Quiste sospechoso Bosniak III con paredes engrosadas >2mm o masa sólida indeterminada >20mm; 9-10: Masa sólida con signos francos de malignidad Bosniak IV / Carcinoma de Células Renales o invasión vascular tumoral).
+5. "procesos_obstructivos": Procesos Obstructivos (0-1: Seno renal ecolucente sin separación de la pelvis <5mm, sin hidronefrosis Grado 0 SFU y jets ureterales simétricos; 2-4: Ectasia piélica leve o pielocalicial mínima Grado I SFU 5-10mm o litiasis calicial no obstructiva; 5-6: Hidronefrosis moderada Grado II-III SFU con dilatación piélica y calicial pero parénquima respetado, litiasis obstructiva; 7-8: Hidronefrosis severa Grado IV SFU con compresión parenquimatosa marcada o pionefrosis; 9-10: Uropatía obstructiva descompensada / saco hidronefrótico a tensión con adelgazamiento extremo o rotura fornicial con urinoma).
+6. "cambios_inflamatorios": Cambios Inflamatorios (0-1: Grasa perirrenal limpia, fascia de Gerota fina y parénquima sin áreas de edema o hiperemia; 2-4: Engrosamiento urotelial piélico leve o edema reactivo inespecífico; 5-6: Pielonefritis aguda focal / nefronía lobar con área hipoecoica en cuña e hipoperfusión focal; 7-8: Pielonefritis complicada / microabscesos coalescentes o colección perirrenal; 9-10: Absceso renal mayor >3-5cm con extensión retroperitoneal o Pielonefritis Enfisematosa con gas parenquimatoso).
 ` : ""}
 
-${(requestedMode === "hepatic" || (requestedMode === "auto" && /h[ií]gado|hep[aá]tic|elastograf|esteatosis|qus|ati|ugap|vena porta|ascitis|cirros|hepatopat|swe|kpa|hepatomegal|chc|lirads/i.test(report))) ? `
-SI LA MATRIZ ES DE VALORACIÓN HEPÁTICA (HEPATIC 6D):
-Aplica la matriz de 6 vectores cuantitativos hepático-portal:
-1. "morfologia": Morfología y Contornos Hepáticos (0-1: Hígado normal, contornos lisos, ecorrestructura homogénea; 2-4: Hepatomegalia leve, contornos discretamente lobulados; 5-6: Hepatomegalia moderada o atrofia lóbulo derecho/hipertrofia caudado, contornos nodulares; 7-8: Cirrosis establecida con nodularidad y distorsión vascular; 9-10: Hígado cirrótico atrófico masivo o distorsión parenquimatosa severa).
-2. "esteatosis_qus": Esteatosis Hepática Cuantitativa por QUS/ATI/UGAP (0-1: Sin esteatosis, atenuación acústica normal; 2-4: Esteatosis Leve con sutil incremento de ecogenicidad; 5-6: Esteatosis Moderada con atenuación posterior moderada en QUS/ATI; 7-8: Esteatosis Severa con escasa/nula visualización de pared de venas porta y diafragma; 9-10: Esteatosis Masiva/Cirrótica con atenuación acústica extrema).
-3. "elastografia": Rigidez Parenquimática por Elastografía SWE/TE (0-1: F0-F1 rigidez normal <6.0 kPa; 2-4: F1-F2 fibrosis leve/moderada 6.0-8.0 kPa; 5-6: F3 fibrosis avanzada 8.0-12.0 kPa; 7-8: F4 cirrosis hepática 12.0-20.0 kPa; 9-10: F4 Severa/Hipertensión Portal Clínicamente Significativa >20.0 kPa).
-4. "vena_porta": Vena Porta y Hemodinámica Portal (0-1: Calibre portal normal ≤12mm con flujo hepatópeto fásico; 2-4: Calibre en límite superior 12-13mm con flujo fásico; 5-6: Dilatación portal 13-15mm con disminución de velocidad o pérdida de fasicidad; 7-8: Dilatación severa >15mm o flujo alternante/hepatófugo; 9-10: Trombosis de la vena porta, cavernomatosis o flujo hepatófugo reverso).
-5. "lesiones_focales": Lesiones Focales / Nódulos / LOEs (0-1: Parénquima homogéneo sin LOEs; 2-4: Quistes simples o hemangiomas benignos <2cm; 5-6: Múltiples lesiones o nódulo indeterminado a caracterizar CEUS/RM; 7-8: Nódulo de regeneración/displásico sospechoso LIRADS 4; 9-10: Lesión focal altamente sospechosa/confirmada CHC LIRADS 5 o metástasis).
-6. "ascitis": Presencia de Ascitis y Complicaciones de Hipertensión Portal (0-1: Ausencia total de líquido libre peritoneal; 2-4: Escaso líquido/lámina mínima en receso hepatorrenal; 5-6: Ascitis leve-moderada compartimentada; 7-8: Ascitis moderada-severa francamente visible en múltiples compartimentos; 9-10: Ascitis masiva a tensión con compresión abdominal).
+${(requestedMode === "scrotal" || (requestedMode === "auto" && /test[ií]cul|escrot|epid[ií]dim|varicocele|hidrocele|orquitis|torsi[oó]n testicular|plexo pampiniforme|espermatocele|albug[ií]nea/i.test(report))) ? `
+SI LA MATRIZ ES DE VALORACIÓN ESCROTAL / TESTICULAR INTEGRAL (ESCROTO 6D):
+Aplica la matriz de 6 vectores específicos cuantitativos y cualitativos para valoración escrotal y testicular con estas escalas de calificación exactas:
+1. "tamano_testicular": Tamaño Testicular (0-1: Normal / Volumen testicular simétrico en rango fisiológico 8-25 cc con morfología ovoidea conservada; 2-4: Asimetría leve con discrepancia de volumen 20-30%, hipotrofia leve 6.0-7.9 cc o discreta orquimegalia reactiva 26-30 cc; 5-6: Hipotrofia moderada 4.0-5.9 cc o aumento volumétrico significativo por orquitis/edema difuso 31-40 cc; 7-8: Atrofia severa 2.5-3.9 cc o aumento masivo de volumen con desestructuración tisular; 9-10: Atrofia terminal escleroatrófica <2.5 cc o masa expansiva gigante que sustituye el parénquima).
+2. "vascularidad_testicular": Vascularidad Testicular (0-1: Flujo Doppler color y espectral simétrico y homogéneo intraparenquimatoso con RI fisiológico 0.45-0.70; 2-4: Hiperemia vascular reactiva leve o asimetría sutil de flujo sin inversión ni resistencia patológica; 5-6: Hiperemia Doppler marcada difusa con orquitis activa o hipoflujo segmentario con RI aumentado >0.75; 7-8: Defecto de perfusión parenquimatosa extenso / infarto focal o flujo arterial tardus-parvus con pérdida venosa; 9-10: Ausencia total de señal Doppler en parénquima testicular por Torsión Testicular completa / infarto hemorrágico agudo).
+3. "integridad_epididimos": Integridad de Epidídimos (0-1: Cabeza, cuerpo y cola de epidídimos de grosor, contornos y ecogenicidad normal sin hiperemia; 2-4: Engrosamiento focal leve de cabeza 11-13mm o quiste simple de epidídimo / espermatocele <10mm; 5-6: Epididimitis aguda/subaguda con tumefacción, desestructuración y marcada hiperemia Doppler; 7-8: Epididimitis complicada con microabscesos o espermatocele gigante >30mm; 9-10: Absceso epididimario mayor coalescente o flemón / necrosis escrotal por torsión de apéndice complicada).
+4. "lesiones_focales": Lesiones Focales (0-1: Parénquima homogéneo sin LOEs ni calcificaciones sospechosas, quiste simple aislado de túnica albugínea o microquiste tubular <3mm; 2-4: Microlitiasis testicular Grado I <5 por campo, ectasia de rete testis o quiste simple benigno <5mm; 5-6: Microlitiasis densa Grado II-III >10 por campo o nódulo intratesticular sólido hipoecoico <10mm; 7-8: Masa intratesticular sólida vascularizada sospechosa 10-25mm con alto riesgo de neoplasia; 9-10: Tumoración testicular franca maligna >25mm / masa multinodular con invasión de túnicas o metástasis).
+5. "varicocele": Varicocele (0-1: Venas del plexo pampiniforme con calibre en reposo <2 mm, sin ectasia ni reflujo con maniobra de Valsalva; 2-4: Varicocele Grado I / dilatación 2.0-2.8 mm en reposo con reflujo breve únicamente con Valsalva; 5-6: Varicocele Grado II / dilatación 2.9-3.5 mm visible en modo B y reflujo patológico sostenido >2s con Valsalva; 7-8: Varicocele Grado III / dilatación tortuosa >3.5-4.5 mm palpable en reposo con reflujo continuo espontáneo; 9-10: Megavaricocele masivo >5 mm con reflujo continuo masivo y compromiso trombótico del plexo).
+6. "cambios_inflamatorios_hidrocele": Cambios Inflamatorios e Hidrocele (0-1: Líquido fisiológico en túnica vaginal <2 mL, pared escrotal normal 2-4 mm sin edema; 2-4: Hidrocele simple anecoico leve 10-30 mL o engrosamiento cutáneo escrotal reactivo leve 5-6 mm; 5-6: Hidrocele moderado a tensión 30-80 mL o paquivaginalitis con engrosamiento y trabéculas finas; 7-8: Hidrocele severo / hematocele o piocele con septos gruesos, nivel líquido-debris y celulitis parietal >8 mm; 9-10: Piocele a tensión con absceso de túnicas o fascitis necrotizante escrotal / Gangrena de Fournier con gas parietal).
 ` : ""}
 
 REGLAS DE CALIFICACIÓN (0-10):
@@ -8015,10 +8884,35 @@ REGLAS DE CALIFICACIÓN (0-10):
 
 SE REQUIERE EL SIGUIENTE ESQUEMA JSON:
 - "globalLoadIndex": Categoría de carga/riesgo global ("Baja", "Moderada", "Elevada", "Crítica").
-- "globalScore": Promedio de los 6 puntajes (número flotante redondeado a 1 decimal).
+- "globalScore": Promedio de los puntajes de los ejes (número flotante redondeado a 1 decimal).
 - "dominantVector": Nombre claro y descriptivo del vector patológico dominante.
-- "radarMode": La matriz efectivamente aplicada ("rotator_cuff", "knee_oa", "cholecystitis", "hepatic", "msk", "visceral", u "oncology").
-- "axes": Array de exactamente 6 objetos con los keys de la matriz seleccionada.
+- "radarMode": La matriz efectivamente aplicada ("rotator_cuff", "knee_oa", "cholecystitis", "ankle_trauma", "knee_trauma", "appendicitis", "thyroid", "muscle_injury", "hepatic", "renal", "scrotal", "msk", "visceral", u "oncology").
+` : ""}
+
+${(requestedMode === "renal" || (requestedMode === "auto" && /ri[nñ][oó]n|renal|corteza renal|hidronefrosis|pielonefritis|ectasia|litiasis renal|c[aá]liz|seno renal|bosniak|angiomiolipoma|nefromegal|uropat[ií]a/i.test(report))) ? `
+SI LA MATRIZ ES DE VALORACIÓN RENAL INTEGRAL (RENAL 6D):
+Aplica la matriz de 6 vectores específicos cuantitativos y cualitativos para valoración renal:
+1. "tamano_renal": Tamaño Renal (0-1: Fisiológico / Eje bipolar longitudinal normal 100-120mm, contornos reniformes simétricos; 2-4: Nefromegalia leve 121-130mm o riñón en límite inferior 90-99mm con asimetría discreta 10-15mm; 5-6: Nefromegalia moderada 131-145mm o hipotrofia renal moderada 75-89mm compatible con nefropatía crónica incipiente; 7-8: Hipotrofia/atrofia renal severa 60-74mm con pérdida de silueta o nefromegalia marcada >145mm; 9-10: Riñón atrófico terminal <60mm escleroatrófico o riñón gigante desestructurado >160mm).
+2. "grosor_cortical": Grosor Cortical (0-1: Corteza normal preservada ≥9-10mm con nítida diferenciación córtico-medular y ecogenicidad normal; 2-4: Adelgazamiento cortical leve 7-8mm, atenuación sutil de diferenciación o ecogenicidad aumentada Grado I; 5-6: Adelgazamiento cortical moderado 5-6mm, ecogenicidad igual al hígado Grado II y pérdida parcial de pirámides medulares; 7-8: Adelgazamiento cortical severo 3-4mm, hiperecogenicidad marcada Grado III y pérdida completa de diferenciación; 9-10: Atrofia cortical extrema <3mm con desdiferenciación total y calcificaciones).
+3. "vascularidad": Vascularidad (0-1: Perfusión cortical periférica completa hasta la cápsula sin áreas avasculares, RI intrarrenal fisiológico 0.58-0.70, vena permeable; 2-4: Perfusión conservada con RI limítrofe 0.71-0.74 o 0.52-0.57; 5-6: Reducción difusa de microvascularización periférica o RI elevado 0.75-0.80 sugestivo de nefropatía médica; 7-8: Defecto de perfusión segmentario / cuña avascular de infarto, RI >0.80-0.85 o patrón tardus-parvus; 9-10: Trombosis de vena renal, oclusión de arteria renal, ausencia total de flujo vascular o inversión diastólica).
+4. "lesiones_focales": Lesiones Focales (0-1: Parénquima homogéneo sin LOEs o quiste cortical simple milimétrico solitario Bosniak I; 2-4: Quistes simples Bosniak I/II o angiomiolipoma típico hiperecogénico <10mm no complicado; 5-6: Quiste complejo Bosniak IIF con septos múltiples o angiomiolipoma 20-40mm; 7-8: Quiste sospechoso Bosniak III con paredes engrosadas >2mm o masa sólida indeterminada >20mm; 9-10: Masa sólida con signos francos de malignidad Bosniak IV / Carcinoma de Células Renales o invasión vascular tumoral).
+5. "procesos_obstructivos": Procesos Obstructivos (0-1: Seno renal ecolucente sin separación de la pelvis <5mm, sin hidronefrosis Grado 0 SFU y jets ureterales simétricos; 2-4: Ectasia piélica leve o pielocalicial mínima Grado I SFU 5-10mm o litiasis calicial no obstructiva; 5-6: Hidronefrosis moderada Grado II-III SFU con dilatación piélica y calicial pero parénquima respetado, litiasis obstructiva; 7-8: Hidronefrosis severa Grado IV SFU con compresión parenquimatosa marcada o pionefrosis; 9-10: Uropatía obstructiva descompensada / saco hidronefrótico a tensión con adelgazamiento extremo o rotura fornicial con urinoma).
+6. "cambios_inflamatorios": Cambios Inflamatorios (0-1: Grasa perirrenal limpia, fascia de Gerota fina y parénquima sin áreas de edema o hiperemia; 2-4: Engrosamiento urotelial piélico leve o edema reactivo inespecífico; 5-6: Pielonefritis aguda focal / nefronía lobar con área hipoecoica en cuña e hipoperfusión focal; 7-8: Pielonefritis complicada / microabscesos coalescentes o colección perirrenal; 9-10: Absceso renal mayor >3-5cm con extensión retroperitoneal o Pielonefritis Enfisematosa con gas parenquimatoso).
+` : ""}
+
+REGLAS DE CALIFICACIÓN (0-10):
+- 0 a 1: Fisiológico / Benigno / Ausente / Sin alteración.
+- 2 a 4: Incipiente / Leve / Afectación focal o leve.
+- 5 a 6: Moderado / Compromiso intermedio o dolor parcial.
+- 7 a 8: Severo / Gran compromiso funcional o desgarro transfixiante.
+- 9 a 10: Masivo / Crítico / Imposibilidad funcional o ruptura masiva.
+
+SE REQUIERE EL SIGUIENTE ESQUEMA JSON:
+- "globalLoadIndex": Categoría de carga/riesgo global ("Baja", "Moderada", "Elevada", "Crítica").
+- "globalScore": Promedio de los puntajes de los ejes (número flotante redondeado a 1 decimal).
+- "dominantVector": Nombre claro y descriptivo del vector patológico dominante.
+- "radarMode": La matriz efectivamente aplicada ("rotator_cuff", "knee_oa", "cholecystitis", "ankle_trauma", "knee_trauma", "appendicitis", "thyroid", "muscle_injury", "hepatic", "renal", "msk", "visceral", u "oncology").
+- "axes": Array de exactamente 6 objetos con todos los keys de la matriz seleccionada.
   Cada objeto contiene:
   * "key": string de la key.
   * "label": Nombre legible en español adecuado a la matriz aplicada.
@@ -8071,9 +8965,9 @@ ${report}
     const rawText = response.text || "{}";
     const parsedData = JSON.parse(rawText);
 
-    if (!parsedData.radarMode) {
-      parsedData.radarMode = requestedMode !== "auto" ? requestedMode : "msk";
-    }
+    const effectiveMode = requestedMode !== "auto" ? requestedMode : (parsedData.radarMode || "msk");
+    parsedData.radarMode = effectiveMode;
+    parsedData.axes = normalizeAxesForMode(effectiveMode, parsedData.axes);
 
     res.json({
       success: true,

@@ -277,7 +277,10 @@ export default function AbdomenAnatomyViewer({
   const [localIncludeSmallBowel, setLocalIncludeSmallBowel] = useState<boolean>(true);
   const [localIncludeHepatopatia, setLocalIncludeHepatopatia] = useState<boolean>(true);
   const [localIncludeAneurisma, setLocalIncludeAneurisma] = useState<boolean>(true);
+  const [localIncludeInReport, setLocalIncludeInReport] = useState<boolean>(true);
+  const [generalDiagramCollapsed, setGeneralDiagramCollapsed] = useState<boolean>(false);
 
+  const activeIncludeInReport = setIncludeInReport ? includeInReport : localIncludeInReport;
   const activeIncludeElastography = setIncludeElastography ? includeElastography : localIncludeElastography;
   const activeHasStiffness = setElastographyHasStiffness ? elastographyHasStiffness : localHasStiffness;
   const activeStiffness = setElastographyStiffness ? elastographyStiffness : localStiffness;
@@ -293,6 +296,10 @@ export default function AbdomenAnatomyViewer({
   const activeIncludeHepatopatia = setIncludeHepatopatia ? includeHepatopatia : localIncludeHepatopatia;
   const activeIncludeAneurisma = setIncludeAneurisma ? includeAneurisma : localIncludeAneurisma;
 
+  const handleToggleIncludeGeneral = (val: boolean) => {
+    if (setIncludeInReport) setIncludeInReport(val);
+    else setLocalIncludeInReport(val);
+  };
   const handleToggleInclude = (val: boolean) => {
     if (setIncludeElastography) setIncludeElastography(val);
     else setLocalIncludeElastography(val);
@@ -3096,7 +3103,7 @@ export default function AbdomenAnatomyViewer({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: selectedModel || "gemini-3.6-flash",
+          model: selectedModel || "gemini-3.7-flash",
           reportText: generatedReport,
           studyType: "Abdomen",
           structures: ABDOMEN_STRUCTURES.map(s => ({
@@ -3120,17 +3127,22 @@ export default function AbdomenAnatomyViewer({
             let parsedState = data.states[struc.id];
             let rawDesc = data.descriptions[struc.id];
 
-            // Try extracting the exact sentence from the report first to keep the exact phrasing!
-            const exactSentence = extractSentenceForOrgan(generatedReport, struc.id, "");
-            let finalDesc = exactSentence || rawDesc || "";
+            // Prioritize the AI's intelligent, concise organ synopsis (rawDesc)
+            let finalDesc = "";
+            if (rawDesc && typeof rawDesc === "string" && rawDesc.trim().length > 0 && rawDesc.trim() !== "Alteración descrita.") {
+              finalDesc = rawDesc.trim();
+            } else {
+              const exactSentence = extractSentenceForOrgan(generatedReport, struc.id, "");
+              finalDesc = exactSentence || "";
+            }
 
-            if (!finalDesc) {
+            if (!finalDesc || finalDesc === "Alteración descrita.") {
               if (parsedState === "normal") {
                 finalDesc = "Dentro de límites normales.";
               } else if (parsedState === "no_descrito") {
                 finalDesc = "No mencionado / No descrito.";
               } else {
-                finalDesc = "Alteración descrita.";
+                finalDesc = getSimplifiedDescription(struc.id, parsedState);
               }
             }
 
@@ -3460,8 +3472,12 @@ export default function AbdomenAnatomyViewer({
 
   const syncAvailable = generatedReport && generatedReport !== lastSyncedReport;
 
-  // Auto scan has been disabled to make synchronization fully manual and save resources as requested
-  // It will only execute when manually triggered by clicking the action button.
+  // Auto-synchronize AI organ synopses whenever the generated report changes
+  useEffect(() => {
+    if (generatedReport && generatedReport !== lastSyncedReport && !isSyncing) {
+      handleScanReportText(false);
+    }
+  }, [generatedReport, lastSyncedReport, isSyncing]);
 
   const exportTableData = () => {
     let md = `\n| Estructura analizada | Hallazgos ecográficos / Sinopsis del reporte |\n`;
@@ -3918,6 +3934,44 @@ export default function AbdomenAnatomyViewer({
     <span>Aorta / Aneurisma: {aneurismaForceActive ? "Sí" : "No"}</span>
   </button>
 
+  {/* TOGGLE DIRECTO ELASTOGRAFÍA & QUS */}
+  <button
+    type="button"
+    onClick={() => {
+      const next = !activeIncludeElastography;
+      handleToggleInclude(next);
+      if (next) {
+        setTimeout(() => {
+          document.getElementById("abdomen-elastography-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 100);
+      }
+    }}
+    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase tracking-wider transition-all duration-200 cursor-pointer ${
+      activeIncludeElastography 
+        ? "bg-teal-600/30 border-teal-500/50 text-teal-300 shadow-[0_2px_8px_rgba(20,184,166,0.3)] ring-1 ring-teal-500/40" 
+        : "bg-slate-950 border-slate-850 text-slate-400 hover:text-slate-200 hover:border-slate-700"
+    }`}
+    title="Activar/Desactivar inclusión del módulo de Elastografía Transitoria & QUS en el informe PDF"
+  >
+    <span className={`h-2 w-2 rounded-full ${activeIncludeElastography ? "bg-teal-400 shadow-[0_0_8px_#14b8a6]" : "bg-slate-600"} inline-block`} />
+    <span>Elastografía & QUS: {activeIncludeElastography ? "Sí (PDF)" : "No"}</span>
+  </button>
+
+  {/* TOGGLE DIRECTO GRÁFICO GENERAL ABDOMEN */}
+  <button
+    type="button"
+    onClick={() => handleToggleIncludeGeneral(!activeIncludeInReport)}
+    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase tracking-wider transition-all duration-200 cursor-pointer ${
+      activeIncludeInReport 
+        ? "bg-indigo-950/80 border-indigo-500/40 text-indigo-300" 
+        : "bg-slate-950 border-slate-800 text-slate-500 hover:text-slate-300"
+    }`}
+    title="Activa o desactiva la inclusión del mapa anatómico general de abdomen en el PDF"
+  >
+    <span className={`h-2 w-2 rounded-full ${activeIncludeInReport ? "bg-indigo-400 shadow-[0_0_8px_#818cf8]" : "bg-slate-600"} inline-block`} />
+    <span>Gráfico General: {activeIncludeInReport ? "Sí (PDF)" : "No"}</span>
+  </button>
+
           <button
             onClick={() => handleScanReportText(true)}
             disabled={isSyncing}
@@ -3964,14 +4018,63 @@ export default function AbdomenAnatomyViewer({
         {/* LEFT COLUMN: DIAGRAMS (100% VECTOR INTERACTIVE MODEL) */}
         <div className="lg:col-span-5 flex flex-col items-center gap-4 bg-slate-950/30 p-3.5 border border-slate-850/50 rounded-xl max-w-full">
           
-          <div className="w-full text-center border-b border-slate-850 pb-2">
-            <span className="text-[9px] font-black uppercase tracking-widest text-[#6366F1]">
-              Esquema Anatómico Abdominal
+          <div className="w-full flex items-center justify-between border-b border-slate-850 pb-2 gap-2 flex-wrap">
+            <span className="text-[9px] font-black uppercase tracking-widest text-[#6366F1] flex items-center gap-1.5 font-mono">
+              <span>Esquema Anatómico Abdominal</span>
             </span>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => handleToggleIncludeGeneral(!activeIncludeInReport)}
+                className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider border transition-all cursor-pointer flex items-center gap-1 font-mono ${
+                  activeIncludeInReport
+                    ? "bg-emerald-950/80 text-emerald-400 border-emerald-500/50 shadow-sm"
+                    : "bg-slate-900 text-slate-500 border-slate-800 hover:text-slate-300"
+                }`}
+                title="Incluir o excluir este gráfico general en el reporte PDF"
+              >
+                {activeIncludeInReport ? (
+                  <>
+                    <Check className="h-3 w-3 text-emerald-400 font-bold" />
+                    <span>En PDF: Sí</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="h-1.5 w-1.5 rounded-full bg-slate-600 block" />
+                    <span>En PDF: No</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setGeneralDiagramCollapsed(prev => !prev)}
+                className="px-2 py-1 rounded-lg text-[9px] font-bold text-slate-400 hover:text-slate-200 bg-slate-900 border border-slate-800 cursor-pointer font-mono"
+                title={generalDiagramCollapsed ? "Expandir gráfico de abdomen" : "Minimizar para enfocar en Elastografía"}
+              >
+                {generalDiagramCollapsed ? "Expandir" : "Minimizar"}
+              </button>
+            </div>
           </div>
 
           {/* SVG RENDERING CONTAINER */}
-          <div className="w-full flex items-center justify-center min-h-[220px] bg-slate-950/20 p-2.5 rounded-xl relative overflow-hidden">
+          {generalDiagramCollapsed && (
+            <div className="w-full py-3 px-4 text-center text-slate-400 text-xs italic bg-slate-950/50 rounded-xl border border-slate-850 flex items-center justify-center gap-2">
+              <span>Gráfico general minimizado.</span>
+              <button
+                type="button"
+                onClick={() => setGeneralDiagramCollapsed(false)}
+                className="text-indigo-400 underline font-semibold not-italic hover:text-indigo-300"
+              >
+                Expandir
+              </button>
+            </div>
+          )}
+
+          <div className={`w-full flex items-center justify-center bg-slate-950/20 p-2.5 rounded-xl relative overflow-hidden transition-all ${
+            generalDiagramCollapsed ? "h-0 min-h-0 p-0 border-0 pointer-events-none opacity-0 invisible" : "min-h-[220px]"
+          }`}>
             <svg 
               id="abdomen-anatomy-svg"
               viewBox={showAbdominalWall ? "0 0 440 240" : "0 0 240 240"}
@@ -7656,18 +7759,23 @@ export default function AbdomenAnatomyViewer({
       )}
 
       {/* SECCIÓN COMPLEMENTARIA INTERACTIVA DE ELASTOGRAFÍA TRANSITORIA Y QUS */}
-      <div className="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-5 shadow-2xl flex flex-col gap-4">
+      <div id="abdomen-elastography-section" className="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-5 shadow-2xl flex flex-col gap-4 scroll-mt-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-850 pb-3">
           <div className="flex items-center gap-2">
-            <div className="p-1.5 bg-indigo-500/10 rounded-lg border border-indigo-505/20 text-indigo-400">
+            <div className="p-1.5 bg-teal-500/10 rounded-lg border border-teal-500/20 text-teal-400">
               <Activity className="h-4.5 w-4.5" />
             </div>
             <div>
-              <h3 className="text-sm font-black text-slate-200 uppercase tracking-widest font-mono">
-                Mapeo de Elastografía Transitoria y QUS (Hígado)
-              </h3>
-              <p className="text-[10px] text-slate-500 font-medium">
-                Añade cuantificaciones inteligentes de rigidez hepática y porcentaje de grasa por QUS.
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-sm font-black text-slate-200 uppercase tracking-widest font-mono">
+                  Mapeo de Elastografía Transitoria y QUS (Hígado)
+                </h3>
+                <span className="text-[9px] px-2 py-0.5 rounded-full bg-teal-950/80 text-teal-350 border border-teal-500/40 font-mono font-bold">
+                  Módulo Autónomo
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-400 font-medium mt-0.5">
+                Cuantificación multiparamétrica de rigidez hepática y fracción grasa por QUS. Puede usarse y adjuntarse al PDF de forma independiente sin incluir el gráfico de abdomen general.
               </p>
             </div>
           </div>

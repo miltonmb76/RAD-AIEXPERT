@@ -28,6 +28,7 @@ const BiomechanicalRadarModule = React.lazy(() => import("./components/Biomechan
 const AbdominalWallAnatomyViewer = React.lazy(() => import("./components/AbdominalWallAnatomyViewer"));
 const CalfAchillesAnatomyViewer = React.lazy(() => import("./components/CalfAchillesAnatomyViewer"));
 const NeonatalBrainAnatomyViewer = React.lazy(() => import("./components/NeonatalBrainAnatomyViewer"));
+import { Findings3dRenderModule, Create3dRenderModal, Finding3dRender } from "./components/Findings3dRenderModule";
 import CaseAnalysisRenderer from "./components/CaseAnalysisRenderer";
 import InteractiveCaseEditor from "./components/InteractiveCaseEditor";
 import { ClassificationBreakdownModule } from "./components/ClassificationBreakdownModule";
@@ -84,7 +85,8 @@ import {
   Columns,
   Eye,
   Ruler,
-  Bookmark
+  Bookmark,
+  Box
 } from "lucide-react";
 import { initAuth, googleSignIn, logout as googleLogout, anonymousSignIn, emailSignIn, emailSignUp, getFirebaseConfig } from "./firebaseAuth";
 import { CloudStudy, saveStudyToCloud, getStudiesFromCloud, deleteStudyFromCloud, Worklist, WorklistPatient, saveWorklistToCloud, getWorklistFromCloud, getSingleStudyFromCloud, testFirebaseConfigConnection } from "./firebaseDb";
@@ -177,7 +179,7 @@ export const DIAGNOSTIC_GLOSSARY = [
     acronym: "TI-RADS",
     name: "Thyroid Imaging-Reporting and Data System",
     category: "Ultrasonido",
-    desc: "Escala ecográfica para evaluar el riesgo de malignidad en nódulos tiroideos. Basado en composición, ecogenicidad, forma, márgenes y focos ecogénicos. Facilita decidir de forma objetiva la indicación de punción por aguja fina (BAAF)."
+    desc: "Escala ecográfica para evaluar el riesgo de malignidad en nódulos tiroideos. Basado en composición, ecogenicidad, forma, márgenes y focos ecogénicos. Facilita decidir de forma objetiva la indicación de biopsia por aspiración con aguja fina (BAAF)."
   },
   {
     acronym: "PI-RADS",
@@ -1234,7 +1236,11 @@ export default function App() {
   }, [isPatientPublicView, patientLogoUrl, selectedLogo, customLogos]);
 
   const [selectedModel, setSelectedModel] = useState<string>(() => {
-    return localStorage.getItem("rad_selected_model") || "gemini-3.6-flash";
+    const saved = localStorage.getItem("rad_selected_model");
+    if (!saved || saved === "gemini-3.6-flash" || saved === "gemini-2.5-flash" || saved === "gemini-1.5-flash") {
+      return "gemini-3.7-flash";
+    }
+    return saved;
   });
 
   useEffect(() => {
@@ -1288,6 +1294,7 @@ export default function App() {
         if (localStudy.pdfLayoutType) setPdfLayoutType(localStudy.pdfLayoutType as any);
         if (localStudy.selectedLogo) setSelectedLogo(localStudy.selectedLogo);
         if (localStudy.attachedImages) setAttachedImages(localStudy.attachedImages);
+        if (localStudy.findings3dRenders) setFindings3dRenders(localStudy.findings3dRenders);
         if (localStudy.patientSummary) setPatientSummary(localStudy.patientSummary);
         setIsPatientViewLoading(false);
       } else {
@@ -1317,6 +1324,7 @@ export default function App() {
               if (study.pdfLayoutType) setPdfLayoutType(study.pdfLayoutType as any);
               if (study.selectedLogo) setSelectedLogo(study.selectedLogo);
               if (study.attachedImages) setAttachedImages(study.attachedImages);
+              if (study.findings3dRenders) setFindings3dRenders(study.findings3dRenders);
               if (study.patientSummary) setPatientSummary(study.patientSummary);
             } else {
               setPatientViewError("El estudio clínico solicitado no existe o el enlace es incorrecto.");
@@ -2413,6 +2421,12 @@ export default function App() {
   // Biomechanical Radar Data
   const [biomechanicalRadarData, setBiomechanicalRadarData] = useState<any | null>(null);
 
+  // 3D Schematic Volumetric Renders for Findings
+  const [findings3dRenders, setFindings3dRenders] = useState<Finding3dRender[]>([]);
+  const [is3dRenderModalOpen, setIs3dRenderModalOpen] = useState<boolean>(false);
+  const [modal3dSourceImage, setModal3dSourceImage] = useState<any>(null);
+  const [modal3dInitialFinding, setModal3dInitialFinding] = useState<string>("");
+
   const pdfStateRef = useRef<any>({});
   pdfStateRef.current = {
     generatedReport,
@@ -2435,6 +2449,7 @@ export default function App() {
     pdfLayoutType,
     selectedLogo,
     biomechanicalRadarData,
+    findings3dRenders,
   };
 
   useEffect(() => {
@@ -3064,15 +3079,16 @@ Ejemplo:
   const [isCreadorCuadroSinopticoOpen, setIsCreadorCuadroSinopticoOpen] = useState<boolean>(false);
   const [isCreadorSinopsisFracturasOpen, setIsCreadorSinopsisFracturasOpen] = useState<boolean>(false);
   const [isBiomechanicalRadarOpen, setIsBiomechanicalRadarOpen] = useState<boolean>(false);
+  const [includeRadarInReport, setIncludeRadarInReport] = useState<boolean>(true);
 
   // States & Handlers for Sistema de Activación Rápida de Módulos (Procesamiento en Lote)
   const [selectedBatchModules, setSelectedBatchModules] = useState<Record<string, boolean>>({
-    radar: true,
-    case_analysis: true,
-    quality_eval: true,
-    bibliography: true,
-    operational_summary: false,
-    patient_summary: false,
+    radar: false,
+    case_analysis: false,
+    quality_eval: false,
+    bibliography: false,
+    operational_summary: true,
+    patient_summary: true,
     glossary: false,
     schematic: false,
     measurements: false,
@@ -4261,6 +4277,23 @@ Ejemplo:
         }
         setGeneratedReport(data.report);
         setOriginalBaseReport(data.report);
+
+        // Resetear casillas del Sistema de Activación Rápida de Módulos: por defecto Resumen Operacional y Paciente marcados
+        setSelectedBatchModules({
+          radar: false,
+          case_analysis: false,
+          quality_eval: false,
+          bibliography: false,
+          operational_summary: true,
+          patient_summary: true,
+          glossary: false,
+          schematic: false,
+          measurements: false,
+          footnotes: false,
+          organ_synoptic: false,
+          fractures: false,
+          classifications: false,
+        });
 
         // Activación Automática de Evaluación de Calidad al Generar Reporte
         handleEvaluateReport(data.report);
@@ -5502,6 +5535,7 @@ Ejemplo:
             customLogoStyle: customLogoStyle || "logo",
             customSignatureUrl: customSignatureUrl || "",
             attachedImages: attachedImages || [],
+            findings3dRenders: findings3dRenders || [],
             patientSummary: patientSummary || null
           });
           fetchCloudStudies(gmailUser.uid);
@@ -7448,20 +7482,21 @@ Ejemplo:
         isVascular: boolean = false
       ) => {
         // Aligned Anatomical Cards format for Appendix / Synopses in PDF (Opción 1: Fichas Anatómicas Alineadas)
+        const isLargeSingleMode = boxH > 100;
         const paddingX = 2.5;
-        const paddingY = 8.5; // Starts after header text space
+        const paddingY = isLargeSingleMode ? 10.5 : 8.5; // Starts after header text space
         const startX = boxX + paddingX;
         const startY = boxY + paddingY;
         const availW = boxW - (paddingX * 2);
-        const availH = boxH - paddingY - 2.5;
+        const availH = boxH - paddingY - (isLargeSingleMode ? 3.5 : 2.5);
 
         const count = findings.length;
         const cols = count > 3 ? 2 : 1;
         const colGap = 2.0;
-        const rowGap = 2.0;
+        const rowGap = isLargeSingleMode ? 3.0 : 2.0;
         const colW = cols === 2 ? (availW - colGap) / 2 : availW;
 
-        const totalRows = Math.ceil(count / cols);
+        const totalRows = Math.max(1, Math.ceil(count / cols));
         const cardH = (availH - (rowGap * (totalRows - 1))) / totalRows;
 
         findings.forEach((finding, index) => {
@@ -7585,19 +7620,21 @@ Ejemplo:
             else if (rawState === "ADENOPATIA REACTIVA") rawState = "INFLAMATORIO";
           }
 
+          const badgeFontSize = cardH > 20 ? 5.2 : 4.0;
+          const badgeH = cardH > 20 ? 3.4 : 2.3;
           docObj.setFont("helvetica", "bold");
-          docObj.setFontSize(4.0);
+          docObj.setFontSize(badgeFontSize);
           const stateTextWidth = docObj.getTextWidth(rawState);
-          const badgeW = Math.min(colW * 0.42, stateTextWidth + 2.0);
+          const badgeW = Math.min(colW * 0.45, stateTextWidth + 2.5);
           const badgeX = cardX + colW - badgeW - 1.2;
 
           docObj.setFillColor(badgeBg[0], badgeBg[1], badgeBg[2]);
-          docObj.roundedRect(badgeX, cardY + 1.0, badgeW, 2.3, 0.4, 0.4, "F");
+          docObj.roundedRect(badgeX, cardY + 1.0, badgeW, badgeH, 0.5, 0.5, "F");
           docObj.setTextColor(badgeText[0], badgeText[1], badgeText[2]);
-          docObj.text(rawState, badgeX + badgeW / 2, cardY + 2.6, { align: "center" });
+          docObj.text(rawState, badgeX + badgeW / 2, cardY + 1.0 + (badgeH * 0.72), { align: "center" });
 
           // Draw structure label (Title) with auto-scaling font size to avoid truncation
-          let labelFontSize = cardH < 10 ? 5.0 : 5.6;
+          let labelFontSize = cardH < 10 ? 5.0 : (cardH > 20 ? 7.2 : 5.6);
           docObj.setFont("helvetica", "bold");
           docObj.setFontSize(labelFontSize);
           docObj.setTextColor(15, 23, 42); // slate-900
@@ -7615,12 +7652,12 @@ Ejemplo:
             }
             titleText += "..";
           }
-          docObj.text(titleText, cardX + 2.4, cardY + 2.8);
+          docObj.text(titleText, cardX + 2.4, cardY + (cardH > 20 ? 3.8 : 2.8));
 
           // Draw wrapped clinical description without cutting off lines
           docObj.setFont("helvetica", "normal");
-          let descFontSize = cardH < 9 ? 4.2 : (cardH < 13 ? 4.6 : 5.0);
-          let spacing = descFontSize * 0.42;
+          let descFontSize = cardH < 9 ? 4.2 : (cardH < 13 ? 4.6 : (cardH > 20 ? 6.2 : 5.0));
+          let spacing = descFontSize * (cardH > 20 ? 0.45 : 0.42);
 
           docObj.setFontSize(descFontSize);
           docObj.setTextColor(71, 85, 105); // slate-600
@@ -7629,8 +7666,8 @@ Ejemplo:
           const wrapWidthLimit = colW - 4.2;
           let linesWrapped = docObj.splitTextToSize(textToWrap, wrapWidthLimit);
 
-          const startTextY = cardY + 2.8 + spacing;
-          const maxTextY = cardY + cardH - 0.8;
+          const startTextY = cardY + (cardH > 20 ? 4.0 : 2.8) + spacing;
+          const maxTextY = cardY + cardH - 1.0;
           const maxAllowedLines = Math.max(1, Math.floor((maxTextY - startTextY) / spacing) + 1);
 
           if (linesWrapped.length > maxAllowedLines && descFontSize > 3.8) {
@@ -9342,9 +9379,9 @@ Ejemplo:
               }
             });
 
-            // Now, check page break for the table itself. If the remaining table height doesn't fit on the page,
-            // we'll push it, but we already ensured the headers and start of the table fit on the same page initially!
-            checkPageBreak(Math.min(totalTableNeededHeight, pageHeight - 40));
+            // Now check page break for table header + first row only. If that fits, we start the table on this page
+            // and let subsequent rows split naturally across pages as needed.
+            checkPageBreak(12 * factor + (cachedRowsData[0]?.rowHeight || 10 * factor));
 
             // Header Render
             checkPageBreak(12 * factor);
@@ -9831,16 +9868,21 @@ Ejemplo:
         }
 
         const isHeaderMarker = /^\s*(?:#{1,6}\s+|\*\*\s*)/.test(trimmedBlock) || trimmedBlock.toUpperCase().startsWith("ANEXO:");
-        const isCuadroHeader = isHeaderMarker && /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:ESQUEMA\s+CLÍNICO\s+DE\s+HALLAZGOS\s+PRINCIPALES|CUADRO\s+SINÓPTICO|MATRIZ\s+SEMIÓTICA)\b/i.test(trimmedBlock);
-        const isOrganHeader = isHeaderMarker && /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:SINOPSIS\s+CLÍNICA|SINOPSIS\s+POR\s+ÓRGANO|SINOPSIS\s+DE\s+ÓRGANO)\b/i.test(trimmedBlock) && !isCuadroHeader;
-        const isMeasurementHeader = isHeaderMarker && /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:ASISTENTE\s+DE\s+MEDIDAS|CUADRO\s+DE\s+ASISTENTE\s+DE\s+MEDIDAS|TABLA\s+DE\s+MEDIDAS|MEDICIONES\s+Y\s+PARÁMETROS|PARÁMETROS\s+Y\s+MEDIDAS)\b/i.test(trimmedBlock) && !isCuadroHeader && !isOrganHeader;
+        const isImpressionHeader = /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:IMPRESI[OÓ]N\s+DIAGN[OÓ]STICA|IMPRESI[OÓ]N\b|CONCLUSI[OÓ]N|CONCLUSIONES|DIAGN[OÓ]STICO|DIAGN[OÓ]STICOS)\b/i.test(trimmedBlock) ||
+                                    upperBlock.includes("IMPRESIÓN DIAGNÓSTICA") || upperBlock.includes("IMPRESION DIAGNOSTICA") ||
+                                    upperBlock.includes("CONCLUSIÓN:") || upperBlock.includes("CONCLUSIONES:");
+        const isCuadroHeader = isHeaderMarker && /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:ESQUEMA\s+CLÍNICO\s+DE\s+HALLAZGOS\s+PRINCIPALES|CUADRO\s+SINÓPTICO|MATRIZ\s+SEMIÓTICA)\b/i.test(trimmedBlock) && !isImpressionHeader;
+        const isOrganHeader = isHeaderMarker && /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:SINOPSIS\s+CLÍNICA|SINOPSIS\s+POR\s+[OÓ]RGANO|SINOPSIS\s+DE\s+[OÓ]RGANO)\b/i.test(trimmedBlock) && !isCuadroHeader && !isImpressionHeader;
+        const isMeasurementHeader = isHeaderMarker && /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:ASISTENTE\s+DE\s+MEDIDAS|CUADRO\s+DE\s+ASISTENTE\s+DE\s+MEDIDAS|TABLA\s+DE\s+MEDIDAS|MEDICIONES\s+Y\s+PARÁMETROS|PARÁMETROS\s+Y\s+MEDIDAS)\b/i.test(trimmedBlock) && !isCuadroHeader && !isOrganHeader && !isImpressionHeader;
         const isAnnexHeader = isHeaderMarker && (trimmedBlock.includes("ANEXO DIAGNÓSTICO") || 
                               trimmedBlock.includes("DESGLOSE Y JUSTIFICACIÓN DE CLASIFICACIÓN") || 
                               trimmedBlock.includes("DESGLOSE Y JUSTIFICACIÓN") ||
                               trimmedBlock.includes("CLASIFICACIÓN DE") ||
-                              /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:ANEXO|CLASIFICACI[OÓ]N)\b/i.test(trimmedBlock)) && !isCuadroHeader && !isOrganHeader && !isMeasurementHeader;
+                              /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:ANEXO|CLASIFICACI[OÓ]N)\b/i.test(trimmedBlock)) && !isCuadroHeader && !isOrganHeader && !isMeasurementHeader && !isImpressionHeader;
 
-        if (isCuadroHeader) {
+        if (isImpressionHeader) {
+          pdfSectionTarget = "main";
+        } else if (isCuadroHeader) {
           pdfSectionTarget = "cuadro";
         } else if (isOrganHeader) {
           pdfSectionTarget = "organ";
@@ -9863,6 +9905,31 @@ Ejemplo:
         }
       });
 
+      // Safety recovery pass for jsPDF: Ensure Impression & Conclusions are NEVER trapped inside annexes
+      const isImpressionBlockText = (bText: string) => {
+        const u = bText.toUpperCase();
+        return u.includes("IMPRESIÓN DIAGNÓSTICA") || u.includes("IMPRESION DIAGNOSTICA") ||
+               u.includes("CONCLUSIÓN:") || u.includes("CONCLUSIONES:") ||
+               /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:IMPRESI[OÓ]N|CONCLUSI[OÓ]N|CONCLUSIONES|DIAGN[OÓ]STICO)\b/i.test(bText);
+      };
+
+      const recoverImpressionForPDF = (sourceArr: string[]) => {
+        for (let i = 0; i < sourceArr.length; ) {
+          if (isImpressionBlockText(sourceArr[i])) {
+            const recovered = sourceArr.splice(i, sourceArr.length - i);
+            mainReportBlocks.push(...recovered);
+            break;
+          } else {
+            i++;
+          }
+        }
+      };
+
+      recoverImpressionForPDF(cuadroSinopticoBlocks);
+      recoverImpressionForPDF(organSynopsisBlocks);
+      recoverImpressionForPDF(measurementAssistantBlocks);
+      recoverImpressionForPDF(classificationAnnexBlocks);
+
       // --- 1. CUERPO DE REPORTE CON FIRMA AL FINAL ---
       mainReportBlocks.forEach((block) => {
         renderSingleReportBlock(block);
@@ -9874,15 +9941,17 @@ Ejemplo:
 
       // --- 2. CUADRO SINÓPTICO ---
       if (cuadroSinopticoBlocks.length > 0) {
-        checkPageBreak(25 * factor);
+        doc.addPage();
+        yCoord = 20;
         cuadroSinopticoBlocks.forEach((block) => {
           renderSingleReportBlock(block);
         });
       }
 
-      // --- 3. SINOPSIS POR ÓRGANO ---
+      // --- 3. SINOPSIS POR ÓRGANO (PÁGINA INDEPENDIENTE DESPUÉS DEL CUERPO DEL REPORTE) ---
       if (organSynopsisBlocks.length > 0) {
-        checkPageBreak(25 * factor);
+        doc.addPage();
+        yCoord = 20;
         organSynopsisBlocks.forEach((block) => {
           renderSingleReportBlock(block);
         });
@@ -9892,7 +9961,124 @@ Ejemplo:
       marginX = 20;
       contentWidth = pageWidth - (2 * marginX);
 
-      // --- 4. SINOPSIS DE HALLAZGOS CON DIBUJO Y TARJETAS SINÓPTICAS ---
+      // --- 4. SINOPSIS DE HALLAZGOS CON DIBUJO Y TARJETAS SINÓPTICAS EN ANEXO DEDICADO ---
+      const isDopplerStudy = specificStudy === "Doppler de carótidas" || 
+                             specificStudy === "Doppler venoso de miembro inferior" || 
+                             specificStudy === "Doppler arterial de miembro inferior";
+
+      const activeSchemasList: Array<{ key: string; name: string }> = [];
+
+      if (includeShoulderSchemaInReport && specificStudy === "Hombro") {
+        activeSchemasList.push({ key: "shoulder", name: "Hombro" });
+      }
+      if (specificStudy === "Rodilla") {
+        if (includeKneeSchemaInReport) activeSchemasList.push({ key: "knee", name: "Rodilla Trauma" });
+        if (includeGonartrosisSchemaInReport) activeSchemasList.push({ key: "gonartrosis", name: "Rodilla Gonartrosis" });
+      }
+      if (includeAnkleSchemaInReport && specificStudy === "Tobillo") {
+        activeSchemasList.push({ key: "ankle", name: "Tobillo" });
+      }
+      if (includeThighSchemaInReport && specificStudy === "Muslo Anterior") {
+        activeSchemasList.push({ key: "thigh_ant", name: "Muslo Anterior" });
+      }
+      if (includeThighPosteriorSchemaInReport && specificStudy === "Muslo Posterior") {
+        activeSchemasList.push({ key: "thigh_post", name: "Muslo Posterior" });
+      }
+      if (includeNeckSchemaInReport && specificStudy === "Cuello") {
+        activeSchemasList.push({ key: "neck", name: "Cuello y Tiroides" });
+      }
+      if (includeUrinarySchemaInReport && specificStudy === "Vias urinarias") {
+        activeSchemasList.push({ key: "urinary", name: "Vías Urinarias" });
+      }
+      if (includeScrotumSchemaInReport && (specificStudy === "Escroto" || activeProtocol === "Escroto" || /escrot|testic/i.test(specificStudy || ""))) {
+        activeSchemasList.push({ key: "scrotum", name: "Escroto" });
+      }
+      if (specificStudy === "Muñeca") {
+        if (includeWristSchemaInReport) activeSchemasList.push({ key: "wrist", name: "Muñeca" });
+        if (includeDeQuervainSchemaInReport) activeSchemasList.push({ key: "de_quervain", name: "De Quervain" });
+      }
+      if (includeBreastSchemaInReport && (specificStudy === "Mamas" || specificStudy === "Momografía" || modality === "Mamografía" || modality === "Mamografía y Ultrasonido de Mamas")) {
+        activeSchemasList.push({ key: "breast", name: "Mamas" });
+      }
+      if (includeElbowSchemaInReport && specificStudy === "Codo") {
+        activeSchemasList.push({ key: "elbow", name: "Codo" });
+      }
+      if (specificStudy === "Abdomen" || activeProtocol === "Abdomen") {
+        if (includeAbdomenSchemaInReport) activeSchemasList.push({ key: "abdomen", name: "Abdomen General" });
+        if (includeBiliarySchemaInReport) activeSchemasList.push({ key: "biliary", name: "Vesícula Biliar" });
+        if (includeAppendixSchemaInReport) activeSchemasList.push({ key: "appendix", name: "Apéndice" });
+        if (includeHepatopatiaSchemaInReport) activeSchemasList.push({ key: "hepatopatia", name: "Hepatopatía" });
+        if (includeDiverticulitisSchemaInReport) activeSchemasList.push({ key: "diverticulitis", name: "Diverticulitis" });
+        if (includeAneurismaSchemaInReport) activeSchemasList.push({ key: "aneurisma", name: "Aneurisma" });
+        if (includeSmallBowelSchemaInReport) activeSchemasList.push({ key: "small_bowel", name: "Asas Intestinales" });
+        if (includeElastographyInReport) activeSchemasList.push({ key: "elastography", name: "Elastografía & QUS" });
+      }
+      if (includeAbdominalWallSchemaInReport && specificStudy === "Pared Abdominal") {
+        activeSchemasList.push({ key: "abdominal_wall", name: "Pared Abdominal" });
+      }
+      if (includeCalfAchillesSchemaInReport && specificStudy === "Pantorrilla y Tendón de Aquiles") {
+        activeSchemasList.push({ key: "calf", name: "Pantorrilla y Aquiles" });
+      }
+      if (includeNeonatalBrainSchemaInReport && specificStudy === "Cerebro Neonatal") {
+        activeSchemasList.push({ key: "neonatal_brain", name: "Cerebro Neonatal" });
+      }
+      if (includeVascularSchemaInReport && isDopplerStudy) {
+        activeSchemasList.push({ key: "vascular", name: "Vascular Doppler" });
+      }
+
+      const totalActiveSchemasCount = activeSchemasList.length;
+      let renderedSchemasCounter = 0;
+
+      const getNextSchemaPlacement = () => {
+        const isFirst = (renderedSchemasCounter === 0);
+        let forceAddPage = false;
+        let yStart = 26;
+        let boxH = 74;
+        let leftBoxW = 88;
+        let rightBoxX = 111;
+        let rightBoxW = 79;
+        const isSingleFullPage = (totalActiveSchemasCount === 1);
+
+        if (isFirst) {
+          forceAddPage = true; // Always start on a new separate annexed page!
+        }
+
+        if (isSingleFullPage) {
+          // 1 Schema: Large prominent full page format!
+          boxH = 138;
+          leftBoxW = 92;
+          rightBoxX = 113;
+          rightBoxW = 75;
+          yStart = 26;
+        } else {
+          // 2 or more schemas: Dual per page format (2 per page)
+          const posOnPage = renderedSchemasCounter % 2;
+          if (posOnPage === 0 && !isFirst) {
+            forceAddPage = true; // New page for 3rd, 5th, etc.
+          }
+          if (posOnPage === 0) {
+            yStart = 26;
+          } else {
+            yStart = 108;
+          }
+          boxH = 74;
+          leftBoxW = 88;
+          rightBoxX = 111;
+          rightBoxW = 79;
+        }
+
+        renderedSchemasCounter++;
+
+        return {
+          forceAddPage,
+          yStart,
+          boxH,
+          leftBoxW,
+          rightBoxX,
+          rightBoxW,
+          isSingleFullPage
+        };
+      };
 
       // 🛠️ DRAW SHOULDER DIAGRAM IN THE PROGRAMMATIC PDF
       if (includeShoulderSchemaInReport && specificStudy === "Hombro") {
@@ -12045,7 +12231,7 @@ Ejemplo:
       }
 
       // 🛠️ DRAW SCROTUM DIAGRAM IN THE PROGRAMMATIC PDF
-      if (includeScrotumSchemaInReport && specificStudy === "Escroto") {
+      if (includeScrotumSchemaInReport && (specificStudy === "Escroto" || activeProtocol === "Escroto" || /escrot|testic/i.test(specificStudy || ""))) {
         const svgScrotum = document.getElementById("scrotum-anatomy-svg");
 
         if (svgScrotum) {
@@ -13179,11 +13365,12 @@ Ejemplo:
       }
 
       // 🛠️ DRAW ABDOMEN DIAGRAM IN THE PROGRAMMATIC PDF
-      if (includeAbdomenSchemaInReport && specificStudy === "Abdomen") {
-        const svgAbdomen = document.getElementById("abdomen-anatomy-svg");
+      if (specificStudy === "Abdomen" || activeProtocol === "Abdomen") {
+        if (includeAbdomenSchemaInReport) {
+          const svgAbdomen = document.getElementById("abdomen-anatomy-svg");
 
-        if (svgAbdomen) {
-          try {
+          if (svgAbdomen) {
+            try {
             const processAbdomenSvgForPdf = async (svgEl: HTMLElement) => {
               const clonedSvg = svgEl.cloneNode(true) as SVGElement;
               
@@ -13366,8 +13553,13 @@ Ejemplo:
             doc.text("Mapa sinóptico de abdomen correspondiente al reporte redactado.", 150, yStart + 72, { align: "center" });
 
             yCoord += 80;
+          } catch (err) {
+            console.warn("Could not draw abdomen diagram inside jsPDF", err);
+          }
+        }
+      }
 
-            // 🛠️ DIBUJO DE VÍA BILIAR EXTRAHEPÁTICA EN PDF (SI ESTÁ ACTIVO)
+      // 🛠️ DIBUJO DE VÍA BILIAR EXTRAHEPÁTICA EN PDF (SI ESTÁ ACTIVO)
             if (includeBiliarySchemaInReport) {
               const svgBiliary = document.getElementById("abdomen-biliary-svg");
               if (svgBiliary) {
@@ -14330,80 +14522,296 @@ Ejemplo:
 
                   const imgElastography = await processElastographySvgForPdf(svgElastography);
 
-                  checkPageBreak(85);
-                  yCoord += 8;
-
-                  // Header for Elastography
-                  doc.setFont("helvetica", "bold");
-                  doc.setFontSize(8.0);
-                  doc.setTextColor(30, 41, 59);
-                  if (elastographyHasStiffness) {
-                    doc.text("ANEXO: ELASTOGRAFÍA TRANSITORIA Y CUANTIFICACIÓN (QUS)", marginX, yCoord);
+                  // Always ensure sufficient space for the complete Annex block (or break to new page)
+                  if (yCoord > pageHeight - 145) {
+                    doc.addPage();
+                    yCoord = 20;
                   } else {
-                    doc.text("ANEXO: CUANTIFICACIÓN DE GRASA HEPÁTICA (QUS)", marginX, yCoord);
+                    yCoord += 6 * factor;
                   }
-                  
+
+                  // 1. Header for Elastography & QUS Annex
                   doc.setFont("helvetica", "bold");
-                  doc.setFontSize(6.2);
-                  doc.setTextColor(148, 163, 184);
-                  if (elastographyHasStiffness) {
-                    doc.text("ANÁLISIS DE RIGIDEZ Y ENTORNO MULTIPARAMÉTRICO GRASO HEPÁTICO", marginX, yCoord + 4.5);
-                  } else {
-                    doc.text("ANÁLISIS DE ENTORNO MULTIPARAMÉTRICO GRASO HEPÁTICO", marginX, yCoord + 4.5);
-                  }
-                  yCoord += 8;
+                  doc.setFontSize(10.5 * factor);
+                  doc.setTextColor(15, 23, 42); // slate-900
+                  const annexTitle = elastographyHasStiffness
+                    ? "ANEXO: DASHBOARD DUAL DE BIOMETRÍA TISULAR Y CUANTIFICACIÓN HEPÁTICA (QUS & ELASTOGRAFÍA)"
+                    : "ANEXO: CUANTIFICACIÓN TISULAR DE GRASA HEPÁTICA (QUS)";
+                  doc.text(annexTitle, marginX, yCoord);
+                  yCoord += 3.8 * factor;
 
-                  const boxHeight = 58;
-                  const boxWidth = 170;
+                  doc.setDrawColor(6, 182, 212); // Cyan 500
+                  doc.setLineWidth(0.5);
+                  doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
+                  yCoord += 4.5 * factor;
 
-                  // Main Box Container
+                  // Subtitle disclaimer / clinical framing
+                  doc.setFont("helvetica", "italic");
+                  doc.setFontSize(6.8 * factor);
+                  doc.setTextColor(100, 116, 139); // slate-500
+                  const annexSubtitle = "Mapeo multiparamétrico no invasivo de rigidez acústica tisular (Elastografía Transitoria) y fracción grasa cuantitativa (QUS), correlacionado con estadios histopatológicos de referencia (METAVIR / Consenso SRU).";
+                  const subLines = doc.splitTextToSize(annexSubtitle, contentWidth);
+                  subLines.forEach((sLine: string) => {
+                    doc.text(sLine, marginX, yCoord);
+                    yCoord += 3.2 * factor;
+                  });
+                  yCoord += 2.5 * factor;
+
+                  // 2. Main Workstation Graphics Container
+                  const elastBoxHeight = 56;
+                  const elastBoxWidth = contentWidth;
+
                   doc.setFillColor(255, 255, 255);
-                  doc.setDrawColor(229, 231, 235);
-                  doc.roundedRect(20, yCoord, boxWidth, boxHeight, 3, 3, "FD");
+                  doc.setDrawColor(203, 213, 225); // slate-300
+                  doc.setLineWidth(0.35);
+                  doc.roundedRect(marginX, yCoord, elastBoxWidth, elastBoxHeight, 2, 2, "FD");
 
                   if (imgElastography) {
-                    doc.addImage(imgElastography, "PNG", 22, yCoord + 1.5, 166, 55);
+                    doc.addImage(imgElastography, "PNG", marginX + 1.5, yCoord + 1, elastBoxWidth - 3, elastBoxHeight - 2, undefined, "FAST");
                   }
 
-                  yCoord += boxHeight + 4;
+                  // Workstation footer label
+                  doc.setFont("helvetica", "bold");
+                  doc.setFontSize(5.5 * factor);
+                  doc.setTextColor(148, 163, 184); // slate-400
+                  doc.text("WORKSTATION BIOMETRÍA TISULAR 2D/3D • MAPEO CROMÁTICO DE IMPEDANCIA Y ATENUACIÓN ACÚSTICA", marginX + 3, yCoord + elastBoxHeight - 1.8);
 
-                  // Summary fields readouts
-                  checkPageBreak(18);
-                  doc.setFillColor(248, 250, 252);
-                  doc.setDrawColor(229, 231, 235);
-                  doc.roundedRect(20, yCoord, boxWidth, 12, 2, 2, "FD");
+                  yCoord += elastBoxHeight + 4.5 * factor;
+
+                  // 3. Clinical Metrics & Chromatic Indicator Cards
+                  const fibrosisStage = stiffnessOverride !== "auto"
+                    ? stiffnessOverride
+                    : (elastographyStiffness < 6.0 ? 'F0-F1' : elastographyStiffness < 8.0 ? 'F2' : elastographyStiffness < 12.5 ? 'F3' : 'F4');
+                  
+                  const fibrosisLabel = fibrosisStage === "F0-F1" ? "F0-F1 Normal / Sin Fibrosis"
+                    : fibrosisStage === "F2" ? "F2 Fibrosis Significativa"
+                    : fibrosisStage === "F3" ? "F3 Fibrosis Avanzada"
+                    : "F4 Cirrosis Hepática";
+
+                  const steatosisStage = steatosisOverride !== "auto"
+                    ? steatosisOverride
+                    : (fatFraction < 5.0 ? 'S0' : fatFraction <= 12.0 ? 'S1' : fatFraction <= 20.0 ? 'S2' : 'S3');
+
+                  const fatLevelLabel = steatosisStage === "S0" ? "S0 Normal (<5%)"
+                    : steatosisStage === "S1" ? "S1 Leve (5.0 - 12.0%)"
+                    : steatosisStage === "S2" ? "S2 Moderada (12.1 - 20.0%)"
+                    : "S3 Severa (>20.0%)";
+
+                  const numCards = elastographyHasStiffness ? 4 : 3;
+                  const cardGap = 2.5 * factor;
+                  const cardWidth = (contentWidth - cardGap * (numCards - 1)) / numCards;
+                  const cardHeight = 20 * factor;
+
+                  // Card 1: Rigidez Hepática (kPa)
+                  if (elastographyHasStiffness) {
+                    const card1X = marginX;
+                    const isNormalKPa = elastographyStiffness < 6.0;
+                    const isModKPa = elastographyStiffness >= 6.0 && elastographyStiffness < 8.0;
+                    const isAdvKPa = elastographyStiffness >= 8.0 && elastographyStiffness < 12.5;
+
+                    // Tinted card background
+                    if (isNormalKPa) {
+                      doc.setFillColor(240, 253, 244); // emerald-50
+                      doc.setDrawColor(187, 247, 208); // emerald-200
+                    } else if (isModKPa) {
+                      doc.setFillColor(254, 252, 232); // yellow-50
+                      doc.setDrawColor(254, 240, 138); // yellow-200
+                    } else if (isAdvKPa) {
+                      doc.setFillColor(255, 247, 237); // orange-50
+                      doc.setDrawColor(254, 215, 170); // orange-200
+                    } else {
+                      doc.setFillColor(255, 241, 242); // rose-50
+                      doc.setDrawColor(254, 205, 211); // rose-200
+                    }
+                    doc.setLineWidth(0.3);
+                    doc.roundedRect(card1X, yCoord, cardWidth, cardHeight, 1.5, 1.5, "FD");
+
+                    // Title
+                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(5.8 * factor);
+                    doc.setTextColor(100, 116, 139);
+                    doc.text("RIGIDEZ TISULAR (SWE)", card1X + 2.5, yCoord + 4 * factor);
+
+                    // Value
+                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(10 * factor);
+                    if (isNormalKPa) doc.setTextColor(21, 128, 61); // emerald-700
+                    else if (isModKPa) doc.setTextColor(161, 98, 7); // yellow-700
+                    else if (isAdvKPa) doc.setTextColor(194, 65, 12); // orange-700
+                    else doc.setTextColor(190, 18, 60); // rose-700
+                    doc.text(`${elastographyStiffness.toFixed(1)} kPa`, card1X + 2.5, yCoord + 9.5 * factor);
+
+                    // Staging Badge
+                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(5.5 * factor);
+                    doc.setTextColor(30, 41, 59);
+                    doc.text(`METAVIR: ${fibrosisStage}`, card1X + 2.5, yCoord + 13.8 * factor);
+
+                    // Reference Range
+                    doc.setFont("helvetica", "normal");
+                    doc.setFontSize(4.8 * factor);
+                    doc.setTextColor(100, 116, 139);
+                    doc.text("V.N. < 6.0 kPa • Corte F2: ≥ 7.0", card1X + 2.5, yCoord + 17.5 * factor);
+                  }
+
+                  // Card 2: Fracción Grasa Hepática (QUS %)
+                  const card2Idx = elastographyHasStiffness ? 1 : 0;
+                  const card2X = marginX + card2Idx * (cardWidth + cardGap);
+                  const isNormFat = fatFraction < 5.0;
+                  const isLeveFat = fatFraction >= 5.0 && fatFraction <= 12.0;
+                  const isModFat = fatFraction > 12.0 && fatFraction <= 20.0;
+
+                  if (isNormFat) {
+                    doc.setFillColor(240, 253, 244);
+                    doc.setDrawColor(187, 247, 208);
+                  } else if (isLeveFat) {
+                    doc.setFillColor(247, 254, 231); // lime-50
+                    doc.setDrawColor(217, 249, 157); // lime-200
+                  } else if (isModFat) {
+                    doc.setFillColor(254, 252, 232);
+                    doc.setDrawColor(254, 240, 138);
+                  } else {
+                    doc.setFillColor(255, 247, 237);
+                    doc.setDrawColor(254, 215, 170);
+                  }
+                  doc.setLineWidth(0.3);
+                  doc.roundedRect(card2X, yCoord, cardWidth, cardHeight, 1.5, 1.5, "FD");
 
                   doc.setFont("helvetica", "bold");
-                  doc.setFontSize(6.5);
-                  doc.setTextColor(51, 65, 85);
-                  
-                  const fibrosisLabel = stiffnessOverride !== "auto" 
-                    ? (stiffnessOverride === "F0-F1" ? "F0-F1 Normal" : stiffnessOverride === "F2" ? "F2 Moderada" : stiffnessOverride === "F3" ? "F3 Avanzada" : "F4 Cirrosis")
-                    : (elastographyStiffness < 6.0 ? 'F0-F1 Normal' : elastographyStiffness < 8.0 ? 'F2 Moderada' : elastographyStiffness < 12.5 ? 'F3 Avanzada' : 'F4 Cirrosis');
+                  doc.setFontSize(5.8 * factor);
+                  doc.setTextColor(100, 116, 139);
+                  doc.text("FRACCIÓN GRASA (QUS)", card2X + 2.5, yCoord + 4 * factor);
 
-                  const fatLevelLabel = fatFraction < 5.0 ? 'Normal' : fatFraction <= 12.0 ? 'Leve' : fatFraction <= 20.0 ? 'Moderado' : 'Severo';
+                  doc.setFont("helvetica", "bold");
+                  doc.setFontSize(10 * factor);
+                  if (isNormFat) doc.setTextColor(21, 128, 61);
+                  else if (isLeveFat) doc.setTextColor(77, 124, 15);
+                  else if (isModFat) doc.setTextColor(161, 98, 7);
+                  else doc.setTextColor(194, 65, 12);
+                  doc.text(`${fatFraction.toFixed(1)} %`, card2X + 2.5, yCoord + 9.5 * factor);
 
-                  const textkPa = `Rigidez Hepática: ${elastographyStiffness.toFixed(1)} kPa (${fibrosisLabel})`;
-                  const textQUS = `Grasa Hepática (QUS): ${fatFraction.toFixed(1)}% (${fatLevelLabel})`;
+                  doc.setFont("helvetica", "bold");
+                  doc.setFontSize(5.5 * factor);
+                  doc.setTextColor(30, 41, 59);
+                  doc.text(`Esteatosis: ${steatosisStage}`, card2X + 2.5, yCoord + 13.8 * factor);
 
-                  if (elastographyHasStiffness) {
-                    doc.text(textkPa, 24, yCoord + 7.0);
-                    doc.text(textQUS, 102, yCoord + 7.0);
-                  } else {
-                    doc.text(textQUS, 24, yCoord + 7.0);
+                  doc.setFont("helvetica", "normal");
+                  doc.setFontSize(4.8 * factor);
+                  doc.setTextColor(100, 116, 139);
+                  doc.text("V.N. < 5.0% (Consenso SRU)", card2X + 2.5, yCoord + 17.5 * factor);
+
+                  // Card 3: Atenuación Sonora Tisular (CAP)
+                  const card3Idx = elastographyHasStiffness ? 2 : 1;
+                  const card3X = marginX + card3Idx * (cardWidth + cardGap);
+                  doc.setFillColor(248, 250, 252);
+                  doc.setDrawColor(226, 232, 240);
+                  doc.setLineWidth(0.3);
+                  doc.roundedRect(card3X, yCoord, cardWidth, cardHeight, 1.5, 1.5, "FD");
+
+                  doc.setFont("helvetica", "bold");
+                  doc.setFontSize(5.8 * factor);
+                  doc.setTextColor(100, 116, 139);
+                  doc.text("ATENUACIÓN ACÚSTICA (CAP)", card3X + 2.5, yCoord + 4 * factor);
+
+                  doc.setFont("helvetica", "bold");
+                  doc.setFontSize(10 * factor);
+                  doc.setTextColor(14, 116, 144); // cyan-700
+                  doc.text(`${elastographyCAP} dB/m`, card3X + 2.5, yCoord + 9.5 * factor);
+
+                  doc.setFont("helvetica", "bold");
+                  doc.setFontSize(5.5 * factor);
+                  doc.setTextColor(30, 41, 59);
+                  doc.text(`Coeficiente: ${qusAttenuation.toFixed(2)} dB/cm/MHz`, card3X + 2.5, yCoord + 13.8 * factor);
+
+                  doc.setFont("helvetica", "normal");
+                  doc.setFontSize(4.8 * factor);
+                  doc.setTextColor(100, 116, 139);
+                  doc.text("Ref: S0 < 238 • S3 ≥ 290 dB/m", card3X + 2.5, yCoord + 17.5 * factor);
+
+                  // Card 4: Confiabilidad Técnica / Calidad
+                  const card4Idx = elastographyHasStiffness ? 3 : 2;
+                  const card4X = marginX + card4Idx * (cardWidth + cardGap);
+                  doc.setFillColor(248, 250, 252);
+                  doc.setDrawColor(226, 232, 240);
+                  doc.setLineWidth(0.3);
+                  doc.roundedRect(card4X, yCoord, cardWidth, cardHeight, 1.5, 1.5, "FD");
+
+                  doc.setFont("helvetica", "bold");
+                  doc.setFontSize(5.8 * factor);
+                  doc.setTextColor(100, 116, 139);
+                  doc.text("CONFIABILIDAD DE MUESTREO", card4X + 2.5, yCoord + 4 * factor);
+
+                  doc.setFont("helvetica", "bold");
+                  doc.setFontSize(10 * factor);
+                  doc.setTextColor(79, 70, 229); // indigo-600
+                  doc.text("IQR/med < 15%", card4X + 2.5, yCoord + 9.5 * factor);
+
+                  doc.setFont("helvetica", "bold");
+                  doc.setFontSize(5.5 * factor);
+                  doc.setTextColor(30, 41, 59);
+                  doc.text("10 Adquisiciones Válidas", card4X + 2.5, yCoord + 13.8 * factor);
+
+                  doc.setFont("helvetica", "normal");
+                  doc.setFontSize(4.8 * factor);
+                  doc.setTextColor(100, 116, 139);
+                  doc.text("Criterio EFSUMB/WFUMB: < 30%", card4X + 2.5, yCoord + 17.5 * factor);
+
+                  yCoord += cardHeight + 4.5 * factor;
+
+                  // 4. Correlated Clinical Narrative Interpretation Box
+                  const interpBoxHeight = 22 * factor;
+                  doc.setFillColor(248, 250, 252); // slate-50
+                  doc.setDrawColor(226, 232, 240); // slate-200
+                  doc.setLineWidth(0.3);
+                  doc.roundedRect(marginX, yCoord, contentWidth, interpBoxHeight, 1.5, 1.5, "FD");
+
+                  // Vertical cyan indicator bar on left
+                  doc.setFillColor(6, 182, 212); // cyan-500
+                  doc.rect(marginX, yCoord, 2, interpBoxHeight, "F");
+
+                  doc.setFont("helvetica", "bold");
+                  doc.setFontSize(6.5 * factor);
+                  doc.setTextColor(15, 23, 42); // slate-900
+                  doc.text("INTERPRETACIÓN MÉDICA INTEGRADA Y CORRELACIÓN HISTOTISULAR:", marginX + 5, yCoord + 4 * factor);
+
+                  doc.setFont("helvetica", "normal");
+                  doc.setFontSize(5.8 * factor);
+                  doc.setTextColor(51, 65, 85); // slate-700
+
+                  const interpFibrosis = elastographyHasStiffness
+                    ? `• Rigidez Tisular (${elastographyStiffness.toFixed(1)} kPa): Hallazgos compatibles con ${fibrosisLabel}. Muestra elasticidad acústica dentro de los márgenes predictivos para dicho estrato.`
+                    : "";
+                  const interpSteatosis = `• Fracción Grasa por QUS (${fatFraction.toFixed(1)}% / CAP ${elastographyCAP} dB/m): Hallazgos compatibles con ${fatLevelLabel}, reflejando atenuación por sobrecarga lipídica intracelular.`;
+                  const interpManagement = "• Correlación Clínica: Se sugiere contrastar con biomarcadores séricos (ALT/AST, FIB-4, APRI) y seguimiento sonográfico periódico según criterio clínico.";
+
+                  let interpY = yCoord + 7.8 * factor;
+                  if (interpFibrosis) {
+                    const fibLines = doc.splitTextToSize(interpFibrosis, contentWidth - 8);
+                    fibLines.forEach((fL: string) => {
+                      doc.text(fL, marginX + 5, interpY);
+                      interpY += 3.1 * factor;
+                    });
                   }
 
-                  yCoord += 16;
+                  const steatLines = doc.splitTextToSize(interpSteatosis, contentWidth - 8);
+                  steatLines.forEach((sL: string) => {
+                    doc.text(sL, marginX + 5, interpY);
+                    interpY += 3.1 * factor;
+                  });
+
+                  const mgmtLines = doc.splitTextToSize(interpManagement, contentWidth - 8);
+                  mgmtLines.forEach((mL: string) => {
+                    doc.text(mL, marginX + 5, interpY);
+                    interpY += 3.1 * factor;
+                  });
+
+                  yCoord += interpBoxHeight + 6 * factor;
                 } catch (e2) {
                   console.warn("Error drawing elastography SVG to PDF on conversion:", e2);
                 }
               }
             }
-          } catch (err) {
-            console.warn("Could not draw abdomen diagram inside jsPDF", err);
           }
-        }
-      }
 
 
 
@@ -15059,10 +15467,6 @@ Ejemplo:
 
 
       // 🛠️ DRAW VASCULAR DIAGRAM IN THE PROGRAMMATIC PDF
-      const isDopplerStudy = specificStudy === "Doppler de carótidas" || 
-                             specificStudy === "Doppler venoso de miembro inferior" || 
-                             specificStudy === "Doppler arterial de miembro inferior";
-
       if (includeVascularSchemaInReport && isDopplerStudy) {
         try {
           const isCarotidasForPDF = specificStudy.toLowerCase().includes("carót") || specificStudy.toLowerCase().includes("carot");
@@ -15932,6 +16336,414 @@ Ejemplo:
         }
       }
 
+      // --- 6.5. ANEXO: REPRESENTACIÓN ESQUEMÁTICA 3D DEL HALLAZGO ---
+      const active3dRenders = (studyOverride ? (studyOverride.findings3dRenders || []) : (pdfStateRef.current?.findings3dRenders || findings3dRenders || [])).filter((r: any) => r && r.includeInPdf !== false);
+
+      if (active3dRenders.length > 0) {
+        doc.addPage();
+        yCoord = 20;
+
+        // Title of 3D Annex
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(12 * factor);
+        doc.setTextColor(15, 23, 42); // slate-900
+        doc.text("ANEXO: REPRESENTACIÓN ESQUEMÁTICA 3D DEL HALLAZGO", marginX, yCoord);
+        yCoord += 4 * factor;
+
+        doc.setDrawColor(6, 182, 212); // Cyan 500
+        doc.setLineWidth(0.6);
+        doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
+        yCoord += 6 * factor;
+
+        // Subtitle disclaimer
+        doc.setFont("helvetica", "italic");
+        doc.setFontSize(7.5 * factor);
+        doc.setTextColor(100, 116, 139); // slate-500
+        const subtitleText = "Representación volumétrica tridimensional orientativa correlacionada con la ecografía 2D. Ilustración didáctica de alta resolución diseñada para facilitar la comprensión espacial y anatómica del hallazgo.";
+        const subLines = doc.splitTextToSize(subtitleText, contentWidth);
+        subLines.forEach((line: string) => {
+          doc.text(line, marginX, yCoord);
+          yCoord += 3.5 * factor;
+        });
+        yCoord += 4 * factor;
+
+        for (let rIdx = 0; rIdx < active3dRenders.length; rIdx++) {
+          const renderItem = active3dRenders[rIdx];
+          const hasSourceImg = !!renderItem.sourceImageBase64;
+          const isDual = !!renderItem.render3dMacroBase64;
+          const isGrid2x2 = isDual && renderItem.pdfLayout === "grid2x2";
+          
+          // Check if space remains on page
+          const requiredHeight = isGrid2x2 ? 115 : (isDual ? 95 : 90);
+          if (yCoord > pageHeight - requiredHeight) {
+            doc.addPage();
+            yCoord = 20;
+          }
+
+          // Card header with Title and Badge (prevent text overlap)
+          const badgeText = isDual ? "RENDER 3D DUAL: FOCAL + TOPOGRÁFICO" : "RENDER VOLUMÉTRICO DIDÁCTICO";
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(7 * factor);
+          const badgeWidth = (doc as any).getTextWidth ? (doc as any).getTextWidth(badgeText) : 52;
+          const maxTitleWidth = contentWidth - badgeWidth - 10;
+
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8.5 * factor);
+          const titleText = renderItem.title || `Ilustración 3D del Hallazgo #${rIdx + 1}`;
+          const titleLines = doc.splitTextToSize(titleText, maxTitleWidth);
+          const headerHeight = Math.max(7, titleLines.length * 4 + 2) * factor;
+
+          doc.setFillColor(241, 245, 249); // slate-100
+          doc.setDrawColor(203, 213, 225); // slate-300
+          doc.setLineWidth(0.3);
+          doc.roundedRect(marginX, yCoord, contentWidth, headerHeight, 1.5, 1.5, "FD");
+
+          let curTitleY = yCoord + 4.5 * factor;
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8.5 * factor);
+          doc.setTextColor(15, 23, 42);
+          titleLines.forEach((tLine: string) => {
+            doc.text(tLine, marginX + 3, curTitleY);
+            curTitleY += 3.8 * factor;
+          });
+
+          // Badge
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(7 * factor);
+          doc.setTextColor(14, 116, 144); // cyan-700
+          doc.text(badgeText, pageWidth - marginX - badgeWidth - 3, yCoord + 4.5 * factor);
+          yCoord += headerHeight + 3.5 * factor;
+
+          const imageRowY = yCoord;
+
+          if (isGrid2x2) {
+            // ==========================================
+            // OPTION B: CUADRÍCULA 2x2 (GRID LAYOUT)
+            // ==========================================
+            const pairWidth = (contentWidth - 6) / 2;
+            const pairHeight = pairWidth * 0.75;
+
+            // Row 1 - Left: 2D Ecografía
+            try {
+              if (renderItem.sourceImageBase64) {
+                doc.addImage(renderItem.sourceImageBase64, "JPEG", marginX, imageRowY, pairWidth, pairHeight, undefined, "FAST");
+              }
+              doc.setDrawColor(148, 163, 184);
+              doc.setLineWidth(0.3);
+              doc.rect(marginX, imageRowY, pairWidth, pairHeight);
+              
+              doc.setFillColor(15, 23, 42);
+              doc.rect(marginX, imageRowY + pairHeight - 5, pairWidth, 5, "F");
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(6.5);
+              doc.setTextColor(255, 255, 255);
+              doc.text("1. ECOGRAFÍA 2D ORIGINAL", marginX + 2, imageRowY + pairHeight - 1.5);
+            } catch (err2d) {
+              doc.setDrawColor(203, 213, 225);
+              doc.rect(marginX, imageRowY, pairWidth, pairHeight);
+            }
+
+            // Row 1 - Right: 3D Focal Render
+            try {
+              doc.addImage(renderItem.render3dBase64, "PNG", marginX + pairWidth + 6, imageRowY, pairWidth, pairHeight, undefined, "FAST");
+              doc.setDrawColor(6, 182, 212);
+              doc.setLineWidth(0.5);
+              doc.rect(marginX + pairWidth + 6, imageRowY, pairWidth, pairHeight);
+
+              doc.setFillColor(8, 51, 68); // cyan-950
+              doc.rect(marginX + pairWidth + 6, imageRowY + pairHeight - 5, pairWidth, 5, "F");
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(6.5);
+              doc.setTextColor(103, 232, 249); // cyan-300
+              doc.text("2. RENDER 3D FOCAL (DETALLE)", marginX + pairWidth + 8, imageRowY + pairHeight - 1.5);
+            } catch (err3dFocal) {
+              doc.setDrawColor(203, 213, 225);
+              doc.rect(marginX + pairWidth + 6, imageRowY, pairWidth, pairHeight);
+            }
+
+            const row2Y = imageRowY + pairHeight + 4;
+
+            // Row 2 - Left: 3D Macro Panoramic Render
+            try {
+              doc.addImage(renderItem.render3dMacroBase64!, "PNG", marginX, row2Y, pairWidth, pairHeight, undefined, "FAST");
+              doc.setDrawColor(99, 102, 241);
+              doc.setLineWidth(0.5);
+              doc.rect(marginX, row2Y, pairWidth, pairHeight);
+
+              doc.setFillColor(30, 27, 75); // indigo-950
+              doc.rect(marginX, row2Y + pairHeight - 5, pairWidth, 5, "F");
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(6.5);
+              doc.setTextColor(199, 210, 254); // indigo-200
+              doc.text("3. VISTA MACRO TOPOGRÁFICA", marginX + 2, row2Y + pairHeight - 1.5);
+            } catch (err3dMacro) {
+              doc.setDrawColor(203, 213, 225);
+              doc.rect(marginX, row2Y, pairWidth, pairHeight);
+            }
+
+            // Row 2 - Right: Structured Text Box side-by-side
+            const textPanelX = marginX + pairWidth + 6;
+            const findingLabel = `Hallazgo: ${renderItem.findingDescription || "No especificado"}`;
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7 * factor);
+            const findingLines = doc.splitTextToSize(findingLabel, pairWidth - 6);
+
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(6.8 * factor);
+            const explLines = doc.splitTextToSize(renderItem.explanation || "", pairWidth - 6);
+
+            const textContentHeight = (findingLines.length * 3.2 + explLines.length * 3.2 + 8) * factor;
+            const rightBoxHeight = Math.max(pairHeight, textContentHeight);
+
+            doc.setFillColor(248, 250, 252);
+            doc.setDrawColor(226, 232, 240);
+            doc.setLineWidth(0.3);
+            doc.roundedRect(textPanelX, row2Y, pairWidth, rightBoxHeight, 1.5, 1.5, "FD");
+
+            let textInnerY = row2Y + 4 * factor;
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7 * factor);
+            doc.setTextColor(30, 41, 59);
+            findingLines.forEach((fl: string) => {
+              doc.text(fl, textPanelX + 3, textInnerY);
+              textInnerY += 3.2 * factor;
+            });
+
+            textInnerY += 1.5 * factor;
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(6.8 * factor);
+            doc.setTextColor(51, 65, 85);
+            explLines.forEach((el: string) => {
+              doc.text(el, textPanelX + 3, textInnerY);
+              textInnerY += 3.2 * factor;
+            });
+
+            yCoord = row2Y + Math.max(pairHeight, rightBoxHeight) + 8 * factor;
+
+          } else if (isDual) {
+            // ==========================================
+            // OPTION A: TRÍPTICO HORIZONTAL (3 COLUMNS)
+            // ==========================================
+            const colWidth = (contentWidth - 8) / 3;
+            const colHeight = colWidth * 0.75;
+
+            // Col 1: 2D Ecografía
+            try {
+              if (renderItem.sourceImageBase64) {
+                doc.addImage(renderItem.sourceImageBase64, "JPEG", marginX, imageRowY, colWidth, colHeight, undefined, "FAST");
+              }
+              doc.setDrawColor(148, 163, 184);
+              doc.setLineWidth(0.3);
+              doc.rect(marginX, imageRowY, colWidth, colHeight);
+              
+              doc.setFillColor(15, 23, 42);
+              doc.rect(marginX, imageRowY + colHeight - 4.5, colWidth, 4.5, "F");
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(5.8);
+              doc.setTextColor(255, 255, 255);
+              doc.text("1. ECOGRAFÍA 2D", marginX + 1.5, imageRowY + colHeight - 1.2);
+            } catch (err2d) {
+              doc.setDrawColor(203, 213, 225);
+              doc.rect(marginX, imageRowY, colWidth, colHeight);
+            }
+
+            // Col 2: 3D Focal
+            const col2X = marginX + colWidth + 4;
+            try {
+              doc.addImage(renderItem.render3dBase64, "PNG", col2X, imageRowY, colWidth, colHeight, undefined, "FAST");
+              doc.setDrawColor(6, 182, 212);
+              doc.setLineWidth(0.5);
+              doc.rect(col2X, imageRowY, colWidth, colHeight);
+
+              doc.setFillColor(8, 51, 68);
+              doc.rect(col2X, imageRowY + colHeight - 4.5, colWidth, 4.5, "F");
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(5.8);
+              doc.setTextColor(103, 232, 249);
+              doc.text("2. 3D FOCAL (DETALLE)", col2X + 1.5, imageRowY + colHeight - 1.2);
+            } catch (err3dFocal) {
+              doc.setDrawColor(203, 213, 225);
+              doc.rect(col2X, imageRowY, colWidth, colHeight);
+            }
+
+            // Col 3: 3D Macro
+            const col3X = marginX + (colWidth + 4) * 2;
+            try {
+              doc.addImage(renderItem.render3dMacroBase64!, "PNG", col3X, imageRowY, colWidth, colHeight, undefined, "FAST");
+              doc.setDrawColor(99, 102, 241);
+              doc.setLineWidth(0.5);
+              doc.rect(col3X, imageRowY, colWidth, colHeight);
+
+              doc.setFillColor(30, 27, 75);
+              doc.rect(col3X, imageRowY + colHeight - 4.5, colWidth, 4.5, "F");
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(5.8);
+              doc.setTextColor(199, 210, 254);
+              doc.text("3. 3D PANORÁMICO (MACRO)", col3X + 1.5, imageRowY + colHeight - 1.2);
+            } catch (err3dMacro) {
+              doc.setDrawColor(203, 213, 225);
+              doc.rect(col3X, imageRowY, colWidth, colHeight);
+            }
+
+            yCoord += colHeight + 4 * factor;
+
+            // Full-width Structured text block below 3-columns
+            const findingLabel = `Hallazgo Ecográfico Base: ${renderItem.findingDescription || "No especificado"}`;
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5 * factor);
+            const findingLines = doc.splitTextToSize(findingLabel, contentWidth - 6);
+
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(7.5 * factor);
+            const explLines = doc.splitTextToSize(renderItem.explanation || "", contentWidth - 6);
+
+            const boxHeight = (findingLines.length * 3.5 + explLines.length * 3.5 + 8) * factor;
+
+            if (yCoord + boxHeight > pageHeight - 15) {
+              doc.addPage();
+              yCoord = 20;
+            }
+
+            doc.setFillColor(248, 250, 252);
+            doc.setDrawColor(226, 232, 240);
+            doc.setLineWidth(0.3);
+            doc.roundedRect(marginX, yCoord, contentWidth, boxHeight, 1.5, 1.5, "FD");
+
+            let textInnerY = yCoord + 4 * factor;
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5 * factor);
+            doc.setTextColor(30, 41, 59);
+            findingLines.forEach((fl: string) => {
+              doc.text(fl, marginX + 3, textInnerY);
+              textInnerY += 3.5 * factor;
+            });
+
+            textInnerY += 1.5 * factor;
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(7.5 * factor);
+            doc.setTextColor(51, 65, 85);
+            explLines.forEach((el: string) => {
+              doc.text(el, marginX + 3, textInnerY);
+              textInnerY += 3.5 * factor;
+            });
+
+            yCoord += boxHeight + 8 * factor;
+
+          } else {
+            // ==========================================
+            // SINGLE 3D RENDER (CLASSIC LAYOUT)
+            // ==========================================
+            if (hasSourceImg) {
+              const pairWidth = (contentWidth - 6) / 2;
+              const pairHeight = pairWidth * 0.75;
+
+              // Left: 2D Ecografía
+              try {
+                doc.addImage(renderItem.sourceImageBase64, "JPEG", marginX, imageRowY, pairWidth, pairHeight, undefined, "FAST");
+                doc.setDrawColor(148, 163, 184);
+                doc.setLineWidth(0.3);
+                doc.rect(marginX, imageRowY, pairWidth, pairHeight);
+                
+                // Caption banner
+                doc.setFillColor(15, 23, 42);
+                doc.rect(marginX, imageRowY + pairHeight - 5, pairWidth, 5, "F");
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(6.5);
+                doc.setTextColor(255, 255, 255);
+                doc.text("ECOGRAFÍA 2D ORIGINAL", marginX + 2, imageRowY + pairHeight - 1.5);
+              } catch (err2d) {
+                doc.setDrawColor(203, 213, 225);
+                doc.rect(marginX, imageRowY, pairWidth, pairHeight);
+                doc.setFont("helvetica", "italic");
+                doc.setFontSize(7.5);
+                doc.setTextColor(148, 163, 184);
+                doc.text("Captura 2D de referencia", marginX + 4, imageRowY + pairHeight / 2);
+              }
+
+              // Right: 3D Volumetric Render
+              try {
+                doc.addImage(renderItem.render3dBase64, "PNG", marginX + pairWidth + 6, imageRowY, pairWidth, pairHeight, undefined, "FAST");
+                doc.setDrawColor(6, 182, 212);
+                doc.setLineWidth(0.5);
+                doc.rect(marginX + pairWidth + 6, imageRowY, pairWidth, pairHeight);
+
+                // Caption banner
+                doc.setFillColor(8, 51, 68); // cyan-950
+                doc.rect(marginX + pairWidth + 6, imageRowY + pairHeight - 5, pairWidth, 5, "F");
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(6.5);
+                doc.setTextColor(103, 232, 249); // cyan-300
+                doc.text("RECONSTRUCCIÓN ESQUEMÁTICA 3D", marginX + pairWidth + 8, imageRowY + pairHeight - 1.5);
+              } catch (err3d) {
+                doc.setDrawColor(203, 213, 225);
+                doc.rect(marginX + pairWidth + 6, imageRowY, pairWidth, pairHeight);
+              }
+
+              yCoord += pairHeight + 4;
+            } else {
+              // Single wide 3D render
+              const singleWidth = Math.min(contentWidth * 0.7, 120);
+              const singleHeight = singleWidth * 0.75;
+              const singleX = marginX + (contentWidth - singleWidth) / 2;
+
+              try {
+                doc.addImage(renderItem.render3dBase64, "PNG", singleX, imageRowY, singleWidth, singleHeight, undefined, "FAST");
+                doc.setDrawColor(6, 182, 212);
+                doc.setLineWidth(0.5);
+                doc.rect(singleX, imageRowY, singleWidth, singleHeight);
+              } catch (errSingle) {}
+
+              yCoord += singleHeight + 4;
+            }
+
+            // Measure explanation height
+            const findingLabel = `Hallazgo Ecográfico Base: ${renderItem.findingDescription || "No especificado"}`;
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5 * factor);
+            const findingLines = doc.splitTextToSize(findingLabel, contentWidth - 6);
+
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(7.5 * factor);
+            const explLines = doc.splitTextToSize(renderItem.explanation || "", contentWidth - 6);
+
+            const boxHeight = (findingLines.length * 3.5 + explLines.length * 3.5 + 8) * factor;
+
+            // Check if box fits or needs new page
+            if (yCoord + boxHeight > pageHeight - 15) {
+              doc.addPage();
+              yCoord = 20;
+            }
+
+            // Set fill and draw colors AFTER potential addPage() to prevent jsPDF from resetting fill to black
+            doc.setFillColor(248, 250, 252); // slate-50 light background
+            doc.setDrawColor(226, 232, 240); // slate-200
+            doc.setLineWidth(0.3);
+
+            doc.roundedRect(marginX, yCoord, contentWidth, boxHeight, 1.5, 1.5, "FD");
+            let textInnerY = yCoord + 4 * factor;
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5 * factor);
+            doc.setTextColor(30, 41, 59); // slate-800
+            findingLines.forEach((fl: string) => {
+              doc.text(fl, marginX + 3, textInnerY);
+              textInnerY += 3.5 * factor;
+            });
+
+            textInnerY += 1.5 * factor;
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(7.5 * factor);
+            doc.setTextColor(51, 65, 85); // slate-700
+            explLines.forEach((el: string) => {
+              doc.text(el, marginX + 3, textInnerY);
+              textInnerY += 3.5 * factor;
+            });
+
+            yCoord += boxHeight + 8 * factor;
+          }
+        }
+      }
+
       // --- 7. DIAGNÓSTICO AVANZADO Y ANÁLISIS DEL CASO ---
       if (caseAnalysisBlocks.length > 0) {
         doc.addPage();
@@ -16702,7 +17514,7 @@ Ejemplo:
         pdfStateRef.current.biomechanicalRadarData || biomechanicalRadarData
       );
 
-      if (radarDataToRender && radarDataToRender.axes && radarDataToRender.axes.length > 0) {
+      if (includeRadarInReport && radarDataToRender && radarDataToRender.axes && radarDataToRender.axes.length > 0) {
         doc.addPage();
         yCoord = 21 * factor;
 
@@ -16710,19 +17522,7 @@ Ejemplo:
         doc.setFont("helvetica", "bold");
         doc.setFontSize(11 * factor);
         doc.setTextColor(15, 23, 42); // slate 900
-        const headerTitleText = isCholecystitisRadar(radarDataToRender)
-          ? "ANEXO: RADAR MULTIVECTORIAL DE COLECISTITIS AGUDA (ANÁLISIS 6D)"
-          : isHepaticRadar(radarDataToRender)
-          ? "ANEXO: RADAR MULTIVECTORIAL DE VALORACIÓN HEPÁTICA (ANÁLISIS 6D)"
-          : isKneeOaRadar(radarDataToRender)
-          ? "ANEXO: RADAR MULTIVECTORIAL DE ARTROSIS DE RODILLA (ANÁLISIS 6D)"
-          : isRotatorCuffRadar(radarDataToRender)
-          ? "ANEXO: RADAR MULTIVECTORIAL DE MANGUITO ROTADOR (ANÁLISIS 6D)"
-          : isOncologyRadar(radarDataToRender)
-          ? "ANEXO: RADAR MULTIVECTORIAL ONCOLÓGICO Y TUMORAL (ANÁLISIS 6D)"
-          : isVisceralRadar(radarDataToRender)
-          ? "ANEXO: RADAR MULTIVECTORIAL Y VISCERO-INFLAMATORIO (ANÁLISIS 6D)"
-          : "ANEXO: RADAR BIOMECÁNICO E INFLAMATORIO (ANÁLISIS MULTIVECTOR 6D)";
+        const headerTitleText = getRadarTitle(radarDataToRender);
         doc.text(headerTitleText, marginX, yCoord);
 
         yCoord += 4 * factor;
@@ -16779,7 +17579,7 @@ Ejemplo:
           doc.setFontSize(7.0 * factor);
           doc.setTextColor(30, 41, 59); // slate 800
 
-          const cleanLabel = getShortRadarAxisLabel(axis.label);
+          const cleanLabel = getShortRadarAxisLabel(axis.label, radarDataToRender?.radarMode);
           let textAlign: "left" | "right" | "center" = "center";
           let labelX = lblPt.x;
           let labelY = lblPt.y;
@@ -16919,7 +17719,7 @@ Ejemplo:
           doc.roundedRect(cardX, cardY, colW, 7.8 * factor, 1, 1, "FD");
 
           doc.setFont("helvetica", "bold");
-          const displayLabel = getShortRadarAxisLabel(axis.label);
+          const displayLabel = getShortRadarAxisLabel(axis.label, radarDataToRender?.radarMode);
           const maxLabelWidth = colW - 13 * factor;
           
           let labelFontSize = 7.5;
@@ -21450,7 +22250,7 @@ Ejemplo:
 
 
   const renderPrintScrotumSchema = () => {
-    if (!includeScrotumSchemaInReport || specificStudy !== "Escroto") return null;
+    if (!includeScrotumSchemaInReport || (specificStudy !== "Escroto" && activeProtocol !== "Escroto" && !/escrot|testic/i.test(specificStudy || ""))) return null;
 
     const preprocessSvgForPrint = (svgElement: HTMLElement) => {
       let outerSvg = svgElement.outerHTML;
@@ -22471,15 +23271,20 @@ const splitReportSections = (text: string) => {
     }
 
     const isHeaderMarker = /^\s*(?:#{1,6}\s+|\*\*\s*|---|—)/.test(trimmed) || upper.startsWith("ANEXO:");
-    const isCuadro = isHeaderMarker && /^\s*(?:#{1,6}\s*|\*\*|---)*\s*(?:ESQUEMA\s+CLÍNICO\s+DE\s+HALLAZGOS\s+PRINCIPALES|CUADRO\s+SINÓPTICO|MATRIZ\s+SEMIÓTICA|SINOPSIS\s+DE\s+FRACTURAS)\b/i.test(trimmed);
-    const isOrgan = isHeaderMarker && /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:SINOPSIS\s+CLÍNICA|SINOPSIS\s+POR\s+ÓRGANO|SINOPSIS\s+DE\s+ÓRGANO)\b/i.test(trimmed) && !isCuadro;
+    const isImpression = /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:IMPRESI[OÓ]N\s+DIAGN[OÓ]STICA|IMPRESI[OÓ]N\b|CONCLUSI[OÓ]N|CONCLUSIONES|DIAGN[OÓ]STICO|DIAGN[OÓ]STICOS)\b/i.test(trimmed) ||
+                         upper.includes("IMPRESIÓN DIAGNÓSTICA") || upper.includes("IMPRESION DIAGNOSTICA") ||
+                         upper.includes("CONCLUSIÓN:") || upper.includes("CONCLUSIONES:");
+    const isCuadro = isHeaderMarker && /^\s*(?:#{1,6}\s*|\*\*|---)*\s*(?:ESQUEMA\s+CLÍNICO\s+DE\s+HALLAZGOS\s+PRINCIPALES|CUADRO\s+SINÓPTICO|MATRIZ\s+SEMIÓTICA|SINOPSIS\s+DE\s+FRACTURAS)\b/i.test(trimmed) && !isImpression;
+    const isOrgan = isHeaderMarker && /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:SINOPSIS\s+CLÍNICA|SINOPSIS\s+POR\b|SINOPSIS\s+DE\b|SINOPSIS\s+ESTRUCTURADA\b)/i.test(trimmed) && !isCuadro && !isImpression;
     const isAnnex = isHeaderMarker && (trimmed.includes("ANEXO DIAGNÓSTICO") || 
                     trimmed.includes("DESGLOSE Y JUSTIFICACIÓN DE CLASIFICACIÓN") || 
                     trimmed.includes("DESGLOSE Y JUSTIFICACIÓN") ||
                     trimmed.includes("CLASIFICACIÓN DE") ||
-                    /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:ANEXO|CLASIFICACI[OÓ]N)\b/i.test(trimmed)) && !isCuadro && !isOrgan;
+                    /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:ANEXO|CLASIFICACI[OÓ]N)\b/i.test(trimmed)) && !isCuadro && !isOrgan && !isImpression;
 
-    if (isCuadro) {
+    if (isImpression) {
+      currentTarget = "main";
+    } else if (isCuadro) {
       currentTarget = "cuadro";
     } else if (isOrgan) {
       currentTarget = "organ";
@@ -22498,45 +23303,167 @@ const splitReportSections = (text: string) => {
     }
   });
 
+  // Post-processing pass: Any paragraph trapped in annex/cuadro/organ that starts an Impression section gets restored to mainBuf
+  const isImpressionText = (pText: string) => {
+    const pUpper = pText.toUpperCase();
+    return (
+      pUpper.includes("IMPRESIÓN DIAGNÓSTICA") ||
+      pUpper.includes("IMPRESION DIAGNOSTICA") ||
+      pUpper.includes("CONCLUSIÓN:") ||
+      pUpper.includes("CONCLUSIONES:") ||
+      /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:IMPRESI[OÓ]N|CONCLUSI[OÓ]N|CONCLUSIONES|DIAGN[OÓ]STICO)\b/i.test(pText)
+    );
+  };
+
+  const recoverImpressionFromBuf = (buf: string[]) => {
+    for (let i = 0; i < buf.length; ) {
+      if (isImpressionText(buf[i])) {
+        const recovered = buf.splice(i, buf.length - i);
+        mainBuf.push(...recovered);
+        break;
+      } else {
+        i++;
+      }
+    }
+  };
+
+  recoverImpressionFromBuf(cuadroBuf);
+  recoverImpressionFromBuf(organBuf);
+  recoverImpressionFromBuf(annexBuf);
+
+  // If there are organ synopsis paragraphs, insert them into mainBuf right after IMPRESIÓN DIAGNÓSTICA (or CONCLUSIÓN)
+  if (organBuf.length > 0) {
+    let insertedIndex = -1;
+    for (let i = 0; i < mainBuf.length; i++) {
+      const pUpper = mainBuf[i].toUpperCase();
+      if (
+        pUpper.includes("IMPRESIÓN DIAGNÓSTICA") ||
+        pUpper.includes("IMPRESION DIAGNOSTICA") ||
+        pUpper.includes("CONCLUSIÓN") ||
+        pUpper.includes("CONCLUSION") ||
+        pUpper.includes("CONCLUSIONES")
+      ) {
+        let j = i + 1;
+        while (j < mainBuf.length) {
+          const nextUpper = mainBuf[j].toUpperCase();
+          const isNextHeader = /^\s*(?:#{1,6}\s+|\*\*\s*|---|—)/.test(mainBuf[j]) || nextUpper.startsWith("ANEXO:");
+          if (isNextHeader) {
+            break;
+          }
+          j++;
+        }
+        insertedIndex = j;
+        break;
+      }
+    }
+
+    if (insertedIndex !== -1) {
+      mainBuf.splice(insertedIndex, 0, ...organBuf);
+    } else {
+      mainBuf.push(...organBuf);
+    }
+  }
+
   return {
     mainReport: mainBuf.join("\n\n").trim(),
     cuadroSinopticoReport: cuadroBuf.join("\n\n").trim(),
-    organSynopsisReport: organBuf.join("\n\n").trim(),
+    organSynopsisReport: "",
     annexReport: annexBuf.join("\n\n").trim(),
   };
+};
+
+const isKneeTraumaRadar = (data: any) => {
+  if (!data) return false;
+  if (data.radarMode === "knee_trauma" || data.radarMode === "trauma_rodilla") return true;
+  if (data.radarMode && data.radarMode !== "auto") return false;
+  const str = JSON.stringify(data).toLowerCase();
+  return /trauma.*rodilla|colateral.*medial|lcm|mcl|colateral.*lateral|lcl|fcl|pata.*ganso|pes.*anserinus|ligamento.*patelar|fosa.*popl[ií]tea/i.test(str);
+};
+
+const isAnkleTraumaRadar = (data: any) => {
+  if (!data) return false;
+  if (data.radarMode === "ankle_trauma" || data.radarMode === "esguince_tobillo" || data.radarMode === "trauma_tobillo") return true;
+  if (data.radarMode && data.radarMode !== "auto") return false;
+  const str = JSON.stringify(data).toLowerCase();
+  return /tobillo|esguince|lpaa|atfl|lpc|cfl|deltoid|tibioastragal|sindesmosis/i.test(str);
 };
 
 const isCholecystitisRadar = (data: any) => {
   if (!data) return false;
   if (data.radarMode === "cholecystitis" || data.radarMode === "colecistitis") return true;
+  if (data.radarMode && data.radarMode !== "auto") return false;
   const str = JSON.stringify(data).toLowerCase();
   return /colecist|ves[ií]cula|murphy|hidrocolecisto|hidrops.*vesic|bacinete|engrosamiento.*pared|vascularidad.*parietal/i.test(str);
+};
+
+const isAppendicitisRadar = (data: any) => {
+  if (!data) return false;
+  if (data.radarMode === "appendicitis" || data.radarMode === "apendicitis") return true;
+  if (data.radarMode && data.radarMode !== "auto") return false;
+  const str = JSON.stringify(data).toLowerCase();
+  return /apendic|ap[eé]ndice|fecalito|apendicolito|fosa.*il[ií]aca.*derecha|fid|signo.*diana|target.*sign|mesoap[eé]ndice/i.test(str);
+};
+
+const isMuscleInjuryRadar = (data: any) => {
+  if (!data) return false;
+  if (data.radarMode === "muscle_injury" || data.radarMode === "lesiones_musculares") return true;
+  if (data.radarMode && data.radarMode !== "auto") return false;
+  const str = JSON.stringify(data).toLowerCase();
+  return /desgarro.*muscular|desgarro.*fibrilar|lesi[oó]n.*muscular|peetrons|hematoma.*intramuscular|uni[oó]n.*miotendinosa|\bmtj\b|rectocuadricipital|isquiotibial|gemelo|s[oó]leo|aductor|b[ií]ceps.*femoral|avulsi[oó]n.*tendinosa|edema.*intramuscular/i.test(str);
+};
+
+const isThyroidRadar = (data: any) => {
+  if (!data) return false;
+  if (data.radarMode === "thyroid" || data.radarMode === "tiroides" || data.radarMode === "valoracion_tiroidea") return true;
+  if (data.radarMode && data.radarMode !== "auto") return false;
+  const str = JSON.stringify(data).toLowerCase();
+  return /tiroides|tiroideo|tirads|tiroiditis|hashimoto|graves|bocio|inferno.*tiroid|n[oó]dulo.*tiroid/i.test(str);
 };
 
 const isHepaticRadar = (data: any) => {
   if (!data) return false;
   if (data.radarMode === "hepatic" || data.radarMode === "valoracion_hepatica") return true;
+  if (data.radarMode && data.radarMode !== "auto") return false;
   const str = JSON.stringify(data).toLowerCase();
-  return /h[ií]gado|hep[aá]tic|elastograf|esteatosis|qus|ati|ugap|vena porta|ascitis|cirros|hepatopat|swe|kpa|hepatomegal|chc|lirads/i.test(str);
+  return /tamano_forma.*vascularidad.*elasticidad|apariencia_parenquima.*infiltracion_grasa|esteatosis_hepatica|rigidez_hepatica|patron_parenquimato_superficial|diametro_portal_flujo|esplenomegalia_ascitis|estigmas_hipertension_portal|h[ií]gado.*cirros|cirrosis.*hep[aá]tic|hepatopat[ií]a.*cr[oó]nic/i.test(str);
+};
+
+const isRenalRadar = (data: any) => {
+  if (!data) return false;
+  if (data.radarMode === "renal" || data.radarMode === "valoracion_renal") return true;
+  if (data.radarMode && data.radarMode !== "auto") return false;
+  const str = JSON.stringify(data).toLowerCase();
+  return /tamano_renal|grosor_cortical|procesos_obstructivos|hidronefrosis|corteza_renal|c[aá]liz|seno_renal|ri[nñ][oó]n|ectasia.*pi[eé]lica|uropat[ií]a/i.test(str);
+};
+
+const isScrotalRadar = (data: any) => {
+  if (!data) return false;
+  if (data.radarMode === "scrotal" || data.radarMode === "valoracion_escrotal" || data.radarMode === "escroto" || data.radarMode === "testicular") return true;
+  if (data.radarMode && data.radarMode !== "auto") return false;
+  const str = JSON.stringify(data).toLowerCase();
+  return /tamano_testicular|vascularidad_testicular|integridad_epididimos|varicocele|hidrocele|escrot|test[ií]cul|epid[ií]dim/i.test(str);
 };
 
 const isKneeOaRadar = (data: any) => {
   if (!data) return false;
   if (data.radarMode === "knee_oa" || data.radarMode === "artrosis_rodilla") return true;
+  if (data.radarMode && data.radarMode !== "auto") return false;
   const str = JSON.stringify(data).toLowerCase();
-  return /artrosis.*rodilla|rodilla.*artros|gonartros|femorotibial|cart[ií]lago troclear|meniscopat|hidrartrosis|osteofito/i.test(str);
+  return /artrosis.*rodilla|rodilla.*artros|gonartros|pinzamiento_articular|cartilago_troclear|meniscopat[ií]a|entesopat[ií]a_periarticular/i.test(str);
 };
 
 const isRotatorCuffRadar = (data: any) => {
   if (!data) return false;
-  if (data.radarMode === "rotator_cuff") return true;
+  if (data.radarMode === "rotator_cuff" || data.radarMode === "manguito_rotador") return true;
+  if (data.radarMode && data.radarMode !== "auto") return false;
   const str = JSON.stringify(data).toLowerCase();
   return /manguito|supraespinoso|infraespinoso|subescapular|bursitis subacrom|b[ií]ceps|tclb|pinzamiento/i.test(str);
 };
 
 const isOncologyRadar = (data: any) => {
   if (!data) return false;
-  if (data.radarMode === "oncology") return true;
+  if (data.radarMode === "oncology" || data.radarMode === "oncologia") return true;
+  if (data.radarMode && data.radarMode !== "auto") return false;
   const str = JSON.stringify(data).toLowerCase();
   return /oncolog|c[aá]ncer|malign|n[oó]dulo|carcinom|neoplas|metast|birads|lirads|bosniak|ti-rads|neoangiog/i.test(str);
 };
@@ -22544,56 +23471,225 @@ const isOncologyRadar = (data: any) => {
 const isVisceralRadar = (data: any) => {
   if (!data) return false;
   if (data.radarMode === "visceral") return true;
+  if (data.radarMode && data.radarMode !== "auto") return false;
   const str = JSON.stringify(data).toLowerCase();
   return /diverticul|pancreat|apendic|colecist|pielonefr|absceso|mama|viscer|órgano|organo|periton|parenquim|flem[oó]n|digestiv|renal|hep[aá]tic|prostat|ginecol/i.test(str);
 };
 
-const getShortRadarAxisLabel = (label: string) => {
+const getRadarTitle = (data: any): string => {
+  if (!data) return "ANEXO: RADAR BIOMECÁNICO E INFLAMATORIO (ANÁLISIS MULTIVECTOR 6D)";
+
+  const mode = (data.radarMode || "").toString().toLowerCase().trim();
+  if (mode === "scrotal" || mode === "valoracion_escrotal" || mode === "escroto" || mode === "testicular") return "ANEXO: RADAR MULTIVECTORIAL DE VALORACIÓN ESCROTAL / TESTICULAR (ANÁLISIS 6D)";
+  if (mode === "renal" || mode === "valoracion_renal") return "ANEXO: RADAR MULTIVECTORIAL DE VALORACIÓN RENAL (ANÁLISIS 6D)";
+  if (mode === "hepatic" || mode === "valoracion_hepatica") return "ANEXO: RADAR MULTIVECTORIAL DE VALORACIÓN HEPÁTICA (ANÁLISIS 6D)";
+  if (mode === "thyroid" || mode === "tiroides" || mode === "valoracion_tiroidea") return "ANEXO: RADAR MULTIVECTORIAL DE VALORACIÓN TIROIDEA (ANÁLISIS 6D)";
+  if (mode === "knee_oa" || mode === "artrosis_rodilla") return "ANEXO: RADAR MULTIVECTORIAL DE ARTROSIS DE RODILLA (ANÁLISIS 6D)";
+  if (mode === "rotator_cuff" || mode === "manguito_rotador") return "ANEXO: RADAR MULTIVECTORIAL DE MANGUITO ROTADOR (ANÁLISIS 6D)";
+  if (mode === "muscle_injury" || mode === "lesiones_musculares") return "ANEXO: RADAR MULTIVECTORIAL DE LESIONES MUSCULARES Y MIOTENDINOSAS (ANÁLISIS 6D)";
+  if (mode === "cholecystitis" || mode === "colecistitis") return "ANEXO: RADAR MULTIVECTORIAL DE COLECISTITIS AGUDA (ANÁLISIS 6D)";
+  if (mode === "appendicitis" || mode === "apendicitis") return "ANEXO: RADAR MULTIVECTORIAL DE APENDICITIS AGUDA (ANÁLISIS 6D)";
+  if (mode === "knee_trauma" || mode === "trauma_rodilla") return "ANEXO: RADAR MULTIVECTORIAL DE TRAUMA AGUDO DE RODILLA (ANÁLISIS 6D)";
+  if (mode === "ankle_trauma" || mode === "esguince_tobillo" || mode === "trauma_tobillo") return "ANEXO: RADAR MULTIVECTORIAL DE TRAUMA DISTORSIVO DE TOBILLO (ANÁLISIS 6D)";
+  if (mode === "oncology" || mode === "oncologia") return "ANEXO: RADAR MULTIVECTORIAL ONCOLÓGICO Y TUMORAL (ANÁLISIS 6D)";
+  if (mode === "visceral") return "ANEXO: RADAR MULTIVECTORIAL Y VISCERO-INFLAMATORIO (ANÁLISIS 6D)";
+  if (mode === "msk" || mode === "osteomuscular") return "ANEXO: RADAR BIOMECÁNICO E INFLAMATORIO (ANÁLISIS MULTIVECTOR 6D)";
+
+  // Check axes keys
+  if (Array.isArray(data.axes) && data.axes.length > 0) {
+    const keys = data.axes.map((a: any) => `${a.key || ""} ${a.label || ""}`.toLowerCase()).join(" ");
+    if (/tamano_testicular|vascularidad_testicular|integridad_epididimos|varicocele/i.test(keys)) {
+      return "ANEXO: RADAR MULTIVECTORIAL DE VALORACIÓN ESCROTAL / TESTICULAR (ANÁLISIS 6D)";
+    }
+    if (/tamano_renal|grosor_cortical|procesos_obstructivos|corteza_renal/i.test(keys)) {
+      return "ANEXO: RADAR MULTIVECTORIAL DE VALORACIÓN RENAL (ANÁLISIS 6D)";
+    }
+    if (/pinzamiento_articular|cartilago_hialino|cartilago_troclear|osteofitos_marginales|meniscopat/i.test(keys)) {
+      return "ANEXO: RADAR MULTIVECTORIAL DE ARTROSIS DE RODILLA (ANÁLISIS 6D)";
+    }
+    if (/supraespinoso|infraespinoso|subescapular|bursa_subacromial/i.test(keys)) {
+      return "ANEXO: RADAR MULTIVECTORIAL DE MANGUITO ROTADOR (ANÁLISIS 6D)";
+    }
+    if (/desgarro_muscular|union_miotendinosa|tendon_insercion|hematoma_coleccion/i.test(keys)) {
+      return "ANEXO: RADAR MULTIVECTORIAL DE LESIONES MUSCULARES Y MIOTENDINOSAS (ANÁLISIS 6D)";
+    }
+    if (/tamano_tiroides|presencia_nodulos|nodulos_sospechosos|patron_parenquima/i.test(keys)) {
+      return "ANEXO: RADAR MULTIVECTORIAL DE VALORACIÓN TIROIDEA (ANÁLISIS 6D)";
+    }
+    if (/esteatosis_hepatica|rigidez_hepatica|diametro_portal_flujo|esplenomegalia_ascitis|tamano_forma.*vascularidad|apariencia_parenquima.*infiltracion_grasa/i.test(keys)) {
+      return "ANEXO: RADAR MULTIVECTORIAL DE VALORACIÓN HEPÁTICA (ANÁLISIS 6D)";
+    }
+    if (/distension_vesicular|litiasis_impactada|murphy_ecografico|liquido_perivesicular/i.test(keys)) {
+      return "ANEXO: RADAR MULTIVECTORIAL DE COLECISTITIS AGUDA (ANÁLISIS 6D)";
+    }
+    if (/diametro_apendicular|compresibilidad|engrosamiento_parietal_diana|apendicolito/i.test(keys)) {
+      return "ANEXO: RADAR MULTIVECTORIAL DE APENDICITIS AGUDA (ANÁLISIS 6D)";
+    }
+    if (/derrame_hemartros|ligamentos_colaterales|retinaculos_patelares/i.test(keys)) {
+      return "ANEXO: RADAR MULTIVECTORIAL DE TRAUMA AGUDO DE RODILLA (ANÁLISIS 6D)";
+    }
+    if (/ligamento_peroneoastragalino|peroneocalcaneo|sindesmosis_tibioperonea/i.test(keys)) {
+      return "ANEXO: RADAR MULTIVECTORIAL DE TRAUMA DISTORSIVO DE TOBILLO (ANÁLISIS 6D)";
+    }
+    if (/vascularidad_neoangiogenesis|invasion_local_capsular/i.test(keys)) {
+      return "ANEXO: RADAR MULTIVECTORIAL ONCOLÓGICO Y TUMORAL (ANÁLISIS 6D)";
+    }
+    if (/compromiso_luminal|flemon_coleccion|edema_grasa_perivisceral/i.test(keys)) {
+      return "ANEXO: RADAR MULTIVECTORIAL Y VISCERO-INFLAMATORIO (ANÁLISIS 6D)";
+    }
+  }
+
+  // Fallback checking helper functions
+  if (isScrotalRadar(data)) return "ANEXO: RADAR MULTIVECTORIAL DE VALORACIÓN ESCROTAL / TESTICULAR (ANÁLISIS 6D)";
+  if (isRenalRadar(data)) return "ANEXO: RADAR MULTIVECTORIAL DE VALORACIÓN RENAL (ANÁLISIS 6D)";
+  if (isKneeOaRadar(data)) return "ANEXO: RADAR MULTIVECTORIAL DE ARTROSIS DE RODILLA (ANÁLISIS 6D)";
+  if (isMuscleInjuryRadar(data)) return "ANEXO: RADAR MULTIVECTORIAL DE LESIONES MUSCULARES Y MIOTENDINOSAS (ANÁLISIS 6D)";
+  if (isThyroidRadar(data)) return "ANEXO: RADAR MULTIVECTORIAL DE VALORACIÓN TIROIDEA (ANÁLISIS 6D)";
+  if (isAppendicitisRadar(data)) return "ANEXO: RADAR MULTIVECTORIAL DE APENDICITIS AGUDA (ANÁLISIS 6D)";
+  if (isKneeTraumaRadar(data)) return "ANEXO: RADAR MULTIVECTORIAL DE TRAUMA AGUDO DE RODILLA (ANÁLISIS 6D)";
+  if (isAnkleTraumaRadar(data)) return "ANEXO: RADAR MULTIVECTORIAL DE TRAUMA DISTORSIVO DE TOBILLO (ANÁLISIS 6D)";
+  if (isCholecystitisRadar(data)) return "ANEXO: RADAR MULTIVECTORIAL DE COLECISTITIS AGUDA (ANÁLISIS 6D)";
+  if (isHepaticRadar(data)) return "ANEXO: RADAR MULTIVECTORIAL DE VALORACIÓN HEPÁTICA (ANÁLISIS 6D)";
+  if (isRotatorCuffRadar(data)) return "ANEXO: RADAR MULTIVECTORIAL DE MANGUITO ROTADOR (ANÁLISIS 6D)";
+  if (isOncologyRadar(data)) return "ANEXO: RADAR MULTIVECTORIAL ONCOLÓGICO Y TUMORAL (ANÁLISIS 6D)";
+  if (isVisceralRadar(data)) return "ANEXO: RADAR MULTIVECTORIAL Y VISCERO-INFLAMATORIO (ANÁLISIS 6D)";
+
+  return "ANEXO: RADAR BIOMECÁNICO E INFLAMATORIO (ANÁLISIS MULTIVECTOR 6D)";
+};
+
+const removeRadarFromReportText = (text: string) => {
+  if (!text) return "";
+  let clean = text;
+  if (clean.includes("--- RADAR BIOMECÁNICO E INFLAMATORIO ---")) {
+    const parts = clean.split("--- RADAR BIOMECÁNICO E INFLAMATORIO ---");
+    let before = parts[0].trim();
+    let after = parts[1] || "";
+    const afterMarkerIdx = after.indexOf("\n---\n");
+    if (afterMarkerIdx !== -1) {
+      clean = before + "\n\n" + after.substring(afterMarkerIdx + 1).trim();
+    } else {
+      clean = before;
+    }
+  } else if (clean.includes("### ANEXO: RADAR BIOMECÁNICO")) {
+    const parts = clean.split("### ANEXO: RADAR BIOMECÁNICO");
+    clean = parts[0].trim();
+  }
+  return clean.trim();
+};
+
+const getShortRadarAxisLabel = (label: string, radarMode?: string) => {
   if (!label) return "";
-  const clean = label.split(" / ")[0].split(" & ")[0].trim();
-  if (/engrosamiento.*pared|edema.*parietal/i.test(clean)) return "Engrosamiento Pared";
-  if (/vascularidad|doppler.*color/i.test(clean)) return "Vascularidad Parietal";
-  if (/necrosis|gangrena/i.test(clean)) return "Necrosis / Gangrena";
-  if (/perivesicular|cambios.*perives/i.test(clean)) return "Cambios Perivesiculares";
-  if (/v[ií]a.*biliar|col[eé]doco/i.test(clean)) return "Vía Biliar / Colédoco";
-  if (/tama[nñ]o|hidrops|distensi[oó]n/i.test(clean)) return "Tamaño / Hidrops";
-  if (/morfolog[ií]a/i.test(clean)) return "Morfología Hepática";
-  if (/esteatosis/i.test(clean)) return "Esteatosis QUS";
-  if (/elastograf[ií]a|rigidez/i.test(clean)) return "Elastografía SWE";
-  if (/vena.*porta|hemodin[aá]mica/i.test(clean)) return "Vena Porta";
-  if (/lesiones.*focales|l[oó]es|n[oó]dulos/i.test(clean)) return "Lesiones Focales";
-  if (/ascitis|l[ií]quido.*libre/i.test(clean)) return "Ascitis / Líquido";
-  if (/femorotibial.*medial/i.test(clean)) return "Femorotibial Medial";
-  if (/femorotibial.*lateral/i.test(clean)) return "Femorotibial Lateral";
-  if (/meniscopat/i.test(clean)) return "Meniscopatía Deg.";
-  if (/troclear|cart[ií]lago/i.test(clean)) return "Cartílago Troclear";
-  if (/hidrartrosis|efusi[oó]n/i.test(clean)) return "Hidrartrosis";
-  if (/osteofito/i.test(clean)) return "Osteofitos";
-  if (/ruptura.*supraespinoso/i.test(clean)) return "Rup. Supraespinoso";
-  if (/bursitis/i.test(clean)) return "Bursitis Subacromial";
-  if (/pinzamiento/i.test(clean)) return "Pinzamiento Subacromial";
-  if (/otros tendones|lesi[oó]n de otros/i.test(clean)) return "Otros Tendones";
-  if (/tendinosis.*supraespinoso/i.test(clean)) return "Tendinosis Supraesp.";
-  if (/b[ií]ceps|tclb/i.test(clean)) return "Cabeza Larga Bíceps";
-  if (/ruptura/i.test(clean)) return "Ruptura Tendinosa";
-  if (/tendinosis|tendinitis/i.test(clean)) return "Tendinosis/Tendinitis";
-  if (/infraespinoso/i.test(clean)) return "Tendón Infraespinoso";
-  if (/subescapular/i.test(clean)) return "Tendón Subescapular";
-  if (/neoangiog[eé]nesis|neovasculatura/i.test(clean)) return "Neoangiogénesis";
-  if (/arquitectura|heterogeneidad/i.test(clean)) return "Arquitectura";
-  if (/invasi[oó]n/i.test(clean)) return "Invasión Local";
-  if (/compromiso vascular|ductal|troncular/i.test(clean)) return "Comp. Vascular/Ductal";
-  if (/necrosis/i.test(clean)) return "Necrosis Tumoral";
-  if (/adenopat[ií]as|diseminaci[oó]n/i.test(clean)) return "Adenopatías";
-  if (/compromiso|lisis/i.test(clean)) return "Comp. Estructural";
-  if (/inestabilidad/i.test(clean)) return "Inestabilidad";
-  if (/afectaci[oó]n|reactividad|perivisceral|pared/i.test(clean)) return "Afectación Pared";
-  if (/vascularizaci|hiperemia/i.test(clean)) return "Vascularización";
-  if (/inflamaci|edema/i.test(clean)) return "Inflamación";
-  if (/tensi[oó]n/i.test(clean)) return "Tensión";
-  if (/irritaci[oó]n|serosa|periton/i.test(clean)) return "Irritación Serosa";
-  if (/cronicidad|litiasis/i.test(clean)) return "Cronicidad";
-  return clean.length > 18 ? clean.substring(0, 16) + ".." : clean;
+  let clean = label.split(" / ")[0].split(" & ")[0].split(" (")[0].trim();
+
+  const lower = clean.toLowerCase();
+  const fullLower = label.toLowerCase();
+  const mode = (radarMode || "").toLowerCase();
+
+  // 1. SHOULDER / MANGUITO ROTADOR
+  if (mode === "rotator_cuff" || mode === "manguito_rotador" || /supraespinoso|infraespinoso|subescapular|subacromi|manguito|tclb/i.test(fullLower)) {
+    if (/ruptura.*supraespinoso|supraespinoso.*ruptura/i.test(lower)) return "Rup. Supraespinoso";
+    if (/tendinosis.*supraespinoso|supraespinoso.*tendinosis/i.test(lower)) return "Tendinosis Supraesp.";
+    if (/bursitis/i.test(lower)) return "Bursitis Subacromial";
+    if (/pinzamiento/i.test(lower)) return "Pinzamiento Subacromial";
+    if (/b[ií]ceps|tclb|cabeza.*larga/i.test(lower)) return "Cabeza Larga Bíceps";
+    if (/otros.*tendon|tendones.*manguito|manguito.*rotador/i.test(lower)) return "Otros Tendones Manguito";
+    if (/deltoid/i.test(lower)) return "Complejo Deltoideo";
+    if (/infraespinoso/i.test(lower)) return "Tendón Infraespinoso";
+    if (/subescapular/i.test(lower)) return "Tendón Subescapular";
+  }
+
+  // 2. ANKLE / TOBILLO
+  if (mode === "ankle_trauma" || mode === "esguince_tobillo" || mode === "trauma_tobillo" || /peroneoastragalino|peroneocalc[aá]neo|atfl|lpaa|lpc|cfl|sindesmosis|peroneos/i.test(fullLower)) {
+    if (/lpaa|atfl|peroneo.*astragalino/i.test(lower)) return "Lig. Peroneo Astragalino Ant.";
+    if (/lpc|cfl|peroneo.*calc[aá]neo/i.test(lower)) return "Lig. Peroneo Calcáneo";
+    if (/deltoid|ligamento.*medial/i.test(lower)) return "Complejo Deltoideo Medial";
+    if (/peroneos|peroneo.*corto|peroneo.*largo|tibial.*post/i.test(lower)) return "Tendones Peroneos / Mediales";
+    if (/sindesmosis|loa|fractura/i.test(lower)) return "Estructuras Óseas / LOA";
+  }
+
+  // 3. KNEE OA / KNEE TRAUMA
+  if (mode === "knee_oa" || mode === "knee_trauma" || mode === "artrosis_rodilla" || mode === "trauma_rodilla" || /femorotibial|gonartros|cartilago.*troclear|menisc/i.test(fullLower)) {
+    if (/femorotibial.*medial/i.test(lower)) return "Femorotibial Medial";
+    if (/femorotibial.*lateral/i.test(lower)) return "Femorotibial Lateral";
+    if (/lcm|colateral.*medial/i.test(lower)) return "Lig. Colateral Medial";
+    if (/lcl|colateral.*lateral/i.test(lower)) return "Lig. Colateral Lateral";
+    if (/menisco.*interno|menisco.*medial/i.test(lower)) return "Menisco Interno";
+    if (/menisco.*externo|menisco.*lateral/i.test(lower)) return "Menisco Externo";
+    if (/meniscopat/i.test(lower)) return "Meniscopatía Deg.";
+    if (/patelar|rotulian/i.test(lower)) return "Ligamento Patelar";
+    if (/troclear|cart[ií]lago/i.test(lower)) return "Cartílago Troclear";
+    if (/osteofito/i.test(lower)) return "Osteofitos";
+    if (/pata.*ganso|pes.*anserinus/i.test(lower)) return "Pata de Ganso";
+    if (/popl[ií]tea|baker/i.test(lower)) return "Fosa Poplítea / Baker";
+  }
+
+  // 4. MUSCLE INJURY
+  if (mode === "muscle_injury" || mode === "lesiones_musculares" || /desgarro.*muscular|desgarro.*fibrilar|uni[oó]n.*miotendinosa/i.test(fullLower)) {
+    if (/desgarro.*muscular|desgarro.*fibrilar|soluci[oó]n.*continuidad/i.test(lower)) return "Desgarro Muscular";
+    if (/hematoma|colecci[oó]n/i.test(lower)) return "Hematoma / Colección";
+    if (/uni[oó]n.*miotendinosa|\bmtj\b/i.test(lower)) return "Unión Miotendinosa";
+    if (/tend[oó]n.*inserci[oó]n|entesis/i.test(lower)) return "Tendón / Entesis";
+  }
+
+  // 5. CHOLECYSTITIS
+  if (mode === "cholecystitis" || mode === "colecistitis" || /colecist|ves[ií]cula/i.test(fullLower)) {
+    if (/engrosamiento.*pared|edema.*parietal/i.test(lower)) return "Engrosamiento Pared";
+    if (/vascularidad/i.test(lower)) return "Vascularidad Parietal";
+    if (/perivesicular/i.test(lower)) return "Cambios Perivesiculares";
+    if (/v[ií]a.*biliar|col[eé]doco/i.test(lower)) return "Vía Biliar / Colédoco";
+    if (/tama[nñ]o|hidrops|distensi[oó]n/i.test(lower)) return "Tamaño / Hidrops";
+  }
+
+  // 6. APPENDICITIS
+  if (mode === "appendicitis" || mode === "apendicitis" || /apendic/i.test(fullLower)) {
+    if (/diametro.*apendic/i.test(lower)) return "Diámetro Apendicular";
+    if (/pared.*apendic|signo.*diana/i.test(lower)) return "Pared / Signo Diana";
+    if (/apendicolito|fecalito/i.test(lower)) return "Apendicolito";
+  }
+
+  // 7. THYROID
+  if (mode === "thyroid" || mode === "tiroides" || /tiroid|tirads|bocio/i.test(fullLower)) {
+    if (/tamano.*tiroides|volumetr[ií]a|bocio/i.test(lower)) return "Tamaño / Bocio";
+    if (/presencia.*nodulos|carga.*nodular/i.test(lower)) return "Carga Nodular";
+    if (/nodulos.*sospechosos|tirads/i.test(lower)) return "Sospecha TI-RADS";
+    if (/patron.*parenquima|tiroiditis/i.test(lower)) return "Patrón Parénquima";
+    if (/inferno/i.test(lower)) return "Inferno Tiroideo";
+  }
+
+  // 8. HEPATIC
+  if (mode === "hepatic" || mode === "valoracion_hepatica" || /esteatosis|elastograf|vena.*porta|h[ií]gado/i.test(fullLower)) {
+    if (/tama[nñ]o.*forma|morfolog[ií]a/i.test(lower)) return "Tamaño y Forma";
+    if (/vascularidad|vena.*porta/i.test(lower)) return "Vascularidad";
+    if (/elasticidad|elastograf[ií]a|rigidez/i.test(lower)) return "Elasticidad";
+    if (/apariencia.*par[eé]nquima|par[eé]nquima/i.test(lower)) return "Apariencia Parénquima";
+    if (/infiltraci[oó]n.*grasa|esteatosis/i.test(lower)) return "Infiltración Grasa";
+    if (/lesiones.*focales|n[oó]dulos|loe/i.test(lower)) return "Lesiones Focales";
+    if (/ascitis/i.test(lower)) return "Ascitis / Líquido";
+  }
+
+  // 9. RENAL
+  if (mode === "renal" || mode === "valoracion_renal" || /renal|ri[nñ][oó]n|cortical|pielocalicial|hidronefrosis/i.test(fullLower)) {
+    if (/tama[nñ]o.*renal/i.test(lower)) return "Tamaño Renal";
+    if (/grosor.*cortical|corteza/i.test(lower)) return "Grosor Cortical";
+    if (/vascularidad|doppler|resistividad/i.test(lower)) return "Vascularidad";
+    if (/lesiones.*focales|bosniak|quiste/i.test(lower)) return "Lesiones Focales";
+    if (/procesos.*obstructivos|obstrucci[oó]n|hidronefrosis/i.test(lower)) return "Procesos Obstructivos";
+    if (/cambios.*inflamatorios|pielonefritis/i.test(lower)) return "Cambios Inflamatorios";
+  }
+
+  // 10. SCROTAL / TESTICULAR
+  if (mode === "scrotal" || mode === "valoracion_escrotal" || mode === "escroto" || mode === "testicular" || /escrot|test[ií]cul|epid[ií]dim|varicocele/i.test(fullLower)) {
+    if (/tama[nñ]o.*testicular/i.test(lower)) return "Tamaño Testicular";
+    if (/vascularidad.*testicular|vascularidad/i.test(lower)) return "Vascularidad Testicular";
+    if (/integridad.*epid[ií]dimos|epid[ií]dim/i.test(lower)) return "Integridad Epidídimos";
+    if (/lesiones.*focales|microlitiasis/i.test(lower)) return "Lesiones Focales";
+    if (/varicocele|plexo.*pampiniforme/i.test(lower)) return "Varicocele";
+    if (/cambios.*inflamatorios|hidrocele|piocele/i.test(lower)) return "Inflamación / Hidrocele";
+  }
+
+  // Fallback: Return clean text if short enough
+  if (clean.length <= 22) return clean;
+  return clean.substring(0, 20) + "..";
 };
 
 const renderPrintBiomechanicalRadarAnnex = (data: any) => {
@@ -22631,7 +23727,7 @@ const renderPrintBiomechanicalRadarAnnex = (data: any) => {
     <div className="mt-8 pt-6 border-t-2 border-slate-300 print:break-before-page font-sans select-text text-left space-y-6">
       <div className="w-full text-left pb-2.5 border-b border-slate-200">
         <h3 className="text-lg font-mono font-bold uppercase tracking-wider text-slate-900 flex items-center gap-2">
-          <span className="text-indigo-600">🎯</span> {isCholecystitisRadar(data) ? "ANEXO: RADAR MULTIVECTORIAL DE COLECISTITIS AGUDA (ANÁLISIS 6D)" : isHepaticRadar(data) ? "ANEXO: RADAR MULTIVECTORIAL DE VALORACIÓN HEPÁTICA (ANÁLISIS 6D)" : isKneeOaRadar(data) ? "ANEXO: RADAR MULTIVECTORIAL DE ARTROSIS DE RODILLA (ANÁLISIS 6D)" : isRotatorCuffRadar(data) ? "ANEXO: RADAR MULTIVECTORIAL DE MANGUITO ROTADOR (ANÁLISIS 6D)" : isOncologyRadar(data) ? "ANEXO: RADAR MULTIVECTORIAL ONCOLÓGICO Y TUMORAL (ANÁLISIS 6D)" : isVisceralRadar(data) ? "ANEXO: RADAR MULTIVECTORIAL Y VISCERO-INFLAMATORIO (ANÁLISIS 6D)" : "ANEXO: RADAR BIOMECÁNICO E INFLAMATORIO (ANÁLISIS MULTIVECTOR 6D)"}
+          <span className="text-indigo-600">🎯</span> {getRadarTitle(data)}
         </h3>
         <p className="text-xs text-slate-500 font-mono mt-0.5">
           Modelado vectorial cuantitativo e índice de carga tisular sistémico-funcional
@@ -22661,7 +23757,7 @@ const renderPrintBiomechanicalRadarAnnex = (data: any) => {
             {/* Axis Labels */}
             {data.axes.map((a: any, i: number) => {
               const lbl = getPt(i, 11.0);
-              const cleanLabel = getShortRadarAxisLabel(a.label);
+              const cleanLabel = getShortRadarAxisLabel(a.label, data?.radarMode);
               let anchor = "middle";
               const cosVal = Math.cos(lbl.angle);
               const sinVal = Math.sin(lbl.angle);
@@ -22745,7 +23841,7 @@ const renderPrintBiomechanicalRadarAnnex = (data: any) => {
                 return (
                   <div key={idx} className="bg-white border border-slate-200 rounded-lg p-3 flex items-center justify-between gap-2 shadow-2xs">
                     <span className="text-[10.5px] font-bold text-slate-800 font-sans truncate" title={axis.label}>
-                      {getShortRadarAxisLabel(axis.label)}
+                      {getShortRadarAxisLabel(axis.label, data?.radarMode)}
                     </span>
                     <span className={`text-[9.5px] font-mono font-bold px-2 py-0.5 rounded border shrink-0 ${badgeClass}`}>
                       {axis.score}/10
@@ -22811,317 +23907,320 @@ const splitReportAndAnnex = (text: string) => {
   const renderPrintReportBody = (reportText: string) => {
     if (!reportText) return null;
 
-    const elements = parseReportToElements(reportText, "print-body");
+    const rawElements = parseReportToElements(reportText, "print-body");
+
+    const renderSingleElement = (elem: ReportElement, idx: number) => {
+      if (elem.type === "case_analysis" && elem.caseData) {
+        return (
+          <div key={elem.id} className="my-6" style={{ pageBreakInside: "avoid", breakInside: "avoid" }}>
+            <CaseAnalysisRenderer data={elem.caseData} isDarkTheme={false} />
+          </div>
+        );
+      }
+
+      if (elem.type === "divider") {
+        return <hr key={elem.id} className={`my-6 border-t ${adaptivePDFContrast ? "border-black border-base" : "border-slate-300"}`} />;
+      }
+
+      if (elem.type === "code") {
+        return (
+          <div 
+            key={elem.id} 
+            className={`my-4 border ${adaptivePDFContrast ? "border-black bg-gray-50/60" : "border-slate-300 bg-slate-50/70"} rounded-lg p-3 font-mono text-[10px] md:text-[10.5px]`}
+            style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
+          >
+            <pre className={`whitespace-pre-wrap font-mono font-medium leading-relaxed ${adaptivePDFContrast ? "text-black" : "text-slate-850"}`}>
+              {elem.lines?.join("\n")}
+            </pre>
+          </div>
+        );
+      }
+
+      if (elem.type === "heading") {
+        const hText = elem.text || "";
+        const isMainTitle = idx === 0 && hText && /REPORTE|INFORME|ESTUDIO|DIAGNÓSTICO|VALORACIÓN/i.test(hText);
+        const isAnnexHeading = hText && (hText.toUpperCase().includes("ANEXO") || hText.toUpperCase().includes("DESGLOSE Y JUSTIFICACIÓN"));
+        const pageBreakStyle = isAnnexHeading 
+          ? { pageBreakBefore: "always" as const, breakBefore: "page" as const } 
+          : { pageBreakAfter: "avoid" as const, breakAfter: "avoid" as const };
+        
+        if (isMainTitle) {
+          return (
+            <div key={elem.id} className="text-center my-4 font-bold text-lg select-all border-b pb-2 uppercase tracking-wide break-after-avoid page-break-after-avoid" style={{ pageBreakAfter: "avoid", breakAfter: "avoid" }}>
+              {renderBoldTextBlackSafe(hText, `print-h-${idx}`)}
+            </div>
+          );
+        }
+
+        if (isAnnexHeading) {
+          return (
+            <div key={elem.id} style={pageBreakStyle} className="mt-3 mb-2.5 pb-1.5 border-b border-slate-300">
+              <h2 className={`text-sm font-black uppercase tracking-wider ${adaptivePDFContrast ? "text-black" : "text-slate-900"}`}>
+                {renderBoldTextBlackSafe(hText, `print-h-${idx}`)}
+              </h2>
+            </div>
+          );
+        }
+
+        if (elem.level === 1) {
+          return (
+            <h1 key={elem.id} style={pageBreakStyle} className={`text-base font-black uppercase tracking-wide mt-5 mb-2.5 block break-after-avoid page-break-after-avoid ${adaptivePDFContrast ? "text-black" : "text-slate-900"}`}>
+              {renderBoldTextBlackSafe(hText, `print-h-${idx}`)}
+            </h1>
+          );
+        } else if (elem.level === 2) {
+          return (
+            <h2 key={elem.id} style={pageBreakStyle} className={`text-[13.5px] font-black uppercase tracking-wide mt-4 mb-2 block break-after-avoid page-break-after-avoid ${adaptivePDFContrast ? "text-black" : "text-slate-800"}`}>
+              {renderBoldTextBlackSafe(hText, `print-h-${idx}`)}
+            </h2>
+          );
+        } else if (elem.level === 3) {
+          return (
+            <h3 key={elem.id} style={pageBreakStyle} className={`text-xs font-black uppercase tracking-wider mt-3.5 mb-1.5 block break-after-avoid page-break-after-avoid ${adaptivePDFContrast ? "text-black" : "text-slate-700"}`}>
+              {renderBoldTextBlackSafe(hText, `print-h-${idx}`)}
+            </h3>
+          );
+        } else {
+          return (
+            <h4 key={elem.id} style={pageBreakStyle} className={`text-[11.5px] font-bold uppercase tracking-wider mt-3 mb-1 block break-after-avoid page-break-after-avoid ${adaptivePDFContrast ? "text-black" : "text-slate-600"}`}>
+              {renderBoldTextBlackSafe(hText, `print-h-${idx}`)}
+            </h4>
+          );
+        }
+      }
+
+      if (elem.type === "list") {
+        return (
+          <div key={elem.id} className="space-y-1.5 pl-1.5">
+            {elem.items?.map((item, itemIdx) => {
+              let cleanItem = item.trim();
+              let isNumbered = /^\d+\.\s+/.test(cleanItem);
+              let bulletSpan: React.ReactNode = <span className="h-1.5 w-1.5 rounded-full bg-slate-900 mt-2 shrink-0" />;
+
+              if (isNumbered) {
+                const match = cleanItem.match(/^(\d+\.)\s+/);
+                if (match) {
+                  bulletSpan = <span className="text-[11.5px] font-mono font-bold text-slate-800 min-w-[16px] text-right mt-0.5 shrink-0">{match[1]}</span>;
+                  cleanItem = cleanItem.substring(match[0].length);
+                }
+              } else if (cleanItem.startsWith("- ") || cleanItem.startsWith("* ")) {
+                cleanItem = cleanItem.substring(2);
+              }
+
+              const renderedText = renderBoldTextBlackSafe(cleanItem, `print-list-${idx}-${itemIdx}`);
+
+              let itemClass = "flex items-start gap-2.5 pl-2 py-0.5 ml-1 select-text";
+              if (isSyntacticHighlightingActive) {
+                const severity = getParagraphSeverity(cleanItem);
+                if (severity === "critical") {
+                  itemClass = "flex items-start gap-2.5 ml-1 select-text border-l-[1.5px] border-red-500 bg-red-50/50 pl-3 py-1 my-1.5 rounded-r shadow-sm";
+                } else if (severity === "altered") {
+                  itemClass = "flex items-start gap-2.5 ml-1 select-text border-l-[1.5px] border-amber-500 bg-amber-50/40 pl-3 py-1 my-1.5 rounded-r shadow-sm";
+                }
+              }
+
+              return (
+                <div key={`${elem.id}-item-${itemIdx}`} className={itemClass}>
+                  {bulletSpan}
+                  <span className="leading-relaxed select-text font-sans">
+                    {renderedText}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        );
+      }
+
+      if (elem.type === "table") {
+        const headers = elem.headers || [];
+        const bodyRows = elem.bodyRows || [];
+
+        if (headers.length === 0) return null;
+
+        const isClassificationHTMLTable = headers.some(hdrText => {
+          const lower = (hdrText || "").toLowerCase();
+          return lower.includes("criterio") || lower.includes("pondera") || lower.includes("score") || lower.includes("justifica") || lower.includes("sustento");
+        });
+
+        const isVascularHTMLTable = headers.length === 3 && headers.some(hdrText => {
+          const lower = (hdrText || "").toLowerCase();
+          return lower.includes("derech") || lower.includes("izquierd") || lower.includes("alterad") || lower.includes("vaso");
+        });
+
+        return (
+          <div 
+            key={elem.id} 
+            className={`my-5 border-2 ${
+              adaptivePDFContrast ? "border-black" : "border-slate-300"
+            } rounded-lg bg-white max-w-full overflow-hidden`}
+            style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
+          >
+            <table className="w-full text-xs text-left border-collapse table-fixed">
+              <thead className={`${adaptivePDFContrast ? "bg-gray-150 font-black" : "bg-slate-100/90 font-sans"}`}>
+                <tr className={`border-b-2 ${adaptivePDFContrast ? "border-black" : "border-slate-300"}`}>
+                  {headers.map((h, hIdx) => {
+                    let widthClass = "";
+                    if (headers.length === 3) {
+                      if (hIdx === 0) widthClass = "w-[34%]";
+                      else if (hIdx === 1) widthClass = "w-[33%]";
+                      else if (hIdx === 2) widthClass = "w-[33%]";
+                    } else if (headers.length === 4) {
+                      if (isClassificationHTMLTable) {
+                        if (hIdx === 0) widthClass = "w-[24%]";
+                        else if (hIdx === 1) widthClass = "w-[28%]";
+                        else if (hIdx === 2) widthClass = "w-[16%] text-center";
+                        else if (hIdx === 3) widthClass = "w-[32%]";
+                      } else {
+                        if (hIdx === 0) widthClass = "w-[10%] text-center";
+                        else if (hIdx === 1) widthClass = "w-[25%]";
+                        else if (hIdx === 2) widthClass = "w-[32%]";
+                        else if (hIdx === 3) widthClass = "w-[33%]";
+                      }
+                    } else if (headers.length === 5) {
+                      if (hIdx === 0) widthClass = "w-[10%] text-center";
+                      else if (hIdx === 1) widthClass = "w-[22%]";
+                      else if (hIdx === 2) widthClass = "w-[18%]";
+                      else if (hIdx === 3) widthClass = "w-[25%]";
+                      else if (hIdx === 4) widthClass = "w-[25%]";
+                    }
+                    
+                    let hTextProcessed = h;
+                    if (isVascularHTMLTable) {
+                      if (hIdx === 0) hTextProcessed = "Segmento Alterado";
+                      else if (hIdx === 1) hTextProcessed = "Derecho";
+                      else if (hIdx === 2) hTextProcessed = "Izquierdo";
+                    }
+                    
+                    return (
+                      <th 
+                        key={`th-${hIdx}`} 
+                        className={`px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-black border-r ${
+                          adaptivePDFContrast ? "border-black/40 border-b-2" : "border-slate-200"
+                        } last:border-r-0 ${widthClass}`}
+                      >
+                        {hTextProcessed}
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
+              <tbody className={`divide-y ${adaptivePDFContrast ? "divide-black" : "divide-slate-200"} font-sans`}>
+                {bodyRows.map((r, rIdx) => (
+                  <tr 
+                    key={`tr-${rIdx}`} 
+                    className={`${
+                      rIdx % 2 === 0 ? "bg-white" : "bg-slate-50/40"
+                    } ${adaptivePDFContrast ? "font-bold text-black" : ""}`}
+                    style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
+                  >
+                    {r.map((c, cIdx) => {
+                      const cellText = c;
+                      const renderedContent = renderBoldTextBlackSafe(cellText, `cell-print-${idx}-${rIdx}-${cIdx}`);
+
+                      let alignAndTypography = "text-left";
+                      if (isClassificationHTMLTable) {
+                        if (cIdx === 0) {
+                          alignAndTypography = "text-left font-bold text-slate-900";
+                        } else if (cIdx === 2) {
+                          alignAndTypography = "text-center font-mono font-bold text-indigo-800 bg-indigo-50/60 rounded px-1.5 py-0.5";
+                        }
+                      } else if (headers.length === 4 && cIdx === 0) {
+                        alignAndTypography = "text-center font-mono font-bold text-amber-700";
+                      }
+
+                      return (
+                        <td 
+                          key={`td-${cIdx}`} 
+                          className={`px-3 py-2 text-black leading-relaxed break-words whitespace-normal border-r ${
+                            adaptivePDFContrast ? "border-black/30 text-black font-bold" : "border-slate-200"
+                          } last:border-r-0 font-sans ${alignAndTypography}`}
+                        >
+                          {renderedContent}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      }
+
+      // Default: "text" type
+      return (
+        <div key={elem.id} className="space-y-2">
+          {elem.lines?.map((line, lIdx) => {
+            const trimmedLine = line.trim();
+            if (!trimmedLine) return null;
+
+            const isHeader = (trimmedLine.startsWith("**") && trimmedLine.endsWith("**"));
+            const cleanHeaderTxt = trimmedLine.replace(/\*\"/g, "");
+            
+            const isMainTitle = idx === 0 && lIdx === 0 && /REPORTE|INFORME|ESTUDIO|DIAGNÓSTICO|VALORACIÓN/i.test(trimmedLine);
+
+            if (isMainTitle) {
+              return (
+                <div key={`${elem.id}-l-${lIdx}`} className="text-center my-4 font-bold text-lg border-b pb-2 select-all uppercase tracking-wide break-after-avoid page-break-after-avoid" style={{ pageBreakAfter: "avoid", breakAfter: "avoid" }}>
+                  {renderBoldTextBlackSafe(cleanHeaderTxt, `print-title-${idx}`)}
+                </div>
+              );
+            }
+
+            if (isHeader) {
+              return (
+                <p key={`${elem.id}-l-${lIdx}`} className={`text-[12.5px] font-black uppercase mt-4 mb-2 break-after-avoid page-break-after-avoid ${adaptivePDFContrast ? "text-black" : "text-slate-800"}`} style={{ pageBreakAfter: "avoid", breakAfter: "avoid" }}>
+                  {renderBoldTextBlackSafe(cleanHeaderTxt, `print-bold-header-${idx}-${lIdx}`)}
+                </p>
+              );
+            }
+
+            let printClass = "leading-relaxed select-text";
+            if (isSyntacticHighlightingActive) {
+              const severity = getParagraphSeverity(trimmedLine);
+              if (severity === "critical") {
+                printClass = "leading-relaxed select-text border-l-[1.5px] border-red-500 bg-red-50/50 pl-3 py-1 rounded-r my-1.5 shadow-sm";
+              } else if (severity === "altered") {
+                printClass = "leading-relaxed select-text border-l-[1.5px] border-amber-500 bg-amber-50/40 pl-3 py-1 rounded-r my-1.5 shadow-sm";
+              }
+            }
+
+            return (
+              <p key={`${elem.id}-l-${lIdx}`} className={printClass}>
+                {renderBoldTextBlackSafe(trimmedLine, `print-text-${idx}-${lIdx}`)}
+              </p>
+            );
+          })}
+        </div>
+      );
+    };
+
+    const renderedElements = rawElements.map((elem, idx) => renderSingleElement(elem, idx));
 
     return (
       <div className={`space-y-6 text-black select-text ${adaptivePDFContrast ? "font-sans text-[13.5px]" : "font-serif text-[12.5px]"}`}>
-        {elements.map((elem, idx) => {
-          if (elem.type === "case_analysis" && elem.caseData) {
-            return (
-              <div key={elem.id} className="my-6" style={{ pageBreakInside: "avoid", breakInside: "avoid" }}>
-                <CaseAnalysisRenderer data={elem.caseData} isDarkTheme={false} />
-              </div>
-            );
-          }
+        {renderedElements}
 
-          if (elem.type === "divider") {
-            return <hr key={elem.id} className={`my-6 border-t ${adaptivePDFContrast ? "border-black border-base" : "border-slate-300"}`} />;
-          }
-
-          if (elem.type === "code") {
-            return (
-              <div 
-                key={elem.id} 
-                className={`my-4 border ${adaptivePDFContrast ? "border-black bg-gray-50/60" : "border-slate-300 bg-slate-50/70"} rounded-lg p-3 font-mono text-[10px] md:text-[10.5px]`}
-                style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
-              >
-                <pre className={`whitespace-pre-wrap font-mono font-medium leading-relaxed ${adaptivePDFContrast ? "text-black" : "text-slate-850"}`}>
-                  {elem.lines?.join("\n")}
-                </pre>
-              </div>
-            );
-          }
-
-          if (elem.type === "heading") {
-            const hText = elem.text || "";
-            const isMainTitle = idx === 0 && hText && /REPORTE|INFORME|ESTUDIO|DIAGNÓSTICO|VALORACIÓN/i.test(hText);
-            const isAnnexHeading = hText && (hText.toUpperCase().includes("ANEXO") || hText.toUpperCase().includes("DESGLOSE Y JUSTIFICACIÓN"));
-            const pageBreakStyle = isAnnexHeading ? { pageBreakBefore: "always" as const, breakBefore: "page" as const } : undefined;
-            
-            if (isMainTitle) {
-              return (
-                <div key={elem.id} className="text-center my-4 font-bold text-lg select-all border-b pb-2 uppercase tracking-wide">
-                  {renderBoldTextBlackSafe(hText, `print-h-${idx}`)}
-                </div>
-              );
-            }
-
-            if (isAnnexHeading) {
-              return (
-                <div key={elem.id} style={pageBreakStyle} className="mt-3 mb-2.5 pb-1.5 border-b border-slate-300">
-                  <h2 className={`text-sm font-black uppercase tracking-wider ${adaptivePDFContrast ? "text-black" : "text-slate-900"}`}>
-                    {renderBoldTextBlackSafe(hText, `print-h-${idx}`)}
-                  </h2>
-                </div>
-              );
-            }
-
-            if (elem.level === 1) {
-              return (
-                <h1 key={elem.id} style={pageBreakStyle} className={`text-base font-black uppercase tracking-wide mt-5 mb-2.5 block ${adaptivePDFContrast ? "text-black" : "text-slate-900"}`}>
-                  {renderBoldTextBlackSafe(hText, `print-h-${idx}`)}
-                </h1>
-              );
-            } else if (elem.level === 2) {
-              return (
-                <h2 key={elem.id} style={pageBreakStyle} className={`text-[13.5px] font-black uppercase tracking-wide mt-4 mb-2 block ${adaptivePDFContrast ? "text-black" : "text-slate-800"}`}>
-                  {renderBoldTextBlackSafe(hText, `print-h-${idx}`)}
-                </h2>
-              );
-            } else if (elem.level === 3) {
-              return (
-                <h3 key={elem.id} style={pageBreakStyle} className={`text-xs font-black uppercase tracking-wider mt-3.5 mb-1.5 block ${adaptivePDFContrast ? "text-black" : "text-slate-700"}`}>
-                  {renderBoldTextBlackSafe(hText, `print-h-${idx}`)}
-                </h3>
-              );
-            } else {
-              return (
-                <h4 key={elem.id} style={pageBreakStyle} className={`text-[11.5px] font-bold uppercase tracking-wider mt-3 mb-1 block ${adaptivePDFContrast ? "text-black" : "text-slate-600"}`}>
-                  {renderBoldTextBlackSafe(hText, `print-h-${idx}`)}
-                </h4>
-              );
-            }
-          }
-
-          if (elem.type === "list") {
-            return (
-              <div key={elem.id} className="space-y-1.5 pl-1.5">
-                {elem.items?.map((item, itemIdx) => {
-                  let cleanItem = item.trim();
-                  let isNumbered = /^\d+\.\s+/.test(cleanItem);
-                  let bulletSpan: React.ReactNode = <span className="h-1.5 w-1.5 rounded-full bg-slate-900 mt-2 shrink-0" />;
-
-                  if (isNumbered) {
-                    const match = cleanItem.match(/^(\d+\.)\s+/);
-                    if (match) {
-                      bulletSpan = <span className="text-[11.5px] font-mono font-bold text-slate-800 min-w-[16px] text-right mt-0.5 shrink-0">{match[1]}</span>;
-                      cleanItem = cleanItem.substring(match[0].length);
-                    }
-                  } else if (cleanItem.startsWith("- ") || cleanItem.startsWith("* ")) {
-                    cleanItem = cleanItem.substring(2);
-                  }
-
-                  const renderedText = renderBoldTextBlackSafe(cleanItem, `print-list-${idx}-${itemIdx}`);
-
-                  let itemClass = "flex items-start gap-2.5 pl-2 py-0.5 ml-1 select-text";
-                  if (isSyntacticHighlightingActive) {
-                    const severity = getParagraphSeverity(cleanItem);
-                    if (severity === "critical") {
-                      itemClass = "flex items-start gap-2.5 ml-1 select-text border-l-[1.5px] border-red-500 bg-red-50/50 pl-3 py-1 my-1.5 rounded-r shadow-sm";
-                    } else if (severity === "altered") {
-                      itemClass = "flex items-start gap-2.5 ml-1 select-text border-l-[1.5px] border-amber-500 bg-amber-50/40 pl-3 py-1 my-1.5 rounded-r shadow-sm";
-                    }
-                  }
-
-                  return (
-                    <div key={`${elem.id}-item-${itemIdx}`} className={itemClass}>
-                      {bulletSpan}
-                      <span className="leading-relaxed select-text font-sans">
-                        {renderedText}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          }
-
-          if (elem.type === "table") {
-            const headers = elem.headers || [];
-            const bodyRows = elem.bodyRows || [];
-
-            if (headers.length === 0) return null;
-
-            const isClassificationHTMLTable = headers.some(hdrText => {
-              const lower = (hdrText || "").toLowerCase();
-              return lower.includes("criterio") || lower.includes("pondera") || lower.includes("score") || lower.includes("justifica") || lower.includes("sustento");
-            });
-
-            const isVascularHTMLTable = headers.length === 3 && headers.some(hdrText => {
-              const lower = (hdrText || "").toLowerCase();
-              return lower.includes("derech") || lower.includes("izquierd") || lower.includes("alterad") || lower.includes("vaso");
-            });
-
-            return (
-              <div 
-                key={elem.id} 
-                className={`my-5 border-2 ${
-                  adaptivePDFContrast ? "border-black" : "border-slate-300"
-                } rounded-lg bg-white max-w-full overflow-hidden`}
-                style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
-              >
-                <table className="w-full text-xs text-left border-collapse table-fixed">
-                  <thead className={`${adaptivePDFContrast ? "bg-gray-150 font-black" : "bg-slate-100/90 font-sans"}`}>
-                    <tr className={`border-b-2 ${adaptivePDFContrast ? "border-black" : "border-slate-300"}`}>
-                      {headers.map((h, hIdx) => {
-                        let widthClass = "";
-                        if (headers.length === 3) {
-                          if (hIdx === 0) widthClass = "w-[34%]";
-                          else if (hIdx === 1) widthClass = "w-[33%]";
-                          else if (hIdx === 2) widthClass = "w-[33%]";
-                        } else if (headers.length === 4) {
-                          if (isClassificationHTMLTable) {
-                            if (hIdx === 0) widthClass = "w-[24%]";
-                            else if (hIdx === 1) widthClass = "w-[28%]";
-                            else if (hIdx === 2) widthClass = "w-[16%] text-center";
-                            else if (hIdx === 3) widthClass = "w-[32%]";
-                          } else {
-                            if (hIdx === 0) widthClass = "w-[10%] text-center";
-                            else if (hIdx === 1) widthClass = "w-[25%]";
-                            else if (hIdx === 2) widthClass = "w-[32%]";
-                            else if (hIdx === 3) widthClass = "w-[33%]";
-                          }
-                        } else if (headers.length === 5) {
-                          if (hIdx === 0) widthClass = "w-[10%] text-center";
-                          else if (hIdx === 1) widthClass = "w-[22%]";
-                          else if (hIdx === 2) widthClass = "w-[18%]";
-                          else if (hIdx === 3) widthClass = "w-[25%]";
-                          else if (hIdx === 4) widthClass = "w-[25%]";
-                        }
-                        
-                        let hTextProcessed = h;
-                        if (isVascularHTMLTable) {
-                          if (hIdx === 0) hTextProcessed = "Segmento Alterado";
-                          else if (hIdx === 1) hTextProcessed = "Derecho";
-                          else if (hIdx === 2) hTextProcessed = "Izquierdo";
-                        }
-                        
-                        return (
-                          <th 
-                            key={`th-${hIdx}`} 
-                            className={`px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-black border-r ${
-                              adaptivePDFContrast ? "border-black/40 border-b-2" : "border-slate-200"
-                            } last:border-r-0 ${widthClass}`}
-                          >
-                            {hTextProcessed}
-                          </th>
-                        );
-                      })}
-                    </tr>
-                  </thead>
-                  <tbody className={`divide-y ${adaptivePDFContrast ? "divide-black" : "divide-slate-200"} font-sans`}>
-                    {bodyRows.map((r, rIdx) => (
-                      <tr 
-                        key={`tr-${rIdx}`} 
-                        className={`${
-                          rIdx % 2 === 0 ? "bg-white" : "bg-slate-50/40"
-                        } ${adaptivePDFContrast ? "font-bold text-black" : ""}`}
-                        style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
-                      >
-                        {r.map((c, cIdx) => {
-                          const cellText = c;
-                          const renderedContent = renderBoldTextBlackSafe(cellText, `cell-print-${idx}-${rIdx}-${cIdx}`);
-
-                          let alignAndTypography = "text-left";
-                          if (isClassificationHTMLTable) {
-                            if (cIdx === 0) {
-                              alignAndTypography = "text-left font-bold text-slate-900";
-                            } else if (cIdx === 2) {
-                              alignAndTypography = "text-center font-mono font-bold text-indigo-800 bg-indigo-50/60 rounded px-1.5 py-0.5";
-                            }
-                          } else if (headers.length === 4 && cIdx === 0) {
-                            alignAndTypography = "text-center font-mono font-bold text-amber-700";
-                          }
-
-                          return (
-                            <td 
-                              key={`td-${cIdx}`} 
-                              className={`px-3 py-2 text-black leading-relaxed break-words whitespace-normal border-r ${
-                                adaptivePDFContrast ? "border-black/30 text-black font-bold" : "border-slate-200"
-                              } last:border-r-0 font-sans ${alignAndTypography}`}
-                            >
-                              {renderedContent}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            );
-          }
-
-          // Default: "text" type
-          return (
-            <div key={elem.id} className="space-y-2">
-              {elem.lines?.map((line, lIdx) => {
-                const trimmedLine = line.trim();
-                if (!trimmedLine) return null;
-
-                const isHeader = (trimmedLine.startsWith("**") && trimmedLine.endsWith("**"));
-                const cleanHeaderTxt = trimmedLine.replace(/\*\"/g, ""); // safe cleaning
-                
-                const isMainTitle = idx === 0 && lIdx === 0 && /REPORTE|INFORME|ESTUDIO|DIAGNÓSTICO|VALORACIÓN/i.test(trimmedLine);
-
-                if (isMainTitle) {
-                  return (
-                    <div key={`${elem.id}-l-${lIdx}`} className="text-center my-4 font-bold text-lg border-b pb-2 select-all uppercase tracking-wide">
-                      {renderBoldTextBlackSafe(cleanHeaderTxt, `print-title-${idx}`)}
-                    </div>
-                  );
-                }
-
-                if (isHeader) {
-                  return (
-                    <p key={`${elem.id}-l-${lIdx}`} className={`text-[12.5px] font-black uppercase mt-4 mb-2 ${adaptivePDFContrast ? "text-black" : "text-slate-800"}`}>
-                      {renderBoldTextBlackSafe(cleanHeaderTxt, `print-bold-header-${idx}-${lIdx}`)}
-                    </p>
-                  );
-                }
-
-                let printClass = "leading-relaxed select-text";
-                if (isSyntacticHighlightingActive) {
-                  const severity = getParagraphSeverity(trimmedLine);
-                  if (severity === "critical") {
-                    printClass = "leading-relaxed select-text border-l-[1.5px] border-red-500 bg-red-50/50 pl-3 py-1 rounded-r my-1.5 shadow-sm";
-                  } else if (severity === "altered") {
-                    printClass = "leading-relaxed select-text border-l-[1.5px] border-amber-500 bg-amber-50/40 pl-3 py-1 rounded-r my-1.5 shadow-sm";
-                  }
-                }
-
-                return (
-                  <p key={`${elem.id}-l-${lIdx}`} className={printClass}>
-                    {renderBoldTextBlackSafe(trimmedLine, `print-text-${idx}-${lIdx}`)}
-                  </p>
-                );
-              })}
-            </div>
-          );
-        })}
-
-        {/* Printable vascular schematic map attachment */}
-        {renderPrintVascularSchema()}
-
-        {/* Printable shoulder schematic map attachment */}
-        {renderPrintShoulderSchema()}
-
-        {/* Printable knee schematic map attachment */}
-        {renderPrintKneeSchema()}
-
-        {/* Printable ankle schematic map attachment */}
-        {renderPrintAnkleSchema()}
-
-        {/* Printable thigh schematic map attachment */}
-        {renderPrintThighSchema()}
-        {renderPrintThighPosteriorSchema()}
-        {renderPrintElbowSchema()}
-        {renderPrintScrotumSchema()}
-        {renderPrintWristSchema()}
-        {renderPrintBreastSchema()}
-        {renderPrintAbdominalWallSchema()}
-        {renderPrintCalfAchillesSchema()}
-        {renderPrintNeonatalBrainSchema()}
+        {/* Printable schematic map attachments in an Annex block */}
+        <div 
+          className="mt-8 pt-6 border-t-2 border-slate-300 font-sans print:break-before-page" 
+          style={{ pageBreakBefore: "always", breakBefore: "page" }}
+        >
+          {renderPrintVascularSchema()}
+          {renderPrintShoulderSchema()}
+          {renderPrintKneeSchema()}
+          {renderPrintAnkleSchema()}
+          {renderPrintThighSchema()}
+          {renderPrintThighPosteriorSchema()}
+          {renderPrintElbowSchema()}
+          {renderPrintScrotumSchema()}
+          {renderPrintWristSchema()}
+          {renderPrintBreastSchema()}
+          {renderPrintAbdominalWallSchema()}
+          {renderPrintCalfAchillesSchema()}
+          {renderPrintNeonatalBrainSchema()}
+        </div>
       </div>
     );
   };
@@ -24900,6 +25999,7 @@ const splitReportAndAnnex = (text: string) => {
         pdfLayoutType: pdfLayoutType || "classic",
         selectedLogo: selectedLogo || "none",
         attachedImages: attachedImages || [],
+        findings3dRenders: findings3dRenders || [],
         patientSummary: patientSummary || null
       };
 
@@ -25415,15 +26515,15 @@ const splitReportAndAnnex = (text: string) => {
           <div className="flex items-center gap-1 bg-slate-950/70 border border-slate-800/80 rounded-2xl p-1 shadow-2xl relative">
             <span className="text-[8.5px] font-black tracking-widest text-slate-550 uppercase px-2 font-mono">IA Core:</span>
             <button
-              onClick={() => setSelectedModel("gemini-3.6-flash")}
+              onClick={() => setSelectedModel("gemini-3.7-flash")}
               className={`px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${
-                selectedModel === "gemini-3.6-flash"
+                selectedModel === "gemini-3.7-flash"
                   ? "bg-indigo-600 text-white shadow-[0_0_15px_rgba(99,102,241,0.45)]"
                   : "text-slate-400 hover:text-slate-200 hover:bg-slate-900/60"
               }`}
-              title="Gemini 3.6 Flash: Especial para velocidad y reportes de rutina"
+              title="Gemini 3.7 Flash: Especial para velocidad y reportes de rutina"
             >
-              <Zap className={`h-3.5 w-3.5 ${selectedModel === "gemini-3.6-flash" ? "text-amber-300 animate-pulse" : ""}`} /> Flash 3.6
+              <Zap className={`h-3.5 w-3.5 ${selectedModel === "gemini-3.7-flash" ? "text-amber-300 animate-pulse" : ""}`} /> Flash 3.7
             </button>
             <button
               onClick={() => setSelectedModel("gemini-3.1-pro-preview")}
@@ -25444,7 +26544,7 @@ const splitReportAndAnnex = (text: string) => {
             className={`px-3.5 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase transition-all duration-200 flex items-center gap-2 cursor-pointer border ${
               isWorklistSidebarOpen
                 ? "bg-indigo-600/20 border-indigo-500/40 text-indigo-300 shadow-[0_0_15px_rgba(99,102,241,0.25)] font-black"
-                : "bg-slate-950/70 border-slate-850/80 text-slate-400 hover:text-slate-200 hover:bg-slate-900/60"
+                : "bg-slate-950/70 border-slate-855/80 text-slate-400 hover:text-slate-200 hover:bg-slate-900/60"
             }`}
             title="Abrir / Cerrar Lista de Trabajo Diaria"
           >
@@ -25464,7 +26564,7 @@ const splitReportAndAnnex = (text: string) => {
               <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500 shadow-[0_0_10px_#10b981]"></span>
             </div>
             <span className="text-[10px] font-black text-emerald-400 tracking-widest uppercase font-mono">
-              {selectedModel === "gemini-3.6-flash" ? "Flash-Active" : "Pro-Active"}
+              {selectedModel === "gemini-3.7-flash" ? "Flash-Active" : "Pro-Active"}
             </span>
           </div>
 
@@ -25621,18 +26721,18 @@ const splitReportAndAnnex = (text: string) => {
             <div className="space-y-1.5 font-sans">
               <button
                 type="button"
-                onClick={() => setSelectedModel("gemini-3.6-flash")}
+                onClick={() => setSelectedModel("gemini-3.7-flash")}
                 className={`w-full text-left px-2.5 py-2 rounded-lg border transition-all flex items-center justify-between ${
-                  selectedModel === "gemini-3.6-flash"
+                  selectedModel === "gemini-3.7-flash"
                     ? "bg-indigo-950/30 border-indigo-500/60 shadow-[0_2px_8px_rgba(99,102,241,0.1)]"
                     : "bg-transparent border-transparent hover:bg-slate-850 hover:border-slate-800"
                 }`}
               >
                 <div className="flex flex-col">
-                  <span className={`text-[10px] font-bold tracking-wide uppercase ${selectedModel === "gemini-3.6-flash" ? "text-indigo-400" : "text-slate-300"}`}>Gemini 3.6 Flash</span>
+                  <span className={`text-[10px] font-bold tracking-wide uppercase ${selectedModel === "gemini-3.7-flash" ? "text-indigo-400" : "text-slate-300"}`}>Gemini 3.7 Flash</span>
                   <span className="text-[8px] text-slate-500 font-medium">Dictados y reportes ágiles</span>
                 </div>
-                {selectedModel === "gemini-3.6-flash" && <Zap className="h-3.5 w-3.5 text-indigo-400 shrink-0" />}
+                {selectedModel === "gemini-3.7-flash" && <Zap className="h-3.5 w-3.5 text-indigo-400 shrink-0" />}
               </button>
 
               <button
@@ -28108,6 +29208,22 @@ const splitReportAndAnnex = (text: string) => {
                                             </button>
                                           </div>
                                         </div>
+
+                                        {/* 3D Volumetric Finding Render Trigger Button */}
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setModal3dSourceImage(img);
+                                            setModal3dInitialFinding(img.caption || "");
+                                            setIs3dRenderModalOpen(true);
+                                          }}
+                                          className="w-full mt-2 py-1.5 px-2 bg-gradient-to-r from-cyan-950/90 via-indigo-950/90 to-purple-950/90 hover:from-cyan-900 hover:via-indigo-900 hover:to-purple-900 border border-cyan-500/40 hover:border-cyan-400 text-cyan-200 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md shadow-cyan-950/40 group"
+                                          title="Generar ilustración renderizada en 3D volumétrico para este hallazgo"
+                                        >
+                                          <Box className="h-3.5 w-3.5 text-cyan-400 group-hover:scale-110 transition-transform" />
+                                          <span>Render 3D del Hallazgo</span>
+                                          <Sparkles className="h-3 w-3 text-amber-400" />
+                                        </button>
                                       </div>
                                     </div>
                                   );
@@ -28116,6 +29232,46 @@ const splitReportAndAnnex = (text: string) => {
                               </div>
                             )}
                           </div>
+
+                          {/* === 3D SCHEMATIC RENDERS FOR ULTRASOUND FINDINGS === */}
+                          <Findings3dRenderModule
+                            renders={findings3dRenders}
+                            onToggleIncludeInPdf={(id) => {
+                              setFindings3dRenders(prev =>
+                                prev.map(r => r.id === id ? { ...r, includeInPdf: !r.includeInPdf } : r)
+                              );
+                            }}
+                            onDeleteRender={(id) => {
+                              setFindings3dRenders(prev => prev.filter(r => r.id !== id));
+                            }}
+                            onUpdateRender={(updated) => {
+                              setFindings3dRenders(prev =>
+                                prev.map(r => r.id === updated.id ? updated : r)
+                              );
+                            }}
+                            onOpenCreateModal={(srcImg, initialDesc) => {
+                              setModal3dSourceImage(srcImg || (attachedImages.length > 0 ? attachedImages[0] : null));
+                              setModal3dInitialFinding(initialDesc || (srcImg ? srcImg.caption : ""));
+                              setIs3dRenderModalOpen(true);
+                            }}
+                          />
+
+                          <Create3dRenderModal
+                            isOpen={is3dRenderModalOpen}
+                            onClose={() => {
+                              setIs3dRenderModalOpen(false);
+                              setModal3dSourceImage(null);
+                              setModal3dInitialFinding("");
+                            }}
+                            attachedImages={attachedImages}
+                            sourceImage={modal3dSourceImage}
+                            initialFinding={modal3dInitialFinding}
+                            studyType={specificStudy || studyType || "Ecografía"}
+                            clinicalHistory={clinicalHistory}
+                            onSaveRender={(newRender) => {
+                              setFindings3dRenders(prev => [newRender, ...prev]);
+                            }}
+                          />
 
                           <React.Suspense fallback={
                             <div className="my-6 p-10 border border-dashed border-slate-800/50 rounded-3xl text-center bg-slate-950/10 text-slate-400 font-mono text-xs flex flex-col items-center justify-center gap-3 animate-pulse">
@@ -28438,7 +29594,7 @@ const splitReportAndAnnex = (text: string) => {
                           )}
 
                           {/* === ESCROTO US ANATOMY VIEWER AND SYNOPSIS HUD === */}
-                          {activeProtocol === "Escroto" && (
+                          {(activeProtocol === "Escroto" || specificStudy === "Escroto" || /escrot|testic/i.test(specificStudy || "")) && (
                             <div className="my-6 relative bg-slate-950/20 border border-slate-850/60 rounded-3xl p-4 transition-all duration-355">
                               <ScrotumAnatomyViewer
                                 selectedModel={selectedModel}
@@ -29405,16 +30561,20 @@ const splitReportAndAnnex = (text: string) => {
                           {/* Render Radar Biomecánico Panel */}
                           {isBiomechanicalRadarOpen && (
                             <div className="my-6">
-                              <BiomechanicalRadarModule
-                                selectedModel={selectedModel}
-                                reportText={isEditingReportManual ? editedReportText : generatedReport}
-                                studyType={specificStudy}
-                                onReportUpdated={(newReportText) => {
-                                  setEditedReportText(newReportText);
-                                  setGeneratedReport(newReportText);
-                                }}
-                                onRadarDataUpdated={(data) => setBiomechanicalRadarData(data)}
-                              />
+                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-indigo-400 bg-slate-900/60 rounded-xl border border-indigo-900/40 animate-pulse">Cargando Radar Biomecánico...</div>}>
+                                <BiomechanicalRadarModule
+                                  selectedModel={selectedModel}
+                                  reportText={isEditingReportManual ? editedReportText : generatedReport}
+                                  studyType={specificStudy}
+                                  includeRadarInReport={includeRadarInReport}
+                                  onToggleIncludeRadar={(val) => setIncludeRadarInReport(val)}
+                                  onReportUpdated={(newReportText) => {
+                                    setEditedReportText(newReportText);
+                                    setGeneratedReport(newReportText);
+                                  }}
+                                  onRadarDataUpdated={(data) => setBiomechanicalRadarData(data)}
+                                />
+                              </React.Suspense>
                             </div>
                           )}
 
@@ -31401,34 +32561,34 @@ const splitReportAndAnnex = (text: string) => {
                       {/* CARD 1: FLASH */}
                       <button
                         type="button"
-                        onClick={() => setSelectedModel("gemini-3.6-flash")}
+                        onClick={() => setSelectedModel("gemini-3.7-flash")}
                         className={`text-left p-4 rounded-xl border-2 transition-all flex flex-col justify-between ${
-                          selectedModel === "gemini-3.6-flash"
+                          selectedModel === "gemini-3.7-flash"
                             ? "bg-indigo-950/20 border-indigo-500/80 shadow-[0_0_12px_rgba(99,102,241,0.12)]"
                             : "bg-[#070b13] border-slate-850 hover:bg-slate-900/60 hover:border-slate-800"
                         }`}
                       >
                         <div>
                           <div className="flex items-center justify-between mb-2">
-                            <span className="text-xs font-black uppercase tracking-wider text-slate-200">Gemini 3.6 Flash</span>
+                            <span className="text-xs font-black uppercase tracking-wider text-slate-200">Gemini 3.7 Flash</span>
                             <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest ${
-                              selectedModel === "gemini-3.6-flash"
+                              selectedModel === "gemini-3.7-flash"
                                 ? "bg-indigo-500 text-white"
                                 : "bg-slate-800 text-slate-450"
                             }`}>
-                              {selectedModel === "gemini-3.6-flash" ? "ACTIVO" : "RECOMENDADO"}
+                              {selectedModel === "gemini-3.7-flash" ? "ACTIVO" : "RECOMENDADO"}
                             </span>
                           </div>
                           <p className="text-[11px] text-slate-400 leading-relaxed mb-3">
-                            Modelo ultra-rápido y optimizado para ráfagas de dictado clínico. Ideal para la transcripción de dictados de voz inmediatos, redacción ágil de reportes de rutina y clasificaciones estándar de consenso.
+                            Modelo de última generación ultra-rápido con capacidad de razonamiento híbrido y optimizado para dictado clínico. Ideal para transcripciones inmediatas, redacción ágil de reportes y clasificaciones estándar.
                           </p>
                         </div>
                         <div className="border-t border-slate-850/60 pt-2.5 mt-2 w-full space-y-1.5 text-[10px]">
                           <div className="flex items-start gap-1.5 text-emerald-400 leading-relaxed">
-                            <strong className="shrink-0">Fortalezas:</strong> <span className="text-slate-350">Velocidad de generación casi instantánea, respuestas fluidas, óptimo para dictado continuo de voz.</span>
+                            <strong className="shrink-0">Fortalezas:</strong> <span className="text-slate-350">Velocidad superior, razonamiento híbrido multimodal, respuestas fluidas, óptimo para dictado continuo.</span>
                           </div>
                           <div className="flex items-start gap-1.5 text-rose-455 leading-relaxed">
-                            <strong className="shrink-0">Limitaciones:</strong> <span className="text-slate-350">Ligeramente menos analítico en correlaciones comparativas extremadamente complejas o anomalías raras.</span>
+                            <strong className="shrink-0">Limitaciones:</strong> <span className="text-slate-350">Ligeramente menos analítico en correlaciones comparativas extremadamente complejas o anomalías ultra-raras.</span>
                           </div>
                         </div>
                       </button>
@@ -31541,7 +32701,7 @@ const splitReportAndAnnex = (text: string) => {
 {`{
   "success": true,
   "report": "# REPORTE DE ESTUDIO... (Hallazgos redactados en Markdown)",
-  "model_used": "gemini-3.6-flash"
+  "model_used": "gemini-3.7-flash"
 }`}
                       </pre>
                     </div>
@@ -31899,6 +33059,7 @@ const splitReportAndAnnex = (text: string) => {
                         if (viewingCloudStudy.clinicName) setClinicName(viewingCloudStudy.clinicName);
                         if (viewingCloudStudy.findings) setFindings(viewingCloudStudy.findings);
                         setAttachedImages(viewingCloudStudy.attachedImages || []);
+                        setFindings3dRenders(viewingCloudStudy.findings3dRenders || []);
                         setPatientSummary(viewingCloudStudy.patientSummary || null);
                         setViewingCloudStudy(null);
                       }}
@@ -32726,16 +33887,16 @@ const splitReportAndAnnex = (text: string) => {
 
                         {/* 2. CUADRO SINÓPTICO */}
                         {cuadroSinopticoReport && (
-                          <div className="mt-8 pt-4 border-t border-gray-200">
+                          <div className="mt-8 pt-6 border-t border-gray-300 print:break-before-page" style={{ pageBreakBefore: "always", breakBefore: "page" }}>
                             <div className="space-y-4 text-left leading-relaxed text-[12px] text-gray-900 font-serif">
                               {renderPrintReportBody(cuadroSinopticoReport)}
                             </div>
                           </div>
                         )}
 
-                        {/* 3. SINOPSIS POR ÓRGANO */}
+                        {/* 3. SINOPSIS POR ÓRGANO (PÁGINA INDEPENDIENTE) */}
                         {organSynopsisReport && (
-                          <div className="mt-8 pt-4 border-t border-gray-200">
+                          <div className="mt-8 pt-6 border-t border-gray-300 print:break-before-page" style={{ pageBreakBefore: "always", breakBefore: "page" }}>
                             <div className="space-y-4 text-left leading-relaxed text-[12px] text-gray-900 font-serif">
                               {renderPrintReportBody(organSynopsisReport)}
                             </div>
@@ -32752,7 +33913,7 @@ const splitReportAndAnnex = (text: string) => {
                         )}
 
                         {/* 7. ANEXO: RADAR BIOMECÁNICO E INFLAMATORIO */}
-                        {renderPrintBiomechanicalRadarAnnex(radarData)}
+                        {includeRadarInReport && renderPrintBiomechanicalRadarAnnex(radarData)}
                       </>
                     );
                   })()}
@@ -33901,16 +35062,16 @@ const splitReportAndAnnex = (text: string) => {
 
                 {/* 2. CUADRO SINÓPTICO */}
                 {cuadroSinopticoReport && (
-                  <div className="mt-8 pt-4 border-t border-gray-200">
+                  <div className="mt-8 pt-6 border-t border-gray-300 print:break-before-page" style={{ pageBreakBefore: "always", breakBefore: "page" }}>
                     <div className="pt-2 leading-relaxed text-[12.5px] text-gray-955 select-text font-serif">
                       {renderPrintReportBody(cuadroSinopticoReport)}
                     </div>
                   </div>
                 )}
 
-                {/* 3. SINOPSIS POR ÓRGANO */}
+                {/* 3. SINOPSIS POR ÓRGANO (PÁGINA INDEPENDIENTE) */}
                 {organSynopsisReport && (
-                  <div className="mt-8 pt-4 border-t border-gray-200">
+                  <div className="mt-8 pt-6 border-t border-gray-300 print:break-before-page" style={{ pageBreakBefore: "always", breakBefore: "page" }}>
                     <div className="pt-2 leading-relaxed text-[12.5px] text-gray-955 select-text font-serif">
                       {renderPrintReportBody(organSynopsisReport)}
                     </div>
@@ -33927,7 +35088,7 @@ const splitReportAndAnnex = (text: string) => {
                 )}
 
                 {/* 7. ANEXO: RADAR BIOMECÁNICO E INFLAMATORIO */}
-                {renderPrintBiomechanicalRadarAnnex(radarData)}
+                {includeRadarInReport && renderPrintBiomechanicalRadarAnnex(radarData)}
               </>
             );
           })()}
