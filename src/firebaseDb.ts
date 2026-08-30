@@ -71,6 +71,8 @@ export interface CloudStudy {
   findings3dRenders?: any[];
   atlas3dData?: any;
   includeAtlas3dInReport?: boolean;
+  vascular3dData?: any;
+  includeVascular3dInReport?: boolean;
   patientSummary?: any;
 }
 

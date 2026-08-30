@@ -82,3 +82,52 @@ export interface Atlas3DData {
   biomechanicalSynthesis?: string;
 }
 
+export type VascularStudyType = 
+  | "carotideo_vertebral"
+  | "arterial_mmii"
+  | "venoso_mmii"
+  | "arterias_renales"
+  | "aorto_iliaco"
+  | "general_vascular";
+
+export interface Vascular3DPanel {
+  id?: string;
+  panelLetter: string;
+  panelTitle: string;
+  anatomicalFocus: string;
+  laterality?: string;
+  vesselName?: string;
+  imageUrl?: string;
+  isCustomFlipped?: boolean;
+  promptUsed?: string;
+}
+
+export interface VascularHemodynamicRow {
+  vessel: string;             // ej: "Bulbo Carotídeo Derecho", "Arteria Femoral Común"
+  plaqueOrThrombus: string;   // ej: "Gray-Weale Tipo II (Blanda/Hipoecoica)", "Sin placas", "Comprensible sin trombo"
+  stenosisPercent: string;    // ej: "< 50%", "70-99%", "0%", "N/A"
+  patternOrVelocity: string;  // ej: "Laminar sin aceleración focal (PSV 75 cm/s)", "Onda Trifásica normal"
+  hemodynamicIndex: string;   // ej: "< 2.0 (1.15)", "RAR 1.4", "VR 1.1", "N/A"
+  clinicalImpact: string;     // ej: "Estenosis no significativa", "Permeabilidad normal", "Reflujo patológico"
+}
+
+export interface Vascular3DData {
+  studyTypeCategory?: VascularStudyType;
+  territoryLabel?: string;     // ej: "DOPPLER CAROTÍDEO Y VERTEBRAL"
+  laterality?: string;         // ej: "Bilateral", "Derecha", "Izquierda"
+  figureTitle?: string;        // ej: "FIGURA 1. ATLAS 3D DE CORRELACIÓN ANATOMOPATOLÓGICA Y HEMODINÁMICA CAROTÍDEA..."
+  tableTitle?: string;         // ej: "TABLA HEMODINÁMICA Y CARACTERIZACIÓN DE LESIONES CAROTÍDEAS:"
+  tableHeaders?: {
+    col1: string;
+    col2: string;
+    col3: string;
+    col4: string;
+    col5: string;
+    col6: string;
+  };
+  panels: Vascular3DPanel[];
+  hemodynamicTable: VascularHemodynamicRow[];
+  synthesisTitle?: string;
+  morphologicalSynthesis?: string;
+}
+

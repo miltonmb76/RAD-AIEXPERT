@@ -414,4 +414,320 @@ RESPONDE EN JSON:
       res.status(500).json({ success: false, error: handleGeminiError(error) });
     }
   });
+
+  // 3. FULL 3D VASCULAR SUITE GENERATION (2 to 3 panels + Tailored Hemodynamic Table + Morphological Synthesis)
+  app.post("/api/generate-3d-vascular", async (req: express.Request, res: express.Response) => {
+    try {
+      const { reportText, vascularType, laterality, requestedModel, customDirectives } = req.body;
+
+      if (!reportText || !reportText.trim()) {
+        return res.status(400).json({ success: false, error: "Se requiere el texto del informe Doppler vascular." });
+      }
+
+      const ai = getGeminiClient();
+      const model = getModelName(requestedModel || "gemini-3.7-flash");
+
+      const vascularPrompt = `Eres un Cirujano Vascular, Médico Especialista en Ecografía Doppler Vascular de Alta Resolución y Director de Arte Médico 3D.
+Tu misión es analizar el informe Doppler ecográfico adjunto para estructurar la "SUITE VASCULAR 3D & MAPA ANATOMO-HEMODINÁMICO" con máxima fidelidad anatomopatológica y hemodinámica.
+
+========================================================================
+INFORMACIÓN DEL ESTUDIO VASCULAR:
+========================================================================
+- Tipo de Estudio Sugerido / Seleccionado: "${vascularType || "Detectar automáticamente del informe"}"
+- Lateralidad Solicitada: "${laterality || "Detectar del informe"}"
+- Directiva Personalizada: "${customDirectives || "Ninguna"}"
+- INFORME DOPPLER VASCULAR:
+"""
+${reportText}
+"""
+
+========================================================================
+DIRECTIVAS CLÍNICAS Y TIPOS DE ESTUDIO:
+========================================================================
+Clasifica el estudio en uno de los 5 tipos canónicos y genera la tabla hemodinámica correspondiente:
+1. "carotideo_vertebral": Doppler Carotídeo y Vertebral (ACC, Bulbo, ACI proximal/media, ACE, Arteria Vertebral V1/V2 bilateral o unilateral).
+   - Encabezados: VASO / SEGMENTO | PLACA / TROMBO | % ESTENOSIS | PATRÓN (PSV/EDV) | REL. ACC/ACI | IMPACTO HEMODIN.
+2. "arterial_mmii": Doppler Arterial de Miembros Inferiores (AFC, AFP, AFS proximal/media/distal, A. Poplítea, ATA, ATP, A. Peronea, Pedial).
+   - Encabezados: VASO / SEGMENTO | PLACA / MORFOLOGÍA | % ESTENOSIS | ONDA / PSV (cm/s) | REL. VELOCIDAD (VR) | IMPACTO HEMODIN.
+3. "venoso_mmii": Doppler Venoso de Miembros Inferiores (VFC, VF, VFP, V. Poplítea, V. Tibiales, Safena Mayor, Safena Menor).
+   - Encabezados: SEGMENTO VENOSO | COMPRESIBILIDAD / TROMBO | FLUJO ESPONTÁNEO / FÁSICO | MANIOBRA DE AUMENTO | REFLUJO / COMPETENCIA | ESTADO CLÍNICO
+4. "arterias_renales": Doppler de Arterias Renales (Aorta Abdominal, A. Renal Principal Derecha/Izquierda ostium/cuerpo/hilio, Ramas Interlobares).
+   - Encabezados: VASO / SEGMENTO EVALUADO | PLACA / HALLAZGO LUMINAL | PSV (cm/s) / EDV | ÍNDICE RENOAÓRTICO (RAR) | ÍNDICE DE RESISTIVIDAD (RI) | INTERPRETACIÓN
+5. "aorto_iliaco": Doppler Aorto-Ilíaco (Aorta Suprarrenal, Infrarrenal, Bifurcación, A. Ilíaca Común Derecha/Izquierda, Ilíaca Externa/Interna).
+   - Encabezados: SEGMENTO VASCULAR | PLACA / CALCIFICACIÓN / TROMBO | DIÁMETRO / ECTASIA / ANEURISMA | % ESTENOSIS | PSV (cm/s) / PATRÓN | IMPACTO HEMODIN.
+
+========================================================================
+DISEÑO DE PANELES 3D VASCULARES (Generar 2 o 3 Paneles):
+========================================================================
+- Panel A: Vaso o bifurcación principal con la lesión más significativa (ej: Bulbo Carotídeo con placa mixta Gray-Weale Tipo II y reducción luminal, o AFS con estenosis/oclusión, o Vaso con trombo endoluminal).
+- Panel B: Vaso contralateral o segmento complementario (ej: Eje carotídeo contralateral o lecho distal).
+- Panel C (opcional, si el estudio involucra patología bilateral compleja o tercer territorio crítico).
+- PROMPT EN INGLÉS para cada panel:
+  "Ultra-realistic 3D medical macro vascular cross-section render of [detailed vessel name, exact wall layer cutaway, exact plaque/thrombus morphology (lipid core, fibrous cap, calcifications, ulceration, or clean healthy intima), intraluminal lumen opening with glowing chromatic laminar blood flow vectors, anatomical bone/soft tissue landmark background, cinema 4D octane render style, soft surgical studio lighting, clean background, strictly NO text, NO numbers, NO arrows, NO letters inside the image]."
+
+========================================================================
+SÍNTESIS MORFOLÓGICA Y HEMODINÁMICA:
+========================================================================
+Redacta un texto integrador de 3 a 5 líneas con las conclusiones del estudio, consensos (SRU/NASCET/Intersocietal), repercusión hemodinámica y permeabilidad.
+
+RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
+{
+  "studyTypeCategory": "carotideo_vertebral" | "arterial_mmii" | "venoso_mmii" | "arterias_renales" | "aorto_iliaco" | "general_vascular",
+  "territoryLabel": "DOPPLER CAROTÍDEO Y VERTEBRAL" | "DOPPLER ARTERIAL DE MIEMBRO INFERIOR" | "DOPPLER VENOSO DE MIEMBRO INFERIOR" | "DOPPLER DE ARTERIAS RENALES" | "DOPPLER AORTO-ILÍACO",
+  "laterality": "Bilateral" | "Derecha" | "Izquierda" | "Línea media",
+  "figureTitle": "FIGURA 1. ATLAS 3D DE CORRELACIÓN ANATOMOPATOLÓGICA Y HEMODINÁMICA [TERRITORIO]",
+  "tableTitle": "TABLA HEMODINÁMICA Y CARACTERIZACIÓN DE LESIONES [TERRITORIO]:",
+  "tableHeaders": {
+    "col1": "VASO / SEGMENTO",
+    "col2": "PLACA / TROMBO",
+    "col3": "% ESTENOSIS",
+    "col4": "PATRÓN (PSV/EDV)",
+    "col5": "REL. ACC/ACI",
+    "col6": "IMPACTO HEMODIN."
+  },
+  "panels": [
+    {
+      "panelLetter": "A",
+      "panelTitle": "Panel A: Bifurcación Carotídea Derecha: Ateromatosis Mixta Tipo II (Bulbo y ACI Proximal)",
+      "vesselName": "Bifurcación Carotídea Derecha",
+      "anatomicalFocus": "Placas de ateroma Gray-Weale Tipo II en pared anterior de bulbo...",
+      "laterality": "Derecha",
+      "imagePrompt": "Ultra-realistic 3D medical macro vascular render..."
+    },
+    {
+      "panelLetter": "B",
+      "panelTitle": "Panel B: Arteria Carótida Común Izquierda: Engrosamiento Miointimal Difuso",
+      "vesselName": "Arteria Carótida Común Izquierda",
+      "anatomicalFocus": "Corte longitudinal macro del eje carotídeo común izquierdo...",
+      "laterality": "Izquierda",
+      "imagePrompt": "Ultra-realistic 3D medical macro vascular render..."
+    }
+  ],
+  "hemodynamicTable": [
+    {
+      "vessel": "Arteria Carótida Común Derecha",
+      "plaqueOrThrombus": "Sin placas",
+      "stenosisPercent": "< 50%",
+      "patternOrVelocity": "Flujo laminar de resistencia intermedia",
+      "hemodynamicIndex": "N/A",
+      "clinicalImpact": "Normal"
+    }
+  ],
+  "synthesisTitle": "SÍNTESIS MORFOLÓGICA Y HEMODINÁMICA:",
+  "morphologicalSynthesis": "El estudio Doppler carotídeo y vertebral bilateral evidencia..."
+}`;
+
+      const planResponse = await ai.models.generateContent({
+        model: model,
+        contents: [{ text: vascularPrompt }],
+        config: { responseMimeType: "application/json" }
+      });
+
+      let planJson: any = {};
+      try {
+        planJson = JSON.parse(planResponse.text || "{}");
+      } catch (parseErr) {
+        console.error("Error parseando plan JSON Vascular 3D:", parseErr);
+        planJson = {
+          studyTypeCategory: vascularType || "carotideo_vertebral",
+          territoryLabel: "DOPPLER VASCULAR",
+          laterality: laterality || "Bilateral",
+          figureTitle: "FIGURA 1. ATLAS 3D DE CORRELACIÓN VASCULAR Y HEMODINÁMICA",
+          tableTitle: "TABLA HEMODINÁMICA Y CARACTERIZACIÓN VASCULAR:",
+          tableHeaders: {
+            col1: "VASO / SEGMENTO",
+            col2: "PLACA / TROMBO",
+            col3: "% ESTENOSIS",
+            col4: "PATRÓN (PSV/EDV)",
+            col5: "REL. / ÍNDICE",
+            col6: "IMPACTO HEMODIN."
+          },
+          panels: [
+            {
+              panelLetter: "A",
+              panelTitle: "Panel A: Reconstrucción Vascular de Alta Resolución",
+              anatomicalFocus: "Evaluación morfológica parietal y luminal del eje vascular principal.",
+              laterality: "Derecha",
+              imagePrompt: "Ultra-realistic 3D medical macro vascular cross-section render showing blood vessel wall, translucent lumen with chromatic laminar flow vectors, studio lighting, octane render, no text."
+            },
+            {
+              panelLetter: "B",
+              panelTitle: "Panel B: Eje Complementario / Contralateral",
+              anatomicalFocus: "Permeabilidad y morfología parietal del vaso complementario.",
+              laterality: "Izquierda",
+              imagePrompt: "Ultra-realistic 3D medical macro vascular render of contralateral blood vessel, smooth endothelial intima, clean studio background, octane render, no text."
+            }
+          ],
+          hemodynamicTable: [
+            {
+              vessel: "Eje Vascular Principal",
+              plaqueOrThrombus: "Morfología evaluada",
+              stenosisPercent: "0%",
+              patternOrVelocity: "Flujo laminar normal",
+              hemodynamicIndex: "Normal",
+              clinicalImpact: "Sin repercusión hemodinámica"
+            }
+          ],
+          synthesisTitle: "SÍNTESIS MORFOLÓGICA Y HEMODINÁMICA:",
+          morphologicalSynthesis: "La correlación anatomopatológica y velocimétrica confirma la permeabilidad y características hemodinámicas descriptas en el estudio."
+        };
+      }
+
+      // Generate images in parallel for each vascular panel
+      const panelsWithImages = await Promise.all(
+        (planJson.panels || []).map(async (panel: any, idx: number) => {
+          let promptToUse = panel.imagePrompt || `Ultra-realistic 3D medical macro vascular render of ${panel.vesselName || panel.panelTitle}, octane render, no text.`;
+          if (customDirectives && customDirectives.trim()) {
+            promptToUse = `${promptToUse} [MANDATORY CLINICAL DIRECTIVE: ${customDirectives.trim()}].`;
+          }
+          if (panel.laterality && panel.laterality !== "auto") {
+            promptToUse = `[MANDATORY PATIENT LATERALITY: ${panel.laterality.toUpperCase()}]. ${promptToUse}`;
+          }
+
+          try {
+            const imageUrl = await generateMedicalImage(ai, promptToUse);
+            return {
+              id: `vasc-panel-${idx}-${Date.now()}`,
+              panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
+              panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
+              vesselName: panel.vesselName || panel.panelTitle || "",
+              anatomicalFocus: panel.anatomicalFocus || "Evaluación vascular anatómica y hemodinámica",
+              laterality: panel.laterality || planJson.laterality || laterality || "",
+              imageUrl: imageUrl,
+              promptUsed: promptToUse,
+              isCustomFlipped: false
+            };
+          } catch (imgErr) {
+            console.error(`Error generando imagen para panel vascular ${panel.panelLetter}:`, imgErr);
+            return {
+              id: `vasc-panel-${idx}-${Date.now()}`,
+              panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
+              panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
+              vesselName: panel.vesselName || panel.panelTitle || "",
+              anatomicalFocus: panel.anatomicalFocus || "Evaluación vascular anatómica y hemodinámica",
+              laterality: panel.laterality || planJson.laterality || laterality || "",
+              imageUrl: "",
+              promptUsed: promptToUse,
+              isCustomFlipped: false
+            };
+          }
+        })
+      );
+
+      const finalVascularData = {
+        studyTypeCategory: planJson.studyTypeCategory || vascularType || "carotideo_vertebral",
+        territoryLabel: planJson.territoryLabel || "DOPPLER VASCULAR",
+        laterality: planJson.laterality || laterality || "Bilateral",
+        figureTitle: planJson.figureTitle || `FIGURA 1. ATLAS 3D DE CORRELACIÓN VASCULAR Y HEMODINÁMICA`,
+        tableTitle: planJson.tableTitle || `TABLA HEMODINÁMICA Y CARACTERIZACIÓN DE LESIONES:`,
+        tableHeaders: planJson.tableHeaders || {
+          col1: "VASO / SEGMENTO",
+          col2: "PLACA / TROMBO",
+          col3: "% ESTENOSIS",
+          col4: "PATRÓN (PSV/EDV)",
+          col5: "REL. ACC/ACI",
+          col6: "IMPACTO HEMODIN."
+        },
+        panels: panelsWithImages,
+        hemodynamicTable: planJson.hemodynamicTable || [],
+        synthesisTitle: planJson.synthesisTitle || "SÍNTESIS MORFOLÓGICA Y HEMODINÁMICA:",
+        morphologicalSynthesis: planJson.morphologicalSynthesis || planJson.biomechanicalSynthesis || ""
+      };
+
+      res.json({
+        success: true,
+        data: finalVascularData
+      });
+
+    } catch (error: any) {
+      console.error("Error en /api/generate-3d-vascular:", error);
+      res.status(500).json({ success: false, error: handleGeminiError(error) });
+    }
+  });
+
+  // 4. REGENERATE INDIVIDUAL VASCULAR 3D PANEL
+  app.post("/api/regenerate-3d-vascular-panel", async (req: express.Request, res: express.Response) => {
+    try {
+      const { reportText, vascularType, panel, laterality, userDirective, requestedModel } = req.body;
+
+      if (!panel) {
+        return res.status(400).json({ success: false, error: "Se requiere el panel vascular a regenerar." });
+      }
+
+      const ai = getGeminiClient();
+      const model = getModelName(requestedModel || "gemini-3.7-flash");
+
+      const refinePrompt = `Eres un Cirujano Vascular y Director de Arte Médico 3D.
+Diseña un prompt en inglés superdetallado para re-generar una única imagen vascular macrofotorrealista 3D correspondiente al PANEL ${panel.panelLetter}.
+
+DATOS DEL CASO:
+- Territorio: "${vascularType || "Doppler Vascular"}"
+- Vaso: "${panel.vesselName || panel.panelTitle || ""}"
+- Foco actual: "${panel.anatomicalFocus || ""}"
+- Lateralidad requerida: "${laterality || panel.laterality || ""}"
+- Instrucción / Corrección del médico: "${userDirective || "Mejorar precisión anatomopatológica y hemodinámica"}"
+- Contexto del informe: """${(reportText || "").slice(0, 800)}"""
+
+REGLAS DE ESTILO:
+- Ultra-realistic 3D medical macro vascular cross-section render, cinema 4D octane render style, accurate vascular wall layers (intima, media, adventitia), realistic plaque/thrombus (lipid core, fibrous cap, calcium) or smooth clean lumen, glowing chromatic laminar blood flow vectors, soft surgical studio lighting, pure clean background.
+- STRICTLY NO text, NO numbers, NO letters, NO arrows inside the image.
+
+RESPONDE EN JSON:
+{
+  "panelTitle": "Título actualizado o confirmado para el panel",
+  "vesselName": "Nombre del vaso",
+  "anatomicalFocus": "Foco anatomopatológico y hemodinámico de 1 a 2 líneas",
+  "imagePrompt": "Detailed English image generation prompt..."
+}`;
+
+      const refineResponse = await ai.models.generateContent({
+        model: model,
+        contents: [{ text: refinePrompt }],
+        config: { responseMimeType: "application/json" }
+      });
+
+      let refineJson: any = {};
+      try {
+        refineJson = JSON.parse(refineResponse.text || "{}");
+      } catch (e) {
+        refineJson = {
+          panelTitle: panel.panelTitle,
+          vesselName: panel.vesselName || panel.panelTitle,
+          anatomicalFocus: panel.anatomicalFocus,
+          imagePrompt: `Ultra-realistic 3D medical macro vascular render of ${panel.vesselName || panel.panelTitle}, octane render, studio lighting, no text.`
+        };
+      }
+
+      let finalPrompt = refineJson.imagePrompt || panel.promptUsed || `3D macro vascular render of ${panel.panelTitle}, no text.`;
+      if (userDirective && userDirective.trim()) {
+        finalPrompt = `${finalPrompt} [MANDATORY SURGICAL CORRECTION: ${userDirective.trim()}].`;
+      }
+      if (laterality && laterality !== "auto") {
+        finalPrompt = `[MANDATORY PATIENT LATERALITY: ${laterality.toUpperCase()}]. ${finalPrompt}`;
+      }
+
+      const imageUrl = await generateMedicalImage(ai, finalPrompt);
+
+      const updatedPanel = {
+        ...panel,
+        panelTitle: refineJson.panelTitle || panel.panelTitle,
+        vesselName: refineJson.vesselName || panel.vesselName,
+        anatomicalFocus: refineJson.anatomicalFocus || panel.anatomicalFocus,
+        laterality: laterality || panel.laterality,
+        imageUrl: imageUrl,
+        promptUsed: finalPrompt,
+        isCustomFlipped: false
+      };
+
+      res.json({
+        success: true,
+        panel: updatedPanel
+      });
+
+    } catch (error: any) {
+      console.error("Error en /api/regenerate-3d-vascular-panel:", error);
+      res.status(500).json({ success: false, error: handleGeminiError(error) });
+    }
+  });
 }
+
