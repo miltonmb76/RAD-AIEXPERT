@@ -1,4 +1,4 @@
-import { Atlas3DData } from "./types";
+import { Atlas3DData } from "../types";
 
 export function renderAtlas3DAnnexToPDF(
   doc: any,
@@ -23,92 +23,106 @@ export function renderAtlas3DAnnexToPDF(
 
   // Add dedicated exclusive page
   doc.addPage();
-  let yCoord = 20 * factor;
+  
+  // Start comfortably below running header line (y=14)
+  let yCoord = 22 * factor;
 
-  // 1. TOP HEADER
+  // 1. TOP HEADER (Medical Atlas Style)
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(11.5 * factor);
+  doc.setFontSize(12.5 * factor);
   doc.setTextColor(15, 23, 42); // slate-900
   doc.text("ANEXO: ATLAS 3D FOTORREALISTA Y CORRELACIÓN ANATÓMICA", marginX, yCoord);
-  yCoord += 4 * factor;
+  yCoord += 4.5 * factor;
 
-  // Top Accent Line
+  // Top Accent Line (Indigo gradient representation)
   doc.setDrawColor(99, 102, 241); // Indigo-500
-  doc.setLineWidth(0.6);
+  doc.setLineWidth(0.8);
   doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
-  yCoord += 5 * factor;
-
-  // Subtitle / Region metadata
-  doc.setFont("helvetica", "italic");
-  doc.setFontSize(7.5 * factor);
-  doc.setTextColor(100, 116, 139); // slate-500
-  const regionLabel = atlasData.studyRegion || "Región Anatómica Evaluada";
-  const lateralityLabel = atlasData.detectedLaterality ? ` • Lateralidad: ${atlasData.detectedLaterality}` : "";
-  const subtitleText = `Reconstrucción volumétrica tridimensional orientativa correlacionada • Región: ${regionLabel}${lateralityLabel}.`;
-  doc.text(subtitleText, marginX, yCoord);
-  yCoord += 5 * factor;
+  yCoord += 7 * factor;
 
   // 2. FIGURE TITLE BANNER (Elegantly styled box with left purple accent)
+  const regionLabel = atlasData.studyRegion || "Región Anatómica Evaluada";
   const figTitle = atlasData.figureTitle || `FIGURA 1. RECONSTRUCCIÓN ANATÓMICA 3D Y CORRELACIÓN ULTRASONOGRÁFICA DE ${regionLabel.toUpperCase()}`;
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(8 * factor);
-  const figTitleLines = doc.splitTextToSize(figTitle, contentWidth - 10 * factor);
-  const bannerHeight = Math.max(7, figTitleLines.length * 3.8 + 3) * factor;
+  doc.setFontSize(9.5 * factor);
+  const figTitleLines = doc.splitTextToSize(figTitle, contentWidth - 18 * factor);
+  const figLineH = 4.8 * factor;
+  const bannerHeight = Math.max(10 * factor, figTitleLines.length * figLineH + 6 * factor);
 
   // Banner background
   doc.setFillColor(241, 245, 249); // slate-100
   doc.setDrawColor(203, 213, 225); // slate-300
-  doc.setLineWidth(0.3);
-  doc.roundedRect(marginX, yCoord, contentWidth, bannerHeight, 1.5, 1.5, "FD");
+  doc.setLineWidth(0.35);
+  doc.roundedRect(marginX, yCoord, contentWidth, bannerHeight, 2, 2, "FD");
 
   // Left accent bar
   doc.setFillColor(99, 102, 241); // Indigo 500
-  doc.rect(marginX, yCoord, 2.5 * factor, bannerHeight, "F");
+  doc.rect(marginX, yCoord, 3.5 * factor, bannerHeight, "F");
 
   // Title Text
   doc.setTextColor(30, 41, 59); // slate-800
-  let curTitleY = yCoord + 4.5 * factor;
+  let curTitleY = yCoord + 5.5 * factor;
   figTitleLines.forEach((line: string) => {
-    doc.text(line, marginX + 5 * factor, curTitleY);
-    curTitleY += 3.8 * factor;
+    doc.text(line, marginX + 8 * factor, curTitleY);
+    curTitleY += figLineH;
   });
-  yCoord += bannerHeight + 4 * factor;
+  yCoord += bannerHeight + 6 * factor;
 
   // 3. 3D PANELS GRID (2 or 3 Columns)
   const numPanels = validPanels.length;
-  const panelGap = 3.5 * factor;
+  const panelGap = (numPanels === 2 ? 6 : 4) * factor;
   const panelWidth = (contentWidth - panelGap * (numPanels - 1)) / numPanels;
   
   // Calculate proportional heights (Header + 4:3 Image Container + Caption)
-  const cardHeaderH = 6 * factor;
-  const imgBoxH = (panelWidth * 0.72); // Maintain ~4:3 aspect ratio
-  const captionH = 10 * factor;
+  const cardHeaderH = (numPanels === 2 ? 8.5 : 7.5) * factor;
+  const imgBoxH = panelWidth * 0.75; // Exact 4:3 aspect ratio
+  
+  // Pre-calculate captions to ensure exact height fitting and no text overflow
+  doc.setFont("helvetica", "normal");
+  const captionFontSize = (numPanels === 2 ? 8 : 7.2) * factor;
+  doc.setFontSize(captionFontSize);
+  const captionLineH = (numPanels === 2 ? 4.2 : 3.8) * factor;
+
+  const panelCalculatedData = validPanels.map((panel) => {
+    const focusText = panel.anatomicalFocus ? panel.anatomicalFocus.replace(/^Foco:\s*/i, "") : "Reconstrucción tridimensional";
+    const focusAvailableWidth = panelWidth - (numPanels === 2 ? 18 : 14) * factor;
+    const focusLines = doc.splitTextToSize(focusText, focusAvailableWidth);
+    return {
+      focusText,
+      focusLines,
+      lineCount: Math.max(focusLines.length, 1)
+    };
+  });
+
+  const maxCaptionLines = Math.max(...panelCalculatedData.map(p => p.lineCount), 2);
+  const captionH = Math.max(14 * factor, maxCaptionLines * captionLineH + 8 * factor);
   const totalPanelCardH = cardHeaderH + imgBoxH + captionH;
 
   for (let i = 0; i < numPanels; i++) {
     const panel = validPanels[i];
+    const calcData = panelCalculatedData[i];
     const panelX = marginX + i * (panelWidth + panelGap);
 
     // Card Outer Box
     doc.setFillColor(15, 23, 42); // slate-900
     doc.setDrawColor(51, 65, 85); // slate-700
-    doc.setLineWidth(0.3);
-    doc.roundedRect(panelX, yCoord, panelWidth, totalPanelCardH, 1.5, 1.5, "FD");
+    doc.setLineWidth(0.4);
+    doc.roundedRect(panelX, yCoord, panelWidth, totalPanelCardH, 2.5, 2.5, "FD");
 
     // Card Header (Violet banner with Panel Letter)
     doc.setFillColor(79, 70, 229); // Indigo-600
-    doc.roundedRect(panelX, yCoord, panelWidth, cardHeaderH, 1.5, 1.5, "F");
+    doc.roundedRect(panelX, yCoord, panelWidth, cardHeaderH, 2.5, 2.5, "F");
     // Flatten bottom corners of header
-    doc.rect(panelX, yCoord + cardHeaderH - 1.5, panelWidth, 1.5, "F");
+    doc.rect(panelX, yCoord + cardHeaderH - 2.5, panelWidth, 2.5, "F");
 
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(7 * factor);
+    doc.setFontSize((numPanels === 2 ? 8.5 : 7.5) * factor);
     doc.setTextColor(255, 255, 255);
     const panelHeaderTitle = `PANEL ${panel.panelLetter}: ${panel.panelTitle || ""}`;
-    const headerTitleLines = doc.splitTextToSize(panelHeaderTitle, panelWidth - 4 * factor);
-    doc.text(headerTitleLines[0] || panelHeaderTitle, panelX + 2.5 * factor, yCoord + 4.2 * factor);
+    const headerTitleLines = doc.splitTextToSize(panelHeaderTitle, panelWidth - 6 * factor);
+    doc.text(headerTitleLines[0] || panelHeaderTitle, panelX + 3.5 * factor, yCoord + 5.5 * factor);
 
-    // Image Placement inside white/clean container
+    // Image Placement inside white/clean container maintaining exact 4:3 aspect ratio
     const imgY = yCoord + cardHeaderH;
     doc.setFillColor(255, 255, 255);
     doc.rect(panelX, imgY, panelWidth, imgBoxH, "F");
@@ -120,8 +134,17 @@ export function renderAtlas3DAnnexToPDF(
         if (cleanB64.startsWith("data:image/png")) format = "PNG";
         if (cleanB64.startsWith("data:image/webp")) format = "WEBP";
         
-        // Add image centered inside image container maintaining aspect ratio
-        doc.addImage(cleanB64, format, panelX + 0.5 * factor, imgY + 0.5 * factor, panelWidth - 1 * factor, imgBoxH - 1 * factor, undefined, "FAST");
+        const imgInset = 0.4 * factor;
+        doc.addImage(
+          cleanB64,
+          format,
+          panelX + imgInset,
+          imgY + imgInset,
+          panelWidth - imgInset * 2,
+          imgBoxH - imgInset * 2,
+          undefined,
+          "FAST"
+        );
       }
     } catch (imgError) {
       console.warn("Error rendering panel image in PDF:", imgError);
@@ -133,33 +156,39 @@ export function renderAtlas3DAnnexToPDF(
     doc.rect(panelX, captionY, panelWidth, captionH, "F");
 
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(6.2 * factor);
+    doc.setFontSize(captionFontSize);
     doc.setTextColor(165, 180, 252); // indigo-300
-    doc.text("Foco:", panelX + 2 * factor, captionY + 3.8 * factor);
+    const focoLabelX = panelX + 3.5 * factor;
+    doc.text("Foco:", focoLabelX, captionY + 5.2 * factor);
 
+    const focoLabelWidth = doc.getTextWidth("Foco:") + 2 * factor;
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(6 * factor);
-    doc.setTextColor(226, 232, 240); // slate-200
-    const focusText = panel.anatomicalFocus ? panel.anatomicalFocus.replace(/^Foco:\s*/i, "") : "Reconstrucción tridimensional";
-    const focusLines = doc.splitTextToSize(focusText, panelWidth - 11 * factor);
-    let curLineY = captionY + 3.8 * factor;
-    focusLines.slice(0, 2).forEach((l: string) => {
-      doc.text(l, panelX + 9 * factor, curLineY);
-      curLineY += 3 * factor;
+    doc.setFontSize(captionFontSize);
+    doc.setTextColor(241, 245, 249); // slate-100
+    
+    let curLineY = captionY + 5.2 * factor;
+    calcData.focusLines.forEach((l: string, lIdx: number) => {
+      // First line indented after "Foco:", subsequent lines aligned
+      const textX = lIdx === 0 ? focoLabelX + focoLabelWidth : focoLabelX;
+      doc.text(l, textX, curLineY);
+      curLineY += captionLineH;
     });
   }
 
-  yCoord += totalPanelCardH + 5 * factor;
+  yCoord += totalPanelCardH + 7 * factor;
 
   // 4. SYNOPTIC CORRELATION TABLE
   const synopticRows = (atlasData.synopticExplanation || atlasData.synopticTable || []);
   if (synopticRows.length > 0) {
-    // Section Header
+    // Section Header with stylized vector square icon (No unicode character that causes %)
+    doc.setFillColor(99, 102, 241); // Indigo-500
+    doc.roundedRect(marginX, yCoord - 3.2 * factor, 3.8 * factor, 3.8 * factor, 0.8, 0.8, "F");
+
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(7.5 * factor);
+    doc.setFontSize(9.5 * factor);
     doc.setTextColor(15, 23, 42); // slate-900
-    doc.text("■ CORRELACIÓN SEMIOLÓGICA DE HALLAZGOS EN RECONSTRUCCIÓN 3D", marginX, yCoord);
-    yCoord += 3.5 * factor;
+    doc.text("CORRELACIÓN SEMIOLÓGICA DE HALLAZGOS EN RECONSTRUCCIÓN 3D", marginX + 6 * factor, yCoord);
+    yCoord += 5.5 * factor;
 
     // Table Column Widths
     const colStructureW = contentWidth * 0.28;
@@ -167,29 +196,29 @@ export function renderAtlas3DAnnexToPDF(
     const colDescW = contentWidth - colStructureW - colRefW;
 
     // Table Header Row
-    const tableHeaderH = 5 * factor;
+    const tableHeaderH = 7 * factor;
     doc.setFillColor(241, 245, 249); // slate-100
     doc.setDrawColor(203, 213, 225); // slate-300
-    doc.setLineWidth(0.3);
+    doc.setLineWidth(0.35);
     doc.rect(marginX, yCoord, contentWidth, tableHeaderH, "FD");
 
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(6.2 * factor);
+    doc.setFontSize(8 * factor);
     doc.setTextColor(51, 65, 85); // slate-700
-    doc.text("ESTRUCTURA / FOCO ANATÓMICO", marginX + 2 * factor, yCoord + 3.5 * factor);
-    doc.text("REF. PANEL", marginX + colStructureW + 2 * factor, yCoord + 3.5 * factor);
-    doc.text("DESCRIPCIÓN PATOLÓGICA Y CORRELACIÓN TRIDIMENSIONAL", marginX + colStructureW + colRefW + 2 * factor, yCoord + 3.5 * factor);
+    doc.text("ESTRUCTURA / FOCO ANATÓMICO", marginX + 4 * factor, yCoord + 4.8 * factor);
+    doc.text("REF. PANEL", marginX + colStructureW + 4 * factor, yCoord + 4.8 * factor);
+    doc.text("DESCRIPCIÓN PATOLÓGICA Y CORRELACIÓN TRIDIMENSIONAL", marginX + colStructureW + colRefW + 4 * factor, yCoord + 4.8 * factor);
     yCoord += tableHeaderH;
 
-    // Render Rows
+    // Render Rows with calculated heights to prevent any text overflowing
     synopticRows.forEach((row, rIdx) => {
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(6.2 * factor);
+      doc.setFontSize(8 * factor);
 
-      const descLines = doc.splitTextToSize(row.findingDetail || "", colDescW - 4 * factor);
-      const structLines = doc.splitTextToSize(row.structure || "", colStructureW - 4 * factor);
+      const structLines = doc.splitTextToSize(row.structure || "", colStructureW - 8 * factor);
+      const descLines = doc.splitTextToSize(row.findingDetail || "", colDescW - 8 * factor);
       const rowLinesCount = Math.max(descLines.length, structLines.length, 1);
-      const rowH = Math.max(5.5, rowLinesCount * 3.2 + 2) * factor;
+      const rowLineH = 4.4 * factor;
+      const rowH = Math.max(9 * factor, rowLinesCount * rowLineH + 6 * factor);
 
       // Row background
       if (rIdx % 2 === 1) {
@@ -202,70 +231,75 @@ export function renderAtlas3DAnnexToPDF(
       // Structure text
       doc.setFont("helvetica", "bold");
       doc.setTextColor(15, 23, 42); // slate-900
-      let sY = yCoord + 3.5 * factor;
+      let sY = yCoord + 5.2 * factor;
       structLines.forEach((sl: string) => {
-        doc.text(sl, marginX + 2 * factor, sY);
-        sY += 3 * factor;
+        doc.text(sl, marginX + 4 * factor, sY);
+        sY += rowLineH;
       });
 
       // Panel Ref Badge
       doc.setFont("helvetica", "bold");
       doc.setTextColor(192, 38, 205); // Fuchsia-600 / Magenta
-      doc.text(row.panelRef || "(Panel A)", marginX + colStructureW + 2 * factor, yCoord + 3.5 * factor);
+      doc.text(row.panelRef || "(Panel A)", marginX + colStructureW + 4 * factor, yCoord + 5.2 * factor);
 
       // Description text
       doc.setFont("helvetica", "normal");
       doc.setTextColor(51, 65, 85); // slate-700
-      let dY = yCoord + 3.5 * factor;
+      let dY = yCoord + 5.2 * factor;
       descLines.forEach((dl: string) => {
-        doc.text(dl, marginX + colStructureW + colRefW + 2 * factor, dY);
-        dY += 3 * factor;
+        doc.text(dl, marginX + colStructureW + colRefW + 4 * factor, dY);
+        dY += rowLineH;
       });
 
       yCoord += rowH;
     });
 
-    yCoord += 3.5 * factor;
+    yCoord += 6 * factor;
   }
 
   // 5. BIOMECHANICAL & FUNCTIONAL SYNTHESIS BOX
   const synthText = atlasData.biomechanicalSynthesis || atlasData.synthesis;
   if (synthText && synthText.trim()) {
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(6.5 * factor);
-    const synthLines = doc.splitTextToSize(synthText, contentWidth - 10 * factor);
-    const synthBoxH = Math.max(8, synthLines.length * 3.2 + 6) * factor;
+    const bottomMargin = 14 * factor;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.2 * factor);
+    const synthLineH = 4.5 * factor;
+    const synthLines = doc.splitTextToSize(synthText, contentWidth - 18 * factor);
+    const synthBoxH = Math.max(16 * factor, synthLines.length * synthLineH + 13 * factor);
 
-    // Check space limit
-    if (yCoord + synthBoxH > pageHeight - 15 * factor) {
-      // Scale down gently
-      yCoord = pageHeight - synthBoxH - 15 * factor;
+    // Safeguard: if box would touch the bottom margin, adjust yCoord smoothly
+    if (yCoord + synthBoxH > pageHeight - bottomMargin) {
+      yCoord = pageHeight - bottomMargin - synthBoxH;
     }
 
     // Warm background box with amber left bar
     doc.setFillColor(254, 252, 232); // Amber-50 / Yellow-50
     doc.setDrawColor(254, 215, 170); // Orange-200
-    doc.setLineWidth(0.3);
-    doc.roundedRect(marginX, yCoord, contentWidth, synthBoxH, 1.2, 1.2, "FD");
+    doc.setLineWidth(0.4);
+    doc.roundedRect(marginX, yCoord, contentWidth, synthBoxH, 2, 2, "FD");
 
     // Amber accent bar on left
     doc.setFillColor(245, 158, 11); // Amber-500
-    doc.rect(marginX, yCoord, 2.2 * factor, synthBoxH, "F");
+    doc.rect(marginX, yCoord, 3.5 * factor, synthBoxH, "F");
+
+    // Stylized vector bullet square for synthesis title (No unicode character)
+    doc.setFillColor(217, 119, 6); // Amber-600
+    doc.roundedRect(marginX + 7 * factor, yCoord + 4.5 * factor, 3 * factor, 3 * factor, 0.6, 0.6, "F");
 
     // Title of synthesis
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(6.5 * factor);
+    doc.setFontSize(8.8 * factor);
     doc.setTextColor(180, 83, 9); // Amber-700
-    doc.text("■ SÍNTESIS BIOMECÁNICA, FUNCIONAL Y DIAGNÓSTICA:", marginX + 5 * factor, yCoord + 4 * factor);
+    doc.text("SÍNTESIS BIOMECÁNICA, FUNCIONAL Y DIAGNÓSTICA:", marginX + 12 * factor, yCoord + 6.8 * factor);
 
     // Body of synthesis
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(6.2 * factor);
+    doc.setFontSize(8.2 * factor);
     doc.setTextColor(120, 53, 15); // Amber-900
-    let curSynthY = yCoord + 7.5 * factor;
+    let curSynthY = yCoord + 12.2 * factor;
     synthLines.forEach((line: string) => {
-      doc.text(line, marginX + 5 * factor, curSynthY);
-      curSynthY += 3.2 * factor;
+      doc.text(line, marginX + 7 * factor, curSynthY);
+      curSynthY += synthLineH;
     });
   }
 }
