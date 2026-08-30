@@ -190,7 +190,7 @@ export const ClassificationBreakdownModule: React.FC<ClassificationBreakdownModu
     const catName = (breakdownData.categoryAssigned || "").trim();
     const titleHeader = formatClassificationTitle(sysName, catName);
 
-    let annexText = `\n\n---\n\n### ${titleHeader}\n`;
+    let annexText = `\n\n---\n\n### ANEXO: DESGLOSE Y JUSTIFICACIÓN DE CLASIFICACIONES RADIOLÓGICAS\n#### ${titleHeader}\n`;
     annexText += `**Sistema:** ${sysName} • **Categoría / Estadio:** ${catName}\n\n`;
     annexText += `**Definición & Significado Clínico:** ${cleanFieldText(breakdownData.definitionAndRisk)}\n\n`;
     annexText += `**Sustento Diagnóstico Integrador:** ${cleanFieldText(breakdownData.clinicalSummary)}\n\n`;

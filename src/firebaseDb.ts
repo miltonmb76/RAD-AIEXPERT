@@ -68,6 +68,7 @@ export interface CloudStudy {
   pdfLayoutType?: string;
   selectedLogo?: string;
   attachedImages?: any[];
+  usPhotoLayout?: string;
   findings3dRenders?: any[];
   patientSummary?: any;
 }

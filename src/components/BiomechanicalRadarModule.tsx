@@ -32,7 +32,7 @@ export interface BiomechanicalRadarData {
   globalLoadIndex: string; // "Baja", "Moderada", "Elevada", "Crítica"
   globalScore: number;
   dominantVector: string;
-  radarMode?: string; // "msk" | "visceral" | "oncology" | "rotator_cuff" | "knee_oa" | "cholecystitis" | "ankle_trauma" | "hepatic" | "renal" | "scrotal" | "appendicitis" | "thyroid" | "knee_trauma" | "muscle_injury"
+  radarMode?: string; // "msk" | "visceral" | "oncology" | "rotator_cuff" | "knee_oa" | "cholecystitis" | "ankle_trauma" | "hepatic" | "renal" | "scrotal" | "urinary_prostate" | "diverticulitis" | "appendicitis" | "thyroid" | "knee_trauma" | "muscle_injury"
   axes: BiomechanicalAxis[];
   clinicalSummary: string;
   recommendation: string;
@@ -49,6 +49,22 @@ interface BiomechanicalRadarModuleProps {
 }
 
 const PRESET_MATRICES_AXES: Record<string, BiomechanicalAxis[]> = {
+  diverticulitis: [
+    { key: "engrosamiento_parietal", label: "Engrosamiento Parietal Cólico", score: 0, level: "Fisiológico", finding: "Espesor de la pared cólica normal (≤2.0-2.5 mm) con estratificación conservada.", justification: "Sin engrosamiento ni rigidez parietal segmentaria." },
+    { key: "grasa_pericolica", label: "Grasa Pericólica / Flemón", score: 0, level: "Fisiológico", finding: "Grasa pericólica homogénea, compresible y de ecogenicidad habitual.", justification: "Sin halo hiperecogénico, flemón ni edema pericólico." },
+    { key: "diverticulo_inflamado", label: "Divertículo Inflamado / Fecalito", score: 0, level: "Fisiológico", finding: "Sin divertículos inflamados evidentes ni fecalitos obstructivos con halo hipoecoico.", justification: "Ausencia de diverticulitis focal con dolor selectivo bajo transductor." },
+    { key: "hiperemia_vascular", label: "Hiperemia Vascular (Doppler)", score: 0, level: "Fisiológico", finding: "Vascularización parietal y mesentérica en límites fisiológicos.", justification: "Sin hiperemia Doppler patológica ni áreas de isquemia." },
+    { key: "complicacion_absceso", label: "Complicación Locorregional (Absceso)", score: 0, level: "Fisiológico", finding: "Sin colecciones líquidas tabicadas ni abscesos pericólicos/pélvicos (Hinchey 0/Ia).", justification: "Ausencia de colecciones purulentas o flemosas." },
+    { key: "gas_extraluminal", label: "Gas Extraluminal / Perforación", score: 0, level: "Fisiológico", finding: "Gas intraluminal confinado a la luz cólica sin burbujas extraluminales ni neumoperitoneo.", justification: "Sin microperforación ni neumoperitoneo libre (Hinchey IV)." }
+  ],
+  urinary_prostate: [
+    { key: "volumen_prostatico", label: "Volumen Prostático", score: 0, level: "Fisiológico", finding: "Volumen prostático conservado (<20-25 cc) sin hiperplasia.", justification: "Morfología y biometría glandular dentro de límites fisiológicos." },
+    { key: "paredes_vesicales", label: "Paredes Vesicales", score: 0, level: "Fisiológico", finding: "Pared vesical lisa y delgada (<3 mm en repleción, <5 mm vacía).", justification: "Sin engrosamiento parietal, trabeculaciones ni cistopatía de lucha." },
+    { key: "ectasia_renal", label: "Ectasia Renal", score: 0, level: "Fisiológico", finding: "Seno renal ecolucente sin ectasia pielocalicial ni uropatía obstructiva.", justification: "Pelvis y cálices de calibre normal sin signos de reflujo/estasis." },
+    { key: "residuo_postmiccional", label: "Residuo Postmiccional (RPM)", score: 0, level: "Fisiológico", finding: "Vaciado vesical adecuado con RPM fisiológico/despreciable (<10-15% o <30 cc).", justification: "Sin retención urinaria postmiccional significativa." },
+    { key: "parenquima_prostatico", label: "Parénquima Prostático", score: 0, level: "Fisiológico", finding: "Ecoestructura homogénea sin nódulos sospechosos periféricos ni adenomas prominentes.", justification: "Diferenciación zonal preservada y ausencia de LOEs sospechosas." },
+    { key: "bordes_prostaticos", label: "Bordes Prostáticos", score: 0, level: "Fisiológico", finding: "Cápsula prostática continua, regular y nítida sin impronta vesical significativa.", justification: "Límites anatómicos bien definidos sin crecimiento endovesical patológico." }
+  ],
   rotator_cuff: [
     { key: "ruptura_supraespinoso", label: "Ruptura del Supraespinoso", score: 0, level: "Fisiológico", finding: "Sin evidencia de desgarro ni solución de continuidad en el supraespinoso.", justification: "Integridad fibrilar conservada." },
     { key: "bursitis", label: "Bursitis Subacromiodeltoidea", score: 0, level: "Fisiológico", finding: "Bursa subacromial de espesor normal, sin líquido anormal.", justification: "Ausencia de distensión o reacción inflamatoria bursal." },
@@ -181,9 +197,9 @@ export const BiomechanicalRadarModule: React.FC<BiomechanicalRadarModuleProps> =
   const [copied, setCopied] = useState<boolean>(false);
   const [injected, setInjected] = useState<boolean>(false);
   const [selectedAxisKey, setSelectedAxisKey] = useState<string | null>(null);
-  const [selectedRadarMode, setSelectedRadarMode] = useState<"auto" | "msk" | "visceral" | "oncology" | "rotator_cuff" | "knee_oa" | "cholecystitis" | "ankle_trauma" | "knee_trauma" | "appendicitis" | "thyroid" | "muscle_injury" | "hepatic" | "renal" | "scrotal">("auto");
+  const [selectedRadarMode, setSelectedRadarMode] = useState<"auto" | "msk" | "visceral" | "oncology" | "rotator_cuff" | "knee_oa" | "cholecystitis" | "ankle_trauma" | "knee_trauma" | "appendicitis" | "thyroid" | "muscle_injury" | "hepatic" | "renal" | "scrotal" | "urinary_prostate" | "diverticulitis">("auto");
 
-  const handleSelectMatrixMode = (mode: "auto" | "msk" | "visceral" | "oncology" | "rotator_cuff" | "knee_oa" | "cholecystitis" | "ankle_trauma" | "knee_trauma" | "appendicitis" | "thyroid" | "muscle_injury" | "hepatic" | "renal" | "scrotal") => {
+  const handleSelectMatrixMode = (mode: "auto" | "msk" | "visceral" | "oncology" | "rotator_cuff" | "knee_oa" | "cholecystitis" | "ankle_trauma" | "knee_trauma" | "appendicitis" | "thyroid" | "muscle_injury" | "hepatic" | "renal" | "scrotal" | "urinary_prostate" | "diverticulitis") => {
     setSelectedRadarMode(mode);
     if (mode !== "auto" && PRESET_MATRICES_AXES[mode]) {
       const newAxes = PRESET_MATRICES_AXES[mode];
@@ -205,7 +221,7 @@ export const BiomechanicalRadarModule: React.FC<BiomechanicalRadarModuleProps> =
     }
   };
 
-  const handleAnalyze = async (modeOverride?: "auto" | "msk" | "visceral" | "oncology" | "rotator_cuff" | "knee_oa" | "cholecystitis" | "ankle_trauma" | "knee_trauma" | "appendicitis" | "thyroid" | "muscle_injury" | "hepatic" | "renal" | "scrotal") => {
+  const handleAnalyze = async (modeOverride?: "auto" | "msk" | "visceral" | "oncology" | "rotator_cuff" | "knee_oa" | "cholecystitis" | "ankle_trauma" | "knee_trauma" | "appendicitis" | "thyroid" | "muscle_injury" | "hepatic" | "renal" | "scrotal" | "urinary_prostate" | "diverticulitis") => {
     if (!reportText.trim()) {
       setError("El reporte clínico está vacío. Redacta o genera un informe primero.");
       return;
@@ -329,11 +345,10 @@ export const BiomechanicalRadarModule: React.FC<BiomechanicalRadarModuleProps> =
 
   const handleInjectToReport = () => {
     const radarSection = generateReportTextSection();
-    if (reportText.includes("--- RADAR BIOMECÁNICO E INFLAMATORIO ---")) {
-      const parts = reportText.split("--- RADAR BIOMECÁNICO E INFLAMATORIO ---");
-      const before = parts[0].trim();
-      const newFull = before + "\n\n" + radarSection;
-      onReportUpdated(newFull);
+    const radarPattern = /(?:\n\s*---\s*\n+)?(?:---\s*RADAR BIOMECÁNICO E INFLAMATORIO ---|###\s*ANEXO:\s*RADAR BIOMECÁNICO[^\n]*)[\s\S]*?(?=(?:\n\s*###|\n\s*---|(?:\n\s*\*\*)|$))/i;
+    if (radarPattern.test(reportText)) {
+      const newFull = reportText.replace(radarPattern, "\n\n" + radarSection);
+      onReportUpdated(newFull.trim());
     } else {
       const newFull = reportText.trim() + "\n\n" + radarSection;
       onReportUpdated(newFull);
@@ -346,22 +361,9 @@ export const BiomechanicalRadarModule: React.FC<BiomechanicalRadarModuleProps> =
   };
 
   const handleRemoveFromReport = () => {
-    let clean = reportText;
-    if (clean.includes("--- RADAR BIOMECÁNICO E INFLAMATORIO ---")) {
-      const parts = clean.split("--- RADAR BIOMECÁNICO E INFLAMATORIO ---");
-      let before = parts[0].trim();
-      let after = parts[1] || "";
-      const afterMarkerIdx = after.indexOf("\n---\n");
-      if (afterMarkerIdx !== -1) {
-        clean = before + "\n\n" + after.substring(afterMarkerIdx + 1).trim();
-      } else {
-        clean = before;
-      }
-    } else if (clean.includes("### ANEXO: RADAR BIOMECÁNICO")) {
-      const parts = clean.split("### ANEXO: RADAR BIOMECÁNICO");
-      clean = parts[0].trim();
-    }
-    onReportUpdated(clean.trim());
+    const radarPattern = /(?:\n\s*---\s*\n+)?(?:---\s*RADAR BIOMECÁNICO E INFLAMATORIO ---|###\s*ANEXO:\s*RADAR BIOMECÁNICO[^\n]*)[\s\S]*?(?=(?:\n\s*###|\n\s*---|(?:\n\s*\*\*)|$))/i;
+    const clean = reportText.replace(radarPattern, "").trim();
+    onReportUpdated(clean);
     if (onRadarDataUpdated) {
       onRadarDataUpdated(null);
     }
@@ -544,6 +546,19 @@ export const BiomechanicalRadarModule: React.FC<BiomechanicalRadarModuleProps> =
 
           <button
             type="button"
+            onClick={() => handleSelectMatrixMode("diverticulitis")}
+            disabled={isLoading}
+            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              selectedRadarMode === "diverticulitis"
+                ? "bg-amber-700 text-white shadow-md border border-amber-500/50"
+                : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800 hover:border-slate-700"
+            }`}
+          >
+            <span>🎯 Diverticulitis Aguda 6D</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => handleSelectMatrixMode("thyroid")}
             disabled={isLoading}
             className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
@@ -605,6 +620,19 @@ export const BiomechanicalRadarModule: React.FC<BiomechanicalRadarModuleProps> =
             }`}
           >
             <span>🥚 Escroto / Testicular 6D</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleSelectMatrixMode("urinary_prostate")}
+            disabled={isLoading}
+            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              selectedRadarMode === "urinary_prostate"
+                ? "bg-blue-600 text-white shadow-md border border-blue-400/50"
+                : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800 hover:border-slate-700"
+            }`}
+          >
+            <span>💧 Vías Urinarias y Próstata 6D</span>
           </button>
 
           <button

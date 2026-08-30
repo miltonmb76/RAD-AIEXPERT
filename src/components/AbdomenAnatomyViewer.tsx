@@ -12,8 +12,14 @@ import {
   RotateCcw,
   ChevronDown,
   ChevronUp,
-  Download
+  Download,
+  Eye,
+  Maximize2,
+  Sliders,
+  ExternalLink,
+  X
 } from "lucide-react";
+import { ElastographyQUSPresentationModule } from "./ElastographyQUSPresentationModule";
 
 interface AbdomenAnatomyViewerProps {
   selectedModel?: string;
@@ -279,6 +285,68 @@ export default function AbdomenAnatomyViewer({
   const [localIncludeAneurisma, setLocalIncludeAneurisma] = useState<boolean>(true);
   const [localIncludeInReport, setLocalIncludeInReport] = useState<boolean>(true);
   const [generalDiagramCollapsed, setGeneralDiagramCollapsed] = useState<boolean>(false);
+  const [showOp2PresentationModal, setShowOp2PresentationModal] = useState<boolean>(false);
+  const [directInjectedSuccess, setDirectInjectedSuccess] = useState<boolean>(false);
+
+  const isElastographyAnnexInReport = Boolean(
+    generatedReport && (
+      generatedReport.includes("### ANEXO: EVALUACIÓN MULTIPARAMÉTRICA HEPÁTICA") ||
+      generatedReport.includes("### ANEXO: ESTUDIO MULTIPARAMÉTRICO") ||
+      generatedReport.includes("### ELASTOGRAFÍA HEPÁTICA") ||
+      generatedReport.includes("ANEXO: EVALUACIÓN MULTIPARAMÉTRICA") ||
+      generatedReport.includes("EVALUACIÓN MULTIPARAMÉTRICA HEPÁTICA") ||
+      /ANEXO:[^\n]*?(?:ELASTOGRAF[IÍ]A|MULTIPARAM[EÉ]TRIC[OA]|QUS)/i.test(generatedReport)
+    )
+  );
+
+  const handleDirectInjectElastographyAnnex = () => {
+    const vel = Math.sqrt((activeStiffness * 1000) / (3 * 1000)).toFixed(2);
+    let fibLabel = "";
+    if (activeStiffness < 6.0) fibLabel = "F0 - F1 (Elasticidad tisular conservada, sin fibrosis significativa)";
+    else if (activeStiffness <= 8.0) fibLabel = "F2 (Fibrosis portal/periportal con escasos septos)";
+    else if (activeStiffness <= 12.5) fibLabel = "F3 (Fibrosis avanzada en puentes sin cirrosis descompensada)";
+    else fibLabel = "F4 (Cirrosis hepática establecida / Rigidez tisular severa)";
+
+    let steatLabel = "";
+    if (activeFatFraction < 5.0) steatLabel = "S0 (Sin esteatosis cuantitativa, fracción grasa fisiológica < 5.0%)";
+    else if (activeFatFraction <= 12.0) steatLabel = "S1 (Esteatosis hepática leve, 5.0% - 12.0%)";
+    else if (activeFatFraction <= 20.0) steatLabel = "S2 (Esteatosis hepática moderada, 12.1% - 20.0%)";
+    else steatLabel = "S3 (Esteatosis hepática severa difusa, > 20.0%)";
+
+    const annexText = `### ANEXO: EVALUACIÓN MULTIPARAMÉTRICA HEPÁTICA (ELASTOGRAFÍA TRANSITORIA SWE & QUS)
+
+**1. PARÁMETROS BIOMÉTRICOS Y MEDICIONES CUANTITATIVAS:**
+• Rigidez Hepática Mediana (E): ${activeStiffness.toFixed(1)} kPa (Velocidad acústica estimada: ${vel} m/s)
+• Confiabilidad y Calidad Técnica (EFSUMB / WFUMB): IQR/Mediana ≤ 30% con 10/10 adquisiciones válidas intercostales.
+• Fracción Grasa Cuantitativa por Ultrasonido (QUS / PDFF): ${activeFatFraction.toFixed(1)}% | CAP estimado: ${activeCAP} dB/m.
+
+**2. ESTADIFICACIÓN HISTOLÓGICA Y CORRELACIÓN TISULAR:**
+• Estadificación de Fibrosis (METAVIR correlacionado): ${fibLabel}
+• Gradación de Esteatosis Hepática: ${steatLabel}
+• Correlación Tisular: ${activeStiffness >= 12.5 ? "Probabilidad elevada de hipertensión portal clínicamente significativa." : "Sin signos de hipertensión portal por rigidez tisular."}
+
+**3. ESTRATIFICACIÓN PRONÓSTICA Y GUÍAS DE CONSENSO (BAVENO VII / EFSUMB):**
+• Dictamen Baveno VII: ${activeStiffness < 10 ? "Regla de exclusión (<10 kPa): Descarte de cACLD." : activeStiffness < 15 ? "Zona gris (10-15 kPa): Sugiere cACLD, seguimiento estrecho." : "Regla de inclusión (≥15 kPa): cACLD altamente probable."}
+• Conducta Clínica Recomendada: ${activeStiffness >= 12.5 ? "Endoscopia digestiva alta si plaquetas ≤150k o rigidez ≥20 kPa; control semestral." : "Control y seguimiento ecográfico protocolizado según etiología clínica de base."}`;
+
+    let clean = generatedReport || "";
+    const annexPattern = /(?:\n\s*###?\s*ANEXO:[^\n]*?(?:ELASTOGRAF[IÍ]A|MULTIPARAM[EÉ]TRIC[OA]|QUS)[\s\S]*?$)|(?:\n\s*###?\s*ELASTOGRAF[IÍ]A[\s\S]*?$)/i;
+    if (annexPattern.test(clean)) {
+      clean = clean.replace(annexPattern, "");
+    } else if (clean.includes("### ANEXO: EVALUACIÓN MULTIPARAMÉTRICA HEPÁTICA")) {
+      clean = clean.split("### ANEXO: EVALUACIÓN MULTIPARAMÉTRICA HEPÁTICA")[0].trim();
+    }
+    clean = clean.replace(/[━═─]{3,}/g, "").replace(/^[\s%]{4,}$/gm, "").trim();
+
+    const updated = clean ? `${clean}\n\n${annexText}` : annexText;
+    if (onChangeReport) {
+      onChangeReport(updated);
+    }
+    handleToggleInclude(true);
+    setDirectInjectedSuccess(true);
+    setSyncLogs(prev => [...prev, `📋 Anexo de Elastografía & QUS inyectado exitosamente al reporte (${activeStiffness.toFixed(1)} kPa, ${activeFatFraction.toFixed(1)}% grasa)`]);
+    setTimeout(() => setDirectInjectedSuccess(false), 3000);
+  };
 
   const activeIncludeInReport = setIncludeInReport ? includeInReport : localIncludeInReport;
   const activeIncludeElastography = setIncludeElastography ? includeElastography : localIncludeElastography;
@@ -7802,6 +7870,31 @@ export default function AbdomenAnatomyViewer({
 
             <button
               type="button"
+              onClick={handleDirectInjectElastographyAnnex}
+              className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all cursor-pointer flex items-center gap-1.5 font-mono shadow-md ${
+                directInjectedSuccess
+                  ? "bg-emerald-500 text-slate-950 border-emerald-400 shadow-emerald-500/30 font-bold"
+                  : isElastographyAnnexInReport
+                  ? "bg-cyan-500 hover:bg-cyan-400 text-slate-950 border-cyan-400/80 shadow-cyan-500/20"
+                  : "bg-cyan-500 hover:bg-cyan-400 text-slate-950 border-cyan-400/80 shadow-cyan-500/30"
+              }`}
+              title="Inyectar la evaluación cuantitativa de Elastografía y QUS como anexo estructurado al reporte y PDF"
+            >
+              {directInjectedSuccess ? (
+                <>
+                  <Check className="h-3.5 w-3.5 stroke-[3]" />
+                  <span>¡Inyectado al PDF!</span>
+                </>
+              ) : (
+                <>
+                  <FileText className="h-3.5 w-3.5 stroke-[2.5]" />
+                  <span>{isElastographyAnnexInReport ? "Actualizar Anexo PDF" : "Inyectar al PDF"}</span>
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
               onClick={() => handleToggleInclude(!activeIncludeElastography)}
               className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all cursor-pointer flex items-center gap-2 font-mono ${
                 activeIncludeElastography
@@ -7820,6 +7913,16 @@ export default function AbdomenAnatomyViewer({
                   <span>Adjuntar al PDF: No</span>
                 </>
               )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowOp2PresentationModal(true)}
+              className="px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all cursor-pointer flex items-center gap-2 font-mono bg-cyan-950/80 hover:bg-cyan-900/60 text-cyan-300 border-cyan-500/50 shadow-lg shadow-cyan-950/30"
+              title="Abrir Tríptico de Foto 2D, Mapeo 3D de Onda y Gráfico de Dispersión Baveno VII"
+            >
+              <Maximize2 className="h-3.5 w-3.5 text-cyan-400" />
+              <span>Opción 2: Correlación 3D</span>
             </button>
           </div>
         </div>
@@ -8276,6 +8379,47 @@ export default function AbdomenAnatomyViewer({
                 {log}
               </div>
             ))}
+          </div>
+        </div>
+      )}
+      {/* MODAL WORKSTATION: OPCIÓN 2 CORRELACIÓN ESPACIAL 3D */}
+      {showOp2PresentationModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+          <div className="relative w-full max-w-6xl max-h-[92vh] overflow-y-auto bg-slate-950 border-2 border-cyan-500/40 rounded-2xl shadow-2xl p-4 sm:p-6">
+            <button
+              type="button"
+              onClick={() => setShowOp2PresentationModal(false)}
+              className="absolute top-4 right-4 z-50 p-2 rounded-xl bg-slate-900/90 border border-slate-700 text-slate-400 hover:text-white hover:bg-slate-800 transition-all cursor-pointer"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <ElastographyQUSPresentationModule
+              selectedModel={selectedModel}
+              reportText={generatedReport}
+              initialStiffness={activeStiffness}
+              initialCAP={activeCAP}
+              initialFatFraction={activeFatFraction}
+              includeInReport={activeIncludeElastography}
+              onToggleIncludeInReport={(include) => handleToggleInclude(include)}
+              onValuesChanged={(stiffness, cap, fat) => {
+                if (setElastographyStiffness) setElastographyStiffness(stiffness);
+                else setLocalStiffness(stiffness);
+
+                if (setElastographyCAP) setElastographyCAP(cap);
+                else setLocalCAP(cap);
+
+                if (setFatFraction) setFatFraction(fat);
+                else setLocalFatFraction(fat);
+
+                const derivedAtt = cap ? parseFloat((cap / 380).toFixed(2)) : 0.65;
+                if (setQusAttenuation) setQusAttenuation(derivedAtt);
+                else setLocalAttenuation(derivedAtt);
+              }}
+              onClose={() => setShowOp2PresentationModal(false)}
+              onReportUpdated={(newReport) => {
+                if (onChangeReport) onChangeReport(newReport);
+              }}
+            />
           </div>
         </div>
       )}

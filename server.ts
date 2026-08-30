@@ -132,7 +132,7 @@ function getGeminiClient(): GoogleGenAI {
   
   // Recreate client if the key changed to avoid stale client caching
   if (!aiClient || lastUsedKey !== apiKey) {
-    aiClient = new GoogleGenAI({
+    const rawClient = new GoogleGenAI({
       apiKey: apiKey,
       httpOptions: {
         headers: {
@@ -140,6 +140,45 @@ function getGeminiClient(): GoogleGenAI {
         },
       },
     });
+
+    // Transparent proxy wrapper on ai.models.generateContent for automatic backoff & retry on 429 / ResourceExhausted / transient errors
+    const originalGenerateContent = rawClient.models.generateContent.bind(rawClient.models);
+
+    (rawClient.models as any).generateContent = async function (params: any, ...args: any[]) {
+      const maxRetries = 3;
+      let lastErr: any = null;
+
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+          return await originalGenerateContent(params, ...args);
+        } catch (err: any) {
+          lastErr = err;
+          const errMsg = `${err?.message || ""} ${JSON.stringify(err || {})} ${String(err)}`.toLowerCase();
+          const isRateLimitOrTransient =
+            errMsg.includes("429") ||
+            errMsg.includes("resource_exhausted") ||
+            errMsg.includes("quota") ||
+            errMsg.includes("rate limit") ||
+            errMsg.includes("overloaded") ||
+            errMsg.includes("503") ||
+            errMsg.includes("unavailable") ||
+            errMsg.includes("too many requests") ||
+            errMsg.includes("high demand");
+
+          if (isRateLimitOrTransient && attempt < maxRetries) {
+            // Exponential backoff with jitter: 600ms, 1300ms, 2600ms (+ random 0-200ms)
+            const delay = Math.pow(2, attempt) * 600 + Math.floor(Math.random() * 200);
+            console.warn(`[Gemini Resilient Retry] Attempt ${attempt + 1}/${maxRetries} for model "${params?.model || "default"}". Waiting ${delay}ms before retrying...`);
+            await new Promise((resolve) => setTimeout(resolve, delay));
+            continue;
+          }
+          throw err;
+        }
+      }
+      throw lastErr;
+    };
+
+    aiClient = rawClient;
     lastUsedKey = apiKey;
   }
   return aiClient;
@@ -519,6 +558,816 @@ function formatImageAnnotations(annotations: any[] | undefined): string {
   text += "Analiza de manera exhaustiva y prioritaria estas coordenadas, correlacionÃ¡ndolas detalladamente en el informe.\n\n";
   return text;
 }
+
+/**
+ * Helper: Multi-strategy 3D Medical Image Generation with Retries
+ */
+async function generate3DMedicalImageWithRetry(ai: any, prompt: string): Promise<string> {
+  // Strategy 1: gemini-3.1-flash-image
+  try {
+    const res = await ai.models.generateContent({
+      model: "gemini-3.1-flash-image",
+      contents: { parts: [{ text: prompt }] },
+      config: {
+        imageConfig: {
+          aspectRatio: "4:3",
+          imageSize: "1K"
+        }
+      }
+    });
+    if (res.candidates && res.candidates[0]?.content?.parts) {
+      for (const part of res.candidates[0].content.parts) {
+        if (part.inlineData?.data) {
+          return `data:${part.inlineData.mimeType || "image/png"};base64,${part.inlineData.data}`;
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn("Primary 3D image model (gemini-3.1-flash-image) error:", err?.message);
+  }
+
+  // Strategy 2: imagen-3.0-generate-002
+  try {
+    const imagenRes = await ai.models.generateImages({
+      model: "imagen-3.0-generate-002",
+      prompt: prompt,
+      config: {
+        numberOfImages: 1,
+        aspectRatio: "4:3",
+        outputMimeType: "image/jpeg"
+      }
+    });
+    if (imagenRes.generatedImages && imagenRes.generatedImages[0]?.image?.imageBytes) {
+      return `data:image/jpeg;base64,${imagenRes.generatedImages[0].image.imageBytes}`;
+    }
+  } catch (err: any) {
+    console.warn("Imagen fallback (imagen-3.0-generate-002) error:", err?.message);
+  }
+
+  // Strategy 3: gemini-3.1-flash-lite-image
+  try {
+    const liteRes = await ai.models.generateContent({
+      model: "gemini-3.1-flash-lite-image",
+      contents: { parts: [{ text: prompt }] }
+    });
+    if (liteRes.candidates && liteRes.candidates[0]?.content?.parts) {
+      for (const part of liteRes.candidates[0].content.parts) {
+        if (part.inlineData?.data) {
+          return `data:${part.inlineData.mimeType || "image/png"};base64,${part.inlineData.data}`;
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn("Lite fallback error:", err?.message);
+  }
+
+  // Strategy 4: Simplified medical prompt retry with gemini-3.1-flash-image
+  try {
+    const simplified = prompt
+      .replace(/Photorealistic 3D medical illustration, peer-reviewed radiology journal quality,/gi, "3D anatomical illustration,")
+      .slice(0, 400);
+    const retryRes = await ai.models.generateContent({
+      model: "gemini-3.1-flash-image",
+      contents: { parts: [{ text: simplified }] }
+    });
+    if (retryRes.candidates && retryRes.candidates[0]?.content?.parts) {
+      for (const part of retryRes.candidates[0].content.parts) {
+        if (part.inlineData?.data) {
+          return `data:${part.inlineData.mimeType || "image/png"};base64,${part.inlineData.data}`;
+        }
+      }
+    }
+  } catch (err: any) {
+    console.error("All 3D image strategies failed:", err?.message);
+  }
+
+  return "";
+}
+
+export interface Atlas3DPanel {
+  panelLetter: string;
+  panelTitle: string;
+  imagePrompt: string;
+  anatomicalFocus: string;
+  imageUrl?: string;
+  laterality?: string;
+  isCustomFlipped?: boolean;
+}
+
+/**
+ * Helper to build strict spatial anchor prompt prefixes for anatomical laterality
+ */
+function buildStrictLateralityPromptAnchor(regionOrStudy: string, explicitLat: string, text: string): string {
+  const fullContext = `${regionOrStudy} ${explicitLat} ${text}`.toLowerCase();
+  
+  const isLeft = explicitLat.toLowerCase().includes("izq") || 
+                explicitLat.toLowerCase().includes("left") || 
+                fullContext.includes("izquierda") || 
+                fullContext.includes("izquierdo") || 
+                fullContext.includes("left knee") || 
+                fullContext.includes("left shoulder") || 
+                fullContext.includes("left breast") || 
+                fullContext.includes("rodilla izq") || 
+                fullContext.includes("hombro izq") || 
+                fullContext.includes("mama izq");
+
+  const isRight = !isLeft && (explicitLat.toLowerCase().includes("der") || 
+                  explicitLat.toLowerCase().includes("right") || 
+                  fullContext.includes("derecha") || 
+                  fullContext.includes("derecho") || 
+                  fullContext.includes("right knee") || 
+                  fullContext.includes("right shoulder") || 
+                  fullContext.includes("right breast") || 
+                  fullContext.includes("rodilla der") || 
+                  fullContext.includes("hombro der") || 
+                  fullContext.includes("mama der"));
+
+  if (fullContext.includes("rodilla") || fullContext.includes("knee") || fullContext.includes("menisc")) {
+    if (isLeft) {
+      return `MANDATORY LATERALITY RULE (LEFT KNEE ANTERIOR VIEW): This render is STRICTLY the patient's LEFT KNEE in anterior coronal view. CANVAS GEOMETRY: The MEDIAL compartment (Medial Meniscus, MCL, medial tibial plateau) is positioned on the VIEWER'S LEFT side of the image frame. The LATERAL compartment (Lateral Meniscus, LCL, fibular head/peronÃ©) is positioned on the VIEWER'S RIGHT side of the image frame. Any Medial Meniscus lesion/tear must be placed on the VIEWER'S LEFT side. DO NOT render a right knee.`;
+    } else if (isRight) {
+      return `MANDATORY LATERALITY RULE (RIGHT KNEE ANTERIOR VIEW): This render is STRICTLY the patient's RIGHT KNEE in anterior coronal view. CANVAS GEOMETRY: The LATERAL compartment (Lateral Meniscus, LCL, fibular head/peronÃ©) is positioned on the VIEWER'S LEFT side of the image frame. The MEDIAL compartment (Medial Meniscus, MCL, medial tibial plateau) is positioned on the VIEWER'S RIGHT side of the image frame. Any Medial Meniscus lesion/tear must be placed on the VIEWER'S RIGHT side. DO NOT render a left knee.`;
+    }
+  }
+
+  if (fullContext.includes("hombro") || fullContext.includes("shoulder") || fullContext.includes("manguito") || fullContext.includes("supraespinoso")) {
+    if (isLeft) {
+      return `MANDATORY LATERALITY RULE (LEFT SHOULDER ANTERIOR VIEW): This render is STRICTLY the patient's LEFT SHOULDER. CANVAS GEOMETRY: Medial structures (clavicle, sternum) on VIEWER'S LEFT; Lateral structures (humeral head, deltoid, greater tuberosity) on VIEWER'S RIGHT. DO NOT invert.`;
+    } else if (isRight) {
+      return `MANDATORY LATERALITY RULE (RIGHT SHOULDER ANTERIOR VIEW): This render is STRICTLY the patient's RIGHT SHOULDER. CANVAS GEOMETRY: Lateral structures (humeral head, deltoid, greater tuberosity) on VIEWER'S LEFT; Medial structures (clavicle, sternum) on VIEWER'S RIGHT. DO NOT invert.`;
+    }
+  }
+
+  if (fullContext.includes("mama") || fullContext.includes("breast") || fullContext.includes("mamari")) {
+    if (isLeft) {
+      return `MANDATORY LATERALITY RULE (LEFT BREAST FRONTAL VIEW): This render is STRICTLY the patient's LEFT BREAST. CANVAS GEOMETRY: Medial quadrants (CSI/CII, sternum) on VIEWER'S LEFT; Outer/Lateral quadrants (CSE/CIE, axilla) on VIEWER'S RIGHT.`;
+    } else if (isRight) {
+      return `MANDATORY LATERALITY RULE (RIGHT BREAST FRONTAL VIEW): This render is STRICTLY the patient's RIGHT BREAST. CANVAS GEOMETRY: Outer/Lateral quadrants (CSE/CIE, axilla) on VIEWER'S LEFT; Medial quadrants (CSI/CII, sternum) on VIEWER'S RIGHT.`;
+    }
+  }
+
+  if (fullContext.includes("tobillo") || fullContext.includes("ankle") || fullContext.includes("pie") || fullContext.includes("foot")) {
+    if (isLeft) {
+      return `MANDATORY LATERALITY RULE (LEFT ANKLE ANTERIOR VIEW): Patient's LEFT ANKLE. Medial malleolus on VIEWER'S LEFT; Lateral malleolus (peronÃ©) on VIEWER'S RIGHT.`;
+    } else if (isRight) {
+      return `MANDATORY LATERALITY RULE (RIGHT ANKLE ANTERIOR VIEW): Patient's RIGHT ANKLE. Lateral malleolus (peronÃ©) on VIEWER'S LEFT; Medial malleolus on VIEWER'S RIGHT.`;
+    }
+  }
+
+  if (fullContext.includes("cadera") || fullContext.includes("hip")) {
+    if (isLeft) {
+      return `MANDATORY LATERALITY RULE (LEFT HIP ANTERIOR VIEW): Patient's LEFT HIP. Acetabulum/medial pelvic wall on VIEWER'S LEFT; Femoral head/greater trochanter on VIEWER'S RIGHT.`;
+    } else if (isRight) {
+      return `MANDATORY LATERALITY RULE (RIGHT HIP ANTERIOR VIEW): Patient's RIGHT HIP. Femoral head/greater trochanter on VIEWER'S LEFT; Acetabulum/medial pelvic wall on VIEWER'S RIGHT.`;
+    }
+  }
+
+  return isLeft 
+    ? `MANDATORY LATERALITY RULE: Strictly LEFT side anatomy. Anatomically verified left orientation.`
+    : isRight 
+      ? `MANDATORY LATERALITY RULE: Strictly RIGHT side anatomy. Anatomically verified right orientation.`
+      : "";
+}
+
+/**
+ * API: GENERATE 3D REALISTIC MEDICAL ATLAS & SYNOPSIS
+ * POST /api/generate-3d-atlas
+ * Generates 1 to 3 peer-reviewed medical-journal-grade 3D renders with clinical correlation
+ */
+app.post("/api/generate-3d-atlas", async (req: express.Request, res: express.Response) => {
+  try {
+    const { reportText, organOrStudy, laterality, customApiKey, requestedModel, customDirectives } = req.body;
+    if (!reportText || !reportText.trim()) {
+      return res.status(400).json({ error: "Se requiere el texto del reporte radiolÃ³gico para generar el Atlas 3D." });
+    }
+
+    const ai = getGeminiClient();
+    const explicitLaterality = (laterality || "").trim();
+
+    const customDirectivesBlock = customDirectives && customDirectives.trim()
+      ? `\nDIRECTIVAS Y MATICES ANATÃ“MICOS ESPECÃFICOS INDICADOS POR EL MÃ‰DICO RADIÃ“LOGO:
+"""
+${customDirectives.trim()}
+"""
+REGLA DE MÃXIMA PRIORIDAD: Debes incorporar de forma estricta y protagonista esta instrucciÃ³n clÃ­nica en la selecciÃ³n del Ã¡ngulo de los paneles, en los "imagePrompt" en inglÃ©s detallando visualmente los matices indicados (ej. fibras preservadas, grado de retracciÃ³n, cuadrante, radio horario, edema perifÃ©rico, focos de disrupciÃ³n tisular) y en las descripciones semiolÃ³gicas de la tabla.\n`
+      : "";
+
+    const userLateralityInstruction = explicitLaterality
+      ? `\nLATERALIDAD SELECCIONADA POR EL MÃ‰DICO RADIÃ“LOGO: "${explicitLaterality.toUpperCase()}". Esta lateralidad es una REGLA INQUEBRANTABLE.\n`
+      : "";
+
+    // Step 1: Deep clinical reasoning to extract pathology and design 1 to 3 3D renders + editorial synopsis
+    const analysisPrompt = `Eres un mÃ©dico radiÃ³logo y director de arte mÃ©dico editorial de primer nivel mundial (The New England Journal of Medicine, Radiology, RSNA).
+Tu misiÃ³n es transformar el siguiente reporte radiolÃ³gico en un ATLAS ANATÃ“MICO 3D FOTORREALISTA Y DE CORRELACIÃ“N PATOLÃ“GICA DE ALTA DEFINICIÃ“N.
+${userLateralityInstruction}
+REGLAS OBLIGATORIAS DE PRECISIÃ“N ANATÃ“MICA, LATERALIDAD Y EJES ESPACIALES:
+1. LATERALIDAD ESTRICTA, QUIRÃšRGICA Y ANCLAJE ESPACIAL EN EL LIENZO (CRÃTICO ABSOLUTO):
+   - Identifica con mÃ¡xima rigurosidad si el estudio o lesiÃ³n corresponde al lado DERECHO (Right) o IZQUIERDO (Left).
+   - NUNCA mezcles ni inviertas la lateralidad. Si el informe habla de Rodilla Izquierda, NUNCA generes un prompt de Rodilla Derecha.
+   - Si la lesiÃ³n es en el MENISCO INTERNO (Medial Meniscus) de la RODILLA IZQUIERDA:
+     * La lesiÃ³n DEBE ubicarse en el compartimento MEDIAL, el cual se sitÃºa en la IZQUIERDA DEL MARCO DE LA IMAGEN (Viewer's Left).
+     * El peronÃ© / menisco externo DEBE situarse en la DERECHA DEL MARCO DE LA IMAGEN (Viewer's Right).
+   - REGLA DE COMPOSICIÃ“N ESPACIAL OBLIGATORIA EN EL "imagePrompt" EN INGLÃ‰S:
+     Los modelos de renderizado de imagen sufren de inversiones si no se les fija la posiciÃ³n de los reparos anatÃ³micos en el marco del cuadro (image-left vs image-right). En CADA "imagePrompt", DEBES iniciar con la descripciÃ³n espacial explÃ­cita:
+     * RODILLA IZQUIERDA (LEFT KNEE) - Vista AP/Coronal Anterior:
+       "Strictly anterior coronal AP view of the patient's LEFT knee. SPATIAL CANVAS ANCHOR: The medial compartment (Medial Meniscus, MCL, medial tibial plateau) is positioned on the VIEWER'S LEFT of the image frame. The lateral compartment (Lateral Meniscus, LCL, fibular head/peronÃ©) is positioned on the VIEWER'S RIGHT of the image frame. Highlighted pathology (if on medial meniscus) is strictly on the VIEWER'S LEFT side. Anatomically verified left knee."
+     * RODILLA DERECHA (RIGHT KNEE) - Vista AP/Coronal Anterior:
+       "Strictly anterior coronal AP view of the patient's RIGHT knee. SPATIAL CANVAS ANCHOR: The lateral compartment (Lateral Meniscus, LCL, fibular head/peronÃ©) is positioned on the VIEWER'S LEFT of the image frame. The medial compartment (Medial Meniscus, MCL, medial tibial plateau) is positioned on the VIEWER'S RIGHT of the image frame. Highlighted pathology (if on medial meniscus) is strictly on the VIEWER'S RIGHT side. Anatomically verified right knee."
+     * HOMBRO DERECHO (RIGHT SHOULDER) - Vista AP:
+       "Right shoulder anterior view. SPATIAL CANVAS ANCHOR: Humeral head and deltoid are on the LEFT of the image frame (lateral); clavicle and sternum on the RIGHT of the image frame (medial)."
+     * HOMBRO IZQUIERDO (LEFT SHOULDER) - Vista AP:
+       "Left shoulder anterior view. SPATIAL CANVAS ANCHOR: Clavicle and sternum are on the LEFT of the image frame (medial); humeral head and deltoid on the RIGHT of the image frame (lateral)."
+     * MAMA DERECHA (RIGHT BREAST):
+       "Right breast frontal view. SPATIAL CANVAS ANCHOR: Upper Outer Quadrant (CSE) and axilla on the LEFT of the image frame; Upper Inner Quadrant (CSI) and sternum on the RIGHT of the image frame."
+     * MAMA IZQUIERDA (LEFT BREAST):
+       "Left breast frontal view. SPATIAL CANVAS ANCHOR: Upper Inner Quadrant (CSI) and sternum on the LEFT of the image frame; Upper Outer Quadrant (CSE) and axilla on the RIGHT of the image frame."
+     * OTRAS ARTICULACIONES / Ã“RGANOS (Cadera, Tobillo, Codo, etc.):
+       Mapear siempre los reparos mediales y laterales a la izquierda o derecha del marco de la imagen.
+
+2. EJES ESPACIALES, CUADRANTES, RADIOS HORARIOS Y PROFUNDIDAD:
+   - EN MAMA:
+     * Mama: Declarar explÃ­citamente Mama Derecha vs Mama Izquierda.
+     * Cuadrante exacto: CSE (Cuadrante Superoexterno / Upper Outer), CSI (Cuadrante Superointerno / Upper Inner), CIE (Cuadrante Inferoexterno / Lower Outer), CII (Cuadrante Inferointerno / Lower Inner), RegiÃ³n Retroareolar o UniÃ³n de Cuadrantes.
+     * Radio Horario: Si el informe o contexto menciona hora (ej. Radio de las 10, 11, 2, 6, 8), ubica visualmente la lesiÃ³n exactamente en esa posiciÃ³n angular del reloj respecto al pezÃ³n/areola.
+     * Profundidad: Plano subcutÃ¡neo pre-mamario, parÃ©nquima medio, retro-mamario o plano prepectoral/fascial.
+   - EN MUSCULOESQUELÃ‰TICO / TIROIDES / Ã“RGANOS ABDOMINALES:
+     * Identificar cara (anterior, posterior, medial, lateral, superior, inferior) y tercio (proximal, medio, distal).
+     * En el "imagePrompt", sitÃºa visualmente el foco patolÃ³gico exactamente en esas coordenadas con un shader de realce hiperrealista (ej. foco hipoecoico / calcificado con halo rubÃ­ translÃºcido, disrupciÃ³n fibrilar).
+
+3. DETERMINACIÃ“N DE PANELES (1 a 3 paneles):
+   - 1 panel si solo hay una estructura alterada de forma aislada.
+   - 2 paneles si hay dos compartimentos principales o se requiere una vista panorÃ¡mica regional + un corte tisular de detalle.
+   - 3 paneles si es un caso pluripatolÃ³gico o complejo.
+
+4. FORMATO CLAVE DEL "imagePrompt" EN INGLÃ‰S:
+   - Iniciar con la regla de lateralidad y anclaje espacial.
+   - "Photorealistic 3D medical illustration, peer-reviewed radiology journal quality, clean pure white background with subtle soft studio lighting, Octane Render / ZBrush medical shader, satin cortical/glandular tissue texture, translucent soft tissue / subsurface scattering, highlighted pathological disruption with glowing hyperemic ruby-amber accent, fluid distension in translucent sapphire blue. No labels, no typography, no watermarks, crisp anatomical focus."
+   - AsegÃºrate de incluir la vista especÃ­fica, la lateralidad exacta (Right / Left), el anclaje espacial (Spatial Canvas Anchor) y la coordenada anatÃ³mica.
+
+5. EXPLICACIÃ“N SINÃ“PTICA ("synopticExplanation") Y SÃNTESIS ("biomechanicalSynthesis"):
+   - "structure": Nombre de la estructura anatÃ³mica en espaÃ±ol formal.
+   - "panelRef": Referencia al panel correspondiente (ej. "(Panel A)", "(Panel B)").
+   - "findingDetail": DescripciÃ³n semiolÃ³gica concisa del hallazgo correlacionado.
+   - "biomechanicalSynthesis": Una sola frase mÃ©dica de sÃ­ntesis sobre el impacto biomecÃ¡nico o diagnÃ³stico integrador.
+${customDirectivesBlock}
+REPORTE RADIOLÃ“GICO DEL PACIENTE:
+"""
+${reportText}
+"""
+`;
+
+    const schema = {
+      type: Type.OBJECT,
+      properties: {
+        studyRegion: { type: Type.STRING, description: "RegiÃ³n y lateralidad evaluada (ej. Mama Derecha, Hombro Derecho, Rodilla Izquierda)" },
+        detectedLaterality: { type: Type.STRING, description: "Izquierda, Derecha, Bilateral o LÃ­nea Media" },
+        figureTitle: { type: Type.STRING, description: "TÃ­tulo de la figura (ej. FIGURA 1. RECONSTRUCCIÃ“N ANATÃ“MICA 3D Y CORRELACIÃ“N PATOLÃ“GICA DE RODILLA IZQUIERDA)" },
+        panels: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              panelLetter: { type: Type.STRING, description: "A, B o C" },
+              panelTitle: { type: Type.STRING, description: "TÃ­tulo clÃ­nico de la vista o foco anatÃ³mico con lateralidad y cuadrante/eje" },
+              imagePrompt: { type: Type.STRING, description: "Detailed English prompt for 3D medical photorealistic render specifying exact laterality and axes" },
+              anatomicalFocus: { type: Type.STRING, description: "Estructuras clave, cuadrante, radio horario y plano en foco" }
+            },
+            required: ["panelLetter", "panelTitle", "imagePrompt", "anatomicalFocus"]
+          }
+        },
+        synopticExplanation: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              structure: { type: Type.STRING, description: "Nombre de la estructura anatÃ³mica" },
+              panelRef: { type: Type.STRING, description: "Panel donde se visualiza (ej. Panel A & B)" },
+              findingDetail: { type: Type.STRING, description: "DescripciÃ³n semiolÃ³gica del hallazgo correlacionado" }
+            },
+            required: ["structure", "panelRef", "findingDetail"]
+          }
+        },
+        biomechanicalSynthesis: { type: Type.STRING, description: "ConclusiÃ³n de impacto biomecÃ¡nico o diagnÃ³stico integrador" }
+      },
+      required: ["studyRegion", "figureTitle", "panels", "synopticExplanation", "biomechanicalSynthesis"]
+    };
+
+    const textResponse = await ai.models.generateContent({
+      model: "gemini-3.7-flash",
+      contents: [{ parts: [{ text: analysisPrompt }] }],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: schema,
+        temperature: 0.2
+      }
+    });
+
+    const parsedJson = JSON.parse(textResponse.text || "{}");
+    const plannedPanels = parsedJson.panels || [];
+    const detectedLat = parsedJson.detectedLaterality || explicitLaterality || "Izquierda";
+
+    // Step 2: Generate 3D render images for each panel with robust retries and spatial anchor reinforcement
+    const generatedPanels = [];
+    for (const p of plannedPanels) {
+      // Reinforce the prompt with deterministic laterality anchors if not already present
+      const anchorPrefix = buildStrictLateralityPromptAnchor(parsedJson.studyRegion || organOrStudy || "", detectedLat, reportText);
+      let enhancedPrompt = p.imagePrompt;
+      if (anchorPrefix && !enhancedPrompt.includes("MANDATORY LATERALITY RULE")) {
+        enhancedPrompt = `${anchorPrefix} ${enhancedPrompt}`;
+      }
+
+      let imageUrl = await generate3DMedicalImageWithRetry(ai, enhancedPrompt);
+
+      // If still empty after primary attempts, try an explicit secondary focused attempt
+      if (!imageUrl) {
+        console.warn(`Panel ${p.panelLetter} initial image generation was empty. Executing secondary retry...`);
+        const secondaryPrompt = `${anchorPrefix} 3D medical render of ${parsedJson.studyRegion || "anatomy"}, ${p.anatomicalFocus || p.panelTitle}, Octane render, photorealistic medical journal quality, clean white background.`;
+        imageUrl = await generate3DMedicalImageWithRetry(ai, secondaryPrompt);
+      }
+
+      generatedPanels.push({
+        panelLetter: p.panelLetter,
+        panelTitle: p.panelTitle,
+        anatomicalFocus: p.anatomicalFocus,
+        imageUrl: imageUrl,
+        imagePrompt: enhancedPrompt,
+        laterality: detectedLat
+      });
+    }
+
+    const finalResult = {
+      studyRegion: parsedJson.studyRegion,
+      figureTitle: parsedJson.figureTitle,
+      detectedLaterality: detectedLat,
+      panels: generatedPanels,
+      synopticExplanation: parsedJson.synopticExplanation,
+      biomechanicalSynthesis: parsedJson.biomechanicalSynthesis
+    };
+
+    res.json({ success: true, data: enforceBaafTerminology(finalResult) });
+  } catch (error: any) {
+    console.error("Error in /api/generate-3d-atlas:", error);
+    res.status(500).json({ error: handleGeminiError(error) });
+  }
+});
+
+/**
+ * API: REGENERATE A SINGLE 3D PANEL WITH CUSTOM CLINICAL DIRECTIVES & STRICT LATERALITY
+ * POST /api/regenerate-3d-panel
+ * Refines and regenerates only ONE panel while preserving other panels intact
+ */
+app.post("/api/regenerate-3d-panel", async (req: express.Request, res: express.Response) => {
+  try {
+    const { reportText, studyRegion, panel, userDirective, laterality, requestedModel } = req.body;
+    if (!panel || !panel.panelLetter) {
+      return res.status(400).json({ error: "Se requiere la informaciÃ³n del panel a regenerar." });
+    }
+
+    const ai = getGeminiClient();
+    const explicitLaterality = (laterality || panel.laterality || "").trim();
+
+    const panelRefinementPrompt = `Eres un mÃ©dico radiÃ³logo y director de arte mÃ©dico editorial de primer nivel mundial.
+Tu misiÃ³n es REFINAR Y REGENERAR UN PANEL ESPECÃFICO (PANEL ${panel.panelLetter}) de un Atlas AnatÃ³mico 3D existente.
+
+DATOS DEL CASO:
+- RegiÃ³n y lateralidad evaluada: "${studyRegion || 'RegiÃ³n anatÃ³mica del estudio'}"
+- Lateralidad activa: "${explicitLaterality || 'Detectada del informe'}"
+- TÃ­tulo actual del panel: "${panel.panelTitle || ''}"
+- Foco anatÃ³mico actual: "${panel.anatomicalFocus || ''}"
+- Prompt 3D previo: "${panel.imagePrompt || ''}"
+
+REPORTE RADIOLÃ“GICO ORIGINAL:
+"""
+${reportText || ''}
+"""
+
+INSTRUCCIONES DE MODIFICACIÃ“N / CAMBIO SOLICITADAS POR EL RADIÃ“LOGO PARA ESTE PANEL:
+"""
+${userDirective || 'Mejorar resoluciÃ³n, perspectiva y fidelidad anatÃ³mica del panel respetando rigurosamente lateralidad y ejes.'}
+"""
+
+REGLAS OBLIGATORIAS:
+1. LATERALIDAD ESTRICTA, QUIRÃšRGICA Y ANCLAJE ESPACIAL EN EL LIENZO (CRÃTICO):
+   - Si el estudio es de lado DERECHO o IZQUIERDO, mantÃ©n de forma inquebrantable esa lateralidad en el render y en el prompt.
+   - Si el usuario solicita corregir de lado o compartimento (ej. cambiar a Menisco Interno de Rodilla Izquierda o pasar a Rodilla Derecha), aplica el cambio de forma estricta y absoluta.
+   - REGLA DE COMPOSICIÃ“N ESPACIAL OBLIGATORIA EN EL "imagePrompt" EN INGLÃ‰S:
+     * Si es RODILLA IZQUIERDA (LEFT KNEE) - Vista AP/Coronal:
+       "Strictly anterior coronal AP view of the patient's LEFT knee. SPATIAL CANVAS ANCHOR: The medial compartment (Medial Meniscus, MCL, medial tibial plateau) is positioned on the VIEWER'S LEFT of the image frame. The lateral compartment (Lateral Meniscus, LCL, fibular head/peronÃ©) is positioned on the VIEWER'S RIGHT of the image frame. Highlighted pathology on Medial Meniscus is strictly on the VIEWER'S LEFT side. Anatomically verified left knee."
+     * Si es RODILLA DERECHA (RIGHT KNEE) - Vista AP/Coronal:
+       "Strictly anterior coronal AP view of the patient's RIGHT knee. SPATIAL CANVAS ANCHOR: The lateral compartment (Lateral Meniscus, LCL, fibular head/peronÃ©) is positioned on the VIEWER'S LEFT of the image frame. The medial compartment (Medial Meniscus, MCL, medial tibial plateau) is positioned on the VIEWER'S RIGHT of the image frame. Highlighted pathology on Medial Meniscus is strictly on the VIEWER'S RIGHT side. Anatomically verified right knee."
+     * En Mama: Respetar cuadrante exacto (CSE, CSI, CIE, CII, retroareolar), radio horario, profundidad y anclaje espacial (axila vs esternÃ³n).
+     * En Hombro: Deltoides/TroquÃ­ter lateral vs ClavÃ­cula/EsternÃ³n medial.
+     * En Tobillo / Pie / Cadera / MuÃ±eca: Respetar cara, eje tendinoso/Ã³seo y posiciÃ³n de reparos mediales/laterales en el cuadro.
+2. Aplica la instrucciÃ³n de modificaciÃ³n del radiÃ³logo de forma protagÃ³nica en el nuevo "imagePrompt" en INGLÃ‰S, en el "panelTitle" y en el "anatomicalFocus".
+3. Formato del imagePrompt: "Photorealistic 3D medical illustration, peer-reviewed radiology journal quality, clean pure white background with subtle soft studio lighting, Octane Render / ZBrush medical shader, satin cortical/glandular tissue texture, translucent soft tissue / subsurface scattering, highlighted pathological disruption with glowing hyperemic ruby-amber accent, fluid distension in translucent sapphire blue. No labels, no typography, no watermarks, crisp anatomical focus."
+`;
+
+    const schema = {
+      type: Type.OBJECT,
+      properties: {
+        panelTitle: { type: Type.STRING, description: "TÃ­tulo clÃ­nico refinado del panel" },
+        imagePrompt: { type: Type.STRING, description: "Detailed refined English prompt for 3D render specifying exact laterality and axes" },
+        anatomicalFocus: { type: Type.STRING, description: "Estructuras y ejes en foco refinados" }
+      },
+      required: ["panelTitle", "imagePrompt", "anatomicalFocus"]
+    };
+
+    const textResponse = await ai.models.generateContent({
+      model: "gemini-3.7-flash",
+      contents: [{ parts: [{ text: panelRefinementPrompt }] }],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: schema,
+        temperature: 0.2
+      }
+    });
+
+    const refinedJson = JSON.parse(textResponse.text || "{}");
+    const updatedTitle = refinedJson.panelTitle || panel.panelTitle;
+    const updatedFocus = refinedJson.anatomicalFocus || panel.anatomicalFocus;
+    let updatedPrompt = refinedJson.imagePrompt || panel.imagePrompt;
+
+    const anchorPrefix = buildStrictLateralityPromptAnchor(studyRegion || "", explicitLaterality, `${userDirective} ${reportText}`);
+    if (anchorPrefix && !updatedPrompt.includes("MANDATORY LATERALITY RULE")) {
+      updatedPrompt = `${anchorPrefix} ${updatedPrompt}`;
+    }
+
+    let imageUrl = await generate3DMedicalImageWithRetry(ai, updatedPrompt);
+
+    if (!imageUrl) {
+      const fallbackPrompt = `${anchorPrefix} 3D medical render of ${studyRegion || "anatomy"}, ${updatedFocus || updatedTitle}, Octane render, photorealistic medical journal quality, clean white background.`;
+      imageUrl = await generate3DMedicalImageWithRetry(ai, fallbackPrompt);
+    }
+
+    if (!imageUrl) {
+      return res.status(500).json({ error: "No se pudo generar la imagen 3D en este intento. Por favor intente nuevamente." });
+    }
+
+    const updatedPanel: Atlas3DPanel = {
+      panelLetter: panel.panelLetter,
+      panelTitle: updatedTitle,
+      anatomicalFocus: updatedFocus,
+      imageUrl: imageUrl,
+      imagePrompt: updatedPrompt,
+      laterality: explicitLaterality || panel.laterality
+    };
+
+    res.json({ success: true, panel: updatedPanel });
+  } catch (error: any) {
+    console.error("Error in /api/regenerate-3d-panel:", error);
+    res.status(500).json({ error: handleGeminiError(error) });
+  }
+});
+
+/**
+ * API: GENERATE HIGH-FIDELITY 3D VASCULAR SUITE
+ * POST /api/generate-vascular-3d
+ * Uses the Atlas 3D core intelligence and render pipeline to generate 1 to 3 peer-reviewed journal quality vascular renders + detailed hemodynamic table
+ */
+app.post("/api/generate-vascular-3d", async (req: express.Request, res: express.Response) => {
+  try {
+    const { reportText, vascularStudyType, laterality, customDirectives, requestedModel } = req.body;
+    if (!reportText || !reportText.trim()) {
+      return res.status(400).json({ error: "Se requiere el texto del informe vascular para generar la reconstrucciÃ³n 3D." });
+    }
+
+    const ai = getGeminiClient();
+    const explicitLaterality = (laterality || "").trim();
+
+    const directivesBlock = customDirectives && customDirectives.trim()
+      ? `\nDIRECTIVAS CLÃNICAS Y MATICES ESPECÃFICOS INDICADOS POR EL RADIÃ“LOGO VASCULAR / ANGIÃ“LOGO:
+"""
+${customDirectives.trim()}
+"""
+REGLA DE MÃXIMA PRIORIDAD: Incorpora de forma estricta y protagÃ³nica estas directivas en los paneles de foco anatÃ³mico (ej. tamaÃ±o de placa, grado de estenosis, morfologÃ­a lipÃ­dica vs calcificada, presencia de colaterales, flujo parvus-tardus, trombosis oclusiva/no oclusiva, reflujo safenofemoral).\n`
+      : "";
+
+    const userLateralityInstruction = explicitLaterality && explicitLaterality !== "Detectar del informe"
+      ? `\nLATERALIDAD SELECCIONADA POR EL MÃ‰DICO: "${explicitLaterality.toUpperCase()}". AsegÃºrate de que los paneles respeten esta orientaciÃ³n.\n`
+      : "";
+
+    const userStudyTypeHint = vascularStudyType && vascularStudyType !== "undefined"
+      ? `\nTIPO DE ESTUDIO SUGERIDO POR EL USUARIO: "${vascularStudyType}". (Verifica siempre contra el contenido del informe para mÃ¡xima fidelidad anatÃ³mica).\n`
+      : "";
+
+    const analysisPrompt = `Eres un mÃ©dico especialista en ultrasonido Doppler vascular, angiÃ³logo y director de arte mÃ©dico editorial de primer nivel mundial (The New England Journal of Medicine, Journal of Vascular Surgery, RSNA, Radiographics).
+Tu misiÃ³n es transformar el siguiente informe de ECOGRAFÃA DOPPLER VASCULAR en un ATLAS VASCULAR 3D FOTORREALISTA DE ALTA DEFINICIÃ“N (CLOSE-UP MACRO PANELS) Y TABLA DE CORRELACIÃ“N HEMODINÃMICA.
+${userLateralityInstruction}
+${userStudyTypeHint}
+${directivesBlock}
+
+INFORME RADIOLÃ“GICO / ECOGRAFÃA DOPPLER:
+"""
+${reportText}
+"""
+
+REGLAS OBLIGATORIAS DE PRECISIÃ“N ANATÃ“MICA Y GENERACIÃ“N VISUAL 3D (ESTILO ATLAS 3D):
+
+1. INTERPRETACIÃ“N CLÃNICA INTELIGENTE Y TERRITORIO VASCULAR EXACTO:
+   - Lee el informe clÃ­nico con absoluta atenciÃ³n para identificar con precisiÃ³n quÃ© territorio vascular se evaluÃ³ y cuÃ¡les son los hallazgos reales:
+     * DOPPLER CAROTÃDEO Y VERTEBRAL (carotid): EnfÃ³cate 100% en las arterias carÃ³tidas (ComÃºn/Primitiva, Bulbo, Interna, Externa) y/o vertebrales. Describe la pared arterial, grosor Ã­ntima-media, morfologÃ­a de placa de ateroma (fibrolipÃ­dica blanda, calcificada con sombra, mixta, ulcerada), porcentaje de estenosis, luz residual excÃ©ntrica y turbulencia de flujo.
+     * DOPPLER VENOSO DE MIEMBROS INFERIORES (venous_mmii): EnfÃ³cate 100% en el sistema venoso (Vena Femoral ComÃºn, Femoral Profunda, Femoral, PoplÃ­tea, Venas Tibiales/Peroneas/Gemelares, Cayado Safenofemoral / Safena Magna, SafenopoplÃ­teo / Safena Menor).
+       - Si hay TROMBOSIS VENOSA PROFUNDA (TVP): describe la pared venosa translÃºcida sapphire-blue con calibre fisiolÃ³gico (4-8 mm, CERO globos deformes), ocupada por trombo intraluminal adherido, no compresible, con ausencia de flujo Doppler color.
+       - Si hay INSUFICIENCIA VENOSA / REFLUJO: describe las valvas venosas bicÃºspides incompetentes en la uniÃ³n safenofemoral o safenopoplÃ­tea con jet de reflujo.
+     * DOPPLER ARTERIAL DE MIEMBROS INFERIORES (arterial_mmii): EnfÃ³cate en las arterias de las piernas (Arteria Femoral ComÃºn, Superficial, Profunda, PoplÃ­tea, Tronco Tibioperoneo, Tibial Anterior, Tibial Posterior, Pedia). Muestra placas ateromatosas, estenosis focales, oclusiones o flujo monofÃ¡sico parvus-tardus.
+     * DOPPLER RENAL (renal): EnfÃ³cate en las arterias renales principales desde el ostium aÃ³rtico hasta el hilio renal, relaciÃ³n con la aorta abdominal y parÃ©nquima renal.
+     * DOPPLER AORTOILÃACO (aortoiliac): EnfÃ³cate en la aorta abdominal infrarrenal y bifurcaciÃ³n en arterias ilÃ­acas comunes.
+   - NUNCA mezcles territorios. Si el reporte es carotÃ­deo, los paneles DEBEN ser 100% carotÃ­deos. Si el reporte es venoso de miembros inferiores, los paneles DEBEN ser 100% venosos.
+
+2. DETERMINACIÃ“N DE PANELES FOCALES (1 a 3 paneles macro):
+   - Determina entre 1 y 3 paneles focales ('focalPanels') etiquetados con letras 'A', 'B' y 'C'.
+   - Cada panel DEBE representar un PRIMER PLANO MACRO (Close-up) de la lesiÃ³n o estaciÃ³n anatÃ³mica clave descrita en el reporte.
+   - Incluye el LECHO ANATÃ“MICO de referencia en semi-translucidez (subsurface scattering): contornos Ã³seos (vÃ©rtebras cervicales, cartÃ­lago tiroides, fÃ©mur, tibia), planos musculares y fascias en suave textura satinada.
+   - El campo "roadmapPanel" debe ser SIEMPRE null.
+
+3. FÃ“RMULA DEL "imagePrompt" EN INGLÃ‰S PARA CADA PANEL (FOTORREALISMO MÃ‰DICO PURO):
+   - Inicia con la identificaciÃ³n clara del segmento y lateralidad (ej. "Strictly close-up macro surgical 3D medical illustration of the patient's Right Carotid Bifurcation and Internal Carotid Artery...").
+   - Detalla la pared vascular y la patologÃ­a exacta descrita en el reporte:
+     "Photorealistic 3D medical vascular close-up illustration, peer-reviewed vascular surgery journal quality, clean pure white background with subtle soft studio lighting, Octane Render / ZBrush medical shader, satin anatomical tissue texture with subsurface scattering, realistic translucent [arterial ruby-red wall with atheroma plaque mass / venous sapphire-blue wall with intraluminal thrombus filling defect or valve cusps], adjacent translucent bone and muscle bed anchors in soft ivory/satin shader, hyper-focused macro anatomical view. No text, no typography, no labels, no callouts, no watermarks, crisp anatomical focus."
+   - PROHIBICIÃ“N ABSOLUTA DE TEXTO: "No text, no typography, no labels, no callouts, no watermarks".
+
+4. EXTRACCIÃ“N EXHAUSTIVA DE LA TABLA HEMODINÃMICA:
+   - Extrae todos los vasos y segmentos mencionados en el informe con sus parÃ¡metros medidos (morfologÃ­a de placa/trombo, estenosis/reflujo, velocidades PSV/EDV, ratios, patrÃ³n espectral e impacto hemodinÃ¡mico).
+   - "hemodynamicSynthesis": 2 a 4 oraciones de sÃ­ntesis mÃ©dica objetiva y descriptiva sin recomendaciones de tratamiento ni fÃ¡rmacos.
+
+RESPONDE EXCLUSIVAMENTE EN FORMATO JSON VÃLIDO CON ESTE ESQUEMA:
+{
+  "vascularTerritory": "string (ej. Doppler CarotÃ­deo y Vertebral, Doppler Venoso de Miembros Inferiores, Doppler Arterial de Miembros Inferiores, Doppler Renal, Doppler AortoilÃ­aco)",
+  "vascularStudyType": "string (carotid, arterial_mmii, venous_mmii, renal, aortoiliac)",
+  "laterality": "string (Izquierda, Derecha, Bilateral, Central)",
+  "figureTitle": "string (ej. FIGURA 1. RECONSTRUCCIÃ“N VASCULAR 3D Y CORRELACIÃ“N HEMODINÃMICA)",
+  "roadmapPanel": null,
+  "focalPanels": [
+    {
+      "panelId": "PANEL_A",
+      "panelLetter": "A",
+      "panelTitle": "string (TÃ­tulo clÃ­nico conciso del segmento en foco y lateralidad)",
+      "panelCategory": "string (focal_plaque, reflux_valve, thrombus, aneurysm, normal_vessel)",
+      "vesselSegment": "string (Vaso y segmento anatÃ³mico exacto)",
+      "anatomicalFocus": "string (DescripciÃ³n semiolÃ³gica y reparos anatÃ³micos en foco)",
+      "imagePrompt": "string (Prompt en inglÃ©s fotorrealista completo para el motor 3D)",
+      "laterality": "string (Izquierda, Derecha, Bilateral, Central)",
+      "stenosisDegree": "string (Opcional)",
+      "flowPattern": "string (Opcional)"
+    }
+  ],
+  "hemodynamicTable": [
+    {
+      "vessel": "string (Nombre del vaso)",
+      "segment": "string (Segmento explorado)",
+      "plaqueOrThrombusMorphology": "string (MorfologÃ­a de placa, trombo, o pared)",
+      "stenosisPercentOrReflux": "string (% de estenosis, tiempo de reflujo, o permeabilidad)",
+      "hemodynamicPattern": "string (Velocidades PSV/EDV o patrÃ³n fÃ¡sico/espectral)",
+      "icaCcaRatio": "string (Ratio o relaciÃ³n hemodinÃ¡mica si aplica)",
+      "compressibility": "string (Compresibilidad en venoso)",
+      "thrombusPresence": "string (Presencia de trombo en venoso)",
+      "valvularReflux": "string (Reflujo valvular en venoso)",
+      "veinCaliber": "string (Calibre del vaso)",
+      "flowPhasicity": "string (Fasismo del flujo)",
+      "waveMorphology": "string (MorfologÃ­a de onda en arterial)",
+      "psv": "string (PSV en cm/s)",
+      "edv": "string (EDV en cm/s)",
+      "vrRatio": "string (Ratio VR)",
+      "stenosisPercent": "string (% estenosis)",
+      "plaqueMorphology": "string (MorfologÃ­a de placa)",
+      "diameterMm": "string (DiÃ¡metro en mm)",
+      "rarRatio": "string (Ratio RAR en renal)",
+      "accelerationTime": "string (Tiempo de aceleraciÃ³n en renal)",
+      "resistiveIndex": "string (Ãndice de resistividad)",
+      "renalLength": "string (Longitud renal)",
+      "hemodynamicImpact": "string (Impacto clÃ­nico/hemodinÃ¡mico)"
+    }
+  ],
+  "hemodynamicSynthesis": "string (SÃ­ntesis descriptiva de los hallazgos en 2-4 oraciones)"
+}`;
+
+    const textResponse = await ai.models.generateContent({
+      model: requestedModel || "gemini-3.7-flash",
+      contents: [{ text: analysisPrompt }],
+      config: {
+        responseMimeType: "application/json",
+        temperature: 0.2
+      }
+    });
+
+    const parsedJson = JSON.parse(textResponse.text || "{}");
+    const rawFocals = parsedJson.focalPanels || [];
+    const detectedLat = parsedJson.laterality || explicitLaterality || "Bilateral";
+    const detectedStudyType = parsedJson.vascularStudyType || vascularStudyType || "carotid";
+
+    // Step 2: Generate 3D render images using the Atlas 3D core image generation engine
+    const generatedFocalPanels = [];
+    for (let i = 0; i < rawFocals.length; i++) {
+      const fp = rawFocals[i];
+      const letter = String.fromCharCode(65 + i); // "A", "B", "C"...
+      let focalPrompt = (fp.imagePrompt || "").trim();
+      
+      if (!focalPrompt) {
+        focalPrompt = `Photorealistic 3D medical vascular close-up illustration, peer-reviewed vascular surgery journal quality, clean pure white background with subtle soft studio lighting, Octane Render / ZBrush medical shader, satin anatomical tissue texture with subsurface scattering, realistic translucent vessel wall showing ${fp.vesselSegment || "vascular segment"} with ${fp.anatomicalFocus || fp.panelTitle}, adjacent translucent bone and muscle bed anchors, hyper-focused macro anatomical view. No text, no typography, no labels, no watermarks, crisp anatomical focus.`;
+      }
+
+      // Generate image with the Atlas 3D multi-model retry engine
+      let focalImgUrl = await generate3DMedicalImageWithRetry(ai, focalPrompt);
+      if (!focalImgUrl) {
+        console.warn(`Vascular Panel ${letter} initial generation empty. Executing secondary focused retry...`);
+        const fallbackPrompt = `3D photorealistic medical vascular render of ${fp.vesselSegment || "vessel"}, ${fp.anatomicalFocus || fp.panelTitle}, Octane render, medical journal quality, pure clean white background, no text.`;
+        focalImgUrl = await generate3DMedicalImageWithRetry(ai, fallbackPrompt);
+      }
+
+      generatedFocalPanels.push({
+        panelId: fp.panelId || `PANEL_LESION_${i + 1}`,
+        panelLetter: letter,
+        panelTitle: fp.panelTitle || `Panel ${letter}: ${fp.vesselSegment || "Detalle Vascular"}`,
+        panelCategory: fp.panelCategory || (detectedStudyType === "venous_mmii" ? "reflux_valve" : "focal_plaque"),
+        vesselSegment: fp.vesselSegment || "Segmento Vascular",
+        anatomicalFocus: fp.anatomicalFocus || "",
+        imagePrompt: focalPrompt,
+        imageUrl: focalImgUrl,
+        laterality: fp.laterality || detectedLat,
+        stenosisDegree: fp.stenosisDegree,
+        flowPattern: fp.flowPattern
+      });
+    }
+
+    const cleanHemodynamicTable = (parsedJson.hemodynamicTable || []).map((row: any) => {
+      let ratioVal = row.icaCcaRatio || row.ratioIcaCca || row.relacionAccAci || row.relacionAciAcc || "";
+      if (!ratioVal && row.hemodynamicPattern) {
+        const match = row.hemodynamicPattern.match(/(?:Ratio|Relaci[oÃ³]n|ACI\/ACC|ACC\/ACI|ICA\/CCA)[\s:]*([0-9.,]+|[<>]?[0-9.,]+)/i);
+        if (match) {
+          ratioVal = match[1];
+        }
+      }
+
+      const compVal = row.compressibility || row.compresibilidad || (row.plaqueOrThrombusMorphology && /compres/i.test(row.plaqueOrThrombusMorphology) ? row.plaqueOrThrombusMorphology : "");
+      const thrombVal = row.thrombusPresence || row.trombo || (row.plaqueOrThrombusMorphology && /trombo|eco/i.test(row.plaqueOrThrombusMorphology) ? row.plaqueOrThrombusMorphology : "");
+      const refluxVal = row.valvularReflux || row.reflujo || row.competenciaValvular || (row.stenosisPercentOrReflux && /refluj|compet/i.test(row.stenosisPercentOrReflux) ? row.stenosisPercentOrReflux : "");
+      const caliberVal = row.veinCaliber || row.calibre || row.diameter || "";
+      const phasicVal = row.flowPhasicity || row.fasismo || (row.hemodynamicPattern && /f[aÃ¡]sic|espont[aÃ¡]neo|continuo/i.test(row.hemodynamicPattern) ? row.hemodynamicPattern : "");
+
+      const waveVal = row.waveMorphology || row.morfologiaOnda || row.flowPhasicity || (row.hemodynamicPattern && /trif[aÃ¡]sic|bif[aÃ¡]sic|monof[aÃ¡]sic|parvus|tardus/i.test(row.hemodynamicPattern) ? row.hemodynamicPattern : "");
+      const psvVal = row.psv || row.vps || (row.hemodynamicPattern && /psv|vps/i.test(row.hemodynamicPattern) ? row.hemodynamicPattern : "");
+      const edvVal = row.edv || row.vfd || "";
+      const vrVal = row.vrRatio || row.vr || row.ratioVr || (row.icaCcaRatio && /vr/i.test(row.icaCcaRatio) ? row.icaCcaRatio : "");
+      const stenVal = row.stenosisPercent || row.stenosisPercentOrReflux || row.estenosis || "";
+      const plaqueVal = row.plaqueMorphology || row.plaqueOrThrombusMorphology || row.placa || "";
+
+      const diamVal = row.diameterMm || row.diametro || row.veinCaliber || "";
+      const rarVal = row.rarRatio || row.rar || row.relacionAortoRenal || (row.icaCcaRatio && !/aci|cca/i.test(row.icaCcaRatio) ? row.icaCcaRatio : "");
+      const atVal = row.accelerationTime || row.tiempoAceleracion || row.at || "";
+      const riVal = row.resistiveIndex || row.indiceResistividad || row.ir || row.ri || "";
+      const lenVal = row.renalLength || row.longitudRenal || row.ejeRenal || "";
+
+      return {
+        vessel: row.vessel || "",
+        segment: row.segment || "",
+        plaqueOrThrombusMorphology: plaqueVal || row.plaqueOrThrombusMorphology || "",
+        stenosisPercentOrReflux: stenVal || row.stenosisPercentOrReflux || "",
+        hemodynamicPattern: row.hemodynamicPattern || (psvVal ? `PSV: ${psvVal}` : ""),
+        icaCcaRatio: ratioVal || "-",
+        compressibility: compVal || "100% Compresible",
+        thrombusPresence: thrombVal || "Ausente",
+        valvularReflux: refluxVal || "Competente (<500 ms)",
+        veinCaliber: caliberVal || diamVal || "-",
+        flowPhasicity: phasicVal || waveVal || "EspontÃ¡neo y fÃ¡sico respiratorio",
+        waveMorphology: waveVal || "TrifÃ¡sico de alta resistencia",
+        psv: psvVal || row.hemodynamicPattern || "-",
+        edv: edvVal || "-",
+        vrRatio: vrVal || ratioVal || "-",
+        stenosisPercent: stenVal || row.stenosisPercentOrReflux || "-",
+        plaqueMorphology: plaqueVal || row.plaqueOrThrombusMorphology || "-",
+        diameterMm: diamVal || caliberVal || "-",
+        rarRatio: rarVal || ratioVal || "-",
+        accelerationTime: atVal || "-",
+        resistiveIndex: riVal || "-",
+        renalLength: lenVal || "-",
+        hemodynamicImpact: row.hemodynamicImpact || row.clinicalSignificance || "",
+        clinicalSignificance: row.hemodynamicImpact || row.clinicalSignificance || ""
+      };
+    });
+
+    const finalVascularResult = {
+      vascularTerritory: parsedJson.vascularTerritory || "ExploraciÃ³n Vascular Doppler 3D",
+      vascularStudyType: detectedStudyType,
+      laterality: detectedLat,
+      figureTitle: parsedJson.figureTitle || "FIGURA 1. RECONSTRUCCIÃ“N VASCULAR 3D Y CORRELACIÃ“N HEMODINÃMICA",
+      roadmapPanel: null,
+      focalPanels: generatedFocalPanels,
+      hemodynamicTable: cleanHemodynamicTable,
+      hemodynamicSynthesis: parsedJson.hemodynamicSynthesis || parsedJson.surgicalHemodynamicSynthesis || "",
+      surgicalHemodynamicSynthesis: parsedJson.hemodynamicSynthesis || parsedJson.surgicalHemodynamicSynthesis || ""
+    };
+
+    res.json({ success: true, data: enforceBaafTerminology(finalVascularResult) });
+  } catch (error: any) {
+    console.error("Error in /api/generate-vascular-3d:", error);
+    res.status(500).json({ error: handleGeminiError(error) });
+  }
+});
+
+/**
+ * API: REGENERATE A SINGLE VASCULAR 3D PANEL WITH SURGICAL DIRECTIVES
+ * POST /api/regenerate-vascular-panel
+ */
+app.post("/api/regenerate-vascular-panel", async (req: express.Request, res: express.Response) => {
+  try {
+    const { reportText, vascularTerritory, vascularStudyType, panel, userDirective, laterality, requestedModel } = req.body;
+    if (!panel || !panel.panelLetter) {
+      return res.status(400).json({ error: "Se requiere la informaciÃ³n del panel vascular a regenerar." });
+    }
+
+    const ai = getGeminiClient();
+    const explicitLaterality = (laterality || panel.laterality || "").trim();
+
+    const panelRefinementPrompt = `Eres un cirujano vascular, angiÃ³logo y director de arte mÃ©dico editorial de mÃ¡ximo nivel mundial.
+Tu misiÃ³n es REFINAR Y REGENERAR UN PANEL VASCULAR 3D ESPECÃFICO (PANEL ${panel.panelLetter}) de una Suite Vascular 3D existente.
+
+DATOS DEL CASO VASCULAR:
+- Territorio Vascular: "${vascularTerritory || 'Estudio Vascular'}"
+- Tipo de Estudio: "${vascularStudyType || 'carotid'}"
+- Lateralidad activa: "${explicitLaterality || 'Detectada del informe'}"
+- CategorÃ­a del Panel: "${panel.panelCategory || 'focal_plaque'}"
+- TÃ­tulo actual: "${panel.panelTitle || ''}"
+- Vaso / Segmento: "${panel.vesselSegment || ''}"
+- Foco anatÃ³mico actual: "${panel.anatomicalFocus || ''}"
+- Prompt 3D previo: "${panel.imagePrompt || ''}"
+
+INFORME DOPPLER ORIGINAL:
+"""
+${reportText || ''}
+"""
+
+INSTRUCCIONES DE MODIFICACIÃ“N / CAMBIO SOLICITADAS POR EL MÃ‰DICO:
+"""
+${userDirective || 'Mejorar resoluciÃ³n, perspectiva y fidelidad anatÃ³mica del panel respetando rigurosamente lateralidad y ejes vasculares.'}
+"""
+
+REGLAS OBLIGATORIAS:
+1. Si el usuario solicita corregir de lado, vaso, morfologÃ­a de placa (blanda/calcificada/ulcerada), porcentaje de estenosis, trombo o reflujo, aplica el cambio de forma estricta y absoluta.
+2. ENFOQUE MACRO / CLOSE-UP OBLIGATORIO: Genera una vista en primer plano (macro close-up) del segmento vascular con lecho anatÃ³mico de referencia (mÃºsculo, hueso y fascia en semi-translucidez). Prohibidas vistas panorÃ¡micas completas.
+3. Formato del imagePrompt: "Photorealistic 3D medical vascular close-up illustration, peer-reviewed vascular surgery journal quality, clean pure white background with subtle soft studio lighting, Octane Render / ZBrush medical shader, satin anatomical tissue texture with subsurface scattering, realistic translucent vessel wall, adjacent translucent bone/muscle bed anchors, hyper-focused macro anatomical view. No text, no typography, no labels, no watermarks, crisp anatomical focus."
+
+RESPONDE EXCLUSIVAMENTE EN FORMATO JSON:
+{
+  "panelTitle": "string (TÃ­tulo actualizado del panel)",
+  "vesselSegment": "string (Vaso y segmento actualizado)",
+  "anatomicalFocus": "string (Foco anatÃ³mico y semiolÃ³gico actualizado)",
+  "imagePrompt": "string (Prompt en inglÃ©s fotorrealista con la modificaciÃ³n)",
+  "stenosisDegree": "string (Opcional)",
+  "flowPattern": "string (Opcional)"
+}`;
+
+    const textResponse = await ai.models.generateContent({
+      model: requestedModel || "gemini-3.7-flash",
+      contents: [{ text: panelRefinementPrompt }],
+      config: {
+        responseMimeType: "application/json",
+        temperature: 0.2
+      }
+    });
+
+    const refinedJson = JSON.parse(textResponse.text || "{}");
+    const updatedTitle = refinedJson.panelTitle || panel.panelTitle;
+    const updatedSegment = refinedJson.vesselSegment || panel.vesselSegment;
+    const updatedFocus = refinedJson.anatomicalFocus || panel.anatomicalFocus;
+    let updatedPrompt = (refinedJson.imagePrompt || panel.imagePrompt || "").trim();
+
+    if (!updatedPrompt) {
+      updatedPrompt = `Photorealistic 3D medical vascular close-up illustration, peer-reviewed vascular surgery journal quality, clean pure white background with subtle soft studio lighting, Octane Render / ZBrush medical shader, satin anatomical tissue texture with subsurface scattering, realistic translucent vessel wall showing ${updatedSegment || "vascular segment"} with ${updatedFocus || updatedTitle}, adjacent translucent bone and muscle bed anchors, hyper-focused macro anatomical view. No text, no typography, no labels, no watermarks, crisp anatomical focus.`;
+    }
+
+    let imageUrl = await generate3DMedicalImageWithRetry(ai, updatedPrompt);
+
+    if (!imageUrl) {
+      const fallbackPrompt = `3D medical vascular render of ${updatedSegment || "vessel"}, ${updatedFocus || updatedTitle}, Octane render, photorealistic journal quality, pure clean white background, no text.`;
+      imageUrl = await generate3DMedicalImageWithRetry(ai, fallbackPrompt);
+    }
+
+    if (!imageUrl) {
+      return res.status(500).json({ error: "No se pudo generar la imagen vascular 3D en este intento. Por favor intente nuevamente." });
+    }
+
+    const updatedPanel: any = {
+      panelId: panel.panelId,
+      panelLetter: panel.panelLetter,
+      panelTitle: updatedTitle,
+      panelCategory: panel.panelCategory,
+      vesselSegment: updatedSegment,
+      anatomicalFocus: updatedFocus,
+      imageUrl: imageUrl,
+      imagePrompt: updatedPrompt,
+      laterality: explicitLaterality || panel.laterality,
+      isCustomFlipped: panel.isCustomFlipped,
+      stenosisDegree: refinedJson.stenosisDegree || panel.stenosisDegree,
+      flowPattern: refinedJson.flowPattern || panel.flowPattern
+    };
+
+    res.json({ success: true, panel: updatedPanel });
+  } catch (error: any) {
+    console.error("Error in /api/regenerate-vascular-panel:", error);
+    res.status(500).json({ error: handleGeminiError(error) });
+  }
+});
+
 
 /**
  * 1. API: ANALIZE IMAGE AND DRAFT RADIOLOGY REPORT
@@ -8599,6 +9448,14 @@ const MATRIX_PRESETS: Record<string, { key: string; label: string; finding: stri
     { key: "liquido_colecciones", label: "LÃ­quido Libre / Colecciones", finding: "Fosa ilÃ­aca derecha libre de lÃ­quido.", justification: "Sin colecciones ni abscesos periapendiculares." },
     { key: "apendicolito", label: "Apendicolito / Fecalito", finding: "Luz apendicular limpia.", justification: "Sin apendicolitos ni obstrucciÃ³n por fecalito." }
   ],
+  diverticulitis: [
+    { key: "engrosamiento_parietal", label: "Engrosamiento Parietal CÃ³lico", finding: "Espesor de la pared cÃ³lica normal (â‰¤2.0-2.5 mm) con estratificaciÃ³n conservada.", justification: "Sin engrosamiento ni rigidez parietal segmentaria." },
+    { key: "grasa_pericolica", label: "Grasa PericÃ³lica / FlemÃ³n", finding: "Grasa pericÃ³lica homogÃ©nea, compresible y de ecogenicidad habitual.", justification: "Sin halo hiperecogÃ©nico, flemÃ³n ni edema pericÃ³lico." },
+    { key: "diverticulo_inflamado", label: "DivertÃ­culo Inflamado / Fecalito", finding: "Sin divertÃ­culos inflamados evidentes ni fecalitos obstructivos con halo hipoecoico.", justification: "Ausencia de diverticulitis focal con dolor selectivo bajo transductor." },
+    { key: "hiperemia_vascular", label: "Hiperemia Vascular (Doppler)", finding: "VascularizaciÃ³n parietal y mesentÃ©rica en lÃ­mites fisiolÃ³gicos.", justification: "Sin hiperemia Doppler patolÃ³gica ni Ã¡reas de isquemia." },
+    { key: "complicacion_absceso", label: "ComplicaciÃ³n Locorregional (Absceso)", finding: "Sin colecciones lÃ­quidas tabicadas ni abscesos pericÃ³licos/pÃ©lvicos (Hinchey 0/Ia).", justification: "Ausencia de colecciones purulentas o flemosas." },
+    { key: "gas_extraluminal", label: "Gas Extraluminal / PerforaciÃ³n", finding: "Gas intraluminal confinado a la luz cÃ³lica sin burbujas extraluminales ni neumoperitoneo.", justification: "Sin microperforaciÃ³n ni neumoperitoneo libre (Hinchey IV)." }
+  ],
   thyroid: [
     { key: "tamano_tiroides", label: "TamaÃ±o Glandular / Bocio", finding: "Volumen tiroideo normal en ambos lÃ³bulos.", justification: "Sin bocio ni efecto de masa intratorÃ¡cica." },
     { key: "presencia_nodulos", label: "Carga Nodular", finding: "ParÃ©nquima homogÃ©neo libre de nÃ³dulos.", justification: "Sin imÃ¡genes nodulares sÃ³lidas ni quÃ­sticas." },
@@ -8623,383 +9480,74 @@ const MATRIX_PRESETS: Record<string, { key: string; label: string; finding: stri
     { key: "infiltracion_grasa", label: "InfiltraciÃ³n Grasa", finding: "Sin esteatosis hepÃ¡tica (Grado 0), gradiente hepatorrenal conservado y buena penetraciÃ³n acÃºstica.", justification: "AtenuaciÃ³n acÃºstica y ecogenicidad fisiolÃ³gica." },
     { key: "lesiones_focales", label: "Lesiones Focales", finding: "ParÃ©nquima homogÃ©neo libre de lesiones ocupantes de espacio (LOEs).", justification: "Ausencia de nÃ³dulos sospechosos, quistes complicados ni masas sÃ³lidas." }
   ],
-  renal: [
-    { key: "tamano_renal", label: "TamaÃ±o Renal", finding: "Eje bipolar longitudinal conservado (100-120mm) con morfologÃ­a reniforme simÃ©trica.", justification: "Sin nefromegalia ni hipotrofia renal." },
-    { key: "grosor_cortical", label: "Grosor Cortical", finding: "Espesor cortical normal â‰¥9-10mm con nÃ­tida diferenciaciÃ³n cÃ³rtico-medular.", justification: "Sin adelgazamiento cortical ni hiperecogenicidad mÃ©dica." },
-    { key: "vascularidad", label: "Vascularidad", finding: "PerfusiÃ³n perifÃ©rica completa con Ã­ndices de resistividad intrarrenal fisiolÃ³gicos (RI 0.58-0.70).", justification: "Sin defectos segmentarios ni signos de estenosis arterial." },
-    { key: "lesiones_focales", label: "Lesiones Focales", finding: "ParÃ©nquima homogÃ©neo sin masas sÃ³lidas ni quistes complicados (Bosniak I o libre de LOEs).", justification: "Ausencia de LOEs sospechosas ni angiomiolipomas complejos." },
-    { key: "procesos_obstructivos", label: "Procesos Obstructivos", finding: "Seno renal ecolucente sin ectasia pielocalicial ni litiasis obstructiva.", justification: "Sin hidronefrosis ni uropatÃ­a obstructiva." },
-    { key: "cambios_inflamatorios", label: "Cambios Inflamatorios", finding: "Grasa perirrenal homogÃ©nea sin colecciones, gas ni Ã¡reas de nefronÃ­a.", justification: "Ausencia de estigmas de pielonefritis ni perinefritis." }
-  ],
-  scrotal: [
-    { key: "tamano_testicular", label: "TamaÃ±o Testicular", finding: "Volumen y morfologÃ­a testicular conservada dentro de rango fisiolÃ³gico (8-25 cc).", justification: "Sin atrofia, hipotrofia ni orquimegalia anormal." },
-    { key: "vascularidad_testicular", label: "Vascularidad Testicular", finding: "PatrÃ³n de perfusiÃ³n Doppler simÃ©trico con Ã­ndices de resistividad fisiolÃ³gicos (RI 0.45-0.70).", justification: "Sin hiperemia inflamatoria ni defectos de perfusiÃ³n / torsiÃ³n." },
-    { key: "integridad_epididimos", label: "Integridad de EpidÃ­dimos", finding: "EpidÃ­dimos de grosor, contornos y ecoestructura homogÃ©nea habitual.", justification: "Sin signos de epididimitis aguda, espermatocele complicado ni flemÃ³n." },
-    { key: "lesiones_focales", label: "Lesiones Focales", finding: "Ecoestructura homogÃ©nea sin lesiones ocupantes de espacio ni microlitiasis densa.", justification: "Sin nÃ³dulos sÃ³lidos intratesticulares ni LOEs sospechosas." },
-    { key: "varicocele", label: "Varicocele", finding: "Plexo pampiniforme de calibre fisiolÃ³gico (<2 mm) sin reflujo con maniobra de Valsalva.", justification: "Sin ectasia venosa ni reflujo patolÃ³gico." },
-    { key: "cambios_inflamatorios_hidrocele", label: "Cambios Inflamatorios e Hidrocele", finding: "LÃ­quido en tÃºnica vaginal dentro de rango fisiolÃ³gico sin engrosamiento parietal.", justification: "Sin hidrocele a tensiÃ³n, piocele ni paquivaginalitis." }
-  ],
-  msk: [
-    { key: "inflamacion", label: "InflamaciÃ³n / Edema", finding: "Sin efusiÃ³n o edema significativo.", justification: "Ausencia de fluido anormal o reacciÃ³n inflamatoria aguda." },
-    { key: "estructural", label: "Compromiso Estructural", finding: "Integridad tisular conservada.", justification: "Sin desgarros, rupturas ni soluciones de continuidad." },
-    { key: "biomecanica", label: "Inestabilidad BiomecÃ¡nica", finding: "Estabilidad y mecÃ¡nica tisular normal.", justification: "Sin sobrecarga, roce o inestabilidad pasiva." },
-    { key: "vascularizacion", label: "VascularizaciÃ³n / Hiperemia", finding: "SeÃ±al Doppler dentro de lÃ­mites normales.", justification: "Sin neoangiogÃ©nesis ni hiperemia activa." },
-    { key: "tension", label: "TensiÃ³n / IrritaciÃ³n", finding: "TensiÃ³n miotendinosa y fascial adecuada.", justification: "Sin espasmo, contractura o tracciÃ³n dolorosa." },
-    { key: "cronicidad", label: "Cronicidad / Fibrosis", finding: "PatrÃ³n fibrilar o tisular habitual.", justification: "Sin cambios tendinÃ³sicos crÃ³nicos ni calcificaciones." }
-  ],
-  visceral: [
-    { key: "inflamacion", label: "InflamaciÃ³n & Edema Parietal", finding: "Paredes viscerales de espesor y estrÃ­as normales.", justification: "Sin edema edematoso ni engrosamiento parietal." },
-    { key: "estructural", label: "Compromiso Tisular / Lisis", finding: "EstratificaciÃ³n de pared conservada.", justification: "Sin lisis, necrosis ni soluciÃ³n de continuidad." },
-    { key: "biomecanica", label: "AfectaciÃ³n Perivisceral", finding: "Grasa perivisceral respetada e isoecoica.", justification: "Sin desestructuraciÃ³n del plano adjacente." },
-    { key: "vascularizacion", label: "VascularizaciÃ³n / Hiperemia", finding: "Flujo Doppler parietal fisiolÃ³gico.", justification: "Sin hiperemia reactiva ni Ã¡reas de isquemia." },
-    { key: "tension", label: "IrritaciÃ³n Serosa & DistensiÃ³n", finding: "Serosa sin irritaciÃ³n ni efusiÃ³n perifocal.", justification: "Sin distensiÃ³n tensional ni estasis." },
-    { key: "cronicidad", label: "Cronicidad / Litiasis", finding: "Sin litiasis ni secuelas cicatrizales.", justification: "Estructura limpia sin cambios recurrentes." }
-  ],
-  oncology: [
-    { key: "estructural", label: "Arquitectura / Heterogeneidad", finding: "Arquitectura tisular conservada y homogÃ©nea.", justification: "Sin masas heterogÃ©neas ni bordes espiculados." },
-    { key: "vascularizacion", label: "NeoangiogÃ©nesis & Neovasculatura", finding: "PatrÃ³n vascular perifÃ©rico y central ordenado.", justification: "Sin vasos caÃ³ticos de alta velocidad o neovasculatura." },
-    { key: "biomecanica", label: "InvasiÃ³n Tisular Local", finding: "Planos de clivaje anatÃ³micos preservados.", justification: "Sin infiltraciÃ³n de cÃ¡psula o grasa contigua." },
-    { key: "tension", label: "Compromiso Vascular / Ductal", finding: "Vasos principales y ductos permeables.", justification: "Sin encajonamiento ni trombosis tumoral." },
-    { key: "inflamacion", label: "Necrosis Tumoral / DegeneraciÃ³n", finding: "Tejido sÃ³lido uniforme sin degeneraciÃ³n quÃ­stica.", justification: "Sin focos de necrosis ni lisis intratumoral." },
-    { key: "cronicidad", label: "AdenopatÃ­as & DiseminaciÃ³n", finding: "Ganglios regionales con morfologÃ­a preservada.", justification: "Sin adenopatÃ­as atÃ­picas ni implantes." }
-  ]
-};
-
-function normalizeAxesForMode(targetMode: string, returnedAxes: any[]): any[] {
-  const presetSpec = MATRIX_PRESETS[targetMode] || MATRIX_PRESETS["msk"];
-  const finalAxes: any[] = [];
-
-  for (const itemSpec of presetSpec) {
-    const found = Array.isArray(returnedAxes)
-      ? returnedAxes.find((a: any) => {
-          if (!a) return false;
-          if (a.key === itemSpec.key) return true;
-          const aLabel = (a.label || "").toLowerCase();
-          const aKey = (a.key || "").toLowerCase();
-          const specLabel = itemSpec.label.toLowerCase();
-          const specKey = itemSpec.key.toLowerCase();
-          return aKey === specKey || aLabel.includes(specKey) || specLabel.includes(aLabel) || aLabel.includes(specLabel.split(" / ")[0]);
-        })
-      : null;
-
-    if (found) {
-      const score = typeof found.score === "number" ? Math.min(10, Math.max(0, Math.round(found.score))) : 0;
-      let level = found.level || "FisiolÃ³gico";
-      if (score >= 9) level = "Masivo / CrÃ­tico";
-      else if (score >= 7) level = "Severo";
-      else if (score >= 5) level = "Moderado";
-      else if (score >= 2) level = "Leve";
-      else level = "FisiolÃ³gico";
-
-      finalAxes.push({
-        key: itemSpec.key,
-        label: itemSpec.label,
-        score,
-        level,
-        finding: found.finding || itemSpec.finding,
-        justification: found.justification || itemSpec.justification
-      });
-    } else {
-      finalAxes.push({
-        key: itemSpec.key,
-        label: itemSpec.label,
-        score: 0,
-        level: "FisiolÃ³gico",
-        finding: itemSpec.finding,
-        justification: itemSpec.justification
-      });
-    }
-  }
-
-  return finalAxes;
-}
-
-app.post("/api/generate-biomechanical-radar", async (req: express.Request, res: express.Response) => {
-  try {
-    const { model, report, studyType, radarMode } = req.body;
-    if (!report) {
-      return res.status(400).json({ success: false, error: "Se requiere el parÃ¡metro 'report'." });
-    }
-
-    const ai = getGeminiClient();
-    const modelToUse = getModelName(model);
-
-    const requestedMode = radarMode || "auto";
-
-    const prompt = `Eres un mÃ©dico radiÃ³logo y especialista en oncologÃ­a radiolÃ³gica, ecografÃ­a de alta resoluciÃ³n, medicina interna, cirugÃ­a general, traumatologÃ­a, medicina deportiva y patologÃ­a articular.
-Analiza minuciosamente el reporte radiolÃ³gico/ecogrÃ¡fico/resonancia proporcionado y calcula un Perfil de Radar Multivectorial en 6 ejes o vectores clave de 0 a 10 (donde 0 es fisiolÃ³gico/ausente/benigno y 10 es crÃ­tico/masivo/severa afectaciÃ³n).
-
-ESTUDIO CLÃNICO: ${studyType || "General / No especificado"}
-MODALIDAD SOLICITADA: ${requestedMode === "auto" ? "DetecciÃ³n AutomÃ¡tica por IA" : requestedMode.toUpperCase()}
-${requestedMode !== "auto" ? `\nOBLIGACIÃ“N STRICTA DE MATRIZ EXCLUSIVA: EL USUARIO HA SELECCIONADO EXPLÃCITAMENTE LA MATRIZ '${requestedMode.toUpperCase()}'. DEBES EVALUAR Y DEVOLVER EXCLUSIVAMENTE LOS 6 VECTORES/KEYS ASIGNADOS A ESTA MATRIZ. DEBES ASIGNAR UN SCORE DE 0 A 10 A CADA UNO DE LOS 6 VECTORES DE DICHA MATRIZ Y DEVOLVERLOS EN EL ARRAY 'axes'. NO MEZCLES VECTORES DE OTRAS MATRICES.\n` : ""}
-
-INSTRUCCIÃ“N DE MATRIZ VECTORIAL A APLICAR:
-
-${(requestedMode === "rotator_cuff" || (requestedMode === "auto" && /manguito|supraespinoso|infraespinoso|subescapular|bursitis subacrom|hombro|tclb|b[iÃ­]ceps/i.test(report))) ? `
-SI LA MATRIZ ES DE MANGUITO ROTADOR / PATOLOGÃA DE HOMBRO (ROTATOR CUFF 6D):
-Aplica la matriz de 6 vectores especÃ­ficos para afecciÃ³n del manguito rotador y estructura bicipital:
-1. "ruptura_supraespinoso": Ruptura del Supraespinoso (0-1: Intacto/FisiolÃ³gico; 2-4: Desgarro parcial articular/bursal/intratendinoso de bajo grado <50%; 5-6: Desgarro parcial de alto grado >50%; 7-8: Ruptura transfixiante/completa con retracciÃ³n leve; 9-10: Ruptura masiva con retracciÃ³n importante o atrofia muscular).
-2. "bursitis": Presencia de Bursitis Subacromiodeltoidea (0-1: Ausente/LÃ­quido fisiolÃ³gico; 2-4: MÃ­nima efusiÃ³n/engrosamiento sinovial leve; 5-6: Moderada distensiÃ³n/sinovitis difusa; 7-8: Severa distensiÃ³n/reacciÃ³n exudativa-hemorrÃ¡gica o septada; 9-10: DistensiÃ³n masiva/reacciÃ³n flemÃ³nides-adherencial).
-3. "pinzamiento": Pinzamiento Subacromial - Grado de LimitaciÃ³n Funcional (EVALUADO EXCLUSIVAMENTE POR EL GRADO DE LIMITACIÃ“N FUNCIONAL Y DOLOR EN MANIOBRAS DINÃMICAS: 0-1: Ausente/Sin limitaciÃ³n en maniobras dinÃ¡micas; 2-4: Leve dolor al final del arco con maniobras de Neer/Hawkins levemente positivas; 5-6: Moderado compromiso con dolor marcado en arco medio 60Â°-120Â° y restricciÃ³n dinÃ¡mica; 7-8: Severo compromiso con marcada limitaciÃ³n funcional e incapacidad para maniobras activas; 9-10: Imposibilidad de realizar maniobras por limitaciÃ³n funcional y dolor bloqueante severo).
-4. "otros_tendones": LesiÃ³n de Otros Tendones del Manguito (Infraespinoso, Subescapular, Redondo Menor: 0-1: Intactos/Estructura normal; 2-4: Tendinosis o desgarro parcial focal leve; 5-6: Desgarro parcial significativo en 1 tendÃ³n asociado; 7-8: Ruptura completa de 1 tendÃ³n o compromiso parcial grave de varios tendones; 9-10: Compromiso multitendinoso masivo).
-5. "tendinosis_supraespinoso": Tendinosis del Supraespinoso (0-1: PatrÃ³n fibrilar normal; 2-4: Tendinosis focal/heterogeneidad ecogÃ©nica leve; 5-6: Tendinosis difusa/engrosamiento moderado o microcalcificaciones; 7-8: Tendinosis severa/heterogeneidad marcada o macrocalcificaciones; 9-10: Tendinosis avanzada degenerativa previo a falla estructural).
-6. "tclb": TendÃ³n Cabeza Larga del BÃ­ceps - TCLB (0-1: Intacto/Centrado en corredera; 2-4: Tenosinovitis leve con lÃ­quido peritendinoso; 5-6: Tenosinovitis moderada o subluxaciÃ³n parcial/tendinosis; 7-8: Desgarro parcial significativo o luxaciÃ³n medial fuera de corredera; 9-10: Ruptura completa/tendÃ³n ausente o retinÃ¡culo roto).
-` : ""}
-
-${(requestedMode === "msk" || (requestedMode === "auto" && !/manguito|supraespinoso|infraespinoso|subescapular|bursitis subacrom|hombro|tclb|b[iÃ­]ceps/i.test(report) && !/tumor|oncolog|c[aÃ¡]ncer|malign|n[oÃ³]dulo|carcinom|masa|neoplas|metast|adenopat|diverticul|pancreat|apendic|colecist|pielonefr|absceso|flem[oÃ³]n/i.test(report))) ? `
-SI LA MATRIZ ES OSTEOMUSCULAR / ARTICULAR GENERAL (MSK):
-Aplica la matriz de 6 vectores biomecÃ¡nicos tradicionales:
-- "inflamacion": InflamaciÃ³n / Edema (Edema tisular, derrame articular, tenosinovitis, colecciones, bursitis).
-- "estructural": Compromiso Estructural (Desgarro, ruptura, erosiÃ³n, soluciÃ³n de continuidad).
-- "biomecanica": Inestabilidad BiomecÃ¡nica (Mecanismo lesional, sobrecarga, inestabilidad, pinzamiento/impingement).
-- "vascularizacion": VascularizaciÃ³n / Hiperemia (Doppler color/pulsado, neovasculatura, inflamaciÃ³n vascular).
-- "tension": TensiÃ³n / IrritaciÃ³n (Espasmo miotendinoso, contractura, tracciÃ³n entÃ©sica, reactividad fascial).
-- "cronicidad": Cronicidad / Fibrosis (Tendinosis previa, fibrosis, calcificaciones, osteofitos, remodelado).
-` : ""}
-
-${(requestedMode === "visceral" || (requestedMode === "auto" && /diverticul|pancreat|apendic|colecist|pielonefr|absceso|flem[oÃ³]n|mastitis|prostat|adenitis|anex|periton/i.test(report) && !/tumor|oncolog|c[aÃ¡]ncer|malign|carcinom|neoplas|metast/i.test(report))) ? `
-SI LA MATRIZ ES VISCERAL / ABDOMINAL / PÃ‰LVICO / TEJIDOS BLANDOS / INFLAMATORIO:
-Aplica la matriz de 6 vectores adaptada a la fisiopatologÃ­a visceral/parenquimatosa:
-- "inflamacion": InflamaciÃ³n & Edema Parietal / Parenquimatoso (Engrosamiento edematoso de pared, edema peri-Ã³rgano, flemÃ³n, lÃ­quido libre/inflamatorio).
-- "estructural": Compromiso Tisular / Lisis / Necrosis (Lisis tisular, pÃ©rdida de la estratificaciÃ³n de pared, perforaciÃ³n, plastrÃ³n o colecciÃ³n purulenta formadora de absceso).
-- "biomecanica": AfectaciÃ³n Perivisceral / Reactividad de Pared (AfectaciÃ³n de la grasa perivisceral/perirrenal/mesentÃ©rica, desestructuraciÃ³n del lecho periadjacente, reactividad de Ã³rganos vecinos).
-- "vascularizacion": VascularizaciÃ³n / Hiperemia Doppler (SeÃ±al Doppler parietal/capsular aumentada, hiperemia reactiva, o zonas de hipoperfusiÃ³n/isquemia/necrosis).
-- "tension": IrritaciÃ³n Serosa / Peritoneal & DistensiÃ³n Tensional (IrritaciÃ³n peritoneal/pleural focal, estasis/distensiÃ³n ductal o ureteral, espasmo visceral, dolor focal provocado al paso del transductor).
-- "cronicidad": Cronicidad / Litiasis & Secuelas Recurrentes (Antecedente de litiasis, cicatrices, estenosis, atrofia parenquimatosa o brote recurrente sobre daÃ±o crÃ³nico).
-` : ""}
-
-${(requestedMode === "oncology" || (requestedMode === "auto" && /tumor|oncolog|c[aÃ¡]ncer|malign|n[oÃ³]dulo|carcinom|masa|neoplas|metast|birads|lirads|bosniak|ti-rads/i.test(report))) ? `
-SI LA MATRIZ ES ONCOLÃ“GICA / LESIONES TUMORALES & NÃ“DULOS SOSPECHOSOS (HÃ­gado, PÃ¡ncreas, RiÃ±Ã³n, Mama, Tiroides, PrÃ³stata, Tejidos Blandos, etc.):
-Aplica la matriz de 6 vectores tumoral-oncofisiolÃ³gicos:
-- "estructural": Arquitectura / Heterogeneidad & Bordes (Estructura interna heterogÃ©nea/mosaico, bordes espiculados/microlobulados, halo hipoecoico/invasivo, microcalcificaciones sospechosas, sombra acÃºstica/atenuaciÃ³n).
-- "vascularizacion": NeoangiogÃ©nesis & Neovasculatura Doppler (VascularizaciÃ³n intralesional central/caÃ³tica, vasos tortuosos de alta velocidad, baja resistencia RI, seÃ±al Doppler masiva).
-- "biomecanica": InvasiÃ³n Tisular Local & CÃ¡psula (InfiltraciÃ³n de grasa circundante, abombamiento/interrupciÃ³n de la cÃ¡psula orgÃ¡nica, invasiÃ³n de fascias o tejidos contiguos, pÃ©rdida de planos de clivaje).
-- "tension": Compromiso Vascular / Ductal / Troncular (Encajonamiento/colapso o trombosis tumoral de vasos principales -v. porta, a. mesentÃ©rica, v. renal-, dilataciÃ³n ductal retrÃ³grada -Wirsung, vÃ­a biliar, ureteral-).
-- "inflamacion": Necrosis Tumoral / DegeneraciÃ³n Licuefactiva (DegeneraciÃ³n o lisis central, componentes quÃ­sticos/hemorrÃ¡gicos intratumorales, edema o colecciones pericavitarias).
-- "cronicidad": AdenopatÃ­as Regionales & DiseminaciÃ³n (AdenopatÃ­as sospechosas -pÃ©rdida de hilio graso, redondeamiento, hiperemia-, implantes nodulares peritoneales, ascitis patolÃ³gica, metÃ¡stasis).
-` : ""}
-
-SI LA SELECCIÃ“N ES "AUTO", DETECTA CUÃL DE LAS 12 MATRICES ANTERIORES SE AJUSTA MEJOR AL REPORTE Y APLÃCALA ESTRICTAMENTE.
-
-${(requestedMode === "muscle_injury" || (requestedMode === "auto" && /desgarro.*muscular|desgarro.*fibrilar|lesi[oÃ³]n.*muscular|peetrons|hematoma.*intramuscular|uni[oÃ³]n.*miotendinosa|\bmtj\b|rectocuadricipital|isquiotibial|gemelo|s[oÃ³]leo|aductor|b[iÃ­]ceps.*femoral|avulsi[oÃ³]n.*tendinosa|edema.*intramuscular/i.test(report))) ? `
-SI LA MATRIZ ES DE VALORACIÃ“N DE LESIONES MUSCULARES Y MIOTENDINOSAS (MUSCLE INJURY 6D):
-Aplica la matriz de 6 vectores especÃ­ficos para la evaluaciÃ³n ecogrÃ¡fica/RM de lesiones musculares:
-1. "desgarro_muscular": Desgarro Muscular Fibrilar y SoluciÃ³n de Continuidad (0-1: Integridad muscular normal; 2-4: Microdesgarro o lesiÃ³n miofascial Grado I <5mm; 5-6: Desgarro fibrilar parcial Grado II 5-20mm <50% de la secciÃ³n; 7-8: Desgarro subtotal Grado III >50% de la secciÃ³n con retracciÃ³n moderada; 9-10: Desgarro completo Grado IV 100% de disrupciÃ³n transmural con hernia/retracciÃ³n masiva).
-2. "hematoma_coleccion": Hematoma Intramuscular / Interfascial y ColecciÃ³n LÃ­quida (0-1: Sin colecciÃ³n lÃ­quida; 2-4: Hematoma laminar interfascial fino <1.0 cmÂ³; 5-6: Hematoma intramuscular definido 1.0-5.0 cmÂ³; 7-8: Hematoma voluminoso a tensiÃ³n 5.0-15.0 cmÂ³; 9-10: Hematoma masivo expansivo >15.0 cmÂ³ con sÃ­ndrome compartimental incipiente).
-3. "union_miotendinosa": AfectaciÃ³n de la UniÃ³n Miotendinosa / MTJ (0-1: MTJ preservada normal; 2-4: Compromiso miofascial perifÃ©rico leve; 5-6: Deslamado o desgarro parcial MTJ <25%; 7-8: AvulsiÃ³n aponeurÃ³tica severa de MTJ >50%; 9-10: AvulsiÃ³n / disrupciÃ³n total de la uniÃ³n miotendinosa).
-4. "tendon_insercion": TendÃ³n y Entesis de InserciÃ³n (0-1: TendÃ³n de inserciÃ³n intacto normal; 2-4: EntesopatÃ­a / tendinopatÃ­a postraumÃ¡tica leve; 5-6: Ruptura parcial intratendinosa <50%; 7-8: AvulsiÃ³n insercional subtotal o ruptura >50%; 9-10: Ruptura completa tendinosa o avulsiÃ³n Ã³sea insercional total).
-5. "vascularidad": Vascularidad y NeovascularizaciÃ³n Doppler Color (0-1: Vascularidad intramuscular fisiolÃ³gica normal; 2-4: Hiperemia perilesional leve focal; 5-6: NeovascularizaciÃ³n reparativa moderada en borde del desgarro; 7-8: HipervascularizaciÃ³n intensa de regeneraciÃ³n; 9-10: NeovascularizaciÃ³n caÃ³tica extrema / pseudoaneurisma o fÃ­stula AV postraumÃ¡tica).
-6. "cambios_inflamatorios": Cambios Inflamatorios Perilesionales y Edema Intramuscular (0-1: Vientre muscular limpio simÃ©trico; 2-4: Edema intramuscular localizado leve "en pluma de ave"; 5-6: Edema inflamatorio extenso >30% del vientre muscular; 7-8: Miositis inflamatoria / edema masivo multicompartimental; 9-10: Mionecrosis / miositis osificante agudizada).
-` : ""}
-
-${(requestedMode === "thyroid" || (requestedMode === "auto" && /tiroides|tiroideo|tirads|tiroiditis|hashimoto|graves|bocio|inferno.*tiroid|n[oÃ³]dulo.*tiroid|ismo.*tiroid|adenopat[iÃ­]a.*cervical/i.test(report))) ? `
-SI LA MATRIZ ES DE VALORACIÃ“N TIROIDEA (THYROID 6D):
-Aplica la matriz de 6 vectores especÃ­ficos para la evaluaciÃ³n ecogrÃ¡fica/tomogrÃ¡fica de tiroides:
-1. "tamano_tiroides": TamaÃ±o Glandular y VolumetrÃ­a / Bocio (0-1: Volumen normal 7-15cc, dimensiones conservadas; 2-4: Bocio leve o volumen 16-22cc; 5-6: Bocio moderado Grado I 23-35cc con compresiÃ³n sutil; 7-8: Bocio severo Grado II 36-50cc con desviaciÃ³n traqueal; 9-10: Bocio gigante Grado III >50cc o bocio endotorÃ¡cico/sumergido).
-2. "presencia_nodulos": Carga Nodular y Multinodularidad (0-1: GlÃ¡ndula avascular libre de nÃ³dulos, parÃ©nquima homogÃ©neo; 2-4: NÃ³dulo Ãºnico pequeÃ±o <10mm o quÃ­stico puro; 5-6: Bocio multinodular leve-moderado 2-4 nÃ³dulos bilaterales; 7-8: Bocio multinodular prominente >4 nÃ³dulos; 9-10: Reemplazo parenquimatoso masivo por nÃ³dulos).
-3. "nodulos_sospechosos": EstratificaciÃ³n de Sospecha OncolÃ³gica - TI-RADS / EU-TIRADS (0-1: TI-RADS 1-2 completamente benigno; 2-4: TI-RADS 3 baja sospecha; 5-6: TI-RADS 4A sospecha moderada 1 rasgo de sospecha; 7-8: TI-RADS 4B/4C alta sospecha 2+ rasgos microcalcificaciones/taller-than-wide; 9-10: TI-RADS 5 o infiltraciÃ³n extratiroidea a mÃºsculo/trÃ¡quea).
-4. "patron_parenquima": Ecoestructura Parenquimatosa - Tiroiditis de Hashimoto / Graves (0-1: ParÃ©nquima homogÃ©neo normal brillante; 2-4: ParÃ©nquima levemente heterogÃ©neo; 5-6: Tiroiditis moderada con patrÃ³n pseudonodular y septos fibrosos; 7-8: Tiroiditis avanzada con patrÃ³n en panal de abejas o reticulado hipoecoico; 9-10: Tiroiditis atrÃ³fica severa o destrucciÃ³n parenquimatosa).
-5. "vascularidad": Vascularidad Glandular y Intranodular - Doppler Color / Inferno Tiroideo (0-1: Flujo vascular fisiolÃ³gico normal escaso; 2-4: Incremento vascular sutil; 5-6: HipervascularizaciÃ³n difusa moderada -inferno tiroideo Grado II-; 7-8: Vascularidad intranodular caÃ³tica central o PSV >50 cm/s; 9-10: Inferno tiroideo masivo o neovascularizaciÃ³n tumoral caÃ³tica).
-6. "adenopatias_atipicas": AdenopatÃ­as Cervicales AtÃ­picas / Sospechosas - Compartimentos II-VI (0-1: Ganglios cervicales fisiolÃ³gicos ovalados con hilio graso; 2-4: AdenopatÃ­as reactivas inflamatorias; 5-6: AdenopatÃ­a dudosamente atÃ­pica redondeada; 7-8: AdenopatÃ­as sospechosas/atÃ­picas con microcalcificaciones o sustituciÃ³n quÃ­stica; 9-10: AdenopatÃ­as metastÃ¡sicas masivas / conglomerado nodal atÃ­pico).
-` : ""}
-
-${(requestedMode === "appendicitis" || (requestedMode === "auto" && /apendic|ap[eÃ©]ndice|fecalito|apendicolito|fosa.*il[iÃ­]aca.*derecha|\bfid\b|signo.*diana|target.*sign|mesoap[eÃ©]ndice|flem[oÃ³]n.*apendic|plastr[oÃ³]n.*apendic|mcburney/i.test(report))) ? `
-SI LA MATRIZ ES DE VALORACIÃ“N DE APENDICITIS AGUDA (APPENDICITIS 6D):
-Aplica la matriz de 6 vectores especÃ­ficos para la evaluaciÃ³n ecogrÃ¡fica/tomogrÃ¡fica de apendicitis aguda:
-1. "diametro_apendice": DiÃ¡metro Transversal Externo Apendicular y Compresibilidad (0-1: DiÃ¡metro â‰¤6.0mm, apÃ©ndice compresible de fondo ciego; 2-4: DiÃ¡metro 6.1-7.0mm, incompresibilidad parcial o duda diagnÃ³stica; 5-6: Apendicitis incipiente/moderada 7.1-8.5mm, incompresible con dolor a la compresiÃ³n -Murphy apendicular (+)-; 7-8: Apendicitis severa/distendida 8.6-11.0mm, apÃ©ndice tubular aperistÃ¡ltico y rÃ­gido; 9-10: Apendicitis flemÃ³nosa/dilataciÃ³n masiva >11.0mm con riesgo de perforaciÃ³n).
-2. "pared_apendice": Espesor y Estructura Parietal - Signo de la Diana / Target Sign (0-1: Pared â‰¤2.0mm, capas conservadas; 2-4: Engrosamiento leve 2.1-2.9mm; 5-6: Engrosamiento moderado 3.0-4.0mm, signo de la diana manifiesto; 7-8: Engrosamiento severo >4.0mm con edema submucoso o pÃ©rdida focal de estratificaciÃ³n; 9-10: DisrupciÃ³n parietal / necrosis transmural / apendicitis gangrenosa).
-3. "vascularidad": Vascularidad Parietal / Doppler Color Parietal (0-1: Flujo parietal simÃ©trico fino normal; 2-4: Hiperemia leve con anillo vascular discontinuo sutil; 5-6: Hiperemia moderada difusa -signo del anillo de fuego-; 7-8: Hiperemia intensa con velocidades elevadas; 9-10: Paro vascular parietal / isquemia por necrosis gangrenosa).
-4. "cambios_inflamatorios": Cambios Inflamatorios Locales - Grasa Periapendicular / FlemÃ³n (0-1: Grasa mesoapendicular limpia homogÃ©nea; 2-4: Hiperdensidad/hiperecogenicidad leve focal; 5-6: Hiperecogenicidad moderada de la grasa / fat stranding; 7-8: FlemÃ³n periapendicular / plastrÃ³n edematoso; 9-10: PlastrÃ³n flemÃ³noso extenso / necrosis grasa).
-5. "liquido_colecciones": LÃ­quido Libre, Colecciones y PerforaciÃ³n (0-1: Sin lÃ­quido libre peritoneal; 2-4: MÃ­nima lÃ¡mina anecoica reactiva <5mm; 5-6: LÃ­quido libre moderado turbio; 7-8: ColecciÃ³n/absceso periapendicular contenido <3cm; 9-10: Absceso grande >3cm / peritonitis purulenta abierta).
-6. "apendicolito": Apendicolito / Fecalito e ImpactaciÃ³n Luminal (0-1: Luz limpia sin apendicolito; 2-4: PequeÃ±a densidad intraluminal o microlito <3mm; 5-6: Apendicolito Ãºnico 3-5mm con sombra acÃºstica clara; 7-8: Apendicolito prominente/obstructivo >5mm con sombra acÃºstica densa; 9-10: Apendicolitos mÃºltiples / fecalito gigante / fecalito extravasado por perforaciÃ³n).
-` : ""}
-
-${(requestedMode === "knee_trauma" || (requestedMode === "auto" && /trauma.*rodilla|esguince.*rodilla|colateral.*medial|lcm|mcl|colateral.*lateral|lcl|fcl|menisco|ligamento.*patelar|rotulian/i.test(report))) ? `
-SI LA MATRIZ ES DE TRAUMA AGUDO DE RODILLA (KNEE TRAUMA 6D):
-Aplica la matriz de 6 vectores especÃ­ficos para la evaluaciÃ³n de trauma agudo y lesiones capsuloligamentosas/meniscales de rodilla:
-1. "lcm": Ligamento Colateral Medial - LCM/MCL (0-1: FascÃ­culos superficial y profundo continuos normales; 2-4: Esguince Grado I engrosado hipoecoico sin discontinuidad; 5-6: Esguince Grado II ruptura parcial <50% con colecciÃ³n/hematoma; 7-8: Esguince Grado III ruptura completa >50% transmural o valgo estrÃ©s positivo; 9-10: AvulsiÃ³n completa con inestabilidad medial grave o lesiÃ³n de Stener-like/Pellegrini-Stieda aguda).
-2. "lcl": Ligamento Colateral Lateral y Complejo Posterolateral - LCL/FCL & CPL (0-1: Estructura cordonal delgada en cabeza del peronÃ© continua normal; 2-4: Esguince Grado I engrosamiento edematoso focal; 5-6: Esguince Grado II ruptura parcial con hematoma periligamentario; 7-8: Esguince Grado III ruptura completa del LCL con inestabilidad en varo estrÃ©s; 9-10: DisrupciÃ³n masiva del Complejo Posterolateral CPL LCL+tendÃ³n poplÃ­teo+ligamento popliteofibular).
-3. "menisco_interno": Menisco Interno / Medial (0-1: TriÃ¡ngulo meniscal regular de ecogenicidad homogÃ©nea conservada; 2-4: MeniscopatÃ­a traumÃ¡tica Grado I-II o extrusiÃ³n menor <2mm; 5-6: Desgarro meniscal parcial longitudinal/radial con edema extrameniscal; 7-8: Ruptura completa / desgarro en "asa de balde" desplazada / lesiÃ³n de rampa o extrusiÃ³n >3mm; 9-10: MaceraciÃ³n meniscal traumÃ¡tica masiva o menisco inestable desinsertado).
-4. "menisco_externo": Menisco Externo / Lateral (0-1: ConfiguraciÃ³n uniforme y ecogÃ©nica conservada; 2-4: FisuraciÃ³n lineal no desplazada; 5-6: Desgarro meniscal lateral definido oblicuo/complejo; 7-8: Desgarro en "asa de balde" lateral o desgarro de raÃ­z posterior meniscal lateral (Root Tear); 9-10: DestrucciÃ³n/maceraciÃ³n meniscal lateral completa con fragmentaciÃ³n bloqueante).
-5. "hidrartrosis": Hidrartrosis / Hemartrosis Articular (0-1: Ausente o lÃ­quido fisiolÃ³gico <3mm en receso suprarrotuliano; 2-4: DistensiÃ³n leve 3-5mm; 5-6: Derrame moderado 6-10mm con sinovitis reactiva / hemartrosis incipiente; 7-8: Hemartrosis severa >10mm a tensiÃ³n o lipohemartrosis con nivel lÃ­quido-grasa; 9-10: Hemartrosis masiva a tensiÃ³n con extravasaciÃ³n capsular).
-6. "lig_patelar": Ligamento Patelar / TendÃ³n Rotuliano (0-1: Espesor uniforme <4.5mm y patrÃ³n fibrilar continuo; 2-4: TendinopatÃ­a postraumÃ¡tica / entesopatÃ­a leve en polo inferior de rÃ³tula o TAT; 5-6: Ruptura parcial <50% con inflamaciÃ³n de grasa de Hoffa; 7-8: Ruptura subtotal/total >50% con rÃ³tula alta; 9-10: DisrupciÃ³n masiva del mecanismo extensor tendÃ³n rotuliano + retinÃ¡culos).
-` : ""}
-
-${(requestedMode === "knee_oa" || (requestedMode === "auto" && /artrosis.*rodilla|rodilla.*artros|gonartros|femorotibial|cart[iÃ­]lago troclear|osteofit/i.test(report))) ? `
-SI LA MATRIZ ES DE ARTROSIS DE RODILLA / GONARTROSIS (KNEE OA 6D):
-Aplica la matriz de 6 vectores especÃ­ficos requeridos para artrosis degenerativa articular de rodilla:
-1. "femorotibial_medial": DisminuciÃ³n Compartimento Femorotibial Medial (0-1: Espacio articular conservado de amplitud normal; 2-4: Pinzamiento leve <25%; 5-6: Pinzamiento moderado 25-50%; 7-8: Pinzamiento severo >50% con esclerosis subcondral; 9-10: Pinzamiento total con contacto Ã³seo/colapso articular).
-2. "femorotibial_lateral": DisminuciÃ³n Compartimento Femorotibial Lateral (0-1: Espacio articular conservado; 2-4: Pinzamiento leve; 5-6: Pinzamiento moderado; 7-8: Pinzamiento severo con esclerosis subcondral; 9-10: Pinzamiento total con contacto Ã³seo/colapso).
-3. "meniscopatia_deg": MeniscopatÃ­a Degenerativa (0-1: Meniscos conservados; 2-4: Cambios mucoides o irregularidad/extrusiÃ³n menor; 5-6: Desgarro degenerativo complejo o extrusiÃ³n moderada; 7-8: Desgarro severo desinsertado/macerado o extrusiÃ³n >3mm; 9-10: MaceraciÃ³n meniscal masiva o menisco ausente/destruido).
-4. "cartilago_troclear": Adelgazamiento o Irregularidad del CartÃ­lago Troclear (0-1: CartÃ­lago troclear uniforme de espesor normal; 2-4: Adelgazamiento focal o irregularidad superficial leve; 5-6: Defectos condrales parciales/condromalacia II-III; 7-8: Defecto condral a espesor completo/grado IV focal; 9-10: DenudaciÃ³n cartilaginosa extensa con hueso subcondral expuesto).
-5. "hidrartrosis": Hidrartrosis / EfusiÃ³n Articular (0-1: Ausente/LÃ­quido fisiolÃ³gico; 2-4: DistensiÃ³n leve en receso suprarrotuliano; 5-6: EfusiÃ³n moderada con sinovitis reactiva; 7-8: Hidrartrosis severa a tensiÃ³n/quiste de Baker tenso; 9-10: Derramamiento masivo a tensiÃ³n).
-6. "osteofitos": Osteofitos Marginales & Entesofitos (0-1: MÃ¡rgenes Ã³seos regulares; 2-4: Osteofitos incipientes marginales femoral/tibial/rotuliano; 5-6: Osteofitos definidos moderados; 7-8: Osteofitosis prominente con deformidad de contornos; 9-10: Osteofitos gigantes puenteantes o deformidad masiva).
-` : ""}
-
-${(requestedMode === "ankle_trauma" || (requestedMode === "auto" && /tobillo|esguince|lpaa|atfl|lpc|cfl|deltoid|tibioastragal|maleolo|peroneo|subluxacion.*peroneo|sindesmosis|cajon.*anterior|osteocondral/i.test(report))) ? `
-SI LA MATRIZ ES DE TRAUMA DISTORSIVO DE TOBILLO (ANKLE TRAUMA 6D):
-Aplica la matriz de 6 vectores especÃ­ficos para la evaluaciÃ³n de esguince / trauma de tobillo:
-1. "lpaa": Ligamento Peroneo Astragalino Anterior - LPAA/ATFL (0-1: FisiolÃ³gico normal con espesor y fibrilaridad conservados; 2-4: Esguince Grado I engrosado hipoecoico focal; 5-6: Esguince Grado II ruptura parcial <50% de fibras o hematoma intraligamentario; 7-8: Esguince Grado III ruptura subtotal/total reciente con brecha anecoica o cajÃ³n anterior (+); 9-10: Ruptura total masiva con inestabilidad anterolateral severa o ligamento ausente/avulsionado).
-2. "lpc": Ligamento Peroneo CalcÃ¡neo - LPC/CFL (0-1: FisiolÃ³gico normal bajo tendones peroneos; 2-4: Esguince Grado I engrosamiento edematoso en inserciÃ³n calcÃ¡nea/peronea; 5-6: Esguince Grado II ruptura parcial de fibras subperoneas; 7-8: Esguince Grado III ruptura completa con inestabilidad en varo/inclinaciÃ³n astragalina (+); 9-10: LesiÃ³n compleja bicompartimental LPAA+LPC con inestabilidad subastragalina masiva).
-3. "deltoideo": Complejo Ligamentoso Deltoideo - Medial (0-1: Capas superficial y profunda continuas normales; 2-4: EntesopatÃ­a postraumÃ¡tica / Esguince Grado I leve sin brecha; 5-6: Ruptura parcial deltoidea con hematoma medial; 7-8: Ruptura completa superficial y profunda con ensanchamiento de espacio claro medial; 9-10: AvulsiÃ³n deltoidea masiva con diÃ¡stasis tibioastragalina severa).
-4. "hidrartrosis": Hidrartrosis / Hemartrosis Articular (0-1: Ausente / LÃ­quido fisiolÃ³gico <2mm; 2-4: DistensiÃ³n leve 2-4mm en receso anterior; 5-6: Derrame moderado 5-7mm con sinovitis reactiva / hemartrosis incipiente; 7-8: Hemartrosis severa >7mm a tensiÃ³n con detritos ecogÃ©nicos; 9-10: Derramamiento masivo a tensiÃ³n con extravasaciÃ³n periarticular o ruptura capsular).
-5. "tendones": Tendones Mediales y Laterales - Peroneos / Tibial Posterior / Aquiles (0-1: RetinÃ¡culos y tendones intactos en correderas; 2-4: Tenosinovitis postraumÃ¡tica leve sin luxaciÃ³n; 5-6: Tenosinovitis moderada con fisuraciÃ³n fibrilar longitudinal; 7-8: SubluxaciÃ³n / LuxaciÃ³n de tendones peroneos por ruptura del RPS o ruptura parcial tendinosa; 9-10: Ruptura tendinosa completa o luxaciÃ³n tendinosa irreductible).
-6. "oseo": Estructuras Ã“seas, Corticales, CartÃ­lago y Sindesmosis (0-1: Corticales continuas normales sin avulsiones ni defectos; 2-4: Irregularidad cortical leve / AvulsiÃ³n cortical Ã­nfima <2mm; 5-6: PequeÃ±o fragmento avulsionado 2-4mm o LesiÃ³n Osteocondral del AstrÃ¡galo LOA/OCD I-II; 7-8: Fragmento avulsionado desplazado >4mm o LOA III-IV inestable; 9-10: Fractura maleolar desplazada o DiÃ¡stasis sindesmÃ³tica abierta / LesiÃ³n de sindesmosis).
-` : ""}
-
-${(requestedMode === "cholecystitis" || (requestedMode === "auto" && /colecist|ves[iÃ­]cula|murphy|hidrocolecisto|hidrops.*vesic|bacinete|coledocolitiasis|c[aÃ¡]lculo.*c[iÃ­]stico|coleperitoneo/i.test(report))) ? `
-SI LA MATRIZ ES DE VALORACIÃ“N DE COLECISTITIS AGUDA (CHOLECYSTITIS 6D):
-Aplica la matriz de 6 vectores especÃ­ficos para la evaluaciÃ³n ecogrÃ¡fica de colecistitis aguda y complicaciones vesiculobiliares:
-1. "engrosamiento_pared": Engrosamiento y Edema Parietal Vesicular (0-1: Espesor normal â‰¤3.0mm, pared fina monocapa; 2-4: Engrosamiento leve 3.1-4.5mm; 5-6: Engrosamiento moderado 4.6-6.0mm con signo de doble pared o estriaciÃ³n; 7-8: Engrosamiento severo 6.1-8.0mm edematoso heterogÃ©neo; 9-10: Engrosamiento masivo/destructivo >8.0mm con aspecto acartonado).
-2. "vascularidad": Vascularidad Parietal / Doppler Color (0-1: SeÃ±al vascular fisiolÃ³gica normal; 2-4: Hiperemia sutil focal en cuello o cuerpo; 5-6: Hiperemia moderada difusa en pared vesicular; 7-8: Hiperemia intensa con velocidades elevadas en arteria cÃ­stica; 9-10: Paro vascular / Isquemia parietal con ausencia focal/difusa de flujo por necrosis o trombosis).
-3. "necrosis_pared": Necrosis Parietal / Gangrena (0-1: Pared continua sin necrosis ni gas; 2-4: Irregularidad intraluminal discreta o membranas focales pequeÃ±as; 5-6: Membranas intraluminales desprendidas / sloughing mucoso; 7-8: Microburbujas intraparietales / foco de discontinuidad parietal; 9-10: Colecistitis Gangrenosa/Enfisematosa establecida con abundante gas parietal/intraluminal o perforaciÃ³n transmural).
-4. "cambios_perivesiculares": Cambios Perivesiculares y Lecho HepÃ¡${(requestedMode === "renal" || (requestedMode === "auto" && /ri[nÃ±][oÃ³]n|renal|corteza renal|hidronefrosis|pielonefritis|ectasia|litiasis renal|c[aÃ¡]liz|seno renal|bosniak|angiomiolipoma|nefromegal|uropat[iÃ­]a/i.test(report))) ? `
-SI LA MATRIZ ES DE VALORACIÃ“N RENAL INTEGRAL (RENAL 6D):
-Aplica la matriz de 6 vectores especÃ­ficos cuantitativos y cualitativos para valoraciÃ³n renal:
-1. "tamano_renal": TamaÃ±o Renal (0-1: FisiolÃ³gico / Eje bipolar longitudinal normal 100-120mm, contornos reniformes simÃ©tricos; 2-4: Nefromegalia leve 121-130mm o riÃ±Ã³n en lÃ­mite inferior 90-99mm con asimetrÃ­a discreta 10-15mm; 5-6: Nefromegalia moderada 131-145mm o hipotrofia renal moderada 75-89mm compatible con nefropatÃ­a crÃ³nica incipiente; 7-8: Hipotrofia/atrofia renal severa 60-74mm con pÃ©rdida de silueta o nefromegalia marcada >145mm; 9-10: RiÃ±Ã³n atrÃ³fico terminal <60mm escleroatrÃ³fico o riÃ±Ã³n gigante desestructurado >160mm).
-2. "grosor_cortical": Grosor Cortical (0-1: Corteza normal preservada â‰¥9-10mm con nÃ­tida diferenciaciÃ³n cÃ³rtico-medular y ecogenicidad normal; 2-4: Adelgazamiento cortical leve 7-8mm, atenuaciÃ³n sutil de diferenciaciÃ³n o ecogenicidad aumentada Grado I; 5-6: Adelgazamiento cortical moderado 5-6mm, ecogenicidad igual al hÃ­gado Grado II y pÃ©rdida parcial de pirÃ¡mides medulares; 7-8: Adelgazamiento cortical severo 3-4mm, hiperecogenicidad marcada Grado III y pÃ©rdida completa de diferenciaciÃ³n; 9-10: Atrofia cortical extrema <3mm con desdiferenciaciÃ³n total y calcificaciones).
-3. "vascularidad": Vascularidad (0-1: PerfusiÃ³n cortical perifÃ©rica completa hasta la cÃ¡psula sin Ã¡reas avasculares, RI intrarrenal fisiolÃ³gico 0.58-0.70, vena permeable; 2-4: PerfusiÃ³n conservada con RI limÃ­trofe 0.71-0.74 o 0.52-0.57; 5-6: ReducciÃ³n difusa de microvascularizaciÃ³n perifÃ©rica o RI elevado 0.75-0.80 sugestivo de nefropatÃ­a mÃ©dica; 7-8: Defecto de perfusiÃ³n segmentario / cuÃ±a avascular de infarto, RI >0.80-0.85 o patrÃ³n tardus-parvus; 9-10: Trombosis de vena renal, oclusiÃ³n de arteria renal, ausencia total de flujo vascular o inversiÃ³n diastÃ³lica).
-4. "lesiones_focales": Lesiones Focales (0-1: ParÃ©nquima homogÃ©neo sin LOEs o quiste cortical simple milimÃ©trico solitario Bosniak I; 2-4: Quistes simples Bosniak I/II o angiomiolipoma tÃ­pico hiperecogÃ©nico <10mm no complicado; 5-6: Quiste complejo Bosniak IIF con septos mÃºltiples o angiomiolipoma 20-40mm; 7-8: Quiste sospechoso Bosniak III con paredes engrosadas >2mm o masa sÃ³lida indeterminada >20mm; 9-10: Masa sÃ³lida con signos francos de malignidad Bosniak IV / Carcinoma de CÃ©lulas Renales o invasiÃ³n vascular tumoral).
-5. "procesos_obstructivos": Procesos Obstructivos (0-1: Seno renal ecolucente sin separaciÃ³n de la pelvis <5mm, sin hidronefrosis Grado 0 SFU y jets ureterales simÃ©tricos; 2-4: Ectasia piÃ©lica leve o pielocalicial mÃ­nima Grado I SFU 5-10mm o litiasis calicial no obstructiva; 5-6: Hidronefrosis moderada Grado II-III SFU con dilataciÃ³n piÃ©lica y calicial pero parÃ©nquima respetado, litiasis obstructiva; 7-8: Hidronefrosis severa Grado IV SFU con compresiÃ³n parenquimatosa marcada o pionefrosis; 9-10: UropatÃ­a obstructiva descompensada / saco hidronefrÃ³tico a tensiÃ³n con adelgazamiento extremo o rotura fornicial con urinoma).
-6. "cambios_inflamatorios": Cambios Inflamatorios (0-1: Grasa perirrenal limpia, fascia de Gerota fina y parÃ©nquima sin Ã¡reas de edema o hiperemia; 2-4: Engrosamiento urotelial piÃ©lico leve o edema reactivo inespecÃ­fico; 5-6: Pielonefritis aguda focal / nefronÃ­a lobar con Ã¡rea hipoecoica en cuÃ±a e hipoperfusiÃ³n focal; 7-8: Pielonefritis complicada / microabscesos coalescentes o colecciÃ³n perirrenal; 9-10: Absceso renal mayor >3-5cm con extensiÃ³n retroperitoneal o Pielonefritis Enfisematosa con gas parenquimatoso).
-` : ""}
-
-${(requestedMode === "scrotal" || (requestedMode === "auto" && /test[iÃ­]cul|escrot|epid[iÃ­]dim|varicocele|hidrocele|orquitis|torsi[oÃ³]n testicular|plexo pampiniforme|espermatocele|albug[iÃ­]nea/i.test(report))) ? `
-SI LA MATRIZ ES DE VALORACIÃ“N ESCROTAL / TESTICULAR INTEGRAL (ESCROTO 6D):
-Aplica la matriz de 6 vectores especÃ­ficos cuantitativos y cualitativos para valoraciÃ³n escrotal y testicular con estas escalas de calificaciÃ³n exactas:
-1. "tamano_testicular": TamaÃ±o Testicular (0-1: Normal / Volumen testicular simÃ©trico en rango fisiolÃ³gico 8-25 cc con morfologÃ­a ovoidea conservada; 2-4: AsimetrÃ­a leve con discrepancia de volumen 20-30%, hipotrofia leve 6.0-7.9 cc o discreta orquimegalia reactiva 26-30 cc; 5-6: Hipotrofia moderada 4.0-5.9 cc o aumento volumÃ©trico significativo por orquitis/edema difuso 31-40 cc; 7-8: Atrofia severa 2.5-3.9 cc o aumento masivo de volumen con desestructuraciÃ³n tisular; 9-10: Atrofia terminal escleroatrÃ³fica <2.5 cc o masa expansiva gigante que sustituye el parÃ©nquima).
-2. "vascularidad_testicular": Vascularidad Testicular (0-1: Flujo Doppler color y espectral simÃ©trico y homogÃ©neo intraparenquimatoso con RI fisiolÃ³gico 0.45-0.70; 2-4: Hiperemia vascular reactiva leve o asimetrÃ­a sutil de flujo sin inversiÃ³n ni resistencia patolÃ³gica; 5-6: Hiperemia Doppler marcada difusa con orquitis activa o hipoflujo segmentario con RI aumentado >0.75; 7-8: Defecto de perfusiÃ³n parenquimatosa extenso / infarto focal o flujo arterial tardus-parvus con pÃ©rdida venosa; 9-10: Ausencia total de seÃ±al Doppler en parÃ©nquima testicular por TorsiÃ³n Testicular completa / infarto hemorrÃ¡gico agudo).
-3. "integridad_epididimos": Integridad de EpidÃ­dimos (0-1: Cabeza, cuerpo y cola de epidÃ­dimos de grosor, contornos y ecogenicidad normal sin hiperemia; 2-4: Engrosamiento focal leve de cabeza 11-13mm o quiste simple de epidÃ­dimo / espermatocele <10mm; 5-6: Epididimitis aguda/subaguda con tumefacciÃ³n, desestructuraciÃ³n y marcada hiperemia Doppler; 7-8: Epididimitis complicada con microabscesos o espermatocele gigante >30mm; 9-10: Absceso epididimario mayor coalescente o flemÃ³n / necrosis escrotal por torsiÃ³n de apÃ©ndice complicada).
-4. "lesiones_focales": Lesiones Focales (0-1: ParÃ©nquima homogÃ©neo sin LOEs ni calcificaciones sospechosas, quiste simple aislado de tÃºnica albugÃ­nea o microquiste tubular <3mm; 2-4: Microlitiasis testicular Grado I <5 por campo, ectasia de rete testis o quiste simple benigno <5mm; 5-6: Microlitiasis densa Grado II-III >10 por campo o nÃ³dulo intratesticular sÃ³lido hipoecoico <10mm; 7-8: Masa intratesticular sÃ³lida vascularizada sospechosa 10-25mm con alto riesgo de neoplasia; 9-10: TumoraciÃ³n testicular franca maligna >25mm / masa multinodular con invasiÃ³n de tÃºnicas o metÃ¡stasis).
-5. "varicocele": Varicocele (0-1: Venas del plexo pampiniforme con calibre en reposo <2 mm, sin ectasia ni reflujo con maniobra de Valsalva; 2-4: Varicocele Grado I / dilataciÃ³n 2.0-2.8 mm en reposo con reflujo breve Ãºnicamente con Valsalva; 5-6: Varicocele Grado II / dilataciÃ³n 2.9-3.5 mm visible en modo B y reflujo patolÃ³gico sostenido >2s con Valsalva; 7-8: Varicocele Grado III / dilataciÃ³n tortuosa >3.5-4.5 mm palpable en reposo con reflujo continuo espontÃ¡neo; 9-10: Megavaricocele masivo >5 mm con reflujo continuo masivo y compromiso trombÃ³tico del plexo).
-6. "cambios_inflamatorios_hidrocele": Cambios Inflamatorios e Hidrocele (0-1: LÃ­quido fisiolÃ³gico en tÃºnica vaginal <2 mL, pared escrotal normal 2-4 mm sin edema; 2-4: Hidrocele simple anecoico leve 10-30 mL o engrosamiento cutÃ¡neo escrotal reactivo leve 5-6 mm; 5-6: Hidrocele moderado a tensiÃ³n 30-80 mL o paquivaginalitis con engrosamiento y trabÃ©culas finas; 7-8: Hidrocele severo / hematocele o piocele con septos gruesos, nivel lÃ­quido-debris y celulitis parietal >8 mm; 9-10: Piocele a tensiÃ³n con absceso de tÃºnicas o fascitis necrotizante escrotal / Gangrena de Fournier con gas parietal).
-` : ""}
-
-REGLAS DE CALIFICACIÃ“N (0-10):
-- 0 a 1: FisiolÃ³gico / Benigno / Ausente / Sin alteraciÃ³n.
-- 2 a 4: Incipiente / Leve / AfectaciÃ³n focal o leve.
-- 5 a 6: Moderado / Compromiso intermedio o dolor parcial.
-- 7 a 8: Severo / Gran compromiso funcional o desgarro transfixiante.
-- 9 a 10: Masivo / CrÃ­tico / Imposibilidad funcional o ruptura masiva.
-
-SE REQUIERE EL SIGUIENTE ESQUEMA JSON:
-- "globalLoadIndex": CategorÃ­a de carga/riesgo global ("Baja", "Moderada", "Elevada", "CrÃ­tica").
-- "globalScore": Promedio de los puntajes de los ejes (nÃºmero flotante redondeado a 1 decimal).
-- "dominantVector": Nombre claro y descriptivo del vector patolÃ³gico dominante.
-- "radarMode": La matriz efectivamente aplicada ("rotator_cuff", "knee_oa", "cholecystitis", "ankle_trauma", "knee_trauma", "appendicitis", "thyroid", "muscle_injury", "hepatic", "renal", "scrotal", "msk", "visceral", u "oncology").
-` : ""}
-
-${(requestedMode === "renal" || (requestedMode === "auto" && /ri[nÃ±][oÃ³]n|renal|corteza renal|hidronefrosis|pielonefritis|ectasia|litiasis renal|c[aÃ¡]liz|seno renal|bosniak|angiomiolipoma|nefromegal|uropat[iÃ­]a/i.test(report))) ? `
-SI LA MATRIZ ES DE VALORACIÃ“N RENAL INTEGRAL (RENAL 6D):
-Aplica la matriz de 6 vectores especÃ­ficos cuantitativos y cualitativos para valoraciÃ³n renal:
-1. "tamano_renal": TamaÃ±o Renal (0-1: FisiolÃ³gico / Eje bipolar longitudinal normal 100-120mm, contornos reniformes simÃ©tricos; 2-4: Nefromegalia leve 121-130mm o riÃ±Ã³n en lÃ­mite inferior 90-99mm con asimetrÃ­a discreta 10-15mm; 5-6: Nefromegalia moderada 131-145mm o hipotrofia renal moderada 75-89mm compatible con nefropatÃ­a crÃ³nica incipiente; 7-8: Hipotrofia/atrofia renal severa 60-74mm con pÃ©rdida de silueta o nefromegalia marcada >145mm; 9-10: RiÃ±Ã³n atrÃ³fico terminal <60mm escleroatrÃ³fico o riÃ±Ã³n gigante desestructurado >160mm).
-2. "grosor_cortical": Grosor Cortical (0-1: Corteza normal preservada â‰¥9-10mm con nÃ­tida diferenciaciÃ³n cÃ³rtico-medular y ecogenicidad normal; 2-4: Adelgazamiento cortical leve 7-8mm, atenuaciÃ³n sutil de diferenciaciÃ³n o ecogenicidad aumentada Grado I; 5-6: Adelgazamiento cortical moderado 5-6mm, ecogenicidad igual al hÃ­gado Grado II y pÃ©rdida parcial de pirÃ¡mides medulares; 7-8: Adelgazamiento cortical severo 3-4mm, hiperecogenicidad marcada Grado III y pÃ©rdida completa de diferenciaciÃ³n; 9-10: Atrofia cortical extrema <3mm con desdiferenciaciÃ³n total y calcificaciones).
-3. "vascularidad": Vascularidad (0-1: PerfusiÃ³n cortical perifÃ©rica completa hasta la cÃ¡psula sin Ã¡reas avasculares, RI intrarrenal fisiolÃ³gico 0.58-0.70, vena permeable; 2-4: PerfusiÃ³n conservada con RI limÃ­trofe 0.71-0.74 o 0.52-0.57; 5-6: ReducciÃ³n difusa de microvascularizaciÃ³n perifÃ©rica o RI elevado 0.75-0.80 sugestivo de nefropatÃ­a mÃ©dica; 7-8: Defecto de perfusiÃ³n segmentario / cuÃ±a avascular de infarto, RI >0.80-0.85 o patrÃ³n tardus-parvus; 9-10: Trombosis de vena renal, oclusiÃ³n de arteria renal, ausencia total de flujo vascular o inversiÃ³n diastÃ³lica).
-4. "lesiones_focales": Lesiones Focales (0-1: ParÃ©nquima homogÃ©neo sin LOEs o quiste cortical simple milimÃ©trico solitario Bosniak I; 2-4: Quistes simples Bosniak I/II o angiomiolipoma tÃ­pico hiperecogÃ©nico <10mm no complicado; 5-6: Quiste complejo Bosniak IIF con septos mÃºltiples o angiomiolipoma 20-40mm; 7-8: Quiste sospechoso Bosniak III con paredes engrosadas >2mm o masa sÃ³lida indeterminada >20mm; 9-10: Masa sÃ³lida con signos francos de malignidad Bosniak IV / Carcinoma de CÃ©lulas Renales o invasiÃ³n vascular tumoral).
-5. "procesos_obstructivos": Procesos Obstructivos (0-1: Seno renal ecolucente sin separaciÃ³n de la pelvis <5mm, sin hidronefrosis Grado 0 SFU y jets ureterales simÃ©tricos; 2-4: Ectasia piÃ©lica leve o pielocalicial mÃ­nima Grado I SFU 5-10mm o litiasis calicial no obstructiva; 5-6: Hidronefrosis moderada Grado II-III SFU con dilataciÃ³n piÃ©lica y calicial pero parÃ©nquima respetado, litiasis obstructiva; 7-8: Hidronefrosis severa Grado IV SFU con compresiÃ³n parenquimatosa marcada o pionefrosis; 9-10: UropatÃ­a obstructiva descompensada / saco hidronefrÃ³tico a tensiÃ³n con adelgazamiento extremo o rotura fornicial con urinoma).
-6. "cambios_inflamatorios": Cambios Inflamatorios (0-1: Grasa perirrenal limpia, fascia de Gerota fina y parÃ©nquima sin Ã¡reas de edema o hiperemia; 2-4: Engrosamiento urotelial piÃ©lico leve o edema reactivo inespecÃ­fico; 5-6: Pielonefritis aguda focal / nefronÃ­a lobar con Ã¡rea hipoecoica en cuÃ±a e hipoperfusiÃ³n focal; 7-8: Pielonefritis complicada / microabscesos coalescentes o colecciÃ³n perirrenal; 9-10: Absceso renal mayor >3-5cm con extensiÃ³n retroperitoneal o Pielonefritis Enfisematosa con gas parenquimatoso).
-` : ""}
-
-REGLAS DE CALIFICACIÃ“N (0-10):
-- 0 a 1: FisiolÃ³gico / Benigno / Ausente / Sin alteraciÃ³n.
-- 2 a 4: Incipiente / Leve / AfectaciÃ³n focal o leve.
-- 5 a 6: Moderado / Compromiso intermedio o dolor parcial.
-- 7 a 8: Severo / Gran compromiso funcional o desgarro transfixiante.
-- 9 a 10: Masivo / CrÃ­tico / Imposibilidad funcional o ruptura masiva.
-
-SE REQUIERE EL SIGUIENTE ESQUEMA JSON:
-- "globalLoadIndex": CategorÃ­a de carga/riesgo global ("Baja", "Moderada", "Elevada", "CrÃ­tica").
-- "globalScore": Promedio de los puntajes de los ejes (nÃºmero flotante redondeado a 1 decimal).
-- "dominantVector": Nombre claro y descriptivo del vector patolÃ³gico dominante.
-- "radarMode": La matriz efectivamente aplicada ("rotator_cuff", "knee_oa", "cholecystitis", "ankle_trauma", "knee_trauma", "appendicitis", "thyroid", "muscle_injury", "hepatic", "renal", "msk", "visceral", u "oncology").
-- "axes": Array de exactamente 6 objetos con todos los keys de la matriz seleccionada.
-  Cada objeto contiene:
-  * "key": string de la key.
-  * "label": Nombre legible en espaÃ±ol adecuado a la matriz aplicada.
-  * "score": entero entre 0 y 10.
-  * "level": nivel cualitativo ("FisiolÃ³gico", "Leve", "Moderado", "Severo", "Masivo / CrÃ­tico").
-  * "finding": Fragmento o resumen del hallazgo del reporte que justifica este eje.
-  * "justification": ExplicaciÃ³n clÃ­nica sucinta que justifica el puntaje asignado.
-- "clinicalSummary": SÃ­ntesis clÃ­nica integradora de 2 a 3 frases destacando el balance entre hallazgos tisulares, limitaciÃ³n funcional y lesiÃ³n tendinosa.
-- "recommendation": RecomendaciÃ³n clÃ­nica, conducta quirÃºrgica/conservadora o estudio complementario sugerido.
-
-Reporte MÃ©dico a Analizar:
-${report}
-`;
-
-    const response = await ai.models.generateContent({
-      model: modelToUse,
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            globalLoadIndex: { type: Type.STRING },
-            globalScore: { type: Type.NUMBER },
-            dominantVector: { type: Type.STRING },
-            radarMode: { type: Type.STRING },
-            axes: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  key: { type: Type.STRING },
-                  label: { type: Type.STRING },
-                  score: { type: Type.INTEGER },
-                  level: { type: Type.STRING },
-                  finding: { type: Type.STRING },
-                  justification: { type: Type.STRING }
-                },
-                required: ["key", "label", "score", "level", "finding", "justification"]
-              }
-            },
-            clinicalSummary: { type: Type.STRING },
-            recommendation: { type: Type.STRING }
-          },
-          required: ["globalLoadIndex", "globalScore", "dominantVector", "axes", "clinicalSummary", "recommendation"]
-        }
-      }
-    });
-
-    const rawText = response.text || "{}";
-    const parsedData = JSON.parse(rawText);
-
-    const effectiveMode = requestedMode !== "auto" ? requestedMode : (parsedData.radarMode || "msk");
-    parsedData.radarMode = effectiveMode;
-    parsedData.axes = normalizeAxesForMode(effectiveMode, parsedData.axes);
-
-    res.json({
-      success: true,
-      data: parsedData
-    });
-  } catch (error: any) {
-    console.error("Error en /api/generate-biomechanical-radar:", error);
-    res.status(500).json({ success: false, error: handleGeminiError(error) });
-  }
-});
-
-// --- VITE DEV SERVER OR STATIC SERVING ---
-
-async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    // Serve index.html for all other routes
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
-  }
-
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`[Servidor] Asistente RadiolÃ³gico corriendo correctamente en http://localhost:${PORT}`);
-  });
-}
-
-startServer();
+  urinary_prostate: [
+    { key: "volumen_prostatico", label: "Volumen ProstÃ¡tico", finding: "Volumen prostÃ¡tico conservado (<20-25 cc) sin hiperplasia.", justification: "MorfologÃ­a y biometrÃ­a glandular dentro de lÃ­mites fisiolÃ³gicos." },
+    { key: "paredes_vesicales", label: "Paredes Vesicales", finding: "Pared vesical lisa y delgada (<3 mm en repleciÃ³n, <5 mm vacÃ­xœì}Ër×µè\_±Ã:‰AReY–u
+!		Iğ $Ïñµ]Lh‚-7z#İ #Øğ Ã2¸•/PÕ½TuSexğ'çKîzíW)çnR‰Àîİû±öÚë½Ö~íÖwªêõ¼˜%WÉ0š%:{¢vúI¦âlœë"š$q6ÓjåI<‹ÒªšåÑ ÎÓhmãBe‰&ÅLO£Ùê]¤F±JçÃë¨¾£~¬ŞSğŸÔwñ:‡³¨H¢Ë<Î¢M¡Ÿ·ù¹êÉó«$%Ù§gZQs5tS‰U““o¦Iœêa”&ÃÁTæ¹™ˆ³|>œ%7Ñ¦%ÆéMR¨…®ŞÂç°˜9ö4Èc•é|ıáHE2Î4½Ìã«tşZ7âÇ.Ö˜ÇE2šëË©.f“dˆğ	Úã÷êÔ¯*½Óãİ`Ù Úh¤Õ´‡©hğÆC)hM‹D§«ŸÇÉP7Fq1ÍcøbÆªòt¯¶ğk¥ÕÓ{j8Üº½y<‹³a²ú9˜%l/@3˜®\¾ºÙ°€qöÇy2‰.§€(3h6ÔŞjO£|õ7P§Ø`õVZ¸•¶‡:æ]šç‘ºÖ=†oâˆ Ÿ­~ÍS€}¡‹i<¼Öğ¯šÆyrµú)‡õ 6™Dğ"×“$C)6-ù0¹Šs\pÄkş–€+âü&E€Ñ¼ ¸×Gİ¶7n´a³:È{K/¼µ?§—ş²‹`İ­ÕÛiGHMm‹ww–dó¨
+{3†—9Ì)[½›%#†G2ÖÙ,²xQÚ õE­ŞM ˆŠ28?Oh8Ğ°D˜L2BàBÏCÄ9èq6Òf 8IÍ °şot"Ÿ¨¯xÌ¢I”éµÃ}W×wûus™j\hª³q2›ÃàÀ›¢UeĞùşŞd²KÈ?Ñù•NIà|ÃHÉœS$“ÕO3@‰@@dÏâ+@xÇ;B¬¹†qg¹¾J"^Ìúö"íÓùåPç¸7şŠ^ÒÕro¼5ÂàKó™!$ÿõ—ÿıym–A«0›:*áäpõ3~¦k“x„û¿m5€óé8úŞf7-ºê1 gcŒ€fD)¯ğ&*ŠçØÊ[ŞEøØ­í4Î¯æMÔBÄÚÉ4Î@+[½ƒÖBK‘ÂÜohIl#gRîS¯È_GíÕ×öêŸím¥V€¯@ò]ãñVóãóïÈ3 0¦ŠòLpÓ®¦0'dZ—WÈ4bÿÈÉ+õÂ¾òÖîÑ2K¥4 =@}ŠÕÏ),”¦Í
+<tX²Ês]dIôê ef#Tfã’›ï!EDõà¸ ¹Ó)à1?Ş„×zš¢‹KÇRu*ïU7|ÿßâÂi2KGŞÆ„qk¯“5< øÁv^^Ø0š 	.“ì*"3ÓˆŞÂZü^uJïİÂ^æ°w„Ì‚™%‹‡,åTÕ˜!¿z›ÇáMòÆ…ùˆ™Œ'üA
+¿ Q8ºùÛ§±Å0×³­Tv†}Ò1İ@jÏü—T[G˜ŠOE]Oîâ¬á¼j:Å€j:8²ªò¸vÿà}¢EÄ¤µê“YXªÎñ 	˜2¾Ÿ,m^§O¡¶-öæ€”
+AîèÖ¡Â1ÉÃĞï§Z›(ÕÃƒ÷S*¦ÀX¢‡˜´~KÃÂI5´ ŸëÀ ²ñ4Á'wì{ì´MVïL+¹çØŒY[•ä#õ\àÁŞ,ˆ]G`Ì¸Q›—ëÑ_™ av4 @4sÁ0áÔDÇUO6.úc‰ô{…IÓ©ÒÃù4B)‘æÕœG¹¶t@±]š°‚)Q}øAìÍ!+kE·Ë7â Â&@oï¡‡ÑiüÕ°É41r§°„ôé}…SAb>)-,=EY¢9¥‹(-¢t;U6¤ıy*¡¯é©$Ş(_‰/-s#yV±zåµu«IˆÇÅS5[ı#CÉã&“¼ø^bUlÕdßË_‘:ft2«@¸ù’ì¦"ƒ—Éö¤ø®L²ÈG‚“+O™´Gñ$
+¹.NÜĞX76$~}ßíBˆ	¥UÈÃ£!&:«Ôu{–|é·¥'¤iZµƒnæQè”XËv¯ƒ€¨Óæó)vÊâÊ|pÛYCÂ®7(d ÅÃQ#€3ªëƒ$¥ù<§6«·ÒÈÜ]#`¦]€áV[ˆ œ*:£îx°N‚q§p–6É0–Ù}_ÆÿãÈ+ÃYJÒÙêï°»†µ¹Ãåç¾Y-fåH“<IÔRd0ÇÅ¢-â`ÊgrX`ªx0YÛdWè "qY¨+Xmâ,Û©Ğëb¢™wåSz&)AìÈ5xÖ7P&ÖX%ò±Ù>„I¿ JŠ2èFAâ
+^&ˆ	ÚâÄm¬Qh¡â…®~.HŠbwÆzä{HŸ1û”ä&)†q¾.Şœü†É‰:JWVeb´M˜ş-#$ÅuÒj‚áíhÃ‰ş„â¡Ûí“–3qC%åA²ÍjFÆÃEİÊ¤Ø[0~hµ¦0ÒÏG˜&
+u2P‘×-š†y‚æ Âv¬`É €½Ç~æ`ff›ªi
+ÄÍëˆt²
+}yALß³§“½]FÎƒd$Ô ’âs|}ââQÕË ÍQÑfŠR¢‰Ô€ŒfŞwˆ¡	…È­ w}+™ë¶[Í¿·S˜#/×½•;!Æ)*õ8!Ü -‡Ğñ_øÄBQZ…ê Cš£Z;ÉŠÎ†¨ú-Êdeó‘l¢Ê6‹yÀxÇY¼f
+Z®³} ,N ßr6¥\ó Ô’ Â–V$Q$]6Y9¶#úI™»ıFÁ#i³İHîM¾½}È]Q–‚e0“m+Ï‘ÔG«ŸÉö‹È¥d¹M5#ƒF¶ëÍâîò|DHihä‘.[!O‘,°À”Â¡{ö_kóÖ[I;ğ˜$9Jƒ>¶WkĞ‘”¡Ïïtt=ºn¨àÒ!`[iŞµi€;%Î´P£9©Ì¨FÆèáØÎ²aôÎ¨0Àƒ&"ó³ùDç›ÑffzbØÃ‡³ëó"Ík”²ETsg”FÈy_©?ÎWïPCÜŠÿ@´˜–"–%
+æ¶el¤<MôŒ°!­`Z	´6Û°‚—p>R&c¢rd»íÎQò£´ÿÓÊçhSùtèŞ_Ü»w5Ï†ø¹ÈÉ÷qóM\¼Ğù±Å•Óñ>Q@™`¢èƒ’Å#l÷Pzñõ·»ò¯úúEj3ã™Îú t«/Õqó¬×ùËÓ^»ß>ëízıV-—å·; ¼í|û…íé
+<o0èïkxïa‡U…Í›Ğ`úÊz—&d;Òól_7ó<ZÔ“‚ş­øËÙ¥ÖJık°È:îQ¥Ñø»êËgÒ+ÿ'¹R•_E»òˆĞiQzÕAÔ—_~iç‰ì7@òƒOxºÑbÌ>'dBXíììÖgúHÿ)Î[QWv7|÷{Ëz·oĞ8b†³S¤Aïò%è/mûW²d$ Ä|óä×ì¤sà4yµ‹ïìİkn¾»íK~TL§Wv€tìì~½÷­7•Íf?QÙ<M	¡x·Oví&Ë:‡:a•³Å4£6uyËØÉæ“Aœï êG³ë:ñÊş^UşˆŞTÌï?¬xŸïîîÂöÌÄÒxÿ»¡àVüîãOØÛ1àŒyÏ¾TŸïÚwQÙÕ°òV.ï“P4üî3ï»>üÈß×øÀq<ì=Íï{ÍàGØÔ¾*-NÚØÃ_ŸÎ‹ëŠ;xDq}”«ÚWByC<v¯ib^kœ€ûÓÒc¾ü‰à·ıÉ3÷M‰ó—ÁÃàûàÍ=ƒ•*?ü“—W‚À“Òl€Èp·•ŞÃÿİ³Á.õ‹{ğ8šNëQÙiDÓ¤Áü{×X»&q,­æ‘Ã!*ÙP)ÿã¿Aú_Ô{1h5ÅùUá?-¦([2>Ë“øø-ètøÙTçğy1›gpêá‡Ûô%4øc} G‹/,áøãH‡,F®ctÂ¼¨<ÜÛÛ­¿.tVùAóáæô„yFUÅy®sR›°ïyJ›Bí2ÊWo'1š“>á>AnÁèM>J`^ÀZ_¢ˆ‘´R”Áùå´¸3}^ÄÜW“D“¸Bov¿ğ»Ë„ñˆÖü¥·~¤FÑ|fªáù bÎ áÚh{ŸgâõÖø%È; Äh2mL1N$*ÅãÌèBL íÑm1Ô æ^I8IîĞ¯1TÕ$†ÎmP,‹ó¾&ùœ:b„á0©9ZFx ï›•áÛÒyQ.Îƒú½&–¿ÀŸE4!kœ
+nÄştuƒf»z{…¿qšYD` 
+4¦Xé.QŠı#tĞ•Ÿ á\õ²êxÂ„Ğ9…nsÍ#¿Fg‰â§(¦Ñ¹öT¤ö÷Te¤3úŞñHF3‹ƒ8CßŒ¼O†ÂâÉ=¬ÛÙOvë÷îµûgç‡®j­şzÒiuŸ¨ùÁÚş—aà/'Z¶ôŠœJ;?Ş;î6:‡ÍCÕïuZ³æa{(!òMÂ"àš;‡ oŠõ°	Ï&°Sæ°Èàc0Î§S#`üx¯Ü÷¯ü¾ÿğMÖ}~ÔyÙluV;Q}7[gMuØfÑó¨ö´Îû˜dûH÷Ï›=Xû«¦ê·Ú­V§{Ò<ìB«S€®æ¸}rÖVGMóı'¥áK³û¤c=o÷Uû¢y}«¯àï‹îÑE»ç†–>»}Øô‹vë¬âpã÷í¯úªÙï¼Ä	À/ûbF5òë:‡•µà+\×4İÇÿkäáM†}ã“ÃNë•]„›6lŸ (š½^ó+õIdİ·ÿGë>ö{éõš}î¥Õî×¿Éş »µhp¯s°>o1Ø¸ùãNúWÍS@fïÉ=ØÂÊü@÷û#€æWW;ˆx›ñFÿæ7
+:Ï“™^ói¡­Tp½Óû«˜âbMñ˜/ó¼ _)<@ƒ›,¯A_Íõr6LËÁ×Éêİ·ÃxZ4’:z+BãAjÄº×ïxhÀà8n¼<ïœuU¯xßíÁ	9muº/W%¤{Õ=~Şëª
+¾8¨Öù‹êÑáî“{MòËW29á9äÎ>²Õ»+¶DrjÒ,^!ĞFÖŒ,Æ©Ğ½i‚Á÷öë Xvï\€Úy¢züœ:ìûïTe¯¶ÿDu2 3İğ¥…/ÔıÚÃ' ³óçÆ~CLå(mˆƒ–=äD¯É˜´ñéÁŞ¯¿PµGzbúoZ>£–ŸÕ»éB¿Yq•¼IPÅmÑPÀ…­ce/¹O‰®7}6»ú+±j2gË	ĞÈû Dƒ< ·SÔ:Ïï¹Aª¾ U‚Üu¦“Q	›BŸ­Kõj Ç«wÆ:si#´ì Å„¯Š 'yäNÜç3J «H`×gÒï·t¾ÉøÍ|Dµëx¢sàlÈ”E<E{¹¢güHzHp,»¨E£k	³Kz z€W&zèşr`ƒÅÕÔKÚtŒÁÂ°1ã¼˜g&r—É*Qè€˜Âá"ö²‡ï vx35zq~BtıéÎR<8ºîs¤f‡“ÕŸ2õATö·‹ÍÄn±óç#t3ÕĞà"ˆú;ÃëÙOcÆ½é$óÆ«èOß%YA{ÊÈÁ	nDn±¦@±èa_<ÎúØCO£ À£Õ£½ÿü?ÁùŸÿˆBT!1„ÃÌÙGŠµ¾¹×(Xú•İĞø2 §ÑP¼¬t¨ÌÂØåP|éLp=Æ#K¡>$fåŞ'Èô7´UR\€'	0Pê! Æ9—HaĞ‘·ƒ;Pëiß©3yGûpl(f¥ãsˆ*" eUÕ‹QÊÒê8ÎPB÷é`ÑğìÿlC“½?2‡áwÖ¯n	9=üƒ»Fò‚ ÜÎ}raâb¢BShz‰Zª‹uƒ½4e1ò†C8ÄÌ.yÆâ	J¥f³Øà>¨“•YÖ¸ÆG¼åoc%kNİmğ#`5®·i«Ÿ(<À£?,ÑºÍœ˜Ã£9Ô¨äúˆz½°|\Üœ„Ç¦^Š^7ÑMäbúD™EJéœÎU@àú÷ üBˆ !Õ]4’#Œq °>_½CáˆäYëèy‰E·ÈMÂ´ ´~t8ç‘ƒ®vlHç<5Ü.vÓl½o&†ÓhÒù9¬‚b‡Ô[0\+×-<$ó˜Ã¤¼Ù‡¼Û |Ã¦Óf3CÒìš"DY+˜n–5Ñğ|«ˆù«ÿw2&Gî†¥(ÉËá×Ñêí·Ù0Î—h®gËìk½úù[Œ„[°t.¼eëiË	À§˜-g`9“³åtT ¿ğrŠ»5\R¬-pô¥]Fƒ#“—ÈËi¨ìn¢p·ÖîŸ÷[çGM‚›½³ÿ~Ù>i÷€óVû¿¿]ê¸`!$T¨sÅ?òä^-t=Q›º@B ÄZ…ò´y'ŸVÕÌÇíjsl¶0¨ºhBéb©ŠAvG…ö-QlÛ‚x ßãˆÚ9ğ£fÅDK\%<ü ¨ ú	ƒç¬„Õ@Ou6&	ƒG-»nŸ¨÷Å&À%Ñ2o @iª%wjU%ş~˜1xDã¢$Â²!d	¶ãŒü0¥0è¨êÅÁJV?d8’8æ˜&ÒóĞÁÖmŠ:RhyªÄ 4…¬”}Ui  Ì(b.&#ÀávZcãSn×iÿÛçÉÁx)iRDèA”Åo–DëuùXßúX’R›»‘ˆ‹N¿E” ¨ÃóÃîqç„~Ÿ®şrtÑiuáçYûw´|<?jà¿€ '/šÇ¨8wº·Ò`O¤¬(jB–gë3{Ğp9t°ÑmT¥×…3ö; ñ¦È.8ËÄHU%l!_[ı‡5Äm©ê¸0E7ü(Ş[hP)b­sÆ‰]á'–NW?å#ÊŠ•Èã¹ª%¯Å}^Åh§‚å6mÈ$±ıy>O1%İ²4?°Õ–±qeÛ²“îy:¡`9Uñ?àI×º.¤1A|Æ	RÕmÁ[)†…S6€+$ 0’ìPˆ…¤á£(¦!˜•R¨¨‰åj€´À›Í)·jÄ©¥Ø- 9”5I#fv¸††‰äj˜È…2¡İ¾Õ ØÃñ5,Œåb²Ì*¶ÿáÔ¶oÀˆİ‘€^51Y?hkD&0é9¦ºæÜŒÉºÙ³ª(u¬*ßhRa)õ‘NMÊöŠBÉo#å&¼VÓ7A\=†xÿãÉ‰ˆGÒ¾jB½†HØm[ÕB2K®€^ Û73_5¢üaz;/0Á`wà¿”08H@*–)ÿ3à¬¸å,A—ÚMİ“V÷hõ·—VŞîwº'ğøìü¸$~ıF¬şvxÖä~·Ún½êÂ¿ªòjõnL²Â)È1ÈÎ Ä½dõw¢.Ç@èª@Ær´•Á‹S€"²,|H!>…zF ¬âÍ†õÛåG	×©!Ğ‚L¢'ë”ô½v° I(®x:¿ø‚x¹Æğ†¨nškp†‹ğŸpÄ#PPğ Sì)HfZvoRPıLö&˜HWÿ ¦WçÖ³‘Hİ‰ç(Õ=#û­‘5M^Cì`‹8àà>›SšøZÀ]¾‘¤w±¹´×u„$‘íˆ›¥áqw°›Ë¦œ0lNbå’|8ÏFøh ³²0n!ˆé>gq¡vù˜Åm”eÍà˜ÖAr%Úvf‚—Œ‡{êóÖi9°L”ß˜‡"Ğ6~b…\× " ,CSä})ÆM;å8¾ÚM]‘Q PW!{„WÄ5k@@>ÆáØ¾_û÷$/æ
+vƒRª(Oú^ãõ…Ôm±|@´R_Ixr%|§%úNğ­JZ¿æ"6œN–g¨Öa¬t’¸´¯Ú+F óaİ…bc	¢÷z.0¯È<Åoè§	×|\¸Xqì&*†dUŒe7=^[`ƒõT¦G’Ëæø..ÑM
+.Œ¼Û³Õ[fÂ>ÛaÒ-ÎL´~uŞiŸuwªê°}ÖFohë|õç#²’7ûjÿÀúóÔa§Ú=é<G’Şo«æïÎÉÙş]·§@\ïµO»½³¶ú
+]y«¿¶šGä¥$+™áë[Í-ób˜Æ—Iözß…÷jıSã…YºGÆ†¸DêÄj×ncüDV,¯IŸDõO	=lƒyæ>òrb–ß&³×ß–9rÌ‰Ém‰Â4M ].Q“[P'i¬AÃ"YÅ3îÀcBÆetÚ²ÏFZšÙİÍ#à»ÖÕjù±±ÀÀÏ¯Ôq§{Ö>9ìœtû°Ë|wÔ•êwç½¯>Ò‰ªÃM”Î?ÄFADŞ1S“òi–„vô@šÍ»4/v<á±<#Å<á*}ßlÒrfgö4	o¦ÇĞ¢|ŒüÔZâÙh"YP&ó‰]Mõô`2)æ­™ÚØ/¥qÚamr`
+û(D-*›>‹ù`†	åöÛ93K_­ù"­Õ:İLbÿÔ¦¿µ¿ÇİnY	Ï’Ô±çkXtÓy‹^MsH.-©„y%Ì=Q!Gîià·€}±*¡¸6Ç³ïrùÉ+oeslÿÀ5°V¦ß+8!êé~}O'ÿù³ìŒı$81¶¨Š‚æµû	m„ıäÓğÙáòK´®í»OØöv}`,€=³m	®f°cÚ4.’—*âÀHåcñ|¹ÑÙ¥OiJú0ãÃyFûYzu|ö;(şòjçÈî{p~ûy¡ó	™5¹EÖ\U8ÊÓûÆãŞ$êE¶vdÂóœ…?q”àÌñvÑ3 İ-é$ğRçÙZB¢¸ôØ5l–9´öB2ö/Ty$¹˜ ©qc‚i…)Nî]ÂÎ‘XÔ)wÑTAó7Æ!b™D$y`3^© ¼!’€†Ğì:Ğb¨6Vâ nk~=×5`­í¤8
+ú¥NÅEÔ—ñLœbë$'ä)¼EJ9Ã2ø,<nNUBAgû@´³j9›H×0nšğ»HœdÖÑg¬O‘AÀ ©9Ø8ÖZ/HC²"b7³'RoÙh3pÎg9ŠŒ5-âù´&@ö¤ !ò
+…NTš%üÇİæ²(p,7æÛŸzğ¡|¶0†¤VvéH;GIgÚ+¦apšº÷ŠËÃ|va@:BÈ¦:ŒÍæ1ßº9"4 ”@óIÕMi"²@¬Ø×$·7DüJ>åHš-9FaA”…ÒîşA™,˜(kˆn·¬Ì®hH¸‹aE,Kù¡ñÚFøo2–_GÅu2Ñ3½$÷9ÚMàÀ¡ã*È ÜÔ³ÁØGè£±GI† ïq1œù£D½³N¯Û9l7UåìÕWøó—ãf˜1(`?T,Å™R8ò©³Ày‰v) ÆUo(¥võ9ÂÍà³ÔÃ‘òŸÿQ°‚ÌYPÂâL\w@(¬™•c|Ä£ÚıûÃ¡ 07±î~#ØİP{ ¿¦¸‘‹ù,I…ùS+qBŞƒGµƒ=ùzcÊ…ÁùÂP‹Àüõ8²r|­!Õwƒ½X½¢Í§€äã„G(MM0Ù%©B9Ğé¢H)ZX´CO
+~™®ŞØ1äÀ’©teJ¦T)ª|½”–€÷„›)ªğÆqX îèSª¦ÎVÜ›mPÍntíj¶ĞÆÀ‰ïÔƒï]1AõÌ}kÙc£–ü½³&D…¢ˆÌ7"w	4/½R† ÙM©ì}n©.ÚZ…»Õà¸ÕzÍCôCµÏkpöğ·Hòf¿vß2lß’lx!í°%Lf™yû°iß8ş·¯ò¨“É}Æñ*æ³ç‡-6¹ÙÏïÿ–?+6Ú@zÙ×f×QVûœ`»"]Pß¢†|1’óµÉêˆgºÇû-Ü¦h7Ï.İæ ¨ƒâ@§¡A½&v_TŒÕ+CoÜ/‰âÚÀ¡uà„„ –FÆ¸ßÚEÕyöZßâF·0ÇÓ>•8%2{1RâÖ6vÈõbƒ~ü^åF™Ä´â×dCÄ`6{¦`»^ØÇ•'n“¼ µÁ7Dï úDšÄ³¼ZIDEøœ1ÎÎ•	,­	ÊşÈ`$La@mşrŒÚ„ú²V·Q’ã`.·/5áº†9B]“}XYÍÒ¬„góÈÕiÿ	4èr©XAèŠŸ3î&h¯¦s‘³O¢âşŸ²qËvÅ– €ßM›±Û0$ˆ­ˆ¤Ïi	åÇNí¢cH¾ÉºÂši0]ò6°úïŒ²%ÁlŒ£1”àLğ©×Tà4˜¬“jl­š#C›¶YF.;™"L79;Ğ`‚¡óRê¶Õ,ı¾Ùµµz[PŸlÑ@8Bïã´rÂÀLç¡ïà›‹¦iAQŞ·‹‘&.#š~¯~ú–
+Ú-A¯ÇUÚDmhúã
+ëã|š¤,á÷k†^£Ññ*}3XRQ7xœ ¹XrÒtıS|¸œ€¶aƒ=êŸš9°£¾üt2`fóâc‹ÍS4 ¶:g¾j¾<?É³yê=û§‹Ÿ‘Û®™%ÖÄ$¢$¹Ky£511™sgh‚YÀæ·ßÌè\7¹¡¿–ƒ&ÒŠ–ëá¿şò¿ÕAü©Â€iàV€Ä’Ïè¢ áamF„ıüQ}¿öŸdÃÒXÆ~ ñHa@~4ÆBEŒé|ì¼E;kRÃ’ÃÏ ûÇõƒR÷iì†}‘·v<Ï§×PÖ1»kè§?¤Á²_Ÿœëjûûe€Ìæ`@…Ï"©yr¾z‡â­=·^ßõ§¡á;$+ãÂÑ$ñÇH1"3Æˆø›oŠ /¼À<³SS}J‹cëÓ!1ôµÑ!£WNÔˆG¸ù÷y­æ¾I#	#~H3¹{r¿ş¹5$·7"?¨ïÕrç…7%:õË;GØ‰è(ÏZIºù`2jòZÿ‡Wp%Ô@ŞõR9¬mnê‚›¬:î™‘Á1UgœÇb³{p‹Äá…M…†}áËv^±P2o±4ÙHf \šz"à®DZêuqƒ>¸Ô’5jf;RÓñ9œîšot’"£lhÂ‘­³)Ì‡±„AkôæäÙ„î°Öb  öá›•¸<'§ĞÀìĞÌäŸö ™Ÿ$¨3×Jª¹ÂA>Ğ±B'®µ±^òzÍÎ÷j½*¶¹ÎÕPWÑËD”f.°63®­Á¤Ù@;nûÊRgÉò0›i9M(öîÒóc‰	É;B]ºjÜ$¥,(“×Ğ#ÏÛÆñyÜR~WŠ8Vãåúc®P—ç‡:
+;³ôèl½@Éy_y·0<1ùG>N,E–Öc„:¨Ûğ
+AË3fG³ğ‹IœÏ¬„ë	5;–´ÓŸˆ`"û¨3"ëà8Bï‹=ëGóïıâY~—F‰cÕD.œHŸJ7ÚÅeY˜“kÆƒÚĞÊrô&WçQÈşøSgˆhxõ»AcØÖ®-q;êª@u¸âÏ%`º±yHÏZ›ŒT¡Äôn\]ÔğEWş€İÕó…Ï	[D×Õä{*O0bQ5Qõ¤ëxÈ¡\ÁqŒTæ_:C9p-£ø»•B;mÎ'ğÑÒÓE‡sØƒdFù(t'ÉwBş$95„*ËŸXƒ(Ïãt]ve+#Ğ Ğ¶ôŠEÁ¹WWğÏ¿÷Ûı]cƒl¥KÃ vÊŒßòÊ¼]ÜÈ<ö¾[@9P(^¬…ø:1f»m†@õ™ó²¬‚½ñÒHJp'©×YóŞ'ì ƒÄ`e%:
+ãï½ë¨Ã$–íÂĞgèÃİscD¸Ã3meSE7ØYJsÄÇ+}éMÄ–ƒ[‰Ä ²)±—K::å@6Ç‡´ƒ‘ÇŒ%úY\yê5õRß¼úÚ¼éU®µLb V;'ÑÊˆı7†œ¾’ CæÇÔ—ˆE~œœuÛ¸Áµ§~˜|Tœ³î°GœR #yöÜ†áÈAßÆuoöwmpÃ»qcÀ© ıLAa"â‚c°Œ¡ÙZÚÀ¥%;4K¦¦z -ÑhÁàh€àš¦Ñ`¤™Ó \àã\$]G´ÊFšTO|¾zGégóÂgˆNLym­Õ­57	ÁHİ8”•ˆb±/Us¬Îé,=ğiÇ(Ä"gúÃÕHxu(çÖ^-$Î07!~·W %¥¹/Z6=8Óf@˜Ş$cFrª Fx›¨HvØL™Ç7,“LX¨éPØÈ”åX[“,í| dN3Ípr¼.ò;—'E‚Ç „°9šr¥X>…RD!Jí6²ïÒˆş;¾òàG}nğ½—ò†+¿îugË2Uàe:!QR¤œ	<1–XÙ¼4
+¿7‰ÃñŒÂtJê’™O|“p(=Û9[v9ü4´Úé-¼¼;Õ-
+UƒiŠTÏ'Òdnëá]æ[ftÊ	åèâÍzó•†©ke1qyàÍ¨²‘ÌeÕ2O÷ÕNo0@ÕÁœEÔ.Eş– ßÔ2]PÊP\àPRÌ|ÉÛ+!U$üHUGå´É©)(½„E‰½Z'
+”
+í)PåÓQ4kƒOiO÷÷Ü1§#à«æ/tàéıÚ5œ„ù?HÎµhÀ±ÄßÆt­…›eg`„ë¥"½ÁŸvj6”„v‘}¯ƒ<)ã(è¹SVdLgæ¦êåG~=;àeØXZ£â4¼öş Ñy`ğKÏ…Ş C‡ù´½GœX³I+Ä™ûS‚)SX‰Q‹a:G˜Ø×ñt¦ &…gû¹ù’mñèãKí5\'‹J¤‹®v‹AL1KÕ>Ø•8zaÏÜEQQfy*ØŠx|²vº1h{õ5`¬Fú 6tà$˜˜{Äc ÷ĞteUÊ&SG…‰}ÁŞ.ø'„ÔjúÆÛ}‘ˆIYúè¤8«`’7Úë€+M”Xi÷¹so¥·kpßeq|ÉõËîÀBëŸ"KÓhã9»'¸Qär¯ÊùõËt8YN†©ÿF~À«tyÿìC~¸LA?%Òz4Á˜é¤Ü4‰î˜JÛY¯y~Ü$eê±ôº‡#hTùıIÛ¾ıEü¥Bğ ¥…ÌYvÚ®=Q¼HÃ·^¬ˆĞúcZ#cf©c®QPSG­ãÆqëÈ˜-˜Q®˜#Æ'¬ôjñı‘d‡tÅıú%{f£UŒ(-—E÷„£s•>ïØ¨Bã` e–¤¬ÈDû™»Ü‰ëÅê8²pD€ıXó¥?¦b^ 
+3…—sHÍ®Lâ‚³1c†‘{µ4ù.nœ‚<‰QŞYRëÏ’x$÷¦ˆ¢X»e·ä_vôà%mtÿ'(Œ¦näQãläoTëôÈjÔÖw l{¤¥‚ÏXâ‡\ƒnˆñ²Ÿìı‘¥Ó-[»–"ìLoßPç–ødŠ²”µcY—ØQ\ ,Ã¶Ä˜¶ŸÛ½İä+Wö±¸Pèÿ·¦LÇTO€Ïbı[{éYBÙô)€
+– K'`{ù	g¨SÉQ”@œ<Y½ÍÆÈãÌ¹¶7y¢)Á·?{Úóš-D†_·,p¬uğAä,r™ÁËt´:`'böÍ¿i³%-d/å6äVæ›mE~.Röh'â0×A”â|…¡Qˆ¥ÿ(A·Ó(œõ32—ŠmÖ•³¿tÙj³"{Á9@ŠAqıƒ‡ŞŞÅoÊ{g|°{0yóZ( ­yÅ–q_ø6µ­z‘sÇi‰o“ãÆÀ`ëvô´r¦ ã™ë†¹É±œ¿±iÓ…8Op^½û"ƒÉX°>b¥§õLÅ€ç^R‡äiL6í„ù8 ¢$uà‰çÆ®2–(%x‘l|§ÎºØËüI)®ûWÓ”C	KÔ)O—¢{ĞĞù%n*‡“©À¹À].8Éşnw„±Xûà#w=««4d½!¢ufº¾!Ê&w˜—õŒºó2<PÎ›j¿º
+6Á*Ôf•5`ıôÓVĞßë­1Ô› rÎã]Ü¥ˆLo:ågèu¢Ø3 +Ysí)xú]ü\°6¬œeDŠ°vÖæ††ŠıtÚÔÍuJ‘~Œ°ˆÃ«Ÿg|ÙÄYólKÆƒ(‚:/6çİúê**Ñ0“÷Ğàì‡g¦3"0ŞÂh&¶ô˜s[ğÌb ú­_ª¸£Ä­ï"mŒpÒµü[ÿ”_-Ç *ğ/Jû3‰‚ÃH|,i4¦¼İa
+4`iÊÈÜY–nöÎzİ~§ïËÑõ²{b_°Tİı‰šVSN3W5èÔ.³Å“ÖdfÁ—,Ö‘E´àJÊ¸GA4›zá}2ó¶Üéó®¥Æ` ´¬ …-¿”$¡7§/ûï\hòAÍåêø-L€…ÁĞSV…ÂÌğˆ©U(ı³YÔ–Œ#ÌÓqIÛvE"º@BÿPÙèûÀ¶FïÏv¸ü¢ 	>Š™¼ŒÛ)‹b‡>J"7ğs´Ñ©LdÆÃ ;Ã™s‘)p¡,À•…éM¾åk]ülzf)Û“¡äKFÂØGú…°5ÁËÔ÷æğßÄÊ\H`$.—†¸p¸©U¹ÆB0,¹Gh"ªt&™Ì½1]:–ä]ZÁÒˆlq->ĞƒlD¹¡WIÌ²	şjĞ3ĞvĞİalmwúÎ|¦";5“&Û›4YQ³Œä•i¸7Ãóì˜¹° u=g)Çà8&‚"‡Ğw´ÚæÊ³-RÖ{¯	Qï‘ºXs¼*¡æ‘ÊÚİ½¹šŠğVÈiğUêTØ8ú.&NëblX†+yMİÇ"¹:i š®ı=§\©¦§aò9Ø«·9¿‚IEa49k2ñºrò 
+j¶[Éºo0¡l”!åu`´ şocú]#ª
+g½˜lÆ“`JEÙÛœx¼ş%ÆíÌøu$F¯›†}[Trö]ú!¶A=Àø5k\¦Ó(ZF³«~—CøWÊS/Jƒ¦¢1H+hœ±pI¶˜ªZr‘NÍñü0É€M6KªO28IY®‘óò¡vÂÃNÿ¬Ûëw.ÈXxÖ}BNWUš'¿?úÅ­…2˜üË†C4!2ØÄ åw^¾j
+°0(±)ëFcÒi³Ùh½°vÁyÌ>M˜ªæ	ÖÙİŒƒf>2phr-Y[{S?È˜T’ê>%ö(²İ¸‘^S¹Xå·V¶5İ©¯<{h™¢O­…ÉæÃ8ƒ’a‘œ*Mp;át¸q/[QŠÅ5án`«Ñzïö‘SÀTNVrnÛ®5ƒ_lsÂ™ığÈ¥)Øò{é¶6B>.>À¸Õô×À{µl¥›È¢{äïÙQìx_Óua<¿ nËâzİZ*HR7ß:RQú²;ğ;4`Ïİ¡EÑImğ‘µÒ®Ûà}İxMs^ÛUâÆh‘gß¢&»âÿÁ–u£m¾í3·1‚L,„‘Ä!ŒÚv\6¿»yx§j”˜šA* ş¸|ªlÃ×’ÔP¥±™nuài`f2c›	é öÙ/jAú,4 1ËŸåÄÑ]ğTqGqh“Áˆ"t-Ä\-ÏdŠ­K4²-bÏO1ÈG&ŸÎĞ3Ü–3ÖO­)²¡š°©M¦ìy&èÆÒ3)”QÕÃg`òJo¨AgÂô~q²bz&\kÕò­äæz¿Ô8 “ıüºLŠ)„#÷.4éö=øšÓiËj¬1 [oÃJ¿J¹{j†.a¬•x‰d9ÿˆ°+¨Øa/r/O¹Z`t€‘¤¬=Ü4İ@±8VZ˜[L—|Du2¹–º5”Îxƒ[NŞ¬ŞeW‘î91NMö·14kå1T9Ú2€®'ñÌQ>Z½cäÕQ·Ùè¶ÉubÂú7vjM÷˜ÛÂİw›È¶j ºY—ƒî3WĞ³¸J)ëşĞ”„%ôMDUIÿŒl Â‘óxÒìírøğı¨®®|AÜ–k¾‰i-'”‡µDòªMÍbÙ0h›—@º,ÅTòy¤)šœÊ–JP¼UL×?R·”œO-m|ÃÇFZ·ºGíHâ~œuë>üJşÒ6ô)a¸J”õBùáU1ã-(’šzkÔñh-zzQ®à|Á]Y~µGı€3´8şãŠ¤i€Ş:ı ¾_#‹ıûc¢ÖÕÕÛCrÀFšBfi@v¿&·??¢<@ìË	˜a¦ûöPg1%IjÃc;#@¡iÄ—¢?*Ë+ˆiÜ”5¾µˆ‡'³%)¶¡¥äS}k:—?¼1›ıÁY\|©òQ,¦"‡†Õ±	].D\®§@Ã_i"SCÑƒ4ıä/¯¬§)_!¯,ZÛ²š¸_rÎX$0Ú ûr÷Z£Í¼"ˆ¦5ñÁd~Ä ÚÌ‹t•ê îz"ÛÂïƒBkŠiÎé£(˜©¯ñrUNU´õƒüğ3Ç’ÅqÆŒj©oç‡éš6î€¼´it6ğ·"–‚ÂGp›yw&ğÃÇlaîR¦QÅæ¢`JzT”Ü`Zìçè†oPt£ä¯â)	Pëqÿ¶µ°„ÙûU%ş³ëJVvzí3÷#ÿ¾7Œ¥M&€Î§_™’é×fºk©g¥ÎÄ¬•cş±½Ô‘YŞ:Ø“Æ¤_N¸ˆÉ‰I3ÓÙ¥ä¤ÙŠàÎ—ÒÑ`}-¦'Õ2Åm¤@Q\P<º%¡®/À*×sµ%KV°È›$uñšÛšùšz¼æ#¼µi+Ib¥3á÷åo-
+Ø0
+Şi¥\X¼£” \Å\[äŸ_²P.×~ß–7Ä	0ùï–İM14œ¢¶5…E&†vÉ2Î¥©Oeül¶$¢·İªp(|EUÍÕÏT_BìÂü…wç*Pµ1ùhªxgj :¨§÷Èm>óª <}¸guNébhuÕ¿³Wï°ş{¬ïÕ>ßsÒë3ğ³"LœãWŒ	vÂa>Çœ%êœ‰ tş-ïÉ¬Ü§˜‰WÙÚnˆœBUÅQg™¡=“ÎEE%Fì¹&Y¡©.4JoéPà#<¸®C_•å«d)Iº¿]\’[4¼ƒ |Mb,–‰_ÂG$àÂ‡KlÍØÒ:ı0—³Ô?Zbæ/]¼¤fš´ÍLÄµ¦KT€+Lb4vDKz
+’yÕ?%¯Š×ßGIÏ¯Ú§«?Ÿa}üÎÉYû%]yÏšğèŸ‘›Ò´eK†8GA‘6º™Ã«Ğ¶P/ğ‰å<Ñ&c'Úl~Ì)ı='Êÿtÿ!–IBU>mRôŞ…’˜\ëÁrŞVE}…8aö€åæıƒıÚş£ÒûL(Ÿí-MÆq.ˆ‘•û‚n\É¬Gjû¹j4S‚	 ¢ßì€éç²ÈaÊ†õy‡İÚ "éÑ­HîƒãiÙâşMµ•Fb‰0(k#‹ø"zN*©6Õ¾Rbj>q*C´zÇ9<…ëpİ&@ÆKT( Oàóy›Ô¾d¡S: XƒHÎA ˜¼0²ªHµ\TáŠ8£Øç¸V¼L(w<œV¸fK¥º¿W{ÈÅ—vel¶uGX{"¹’Ò>aZÏ"š c<§Ê–dïÔö?§~)“ƒ¦ŠpMéØ`RĞ/o m*iJÀ ÷š“y	yHı"ïWFD–@ú¢y…Ø —¥ØòŞ¨µ«ùX{•÷éê+[5Ú"6·¥+G¥l?§9šÇÑ¶Ô-£¯­*fï00D5»!×–Hîrtƒaš“hæ7ÔN±%|İ-4öˆÖB¤ØVÔo»¿ğ¢I 6·9TÚ–ns©ÈãöYó¢ÓÛ5ÆJäK¶ã{µûê)hĞê»S£›~ÅÒex„gñU/ök/î‹Â|ÀŸ²í^>µ4ÄûÜ¿±0R/î×^<àJ8÷ÍèlÊ·iÍD/^<¨½x¨ö±Ìşg<–¤Ñx·„¹v"	Áp TèôYĞ¡ÅÂ8E“ÙRDùåZ¶¢£°FEõ%ƒê|Mûœä|¿pŞ"¼å½uø‚jw.½x½l‹ÿ}˜ƒêÛ,PÖÅ¦Ìã°š 6Š6Wî£MC[	$pÚQP“7Åm²Õ*ËõƒMâ¨gõ_K÷w×y1©G´¢«CƒYYÆ\%†B)ù2¯
+ãK©•Ò¶"ÑgÕç}iûÁïB+’±]êCÕø>â«@¬'Ó@÷×—ŸïÉ¶™rxıóç”º%ŞÍ4âá&[*29ÈhÏ³Y˜Öçi¶×Z[÷'în»ñÒ|]Ô5å0‡Y1|›oæ¹A³€v~R;¢\í¦ì¶dyú¶^Z{°ê,ÙÌç¬}ÎMÄã Îgw½I.‰K…:ƒRô™$¼"½–²ñâqA%ÅÄ+K¦Ô¥xäe2¹¾›Oå¨ÛVıo?Ğo†w
+MĞ½aJ§î¾ŸJ İP=YŠ/’¤v/…QãU™‰ÄØkx$%5üÖÊ<½oªÔR¯¢7oÈ˜·x·­ĞêÈBÙ—(<0ò•Ï¤øØ	å©ÅfîãACQaUsSF×U›ÅêÙ¦ô(^Cî€ÆL"²c™Ê°µ‡6EQz ^ŒòRY'™*µä’¯H$Õaœò­H^õVïRåIT®ÍíŠÛ<ÇâÅ¥ÜßAƒ›råAºnò†KÇ€ŠÆ%QzÖëdŒê
+Dés¶GsÌ.„&É+Ù/¿äÓÉ7¾¸Ò*wóœ¯?»Öt÷‹tª—#t"’&—F°Eô›
+pbbdØ!VJÖ^¸ÇÚgŒÕÃwß¦EôÍàc)«¿6ûê¼×9iö:M¼‘å´·ú[ÿ¬yÖT~Œºø¤ıÏÖ	ôšÖ'f¡²b…Oè:•(eRŠl€w\íîSÛ‡QN˜·4l“’»¯vÿ@‡D K+èàÛşy“”?ÏÔgC÷‘î0ô ¾™¬q‡ûµGø!Sv”¾2Î_â¥v&ÎG°¡×¢Ì%í×>·Y_DŠÍÚv¯–éÄï~­Šø…zÆs® r~—ªszúœs_üêˆ@Ó¥QõSá»æYà1 ×ÂfÎ¡Ì„aLQş²9øv`(dPÜî;À+YÊ¥yòhKùãu!o[%![PÓ~.A[41ÂCÀ\0¬±‚-$?¤øÏ]íÍÕ?³&Ï¬©~+ŸÚ*ÏÕR!koç
+Póê&,8u.*Œ¡£ZE‘( ‘Wš…ÅÅ	_WkÃLÉ±ç9 Œt@7UÎÇ  6à©ŸÅ)29£²‘]D—$RÙnú[õbW³­èÊr"
+} 
+Âl+TfX;²Éş@ˆ(Öc¼*ŸÓdõÑ7.tÇh#ƒÙwRç}3Q\Şvlû<à¤1Î‹v}›élXÿûuÒĞqNª>¢tS9$ôù¡\L:SÎ]#K7RsiöƒÚÖèÇ(§ë™I¤³ÅïíĞµ2!Á@:"a½Ô°³Âà"Ø?AJßbµPZõ#”dblòL¹nFöb¾;ˆJ^fæN®k‘dÅãÒXSD†]ãW¡A”Máì—cßÁ¸#zN‘Iö¹ªôNàx!ş#KŠm?fƒ¢ş}UAk´…ÁNÉ¥$Ân’,‘ŠºOI–#şÀ–˜*Ã°YÄ™é“á	mG÷7÷j®'‹A@ş÷ïK÷€1IbÆa…RÇ@:¨ñ@{=	ìßß‡Ñ¥£g¦›•«MĞÔ™ô{IÁ…!Å@§„c{= »7ÁfÄ1£ZPN1v†‘áğ -s†ç¤zàvÃ+„(Z«³%„b‚¯ ¬‹
+¡?¶õèÃÜl<xÿQ>) ÄkÀË½{­pôˆœ=‰lî¢|s;¤)İ¿
+Ñu4Hfs/
+´tókéæ_[dÖÜŒ•Vˆ{Á°Lƒ76ÇùÎÉœ›Ò~ats+’1>H×3ºQuú˜D…XÖÏ/h`dè—z†×e0	ê­şŠˆ8©¬³8"[¹T‘±cø0ÖÆ6â+7XHt#ØŸ@Ò<µ·fôù†äf€rqhw)C'b-ù7¡Û^1LÑ>Œ¥#¾0™w×	t¢³qÀÃb”—äò_ƒ]”ñXôÅ]Eï]ñk“Vªî^Ù(C/Zn¨ÄhY%iàÂõ®xãam hÉˆfüéõV¨3ER½»p¥ï *bÒüQ7ˆ´¥z}MÏÃb¦DÇÄ“SM&X™±™ö›6Ù+&K§Vï½½×—ÕmtiÎî2_ÉoW¾ï„J € ¦3ŠÛ5f–œnW“óäëlõ÷oÙ3¹¤¯–nyí‹K’\ğ/º‘Jä´¥)¥L¾_VH³—|³9”18í¼ü*gCÒ’ÅÖÕ?JÃíµOšG³“ÿş'«±´ºÀÍi¤Vãæô¥Ö’k³ıDS]66rìşŞ2tªün9ôÏÙ…W•ÜpOëÎ^¾/æ¤œï9§j{«w“dæùI?ß«}ş¹ÕŒìI²ÁW"ÚKó¼qœ¿˜ı‡ì:%y™ı›,¹Ûjy¤	:äMHB$­h=FŞvÛˆ‚îEty´Wûì¡,Ãw‹I:ç²,˜:{NA[}xàBä>xçûTbœKÕÓGäxæ¬c÷ŞÁÖ(Í¡+¹>r
+1êQ:¿4ò4UdÅ'6âÚÀÆ³(øàİ¶ù_ùßŸ»jLì×¥“áêgìO×€`ÊMñº~sÒl¯À§Ë<Ó³µº—GÕá l¥÷4w™ËÆñ¼\ŠGT8Øï½¬)Åkq_[­É«Üë%%M“Ë›#ëØ+¿¶/Š÷-¯ªõÊògœÙÅÚ«iT†‹5µŞÚÍUTÑ„£kŠ2LÙÕ¹&HŞáÆ1«8©7”ddŞ×C`½V%h?¶!ä| Û^ıàqm¯şÙ{Ôq¨IÌQóRPİ›©§Ck‡^=:t±ı<TÔç}ø}ğ™Õ€FV¶‘¬$ï®ÿ…G‚cj±O F{õÇ{Ö$ABˆO‹€ÄœÄj²¼C§³« dcİx‚áË´g8zà…À·£yQÌ½™ëNr¬hgBëªJSuF‘8LL°¼[÷_…wdù¡èÑƒê$ŠÆ|'Ì‡¹VÜÑzŸD\’@’ˆƒG¾*ÜûÕ¾
+E‰í¢’›</ÿff'y}¶ÿÎQx§¥’ùkƒRèˆœ“=¥ÄuÙ—0[=­)­ -—ø%Ë
+Ü‰QTòQP¥«Ïàµó„JÏ-ã)vü-µîôİ¬~BgMÁòI,%"”Z\q•ÄIÅUK¿^zÚ7Ùrå¹êzÏßk¨+[èXpÆé ûÓ¾&Sôi=Êh[¨×ñ¬°V¶ÂĞ6S^Éş&×`‹>ö.6=ÏZêLˆÚ7sY³¿?Ï5‹V‰ ~9áqƒrá uÉ¿ 3GñtF8›bc7ÚøBƒŞ…ÜWËKfÃÖ>¶#ƒuçm|¡¹¦¡Š[ì|LŠÌûH€Òd‚ÑV¬gØMDlşğkËqìÂ§ø¦ªâKÉó^ÄgVöAï±>Œ. `tCa&ÉfOƒ˜³q'ywíU±ü}nêëc&™Õ;lOÁ’Ô#S/šö„ĞX,>w.ußtbCåczêñ(ÉÍ—b:ş0®ˆ;İyìJ0ã+<[¶ı0Œ²Ï%P#Ÿq?Z€<ûìAí@*'s1QšÂ¢Èº4¡ MÂÔÓ¯Y½]½à]
+TÀ{óHLß-ãi2¢g£d²¼‰¬Ah49ü¥)ÂÔ`@7Ü«°+°^Ãxƒ°M6ù¢Îòx¥ƒù˜ÆÀ„ûÑxÛıV¯{JnCµûtõH³çiÀü¾ûÏÖc5åïšõKy	ô‚aÂTHG*çn ‰ß`š@é*gÛƒ§CŸ¹n·xx½½»ºĞa¸³÷XÜ¿8C`oWèÎ'Òvc³äÃ
+eÉ_Y1F¦\º±Ò“Áÿ×U_ÿ¥oÑİ#Ÿ³-Û¥4!eÔæ‰ßdœÆ©lº²¬å!tw`º3qP4+WyÑ‚œÛe0¶Á„ˆ#ÑĞé lÖŠd$á ÷ëµåq$¯Ü[µh-å(´V–5«M¯éÑOñ¶‹ä¡øÍÍÊ £V£•Wnå\Äx7‚G®7„‡èèEk8ÅA°áE>tO«‡W_Ş5Ybş%Ğ¢É”t¢‡¤­åZqËb€pÏcµm–æ‘3yb|–ø÷„~—-7'~/ºÎØ ˆŠLÖb±è©8²:£ØkTi>;x¯†T6Ü-h¢YË,&:MêE¡U‡‚çÜ5WkjOŞ\Á˜.ÜÒm?3-<ó)˜õk™Y^c9'L('ÉSDçxB9dğß	‰&û§Ô†W«wôÎ–	ÁÎUI#%;<´½¦TÑíC¾p£)G¤æ÷É'hB0"ÈTBz„~ÜšhjÁD0Ïç`¬Z™@	Yµ\XX…$Ü6Ğ$°j?Ñ…ê&Z±°y]ÆUáá	-CsŠ[ti¢†zP \Y^1ûñ­<ªØfÅ¯²¿weŸeyˆ;3ƒ;t?¬=+OğW¬á´—]z¯ZÚÃ()R)X9£[è0—DĞ{âÈ¸åsMßb·!·Ğ;6FazzÀù% é`ú›(]´Œ=âëa–r-½Å`8İajPÏö÷ÜH°/ v¤Ÿ
+¦rzr–ÍßDş½1#ßõCÉ‘æÂ½(iï>XØÎ²vÒšM™;†¸Y='÷ödBØ”H—Î{E8ûeÜí[ÆSÚÖtJ,ÎüaH3½ U×RÉ²àë!8¸Š3t•QÀÍn‘kpğ´EY¢L}¥E”ŞbãMÀ H#ĞyùN¸ÇÊÆs~i€É mâOl/7!Ëú0ëã|’İgî¡Š)VB«çä…”¤wË*É›,—S>»_”F•[İ×F-Ä`6G„y†Ñfr]İ4J§‘Ì`ÃŠ­s¨ü¤`ÖŞÂ¡Ûa{/œ½o­i±ğãh(•_ôq‹
+ïSª/­³U½Ùäà¡ÚæêJ(œÙ¹‰ÆìD;2å,,)X¤$ŠäT+-™ÁYËäl³›‹âl&GHúv7œ3<İ8V§›ÜıCnë„ğÌöjeŒ)FøÊr„e¥)áw°úiHV64.¾©†—Â®††å¢gd¡_rœcùO í¥Zá|n6†^s9$p÷ì±rÌîTú,[c„†4æÊ\IDün´nf3 ôª<Àw/ô<Ï’8÷us-•UÑ{í—GMÒ_[Í£Î‹NK4XDœ=PNkj¦¶î!}.l¢á¥‘à-F@M6L>¾c	—_Õàlø¥Q?Ñ@ñÆãgğ2Wo åÎŒMß@VÃ×Æ‰_	?ı>Å‚Pf_bD¬wâ(lMsÉ[šŸ‚d®’7	Â{ùÍF]DHŸ“šñgg‚×¦HßŸ© ÅaSõ{÷úmÕkÿÛy§İk«ö‘êw^Âï“3ø£ÿoçíã¦ú]¿{‚@Ş¡{Ó#:Ù(~C‡TKLé0ÊÇQCX7V•çÑëh§ªvLşnsUü)“vvënŒşPç1Û†M´†Âx¢)¦‰¿æ»nğïW²Õ?&È«0Œ’kã‘†ò	Ü‡ÆC†R€¯?Êfd»ÀB$x×^,Õçd–Ì“©8sR±q”ŞtA»°ƒkÊqq(’Yûé1î
+,#mVvğÌĞ};¿ºÂõ›ÂíÕrI¦j©Vj5¼V	_OİEæøwéŞ\x2»^ä:áOL¶‡Î’ìõ<_à“Ñ^İ#Q5Q Ug
+Ã>ŠïğàˆCªñ]Usµ£3ÔvÇÙÀè	§Í<¤™†ÁğHéÁëXÊ#³Ã00ÜÆïâE!V|İ±H8;U€hh\¦™YÅYü
+@‰0ÖÊÆÒ	<ªóË4”Ômr/Çªƒ«¿ëÔDçiå›·Ì†I7…àcLu;ñèl°eÏgbë™¼`Ë}²„ğCââzÆ´€–3–Æ 6€·Šïø¥ÇĞbZ‘õ:JÓèû1c.[Ùêñ­W’…ã¹‘>í‹¶h¿ñîû3hª˜±¦^¹«ÔH´5Œ±¼¡ –ÜD]>½wëoÌbr…˜.%Gc¤YD"ü …Ü‚Ëí Õ0I)ÆZ¥i„u+êf‰…±¡79E½ÎĞiKìağªšO-ğÿ	€mdŞÃøw¸tRš±>.>ÉWÿÈÑ.Òp5n©p+Ìw>JLukê@·0^F T¶'›qLaD¶fFvù“{ÿòoÕ÷şğÅ=ØEFÄùnpõ¥Šş%3PÆê(Z¤E]êºÇ-º}Vù>S$y¤OøŸ3}^ÄUy1ä†ÅŠèŸÎ¼çWÉø‰2(;êq2‰ÏÓø	šTP¤ñº pU×Z÷‡(…øı(5£¯±z÷ùïÚ­³ª÷rJF|8ÈEø‘R%6¯ıúg½ÎÉKõcuÃ7Ä6JíOÎŸ·{åö!¸Ó–Îß©5’ÁòÂˆ4{½æWÕÒûdO6|v(o(ÿˆâfÎÿ!Âùí‹ '_Â:ìe $˜0€¿ø" m[¾[ûlCOœ3¨¯‰ÙT[©ÆP5ô¿êˆtµL[¿-u]·DBï† I»}ÁÁçş"Ër^5ËªkBTUØ~uöW×H­ƒƒ™ÿûãnHü¢?Åof@û‰©ÏğïåRíüğãÎ^S¬‹xtZ4´FiµNO*ÒEØo|Å’YÌÎ<:÷~åœ{ÿZzõDUÜ@uKhB(íò”6¶ù2v­%B±›|7áïš¾­_VË_™ÅêHš-' –ÊĞ‚hf§a€F».,àáÿA|Ÿ¯U%e(b”-v… à@2­Ó›ÊNÿAªM“†áD5Ğò'¶NÛ_£µ?í§68I0çEå`ooW&ì¦z¥À±”Ì º¥ñËP-¡1yj»fÂ÷cŸ~z™v6šj)”„€ĞÉ¢§âŒ[Š ‚•‘qÕh‘¶=ÄĞ>ôË`ŒˆĞ¤@d i’Ç®cÿ§Ñ"…A¤õS%Œö_ÜYå‡ü1âœyÏ½?mÜZÇ¬ÊMæX3Ó©‰^Ã-°EÅ"’ëù	:² rE½ÇøˆAù…ÿ”Ç®úòmØ,_x7:@“­zÓƒİ&Ì¯ôhÁ{“\©Ê¯\‹]ËCòôÅÌß»‡·ïÈ³.ŸBmoĞZ}âù¤¾#›‰ÛéM9J`~ãxÆĞJQ-¯ìúgŞI8ÜGzzF…Ş„gEhø‡6z«çèØ˜x¡9s=¹ò7À5Îgbª\½}“Pb+Vd4UŞ;W!"†F]Ôï‰d§øö#]˜ËéH>)y¶Î‡R:xÁ=³í&Ç»Ñx•ÀzH§r_÷Q¾âtğÂ&EQ-"Ìz‘¯~Æ}Ãè”VË¦¼›;V·æ•VoõW¬øE†–öœõš-1³´‘y´Îšı]r¶_tÎÛ'œìMUÂºOøşhZ£ñêbîF¡ƒœàö4¡›c². O@CG,0¡\$+©N]ÃCÀ'8kx‚¡©“.rº‹S}ÓÀìc>áĞSµ }gõ7ög˜ğ½Ïn'êªŸàŸI&w¡ó…æñ:Q°Õô0~xæó	úŸ¤¤À+PÚğqEÃÿ×áT`wŞFwÚ/š.F”È›ñé«ÊW%ü#¤>ÂP‰æ)üßü#U3ú° êwº'í¾ìfßBËßó¡
+ *G»U¹bÂÕõ¨4OwKu+g»òƒeßQ? ıõõ°~¿ªÔUá×c^‘‚ÿ%¡à&Yı ¤,/Ø"rdöÚıÎáyWÂ\;€>İÊ¥À¼È¯`9'«?Ããæ&l™¢ÏÎfRNÃ!,Â¾-ù5ò¡áP	%¯gfV~½»mfhàSdöŞJÜàh|búÀ?@‹me¿şø×»°ór>á1¨şğ|s°5g½ó>y{Í CŞ9=İ‹q/C¼Ü@|2ÙE\J6‰YuE4¶Yı:L\¢YcÖ×\ó²•ª¢“«=¥½±í9 ÷Ïi³×>T2_¦ì16‘•Ab7¡€5”0¢‚BuFš‘ç“œŸ&Eä¹Ÿ]dŒş¦ôIÛ&„7Ô™Í¢>aÏ’Ÿ³®êŸŸ¶{nĞ§×YıO<
+ş4e\Ê_ı˜N5i)”aRNµæÈ2bßóN…­²dKJ²+fFSü¬®^tÛGÃæ!(õ9ÄZ‰gO…Y¬#JÄˆƒULŒĞB¥|=E`“ë5rj¹ Š2¹5ş¦ä¦ÿß|`ŞDÅÁ]­áF{@ÕÙyQUÚ¹ØÎ´HŠÔ›"¶Ô ®Ôï”u03øQœg×­É?ÜLÆqœÉÖšÓî½ÌŞ?À™áñä3™÷‚ĞÍ•rïì2Å[YOŸË)–8¾ÊSŠÈCúü‰ñ×ØƒS¡DöÒK|k‹rUL)• 6‘*Z•Gûè¸\¨Ê3y¸»am€{ÉˆQê¸lãx?şl)íÑz÷ ¹ï?`¤*B@Ã(*ˆ9ç°:d[ÇíI~şiLŒ÷NÃŸndÒ%®,ûÖI`TH†~âä®x ãOà.¬<UûÄä?ñª0q=…ò»~PQ±òLQ›u|H¦Óã» S/ÙØOë
+äÿİ4ÈG€?ÚG0`t€‡ì İbFCøğ®W®¯x ŒÎ×¿GizÇ•¿¼EŞØ6„¶š¼Ö¨ÿdã-¸¨´6äwÉ(‹ÅùtJãË¨¿y¼¶QJ*_’•h–Y0”nHZ[¨Ö½¤øîNcõlTÑ‹¼ÀÖ?^kÜÙõY“|ÖLgú“­„ûXçÓkòû}Ô½`JŒ2qª–ˆf>ºãÈ€µi3cËÊRwš†óC’hœ¡f¼V<Å³dÃö;;R/0hş7Ìüw±d—vØy©H|tó.Œ·)*vBËòL¾Á;e	j§ºù½r¶½GeÛ;_ºØÖ†ÚúË€»®½.qÇmïK\¬Ü,ä3å·DÑ7<ÜØ8 †[^d¬Üfî¬uÂ$bİQ-·X?Eå[‘ŞÇ±_Ş¢/ÖÑ;õ?Äîôú˜¾ßkÃıbûn¨Z­¦.:gmuØ¾Pıvï¢İS .cÆN‹ UV÷î±Iİã¸ƒ
+&“Ïú Çy…—‹&`ÎÒ,êqvS?é¶/Û'ì7tO Én`_¾ÁRFÇæ1Rx$]Û}¡?‘èM’¬íOÀtÙ›Šå((‹¢6ÓHĞÑØˆÑ†>Àë®›Bv4Û8˜^SqÍ®av Ñ_×_ë$³+şiTÙ¥¨™b¶SÀØÖ¹„NÅô³+Í î´:Jµ}S¿Mğr§\ÁWzvç*×sà3¶Ïq<«ì|
+}²ß[k½Å8Z/’4®¸™ša«˜!`Ú1“0˜p‡H)£rÚíAû½:ıGôF2ØGºò‡¯q	ÉHçßbŠ~ÛØ‹FN$Æ«¹T,]¢hÃx ÿ¯g³é“Fƒ'×€ıOşåùÇ?ğ¤àÿab†}qïÿ  ÿÿ @ĞÑ
