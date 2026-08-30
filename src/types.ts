@@ -131,3 +131,5 @@ export interface Vascular3DData {
   morphologicalSynthesis?: string;
 }
 
+export type UsImagesGridMode = "auto" | "1x1" | "1x2" | "2x1" | "2x2" | "3x2" | "4x2";
+
