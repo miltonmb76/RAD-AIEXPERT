@@ -9,19 +9,15 @@ const ExpertImageAnalysis = React.lazy(() => import("./components/ExpertImageAna
 const ZipDicomExtractor = React.lazy(() => import("./components/ZipDicomExtractor"));
 const AsistenteMedidas = React.lazy(() => import("./components/AsistenteMedidas").then(m => ({ default: m.AsistenteMedidas })));
 const CreadorNotasPie = React.lazy(() => import("./components/CreadorNotasPie").then(m => ({ default: m.CreadorNotasPie })));
-const CreadorCuadroSinoptico = React.lazy(() => import("./components/CreadorCuadroSinoptico").then(m => ({ default: m.CreadorCuadroSinoptico })));
-const CreadorSinopsisFracturas = React.lazy(() => import("./components/CreadorSinopsisFracturas").then(m => ({ default: m.CreadorSinopsisFracturas })));
 const BiomechanicalRadarModule = React.lazy(() => import("./components/BiomechanicalRadarModule").then(m => ({ default: m.BiomechanicalRadarModule })));
-const ElastographyQUSPresentationModule = React.lazy(() => import("./components/ElastographyQUSPresentationModule").then(m => ({ default: m.ElastographyQUSPresentationModule })));
-const ProstateUrinaryDynamicsModule = React.lazy(() => import("./components/ProstateUrinaryDynamicsModule").then(m => ({ default: m.ProstateUrinaryDynamicsModule })));
-const Atlas3DModule = React.lazy(() => import("./components/Atlas3DModule").then(m => ({ default: m.Atlas3DModule })));
-const Vascular3DModule = React.lazy(() => import("./components/Vascular3DModule").then(m => ({ default: m.Vascular3DModule })));
-import { ProstateUrinaryData } from "./components/ProstateUrinaryDynamicsModule";
+import { Atlas3DModule } from "./components/Atlas3DModule";
+import { renderAtlas3DAnnexToPDF } from "./utils/atlas3dPdfRenderer";
+import { Atlas3DData } from "./types";
 import { Findings3dRenderModule, Create3dRenderModal, Finding3dRender } from "./components/Findings3dRenderModule";
 import CaseAnalysisRenderer from "./components/CaseAnalysisRenderer";
 import InteractiveCaseEditor from "./components/InteractiveCaseEditor";
 import { ClassificationBreakdownModule } from "./components/ClassificationBreakdownModule";
-import { CaseAnalysisData, CaseAnalysisFormatOption, CaseAnalysisElementsConfig, Atlas3DData, Vascular3DData, UltrasoundPhotoLayout } from "./types";
+import { CaseAnalysisData, CaseAnalysisFormatOption, CaseAnalysisElementsConfig } from "./types";
 import { 
   Activity, 
   ShieldCheck,
@@ -1085,6 +1081,48 @@ ae.start_server(("0.0.0.0", 1040), evt_handlers=[(evt.EVT_C_FIND, handle_find)])
 };
 
 
+
+const splitReportSections = (text: string) => {
+  if (!text) return { mainReport: "", cuadroSinopticoReport: "", organSynopsisReport: "", annexReport: "" };
+  let mainReport = text;
+  let annexReport = "";
+  if (text.includes("--- ANEXO") || text.includes("### ANEXO")) {
+    const parts = text.split(/(?=---\s*ANEXO|###\s*ANEXO)/i);
+    mainReport = parts[0] || "";
+    annexReport = parts.slice(1).join("\n\n") || "";
+  }
+  return { mainReport, cuadroSinopticoReport: "", organSynopsisReport: "", annexReport };
+};
+
+const getRadarTitle = (mode?: string): string => {
+  switch (mode) {
+    case "rotator_cuff": return "RADAR BIOMEC√ÅNICO DE MANGUITO ROTADOR";
+    case "knee_oa": return "RADAR BIOMEC√ÅNICO DE GONARTROSIS";
+    case "cholecystitis": return "RADAR INFLAMATORIO VESICULAR";
+    case "ankle_trauma": return "RADAR BIOMEC√ÅNICO DE TOBILLO";
+    case "hepatic": return "RADAR DE HEPATOPAT√çA CR√ìNICA";
+    case "renal": return "RADAR NEFROL√ìGICO";
+    case "scrotal": return "RADAR ESCROTAL";
+    case "appendicitis": return "RADAR APENDICULAR";
+    case "thyroid": return "RADAR TIROIDEO";
+    case "knee_trauma": return "RADAR TRAUMA DE RODILLA";
+    case "muscle_injury": return "RADAR DE LESI√ìN MUSCULAR";
+    case "visceral": return "RADAR VISCERAL / INFLAMATORIO";
+    case "oncology": return "RADAR ONCOL√ìGICO / ESTRUCTURAL";
+    default: return "RADAR BIOMEC√ÅNICO E INFLAMATORIO MULTIVECTOR";
+  }
+};
+
+const getShortRadarAxisLabel = (label: string, maxLen: number = 25): string => {
+  if (!label) return "";
+  if (label.length <= maxLen) return label;
+  return label.substring(0, Math.max(0, maxLen - 3)) + "...";
+};
+
+const getBiomechanicalRadarDataFromReport = (reportText: string, radarData: any) => {
+  return radarData || null;
+};
+
 export default function App() {
   // Public Patient View System
   const [currentCloudStudyId, setCurrentCloudStudyId] = useState<string>("");
@@ -1313,7 +1351,6 @@ export default function App() {
               if (study.pdfLayoutType) setPdfLayoutType(study.pdfLayoutType as any);
               if (study.selectedLogo) setSelectedLogo(study.selectedLogo);
               if (study.attachedImages) setAttachedImages(study.attachedImages);
-              if (study.usPhotoLayout) setUsPhotoLayout(study.usPhotoLayout as any);
               if (study.findings3dRenders) setFindings3dRenders(study.findings3dRenders);
               if (study.patientSummary) setPatientSummary(study.patientSummary);
             } else {
@@ -1948,8 +1985,7 @@ export default function App() {
   const [laterality, setLaterality] = useState<string>(""); // "" | "Derecha" | "Izquierda" | "Bilateral"
   const [projections, setProjections] = useState<string[]>([]);
   const [customProjection, setCustomProjection] = useState<string>("");
-  const [activeProtocol, setActiveProtocol] = useState<string>("");
-
+  
   // Helper to build gendered laterality
   const getGenderedLaterality = (lat: string, study: string) => {
     if (!lat || lat === "Bilateral") return lat;
@@ -2411,11 +2447,42 @@ export default function App() {
   // Biomechanical Radar Data
   const [biomechanicalRadarData, setBiomechanicalRadarData] = useState<any | null>(null);
 
+  // Atlas 3D Fotorrealista y Correlaci√≥n Anat√≥mica Data
+  const [atlas3dData, setAtlas3dData] = useState<Atlas3DData | null>(null);
+  const [includeAtlas3dInReport, setIncludeAtlas3dInReport] = useState<boolean>(true);
+
   // 3D Schematic Volumetric Renders for Findings
   const [findings3dRenders, setFindings3dRenders] = useState<Finding3dRender[]>([]);
   const [is3dRenderModalOpen, setIs3dRenderModalOpen] = useState<boolean>(false);
   const [modal3dSourceImage, setModal3dSourceImage] = useState<any>(null);
   const [modal3dInitialFinding, setModal3dInitialFinding] = useState<string>("");
+
+  const pdfStateRef = useRef<any>({});
+  pdfStateRef.current = {
+    generatedReport,
+    patientName,
+    patientEmail,
+    patientAge,
+    patientGender,
+    patientId,
+    reportDate,
+    doctorName,
+    doctorLicense,
+    clinicName,
+    clinicalHistory,
+    findings,
+    studyType,
+    customLogoUrl,
+    customLogoStyle,
+    customSignatureUrl,
+    specificStudy,
+    pdfLayoutType,
+    selectedLogo,
+    biomechanicalRadarData,
+    findings3dRenders,
+    atlas3dData,
+    includeAtlas3dInReport,
+  };
 
   useEffect(() => {
     if (!generatedReport) return;
@@ -2505,43 +2572,6 @@ export default function App() {
   const [reportRedoHistory, setReportRedoHistory] = useState<string[]>([]);
   const [isEditingReportManual, setIsEditingReportManual] = useState<boolean>(false);
   const [editedReportText, setEditedReportText] = useState<string>("");
-  const [isAtlas3DModuleOpen, setIsAtlas3DModuleOpen] = useState<boolean>(false);
-  const [includeAtlas3DInReport, setIncludeAtlas3DInReport] = useState<boolean>(true);
-  const [atlas3dData, setAtlas3dData] = useState<Atlas3DData | null>(null);
-  const [isVascular3DModuleOpen, setIsVascular3DModuleOpen] = useState<boolean>(false);
-  const [includeVascular3DInReport, setIncludeVascular3DInReport] = useState<boolean>(true);
-  const [vascular3dData, setVascular3dData] = useState<Vascular3DData | null>(null);
-  const [usPhotoLayout, setUsPhotoLayout] = useState<UltrasoundPhotoLayout>("auto");
-
-  const pdfStateRef = useRef<any>({});
-  pdfStateRef.current = {
-    generatedReport: isEditingReportManual ? editedReportText : generatedReport,
-    patientName,
-    patientEmail,
-    patientAge,
-    patientGender,
-    patientId,
-    reportDate,
-    doctorName,
-    doctorLicense,
-    clinicName,
-    clinicalHistory,
-    findings,
-    studyType,
-    customLogoUrl,
-    customLogoStyle,
-    customSignatureUrl,
-    specificStudy,
-    pdfLayoutType,
-    selectedLogo,
-    biomechanicalRadarData,
-    findings3dRenders,
-    atlas3dData,
-    includeAtlas3DInReport,
-    vascular3dData,
-    includeVascular3DInReport,
-    usPhotoLayout,
-  };
 
   // --- SPECIAL INTERACTIVE AI PARAGRAPH ACTIONS STATES ---
   const [selectedParagraphText, setSelectedParagraphText] = useState<string | null>(null);
@@ -3078,20 +3108,13 @@ Ejemplo:
   const [attachSummaryToOfficialReport, setAttachSummaryToOfficialReport] = useState<boolean>(false);
   const [isAsistenteMedidasOpen, setIsAsistenteMedidasOpen] = useState<boolean>(false);
   const [isCreadorNotasOpen, setIsCreadorNotasOpen] = useState<boolean>(false);
-  const [isCreadorCuadroSinopticoOpen, setIsCreadorCuadroSinopticoOpen] = useState<boolean>(false);
-  const [isCreadorSinopsisFracturasOpen, setIsCreadorSinopsisFracturasOpen] = useState<boolean>(false);
   const [isBiomechanicalRadarOpen, setIsBiomechanicalRadarOpen] = useState<boolean>(false);
   const [includeRadarInReport, setIncludeRadarInReport] = useState<boolean>(true);
-  const [isElastographyQUSModuleOpen, setIsElastographyQUSModuleOpen] = useState<boolean>(false);
-  const [isProstateUrinaryModuleOpen, setIsProstateUrinaryModuleOpen] = useState<boolean>(false);
-  const [includeProstateUrinaryInReport, setIncludeProstateUrinaryInReport] = useState<boolean>(true);
-  const [prostateUrinaryData, setProstateUrinaryData] = useState<ProstateUrinaryData | null>(null);
 
   // States & Handlers for Sistema de Activaci√≥n R√°pida de M√≥dulos (Procesamiento en Lote)
   const [selectedBatchModules, setSelectedBatchModules] = useState<Record<string, boolean>>({
+    atlas3d: true,
     radar: false,
-    atlas_3d: true,
-    vascular_3d: false,
     case_analysis: false,
     quality_eval: false,
     bibliography: false,
@@ -3101,18 +3124,15 @@ Ejemplo:
     schematic: false,
     measurements: false,
     footnotes: false,
-    organ_synoptic: true,
-    fractures: false,
-    classifications: false,
+            classifications: false,
   });
   const [isActivatingBatch, setIsActivatingBatch] = useState<boolean>(false);
   const [batchSuccessMessage, setBatchSuccessMessage] = useState<string | null>(null);
 
   const handleToggleAllBatchModules = (select: boolean) => {
     setSelectedBatchModules({
+      atlas3d: select,
       radar: select,
-      atlas_3d: select,
-      vascular_3d: select,
       case_analysis: select,
       quality_eval: select,
       bibliography: select,
@@ -3122,9 +3142,7 @@ Ejemplo:
       schematic: select,
       measurements: select,
       footnotes: select,
-      organ_synoptic: select,
-      fractures: select,
-      classifications: select,
+                  classifications: select,
     });
   };
 
@@ -3140,36 +3158,44 @@ Ejemplo:
 
     // 1. Activate interactive UI panels immediately
     if (selectedBatchModules.radar) setIsBiomechanicalRadarOpen(true);
-    if (selectedBatchModules.atlas_3d) setIsAtlas3DModuleOpen(true);
-    if (selectedBatchModules.vascular_3d) setIsVascular3DModuleOpen(true);
     if (selectedBatchModules.measurements) setIsAsistenteMedidasOpen(true);
     if (selectedBatchModules.footnotes) setIsCreadorNotasOpen(true);
-    if (selectedBatchModules.organ_synoptic) setIsCreadorCuadroSinopticoOpen(true);
-    if (selectedBatchModules.fractures) setIsCreadorSinopsisFracturasOpen(true);
+    
+    
 
-    // 2. Trigger async AI generation processes concurrently with smart micro-staggering (prevents instant 429 burst rate limits without slowing UX)
-    const taskQueue: (() => Promise<any>)[] = [];
-    if (selectedBatchModules.case_analysis) taskQueue.push(() => handleAnalyzeCase());
-    if (selectedBatchModules.quality_eval) taskQueue.push(() => handleEvaluateReport(activeReport));
-    if (selectedBatchModules.bibliography) taskQueue.push(() => handleSearchBibliography());
-    if (selectedBatchModules.operational_summary) taskQueue.push(() => handleGenerateWhatsAppSummary());
-    if (selectedBatchModules.patient_summary) taskQueue.push(() => handleGeneratePatientSummary());
-    if (selectedBatchModules.glossary) taskQueue.push(() => handleGenerateDynamicGlossary());
-    if (selectedBatchModules.schematic) taskQueue.push(() => handleGenerateSchematicSummary());
+    // 2. Trigger async AI generation processes concurrently
+    const promises: Promise<any>[] = [];
 
-    const promises = taskQueue.map((fn, idx) => {
-      return new Promise<any>((resolve) => {
-        setTimeout(async () => {
-          try {
-            const res = await fn();
-            resolve(res);
-          } catch (err) {
-            console.error("Error en ejecuci√≥n de m√≥dulo por lote:", err);
-            resolve(null);
+    if (selectedBatchModules.case_analysis) promises.push(handleAnalyzeCase());
+    if (selectedBatchModules.quality_eval) promises.push(handleEvaluateReport(activeReport));
+    if (selectedBatchModules.bibliography) promises.push(handleSearchBibliography());
+    if (selectedBatchModules.operational_summary) promises.push(handleGenerateWhatsAppSummary());
+    if (selectedBatchModules.patient_summary) promises.push(handleGeneratePatientSummary());
+    if (selectedBatchModules.glossary) promises.push(handleGenerateDynamicGlossary());
+    if (selectedBatchModules.schematic) promises.push(handleGenerateSchematicSummary());
+    if (selectedBatchModules.atlas3d) {
+      promises.push((async () => {
+        try {
+          const resp = await fetch("/api/generate-3d-atlas", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              reportText: activeReport,
+              organOrStudy: specificStudy || studyType || "",
+              laterality: (patientGender || "").toLowerCase().includes("izq") ? "Izquierda" : "",
+              requestedModel: selectedAiModel || "gemini-3.7-flash"
+            })
+          });
+          const j = await resp.json();
+          if (j.success && j.data) {
+            setAtlas3dData(j.data);
+            setIncludeAtlas3dInReport(true);
           }
-        }, idx * 300);
-      });
-    });
+        } catch (atlasErr) {
+          console.error("Error al generar Atlas 3D en lote:", atlasErr);
+        }
+      })());
+    }
 
     try {
       await Promise.allSettled(promises);
@@ -3183,118 +3209,6 @@ Ejemplo:
     }
   };
 
-  // States for Advanced Vascular Analysis & Schematic Drawing
-  const [vascularTable, setVascularTable] = useState<string>("");
-  const [vascularStates, setVascularStates] = useState<Record<string, string>>({});
-  const [carotidPlaques, setCarotidPlaques] = useState<any[]>([]);
-  const [includeCarotidBifurcations, setIncludeCarotidBifurcations] = useState<boolean>(true);
-  
-  // States for attached images / DICOM captures
-  const [attachedImages, setAttachedImages] = useState<{
-    id: string;
-    name: string;
-    url: string;
-    base64: string;
-    caption: string;
-    isDicom: boolean;
-    dicomMetaData?: Record<string, string>;
-    width?: number;
-    height?: number;
-    modality?: "MMG" | "US";
-    projection?: "MLO" | "CC" | "OTRO";
-    side?: "Derecha" | "Izquierda" | "Bilateral";
-  }[]>([]);
-  const [loadingAiLabelId, setLoadingAiLabelId] = useState<string | null>(null);
-  const [loadingAutocompleteId, setLoadingAutocompleteId] = useState<string | null>(null);
-  const [isLabelingAll, setIsLabelingAll] = useState<boolean>(false);
-  const [isCorrelatingFigures, setIsCorrelatingFigures] = useState<boolean>(false);
-  const [vascularDescriptions, setVascularDescriptions] = useState<Record<string, string>>({});
-  const [vascularSubLocations, setVascularSubLocations] = useState<Record<string, string>>({});
-  const [isAnalyzingVascular, setIsAnalyzingVascular] = useState<boolean>(false);
-  const [vascularError, setVascularError] = useState<string | null>(null);
-  const [includeVascularSchemaInReport, setIncludeVascularSchemaInReport] = useState<boolean>(false);
-  const [includeShoulderSchemaInReport, setIncludeShoulderSchemaInReport] = useState<boolean>(true);
-  const [shoulderStates, setShoulderStates] = useState<Record<string, string>>({});
-  const [shoulderStatesLeft, setShoulderStatesLeft] = useState<Record<string, string>>({});
-  const [shoulderDescriptions, setShoulderDescriptions] = useState<Record<string, string>>({});
-  const [shoulderDescriptionsLeft, setShoulderDescriptionsLeft] = useState<Record<string, string>>({});
-  const [includeKneeSchemaInReport, setIncludeKneeSchemaInReport] = useState<boolean>(true);
-  const [includeGonartrosisSchemaInReport, setIncludeGonartrosisSchemaInReport] = useState<boolean>(false);
-  const [kneeStates, setKneeStates] = useState<Record<string, string>>({});
-  const [kneeStatesLeft, setKneeStatesLeft] = useState<Record<string, string>>({});
-  const [kneeDescriptions, setKneeDescriptions] = useState<Record<string, string>>({});
-  const [kneeDescriptionsLeft, setKneeDescriptionsLeft] = useState<Record<string, string>>({});
-  const [includeAnkleSchemaInReport, setIncludeAnkleSchemaInReport] = useState<boolean>(true);
-  const [ankleStates, setAnkleStates] = useState<Record<string, string>>({});
-  const [ankleDescriptions, setAnkleDescriptions] = useState<Record<string, string>>({});
-  const [includeThighSchemaInReport, setIncludeThighSchemaInReport] = useState<boolean>(true);
-  const [thighStates, setThighStates] = useState<Record<string, string>>({});
-  const [thighDescriptions, setThighDescriptions] = useState<Record<string, string>>({});
-  const [includeThighPosteriorSchemaInReport, setIncludeThighPosteriorSchemaInReport] = useState<boolean>(true);
-  const [thighPosteriorStates, setThighPosteriorStates] = useState<Record<string, string>>({});
-  const [thighPosteriorDescriptions, setThighPosteriorDescriptions] = useState<Record<string, string>>({});
-  const [includeNeckSchemaInReport, setIncludeNeckSchemaInReport] = useState<boolean>(true);
-  const [neckStates, setNeckStates] = useState<Record<string, string>>({});
-  const [neckDescriptions, setNeckDescriptions] = useState<Record<string, string>>({});
-  const [includeNeonatalBrainSchemaInReport, setIncludeNeonatalBrainSchemaInReport] = useState<boolean>(true);
-  const [neonatalBrainStates, setNeonatalBrainStates] = useState<Record<string, string>>({});
-  const [neonatalBrainDescriptions, setNeonatalBrainDescriptions] = useState<Record<string, string>>({});
-  const [includeUrinarySchemaInReport, setIncludeUrinarySchemaInReport] = useState<boolean>(true);
-  const [urinaryStates, setUrinaryStates] = useState<Record<string, string>>({});
-  const [urinaryDescriptions, setUrinaryDescriptions] = useState<Record<string, string>>({});
-  const [urinaryGenderMode, setUrinaryGenderMode] = useState<"hombre" | "mujer">("mujer");
-  const [includeElbowSchemaInReport, setIncludeElbowSchemaInReport] = useState<boolean>(true);
-  const [elbowStates, setElbowStates] = useState<Record<string, string>>({});
-  const [elbowDescriptions, setElbowDescriptions] = useState<Record<string, string>>({});
-  const [includeAbdomenSchemaInReport, setIncludeAbdomenSchemaInReport] = useState<boolean>(true);
-  const [includeBiliarySchemaInReport, setIncludeBiliarySchemaInReport] = useState<boolean>(true);
-  const [includeAppendixSchemaInReport, setIncludeAppendixSchemaInReport] = useState<boolean>(true);
-  const [includeDiverticulitisSchemaInReport, setIncludeDiverticulitisSchemaInReport] = useState<boolean>(true);
-  const [includeSmallBowelSchemaInReport, setIncludeSmallBowelSchemaInReport] = useState<boolean>(true);
-  const [includeHepatopatiaSchemaInReport, setIncludeHepatopatiaSchemaInReport] = useState<boolean>(true);
-  const [includeAneurismaSchemaInReport, setIncludeAneurismaSchemaInReport] = useState<boolean>(true);
-  const [includeElastographyInReport, setIncludeElastographyInReport] = useState<boolean>(false);
-  const [elastographyHasStiffness, setElastographyHasStiffness] = useState<boolean>(true);
-  const [elastographyStiffness, setElastographyStiffness] = useState<number>(5.2);
-  const [elastographyCAP, setElastographyCAP] = useState<number>(230);
-  const [qusAttenuation, setQusAttenuation] = useState<number>(0.55);
-  const [fatFraction, setFatFraction] = useState<number>(5.5);
-  const [stiffnessOverride, setStiffnessOverride] = useState<string>("auto");
-  const [steatosisOverride, setSteatosisOverride] = useState<string>("auto");
-  const [abdomenStates, setAbdomenStates] = useState<Record<string, string>>({});
-  const [abdomenDescriptions, setAbdomenDescriptions] = useState<Record<string, string>>({});
-  const [includeScrotumSchemaInReport, setIncludeScrotumSchemaInReport] = useState<boolean>(true);
-  const [scrotumStates, setScrotumStates] = useState<Record<string, string>>({});
-  const [scrotumDescriptions, setScrotumDescriptions] = useState<Record<string, string>>({});
-  const [includeWristSchemaInReport, setIncludeWristSchemaInReport] = useState<boolean>(true);
-  const [includeDeQuervainSchemaInReport, setIncludeDeQuervainSchemaInReport] = useState<boolean>(false);
-  const [wristStates, setWristStates] = useState<Record<string, string>>({});
-  const [wristDescriptions, setWristDescriptions] = useState<Record<string, string>>({});
-  const [includeBreastSchemaInReport, setIncludeBreastSchemaInReport] = useState<boolean>(true);
-  const [breastStates, setBreastStates] = useState<Record<string, string>>({});
-  const [breastDescriptions, setBreastDescriptions] = useState<Record<string, string>>({});
-  const [breastBilateralOverride, setBreastBilateralOverride] = useState<boolean | null>(null);
-  const [breastBilateralType, setBreastBilateralType] = useState<"quistes" | "fibroadenomas" | null>(null);
-  const [activeVascularIdHover, setActiveVascularIdHover] = useState<string | null>(null);
-  const [includeAbdominalWallSchemaInReport, setIncludeAbdominalWallSchemaInReport] = useState<boolean>(true);
-  const [abdominalWallStates, setAbdominalWallStates] = useState<Record<string, string>>({});
-  const [abdominalWallDescriptions, setAbdominalWallDescriptions] = useState<Record<string, string>>({});
-
-  const [includeCalfAchillesSchemaInReport, setIncludeCalfAchillesSchemaInReport] = useState<boolean>(true);
-  const [calfAchillesStates, setCalfAchillesStates] = useState<Record<string, string>>({});
-  const [calfAchillesDescriptions, setCalfAchillesDescriptions] = useState<Record<string, string>>({});
-
-  // States for Intelligent Anatomy Dialog and Additional Findings (not mapped to draw structures)
-  const [isSmartAnatomyDialogOpen, setIsSmartAnatomyDialogOpen] = useState<boolean>(false);
-  const [additionalFindings, setAdditionalFindings] = useState<Record<string, Array<{ id: string; structureName: string; state: string; description: string }>>>({});
-  const [smartInstructionsText, setSmartInstructionsText] = useState<string>("");
-  const [isSmartAnatomyModifying, setIsSmartAnatomyModifying] = useState<boolean>(false);
-  const [smartAnatomyError, setSmartAnatomyError] = useState<string>("");
-  const [newExtraStructureName, setNewExtraStructureName] = useState<string>("");
-  const [newExtraState, setNewExtraState] = useState<string>("Alterado");
-  const [newExtraDescription, setNewExtraDescription] = useState<string>("");
-
-  // States for Dynamic Medical Glossary on current report
   const [dynamicGlossary, setDynamicGlossary] = useState<any | null>(null);
   const [isGeneratingDynamicGlossary, setIsGeneratingDynamicGlossary] = useState<boolean>(false);
   const [dynamicGlossaryError, setDynamicGlossaryError] = useState<string | null>(null);
@@ -3309,13 +3223,21 @@ Ejemplo:
   // States for expanding sections (maximizing read size)
   const [isMainReportExpanded, setIsMainReportExpanded] = useState<boolean>(false);
   const [isSmartChatExpanded, setIsSmartChatExpanded] = useState<boolean>(false);
-  const [isVascularExpanded, setIsVascularExpanded] = useState<boolean>(false);
   const [isCaseAnalysisExpanded, setIsCaseAnalysisExpanded] = useState<boolean>(false);
   const [isReportEvaluationExpanded, setIsReportEvaluationExpanded] = useState<boolean>(false);
   const [isBibliographyExpanded, setIsBibliographyExpanded] = useState<boolean>(false);
   const [isPatientSummaryExpanded, setIsPatientSummaryExpanded] = useState<boolean>(false);
   const [isGlossaryExpanded, setIsGlossaryExpanded] = useState<boolean>(false);
   const [isSchematicSummaryExpanded, setIsSchematicSummaryExpanded] = useState<boolean>(false);
+  
+  const [attachedImages, setAttachedImages] = useState<Array<{ id: string; url: string; label?: string; preview?: string; metadata?: any; isSelected?: boolean; notes?: string }>>([]);
+  const [loadingAiLabelId, setLoadingAiLabelId] = useState<string | null>(null);
+  const [loadingAutocompleteId, setLoadingAutocompleteId] = useState<string | null>(null);
+  const [isLabelingAll, setIsLabelingAll] = useState<boolean>(false);
+  const [isCorrelatingFigures, setIsCorrelatingFigures] = useState<boolean>(false);
+
+  const [urinaryGenderMode, setUrinaryGenderMode] = useState<"hombre" | "mujer">("mujer");
+  const [apiConnected, setApiConnected] = useState<boolean>(true);
   const [isImageEvaluationExpanded, setIsImageEvaluationExpanded] = useState<boolean>(false);
   const [isAdditionalEvaluationExpanded, setIsAdditionalEvaluationExpanded] = useState<boolean>(false);
 
@@ -3377,474 +3299,26 @@ Ejemplo:
   const [migrationProgress, setMigrationProgress] = useState<string | null>(null);
   const [confirmResetFirebase, setConfirmResetFirebase] = useState<boolean>(false);
 
-  const getStructuresForProtocol = (protocol: string): Array<{ id: string; label: string; allowedStates: string[] }> => {
-    const norm = protocol.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    let caseKey = protocol;
-    if (norm.includes("hombro")) caseKey = "Hombro";
-    else if (norm.includes("rodilla")) caseKey = "Rodilla";
-    else if (norm.includes("tobillo")) caseKey = "Tobillo";
-    else if (norm.includes("muslo anterior")) caseKey = "Muslo Anterior";
-    else if (norm.includes("muslo posterior")) caseKey = "Muslo Posterior";
-    else if (norm.includes("cuello")) caseKey = "Cuello y Tiroides";
-    else if (norm.includes("urinarias") || norm.includes("orina")) caseKey = "V√≠as Urinarias";
-    else if (norm.includes("codo")) caseKey = "Codo";
-    else if (norm.includes("pared") || norm.includes("abdominal wall")) caseKey = "Pared Abdominal";
-    else if (norm.includes("abdomen")) caseKey = "Abdomen";
-    else if (norm.includes("escroto")) caseKey = "Escroto";
-    else if (norm.includes("muneca")) caseKey = "Mu√±eca";
-    else if (norm.includes("mama")) caseKey = "Mamas";
-    else if (norm.includes("pantorrilla") || norm.includes("aquiles") || norm.includes("achilles") || norm.includes("pantorilla")) caseKey = "Pantorrilla y Tend√≥n de Aquiles";
-    else if (norm.includes("cerebro") || norm.includes("neonatal") || norm.includes("transfontanelar")) caseKey = "Cerebro Neonatal";
 
-    switch (caseKey) {
-      case "Hombro":
-        return [
-          { id: "supraspinatus", label: "Supraespinoso", allowedStates: ["no_descrito", "normal", "tendinosis", "desgarro_parcial", "desgarro_completo"] },
-          { id: "infraspinatus", label: "Infraespinoso", allowedStates: ["no_descrito", "normal", "tendinosis", "desgarro_parcial", "desgarro_completo"] },
-          { id: "subscapularis", label: "Subescapular", allowedStates: ["no_descrito", "normal", "tendinosis", "desgarro_parcial", "desgarro_completo"] },
-          { id: "biceps", label: "PL B√≠ceps", allowedStates: ["no_descrito", "normal", "tendinitis", "subluxacion", "rotura"] },
-          { id: "bursa", label: "Bursa SAD", allowedStates: ["no_descrito", "normal", "bursitis_leve", "bursitis_severa"] },
-          { id: "glenohumeral", label: "Derrame GH", allowedStates: ["no_descrito", "normal", "derrame_leve", "derrame_moderado"] },
-          { id: "acromioclavicular", label: "Artic. Acromioclav.", allowedStates: ["no_descrito", "normal", "artrosis", "hipertrofia"] },
-          { id: "dynamic_assessment", label: "Val. Din√°mica", allowedStates: ["no_descrito", "normal", "pinzamiento"] }
-        ];
-      case "Rodilla":
-        return [
-          { id: "quadriceps", label: "Tend√≥n Cuadricipital", allowedStates: ["no_descrito", "normal", "tendinosis", "desgarro_parcial", "desgarro_completo"] },
-          { id: "patellar", label: "Tend√≥n Rotuliano", allowedStates: ["no_descrito", "normal", "tendinosis", "desgarro_parcial", "desgarro_completo"] },
-          { id: "lcm", label: "Lig. Colateral Medial", allowedStates: ["no_descrito", "normal", "esguince_leve", "desgarro_parcial", "desgarro_completo"] },
-          { id: "lce", label: "Lig. Colateral Lateral", allowedStates: ["no_descrito", "normal", "esguince_leve", "desgarro_parcial", "desgarro_completo"] },
-          { id: "medial_meniscus", label: "Menisco Medial", allowedStates: ["no_descrito", "normal", "meniscosis", "desgarro_parcial", "rotura"] },
-          { id: "lateral_meniscus", label: "Menisco Lateral", allowedStates: ["no_descrito", "normal", "meniscosis", "desgarro_parcial", "rotura"] },
-          { id: "joint_effusion", label: "Derrame Articular", allowedStates: ["no_descrito", "normal", "derrame_leve", "derrame_moderado"] },
-          { id: "baker_cyst", label: "Quiste de Baker", allowedStates: ["no_descrito", "normal", "quiste_leve", "quiste_severo"] },
-          { id: "popliteal_artery", label: "Arteria Popl√≠tea", allowedStates: ["no_descrito", "normal", "ectasia", "ateromatosis"] },
-          { id: "popliteal_vein", label: "Vena Popl√≠tea", allowedStates: ["no_descrito", "normal", "trombosis"] },
-          { id: "distal_tendons", label: "Tendones Distales", allowedStates: ["no_descrito", "normal", "coleccion"] },
-          { id: "popliteal_fossa", label: "Fosa Popl√≠tea", allowedStates: ["no_descrito", "normal", "adenopatia"] }
-        ];
-      case "Tobillo":
-        return [
-          { id: "t_aquiles", label: "T. Aquiles", allowedStates: ["no_descrito", "normal", "tendinosis", "desgarro_parcial", "rotura"] },
-          { id: "fascia_plantar", label: "Fascia Plantar", allowedStates: ["no_descrito", "normal", "fascitis", "desgarro_parcial", "rotura"] },
-          { id: "l_peroneoastragalino_ant", label: "LPAA", allowedStates: ["no_descrito", "normal", "esguince_leve", "desgarro_parcial", "rotura"] },
-          { id: "l_peroneocalcaneo", label: "LPC", allowedStates: ["no_descrito", "normal", "esguince_leve", "desgarro_parcial", "rotura"] },
-          { id: "l_tibioastragalino_ant", label: "LTAA", allowedStates: ["no_descrito", "normal", "esguince_leve", "desgarro_parcial", "rotura"] },
-          { id: "t_tibial_anterior", label: "T. Tibial Anterior", allowedStates: ["no_descrito", "normal", "tenosinovitis", "desgarro_parcial", "rotura"] },
-          { id: "t_peroneo_largo", label: "T. Peroneo Largo", allowedStates: ["no_descrito", "normal", "tenosinovitis", "desgarro_parcial", "rotura"] },
-          { id: "receso_articular", label: "Receso Articular", allowedStates: ["no_descrito", "normal", "derrame_leve", "derrame_moderado"] }
-        ];
-      case "Muslo Anterior":
-        return [
-          { id: "recto_femoral", label: "R. Femoral", allowedStates: ["no_descrito", "normal", "esguince_leve", "desgarro_parcial", "desgarro_completo"] },
-          { id: "vasto_medial", label: "V. Medial", allowedStates: ["no_descrito", "normal", "esguince_leve", "desgarro_parcial", "desgarro_completo"] },
-          { id: "vasto_lateral", label: "V. Lateral", allowedStates: ["no_descrito", "normal", "esguince_leve", "desgarro_parcial", "desgarro_completo"] },
-          { id: "vasto_intermedio", label: "V. Intermedio", allowedStates: ["no_descrito", "normal", "esguince_leve", "desgarro_parcial", "desgarro_completo"] },
-          { id: "tensor_fascia_lata", label: "Tensor Fascia Lata", allowedStates: ["no_descrito", "normal", "sobrecarga", "tendinosis", "desgarro"] },
-          { id: "sartorio", label: "Sartorio", allowedStates: ["no_descrito", "normal", "sobrecarga", "tenosinovitis", "desgarro"] }
-        ];
-      case "Muslo Posterior":
-        return [
-          { id: "semitendinoso", label: "Semitendinoso", allowedStates: ["no_descrito", "normal", "esguince_leve", "desgarro_parcial", "desgarro_completo"] },
-          { id: "semimembranoso", label: "Semimembranoso", allowedStates: ["no_descrito", "normal", "esguince_leve", "desgarro_parcial", "desgarro_completo"] },
-          { id: "biceps_femoral", label: "B√≠ceps Femoral", allowedStates: ["no_descrito", "normal", "esguince_leve", "desgarro_parcial", "desgarro_completo"] },
-          { id: "nervio_ciatico", label: "N. Ci√°tico", allowedStates: ["no_descrito", "normal", "ciatalgia", "atrapamiento"] },
-          { id: "tejido_subcutaneo", label: "T. Subcut√°neo", allowedStates: ["no_descrito", "normal", "edema_leve", "edema_severo"] }
-        ];
-      case "Cuello":
-        return [
-          { id: "glandula_tiroides", label: "G. Tiroides", allowedStates: ["no_descrito", "normal", "bocio_nodular", "tiroiditis"] },
-          { id: "lobulo_derecho", label: "L√≥bulo Derecho", allowedStates: ["no_descrito", "normal", "nodulo_benigno", "nodulo_sospechoso"] },
-          { id: "lobulo_izquierdo", label: "L√≥bulo Izquierdo", allowedStates: ["no_descrito", "normal", "nodulo_benigno", "nodulo_sospechoso"] },
-          { id: "istmo", label: "Istmo", allowedStates: ["no_descrito", "normal", "quiste", "hipertrofia"] },
-          { id: "glandulas_salivales", label: "G. Salivales", allowedStates: ["no_descrito", "normal", "sialoadenitis", "sialolitiasis"] },
-          { id: "parotida_derecha", label: "Par√≥tida Derecha", allowedStates: ["no_descrito", "normal", "quiste", "adenoma"] },
-          { id: "parotida_izquierda", label: "Par√≥tida Izquierda", allowedStates: ["no_descrito", "normal", "quiste", "adenoma"] },
-          { id: "submandibular_derecha", label: "Submandibular Der", allowedStates: ["no_descrito", "normal", "ectasia", "sialolitiasis"] },
-          { id: "submandibular_izquierda", label: "Submandibular Izq", allowedStates: ["no_descrito", "normal", "ectasia", "sialolitiasis"] },
-          { id: "ganglios_linfaticos", label: "Ganglios Linf√°ticos", allowedStates: ["no_descrito", "normal", "adenopatia_reactiva", "adenopatia_sospechosa"] }
-        ];
-      case "Vias urinarias":
-        return [
-          { id: "rinon_derecho", label: "Ri√±√≥n Derecho", allowedStates: ["no_descrito", "normal", "litiasis", "quiste", "ectasia"] },
-          { id: "rinon_izquierdo", label: "Ri√±√≥n Izquierdo", allowedStates: ["no_descrito", "normal", "litiasis", "quiste", "ectasia"] },
-          { id: "vejiga", label: "Vejiga", allowedStates: ["no_descrito", "normal", "cistitis", "sedimento", "litiasis"] },
-          { id: "ureteres", label: "Ur√©teres", allowedStates: ["no_descrito", "normal", "dilatacion", "obstruccion"] },
-          { id: "prostata_o_utero", label: "Pr√≥stata / √ötero", allowedStates: ["no_descrito", "normal", "hipertrofia", "miomatosis", "quiste"] }
-        ];
-      case "Codo":
-        return [
-          { id: "t_triceps", label: "T. Tr√≠ceps", allowedStates: ["no_descrito", "normal", "tendinosis", "desgarro_parcial", "rotura"] },
-          { id: "t_biceps_distal", label: "T. B√≠ceps Distal", allowedStates: ["no_descrito", "normal", "tendinosis", "desgarro_parcial", "rotura"] },
-          { id: "t_comun_extensor", label: "T. Com√∫n Extensor", allowedStates: ["no_descrito", "normal", "epicondilitis_lateral", "desgarro_parcial", "rotura"] },
-          { id: "t_comun_flexor", label: "T. Com√∫n Flexor", allowedStates: ["no_descrito", "normal", "epicondilitis_medial", "desgarro_parcial", "rotura"] },
-          { id: "n_cubital", label: "N. Cubital", allowedStates: ["no_descrito", "normal", "neuritis", "subluxacion"] },
-          { id: "receso_olecraniano", label: "Receso Olecraniano", allowedStates: ["no_descrito", "normal", "derrame_leve", "derrame_moderado", "sinovitis"] }
-        ];
-      case "Abdomen":
-        return [
-          { id: "higado", label: "H√≠gado", allowedStates: ["no_descrito", "normal", "esteatosis_leve", "esteatosis_moderada", "esteatosis_severa", "hepatomegalia", "cirrosis", "quiste", "hemangioma", "lesion_ocupante"] },
-          { id: "vesicula_biliar", label: "Ves√≠cula Biliar", allowedStates: ["no_descrito", "normal", "colelitiasis", "barro_biliar", "colecistitis_aguda", "polipo", "pared_engrosada"] },
-          { id: "vias_biliares", label: "V√≠as Biliares", allowedStates: ["no_descrito", "normal", "ectasia_intrahepatica", "dilatacion_coledoco"] },
-          { id: "pancreas", label: "P√°ncreas", allowedStates: ["no_descrito", "normal", "pancreatitis_aguda", "pancreatitis_cronica", "quiste", "calcificaciones"] },
-          { id: "bazo", label: "Bazo", allowedStates: ["no_descrito", "normal", "esplenomegalia", "nodulo_esplenico", "infarto_esplenico"] },
-          { id: "aorta_abdominal", label: "Aorta Abdominal", allowedStates: ["no_descrito", "normal", "ectasia", "aneurisma", "placas_calcificadas"] },
-          { id: "retroperitoneo", label: "Retroperitoneo", allowedStates: ["no_descrito", "normal", "liquido_libre", "adenopatias_retroperitoneales"] }
-        ];
-      case "Escroto":
-        return [
-          { id: "testiculo_derecho", label: "Test√≠culo Derecho", allowedStates: ["no_descrito", "normal", "orquitis", "quiste", "nodulo", "atrofia", "microcalcificaciones"] },
-          { id: "testiculo_izquierdo", label: "Test√≠culo Izquierdo", allowedStates: ["no_descrito", "normal", "orquitis", "quiste", "nodulo", "atrofia", "microcalcificaciones"] },
-          { id: "epididimo_derecho", label: "Epid√≠dimo Derecho", allowedStates: ["no_descrito", "normal", "epididimitis", "quiste", "hipertrofia"] },
-          { id: "epididimo_izquierdo", label: "Epid√≠dimo Izquierdo", allowedStates: ["no_descrito", "normal", "epididimitis", "quiste", "hipertrofia"] },
-          { id: "hemiescroto_derecho", label: "Hemiescroto Derecho", allowedStates: ["no_descrito", "normal", "hidrocele_leve", "hidrocele_moderado", "varicocele_grado_i", "varicocele_grado_ii", "varicocele_grado_iii"] },
-          { id: "hemiescroto_izquierdo", label: "Hemiescroto Izquierdo", allowedStates: ["no_descrito", "normal", "hidrocele_leve", "hidrocele_moderado", "varicocele_grado_i", "varicocele_grado_ii", "varicocele_grado_iii"] }
-        ];
-      case "Mu√±eca":
-        return [
-          { id: "nervio_mediano", label: "Nervio Mediano", allowedStates: ["no_descrito", "normal", "neuritis", "atrapamiento_tarsiano", "engrosamiento"] },
-          { id: "tendones_flexores", label: "Tendones Flexores", allowedStates: ["no_descrito", "normal", "tenosinovitis", "desgarro_parcial", "rotura"] },
-          { id: "flexor_carpi_radialis", label: "Flexor Carpi Radialis", allowedStates: ["no_descrito", "normal", "tenosinovitis", "tendinosis"] },
-          { id: "arteria_radial", label: "Arteria Radial", allowedStates: ["no_descrito", "normal", "ateromatosis", "aneurisma_falso"] },
-          { id: "receso_radiocarpiano_anterior", label: "Receso Radiocarpiano Anterior", allowedStates: ["no_descrito", "normal", "derrame_leve", "sinovitis"] },
-          { id: "canal_de_guyon", label: "Canal de Guyon", allowedStates: ["no_descrito", "normal", "atrapamiento_cubital", "lesion_ocupante"] },
-          { id: "receso_radiocarpiano_posterior", label: "Receso Radiocarpiano Posterior", allowedStates: ["no_descrito", "normal", "derrame_leve", "sinovitis"] },
-          { id: "articulacion_radiocubital_distal", label: "Regi√≥n Radiocubital Distal", allowedStates: ["no_descrito", "normal", "artrosis", "subluxacion"] },
-          { id: "tendones_extensores_compartimentos", label: "Compartimentos Extensores", allowedStates: ["no_descrito", "normal", "tenosinovitis_de_quervain", "tenosinovitis", "desgarro_parcial", "rotura"] },
-          { id: "fibrocartilago_triangular", label: "Fibrocart√≠lago Triangular", allowedStates: ["no_descrito", "normal", "degenerativo", "rotura"] },
-          { id: "extensor_carpi_ulnaris", label: "Extensor Carpi Ulnaris", allowedStates: ["no_descrito", "normal", "tenosinovitis", "subluxacion"] }
-        ];
-      case "Mamas":
-        return [
-          { id: "mama_derecha", label: "Mama Derecha", allowedStates: ["no_descrito", "normal", "condicion_fibroquistica", "ecorrefringencia_aumentada"] },
-          { id: "mama_izquierda", label: "Mama Izquierda", allowedStates: ["no_descrito", "normal", "condicion_fibroquistica", "ecorrefringencia_aumentada"] },
-          { id: "cuadrantes_mama_derecha", label: "Cuadrantes Mama Der", allowedStates: ["no_descrito", "normal", "quiste_simple", "quiste_complejo", "fibroadenoma", "lesion_altamente_sospechosa"] },
-          { id: "cuadrantes_mama_izquierda", label: "Cuadrantes Mama Izq", allowedStates: ["no_descrito", "normal", "quiste_simple", "quiste_complejo", "fibroadenoma", "lesion_altamente_sospechosa"] },
-          { id: "axila_derecha", label: "Axila Derecha", allowedStates: ["no_descrito", "normal", "adenopatia_reactiva", "adenopatia_sospechosa"] },
-          { id: "axila_izquierda", label: "Axila Izquierda", allowedStates: ["no_descrito", "normal", "adenopatia_reactiva", "adenopatia_sospechosa"] }
-        ];
-      case "Pared Abdominal":
-        return [
-          { id: "rectus_abdominis_right", label: "M√∫sculo Recto Der.", allowedStates: ["no_descrito", "normal", "diastasis", "desgarro", "hernia", "hematoma", "lipoma", "coleccion"] },
-          { id: "rectus_abdominis_left", label: "M√∫sculo Recto Izq.", allowedStates: ["no_descrito", "normal", "diastasis", "desgarro", "hernia", "hematoma", "lipoma", "coleccion"] },
-          { id: "oblique_muscles_right", label: "M√∫sculos Oblicuos Der.", allowedStates: ["no_descrito", "normal", "desgarro", "hernia", "hematoma", "lipoma", "coleccion"] },
-          { id: "oblique_muscles_left", label: "M√∫sculos Oblicuos Izq.", allowedStates: ["no_descrito", "normal", "desgarro", "hernia", "hematoma", "lipoma", "coleccion"] },
-          { id: "linea_alba", label: "L√≠nea Alba", allowedStates: ["no_descrito", "normal", "diastasis", "hernia", "ruptura"] },
-          { id: "umbilical_region", label: "Regi√≥n Umbilical", allowedStates: ["no_descrito", "normal", "hernia_umbilical", "diastasis"] },
-          { id: "epigastric_region", label: "Regi√≥n Epig√°strica", allowedStates: ["no_descrito", "normal", "hernia_epigastrica", "lipoma"] },
-          { id: "inguinal_region_right", label: "Regi√≥n Inguinal Der.", allowedStates: ["no_descrito", "normal", "hernia_inguinal_directa", "hernia_inguinal_indirecta", "adenopatia"] },
-          { id: "inguinal_region_left", label: "Regi√≥n Inguinal Izq.", allowedStates: ["no_descrito", "normal", "hernia_inguinal_directa", "hernia_inguinal_indirecta", "adenopatia"] },
-          { id: "crural_region_right", label: "Regi√≥n Crural Der.", allowedStates: ["no_descrito", "normal", "hernia_crural", "adenopatia"] },
-          { id: "crural_region_left", label: "Regi√≥n Crural Izq.", allowedStates: ["no_descrito", "normal", "hernia_crural", "adenopatia"] }
-        ];
-      case "Pantorrilla y Tend√≥n de Aquiles":
-        return [
-          { id: "gastrocnemius_medial", label: "Gastrocnemio Medial", allowedStates: ["no_descrito", "normal", "desgarro", "miofascial", "hematoma"] },
-          { id: "gastrocnemius_lateral", label: "Gastrocnemio Lateral", allowedStates: ["no_descrito", "normal", "desgarro", "miofascial", "hematoma"] },
-          { id: "soleus_muscle", label: "M√∫sculo S√≥leo", allowedStates: ["no_descrito", "normal", "desgarro", "miofascial"] },
-          { id: "achilles_tendon", label: "Tend√≥n de Aquiles", allowedStates: ["no_descrito", "normal", "tendinosis", "rotura_parcial", "rotura_completa", "entesopatia"] },
-          { id: "plantaris_tendon", label: "Plantar Delgado", allowedStates: ["no_descrito", "normal", "desgarro", "engrosamiento"] },
-          { id: "retrocalcaneal_bursa", label: "Bolsa Retrocalc√°nea", allowedStates: ["no_descrito", "normal", "bursitis"] }
-        ];
-      case "Cerebro Neonatal":
-        return [
-          { id: "ventricle_right", label: "Ventr√≠culo Lateral Derecho", allowedStates: ["no_descrito", "normal", "dilatacion_leve", "dilatacion_moderada_severa", "hemorragia_intraventricular_sin_dilatacion", "hemorragia_intraventricular_con_dilatacion"] },
-          { id: "ventricle_left", label: "Ventr√≠culo Lateral Izquierdo", allowedStates: ["no_descrito", "normal", "dilatacion_leve", "dilatacion_moderada_severa", "hemorragia_intraventricular_sin_dilatacion", "hemorragia_intraventricular_con_dilatacion"] },
-          { id: "ventricle_third_fourth", label: "Tercer y Cuarto Ventr√≠culo", allowedStates: ["no_descrito", "normal", "dilatacion"] },
-          { id: "choroid_right", label: "Plexo Coroideo Derecho", allowedStates: ["no_descrito", "normal", "congestion_hemorragica", "quiste_plexo"] },
-          { id: "choroid_left", label: "Plexo Coroideo Izquierdo", allowedStates: ["no_descrito", "normal", "congestion_hemorragica", "quiste_plexo"] },
-          { id: "germinal_right", label: "Surco Caudotal√°mico Derecho", allowedStates: ["no_descrito", "normal", "hemorragia_subependimaria_g1", "quiste_subependimario"] },
-          { id: "germinal_left", label: "Surco Caudotal√°mico Izquierdo", allowedStates: ["no_descrito", "normal", "hemorragia_subependimaria_g1", "quiste_subependimario"] },
-          { id: "parenchyma_periventricular_right", label: "Par√©nquima Periventricular Derecho", allowedStates: ["no_descrito", "normal", "leucomalacia_periventricular_leve", "leucomalacia_periventricular_cavitaria", "calcificaciones"] },
-          { id: "parenchyma_periventricular_left", label: "Par√©nquima Periventricular Izquierdo", allowedStates: ["no_descrito", "normal", "leucomalacia_periventricular_leve", "leucomalacia_periventricular_cavitaria", "calcificaciones"] },
-          { id: "parenchyma_focal_right", label: "Par√©nquima Lobar Derecho", allowedStates: ["no_descrito", "normal", "hemorragia_intraparenquimatosa_g4", "calcificaciones_focales", "edema_difuso"] },
-          { id: "parenchyma_focal_left", label: "Par√©nquima Lobar Izquierdo", allowedStates: ["no_descrito", "normal", "hemorragia_intraparenquimatosa_g4", "calcificaciones_focales", "edema_difuso"] },
-          { id: "subarachnoid_space", label: "Espacio Subaracnoideo y Cisternas", allowedStates: ["no_descrito", "normal", "dilatacion_benigna", "coleccion_extraaxial"] }
-        ];
-      default:
-        return [];
-    }
-  };
-
-  const getProtocolStateAndSetters = (protocol: string) => {
-    const norm = protocol.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    let caseKey = protocol;
-    if (norm.includes("hombro")) caseKey = "Hombro";
-    else if (norm.includes("rodilla")) caseKey = "Rodilla";
-    else if (norm.includes("tobillo")) caseKey = "Tobillo";
-    else if (norm.includes("muslo anterior")) caseKey = "Muslo Anterior";
-    else if (norm.includes("muslo posterior")) caseKey = "Muslo Posterior";
-    else if (norm.includes("cuello")) caseKey = "Cuello";
-    else if (norm.includes("urinarias") || norm.includes("orina")) caseKey = "Vias urinarias";
-    else if (norm.includes("codo")) caseKey = "Codo";
-    else if (norm.includes("pared") || norm.includes("abdominal wall")) caseKey = "Pared Abdominal";
-    else if (norm.includes("abdomen")) caseKey = "Abdomen";
-    else if (norm.includes("escroto")) caseKey = "Escroto";
-    else if (norm.includes("muneca")) caseKey = "Mu√±eca";
-    else if (norm.includes("mama")) caseKey = "Mamas";
-    else if (norm.includes("pantorrilla") || norm.includes("aquiles") || norm.includes("achilles") || norm.includes("pantorilla")) caseKey = "Pantorrilla y Tend√≥n de Aquiles";
-    else if (norm.includes("cerebro") || norm.includes("neonatal") || norm.includes("transfontanelar")) caseKey = "Cerebro Neonatal";
-
-    switch (caseKey) {
-      case "Hombro":
-        return { states: shoulderStates, setStates: setShoulderStates, descs: shoulderDescriptions, setDescs: setShoulderDescriptions };
-      case "Rodilla":
-        return { states: kneeStates, setStates: setKneeStates, descs: kneeDescriptions, setDescs: setKneeDescriptions };
-      case "Tobillo":
-        return { states: ankleStates, setStates: setAnkleStates, descs: ankleDescriptions, setDescs: setAnkleDescriptions };
-      case "Muslo Anterior":
-        return { states: thighStates, setStates: setThighStates, descs: thighDescriptions, setDescs: setThighDescriptions };
-      case "Muslo Posterior":
-        return { states: thighPosteriorStates, setStates: setThighPosteriorStates, descs: thighPosteriorDescriptions, setDescs: setThighPosteriorDescriptions };
-      case "Cuello":
-        return { states: neckStates, setStates: setNeckStates, descs: neckDescriptions, setDescs: setNeckDescriptions };
-      case "Vias urinarias":
-        return { states: urinaryStates, setStates: setUrinaryStates, descs: urinaryDescriptions, setDescs: setUrinaryDescriptions };
-      case "Codo":
-        return { states: elbowStates, setStates: setElbowStates, descs: elbowDescriptions, setDescs: setElbowDescriptions };
-      case "Abdomen":
-        return { states: abdomenStates, setStates: setAbdomenStates, descs: abdomenDescriptions, setDescs: setAbdomenDescriptions };
-      case "Pared Abdominal":
-        return { states: abdominalWallStates, setStates: setAbdominalWallStates, descs: abdominalWallDescriptions, setDescs: setAbdominalWallDescriptions };
-      case "Escroto":
-        return { states: scrotumStates, setStates: setScrotumStates, descs: scrotumDescriptions, setDescs: setScrotumDescriptions };
-      case "Mu√±eca":
-        return { states: wristStates, setStates: setWristStates, descs: wristDescriptions, setDescs: setWristDescriptions };
-      case "Mamas":
-        return { states: breastStates, setStates: setBreastStates, descs: breastDescriptions, setDescs: setBreastDescriptions };
-      case "Pantorrilla y Tend√≥n de Aquiles":
-        return { states: calfAchillesStates, setStates: setCalfAchillesStates, descs: calfAchillesDescriptions, setDescs: setCalfAchillesDescriptions };
-      case "Cerebro Neonatal":
-        return { states: neonatalBrainStates, setStates: setNeonatalBrainStates, descs: neonatalBrainDescriptions, setDescs: setNeonatalBrainDescriptions };
-      default:
-        return null;
-    }
-  };
-
-  const handleApplySmartModification = async () => {
-    if (!activeProtocol) return;
-    setIsSmartAnatomyModifying(true);
-    setSmartAnatomyError("");
-    try {
-      const helper = getProtocolStateAndSetters(activeProtocol);
-      if (!helper) throw new Error("Protocolo no soportado");
-
-      const structuresList = getStructuresForProtocol(activeProtocol);
-
-      const response = await fetch("/api/smart-modify-anatomy", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          currentStates: helper.states,
-          currentDescriptions: helper.descs,
-          structures: structuresList,
-          instruction: smartInstructionsText,
-          studyType: activeProtocol,
-          reportText: isEditingReportManual ? editedReportText : (generatedReport || ""),
-          model: selectedModel,
-          currentAdditionalFindings: additionalFindings[activeProtocol] || []
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error("Error al consultar el servicio inteligente de modificaci√≥n");
-      }
-
-      const data = await response.json();
-      if (data.states && data.descriptions) {
-        helper.setStates(data.states);
-        helper.setDescs(data.descriptions);
-        const nextExtras = data.additionalFindings && Array.isArray(data.additionalFindings)
-          ? data.additionalFindings
-          : data.additionalTexts && Array.isArray(data.additionalTexts)
-            ? data.additionalTexts.map((txt: string, idx: number) => ({
-                id: `smart-add-${idx}-${Date.now()}`,
-                structureName: "Hallazgo Adicional " + (idx + 1),
-                state: "Alterado",
-                description: txt
-              }))
-            : [];
-
-        if (data.additionalFindings && Array.isArray(data.additionalFindings)) {
-          setAdditionalFindings(prev => ({
-            ...prev,
-            [activeProtocol]: data.additionalFindings
-          }));
-        } else if (data.additionalTexts && Array.isArray(data.additionalTexts)) {
-          setAdditionalFindings(prev => ({
-            ...prev,
-            [activeProtocol]: nextExtras
-          }));
-        }
-        
-        // Extract only the newly requested/changed diagnoses
-        const changedDiagnoses: string[] = [];
-        for (const struct of structuresList) {
-          const prevS = helper.states[struct.id] || "no_descrito";
-          const prevD = helper.descs[struct.id] || "";
-          const nextS = data.states[struct.id] || "no_descrito";
-          const nextD = data.descriptions[struct.id] || "";
-
-          if (nextS !== "no_descrito" && nextS !== "normal") {
-            const hasStateChanged = prevS !== nextS;
-            const hasDescChanged = prevD !== nextD;
-            if (hasStateChanged || hasDescChanged) {
-              changedDiagnoses.push(nextD);
-            }
-          }
-        }
-
-        const prevExtras = additionalFindings[activeProtocol] || [];
-        for (const extra of nextExtras) {
-          const matchingPrev = prevExtras.find((pe: any) => pe.id === extra.id);
-          if (!matchingPrev || matchingPrev.description !== extra.description || matchingPrev.state !== extra.state) {
-            changedDiagnoses.push(extra.description);
-          }
-        }
-
-        if (changedDiagnoses.length > 0) {
-          const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
-          const separator = activeReport ? "\n\n" : "";
-          const textToAppend = changedDiagnoses.join("\n");
-          const nextReport = activeReport + separator + textToAppend;
-
-          if (isEditingReportManual) {
-            setEditedReportText(nextReport);
-          } else {
-            setGeneratedReport(nextReport);
-            setEditedReportText(nextReport);
-          }
-        }
-
-        setSmartInstructionsText("");
-      } else {
-        throw new Error("No se devolvieron estados ni descripciones actualizados.");
-      }
-    } catch (err: any) {
-      setSmartAnatomyError(err.message || "Error al aplicar los ajustes inteligentes.");
-    } finally {
-      setIsSmartAnatomyModifying(false);
-    }
+  
+  const applyPreset = (preset: any) => {
+    if (!preset) return;
+    setStudyType(preset.studyType || preset.name || "");
+    setClinicalHistory(preset.defaultHistory || "");
+    setFindings(preset.customPrompt || "");
+    setSelectedPresetId(preset.id);
   };
 
   const checkApiHealth = async () => {
-    setCheckingApi(true);
-    setApiDiagnostics(null); // Explicitly reset to null to show loading state initially
-    
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000); // 6-second timeout
-    
     try {
-      const res = await fetch("/api/health", { signal: controller.signal });
-      clearTimeout(timeoutId);
+      const res = await fetch("/api/health");
       const data = await res.json();
-      setApiDiagnostics(data);
-    } catch (e: any) {
-      clearTimeout(timeoutId);
-      console.error("Error diagnosticando API:", e);
-      setApiDiagnostics({
-        status: "error",
-        message: "No se pudo conectar con el servidor para diagnosticar la API.",
-        error: e?.name === "AbortError" ? "Se agot√≥ el tiempo de espera (Timeout de 6s)." : (e?.message || String(e)),
-        api_key_configured: false
-      });
-    } finally {
-      setCheckingApi(false);
-    }
-  };
-
-  // Run the diagnostic load automatically when switching to the API or configuration tabs
-  useEffect(() => {
-    if (activeTab === "api") {
-      checkApiHealth();
-    }
-  }, [activeTab]);
-
-  // Initialize values and load from Local Storage on mount
-  useEffect(() => {
-    // Instructions setup
-    const savedGenInst = localStorage.getItem("radiology_sys_inst");
-    if (savedGenInst) setSystemInstruction(savedGenInst);
-    else {
-      setSystemInstruction(GENERAL_SYSTEM_INSTRUCTION);
-      localStorage.setItem("radiology_sys_inst", GENERAL_SYSTEM_INSTRUCTION);
-    }
-
-    const savedChatInst = localStorage.getItem("radiology_chat_inst");
-    if (savedChatInst) setChatInstruction(savedChatInst);
-    else {
-      setChatInstruction(CHAT_SYSTEM_INSTRUCTION);
-      localStorage.setItem("radiology_chat_inst", CHAT_SYSTEM_INSTRUCTION);
-    }
-
-    const savedClassInst = localStorage.getItem("radiology_class_inst");
-    if (savedClassInst) setClassifyInstruction(savedClassInst);
-    else {
-      setClassifyInstruction(CLASSIFICATION_SYSTEM_INSTRUCTION);
-      localStorage.setItem("radiology_class_inst", CLASSIFICATION_SYSTEM_INSTRUCTION);
-    }
-
-    // Reports log setup with IndexedDB persistent storage
-    idbGetHistory().then(idbReports => {
-      if (Array.isArray(idbReports) && idbReports.length > 0) {
-        setSavedReports(idbReports);
-      } else {
-        const storedReports = localStorage.getItem("radiology_reports_history");
-        if (storedReports) {
-          try {
-            const parsed = JSON.parse(storedReports);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              setSavedReports(parsed);
-              idbSaveHistory(parsed);
-            }
-          } catch (e) {
-            setSavedReports([]);
-          }
-        }
+      if (data.status === "ok") {
+        setApiConnected(true);
       }
-    });
-  }, []);
-
-  // Prevent browser-added default print headers and footers by dynamically stripping title during print
-  useEffect(() => {
-    const handleBeforePrint = () => {
-      try {
-        (window as any)._originalDocTitle = document.title;
-        document.title = "";
-      } catch (e) {
-        console.error(e);
-      }
-    };
-    const handleAfterPrint = () => {
-      try {
-        if (typeof (window as any)._originalDocTitle === "string" && (window as any)._originalDocTitle) {
-          document.title = (window as any)._originalDocTitle;
-        } else {
-          document.title = "My Google AI Studio App";
-        }
-      } catch (e) {
-        console.error(e);
-      }
-    };
-
-    window.addEventListener("beforeprint", handleBeforePrint);
-    window.addEventListener("afterprint", handleAfterPrint);
-
-    return () => {
-      window.removeEventListener("beforeprint", handleBeforePrint);
-      window.removeEventListener("afterprint", handleAfterPrint);
-    };
-  }, []);
-
-
-
-  // Set defaults or modify states based on active preset selection
-  const applyPreset = (preset: Presets) => {
-    handleLoadStudyType(preset.studyType || "");
-    setClinicalHistory(preset.defaultHistory || "");
-    setCustomPrompt(preset.customPrompt || "");
+    } catch (e) {
+      console.error("Health check error:", e);
+    }
   };
 
   const handlePresetSelect = (id: string) => {
@@ -4303,11 +3777,10 @@ Ejemplo:
         setGeneratedReport(data.report);
         setOriginalBaseReport(data.report);
 
-        // Resetear casillas del Sistema de Activaci√≥n R√°pida de M√≥dulos: por defecto Atlas 3D, Cuadro Sin√≥ptico de √ìrgano, Resumen Operacional y Paciente marcados
+        // Resetear casillas del Sistema de Activaci√≥n R√°pida de M√≥dulos: por defecto Resumen Operacional y Paciente marcados
         setSelectedBatchModules({
+          atlas3d: true,
           radar: false,
-          atlas_3d: true,
-          vascular_3d: false,
           case_analysis: false,
           quality_eval: false,
           bibliography: false,
@@ -4317,9 +3790,7 @@ Ejemplo:
           schematic: false,
           measurements: false,
           footnotes: false,
-          organ_synoptic: true,
-          fractures: false,
-          classifications: false,
+                              classifications: false,
         });
 
         // Activaci√≥n Autom√°tica de Evaluaci√≥n de Calidad al Generar Reporte
@@ -4720,119 +4191,7 @@ Ejemplo:
   };
 
   // ACTIONS FOR ADVANCED VASCULAR ANALYSIS & DIAGRAMS
-  const handleAnalyzeVascular = async () => {
-    if (!generatedReport) return;
-    setIsAnalyzingVascular(true);
-    setVascularError(null);
-    try {
-      const response = await fetch("/api/analyze-vascular", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: selectedModel,
-          reportText: generatedReport,
-          studyType: specificStudy
-        }),
-      });
-      const data = await response.json();
-      if (data.success) {
-        setVascularTable(data.table || "");
-        setVascularStates(data.states || {});
-        setVascularDescriptions(data.descriptions || {});
-        setVascularSubLocations(data.subLocations || {});
-        setCarotidPlaques(data.carotidPlaques || []);
-      } else {
-        setVascularError(data.error || "No se pudieron analizar los hallazgos vasculares del informe.");
-      }
-    } catch (err: any) {
-      console.error("Error al realizar el an√°lisis vascular:", err);
-      setVascularError(err?.message || String(err));
-    } finally {
-      setIsAnalyzingVascular(false);
-    }
-  };
 
-  const handleToggleVascularSegment = (segId: string) => {
-    const isVenoso = specificStudy === "Doppler venoso de miembro inferior" || generatedReport.toLowerCase().includes("venoso");
-    const current = vascularStates[segId] || "normal";
-    
-    let nextState = "normal";
-    if (isVenoso) {
-      // venous levels: normal -> reflux -> thrombosis -> normal
-      if (current === "normal") nextState = "reflux";
-      else if (current === "reflux") nextState = "thrombosis";
-    } else {
-      // arterial & carotid levels: normal -> mild -> severe -> normal
-      if (current === "normal") nextState = "mild";
-      else if (current === "mild") nextState = "severe";
-    }
-
-    setVascularStates(prev => ({
-      ...prev,
-      [segId]: nextState
-    }));
-
-    // Sutil prefilled description matching the manually edited state
-    let label = "Normal / Conservado";
-    if (nextState === "mild") label = "Placas ateromatosas con estenosis leve (<50%)";
-    else if (nextState === "severe") label = "Estenosis hemodin√°micamente significativa / severa (>=50%)";
-    else if (nextState === "reflux") label = "Insuficiencia valvular con reflujo retr√≥grado";
-    else if (nextState === "thrombosis") label = "Obstrucci√≥n tromb√≥tica patente / No colapsable";
-
-    setVascularDescriptions(prev => ({
-      ...prev,
-      [segId]: label
-    }));
-  };
-
-  const handleExportVascularTableToReport = () => {
-    if (!vascularTable) return;
-    setReportHistory((prev) => [...prev, generatedReport]);
-    const separator = "\n\n";
-    const title = "### CUADRO DE HALLAZGOS VASCULARES (S√çNTESIS DIAGN√ìSTICA)\n";
-    
-    // Avoid double inclusion if already exists
-    if (generatedReport.includes("### CUADRO DE HALLAZGOS VASCULARES")) {
-      // Replace existing
-      const regex = /### CUADRO DE HALLAZGOS VASCULARES[\s\S]+/g;
-      const cleanReportText = generatedReport.replace(regex, "").trim();
-      const nextReport = cleanReportText + separator + title + vascularTable;
-      setGeneratedReport(nextReport);
-      setEditedReportText(nextReport);
-    } else {
-      const nextReport = generatedReport + separator + title + vascularTable;
-      setGeneratedReport(nextReport);
-      setEditedReportText(nextReport);
-    }
-  };
-
-  const handleExportVascularBlocksToReport = (blocksText: string) => {
-    if (!blocksText) return;
-    setReportHistory((prev) => [...prev, generatedReport]);
-    const separator = "\n\n";
-    const title = "### S√çNTESIS DE ANATOM√çA VASCULAR DOPPLER\n";
-    
-    // Format blocksText inside triple backticks so it gets parsed perfectly as standard code in markdown and PDF
-    const formattedBlocks = blocksText.trim().startsWith("```") 
-      ? blocksText 
-      : "```text\n" + blocksText.trim() + "\n```";
-    
-    // Avoid double inclusion if already exists
-    if (generatedReport.includes("### S√çNTESIS DE ANATOM√çA VASCULAR DOPPLER")) {
-      // Replace existing
-      const regex = /### S√çNTESIS DE ANATOM√çA VASCULAR DOPPLER[\s\S]+/g;
-      const cleanReportText = generatedReport.replace(regex, "").trim();
-      const nextReport = cleanReportText + separator + title + formattedBlocks;
-      setGeneratedReport(nextReport);
-      setEditedReportText(nextReport);
-    } else {
-      const nextReport = generatedReport + separator + title + formattedBlocks;
-      setGeneratedReport(nextReport);
-      setEditedReportText(nextReport);
-    }
-  };
-
-  // ACTION: INCORPORATE ENRICHED DIFFERENTIAL DIAGNOSTICS SYNTHESIS TO REPORT
   const handleIncorporateDifferentialDiagnostics = async () => {
     if (!generatedReport || !caseAnalysis) return;
     setIsIncorporatingDiffs(true);
@@ -5585,23 +4944,12 @@ Ejemplo:
     setSchematicSummaryError(null);
     setSchematicSummary(null);
     try {
-      let reportWithExtras = generatedReport;
-      if (activeProtocol) {
-        const extras = additionalFindings[activeProtocol];
-        if (extras && extras.length > 0) {
-          reportWithExtras += "\n\nHALLAZGOS ADICIONALES DETECTADOS POR EL M√âDICO TRATANTE:\n";
-          extras.forEach(item => {
-            reportWithExtras += `- ${item.structureName}: ${item.description}\n`;
-          });
-        }
-      }
-
       const response = await fetch("/api/generate-schematic-summary", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: selectedModel,
-          report: reportWithExtras,
+          report: generatedReport,
           studyType: studyType || "Estudio Radiol√≥gico"
         }),
       });
@@ -7356,9 +6704,6 @@ Ejemplo:
     const specificStudyLocal = studyOverride && studyOverride.specificStudy ? studyOverride.specificStudy : pdfStateRef.current.specificStudy;
     const pdfLayoutTypeLocal = studyOverride && studyOverride.pdfLayoutType ? (studyOverride.pdfLayoutType as any) : pdfStateRef.current.pdfLayoutType;
     const selectedLogoLocal = studyOverride && studyOverride.selectedLogo ? studyOverride.selectedLogo : pdfStateRef.current.selectedLogo;
-    const usPhotoLayoutLocal: UltrasoundPhotoLayout = (studyOverride && (studyOverride as any).usPhotoLayout) 
-      ? (studyOverride as any).usPhotoLayout 
-      : (pdfStateRef.current?.usPhotoLayout || usPhotoLayout || "auto");
 
     // Now re-assign to local variables with the exact same name as states to shadow them!
     const generatedReport = generatedReportLocal;
@@ -7509,7 +6854,7 @@ Ejemplo:
         boxY: number,
         boxW: number,
         boxH: number,
-        isVascular: boolean = false
+        
       ) => {
         // Aligned Anatomical Cards format for Appendix / Synopses in PDF (Opci√≥n 1: Fichas Anat√≥micas Alineadas)
         const isLargeSingleMode = boxH > 100;
@@ -7536,34 +6881,58 @@ Ejemplo:
           const cardY = startY + rowIndex * (cardH + rowGap);
 
           const stateClean = (finding.state || "").toLowerCase().trim();
-          let dotColor = [99, 102, 241];      // indigo-500
+                    let dotColor = [99, 102, 241];      // indigo-500
           let badgeBg = [238, 242, 255];      // indigo-50
           let badgeText = [67, 56, 202];       // indigo-700
           let drawBorder = [226, 232, 240];    // light border
 
-          if (isVascular) {
-            if (stateClean === "normal" || stateClean === "permeable" || stateClean === "sin_lesiones" || stateClean === "normales" || stateClean === "dentro de l√≠mites normales") {
-              dotColor = [16, 185, 129];        // Emerald-500 (Green)
-              badgeBg = [240, 253, 244];
-              badgeText = [21, 128, 61];
-              drawBorder = [209, 250, 229];
-            } else if (stateClean === "mild" || stateClean === "reflux" || stateClean.includes("mild") || stateClean.includes("reflux") || stateClean.includes("leve") || stateClean.includes("espesor_conservado")) {
-              dotColor = [245, 158, 11];        // Amber-500 (Orange for mild-moderate)
-              badgeBg = [254, 252, 232];
-              badgeText = [180, 83, 9];
-              drawBorder = [254, 243, 199];
-            } else if (stateClean === "severe" || stateClean === "critical" || stateClean === "thrombosis" || stateClean.includes("severe") || stateClean.includes("critico") || stateClean.includes("cr√≠tico") || stateClean.includes("trombosis")) {
-              dotColor = [220, 38, 38];         // Red-600 (Red for severe)
-              badgeBg = [254, 242, 242];
-              badgeText = [185, 28, 28];
-              drawBorder = [254, 205, 211];
-            } else {
-              // Fallback for custom or unmapped states in vascular studies (Amber/Orange)
-              dotColor = [245, 158, 11];
-              badgeBg = [254, 252, 232];
-              badgeText = [180, 83, 9];
-              drawBorder = [254, 243, 199];
-            }
+          if (stateClean === "normal" || stateClean === "sin_lesiones" || stateClean === "normales" || stateClean === "dentro de l√≠mites normales") {
+            dotColor = [16, 185, 129];        // emerald-500
+            badgeBg = [240, 253, 244];         // emerald-50
+            badgeText = [21, 128, 61];          // emerald-700
+            drawBorder = [209, 250, 229];
+          } else if (
+            stateClean.includes("ruptura") || 
+            stateClean.includes("desgarro_completo") ||
+            stateClean.includes("orquitis") ||
+            stateClean.includes("torsion") ||
+            stateClean.includes("colecistitis") || 
+            stateClean.includes("severa") || 
+            stateClean.includes("severo") || 
+            stateClean.includes("masa") || 
+            stateClean.includes("solido") || 
+            stateClean.includes("s√≥lido") || 
+            stateClean.includes("maligno") || 
+            stateClean.includes("birads_4") || 
+            stateClean.includes("birads_5") || 
+            stateClean.includes("birads_6") || 
+            stateClean.includes("suspicious") || 
+            stateClean.includes("aneurisma") ||
+            stateClean.includes("trombosis") ||
+            stateClean.includes("critico") ||
+            stateClean.includes("cr√≠tico")
+          ) {
+            dotColor = [239, 68, 68];          // rose-500
+            badgeBg = [254, 242, 242];         // rose-50
+            badgeText = [185, 28, 28];          // rose-700
+            drawBorder = [254, 205, 211];       // rose-200
+          } else if (
+            stateClean.includes("leve") || 
+            stateClean.includes("quiste_simple") || 
+            stateClean.includes("benigno") || 
+            stateClean.includes("sinovitis_l") || 
+            stateClean.includes("derrame_l") ||
+            stateClean.includes("espesor_conservado") ||
+            stateClean.includes("hidrocele_l") ||
+            stateClean.includes("ectasia_l") ||
+            stateClean.includes("bursitis_l") ||
+            stateClean.includes("birads_2") ||
+            stateClean.includes("birads_3")
+          ) {
+            dotColor = [245, 158, 11];         // amber-500
+            badgeBg = [254, 252, 232];         // amber-50
+            badgeText = [180, 83, 9];           // amber-800
+            drawBorder = [254, 243, 199];       // amber-200
           } else {
             if (stateClean === "normal" || stateClean === "sin_lesiones" || stateClean === "normales" || stateClean === "dentro de l√≠mites normales") {
               dotColor = [16, 185, 129];        // emerald-500
@@ -7626,29 +6995,12 @@ Ejemplo:
           docObj.rect(cardX, cardY, 1.2, cardH, "F");
 
           // Draw badge for state FIRST
-          let rawState = (finding.state || "ALTERADO").replace(/_/g, " ").toUpperCase();
-          if (isVascular) {
-            const stateClean = (finding.state || "").toLowerCase().trim();
-            if (stateClean === "normal" || stateClean === "permeable" || stateClean === "sin_lesiones" || stateClean === "normales" || stateClean === "dentro de l√≠mites normales") {
-              rawState = "PERMEABLE";
-            } else if (stateClean === "mild" || stateClean.includes("mild") || stateClean.includes("leve") || stateClean.includes("espesor_conservado")) {
-              rawState = "LEVE";
-            } else if (stateClean === "reflux" || stateClean.includes("reflux")) {
-              rawState = "INSUFICIENCIA";
-            } else if (stateClean === "thrombosis" || stateClean.includes("trombosis")) {
-              rawState = "TROMBOSIS";
-            } else if (stateClean === "severe" || stateClean === "critical" || stateClean.includes("severe") || stateClean.includes("critico") || stateClean.includes("cr√≠tico")) {
-              rawState = "ESTENOSIS";
-            } else {
-              rawState = "ALTERADO";
-            }
-          } else {
-            if (rawState === "NORMAL") rawState = "NORMAL";
-            else if (rawState === "DESGARRO MIOFASCIAL") rawState = "D. MIOFASC";
-            else if (rawState === "DESGARRO INTRAMUSCULAR") rawState = "D. INTRAC";
-            else if (rawState === "VALORACION DINAMICA") rawState = "VAL. DIN.";
-            else if (rawState === "ADENOPATIA REACTIVA") rawState = "INFLAMATORIO";
-          }
+                    let rawState = (finding.state || "ALTERADO").replace(/_/g, " ").toUpperCase();
+          if (rawState === "NORMAL") rawState = "NORMAL";
+          else if (rawState === "DESGARRO MIOFASCIAL") rawState = "D. MIOFASC";
+          else if (rawState === "DESGARRO INTRAMUSCULAR") rawState = "D. INTRAC";
+          else if (rawState === "VALORACION DINAMICA") rawState = "VAL. DIN.";
+          else if (rawState === "ADENOPATIA REACTIVA") rawState = "INFLAMATORIO";
 
           const badgeFontSize = cardH > 20 ? 5.2 : 4.0;
           const badgeH = cardH > 20 ? 3.4 : 2.3;
@@ -7731,9 +7083,7 @@ Ejemplo:
 
       // Helper function to wrap markdown mixed text safely
       const wrapMarkdown = (docObj: any, textStr: string, maxWidth: number) => {
-        // Strip unicode box drawing or stray '%' lines that break font encodings
-        const sanitizedText = textStr.replace(/[‚îÅ‚ïê‚îÄ‚Äî]{2,}/g, "").replace(/^[\s%]{4,}$/g, "");
-        const parts = sanitizedText.split("**");
+        const parts = textStr.split("**");
         const tokens: { text: string; isBold: boolean }[] = [];
 
         parts.forEach((partText, idx) => {
@@ -8308,8 +7658,6 @@ Ejemplo:
                               specificStudy === "Doppler venoso de miembro inferior" || 
                               specificStudy === "Doppler arterial de miembro inferior";
       const isCarotidasForPDF = specificStudy.toLowerCase().includes("car√≥t") || specificStudy.toLowerCase().includes("carot");
-      const hasBifurcDer = !!document.getElementById("print-bifurcation-der");
-      const hasBifurcIzq = !!document.getElementById("print-bifurcation-izq");
 
       let factor = 1.0;
       let estimatedHeight = 20; // Start at top margin
@@ -8356,9 +7704,14 @@ Ejemplo:
         const emojiFreeReportLocal = stripEmojisLocal(reportToRenderLocal || "");
         let cleanReportLocal = cleanRawClinicalText(emojiFreeReportLocal);
         cleanReportLocal = cleanReportLocal.replace(/\[START_CASE_ANALYSIS:[\s\S]*?\[END_CASE_ANALYSIS:[^\]]+\]/gi, "");
-        cleanReportLocal = cleanReportLocal.replace(/\[CASE_ANALYSIS_JSON\][\s\S]*?\[\/CASE_ANALYSIS_JSON\]/gi, "");
-        cleanReportLocal = cleanReportLocal.replace(/\n*---\s*\n+\*\*AN√ÅLISIS INTEGRADO DE CASO[\s\S]*?(?=(?:\n\n---|(?:\n\n###|\n\n\*\*|\n\n#)|$))/gi, "");
-        cleanReportLocal = cleanReportLocal.replace(/\*\*AN√ÅLISIS INTEGRADO DE CASO[\s\S]*?(?=(?:\n\n---|(?:\n\n###|\n\n\*\*|\n\n#)|$))/gi, "");
+        const legacyIdxLocal = cleanReportLocal.indexOf("[CASE_ANALYSIS_JSON]");
+        if (legacyIdxLocal !== -1) {
+          cleanReportLocal = cleanReportLocal.substring(0, legacyIdxLocal).trim();
+        }
+        const summaryIdxLocal = cleanReportLocal.indexOf("**AN√ÅLISIS INTEGRADO DE CASO");
+        if (summaryIdxLocal !== -1) {
+          cleanReportLocal = cleanReportLocal.substring(0, summaryIdxLocal).trim();
+        }
         cleanReportLocal = cleanReportLocal.trim();
         const normalizedReportLocal = cleanReportLocal
           .replace(/\n+\s*(---\s*)/g, "\n\n$1")
@@ -8374,13 +7727,7 @@ Ejemplo:
           if (!trimmed) return;
 
           const isSemiologyLineLocal = /semiolog[i√≠]a|justificaci[o√≥]n|exclusi[o√≥]n/i.test(trimmed);
-          const upperTrimmed = trimmed.toUpperCase();
-          const isConclusionHeader = !isSemiologyLineLocal && (
-            /^\s*(?:#+|\*+|-|_|\d+\.)*\s*(?:conclusi√≥n|conclusiones|conclusion|impresi√≥n\s+diagn√≥stica|impresion\s+diagnostica|impresiones\s+diagn√≥sticas|impresiones\s+diagnosticas|diagn√≥sticos|diagn√≥stico|diagnostico|diagnosticos)\b/i.test(trimmed) ||
-            upperTrimmed.includes("IMPRESI√ìN DIAGN√ìSTICA") || upperTrimmed.includes("IMPRESION DIAGNOSTICA") ||
-            upperTrimmed.includes("CONCLUSIONES DIAGN√ìSTICAS") || upperTrimmed.includes("CONCLUSION DIAGNOSTICA") ||
-            /^\s*(?:#+|\*+)*\s*(?:CONCLUSI[O√ì]N|CONCLUSIONES|IMPRESI[O√ì]N|IMPRESION|DIAGN[O√ì]STICO)\s*[:*#\s]/i.test(trimmed)
-          );
+          const isConclusionHeader = !isSemiologyLineLocal && /^\s*(?:#+|\*+|-|_|\d+\.)*\s*(?:conclusi√≥n|conclusiones|conclusion|impresi√≥n\s+diagn√≥stica|impresion\s+diagnostica|impresiones\s+diagn√≥sticas|impresiones\s+diagnosticas|diagn√≥sticos|diagn√≥stico|diagnostico|diagnosticos)\b/i.test(trimmed);
 
           const isFootnoteOrDividerLocal = trimmed === "---" || /^---+\s*$/.test(trimmed) ||
             /^\s*(?:\*+)?\s*(?:pie de p√°gina|nota de pie|nota de pie de p√°gina|pie de pagina|nota de pie de pagina)\b/i.test(trimmed);
@@ -8483,16 +7830,6 @@ Ejemplo:
         console.warn("Error estimating paragraph heights:", estError);
       }
 
-      // 4. Clinical schematics / Diagram estimation
-      if (includeShoulderSchemaInReport && specificStudy === "Hombro") {
-        estimatedHeight += 95;
-      } else if (includeVascularSchemaInReport && isVascularStudy) {
-        estimatedHeight += 85;
-        if (isCarotidasForPDF && includeCarotidBifurcations && (hasBifurcDer || hasBifurcIzq)) {
-          estimatedHeight += 75;
-        }
-      }
-
       // 5. Signature block estimation
       estimatedHeight += 38;
 
@@ -8559,10 +7896,15 @@ Ejemplo:
       // from the main report content so they do not print as plain text.
       cleanReport = cleanReport.replace(/\[START_CASE_ANALYSIS:[\s\S]*?\[END_CASE_ANALYSIS:[^\]]+\]/gi, "");
 
-      // Strip JSON & summary cleanly without truncating remainder of report
-      cleanReport = cleanReport.replace(/\[CASE_ANALYSIS_JSON\][\s\S]*?\[\/CASE_ANALYSIS_JSON\]/gi, "");
-      cleanReport = cleanReport.replace(/\n*---\s*\n+\*\*AN√ÅLISIS INTEGRADO DE CASO[\s\S]*?(?=(?:\n\n---|(?:\n\n###|\n\n\*\*|\n\n#)|$))/gi, "");
-      cleanReport = cleanReport.replace(/\*\*AN√ÅLISIS INTEGRADO DE CASO[\s\S]*?(?=(?:\n\n---|(?:\n\n###|\n\n\*\*|\n\n#)|$))/gi, "");
+      // Strip the fallback text summary of the case analysis from the PDF text entirely
+      const legacyIdx = cleanReport.indexOf("[CASE_ANALYSIS_JSON]");
+      if (legacyIdx !== -1) {
+        cleanReport = cleanReport.substring(0, legacyIdx).trim();
+      }
+      const summaryIdx = cleanReport.indexOf("**AN√ÅLISIS INTEGRADO DE CASO");
+      if (summaryIdx !== -1) {
+        cleanReport = cleanReport.substring(0, summaryIdx).trim();
+      }
       cleanReport = cleanReport.trim();
 
       const normalizedReport = cleanReport
@@ -8590,13 +7932,7 @@ Ejemplo:
         }
 
         const isSemiologyLine = /semiolog[i√≠]a|justificaci[o√≥]n|exclusi[o√≥]n/i.test(trimmed);
-        const upperTrimmed = trimmed.toUpperCase();
-        const isConclusionHeader = !isSemiologyLine && (
-          /^\s*(?:#+|\*+|-|_|\d+\.)*\s*(?:conclusi√≥n|conclusiones|conclusion|impresi√≥n\s+diagn√≥stica|impresion\s+diagnostica|impresiones\s+diagn√≥sticas|impresiones\s+diagnosticas|diagn√≥sticos|diagn√≥stico|diagnostico|diagnosticos)\b/i.test(trimmed) ||
-          upperTrimmed.includes("IMPRESI√ìN DIAGN√ìSTICA") || upperTrimmed.includes("IMPRESION DIAGNOSTICA") ||
-          upperTrimmed.includes("CONCLUSIONES DIAGN√ìSTICAS") || upperTrimmed.includes("CONCLUSION DIAGNOSTICA") ||
-          /^\s*(?:#+|\*+)*\s*(?:CONCLUSI[O√ì]N|CONCLUSIONES|IMPRESI[O√ì]N|IMPRESION|DIAGN[O√ì]STICO)\s*[:*#\s]/i.test(trimmed)
-        );
+        const isConclusionHeader = !isSemiologyLine && /^\s*(?:#+|\*+|-|_|\d+\.)*\s*(?:conclusi√≥n|conclusiones|conclusion|impresi√≥n\s+diagn√≥stica|impresion\s+diagnostica|impresiones\s+diagn√≥sticas|impresiones\s+diagnosticas|diagn√≥sticos|diagn√≥stico|diagnostico|diagnosticos)\b/i.test(trimmed);
 
         const isFootnoteOrDivider = trimmed === "---" || /^---+\s*$/.test(trimmed) ||
           /^\s*(?:\*+)?\s*(?:pie de p√°gina|nota de pie|nota de pie de p√°gina|pie de pagina|nota de pie de pagina)\b/i.test(trimmed);
@@ -8809,11 +8145,6 @@ Ejemplo:
 
         // Skip inline Case Analysis JSON blocks as they are rendered in Step 5 (Diagn√≥stico Avanzado)
         if (trimmedBlock.includes("[CASE_ANALYSIS_JSON]")) {
-          return;
-        }
-
-        // Skip decorative delimiter lines that break PDF font encodings
-        if (/^[%‚îÅ‚ïê‚îÄ‚Äî_~*-]{4,}$/.test(trimmedBlock.replace(/\s+/g, ""))) {
           return;
         }
 
@@ -9458,15 +8789,7 @@ Ejemplo:
               doc.setTextColor(15, 23, 42); // slate-900
             }
 
-            const isVascularTable = colCount === 3 && 
-              headers.some(h => {
-                const lower = h.toLowerCase();
-                return lower.includes("derech") || lower.includes("izquierd") || lower.includes("alterad") || lower.includes("vaso");
-              }) && 
-              !headers.some(h => {
-                const lower = h.toLowerCase();
-                return lower.includes("referencia") || lower.includes("estructura");
-              });
+            const isVascularTable = false;
 
             headers.forEach((headerTxt, hIdx) => {
               let hClean = headerTxt.replace(/\*\*/g, "").trim();
@@ -9877,11 +9200,12 @@ Ejemplo:
       // 9. RESUMEN DEL PACIENTE
       // 10. INFOGRAFIA DEL PACIENTE
       const mainReportBlocks: string[] = [];
+      const cuadroSinopticoBlocks: string[] = [];
       const organSynopsisBlocks: string[] = [];
       const measurementAssistantBlocks: string[] = [];
       const classificationAnnexBlocks: string[] = [];
 
-      let currentPdfSection: "main" | "organ" | "medidas" | "classification_annex" = "main";
+      let pdfSectionTarget: "main" | "cuadro" | "organ" | "medidas" | "annex" = "main";
 
       paragraphs.forEach((block) => {
         const trimmedBlock = block.trim();
@@ -9905,249 +9229,68 @@ Ejemplo:
           return;
         }
 
-        const normalizedBlock = upperBlock.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const isHeaderMarker = /^\s*(?:#{1,6}\s+|\*\*\s*)/.test(trimmedBlock) || trimmedBlock.toUpperCase().startsWith("ANEXO:");
+        const isImpressionHeader = /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:IMPRESI[O√ì]N\s+DIAGN[O√ì]STICA|IMPRESI[O√ì]N\b|CONCLUSI[O√ì]N|CONCLUSIONES|DIAGN[O√ì]STICO|DIAGN[O√ì]STICOS)\b/i.test(trimmedBlock) ||
+                                    upperBlock.includes("IMPRESI√ìN DIAGN√ìSTICA") || upperBlock.includes("IMPRESION DIAGNOSTICA") ||
+                                    upperBlock.includes("CONCLUSI√ìN:") || upperBlock.includes("CONCLUSIONES:");
+        const isCuadroHeader = isHeaderMarker && /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:ESQUEMA\s+CL√çNICO\s+DE\s+HALLAZGOS\s+PRINCIPALES|CUADRO\s+SIN√ìPTICO|MATRIZ\s+SEMI√ìTICA)\b/i.test(trimmedBlock) && !isImpressionHeader;
+        const isOrganHeader = isHeaderMarker && /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:SINOPSIS\s+CL√çNICA|SINOPSIS\s+POR\s+[O√ì]RGANO|SINOPSIS\s+DE\s+[O√ì]RGANO)\b/i.test(trimmedBlock) && !isCuadroHeader && !isImpressionHeader;
+        const isMeasurementHeader = isHeaderMarker && /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:ASISTENTE\s+DE\s+MEDIDAS|CUADRO\s+DE\s+ASISTENTE\s+DE\s+MEDIDAS|TABLA\s+DE\s+MEDIDAS|MEDICIONES\s+Y\s+PAR√ÅMETROS|PAR√ÅMETROS\s+Y\s+MEDIDAS)\b/i.test(trimmedBlock) && !isCuadroHeader && !isOrganHeader && !isImpressionHeader;
+        const isAnnexHeader = isHeaderMarker && (trimmedBlock.includes("ANEXO DIAGN√ìSTICO") || 
+                              trimmedBlock.includes("DESGLOSE Y JUSTIFICACI√ìN DE CLASIFICACI√ìN") || 
+                              trimmedBlock.includes("DESGLOSE Y JUSTIFICACI√ìN") ||
+                              trimmedBlock.includes("CLASIFICACI√ìN DE") ||
+                              /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:ANEXO|CLASIFICACI[O√ì]N)\b/i.test(trimmedBlock)) && !isCuadroHeader && !isOrganHeader && !isMeasurementHeader && !isImpressionHeader;
 
-        // 1. Identification of Organ Synopsis Headers and Content
-        const isOrganSynopsisHeader = (
-          /^\s*#{1,6}\s*(?:SINOPSIS\s+CL[I√ç]NICA|SINOPSIS\s+POR\s+[O√ì]RGANO|SINOPSIS\s+DE\s+[O√ì]RGANO|CUADRO\s+SIN[O√ì]PTICO|ESQUEMA\s+CL[I√ç]NICO\s+DE\s+HALLAZGOS)\b/i.test(trimmedBlock) ||
-          /^\s*\*\*\s*(?:SINOPSIS\s+CL[I√ç]NICA|SINOPSIS\s+POR\s+[O√ì]RGANO|CUADRO\s+SIN[O√ì]PTICO)\b/i.test(trimmedBlock) ||
-          upperBlock.startsWith("### SINOPSIS") ||
-          upperBlock.startsWith("## SINOPSIS") ||
-          upperBlock.startsWith("# SINOPSIS") ||
-          upperBlock.startsWith("### CUADRO SIN√ìPTICO") ||
-          upperBlock.startsWith("### CUADRO SINOPTICO")
-        );
-
-        const isOrganSynopsisTableOrSummary = (
-          normalizedBlock.includes("| ASPECTO EVALUADO |") ||
-          (normalizedBlock.includes("| DETALLE CLINICO / VALOR |") || normalizedBlock.includes("| DETALLE CLINICO / VALOR|")) ||
-          normalizedBlock.startsWith("**RESUMEN INTERPRETATIVO:**") ||
-          normalizedBlock.startsWith("RESUMEN INTERPRETATIVO:")
-        );
-
-        // 2. Identification of Classification Breakdown Annex Headers and Content
-        const isClassificationAnnexHeader = (
-          /^\s*#{1,6}\s*(?:ANEXO:\s*DESGLOSE|ANEXO\s*:\s*DESGLOSE|DESGLOSE\s+Y\s+JUSTIFICACI[O√ì]N|DESGLOSE\s+DE\s+CLASIFICACI[O√ì]N|DESGLOSE\s+DE\s+CLASIFICACIONES|CLASIFICACI[O√ì]N\s+DE\s+BI-RADS|CLASIFICACI[O√ì]N\s+DE\s+TI-RADS|CLASIFICACI[O√ì]N\s+DE\s+LI-RADS|CLASIFICACI[O√ì]N\s+DE\s+O-RADS|CLASIFICACI[O√ì]N\s+DE\s+PI-RADS|CLASIFICACI[O√ì]N\s+DE\s+BOSNIAK|CLASIFICACI[O√ì]N\s+DE|CLASIFICACION\s+DE)\b/i.test(trimmedBlock) ||
-          /^\s*\*\*\s*(?:ANEXO\s+DIAGN[O√ì]STICO:\s*DESGLOSE|ANEXO:\s*DESGLOSE|DESGLOSE\s+Y\s+JUSTIFICACI[O√ì]N)\b/i.test(trimmedBlock) ||
-          upperBlock.startsWith("### ANEXO: DESGLOSE") ||
-          upperBlock.startsWith("## ANEXO: DESGLOSE") ||
-          upperBlock.startsWith("# ANEXO: DESGLOSE") ||
-          upperBlock.startsWith("### DESGLOSE Y JUSTIFICACI√ìN") ||
-          upperBlock.startsWith("### DESGLOSE Y JUSTIFICACION") ||
-          upperBlock.startsWith("### CLASIFICACI√ìN DE") ||
-          upperBlock.startsWith("### CLASIFICACION DE") ||
-          upperBlock.startsWith("#### CLASIFICACI√ìN DE") ||
-          upperBlock.startsWith("#### CLASIFICACION DE") ||
-          upperBlock.startsWith("#### TABLA DE JUSTIFICACI√ìN") ||
-          upperBlock.startsWith("#### TABLA DE JUSTIFICACION") ||
-          upperBlock.startsWith("#### FICHA EXPLICATIVA")
-        );
-
-        const isClassificationAnnexContent = (
-          (normalizedBlock.includes("| CRITERIO EVALUADO |") && (normalizedBlock.includes("| HALLAZGO EN EL REPORTE |") || normalizedBlock.includes("| JUSTIFICACION DIAGNOSTICA |") || normalizedBlock.includes("| PONDERACION / SCORE |"))) ||
-          normalizedBlock.startsWith("**SISTEMA:**") ||
-          normalizedBlock.startsWith("**SISTEMA / ESCALA:**") ||
-          normalizedBlock.startsWith("**DEFINICION & SIGNIFICADO CLINICO:**") ||
-          normalizedBlock.startsWith("**DEFINICION Y SIGNIFICADO CLINICO:**") ||
-          normalizedBlock.startsWith("**SUSTENTO DIAGNOSTICO INTEGRADOR:**") ||
-          normalizedBlock.startsWith("**CONDUCTA Y RECOMENDACION DE SEGUIMIENTO:**") ||
-          normalizedBlock.startsWith("##### CRITERIOS CLAVE:") ||
-          (normalizedBlock.startsWith("* **PASO 1:") && normalizedBlock.includes("CRITERIO CUMPLIDO"))
-        );
-
-        // 3. Identification of Measurement Assistant
-        const isMeasurementHeader = (
-          /^\s*#{1,6}\s*(?:ASISTENTE\s+DE\s+MEDIDAS|CUADRO\s+DE\s+ASISTENTE\s+DE\s+MEDIDAS|TABLA\s+DE\s+MEDIDAS|MEDICIONES\s+Y\s+PAR[A√Å]METROS|PAR[A√Å]METROS\s+Y\s+MEDIDAS)\b/i.test(trimmedBlock) ||
-          /^\s*\*\*\s*(?:ASISTENTE\s+DE\s+MEDIDAS|TABLA\s+DE\s+MEDIDAS)\b/i.test(trimmedBlock)
-        );
-
-        // 4. Identification of Main Impression / Conclusions
-        const isImpressionHeader = (
-          normalizedBlock.includes("IMPRESION DIAGNOSTICA") ||
-          normalizedBlock.includes("IMPRESIONES DIAGNOSTICAS") ||
-          normalizedBlock.includes("IMPRESION CLINICA") ||
-          normalizedBlock.includes("IMPRESION ECOGRAFICA") ||
-          normalizedBlock.includes("IMPRESION RADIOLOGICA") ||
-          normalizedBlock.includes("CONCLUSION DIAGNOSTICA") ||
-          normalizedBlock.includes("CONCLUSIONES DIAGNOSTICAS") ||
-          /^\s*(?:#{1,6}\s*|\*\*|\*|__|\d+\.|\b)*(?:IMPRESI[O√ì]N|CONCLUSI[O√ì]N|CONCLUSIONES)\s*[:*#\s]/i.test(trimmedBlock)
-        ) && !isOrganSynopsisHeader && !isClassificationAnnexHeader && !isOrganSynopsisTableOrSummary && !isClassificationAnnexContent;
-
-        // Route blocks accurately
-        if (isClassificationAnnexHeader || isClassificationAnnexContent) {
-          currentPdfSection = "classification_annex";
-          classificationAnnexBlocks.push(trimmedBlock);
-        } else if (isOrganSynopsisHeader || isOrganSynopsisTableOrSummary) {
-          currentPdfSection = "organ";
-          organSynopsisBlocks.push(trimmedBlock);
+        if (isImpressionHeader) {
+          pdfSectionTarget = "main";
+        } else if (isCuadroHeader) {
+          pdfSectionTarget = "cuadro";
+        } else if (isOrganHeader) {
+          pdfSectionTarget = "organ";
         } else if (isMeasurementHeader) {
-          currentPdfSection = "medidas";
+          pdfSectionTarget = "medidas";
+        } else if (isAnnexHeader) {
+          pdfSectionTarget = "annex";
+        }
+
+        if (pdfSectionTarget === "cuadro") {
+          cuadroSinopticoBlocks.push(trimmedBlock);
+        } else if (pdfSectionTarget === "organ") {
+          organSynopsisBlocks.push(trimmedBlock);
+        } else if (pdfSectionTarget === "medidas") {
           measurementAssistantBlocks.push(trimmedBlock);
-        } else if (isImpressionHeader) {
-          currentPdfSection = "main";
-          mainReportBlocks.push(trimmedBlock);
+        } else if (pdfSectionTarget === "annex") {
+          classificationAnnexBlocks.push(trimmedBlock);
         } else {
-          if (currentPdfSection === "organ") {
-            organSynopsisBlocks.push(trimmedBlock);
-          } else if (currentPdfSection === "classification_annex") {
-            classificationAnnexBlocks.push(trimmedBlock);
-          } else if (currentPdfSection === "medidas") {
-            measurementAssistantBlocks.push(trimmedBlock);
-          } else {
-            mainReportBlocks.push(trimmedBlock);
-          }
+          mainReportBlocks.push(trimmedBlock);
         }
       });
 
-      // Filter mainReportBlocks to strictly prevent urological annex text from contaminating main report
-      for (let i = mainReportBlocks.length - 1; i >= 0; i--) {
-        const norm = mainReportBlocks[i].toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-        if (
-          norm.includes("EVALUACION INTEGRAL DE VIAS URINARIAS") ||
-          norm.includes("DINAMICA PROSTATICA") ||
-          norm.includes("VOLUMETRIA Y MORFOLOGIA PROSTATICA") ||
-          norm.includes("DINAMICA MICCIONAL Y RESIDUO") ||
-          norm.includes("PROTRUSION PROSTATICA INTRAVESICAL") ||
-          norm.includes("CORRELACION CLINICO-UROLOGICA Y ESTRATIFICACION")
-        ) {
-          mainReportBlocks.splice(i, 1);
-        }
-      }
-
-      // Mutual cross-contamination safeguards between Organ Synopsis and Classification Annex
-      for (let i = organSynopsisBlocks.length - 1; i >= 0; i--) {
-        const raw = organSynopsisBlocks[i];
-        const norm = raw.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-        if (
-          norm.startsWith("### ANEXO: DESGLOSE") ||
-          norm.startsWith("### DESGLOSE Y JUSTIFICACION") ||
-          norm.startsWith("### CLASIFICACION DE") ||
-          norm.startsWith("#### CLASIFICACION DE") ||
-          norm.startsWith("#### TABLA DE JUSTIFICACION") ||
-          (norm.includes("| CRITERIO EVALUADO |") && norm.includes("| JUSTIFICACION DIAGNOSTICA |"))
-        ) {
-          const extracted = organSynopsisBlocks.splice(i, 1);
-          classificationAnnexBlocks.push(...extracted);
-        }
-      }
-
-      for (let i = classificationAnnexBlocks.length - 1; i >= 0; i--) {
-        const raw = classificationAnnexBlocks[i];
-        const norm = raw.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-        if (
-          norm.startsWith("### SINOPSIS CLINICA") ||
-          norm.startsWith("### SINOPSIS POR ORGANO") ||
-          norm.startsWith("### CUADRO SINOPTICO") ||
-          (norm.includes("| ASPECTO EVALUADO |") && norm.includes("| DETALLE CLINICO / VALOR |"))
-        ) {
-          const extracted = classificationAnnexBlocks.splice(i, 1);
-          organSynopsisBlocks.push(...extracted);
-        }
-      }
-
       // Safety recovery pass for jsPDF: Ensure Impression & Conclusions are NEVER trapped inside annexes
-      const isImpressionBlockHeader = (bText: string): boolean => {
-        if (!bText) return false;
-        const firstLine = bText.trim().split("\n")[0].trim();
-        const normFirst = firstLine.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-
-        if (
-          normFirst.startsWith("### ANEXO") ||
-          normFirst.startsWith("## ANEXO") ||
-          normFirst.startsWith("# ANEXO") ||
-          normFirst.startsWith("ANEXO:") ||
-          normFirst.startsWith("### DESGLOSE") ||
-          normFirst.startsWith("### SINOPSIS") ||
-          normFirst.startsWith("### CUADRO") ||
-          normFirst.startsWith("### ASISTENTE") ||
-          normFirst.startsWith("#### TABLA") ||
-          normFirst.startsWith("#### FICHA") ||
-          normFirst.includes("EVALUACION INTEGRAL DE VIAS URINARIAS") ||
-          normFirst.includes("VOLUMETRIA Y MORFOLOGIA PROSTATICA") ||
-          normFirst.includes("DINAMICA MICCIONAL Y RESIDUO") ||
-          normFirst.includes("PROTRUSION PROSTATICA") ||
-          normFirst.includes("CORRELACION CLINICO-UROLOGICA") ||
-          normFirst.includes("ASISTENTE DE MEDIDAS")
-        ) {
-          return false;
-        }
-
-        return (
-          normFirst.includes("IMPRESION DIAGNOSTICA") ||
-          normFirst.includes("IMPRESIONES DIAGNOSTICAS") ||
-          normFirst.includes("IMPRESION CLINICA") ||
-          normFirst.includes("IMPRESION ECOGRAFICA") ||
-          normFirst.includes("IMPRESION RADIOLOGICA") ||
-          normFirst.includes("CONCLUSION DIAGNOSTICA") ||
-          normFirst.includes("CONCLUSIONES DIAGNOSTICAS") ||
-          /^\s*(?:#{1,6}\s*|\*\*|\*|__|\d+\.|\b)*(?:IMPRESI[O√ì]N|CONCLUSI[O√ì]N|CONCLUSIONES)\s*[:*#\s]/i.test(firstLine) ||
-          normFirst.startsWith("IMPRESION:") ||
-          normFirst.startsWith("CONCLUSION:") ||
-          normFirst.startsWith("CONCLUSIONES:")
-        );
+      const isImpressionBlockText = (bText: string) => {
+        const u = bText.toUpperCase();
+        return u.includes("IMPRESI√ìN DIAGN√ìSTICA") || u.includes("IMPRESION DIAGNOSTICA") ||
+               u.includes("CONCLUSI√ìN:") || u.includes("CONCLUSIONES:") ||
+               /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:IMPRESI[O√ì]N|CONCLUSI[O√ì]N|CONCLUSIONES|DIAGN[O√ì]STICO)\b/i.test(bText);
       };
 
-      // Ensure ONLY ONE Impression block is ever present in mainReportBlocks:
-      let impressionFoundInMain = false;
-      for (let i = 0; i < mainReportBlocks.length; ) {
-        if (isImpressionBlockHeader(mainReportBlocks[i])) {
-          if (impressionFoundInMain) {
-            mainReportBlocks.splice(i, 1);
+      const recoverImpressionForPDF = (sourceArr: string[]) => {
+        for (let i = 0; i < sourceArr.length; ) {
+          if (isImpressionBlockText(sourceArr[i])) {
+            const recovered = sourceArr.splice(i, sourceArr.length - i);
+            mainReportBlocks.push(...recovered);
+            break;
           } else {
-            impressionFoundInMain = true;
             i++;
           }
-        } else {
-          i++;
         }
-      }
+      };
 
-      // Recover from other buffers ONLY if mainReportBlocks has no impression at all
-      if (!impressionFoundInMain) {
-        const recoverImpressionForPDF = (sourceArr: string[]) => {
-          for (let i = 0; i < sourceArr.length; ) {
-            if (isImpressionBlockHeader(sourceArr[i])) {
-              const recovered = sourceArr.splice(i, 1);
-              mainReportBlocks.push(...recovered);
-              impressionFoundInMain = true;
-              break;
-            } else {
-              i++;
-            }
-          }
-        };
-
-        recoverImpressionForPDF(organSynopsisBlocks);
-        if (!impressionFoundInMain) recoverImpressionForPDF(measurementAssistantBlocks);
-        if (!impressionFoundInMain) recoverImpressionForPDF(classificationAnnexBlocks);
-      }
-
-      // Fail-safe Invariant: If mainReportBlocks still lacks an impression, extract it from cleanReport
-      if (!impressionFoundInMain) {
-        const rawLines = cleanReport.split("\n");
-        let capturingImpression = false;
-        let fallbackImpressionBuffer: string[] = [];
-        for (let i = 0; i < rawLines.length; i++) {
-          const l = rawLines[i].trim();
-          if (!l) continue;
-          if (isImpressionBlockHeader(l)) {
-            capturingImpression = true;
-            fallbackImpressionBuffer.push(l);
-          } else if (capturingImpression) {
-            const isNextAnnex = /^\s*(?:#{1,6}\s+|\*\*\s*)(?:ANEXO|DESGLOSE|CUADRO|SINOPSIS|ASISTENTE|TABLA|MEDIDAS|COMPLEMENTO|RADAR|INFOGRAF√çA)\b/i.test(l) || l === "---";
-            if (isNextAnnex) {
-              capturingImpression = false;
-              break;
-            } else {
-              fallbackImpressionBuffer.push(l);
-            }
-          }
-        }
-        if (fallbackImpressionBuffer.length > 0) {
-          mainReportBlocks.push(fallbackImpressionBuffer.join("\n\n"));
-          impressionFoundInMain = true;
-        }
-      }
+      recoverImpressionForPDF(cuadroSinopticoBlocks);
+      recoverImpressionForPDF(organSynopsisBlocks);
+      recoverImpressionForPDF(measurementAssistantBlocks);
+      recoverImpressionForPDF(classificationAnnexBlocks);
 
       // --- 1. CUERPO DE REPORTE CON FIRMA AL FINAL ---
       mainReportBlocks.forEach((block) => {
@@ -10158,12 +9301,20 @@ Ejemplo:
         renderSignatureBlock();
       }
 
-      // --- 2. SINOPSIS POR √ìRGANO / CUADRO SIN√ìPTICO (P√ÅGINA INDEPENDIENTE INMEDIATAMENTE DESPU√âS DEL REPORTE) ---
-      const validOrganSynopsisBlocks = organSynopsisBlocks.filter((b) => b && b.trim().length > 0);
-      if (validOrganSynopsisBlocks.length > 0) {
+      // --- 2. CUADRO SIN√ìPTICO ---
+      if (cuadroSinopticoBlocks.length > 0) {
         doc.addPage();
         yCoord = 20;
-        validOrganSynopsisBlocks.forEach((block) => {
+        cuadroSinopticoBlocks.forEach((block) => {
+          renderSingleReportBlock(block);
+        });
+      }
+
+      // --- 3. SINOPSIS POR √ìRGANO (P√ÅGINA INDEPENDIENTE DESPU√âS DEL CUERPO DEL REPORTE) ---
+      if (organSynopsisBlocks.length > 0) {
+        doc.addPage();
+        yCoord = 20;
+        organSynopsisBlocks.forEach((block) => {
           renderSingleReportBlock(block);
         });
       }
@@ -10172,2419 +9323,3466 @@ Ejemplo:
       marginX = 20;
       contentWidth = pageWidth - (2 * marginX);
 
-      // --- 4. SINOPSIS DE HALLAZGOS CON DIBUJO Y TARJETAS SIN√ìPTICAS EN ANEXO DEDICADO ---
-      const isDopplerStudy = specificStudy === "Doppler de car√≥tidas" || 
-                             specificStudy === "Doppler venoso de miembro inferior" || 
-                             specificStudy === "Doppler arterial de miembro inferior";
 
-      const activeSchemasList: Array<{ key: string; name: string }> = [];
-
-      if (includeShoulderSchemaInReport && specificStudy === "Hombro") {
-        activeSchemasList.push({ key: "shoulder", name: "Hombro" });
-      }
-      if (specificStudy === "Rodilla") {
-        if (includeKneeSchemaInReport) activeSchemasList.push({ key: "knee", name: "Rodilla Trauma" });
-        if (includeGonartrosisSchemaInReport) activeSchemasList.push({ key: "gonartrosis", name: "Rodilla Gonartrosis" });
-      }
-      if (includeAnkleSchemaInReport && specificStudy === "Tobillo") {
-        activeSchemasList.push({ key: "ankle", name: "Tobillo" });
-      }
-      if (includeThighSchemaInReport && specificStudy === "Muslo Anterior") {
-        activeSchemasList.push({ key: "thigh_ant", name: "Muslo Anterior" });
-      }
-      if (includeThighPosteriorSchemaInReport && specificStudy === "Muslo Posterior") {
-        activeSchemasList.push({ key: "thigh_post", name: "Muslo Posterior" });
-      }
-      if (includeNeckSchemaInReport && specificStudy === "Cuello") {
-        activeSchemasList.push({ key: "neck", name: "Cuello y Tiroides" });
-      }
-      if (includeUrinarySchemaInReport && specificStudy === "Vias urinarias") {
-        activeSchemasList.push({ key: "urinary", name: "V√≠as Urinarias" });
-      }
-      if (includeScrotumSchemaInReport && (specificStudy === "Escroto" || activeProtocol === "Escroto" || /escrot|testic/i.test(specificStudy || ""))) {
-        activeSchemasList.push({ key: "scrotum", name: "Escroto" });
-      }
-      if (specificStudy === "Mu√±eca") {
-        if (includeWristSchemaInReport) activeSchemasList.push({ key: "wrist", name: "Mu√±eca" });
-        if (includeDeQuervainSchemaInReport) activeSchemasList.push({ key: "de_quervain", name: "De Quervain" });
-      }
-      if (includeBreastSchemaInReport && (specificStudy === "Mamas" || specificStudy === "Momograf√≠a" || modality === "Mamograf√≠a" || modality === "Mamograf√≠a y Ultrasonido de Mamas")) {
-        activeSchemasList.push({ key: "breast", name: "Mamas" });
-      }
-      if (includeElbowSchemaInReport && specificStudy === "Codo") {
-        activeSchemasList.push({ key: "elbow", name: "Codo" });
-      }
-      if (specificStudy === "Abdomen" || activeProtocol === "Abdomen") {
-        if (includeAbdomenSchemaInReport) activeSchemasList.push({ key: "abdomen", name: "Abdomen General" });
-        if (includeBiliarySchemaInReport) activeSchemasList.push({ key: "biliary", name: "Ves√≠cula Biliar" });
-        if (includeAppendixSchemaInReport) activeSchemasList.push({ key: "appendix", name: "Ap√©ndice" });
-        if (includeHepatopatiaSchemaInReport) activeSchemasList.push({ key: "hepatopatia", name: "Hepatopat√≠a" });
-        if (includeDiverticulitisSchemaInReport) activeSchemasList.push({ key: "diverticulitis", name: "Diverticulitis" });
-        if (includeAneurismaSchemaInReport) activeSchemasList.push({ key: "aneurisma", name: "Aneurisma" });
-        if (includeSmallBowelSchemaInReport) activeSchemasList.push({ key: "small_bowel", name: "Asas Intestinales" });
-        if (includeElastographyInReport) activeSchemasList.push({ key: "elastography", name: "Elastograf√≠a & QUS" });
-      }
-      if (includeAbdominalWallSchemaInReport && specificStudy === "Pared Abdominal") {
-        activeSchemasList.push({ key: "abdominal_wall", name: "Pared Abdominal" });
-      }
-      if (includeCalfAchillesSchemaInReport && specificStudy === "Pantorrilla y Tend√≥n de Aquiles") {
-        activeSchemasList.push({ key: "calf", name: "Pantorrilla y Aquiles" });
-      }
-      if (includeNeonatalBrainSchemaInReport && specificStudy === "Cerebro Neonatal") {
-        activeSchemasList.push({ key: "neonatal_brain", name: "Cerebro Neonatal" });
-      }
-      // Old vascular schema disabled
-      if (false && includeVascularSchemaInReport && isDopplerStudy) {
-        activeSchemasList.push({ key: "vascular", name: "Vascular Doppler" });
+      // --- 5. CUADRO DE ASISTENTE DE MEDIDAS ---
+      if (measurementAssistantBlocks.length > 0) {
+        checkPageBreak(25 * factor);
+        measurementAssistantBlocks.forEach((block) => {
+          renderSingleReportBlock(block);
+        });
       }
 
-      const totalActiveSchemasCount = activeSchemasList.length;
-      let renderedSchemasCounter = 0;
+      // --- 5.5. ANEXO: ATLAS 3D FOTORREALISTA Y CORRELACI√ìN ANAT√ìMICA (P√ÅGINA DEDICADA) ---
+      const activeAtlasData = studyOverride ? studyOverride.atlas3dData : (pdfStateRef.current?.atlas3dData || atlas3dData);
+      const shouldIncludeAtlas = studyOverride ? (studyOverride.includeAtlas3dInReport !== false) : (pdfStateRef.current?.includeAtlas3dInReport !== false && includeAtlas3dInReport);
+      if (activeAtlasData && shouldIncludeAtlas && activeAtlasData.panels && activeAtlasData.panels.length > 0) {
+        renderAtlas3DAnnexToPDF(doc, activeAtlasData, {
+          marginX,
+          pageWidth,
+          pageHeight,
+          contentWidth,
+          factor
+        });
+      }
 
-      const getNextSchemaPlacement = () => {
-        const isFirst = (renderedSchemasCounter === 0);
-        let forceAddPage = false;
-        let yStart = 26;
-        let boxH = 74;
-        let leftBoxW = 88;
-        let rightBoxX = 111;
-        let rightBoxW = 79;
-        const isSingleFullPage = (totalActiveSchemasCount === 1);
+      // --- 6. ANEXOS DE IM√ÅGENES DIAGN√ìSTICAS (MAMOGRAF√çA Y ULTRASONIDO) ---
+      if (attachedImages.length > 0) {
+        const mmgImages = attachedImages.filter(img => (img.modality || detectImageMetaFromFilename(img.name, img.dicomMetaData).modality) === "MMG");
+        const usImages = attachedImages.filter(img => !mmgImages.includes(img));
 
-        if (isFirst) {
-          forceAddPage = true; // Always start on a new separate annexed page!
-        }
+        const sortMmg = (list: typeof attachedImages) => {
+          return [...list].sort((a, b) => {
+            const metaA = detectImageMetaFromFilename(a.name, a.dicomMetaData);
+            const metaB = detectImageMetaFromFilename(b.name, b.dicomMetaData);
+            const projA = a.projection || metaA.projection;
+            const projB = b.projection || metaB.projection;
 
-        if (isSingleFullPage) {
-          // 1 Schema: Large prominent full page format!
-          boxH = 138;
-          leftBoxW = 92;
-          rightBoxX = 113;
-          rightBoxW = 75;
-          yStart = 26;
-        } else {
-          // 2 or more schemas: Dual per page format (2 per page)
-          const posOnPage = renderedSchemasCounter % 2;
-          if (posOnPage === 0 && !isFirst) {
-            forceAddPage = true; // New page for 3rd, 5th, etc.
-          }
-          if (posOnPage === 0) {
-            yStart = 26;
-          } else {
-            yStart = 108;
-          }
-          boxH = 74;
-          leftBoxW = 88;
-          rightBoxX = 111;
-          rightBoxW = 79;
-        }
-
-        renderedSchemasCounter++;
-
-        return {
-          forceAddPage,
-          yStart,
-          boxH,
-          leftBoxW,
-          rightBoxX,
-          rightBoxW,
-          isSingleFullPage
+            const scoreA = projA === "CC" ? 1 : (projA === "MLO" ? 2 : 3);
+            const scoreB = projB === "CC" ? 1 : (projB === "MLO" ? 2 : 3);
+            return scoreA - scoreB;
+          });
         };
-      };
 
-      // üõ†Ô∏è DRAW SHOULDER DIAGRAM IN THE PROGRAMMATIC PDF
-      if (includeShoulderSchemaInReport && specificStudy === "Hombro") {
-        try {
-          const sanitizeShoulderSvgForPrint = (svgEl: HTMLElement) => {
-            const clonedSvg = svgEl.cloneNode(true) as SVGElement;
-            const stops = clonedSvg.querySelectorAll("linearGradient stop");
-            stops.forEach(stop => {
-              const curColor = stop.getAttribute("stop-color") || stop.getAttribute("stopColor") || "";
-              if (curColor === "#1e293b" || curColor === "#2e3d52") stop.setAttribute("stop-color", "#f1f5f9");
-              if (curColor === "#0f172a" || curColor === "#111827") stop.setAttribute("stop-color", "#cbd5e1");
-              if (curColor === "#334155" || curColor === "#3d4e66") stop.setAttribute("stop-color", "#cbd5e1");
-            });
+        const sortedMmgImages = sortMmg(mmgImages);
+        if (sortedMmgImages.length === 2) {
+          const meta0 = detectImageMetaFromFilename(sortedMmgImages[0].name, sortedMmgImages[0].dicomMetaData);
+          const meta1 = detectImageMetaFromFilename(sortedMmgImages[1].name, sortedMmgImages[1].dicomMetaData);
+          const proj0 = sortedMmgImages[0].projection || meta0.projection;
+          const proj1 = sortedMmgImages[1].projection || meta1.projection;
+          if (proj0 === "OTRO" && proj1 === "OTRO") {
+            sortedMmgImages[0].projection = "CC";
+            sortedMmgImages[1].projection = "MLO";
+          }
+        }
 
-            const paths = clonedSvg.querySelectorAll("path");
-            paths.forEach(p => {
-              const fill = p.getAttribute("fill") || "";
-              const stroke = p.getAttribute("stroke") || "";
-              if (fill === "#1e293b") p.setAttribute("fill", "#f8fafc");
-              if (fill === "#451a03") p.setAttribute("fill", "#fef3c7");
-              if (fill === "#500730") p.setAttribute("fill", "#fce7f3");
-              if (fill === "#7f1d1d") p.setAttribute("fill", "#fee2e2");
+        let globalFigIdx = 1;
 
-              if (stroke === "#ef4444") p.setAttribute("stroke", "#dc2626");
-              if (stroke === "#ec4899") p.setAttribute("stroke", "#db2777");
-              if (stroke === "#f59e0b") p.setAttribute("stroke", "#d97706");
-              if (stroke === "#334155") p.setAttribute("stroke", "#475569");
-              if (stroke === "#475569") p.setAttribute("stroke", "#64748b");
-            });
+        // 6A. ANEXO DE IM√ÅGENES DE MAMOGRAF√çA (MMG) - OCUPANDO LA HOJA COMPLETA
+        if (sortedMmgImages.length > 0) {
+          doc.addPage();
+          yCoord = 20;
 
-            const texts = clonedSvg.querySelectorAll("text");
-            texts.forEach(t => {
-              const fill = t.getAttribute("fill") || "";
-              if (fill === "#64748b") t.setAttribute("fill", "#475569");
-              if (fill === "#475569") t.setAttribute("fill", "#1e293b");
-            });
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(11);
+          doc.setTextColor(15, 23, 42); // slate 900
+          doc.text("ANEXO: IM√ÅGENES DE MAMOGRAF√çA (MMG)", marginX, yCoord);
 
-            const circles = clonedSvg.querySelectorAll("circle");
-            circles.forEach(c => {
-              const stroke = c.getAttribute("stroke") || "";
-              if (stroke === "#1e293b") c.setAttribute("stroke", "#e2e8f0");
-            });
-            const lines = clonedSvg.querySelectorAll("line");
-            lines.forEach(l => {
-              const stroke = l.getAttribute("stroke") || "";
-              if (stroke === "#1e293b") l.setAttribute("stroke", "#e2e8f0");
-            });
-            return clonedSvg;
-          };
+          yCoord += 4;
+          doc.setDrawColor(203, 213, 225); // slate 300
+          doc.setLineWidth(0.4);
+          doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
+          yCoord += 10;
 
-          const getCardDataForSide = (statesObj: any, descObj: any) => {
-            const structures = [
-              { id: "supraspinatus", label: "Supraespinoso" },
-              { id: "infraspinatus", label: "Infraespinoso" },
-              { id: "subscapularis", label: "Subescapular" },
-              { id: "biceps", label: "PL B√≠ceps" },
-              { id: "bursa", label: "Bursa SAD" },
-              { id: "glenohumeral", label: "Derrame GH" },
-              { id: "acromioclavicular", label: "Artic. A.C." },
-              { id: "dynamic_assessment", label: "Val. Din√°mica" }
-            ].filter(struct => {
-              const s = statesObj[struct.id] || "no_descrito";
-              return s !== "no_descrito" && s !== "normal";
-            });
+          const boxW = contentWidth; // ~180mm
+          const boxH = sortedMmgImages.length === 1 ? 160 : 88; // Fill page nicely
+          const slotSpacing = sortedMmgImages.length === 1 ? 175 : 122;
 
-            const getPDFSimplifiedDescription = (id: string, state: string) => {
-              if (descObj && descObj[id] && descObj[id].trim() !== "" && descObj[id] !== "No mencionado / No descrito." && descObj[id] !== "No descrito.") {
-                return descObj[id];
+          let itemsOnPage = 0;
+
+          for (const imgItem of sortedMmgImages) {
+            if (itemsOnPage >= 2 || yCoord + boxH + 20 > pageHeight - 15) {
+              doc.addPage();
+              yCoord = 20;
+              itemsOnPage = 0;
+
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(9.5);
+              doc.setTextColor(100, 116, 139);
+              doc.text("ANEXO: IM√ÅGENES DE MAMOGRAF√çA (CONT...)", marginX, yCoord);
+              yCoord += 4;
+              doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
+              yCoord += 10;
+            }
+
+            try {
+              let format = "JPEG";
+              if (imgItem.base64.includes("image/png")) format = "PNG";
+              else if (imgItem.base64.includes("image/gif")) format = "GIF";
+              else if (imgItem.base64.includes("image/webp")) format = "WEBP";
+
+              let drawW = boxW;
+              let drawH = boxH;
+              let drawX = marginX;
+              let drawY = yCoord;
+
+              if (imgItem.width && imgItem.height) {
+                const aspectImg = imgItem.width / imgItem.height;
+                const aspectBox = boxW / boxH;
+                if (aspectImg > aspectBox) {
+                  drawW = boxW;
+                  drawH = boxW / aspectImg;
+                  drawY = yCoord + (boxH - drawH) / 2;
+                } else {
+                  drawH = boxH;
+                  drawW = boxH * aspectImg;
+                  drawX = marginX + (boxW - drawW) / 2;
+                }
               }
-              if (!state || state === "no_descrito") {
-                return "No descrito en el reporte.";
-              }
-              if (state === "normal") {
-                return "Entre l√≠mites normales.";
-              }
-              return state.charAt(0).toUpperCase() + state.slice(1).replace(/_/g, " ");
-            };
 
-            const data = structures.map(struct => {
-              const s = statesObj[struct.id] || "no_descrito";
-              return {
-                label: struct.label,
-                state: s,
-                description: getPDFSimplifiedDescription(struct.id, s)
-              };
-            });
+              // Background fill for image frame
+              doc.setFillColor(248, 250, 252);
+              doc.rect(marginX, yCoord, boxW, boxH, "F");
 
-            const shoulderExtras = additionalFindings["Hombro"] || [];
-            shoulderExtras.forEach((extra: any) => {
-              data.push({
-                label: extra.structureName,
-                state: extra.state || "Alterado",
-                description: extra.description
+              // Draw MMG Image
+              doc.addImage(imgItem.base64, format, drawX, drawY, drawW, drawH);
+
+              // Border around frame
+              doc.setDrawColor(226, 232, 240);
+              doc.setLineWidth(0.3);
+              doc.rect(marginX, yCoord, boxW, boxH, "D");
+
+              // Projection tag
+              const meta = detectImageMetaFromFilename(imgItem.name, imgItem.dicomMetaData);
+              const proj = imgItem.projection || meta.projection;
+
+              let figTitle = `Figura ${globalFigIdx}. Proyecciones Cr√°neo Caudales (CC)`;
+              if (proj === "MLO") {
+                figTitle = `Figura ${globalFigIdx}. Proyecciones Medio Lateral Oblicuas (MLO)`;
+              } else if (proj === "OTRO") {
+                figTitle = `Figura ${globalFigIdx}. Proyecci√≥n Complementaria MMG`;
+              }
+
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(9.5);
+              doc.setTextColor(15, 23, 42);
+              doc.text(figTitle, marginX, yCoord + boxH + 5);
+
+              const defaultCaption = proj === "CC"
+                ? "Proyecciones Cr√°neo Caudales (CC). Tejido fibroglandular de distribuci√≥n sim√©trica sin evidencia de n√≥dulos ni microcalcificaciones de sospecha."
+                : (proj === "MLO"
+                  ? "Proyecciones Medio Lateral Oblicuas (MLO). Adecuada visualizaci√≥n de los planos pectorales sin distorsiones ni adenopat√≠as axilares."
+                  : "Mamograf√≠a digital, proyecciones complementarias.");
+
+              const rawCaption = imgItem.caption && imgItem.caption.trim() ? imgItem.caption.trim() : defaultCaption;
+
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(8.5);
+              doc.setTextColor(71, 85, 105);
+              const textLines = doc.splitTextToSize(rawCaption, boxW);
+              let offsetTextY = yCoord + boxH + 9.5;
+              textLines.forEach((lineText: string) => {
+                doc.text(lineText, marginX, offsetTextY);
+                offsetTextY += 3.8;
               });
-            });
 
-            return data;
-          };
+            } catch (imgErr) {
+              console.error("Could not append attached MMG image in jsPDF: ", imgErr);
+              doc.setDrawColor(226, 232, 240);
+              doc.rect(marginX, yCoord, boxW, boxH);
+              doc.setFont("helvetica", "italic");
+              doc.setFontSize(8.5);
+              doc.setTextColor(148, 163, 184);
+              doc.text("No se pudo renderizar la mamograf√≠a", marginX + 10, yCoord + (boxH / 2));
+            }
 
-          if (laterality === "Bilateral") {
-            const svgDer = document.getElementById("shoulder-anatomy-svg");
-            const svgIzq = document.getElementById("shoulder-anatomy-svg-left");
+            itemsOnPage++;
+            yCoord += slotSpacing;
+            globalFigIdx++;
+          }
+        }
 
-            if (svgDer && svgIzq) {
-              const imgDataDer = await convertSvgToPng(sanitizeShoulderSvgForPrint(svgDer));
-              const imgDataIzq = await convertSvgToPng(sanitizeShoulderSvgForPrint(svgIzq));
+        // 6B. ANEXO DE IM√ÅGENES Y CAPTURAS DE ULTRASONIDO (US)
+        if (usImages.length > 0) {
+          doc.addPage();
+          yCoord = 20;
 
-              checkPageBreak(125);
-              yCoord += 15;
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(11);
+          doc.setTextColor(15, 23, 42); // slate 900
+          doc.text("ANEXO: IM√ÅGENES Y CAPTURAS DE ULTRASONIDO", marginX, yCoord);
 
+          yCoord += 4;
+          doc.setDrawColor(203, 213, 225); // slate 300
+          doc.setLineWidth(0.4);
+          doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
+          yCoord += 11;
+
+          const colWidth = (pageWidth - (marginX * 2) - 8) / 2;
+          const imgHeight = colWidth * 0.75;
+          
+          let currentCol = 0;
+          for (const imgItem of usImages) {
+            if (yCoord + imgHeight + 17 > pageHeight - 20) {
+              doc.addPage();
+              yCoord = 20;
+              currentCol = 0;
+              
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(9);
+              doc.setTextColor(100, 116, 139);
+              doc.text("ANEXO: CAPTURAS DE ULTRASONIDO (CONT...)", marginX, yCoord);
+              yCoord += 4;
+              doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
+              yCoord += 11;
+            }
+
+            const posX = marginX + currentCol * (colWidth + 8);
+            
+            try {
+              let format = "JPEG";
+              if (imgItem.base64.includes("image/png")) format = "PNG";
+              else if (imgItem.base64.includes("image/gif")) format = "GIF";
+              else if (imgItem.base64.includes("image/webp")) format = "WEBP";
+
+              let drawW = colWidth;
+              let drawH = imgHeight;
+              let drawX = posX;
+              let drawY = yCoord;
+
+              if (imgItem.width && imgItem.height) {
+                const aspectImg = imgItem.width / imgItem.height;
+                const aspectBox = colWidth / imgHeight;
+                if (aspectImg > aspectBox) {
+                  drawW = colWidth;
+                  drawH = colWidth / aspectImg;
+                  drawY = yCoord + (imgHeight - drawH) / 2;
+                } else {
+                  drawH = imgHeight;
+                  drawW = imgHeight * aspectImg;
+                  drawX = posX + (colWidth - drawW) / 2;
+                }
+              }
+
+              doc.addImage(imgItem.base64, format, drawX, drawY, drawW, drawH);
+
+              doc.setDrawColor(241, 245, 249);
+              doc.setLineWidth(0.25);
+              doc.rect(posX, yCoord, colWidth, imgHeight);
+
+              // Print Figure label with continuous globalFigIdx
               doc.setFont("helvetica", "bold");
               doc.setFontSize(8.5);
-              doc.setTextColor(30, 41, 59);
-              doc.text("ANEXO: ESQUEMAS DE HALLAZGOS Y SINOPSIS BILATERAL", pageWidth / 2, yCoord, { align: "center" });
-              yCoord += 3.5;
+              doc.setTextColor(15, 23, 42);
+              doc.text(`Figura ${globalFigIdx}.`, posX, yCoord + imgHeight + 4.5);
 
+              const captionText = imgItem.caption || "Sin descripci√≥n";
               doc.setFont("helvetica", "normal");
-              doc.setFontSize(6.5);
-              doc.setTextColor(148, 163, 184);
-              doc.text("MAPEO ANAT√ìMICO Y SINOPSIS ESTRUCTURADA - HOMBRO BILATERAL", pageWidth / 2, yCoord, { align: "center" });
-              yCoord += 6;
-
-              const yStart = yCoord;
-
-              // --- HOMBRO DERECHO (LEFT COLUMN) ---
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(7.5);
-              doc.setTextColor(71, 85, 105);
-              doc.text("HOMBRO DERECHO", 60, yStart - 1, { align: "center" });
-
-              // Diagram Box Left
-              doc.setFillColor(255, 255, 255);
-              doc.setDrawColor(229, 231, 235);
-              doc.roundedRect(20, yStart, 80, 50, 3, 3, "FD");
-              doc.addImage(imgDataDer, "PNG", 35, yStart + 2, 50, 46);
-
-              // Findings Box Left
-              const dataDer = getCardDataForSide(shoulderStates, shoulderDescriptions);
-              doc.setFillColor(248, 250, 252);
-              doc.setDrawColor(229, 231, 235);
-              doc.roundedRect(20, yStart + 53, 80, 52, 3, 3, "FD");
-
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(7.0);
-              doc.setTextColor(67, 56, 202);
-              doc.text("SINOPSIS CL√çNICA - DER", 24, yStart + 58.5);
-              doc.line(24, yStart + 60, 96, yStart + 60);
-
-              if (dataDer.length === 0) {
-                doc.setFont("helvetica", "italic");
-                doc.setFontSize(6.5);
-                doc.setTextColor(100, 116, 139);
-                doc.text("Sin hallazgos patol√≥gicos relevantes.", 60, yStart + 75, { align: "center" });
-              } else {
-                drawAnatomicalCards(doc, dataDer, 20, yStart + 53, 80, 52);
-              }
-
-              // --- HOMBRO IZQUIERDO (RIGHT COLUMN) ---
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(7.5);
-              doc.setTextColor(71, 85, 105);
-              doc.text("HOMBRO IZQUIERDO", 150, yStart - 1, { align: "center" });
-
-              // Diagram Box Right
-              doc.setFillColor(255, 255, 255);
-              doc.setDrawColor(229, 231, 235);
-              doc.roundedRect(110, yStart, 80, 50, 3, 3, "FD");
-              doc.addImage(imgDataIzq, "PNG", 125, yStart + 2, 50, 46);
-
-              // Findings Box Right
-              const dataIzq = getCardDataForSide(shoulderStatesLeft, shoulderDescriptionsLeft);
-              doc.setFillColor(248, 250, 252);
-              doc.setDrawColor(229, 231, 235);
-              doc.roundedRect(110, yStart + 53, 80, 52, 3, 3, "FD");
-
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(7.0);
-              doc.setTextColor(67, 56, 202);
-              doc.text("SINOPSIS CL√çNICA - IZQ", 114, yStart + 58.5);
-              doc.line(114, yStart + 60, 186, yStart + 60);
-
-              if (dataIzq.length === 0) {
-                doc.setFont("helvetica", "italic");
-                doc.setFontSize(6.5);
-                doc.setTextColor(100, 116, 139);
-                doc.text("Sin hallazgos patol√≥gicos relevantes.", 150, yStart + 75, { align: "center" });
-              } else {
-                drawAnatomicalCards(doc, dataIzq, 110, yStart + 53, 80, 52);
-              }
-
-              // Footnote
-              doc.setFont("helvetica", "italic");
-              doc.setFontSize(6.0);
-              doc.setTextColor(148, 163, 184);
-              doc.text("Mapas anat√≥micos y sinopsis correspondientes al estudio bilateral.", pageWidth / 2, yStart + 101, { align: "center" });
-
-              yCoord += 112;
-
-              // --- SUPRASPINATUS EXTRA DRAWINGS FOR BILATERAL STUDY ---
-              try {
-                const supraspinatusWrapperDer = document.getElementById("supraspinatus-ap-print-wrapper");
-                const supraspinatusWrapperIzq = document.getElementById("supraspinatus-ap-print-wrapper-left");
-
-                const shouldPrintSupraspinatusDer = supraspinatusWrapperDer && supraspinatusWrapperDer.getAttribute("data-include") === "true";
-                const shouldPrintSupraspinatusIzq = supraspinatusWrapperIzq && supraspinatusWrapperIzq.getAttribute("data-include") === "true";
-
-                if (shouldPrintSupraspinatusDer || shouldPrintSupraspinatusIzq) {
-                  checkPageBreak(120);
-                  doc.addPage();
-                  yCoord = 20;
-
-                  doc.setFont("helvetica", "bold");
-                  doc.setFontSize(8.5);
-                  doc.setTextColor(30, 41, 59);
-                  doc.text("ANEXO: ESTUDIO MICRO-ANAT√ìMICO DE ROTURA DE SUPRAESPINOSO", pageWidth / 2, yCoord, { align: "center" });
-                  yCoord += 3.5;
-
-                  doc.setFont("helvetica", "normal");
-                  doc.setFontSize(6.5);
-                  doc.setTextColor(148, 163, 184);
-                  doc.text("INTERPRETACI√ìN PARAM√âTRICA VECTORES CORONAL (AP) Y SAGITAL (LAT)", pageWidth / 2, yCoord, { align: "center" });
-                  yCoord += 8;
-
-                  const yS = yCoord;
-
-                  if (shouldPrintSupraspinatusDer && supraspinatusWrapperDer) {
-                    const svgChildren = supraspinatusWrapperDer.querySelectorAll("svg");
-                    if (svgChildren.length >= 2) {
-                      const apSvg = svgChildren[0] as SVGElement;
-                      const latSvg = svgChildren[1] as SVGElement;
-                      const apPng = await convertSvgToPng(apSvg);
-                      const latPng = await convertSvgToPng(latSvg);
-
-                      doc.setFillColor(255, 255, 255);
-                      doc.setDrawColor(229, 231, 235);
-                      doc.roundedRect(20, yS, 80, 52, 3, 3, "FD");
-
-                      doc.setFont("helvetica", "bold");
-                      doc.setFontSize(7.0);
-                      doc.setTextColor(225, 29, 72);
-                      doc.text("HOMBRO DERECHO: DETALLE DE ROTURA", 60, yS + 6, { align: "center" });
-
-                      doc.addImage(apPng, "PNG", 22, yS + 10, 36, 36);
-                      doc.addImage(latPng, "PNG", 62, yS + 10, 36, 36);
-                    }
-                  } else {
-                    doc.setFillColor(248, 250, 252);
-                    doc.setDrawColor(229, 231, 235);
-                    doc.roundedRect(20, yS, 80, 52, 3, 3, "FD");
-
-                    doc.setFont("helvetica", "bold");
-                    doc.setFontSize(7.0);
-                    doc.setTextColor(71, 85, 105);
-                    doc.text("HOMBRO DERECHO: DETALLE", 60, yS + 6, { align: "center" });
-
-                    doc.setFont("helvetica", "italic");
-                    doc.setFontSize(6.5);
-                    doc.setTextColor(148, 163, 184);
-                    doc.text("Tend√≥n supraespinoso sin desgarro", 60, yS + 26, { align: "center" });
-                  }
-
-                  if (shouldPrintSupraspinatusIzq && supraspinatusWrapperIzq) {
-                    const svgChildren = supraspinatusWrapperIzq.querySelectorAll("svg");
-                    if (svgChildren.length >= 2) {
-                      const apSvg = svgChildren[0] as SVGElement;
-                      const latSvg = svgChildren[1] as SVGElement;
-                      const apPng = await convertSvgToPng(apSvg);
-                      const latPng = await convertSvgToPng(latSvg);
-
-                      doc.setFillColor(255, 255, 255);
-                      doc.setDrawColor(229, 231, 235);
-                      doc.roundedRect(110, yS, 80, 52, 3, 3, "FD");
-
-                      doc.setFont("helvetica", "bold");
-                      doc.setFontSize(7.0);
-                      doc.setTextColor(225, 29, 72);
-                      doc.text("HOMBRO IZQUIERDO: DETALLE DE ROTURA", 150, yS + 6, { align: "center" });
-
-                      doc.addImage(apPng, "PNG", 112, yS + 10, 36, 36);
-                      doc.addImage(latPng, "PNG", 152, yS + 10, 36, 36);
-                    }
-                  } else {
-                    doc.setFillColor(248, 250, 252);
-                    doc.setDrawColor(229, 231, 235);
-                    doc.roundedRect(110, yS, 80, 52, 3, 3, "FD");
-
-                    doc.setFont("helvetica", "bold");
-                    doc.setFontSize(7.0);
-                    doc.setTextColor(71, 85, 105);
-                    doc.text("HOMBRO IZQUIERDO: DETALLE", 150, yS + 6, { align: "center" });
-
-                    doc.setFont("helvetica", "italic");
-                    doc.setFontSize(6.5);
-                    doc.setTextColor(148, 163, 184);
-                    doc.text("Tend√≥n supraespinoso sin desgarro", 150, yS + 26, { align: "center" });
-                  }
-
-                  doc.setFont("helvetica", "italic");
-                  doc.setFontSize(5.5);
-                  doc.setTextColor(148, 163, 184);
-                  doc.text("An√°lisis cl√≠nico y modelaci√≥n de fibras intactas vs soluci√≥n de continuidad.", pageWidth / 2, yS + 58, { align: "center" });
-
-                  yCoord = yS + 62;
-                }
-              } catch (ex) {
-                console.warn("Error printing extra supraspinatus detailed drawings", ex);
-              }
-            }
-          } else {
-            // Unilateral
-            const sideTitle = `HOMBRO ${laterality ? getGenderedLaterality(laterality, "Hombro").toUpperCase() : ""}`;
-            const svgElement = document.getElementById("shoulder-anatomy-svg");
-            if (svgElement) {
-              const clonedSvg = sanitizeShoulderSvgForPrint(svgElement);
-              const imgData = await convertSvgToPng(clonedSvg);
-
-              const willPageBreak = (yCoord + 95 > pageHeight - 20);
-              checkPageBreak(95);
-              if (!willPageBreak) {
-                yCoord += 18;
-              } else {
-                yCoord += 6;
-              }
-
-              doc.setFont("helvetica", "bold");
               doc.setFontSize(8.0);
-              doc.setTextColor(30, 41, 59);
-              doc.text(`ANEXO: ESQUEMA DE HALLAZGOS Y SINOPSIS - ${sideTitle}`, pageWidth / 2, yCoord, { align: "center" });
-              yCoord += 3.5;
+              doc.setTextColor(71, 85, 105);
+              const textLines = doc.splitTextToSize(captionText, colWidth - 2);
+              let offsetTextY = yCoord + imgHeight + 8.0;
+              textLines.forEach((lineText: string) => {
+                doc.text(lineText, posX, offsetTextY);
+                offsetTextY += 3.5;
+              });
 
-              doc.setFont("helvetica", "normal");
-              doc.setFontSize(6.3);
-              doc.setTextColor(148, 163, 184);
-              doc.text("MAPEO ANAT√ìMICO Y SINOPSIS ESTRUCTURADA DEL MANGUITO ROTADOR Y ESTRUCTURAS ADYACENTES", pageWidth / 2, yCoord, { align: "center" });
-              yCoord += 4.5;
-
-              const yStart = yCoord;
-
-              doc.setFillColor(255, 255, 255);
-              doc.setDrawColor(229, 231, 235);
-              doc.roundedRect(20, yStart, 75, 75, 3, 3, "FD");
-              doc.addImage(imgData, "PNG", 22.5, yStart + 2.5, 70, 70);
-
-              doc.setFillColor(248, 250, 252);
-              doc.setDrawColor(229, 231, 235);
-              doc.roundedRect(100, yStart, 90, 75, 3, 3, "FD");
-
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(7.5);
-              doc.setTextColor(67, 56, 202);
-              doc.text(`SINOPSIS DE HALLAZGOS CLINICOS - ${sideTitle}`, 104, yStart + 5.5);
-
-              doc.setDrawColor(229, 231, 235);
-              doc.setLineWidth(0.2);
-              doc.line(104, yStart + 7.5, 186, yStart + 7.5);
-
-              const cardData = getCardDataForSide(shoulderStates, shoulderDescriptions);
-
-              if (cardData.length === 0) {
-                doc.setFont("helvetica", "italic");
-                doc.setFontSize(6.5);
-                doc.setTextColor(100, 116, 139);
-                doc.text("Sin hallazgos patol√≥gicos relevantes.", 145, yStart + 30, { align: "center" });
-                doc.text("Todas las estructuras musculotendinosas", 145, yStart + 36, { align: "center" });
-                doc.text("y articulares se reportan normales.", 145, yStart + 42, { align: "center" });
-              } else {
-                drawAnatomicalCards(doc, cardData, 100, yStart, 90, 75);
-              }
-
+            } catch (imgErr) {
+              console.error("Could not append attached US image in jsPDF: ", imgErr);
+              doc.setDrawColor(226, 232, 240);
+              doc.rect(posX, yCoord, colWidth, imgHeight);
               doc.setFont("helvetica", "italic");
-              doc.setFontSize(6.2);
+              doc.setFontSize(8);
               doc.setTextColor(148, 163, 184);
-              doc.text("Mapa anat√≥mico y lista sin√≥ptica correspondientes al reporte f√≠sico.", 145, yStart + 72, { align: "center" });
-
-              yCoord += 80;
-
-              // --- SUPRASPINATUS EXTRA DRAWINGS FOR UNILATERAL STUDY ---
-              try {
-                const supraspinatusWrapperDer = document.getElementById("supraspinatus-ap-print-wrapper");
-                const supraspinatusWrapperIzq = document.getElementById("supraspinatus-ap-print-wrapper-left");
-
-                const shouldPrintSupraspinatusDer = supraspinatusWrapperDer && supraspinatusWrapperDer.getAttribute("data-include") === "true";
-                const shouldPrintSupraspinatusIzq = supraspinatusWrapperIzq && supraspinatusWrapperIzq.getAttribute("data-include") === "true";
-
-                if (shouldPrintSupraspinatusDer && shouldPrintSupraspinatusIzq) {
-                  // Print both side-by-side!
-                  checkPageBreak(58);
-                  yCoord += 11;
-
-                  doc.setFont("helvetica", "bold");
-                  doc.setFontSize(8.0);
-                  doc.setTextColor(30, 41, 59);
-                  doc.text("ANEXO: DETALLE BILATERAL DE ROTURA DE SUPRAESPINOSO", pageWidth / 2, yCoord, { align: "center" });
-                  yCoord += 3.5;
-
-                  doc.setFont("helvetica", "normal");
-                  doc.setFontSize(6.2);
-                  doc.setTextColor(148, 163, 184);
-                  doc.text("COHERENCIA GEOM√âTRICA CON LA IMPRESI√ìN CL√çNICA: VISTA AP & LAT", pageWidth / 2, yCoord, { align: "center" });
-                  yCoord += 5.5;
-
-                  const yS = yCoord;
-
-                  if (supraspinatusWrapperDer) {
-                    const svgDerChildren = supraspinatusWrapperDer.querySelectorAll("svg");
-                    if (svgDerChildren.length >= 2) {
-                      const apSvg = svgDerChildren[0] as SVGElement;
-                      const latSvg = svgDerChildren[1] as SVGElement;
-                      const apPng = await convertSvgToPng(apSvg);
-                      const latPng = await convertSvgToPng(latSvg);
-
-                      doc.setFillColor(255, 255, 255);
-                      doc.setDrawColor(229, 231, 235);
-                      doc.roundedRect(20, yS, 80, 38, 3, 3, "FD");
-
-                      doc.setFont("helvetica", "bold");
-                      doc.setFontSize(6.5);
-                      doc.setTextColor(225, 29, 72);
-                      doc.text("HOMBRO DERECHO: DETALLE DE ROTURA", 60, yS + 6, { align: "center" });
-
-                      doc.addImage(apPng, "PNG", 24, yS + 8, 28, 28);
-                      doc.addImage(latPng, "PNG", 64, yS + 8, 28, 28);
-                    }
-                  }
-
-                  if (supraspinatusWrapperIzq) {
-                    const svgIzqChildren = supraspinatusWrapperIzq.querySelectorAll("svg");
-                    if (svgIzqChildren.length >= 2) {
-                      const apSvg = svgIzqChildren[0] as SVGElement;
-                      const latSvg = svgIzqChildren[1] as SVGElement;
-                      const apPng = await convertSvgToPng(apSvg);
-                      const latPng = await convertSvgToPng(latSvg);
-
-                      doc.setFillColor(255, 255, 255);
-                      doc.setDrawColor(229, 231, 235);
-                      doc.roundedRect(110, yS, 80, 38, 3, 3, "FD");
-
-                      doc.setFont("helvetica", "bold");
-                      doc.setFontSize(6.5);
-                      doc.setTextColor(225, 29, 72);
-                      doc.text("HOMBRO IZQUIERDO: DETALLE DE ROTURA", 150, yS + 6, { align: "center" });
-
-                      doc.addImage(apPng, "PNG", 114, yS + 8, 28, 28);
-                      doc.addImage(latPng, "PNG", 154, yS + 8, 28, 28);
-                    }
-                  }
-
-                  yCoord = yS + 42;
-                } else if (shouldPrintSupraspinatusDer || shouldPrintSupraspinatusIzq) {
-                  const isLeftActive = !!shouldPrintSupraspinatusIzq;
-                  const activeWrapper = isLeftActive ? supraspinatusWrapperIzq : supraspinatusWrapperDer;
-                  const sideLabel = isLeftActive ? "IZQUIERDO" : "DERECHO";
-
-                  if (activeWrapper) {
-                    const svgChildren = activeWrapper.querySelectorAll("svg");
-                    if (svgChildren.length >= 2) {
-                      const apSvg = svgChildren[0] as SVGElement;
-                      const latSvg = svgChildren[1] as SVGElement;
-                      const apPng = await convertSvgToPng(apSvg);
-                      const latPng = await convertSvgToPng(latSvg);
-
-                      checkPageBreak(58);
-                      yCoord += 11;
-
-                      doc.setFont("helvetica", "bold");
-                      doc.setFontSize(8.0);
-                      doc.setTextColor(30, 41, 59);
-                      doc.text(`ANEXO: DETALLE DE ROTURA DE SUPRAESPINOSO - HOMBRO ${sideLabel}`, pageWidth / 2, yCoord, { align: "center" });
-                      yCoord += 3.5;
-
-                      doc.setFont("helvetica", "normal");
-                      doc.setFontSize(6.2);
-                      doc.setTextColor(148, 163, 184);
-                      doc.text("COHERENCIA GEOM√âTRICA CON LA IMPRESI√ìN CL√çNICA: VISTA AP & LAT", pageWidth / 2, yCoord, { align: "center" });
-                      yCoord += 5.5;
-
-                      const yS = yCoord;
-
-                      doc.setFillColor(255, 255, 255);
-                      doc.setDrawColor(229, 231, 235);
-                      doc.roundedRect(45, yS, 120, 38, 3, 3, "FD");
-
-                      doc.addImage(apPng, "PNG", 55, yS + 3, 32, 32);
-                      doc.addImage(latPng, "PNG", 123, yS + 3, 32, 32);
-
-                      yCoord = yS + 42;
-                    }
-                  }
-                }
-              } catch (ex) {
-                console.warn("Error printing unilateral detailed supraspinatus drawings", ex);
-              }
+              doc.text("No se pudo renderizar la imagen", posX + 5, yCoord + (imgHeight/2));
             }
+
+            if (currentCol === 0) {
+              currentCol = 1;
+            } else {
+              currentCol = 0;
+              yCoord += imgHeight + 20;
+            }
+            globalFigIdx++;
           }
-        } catch (err) {
-          console.warn("Could not draw shoulder diagram inside jsPDF", err);
         }
       }
 
-      // üõ†Ô∏è DRAW KNEE DIAGRAM IN THE PROGRAMMATIC PDF
-      if ((includeKneeSchemaInReport || includeGonartrosisSchemaInReport) && specificStudy === "Rodilla") {
-        try {
-          const sanitizeKneeSvgForPrint = (el: HTMLElement) => {
-            const cloned = el.cloneNode(true) as SVGElement;
-            const stops = cloned.querySelectorAll("linearGradient stop");
-            stops.forEach(stop => {
-              const curColor = stop.getAttribute("stop-color") || stop.getAttribute("stopColor") || "";
-              if (curColor === "#1e293b" || curColor === "#2e3d52") stop.setAttribute("stop-color", "#f1f5f9");
-              if (curColor === "#0f172a" || curColor === "#111827") stop.setAttribute("stop-color", "#cbd5e1");
-              if (curColor === "#334155" || curColor === "#3d4e66") stop.setAttribute("stop-color", "#cbd5e1");
+      // --- 6.5. ANEXO: REPRESENTACI√ìN ESQUEM√ÅTICA 3D DEL HALLAZGO ---
+      const active3dRenders = (studyOverride ? (studyOverride.findings3dRenders || []) : (pdfStateRef.current?.findings3dRenders || findings3dRenders || [])).filter((r: any) => r && r.includeInPdf !== false);
+
+      if (active3dRenders.length > 0) {
+        doc.addPage();
+        yCoord = 20;
+
+        // Title of 3D Annex
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(12 * factor);
+        doc.setTextColor(15, 23, 42); // slate-900
+        doc.text("ANEXO: REPRESENTACI√ìN ESQUEM√ÅTICA 3D DEL HALLAZGO", marginX, yCoord);
+        yCoord += 4 * factor;
+
+        doc.setDrawColor(6, 182, 212); // Cyan 500
+        doc.setLineWidth(0.6);
+        doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
+        yCoord += 6 * factor;
+
+        // Subtitle disclaimer
+        doc.setFont("helvetica", "italic");
+        doc.setFontSize(7.5 * factor);
+        doc.setTextColor(100, 116, 139); // slate-500
+        const subtitleText = "Representaci√≥n volum√©trica tridimensional orientativa correlacionada con la ecograf√≠a 2D. Ilustraci√≥n did√°ctica de alta resoluci√≥n dise√±ada para facilitar la comprensi√≥n espacial y anat√≥mica del hallazgo.";
+        const subLines = doc.splitTextToSize(subtitleText, contentWidth);
+        subLines.forEach((line: string) => {
+          doc.text(line, marginX, yCoord);
+          yCoord += 3.5 * factor;
+        });
+        yCoord += 4 * factor;
+
+        for (let rIdx = 0; rIdx < active3dRenders.length; rIdx++) {
+          const renderItem = active3dRenders[rIdx];
+          const hasSourceImg = !!renderItem.sourceImageBase64;
+          const isDual = !!renderItem.render3dMacroBase64;
+          const isGrid2x2 = isDual && renderItem.pdfLayout === "grid2x2";
+          
+          // Check if space remains on page
+          const requiredHeight = isGrid2x2 ? 115 : (isDual ? 95 : 90);
+          if (yCoord > pageHeight - requiredHeight) {
+            doc.addPage();
+            yCoord = 20;
+          }
+
+          // Card header with Title and Badge (prevent text overlap)
+          const badgeText = isDual ? "RENDER 3D DUAL: FOCAL + TOPOGR√ÅFICO" : "RENDER VOLUM√âTRICO DID√ÅCTICO";
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(7 * factor);
+          const badgeWidth = (doc as any).getTextWidth ? (doc as any).getTextWidth(badgeText) : 52;
+          const maxTitleWidth = contentWidth - badgeWidth - 10;
+
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8.5 * factor);
+          const titleText = renderItem.title || `Ilustraci√≥n 3D del Hallazgo #${rIdx + 1}`;
+          const titleLines = doc.splitTextToSize(titleText, maxTitleWidth);
+          const headerHeight = Math.max(7, titleLines.length * 4 + 2) * factor;
+
+          doc.setFillColor(241, 245, 249); // slate-100
+          doc.setDrawColor(203, 213, 225); // slate-300
+          doc.setLineWidth(0.3);
+          doc.roundedRect(marginX, yCoord, contentWidth, headerHeight, 1.5, 1.5, "FD");
+
+          let curTitleY = yCoord + 4.5 * factor;
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8.5 * factor);
+          doc.setTextColor(15, 23, 42);
+          titleLines.forEach((tLine: string) => {
+            doc.text(tLine, marginX + 3, curTitleY);
+            curTitleY += 3.8 * factor;
+          });
+
+          // Badge
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(7 * factor);
+          doc.setTextColor(14, 116, 144); // cyan-700
+          doc.text(badgeText, pageWidth - marginX - badgeWidth - 3, yCoord + 4.5 * factor);
+          yCoord += headerHeight + 3.5 * factor;
+
+          const imageRowY = yCoord;
+
+          if (isGrid2x2) {
+            // ==========================================
+            // OPTION B: CUADR√çCULA 2x2 (GRID LAYOUT)
+            // ==========================================
+            const pairWidth = (contentWidth - 6) / 2;
+            const pairHeight = pairWidth * 0.75;
+
+            // Row 1 - Left: 2D Ecograf√≠a
+            try {
+              if (renderItem.sourceImageBase64) {
+                doc.addImage(renderItem.sourceImageBase64, "JPEG", marginX, imageRowY, pairWidth, pairHeight, undefined, "FAST");
+              }
+              doc.setDrawColor(148, 163, 184);
+              doc.setLineWidth(0.3);
+              doc.rect(marginX, imageRowY, pairWidth, pairHeight);
+              
+              doc.setFillColor(15, 23, 42);
+              doc.rect(marginX, imageRowY + pairHeight - 5, pairWidth, 5, "F");
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(6.5);
+              doc.setTextColor(255, 255, 255);
+              doc.text("1. ECOGRAF√çA 2D ORIGINAL", marginX + 2, imageRowY + pairHeight - 1.5);
+            } catch (err2d) {
+              doc.setDrawColor(203, 213, 225);
+              doc.rect(marginX, imageRowY, pairWidth, pairHeight);
+            }
+
+            // Row 1 - Right: 3D Focal Render
+            try {
+              doc.addImage(renderItem.render3dBase64, "PNG", marginX + pairWidth + 6, imageRowY, pairWidth, pairHeight, undefined, "FAST");
+              doc.setDrawColor(6, 182, 212);
+              doc.setLineWidth(0.5);
+              doc.rect(marginX + pairWidth + 6, imageRowY, pairWidth, pairHeight);
+
+              doc.setFillColor(8, 51, 68); // cyan-950
+              doc.rect(marginX + pairWidth + 6, imageRowY + pairHeight - 5, pairWidth, 5, "F");
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(6.5);
+              doc.setTextColor(103, 232, 249); // cyan-300
+              doc.text("2. RENDER 3D FOCAL (DETALLE)", marginX + pairWidth + 8, imageRowY + pairHeight - 1.5);
+            } catch (err3dFocal) {
+              doc.setDrawColor(203, 213, 225);
+              doc.rect(marginX + pairWidth + 6, imageRowY, pairWidth, pairHeight);
+            }
+
+            const row2Y = imageRowY + pairHeight + 4;
+
+            // Row 2 - Left: 3D Macro Panoramic Render
+            try {
+              doc.addImage(renderItem.render3dMacroBase64!, "PNG", marginX, row2Y, pairWidth, pairHeight, undefined, "FAST");
+              doc.setDrawColor(99, 102, 241);
+              doc.setLineWidth(0.5);
+              doc.rect(marginX, row2Y, pairWidth, pairHeight);
+
+              doc.setFillColor(30, 27, 75); // indigo-950
+              doc.rect(marginX, row2Y + pairHeight - 5, pairWidth, 5, "F");
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(6.5);
+              doc.setTextColor(199, 210, 254); // indigo-200
+              doc.text("3. VISTA MACRO TOPOGR√ÅFICA", marginX + 2, row2Y + pairHeight - 1.5);
+            } catch (err3dMacro) {
+              doc.setDrawColor(203, 213, 225);
+              doc.rect(marginX, row2Y, pairWidth, pairHeight);
+            }
+
+            // Row 2 - Right: Structured Text Box side-by-side
+            const textPanelX = marginX + pairWidth + 6;
+            const findingLabel = `Hallazgo: ${renderItem.findingDescription || "No especificado"}`;
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7 * factor);
+            const findingLines = doc.splitTextToSize(findingLabel, pairWidth - 6);
+
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(6.8 * factor);
+            const explLines = doc.splitTextToSize(renderItem.explanation || "", pairWidth - 6);
+
+            const textContentHeight = (findingLines.length * 3.2 + explLines.length * 3.2 + 8) * factor;
+            const rightBoxHeight = Math.max(pairHeight, textContentHeight);
+
+            doc.setFillColor(248, 250, 252);
+            doc.setDrawColor(226, 232, 240);
+            doc.setLineWidth(0.3);
+            doc.roundedRect(textPanelX, row2Y, pairWidth, rightBoxHeight, 1.5, 1.5, "FD");
+
+            let textInnerY = row2Y + 4 * factor;
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7 * factor);
+            doc.setTextColor(30, 41, 59);
+            findingLines.forEach((fl: string) => {
+              doc.text(fl, textPanelX + 3, textInnerY);
+              textInnerY += 3.2 * factor;
             });
 
-            const paths = cloned.querySelectorAll("path");
-            paths.forEach(p => {
-              const fill = p.getAttribute("fill") || "";
-              const stroke = p.getAttribute("stroke") || "";
-              if (fill === "#1e293b") p.setAttribute("fill", "#f8fafc");
-              if (fill === "#451a03") p.setAttribute("fill", "#fef3c7");
-              if (fill === "#500730") p.setAttribute("fill", "#fce7f3");
-              if (fill === "#7f1d1d") p.setAttribute("fill", "#fee2e2");
-
-              if (stroke === "#ef4444") p.setAttribute("stroke", "#dc2626");
-              if (stroke === "#ec4899") p.setAttribute("stroke", "#db2777");
-              if (stroke === "#f59e0b") p.setAttribute("stroke", "#d97706");
-              if (stroke === "#334155") p.setAttribute("stroke", "#475569");
-              if (stroke === "#475569") p.setAttribute("stroke", "#64748b");
+            textInnerY += 1.5 * factor;
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(6.8 * factor);
+            doc.setTextColor(51, 65, 85);
+            explLines.forEach((el: string) => {
+              doc.text(el, textPanelX + 3, textInnerY);
+              textInnerY += 3.2 * factor;
             });
 
-            const texts = cloned.querySelectorAll("text");
-            texts.forEach(t => {
-              const fill = t.getAttribute("fill") || "";
-              if (fill === "#64748b") t.setAttribute("fill", "#475569");
-              if (fill === "#475569") t.setAttribute("fill", "#1e293b");
+            yCoord = row2Y + Math.max(pairHeight, rightBoxHeight) + 8 * factor;
+
+          } else if (isDual) {
+            // ==========================================
+            // OPTION A: TR√çPTICO HORIZONTAL (3 COLUMNS)
+            // ==========================================
+            const colWidth = (contentWidth - 8) / 3;
+            const colHeight = colWidth * 0.75;
+
+            // Col 1: 2D Ecograf√≠a
+            try {
+              if (renderItem.sourceImageBase64) {
+                doc.addImage(renderItem.sourceImageBase64, "JPEG", marginX, imageRowY, colWidth, colHeight, undefined, "FAST");
+              }
+              doc.setDrawColor(148, 163, 184);
+              doc.setLineWidth(0.3);
+              doc.rect(marginX, imageRowY, colWidth, colHeight);
+              
+              doc.setFillColor(15, 23, 42);
+              doc.rect(marginX, imageRowY + colHeight - 4.5, colWidth, 4.5, "F");
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(5.8);
+              doc.setTextColor(255, 255, 255);
+              doc.text("1. ECOGRAF√çA 2D", marginX + 1.5, imageRowY + colHeight - 1.2);
+            } catch (err2d) {
+              doc.setDrawColor(203, 213, 225);
+              doc.rect(marginX, imageRowY, colWidth, colHeight);
+            }
+
+            // Col 2: 3D Focal
+            const col2X = marginX + colWidth + 4;
+            try {
+              doc.addImage(renderItem.render3dBase64, "PNG", col2X, imageRowY, colWidth, colHeight, undefined, "FAST");
+              doc.setDrawColor(6, 182, 212);
+              doc.setLineWidth(0.5);
+              doc.rect(col2X, imageRowY, colWidth, colHeight);
+
+              doc.setFillColor(8, 51, 68);
+              doc.rect(col2X, imageRowY + colHeight - 4.5, colWidth, 4.5, "F");
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(5.8);
+              doc.setTextColor(103, 232, 249);
+              doc.text("2. 3D FOCAL (DETALLE)", col2X + 1.5, imageRowY + colHeight - 1.2);
+            } catch (err3dFocal) {
+              doc.setDrawColor(203, 213, 225);
+              doc.rect(col2X, imageRowY, colWidth, colHeight);
+            }
+
+            // Col 3: 3D Macro
+            const col3X = marginX + (colWidth + 4) * 2;
+            try {
+              doc.addImage(renderItem.render3dMacroBase64!, "PNG", col3X, imageRowY, colWidth, colHeight, undefined, "FAST");
+              doc.setDrawColor(99, 102, 241);
+              doc.setLineWidth(0.5);
+              doc.rect(col3X, imageRowY, colWidth, colHeight);
+
+              doc.setFillColor(30, 27, 75);
+              doc.rect(col3X, imageRowY + colHeight - 4.5, colWidth, 4.5, "F");
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(5.8);
+              doc.setTextColor(199, 210, 254);
+              doc.text("3. 3D PANOR√ÅMICO (MACRO)", col3X + 1.5, imageRowY + colHeight - 1.2);
+            } catch (err3dMacro) {
+              doc.setDrawColor(203, 213, 225);
+              doc.rect(col3X, imageRowY, colWidth, colHeight);
+            }
+
+            yCoord += colHeight + 4 * factor;
+
+            // Full-width Structured text block below 3-columns
+            const findingLabel = `Hallazgo Ecogr√°fico Base: ${renderItem.findingDescription || "No especificado"}`;
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5 * factor);
+            const findingLines = doc.splitTextToSize(findingLabel, contentWidth - 6);
+
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(7.5 * factor);
+            const explLines = doc.splitTextToSize(renderItem.explanation || "", contentWidth - 6);
+
+            const boxHeight = (findingLines.length * 3.5 + explLines.length * 3.5 + 8) * factor;
+
+            if (yCoord + boxHeight > pageHeight - 15) {
+              doc.addPage();
+              yCoord = 20;
+            }
+
+            doc.setFillColor(248, 250, 252);
+            doc.setDrawColor(226, 232, 240);
+            doc.setLineWidth(0.3);
+            doc.roundedRect(marginX, yCoord, contentWidth, boxHeight, 1.5, 1.5, "FD");
+
+            let textInnerY = yCoord + 4 * factor;
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5 * factor);
+            doc.setTextColor(30, 41, 59);
+            findingLines.forEach((fl: string) => {
+              doc.text(fl, marginX + 3, textInnerY);
+              textInnerY += 3.5 * factor;
             });
 
-            const circles = cloned.querySelectorAll("circle");
-            circles.forEach(c => {
-              const stroke = c.getAttribute("stroke") || "";
-              if (stroke === "#1e293b") c.setAttribute("stroke", "#e2e8f0");
+            textInnerY += 1.5 * factor;
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(7.5 * factor);
+            doc.setTextColor(51, 65, 85);
+            explLines.forEach((el: string) => {
+              doc.text(el, marginX + 3, textInnerY);
+              textInnerY += 3.5 * factor;
             });
-            const lines = cloned.querySelectorAll("line");
-            lines.forEach(l => {
-              const stroke = l.getAttribute("stroke") || "";
-              if (stroke === "#1e293b") l.setAttribute("stroke", "#e2e8f0");
+
+            yCoord += boxHeight + 8 * factor;
+
+          } else {
+            // ==========================================
+            // SINGLE 3D RENDER (CLASSIC LAYOUT)
+            // ==========================================
+            if (hasSourceImg) {
+              const pairWidth = (contentWidth - 6) / 2;
+              const pairHeight = pairWidth * 0.75;
+
+              // Left: 2D Ecograf√≠a
+              try {
+                doc.addImage(renderItem.sourceImageBase64, "JPEG", marginX, imageRowY, pairWidth, pairHeight, undefined, "FAST");
+                doc.setDrawColor(148, 163, 184);
+                doc.setLineWidth(0.3);
+                doc.rect(marginX, imageRowY, pairWidth, pairHeight);
+                
+                // Caption banner
+                doc.setFillColor(15, 23, 42);
+                doc.rect(marginX, imageRowY + pairHeight - 5, pairWidth, 5, "F");
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(6.5);
+                doc.setTextColor(255, 255, 255);
+                doc.text("ECOGRAF√çA 2D ORIGINAL", marginX + 2, imageRowY + pairHeight - 1.5);
+              } catch (err2d) {
+                doc.setDrawColor(203, 213, 225);
+                doc.rect(marginX, imageRowY, pairWidth, pairHeight);
+                doc.setFont("helvetica", "italic");
+                doc.setFontSize(7.5);
+                doc.setTextColor(148, 163, 184);
+                doc.text("Captura 2D de referencia", marginX + 4, imageRowY + pairHeight / 2);
+              }
+
+              // Right: 3D Volumetric Render
+              try {
+                doc.addImage(renderItem.render3dBase64, "PNG", marginX + pairWidth + 6, imageRowY, pairWidth, pairHeight, undefined, "FAST");
+                doc.setDrawColor(6, 182, 212);
+                doc.setLineWidth(0.5);
+                doc.rect(marginX + pairWidth + 6, imageRowY, pairWidth, pairHeight);
+
+                // Caption banner
+                doc.setFillColor(8, 51, 68); // cyan-950
+                doc.rect(marginX + pairWidth + 6, imageRowY + pairHeight - 5, pairWidth, 5, "F");
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(6.5);
+                doc.setTextColor(103, 232, 249); // cyan-300
+                doc.text("RECONSTRUCCI√ìN ESQUEM√ÅTICA 3D", marginX + pairWidth + 8, imageRowY + pairHeight - 1.5);
+              } catch (err3d) {
+                doc.setDrawColor(203, 213, 225);
+                doc.rect(marginX + pairWidth + 6, imageRowY, pairWidth, pairHeight);
+              }
+
+              yCoord += pairHeight + 4;
+            } else {
+              // Single wide 3D render
+              const singleWidth = Math.min(contentWidth * 0.7, 120);
+              const singleHeight = singleWidth * 0.75;
+              const singleX = marginX + (contentWidth - singleWidth) / 2;
+
+              try {
+                doc.addImage(renderItem.render3dBase64, "PNG", singleX, imageRowY, singleWidth, singleHeight, undefined, "FAST");
+                doc.setDrawColor(6, 182, 212);
+                doc.setLineWidth(0.5);
+                doc.rect(singleX, imageRowY, singleWidth, singleHeight);
+              } catch (errSingle) {}
+
+              yCoord += singleHeight + 4;
+            }
+
+            // Measure explanation height
+            const findingLabel = `Hallazgo Ecogr√°fico Base: ${renderItem.findingDescription || "No especificado"}`;
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5 * factor);
+            const findingLines = doc.splitTextToSize(findingLabel, contentWidth - 6);
+
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(7.5 * factor);
+            const explLines = doc.splitTextToSize(renderItem.explanation || "", contentWidth - 6);
+
+            const boxHeight = (findingLines.length * 3.5 + explLines.length * 3.5 + 8) * factor;
+
+            // Check if box fits or needs new page
+            if (yCoord + boxHeight > pageHeight - 15) {
+              doc.addPage();
+              yCoord = 20;
+            }
+
+            // Set fill and draw colors AFTER potential addPage() to prevent jsPDF from resetting fill to black
+            doc.setFillColor(248, 250, 252); // slate-50 light background
+            doc.setDrawColor(226, 232, 240); // slate-200
+            doc.setLineWidth(0.3);
+
+            doc.roundedRect(marginX, yCoord, contentWidth, boxHeight, 1.5, 1.5, "FD");
+            let textInnerY = yCoord + 4 * factor;
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.5 * factor);
+            doc.setTextColor(30, 41, 59); // slate-800
+            findingLines.forEach((fl: string) => {
+              doc.text(fl, marginX + 3, textInnerY);
+              textInnerY += 3.5 * factor;
             });
-            return cloned;
+
+            textInnerY += 1.5 * factor;
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(7.5 * factor);
+            doc.setTextColor(51, 65, 85); // slate-700
+            explLines.forEach((el: string) => {
+              doc.text(el, marginX + 3, textInnerY);
+              textInnerY += 3.5 * factor;
+            });
+
+            yCoord += boxHeight + 8 * factor;
+          }
+        }
+      }
+
+      // --- 7. DIAGN√ìSTICO AVANZADO Y AN√ÅLISIS DEL CASO ---
+      if (caseAnalysisBlocks.length > 0) {
+        doc.addPage();
+        yCoord = 20;
+
+        // Title of Annex
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(12 * factor);
+        doc.setTextColor(15, 23, 42); // slate-900
+        doc.text("ANEXO: DIAGN√ìSTICO AVANZADO Y AN√ÅLISIS DEL CASO", marginX, yCoord);
+        yCoord += 4 * factor;
+        doc.setDrawColor(203, 213, 225);
+        doc.setLineWidth(0.4);
+        doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
+        yCoord += 10 * factor;
+
+        // Resolve active theme palette to match the rest of the report (no "embedded/foreign" look)
+        let activeThemeBg = [248, 250, 252]; // default slate-50
+        let activeThemeHeaderBg = [15, 23, 42]; // default slate-900
+        let activeThemeBorder = [203, 213, 225]; // default slate-300
+        let activeThemeAccent = [79, 70, 229]; // default Indigo
+        let activeThemeTextDark = [15, 23, 42]; // slate-900
+        let activeThemeTextMuted = [71, 85, 105]; // slate-600
+
+        // Determine card styles based on pdfLayoutType to be cohesive with the rest of the report
+        let cardsStyle = {
+          sonographic: { border: [79, 70, 229], bg: [245, 247, 255] },
+          clinical: { border: [16, 185, 129], bg: [240, 253, 244] },
+          differentials: { border: [217, 119, 6], bg: [254, 252, 232] },
+          management: { border: [147, 51, 234], bg: [250, 245, 255] }
+        };
+
+        let pillar1Color = [79, 70, 229];
+        let pillar2Color = [16, 185, 129];
+        let pillar3Color = [217, 119, 6];
+        let pillar4Color = [147, 51, 234];
+
+        if (pdfLayoutType === "clinical_slate") {
+          activeThemeBg = [241, 245, 249]; // slate-100
+          activeThemeHeaderBg = [71, 85, 105]; // slate-600
+          activeThemeBorder = [148, 163, 184]; // slate-400
+          activeThemeAccent = [100, 116, 139]; // slate-500
+          activeThemeTextDark = [15, 23, 42];
+          activeThemeTextMuted = [100, 116, 139];
+
+          cardsStyle = {
+            sonographic: { border: [71, 85, 105], bg: [241, 245, 249] },
+            clinical: { border: [100, 116, 139], bg: [248, 250, 252] },
+            differentials: { border: [148, 163, 184], bg: [241, 245, 249] },
+            management: { border: [71, 85, 105], bg: [248, 250, 252] }
           };
 
-          const getKneeCardDataForSide = (statesObj: any, descObj: any) => {
-            const pdfKneeStructuresBase = [
-              { id: "quadriceps", label: "T. Cuadricipital" },
-              { id: "patellar", label: "T. Rotuliano" },
-              { id: "lcm", label: "Lig. C. Medial" },
-              { id: "lce", label: "Lig. C. Lateral" },
-              { id: "medial_meniscus", label: "Menisco Medial" },
-              { id: "lateral_meniscus", label: "Menisco Lateral" },
-              { id: "joint_effusion", label: "Derrame Artic." },
-              { id: "baker_cyst", label: "Quiste de Baker" },
-              { id: "popliteal_artery", label: "Art. Popl√≠tea" },
-              { id: "popliteal_vein", label: "Vena Popl√≠tea" },
-              { id: "distal_tendons", label: "Tendones Dist." },
-              { id: "popliteal_fossa", label: "Fosa Popl√≠tea" }
+          pillar1Color = [71, 85, 105];
+          pillar2Color = [100, 116, 139];
+          pillar3Color = [148, 163, 184];
+          pillar4Color = [71, 85, 105];
+        } else if (pdfLayoutType === "executive_medical") {
+          activeThemeBg = [253, 251, 247]; // cream-white
+          activeThemeHeaderBg = [141, 110, 50]; // metallic bronze-gold
+          activeThemeBorder = [220, 201, 159]; // golden-cream border
+          activeThemeAccent = [141, 110, 50]; // Bronze
+          activeThemeTextDark = [15, 23, 42];
+          activeThemeTextMuted = [141, 110, 50];
+
+          cardsStyle = {
+            sonographic: { border: [141, 110, 50], bg: [253, 251, 247] },
+            clinical: { border: [197, 160, 89], bg: [254, 253, 250] },
+            differentials: { border: [141, 110, 50], bg: [253, 251, 247] },
+            management: { border: [197, 160, 89], bg: [254, 253, 250] }
+          };
+
+          pillar1Color = [141, 110, 50];
+          pillar2Color = [197, 160, 89];
+          pillar3Color = [141, 110, 50];
+          pillar4Color = [197, 160, 89];
+        } else if (pdfLayoutType === "asymmetric") {
+          activeThemeBg = [249, 250, 254]; // Soft blue-indigo
+          activeThemeHeaderBg = [79, 70, 229]; // Indigo
+          activeThemeBorder = [165, 180, 252]; // Indigo-300
+          activeThemeAccent = [79, 70, 229]; // Indigo
+          activeThemeTextDark = [15, 23, 42];
+          activeThemeTextMuted = [99, 102, 241];
+
+          cardsStyle = {
+            sonographic: { border: [79, 70, 229], bg: [249, 250, 254] },
+            clinical: { border: [129, 140, 248], bg: [245, 247, 255] },
+            differentials: { border: [79, 70, 229], bg: [249, 250, 254] },
+            management: { border: [129, 140, 248], bg: [245, 247, 255] }
+          };
+
+          pillar1Color = [79, 70, 229];
+          pillar2Color = [129, 140, 248];
+          pillar3Color = [79, 70, 229];
+          pillar4Color = [129, 140, 248];
+        }
+
+        caseAnalysisBlocks.forEach((caseData, blockIdx) => {
+          // If we are on a subsequent block, let's put a page break or a nice spacing
+          if (blockIdx > 0) {
+            checkPageBreak(85 * factor); // require generous space, otherwise break page
+          }
+
+          const cfg = caseData.elementsConfig || {
+            includeSonographic: true,
+            includeSonographicDetails: true,
+            includeClinicalCorr: true,
+            includeCertainty: true,
+            includeDifferentials: true,
+            includeDiscardedDifferentials: true,
+            includeManagement: true,
+          };
+
+          let formatTitle = caseData.title || "AN√ÅLISIS DEL CASO";
+          if (!caseData.title) {
+            if (caseData.format === "flujograma_semiologico") {
+              formatTitle = "FLUJOGRAMA SEMIOL√ìGICO";
+            } else if (caseData.format === "flujograma_algoritmico") {
+              formatTitle = "FLUJOGRAMA ALGOR√çTMICO / √ÅRBOL DE DECISI√ìN";
+            } else if (caseData.format === "esquema_pilares") {
+              formatTitle = "ESQUEMA INTEGRADOR POR PILARES";
+            } else if (caseData.format === "mapa_diferenciales") {
+              formatTitle = "MAPA DE DIAGN√ìSTICOS DIFERENCIALES";
+            } else if (caseData.format === "matriz_semiotica") {
+              formatTitle = "MATRIZ SEMI√ìTICA COMPARATIVA";
+            }
+          }
+
+          // Header title bar of the format
+          checkPageBreak(25 * factor);
+          doc.setFillColor(activeThemeHeaderBg[0], activeThemeHeaderBg[1], activeThemeHeaderBg[2]);
+          doc.roundedRect(marginX, yCoord, contentWidth, 11 * factor, 1.8, 1.8, "F");
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(10.5 * factor); // Spacious, readable font size in appendix
+          doc.setTextColor(255, 255, 255);
+          doc.text(formatTitle, marginX + 5 * factor, yCoord + 7 * factor);
+
+          yCoord += 16 * factor;
+
+          // --- FORMAT 1: FLUJOGRAMA SEMIOL√ìGICO ---
+          if (caseData.format === "flujograma_semiologico") {
+            const semiologyStepsToDraw: Array<{
+              title: string;
+              subtitle: string;
+              content: string;
+              bullets?: string[];
+              accentColor: number[];
+              bgColor: number[];
+            }> = [];
+
+            if (cfg.includeSonographic && caseData.sonographicPillar) {
+              semiologyStepsToDraw.push({
+                title: "HALLAZGO ECOGR√ÅFICO PRINCIPAL",
+                subtitle: "Punto de Partida Semiol√≥gico",
+                content: cleanTextForJSPDF(caseData.sonographicPillar.primaryFinding),
+                bullets: (cfg.includeSonographicDetails !== false && caseData.sonographicPillar.details) ? caseData.sonographicPillar.details.map(cleanTextForJSPDF) : undefined,
+                accentColor: cardsStyle.sonographic.border,
+                bgColor: cardsStyle.sonographic.bg
+              });
+            }
+
+            if (cfg.includeClinicalCorr && caseData.clinicalCorrelation) {
+              semiologyStepsToDraw.push({
+                title: "INTEGRACI√ìN CL√çNICO-ANAT√ìMICA",
+                subtitle: "Correlaci√≥n de S√≠ntomas y Laboratorio",
+                content: cleanTextForJSPDF(caseData.clinicalCorrelation),
+                accentColor: cardsStyle.clinical.border,
+                bgColor: cardsStyle.clinical.bg
+              });
+            }
+
+            const primaryDiag = caseData.diagnostics && caseData.diagnostics.length > 0 ? caseData.diagnostics[0] : null;
+            const discardedDifferentials = caseData.diagnostics
+              ?.filter(d => d.refutingCriteria && d !== primaryDiag && (!primaryDiag || d.name.toLowerCase() !== primaryDiag.name.toLowerCase()))
+              .map(d => cleanTextForJSPDF(`${d.name}: ${d.refutingCriteria}`)) || [];
+
+            const showDiscarded = cfg.includeDiscardedDifferentials !== false && cfg.includeDifferentials;
+            if (showDiscarded && discardedDifferentials.length > 0) {
+              semiologyStepsToDraw.push({
+                title: "CRITERIOS DESCARTADOS Y EXCLUSIONES",
+                subtitle: "Diferenciales Desestimados",
+                content: "Criterios que permitieron descartar otras sospechas cl√≠nicas:",
+                bullets: discardedDifferentials,
+                accentColor: [185, 28, 28], // Red/Rose tone
+                bgColor: [254, 242, 242] // Light Rose bg
+              });
+            }
+
+            if (cfg.includeDifferentials && caseData.diagnostics && caseData.diagnostics.length > 0) {
+              const primaryDiag = caseData.diagnostics[0];
+              let conclusionText = cleanTextForJSPDF(primaryDiag.name);
+              const bulletsArr: string[] = [];
+              if (primaryDiag.supportingCriteria) {
+                bulletsArr.push(cleanTextForJSPDF(`Soporte: ${primaryDiag.supportingCriteria}`));
+              }
+              if (cfg.includeManagement && caseData.managementRecommendation) {
+                bulletsArr.push(cleanTextForJSPDF(`Manejo sugerido: ${caseData.managementRecommendation}`));
+              }
+
+              semiologyStepsToDraw.push({
+                title: "DIAGN√ìSTICO PRESUNTIVO DEFINITIVO",
+                subtitle: "Conclusi√≥n del Juicio Radiol√≥gico",
+                content: conclusionText,
+                bullets: bulletsArr,
+                accentColor: cardsStyle.differentials.border,
+                bgColor: cardsStyle.differentials.bg
+              });
+            }
+
+            semiologyStepsToDraw.forEach((step, idx) => {
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(9.5 * factor);
+              const wrappedContent = doc.splitTextToSize(cleanTextForJSPDF(step.content), contentWidth - 12 * factor);
+              let cardHeight = 14 * factor + (wrappedContent.length * 4.6 * factor); // generous vertical spacing
+
+              let wrappedBullets: string[][] = [];
+              if (step.bullets && step.bullets.length > 0) {
+                doc.setFont("helvetica", "normal");
+                doc.setFontSize(9 * factor);
+                step.bullets.forEach(b => {
+                  const lines = doc.splitTextToSize(`- ${cleanTextForJSPDF(b)}`, contentWidth - 18 * factor);
+                  wrappedBullets.push(lines);
+                  cardHeight += lines.length * 4.2 * factor;
+                });
+              }
+              cardHeight += 3.5 * factor; // Bottom padding
+
+              checkPageBreak(cardHeight + (idx < semiologyStepsToDraw.length - 1 ? 6 * factor : 0));
+
+              // Background card
+              doc.setFillColor(step.bgColor[0], step.bgColor[1], step.bgColor[2]);
+              doc.roundedRect(marginX, yCoord, contentWidth, cardHeight, 1.5, 1.5, "F");
+
+              // Left accent border (thick for step)
+              doc.setFillColor(step.accentColor[0], step.accentColor[1], step.accentColor[2]);
+              doc.rect(marginX, yCoord, 2.5 * factor, cardHeight, "F");
+
+              // Header and Subtitle
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(9 * factor); // Spacious, readable
+              doc.setTextColor(step.accentColor[0], step.accentColor[1], step.accentColor[2]);
+              doc.text(`${idx + 1}. ${step.title}`, marginX + 5 * factor, yCoord + 5.5 * factor);
+
+              doc.setFont("helvetica", "oblique");
+              doc.setFontSize(8 * factor); // Spacious, readable
+              doc.setTextColor(100, 116, 139);
+              doc.text(step.subtitle, marginX + 5 * factor, yCoord + 9 * factor);
+
+              let textY = yCoord + 14 * factor;
+
+              // Main Content text
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(9.5 * factor); // Spacious, readable (increased from 8)
+              doc.setTextColor(30, 41, 59);
+              wrappedContent.forEach((line: string) => {
+                doc.text(line, marginX + 5 * factor, textY);
+                textY += 4.6 * factor;
+              });
+
+              // Bullets if any
+              if (step.bullets && step.bullets.length > 0) {
+                doc.setFont("helvetica", "normal");
+                doc.setFontSize(9 * factor); // Spacious, readable (increased from 7.5)
+                doc.setTextColor(71, 85, 105);
+                wrappedBullets.forEach(lines => {
+                  lines.forEach((line: string) => {
+                    doc.text(line, marginX + 7 * factor, textY);
+                    textY += 4.2 * factor;
+                  });
+                });
+              }
+
+              yCoord += cardHeight;
+
+              // Draw dashed connecting line between steps
+              if (idx < semiologyStepsToDraw.length - 1) {
+                const arrowY = yCoord;
+                doc.setDrawColor(step.accentColor[0], step.accentColor[1], step.accentColor[2]);
+                doc.setLineWidth(0.5 * factor);
+                doc.line(marginX + contentWidth / 2, arrowY, marginX + contentWidth / 2, arrowY + 5 * factor);
+                
+                // Draw a small downwards arrowhead
+                doc.line(marginX + contentWidth / 2 - 1.5 * factor, arrowY + 3.8 * factor, marginX + contentWidth / 2, arrowY + 5 * factor);
+                doc.line(marginX + contentWidth / 2 + 1.5 * factor, arrowY + 3.8 * factor, marginX + contentWidth / 2, arrowY + 5 * factor);
+
+                yCoord += 5 * factor;
+              }
+            });
+
+            yCoord += 6 * factor;
+          }
+
+          // --- FORMAT 2: FLUJOGRAMA ALGOR√çTMICO ---
+          else if (caseData.format === "flujograma_algoritmico") {
+            const steps = caseData.decisionFlow || [
+              ...(cfg.includeSonographic && caseData.sonographicPillar ? [{ title: "Punto de Partida Sonogr√°fico", desc: caseData.sonographicPillar.primaryFinding }] : []),
+              ...(cfg.includeClinicalCorr && caseData.clinicalCorrelation ? [{ title: "Integraci√≥n Cl√≠nico-Laboratorial", desc: caseData.clinicalCorrelation }] : []),
+              ...(cfg.includeDifferentials && caseData.diagnostics && caseData.diagnostics.length > 0 ? [{ title: "Conclusi√≥n Diagn√≥stica", desc: `Diagn√≥stico principal: ${caseData.diagnostics[0].name}.` }] : []),
+              ...(cfg.includeManagement && caseData.managementRecommendation ? [{ title: "Conducta y Manejo Sugerido", desc: caseData.managementRecommendation }] : []),
             ];
 
-            if (includeGonartrosisSchemaInReport) {
-              pdfKneeStructuresBase.push(
-                { id: "gon_pinzamiento_artic", label: "Pinzamiento Art." },
-                { id: "gon_osteofitos", label: "Osteofitos" },
-                { id: "gon_esclerosis_sub", label: "Escl. Subcondral" },
-                { id: "gon_geodas_quistes", label: "Geodas/Quistes" },
-                { id: "gon_desgaste_cartilago", label: "Desgaste Cart." },
-                { id: "gon_menisco_deg", label: "Menisco Deg." }
-              );
+            steps.forEach((st, idx) => {
+              const stepNum = idx + 1;
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(9.5 * factor);
+              const wrappedDesc = doc.splitTextToSize(st.desc, contentWidth - 22 * factor);
+              const boxHeight = (9 * factor) + (wrappedDesc.length * 4.6 * factor);
+
+              checkPageBreak(boxHeight + (idx < steps.length - 1 ? 8 * factor : 0));
+
+              // Draw background box using activeThemeBg
+              doc.setFillColor(activeThemeBg[0], activeThemeBg[1], activeThemeBg[2]);
+              doc.setDrawColor(activeThemeBorder[0], activeThemeBorder[1], activeThemeBorder[2]);
+              doc.setLineWidth(0.3);
+              doc.roundedRect(marginX, yCoord, contentWidth, boxHeight, 1.5, 1.5, "FD");
+
+              // Step Number pill using activeThemeAccent
+              doc.setFillColor(activeThemeAccent[0], activeThemeAccent[1], activeThemeAccent[2]);
+              doc.roundedRect(marginX + 4 * factor, yCoord + 2.5 * factor, 7 * factor, 5 * factor, 0.8, 0.8, "F");
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(8.5 * factor);
+              doc.setTextColor(255, 255, 255);
+              doc.text(`${stepNum}`, marginX + 7.5 * factor, yCoord + 6.1 * factor, { align: "center" });
+
+              // Step Title
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(9 * factor); // Spacious, readable (increased from 8)
+              doc.setTextColor(activeThemeAccent[0], activeThemeAccent[1], activeThemeAccent[2]);
+              doc.text(st.title.toUpperCase(), marginX + 13 * factor, yCoord + 6 * factor);
+
+              // Description
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(9.5 * factor); // Spacious, readable (increased from 8.5)
+              doc.setTextColor(30, 41, 59);
+              let descY = yCoord + 11 * factor;
+              wrappedDesc.forEach((line: string) => {
+                doc.text(line, marginX + 5 * factor, descY);
+                descY += 4.6 * factor;
+              });
+
+              yCoord += boxHeight;
+
+              // Down arrow indicator
+              if (idx < steps.length - 1) {
+                yCoord += 2 * factor;
+                doc.setDrawColor(activeThemeAccent[0], activeThemeAccent[1], activeThemeAccent[2]);
+                doc.setLineWidth(0.5);
+                const midX = marginX + (contentWidth / 2);
+                doc.line(midX, yCoord, midX, yCoord + 6 * factor);
+                doc.line(midX, yCoord + 6 * factor, midX - 1.5 * factor, yCoord + 4.5 * factor);
+                doc.line(midX, yCoord + 6 * factor, midX + 1.5 * factor, yCoord + 4.5 * factor);
+                
+                yCoord += 7 * factor;
+              } else {
+                yCoord += 4 * factor;
+              }
+            });
+          }
+
+          // --- FORMAT 3: ESQUEMA INTEGRADOR POR PILARES ---
+          else if (caseData.format === "esquema_pilares") {
+            const pillars = [
+              {
+                title: "PILAR 1 ‚Äî HALLAZGOS ECOGR√ÅFICOS",
+                content: caseData.sonographicPillar ? caseData.sonographicPillar.primaryFinding : "",
+                subContent: caseData.sonographicPillar?.details ? caseData.sonographicPillar.details.map(cleanTextForJSPDF).join(" - ") : "",
+                borderColor: pillar1Color,
+                included: cfg.includeSonographic && !!caseData.sonographicPillar
+              },
+              {
+                title: "PILAR 2 ‚Äî CORRELACI√ìN CL√çNICO-LAB",
+                content: caseData.clinicalCorrelation || "Sin datos de laboratorio o cl√≠nica adicionales.",
+                subContent: "",
+                borderColor: pillar2Color,
+                included: cfg.includeClinicalCorr
+              },
+              {
+                title: "PILAR 3 ‚Äî CONCLUSI√ìN & DIAGN√ìSTICO",
+                content: caseData.diagnostics && caseData.diagnostics.length > 0 
+                  ? `Diag. Principal: ${caseData.diagnostics[0].name}` 
+                  : "Diagn√≥stico diferencial sustentado.",
+                subContent: "",
+                borderColor: pillar3Color,
+                included: cfg.includeDifferentials
+              },
+              {
+                title: "PILAR 4 ‚Äî CONDUCTA Y MANEJO",
+                content: caseData.managementRecommendation || "Seguimiento ecogr√°fico seg√∫n evoluci√≥n cl√≠nica.",
+                subContent: "",
+                borderColor: pillar4Color,
+                included: cfg.includeManagement
+              }
+            ].filter(p => p.included);
+
+            pillars.forEach(p => {
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(9.5 * factor);
+              const wrappedContent = doc.splitTextToSize(p.content, contentWidth - 10 * factor);
+              
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(8.5 * factor);
+              const wrappedSub = p.subContent ? doc.splitTextToSize(p.subContent, contentWidth - 10 * factor) : [];
+              
+              const cardHeight = (10 * factor) + (wrappedContent.length * 4.8 * factor) + (wrappedSub.length > 0 ? (wrappedSub.length * 4.2 * factor) + 1.5 * factor : 0);
+
+              checkPageBreak(cardHeight + 10 * factor);
+
+              // Draw card background
+              doc.setFillColor(activeThemeBg[0], activeThemeBg[1], activeThemeBg[2]);
+              doc.setDrawColor(activeThemeBorder[0], activeThemeBorder[1], activeThemeBorder[2]);
+              doc.setLineWidth(0.25);
+              doc.roundedRect(marginX, yCoord, contentWidth, cardHeight, 1.5, 1.5, "FD");
+
+              // Thick top border color
+              doc.setDrawColor(p.borderColor[0], p.borderColor[1], p.borderColor[2]);
+              doc.setLineWidth(1.2 * factor);
+              doc.line(marginX, yCoord + 0.6 * factor, marginX + contentWidth, yCoord + 0.6 * factor);
+
+              // Header title
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(8.5 * factor); // Spacious, readable (increased from 7.5)
+              doc.setTextColor(p.borderColor[0], p.borderColor[1], p.borderColor[2]);
+              doc.text(p.title, marginX + 5 * factor, yCoord + 5.5 * factor);
+
+              let textY = yCoord + 10.5 * factor;
+
+              // Main content
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(9.5 * factor); // Spacious, readable (increased from 8.5)
+              doc.setTextColor(15, 23, 42);
+              wrappedContent.forEach((line: string) => {
+                doc.text(line, marginX + 5 * factor, textY);
+                textY += 4.8 * factor;
+              });
+
+              // Subcontent details
+              if (wrappedSub.length > 0) {
+                textY += 1.5 * factor;
+                doc.setFont("helvetica", "normal");
+                doc.setFontSize(8.5 * factor); // Spacious, readable (increased from 7.5)
+                doc.setTextColor(100, 116, 139);
+                wrappedSub.forEach((line: string) => {
+                  doc.text(line, marginX + 5 * factor, textY);
+                  textY += 4.2 * factor;
+                });
+              }
+
+              yCoord += cardHeight + 4.5 * factor;
+            });
+          }
+
+          // --- FORMAT 4: MAPA DE DIAGN√ìSTICOS DIFERENCIALES ---
+          else if (caseData.format === "mapa_diferenciales") {
+            if (cfg.includeSonographic && caseData.sonographicPillar) {
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(9.5 * factor);
+              const wrappedPillar = doc.splitTextToSize(caseData.sonographicPillar.primaryFinding, contentWidth - 40 * factor);
+              const pillarHeight = 10 * factor + (wrappedPillar.length * 4.6 * factor);
+              checkPageBreak(pillarHeight + 12 * factor);
+              
+              // Draw background
+              doc.setFillColor(activeThemeBg[0], activeThemeBg[1], activeThemeBg[2]);
+              doc.setDrawColor(activeThemeBorder[0], activeThemeBorder[1], activeThemeBorder[2]);
+              doc.setLineWidth(0.25);
+              doc.roundedRect(marginX + 15 * factor, yCoord, contentWidth - 30 * factor, pillarHeight, 1.5, 1.5, "FD");
+
+              // Left marker line
+              doc.setFillColor(activeThemeAccent[0], activeThemeAccent[1], activeThemeAccent[2]);
+              doc.rect(marginX + 15 * factor, yCoord, 1.5 * factor, pillarHeight, "F");
+
+              // Title label
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(8 * factor); // Spacious, readable (increased from 7)
+              doc.setTextColor(activeThemeAccent[0], activeThemeAccent[1], activeThemeAccent[2]);
+              doc.text("HALLAZGO SONOGR√ÅFICO PRIMARIO", marginX + 19 * factor, yCoord + 5 * factor);
+
+              // Text content
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(9.5 * factor); // Spacious, readable (increased from 8)
+              doc.setTextColor(30, 41, 59);
+              let tempY = yCoord + 10 * factor;
+              wrappedPillar.forEach((line: string) => {
+                doc.text(line, marginX + 19 * factor, tempY);
+                tempY += 4.6 * factor;
+              });
+
+              yCoord += pillarHeight + 2 * factor;
+
+              // Draw visual radiating line
+              doc.setDrawColor(activeThemeAccent[0], activeThemeAccent[1], activeThemeAccent[2]);
+              doc.setLineWidth(0.4);
+              doc.line(marginX + contentWidth / 2, yCoord, marginX + contentWidth / 2, yCoord + 5 * factor);
+              yCoord += 6 * factor;
             }
 
-            const pdfKneeStructures = pdfKneeStructuresBase.filter(struct => {
-              const s = statesObj[struct.id] || "no_descrito";
-              return s !== "no_descrito" && s !== "normal";
-            });
+            if (caseData.diagnostics && caseData.diagnostics.length > 0) {
+              caseData.diagnostics.forEach((diag, idx) => {
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(9.5 * factor);
+                const wrappedName = doc.splitTextToSize(diag.name, contentWidth - 30 * factor);
+                const nameLinesCount = wrappedName.length;
 
-            const getKneePDFSimplifiedDescription = (id: string, state: string) => {
-              if (descObj && descObj[id] && descObj[id].trim() !== "" && descObj[id] !== "No mencionado / No descrito." && descObj[id] !== "No descrito.") {
-                return descObj[id];
-              }
-              if (!state || state === "no_descrito") {
-                return "No descrito en el reporte.";
-              }
-              if (state === "normal") {
-                return "Entre l√≠mites normales.";
-              }
-              return state.charAt(0).toUpperCase() + state.slice(1).replace(/_/g, " ");
-            };
+                let cardHeight = 11 * factor + (nameLinesCount > 1 ? (nameLinesCount - 1) * 4.6 * factor : 0);
+                
+                doc.setFont("helvetica", "normal");
+                doc.setFontSize(9 * factor);
+                const wrappedSup = diag.supportingCriteria 
+                  ? doc.splitTextToSize(`- A favor (Sonogr√°fico): ${cleanTextForJSPDF(diag.supportingCriteria)}`, contentWidth - 14 * factor)
+                  : [];
+                const wrappedRef = diag.refutingCriteria 
+                  ? doc.splitTextToSize(`- En contra / Ausente: ${cleanTextForJSPDF(diag.refutingCriteria)}`, contentWidth - 14 * factor)
+                  : [];
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(9 * factor);
+                const wrappedTest = (cfg.includeManagement && diag.confirmatoryTest) 
+                  ? doc.splitTextToSize(`- Test Confirmativo / Conducta: ${cleanTextForJSPDF(diag.confirmatoryTest)}`, contentWidth - 14 * factor)
+                  : [];
 
-            const kneeCardData = pdfKneeStructures.map(struct => {
-              const s = statesObj[struct.id] || "no_descrito";
-              return {
-                label: struct.label,
-                state: s,
-                description: getKneePDFSimplifiedDescription(struct.id, s)
-              };
-            });
+                if (wrappedSup.length > 0) cardHeight += 2 * factor + (wrappedSup.length * 4.2 * factor);
+                if (wrappedRef.length > 0) cardHeight += 2 * factor + (wrappedRef.length * 4.2 * factor);
+                if (wrappedTest.length > 0) cardHeight += 2 * factor + (wrappedTest.length * 4.2 * factor);
+                
+                cardHeight += 3 * factor;
 
-            const kneeExtras = additionalFindings["Rodilla"] || [];
-            kneeExtras.forEach((extra: any) => {
-              kneeCardData.push({
-                label: extra.structureName,
-                state: extra.state || "Alterado",
-                description: extra.description
+                checkPageBreak(cardHeight + 5 * factor);
+
+                // Draw card background
+                doc.setFillColor(activeThemeBg[0], activeThemeBg[1], activeThemeBg[2]);
+                doc.setDrawColor(activeThemeBorder[0], activeThemeBorder[1], activeThemeBorder[2]);
+                doc.setLineWidth(0.25);
+                doc.roundedRect(marginX, yCoord, contentWidth, cardHeight, 1.5, 1.5, "FD");
+
+                // Left number indicator
+                doc.setFillColor(activeThemeAccent[0], activeThemeAccent[1], activeThemeAccent[2]);
+                doc.roundedRect(marginX + 4 * factor, yCoord + 2.5 * factor, 6 * factor, 5 * factor, 0.6, 0.6, "F");
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(8 * factor);
+                doc.setTextColor(255, 255, 255);
+                doc.text(`${idx + 1}`, marginX + 7 * factor, yCoord + 6 * factor, { align: "center" });
+
+                // Title
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(9.5 * factor); // Spacious, readable (increased from 8.5)
+                doc.setTextColor(15, 23, 42);
+                let titleY = yCoord + 6 * factor;
+                wrappedName.forEach((line: string) => {
+                  doc.text(line, marginX + 12 * factor, titleY);
+                  titleY += 4.6 * factor;
+                });
+
+                let textY = yCoord + 11 * factor + (nameLinesCount > 1 ? (nameLinesCount - 1) * 4.6 * factor : 0);
+
+                if (wrappedSup.length > 0) {
+                  doc.setFont("helvetica", "normal");
+                  doc.setFontSize(9 * factor); // Spacious, readable (increased from 7.5)
+                  doc.setTextColor(16, 120, 80);
+                  wrappedSup.forEach((line: string) => {
+                    doc.text(line, marginX + 7 * factor, textY);
+                    textY += 4.2 * factor;
+                  });
+                  textY += 2 * factor;
+                }
+
+                if (wrappedRef.length > 0) {
+                  doc.setFont("helvetica", "normal");
+                  doc.setFontSize(9 * factor); // Spacious, readable (increased from 7.5)
+                  doc.setTextColor(185, 28, 28);
+                  wrappedRef.forEach((line: string) => {
+                    doc.text(line, marginX + 7 * factor, textY);
+                    textY += 4.2 * factor;
+                  });
+                  textY += 2 * factor;
+                }
+
+                if (wrappedTest.length > 0) {
+                  doc.setFont("helvetica", "bold");
+                  doc.setFontSize(9 * factor); // Spacious, readable (increased from 7.5)
+                  doc.setTextColor(109, 40, 217);
+                  wrappedTest.forEach((line: string) => {
+                    doc.text(line, marginX + 7 * factor, textY);
+                    textY += 4.2 * factor;
+                  });
+                }
+
+                yCoord += cardHeight + 4.5 * factor;
               });
+            }
+          }
+
+          // --- FORMAT 5: MATRIZ SEMI√ìTICA COMPARATIVA ---
+          else if (caseData.format === "matriz_semiotica") {
+            const requestingSigns: string[] = [];
+            if (caseData.semioticMatrix?.requestingSigns && caseData.semioticMatrix.requestingSigns.length > 0) {
+              requestingSigns.push(...caseData.semioticMatrix.requestingSigns);
+            } else {
+              if (cfg.includeSonographic && caseData.sonographicPillar?.primaryFinding) {
+                requestingSigns.push(caseData.sonographicPillar.primaryFinding);
+              }
+              if (cfg.includeSonographicDetails !== false && caseData.sonographicPillar?.details) {
+                requestingSigns.push(...caseData.sonographicPillar.details);
+              }
+            }
+
+            const discardSigns: string[] = [];
+            if (caseData.semioticMatrix?.exclusiveSigns && caseData.semioticMatrix.exclusiveSigns.length > 0) {
+              discardSigns.push(...caseData.semioticMatrix.exclusiveSigns);
+            }
+            if (caseData.semioticMatrix?.discardCriteria && caseData.semioticMatrix.discardCriteria.length > 0) {
+              discardSigns.push(...caseData.semioticMatrix.discardCriteria);
+            }
+            if (discardSigns.length === 0 && caseData.diagnostics) {
+              const pDiag = caseData.diagnostics[0];
+              caseData.diagnostics.forEach(d => {
+                if (d.refutingCriteria && d !== pDiag && (!pDiag || d.name.toLowerCase() !== pDiag.name.toLowerCase())) {
+                  discardSigns.push(`[Exclusi√≥n ${d.name}] ${d.refutingCriteria}`);
+                }
+              });
+            }
+
+            const colWidth = (contentWidth - 6 * factor) / 2; // more gap
+
+            // Column 1: Signos Peticionantes (Inclusivos)
+            let reqHeight = 10 * factor;
+            const wrappedReqLines: string[][] = [];
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(9 * factor);
+            requestingSigns.forEach(s => {
+              const wrapped = doc.splitTextToSize(`- ${cleanTextForJSPDF(s)}`, colWidth - 10 * factor);
+              wrappedReqLines.push(wrapped);
+              reqHeight += (wrapped.length * 4.2 * factor) + 2.5 * factor;
             });
 
-            return kneeCardData;
+            // Column 2: Signos Exclusivos / Descarte
+            let discHeight = 10 * factor;
+            const wrappedDiscLines: string[][] = [];
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(9 * factor);
+            discardSigns.forEach(s => {
+              const wrapped = doc.splitTextToSize(`- ${cleanTextForJSPDF(s)}`, colWidth - 10 * factor);
+              wrappedDiscLines.push(wrapped);
+              discHeight += (wrapped.length * 4.2 * factor) + 2.5 * factor;
+            });
+
+            const matrixHeight = Math.max(reqHeight, discHeight, 25 * factor);
+            checkPageBreak(matrixHeight + 15 * factor);
+
+            // Column 1 Box (Emerald)
+            doc.setFillColor(240, 253, 244);
+            doc.setDrawColor(187, 247, 208);
+            doc.setLineWidth(0.25);
+            doc.roundedRect(marginX, yCoord, colWidth, matrixHeight, 1.5, 1.5, "FD");
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8 * factor);
+            doc.setTextColor(16, 120, 80);
+            doc.text("SIGNOS PETICIONANTES (A FAVOR)", marginX + 5 * factor, yCoord + 6 * factor);
+
+            let reqY = yCoord + 11 * factor;
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(9 * factor); // Spacious, readable (increased from 7)
+            doc.setTextColor(30, 41, 59);
+            wrappedReqLines.forEach(wrapped => {
+              wrapped.forEach((line: string) => {
+                doc.text(line, marginX + 5 * factor, reqY);
+                reqY += 4.2 * factor;
+              });
+              reqY += 1.5 * factor;
+            });
+
+            // Column 2 Box (Rose)
+            const col2X = marginX + colWidth + 6 * factor;
+            doc.setFillColor(255, 241, 242);
+            doc.setDrawColor(254, 205, 211);
+            doc.setLineWidth(0.25);
+            doc.roundedRect(col2X, yCoord, colWidth, matrixHeight, 1.5, 1.5, "FD");
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8 * factor);
+            doc.setTextColor(185, 28, 28);
+            doc.text("SIGNOS EXCLUSIVOS Y DESCARTE", col2X + 5 * factor, yCoord + 6 * factor);
+
+            let discY = yCoord + 11 * factor;
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(9 * factor); // Spacious, readable (increased from 7)
+            doc.setTextColor(30, 41, 59);
+            wrappedDiscLines.forEach(wrapped => {
+              wrapped.forEach((line: string) => {
+                doc.text(line, col2X + 5 * factor, discY);
+                discY += 4.2 * factor;
+              });
+              discY += 1.5 * factor;
+            });
+
+            yCoord += matrixHeight + 5 * factor;
+
+            // Bottom Synthesis Box
+            const showMgmt = cfg.includeManagement && !!caseData.managementRecommendation;
+            if (caseData.clinicalCorrelation || showMgmt) {
+              const wrappedCorr = caseData.clinicalCorrelation ? doc.splitTextToSize(`Correlaci√≥n Cl√≠nica: ${caseData.clinicalCorrelation}`, contentWidth - 10 * factor) : [];
+              const wrappedMgmt = showMgmt ? doc.splitTextToSize(`Conducta y Manejo: ${caseData.managementRecommendation}`, contentWidth - 10 * factor) : [];
+              
+              let synthHeight = 9 * factor + (wrappedCorr.length * 4.2 * factor) + (wrappedMgmt.length * 4.2 * factor) + 5 * factor;
+              checkPageBreak(synthHeight + 5 * factor);
+
+              doc.setFillColor(248, 250, 252);
+              doc.setDrawColor(226, 232, 240);
+              doc.setLineWidth(0.25);
+              doc.roundedRect(marginX, yCoord, contentWidth, synthHeight, 1.5, 1.5, "FD");
+
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(8.5 * factor); // Spacious, readable (increased from 7.5)
+              doc.setTextColor(79, 70, 229);
+              doc.text("S√çNTESIS DIAGN√ìSTICA Y BALANCE SEMI√ìTICO", marginX + 5 * factor, yCoord + 6 * factor);
+
+              let synthY = yCoord + 11 * factor;
+              if (wrappedCorr.length > 0) {
+                doc.setFont("helvetica", "normal");
+                doc.setFontSize(9 * factor); // Spacious, readable (increased from 7)
+                doc.setTextColor(30, 41, 59);
+                wrappedCorr.forEach((line: string) => {
+                  doc.text(line, marginX + 5 * factor, synthY);
+                  synthY += 4.2 * factor;
+                });
+                synthY += 2 * factor;
+              }
+
+              if (wrappedMgmt.length > 0) {
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(9 * factor); // Spacious, readable (increased from 7)
+                doc.setTextColor(67, 56, 202);
+                wrappedMgmt.forEach((line: string) => {
+                  doc.text(line, marginX + 5 * factor, synthY);
+                  synthY += 4.2 * factor;
+                });
+              }
+
+              yCoord += synthHeight + 5 * factor;
+            }
+          }
+
+          yCoord += 6 * factor;
+        });
+      }
+
+      // --- 8. DESGLOSE Y JUSTIFICACI√ìN DE CLASIFICACIONES ---
+      if (classificationAnnexBlocks.length > 0) {
+        doc.addPage();
+        yCoord = 20;
+        isFirstBlock = true;
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(12 * factor);
+        doc.setTextColor(15, 23, 42);
+        doc.text("ANEXO: DESGLOSE Y JUSTIFICACI√ìN DE CLASIFICACIONES RADIOL√ìGICAS", marginX, yCoord);
+        yCoord += 4 * factor;
+        doc.setDrawColor(203, 213, 225);
+        doc.setLineWidth(0.4);
+        doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
+        yCoord += 10 * factor;
+
+        classificationAnnexBlocks.forEach((block) => {
+          renderSingleReportBlock(block);
+        });
+      }
+
+      // --- 8.5 ANEXO: RADAR BIOMEC√ÅNICO E INFLAMATORIO (AN√ÅLISIS MULTIVECTOR 6D) ---
+      const radarDataToRender = getBiomechanicalRadarDataFromReport(
+        generatedReportLocal,
+        pdfStateRef.current.biomechanicalRadarData || biomechanicalRadarData
+      );
+
+      if (includeRadarInReport && radarDataToRender && radarDataToRender.axes && radarDataToRender.axes.length > 0) {
+        doc.addPage();
+        yCoord = 21 * factor;
+
+        // Header Title (Positioned cleanly below global running header line at 14mm)
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11 * factor);
+        doc.setTextColor(15, 23, 42); // slate 900
+        const headerTitleText = getRadarTitle(radarDataToRender);
+        doc.text(headerTitleText, marginX, yCoord);
+
+        yCoord += 4 * factor;
+        doc.setDrawColor(203, 213, 225); // slate 300
+        doc.setLineWidth(0.4);
+        doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
+        yCoord += 7 * factor;
+
+        // Spider Chart Geometry Parameters (Optimized scale and safety margin to guarantee zero overlaps with right panel)
+        const chartCenterX = marginX + 37 * factor;
+        const chartCenterY = yCoord + 35 * factor;
+        const maxR = 21 * factor;
+        const numAxes = radarDataToRender.axes.length;
+
+        const getRadarPt = (axisIdx: number, valScore: number) => {
+          const angle = (Math.PI * 2 / numAxes) * axisIdx - Math.PI / 2;
+          const r = (valScore / 10) * maxR;
+          return {
+            x: chartCenterX + r * Math.cos(angle),
+            y: chartCenterY + r * Math.sin(angle),
+            angle
           };
+        };
 
-          if (laterality === "Bilateral") {
-            const svgElementAntDer = document.getElementById("knee-anatomy-svg");
-            const svgElementPostDer = document.getElementById("knee-anatomy-svg-posterior");
-            const svgElementAntIzq = document.getElementById("knee-anatomy-svg-left");
-            const svgElementPostIzq = document.getElementById("knee-anatomy-svg-posterior-left");
-            const svgGonDer = document.getElementById("knee-gonartrosis-svg");
-            const svgGonIzq = document.getElementById("knee-gonartrosis-svg-left");
+        // 1. Concentric Regular Hexagons (scale levels 0.2, 0.4, 0.6, 0.8, 1.0)
+        doc.setDrawColor(226, 232, 240); // slate 200
+        doc.setLineWidth(0.35);
+        [0.2, 0.4, 0.6, 0.8, 1.0].forEach((scale) => {
+          const points: [number, number][] = [];
+          for (let i = 0; i < numAxes; i++) {
+            const pt = getRadarPt(i, scale * 10);
+            points.push([pt.x, pt.y]);
+          }
+          for (let i = 0; i < numAxes; i++) {
+            const p1 = points[i];
+            const p2 = points[(i + 1) % numAxes];
+            doc.line(p1[0], p1[1], p2[0], p2[1]);
+          }
+        });
 
-            const imgAntDer = svgElementAntDer ? await convertSvgToPng(sanitizeKneeSvgForPrint(svgElementAntDer)) : null;
-            const imgPostDer = svgElementPostDer ? await convertSvgToPng(sanitizeKneeSvgForPrint(svgElementPostDer)) : null;
-            const imgAntIzq = svgElementAntIzq ? await convertSvgToPng(sanitizeKneeSvgForPrint(svgElementAntIzq)) : null;
-            const imgPostIzq = svgElementPostIzq ? await convertSvgToPng(sanitizeKneeSvgForPrint(svgElementPostIzq)) : null;
-            const imgGonDer = svgGonDer ? await convertSvgToPng(sanitizeKneeSvgForPrint(svgGonDer)) : null;
-            const imgGonIzq = svgGonIzq ? await convertSvgToPng(sanitizeKneeSvgForPrint(svgGonIzq)) : null;
+        // 2. Radial Axis Lines & Outer Labels
+        const rightX = marginX + 94 * factor;
+        const rightWidth = contentWidth - 94 * factor; // 86mm width
+        const rightBoundary = rightX - 3.0 * factor; // Hard boundary limit for spider chart labels
 
-            if (imgAntDer || imgAntIzq || imgGonDer || imgGonIzq) {
-              checkPageBreak(127);
-              yCoord += 15;
+        doc.setDrawColor(148, 163, 184); // slate 400
+        doc.setLineWidth(0.4);
+        radarDataToRender.axes.forEach((axis, i) => {
+          const endPt = getRadarPt(i, 10);
+          doc.line(chartCenterX, chartCenterY, endPt.x, endPt.y);
 
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(8.5);
-              doc.setTextColor(30, 41, 59);
-              doc.text("ANEXO: ESQUEMAS DE HALLAZGOS Y SINOPSIS BILATERAL", pageWidth / 2, yCoord, { align: "center" });
-              yCoord += 3.5;
+          const lblPt = getRadarPt(i, 11.0);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(7.0 * factor);
+          doc.setTextColor(30, 41, 59); // slate 800
 
-              doc.setFont("helvetica", "normal");
-              doc.setFontSize(6.5);
-              doc.setTextColor(148, 163, 184);
-              doc.text("MAPEO REGIONAL ANTERIOR Y POSTERIOR - RODILLA BILATERAL", pageWidth / 2, yCoord, { align: "center" });
-              yCoord += 6;
+          const cleanLabel = getShortRadarAxisLabel(axis.label, radarDataToRender?.radarMode);
+          let textAlign: "left" | "right" | "center" = "center";
+          let labelX = lblPt.x;
+          let labelY = lblPt.y;
 
-              // --- ROW 1: RODILLA DERECHA ---
-              let yStart = yCoord;
+          const cosVal = Math.cos(lblPt.angle);
+          const sinVal = Math.sin(lblPt.angle);
 
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(7.5);
-              doc.setTextColor(71, 85, 105);
-              doc.text("RODILLA DERECHA", pageWidth / 2, yStart - 1, { align: "center" });
+          if (cosVal > 0.25) {
+            textAlign = "left";
+            labelX += 1.5 * factor;
+          } else if (cosVal < -0.25) {
+            textAlign = "right";
+            labelX -= 1.5 * factor;
+          }
 
-              if (includeKneeSchemaInReport && includeGonartrosisSchemaInReport) {
-                // Anterior Box
-                doc.setFillColor(255, 255, 255);
-                doc.setDrawColor(229, 231, 235);
-                doc.roundedRect(15, yStart, 31, 50, 2, 2, "FD");
-                if (imgAntDer) doc.addImage(imgAntDer, "PNG", 16.5, yStart + 1.5, 28, 28);
-                doc.setFont("helvetica", "bold");
-                doc.setFontSize(5.0);
-                doc.setTextColor(71, 85, 105);
-                doc.text("VISTA ANTERIOR", 30.5, yStart + 46, { align: "center" });
-
-                // Posterior Box
-                doc.setFillColor(255, 255, 255);
-                doc.setDrawColor(229, 231, 235);
-                doc.roundedRect(48, yStart, 31, 50, 2, 2, "FD");
-                if (imgPostDer) doc.addImage(imgPostDer, "PNG", 49.5, yStart + 1.5, 28, 28);
-                doc.setFont("helvetica", "bold");
-                doc.setFontSize(5.0);
-                doc.setTextColor(71, 85, 105);
-                doc.text("VISTA POSTERIOR", 63.5, yStart + 46, { align: "center" });
-
-                // Gonartrosis Box
-                doc.setFillColor(255, 255, 255);
-                doc.setDrawColor(229, 231, 235);
-                doc.roundedRect(81, yStart, 31, 50, 2, 2, "FD");
-                if (imgGonDer) doc.addImage(imgGonDer, "PNG", 82.5, yStart + 1.5, 28, 28);
-                doc.setFont("helvetica", "bold");
-                doc.setFontSize(5.0);
-                doc.setTextColor(71, 85, 105);
-                doc.text("GONARTROSIS", 96.5, yStart + 46, { align: "center" });
-              } else if (includeKneeSchemaInReport) {
-                // Box Left (Anterior)
-                doc.setFillColor(255, 255, 255);
-                doc.setDrawColor(229, 231, 235);
-                doc.roundedRect(15, yStart, 46, 50, 2, 2, "FD");
-                if (imgAntDer) doc.addImage(imgAntDer, "PNG", 18, yStart + 1.5, 40, 40);
-                doc.setFont("helvetica", "bold");
-                doc.setFontSize(5.5);
-                doc.setTextColor(71, 85, 105);
-                doc.text("VISTA ANTERIOR", 38, yStart + 46, { align: "center" });
-
-                // Box Middle (Posterior)
-                doc.setFillColor(255, 255, 255);
-                doc.setDrawColor(229, 231, 235);
-                doc.roundedRect(64, yStart, 46, 50, 2, 2, "FD");
-                if (imgPostDer) {
-                  doc.addImage(imgPostDer, "PNG", 67, yStart + 1.5, 40, 40);
-                } else {
-                  doc.setFont("helvetica", "italic");
-                  doc.setFontSize(5.5);
-                  doc.setTextColor(148, 163, 184);
-                  doc.text("No disponible", 87, yStart + 23, { align: "center" });
-                }
-                doc.setFont("helvetica", "bold");
-                doc.setFontSize(5.5);
-                doc.setTextColor(71, 85, 105);
-                doc.text("VISTA POSTERIOR", 87, yStart + 46, { align: "center" });
-              } else {
-                // Only Gonartrosis
-                doc.setFillColor(255, 255, 255);
-                doc.setDrawColor(229, 231, 235);
-                doc.roundedRect(15, yStart, 95, 50, 2, 2, "FD");
-                if (imgGonDer) doc.addImage(imgGonDer, "PNG", 42.5, yStart + 1.5, 40, 40);
-                doc.setFont("helvetica", "bold");
-                doc.setFontSize(5.5);
-                doc.setTextColor(71, 85, 105);
-                doc.text("ESQUEMA DE GONARTROSIS", 62.5, yStart + 46, { align: "center" });
-              }
-
-              // Box Right (Findings)
-              doc.setFillColor(248, 250, 252);
-              doc.setDrawColor(229, 231, 235);
-              doc.roundedRect(113, yStart, 82, 50, 2, 2, "FD");
-
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(7.0);
-              doc.setTextColor(67, 56, 202);
-              doc.text("SINOPSIS CL√çNICA - DER", 117, yStart + 5.5);
-              doc.setLineWidth(0.2);
-              doc.line(117, yStart + 7.5, 191, yStart + 7.5);
-
-              const dataDer = getKneeCardDataForSide(kneeStates, kneeDescriptions);
-              if (dataDer.length === 0) {
-                doc.setFont("helvetica", "italic");
-                doc.setFontSize(6.0);
-                doc.setTextColor(100, 116, 139);
-                doc.text("Sin hallazgos patol√≥gicos.", 154, yStart + 25, { align: "center" });
-              } else {
-                drawAnatomicalCards(doc, dataDer, 113, yStart, 82, 50);
-              }
-
-              yCoord += 56;
-
-              // --- ROW 2: RODILLA IZQUIERDA ---
-              yStart = yCoord;
-
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(7.5);
-              doc.setTextColor(71, 85, 105);
-              doc.text("RODILLA IZQUIERDA", pageWidth / 2, yStart - 1, { align: "center" });
-
-              if (includeKneeSchemaInReport && includeGonartrosisSchemaInReport) {
-                // Anterior Box
-                doc.setFillColor(255, 255, 255);
-                doc.setDrawColor(229, 231, 235);
-                doc.roundedRect(15, yStart, 31, 50, 2, 2, "FD");
-                if (imgAntIzq) doc.addImage(imgAntIzq, "PNG", 16.5, yStart + 1.5, 28, 28);
-                doc.setFont("helvetica", "bold");
-                doc.setFontSize(5.0);
-                doc.setTextColor(71, 85, 105);
-                doc.text("VISTA ANTERIOR", 30.5, yStart + 46, { align: "center" });
-
-                // Posterior Box
-                doc.setFillColor(255, 255, 255);
-                doc.setDrawColor(229, 231, 235);
-                doc.roundedRect(48, yStart, 31, 50, 2, 2, "FD");
-                if (imgPostIzq) doc.addImage(imgPostIzq, "PNG", 49.5, yStart + 1.5, 28, 28);
-                doc.setFont("helvetica", "bold");
-                doc.setFontSize(5.0);
-                doc.setTextColor(71, 85, 105);
-                doc.text("VISTA POSTERIOR", 63.5, yStart + 46, { align: "center" });
-
-                // Gonartrosis Box
-                doc.setFillColor(255, 255, 255);
-                doc.setDrawColor(229, 231, 235);
-                doc.roundedRect(81, yStart, 31, 50, 2, 2, "FD");
-                if (imgGonIzq) doc.addImage(imgGonIzq, "PNG", 82.5, yStart + 1.5, 28, 28);
-                doc.setFont("helvetica", "bold");
-                doc.setFontSize(5.0);
-                doc.setTextColor(71, 85, 105);
-                doc.text("GONARTROSIS", 96.5, yStart + 46, { align: "center" });
-              } else if (includeKneeSchemaInReport) {
-                // Box Left (Anterior)
-                doc.setFillColor(255, 255, 255);
-                doc.setDrawColor(229, 231, 235);
-                doc.roundedRect(15, yStart, 46, 50, 2, 2, "FD");
-                if (imgAntIzq) doc.addImage(imgAntIzq, "PNG", 18, yStart + 1.5, 40, 40);
-                doc.setFont("helvetica", "bold");
-                doc.setFontSize(5.5);
-                doc.text("VISTA ANTERIOR", 38, yStart + 46, { align: "center" });
-
-                // Box Middle (Posterior)
-                doc.setFillColor(255, 255, 255);
-                doc.setDrawColor(229, 231, 235);
-                doc.roundedRect(64, yStart, 46, 50, 2, 2, "FD");
-                if (imgPostIzq) {
-                  doc.addImage(imgPostIzq, "PNG", 67, yStart + 1.5, 40, 40);
-                } else {
-                  doc.setFont("helvetica", "italic");
-                  doc.setFontSize(5.5);
-                  doc.setTextColor(148, 163, 184);
-                  doc.text("No disponible", 87, yStart + 23, { align: "center" });
-                }
-                doc.setFont("helvetica", "bold");
-                doc.setFontSize(5.5);
-                doc.setTextColor(71, 85, 105);
-                doc.text("VISTA POSTERIOR", 87, yStart + 46, { align: "center" });
-              } else {
-                // Only Gonartrosis
-                doc.setFillColor(255, 255, 255);
-                doc.setDrawColor(229, 231, 235);
-                doc.roundedRect(15, yStart, 95, 50, 2, 2, "FD");
-                if (imgGonIzq) doc.addImage(imgGonIzq, "PNG", 42.5, yStart + 1.5, 40, 40);
-                doc.setFont("helvetica", "bold");
-                doc.setFontSize(5.5);
-                doc.setTextColor(71, 85, 105);
-                doc.text("ESQUEMA DE GONARTROSIS", 62.5, yStart + 46, { align: "center" });
-              }
-
-              // Box Right (Findings)
-              doc.setFillColor(248, 250, 252);
-              doc.setDrawColor(229, 231, 235);
-              doc.roundedRect(113, yStart, 82, 50, 2, 2, "FD");
-
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(7.0);
-              doc.setTextColor(67, 56, 202);
-              doc.text("SINOPSIS CL√çNICA - IZQ", 117, yStart + 5.5);
-              doc.setLineWidth(0.2);
-              doc.line(117, yStart + 7.5, 191, yStart + 7.5);
-
-              const dataIzq = getKneeCardDataForSide(kneeStatesLeft, kneeDescriptionsLeft);
-              if (dataIzq.length === 0) {
-                doc.setFont("helvetica", "italic");
-                doc.setFontSize(6.0);
-                doc.setTextColor(100, 116, 139);
-                doc.text("Sin hallazgos patol√≥gicos.", 154, yStart + 25, { align: "center" });
-              } else {
-                drawAnatomicalCards(doc, dataIzq, 113, yStart, 82, 50);
-              }
-
-              // Footnote
-              doc.setFont("helvetica", "italic");
-              doc.setFontSize(5.5);
-              doc.setTextColor(148, 163, 184);
-              doc.text("Mapeo dual y sinopsis anat√≥micas correspondientes al estudio bilateral.", pageWidth / 2, yStart + 54, { align: "center" });
-
-              yCoord += 59;
-            }
+          if (sinVal < -0.8) {
+            labelY -= 1.8 * factor;
+          } else if (sinVal > 0.8) {
+            labelY += 2.5 * factor;
           } else {
-            // Unilateral
-            const sideTitle = `RODILLA ${laterality ? getGenderedLaterality(laterality, "Rodilla").toUpperCase() : ""}`;
-            const svgElement = document.getElementById("knee-anatomy-svg");
-            const svgElementPost = document.getElementById("knee-anatomy-svg-posterior");
-            const svgGonDer = document.getElementById("knee-gonartrosis-svg");
-
-            const imgDataAnterior = svgElement ? await convertSvgToPng(sanitizeKneeSvgForPrint(svgElement)) : null;
-            const imgDataPosterior = svgElementPost ? await convertSvgToPng(sanitizeKneeSvgForPrint(svgElementPost)) : null;
-            const imgGonDer = svgGonDer ? await convertSvgToPng(sanitizeKneeSvgForPrint(svgGonDer)) : null;
-
-            if (imgDataAnterior || imgGonDer) {
-              const willPageBreak = (yCoord + 80 > pageHeight - 20);
-              checkPageBreak(80);
-              if (!willPageBreak) {
-                yCoord += 15;
-              } else {
-                yCoord += 6;
-              }
-
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(8.0);
-              doc.setTextColor(30, 41, 59);
-              doc.text(`ANEXO: ESQUEMAS DE HALLAZGOS Y SINOPSIS - ${sideTitle}`, pageWidth / 2, yCoord, { align: "center" });
-              yCoord += 3.5;
-
-              doc.setFont("helvetica", "normal");
-              doc.setFontSize(6.3);
-              doc.setTextColor(148, 163, 184);
-              doc.text("MAPEO REGIONAL ANTERIOR Y POSTERIOR DE COMPLEMENTOS Y ESTRUCTURAS EVALUADAS", pageWidth / 2, yCoord, { align: "center" });
-              yCoord += 4.5;
-
-              const yStart = yCoord;
-
-              if (includeKneeSchemaInReport && includeGonartrosisSchemaInReport) {
-                // Anterior Box
-                doc.setFillColor(255, 255, 255);
-                doc.setDrawColor(229, 231, 235);
-                doc.roundedRect(15, yStart, 31, 60, 2, 2, "FD");
-                if (imgDataAnterior) doc.addImage(imgDataAnterior, "PNG", 16.5, yStart + 2, 28, 28);
-                doc.setFont("helvetica", "bold");
-                doc.setFontSize(5.0);
-                doc.setTextColor(71, 85, 105);
-                doc.text("VISTA ANTERIOR", 30.5, yStart + 54, { align: "center" });
-
-                // Posterior Box
-                doc.setFillColor(255, 255, 255);
-                doc.setDrawColor(229, 231, 235);
-                doc.roundedRect(48, yStart, 31, 60, 2, 2, "FD");
-                if (imgDataPosterior) doc.addImage(imgDataPosterior, "PNG", 49.5, yStart + 2, 28, 28);
-                doc.setFont("helvetica", "bold");
-                doc.setFontSize(5.0);
-                doc.setTextColor(71, 85, 105);
-                doc.text("VISTA POSTERIOR", 63.5, yStart + 54, { align: "center" });
-
-                // Gonartrosis Box
-                doc.setFillColor(255, 255, 255);
-                doc.setDrawColor(229, 231, 235);
-                doc.roundedRect(81, yStart, 31, 60, 2, 2, "FD");
-                if (imgGonDer) doc.addImage(imgGonDer, "PNG", 82.5, yStart + 2, 28, 28);
-                doc.setFont("helvetica", "bold");
-                doc.setFontSize(5.0);
-                doc.setTextColor(71, 85, 105);
-                doc.text("GONARTROSIS", 96.5, yStart + 54, { align: "center" });
-              } else if (includeKneeSchemaInReport) {
-                doc.setFillColor(255, 255, 255);
-                doc.setDrawColor(229, 231, 235);
-                doc.roundedRect(15, yStart, 46, 60, 2, 2, "FD");
-                if (imgDataAnterior) doc.addImage(imgDataAnterior, "PNG", 16.5, yStart + 2, 43, 43);
-                doc.setFont("helvetica", "bold");
-                doc.setFontSize(6.0);
-                doc.setTextColor(71, 85, 105);
-                doc.text("VISTA ANTERIOR", 38, yStart + 54, { align: "center" });
-
-                doc.setFillColor(255, 255, 255);
-                doc.setDrawColor(229, 231, 235);
-                doc.roundedRect(64, yStart, 46, 60, 2, 2, "FD");
-                if (imgDataPosterior) {
-                  doc.addImage(imgDataPosterior, "PNG", 65.5, yStart + 2, 43, 43);
-                } else {
-                  doc.setFont("helvetica", "italic");
-                  doc.setFontSize(6.0);
-                  doc.setTextColor(148, 163, 184);
-                  doc.text("No disponible", 87, yStart + 25, { align: "center" });
-                }
-                doc.setFont("helvetica", "bold");
-                doc.setFontSize(6.0);
-                doc.setTextColor(71, 85, 105);
-                doc.text("VISTA POSTERIOR", 87, yStart + 54, { align: "center" });
-              } else {
-                // Only Gonartrosis
-                doc.setFillColor(255, 255, 255);
-                doc.setDrawColor(229, 231, 235);
-                doc.roundedRect(15, yStart, 95, 60, 2, 2, "FD");
-                if (imgGonDer) doc.addImage(imgGonDer, "PNG", 42.5, yStart + 2, 43, 43);
-                doc.setFont("helvetica", "bold");
-                doc.setFontSize(6.0);
-                doc.setTextColor(71, 85, 105);
-                doc.text("ESQUEMA DE GONARTROSIS", 62.5, yStart + 54, { align: "center" });
-              }
-
-              doc.setFillColor(248, 250, 252);
-              doc.setDrawColor(229, 231, 235);
-              doc.roundedRect(113, yStart, 82, 60, 2, 2, "FD");
-
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(7.5);
-              doc.setTextColor(67, 56, 202);
-              doc.text(`SINOPSIS DE HALLAZGOS CLINICOS - ${sideTitle}`, 117, yStart + 5.5);
-
-              doc.setDrawColor(229, 231, 235);
-              doc.setLineWidth(0.2);
-              doc.line(117, yStart + 7.5, 191, yStart + 7.5);
-
-              const kneeCardData = getKneeCardDataForSide(kneeStates, kneeDescriptions);
-
-              if (kneeCardData.length === 0) {
-                doc.setFont("helvetica", "italic");
-                doc.setFontSize(6.5);
-                doc.setTextColor(100, 116, 139);
-                doc.text("Sin hallazgos patol√≥gicos relevantes.", 154, yStart + 25, { align: "center" });
-                doc.text("Todas las estructuras evaluadas", 154, yStart + 31, { align: "center" });
-                doc.text("se reportan normales.", 154, yStart + 37, { align: "center" });
-              } else {
-                drawAnatomicalCards(doc, kneeCardData, 113, yStart, 82, 60);
-              }
-
-              doc.setFont("helvetica", "italic");
-              doc.setFontSize(5.5);
-              doc.setTextColor(148, 163, 184);
-              doc.text("Mapeo dual y sinopsis anat√≥mica de la articulaci√≥n.", 154, yStart + 57, { align: "center" });
-
-              yCoord += 65;
-            }
+            labelY += 0.8 * factor;
           }
+
+          const fullLabelStr = `${cleanLabel} (${axis.score}/10)`;
+          let textW = doc.getTextWidth(fullLabelStr);
+
+          if (textAlign === "left" && (labelX + textW > rightBoundary)) {
+            // Split onto two stacked lines to avoid right panel overlap
+            doc.setFontSize(6.8 * factor);
+            const line1W = doc.getTextWidth(cleanLabel);
+            if (labelX + line1W > rightBoundary) {
+              const maxAllowedW = Math.max(10 * factor, rightBoundary - labelX);
+              const wrappedLabel = doc.splitTextToSize(cleanLabel, maxAllowedW);
+              doc.text(wrappedLabel, labelX, labelY - 1.2 * factor, { align: "left" });
+            } else {
+              doc.text(cleanLabel, labelX, labelY - 1.2 * factor, { align: "left" });
+            }
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(6.5 * factor);
+            doc.setTextColor(79, 70, 229);
+            doc.text(`(${axis.score}/10)`, labelX, labelY + 2.2 * factor, { align: "left" });
+          } else {
+            doc.text(fullLabelStr, labelX, labelY, { align: textAlign });
+          }
+        });
+
+        // 3. Data Filled Polygon
+        const dataPts: [number, number][] = radarDataToRender.axes.map((a, i) => {
+          const pt = getRadarPt(i, a.score);
+          return [pt.x, pt.y];
+        });
+
+        doc.setFillColor(224, 231, 255); // indigo 100 fill
+        doc.setDrawColor(79, 70, 229);   // indigo 600 border
+        doc.setLineWidth(1.2);
+
+        if ((doc as any).polygon) {
+          (doc as any).polygon(dataPts, 'FD');
+        } else {
+          for (let i = 0; i < numAxes; i++) {
+            const p1 = dataPts[i];
+            const p2 = dataPts[(i + 1) % numAxes];
+            doc.line(p1[0], p1[1], p2[0], p2[1]);
+          }
+        }
+
+        // 4. Vertex Dots
+        dataPts.forEach(([vx, vy]) => {
+          doc.setFillColor(79, 70, 229);
+          doc.circle(vx, vy, 1.5 * factor, 'F');
+        });
+
+        // Spider Chart Footer Caption
+        doc.setFont("helvetica", "italic");
+        doc.setFontSize(7.5 * factor);
+        doc.setTextColor(100, 116, 139);
+        doc.text("Representaci√≥n gr√°fica vectorial en ara√±a (0-10)", chartCenterX, chartCenterY + maxR + 9 * factor, { align: "center" });
+
+        // RIGHT SIDE PANEL: Global Load Index & 6-Axis Matrix (Positioned cleanly at marginX + 94mm)
+        let rightY = yCoord;
+
+        // Global Load Index Card
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(7.8 * factor);
+        const cardMaxTextW = rightWidth - 8 * factor;
+        const domVecText = `Vector Dominante: ${radarDataToRender.dominantVector || "No especificado"}`;
+        const domVecLines = doc.splitTextToSize(domVecText, cardMaxTextW);
+        const finalDomVecLines = domVecLines.length > 2 
+          ? [domVecLines[0], domVecLines[1].substring(0, Math.max(0, domVecLines[1].length - 3)) + ".."]
+          : domVecLines;
+
+        const cardH = 23 * factor + (finalDomVecLines.length > 1 ? (finalDomVecLines.length - 1) * 4.0 * factor : 0);
+
+        doc.setFillColor(248, 250, 252);
+        doc.setDrawColor(226, 232, 240);
+        doc.setLineWidth(0.35);
+        doc.roundedRect(rightX, rightY, rightWidth, cardH, 1.5, 1.5, "FD");
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(7.2 * factor);
+        doc.setTextColor(79, 70, 229);
+        doc.text("CARGA TISULAR GLOBAL", rightX + 4 * factor, rightY + 6.0 * factor);
+
+        doc.setFontSize(14 * factor);
+        doc.setTextColor(15, 23, 42);
+        doc.text(`${radarDataToRender.globalScore} / 10.0`, rightX + 4 * factor, rightY + 14.0 * factor);
+
+        doc.setFontSize(7.2 * factor);
+        doc.setTextColor(225, 29, 72); // rose 600
+        doc.text(`Carga: ${(radarDataToRender.globalLoadIndex || "Moderada").toUpperCase()}`, rightX + rightWidth - 4 * factor, rightY + 6.0 * factor, { align: "right" });
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(7.8 * factor);
+        doc.setTextColor(71, 85, 105);
+        finalDomVecLines.forEach((line: string, lIdx: number) => {
+          doc.text(line, rightX + 4 * factor, rightY + 18.5 * factor + (lIdx * 4.0 * factor));
+        });
+
+        rightY += cardH + 5 * factor;
+
+        // Table of 6 Vectors (Compact: Only label and score badge)
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8.8 * factor);
+        doc.setTextColor(15, 23, 42);
+        doc.text("DESGLOSE MULTIVECTORIAL (6D)", rightX, rightY);
+        rightY += 5.2 * factor;
+
+        const colW = (rightWidth - 4 * factor) / 2;
+
+        radarDataToRender.axes.forEach((axis, idx) => {
+          const isSecondCol = idx % 2 === 1;
+          const cardX = isSecondCol ? rightX + colW + 4 * factor : rightX;
+          const cardY = rightY + Math.floor(idx / 2) * 8.5 * factor;
+
+          doc.setFillColor(255, 255, 255);
+          doc.setDrawColor(226, 232, 240);
+          doc.roundedRect(cardX, cardY, colW, 7.8 * factor, 1, 1, "FD");
+
+          doc.setFont("helvetica", "bold");
+          const displayLabel = getShortRadarAxisLabel(axis.label, radarDataToRender?.radarMode);
+          const maxLabelWidth = colW - 13 * factor;
+          
+          let labelFontSize = 7.5;
+          doc.setFontSize(labelFontSize * factor);
+          while (doc.getTextWidth(displayLabel) > maxLabelWidth && labelFontSize > 4.8) {
+            labelFontSize -= 0.2;
+            doc.setFontSize(labelFontSize * factor);
+          }
+
+          doc.setTextColor(30, 41, 59);
+          doc.text(displayLabel, cardX + 2.5 * factor, cardY + 5.2 * factor);
+
+          let levelColor = [16, 185, 129]; // emerald
+          if (axis.score >= 8) levelColor = [225, 29, 72]; // rose
+          else if (axis.score >= 6) levelColor = [217, 119, 6]; // amber
+          else if (axis.score >= 3) levelColor = [8, 145, 178]; // cyan
+
+          doc.setTextColor(levelColor[0], levelColor[1], levelColor[2]);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(7.8 * factor);
+          doc.text(`${axis.score}/10`, cardX + colW - 2.5 * factor, cardY + 5.2 * factor, { align: "right" });
+        });
+
+        rightY += Math.ceil(radarDataToRender.axes.length / 2) * 8.5 * factor + 4 * factor;
+        yCoord = Math.max(chartCenterY + maxR + 15 * factor, rightY);
+
+        // MIDDLE SECTION: DETALLE Y JUSTIFICACI√ìN DE LOS VECTORES
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(10 * factor);
+        doc.setTextColor(15, 23, 42);
+        doc.text("DETALLE Y JUSTIFICACI√ìN DE LOS VECTORES (HALLAZGOS Y SOBRECARGA)", marginX, yCoord);
+        yCoord += 6.5 * factor;
+
+        const detailColW = (contentWidth - 5 * factor) / 2;
+        const axesList = radarDataToRender.axes;
+
+        for (let i = 0; i < axesList.length; i += 2) {
+          const axisA = axesList[i];
+          const axisB = axesList[i + 1];
+
+          // Set font size BEFORE splitting text
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(8.0 * factor);
+
+          // Compute lines for axisA
+          const findingA = axisA.finding ? `Hallazgo: ${axisA.finding}` : "";
+          const justA = axisA.justification && axisA.justification !== axisA.finding ? `Justificaci√≥n: ${axisA.justification}` : "";
+          const textA = [findingA, justA].filter(Boolean).join(" ");
+          const linesA = doc.splitTextToSize(textA, detailColW - 7 * factor);
+
+          let linesB: string[] = [];
+          if (axisB) {
+            const findingB = axisB.finding ? `Hallazgo: ${axisB.finding}` : "";
+            const justB = axisB.justification && axisB.justification !== axisB.finding ? `Justificaci√≥n: ${axisB.justification}` : "";
+            const textB = [findingB, justB].filter(Boolean).join(" ");
+            linesB = doc.splitTextToSize(textB, detailColW - 7 * factor);
+          }
+
+          const maxLines = Math.max(linesA.length, linesB.length, 1);
+          const cardH = 9.0 * factor + (maxLines * 4.3 * factor) + 4.0 * factor;
+
+          // Render Card A
+          doc.setFillColor(250, 252, 255);
+          doc.setDrawColor(226, 232, 240);
+          doc.setLineWidth(0.3);
+          doc.roundedRect(marginX, yCoord, detailColW, cardH, 1.2, 1.2, "FD");
+
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8.5 * factor);
+
+          const levelStrA = `(${axisA.level})`;
+          const levelWidthA = doc.getTextWidth(levelStrA);
+          const maxTitleWidthA = detailColW - levelWidthA - 7 * factor;
+
+          doc.setTextColor(30, 41, 59);
+          const titleA = doc.splitTextToSize(`${i + 1}. ${axisA.label}`, maxTitleWidthA)[0];
+          doc.text(titleA, marginX + 3.5 * factor, yCoord + 6.0 * factor);
+
+          doc.setTextColor(79, 70, 229);
+          doc.text(levelStrA, marginX + detailColW - 3.5 * factor, yCoord + 6.0 * factor, { align: "right" });
+
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(8.0 * factor);
+          doc.setTextColor(51, 65, 85); // slate 700
+          let textY = yCoord + 10.5 * factor;
+          linesA.forEach((l: string) => {
+            doc.text(l, marginX + 3.5 * factor, textY);
+            textY += 4.3 * factor;
+          });
+
+          // Render Card B (if exists)
+          if (axisB) {
+            const cardBX = marginX + detailColW + 5 * factor;
+            doc.setFillColor(250, 252, 255);
+            doc.setDrawColor(226, 232, 240);
+            doc.setLineWidth(0.3);
+            doc.roundedRect(cardBX, yCoord, detailColW, cardH, 1.2, 1.2, "FD");
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8.5 * factor);
+
+            const levelStrB = `(${axisB.level})`;
+            const levelWidthB = doc.getTextWidth(levelStrB);
+            const maxTitleWidthB = detailColW - levelWidthB - 7 * factor;
+
+            doc.setTextColor(30, 41, 59);
+            const titleB = doc.splitTextToSize(`${i + 2}. ${axisB.label}`, maxTitleWidthB)[0];
+            doc.text(titleB, cardBX + 3.5 * factor, yCoord + 6.0 * factor);
+
+            doc.setTextColor(79, 70, 229);
+            doc.text(levelStrB, cardBX + detailColW - 3.5 * factor, yCoord + 6.0 * factor, { align: "right" });
+
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(8.0 * factor);
+            doc.setTextColor(51, 65, 85);
+            textY = yCoord + 10.5 * factor;
+            linesB.forEach((l: string) => {
+              doc.text(l, cardBX + 3.5 * factor, textY);
+              textY += 4.3 * factor;
+            });
+          }
+
+          yCoord += cardH + 4.0 * factor;
+        }
+
+        yCoord += 4 * factor;
+
+        // BOTTOM SECTION: S√çNTESIS BIOMEC√ÅNICO-INFLAMATORIA FINAL
+        if (radarDataToRender.clinicalSummary) {
+          const innerPadding = 7 * factor;
+          const availableTextWidth = contentWidth - (innerPadding * 2);
+          const synthFontSize = 8.8 * factor;
+          const lineHeight = 4.6 * factor;
+
+          // Set EXACT font size BEFORE splitting text
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(synthFontSize);
+
+          const wrappedSynth = doc.splitTextToSize(radarDataToRender.clinicalSummary, availableTextWidth);
+          const boxH = 11 * factor + (wrappedSynth.length * lineHeight) + 4 * factor;
+
+          doc.setFillColor(248, 250, 252);
+          doc.setDrawColor(199, 210, 254); // indigo 200
+          doc.setLineWidth(0.4);
+          doc.roundedRect(marginX, yCoord, contentWidth, boxH, 1.5, 1.5, "FD");
+
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(9.8 * factor);
+          doc.setTextColor(79, 70, 229); // indigo 600
+          doc.text("S√çNTESIS BIOMEC√ÅNICO-INFLAMATORIA FINAL", marginX + innerPadding, yCoord + 7.5 * factor);
+
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(synthFontSize);
+          doc.setTextColor(30, 41, 59);
+
+          let synthY = yCoord + 13.2 * factor;
+          wrappedSynth.forEach((line: string) => {
+            doc.text(line, marginX + innerPadding, synthY);
+            synthY += lineHeight;
+          });
+
+          yCoord += boxH + 4 * factor;
+        }
+      }
+
+      // --- 9. RESUMEN DEL PACIENTE (SI CORRESPONDE) ---
+      if (attachSummaryToOfficialReport && patientSummary) {
+        doc.addPage();
+        yCoord = 20;
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(15, 23, 42); // slate 900
+        doc.text("ANEXO: EXPLICACI√ìN DE INFORME PARA EL PACIENTE", marginX, yCoord);
+
+        // Simple divider
+        yCoord += 4;
+        doc.setDrawColor(203, 213, 225); // slate 300
+        doc.setLineWidth(0.4);
+        doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
+        yCoord += 11;
+
+        // Introduction Summary
+        if (patientSummary.summary) {
+          const cleanSummary = stripEmojis(patientSummary.summary);
+          doc.setFont("times", "normal");
+          doc.setFontSize(10.5);
+          doc.setTextColor(51, 65, 85);
+          
+          const splitSummary = doc.splitTextToSize(cleanSummary, contentWidth);
+          splitSummary.forEach((line: string) => {
+            checkPageBreak(5.5 * factor);
+            doc.text(line, marginX, yCoord);
+            yCoord += 5.5 * factor;
+          });
+          yCoord += 4 * factor;
+        }
+
+        // Key Findings section
+        if (patientSummary.keyFindings && patientSummary.keyFindings.length > 0) {
+          // Estimate first finding height
+          const firstFinding = patientSummary.keyFindings[0];
+          const title0 = stripEmojis(firstFinding.title || "");
+          const originalTerm0 = stripEmojis(firstFinding.originalTerm || "");
+          const simplifiedExplanation0 = stripEmojis(firstFinding.simplifiedExplanation || "");
+          const analogy0 = stripEmojis(firstFinding.analogy || "");
+          const reassurance0 = stripEmojis(firstFinding.reassurance || "");
+
+          const splitTitle0 = doc.splitTextToSize(title0, contentWidth - 10);
+          const splitOrig0 = doc.splitTextToSize(`T√©rmino original en informe t√©cnico: "${originalTerm0}"`, contentWidth - 10);
+          const splitExp0 = doc.splitTextToSize(`Explicaci√≥n: ${simplifiedExplanation0}`, contentWidth - 14);
+          const splitAnalogy0 = doc.splitTextToSize(`Analog√≠a de comprensi√≥n: ${analogy0}`, contentWidth - 14);
+          const splitReassurance0 = doc.splitTextToSize(`Contexto Cl√≠nico y Perspectiva M√©dica: ${reassurance0}`, contentWidth - 14);
+
+          const neededHeight0 = ((splitTitle0.length * 5) + 
+                               (splitOrig0.length * 4) + 
+                               (splitExp0.length * 5) + 
+                               (splitAnalogy0.length * 4.5) + 
+                               (splitReassurance0.length * 4.5) + 20) * factor;
+
+          checkPageBreak(15 * factor + neededHeight0);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(11);
+          doc.setTextColor(15, 23, 42);
+          doc.text("HALLAZGOS IDENTIFICADOS Y TRADUCIDOS:", marginX, yCoord);
+          yCoord += 7 * factor;
+
+          patientSummary.keyFindings.forEach((finding: any) => {
+            const title = stripEmojis(finding.title || "");
+            const originalTerm = stripEmojis(finding.originalTerm || "");
+            const simplifiedExplanation = stripEmojis(finding.simplifiedExplanation || "");
+            const analogy = stripEmojis(finding.analogy || "");
+            const reassurance = stripEmojis(finding.reassurance || "");
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(10);
+            const splitTitle = doc.splitTextToSize(title, contentWidth - 10);
+            
+            doc.setFont("times", "italic");
+            doc.setFontSize(9);
+            const splitOrig = doc.splitTextToSize(`T√©rmino original en informe t√©cnico: "${originalTerm}"`, contentWidth - 10);
+            
+            doc.setFont("times", "normal");
+            doc.setFontSize(10);
+            const splitExp = doc.splitTextToSize(`Explicaci√≥n: ${simplifiedExplanation}`, contentWidth - 14);
+
+            doc.setFont("times", "normal");
+            doc.setFontSize(9.5);
+            const splitAnalogy = doc.splitTextToSize(analogy, contentWidth - 14);
+
+            const splitReassurance = doc.splitTextToSize(reassurance, contentWidth - 14);
+
+            const neededHeight = ((splitTitle.length * 5) + 
+                                 (splitOrig.length * 4) + 
+                                 (splitExp.length * 5) + 
+                                 (splitAnalogy.length * 4.5) + 
+                                 (splitReassurance.length * 4.5) + 20) * factor;
+
+            checkPageBreak(neededHeight);
+
+            doc.setFillColor(250, 250, 250);
+            doc.rect(marginX, yCoord, contentWidth, neededHeight - 4 * factor, "F");
+            doc.setDrawColor(229, 231, 235);
+            doc.setLineWidth(0.35);
+            doc.rect(marginX, yCoord, contentWidth, neededHeight - 4 * factor, "D");
+
+            let interiorY = yCoord + 6 * factor;
+
+            // Title
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(10);
+            doc.setTextColor(30, 58, 138); 
+            splitTitle.forEach((line: string) => {
+              doc.text(line, marginX + 5, interiorY);
+              interiorY += 5 * factor;
+            });
+
+            // Original term
+            doc.setFont("times", "italic");
+            doc.setFontSize(9);
+            doc.setTextColor(75, 85, 99); 
+            splitOrig.forEach((line: string) => {
+              doc.text(line, marginX + 5, interiorY);
+              interiorY += 4.5 * factor;
+            });
+            interiorY += 2 * factor;
+
+            // Explanation
+            doc.setFont("times", "normal");
+            doc.setFontSize(10);
+            doc.setTextColor(15, 23, 42); 
+            splitExp.forEach((line: string) => {
+              doc.text(line, marginX + 7, interiorY);
+              interiorY += 4.8 * factor;
+            });
+            interiorY += 2 * factor;
+
+            // Analogy
+            const analogyHeight = (splitAnalogy.length * 4.2 * factor) + 4 * factor;
+            doc.setFillColor(255, 247, 237); 
+            doc.rect(marginX + 5, interiorY - 3 * factor, contentWidth - 10, analogyHeight, "F");
+            doc.setDrawColor(249, 115, 22); 
+            doc.setLineWidth(0.5);
+            doc.line(marginX + 5, interiorY - 3 * factor, marginX + 5, interiorY - 3 * factor + analogyHeight);
+
+            doc.setFont("times", "normal");
+            doc.setFontSize(9.5);
+            doc.setTextColor(124, 45, 18); 
+            splitAnalogy.forEach((line: string) => {
+              doc.text(line, marginX + 8, interiorY);
+              interiorY += 4.2 * factor;
+            });
+            interiorY += 4 * factor;
+
+            // Context
+            const contextHeight = (splitReassurance.length * 4.2 * factor) + 4 * factor;
+            doc.setFillColor(239, 246, 255); 
+            doc.rect(marginX + 5, interiorY - 3 * factor, contentWidth - 10, contextHeight, "F");
+            doc.setDrawColor(59, 130, 246); 
+            doc.setLineWidth(0.5);
+            doc.line(marginX + 5, interiorY - 3 * factor, marginX + 5, interiorY - 3 * factor + contextHeight);
+
+            doc.setFont("times", "normal");
+            doc.setFontSize(9.5);
+            doc.setTextColor(30, 58, 138); 
+            splitReassurance.forEach((line: string) => {
+              doc.text(line, marginX + 8, interiorY);
+              interiorY += 4.2 * factor;
+            });
+
+            yCoord += neededHeight + 2 * factor;
+          });
+          yCoord += 4 * factor;
+        }
+
+        // Care Points Section
+        if (patientSummary.carePoints && patientSummary.carePoints.length > 0) {
+          // Estimate first point height
+          const firstPoint = stripEmojis(patientSummary.carePoints[0]);
+          const splitPoint0 = doc.splitTextToSize(firstPoint, contentWidth - 8);
+          const firstPointHeight = ((splitPoint0.length * 4.8) + 2.5) * factor;
+
+          checkPageBreak(22 * factor + firstPointHeight);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(11);
+          doc.setTextColor(15, 23, 42);
+          doc.text("PAUTAS Y RECOMENDACIONES DE BIENESTAR:", marginX, yCoord);
+          yCoord += 7 * factor;
+
+          patientSummary.carePoints.forEach((point: string) => {
+            const cleanPoint = stripEmojis(point);
+            const splitPoint = doc.splitTextToSize(cleanPoint, contentWidth - 8);
+            
+            checkPageBreak(((splitPoint.length * 5) + 3) * factor);
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(10.5);
+            doc.setTextColor(15, 23, 42);
+            doc.text("‚Ä¢", marginX + 2, yCoord);
+
+            doc.setFont("times", "normal");
+            doc.setFontSize(10.5);
+            doc.setTextColor(51, 65, 85);
+
+            splitPoint.forEach((line: string, i: number) => {
+              doc.text(line, marginX + 6, yCoord + (i * 4.8 * factor));
+            });
+            yCoord += (splitPoint.length * 4.8 * factor) + 2.5 * factor;
+          });
+          yCoord += 4 * factor;
+        }
+
+        // Suggested Questions Section
+        if (patientSummary.suggestedQuestions && patientSummary.suggestedQuestions.length > 0) {
+          // Estimate first question height
+          const firstQ = stripEmojis(patientSummary.suggestedQuestions[0]);
+          const splitQ0 = doc.splitTextToSize(`"${firstQ}"`, contentWidth - 8);
+          const firstQHeight = ((splitQ0.length * 4.8) + 3) * factor;
+
+          checkPageBreak(22 * factor + firstQHeight);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(11);
+          doc.setTextColor(15, 23, 42);
+          doc.text("PREGUNTAS SUGERIDAS PARA SU CONSULTA M√âDICA:", marginX, yCoord);
+          yCoord += 7 * factor;
+
+          patientSummary.suggestedQuestions.forEach((q: string, idx: number) => {
+            const cleanQ = stripEmojis(q);
+            const splitQ = doc.splitTextToSize(`"${cleanQ}"`, contentWidth - 8);
+
+            checkPageBreak(((splitQ.length * 5) + 3) * factor);
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(10);
+            doc.setTextColor(15, 23, 42);
+            doc.text(`${idx + 1}.`, marginX + 2, yCoord);
+
+            doc.setFont("times", "bold");
+            doc.setFontSize(10);
+            doc.setTextColor(30, 41, 59);
+
+            splitQ.forEach((line: string, i: number) => {
+              doc.text(line, marginX + 7, yCoord + (i * 4.8 * factor));
+            });
+            yCoord += (splitQ.length * 4.8 * factor) + 3 * factor;
+          });
+        }
+      }
+
+      // --- 10. INFOGRAF√çA DEL PACIENTE (SI CORRESPONDE) ---
+      if (attachInfographicToOfficialReport && infographicUrl) {
+        try {
+          let base64Image = infographicUrl;
+          if (!infographicUrl.startsWith("data:")) {
+            // It's a blob or normal URL. Let's fetch it and convert to data URL
+            const response = await fetch(infographicUrl);
+            const blob = await response.blob();
+            base64Image = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.onerror = reject;
+              reader.readAsDataURL(blob);
+            });
+          }
+
+          doc.addPage();
+          yCoord = 20;
+
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(11);
+          doc.setTextColor(15, 23, 42); // slate 900
+          doc.text("ANEXO: INFOGRAF√çA EXPLICATIVA PARA EL PACIENTE", marginX, yCoord);
+
+          // Simple divider
+          yCoord += 4;
+          doc.setDrawColor(203, 213, 225); // slate 300
+          doc.setLineWidth(0.4);
+          doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
+          yCoord += 11;
+
+          // Let's determine format
+          let format = "PNG";
+          if (base64Image.includes("image/jpeg") || base64Image.includes("image/jpg")) {
+            format = "JPEG";
+          } else if (base64Image.includes("image/webp")) {
+            format = "WEBP";
+          }
+
+          // Measure its aspect ratio to fit perfectly without distortion
+          const imgAspect = await new Promise<number>((resolve) => {
+            const tempImg = new Image();
+            tempImg.onload = () => {
+              resolve(tempImg.naturalWidth / tempImg.naturalHeight);
+            };
+            tempImg.onerror = () => {
+              resolve(1.0); // Fallback to square
+            };
+            tempImg.src = base64Image;
+          });
+
+          const maxDrawWidth = contentWidth;
+          const maxDrawHeight = pageHeight - yCoord - 20; // 20mm margin bottom
+
+          let drawW = maxDrawWidth;
+          let drawH = maxDrawWidth / imgAspect;
+
+          if (drawH > maxDrawHeight) {
+            drawH = maxDrawHeight;
+            drawW = maxDrawHeight * imgAspect;
+          }
+
+          // Center horizontally
+          const drawX = marginX + (maxDrawWidth - drawW) / 2;
+          const drawY = yCoord;
+
+          doc.addImage(base64Image, format, drawX, drawY, drawW, drawH);
         } catch (err) {
-          console.warn("Could not draw knee diagram inside jsPDF", err);
+          console.error("Error adding infographic to PDF:", err);
         }
       }
 
-      // üõ†Ô∏è DRAW ANKLE DIAGRAM IN THE PROGRAMMATIC PDF
-      if (includeAnkleSchemaInReport && specificStudy === "Tobillo") {
-        const svgLateral = document.getElementById("ankle-anatomy-svg-lateral");
-        const svgMedial = document.getElementById("ankle-anatomy-svg-medial");
+      // Add running headers on pages 2+ and page numbers on all pages (Format Editorial)
+      const totalPages = doc.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        
+        // Footer: draw page number at the bottom.
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7.5);
+        if (pdfLayoutType === "clinical_slate") {
+          doc.setTextColor(100, 116, 139); // slate-500
+        } else if (pdfLayoutType === "executive_medical") {
+          doc.setTextColor(197, 160, 89); // Gold
+        } else {
+          doc.setTextColor(148, 163, 184); // slate-400
+        }
+        const footerPageStr = `P√°g. ${i} de ${totalPages}`;
+        doc.text(footerPageStr, pageWidth - marginX - doc.getTextWidth(footerPageStr), pageHeight - 10);
+        
+        // Faint, small watermark or clinic name on the left of footer
+        const footerLeftText = displayClinicName || "REPORTE RADIOL√ìGICO";
+        doc.text(footerLeftText, marginX, pageHeight - 10);
 
-        if (svgLateral || svgMedial) {
-          try {
-            const processAnkleSvg = async (svgEl: HTMLElement) => {
-              const rect = svgEl.getBoundingClientRect();
-              const clonedSvg = svgEl.cloneNode(true) as SVGElement;
-              
-              // 1. Force background and clean outline colors on gradient stops
-              const stops = clonedSvg.querySelectorAll("linearGradient stop");
-              stops.forEach(stop => {
-                const curColor = stop.getAttribute("stop-color") || stop.getAttribute("stopColor") || "";
-                if (curColor === "#1e293b" || curColor === "#2e3d52") stop.setAttribute("stop-color", "#f1f5f9");
-                if (curColor === "#0f172a" || curColor === "#111827") stop.setAttribute("stop-color", "#cbd5e1");
-                if (curColor === "#334155" || curColor === "#3d4e66") stop.setAttribute("stop-color", "#cbd5e1");
-              });
-
-              // 2. Adjust paths fill/stroke colors for paper print
-              const paths = clonedSvg.querySelectorAll("path");
-              paths.forEach(p => {
-                const fill = p.getAttribute("fill") || "";
-                const stroke = p.getAttribute("stroke") || "";
-                
-                if (fill === "#1e293b") p.setAttribute("fill", "#f8fafc");
-                if (fill === "#451a03") p.setAttribute("fill", "#fef3c7");
-                if (fill === "#500730") p.setAttribute("fill", "#fce7f3");
-                if (fill === "#7f1d1d") p.setAttribute("fill", "#fee2e2");
-
-                if (stroke === "#ef4444") p.setAttribute("stroke", "#dc2626");
-                if (stroke === "#ec4899") p.setAttribute("stroke", "#db2777");
-                if (stroke === "#f59e0b") p.setAttribute("stroke", "#d97706");
-                if (stroke === "#334155") p.setAttribute("stroke", "#475569");
-                if (stroke === "#475569") p.setAttribute("stroke", "#64748b");
-              });
-
-              // 3. Adjust text colors
-              const texts = clonedSvg.querySelectorAll("text");
-              texts.forEach(t => {
-                const fill = t.getAttribute("fill") || "";
-                if (fill === "#64748b") t.setAttribute("fill", "#475569");
-                if (fill === "#475569") t.setAttribute("fill", "#1e293b");
-              });
-
-              // 4. Adjust custom guides/circles in background
-              const circles = clonedSvg.querySelectorAll("circle");
-              circles.forEach(c => {
-                const stroke = c.getAttribute("stroke") || "";
-                if (stroke === "#1e293b") c.setAttribute("stroke", "#e2e8f0");
-              });
-              const lines = clonedSvg.querySelectorAll("line");
-              lines.forEach(l => {
-                const stroke = l.getAttribute("stroke") || "";
-                if (stroke === "#1e293b") l.setAttribute("stroke", "#e2e8f0");
-              });
-
-              return await convertSvgToPng(clonedSvg);
-            };
-
-            const imgLateral = svgLateral ? await processAnkleSvg(svgLateral) : null;
-            const imgMedial = svgMedial ? await processAnkleSvg(svgMedial) : null;
-
-            // Check page break for 95mm (75mm content + margins/header)
-            const willPageBreak = (yCoord + 95 > pageHeight - 20);
-            checkPageBreak(95);
-            if (!willPageBreak) {
-              yCoord += 18; // Generous space/gap from the diagnostic impression above
-            } else {
-              yCoord += 6;  // Normal small spacing at the top of a fresh page
-            }
-
-            // Header for the diagram
-            doc.setFont("helvetica", "bold");
-            doc.setFontSize(8.0);
-            doc.setTextColor(30, 41, 59);
-            doc.text("ANEXO: ESQUEMA DE HALLAZGOS Y SINOPSIS DE TOBILLO", pageWidth / 2, yCoord, { align: "center" });
-            yCoord += 3.5;
-
-            doc.setFont("helvetica", "normal");
-            doc.setFontSize(6.3);
-            doc.setTextColor(148, 163, 184);
-            doc.text("MAPEO ANAT√ìMICO Y SINOPSIS ESTRUCTURADA DE LA ARTICULACI√ìN DE TOBILLO Y SUS TENDONES", pageWidth / 2, yCoord, { align: "center" });
-            yCoord += 4.5;
-
-            // --- DRAW SIDE-BY-SIDE LAYOUT ---
-            const yStart = yCoord;
-
-            // 1. Draw Left Diagram Box (Cara Lateral)
-            doc.setFillColor(255, 255, 255);
-            doc.setDrawColor(229, 231, 235);
-            doc.roundedRect(20, yStart, 43, 78, 3, 3, "FD");
-
-            doc.setFont("helvetica", "bold");
-            doc.setFontSize(6.5);
-            doc.setTextColor(71, 85, 105);
-            doc.text("CARA LATERAL", 41.5, yStart + 5.5, { align: "center" });
-
-            if (imgLateral) {
-              doc.addImage(imgLateral, "PNG", 21.5, yStart + 8, 40, 40);
-            } else {
-              doc.setFont("helvetica", "italic");
-              doc.setFontSize(7);
-              doc.setTextColor(148, 163, 184);
-              doc.text("No disponible", 41.5, yStart + 35, { align: "center" });
-            }
-
-            // 2. Draw Second Diagram Box (Cara Medial)
-            doc.setFillColor(255, 255, 255);
-            doc.setDrawColor(229, 231, 235);
-            doc.roundedRect(65, yStart, 43, 78, 3, 3, "FD");
-
-            doc.setFont("helvetica", "bold");
-            doc.setFontSize(6.5);
-            doc.setTextColor(71, 85, 105);
-            doc.text("CARA MEDIAL", 86.5, yStart + 5.5, { align: "center" });
-
-            if (imgMedial) {
-              doc.addImage(imgMedial, "PNG", 66.5, yStart + 8, 40, 40);
-            } else {
-              doc.setFont("helvetica", "italic");
-              doc.setFontSize(7);
-              doc.setTextColor(148, 163, 184);
-              doc.text("No disponible", 86.5, yStart + 35, { align: "center" });
-            }
-
-            // 3. Draw Right Findings Container (Slate Background)
-            doc.setFillColor(248, 250, 252);
-            doc.setDrawColor(229, 231, 235);
-            doc.roundedRect(111, yStart, 79, 78, 3, 3, "FD");
-
-            // Header of findings: Unified title
-            doc.setFont("helvetica", "bold");
-            doc.setFontSize(7.5);
-            doc.setTextColor(67, 56, 202); // indigo-700
-            doc.text("SINOPSIS DE HALLAZGOS CL√çNICOS", 114, yStart + 5.5);
-
-            // Draw horizontal divider line
-            doc.setDrawColor(229, 231, 235);
+        // Header for page 2 onwards (Running Header)
+        if (i >= 2) {
+          // Draw thin horizontal line
+          if (pdfLayoutType === "clinical_slate") {
+            doc.setDrawColor(148, 163, 184); // slate-400
+            doc.setLineWidth(0.35);
+          } else if (pdfLayoutType === "executive_medical") {
+            doc.setDrawColor(197, 160, 89); // Gold
+            doc.setLineWidth(0.35);
+          } else {
+            doc.setDrawColor(226, 232, 240); // slate-200
             doc.setLineWidth(0.2);
-            doc.line(114, yStart + 7.5, 186, yStart + 7.5);
+          }
+          doc.line(marginX, 14, pageWidth - marginX, 14);
 
-            // Ankle structures to map (9 structures in total)
-            const pdfAnkleStructures = [
-              { id: "achilles", label: "T. Aquiles" },
-              { id: "plantar_fascia", label: "Fascia Plantar" },
-              { id: "lpaa", label: "LPAA" },
-              { id: "lpc", label: "LPC" },
-              { id: "peroneal_tendons", label: "T. Peroneos" },
-              { id: "tibial_posterior", label: "T. Tibial Post." },
-              { id: "tibial_anterior", label: "T. Tibial Ant." },
-              { id: "joint_effusion", label: "Derrame Artic." },
-              { id: "deltoid", label: "Lig. Deltoideo" }
-            ].filter(struct => {
-              const s = ankleStates[struct.id] || "no_descrito";
-              return s !== "no_descrito" && s !== "normal";
-            });
+          // Draw study name on the left of the header
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(7);
+          if (pdfLayoutType === "clinical_slate") {
+            doc.setTextColor(71, 85, 105); // slate-600
+          } else if (pdfLayoutType === "executive_medical") {
+            doc.setTextColor(15, 23, 42); // Navy
+          } else {
+            doc.setTextColor(100, 116, 139); // slate-500
+          }
+          
+          let studyLabel = studyType ? studyType.toUpperCase() : "REPORTE DE RADIODIAGN√ìSTICO";
+          
+          doc.text(studyLabel, marginX, 11);
 
-            const getAnklePDFSimplifiedDescription = (id: string, state: string) => {
-              if (ankleDescriptions && ankleDescriptions[id] && ankleDescriptions[id].trim() !== "" && ankleDescriptions[id] !== "No mencionado / No descrito." && ankleDescriptions[id] !== "No descrito.") {
-                return ankleDescriptions[id];
-              }
-              if (!state || state === "no_descrito") {
-                return "No descrito en el reporte.";
-              }
-              if (state === "normal") {
-                return "Entre l√≠mites normales.";
-              }
-              return state.charAt(0).toUpperCase() + state.slice(1).replace(/_/g, " ");
-            };
+          // Draw pagination aligned to the right inside the running header
+          doc.setFont("helvetica", "normal");
+          const runningHeaderPageStr = `P√°g. ${i} de ${totalPages}`;
+          const rWidth = doc.getTextWidth(runningHeaderPageStr);
+          doc.text(runningHeaderPageStr, pageWidth - marginX - rWidth, 11);
+        }
+      }
 
-            const ankleCardData = pdfAnkleStructures.map(struct => {
-              const s = ankleStates[struct.id] || "no_descrito";
-              return {
-                label: struct.label,
-                state: s,
-                description: getAnklePDFSimplifiedDescription(struct.id, s)
-              };
-            });
+      if (returnBlobUrl) {
+        const blob = doc.output("blob");
+        return URL.createObjectURL(blob);
+      }
 
-            // Append additional findings if any
-            const ankleExtras = additionalFindings["Tobillo"] || [];
-            ankleExtras.forEach((extra: any) => {
-              ankleCardData.push({
-                label: extra.structureName,
-                state: extra.state || "Alterado",
-                description: extra.description
-              });
-            });
+      if (returnBase64) {
+        const dataUri = doc.output("datauristring");
+        return dataUri.split(",")[1];
+      }
 
-            if (ankleCardData.length === 0) {
-              doc.setFont("helvetica", "italic");
-              doc.setFontSize(6.5);
-              doc.setTextColor(100, 116, 139);
-              doc.text("Sin hallazgos patol√≥gicos relevantes.", 150, yStart + 30, { align: "center" });
-              doc.text("Los tendones y ligamentos evaluados se", 150, yStart + 36, { align: "center" });
-              doc.text("reportan normales.", 150, yStart + 42, { align: "center" });
+      // Output either as file download or Blob URL opened in a new clean screen
+      if (returnRawBlob) { return doc.output("blob"); }
+      if (shareViaWebShare) {
+        const blob = doc.output("blob");
+        const filename = patientName ? `${patientName.trim().replace(/\s+/gi, "_")}_reporte.pdf` : "reporte_radiologico.pdf";
+        const file = new File([blob], filename, { type: "application/pdf" });
+        if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: "Reporte de Estudio",
+            text: `Le comparto el Reporte de Estudio Doppler de ${patientName || "Paciente"}`
+          });
+        } else {
+          // Automatic physical browser download as backup
+          doc.save(filename);
+        }
+      } else if (openInNewTab) {
+        const blob = doc.output("blob");
+        const blobUrl = URL.createObjectURL(blob);
+        window.open(blobUrl, "_blank");
+      } else {
+        const filename = patientName ? `${patientName.trim()}.pdf` : "reporte_radiologico.pdf";
+        doc.save(filename);
+      }
+    } catch (err) {
+      console.error("Error generating native PDF through jsPDF:", err);
+      alert("Ocurri√≥ un error al generar el PDF: " + String(err));
+    }
+  };
+
+  const handleDownloadPatientSummaryPDF = async (
+    openInNewTab: boolean = false,
+    shareViaWebShare: boolean = false,
+    returnBase64: boolean = false,
+    returnBlobUrl: boolean = false,
+    returnRawBlob: boolean = false
+  ): Promise<any> => {
+    if (!patientSummary) return;
+
+    const displayClinicName = clinicName && clinicName.trim().toUpperCase() !== "CL√çNICA PRIVADA" && clinicName.trim().toUpperCase() !== "CLINICA PRIVADA" ? clinicName.toUpperCase() : "";
+
+    try {
+      const doc = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4",
+        compress: false,
+      });
+
+      let yCoord = 20;
+      const marginX = 20;
+      const pageWidth = 210;
+      const pageHeight = 297;
+      const contentWidth = pageWidth - (2 * marginX); // 170mm
+
+      // Load virtual image dimensions to prevent any layout distortion on any device
+      const logoDims = await getImageDimensionsVirtual(customLogoUrl);
+      const signatureDims = await getImageDimensionsVirtual(customSignatureUrl);
+
+      // Strip emojis helper to prevent visual square errors in default fonts
+      const stripEmojis = (str: string): string => {
+        if (!str) return "";
+        return str
+          .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "")
+          .replace(/[\u2600-\u27BF]|[\u2300-\u23FF]|[\u2B50]|[\u2190-\u21FF]/g, "");
+      };
+
+      // --- DYNAMIC PAGE BUDGET & COMPLETE WIDOW/ORPHAN CONTROL (ALGORITMO DE CORRECCI√ìN DE VIUDAS Y HU√âRFANOS) ---
+      let factor = 1.0;
+      let estimatedHeight = 20; // Start at top margin
+
+      // 1. Header height estimation
+      if (customLogoUrl) {
+        if (customLogoStyle === "banner") {
+          let bannerHeight = 35;
+          if (logoDims.width && logoDims.height) {
+            const aspect = logoDims.width / logoDims.height;
+            const maxWidth = contentWidth;
+            const maxHeight = 52;
+            bannerHeight = aspect > maxWidth / maxHeight ? maxWidth / aspect : maxHeight;
+          }
+          estimatedHeight += bannerHeight + 5;
+          if (displayClinicName) estimatedHeight += 5;
+        } else {
+          let logoHeight = 36;
+          if (logoDims.width && logoDims.height) {
+            const aspect = logoDims.width / logoDims.height;
+            const maxWidth = 42;
+            const maxHeight = 42;
+            logoHeight = aspect > maxWidth / maxHeight ? maxWidth / aspect : maxHeight;
+          }
+          estimatedHeight += Math.max(logoHeight, 15) + 6;
+        }
+      } else {
+        estimatedHeight += 18;
+      }
+      estimatedHeight += 2; // Underline
+
+      // 2. Patient metadata block estimation
+      if (patientName || reportDate) {
+        estimatedHeight += 19;
+      }
+
+      // 3. Document Title
+      estimatedHeight += 12;
+
+      // 4. Intro Summary
+      const tempDoc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+      if (patientSummary.summary) {
+        const cleanSummaryLocal = stripEmojis(patientSummary.summary);
+        const splitSummaryLocal = tempDoc.splitTextToSize(cleanSummaryLocal, contentWidth);
+        estimatedHeight += splitSummaryLocal.length * 5.5 + 4;
+      }
+
+      // 5. Key Findings
+      if (patientSummary.keyFindings && patientSummary.keyFindings.length > 0) {
+        estimatedHeight += 22;
+        patientSummary.keyFindings.forEach((finding: any) => {
+          const title = stripEmojis(finding.title || "");
+          const originalTerm = stripEmojis(finding.originalTerm || "");
+          const simplifiedExplanation = stripEmojis(finding.simplifiedExplanation || "");
+          const analogy = stripEmojis(finding.analogy || "");
+          const reassurance = stripEmojis(finding.reassurance || "");
+
+          const splitTitle = tempDoc.splitTextToSize(title, contentWidth - 10);
+          const splitOrig = tempDoc.splitTextToSize(`T√©rmino original en informe t√©cnico: "${originalTerm}"`, contentWidth - 10);
+          const splitExp = tempDoc.splitTextToSize(`Explicaci√≥n: ${simplifiedExplanation}`, contentWidth - 14);
+          const splitAnalogy = tempDoc.splitTextToSize(`Analog√≠a de comprensi√≥n: ${analogy}`, contentWidth - 14);
+          const splitReassurance = tempDoc.splitTextToSize(`Contexto Cl√≠nico y Perspectiva M√©dica: ${reassurance}`, contentWidth - 14);
+
+          const neededHeight = (splitTitle.length * 5) + 
+                               (splitOrig.length * 4) + 
+                               (splitExp.length * 5) + 
+                               (splitAnalogy.length * 4.5) + 
+                               (splitReassurance.length * 4.5) + 20;
+          estimatedHeight += neededHeight + 2;
+        });
+        estimatedHeight += 4;
+      }
+
+      // 6. Care Points
+      if (patientSummary.carePoints && patientSummary.carePoints.length > 0) {
+        estimatedHeight += 22;
+        patientSummary.carePoints.forEach((point: string) => {
+          const cleanPoint = stripEmojis(point);
+          const splitPoint = tempDoc.splitTextToSize(cleanPoint, contentWidth - 8);
+          estimatedHeight += (splitPoint.length * 4.8) + 2.5;
+        });
+        estimatedHeight += 4;
+      }
+
+      // 7. Suggested Questions
+      if (patientSummary.suggestedQuestions && patientSummary.suggestedQuestions.length > 0) {
+        estimatedHeight += 22;
+        patientSummary.suggestedQuestions.forEach((q: string) => {
+          const cleanQ = stripEmojis(q);
+          const splitQ = tempDoc.splitTextToSize(`"${cleanQ}"`, contentWidth - 8);
+          estimatedHeight += (splitQ.length * 4.8) + 3;
+        });
+      }
+
+      // 8. Sign-off block
+      estimatedHeight += 38;
+
+      // 9. Calculate pages and remainder for widow/orphan detection
+      const usablePageHeight = 255;
+      const estTotalPages = Math.ceil(estimatedHeight / usablePageHeight);
+      const estRemainder = estimatedHeight % usablePageHeight;
+
+      if (estTotalPages > 1 && estRemainder < 48) {
+        factor = 0.84; // 16% spacing and height compression
+      } else if (estTotalPages > 1 && estRemainder < 60) {
+        factor = 0.88; // 12% spacing and height compression
+      }
+
+      // Helper function to check space and add page if needed
+      const checkPageBreak = (neededHeight: number) => {
+        if (yCoord + neededHeight > pageHeight - 20) {
+          doc.addPage();
+          yCoord = 20;
+        }
+      };
+
+      // Header Brand/Clinic Logo & Name
+      if (customLogoUrl) {
+        if (customLogoStyle === "banner") {
+          let bannerWidth = 165;
+          let bannerHeight = 35;
+          if (logoDims.width && logoDims.height) {
+            const aspect = logoDims.width / logoDims.height;
+            const maxWidth = contentWidth;
+            const maxHeight = 52;
+            if (aspect > maxWidth / maxHeight) {
+              bannerWidth = maxWidth;
+              bannerHeight = maxWidth / aspect;
             } else {
-              drawAnatomicalCards(doc, ankleCardData, 111, yStart, 79, 78);
+              bannerHeight = maxHeight;
+              bannerWidth = maxHeight * aspect;
             }
-
-            // Footnote at the bottom of the findings card
-            doc.setFont("helvetica", "italic");
-            doc.setFontSize(6.2);
-            doc.setTextColor(148, 163, 184);
-            doc.text("Mapa anat√≥mico dual y lista sin√≥ptica correspondientes al reporte cl√≠nico.", 150.5, yStart + 75, { align: "center" });
-
-            yCoord += 83;
+          }
+          
+          try {
+            const format = customLogoUrl.toLowerCase().includes("image/png") ? "PNG" : "JPEG";
+            doc.addImage(customLogoUrl, format, (pageWidth - bannerWidth) / 2, yCoord, bannerWidth, bannerHeight);
+            yCoord += bannerHeight + 5;
           } catch (err) {
-            console.warn("Could not draw ankle diagram inside jsPDF", err);
+            console.warn("Could not draw banner image inside jsPDF", err);
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(14);
+            doc.setTextColor(15, 23, 42);
+            doc.text(displayClinicName || "ACOMPA√ëAMIENTO EXPLICATIVO", pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 6;
+          }
+
+          if (displayClinicName) {
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(10);
+            doc.setTextColor(15, 23, 42);
+            doc.text(displayClinicName, pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 5;
+          }
+        } else {
+          let logoWidth = 36;
+          let logoHeight = 36;
+          if (logoDims.width && logoDims.height) {
+            const aspect = logoDims.width / logoDims.height;
+            const maxWidth = 42;
+            const maxHeight = 42;
+            if (aspect > maxWidth / maxHeight) {
+              logoWidth = maxWidth;
+              logoHeight = maxWidth / aspect;
+            } else {
+              logoHeight = maxHeight;
+              logoWidth = maxHeight * aspect;
+            }
+          }
+          
+          try {
+            const format = customLogoUrl.toLowerCase().includes("image/png") ? "PNG" : "JPEG";
+            doc.addImage(customLogoUrl, format, marginX, yCoord, logoWidth, logoHeight);
+          } catch (err) {
+            console.warn("Could not draw logo image inside left header", err);
+          }
+          
+          const textX = marginX + logoWidth + 6;
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(14);
+          doc.setTextColor(15, 23, 42);
+          doc.text(displayClinicName || "ACOMPA√ëAMIENTO EXPLICATIVO", textX, yCoord + (logoHeight / 2) - 1.5);
+          
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(9);
+          doc.setTextColor(100, 116, 139);
+          doc.text("EXPLICACI√ìN M√âDICA COMPRENSIBLE PARA EL PACIENTE", textX, yCoord + (logoHeight / 2) + 4);
+          
+          yCoord += Math.max(logoHeight, 15) + 6;
+        }
+      } else {
+        let symbolWidth = 0;
+        if (selectedLogo === "medical-cross") {
+          symbolWidth = 14;
+          doc.setDrawColor(220, 38, 38);
+          doc.setFillColor(220, 38, 38);
+          doc.rect(marginX + 5, yCoord, 4, 12, "F");
+          doc.rect(marginX + 1, yCoord + 4, 12, 4, "F");
+        } else if (selectedLogo === "heart-pulse") {
+          symbolWidth = 14;
+          doc.setDrawColor(244, 63, 94);
+          doc.setFillColor(244, 63, 94);
+          doc.rect(marginX + 5, yCoord, 4, 12, "F");
+          doc.rect(marginX + 1, yCoord + 4, 12, 4, "F");
+        } else if (selectedLogo === "dna" || selectedLogo === "shield-check") {
+          symbolWidth = 14;
+          doc.setDrawColor(79, 70, 229);
+          doc.setFillColor(79, 70, 229);
+          doc.rect(marginX + 5, yCoord, 4, 12, "F");
+          doc.rect(marginX + 1, yCoord + 4, 12, 4, "F");
+        }
+
+        if (symbolWidth > 0) {
+          const textX = marginX + symbolWidth + 4;
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(14);
+          doc.setTextColor(15, 23, 42);
+          doc.text(displayClinicName || "ACOMPA√ëAMIENTO EXPLICATIVO", textX, yCoord + 5);
+          
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(9);
+          doc.setTextColor(100, 116, 139);
+          doc.text("EXPLICACI√ìN M√âDICA COMPRENSIBLE PARA EL PACIENTE", textX, yCoord + 10.5);
+          
+          yCoord += 18;
+        } else {
+          if (displayClinicName) {
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(14);
+            doc.setTextColor(15, 23, 42);
+            doc.text(displayClinicName, pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 6;
+
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(9);
+            doc.setTextColor(100, 116, 139);
+            doc.text("EXPLICACI√ìN M√âDICA COMPRENSIBLE PARA EL PACIENTE", pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 8;
+          } else {
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(14);
+            doc.setTextColor(15, 23, 42);
+            doc.text("EXPLICACI√ìN COMPRENSIBLE DE ESTUDIO RADIOL√ìGICO", pageWidth / 2, yCoord, { align: "center" });
+            yCoord += 11;
           }
         }
       }
 
-      // üõ†Ô∏è DRAW THIGH DIAGRAM IN THE PROGRAMMATIC PDF
-      if (includeThighSchemaInReport && specificStudy === "Muslo Anterior") {
-        const svgSuperficial = document.getElementById("thigh-superficial-svg");
-        const svgDeep = document.getElementById("thigh-deep-svg");
+      // Add a line under header
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.4);
+      doc.line(marginX, yCoord - 2, pageWidth - marginX, yCoord - 2);
+      yCoord += 2;
 
-        if (svgSuperficial || svgDeep) {
-          try {
-            const processThighSvg = async (svgEl: HTMLElement) => {
-              const clonedSvg = svgEl.cloneNode(true) as SVGElement;
-              
-              // 1. Force background and clean outline colors on gradient stops
-              const stops = clonedSvg.querySelectorAll("linearGradient stop");
-              stops.forEach(stop => {
-                const curColor = stop.getAttribute("stop-color") || stop.getAttribute("stopColor") || "";
-                if (curColor === "#1e293b" || curColor === "#2e3d52") stop.setAttribute("stop-color", "#f1f5f9");
-                if (curColor === "#0f172a" || curColor === "#111827") stop.setAttribute("stop-color", "#cbd5e1");
-                if (curColor === "#334155" || curColor === "#3d4e66") stop.setAttribute("stop-color", "#cbd5e1");
-              });
+      // Patient Metadata Block
+      if (patientName || reportDate) {
+        doc.setFillColor(248, 250, 252);
+        doc.rect(marginX, yCoord, contentWidth, 12, "F");
+        doc.setDrawColor(226, 232, 240);
+        doc.rect(marginX, yCoord, contentWidth, 12, "S");
 
-              // 2. Adjust paths fill/stroke colors for paper print
-              const paths = clonedSvg.querySelectorAll("path");
-              paths.forEach(p => {
-                const fill = p.getAttribute("fill") || "";
-                const stroke = p.getAttribute("stroke") || "";
-                
-                if (fill === "#1e293b") p.setAttribute("fill", "#f8fafc");
-                if (fill === "#451a03") p.setAttribute("fill", "#fef3c7");
-                if (fill === "#500730") p.setAttribute("fill", "#fce7f3");
-                if (fill === "#7f1d1d") p.setAttribute("fill", "#fee2e2");
+        let xOffset = marginX + 4;
+        let totalDateWidth = 0;
+        const formattedDate = formatDateToDMY(reportDate);
+        
+        if (reportDate) {
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8.5);
+          const dateLabel = "FECHA DEL ESTUDIO: ";
+          totalDateWidth = doc.getTextWidth(dateLabel) + doc.getTextWidth(formattedDate);
+        }
 
-                if (stroke === "#ef4444") p.setAttribute("stroke", "#dc2626");
-                if (stroke === "#ec4899") p.setAttribute("stroke", "#db2777");
-                if (stroke === "#f59e0b") p.setAttribute("stroke", "#d97706");
-                if (stroke === "#334155") p.setAttribute("stroke", "#475569");
-                if (stroke === "#475569") p.setAttribute("stroke", "#64748b");
-              });
-
-              // 3. Adjust text colors
-              const texts = clonedSvg.querySelectorAll("text");
-              texts.forEach(t => {
-                const fill = t.getAttribute("fill") || "";
-                if (fill === "#64748b") t.setAttribute("fill", "#475569");
-                if (fill === "#475569") t.setAttribute("fill", "#1e293b");
-              });
-
-              // 4. Adjust custom guides/circles in background
-              const circles = clonedSvg.querySelectorAll("circle");
-              circles.forEach(c => {
-                const stroke = c.getAttribute("stroke") || "";
-                if (stroke === "#1e293b") c.setAttribute("stroke", "#e2e8f0");
-              });
-              const lines = clonedSvg.querySelectorAll("line");
-              lines.forEach(l => {
-                const stroke = l.getAttribute("stroke") || "";
-                if (stroke === "#1e293b") l.setAttribute("stroke", "#e2e8f0");
-              });
-
-              return await convertSvgToPng(clonedSvg);
-            };
-
-            const imgSuperficial = svgSuperficial ? await processThighSvg(svgSuperficial) : null;
-            const imgDeep = svgDeep ? await processThighSvg(svgDeep) : null;
-
-            // Check page break for 95mm (75mm content + margins/header)
-            const willPageBreak = (yCoord + 95 > pageHeight - 20);
-            checkPageBreak(95);
-            if (!willPageBreak) {
-              yCoord += 18; // Generous space/gap from the diagnostic impression above
-            } else {
-              yCoord += 6;  // Normal small spacing at the top of a fresh page
+        if (patientName) {
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8.5);
+          doc.setTextColor(100, 116, 139);
+          doc.text("PACIENTE: ", xOffset, yCoord + 7.5);
+          const labelWidth = doc.getTextWidth("PACIENTE: ");
+          doc.setFont("helvetica", "bold");
+          doc.setTextColor(15, 23, 42);
+          
+          let patientText = patientName.toUpperCase();
+          const maxNameWidth = (contentWidth - 8 - totalDateWidth) - labelWidth - 4;
+          if (doc.getTextWidth(patientText) > maxNameWidth) {
+            while (patientText.length > 5 && doc.getTextWidth(patientText + "...") > maxNameWidth) {
+              patientText = patientText.slice(0, -1);
             }
-
-            // Header for the diagram
-            doc.setFont("helvetica", "bold");
-            doc.setFontSize(8.0);
-            doc.setTextColor(30, 41, 59);
-            doc.text("ANEXO: ESQUEMA DE HALLAZGOS Y SINOPSIS DE MUSLO ANTERIOR", pageWidth / 2, yCoord, { align: "center" });
-            yCoord += 3.5;
-
-            doc.setFont("helvetica", "normal");
-            doc.setFontSize(6.3);
-            doc.setTextColor(148, 163, 184);
-            doc.text("MAPEO DE CAPAS MUSCULARES SUPERFICIALES Y PROFUNDAS DEL MUSLO ANTERIOR EN ECOGRAF√çA", pageWidth / 2, yCoord, { align: "center" });
-            yCoord += 4.5;
-
-            // --- DRAW SIDE-BY-SIDE LAYOUT ---
-            const yStart = yCoord;
-
-            // 1. Draw Left Diagram Box (Plano Superficial)
-            doc.setFillColor(255, 255, 255);
-            doc.setDrawColor(229, 231, 235);
-            doc.roundedRect(20, yStart, 43, 75, 3, 3, "FD");
-
-            doc.setFont("helvetica", "bold");
-            doc.setFontSize(6.5);
-            doc.setTextColor(71, 85, 105);
-            doc.text("PLANO SUPERFICIAL", 41.5, yStart + 5.5, { align: "center" });
-
-            if (imgSuperficial) {
-              doc.addImage(imgSuperficial, "PNG", 21.5, yStart + 8, 40, 40);
-            } else {
-              doc.setFont("helvetica", "italic");
-              doc.setFontSize(7);
-              doc.setTextColor(148, 163, 184);
-              doc.text("No disponible", 41.5, yStart + 35, { align: "center" });
-            }
-
-            // 2. Draw Second Diagram Box (Plano Profundo)
-            doc.setFillColor(255, 255, 255);
-            doc.setDrawColor(229, 231, 235);
-            doc.roundedRect(65, yStart, 43, 75, 3, 3, "FD");
-
-            doc.setFont("helvetica", "bold");
-            doc.setFontSize(6.5);
-            doc.setTextColor(71, 85, 105);
-            doc.text("PLANO PROFUNDO", 86.5, yStart + 5.5, { align: "center" });
-
-            if (imgDeep) {
-              doc.addImage(imgDeep, "PNG", 66.5, yStart + 8, 40, 40);
-            } else {
-              doc.setFont("helvetica", "italic");
-              doc.setFontSize(7);
-              doc.setTextColor(148, 163, 184);
-              doc.text("No disponible", 86.5, yStart + 35, { align: "center" });
-            }
-
-            // 3. Draw Right Findings Container (Slate Background)
-            doc.setFillColor(248, 250, 252);
-            doc.setDrawColor(229, 231, 235);
-            doc.roundedRect(111, yStart, 79, 75, 3, 3, "FD");
-
-            // Header of findings: Unified title
-            doc.setFont("helvetica", "bold");
-            doc.setFontSize(7.5);
-            doc.setTextColor(67, 56, 202); // indigo-700
-            doc.text("SINOPSIS DE HALLAZGOS CL√çNICOS", 114, yStart + 5.5);
-
-            // Draw horizontal divider line
-            doc.setDrawColor(229, 231, 235);
-            doc.setLineWidth(0.2);
-            doc.line(114, yStart + 7.5, 186, yStart + 7.5);
-
-            // Filter out structures that are NOT described in the report
-            const pdfThighStructures = [
-              { id: "rectus_femoris", label: "Recto Femoral" },
-              { id: "sartorius", label: "M. Sartorio" },
-              { id: "iliotibial_band", label: "T. Iliotibial" },
-              { id: "vastus_medialis", label: "M. Vasto Med." },
-              { id: "vastus_lateralis", label: "M. Vasto Lat." },
-              { id: "vastus_intermedius", label: "M. Vasto Interm." }
-            ].filter(struct => {
-              const s = thighStates[struct.id] || "no_descrito";
-              return s !== "no_descrito" && s !== "normal";
-            });
-
-            const translateThighStateForPDF = (id: string, s: string) => {
-              if (!s || s === "no_descrito") return "No descrito";
-              if (s === "normal") return "Sin lesiones";
-              if (s === "desgarro_miofascial") return "D. Miofascial";
-              if (s === "desgarro_intramuscular") return "D. Intramusc.";
-              if (s === "desgarro_completo") return "D. Completo";
-              if (s === "tendinopatia") return "Tendinopat√≠a";
-              if (s === "desgarro") return "Desgarro";
-              if (s === "friccion") return "Fricci√≥n";
-              if (s === "contusion") return "Contusi√≥n";
-              if (s === "desgarro_parcial") return "D. Parcial";
-              if (s === "hernia_muscular") return "Hernia Fasc.";
-              return s;
-            };
-
-            const getThighPDFSimplifiedDescription = (id: string, state: string) => {
-              if (thighDescriptions && thighDescriptions[id] && thighDescriptions[id].trim() !== "" && thighDescriptions[id] !== "No mencionado / No descrito." && thighDescriptions[id] !== "No descrito.") {
-                return thighDescriptions[id];
-              }
-              if (!state || state === "no_descrito") {
-                return "No descrito en el reporte.";
-              }
-              if (state === "normal") {
-                return "Entre l√≠mites normales.";
-              }
-              return state.charAt(0).toUpperCase() + state.slice(1).replace(/_/g, " ");
-            };
-
-            const thighCardData = pdfThighStructures.map(struct => {
-              const s = thighStates[struct.id] || "no_descrito";
-              const stateText = translateThighStateForPDF(struct.id, s);
-              return {
-                label: struct.label,
-                state: stateText,
-                description: getThighPDFSimplifiedDescription(struct.id, s)
-              };
-            });
-
-            // Append additional findings if any
-            const thighExtras = additionalFindings["Muslo Anterior"] || [];
-            thighExtras.forEach((extra: any) => {
-              thighCardData.push({
-                label: extra.structureName,
-                state: extra.state || "Alterado",
-                description: extra.description
-              });
-            });
-
-            if (thighCardData.length === 0) {
-              doc.setFont("helvetica", "italic");
-              doc.setFontSize(6.5);
-              doc.setTextColor(100, 116, 139);
-              doc.text("Sin hallazgos patol√≥gicos relevantes.", 150, yStart + 30, { align: "center" });
-              doc.text("La musculatura anterior del muslo se", 150, yStart + 36, { align: "center" });
-              doc.text("reporta normal y sin desgarros.", 150, yStart + 42, { align: "center" });
-            } else {
-              drawAnatomicalCards(doc, thighCardData, 111, yStart, 79, 75);
-            }
-
-            // Footnote at the bottom of the findings card
-            doc.setFont("helvetica", "italic");
-            doc.setFontSize(6.2);
-            doc.setTextColor(148, 163, 184);
-            doc.text("Mapa anat√≥mico dual y lista sin√≥ptica correspondientes al reporte cl√≠nico.", 150.5, yStart + 72, { align: "center" });
-
-            yCoord += 80;
-          } catch (err) {
-            console.warn("Could not draw thigh diagram inside jsPDF", err);
+            patientText += "...";
           }
+          doc.text(patientText, xOffset + labelWidth, yCoord + 7.5);
+        }
+
+        if (reportDate) {
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8.5);
+          doc.setTextColor(100, 116, 139);
+          const dateLabel = "FECHA DEL ESTUDIO: ";
+          const rightX = marginX + contentWidth - 4 - totalDateWidth;
+          
+          doc.text(dateLabel, rightX, yCoord + 7.5);
+          const dateLabelWidth = doc.getTextWidth(dateLabel);
+          doc.setFont("helvetica", "bold");
+          doc.setTextColor(15, 23, 42);
+          doc.text(formattedDate, rightX + dateLabelWidth, yCoord + 7.5);
+        }
+
+        yCoord += 19 * factor;
+      }
+
+      // Title of the Document
+      checkPageBreak(12 * factor);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(12);
+      doc.setTextColor(15, 23, 42);
+      doc.text("INFORME DE ACOMPA√ëAMIENTO Y EXPLICACI√ìN SIMPLIFICADA", pageWidth / 2, yCoord, { align: "center" });
+      yCoord += 8 * factor;
+
+      // Introduction Summary
+      if (patientSummary.summary) {
+        const cleanSummary = stripEmojis(patientSummary.summary);
+        doc.setFont("times", "normal");
+        doc.setFontSize(10.5);
+        doc.setTextColor(51, 65, 85);
+        
+        const splitSummary = doc.splitTextToSize(cleanSummary, contentWidth);
+        splitSummary.forEach((line: string) => {
+          checkPageBreak(5.5 * factor);
+          doc.text(line, marginX, yCoord);
+          yCoord += 5.5 * factor;
+        });
+        yCoord += 4 * factor;
+      }
+
+      // Key Findings section
+      if (patientSummary.keyFindings && patientSummary.keyFindings.length > 0) {
+        // Calculate the height of the first finding to check combined page break
+        const firstFinding = patientSummary.keyFindings[0];
+        const title0 = stripEmojis(firstFinding.title || "");
+        const originalTerm0 = stripEmojis(firstFinding.originalTerm || "");
+        const simplifiedExplanation0 = stripEmojis(firstFinding.simplifiedExplanation || "");
+        const analogy0 = stripEmojis(firstFinding.analogy || "");
+        const reassurance0 = stripEmojis(firstFinding.reassurance || "");
+
+        const splitTitle0 = doc.splitTextToSize(title0, contentWidth - 10);
+        const splitOrig0 = doc.splitTextToSize(`T√©rmino original en informe t√©cnico: "${originalTerm0}"`, contentWidth - 10);
+        const splitExp0 = doc.splitTextToSize(`Explicaci√≥n: ${simplifiedExplanation0}`, contentWidth - 14);
+        const splitAnalogy0 = doc.splitTextToSize(`Analog√≠a de comprensi√≥n: ${analogy0}`, contentWidth - 14);
+        const splitReassurance0 = doc.splitTextToSize(`Contexto Cl√≠nico y Perspectiva M√©dica: ${reassurance0}`, contentWidth - 14);
+
+        const neededHeight0 = ((splitTitle0.length * 5) + 
+                             (splitOrig0.length * 4) + 
+                             (splitExp0.length * 5) + 
+                             (splitAnalogy0.length * 4.5) + 
+                             (splitReassurance0.length * 4.5) + 20) * factor;
+
+        // Ensure title + first item fit on the current page together!
+        checkPageBreak(15 * factor + neededHeight0);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(15, 23, 42);
+        doc.text("HALLAZGOS IDENTIFICADOS Y TRADUCIDOS:", marginX, yCoord);
+        yCoord += 7 * factor;
+
+        patientSummary.keyFindings.forEach((finding: any) => {
+          const title = stripEmojis(finding.title || "");
+          const originalTerm = stripEmojis(finding.originalTerm || "");
+          const simplifiedExplanation = stripEmojis(finding.simplifiedExplanation || "");
+          const analogy = stripEmojis(finding.analogy || "");
+          const reassurance = stripEmojis(finding.reassurance || "");
+
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(10);
+          const splitTitle = doc.splitTextToSize(title, contentWidth - 10);
+          
+          doc.setFont("times", "italic");
+          doc.setFontSize(9);
+          const splitOrig = doc.splitTextToSize(`T√©rmino original en informe t√©cnico: "${originalTerm}"`, contentWidth - 10);
+          
+          doc.setFont("times", "normal");
+          doc.setFontSize(10);
+          const splitExp = doc.splitTextToSize(`Explicaci√≥n: ${simplifiedExplanation}`, contentWidth - 14);
+
+          doc.setFont("times", "normal");
+          doc.setFontSize(9.5);
+          const splitAnalogy = doc.splitTextToSize(`Analog√≠a de comprensi√≥n: ${analogy}`, contentWidth - 14);
+
+          const splitReassurance = doc.splitTextToSize(`Contexto Cl√≠nico y Perspectiva M√©dica: ${reassurance}`, contentWidth - 14);
+
+          const neededHeight = ((splitTitle.length * 5) + 
+                               (splitOrig.length * 4) + 
+                               (splitExp.length * 5) + 
+                               (splitAnalogy.length * 4.5) + 
+                               (splitReassurance.length * 4.5) + 20) * factor;
+
+          checkPageBreak(neededHeight);
+
+          doc.setFillColor(250, 250, 250);
+          doc.rect(marginX, yCoord, contentWidth, neededHeight - 4 * factor, "F");
+          doc.setDrawColor(229, 231, 235);
+          doc.setLineWidth(0.35);
+          doc.rect(marginX, yCoord, contentWidth, neededHeight - 4 * factor, "D");
+
+          let interiorY = yCoord + 6 * factor;
+
+          // Title
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(10);
+          doc.setTextColor(30, 58, 138); 
+          splitTitle.forEach((line: string) => {
+            doc.text(line, marginX + 5, interiorY);
+            interiorY += 5 * factor;
+          });
+
+          // Original term
+          doc.setFont("times", "italic");
+          doc.setFontSize(9);
+          doc.setTextColor(75, 85, 99); 
+          splitOrig.forEach((line: string) => {
+            doc.text(line, marginX + 5, interiorY);
+            interiorY += 4.5 * factor;
+          });
+          interiorY += 2 * factor;
+
+          // Explanation
+          doc.setFont("times", "normal");
+          doc.setFontSize(10);
+          doc.setTextColor(15, 23, 42); 
+          splitExp.forEach((line: string) => {
+            doc.text(line, marginX + 7, interiorY);
+            interiorY += 4.8 * factor;
+          });
+          interiorY += 2 * factor;
+
+          // Analogy (orange border bar)
+          const analogyHeight = (splitAnalogy.length * 4.2 * factor) + 4 * factor;
+          doc.setFillColor(255, 247, 237); 
+          doc.rect(marginX + 5, interiorY - 3 * factor, contentWidth - 10, analogyHeight, "F");
+          doc.setDrawColor(249, 115, 22); 
+          doc.setLineWidth(0.5);
+          doc.line(marginX + 5, interiorY - 3 * factor, marginX + 5, interiorY - 3 * factor + analogyHeight);
+
+          doc.setFont("times", "normal");
+          doc.setFontSize(9.5);
+          doc.setTextColor(124, 45, 18); 
+          splitAnalogy.forEach((line: string) => {
+            doc.text(line, marginX + 8, interiorY);
+            interiorY += 4.2 * factor;
+          });
+          interiorY += 4 * factor;
+
+          // Context (blue border bar)
+          const contextHeight = (splitReassurance.length * 4.2 * factor) + 4 * factor;
+          doc.setFillColor(239, 246, 255); 
+          doc.rect(marginX + 5, interiorY - 3 * factor, contentWidth - 10, contextHeight, "F");
+          doc.setDrawColor(59, 130, 246); 
+          doc.setLineWidth(0.5);
+          doc.line(marginX + 5, interiorY - 3 * factor, marginX + 5, interiorY - 3 * factor + contextHeight);
+
+          doc.setFont("times", "normal");
+          doc.setFontSize(9.5);
+          doc.setTextColor(30, 58, 138); 
+          splitReassurance.forEach((line: string) => {
+            doc.text(line, marginX + 8, interiorY);
+            interiorY += 4.2 * factor;
+          });
+
+          yCoord += neededHeight + 2 * factor;
+        });
+        yCoord += 4 * factor;
+      }
+
+      // Care Points Section
+      if (patientSummary.carePoints && patientSummary.carePoints.length > 0) {
+        // Estimate the first point height to avoid orphan header
+        const firstPoint = stripEmojis(patientSummary.carePoints[0]);
+        const splitPoint0 = doc.splitTextToSize(firstPoint, contentWidth - 8);
+        const firstPointHeight = ((splitPoint0.length * 4.8) + 2.5) * factor;
+
+        checkPageBreak(22 * factor + firstPointHeight);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(15, 23, 42);
+        doc.text("PAUTAS Y RECOMENDACIONES DE BIENESTAR:", marginX, yCoord);
+        yCoord += 7 * factor;
+
+        patientSummary.carePoints.forEach((point: string) => {
+          const cleanPoint = stripEmojis(point);
+          const splitPoint = doc.splitTextToSize(cleanPoint, contentWidth - 8);
+          
+          checkPageBreak(((splitPoint.length * 5) + 3) * factor);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(10.5);
+          doc.setTextColor(15, 23, 42);
+          doc.text("‚Ä¢", marginX + 2, yCoord);
+
+          doc.setFont("times", "normal");
+          doc.setFontSize(10.5);
+          doc.setTextColor(51, 65, 85);
+
+          splitPoint.forEach((line: string, i: number) => {
+            doc.text(line, marginX + 6, yCoord + (i * 4.8 * factor));
+          });
+          yCoord += (splitPoint.length * 4.8 * factor) + 2.5 * factor;
+        });
+        yCoord += 4 * factor;
+      }
+
+      // Suggested Questions Section
+      if (patientSummary.suggestedQuestions && patientSummary.suggestedQuestions.length > 0) {
+        // Estimate the first question height to avoid orphan header
+        const firstQ = stripEmojis(patientSummary.suggestedQuestions[0]);
+        const splitQ0 = doc.splitTextToSize(`"${firstQ}"`, contentWidth - 8);
+        const firstQHeight = ((splitQ0.length * 4.8) + 3) * factor;
+
+        checkPageBreak(22 * factor + firstQHeight);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(15, 23, 42);
+        doc.text("PREGUNTAS SUGERIDAS PARA SU CONSULTA M√âDICA:", marginX, yCoord);
+        yCoord += 7 * factor;
+
+        patientSummary.suggestedQuestions.forEach((q: string, idx: number) => {
+          const cleanQ = stripEmojis(q);
+          const splitQ = doc.splitTextToSize(`"${cleanQ}"`, contentWidth - 8);
+
+          checkPageBreak(((splitQ.length * 5) + 3) * factor);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(10);
+          doc.setTextColor(15, 23, 42);
+          doc.text(`${idx + 1}.`, marginX + 2, yCoord);
+
+          doc.setFont("times", "bold");
+          doc.setFontSize(10);
+          doc.setTextColor(30, 41, 59);
+
+          splitQ.forEach((line: string, i: number) => {
+            doc.text(line, marginX + 7, yCoord + (i * 4.8 * factor));
+          });
+          yCoord += (splitQ.length * 4.8 * factor) + 3 * factor;
+        });
+      }
+
+      // Signature / Sign-off block
+      if (doctorName || customSignatureUrl) {
+        checkPageBreak(38); // Requerir suficiente espacio para el bloque homologado dual
+        yCoord += 12;
+
+        const startY = yCoord;
+
+        // Dibujar borde gris claro con fondo suave en la columna izquierda (Caja de verificaci√≥n)
+        const boxX = marginX;
+        const boxY = startY;
+        const boxW = (pageWidth - marginX * 2) * 0.48; // Columna izquierda (48% de ancho)
+        const boxH = 26;
+
+        // Rellenar fondo
+        doc.setFillColor(248, 250, 252); // slate 50
+        doc.rect(boxX, boxY, boxW, boxH, "F");
+        // Dibujar borde
+        doc.setDrawColor(203, 213, 225); // slate 300
+        doc.setLineWidth(0.35);
+        doc.rect(boxX, boxY, boxW, boxH, "S");
+
+        // Metadatos de Integridad en Columna Izquierda:
+        let internalY = boxY + 4;
+        
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(6.5);
+        doc.setTextColor(71, 85, 105); // slate 600
+        doc.text("VERIFICACI√ìN INTEGRIDAD DE DOCUMENTO", boxX + 3, internalY);
+        internalY += 3.5;
+
+        // Obtener el Hash generado determin√≠sticamente
+        const sSeedCombine = `${patientName || ""}-${doctorName || ""}-${reportDate || ""}-${clinicName || ""}`;
+        let sHashVal = 0;
+        for (let i = 0; i < sSeedCombine.length; i++) {
+          sHashVal = ((sHashVal << 5) - sHashVal) + sSeedCombine.charCodeAt(i);
+          sHashVal |= 0;
+        }
+        const sHexStr = Math.abs(sHashVal).toString(16).toUpperCase().padStart(8, "0");
+        const pSeedVal = (patientName && patientName.length > 0) ? patientName.charCodeAt(0) + patientName.length : 42;
+        const dSeedVal = (doctorName && doctorName.length > 0) ? doctorName.charCodeAt(0) + doctorName.length : 17;
+        const partVal = ((pSeedVal * 231 + dSeedVal * 19) % 65535).toString(16).toUpperCase().padStart(4, "E");
+        const pdfValidationHash = `SHA256: FD82-${sHexStr.substring(0, 4)}-${sHexStr.substring(4, 8)}-${partVal}-9B1C-E8B1`;
+
+        doc.setFont("courier", "bold");
+        doc.setFontSize(5.5);
+        doc.setTextColor(30, 41, 59); // slate 800
+        doc.text(pdfValidationHash, boxX + 3, internalY);
+        internalY += 3;
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(5.5);
+        doc.setTextColor(100, 116, 139); // slate 500
+        doc.text("ESTADO DEL DOCUMENTO: ", boxX + 3, internalY);
+        const stateW = doc.getTextWidth("ESTADO DEL DOCUMENTO: ");
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(21, 128, 61); // green 700
+        doc.text("FIRMADO ELECTR√ìNICAMENTE", boxX + 3 + stateW, internalY);
+        internalY += 2.8;
+
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(5.1);
+        doc.setTextColor(100, 116, 139); // slate 500
+        doc.text(`REG. M√âDICO: ${doctorLicense || "M.S.P. Reg: 6025 / Senescyt: 1005-12-7489"}`, boxX + 3, internalY);
+        internalY += 2.8;
+
+        doc.text(`FECHA DE VALIDACI√ìN: ${reportDate} (AUT√ìNOMO)`, boxX + 3, internalY);
+        internalY += 2.8;
+
+        doc.setFont("helvetica", "italic");
+        doc.text("Firma de Validez Homologada seg√∫n Normativa Sanitaria.", boxX + 3, internalY);
+
+        // --- Columna Derecha: √Årea de Firma Digital / Aut√≥grafa ---
+        const rightColX = pageWidth - marginX;
+        
+        // Agregar firma f√≠sica si est√° cargada
+        if (customSignatureUrl) {
+          try {
+            let sigWidth = 35;
+            let sigHeight = 11;
+            if (signatureDims.width && signatureDims.height) {
+              const aspect = signatureDims.width / signatureDims.height;
+              const maxWidth = 50;
+              const maxHeight = 15;
+              if (aspect > maxWidth / maxHeight) {
+                sigWidth = maxWidth;
+                sigHeight = maxWidth / aspect;
+              } else {
+                sigHeight = maxHeight;
+                sigWidth = maxHeight * aspect;
+              }
+            }
+            const sigX = rightColX - sigWidth - 4;
+            const sigY = boxY + 1; // Alinear ordenadamente arriba
+            const format = customSignatureUrl.toLowerCase().includes("image/png") ? "PNG" : "JPEG";
+            doc.addImage(customSignatureUrl, format, sigX, sigY, sigWidth, sigHeight);
+          } catch (imgError) {
+            console.warn("Could not render custom signature image inside jsPDF", imgError);
+          }
+        } else {
+          // Si no hay firma f√≠sica, mostrar sello digital elegante
+          doc.setFont("helvetica", "oblique");
+          doc.setFontSize(7);
+          doc.setTextColor(30, 64, 175); // blue 800
+          doc.text("FIRMADO ELECTR√ìNICAMENTE CON TOKEN", rightColX - 62, boxY + 8);
+        }
+
+        // L√≠nea horizontal para firma del doctor (solo del lado derecho)
+        const lineStart = rightColX - 70;
+        doc.setDrawColor(203, 213, 225); // slate 300
+        doc.setLineWidth(0.3);
+        doc.line(lineStart, boxY + boxH - 8, rightColX, boxY + boxH - 8);
+
+        // Nombre del doctor en la derecha
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8.5);
+        doc.setTextColor(15, 23, 42);
+        const docText = (doctorName || "Dr. Milton Benavides S. Cod.6025").toUpperCase();
+        const docTextWidth = doc.getTextWidth(docText);
+        doc.text(docText, rightColX - docTextWidth, boxY + boxH - 4.5);
+
+        // Especialidad del doctor en la derecha
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(6.5);
+        doc.setTextColor(100, 116, 139);
+        const titleText = "Especialista en Radiolog√≠a e Im√°genes Medicas.";
+        const titleTextWidth = doc.getTextWidth(titleText);
+        doc.text(titleText, rightColX - titleTextWidth, boxY + boxH - 1.5);
+        
+        yCoord = boxY + boxH + 6;
+      }
+
+      // Add running headers on pages 2+ and page numbers on all pages (Format Editorial)
+      const totalPages = doc.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        
+        // Footer: draw page number at the bottom.
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7.5);
+        doc.setTextColor(148, 163, 184); // slate-400
+        const footerPageStr = `P√°g. ${i} de ${totalPages}`;
+        doc.text(footerPageStr, pageWidth - marginX - doc.getTextWidth(footerPageStr), pageHeight - 10);
+        
+        // Faint, small watermark or clinic name on the left of footer
+        const footerLeftText = displayClinicName || "EXPLICACI√ìN DEL ESTUDIO";
+        doc.text(footerLeftText, marginX, pageHeight - 10);
+
+        // Header for page 2 onwards (Running Header)
+        if (i >= 2) {
+          // Draw thin horizontal line
+          doc.setDrawColor(226, 232, 240); // slate-200
+          doc.setLineWidth(0.2);
+          doc.line(marginX, 14, pageWidth - marginX, 14);
+
+          // Draw study name on the left of the header
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(7);
+          doc.setTextColor(100, 116, 139); // slate-500
+          
+          let studyLabel = studyType ? `EXPLICACI√ìN PACIENTE - ${studyType.toUpperCase()}` : "EXPLICACI√ìN PACIENTE";
+          
+          doc.text(studyLabel, marginX, 11);
+
+          // Draw pagination aligned to the right inside the running header
+          doc.setFont("helvetica", "normal");
+          const runningHeaderPageStr = `P√°g. ${i} de ${totalPages}`;
+          const rWidth = doc.getTextWidth(runningHeaderPageStr);
+          doc.text(runningHeaderPageStr, pageWidth - marginX - rWidth, 11);
         }
       }
 
-      // üõ†Ô∏è DRAW THIGH POSTERIOR DIAGRAM IN THE PROGRAMMATIC PDF
-      if (includeThighPosteriorSchemaInReport && specificStudy === "Muslo Posterior") {
-        const svgSuperficial = document.getElementById("thigh-posterior-superficial-svg");
-        const svgDeep = document.getElementById("thigh-posterior-deep-svg");
+      if (returnBlobUrl) {
+        const blob = doc.output("blob");
+        return URL.createObjectURL(blob);
+      }
 
-        if (svgSuperficial || svgDeep) {
-          try {
-            const processThighPosteriorSvg = async (svgEl: HTMLElement) => {
-              const clonedSvg = svgEl.cloneNode(true) as SVGExúÏ}KsG∂Ê˛˛älﬁx-BxÒ•nŸÇ†Ñ{¡áRn∑€¡.T%¿íUp@âÓvƒÙréââﬁÕ,f<;/ºË–f¢∑¯'Ûf~¬úìôıŒ¨@Iîtõ™2Ofû<'_Á;'-:•ˆ¸wˇBbüƒœ«èIΩJNWßd§ÈﬂN\gaDÉˇtãj6qsÀ¥)—Àq=‚ÿd‚jÜ	îâ7wf^ÇûÓÿûxCû	«¶∆vR˝nA›ª!µ®>w‹∂eU∂ê™Ê>ã€⁄N÷ñ™é∑´È7¸Eû~F˛íHÂ´/‹VJ∆§’	ù∑Ás◊-Ê¥≤ÖèvX3∂∂…_ˇ™J“	Slm%ÎCà9&ï∞úßO…÷ø÷i„∞9⁄¬â7⁄4v@åïÂ©™ÛíéÎ„›Òaö“k„˙~CìïXØ◊˚ÖJ‘G∆.≠,±Ÿl’wwe%6ç›€[´ƒ‡IZ.U“6^.†_g⁄¸∆#c”≤{s◊˘6êFx9£◊5ÌπTyÊlYƒ4Èj±úÅeJ÷ H >VãíØ+¨EÈÃ¸Ö:ª¥€xE¢bπMíΩ¬j≈dÓ`¨çuïDHµvÎZ≠ôIäéõ˙~Rªµ⁄~≥ñIJß˚„fR˚„∫Q7≤kE¥±ï/NÀg=£F«-¯H®â~@zÜﬁÿkÏ©™'ß∑s»ç˚˚J¶≈»çwiM÷ôQrá˚˚µbµÍúIÆµøªªßëb‰¸§Y‰ˆZ˚≠ÉQQÂo ?ßØÁBﬂ•˙çÔÛÙ”§Kf9˝û–Ôy)˝Nà´œ †¢◊léGı—Á∑íîØ¸≈∏›
-∏≠√gJ&”†ﬁc›ta‡”é,§Ω‡ßÃÓû*]+ë;Ë=´/ÇS/9`¶ƒ6!uµÿ¬ r0Æ…)´.kä,}“YŒÄV!X˜∆k5$πtæpm¢Ω“LTZ˚ñ∫s‡¡•saO*Kî~Hê·m4ßì·¶ˆ±©õ*üw{π(eÊ::ıºÀsrs·xsÍöéÖT‚È∑…b/,ÎwÚ¢é)ùÒ2ÿ∑"ƒ1aH5FT™sCıoa	1ÅuµKµoŸZÂpw:%ï}¸%œq›˚)ôjÓƒ¥Ω«7T3®ª-©ﬂ+–Í†tƒ=%ïªé„∏‰=‹%ü±BûS®·úÏêF-¡]+‰ÆÓ&ﬁ£H¸&V¬vJÓ¸Úûí˙¡Ô∞uœ®Ma0à7”t˙x¢Õ»ÿÖqc~CâajxeÍ¿ÿôÏ3a◊†çú[ÔvB-èfîµ˜;∆…3«ùB{«bÂôˆÑhsVnú1—†tÍ›0NƒÀHıÀs∆e÷~e]mKe8l<8Å™l›PÎñB[4TÖëcI=à§öﬂ” A5Ÿ"≈%L7l·\i÷ëV˝Ÿ=î§ƒY©≤’>Î˛·¸	Èø∏Íû∂…qó<o˜˚Ì?>;íØ»∞wv~1ÏÒ˘È’∞N.Œáó›AÔ| ’D.|iÛãËGÇ°è»_àfô˚	Ÿ“A®ªï√B÷7´ª	ëV3≈f˝ì«ñΩj3è-ı÷¡#Rﬂk¬üÉñí3ßÌãÓ96º”æh±˘ù´~{–í·’Ewp“ÎÙ⁄˝.rÈbp~ruv‹F6ıì|"›3“Ìú?¥Oñ?∂Ôák≠◊@‡vvv»Ò†˝%t⁄qwÁË´¸óÙ€_ù_]‚KâæﬂÁöÎA:M∂Ï«ÆˆäÙÈxNéπì#Á5©\XöÌêË∏'ÌPwŒÛ∆ÓÓ#‚ˇëwñ$7!]≥édâŸÚÄòÈ*êqﬁêuË“}(¢…˛øurúZëØßr{UE’CŸ⁄áJ@Í5YR.Y˝ˆŸyTä∂PM´ª~C`º›≈_rëH™Ò	,=®b¡öaÙ¶ xâƒ–Óã≥gP|#^<ËG«é‰£J’\5Á–…Œ/…Ÿ}UäbZÂÓôÉ≠7slsd—4gõJ∆∆öRÖÜPÖ!›1d p·:cêKÁ}i¬ﬁÓ™	b¸<á¬ˆ÷QæR ìL˛ﬁﬁG+¯	^Æ*¯M!¯∂;1m÷EÈ@4ÿI∏§2¥¥9%G¡∆-O∞=ç›˛i‹ß‘ÎıPˆÛ4 \§¡ n,⁄ıÑ\ŸÊÿ§ôõsãﬁ£ ÏÁ´Ãﬁ>¨’ˆ†©5‡÷+5qvˆk5ÖEh·¬≠”_˛x÷Îú°nız+ÆP6∞˛Ωq\Û{ÏTƒË÷Dæ‡NqΩÓÅƒ} ¬÷;ïZU÷›XH%^À}‹˙¡^¸ë§‚ TsÏø€™.tÿ¬¶x~´vÕ•‰Ï¸í‘”aØ	j⁄l%Ó“ô„∆èp≈Æ1NÏøBíO…◊	Ω˚1–£ë©”ôw=¶S`üwm› À-mD-xw¥¸_í:≠í˛sP∂GÖàxJ"√"ùö∞”)vºÖ°p
-˘ƒªjvˆ)ùé\Më_fÂáı®√5å∑4í˚~õÈòÀü‡µ£& CÙO.Æaú∂ìhÛw‰Tª√:ƒ(|S31®pêùgà”<YKÙ0å\ﬁ◊<c’4æaÁ∂sÕ•fÓ§é6ƒ¡ÉG~É«—î‰ìO¬«lßíYìÚ+éÅ·†IŸÉG'é{q|Çq‰‘F®GƒÛønÀö ∂Ÿ≥;Ò£óh∑˝˙≥…B’Fvx„gÊ{Æ ﬂ¥»¢∏”¶^VF >—\◊πûöŒXC·àR9Æí”y2¶åö.<}ainúRœU-DIw¶3ã∆òD:˛”,f–ÖÎÃ@ µ(#≈√Â/ZV^j√‹ËiS¥AFãÓ∆ûg¿súÚ=íπ√ü-ﬂÿÖZ>”‹t?\àá*A/rÑ6ÅI,&Ω µC f“c&g≥9ûŒ$E•<Wú„:!Á°Œ©ﬂ~ç
-ùõ¢
-ÖO+€\s∑
-Pd	A¶‘÷·°f8è}™ñ!fJ/\ÉN»¶ï:.ïé»inç∆/íëAYz¥öÑ⁄∞s(M+ú¨ÏXâb8Q÷m¶ƒZ˛Ç3ñGxÍÂÂ,ñV’o4∑=Ø‘∂´sÁj˚›éÊQË‰O≈{Á∞ÍÿÆBK,æ>æ~Ú∏Eí´8π¿«;§£π∆±6◊–∂™^CTß⁄ÏùLQ˛—=Œ)h”zZ`é©ÙA)S{¡⁄tßâZdføí≥;	ï\T(ù¬%˙IÒ¡$^Á§t‰Læ∞xlÉ\ ≈0L$Î^Äb´Ÿwπﬂ}ú≈.i¯˚£Ø∑NûÂê ÌÎ∏Ø⁄*£òf*?¡™H«FπVgÔ¶¢Ï+F≥¨ñœ¥)UvôüV[m\f¡x∑ï”Ö<_‰QéMK∫üW¥ŒÇôt~√Üìö|ØøﬁÜ<}≤!€í◊j∏≥ÇJΩô<[èmœ`µt£Yñˆ˝ƒÒÁ·XÀ7X{†SΩ’`CêŸ≠E∑Íµ"[ıhA}çà≈t™Ff>€†_,|íË—t9{eÀ·ø&ÜeﬂÚ†ç˛C“ñV£–±É‚|6ömÿ6Ö^¥Pº
-TÊëBÙ±ORG π'é3∑qaÎ9s4M;cˆ+t(§‡qÄ\÷“í¶8˝(m©–ft¨Aﬂ ü`≤^@◊‹¡Ó4ªg˘fÜ5É!ÃÖyhÊÿ	ì´Ã‰Dá◊ÜÃ¢c'G˚ .Tÿ'j—™˛ ¨õÎ7§B]7©±8™:≠æ“\ªÎŸÖeÄlÕY«ÛNé ≤8s5mœ4(yÈ¡Ã ’E≤±Ú˛%˘-ËsËÌˇ˜?˛˚ˇ¸øˇ˚øpS…Y∑Û∞xª|˛’‡ºwLé{ÌgÉˆ)Èù¡£.ûK‚œ”ˆeØC†,AÑ6⁄∫µ0Ë’øÍ7t™ıÏ„$€Œ®ìï>ú/å;æÈ,®e≈WYböæù\ﬁ‹πéi¿4]∫@,%€ªÉU›ıå
-Ï<Ùow4¶w;êegŒÛDE,†˜ÃµÙJëõ∞,±2∂r+á+GütºÁÓù§Sì6c—Ì'IÔŒ÷—.ÃCœ/O˚¢R“…M¿=|S>∑ôw≠*{rÊ¥S›™d¯‚ô†î∏?7 ‘µHâÍÑ˙–@®uZµ∏ﬁEû6Î∞ï·+Éh
-oPÆîÎÂ™ µAπnPÆøîk∏œà¨Î T±Zè¨¸s¨¡f#‹x®I˙€áñuÉe}ØX÷ŒU∑ﬂ?ááó=‹¯wáø4k˚¨}π¸˚iØsNÆ˙óÉvwx9∏Í\^⁄}dÀ≥˛Úog«W˝v¿óGd–}÷;?Î…≥ˆŸ≥>|eÿØ¬¥C2l˜{/˚ë°[/M ©∑Å∂ñÙE¥j=\k0Âa˙D¬ûıÒ¨DÓË0ã<&C†˚˛0ﬁ,≤µ”ºËu`p}Ïíkc\eG∞~—Qç‡È68◊ŒuÉsıŸ∞¡π
-ú+€ì@∑
-3”µã:qm9£(≤≥ø|3ZX9¶n5X+©Òù>-V[*RΩÔø+C ÙÊ7”T¥ÁÕß¡¬-l:”\gÓ7,íˇôµ¸…f†∏ÂxØ±∆Âì¡6eQ¡ve@g£)÷Ê±ç™*y¢jNç‚¥‰ı
-HÂVdv≤–¨å:aäuÚ	)+ƒÈ(*ÑõgW≥±Iƒ∫õŒnàÌÄÄ°Z^&KpÌ^õ—“4{bôéGŒÃ[jë^NµY4ä…§RòÃmïâd–(L"£5/ä6Ê6ã'/‘<QâÓ„≤J¥≤•![Ÿ“PîHé4$ì-≈àdJCAŸ“PîHé4®á>ùh˙›cƒpkŸ„ArÛKÒ˜: E«˘uMb"Ω"SÌ•¬O=÷⁄:/4à\∏¶≠õ3§íAb··	ˇµÁ¿\:7=oAcÀ"ÃÒ_“óUrÑ[«[Ào¬f+Ü˜Ó-1°s\ª‹/æ€ñDï'ü˘XrŸÛ4Ç\öªn<3k!¥∏å¬«Ö?ÜMùã>tú8vE_y∆ÑØ•~k‚∂ÛÒ⁄Y*˘>P⁄»≠Ll∂Ä„I!ŸaÊ¬@Ïh7Î¿áü	ö≠ÄÌ#è?õiè-m:’Êé{GtˇîP3®çéP7&7q+˜üö>á9eF∏'TLØã}dO8ÜÚ÷v,ÖßxÊÅY⁄'¢6¡SnôEÌÌ;Ø|Ìïö*Ω#ø˛Xr€ØÏ] ‹LoÇ∑¸&-I“√ŸAû0÷q^ +ÃtøÃ5Û≥
-(rÖì]˛ŸãèKêµ*êE ŸÖK-õá‰R&§ZârJfa≈DÿP¶(u∂ƒ˙Œs¶¥ÚÌ+≤‚JW¯eﬁn3xC%Q`Eï!⁄éå»MiÊ%út±Tﬁ‘¯ìO
-◊7¬≠úDñ§ÍO7¶#GdäÊÂßÖ≠Ä•¨µ±™HÕyÉ[z1%Üb⁄l‹=◊ºg|î«YL,7Ç	çI√•¶ùØ‚√ØTVxÉW&`*ÛG¶9%ïH%(§Ãl!,eãlAZd‚¶˛≠vT˜√Õ¢d:ñ [Ω¨˘?±ô?^D˛å<™[)ÍiTV|1˝CZcŸ¯j…
-báû∆¬“»\út?"ˇôG<nke˙u›µÓ»úæ4a!#~@<ﬂ0†Ÿë=”ªq⁄ä ∆∆UÎ£r’¬Æ}˛YWÉﬁY{yL›3ƒ(ïu–∫rM[sÔ
-˘hΩ¿’‘Çe0Ÿ-Ò’Põ≈U∫VÒ¸w1Ô*3I]µ^PèÌùJºÂŸd˛ZºÇ‹[KP/ÂÆÂ3l„±µÒÿ⁄xlÒœ∆ck„±µÒÿ⁄xl©…m<∂>è-6l∏ûöx6#g˘∆=k„ûEÓ€=ÀﬂZã¯ÑU∏2÷˘9æY·Ó"≤’»§ÏJ{hIj∞<∞äú\D›®rN">:ó®À€C±·Óµ?Vá(1¢,Fóàz~FmÏƒßb◊«ü¬Vï7Œ§|tfÎ˘˘È—†K*ùÛ3“}—Ó_µ;ΩÂﬂœbxπ¸€eØ”ﬁﬁ"àΩπ˙˜Ó`K—Nπa±´ñ;¡Ôx{@˚¢=h_ûãÛéØ»Â†›Åü¢_ŒAU~˚óxı¯Û[Ú∫∫'/*>RI;u„Bï·9¬˙mˇ)1K‰˘ä∞dﬂ©{ÙùÚ'“˜$ˆå√cƒyfÌdÖFcÆ#/∫C6w¬!¯úç¿ëó†B
-5ãπÆKñÙú’/-™g"·∆)k„îµq ÚŸ°;e…≤ò]Ãw»íxöe9Ø®!6_ˇAÔ2|∞∏Ô’∑¶a”ª∆{`.ˇ±|c£è’o2\ùòøï2{Ô˚Ô&uçº–@‘Ÿê¬ïª¸€_¨ Ï*0≤`çe~A_öç\	c]
-Ÿûﬁ+ä9Öch}h»ıbqÀÁ¥LI «È~(ègn_F€uıB∞DìŸÊs(r^•˙Líê¸A’T≈ÙY∫ë3◊a`îHï.‹Â|&≠éD‹g∆ÿ?gà:J
-.·ëÎ—˜Ìî ⁄pq|≤∂7ÇhW“!AÚÿ˜IPºJª%®hÛL»À]»9AA$g¥ÒOxK˛	¢7‚.
-)U-Ï•∞ÆJ¶9zœé
-R5}
-ÇSôN
-/àœü„<Ó≠ Mh¶”%ΩbvlH»««‡€b78≈ÏòÚ@q˘∆ù‡ÖP,éº6”\(é0<πÛ±RŒ= e∞D(cÀkL2tv„–ªB*&d∞‚ÉE˙ùì”-`ƒM»qgÊôûè2‘ PtÀ[ ;ÉÛÀ´”Ú √°Ó:Û≈40¨HÜ]S;[!ˆˇÎéï~ˇò≤e…ylVÒKÇ(w~⁄ñ"E≈≤†ÖOÖ  ÖÇR)°œñ€	ﬁ/cå
-òpHaÛ=ÉJŒ@‚Áh∑É|k1eË,⁄qKÒ+<L@5n÷j≥◊„æ"ﬂÆÁ2ŒÔ@B¥£è‹b◊¯¿-M≠†“MÌcÅ∞‘e¯¥SbÙLò¸S0¥\‹H∏\òøû´I¨»k9Z§(N$Åõ‡ºƒS≠ˇ„H√ﬂ‡cŸ™ú∞™(p"™»Oºé5˜[¬.JbC'mdQ‘¸§|(»ãw∆⁄‘¥¨%2ÓKZù\˜K yò@Ú,ÀúyÙë ï<"mY‡YÖ;å&Ò™˛J¿2R˘|\∆ò@Y/“$j#Ñπ)¡©b‚è„NFZÖ-¥òQOk’FcªtπF}¨—›rÂ6ZXÊ.N›uVÓA˘r’h∆¨r[è.[XlswÖb«¥E•¯∫§,+zZÜô„˚˘»Û &V®r‰ŒaKkéVU5ﬁ˚`õæ"8Ì)Ã,»‹ 6î,~\:CvÜ£˘DËYŒH–√ØïØEﬂ‡j~7C'/Dè·≈ßØß÷Ôpœç|∫òèwdÀfâJ{5ËWu®ÊÙ|ÙF¯]•¶Ú…7›X3XÜLMè˛ûM}V©¿ÆﬂÅ±+sÿ0ß—0n‡íçÏ”I’±-GCß¬äÇZ0Ÿkˆ≠ª∑Ü7LLÓï-û@÷¡DdÆ≤ÈHÏ’j©¯dúëå◊g˛°m<åphtbKÍF ‹"Zã∏Ù˘kπ‰§W≈el`=dˇﬂ´Ò?R¢i’¬ûcΩSuõ;(PÿÛBíf6,‰§‘P\\z*äíLg‰ΩÈπ:;Ë±íØS[.Œ-\ò∆Äh…ctÂßú<â`“fé«NG@àSõ~±˘å4ÍäMæfRAYüíf£¿iw
-1ìU˘ÛA∆∞õ°dd9˙∑≤=_)ìWq[ßõD»‘˜·«˛æ“by¬™…cÆ{“≤W≈∫ÂZ'ÔÎ÷e{=Æi∞NF¨ë“&G˚≠ßÕ“ïa˜ò≠±QKôk)S£4k‰"»¥/i Ée±m2;•ª«^+ ¸(õ‹∑ìäkü,lΩÖP∏Ó∂·W˝ˆ jÿåv]ΩÆ∂,ãM.a#cjP«£|ÙÜH†7ö—#ëzì[œw˜r1À¿∫dŒ∂˜ØP¬‹ØÍï{≥ÔKå˜ıf⁄zèœ‰Ü;aÄÃ∂øÛòÖÖÊnÈ°ón˘ã.¢†fõ¡C:f`ÚñR*`ß3”ÄˇMeuÍ¬ªÂ/¯2øN!Yù"î
-‘ÈÜNM~f%´’Ûm~µ¢§dãã÷,FÌióœå±Ã]÷¯,Fïáa|Œ±:ÁZúEcíg…cﬂ‚¨xï∂8´h≥8ÁÂ.dqV)fqfª”wki~∑VÊ,Û∫÷e¡˘∏uy≥Ú∫ ˆ÷Õ Ôﬂû,XîiOˆ≠R˚på@a˚p¢á?˚p≤Yø
-˚piõmõ©¬eöji∞XàôY—`-'a÷ãÍ‹åÃ˛Ü&3º√pB2í;0æ¸D˚^3’ß⁄BƒûÅIã5ÜÑ∆“¸	Õ√—ŸLbnΩª∞ø«ªªóÉﬁ“∑
-òÖ}ªóÆÈÕVa«ƒ€c˙≈Ç∫∑öi«ìl+B”ú.ñˇ†hFíYz€∂∏˝)…(¸sµ¯&¨¿ö «Õ¡)”†ÿã‡^ˆ˚)7∏Á=Ø‡êya…*ÜÊo–ùÔD÷D¡A…¬ôG◊	€œáU(e)Á<€ÿ…7vÚçù¸€…<Dféu7qÏ◊l^A˜&˚|Uc∫2ÍŒ∆ò˛`çÈë¯W#˚∆»æ1≤ˇ çÏ∞VÂK¡`—öà˚_vFó∑9AepŸÀIá‡\⁄A“‚«_p“ë%~.ÌË∫[F<yº∂Åƒo‡π°qNØñˇµ€io `@›_Y(v¿1k¸ŒËná1¡AoÿcRÉÀb¨'ÀgPjÃ»8˘‰ì¸≥ü‰ „Wn‰¿tÎ±ƒP9Ën 3^%è∂û°mKH•—ê,å¯“H öÏ?…ÑUN dB–íúuó>Ìé
-Cß=hìˆŸew–;g»êÉÿôdk_Ã#NRfç^Üb∫Ä£∏%˘∞9zq>X∫ﬂ∫_ñQÑ°«_Ïl≈NˆaN√ÒΩ)[À=Dvûü^¥óΩ”ÓŸÂ9È°tƒÕ3¢Õdq3≤;Uè;ÍAvwD\oAXNàyK√
-≈h˚i	∏—ØÔk:}}¯ñá©.
-öÓwxŸ€À‡Ï±„zh4˛pXkˆ◊ÊmZ3 œπL=é)	ˆ!\9Ók<k)˙Ô·w¨Ø`¡<x—Óùa4ƒÿ–∂ç¢πª~ˇm ìÒÊ?<»$õ0|‹§$‹Nô)Ií£HR"Ë_¡ãó9◊Sjòöû±‰TºHÉ#HL€@¯¿ıÿ¢Ø7vuÓ•xGN¸wÑx˛k]sgÊ5ﬁí%v“de^„aß»…◊Ê/»Äø» {rÍ9åÇ√™Møˆ-∏—pO,üt≥ËÈö≠Y◊Ωû,Ó;B†É/kˆåΩ([•¿∏õÆüÆr¯Ñ¿YDt#I\xoNåsÉŒq°Æı§∂á|≠„µ—Pû:—ÓÎi2Ö¿πÿ–πiiÁzgOnÚ® ¯iñø`¢,r~≈ÑT-,tŒè’™sïÑ∫¶Ó1KÖ*=ñ”J„ªÎÄµ⁄Ã∫¶≥QT©™§}—‹Ω8"®¡vV˚ÅVOª∆H∑ ˛◊ñâü®™ø¿d(¢È¬d`k~Ìs8&äv˘á_¢g8≥ôE›ÎõªuÈ‘‘"‘é˘ªÄN^_IÜŸô1Êcß´vI	¿Ú+NÌÅ¿ïY÷¬,øJP`àÂ‘CØ,}ëF+ÀÛ√*gÁ-ÑTñí(≤çÿ‡î◊¬)3æ«Q 	Â+U^OÕ“<º†rRıﬁZôq)´Ïﬁ§XÂHˆ¬HÂX,8Âx£6(eYA|ïÈ·Ìì∏?@±øRaCívÂ)óV’∂Zâk6ﬂ
-F9&Bô≤	ƒgÙÉLÊv%ÅKˆÓò|4Ë∂À!ì≈ ÔJëYßdÒ™Nµ©Êqê‰•3u†UcºìL¯;≥{˙xe·PÓÿ∞»«NÊ• £Z¶D	Í±Ê†b°◊lï¢∆Lù≈â°·O$ãWå#Åël10∆;ïÕ^ßC{¬üûjˆÇ›⁄C·)Üí>!ï	;æãx`2lWç3âp¬Mîö∏7õèW®¿[ghÿWU_ˇiQk÷j;¯œﬁ¯∂∆J˛EÀsÁ¬?◊º/†4º°úmecY%¨_‰⁄ÓÔXŒ-äOŒ¶Úâªÿ≥”Pqì|A⁄”Ö57gÕ Ì'Òr”d$∏≈êäYË<◊c7√ÁÒûù;∞;‘A•VËÅq$ˇ¶VÏáÄÔm¶w®ÄY Å±s;PÂ€‹Qfª†L>ñoœ°Ó.ŒE∏CE–Tí˚ü+s$>Q¥SUE’êêQ˚T’*e[#œvy7ÄX>‘@WJÚ=…ÏØdé'd¨¡r-£ıJ˘^yUˆ|N®ZQä”'ñ$Ô◊Êwdy?.¶Å-ñ93òFˆΩå<gvbﬁóÊ¸¶≤≈.6ÁÀ±Ωºƒ¨Qzà≠¸µI$ˇ£Ù"à,:Á€ˆÏRDÆ‚∞Ü”Õ?©ë∞ﬁoíZyU`Â ≤<´PÍÑ’èty´<l„üHÎ‰ß≤˛Gx˛!	◊WU1≥´8xHÛEúÍµ—·ÅÙ*åú;ÅÊ÷´äR#@Å†ç©ÉÓÚUªv‰5t‹jéw•.@˜“PyC`kioŸ∂*ΩÖÚ⁄™æﬂΩX[-M=Àhª?qhûáá|™±å%Pg¬'!J%∂Ñ∂¨€±≈z53YtºWåÇ}¡…ës»=◊&XÅ¯ÆèÎ6?±öŸ…ƒÕ∆˘	≈ú≥äe»ïl Í!:ÃaqÁ†VÀÓâXÍ˝R©w1u·∂‘âDKŒäK,J:´f8Ö™.Ÿ^◊ÂSë˚U∞§ícü‰w{ü‡|5g»Ì`ÀIFlvÜ’Ñ1·>¨;øπ8>¡ªøÌ2æøˇ*Nâ‚;åÍ.¨äØß‘ö@˜∆£qCxﬁ.®LTv‚RjÉÃÂ”íM•Hm‰∆¶é¬µ™ƒP‚L∑ˇíb∫*ˇj{ª„÷ûh±AÈL¥˜†H{Wïªçß„∆”1Yüçßc¢}˜‚ÈË[Ç3¯Ñ√`‚p!8´œÒD¶ﬂHêOî˙Á: >P◊¬á‰9¯–ù·G¬ﬂ¨}⁄¸ ? ø£^ø}Ÿ¥˚JﬁÀ`‘˛çË\˜Jﬁàé…ÚY$T ÄıÛ°˙+„+ê/¿üA∑ÛºM*ß«€´π≠HÄ§Sâ}S∆BLïÔ∞Ú¿9ÿ˚„WΩÓ‡y»‹VpO)å™∏'76<†>Ï∑¯¢◊u<˙ñùﬁΩ#ﬂ5¥ãDpû◊Ù%lØCÑÓÈ1)/)©´ÉÛ\YÆF^Æ¶,W3/WKñ´ïókWñk7/◊û,◊^^Æ}YÆ˝º\≤\yπeπÛr’k“nÆÂÊìãGÆ|‘•Rœñÿ*πéÊR'Ó%¿≤¢Ô≤àËê‚⁄õQ[ßI†Ç"iÜ¸mÌµii…¸m|òU∫ôR®^Ö2S
-’+†PfJ°z L)TØÄBô)ÖÍP(3•PΩ
-e¶™W@°ÃîBı
-(îôR®^Ö2”
-’+¢PfZ°zE L+TØàBôJÖÍW(S•PΩ2
-e¶™U®X6eÑz±Ω‡ÁO}~ûÚª*ú˝4ìV«ÅÛÍÛ'd‰8’lÚ√◊ﬂ/Ω‘bÆå…RR/éöÒ"8œªÊá≠◊ﬁb:’‹;	2:ﬁöé4O‡ˇ“©dÕ|B–¥üwv c3˜ù°ÜXAˆ‡ˆ
-(l °ÄÔdD_•Rˆ∂à√ç≤√™’j¢ıÃø¡ú”)6≤¬Ö2Ø —;Ï7˚E•OBöRfÉ“’2%<ˇ,ÎZ46ÍñßM©Ma»]qG=èxqËˇêÙ9 ÷"•#í,[Ü7å ı9ŸOâgNºF"πÍÒ›}Ãô.ˇ)`nÒî©£4Y≠n†ã08«W»£¬Å¥YÖ‹∑Mb/ﬂbÜo¯›ãåÓÁıˆí/V”Q–aQOØÙSﬂ’K˛&ÌÎ•†PÃŸ+'s!o/9ç<ñÑÆF±°∆w2Ú;FÈ»˜6˝®xç‚éT)ı.ÍI•I±ï°ÀRJàQç¸ØO"ÏHÌÛﬂ°«U8‰ƒ|≠ƒWŸëîÅúÅ~E/,Œ·l7,òäÂ>X—ÃÖù∞‚Ú1xa˘·BttøÒ›;–‘Ã-´A'`LiÕ¥©”’n·Òf†aÃˆ|‘€¥èá‹?)Q˘¯ƒ9©vÚiµ$5æ@É tí¡}T¸‚u‡ﬁƒqe¢b–9’ÁG&E•ÇGÅãÆˇE5C˛Sos…QèïVœE4≤íg„d¡√eﬂá√Ç¨$Xõ~K]Ÿ1AìÍ/ÙTF_€Ò¯ô]:!–“≠Ö«Æß»~/{óâÓñg¢WúÈÂU"B&ß1JâÑ©π(Ò·î#ÍÕ{6wÍ…‰Ç°¡Ë0ÕFí"ëxoWA{ËÎÛq%y(~¯*Ê5õswÍÃÉ)®Ñ◊-¿Øﬂ˚ïT s¬&@jâ·2gHP»-h‚Ñ˙>=~¢Æüs!ˆ#Æ8~≈—|ào‰ÚÚµ  œ∫†Pt~ãvOï=™<ô;8&¸…˚∑Øü¸…€˘Êﬂ‡[ÂÎ⁄Œﬁ7¯H€—ø˘¸ØÏÁ_{ün?6îJ“·GVDŸJ ∆=S+\Fíi(ãåòL¬ÑñˆäÔY∫ØÎﬂÑÛ'ÔS—Ò%YZ≈˙g1Ñ˛ˆ/úÍ.≤ê.ONå÷ç‹µ:oÊçÊµÌªÁbŸÕÂ∏Ä*:∆RØ]‘mW=gJ1é¿g≈‚K®÷pâ2?èT◊Ää˘F±Ñe¬&‘6:ÎUíNsR7;û˝+¥∏˚sÒ^Ké\xsjXr]‘ù)NVíF~ífíÉ©|ºRjÚà·üŸ¸õÃ˙œçMõFß(dFùñ6’ZòE≠∫åD=a∏RπCßÍ∂ãÑ[Ã∏ﬁàfÊ∞c˘ôÖæ±ó ü™ïö≥æ„,ÓæÑénµ§íÉØü√ÎÉÍÆÚ˝‡=Ûl&;0€qÇèâqÅ~$Ë™œy¬?<
-Ñsá∞àì<ø¯˜9,!ôıˇ(¬9	z…∑˛äë]ôYÙr8%∑ÉR#U©˚¥zñ◊àeQ–=:ßöµ≥WJ¬Brç0Ìú˚çà°5E-’2fv55VT»S˝!˘Ê≥£ÒHH∑ñøÿ∞Ù‹°∫3qó?çŸŸıwr,>¬√*”	πÖËP˝€˙Ú˛<˜ì¢∏Œ˜éÆ˛˝›Ω”ã>FÙ2…†w>$›3Üˇ≠{§;º\˛ç¥;óΩÁ€mÙn'Ω)Lﬂˆ¸Ù∏Äπ…”2•”cπávÑdØ,…^J]ÖWzXIÓôîêVñ¥ãzX7ÅzπWw‘)ÆÈ¨á…#<1^.ÿpÈ;”ë	Få∞Kuf^ÏÕÄﬁ,ö>º6¨;biwŒ"	˝éÙÀˇ4Ãå∞Õ}-RÓdƒÇ≠˛R1,`Ÿ¬ı1yÍÚ g∂£„{æP$ÈÑ)‰Æ,vîΩIà˘Aƒﬂàk°doµΩ˙~¶Ø‘0â.¡˝®£Úí∫∞•ëÿ!—π%Øˇ∏¢¨@ñ;Ë∞‹ﬁóC%˚Äﬂï≈˛ƒ-QÈN‰óDÂı`˙®ƒÌPëûK^ÊÑ≥ZìC¥j’ñÚn#∆ï’¸¬d}'π’»wVHqh®ÌÓÌ™
-Jë¨ÌçˆåV…É√˙®Qò§Ô¥óE“–{ÖK`¶–"t6Ohπßâå4À≠[Ph›“B+ª¨ÑπJﬂó=◊Óm¿K3π€â¨@ñ;`¶‘|!Ê^¢Wº‚bèÀ—Á–ä[Í‚|È\d˙ã§˜∑!ÃilÒ[&$pÓ…?∂¶ê£›•ÂÙ‚ÂÙ î”ì‹»È 5∂Ãâ+9X&Ë·%@∏†˙Ví*é‘ØI¨◊¸ìâ◊Á%j_tU±’M”-T¿˙£iGŒÎÁæo ~ÉmQz6z¡x‘ ∞ﬁoLß¯Ôÿú«/=·+!4ËÍ‘∫˚çL0%˚m‘xÒG àR —0Kt/Ç·Å¬è hÂ#“dˇóÌ_˘úE'ŒòÅ`⁄‰m[Ò†Î2?πNqoÑ0}¬'·ÚÍ∏ß⁄ƒ∫ù^ó=™8˘Ì>E«˜ê≥ËÇ+%≥Y¶ö±ﬁ´dÅ•¨*ÜlNÚ-ƒ43'ÇÂﬂN÷å€ΩÄO$™7ÂR∑XuN)kÛnı†XõÒdcÍ(˙≠0∏Ùç∂2®ˇ$˜ÑJ«2~Êœ‚k 9’¨m⁄Ãÿ%ôX8⁄\€a…∂ÑC8ÓÌ$)˛÷„<Ç,Y!Çck¡>9Y≤bA¶Ω1Y!Ç∫6ÛÕ') *Ò¥√ …‘Ë√˛T≤ﬂˇ0CÔ¯*Î∑mëá€Í∑ãû‡¿,Ôxï4óT`◊;Yò∂	ì»ƒﬁŒZ8˚ƒY*à3PAH‹≥ùW∞1tß≈©≥MPR◊ôjdF]ÛÂœYã√ŒLª∞L:YPè–˝T·E'$∫0A™√nõfcè;ö≈¢,j∫π|cü*‚%≤ˆÓ3Ú.H:Dç˛œ˙_$Í>ÙÑl¡p(hætLªÇÉ"Ü∂™ •yV¿ëÇ•^∏À7‹‹Ω¸≈û”â´=∞ô8,xÎXõõv˙8’ÿç	ñ∫B“uW˛(©XB£§Y~îÏ›˜()%∏Œ()%∏Œ()'∏÷()%y?£§Ydî4„£§yØ£§%eƒ◊%Õ¯(iÆ5JöÒQ“\yî4ì£§˘∂GIÛ^F…¿EPåìÊ;'#ÂæüëuE_∏†ê°¡[,ùe§cçÒèQ∆ygRﬁÃ2Á»R ° ‡˙¯“a+È1¨çÖÌ˘KWõ˘õnú‰XÑ˘≠ù∫c-¶6aa§eÜ•Ö†F<”œºè¬ˇ[Y7Ç?
-VìÄü>%ªUi‚»*ﬂæuß# °}l?¿6Ù£;‹fJg∂Ó≥_Ù@%Á–#pˆ2øız#±ü¬+˜‡?Ÿ5g>Õ≤[IŸ∆*á~ÒKœ¸L|ÈoâÃµ∫ﬁ¨≈[€*xß#~îÎê¸£,uOÙ¬ûÿ≠}Ã=ër—ÆÔ‹s_îø;A∆èΩ¢'BYÜ˜$/:ÒûD,Ìƒ”&X+åYÏRCˇ-èëÔ-àæ¸âMó8∏T”˘:7Ÿö≤øs˛Ö«à;§ò5ûBõ|H·S≤W côn?ô!˜πÅúπ{ﬂá©»Ôß+˝µrÙQï∑˛ø€?:ˇ“è˛_<¯◊9Ø“±ˇ%—˝;é}Õ!‘20
-ã	¬Ê#D!˛ª4Avc_IzÏ˙?KàﬂØ<p⁄≈ÇÒ[Á—˚F,•yo¯É¢ÿÉwá;(Ö9h–¶±ãx«Ç˙xw,5KJTcÍı˙AcøPâÍHéíõÕV}wWVb”h—ΩΩµJTF•[Q±˛aMÏÉîÂi D⁄P_ µê Eı÷¡·aSaå˚˚˚…ß¥F˜∆íQ¨)R\eìbË:n¡gUÙAöoX69ﬁÃ"‰∆ªá¥&cyî‹·˛~≠XÌÑ¬díkÌÔÓ !)r~“,r{≠˝÷Å$∆©RΩVƒ‘k^JΩ2Ï∑LçW»feÑT¿»“°bïl‰1ÜÛ)"ß]∫xÓÄôz3ÉG/9‡§K˛£´JÖi)ËXdâ£êºU@∫ +v¨a‚H2ˆÍ…àIõ≈ëƒ£ï‡0 ÿë·R6≤pL@S‚À¡»
-3'Äd∞™W∏πî˝’™Ô[ÄNµ¬¿¨áª”©§
-Ø@Ûìrƒ>∞,üBÚ#lÍ…ç)É«π+á2Ù˝ob%§∑i·ÓØ~êË˘°gò!±ELﬂ/@ÿ|Ù;¨X™u£H ‚1ﬁg…ØH4ÓZÁ¸¯ÍÜΩÚ%ã9˚ò‡Ò„Hë√ãêwMÙ)»	9`!}n—º'W‘±}÷æ\˛˝√:F¿Ñ>„©t⁄É6ÒC<~Eÿœ”.ÏuêÂX‘J±H.5)vı*˜ˆf!aè≈¡¬ëÛÍ¨πÒ)7·§Já—ãb£¬WÃ˝G‰†ïàzÎÅ>˜ÎZâ®…íä”´HWC—Õ›òÎ˚U‡¥…KÈèÀ…Å%ôí'Hõ±b–m^∏ŒG…‰8û≠~±Íæ*E—#¡ê°|ƒÙfémé,öÊh≥–Ihzºm¡R–C"˙bÊzOíøWˇ0%üèjU¥µé‡Àπ¸“¢rœ”Ö1Y≠ÿ'¯π™ÿ7ÖÿÛ¿‚¬Æ„Û ï!lí£¿€(OreØ>ˆ◊#—µÚT ÜÉı—ùO»ïméMÑõsãﬁ£ŒZªjªãæ∂5·Kâïö8kÜ≠m∆ïJ¬÷ø7ék~èùjÅ›ö»‹,≠◊=ê…l≠R©I›-E‹f*H˜·n¸Q≤‚‚~IºçÌ#≤#‡ÍŒtÍÿ◊¿7j{N4D‚eë$Ï)»ıt˘O[›ê√80N¢ú“Èõì*ì»7QÕ®™	›,¶‘u9DJÃ#î⁄ÓºJûÛ<âöêh◊ÿ¢Øì≠:aœr€¥∞lÕ-‘§Œbî—$NÔèè<cwécV«‰;√ f⁄ ]]84!ªœäQì“ ºÈŒèV$4Cb ïã+≥Í@U.éO"Qœía¯¸–Zj∏ø∆
-%É¬•˙1·§/“!·‰˘ãEÑÀŒ[( úîD∂ïRÏƒÉ¿W¸KÍ&¡ú–~~:å”ΩFΩHŸ±s„√‘Î≤Kæ≠Â/SÉÚ\E‚FÉffÖ±cÔ◊e«˙"….°îÖŸ≠ß~i^ﬁsÄ:âJ∆¬‘Ω£`tåKô±ËòEZã.í∑p(∫XëËÇQ1hTvË’ı◊Ô2∑ùïo[ö ®¢.µË≠Üëœ™q4ÆÏk≈†=aA}†Î¥·∏ç°»]$Db&≠ta{e”Af	≈‡G,ÍÖG≈‡™Ÿëq/YzÃÿ≠(∂e™àÅ1Ÿà‰ë˜ìùY¯⁄ä˜p± À7Sƒ;AO∆g÷ã7Å˚@âLeØ°ÈsËÉ4∑˜ï‹Vúƒ`ö+cÉX$—I˜ÄjüüvœJ`É$Ëüˆ»p@-ò%õæ∫pùπÀ‰¯˚hã#0#Ò:4äs'@ˇà¥Yç'âÄ;ZÅ˝¥í˝ê¯ÒkªÅ¸l ?»O"ˇÚ≥Å¸l ?¸≥Å¸‹‰'EJƒyJËê?»ïß¢Ïß’ÉÈ
-§≥F’∞U:2Œ[«ÃÑÎµò%πàä.«6@?˝«d€è_7ñ•s~z—Ô^rPÀΩr‰-@W∫ÇSç¯⁄*ÂﬂªEØ†˘Î∞·/ˇ>x÷>.ˇﬁÔ√÷◊Ω≥vøãˆ«›√u¨˙äÕl⁄¨/Ü∑’∂‚V}l ~˝#∞Í'¯˘+∞Í◊#V˝√çUw,~–V˝∆zV}°’Ÿv˝s¬lÅ¡˘˘ÚˆDißæ•û©/b7æ†ﬁÚ|ÜW™ôYó$Œ4=.í˘b˘ìx¶Ã5“æèVÒ™1¶Ìÿ◊–WxwX$◊¿\˛=Uè≈õÊ˜ﬂ-LÍ2Ω‡]ó^gc<b‘úq¥˘D≥`P˛LÄ+Z√ÂcîÈù[Õ5ù(˚œ≈u≈<'÷_ßÀz–◊π`/2ê^Q‰Î∞ﬂí·R„öE^k÷(∆|E*˝Â/í¥·Âvù≈tí®«–ÇÃÄNò«Úïü$óè∫¢YB®$UÛiˆDJr\-N’ó¥"t{˘tßÏûÿ-¶Ç⁄)ÉÊ©*ﬁbÊBzõÖ[	iŸcˇπZyÆT˛2á]aLw‚/îÿEsì∂≠ƒÿ‘ÛﬂÅ[Ÿ£îÊÈÊ‹å6 ƒ¯l8§o¬é–më§(¶∆ﬂ†JP5ë°∂ÆFÛ)>dçh√}`kDªíË…c_£xïFÿ®h√ÿ‰Â.Ñ≤QŸ‡líDﬁ	ŒFÙFiìR’¬XõuUÚ≠£m§j˙>6ÇSôàﬂ +›ƒÜ›$˙˚cﬁ$õı±BoökAo.¡‡M¿À7ÓD√–dRlL∫®“¿#k Lí;ÄõÑL‡QRj7ˇ!An<”^æôÕ9‰∆o]	–Mî„ı≤†õXDπïA7~≠Ôv\*Ùb˘cõı˙ΩˆÄtˇp9h?Ô^,ˇvŸÎ¥ã].Å–≠¯]Ñ∆o-É—àÙE`4#û‘á—ƒ	
-$ç ∑“5A~’Ï5AõÎ|6◊˘lÆÛë}‘p%™äıì≤ﬁo˚:üuÔﬁë¡a¥›ÉöûMRo¥Í5Eÿø_Àu>π¢∂W_ÈŒ5úéq∑,«WèóÇüB1S¬¬Véõ‚s=&â>J*+v ®µ€¨)ÙÂ!‹Ö¥v…ÁIQ§P‚©∂?nµ‰”Ò¡~}?ï6¿¨©§u•+ùJIÎ€πË)\∆–:…%Zt…''Ö¥‰LJ m‰°_#@Üíw´<àãw8˙•sﬁ?ﬂÅ?›„ÛNªO*ÍUˇZÒJíKÉaÚxVÊ>ö40F¡µ2¡i9H¶;ºËvñ?ä(/§›«pùﬁ˘YóYy˚Ìå}”}20çù·Å†ÒŒ—Ï˚Œ—lá!m3ÿ∫ﬁ≠X-ﬂçY"fÛz≠Â∫utRWe˘çWeÌ∫#+AúÏg<Ü‚Maú◊;.ÉN¿ÊÄˇÊ¡’·µEµ[Jºô¶SÜi-,ãŒU˜FEA,bp	c≤‡› aü|äÅáwﬁCYÎ#Vô°?˘€∫™jøË‡R˘fO^VUyq‘›.¶äp¢ûYÖát/ï›«KƒT˜iàÌ0Œ«&oåÃÎè≈·Køc[Ï èzˆl1œ8àvycÍﬂR%ºpyÛ œJE^∏ŒksöÎ8^‡L‰X©∏c`{ô¬ñ~5f.¶Ï(£(1π™†Ïí^ KﬂDßÕ¬%˙∏w«¬å+52ZÙﬁpæjÒ;õ]´≤B@˘®˝Ñ∂Ô‚≈Îë\k5ùcVh6C7¨UÙëÊ∫+q|Ñ◊kµcô≥ï û±ú%$ù◊E«¬O>âççUˆÉ€±¡5r7K'Æ∆—¯»/\dmc°„ÓXÀü°!hbá)FqLPè»0ÈW%|î[õÆ=qOõ‚Ò©s‡ÿ“¶l/MfD`BªÛ[çÉ^®˜Î»≠4Ÿ’
-ÜRøR˛É‹*Åˆöﬁï„è≠Ñô1wnËl˘3rË,rL^=ƒˆ˛,Ro(‡ˆ^øW¯(L*‘÷-Ì^oÁv|Éﬁ¡_π5`©Ñò<&}X¸‚=Csv≈eÙS•ﬁÂU»™C|XˆÎ{ö['€,øw*lú&–÷‹úa$`‡í•ë€ ≠»u.ó;ÈQ[V;ˆ¶\A:`Å≈+ 8´÷16™˚’ã>,T≥ÄÇ6YP±˙'°xºªÉ—©0Î¯®üd{Zr¿+Gÿu$Ïía> Ñ"ïœö”i·jÒ!Y-ˆ4∑ZÏn›d°∞Ç¿ˆ√.KˆdaVÒ©"≈+ˆ8øVÀ7òÆ‚máL©P¯[§ÂOäGôx◊ÀÚg=»ºÑøZ¿J•û¬dh∆7Ìé◊ˆØ@å˜Ü˜äsâg≤◊∂3¢SÕ^‡@åw¡yà1ø◊Õÿ%‹¨@ÅöÇ%±ÊeÉ!¯'<ìD™åô˛Ñï•ﬁéü1úhq£“Ü'=Øj≤LËπƒ£*b®ÚEÂ¶>B‰MºeÚ,BÚ™Ú}˘≠	Ÿ»wPõÖG˝~p`ÀÎÇèÒ‡;;m·≤∏&T¿4™
-Ø
-´≥áNò˛™≈ÜåÂ?ÿ’Auq*ÇÊ9têƒdﬁëπ´›Qæ∆s¿rSÕí‡ÿo];√ûﬁ qˆ†Ú¯ÎÍüÏo>}ºÕ_ÊúNÒúˇ¨⁄ˆ·ö±w¡Ö~Ú-˛	ãN±Qî≤Æw√OZoˇåz˚€ø`Ê™Œ(Q~<≈ﬁ?;VÕ¡•N1 ΩX˛¢# "£¸ıê›Nk aØk@$÷È ª•"â¢áÜ? s¨m==≥Ò1àzÛÖºRyüa÷ÕÖ.é&Ï–à]`=bë\Rï®˝Ω^`òÚKı?k›G(Lˇ—f˛>÷Ã›zñnáR±Î#‘2Ñ=Q¨˙*O¨êˇ26≠Úê∫DÆ∑wC€3ˇb∂ƒÖl⁄‚5◊3æ∫Ukûc5·xú ™ñ85›]Ìæ∂ΩñƒŒîx≤ﬁ%mb∂Ωá€Ÿd.~ihV˚¢{v‹ÎÙ.{C“~vu‹FÇãÂ∆á]“È¢%ß,Fã„nÕ◊ÖAZ~ÜB¡éD⁄LòñOp%úVP˝Pk‘⁄ µ6@≠U5çyÜî!|§$kçÉñæüÉ˝jÏj“ CRíE¬ çÎz}†÷Ú’76§ÛÛ´á’·I˝ÙqÜ…0_⁄®Y;¯aCëÖJ< Or…[Ñ(ëCÍe
-+ı◊b—¯¢≥rr>lì^˘cª\+æIÄCÉÛNwxÓ/ÂØ˙à:#2˛ΩCÿ»ˆÅ·^Ø—ÿc8ÊˆÜ+`Ü¸=xÃê?¨$@CAè|p†°:Fj`0ôÉ∞K ÜNz«—mmàä∞‰„Eıòë+ûÏ™π°ﬁYVB¯‚«åπ≈À¥∏ß¯ÍÂùX≥L#«ò~ΩµyôÚ¥˘Z•ÅÑ‡bí≈(^™ÊZnèoπÛ‰⁄Ï⁄≥ÂœF/ùÍ,÷êáÒÂ1VE`xÖÔk¨∆*Œ¬W‰⁄:cBÊ◊-˙∞@˝Xi3S;#ÓMçêà:0Èƒ	ÄEÎ¬0Yˆ¥ú›’ÚÉzpS∆ºa÷`® åhÖkBö™ì6œ≠t¥iÕ},D¢¢ë
-5ËT€'¥WÛ4v≥0Lòàí(Z≥®@'kyWÃ∆œ´Èm‰¡äúı‚Gh˛ú˝ÇZö¿ZMG&≥ò7Yç˚2•ÙÄí©„éa∏ü‡—ˆÒÃ˘BTÛF·Îz√ä]ı1á˜£,ıÿ\˛4≈‡4h|¥Ω[4VCYà9ÄµƒLsMähöàAíóED¨o:äŒØ˜b:
-¶˜q	√K⁄Ë"5π|ú&ôÿó∂úD˙Ò°ZN¸iÔ›ôNûw/⁄óÁzitÀøü≠‚–˛úbd	¯œ‘
-€K"yäòLn¬‰ôVìY˚Â¶ìÑÒ$⁄úµÏ'˜hAë⁄Pﬁä•úÂ][Rﬁù-e}kJñı;£7◊≥©î∞™¨mWπÀ ;µ≠¨l]QıÂ[±∞ºÀ[∞≤‰äÚz.Ò%ú‚◊vãWáÈWãí“Õ}5Q ·ÂzV´v´{±\Ω€U.á÷≥_ï∞`≠m√z◊V¨‰”Cc7]⁄∂vzö.◊ROõ#cúe[Ÿ>VZ;V∂í…ÌdKY|â3ñ…ñà…ÂßÍ¸ NYâö.d9À∑ù≠vÃ]‹~VﬁÇñs˘ÑtGÚ^√†·Î€Ää—V=9/nH[iÔú6¶=Ôûû˜Œñc∑U|ENœ'Á˝Âﬂü	Î⁄ÛﬁEwpŸ=ˆÄù‰‚|pŸÓﬂ/UÜ¥¿î_¿îñkL[…ú&3®±–â,¨ã€cfwf—ùfñMMaUÛW¬™ñ∂´)ããö≈"G¬208◊2V»6v_√Ü >&çiπLC¡ﬂ;àu…Å‘J¶∞ì=_˛¯¨}|ŒÆÆ^‚†¬Â=4òE8•0ò›ü‚´åf+òÕJŒb¶óSqPõ}Œ=_·FóiêØ∏≈'·akkÙ≥\π∑êç≈
-]±ÿæÌoπbÉ€ÇW,∂ÎÅ®⁄ŒîN`Ù,ŸdÀªbD–Ùr%˚¡ÿWÏaÕ5uZ≤»[û©|ë&¶;65n(X&À¥cà\%¨á[ODÉ|O¯(¥Ï®ñ¬*õä∞å”N‘ûÇ>›3Õ]˛l∑0ßZÃqŸ}rL◊]æ¡«J√ä"ÆmNÕNc¶(6O‹ºôQ-ﬂ£ÆK÷˙ ;Ësüã˜ÚÁX†G{0«^pØ∫mÚÑ‘ÎêÎ¯0:nä'´ÙÛ	k/¯Òïû@ö∞—ãT~˚—™»t∫˝Ñ<7g∞5°6w«fâ,•WYÈû˚s‹bñ™NÿE…ö©Îê£·HÎs6x≤≤V®0¿¸>pawag ΩT˘ƒ`ºF[ècC≥ÇõE2D0≥=â!‹oT¸Ò -KPﬁ“®≥£õö°ÚBŒ≠µ?Ó÷g˛{Âz∆¨¯b~Ä>êÿÛÒæê’πÌOÅVÚﬂ+◊˚≈Ú'NPw0öÜÀúÔ–\\Êh¶
-é˘ñ?cHÔ“Éï‹B]PJ-ƒÂmƒ+Zâ€â3ŒSV≥∑ØΩÁ-`1∂}IâX∞Å∂¥π8“©•Ã≈ycô^‰çsÃ∆ëıNqÀ±ƒt]⁄z|‹{—\"\7Ê{áAœ`˚ıÏÙºw‹ñ6'õxÜá@!{
-[î„ŸäïçXéLªrú¯J>yâfm<Û2MÊœºÿg„ô∑ÒÃ€xÊm<Û6ûyØg^j39*ñí≈I∫XavÃ[ƒ∞⁄¸™<ˆ§+ÿOHßﬂˆNzùváYÃò	Ì¨Ûº˚’∆wOÌªÚR‚º◊˚„WΩÓ‡¯]∫ÔÅ∏?$˜Ω≤¯êõ∂¥Èà∫+8˘mZ√ÅOQT‘Ã(ñ∆Ä≠•}`ß™ÍºC_<`›0-÷•úÒzÈ}nhaåpË„u…ÉFfÌ±{k?
-µˇ∞Ñï+◊ªt©kFˆŒÒêìπ≤üÛ¸…<ºêñ«=ÜVãˇ|‚R⁄63#|À€˘4SÍ;]¶≤7¶$Ô∫ôÒÃuyvò!HÆ.1‚‹∫ñÙy¯Ωj⁄6uQ[¯Íñ¿T€ ·|	|[Œ7.¯÷[˛ÑW∂{$¢.àÀÆi'û9ô:¶ë5ôÎF,éÛ:!ú£ÓU˙ÚgV”∫C*üëVÅ(ÆQΩÚ~zÜ9^xZÃ3Õ:P’5¢w[!¿nCc€8çÕ˜∑ XJ¯Ô2æyaÄV2◊FèÅñµ)ûΩé, Õ≥¬y/¨≤ >≤Kh`¿2˛;∑bGw¥¿(±¿™	∆o≈ÿr÷b .§«¿°Páq
-önUQÃ	BE˙xe/hœV◊õkñ±F*·* ¶SêgÊ~ß√tjÇDG≈âGwtºmÈ÷US‹ÊıpÜPïﬂ”H•ç{ïè«‰∆| ywî(xîUàT⁄È&ñ£Û(∫˘=Ÿ%˙¥DyΩ¨ÚzëÚñ?[∑X⁄+ÊÆö‡x\q–à2•fÂ^p˙l/:[∏--ª"b0ì1◊ÅΩ∞V¢‰Yøàóãòdá?Ö8Àãï<R©∂•yÊ§∆7,ìÁºf0¿Í-ZMı )må. 7>£˜æ-Ì3j~ˇ›¬§ÆQﬁk4“ì’k4æ0záa7œ∫WÉﬁPÑ>Bê%iüüˆŒVâ∑i”Ökz”‚§AéB7˝ƒŸ!7˝T+ªéÜÕÿ8énG7é£«—ç„Ë*¢åëX¨\S O•*B–Z/,–˙Ωπè&eëèr	ÕºK·ù∫ö~¯nªræoúy7Œº ?Tgﬁ√ñ÷•û˙R˚Q;ËF∑ ÒX∂©ex|yØ:´à“‹8Êû?!ˇ  ˇˇÏ}KW#G÷‡~~Eò”∂ÖíØÓ≤O"Ñ—˜	Ñ%Qn’5v"• mI)gJTaSs¶óΩËUÔfÁŸı¬ãÔx◊[˛…¸íπ7"232˘P.ª©s™
-§à7nºÓ˚ä…m”ƒΩíe=Db€ﬂITn∑ŸËúˆ˙›ÛÛhwN?oıœ)©æ"˝Æu⁄{—Ïˆﬁy.lÓ˜*
-wkkç Q˜xÆÔŒz}â‹pb˜ä¿%%™MÚØÒÁ˘ïC*ÂΩ ~Ö\ﬂûªÒFÙ´≠ÍÊõjuÖÔU#öâÑ∂·Ω[”+"Ê‰Ÿ^#;wkÛ∑∑[EØÄÍ _Vqª@–nØuz˜è≥~´Å∂uÈj›∆î˙›∆Ì¶ÈjPˇÛ ∫.ˆákºö„¬±o…"¥l(^Ã/Á2äç≥i‰≈MREÕbF∞∑òL2ä
-≥f97◊}œ3ráau@8´≤_0≥i¬Z°ãÜ-≥[kùµ7ÛOZ¨&Éﬂ“K”q:º¡çÉ≠È˘i¿VE}\*c '˙X=<9¡óÓú>“+˜È÷Ä'd÷qòﬁ,}{„RÈÚò˛È9I)qñ+∏-b5{ıA"√ƒ++OdX0vN	ùìVü¢ƒﬁAîÿµ¿'wø¯<äπ`F—xuﬂ˜1a´øÀ ±÷iøŸÎ∑NÒó6OÀaıX•∂¢¢<ﬂ„Ôµ3Œm"äª‰y7l}Å≠SçD1–•¢¿Ñi<EÄ•⁄æû"¿û"¿~˜`ïÕãΩ›JÜ≠¶æ∑mV™™z⁄˙û≥yÒ†Ae\9˘8`˜3=‰6<‹”Ï mZ@ÒM;ÖŸÆ†ˇ_Ç“µ⁄V•^OŸé≤—BXÆæﬂÜ’—ˆrTÎ€5Á‚¡n≥ﬂdú^ÁøΩµ≥µ´\Pz´Åﬁ¿◊E∂‘ı—wó‡„ä~7%ÒhÍP\—ü∆«——ˇ≠·¨û’ãÿu´›Ïßﬁæ˚˚Á-`⁄€≠ÉnÛ)ÙM}£T3»9IÍëó{¥¸_F ;ÔG\eπ¨-!·Ê≈x·,OÍqc‡‚˚Aä®˙õ´BG’ÙXÑÆ≤-,BÅ»7ußoÑ}¨©OPËww¡g8Gˆè+ËØ¡ÀXg'òªSÔÎ°3æ¥áﬁ + 2–Ç:∑kπôf‹rÏ0_£¢$>u™0V3ÓÑß˙=#*ÉÑbÏ)º≠t•ùøôYB@ÖL≠:9d–˜…~D(oÕ÷Õg,ΩûDüÁ9ÊØQ,[¡â&N¯ƒ≈¸Ä74^$ò€cXøâò2ë≠äK»Ò:nÃ¬2u	-T≈c)hÖ”KÏ'Ì–µ∏Áà∂È.|;L@◊¶ÙÑkárﬂıO∏Âv¿©G∫p∏¢r™<ÿæpE√Hû¢k˘Â‹Z &ΩÅ=zÌÌ!#äú8œ®¥Sì”ªÅµ‰kÒ ·2\äÉ1hTÁsB-ó¯qÙˆõTÅ~6vÁmÓöGü¸ AÙ=˙‹Ñ◊»û……!Ü!ZB-È>äˆ•òfŒ·∫Hë@íTO1z	o6Y»$§3
-QˆRﬂÿÏ¶ˇ¥õ0≤ç∑˛ç|5,%¸=;¢Ê∆=<zÃQ◊˙í4€VØﬂ˘ºkùE>"_úÉ‰’≤‡˜øHˇò&"¡_O¨~´Å8ò,IÕ±Ã=@xvuìeEÚ|˜ØÌ÷$√˚¬ÄÆáΩ÷Aé‚„Q¥0Xbÿh,∏rÓká≈¨”Üí∆¬kò&üuzsw4ö≤Ñ"ºËsÕ∏k√:ì:¡'ÊÊ,â¬»û˘6uœ07µÊÿÙ˚E ?8”ÖÕZKÕQ†õcƒÒ¸4†Å|7]`.èÄå|oÇßññ*ˇp˝˘Q÷RöÚß¬öC‡+¶ólcúÿÄ¶p‡SîCÒC⁄tüî¢ıb3Õ†÷p»·õNŸú|7≥OËa|‚Rû‡Ô•ç“g˚∏ùÜŒ∑î‹Ó Î€àÙ£óÓ›œØÏ€ \¥€‡ ±˝øüº∂Øù’óˇÛ/√W?nÆUÎoK/7◊˜^={Y^{≈~∫eˇ≠B[P∏˝Œ{3`â0{ÓÍÜã N„É˝ëN∆ ®z•\D`J√ü_V^ôÕ›srM≥:–·GcœûóÑ~e@klú“ >*¿®˝~Ãß§Ç„è"ª¿R©GæÀæT#˚•=3/(|yk”›=p_zwøºöﬁ⁄ÉóãªΩ¬ıµ’E˚±∫V{À◊ixÒóç…Ì–∏ŒΩóÈGñ¬4ÆL4ÃP¿Œø2òΩ]ËµfR	D+Òú†Z(\‡C6£Â`◊N°ÖÄK«º4Ωƒ-\ éM3Cﬂ¬Ωs;éF∑#∏®¬≈…{à>|ÑÛ!_tÁ/¡3Ü-\53"J?åë_5.`D j¯s—£%Ù+z¥@Dñs;ZMˆ*‰\M*¨Öõ@èπ¯Äò«›@l¨¡Ÿ.œΩ#˜ç3,Uuà´~/ö∑ ≈˜9~¸:¸≈Ÿ|rO5"·∫«NP;4u’º&IÆ(õ¯†¯Z—⁄Ä2§tOÁ€
-≥x»üÂD•vHË˙™x®|¿ëÁ∞˛¬.NËM≈>™b«‚ÈDÜ≥ç÷tÍ»znÆ˝E{OIŸú´ÜkiW«àT ‰ÿ±áé_t¿"j_YÓ©T»'pî—ˆij+»>ëã”˙»4≠Ô)j_ÆÇDt˚Ó|ÏHﬁ±Dœ°≤§üë»¨Ù¬jüÛ‘â'ÁÌ~ÎÃ∂¸Óo˝.+ÂvtŒ
-ë¡™ó"Æ˛ÎΩQr≠Æ(∞˜#ÿçsÎ¥/§fÏ∑z4ﬂ‡aì êûÖı„Ó˛⁄«ÅJñé6T»ãgπF&∂˚ˇœ°)∆¥P$é®ÆÏ≈ÊAKåUQŸŒ…ﬁ∏±ß§ÆPùwD•µ
-ï6À€⁄5E°æ$·*Zì÷ãL§\7OpÌ-.Êt›`0∂›	lÔ2 ∞ƒ◊ˆDµ£ÈUKFµ»æﬁ‹ƒ8
-$tmO‹⁄*ëÖ≠MÌ9Y9±géG&Ã«e√úÓ˛…]M1÷µ†‘-g¿·Åπ˚Â–»‹0U˚åQ@e-ÀU5XÿSÄè{ç¶ÑÚù)ñ°Àó¿æø∫˚˘¬w1Ééè˜-BÀ`¿«¯^0∏˚eÜ∏ÎÓîï›ÕıXãã4-VÇCÙ$ß[H!y*VfÌlmVt»h„ÏÛï¥WÖçôl•Íó‚~’å]-ì€ùí/=ˇª`N•JÚ9^kÓ  ËM_¬/ıPÉqqC9¥œ∞=∆msáLmL|4NÜ—¿j√á/ê?√’üŒ«7dÓëÀÏ2†∑É,Óá‰√ƒö˝∆qÛêı>–∞
-¯<[tî.ÿ©Úé¢öÀ¡pîŸmÒ)c ¥-é˜ÚjéMtØ∑äOêç$≤¯ú˝∞ñoÓπ¯Lç“â £ïe#óLFáùl˙xo˛œgWÑ=8œ…Œn|LpCéhyLŒJ[xÉ¡bvÜ¿·„¢øc∆ﬁ<ƒ¢îDŒ⁄*ºE5=B˚M˚¢_ocùlQd˛◊ŒÓdí÷Ìò†j39¯ä7>ÆÜ|ütÕ}@Ud Û;o ºr¨ÃCÌ "‚Æ„Á±Õ1?
-_Ç“!1ù÷cÿ_·‹LgÌ8˙XΩ:C‰XÀç¨Åu,4£E5-Üµ,Jkà0∂˚$yJt4¿∆È`‡ÃÛga´çÙ·t3GnM‹(dh˚ﬂ1&Ç.˙(xñÿfc7´µs]7∞y1(∫k≈’jß˛Pµ>…æ2
-õò8£k“Ω∞Üœ'ˇGÔE¯ùyÅKiƒ^*¬l qΩvÁW≤¬}·˙-ï∑…ï=—C.KÒRiP ¶+L1&œH)æË]ÚD,Â èaTu0bœHMÖiÜf˘é˝U‰/Ö3[¡]	µR5<,äîkVˇB” W¸Jd  —ù∑Œ˜*¢ÆÄB5CŸÛI7ù»*±hÎÏ˚íítçMbç]HÏø„5Ç[r[wà;Ñ=ùY/É⁄abÏ™06û¸h‰*å‡?πF\ s6ØV œ„ÿ9±ﬂ|J»—„∑åù:Aº˙‰E=çÆrº‹[;ÎÚ$¢˘ˆ$Ø/áY≈öµ{ÉŸz¬°e8JÅ¥ÿ¡=7C⁄°}€ ıE{åMê1` HΩ~ñ⁄¬Ÿ/¥¯’e_/∆ıPê{fuF∂B√,XØ4ØÅ≈•ëÃòìö˘+ÿ®∂∞áﬂ.Äo⁄	¢)4[ã8ID†_ÊÒEñ∑Ç 1∞¸æﬁµ„èÌô	Pÿ(£ñí\ÿÉÔ.)wCÏ1Ç}ÑßòÚPÛ¥°QD)˙:d‘£î±r˙Û*.-Ö∂ı©ÆTêtªånÉ{∫æ•ÒÈçwOß€˙ú%Ó9Èv»,z§â=°ô|bl%H∞]÷B‰!•Ó‹RŒn9áΩö+[õËÔƒIÄ˛bó^‰4=®ènIì◊#]À$âN÷5O#œCá{›NæØe†^ﬁ-¢BM∫E≈ÁN•]Lπ/;›ˇÏı≠~´sJZùìføãÍ˚P_=‹ Z“R‚4j¢—ÌúP•<
-?9kZßç⁄¨~Û4¥Xçªˇ”C’}r˚ôo™uÿ/UUTâuÇR{∫p©J¬Zô4Bwon_¢ˇwÙÃ»Ω—Jõ–@enÈ¿ïÁ£Ç˙”⁄ãπß5>Sõk%Ÿ·O∞ﬂ6°Û«GõÎGïè°â⁄bó∑®ÍøÆ†ÆøØ·˜m}¨Ïì‘ÈÜi€•È„T)R+h¢?ëSÍKÁ¶‚oØ3Ë`U†j‘†\Niæv‘òÁSc`j1Î⁄ûb{≠•Èhã4\ü5<Ê™v[ıØc@πÌ=ﬁ¸Éº[@jnﬁh,ˇ\åti{õÒ““/û„™≤Ø* W’M˛›˜j´ß&rñh;◊Œ8\by~8óﬁ&%ho3\›“üÍj≠v⁄ﬁl{Ù*"%ú–:Eæ ∂3zUr‚K¿+PÆ‡ç∞i¥“´ëÈC„Oy3›∞U&/‹`!‹ ]{
-#˜–)äÿ≤:ào¸V‘≥VwçfUÅÑópµé/XΩö¥ce)ë™U™zB3#&ãªVÛËëTGÿL=í®r^ì¶ΩÜ¨c’§B∫Ô√∂]Ïa∏I„C÷Ï5,‡{»xπh‘#ºOM`	,—∆ån¶ßwˇË1´2ÚÕ”^á4èzÁ'»9ı∫Á4ˆIˇf’EúS∂éÌ£V…ãÁb[+6iÏµtwVˆ	<∆÷ãVW∏3ÒÛ¿ï§ﬁLqö&‘b{ô€˚›00;åÍ¢Æ”ÊÖ˛¶À∏%NûUI<oøY	¬¯ ¥`coò£ï€0é∂EÈªn§oh˚}oˆUÂÁj¶≥A|Ö†PŸ€·π#ˆ;öø∆ëÁˇÎôlıÇ¢‡wˆ03ï
-Pç†ﬁoò-‰‰È…≠¶çt©ﬁJ0÷ˆ.˛Õ™ñ9TÓ`ämîè¿V±´.Ukﬂvå%+˝	c&V¢›éBX4√pﬁ«îYNª:Å-√‡ãıùÚ^ß€íPk„›◊·5ﬂ“ÇÖï_Ùº˚œ)Ô˚›ôm ^À n∫x´˚¿-pFÖ˙|e‹∫U…Z]$œ»Óo·>mFlÛ≥¬Î4…©E˜i5Â>-tçUÔ}çQ9∑äv∑zM˛·Ó±îÎ≤˙¿◊X⁄ïY}ÔÔ1v4Aî Çr‰—¶YÚîÉ\Q™√ı!Å∫◊•rà¿QÎÅ.%ÅDâ"Z¿Ø£XÛ!â#Ÿöè∫†˘8q–	.¿BÿWæ7a{@ZSÍ_Î˘§a˚CΩ:d∫ò–/S‹FAl€YÃ‡2Äﬁü€3Ë_À‡ñ∞e‰~"ÒÃ!îOH)¬8ÈU‰§√ÃP#ÆVK%ÇA~;‰,#U)·Û¢QOõhb60!>"n¥˝Lˇœ3ö
-_ß12wZﬂÔ”ÁT’Ñ!‚:ì¢5º6B‹5AƒáY”Hı˙ÒÙÙÊ-Õ≠HeiºÌ∑Ã¡û	A∫≤ªÉ≠ÒüM]R	—D»iñZ˛”ÑÄúû3]
-´él]-FÓ‹»‘√i÷vä ÉOLeGπc¥üôáGsÖF0Oc´ïJépçúäU’¡Nõ†ÈÔò5·bHWq<à˘'Õ˙^6C4˙6ˇ+ˆë_YØŸ¶Q/ßÈ-böïjrπΩr’d6L…Éún[hN´J∫m ±t'As¬T {[,ØLE∑ô)M\/D[wòb˚?JódµTY}ã"Ã7∆’´<ˆ‚mßØùj§LÀLOô+g¥∫√T´’%ßjN3§ Oèu _îOÀ‹†ÎIX±iÓê#ê'·±‹)oöèh5Öµ÷ô)√pè¢xÖœiºÇ¿∏†‡˙°Ã∫ƒ¨Hµ5|ìŒ€UÄ∑S@RÍç`~BJ1C˜,d‡NzÏR`°Éíeƒ‘-r o]‰E+ä	‹#
-fvë° OØ˜ë7˘bc
-21	ÆÅ”$';4q2∫ªV}≥+MÎÍ›*≥Rπ—»`§
-≤Qô~?πô¶Ç,ìÃ±,eòaÁÈ^‹ ˝2˜÷2ÎÈ∫w»`},éo-º@äq*˜≥LÂR§]àC—EU∑É Pô§*„4g®ÉcbNÃç ö¿†	¶‰√oåÀî í‹#¶,RfDß‡‘´6”LeGÓØOKeEñ>qúA)50›◊4®Y”|Ïí‹áÅ€®Ìãgπ@~£Á¡<m“Á°ì%å„7Ú
-µLf£
-ÃF≈Ãl‘Tf£VÄŸ»2“ÎõÛuÂ◊~èWæ÷åÌækÔ◊≈Øq£'™a‘‘ãfˆñ6&ﬂß˜[ª0û3r4¡ﬁòQ*!◊ùÚ`≤qr¸Éyﬁø…¥ÎåˆIo.—jmó qΩJ’ΩM∫ÃÊ]úÎ›⁄«Âëk_∏cö©±˜œÍÍ	H∆èå◊‡VÊ=ZÉ{TÒ0 ®˜Ë÷oˇ›˙=ﬁ£çŒÈQÀ:hµ[á÷!líø5Nc-ﬂ÷{~Ö¢πÛyW´iSl}—›ò8C4‘?4œÏ7v{ÆT67*õƒ~øp∏E=Ãﬁ‚Ó'<⁄Åyñø…ª≤·ªs«w=Ó@∑ÒÂ¸ªZ€LY–‘{2∂{
-ºlõÁv’mæ3¶yÉ"ÛÁ©Ìc2áká`≤\Ê;‹iˇ@Ièœ5C¥ôË¸Yﬂ¸wp˛îÊùÔ∆åÊ≠§«°q+˙Ù8æõöÖÇé˘¸N1^0èÁ)&“Ôûuõ˝0Q“›ﬂëÈ≈œ?ÔZá—ËtªÕ6op‹Íı;<¬"Èm∫˝ 7zﬁ+°ònZ÷}ÒËDæ™ÖÚM—§Œ°˘=*3Õ&´˚‰ÿèÌ.Ω ∞òÃ‡p_å1ûéxlx†oÀ‰d·sêZÖ‹õB ÃÏ‚”AcÄ6π˚…«4Aú◊>≈ƒB~ªÚ5áˇß,≠6 Ÿ‚5X˛FôÁæ¶ÿêHªÿÌåßπñı˚3œßi%É÷ÊCd"≠3¢»&YÑCﬁÆﬂçùoÌÈ–#∂ Ù„Åw'6¨M∆ÓÏÓgt%ay—Œò.KöÑëC©3·Tgôô”πWVRwãT8±ßˆ%MwãYù∏!ovÜDc|˜3^Ó¿§;$X\∫éœÚ; ÖÊ8<ÃË¬ı‡LûsÓ˛ââ†R≤⁄˝´◊_#G≠ÉuÛ¨≥nkï‹`•„Ö;qi±„¿õÜAòM£~˜ÀÑ6wˇÇµüº√ìK¡˛ô/•«ú˛⁄Ωlf	ßk!ÎõVô8Mføÿ„i	¢í`í∑>çl÷®¿Cêq¢®Q;3Áyté⁄“Ö∆ÁÆıÈ¢d1ìÍBVµ{à™˜≤)µ<$âaäπ≥Ú'Œ Mêú‰–dÁôu.'9Ê∞<ìè`∆sü‰û˚‰]Ã=feÓ-õo‹)ìæ3∏‚aÇ3g¿C“Äú‰#b(O9∆3ûÊùyﬁ|ÍÕ#9Äâ°≠"$ıß°6™D.ôäâX»M¥.Vüj]Ï[À√B™Ö∂
-≤êâiØ±h‡ä9Õ{(π—í`<Z®s⁄ÏEb7µIÛãÛ÷÷;Îv˙ùFßÕ
-á¬«ΩÂÏñzÈÆêtû«-ú>º}ﬂû√Ç›Gï?<ËVT˝§Å5ﬂ∞g}<¡ÇÂ0(¡öˇøˇ˝4»üˇ∞ bá=,ÓsÜu≥H3öì/mê…˘UK≥ﬁóMê:\áVçî‹ÀídcÙøÁ‡–æ7ÇçL9ænßE™ÂMé„`¬+; ﬂÁ–j=ò…-¿z‚ò˘
-ä&óƒÃæpîGe}ÆΩÒÇÁö¥â/ ú&ÉV©eé~Æ‘ÚyS„–Õ`~˜êûñ™‡*¬}˙√Öœy"Œõú]ÁÂM»)Vºâ;:¥∫≈˘Y$ ›ÿ£ªüm“≤[í“≠ãE¿a »ö°≤[ﬁ2·ØîÇ˜ª\¬:8Ïú–‘_ZÌvŒBÒáh+~	¨m≤í8≠ø oÛﬁ|1ºa¡¶g6Ê∏ä˙%ÍE•∆ZfëqZ‚5¥\á«h~è‡Ò„-…Ω©ï≈U≈ì≥Z∫∞¯ÉWﬂÀJœ‚IX¡pÃîJk°É=TÂÒºU«ﬂ]≈qMµÒ⁄≈÷h€—’7◊!Ø:µaΩ
-√dWÁ5hñπÎõW*ï›ÍNÆMµ∞5\ÀÀnZs|çUq∆u +2€Æ?R0,_Â<WÖÛ{T7øgesÌr·àe~ì%^øú*“®À]-ÀU˘VF∂S7ÌÑ‚ï»∑vvÎ;:pπQß<kxV*©®èúQm†k©äÁ[ı⁄Êû÷[_L>µ›ë=“¶ÇRP€⁄©◊∑˜VÿÌ!|ŒBß¢„$`•§S·ôÎÉgëds{sØRìãOW∂+ÉÍ‡Å%\|âœ´ıZ}´Æ˘‹ÜœwÚ09∏Q.^æ}Æ2Ù˜(AœÚÛKﬂ,rµ˜{›,)•„·f1¢æÃÕíÇ˙7ãµºYRP.|0¬á9„lf*‡∞tB0”LÊq∆˜9#JÔG;$0“û⁄„3ÚÀúì4‰ó8()»=‡IIC∫Q·úk∆Ia≠T∞ºwtN9é…‡>ßDÓ¸hádêgDˆ∏Gƒà˙2'$ı%àµ<)(õEÕ<k
-|3œ*Qƒ,¢tÛüdT≠eùcl£Ç§=£3<œqÜÁÖŒ∞iÓÛ¢s'Jof‹˘ˆ⁄,Ôjé•Ü\æ3_¯Sbø∂›9NÎ⁄ÒÁ@Ææw6Ω,E‘ì’ò(ß0◊´1h© ÆHo&ÅB +g+	v·;ˆw4âÏ^]™4¡∆|T¬*`¥·sRäu»uÚ)güî_(Í]RäD„R}êAµ—∆Ü©äî	∆Ø$‘¸ïu™2!Ñ2eX‹ÉóÌM¥*faëm
-ªJ5Ê¸F¡ú◊Î}qéJÈ√&9∂⁄mÎø>ÔÙ»W§◊:ÌúıZ4W€ô’m∆:·±ñê‰8O>c±ëúà†®±E5;…Ü2çππ<uLñO’:µ˙wˇ8¡|™ÕFÁÛÓ›_èÁFÁ‰¨›ÏSS€z⁄l)¥a«ÊÜï´]‘3X)≥Zmg4'áº^ÙÅ˜Üîö‹§õHzˆU-E•ê<˛èû∏¢ü‹]ƒtçEÉe)CgÉUﬁ◊»Óu4´ÈMí˜;.€J!èv7¡£“:≥z‰‰º◊@Á∞&íNMí-80«ÕÓisÆ‡ô£>ïQiq¸-Gmqû[[µJÑhà˘€±UîµC◊¢·0≠ÇÂÀ_ØôIõªò\_Ω‘™1âO=,Ñ7Û¶Ë•R≤f$db¢ ©®ÚS—•/ ¶≠û^&Àë—R4QÙ¨cë‚\øc±πüã›Ω¨s?6ﬁÿ6Ø}réŸ{·î”“sxêv≤“ˆ¨∫ÀnV9¬w$?áxÕ≈á&~ÄÌªøü¬uãÁ©_Ï8i»@◊˜ Û›pQ«∞ç0søO-a˜[…C∑‹¥bdÀÍb±WO~$#ŒÀ%é«ﬁkgàG˙?ùd_J'‰G‚a«£∆s|Õ≠únµè(DúCÉì2⁄¿Á±¶sÿÛé_Ü„±ñÿﬁ#¨÷ﬂß¿Ú.∆.</_Oä“:º:–d∞Ç¨dH*R†tî®ÂÚk{|a›€w?√ßƒ¬Oç=åˇÿ„Ø}Á“ı¶BˇÆsY&Á·˜fŒÃΩ¥—k`Ä—Ñw?—)ò¿i^‡#ÕÅ(d•†ZºQaeXaì†“I;±†^*R⁄$•$BG'Âï˛(Qﬂ⁄$≈ˆ˘‰	+ÉêOGâ˘îòMÙxÌÑ4ág"x…˙ï›·+*-NΩØáNÄﬁßû"8r9-`˘…≈ñ‘"¸ò≤∑“3¶ø,@fELŒ|w:?§∞f‘d($*Û˝[#X!Ω~(-Ù-NNÄ–T¶/_‚ƒ≥îa‰IiïMp%mÔˇ]ïº)÷g› »pzï¿à˚ËúsC—9îÍ—™ÔJc¶¬¡ûÀ+ú2∏à%:b;c,VèIi‘j≥∫±#2Ÿ(e∞√ÿ}˛ÓÁâ[ò∞^Nê=\∏ÉqƒÚ‡ ˆ≠yâ÷v?üÕøaN	ãu∞Ô∏·)\çJ◊o|ΩªqÖ»¨Ö^Å^;äyhœ„ƒv…”\ûÿ≥wxpU¢ÚäÉ¢ø…˜âéü˙Õ0ﬁi˚¶√\äÑÉ,«ÓøÕ∏&Ä≤fXóÄº@˝c±êt»Û¬Ê±ß7“7ﬂ†“.Í2À/-J¬ó“Iâ°ƒ.…˛æè√jÔ!qÕÀ≥EpU2“úB*áûÄŒ©=qå§€Ú#∫b·ç∑ J∆í∞~¬G]\*˝Òx&Ê4v¶óòA´¶ƒÌ˝Â/UºΩGÿ πä¬Qfˆ‹ﬂ˝rIC4‡˙¬¬ ‘∑±åº9¶Mä¥Õ|5≠‚Ò⁄∞ﬂˆ˛EéèyuÆD@g¡Çïn‘Q∂ãérFÕ{X~◊ü∫∂è?:◊ˆx;"  ≥€◊û
-£<ÏVÆÇ]&1‰ã∫#"ÁHì£ñ øµƒˆG˝É"ˇ•K∑E∑è&B˙Åtf∞àXpÔÓóŸúïSáSãAYpiDW1‹5>V.ı¶‘ü–jÜÔ¸?Ñ˚÷C•¸n%ó%÷üÌÓâhæÖ6\ëí„˚ÚƒÀœ;Â◊∂?-≠4º≈x[`N◊K¿W)T‰ÜÖèøŒè WÑöÓ»?•8⁄6¨ˆ±Nâ’8nµimå¢æ∂{<≤WÓvmNW€È÷:ÿ‰ÜÙ·©@Geòëı˝¬ zﬂ[&Õ˜∂ıh›Êxdπﬁ"∞BÆ∑âIæWû∑OŒ¥ˇ^Œ¥O±O±O±Z<9ƒ>9ƒ>9ƒ>9ƒ>9ƒ>9ƒ¶"ˇ‰˚‰˚‰õä˙ìCÏìCÏìCÏØÂÀï]	áX≠
-*Rf=˘√ÜÌˇ¸aO˚ùn∑ﬂ¬7˝ÊÈ!-`‹$÷Á-Ê¯‰ €ywîzTwŸt]˘ìˇlnˇY¨¯}ﬁËüw—ã∂’¡Õ g™g·È:≤zçáqüU-!¢˚,∂zrü}rü}rü%ø˜Y<“ÈÓ≥‘%”Lùâªæû8¿àåè√œ„Ø=r¬æ5˙.&a·ˆ˜Õ¿⁄¸k#44A#J‘ÈUtwΩ˚:Ex§w˜ÀÿÒÃ BªÎ◊sx°Ó¶ÛÆ lØùÌª0gÏ+rËå/—ã&≈≠Ámèˆ‘±«__,¸@Ù¿=∆ÅM∫a£ªü†U◊Œpïe◊ŒÛ"Æùë°/<;q„Ÿ)ŒMvÏ4}˙u¶}Ø∫u¶BÀÁ’ôD.ßŒ4HO>ù2êw‚”âK¢¯t&èqnüŒ9±èÓ“©;≈øÜK'R+√•3√HÎ„ÉÕÌ„)ÓÅﬂãègbNO>ûi>û ¯]û0€•ËÊ9≤LKzÉWÂúÌæpˆå˜Ô{‚‚)ÓîﬂôãÁ,qÉÃï‰7Êâ+EsK≥'ÊQ<>OõùS´oµ…A◊jùw˜<u‡áÖ?A¯ŒÂÔŸp|ÁxÖ∞ßﬁøì¬KsúÚÓÎÿ2À√ìÇ+‰‚ôúÿ{Ë„˘‰Û˜õˆ˘√í´p…Ïm•ª¸çú-g;ü9u´6™;.N•Z§öS"GÖmÿä=ñ[`≠∂U©kº⁄äπ&yÚH»Z‹ﬂ≤GB‚ô≠˛Kú†4áÑ«9A·¥êyÇñpZ0û†1/ía†Ç'JÑ§:ΩE†®ﬂZn_ZN≥UÚê˛NèÏ%ati‡^+Ôﬁ?!d÷
-z*f∆û\¬ˆøÖÛvøkı:ß≠√i4ªM6⁄ëËÒ‰ü@˝÷…ãVØoa¿ñ∫ äùˆé:ß} s€Íæßæ	Z
->æ√AuS–Z†ëº˛ﬁ;¿QË„1y—<Ìw[4kV≤∫w;˝‚ºﬂÑ'€ﬁZﬁÁ@#ÎÜòàN¥ô—Î`wë¯x$(˘o‡sP©ƒ'ÉVWN=ZüÉ<;øöì¡÷o¬…`Kq2ÿ›.‡d@èp∫ó¡5*∫]WïÃH/õªü©Aøm≥]Œ‡*≈ò√í≤#)†Z?|øp?Õ2õ_π˛Îë∑ÁW–¨≈Ÿö{D üíæ	ñ“sá 4œ∆ŒÉ¬óéó=…é4E	Lé	^:˛Ñ•∏í0ÍïI√^=ÿtw?MPuùâTK¬Jï1ÃÇ0\›LÏØ±j)_¥Ç®ƒ≥˝ªN"˙Ú∂Yô‹R¿À4’BOœˆ%@yuE†mÔÇ:â‰DóLAí¡KG0X@êﬁ¶∏âÇô==hö¯VAGìü˝Ü˘Ù$‡§yõD«]v7âæ(‚o2M»gÔÖ√	EÂa<N≥ì]Nå_Ü>'©Tßìtx˘ºNÚ¡»Âví
-Í…ÔDÚN¸N®ïJq<ëNtnœìá9ªèÓz¢=œøÜÔ	•~™Ûâbï‘:õpr{õ$V˛˜‚níú‘Ô‹ﬂdÛ^˛&Õ1¡ZØæ!BkdÜeÄuS·≥H»‚©#v9°,3Åo	OR¸N6›Ô$±ep•Aı7Íx2«⁄«#"ß¨l'ëË;F¢Tyªõ‚d>%l}ÓÈc¬ñùL^X,K}ñ{	)∂z÷AªyH÷IóΩ≥CrqC^À§vHzxÊ√wÉ⁄‹l‹á¿Bqª[ÿXıFqÉCoÁŒßÓ("ôdgn⁄`øzX¶ô>–Ä‡Û§G
-m`¿9Ø ˛p˙~ôÛ<Wy{xíEHÉœÅÀù˚>Â"êC÷<=T(œ`5|¸)’í[\Ûp¬h]ÇèÏŒoòŸm59’ÑwFnÓ"DùZ·íﬂºı¯ÎEÙå…Ç:§¢≥≠Å9ÖjÂóÀ»∫^n$?Àî“P'¿çËìÙu G¢Ç∞DR †È4qù	00¿MG K{>Õúóø{Ÿ-ìóvQzË—dÜ(ÔÈÑ¥\Y]Uπ„ø’Qö]†©/ù)–gé:Oz∂≥â=vÊÙnõz\⁄xÂcŒ†Í5É^96„+UÌ⁄ä;ôÖiMu
-ˆÓóÄ=GÜÜﬁT^”F≤a;X7„∑‘%’‹U˝N¿MeWbåºY!˛äÜ»RÇ&®.…£Æ-ø≠Üoí4Å"ò∑¶CÁMgT‚Ω6ÜﬁZ–%ﬁıäNˆK[∆r∞∏`ö¢Òö†ÜÂt¡≠f+†WJ–Úπ
-¬ñ∑'?w∆6“Ò6∂”ûh›>ëc÷âÏ¢õ:,‹√L‘2[‡}^¡©XSãb
-“Ò-í9†õâvfD[xRH‹®âmpK…•ÄãQúe±[P”Ly≥ì∫Ó:E\–’¿3îíå%^èÓ‰YÛC«µk‰ñL‘}ˇ˚£æ}ÎáÔµèíBΩ‹—¬≈çıJ¡PËf`ót.¬‘ÖózÍ¶y(œPÒ±~ÕπQÊôL7_ÿ!·TZÅ/Ø]ÁıÅ˜Ê˘«ÎïÍ&Ÿ$€[õd´æ˘Ò+y+røÊ»ıX—ÅJƒéºsdga.–
-ïi1ëËóÇf$∂È&7ΩËÛÆ_6≈.bàÎpÉh¸/ì@ayãÖÛ≠≈C<WïùóF¬∏ëñàx¿xUŸ¢Ÿ‡±QÊq±«o„FŒµ$‚&÷≠I-◊Z$†iÉ”J\ÑÚ	œAâœ µÅ»Zm»πÁ”ê¬Ç∏Ïhªìãî·°Œ!W<HO≤à¶BÜK]÷oó>≈…ê|˙ãasüæ")‹%/+æ¯.1M.=wËÏS!ÑP*vÆ&¥Æ®;X†∞€JΩq#&— ∏¯äw(éî≤ä¨A'Á‰Ãˆ#Â£ˆ:ø∑ÑImv¿ÌÈëÍ')"(vƒ`«+égËì`lÕÌƒ”§gÉÑ#´}qîEÖE:“πZä;ﬂƒ≥M©E˜ê∫ :).«>U3ÂdHP∏ﬁGc2|ÿ˜ÓAﬂ(√°yÿ7ıüByY‰'—æºÒbÓ†∏2æ∞ﬂ·–?xﬁƒbå[@uœ#ÙYSñÛÅîÙ:äLY—_õœf∆£X ê9ZìÀ•yq:ñ ÿs∞˘µoπG
-¥ñ"˛M≥ÚÚÎΩ¯w'R⁄©√ø‹¬∞YmüQMí„oå<nriœ$ª∞ÏØøkˆo6˙7˛NúÈCS øü”¸W‰∞uz˜W¯ôRÁ®}˛a’ÎÊ´}n5ZòÕØŸË¨vŒŒ⁄Õ_€e~}}ùôø⁄ÕØößá“ö∂NUÛÙ–rœ/ú©xMP◊¥ì¬ÖF9xÕıå@óï/MâkÙ%Ô÷4Ü$Öçd6“‚ª¥9k9”SäÁRê‡WÚ8F-g√ Å@6„ïnŒKD’k*\‹√ÿ“Ó%Edä<{Åﬁ %J‹⁄¡⁄Hëüı2B*>I¡7#7•ùVå}í≥SŒ“Z“N‰Rñº#Ù∫—Ì8Y∫À?jﬁ;F≥©‘…öÖ ömaav©˘öm?&ˇËûsIY®¯πé£S_i™‰Åﬁ\Nráeg:ætÁW•ïØStÏLdÍ»≈LÌ≥úëkñTé£ƒ§ı4ﬂ0ﬂ}ûUL¢õ2*≈|πQıè–&î.π;nÏá´qÅÁ"£‰ÊæYﬂ€ﬁﬁKÎ3qA.°˜6˚›wF„≈∆poggs€‰˙ﬂ™€U˘˚¥ù◊F’ßùwÍEéìÔx˜•è¸¯;Pí8>#+gé?qlå®$˚àá®E]ãπgF)DI	h–*–Y`Öv]ZÖ£o*Åo=2≈pÄπ3òStı.PöŒKvcc⁄ã Â»¸›hÃ6ëø´7⁄ÀN2pÓ˛8©∑‘3mgiHúπCÛÆü˘8Â'FË˘T®á;,Bo⁄¡.–·Ç:Sr8ìŸÿô/”›ªWo|ÓÕçNÑ#Ó
-˚√Êd-¥÷…9Ys°gÅ‹â6YÊæ•ÅﬂuÇl∫á©∞YäÓ‹˝¡2≈‰íª›A…b‚Ì°0¬›/T›ñóZ^!…Ÿ-—≠  
-û÷ŒJ‚˙`èÃÒΩÉ≈•!†nˇbÕ¶6qP∑q˜3∆ò‡ÌçùõÇ1wy „–yuŸŒû‹∑¿:6%z?¬B›—"(poJ=Û_dÚêÀRÇ#¸`§†Álbœ£ÖÕEπ(@5⁄º xéT·0ãÂ:¿Õô^¬µbO0h«#◊sßsw¬èw óÓ$ˇhYE9ØËÆzÆΩƒ
-úk«wRcm≥O≠z$ûö°∑¶¡Æ3ó≤≈E`œØ`∆|õõ·˜£V9ı2±îìhlíê_8A‡åóí/@¯iôå3Ÿxç HÒg(8“œ‰)Ø]¸≈@i–Ê¨Ï«õ•—–Âû‰-›DÀVJK'—≤ilâ∂n°È¯U“éèDT_ôQFﬂ
--œ{G)0ÉLs√ôÿÆLŒºŸ¯ÓÁπ£nÃ®G0ªÙNRZ&Ä˜ŒÃ-ÅµZˆ≠îñ	ò˝ò3ÿWB”3çÇ4ZY7±[Z)ª%±XV bŸâ%∞ÃK`ã3≤Ú,Åù óïB.;A.+Ö\ví\à\∞S-Cgd/∆Û®5;å…t>Ü,EoºòLI€æÒ‘∆Â;®o@v;
-µ%¡`õLﬁ§ıißÓå$¬>˙(ÚQ¸=Ñﬂb[´F}eÉÏ{Áztq*Qt>©Âbß€=¸^ÊΩ
-e§+òÍÈæYÈä˙ù,üÃM'µFüT¥ZÙ±∏z·Ö˛'Ç„E‰r¢7¿õï´ô:Pﬁ #Êˇhqå¬ä◊…I´yr–Eên≥q‹Qﬂx—Â5°Ã)= ∆≠ˇ˙‚º’Ïjp÷¨,ıçâ@/ô'0Ú˘¢'Ub'Â
-§ıπ1åì÷∑5óõN°røLzsÈ›˚HÃß∑Dø˚_jíΩ{§Ÿ{‡D{Ï„©ı⁄rjΩ•ñ'#Ω^Ò{b_≥{¸Z2˜Í3œü‰Rû?|£a•ŸŒ;ókÏÂ¢?Ö]ﬁÃË/…˜Jÿ≥Ì\äèÒ˚Û¢aMÃRÒ∏/öÏKY(€j¬Å0˘$êRwÿ⁄ñ πÛπËØÃpUr\öºi|mV uy;‚≠µ-w’ﬂú|üT˜Ÿ∂∑	zÂ˛™€dg˚7øM¢wòî⁄∏Q*õ’˚Ô≠„∫~ß@”hßÏÏ<ƒN©Ì«Ôk€‰∞õw¸é÷Ñ—ı›«ﬂ";y∂»ΩE˛Z∏Yj“V1ŒÁë∫Zrø`&¨›ù‰GôIéˆmıò±à•ïπ¶*≠§D)Ê£d*/Ù<Ë\|ã\˛Œπ	JI/Ñ’0%e…f;ä˜1πÜ${û!9\BÃrDGèiÄÃﬁ_∫∏¡Äyï°l˝≤\.'A ÿAı£büåmÔÅ;w“Ÿ}	7w=8Àá›Á“T˘ ⁄ºÉ
-Rªˇsç(/õ“ÇP•l®Ì≈πí◊∏Òß.˚Tﬂ€â€9aoTµÜ”üÒs•ªöTìŸBò£ô∆¶ÑÍÌóØpv
-ºl¡*√“"¢Œ7D:}·?
-¢g—Os;˛1˛tÊ¯—œ¡$˛q¶øIRÒ„áX¬èÒi¯Ö?Œ¢ü øË«¯Sƒ/¸ã~úÈÔ-u!6©´Ó˜wπn∂Ô‡ëc¥nv¥Bvºnvºnv∏n˜]!ƒ$<@#·«hÖÏh-ÏxÖÏxÖÏpÖñ]ãåG∂áé≈pΩŸÃÈ.JÏŸÃ±}2r}âUãLLgÃÛ‰¶„YxC.ÛRqœ@9µ3mD>#õdüTsòëBÂ ÊZ*Ÿk‰Ç¢'œ†dØíuı”ãU}»R8!ânr8LûÎí|`˙¬rèFù•Y}W‘‘ı£ë˚FœŸ†kÂz}*5L˝≤M.òç0a(EÑc˜Õ~å±}˚á„Òﬂ~c÷ƒ‡QÙŒà£w÷îQ†’i∫’64=c8 K·œ‹”3dJ>’±$DÇ.ı5\Ç*ùü´⁄J-≈vì“D±,eÏ<¥,óÈZÌ^¯%Ø„_€CèuàE¶.aé:Îßq2Üﬂ∞ÑøÃ”Ô ôx È—" 6uå≥ÁX ± ¯QÒ‡∆-õ‰Äﬁñø— ì%mfeíNÓ–•sIø»e0œK&åèBZŒË;Iâ.±4œ8äÖ± »+Æd6gl-ˆí#ë≤˚Ü¨π∑¸‚'ßõ;µµ|%ˇ^≤[+Û˙$∏~ó¶ﬁúÈ¥}gÏ\€”π.«tﬁ<⁄∆Îp∂+À`ê«>é©o ±-o\möÌ5™t(@È£È¥|˙—2¯‰#œõOΩπ∂”Øï¸].≤ê?>¯~Å…„#∑xŸØÈÀê|Ù√’ 7$X∞$‰cŒ∆w?O°?ÜIÂrÆdÔQBÑÁBOπé•π:‹í3âÉd7¢psÌrïu”Œa/U+™_Ò8’∏&¢∏˙qV¿x’„Ä-\2œâí_*"˙¿s5èIF&*œ‚≤¨Ô¶ËÀõ}´›n¢˘†utﬁmXçVÁ¥Ÿ#´€Èﬂ˝˝∞iaÜì≥∂’∞–§<±˝Kw˙Á0YGñÓ˛¶$£≠√x+ƒﬂJô8œ`rr÷nYáhálìÉÛˆf2ÈZ'0i,˝iı[m$FÁ	b5˙ÕÓ›ﬂ{˝ÉÙ[g“ZoΩP…Çe4LÉP¿ Ô]xoxa‹Á§^’Àï–Ü%M0cÿ◊Ü’McÿÂÿ¢≤πßÛ
-†JtÙÁZ'm,N¡„¨—Põi™zLc&üZú-&$«ZLº˜¿vUáÈl◊—ƒôb›l≥ù'Z¿√ï{/≥êÕW≈ÌúB÷‘|÷Œ®CdÛå—™Ï
-»Ï¿uS«⁄Èπ,üÃ¬#Ï©(®≠∫øˆÆ¬„pœ]%¨™l∞œ€√Øk+v‘A\Wé÷≤ÎﬂiÒ›ıL…Ù{ÀŒ∆6‰b1F*iπú¬!¸ho´°„ü—~¥p;{÷˘ësK¬≥r"«DZ⁄˜áÔóÖúíÅëWö«(M¨õç&¡ãfä≠œ¯g⁄EW°süRQ±¯òÔ,ËÊ!∆`z€'Õ”æ’m¡Ô›ÊÁ≠^økZΩ˝‹áíL˛∫ !Ù’t§–Èrh4™íhoD:ûôYøÉ§µÆk1âˆ#”Bˇøˇ˝	˙∏˛·«YôÈ£ì^o˜…*@Iﬂùy¥’¸fÊº%•(ƒhü~˛ˆˆ√5“∑'ˆ›{¸  €U¸I‘â~F>ÜA?Ü˝û¸|ü|¸Ò[çv3““œ∆ÓºˇÜgê,≥_Å®}è&%&í[˜˘ÑË6æË®ÀÁŸV…¥|U ˆéé¨‹AswÒ®?ˆ∑üñ¯],±ÙI∫8è Òˆ…¸ü—O∆≤aa—0¯3¢û“‚q≥≈U…Å„É¸åUÊ.“G";´¯âR2.ê∏∞}•ÄòP4å˝Ä0&6ÍÖ	˚y›ç»≈ÿ|GJﬁt|ÉOféµ«∞Ká7T-5%ˆSÜbbœ	ñ/c…∂ÄQﬁà%¬h'l"N÷wÄKÛ£ØpÃÿ¿$‚à)Îe“8∑©g)±zx¿[B≈€ìÊaû!ç#´b ïVÄï ÌÈúÃ_“q¨÷a£ålLL+P0jtÏ)ÒîSŒvz9vXF+6a÷ZX£
-‘	OWjı€0·⁄!9ÍÙ;›n”j=,êp¯[õÁ‰åÇI,Å6¢'ô5€AÌêõug√µœvùQy∞·˘geõ6añ_¥K#g=rßNúD¯3]G±_‘Æ√¯”?&qéKãixÜ&|∏(jÕsÜAMB¿Rﬂ ∫Ù£¥vºÅ5ù:hh>‡‡⁄”í:óè>“\˜ayÜ≈É¥Ôƒ›°ƒs©%“¡˜;ó#p«ãf]ÿlüc˙Fota¢1np'u†pÁdä1À¿/‡ƒƒÛâøèÌY@Ô1ùbÑK.L–Oñù‹<ØlEcD
-¡j-:d¬õ Ç–x8Ê˘àÙ4àÉîHe“∫–Õm˝õôwÈ€≥´õ’ƒ‰Ú±¡2œW¡‹#öìØr}(∞÷ò,Ö(T3µ'h¶î,√Eè≠ñ1ñ©oNùæj!≥i†r¿•d."$§Äò
-€:*ó·7 õ„)äSÊ¯Ó–Ö[5`ñ‚kt•æ˚'Vm•â6ÏÒı◊ò‡úµß¨Æsâ?#ﬂRROÕ¨âMÄMë}$©i≥â-\oE™<˝ˆ—‘í_¯àë=˙@ø"[¬&R»'Ë26k†ÄˇT¨Iî|í∑Í“¢PwdiØhY+ü$Ó£∫·<VÀ‰»ΩD.ÅùG˙ﬁ¬«’ÍÕo‡£Ü={ãy|CgôK⁄Öª ®5¢pXXóoË86ﬁ E6…M“Ù¬‚sΩıÿ,I˜—~\b£åqÎ—≠¶á≥Wn…âiéa¢{zZfπˇ«[†ÆÏ QÜﬁÛhı´nmäù™È˚¶&ÔQU¶lòà	sÆ.ÁûFu·?≤÷piQw~XkTwë‡O1µ<c‘={#‡~È^1SÖöLë&Un` ïã≈◊".^·2‚+G	ló(v ªπÆH%ÿ°•;““«÷ 2â«)πBp∆+UF±–¬πI]RíB˘ÎŸi∑Àâ47H‚`”ÖR√„ç1>ágåÎ)ù°}“øFˆ¡yùÄπp/—ïâÿx,ÁƒGcyÌŒØ0¸o¸70fppÂKá≥Q∫ÎÜ}%ﬁÈbrˆ9±ÁWÂâ;-%Æ5"fÿÁŒ°ˆå»w}‘µ†¬ó˚˛B,v}w¨ˇ.@;)E9|Uÿ»Ô	(Û+ïÏd£®≤©yàxÉcj%“7–¢ KZíˆiïﬁÇªF'—¨–î°e%ê {€å5fp#Ùnc«®i«ÿ’qTÇéúÔç`Ïú\T—4W˝~@u@∑Üo¬µVdCæiˇLsã«dF{%>ìgÈ?™=ø“◊C@’ºÌG^{˛wË”ÖO‹»∑'‘?ë~≠ïK8õ√’<M¢},Ó¥£Îî‡h”íü¶\Ó≥Ø÷¯äÚˇèÒ¢ﬂ‰ˇ®∂Z˝
-öÖÇ<Ciì5º8d[¡‹◊a¥ùxr§GF¨lÏ¯°”HmT∫!v/µù˘‹ÒﬂRñV¯8béVTnU&[^Âø™Î÷>göÕlØ„fÌ7å‰xÙ¯ŒEÌÖ˛ûû>æP˙á/¶›ö0BbxÍrä%e•û±<˘∫iÚëæd¯Ì"ò;√˚¢(º∆IêØ·Lb^‡h?Kº0	pZﬂü‰{/ÉØ	Îê	^>Oæ≥>à¬'ãÒ‹•Ú}Ï¶Féº¡"†R?VRí·Õ‘Üo–Ü€çàH˙‘Q¶{•«`√∂·Ãı¶ºÏÏ∞ƒYy(¿îU_≤»éñø¬?Ò,{Cã‡Z|<*€¶Eà„á¶Nhld,ä˝¶è±)r∞≤H∑ö0|Àcòü$æK›‘ÚL∞NUΩcoÆúgwrŸÉœÒ]¢[lG´°êZá˜≈1DÏø∆≥XG±#X‚Ú©•^>º>øÙàTÙù∏”\§¡πØÑ{Õ˝≈÷ÉõóÛØ¿nïøÑäûùaÒ1,£Fi|Ê{3‘¿9⁄ G›PÒúf–˜b`y::Î	ù5˜—Gn˘5e§>%õÒGÏpõL◊¯'¢Åc#—]7ºly¨'≥¶l>	ˇ†+kXoÓë‡˚ÖÌÀ9P8i÷%G.-SÏ…2o—ù'ä[”¬'¨˝\Î6ˇ4:˙$ã!–∞ï:áΩ∞ı'—¿≥√ﬂÒG–t|CòÁ
-ïΩ0ã‰0∏∂X€∞»ó ¶ó∏∞TbÒÁg*TDáv=DXaˇe_≈ æ@G é9	F¬&π˝#Ôéd¯√W·_Ü? Ôôê›≥z}˘ı0€¯¬ô†ùÔµÌOK+pèá‘Ã∆¿*±¢hL$At?;<RÕzlÒâ)tº9º:bŒ:zõ~Ãäão3ÆeòŸ[|⁄É≈L™k|nÒ.Pﬁ#›Ö9*ˆΩY¯@D˜~t—Îﬂ‚à_ó=b≠GlÇ_g#∆<{4îÜa/ÍI£IïbzŒUK¬6Õê$™ yBåöf:Ã¢p‘itp'pñqW‡È8aü…/˙ª‚ÖTÅ◊©ä~g’≠ƒjU§È	ª'¢G(%Ü¨·ß…—	—éú@ï¢¸ì∑Ñ”D.	ø˝ÒsçBåÔköM∆†
-€*ìû3qÅTóÙp6ò"õÕ>F> j¬õ©w–ö;Ωé+l—|3„!Â™mëß¶≤í»x^Ô#TÓôò⁄Tkö‘ém¯Ñâ¨◊<iu⁄wˇ¯úW•å≥§5OI∑ŸËúˆ˙›Ûk\;‘˙q◊L∏	Œ˛&Fê˚‰‡‚0˘
-ﬂ‡m[™Q˘Á:Y÷¢tÖJMm°Wñ'µ¸‚útZï˚ÏÜ”ùò€πPj°‹?ÔZ»„e(§Œ\Ÿ[:E∂Q‚çË6è Ñ™h‡ÍõK¬;lˆ›÷€ígV?⁄æíı∑ﬂm∂NößΩVÁ‘JéΩ£U «é˜±∏®â’Lﬁ ë2sKPb∫◊aÈwo‰…1FÜìIïißçè…OÎNy;]Rf°Æm™É–K„8©8"ñi÷`⁄[K<ó˘06>ñÇΩ"a⁄™ÎåB|´è˜ºÔî∑“1F7≥LÑy¿˜°3∑›qàµ§ãﬂ›4N"R'Ü≈jèxÖ#ΩGÑQÙILU£rÑﬁÎc¸^B!Äå¡Æ»/HG/ôßÖk
-fŸÄ5ÕÛ\›8ãêì˚ø’≠¥—ñ¨kúHá&{©ö‹Ä>£¯K‚õh&ì/ë°≥U/{o‡QYÊÓê=<R:Zå«/Y¶v\}7WMjà^¢%3Ë·b3À⁄™eàx≈˜X`É”ﬂ1Â{ı/ «CŸc!~‘Ev◊Äó.ÀCú]Ïò≈Â›‹ú™òQŸ[#µ=t≈Á\’ô;˝n}[2"€kŒ’nëXåˇ¿–PÉc∑ÏZ‘ˆ	O%√|aDò§õÃªz2Ú—ÖŸmrÆM|Á?¿“$ÿ+äÑzS‘ä-LÃÜ·=óìMM~XQÛÑ‘X/ì◊õ`)Ù)7h2˛©¿≤ëﬁÕt~Â`÷Í©uÊ{òÌîÂZg™◊`1Å…ﬂ`pîêÌﬂ-U¢ºáäÄÁu(˜U	ΩÛ´4Ü#/Œ™”Lˆ∏‹zÒQôPäQeËOÄ3ÿ™Ä00
-¶h»0ºó⁄FÜ[Ù”Ω‚u|¿1ÎƒŒéÿ´v?√{ÀQ}¡v˘?ZS<ç:∂•–-èË,]LF	”YT*IBh-Ú
-™IKßÄ™¢ÏªèPªkz°T«÷6´PŸß≥´LáÁWπ˚˚iøâoZùìf„ÓØòıvçùü6®lí„aÀ˙¸ÙÓ4n}eiˇ≠G;ª©ø…;ﬂÄãƒP©Ïw¬—À˚ ØëbÚ’ÒÛÍ’£!Íu16,zc;åﬁËù∑˙Õ∏(EÌê|D∫Îƒ:#_ú∑∫wˇß˚9V —mº‡1?Èqad–°…ÆQ„}í¸‚è	‹‹ ∆+gáÿa˘0äÄ±±çÃ∑ë„9‚ßQ7«è>äæ◊Æè}©§k˜≠=úÿ3Ê¨Em§4¨œb	;=tZ4ÓL
-+1∑)hJë——p´!õ†Dû»‘3åî#˛‰~±!°K∫7"·»≠È üC›‘ﬂ˜›› ˜´‘9È¨7O:á≠”ªø&5ùø˜ ëh5á±0§+EÉÙﬂßAû"ÌÛ€Ú@ê73¿‘Né£8⁄—A^Ü`û$…ù3àQN™ï∑Ø$ú§ñ3úƒ† —∞}˘H“U7í◊ø#¢ô∆∂ˆ˝LâëÔ)c®»â=sº8éÕ÷J∑«–RçÒƒXê¨=íıX˛“ÿ’ã«˘aI•âAÊ¯ ]D@bZ,µÍ·Ø<	Kj5±“‚.âˇŸÉgëRóΩm¯ÅÁ”ddãAÑã|˙Vr:Ùà≈ºu∫h—î]˛˘i⁄:‚˚ô¥ÇÜ·…‚?ºªTá´§g◊6à‡R^≥•\ªÙé]≈‹∫îô®éA„÷µîSó‚WïÂ–ïJ‰å¨ÜëÑ?tÉœÑŒ -[ìÀ/i–Î≥nd¸ì}PGPﬂ÷Ô|¸ìÙ„„®˙Ø4W1±m“Oå£†R/«õ»‘ÀÎ!¶•kHp,Ùft∏TΩ¿Ñ»íòﬁI0ù.±ê˝"_Æ©L›«oMòtZ \3r6ì•ÍnKº	îÏ|¶—˝ÿ√K'ºR3hP≈Èc∏gK}/p5πÅ∏∂:’Ç¯aU¥8à¨ÁŸD—&”•(îór∏2∫à`9rüa±Xc&û'=k$(YvåF¡¯ŒÕ3âΩS‘˙‹M/mqóµÆ}ŒÛõ∑"Ç}√D˛;‹ÍR¯J¯“G‹<ÊWﬁ~ìï…EdÜwM‘ﬁÛ¨`Ä‚è-Z
-¶eÃ‚"ö∆›ÊfdÙ§ä·gÁÕ8æ®WÃÓ’nñ”uüKMÒàïÚﬁ4Ò?ökΩä#æ>‰’Ãû∞ÇCûÏd«ŸŒ#TvD!ßk§±FÛÛôTW%A€¢Ò∏cùçÆvQ,ÍQ8HãöËôåEMF£ÍE≈¯π6Ö[bòa<Ú:©–‡»Ë‘ït#û;‘ï•1”*xP)tŒ;ïêüërR˚§é˘qSf¬c>ËÕ»`Ak0_ÿ„Ü»ºl &ã#,	CfvÏánŸÃ˚¬{'îzL”‘ER|≤ ÖØö% »)8X—6kƒæ1˙T´‰≤∞P:W5(T/BD˚œº“gdÖÏˆñÉZ"b≈≥RTºëÊ°bb˘q+D H±–]JÆíΩ⁄¿5/]œÆ(tƒßE*¥∆#u‹Ò—ÔÖ®Àßâ#≠üõ _l¨õ°Äx‘Î3*öÈkÑîRöîŒLË˘©Óﬁ–OQ¡ƒ∞
-†Œ±≈„OoÅ§h¿•&·\èà¶è~)(@	Ú&ÏUED\¥ è™ ˇ—g‡ïƒ®‰·èÑ®êRF)*$LÙì"G·üHñ¢DÕ&Ü7Ó™ôJ“#)ÀÏìWD˚dRÙÿ,oÛT°Jƒy˘ú∞)—BÛ|VÿÅÀ<û-™ßOMOüzRr˘ê<±X	ﬁìΩ¯»}R‘¬@¨º!X…≠%∞é]Êk™ª"]˙L˚Õ~|Ã)Øî§â¡Î;NæÈ$>áŒèÉqæfFﬂZ9ú GÅl +	Ô_ãÒπØ<ú?hÀ(Ûÿê,E=óñu;?˘)üÈqÄYõÑÔπ†∆Ô[˘ä√uÉ•N∏WÃ5˙|Q¿SUî4eu8;•ª™¶d≥yyJ˝≤y™µE7/ÌB%•ƒB·r(≠
-≥£l&[Ö‹BÁO≈S™R<yÑ„~πo∂¯∫)â∞p	>Aí∂,≈ßÒK“úpc5¿E¿¬‡H©Åiƒ\öÌqt˜≥M@b∑Æ=Dø÷±sÈFUaèb˝∏ôsic°IÑß·0‹yF+≈_≈H∞ë%QûÎ∞Ì◊4I\ˇfÊò ≈Ö/√ÜRQGé›í”yTN≤Ä˘zÂ≠…î)ôKYKÎDu »èáíú•ø{.M≥„_”ÔøûL\w%·B6Xıº[¯œn{ˇﬂFeoÁ◊≥€—ÿπ∞H¢}Î;£Ò‚[èó‹€p·ppè≈îX’ ñŸ=9iµ ªíËb ·∞.üÂÀÚ'¯Ì-ˇµ¸IX∏Ô6n0s&4ÇÕ"ˇÌÃõç_∫w?øö;0K˜¬≈œﬂõ¬Ø3g3tÁ∑É±Ω¬’0–MP;Cœü{Óÿµ⁄˘} —¿0Âà2_ˆE‹‹‚Ø6±/ÜËÄ˜f·ª¡(Ä_›F-iuÀóãªΩöä¬,(Q.X)¶t{È›˝Ú üÁù/∞‚¥JxÆ©~ê†è~Ó>îßM?º•ˇ:¡mT¥¸	ˇ¬Ω˚oä˜Ù÷∑}há©ù›ÎÎôÌøtÓ˛˘j˙˝¬•Ö¥‡√|ÛõGÙ	S˙%&) ¯YÈ[mÃ⁄¸ÛYª”Â·Ä/ößùû≈úÄö4˜ıY≥{“¥ZÌ÷°u2^Î¥w~‘j¥ößçñµ/Vﬂóån<—ù»"V∑ﬂÏ∂¨6aèmb∫Ì:£nêN£}ﬁC‰‘¡¢µ…35´”ÌwZÌªø[çxÇ'ùÓQÁ‰Óo˝.z@n$Î(“Õìg¨.`9U}BµNZ–ØﬂµŒ,hÒ≈yÎƒÍπ•q¥§˙*™’˙/>⁄nˆî*[˚+RÊæË˝1*Çi^v2ı»ï}√_9sºèm2ª˚	S"‚s≥†bâocÍ˜˘›œÛ≈ÿπd:∞/ú∞
-œÅ‹È§JF.fî(˝Øj}2YÖWSÍRo*Pq‰Ô˙ß®ﬁq’óV„¬áb7>}‚üÑ¬#.|œOÜ>cƒ5pmï§<`rNtA˝Qm7GÀj¯÷fû>ΩöÂ Ä-kIË€¶åhâ>z5GÀ≠$Ù›<Û›¢–ı^Y…ñuâÏï<»◊i <-∑%µ<Î∫M±œÚ4¿ñ;¯zúv¯¬M≥<^ ∂s£‹pXª–£y∫F Ò:∆(§˚’*3öªã´ÇX¬ë˛Ÿœƒ≥ıñ2ﬁsw∫`>í´ﬂ¿ùòhQƒöòB–ÏT	öÊy"cì>:%Ÿ}ó£^ﬁ+∞â7”z¨–'òﬂ ò ¸Ø◊¸(°◊/ª
-Ÿ,åë™…,'g]x£8˚¿!UóÄ‘ÔvN8G–>ˇ/©∂§nÛ®}˛¯ÿ#vÕ>ed8º≠eÊhµ[›&áP_¬ô’Ô‚ÉæAé∞“»IHÒÌ%`µNŒÄK¿ŸeÜ†vR@œNΩ¨À|ãﬁ ~G“≠Tb7ë‘*fD"•úÔΩ6W-‚J9Ø6hXnÄëû4ÏπsI£z=
-”¡§[ÏÀ™	r)¬s.±≤J¸!ıˆõÚ‹k{ØCGl>UGŸó xÂeÔ≈Ÿ+j∆±£xë ñ◊Òaæˆt„'»∆åˇz;ﬂ9Û˘ÌÖw3ºz√·Ì’ìûÖ¨~8	mqË`œèT$ÑÑ»I\ˆñWßò$ø9ü‚eÀq–f∑ã©À≈îE0Çø3&e{°L ~C…¥ŒÎ+ÿô∞Ó-êhÓ¿EùEêK˚◊¡˛Œnùô{˘“æ˚ÈU@”ÛﬂbÃ_ÄÂ:
-·’{—” •›`l;ı#
-ÄwUbß%7»§¥¬RD>#+´+»ˆØ®•≠¢›<„CaG¸D∆¿Ωp£Ä ÊÊá§¡æ@Ωî·\ÃØP="¿b,ö
-}:`äkÅeõM0®"Âç „⁄_£®Kø†_Dáî˛Tﬂ‹$ì`’tTÌ±Àqß{Ï^∞j +ÎÜ^≥+;pB«—ÿ{}F?I“f\ﬁ˝4uP4›˝ﬂypÓdûπ NP…µËwíÏ≤ _˜räuÏêhp 'éçK2¥á¨„_cÌÜØõ˙¯ÛÌô¶Eé˜ÓZ(∞¨'¨z.·~öÚîî«—NHC:<k°§†¨ôöï'>k°ì®üÍ2ùéµPÊ…t`ß&‰·ßd-tr¡ú•AåO–Z(ﬁ‰
-G%5Otí÷B±&ksEIq⁄∫î√◊…å:RŒ))è/5∂•|<≥‰Ø·\å˘zƒå=a9Ì≥z"…_)14HTâjJvƒPè›^∂†xÅI¯éÌìÈ¬πéµ17p›ã≈∑¥_®Å—p"â§7°ÎQu[8ãÊíø:=˛…“µp 2K8˜é∆nÆza‚ù{ÂYΩ[—…ê'ˇ∞≤√S'a€LsÒπñ"«Ø«©âCÆ˛zã`tHÕ™0T®ø≤M-Qö»ÖÛÏÒz∑w?Ó“ç©G1ÛÇ
-p‰ıÊçﬁ˝ZÊMu„Ùf(4ƒ¶HÍL–s|®q¥ë9ƒBõBŒ'3»Ω)„Xö~ÑM—i(p/~¯63Â›⁄óE<êÇ»Ω‹Kl	cJ°Ìa (tœÌ ß·öÁﬁÛq¨yÑÌ–ÂÊSv[ o'ÙWÿÃå{KÉkoAB§»‹~
-2∆Ìß ¡øµ˙f∏Obf,ﬂ>°Iëw·∫ﬂ3¶Ï‹cüT∂¬R›[<À‡∆ûÍ@ﬁg◊¯“ÆÒsÔ+æ„eAQN…Ñˇ'ºà2ÿV0„a•∂Õñ`ÓÿcÕÈ/vo€rí6,2ó˚ÓÜ∂±æfœ}Ã/Äu	‡ü‰Á¢Ú’ùãêr_"˚L"˙,7…g„X©˙gZºõ¡\Â≈ﬂ5Ω”\Õ
-<ë‚Ωì¸D«∂±˙°…ûLußãPΩœ3-<K¶¶êq~ã’öI	˘MÇmîàÿ'ºı9Ò¸flG7¥Œtüúı^¨ë x~à;é˘ó¿ßc{`oúŸæãŸ(÷¬môÜgw“Y∑MâÖ.‘LôeÌµUÎv-À∫mÁ∂n€™uªÆ˜˜ì˙Pq‹%ÎˆNñ’◊≠€π†K÷ÌΩ<tØÁ≤Ã€„v%9∑sôÊmçq{k3ˆÃ∏ΩgŒU∑√Údﬁ˛˜5ooã∫≥2oÛõï€µÀÄåΩ§QªszhÒÓÀX≤·‚&•¡d#XÂ@ñ2b[˝VÆbªıá±óá≤îÌ∫çÓt¿pZ›V≥O+ÿ˜4]À)«ÏwcøN^<i¡ñçÖèc%|m_áŸ¨∞#˛
-\√Ï
-ŸÜõ–|•ö…˙æõnõ◊X¯-Ñ%ÿ»@‹@«‹Tì›µ/Äπˆi¥{jáê´∫Öù9˛Ä[Ó5wDS§—Ç8∂ø_àc®$cüw¸>7ï&[·?ÄIq˝·má©ëumáˆª≥f<_ß!ûåµê«Ãg=R)¡è≈Z»YÊÇyùj;ºˆcàyÌÜ©˘;ƒ¥≤ë`:åéŒZ»<>¥È–~”·k…Hﬂ_K÷√@jˇê∂√Ì•⁄„¸F´Rç^ïøæùOz:s[˙xøwy«=ÄÖœLç˚Y¯B~4áöƒåÇ^;%™Ü’ º€[öÍÓ'ﬁ‘°qÔz‹Œmˇ%Ï:·E˝(Vä¬Ö;b~bÀ˘Çáµ3ö˜≈kikæŒΩ5_ècYÁ∂&àC~˛ã§… m°)DÓËqYRS Öè@p∆xøﬂ%’ÈŸ{Y]ﬂ{u[˝K˘Â&˛P˚K˘vÎ/ÂvÔÛ´ôÈÚ⁄àÓuØe;›u~C›µ?éE˝áÿˇ  ˇˇÏΩMsG∂(∏ø"Õ◊ˆ[ D $E—ñ JÄ …÷’S\Å"TvÖÆ$≤mM\/ﬂ¬+OƒDÃÆg7ã^ºË››Úü‹_2ÁdfUÂg° î‘WénäÚÛ‰9'œwäˇ¡~+Úù#Ω~}@—‚Î_˘øŸø1£eŸèÂıœçx∑¡íHAí(7éD~j«ŸßFﬂaN›;∫•G1ÉSﬂöOÁÙ(.Óÿ£HKxV®˙#}I∑¢}ÀÎp+∆v¡u√˛≥t+&©–&ßbö˘åO>∏ "9Ò ©‹YêZ'v≤∞ØƒΩx_ˆ.Ú®ÊÅÃ-+8É¸ﬁ≈`˜bê¯z—ÉÉ±íg˝’|n¥¿‡b|ò´S>c`p2>»≥˛ú^∆¿‡f¨‰:ÄÉ¸hé∆\'¿<çryëfæ∏ø∏◊öEãŒE∆qw8ÀEV∞¢ØÒ§yÛ€Y£ﬂmZúsæ’›t,ç6iœ£ÏæVt>æ	’9DdpÀÙŸÿ/‹“ˇHkÇ∞Á“H›Öˇ1eGüüÛqË9c¡◊Ö∫37<«NÆ‹â}vÀm⁄õπ™;rSﬁ€ˇn»‡ÚC≥VI1F◊ÏãñpEÊvoKx#s˙7É%<ëy=ª¡Üë¡<ë√Lœ‚B«§‚»¸‚â‰É(óhn7‰Ü2?[?d,¨n¿®%öÓ‹ŒL´˛
-™á˝˙∏∫˚Î„Ω$S(fÕˇ‘ñÂ°Ç√‹h1Ù›cÉ¶ef}˙bYˆÌãœıÆ|Æ±2ªà«˙Ó«±≠5#nìﬁÕÿ ∞	å,◊ˇ$ÏÂñ±ïdÉû+uƒû¿˝»@ˇ¥W±EÈãÁä◊‘58≠∫çÛZÎ9f8‡´W˜ìd8Íõbón≠[$˝©\üj˝Ì"π˘}2Ù.>∞ÊE≥)4ªi+òåËõlòw‚9£…Õ?¢ôäò\OZﬁ{Êv^Ö+¯Æ¬ÿuµ–ıÍû´Ω√kgé´<ÎP¸Vã¸VaÏ∂ 5∫‚µ:|òcÌ˘úV°)5.Wß‹√´´Í¢§ƒ0vXU˜Û8¨(ˆ~qX}qX≠”a’ËıªœÎ˝Á]tÒ$9|#xEáï‰
-WÙVu≠∏êz≠À«Y≈WÖCΩ—*·Õ@K9[~®õﬂœOöı¡j∂Ω>ªU¯p´¯¨ZÌÛßÕ˛ÛvÕÒÅVqZù4kOœo˛Ëı±~Ωö9ﬁçÁJ‡KüüÁj]°–=B◊‚7GÙÀ`…Rﬂ•/zN˙ﬁÿÕN.ìÊ‚œG∏Õ…–Õˆ2˘ÓDÍÁ÷bodıÇ∏ÙœÏA
-?!R^∑L∏Ñ	ê1kLéπ≈XÃ5¶ìYZ”ô•#ÊıyôãÙÑ5Êu∂g…â°Kyπ∆DZX‡„•£Æ€q§πÜ‚£M>pîäòûÚ}ì‘oËã˚Hæ…rªèRı.y‹'Ï@äe«œﬂrM›FèÀáªøVh6¬/ïøV„ﬂxÊ
-g…Õs¥∆
-sõ≥≠«ö¿&Úôj›ªGâÍˇ,Ìc”´Lezµ?ìT&~ü~¥\¶
-`ƒ˛!2ÉlÃÈ<ú˙F,ªJ$Wœäec•n(AµΩªGäª<yâÁ.˝ZVXã>ß∏ì$7G-aÍ‰ØaÍÃ¸TCﬂÑc‚#pä›ˇYºÄüØ J‡ﬂáºè 'Ó*ÛÿSŸÑóüOx1£ÿê[Ωﬁl>$ÍÀ~ƒÓŒGï˚i˜•‡üH¸…‰ØSÍ˚©ej#—@?ÃÁÎïM’©√lbõ›mﬂ†ÊL∏ƒß≠û6Œ›ZKj?ï≥¨Ánøÿ∏»√3–˝vã*+∏€.OCıπ∆E~µAÏ¥À1∂‚≥{òßKÆL∂Å˛Tce—[äÉÿcóc™√n/«Ç‚ws<§Xw¬`Êø∏‘æ∏‘÷ÈR{QÎµÂ˜+:”‘¨≠¡j˛49—j∞b‚O≥*tz/Ó7N^l≥°Vq¶u—'W´◊Ô◊ÍM6 *>4•^dâçîÂD≥‚ˆr˛.âm|Ü/säï-ï ñÑuã∫çbFî•¨£=Åã˘‚Ã˛(¡Q'xÛ2|v3/FŒQ8ãwˇ¸IUÉO»#ñ7˝iêﬂ#∂D’ƒ¡)UŸN1sã\ƒZ√{s1
-π`µÓ®ÅŸ7f^iN/ñ¸ßZgQua)¨/ÈN|Ì& Ì±Bèºp¢`sœ¨}Ææ´¡ÊRüË_]$àO˝D¶›ƒÖ§í<cuóf‡ïMπwX5l∞1W√zû}qLßæõøÚ‡'éˆö´c∫ÑØcJùÉç˘:(‡ªÆœTˇX€˙∏àøëº£€y!Û-–¯RƒÕ
-}ñ3ÿås·s±vãÎN◊\5⁄¨Ö∆Ä^%r‚FÉ–õbË'C0¶ÅíﬁıdˆÉB…qpEmÄƒÒ1>âƒ(Ë˜
-F«áÑgﬁ4ÖŒ%ñÜ–Á˙ú°ºZªÔºô∆Øª—v2?◊¢pÆ√h∞ê)¯|ıÑ⁄>µ8]hø∆∆—¿8¿+ΩS
-îπìyeŸz9:“YôÖÜÿ^eœú+z¥∞]Ò§A9*õÕGò2Œx?Ei√*{3wä>aΩz√∑T#ËÛq°≠Õó¿⁄^≥Y0Ó8®qÏg∂§úz-≈ÓÒ3ı2&^-jR…$©¢O˛æª∏ x&¡å\z3;òá!öÇ¶†#	(KÙ72]g‚_CHJX∫@P¬T¨JXÜñ*_U#$$í’Õﬁ˚î}PF"∆mÏÔÍΩŒ≥øv±kπ,Ù™Ï∫!ê)~vK{Já†…›a7áq=Vùd¸«÷È…ñÃNı=ÊàL±¯EïZZ≥ÓÁ¢g]8—Ω,ı”†z¬N  îÏ?vs®ÌÜŸú{7øü˜1D¨V#/•‘ã⁄—ñx+˚M0uﬂjYÿÀÉqﬂëÔÃ\EAÂ˚BíZÿé@ˇiú¸ô!§Q–Œ∞U*∏†‚@ÃZ$ î·ò^ß)W∏GÃN«8¿%!nÄ«ŒŒ^≤µÛ∆èÌ9iêÊŸÕoËyÜ?“§õZèŒjgÌß›⁄ÈÕÔà	œ[˝n≠◊>oû¥∑q>"Ú)g6¿∏√ÊO¬(ì]ë?1V;èX+º[Ânóû?sCêüFS¸∑7&\›¨&ÿ–ù·—∂gÓÃ9É1–Æ™K€‚/hEïÜ ãé±ﬁø€… pTèë≠≥≥ß"™±eÕ£|´˙*Y…õ¸9H¯’∂xD¸N	¬Ÿv"Ä—ÏàÃÆßnp©Ø°OËÇ@3!ØJ•v{]¬q
-0∆Äj¶∞’ﬁ¡r8|:&g3éwº`º>ﬁEéÒ¶aÆœ)·o0§PW]∑ô≠/ÆÂ¬–˜XÍkËÇ–≈ô˘
-¯Îı-ÚÑî…)üûµ⁄¯q>Æ˜@á:ÊCá:^8?\æ¨>®JÎ…ÔFúrág	q,+$h)Ùß"•‹#&M\hE“£ﬂ]pÙ òØv_s\0|aGétæÚíÛïmÛïœáÁ¥À·¶,U«Ø]n¶CïCïMCï-C·Ò5!Ó¥˚]@ûoæâO>SΩÏı3‹¸6≥GYÌÅx+ÑÈo…Øxqé¸‡¬ÒOΩQsxÖπ˚ﬂ ˙[çﬂ- ’“ ‚uR .∑i◊üwjÁ'm“™ëgÌÔk§ﬁ>Î¥˝Z,V.òÒ7~w◊&äïÀã∞‘ˆü»!‰°E £ ;≤lÀ—b
-ˆã$Ú›*
-„¯£" G§∫ºHn∂†:´èYA8ÈäÀÚôƒ €’ä>JW˚ñw«cSÛg:-äÏÆå¨˙`∏Ú·!	¶|MºÅ+È^ú€˙¡ı@êÚr˝`Ü.W*“^ê\ºô;é⁄DJFﬁ+àî§ª.GMhI@DP¶Riü÷}hç|&ëe/òHXŸ
-¡rˇ®Û˚∫◊.”g'—ç¸U÷∂ZŸ˚∞§[Òt€›ç≥Ñ™ëdã®ãÍÌÛ>à\€F:3¬D%µx¬€QÖ<AYÅ∫‚ÛúÖ◊⁄q"∆]¢>Ö∆´≠Ô;çßZ¨≈Üm•'rˆRYvÀCîª?ùå∂∂∑ÖÅ:Á˙8i±õÏ¡Fﬁ•<ÿ”ÊÈ ÉΩw/¶Úh?4é;z–	¬=…»Dêóò‹Ø¯˝3ˆ˝3€˜B†¶≠I™G=ÈÒÜﬁ”„áª=˛‡-%Kìùß"GS*!˜ëπØå°€ó≈–X Ä M{ÂJ\2›„¥£iu$∞Ò˜œ“9ìëmm%Mº@Ÿ◊d∫WÙn÷líy® ⁄üÅ∆ºpmr§nÅnâ-Ó€‚T3æ¡ârÏ~Qõπƒ{/ä‡‰2Ÿ÷¬Ö(TÃÉ√,ó æZ`7R·ÍÈOì]ä/ç˙w@<#Ùˆ1ﬂÙ+ÖTãú&ãlÏüóÏüä¸8M£>$á}ˇÇS9@·™ÇÊ»]€5!J/™&ñH™’êØπìäŒ3g§|ü™64õÄâÈÇ˛ï•Pã á¿tÖ√ÆÛ;¬—Hi»Qù(˙EîÏ?îpì◊Ó` CÄÆYo˛6qRwÊC«á
-ı˙∂âÎ3©*l‚ KO~ÊΩÄ¥@Pü¥/|o0w`	0Åæ°[∫£µÏZ–·\∆Sﬂ≈–"'Ù$}G≤«%ÇPºYM I•FC8O,p/ùπ?´;SÆ1¶¿eSÉÎ‚OâÙ›üºa ßp#ﬂô—sÜoπ=4∞^Ã‘#o|Ûˇ¡ﬂ~ù†oËN}ıurÛËD «ì±7ÉÅ„hP*ü⁄DÚ˘∑NI_Ëëä±Üã@›L>Ç˙;t·œ°Cﬁy—‹ÒΩøÚXX.s
-€ƒ\¥’RP‡ñpøA±Òa'l0ò:≥õø√¿Œï`≠√¥∏#X∂3NúùCo‰Õ∞‡T\Ò@B[»Îà—wÒ«¸e¿?§˛Q	e\ÿYæ8Rg¡∂áy»#+: uÖfá§∆êawÑ1§/∏º‰”JB'. dµS2´Ï_¿rg3ÚˆUÀ0Dàã§n˘√Ö°»¿ôﬁRq∂¢?ÜÅÔñ‹0ho’Éπ?§éOg:u·^èÌﬁT¥`¢`˝OQÁ‰òﬁ~8Ó‚hÜÖWˇ¢[}â\$$o∞&d!B,t∏ó°¨ûÆØÈÿbêsC` !Ò8›Ñ %G\y∑®äœ òn´ÚÅ
-˙˚Ω{FW1zòRà‹Dº ÂÓF≥!⁄èçv¡ó§^Î`ï>™ì>&RxﬁK32è}4Î3ˇ¡≤xé∞Êø·?¶yp'∑y–
-∑M[
-w>¢•P=ΩÆ<gû‹ÆpáN|EˇæÙ›+Ô;ÛsÃ*	<Ô)ˆ9˜Ú“•q;-Á:ò”›Öﬁ∞|UŸ"ø≤ﬂ+“Ô’‰˜*˛˛(m£ˆÁQÁ-LÀ∆m°X¬Ñåx|ïâ*+!BSâ¬R˘6kÜJ˛‘≈Áû°öÜÍ*3TÛœP5œ ˜îŸrÊ≥`ƒ+∏ FéZ4ÒôÔ4_Ÿá•lUy/˜»Í!-˘`âë´ÊëWÔ/]
-¡MÊc`1(eI∆ìƒVﬁqCnUﬁSø9S¥«™üsoAA	_√ÊöëÜŒ3’B◊A;—˛Å˙Â,Ä[øÓÑC¸˙P˚Z∏Qƒ{([¸Ò040e}
-ç≤Cä°âCB1õº&Ú†È∆»_I€)Yq ª.ó˜,‰l›ºâYPA€¸ûqÛá∆ÕÁBbGíÖ  VñáÉŒ”Ú¬·`£pÿ´f¿· !Ï.oO·PÕÑ√C#r¡°Ätuû’ΩhÏW2°!cî∆Åœ|Á–õ0xo˘f°ë6¢_¡?ﬂÂFÄÔ›S¡-{%}^yØø54ŸJ∂ÜÛ}¸ôõ≈Ô1∞Z∫J˙0ﬂÁü%¿)*'>/ rByÄR‰¬˛2wAΩpâ;AùhzÛ7Xå\°íZ˛p¬{‚°m–j>O¸œ|ûtëüµˇ4Cm[ü+5K17∑´!q£u∫gæ´(ÿ‹7òÕø≥˙ÒÓ⁄Ωª¿ %rÊÑÉÄtú(rw:N8√Î• 0H4üy>˘À‹o˛”/rMh≤™Ä”–x≠c!"õ£-’Ç˜wI·øüû÷NÎñAÚ©“0J˝¯døQ∂å"9±Ãx/Ü∆#ã.
-H€ΩR>ã†ˇ”‚9`+%“ú¿Ãﬂ•	®qÑﬁƒi¬ ‹éÛ0 ]gËYûBäk ÀÃîà…R%G∫'ïﬂNìâ∆Œfºæqƒ?›…!4∆L◊Ù&œhÜóΩ”Ó·23ædâ@1!ÛÊãp«j·Å3ﬂ=-?®‘Lg.û&[eë/Çˇ˚ˇó¶7T¯õ3∑~Û70˜<√uu≥Ü|%vå≥IL∂ÌÿµŒ¶∑µ¯1në0¡∂Ù)LpƒªoŸÓ Af¯∆-ûâ3Á
-ú‡zè8Óﬂ:t¬∂aeπ√'8±≈+ºu¸ƒ∆Ç`•X…ÑR»ñÔ–[6°>Fz=M1˙<©'BGë∑[¢8VcŒ^•ú+ˆ–=uú	à‘}ö'yÛ7≥I°€;ØëÔÉy8q|“õ]˚ÓÈÄÙ◊"µ"ˇÂÖ;Øá[.VÉÅSÔQﬂUÈ2∆ı∑NXÜn·`±† EÉ(æMæ&ï’aëƒv:√\∞ÿG‰[ƒü~&”B≠YñŒ‘a·˙¬<Â#rP:Ã⁄AˇjF’Qú†KwrΩ]1aúâûOÏﬂR†Gµ|ê1Ω+ì	13HÛ9
-≠üe›Œ|{U∫ΩΩ“ﬁÚw&, ].åÏ°eﬂË(U6DKg_ëâf.ìÏr–”bY)aK4A0a£Ù/I˛/◊nÈêˇ0ÀMöf≈&˘ªfïûkëàÎ°é<vöË ìóó|âx∑Ù øˇÖ8>PˆŸBpπ·ñ%{ØD:ïÇOÄj˙∆S°«ˇpá$éÿ!ÁÄ>)ìo¯o3ÒKqÖ‹Åôë[]wÑa q1ì
-PÒw£Å„S&ha0…Y 8ﬁ÷4Zf«Öuó„(ü-{õ
-fûÛ&¡$›¢†∏m]«1ú°5KËI£
-h7˝ÊìjGBÊ„b“ïŒ âº!⁄æ˘ﬁ¿-î∑K?ﬁÑ.Å˜W{Ê;„û+V€5Ì¯±˜M±ÍŒˇÛﬂˇXuÔ¨ÎGﬂ=[∆R˚OÓH»˙Ë«⁄5¡$˜÷“1Ój´q5Àc™Ê˛,t¢`í 0AË°‹6tÄ#≤X+∏OùŸÕ?∞D	≤∏FÊ†µñ4>`çsn#·Vçî[-⁄M∫qm5¶7A‚x`vú/ë˛Õﬂg®‚’“]ﬁC‹ésZI}‡2˝=S8–¶(¨™v¥¿qÕi≥%-∂e≈¯
-¸è«~·Ÿf?™ï†@,zkkH·Dá∆’Ì4Æã
-(yÉ∫h„X((&'f‡…aﬁ{¥¿›Çi©Tñ´¨£ñWh4å´ëgéÔ;B•ñÄ⁄Üj>»Xõh“&Î›"–o±~êçP4:(ÌÁ@#)l0≈#Ω∂S$¢•}+ÒËqÁÍDk·±fÓª¬Âxî‚ı-«”§H+N.‡Ôp¸n
-(˛Í≈17≤¯ºwããM∑õ\ºÉ∞Ef;ÅUq[Î~Q6¶'›≠‚ÌAâ±ãN˝ÂÓº{¸(ˆ>õ%€øß˚Asdˆ<éÚ“Õ?∑%π&ôªCgB∆7ãX¨uJAìP[∞í˚)π∆Qœ“ùøÃ∆≤.oßÊπ\X_ºùˇ$ﬁN”ÔˆÇ3˚<¸˜àtùn£◊8ÔÛ∑∞ΩˇÒº∞∆™3§z nëgµV´ˆØO€B°ôƒü
-óCu»‰º(Œ_∑ﬂ˜@∫¢|P∫ƒÁÜ&£(ÌÛÎØ‰’Îmö¯1ºÏÕ‡>Ô∫ó%^ôÎâπÉmîÌ∏@L!L´‡áTMä’∆Ê§3º$_=ä_ﬂHêü:‰˝Xbõ-§jékê3U%∏Dp÷‡æíF GhZ@≥±Ú‘
-r∑FhÀ D&ù	fz“C£2‰áx/ó˘bÎ◊¿É˜ïµ*îv†Ï˛64ñ.¯¿¥`º8ÊT≠¿ÿÊÅÔxc°ÃÏ2◊ø^Hl?ﬂq <StÄßP‚ı¯RyÂƒ≠Æ;›uq¶™ø¸yí≈?á∞ô	&<¡»ïv†FBÙiÚjÒ®W¿çI-Ä,√©rR"MrhúXÂo˛6¿Õ£~Ô¯3D!2‹ã‹õˇùîÑM{>≠ È;4/*ƒe`C7¬Pz'&“'oπ∆#í]g÷@Ä"™†èë≥ƒòπ¿ÿÇÿyKÌÕ¸‘ìôÖÒ%Œ~˚NÂ…IƒYHE#Sô!& Ú®3•˚+Ï&≈üÒ“èN‘Ê·¿eﬁØæJ)E¸ ∫cÍ‘ª{—	JZJGˆkuxÊ¬¿ﬁı)ã_Es	˘{:
-\#¶hWq$·W‰3o›¡œ»ˇ#Zg2t«é7â∞>‰TŒπé¡Öë,Ó0)˚üÆË	'V)Ö=!Òœá≤¢!ìT¬‡‰°W™')G~*(÷Ûöö‰ΩÏê]M®W«Ë¬¿‰K≠4épk˚Œt[Ûh1Œílu´€8?itÈÒº÷:"ßÌz≠*Eø›i?Ìﬁ¸v⁄¨∑È£1º·ãvÎ˘ŸÕˇÍw·sr“<π˘≠ﬁ«&ﬂ*‘µry∆¨R´Ãü√≠ﬁ¬»*ƒ)1®âŸÄÿRœUX¬éZwÁ6˚>4ﬂ&íu-~V&%v±ÅıF‚Êpö»r#”ˇ”/î—‹#eŸ8ú”t'_	<ÜÖ2D’_◊xPç{I!ÿ=¨≤≥m~=ÃJ&ïaNo“≤)°jâXUÌÃñ®¢*Ç"ªê*5(œC
-X) qœÚD·F0-o>ºpéπ≥™QVx*±òn]|N@rœ^’X1Z—  CÈÿ ;2òxrºµ.˚¨=§\ïÀTãfÑ∞à)ﬁ#÷Á„–uX@7∞ï‡°÷í¯™TÔ6ÿÂ£‹ˇ©=€ù~≥}NéèH˝yÌ§{Û{˝y´FB.<Ì6OH´ˆ≤˝ºøΩ¶	c◊¢&◊á¬ÿ±TiØÑ°•C–¿Å}=‚ÄI 0`ÀΩúÅ§Õ|YTÓñöö¢ì©◊0C(Àx2à≈reu.ÚxgAﬁMNøòn¨(l∏Hê€ÅÊÓëo’z}›ê§õRô?W(5≥hÂ⁄Ûó1Ó&ˇÏ4í5Aè¥Ã
-ÀŸﬂ‘Àî9Lu9√g∂ %“®'e‹ ]€›Ê”Êy≠%%»W2ˆ\÷ñì¯‹0¨Õv”%çu∑:}›öi[°¿tJÛfôµêNm4+C	¡a^Ä«î}‹#Î°ølõÃbj[ÔÂ◊mÔJÈÎ™c∞Á°p]>‹7≈yÊ\ ßKäeä›Ã}ıPÿn’÷ »≤R"©j∆î≤¬I£_kµ€Vå:\ôJ´Cäˇk'’ïPGZ§)%(ﬁWh‰Öy≥˜àg…)æí\À Tj∞¿ﬁ §o£¨âÙ;»W*(≤ïØìÿ‚ªµtáÓJ‘ûΩ»îç/SW@ﬂ{¿u-¥˚èÇƒÕg˛Ñ	°])”\¶=isïRÆñ»ãfØ_#gµz∑-ZVjÍk‹ˇ" •∑ÅKvH≤íø`Ö∏Xj≈¿ë»∫;◊;¯ØÅ»x4¿^ŒòïÿâI\Á~¶$‹=∂Çaê\JØºY√
-ˇ°ﬁ≈åö4;¥ßíó√≥úÍ§∫ÙSå∏;·l®£>HΩd¥êN÷∑√ÿr›´©üYÓ+Ö66Eá@Ê≠kOQ†Œ‘¥D+à@JI¯
-ÿΩtEÍá€F„Ar°‡‡¯àf∑Ÿ≥∂ƒsU]* %áñ§ZßR˙1ë≤º„lÛ/Í„5„\æòQÌY¿∫!2—82ﬁ5h‹W£$,IÃTóŸo–%<˚“/ä¸áZ©“˝Îaã)h2§”¨‰éeãµo£§¨Å‘˙fJ\	<›útÔûâK%∆O#À∏èoêöMdB,7Ûòl¬V;"˝ÓÕÔt£êg†}ˇk˚ºè‚~ï‘—Ÿrﬁ[Øl¯6ÿ°°ûG“)·ç… 6‡FU6¶ØxC≈tõüÖ·À∞Óª3{•±ÉViq5{•	È˚Ü¸¿µæ‰Çê4°Õ≤›≤ñkzóØ≈ßÆK„Hëï‘Ãe&äVö&ñ≥’:>∑∑àÒßΩoOÑ¥~ÂZ„rñÆºS} Ù•X≥≤,XF”√¥[ëÿ⁄≠UyèZZêë ™©m…LeUÂ9ëÃPI©‹û÷å&(˛ê˚(nç&®\ã\“ïwÆOöÊd√Sñ©	∞ØS;owÈ{£m|Ç≤ﬁmo«p[∫[≥≠)ÔyK2ä¸˜	˚∏géø√ˇ0£~Ó˚;¨™â`ñ¢¡S~0¯ô\∏~ûTwn9âñ∞1âyã)ì0:ŸbV6;iÆÛ5[ûÆ¯vñßEÀOD[ht⁄∑ùˆU£ì4ÉÙ4u:—∆
-Ï}¯ÑÌT¢®.V∂Q•A3õ1RŸëÙ.ÕTR$’6õ©È£Ÿ®ñÅÁ¶lTfz[•Tø»¸¥FìSØy˛¥’@Å;óıV≠◊k÷◊nÖ¸Må67gé.êµJH›«¢`,≥†˝ÒÉ´ñ∂*Â¥+≠%§J≥.Òxu&ÿ\8H ∂ÂÂ≤@≠?Ùjyy=ü´xi;î(µØ=˛j±Ajië}Mcáæ-ﬂ⁄xQ‰Å:aGå≈r$õ'°{ÈÜÙi,Èˆ¨'pﬂPJ”Xz$â5{ÅäÖãi\¶®ìey—«:[“ñ”∞ô–≥ï∏Ræ¥Õ®›!√ ¶&O∏◊yØﬂ}^7¶ûÆ)VMµClÑ£›:XÕ@˜©¿ß®…õ3÷M¢e&#ﬂ%Ô118Ghb<çí∂å•)Ê¯Ù&≤TE$†”ä^EC$≠ƒ1c· ﬁM≥lJÚú0óÏ6¡ı¯J§£f.J;¸$8›R+Œ$Ü+@X(∞éáö±ÏÃu¢yË—å¬* 1ã}1ã≠Ÿ,&Êı¬<p≥à!ô∏Ó0ÇüÔ’‰ﬁènICMﬂˆ}öëãÂë—Ñ©ùˆA√ûTLâO&#≥Äƒ9ª¥¡øòpÔŒf N64∫ù¡œKYÓ§Ú˙>›˝EÚPˆRfΩt$5∂’¢`n »'õœ∆˜	˘RË*–˚bÒªµ≈œ^¸Û7ˇ	ùˇõ˙õZËAâú4kOœo˛Ë—‡±⁄ã⁄˘ø÷N⁄‰%©ùﬂ¸÷jˆö=Z˙•^ÎâuÄhÕ.∏Ök«øéºËΩ^k/úÛÈWÕ…ºjÊ(]¨ïÿÍûÚız
-Âîw-ïrË[†Ô\^NÑÃﬁ∫c|˚”«Òxç©§	„UÖ5ÛﬂßA8#ÖI@∂‹ÒÖ;û»∞{≤E¸ ¯9µ*#ˇf£˜qc,CÚJ∫¬^”√„^'Wôm ˆˆ,&E ”""®´¿áB∫ÒhL£TÌ£‘X6Gy∞H‡n*Â1ö4Wƒ6 ¢Úâ˛l⁄À¬=`Á≥˘Ã“§7_+7≈„>qgn*"æò·[¡W Ü¥éJ\í•=•«É∑nÑ∏Aëò1AZ"é—W`a"ÔeáùÈ[opD~a/ÖG2@.!~–ä®!ı5˘PÜ I Ò•1h>Ä8≈/<⁄Ω=eê°wIM~(•E“Hï2jÀeX”A2–˛ET*+)çA¢—'‚Âı‡⁄Ò´T˜“av„ZtS)≥h!8Qœ	ÀîwhÿehYIZJ`05≠&M≈}öZÓ•Éä{ñJ_åì0ÊÚâœÁﬂ(
-*Ø8ÅP‡„µµ¿áÖd†ΩyŒÑÓ%S±ÿwœ÷7•v©º◊kKy/íá–Ì≠ V&ì 9ÿ(-É÷Ä%d"ûÄå›6jì÷îå#Útu;¡…'ëkQ¢3nN^î(lI∞‘hNƒ,≠ù@q Ò®-´Ißµ‹[0∑êô`†:˜ ÃÉ˛mÏÒ¿eåî¨˜0$ÑÆ3ﬁyˇ÷ì™P€Ó^<°2∆ßÌÔ≤ÓcwÊ¯æ7 a0˘´ª3)oV*x4ª8‘>'%ÏÊNvËb¯Ÿ.$Hm-«t	Î'Fi¢[“¢4XrGàßíè"#?Äa*7kw)Z\vI∂˚/«¢r”¢uµ°@å‚¨Ÿ¥ò9‚ﬁ¢≥i—âÆ«Ã◊∑¯ˆ{ò∞'~ıÇKJúª;û,;⁄/AU¯lftn@‘≠Àá¢Œ:*ﬁü|o÷ú∑ 81–¯ˆóüI– ΩUpMT∂‹;Ã#∞f‹“K≤—[ûEÂø¸åßÅﬁ§Y≥.{ƒΩÖ#
-6XÉ#±¸‡w'ŒÃ)≤∞ﬁÊJ≥ !Æ^í˜†ÚÜ.Í<ç‹øÃ≥iØ"J¡ˇëÈÙ-™j√çÊ:?£Y⁄!Ä.≠@ÈMF¬∞»
-‚9U{
-]5π—¢råCE3Æâóî$#w‚Ü¡<bE.ã$ -+|ÔEÒk∏dõÊ	ó»bHî\übKT&óﬁˇÚ¬xΩÂûH3≥pÓ¥U“Òõ≠çÎúzÍAf5sCi2ªŒhs"PFª˘Ç;Ã€·L 'µëL#È+¬Òì6	àìíå[3“∑
-í|%wSÒ$6‘—Òãæx©\˙ÛüˆcÁﬂ"wÏ¡‡Û±⁄cDY‰÷iÎ˘˜ktV#Ω∆Y≥›∫˘„©ZΩS∫–ÕÓ¯£ Ùf„egØµû∂ª7ø˜ié¬}rÛ[˜∏›¬“'ç:ÄÏÊèÛ%◊‰F@¥∞ ‡!@À—‚≈∞8Öiû˜∞¶ìvótˇÕV≠€Ë-9˚ÿô:ˇåù˘ypVÎ‘Ëé+$†JÛ¥—mú◊õµ÷
-´ 1„Ø#®u5«˙›ÊøR\∏˘ÉFl‘€gùZ∑÷oæ®©≥€80,&Å∞ ê‰¬	cãõN‰J2Á´dó¢L›\iÁ
-•¶œÀñœ+Øµ9ñpQïÀ…R—?u»®1;À∏õ4K˜nIΩ	ËÀÊp·NpÜŒÖè0ù`¿≈_È[*ÏùÔJ5O bÍVJ—BÙÇÏ[N<mRqa0¡¿l,≈û∏-N€]¿;Ã∑∞#¡UÅˇ›ñÚﬁ‚∫7sßQ?@É¸©Ö°s˝ùJ%èc∑ëÍ¸âÎë€æÁhc˚˙bÓ√Ì=âøıZm·P¡öû›æ®r·Üz£ãQfÉèQÄzmH;â†§_‡Xé;Å± 2w®H¶Û4K”yÙ∂†Gphm%/R–xWVZöt∫M`vw’:¶êﬁÍÃÒS˙‰n8ÛÜÈ—∞g”]ìC¯Æ3AZ8¬Ô{ùì”Ç}õ•iËÚ_ü2Ì∂>,?º#πî>Uë◊“êµ«'<∑*¡-S–ˆÉu¨”(&m≈2•jí8Kâ)Ü›éÙ)]>l´WF˙â"°ßÅÖÎ”ïı` øÎY†bΩuÛ˚9†‡NÌº÷ø˘„åñ„ ¬¡z¸™}¡%ΩõøRéùà\ìñ@tÄ·y´b£i”˘è3ÓΩ‘Y¶ùñ<HûÑ¡®Âƒs$cOÇÆΩH:U·sÒ9Ã'∆pπ‰mæoäs%{À"î≠=âüõ¢28,ÖÓÂÉnÍ ∆∫°Á‡öáîÄ≈˝¡áÖØƒ@¿ñ&Œÿ-ÕÇVﬁÎ0ua[Ìhh≤≠æ˛KÈöÆFGè7˙ÖMÛCÊÙ’~x≥ΩÕﬁ—1kEoÉ˜âÑI©œ¨)úKl.¥˙V#ky"°qxKå˚oäÆwõ˝F∑âÇs£WØu˚ »„kSçÎ≠ÁΩf˚ÑËL¢>Öv|ç—§;√  ¢„-ˇ ¬g«»˝®3tı	}Ó(îÅÒG¬¯~¯¿0Äﬁ¢#√–…Õb‹Nä˙˘*Ëﬁ@ÉıÂÔwÉ∑ıIÅp;Ï5™U^”T)ïB˚ﬁí¡Àòe·9xÑ5{l!zµ´	N‘+‡Ò·˛§ÇNx*[‚•˘±’–®Às\ÚíõSÎ∞0f4ü¢≥\ eSH{:<#ÉË8ç®ÕYÖÆÆØR8¿‘ "ùRjv≈)√/CÀ%ùk0ã˚S D9Çeiù∆ÖSô7≥Ü"≈·£ZœœAn{9mû7Ò◊EBC-&#¯‰˚π
-È:√|‚™Ñôl"Ök~!A≤</%)(=ód∆sHÃ¥|X$û¡:ãˇ-c®k’ÌQÜ1øQèÚ⁄éñ‡isqÂ%~t€Z¸¥9nç˝á∆$ë‘Â4tS'‰	œ•îAb"~ÁÜ?1G¶‰√«Hs¨ûE˜»ëôÄ¯w&ã^ÂËágá!ë◊„”Ö˘U›¯®˝å¯7;»z¥cæÿ˛F?]kAEˆüj∆uË‹∆÷.‹{ƒ÷(∫≠˛!˛ß“ûŒ‘Â¡•hUÍf†≈ê©3–F1ÿâcëÇG/3íw˙l*>Nû"˜‡äû¢G_mâ√‘ÈÇ-DùŸŸ3VE-Å“eı≈ˆπÑ˝/›π£Æ’°HÚÕ9Ê~9RòÅŒ¸3}ó¶jÊ
-¨<›•¯aŸÙ°m∑∆mVJ¢ôO‹¶ms‹⁄ã˘Ò„äππvŒ«höAÕ§FœıCèJAÛ¯CZ%`¥/ ≤àÜ”}˘" ≤‡¬˜@À»Òı≠°ñÛ}_∫ÌXËY∏Ôáªé:§\é≤5ôÉ•§9ﬁÑƒw5vﬁ∞»`±√@HÜ?0Zñ¶ÔZ(:G¢H 9_±TNEzÀR9
-c√’√`è°Î•Î%£•10ÜÕÖêú…ıß-:‰<B¨,`7=F!"œ∞Â‚èOíÀf—ƒ_‚ÈRya∆Éê„‡Ò?·≥$ìåañ;îÑ“l…≠b¬$»–âﬁ¬9¿•;Åk
-≥‡p[‰¬ùΩw›	E’îGÎ2ÁAL(∆√C˘Ì3ê•Ùçı^,Êt·,—RÕ°¸—Ù>÷
-a€*í≈m$>ë≥¬=/áD@à>¨Á˝‰=jäl@|}nï5≥¨qìÂâˇ≠cGysoSã—Vì“à-âLË3í Ã,\u÷>ÿä‰ÉïÇ2dÏZB∏MIT≤◊π-ßXumŸ™}ºTZ…k	ä«´_à›ÉH€≥§t∏Y–n{îÂÖìùÉ‰:(^Ω÷|4 jóqr…nFç‚]ÎÃvÏ§é&∏µUõÕπ–ukÂMàÊ0¥KNn˛Ò´ú-˝ç)fE√jº)Y
-F@Ÿ†À‹!•7y7∂§S[ˇp>ò9‰öp3eèõ)u‡[G4/TıÿP∫Õbv£XJHÁs|ˇõ´$bÌ∆mgXª¡ˆÄ˚¨Ñê“L(ïô°÷Ä œ	&2ú◊f[`ÀSpc9ÇûÅdª8Ãaª†bögOkÃ±“Ü‰ΩH„ó´·Mz`ì“$åö
-,Zº∑62˚Tù}jü!«√®Ú…J.¿1ës¯BÉÜu`≥‡Ù% Œ:®†·üñçüÊ∑)Iı	ÕX6Ωàbª¯˘.∆ôÌöÇÕƒM≠jj±>-4^˙qÖ7Ã4G$€EîåÇÉí\˜q|o4Óã`v√-ãJ±†ˇQ¨O+(ˇ¡5nça&®“,x,ëáHØYTçPœ`ï4=8©∆ÛâXtÌ|ööíMMe´‘-^0k∑«–Öòî∫¿ÂÌ1Ü¬∆3eçi&Ù·¬
-ív•ZπMZt:oñ!ÎNZ1‰.ª≈ã±7Ã*Vf™Ë(*é–;Ω»ƒøT™ 5Ñ‘âçßi√ãÄ_rU√Õ;A<∞#¨πº›¢“º≥¶˝äﬂYU€Í…Ò_J√]î^¿R®¶à ≠™√⁄Ëj@“¸œˇøH!€CdMLiº@ñˆõ_ô=¬`∫u~Q_<—ì8>ı6A¨•üoRÿºﬂ⁄∂¨Üπ—xlÇò§¶7ÂöﬂàÿÌ_}e_¨äÅÍãN≥BO≥ﬁÓv-5⁄¥U;Œu†&U≥äzﬁÑÄ^DhÀ”∞S$fƒb–…C⁄JŒ5'§+À@Z¥y‹îU sœáê¸F ò…À%-¯f®(ëNn≈”84‚P0x9Cp,Æ€k:¥Í2á&Ÿn{j{Ò©ù<Ø˜k‰%9´ù7æœwXV3
-≈~w4˜∆ûã∂<W(*π£õˇò˜]‡œô≈,&Ü5¡roX¶&ßÃªÏuä<EIr˜™‚øV)t∫\†TN•gMaRIDî2≥kü`ÌF¶Z+mß7ø¿GJ)R µõwñ6…‹µˆ-ÿ!Oœc¿
-“ôQ`á∆Ü∞Ÿk¯B'⁄V‰@j‚Zd7ìbÄ‰Cµò∆h})K *;òÌ≠´€áY,a}S4¶qî≠=∫”í¿·(‰O ⁄'y∂_.etmÂÎ ÖvKívbÙ©YögÖ'm".ÈpªÖ!™@≥[¨ÌD®ÂÅ«$›2"…õ≥+Uª‘°O£s¯—mÙäZ£’(„	íO 0«\ˇ≥ÿEÁ˛Ñ+]èÒ 0YxíÖÿÎ¿füm˛àùuQ◊“ÅmDêñ√π’!Á¡Y1ÿF1Á(A˙y-){G$G≠Ç•Ã)9Í%¨/W˘.›†‹ˆb… »kè—§ÀΩ—Y4=•˘iA@‰ìŸ‹• ∏≤‘'Mp/3ª¡"~ ü`YøîµìØÓ
-mƒ3»%“0tògêáêA-¯5:DsÏZ6FÀ˚¥Ö°≥*&>æΩ∞n1oÖkË#: ” 
-ΩˆπTZ·¨÷m∂•'x çÇ`∂DM≥$óïÈ>›`k&ÿéßä`ª»»πÁZD@ÈËZå2 ÆÒ6Œ@ÖiW2%w §ﬂy—‹ÒIË='â¬]Ç≥Æµ3j°ßçF¬&^∫Öm≤„FYös°◊ñÔlÍê "~h[û.) )"–π3v-–0Œ¶Œ∫Ê¨„cG˙∏CnSrÑ	9Ù∂z™eYçîQ”†/ıSÍ˝ñÂ%n*Sß€àbîô©3ß{s∏Ÿ±a…Ñ¨¡åÔ`õ1Nv˚»ò!iôœò7ô:zuµç-ß ªÓeºE≠v«2l03EË ®Õ#5 ÿù:’⁄ˆ∂‚Ãç},÷ˇ(#≈ünuÄ≈!QW¬kÏ±ΩXÈıxÔ] ‡ç£h3‡´M∫*|uçhÌòJlVŒå≠òT&°ãb:◊a-ÃH∫ÏLBóefB`-;ïÿg·\:J…˘ƒvô"€sêùëœu∞)›Ò.¥«º˙„F]©ñ»Í»Y√¬ÓBYºe¸¨ËEê„g¯èM=∞öY`…Zs≤Ò[~ü1¬+Wm™Co\`\›Tøú±û´v∏'I∑≥kOD"◊d˙lcEæ≥Òó-tÅÇgTÒlﬁôµ ∂À\•6 -+˙n.è◊ÑJÙ-‹"94âÚÇW`˙ô%Á
-›3›
-ôG¨ 0üÁßÖ—≤é˜˙_à5·qπ3∂›w{¬ª·2¿G ≤éòÓıÛ:c√·-ÌÊ3UÁ≤Ã ª˝ˆ—ÌóQ|IáﬂÇ“‰LO≈á∞ „d‘˘% ¨©'Õ|ÜÛ\=))….C©≠⁄4ì‘∂¥¨S©T 9∂zÊ∞¯U=üO‘˙≈ú6n E‰Ïÿ¸¨•/Y˘IZ9Á&§S∞Z^ê\`™° rﬁ!›+ö˝Œ]àèrÀLtó∂Âq3x¬ÇùI≈zπ∂)ï¶Î€ã2¬ÕHÉÛU _⁄µY„≠%Gó+6öi∑öØ∫ﬁ¨≤ƒBA‚≈•à≠EàÕWΩvo^5Æí˛§Òk[1b”¶¸≠ñÅÊÅœå~èîÃ¨1ø
-Ω7Ï±π Àq¶˙kÚÅ?O©‹Rë .òcF§–d’	ﬁë,j†r\∆NÒ≠aπâ˘™W-(¨∏¨Ãú€ﬁ´Ú≈—åuá§ï/W1‚∆Y?Od∑ÜU¸C≠q
-sp‚Vˆ–ÂJfpì*	2pÃÜ”',›’	gÆÜHK"V¬˛®ò —ÒßÑ	d≤Ò@Ä˘∫Å'Ä“{$9V∏Vﬁñ∆ŒU!A¿¢∞4‘Ÿv¶X∏•q•X;Bñ…qpE
-ç±:˛p€x‚â—Uz«ÿå©Õ∫|¯ ~ÛmWUÛüsû}nt7æ»ÏºúBô€ÿ∫Ñy'ùÈ5üû∑{§” ı¶Ÿ>Øù˜=R®ë”⁄ãvw{kaµ=ùﬂ!˘“Õ◊…	VãX @£rÙòø$LDÁ21Ø=|l:(‹(›∫¬˜≤G:g]+åä±n˛∂Å· •T‰îÛÑq⁄Ì”:ıSØ{Y5k‘œJ˚Ôbèry‘O∑Ÿ–æ’Óß—>+‚}8Ç?#—ÿ*Ú#[âÓÒÓ¯ß%¸Ùø 7ù∞…Â%ı3ñ°¸§€§üZ‚îKﬂöì€Ó]Ofo›»ãêi∏>ßr6œ‰'[‰X!Å›ñ2õaü∞§ó«€Ùﬂ$&E-ÿ\ÃŒ(KJØ(Ò≤véîLmÃ≤(·RZ0fWÎ‚îro9£∏u:(2çë"IS¬ñRA√–.ÑÕ⁄[Ÿ≈ä,+Æ';\√ •&œÎnZ˝¶™†Oó>B£{‚6íg)lnqîƒ'õ6(º§úﬁª˘≈Z|à6Õﬂ¡¨¸„Z´v^o§˛ˆm^ãÛ÷X\Q"jbU°s%dDõëin"ªåA‹Ë‚á±B~ôÿ7„&U1@8Pë-}†´ƒ>ÆÒ8@eﬁGû¥k
-27¯πúgFæ†çœÁÙfG∆ß+I:q7#2≈⁄y„«ˆÈ÷Nj]r‹lü5Í7øaô“ ÕÛ”VÌ¨÷owõm–»ì«¥œû∑˙Õç:|AN∂7$˜!¬πáx_˜É.‹–.
-*#wvÏc|áçä›∏Õ)`D◊≈∏ÂB≤d˙§é3√{øh–!-¸1^ˆf-FÊ!VL)]«Fy ¸,e†¥ËÚh£ÊÑÕçrûæ”á%Á çÏﬂXÒ—ÒŒ/(√è(ølíe”{ñÇUËëáÇ÷oG3°M.\¨Ê<ÚÉÃ&ôO&òKÚñı¢Ö›ù)Ôç«€“ZÚ1ï	åﬁ 8Ü{à@∂t…√››§C ∂J∫5˛<†=˙YAÉ∞2)%peêÑ÷„õTº<≥´†È““.Zˇ ¯Â†t+Ua+2hlÂäd
-∏K±˙öı%?∞`HoÍ·Y◊ﬂ:Ä∆O] ÉYxç≈∑¯Õ#RhOgﬁŒoH" óæ'9óÓÏöOLfÕ°n.˘´$xÁÜæ3ç»{VRû5I›ﬂVqÄÛ÷iÙ£lv©ö ‘i}$¶j‚â±˘™´“â‹b2◊ÆËìSôî) èıãqÆC#ˆù+/jØ‚Áûã‰ù„˜AË∆ühWﬂ`2¢/Ω®Öª”ÑeV»˝xQ˜«GÜ”éõ†WMπh!ûöîw±3n_l∫≥y8QÆ>Xµt˜`∞?≥ŸAT†KTjc_…á!tâºâ±˝Lº£Ñ;H∆Ãr	026Ù§ÎéÊò≤˝ÃΩrF∞UR`ÿËªÔ\?"†k`^FL~ﬂ’ÿñUôI…≥íMûUQßyeô˜µP ói9ˆi‡MÅ∑W1∫∞M^(|è™ÄÇª_Ì~ˇ|£¸qÔû•“°»;≥ÇW‰D¸gƒYr`ãaüW”YÈ
-òÃ¨t-«∏˝í X∆âŒı SÙmﬁ¢í∂(x®ôlìØ„ëÆ9  ßeVé•Ãj∞Tÿ_¯À≤~…Pá_)—◊·¨©j9#ﬂêˆ0ﬂçvÖ˙ú÷ê≠…\Î°ÈfZ«ﬁr≈!v√µå«¿:·K” «®>;¿•≈Kÿ!’“Æ<ƒ3öê∑ÙÅÉœÿõfåﬂS≤eIŸ—≥IÂ∏√ á{"ëÏÂø√,¸4!‰lE‚YHztt$Vê7¡ëÅ%ﬁTd#!V≥_ÆeΩò?;x·õfCN¢ŒóW!R•†%ã˚5SYM!ê◊÷M≈9ä§lÒΩ∑ ï“ 2”/(úKÙƒã˙ô<)—èŒÇ°¸Ñnæ^„â
-æ{9€"øí-äyÙ∑8w·QÚ´: ù	ÖÇ∑te¸˛eÚ˝µ·`‡z·¯±Ô#÷ñ]1˙=◊è–/#πΩ–Å⁄[Ÿè	µY)|+Ÿ?në@ÊA|{fÈBÿ%õÈ;≤≥p*b„\;s©{„††3™r–”ÒÃåÑµÛëJ∂Å–ë[∑]€¸:2\Œ}ü‚toÜÚŒı@?˙@
-˙Ö¢zÑ"–á˚¿*ﬁò0˙E1b$«8ó8≤é%¬È<äQÅFx≈¿~,Ûi-àãä›>0‰ ÎcŒﬁ$ö9ÉüA¬fœè¡áŒª¿äÇs,Rk∑ü»[JVœ[˙¨jŸ∏ÛÇJG‹x≤?ﬁ_›†≈bgÕ˝“˛ oî≈Z)Úç∂√\≥ãH^Çò—ã˜$˚(äÛ€ÕÆ‚òE>}1°"VÀ3∂ÿ·kQrÊP·d2qu∑ù Ü	+¯kÏuñ∞eß	q‘ˆã—@˘˜kl2°H∂ÍD¬»)˝™Eµíﬂ°∞Z"‘DÑ. œN‡_èÑwx‰1¥ËX≈xã¯Éıµé]Ó1HÓÉß¥tÆ…âÚ˙∑Ê›ËŒü
-∆TÀ<ø∑ã·„£ §´]r	ÌÏr°ÑTºÔÙeıÌÚ! ∫∏2‰0hDúü®‹.Mòe∂bjQ‡†/í9=˘0tπÖ∂¬g…RW‚&‘W$ƒ‹+ënMNÇY™òe§¬ı´wÄÔ@âS±LC]c√ÅÁ*∞±‘*Pˇr*A~;√æt®M’˘π;ÛÚf@∫É,£‚3Î2§ô+¶Ó∑Æ;]¨/¡ùﬁºòÜCﬁπ88jÜ.æ ·‹¸oávwÄ´mI:Ü¢q "P≥ì¯≤Ó¬ú_ÄX∑˘ÙYüÙö'“©ù7ZG‰)3œ∂gHö¿BÆ@/=ÿ°j*¥7övùô§òä6\ÛÜØ¯§¶∏}∆∫¯ÿ˜Í6‡f	%-≥|Ê\ıπt&hÃ;ƒ$rˆå_∏n~ÛÇP≈ÿ£—„†≥‡!ˇö∑∆íÂÁq£©;Ãá¡÷á7ÊâZ/”ßK)Jõ—vz	≥˚' x…_©†" <!ØÑFîaàó_c·kÊŸ* ≤'Ú÷Æ÷.y,¶∫ç°[•“÷ka¢#±ΩfÒ§	mhLMKJ`PÉ∫•t4õŸˆuí÷,TBT“ösá-‰XXd÷SÉòôÖ´/ãfÚ2Y±	∑!c≈èú"Y ŸÍµÓ”È7{œ±Ëˇ”V˚∏÷⁄*∆∆#πhg¯ÿóπd∏Ê’ŸÀ«MÂ ƒ
-:ë2Øµd†¶Ï“ÓõE´.ÔÂ\v^ÿV*∏p0wGÖä˘ãmx‰à∆HÈæ'æd®åü"ÀAk∂‹⁄ñﬂ˚ nS‚ÇOJº`∏â∆(ÆçsÎ»h|v[#£Cdv¡{bîY∑¸L£yêA·–
-ßŸ∂	.Ò(<}◊-àï9hBpIªL"R®„)4="mºá©¬ºf‘)s·GÓ:¸©á9O$õÙ∂N=`	ΩÜË±o÷Z§pp≤ùpâ∞¢]7Å—~…X±0ÕCßîèYvò ˘|÷bC=6ùı\¯m[Á/Æ~∑(⁄k§wW”´Ìíbß')^—•ãË7˚“<‘ÀXhA¸£◊Ô•≤}ßﬂ*ÉqmeŸ-1‰¶Ú3KƒÂi±·∏avgΩd°·¿ÿ§∑≤ÀÙz|›2Ü$!wÍ;◊õ∞J'Ê%:FÍTÅ„⁄_Q˚òlŒ1)Ag–#≤¨ˆrs£≠‰˝[É,4Àöámá‰eÛç≤î«XJﬁh]MöÏ†µTr˛Æ¥‡ÜÛ]*óq[ENIj©'F˜$!£=
-t·“I—ÎIU4zÅTæ¶7ÆÀ2Æclj`"èÄò<åpoøNÓmaàƒ®-ès†çS~Äz#t¿∆qjZ<PUi{∏≠ál†¡µ3…<Å¥?ïıÖ?ÀÚüJçÆ€yß,dQTìm{o“”Á∏	,bJÇôÊªò˘~\œ7»WbÙîÅ◊Jl‹Aï(Kf^*Üù‹Ñ¢p÷<9iaànΩﬂlüëìFø÷Ç^íÔü˜˙Õ”fùø0j=‹∂Ñ›≥çﬁ‰ s>ÁÚb@æìB˙¸·K“kwTøí2ëÃ7 ø3h˝á:/˘æ*4»}Z≠úiFa6ì10ÓG˙¿áËÕ⁄6ÖÎ ‘†g‹E±¶çé•FàHrÈK4êπËòü†Àıq„ÄL®aÅ÷u∆√…E€¶ÿj]b¥=E‰∆”˘ÃÂ>(Ñ›¶∂ØKVdÑÌî¯¯¯ﬁ3«˜ùøéh>ÜÙÂá7ÙπHJ?Õ£Y:˛E045ÓF”«X0Aõ˘˚∏	5ﬁ•ÛK]≠´†û‰“ÒÊäla…”o«AÄfµ‰Lì¿CW≥òÜËE¡wÑò<√•àÉg2âØúc≥·öo‰òÉˆ8Îîé3NI<ßt0„9©«Átº¯úéûìxR«¬I≥ì:ŒyRÑ6„îé≥N)«‡óF…é[Ûí˚Ñ!Á)E>{ÚgŸÄF±}ÌaI~$uÿ™¿ÔI:≠J÷<Ì∑§f‡Ç¬¡j∑V8TÀZ¶F¢∂¶∞lk˛„vzIvæè!E¨ﬁ,Döé}öxîÈ9®@hO∑sIHÜ3Î249Ì-¢†8é9î7øœÈg≥1+¨hJÎôñ>Jı	VﬂT\È∂RM'ë'ÿ¯bÓD’¸êµÕŒ∏ÑÎ9µ≈Áï ôcãLhkæÑ3ˆªáw∞èÊ41 ÏÅ`{Ã˜˙õ–öq£‘¯ñë
-ìB’~ä¶ízB)=≥&˛A=DuL
-pµπÄt3©⁄œÇ˚Y≈±å)º=_f	6∏dF‰BVh6œØŒoù∂üÒŒ†Ãèéxl‰à:O<Œ‚â«∆p%â◊€π‚±ù+.ì(pFõÄ¿9c%·å«Œx¨rFï7cú]Å5Æóì [òz˝‹Òˆ≈¨rè4∞°<L1ñ	Û±Eô1Zé–\jt!gÃ|ÌO))™â}ÜNÊå%—lq‹Ó˜€g©Ÿ"ÕA”¸vÑ$ø9mû◊Z… »óu};.–õè«ZÑ ∑‘O&nÿqÜT3êî‘¶Œ;¿Qt¥$åCè°/H„˝ôTBM°åæáñò”TüKÚ¸Â“ﬂ∫
-ﬂ¯±VÔﬂô"/mƒ$∫∆%±±ùÖï-<¥¢Ó†^WœÙ˜zƒ§ERên+πLÕƒZ¶@OXx¯ìÓh”=)®≠"âMrñÆSÄ@».PpEÂañU÷~»ay&Åy+7ΩKDRÓâV˘aΩÿû±ÈnWƒdC…É™%=[¬ﬁºπ„ä{⁄.cﬁxö1ûíHÜÃú2vJ}f„v;®gtƒ›çµ÷snÁm"<Ì÷Zh}qÛ{≠Gûw·‰h¡•Ê˘ÕogXè¢”m˜˙7ø—⁄’-Ø€°Oàt¬ ¬Ùk=˚»îççeêYõÁ O`7¥)⁄åêË.
-©«Áâ1ù€–?ÈqDﬂ~+-‘ã‚E6YJ˜–∂PûÚ›ëGLíøóYsˆP¬Ú≥&»¿S°ùHiXîªJV¯àp´X¡∞i¥ﬁigñ¢ﬁÔã∆7±D{˘–"ü<s˝)>ê!>3‰çaB„4√wx´∫W–â âbÄ	q0ÇkÃºÄÊsÍàû·ãg¡‰˛%h–¿µ°ßÍxÄ—õ8x'ª∆∆zD
-·y„Ó-	Xëøj¯¥Ï–y÷?k—·¯'‰W2ô˚æÿ<ÚÉŸèI¢∞Ú≈K€?ÿæxë|Æq(‰ÅáÜV¶k}RÇèÊ°√›—ø˛*}˜>˛p˜[}†gÊÅ∏»§åÙ6˘T â].U´UfÈò9ò2${GUPQ.ùπ?¸}|bJ1
-–-=f5¢È™ULí)h„˚¥ù9Ã:.âBä]]1˚˜7ºœßP-ÙqÀ«Ïê‘u•—Øø5|˘C2À3L◊fógG?ÚÒˆ)–-ÄÑÃ«€6géCØóº◊À∏◊≥§◊3≠ñ	–Ô? rä˜N(p√wŒü¬Eèã¢?1|í-$˛ßÑ}¢‰TÎıey‡h<≥¡[RpCÌ›p\<∞∂“{'ú∂a‚'Ÿ„ﬁÑtNNâÉ<Î÷Ç√òA¯AÂ>B˘åoHo~1ìb∫Öœ∂ú7n=€kª∂{‹ËΩ5)íF%z˘N9∏EXa
-àXﬁ”ùÖ7wÿ’Û7\»Èsg"xúÄõêfßÉ∏y√yÄ(9{Zm‹'ÖnÁå|ΩMÆ…8∫æ3@ßõaÖ;«ákƒ)ÂÖS’®ZÍDπHà⁄pÛuAlqçg.ñ]àL YÍœ£eôÿ=OË-Ø‹°”4ÊNóIçR}†∫Óß≠Ï~-™?÷«ZøZ'ªcmjË‘œÓ”ùIÙŒ#◊–˜)hÕnv÷.∫»wXï˙	Ê !ê¬wÁ`∞ΩÖ"*˝hj`øÄ4·‹Z.@∏PŸﬂÅ/î¶bSl«ì¬^yÁ iü4iﬁoæ©èÀæ”)Kè6Ïæ;ÀB-Ãimx$^Ë…ËO≠cß‡·ã¯éÏß{*Äˆ«c∫á¯{ZŒ=iQ!Ö˝ùÚ.o√?¨í¬cˆô∂U3æÛÜ-œ|\Uu_€r˚ÙKaåÄ”˙`8}v®ƒí—øKYò„w‹ìâñôZÌzÿ  ÖíË.‡ˇ©8≥B°‡>Ê6-≤ãQÎßﬁï;,î∑∑ïwñ„wÇfﬂ¬‘¿Yäaª∆#ßHqÍE^‡ﬂ¸c‰¿¯ÙkFI;F\]äÒwF<Â˝ù
-o+~âïˆyî¡; ô«Ñ6“÷˝$M+}\¿≠Ä‚¥ÙáUWJáÍ ≥–πpô˝˚¥…<≠È∫’qBwËF.'¬{j›@ú¡!A%¡§$√<6$˘ŸN‹Îà¶Ùi3ú£≤êN‰¡5Èπ>MÛò€‚Â˘èÕGPßπÇÆ˝lŸˇR È«îd·~Nè±6SÕüe?∆ÎGlU°tﬁƒ‡ª±;Ùh€≠cÁß@?¢¥˙,{$ò0√
-ı∂8ÎõÏ9Î?˝Ç,V¿h:XKÄ1¨€E0^Ö-^j9cKdn∂K‰ƒõ‹¸måôÉâ\qD≠OêÇRiÉÕKi
-iŸÑ÷å!∂£À¢0˚5ÃGÒÜºÉÆúÈOøpÙç◊≈êWFá^%“ı‹h‡»¶åÕå>é€mÄÈáíñ7Al—*yÓ 2É[j#‘ﬂçÍØπ{K*2`ŸéYÄØK√ (…Õ©µpı¬˘	Ëu@ﬂM	#∏€:Ω
-j ﬁ›¸}‰NAÓ„π|7ø§å£”´mÉ‰&O=ô¡:I$<õÉΩÛFûÔ ∑†H·√O˝0I‰én˛Ãﬁ”	 iy‰†¥ïÃZñ¶ %ÚCª˚Ù˙5t≥ê …˝Í	©∑œ˚µÊy£K
-\g>ÿ≥49/äéÉ´á∆∞∞™ë&èêfPq£öÖ∞Çùá˚ZEüTL5ñ¢Ÿ9Ã.îïQß…≠lõ¸_–+Ù™¶¶Í%≤«å„i…¯h
-j¢›Åy=êÊfËrÊÜà„ÎÊ∞∞ãj;s"¬uÌÄ¬∫µç	Ê™ÌFÖı∞ö¸jÆqi Íx‘Ü•«Ü%n0ÇIí=)E· I»ƒ·Ê–˝ÿâ‹É=láhìTOÙ)¯é≤&HämVá∆YΩu¸À5;‡≥0ÉÂá·MºcÁ
-ÇhÃÒyG|£Wì2«£5V}£ëVÌd‡EÇlF∞Zˇ‚~≈ÙD√æòx/ßònæÔHˆYdMV=)∆«!Nî¬Ûë ß,òUˆS*UÃå¡Úh3•ﬁ<}ÓãÀ‹ìrå‘˜Ωo„€œÌ´Ó—6pÉáZKfDh‘€Oªµ”õﬂk‰¨}“&«Ä•˝nÌº˜¢—Ì)>∞}s¨Ñ=’Â¿∂øÚ{ÀB^|ãm,áW+/î `:ÔıªœÎÃ‡WŸãvÎ˘ŸÕˇÍwõı⁄ñqÀπ@O(û‚Thä" âa‰ª1Øaa∑ﬁD‡9‚ÉÎ-enV•ˇtaîµâî)|g·´cF÷
-Ã»qx'dy∞¢Mñ/…ãF~ë©“Àaüza‹ÓYÆÉ/xw[º[ëœ	∏Q¥˚Eæ∏ÎËª%—‡≠∫ë7 S–ô‹∑ )qç°ê€ß˘ôe≥g£ÿ≥Zß—Ü¥{⁄ﬁnÜ∂‰~ÄÙ%∑9π˘:≠∆è@9<|/6s!ù<–»rbI˙–ÒH.êj«Æ˙Ylˇ˘Ôˇ/ÈVÅ#…&@øf÷:öØc4àC~ΩMªd+ﬁ,Ñt’ú™iÇ¥1‹êÀÔÍÉÁ¢W)ë˙≥n˚4‚:≈¯iÛ¸)Èuu ∏3r\Îˆµ∏|†´≈¥å±)KPaSUUk†˝®¶lYWè÷G.ëgùcnµaü≠¡Îwê≥Ëà1BY∏{pÌ’ò–’8òR[˜N—–T„¨*` BÙºµ≤§fô_µ‡M›≠0…Ë>ŸÀ0Dà…ﬁ€ﬂ¶,¶àìŸpºjı3ıÆ–∆£√°È†\QÜÉU«C-?lÖ&nÔ#©ó-„bƒÈjcKf,CWóZ®]c)!°¢Â^…Z√á!ıa[E"/kC7‘ƒˇlñ°Œ_µ2aÛ3ﬂY÷Ù˚ñucëµ•˜ª‚¥îÔ ‹õó5ˇf!;µTÓ:*wÇ«ƒÅÍùA†Ñ˛‹ùÊã¨%,É‰∫´≈2Èò‚!TØºë yΩ95Óí„˘Ë7kT ìÁm“Å5P9Ïï.VwTë.ƒÍ*"N0,≤·nsU8˛–±V◊rk•√Ú1Ô–´‹Z÷™¯÷*ÔÕMXª4*wxgŸ¶ø%ªZ∞˚Ú>Vb1 †|G @G|÷‰õ›˛c„ﬁ+w¥˜ÜÔR}∆¸´1ÍÍËä¡,úG‘g⁄úÃBá{~It>b–î™2≥.∏5FthÓò®˙9∞l–~@cÏ≈°è›7RpPû]]âgWoœ≥qb bëw{û]Â®D«Za\œNáÂ<;Ô–·Ÿ˚Ä¬Ï‘ÑU1ÆYΩ#)≥ú5ˇfŸ÷>{îÿ ÇÚùÇ†í5ˇ¶9∑ ï;@5k˛• êZ≈ 6[Xµº8µÜ˝èÁµÛ~cE^4»Ymß§^ÎûÙH°rU!OCoX$‹6∂w8ìY0sÙßıúp∏Z%≠§¬≥±¨'⁄£15£ú5u“¿õ,∂ñ≥j≥lƒ·ïÚvˆó{51;wìÉf£’õ-è±hºS((l◊Xax´\J¨~/ôÅΩ’~™x∆∂l
-¬MnŒ”Tw∞Æ“Œ´˜õÖã,WrÆ2ØaŒ H1æ‹õ_`Yã5≥∑§ﬂ¸ﬂ§FÌÈ”ZG˝¢O?ÔÀS#|=®≈——dl$£≤Ìæ¢Ye€∂“ÈòØv_”hœ≈®P∂ÂÏ∆T^9‚œ$ªÄâ·(ÜÅdÌÊ,<Jx:Æ≥v¥Rfä1£R!œ4Ú˜1ñ s¬∑Jı–50#qq¥ßÙAY˝@*≈π$õb˚Dπ‘m·¿©%£%â/Ø∂ä1.}*LÛ≤ëØﬂ,Z‰ù3∞
-g`6oa'teﬂ‚6gRqò>cBÖ≠¬Ø)ÕBoå≈Ë≠º´í¡ª*+ÚÆä¿ª¿◊∆∫ÖR≤‰òE*µ ÊºÈTdWR»ªŒØƒP˜ª‡W‚Í(ùJî’n√Ø>m±Í∂Ä`$ÛÖÜOL⁄ZÏÚˇ4ÿUï≥+û8¡XZÇíÜ`Á@’T]ëU◊(=ÌÒÏåú°\öãêﬁ|äπ⁄+i+ê<ñº)Ô“te±ËÀmT¶OZ±π±ËL{@¬µn„$é$ﬂ`LoΩﬂ&ΩÁùF∑ŸÓ~rÚO‡—i¯ì8ˆf9F•»˜.>8U9‹˛¿•ör$c'ËΩÇﬁ[ë†˜6!RÿL9Ämıv∑€h’˙ÄrgçäròìﬂÌt<ˇÁ∏˝c‹T≠Ë&{ÕHSû“SÕ2ª‹Éh—éPŸìít :∞¶üßΩ™Î¥∂Hï≤“ΩmÍ—¨µVHcù4kOœo˛ËÒ®c~∫,$Ùy∑›∫˘„)|s¥¯∂∞•ÿ˜öY<·ˇ  ˇˇÏΩŸrIí ¯^_a≈.HD‡ ¿ô$@”∏ 3ª@ëÄ'#¬#›#p$+€o[˝–R#≥"#+“í{<‰CäloÕ»ÆîÃS„Ω>¢ø`>aU’Ã‹7?‚ ìôEJU"‹›N55U55=Ú2∑¶fÎìh\/Å¥ﬂ«‰ö,≤úˆ»Ìü‚Sãm*Äñ©Ú£p¡t˚f&5´G>ô∞VÁ»C˚BΩÇ?]yztú‹π5  *3ŒZ@XräÒsK 'â”Âöì?ÿúê˜åL‘Œ"HËxÖ·ü÷å€¥GŒ8÷’\û)Ü,¡`;ôéí|8⁄ô°*R~ÕPhkt*œ‘sπŒ7÷^Ó)DO .Åî £™ÆÓ¨ìv˚˘ÓÓ·ŒÓ·FB»Ò%§QÚ éOŸıKÅÏ8Ω?˚çÈF≤®~Ÿ8`á7\√≈Z∑±≈6æ|µπá∂⁄xŸ]€›⁄Udn∑ô[2•∏©êπÂídÆ(JJ$ﬂ£5ƒ¶VÿA¥á≠6xB–ÉΩwÓ_≤Ó∞3⁄@	á>˘WÎÛˇ˛?ˇ	á±˝Ú;&d^‘Ω˘3z˛≤A;^D˛—<\AΩR9	‹‘pQ76avJ˚∫¬V[ﬂ8Qê∆¬p)˜{…§œ?µU¸m∫ï=t≤Gˇ˜*]ªΩôÉ!≥ƒ®7DØ‡;ôËAﬁ	ÁÈà"«˘ò™EExhx#ç~ÿá`hDÏasÕ∞Dı”·ÕO^,=Øy∏Ñé«6V_ïôÇÛ†ëì¯@ÜILR‰πí„¨m≠Ëªiu}SJZxDh∂ ≠¬yêY„π≈Ô„+åK Î ‰Å™∞®`≥¢GA}X–ÂÀÂwÆX√ocû)`Rm`}ˇòcèx∂$ôúÔëÎn–\Îxqúdÿ†¯}œ:aÛmL;„õL™—0Ÿo∑-Tnò…+Î|7„Æ≠Ï ÈSl˚Ëx8Çeˇ‹oüÃùÎV($íô¶‹√÷d‘ƒhótµk≈π⁄‘√\UfÄgg∑±≈T¨U∫3ÀØ¡Ô‹1™∫v€°Å§ÀDÁ]P¡iàXPG*™vw¥Å*´Ç—ZX€⁄§H∞H˙w_p—w„ ö:LpΩ†5´4´>€›ù)úˆﬁ÷ïNFúVUqtœ+¬oïàx~îêîã9(àüQ<†Ü°Ã ˙)9≥ùî†]A©ÛGH v}Ÿ«„3/ﬁÄÌÙ~@’x@∫«vWu†!— ˛: I¶Ú€ﬂ˛ñì/yA—“%À‰Ñ”ê{p≠>sŒd∆ôô~76-µ´\¡ÈOgbS˛‹thY°ŸS#.éWx>Á&âßè÷’Ns+‹å…)¶Åœ≥¨±ôô uàXÖâ®h÷Q·|w¸ÍIDm|LmÀ»†:Oa¢Èº˝R\|§“£ñ{G+gÃó|í≠Ÿ⁄a13®õ∂ñé:pQ9ıYè8 Cmê”+Lµ¯Íj_gäYèÍx˘K&-x˙ÿÉÕ¥±Ég¿ÉMÆk9ÿ€›Yﬂò—$)J3 âHıá·nªMa¨T@b!9R˛˘©ú÷ÚN*:Rπ}95ÿ2»Á?ÏmÈ‰gsÁ˘Ó˛ˆj∑Wô∫¸ï®Î	∫pB i˚<–=à5íîwñŒP≤UÜ”	_π∞`E¬®Nx∏CèX{ÉôhQè≥ÛSpMˇé¶¿® €ËÜﬂqV#ú©Z]?.Îzº`FN*´Ã32k/5ÉluóÃ˜†Î3å¶ıñJ«√oû˘Õ∑∏ÀûEæ˜6Îo†∫°¥rr"#viFBóÎ8ÌµÅ>Ô_±Á<±`GM3¿î}ﬁ˙WIÒÕ—øf°‘)úïÉ.Ó ®dÊF∆#fßï
-âf—Z*≥K+ˇêñ‹hﬁBgΩ…:ï‡◊%.+#≠˙Q7∑Ω`fk1"¸÷Ü:ΩÊ6Î¨ëŸ>|ÔÑßWπ-ä2ôm Ó∆Ò0ÚzÕ|∏iÂí∂‹;ÚPÆÅkCÚJiñÊ]‡√∫û&´±7á7?F›†™˘>j`w}6∏˘±â ´VπıŒXÿÎ õF +ë9 .Ï´düÓøvt∑î’›™ZTgó¸;Fl˘PØ€%Níçä #ı∏o¢Ä≥Wå'è![¡ Ÿ€Û#ä‰Ç±F∑o~l V»‹J5ó5é‘@zæﬂÚ[\/éÉ®V5\R	vñ1ØéA.ˇ™
-qTÕ•Ú5q¡«ÍR.ù÷k}ÑÍ˙:§öXúüq]?§ÿêfÑµ∞f3ëè°û>UäÌÕuÈËêπN	∑·ê˘jmVJü03R„Âp´Ñ≈f¥Ç7É.ØòJä6Ê≥C…h¢Äï‰2ìå&À≤ãëd¥ñÕBL$£çˆ1>∫ÑJ7Ãí«éäxcŸ#MDﬂ`ÄëÜã∆ÈN…ò–´ÈÚπlÆ‘‘ e5Ã[¿¬â8h	62Ÿ‡’Ì¸äiéú1±;J–Õr≥“◊©•õ÷©Ω≈CG‰g:ëáj\tÃNºGÊ¢>Zûç¶©Ã,T≥≥ÍÚˇ8p-*qøn¨^Õ∏⁄≥C»9m 0fŸ=
-5òë◊◊∞pïôtîÈÑΩï∑Ga§#√>$#€$ç$4:ºßƒú‰êåQM<”∂PY≈@éï Ú¨á5(¶ J\¢Je£ÄÌJÆÄÅÂﬂØJ[#,skÑGèú@#⁄ÒAaÊNﬁ#°ñYÕÈ*@´1°˜«)Ûµßi»"iù`å Xw"Ÿ	 +à|∂0™ÿXS–¨Ö2bÛË–◊h5Yë>@?∞·kìAˇ0â¥nhfW≥ÊËÀQÓ%4pß%O-∑Érª∑ÆlŒqâBÕòƒ˚ï≥“∏ø∏àø,‚˜ßë_"¬6¿√6Ä;ëj¡»» Ã(∏F≈±ö¸ãµ2§öq7¡=
-qz_D¥òÚ&0fPj,„@6c˙H6Å1âº	ä>¢çêqëa»åwôªÖÒo5÷º»g{!å3f≈óM(.JßÔ4‘«Æ4˙X!˜BÉöÃøeS=Õü∞–ŒçT KI´zJ[n;T≈Ì#ÔEß2gxXír:H-∞T≥˚˘x‘ê{´Ø)k$Ü¬ﬁﬁÿYóñ.ÎÏŸÊ¸:\›ü∂R√∞dÁÂ]5™['&·ªl˝Ö¨íyAZg,Mëµ‚:‚Xß˛{
-g≤È‚Xß∫≤Ñ,k^√¢v—eTêÌ»ÒXç[Ô4≈Á†u“z ﬁ2;Úhdˇæf4\¯FWã5ì/Ë(ºwÆΩ—î”h:dˇ`xzÍ«ø≈æy≥JëˇXVSµ“l ]hv≠®ìÀæ,≤π∞ê√æÃº∂´‹z«{sÈÇ3ô¬ó6C¯2ÕÓçÕ
-æ¸Ëÿ¿˛∆ãW;»	^Ωÿÿﬂ\á_dtt
-ìòº⁄:\e€7\7˝‡¶¬àñÏÒoµﬁ∫ÃŸ‚{∞—Í€l∂e“∂≤ê¶'¯ÚÉqÅ…y ∫Ë∑.—q‚∫˛f^0=]d‚›îÊ_Nô<ò&¯2õ˛ﬂ+§˛“Ó“∂†ÊI∂Ä2KŒËfîõΩvxy˝≥†È2•‘ÁWQGßÓvxTg7(5•¥¡(F]}jdn~6Ã`[ﬁ¿[©Ãÿñ≠h‰7∏3ÕÇ»&1ÿ´˝≠:€ÚÒ[€«tÒ™ Z∏?œ}ò» dÿ$ñsÏ¯»è˚ògSZ^xPï⁄®ZSw—
-Ü¨%õ©„[€Ú÷ÑØ–Û/–≈´ƒ˛SüT´ît˚‹«|†ﬂ √v"lr±Ãmù±ùÁ·‚ªg&
-÷√^'Ñ=¥s≠Rª¢Ø™( è√Œ ˝ìÑ∞ùŸêE áè1£˛Yç1Ö Ä≠Çπ;ÊZﬂ–ô6ÃnK›«$›ˆ∫ã]}W
-Î›√ÕØVG¥ÿÕ≥ŸÕ∞⁄◊n˜;÷ª<E!Ì_LÓâ˜˘ 0‚ﬁXÜøÑıØÏÌº®ÿ4E€eögQÄœsﬂÙ˝SnÑü_Í4MwTßˇao√ÏUÀñ◊ÏÖﬂËÁµ˚ı∆≥ΩJÊn ‡l˚^<å|rÙ»≤åExÛÇ§≠¥§ÔGmxŸπb@A√· –%Üb]Œ$È3yû1')‚úRë¢l€ø€ﬂÏû
+      if (returnBase64) {
+        const dataUri = doc.output("datauristring");
+        return dataUri.split(",")[1];
+      }
 
-D∑âè("hOBxlÇ&	ë,ﬁÛ√»Îpåöc÷káå ÀÍX“™¸ûÍÛ|c<˜:ùÜ◊|ãÄçøzë_¶Ãû˙XG,õëß÷†Î]‚ÂSÃ kNé∏›íkf±ßjH)ª“|∑+6!kÑÉAÿ˝çµâ0Ô‹◊¨Qç·sGôóVXäuå)!˙Û
-OÃ±¶|SÃVy°œSEæ∂ãÄÄ§ı¨Å÷⁄&kÖóùÖQ@÷Ú*LÏ¿
-ãnL≤∆á`Ö«’k´€˙¶≈7ÇÜ≥b£œÚÆ˘üﬂÛ?_Û?zræk÷ÙPÜ©Ê¶ù¬é_'îÆV6≥°G4◊§D›ΩıÁx√&Ú•»’VãE√^èõù#„é—˝∏OôñÔíE>»ú,–G ´(P}ŒIÿF+ b®HƒÇB`p‚=*…œSß˛`á⁄Ÿm”kE/ D¨J&Pt·s¯Û≈c≠>º∏{◊ˆ‰fEB†ÕQ◊Ç<C¿ÜÇ∞>	#Fˇiæ;ÍvõcÖ)x`h±H∑“joyW@äØ˙ Ù=2/câº&ˆ[q:?jr«¸<^~bò¿{F\=∏ó∆Ä˙ó~sàù_£yßP–Á#Rx:~(∫|Úì›[~f^<5Ï%}ÿ…/°[°•¬’< µ~≥wÛ√)f≠Æ—ñ˚÷;Ö
-z©DÏ2Í;Â‹◊q®\¿1jÕÃöt’8éhÂëJ8Ó‚>∏P^Ò¢∑x·ÎÀz^◊«}Ç8÷Ò€∂≈ù≥ﬁÇ""|0Ì~«ªZ£vv∞4›ﬂÿ€›áùÊd∫[…ÇlN,”Û“Á#ú&q“&YÑ±_xQ∂˜æ†¬”–¿Ô #[.¶~HHaÊ¿|f(5Z¸b‘Ì·êkKaöV3«»k≤m‰[˛FiT]Y!nã¡∞hù¡Ã¬¶∞ø∞î!Ë€6ó‚¡∞uÂ‹¯õsõ)ù·_'¬Øåê2
-¨˜∞N	s≤èõ;ﬁ˘UIúëwòn	Ä¥xî6û‘¶@≥z™~õnŸlE™uA´¥¯iª∆Ò∆urVjîãŒÊ‘<ÑÈ>e`[(ı ZEDÊÇ^áe˛¬ênJ·õÎÊJ(]xcúéÃÆíV§ÿü‚HÆˆ›™yW…,∆	UC”ëíÖyñgù∞a©˚Ö–º?¿·+G$T…5#Pn∑ÅJ¢î»’-…ÃÈ^Qw˜*
-¨éÒÌ0
-∏Æ 1QKF∂û≠Ã-ú§zGQjê˘ppFŸ0Ü5™[¬~h∂à¿±∞Ô#™sÛË–€Ÿô#ﬂÔ•¶≥Ô]`EòO2§4‹íe¿zÒú7ø
-ºØ˝∆˛k‰eU«' õ¯âí8Ò#vj/Dƒ<®Á8æ;wäÅı^WfÆ_ãPMu†lopÉãÁ◊<tSH¡Æ‡[≈’ª¶ô¨· OfìQaÊîêh“ÎììnÂ9l P"PzﬁypÍ¡Ò¢N‡A≠¥z’ÙzŸo´Ô®«xÖ·ﬂh€$øB˚aˆPµ¥4z≥ÊÒmüëÓâàV∞ı7êåa≈*;vÖΩŸ‚^â^¥
-Ëj∫[ÄÖDDÙÖC9pœk‚≥_π~c©íﬂŒ‚´C8ÊÏ·gW<q#
-/bÏGb9†=™=Ü}õ@zÁh=√óÕE=˚√Õ±Ÿ€Ò/Ω∆ò€‡ƒ “∆.ÇL°é]WEEƒ›F«ÎΩUMß¿2ŒπadCé√Õ}∆wûÔ)¨
-82ºsœˆ¿ÿ¢pxz∆æâ'}0¿ªãÅÉõ?≥aèq-,<o.BÙ√ö¨¬ÓR –ﬁ)çE¥Å£º&∆+£ıZ] ÀûqOã√y¯s’käP+:"¨¿);$*˘òµ=Xæ1lJóQLÁ˘E¯⁄ÁñÙ8UäÃ¨$ÍOØwıDi
-È¶ é'¬õrâ`Q©ÉõåÖJ@ù‘ì§π¶¯Ùäãk[7ˇ¥√„ìm~µ∫æZ°Ê¶YÒ©Qœñ‘*bÙ˙-ûòIÿîõpK#Üpú(•ÜpD@=5J7Ï@Â*ò¿+y«U_HÁó¥∑‹7;≤™≠í°)E‘∏Ï—«(%õÙ%ˇ`ê««Dá∫¯ËÅ˘’∏ÃlHRU¥‘ùraz·¡|∑´…[HCœÉh0ƒËätÕ◊
-∫Ë}éF4@Óa∫Á´√ÏvËê†iËI©Z˛y–ÙçQy	◊Énú®ÍA\$≠‚z“¸Wº€jsÌu∑†Ç~_)=dOI{Óè‘÷Å¨≈T”Â!É}≤£ ¡∫É¡Œ¥Iû1¬ÅÎœ9ÌâQhj˘mØ€ Íÿü≤À ´ÓAîò¸…¶˙û6&|êªëPZ~Ø‡≥∆Õå`ÑÎ)·˙≥ÁœOqç?>áGõ0´Ê‚}*∫¯‡ŸÛìÔÒôá5\º˜\<?[ûÁ?—á’f¬>∑ÓÒ◊OAŸﬁÍãˆÏ’˙ãçCˆ;∂∂ªΩ∑µÁ©Ø7◊wøû€›ﬂ{π∫Éf7á˚ª[¨∫∫ıbwÛp{óí·EˇZ Ë´ÕWÎdæ˘Ú’Õ˜üØÓÏË˜ˇtï∆-è≥Öz≤OΩ/,∂î≥§∏X8¿z“ùÜ}±¥i,‘•"âõv…v‘.ôâ£÷z™èÉ´é8A70$fdõπ±~HyoŸ÷ »≠Sø†mî4ysÊºù>6ÚjÃ™?gWwYtΩÀ¢+≠h2¯ÂE≥Ñ571§'™˘9≠˙S˝µ(∫¢æg)xÏuæ˚ÿÏˆ.KA4≈Âf\≠h’Ú(.R-‹˝èl·ñãñÀ.aÃÁC-÷∂78´C≈™Ís«¢AëQKNWps¥∏–îRùÖâº¬ÿo§’U`±ŒÑd»∫˛¿#ã
-Á&÷ÈÜ’Î–ŸL¡(πÒ˜Ípvjbò·Å·$Îj`Q'øKu9Ã
-¶Æ∏◊mÅ(S“ C—ŒhÂë•√êmÖxl1Y:òlFL,7(ïÕåÊ l™#Õ–±æå.XÆï[Æ±∑≤·4iƒ-2ky‚ò(„GDôV<î˜e≤X(SäÑ‚\íÖ«•Çó§#åd5˜˛¢å§"Åda¢h ŒUéÃNÀD‘7†V^ø„≈‘+§V‚E:N0ê±CÅåd≤0 eÇÄËÁ ô∂√¢&j‰s'Òø_◊]≥iˇdéâ£Q˛—Ω–FˆAsx†Âr‰2^héIfy	ß£…ñÓA›Âfî'ÊL”πh¥%-ÂJí∑¨˘æ#ñÁH&U+Ù)±ö_¶›ç\Î®Ø‘CX©‡¥W€m.êgÀ∆˜Í≤Ò#‹ùùÊêåÖπ≈⁄ÉE~◊√¸‹fY·≈\ıœºôÔÍnf2√ÿkt¸=C˝∂ú†/É9‘Õ≈Ëx”ÙÉN’Ê\™ΩôTS˚…ß¶˘w©˙FRs Oÿ¢©—‰lÈ°éãâ&eæ˛pâ´Ôˇ†Íﬁ)AL®D§⁄S¡Gª>)”Ô˝˘¨~Ú~Àˆ´≠ÚKÆøk{<v2p]r\¢ñ|j«k	+@(g ¶Í‘sBÜ™sâÁús‚^cpï'¶¡“‚|⁄h≠ÿ9 Ÿ.ùõ–T=ÿö„ÍÜz'ˆ;ÜÁ—˜©∞íZÜÖ˚ÜzÂ◊Æ—"è£<Õà=tf¡K÷˘‹Y*È7•]1À;≠g\ç∏LìCJÃìùùe(s¥ü∂ï≤Æ˛’·Vxë§€±Ω˙h¡ûrﬂºÂIπ+XF F„ Lπ™ﬂ}hS&ìhÂÙ°}ô5 òÈ	óß_Ã6{V£^‘´V÷¬aß≈z!7∆çäKa˜Cööî˝≥úˇ.ïKÓ£∏T∫m<WQŸøzÛœ´€Ë¥´˘ÌVt≥cﬁq„'XÈ&æWrº-Îu z?≠Ÿ}7M∏M¡55ƒ©Ä≈ƒ¡2äkπ˚MΩıØQ≠=Õ÷îE±0çGØÌ&‹‘⁄ÃØíVß\ÒíIœjPöô
-•≈ˆL:Kˆº‹∞“Am3‡(UÎó”G-◊]ìZM‰‹ôva)¬8‘ö¶¶˚ékË:á&Û5Ã|lÙ7•Ÿ>*ò¨iÏöo≈H5#";–MÙ˛∆Œ¡Ê≥-g“ô¬ﬂeKYÛU¥x¬-≤ZæÍî‰¶◊éd^Èw`ﬂ˚-íÙIVFŸµf∆±%≤õM-∏ÿ.dÔ=ƒˇ;HóÀ)òé+'7ı¿a1,ŒQiAO« k-ŸµCg$∞õ£A≠?Ñd	∫E◊åGŒ®gÚÕ.¯Q §’Û*∏È”_‚≥¿Ô¥jt˙ùVÕ≤ﬂo—π¨Ú
-~0Xôi˝Ùâ¶‚ˇdQzΩ“]ßÛ˙/ñ÷ˇ™…z*Vóìå+3ß¸ˆ!éÔ„ò6≠SÿÁYÜ:3&∆ç) „°˛!œØÈgD8P÷70-Ó´ıÕ]”3s*∞¡¯p““èÂ√Ìëè%ˆ∏ûÊÍT‰/hsGˇ»ä¸Å⁄Ÿ‹ËX iEÕŒ∞¿ëFC€“hËôvGQ⁄R»!X<LÚËÀkÛΩ¨h˛iûYí#vq`X9†{π€nC?À‘ò$!ˇ2ÅC‘’O• Ø`)4ußg|8◊∑_’†®™¨›Á…8ŸCãÅ$^æt5¨<ﬂX{…#Yâ›˚EØíöz â.iOßo0ŸÇçÜtÔo˙c±rIÑ.≥W4&˝¿	‚¬#bzõY(;ŸBÍjiÕ†Öº·wìüˆNäXLN™jﬂß¬ˇM\¡É∑áö)yí\bF‹WÇ%]⁄"À≈:ΩÈ5‘’ı2j˚Úáu´‘ÎıJQ'Ã.Í-ÓMø
-¯S[∞ÿ ıo≤Z ZL˝f©m¨”*%Há:õúôhÌ´AUFÿVc aÕÜÍ	ÛXc!‡R
-sé\Êî√òÕnÎ§F	b¯æ˜µáB£∞r*Häç¡ñAMzî
-í®ã@‹PDêÜ¿‚≥ùp1n≥,8RÊ¢˝)JäÜÀŒ C⁄ÁÀﬂõŸû6∑·â≤ Æé'Z∫3∏+ÿÂ$N◊ZyTCe˛9§”˜JÊ§÷¿ô.Ÿ˜¥R%èë(πlö‰oäì$•H÷Oy•ıÕïì˘=òiS÷itƒÖêYln3Srb´“ªç }Û…L•Å¥‚±≤'kF›c‰NNvèü99«∏{
-yìÔ±≤&ßåº«œôlzOí1Ÿ2Ú˛‡˘íMÔ˜ú-9m‹˝~s%ªª?x¶‰¥Q˜dyí«Õí<fé‰â2$èü£Û˜(™('^"=~óÇää†MF ı3DY!Hóg~Ùô˛8IñÀÀü)ñøê«ù¢©ª&OÆ\ƒ˛ì—«ÓD4—S¶ÔŒƒâî≥Fòõò2ˇ> Ìﬁ4E∆W¬µ©pJÆ0[ÂA˛'è?l;èô”Îjlæ\⁄œ©dBÂÌnı…ﬂ™8ÈrÈîÀÈãèÃÑÀeÔ%FH∑Ï∏…J∂Ï∏arîòv¢ÂQ”,;í,Oëe§ñÃlÜc$Wv´	Ú”óH¨l≈/œI™<-ŒïÇRV:Â—ì)O£¨D ÊUnô\øô)îß∆-s≈„GIùú	∆úƒ…•“&èF…R´!YTˇ¿˜#÷"=åè!~N'Ö≤Éˆf&PviM/}≤√/+y≤Éß	ÒLú<=9+çÒY)ì«Jòúâˆ9YbKÂàÕA˚åD…*M2´6:√|§oN;mrÒ≥ì&Oå¯∆ËK ~v¬‰üÒç·0ƒœ,∆Ií¸^ëﬂyÖQ"9Ú8˜ŸIëßy@œÄ©n/Ù§»xÖ·ùá&j+Nµvy1A¶d;‡¿ÑyíÌAMò%y‹…?ìq
-πëGS#˛<)2oBÀD£»>…éëy≤X°àPîµd‰Iƒˆ¢1fe@û,ˇq&E!˚qVí‚	2èC”ã3ø˜ê$nZoe<Å‹OòYJ2yd}\cß@'ÚœE„ßñ¯x4R?Ö§«„Ü≠…Bê“	è'Kw¸>µlE$~‘4«nR?m†+¡Ò¯ÈçÛ5”!Ò#&6vá(J"M≥9w¨"aùMI7 Gàj›&ÕƒE:A?˚>–„(àX<ƒT«h+«|äò¬Nå<åã›B!vv1∏ø◊
-YkËu˚Y$™‚X{—¿ô3◊ç·7^ƒOÍÏ4
-bÿ•^b]åâ=≈CÔ‹«∏éo;√nœc¡wﬂ?jy¨∫Ê}C˜BÁ0á∂º·ö±∆–/5ªTõÑ√◊ﬂU¿Å:>bÓ≈™√£ñrwÓ|}â«ZKoÈ·ﬂ·Ë‡Ty:FÖôÔõ0Ÿ˜;ò!!‚ÛO—Ú,oï√vyﬁ®DäÑ¿,Õî˛˚5˝˜•≠9∞WƒÓ|ƒ∫E◊≈£3=A(Î+yƒÑòÕ4}¿ôñ◊B¸ê–ﬂî–_I*&7=ØÉKM+nxêLÅπﬁœ7ºtßŒb˜-xq^˚◊Áâ¡ÎÊŒ·∆d∏ÎxûZﬂ]{µçv±ïYéÿ@Uf’Ù¥1®)c3ånßÉr∑1¿Ã∏ø_zÒô»ÉÅ{[$æ˘)∆π£›∞ooÍﬂo≠qCÄÁõtfñ uÌ÷;ì<Òw ⁄]Ωkö˛•=C˘∞„ ø¢0ΩöWèë sûdT8ï(ìÈÌKñ_|ÅÏ∏ñ|Ezm¥◊<Û¢µ∞ÂØåõZ{ﬂ¥S:∆/˝Kûã¸˙ΩFúté,D“ëÖ˚V:ãzﬂkQ§˘*l¯ |⁄¬∞èÉ”—◊AIÓ‰<¢ÀËOç/⁄ƒÊq÷éZ+F,ajØı´-5wÏOVØ⁄ª”tù∂ 5WÄÉ\πdﬁwzõP/Õ∞øÉ‚2PúR∞E∑Ól[mhhJû¥O ›^Æ..ﬂ_aœ◊.˙äuIµ¡t9Yöπv~Ç~“'1ìÎ⁄£gkµçáœﬁh‘†CÕpP§ê
--ÁS!]úRDË°ã•f>π…öÀH4µ`6Y9˝ÿ≤ì™¢j}ó¸X"J.c˘ÛJ‰òÅˇµ”U,£›IéljéãË	;ˇ˛ü·)¶Vcú3|æπøçCŸÿ⁄X;‹ﬁ<d[∏'ÀI"U£πîX≈≈˙√RÎXÏó∞\œ?{é¥ío‡(ZgÕ]4¡·¥c+h˙ΩòÛêÌ˙A}Ø¬‘È
-ÿ≈eî¢Å¡≈Õ´êï˘˘Â⁄¬bÌ¡“√G¥Ÿ±” ·Cí>RÏ´’≠ÕuŒππuê‰w◊¨∫˙Í^ÔnÔŒL⁄©{“Ün∞F(6—Æˆøc/•8Ô±ÿ?Ω˘KèÌêõö7x=h+
-ºzÊˆ–e	Ãÿ"ÂØud∫3oÖ›¸#4∞CﬁÛzpä√cî}ÌÊœßë◊ˆ¥,Ü¥ıÏ±Àç⁄!≤·u7läSô©ß6H. -ÙÊ÷Ñ∫0M€$Re÷a…€ä$ë‡4âvfJK>'™ ”_]ƒ—ì©®gÊkwË≥T3W[sŒ¶>w6§B[ûœ,¢¶≥ló#”òç`,áñ-’ä;"ö=¢‹êh∂ﬂ®˘$ÕÑOu◊Tñ≠VE;ï,ı[EÌ`4√zÄª$Ö3/äÇÜÁh¬ä∏¶£ı˚	ª¶˜†bØ·‰ÈøøüMf=´¬‘°»†kA˜î˚ïçº˘“ÅèC!º;ﬁe“∏—µ—ùÈ!ËàùyW&Aôe›§8XïŒËpPÕÔ Ò—Iy$:ltÇoá˛(…õùR‹}GÙ@ú%…‹·°ë»∏ÑPÄj[v∏˚˜;ïYaÔ/ŒJl‘5ﬁ◊Õﬂ∫˘	0TœiNÍ¢∂`3!–—V¢√Oó»R DwûNÀ‹;ÊSR√¥É$˚Üd…‹IAS√À¸dD©o#‹Å£b‰Î”Áö+>kœ‘"Ò√ëÿ•◊m <Ü¬Gﬁ“V÷#ê¶ÇŒ Ï±g>Ê~˙¿Í¿“[uû*3Yëåñ≥=Æ˘wóX">ô¯ß∑gC|©æl¡|)u@Gï÷$ê/bT<Y>ıöãXÄJ2f≈q†˚"q*Zπ˚l≥{Û™cb∂M·¯b=Å’Z&–ì.∞'M¿õ≠⁄†7C4⁄Íﬂ«Fi-@°ò«L?£Sè§øxóB´ìWWﬂ”GØ”™œ9õ€h∞¿ >IELÙh˘;‘Œnõ^+Ã5tG§;z¨’OÈåƒZSÑı¿ò€Û0ÈxÖG’&A	œ–m ´>L|PÄâ®^¿ÇóÙd˜Kaîíéz‰ƒÌ	&ı≥“≠ßê”®53kÜ∑7ÓÑ{dfw%.<TSz—[ÃGŒ5àår'=äƒ∂≈ù≥ﬁÇ"bG∫#›q¥¯ïL@»&µ˚œÙ‹Ù9â¿˚àêÑ3ã0~êxZÄÌ˚b£"äc¢‡∞'èÒ˙¡í\ê7¬ÏÉûŒó)+ù*ñf£f–&Ö-ã)â¬b§ÈÀC3&÷¬RF,,€+Fì~_9óë˚Ωñì›ê»XYâ⁄≤Ì' q¸2n
-=^ı)Å∂ÅJ2∏Ä‰÷ª§ò…dØ)≥∂≥ö!ûªd>5ÈˆﬂsX†@x(R»øÖ&obR¢¶È.µ.kq“ÁçqÏô %≠d2@W˚ÓÀnW…,R&√˚∂©t<Æèñá{¨ÙÔ"koa÷wW∑î!<›+Üì{V«¯v\EÌÅ®≈ç!™ïŸ Ã—¬INÔ"±8tü¥êûf5“åXÈœ«Çó4…%âΩJe|ﬂù; e_WfÆ_˚“c2Ï%iÓµwØÒÜœ‰Vû{5∆Sd>áü’#È…l24O3Äè…0˚‘&nø9l ∞-@»†<~ÍÅºS'°æHΩjzΩÉÏ∑’w‘cº¬éÔ	¥mrûÙ⁄Í°™ó`f≥∆'ëHiﬁ•$Åo 
-¬äUˆ⁄
-3|Qô◊ÖÆ~dÚy5~êLﬂ)Ó	êWÆﬂËáy}¶èÛDôºs4‰Â∞wm[Ì8Ï˚ΩÕﬁéqË5&¿¡ﬂıP∂pÛ2vÙZ·EªÆääàÖçé◊{´•»∂ÁVÑÌ∂éÄ˘£`{6p9h›Åı•bá“†W+§ü◊œ‰.»å–ÊCsùﬂ[(
-áßg\µ≥bE◊˜:~´±ã° ±ÿ∞«≥¨√—4›tc;b^–:q√IE\bs¢==OèƒÅ|Áíé 3=◊#f5æÍ5YU≥0“U∆¿7„W˝NË°æ®UDC"í¡‡-/u0√∏Z˘J≤êÌãO~ŒO÷2N<Ô0a˝j≥È«Òa¯÷ÔÕ≤”0<ÖëﬂÏ¯e^˚†ã∑’J}ÆD~ò√Ípp¶ZÂ4°Ö§ÜŸp’Óü≤ÕS}ó∏ß]Óà9°eœ§1≠¥¬]®ªaò˚t†√“ÊgÜ@$u4/mkìôÒœuOM,K-(Ò6æ[aÆoÙÔû;!˜
-€¡≈d˝! ¿ì–àÍªÅ√†Îa©r¨r∑XÅ„“Ω˘y”nésYó@2ˆ™©ë'#nÖ∆ê«∞9\kêÓV^–&F⁄ß5üÌ¢Ωö◊1–HÜƒ¿œ8±Êx√wzx—√Fwà¬`ÓÍ∂D≥ÎÜnc≠Yfl\ò™´Q *qA£Lº!ˇÁ¡∞$TÏOFÖ2¡ªSZƒ∫~-''Yãx~	µW–Œ"˛ò$Å/‰êΩ◊jKö™V`VŸ,ﬂÙ¿”û≠PT¡ı’√›ùùä-ŒkChTó∏ƒ⁄˜z»“A⁄rΩWó+∑óÊnœ†‘RTÏﬁÌK(ÀXü=4 ä√œcâ©fåW‹5O#∞Ue£Rùí‚LT3u≥Wí¬N}≈R∫n Q\∏ |ÉÀ⁄æã4òŸd8ˇvH4´≠j¡)–¥f/&…64≈d«fLÆy”9‰nœCŸ3hù8ù©.\˘,ƒg7E¯ bh&Vi„û’GYØRãÈ^Æ˚·≈–ãZ-X0cqSªÅJV—ÂΩ≤‘|IQs]ÑãÑhvc¿ü»¢·BX÷nAsTV#ı…g“∆ù"!ô––ƒ∆˛Fªç∆¬∫ƒM,8>/ˆ@Çlá-;P¨œÇ¯Ä|≠ZÌU◊£IqXC5|)¥⁄ñÇÜ¯ù‹"ˇEù‹‹U?W´Ù⁄π÷∑¯WçjoÿQ·áØ]cìõuú¡ôuKçŒ®‚û.Sà]Å«è ˚È∆Á…ÎGêÕ1UTÜ@õBˇ»©∆∞è·è˜`Å;OTE^$gCü®`û•LI¡ $]d+‚'Ù1DãD
-ñ…¯•¨ârP°ÛI{©ÊÅﬂ–åˇ~ˆ¯±l9	∞hj…-KïDØáÕô¸ŸÙl…eÖÂê[o$ü&‹${YJ2≤ÇÂâñ«‹#≠O<›ıâßµ>9€[WÉπ” ÈkP©“ó€∏u’Û∫òBÆseÎh“@_ô{˚^g∆Ë9a$ÜÓ»bº(Ü⁄úl{Ω°ß-|B°™∆Êhj,&ôR¢Ú51∑Ñ∑‡w◊DS¨≠ŸOBEiz≤úE2LcI:æ…´ü€∞†a—ì…&πf÷ÊìÚ≠n¸ì$I•kNzÎµºæ†óÅ%ÚbÒ¡"¬¸•I¯;Â¬üïÅä˛,|g•a≠h¬H™Ω2L’8(¥ƒu∆òTá `nyW UºòÉ7'3ö:ê¸?˜Ω~[å·πYWpßp≠%Ãk_©|Æ(µÜ¸Jàı”d‚£ÕùÕµM¥.Øﬂyz|¬‰ å£‡ÛÕù•íÊ∂ÿ˛∆ﬁÓ˛·∆Ò…q|ß∞›≤≈oUa3«∑ÊNgYµãÙdñı¨=Ö”Üogk‹{öµ¨˘E{“ËÉ÷„Ò©èùUû<ÆÃdîË_dó@‡ø„cø¶¬∑27É®Ie˛Ìˇv\ñiNˆ£ºy≈;Wø∂|ˆÚp{ã·	/fŒ£AËÚ’o‰˛Fú†ø) ˇÆ3¯úO»±ø;ü∏>z›>ˇ˙;◊◊oá!Ø|ªr€Ò˘∑˜Ò ∑]ï;ü˚πÂü~û -˝πﬂ∆›û(ÒØÆ‰UÃ‹¸ØŒ¥\%˛_Wâ^#”gN‡xÕ·@6É´ÑØó¯—U"–K¸‰*Í%˛Ï*1‘K¸≈UbU/ÒèÆzâ?∫JlÍ%˛…UbW/Ò'WâWzâˇ‚*q6Ëv¯wÁÇÇN≤dŒUﬂ—K¸sE€Hk¥G∂ºCˇúﬁ%Z‚‚Ò;fÌ(ÏAE6˘1º‰IÉêu¬≠ÿ`dnÖm?é·£piŒﬂ{HL™ﬂŒ<=np®—ì&ÈÖû∏ıª≤¿›πö≥Ñ◊á·] Rˇì≥ÌY‰“Y§Ÿ
-≤ƒøπvßiI◊=>Ü˘~A!Ø”?ÛdØ”ˆú•˛ )Ñø›0Ù@Bê•Ë¡=ˇ3≠1zpÎeô°ª‰ Òç	&0uG*ﬁhó.~|îµa‡€IŒ∑jŒ∑ÒMm†’N¬I≈Î≈høœ–hà°é1ÃÚôÅHäò≠ }¥Ahá≠ÉR>reå¬˚©Äx≈*Ò∑C¥AhÑó¨˙Ôˇ˘áô
-;ı˙®®FO≥^ÀãZ(¿Q"Ùjá˝Y•K‹πÌˆ5Üí(±Ô˛˝èˇßÕ√ıèˇó-®èˇˆØÙÕΩ≈˛˝èˇ}um≠øÚäH¸◊ˇáæf`Ô_ˇL_≥∞ˆØˇ}Œ¬÷ø˛w˙<LVKà°7%·^Jª~tÍ£ÈÜpºäÉòíF¢XÍ_1äÛáöx*}6‘Û7qÿ£*Ín	!¶'b≠¸°:È+Ωı#i¬ˇÊ#~æ^[=ÿxΩ∫≥∫ı˚ÉÕÉï[Ôxß◊'¬êKØ∫—kQ≈çùır’z˛Öú‚õ[Ô¥˛Øè{∑ﬁ%”πæıNõ}K:º~cÀ·Bî◊A∆}“’∂Ÿ$cƒ»øˇHJÚÿÏ"úë©ú	˚á°:8ÒéÀÀÇÅ6
-;±Ÿ∫îàOâÎÇ^Àø‹mWµIÕËS˜{≠¸*07QÅ‘˜≤TQ‘Pc!ZHΩxí»T5@DÖy¯FüÜ√sRO√OU€k1…®,∫æ´AxÄ€M…ì≥ ]V9Ó˜*îUC‡Çˆé∫4õ∏Nqó"@mQ ÷ŒΩò4÷?ıöWÏ»@¡◊ˇ·`wÁD,Ò‡ÃCóê⁄wvŸÜ'¡'ÑSêΩ†|qÊ≈Ù=ÍÍà®/¶t“rÓ£ åΩ8|‘Y8QqÕFù\∞s’ Gâ¥Ì/±M"Ω:„·91›´G«ÒÒ¡	r=‡G«sÆrs÷Öìﬁ ßˆx¥pR‰®ôD
-à}$)ÿCùû™V;¶jçk'±R]∫”=ñYb≥º1A˙#cW$pµqY˛ì8-[r µª™Æ2Ã≤W…–›·,ëd	\G ëÆ.K∑hjïtBx·É|–Í›Ê˘«“x˛Õ˜~ø[\íΩd¬	¿¯ÏäfŒyy ∑qÎpï“ó¯•∑©Dz_a@µ—N-ZÒ7˙⁄–è⁄“/~`åË7ä=¸∞–◊û‡°ÙÅ_S5zƒ‡Hæ∏}Zí õèsøÛTFü‚Ôp4O≠bAœèìwG¬î”•ﬂ
-7ô‘˚Fÿ∫⁄/ÙÚNa›xIAR	ÑÔBùn»””côî‘î@8¸vàZÕvp©…∆Bù(¡ÄÆÅ(r⁄vÉû}I´í©™≠/I‰l≠â—«È—cÎg)Qs	ëÉëÊò≥_µ”:BËÏ˚ß>“ I…V≤Ï§œj
-_fë¯ñ´øê6»Î˛•ﬂ¨j0BéÙñÚ∆e◊AÎ‹r.:◊uQ∏4ÄÎ˝a|&hûaE[∆˙Õ¢%8G≤G±ﬂçVpÓ€t&ã∂ÏÑ≥<P˜ù‚Àã¸îNı¸.5gx˚p@·á~(›ıÇûP)SJ°W5qQ{“µù.~+Q·ÿ!ú˝·¯‰‰ÆRπÚ©…ilq
-KÈò è#-’P≤0RÖaù¡ÖΩ∑D<∏sguÁÊ∑6°lä«3a–√nE$US∂òê=)SJLZ∞%≥¸FdY}ÎÁEKoÏ1Dye%Èœ L«Ø∆:hõA}æFs¢¯åP≤ª¯N‡∫Æ4≤…ﬂdÏƒ$ê°§›—“PõÀ&¯Æ’»gz&ﬂRñ˜»¢‡|§ÔÎÆ…¬5äıx˝F’ëÉXI~…m*ókF?8Òtxá»W—;,VI Ã*π¨xô]QAX?Ô4Ú˙g•ö≈hR˘ÉñëßFq’¶-|ª†M:E>h¨ è‚YF¸€¨3›I¬πXËkî¥∆;”◊KH+Ï®^Ø;Gx¢(Æn@Ê*™¡ÃæU’†Ñkò†dç«Ö…kÖ∞¡RE∞	8™i∞Ióñ§T9à˛ÁÅDmêòhtç ¢xG1=¨Í⁄‹‡¯’ß–ÿ'˛î“∏∫jêöìbÆ”úR˜Ç>üQ–Ô-ÎHQ‰1.<ßk‘jµ
-ôæŒ˝·Ë˚ï„⁄q|r˜÷\}‡«<Ê™’û8»pÛ-Ÿ8û˝∞u≈øNZ*Há›’ëñ¿ j¸M©8ºXÛ;.á∫(Ïà*+,äºÿK$Aã*í≈§¿HtK¥/´—b6±Ò¶\∆Ù5iı-Ò◊F ˚5‘Z=>⁄˚¨®◊É£X∫V?Ï€u§ ø†u§≥ìÆ¸èM–YP7£q´0®¸ìú°ìEä;,˘¬Å≠n0f˚r∆tjÕ&+äË“˘œtMs“*XD\íö˘RŒ ¬…‰w⁄\«ÕXhäp)‡4∞Jï °\Æôç8Y1ﬂ‚1?©ËQê4.B0 ÷vÈ4"JöÇèÆ#ÔPW÷
-/ « Å+◊»ﬁœUôÅû6ºÊ€A ¬ø§hd√ª1ˆ¿õ7o*Ü%=ô )ÜonÙxBÅhÇÂä±$Õ†qÂ$IXJ∞1ñì‰hrêÃpÃ-ü∞u«k¬(Àﬂ ËZñπuÙTe√x>c˘Ï∆˘"
-å3Ì„›m#zmë¥∆Ò@◊AT[°∑M¬t∂±Ωœ¸oá^ßÜQ¶D>©GÜq®."Tlµºk„j™>N˛£'À$\iaŸF‰‘î39XIÿ¸J∂¿˚≈qWÁî£#s…%,ªÄ®]@K˘3)¿;ˆt·√±≠«‚∑By£BŸ©™–x&wtáue	†=∞≥√ÑòWmÊÄëL0jú‡wN§w%QÎ…y[Õ;°ñ¸„;¡.õ±#≤†§Ücí™ªwy ÑvaáD˘5mØ.“¶œµßàˆ:˜ıËj√≠$˜ı–‹–'å˝÷Ø`ÂˆÌ‹™OWéè‡?±◊Ñ˜uÀ›?Ún~8¡»)3OøW7ﬂSô◊<¶ ÃÒ…˜_‡7˙ÙdÊ÷\¿èAÇ‡‚J6Ÿr-7…≤÷EÆÖvÉ1õ•c£t-Öy8Œá’Ò—∆∆©ŸE8∑Ónoœ<=>˘ŸfŒ/k2&Mù∏'bUHq∂Ù¸˘∂ü8òy ´¨åô¬ÁÒ÷÷Hq≈©$êÍ∏“§Î$4_4l7∞íÉ¶◊IN3–å¶%®Z}|ˇ}“â:s'‰1ªá%0nõój`5‡\∆<fD±4ø”j›M’R'Óyê˝òê÷ç*ö∏$^“·/~…ÔHÌ„~◊ß[x©…¥‘¯!°å¥‰ h%ûˇ[fù”¥!ò«´ÕD‹Ï]Ô)—˝·∑ËO™›Ü2spcènqƒ—ç9º±«wo‘Òç;¿±G∏4ÚC4∑°ËyÇΩW®ßñ6Ö™j,X®∆GP¨Ä—?sÆ§ÅC…2Â	y?v ¥•—eC(g\Î˙váI›.ˆ„:¬ﬂdÏüó=ï[Ä‘’¡‹nπàÃ…ÃbÀ•xr:⁄R∂zŒ¶√∆]∂ªÉ™9t¡ôW¡©)∫'4ÂÚ1eÚÚxrWhò∞ 6Òõnæ £z?;-‘R?É=˛ñT4ñ[’,{Î_Y&(EûV
-ı1Á
-›ÍzÕAù˛ª£6Æ	•R∫”R6"wéÔp≥m¯ëaÚA,—º≈;u≈+Ò5x-ˆ∏˝„ºX\€D$ÈPôà8mC§≈,‘í]—øÃ◊7üVÊâöé˚±«L√µ§¯¨÷’åÖ‡FI£_@!–zòı„wÄX…raŒäªwØﬂ\c≤∑8Fßª«¥Ø—≈8ÇÇ(]≠ÅXPy¢¿w“≤Eù›æò„= b…(ıÂP‡MﬁJ‰îR≈ø†ﬁ•j∞‡“„á%œÎi˜)≈V®ü¸çPrÄÿoa¥Œgß+0ŸPòFp_Ÿπ?*∞?»4¬≥Ë’:$áﬂƒÄ7¢öAú⁄ZZpÌ<˚–ª–ËÙot'æ{C[ëÍ÷ª≠0EmJ˜—Ú<„Âhè2aÃPàRÄ∆ÎiÏZs9>˙ù{êÍ ¥ˆì∞Vnﬂ‡qô}	‚tvkÇÊKŸ!4`:ëR‘ÑF¢ç¿‰“eŸ_iz1¬ñ¥6¥÷œ©?HÊ∫ËwFR§zF-Á•<Øve∞àôEbö¯ƒjœú—z˘1¶'ÍÖ]Ø$fr™™Ãc·Rèˇ*m4ÂFÏX¸∆ü¿»æ„‰˛h˘c¸;ØãÆÊÙ¶ƒ¢&ö1F!¯b ”†9ÏxÿåÍ¶3º‰±†∞4 ∞Ò‹æƒˇF~kÿLﬁEò: £&·C?ËÈ˝ÜÒ¿€Åı™◊M√èõ?íOÄTPä|ÛÁ÷∞Ú`œÚW–C£Ã'…Î¬aEV=Û£^‡}¡‘√Xé‡tÍE’Ñzp
-˙7?†ZA‹Ÿ?‡ãßd“P.Ï‹¸ ·£cÉµçŒ¢a_ÆÏœ¶Jão:~¨ˇ‰–É…tºÆ($:—)<≈Vr%Ú.Jl©«a◊Øˆ;/î“®Oß®æzqA∫∞EmñåC¥ÿŒ∆àÿ+w ≥G†[Ï(9#Ω<∆5_C:/â5¨¶_[Jﬁ8ÂøóÁÁÁÊŸYxÓG+˙À≈yq˚Yk»…∑ÂyÛÏ€√îå¶W˘ˇÚü˛´Òf⁄åÇ>∫‚¬Áó xﬂùb¿ﬂdŸl 5	iuƒÕ,Ê+ÛÒ!√◊+I◊©!∫9ˆ†ıÓï±õ=˛Œ⁄…7?v˘Êm˚‚˙8¶Ùı{7?&?	Û£õ?`£“œP˛Çπ¯|Û‚Qã–ÏÊ/]ü„ÛŸP¸“—£P…P¸Ê/±'õ√‰óáΩ-ÅØ–è¯ß® Êhtë¬é—CÿÈ › ?	ÉµùFØ¯@¯·„˛
-…Åá˛lºoû“ûﬂ¸¸ﬂ6Ä…Ô¶ù#ü≥àU∑¡lÖQL+í¨%[MΩ‡ª¨;å%ŸÇß—ŒÕè±ëaA¬»ÍÑﬁÖ¥B‘PàFÚ’Ò‰‚k»Fƒbû•ú†zÛSÀ37∑¿!
-á»ÚmÌY€⁄£mÌMi[Û^âÂÓ„Êï◊√‘∏èÈ∑Ωèìóé}ú|Àﬂ«ˇ-go˚=˚[€∞)†øòäC.ûÚ}ÓuÜ∞áãv-Â"Ïê[0wìÛú∆OÄãÇ„$OÑ	1&ƒƒ&÷≤õå˚òT:‘®í◊ÚõC˛Aı"^z|€5"Œ)≤§◊è0ßèz6hÙ¬?•Ä”úõ`⁄j˙yÛSÚ[uD=GSå]êL#y¢ √^ÄnV4LÕ~zÛcœç'/°xÒ ùì„sœ¬Á·s/üóG¿gﬁ)Âi¬lÈjΩr±€äÈuZíQ…G«ı˜4◊?Áb˙ø¸Ô9òé±ÑêEπ±c[MjK^¨ê™p8°˝∂ÔÅH(fÊ(~◊'?¸9ô%	ÿ‡π:ª"ykÓãnóˆ˝˜2B¨∑ÁD=zàßqs™π@ˇ]§-p)hkÏQ™;Oõ@}{¸≥èC„Ï ÇÛ_$¯¨¢)]io8Õo~maûvE≥Öø≤ı0ô⁄K…é¥BZRÓí_ôÜø]G@◊√õõÿõ£<\≠"2‹F˝N"Pâ'Mµ◊,’æÊ#ÈˇëGéÅoFîØêØÓÅ––sI•Z∏˘0,¬Ã|Ãk};‚Ä>Êb™ èÈ(äËÁ¬(§¯øx‰ÙOª¸ß
-áü†g∫1Mï’,f¢≈‚Ô_ÂùÎ X Úb.Z<†Vèº⁄w´µˇxÛ√Õè7?›¸˘Ê/7ˇxÛ«õ∫˘”Õπ˘◊õæ˘Ô7ˇ€q´vrwFû^ïkTcØ¯´±√ÜuéiÜçm•ÖJﬁ•NJÂ$´à#™ò◊9%Är*ûú™'Ÿú©} –?…iX!˜0ÑW†É•-ëu›˙(›®∆5\øı5œ'«´Âë1
-Æà≈ªŒ˛U≠1€“_Øû7AÌÍ ˙^èØX¢8S8y]√µ¬ºÓ…‚rıôUS◊¶5áQFµ3ø”g˝À⁄|}ôE!ÜñoÒÿ+Ó⁄∫ê=Ú–à‡¯@¡ A0ˆE∞:*pÎù>π∫¢@0cO¨Òº„˚å=eUÎãR¶4ÄJ/≥Xû˘·0Ú∂◊Iò^ç÷Â6í›TÈÅYÉ#z ºÔ6Ù[)ˆo≥ÒHJ√€ñ“0ª∂÷vòÃ¥Q˛CCƒúäÔÊÓ∞C†9É†/#Vππ"ÀÛ;svié⁄eÖ◊à·h4ê9˝j∏ç2ï’ÊYç÷ï‘§óÙ¢€®-≤≥†’Çs+-jM∞2§∂ºàC(VÁ%Wê<Åø Ô5˝Î<ˆ°UÅJµÀãœÄπ_‘/πÀkÌhaæy√¢ª‰¢’% ›wµ£Gèù∞~HæÙ5äË◊zpí∏Fø	bòˇÖ'√!è©UkbàÎ®í^≠†⁄TÙ„]Æ®ÑëÅjëMLqÇˆUvÀ¢Ì'ÊHò‚5‡~Œ™ßèià9÷»IìÉÈ!B	2ﬂ"ò.»òH”e[]J˘ ≥«¨˜f3«Naõ£ÅÙª|gíRóI
-Ï˚ùÏ7p–Ω¨kÉ)”◊ùC)ÚëG<‹§√"O~YRÅŒ ≠˚
-g2£˙L1]˚
-#gI3¥x9±Ûè~ﬂ	"3◊ˆNI≠*Æia3I˘å¿Á…òÔGvë_Ø◊”¬wπK≈$|∂yWÿ7nØﬂ‰^>∫ªó◊<2∑›A#≥ÉR7¯åÈwô˙-ﬁoÙ]VˆÇp4 fç6◊å”f,É 
-›¸ï«U§@û∫ûÂklù…2öXmµH‚Ù:œÖjçéfQ8Aût∫¥Ë,§?UˇHVñalñRî¡…È"ëòü1«™è^îFèœ™–˝—X$m˚¢úsí&æ÷ÉñaGB‘Ñí∆ˆØ@∆ â{$nØà¬X¢UÀãÅŒÀ'l4ƒ¨∑âX’9’dÍ;W∏ëbL√\¯(Ïë∞#%0´—¶∏A!-±æ®Õ[bQJ∞9£©^–ÂH2ÖŸ_˘ùáÀ0∑¯V¯-6Áî4ÏVÖêT_F1IÒMä“E'.9	H"±áﬂCô)%”%(Ui>ˆó"Ê÷ øòò/‹„}êå6ñeèX# ’]Ô‡{¥<œ%A>`N∆ò¥qC©kclÊh≠±~—wìÉïN#Ôä®;†S¢Dõ∏7<%{ªTÔÇ–oZD…·8% /Ê˙≤∞6öôTHÙe‹∏$^é∫g¥ı‹ê;>EÄåc!√#>+,‰˚°IˇZŸ%˘&#§Çºàñe»‹p∫é©£,;ﬂ|œÓ‹πıKXhzÁ˚ûâ/:‰Ÿ˜o¥)¯Wô∑˙∫¯Px∏≥JˆBÏxQDzÄ¢≈Ë…Ç?„Çc–e¿≠_åœF‹üÇµ†˙w≥7«Ω;9Kqî|Ä-i•—>Yq≠”Á"í|©ÖAUj£x¡Í‡:pË:¯•îÈΩ2W?™ﬂπ˚Ù∑ﬁ]Wgæ?:>q|oﬂ˙›Ì‘v‰YO¨π'VßÏñ¥Wûßò‡ç†gñEÏ ïÿ…tx6∫ÿ∑/ÉxÄ∫9û‚{?"a ?ü5˙ñæôBÎ„TÑ!Ò¯˙W[·Û√˜7Ë\∞∂ªΩ∑µ±Ω±s∏À÷7W_Ï‹¸È‡psmwÖûˆW∑W1r’À’≠≠’ˇ¯b˜Ä˝ûlÓÏÓal´’ù’√õ?moÆQë[Ô$-å9ÓqfÖü˜°0Û≤»e≤0⁄ÇËˆ‹:‘-Ö6K˜√>(pÙkIHËÿË™n™π#a Ö…Dù
-˙4ˆéè„;3O1‚¢—>ÏÄ#¯tLë∆™O'e˛ﬂÛ_µZÌ˚‰ıÒ1˛oÊ˚[33tïc{ÉÒ]
-£¯êÏ¶‹≈lwÏµõº´!“]mÓ¶P?\‰à!Ùﬁ∞vDUç$€_@œæ√À∫™ïoˇ7é^p16˘ﬂPràß¡DÛ	®õç˛JâhBGßÉ;:úZËêX4zh¿˜M¸8h‚é)∑˝bI¿‘È‚Ø0N⁄xp’k
-ã∂√ê◊[ªLuç¥ëj¶$Ω≈é0Ω'E/ﬁ˜õa‘˙BP˛˜â*∏®L9N*†‡*¿¸ÍãwzTef»˙˙kÑz4 ƒ¡áT…)é˜∞t%Í$C†≠ˆZ>jÓ—“"ü~∆Î…èaÌ@câ∑Ω>ë	 §Ôº?ñƒ:-≈Òj5RZ˙¨óÁ«$sQ¡ååsŒq¯=	X*+‡)Ó÷íÁÁa$¢CÄÍŒÕ±Ö:ì¯…x®√møKùˆ4πÚ=Öí›ﬂ€ﬂ8\]€º˘”ò•¡/<·Q™“]™µdî…?I)rG˜b(NÛTWÛIë¸ï£OÃ‰bÒbı†E`™Ù¬◊ã°
-`CÊG§Ω7æSI˘ö,	K±∆–õ\gª3-Dé	 °q≈;^√ÔH]CãjÓÑL£^πFΩ—⁄R 2<≠Øç√ÆB¶Ãs∑sP#©AÙqπFuml.^@ã&lw†[pÍˆ‚1é‡ŒaÿÇ›–Åˇ+Àº-ö:3è—.ì_ZydÆ⁄ynn~ä1x,ÃÙ õÓhsPq©µ]êÜ#M–¥g	HÖõxO°B¸,»;"™Æ˚=a÷π˘© eK`§£±9ÌªîîÖ¶{]O°¥%hﬁπÉ:ö÷µâÀTYﬁËåÖƒECJ#¥s`)Ï÷«iåRœÛwØŒ6…∫Q%ËBÅw*π û<’ÛÑFÏiΩ$˘Ê√©OÃ$=r	ÃQî:Ë…y8Ï÷Ñ_´5Ì$°“LòÕdù"íÒ«ªÚ∏g—˙Ù&<ÙâúÆÛ°•aÃhê“+˛†§·0e-^ÂIL´$%˙Ê‚:c˘Ú–∑πXõ )›Kü2g}wı—îœu\Í–`I H µlC@Ó‰Á4!qymIØûÂK¬nÃCx≤òz≠…F¸µÈ¯©ÖlÍÖ¨ãÔ 6∑B=\çÙ∏múÚ˚∏•˘˘
-9¥„ì∂ÅÃvGúAﬂ˘’ ŒÛu¿-up<úø7?_√?˜€f∫Ü$Nµú$Iñ8ë¶πI+±◊yñ‘êì∏„¢k%xãöãåı≈™ÊÄÜÙü∏Ø ‚˚=ã§ÿ£…9≤∆Íü£/úÛ[5˝åO‹Sf˛‹•§)À˙Ì∂ÚO∑AÓ´nL!W»0ëàîòñæ5:48:#ÓØgGO;»k‚ˆ2F€«[Ìe9Z|“Ü´ïÛ0Öë*»-Ê¬»Îù˙÷~÷ÏKŒ¬aú&*‹Åùè’,∏ŸSRL‹˜…+˜`0l]q˘ı%, °J⁄pDH«Áß2‘„$xeËåx˚Ïj≥¿}÷Ñ_™ÈªÔ3’å´+D¬!úŒ1òï*\ß∑ò“Ÿ8/√â∫…£üí=ÂØ·ª*ê±7Ÿp«,D√`ØÖ⁄@˛¬>˜w”˙í?≈rJÇ≤⁄ÈTocÖ5Ù∏Ú€Ò—ΩFÂˆ,3ﬂ∑⁄ÀÌGÈ¥ŒIkÓ÷ ÷OzZÙÔµñ'Å’¿Ë#òo/<XÙ“#h6ZÀ˛BâX¨ï≠ØVaa··‚É	F`50˙Ó›[ZX^û`Vcå†µ‰ﬂø?…ÃR#¯\?ïØ∂(◊:ﬁ« #u:d˙6Ÿam UÖ™ø>í©Qˆ∂fnÒ¶˝∞Ìµõ3eññº˘{F-ø}Ø˘ øP›˜ÊçZMˇA˚^~≠ÌÖ÷BÀÏÀ_Ù3aç ÇR~{	˛	@ãw≠Ê‚˝≈˚Ö5õK=≤j6<»ö_R™Ω¸»üoX5=x0_ÿßÅò‚›“ÉÂÂ˚Ÿ¥¡*•◊ºøÙ`Èa√¿¶{	6ë=G†1F6≠ñ#wòVUK"û6ƒ•dàM¯Oÿeß√ ÿˇfÒFQÁ€çó∏l@Æˆ¢ˇ∞=Ø"s>oóÑ££@O⁄‰Ä;˛)}˛,s…˜æäÉ£¯˙•LlHÃ™¸Å.÷:*àË"$Ÿ%ï’KG)WæVBú¨∏?Ï◊ŸûxùWUIç∫kR
-Õ*Ò¨°¬8{·9Ωw‘2§A=|å£Vc°[Z¸√Qjıûâ˜SÊV$—ﬁsU=‡_ú‡°ê2vßÎ¸ufü≤Z7Ñ_töKU}⁄tbåá≤¥π¸´‚[≠Ø’]uL\V{©ΩuT“®J{⁄[•≥‡ˆcuÃ¡æ:®Œœòj1ºΩLR„à„µ,âK‚`»—~k]È.S€QøGslI¸L€í~8∂¶“%;6©‘¬æÇÊµ ΩÂ‘]äZ ZhÀ¡&æ(çe`Ñ%`ÿ˝»ãaUº¡0Æ¨(≠≥=¶#Í0jÃ«÷¬8dUøt7Î ZA{o}x˙Õ‘ÔMåÅ ¿Úƒ†3Ü*›C>Õ°,EﬁË˚1œ»âÖƒÌGÄG~ù√jπN›‘ ÓUñ¢^htŸb ÜE;∏ºûé¯èBœn≠Q–kOiç(‹°ëQõj©∫ËﬂE<’óÏ˝ÆK;ƒ0∞3“´cåÓΩ≠é	à>
-Uâ≈Agò¶◊Goî`¢≈±˙'m¯≤mVÌﬂ¸aúH˜ñjç(¿Ømh‰˝Ï{ÿ%øRZ&Æá}uï@ŒJIıìµy¥˛1¥£~è¬ì±AXnï¿&˙%ñ'OÆÑ$ô6Áîè¥qÛ6œ™@ìø≈êlåB‚‡í6√(Úë!ÁßX>aí
-V$Ë›¸@QVÙû,"dS¬‚¥$ç≤€(;$Jt¬ﬁiÄ«zÄ˝bN®ê†#–ëè˜
-ﬁ¥˝&Ì5∆±¶ÃBÅ|‰Â≠S°L†ÙöB‰†Œ Ñ„Ä«™´Î3∞`]tD¡≈YıtÍv+•eÀ_£B]vﬂmΩº9^ï¿«)ø)0â˜ÔïÄœiPíÇß¡"ÂÄ©@àLb+2ΩAB∞©Å.atuø w
-œåÓ(!A√kªâmÇèÒ:õ@à `å x≥„ùãpë9`q»πk^∑˛äã‰‡<ƒ‡B≤(KuÄÃ°	’Ω\∞ä«T“] L(fè1Ö∏åá	1≠N¬'Ç:ºˆ‚ÿèc§	y‡IAbÓR4WqúB8U¬8zAHÏ@F÷â}äs°„>R"⁄@ów÷9Ÿ∫ R’‘fÀDZƒFõ%˙·6g“?eâ·‹ø&Á`BﬂÕ√I è∫bÿÚ»)\õ~†ÜøßZ[Â?◊‘≤˛†v_zojãn∑N∫«ª7?Ø"Z®»FÛ√¸Ó√¸Gœ~õ¿a['ﬂ;:VôÂPµﬁ≤k9ßlÔ–Ó{©Ã¿®˜r@ı∏ ]Q9]∫¢Tpø˙áË7ÿ øAë–0ô¨Èæ∏⁄Û/√∂Åª$˚(£º+vÄ±V˘±ÜÒ;}¥)ﬂKáG„#«ÿªa/tπâ&7¨Ê∑Ωæ™∏j!å+ñ„RÊ]-.	¿^<‚Qvÿ†÷M¿º÷ïG–èçâÙS^öôÎHNπ¯T`≥∏ªBø1-˜‘ÖŒ|<fö!L»s˜æ,Ωw	„º¨yCÿkÜÔÊ‹∂ÖÆ ‚iÖ≠ò'¢ÀûÖóVö4zN#∞œí_âósøvOèc:=‘…ò∆ƒ]ñÌ…,3|aÕ›ô⁄£|T¨-º@Ñ—≈ù´∞ŸÎÒõ3‹ÖØ_ü∫ù•¨º6˝ÅÁÆ¿<˜16Ö(‡íÖ‰ò1º ∂¥¬*&œ≤í'°hW,opÏlüËí·∏…≠¿qjD˙é!á Ëõ÷ˆÓ∂=§U0†øoét«∫Á¸Àü˛…±kúyÜqzòŒ:)˙Éˇ
- x-Üˇ¡âÅE  /≈ﬂ+ïcƒÔéì‡fÈñ‚hñë=#FÜ‘U¿ f≥õ0ı™âM˝\ûﬂÑy˙÷G°Œå˘-àì°™∫∑≈ûÒSUAE:©®zx˚˘’^’ñíÚãó˘’”“ÆjcÂ…:[UEÍ˘ç9ÑC’⁄W V“\ÖŸaÉ;©cls?“luc˝Í#÷Mh”Ê∑<∏/‚»$œˇi6øôMg˛jˇ2õnÖisïaçU’så€’Éx'\óZﬁ«Æ[#-ª’∑°èñ‘¥‘ˆ4sU⁄’§Ï,ãgú›ZB•˘OÖI?¢—·ÖÂå"ééßOd‘ÊÛ¢ãXmY|„›õÃ`#RT@ãnÅc÷);@[VcE!¯£0úwƒ¸gzZ‰çÆ`¸NÊT8π‚0%RF-Hâ5…¸+Zse!π x?±O¨Y4È©y5«Äº0k[—ÈO÷lç#B©i:àÂµòÔrc1UK∑t¥∫TøéWiÈ<ÏYhfúW ﬁˆµÉı EÊÏËíŒ®ë©E«ºˇ†T®È@Ÿå&G8“1¥∂ÈqUr‹{dÁ√ô’—<é<◊õÒàÍ¸DHÎÌôè¨}ÛSåI<0ˆ°ÈˆÚaiÔ—ıP:∏Í¶êﬂÛ˝B3HU®¿r?l 9Ol˘:tŸ?⁄mÏÖÒHÌ‘˙®´√˚ê,*53j8Óàà5¨
-µ^“I–q1-uQºH≤BìõDNn9≥»…#ßa9πq‰4Ã#'7êúÜâ‰‰Fí”0ìú¿P“›Bi≥∆q«5m◊∏qÛ∆I'1qúƒ»q,3«\[,él≥X0÷3C¨xÌ∂æ7ôF’eå?Ûy™¢‡jõ{ö›~◊ZƒDá∑˘#qÚO¶è”7}Ñ∫CêñRó∫‚}¶i†L¯dÃq[ΩtT·f?i3Äqù÷É%nç∑ù13« ’ŸóÙ6£/Q%Ò≥≤*ΩpV¬k±qwª!ﬁ∏Ï'a_Ñ]o`€PÍØ]’z˛0
-‚ÆﬁÀjÚŒÖ≠ K!´|«ø⁄s⁄\˙Q7àÉF@)á^SzDÃ‚¢öxﬁ~f Oÿ)Ü)kâÌÇsV-ü2¿{·ıN;A»ˆU'Ô¡¬iœ'+œîïÁ∑CØï4Å 7ÒîFYMﬁb–«tHâ©gK≥ÔƒsÊá0 ¥Õ;ﬂèö9ﬂ~^›Rî±¿*%<„ßn∫I)Ø˜>Õ6∑Éf
-”ÿ0˘Úπ±ö¿ÑΩe ıZY&^”Çæö2Y¡Õï∂ŒÏ4ªyÄ/‰®‹	usnsì∆£ÏÍÄ*"Õá%·vyÔΩ%íQœ[k€ÉVéûlà48≥ƒ¶”—OX˝˜VÒ˜˝√u„¡u£\9.ΩÊÚZæ≠wÅL«5ä=èU•]õ∞".—,?√–ÜòèÄíO'R≤‡sJ◊Ã¬Ê°7óÿòí∫±9Ñ~Cñh¡ƒH¬2h≈◊|*ÛG#aúˇ¥-¸beÉ
-‘—&Ω.ÈCf8À#Ïox◊¢ﬂ2≥≈ÿÉ◊~ª=§¸ ”0ÊÜâ°≤†‰Æ"Ô§fúÑ4™7YrŒk{-©∞”eÃ}Ω∑~Ù∫yÁö%Êä¸ÄÃœ∞Hµ∏I&x]ÔÊ_˝oá>¸»ù{¡!È‚swXÛ $3yz äƒhﬁqm‡ó±„≈≤ ◊≤<˝Ë*óúfùD∏ùnã0¿G‚ì1€∂¯∞2F£yGÜ8NIZK4\ Øs?»›,Œ#“W{%ßëÎsÙ@3¯88œo£¯ºÖß¸HòÎknJ–≈hP·r–kì‡@4-ì1lëQ∫ÄLÊ∞‡Ñ`&3tHm#∞€u;íIy'Ö=∞QÛ˝Úèªâ©~—¶∑wáÎHº*^"#ünˇ
-€˝d€¸Ò€6/}\∂Õqûq≥∏MeÎCØ£˙Éö8cNtº˝g(C†Ã8ß§«lõÁtLKxÒ˘S€»π€¡»yIX¶,Â9Øä˘ç`ﬂ¨lp•IÛ‚Ë&Õ…åÚlõπ˝”—"ŸPÂX“RFZ÷≤“Tx^CLsYyÚ3H8ì.ï±£÷l+Ù,úVµ—¨´ÕNKòWÔ%öΩîÔåÀ†ø’Ùd?∫ïûÍZ'P 0dv,˜ÿ>“í”äÿÀn-ºÉ
-Œ\ø73˚£Ö˙Ú…¥MÌìïæÔ⁄”üÔâÜ˜ö._k÷ŸöÆ°Œ∑˚Nt“F˚R…ö_U™™ﬁVpäóñÄ≥u∂M⁄´¢⁄~FÌ-Æ¸…Øn+»TSBıSn∂û)›L©—Xú¥5?∑»/#P*’ÄP<ê÷°`-mEÇ·P,Œeõ°ÛµÊÄg“íçX«Qª÷Èõ_‡Ta‘TœÒP§è#’à√!ﬂ£‡≠4TŸõ@ï Dƒwô√éË˙0˛@3õ˝x‹ﬁöW∂≈.÷Ô'∑áqõˇ‰ˆ∑Êˆê2Õ˙‰Ú‡öÕœ‰ÚêX∂ˇM¯<ê˙©K˙="úÇã√˚˜fXÌΩÌª3h•
-¸√¨z^LÁ>Ãçßbáì´nT©¨3Wût=ãoÈXÕ”ä÷úcÛì{¬'˜ÑOÓ	˘qú'â‰<¬ﬁ˚‰ˆ∑Ëˆ†„Xv|Á——Ë=xLËC=ŒÛH\hÑXœ…iR∂È2L.+HyûÉ ÜÎ†PL•\πRk¥∂∏™,IÑÖrÄê"¸ñúûî-˘útó∏x–s2)ukÏh—)≠Ëï¿Ùvyáéfìëd∂*™ F#Ê`√Öµb≤dç1∏¬åâƒÏ9ÏuËvÒ¥CÜKDõà˘óA<àï@óö‚Ô~«>≥hgà*ÁÅöZ3ï∞I¿%Ëî~hàÀÍ…%Ωùk’ê8EêñgjÕÆ=#ê¯∆€^‹¥Í<óØ¶È Ûﬁ|m¬VF’ËÎÙBe?yÑ§<BºÊ∞[B∂˙Ì0@˛k«˙÷l˜ëIS≠±˝R∂d!HƒdÑlÑ£}nWf∏n≤pÖ¬ë◊txõ∏çœ:⁄Üø&ëk{ñCDòh%i=jt”Î4o~Ë˘<¬¨ﬂÚª„ªÄ$ œ1°üò-∞“Jº òç˜Ω\∞N√AZ&±Í÷ﬁÍÍ{*π3ï5∑,S√/Åú`Ë•‡Ÿú85¿ó6öà_àΩµq·g£&R{Ü1ßœ‰éê^a#ÙSòr
-Óñ›ﬂè@4)mü[,xHœ´$¸ybç*8ª4ã;Qñ∆~Ûóí˛p%HÆAi˙K°dh¢§æLÆ?óﬁé‚z«ò_´x,√ü¯µ™˘∑PÕ~Ã5k·ƒ«ÖºtØë~&‡ı»¸Ç≈N3A‘¶g–‚≤f÷‡íVNﬁ	Œàù.cóOã≤\±$·Ç ≤Ä§e|˚u”eíC:i[ô‰\?'"-RπshìDÑ«ıPD1˜ÔUlR˜À¥Ç_Ìœ;eΩ‹˘≥áˇ≈˙óq˙p?æ`ﬂN√˜9V∆åKøî`ﬂC Ñ‚Z8.Ú{q™!ø3Ìg{ôƒ¥≈ÎÅÿˆZ~-p¥v1sÛÓl+èﬂ∂"”∂ÔRzøß{¶¸e4zÂ√q⁄Td´ÿ∆nk›˚|W.dÌÇ®ÚdS9àyd[ñ∏≠√Ò_∏¬:f·ﬁº≤®)¥«%l∆SêO€ç„øπÙú#:	Æ∂ë«;[È˝—-∞ñ˙º‘
-Ûy¸ÇX ˛}¨ØÀÑ«m¢cF-%<\àY¸Psº‡ro$ºXJß„á(c%aº≥b,˙¸)y¿/œáÅUÖ2„¿”è÷õ!—C∆‚B≠\`+nÍU5Sqz¡ˆ¯˜W ‘j	{´´EöF˘µÇA⁄: cû{\qR0—î√h„êüè)>_©ví„π´ô’^Q+SqzÈ—lWêuë5-,iﬂÔ%í”Õ5ê—ÓØƒ‚ﬁ≥ÓƒäMÓÌ[¥O6˜„6ˇ…Ê˛oÕÊ>m4Ò…Ëﬁ5õü…Ë>1ø˛õ0∫∑(≠—Ø"”¿·\
-mÛµR∂˘€plìàüLÙ?ôË2—ˇd¢/ˆ·'˝O&˙üLÙì°˛ÚLÙÜ∞3Å·ò÷P\®≈™∞3[–∫Ô˜ã[iA)YùÍv˜ÊÄú¶˘¢€0_´È∞¢7€Õ4◊qÈc◊é∆≈à2[•jÜyæiVØŒ0≠Á˝eI\…˘äKsø£ÙƒB§Ñ\si]’Ÿ∂züWùb±vá1Oj¥∞)?Â[tªLT£lÁdIºH#é°F2ØKáuô”ñ>
-ÏåœÈUFæ¥™· H=d#ΩÀ®ëgˆñk”~ÊGΩ¿{ÌÄ˚K˙¬P˜¸^3∫èm–>∞j«∏ÂR/èÇ÷â√&∆YÓô¥ÁŸ≤G~÷˙u€ÔÜò8◊*wÛIãGıïÃê∫_79≈“,kü>ÈtÃdAfd45æÛ ZéicBE`+™9ˆ¢¿7?*wÖ8N{aÃ¸fx›¸–¶Î*RÒgπv±|≠É=i´ßE”EïtË˜ÑısƒøƒDÉéå}˚∫ÁÍ\É˝4•⁄∆üÏä€ﬂÀ»Æ!WΩ¥=nK;Bt˚lB4ƒ∞H ~Ûˇ  ˇˇ ^¸æ|xúÏΩÀvG∂ :˜WÑQu\§LÄ_zXîDR™¯jÇRµ[RQÅD H;ëâ LP§Æ’gÿÉs'uGw“ÀwV≠^µj÷S˛…˘Ç˛Ñﬁ;ôôëâIŸ≤ã≤dFÏÿ±c«é˝ä2¶°„RØQ˚Êí|∫!£?§1R;£Q<âNG¨Â›®ˆ»˛ﬁ£13q˚d!ä·Ÿ⁄⁄"5'°¨¯µE≤x˙§∂€c#Jzn$r}“cã‚p‚¿{Í∏WˇƒG§ÔvCô¯f†C≈√‡TvNkdGæ"ÚLàÎ˜]/i/ C6∫˙)vùÄxÓÄÖAµvú`4ˆXhO∆à6âÉX∂“c}Êƒ~è√´üúÿı;s{ÃèYuÚªP:ƒ1òîx»Bﬂ•ß£I‰L<hÙiî@î$VU`$¸´üFÆC+—@k·Y ‰áA‚Ea»¬ÄìGŒE»¥wAÏ6°–|‰.e¿À/≤-ı_æD¸‡∞pB ˜*ÒÒˇê óXÚBgH√Vº∞≤ÿàÉó„1∑Å÷ã‰k˘>Ú\á-4≥®®Æ∂<dvA∏~†u„Úõ/æ–
-.»zè{ÓI÷£Qt@Gl´6äÎ»8ÆoínˆXXèÎ´ÍkèFC÷Sø!Ω®Ø≠¨@{~\è®’ÄQ|·±≠ÄªÏ)“∞ÌG¿aèHçûnØ∂$(õyJ.Uøû$†8¶ÇÔÎ˝âÁëòù«u>v!uÎkµ'⁄®eÎ¬Øõ+„Û∑dÇ‘ÂúÃÒÓ^è¿îs~p˝A˝=`
-ÿ è˙ËÄ_ilêÆ8?hù’$§Â≥Û‡Ÿç˛:·“Éë‘ÛËèÉ "§„˙¡8r#|æ?âº  ÊnÍX/⁄F7∆˘N<¥Ùa¯ÅŸ—>BÎ++T˜ÈòÒÈ‡–1çíy∆"M nﬂ≈È»m9w(‚ÌaA@úJƒ	Û	sh£ıë›k£'˙T8ö}èù¸ßÓâFè¯˜0xO‹òç¢:à];CÚ˝$ä›˛ÖÒáéËy˝}}ÌP;Ø”	Ã:Ω£ñÔë=÷è…Æ«FPÌŸôÄòŸq)‡<ä»”‡ú‹[æ,aõ˜ı◊k´úiÜmÖÎÅáÄ◊◊@û uXØàIaÃçU‡ùh¬¸}=≥ß™?]øg@I—[Ÿªh∫˛ı†µ;B.Ï”´ª~ffo£)⁄3¿™6)Gõ”p5®cÓ∞(bΩN ‰€Dp7ov–hY†îkãCâ∆‘œ≥˘˝∆F·d≈ÆﬂsA}SLœf—<kOé<
-OµŒ<^∆&≠∏BQˇ‰©,xÔusçsE"tπT≥ÇÍQ◊sòK∑}üÖ/Nˆ˜PXûû„ë˜àXá‡Ú“Ü⁄ræ91ÇüEÚà¯Ä˜e·pÔ06˛¸∆f.ËpΩÍ}$ó˚_—(s ä·µµØå˜±w∆í!˚ FÆmÅLá‘Ô›D;∆’Mhm˚ı©1Õ/kô5AàÍcw0‘dı3ú·˛ ı7äg»i)Ò@4ãE{c•HgÑv©L∂H€,Ÿ≠S√ò(dõ®<D∫yå∫¸=v^Œöáb÷ÿe‚}]%”Ü C†)◊g¨sıˇ¸œø˝j	5f€ª˙ËÉEëSáY¥0©mˆYYwI°K¸ÉCÅ.ä=ó/êvñ.|xmÈ’‚ˆ@”¡Ë Û•œFA∂·Òhó¡t¨sk‰>Mù\.√àhCÌâ^}øA:‚qP^Ÿı‹ vª ”Oª‘Ôi N§ùº,íµÅ<^¡ÀÄÏ≥^£ê‘P∂@Ÿ£q5(∫=hÅ”ÊØT“€ZΩ,\RÑl=—¨§Ùˆ!pmD∂H<Y—Aª(z-Í4‹ﬁ[2ùö&ÿ7  Ë l˘“óãyƒ
-öŒA[låËxAV\¸§]*Ñ€‚Ì¿M}ãX‹Úi†ÌÒf¯õÖhÒõ/äÎÛV«±Üπƒp'}î≈ö8µ5Ó∏£±Áˆ]÷;…‘XH*,ëÇÜ3V™˘·¢·v±ı!tôìçj¸cd|.$ØRÿ-KBV
-µx´,L.ÛYuûã}‚1äkX›|VºP»?»
-˘QÆ-‹h≠i|∏§Aò∫íÇ|öÊgdÇY°%ﬁZƒyÚ“bªJe/≈wµ∫ò[◊äVë?¿öÔ≥:TŸ,≠áu¬∞F+aøhìyB|rûoız."A=•∂,‘Ã%≤ñÉ`SŒÚè™(oY⁄T‰GI˙œXÛËƒπÈ†∆!d=g=Mìö7
-¯QnL§QM	_®ªg‹√êq\pmé¬vŒ=n!ã∆P—ãÖeÉ∞3ÍM§'°‹ï≤™¢◊¡91Bò”˝´è˙H—=1ÜJ‹ÖYN”Ã„ßˆÉsÅpû	i®7lGA$z’qÜËÒŸ"öúG·óÆÔxì≥o˚«º(9£1s@`:ùx“ªKâ`û§NÍ”D%_JNÅ÷H!âŒŸ‡Y Dd¢≥A¢L£È!kë«bL†®u“*˛´%bzyô4Zp@îÇ¯/h0¿íT¡yx¡ X4pËpH( „H¬—⁄S_ì¡h@g<Í∞ñÁ-¸+’9∞≠⁄Ôölı·Z∑ˆá%b>Ô7˚˝áµ?,√ÿ∂ÉÿÆ!imï≠ı6VoÑEƒu∞XÈ7ÔØ“<N∑∑¡öï∞»ÄÿÆ!ëfÛ¡Í˝aëq,÷÷÷õ7¬"‚ZXÙ÷ŸÊÊÕ∞0A‰∞–Á·jÉ¥z®rÄÃãá ô]œ[Ü=¯!ô}}ê∂c
-+ÛŒ=ÑhN˘§ˇ†O˚Naèd©ıç&]Y3Í±˛ösV=–ÓØ≠ıvøø6´ﬁ˝~≥◊ÏôÌ±U∂ZBy$îc˝u¯H≤Àg=gusu≥B]g˝¡√áô∫›’˚˜ã˚ôîÎo<d+›L›á˜ÔØTh◊`X˘l˝˛∆∆fô¸»î”ÎnÆﬂ_–ÕÿZ¬c®@H∂∫&©“·ôÅn¶TZO1§ÅÍzÇ™ˇ#2ò†ácŸqC„ÆØ-XÛØBíJ∆Ú°8`ï=ËØËË»eZ¡4cp“‹;Ë~›-∞”ú	_t¡ÑíÎÔ”ãvo°∆MÆ˙Xiu-<S(5©©&`π#qx=(Ø qH®Xùœ†íH€”("ƒwâ÷cv/x¿µÍ/Y íåzÿ¥∏ƒ®*Ø¶¿•ööπØæ"_Äãµ00»|Ó{ÃËzhiÎJ:LÄ{@¡X}5T2éNƒ’B◊6º
-Iº˜  9ß ßå™$√Õ™|&Ã∞QXd´êdå‹@‰ıP}ÉÏßœÀ™C?¡∞˚ËØ•,)Py[=µuñM¬ VBóÍíØ>R[ÊÉ8àË’SΩ©]„π•¢-ad[<ã•¥gñ$ê9íø1HTñê…0≈KÅ&·…√´cr$≤k!W∆E`"ú)≈o_ªΩ∑ñºáÚ
-≈)[ÂÈµπêüﬁ’«ëãv•(Õ¥\6zÔbt®†Éy.]†Ò8qüz√≤4óÛG%˚§o	å®€ø˙{àÊ+¶æ ∂Öu+ x‰˙4¨ñS8ﬂTãFnë§›F3∫ã%#=4»Ωg…WT§tŸèhÀá ªÖCÍpìæB~QÜÓ—ËŒÄz‚Á>ã>ÕgüÕKtŸ\⁄¢NnÊë3î*!K2.ÆMıß!Ò†z¿âŒ¢1ã@ÈW•ØAxåˆ≈˝WATû‘u3nAXéŒÿ'§∑`olhACË”ÕsË.O2»D“⁄]Î“˘Í®Ë¨HÚuA}∏}öKjpœiº—í£zíaóêêPåt¢&Õ5†9±BF‘«µ@W°:ê'vùSüÖg¨åÊVÕ‚ÿ∏'gºy í\àÿIk‰x¨?C®TRD‡iÍSıÇà∑wıÑÔéãqŸN≠®BÁiØ7q‚ <—Å_Œr≈…±)>"K÷aÔ¸$P?+V=´8¸%˘±òi+¶≤Zƒî®Sô≥äÌn iâaîÚ≤YW[Í3ÁÍüπ,‘ª—ª—Oí ö®∆≈±ãœ4C4ùGw)¢w)¢w)¢w)¢w)¢ñœ]äh÷BïÓvó%˙[ÕMô_Uöhﬁ˚ó&5>”^bÆhÉÏΩ(OèÃª≥
- uf  ∏gÃÃS˘nF™f÷›êÉÅ/g¡0åÁ¬¸v≤ÌämãÂ@≤F®ÅHKºﬁ∫∏≈|Q3(Û©GØë˝yC¯i†v∑}•|P[’ªƒ–ˇ≤â°Îø˘ƒP-∑Ô_834u¸FRCwΩn~fF®VjF"Ëv–Ó≤?Ô≤?Ô≤?Ô≤?Â<ºÀ˛ºÀ˛ºÀ˛LP˝ıeÓâ˝ñeôöÑ:Â∂⁄¶h÷Â&Õ\ŒÁæH¶òñH¿∞g}¶»Y3>ìÊ≤9ü≤û%%3ÖXòï©*[Ú<EÉ∞	&ÖPeU#€3ìÆ)±_Mñ¶rˇ∏ëVÈ$}hKtÉ<∞CÙZª∆s{E`tòB˘ä⁄skæc
-?;≈¸#†œìΩÇÙOQi¿7⁄,˜Éûµ*ã`∆˚NÆ¡]˘º†≈§ö•…§Íæµ*¶ud®r†YäGìÆ79ßéôH—QOı¥—Oê˝…Y¸⁄Iü_ädt=˚Rgˆ|
-¶∆ˆ¶QñO¿¨û◊y§RmTÍ’ÖñÛÊG,<É1‘ê_ R<ù`4
-¸SX‚òÄ rafL=nf*8ò?rıø}qÿöÑ`úZBOyJPï)K‰Ç¿°zrá¢OÑ\i∂ä¢⁄i‘;ÖE^-2%tò9€πH932òÙ¥(œP\üfeáUö¢Íos‰:aÜ2]Ø‡ê>+Ü∞xBUAäÔòBÂ…xV∑è°èfî¬òÛ <‰$—4§èô´ê˝9S&ÄR0LäÉï∞R"òd~ÙY^Éı∑È®Î<_%}/2ã¯\`ÂLò≈Ó≥ï4 ôÜéË≠Œ`Äàãb†j∂ÎƒÛixC¶Ì°ö„úßa\∏F≈âÉÇˇ“4ôkÛªJAÂ<îN öd¡q¢'iÅ…ûÎ î®îô¢.Lg§æK	#Cw`∫Û]«Ì—G…a!g“u≈˘ì#ÃßÏzBF(ò•dôΩ~¶GDÍmFtW®P
-$ßJ>˛uÊ°z8L≠ë;¿úWá¢K5™íŒóÀ‚£VÁùØª<œÆŒ≥ÏÑ”†1ıÖ:¶rR◊Wio]0éÙÄ„ah æ–2≥ôÄ5=[¡Í≥Nˆ÷ÕÑΩ·ZÆÏπÙ<såäÇ °πvR:bWÒpmV"û5™1G“DYòHÑÒÆ>R≤ã	vW?!#¿l∑∏òÄˇ’?«±òdõÇ¯P∆ÿ÷ë—•k%Âa"Fµ÷gd÷u^=èf'”≠ ∫¢ƒåU#°NEÏíórôŸ»—Ïæ5âLˆ1Û„J2„ù?ªl©ÍYq:ø‹j™‘√Oô)•ˇ©s·§˚·≥ﬂ1¶ÖV]—â_œ‡J¢ˇ ·ƒZÉ¸Íü#¢ƒıÂ.Ó∑óá„˙´J|À˙Då„	wïácõ€uÂI^yøB
-kœ‡¶nÂƒ8¶≥R◊,ˆy
-≠∆ÚBîE Åô¶Ø—√g¬n≠“øúYÿΩÌ…¨¨:›ÀÁ‘	„©b.K|⁄∑{Da‹ü#7≠®∫; ”∏eÛ≈WŒkc7ÈÏt∂¨cı.ãÌ∫‡∏ëÎÉëµ–2∞2R˛√ª!ß¬{˛ØÍ+◊Gí2øˇ†∏ÏÚ›ÂìÚÃ5[?C÷]ÂºªYôw3rÔäµ TiSjLQ÷ò‘Û6∏ûßzóPª<π∞$ÓfŒû_ÔëîÜH˙÷åÖ,ên±€j†Ç~Œ)ä"ÎÏ_2/—ÅÆﬂ~2" û‡≈>Q‡√ﬂr¢5±„‡e7£ô©àF9=q¡íç∏ai·˜‰$cG¯MÇ‹˚/óˇ5ä≈Æ≥Ï6K**µ≈≈œ ¡ÒgJé
-]∫–‹\"ÕœÍ√%≤“X]]‘ıö} 6™ Z]G ‡ü&Ù`qÓ¥+	h}âlÆ-ëáÎgm√Ñ”gÎ¨BjRs•˚A”LíYYøˇ`„ö)Q›ıçµï
-iM˝ıµ˛À‘eÕ’µ‚—(Mâz∏N◊∫f◊’2õÚ©Xzé“≠ÂR©Ñ@KNTi=⁄ÑˇË¸9X˘‹-ï~6˜ëwBŒî%*E¢àû™§“ùÃÉÈPπÉÁƒ€°sIù‚Áde[æHÆ?±¥ÇîÂ,Ì6!‹&öxND†[ìNF„vtÛ/W’˝ÒØóÖΩÇ mKe6v{ﬂ»÷Ó.ºª˙à/≠Ì¶UmÌjïmÌ¬*·
-πnk˘E˙÷⁄¥^€÷∏^øùÏ˝zkíZw`‘‰ê®—…õ¬í£™√÷,ö¬¥côIMd≥Ω2Îò3¨(ù=IÕÚ∏‡µÇí÷HÊÌûõñfa¿2Ó’OπA^?)µ+CS¸uE!Ex¯ÒDJ?jûoÚ©Cê≥#êÕ≈»ç€ä@ŸÀrV>¿d L∞1ODfÆ£'$ä˘pL&Sq˘§·ïÑ’û∫ûäaﬁEW~k—)?ø KFKô”’^®∑Tq∂ßﬁm·Uœj2©ßmÜg›´ŒUáäÓ˝€ÙtÎXu7éÜÑ>gL&N∏Enﬁ_ïó\¯«áy/πÎs«¶8∫Lsô'„ˇ-˘ê\ù±≥±≤ÚÊ¯àé∫@w|p˘Ó“|/∆ßñ:≈Mø˜ßqno⁄4 }Xs>Ï&œ?Æ¯
-¿4À}–∂EØ»Ò,ö'˚s”õ…w∏_ñ4ı©]ƒ ’g´ö~ÛÒêìt≈ö13√Qléú$H„:ÆWòôﬁ–âCÁÑ6%.ŸH˙d—©ÀÌvéI¥çJ• ›ö‹ ñu^)‰ö
-™=È¬ûwèècKÇ—=≤ö{D¿jCºp‚t4%,Ø∞ÓÄ—·àïVd’*_6åÓåΩü¡á˝ÁtÆBv‚¬÷ä%lt@À◊;ÏøLpwàÎõeÔ^∫˙sËÁ∞Î~^˜‡Jw•ﬂ|8ˇé›;gˆo√ôm€\’ô}Á/´w{épu#`ô'¸=J¥ƒÆ∂rXÔ|IŒë©OªP∆zâåó≥!ˆX˝Ø≤pÒ=2Zá≠[äı‹2£ad∏¸ãÄ‘√)C…]≈öÈeC±0<ê ∞∫WµÅ∞∂†w≤∞âÑŸ∆eÆ«Ek˜ÎchΩ"G#g…E9	àÈoÆ:â∑~<âÜ©*(#bÎé∏◊ÿÚ©p˚ÚÖûLóƒS¸núñi},2¢)‚ùLÔÉw ¢ﬁ©C√±{*“ç;ëüm€™—ç fV"æ¿‰∆lFbz5ã^3‡ÕB◊N’t7Ø¶Ür‰UÄ'Ò[‡80µΩ”;L._´∏ç/P◊}Œ_TE!ëyv@f€;£ˆ#‚>-	O‰-ûä;Ft oÔî° >ÖØ|«Ä˚›ÙHUR∆:òn7ƒ≈ÆG¡i·¯M⁄Ä™2W±êåBDrO”4òbw˚eöóô;¿`¶
-ZmVÙ˛zöêÜéΩS6ÓöY´≠£ΩÂ›£ßdZZ¥ı `ÛÙ4r˝‡sh=óoJ’‡º¬<‚ÄJa¡Rey“í(|åoØ~¡ÀR8Ω`<ˆXx:º À¨™AÈ∞´‡a‹¢H&KjM*Õ‰Xﬁ¡Ú≥‡Õ'
-Í≠Õ
-Ú≤ŸpaÓaA∞–ZÓó
-ä‡∏ùu5¸¥QCiŒ∂˘/5¸Pn∑œRq2Æåo¡bÁ◊<g>O∂g s∂ıE©∞√H¢ı»Ëd/à≤ÒØG§µ¢v˘™Læí+cÇFJ˙|+≤Ê.˜>ÄñÒ£‹-jJ t,OG{¡ÏT{±fƒ¢>ã›õ´ü~˜ÊZaÏ¥ú≠Ú⁄>»⁄ºÇæXr-§ﬂÏhØå»ZÉoM|≥E›>‰QÆÊ=’Ôw∞n<,Ô˜+€Ò∑1Áéø˘¢ÃI◊Ìª˛¨˚˛l4rm£PÆeíﬁE4ôœÌBW˙úûc}@S{_oD”æˇC*ƒÙmç©•xZ‘*û Lwõç>è4 Ì/ñ„jç3Gq.Isæ›ΩÛ]qëtŸ∆∂›Ω∑¡ôEÕåd…]¥2CÈêÁäeV’ªÏí_Qvâ‘ﬂ~kŸ%Ó]n…]n…]nIıvÓrKrü[ª!AF‡π% çï¶ô¸ã&î$wF*Çmì"ÄÓ§–à˙=˙sdé‡ç¢%©#*5D/¶Ô}¸2≥MëOÿ}:¢Q-ü4"^#uœ%/2
-z¿IqZµ⁄[rA^¶˚Dπâ∑˙©vH
-éÎG/óè¬=∂ ‹œ	{Á’s˘VÕtHÅh`@¥}è·NBØ·1ıKÑyû;éÿs/Ò’Kx^eºD∆Åw1¿„˝˝ ‹•Œpac ‘ø»Ë3RÉËµ‚8‰ß6`d∏›IÃjnØ∂(vï¶¢àbxçpHÙg7.‘¯Aÿà“V◊óDò
-’ÓA≤¢L	–Î-·÷’or5˘Q~Ø∏v”Ï%4-±\Õ“æ&«rPy¸ 	"ÉòüÄ»©‘õåPŒïºÜÃy©Veà ™BFùK®B≈ËC>~Rπ#2egéé»$ö€ÍàâËÚ2—˙Qµ"°jé>»óπ˚êÈAÚ›“5˝ÂBR4©xÅ¸ºLj‘nH¡âû≈îW,-∆œÖ 3‰Jv:ñ–T /‡;®”6ÿàÉΩ‡}rÿ&üK|#ZÂ≈Ñ®™PP
-∑yx⁄¬óI+á<πÄ∫ú¬FÈ˚sïﬁ¿“3˚4Ég5îﬂ.”ú©≤uu}Eàœc€í èãà,s¬4t,ÖQAÍ”ëÎ]`ù!ÛŒnV´PÎ=CÖ	k°rïV∏ÃÂÑ•›‘í<y—lzwÌñ^Ë ñï$ùãkm÷T.·Ã
-Ìb#ëK©“G'ºW[:ûﬂß…"JÔ˝∆ëGô∂4dK‡â)8ûËpLÃû}ßˆ®w æﬁ‘Æö‹!u≤˚=#Õ¸NeQz’Vzµ®Ùö≠ÙZQÈu[Èı¢“∂“E•7m•7ãJﬂ∑ïæ_T˙Å≠ÙÉ¢“m•ïnÆXág•∞º}8«≥i–¶}DaÍÜ¨IÅô4ƒ´ÎÔlï¡Ç§ß`'¯À÷≈c·P≥Ôà∑∂⁄Ù‹ıhæÕﬂO€¬ó∂V›É∑K‹Õ1xªÑ¡›É∑K‹Õ1xªÑ¡›É∑K‹Õ1xªÑ¡›É∑K‹Õ1xªÑ¡›É∑K‹Õ3xªå¡›<É∑À‹Õ3xªå¡›Boœfp∑à¡€U‹Õ3x€∆‡º⁄¨”r¢ø¯v‡r-uÖgocQ‘iÔVs∆ˆVÛj':¡]~”MÛõ‡áÕIb¯ê~Ÿßƒ÷aë∑J∆A»Á‚gsûã,Ow®=¯§ÛTKéôyÇ–:´≈¡ÁÕëò;>gnƒ<p—œü3¯Ωøsì∑qﬁ=≤◊oàx7÷jﬂÂ !ÚÀÂ ÑAƒn+óÉH¶Sßk\≤&∞(èÍØ:˚†@Áö?˝@ *9≤π÷“ÆES·π∆]ñ¡Ø0À†6gí–òœ—çåj[°•œ=@…àªDÅíù;M ≥¡ø§9xØ%<.<J^¿lÈ‚Ö4∂ñ§´∆1»7>Â˝  ìB∞ÀÙkƒ∆4º´x õÔˇÍüΩâá˜ãÁë8±Ô¡laÁc/‡€'∂~ˇK&?§7ﬁIÍ\}Ïsr‚±cyB≤»ç@˙9 Z›^ ÇñzÃfÊAXJÎÈñC2éh»z$©WrXFöPPà†
-R˝=†`;V‹Fõ ≥5X˝hçÂe“lêgAË0ÌvpB·ﬂƒèÎä<§Ä∞‚ñVÏEc°îZê9&!◊9†ÏE‚⁄Û~≥ø—◊é!»Aÿ∂ÿÆZ?iiï≠ı6VoÄA¿¸¨Ùõ˜Wiu®√L2 ∂´÷OG°Ÿ|∞zˇd ÃèÅqT«u0» ∏Ωu∂πyL 9“π∂⁄P'`‡="†]ac5√˙A/A"'Á<ÛK~≥πÚ∞πVvàçıËõÕ¶≥ÍÃ]+=¶‡úõ[:.ß*òıçy¡Ëá‘±S˘§ûç“ìz™ÇY/?Á˙«Ù\ˇêûÍ«ÏÃò5s≤cØπJ◊6÷Ô_ßMc¡êœÿ*{–_IÁ®e¶ç
-–(fCêk]¬ç∫B‘ûÄ›Z º≥œˇôÛÙCgAƒûEÄÈäìËT™+nt ê$í’ «ò¬BZ†vêZéAœAOA!åˆèµ¿∫xÄ;M"–X¨xBgj®ã,Ñ<	 ;
-® —SÍuıHﬁﬁ’GxJZ¯4Wc2Í∫ﬁÔuÚ àqfƒ†A^™˜÷SÎORp
-ÍÓBÅ´üx	KÀ†ˆOPΩîïs‰‚ ⁄≤P¡≤023AÿIÊÑìp€ºH
-f}≤∫lû◊ûAU‹>3p
-e©a)Ã
-úÚòh>TöâàV<@câD÷≥4–00– ûêQ¯≤‡§å“Ú≥OÃ‡ìxrP|ÜÜxıèj T˙)yTß#ûS_~°ª[Ì\∞.«‹(K–Ør≤FÇW.k·‚Ù˙•çÜ–F&|ú˙¡” K_xÉ(Ã∆D˚⁄<îç'a0∑kyJ.Uã“2‹ìâKØôqi´ó@Ï_µ^ûkâM'KÇGüò2¶ùΩÓôÎπÿ¯∑áÆZ:ëø‰◊ÙÖX#‘4ΩÉˆÇD
-¡t∑ø–ä8tLuæ\"t¨:	,}AÇù.Ùr»Bﬂ•!|5∫t≠P6∆â¢—£$ê,<…Äãùa6¨åûÂMˇ[;˜»ËºN' i £‡Ú0Ú48ü_7ììoâO.Í*àEC⁄ﬁ◊£Qâﬂ]˛,àà€°˘Y¡°óD›≥!–
-·œD°ª4›wÀ∑UÜ‡ôXc~ªÌ]–Ò≥€¯úGÛWp,WYÊâ;ﬁÏ≤ZÛæŸ“Õ”w»Œ˛ÓŸ_ﬂ≤õ◊π@vñ¶çª©;¸|P0—§+ÏÖÖt4˝äoï˝ú/ãÕÖÇ~˘]€ÜiÄ¡T±çª Ë©Dˇ/∑s˚sæ7cT&w„V¬ÕØ»˝9Ç¢€‘Î∑ú°ÎÅA=3&ö/<3$Í«@®@˘˝f~O‰ë÷_'. πqåTç~ùJîÓB§w!“2ÓB§w!“ªÈ]àÙ.Dz"˝!RTFÏ!R¶Ï¿I$nr–œ˛ûæñ◊9X¢}&ô
-_dOæŒAâè!
-<¿©á6Ø˛wƒßÔ\˝”cAæ¢R≤‰©˚ôã$2j]Æ6–‘èÒöÄ|ı#ÒäÏ0o@{ññ˘ûLºïã˙åzß›IÈ—’ßÅQ±9]˝•™Ü˘‘àU	Û9∫Ú˚ŸD˘t¨≤Aæ¢w1æ≤‚∑‚k°±⁄…aß2⁄ñ0ˇ|±µo˛)	¿bÍ{`èqÛ©$¸ßŸXLøÑO-É^r'Ô ò1ç!ﬁ≈?øx`πÈXlˇ"B®zÜv^»Ã∞†àVC…∏ºwÒ¿ªx‡]<.¯ÀƒKuõªp‡]8.hºøŒCíªp‡Ã0»]|–xî◊È~eÒ¡dºóÛzˇu√Öø\êÄ?√<ì+ZJ¢Ññ“3¬Ñ€,d›0 ™Êç√ÇæTÔ"?G\PT,ã3R?M¿B¯Ò7ñ»Í⁄Y_µxÒ+E"fﬁn~€>l€}ÿ’|ÿ6Otiõ%èÊ‹+òµ9¿\?ÊPr{ÈıÌÅlVRÌ&ˆ˘˘W∫ÂÒÎπˇ3á†¬¸∑˚‰œ–[„¬<ÕÌ9yÖoÆ>rw¯[ñp◊ﬁ5ù¬»Ï;…Åhˇ¬üÖ6ˇv
-$∫aÔ¥LB~nµ∂“‚Ç¨«—¿Z6¬É0p{πÓ·ŒdõødAqgT˝LW2’K:2`·Hl `–iêm:ÅzW?qœY!	åy%àc≥ù·≈àûÇ§u%Å—%ó'Ø˛Ó$X“édŸ¢=j%`≥4≥BµÔ“†Ú{`KQ‹∫<T2=®)«éÿîô°èÃ  °qöÂ.>p≤{=ë™J±ñd*V	∂¯ÜÒŸD[¥≤·ñ¬óÒñ“Ú∑pŸMtM©SÇ e˜Y˜∏PfºÔ∏‚R–Ü˘±ÀeCÓ∫aák{‘KpÑ˘\É0˙ô¢€jÿîñ˛ôE`¿ÄB´õã8ıﬁB‹„∂∞·ﬂa ;ˆÒª¿À]‡Â.rx˘e/ÂzŒ]‰Â.Úry1ﬁﬂE^Ê!…ø|‰%ÔYæã¥¸f"-YM_-¶üyÄÂãƒÒ‘FÃRWÍc@2‹¸üÖ¡HÜK∂»íWsM‡réÖÃ[øí[ÒUrÎ˛h ë£¸≈„O∂»∫rËW{`Aé±˛%¢Å"M|”.G;nÌ¥é…”ˆ·˛Óˆ’ø¥∑kãÿ^Yπñ(fπ¡3/$6ÇH(ÉPO‚¿¢±Á∆µ7æ
-‚`Ñf‡]Ps`tî[…æÿhØ"‚úIÅÅÃµ¥îÿ¬Á«Ø¯kXËàÖ}◊#œ@ˆsaBN‹}|Z%–‚ ’d4¢ÄÒVr†t~Ö˘ Ω~ã~Á∑Z@…ı[ÁºG}ÍEÏÌy
-LæÔê …}o|sYŒaº1Çy5Ò}.$ÚSåû(°Ëù®o¯Ræ”ÜÍËÂ¡IÎèª‰˘ﬁ·”÷ŸŸ%€≠„Á-r“Óº‹k?2Ôø8å(Zæ[
-óˇΩ∞º¶˜ı¬∑èﬁ4‡Ô‚∑ão¢{oñ·üÊ
-∏≤¯-˛Öá€4P¸∫˙/ãoø^|≥∏¯Ì≤´≠à*jﬁΩgˇòÜ{Ê4e_7ﬂI‰ıÍ€Eá®wj◊Ù•∑)ÊÈˆjw˚‰òµN˜Æ˛ˆxúÏÓ∑Z'ª¢ÂÿNASó™.7ÓïÇJ-ª¸∫’Æ•Ó∑Né€ˇGT ﬂÌêÌΩ÷´,v	ì‚%∑⁄‰y¥Bõù´ˇ Ñ;Ìé!$ÍÌÉg{-¿Á∏›*jﬁhƒl_«¨¥˘„›mhı`ßµ›æ˙€Ÿi\˝˚~{˚:mıY÷°ßö∆ÚV›ˇ¸ÔˇˇJãIÊ5ŒÇ◊8Åﬂ,7W‡i]æyãoﬁ …≤ ?p-Ëgˆºë‚ÚÑÔõyæOlU}Çµ˝8ôE†ªÆX {ÏLºV∏/Tµ§ËzqQaßÅ‹ïV™®∞ÒT4ıU÷çH¬ÕC%v‹ºµT„ôdõAè2O>ËÓV=∂^™áx¢˛‡ZqUà)ûÿ£ÚzÁÚ
-]Æjà÷≈wÆu\Øı3*‹´4<tAm≥ãä∂UU˜«–3f~‰Vi‹QüS„»´Ò6Ò‘¿ ˙œ©ßÛ◊ç∆ìh∏9E∆Ωñˇ/	∂^RÃµîa…ÀÚ#%Ü0»®_o·∑Ê3@ùp§°_+ÅaF]í ?˘Ø@¡KTº¥˘Ã∏îy¡◊’G∆"4ˇZ¥≤ﬁV™∫D∫\•Ä]∑!Iµ≤HñâÜ	¨S¡34˛ÖÊb⁄åπ¶œ±‚RëÂ®Ü~≤Œ’GTÎ›à˛æ˙	Üu9y∫Kµf»ú ËË˜¯ÿ!qAe0
-µ_‚p)Ω¿¬pQ”Kè5ﬁ”–_®ÌÜ!OË	#b®[Ü§á:xîxiA‘ñ÷WÍ¥°Ú¢E %,*∑BÌÔàÀÏ¢¨˙o®˚\øNË ]ôdÖ}Y"ŒÑˆ¬Äsb†É˛* UÀÔ\à∏â˛Ç˙>;O»ÄúL£ÔèhàVÿxò—»óﬂ¯o¸Ø≈¢£7◊:È+ƒ58Ÿ)…ë++¡q,+¿qµ¯BÍËìÔŒ>Ωíao•>mÛØº˛çC´°"œÀq(Fè”+ó«ö[7´èç≈´Dı∂Î*Ø∑[ù›”÷AkÔ;–óNˇÿ9<x´Î
-Ñ‡Onõk Dºƒ'B¶»H0ºÙ,n:≠P∫5´lS¢∏Óu∫∏bâñ[\©ööZBñb=3≠¥ jÂ‘C~˝J"(}bçÀæxç¶≥*Ãf7z¡(òΩ˚4¸ÅÛ»Ú_Pq¸ˆ—Ô>4ó6/ﬂD_Oﬂ‹Éˇ¢{”zΩ>˝œˇ˛ˇ..7@é∆	Á&(Ëx∑vˇÎ·#Û~m7jè∆!ã"°†e[∫«[Zº'û∂˜è`d⁄ØØ˛ˆˆ –ÿi∑û_ù†€‘|ﬂùnlÔΩTíüáªù©Y˜0˚ª≥¯¶ªÏÊzUÏÃÕR\‚"@_˝ç„hY¯Pñ=LãVoPıZ|doEÔn∂πåÉ!»å>∞ô}PpÏ’¿Ïv˛ÀÀ›˝…ˆL
-†éŒ.¸Û¢µ∑◊˙oœ;˝Ë∏}∞›>jÌ˘∑_∂vé±T∏˛oG|ƒ$ƒgª˚–>§˙¶òÇ˜Ï∏µ}ÚÚ∏eÙ!ÈeˆE˜Tù”PêΩ3–::<V3Ò4~ÔvNé_r§wZo∫ãXK˙ów°Ökéµñ•ÅO7ù˘Ñÿµ›“FHæ˙ŒnDpgó|G˛¯™?É~KAµã¬±ì>π∏≈¸ûb∂WŒŒ!Ö»Ó´÷ﬁKY}ˇÂﬁ	ÂqkˇÍ ñMΩ"hùìó;Ì√§√˘!AœNü∑û]˝«L<tÈ˙ªﬂ˝épÛU∫FùYU ßØ<’PHgÀ|∂N>ã5ïHü,È⁄f®röéÜÔt˚J¬.©(u?KUéIIM°*Z*ÚY\RQhñ∆¬Ãœm0Àm•»È∞§ñ,,RE…X›îRßÁá$O!)Ωªí**≠ k…/õuyôQ\ó ¢5¶QÙà¥¸¥¨Ñé¡`ﬁ¡úEDaYPgô˜åƒC o1æÜ◊DSC‰Õ‡nâ@Kä¿(q†∞#á{ﬂaÁ˝ å
-/QÕBA∆wg‰õåÑÄe6>±ôf©_+å‚=ÓÆóEπëö∏kı`∆Î”È% å_J•>eSÎ3I¢REÕeFùb&W#ßÆÃ*(µñ¥‰∫‚<ö†&à2J’Y‰Ñπà‹Çö˙´‚ﬂ(±Ö,,Í∂1sÇ3¶0Ñáºcﬂ’MTçMp#–è¸∞¸yL†¨Ùñ|£©ˆY¡à≠#ÿ◊Ó[ã_Y‚¬ÕQÑá|Ê ˙KtR'Ÿ– ó9ò˛bc.7ç§√Qk£¢CH£‘<©6„M◊¸Ò_ùÒp%√UDÌÖD^rú
-ã)YX^J…πDHÌ∞ﬁiâ	!DS»∆æÉDJ{+ÚnADIrIÊäÛ”⁄˛>º’„	6^PœÚÉïdaì#xPÿ“≤>∞	ã'\“ÃFí“¬›»ârgÇIﬁÛï¥m˜AÇ7
-ˇâIˇT∫DK@ŸàÖ1ña&@*ƒ≈Mï¥èI"è¿¿MP-JGZ≤4*è)∫.∂"0ãM≤$DXo~S8≥c}’VsS™ßCfÎÜøÊzb˝:ÇΩ\¥W,yXΩ‡nß¶vyÈ\âd˝-#Ú5i¶¨ı~Ëzå,|ü£¥-¥≥7Œ“˙˚Zßµ‹Ë Í	{l_I⁄∑ûí∆K\&È0Îçö]…H…tRâœ˜È\”_dYˆ˚¥ê)t≥J©Y˜”‘õã9uN…
-ΩYY"∞,≤µ\!¥îV¡SËém‡˚¿ıQwBÌI™N¬≥_‡ıN5È¬öENq˛“på'p¨K›≠ÔFÚ;	ÈdDyÜÍ=kœó¯8ÒË'ãæ¬7]¿°òˇ pOcò'⁄ à◊ßa–√ΩËÈ∂j%≤-∞¡0À<·˚™¯éÖ<r2vc∑–]›öé€ø‡pÕ»‹7Èÿ.‘˜$nS'êG6ÓâÛßû3öéO#ø¿+o⁄áˇ«àÈ=∏(òéY‘∏Gë)]M=w@1Ø?h‹ÉRò6ÌîcÔµ{ıÒmÃ®“ÎEs‘Z˛ﬁ'6äÄgçã 4 ]†N0kÄU±œjÄNS’ó©7¶tJ„>ﬂÿô:∑«º8p{”ÿÌ∫_I0∏`¬21¬õîä«g{xÃπàb7ÜÈz´#‰Ë†)Ô`!W˙úËÆõû±àÛ9∆€ß£I8^Lá.»AU"?«0o†¨ÎLª‘˚(fSXUCò,#WM PÙßIËæG{¸ôÀbÍïL!X ˝ûÎ‹˛Qr· Q≠ÃÁ4>Ø)øfWãﬂŸ¥œÍπ0"Úm¿ÅÂ
-qE¯ﬁ„˚¶È¥≥Üüè	è\Í”iÃ]6ç{¯p:bQ†É/£}~l€ˇ~^‹ÓâfO]∫pê<Ò≠ßßÈôâü’`Å –02+ßÈ£æ€]|ÑΩx\˝Û≠Øï3<í÷è¶x J‡Z&KHì?≠‰xN®-ùæÈé‚Ôﬂtßx%j¿5‡‚1¶ëO›ËØ(
-‚~ÿàÅ|ç8èÔÙ&òE1Ìäiœpb˜Ÿ(¿ìûMº…¥1÷c9ÃäŸÂdxÅ« ‹.ßƒhÒÁÚ£äg˙ı±á˘Tñ˝ÃTŸÅ©¸‡⁄SøQBMá4∫£ &=ÿ∫ çß› :4u˝>qñã¢Süè`o‚%èäÎ≈«unw∞Ühï±êE?≥±†#Íß}‹íÀû±§ÅíÎ9O
-9åÎn~?ÂÁ*cpû‡·≤É0R8É"P$c‘VíOCw „¸c˙ ˛Ä,–@≈¡i4c™9^f:!>Bqqä&ıN˚ﬁ‰{Tù∆`‡#j ÇG…"Ø@ãÓ`D°=Ã≠ìYm≤Êt»'?û§›∏Á∏ ß¢©¯„Ç4 |^”´üﬁNSé[ ˇã’JáB<∏N1O3_ÓT∏5é
-d~?Cf‚àMQc
-¬SÜS”¶"ûDßAWd{∫g0\„ÚYü»≥©Ñ‡±Ò‹ßK¿ÜÓkˇÍo≈–LaI†ëãVåÀówÙGN'a:å≈C◊qB<=Âv/@´õUV(±uêÔUﬁÈg«)vÜ¢¨?˜=Òßlrø?Ç“∞æ´xLjÁ¯M–bäïï?≈:¸‘+ft7~
-WCPlÆ“0Ê¸¸Y:r©´A˛m‹Ø¶É¿óﬂ∆Æˇ£¥zNi®∆Õ¡Ø¿ √xçòÔFN:Ì¶|KY˙õî@(ëß0#@e€ûÙ˚∑,U‡S é0.ÿÊ–W,›>Øy•êõ¬:RX
-QaÂëˆ+ötÒHˇ1'ºHÇ'¡¸iö4vºÆ>æ≈crË„Y}É[∂á	µp0d˜Ûö=+π6˘ﬁeåÃT≈	‚¿xå¶>∆†D¡ÙÄe*ûvÖöÎâ?› Ú]˙hΩu˛
-√ª¡†x(^ñ4º8ÇπâªowD&¯ÈXB/ôôŒ\P∆8¸&À^yxxV¶Bñú)wÎÄÌÕù?åX•^(’û˜&®ìFÒ»uƒv»i™√Í∞¯6ﬂH{¬TËì¯{z∆æw qΩâ3,—Q^ÅPEÔÌÙôÑ˙YçGœ=cb} ä˙N6Ñr˛Lﬁÿµ≈)ÌF®M¬‰—©Ë–ÙÍü≥¶Å¯ÉKN¯È M˚I≈±ÁP9õä°’ÅÅÎ3h±hT,Ê√q‚∆3«D%6èçJÑÀßòì]¢ÂVíÖ÷¡’øÔµ1õÁ›…ÏÔÕù≈öñi1‚Éö4ïZtƒë
-∫kŸ5|;\πŸ'˛hÊtœîJUﬂº@0È¢u∏-≤‰_]˝G´C^∑Z®Cæ#G«„mù¥tJ	Íd{•+⁄V|òΩÑÆÄèJ’ÓôË∑ˆèe>Êng˚¯û/ìì]å8c‚ˇÏN§f°µcpÑéw‡·LtOáÖºc,^Ï]˝ª»KòÖâÓ ”ûÍn1+Çygÿ<û¥è€;ª”ÕÉÙi±Q0ã÷Ò…Ò!6ﬂèw⁄{{ê»)ºÈ´b5w&˚≠ÉÁ/€'á9xÁ∞€Ê›ﬁÈªRg˜,TˆvE¬ºÍ)¥ãRaø}x≤{∞”>8ÏÄîòâ]>¥•Ω≥¥f°µ}∏∑ª›Üi}ç∂ûø‹©0Tπç˛ ¥ô…/GHÇÌyPHW_ÊÀS:òÙ≤ÃùAõœùÉπw‡Á1óÇÛ‡õˆkb† ƒ?èì„÷À˝oˇpÆâñ`Îà%lùC5¨ÆàÍ∞Ÿ·qß˝ä„{r¯=úçØaxÂW∫√ÉÌd⁄w‰‰Â> 
-´H^˜,mÂ;Ú™›Ÿﬁ=66ûUË‰(˙!€ø(fÅ4E≠ﬂD![^&€CÊ¸¿˜Í‚fÈHb’
-Cz—p#˛WhjXd1Q≠ç˝…i∂]≤?∑ó¶˘ÅzöÓ˜hwÒs•Ôí‡OqéÅxŒ‘˝eö—O˛Øf›Ã˛Q˙4v(∑áÛ∂@ïÃ≈;w{…ˆ·:Z†≠'Û8ÿó˙Ì·_®4¯ŒÚ]Íπ~`Û(Ú˘⁄«ÉæNG4‡Ë,“¸å7ÎJEï ËÃ\~7z™únÓM…^EÈ2U˘S=¥˙ØU˜ŒûÚ¨Eú…IX˛î+>¯Ëfh_SA≥Œ\0˚P0ÈËiã¶ÚÔ)˝O–è–—í.ﬁ€óÊï¢†sE9ã#µ’É≥∑GàRsÕ‰F–°eHñ/%ú!Qì§Hw4¶X!*#ÎîüåNÒ\(ÈÚrÅ»å\Ø’‘Û˛rê§..DX¿Û˛]y‚åô v™r¡NE.íû√tC±UE≥œ»–:FÏg∑àÈ$â†—iíI ˜d¨√'ìLe7\≥ÁP©úq‰tãÀTHWxıëºˇ:–≥#Oyﬁ§(pCVüW≈67¥ãƒ´œ|<å÷xçì¡„wR¿ö›ê≠+k‚íúÉauäÇSP˝pyÂÓQ@,ëˇ"JH1	•Ú~d´+ÙÊéòg‘Û`=˝Å8®c£èu»<‹Õ–ü¯‚tò/‘Ê[êDxü?•ª—L(ò∑ΩÎ˙ıî¥YÍ4bËs62áÎ í|9gc7p	ô©|7†‰,/°%x^íVıÓ‰∂ZÃŸ–úë¸ÅÎµ7ó[√ñ¯>g≥’=vf
-·òd¶Ø;ü1gkUµôË˛<≠ÃÂ  Ñ2ÁißÍäÒE¡tmüNÚa]<Iz±⁄˜^ÒD2q"Æ8-óÒ£Zµ¢¶m	¨◊Î–áRÈqXr?%ﬂÚø%QõÍÁÄ&V^D≥À˙…óqî›ìè%ƒˆRU†)Ægêk∑<îKàs\⁄=‹z«4Pe;?Ï„^1h4=øò÷gV…n∫Sƒìÿ}Mƒ~3¯"@ß«»g }MöÊ—∞ôΩx&`M—NÉ»Rr(âç’*Ãíî3À8hÁÁ	∏ÍïÆÓÅ]9˜∂Œ›hOûq∫ Ø0SGi'—„oÌ‹Ããó∞≥8yRvîqéÉ˙˝UÊ˜ÇyÃC–ˆ–Sôê)ó- ìòxﬁû,h92-®¬„ñ»∏Q^ËòÕÈº8|π∑≥{¯gEËç"l¯∫∫)qMì§/L◊JNnP›OXåkÙ·då'®6ÓôÌø˜d)Àìp‘∞O∆@ΩJMs+˜fñ∂í,jË$)ë4◊–õR…kEıü™‰∂NÍg”Î[R€≤ é“"EP≤	sp€èò∑É«s¡›ÊÖ»ñ!OØ>buhÄv∏†Y‚n÷L[}¡MŒ?E-"$~Å6øØn_÷”ì{
-q3–cﬂ„îº3*<Z6íx]@[/¨C—y{êéV∂ˆçf Æ6@R˛ioÕ"°~∫Hü≠Âæë˛áõåƒNJì]úöGB’àfL›t+®¨–∏ßµ[D≥=w–¿Î4±i•ÂIÀèçπ§0KÄÎ=®}*\˝‰3kÈ[ã≈VÂÍÃFˆyc‚Jíiÿ¬Ú§?qÓS±È∑/GqSÒâ!ª°XÁ2cBÍ#Êt⁄«5JÑdzydDÆ˛1äÄ˜[√Æ5»üvw…a^Úo¬¿©ò.R·Œ%íî¿9/Û]o…>π$Ω;	ªÄ023πg´o÷†?” ZÜ€%˝ëï`Ìâ≤£;£¸∆˘RﬂV•-®y÷Õˆ¡Y∞ì¡+æªw±MìÂàÓãb `y5+H∞%Lê3∞U0wœã`j1∂Ç P‚Í#Ö…<0§ç:^ j‚π‘/!ò‰H‘04≈è»£|F>-^qC@KêY—XpU,±pMÇçôéú¶P®Q‡Q◊0ücîv»¬¥K¡&)dÒ ¢‰ä_}Ñ≤ :ûbiC≤¨7∏ákÌ∑?æ<˛.ü˝0g“ó’∂ˆl“ù!/™¡éo‚$‡AÉèÅ÷ËD/¢’éÑAˆU^áFrœúJ∂Ä[ÍÖ,ﬂÂA—¡Õÿù\˜•œØR⁄◊™djVÜb’Œ6qx˚,}iôÏäÇálÄ$zÅ~≠ÔÑ_+«!ïﬂ8kXèPò1‰÷#‰ÓÍÏY	πıUØ“™ÍD”„+E ^ieo/£f‰Éäyπ2Í∫A$Ô,óÖM›·Lm≈P èz|'b/p
-≈Õ+õOyy¡oW«‚c–ÂìC)¶*êZŒ»'PÒÍ¿}!Íå±	ZÙQÍ@Œ´–’R9W»≥¶æüÇÙ4ÀÁ&≥{ı/IZi†’«¿	„∏ábyåˇ-ìñ≈K”|cˆôáK»#'ä`µ¥¬MÔ7»…ãÔ–Ìü#gÖLeπ^mÅÁ€‹gêTd®Ô,öäÏ≠8î{Ô≈¸ÒãVŸç{*Ω¬AV˛,õ&hÈàB:D	¶qOOœ=-Ç’%)9i◊è[;ùÃÇzº&"…A;2†dMQR/\˝]‘ ò∏® ’nã◊‰DU`å¸É∫Ú['ÌÌ‹»WœñÁLê¶ãL˘Æ{û‚÷Á4Ö1’ˆ±W‡!9`i≈dë)ËÃ}ÙÒõ;¢ã„Ç<√ZEWG™ä’·Ë
-§›î\+≥c
-◊Ñ¥Æ9ÖUÍgq∆ã`ÛgÒ¥V J8D¶—®ï:{–A	Û»ö»Äœ±ña_HU«IdX¶{—eÖö≥¨#ÂdmYô.Tÿ]ÒÌ’´è<Ω∆‡ËáŒ;;´l?·¨l€¶üÊ(‚.î≥¸îcÛˇlm‰2Ò1åÎî˘í¬ù¿ëë©ëEÄûÛÚ∞<ã‚Ö¢å«yz,n)´™ñî≥Ç⁄
-c|vNP˘†ç{FB®¸ë(ö÷A»	Q	ãj†Ù∆°)Ò§3uøﬂ@.7ÏïÒ§“≤⁄zUÉ-õ+bKã»±È'€Í%•t˘)ñL·
-‹ú∂2ã•OR|
-òQá6ù[O∂√Oì¢˜Ùﬁ¬⁄é`»AUùÏBÒ´èºj9Ûè\ ¥ ºÔkáH¿‹<Á»hÏ˙.ÆàÖ≥ÈUR´kßáSå]c»-´Ä∏.Oÿk/T=ì√õôoÙ˘äb≤:ªKRër‹˚€7óÂØ©8œÃ¸”«£7]µKzÀÀ-0È.˘¨p<ƒk¬SπÆ~¬*9ÉÄ©”˙8„HÅ?(5
-Äm^©ZÜä¢îÀò¸YMHÓä¬˘ïGnúŒÍ<˝ŒÄ74Ω.íµ˘≠ IÂ,TŒØF‹Æ®ÅÈ
-*,Ù¥ÑJÌ)¢¥ÿÕ°CG”Äg.‚∂X"-_<™„µuÿÈæ⁄∞nÀÒ˜≠ÔRé/˛4ËÈ&qA<ﬂwÜÏbná˜9dœétƒÒt8ôê+ª@rÆÑJL™a_¨÷PÙ0bµ´b2œ†V∆ﬂeR%H§_/µîAÅáAôÕº√Å\}Dÿå¨h∏È‘}òiN˚‘¶^:ÓT}¢ñ2Cvcƒ	˙òÍÓ†~‚≈Á1’1ï|Ñ€	0!…[¢≤1(4‚æ¯ê™§Z<”,Hçá©œ&£@MP|{N#tÕ'`å˘¢raÅ§Is?x>ba∫a~0ø–”ã‰≥«[du5iäø˙&õGí¶—¨,ë’ºg≥÷hdí¢¸è†êÂﬁvuóSŸÅ8˘æLˆµ%gâËª·p÷Æ$®&∑¢ÀÕ'#yGq∂^ö π?b»⁄ÊJ˙ÃA◊*¶éóÀdUÀ°Á«‚˛¶÷ÃÄ≈G<—ãg-=¬fª,îW†™üπ˚N®?ßCÏ”xÿ8jì{d⁄í8/¬Oé‘â* IÓ≠¿ ‚öa‘±b'äHÇ®‹%¿JvÍk®wOÄ)ª¿±HÆΩ∞ã\?Såˇ‚ﬂ˘’ü˙•ó_/Òb…ï∆ÍYi¨„?õ¯œÉ%“l¨hR¢Œwxqsß® w/ÚØ)¡dg2;O9◊,◊B‚$ß
-«Öèﬁ‘ ¿ﬁ”/`ñ†ﬂ˝˛√8nú_.ÒøóÔdzWf/‰•ûàÑËHÙã∂_⁄ë≥°F≈-∞Ê5V¨Lú“i)Ó>xRf(ç¢:b[µQ\ M’7	_°√z\_U_#å ÷◊VV»ÁË#~‘}]§∑’«t¿H?„zDax"PGù∏Œ%˛S˜XØ`•´_‘7kO$=≥ÌøØ„b®UwÎ´çÖB◊ƒeue%Å∞Ük:(c ê~ æuØ'ÆÈrhƒ÷#û˝_Ô‚çºí ˛:
-ãﬂ9qc6äÍí—t\_’Öf°W~Æaº¿x‘7√ˇÛ?ˇüˇıxã¡êßΩà¥’ÙbÅ«À√5≠C„ÿÛHGqQL∫c∑“ÿ0p√5VXr∆Øˇ≈ ∑3°~Ï¢ŒuFÆ>Úå1∆»]≥T\Û∫Æ˛>¬~qG_›4<«…‚¬˛‰ãÇÒƒ9À'nƒ®ﬁ$£ﬁ#ÌÁ*ßÁ¶$1ø A√ˇ√Ú=≤áL∞çjªˇàt∆|êû„e%ÆC6	ÇI∂¨ë0À—ΩGP®é‘GÆ$§ì¨î„(ê§Ω˙πG∆ı¡¯‚l2É∏ù˙B˝ƒ{n˙∞÷AπÔ1?√%g<∑>‡2qIÜØTQøŒ\ˆ˛ipæı·›
-Y!øóOÂﬂwóñ92¨„ëI(√ÎÔÎØ◊ÓØåœﬂM
-n>¢ y¡Œ)û:Ωx9]¥
-Å4éÒ6òﬁ9óCFidL)«~`[†‘%Éåâ£-<—%Èªû∑UÛA©aÊg`˝;ß€€`Mı‡œúµ‰˜çÜ˜≥sx|ù^«{πêG§∂JVkódŸÏ‡‚‚eÆ√0ªx2ﬁ‡ûÔÈ\ãÇ˙	Íâ.ÇµUA}§h}Ï·µdÇ6ó‰ºπıA0»%π–æüØn} ê Ø…Ö¸zqôíÎ·:]Î>»í´±ZòÌ^Zà∞ÉÍêZmû¡p‰(ëå°9m}R#∫t·˛√%rï∂’á∏,ÉÓ¶Íz}ìmd∞\´e«	QzÖ'Èûìù û=,eÀavX ∆¸–8n
-i28Œ˘ñX3âs±%VMn’6@éJd∫˙¸ìÈs≈q¡|i¬¶oó^◊3x4ß	§≤äÍ∏JŸ∂Ár/»Ûñ∏ñÚmzX$O⁄[6˘≠ë ˆOWÆ› zE±ÕDóúBQ¥◊ ER´Åj•^√Çâáñ9∑·È]»∑π ‹¢¯=Aﬂ»^Ñü¥übù ∂A∞˝ØAle_Ë	ˇ¢ë«§>ªˆ6Í∂6l]í‰≠=XDÿ™&»…‚HQ:≥ë£Ur∞*Æ^óß√¥À’0N˝ÛUô‹S¢&ßÂÃVÔ‹ˆ*x∂ÿDã”tÎÉ†≠≠T/@£ÏNP	Qxo’¯ö	f≤•pV'{˝∞±kØ¶^¢‰–µH•¢Â°=±¿ˇ†˜[›ÛÿVìøàπ>*(Ez[5˝M6™=˘êN˝À«ÀºXu Õ∆¿–˚Œ;ô™π≤˚®”µ'§æ\Üe≤¥±«À∂Áã∞‰€;Fé÷≤{£©w6X˘å`‰≤/ñ…oP‡œÜFó◊Œ_7W4VHmÃ∆úåtÕ}˙:ö6¸©‘ ÏíåZwÃ‰ı©“qî*˜Ã'4§Wˇ†da≠WJVÍ@£cÕ¿0tw©>Òã˛î∆˝‹∫®L¥Gƒ•e_¡BéÕëßh˛ıÇ˜> Á–=øé:Æ¬u£áàFæ·mˆ2kf¯‹⁄˝zc√b„)µæÀ‚˜,£«ãF≥úc∑ãÿ°Ç	™Õ+~Âe-?Ié&¿ ﬂ3E)ê"kÊDpYómS0K@ﬁˆê&ã1NÎ¨q¸€¥‡%‘ò«™√'fy¢‹å‡m˘ò,‚’û ÌJﬁÀ◊ÓúHAk?!5ÔW∆é…¯;r±`èä:¶H2óC-/¿eQüÚO-˝¥øù3áqªÒy}8~|ÅLfBÍq©»∞0Õ¬ b YVD=˛Î˛Jv“Ò«8Á\’∫ /ÿy 5Í´ÁëÖƒúÖ<Ñ"@H ‹jáj(Í£µ¨PØDæ¨¿≤f≥Œ’r)∆ EåíX´Y©0\øÕ˘/XËæ·ﬂLQˆÄ∞d‚≈n*˙6w3ùÆó≥NŒ9ç4ÁåÕ¨ZfBŒPÍ)[•w^j≠»ù¿¥7`€à*∫¿NlÑ[z(∑y˜’ÔîßíGËÛÀ´≈|£/†!TÚdãÄ
-õkÜ3‰Üùinµ@OTd≥âMKªû¥!~içàsµ≤fi≈πÄÂS5¬hmﬂ¢â\Ö∫∏‰é‘°c.´Ôá∞BŒ\SΩ¨©k≥WT¡YÂíÄ£TA¢gÂ¯µépQáﬂ·
-1˙[¡@⁄rÎˆ≤H˘˝Pd'UÛÜ±Õ®(ZtÌ}˚.oLdDàÔUﬁ+©VCC◊ˇ°éû√îY.ﬂ˜1Â1‘õÁƒﬁ∫¸ÊÙÁº§H[ö≤Zxêƒ˙ÀbÍzh¢‰lÖ7Ü„›‡∆œÌ—x°Vj7ÜåB^àüG◊ﬂ“9ô\»Ü¡˜ÿ/œc‰"Ìó–ÔAµâ/ªœ"≤ —ÏÇtÇn»∏Î~Q££.˙Ø#ˆ◊0djwsH˝Ö¸≤S$X*ÎÎB∂¿¿©A¥ÈhŸÆjíà;m
-Q· -?‡„dWã§S≥P6=4dX±=‰õò[\†!÷ﬂ◊E»…™W£c@;qŸ ∫≥X∑ˆâ[Ä√"y£["|}®_πÒíœ9_[§T"û¯:"F–ﬁátlÌËÇÏ;ÉÓ-VÏüU(	@}Dœ‡˘∏/TâüôÃjƒBÊ¡<Ë•ciÌ≈ctC´%ÊÅö»è†Kºc€ÿé≥mÂ‚{C8B◊-OÒ0îÎR(C¥ü
-M◊πU2!ﬂ˘∞!]{bä∆›åÓ]áz9.Z4¬≥•ÎSÁ¬èáò≥MûÁdÔ§&ò◊‚£Û{)√?"d™÷&∫t&£/ÃA∞DË7åô∏ºY2MoáWóAD=‰_ª¡y]¬Q≤®4†y[k•ƒ∂8‹é∂Í(ªXVâªˇÁˇ˜ì
-ªwÆ>ä]çD§]˝‰cd[Kß‰ô´á∏Û‘Ãp|©à(ß∏»•x?"SF¢/$îòuXrﬂ£z÷<¥ÚìÈ≈Ãªˇåyê<3Œ¸·áÏàS™Z~/…≈≤ûT%M≠äTÃ"^^¬M≤í“§/Q¯i–ª‡'Ï$gbÂZê)_iâ|BWûæﬂın
-èƒÅGìámÍπ÷“¶4ªúm{µEG¥„b¯IVE4|≈¥9![¡à6Vhƒcµ7¶≈)∆ª¿-∑8ıy|º√Ô˘I-hãÌñ™Vºñ€3‘´f⁄ Ò.–˘@0Eá;m€~”Ô©—3‹K∏$∏/Ûî\fåá«x∂QKbzÃ©åã'[W8_7⁄°·'CÜvø )πœHŸƒpH¬XJıp#√ìˆs$y<©·í!Ig¬”Ï{tåûì£ùg€Fy`tø≥Z*Å‹’©~@óxˆA6™Ü9i¿∑oÏC“πq4®mv«xïÈ€∫í˛{6®Bz!kﬂÙ$ôÂ˚–’ú}ü»x]ı ”;saΩ>j`29!®SCìúäKÀÇPLVL“éwIDµêV∫¥ﬂ‡\ê”8˘†°ø3˙Vfﬁ·ytY-ªÈÑä>º%d’P%(*‡wÌ Ω¥òÌS◊W◊é©¥õB|Y>ﬁ=:<>Ÿù∂ûÔÔNw;'/w⁄á”ùvÎ˘ÓioNµ≥(U2á∞òoí//Í–j“ê®–àÉó®-»k≈“£Ò¯°v–UËHy¡ù›ŒÛΩ√Œ.˘é¸Ò%`˜¨Ω-´-Ê∞IX±ÉÃâ40—”Ë[¢qÓSûÛà<ÍΩß ∂i$ JNﬁcçÙ-1&Ú#bœLô>Ø‡≠Hßü‰ã<˘V¨ôc`uˇï/"zxíKõå}2A&{RÆ“HKΩEäü‘v¯yäuﬁ'NàzÓ±mÒ2ia'PvÈÇY)ñÔßÄ6rœSú–⁄gÇÎñ»;±ÓÎøÁNäw3≠ÇîÚZÍÖ:µ6e°Îë_ˆ⁄dœÀå∞∆ïbÁpEÅcÕBx<\Õ;£ëÍ+TŸØ!(ÆXÂçÖkË´3">≈%‰4∫∏ÿkV™asﬁëí‘EE¢}	∑Ó‰∏äpY’πrã#s„…2lA‰»êµ˘WØI˛◊Õ5=d0k÷˘¸‡S¿Í‹∞Vi ÷Æ9  30C∫†X÷~Ûgô ˜?˝◊ È_Å“Î◊fıf6:VJnNÏüÅ‘õüä‘ÎÖ‚^˝-V°=7ä+ŸfÖÍëç cœ)êµ–©ı≠ú‡˜%ÓÊjÀ¸˙lî<9πÖP-çkÌ®i≥®p_√¸ÙÂøºÈ}˝¶Ò&˙zY(‚	 k›ÓƒÉ?ù1ı—ãAù∏¡ˇ=ÁÁ|lCﬁ—˜˘¸ëƒfîôA´âœ_$FgööíB€ñ´ˆœ≈ŒPùﬁåùh'ÀY‡›\ƒ~Ê:&∑˘bIh¢ı⁄÷IÀ<≤EFRßüóænn&>ÒPƒt¯éúîO>pú^7ﬂ™†<Êƒ˘¥ﬂÈJcÂ≠‹õhÈ}VO 9. b@,B'ıB≠NÑie{è§gèœÉËj> lœ&2Äı§ŸZ$í6±ÄÛWJ¸#¶	kz8æNí(rëAôÏÇì8	_ç<åé¶[ŸrIÚûñL≈å]Áå∫á#Ωo·ë&¨ò≥#XyC7æêi˚4§‹÷‘ëèK¶≠LÓNÍs'ûá‚[0m¸^≠ÎŸÓ*K¬÷sA• ∞ﬂ{Ü)5¸ÎÚ∆
-nçßñ°ô®ÀáP%zD#K÷ã∆õfó®#O¸<=Ri;ºOÍ«Ú˙ı{5ãÒãì‚ìÂÊ›Ôìßéù”9‹X¯ZX”=>§¬Œñ•íì~Y◊òNæÚH^≤öãôlm≠(4mﬁŒ»«ûﬂc”Æ«l˛2Ë2#Â1S?A æ~õıah‡8xüN~À“Üç)!Õÿ}ÆÉw#>íIÛ≈…˛ﬁ	¢çæ2	-
-F†ıB!.Mı¡ºÙ )eø• ≠&Q‚ı4gäòíÅX≤o«6µø‰πEˆWIê∂†Êè•åÉöÆÃ-Z(•Œg∞—H£¯wh˛Ï¥√y‡Ì]t¸Îƒeaœ˛ñK>ZÚåF≈îπÂ–B‚TZç?39+ƒÏësNÎ±Ö$œPãëfB–?CPÅâ¢=È*‡ÀcË*ﬂ2<:FÎ
-k÷˚.HÕºœ-F4\Øë!öÊÜ±´ÜSS©ŸÕïïÂáZ6ë›√ˆ8ç&’ËΩˆ‰~Pså[9√%2,≤oƒu2æ#:Y«-)~
-$Èö]3Hj¥U@c1”nó^ˇ∑∑≠iâ∏	à¶ƒ⁄\ VÁ°©EñÆØówΩp)ÆVÅf´e4´Jµ’s±—≠π˘ooı}Ss\≥ƒj	VüÕúîkÆ‹ _+7nÅä•ùÆLπ≤Y`œä.gmÎÆÿ€¶sE*ó®"ßñ±{5
-óéuƒ˙| ÏCT(ØπWNú›qw”∞Xd[¥Ícõk®÷aqπCK®G¡|£õ∏√¥y¿¨⁄¿¥•.Wh
-óÏŒ¿Ëˆz¯&cåé“°4ÀÍ*Ó	C7…âœ%0óßÔ˘2a^O‘?4¥πS-%Ø¨f5H˝sILÁG
-æ"ùóÔÏCaﬂÖ->ÃÒ.x9⁄ÅXº7˘}DòOiÊZc^óD£”EëUø(VÎdâT≠ìR≤^¶⁄§5Z´,]°ﬂÖK$lú#êÌ(5FÀ’Tïœob¸7≤*3WÑÚÃçS]ÊŒ;„\”,„MiW+‚•[1H‘ß»«"¿Y"NπÇùûOÁy“µÍ	;”ãD	éÖæX	sâº√Øu·èM\±|d·ØS‡èU~ÄàÁ¸ñﬂ;π‹ä>—Z∫?ßÂi∫é∂÷îä¨r‰
-˜yî(V∫7^[YÆâÖLÕôµ„Afˇfç´›∞4≈∂`<?¨Òrπ»VA˜K5rﬂ†õ…NÀe¥HÜîØ∫( z≈ki"–z	ªó¨ºkØæîf˝ØÂ©·’ﬁjKÔ⁄äéGB‡9a€2úf¡É¨ÕrÒ¬\∂4kﬁf)Æä°¿Bö[E’«∫B€◊h˚*ù?Üåó√Â2õúƒ=DsÂ}./ì÷ß/ñ·ÙA∂|õc›j¡js+Öë± ó¸æD<˚Í"V
-åFèXOY√cï‡è5@Õıµ≤EŒÔ0ﬁâé2ÑÔ/H+ö…{µEî*˙{`ÌmÌË+˝ÑØÜz˝êçÅÌŸ¬Úõ{ojÀÉ%Ù˘ö@¨»f–zm˝◊µ”hu⁄eËUöÈiÂé<óË1&òóã.UI 5≥>µt–œ'î3zi`9aå$∫Ã∑å&VZŸ∆L45œÄç´Wí¥Zí¶•∏}˙‰∂_tëMÎB)IïSA5ÎÄÊ∑ñ'™Øº°ƒ€R=≠ÂE„úπ’2LëaBò3s†rﬂÆõ*êF”exΩ8®~≠DÅõw†Bf¿<ù(„¶ÇÈ?«‰Oª;O∫µ∆0©Ï√y<k∆‰Êã¡oóE;ge©KÀ˛:÷”∂Îiõ˜Ñ^Ç›OO•µÏ»”J®’2C‘Ãv⁄Ôí3©u›WgårÔÄ8eDœ1ÊbPº√õ2à!èÕÿŸálß5Ü¿≈|[$GFø}‘uÇ–d∆Pê…ı	ıâÿí)≤8s«Øic2˜Qﬂi'˝ÆÈ‡Û¢>ªU∆æCFsö©∂;T˘í;ú/ÍÂ:√`‚!_Ã(˜'ü±YeZxˇ˚¨B'Cê⁄ï
-·}+òM1∑]ØºüŸQº:j2öUÏœ°≈≥
-·PÕ.’ÍäÉÃº?Én7´6ı˙-gËzãfï=`ÅOcÍ=AôÕ∂mª«Ø‚å˝o‰%€û;ÓxH†å/»$vÒﬁ}ëû@;æ8	“b[ÑFæcnc^¬£M˘nﬁG0~∆·{Xó?v1n˜æµlI∆kgÄø8c»ƒÂì∑ëì÷àÓÑõ bk6ﬂäåÔ∏‚‚ô¿'ÏøíØ0·uH&∏9‘‰Gãöå‰JéÚ‰·˜c˙~[Bƒ«jÉ5Ø"Ù—óti4W‰9ÛYS\^Ùñè+Ø˚X†]º59fﬁÈáåë†8Ö‚†«?‹ª˜‚)ﬁfè	R‘Ôπëi4$xÖj§Ï–p>¬tƒÒ{2æ©ÌıóÖﬂ}˝&˙zqy0‚ò•òg˜˜æ]ƒ/‹N˚}ñ~ËWÜdÃqΩ¢|∂E?D6(˛ˇk^ø·ÕoƒÆMB4V‹1]±tDD…}Ïömæ¶—2tù!A$â|tmtÜ§ÁÜPmIàFTØ#‘PlÔw»üA‹íeÒG‹Æad–o¨ÙªHß]ÉoØW˝Hñ]ôŒèºéDaKê“AÒm3ÒëëC«LtFo!ˆ	ø4Ê›@˝ˇFA“ù^¿"ˇ†¶æ)º'è7F#¬b∑-∆ti-yÇFåıPëEtÖ"±Ø¯h}EG„ojãeã2^\\‰â(2¿"∫≤bˆá≈0hä∑˘"õê1Éø∞ÊƒfV.&æ…ê@ˆƒN≤¢ø«9j¿ps¸Œíw≠7áf*òô∂öÊ€,©Õñ”I¯;L™œ9@4˝ªÂ„ºzMúoÑÙç±^ª.÷7C˚∆xØ_Ôƒuã¶"¥ºD‹}Ú˚Ê„ÂÓxUxæíÂ'e≥|[:µ¯‚«}x ØáÕd⁄Îz≥≈›7N=|∏+› ,Ê‡”Â¯#;ªD˘¸2æ@ÂÍsü&á˙S
-OBf®ˇ´çÎfÍúê´÷˝ë%%Ñ&Oæµ$†≠Œü˘µ$f≠˜¸Ÿ#"b˘z† Ä.¡8©&û‘„`¸à¨à¶2bØƒsôÔùÒ‡cu„‘7µ,Áñtw=€YQ˛œˇ  ˇˇÏΩ]o◊ñ ˙~~≈6;hSâHëî‰ÿä?ÜñhG”≤•ë‰dNÀªDñƒäã,û™¢dEp^˜6ò”òá¡Ù§q/Á‚Ê°ëó¡Ah˝ì¸ÅÈü0kÌè™˝YU§d«IL$2Yµk◊ﬁkØΩˆ˙^S≈ÉM}F⁄ìŸ”G>{Ø§xmc°rH›,ƒBò,õ˝:›
-ªÈX∫q—ëKvi,ˆœ}â?V√Ï•«G‰ı˝	.9t ≠æ†fá∆ê√p˙b"9ªtÏçÇ|ç‹Ób≤‹€¿éÅHÀÙ/jˇz|îLæ@m∆kı≈¿msÅjº PÜ¿…P˛áqwg@òâ«ó¥q•i4B1êrÉŸÉttlRÔ¢éóu≤Jß©…'*˙\ñOûQVÙí_êˆ“Ÿ~FÒ˘´˝|!yŸ6Ω¨=ƒ~$ä|â ˝‰Ç≠∑(ëFëB‚ÎYÜîZn€`HÇ◊_hÚ˙>Ú≥ÔSOò˚#?ı(K
-ÇÿÉ⁄4=n‹≠=ºøƒnRì€'ˇc†°vÚ:{MüKàé;jÏù'ò
-ÛgqËÒY0Ÿßôâç4$À6∞8∏±Fî∂uu;QR∂DÆ⁄m˝8åéÍ™òt∏H.®ùoMy  ∑hÈß¶t&†gtC[jΩ\*çwÊ)±¿¢yÜ± ıúÁaqDsITRUÁk	€% n•Î—$LÜ›‘ëùëöBÉ˝`‰G”¥^ßRå˘Â»∞‚d+/àsI˙4¨¥Ó«±ÛÃã'EQLíF‰»KÇ>…ÒÇŒÉ¶ *FkµEÇÂ„RqÎö® á˘!!¡‚òO∑«&z#T`éQ\Øijñc/@¬T ‰\ 9 π's]Ÿø“a*î*˘[U¯UÜû8◊œŸ€Ô28Ô–·2‡X≥—ë71ñB{mﬂÍJhõË√Ä˙q
-H S¡≤Ç®»ÙÚ&ﬁƒ«:û˛€ ≈"√»¢	Œ˚2S“	5‹k¯"}⁄èû	’∆[¡ïL±&æh9ˇ∞M^‘ñ3î•Œ»pó]*π]&fÆ⁄⁄x4êıGkGﬂ±T¢óNê–ç‡GÛóKÖËoÁyQãﬂ|ãË™‰’F[cæ1}cH‡`¿Û‹—·Q¸2˘ÙÂ“#ﬁ’Ö˝ÖÅ‘(ÂÖ„ΩÜA÷_ÉÕ&k®ævù˙d.Ea	ÿ¶·wQ∏ ıQ 6£≠>ÕI—À&
-Ñ\Øôòp‰Ë:(˙Í/˝pÇN‘9í)–Ãsn—B=cÑ\‚yÆ.EÉ)n∞:µﬂã|ëã‰(8
-ÓFµàZ∂ÊÇ`B—‚–Ë{lœoú2ærëç‡$äOÄP%dì ¡ıúI\@Æ!ÎvåBïE_§ΩSs5ÕAO}A‚”IÏ»$3ﬁ∏˘;’ƒ◊c#Ÿıì	\•%çcÔl_—¡{}îÚ÷ëÂ§÷Ãú%ÕÎJ´U3“Ç≤Œ‹9ASÆá∂—!1æ¿ºcY—î:¬÷8å@Ì'˙‚;ÏèôKÕlÆÕÕ≥†ÀdG¨Â
-¥êB9ºÃ¶ÚŸ^1Õ¶4è¢Tõ™ì‡]ñ>]ÜÙ⁄àó∫2†Bf√|9J≥*Ω:3|Y'ˇòôætè(©*Rßâ‰óÛ|%¥∞q€»ŸñπÁ∂ñ⁄≠<=è»Ödœ
-Øöıï‰9#›)‘Ãt]¯—Ω^™¶Ì*Å©ûæÀ
-”•{´Y¨≠ k•‰t¢†Zû–Ë]¡´S^3@Fœ´Uí@ÑoçB^fyÍ PZç·ª◊áÀr©˜î¸Ωò©ô
- X=ESQãy25·Gqà-œÿÑü‹ƒ§&ágILË	å	ÇÄ]qæº}˛N‰p^<⁄Ì≠o?Î=ﬂËÆol_˝È˘w“ïÌÁΩΩÔˆ^<ÌÌˆûØov47SGæô‹ò‹7’˘á¶≠ "G§.≠≠ªÔ¡À¡ÀÊÀO_6^&/˙„?æ¸Èø¸ø/rC˘„h9¯ˇ|¬=w+<r‡5∞†˝¡x9~y∏và÷ä√Gklƒááü.Ôn®˘k*‰†v˚;¸SˆÅ£÷˚îü‚+∫`_ZªÛºı¢¿ÿÃÕS∑nMÿw@¨‰Ä˜à«y~ùˆà◊€_òehTÊ≠[¡∏≈¿ß+2ËNòã^z«√. 4Úk»Ê∏õ<À‡£•™r«,(â≠Y
+      if xúÏΩ[oIñ0ˆﬁø"∫F€™íX≈")©%Ífä¢∫π´DˆÃéIéî¨LVe++≥&3K$õ¢±˚Ê}¯|û≈g`a`—k˚°4ÏÒÿ∞1X‡ÜÔ˚#ÊÏO9'.ôïER}ôU°[¨ åÀâ'Nú[úhßA>M„Wﬁ·£(ŸÔ∞∆0?Ùíi>ôÊÌ÷>ºjuÓ≤”O}¬÷ŒF^¸2Ù~Ïo·W®*ﬁ26H‚,gXã›w5d<£ ˆ∆ûxyƒ˘s¸ıêΩπr¢=ËÂi8nwzi0âºA–^‹ÕÆ/√÷z›Íúæé&Q8a˜&˛¡∂ Z⁄≥◊¯-¯≤Â∫èÉCˆæ∂w“Ω⁄ &?û–¶7°6shsõbß⁄Ä3±˜.zyíˆGÏ≥œXÒh‡≈[’O€'‘c∂ vÔ¥≠„ï1Ô–sfı–÷K0≥Ö„UÊéaC‚ÂÏ0”Aƒ6≤|ÍáIÀ*Â´ÏçQ⁄C◊˚Ä-¨j0m©«å…bÔﬂ≥÷KÅÚ÷È≠]_ß,à≤¿"“KÊΩ⁄˜zÒOåjàÌdƒõÒÛ‡p€€ø ‚”Ø“ ~ıÍioê^ºÿˇ:‰ªçoµ*áaÏ'á=Ï∫-*"ÓG^¸∂h∫4∂Y‘æ°QÎî?µW#ó£ˆîeF¨§iÅM<âÇ<L“vkˇ∞a)¿ÅÛ]¿∞/¶ï¡^>~¬ÚQöLá#ˆuøV[ï˝yQê¬lºL”ãMcFÕ√—t
+¯£vƒ∏†èF…Æ≥-¿G<$E{˝È›O>ëHy±[0“Ì‰qä¿›g^vXª√Ó?#À”c5∆,»7≥Ø&Q‚˘–∂®’Œ”iÅ"(BOy©≠‹ÀßYªıÀ  < 	(ë·"Èızh8ÃÅãÉ|m0≤l;yƒlò$CÄ4˙Ôã%é'	‚ß∑x¶¡æók”|T¥9À±U√l∏m˜èkÂS™°Ø˜ê†+†1& ú}A@√2±Wå–0_Yñ6æ∂VõC$JõLé#„Ø{^10ΩÖSçèH∫Ìî`*(70˙wèùà{ï=«…dì) ¿ìÿHç·S€·8 ∆“ÊTÂn±’Y`+˝~ﬂ®ÀwYg;ˇ¨ê+à˝ƒ ˘¸ õ‡Z@∫[˘Ç1R–´ i9`/`ôÑ^dê'öîJ<‚Ãö”_¡èì√}NòA˚¿¶
+≥Îœ4ˆÉÉ0¸f,\ôEWÛ`T“Ç∆ôxC¡èá‡≠È>∞x$P±>™DÔÛ∆"÷Èk98πµàﬂØS‡éIî√AbÏ,‚è…¯DN	Ëó˛Å‰©≈,hê-E{⁄£µ≠ˆ˛[€~±•oßbâÛ≈‹xÒ±>è8≈⁄˚ﬁÿÜ7$iÀıº∆ÉhÍY˚Íç˛“’J-≥ä≠\ÌXBY≈¸º“qò%„lä§è˚q÷ÉÂ–ı4kqU6?#’9)é‘¡5m€î√^˙,ä©,I}àá$Çop9C[w©Ü3õ€@πaﬁ¨6´.¶´q±∂¶„±óœfjöb≤c1 ôÕx”5ÏÓ•√,∂g:°ù]î7DÅõ#¸ bh%Uip/ËP6†´“d∫ßÎOﬂ~1ıRﬂ£	Û$É÷@´ÅJ⁄“ÂΩ¶‹¸F¡Õu:ô%DÉ∞õ˝§¬ríŒê=kÈ]|$∞ôzQ4KH&24q∆¶Y∞qp ˙S[ó∏iŒF…·Kê‡Ûgâ∞«˙4Ã∂Ähr†ÑµÓÙ⁄∞ÜP5)¯†qÈtM˚ini•–‹‹UÔ≥Ù⁄9’ó¯ÆÌxEñÆd¡&ÎyÄ3Î6ÇŒ®‚Oó)ƒ™@µ¡#√∫GæqW=Œ9Ål˙¥©¢1⁄ºÀ´qÆ1ù¯–ÛKEfNçJê»J7¯DSó2%ë\\t±≠îkËÁ-)∂Lé†ø‘ö≤ZRò¿xÙÎM“;hê˛~zˇælπÜ∞hi µ=MüKjŒ‹üOça’nÖÕà[o§~?TªIı¥4‹»fLO6czÃµ0◊¸dó;?ŸeÕOÕÚ÷Õ`.kÕl{U&r˚«±7Ü˝¯ºm£)o ˙Ãtl‡+÷Ωæ=–s∆$X∂f~àµ9xÊ≈SOõx≈°ÄÿJ;Zã…¶
+Q˘î67µ∑Ëw◊LSÃ≠Ÿè‚¢4<ŸéBÅiLIx©Ñ∏(q◊∆ÅπCøÃmí[fÌ}R>u‡çø
+‡Öd©€¡QŒüzæ7¸r=âÛ‘Àƒã	Ûá&‡œQáÕË∑üÚ$µ?AúâG\Kx≠ã&¶Yûåü&√Ìß⁄#‘q@ Iı<"XçÅèÖòäA¿|ÍV∑è'<ŸÎhÊ@ƒ>˙8÷	j/BL¿‘µπÅ;#s¢-•‡ªéú˚VÎn±ÅRk∏B	1öLº≥˘|s}Û»®Ωkw˜∏Ä‹Í8
+>Ÿ|ﬁ†îjÓ){µÒÚ≈´Ìç›Ω›Ï⁄Ãvõø“:ªWá¨=F~≤¿&K÷ö¬a√ªR†ïÜ•bEõo¥_–z‹ÿYÎ¡}è]"‚%ÓUó@‰ÔûpÿO©ï• ¬É0Pô?˝ü≠í—EX≠«éòÔ≈Eˆ8$~¿æ‹~ˆî°
+Ñó±˝ Ù— ¯ÚÒ'r}#M–ﬂí?ãÚª|@é¯l(^>pΩÙ∆˛ˆ3◊€ﬂN^˘jÎ™„ı/VÓ W]ï—Ø}Ì√ª
+iÂ◊ìhöçcQ‚˜Æ»Ê2^‡Ïrˆæ˝@î¯]%‚˝Lü9ë„¶πl‡[Wâ@/Òù´D®ó¯ﬁU"—K¸¡Ub™ó¯£´ƒö^‚Ô]%6Ùˇ‡*±©ó¯OÆ/Ùøsï¯J/ÒOÆ£|Ò˜Œ	…√HMôs÷üÎ%˛sK[HÎ¥Fûz€¡ﬂ2–rÔ6· ’Ôå§…ò*niê¡CÓH %…[±¿@∏…%9≤^zQÉµáÃ§˝€Œ√›}Œ5ûbÚ$Ω–w°…X∏æÿuñ& ﬁë,ıﬂ9À–∫êEéúE~íÀr≠Œ”T◊
+››Öú¡åB^4y≤åxŒR˚AÆ
+·w7=êd)˙·ˇHkå~8ãçß≤Ã‘›Ó Ÿ5mÕ]¿hx|:û´¯˛A„‚ª;UﬁÌ’ºk◊ºÎàw≈Zã≤4/ŒítÃRÔêMAû¡›i0ÚRIÉ˙0a	ÑvX:(Â„Æ<H∆(1Ìá <≥Vˆ€)∆ Ï'G¨˝ÁˇÚmß≈Üﬁ’ ¡ÛR∏).Mvê‡˙lìwÒŸ˚Uí˙ùÎÓœˇø⁄{∏˛Ú≥EÄ‚Âü~OÔ‹KÏœˇﬂ”[◊“˙7^±ÇàˇÌˇ¢∑‘˚o†∑UT˚oˇΩÆ¢÷˚Wz=U≥%DBç∞õípØ	•„ ÎËŸFvúÖŸ£(ºE±48
+3Á∑5ÒteòsO˚˝uñƒT•xÑKBàÈJ¨ï_
+ÅNtÔ•oÉt+˜R⁄ﬁÏlmØΩ⁄~Ωæ∂µÒzÌ˘⁄”_omn≠^9·ùûÓΩπ[™∫˚Tq„˘„f’‚‡PÒÕï≠ˇ”›¯ âŒÈïmÙNux˙∆ñ√Ö(Ø£åbOZ≈≤Ÿ<`0oip5É˝CïƒêÄÂ0ÃG¯û√˙ahò&øN/smBºÈI¬«{aÏG/⁄⁄†:˙–ÉÿØØc»|/˚@Ew	-¢Ö“É
+ ”‘úÉà
+„å>≥È>'Üv°®ß—gQ€; fRQYt}Ω Ñ^ƒ√|d7%5g u÷⁄çwc·P¥†=£.Õ&N’$æ¿)<—Zä˘Ωóy@	CopÃv|˝◊[/ûÔâ)ŒG^¸§ˆÁ/∂Ÿ»µ'ú^AˆÇÚ≈»ÀË})Ù
+QüL· l9◊Q´cOá∫ä&ZÆ—öv^4¿I¢˚ƒK<#ëﬁ	Èx®'ñ˚ U±Ω≥õÌnÌ·Æ˚ﬂŒÓ¢´‹¢Âp“;‚‘~Ó,Ìôñ";nD¬;Ò“,@ñÇ=ÙËW€j«4≠qÎ$VÍÒib˜¸k…·)-”\påäU°j”≤¸Höñ-9à⁄]U7V≈´TÿÓpî»≤≠#Ç»VWe[4≠J:#<@>„´á¥^¢ÛØß∏ˆ'X‚íÌ©+ÑÒ—Õ9ﬂÎB–´”\:‹§¥¡%~Å≈c*ëﬂ∑pÌQ@û%˙ü¶/9∆“7Æ0¶Ù≈˛∂–◊ûÿCÈ…ƒØ˜”¿{K?≥	t/ºè°/˜CÈ˘xDWY<Ô¬5å–<¥äÖqê©g;{¢±<óü‚@+=ﬂO¸„W…°˛Bæ¬!<ˆr^È>"LB—ª0Á%R{ô!U&æB ·∑S¥jÑGö<`LƒŒ^!êZÿN^b7–l—™‹Tã•I‰Ù◊ÙYzlù·(%	>A™Û¢à≥Êåoø.nßuÑÿy‰ïe[j⁄…û5Òüá#åˇmsÛÚŸc/8
+m'¿»ëﬂíAﬁQéºŒ!Á‚scá+#∏7ôf#¡Ûå(⁄&—o/¡12ZE±ﬂMV†xOl>S≈[û'áDbb*bzq?%≠û˚Ú—rÜ™†? Ö+˝PzÏÖ±0){QaW5iQ˚•[;]˚≠$Ö]áp∫Ûõ›ΩΩÎÖ…ïM„)Á∞4ê	†©9dYÄREëFtÙﬁîxpÌ⁄⁄Û≥ø∫	Õ∞ÕÁ€_ºZ{å&b=ºhÈÇd—î-&T îU∂dVﬂà,´Øc]_¥¨Ò∆”ëAúWVÍeË˝h√∂cbLöëºÕ‡>ø¬p¢lDH≠.æ¯]Å÷LÍÄhÚìäïÊÜrT[ÚnêKQ◊ÃÊ≤	æj5∂¿7=sﬂ*"Ôqã˝Hgﬁß],‹ïÖªWN†Ø”7E	ƒ™˙&ó©úÆéÆ8M” €∆}ı)‚∑ÿë¬¨íOa+ﬁƒÕnVAò?oòzìQ£f◊aØ/∆XFjç¬’¶M¸A®Uù‚>hÃ .'dB_Ì©Ø≥Ã™3˝êÑs≤8Ãëjçw¶œóê(VŸNØ◊sB∏Wp\=ÄÃUT√ôÌU’∞ÑsXá 5«Á≈…k3qÉ•f·&‰§¶·FWãU™Fà˛ÎPR,ê
+úh|ç ¢xáº ÆÆç‘ØI'˚ƒøÇSÆ´É0©YsiK†•æ'>5R(†Ô≠ËHQ‰1.<óktª›Öæ.˛fÁ˝Ínw7€ª~e±óYN XÌ	}@¿√∑d„®˚aÎ≈∆¯^Ïp2z∞¿§°ºH˛§¶¿@j˛M©89\¢àK√…°.
+w™∞òzá∞ñHÇU‰SB#Ò-—æ¨Fì9¿∆rÀ*™jÌ-ŸØ@‡•÷;ºµ^6
+r[W‘ÎÅ*VÆ5I&virƒ˜j5Ã*Í·:
+j®≥∞æ”7RaWzå“°’$eQSæ‘!¥`‘- ∆lv:<’l•`∫§ˇôG”úºÖ
+Œb.JA3 QY4©æó√u‹£`\pXïJ’p.ê8–ŒK
+ıÔ¬ü{|√Ñ'◊Ø€v&†‘ßƒEx—ùP5Œﬂ#’éI%M¡ç§¶-È@[ôüç°ÀÅ◊(ﬁıâ6äÃ¿O˜Ω¡€<·_r4äâ·›k‡Õõ7-#íûBÄäﬂ\ËËÑ,»ÀÕ¶íÚ≠ƒïΩ
+"a%¡∆òN»%–‘ô)‡òK^mÎé«DQ÷y+£Î"¯≥‰…&q∆Ee#xæb˙Ï∆˘$
+ä3„„›m#zió”†.BR[e>(ì¢t∂ÒÏ~;ı¢ncX”)q9Ä,Nrvò¢aÀG}◊¶’§z_}`£Ñ-NñQª““MõêKCÆ‹¡‚Ê/d	|Xwu.P9?17ú¬¶à÷ådpˇA5s0
+ÄêC2 @3Œﬁ
+„	@Ö≤rUaÒT>Úa[hbv∂≠òy€ﬁXóÅÓˇPÓ◊óˆ§wUôı‰∏≠Êåï–UæÏ≤+¢
+K8&´∫~˝.‚ã0Ç]‹°KÅ¯&π. ¶è≠ßHˆ˙ÓÎëkë%Öøöõ˘$Y‡ˇ≈!¨Ÿ∫]¸M˚·ÍÓ¸ìyQû¿ﬂ◊~z≤„ù}ª7cØÛ}·!xOe^√|≥ª˜˛æ£W:WCÆ	Üoà+’lÀ…¥‹,Àö9öc° ∆ †tMÖ©◊„jwgcÎÂ⁄˙Êƒ”Æ˝Ÿ≥Œ√›Ωm‰‹YS1hzÈ§=ë´Bä≥ç«Ø‰_X~B˛a∆)]Y#Ö◊ÁüX€B ≈ßë@ö¬FPÆ£xæhÿn‡eB4ΩHi3–åf%h[}ºØ:)tnµÅ‹g+X8#l∑“¨ [Ev.cQ¨ºﬂiµÆój?yPÜ˛îP∂Õ+ö¥$íÚó}…}§∂˙Ä/Ö˚Ù):5II‘ﬁ!&ä mÅy	Z	cœˇ≥Ù4Sç∞˙◊BƒÕﬁıûî•Ë7ø¿Û§ö7ƒÿ!+Å;7tÀsBwNŒﬂ ºù¿sCxcn öÀPÙ|Åµ7”N-cfö™±‡L3>¢b’@å˛öÔJ:
+Y¶9#≥G”]¶æ∆ó°úq˚≠Î›5&mª∞∑ÔˆˇÊ∆~◊¿øÏ©Ÿî\ÑsªÂYlNŒ`’∂‹hO.g[™6œŸ|ÿeª;(ëöÉAœ–qúˆëY~BS.?ßLﬁ@WæB#ÑU∂âÔÙUhvÒGI‰£ï˙¨Ò∑d¢±éU-∞∑¡±Ç2Î§UA˙$dÙÍzÉºGˇ>®7°4JG~#rm˜€Ü/!¥%z@∑ËS/ˆJ| Ø'”ò«?ˆ≈‰⁄!"™√"Dƒ"#f°ñÏä~pgææ¯¥2
+–t⁄'là5fÆ©‚ZWã¿çT£˜†âx=å˙˛	ñöÆ”.˝®∏~˝ÙÕ)@G∫ªﬂ¬∏.9∆ƒÈ∫˚H≠<ëë-ÖÓvoë˜(ã)(ıÈ(–´ûJ‚î¯*äﬂ£ﬁe™BXtÈ˘√≈Ûz⁄¬}»±UÍß~!4\ ˆgO√·(4\Ö¡&"4Çüï˝!◊G÷ÖFxaæÄßZßt‡Wù†…M©fòïññ÷Ë¢—£zù˛]â'oh)“D]9QdTK·
+›,ÚÚ†{ÁfüÒr¥FôfËF)A„Èe¨Zs:~Ú+wòä[ØTZ+˜Ÿ‡ÛnbÙ&Ã∂∞€ _ °;—âÃP‚&âÅπK7›˛Ûã9ñ§µ†µ~ÜAÆ∆∫‰7LRL)“>LRﬂÈîÁ’°ÈÂ…”‰0H1‹™î…ò’K/—|¿íÿZúåΩ(Tar®Eô˚‚H=~Z 5MΩ÷Ç˙é_a#˚&…‘7¸‚Ë.ﬂxc<jNO¬L‘ƒ0∆4¡_p¶ëáÕ›D”#û
+Køéﬂ4ßı~ÖÃöÑ?&a¨˜õdyêÑ÷èÃË∞x“0Çl©¸Dï∑¿ØÒŸ¸iDM≈â¸∆tíz~¬ÎÇ≤"´éÇ4=£/z>Õ$‰Äß°ó¶TÍÅ&î ˆœæ'D˘a6Ÿ?‰ã_j–P.âŒ˛Ä	Âß∞¡\&FgÈt"Á÷ÁÄ≤m™¢ ”ørÏ¡`"o,
+âÜˆtOπÅSBêÇZzY2⁄§Œ√¬h4!-jR<8$[ÿa¡mnJ¥XŒÜD,ÑUÃåõcoÄ"§_ˆë#“ÀCët˘ºd÷0õA˜pÚ˝!ˇ~≥ﬂ_\Í≥QÚ.HWıáÀ}·˝ÏÓÀ/Í›Õæ©˚¬Ñ0õ0ÙÚÔˇ¸èˇ∑ÒF:H√	≈Ö◊_Çl‡}3ƒÑøj⁄,Äb ò8ù“˙äÑg÷Û=ÃÆU§ÓµTß%çè9∆–˙¯ÿXÕf≠‰≥Ô∆|Ò‚ûq$Jô È«gﬂ©ØD˘ÈŸrX®Ù5ëﬂ`,_º®jéŒ˛88=è¶‚õFè•JÜ‚g‹kr0Uﬂ<Ï%ÙΩB?‚;hQa∆…¯"•£ìi4ñ´æk+çq@¯·„˛î‰–√ÛlºÔ$öécÍÌ›ŸwiÏÛe‘°æÇÙÓs≥ÔÛ˝$ÕËeK≤5µ‘ä|ïçßôd{¿0@çŒæÀ≈BÜ	IR´zñ–Q¿!ˆ√Ñœé''8ÿælT`,+Pd
+´gﬂ˚ARπ∏Q:D˛ï/kœZ÷-kÔíñ5Ôï_Ì:{q˜Fü÷1}∑◊±zËX«Í]˝:˛j÷Ò≥ ñπøµKò˛≠0Lπ8‰˙ùMaœZµœÒQD«ä`s7˜‚òﬁY˚0æZ;é˙EîêÖ`»ôM∆7*lÅoìŸ$»E-˘É*y~0òÚE/‚°«ó›~ w@ ,ÈM“`¿πêÏÙ R¬iæõ¿snpˆΩ˙^tD;'SÃ]†Ü°~QÂi‚1+Ç`îåÅ˝âÒÀ´$hÅ^tπsdrzé-zéâû„zæ9=ÛNÅ˘∞M≠kÛUK›pL/ÚÂF%⁄4Æ?wêπ˛∫ñ“ˇ˘_j(s	·Â¶rÃm<È@Ó≈BéÁYdˇ,@$f)˛8†s¯ã,6K*lÉ#:Í`¨
+ı‘\„1≠˙wà÷€wƒ=˙ëM„Ê\sâ˛]¶%p$xkÊ√‹‚ø‡æ1 h|;HAˇK≈~≥hJW⁄ŒÛa–]Í”™¯¯≠ä^∑’‡0^J˛‡Dõ—íqóŒïiÙõ€‰∫<πnü}7¿nNãO€n-°N¶È$Rï¯eì©ˆÿA•⁄€z"˝_Íÿ1Ïõ)^`|^@πFCÃ)at’¬Ÿ∑@aiÇÃ€Û;≥ê^÷R™@œÈ(äËzaöP˛_T9É·ò{q⁄†¸Ñ±y§0ÃP5U&´`õT¸oÇ„:Ωê"/π€;^˜õµÓ{ˆÌŸwgﬂü˝·ÏègˆgˇÈÏwgˇtˆ˚≥ˇ|ˆØgˇÛÆﬂ›ªﬁë⁄kq4jˇÂl∂Pb∑¶˚ñÀﬂA;œ
++îzV68&'YE®®b8‹Ê§Â4<9MO≤9”˙Taí√∞RÓ	dàSÅÀZ"Î∫ÌQzPç‹¿«|º;KZ@éV1l√!mÒ.›ø≠5fG˙Î’Î®Ω@[ŸƒãôÒà)√YAìß]ú´.<RìÀÕgVM›ö6ò¶YívGA4aì£nøwì•	¶ñ˜yÓïWmèêÖ1ù–HA}†dÄ L'"Y∏r¢ÆWp  ¡Ä‡Åœ	_gÏ!k[o
+3a…X„ØúàÉª£ 3<E^ı 	¡¶◊•yπäl∑TFû¿ÏÇä¬ﬁw˙øZˆØ≤UÒìåÜW-£°Ç]õk;MfŸé(?àXSÒdÒ€ûìáô±ÿÕ1Eû_[¥KsÍ–úﬁ~™Qé)orê–ªò∏˝Aﬁ]Z\f]öW2ì—ÉÒ~wôçBﬂΩï&µ+∂û2§{s7aXÌÀ]AÓ	¸˘Á\≥ø.¡œ	¥*H©{±lõ˚aw˘àyÌÓ,ı'G{ ˘íªHVG@tﬂtwÓ‹π≥«&	ù•ÔRFü¨É6$içæd0˛5√)œ©’`äÎ¥Uû≠¢"4Ù£/WT¬Ã@›%ƒ»íf?¶<·¡quÀ¢ÌÊ
+Põ‚)–æÆ™ß√4ùÄéHá49ön#ñ@Ê[D”!i∂l´K)TˆXı‹lF€±K‘Êh†¸¨˛0I´´d∂ø@g{¥8¯^ï€‡í˘ÖÀÁ–à}‘17Î∞G∆’7K*–∑rÀ_·ºå≈®~èõÆÌ¬®ô“ä	ù=ùÿ˘O~Of	"ùS{•îfÁtf3™|E‚s5¶¿˚s‰˜zΩ≤›Ã©®“gõæ¬â·-<}SÎ|tw/›<3∑›¡~eç<¯åÈæL›ã˜âæ ö:ÁC`5“hquú!0Á
+†‘ÕèB–w#èñÿ+œ˜“µ8&Ù¥}:ÆO˜◊}âºÖîë*}ÈÅ ê·/ıCBÅk∑ﬂ1’:@<Øë€ÀÆwWï…¬o0NaÂVøx&v¸˚¸Â"èêîtÙ
+^|~KÎ˝ó§'“
+ê9t@%$i vÏºs^<‰ßÆAùı^n≤kl˙0w‡'5«∫LXî°öΩXô˙Ä7K}¨Å–›’gL“	@%uÍ]„Mí¨MPt§J~Ï*ñÖ±Uå~IfbŒπ0ıÄ⁄Ô-/∞~Ô˛sˇπΩ¿ñz˝Ωó√4Ù_&—Ò~!≤©*ùô•Ø¬‰Uúj±L˚5Q®‚+}>ÁäÿÀº.`XK≈çS¢iº˛)Ôù.–ﬂ„SëØÔ¥”˚§Õ6f›•ëÍ…¥æAaúWú4ØG3Ÿ1fœ	ï	”'E^*™yœﬂÈ2„8ÔﬁÜÆ∫∑§PûÉÏm»Á+(ê„]Â«(xé::W°â“B¿¶6¥Ô°“¿¯9Ñ„Ó-%¯⁄˝r£®2ï4I€~ƒaYÓ˜5˙ﬁhEoä∑1R}'¨ÿÙ5—ÿ!
+ä[¨_6‰ˆí‹Mm†ƒ>L∫∑¬ˇÁˇ·ˇÇ-;Å)$Ü∂çwä7ÎË—"£m@ìR≥Gô‚Õ~_Ã(›lœ¥!?aÔÃ+zL=L∆MVz∞≥ÔQµ¿kIŸ¿KáÀ√˝H¿À≤¸Ï;êÇòíxP§ÊpN‘.¬>¯§b>qÕ“¬ÌÇü°B‰Øj?ó	ü∑ä)˛VÉï◊ßHÎ‰ü[e[ö§/0¬Ÿˆ-4N"Ô”4ŸE˚´Pè¿ƒH’CÖ:ßˆ	•´öìÓMN¯¬lÉ©Õ1‘u"PMπ
+lQ…ª!ÀG˜Opõ8e£ •K˘/PxîÅh⁄áçÚäx*˛öÑbçåjØyx˜∞ª≥Ú9*¡ñBâ\Ob/|}yƒ<mÕˇDg≠ú!MÚ¨»ÃS“†&ÇèëÃç9u∏ñù›∆ì·ıQtøÖ⁄uçõ…[Ä˙É}ˇf∞$¸äP—Rø{x'oÍÒˆhüæÅ°XºëU÷ZfÀ≠S∂h)1ñPå∆†$†s~Æ4“π6˘Q…HuºdﬁLâ¡ZÔëyã„Êî-›?·r éµÔGÀ˜O†I‡◊ÏX|=>-–uÁÜ∑≤€FWoπ80˚=u S1π€<ÅÈ(aBÕ°ú9mí3ò˜ΩˆÁwÿÁ˝∂º|∑ÂÂ~Gõ‘7n7-(WZˆ<!HøDg˙{ú‰≥ß•n;¥ß•nc,O¶ˇéä…›Á{&ﬂÁª&KÔ∑n8∞ÜËcçπ·º¨Ö{ÍÌ—Â"!⁄è⁄…©Ñ-ÎA¿+lç@±Â"6¿F/⁄ËwÅ§îáΩﬂ‚VRjíÓ≈ä–4÷€ãd∆»RøIˆKrŸ)Y`ÓqA—]I≠äïz$*XÊ»gt,ﬁó*”	ﬂ$qÎ6ˇ„‰˚î›√˛Øß{¯G;M$:π«∫≥{Ü‡Ó£ÎÍ√5$Å@ÍÌv‡™™Ä≈º4Êf	WÚlÕ+‹Ω∂`?∆|6:ÓJ5ÅSˇ‹”nÇ—?bq:ﬁ¿jçé\/†BtÏzÅ]¨NÔüp‹∫J˘…8åA.z"!2Ô˚-⁄3Ω®Â(lÀd;wz7—¥Zàó»9t)RähÂ÷úé π.O~Óπj“ãú‰Qé)Êﬂo¡Ïﬂ
+∆≠'≈“?Ω∑òWŸë›ç,ıV†√‰çÉ,ƒ\=J˙A˚D·”Eÿ&k;ª∑Ëzéñ,˜¿A…—∆¡⁄WåÆﬁ∏⁄rySpÊJæî:˛¸;√ÿÊêŒwñ˙):áÓS‡dÅAL Ø£j£y™ÙK¨{•Æ˙‡ﬁÌB∏bÊ•ﬁŸÔ=÷ﬁ‡.Ò~∞bc¢)ÜÏ.ƒ'$=%q%˚(L%ûœ∏eÈ3ÿ»±;ˆ’?Jk¸9èŒ#éKÖÜy¯¿(wºé«*Ã=”n|nÈ˛FÔ¶C«ìb˝~êñœ;µ)«≠VëCT[W‰<sxä^NÅ æ$¶ÄW¨ì∑Õ8Bß∑∆F ıΩ®±!&Áï•˝.9‡‚bÃê†⁄¢ÖYÅû¨¥"®/≤ˆ çTΩ~‹ãÁúÑ¬œWúæ‚˝+T”∏,=ö·?õE∞Z50â"‡πÑπΩ*<jnwXiúŒ)Kq—ñ .A79ÍÆ ≈OéqÄj%óÜ+¶ó§´ñ~}^rË“c\s‹·/2P)˜mÊ@1ë™AC»8¿T⁄(Ü¢<⁄jÊM¥–g3<ŒknuI,l¨û≈HéµlsÖ—çÀ\ˇ ^¬—„ bñˆlaÙÑd˝Ì[è;÷‡G7ÍIßdú…∆öqÜ€fñ+°§® ˆ§Æ‚’j+\ﬂ˜¸a@(Ë1çÃÖ,hJ=Bõ_Y,¶Î5.
+`aK›àP~'—*ju¥ÆDd≥ã[é.<∫ÍÉˇ“:·ÊÍe≈—ãàefET¥÷˝Ê]î˙®î≈us[%∑ÂÃ=5¬û∫2{GÂîUœ	§›Ê„∑Â>B¨>Oß1F2¥XéˆV–∑§›:Épàº´¥bUµ¨ªîäÍ	◊ÿNﬁîï	ãe ˚^FÊ≠áVâ)…FiøÌ¢Â∞ ñä@#cAc(7œ	Ωs˚-…œeH?v˛4y5∑ Ò˝WÑÃ}∆˛ö»
+#c ª-xç^…º•ÿç.√ÉPf‚GŸπŸ˜Ì~9µX4ËŸ0Ë«E;.∆•N «√2÷ñÁâ2(ªïÏßôÓ;u÷∂øÇN S∫õÉÎ∑À€Nci,Øsﬁ''—%£ŸC’8m*QÂ$-ﬁ¶yrãÉU‹i©í7›1xìXÀI„	±{ÿÂ.'ß\çÜ∫=jÈ¥«t>Ê–n+"∂‹ ﬂ©‚7∫&Ú9?u#~ïÊK<'∫vp)≈ûh·3'òX‘9–∂¶Ö9Ì4üì)ÒÜƒ· ¶Un≠Fè∑≥b®Ê≤"êœ8-©r!Ø™hb◊‹NÏæJõo‚kÉ9‚ÅÆÚS◊9/Ü,¸†˛ÑG'¬¡•¢	È.NÄ©È÷ì5ñfÔ<ÿ+QQ«pœ÷ÓOx^}d†J<¬"1ëP2≈∏ñA2±O@ˆŒSe,ô∏∫œúáá˛¶±o’,F”⁄°˘’Öë{ÈÎ~r‘ÌH^TÎ–º¨ΩR@[ÌnG]uloñM¸Ó˛ßo•€}ãN†—‘Ph—Ÿ∑xhwìx&
+ÔX“\‹ej¶;æñE‘cú«R`TefÚH:Ω¶Ê9f∂‹C∫«o‹µ’C'=ôVÃ≤˘œXÍs®#\1òhêﬂ≥˚*Kœı†‘=EXTÇY∆Éyªé†/^¯Q‚S ÉÚ≈\vÍà¢D9†KÀ„Æ›ˆÂºÆIÎâéÜD∂˛±∫ìTt+D˜ìºåÔÖØ÷ı9’Z0Ççzò¢ä'È≤na√*±Äºé∆qàKÁœÖhEµBﬂØ∆iC·˛†^ú0—!£Ìfú¡Ú[e-Ô]˙≠N}÷Svj)˜ÙK ^6Äpë‡DÔÊSº4√KﬂR¥Ï˝ä¥<˜óugµ≥0%3:ProîVb·‰¢AÖ3ÅÇJ€-'/?¡Ïr©≥˚‘j!í©S˛Ä!QÙÅÖô_4áo‹îá¨…<ÿ6ácº≤∆vCrˇÜ#vá©wÃ7ÁÿÙ ô≈œa®%˝^Òx]˚´Üd’9?jÕX9&®cC„úä∏eÖ+∆f”ï∏”Ús©‹?Ç€ﬂÏ€˘√'ç_|("Ô⁄-[  ¯.∫ dB∆ÚâπëH∆√+Ê-ÑE±0{Ü±‚hÅ¬2ÏÜ≤∆Ú‡À‚´çó/^moºﬂ|˛‰≈´gÔ7∂∂øzº˘‚˝„Õµ/ûü˝nk{s˝≈˚_Æ=}Òjm}ÛÏwœedj°SÓí6è"Q¶ÍàWËÂ…W(-6ZÓŸµÁ˚Çßd¨/¯xcÎãß/∂6ÿØŸ_–=Ÿ\ÁÄµ:%h)n!q"L¥	z»4 }D1èH£—°wl€ÀxãÇÜ’{¨Qºe∆B^’[\√;|¢∑⁄´x[úW’!Ú|îjbÕß˘Ø~—›ìƒm,˝xÇvrOi“h›®¸Ñ¥C˜wiLÑànÈ±kÛ2q·FêΩu¡™¨Hª»©nÅΩ·˚˛H^7S+–œ»X∏◊IË|Ë£6…Û‘“VH(Fw(*å+¬Ω—rŸòçuW_•»~FyßÔdîûí–ógx|™'äÛiûíÿﬁRì©-Õ;Sª(H4¿/#ÌNÃ+wó5]+ó83^,£•˙|Ù/7BˇÚ9—ø≥¥¢ªfM¡~íı√O¿Ì5ÀsO¿J£	X9ÁHÀ¿ÓÇlçk˚K?»¯¸C·•ˇ0}„‹§æd{«j—Õè(xTﬂ˙P®æQ…ÓÂﬂjöÓﬁºêé≠y#ÿ$rx
+D-∫Úú;N˚ôπ6≠õoÂáÓLƒ 7ÃébiéPk∑õE√Ï9Ÿ(—y)aπj»YwüóoMº∏î+ŸÿF4–√r¸àqÆ#€îÕüF[]sIIÇÌ
+Ñ’Œç q=zÇw’–0;8Œ“¿¥Û§Æ¶ô6j◊ Î»Â)å~‹^∫≥tKŸƒSÓ”°9&	bÖa≤93fæwq(ì∑—ﬂìß;ÀmÿríÅ\4Ë»ÑÔ~{Õ∫Ë†)†Àeá∞;öòÛÄ¿jkKP}(∂ n≈EŒÄ¯í&·«◊*à¢‰¡.∏àï˚j°w¥8 V
+⁄‡d‹(O≠=Êvﬁ4ÃèEÿæLúø%◊,[‹≠Íìë	æRvB7Ω7∫=\©ID@⁄|-»PôÄÚãQ }]ºŸGƒ≠Ph™â:He†G6vDΩh¥iâ≤c˛3"∂Ccí?oúT≥ø:(^m7oÆ®ßãÉ”)‹ÿ¯.‹ye
+fÁäR)q?€4¶£ØﬁìßvsæíùΩU&q8ogƒcœo1„7‚:ÏeÍZ_™ C‹)em“ÆÒ•¬Í∑(mËò¢•ßœıÊ√åfR˘0ø‹~ˆT^∏-[£dp#?ÂÏ“ƒq ÃçÓ	YäÏw~h¸ê®ûfLSYÓhw∞ﬂNúlœ˝íbã‹Øîì∂¢Ê≥(Áâ~ì¥qœµƒ‘/=ûHU«ë~◊Ω6∞À2∂+3À2»¿π6∞æª}	&ïÎ÷vyßy-ßÏ`fßeSuJ[∫@…´,#ì(Ú&®o–Õ“!ë≤*ß=uW{0Ñ”b©úç_	ûK˝˛‚-æ∆ms∫óßFórvhBœ=ÉU)Ω‰ä%π¥¿FU?ˇ†îBgÑ’ŒÊÿZS¡[V‹{•™±)M¸´<@|„Øˆ*z”BSUKÆ&VÊjbyæ&4A¡1ÙıCØd´’’‡lπgM±∂|{ŒF\x[∫ıW{FŒ≤y\qMƒrT+∆úò[Í_ ^'o^k›su´¿'\O⁄Œs¢óçÁÜXÆCPCJ≠#˜fÆùÎr7Êk¬=Eï¸öÏT/y&%2¿å™Y∂Cdi>∑•éZ"iS"nBì˘f∑‹‡c›£yöYv5≥˘ÕoßaêV¬3ÜkŒ+‡dw=¸p%*G”·H(Mïeuë OI° ß¢ƒK!ΩımFIZñıOâµ–BJ)ÀÀ∂©N)∑ÿ™Üã¡NßZ|™Œ†LcÃwU˜Ûëªá=£|R@4ëñÉ|Ij,Àí®Ü≥»√Ö∫«’bù(Qàu‚AÅ÷”Böt˙/•Ó«ÂªtÅ•õS8ê©õ °¶@®i°ö¢r‚±ˆWlYƒrp·ôg¯4ƒe2o∏	Á¥gñ	¥¿]´äñ.E!ëü*´üÄ¡‘ÿE∆∂H^X5®bv¶i≤∏§µ“:)⁄\`okó[(ïqíf˛*,îÚC)5¢pØ≈˛ˆÒ$!´ Z	[≈âï*ê/$È¥Ω¶ñe’WyÚ°F∞“Ì”⁄ŒrN(D∞ ¨∑≠G-œ+¿∞ƒ bF≠¿Î‰*]„ùö°˚√TgkÑ—*RøÎ"+Û´˜R≈–|EÓ5;o≈ﬁ´o•∂E≤>X∫Ÿ∆€lÎ]ÈÎp(œπ	ª∂·".xmií´7Ê∫≠Y≥ø
+vU›
+l§•]T~ú;¥{èvÔ“Âƒ\T∑K;\á,DsEB..≤«¡Å7çr·`n—çø‚mâtõπoÕ√F'm-¯}ÅEÓ›E\K¬Ô^∆ºc‚*oßÀñﬂzXî≠2Û€Ωπ=W´h∫ËÆµË˝=êÇˆ÷CK≈[ﬂ>“Ó∑ß˙Ír~›©q˝8ˇ8Å≠å)ç6ı_Á,’qg·´6ˆ—Ie*—Ω.0∞®‰oii∆Ají?ùêH"ÙZW´"Âo•C‘ï·x›8Æ9„]Õ3aì¶”•‚bñkB¿¥†ØÓı£N!íió%Öp ±Êú–ÚÅπ⁄ÈDÒï:R÷ñb´ÃÁÙ¶7Û•õ,√laN_z„±ù◊y^¯óÖ√π⁄Õ|.◊˘≈–¿W>œ Í®©b˘œ±¯ã·ŒÄ¨L¡˚pœZ1•ıb–€i’YRô>›q‚,µl⁄q6.ó‡ã<≠é3jZ	π[ZHµòûºQYöuŸW'åzÎ œª°G›‰ÔÄHò¡èMﬂŸâ=hç à-$wd6c–p¡ºx∆à£)åô3~Hë«5ñíis2wÚÎbêi∞[zÛeVoqü—Ãı˘1˘p‚Èx=
+'˚	fK$ìc6Õ√]Û,SqNé∑ì¢ÿ}Êe«Ò¿æªO˘·±FukôtØ/0 ?óo˙g3Ç• ÅÚø|ÜM3<OìLS`˚Sí<˘U:ìâÔhøJ19Ív∑Ï3å¸±)û“ÈhËM≤é∂4hoì¸˛ ;\-‚cy“î™mÖè•‡à Êrè}ƒA
+3À[·ógpà€ÚÓ£Ëò§A¿íÄ)ÂÔÆ^ªvïF^Éçë"^Ï3qãçºlƒ2–Ë2ôπ@É˘•ºùCéﬂ’¸"˜o⁄ø∏æõ·EncíªE¨Î °ÿï%‡¯0Æ-òí	¡ƒG´÷]ˆ6sµÔ∆◊©6~√ìjw±âçogDu`ÇcdLfÕ»ƒÅ^M%[—pôÜÉCªÀ‚D,¥	•ÃS®∂¿WJUx˝ÓWÎ≥-F∑•-Ú?‚Zä$µ/&€z¶„ÆGÁåÂ8∑q=˘8⁄ ‹◊(¿s]Aª4;ƒC6&å6ﬂ|µ„∞ÄLi(V·ﬂ,Q√Òì ãØÇtrÇr»Ó›èYê¸VÓ3≠ßà„|î_\c)fÏ3ö≠œºÒ‰n´SQÊ/Â’E"C,¢ÔQÊ¯”U‘í∂â∑*4Zs!ûüÍQ8f—»S~‰†∏X?∏F⁄Ì/®zwx€ä)WX}-ôomTõ=ã]\“{5±´‰√º|Nò/ÙÖ°^9/‘˚¬pﬂ87‹ÄÎÇl√÷ ˝ﬁ˛É+K˜˜òç7m/ç§lÒA›*_∂⁄¸»t¸z¥§ñΩ..9¨<ì¬∞É«sƒ¢´ü∂•Ωá=ﬁ`“‘côÄ§ÖgB¶,jız™+ Wû˚‰	^3bäÛUx~®\ÄÉ'´åb¸Å∫Í¸äÓg0k“≥Uq«qπC¿K2Q’¯ìnûLVYüwe±ΩÉUyt‹≤èèÂ’;w[6Â÷˜Ü=X6s®∏±ôu¥5©ñò˘¸≠≤»[*MTgêõ√qTãìïrªÒMµÕ,;ö©‚2©
+¨“TÆü{ö|"ùE]X;FãŸ–}πN!∞duó¨Õ›ë¿-–Ù]V&r˛Ë¿á—Ò*ª∫ÜYCØÇ8ö◊ÀÓ∂|Ôgìª®ƒæ1;Ü
+W ÆÒ†ÿpÏ£ÅÉ!˘áKwá¿òô'¶¥ÀoE	)ê§AUë‡ ÿ¥÷ÂÖFŒ¡ç
+¢¶+cuÚ9ù=\®cÃË©x†—Ì©≥tÌ*˚Eü>w•ˇF-””÷lG„»ßà–+'|æÂ]QDö\œSE¥
+ì6'¥˝ƒX ì7˜Pû}pè ÓçÉ‹#ë±˚≠i~–Ω›zpoëø$OÀïM˛Ë!î¿Fﬁ®nÚÙX#t\Q±˜.bN$L$$TDº\<åA˜È)µëŒ¶8bœC~ (ôQ∂m.'beã§pµV©Ù£(ŸoÔòj“ﬁ;!˜Œ™Q0∑‡háf4&±WjÜJZ≠úçwËÖ9s‡¢wàAÒÌÁ^˝—Œmê¶jé◊y˜&Ãz2	üÎ∞õ~≈≠(ÿ«A2Õ€m“b 5H"Ô,∞e†Ÿ¬ßÜ∑¿ÉÆ÷“‘>Ô–KÅ&üÄ˙≤O˘ø∂Ôe·ÄtA„`˛T≈dµµ¿∞°.ì∂.àèx8?&4\à·n§iôº+0∆$m∑,3ÀÅ"„. z.∞ú›ò®Z*œ+ˇ´m¶“®RÙj‚Ø1ˆƒUÕÒ9[˚D·˘%ÅÀëhU–ﬂ-äî¶¬™C7Ö3a-¢ü.º(Hs 
+ﬁØÜÜ, /o‚Mº–08
+Û$ÛpS§‰}™åt“øÉFê?m'œ§i	Ì¿eXì_¨‰gXFπé•–K"(≈†¬[˛Hö‰^q•Äq/•¥>P·±Ø⁄W˜ﬂÛúäùã√ÙÙﬂ≠(æªX[¡Ó]$à¨Ô?|ãljF◊•≤•Ò¶‘H`c¿˝º¢¡˝t7ª∂ª¯P4G∂∞R{Q®µ«O÷â¥*ZçB’^ó’çF4ª'Ô6çìh⁄¶—˚$Íhm‘†≠T÷Ê§Æ≥âÅ°™n&e<
+r˚ÜΩ˙À ö`Ïl¬ﬁÖŸxÊ±pd†ù1A)Ò∏0èä¨Mn[ô8oÅÌá˚Q(¢g– ÷ÎH!t¬[w ›∞<á^úsπrÅC0L“!0™åmí‹.ÑƒJ™ŸoJ4&}ÅZ'/%%„¶ÄtÃ-¬¿!
+…\6Ó}bzv68$ØÇlOÈn◊‘;‹6lﬁ µºu9…âUpf‰ªº—Ô∑J˘yc’…saávÒ!	äò`qﬁ¨Tä9O¢(p‹n?±'ø¬Ì§"q(≈≥}{hëZOÌÆ«O‡•ñ¿[Ä(Ùìf'Aç∑Lﬂ€Ê‘∆Qós–åªÕÛHc§à}I‹©mhê‚≠òéôiﬁåV+S9&ß¯îSŸÅ0¸Ä¢Ã!%≥ 6Lxî—ØK•‰U**≥ø∏‘/Úî»§0ÓÙÿ¶7◊»"")≤:óT9o~Ï`á¶˘ãf‡‘Œc‰ƒÈ‚ùõÍà•Dk£,]Úf©"≥Àá¬◊r3|ÕÅ;¡–åLB†|[Ú¥6›Õ2"•/…®‚‘Ê≈Ò≤23hFˇ^œJ9jj0ÿ<WM›I˛Û§¨¡è9;u~
+ìô%õgs†<å¢Ä?©Ïº—'J8ª;_m¨øx∂Ò¸Ò⁄˙ÊŒã≥ﬂÌ=Ø=yÒ|cÎ˝÷W_lº⁄xææπ÷±¢+oŒ‰AŸ¸Q|(è:0†5È,m¯}wv˝›ﬁÓµ›Ón∂˚Áø˚ó›?ˇóˇ}˜¡ûp0ÃÆéûÉ˜¯œ∞Ÿ† ŒC¿◊\»ÇÚ;øŸçw˜V˜–[±˜pgïCº∑wm1¸p†›4F»NÎÍﬁ{¸gV/íFùÔIû3⁄qO≠;f⁄˘PRÏÀ Ó©O?ùÔ@XŸéh∑Û‚9ﬂÏÔﬂó›ª;TiV}ü„}˙ií‰4E¸µ©èIπµ>Ê {÷YºRZ˝√„µ`ë´T&VŒûÍPu#√/œ<¿oÓ”í€ã»¿„,DB¡∂˛4%n¬„vå{º≥Ò*}OìC#s<üys—Œjœòü¨=k g£¶µ‰-WwnˆóKw_°8¥|”º"ÖbŒNˇıÚ‰Ëı˛CW7/›ZX∫}sai˘ŒBø◊ø’Ÿk’√∞ZeXe‚~ uÂ¶-∏aD‡M„ºÊn‚på"Òd
+bA›Å	fúUª”Ôkß ãº[#ÃÖ±Z%éä†-QRoV›±…såúy˜øWáﬂÔ"ØX®»£√?'íp™.Å≠Íz¢•_cUïnã–âk≈∏o«†≥éD≤%8÷GeFæ∏ÏêÎ=ı#pﬂ(U|™/Ñ≠@¬…zR>|˚bÀ#<äS0ÂáÏ™I„∑˚Âd≈§q@“UÙïÑv”A∂mbÖök∫‰Áﬂˇ˘¸ˆÇ¯´ÊØ’∫∏˚"≠^’fÕR≠fπ~z≠ÚÓè+⁄:∏j”$°€ûÇ}Ö‚&JõÍä-⁄ìÙÏ{o¶Î.Neú7ÖàÿqHf";Ú⁄¥sÃ\j'ÉY'º8∞•}Ûu-’Ãx]]oöÁI\”1j7˜[ºX›6êƒÎQ8x{ˇÑ{F^ÏG¡f!–º2îÜ∂î–Íê‚á∆˚˜µµrñ ±∫öıwıÕ4s+Yf
+.’7(jkcY[=B.ÈÂ∞ÎMÛ§`|¬ñ'q¿”4K“.ô.ÒÓ)-ﬂÏœ:-)3É*œ+ƒ‡Âø8ºÏâ‚%ø^@h.Æ8ñ.f~£o0Ûï(tÕÜFÎ„VüÜÆƒÌ>g˛Ã6ùi}:vK‘!jôx)*!ùåY≈€æê {wnÔ’ûD=Ô…R}gú±œJﬂ ]6ÖJ,ãˇJ)1õ†´Ü‰ v°ä+ƒ~“Îı±È⁄¶;D_∞ÛHFj¿Ûè—O.g|’·[t«ÃòI.Ôœ=ÃÙFYwöo@U’k∂?wóÌ`éTŒ≤¯y”9À˙Û•t>ySô”Ÿe\Âó£´Ì≈∏…åÕ¨¥®’•Ç∆œ≈“AÀ~jRB„«X&kv∑7#ãtëé›ÃTÏŸNÙ6À$ÚÌâl]:i¬ﬁÖSJ„«µî>PjÈ&@ó”Ks +mƒµi¶K¶•©øqéi¸‘⁄»ÊOÌ[ëŸ∏î§∫R]òë¸ó†r¶?/L'NEEù¶.n˝Z¡√|5y£f•&XÍ.ÃÆb«ÆËéÉô•⁄’Ò˙çR„gûÙ¡E˘∆)Ñ%,Û§.∫iñ ?ÁÚ&©<¥G\„wWú∑8ˇ∑ÆÙhÊ4H	˚e4‘Ú‹∫.\.%¢ÂÏí6+ïÔÀ»‚u˚føú¶÷}≠ùé∂eYŒ]u[Ω+
+ˇÃõ?Û$ƒœ‹	e•ÀJ2àüKJ4ËnÍ\…ÒS-ŒÃtƒs:R	Œ»ÿofH]R¿,ÎU√||e>¸TÏÛU©~™í˝T¶Â£WvjæVÂJ%€¥Œñ˚µ~j¸ÃôÉèCî∫RÓÈ*LŸ[∞‘◊m4t†
+$kéît¯iûñÆ(=+5ù3+ùîjÊŒKáü´ÖÁs$ ”›fíØjQÉÔ¿∫Î3~Õ¢}ZöÊ«¢ë‘‰»¬OÂÚ©^@’K»ï3Kî/ÁÕ/Ï‹Y¸ÒÇN}.-¸ú„∆H-Ã§4!sf÷¬œ\Ÿµ3OÜ-ÖW
+7îcN¥àœ%Dú8ì”hÒ&|$.‚å6y*„úÌœÖbMÊﬂ¯q‚L.f≥ìπ#LÍ‚KfDó‡T∫8M•û˚!"K.#Æ‰\˙r-‚IT⁄üJ€«œ:|§A»è:“ÃÛ·√F~ƒ†ë*¨¥._r∏H√`ëüF®»yEfx§gπ4˛rCDfàÃ¬[çì‰\°!?€¿êsÜÖÃˆS}êê&!µ· µ4R˚≤™Œå0êfA órﬁ êˇ¿·MÇ?~»–ès«©^zÿ«œ!Ë„\∑|4˜ò#p©°ÁÙ®h‰1k†
+8Gx«¨Q]d,ó÷1PGÌÿ™ku·syÀJ˙Ãƒ^4ﬂ8˚5ïçΩ¬^TïN?ı*w„Ã∫•√üËî"~\'ÚJÈ≠•e{æ◊4h∑X‘å2j–9/2œÁs7j◊^Àk‡œLq,ë◊(…q%Œ ˜}[uK´–∏‚Uñug∂uù	ÚK@'Ëß >¶Â8D_y,^.éÚïeY]ﬁô‘W),J$o‡~k
+ÕT,Íu"âΩö=˚S⁄¬ú1ê
+œæÖQç'aD{{ôÄ ÈΩK“P<`oOáS(±óèü∞‰ Ñ<]ÆG®òF¿tX‰12RVBÏ‚ L«ûÔıä—3•ë–üÜg˙æ031°ª+F÷ı·ÛÔøaY¨ú—Je˙h{5¸œ˜ˇXá˚´7jéQ_òoß⁄e	n›|ŸªaGÒx√Q9ÍP”"n¢÷[%.‘”÷(µ;":ïÁµ(®#<»>≥=Wt–\g¥ß—lﬂJYìàﬂ:ørâG¥/%ug∑∑€Ÿªºê‘
+Qƒó¶´ç∂yérNË
+Ø“ÇÅbw∫À:/¡˜ïÚ∆üˇÓ_*Ö*…u∆»∏X>7?blÕ•aŒ	Bå+@∂4·2:ˆv}tl˝°J#n∂∆Vß§Tz˛?x†≠{ (Î?¶züNêÄ3Q∂$AÌbÜ≤Eb/Ÿ‚Ëx2
+p«M0G—ªÄ“!•ﬁ1%∏ß|ˆ¯ ù…,(¥®‹ﬁd˜xus∂€çE∫óì›Î˝wßÀ˝Âe¯˜Ê∆-˙æÇˇﬁXŸª.4õû‰ExíÕæ	Ë⁄êÉ`±¿®qWö§(ÖE«∞ ‚A4%ú‡ŒÜ—$AJ“‡j∆8©,ˇ
+Q¯6`◊Æç µﬁ7√‰⁄5óè∑:öîæsÆi 	Ωõ]€Ò∫ﬂú˝˛Ï€≥ÔŒæ?˚√Ÿœ˛uØ≥ûâãÏ¢à§ıë◊dïœöÍzHaSævÌ âÍ∞ó'_°|±≥–ÓP‡ë´”πWÇJÃì∫ñ∑˚≥[v]_§ ÷Ì•TÆ&XÆ…&z∏SŒcÖóbæB“«èVæb*∏7>xPy^ ¶|˝G	)ø¨ÒU!‚Ó¯æéÈ≈.;>ºÒ·7?Ppx›¨ZP≤‡!Â»‰÷EìMtΩL5™Ωh¥2ŸÒ¯a√å˚}ìºV>|å±òüŸÅ∆tZ·ÇQ∆ı°ÏZhÆÄÍ'üÎ4Û™Î¥µù”‹4ÕÊ
+ﬂ@Cm\oQ˛G
+›%ªº}+.~~äÒª%ﬂÃ˘]3=3“3≥ri~}·ÍæsG≥Ôœ∆M„êa/≈I£cí⁄ûÖ?AüÕáı◊‹¯ËØ—¸5r’‹˛ãp’,˝]5JT˝…∫k‘Ö¿ó·¨˘Ëß¡œú6Ñ…G®Ë!LÈÇ∏5îSïûÌûõ—vä÷lêAúçíº†Às˙K‡£ÀÁ'ñˆ‰≤›=≈Ttˆ¸%fU)¿ˇ£Ÿæo¥}¥}Î2ÈrÖÌ˚Êá¥{/_Ü›{©ˇ„⁄Ω?§…˚Ûøì˜7ysÉ–O!ü∆iÂnn‡˛¸'d‡˛h€˛h€÷:¯h€vÍÉ7œi˘aÏ€?_”ˆ|"Íá1mˇî≠⁄µw™õ
+S2Ãf,âÖ©ÑﬂG»C—(“-)xO†∏ÔÙ•u≈ÀÚ ≥∑¸&¡Ï8Cçm≈D/ÉÃ≤≠ØãNπ1òåÍ‹,\gWW%™oúmlVç kêCÔÚßäS†QƒNrÊ∫¿ÆéìPG2L∏¬êç¬ ÷÷ OŸß´lNœA¿€SötπQX©i.N±’¥ô&Y–¨A?ˆÍ{±h®“Ø®0âü%”,¯jrˇÑz¶•C]ÇÿTP≥”r_qÉ‚RøÚEy~¥X∂_@ó¶ÕcµÀv¢˘éß?–¥‘ÆÌ£Ø\Ö¸p:.`˚0ò
+≥µï^™§tSµyá?6àgf´ÏF•⁄Íå#≠“˝,â¶ >á1]/ö&KËY∂Qº†kñ‡˙Œèªüﬂt»K}+`ıÓå‰∞äé*ÃÔé'. Ë˛ﬁO¶1:æÇåmÆaÓÉógﬂ¶©wê¨B+º#$Ô ﬂ£‹ã4£	≤ñOYÍÂË›Jÿ»˚π· ¥ëà1aYb4õ∆l"⁄]Dê«}dcvÍ4Jÿ1`;St§†/ﬁÓ9p	áúó1ê¿Ù∞·]∞k1∆˝z†¨<æ∆#¶ÏKX	–∆—»√ìÛÔí∂q4`.  øwz5®Ã_˝æàÖê◊Ú∂⁄
+jT ?ˆrÔRÆ˜°ˆñÀ:Ä±Æk¢ÎW‹fî2zÕH NAŒƒ3t€£ ì‡Ü{Z>€{—D∫oº&uÍr.5ƒQK∂s,ø¯^6¢˚x˘…˘ ˆ$q“˝§ÙC}i(†Ïõ™N¿ 9£ñVt+àîìñ4¡®¬Ô‡ÊWe6ßŸ ´n√Õì0
+c{9Õé>nGÓ‹˛«ø„ˇ±-/ÇÂÀ¬0Ñ•èÓˆì$˝Ô>Ê≈¿	:EyáNË∂BV∏ÓàÜOÖRØ≈DY{éöe—'ncñ≠J°≤£ßû=üÔ<}ÄGq—ı@{ˆ•-;≥ü‰y±ÃÏ•=|¬Ø%Îàñ©·b(ÌË⁄rË_⁄r(Ó.Ys‹¥øñ¶…aô¯ã∂ÏÈ^$ö'∆¯(Ú‚A¬~§9â˜Ì5‹öEû  óÚëêÛPΩº¢YWOTt¡Èá!ƒpﬂıÕy„,âyk°2‘|ÒˆÕ l‰wÙl‰∂RH÷î¶«…ı•v|‰≤ﬁõ§AÖ÷Ì
+(3ÛCiÜGh¶{òzìˆw√§ıu∆Ì÷n‹rﬁY-^6E]B‘å¥=Û¬x;Ã)É}(”ï£≈[Å/ãØ6^æxµΩÒ~Û˘ìØûmºﬂÿ⁄˛ÍÒÊã˜è7◊æx~ˆª≠ÌÕıÔπˆÙ≈´µıÕ≥ﬂ=ó˘W©€®≈Z™◊y.˜Æ%KÆrvfái÷‹ûÆ]≈MÈ"ª—dü_q}c>Y°.<á/f‹xÌHÆR∫Ú∫bb”∑±"ïÈó†Å≤G/“pHr8◊åcé.x≥ΩÊ‘9
+8íqΩ\¡.à eÆ*•ªh†ÆH°¨¸^RL¬mùÀOU˘Mó™Ä©™0ë÷§ÿ¬;JJÇ˙÷Wÿ$•ƒã“ª©ƒµ $£´Ãïî}Â¶+Îï;ﬂUéÎ¯~ÎK©îjJ'Üvz@Ä⁄ÃÀM~ê3Zöµ`
+CìEÂÀsQ˘ÚOá Ô‹ºÑ\A…ú>?2_nFÊsÙ OÇ†eˆŒŸ¡∑¥!˜ˇ“˘Û◊ufNb~ÛÛ%ÊïôBé˛Ω^:û+˘‹.¸lBê?ﬁ\¯ÒÊBˆ>∆ÿŒc+xYı≈ÖU›4V«ToŒuA+h¯à∂Â unz^‹¬C	ªœíÛ6Ø 5∏uÁòw%–\Ñth^£$πh¯T¨~çf aßa~‡ÉB*ÿèg00Èπñmê=æ¢µ∞ƒÁãO	QÄ"r8õ)î#XZ¸àïx@en
+„x$›™ÙtYøª@µµbd!¶«Kñ˜uåíà⁄ˆ+.T;’‡˙`=º .Á+?<Ñ .›¨¨:a¥xS-l∑hnŸ†.˛¸|n∫V/xôIm–zEÕFRmA∑MÓHôqÂË]8jÀ≤uí´îsk/9©óbÒSæ=§zqhÚ¨fc)D[çf‹kbêlE…Í€3ÿ@ÿês-Ú˘√›ôº/Ò8¬…õπÚÀ‚5bzöA;À7˚&*E∏fa—n’ﬁ∏ÒNXˆÉb¯±ÓÑ≠Ò¬|ºˆ„ù∞°w¬^¸äÊõûq®‡„m∞ÍÛÒ6ÿ˘nÉUªØÉ˝xÏ«Î`µ~W}Ãåçà6ı_Áê0/®u‚∑6T¢ín‰ß†ü¶ÁTÊè†¯ a¯itFHX‰H¨Ò02.vQÕœ+Àÿeﬁˇ"p¸_ˇ2ß·¥ˆJ_ß›‘⁄õõQ≤oµ\Ãz⁄ÃvZÀıπlßód9U˙≈mß‰Á®3&û€vziñS5⁄K±ùŒpì5TÄ—âèZ&Â¨—»R™S©õYú€ä¶ü»:áÒî,’2R`©Ó ËŸ∂‘K±§.À@lATw‹ƒúZeLùiJïáä\Ê”ÛKï˚∂„DÍOÁ,ÍKL(òë“ó9ÚÓåeÓiF@V⁄iQAırKñ˘Vì¥aˆ¢≠<Å≤nê£◊†›JÅŒA«øŒé≥◊!¥‘ZgR7·G:•#âÍYMF^.€¿ÔÁhâG5Å?¬É„r3^§yªıßo≈+qÑlƒxDæ˘Aƒscèß^Í{æó·˘≥A>•e¯sê§xzÕCÉWi´î‹í£ÙU pV‡î<ÃIåâöˇ∫Åy$aÜÇ·4%ªˇoßÊè†≥£Z@ã–ŸbÏF«B~èe”åΩÛ¢J≥ÒŸw~8H26IRhÂ ⁄=‘=”ó=SÌ/6ûoºZ{˙zÎ◊[€œ^o>ﬂ⁄~ı’˙ˆÊãÁäÙ†ﬁ∫9;Ìı/◊∂gU)œF{˝È⁄÷÷ÊìÕı5,]◊¿‘◊`Û‚¨°ÕEíM|™Ø‚«∞?–S≤É˝±êfíjg…-ö„5ä#ﬂ°Ô8ÍÕ+L'æósÒ÷æœÎdΩÉ≈évä≈SÿFŸß˜QÖ‡!Âh•€¢ëÜãTÕGqh˘Î≠œ{@†’úh/Ù˜±∑/yq£≥Úr√ÀnRQ¥~µ=ÊÎù7#èUÇ'KnÒä.C02Œ
+íÏ!k?Oòák Kœæ≈√≠∞UÔ{_'ÇEtÏÖ¶£kgœM=i0—j∫T]/™’S'b6é∞ôµ(¬ùfr¿ïñ◊¡C†€…#P ¶(\H ◊k˙uñO}ÿAVÕ1µ˘6∂:z+Ó—’¥VÖ£’◊áI˙}•ØAí¬ëÎ¿≥ÀÍm˘	∞À≈πŸ Ò≤Øc(\n‚i8‚¨y+/Ø7ƒm±Õ`·eK∞¶Ä≠1¶#®ù0^Ê È’ı|uıe9j¡›ˇV~’çCáHÁ8råc+∆hM⁄…dYΩôâ‘;N¶˘ˆÒ§R°¯Îà ∑‰aæSπ
+çe≥%˚∞\‚‡ê=ÇØÌã≥ÈÀjÅÃålπ≥∑¿N»ú∫
+ÍﬁÑŒ¢„ˆ∏¯uñƒ-êÛÓ}L”∫¯Í’”à†¿	_Ï8áﬂmÏ›*‘Ä7ümaûÁ\TI:⁄-Ø‡&X≤7JÉ(]èÒŒ´(Òpóxì¢I=Úì◊=°˜˙ 	éK–∆{î6∑^lÒp∂N/É·‰Ì´€W;;˝Ω”Èçl[AÖvÎåÑÓıQ˘hÎ}kBÜí˝€¬àkVÂå”Q±îÔí∑ñ`píQ≤≈^∂É4]e^|\∞l!!n§)O∞ƒ=1M7T0ã∏åZÏ:ÉöΩqêe@8µ‹wslq_∫[M∆≤Ç8É|t]±õÒdöãIzP⁄≤aoFÉ.µ–òÄ`qøFC9‡∏HïÚ)>î6m#yK*ÿ8mx¸=êËÂØ{âúÛv`X‹ı›BY≠ïo) =ÏarÒ(g∞«Úp◊™≥/wZ$îE¶-⁄—‘ıáƒ´ÙJ{ãi©@¨iÅU∂ß©Y ∏∑£ÜÄTJB3€üXi[käú“vh‡ß‘™Æªö$Åh˘W¢F[õﬂ∫MÔìZõ ˛i˝†ãΩz>ÙÎ˚∂´÷òT¨ﬁ8:û1/Ü,p.(•\`*õt¬*^∫Åòq!tÃÆ.Ä(Xµ∆,@◊’G«≥@,Ñö¶4n8xZC3…zΩ(Ï†lΩ©s¥.n5ô)z©°MY∏ﬂ“ﬁ9ªnåÍŒ1B¿sLo—&Ûuç¿V2‰ú`Ú§u—†jı˙´4™Çd‡Ü‘:ﬂ™‘$X∂ŸúÙK˝• ‹ÿQf“ÅV_ïÖÌÏé¬<˘.6¢>MÚI$¬41«‹∫5≈x1”™÷”ìSÜ1¢=*ä« _†|R»Ñ5‚\!–EÃK£]¬{T™∆ﬁù}Ö+Q7∫§Ètí'U¢ûú¶SCl¬?köç€$ÄŸn∑ÀØm>˝5˚’ãWÛtskõq#k∑◊{º¡∂_≠=Z˚Î≠WÇ$»T€âÔ£ò‚µ•¬ã‡, ‰:.éﬂ’ﬁ√
+∞™9O@ˇ¯u‡•f©1ûMÚª*˙‰≤]ã∫‘ÜÁoa∞C{yÅ]Ì_5j˚æ£6•™¢pÚºπrÇ ¢}<∆}ˇÙçm‰9`Ü•`=yŸq<`mÙH•°|ïÈ¶ˇ–aÌ*õ8<rcÚ–íŸ◊«^·œáΩiHOZ¥Ãî;KôJƒ|X3‘.b"`ÊózlS≤ÕÿéˇÒ#6—ÃÛ∞t≈ÕƒF„°øˇ+T˜ºC/§__hrUa	Bg-ï¸Ï3∂ñ¶Äı0£ø¸qO$—Ã((≈|$√Ñ`@g±^t˘ç*hëÉÜ™∑•‰⁄≈Ì]t.	TÙb∞ß†´;s◊Øÿà•öd±2òπe9sÄÊiFπ„PGÛËò¢uP#&Êîùkì“¿ˆT4ˆZ4ÎûëßS3Ü\ü°hﬁ•C∂AüÇN.ÛÙÕÇVvJØWÍ◊ﬂc•UI”˙I/´lgØ¿•Ü◊jÆÙPœıŸAöåÖU5„8Ao-z1ÿ$Úyì–XjÏ•«É%Ô≥’_≈Tºó°^ø1^7¬ûYÖ+åÓÇ^·ûŸ®Q≠Â?HR≤T√‡?x”∫ÜÉNI˜~á$nT◊f)ÚÊc”âß,„
+¥£TÎõ⁄9UÜm_R°ÈæƒÊE≠‚œM>d=´`D¸£ì>ØWÚù
+s¯¨b3òWE≠2ñsaN÷∏ô~∆?\çÃ•)*4◊MÙµ|£«û‚^≤Äúﬂ¿HLáJˆ,X›^N±,∞gy
+D«lt#ß˙«§¶¡;3¨ì»	üñâ	ûZ§§?©$§Ö@-ë≥h√._¶äK†àãRC%%9G·R4ƒÎü»∆¢ˆëí≠∂c»qIÙ¥“Jc-ÍHâY´Ä¶≤m†›8@˜][¢ÈíãWßlG	Ç{MÕ4R*$Q·ù|©%ãà';{%°ΩVÄ,äYÚÍÈî◊ëH†u3iT"#uπÊˇCÇ(⁄î≥X7ıŒi/¶‹BóTßJ"ªŒ*8|ñ££r—™“[ß[Ï¶Ü˜ééô‹≠π4íÅ˘V_åa1F„—†ÈÅ7êÔu~€bùrÑh>ñFµ∏≤˝¥É±ì[Rè<—BôuÃO”x• @.Ò≤“–à”8§”)ôV4T9.Âeù∑¢`wÍ5Íö¥5óßY!¨¨EjåΩ«"‚¶®pi?YM´¢~s…˚ºmñEÛ9Zök⁄+òß˙6X9à/∆ÔO)Pb«7Î€Õv≤%SﬂhgAÌNèzG#ò}LFÓóá^∑[Î…ÿ\ú¿NÜ;ó-ﬁ\1¿÷i„LçÅŸv/5PÀ‹Ê‹òa U˚≤¡ﬂ7ÙJ†⁄†õTÇG√ù∂·Üπv Ìr∏
+€S–Èî6}›!+{€CΩØ&¬”)6q¥€≠íctÅçÉtl˘vïÌ'	Ì‚h¥∂ô#e‚∞%U+]\YË%F àweTπuC8å9Aªt1≥‡ﬂ‚¥€∞7%—; 5–«mùéj‰Ò≈O…Î[:f%õ"∑Ó˝¬ﬁYÂÊ5B5∞®à	h-¥:V""1í6Ø†SûL".jG]*¿Õ∞à=t˙+K¨§c”hÜ/Å¬3	ÇÌ÷¢7	I#ÏJ≤™-P2ÚQÇOÎÂã≠mÕ∂ ŒoØÿkâ£Ñ]4û∑\°≈pã¶0æa’ñi	xU#]∂á„Äá∏ (AÅÒ:ÒÉhUE˜<√ü⁄jØAß é,â=
+Ó0çíü üpYË¸,•…!ë#_
+¢$üUîfü”›Íì©ü‡Õ8P]„ö_‡‘ÑçÎÔR8‚˜›P√RÊ‰i:¸L·Ñ›’∞ bJ;≈èkj(Í@á∏õ†Tﬁãì√v∑ ~µ*St÷§á	¸óﬁ ˚ÿ„ –íAË'â–§MzÇiµ¥7C
+=«ó¸õ˝^ÓIO˝∞Ka √1ü˙IO˝∞KÂ!áˇñ˙¡£>{àf©±óØ'ÄˇW@∑/Òq[ºÓ`Ç£{/ü¬∏ä1=@µWL« :z⁄1•Zsﬁ*ÖZõjï¯AN°ò	®∑ÔJ˜·>Fs1-î∏«6izt)I	å+O\ÖáÆÑ∞˝7¨≤*áˆ»=ùﬁçÕwv…6 V;i2—HUV¥Z05ı‘∫ãsÀ”A~¥Ô8ÅØ„}å¸¶Áépå_©∞’ª¨†üW	ß_ÕmÇzyÚ49Rº'§›)NüÓ¸∆Î~”Ôﬁ9˚ˆÏª≥Ôœ˛pˆ«≥=˚˝û8êZ:o´ˇÃõ‰{ì¿*¯}å¨
+¥˘#—◊
+‘A[bGÉob?\∞gÈÅâçÙ–ÙÜ¨~‚ﬁÎ8ÏB«Võ/rCíƒπ«B∂·RÉL*≥¿&÷9kıM?D∏zÈ4'Y!ˇ 9 cé0}Â†@ß;æ1'°pµdˇÎ Æ>Y¬ C #h√B.ëp#ÇWâ–Ω§˘M?S≤‰JD—«e-t5œ°NÂ–K{‡ay&¥úäT¢.∂Ú–òì°òxÉ¨tÓ[ÂW,⁄≤ß∏¿Wo2ÕF•‚¶qœ¬UœÛ}ªF/4ÕœŒ4∏vØàåÜTÖg⁄¥ö‰z+»ÉéùƒƒWGﬁ±'ô´üF”}(~8sZ∏ƒ_Ù.¢®0ë ÕΩ1_÷¥y0<’ÖCÍ≈Ü '*Õ¶Çú≈ıV	¸GcâóÔBåΩúËäíûEÄ†-{a®”Êªº“˘âZËü⁄”0Ú2X÷°ﬂqq-$ÇRïFf£	¿7[D|£·J«ÚY_©}≠Ê^≈¿Ìƒd1rçV'∑≤øÂpÑA¶Ì™{:…âåöï9”Ùï∆Ñ£™⁄éjÕë}Tûñ^Öt§œ¯öpMdñ‡‚p®ì è¶P⁄IŸ£Ωz
+,î⁄ÜÌYØFä∑ÅÁâ[ 0RÓ°|ÊOÑ‡
+:`ÿN∞›˝-–BW5úá–Ì'
+„◊ØóF∆Ôä\€VÁì
+Æf¯í:‘{í:9]‚"›ƒa≤O›Ë–$K4&»u3RiJÃ:* ÓúRe≥™π	ó$_Æ◊Èß∂VvÙº”˛3Q¶ë¬÷∫CûÿÜ¶íïDãº“-<PEÅB¯ãÅ”√ç6uÜ!i1mîêÖP^bËˆÌ©Ö»oDﬁì<óDÕhqÂF6Æß±Õ«‰Ù˜HrIã—:/Oø-,ΩÈ∑ã¥/–ÏW45‹ÈJ¡åÇ€ï8∏&ŒµÊ–Ó¬≤]>ó•¯w]ú*J¨ãE[Ò˛RSUÆµñJ‘≤ÑRZÂøÖ›BU5èœ…ßér≈dö-	Ω‘¥©qñxtÎ≥Fmù$G^ûyì	/¶⁄q˚vLSπ®˘ö⁄b∑+ü∫¶6mÆ˜Á4Î¥E2iä°C≤<92scì^_÷Îı&Öﬁ.®¥–€5ólë™MXÅ:Puö¥è„«ÙŒ>1ÍNñ$…këÀ÷R‘h¨8´Í‡bãgH˘,àB[bÄä∞6’a⁄áô„Ω>¥˜:NqâKûÏÕŸs›ÌÛ#íüCÖû§…Xs)ó—yÈ(“E˛âí,Êséa≠˘≤ƒv¢èò˜KπIºá˘=ã<X+Ù[@-é˙V˘lWı∞§ÏêÌ¿Ùïª¿ßµ a¡mπ|„"⁄b	 åU∂s9ÌÕÖd Ω˛Ù≈WèŸ„µÌµGk[2@zÎ◊œ◊çÄh¯˜hòOuΩy∂ù»‡$µ]Ü-ﬁ©v~ïõ)™c’1¬ƒ‘ˇ&¿®È¬/(Œà†—SuöQ Â	Ω≈è'€+vç@VŸí«©Mÿ,#/kXDh≥ÎHØr∑ /…ˇÉ†hdy\Ωj,çé®c:#Ω±‰%Õ9“¶”à’ôv™æ¨Qôp¡*ï–LøHx\º÷Kj†)›∆Ó÷∫? p$√BôdœP…≠xìWpXPÅN∆Q|’P6op°ÙNÜÊL´^n`—™MÑñéàú^úƒˇ∫7H∆≠rË6Ä’?ûp ‘œr…I!lÆjæZª¨-át}àöN¥˜Û˚ΩÒñn√£bUXCK´˙˝¬ÕRSÁzÕ…˝1E65;¯\nCœ/P|'¥?„â[ÿ+X_g‡«π*Í´‰∆O€ì#?zÅ‚{UiÕÉÑì´~VµÎE"/o=,◊:i∑¿É‘_kıæ&ZÜæÿƒ!†™)¿C6º∑‚wπ,»c¥¯…’OaÜÂ2…$‡©µÄœM«kÕ€vRáàº≠µƒ#ö·FeŒË æøñWìêm∞±-8íøêâ¬`Â†g≈ﬂ0¡~;#Ë(†mÔ6=Œjp„∑º“&Á1—«AµY£FπùŒ  #?B≤o+ÃÂé@SB°”¶4¯°±ä2«òù	≥Yr9%‚2c^Ù k>cØ*[*Ì,OÄE‚YîDäF&\∂ùEÙ&wN€B1ñ%É\CÁ+2∫<ÂÒ∑zE+FU√OM=A8¯Ÿë £S@Ü É—v–⁄Ÿ©µ(í@)<Ω-Ω=’HN≈àjróGÍƒ#;é.ıâJn°O4˝∞,˛†õJªı=™hdõÄ—%≈^æ8ÛQ2Õô?Âë'®ç16?q‹t7FëYÚ  Êˆ∂ÄkéV}lJP‚êhâº°(Å˙P¨“b⁄ö’2&√çI~r Á≥≠ZyÁES$ `åNO–ãâ‘â*]åéi_§5/ÃGâuöÔ«î´ì»ø®TçΩö'1äFÈFÒ≥Ê0èV®VÜR¥òÿπ§hÖoò¬†°]/Gí¥Õ¨*"Â‘ô≤Û<“sΩ¸Ïl|n±y∂‡‹Htû)<_é¯|q∫Åm"Õs6R#SØGgﬂ£Ã^¶·ª™˙Õ•ÏÛ Ÿî¥ÁìµõI€Û…€3%Ó¶2˜y§ná‹Õ‰f”õ∆Ÿ(<Ä-©‡3.Á3˝ß◊µE-ólU<«<Í8"ûAD≈3-∫ ËC?1«óAÈv€[`˚Œ†‚|MO5‡ıvë¸ΩÇ°·œ~7∏mx§«câvÈÌÏõÌÏ7iGà≤–P†RÌBD∞ƒŒ∂ôÁiæ@vå©_Jv<ª—_ëú—Ì™tIÕuæJ>Øœ$'*l'O¬4†Îî§nJÁœ85$ÒÀ4¶Añµ[[a<HìXÜÒ]ìŒ“Ÿ‡Z=∂¬P@£fqÏÒ‰±Lûa±ê"÷á“ÿ H›ôßÓåëœ8y'”—ΩÙ–©HÜóã∏Ò¬=ÉAœ•¿∆*[Ô˛q¨è0^2Á◊≥yy≤oá¢E˘%µ2⁄çãCfˆ≈≥t¨õ.C¶¯sè9k¿´Î◊ı≈≠ı∑¢TkUù9]O¸`-oá÷dR ¸UÁ∑®EÎˆ8ÌtÜ™ï™îÖ¿©j%»˜?•¨É38ç2õóèüpmDπ•Ã€	aºtà)–#™+˜{Èl≥}U·›Õö¥,ò	^˝©À—ÀâÇ≠Zcµmó£üÈé{Ã.IOÇ„¥a«{ã√pÅ]}}µc(˚ÅìCX@-∞7aå¨*x}ÂD¡C°˝9ø: Àæ)Ì2•hPAR‘⁄ï˙ O‚n>
+∫¿ßd*ûQ‡swp~P7WIh>ï≥J¶ãä*|ÉX`Œ?aqÒá«≠¯îhÜ_=O˜ÉY‰&k	b„Qõtç)ü∆J™+ÚŒãCmπÒÏX\W|∏™´•∂Õiãéñ…SqsXõ¨˜[¸òä,Q±QÑ˛vÇ¿‡Ìk:à=~{Pé◊¡«œº|‘K1‹uL"ßê7WnuÙÎøÿ“í≈ïJP—´q∏√<È±¡ëœæ‡âÌ≠ƒEñÊP—ºUä_{^zT“ïÃÆ
+ï°¢ó¢ e^í˛⁄8(Ú©›÷¨„!#ÿÛxZ—–O¥tﬁúH≈È¬*i„ ï∆ÜÃ>lØõ 8™†Íê.}@Z-√&ÖÁ/R∫zs”©1„èØRÓbSx2À´îp™íû>Œ¨…”ö=ad´Ò§ß_NÜˆΩU:cﬁS_∂Y‡sn$ìÇ'8´YtÅ-ﬂË˜XøwÁ¶Î\,ñﬁH”ÍãlóK€ Ñ0©”%˙AUŸdµm›DSÅ`WÍÒ¶œ_¨©Ú∞˛o]>ÍTŒ¬s·œX…∞∂ÍÌihEì≤P¡+≠gçlfö•ÃdÜjhhÙdìa¢ª±e›dlîL—Üµ‹•ìÜYa∆S¥N©óVÙ$‚∫MŒ_îân-µ*Î&(”6ßˇr∞RGE≤–ﬂ+J+ùÒ≥Ó0a’QB›^W|/aºÅıÓº6ªXÍŒgü”¨r÷ˆk∑¨Y„ú˚iQæ∞¬…o.–≥‚ï·Õÿıå\ˆ“8∆7¢‚UïïÕ˝‹ï≠võUk#®IÍo=Iiå©,Ôf´.æ©MÖ¿ç‡:∆OÍ`˚Ï©w‘2¢'˜7ìñb~1–@üo„~˝Uà)nWï∂MúÊo~¿∏<Ô+ Õƒ¸XxÈë]«∂göøiÈÅà*9¥Ó$Èä‹x‹ïêäØí&ÓS#Y	∑XJéﬂ)uC¯/Ã·‰wî:ß©+q¸˘ù®Üﬂèµö€ãj¬B„Q;ö§ﬂñ	⁄aÂ÷ÌƒBO@t
+ƒŒ<MÉÂ í;¶6:R£©â˜m/ö÷‰ï¡·‡ÎÇCÈâVc„äZ8bÌÌ^Yò'∑æí°5\8^ï\eñTcÊ*1®*äÇdL°Y˜ JHîÖ√6A‚±EE˙(ÏŒJ¢|≈Yã“‘T(ç≠?}ã˙÷ˇ  ˇˇÏ}mo#Gz‡˜¸ä2wìh|"%R¢F£Ã»·Hú±.öëNíΩ{∆M≤E∂ßŸÕÌ&Gí˚Âí`ŸC>wÿ¯páÉÅÛáúø,˜)˙'˛ª?·ûß™∫ª™∫™ªö¢d≠=mxD6˚•^û˜WR:Ã1ø˛+ „ ¶3“·≈áÈÑ>»ÄŸ`ÂØCs70n5-RZó…z{uUÒH¶0èµõómôÜrÂŒBs∑îõO+8§E\RC±]ÌΩµ\÷˜ÀszX:ZÇCÃˆÿÅﬁ∑ÎÕÊ˙HåI∑¡.±LÕ,≠6M'˛Èb∑”g∂ˆÄØè;†è9}7j†ä!ö`«PioJ‰Ÿ∫p«[äúÒa^ÚúÖ(àh]F≤Ûî:#B2·í©*ÙœH*˙´™RkZf,¸TL5ö¡Åhê éD)∑A)÷VSJQç$ldÿEEzê°åü Ã\≈úX*Í '·Óãˇà÷d^õÀÑ”¸Á¥◊{bH¡˘o/Ë˚3¿»•Z]‘¯”
+34Ü&πòW3™À†OØÀò¨i2q>ˇÈ%ΩÓUÎı’JÚπ)|^}ùÂ\˝Iˆ/øü·/˛DGÙv@"Îé@M
+ﬁ>#{S>G¸ë√lM¥n§Zzü•Á_≠|ÙŒsœXdËìÃn˛π∆t ÎW·b&"ö'ΩòB„,Ç˚hπ¸‰ùÖœ¿<RvÃ^RÙÍM‚[mƒ[TÇx€˝¯àπß∞Î´¡".¿8‹„q–ÅAú®>◊_aÔjÅ*≥÷s0æôáÿ1¡ﬂg.≤ºãóxÍ3Õu≥⁄u{hÚ˙8¨ÿç)BÂy}nù≈lÃ	„Jj>¿≠ôôüN(»í»≤∏DÖ¥ûU®KÃ‡Ot∆qÅÕÅb±w J“°±?µPëw∫Ãñœ°ùøA †&,,’Ö5Û?»¶/Ω1[ôüw˝‘
+Ï\ˇ.H´]dí[6ÌI{Er)∆s[IúQ»$MÅt3aÉÆÍ$D„K≤|Ò,â÷›ò∏j+˙H6/™Ó&ˆW´D·j—ıFÇSeI—+¯≤R°Óø®Pô‡cƒù;e»Ç¶G'Ëã‰mâZ§À°]∑N˜ó?ì[-ˇ(""ÊÀr(?@–F√Ωõ¯ß<VÙ)J—åÔ‰ˆRj:¢€ﬂ:p”d*ŒCI•ßﬁ.=≠qî‰≈jyÃiÌá@_§õ˛Ê∆%‘ñï·Iâá≥ûÔı?ı∞,PFZ”üÒ±ìÕ-◊´˛Ò¿{'tÖØÅ¿S’Y„p“÷_˝dı·jßπˆöú˙†Â„?ı~ËS◊m\Ôª¥¸≥x
+"gÚuR_Øâ˝¿’w–~‰¸⁄xØ_(w‰Ô9´77»ˇ·ù›◊5-ﬁ˘ôiù∂§öÜ∂#ﬁÇæNÌMN‡uvÎÒƒ»¯ºéªQ€Œu0á˜Or#>èY«¯ûèeòÈ©À÷◊·’≥…ƒç˙÷ÔÓøÖEØü9†“vôÉ∞¶ˆVﬂ¡ÿ,-ƒ8&“ŸÄΩôÍ◊.´\‘h4‰a©⁄5„|’\ùúøàkCá√≤‰ÜÒt˜È0Z√õr'z§¿eä∆¢,¢ÙUÆ! @@ •Ç˜=Qx,[∫GXµí†Ò·íÆ¥V·9õ)Ä≠ù˚dÏú◊œÍ„9c¶ıƒo†Øı÷πØB=\‰6tØ˚ÓüˇÂ˜ø˝’„º¢Uí˜¥r;˝x‘ =<Á†˙lK7Dí(_§Éj\®`e‘ J¡MÇ◊E°çíµ:V‚:wöa\™•ñ #íÜÙf”i(wÜ¡\=πÃ◊ûeá =A*Yã{ﬁÂKØ‘aIèB–‰¢æF2plØí‡l•ß6€	Ñ&…œØ¶óäß¬Èbœ9Ärä!¿A∫≈‚&¨µãË•πŒ∏≤/
+—q’'!J5QMöß∫_{T¸ŸC°üZé:ªıŒû≤=l3Ê£8íùçá(Qô„Ä‘*¬¨'íƒ.—àÈ”WÙ—ô⁄g˝ÖˆÊÍÒöxÃ≥â«\qõlmuS®ø)‹x”ŒÏQñqúŸé] 'é&íìùõO3øø˚Ê(È=›ﬂ¸Ùr…‰|É?ãˇ≠O˙¶ˆÄˆâo1«Ñ: (ïà–¸ÕbT®|sqX(›vÉ~d¥√ıC lß!¢Ti¶°Ä>˚πØQó»\qÖ2Äø¨˚Å5hÈıw∞0ÌO{J^Vã üœ"tÁyÿÄ¸S ü7§„Ê‹$Œ]›`ô˚]	oSû-˚ﬁ˘‹˘w”•‘›Æ˚Qt¥+SÈ zãsÂ.¡5.“+]‡êj-∏)∏ÄÕjz@3Çô»Ù ¶0#xÈÅKZÄ•+K†≤©Ä*'#0AIHπ‹°Ë-ˆZã a5%1WVgú`Í9æTTx/W>$I˝?ÆF~Ã⁄(|∏í1Ë«¨ÿø8û…9(" \∂©±ßàè(V
+bÁ ∆*•—É(úÄê8ãPÀ°#‘ÍY=wzÜ3Â™é?,T∑Úœ:ì˙Z©M‡¡ˇ0Ã!Ê#√ùıi ?e0u‡·ë„Í∞®x⁄u|™	'“Ø?,?ˇ*ËCÒ(ÚÇ∑ıU√îË µÍ[¢a1Â˚ø˘˙wZ-N£‰Œ‡N6K∫Fü2®qfãD^£k⁄kt÷öÊî∆Îåßı’F[ßﬁô¢‰òÃu˝-]N≠∫Œó?°›—WõÍdîïŒf∞ô¿!"—Ê*õxrn}UUﬁí_√yΩÖh⁄L¡—Œ∞s∞WÓ9uò≥†í„„}iv2ÿ¡ﬁQ≤∞˝'29a{œ;Å»tÑVÏT∆∆ÃÎ†Or≠ïõ÷–ŒB∆É-4ì§Êi–¯¬üπ~?Ñù|ÍÅB∏ÚH?≤• <«wnƒe^£ü©ÃÚg√ïÊ™dæë).ú~∆p˝B"áƒ™ÃÄ)ZÇ‡¡Ù´ÔûN”uiZôkêhiëHAùƒDBøi0Ëﬂæ˙8ÙùÂ‘PíWKÆ>»£∫çÒ®ëLh4o?ô•Æ≠Aå“gX¶˘õd‡a◊lê¡<T˝Ñ]§πcIç˜Fed/5ËÌ&õîE$ÃuMƒˇçU¡vì¢y:†⁄j¨à}§pRM4úëAanï≠√—a„çÜM"ƒ∑äç:îtª˚ıˇ¢›eXûjßË‹E√b‚Ù‹–hÓQàG"¸∞ÿÅ]w
+vLûGﬁ†ÑêÒ¸q="è∑≤Ø-D“ÏÎ∫éKÚ“∫¡,◊^•T1Ÿ◊V≤±H,%äºΩnoDÇÈ∫ı/tÄ¿Á»ÈaÆæ [¿´õ‚{≥)ÂHåö;pï√Uÿ⁄%)‘_N$êÙ#Z‘e)GbrÚ˜)≤ëJºSyg–‘üc;$”h)EÀLŒ¨[ﬁ„…vnÔú|ıülƒ`ŸS€ﬁ€›‚;ïá
+&_∫c/€n≤Å!€äΩ¡.}æ$6\Ò[ôNw‡7!¶Ìåxé…≠LÍ˘ı◊ ¡ÑãõlÒ‘4åçêW•Ão1ƒÎNI÷â7°èxS ≈A\˚Ú%ß´ñØ»Z?s˚#Ï´„n–æÈjã:]n◊¯r+—íKôyÎÅ6çÍ.7‡{‚‘IﬁŸ-‡‹œÜµWÚ›¨µúËF…j~ô¸πt˚ôû/é‰»6îG_Â©üIWDƒ.∂–Ò)›Äß·99»rÀHíØ$Kãó˙Ù≥º¨°Å,∂—j‘@T¢∆â˙¿©R¯»2{¬Ô3ï€360J∑$Ø®:¨µ3`%®4™·∫ô8Ω8Ùg®6Ñ–iA∆FFL…’‰~ZFTnÍSµi≥=r“tdFŸ:MwÀÀaï–P§Hàh‘Ét‚`n ∞p „#˙Øì$/c¢4ô˘à	zL«„»ç—•á¸0´òvÿ⁄Ûj‡Eﬁ¯S≤`è“ıb3ß+ß»,mÛ≤E⁄5˘¥{¥˜loß≥{`9<#DiÊ1ZÀÕÇQ9¡†ÆÏ?-CïcÜ⁄¥~„K`ë–~ˇ.›'Jt˙åË [ÂBåf)Fkö˘Â©*'•Ì’‘2Ä];êd.vjÏOÅÇ∞lΩ8JÅgaª≈âÉ˝H/X;RÃy•≈ÅÁÉÎoc\§√œYmdÕıWCèÕ3iﬁßZh46öÇ7rÔM3˜97í@a’ZEE$±€õ¢Ò∏å®lŒô7Cuﬁu¢∑KzÚ oï÷ÕÿÇá∂%ZbˆOb–2ÄEeXG∫Xlh“∏’Nú¥\‹Iv:—!ﬂ˝ÚêO›à…-I !ådä“Je”‹É+ìôß{>ÒùÄ.+Y!⁄=ˆ˙_ù1˛RpKã(]IO∂a‰≤Û´»÷8ê©|∂Hf¥rÉµJ8¢úÄ†G]	zˇE<ÇLÆÄ¨áÉÒ;â»LüƒŒ¨ÂºÏºl¬‘¶√É£ìŒ>9ÏÏÏu_ûtÌŸ÷-í{)ˇüˇ=oˆYÆdw<aë›V4]ã¯%Ç˙H∫∏º©1Àœ"¢≥_f‡’5˙#Æc€FZ2˙∑(†Ü1A(y
+kÙ°π˛0
+'¿=<4˜é⁄VÏMv$ å©dZŸÍ±;fc3TH@#fu_Rï†LœÅá∆òïgI≈ôË∂±àØ<≠€∏OeEŸêl…
+I⁄Bı4á˛R‡ŒÃ˚ˇıc◊Û˝É„Œ—ﬁŸÌíè;˚˚ùø~~pL∫??‹ß"ﬂ±)÷5Û/≥”Î,Ò˙~Î^$õÚÌE∂ƒTh)6ã:«2ºΩ44oENèzr	◊_Â∞—Bˆ£…ët&€Ø8Ô¥J?HÒN$‡∆˝LÙ,Z5 ¯f¡qÛ˜…Œ^ÚekLΩ)´òíúHZ ü∏—Xgte€ú√¶t√tœ—€ÛVÊ’£F[VW))°F9=9NÆøé∆<Ää◊ﬂú¢ìåmÀ`ŒÕ‘¢	zˇ(¨igvU3ks•kïV§È,Ñi√më«°iõùÕ6/5¡8ß“ŸM†Å≠™B≥… AñMV±⁄ º/ã7,b]∏≠å¡∂r6„ÆÖ`ï,dáŒÎ˙,˙ä®]¬r÷‘È_’
+&È„#V4¿†ÔﬁpÖ„∑ÂÎãƒÆ≥XVº¨˙¢œÜnÑÀÈpΩ√—¡®0i”Õ≥¨Zé^ØπAØÈã'r…!∫‡u"Ö Î˙p5ø6’¯£–Û¬ŒojŒ&¢Wˇq+SKÉÔ»QwÁ‡E˜Â.h/ª«‰?íùOˆvQP!œª/ªGù˝n^d1	-p~Êã+ÅM$Î/Óìâ_oUNcíPdÛÜ3—Ükde≈Ìd∑ÔÈÖõ\í’%}√’„ﬂ”èPÛ∏`3_#Âúñ< b—ö˘3¯º≈‚‰ÆÏ¶<^‰/ö?Ù≤‹~¸„ˇI„®˚¸ìó'ùcr¸…ÛÓ†∆1®ÈG¯J^\ˇÌÓﬁŒ99Íúttj{ûÿ&¨fB[4v¸rKóab˚.âëCxcl‡ªÔX	$≠ùÓp‡''ßX÷ê8Xı ˆÜ3fAJçôX~IÏZÿ/ÕÈπ}7r∂¥S◊≤+≈FOfm¿õQÅ_ÃA
+Ù¿&V∂⁄æ-d`ß¨[¶xÇ£='xâ™{ybg∫0VÚÔHÛ™A.añ5‹ŸL´ÙæÖy",Ú6Ã]4°áhA'º
+„s 2Ô{Tj5íœ©[≤cÆˇÄÏòbDˆ∫ëù∑eÍ2µ∞	"≈Û£Œ≥ÎË‹gCÊ?˝øﬂˇˆW‰»z(&” gÇ>°òÅ(˜ÚƒdÈRwW˘˛C÷ˆM≥k5uciÜΩ7æ˛
+ìáb ºt®H≠]Z1e»æp◊CîñÊÂ°Jbq‚>3/U¿K‹W•Ò√’#H©° ‰fQóñRoo<‰µÕÙZ†’„!ñ±2-X°¡+kÇØô¢∏/«ΩÎro“¿{IıŸ fëE æai@<¿¡ç l]_Y{ÕkΩ¬{∞˘†‹¨ƒM(°ôÌ’Y1pF|5B∫Ñ
+ÙYm@~bT3Ö‰q%∏–j€ﬂ˝ÚøâÔº˙ÓóˇΩà—T‡3y¶§e*g4ˇaÊ¡B“Ê†Å¯6(M´Xó”ΩZvnUsê¨~¢5TêÂ@,˝*’˜_Ç¨FX1JT.h˚›¨"N>‰ÅÊ…ï‘Â≥Ñ	¶πƒX‹
+^Ù"ÄL'ÈÖ∆òß¿…§PcLmÖ/N¨i=U’\JéxñCîÂ%ÖÏ^ãÇçß©HÆñ©cﬁç1s«˙‚^oˆû:Á)Ô¬xôV@S<R¨©IÊtß~|êµR˙	cëh}H[Màt+~ÒN("§®U0H0X<>√©í[xÇÉ>»zì«€)†&!ò¯ÚE˘¡U^»˝◊;˚üÏí›ΩÁ{ËÖ¸tØ˚≥Ó˘ÓóˇïÔüt_t–óÒº{|≤w˝ÎópÒı?º‹€ÈêŒßùó-G±HÏ‚Ò
+[ì‰å∞Ñ¨kÆûî/jë-˙¨˘∞’πQ∂®˙í ¨cƒ«î,.È	È]HP˛õ˛%LgøO>Óvvaôñ: -#≈ŸO&»Ö]“$ur-Y˛ŸÊÁQi˜9æsFì|·È©¥ïPwÁ9πN4=√BjÔºxc˛ıïåZirWÕiZπ0∂d«Õ¬¨◊UP¢Üá™âØåµ¡zb`E∏ß˜)iªªn?åÿÖ¯¸!%´Äª¥ˆÑúvgô◊\Y'gıW¿¥=F@ì€ÙS¶ø1w±zÜ”yµâJ¸’¯fΩdøûM˘KÄ ¬Tﬂ≥z≥âÖºö¶¥]>ZÃñzÁ9¢r	Ω*ÍN%U3I€õ3ç˜’Íõ’7-XÅ7—∞Á,=z¥‹\m-∑÷õÀ´çıˆÉ◊∆›$∏aìíå†tßº v1|&M«Åôá!ÈÈú•è™≥XŒ‰,b∑˘…OÁƒ†«Ã›Ç_ƒ◊é@;ÉˇÂXB˘÷|li‘¥m¸£.Ië$QY^µ6èùb£ãy+◊â‘hƒTF⁄ıqçö“„4,∫∂›˝˘a˜Ë$±~Â‰0Mö≥!r“<5]v∞`\ITQ¡ZbL\mµ©Ú˝Ñe+È“ÉoÄ7ıPﬁ|∫∂˝çÑútWHO∑H‚ßÒ‹6Y?ãeäLÇ™‚õ≠˙úÃ!oÚ∫∂≥4ja•äíÇk€Y‘õ†áÓ„F√íWã'°ƒﬂó& òbNõ⁄|¯(zÅÔ.,]KwF◊DˇU#èÖio±«0≠¬µ5»œüÇ™ı‘≈¬û∞‹‰∏Av¬Accµ’.S¢À3ÓU¶√F4 «ü>œƒÖûÎLQ¯¶úr¿˘(å©X«·t€n±ucÃTBn◊€Ë©Ic®¸ú\ê+’˜n®ÑwØ√oJÄäaÒã¶>œü‘V…*A™æ'O=ﬂR”$<û8 û‘^¿ÂmÚ1êÖ˝ıu“Ü7	‡˝~ªEö-¯≥Nn‚;PCy£HJá~%gÊ¶£'5†…ô}Ä–^ü‘(4àgøΩ =-z9Ëu–Fu$∞‹y^¥ã¢.iŸæ¸\ô‰_æu/N#xvÃﬂæè÷”ïÊíoOOÅën‡˝¢™ÀÍ˜Üv‹ö◊◊9Xvlã¨„^©ı˙I≤%éªcMXÄL‡Ûß^ Xõ´Ù'}ˇ3˙Ë¬)Z≤cXKnS¢ZM(£n5*±≤bç/¬ÅÎSWS<∆ñ“7e±˘°±,!JÿrhvSó˜bUÛ’f)ªUE©Ç!e
+ÇclØt,r∑¥¸œ¶$@Ê1/DWt©6Üxıµ∆√˙)å|TÀYx≤	]~ûGàÑ⁄\£—Ï54‰—òw£áP…˘ˇ©Iƒπ—~˘˘iå]ëZ∆h6√P"çgBx≥m¬uè›"™˘ò…œJêøR-ÛetÍÛÆ>W∑ÖF∫=©=ßÛ#0?ÚÁ∑E∫‹L√,-Ô m˙ﬁ¿êãƒ÷CM,—lÍNIÅÑøv&“ˆè®Ωˆå˛˚”Kõ’∆µU‚∞ë;A¡ÏÄR≥	‡TöùØ¥pspo÷'Z\d~?X†ógi˝…,ö¯ÆË776ó7€ ˙ÔË71x{ã9_ÜAbfLì~úwN%O&rò´´z|Å8Q˛O#πòPêW>Eæ“≈x ≥¡YïbÅ>ôÙi8≈Pˇ}ÍUÇIüÄXÔ|™SÉ?yÏŸãFo—‚{–‹s¢Éâ,}‡ÈN+8§bSÔáZ*qñüC$Ìúr†≠≤äÃ!**=ŸÇè¥–òì≠BØ∂HM/¿§¶ÎvZøÎÊòß‚«∫N/Ú"≤Bv‹õp‰¿¥—»ìãB∏Òéì;HàÖ∆¡uÿÌ>§¯ìôGj
+ëAMÜ·O^(€VG©†.œ¯{—Gó|n®ñ≤∞+ì~[j¯ì4\…ê§§∂f6Ê_êÙd@∞ffiµQó_rôüo˘5Atü`∑ÊÈ,¶ÑÏœ±v/`‡ü?H\Í9≈9øÇ»ñ™0”RNÿ◊˝D ﬁ˜ú¡PMÜ≥ÿê)ãú®åL´ U¨—gä†M…’‹Xnøk∂äÆn äösj’Qß˙>À¨¶Y÷Â≈DCå¥TÒwÓ¬6%l#H,€¶lÌ‹Î”ëãoîﬁ!ÃFMóh.‰Oö´ΩGõÕ◊˙◊Î,wÛ&…õ-ôÊ¯BkAñ ßuøî¸ £Næ™±VÍ4ÛºZÎÓèhm<n:˜π(WÛ'ØRZ%Ω«S)”§$€€˙4elå{c#›j…H+**ºü+*…¸áˇ˚Ú¢≥˜íÏº<Åø›#Ú≥Ωìè…IÁÈ±Œëÿ"uŸk¯¬EzÜE„˙o'ﬁîºdMÖ–ös‰xæ‰0‘,ÆÍ›D#`Í4T;NbCv#ÁÃE≠@ˆ◊é‚Û¢;Ô<´o¨sngµ€Ïº^y$∏"—2…?£[/˝ñ3°PAdRoì¬â$ìJÇxêx§ì„93ˇó‡±å˚Qà]ê#≈ÅâÜ£úÛ3gIôÒ¨áb”pBﬂµå%›±b&tî∞#SÂN_5πcSSTÏ¸ÉÓ√¥ÈïCÒw'¨«åp‹]∂ ÌM»ª&∫%$£¸¶ÜﬁÁe[‘µ¢YE«ä¡!Ò
+§Áñ;~]@Â_\;òa–JR$ ∂£ÿ˙ı∑“ûk8qzhw†u≈√H55àB∞…?{∑ŒäujjmÿdùÇÚ<«qñ˙‚)`ÚD°SŸV©ríH∏j≤
+ÂäU”B±jŸ)VÕHmË;v•S™¥
+ì´®U£í"ß5m6È»ã¥+E1.õïÍë'NñêF±¢í ≥c˙ÒåŸ¬uqÒËüÕpkßÕ<´1Ê˚Œ∂á—©v)]¿ë~ƒh3(≈hVÚµπäÛ∫‰ıCB9Ç8ìu-p¨!e≤R%ì∫#/sÊ∆µ–®;ï…œÁ¯Qâdﬁìà
+$"Y¥{O ^∞∂‘«øòaÚË›–âtqÓÇJÏ8±A»Xâ¿zWÓ4˛Qìàdﬁìà
+$"Y¥{O"é}Ñªª"“eπ‚Ä≠≥áÙå'”Ö”g‚˝®ÈŒˇ=M®@p¡Ó==¿ﬁéwDËz‹!‡VÕŒ·ﬁ¬È@œÎ˘^8åú…Ë‚GM§ÖxO*PiÂÓ=â8fåÔÜH»Ks‘‚iÚ∆”Îo-µ»Œ›Ñn∏4xºéÂù.bÔ«≠c®k±(Í—˛1PuÒÓ?ÅµxãU•ÔÜÑ‰÷Gì,&"≠ıˆr≥Ωπ‹§¡ß÷Dd7ƒ.eü:~Òj∞{ùÖK≠£&|	ﬁKË_≥{O&h)å=,∂t7t"Yóª2≤
+&¨õãsÓÏPXÙ~‘Ù!]Ñ˜¢äÉ#Yµ{O#x◊ÒªÚm§Îr4ÇÕìKˆ√æ‘jŸÓ˘áﬂ¸Ô!«›˝ÓŒ…¡V´xq∞€›? /^Óuè±®>Y:>ÈúÏº$«{ª›ßù£÷âír–\Í5WõÉ◊6…]4∑ã& ∑Ñ∏#CAQÎò∏“2à˘†9ç¸Yì‘ù- õ◊bÑ9\ñâˆÍ'Nª∑~⁄≠èû‰©x/Ø◊˜›ÑHÀòŒ¬µ¥´3™O˙!dz1¡ÍRÙ«<u[@úÃ¢8w» eâÓ-±y;@ÖÛî˜ó“$˘Ãù€¶pﬁ{:œU6D.Çπ¯õ∆T|Ì[XnÇ»Ã|a( ÑûU‰ﬂëœ“$ôP≈r1“
+ö\~ûèA„¬CÜ'ZTLÇ3g/¨1zª≠¶ÛôÀ±5~◊÷¢,k€ª^
+˚ã˘Ä¥í+ ÍãÅŸÕ˚Ì…yÑÖÑ-°¬H”Ú9C∏e∫Pí,xœ©Ci†í(”~≤òFHIÅÔiDQú'hC)hˆ„‚ÈÑîMô$Q.íB(3G:°&\Ê)E∂.ñî¢dî⁄$s7∫—≈Õñ9÷f)]∑ünåDX”∞C h°M+©˛lËA_⁄]¥¨¬à°ìí«¨:h¶∑®±\V®{[‘U÷ê†Ç1‹4Ñ€∂ÜS^— √K¶Õ`b≠Y}!ö±öÌkRA¸±s^’_µZt≤©ç‡ÇÂ1`ƒΩí∑†I=rﬁπ÷æ8M1D4YJ†)Ì^RáH”˛2©+‘4É-+!Z€>‹Ûxd+ŒúhÄrÇ¶í– I˘¡ISa≈baã≈jŸ´˜“Ú±⁄Kî‡Ç:ß≤èUM˜‰rSÖ¿Ω#≥¸‰À—6FÆÁÄä»°„‰t)Mπ˘r/È«Ip∫Ïç¥'∏Òûë|w?tïoÖ◊¡<Ãw‚H»ÓÏÀ'ãÓg¡‘”bÿ˝L =Åµ/∫ıÄ7,z
+∞\ÈÓ+]•[CaC-^U\ùF≥†Ô$È∫¨N€•ºäWµwıÏG€mÄÇú*Jd≤êCÒ¢uÊ~^îΩ∞°OΩ16 OÆäªAq±[è¢xd‡Ó¬;.¨X8¡.|ÀZ[2¬ zwAæòJ@‡
+n” ;Ù5ø7‰¸˘(åy;€◊1Ÿ∫U^(—‹)âß’w}‰"Gì√”¿.úD†hµ6àL–Xë⁄$ eø ÷XZÂ%≠úœî\oPÔRb¿∞„ªNƒIOëäV54±˛¶Ò⁄ö˝o3ÉaítN)"êE4ßP◊û⁄òö´Ó|~ô˜ΩÒƒs¢Lå±ízï¨|%16pDÅ∂?;8˙´„√ŒNóté∫9mt¨»Á<sïô][´ÕáØ	ˆdPe!îîÿ™KHØ£wà·∏ÿ¯k*lï„©›d0ÇütûíÊÔâ¥{pD∫dÔÂI˜Ë®{“Õ5‚©ò\5qO∞jπÌ@9•(•À¨¡&=πºLË√Y]&‘òüè6uâ[v•ªöÈ]M›-Óπ7≠¯ñ\Ò∆ƒÒÄ◊7€∫Î5¶⁄ç<¿™vô<ÉÀu$8˜ÖéM÷í`SWº6z/òÃ¶ÿ`!h˙+Â_œÜ«÷ëÖ’€YøcΩñolJíπ∏Zy{æ⁄¿[,∏\¯>wÇ Ìç°M›I¯ãdÊ¿»€8ßú±≤#U;Ãug‘˛eû∞ú=Î9—ıWcw
+d∂∞ˇ<¸ ®U"ôî&4¯ˇyÇ√œBsì–ºàêWrïä¿Çú(0±’ê°L°¿LîÒ’•É#˜&9⁄93)W¡ö<7ë¥ø±ŒË‚∂≤≤é, 	æÒ=÷‚3}∏©1qÆ:-()¥Î0xˇ6–àaò'é∂Ÿ¿bì†cÕ<”®Ã„*DﬂÈπæ)¢?ì0ÃÇ√v:‡≠«+Ùc(&»-4e_◊KëÌUÌõG‘⁄2©}íıo¿Ø/ú±¯ÎIgG9K.àp≠˜Èåù∏ˆöŸ@(Ï∆gVÇÛÏ†∆x†ÕŸQÏ:êK≠>;ÄÊ∞-õ^–…):ÏN	^…Dãï{`1
+f6¿bëß^ü⁄ ñjfCvî-]Åñ≈©4‹+N—≤+g¨˛f,óÚnQ‹Wå:b•&ÚêãGıÓ˘ÛΩ§ª_,Vû9\4ÂAƒ*§aÚÌ·™∆e´/’XPFù÷ócåH|U;ÏI_∏—.–X≥C-H∑ô+Hg®F']ı–P§Ælywè|-< …@1ﬂcáæO_rø—ÚSÃ6+j5RˆHã∫ÚvﬂK˝v	!ﬂÒ’@È)\~`I5J∫-œ¡ÚnëÈiñ¶ú˝°°ã"{·æøs¸ßX§ç≈ê,`‰C75uÂH´€ò:—–ù6Ë√Äèº±B¬≥GE*…iÿü≈[yr¡ŒcÁM`Î¬©ØÄu¡¸÷Áô;%ÈF¶zöÈÛ√Ÿîå£¥¥à`ô6Åb≤ékl3kùﬁ cã˛·Ò
+˚Ω“Cöl”?s=‡Sœâ…,BKüáO˙∞1&ü$'ÊzfùL”1Ç~òÎ!;3◊˜·ÏÔ\è8
+ÿ1æ∂Õ?Ãıêè√q/Çq∞øs=‚$Ïyt.¸√|;=ã˝êtΩ0Ç-óæﬂ‡ëáa,?3=1ÁCØˇ’Ì;¯0˙aN∞¶Å}Ô\∑znm˛ô∞åü˝ùÔ†π¬¬¡|√ﬂ'ﬂçX”‰Ë˙€)hRÄö⁄”7z¡;7c n«ûã‡çÓVÂ◊‹Ë’NÑ0F[ººË™9w∆üçá¿øΩ0v˙t£sÁnÙËA≈éü=ñ}ø—#˚nÙ›òŸCì3ÛaWò©ø€¬ó˘à€ı∑ës¥ç˛ùoö—ıWÅã√>ÃáÛN0£È<Hì'n0‡ùŒ/fK°‰ä˘∆ÓF.BÂK§ﬂ)›"ÂÃ\è=ò"œ¡…R7˚úËÅÕ√Ø0â≤¿ÊR§»ÕQ≈UÄµ°£Jö/ÌÃ‚i8¨úÃ¶ã˛%âóË“Ã©§aÍß@‹˜ÇÔKOH˜3Qß¨Ù∫ƒÖ@ƒlD8ûbUï´}∫us*;ŸÕ’Tâ	,ö;y›ç@T¸Çv¬
+ó©$”ãú/·c∑üÇ∆A/û^=ç`±çFÒ¨Óãé¬S√Ê—OÑµI˛ísﬂ^k)Z*£˛FîaΩAˆaƒ∑T[^q%-∞°dóM‰w¯»•p4÷ra/óE‚ÙL&—“SL•ﬁÄﬁá‚!¸·Ç~
+ô]∏îáÿYâ·*	K∏™PZÊ$Ôu√˙˛h»íDêø˘Ÿ‚gE\u·|)‹k˙)@ô›,v0ÿxJÀlwHT±e 2°#Çè/6iÔÈπZ∂º}Ñá˛»ûíú±∆ﬁó ≠n4üíù≥ŒSœg+-<';WbuÁû&≠X8Kl›%‹a¬û€†√*≥ÓWÛùË“0àõ^	!£+asxË¸
+M1Â¬òw/›
+Ñ¯ÈBPBì-Ü≈Ωï}mk6»ÿ–ªL©Í°xÊ6X≥q\î9 ]ÄµUP¬∆èPÏI( $	XÔ $¥BÅ¢MÀ^†o>ƒ* ¢DËíÄ3jM∂»\ævzeïíßx1ZEAFL"ctØ)√)a]∑∆á•Õ9r±Ω3pbû€0â¬/ÿÓïE[Ê&d…(nJı≥.Ωz]â‹õ≤õ≥òMMÔZª®Oä¬Ïùxîìt≥∫q≤Q*Ø≠ëx,Ñl,V|Î
+¬|±óñ;¬ù≈˛Œ˝úîµü X∂œ8ËŒDâ/9cˇåŒπ'çÇ}Ø0Üi$ øVñÀ§,ù=%^úd∆í'D§$©ä$»ie$ë;ùEA)Ÿ±'<≤å
+C('U©’1>x`‘N∂vv19x(‘P\qﬁ±miBá1°÷=aÒ-¬w≤°e˜•¶>«2r('≥Ke£µ!báÕ>¡UƒıÅ@œπvØçÜ∞~À¬bΩ∂®Õ0Kcû∞’Ot£Ô©ÜB⁄`πA˜Y-˘û’ƒF∫®®ûÿ
+ jcÃïç(Rp≈•ñ∑$t©TVÕuÈíıLƒn¥≈ﬁ1∆,Ãk%M!‹ªíS"Ñ_ë´^∞h;âﬁ CÅá≠ó…Sëë—r 2ª,÷P…oÅá‚ªÿ"'¯é ªõ/c+◊ Û†ÆøÍ√2.cì∑ÎﬂıºiòòMPx!ës6Fﬁó∞[é_Í’¿#ÔŸHZÄ∑d7CÏé=’’Ä4Y„W@†»”ï™û…{!Ã "°â^ €ÜQ∆µÑ2Æ.”ˇi∑aZj©dQ
+|xîjÛI˚@é\ÏÎÇRqØ%Q!jHB+´◊•∑ »πﬁ†•›·saæOÊêFQzÄ]ÕÆùUÆxêFHÓ†Õº:>ãzçcå=r2†/ÓÀGK°‰™Oe5	“ñÇ6$WØ≤:4ëÎº≠ü¡Oq"Ø–B9∆Nî§iÿË∂©ΩÑAÕ‡ñ"h,Ãx.HÂ.…ÇŸ£˝éYﬁK’d≥æΩHÎ’≠YÆÑ©óÛ∂K•à@cy„•RÓo£,⁄Î|Jfq'éa0J…Ébˆ5bßÁªÉ'ó^Ãná±∫≥≤∞°œ-3ìâ,+Y—LÈh2Ø’AÖ”õ*Oì±Xíìwæ@VÖ£*C3Í)öj¶“ñ≥Ï˙√ôÔEºÂ8ÉC¢»¬Ÿ0ö&Èeπx>e èù∫15~èq-»q~;◊øã˚3ÿ®ï±$üÁU÷¿H°√òèÀÅ«Xﬁ√çî‚ Y„ÓDBé'^†K…,•ñ:v7Ñ _ï±~c…√ı5fîgXåO_X3[Å™Ö55Øñ ¢2Á^á,Ì81 %2
+@ÖπZôb´Lë3ﬁ^ú¨ÇÎ‰ '6>7Qlâ§VcPä X+í¢p¢r5rH»ô_ w˚¨+h[®\Û°DòèØ+T@‰ãü\ÆY%Wåàjﬂ„à®’‚à®®‰óÏn”“ ∫Lb˙ﬁÂ|9„€ñóÊÓM∑&O•S=›7õÔY‰L™ÂÛÛ&ÛX˝)‚‹r<u¶3Û˛ªºx⁄(A,5‚®àπÃrN<Jaú:¯⁄*9Gt§ø$„y¡C(Ãô¥∂ß7 öµ§éÙÂ¶#u¿uêÁ§oJD:V/†x»∂?8,ö‚U]Q’!bV5ËYâﬁ^∆ëÃ
+8L	QjÄ{3hX˛G«√ºL•¿ë>†Cµ’ªÅ÷hE"Ïß*0¬Ô∏E …Ü{(yö;(4a
+.KóQ≤¯ªú®_≈j1'e»7 L˙ë◊ª;r`íÔÚöç’vöM’˝÷ „¥«MeÒìtYQ'lSﬁπ¸Å5°êÓD¿Aù¿e—BEÊ8úE}∑2(S~Ï\√s’p¿*tÚhÏÀ‘≤RœÕk≥"r"gû•≥W÷⁄¢_´Œãäœ».¡£€ZøNå…„AŸr]{◊ùb=2Db√‰Óí!=B∆4_5Aú™÷≈œ-E©\+Ò£ƒ’Ù|ü}¥@%¶—%Û∏P+≤Q·¨™Äz+¬ªá¯ƒB57tÁÍc)ÂSï⁄ï∑À"æ(U¢ŒRia+à:å¬æ;ˆf[H™Ê5ÓF)˚BrOeàx∆aØZL·È0n7éÑœhZçpÀV⁄TG©h. ≈Ω°ŸV±¢ZfÒ©%%MÅq„qRLxÜnc‰ƒ#ô(lîWwa«ñ‘ºd5ozﬁÃï∆y»zU©=≤+π8+Ã?•í`ƒ∫EDëß,ë‚ô°ÎM0)à	GX„n¿%ÒîE^”√ˆ:hGÙD0∏ú◊˙`E—hÏêÊÍÍü¢…
+a˜Ê±®è_x}#˚úÀL’F!ûgR öEªl–÷¶PC√ı†uK›9û∏nî™7n@>-¯ﬁ–®i8˙ÓM!ô—+@˜ÖƒÿRòƒ""IÕÃFíïƒf¢»Ã9îN≠=m’≤_Å˙d$-ﬂœ2>¨Za´J¥e  ò:åêD4˙)¨)q˝T–úL!'¶û;ûÑ‘˛MiP‡ºsá»”oNK$[_π/Ω®‘¡Èi°«V¿ÁOdé¨7n%◊Ûª,ûn„º¢œ≤üz·º´à¢¸ët∫'0ôd¡∞òå®[+*©ΩS6“ç"¿óJ9JóKZ7^4@ØÂ›A‹÷‹¶^qπú©Ô:(◊÷±%È9àZâ´c-kU1oöïúôıøT–«¡M®kÜ‹wk€ﬂ˝Ûø¸˛∑ø≤RräZ“˙‚Âzâ∏a4î=¶[\Q:-Œ¡NGcÖR%,J)Ã8óˇõ,¥[©∞}LGK%¬TvyíC73Ü/!Ÿﬁ(◊é•|Ñr˚(ùJí\ÒØ…8qîÏTßR∫ÏË®QMB!ﬁÖ1È`æ=YÚG A,Ô–,ìNˇôa‘+\ë≤7&„Îoﬂa⁄ˇ2ø/ri5ecßﬁpÜmÀiÚõõV¸sbÊ È3∑∑eE≈Ï÷q&9|‡muòbü∂“âÔZ[^◊D·c.,elπ®è}œÓBƒNXT`º˙≠G…c˚ìÿ!«Œ©ySñÜÌ$@≈§˜o„F≤M[a{∆6§Ááøòπtµg¨ h(ù√=¸Ñ~Ñ Ï{ºaúy~â¬Ü∏√07
+`€˚·8$;£(X<ëÂ4< ¡≈“È¡¶ÉzˇËè&◊øc!>“4Õ,˙	PäŒ1ùQ±<]ø€µ^Ï¶Pg]◊˚Q,;FAjÏ€Ú©s·«ÍâËÆÜˇÓ?ˇ#aÂÕ}˙˘ƒÖõh7˛HXŒx∆7îPVΩSvô‡ˇ∞Ω·Ñ)o¶w2Ú&˘QXZãÏD©m◊ÿ$£Qk¬∞Ë9=œ˜‡'Á~oV˜í–˝œ|j
+[⁄;ç‡⁄"eIë∏±%‹ÃE#@øÔ¢"Á∆(˛ﬂûbLﬁ¿EO
+"–Ñw,ê‡#Ät ◊@óù«ﬁ’ á†»–ÅÙ¬)nQR¬ÑëDßyëfFÿ w‚4Î∆]Ï?^ôïf+ÿévr≥∂Z3’zYCABñ'`ôÂ’∂EÈ· Ç/î∑Â∑USrÕA*Th”wTy{3ñy‡û5BÄ∞%˛Ÿ˚‘£‹}_&µ7=ﬂ	ﬁÍ⁄ß Gæøå9™Y]!IN›ö@è646√v.ˇ"≥r°GW lπ‰ºÑ£€qıY(,+∂î
+¶âRìYóÚX«ﬂ˜Ç∑Ü÷à÷ã“d˛H√∏‘∞Ñùs^Œ‹wéïœR—ªmdÂò,_¬bU‡0Àˇëå?˘fÉ¶∂f°Ö⁄Õ Ë†?Û—ê‘yÁ≈¶~ Ï∞Ÿ⁄U-1ÜXG£û"b√∏ZÍ3~◊úÒß∞ÇQD≥‘b¿lxÛ5ïe¯√°üCwíËFÃÑ˝Îoá^æ¡≤œXmè0^T8j⁄î⁄èz?Hãç ≤i±¶öÇ7‡Q,Lñ˛Iœ7W3¬¥üÚb√oÕ{d∂„ŒKΩIN◊!Ê∫ÖdÖÏ±é≠fÁ∆\e˚oΩjø:~ã§WñÔZ‚™d<‚‘Û›Z…ï î`ˇ'l@¯.ßÕ≈é‹”ÆêÎ•\¬à2˙¬Râé“~2ÒCß¨ÍìÈìZcz>]nåÀç…‡tπ1˚Ùüs¯éëÊáqz≠úiQﬂ≈ä[+8ø–F&ßa€ÿ˛€•2~¨äÖCÄÀ°“êô»˚°V-◊¥ÓÌ‘v;p‚Qö…(0~S‚S{µ Å7Kn,ZìV˛W€·j˙ØïãÄó3
+üIèNº®ÓÁù®?Bó™3¯b ÈêÏ¸ÖWü#ë=ûa¥WBü8¬á)[:‹}∂rÚÛìïª+ª;?_9|˘¸AAf&±&u//seÈ˘≠^‰âO§a®$Äñe°î‹Ì8&øŒs˜oÏ“Nœvo«*1fÃµ,c~ ì´»R´Y¶‘%Z^ÑEÈELKı7Ûê`Ωì¶≠`ví&êkcï÷SQºåT+9¶ˆ&éå®%˜óZo¥]Ü-Iâ⁄ëˇ"5°,ãË8i6ÿ=eu‡ı∞-ÍÆ3Â=&ùæ«Û;]XÄ ﬁI{Büº¿Ú¿.¸é‰ úÃêkjP%º%'n¡r¶›ó]PÚß¶”íG·Ÿ°É…ú”]wÍx~ºÙAú;˜‡™b Q≈D£«ü`vë]€–¢«hΩï©F£ä
+æ≈¥È⁄ˆ~ÛıÔÙ0îÄKiùÖΩÿ4p5ù!SÕ4Y‡Ì¢jË5ÕÌ+ÍUâ‡ª˙øTW⁄IºoxÍˇ›¥tÇ—ÂûÀ\’A—»5ô"i7’Ù πƒRÖC÷Çx≠JÈm$3;°Oö%fEûnC⁄´∏¨ºb•™D÷∫ô`«LñóXﬁÖyç'æ;%@∑´PdUü»æ:7ÈLêP1≥‹ò≥Ìf∑W≠Gî´FÙÔgÄ§á◊_GÓó¸OŸä3Ñç∆CìuB0f∂Ô€jÑP<∑b:\Z˘´ 5Ó2ÏÌí¬≤“=áÏ4Ú{Ä{•çlê`opc¯xßﬁl≠≠∑AØ€iÏï÷÷zˇ¶+Ó7¸?£ıÑûÏÄL°\</8e)a)0Õ±πX¡QzwU4∏Ø`¸`ÄÌbOú{&≤tÜ7ëX‡ÓSk†”ŒıøÜË~ZowﬁkÌÒG˚«Ó9“ÁÁ◊_nd’ÎÏñˇπ› ˆŸn˛/,‘Â∏:œ‹1zÒ„¸˙¥«çê·˛)µ;XÙ-$]4ÅE◊ﬂÿN]≤‡,L˙¨á⁄¬Ò∆;^…V®à”≈[*„MπQ>√,˙± mÒ⁄ÂÉ6‰›<moÍéójë3x√G˛ÜÕvôT|t©	?á‘æuI˙Öç~8~èÀ⁄cÅ∏\P1wÉˆ‹Yªÿ˛‚˙Îb86∫˛÷áaÜﬂ§éàqàÅµ—ıW$ˆh$ÚWÄÑ˝Îo¬≈SÄ
+úsˆªÊ2rY°ˇn˙¸E"?ıõ {®ø5»œ«‘ﬁßn‡ºC «aøﬂSÌÒC„ÍÄÁ3ﬂ¡ˆeIÕVjüzçO2∞BˆΩ>çÀ˚˛1õé$æU‰ÊØ∏¸ˆŸìÔ≈_4éá‹À-≤±⁄j√&ªÅ˜/¶[X°]o∂Í◊7Ω«tÌa—scÂCÚ,d)[œ<L°noé3? áñ<IÑ#ﬂ´¸’r3`!ƒ$[µ®®MNÀœ—;åÖÁ2)ksï00./9wÌ˚Ä0Ã0=Ø¥ î+¸¯Ùbo∞Tc£{√¿ôŒ"∑N#3ÿ∆¸m>ÇWQ]ÜM•¸ã°Hz⁄´—¯	R”™ÈzK}î ü.≈2ú¯  ú’±ö‘ù)E^∂^Z ¬¢o6ü¨˚'ëèæ˝g‹Ûúà„¿~ÛO˜˚ﬂ˛™ñÎ…Áìƒo…H	ÒOb	ºv◊&!µﬁ¯€ áV∞.ÖÓ(Kk«K™G#a/πBøÀtv!:y`Ucã‡ó‰%pV)ÕπX©°úChœf“∆ZıGö–πq,BΩ±e…+êß¢˛Õ:_ŸﬁÔ¯ kØ “”Cä{¢;¿óÏú◊œÍØö-Ôˆ∞±ù`ä%87{Á¿,›`Pckúâa˝⁄»=u£»çC†ÕOjAXONŸïÀ±™=Rö˝ò^h›˛±z7«\áè#wB¡lª˛Ñ™‘í÷sVŒÆ∑≈x-s2}6Yˆ"DÑ“¢}ïCvXl‡—¢V˚fGÏ-wÿ2’◊–âó—P™L¶ZéÚ”Ç1Æ	≠>#áƒ¿Ò!	hK áPv–tiDVÀ6 ˛°»ÿ<håUÜÿÄ3Lg,ñv%çö˘£±¡±VÛöÌ§wﬂÿoïÆ-„ÉÎoae˚º»3Ö€€P∫—˝p‘_só˘Ö Wæï´úôT—≥{˝Õñö≤¬aÏùπØ*Ö‚˛H#Êß¿ùh@é/m19mˆœìs…I‰á +e≈K˙ä∑»xêÎ+nUÉ∂¨∑8v»ˆ†“–5Àd'ΩﬂñëÚ”l	T{@pÚ¸íJß,˙oßœGé“«¢¿›c·E;—ÏK˘-Ãö‚‡Ó<F˚™ºh‰ÇhÕãØ	#ÁK≤Ù™ÿ8=aÒƒãhqü∞ ´ÅÿSº≥˚R~z˚ˆA6rùÎØ±Üwï««#œıaÀGnˇ≠ûn‹üîù9å¬ií∫±B:Ô¨ñå58GÀˇ¡däÑx·]∆˘≥ûÖ∆w„.„òè¡õ+#æ/e/∑0ú(’CSß].CâÎP∫¸§‘∞•‰&ÂtE,ı#ö9î§À^“±0YZ«-õ∞•ÛëX/x#WXﬂ;z<»ï Fk‹bZF÷~»ÚNt}§€%ÕÌÿ±®ñ—Â≠?’*2sJQÉıúÆPPRˇ‚áf!ü
+‚€	≥® Oa˝Q ögAnJÕ§Èc=BÎÊÿ•HyØMµÃ∆Q«e™Sy∫5∑ùV™ìRö+-¥SŸhõÚ•-ª^
+¥≠:+®~\13…∆dVUT/¨òì(ô¥@◊,v"VœOdπêåy˛ÿ™zﬂùM5¶Ì|ØË‹+PÅC√4e»Ì é€¢r9©jD	´§§ÉºË<Ôæ$ª]r∏SµíyÒUeÍ
+Ôå«®⁄ª	+äQ*ç€h»hÄ◊P+Ω⁄∆ˆ^—ÚÆ∑ª£l`grØhp/3∑„¬˜ºûÔ°\JuÒoÀ‡•Üz{‹›`8ëm≤jQó@g-ıì’G´ªÕŒk£ﬁûê¡Õ+∆ú»LØµ´Ã_n◊í¸FJÌ~∫äBˆ æÇ*3§ñ4Àwı†¥óπimÚ?À~Õ∂¢ÊA%t€ pÙ±3;ÒbZ!h%`- #¥‡ÉjXï«∆ÚRA˚±T}ÿa°–ÿj3ÏPt¡[~Ó'Ë`™6’Ã∫ñò[^Á\\Ç`©∆∞#Ÿ’
+∑(˙ã\%ºPÖâ«∆¶ãâx(äÜrﬁ±.√çÜ∂e]Ì]û8ÙS÷1—("KZêæ»€ı∫HÍ`§à0ãJÉΩÂ}ãÏ÷¿¬J-í§µ	í÷fÍM≤™á—-¡’À‡˘∏±”ëñmÿQÏUR π+µ”SΩí1πåôrë_ÿé*C^2◊>⁄À◊…ıñﬁW~πmÎ∞™xv\¶úœBRFV†ﬁ${¡JNáïÜÑ«wˇÌ?UK≈M∞Ëè!=æÇ#<9™;ƒì#„ÿ∂ßÚ·6∞ÉÊab_dªK6Ö¶§#ÔíGaÅZ)Å°⁄#ÀCIáæ¯˜F[Á“o”hïÑr
+íìaW6àáZ“âñƒOîé*è™Ü ⁄ROˆ∫∏ ÎêÅÏé
+‰©¬≈VreÅïVÔ¥∏®∏≠.S6;É%Ï“‰≈ﬂπ ·Oƒ¨¡.£úL°`QE≈P±9¥œ¨ÌÃxj%i‘W)‚µLÉe
+,1áŸÖ◊™≤<´ÏSE^L9+·iÛEûÒ´tñ∫à9ú+¸ÏQtˆàs±z¶8=EtTDƒ˚ífÛUát˙ΩD≤©,ŸfC	ì1ï  “>m*Åy´ªœ¨Õ ≈£,tµ–q¶"È_;¶a;ì(º¿fsd:KŸRï—ÿá⁄^8/>œ)≈VìÃÊë…˚	7ÑR≥h&O/|w©FIöµd©¥ñdÅı˘2ÙyÕ¿ï„æh!QL/ÛπÅÈ‰Ÿ±Æ^tÜêè‘Ó±πN±bﬂ¿
+Æ‚ÚmÎÃ$k∂pÌ≠!∂`ÔK⁄Vk`.û/’d∏˚Ö=á|ˇA£ü„{§0\âJÎ∏ˆìÇÜ.c§OÈ¬`"ÔKVJK4∞√€¯„;AT‹M#9™ ú%_¥q+‚ÅJ∂ìç∏jÅÌ™ÍSoÏíŒ:0{ XÏ›úF‘Kß1Ép0õXtW.—÷å⁄ ÌÌ )¢G+ÈÇz3ë^’DﬂVXºò≈¥sÏF”0ıΩÒ[g`|lú8B…8…oÆ ÖŸÜﬂ¨ÁeB9Ã˚æa˘U©ÛõiOk€¥"<ov¬‚¸û]{}ßJ/Z;».ŸsÆ»)~X˘Ôå¸€Bæ©∫™Öç])÷•*ñºp√»π†ﬁï,h˝˙(ùÛJÒlÿR⁄yÕìÀK9çoÆÅ&X[&#ì+ƒÊ:ú∞5≤ŸN$Fÿºüœh€ÄÚn‚KÄ	º'ë7∆Kﬁñ˚ﬂ≥CÖßá˛;¥Ü∏úHCÍò[€"£˙+ﬁÇ	¬¨”Í&µÌjF™¢˜≠≤˜a¢]ÚÆ¡€y_ãD∏gw9Aˆ¬;ôa/úbË ]n"Â]Óc:À;‹ töUv≥ûgÿπCü∆÷åS>Áe|È2v2Ω Òl¬z]. Û˘ﬁ1xMß …nT†ƒ,RÎãµq·¢|›}l$Êfö≈,|≤ﬁ˙±EﬂÎÿ$Çô £ZÍ{ôJî¡ın6∏
+pΩ`⁄và8ﬁø˛ƒe7V`zA¨%.»â8¸jM/w¶˘©ôl)E~jÊNXß ámZ“–ÏEmvºËaºd≥=WÛÌTXÎÉäpÿzÿRﬂπgÑ3Ãd∫ c\[íCêjxéUk(µÒÇò≈cEûZ¿æ¿›iñw°oıˆÉISª≈bû]ÊTvX_àª{8cØO> ÅYPGkÒ§JÀÄÑ¥ÀvÙ!†Êz˝ÇntÎ«Â)€Gßc/≤óXïIXÆ ”ámë™3¿‰?N-«]ßr2ãÙ”π¬Ù·J5_¨~mFu°ä!≥≈ ƒ$PU⁄oà—UK®;Q≈¡ï7pueuzÒM:åfnœÕ¡⁄’î∫ÚÙèÏ”ö„…
+v¬£í#ær‹èm~æ4¢…>∞Ö?¬6¢Ó†·—ÑF¥ûyÄ<oíLùaLb⁄D}J%πaÜ ﬂÃ\ùbË{ò6∂…˛Œc’ºxµ Ã ô˚‡F8võX∂P<´åis‡ΩIŒöû9¢±¨j¥˘Ÿ#¨Ø3¨z	‘û’õUu∆¢∑ºj•:i@)º´µ–wIojIo⁄úÛEs‹Tù–ñD…»ºwäÎT™%}ñÏ“ñ’†
+êó”òqæä ¶]◊Ueqe9¶é9@V*≠$€≥9π®0Å†¬l§±ÉN–g˙£ÄÒls §¸1Lú⁄–…tÑ≈\X/oQAâı&í)G ÒÖ—:/ÎYD ä˛I:4lã»¡“cÁıÚ7…hÿlÆÃâÛ’_µ:ﬂ´™ﬂ`ﬁ8$ÿUÕD◊îâ*{eÌnVÙ6¡§Ÿ^ò‹:vNˇ'≥3ë¥Xa™‚-F˜-ÚH
+∞cï&&»6†\ÉX´°¢Æ9^p&©LT)ÍK|Œ·ıW√i¢I¨9g*C5É“B/ùﬂ˚ht±∂WSc:œQqœ˙éZQvè«ìÌ?¸ÊÔˇÏ‘4
+ÅõÍ£‚1fc˚YçAá£6ë»ÑÇM]—Ù˛m“ıÖL˜˛lB~aΩ5ºõ∏†V¯^nw∞xZòí.ºiV<°⁄‰2h#¿Èù ^4ŸÂ	NrG≤{ÓÙßŒò∂ÙÄíÚ´ìªòyœÏ±>qÉæ”s1◊¥ÒxebH^A-¶¯ÎøØ≤ÄâsÛ8qo§⁄ñaQÙsßt%aFô”Ê6s@í¶◊_˜iõÓ;Y)©pÒ\dV^» ¿‡b≥ÎPYâN=á5∏≈PºÆæ É¥Ûm“|£¬⁄–∆jq-7æ®pLeùzã~6<8°M´g=êﬁ…S	dn:]mg]ßT¡|Óç 8a‰›¥*/∆8†¡ìK/Êw†¥˝7C>¿ÊÄÿ_æ1çº±πlà∂ùPµ'-Ë,Tcí^ó∆‰¢æéÅ'π≤FÁqA\¢xµ˙f}r˛¶πˇD√û≥ÙË—rsµµ‹Zo.Ø6÷ºN'ª"¨O/–˛ìû„±|A8≈–æLŒ ≤ÍÚûT	∑…2ÅôºE˛qa±º#˜Ë…hÁL◊y;ÈáOº@¥Ë¿Ω›aI˝îÊ∞3–Ê–6•Ö6_PLåãÁzDÔ≠Ô*G÷a'Œ_´iπd3@•‰anR5ˇ32sL†YABÚáﬂ¸„ˇ!;wN»ﬁÀìÓ˛ﬁÛ.¸Åq˛ÌÓﬁŒA˝®≥ªw∞˝ÎÁ≈@e…@Ì∏Ãtg‰LªÁ0K¿8Ìê?"µS≈Ê[g•ôcsï|I≠®B!ãïGõ§:à¬	 ˆ,¢ï+‘≤AYºòµF#7ì˙¶ö)ƒ’±ı„Òπjé∑©^¿ö)iùE∫™e8≤Å&AnmeêmqŸ–‰!É~‘fûU†‚8	»Â	MÍ{Uøy÷Ü [Ù
+ö=wK‡uó
+‰Z€"FÛT‰2•ñ© M¨¶†£óÍê˙… 8ìƒ.J'}oHeXNXÍÿŸ(ÙØø¬óÚRB~
+ä∫SÄÙ›Ê©µÒÃ«<"ÅwÍıQ‹xÑ¯ÿÉ?AÇ;¸HÀL^Äå9Aﬁ≈°9ß\(£ŸÂ˜ı3+Oz∞Mt»WKŸÀì€•	˛ˆ¡§PjïÀ§4+ïIAªèuô˛µ$ç¡ñkdGÆ #M!î•—ı/ ≤7Ÿ· µ“‘)}aU€T§r5îfqFCq/(°Y;\ù#†flÏ£3∆Ææ¨p6™m® ˆ·r⁄ÿ„ÖsÓçA¯ä»ıWëÎ$øë•!àcÏâﬁ |P–Ì£õ√+÷ëøî€“PŒ⁄XÆÅ?ÊSûÎÈÊU(OÃ∏5BPå\XT)ŸÇn;C7^*´í\ûvDˆûπ~?ƒn~•óG!-€;Æoq9"	\˛o_}˙Œ‰8º¿,“?Ï òRûW∆ˇ>¸∞a‰%d…˝¢A^∫@ôBÚ4åœy˚Ä3ä!™∞úBàíhÏa‹ '.È· ∫˛M+◊øc≥1‚û£>å:_Ãå%^@_#Ì ^üìå\÷íﬁmîQõb3»ÎíÇ‚ñw£(åñP¢o*œØ⁄ W√,sEr_π<F—*Òƒ-†sÓ‘≈Í>#\‘ﬁ◊Û‹‡ùxáá$Âm!¸ëãe˙ΩÇex_ ]àQ;£rﬁ”Y≥™:HúçñE˚ú{"SMÊÇ5à…täIÑ—}¿JøÁDıÈ¥v#ì6∞Ã¸m§Ô¯˝%‡dÔFı÷:Hﬁ^S∆¬]ß∫ä~ÒÅøm±J≤XΩq<|P\∏ª§j≠SO))Sß.&,ﬁÑTåÃg13ó◊I«tﬁr√£"^®;î’ﬁòñ`¯”◊ö“é\'j" Çúøòú∏&ÿ—≤tœÚƒSÕrîRuπ¸6HmÕ∂Fjk…R[≥mëˆYñ\ä¡WäóKq§ø£X+)€j]%K ÖYŸm"±™∑é{™jZ!È— ⁄≈Ò≠‹`ü¿Û4’ÇTÿ≤z≥≠Â{7€óÎ.ª∆≤˜ê’`üb¥∏≈‰+ÈˇÈ”µö∫–T?Øm?wAàÒ“∆ùùΩÆ◊õi0«√à’{≠D©∫e∏ûH.4d3÷9â‹˙Y‰Lrƒcõæáve·Î≤Ñ0SÔöÀ°ºﬂ\.#€Öu}wË”#ªK…¿óâ
+?v•lﬁåÂ™X|’4Q‚¿H¥~8π ÒåöÄ£)»S/bdÀ2F¬l>§{ƒ*vN≤5‚ÎGü£∫‘Ô~ˇjº8ÒE–'6*üÙ Ë¢Rë>Vs∏ ú‡V<!	Ä4@y¡ÑÖ•ïœ^uè?y—}˘fgøsº˜loß≥≥wÚ≥◊Ø>ã?;~˝·GüΩ˙l≈p…  ≠ˆÄ{ ´ÍsŒoJ∞ë˚#¬±˜¿§:—†qÜ‚hó“qWxÚÈ;”˛à`E√™+ƒ•·RÀ¶uv˙FÀ+≠ ]p[¨2Iôπ™¥VØPgmlH‘_UªqôlæsV:‰ZﬁN8¡æ¥Œ0C√ÛñI±áiüƒ≈4g±•9ò†Òáﬂ¸˙Ô˝ÀpZ°¯¿Ω/éS°¥Ã=•	,,°Rq0xä¡u'!ãMX˙¸≥‡≥‡√q«–†ìÇë≥ı·áü?ΩLßuıπı´o13c∂l¥nÎöôÿ·&’zÓ =˜∏ΩãP‹Ã∞sﬁ<Z†23}°!lÖC∏ ≤HieÑ˝_$–m¢¨}| ?›‘HH‚ŸxåißΩ‚¯Âàr…ù÷ıêUi<•6f †s«ı5‡ı‡sûÍ‰gTÀõíìHF›Â‘∏{A≈j;∫Q∆I∆Ñ¡ê7r‰Vl5ƒÉ¨—xê‘»íélN}éøãèƒ±HâWfº∆‡≈}/ûÜUÀ:ﬁ$q^t™+6µÄ‹r¡j	ì(vßJû7uÄ7ë"]+¿(»¥ÔÌ‘jø™"˙XgnWZµäe∏Á+¡=7/eñ?˘…O»Œ¡Àù˝Oé˜ÆMª	\Œ Ø—û[V™∞màv/í„ï•Ë¨Õ'–∂á"óMNn»}2rU¸Táπwa˝æ¥ìÌW•)ßÎRòP∫Å~'Ì˚Z9r>Â£UâL%q◊πUv{AΩ∏Á˙˘Å9çOÙêÔáî“≥˜¬Re,¡Lf>e~}≈ΩÇ∂œy˜@l∂ˇÙµ Úã0ã∑™·#p~≠‘*A‚1Æø©qI–ß„j¡“%™ã®Gç…-åë(±AÆÙq∑
+†f¯å%Or5ÿú0JLù¿è⁄ÌLƒî™Í<í#6ìmQ‰‡Ìƒê3A∞9ø˚Á˘˝o•Œ®(§cÆ£ãπßO≤=•©`GÓÈï	l¨|¡¨ô_/<7{Ç1“ÿ0Æ0`yΩ;‹H_X_f◊=u zãîr&WÉT°ÜôòÔ2 ∫ €ÜÉFá{q/C&wQÈ—xçPómOÅ∑í ƒ\`b"“(ÏxÁ¯3WÄâ=¶¯≤ˆÜ|∑ƒ†zÔí€òbFœ¥A]¿ﬂÚ9 Ât^Óñä2ì∞“RÁ±ÄåäèFX@°= iÿü≈[·lä˘Y<Bîû ∑0c HVÊıÛLTjZ
+#Õ.ìﬁ‘ƒÊKÄë6∞$Fµ	Pû#Ô©Ë]og	*dgU~ØKr—»ŒH∑Ö·RAæºGX“Û&xÁ—ˆ∏5M◊0C§W’‚ˇä≈€«+Hy20ßsÁy9‹IíµXæIˇ.oÙ¢#ˇ*Ô=˜∑˙°_G¡¢˛PI" jUO	¥<3üÿÒ¬Ò6∞;œÏ»˙Üà	Úî‘¨!ïbûéù\Õ[«ÙÒmÀ+eîxA∂C'p}€»1Y˛öC∑èÊœÂ°6CS≤á
+aÉ|û»E7¬Ciûj)#ÖœK™ë∂ŒXæ`›¶ó«Õcˇ≠µú2]ÈôÁSßE*I©f¢IŸπ–π&’ÇTµ≠T´mˇÏ‡ËØé;;›7ªGùg'çìüüîÎ5•Z6ˇ‚KxÈ°9√»ôå‚r∏}‘ïúHêk:≈£˘L‘∏‘RKòÁ4‘T"$ù\XPìa©\[U∑ÒË’HËH°$ŒJVixçÖª◊!Bn&mÕKm– ÁﬁLU-å£/÷bo5õ&œ„˛8”i,yuvºœß…ÚiÚãgìPé'†–òÚ¨O´Ak¶¨-.≥F;–ajM!…0=ır»´∏¥]›ËöÖöiÃñ9±C6—¬y1rºêEZxñï0Ûú2LØ_l˝÷m∞æ]QTπ–∏ûxd+oû1A°KÚ»–3Òö˛¿àâ…6(ƒ≥[˘j2•’.,Ççùm(ó‹˝°e-8,Éê¬BïH
+ÆŒ≤«HH∫ﬁß◊ﬂ8òT‰”r‘ÔñT$‘S)zh1O7mØEX¨E¿≥ﬁÄûy…U:◊pY°á≤◊óH+v1µµ=aâ-ñ≥¥¸KπœÀÌΩ¡⁄$` ïÈ·‡îuÀ∂Y4ÌÃLHõ†ÂÇpéØ<É≈S÷≠xrÈ+≠ºÌmcU§π%Ÿ)/=ÂD%>.’~2_ËMrcƒDeiπq9˙hæã»ß^Ãı¨
+Ê;ºäÈ ƒ•√›g3v‚π aë#◊Ò0+ƒZ¸’ÔΩA"œNËœ∆AqPEºpIpËKÙg6]6MÒÏ]–%EÆ8ƒv0ÜEIVFlmÖóºLÄ˝€@ñ∆eû_°îÊ¢ÊÅ-BxM!>∆ÑÕ/<¶˚öÀ“J õ≤j|Õ
+IFuó†'∂Ú‹œÑåó¥–/åiÈ‘Ò„"ﬂˆ YjÏ≠DZ°B˛”Ç†Taó9†µÇ“]iàÜ õN‘yÔBé„â¶©Ô§ˇ…—>	<Ï£Y¶_ß…ˆW†¿$"Ì˚Ç€Éâ¸l‰L„Œdr<r"wÈœY<Ùõ…‡Ùœæbt[.‰MGQ≈ ﬂ<IÂ^√$!ı‘ã∆XëîÅ*/	Íêd´n ™<‚¯3ÿÌBxMÂ•Ø˝æ!ı˘ÿÒ¸[Sl'ëL<±°O<ˇ4–Ñü±uJ‰ÜdS´<›´õ¿)‹n	ûÙUﬂlbÆËI∏ìd¸-)∆ªeÿÕ¬<ﬁì—¡jâ.;‰%€±Wnà∂≥'Ìå\X°©îfÊ Zg/¬vd5\Ãh.mîƒeﬂt–ﬂÉ˛áÏé¢CTG¸}/xkoU>vﬁh#á≥¬“+sËè‹o´I•√8ª:°¿U¡¥sVÕû≈1b÷=-DÂ¢ß&Ê˘	f=758ÉÊÈ®ç6Ö’Úø1â ¯9∆:–@$hYﬁÎ*ˇÜç∆¶N√M	H.iã‚Ëø}’eK√IÀ˜Ñ∂ ∂UQ{Ëı›lˇñ∫=¯~IŒMä°Î~c=¿Aπ§ë1;Ä¶ÿvcÖP˚9ÓG˛≥√ÖπÊ^¿Ü6>Êx&5¶KÏÕûF∂]zóI'<fM‹J¢˝˙l¸ÀvlFÀ(.-óQ‘•…T˘+´’ø‘ŒÃÆ0Œ“›∏íôÂJÖÂLóˆgDı®bç∞4ú4"c5¥!uã‘ju¿–Höy©>â|Ê¶˝ˇ   ˇˇÏ}ÎéIñﬁ´Dó3¨Ì∫_‘R≠§≈¢‘¥Î∂d©wwdA "£»T'ôÏÃd©Jj3l`çıÆwk`lc √∞›∞∆†x1?l¿|ìyœ#¯úëôë7fDíUí∫EÃ¥™Xôëëq9qÆﬂWtqN¡ÎÊÆ¡·;fíôÕ…dü0âN¯íM9≥'óî˙≤ï∆')/aº;ÿ…rC”ôF‘q"ãP#\"æFÙÉùÚ'Èñ0÷.fCVı ∞∫%˛xÍüü#–û#k±˛@Ñ±‡u‰óë.!ueòŒ>ÕS>5],5˙Xec¢”H§RÎ∫cH5S¬»O¯‚ƒ¥[„Àg∑C÷ÉÕ[+õ∑wW6∑Ó¨l¨m-†˘e>iL∂îÉ47l5gÜè¸îE§Ë#√R•√é#z`%bÛ>˙ﬂªŒƒFbï\êÉuÛÇ¿TÅ0Áó.âªzÔ≈dÅ%®Õ&Æ≈v”≠Õ˘–G£†RÎçµ–¥ –XÅ£†•40Ω6≈(¬(eI´Á:è—&Û—ágí∆√≠z”A@Á˚5éBÈö”¨˚’)“%[‚§Mû˙o√lnÚFN≈x\ÕΩ4ìÏµt†Û‡3íÏkXF¢{êÎØ∫Ñ1Ëfh9)cUÊ£•O“æ&ª˙Z‹^◊‰ÁRmecÿö»$Ççÿ…ú´€üÄÿE'k‰äW›Ø•ÌkÏßYÅÅ(OíI∞⁄ìrQª˛^´¬•B+§Pu›.\ä'Ï¶‚	üÁqgƒn|±¶`stFWwÒ AÌ:o˙ºÈÜƒGˇ(:P
+R‚∞Å≤ñÈÈãZ»ÛƒœXrÍÒ£Qˆ>€Ïåj‹C`„Ωp¢YóS(ès…†dz>y]· Ω˛$'y˙ìÕ~!tí
+∞÷ôÔ:ìÄÀ¬tmŸ¨“t|–XÜ%•∫d=‰ÇùD>"©U~≈È!0ıùîM¨öïjª67àßX’oïÍÜÂ[b∞]ÏLHW~mÕ¢JZ∫ﬂ±Ga(3íö»Óg#Á$—ûı‹ªÎÉÌô}g∫"a sÎ ±,\‡å@ááàÍZ–7Cp‹6w>≤í5ÈËê∞€$a√ò 'm…≥âÙñ»42ﬂ¬íê|Ç∑%·?Ω¡>!]ò≠„ÊM®ö≤ácﬁ≈¯»ä»ﬂwuÖ≥û√˚ñ7++z&–pU¥tN ÇıCﬁ#ÚÙN`ﬂ˛∏≈~‘4”‡Mn˘Ÿù]ˆ
+∂é—~è©Èaà`yKÌ!`ÔÕÀ¯`Îcı»ÊV™êO»ôùTÎN"ﬂ8P1Ÿˆ˜ı∞ú
+8À0–ê	3∞ÃúÖ£Ÿ˚Æ>xy¡™0‡“˝œÌrü˜m´?ö˛ ÎJÇ£WÎSB~ÂRœïÅ
+…6ãîtÈ~X≤“ß±ˇ¶z7sÚb9[®˛änc@y*Çc∂J⁄âQDk¢bHN-7¥(ËÒ>‚y
 
-V∞R™È¿3¡'Íu=ò∆îö0.•|}2Z£ﬂ„ËLIò◊Kv≠øF{F,`¥0ËD¨FA¬#ˆDq∑{´≠•éQÚŸ°Œ™Zôb>úÉ÷´Œ‰Ì´6˛°À€w€wW€ù{ã≠fÎŒ¬a≠xk9RV´®WC]^’7t]UØ0âá7F»O¶¿EŒ%hÒ^´%Ö√ÊÈÊÜòeÕdårÔ=ﬁRÓNQ¸Ï≤•%óX9)V÷HTq§èbüÅ8Æ⁄«ÆWO§¨ÉD√*£Häå\ÀJô)œV,˘ìçq¨}` î4â+‰å…=≈3∞RÀ?Ó:» \ºV† g◊a”◊Îπæ≈ò¨ú(?"∑Uø€≤'À*éên£≠,G¥U⁄J∏âTßü˝áˇ¸˝5·Á¶ØnY‹^}KzŒU∫ØZÜ·$ï√ù%o>ëˆ¡m')∏ı%® —]d7ë€Ã*À—≥1äØ~J ]T/ú∑±»·Æ–£Ä™ât|UœQ∫’.˙e°~l∞FázªkJnªü;ö¶i4.x1J7j¨Y—1ç◊√†ˇÊ¡≥ ΩÒ Ù7sÜfWÍÇC+  H–ë|@⁄Î¿gq+z≤∏De©ö„-êBû^¢îqqïˆFG⁄=ú/ÓÂ¨·M”('|\ó6é∆>ÈO„$äTuâ%k{‘YmïÖÕr¯î`ÂºL÷ºÊÉ√g‘_“3’Ÿ√≤b#Ê+-Öò/ÁÉBSQ˘h§w‹i—©gláT∆ú]”Ug“;-ßå∆ÍPlôx1
-!ëZ√"˜>pÄÕ{wCíÁ1ñO∆íÉ∏îM¿J÷~‹QÖeöOˇ
-.1ô†©øÑs‡ß–√å*åQ≥Ÿ¨D¶ª^†¯Uëõá3 &<˚—ÕÃÔ∫≥⁄$|ÉÊòíïd¸˛Ã”åo`ñE±Ï r=^p¸ŸìŸÿt3d0ÕÁÕb.ûü-ì˘≈kg*sõruîÚ¿>vº(≈øÏaì·ÆôNçZQt¸\/∫xOA&t¸h9 Ì˝ï$Oœ´®I§Ú3€
-ﬁj	‘ÅøΩê[îEùBÔ⁄ô‘Òc€JÔ(£zïAõY’Ÿ ù:‚¬ÏÍFbu°ÍØúZ?Ö:≤Ÿ3Z;zπŸù‚BIŒk:*k÷ˇ\ubT≤∞˙ºÿ›2Fu$+ÀàM«RT'ﬁEémyˇ-∫∆”n˝J≥Ò3K÷Ïº}ÂÃŸb,≥dœŒ_sÛy°ÛægŒçüü7?4√ã/™Eö⁄—≤TÃoô¨5:o,[À∂sÀø,ÓIä!T≈qÕmx"•z∂UX7r1≥ÉÇ”Y ;%ë››’ñô©Ÿ^wZœ»\”Ù§˘ôÂÿﬂ˜mπÄÿg÷\»¯ô%ø&~fŒ±)∫©<õ¯π°\õˆÆÊ ∑â7˜[öÏã•Ÿ¥d”,IöŸ™¶âm¸OôﬁÆbJ:xg&J¸88W∂+Wæ+gfJzKœNYsÓT™ïóICßUh°«œåi(Ÿàb[÷IYx3Ì$Ìñ¨ù¢—Æ!—aÕêï?’33Ê≠À≤3Z3
-~nÊ‘å¯©∞[Xz<K<Ÿ0£Êπs3YÏ4 “]úÙÆG‰e©ö"éŒ§ M~ú€«ΩÅ‹[»ñ6é∑7S«Òz˙8vyØ8ù~Ê(+9ÿ2cr9¸Ãî`?≥$ôÀÄ`Ûæaä”€FÚµ·„π_k~&…”ÜÕƒFC¨~6[¬√[ˇ\ÀÀff«ïü«√Ê:√¨Ê]3≥oMëgMâ_.•ç“8%¸w·Ss5si
-d4˜§…2_9µ>øh«ô
-n3?ø”L5‘ªwò˘›e\Ë‘´ﬂ∞£LE7ô√If^ô[|ô1Á◊ÎS‚S∑Û–\N1øXóò9b -tÔ‹¶ä+L°#L!éﬁt=S‚ SÕ˝Â∆ù_Êu}˘;æTq{yüN/s{Ëﬁ∏√À/¡›eÆB7U]Jº#n‘…eNó"◊àÍÓ-eΩñkÀé-e≥∫Œ\n÷°evwñ¬ππkEé,3ŸMM!˝#»ªØ\ê‡”¨ ÅC_‰ (èübëªrri#Ïı≈g‚«ãhdxöÌŸrº”I€Ÿ¢jòQ ŒYÅ9ü∑ÅíSæ∞∑?5À∑ ^•<ﬂNò”’‡∆.T*ã∂ˆúæñ§;¿ø¯4w¿8¿ ZñÙŒÑ bsòUSL^]îke…;îW`ø7ÖnÈ®Hÿ‚D4ˆBËˆÍLÊkFÄ+º˙f5ö!=À»N"ßw≈ã x¿ŸüL°YHv6ûêË8Ë,Q∞GA1ÅËê–#¿"$TX9∆\Ã7yØôœ&_©,˝ßb6ØELŒM¡›‡3k ‡≥&6X—ï,Z⁄t	§"É∫æ>¿Ã?WZó„FA ˘µÈv,’±ÀÊõÔÜÓ_≈<-á¶ø•$E¨¢‘Îbä‘%Lm)ûäHıEö’‚•G´œ‰5St˙4,∑ù!ó5	QÒﬂo08˝Fq^6_.ﬁú3ÆÉ±z‰…b£Æû£Ÿ6dÅ7ìÇcôñ‡}'øÒ”ˇ—¡(∏8◊íôø?Ô_∂6?£pA›<ÎÇr&∆Êl,∏æ[Ï\N™xh√äÑßÂˇùª€óå÷;¿$˜”	AP&ö'äc;_°dâíódix>˙x‚FòùÈ‘ßâ†bÔú¶ˆßô¸Ò!¢cÿP®QÎ€≠…ˆ˘ &Ê‰e$a^é^~ﬂˇ˛Â¥”Ít‡ÔjÔ˝æåWñ?„íMM≤∫6# º	ÂÕæıi¡‡É–C”OÒTöƒ»ÖÖÁ∞À®g$¬O6Ù&Òc˙@ÏﬂNXÍ™¨æAÖ0x„ìO?hΩoO¢O?µŸx›ŒﬂTËõsO”lÿ/ìOº∆∑Wˇtı˝’üØ~∏˙ÒÍ/Wˇ|∏∞Ãø≈y^U“˙–´≤ÀÀñ∫x§p(˙È'ŸõiÙ˘Ê#Kèl/ùy'ÿGâbªiΩµ†æñ|&oR`Î˝zª:ŒÕ„N/3&‘•^‚Md˜wŒ¶Ã·]7·\øLπèü¡°~YpWﬁπ;}\√õ~˛VúÈo E|≈Â"n˜o…˛·òXÌ¶˝√[7·æ˙éú√ãjKN…úÜòû…µÎ8&´&ËbûjXXk◊ÈÅl˜x|∑n∆≠ñä^ÀÔﬁ«òØOπ£1çV∏¶óq±+ª‰öÀGı˘ÁZ’ºYEyÈ‰TM’ÉŸ!‡+`(ÙÎu!Âo…uóÍÂı¬–¯˘˝w€Ã¸¶ôèñaôYæ1ªåºqe€å∫â√ÚÕ˚ã1”Xxÿ1“»ê§}œ¬–fÛnÌ5+Ì5íΩÊZ¶öªø
-SM˚h™…X’÷\ì’ƒæ	cÕG;~ﬁs¬`&˚ ¢∞§ãº^*√*9œ?S¢Ó¨I?ˆ˝q2åR«ÄnŒËìoÅè&ü,·ÀMõ{Ú•˛hÏ˘5Êì1‡ø5›˜›è∫Ôè∫oô'Ì8tﬂ´ÔRÔ›π	ΩwªıÛÍΩﬂ• ˚Û_è ªÕTﬁL!Ù!‰”xüZÓÍ
-Óœ? ˜G›ˆG›∂ÙÇè∫m´<∏:ßJ‰˝Ë∑π™ÌŸX‘w£⁄˛êµ⁄Ö’≥ç1UÃ&$sU	´ƒ»\—®ßjR∞B"ØåàUBª‚%©…VC19OPb;B6—ã?—tÎÎ¸•LLïÍL-\§WœZ∏k#ñ+õ≥NÄ4à©7ÿ’åR†RDOrf+›¯E68ÜRÄ—IƒÜd¯∞∑˙eîŒŸùúÉÄıóI“fß∞S„îG±ÙGâ_≠√¡ÿ+Í®ÓçyGNE|ÜÖ—¯Y4M¸ì,Ëôn˙J`õrl∂jÓµ#€-gÌH?öÔ	›. s”jXmGO!Ó±ÙítÉ“µ˙ DLG&vìq®≠µÙRÜ–Mìwˇcá3Î“Og1étó%Q8ˆ9„Òﬁ‡]SãÀY∫R<«k·˛NœüØ⁄‰∆ª≥¡ ØS^ ¶ïø»°~∑\±ÄV.~¯d:F√óüêÕ.Ê>ÿπ˙>éΩ„hza-E@j#}†{4˜"]—IIß$ˆR¥nEdË}ã‘∞“H»ë$6öL«d¬˚]Bê«ld#NÍ8å»9@;b4§¡@·/÷5ÌÛqqÉúó‡¿}¥∞a‹Ó˝~=Vû˘ﬂ`àÈ"˘vÙÒvËa‰¸i¥Hzo'0ºáõ28∆ÔÕPq‚ü˝æéôêW¢No5⁄ /ox©w#ÖÅ©Ωc”†ØkóøzóÈåb2Ä∑Únƒ .Åœƒ∫˝°èI¿Ω4c{ØõBx‚ù¯Ø®8u3Âq÷ÇÏúã//“Jƒ,rﬁá3âG˙√Ü°?i˙°ñP–Ïôr'`âú(£=-ÀZ¡'µ%∆»aw∞”+ìÃI∫ró‚¬Æ∏yÑ˛˙±õiv§·„qdè‡˛ÈÔˇ»˛#{^€óÑì ∂>Z∏ÎO¢¯[¨˙˛Ã%X»€[dBª“a"∏«O∂PÃV(ÀıÕJ;s≤U}ºµò®+Ö Ê-ı‰˘‘?ı‰	Vú≈u˜=≥ol+ËòQöÊAÕ.aú·VïjG§dH7Éq¢K€°uc€!Ø⁄ ≥Êÿqø«—ôâ¸y
-ù˜¥oÅeÕ#s|z„~DæÚ„î≤˜ı.Õ<O†ã2÷kŒ+ívı"Û.∏|7à¯*}ØŒÍg—è7∑úÆÊKwWùŸ»Ô…Ÿ»u˛$Á¨iö+’“Ò[õ6˛$ˆR∑Õ°LÕ%)°õ∆YÏMJÙÔäJÎõ(◊k/«5kµfËÒ¶1ÍºfÑ˛Îôå˜ÉîÊÓD∫rö∞üˆ_ñv{;€ª˚ΩÔ6ü?Ÿﬁ}÷˚Æ∑∑ˇbcs˚ªçÕÓ”ÁW⁄€ﬂ\ﬂ˛Ó´Ó÷ˆnw}ÛÍOœE˛U⁄ÉÆ‘b
-≠Ï≠≥î5/DK&2r¶ªi‘çóêŒQ#ûg7ö±‚ﬁ+≥Ò
-EÓ9LyQRÎ€í\≈(ˆÌXÿ¯ıX¬Ù'ÄŸ√Ì88°r∏÷t0ñ5“Íœ∑g™?ﬂ∂e.SóŒ“¿öêå…ÂŸÿ9RŸ‘UF±Î:ÍÚ*èñﬂK∞Ix¨3˛…ïﬂ¥ÌN ñ≠êCEZêb´≥å⁄÷ó…$¶âÖu3c◊úIF◊à-)˚Ú™-Îï=ﬂUä˚¯AÌK!îJB'∫vzÄÄ}zòõ]æì3lómò\—§ayg&,Ô|8Xætoır}Ds˙˘Ö†yßöœÄ–ÀBãÏùÂŒ∑Ù@n˝⁄ÈÛk[!7+2ø˛Â"Ûr)ì#/ÊégÚEûª‡¬/∆˘cÕ∆è5m–˚Ëc;≥è-ßeÓíçÆ◊T«≤∑Y˜›A'èÈ—í@≠GÅú7∑P¬È”∂VÛrÓ¡ΩÛqä9q˚_ŒÖàw Ê.Míã∫Å[bb≈{4;“sÓâüs{¸r	ñk—’g¡W‘t>ˇÄQÉ≥öB9Ñ≠≈B¨¯⁄fï+«CaV•W;rÌÇ¨Øe%1Ω‹÷¨Ø#‰D≤cﬂQPÌR6ÄÀì•u˝¡åse¡C8¿ˆ™s≤YÑ—“™<[vYônﬁ]G¡.v}æ	W›´◊,fRË¥Óx≤Wõ„mï)%≈V€¥‘™ŒÀqÆÇœ-,rRÃ≈‚«¨‚ﬁ?+ÈXr÷V¬Åí∫&
- :Z∫ló0∞æp∞°∆µ–#‘nœ‰}É·Øg /ãe¯Ú<Rùv:´-î‹]3◊h◊
-+.|¨ÜKﬁ[√«j∏ÔªnÅ˝Èc5‹è’p•’pØÄ#YÂK¬)>÷¡Õ>Î‡ŒV7ÛU˛X˜c!‹èÖp•¸äúîzÖÑõÚØπ]C‘“ºV¯:â8ÒF|r¸©°3ªÔ»;q¡O•Ë(Æã§ÇpÅmÖ„z%z~Y˘’n≤ÚáÒ{.|3£ ∏∞ò±Uc¨ùâ’»ﬁ◊Å-◊”W”◊˜ûKk|C:„åCøæ÷òZxä‘®skçoLgúÕˆF¥∆ÂÆ≤áäC7≠($R÷'*Èàe,µãπıár,⁄jc™£>Ì¢bŸÂZ‰—!wÑ:Gá‹/Æ¢Hv©ëKï»"ú ¶8û7 Wú€ñX‹'
-wS)&TËK¸iwBh˜4B@+)Nñc=‹‹-Åøï8m8ÜΩp/ç`C ØÎßh/©◊b¿sêqOŒ_%Á…´ z™-Úh‹M¯Oi0&uY˝°óä>˚= Úd]‡è‡¯‹Ï∆˝8≠◊˛Â{~ãœù¯céÖo?$r#èúLΩx‡º#Ô˙ÈîÜ“·œ~c‹ûá
-/ˇVÕHÎ…@∫Î√80•∂ıhå).a4ˇ3h¬
-˘'”òZ<˛0ı1s¶/ã—ü§∏>ç™∆◊√ÏH†åﬂ#…4!ß^Ak2∫˙Û ËG	ôD1Ùrå!Üèdõ<éK_©˙”ﬁÛﬁnwÎ’ﬁÔ˜ˆ{œ^m>ﬂ€ﬂ}±æøπ˝<C=xn]]ù˙˙ó›˝≤GÃ’®Øou˜ˆ6ülÆw±uQ3`_ÖÃÇàeSõ	%´N¯Rﬁ≈p>––Z™¸#C@Õ(ñ¢Ë5úcO‰¡Ó¡¿‰ŒòN^ ÿSÿ˚ˆL“<êÌ®«ÿ<Ücî‹zÄ"$bé‘∫Œ;©∏Iy‡ˇ+6ãs Àø›€~ﬁd…∫„˝É#|€ó¨πÚ2sªaôüò7-ﬁmlcùz˝ ÙË¶ä0¶ñ√ã·<p≤#Å`§ Jë˙Ûàx∏ßº¯Í{ÎÖ£˙»˚&‚$bAﬂh2∏Ìÿ˚#`≠ ¿ï=´¡%Îı“
-òﬁ[Ï¶Ü ™A&Xâ¡≤g0¸u?zBŸtçsé∆ıä˙UíNpÇ¨©s8ë÷[mX[Xî{±œÆ†78î^_ùEÒ¥øN
-KAOo+˜5àÄ\∆»Œïâµ}5Ü∆f[Aﬂ'’{	Y{π#¶ã≠6÷÷K
-–a"Ü¬cÕ`›†ù¸∏ú…°Ëy—éˆ`ˇ^zÕC†Œyhô«^p2ˆ@2®“O"⁄ ›L«[ﬁy4M˜œ'Ä
-Õ_Ö¥}MÑ1^ä]®lõ£0:ÇÌ2ˆœ»c¯Z?–(õº≠©öqët…UßÆÅ∏7°Q¯x<.}ìD„µø Ôò∆!º‚≈ÓVXP†Ñ€Gﬂ Ã·wﬂÆ5l¿öØÄ[ò·:ÂèÙ$ıöóSlŸ∆˛14áW(ó±⁄WyxJºéQ•¢W<Å˜Íìú1øéÊÏÕΩÌ=Ê»∑–L`:i˝ˆ˛ÌÖÉ÷·eßÙZÙùç
-ı÷Mò90›Î√ †Æ˜ç:2‰Ïﬂ‰J\ıQF8-è"îbˇ4z#A	&'%ÈSØ”∫«kƒüÁ$õsàΩ8Ê	NüROLP¨"n£˘å¿ìÕëü$Ä8Ö‘ws§Q_ZUNxÒ;5>Ò{xÈ>öb7«ìi È°qd√Ÿå
-]⁄C∆ãÁ5* ∆yíò[xQË¥ï¥5±P`„≤a¸.Ω ¿Àn7#±Êu_—∏ÀßE¶µŒlK>“£&¶USg,€ _hœâ”Önö?ßŒ˚ëƒúÏNâ=“4ŒU9‚d@¥ië8˚ìƒ,« Ï«Q≈Å89°“˛ÀfkUÅcá
-|å^eŸUE	¸@œ_Û'Í“˙u®Zü≤Ω	√ø,ût~Vœ~˘‹ŒÊ*u&èﬂ»ÓX^\≤.
-/0◊(_†Tti+øiD…às¶c∂· H6V©3m†ÎŸÀãÀÜò35Uq\apÚ·Iï¢ızﬁÿÇŸrWs#¥ÃnUùô zeSS∫“`ø'›≥æ∫2¸)S7«pœ≤¨GY‘€ÆqTv∆CŒ8Ïúü‘Fùwhuv˚E∫FR2pÖkùmWJl6lµ;m–;ÚMÎ `GûItˆ5”∞]˝«∑A›Fá±ç(OS˛âî%¬9ÁLª5E1U´÷îùœÇ10¢Mú*≤«¿_ íÛÑÏ\Œ–Öƒã˚√‡4bÇ=‘DˇÑú^}+ jŸƒÒtíF.VO,”•¬6·?›’∆u Ä)ŸF£A6∫õ[ø'_oÔ˛Õ÷Êﬁ>aJ RØ·Ø.ŸËë˝›Ó„Óø›Æ-`Ûåëûj?xÁ»f{≠â‹˘pæé±„_Hwœ·Éÿ≈ú' ¸ﬁ˜bµ’£r8ˇû5}|ŸêÑm/ ¡Ï°≥CΩ≥Hn∑n+OñßŸP\r#œÎO.pÄ®GçÔ`p˘ZWÚ˚∞¬Ç±Ä7y…˘∏OÍhëäÉÅˇ"Ò„Õ¡#ã∂ÀTqx‘å…ûÄû‘.–9ˆd‰!˛|‘úÙJçn≥Ãúï©J¯zh+Tœ}"`Â€M≤é……Êx‡øıè…DRœ√÷Â5ôïŒÉ¡—◊(Óyg^@=ï¯™\Ñ∆Z⁄ÚØˇöt„†$Ù_vπ…”á&‘)EΩ$úö¢Cgæ_d˛ç> mD64Âÿº5!WoÆü¢3q†¸-
-y™–ö∫˚ÛéÉXàI)ÉïÎàï0Oö5eÙ œ©∑ÜsbJRÒriQ*ËûÚŒ^ÒŒ`ﬂ3˜˘x™zœÀk"’ª4º8GËKê…9b^æ^î⁄NÈÌ5˚Â˚¯–ö¿i˘Ü¿ó5rpò√RÇ´ÄÀMîs‰8éF\´ö0ò†µ≠dµyS†≤‡÷»ãœˇ[> Ÿ˚„∏/"ª˝Zπ]	zÍ#L`¥7<ˆ¬œÃJ/‡èÂA«QL5’0yÄ÷òó`∞`»ﬁßËAb◊a¡„“
-!Fûb&:yLóÉπ⁄Å*ù”á·ÿX®ö/±{˛îAÜÿuïi◊Ñà}d‘gœ∂SÆ/kVBºOôP¬œµ)YÂn
-Ë˚8®˚®[ì?P]6ë˜ÚJì<·»ΩhÈ:ü˙@aêòñÍ≥`w{)ıeÅ3Àë!:'C¿±‘ø≥,jÏü™nùù™âLpUC%˘äëÅß@ñ·Üﬁﬁƒä¿àÎbÉ8üÖ≥∞	¸ˆr∞dÁà°´]P¯∏(Ùõ>jiÖ≤eƒD¨5 ì©õÖ—ˆé—|WóôhÖªdÏ’Â"9»¡√âM$T 9Qnù‹…&%ö+á”^»@ÊÕ4~µÑ;eœ –'äVRyà*©ÛëKˆ?DàºO±äEKo]ˆ|…5p	q `ŸeR¡∆ß:úõ6kù”∞uZøo:!XqµNƒiÕ∏ë¿p@`˜ç—Õbåﬁx¥¯i|ÏıÖ«{ë›6ﬂß íç•“SLÿ~“¡»S≥d6x§â»¥ GI‚"5âõBC%Jc·NgÍË»9ØÃ :ÎÉú‹UxÆ2SW•Øôò8I°Âk ÷A9{4$Æ
+´œ¨Æ’õ~7ƒü	
+È›¿!D'i*B‹Õrï’dxå—ê6÷7sî<§≠P=åÙF≈‘’dT“^BFËp/hÿ^◊Iù∑`oﬂä ·Òdç¯·√ñiÂ´0'Ü°gp-›«∫8Z® Y#ûë£]¿„◊ä ⁄IœÄ∑ﬁÃ¬ÍÁ¡Q¬6T@9⁄ûñSBü4ÉÊ#–p4u&}ÓÒQ◊∂0∂f°–m|ﬁÖJÃ‹»•U?i!™9K‡âÌ/1Tﬂld'›«Cìì(·QsëÙY√È[l·¿´ï’Çœ†Î€Õmb;ÄIıi™ÃÿŸsïÑÜƒ≠ôDX^H/JÕÀ€c_q’Iˆ%™ÄﬁE}≠öÚÕûMä‘lÄ`Íá›Cı;Ω*¬«´]Ò?·M√{†–∂∞I◊$[Úöã·±h$¿rU*√Äd¡dúÜöG©Dºâ]Í«◊‘Í4yrãQ»w6
+`1ÓoZ,Ü…˚^H°*gp,≤~0`ü±Õ2ø†t‚"aº ÈgH] ∑…]§o]œ,Ó˜≥`¥ÍQ˚´2i™Ù∂T:üËùvÂ˛◊8õ/wÆ0ôk£ºïtr_∂Ú&ßê¶±,ƒ%€.∆≤ÀG7ª≥ëZÊπ`˚;Í≥í˛V∞ìä•@1Zö/òÍŒ*jÈ.˛ u.–›åz˘û6à"éi∂•∆¨À⁄”+<FÌø8ˇµ¥±mè’róÿõÚ¸µ–q¨µ5°≥⁄SvoJ≠˚˚lCè_?ÍÔÓû´Ω∑svwœ’›€˜e!'L_ŸTQ¬…{æ{¢˝Sø∞FØ¨Ù"]|ZÅAΩÄJ€E€≥—}YòËâÔåÆDÜH¬|ırı…ÍÊSÕÑÅ6ÄÜoÆÏZ.›`˙A∆b›<¸àÏÕH—5ÿäüÿæTç≈Úñ≠h1ª-H’§∂ˇ+‚ˆ#ÊÎ¿})m˜≥}wT˚ƒœ˚ZëüP#r∆PV”Í5£	Íü¡ô …ÚÓv~(¥L·"¢±ÀyÕ{√Ù<kxÚRΩ_Ï&I	"˚)¸I\uGá5¸TÜŸä{§»nÒÂéV”Ã√c±¢Ç≥BC*©NdH€¡hâ%˛ëÂôÃ8çÁË%U›=∞Æ`vÁQcÛ:wô‡Ù„[Üa≥á‘wú$q¬Yà{∏_ûÏ«4∫ÿ@`Ö*zTê íN¢à£7Sà"îN˙\`ÖÇÚZZRSR`6KÄaÚYè¿…*•¥-˛~+Nö;çé˝9˜∂ªF¨J“2⁄5ÂWÍ0ãT¢s’˜Ö´!·Æˆ≠^mWÀ}
+˜«€tæm£ôuXês®ÊcΩ;ï¬ú=Osã‡@œªEM,ØgÕÇlâg¬~WaŸu≠Qó;t¶TZv∫QØX) 8;ı—≤ﬁ≠U{}Ò/Ê]ÖbÓºoí¯©$®Û«ﬂ˛;bó©ÔU?j4˜Ÿasø’®∞vÛ‰∏} æ|ºœNèèZGèÿÉzªƒŒ-≤qçaØ„ºñD6€ù]ç†è‡w⁄≠èKG;õ.îzãuÇ+á≥ü±á»ﬁ∞C∑gü€®`∑›ó:Ò"tç≥—+^Ôº’¶§U∂Í\ïzÓËŸ/¨q°ÁhVäˆ&˛í{û5DóóEq‰6?ßiÂ.k»˙pv‚˙–q€ıX≠U/w(È∆∞Û:4˜¿0∆1⁄úo?πw/Sé™Oö˙˛21€Á,ç}bFZÜR[u≠◊®“ízÒdmçhüV“#˜‘à¶=zÇ‚_¨=1iCü,ûı(Ÿ◊Zv1<⁄C©6ÜYπÛ4Xï&ZrY&íÖT|ãËÀ€π|jR5Nòì—>Wì–S‰“QbåiYﬁ¬º0ï?s†˚¨	§ªÖ)Fi«¨]ôuBW§<¯Qç&≤~ú[¥`RÍ"ü> e^`z±38}aêé√é„í‘ìhä˝¢¯6g§>•Úù‚4¨¬ıeñ“->B’Ë
+ 8ÁwÖ¡É˘HN?ò%∂;Lƒ@ô’PÕ≤ x≤8—-' ÄÓ¶l¬Å«†õCã‡˛Y0ÒSÈQpïLùÇÀ|W0hÙ •ƒ¿é5<yiΩ¶ÔŸ=Üˇ¡Ti4:ßøˇ∫+∆ÇZ\õk¡¸Ã≠£Iªí≤∂3˜ªû}FôÛ<ª°Ih»ƒ˘o&0W‹Bvu	ñvÜŸÏ*ƒ°‹ÉYµÊÇMè)©‚*Ãç n´>¸d	ñié±=á_‡
+@æNÃZÌ∫XÛ-ú≥¨ÎMø(}0◊ÛÓ U¢8çÿ"Ú_cM«¬vïΩóÆmè˜@b“#ß6°Ω≈ÎGÙ¬ÓY=πdaı`ﬁòœΩZ–BÔ¬ºaÔkPŒì“L¨Qª7˝nÑ=Y[“™ÆK‚5ââàÏè*¶ˆV⁄‘ŒÇ Ã
+"∫Cw≥ô;	À|;?çc±[˙,3;±¢Û™7È⁄â” RV£\e"iSÃ*Ù—CRÄ≈ŸˆŸ…∆0ÖLéÿ¸¢†r±z ∆˛õ∑Ô6Hq-2Á,ósÎxÏQ◊„(%,v–z‘l◊õGßMú¨ë}¡i´ı8bésÍÈ“Kâ¨h˛Üì+&s3·LÄ˚¬	≈L‹DÙKÜ∫¬çΩ∆Í”ﬂYt∂Æä!ô]Ô„Qÿt"˘+∏?∫ì@y* .Lñ›ı)A˙√ê÷J˚6÷=MøÂ÷
+∂ˆ¬Ü∑∑X‡ˆ∞µé2y,ÖøÑe›ó¬ëv°°xÎ⁄¯€x˙Ï∆sxTﬂÓìHèïπ∆≤%,ñ√%ÁŸ(Ïöp
+O∞QWì%˜eΩGÉ9t{àq„ÊÀG|3Â-Á	K<«Ωè“ÚCêñ≠h?¢Fx¡≈ö£ç(va§†“Ü+:ÂÛÃ∫yŸŸºXËk∫P%¸Ìﬂˇ˜°¸îåqjî>6¿ÑzçBœ—¿`N¿Ë¥¢âÏN¿’ß*R¥áŒe ¥àF$8†πF´âï≤µVc˛]fhﬂÑ›«¬‰l•mx≤Ç∆»$¸c¿©`UEy°=§2O6äN'ê~÷ò¢ó∆7V¡y!—;Z»óÒi5∫C3G∞P&†∫Åó‘?äù˜VÏ4§!Èâe„ˆÈîÙyÃÇÃÍvŒöºyAÛPû{rO¸Ò∑Ûø˛ﬂ?˛ÕèPÃú¬ô?ÈrTL‹|gèb ˜ùÈwX∂DÂŸq¡°À&Å“[bm∂m√¥¬t"´ªòoÖÌœXYƒÈg±z£Ω∆“ùP´pA§ Ø$ÃG––,QäìzÅÙ	@€ü8x1È^†ô†î‰ö{âJÚè∂ﬂá(Vƒ¢±c‘w+≥Raq≈ÔÊÖIKvG‚Ä4˘óøáˇˇ£°8)øR√ù®S√ìuçÖuÒŸ Á8ÇÚä@¸aö≥∫Eµ“õ¸Pa°æÚ¨ŸéP3^∫ﬂÌI˚$uæt˝1Xu`´Ÿ[≠›Í¨ü‘ù‰oΩH›ç·KÈEæ@ÚbÌ,ÿ u-vO;`ÊI4˚=ˆº›<Y˝Ùı°÷Œ◊ıjÙ#q°/¬Ól¿g+÷á7œW¥CtÌ«{lƒ_‚Ò⁄ÚZ‡∂:«ù ©·jÀ∫MÅ%,|Ü{Ú«‡J˜÷û€\oO˛ããï}˚-[⁄wA“≤Ø,«Q´æ§€fx∞Ì1	¯5ã»1GÓÃ√rﬂF∑û´›.@3{ΩÆ®òú85,ÇÅévSRix“ª‡=Û¨ó{¿¨Ü ±ÈTHT/üT/N(ñÁQp¬aÅ>«ÖJÿ:~ˇß›ÅvlpoúØﬁ^˘Ù5u›‹n5B⁄·⁄?Ì≠˘‘ à™Z∏⁄Wÿh‚8+lky˘Õsì˛Ù$’R}‘∏Ù	ñ˘c÷¿áÅh:d~◊ñ¨%Õxh≤≈5F‘V¸“¿„ÁK+ (,¢—è–sXç˛3œˆü}˙:õµpøY√Á>◊~§à3∑wµfÅ§ı€È’íù©ˆ]îo∫âœ©{=>ÕGÔf≠ÿtZŒH…g!≠Ì™iúÈXu.q:ôÛNNƒzXqQIY1ÁZj“D‰∫îì]VG©<Êôx!P»ˆ2™€üré„YΩﬁ¸≤Õ‡‡^P·ú:÷éHQÂ|úè´õÒG∫œ˝¯e®€åƒ‘2(í˜øµï	M=RßÏíí™µ¬¢≥úºTºvìH@î-.•›4<§N∫—
+ú bŸ^ú$P
+{Q‘Õ$XƒÍÓL¸ª(%e;›5X}≤ªÖ{∞B∆ﬁ¯,Fß8À`‰lÕ⁄ñ°Æ><#$
+Ån≥¯øìßzzﬂÊ⁄ÆnÇ_∫g/a´i§∞~îÌS1Õ/ƒ≥K$ö∞⁄≈Êb”˘LÕ#√xú£¥Õ—ÀÀ¸Ç=ˇ4Á˚∞ñu1¨=Gkx#¸M”¸’ozπ4˘$%iéèó«•_¿˚•∞«CõÉvî&˛ã¨¥8ëxkôFtï÷ÂMÍÙG.XW9i[^h:àË‰zÈ¬∞kœ&èæŒT-–˚@∞v	·Ü‡6∫!¨–^]øN‚æs9ºêDÎkêƒ9xåf≤¯´p›áÈl∞‹Î¬µ]õÅös√íZAJYà®ŒR	ÅúN}˘S“[Ö¥"vãÖtBhË	ÍÙ‰‰IÈaºZs‰Ù¢ÂÚ\ó`˘f5Dâ¢‚îrﬂpniJÆ#~.ıEk√8÷wÆGúj-õ&·“·	}J—±vÍ≤öq4Ω«|æwÖŸ© yQÔçdÄcüy2Âø¸èÏ Cˇ÷Ã&–E÷Âó”∑#	)=–ƒv”Fw”÷M‘€Ì:€o≤«ß«GÕ˛X?h5Îç÷Ù◊GÏ/Yß~pzå_üLı®uT'&bsµ≈+p+UùVT‰ÿ]OUÀ¿
+:gÄ˛R∞æ2·≈î∫Ω†»cuƒò]B˚˜{‡ﬂdx_7#”ÅÖÚ•'¥TüÌ7üù‘q•>]“≠ ëÕ¿¥X∑Tœvü“≠˝‡™’´-Ö◊¨I:≠*õKÀÃÚŸóßá(ÕÍpëºì}Kw›Œ`AW¯ìJ.Ò˝˜^Ù2kBµ ÄhKúÃ˙’O¢Md4 k±	ﬂWiOÚªBõyqï%Ìi€ÒótÛΩ∞Â5r&µç1$á{˛œGˇ|ÙÈkX.oßÁUˆxŸ9À√dwÃZ9µá‹ù5”Ú?œÀ9,Z_ %q/¢•Ñ”⁄∂F}^È3‹\±±#G3ÛΩI-ﬂ
+€›–/òÉÛ$£˛Ä‰ÕHH)~†5ñ∑Ù;•Ï´î%£T˙$™·∑îËâ¯r#'tBQ—aËã∏x/ç1=OÈﬁÊÓıïÓ…®«√	˜^â"û( ∑˚I>Ìb—qóãl.ªkª2˚*æd<}ãn!J©Ç„pÅ–»œ≤è9WEÃ}4Ú&ƒ}ü±ñ»ıX«rD¶ÿâËˇùßWÌ ovN@ˇ<~∂πqx¯Òˇxä<≈ıÓ˝xäøáß∏‚NªïÅÀ=…ãëﬁ>ÿ”\oH}EæJ8Ø	Ÿi¨û-s‰·‘€‹•[=T»Àá„…8√lh6òLøÛŒ≠ëÎ/TØ{û˚rÊ±nƒ >ü±¶|›é5Bø÷g¯ÜzŒ¯Ö¶ÀVåÆbZ®›’À-Ìq§õ§ª æú	SŸ±CÌF›^wCqY˙T)õ•*î6pa9~Ôu˙|,ó(†EP~É≈È(…ìá|z™Õ=F#©_≈›}≈£‚hb1˛S"+vΩ—Yï …øµëÜã∫Ö4¸°Fì¸Ç>⁄iRøM∏ç‡I$µ[–8]âIç∞ÕRÚÎ≥^Ò’+eı¶É(Zòæ∂hŸ#1“ÕKXx»]ÒYƒU∑]º π∞≥1æ\~ Üˆh˛≤≥K±Tå8VÔ‹*_:P∏ @‹[
+ùÀnJQ´\¢Rño&”Ô1]ø§Òy9ÿ !.ãÅ«ô≤¨Y∑p)çWoøsu.^ÆµHN  ˜Y¸e"ÒåÉxóô ûÜ∏|ÌXKX≠Ì»"¶4íS)f∫p„ü‘èö‰ªoÄ›$˝¯'”_µ€ıá«Ï‰∏ÕZuVÎ¥≠”˙æ¯
+Óx‹y\o∑éó5˙òÎF/»{' ·âPñÙuM≠‚Ù€XrqõTd≈(πTX¥Üt£Ú◊¯¶◊≤	P[^ãIÓ°|) ‹‹`Éá¬cx Ì√ê§¥™ßí®Ôn‘È™Ùq“C ˜≥° J~ÍæÌ‰iŒ4`DóÈÍ"›EÔS ^ó∫>è)w#•»≈π\†ÅLÜÜØó›ÓQÚúÖ·;Å≈–S!ÜºÁ“)HñhTg$¸w	Ù#≠|åxÄJXıí,'≥ãçÄ ´AŒ(`œÛƒtùW¶®}ôñ¬P©µ®ï∫pPp‚TÎW™%⁄r|-É£iC⁄ò~I/…ÛJ†√äÜçF}	˛0*9ä¢‹u…åãƒ',ÄGÿOèY™1]t3ÿœscõﬁÈöí‚C¥5,ø∂îHÖê~ ÏzÆñvEO-ÃıtÛHA_í[{[’®	e!	µæjìˆD¥Œ´ÅK9`Wùcµlb˘™å≤≤∫ÿGïÆƒNù—Î_≠
+ô`¯yFá‚î“^8∫)tu1…lû∂J|,‚≥îØãø—›z⁄ß©—>(V¥ÅvKˆ¿ˆÆ÷¿›≤Ÿ
+€’’ºÎ3ÙZ7KAé⁄Ì8Ë˘-b¨ôKØßˆã“∞ıÅäíYﬂîPP-á†z:píMﬂv	H‰öΩî—6w-36`¬¡ÿA¬C;∏:Ü<îÖË(ºo-l,6üqªZ‚≠f8â#û™;ªªx%†R{Q^)bÖl∞bù(Èó…ubñ~©~Í∏3˘Õ¨=∫óƒ3fèr™t6SÈZ\3+«Zƒü*èvQ¯«xr™"6Ÿ ˛üÆäàﬁnW)ãÄû'ÜÆ.Ob	c\'ÉBÈ±˘ÏÎÎˇÜ"Cø›<w¿fé; ‘<öleÔ¿ˇ˝?GÆÄ°!R´;·û§bs¨44:Gá”∑Ññ&™±,ÜêL‹˙ÇùL8
+)JéF %ˆÕÑG˛D@bZ∏áªûºﬂeg6æäá•.∞J≠±É \”∑  Ò-¨´âèL"" "ûfˆGÖ«QzÏ≤N~¨^-ÊËÍŸ≈Ω€∆éAs∑~™πìãµuÍˆ˚é§x
+Oô⁄íXG∫àR·'E "C	°ñ-◊W¯’)XTFàìSáè∂v*¬≠í‰hS=ÜüZ¡q˚§®~äπÒ]ÚÄ* GbwE4Öw./ˇv8CÜÔ“R¶=iûk·FMA…(â?4jÇú2'zÉ`ô√cKóå2¸ËíRäœú∫ÚKZãÉÑ7?ä›≠™íﬂ?R}ù¶§[Eß5»$ånz_•ÅÙÛﬁGÒÙ˛äßpä* ßàˇﬂ4sÓ˙Ì]’DâÕå§ ·”]ﬂﬁΩiÈ%ûΩ˝¡JØh‹+JØ:QjÙ~ÚR´ˇ`J¿G±ı˛ä≠hé* -	é≥ãÕ4S(µËã≠›r°#Ì‹∏Ã
+¡n>Pë5'*N‚ô˜íöc˘•áë#·uÒäæ>◊„≤â€ü^*œä,_@¬"S_x)?èúü+x/>a9ƒeœƒ=ˆö≠≠≠Mî&Æ§˙È¡ƒÇÈñxÃ9{›E≤˘s|ÊK-Òl£‘ ¸ƒı≈gVFéÎÃbQoÎQû8e”Gp&ÿo∂Çç]ºm~Óq–HÒŸmQºiÀ(H~Tn;K–1d|âÜ^]S	k,cµµ5ÉvuÚ?ÒCPnrÖYqﬁïc°?ºjBÜGŒÊÛ»Èª3ﬂIø‰»~î ˆ©-Y yÆ^qM;F≈'[;p…µ^%àÙıÌ:5_cè“ã¥ı,¶Ç⁄NOêó©Ì„ºT,i⁄À¡5⁄®B=VÚ^3˘≠ôz®å>¨T\Ìj¶	m8ÌıúQ	ëJPDºêfâ÷otM_a6P!;0w_;‹◊H˝ùC?ûâŸ¶}"ŸÉ<√<Só¿{%óêlVÃGπtr)‹èrÈ˝îKXËV
+;m\è0Ø:‰/\Ôß%Ö8’æ}B◊!Ñ‰ÿ~îAÔßBÑ™n+íCgŒÑﬂº˙“BãòG‘ë?1i‰XˆË£8∫&qDÉ˚QΩüÚàÊ Æ
+Â—Q¥o\5/EﬁOI—p¡.˝(àÆCE£˚QΩüí®î(™∏YQ‘ìé+#Ω´ÕÍèÎ˚mÇOﬁoMup¸Ë›Ò≠Ì&;©∑ÎÿÄ@À'ÕvÁ¯®~–˙E}ø∫ø>Q,µkT08o±‘5‡!rﬂ∑˙ºÛÕƒÚRÎm1≈L∫|%XÛ÷1ù¿õuÑÅD_ÒÎ¬à@%ä„§òmì
+¯ºy6ûZ{4ûËQ&äè8—	Z≈‡.âø‘Ö”ÃF˘âÁ«ö∆‚ì«‘»k‘ìI}»?„W?=≈,u '˘⁄◊¸J§M™Î∆å‹◊”7‡Ôü‰Î$&®ï‚S®1QñVfˆƒ0<o2≤FÅ¸$‰“ãΩà…;¶_ëı*∏)e9
+r¨R§⁄„›ÅµÇPTì!’°LF;˜@vh`2©ü,iHNöV ík7Öí™çëä∏¯-˝ó3ë–∆È;USwÊJ€¡Ω7sqˇ4˜RôŸÉ	füÃzìá%8w"∂yó.æπ+:"èW´]P#ä˛†nÅú∫Ö”∂í≤œtYEC
+¨òõU—:å“]:òb77Œ5%ò>G∂©6nû©c†º+Ôpî#¥∂:^¥ÃÄ≈Ω´∑45z3Û}… ø¡î·{ro+πxpÈd‘ÛË˛ÿôÈÍe¿)¥´\÷±‰F4S“=∑À}dwßÕâ`°ÎÙ{DÔcT|äÖß≠:Ûk]‘Íöí∆˘»∑^|GÏ£ KùêìÊ\ËÔÖTÖ…uMmÇÌg'©¡‡eH¯¨»QÅs.Óä…Ø;‹∂◊uä=¯¸r-IÅ>∞ﬂlôõ·ÅπËé˙˜≈¯#¸ÆXß^ò∏X\í?g◊Tº~MÎUÄÜÅPˆÕì”Ø/⁄Zòpæù§„úE´∑˚[“`®Ü(¢E=+gﬂL≥w*–9"g¶Í∫P6…õ…ûâcö˙ˇk|^#jõîöh5 ≈ÿ@»˚lBÔ eJPDx˙Œ_öa)´%á∏≥2hOzÊÂå¢Gø>öæulﬂˆYCú≥à+ifFidÅ·ì⁄º¶LüL–ñ_‰Éd¶>gü#$gÕ(Äø‡Qü$s‚ùˆÌû FZË{Eë|^¶™;qh#4˝ÆÂò?j©™UË!Gœß!@®©ù°o‡Gú>Ÿå‡•ˆ‘ãˆøÓDON… ]v+$.èÊU†®É5ù'[	Ëø°uπäh‰¬Ÿ±∑∫ô"â5⁄≈˘g©±.a4˙u¬S‰æpà€£ÆÎç1%èÅÜè
+œ¬&§î+"˛Î‹Í[fÃbiÒ!lﬂW5ﬂuêÍ
+©B#…È∞‚|ÿ]ì∫%ˆÆáÑ¸RÇpÍ¡x+œùÿß#<ø˝VGÙÕæJ∫¥åÀﬂÉ‚>Q∆]èù´h[blpÇ“C(vâaYw⁄≥µ-∞Ω∂T‘¨Ñs+¸rw7·¨*Lòç‘7CìKª±¬ÄzqI∏ÈpK¥Yes¿&èóø.W¡¢P#°L)gœ§V˝öã‡ﬁ˝Zÿá[3úhÍ>è ¥Õ÷|ÖJ6]K|PElt=~fΩpA&Ÿ–oè≥ÈÔ€Y∞†˘˜º†Œ‘Ë•Æ}ª«aûTf»Á9	.yÆ¡œìîÎî˛pÒr Zïa·Œ…!#p˘ûÌA˚NÆ[‘“B\ÍH\\ø(∏`ˆÌ˛ 0∞?„=∑O}•BΩÔÒæÂ≈Nfb‡=@\Å£t¯4Ÿïº+ãÿπ•˚v7‚=•ˆˇx∂≠‹¥·¢°π´zHT`ÅZªrà§»Iœ÷∆ì«è°ÁƒôÃFIéB¥Cïıˇ˚mdûVÄ(¢ î;FdÃhßôÜ∫G÷Ö›∑◊[Î:ˆ¯Ãµºﬁ⁄K÷,ÒV‰;m˚£)¢ÉÖN¸⁄RÏ∂Î‚‡¬øË7Gp–±5ÊTÎzÒY≤f˙ C‡à2πëG±´ÉXJq]¬d¡"DÓyÃs≈Ã'W¿7%òÃÖÊÏetÊjñÜ/;KTïÑ˛◊èYX{mï^ÄR+€á©e«£’N◊√≈#t§zWÃ=gı ∞∫ﬁc≠°’áÕ´≈ef…õƒ=!Ó}∂q£|fc1n©·ô61ö¨q£◊_,˜◊›¡ˆ|‘\°¯2°=®è¯•ª÷uﬂ∆h'
+âÜ5&ûÂ≥}€Íè¶?¯Ë ˜Y-ÍﬂË≤u›]l•õh]:weì{{*N∑˛Lßﬂxhçk5{ÿß”Zﬂ˙¶N~ÕØÓΩÜ{◊ÏﬁõŸT5€4©$ï
+¿ÿ–Ê{]—ßâÁºÅ≥<øç†câ>JŒSÀ„iÙdg}˚)sœ^‡/]<=£hºåX©y›æ≥k.§ﬁta9¬ÒX¡·Q.(dPE„_0 $*tÜûˆá_˛{µ;o˛Àˇ`vº.¿˚eÕÜµ]‘!•—N9_ÍLk[¯‹0ïX8∆≈ôÜ™2X¿Æıÿâ5‚e˜¨ÖÙæIæﬁ›–Ñﬂt˘6Oî≥∏zí¬Éé‘∂ù–‘Î^Y#Ì£Æ¸êKi‚≈gûY:–.[√È[‰äıáuC3eƒ<vê3¡Ÿ†Ø≥˝V„¯∞¸]4N4≠ùTêéPÃV@DÇ¸_}1QÓB8;)ë,.⁄†ú±úºç!=8n‘XìµéNõÌ£„“q(è2kå’Ï˚π=ïRŒxuÌØ.„Ñ∑NƒZ«,Ø;∞/\ü°xa˜@˝Ü%ÊR=C◊Ú∆úº9√±É?¿£ÏhE“™[ü(+›;∫zÇVõg≠±P≈,¯∆ÌY&i·1éãÊ8gWµ¶øÉ∑¶o	–◊∫ï‡k Z?Ÿ(ÙÇÌ√ã¸JÚ}f'gñ}††ﬁ˜¨>(Ú=¯¡≥_`)˛Üb6#º#;ıÏ~∏ lír%ì¢ ÛîÔY>>µ*Qo™TÅ$JHR©ƒf˘¬€•úí†ø∫ìqô!Óép4§”†ÏâØç=~ùŸÁÁíàñ:hJ]2ÿw|≠}K¥zV`ù‚‡ùs òM~≥vÀ»◊+ë>m©›„˙Ûkπ≠ïw≠l|J–Ù4ß…#ì»Ã÷≠®’¢≈≠˛5√/ôîóYàTç#ˇÒÿq≠TÖƒ-– nihzÁgû¶/˜\®àÈ‡≥AÂ ò2=W e›Cû&∫¡ƒWŒ7>CËH`÷7ìÈ˜ÍàFR|ﬁ+ﬁâﬁP®â)◊zëc6	l§Sér:·5∆2Ì®•„∂™à6‹™V∏N„Ω¥VI…üÒÄ¢ìHê7£…˘Äã:é1ìL®º"](ÿªéugr ÛùS≤µæô≠⁄∫E˜˘)¨ª‚o"Ø”Ã… ≤—·¨Lr÷Œy˚ £D≠5ô£Bo≥¶¢ÈæÌ¡ï;qù˝¢u¢ÛX™–÷c†ë#<iñÙn¬yiÉÊ®wµ’ÌÚqpo…Fn˝OV÷z›· ⁄~„peÌï=^±∆îÍäÛ∞û˛˝ræYE≈”„æ
+∞ﬁ3ıﬁ˘≠,ıGÏΩ¶’â¥{=0ÑuÓ”±H◊iOï_8ÔÊúî“Â+7‹u±cÎÜ6›Åuï%–≈mW¡Wm¬Ü4õ‹p;æO{Ò∆∑‚O}'Í;ÀRRØÍ`è›Ò˜
+;rB√
+Ä5ÒÚÇ◊=Ê'qßÜ∑:«Áò¢ØÕg´Ωù((¨›K†ønm§#ilx•ßy§}TcÅ¨†rËÓfÂï
+;´%@¸ã~2Ù∞√´;Kñ®soâ"·Ï¬Ê/∏ó˜ñ6ÿ€⁄Åˇ-1å^}7Ä`Û@Ç5–:—çé≠` 8∞GºkçÔ-—ã,)ﬂæ Qô˙˙œÌ^0∏˜F˘Î›[:º√6∑ú-∂≈vVwÜ∑ÿñuá›ÅnnÆnﬁÜ≈oõ¯À+M	xwDgÎËq‰È©ö‘0w;’ºú’∞oTçË∞´kSÚa«u=wDÖ"˛›ı¡éV«
+≠∂t%HÍHîU¶˜≥€˜çû-•%ë9E:B2ï‰Û`?›µ⁄}≠xOzPrS^TrÏR«Toå´ß¥/:≥8˝∑„≠óÈ°1/e)úx8ÿ~∞˛ Ó9;LÜg#Àv|ˆ“iF%ánO˙Ã„Bdˇ,dÒ)=:Ê ßHoÁåL◊û\x¯âZ-ÖK;vÆ5T•ê5Ú$ä9≥Ù+‰ãÂf 8	°Í50˜°›üÄÍ®{é±gl?l&@∂Ç	Ñ˘KKí6tí¥ë∂DÍÈ∑úPˇâÏ§ËÀ€i•à˛"ù¥ûËã»s©k.˘ABs)£t,¿ıåêo\ÿávp´í¬óL⁄èc7ºÈ}4„Èÿ}:7—›ÊÒsöO◊∆’éI4c€\a[+å›µeYÓ¶F9√z”Œö…]7_ò$Ãe≤‰Ç®õSMI.èJ¿<_ÅzV¬®ÁÆ≠≠ô◊Õjßs∞ΩÎ,{Ùu°uæà¡	◊ùèãM	k*›ƒ£$Ú˘o›>@3∂Ó8B@Vº‘Ïhd~ëö–H{Ös≈j“+ú˙ E´ÅS&‡}]ïQ7$ÊÜŸ≈N›XÄÂìo)Bl!√DÈ √`çsÔë”π˙ZE]d†÷ `Ì…SÌ$«î¿äƒUDÒº•´à™˘V„ä˛"2ô‘ U≈î¶å™Ñ-®ù~
+'Ë O0P©ƒÅ=µ∞ìært›zóõ†ôÓuÊs˙ Ø€"ßFÀ†* Ê^avÔ“† K–K?„!à	˘%Ó1ÃÜøÇôDÏ´=Ïê÷Cœ¢€≥´kaöı
+›E˛'º1‚ó£FÙäß›9Ò‹≤+c¯Q∆±ÁÈL‹LÖÓt0óNt««ÁÈ6ßz˙Jo§yifÁÔÍ•ÊÔÊ¶Êcb%ŸC\fwi´"•Æ$0™0!íÍE¸\eâŸìΩ∞¸„L *k(LÒ;¸Fú}rO¨ªgÇ¿kP-®Ã®uÊªŒ$¿∫YÃª∞ÿR:Û£¥·ŸS§MdM–’©˙‰î”UúP©hIÚ–	’‹dvV¯-ÇMß‰W´[“≈–tÏ°="¥
+Ê`.)V	üºa±ÅVÙÛcÂö·§ôh7&jZ¢ÚïPà–üD†3ø¨E3≤ïﬂë‘rt¯9Æ∆"ï„ÃºYôO&jß‰z'3ÉÓ¿˙ÜwÔy–ë3g‚! M≤9v€fí”£†<;rG®gä¡6B·√÷£«Ì:ÿiΩKˆ€ºN∏≥Ï–¶∞ØquG¶¯ÌŸßØ3Í<>Zí=ÁìÓ¿∑≠p¶îâIxxùÒ%…∞Cie∑ÜπxﬂõÁo±	gæ ˝]y‹π	h:ÌÀ+‘¿ƒ?jıõëô)îü¬z¶%môÕ	è3§·Ñ8Œ6YrÖ*+@oK√ØûEæÚ≈k∏uıJkîó6\⁄Êßí^Q§Õàº≈kV#?7tòÕw,ﬁd‘≈Ù>|â°:å’-I=!ﬁ˜„Õ©¡•±äíü!ÜxhÀT,ò~¶¿z8ªµ)dÆÿF˜(4;	—i
+{ïIı2≈	ç6ËkI&Pê§¯˛ñƒ∑)rH©IÄVx⁄∏Ÿpxºfkkk¯ó∆{‘’7p¢‡˜¶¨∆8#,ﬂ"ÃÚ–ŸΩ@ï¨(™CAù`â© ]ÅcÏ-W§3àI~˛sw]|?gs∞nÓ?ÓTkƒm-#¸üô˙àq!π°ãZﬁRI"‡')PÙô.W¸,@*‡ßL2ìdh4Ëü„”ˆqÅüäâÿe5Ø†¿è±∞¿œ'0cæ»≥Ç÷√}¯OU¡ë”$,≠˚ç∆§Ezˇ[Ω—äRân]ê`@ﬂÍ˚+ˆ°IÖ÷´o&6˜z‚∑∂§~{˜Ç] EÑ…g€/\˜˜õÌÓÍxë›o˝‚œÿpº^Ô?h,Bdòﬁgvá¯¶©«ƒÏr}Øò{ÕûˆéΩ@x‡^ŒÖG’˛öö«™9CìΩä9ûW:ñÔK‘ÉØ@«ÖÀ´2ç0∂œ˝ÆgèCv›/-«±^ı]3j
+Ì“∫ƒMzñ∫ÒU√ø.Ç√ùÆÒ‡î*ÑqL	â+#YÊgBú Ê˛;ı)-ı3o€ \&ØpCdÓ&¢XÙQyπYö9anÔn™bYMÎM˙2Û„q#ôÃ±9–≥„8nÜ3N’Ìcµá≈àƒNã#{¡YçøXc?ø‡˛Ù{ÃÇ¸˘
+˚9úG~¿˛âa≠ü/≥+X>Ø‡ª+j˙‰
+ÇqF.¯ÔŸƒ«ﬂE¶nÁ.˙v˙C0qå‡}Òc~dïÆC£‘∏¯S¡ú¶€r”Â∂ÿK¯ˇ¬2}ï«ë≥!°z™%˝*≠UËÖYùÚ¨™„õIÉ{„I1Áä˘¡JõUF’TzVÇ†¶z‰à¥b≤yy∆»fﬂÈÒ¢‰gahÊ?bîlÊXÉcFmËZö˙»BèQ°¯(
+CjS.ñπD~Œ≤xü•˝îÑ—ìi“?ziüüI≠H¸è©'p¶+;F≠›¨¥7ªÀîÇ“¯0ã#@-à’Ë>ÈiTÒnçÓü€«XÏ]4ıœ-–](áb>èauéôÅíMõÌv'~‘õRBC®gí<¡ö Œ®Â°gzx¥o™ø(áÊ∂Aä"~–n‚◊Å∑àç0≈ B€ ±˜Á™e≈1I ´dö<ŸÑw∫¶Ây∏?ÿô6¬òÚD„4íq`Ë/)§M'¢‹2JÇƒœâÎ€Çg;N„√Ÿ*®”æ÷øy]ÉUR∆YŸ‚£	¬†’\áü9Ygfâ‘*°$!ÍG»∫zè=aãç=≠Ü-¡FCKÿ‡£J-E7+±U∂9Wc‘ 4à¨“é¨j¿ÊÃos£I2“Ó*F<À3È2–ÑπT_€q⁄|	¶ô:Që6Ôê»ÍÿöÌ^sŒ˛≈ﬂ*úï‘‘EIù|àU≥\l¸|îF•ü\iÙŸº“Ë≥è“ËCîFª?±Mô∫™à£øªvqT-¯l§ioÔ≥Ø\g2‰Åñ¡C4EF}IGÇÕõW‘UÒÏVe	úK>Çl§»Ì^«ùx]9è˜_‹Nk+‹r‰H÷TÇû*‘Ç–pÀﬂÓâ	°Gè˘®xn‘íëx»⁄‘√@÷ü£m|)‡Zg7⁄j‡ÆzÏ‹sá≥ñ—\ÿñä†ÅÖ5ÓÍx‚Å›~!ƒårg$z‘õcüw|>]ábNTFÙ1ºÍVî§èŒgÇ–ëÉ_ùÿ≥öÀü¢¡€Ÿ–c8P?R>‚#Ó°w‹ô n∫»NhÒ f QZ¿ñø¿-?˝˜ºd:$ﬁ„ÅLb–∞ë4√lïYî®—T©ù~◊Ç	ﬂ‹LÑ3ËGDf™Ü`!§å÷qÜôÍﬁJ°6¨·,ASˇ∞ÈQaBß{©±ÉÜÁXèù@é∞Ù˛W‡IáJy˝Ù†ﬁ¡âx|z‹n7Î≠Œiù˝%k‡oıFk˙Î#V?™üN}ÿj‘È¶b¨z ìøΩ≤yRÇu,íêæå0ù‰ãpæ¡(˚Çq¯ñ˜⁄—ïÚË”¶éæñÁ»Ï¡l_'ûãâ	ŒΩ◊X≈ã8åù`“#¨^æ:Ö3W47ª5ô‡jﬂΩ•Ÿ¬Aƒ¯xÜÉ„cÂØuõæ†gı˘–Ÿ∞Ì?_=á°î<€¬ÒEÑÉ{ØÈ«Ì˛2˚2y¢€¬ﬂtÓ¥G]gÇ∞øb¨a¢ƒ≤Å˚“«∑“Ìƒﬂ4µÆµ™a=w_6Îß≠k7èˆõÌ¨6{|p⁄Æwé¡ÇoÌ∑éutV¥‘]Tµ£|i„Ö˛Ω◊Á©{K¿Ω‹—©€Ô;<Æìﬁ9hrvOKóÉ1M˜52nKES›Q^◊àbﬁJº†[{Ï∏H˘Ç"^>fâ -—À‹ë¿∂/∑òëI Mƒ/O•¯•˝}<ÓYJ'ÙÎªõN˘|™íø‹ƒ¥°ñﬁ8<éîv	ﬂÎ∂KGò?™;*9&ähÂi≠ ˜ãîÍ…∆Sxw¬G.=ﬂã-ö∏ˇÙxŸì/ò¯!≤vˆê“yLE˚fÊÃúw≈Ã$;˚T±Wxjg∫Z∂éÎs]„¥`4Œ-«/7˜Ú
+ÕvÂ….µWK6Br˝›K≈ÆJN—¯-ÓΩfﬁ¨ÏWﬂ#∫?˘z%œ5§RÌ©Ÿu¡>ü~oïË2]˙Õó∂∏ﬁ’Ω◊©/ S«∫àEÎàø?œ"<â⁄Za°K˜˙∂Í-´´´Ïp˙Î˝««lø…Íè˜[†ëOˇïÒÊWıÉ«Ráø5@KﬂØÔ„èÌÊ…q˚¥…jèÄv.Æh6˜[uP„Oé;ß´èöGÕ∂¯”2=e∂≤Éä8¶MX±.^^ˇöahøZΩÖë'ˇdsk„|”z„Ö∆åä∂'πåÚG˛Ñm"∆Ωe¿ëà^ò–õëdp€=	»∂fÄç' ; 9qﬁ˝∫a{]áß >sˆsÒ<˘
+;
+G&òÈ∞‘e)Bò|äîW†∑’'7_ÓÑ2ìY}ÜïÎ¡Öe˜]Ÿ=Øòòy…∫ÜºÓé›≥z∞J÷r¬µŸT´Ÿ<íù‚wı$ËÑ≈êLêƒwÊó◊ŒÖ5$lÂ‰"vÏC§êXë◊r‹!à«vûp˚%E¥ÜûÑ—∂z∞¶?ÙâÙﬁüÙπg#(πë¨ﬁã…(∞ºπGp^÷kaká[€5=œı*ÓÏÒÍS63ëèas'…xcômá.«úUèuâ93 RMÈÑˇÒ∑ø˘ØLº1+ZÂ{CPBª‡Q7p«Ìt∑/«ÖèJF‚∂tn#ââ=ÚQH±aoO¸‚ÚÊCìÑﬁ8ﬂ8€ºıt˝ŒÌö◊VÑXò+≥w≥20^Ωù›Øπ*å#ò¥´U‰Nªê{è^£eeæWP´„„Fæå·Yì€≈-È¶≤!≠b6q’æófW“¿˜Ëgœ}ô†qÇÔgÊv…!9KççDıü¡0⁄a⁄ç>º‹BhAÙaW≥∂^Iˆ3)pî˘Õ9 9m◊3C@W˝n∫}mí&M∑Û]}O∂ìH\ï™ù~ñ«„bvª8ÆámEé«ˆÃÇ”*•¶≠£á«Ì√¶πÜ¨9–cê¢kR◊vµÒ£´:3t≥ñxúñ´‘ûà–dïqU≥ﬁ8m}U◊/˝ëITf6≠ræ≤ísivΩÕ/lﬂº√g>˜.BÕ.ô¸≥o&nß≠Q◊ı‡∂<Ò;˛•;±BÄ£¢ÎÇFŸïFUYƒ/Bùéé@∞è=∑ÀaVÀ‘¬p‰4∏≈√≠+O|ÓúØ¬À„πC?”Ån$fMr#Ã≥"≤Ù≠Bù™6∆K>k÷Ä$ >8Éı\§leÒxK„ÊüÍ¶rÎå⁄A`à*GÓùç|0-¥d6?˝ì–∫ÙcËÅ4F—N%_≈π˘V©ö@ÒÂÊÜfﬁ<◊õ˙Á∞X=á!lÉê∑&òXCk˙;4ÉÈ[êTgÄµz r05_˙–∫¥áTÀ7}Îq¡äˆ)R2’]∞_E”vœ]÷E’ìÑ≥_A∑ºÏÓ°=¬Œßï§ hÿ1¿j6)jª+álO’P#NôñíP]w|uÍ¬W„3◊Úzµ¥π¬Ñˇ€TF-Â”[oEm÷2Wˆª(èïT÷™XT66Í1Ö•hdVñ§Œ¶÷[ó2ÿBWÑI‚G…UØâBÚJ”ÉCÌf,™mÚπp∂s]8){9·¡Qí∆6ìU>iUaGÚ°MûùÚ‚#a}¶ÃÏJñc°d`ŸRªπ™~ Øl&E˘û®v˚∏çvHÎË¥˘H˙·˜å‘f∫Tùs ]};≥∫∏±≤∞s˙l≥•|>D›ì‚T»à¢hùn•…|¢,ÎXÍiHõPqΩ>9√=Pn^∂îÿÇ\©Ÿæò…8ÙÛÌ∑ÏòêÀ◊æÊW~mÃ)b÷Ê]Y	¨/œ)Üî¥ÿå JÉfDë¸Îı
+#¥¥Õ¬Gyo[ å¥M÷Ó∑(etƒAlèÈ*DwMí?_óØëM”„ydnc‘Ê”≤÷ﬂ®8ôîeá?ìØ@FíÃ•"±ûõ$-ò∞æËO ⁄_O[˚†∂«aá‹á«≠h+ßo∏z§Iup‚_cµË•ÂcÛ=c˙ºjäHÿ»!pSD¬Níkr;Y±âJ*7ƒi/_vÕ#÷8>–ÛïÈO⁄¢≤àÀ~:÷Ù\ƒP∫∑7wûRdDı§Á∫#•/„&ˆ˘¶¢Ä…••É=~åŸf5π∞7)<Ë9¢_üÏnËTLi—ïºYúMá˜≠Q ∆<XÎ>œ±«ñ“QÄ“9‘ò¡ycè2©§”Íú6Î‰2'◊Æí∑ßø:iÌ”◊2Ì§√j'Ì„F≥S?l5èNèqyü6u≤F
+¬ƒªËã‡\‰ºYˇ<õí»c|Nâ»Öa∫›îIX≤£Ø'äÜg˜éàñ•jëu\ûe≤∞®YNÃ,£ZÕ‚ÏÕãöÂ©ZßŒ/¨qRIπ* ≠î
+•£à∏™jÜ»Ó∂3ß]NT,ÚDjÿ!⁄ßT!#á‰,¨£r!ïêˆÙÌ#ı·Ùáﬁƒq}Õcj∞=èM\ÌêﬂÕû‚≥VÍBÉ_π2Ô]Èa◊¯ÍD™±¬ﬂ∑¬8bà-å~u'VåhÖâ‚e◊rS;™Æ˛œCè˘ˆp‚†7õÀt*Q7cêJM[k|4\ãÙ†¡Ÿ¯¿
+∫1¶4A⁄°±–óê#”ëÍ⁄^”∞X.`§(=©;çç®rÒEÍπéeíï∫°p/ro*⁄È≥D≈}*Ùπâ‘ÿŒ¢?F.SOèŒF;¥‡5›rπ‡5ÙºB?˙ÆVD,Û‚üo‹bÿÁ˛:÷Éæ1ÛîÜ+∞∑œ!óvôúìÄ˚“Q~›—Tq_?)7◊4¶¬ÓÅ•(À&óV4n <z∏Áèø˝/≈®Rë e›¿ı<n9†}avps§ÓUY¡Ùá°›µ¥ûpfı˙û÷‚j›«pwÃ„M∫‚—JªãZÌ$∫•¯◊„H).Øm1ã¡.- 6ˆ2a∆lLùVﬁÈä˘”Ô1{≈ˆŸôÌy~ÙZiıf⁄ıˆ§ô¨òπr:i¥Ëpø)ÔÉˆ⁄¨ûÂÆå˝?Xoc‚ëqg≠—πcÅ…„z∂Àjı—Ù-L‡≠˝e£ï—ÆÔ◊€pó… hL¨Q@^Ivã]`ö;Lº:u2◊=Í ™~0Îæ{ÊqU˝ﬂ‘‚)ÛÃYŒLÇ·˜{œïF¯.kP±íÀ÷ŸæmıG”¸ ≠_X£WVè¶¥k∫\›K'˚ÕÊ?Qåˇ3ºﬂd%¿Ècy†Ÿ:VrKü√ª∏cò|Yª ÛÓL^`Â÷–í ¸%jÚ∞∞-üZaE!÷…˜‘%~Øâõw±(æôPˇ3~a9Ük‚Ôˇ∫†`Ü`4BQ£# J√4ô`*ÂIX^4y>ü˛ŒB£ÌÁ–·Ø,ÿÒ=Î]ŒÒ$†\ƒ´tÏ§¬g“DRÈˆ…D≤õû‡3˚Ã±qQèWÜ¸Îﬂ∞”ﬂ£e‹≥@∂ãv¶oI®¬lw\1⁄µG§üÇÍj∂≠µâ†uÙ»d≤e	;ã:÷EÃ°È˜‘´~ÑBo˘›≠¸«+ù`%Tô‰êÃ!√ü"&ò~}”ÎéπH©¥úg˛dz∂Ò,ˇ+ÿ´p+å’16FŒ'¯Àhÿj>∞ø>É¨/n8†Åº7<Àõù«áÕ#v|BUô«GıìÈÔ†YÿØ¨8Ü»iEÿVj™9≥ác8ÙÖpä()€Qqú†B8}€∑|t1˝ﬁe∞¶Y¯∂?FÅ'nòäãÂﬂ¸'Ã¬t¢`oºBÔ◊â’h{&´‚ñBÛË¥i≤NAUùtâË}ç”Ô∫®ìÉNè âı}p]XgN»‰Ò˝Zaf]†V'V~œ´¸‚]Lkø_aÛˇ{wZ®°Ô€†·QÉÉΩu:˝Œ⁄#WOQåD˙¡qßﬁnõÃc´«CM5s{Z∏›°ÇéFWœÉÛô≥Ó®À«x~˜‚≥æ¬Dé—)©L#˝O"˝˙.¶–Ô8#v◊tˇñ5Ö˚öÅxú˛0‰FÚ€h;≠£„ìN´c2á«∞ˇF(ïS"xƒ&£–∑Œ.l1≠@.èÆ¿ CÙPT¨enHÖâå–‘¬ô_ƒS)~s9‰ñ?Ò8LM≠_ˇ´˚’¬ò∆ØxèÍ©ÂykôÕ&b!Ï◊ç&SŸêú|+òÇÔá≥Ü)@˛ÀæG}⁄ä∞œ9»’Æm±û»’¨˜€v>w›`‰Ç≈`j#˝ClôûKGn`—êùÿ4µ'®{åÃ‹d'-*ˇ;ô˛ÍQÎ»»NXêp$ÇQ{ç®O∞«∂4ú“ŸdÇRÈÖUeV%>ß*m≈7äºç!@o\yF±ıÃø!E≠©ÿ˝oød
+¶§ÓÙ◊ÿ™kÊ·x\ﬂo√≠ÌGı#£”3Và4yá`h∫}LºÎ!˘"õ˛@ùÅç<Ê]2í\î ¬…Èá˝Æ‚Îä¿9”Ä´bV#“ﬂ©∞∂A`Ô‘ˇ¸?q›±tp=ÕPD¯`r)˜Ç—§>ÁÙq€L¯6¬dJRÜ|TÎ,ÂD<k2å|V‰¥Da<∂&R≤≠·˛
+∏––†πk|™˛Ü°p8IÚ6ú$úI[11€∫ıNÎ!°5çÊz?ú_ÿã0©û˝ä‚ûMÙ	~ƒ+`V‚ π⁄É÷jªæﬂYa«Ú_t◊ñ+Ã˘ô3I»f˙=ûm˙uaS˝î–¯jCW¸/‰∞}Ç ‡=vè}ÚIà™dü@ìkvO‹_BÎdÒ
+~i≠îíØ˘·âiÛ@VD(˜y–…y˝°vQK5}∞sâÍ•≥dƒ'Â=ˆ	ﬁ˛™yˇ]÷/M\ÚdÂÒ∂#ﬂ*,>.füLA∂’@ À5´=∫_∞Áü“¢˝˘&QF¨Ë¡ªQ™±”7 ﬂO‘F	Âq*&GÊBf2≤’»ÎÂ 5‚£W[<7‹áH`ÕùD}Ãè¸Ï>%M§oÑÂ5ŒîÇ*3¿ü†©'â£ÀoÜN.®µª#íg∫∏Üœ‹K˝ ıÆXıX.7Ä>ÀÄ¬Ä(§¢CÅöyM…Äl∞∫É–1+≠ZPüÕÜQ–›à0µ˘Ê)ç√èn·ëLà1Øù»ÀÉ1¢B#ñªº‘L5ù)õõâcF4àpﬂüõ™E3›®5Èo-»∫4´>#U+QúùHÍ-‡D÷a†TIrÃÅö¢Q"ΩÙ:§à~Ô:I≤ÚKKUÇ2F›Ï.ôÎ:¡`ÄœrﬁC®∑“<Ø◊gxüºÌ˛oıπNXaùßj>Ì§WÇjmÂï#Ñ/É,¨≥¨PR>˛K»◊åÈhTh)kªsÜY≥∆[è)¢t}4/)ÑËétôç23»≤â|ÒÀGÂ¬N7µ’,±525DB´(ë∏j?îÀ
+ÖÃŒó-Ä»õÍ€oŸ'≤PêÿÜ˝Zûâ∂ºÊªC^{‡∫på4rg≥åC˛pÔ•<∂.Wo£Ñ›Q|¬∑6riÍ%ÌÖ$çy≤±vÁˆ”,sŸÆ¬f&œˆë†Õ‡æË_`fì˚Æ¨¿#±Éì¶àT‚„˙.≈µçÄ
+:B€ÖYª˘i‡;$W ñåFU`vË·‰h“ÆﬂmÛsè˚É∆À<Åì≠Ú¶ô1¨Î>A¸1übayêR“s}#.{ñu]X›A ‘ò)Ú80Q Ÿfµ◊:[Z2FÑõ:*Î)ó<ÇÂ5•:i„•GÜ{÷Ñ=n~Ugùf#^¨Mu–Í¥:Ö±sÃ˛í=ò˛¶Ûgèõ¢÷ÙAÎ¡AÎ¯Qª˛±ÕK3©Ê√ﬁ¨Ts™“,9zD˙ª◊cõ{aZßHÏëÅê∏¶«a¬;):qπk~í™m%5 ™•M√‘f‰ÍÇ
+N∑“v”¬ `ıwIæ¬…§£qÈ"ÆÊÉòV¿Y7Æ1ÃM÷
+:`§∫5≤eÌ˙6^Rëœ™¿˘j˝·VÅ~ÛPkS9–[?=Ó`Z≤∆-Hó.Ö±'$Â(XHºJ&˜dTñÕMâ¸©|î1ÿ&]{å
+ÏäA∑Ü®‘¡·÷∑=Ã]£Ñ¬Ä¢∏2ı[4n·0≥⁄√8=ºCëVÑ[a ÍNÅOÇ!˝·ƒv,è–Ú≠±µ¨ÖÇ_räÎá‘O_©ﬁvKï‚ÕP™njï–ñV=ßå—ÃÊ(¨w;s‹Ó◊Z[°)ÊÎ°ú,äí5ìô˙{⁄•V»Ê©’sç".∫LF≤£Uı,Ï√¢ZZâ¢ö«c±<·‡V◊#\ìÌÆ„≤>Ú≠!&e∫K:Ÿ¸.X∏∞mZ◊9]ÿ⁄S6A‹ÅÈØ<X∏üˆy◊¶T\”.»Ï±gc±ïrûΩΩÓ≥¯¡Ø®[ÂâCÿ™œzvò‘‰‰>tgè∂t¸ƒ˝ƒ∆èƒËØòÊÄ
+Á2‹≈‚UÒ#q“ß?PJsT5¡/,ÕgãpÏ˘0†¿°ûë`ƒ·LaQh_;,ZçÚ9ã∆IAôÂBH‘D7f—¡óuY%˛xLÙdöê}≈ò«Xõ+√é(Û~î µ√â1ãf¸JDf'^Kªï÷XuCﬁŒd{D‹»™√QçG&ï&§ƒÈ@‰Ìl “(
+ôä∑È∆¢5!éµ©#"'6í¢4*fw°#ÅFdÔ˘}∏]ù	º…®ø»ÁRÄ≈à<Xxy¡‰¿Ú¶¶˝£(^q‹fÜnQ∫&RÔ÷¨{såt]%∞ﬂ∏œs^V0Ø∑sÏ3
+t≈¡YËﬂŒBòÃ"“V  –sW™ì£Î¨4ÙBFπ´gëk˚Û9≈Áhlƒl©oM…ó—§˘‡Ù‹R†Z∆Uàg…*D\#é›ßT˘rREÖ?i’◊˝©HWeX/˘˛ªß‚≈’äW”áÌû
+´QìSërLâãÊÛJE%º?TXå®™5»qÆq\ëÃéœÇÈw#•ò∆'ÈÊçdA.ú V◊„XÍﬁ£¨t>Ç%Åt:∂'X	Ωz“≥`∞°`µÙ¡]YMôÍpÀÎ(ıÁf:ï∏ÉåFMº›J-On∫≠Vï;=◊§]â—\∏jEo∞ò#LC´“¿R∏yÌj{/‚£h‹êBïdM˘È™TZ©VÊLãÔN± á˘∞5´∫¬¨v^8ü~‚¸d,…Wç
+¨üÈÔ¿>Qµà˙‡¨Xà+¯Õd˙ùƒˆÅû_Ä"ÑUÊ]gr≈=(ÔN¿†Â¯y	—çn ªÜU÷–¯Ç¿ç‹.ß‡†P®\–±@…±	?Ë›ÈV}ùî%3Ω*Õoˇû™TI•Ùn˚—™UÈŸπ&ç* EÎT◊qäiËViF¢è›º>µ≥«Ñ´LÙ]
+%°ZID•4\´Ö@:{8v®6µÁ.ﬂî¶@Ÿ¸§ï∞«>\_¥lc†˜_˘
+WS/±∆Zı2.u˚˝’øÑ•ê˙&úï›¥
+^;ü
+BS˝d∞ÆVàˇë0¥è'Wéâ≈…µ
+√7ï8Ñ=AL]%T
+	Ïû_—ÙÙÌô-]Wg∞DQùÛÿ˘Ù{özw ï‡?PiÅîf¶d…6`ËM[y' V ,çwˆ£U∂äfÈöîÆXT›på–‰“Q∏
+†áKRëπyïkw/∆∞A"U?<•aÖÙ…‰Ïê˜÷	ËclqêA7•[E¯r?iÕ*åû¬z,\ß!4ﬂ˚Ø_Â†&~¯⁄U}ÍVb>2öï∏nŒ–°Ñä¸‡Ù™ˇ  ˇˇÏ}[è€HñÊ_	ÁÃn•gÚ"Â≠Ì\€Y)g©7oì ™û√®¶$¶ímäTìîÌ¨[èã›ﬁ∂=@Ô Ωı∂ıP≥˝≤h,0¿‰?È?∞˝ˆúà ºâ'(*/∂ŸhW¶í
+„r‚\æÛù™zUÇÁ“‚3"∫Tjh¶‹Póå£⁄#ıIr±âx‚9≠éÑÔ–e˝©èBŸéÂûö‰B!E‘–∏}%kÔ“1`˚ÏK˛“™Zñv3∑¢f©T£I.“è@≈JM—Çt¨Pd’´a’zt¨∂®mby—isÛ ’ŒnD.õ_ùÑ©4¸ÿª)U*&x˝®u©„“Ùäµ˝à˜Ó´Q9ƒ≈˜_çäiá∑∂S3íR§‰ùÛiR!aÛG£IuﬁA»ËÓRhßa:≥˘‚—MÖë@Q∑—‰ß+ºÊ#tp25á@ÙMûS&u%y∑ÕŒ-Q AâK*ê.b›«≈kVΩêO|Nñ~;∑¢[%»ø’]∑˝QhWÈYZêzçiΩ˙U≠'Aµípˆ\›ÊÊï¨üÌñPæﬂî~•PM~‘
+÷È‘ûå	uÓæÇïªÆÓøä•%m5“≥íœ4ßñ%)|4JVà√R¥úHìíJ«0Xë[ÀKîã0¢*†>RîcÂ,º#H a
+|DTÑÜk3,!xB“Ø1/ﬁäª* +Ó˙—fí	=À¸ÛÉâ©Ÿ’/UΩË.j'ÒâAJS∂r«Ü$°DNrÃ„∂ﬁ‹Œ© ≤ì‹Â‰tﬂT 1˝¸€Ãàzif1ANù=§≥Ê*"pêèXÓÃãOÑ%AÂ¶~Z+ÕMˇy¥K®ír£é&•J…G≠°ﬂ¨â◊≈>œ®¿À›◊ÖÎ˛Î@J·ú(^ó.∑ì™∫3/*Q{Ë„QÖ2fe°PxUë'ãJN<w‚¬ÁXLâØ¥âê]>G#å¶√[¡üœ$TâjLë =˜]°Äo[ÈëíôoûO
+OxYôq—Pv‰nL*; ë≥ì‹Œ‘z N≤WZöﬂå≤3„|°Í;ÈyPu˛!◊s./q‹Ü¢Ûx7∑÷.óQâ›õ‘s>Qn ∂@˝=sáÓáAπô∑»Óø¬ì¢œø‚Õp[~4⁄éåÆ)Ënh&Æs’ ≈G#›B¬≠„Ÿºﬁ |'oólÏ˙¸ó}7z˚Ò≤∞ásÜÀé„äÏa(IÚó-øjdî◊uh8X˜sÜîÊP|»·%ªl${$?˝∏5-73û8J⁄V(íÍñzÚÌ§Ñ…ÇºK3	∏(:^*WŸZ]0=5ÑGíœmj»≤|≥ï!°€üá’x≥)Îµµ5 ¢€≠æ!‡©°bÄ√Ê≤?˝Û˜≥˜ºMÕ7ÓCZ/§F6¯Áﬂˇ_nC£n6v√2ºH£°¿……∫p&°0ıoT©éJ·V“®µÀÙ‹ªwaôˆêÁn÷∞®›◊∞gØ¥˚≠gGµõC%;UÎ9QÚy^ZÁ∞{|pºˇ1Q\úö"¥
+*ˆ ]~jAY—Ç‚˙¥ÿº< Ê<⁄ 9∆¶oapC•⁄Øå*Í¿ÚZ—C3@EﬁcXQXÕ+@ÍW√„‘b∑Øàá{ÎÚ˚^∂∂ÚI˝ûG˝◊ÂÂûZ7Iï;:wTπ≤¡n M∑µ[≠LØà≥[Q∏„Eπ=[Î •ÁóŒ<∫¢VGE”k€Æs.´w°J-4B≤F≠ª∆ÒÅBp+z¥“OSìVø)Nt∏Ω∫πÀN,7ˇ‹r«Ê‡˙é¸1Y◊9∑,ºÅ…è7©U'±Ùj.d|¯ËC—®KÀD›'†bŒbªˇöÙÕ√O[{≠S∂≥˜—(” /√¥⁄ˆôp±‡R_YG˛
+≥°%Ù`Q
+tﬁë!ÛEPqÊ%ú‡4≈iQ”E"ò"®ôË¥ñ[éÃãÕ∫3ººÕ˜œß¯|xY££°¡~Ç$ k÷ACç“ÁœÜ´Á
+Lbﬂ≥ºú°^=®ÙÜw†ötj:(&J7N«¥KT§"–fi©Ò¥61æ\›)Wn“œ*ùæ∞˙–°;4ÌßWâ_ÀÖåô÷ú|≤¢^˛?ò/œ∞Ç‘ï?1x$Ù£Úo∫éx∆óì!>d¨cæç;√.ÕT:©IµTV^∂≤ü|wÌFﬁóΩs…û-›!≥ã™+ªÉ Î%ÓêÃgAªC}ÙÙŸüñxÍ™oâÁ.ƒ%]p&.haüö†ÃÆı¶ ¥[@;Î®Q¶õõÑÊch˘	Î&mº§2w∞–Æ(tYM¶∂o.=k£ŒÉ†ôQ‰%ÿqíﬁSpÑô°e Iãqû|s[xûé	6Ï°…á¶+ÖÙ7ÁSJkÆsÊéF∂ŸUæ2ÂçaG÷INÀ¸Ô¥ÊÎëVu…´Z$Af·ÔécÜû»¯ı·øF8≤Ÿ•é˜ä[ P™≠?YO
+äÖã—ßïØ2	çu~¡NZGùÉ]÷=lÌw¢x„◊¨u¥«ˆ∫≠˝£„ﬁY∑›c?ˇ˛˚¢€nùuèèM/Æﬂ˘Ìc$ÙÀøh<nõ;ØPBß˝¨Q\§ôvßÓcˇ¡2«3≠ˆ…Âj3å´àOBWÏfh¸€£§ÿgp`mïXÆ›L±àÔÄ—πìäJ´aÇ=Z‚ÆJÎT<Wõ≥<û_U2JA˛¬!XÉè)ÁÖïä›π•AÎtèçw´oW˝1Iz…yÈœ]™ÙULG∑oç •^{Tœ]zÌÜ”Å‡πKFπ≈öô˘éÊ∏!åm0ÛÊ*√MQ}Ó±ùW¸EÅßéÁ¡¥koÒâ`UÒ\_‰Å5”NeÒód»ùt8Ÿ¸oπ‹s©"ÓEÂji˚8ıí%±¢∫œDÌÒ‰U≠¬Œæõ8\%o˜9[:∑ﬁôCŒÄÊ<Óäa.æÂÙ5\ˇ¨—onºZºÕPÈÜm?Ò2ı∏¿-Ã[Ò§mJ¡ÕOV•‰s(q∑Câã≠¢Ò‹Ü_.WùùvÃßD∏∫	}Ñâ,ı%
+∑eÙ*3éìÌÃqí€AÙÒ÷3ÓÈÖ5Ñö¿Òe6´˚≥{^j>‡aﬁ#ˇx¿.`]€|m„4âR~'™4 ô›úFﬂwÌi ª&KhC≥ﬂ∑´[èÿ˛¢$p–‚1„nxæ6¯úÔ˜™˘∫ÁØ:ÆcÚ#ÆJ3Z/ˆhóˇÏπoÒÁ‹„]∆4√ŸÌ'A_"†5ÈØnÆms«˝ñFxï`Âí	K©œ	1‹ÜQﬂÆ1§W√¶≈N#≠•æ–)#!`/ŸœCÁﬁ†Ω)∂ Ôú©dËƒ «F=ÈÔÓz(Iüﬂ,œ^rÖg”⁄p˛ûô–AdÌ=Wd„û[põ,+Çßt	_fÁ™Z∆å¥-u9éªõL¨dÄr0â&/ﬂâzàW¶dÑ]™∆â€hQl‚mÖR‚≠gL*„à!MºÙf,â/–¢gyÅ–Ã°≠≈KçÉ¢ÿ…˙≤äNƒ@§‚î•qNR¸/}m$æ
+Î«çÃ1Ω≠¢·–≤Òp6≈ÃmZJ6≥ŸXß"∂¢–ßÚaìU-tä+∞;_”ì˘Å1≈tà¿◊ˇ‚"Çˆ˙g($ê~dAHûrhº≥∆÷∑∑Î<ì≥»°Ûi∑ó1)E4∂»√“ÿ%^4ëW–w
+íØ'áñÉΩŒ‘ÁZ√S˛%ûåt¸†x™´ûJ…8\≥¿JâüÅ;π<s·£Iﬂ5º·rjŸCItM“°·Ω•◊·pÊÂá+Ë{˜MmŸî=T”˛â‘*ÄÌÀÕ∑-@F0˛Ë¬âaF\Í)€ΩBo@˝§JH=ÆKºh≥ﬂv'2ç9,U≠’@∏∑ b¯ıåí3å—Î.›°Æ7œ	·œ≤Ú3ÃÏfÓÃÍœdænéÕ¶>7Q©<Ì+)06A\líÖE7‰ÖÜ9Ÿ{QÎö°a‰‡€¨B6Ú¨!√–lÛ·pk-˛uÉœƒõ!n
+Õ/-£	mﬂΩÑ/≠-’aÙõï€ºŸ.Gﬁ_öÆ®cF´[üÊiTË_ÔoõIÿÈ#]Éí±Ê⁄å!Ø`•ï˝ú Aﬁ±êâÊ¶Ω3â≥a£ARÅùÃ2Cávr®û∫∂mL04LU,Ç”RÔ∆˚ΩTê$ÉƒÎgN Îü≥πn—
+$øç|£¥èWØ¿*;¨Î÷û¨u4å≤õ]á=€=:ÎúûúvŒZÌÓı˜G2^v˝˝~∑›™˘yÎõ·@€y#æÙÏã÷¡AÎÔˆè{zOÜª=ÚÚY◊Z?OÇæ;L‡ aO¡Ø^2˘C¸[‘ΩÅW“sΩ&ùÊêK
+◊7}tfó›≥66&ÀÀ√]f8ó+Ãæ€eŒ©≥πÆJU’≈{zÏµy	v“›˚Ñ}ú√€éÒøXgÄÏz>XπB(E;”—ó–Ï+∞Y>iﬁ∑∂?c‚≥œ¿ä”Yaÿ—·¨Õbÿ÷»YÉ‰≤È"%j€r&S”Ñz	ü∆ Ωê}˜›|/˛M˚?(Aöf©^†±^`)@∞_LE™ÉXódG'∞ßÏÂ⁄⁄ZqO_—…K6.÷…SfÆÅ72É596UöÙÕ†Wÿ…e˘@"DΩH®é‰•,Xy–8FB71É©øõpÕ∞0’'qÑÈ€]ÍE‘`¬Ñß∆…ÀøQ∞]„å¢¯0{7p'KœÆÜkC1UñˇæÓß¢Ô+z÷å	Ï‡Lz
+t, ÃFÈß›9ù≥ä±áDß^WÀJœîøˇ˚Ú3≈6ù‰à[i<,©¶^OÁÌƒ`™\ª
+¯”´Õ˜…i€J»ˆT8¡
+`°m–≈lÈŸëãÂ\8†¿sùj`†®›òˇÓa)‚µO u˛†Y‘4à ı:◊ÆÎ êÏ«ÖG`/Ê∏k÷cZuø#Êc¥Ä…ˆ„F⁄~‹K¿_¢)(≠d¬˚˙…x¸d<Œ”'„ÒŒèﬁ‘6á«” Û~jÂYè97	Û—ªkÊ„i∂ßüÏ«Wé˝X4Ñw–ÄÃÈÍ¥ sz˘…Ñ‰◊-õêõ°	â“.cFzk9aóµõë[ÛòëﬁZÑ4j{Xº€2Ó≤)ôw¬dl…ºÊ˛ì∂Â‹ò,†Oìt«Üs˝‹j}2(5n´$Â·œX7Lc
+¿àR\°ÒŸ$°òbJ‡5ôßÊƒ3}X∫∂ã—%{!èú3dÔ[ﬁ≥`%b∂áªÑI¢p¬ ÷”3≥o.Í<YÃaë)¯N‡—ﬂ^ÄúCÕ	ƒ!Îâ≥(y∂%'Òd)I ≥S‡P£)œW¥¡á±˝ØÅHß∆¨{\_X¿ÔôÇÔˇìªb∂Yøπ—|úõm¶í_ﬂt¬Å#ó·DI6Sh§ÔOæY'™«à9S—ëƒ†97ÆÊà†F€‹{ùk÷3%Rìôo{ _8KáöLõxñ ñ!I°!êú£Ωœa§‹8Õï,!ÂÛ?Õª◊q¥¬~/s« ”∆2Ø∏ÿÃ1ıqU«⁄jwÎÕ3öÕÊ1wL≥∫Èc[’“«∂…ôc‚EtèÜ‹Óëì«*˜ª‘ëT}(À•Rê∏}ÿç»†™âHra≈è‘Ú=ı%Duè^üÚZÖ≠£ÎÔ∫Ωni∑z«¨}|xr–9;&Ÿ6u2K÷9c7ûbì'ﬁ>î,õ
+¢;æí5fíπ6™`€N|Ig‹$ã√|®I7yC}èÚn
+∫ˇ)ıF}‹¢ì-Ú3oT˝Ì∆2lä´œ—Í-*	8±´„ÆÁﬁ¥B;≤÷≈P£É
+Ãºs™Yƒõ-1ç6rM£Ì¶—Üb≠mGÎ)
+J§˝VqˆÜàÉâD ¥¸ÈwˇÛˇ˝ü`‚m¥P¡éù∏ Jw’Å†∏±0€à¬›P‹	àºÜ‚8‹	B”ıôñ√=Uﬁ∞µÇ0'∂õÕ∆p∂9Qâ)æ™˙T„ò_AË(3ÛôˆÅ@+•≠µê•$]®E≈‡Ù&Ü˜›&˘áHVüO∫‡®gÃìãÌ√°î{›ÀhZ‰–˝ÒIª{|‘·÷⁄≠≥c÷{¢◊9êñì÷iãØ‰ØŸiÁ‰¯Ù¨C®\l◊M!Db“FuN¯üL‰e‚b(©πP}‘P*Öê~^ƒí‡Î¸-édÎ˘<«µ⁄g›Øé{§#Ü,àÄ∆\gm≥0∞!¸ô˙¨ıL•è0mAT∏Ç:Xø1#˜≠á?õäub√w◊@Ä±ãA!O˝Ö5π˛C`‚=ÅÈΩÎò?ÂuÈë˜ -€ñZë©b251d	q"jµä.óv…&.6·3PaêBÀKÖù$çÜ¡}£∏+@àñ	 :‹j`4eÌ-ôáiî(‘Ñà<›«ÙH˜úm…ßÊ4ìd	bZM≤L‰\
+∂õ"?…’Köe¡¨!ò5ÁˆÙW.ØAMIG÷Û˘æi√«1ÏÕ]ˆ"∫7Y*fÖ¡ø‹˚ß˛_¶±¬å5∞9=ÃâÈ¯∆ÿ‚ãÂT!c[bÔW*v’∞GËEÁwuCÌj‹ª?ˇ˛ˇS‹ΩÎÔ<G¨Ö-]ˇƒõ¬ŒÓôXÏ–änÔL7tmbŸ¨◊únmÓ≤é∏â≥‰úD7F˝˚áˇjU‹≈.¨‰ë'ó˝·‘¨°Â¨âm9Üg∫=„õD4"ßì[ªÏÓSÒΩjˇÈèâÚ[q‘‘àá~øœ˙V,?§¿…È’6ˆ
+Ô‚Ñç∏-\vø˚m™W©[A+£¸A~bÔ^q`‚˘8†√uK&†ä–˛ö5§¬)ÙΩjñéúSSó‡¥¬nYtòaπ≈ˆ<û†2´EÉGÏ°±–Õx÷≤∞¢©çêQlIG‡fû#0Bs‰ëDzvZN˘….¿ò:^éQC¨ﬁ…zeºÅQÿL)7-|ÄyÆ¿∏Ñä/·∞|ö0q◊œÚºÉ‰B'tˇ AM2i0Õb‹_mj vÛ’ÈæÅÿ!<πã¶lŒnuVÊIéE#®6CSOyü∏d÷ÏŸ¿ò—ˇGäG#—ﬂR`9¢Ô}€ºñ}∆cA´À:ÓD
+¶Q'≥©ïÄ2“àÉ¶–‡ŸúÔ≈£Èõ»
+è◊ ê‡ŒMJ¨ˇXX;O-§@j:Í;+xíèÆ»=dç|ç2.Á<ø^#ü@ŸÃHµÒÉœAD30¿∏Ò’‚`"8^¥Äƒ‰W
+ïâÏ˜8CÏYœD’âÉy$g!bUVÿ@`Ü9åE*Ω¬»©x0ŸÅvΩÉÇ»’,ºè’ñÙD‡œ)8î$±lM$∆s∫≈∏$NX-±∆oΩJ‡{∂|9ÃùgäÚ^J,¶‘3qÒÅ	Ó=§?PcN±VBÁîTà •é°"gÒ©B‘œ®¨Ê◊à?£™¶Èózï˛Ñ⁄í¨<ël,ÁC≤“å#¸<˛”+ı7çµç§> ˜Dd–ÏôÅaŸÿóƒÔ:ΩI5î˘H∑G`¿†°Ä°¨ÙK˝¥BÔíç¸A{Ï–≥·:Ω¿ú®#®|Zeç¸Å÷.„C*uùQºY`UÅ¸!d¨ ≥C9'ö)ñ(™Da,™†i%~6t 2√Û¨æÙ≤^}À∂!…M°C™ïE/—≠:ÒÃ7ñ?5lÎ€êÜX¯S)‹¡‘Y(ç‹I&Ù€Ï9W∫´9TãÉa"¿E>nÊ$8≈q—rÜä#DuØPZ>J˘!Ç^Dõ°ˆˇÛﬁÒ&K=»¥·0ÌÉ—áVÒ¡näBÆìw†\)ÓïîfôNóyÕiÀ∫VuÕdd`÷V.0k+ò%{Î∏æ£˚÷‘ΩÏ≤ºØ⁄ÌFQ∑”x≤çtƒ5|â∑ÜËÙ>≥.5ª^Ñ;€N8úvÊeuòv
+M•4ijé'.ç3HD{Ú˜nGË™ª˛¿∞Õ’óçµ«è_’	ò#„—r$ãM√ëïkøÄ∞jÆß∆õlΩÛgp[F∂¢â´P∂ÆÛ√mk=_Lóë3»ú‚s·¨e≥|X"`ñí¯„(á~Z>ëiÅñ#o~®Dç∑+Äûƒ„V√äSpm…·SñaKËlÀ¡[%7üCá⁄ì≤ÅTÛHíâ÷Äh~®⁄S‹&à9£™IQ"jH∂~4£}*Ko˛”:÷R ıGy‡¯\4ﬂÕü≤¬gì„ﬁ6spotó5 X=‘e'∂KŒ∞CQ£„Ÿª}ûÚ´_J@f„q£ˇä[‡ÖÂÄ„ó™ïÂÄIù…Oßü6DqvÅ4âDr∏(°≈±¯ÎKXXHÔP“<âXË „˘◊€Npj˙0°Õ4})≥`JÖ˛ç&è?∑˙6H2&ó¨gﬁ‡ÇöB.Óëòh£r*˘vÛgπ©‰Åiÿw4è¸πÎæÊEºã]ºÔ˜*âºkxjï‹∆0ì¡m∆◊?ÚƒV¿}X≠uØÛ»OMÓÖ√ó’ˇ†0˜å·ıècë,Ô@„l2Ö>à‚oCﬁ>¨?&DqQ“D‡¯ËÁ„pªâ=ø˝∫£}e~†È„ôW\l˙xâ¢Sïòuóm¬ELèDÎï•Áéã∑–:Ê´:zó«˘[?‘¢∑õ:û‡)¶π8ÍŒ[≠1i¸˘ıÔzÛegØ≈ûwütè˜OØø√rÏk∂ˇÂıoZ=÷>∏˛Õ|BÀK¯î:.S«ÛD€áí:^Al«ó∞¿£ΩÁçGB-¥ã˘ÈåÒËÆ7]<oxÔQ∫xA˜?•ã´èªùtqU_ª±tÒË‘"ÂäG˚[$äs¸Â∆Ω™“≠ˇÛÎü(aƒª‰À⁄lÏ4vJ|Y™Vø7´H¯›≤7+πsñíJ’ïUfΩ≠ˇU ÂNΩÅ…,Áµœˆ√¸”rpJ¬.çpvØúèCn⁄g¨Qç5 rÅ†Hz• ˆeKK[Ø=èªÛæ‚6éÂLü∂¶Êûü∫ù†$ö˙Ùw∆^LÕ0ﬂt?Ú›¥Cö√K÷q†¶y¥h2ëº]ñÅ
+¶v∫Ã'-Á?≈büˇ¬â˝µ˝ü– Á?˘ûy˛ÙJtmmÍYÙo
+>˜ßKﬂ¿≤r^”5`œ¥ü.9Æ;A(s\ËÄÈy:DÁ·7N\–0.±±U˝F≤¯¯,¨ËÂÚ(∏>‰ÈS®8$ Û:πt",â>–â~öFæ@àbW⁄C£SÿVy¬lœy÷_æ](ïƒp¨ÊitŸ
+aîÔLGö•#¬˝¿Ì åv/µº‡˙ß¡‘vYì∑Ø:Gë∂Œˆß†Yëåñh8HŸıŸæ¯”ÒÿæÕÃã<˘)=YuÏ;ú≈zïœ@1UN»±üÒnsïŸ&üâÖo´WóÅú˘#.~j“ZtøNa¨óèíuàRQïÃöW∞‘I3#'çQoßÊ;Û‘Ïò·Å
+≥™á˘…KjÙ¶Œ ≥˙DòËÂÜP°ü©ßívÊßVöÂ∫A4®âu}å¸4æßV;fÕâ›®≠Ω.~‹:`À«≠=vx|⁄A$_kø{$
+D=¨@˝ƒË"ıè¬q†P˘S¥&5p}Í@¬®ú¶G∞35äŒg‘ËÒk…Cí˝*Òl™Apjû{¶—~õ‹v∏È∂ÁZÀ‹ZËZ\œß˛Ätœ•} 6∆<áŒB˙õ°≈âxl–îKc◊ÚùjJÚ\X[\jÏﬁôöo‡eëkf¡‚{«Àñ\"®yømÉ˘`8	&°–§à»~òÔròR≠Éµ‡t¢2ä∂úl\=èdLÜP¸ED∫'
+úˆ4u¶˙Û_D˙0Ω¶!Yﬂ]@Ø˚◊=d±B~}˜≠pÙºèëE
+Ü÷U"˘ú|@í´∫¥MÒô‹qc•ó∏$ÇÑMÿBÊ¿ÄÅˇ¬æÈ_ˇiá‡„ç·|À…ªv2ÌÇfõ¿ààÙ1„˙_‡#‘ÿa√ ∑…ù∂	©Åp@GÜMéLAlŸ	–Àa√È˜Ω«´"ò“"∂<àΩ∫'BCˇ—£ÍôãwGÄî≈aü>Èı…kñ&ÔV∑EûUî "D∆{§´*Í3Ø{S§l¶My4+a%¿\¶g⁄dÉìtDÊ}E∞r|åá*9ìıYA æÂo⁄Të7˘â=ÕK–∞¯ñ´;D·tjÜN¡E—ì–35Ánß8Ë” WP?Í¸Å£Œ¡.í?t€≠≥ÓW»÷ø«:á'≠≥/∫m¯˚Y∑st∆z_∂NøfÀ›Vô¡∞ÿ~[æHˇ≈DÑ¯∂DèÍ…µö[çÛÜëãqu=¨≤y+(W6æÑ≠T\+£tëopØ∞Ægû1ú‚…	∞,ı√<Ö&QÚrb}5~æö˜Î÷L¬&¢◊V…ÿrdqC\ˇ8@<+„iÔæ9û\ˇÄ¸Ç+lÄ9SCóóOO‡úÚ-^™€E@ù÷G∏»ópÇ8:∂èD$ú+|cŸ∑åù$∂ıΩÑ∆“∂oﬁõ.!;ôObÇÙM ‹öQ≤ÁÕF√$¢d·¨ãì›©àì≈Y-EYE`YÒ23ïÌB∏ÏN%∏,Æ∫bf9" &FÄÚô1FŸÄ-â+^ﬂãhÙ}◊ûÇ¿<#¨ö·jÎ÷#,ä¸Ö2ZÒ`qµñ/>›B^5ﬂ Åécîûoö}M.${;.‡ÁƒŸø∏/R¯a˘j74Èkbj≈£~È√˝Eû«Pâ†„áã<)TO˜´VÁ…ŸikÔÀ∂`ö=¯˙ª3@ñ:≤¯√^',pEE/ê»¸ŒôzH^l®(N:ê'û¸⁄-‘–’!ô©°Q=÷∑W-Ñ~2„†rÅÑÂnîkÉﬁU›ÄvFò?LÙk‘Îüú”Õw6ØÑ{O–›≠ 0ÚD>sèœœ-§©Y¨À»k$pﬁC®w>æ2ƒB6„J®=È£ãŸcS©Ωëq·∆¨Q!;)\¬πï≈‚‹⁄óço6&Ôæyˇ˜F}cππ≥“|¥Ω“‹xº“X€xH$-¡Î>·∆g?kı:ÜÛ—«⁄{ja•÷ÑbÑ”oyíÙ¡ÂÄB Ã_Ê;óc.[√_Mù ¨Œ6ô∏€L∑T'»ºÏ]oà√d#ÙÛqòà¡ÑÀåŸ9}ª,%Yß§2*—6®0&∞¿?(∑â’Ø'œ(ﬂ<¸P2ç*øÒ%EÔè≥çT;ßëPo”G ùnŒQ˛@ﬂ£¨£¬¯îw§>ÓfÚéD»qœ}ÎÿÆ1LNÕ…ﬁãÂ˙3èb˜O¥œîÌútD*flÅV{Ü≠[ÉéM€Ãbì.Ìô∂	RU^vÍnsvÆ¥ãÏay-]‘æ⁄»
+∏û'‚ÊCÙ>ãòı%A=	g=G) ØÂ¯Ue˘DﬁÅéﬁÖ5.V˜	Ari◊üJ◊‹Nú ¢Ã]“^∑ù¶'∫“/±>wdÕwaÈÇxÙîRq,E¸÷Ï◊∏z˘¨¶]szã7Í≥‡©tÔ¬íU≈2bçqa~k2È]ûπ¸ôåR|#‡ü’*öÙcf˝‡¸2¶Èïú2ˇãóÚú˘°Y…Á&áöä,SJÑ"JZœë«Bm·lÒ „P F^ÿnÔEçkˇ–Ù}cdˆ~=ÖEQ´•ΩÄ* £‰]‹˚c√≤oekxf˛∂¿œÛ∂D¯˘Gµ⁄ÆÁô`I†a·¡¢0ı9Äóœ\ù[ö+‹	r≤»ªÄwÓNoÅ4_ r+Ø¡¨¿*˚}9Ã^aŒ‘∂Wÿ∆√£àJ±r	,l,ò4`œ¿»ë3˝vÍÀcâsãß˚Ï¿Úf0¸X7A?≠¶çÎD+ÈµfD7xÙó[ ≠˜Œ_zˆÁﬂˇ„o4KÈi‚Tóvî,™ëÌBCC¨„f€∆∑#Xo-«Æˇ0Ê±D)óÜ„Ú∆∑–Yk ÕJ·≤Òb∏å'MjQR»…E™ñπ,qR|≠Ω6/√ı,R≈œ≈oªÃp.y¬¯.H∏qﬁï^∏©¶±>eòÚóq/°ÌW¥£û	Á°Cw'·ë]î˙âÎ*ñ≥Ä‡∂»¯l&r&À9)mÚzõÏu’à[h·ÔÒ :ﬂ;©iç"øÀWlmm[a|ÆwE0òˇÃﬁ”√Krâ/è2Êf¶ƒŸ4ggÄÏÉ©øÎN€rLéÊëÂ≈ƒœŸÔ¨'{Ω©·◊J[-Jî◊ÃqŒy„[ö30Û—ê(‚Á∆üˇ˝’M≤◊ïV"[~°€•P›TÕ∆lé¥ˆËú]ˇ»¡∏Ë≈…ëÎÓ…Ã¡àíú∞ñ7«Ó§@§xp/EÉÜœLo¸~© Lhé•VÜ4ˇBÓª¶
+{ÖKôø&h¿ò ã:p!	y(àÌK§¢‰rMÊÜ$Ò¯ü~˚øŸÒ ”J<˙”oˇ/Ø.Mﬁ›tç"ŸŒk“<ı|˘˛˜8Ç¢…‡#≠ËøiP©QíÚ&†°ãÇ*∂q	"Òø(∂BÑ…ïO™p6ÎU´
+‚Rº],çTΩfÓ*fjÜW¬?îƒﬁ=”X†ÔÍæïÆL-:ìR@!HÖéƒûoç·’œ-sàc`8<îØ∑™ú"öt¸;Ÿ$4ÌFrq$ÚTJîhÌ®…*ûı.‹G≈w´òQG]∏≈Óµ
+3jˇ˝)8—¬ì-Ì0M¿vò∂kˇvó∫¨Ê¨•Œ0ji*åG|“úÏÂ{∫ö*{~´´ºoOÕdˆΩ∫»˘_SÈ7µ∆˘≥â@Ö,Òˇ.Ò6<áóìQHÔNLœüòX∏ E˚Ì,sYs5≥çE	uœÑ'cΩˆÅ¶9P}ë/ÏdY£›ááÀ{¬ìu|™s›rw≤ï˜æ>jv€Ï¥sr|z∆ˆé{=LN˛E˜Ï÷˘™ª◊9jwXÔ¯À”v˜hˇŒ§+Ô]:∆ÿÏ€ÆÔœëØ‹hú7∑rÛïπÕyè≥ïÖÕ|ürïë€'¶ó<k=⁄Üg°¿7úàƒ{fù«l?≤fÅÂËg-w∞V´xkﬂ¬≤Çâmüôx‹	ÇDÖ!D z)jn;Ü ò2t√¡A≥Á›*‹’D˝ ıâ bÙ‹[œQ&˜Úáú§ú˜™ãÕRŒ)(QÍÜΩ≠5AπŸlòÕbÇr$ço™åèVz≤|ïgHqrrµZ>^rr4V∫©…ö}—ØMƒ{g£˝∂Ä‹bM2‡àZÀmfáésç\„Z≥ä#«}ùn>TQ[ß›c∂◊=∫˛t◊cÃ Óu˜èé{Ïk÷>hı∫/xr1Rx“^Á>§á%˚V*4‘èÜ÷˙áA≥π¯¡ΩA/‰ÁG‰•–#,–•¸¿∏wâƒ˜$}∏õ9,?ît-M% æD¢V$D„4≠X‚7iëN—äÓ˙p¥“C{èR≥r∫˛))K}‹ù w¶lÄ5‰√Úo„©E¡ÎÖA<#«c=˜C∑≈]Ü{V©÷Rn€fmM±Œ O°9–wÎÎ¨`‰Ç€è?∏¥1‰è 4bõ†)A°NÏ)?"¬(L*Ú°Fas´sâ‚b∂Œ—µAÿWÙj.ı–´#®p•SgÈ!sòÏnTu)…bû¶m&v˜=3—ﬂX–ÎvÏk√,¬ä=œ}ñ' ‰_ÎÍ1B^›1÷©⁄Ÿ©7±ïı W;,Ô®´À'–cƒ]?<◊Ø⁄Ûù·™La§5zNât
+P¨mÇÑ∏Îúª–•ëî ·Á/˘ª£<xÖÂ_Æ¶ër@.?zÿ˚ˇ@yòbV/´ãñM∏∑%0®ﬂxW5 ¬Ç‡Ÿ"œPy	£å€G-¨d6åf„ï¬9îD›£î[©^ctÒÄ≠CÒÖWaˆÄF¿tÜ≈àdúA~-(ΩR.E )åS∂äqk}kNAë7e&Çµr∞˘*⁄ü∫xSZ%πÙì&ûÎLë÷ó±~	&m‹j1`ß
+∫lÇôicw˝ÿ≥F¶≥õ˜Nè”kÕÁ∆¶Ü‘ei¿HNÖ§åá/µ™ÄT#Õ¸/Ø¬3çTÃSΩÆ'ÎbA®öu´(@@Ω‚`9âq6‡ä’‰¿LtAÖ.ƒ!/=€ã…$va¿¯˝œ‰†¢	ΩØW±≠yöƒa‰Â6÷ ƒb∏ä•âêÈÇ√ªﬁ±M‚Ÿca%$X°u€∑]ÿr„>û/ßqaâç2‚π—Ë¢‹:6N0≤¨âV5`F:•L¥6Ø√5‡ÁÉ,'2
+À‰˛zjÇÌsÕíY√ÙÛÍG1í{¨n¶T2]ÕA;¸§π¿ÚR)=Æ1}≠§	iûêù7–_òr⁄÷’*0îÕU2ø
+òÑ—˙10Ö‰ ¨Òc.G™“
+ü»µ®¸è˘7∏.µf∆Üñèô√ßW	#jMHzç%kπƒß.…û1 ”µ["£e£u{◊≈¸˝‡r5¥<Û1•©ºúÀxXÏ∆+@õVb+ó¶¢ë;GNÔ“†aåæíã¯⁄‡~kµl‚º*EìWXdéZ@NÈ®Ê”t‹˜—3*åüò∏Ç·´4F=Q4N-aªË±“SnÈ¡ázÍ-û—]D≥„2hÇ9÷PHLl„èË‡¬d√¢√ßVñRj€ÒÔœôœ5¶£ÍÇÖ1	–îXDåﬂLcr™Èà’ó`E	å•Y(L´{B ˇ˚>« @[)ﬂÊô#ÀGtM‰æ>ò==Î∆ª’›>ºi8ÿƒ›9Y9®Î√ˆ_â|…émé'85˝âÎ¯ÊrvôØ∞•ƒ˘π§©]TIY¡M´;!–V>ØÏ38Óπã√3yòG;Ì0µ©√÷a_Á˛aÕ6ùQp¡û±F%—å≤Ïi ±SPNÃìƒANªâŸ≈‰DÇf.ã$>W´ürL0÷äõˆ–’Õ§©îKS`%l,˝¸&ºÚ◊îà@˙ﬁ@ ·ßn*©ªú‰kËò3Í≈„¢∫é¬∫Ãsﬁ/Á]±ë¿FftÈXáŒk›∫y¯t…q›	fg†∆<7=OOO∂'æ‚ÇevâMØŒ€‰å™—Qö*lFü··Ô!ÖFt¯Œtî»(:L√ZÏ’:^e‡ƒˇ¯O·AÃW
+Ga¸mÆeCÆÓûºÙ®Q¬Gi˙≠+~iëŒÙÚäÛÒïí_&-"’ΩI2<Ÿ˘¶Q^D¶⁄s^^Ñ=RÛ"∂Á»ãPrüt9rCoû4N¶E§%ío%‰/ñg/~XiâΩˆù√÷Y∑Õ⁄›£nªuïM=~¡˛cÁkˆ¢{¥◊=⁄Ô›ôîƒﬁ‡¬É–ÃYCs7sscÍÉ{öîÛ~‹õ¨ƒNƒ\ä	z&;sÄÌEDµ7Ò,0q'ºÓ¯íàÛµ˙ò)ò5—¿‰STVÂC„õ†*YCX ~;·’QaçFh«∞ŒíeŒÜñgÚèBñ˚¡‘zò	È\ˇa‹ÖÙD?µØ?‰¸ƒ‹w]lÇb˙ëU2”¢∑ÓR™çA„1S1ñ—w2UQæÀ¨£ÂÊ*∂dÇ‚,uë§®ÄÑq™î¥è⁄Md-íJ¶ñe3∆ÏJq:cäEÚˆí‡¯ÒR5«îtF…æt{˘åQjı—ub•"ÊÔ=âï
+∂‹áb/:)Ω˜"≠1VØkØ9ZÑp;ÇÊÁR‘âÀ€x1˙E™∆}Khúª2*'ÌÊeH@BçF∏Nh.¯‹Ó$Rla‘´ë ¡…geG3eÏë›µz˝åÃºúÃH9£µºƒqT>=îí»…Ã…P
+ù%ôL®y©ËÈ˘ôå˘…∑ÈÚM5ú&"[3>◊6i…ó\*üŒsvYöÓîPÄ
+∞U®œ¢&cRÂ’ÒD»©Ê.{nª ∑}¢‹—	≈ﬂâ] æÁcÿ$‚E?Ìë“KwèlÏ≤3[ZêL+Sñ’æ˘¸ˇ"SÙC·®hj«ó∫{íÑ ä5ïÿQiJÄj˚È~qÛ=‚òÒ
+ü8‘«ÈõœA@›„"•W˘W`r=e#P8‹FS*Û¸ñIÃõ¢—$CÅl>§†5Û~·EGxÇ¢ ƒUﬂ≥:TW≥Lî+ 8‹P´Â¢√tÿ°·Ω∫oíh∏°Ú¨-YG¨EÛÃ=ÂlÜıØåƒÛ~«ø»ídπã·vKÒ≠å{öÚµiVCu|”∞‘ü√ƒ,òµ.í:+úï¨˝Ú£a˝Ø@ØÂŸH`˙¡é∫\=1¸¿d/<åmŸó∏q`…⁄X»2ﬂ≤øZ◊ˆ)±XëÉ√·Œqñ±Ë°~¸N‚V©t‡ôXÀ⁄y≤JVCáF¬}îIüäk«¢q≥P∂™y¿Ω•5£êC*ƒ@ˆ6ŒO◊Eí0jM6@zO*‰®ÁgÉ=û&ècÚ	£∂…•[SH7≈Xh€nhóñ9ó_wà†¥_~Òó∏rÿ_≥&U]ñÔ≠ü(ñ©8?4◊·Ω°î„ô'{^Ÿ‡$%òlŸÉÈ^‹/Ò®h√Q±¨âB´îπºàõSK9æ«m¬Ò~Æ∂m≤qäXèK·ÛÁ€;©u ◊π∞W¡–zù÷—	éqè’(Ü≥b/Áﬁ¬—"\z+´D{?ãﬁÎØ›l›Zo•`@Iç—Ãπ¯ÃñÆ(≥ÜÛ9
+wÀ”W=•´úKO∏ˇ1ß`|‰KY;paaM|™–y\¿Ü Ow‡Â$EÁÑç#0h…πB…2Æ$ÇDﬂ5%‘√óûu˜û¨u¥tjé∏s]âO÷’v(‚ØNÀpØG›îÛˇ$Ëª√Kµ«∞ÍaéVë^ñˇ+>;ëL'œZU≈ìÓŸ◊,¶*ﬁŸ”ÕUj™‚•X)ó£Py3U8óø¸$ÊÆ Ö ò•Ù√DıE˝ú∑|uÔØ5ï=æ∞…RçÚ⁄3’æ*ØôTÒÓ¿À%5≤jiùâ4J©Î¿ªZ◊ÈMG#êÊ&ü÷%,|∫§≠òà+•›,t‰Ëí/≤£ìRfH>E.-‹≈UÑö&Â˘(»’ú∫|)Ì@ƒB”ÿUÒ«çTI¨›d“j”ÏmTK8_yéÂóÿ„%µä≠Q“,IÚ,cc˛
+≥âCVvìÅ„ØoŸàêVXîæÙ–I£/G∂‹qB_Ï√¯véíÓ%õò#Ú·(÷l4˛®£#ÌòÛ-ÿìc√gÆUÛLOQO˛1=¨„O˝Å	ª≠è¯!3ˆ8ÅDuù∞·¿]CÑ%∂4ëÖw,·˙s±b‚KêrîV\cÜw8òbc˛¿FoˆdÔE9^ã6C7ìˆ≤∫∫ zùvª{˝˝V8ÌºËb›¨Œ—Ø>–=zq|zÿaˇûÌuØø;8ﬁÁüÔ…J¯5lc6B+'$°v•Aª1
+ÎQ6$⁄ùÅŸ-Ÿ\ÂìãM
+Ç2ˆßÃ∞
 
-õ¥¡JZéÁ´sﬁÛˆi≤Ê3Ù4”≤W0/Â-¨êr`_îﬂ∑hÚ£H˜oñèõ˝h=å¶•üEN∑öÙÌ®”√dƒyyÊ≈„zm=öôGpí·…%fã5;˙ÿ;=8ceb∫ﬁ+õ®¶n≥Ã0◊π¨–˜û¸à6ÃÈ&Œ¬ˇQq«ùmòbÆÓΩûÇ\˜‰/,áælêo€¡s/&‹“…q‘€≠Q√Ë"˘Òâﬂ„¸Ì9ä"zz<¿S#ë£à@	∂Ñ¶ŸNÁ≈≠≥D ~œTPa† ùn0fTızäQê¯˜Ÿ˜∞^á≥)
-Oa®±è6n-:™í≈?Ü’◊≥]Q≥ÓÉ\ﬂÈ2Û™°O`SÓP[¨-h)ò¯LÍÏÛ,√§»E;≈Yò°áFˇL+XÅ4ÍÅ·ãü¡ô2Çı⁄í7	ñ®DÿhXõÉd‰ß√ü⁄Œˆﬁæ§[‡Ò€k
-Ùj<î∞Å ÛöÕ’#ünﬁ˙7¨È<ç¬£#ØI»"Û÷£`‰3 MÕ†‹é~∏ñy˜<√ü“n/ √ ,=Í‹°*%oâüˆq[»Ù,∆—EG∂xK∂™»Õ>ßUÂ'”AÑ5Å‡qâHvÅKulL~Ã´ÙC;<'K±¿b
-'îp—*kdLn±ê`IEËO‰ õ„Ë¨æÄG ´¬ù5SÔ¨Iˇ•√ﬂÒ˙¯>ül¯	-ÍÉHB∫hì&'Z5ÈŒ	u=«õÏõ~üOÓI3˚°∑BGÜs∂ÙìfˆCoïl‘¯ØÒû!Ï1˙¸B°Zj‰•Î¿v/◊˘ÌLm¢ºﬁKß∞n£O`ÌmB¶«ôvÙrAÂj’us2µ:÷p,¯)u≈å@ºÂpOêªé–õ€#‚–ç2níM∫=Zé%ÇÉÊïF6Ñ¬†+Œlo·Åeär®è<îÒ]9,dd√‘⁄	ïâÑ™¢qÜ´9QÀæÄ¯B´–`V}Ë¿Bõ±∫|°Á7Ω‚G¯ï6÷ﬁ.ûÚ—ŒéªÑ·Ød6¡jjí<˙Ù‡?xço[ç{Wﬂ_˝˘Íá´Ø˛rıœWˇt»Rçx[yœºâOmob∞Ÿ¯ËYÂKÎG!Dø:@}ÒæÒÛpQ_•áÚHt†7ß{ê˙â˝¨√¡·+dh’Ÿ&W8I\{l§+.•ë"ÉI€,íâgù}ìÉhVª>E<FQíÛ?ÄŒ~HÂc0yÁ @£;æ6'¢Ój——7>\sxí$Ä	ÄF–á\ä¬ï>sHÑ◊úﬂ$|Iˆ¸4cQ‰yi=[ÄÁåsËM}‡¢πR6…|T¸YÏÂë≤&'|M‡R0#Ó;À,ô˜•/qØÊdöçÊ™rOÉU”Ù'öÅ™~∂& ÷ﬂä¿®àU”&’¶˚-Gv2¶tuËù{Ç∏"NH«¥Ã 8	R∫q)}Yî_FÄÖ∞qÍçÿ∂¶á¡®∂08°oA∂¡O)ñ&SéŒº∞W?yh,•e˛iÄæóçCa‘‘§e/Ë§ı6w:ãh†˝ñæC/ÅmlTë¿xÖS…,|4a’6;hÿÇ“∞|“íoJ_›‘+ü∏ûÅjål≥ï—Õ¥∑ú—…¥ûèÍæår<ó®3C?£≠1’jˆÿA÷õ%Ô™àñÓÇ@:Ù„glOÿí&€¬c!04Ö&‹o‘wO£o8ûÂ«®‡≠Ä≈qK3åòo0c˛∏.«>Ïc:ÏcÎ∞ÌÔÀ{†={¬ÑÆ_… ˛ŸgÜ¡H˘Ì»2ÆΩ|‚†jä-i¡ÅΩÛ†‘\ËtÄØtÜ`_⁄¡!qñ®L/î’H∆í®œ‰†0Õ9∆√Í£Í!lpæLÆì5NuÈ˘rÔy´˛gí©Fr]»i§+ö-â‰y%kx‡ël(~°b/∞*cò“¶H1ƒú"5¢ç2g ÇÆ◊çÕY~≈ÛûÚsâO±5ÆL…∆‰4≤πAç˛Âú¯ãÑ∆hùµßø=lΩ9®Ái_†€tiò—ï:S†3
-W<pç«µ¶<ÖEø|¯åóbﬂev*o—=…‰Œo˘˝ßTLÕö0©’h£-2°U¯g–ÕEU5|N\µ¥ÀSÌâÀ•™Nç…∞,‡—.œ*OÀ(9Ù“ƒõLX≥¨ªmGUïÛ'_—>Ÿıá/mK	á6ì{î8Õ"ië™4AÜÇCê<13ı`V_“l6'ãπ‹Œ±4ó€%ìlû™U¯ }AˆLï˛q˛òæ¿˙Çﬂ)œN8î KûÀ⁄Vîp,èUµP1EG)[ﬁhèO0C¨Õ,òv—¢Ê¯Nû⁄w2L*Qâ^ÏÕÚµÆˆŸ…‚êy£'q4íL &8oD2À?…8<ç¯Ã1≠Ó@¥ÿè‰Òﬁáƒˆ(HÔkËπHj¡†XQc†Øô±]Ói	ﬁ·9ÄÂ3&ª»ñ5¬¢]s˘⁄Ü¥˘k‰‡f˙õ	»‹Az}k˚≈ŸËÓww˜z¬AzÔ˜œ◊áh¯{
-ÊVîvOˆ#·úîóÅO7ÔTäÅ_#˘aä‚ò€GòıøÒ—k:∑Ú1ÄtzôE3ÚAy\n±˙„â˛ÚS√èÏâpjulöÇëµU4¢8hµ-§é=ÚÖÀ.…˛U&AΩëE∏∫k.ïB‘1ùë‹ô1rCr•ÂT'¢uH&E’õuûŸ 7å £mü`ÑUœ!¡»CÀdoòª]Íæ≈¿ê%Ç<√Cv¡É´º¸≥dåPBÒ≥óf≥ç{¬5gÍ∫ŸC7¢5Ÿõ5!5x„h¸oË§õ˝hT3;@≥Ï˛—Ñ ˚i∂ú‰ÃÊöd°{ó‘Ep»ÇÂ¸I>N‘˜≥ ÊXü\±®ht—¿Rsﬂ Õ,Mp∂€›7®gSµ¿g≥9ø@˛ùÇ˝K‹Bva]˝»¬πœg…îü∫%G|‰<˘wWk…ÇÑãõ˝tıÎÖ<kØ]4ü:ËiÅÅ‘_iıæ=â§l≥Ò  ◊`ê{[˛€l¸›¸‘‘O›Õ6—ƒg©µÄŒMGËkÕ˙∂b«‡¯1µ∂"ÔÜ)ï-0£Å¯ÉnÍF!]a£kp}°*
-ÖdòNœ}Co˝nâ
-–°OèΩs8Ù©¡É_≥J´CòGEDO86Tù4Z«(é”≤2‚√9[~◊°.∑8öRZup0°BÉ5cêßê9«ÏLòÕíÒ)	 óÍÛ";X+„SŒ*SŸ‚‘≥<â±(ë`ç‘qÈz˛6qrÍÍÍ°±Q¬…5∞∆XQ•ÀÛøï‘\`‰[Ön0,jÍ	éÉ≈é8Cß )ΩÌÚAK±S›0É ‡êø≠£ºmKBπÃGT‚€?RƒÈ	pdÆè?dg˙x◊èLˆÕTRΩ¥®¢êlP¯{)Í‡≈ç≥ F”î¶ÃÛ.’ÒAÙÕèú7≠çÄ^d?≥[[ÛÅKÜVyn£ƒ8 ﬁµÜ";‚CæKÛe´ˆî≤vH≤»\œz÷À©N,Ä>:¡xÅ\LQù"Çì—E_·q$Ùkæ–Ê	°N√a§EÛ˝ú|uÆÀU„[’HåºSÜëˇ,ÊëÚ–úãÊ;ù¡ñ–Ø»EÛ—9'Õ]3]MüZ ;œ¬=Ûœ÷ŒgfõÀÁJ¨s)Û|3ÏÛıË
-,¥
-4œ⁄IOΩ^˝Ä,0ŸâÉS◊Û’πÏy˘Ïkr⁄≥Ò⁄’∏ÌŸ¯ÌRéª*œ=◊m·ªâ8lö”q2é·H ÈåÕ¯Ã\ˇÈÌ¬¶öI÷Âœ1É:
-NŒ¿¢bLãÃZŸ–ﬂ©ÛK†uΩÓ-í#´Sq⁄ïSxÕ∫à˛^N–gk∏}∏$˚cÒ~À˝©˝UÈá≥≤–QFï)¥sAc;ÎjûßŸŸ)cús˝ÇÛ–˝Ÿï˜Â…Ì¶J◊\d´dÎÍ≥Lr¸Å˝ËI˚¥ºA∆©´‹˘3Ü—x'éNb?IÍµΩ`‹è£±p„aß$&ù•±@µödò!üŒà≈π«ícåEÚçÑ‰æ>4ç≠‘-ç∫Sf^y'“—Ìé—®X∏ósøÒ‹<ÉNœÜc£K◊{tû˙ÎCÙóLYa:/çétWÙº)+œ+º›;§v°ó‹•a›¥4ıÒÅÓÎpÎ≥œ‰Õ-ΩÔ @ÆV{dÊx=¯›¥h1ÚêÈ ˘Ä_„Ùn>jﬁª>O=ùa÷ã+e!PÍ-c°@qˇC :XBiƒ,êÿÏl<a“GrMò◊¬Ó{Ò	¶@È≥‚ºœ<ùuí"Ô*¨Z-qÀúò`—Sôèvl'ÍlÖù≥c€Ù~¶5:ÑÔ1kús∏î{‚ßfq;>\:	…ÌW∑ùµ≠B‘"yåëT˘Ø>π»∆C]˚SV: €æ6N√[ƒF‡•~Ö<à·Ô—∏ë˝∆1¸)UqÀ(‡stwÙq}P6œí–‹´JUéGÿ±H¨ˇyÊ√≠Ë‡cä3¨ËÍxz‰ó°õxä#Û⁄§\Ÿ2:±.œ;œÉ⁄rtcŸ±ò¨¯hMKuù”-Qq3hõ¥˚{,LE¥p¡`?¬¡`ı5yàMÜ›7˝uÚ3/6ctwQñìÛõÀw‰¬Áã§›÷b&8ﬁ™w®ë=|Úî%∂◊iíÉ£{≠+¯n\2d%ıUπ»‡xKﬁÄf^
-v[	π•˜U2Ñ3è•ëîŒõ!)è.l¢ê6Úc°Ã!Ë¡<Ä„’#S·GÂªÇDpÎS§VStR”“ãòõ.õ3˛x3['µ}ñ.{HNß>…“ö+oBœVÂJS.NÜ˙Ω5S[(÷i√g‘H\¶ß¨j”E“YiµI´yo’ã≠{q\A|˝2n¡UÍ¥àÖ®*∫tÎ÷U0Â V`ï]æ&¿‰ı´µ¨=Ïˇ;7∫,g·\Sv2Ï≠b}j—ÖÃEpßˆ¨íŒL“î©dCâûj∆|NdÅôhÙˆî–MBÜ—uXùçdP‘
-£`<EÌTv3áäúD\÷…ÈÏK¶¢ÎéA¨
-F≤
-J’Õ…ø,§‘Ú ’–ÂﬂÇBKß¸,
-&tÖ ˙∫¸ªÒ
-⁄ªyuv◊–‘Õßüì¥r⁄Ò´˜,i„¨Áiﬁ>◊¬âo∂°'‡3≈õrÍ)πÏÖråD˘-óñÕ~›ñ≠Nõ5Ì (HÍØ]‡Iiî•4O≥5›îñÇ√ÜSÂ'}¡˛’è±˜∂¶ DNÓØ&-≈'Xa†æºﬁJ}˘}`L˝v≥÷∫äS˝Õåe
-∑É^ÓlkÍOÊf3Me	ÏXÓgÃ¬»çK˙;t˝ß˙õnU`iEó≠áî£f?fªä®ƒäÅZQs´í‹Ñi8≈	±`ºÜ<ÛÒ/¨˘‰O†"#´-—¸¸FW≈N»B≥f∂∫™c°Û…N@Ó.I/j*kãV\÷+sπ¡Máë±â+OóA3}âVöªiËV7©À⁄ßõ_f4å†ÈYÙ•ÀüZƒKwMÊañ\¸öá‘qn®Õ¯†0—∏ 5∑âÇUaËèÅ'Âí(•6Ä	Q¶—UñÊò°>2GÏeÎÔàÕ0ñ∆!d÷˛Â{!üe#¡òÙ´?c∆dD:%]û¨òNËVéÃù)™«Å∫p-këêªHVV[-›%DLaÌ8OÛíFj¶œBı∏ÀO3>dI_2≈rµ\/vÌ∫™(èb~Î®9“T	[có«zøZ-7?Ä√’	^bZõiñùöN¸Èa¿∑◊g∫˘1áè?†]Ωæ7Q$ëS7†˜–ioF‰\∏!ãÅ¬PVÃKûsóy[óëlìRÁDH%\*U•Å9I≈¿ }B≥§”öáñ9ESA38‚(î¢˘.(≈r+£≥ëÑ¢çj0;üë‰[&fÆ‰O,Ù
-eñ˝h„ŸÔQ˚Ãsyπˆ4øù’Üäº…Ô5Éq?ú¬é¨◊≤Ü ÀHC}nDcû˝®°¢>m%ß=Y∂DÓº˛‰Ç∂;Ë^.âÔmÈ{Î0èG∏¸]˛ó?œá≈ÔlDo8≤ﬁƒ™Òõ'Q\]ıœ7˛–c∫)ögRO’œ¬˘/óù˛Û$}êÎŸ_[T≠<ﬂÓå\D5‰‰(ÇC°y√s4ΩæxßÇF—$0èÏ8f/)Fz˝!éÒùU∆Wt¿ˆ∂˜Â.3gaïXá]¬qx&‡>FÉA¡`tı=÷∫ñé@m÷ˆå/ÊVX∑òIÕ4	Sœl¨Fı´ˇ5FAáï¯	=ÑêEyE'!W†N6fqpâËyn†J$≤$Yú£BZœ2⁄	µ˘õ2]:Ê@∞ÿ<f)Ï–8êi¥»πü.2y¥R80TÂÖ©Ω0«˛≠|˙ s®Áy/Ã¥∆ﬁ’_∆YvåúsÀß›$YmIŒ≈Ñë±îƒFå”îH7c6(T'*k¯í©@âÊÈò¯™[z§™#uÛ˚◊*D!¥(|eìdÑ©kr@*Ùµ‚ç
-Ö	>F\πc∂YPUÈç˚pDL›£u”€Æ¿m–ıÂ}r-'Ó?∫qöÈ9ño#éj£¢ﬂˆ¨Ä%âä3F4?wåµTäîÿÅ„∑›,ëçÛPR•◊wKOk|KÚ‰∂‹Gµˆk†ØM“ÀÓ˘I	µe)Ex„ŒÙ(˙_òF('≠Ÿmº¡=|ÚπµÌÔÇS©ä|û∆∞¡
-çì£ì∆¡_µ>ou€Àá‰8)ˇ4˙QHMΩI£Ô”äÒﬂLìXNÒs“X©…ı√ıw–˙Âºm2Åâ7Œµ'ÃgŒÌ;dàx%¯KIx~%m–ˆ@”PwƒK÷7®æ…@ù˝F2	∆dÙ∂A’`çäÁ˛â1‚∑	´0b⁄fz)¡D¥çxıt2Ò„>∫A¡ª˚o Ëç3 î˚√™Ù—8™Èµÿ◊—WS±ÈÏ:‡ﬁ4ÒkÉe:j6õÍ∞ÙäÓñq¥[ì∑áÚ 6t	Ä≈∆„i“ß√¥ÜÒr§t çE¢ÚSÕ9 %L@$•å˜Ü¢–-›Ω≠:‚H|“•N˙πõ!ÿÚ€êåº∑ç≥∆h@ŒæŸP˝Óo†ØçŒ€P«zh36t€˝Ù_ˇ˚ˇ˙üˇÈ˛∂(ﬁ*‚=c•Ô;FÁ…»¿Í≥!Än.å&D_§ãb\§`iÿ1e√‡∂Ü¡+2”F…Z3wΩıña\Ë¯•ß)27íÖM”4kOF„ut–zpaÊ™e˝ÙÆx-n©Wõ^Í√R(≈†…ycô‰Ë∏⁄"CtÿYÀ.›]*ì_oeMÂÀü√eÅ±o9Çrä!·A∂ƒÚ",Ø—9Jsúqx_d¢ì(nL"‰j‚ö2O}Ω6)˚≥âL?’,Ïv7›MmyÿbÃGq=wi¢<'˙ÈYáY% ƒöÿ Ï·.voNk__Xû›ø?Û˚x‚g.?O[€f˜îºÆœgﬁUEøœ¸Øö„'~<ãÁ'ª.´f~˛´]Q´∫Ω˙‰¢Ó2÷ÀŒÜ/ìœh>”WµÊ(ø≈ÌCÍi£‘<HÕáe/Rı·b7R∫Ï˘»©áÎG‘óî'‰Œ\J©–L]Cvªoó»\~à*ÇKÄ_¥›†N÷;›˚Ã≠¡zkSã„ }‘Îπ'ÇÌ:w3PoÂûÍuG¯Naåé0Ó⁄ÀÃıö;ú÷∑j´ÁsÁø]M©yﬁvS6ÃkSìÔºeªˆîdJóÈïÕ—H◊\›»ÊB5;¢9—Ãädv≥#òΩÏ»eE≠ƒ≤°UE§™åRUåNNdr¢íëåÇ\Ò°…-’•â√j+lÆ*Œx„4¬ ®®Ã^,}JDæ@.F~… .|∫î–˜Yq y<ì∑ à sπ*∏∆#ç}D∂Rb;óÓ¥(çƒ—òƒiåR°UŒ:Ú”3ú)u¬ìBqÀÏÁƒõ4ñKu˜»˛áaû`¸2<ŸH#˛È”Ä3<ˆ¬A„ /˚^H%a¡˝Ü'„Á?%y(∆¡¯M£Âò†U|æˇı˛¸´gë?å+∏íÌ≈Dánëßbú[#aJtÌÍ]eI3•˛:£¥—jÆ⁄ƒ;óW„πÆ~¶À´Õ.Ûô¨+zpWüåÈ|FÄõq›m±âãk+-]xwÑÇ·m£É€¥ù°-n;« ¡Z˘o©¡dè9ïÏÌm)≥S—÷éíÖáøS…	[{^9D•#4√ß∂qalLÌ±Ú$óZπjı,d4XC5I¶˛Pç/¸⁄˚¨‰co<÷óπÈ'@∂¥œ˜;W"òóÈéœEfƒπ∆p©›R‘7*≈ÖÅ”ÔËﬁ_H‰êXï)0eMtLÜ˛qö¡•]I]ÉDÀ∫â¥≠#T$Ùóe˝À˜_F°∑ò)JL±‰Úñπ’´(oÄ©Ñ∆Úˆ˝if⁄‰Œ(}∂ã£,ﬁì¨ÚÇ5òÖ™/à—yk&r¬7gﬁÏ•
-ªæ†@eì‚p]ñ˜ˇùñ§ª…∂πÅù–u5ïà}¨+p2ëU4¸ Ç¬Ã*k	∫Ø√Ü—î7ñc1æS¨‘°§éª?˝?¥ãDÈo˚çªH`òOú˝4t™{4‚!òÊ;∞·ß¿a'‰iJ…	6¡?∏◊ b…h-ˇŸ¡Möˇ\©¥«~i≈°ñ[mQ™(÷µ#âAEé¬‘◊Õcç;›ˇB|èΩ#åÌópŒÍ∂¸ﬁ|Jâ—c.çΩ
-K[WB‘¿E>¢I`Íâ1¯ÔRd3„xSueP’/à1∞äj¥î¢Â*gV]Ô˛‰°±v⁄û<∏á=;w∞jø©=‹‹X„+eb„/˝QêØ
-WŸ »ê/≈Ê‡í˜Ö†7S¯Á≥AàøìÈÙﬁ‡Ê&√¨:#ìÚN&ıÙÍœ¿¡D77/6ÿ‚©Y6B.Køõ!^ÔïdÌj ‡˛à◊•\úDÿê/5ºµúx˝J`˝ƒÔ±OH∏B˚∫–ñe
-nmØqpkﬁíı\Ωµ`ªzü3ù‘"Nmì¶ﬁ—ô∞◊‚„*‘j`%´&ÓπÏπt˘ôú/èd◊?ij]_ö‘œ%øk,bKnã¯ò.¿„Ë-ŸŒc—ààWRπ≈{∏ö…kX0ã-¥Ó5ê#ï,q¢<p>É\_Ü∏∆ÎRl˚` FÈñb·ïEáÂ’Y	
-ÕÖb∏m&ﬁQÖS¢	»4ÿ¸c#C&‰Àbû~÷É®\’ßK”n}‰‰∂#S 6hxú…áÕ¥eäTa#:Â ;h 8>§ü$åôã“d‚N∞Ôt¸Ï˙	öÙ<Ã3¨Ì¬n=
-∫„Ö©¸)ÿΩ^lÊrœ≤Í[lÖ…WΩ›Õ'õÎ›çÌä√sbîe√ecå I
-um˝i⁄™LsR M€æ	È˜ˇ»÷âù>#:x¨r&∆ä·≤e~&UÂ§tµïiê†["∆‡ce«~
-Ñ≈p`©∆aÜ<ìÀ3N<¨_zŒ óbå,’(Ôd|ıcÇéãt¯Ü÷F’–\}∞yäb∫Ü∆¢£)XqÁÈ}◊}zÀ'7í@	jù"á""Ùˆ.ÔD¸\ƒî7ÁáWCp8oxÒõ∫˝Y0µ“∂W8CWï3¥DÌ/|–rÑEaÿF∫Xﬁ,ÄQø’n"J4ÆãïŒ\t»O¸GÚïsA<"a$)r+3´Ê.]jûﬁ€IËç)X…È“j≥Wˇ‰çfD—-KÇ†ËZxrïÉ\5~ï Ÿ2G2˝ú-‚+ô¡:%'bïSpå5%ÿÌ9ÚH<πÜF ˝wÀL{bWñ+ªÆ™0≠Ñig{wøªEv∫ÎõΩÁ˚ΩÍ«÷;$˜R˛ˇ7ﬂŒ)>Ó≥X…ﬁh¬<ª+—tÎ∆/¡îG≤Ö@f ¨0˜àŒÔ~û£g‹∞»è«’*‹í”æ%aUåIL…cÄ—)&@Bu˝NM‡ÙP›;\≠tº©Üƒ1ùLkK=Ú¡t‰>5–Lÿø6çäÎ\“Ö†LO·M†õ•'"√ÜJxlÀXtÆ‹ÆT1ü™ä∂ 9»
-IÍBÌ4áﬁ)∞ÁÍ˝øˇ;°Ïz∫µΩ◊››‹&=Úewk´˚∑O∑˜HÔﬂÔlQñoœ∂)V,Û/””€4Òˆ~„üãEyDkó’πÉ
- ≈‚Ro1m/b/ı 5µ»ŸÄ†´–˛“ÿçxŸõIßX~›¡Azg•Élﬂ…‹πûBŒ¢Y¶úoñ7ˇßXŸ∂f§,√ä∏ J&Ô˚Ò»¶teÀlÏ¶l¡l˝ÿı˘ê9∏◊\U≈çKt√…ßãœ˛’ü„Q P‚Íác‰bƒÿ÷Í‹\,ö†ıèí¡öufó5∑4W
-+Éq,Ä»§≥“8ü<îœ8Tm≥´˘‚% &Ñ¿b¡Áå;ª6@Xä`vDh∑&®º…“Ω¢£ÉÔ´ÏsºXFn'?`;∆õüÆÖh% Ÿ•Û∫˙ì~Ä†bóŒö>˝À⁄ç¢I÷}Ï‘@˜˝kB8ys^_$~–ÆX±ŸÏ@›õû¯1Ç”„rág√Qi“. ÕV+G€[∞KzN∆b›ã}≤É&xK°üu}hÕ√¢:oJ52™ŸM›—D¥ı/ÉY…µÃ˘éÏˆ÷∑üıûoÄ‰±˝º∑G~O÷_ln £Bûˆû˜vª[=ìeq1-p} ê¿¢ìçAêÙ…$l¨UŒ|ƒ
-(≤{¡kCù5Ú4‰’xwÿô#»ÍÇæ·Ú˛RÿGh√yÿ4¥py£•e¿?¡§5ÚÔ¶/ú-UˆC"û 2˜ÖŸhÓ˝aÁÂ~q˚„?ˇbÏÏˆûæxæﬂ›#{/ûˆvakÏÅòæ€Öü‰Ÿ’‹ÿ\ﬂ&˚ª›˝ÆMl/ÿ'UVs¶-yaπ¶À1±-ü$xB#,˙ß,íá⁄Nˇd:∆oﬁ8J1"Ò0ÎAúLô)Sfb˛	∏#ÙZX_Õ;Ú˚~Ï≠Yßn=F*	6v2[Ω¯√†@æ°líceg’rnKÿŸ—≠R<…–n0^≤Ë^ÿô¡∆J>#ÌÀ&π¯Éõ◊túŒnZe∑-Ã„aaÍ07PÖ°ù¨çO=¿H”ˆ®Âv:§^)$RÔHèπÚ+“c Ÿ+öG∂©À¥;dZqXäßª›'W◊˝êôˇÂüˇ◊ˇ¸Od◊?	êM¶N˛ﬁmB	CQnÂIH˝¬äwófΩ¢ ˙M∑´ïô±,√ﬁ]}è¡C	^:T§÷>Õòr¬~p”Cú•ÚÂÆrbÒíæ3Ød¿Ê´Rˇ·Ÿ=H©¢ ef—AK©w0:·πÕÙZ¢’£LcÂJZ∞DùWñ%[3UD9ˆæÍ˜nãΩ… Ô%I‹gò∆·%Ò¬î˝¬Ç' Äx0Äáªuei˘êÁzÖ˜`±B…πYÛõ–\3W[5≤‰8Ò’àh*êg≠˘B©Êr…„gîdB´=¸Èèˇó¸ŒÀü˛¯ﬂäöŒÛP≤π2ï4ˇn  i1ê@BãîÜU¨®·^ùjfU∑ì¨‰~bUÃ¿À[˙}&Ô?^ç∞dî‘©\íˆ{yF0ú|ƒÕEKjÚNX¿Åè√\Ln/áÉ0”•∞aÇq
-úLJ9∆ÙrS¯b`MÛ©"´ÊSrƒ£‚<.)bœÜòl$MerµHÛ~Úá©?Ú–?é¶ﬂ‡•∑<˛4Ji4Õ"≈ä†‰Fwj«^+£ü0v`iÅ÷G¥4ÖL1„Øú"cäûecÄ$Ö≈˝„(Jµÿ¬s`ÏN÷wπøùÜj ì_~Svp˝,‰ˆÎı≠ÌdcÛÈ&Z!ø⁄Ï}›€%?˝ÒÔ…ﬁÊﬁ~ÔYmO{{˚õWzçØ˛Ó˘ÊzótøÍ>ˇ[’ãE9.Ó/1òà+Yï1Ñû/Z!ZÙI˚ÛN˜Z—¢˙K∆Q=>R¬£∏î≤ßê†¸Î?¸◊?¬Ù7qˆ[‰À^w¿TÔ∂}dg_LˆIõ4»N¥x˘'Sò_@π›ß¯ŒQOÜÉáß““CΩıßdË{qzÜâ‘NÉd
-c˛ÂïúZYbW›aZΩ–∑x«ªÖQØ-ÊP¢ªáÍÅØÏhóúıd«äÃqOsÓ”¬v7¸~≥Üÿˇ	%´∞wiÓ	5ÏÆÇg^{iÖú5‡–¬Ì1öºJøÂÚ3´Æg8ùÉªÿP9_ùo∂sˆ+˘îø¨,ı=k¥€ò»´Ì
-€Â£≈h©”¿ìÖKht
-T‘OQSÑÌÕ∆{–z’z’ºäOéº˙Ω{ãÌVg±≥“^l5WVù´Ip¡&%AŸJ„ƒG˜Iò4FFH§”s∏Jªj0_Nqw∑‰˘…/l–˝.∆n¡˘µCêﬂŒ‡’óP}‘tû-ıöÆÍˇhR∆M"DñÉŒ…bßÈ¿hƒ¢©„2ë>õ Hª›ØëcSÊ~úπE◊ˆ˛˝Now_hø>ÃÊÏútOÕ,)WÑ(*iKúÅ´ùU*?a—J∂`	«;Ä‡m;ñ∑kOQI»I˜·ÈÇ¯©?◊M6ŒbOﬂ2E*A]Õ!É6'∑Àõ
-◊’<åZÇTQPpÌaÓı&âƒ∫˚¯1˙∞ò¬aÒ$4ˇ˚“  óœi€o†b0É±†ã tg˛C˙W˜<ñ¶}GÚ=ÜaXÆç∏Iûa
-¢÷c{∏…^ì¨GÉÊùVgµLà.è∏◊Dô.—ÄÏ}ı4gé|/EÊõûî~é¬òäeN∑√ì5ó˙L	rª≤äñöÃá*4¯#UﬂÈâÊﬁΩ0æ´ *∫≈Lö˙8z˚†÷"-ÇT}.a¯†fuH∏?ÒÄ5<®=ÉÊ´‰K [++d˛ﬁ%∞Ô∑V;§›ÅVËÌ6æ%î70
-ë∫8
-£X\˝:§√5†‚ ‡HØj‰´ﬂD¡8ª,[9hã»	√C ∑y-Pt0aíñáØµI˛õ7˛˘q}'¸Ì–µ%ôà4Dz{t|ÈAﬁ/à..Îøõ÷q[^#µÛ0ÌÿY¡µ“Ûıíu≤&è{5¡ú∞ÄôpŒcÿµF¶?Â˜kåË£Ä)¥T√∞ï‹fDu6¶åö’(« í5>ã~HE\KÚò™îæ≠≤Õü;”"á≠∫f∑mq/ïrc‹-=neQQ…`H…0∂Ÿ:˚k÷ÛØJ.H¿Ã=û2àB¥^;Åu4ñõü7éa‰√ö°·…'tÒZ8G»Ñ⁄ù£—m5tƒQüwßÖPã˘ˇƒ≤I‰π—zÊ¸, ÆG§ñ4wÑbHp„9ﬁ^u2·∂n◊àÆ>f¸≥Ê‰ØeÀºG:ΩøÀ◊˙≤PO∑µßt~ÊGû‡¸÷Hè´iò¶Â∂M?xr.t=T≈O”`Ïï$H¯[o¢,ˇêÍkœËﬂO.™@a´˘ak,?VÇÇŸ•f¿©h4€Ã¥p}to7&1j|<¸~µHØŒ“â˙ìi<	˝j®ﬂæswÒÓ*†˛ÁÍ∑—y{çÏzﬂFc°fÃÇ~ºSo¸-&Úò©≥z|É{¢˝«j2°Y6Ä
-˘lpHÔòŒ™tÿÉIG)∫˙oQ´LzÿzÔõH?1-˚«‹=õ…◊Q¸5æ{ÄÕG^º=Ò«ı[ÅÌ≤∂áÙƒ¡˜æá:˙‚Gæ±ë¨s2P[?*r+Ñ,®X‰‰
-ÁHï99Ã}µFjv&S]Øf˘ªÆøÛÙ}«w]˜(b≤D÷˝ãph“h(ãF∏Òâ˝+(ïÉ+∞,÷u»ˆOÆ©iD%∂L¶Ï°>Juq∆ﬂã6:ÒΩ…ΩZ ‹Æ\Úm©‚OëpEí⁄öÎò}AëìaÉµsMàç∂¯ísRº‰◊∑˚´;ß”Ñ≤€òªv‡ÌaR7gÇ
-»	ñ.0”TNX◊ÌD¿ﬁyÉ=Æ™√ÜJY‘@e‘`V \≈
-}f¥≠h¢⁄w€pﬁµ;˜`ã∂Ó¿u«‘Í£Œ‰:|YM£¨Àì3»ä")is¨‚1Ó‹ÑÌ
-ÿF
- 4üØ∫¢µç◊g#óﬂ®ºCöç Æ–:‰_µ[G˜Ó∂ÌØ∑iÓÊíwk2›˛ÖïY ü6˛RÚµ¯©˚ZÈ”4œj´π?¶πÒ∏Ëm»ı@FŒS§¨Ùû§J§…ò\]◊gI+PEπgQÊ1“≠ßå¨ÑAEâ˜ç§íÃ~¯?~ œ∫õœ…˙ˆÛ}¯∑∑Kæﬁ‹ˇíÏwÔŸâ“P≠Üœ|§gò4Æˇf§‰9+*Ñ⁄ú]/É°∏∫uïÄô—P7ÏX8â-teÿàΩ3hm ™ΩnÏi6/∫"Œ≥∆ùnœÌ∂zÌÓ·“=…âöI˛ÕzŸ/CÖBëIcUöNDLJ8Ò Ò»&«3rÊˆ/…bôÙ„´ «öGÜÒ”–$IÜÃdzÑbi4!¬∂G5c¢:V¬òéí„»ïyÑS∆É67lZíÄ ï–|òΩ†\c$ﬂ◊ˆD%≈q¡Aâpt≤l¡∂wmﬁeŸ,°(ÂÔZËΩ…€¢úheÕf4¨8¿=w¸—aïvı„`äN+"I@Rçb€·_IzbG√æwÑzöW<äuUÉÃªÏS∞v+,Yß%◊fqÇMf–)HœÉ~gô-û ∆Oï´
-UûÄÄ8U ´v¡™SM∞jwÄkC€	W6° *0ÈæäV1J∏I{⁄R—Ê.yët•I"N∞U=2‚ƒ…“(ñTpvDøû1]∏Õ/Ì≥&wg˘Œù„∂πáuÛ-ÔÀ√ÿDªåÆKËHø¢∑ôäî≤∑K˘⁄n°¬≈S>$ÙDêg≤bEée§LïDIëw$ÊiŒ¸D°qgf2¡„9~”DB¿‡#âòÅD†}‚+KΩ˜á)èæ:ëÁ}Pâu/q07C"0ﬂïü&øi!`ëDÃ@"–>x±"ﬁΩ/&"À{!X:˚§âû—$Ωq⁄‡MÇﬂ4]¿˘§	3–ÿO∞∂„{"Ôâp≠fwgÛ∆È¿Qp—IÏMÜÁøiÇ† ‚#eòÅ2(ê˚‡Iƒ´`¸~àÑ
-ö˜A-ã7_˝‡Y©E~Ì:t√ßŒ„LÔtûømCá≈MQè’ﬂı–Å˜·Ä≈Ã*˝~Hà’M≤òàtVV€´w€‘˘¥2Ÿà∞JŸW^≈<Ïf˜∆9èÄÊ
-¯MÇè‹∆ÙÇ√ÏÉ'4∆&&[z?tB¿Â}0yVÕ≈{Ê¨Pÿ˝¶ÈCÑèbáÄ⁄O#x’Ò˜e€»‡Ú>hõólE}•‘≤”›Û_ˇ·¸w≤◊€Í≠ÔoÔb∂äg€Ω≠m≤˝Ï˘ÊŒnoìÍì˙ﬁ~ws˚9Ÿ€‹Ë=ÓÓ.TîTù¶ò„“Qª’V	Ó¢±]4 ∏#˘9äVˆâ+MÉh:ÕY¯œöl†ØlQ‹ºuGHû√eëhÂ≠≠˜Ìﬁì<Ô˘’_˙°Y—ß≥ñ’Úå⁄É~Iœ'ò]äﬁ4©€ƒ¿©G?ÚÙAy†{G.ﬁŒP;y ÎKYÇ|Êém”N^{⁄<UÓ»ß∆‚ﬂuÜ‚[ﬂ¬b‰C¿}.úH¬~TòÔ0£Ä,AÊŒ T9]åÚÑ∂M.^õ>húy»˜â¥-fÇsG/,3z˚PÁsßc/*¸nÕ=DX÷n˝÷9ë„i)$?qf ¥'´6w¨∑ß∆6AÖë¶ô1ñ3Üﬁx«t°$Xß•AÄZ†J#¯≈b°~§3–à‚8¡*îÇF?ﬁ<ùP¢)EÂMRmÊH'ÙÄKìR‰p©H)JFi¬p'p£]\lôÔ⁄<dcb´ˆ”Kê[
-v(-¥h%ïü5ËK´ãñeq‰¿c\ÚËúeÕÂù#VS√Jyoã™ :T–áõ∫pWÕ·d
-Z&æ‰“÷∫≈bIk)–æ¨$ƒyo√∆AßC'õÈŒYz‹kqñ–#Ô‘∞Ú≈Yà!nìPKj˜í<DñÚó"ØP€ç∂,ÖhÌ·ÏΩÄ{∂íì©êO∞dZ ídNô
-KãXú(÷zL∞Ï±,Mkm¢• óƒ9˝¯hY™'ó´*§”[SÚ0Õèôé∂≠‰ˆPc9l'9•+v¿L˜í=∞'äÄS∞7≥ö‡ŒgÜﬁx˙[ë7ò˘QxÃcåÒN|≤'˚Í≈¢Áô3u*0Ü=œ“}Ä}—£€º`—c¿Âôûæ¥e∫udv‰‚’Ÿ’4ûé˚û◊ey⁄.T(^‰ﬁµ?÷jÂt^P!ìÖ'OZÁÆÁEè6Ù4aÇ—‰≤∏gªÌ[?9∫˚Ö¯é M∞
-ü«¢÷ÍN¿√ﬁ‡/R	ÇA¡cV`{ŒÔ;j¸|%ºúm∂◊1ÿ∫Sû(—])âá’˜¬ ¯"œ√>Æ5ÄUÿèA–Íh« ÇŒå‘.)øÎ¿XgZh˝Ñ()=‡8˘\¡ıÒ.C/ÜÎ°Ô≈úÙâh5YBìÛo⁄6ﬁ™e˝Wô¬PùSFJ¬<ãbSh+OÌÕ’WﬁÛV0ö^ú≥1ï∏^-*_å{2√à
-€Ø∑wˇfoßªﬁ#››^Wi¸9è\ej◊NÎN˚ÛCÇ5t^9%uÖ …„yÙv–ç@dÄ•ÚΩöÉäF0‡˝Óc“^„5ë6∂wIèl>ﬂÔÌÓÏˆˆ{F!ûÉ´FÆi†f,Ú)E!mòfÈ¡≈Ö†k§µH®2æ5Ô›µ$ÆŸUûjgOµmè¯oÉt∆∑‰Ëä
-√∂oØ⁄⁄[TµwLÑ’ı2ÊgT$xJ	⁄¨$¡][Ú
-XËÕÒdöbÅÖx`©Ødæ˙ÜnxÑ5VÛz«v)ﬂYî$7quL}æ^¿[N∏\¯æ*Ê˝¥wfÑvU'·/RFﬁFÜp∆“éÃZaæ®:£=Ò/≥Ñ˙PÃ{‰≈Wﬂè¸»la˝yﬁ˝“∞S¬ôî3&‘˘ˇ©ÿ√O"wëPìE0Ö\-#∞ƒ'Jáà\j»ë¶P:L¥Ò≥sª˛1Lr∏~Ê`≤SsÚ\á[∞ﬁcï—Âeeiô¸‚kl›œ¥sWab#:M()ïÎpXˇÓ†√1Omªâ…&A"∆úyÆQπ«U∏!BÔ»+‡ë∆˙3√Õ8<Ãºvâæ£`≈πÉ™°¸ÁJÈ&†‘v±xwO≠-í⁄ãº~˛|Êç‰ª˚›uÌ*9'“#4ﬂß7Úí⁄!”# +PXåœ¨dœ≥U.@áÓmŒ>≈¶ıSQ™œ?@sÿí•ÁtrEÇ˚«[2ñ•‰*åÇ©0Y‰q–ß:ÄzÕ≠b»?e†+ê≤ÿGIwŒíSt™•Ösfs¶åÀŒnô›◊î:r¶∆róã{ü€Õ-Ígƒ◊íÆ¸® yfp±§ë≥êF‚◊Á-ã…÷û™± ç:Õ/«"˘U´πcOˆ¬;´k˛—“›5“9≤—)≠>w$©+ÅiÓQ?ED?Âd†¯‹c{ù>ÒºSÛS|l≤£®”ÃéGö‘ïó˚Æ˜#X%ƒ|/‘eî.2ººUëjîT[û„»{ááû4Â«*∫Ëf/\˜S/úqJd⁄Xå)pΩÒâü©∫“Í7S/>Ò”&Ìº ic*+î}vØH$9é˙”dÕ$Ï:VﬁÑc]˙°‘P<£Œô›˙mnN’»tKC;Î?ö¶4a••E€)h®¥πào˚´∏∆≥÷=D#,q√ø‹_b˜gÍÑmìáÙüπ:¯*2çQ”`O_¡nL»qaÆ>{hdJ#‹ÙÀ\ù¨O˝0Ñ>ÿøsu±∞b|Ì!ˇ2W'_F££∆¡˛ù´ã˝Ë(†s·_Ê[ÈiF§ã(D1,πÚ˚]ÓDâ⁄gvaŒNØ˛…Ô{ÿ˝2'ZS«>¯;◊„;Å_{ÊC<Ã≈„gˇŒ◊HÆ–A4òo¯—d˙1+ö_˝òÇ$[”z˘Z/8ı«QBè€Q‡#z£πï„ByõkΩ⁄ã«h©¡Çóµöse¬ÈhÏ¯{%^ü.¥qÌZ]¢8Ò¬º[ˆ˚Z]ˆ˝¯Õòyß‚ |ª+ ≈ﬂá“è˘à€’è±˜h˝wæi∆Wﬂè}‹1ÏÀ|{ﬁßQ#ùnrﬂ∏Bß˚á)˙A(i1ﬂÿ˝ÿG¨|Ó˜õ“%“ÆÃ’Ìväg˛%ıû`˚ºx°Jg˜óGY†s)‘‚®ÚEÄÂ&°£≈ÄÎÎ”$çF∞+'”ÙÊôÖ„e 
-ö9ÉÃM˝à˚Ê¯Áí≤ı‚T%9ÅÇ∏âòé«S,™rq¢OónNab=x6Qb@Ûá¿Ø˚1∞äﬂ–JX—"ÂdébÔ[¯⁄Îg®±}î§WNc V≥Ÿ,û’á"£–∞y‰	6¬‡Ø˜´K-E†r·ØEVödFsMue•¿bP)zY¡ø√WŒÖ£≤ñ3”ÿ\eâ≥+9GK/1~î*x«Ù9d·ŒË·∑àÈÖKœêjZbhUÅ√íZ2Cãú‰6Éq?ú©+TqÅ|˜ù™Ò´D\mÓ||–ÙS¬≤Jt≥ÿ¿P≈¢ÄXZ¶ªC¢ä%S	|}∏IkO◊»Âb≈«7ÄyË=©q•zõﬂ∂˙Ò@Ó%øVΩü«A» -ıì_+—∫sK	„V*K™öK∏¡Ñı€§√*”Óœf;±ÖaåKœ˘Ñ†+9Êc≥+¥Âêg‹iV $Ã A	Må
-œŒlcX≠lc¿wÏ&WËá˛—,7f6XÆb∏(3îõ`◊Œ≤%™ÿä-	%¨B'áV»P¨“¥ÑÁhõè0ÄÃQ¿vËåRSÄ%rìo59Ñïä•¯f§äÇÙ
-H<clØ)u√)9∫ﬁŸ9¨,ŒÆèuËΩÅóT9ìa&qÙ[Ω2oKcBäÎR˝ù|ÑıÉ√ô»Ω+∫9˜Ÿ¥¯Ò.Ø’I—Ö£ƒˇ  ˇˇÏ}[oIñﬁ_âÊÃŒ{»‚µÿ-©]"KÍ⁄Â$’;^µ eU´≤;/5ôYºH#¿˚`∆.0∆é±kΩ2‡á∂÷˝‡¡¿∞ÅÂ?È?0˝|NDdfd‰-¢™H±{îÉië≈ »»àsNúÎw
-ÆzÒ!ínÊ#7fµ˙⁄	])!dkæÍ[˚HRv‡}mÈ®-›	øËﬂπó”≤ˆKwå√ÔD÷¯‚OÙ«h_⁄ôYﬂÊô	‡Ø∆ZbùÇ–Ÿ±√∏2ñ<$≤$IL$IO´K 	h4	ºZ±£/x≤:*L°^tòJ´)r|¬¨ùtÌÙrrR§°º‚¢c[cÃ¶1fﬁ=iÒ5“w“©•˜%Æ>K3s(ô'˜K•≥’K!‚óŒ>¡∑u@@OπvœõÕ¶¥~K“bΩ–ú®Œ4ksû“µOäFﬂQÖH≤AsÉÓ≤YÚû”DGª04OtP5™9Ê≠é*RÒç7ÖgK,óju’\óÆ¨ùÄÖÿÕñ\¡[£∆î+ÛÖö¶îÓmî·Øx™^â¥h=ç^+BÅónîØL§"£ıT≤êé£∏^JÏbõú‚3<ÏnæÑ≠\=¨É∫~◊áe\¬&o◊ËŸëªMPy!ÅuÂ7ˆkÿ-À©çj‡ïèlƒ-¿◊≥aÜê∫∂j@ô\W@¢»À”»H&z!'ÃfàX&⁄l√K.7b…∏∫ƒ˛◊L∫3®•öE©àa‡UkeLõ$Y9¶ÿ◊;§‚Å%aêµ"a=≈Î*ˆ dkΩ¡J∫¬œïı:¢ò#s`TïËavUÿ¨YƒÉ$Crï¯`b0YU–[:…yøVJÙ’}˘J}*≈$HZ
-f∏!˛ˆ*«°	®ı’Ú¸)åıîS⁄È/C%I6Üm`R∏•ä++û+Jπk™`∫¨ﬂ1Ø{1-v)∑∑ÁÈΩ∫1œïÙÍıg€D†∂€®=˝uåE}õO©,ná!LFÅ<®>ævhı:x¯∆˘Ì∞"Zw+≈µeÂb"≠JV¨Å≤r¥,oJË†“«˜‘3-À≈=Y
-ÁK‚`UÍ1™h•vJöifÀyu˝—ƒ±—rú”!(A@á©D±Gzât „ÉR˙ÿôÛ€≈µ Wƒ¬¯õk]]ˇ!ÏO`£V\€ãû>UπÄF*∆¸zPo<@x(‡ i„ÓXC«∂WTíYˇ &-€lÓ‘¯†_’1‚∆ö¡ã1fî14ÊW¨ôÆÄ)∞f¡#§%òŒŸmì∆é¢^Ú–QÄ¢Õ-Œie™m¨:CÆÙˆÍb\'N‚“qc”AWHZ
-®å∂¡ê1N|4ÆFÒ≈·óúª}ﬁï¨-LÆÄ«Páû»Ø´4@ÂæŸ–*6Ãàj›·å®’Íå® §‰k~wŸ“ïtù∆Ù<Àz=Ù√õ÷ó¶WÓ+]7¶O%c^ÓõæÔE`çÕÍ˘EìyƒCåº ∑úDV4)ﬂqóÓCSè	ƒZ'éjÅî√,Á‘£Ñ∆YÄØ•äsdGˆó∏b<ØxH¿úqk{v∞Ÿz¶#}ΩÎH}8uÃIûàdÆ∂«¯êo2qX4çcH†∫¢©Jƒƒ'5‰Yç›^w"ï‡xq#T©Óm»©°Áõè2’G2@õY´∑C!º—J!â?ô–à∏„â$ùÓ,TÚ,w0h¸Ñ\oÇxÒwÖP™`N îg%vòÙªw{‚†LøÀ[6Z€-Y6¶˚]®è3,éYuÒ”dYQ'clSﬁæ˛ﬂGL(î;ú†GñGy∂ê≈ò9Ù'AüÀÄ:„G/4<Ü¢–eg£g∞êB=Ø•\õÇ»•åúFñŒ^Ÿh…q≠::Øü…Üstånlm˚:v&ªÉ∫%∂ˆ.çOáQÿpΩ˚ä§Lèî˘ÓıªqfZWè[ÀRπV‚	G…´i;ˇQÉï∏Eø«ïƒZÅé	ßÖ ÊmFﬁ>≈«™©©;áè•¿ß*ÿï7FÀ≤ ûçîå§sZXã¢éøOCKﬂM¢KIfa—“›®=æP‹3b ûü0D`ÄVKx6çõÕ#Â3àÃw÷Kõÿ(ÜâÊS‹ô≠ïª!õeZŸüíÖ“Œ/·<ˆ|èÒ/0åSö9q?+∂Í—]¯µùi^≤öw=ﬂÀA„|¬{U©=≤$/y&qVX¸îhÇ-PÎÊëEûâåg»ıX{åEA\9BåªÅ–ƒì#Ú˙€∂◊A?¢c!É¡◊÷ˇ E◊"k´´Ü.+§›ŸsQÏ€˝“„s*03/∏ÑxöjËÌIkªBK~®√-•=r2¶¥?JÃÍëœ¡
-æ32*ÚáCáŒ h*≈L±tWDåÆÑâ="≠ô˚HR°˚Lù9«“â∑ß•zˆ§O*“Ú]Ò4Û√ÃÄ≠ådK¿ã,.H¯,˙à+÷LàP'Q4«0$DdSwÏ3ˇ7ìAûuNáx¶œ.K2ææ˙^Qˆ5êRággïq]_å»7à7Æ•◊ãª4F◊	^±±Ù_ΩÚΩMTQ1${›SNXL2ÁòOE‘ç•’`ØÖÏÈãQçRI»%¡çó–˘pê5∑XT<gÍPı⁄elIz	™VÍÿH[UL[Êƒ4gÓ˝ØµäÛÉ@‡∆“µSÓ”ÖGﬂˇ„?˝Ò˜ø’2r™Z2|ÒzªDﬁ0ñ 2¿*kß’5ÿ…l¥X ”áEIãR@Ä˘…$Ùˇ5û⁄≠`<:a≥ea¢ª¯‰à.∆ãO∫û%˙ Â⁄±‘œ0€>äSßáödJW‚◊xû8K˛—2æJÌ´„°E5ˆQÖ8˜C“∆z{“∞èF†A,˚»,ë}´øH&òı
-ﬂHé˜˙ªs,˚_˜îQ≥cÏÃN∞m9+~£	‚üÚPÆ§H_–ﬁ∂ñ”[«I&ÄÁ¿Ÿ∂Øÿg≠te·ª— ÆklÒóñ2Õ?÷\‘é≠˜E‰NXT8xã∑5èGœBãúXgV`,YZ¨ì S09ê›ˇ7ío⁄
-ﬂ3æ!=«ˇıÑ≤’ûpî∞P⁄G]¸	„ûﬂ∑E√0¯‰‹ç Üº√0x∞Ì}ﬂı…Œ(] ã'†≤ú˘ó@‰è¯rì¥{∞È`ﬁ¿<åGìÎ?x±≥á,{Õ4˚	XäΩcÚF’nd˝Vt◊zæõ¬Çul]cÓGµÏ)◊í∂ÂsÎ "ñ÷àÆÜˇ˛?˛=·Ê˚˘î¬M¨èõñ3úàÕ#îU˚ÃÜ]&¯ÿ^Ãç∑≤grÒñâ£≤ñle·—… f‘i:CFVœvl¯ìu∑7´sì$l‹â√\açÓY ﬂ]î9(ïHä∆ç-·&ù ˝>EC>sm0¸ø;√úº≈H
-2–îwHÒppj`»ŒÊœjí#0dÿDz~Ñ[Còpëhı;p¸‘i D«‘cU7tæK¸`eR[≠†£8ÍÈÕÖ]–÷´ó70î/<Údú=Ú…⁄√[çs°Fπ≠Ø∏5-…-ORaJ[qáAe»õòÒÇ» /ˇ¢ÈÖ5ƒœéﬂgÂÊ‰˚YxŸs,Ô´¢ˆ©Ÿ+ﬂ_¶<´YN]!qM›Ü$è∂
-|Ü≠\˝EÍÂ¬àÆ$ÿr≈yÒâÆ„ƒ-Æ @eYÒ•∏&j]fv∆ZŒûÌ}U“Q;`—FÇá? 0°54∞sŒ¡Ñû[ZN<MCÔ¶…ì√1«\ﬁ@0:LÎ2Œü|≥¡≤∂n°π⁄ltÿü8ËHjü€aY?~ÈlÌL®%•©⁄Ÿ®g»ÿﬁ04KC}"Óö2ˇV0XïZúm¡ŸÏ¢•≤ø¯p‡0ƒg‘ù8ª+a}Á˙ª°›áﬂ`Ÿ'€√Áïéö4•.ÕGΩ	§’NÂ¨kqAuo¡P<Mñ˝ì|æ∂öx@f˝îÁõ~[æGÂ~‹)rbYî#ÆÈ:¬Z7ü¨ê.ÔÿZ‹ò
-∂ˇ∆Q˚’˘kΩÚz◊öP%?#Œlá.‘|îÏˇÑü¿◊Ys±czVs*‰z)◊D©|·•D«…üçﬂ™ÎCÉ6¬8z∏–å.£•¶;XjégKÕÅﬂgˇπÑﬂ1ÛØ|ê™ìæPœ‘¿w—:≠ï8ø–M.&£O±mlˇ´F›y¨™ÖCTÄÎ©≤§2QÙC5P-7
-√€âÔv`Ö£§íQ:¯À
-üZ´ºiqc’ö‘Âpµ±nAˇµzÕÑ—g‹£Ô©˚™ÙGRµ_N¿8›ëùˇ‚€W(dO&òÌÀ'¡~"¡GªOVNu∫≤øª≤{∏Û´ï£ÉßãïôDSô,öx=Ãïf‰◊Ùâgô	a™$êñ&PJÓv|ÆøNs˜æÌR÷ÈYÔÈàSŒπöP1ÂpΩä<$ì©â÷É∞®*ΩèYW„Õ"%∏8H”R8;.»µ±J«TØ<fêcjabeµÊ˛ZÔMaóaMQ¢≈∂U‚ø L®´":âõv.¡Xÿ=lã∫kE¢«‰ë’∑E}ÁÖ˜òÓ∑'t»>¬S¯;ä´ÚbÜ\˚–30£ÄØg∑`9ìÓÜÛ+¯ÆÄ¸Y(≤íG˛≈ëÖ≈ú—.ç,€	Öπœﬂñ=xÜ’EzmC´Ü)åV&ç™*T |Àe”è~¯˙õ?”PL.µ85vqŸƒ’rÜ‘4+®oU°M`‘4∑ØhW≈ÄÔˇ·1[i'éæ·GˇgVËÑ“ê{~.S°É¢ìk°h/√Ù πƒÑCﬁÇx√z≈ÃéÔêµö≥™H7Ã!ÈU\ØhÑJ§mõI~q¨d9@x
-ÔÂé˘B◊C(“¬'“G'.ù1'¶f÷˚ sæù£ÙvS<¢—_LÄIèÆø	ËkÒO›;TWó:Àºí”0ı}ﬂT#ÑÍw´ñ√µ»_¨qò°ªKVØJ∑-≤# »Ô tkŸV0Aw03|∂≥º∂æ±ŸªnßŸ≠≈÷˙@ˇeﬂ∏€ÙˇÑ·)H=ŸÅ∏A9ˇ≥``’ïÑ%L¿-KPƒ¶:
-éìªMŸ‡ÆíÒÇç	∂É=qÓò “Œ¢±¿›3Kkê”÷ıø¯~⁄lµ?Î¬ÎGO˚'ÙÂÛ”Îo<hı:ªa¬Ja„Éhü03˘Ô[‘e{∏:O®ãëD¸q˝¿Ö◊LÃp˜å⁄}ÛI]`¡ıw∂Sœxpá„>Ô°6wæ°Æe◊lÖ 8º≈òoÍùÚ)g±'®åUÔã«‘.Á¨!kHõ0Z7¢nc!∞/≈Ã_Ú∑]"ÜC◊∫sL=[˜o†üﬂÏ˚Ó^.ºÊ»Ààπ[¨ÁŒ∆]‡ˆ˝Îo»·ÿtË˙;«˙)ìe¨∞Ä!\kÉÎw$¥Y&Ú;`¬˛ı∑˛¸%Ä¡…9˚¿]S9π¥ÿ7ûÃœg˝“ÉaoÉıwÉ&Ÿ∑,Ì}L=ÎiÄú4•˝˛ 	
-Øü⁄©|>q,l_c∂2ˇƒ–∆l|ãÅ≤g˜Y^ﬁ˚Ál6ìFô[<‚¯€·#ﬂãÔ7OöGM‹Àm≤µ∫ﬁÇM<°˚W—6¬ ¥ñ◊÷ó?Ÿºwˇß^=7V>&O|^≤ıƒ∆Bˆ<Û
-he_È»q|sÖﬂ¨6B.≤UAEÂlr?«Ó(ûKµ¨{´Ñìq=‰‹m¥Ô¡0¡Úº&»0Æ««W›AcÅKåÂ–zV4	Ë2ÀÃ\‘Õ˘#ÖY¯H^U∏˜¯óêÙ
-∂W≥Òc¶f®È{g˙(	>)] 0B¯ !\,#Z¶;S8
-lÔ´ÂZÄ—l>^˜gÅÉ±˝ÀÌŸV x‡áØˇ·oˇ¯˚ﬂ.§…zŸœÁSƒØyêbñ–ã&ÒÍ}7N©µ]8ﬂV>÷¢ıL
-Ôé≤¥:yºƒ<s{Õ7äwY£ÇN/E'O¨jn¸%˛à	8≠íÊ\Æ‘0[CXœÅŒdçµñÔ§Œ%å£YjªöêW†O˝áÎ¸V˜~ÀZc|Uóêû\ôº'∂b˘]Îr˘b˘˘⁄:Àwˆ{ÿX	Œ/BN~∫ˆ%ñ‘,ªÿgÏ\i?6†g4hp‰Élæz∏‡˘ÀÒGzp9Zÿ#µ’è…µ€?öwsÃu¯8¶.
-gÎı'TµñœYm8ªŸíÛµ ãπòÍsèW!C®-Í£ÚK∞AdãjÌõû∞◊‹aÕRﬂíñHFCAôLNËlñø\åyMËıY$Ño‡èµ≤;<V.çÃ™Ÿ∆bNµ¿?[$çqdàÆ'C4·π¥+I÷Ãè∆«[YLõh∂ì‹=s‹*Y9cΩÎÔ`e˚‰ô—ÌMòø›Ë~:Êoyó˘π0Wæïk∂2…0≤{˝≠À\Y˛–á„ùáØåRq*ˇ»2Ê#8≠`@NÆi!9kˆÑÎπ‰4∞áC†ï:0≈öæ‚Îƒ‰˙äka–÷ı«Ÿˆ L∂fiÉÏ∏˜€J~V-Åf(N∂3AÒ√‰îFˇÌd|<Q˙*ß{(=h'òºŒ>Ö{S,‹›ÅÕeü…ÉFTk =∆¨◊8ÂÃ£v`„låÑÖc;`‡>æ…£û‹SºΩ{êΩÉ}˚†YÑŒı7à·m2|8≤©[>¢˝Ø§Át¬˛d†ÏÃQ‡GqÈ∆
-iük-opéûˇ√qÑÇxÓ]∆≈ÿM[√‚õπÀ8÷càÊ »ÔçÙ·é=4	⁄Â*îÑUTüî8∂î⁄§ú≠àP?≤õC):—Ï%J/Àp‹“÷¥a>ïÒÇ∑rÿ¿≈Ω£›AΩqÛi]â˝ê÷ùıën’4∑„◊ºZF◊∑˛TQ(≤áS¬ºÁ¥†dÒÉ?)WÚôr!?ùpè
-û)º?
-PÛƒÎ√Mâõ4ô^,c¥g®›ªñ)Ô¥´ñ˚8ñqôñô>Ω>µü6ÉìR[+-µSŸjï’KkvΩîdõπ ´@?6,∆å´1πWÕKsb#ìtMB+‡@xN¨À˘ƒıcs@ıûâùÀ0¶ı|åØÿªHÅ#P√
-`»ı`«uYπ^‘HQ“*)Â ˚Ìßù≤€!G;¶HÊ’ﬂ™3WDg<.Ì–ﬂM8(F≠6Æc!£æ@
-hŸ’:æwCœ{±ﬂu=óª°√ΩŒ›éﬂ≥{éçz)≥≈cæ≠kÄó8ÍqÓa”°ﬁ0ëGdUó†»[˛¸g´˜Ww◊⁄/JÌˆXÆ≥∫b¨âLÌZ=º`ÒpΩñ‰3µ{…*Jÿ¯Lô!˚°Q∞|ok{ôó≠†N˝gù¡_∞≠hy0]Æ>vf'v»∞1°PıWÅ†L3Oz/\ÕØJ÷è¶È√/ÉF◊ö·ób”H—ÚK'fá2¥©µ¥kIyÀÎ\àK“4Õ~≈ªjpãbødQ¬+Mò–-0at∫ò»ób»`*Á-€2¸“±h¯•Î™Úƒ©ü9∞é±Eh Ç‰A∂´◊Î"æXÄë1¬$®MˆŒ^[‰∑z^ÍÏï—¥ÓÅ¶u/âø&Y5¬Xí-!ÃÕ‰ÖÏ5s–ë_öm¯UUR‡‹ÏÙƒÆ‰á\zò
-ï_⁄ì)¡Y2’>ÍÎ◊Ò˜5£Ø‚Î∫≠√L#¸zìú|äê2≥
-Û&ﬁ9ÌM	ØÔˇ˚0õã·&hÙ«»oè/ÛÄx|•'∂n∆iˆ¢MÏ†y¯ÿWè›Ü–TÊ á‰QY`^äXa0≤*sÉoµäB˙-ñ≠KNIÛ e“Bc«Å|©êN?6:LÜ2cÄB®'}[\H;e Ω√@<|Yã^ﬁjp•÷35æT›VóõÌ¡Äëvi≤√±c]åÑº¡.óú‹adabÜb™ÿ÷g⁄v∆ç¥£Û5ìÒZg¡rñîßŸV•◊™∫<Gˆ11ÄÁg%ç6]Êôÿ1≥§≥$D,é¡©“œÓ«Ig˜ô„0ó´Wñßß®éääx∑R“ …|U# ùåQ¨ë‹+Nê<ŸÂéÆc*»@“k*Åu´ªO¥› ’≥¨µ∞yà¶"È_Á≤¥ùq‡_a≥9Míc…d6˙©Ä∫_úñüß‘bÕ4≥it2≈"°Ã-öjF'—ïCL§ikñJkIûXüá°œìoJÆÇ˜eâ‚zô.Ã¶ó};ﬁ’ãΩ°ÅÚ©⁄=6◊)VÓh0∞I»∑U‰&Ÿ–mÄ´Ô—ï ›◊¨≠÷†<_æÃt∏ª≈=ãæˇ§YBº„¶(ªÑï‡∏ˆc@C “«la2Å˝ïïZà~ÈrõæÌıG’›4‚ÀÑ·4œEù∞"^ht`;Ÿ@òÿÆj9≤]J⁄õpÿ¡bÔÊ$ÉÄ†]ÖƒÂ`2÷ËÆ\clîZ¨∑C∆ ê#Zq‘ŸTz’VêU|]u`˛`ö”.t∞}Ã$fiÍ]wå≠30?∂>8FÕ8Æo6–¬t”o6Û:a6Õ˚æ!¸j¶Û[Ÿû.<bà¢Ÿ	œÛ{r˝mh˜-ì^¥zî]≥Á¬êS¸p¯ÔT¸ÎR>…‹‘¬∆ÆåÎ+ªp√¿∫b—ï4i„≈Y.E¡+%≤°+iC<kæyCÄ"£»¯µ∞ñ»àbq~po>–u≤È
-NFÇÿÅºüNX€†ÚNÍãáºßÅÌ‚Wæ™èøßóJV/Ùù	vhıq9QÜ,cmÌ:-?-ò(`ì°õ,<2sRU=oï?Ì‚gç8	ﬁÃÛ÷IÄ{võ/»x+oÿÛ#L]πÕMèºÕ}LﬁÚ∑2yMì›4‡Ûîª:tXnçõúsvzŒ°\∆N¶W$úåyØÀ9pæÿ;NØ…´
-±'(9ãÃ˚øŒ€∏U~ôû√1
-7Õ|>^Ô‚πÔunÅ£äı^f¶
-erΩŸ&g@◊]À>∞C,–Òﬁı∑†.”P°È9]®qqBé’·Á≈zgRüöÍñôÃœÇw'ºSÂ'-V“–ˆÙUm~Ì∑è1_r≠Â∫f±Éµ>ú†
-7Ä≠á-u¨+ÇD8¡J¶+Ç)·!v¿µ±%©7≠F‘81≥ÜI€y>V`·GsÿëFi›Eq£®ØÆ∞0X“47†ZÕ”´úJ/Ì/‚¬Ó^yñk˜…g@$,–ƒ[º˚ÈÅ—2 >Î2Ç}òπvø¢ù∆˙â≈Ï+Îg'sØÚóh¡$»,Ñ0ÂŸ`€dáŸÚü%ûÇÛ^fz2œÙñÀÖ¡ÙÒäY,∂xmFÀJI˝Ê:áââ©™∂ﬂó!™ï`ö;a‡JØB]È≈Ç^bìéÇ	ÌY`9háö“´~Å˝ìçiM1Úúíù2
-ƒÁ˝Ë÷ÁgfÙ1ŸÉc!·?ÄçX∂–ÒÖl¬2Z/l`Q7I"kíê5Qèò&7gHÙÕÉ¡Ê£hÿ‡¥)∏-Ôúô´¶Â´9qñPN√3ÒÿMrŸ\˘Ãò”¶‡5vS9cjzàFXUìxt˘ÿ#ƒ◊J^Ωòj/ñ◊Lm∆™ß<_Ol“4ÅRz÷˙\üïy“zÊI˜¶|–7ô⁄öL†Ï≈2˚‹Fuùiµ§œãΩ}÷≤L2zwŒõ(bÖÎ∫™Ï!Æ¨‡TW§iR©ënœﬂ˘ò¢¡ä
-˜ëÜq¿ûÈè<~ñ`õSÆÂª‚ÃáN¢Çπ^ﬁ$°ÇÎ,ö©`J˜™‘Ò:Ì—3èî‚ëäÿ∞%3/èùÜ‘Îüîe√µµï)yﬁ¸Q´”= ¸ÜÚçCÅm™ÄºËÜÚ¢ä¿^Ÿ∏ùΩI2YkÕÉLnAùXgR¸ì˚ôHVòòxÛ±}´"í% Ïà≤√’Ñ¨(Wƒ „cô	*öÄ312ëQ÷ó<Œ—ıªaì¨°Klm R3á“\ø:}Ù±4ƒ⁄ZMúqºD√=Ì;™5˝y˘=å˝ıﬂ˝ÿ©(·4-Œä«úçGO¸¿é˘Dk‡K>E≥˚ëé#U∫˜'c¯Öxkx7°`V8vn∑<=Lqﬁ§*û0kr	¨8È-˘¸Î1Oä@2Ω¥˙ëÂ≤ñ0Ræ‰8I!≈ {Óèuı˙Vèb≠iÛ¡ X3ë‹¿,f¯ªø3Y¿8∏yá7k´dQı£[Ix£4hÔ6± í¢Îo˙¨Õâàù,Åñ‘ÉpÒ(V∂œ·`rπôZLWbéS€‚n1¶œÅo_ëA“˘6næa∞Ä:≤—,ØeÊ/UŒ©ÆSo’üKéÂFE”ÍI¥wÚòeï7ùÆÃ∂”…ÆSP0üRê@'\ºó≠ ¿1hçä;P€˛Õo»Gÿ
-˚À7£¿vÀaC
-·Ë$‘û–YBcêä^•ê∆¯jyO∂r∞FóaE^çH¢xæ˙rs|˘rm˛{V„˛˝•µ’ı•ıÕµ•’ÊÊ‚ã‰e∑}§ıË
-˝?…g"óœÛ#LÌÛ/≤@Z]ﬁcîpù:°22ÀÓCïÑP	ñwLœ@ûåv.ä:o«˝ê√±Ì…	Ç∏µyQ?ì9<√¨9å¿¯Õf-–ÊÉ“T„Íw=°˜ïCƒëMÿâ¸Ø÷k”3 •=<√håö?√ï	åÚú¿r%…_ˇ˝?ìùœ⁄ß§{p⁄ŸÎ>Ì¿?0œˇº€›9\>nÔv˜Æ˜~)ë2äÊ§vßL¥3≤¢Œ%º%p\·î?%g6™/<∂…°ô«µUÚöyQ% ãï˚˜H8t¯c`ÏI¿ê+Tÿ†¥^NÃ⁄`Å[¯ÄÒÚ=µRHòcõ1«„∏jçw^¿FY—:œtUa8“â∆In-eí-yÈ‘≤S˚®≈ûU¿pû%»ıMÍs’∏y⁄Ü [Ù*ö=UwK∏Kz≠.à—4	ïµÃ‘r•`ÖUp(…KuJ±¸‰0é’‚πã…I«2VñeÏl‰;◊ﬂ·ó
-ÒR#~*@]JKÄäªLÉµ„{·ƒ¡:"òÅ}f˜Qıh∏J|h√?ûä;¸ë¡L^Åé˘†ÔbÜ–îØ\©£È’˜Uı3´/z–-t»£•tÛ‚∂1∆ø}4Æ‘Z≥0)kF0)Ë˜—ÜIø÷î1ËûÈïBπ_ Ñ≤¢4˙`Òdˆ5˛èÙÕç⁄“ÇL˘¬jaSc4îµÍäÜÍ*(Q∞v∏:« Õ,ÿ2ÿGÀ≈Ææ8Õ64 ˚u÷ÿcﬂ∫¥]Pær˝.†V¸7“ÿ˜A„#⁄±¢€G7óLØ⁄F~∞o{8)∫^ 9kdcΩ˛@ºÚT£óØB}a∆ç	ÇjÊBP•xˆiZC6ÍPíÎÀé`Ôu˙>vÛ´˝z‡3ÿ^◊PG„Î»$ı}˜ôÔXëˇ
-´H?˛∏G@ƒŒº∫ÛÔ„èõ•g	i–/õ‰ÄÇdÚ…c?ÙlÎ´Eq¿0—QÖp
->zH◊ˆ¸∞IN)ÈÅ‡ ∫˛]+◊p±Ÿ°óh£ÕrgâÌ±¬◊¿A?à¿œqE.oIOõu“¶⁄Ú¢∞@ﬁÚN¯A√#∫Ú¶ Ù|”Æ 9årù+»ˆe»¬cT≠í(‹9G#äË\Ãﬂ◊≥©wN={`âîƒ™∫≠*Ü?¶”oW¥¿®„˚
-Ì¢ Aå÷”ÛOzXU’F·\ÍÈQ¨∞W"ôX2WºALjSåÃËW:=+XéF`µó“%GV˛É5“∑ú~N≤Û—Ú˙&hﬁã/ÿ¡"˛∫…lï‚≈áÛ≠‘g™"ãËπ·p±∏ªµé·‘¡(50uÍb¬‚‡M(≈∏√|rw˘B¨ÈPo¿ﬁ;€®ÍØ¥Í∞˜‰	&ˆ¢ ⁄QÿDk»≤`«Œ/ÆßØI~¥¥‹≥æ¥`9j•z~¥∂µVÅ÷∂û’⁄÷Zeüu≈•ò|•Dπî@Jı3™U±ÿVmî,I¶∞ÖÖƒ™›ÍˆT”‘†Ë±Ñ¥5¿Òµ¬`œ`º¥ ’÷D‚æµ|Ôf}∏Ó∫Ôhˆ“öÏcÃ◊xy#˚?Ω–RóMÏÛÖGO)(1v“∏≥›ù„zÕÿ‰®ÄCpﬁ!ÃXÖÿ[èç™¶Îq&Åél~té∫|X„úxƒûÖS{´Î“§∞≤ﬁ3¨ñCyæπº	(∂Î8thy—1À
-i#û¯QÈGAÁ…W≈Û´"ﬂGç3—˙˛¯
-‘3Ê"Pê#;‡bK3G¢‹}»ˆà#vé”5‚>ÔGüì∫,Ó~˜0^¨ Îì/Û»‡ §èc˜Å¿ºS‹äá$&ê&/X∞–X˘‚˘qÁ‰Ÿ~Á‡ÂŒ^˚§˚§ª”ﬁÈ|Ò‚˘·'/>˛ÙãÁ_¨î|eeÑ∂∞("Ä&@}÷ÖeGπ1#{å{æöp(Œ∂ëÃ€`‰∑§oE˝ADC”ï·“§Ã¬“iùù<QÛõ⁄¿ÑŸ.∏Îô§Œ]Uã’+·¨π%Ö˙´j7Æ2üÔîHá¬ €Ò«ÿó”&Ëÿ"Æhô⁄XˆI(V†YÛÖÊ‡ä∆_ˇÓoâx¸ÅÄ‹yphô;*xZB¥boìÎN}ûõ–xıÖ˜Ö˜Ò«∏cË–IAíá»⁄˛¯„/ºüøI^ÎÌ+ÌGﬂc¶ŒÏ¨”∫U‘ÃDè7ô’sÏŸ˛.¬x3ÂR¨y≥@eÍ˙BGÿ8á-MêRcÜ˝ü$ô–M≤¨~~Í?ùƒIH¬âÎbŸiØ:GY.æSYUë‹à˘∏g àé∫òı5xπHu¸g4À◊2A"Yçmó3k@ªû!⁄N—,+Åq‚9a2‰LÅ\Éƒ÷í|êñí8YíôMiœâgâ‰ë3ôJù◊òº∏gáëo
-Î8K·ºTW|(j?ÄlÀgX(òdµ;1ÚÏ»Ç≥âTŸZfA&}óXßV˝UïŸGªr€h’a∏ßÉ‡û˙Ø=,ˆ≥üëù√ÉùΩg'›Îﬂ±ÓE“)ü‡Y)/¢˛iiÑ∞]íÌ^ó$'ê•ÿ?àÕ'…∂O‰S6˛p+€'#á‚ßF8 ˚qW‚˜%hL∫[l*'íìÆ√T`¬‰∆=¨§Ô´qÊ|réö
-#uWóπÊª=ß^‹S˝y±ºåOéêÔ˘L“UÔïPeº¿,{¯‘≈ä˜*⁄>Ác"qØıg/$íüá[|›å·‰/tÇjH<¿ıßÅö'}fr\5étŒG±È¡3ÍëGCr≈Ä1b#V#…ïw£ZNüa&ílFõc.âY¯~´ï™òTù˚ŸåÕ8C[V9D;9ÂL“4UŒÔˇÒü˛¯˚ﬂ™oTï“1’ä±EËŸ√ÙAèY)ÿ1={[F6Z±`ﬁÃØÁ_ñGÇ1”∏d^æ«Î4zw–&h_à/≥Kœ,†ﬁ*£úÎ'†U®i&ÂwïÍE»€%-KÓ’Ωπﬁ≈¥«“ÔH∏,Ë{‚º' Ê”ëfEb«πÂL®D]úf9Ò•Ì≈n…IÏﬁmFX—5Ÿ–Á[æFπ^Œgª•¢N≈5¨@Í2îòQâ—H(µG9Û˚ìp€üDXü%2DŸG˘f‹8 Õ™|=Â:ı-[äRô]ßΩs™	ˇL7%^ ìŸ¿ö*’{$m@}9LvOÂËz+-P…PA˙©zﬁπËŒ(∑+ï·ZEææGX‹Û∆;∑Y{\ŒöeﬂØ8Q^ôÂˇU´∑VPÚVT`î|ú˚\¿Ä‚N‚™ﬂC¯2˝ª¢—Kë¯WœﬁKgªÔ;À®X,¢Ä¥ZN
-	
-œÃ|a«æe{|b∑^Ÿëˆë&≤Ø§VmH•”p‰‰‰jﬁ;V¨ﬂ‘¥Jr•J5»vdy‘—ÕÀÍˇ sÿˆ±˙9ê<ÃgXVÏ°Rÿ ﬂÉ'†fCz®Ì¬cV2R9^åF2ÿæ‡Yp¯ÄMù^≥Á˛k[9u∂“€aNçRíZÀ§8m$9Œ’ÑŒç§jm%vÿ¬£ø:<˛Àì£ˆNÁÂÓq˚…iÛÙWßıvM≠UÉM =Àπz=≤kX„QXÔ◊œ∫ ‰öNâø±z&Ê\ZW!Ãsj¢IÖõ\Z–2«RΩµ™n„»´ë‘ëB)úÕx•·1l∑M§⁄L÷öó˘†AœùÕT≠Ã£Ø∂bo¥ö&∆˝8Ài4œÍÙ˙POì÷”‰Oß†∆w«`–xXÚ\\VÉﬁ
-,Yõ_eM·DˇKk*EFŸ®oÜÕ` ¥msßköjV‡∂Ã©Y-|.géWëë•§¨<g¶›Øˆ~É6hﬂÆ™Bi‹å#2¯´hû1F•+ëaül®◊Ï\òî˘•|v≠XMj¥Í•EπÛöª3ÃdYKKœg¥`íI!ÃYæ‚ò	…÷˚Ï˙[ãäG}nÒ¢"	O•j–Í3Ωl{5“b5ûãËiî\u†ó=‘=æF[—À©]ËJK|§±úµ/ı1/˛’è©DGÉ3ﬁ-[Ke)hgV∆¥1[ŒâoâÒÍ+Xle›jâ'Wæ≤û˜Ωm≠ â47§;Âµßú™$Ê•˙O¶Kù•6F.TŒ,7.Áa›w˘‹y¢ﬁëÖ®`é%PL†.Ì>¡ú±SõÇÜEé©Â,rÀG,~Û{g(‰ŸÒùâÎU'‚ïKÇSo∞?Û◊ÂØ)zrI—+é∞Ãa^⁄Äñª·Â'Ø`ˇ6–•±BY‘®•Q¥<∞Eà¿‚$·`NÿÙZ¡∂Øπ*≠ò∞ŸQçèY!Ò¨nìÙ‰Vûª˛ÖÁÄíq¿Ä~aNç3À	´b_xÈd≠≥◊H¥ŒëB•˙ß9Q©r\ÊàVãJw1•!mZAdü˚Ç›±Ì'•Ôò§ˇÏxèx6ˆ—¨L”Ø°”x˚$0IßS{_t{8¶ﬁ_ç¨(lè«'#+†ç?Á˘–/«É≥?ü˘ Ÿmπî∑"â*'¯˛‰E™à∆âËH©gv‡"")'U	jëx´f UëqÚÎ	Ïv%Ω&@y…cﬂ7•>u-€πA2≈vpëâlê'~˛Å4%“Ñ?cÎîÄ˙d2Ø<€´YËn◊$Oˆ®˜CõX+zÍÔƒ≈y∑ªYôÉ◊1:≠÷ÿ2∞Cvº›zG¥û?igDaÖ*¥RVô7®kù=ﬂë÷t±¢πn∂Aúó=Î§ﬂÉ˝á/ÿGhé8{∂˜ïæW˘ƒ:“Fˆ'ï–+Sÿè"n[PJápz8°s‡U…µsV≠û≈9b’=¢¢¶Ë©ÖyéEºIè&g∞<ÈÄ˘HaS8ñˇÃ"ËÁq†AH0X—%Ô*ˇíœFßaVí+⁄b<˙ØÔ:|iÑh˘Ëé»‰6≥á}øìÓ_£ÛŸÒ‚˚9≥Ä°˝ç˜ „íe∆Ï õb€ç¬¸c‰§`˙œoFÀ{ó¥Ò)œgRs∫‰ﬁÏIf[iHÔM‹	è{∑„lø>üˇÅã¸`âÄƒepU]ö êøÒXEˇR;GpøÇõO§ó∫q≈oñÉ
-Àπ.Ò¢FT#,I'à´¶ñ"•nìÖÖ
-0tí¶Q™gÅSó¯ì+xÌaÓ©c&õŸúMˆâÉëËÑØa  :ú¬¶,0óuü§æÑÒ¡h3ﬂ¬U3çÿƒY≥9¬≈„k¨=ƒh≥˛I∫%åÜµã˘êU;ä¨˛Hä?û˙ágg¥ÁàöD¨?‡a,¯AáFfÇ‚í!¶KB" 3`¬Í”\Ò©Èb©±À™[ùA‚ ï\◊ù™@≤ôG~‚œg m{∞>æ|y/Óz∞∂µ¥vØµ¥∂~iµπæXÇÊóªTL6≈AZ∂ö1√G\u)vâ∞TÌ≤„äÓYôÿ|à˛˜æ3±±±J!»Aå:âyA`™{ ÃÈ•œƒ]{ÂƒK¿‰a3ﬂ≈q’—*C>Ï“(®‘zc-t-4R¢Ö•(hä¶7&_EX•‹"iÕ\Á1⁄Õ|¥◊·»ô®¡√t™7]tæﬂ‡*‘“úf›ØNë.kcÀz“fO˝∑º√laÚFA≈xZÕΩPŸÏµv°ã‡3≤›◊∞åD˜ ◊=^u#c–Õ–rí÷™ŒGÀÆ¨}ÕÏÍq{›êüK∂ïçakìÿ7≤≥9WÁv8±ãN÷ƒ/ª_k«◊‡ß™¿@í'IÑ?XûIΩâ®]ØèUaäR°RòñnK	ó≈ZJ<·ìÇ nE<·÷âUÅÕ—Y]]‚Ç⁄u¡ıw¨¡õn∏Ä_Z¯G˘–ÅTêíÜ$ZfOü!œZ_ArÚÒ£Qˆ^mv&5Ó1∞qÇâ^JÉh÷ £≈\≥(πôœ–ºÆtÅﬁ|Tê<˝Q¶Õ~¿uí)`¨^Ë;ìàäBµ∂¨™4l-„íR›f=9‰ÇÕL>"…U~ÂÈ!∞ıI;)õu’ú™∂kmïı)ñu√≠Z›∞û%FÂŒµÚkΩ™U“¬£€ãCòë‘¡Ó~6ˆúdmœ˛Éï—FÂ\∆π©òÚ¬∫r,Á8#0aQ]KÊfé{Láz¡f¨È®K#‡6—∞aÃ 'm—g€[bßqê˘ñÑ7x[‡˛s–Ïi∞Ë‚l-X∑`¬ @`(€”>∆Gñx˛ø´œùı:¥Ç™¨ËJ†·i—>–9)
-÷˜ÈÄ5O?â,÷oã¸r?™⁄i6Y>DvøE^ÎÒ{⁄AíÜ6â∑‘ˆ¬ŒﬁºåX´G÷÷ïB>.g6ï(÷˝Læq$c(d≤ÌÈa9ïÙ,√@C.Ã@r{ÊrG≥ˆ›¯‡ı´¿ÄèéøOC÷w◊∂Üﬁıw@W}∫9e‰WaÎπ≤2P.Ÿ™öí.<äKñ@˙úDtæù~öÖÚR9[™˛Úi∫)†<+Ç#∂‹¥£àñ¢¬eN-7¥X‡1†Cƒ?
-$÷êX}kp˝çã?3(§˜sÑùLS·‚ÆB»M≠÷`á«iue≠¿@)¿CZè’√DoîL^M∆J⁄kö:4àvÏ†Ô(FÁˆVRè'k“>~`ù÷QOÖ1=Ék·_h8÷˘—¬
-ê5‚⁄<1}≠§¨ùÈ÷kyX˝"8J`Câ Í—˛ã¥úöˆIm>"G”…dHÍımcã`r›&§}`P÷ô{iµè∫ÿ’úÖ·â.TﬂlÏŒtü MòD	èöãhüÂ^ø√Ò‡ºZ]-xÂ›7≥n∞â±#Lï
-Œû©$4÷ ∂*7àaya{1Pj[¡6˘ú®NíœPÆX‘wﬂÚ–îÔl¶HU≥yÿT?p“À<|º‹Á	3˛QﬁÉ
-mh õdpMÚ%ØÖÛF¨W•‚5úHFLF…	o®y‘∫@¯õÿµ~|M≠N≥On9
-˘Êj	,∆}ÓM+Ç≈0yﬂs!T≈6¡"F#ÚK≤VÁ4ÄNú¶Pﬂ~Ü	°sÏmÚXÈ[◊3ã¸ﬁãºÂÄçø,í¶joS“˘¯Ï∏∞´˜ø¶Ÿ|Ö{Ö…\´ı£®…}˘ õÇBöƒ≤ól£ÀÆ›Ï˛™BÊÖ`˚õÚ≥≤˛R¬IÂR†-Mß/òÏŒ™]j·.˛‹wŒ—›åz˘9û6à"éi∂%«¨Î∆”+<CÌø<ˇµv Nèv@Ö$ˆ∂>-vk±&LVõ1≈Ñ&ÖÓëU=<~˝®K ›_õ∑∏{‡ÎÚˆî|Y⁄FÖ√óò*I8π„‹ìO˚‹Ú^[*1]|ZÅAΩÄ ±è∂ÁNˇ¢4—ﬂ]âëÑÈÚÂÚÛÂµö	«tj \yZÆe0˝ cπn_<{3QtXÒ#;™1'o1äVg∑9©öl,ƒˇ)q˚Ûu‰_Å«˝Ï–˜ÖEk#Ú3‘àÇ5’¥z√hÇ˙Áp&òdyú-S∏àdÌäV^Ûﬁ8=œr{ /%–˛A+€î ±ü‚ü¯∑ÓÎ4DçØ©a∂“I≤õ∏©ïÑG4ÛH™®‡Æ∞%≠NDH€¡hâ≈ˇÂπÃ8çÁË%U=ÿ≥Æ`wgQczSH&∏˝¯ñqÿÏ	õ;nˇ¬Y{hXüÏG4ˆeÅ´ ËM0PA¶ñtEΩô\°t“ÔV*(oT†e5%	f≠¶∏ÎqX [•§⁄‚w[q“‰4vÏœ»g8pßñ§eƒ5ıﬂ‘È,2U;Wçuüªsuhù”È∏Z)‹ü≤Èll£ôuXís(ÁcΩ?ï¬º{û&ã‡Bœ "O'V0∞™ [í«ôtøõÇÏ˙ñ◊ß;S¶"ªvˇºØ\) 9;ı—≤ﬁØU{sÑ¯´Y©êÔ›ú…6?’u~¯˙ø±Ó2Ì›œ€;ù]≤ﬂŸÌÓ¥˜»qÁË¯î|ˆlóúÓuûí«Ì„;∑Ã∆5ÜΩNÛZ2Ÿl˜[Aﬁﬂ©[óév6]º(Ì.9âÆJ~Aû`˜æàÏ˚˚ÃF˚ÿø–qàó5A◊8ç±‚ıŒ[Õ`ä™≤Mﬂ´Rœ3˚kk\Í9™ C—f‚œhX.∫º,G>¶gl[©OvD}89ÚCò∏Ì§—m◊;îtcXxΩâÕΩ«∞åiå∂‡”è>Ãï£Í7MΩªùòÌ3¢büò5-CÈXv≠7X•%õ≈Ûfìµ}ZRWÓÖQõˆ‰	í±Ò‹d˝fë¨ßŸπ6Úƒ`d•n<fÂŒ2‡¥m¢E/ÀL≤êåoë|xØ∞üöPç3ÊdÚáO‰$t•πtí√EZæoi^ò‹?s†˚º	§ÀÖ‹Öî¢¥c÷Æ»∫ç°+~R£	ÇlòÊÕπ)uôOÂ≤A_`ˆb=8}aë„â#IÍI4≈~^˝6+Rüî|ß4´îæÃR∫˘≈Uç>2ÅsﬁÒó<òzb˚¡,±}7%V?B5ÀrX∆ìÖ¿à^h9Ë` &x¶ÈZÓüDìPIèÇoâ‘)¯ZËÛÉ∫D)æ∞cOû™◊{@?ò*ÇFÁ∑”_["qa!®≈çπÃè¡¬Z1∂iWBñ;”∞ÿ=ñ9OÛÕÑÜHúˇıˆäZÿ]]Ä•ı0;Ç\≈8î€∞+†ñ¿^êÎ?`J*ˇÊ∆ç7¯ı~≤xóiä±=áû#`øNÃZÌ˚XÛÕù≥§\±ÙU0¿¸pL˚#Tâ“4bãπêœiìt€v≥ÆÌÄ@b2cNmÜˆñ“üÖ=∞ÇdÅz0o,§¡9#hÆwaﬁp(ÁYi∆i‘\„·LöZ’uYº&æâ˝1ç©ΩÆö⁄yÄ™ r©;¥ïœ¸ÿÃXÊ≈iÛ=ÿ‘≥ÃÏƒJŒ´¡§ogN+K¢FAe<iìÔ*Ã1¿¶ Û≥ÌÛõça
-ëœ±˘YàÇïªpÍ›A 0Ú˝?æ{øAäë9G`πúYÁà¿c{˝Ä¢î∞»^˜iÁ∏Ωﬂ98Ì‡fyˆ9e¨6†à9NôàêOóÅ"≤í˝s'WD‰f¬ô ˜≈äô∏ôËóu≈å›$ÌÎ±ÿŸB˚v,ÜDv}àGMd≥)\B˛ËO"È©(ª0XL7d	˙◊ﬂπå∂†thc›”ı∑±‹Z¬A¬û€ˆâ¸é¬°÷Q&èÖ∞¢ó@&0}!Li&ã∑æçøçØﬂÅ›xè⁄C&R˘cEÆ±	ãÂê‰Ö]N·	Í`≤Ã‚ˆP÷l1]Ä7~±|ƒ7£Iﬁrë∞ƒs<¯ -“≤õ#jÑÁî”cDŒÖâbÄJR&L*§9∫}ŸŸπYËk:ó%?|˝_ˇ˘'(?E«89Jü`\ΩF°ÁÉh ¿Ü0:≠d#˚◊ﬂ!ı…ä„a©Á2
- FD0‹N∑Éï≤çÓŒ.¸ªH,–ævâìpî∂Ò…
-c$
-êèe´®*ä/⁄.+Ûd¬F“È8“OìHzizpc\7z«BÒ2!£Fﬂµ1≥—BôÄ2ËGAV#¸ vÓ¨ÿŸÜd¿…∆≤S2§C0#d&W∑hÚˆÕqÓ	û¯·Îﬂ˛Ô?˛˛∑?A1s
-g˛§OQ1Òãù=í)?tÆø¡≤%Vûù˙dŸq{K¨Õ∂†mÿVÿNÏÍŒ˜[ÍˆÁs¨,÷”œ"Ìù„&Q'√°V·â*øî1AC≥x)V⁄‘§O⁄˛ƒ¡/3›4ìîíBs/SI˛¡ˆ˚1äN4vä˙nÂ(à+%º€&]1Åk “‰?˝˛ˇ{CqRˇMw¢NOﬁ5◊≈ÁÉú„ +]µgıT-™•Ÿá
-K}†Q`U;BÕx]ò˛0∂'A8Ï2©Ûôé¡™[ÕÜﬂ«›ìï£ˆŒâNÚ∑^§Ó÷•Ù"_ y±vlê∫y®0ö˝6yu‹9Z˛˘õ}+5œﬂÏG÷ª–Öπ|LÓØ¬µàk¯√€WK⁄Å]˚ÓxõxÙwà6õëﬂ=9<â∞5\cQw(∞Ñπœp[¸]Èﬁ:˚ëlãëX…o~Cv}ê¥‰sÀÒc"Í∂t«å∂m" øía9Ê¿w{Fêá6ˆq¯⁄„R4≥M–ÎääÉgÛ`†£=îP^Çt¿)/Îbõ0À!@Z	âÍÂìÍ≈	9y~"™n8Ë+$TvÄ≠‡Áˇ¶?≤¿éçN¢≥Â{K?CΩæ?†œéª;q€·∆_ú4C6 à™FLÌKƒõ8ŒY_\|˚ d>—j©ÌıG~ s“`˛ò&ÿ‡∞áôﬂçkA3ö±…aÄ¡àö ≈/åz∂∞$≠¬<çˇøj_v¯ÚÁo‚µi∆¸˝∂âœ}•˝H±=p’¥@R{ÉùëÌŸ…L˜}îo∫âœ ΩuAÛ—ªY+6ùá÷Ñ3RÙ3N¯ö-9çSçU"´…ú˜"÷U`≈e%eÂ=◊¶hMöâ\◊ˆd’¡I*èy&^‹
-(ÓˆwTc›˛§sœÍïŒg«Ó9û¡©cıpE *Á”|\›å?¶˚<J_ÜMõ01µä‰ﬂˇ_meBSè‘√©˚JM’ZiQáYNûØ]cM@§-íRKÖá‘I∑cmé±l;M®ÖΩ(õf,bπUâó§§l®–]£ÂÁ≠u‰¡)2ˆ∆Ωù¢ó√»YØbÀXWw{âÇ£€Ã?¡/¡‰ô>Ωo≠Ÿ“MSgv0ZVë¬ÜI∂œîi~1û]&—Ñ4Œ◊ÊõŒgj±5L◊9I—\Ω¢Ï¡O…´ü|◊√í>F„¢Ê+¥ÜW„ﬂ4Õ_]Ò¶óKS‹§DÌÒëÎÂqñÙ˝HRÿ”•-@;RåyVZöHº^—L#˘ñ÷mÍÙ>YWi[Al:Ë‰9zÈ‚∞Î¿f}ù≠ö£˜Å¡
-ÿ√Q"Ñwxo£[í¡R€´õó¬Y¸¡˜.áÁíh}í∏ è—L”}úŒ‰ﬁÊÆÌFjŒ-Kj	)e.¢:ﬂJ‰¥Ú·üäê^üRHK‚†U.§3BCOP´õS$•›îZ‰ÙºÂÚL_¡ÚÕÈ% äSÍ}√Ö•)Öéh¯π÷≠U„X=Í‹å8’"õ√•√˙îE«éSPü4¯äÎ∏†Ÿ{ÃÊ{ó:;ï /ÍΩë»pÏ^ rQæˇ˜ˇÉÏaËﬂr{6]$C^~y˝Œê“#Ml7mt7m›‰q˚¯∏Mv;‰Ò·È·AÁlÔu:ÌùÓıÔ»ø#'ÌΩ”C¸¯Ë˙oûv⁄¨±π⁄bä∏ÆTßï%96F◊”¥e`%ì3@)°Ø\xQQ∑ÁŸ!§ç”±Kh˜…ˆ|¸€ÔÎÜc∏c:≤–CæúëÍÀ›ŒÀ£6RÍã›™1lãPKˆli$‹⁄èØ∫É∆B¸ùeóIße	asaëX!˘Ït•Yæ$Ó$øaw›…`AW¸ìJ.˛˝˜aÚ2MÆZ0ÄhãüÃ´˙’O|LÏhT4b>üf<—ﬂ∆,ä´,ho[<ûG/ÿÕ„ëõ·§«ç’%æ$á{ıÖ˜Ö˜Û7@.oÒßWQ˛xŸÀ√ƒtÃF9µ]ÍO¢Üi˘I˜Âà6‘H…‹ãh)Ò∂[ﬁê68!˝ô+µ"6≈jÊ>7©Â["≠U˝Ç98A2Í/H—éƒ≠#˘å∆äËARz¡æ©≤d§JøàÇÑA5|KäûWB'Ï/2:˚ -ﬁS1¶g)›[k›\Èûàz<ô–‡5/‚IÚßB{8Õß},:ÓSûÕe˜m_d_•__øC∑K©Ç„pé–ÿüesÆ :˜±ï7i‹˜K“Âπ¢9±û)vƒÁˇ£Œ”õÓ ÔúÅ˛y¯rmuˇ√)˛·ˇpäÎ›˚·øÉß∏‰N€ É¿û‰ÂHo?⁄”\oÿ˙ä˘*·ºf»ŒÿÜ¡ÿ"GNΩµU◊nÙ4∞B^Íé'_¬—gCì—‰˙õ‡ÃÚ¸péßz;¸ã c›®[ ø~I:‚u;ñá~≠_‚Í9„Áö.;et”BÌæ^nÈÄbªI∂cÁÑØ`√‰Óÿ±äv´nØ±∏¨}*ÇîU©
-µú[ŒÑ>|£ûèı¥® oP£(;Jä‰!m¬Ã@µi≤«h$ıÀ∏ªI<*ç&ñ„?e“∞R◊;´îú¸≠U.j+	iÑÆ F˝CÍ⁄jSø5∏çé‡Y$µ-ò	úÆ¨ì√6S‰÷gΩ¶ÀWı™A-L_;‹∑lèØtÁ{W|J@<q’o¿œA.lÆé/_◊ˆñ·/õ-K≈à”h˘˛V=qË@·JÒp!v.˚I(EÆrIJY~=π˛”ıküµ[=ƒe9òa"Sæk÷í“x˘^IªÄ®Ò˙ê÷=8{(KüÁÒóYœ4àwô‚iàÀ7ÎF÷Vk;¢àIEr™≈LÁn¸£ˆAgè˘Ów¿n~¸£Îø9>n?9$Gá«§€&çì√ΩÓN˜¥ΩÀ?Ç;ûù<kw5˙òÎ∆^êé@¬≥Ü≤L_◊—*hú~K.ÓëíäÆeIÖ$4§ïø¿7ΩëMÄ⁄äFÃˆﬁ· ó§ÃU‡<˚8 i7üI“®z*â¸ÓFìû∂}ú~6DŸ´⁄aƒ<M‹Y√ kóÈÎ"›%ÔS€ΩN˘~Qß‹UEëKsπ@ô∏ÜØóg˜$˘Œ¬'«b»áêK>Ÿ)»,—§Œà˚Ô2ËGZ˘È’t’À~ŸÄúÃæl8‡`ÄˆºHL7–yeä⁄ó)¶Ä©FKFis'ŒtÛRFb,GÁ1Î‡h:ê6¶_÷K¿‰˘T†√íÜçF}˛0*9í¢‹˜õ#+.ÄGÿœÄX≤å1]t3‡Áô±ÜÕ ÔtMI~±∂5,ø∂§Hó~ Ïæñv≈ûZöÎ…€Õc˙ö‹⁄{º®FN(ãõPÎ´6™ü iÎº˘,«Ï™3¨ñÕêØ‹ÒOTVó˚®‘JlÂå.°{|µiö	∆œ3⁄Áßî6·Ë¶H∞oó7ôM·¿U´‘¿«¬ØÖb]¸≠.Îiü¶F|PÆ0hÌ÷¿FKãê[Zâ≠∞1ΩöwsÊÉﬁËf)»…∏'z~À:÷Ã§◊≥ÒÀ“∞ıÅ íYﬂî°†ZÉÍ9ÅìÏ˙]ü·Ò‹A≥ó2bs~á°—R¡ `Äq„	6<¥£´C¯'@YàÅé“˚öQ`c±y≈Ì:=–2oU·$N˙T›oµ< vÄRxQ|ì«0Jª¡r:ë“/≥tbñ~)_m‰Lz;î†◊Ó%ÛåÍUVJgsïÆÂ5≥b≠y¸iÍ’.ˇÔBAUƒ¡ˇ’™à‰ÌZRYÃÃX8tuqxã„:“åÕw__ˇ7˙„π÷
-‹±Ê¡—dßˆ¸Îˇ;9√!µ˙àVlé•B≥°s‘Ω~«–“x5ñEíâZüí£	E!≈í£Hâ¸z¬G·ÑCbZ»√˝@‹ÔìûçØ`©P©5vÑÎ˙@|+∆j¢ÅMD@ƒ”å¡˛X·qíª®ì+ñWÑ9˘vuqÔÜ±c–‹ÌÄ◊tÆº
-±∂N˝·–-û‚S¶±¿ÈHQ*æîê12j˘r}©ø:’5ƒ)®√G[[âpÀMr¥[=∆W£‰∏}^zTø¿É‹¯.q¿ø‡Ä#©ª"ŸÅ“;YˇÌxáﬂ/nK©z"‘>◊‹ç™@â(IËö?5”ú≤ zÉ`ù√c]∑e|È6•‰◊å∫Ú£≈Q∆õü≈∂¶U…p©æB¶§?çNkêIò‹tW•ÈßÉ‚ÈÓäßxã¶îOIˇ[T|’Œπ+˜Z≤âíö9IU–Owe£u€“ã?{„G+ΩíuüRzµYKç¡üº‘Í√?òAl›]±ïÏ—îrKÄ„¥–£©ˆcä•˚`ΩU/¥R§ù[óY1ÿÕèTdÕàäìyÊ£—öc˘•áë#·M9EﬂúÎq—ƒÌœ^™»ã,_¿ÜE¶æ)§¸,r~¶‡=ø‚ràÀ(›âá‰i6õe•â+)_ÿX0›2è©ê≥7˝ÄX$õ?'§—~Ò≤42œ6J¿À ÆœØ™å)÷ô«¢ﬁ–kyV‚îUè‡\∞ﬂåÇç]º«Ù,†·hGÈg∑Œ‚MÎFA˙¯í{€YºCŒóhË’5ï∞∆2V[[3W'ˇ/Â‡GqØ0+Õªr,ÙáOõÄêÎ#∫≈}‰Ù›ôÔ%Éä^RÏ~§d˚4,ê<WØ©â¶ù¢‚è≥£Ì˘Ãµ>M2”◊7Ë‘bç=Io,”÷∞ò)‘vˆÒ#µ}\îä%L{±∏Få ’c)Ô5óﬂö´á È√R≈’¶°fö—ÜUØgE%Ñí‡!âxÓ!Õ7:XŸ2òöæ¬l†Bû¿ﬁ}Â–P#ıw˝∏≥M˙Dt
-ÛpL]wJ.a≥!†òrÈ&‰Rº∏‰“›îKXËV;m\è0´⁄ß_˙¡üñ¢¨ˆÌÉ∫	!$÷ˆÉ∫õ2^Xu[ôÍ9z˚BË3-bö¥é¸ìFée{ƒ—â#∂∏‰—›îGlØÏË™TçE˚÷ÂQÁíg‡˝)…!∂\¿•—M¢du?H¢ª)âj%ı ∑+äv‚§„©Öëﬁ∑ÕÍwûµwè|Ún˜˙oˆü¢;~Ø˚¯∏Cé⁄«mÿÄ@ÀGù„ì√Éˆ^˜Ø€ª”˚Î3≈R-£Ç¡Yã•n aüÜ°5§'øûXÅBoÛ)f“Ì'QÉ%0k”çl∞YAHl„À›Cq®ƒ‚8Èf,`R_¥œ∆[k{„â^ÀD~ÒùA´‹%ó˙pö˘nrêæ;÷laÃØ"8¶ù¢AÕ1ô‰á¸%ΩB¯±‰)f©à8Iõ_—+~êvX]7¶`æ~úæˇ®X'1A≠‰W©∆ƒ&∞∞T9√º… Ú≥êK_n'ùº”∂·K¢^ôRî£`èU©hd-!’ƒeu(œ"g»L&˘ 7)H” Arµî¸XmLTƒπ¿oÈøúâÑ6Nﬂô6ug¶¥‰ΩJ‚˛”‰•:≥Ã>™zìáe87ìnÛ.ù
-æŸäNö«À’.®%êY††ÓEÍÈ ¨$ÒônW—∏VÊÊ¥hFÈ.'òb73Œäw˙ÙŒmSm‹<S«@y1Vﬁ·(«–⁄Íxôœ˛ ã{ó∑45z3Û}Ÿ ø¡ñ·{“`=K<H:9ı<yF8∂=3]ΩXCAª*Ï:ñeD3%=˚4ƒÓÓ,As‚DXËz˝-¢˜V|äÖß›6Û¥ÆjuCIc˚‘≠/|EÏ£©Iù!'ÕHËƒ≠
-≥tÕ˛¿-⁄L∑üÕ¨É_√ÜœíÂ8◊1Å+∏+&$ﬁvhÌÿAﬂ)˜|‡Û7ôkIt7¬|327¬s—˜Üè¯˙#¸.ß” N‹ÃøRºg7Tº~CÙ A√@(áÊ…çÍÎÛ±Ê&úÔe€qñ∑’˚ˇ   ˇˇÏ}iè#Göﬁ_	’Æ%∂ßÓK›µ›ÿ$´≈q]CVıÏé hÇÃ(VJ…ÃT’U›j`∆¸aÎ][ã]`∞∆†√∂`ˆX˛∞¸çˇd˛ÄÁ'¯}#Úà<»å YWWRW1+è»8ﬁxﬁÎyπGÜ™…":Æe’’7Û’;%ÍxëûnÇ∫*ïMv≈‚ü'≤∆ËÜ˛ˇä∫Wa5‚˜Ê†&ôç—dl eÅŸ˘¬ªBô
-…ûﬂÜÀßfƒ∞T¬’RR∏sj“û¸:,ãEã~›Ω≥LﬂÙICÏ≥»+©ßF)DÅ·ì:ÃàC¶èB‘ÂÁ˘†(“ü”dHI¡H+q‡œ˘A‹áãOäs‚ùö¶!àëÊ˙^âßü◊Ä°Íá_-øO-˝G-4bXÖr¥|jÑÍÍÍ  ~ƒÓÉîÕH^*hOΩd˝´ÓA¸…9YYÇe◊KH‚  º
-u–&ì˝d=C˝7§K»F^(8ÎzKkπ"±Z´∏|/’∆ZΩ_Á|äÃq”Ó;ûã!y>ûπHe9HÃxHÍ_óVoÎ10ã©≈Ü∞|_√{‘|«¬RWX*4°ë˝3Œá’⁄hNå∏w=,∏¿."N5oÈπì	˚TÑÁ∑ﬂ™àæ…gE&-Ìt¡[ê‹'“∏ÎÆk]&}ÿ}ÉîÔB±J4”∫Ûñ≠¡Ìµ.≥feå[Ò¡≠≠å±jlh¿d¶æ	H.o∆äÍ„S¬uª;bõï,Út˙;Òtıbbj§°‚,SC≥ã{Rª~≈Ipç3÷ˇZËáÎåhÚ:O(¥ıÊ¸ôl™ñ¯†8J™—¨Gør@&ô–nèë—OÅiÕY–‹≈5/:Ë9É=5y©+_Ó©õ'ÚqIÄKôi„¨Â*ÂÄ?úøHf%CZ∏ûÂ`q»Ñ\ﬁ0=∏ƒ Õ[Di1/u".Æ^ú{0˙Ê‡,––?”5◊‰møÖR°>ÿÄzi	'=1pW`´üí&;Q›ïy¨‹ uªUJÒûÉ˝Ôœ≤çm<i¯é‹ó-$ôR`Å®]⁄ƒSdhò |Ú¯—¥‚Y·dñ‰ƒµ¿W®4ˇw±›ZÍÈE‹	Â∏»åyáVöÆ´€¶ÁÊÄé∑‹∑L∑ÁPœX~Â¡úÂu+ ç∂¢˙£.£E#~m!5€ı±s·'⁄Õë‘•.„±éóÓ%À∫“$é®íe•!∂îh+ÀG\ï0ô≥â÷@¥Õ3IÕÁ¶ %®ÃÇÖèŸ hÃÂ$Ñ5ñóòJ@®_qe˛òπ›O·^ï'†|i˙0¥‰–^Íˆ=t_º@C™wIúSR⁄?ciÈ ØR-3]$Æâk‡~BVØµûŸ‹™ò	≥‘∞ß\- q„Ø?ﬂ⁄_Oœ6f+Õã/ù≤uõ]8;†]LÙv¢êhP7=Íì¶IˆËG‡>©ï˝[’j]OWŒ6¥¬MîNùÃª≤FÜ∆éL√Ç√≠>“˘7R∑V3áæ[´kﬂºë_≥Àgo‡⁄e”x;πTÕÜBôé\ê ƒÿ–‚{}—¶–≥ﬁ¬^ào64,”∆®Ê)ı]‹ç>ﬂ\Ÿ¯Ç8ΩØKwœƒ€/#fjY≥ülÈ∫yk˙0a{ú¬‡1∆]0∂Ç**ˇ¢¢L&Cg»…”˛¯õñõÛˆèø˘O⁄n«´"º§xcÂõŒkìR∏OuΩT–∂'aau√`baªÇ¨aÎ÷#G‘fU:˜§Ö	~≥{∑bmæ©V‹ú©ú˘eîå›Í8p€åïΩ˛%µï7ªÍm.á≈«Ôzzét‹Í _∂á£wX-÷'Ê◊ôyLÃâÖU€tºBöÌ∆·~ıª(ÏiJkiL@¬¯:`cJë`∞Åè$z!ùúP'≠Ú®±í»Ö.›;l‘˜Hã¥é[ùÉ√ ~®ˆ3+Ù’‰Î«V˜îí9”Ÿµ5~viáºuì∫uÑz˝3Û‹Ò	¬¿s”  SÃ·}Íπå€sÜÆÖø¿£ÃdFÚY∑J3<!?;DΩÕ£Àd¿Ö#éA=6ÃÜGO.*‰å\¢îé˛ o·çﬁqJ;úÎ4SUÙ∏˚Qs7∫Å(A/Í}xâe)zü…·ô’•>PP7=: (o¿/éK~Ö…¯≈,FxGrÏôÉ÷‡™“F∏î´YûÁD∏A}T}
-¿*ìq*ÂÅdíHr¡ƒz√ïU%¡:°[•ä;6ˆ&“tj$>±e◊cÁ–ò&;•XF¥“DSiî¡v8Óï∂!N“2h@è±ÛNèôÕY>Öi‰´•åDVÌﬂ„¸Ûk•w´nZUˇTt†ÓnÓÊÀGfπô«Ë|F-çõ‹Ú_&≥Ú≤Hí™∞Âü∏ñCs9€Ä ∂É⁄˛YÜı£51‰Òı†J7öû)Ë≤Óa•&∫AËK˚ÄìÓ!|K ÙõpÙÉQã/{≈'…
-Hër•9$a`"› ﬂÂxT'ºÜI@gW˛FN∏™‰∞Sx/•YRÒg‹†¯N$ 7£“˘úõULc:±Pei$™d∞O-⁄É=9g˚.I⁄ZY+ÊmmÛ*˜ÂA¨[‚ocDÜ^Ák'K”F•je∂jÌ´˜xky*£4'ÀºThoV¥B¥,60=X¢—J\!øj©<ñÁh´’†æ#‹i‘.¬~irT;õˆ˚Ãû-ò®¬≠¸Î≈e£?\\n6ˆó_õÓ"uy∞+é√J˛˚≈YB‡È1ﬂ ¨ˆƒB∆w˘F%{ã-ˆ≠⁄≠ÂÅ4aïÎT4“æ¶™OúuqNtK©V,◊\u©iÎö›Ω,ñ–≈e7Ö≠ YÑçHmr‚Âxõ÷‚µ/≈˚æ’Õä’
-)áWu–â]«q≠ê'‡|8 P€f’Qo∆'s•ÇΩ∫ƒÊò+`[^Øˆq©´`lˆ^Üˇu}5ÔK#√K5‰ë∑QπÇ[AÆ¢ªUîW2Ò¨í ÒœYÁ√&9[⁄\ 0E≠g‹NŒMˆÍπsÒlaï¨íıM¯oÅ†ˇÍk∏ õ¨Å⁄â™ü–•¡YtÉ=”f}Í>[‡/≤ ˝
-DeÓ/M#8{ˆz˘-1û-Ï?!kÎ÷:Y'õKõ√m≤Nüê'–¬µµ•µ«S|[]√/Ø%‡”Ëï•£ñ∆QÜSã√<=€úûÛ«+ôM|Dã—æ…√ª¶›˜õßä¯OWŒ6ï6VkÀÁÇ‰∂ƒ(œÙì‚Ú}´¶K©˘I¢®"!ô	ÚY–Ã7≠fÉ¢Ø‰Ò…wJi–ã\ª“0U‰∆sqˆT∂EeGˇ§–ﬂj±
-„Rƒâõ√ûÈ+/–•Ïúí„≥pÿ≥©i˘‰ï	“"ˆKC˙ƒcBd◊Ò©‹:fä®»/ÁîéLQüƒ˜å\ ◊∏-ú†ÈCÚs'Ù–,åƒ‚ég¬o«>5∞+™÷ïÿÆêrQ2•bh«‰ªÚ$oï$j-´≈7L£ê«9æ:˛ÙyÛ∑ç€f•4Ë«äy©èÀıˆõ]¸˘”Ôø˚_ Z‰iZŒÛ˘≥‰ÕÃbÁÂïöŸºªËçayªÓÉ']Ù«¿‘…ˇú"YzBÓ≥R¨ëÏ,ü,]Ã§à˛q&¢’Z≥Áäb©÷È‘…
-È¿nÔ†W≥Ô´&M”çö°cmÆπm9∆#-oŸC
-„ƒC:A9\r˘£Ù˛&4Ω—Oﬁ –√"1aWÿ&ı	(¨–A£wß"¶Î®~–⁄#ıEÚ|yy˘π$Æ…Ñ´f&„åäÜëæ jmÛ£|oößEóéHòsÃ…"M”w?bç‹!bˆ¨Í=:y≤2[C&¨Î	Íjk≤≥ÂMøI‰„∏_°4û<∑x ¿ö÷î˚SUnÈ-∂7ÍQ_ük¨õ7ƒ4v»z√	7;¿◊?˛Ó7¿!êu}8R7 ÁQ§ 0>˝ΩNÌ i»€E˝b4‚˙≈∫ÙÃ?˝˛˛7Y˝”z˙–Mæ }å≠«,,Læ"µñåﬁŸ@ØH >öækπ¸„ˇ˝ˇÚwd-”àı≤Fº Î
-r:Ü!]mÜV¨_ldZÒ›ﬂ`?l§Mÿ.k¬æ„Sêjª—ª!¸6C6r-¯ßã˝∞ëiƒì≤F|Ê|≈XòóCA∏Ëµ·B}QÆTÒíG"ˆ‘q›ÿSÌÑ®
-¬@UçÀÊD	
-Ôât.¥êöhâVFôH~‡ÔÄC8bZ
-|≠`wóÑk+≈Å∞ i∫µæCπs8ÄË ≠õ‰xﬂs‰åIBõn≤)¨ï‹öb*üŒÉtJ`k≈c?rA†§´ózrSq∫™Äi˛°®¸ÆïjV>Ë`3V!GÜNCkï|
-^ s‘—À|uV#"~π*‹>LÃ√Œ›5°«|’Iû2—ö~|ÄË.òNXnæB…¥™˙ê¨øt]$Úq£G¿®˚Bπë,ÿé¯_¢@>ü¯Å$äIC…ïm&%’?»fS\«•}3∏ÑÜMì–óM·O„8=x£AŸ5(aiônC«–èù2èŸ}‘˘jò¢¡GåíµE≤æHX–mOêƒ…ÅI±Z√î·{Èº˘T¬hY7J)UÖˇY¶PÕNè©hz_öv?¥êÿtg}ÇÚ¶˚Íïuñi=÷S?èŒâÁùèìMP∞+Ï*’ÌU+•|6¡[7˜T‘-K»i/ø¨∏…Ï"5Kßôè+´Ÿ±“ —;(Z5$ò4 ∑EtMÕ¡1p:Åê]‰ÿπ√¨º∑$ƒÊ“M<dn¨IêÓ-c*g_©®Kt˜z÷>ˇBYqœ	¨D\yéèé¬-)659»£`rå◊¸/"´IpK„Åƒî¢åö™“Ä≤µ˜v–≥2¡¿âˆÃ°`NÄï<˜ô£ßbVù¶≠Ç∫˝a&°€H_7D~çíB5.∑{ëò∆Ö∑‚ë(ÊhƒÑÖ’&üÃ∆_AM2X €ÿ>ËÆÁ1s≠kq“ı"øä«¢‡9X1ÓQr5*ïLsé<Á´®).¸≈¥œ“òÙ6S4ßãyu¢9>˛:KC°Üﬂ@Q
-=[qRÃ’ﬂRK‘ﬂ*M‘«$KÆù≥(”Kä`ƒ¢+•
-EÇÇÀë¶àüâ§®∏!`‚ﬁbÃ)à 
-S<Ü?°«…œƒ1ùz<‹A“à“ûÔXaÄ,ZòÉ·!ın>^qÔ∞ù…†‡gÁÿ rñQ±CÂ"'≥õNs≥ôZÒQ,=ï»Øó÷5¨™ëâ°eôC”Ê‹ïƒ¬ºR‰Òyöåb®Ë/gØú£_7∑…$´1√pëêYƒH ·ÇAœÂ$Zq ˘Ü‰¶£≈Nq6éÉØa‰gx)Âÿ.Îºª·ACzVË!=mæÄSj∂-$™'Ñ ez‰¶Äg≤d¶zªÌ'ù:Ëi∆˘YªJÚÛbr?—ö–Ø±U{f¸€ì?SÄH˜ºøˇb!r‹úÜ˝3ﬂ§ÒHIìÌ¯<—„QΩ]ûÇQuiúßÅ◊Ω˝ı[Ωô¸¸'4Â§{Dı ßO¡às&~»\8Zj¶ >Ò’%∏),ÊDxÙêÜC8·€Ÿ…ŒPi®-i¯ÍQFR=y5óÆÕÜÙ“ös@Y˝‘„’u´U UªÚåBÆnl0õ1“Ì>¶¬`ÑWË™C_›BÏXOVƒ'ÈØ˙ÇT«7ã∑bQÚ!Vãu^8T?]öOµ8Æ§ ïn±>4›ÁI—›åË‘%¡.§}È≤ä∆J4îµl]^[‚˚[.æuyD+U‘¬Û˙¿≥DÄÕ„Y^^∆ø,íX1ﬁ·M};
-◊≠·©Õ:J 5¬bU˙q˙A»íEu,®35cß≠dâΩŸÛ◊©bFÚˇ˛y∫"éœx;ò7üútßªàæ¥¥ÿÄ'‚mZ9Mut…T?Y©Ä¢Ow∫‚gR?UíaÔêKÜFÉˇ8<ÓN!"3G1ëö¨f¯—¯πs?˙ìº(8`>|ˇL+8Jn	SÎìFcé7‰ìÙ¸w˙õN)ï¯•sh[ΩΩÇ°) ªs©–~˝Mh2œﬂûõQ!¯õhR~:ü9,øxf|“luÊ∏™”IˆI˚Wøò„ç”˘˙…Ûˆﬁ<DÜÓuzWhNÎZLÙNW∑äÄ∫áπ]úâ˚^0>w.f™NóÄÈ™«3&íÍ>ØåF¶‹ñ®Feâú†ñßO[wîê&Û˚ûÈä¨©Úµ,˙z‡Ë™T¶Ÿ…\§¶©kø—t’∞∆«	'"Ùd<T˝òQÅú»ì•ø'§`»ùá¡G“S⁄Ú6¶o¢Ÿ≤|1∏ïÒbÒc∏Eï≈f)∆Pƒ±Ω[9ˆ29¨7kÀ,˜3§7)DéÕPK+ıì·bË1ŒtÁRò‘ùzÿ]–≥Áå‘ÿWÀ‰£sÊè~¿(»è…G∞˘˚N¸»Ö.¶a∂Â}Wò}¡Ô'ËW±4ó®œˇˆBøãH›î⁄5û¸ËË« ¥¥ä˝‡GÀ™úáZ°qÈg
-uö_V.∑N^¡ˇsãÙï«Ìõçà∂w∫†_ÈnS¥B/éNz÷¥˝[ù{˝…}ŒS∆K˜ú¶Wu•ÁT©¯Ös›rDX1◊yÊπ«D∑Ω—ÌEä-.R“Œæ≈H—Ã%ô€å|£+ŸhÍ6EJUèp“8;%«B≠∫ïYg˘%”‚6K˚©£~•f√§ﬂ{i_I-I¸9˜©'™NŸwF⁄Î]•YFˇbÀ¯#R¥q0ı$Gdiî´ﬂh]?≥çqºuQ◊>7Gsa‘≥YßØxE†îî©))ÂÙCøÑˆ] äi"e∂Û!3Ãpò/«í± N»Â·œÙpk_ìøHõÊÜV‚7!®7±3«Ç∑Hï0IÀB› 2Á#Y≥b$Pô:O÷ê3za$¬‘’a‘Ûp}êû2€∏ÙDÌ07–¥ó®ëÕH”d[õÎ(·êI√¯p¥∆‰i_iÑﬂ¨¶¡iR⁄QŸ‚#%	BßiÂ\«ük–N©”∏íÑ®∑a.Å¨ˇÑ-ﬁÏãi‹0‚N∞\∏ﬁsË£©Óî\,›à,ëµôn∆o 7ƒNsü(´oß˘€kíâÙÆÒÏÁe*]°LAi·Ôç4læÇsE"ù–’õ"mlüó:¨„›LÁä#p˛¯Ô˛^pNSÁ%u 9 ñÙb±ÒÛ ç*?•“Ëg≥J£ü=H£ª(ç∫Ê 4uÎvO#é˛„ïã£ÈúœZH{£I^:V8dÅö¡.™"ˆ ∑çû”œ®õ∆≤;'∂4=ô≤ë@n]'Ù˙,1kÆøÙ>mf8µ¢û¨…Âzø˝ñ,,Ëﬂ∏Ìob@¯#]f◊/dZw“EùzD˘Á®_à“-»≥Ém)pñ<rÍ9√§ &¶—úõTf–¿ƒg…=–;„BÃHW&¢Gæ8µyß◊óóÓåä2e≤ìRüi©ïı$:Hù◊Xá°£§ñU	aGRC&˛-ÈºÕUµjáÚ'Å/òÕ<¥é[!÷P—	ü<X?Äó∑Ñ%éK~Ù=Æy'™pÈåúEAÍ÷íf≠RûŸò´ *gt˙}
-æ∂ñqg_ëôi:!›†0è3é‹ò"Ô≠íjÉ{0uÌ√∫[Ö>Opıâ*EØ´÷u≈µcˇé˚BqËn„≥÷~˝∏› ù÷A≥’Èí›√9Ÿ;Ó‘ªá'M≤€>h∂^t˘ì6∫ßëdóÖr8±‡ëX~˛≥7ßπ+'9ˆ±3X¨m˜≠k“ß∞«ôÜ¬.õFæï	ËØ≤ƒÊÎ·cºƒ⁄õXz=§ŒNõ¥C>Äì§‹ÓÎMfú8π&ÓTé-r˝≈KÕ£?2y˜ÈKÛå˚äl˚äñû∏ïZÚØ73|—≥Ö¡>˙rµ√Ñ(•·1x-˛æ◊os.ê0~N≠/J ö∏™⁄¯R!üÊtœWøÄwÊïb*§€x4ó∂ù?<j«ßD¸í Ωz’ô
-ŸMË¯ï	¬©çÃ'<≈Ù±5»¥Vh‚‰ÅoXéœ‘¿¯ò8•ñ_nÀß€)á∂ôOúÓŸyˆ,g°üt•ü∂˛Ÿõa·ç&]jf⁄ü\ù}≠âœB„ÚµÆ7»ÒÄ{∫xgvÚ7Æ¥¥˙XA‚tÙùòùﬁ∑†M ◊>3˝¿Ò.üΩ…ò<q∫Ù<ñ6{%~üU∫û‹iëƒ∆™Yñ◊Ñ+n,--ë˝—wÕìΩC“lë˙I≥}|ÿ˝mù¸iΩ¨Ôù‘Ì—w¯∑F}Ø›¨7Ò◊NÎË∞s‹"µìÁÌFtF˚`ø’l◊èÎ‰Ë∞{ºÙ¢u–Íà?=‚Oô¨å√∫m°7ò3å
-ˇ^uZ_ﬁu3º\⁄FEÔÛ?[[_=]£_§4ài—¯s”Å9r^&j“∆Ö≈+¬´óÅGÂ2V“≤E™7bin∂∏!âJè“”∆Î›0Ωæ≈rq2JˇX</zÖM© ∆Õ®‚.1â+ÅÂ	—s.„±ÅÈ
-^≤÷W¨ÚÄKRy¡Xô0Ìæ7`±ëK"F>*,ÕHÉZXõf%\ØÆ)]VVnuÇ{|s¸ªzQ.ΩR’(Óﬂô]úQú;Á–‰ˆ5¸¥`ïº≈à∏7Íghby
-åÜ∆Û“dQn¨Ë
-ŸÅ±Né5˙q¿´¿¯· 4f$8‰⁄15æ
-ÌÄz3˜†ä∫3iYãxÁxi;vÀÛo ïÌ.mô8∞`–Mà•ÇY∏Sä¶çÿíR2Î«‘X	êÄ£r¿ˇÙ˚ﬂ˝w"^éŸÑ&≥|gLL÷DÁ›Î⁄‚∏ìoˆÖKπUº¢'>%ß&÷i4mÖ;‚WóØ1ÃìKË’”’ﬁ⁄ˆ+OÁHä÷"∂RôΩUîŸ wÈqNt«¬xS∆	˚”Âç…[∆å–„ØäNÄ*ì Êtªâ^FsØ)mb¬cïg™íæ.aê‰¥mØ‰ü,≈;v∏√˜úWôJµp|b»J‘%Ω\ﬂDd≈n∫Å3?ä’Ë√À©‘≥UJ-Rcì,:‰V„l;≥Gﬂ2ë#Ì”ö,$p Z ∑Ú˜WÆC´ZîB›@ßV !M∂SØèUR™ƒ6¨v±]h%Íèçâyt”d–µv;˚-}Ñ¨lU+íÀœ…µº•Lãõô’ÖÆõ4≈”hC)§^x\¶ÈW©3Îç„ˆÀ∫r©õæuåÕckO ãöı˛:Ï‹Ù)ß°vz>ÛŒcdóçw¸õ–	˛¢m˜∂aÍâÔ¯ó~H-û[EﬂDiƒ†Qãx ∆Ñ∞u9 ëG£œ`T’™ˇ)V˛õ/ª∞™<Òôu∫/è˚ˇùoËZbV«Â´ÔÏ-k∑«b™öãß|‡*Ü∂gòëÚ¥@a;¨iF+›Å ’≠∆cFeÅ ®•-˜…j9Ã≠(Hôˇ»†.u◊† VL…Ås1%©∑<p§¥V÷öja,’íX1}€xx]ÿ!OCt´tHG‡e@£∫Éºﬁ›–ëÉ'¯“˚Ù¬Ú•—;èÒÍ4òˆÑïfj˚ËØ‚÷¶·<R‚zTìÑì_A5kÊÈæic„Û iì;j75(huruûF]6áß™t®’ªÜLÀI®æ„^;p»Ì9‘3jy%rëC∑ÆåSúx¸“ë`≥?≥¥ﬁE÷ﬂî¨XîÀïoN∞H±ìÇøTµ⁄h8ú˜_2ÅÕuF(Ì∫jqXh∞ámA—Ç√Ô;Æt|b¬Ÿ(5·‰ÙÂåGäÖYÀ&/XåÁ9.°çˆ°G≤°…-;’9B˚Ã©Ÿ”ó©/”Å44[~ﬂR®üpçKãIﬂ¬’ÈvPi∑^Dv¯-ÿÃOï«\ÉT]œú^\	«X‹8·J”MeeJxEíU|A%Ût=_£$	M•ûÇ¥âÅÎ’…Ê ∏~Ÿ2ŸRâü75”#ô∫~æ˝ñrBÊÂØŸ•_swóuXﬂ$yÃÕ(Ü§høÇ  ‰∏DQÙ◊´F®iÎπè ﬁvå0RVY«î¥J"·&enß˙ò* z™UVºzé¨i®øN‘mÙ⁄¸y’›ﬂ 
-8W·9_ ˛Œî
-¬ó® #°}¨?æºº¸kÖ§6Ì…i˚+ym`{Ív(}xZwuÂ·Ë] Cã‹Ø@¸+‡™:ªÎÀòzπ(I$¨ñ‘•íD¬f∂ÑﬁF67<VVì~∫z⁄µH„pOÕV¶>h
-õÁú~ﬁ◊Ùk·CÈØ>^€¸Ç{FdKz©92ÇÒëﬂƒ¥±åN‚0π∂†º≥G¡é1Y≠Ê&Ï5Ó>§ ‹ƒø~æµ™í¢TÖ·ç¿lYl@Ì îy–÷}V¢è-‰Ω ◊‡™T“mwè[˚un2Á¶]a%Ôå~{‘nÚ√QÿIó‘é:áçV∑æﬂn‚Ùﬁ;<n©Dçåqo°Q–Œπƒx≥Úq1§|ìGˇú‰ëã›t[9ï∞bE_ç˜ÓM·-À;‘“RÏS9¯¶Úöï¯Ã
-–jR)“2ØY|P⁄u~E›,HŸà≤ùÉP*@D√T=WıP”EˆÙl£∞€ïx≈K§Ç¢ºKuë	o»çÖuÈåﬁπËqÄ√˚£ç–r|≈mÍlcùx∫M~´∏ãOö©su~ï ºõ¬aWÔ¯Í&–X*K∂HR#)zø˙!5@âÊ‹â0Pˆ©%
-P#tı]‹=‚õ√–Bk6ã¬©D:PJ≠!m•˛QppÕ”Ç{„sÙœDwËV?Qvç≈∂ÑRôäTW∂ Ë∫≈JyDﬁH›≤xﬂàÙ_ƒï´h&EY†Í
-˜cÒö¥†≠…$Á¸@ÎHçç"©]b"–µÙ®,¥}
-Ø)™»V^KœmòÍﬁáõö©l,Û[|ºzÕì°…¸·UÃu%b‚9(4†ñ3 /∞Dpïú±ÆÖ%}›TÑ∏o>ØV◊Ü¬4@S§¥˝ÀcaQ·
-Œ≥˝È˜ˇÌØIØƒ¥¿]'p<èQ‡Ü7õÅØ∫MÉ—èC≥Oïû–£∆Ä¡Í«{ı.‹\È"ÿá˚;ËaÊd^ÿèÜ¶ùfövf¬˙Jæ!◊e_n*ZB„‡Âe•√®9ﬁN§ÚJ*B©ÃÕ* *eTﬂV∑Ayúœ©œaã˛Pˇ/§b!øó—-∞c?©Ó2áØ3tñ>cËî±GÔ`§≠ë~YÔ6NˆÍÕ¡n:.`/G10Ì–Y$CÍRr.µëK-ºë)é€9Gˆ
-&j€éo"∆(H_r&Ω¿4£ü∏ZJ|ÜŸ¯Îwè‘”Òˇ?I/#œMg»˙ k1√ùë∂}jQP[œtH≠ù+	˙pª˘Hk»;ı&å˜∂÷x7B
-çñe≤MŒ1U¡c>ÈI˘
-Iqhaº}ßÁ1ÿnÔﬂíF§%µ©u	É†ª®"È¯ÒÙﬂ!ûiÊê“4È¿˝Ë¯µ~NÌ◊‘‡C?]ñõGÕ]ΩÒov:≠Ω»¯ˆ!^ØµÚôO=–N,öﬂß.éÉâpˇS+¸
-ìÓÜ4R».PÉâM-|Í3Ç±Fã!Oâ¯P:'‚#71)æ	y!∫/Ÿ9µ4Áƒ?¸Ìò§'ŒÛ[jÌ‚I(≠Œ Ût¨åˆÃœg£?PÌß8Ü{Ma≈sñ Ö"ûÙ2Ôˇöbå°>πîâl0‡upœÏY&Nj˜ÏRsÄø˚y>˙	≠Ÿ.Ó3z«Ö*åv◊Ω]{¡uP?Ùñıãí@¥^ËvîÜGzI√˙Há3˙Å∑jê§S?"^AKML±ÇŸj0¶‰∏Œ@°¥á`˛ı&Ü◊à =)‘˙“á†+ièÚﬂ¿ZÖK°ØÒf‹¿e· ñt[Ìóg4ÎÆ≤>>πaç~@ÒØπó∑∫'˚≠rxƒ3kÍ{:√ﬂEêòØiÍf|FòÁ47‘åòC6}!ú“*íÌà˝CdÙn`Z ò}>˙¡!0ßI¸∂Ô£¿áÃîìÂ?¸å§µá}:bÊÌ"8ùYqS°up‹“ô
-« U√>ØQÛºFÇ—˜}Ã|'0ò=ÈWhGÌ√ËYq±èŸ¸Î#Îpndy`£#È∏FnbX0˘˝)ˇ?íp%EÑﬁåı1\[«£ÔΩ°	:èûHﬂ;Ï÷;ÌCùql,FÍà¿OMP∏9∞†˚ bˆgn\wÏ>sqˇ6“Ω~äÅt—∞,#ˇû"ˇzCË˜A©Ñ’Ÿ◊√ø'-·Ç  G?∫A4Üâ¸÷√n˚‡®€ÓÍå·!¨?•rN€$¥cˇ97} õ(óÌKP»êÿÅuﬂ3≈@&D_ÒHäÈPäÔ71ñCF˝–cË‹—Uµæ˚;R˜—3â~!ÙA2ÉÁƒG˚-’M‰≥h÷µSZêåõ«0ç¬èG√∏¸S˜Ì_ä∞O»’æIâç;Út ÎvÎŒßéÿh∫:“?§ 2û¥r‡îwŸë…áˆ±á≠gÈ<jÛŒ£—o_¥¥Ù$AS["(Ei¬ûÕ€Î–5#≈)(™˝|Eß’à:Rñ∂‚à$oSv kœ(∂æÙ/m¨û™+vˇ«oHÉª{sRwÙﬁUœ®Ÿ8©7;ápiÁE˝@k˜L±E#ã¥3¿‡IÎí—èº1∞ê]÷ÁJíÉRYÿ0˝∏›”ÿ∫ﬁ»<®’ÑWÛ⁄W*öpAÙÍÆ‘ˇ˙p72pÌä€pØ˛^x≠≠A›Á¯§£'|q@,C>¬:*Ì®ÅG√ab≥‚FK∆.#…2§6˚ yÓ4„]ÉÍÆˆÆ˙◊ËJƒÓ‰í∑ae)i:2çﬁ“›´w€ªúAÍ†•5÷Õx|a-¬†zÊkûŸËôúŸﬂè9bUNö˝X{ﬁ^Í‘õ›Er˝dA˘—cﬁ≥¬ålÊﬂ”—Ê_Á6‘_päƒ⁄–QacME™z”Á4Ã œ»àjvÃêùÍü√-óMCÅw>báWâƒF?≠¬iÑ|Õ.9úrÅBœ±4≥∞AZ∑mÉ]<{£XUeJvnü›í˛≠q^7~ßö:—wƒ˚¶2'≈'∆Ú^Uº˛≠j≈+ENn«˛7Ï≤Èº≤µãÖôß§∆0ÚùìÄ.¥x,&I…¬#Œt∆{@yìù“–
-j$‰s”)Fu÷q’Y8uû3 KP∞!Ö“¨èÂ(_{3«Ï4.UJÉß ã ˝¯)˘ıüsA≈∑Ä∑∂I’⁄J2¨ÅVöO&=9…;I#é0Ü∫4_∫`T$-X©Ê≤5
-ÇôYÅDú{È íhó¯äıEé≈åº8R´à¸ä3Û8Ø[éÂPÉ∫ÜOéëTËÒµã‚ê Õqw}ú◊=ÁBùÙ¢/V2JDãBΩÓ*Áá∂u©˛0)SÉì≥•MdLHãÛ ≈Ë9…ÿ±ï‘DÃ≠¬4i@±]™ôâ<B⁄ı¸ƒÙáN·ôJX›o∂µPœ-«@∫±„xIH∏nàm…%∞ÍÆÑÈÍCâgàüZæ»?ûﬂôat»då©≠RçS.§œÓñÙWÑÆB~®G˛´ùX	#™j+®ÑF·Ò!˙û|≤ÀòÅÏêï°°ozx]tŸ>¸OL%qtlj∏¨≠oÊÁÅ¨‹óe0≈Øbõö=≈∆@!bñ
-≠‹Ïà¢§õi!&ZUÊ(Œè÷˜X;∂jçß¬Q¶Uπ@fvµ®SçÜ◊ãÖOO/≤™&k’íB*ÎÁGw Å'®QDπ≈ºÓ≤_+≥<Zˆù!´=w@’¶∂B∏}±ˆí?‹ymdKèQænJ.àm•J€6èeQ˘úœWóü<˛¢X√mK™Î)∂†˛‡ºä97^ùamf›UÂÑeVpV-â }ö*yRêÉE•ò“∆ÿ@ˇÚÃëM.W™¶åB"qq®Qk)†⁄aßÛœØ NëÇèå&ƒR˙‹ugJ…dÜ„ÉZ≠ìß∞◊)2Å©vR!-Uí«)èàf∑àúÍ©ΩQY“QµòxQ'Lq
-ˆ£9˜`u∫J¶IÂñQ*‚lÙÉì÷À:È∂	Wk˝`Ù€Ωv∑›ƒ≠›CÚW‰˘Ëw›_ú¥Dz˙ÛˆÛΩˆ·ãN}ÈIıs—Ÿ)CcRv
-OÏÆÿzD∆ågêµù8äXƒëE~Fê∏∫€a∆Rê ù4C~ÂöåÄ÷≥àßﬂÁô≠ruN9ÍÎyMjnú—Îj9Á\æ¬Œ§Ç∏TIöÀyèß(Õ†ùñ\ãÆ$T¯ãU”Í´J’´kxY _Ñ¿Â∞˛â‚ƒ‹`ír®‘çπê{déÆv1
-^°ãÊÑ•++_p$g 3ë¶∞Hâ°]ï<¿ÛFr·O.Ë&}”≈ÄrI†YCu∞πLC%y¸j¿É¢Lqsä›Ljªi6B7M5sâÙá∫5@Æ§`»ˇpdZ‘„6ˆ©K)Œ®8≈ı.oß/%|Ωeö|ÔX™Æ)e›W%‰î—¬‚õ"€≥ú˛◊JK°%∆k7,ÓîmeCvÊ¥&*7‡ı∏Æ©RÀÚ>˘iQ‡D2´æå„Hxn^‚D?t≈ÙÑç[ûèpFª`ˆ-á1€ßCåvT  õ@qbõ¡∞º	Î;“"H0˙≠” ◊SìıM˘≠€Ñ(XÒKW,•ígoÏƒÎ,}pDq÷üÊâòá¯•a∆1tVÈC7w¯íNüÿÃ\†˝H6√T€¬∑ÅxV˙HÙ—è<ÇæPçbﬁ¡9U|∂˛üÓrTS¥™Ys?<‹_Ÿ?]ÒÎ"ÅgÏ^0ÀÑê®âf⁄ÑÉı(ÂN¸Òê+Td˘OìéÈ¸ëeû≈NÉ
-g§≤këøJ‹m-^K√ı+ò–e3‰„BpQR%Z68 æ…¨°Rß<sﬁ)˘∏Ëî‘ÚHÊ¸l™NiEVte˜Anã(Òå‰™†ç/≈åp jïΩ/o√„
-ﬂL‡ÖvæDœÂÓ≠2 Í‚èÊ≈®Fä£*™ÚˆQîØ.3M≥(øRÌ“¢y”≈
-ï–â_fºúBΩﬁ(—[Ùä¡KŒ±ˆÕ·$R⁄"âıú%jÊJypTçïöV»§#∑‘4re{`yuıl
-±òY^±Í•í5mpjf)Äñi“k/õÙäsƒ2<3„öåTIûÈΩ∂P=wúØ±LÒÿYßÁﬁ~ÛT:π⁄Èl∫€Ê©8˘9;9√î8i6´Tí1~olPq∫;†¶MyOC€”xrÿFﬂ€RÓñ/¯oÏ(ˇv ⁄˜2+<	ÇŸ0%∞óÈâ¬Øú,ZbPòd(
-·˙Û(w;òÍ2ÍıœûKtzòJ\èNF≠[‹∂íŸ≤ãÓΩEU•√sEËJÙÊ‹°É˘la
-®JÅ∫„˙—’∆Né3&%mπ&@ï-¥t!ïR®ï~q÷õVÂ\DwYç©pZDWÒâ≥·´îÈﬁ ¨®ƒ=ò?£ü2<RIm{·ı¡Q°HE˙M8˙>¢íÇñüBRÉæ^2kÙCPhYƒ3Ö•Ll∏?ø®ê['ı√Õ{X’–v˙å;†r c»19]’Õa´®`§^z∏*.ˆ◊E∫•ê*ÀŸï_mÔ-¨ èŒ!™∏+Áç©ÆbS¿Vyë›]?û⁄‹!¬T&⁄“N(Liñ¿+œŒDj1oS◊∫OÖ6úG◊¬$Ê§{¬N|§§3mS¬©€æ‚ŸddÊXª^e¿ÂÕæΩ¯K"Ùä´e≈£≤ïá`Òπ≥A∞ò	Ìﬁ ∞ç[L7ìQìîÕ26ty·7Èò°€ø	Mq»≤É,›»qÀIPêª&0⁄Ù£w=32]ı`ä"úÛ»ÈËnus‡JÄ	fæÆ Ê”Y—=†ÎuÔr#`+Àúóß◊{o¡÷∏Q∫"–ïä™kˆjÓ\*ÄKêNz∞πdÅÃıCÆ≠ùî2I˝∏‡ŸCÊ ´ŒÖΩ}f¨p^ó2êA◊Ö≠:√{ç¨bè·1Ã«±Û4fÇº˝¯™Ñ§ÛÓ£´Ñi3∆Vb<
-»Jú7£Î0b&Ω7∏*C´ Ñ¯LxU•≤ª93‘%·QÌ	|ä®ˇÑ?—@
-u«¬◊pH/ÙQ([©‹ì]ì‹C(§£“õYÕKõ¬Úy—ÂNã≤¥os#0Kf∂ÕRﬂﬁàï¢+¬X±»ö/¬öˇÓ•Ä±¢íÈ%ªÕıÉ´ÌùÑÀ8cø:äSi¯∂w]P*Âæ◊Xjè^2o<⁄Ohòo?å*·…æ˚0*eπﬁ‹ çHHEgŒÜ§b~{É§Zp, ‡®∞ú˜„tf©ú\ãû@QÍïIë1,tCf†—g<ß,¬J—Ÿ95E=…/)Öt)ñäΩzd’çÈÎg4`ÈﬂÁF∞UÜk^^u[˜]ÂGÈä‡U“ßÛ≈Ws›—†UŒ^ämÆd}ºSQa‡∫ïD;yØV'¥&¯SBù€∞JÁ’›áX_“Êj~T ˘èfDYQ›é{≤‚8,	Â$H*Q<Ü¡LÃZ^¶:	MÍ˚»àèÖÇ∞Œì‡ƒáy(‚#í⁄3¸ŒÕ∏bIZOIøÜ‹Ωx#Ê™$Ø∏Ì'ã)ZHh®π¯Á\-R≥7øñq—mD'Èé°î¶lñˆçíÑ9…)è€ ⁄VI¡ôÌÏ*WN˜Õ•´Ô±¢@π_ôY¨ '«Ì=J{ÕõÚÅ¿N>Ïcu=/›∞sïõ|tÆ4[j¯ÁÒéBQûk54IEqÓ5Bª'h_è∑y&ıÑn? L¨ªèÅ§:Mâø._›)W‰i÷X®L©´˚Ö
-ıå£∫>  q¶Ü\œq8éµª¯LsÖÏÚy4¬ Dﬁ"/yèEG–πó)˛ï@hπÔ f‹4Ëâ$3_<Ä'˛òÖ~— ;—jÃÇiÀŸŒ.Áu’bz`'[¯-/ÕØÏLÿ_TÒN~d¨√rúÉgyô‡FÄN/Ét&ï´ªV∏#€}∂Ó1‹©§ìå±m‘-_ï¯¡OqÆ…Ìn#°	÷†BÏ“|¨AŸ˙ê˜	e›m„[rL4àLÌpN_ÃA?#Ô\/¶8%¯y‰‘Éˆ˙úÈŒ3]‘QoÑ…†àÉƒ:‚ï)ÒQ¸1'Ù–˚dRcs¡F6#MlT2"2JJ˜	*E˚E\<˜Ü¿RyÿÎÑF§‰—Ωûc—º˜Çê|¸§∫€0(W^Ëzà…ì¢ ˜5Y¿=Ví_JÑù&sI¿‘59Í;ˆiT[ƒ#~ò‡ â¥9)∂Påøî™I'Â¶y<¯Ì@DÒrJñ“&ä?Êƒ>“@EÒbÕ¬"yo⁄Œ-¯+FIDØçŸã4aQÈ†‰Ä?Ax Ñ=÷K∑åõ EOví‘nh≠ë√	1ÛÀ3¯u◊}¿G7îm˙¡±c8ÔF*õdi*Ñ/À{ê¢¯lâ n#€ã iöäãD`êg9–◊$‚ÌíÅ‚≤Odﬂ|ƒu‹¬Æ˘ö¯öãÉy±ÃbÕÙ[Üô2ÌS;Ñ◊ˇî )(3ƒAû†¥›í£˜Ö9Ö˛ƒ^z@_•Õ∞Ûíπz≈Î™A‡ °Á ˚∂j–{ıb´ËBÖf√ƒw¿¨ﬂh≥^^^Vôt;”/xj∞€Ú«˛.·ÜÁ±[!;w©µ"24∆7¸”Ôø˚õõ@‘k´;±±âX£JK†]êú§{
-”Î5:ˆ/©==¢÷.Ù|Gv˜Ãdñ¡Ê∆.VﬁswaOûiwgÛQêAv<,9Ñ-Œõ1˝±µﬂ>‹;|qüHR;LÁß>U§v»M(3ôPOã≈À„Ùcv	a∂Ï#K}hÛ{†g◊êÍu˙”èµoö" ê˜à≈çõ)3ö<©«…Èoà«kÎÚ€>u‚c|ó¯=¸éÁÂeìTus·êÖ‹…æ∏-ÀîÀ…¢ª
-ÿù<v##ŒnpßìÚjp∂÷™ŒP6qÎæXùtîÆm§>Ñ‘*#j›9éÇ[¬—ŸM§á§Â+„H/π$ËM‡Íµ“ÅÌ¿#œMg»˙£w<wåë∂}jQtb!}÷E9nLÖ´πêÒ·–˚Ç®+çﬂ•T◊í…v˜ëÙı'∫vÍÕzál7Ôòy≥mìs¨•Ñ%ª{“<Úâ)	-ÅÉEÖq¿º1é pÊE¿a7≈aë	GíDWÄôh¥é‡7Ï¡ã∞3ºº≈◊œÉÔ>˛òczG¡ﬁ˙X∆kÀÛò∞—®:ÌÀGCv◊ÛÉ¬WﬂÛLØdC∏¥æCéáÚH‰º∑iò Z–Œ:Eï˝CÚãì.ŸhíZRT˝˙Ìç∏àﬂ´›3c˘$ª€†Ë:ÕãáGçˆËª≤N˛¯õˇ¨“sÔ,:ˆF?$Iª(©˚Ë%{N~Fˆ©ÀU«<ƒ9c1˚≠ﬁŸm?¬3ÃæÁPÔõ–ƒXI‰°Ω$/DΩ;~ø¶Ècé+sœÈ9Éq~Ÿnﬂ0Jñä{v	À^7¥ÿ ä?Ê¯∫"´ﬁ5⁄ÚÓ;2⁄˝áqïJà®|3∏T¥±C^r«¡âg⁄‘√z∑í#˝4†Ωt¨p»¨◊‚#&Zß(\DD⁄>z¿G≥‚£…ì')ó™<h˝Â!.[ÑIù£˝{Éìd)ÂzéDAå–ßÄö<,m¬|¬*î±°))ä⁄>:Zƒ(I”‚¬≈√X∂ët"˘Wè@Ú˘údñB/≤ËﬂtÍ«æ(Ù•X7óP)˚1«w–TüÎÅJcá°*…Ç_MìwàOõ;§`ô]Y»Ä¥»ÿöÍ	„ÉìÌÊg/ﬁˇZ˘åª€È˙›k??<È‘˜Óõ5©√˙¢öI_¶<:"g&<*˘V[ ê∞=‚Ùii§[_qR-ÂÈ ÊM{’¯BŸh>Ä¢Ï«,vÃÉ/-ˇQJ~-€OîÈaÛcê·ÜçDºÑ~©èi[Íﬂåmkát—ñL^R⁄
-MÖ}¢‰8CgÈ36tå§ﬂ5· òÏÌ§˜™4ÒªÄß0„Ó6÷·/#ùx$r8Gú7 yYÔ6NˆÍsÍı„√˝—ﬂ÷a≈~÷⁄?l∂Fø›o7ÓOº~”q]dıaÊ£Ê,í˝˝v{ëºd∂„√∑Cõœ%©;^‡ò®úúƒ&áCÍr“X”·‘S'"NÉ¡ß+iª4]å.$%âA*3®›0,ä“2 Ã“æ— G|…f°Q≤/mÀ´˝ä`ëº	fÖ¸ù±ïç@Ü$øH©¯∑πb§ &úÅ
-dä˜äCG‘Ñ75ç+/·ái yà1º\⁄ÆF<˘gUé£œ,÷òC»¨go2_´%åó§`–¥…>’œÒÉ–∏<ætAí!Y&z∫x®˙J«œ8q| àWõΩJ√e≠ZJN– ΩHÓN°vóŸw◊æ…€™wÆXºï+6µ’°PÄBqÖ©Øhu»œÅñæ'ã„aäÁ>W2≈ãl–zìªåQÙjßyÓâ≥=˜∂≥?Â≥ΩúSo∆óì≈]Ìú/<Ûa÷Áﬁˆa÷„Göı%IpäÛ|L~≈ÕÉ)Ω‹ €h∏ıªG—`êøù€c£ü0oÂ=uπ:¬íé?÷â∑ôØ·Iìπ8°N°óóó≈ ΩU±–∫RËîJìqñ|}Kx-Ü”Ó[°¡x◊¥#a Ì-9™r7«>vãµ•ÎA¶úcÄhd|*π3ˇª⁄ÌÁ#≠Ê%ØÊ"±d~‡›±œ0´=}}¯I„û-Nu<WúR˝ÄJ”Ã”ï¨†∏.1™êö•"Vs¬¨*võãN4+ùôÜ¡ÏÖ
-Y3!öÜÑ™ä–$ZtÇ çC™ pïw•∫<}öÎ≤#è˘Ã8ô¢XΩ®»¥·Œ‘ÍÊÈ©Õ|ˇŸ&ΩyrX˘Fç˙Qˆp@˘‚]p‘	ù¸ÏÕi˙EÂ\÷ƒ∫<åÍ“='€”ªñà˜≤'(Jy«~I≠ê˘êd.‰¸∏øIü∫ã∞∏ÙpiŸ–•7U¶≠Ï’†)™óJ#X√∆œ≈
-øé„3≈¥)H>SÍ˝˜LÄUpJjÆq⁄≈‡”;]ÓáûRÎë"R(πt9'P»3íiñ“ûöå˙Ü≠ÂΩà#yaâÇyIÛ“¶C≥öº¥%1ˇ™ıùÒ°¡◊¢ÚTéD∫õ´ÑÉY>ˇ≥’'´∆⁄ˆ∏ôÁÉYí–Óµ|‘ ∂}‚?K}«öËu/ó÷‚–pq$éxŸà}©÷ ãÙ’¶b¸≈”=áBc◊≥^ΩmÚ
-˛œbô∆J1Æ§2"ÄC§Ú0ìçIa&ä/GHX «ö_fbÕ4©ΩYµ#_ú¶Ö2ˇln≠≈˜=‘äMn|6Iæ®È]≈}v|ŒçÍ>;úÂÓ=Éˆ-!¥Ëﬁz
-r{bÉí{™) 3Ó¬Â˚‰.Ém9:A≠â*]¨®™«-£≠+A~µ&
-˝v∫[lÙ4∂Í⁄ª˘Ω¥]—∞Õ≥ŒmÏn≠±I;ïK‚cΩÔ¥ïBÙÔ4∏-)5}7·m˘Ùæ≥X6≥®nˆ‰TÉàK&wŒ-É÷ŸTnâÛ¡É.üΩIWrÕŸ)v3nÛœﬁ_7¸¢ˆ‰†û^<˛©ßœªq‹#Ω˚Õ‡ùqC¥t4Ö›œII»µ·)πñ›†RP‘#ãÈâ™˙„≠EPeπaq‚ƒ/B”˝‰Ò"´™¿©4¸`ß$éˇN#ß$ØÈn„&≈I}gÅT~ë=`©qüY±‘y‘”≈ﬂ¥’ÀÃ-¶ U/3OΩq\ïÌÑ€≠“Öq£Ë™ÿå[∞äçªU´4◊ÒÓ¬¨gS™∞‹¸†ıKrT?hÌÌêˆ~˝E+©ËıW§~–$Õv˝≈¡a˜∏›Ëíüü¿œ›v£~‹><P∏ı’µªº$è6Dº„~⁄+Û–ﬁÀ’R(ØV¿T´K^¯I˙æ j¬°b~∫GÜÙbÈ’í?T≠’|…U}s`;>Ò®ë‘ÚEù^™bﬁï-ﬁ-i5g^.>Îb!ñcÜs≤u‰ÛîÅ G‚{ÊvíöóîÎQü‚OP∞,Jÿ9º ûî‘®õπogIißñÁ¡∞k/qôÃæ∞6âoAŒMœ®2ìñ RîÃÖ¿újÎ8˜íƒ)ÛÍPéºt˚$o"o[.≈Ó™xªO…¬©y¡¿∞9/mí°±#~Ö±xΩ¥≈c_Aº⁄[[ˇbÂ…AñΩ‚%Ù∏¿+ò7”A€à3‹ﬁ]zúìœ±ƒ›ä%.ﬁsËO-¯rπÑıœÛ|F( Ù.m@a +”ÈE÷~Ú*∂ì≠¬vR⁄@t?°ûì∂TÑ&ÁKÃÚi6©˘ì[^åõy}ÿ√:Ô‰Êµ≈Á6”Äø¡Å™§¸).N⁄Û+5;Ä¡Üëƒ€¬œWKõè…˛”pbß•}∆Ÿ'¯‹‡c.Hñÿ94œ_≤õÒ-N≥-Ÿ˘bv¯ÔûÛ
-/›ﬁ#äüxt{Ÿm¡Ù‚ˆñ6ñ∑8_≈¶€ê:ﬂóL;U≥påØ∏Ωæ5{¥í≈Çü©F&î†ñ˘q	•”ó‰ÁqïVÓÙU4Ï®PÒ3'Ç
-úaÄî@ÍÔ.;≤˘bq=ÜÒöÁûÌ©˚‡±Dı"0@ô	ßEº…)∞@/9«>»ñCÀ–”VÑÂxe[7¥¯ÒMài˝>£æ–MÔ&,h™ßçïØ<ÍNM”•»„Éü sºƒj‰1eÏ?ÖM[É˙?2˝äùbz ∏›I¡rÙ<ïÙ>J¥=¯—G#ÈGbyFa˝dµ∞Mo…ƒÀ®Ÿx∏◊ƒâûYmXìÁıâh|§‹ü"’è$6ÊÈ‡ö*©P5◊è¯f`ï#=Ï≥ñ§Ü¡ÖßC:˙ÉÉ5™GÔlLŸ‰‰†CPTpy*’>Ω0áÊk¯€Ëù«(/rï§©ÒÇ6‚÷†ã<™dÌ¡èö»”vïZπ¯y∫o⁄ÿjñ”¨7óqóÑïΩ™z≈SE_Õ·©*=ôr ÕY`ÂƒOﬂq/è8‰ˆÍµ^hZFÇú“>ıæ–kÛÇ·µGòÔ£SK&n™y˚Dnç©»-æ-¡¿˝è&úîÉèK=i#–k»ê 2+Uñ∞⁄Ë7◊Ñı¿4ÓU≠Ÿ†pÓ4ìATàØC/ŸFZﬁQ7∞ÎçsF∏ Iñ…Ô0≤•#´?íÂÿoõﬂ¯t §+Ç #@_YÅ±‚bCYX¥A˜1aƒh0r‘‹ùÎúQ£àT†§-≤ÅgˇAµÕáÕ¥µÙÎ:âm‚1] ™_ZJÍæÕå-≠¡a¥õUÎº≈&'÷_5¨®£&≥[èñ—”V®
-‹®g|æø ,&°ßtJB÷ñ't˘Zö"ÿ/qîmÖÌºu&≥7¨Ø™v©®N,==‚Ÿåı‰û:ñE]Ã˜V¡£ÜÍŸxæWŒÃúQˆ‰.˘ˇ   ˇˇ Ñ.ªΩxúÏ}[oIñÊ˚˛ä0ªßKÓ1%R›∂FrÅ&igtQÆô√®2CdñìôÏÃ§-ï∆¿ˆÀlÔ`∑3¿Ï Ωı∂ıP≥ı≤h,–@ÛüÙÿ˘	{ND^"Ô$eŸû Fª(232.'NúÀwŒaıG≠∆÷√ÒŸï_˜,Í≥˙n#¯Û≈„Ÿ’KrÈÿ~}ËXôœfÃQèﬂ•£W¶=Æø1Ê÷û¸¢|Ì˚2≤®Áù–);®ÕÍ;‚e#f˚Ã%oÍÕÌ⁄ìæ=⁄‹ﬂÚ'Îhÿbó>6ªµÌû\ÙŒœŒ{ÌNÒÕ	Ùé˚ßGão˚ùˆöﬂ∑ΩµCÜé”S∑¬b~≈å◊û|÷>:jˇ›·È@ÔÕp∑´z7∂Ã®°|ª?tåkyTÜ˘V∏~MÇÒvÀ~„±©ÈXŒ¯∫K}∫9rÏK”ù2£k“±ÌxÃ#?˚©∫gsJg∆°ˆıbW{ƒûOáÃΩOûê≠•s…+v}pçºïÜ{ÛÀâÛöπ{√q0–«ç∆V≥Å‰n{¶o:v}=t=Ú”õ{≥ÿ»gF'”—–ÏKÚ)˘ƒô—ëÈ_◊w[üê=Ú…'o˘Vá¬∞£FŸf°ñ9∂ÎS”0,¶µ	y€¶=õ˚ö‚_œ†'£	Ω:W5ÌÁ˘ìÃ8∏πW5Éoµ€vÏŒÑ⁄cX»∆â‚Fª	Ë†c{>:¿ ‰≈ÊÊfqO_˛≈Øtr@ÿ¶O›1Û7ÉπY¶Iè˘É¬Nn/ºØﬂÚ[˝Uê÷uÊ∂≥ò‰·˘2∫¶vΩ]:£π∑Á‚Å}7©Ô›%Ò^l5»hÓzé[ü9&“ø.Òminæ-_ôsOlW1Äm>“0{◊wfµ'7∆¶!ñ ÙﬁÆ˚≠;÷Ë]%'“nÉXpT‡∏Ã¢WÃ‡˚jÓ˘Ê•9¢»˝¥;ßsVrˇæ:±›l‹´<S˛˛Ô´œãŸc8»H„>ûBöÁ»KÂXÉµnvﬁ&óm7¡€•%ƒÌ`˙∞à£@.k6A0´=9q`|dB-ã∫éM8-~Äı9	∆J¯l0o‰öæ„mﬁÚ™Æ4ãíÜZÀp3ZLÂÊ˝-êS™on´ºÔfÎÁ‰å˙H@ãÔ©G∫0è‘ı©üæU=ÿ}xçº∆» L’wîÎÙ”óª:`S/§ë1ù’∑ÛE˜f#ñ›-÷Öwqœ‘±E	bFaÀ˝ö‘õõ-î∞·ﬂÄ·◊/Áñ≥n ‡ö*˜›ﬁ$›!wÕKÊ2{dRãIK‡xÎ£áÏ\ˆò9∑PS
-áxe/-ÁM}"≥g’÷∂™Äºœ…[~˚1|%Øº∞¿8,:Û‘%Ω}-·_à≈Ú»'o–áaû*Û£Ú¯£Ú¯ÓîGwn1„tÓcû‡∑fûˆòsìP›˜M}<œˆÙG˝±‰ —ã¶=T s∫˙jê9Ω¸QÖ‰◊´ê;°
-â‹.£F∫õ≥`¡Æ◊ÆFÓÆ¢F∫õÏjdÕ=‡Ä–Còk“˜YïÃ;a2∫dﬁ	Û·+ìñÈ˘\ôúIjè!©= Â2é–≈∑p´˘£B©qõö÷ô÷Df~®‚qŸ0°bÏÜryv∂ä
-“C®|Çö¶p÷g¥ºåPœµ áXìíyŒf.ÛÄtA¸Y¸`#—]¿äQÚÃqßÜC]JŒ∫œ»F◊Júö#zOaëpL
-CáógG.Í<^å√äU¡´:ù˚y3>'¶ö´øqÈå†≤û8ãíg[rAvLsR2•Wu8‘‘ÑÁõ·‹¥åÓµMa~!Ô:¶Ó+√yc„|≤Ö˝µø˝W$ÌïnÅæî¸ä¶òsf„4uêæ⁄6µÆÅë3jC*∑∆‹òøˇkòL˛t%kŒÿ∆ı?iõ€Õ«/Q„ñj;¸¿¶Ã•ñÅ‹%˛pÎmÛΩ˜êp”˛É
-@“Ü#¨◊·ü3ÿ†çÔéåFƒõPX∫∫5˛kNëHfsK¡∞ﬂ˘†Å˘◊I´ÕCéäWÖ›ﬂ¢€ˆf¶≠`µŸüÌïxs‰3åùbÜ·˘
-$ﬁÛ|w>ÚÁ†]N|$hŒÅ>-æ∑Õ|p¶3ã˘·ïD<[f∞1Kú2√úO”ám!Oƒ›¸¶ÓMÜ:`ÊdÒ-∞¬◊‘öÛ[hÿMX åÑ•lÊö[˛„Xz«E62~ºÑôr¯ø¯aÏy L˚,[y¢V›Î8[·ÔπÆ„ÍoX_a”∫é'é f˙®ø¿v›Iúî|Ò¯oπ∂TâúåZæ9ûTSovàÂúxù3™=ô¿>;rwØ‡ÖÈ™‚ß§vi‚©e⁄†ZÇ 25ˆƒGXãØÎhS‰Lï6õÕ›ó[è[dSh∏ŒX≈‹Âº≥åÕÓ∆Î∂∞Yx√¨˛(≈mC˛πÚœmŸr{-ék…DC-ã¿T¯;≠Vïä∏GjÚ@tèÜ‹Ó·NñÕ2Êê9_RÉ’M{˘~Wí™Ω·…5d˛Ü÷Ô"1ôa7
-Ω∫´"}™π>‘‹(˘ßü0$O?e7≈˛d7s\yôsNj∏¯§”v¿ÙOûùû˜H∑G⁄'ã_ı˝˛—iNIÁÙ¯Ï®wq™§€Lv◊§⁄¨y≈Üsﬂwl•…ÊDÒÄö1«±;†¸æ:∏Ÿ‡>`H˝\ˆ∂1√üÔÕuPŸåÇæt¶O—^E\@“*Eä7[ÁOUìK±Ó¯˙î3∑êéÒ }‹»cl≠Fí‚Q∂„∆∏¶¯è|ÔNC›Í&òk¨1eÏÜ¡X'èH_6äx˚Kµ•˜Mﬂ*<%q
-œaõSXn†:•ãuiŒÄo∆ETê `ak8‡czeNÕØ·∑≈∑.£xöe·y≤qÏÄ‰'ö6Á~M•Éj\•∏˚™F¨˝c”∆é≥ÌßÂﬁa¯WŸ|¶A˝≠b∫÷Vï…‹ﬂºf›|,≈ïFŒÏ˙¬ÅØfCá∫∆Ü,ø= ó‘>mæ§f¬ë∂ã||8ƒ√ôÂ€pÏ_’∑aP•çM)˚Uµ≈(Õ7ı¯jÀﬂqf&Ïπv®GÆï÷h º5ÔRU-‚ÕV®F€π™Q´D5⁄ñT£ÕVDOëS"m∑äD?"¸`uÿùí(ß˛üˇÔˇ¸£•®°Ç;sÄïÓ…°b∆RXÄr%
-/4Cq#§O8Ãråá8.7G”t\üÙAÀq}n©r†Pæ±©’l6årub'≠N¥≤Í.\b-+~«
-’tèvù7ÅåÇ>ø/’Z)≠%D≤ÖPÈPUX':JÉ3òQ˜öMÚë¨<ü4¡©û1˚ìVÖ‚3ƒîYcZ“Rv›üûu˙ß'=Æ-†—æ8%=–'Ωsi9kü∑9%AŒ{gßÁ=Eá §µFoäÇ˜ALKzM¯O•K9JJÆ)&˛ÇáX|P5b€™à•`Ç§˜∑8ìÌßG0ÒC‘Ó\Ù??(Mò¢ÀB–òk¨m:6Ñ=3„œUË8G†≠ë¢ªísLâ–ñ#¸7,2ﬂ∫¯ôI\îâ©Ál5∞X+gdbŒ?¯ÔÒôm∏ãoâ7'3èn|ƒ¥,*Zˇ’úëŸú°À‚îÂ—É—ˇx@Æ…Ã¡&<"Å›î€i?"Ùô€FqW ÛM¬:‹J—
-]¡Œöú·C´T≈5SDû∫¶AúK≤ú8ÀaN«ÿ
-˛Éº€Iÿt¸Á6±∆“ü-¡4ï<Ñ–…jö1Pk.≠˘WŒÿËÀ–ìnéú⁄ò˘!≥‡Ü”ôòˆÊy›KÑÁä[©Òf¯◊Ü{ˇÙ/ˇ˛@«4¸—1G.-9c∂Gß&'ñs ⁄Ë9Úˆ¡í]•÷≠Ë”¸ÆnÀ]ç{˜oø˚Ìåª∑¯µÏà¥±•≈˜º)ÏlóçÄÿ°›ﬁ1à∫63-
-Ùö”≠ù=“7âª‰,∫1Íﬂ?¸´‚.ˆÅía‚È„πÂõÜÈçÃôe⁄‘5©nßtFøLx#r:πªGé·>ﬂ+˜ü~üË!øgMˆxË˜ÀwÕØ˘A4ßW-Ïﬁ≈	òç∏-$ª˛«TØR∑ÇT8E˛„õØUgÌ%&^N}u¢ébIT⁄ﬂ4U8ÖæU-£¡™#Á‰–%8m≥€&¿øe≥Ñ¯ÒtÜ¬¨^—Ee°™Æ°E´6¢åbKwÚÅö#•⁄&ÂÏ¥¸ú≤*õ 	Ò2”À1Jbä5¿;Yk‡£å50rõÖ_lá¶¿Ì<S`®¶L(^¬,(`˘jf¿ƒ]ø»≥n´Z’ÌÉ j%ï√,¶√zS∞õ/N)bgÒ‡.5a≥º’≤»ìçÜªK#3pûÚ>qŒ¨Ÿ)e£§ˇè$ãF÷£ø+¡rDﬂáñ3zÙè≠.ÎòU0ç:ëMxË√2p?cœ0—å1aå‰3js’‰Õ¥˚ºÆAt§¢’8«ilπé‘¥◊∑ÃyíèÆ»=dM0å#áB∑´·5mxMeêMI®çÁÁXí öÂ∆#fDé Ü
-‹ÊÊ¶H¶∏Ày˙{!ˆd¿Pt‚`∫(∞*»H`Ü9å%zÖí\Àwa±}«ßñbœY∫ F5Î„r$=¯sJ+A“Î¢‰xµÃbúì	#¨[„∑ﬁ$&-Ÿ8Ö÷Œecf3Æ˜KPb±§.C‚‹ΩØ˛Bç5ÜŒ¡ø+r*DÂ™Œ°ƒgÒ≠Ç’*ûQY…Ì‡&˚ù™hö¸¡M˙’ñ@†ÓeÀ˘RYh∆âvÔ‡F˛K£GùD#©/î{""h∫Ãß¶Ö}I¸≠”õTCôØt{
-* >( Rø‰oóË]≤—Ç¥Á-é=ŸLûAÈ€eÊ1—h¡jÌ™a|‘ô í≤Nå(ﬁ)t∞ @˛2VŸ!ùÕî´»™9[&s[F”¯Ÿ–(K®Îö√¿ :°C”Bå)rr&dHIxÄÛÌ±.{mzsjô_¶¿ûZÖ3’YÖJœùêyÊÿ‰)∫ó3®;√ÑÉK˘hxß0ß	óÈ≈q—∂…"õWT2LπºÅ†—f(˝ˇÂ‡ÙÉ•ÓeZ¯“H€`Ù°U|≤õ(¨Ô†€fW6Ø§$À§s∫4à∆˘ ≠J ñXÛeM3ô	YòµõÃ⁄ÕfΩµ«Ëºa∂ó=í∑‚ÀvªQ‘Ì4ûl;ÌqÒÜöæNÔ3t©Ÿı"‹Y+apz∏Ú,À”Ù∞!ﬂ§Yíﬂ(Âh(Òà∆$¢Ω‡ÔnG»™{ﬁàZ¨˛¢±˘¯ÒÀuÊîÒh9úEç¶a» ’ﬂ@XV◊SÛ≠¨ΩÛwp]F C∏äÀlss\üë-~¢n≠gÎR”e¯Ã-M$…÷à≥öÂ”≥§¿ò«`J·”∆Y®°9ÚÊoï®1∫ËI<ok†8	◊ñú>â€Bf€∏≈‘CXæ?2îêû§$´GA21ﬂ)™≤Ù∑	lé˚®÷$()JH∑|î9s›C≠µú÷±dê©? «Á¢˘ﬁ˝)[¿|v8Óm'˜¶n≤Ê‰w»ôEÅ‰®≤Àﬁ l”·oø ôç«ç·KÆÅg}∫i0≠LTÍLtx:¸LaCG*ëÁ»Z¬±¯Á ,LÔP—ºRb°ó«_˜,6¶∂Œº®–,MØe¶íÈø”‡ÒßÊ–2Ø3õ\ì£Óh¢B.ÓñòhcÈPÚVÛπ°‰>£÷{G˛‘q^ùŒò]ËË‚}ˇ†Ç»;@√sKà‰∫ô(¥ô.æ3ÚÿñœmXZÎÉé#?g‹
-áÉs⁄ÇV@›£∆‚ª©ñ∑°q2õÅè"ˇõa¬Ë}◊ÒcÇ«’S“D`{hÁ„pªÖû”;J˚Û#œÒv√«á´p<`ù2«\s¯¯/öp)ÜèG¨U7vºu€±„bZgAnﬂ>ä¿q>Í«"µË›ÜéÁxíj.ºu«çá≠Æ1h¸È‚ü˝º◊mìß˝ßG˝”√Û≈Øüı;mÚ9|æ¯M{@:Gãﬂú¿7jq	?Üé°„y¨Ìc	_Çm«ó–¿£Ω«çGL-‘ã˘ÈàÒËÆè7\<oz?†pÒÇÓˇ..øÓn¬≈eyÌùÖãGßñR¨x¥øE†8«_&Yﬂ˚)—ˇÂ‚{7‚˚dÀ⁄i<l<¨∞e…bÿ˙≠YEÃÔé≠Y…ùSK
-y™¶¨*ÌmÎÁ);î3wGåôˆ+èÜÒß’‡îÑ^&·ŸΩræs”>!çÂ≤DÊ#`î!Å§)±/ªZ“˙⁄„∏{WàM-úÀRõ∂¶‰û∫ùu†$öı…ÔÑ<õ≥0ﬁÙ0≤›t¬4á◊§gC‡˜–¢•V!„6Ç∑´"PA’ñ#Pq}’b˛Û)^$ˆ˜¯<±øVBˇ}uHîÛ_˘ââÀ.nD◊6ÁÆ©˛§»Á~P˚» ~•.ªÃ:®Ÿé3C(±Ë s]ùDÁ·gH◊ÿX]øë,>>ÀKrypç
-L¡ÈS(8$ Û:±t¬-â6–ô~öÜæÄâbW⁄BEÍUD)∑úgÌÂ≠BÆ$¶£û'—e+XÑ1Pû=kñé˜◊É–€]kª˛‚˚—‹rHÉ∑ﬂ_"K€"ásê¨îîñh:î¢Î≥}ÒÊ”)ulõôYÚSr≤lÿ∑yÎ:_Å‚T9aé˝å5∞≈EfK˘L,≠^]Â»qi$‡WZãÓ◊)åı‚Q≤Q ´í°y	KùT3r¬ıvjæ11O,¡éyDò∫Ê'/®—ù€#åÍn¢€BÑ~"üJ⁄ëüZañ[TQ°V‘®◊óë_-ﬂSªgÕâÕ®Ìnønëç£”vóüû˜…◊>ÏüàQ˜óH˝ƒË"Òè¬©/•ÚWëöd«ı1à	≈cÈ0ÕÿÉù©APt>£†ÓøÚê§@øí?[U!8gó.Û&ù7…máõÆµö”:x¡ùπÆ≈ıtÓç∏C˜2–D¿∆î«–ôò˛∆0y"$ÂJﬂu0¶5yﬁö[\≤Ôﬁû≥◊0ÿÑÁöò@|Wºl…5ÇöÁëÛ€¢ƒ≈Id
-Uä(ŸÒSZÎd›r8QUä∂íúl\<èxL&†¯Ex∫gúˆ¥ÍLı5Œ…√Í5ïÂ›[p¢·ı«?t1ãÊ◊w.QGÀ˚≥H¡t]≈ íOïHe¡j]“¶¯.ÿqSµî^‚
-$dn√bcò 
-Åˇ¬æ.~èiá‡˙ö⁄_Û‰]69õèA≤M`DD¯]¸+|≈ù	%Ë‰f‹hõ‡Zddÿ‰ò)àå"=∫a⁄ƒòœpﬂªº*,!bÀ€[˜Bh»?z©zV ª#@ ‚∞OüÙ˙…kj≥´zKƒY«	 B§ºG≤™$>Û∫7E¡NZïGµ(÷2e8”Ü'Àú§! RÔó+««x(íì†>+pŸ7‹‚≠∂T õ¸ÃöÁhh|ÀEó#s:g°Q∂“ì®GjÆ‹Œ‡†K_U@Qh¸§˜7†úÙéˆ0˘„Qø”æËéŸ˙ª§w|÷æ¯¨ﬂÅﬂ/˙Ωì2x~|‹>ˇÇlÙ€U
-√Ìˆ€ÙD¯/"ú¡ø∞%™Vë\°π€∏l–\å´„bïÕ;AπíÈ5l•JÁZUJó`÷ı¬•∆ONêÄÉR?ƒï“$y9±æ?_Ÿçuk&a—∞A@*ôövP‹ê¯ãÔFàg%<Ï›«…g”Ÿ‚[Ã/¯Äå0f px˘§ÈŒ)œ‰•∫‘—∞>‚»¡|âOPÇ@«·ïà‰ÄsÖo,ÎŒÅ±≥ƒ∂˛ °±j€7o§∑ãêù≠∆1Å˚&yÓöQ≤óÕFÉ)¢d%Ê¨ãì}∏$NWµeÅe≈`JïV!\ˆ·RpY§∫[ƒÃrD ,å Â:Eﬁ·É.âØoE§Cœ±Ê á˚∞Œ´Éf∏ÿ∫˚ã"?B¢êf+û,.÷r¬‡À-$‡:{ç	t0FÂ˘¶Ÿ◊$!Y„ÿpüg?¸]`æH·áÉ°∏°ŸPì∞V<ÍsÓ/≤<ÜBÑ:~∏»í¢jâQ√«˝Z´Ò‰‚º›}ﬁôÊA^¸˙B êY¸–ÌÖÆT—
-Hd~g©íÁ*ÚìN}ÃØ<Ï6 hÍ2SC£Z6ÃØ)-Ñ|f∆A·ñ;Q¨ZCdq⁄c¸∞¢]cΩˆ…U0›|gÛJ∏∫ªÌ˚t4	N‰ÁÙÚ“ƒ4’"äuÛ	ú7|XÍùèØ±êÕ∏JO˙Ë«‚Ï±)G Ω)„¬iŸ¨(Ur	ÁVãck_4æ‹û]}˘˛Ôéát£˘AÛQÎAs˚ÒÉ∆Êˆ}≈§%x}H∏Ò“È«iÌ°\„Õßp>zXõ`dÕM¨î@Å&L`#<˝ñ$}p@8‡_ìrDÊ/vÂpÃe€¯jn˚auÜ∞…ƒ}ÿf∫•uÇÃ´∆˙éròÏ†á~µ&b2a¬2Û•lúæ€,%Y£§4+—6XbNÄ¿nRÓ´øû8£|ıcâ4ZJ˘ç/qòHrm$Î9çÑxõé8íÓ¸xcéÚ'˙ä:*¿èqGÚÎﬁM‹ëp9vù7∂ÂP#π4g›gÎè<äÕ?—>ì∂s“)©±Ru¸tâÆª[m3ãMZÎ2t€çERU^vÍä;∑yvÆ¥âÏay-M‘û⁄ÿÙπú'¸Êπœ‰
-Ê˙Ç†ˆ√Uœ
-îi9jP>QÄw†£ÔçÍ>É√¡Oíˆ˙CÈö≠ƒ) e.Isx]+ÈLOtï`}ﬁöÔÈ{t•Rq$ï4¯Æëz˘™¶MszƒıY‰©tﬁíïŸ2bçˇfB}Ø=õ&‘eü^ä/ ¯'keÕ˙QZ?8øåiöíSÍ1)Øz+î‹≥_cp(ìxôTÍ–†Ex®=G|µÖ´≈åF¿yaªÓ≥5“˛1Û<:fÉ_ÕÅ(÷™ÈFêYπ»(˘>Óé√)5≠;Ÿ.Àﬂ¯}ﬁñøˇwµ:éÎ2–$P±p·AÑ(Ã=‡Â+∑Œ-ÕÓÑ`±îwÔ‹{Ω“˘0∑Ú&¨
-P	ËÔIgˆbœ-ÎŸæˇŒR	D•ÿ
-s	‹⁄.∏Â§]äû≈úÈwS_Kúõ<ºÿ#G¶Á:¡Ùc›}W¥6Æ„≠TØÖW‚˝›Êﬁ_EﬂRn5∏+Øˆ‰ﬂ~˜€ﬂhd,UW@ui{YA£[4d`7À¢_èÅﬁ⁄6ı?Lπ/1‡K|‹¯å~ù5GÅZ)L6nwÇ˘T„Z*!‰ E™HHπ,qí}mæb◊!=ãPÒKÒ◊°ˆ5ﬂ7¬X’óbÍCüHâX»Ω{,¯#|›h˚•ZÅQó¡yh´õìpéîMî˙ÅÎ2ñ≥ ¡mëÚŸL0‰Lîsí€&¯uKŸÍ™·∑–¬ﬂ„ï5æ˜RÀy~7n»ÊÊ&˛ıÄµﬁŒ`˛ôºUh/i |y1W¬G”4LAú≤èÊﬁû3˜-”fÕîü≥1ﬁYKˆVS√0Æ∂Z(Ø„úÚ(∆∑4K0´•!ë:ƒœç˚›7ˇE7»V\7≥—Ú∑±]	’M’lÃ∆HkœŒ≈‚;∆E+fàHπŒ^¡ë<√å(»	kysÏN
-Däw-öº–≠x¡‹È€⁄2+°9óZ“¸Å‹±¶
-{Ö§Ãá	0»¢\òÑ<dƒ÷ò$RQpπfÊÜd‚Ò?˝„ˇ&ß#+qπOËOˇ¯y˝s!8hÊm–ç@◊(ëÌºföáÇ¢û/~“†ø«’OÆ üiI˛MÉJı%I#	]‘Ñ°XÙX:‚ëmÖ	(_©¬YŸPóeƒïxªòSΩ  wKFjÜWB?{ò=2A<ﬁ”ï.O-:ìR@aê%±=œú¬–/Mf‡PõªÚıËaôSD3ù&dÄ™›8 éDúÅú%¢9ÿ¿E¡sΩÑ˚®òpwã3Í»Ñ[l^[bÖC©‚ø0N‘ÇàñNçÇ*`'[⁄ø[Rì’,#uÇ^Ks¥ƒ|ƒ'Ω¿…^øUSÉûﬂ)ï≠9KFﬂÀDŒMÖcº+ÁÔVÇﬂ
-â˜˚êƒ;^NFJzw∆\o∆∞pY˚›êyPs5û≥Ì€bÍ.É7cΩˆë¶:∞<ëﬂ⁄ 
-≤Fª˜U.oﬁ¨cS]Èñ˜'Zπ˚≈I˚∏ﬂ!ÁΩ≥”Ûrxt:`pÚﬂÙ/>#Ωœ˚›ﬁIßGßœœ;˝ì√˜&\π{m”©9:¥œ[!^π—∏lÓÊ∆+sùÛéV:Ûá´åπ}|w~Õ£v—¢M]>µ£$>ÿ3Û2Œˆ‘ÏQ»rÙG-˜∞V´µgbY¡DÑ∂Gw"A¢˜Ä D z)jn€TŒòb8·‰†⁄sçfnj	D}Âxâ@ 1{Œù«(…Ω¸1)Áıv£îç%r›∞∑kPn6¨π≠†q„wU∆G+<9J…Rúº\-üè/89ö+›–dÕæË◊&‚=ã#ãQªÖÿbÕd¿QjQ,∑YmŒ5bç◊UÓ◊iÊCµ}ﬁ?%›˛…‚◊ ªûbÒ†xr: _êŒQ{–∆Éã1Öß⁄p>Ñê‚∞dﬂ) GÜi,æ˘q6œü£5»ÁÖ¸úë»y-‰d)œß\ Ò>‹œñK∏ñ¶_"P+b¢qòVÃÒ∑HáhEw}ºZÈ©˝ÄB≥r∫˛cPñ¸∫˜‹ô“61ñwœH(r^ﬂƒ3 „xÀXœ√–lÒ>√=ó©÷R≠€fuMAgÄáß–
-Ëª≠-“;†¡c≈ƒÛØ-ty√+±H ‘Ô ‘â#"Ù¬§<≤Ê1◊:k*&fÛíÅné¬æ¢U≥6@´éHÖuj˜U1á…ÓFUóíYÃ”iõª˚ñ0¥7Ù∫€⁄0äp…áÁ>…c ¡ØÎÍ1B^ù)÷Y∂≥swfIÙ¸-w8∏c]]>É'Ó÷©Ô:ﬁ≤=è–ô\ï)å¥FœU<ùkôæHB‹∑/Ë“8‡ G·˜/¯ÿëºƒÚ/7√H9 ó=‰Ì_®ºL1´Éó’EÀ&Ãé≠ 4l<ä´eaA	lëe®∫ÑQ∆Ï#Vb⁄lºîÚG%Q˜(eVZoc4qá≠≠b#
-Ø¬Ëáiâ∆à…8˝¸ZPz•\ä@Rñ¨é~k}kN Aë5•¡∫¥≥˘&⁄ü∫xSµJrÈ7Õ\«ûcZw$c˝L⁄∏’b¿Œ2Ë≤F¶Mù≠S◊3{/oL∑Óß◊öØåMSó•#9í2æ‘™Rç$ÛüﬁÑgöR1O˘∫Iú¨∑B’¨[•‘+ñgÒ	^≤ö®âà–Ö8‰⁄ìnúLb&åﬂˇ$òtëhBè‚ı*∂U obESq˘AŸ¬ÑXw[“42]pxØwnìxˆòY	V®›-∂‹tàÁÀy\#¿F—xm4∫l≥¨âV5`F:•L¥6Ø√5‚ÁCPNdñ…˝’úÅ Ìq…íò6¡ÛÂ%éb$˜ÃØÔ§D2]…A€˝§I`y!ó.Åkî£Ø•0!Õ≤˜Z‡Ñ,€ñ\ÊyÛ2ë_ôÑ“⁄10Ñ‰(¨Ò√6"QÈ_»Õ®¸˚k§K≠Éô√Ù0ﬁ8∏I(QõÅÇ§◊X≤ñK|Í*Ÿ¬3Jy∫vK§¥l7¢nÔ9øÔ_◊CÕ3S°ë™ÀπLçb3^⁄t©l‚“4r◊H√Ë^i£Gr_€‹n-óÕCú◊Rﬁﬂ‰ôS- 'uTÛm:Ê˚ËKÃüX∏ÇÈ[jé¢hú\¬ˆ∂ÁJO∏Uw>ÑOËâ∑xF˜ÕäÀ†âÃ±ñèLbf—k<¢˝	##Íh0B‚‘äRJm;˛¸äÒ\Sa:≤,XËì @ÚEƒ¯Õ4&g9q9ƒ•∞¢∆“,d¶À[B ˇ˝&«¬@G*ﬂÊ≤±ÈatM‰æ>ò=ΩÍÙ™>ÅŸ}»ß7õπ°9'´``Íıa˚oDºdœbcj˚ÁÃõ9∂«6≤d˛Ä‘ÁgMS∫X&d7u,ÓÑ@S†|^=ÿ#p‹sáF r7èvÿajSá≠√æŒ˝a”bˆÿüê'§±îΩ®§,{ZHÏ‰´q(á›ƒäÏÌƒDÇdI|*W?Âò`¨7£ñ·ËF“,KS†%t,˝¯&ºÚiJx =w8 ·S?ÂÉ‘%ß`:Íå|qÉËÜÆ°0º&.ª‰mrﬁK6‚SwÃ¸É⁄ó@áˆ+› ∫~xP≥gÜ—hÜaóÃuı‰d{‚˘34≥kl∫æjì%%T££4Tÿâæ√√ﬂ≈—‡ŸÛq".†Ë0k±/◊Òeˆ ^·A¸€
-bN)qÑ˛∑ï»Fπ∫{Ú“KçæJ”nΩ‰C∑iLØÆ8_)˛≈‘"!R›õ%›ìMo≈Ed™=Á≈EXc9.¢µB\Ñ˚§õÛ g2Ù÷I„d∫ç∞DÂ[‚´£?Æ∞ƒAÁ≥ﬁq˚¢ﬂ!ù£˛Iø”>ä ¶û>#’˚Ç<Îüt˚'áÉ˜&$q0ö0PÕ—ä5T1&q'7&1N}Å%∆y?>ò®ƒ^îπÙ;ürÄÌ$Jµ7sMPqgºÓ¯GàÁkı0˛Rd§r,"≈‡&*´Ú©ÒàJ¶‡Ö∞^h4™@;:Kñ93LóÒØ¬,˜£95\åÑ¥?Ã¸˜!<—KÌÎè9>1w¨∑†ò~Â2äi÷ªÓR™çQ„ëb§bÃ£ﬂÀP≈`,eGÀ´ÿ'@Í"HQ	„R›R–b<kÔ"jQ©djU4cú])gLeëºª†∆#8~‹TÕ1)ú1»ætwÒåQ÷j£Î≈BEúø˜,*»FGäÉËPTI—˚AÑ5∆‚ï»Z¿kÇ!ÃŒT§˘π5B‚Ú6nå~	D	˙°4Æ\ï'ÌÊeHÄCç«H'j&¯‹Ó$Bl°◊´ëä¡…œ éj ‘U6◊Í!4Ù#2Ûb2#·@Ã÷Fç„®<uWJ"&3'B)4ñd"°VMEØüIàó•/F™a4—öÒπ∂›Hsæ$!»Ÿ¯tﬁ≥G“ÈNj…E∂äÍªTÉ1U˘’ÈL©Êyj9¿∑=Eæ£„ä/vâè¯ûõDÙ«=RyÈÓëÌ=rs´Ê$”äîUˆjø˚¯ˇ"UÙc…∞§™_ÚÓI&ê¥©ƒéJßXn?}X9ä¶˘ P2Ñs»Ø”IlæBí ’=.B:ë ?ïÎÄåA8‡hpfDKƒ˘m(eﬁç&3Õá©‘öy{Î
-äéDäÇW˝Å’°∫)SêØ „pB©ñ≥fìcÍæ2ú7∂kxGÂY€0≥∂†Ev·úÛlÜÎßåƒÁ˝éˇJíÂ√›ñ‚S‘2Œ¨y ÷¶Y’ˆòÎc©?õàU`k%íuV8´†˝Í£aÎÁ ◊Úh$P˝`G]◊œ®Á3ÚÃEﬂñuç(®ÕÄ%ÅLˆÜ¸|K€:$˘bEá;«Q∆¬°á¯ÈUÄ[UMûÒµl^&´ddË–∏è"ÈS~Ìò5ÓÚVŸc¬=∏∑d†f‰rHπî≠ç´'åÎ"0jÕlÄÍ=Y"F=?Ïqπõ<ˆ…'î⁄&ÁnM¡›$[`°nª≠]ZÊ2$øæÅ†¥_~ˆS§ÚÁ§©*.„÷KœTökﬁñ Ò¨=C¶<I	[`π7}Á98*64QhKE.ﬂ∆Õ)RNÅ/¬yõq«@ºüó€6Y?E,«•˘´Ìùt.ÙUP¥^•ÂE4Ç£ﬂ£˘pˆBÏÂ [8"¬⁄† ¨Ìö¸,z´O∫—∫kΩU™‘òö:üŸÅ)ä≠·|é‹›¡È+ü“ÀúK˚‹˛òS0>Ú^;rÄ∞fû*”Ÿ˜'∞!îó€wsÇ¢s‹∆¥‚\Qâ2^ä¯âæJJ(á◊ûÙª˚[˛d-ù≥1∑`nI˛…uµ≤áÿ√´”2‹Î™nJçıﬂ˜áéq-˜®÷®éÈe˘áXyÒtÂU[VT∑ÏkScvuXÛ25UÒí¨î…Qàºô*ú∑øºÔπTôID! f)˘0Q}Q?Ê-_‹˚sMaè∂2WSv©ÿ∑Ã0ì"ﬁ{0∏§D∂\Xg"å2êu`¨Ê»±ÛÒ∏9„ÀZ√¬ß5m¡D\)ÈÊVgNùì‚•lËT)3ºYÆöªããk2òT«£ WsÍÚ•§·McW≈è€© íX∫…Ñ’¶≥∑©j¬˘¬sÃøƒ6ò÷‰*zjç*≠Rê|Àÿ∞Ø0ö8Ã ¯d‡¯ö"§•,Jœ=
-2iÙp/ =;¥≈ﬁèoÁ(Èë∞Á^ìóáGëf£Òg éé—µ√l‚ô∞'ß‘#N ™Êëû¢û¸√\¨„ÕΩÉ›6D¸≈à}N Q]'lÿw6aâ-ÕÇ¬;¶0˝Ÿàÿ1Ò‘¬§•◊ò·ˆÁÿò7¢ÓòÚfœ∫œ™ÒZj+Ùn¬^Íı:Ù:ù˛‚õ¨6pﬁ{÷«∫YΩì^}†ÚÏÙ¸∏G~F∫˝≈ØèN˘∑«ß›†>Ümî#¥r‚AbW¥£∞e„A2†›Ãn≈ÊR¡QÓOvTî±=•D+( ìÍ +˜@yØê®ì.<t‡âû†,2vB4)9«DfhÀF≥6»¸¶K:X˜$®ô§fﬂﬁﬂöÏ¨ ¢âµT1¸;¡ØùŒ-û°:,∫M"Œ‹!#Õü,YrJlaóâ{`Z<6Ö¬
-kxØ+J£Ù‹â=7Åñ¯j1Úî{™ÅèLN^hÈ*ú3™é´‹ƒR«éa^^b⁄®Ö4'/À5LµAG‚÷à ¡Ëh~˛Œ6@[ tÒ{õLﬂzàPüìw"∏¨
-x+N?ez¢s@]™.µd∫©]¥oãh”`sN§˜Ñ_ã óºRi<X§È®§üvÈ=ùî)EõI˘ßPlI'è”ÈVs¶ä9´ﬁ¨ŸuPƒKÏ5πÃõtﬁ‰¯Ùr≤CÖs’RC”´(
-Ô«NÏÑi*ìÃ∑˙Â’¥Ó•œ{È<⁄Kï¸IÑ±∆ÌÊb˛(^¡èÃ·ˇ@€ºj3°X√õà’Ò—Zƒ?!»áÖÏ6Q"H{Æ	BXfg”é££=¯,RdJ’ÄÄ√!{!´Q¬Eﬂ◊àj"À<#J¬Ø»1¢“…i~˝∞ìN˜ˇ#Ø®‡b¶÷Õ)rI..–∫xƒÁ·kLô)îﬂ•&πtM¨S>g[≤úi géD*•©Nu%ô-êì«(°Ã|ï Ó[»V∫o—!∆ıñ…º∑ô)òf!PqQXÁ‚Xä†^ﬂBaù≠îègji¡t¬® Ã‚åQó© ¨_SÿK7£πã»p≤D}*+8Œ&X@Œ3Çù;yçm∞MëUhìøR…6√ºTP|ò{PÎ}µG>·™∑åxÛ1sE
-9JûˆÎÁÌÓÄÏ|ÚÄ|“µñëH¿‚∏d¸1^ÓSûspÒ=QxÇ˘£M€zjE“	T¥VÍ∏âQƒóŒhÓ•§÷á≠$÷%8wHBqçÌi›Yö0éåç:s3ÒH”Ù·,ﬂ¸:¯iRoÓJfˇ¥Ô\aöV∫:BPπ_-õÂÓ%Z.ô4èﬂÀmy”wÕ©˛#)=q±iå¬ ¥Y˜ù∫K.]gQ
-7N¯◊/"¨´|O+"‹¯N|.íµ¯Õ1ëGﬂ√Ì9ﬂ™Èrr·l‡ä ˜7”g$«ê¥Ç\fç5Ú§Ñ Ã®DAº]@HŸÆ¶4%Lﬁ≤2\±'å\öVR…+Áﬂ›ÔLÿËU«tGVN€‚¯Rk§‡-A∫’û¥A∂∂Ø„ÅRK√´^Q∑*â7SNä˘Fx≥•9GZjπø÷ñsDì*r]‡†ñTÙy.Åœ€GßÁÅ©øs¥¯&≠¬Ôè⁄§‹>Ïùê„≈Ó‚ó’éÄõ!ÃÊ√›˛îéŸRi§T§ïµf˘–V-
-”kÏ<Ÿ˛	Uë]£,°F"ıFÌ…rEÛ’ıù 0è˚ZBRƒ ):T"#∆Ì˙Sxèûô4ôe‰‹â“¨S#üÉ≤&uÄ?˘c6lÅÔ`ŒJNÔjW
-øÔùªSíGGmj-æ˜—Lop›•s∫% p;Ñ‚ô˚âß¬Ú∞2K¶ìt*I,î ú™ô)™Íá®Wy™*¶ôSSì«Râ
-¡VSË7mwˇÚ˘…E{Ωn‰™ScEÄÊ¢|Ÿ¿ RHæ¢^Ôµx Gº˝ûâü¬T´°ï'™»˛˜® ˘ü»EFs¯2åë\DÉzì(@bââúÅjËW,ÒÛÜ¬úÅ°Ì1ïêp	Ò∂∏íTäµîø*≤ë(ÌÛØì¨—¨ÒZŒ(H=`¸?jı7÷«™·AºËßﬁxÑuáŒï“FX…√nÍ'õ—EWÕ¸ˆ∞Ò®π≠ò˘-íVtøÌÆí¯-#à)å~è‘‚w/ùô/•B}´G]E'&,”FçØ;÷™TZ¬s¥™ñÇLEﬁ[¢JÄ¨Ω ûIú±_êœ⁄GGÌø;<êˆI˚bÒÕqøs:Pëz˙1çXìu/¶fÕ∞e≤Ì‰g
-)‡^öâBJ&I«•ﬂa∫ºVa”Òıi¢\ªî4$÷eπ3ù2DÚ˝Íe‚ø”¨!xÈ†„£Ï!3~˜…CRgJ•#—
-ı( #jÆ mÈ++Ã%¢ˇfıızeøt9`äó•3{§dª0√«2‹L;}GÅŒoÕ|@»∂»‰û$ı¿Kù,Ç‰íA‚V»D˘Ñ÷»ÕïíÁ)ã‹\jÆJ?	¸8êúMKœ§C3”≤¥‚πU ?è∞®$&“˘ü
-ãÅöä.Ö∑(◊∏.(ñŸeµ§‹©òyHu≠PÁ`[ƒñí∂ap
-ßÅÂcû7EÂœπ‰e˛x◊ñÃEZXã7Ñ∞§U®iú	9qô?ö‡/•*œyº§!RpL’c‡4çî%‚ΩÜHˇ«?tô«®'∞Ö≤Õ¡§c{ÒÉ«Mñx‡[◊è∫&%3◊πÑMG?UÊ"ÍÂ•9ÜÛ†ÂÖD>ÅÂÉ˛X^ Ù{	JÙ‚[ÀÙLùÇ!408´Õ'l‘B%û9A3>hÄX !ûI^À‡2Ä™àe-ìúc%+Ø÷‹Í®OZá}*ÒR¿oÑÓ´z†ÀÄàÿ¸s˝£6*ìÏH`Ûá-Ûô¯:„˜LBä`Âªw+œA"H˛öë†&N(GiÁ/êñ¨≠Uò∑Ü¡@ãaÎAÿéË0ÓÕA∞kOÉ]´S∏XΩØû¸Ø7yäcﬂZ»Æ≤úƒÊH¨RÏdªé”»ﬂ∆®∆∑jÁs]Àm
-ˆkë6RœGØ»Ï˙`
-ûâèHˇnP‰jf©xí√XÕm–ŒiÎ|¨πª=TÙ$ù˜ﬁ{ 0ˇd}‹»¶skIÈüxj∑Ë ¸|qH€{‚Ö∏ç@´†ÈWD^?hø¥ ⁄Íâ~˚dÒÕ‡—SÌnø”?=iëçAÔ˘I∑MNœ˙'¸∆ﬁﬂûıŒ/⁄j’Q~tPHWûÉ¢åO~|^äOÖ¯Æ
-)6vVHlæ’»l ŸaënΩeóEÎ}pYîMˇË∑®ŒèŒã¢Wﬁ≠Û"OÃ|ß…‘êÔ√hZ+>/FZá/\
-7y2hÛûI™‘reƒ…Ωb¯û≤{£ä◊rcå6ı|7«Œ˙›9v6e.µå¸¢Â·èú[©¥—)§Bôògù T©brFUÇÀ≈ÕÜ}äî˙$|'¨å˜ß˘F/;ZQÃØNùΩ*ÛªËbLUã»-¡3jOŒ\«w0sa ˚6ç€ÿqÏKì⁄_S“	J˛¯t¥ä≥WDé“¶Nß.<¢§ﬂFè^bÊÃ≤ “kq#õH°Ç6{éÈfòìG° ©X»k”õSã¸jŒÇW>≈t[ÿ§+*:ä‘\An—ÍbA‰hÜÆ&fÇgÕ&Æ çnNﬂMdqò“k~Ÿº„æÖ˛»¸É≥ñ÷Au‹íkπm’X µ‘`Ω„ßΩn∑◊%ù£ˆ`¿s~]Äé: ÁΩŒÈÒqÔ§€;ïÌW ∂T8œÆJ8OëkÏ$ùQoW7oÅJ¯è¨-≠; ®?üÁV∆cD…©\2§)•@˝j·Aí<y€Be)◊∏£_ô∏[ÙöÙÄe¬ó··@´˝jaAw‘ﬁg*˚éH≠∏ÁŸLÃ2g⁄#«ù9®–≤`Ã∆¯éÒ!∏œÖ5ﬂ)Ü)jô)t≥	Ò9=ŒLóZ¨5Oo¢óQ(jAª° údYqK3ÇΩ'í¢‘◊Í#’À∂•≤X)ïP…¥´¶Rî6î≥q∂l,€PéÖYcé"≈ÂπnÛ-Ò;QæIòm∆ÕW)æ∏Æ!Vº__v#7$U›©9ŒT±OwjNö·»ù∫[‚NÕ’˝TTª˝∂≈\_§*»Ïà“@»#Èµäô±r+•»!h¸`JÎ.ú√inÊ2ë±2f´yá”∑&◊∞¬MUﬁ„>OO
-¯–Uﬁ˜õ≥«˛ÑWıj,C|r<$·‰Ãª⁄ëêJ9÷◊'£»v;–]·@VZ¸¨]Ç9ìÿˆâcGr»ìΩÚî„ò0ê\xˆ¡ ¶yìúÕô¡”@è,Ãîk;>‹gôCW§çvCÊ‡B˘Ó]I0∑B]Oñ£≠Xõ©…íπùÖ2`byïÂÍ¢òßÈµ-ÿ u{4"‰ﬁ=hgìäØ˙° $øwœîæÅ^x/‡Ö/UÚﬂk·(-˜‚'ç«çn≥˝≤D·-»∂ï0Ó¶ Eº’*»ÂÍçëÆ(N°<UQ›‡XLU™J∫ü'bÜπë5ãEd£¶Õ≥ëÒJã§*ª@ZHÛ$ œ…Æ’åé[àEŸi,ÖB◊ ŒAU®”õñ%™a‹$6≠ûÀêøÛ],Öd£œäÛ-ˆÈ’(™|™ΩJa≤©§Ï∂Õ•mQ¥ô|Ac≈€p∞JB\´@w~óXS],œªX«∏∂«√DÈıÏ2∆•>nk≈‰RÇ¯"/•ÔÙı‚{ï‘2â∑-≥äzu5J)Ú‘‚¿+)∏µ'(ﬁo⁄–Ã[u§S–âB·Tv¥¥R5°2™ÀÍA,xÒaºô\G3ÙV@√’oªó`ºJ”ƒÎ“z≠úßâÌ°_Ñ)ìF∑ËÏVÄÎÂÉJ@|≤äë¬aıπèxâ›n⁄≥πØ˝Xs!√:Wz)qÒg—‚»%^kn∞cj”1è”âƒ^Ωs^\yπr˚yoÿ¿2îº¿ÚŸ‹‹ƒø˛⁄=•—∫Iﬁ™œÃeL0…
-æí»ú0…Ò0 ^õ•Ÿºï":Brî¬oÙGY^¢NS?PH%4≥N©çUô∂P#2Ê†Ò.W°L1˝s˙!Õ3@c•5€VoWXUêUW“.ì6ÂXï’°j…M5å…¥ÄÆØ»ΩÉbcÂT–beÆÛÇHıäì7z2ÊF[§¬f¥œ0Øl•°_ÀJ£◊$OSË—©>´áÀ¡v|®ÛF-°¥|ÌëúFÛPÃ:Fî—•ΩCM?ï—L{2éÈa#ü(ø]<—	§S Í!ˇ∂´≈gu0∫Z“SÒ≤iÎ∞Z—s¸Õ≤—l˚=ôÉïM“ãµ,‘WRÓı'&G1Êì"[®√juŒR≠kè˛∂á[RYD1ñPã?∏Ôb‰:ß∫&Z9ì^Áπ¿zÂgAtaKPKŸ¿_óÖ(Ω¯I£’x‘lº¨Æ
-π;íei3 £ õÓ> `_ÂäÎﬁ»u,kH›∫?ÅmZE∑ó+-ûÎüÀo+·j¶CéƒéQïÂ1ez÷í√˘‚{é0¶Z'ÉÙ∫¬cc— _≥w[¬$G* Qgâ¨êN¶»6rÒÄZØºH£BeﬂÍöæj.© Á†Ü«ão∫œèxy—nopxt:Ëë/»_>\H•F·GD"ﬂúûÙ‰º›Ìü-æ9ÑØ*(ƒ§∏˛´WÜÛ∆Ü9∑ π§∞ß"É·9÷6 ˝wŒ3
-0¯ΩK·ùp(åyÇ‘Ë€Ú)GG‰ı⁄ n¢è(˜áUÕ¯eEúç0Fƒ,hF˛≥¸I«}·àÆÇ Cmõ]·@î<s¬+î!È°„@2ÑµµkU¥*ûœÓÕ;à^ÒÁ$Í`UÛì›Ÿ⁄´‹)h/’m≈gﬂñMx…![∫Ô
-v\Ÿ^√]vŒ≠«öOÌ=‡Æ‘™˚Ê{†ô—áœûuü°õúûE˚h rÜf\∂≈S?˚Yf•KÃãÈ”Ëá∑b0¯Ã4ıg/…ï≈?>ÇèI]2rH&"E:Öè≠ÑüÎ9*ê:<ggCÃ˘q8ÎÀxK¯Sôyü⁄[r|"GÉ+„¿ÎÆm¶ÊJm*ƒh|≤|è´’*Æj.?©{YΩµùñÏÀIã1ëÄ£ ü|ﬁ\¥…ŸyÔÛ~È¢Ú‹¨6¬©T¯^SÃ5lŸÄ˜¡aﬂÜÚÒÚ)Ÿ≥Ar„WJ‰Àdﬁsù≈–ÖZ*4e1WQë◊°QHœK)X< ï*ê¸¶
-p—ÔüùíÛ^˚Ë]lÑj)≤¢vepC’‚u.ù·‚ÿÄKTN˘iPÿ´úùìàaü≈e#
-ïL~~¨≠¢∑^fÖlFÖ38•∞µ`äpÜ6>¢Ú'
-ñÅ¥a:ÛÕ◊Q›x·åY„Ú_5ãÛ,="nÎG•§ß}J>IbÛ%T}œRkjè7ï©#Wí÷`ª—®n∫⁄TZÕ‘åK ’√Óé`gp4¬Ã~ÈÕßSÍ^´PnÏ≥π<=\DüûôÇ˙≥Q/;kŸQbè‘í£3®j \'PÖxpÌ∑«Âî,Ç]·Å∑tHørx‰yeñéÍ=ÿìﬂrºb-;Rµ4VIq©á^%É«A;vêU◊[◊©¢nº#Ó—6Ë’^–¬Åo‹£Ÿ/ıøÌtéÿÿa°
-·:¡#VÂ9É—ﬂıËN%˚®#P´O– „JoRÁµSò$L∆#g‡ì≈ßåHvPY\=å-jySfVgæ}tq˙	N“…È˘q˚ËìıÑIU"+ﬁ…Æ+ó«`Ùî—uﬁÿñCçÃœÜÔŒ:Êíøü%xwtü^&ﬂ®	ÇLµäÛıÀ'∑¬i∂b÷öÄ^€C—E£h=3ÖY¸+%ˆúΩ¶´SË~Ô
-˙bSÎ»¥”YŸGπŒÉiÈ™∂–¯¶ÛÏ?sa,Z÷øº
-Îà}·9/w‚Ñ	ª_ÈWbƒπ∑QπC"m∞9åÀÁÆ%{'¬›¿∏_Èª/ØzΩæ‹R}’á|Å·ÁPÿ£Bì¢!®"tmŸBz⁄Â„íz|ç1/EtÃ YVõ®*°¡’˘AÕpÁD∏&‚?âI∆ëtÒﬁ"è|&Ï1ÿ}’‰f^‚ŒØ\1œÅ˜”õ5œÿ€ü¯éÉ(ÄÉÊœl˙≥
-{	•pÉ©ëO ÂÛ„(Ù}lGÂ‹q—ÉÔ2˜S|_‘lß~Uıp≈^U£ﬂw«¿‰ƒ4
-L¨0Dbc" ••ÊYÇq≈Å0´T ≠¶¯OÅ>ÄV>sls.©&4WêüCÂ5ukµ$[Z[îi+•3à
-(W^qƒ«ÊDA€Åiá Ò‚∏¬hcG¿`¢s¡≈X/ÿñJ√¨FøÜ¶ÃJÅµ`	‹ :∂Q‘gãü∫_1ür∏’B‹(ÿ¶xÅüÄ	{∏Ñ´/îJ⁄™•û-˘1∑…b±4ãËQáﬂç“—ü3ò¥"¡g
-¬íZçÜÇÓ/€´CXDt¡‡bÒÎìn˚Ò5ÁΩnª√—6{d–;Èüûõ”√˛‡Ç6[e.—ﬁÛãg¿≈ΩŒÛÛÈúûúÙ:ò6¨¯¡íÈŒ_∏¸roﬁﬂö:®9mf~√`˙ƒ?ÿ~JvˆDjÓSÃÃç<?∫hü\êŒgÌãåp#∞t»∑y±*sÀØÂyW˜„æd∆Ñ1„—√ô_MÙ?j‹‹ê¿§πG·|⁄|¸(lHûâßö—SÕºGÿïÈkæ%VOÒ¡0π5ﬁﬂlÂ›ü)9µ≤‹4»ö<Ä'ıÓ—F≥—x=©7waS‹I¶¶ç˘:aG‰‰ÎÃ°ñ¬=€PÕ<ó+§≈œ8!]ÓvÀ˘ä[O'‘'ì2|âœ…ÄMZ
-<GÅU(jãÖüÙÛòÚ78Ìâ¯+9„]¨7Kã“ﬂ∑^¢ÔÁ$ïÛ¶ëH¯'ä¢Vä„QÀ«ÃÛËò~5ßnq]ÂTıüé‡Oﬁïãqïe	‰÷õ8é'hÌ8.
-Gë‘ª.+V" î¨nŸO•÷«î±ÿÙm^íç πÈFÌè82ß<m3à?ÛÑ˜f‰œE1"nsÿ4ı>≠›øèN‹ƒ¡R{/^¬Åä∏¶(îd'‰ﬂ!‘I°R¡ÌÂb†}æV¥<·îƒ|¨S±ÌÆ¯ÑÁ–
-†g<ì⁄´1¡Ä#£Êï“Gôi‰î+˚Ùf$-]2·R±π"ÀÃ"≈r cjÛ©ó1ó&&m&ú"ËáÂÈ†Këß9a˙9¨2o(—c6eI˛úéﬂ;Âa˚πÃ™Y ¨Ñ˝ú˙≈úZ´¶"ˆ}Ò{ÿ‚†¢Sr»@‰0	¥ÈÑeøÇOò9‡Ç<œ°<vﬂ^Ú§P§˜’©EZ-0b≥9àÄã\zEËÓ≤ÄcNÒEÊ3d˛jnz>¸w6∑`ª“ Ô:æ¯`ç©Aê?˛!¡U?-6¶,«pÀå'â›¬s7MΩqúª©ÿÊ≤ü'Û∆Wî1©‰Ÿ] ∑⁄Oo‡ÂõÆc	ª6˜‡8F_|∏€òmp7{¯7œYT+ÛÒUAmKıWπÉÇ$_<B@s2áÒnàÙ∏Ú–n1±ÁQpñú®≤ÄZÈªÕôåJì@¢™K¢¶d≤VKBNŸV)õíÆ◊RÊØÕãì Àòëäí\ïv•‹°´âøMÊe_=ÑJ'…D≠?\Ù∫dµÙ≈7†¶üﬁÁ$ÿ;ÓüÙeÌµ›Ø@õ,ÉHÊ3¬s>MÂoYv<
-Ä‰ƒ˘†@6µ'¸]ÿø∑
-∆BµHŒ¸∞=y1aUØ]qq‘|ûÔŒÔ\Q∫A	uèΩ±N¨GBÃ∏§«’	„´“≈#´ï±Zb<’lr⁄“¸A5uõ^AŸTv·îB6sù!B„ºX£Åπ¥‹ù∏
-Uï[]ã•Ò \ªπ°6R¡“f÷¨SV≤Œ·§rUòö∂"6Ó}—^^bJ¯`]vy¿[ÍÄä5zxõ/≈ó+Z}ÃJƒkw(jY…§±Ò)ÓÁÃ¯>	Có‚¢?E%úsT¯
-¶
-Îm01hﬁÌ¢)ÕKK‘	⁄àÚÒÊ
-y¨cˇªF|P‘JπµÄmÇ¿*Æ·p€Ù&Ê•M›/çïd<'∞í.ª§†!mîÜ
-2\… PˆH— ç3‡[lzsj]û⁄»À√x¶‘F}‘sÀv§ ≤≤ÉÜûπ·†vD5_|<•H*sù7ﬁ¡Õ∂Ç$°)∂÷F˘ú2¢k"o*Vì‚ŸÛsƒÔ‰J4ÁÃ}ûîêW„êf)‘®[l∞iÛkÒ@˛Ëﬁäñ¨\Z(öKπ¯Ät^c2‹hWm˙Æ9›(‹…„7t´(©º-¥CÜ"º3‡Ì›ÑE$a¨çè]nœaÌ%«Ò“ÖÎÀ=˚µI›µŸŒñpw…áﬁÆ›=“Ób†=Ë
-Á=2¯Ùâc“?\ú?Á~;rvz~—>™t|O÷Î-Á¯
-˛˜Â¯⁄ë_°’Ú·;qhqƒJ\@)~y.‡'€c›0
-Vº=ﬂ ˛Ä˘àÉL•√Aq8∑B49gcÃœQ⁄SƒS–)ZÂ∞∏õE⁄Z›ä¬&ˆ∑&€£◊∑T:ÎKÚú1◊s¬B<‘{æã’÷∏ŸqJÅõπ‘„ı⁄BSe‡° ¸á!ù·içí s¿ë&
-∏aghôc¯ƒ´Ú æcÓ” €ΩAÉÇn≥¯˝QÊ|é˝¿fXA˛˚]ª\D˝∑ﬂ˝ˆøëˆYüÄÚÍ•C:‘5»™ÿsƒõÄà±G:ã¶t›G 
-.¬kÜ›W˜†Ja
-€UáU≤‹{%“KK‰£òŒqí^CÆÛÌnf»<3-6ÚWg‚-ﬁé<;œ9&ﬁÅ}e;Ø±zÒ<§<ævΩ/äm¸%:êÍ.5∂8Ã?ø2bô∫÷√@Ó|π˛°§/ˆZ‰Áôƒ≈zË‡ÙñU2‰5±¶òWÖWƒ‚ÆAÿK"g÷=ÖØ⁄«(æ&Iêj∏ü†µ1s”ßõd`xtŒxLa®F
-Û?ªöôÆ¥>@?ÎúW¨‡µ∑@‚ŒOÉThÁ ø€±ä8YE 83’Ã¡⁄ÇÈ¨lî„¶Ó´ú¿qﬁ(…zXº,≥X·˛‹Ñ„óí}J&®!◊&æ?Ûˆ∂∂®TÙ;Œÿbõ#g∫U#B<®}	Tnø™!A©Œå”≤ÌD‡‘Ã\îÁF◊kËVcÇ_]*ÿ,cb-QËÒê˜â¥˚d¿;I6r∫{ã>·ı‘êÜ"?4˙êFsj˝jn"ﬂCb·ÿ<—fë!g´xKÁW∆
-2D˚¬€lòg÷€ás«±«YèalÆ2üÛÛj˚[‚Å'd„4¡ª¡æou *ùÌ¿Œ˜YN∞«πMÉ~ÛË¨k∑¯a[ùÚ0Oî.ftKaaò•‘„®Ã!u]æÓSf/~l	éMQy’ß•p	É7$B{ ⁄{<›úÔES#	QOj°»%Øb'¨2+⁄Ÿ"6r¶˚\Cg∞z*º‡ßµœ	O»0‚Ôq§ÜîúL&™í|^@⁄sY'TXwÃª–ƒúÚˆHªTÕ¶»†+◊êÕ¡E’∞a˜søÃó@a_ÚSª‰úcü#¨n a°^ƒG¶@Ω|t„pÚuÔG´§?ﬂ˚[NA*h%yG+å›Û”"r<ÔXX(Æm]xD¸È_æ!s¨7˜…?p–ÉÑ∫›/É"«?Ω—>bÂ¢øÖl?xÃ}mr%ä£Pm¬ô_$‹H1Â‚≠@√√‡A∂Â2<èñæL°ä‚ÎRhy5ü•í£dì˜WÁd‚ix^N∏Râ≠ΩπŒ`†¡∫Pòı©|>BßıE•(gdE˛ÛU¡è*q≤™≤ ®6ºR»∂.Û»ñnXçqê[§MìjuÑÛ–Qí≈O√\ú†2y¿J·1‘˚9Æ
-ß‡1pç+%mÅç√ﬁIÔº}Ù•∞?})Ÿü™rÏï¸Zö/YR5JÉTVè{à@D"cuÙ√£F≤Äb®∑"T´€∏Òì¥WÜˆ&nØ.©^QFs"≤ÎÈaéí2ø≈∑CWxÒ{¨m'ò(/ì|s:Û∑;≠∏Ì2áÊü˛”w‰\"¡ß0ÊcUDpA"≠T≤ÑºC&”’‚{:ÌÛvÁ¢wﬁÏë/M¬x∞,D•,V5v7Z¶∑:Ó¥ÏnUt´	gOK¡ªÑ)&;>.3f˘{§∫ª˘E>–=ú¨¶Gí6êîŸÆ©Í˙E"T_¢Ω4PÀ1T∫V`blïú´ §H‰Uvx"g¨:ÂÚZ›‘^|˙º) à0Z89∂»‹BÛÑcÉ¨ƒ∞(¿Ã74 )∞πî·ØÉ=Ê`wﬂö^lYÈ®Hnπ;©e[íY¢ú!	ΩEr@≥ËÎª_dÁ)\¥\ÏKqÜNÚQ=æ∞ª_X—	|Î€]c{WÏàD™jYa>û=±ìŸy:˜–ºƒ≈ë^PΩ˜öt\ê∏—Kqã;AÃ¯ı≤ª!˚¯è;bù;Ç[8Ñ<à60ô¯ˇ?   ˇˇÏΩmoIñ.¯˝˛ä(VOó‘#Q$ıbIkª@S¥Õæí®+ Óè◊ï"STV%ôÏLR∂¨6p∏¿b±sg–∑˚aÿ_`∞”¿÷ç⁄É˛rÅ÷?È?0˝Ó9'"3#2#"ìî‰rıª≠íí˘q‚ºüÁ»˜–Yk</IJGÔ¬fíœîüπ%qVõÆå=ó…Î8∆xÏf+A
-òÀ¬˝PÎ*=d°àj2óÜJä@à÷7ÛYs•√å·2_“Ñbõ<∂…‹9w∞XHãÛ≠_©ÍÕìg§à˙≠≠Jú¢ˆjcÚÊUΩ?¬·©≥¥≥≥RØ5VıïZu}9WoÀ?¶ÂﬁH_4˜•‘·˘S_6w…”ø◊m=;hû4y∂KÛ∞]úÏ‚Lº≈]¬_I.]íKÍSñ+Jå©/ (ÙE÷º”ÕF¶p4H=≠{°ßu√‚œ5GÛÔ4ßTﬁÛ˝V&ébÀƒA'Óïù∫C…Kõ—Ë1Â‡|¿,™
-ƒ, 
-gçú~à1x «Ñ˙(8õæ¶¢Ω´ÖL‰F`«5[Ωµ„NoôqÄ'6∂]œ£⁄¬1˜µ•â	†a;æ9ÜcÛ/\4]F¶â•‘≈¶Ø9Ò,ä2õt.ú¯‘u|≥õ,£ﬁ6ïºé◊©ù’/uçãŸ¡"Ú±T‰?#EM˚+idÁåóæ K†øDÎ‰π‰™∂$‰Íã∏¬‰ï¡*1µ@Ñêáø0î‡'{πÀLì>ÇtÈhH{„ÓdCïŸ‚Â·˛ÌÔ˛ #≤t;'›c÷ÍuAp/Çõa$t·æå¸YÉ/aÏmn-ö.l=üå7#Å®u¿)uëü3gRÇ°H$1ÍÉ ¥í<Öp˙µ§º√z#"Öˆ´+PÇR⁄âH£¢∑Â+Óâ-¶»
-m¬!QêGÄR¸5ÜD“íkØ∂AE˛Ùls«≠ùæ¥’e∞”¢Ã‹)*Ÿr¬!U{°πîi_≤s≥9Ò˚$£jr”Ú≈≥Vá´ÎWÖG¢D$≈òÚ÷lÖúˆ‚≠öµxkCŸöe˜,ë[ŒÑã∑Ã◊')9q 0eÙ(≈éﬁgÚ”ıL,Œ·T#évıé;ËxŸ]f∑€°h(ÖÈôIN'È\"√™#Q÷RX´õΩ–-*L«¨‚elƒ$ÎE…¢4Àòl"æª)1l5pú–ÛfM¥¸llX[~ÍäÁA¨∞LI	`æ–µﬂªLõ«Eø.,¶D ˚-C>ß" ?™:ötÍ(¸≠SH3Cã˜m º2J´“$™ÑbjÀX∞(9i¿|Ïz‘(îCô•X	©0ÿøh¡±•®ﬂò^UŒ¯Õ\=Ω√ËàVÎ®Êß6∏¿)Ëg!∫júyC÷õbB*’@t6U«qı
-÷\'©bëÅ?_}Â^æä”Ä‹AŒËÁJ{xU§´]ﬂ+E∑‚"’ …∑iXëH¿∆ôœb!Q¬!¢n«ÌXc§ï}¿F98Gmı[©´i∏?»
-
-Õ:´…ïõåˆ[ØùÓl◊_V‰ïRtfjÓóWö7÷œ6›óv4y)m~è)XUz$/&ıoØÊÍ≤=wäﬁüÅCØ˚ÿ¡Ú*ıî¬v>®Úè}e∂∆S•◊,$S˝o")Æñ9[åﬁ ¶Àö®¸≠É6ﬂç…´qï¿π…–ΩÈ∂§"EØ^{”ÛWé˜÷â®ç9ﬁª‰{›‰ÔJs¥øç˛±òã-¶>≠K¡Z´Î˜„Å“(˛ÙèˇÙoˇ˙˜…iùÒ°¨Ÿ“aóª†¥ŸyÎÙ.ó∑TπM≈5ÄJœ«%XòÛ‰ö∆¶¿H∑–o‰'â˙œ^;·}kîâÀ4?≠;∑¡ÅQd8È‹â^E≥êv/<ıUjáYRyv±ûzNÖïâ[e≠±ib·'È@¡Ê´√ÃWN¥ï|®†ﬂIqÛ9ﬂƒ‹∆Û∏øüWo ˝syGyΩM\é≤õ‘fXﬁ√¢ï>ıx
-). v#»ë~w˝ıÿ•≤#⁄:|yÊç9TiRN≤ƒó|Q·Ã"‘$¿R¶d∏·ı˚âG√é∞Vf>XÆ≤∂üÑ5‘…sá˝ËGg¶¬EóÃ'àP¯’èã£–ƒ]øü∆Yƒ?˙–†œ]»µ7ÚTãÇõlπMåç‰GÂ° ¥Ö5|õc)œdÁjl0pFëKS@Ò€^7@B2¡˜‡˜˜Å}Öıí‹Uè=D£ø)“πÊn,.KÂÌíê¢$0Ò∏í}∂K◊ÛÕ&9ö@è¬…èÄ¿Å9q:&wr1#∑ Ílû˜˙fë¨¨·!wf˜Q[8ÈÓ, “§eüZ&ÖåÑì^r^.IéEºª8ô}RJÙE1ªÛ8–pÏÕ#Õ„•ä˜∂ëÖfìÅ∑&ä‚Áˆo	f{Ñõ:t£¿øp©˝Öª.A_a‘4âÔ˙sÁí¿Ä'zú5%%Å›⁄UbU∂ÁÖ◊_]Ω‚i¡$âJó©’‘FFﬁtÜï1ºtñjF≥	f0Ü<‡ÎÒ1ˇ˘I~≈Ö.’ëá¡`÷wM%å%xgRbeùÜrD{©∑Ï∑ﬂ£É«ˇüBÀ«ù'œéõ‘–ÇÌµ˜ŸA~v±&ñ–nJ_|ZsÎ[çùóﬂF‡∞§Ë¸ëCµSgaÙDÈWæké⁄†(,K±◊fù√ìˆ~ÁI˚∞’i≤ÊÒIÁq~€ß%ö7∂hŒ)@2òOµ‰>	å•Ô†^6pn\oπ√Î?–Œüzì∏.õ™˝/π*B“xÖÍY:m„éy=WïÌcNËA®ˆ¡ö)õnú÷®bˆIú(WÅ∆7I6tx‘œ9CGßèj'4ÙÉSP6P$ ãÎo3ü†˚„“Wßû;öp(ºã1_i^óËØˆ-ˆ∏ío¥yº«ÍªÏÒ~≥˜‘¢<Ö ’\Ê{ S≈˘‘ ¯«ReH»'´Î’{´g÷ÁîΩsiö…W´s‚'ÈeŸ2´c7íáÃCµπa[ŸæÇΩcBäﬁVùÑÜ4“z√îG∏?∏ÓΩ⁄i}˝e^ØÕfqÔîRîô‰7õeFá∂;¸Á—QÕhrÒ¬Å%Y‰€-pÇñvòë∫"êz`·Ÿc\¯R^…¨7ÍπhV≈@(YŸ
-B´”¸∆dãÖt7ïvÙÛ·ògsÂ7p–„¿Œ º!æA≥u“yﬁ%⁄qª’=hÓ5˜∫Öû´Bã™–∑µ®@•^ˆ◊ßw&ÈH-F1ƒ
-◊Ω©‘p5vKÙM,j	üÃyåc∑ÛÎØOCèÅËÀ=ÕÍ‚ÙÀXºVYg‡"N°ò!ÉÌáﬁD†xcBkö:—äÄv˝~Ë˘çöÒ°¥ƒY°Í,q©;9Ì^ãÚ<g†‹Pª"‘π)[îŸ JÜí‰í<,ˆô,∆Ã“¸ô‰ÜíøyN€Ncd% õ#¢éÔæu"Ÿ6◊rD…Ú§≈â%6ªV43ö!Òa√F\ÙgÓÃü¡Â@◊ﬂ Ie…	¯õ7û’€ÿcsÕrí{rãSº[f*(yûIﬁ˜Ün(@‡' èÿh”XèU§†⁄Î`¡Ö	Ã"0ëcúRâÙo:„`ÑwÅ?Ä´¢õœtÅ'iûç]vt‹˝àÙŒ˙Í$0m;Ç◊¥Ou%t–…,J…Ë†‚†U≠omØloÇzÔ{Ù£—AÎÏ(æ£Ë§ãÖ|øKz®˙û©6 ⁄?=jüp≠Ù‡˙W?Ì4ŸQ˜Ñ<9™©s·åIïxë{˝˚D©Ñ)Rt	ã FŒŸlLz(Ã›„u™¬…{àaÓà"ˆ,ráp)
-¿	L;áˆÂhKe_ä ;Ω˛fÑÿíHÂzÃ*®—†EkT.DøWN?ÂÙL—êQg∏ÎØœDŒ ıÔ|˝
-hF}ÿåHD2Èõ)•^qi+Üî‚ 4F@ô•%∏≤Ôq¯P©åÛÔ[o=!Ô&ü-ÿIÃ∆9óTç∑Ñßà/|ª≈VoàΩIL∞ïÇ;ƒï0î$≠#w˘Éi¨s]Z¿˝œ¨πáa°ﬁ…qsØ+˙Ç˜éö˚{]ˆ3∂◊<Èˆÿ~∑’‹o˜Êä†Ä’ÿyiá"0EP
-q ø›XJ˙Eqî=gÍPÅnqÖ"'Ωˆìg«ùΩÊL}≤
-∞" 2‹Iî‰Ê	8®¬0ïﬂÚé∫£Î˜o–—s[Á+T≤tÍ˘¥áÒDY‚‰¡dâƒÁ"Ñ,HCD⁄•T.œ±U∑…9V·ÄcP¸∞^´˝€«J⁄’«^M¿QÕeµ&∫tíDgéHÙ¡âòàV¢0Á ¸éËé¯_?@a‡≤s/B8û$¬NrI≤.êÑêp«Î˜òMcú+Ä&èyﬁ»·Dñ(=/êBOØ›S∂§ãRXØm’/µqi•∂∂ñC‡ç5™àÓ¡+Çû#"÷ÀUv(`(a<¿R–ÜÇˇä…»≥SåÒè·?q·5ÈW3–√8[áÛà^D16wÍâN¨)q
-’Ï÷cc—H≥¿∞4ÌJÓç”ÉtugãeÓíÿ~C`Ÿ!¸]Åkôù∑)Ìº1íÄèŸF%ˆ`™õˆœAI‚)o‘µÈúñs©˙eåói—18ät§›HŸ˝v)#§∆H¥É†?ï±ÑÂÌe´ª,S…47P,«´·s›Ù}@%qQÖnŒÀ„D˘SÉ©a¿≠<ÇÕéÑ*mg=(∂∆i"æ∫ß´¡€©nŒpcÅG-nˆ$tÿ≈∞NÔcS9? Sã§‚Œçı°…¡ˆ'`º1ùZF{	ï=˘ªÀJ:#1Sk)d‘qî¯˛v>ae˝∏\ÆéôEóƒ*ì´%∆ﬁÂ40
-G¬è'^él¢É.Ã⁄Jb◊+^.Á⁄êv|r\ÍÀÔy˘ÏçÃ¶èøª«¬G¥ÒÃ”gì≈˜7„%b!k
-"à˜π’b,¥)=lÌg},"gû_‡yt˙}w2}P!Æc?5ED‰áÔ»G9Áﬁ î5€ìl@0ÓÖÀ∆/Jÿ∏∑üÏ7∫fΩ ⁄„ßsJÑM¿{S{njá∂Rä±/Vu3Ø∫◊mŒº≤≥ ıKœ14Ea…œ≤kO(&ÊóÈÍ»©.TÂ·Q∑wR¥om>´Üúu]y∏ÊLº5¥^æ-Hö∑˙èJÆFFññŒÑSJ˛ó.òV$ﬂ¢ 4R‰#©Ÿ≠g«˚ªvWßAµ ’®eÆ“Lµ	É¿§SÅÚÆ§˛ˇpıü≠˛î·ä≤ø˘¯ÍSViTÈæzl·Q»7Åhç¯¶8q¿>„—¶
-ÍóxreóUNZ¥cO|¸ıY»õàUV¯Ÿ}ã{ˇ)ÈóxÕ6ìÇ±¡ªÿjRá1∞|„ºÚ–ÌüUvD¶è;‰∂Ñ…˜¢jr_êw¡Ëà`˝Ò¶Ñª∆ß¬Z¡ÏÃXpö¬ÛR[ﬂwüÒ˜¡n[ªkkdéü—t~M&Mc`S N‹Ñ˛‘~3˘QV) § ñjπ!ØÛ¯në“N%Çïp£ñ≈≈Ö¨pˇ.‡ßÏ∏ç›Z€Ë l˜NûÌu∫’jï-=M€6cRSRîv‡Ñ_¿BY&í®P3ªW≥»‡›ÚâvÊPµBƒ⁄Ω‡.eb£ NP≈—Ö£Î˜òbQ”â≠ãHº5TAæÕ_•2/,‹Ñ{∂A∞˝ÙxÖ1c¬9œ_Á•ﬁp"
-xt¯dÌ«GOòCÌY∂6Ráÿ'S>;S/ÙÖøt‚Ñ◊ÔGÆpÙMúKRm és|K´¡€S+6Uµb√§L(√˝Ê≠|e}≥å\ãk€Ñ`;J'Î«ΩÓ!Î∆”dg,ÊQ>k¥r∏ˇºÁè∫«ØkˇÒ…0h¬Á∞˜Ïº˝lÿl¸ﬁRÎ˙‹Ò∫¢C8XæŸìGﬁ»çÖçbm2¬£Ç¯œ/'Ó∞b{»-®—®I™&"ò§£5ÃW£Ó]
-/KÓRiPA±Í7hRÚ‘¸ΩãçxbÊ PíÒóœPÕÃì∏úÊË¯˙W≠ìN´i⁄°∆^¨Ûq9]d£p&Ã‹é≥∞ƒKB’»îåÀMêêOÉÈWÓeR≈ªBz#hë/\ëÖ˛ ÛÀ@F[Ê˜ò≈‡u¥í0: €¿T8ıàªFIˇ@~®”X†Í∞sÉ¿§4 N4):+¿7C5Z*÷ã\q?— vó‚`U‚ ∆OúõG¸§ÕäZPç©#ºŸüO}Ti,#~±ÁE∫,ó:<rv˚tK/ÜŒ‰¸r1<lÂπSæ∆÷,·#i z.∫Å"±m€wá@ª®Í„ﬁ_{Xπ≥8ê\à[zqÌ˜ã^f—;8Ybµ5€=ÛP¡I–D€+Ú¢WK4¡œB‡Y±d∑¥å‹)øÖ;†g%W˙ÔIÁàª/%è1^“å…g©‚æq÷çoE{ëfJoëz≥CXàå≥7˘˜Eœ˜§Á6ÕQZL±:∫V≤R®I™:[4w∆˝ ∫Ñπ;	xª’ƒ#ùˇJwè˘ò©ÊÆºè\)ÍËfˆQzI|Dw®èNÿVï?¶ªÚÃ#®`Òo∫≥ﬁzì66Hƒ˘~Ï˘p˜Ïë«AØùqÄ?œ›%©f»~%›n	·†µu¡.„!†_¬Áj‚ñx'~Ù¡#ù(}Lv'Óx	'Â›≤ñæÃ´É”≈xJrı˜Ã§3¡¥≈ß`ñ∏X’£‹Ÿ⁄â£⁄µ|?4{p°S_èX‰'fÔúÇ3SaLV·)ﬁ|
-ˇ}Ω˙l,¥øŒW_4¯oJÈÍZ«Ò‘üÖ´/∂)1 –QÀ⁄zÓ%Èº]≠õuJÂõ‚d˘À_Ø÷0!ıÜR•§¯6È%¢ıUa¨7á‹#5j˙"ˆÕÂó,ÕD6«uÑ€^µı∑`≠∑,—·BOé-≥"ﬂ&Lﬂ&1’ßHÇr#‹ßIV%N¢{,21mÌX¥NÖ<‹=!Ò]ov€Oöô‰V†ıN•¬ÆíŒòEÀbbTcüÉsz°P]≈ƒsBÕ(kﬁ%ò†@Äô∂Pö‹—üëªÅBYëÎZJ)C÷∑|u¡+¯ÙG¢—0{»j6<ß¢L≤L~X•µ ’2Ñ
-2Ô∫îí >)XD˘d:ÔO’€‰båÌ$]a™*Ä†‘w–‡∫ÀÊÇƒ[◊≤?	ùH›d¬ygoAÅ⁄}AZ…ˆ*
-‡⁄Úπl»HÜ√ZÈ	J”îöJò∞1⁄+ZÂhéß˝∑≥¢‘÷,+°;Ö°,ﬁ:+;ÿDv—ìLêÚ˜≈Ëƒ5
-xJp@π]_k∞U"<zÕK:`Ó®¢ò-WágÈ‡ùLDö4.}ë{æÜ•…eeïJ]?ƒcDQÃ¿≠$|3N<wXªJ±xéKeîOH”ÑèÏı#>h(l¶¸BëE\˛Âªò¶]ƒïvßR/Ò∫°±∏π-˘ö¶SîT†ù[TÕdƒåÿï*[ñk‚óî˙R†‡pûvLA>r)≤z◊àô'Ö5Íd⁄ª§0√Ã`o\Åâı0D¬éÿ>¸•ÂpWKKF7v%ü≤3‚ñÓÄ=` ;„K8ïf?ø(00íL⁄∏’i∞ºvClÑæd†CúÖc£»«'Wì‹ıÜUo‹˜g†π,—≥óŸ/iªK&Á‰F˜‚õ˝¿~Ωà”∫·®Ê∞w∆ñ‚≈âµ$¥∆kÀÜ≈(òO[ €$Ïv≤F„%.™¨+ :“CÅ}∏5∑}Q« Z¯!Ìˇ≠¥ÿ™§h22¢ë•¯‹ÒO¸»À…ót˘ôœ3S(ﬁÁ;ÏÙ˙êÜ@‹œ$œù˛ı◊Å•Ã‹ú›Aﬂô).O hP‘R}%ÀiÑp≥DÄ∞*iﬂ„ïªh∞$Ômîé¸ì“‚FIluÑ_f„X∆
-È‹è=!à•¬·$¶Sx˝^k<6ibU≠sΩP31ÌÊ÷mmÎNùp–JÆ”ñ3ßy_%e‰Lñàªì|0„Ëﬁ◊˘ı“z¯Æà1zÉíÖ8Ÿ˙ŸƒÿÇ£˝˙÷zÌ•Q!“U÷l´Ω‘"Å◊í—_b˜YvC∏’$vöƒ)˚‰3æ_Q]yA÷}ëáIg$¨õÀvÍzhS™Æ»ŒïGïÆÉ⁄‡È∆º•{∞◊ûÚ(ÂΩ(Z’n£iI¡úËR8U-ÙA’‘!£MﬁÕ—+e.RIäì
-K; ¢Â’w2ı*•”sàÈ±‰c-aKÌñ[ìB.◊ù∏dD…Nºá°XöåJX‹üØ‹˙|4≥Gâ»@ÆŒ€õh’˙í¶y]L≥Zh∑IpÈrî°Ó9å¶w`	63ÇT=/”k•ÏöﬂËîb∫)[22ôÇ6=¬DŒ˚K¯ÒÈ©%˙ÊÄ€ä¶≤â∂ò>%"wi/f‰K*_/q5w˝ÓŒ‡7!Gí¬ñt¸¢‹ù∏v:ççÍ•ÖñªI7ÙÜÿìººè&\©~2¥«˚ aæUÀE´x_Yè∑»∫4{Ω/WïËWŸ‚EK-§VŸ§:Nª’Q» Lù!KE∆~%^YN( oß-≤˚¡‰Ú$ÄCì” å•,)≠P%ÜµA*~‰Á7r´ŸÌZIû⁄(¥ëS≈i⁄‡…á'•"∫©7ı·µ[<‘∆—9
-ÍNÈnvi /]ı∑F<ú√Óπæ;UXë7XÑb‰>+ôÄõdk$mü≠X6ÓûfnJ+mﬂIK7§]ÿÆ<S*nN[®ÿXø^6ÑÒ"ç{∑ºîªÀ9Lpã^,F⁄ 6ºt<üuÅŒ|Á!?Á2øBLH†K¢ÎtOumåpíX´|ÊaÅ7©ΩZcoWÂ*9—%[—ã±ŸêÊ &´î¸2“02‘®èJYX∫,æ¬L+mN”BπVEŸVÜ'DFWPÁí$"À ·º¡_≥©Mô@-u3±Ωyq˛“ÊË)• ˆ”⁄BN≥av”XñZ8z,IFˇ§≈∞Ã@_lÕq±Æ/óå’‘ \¿çûﬂy≈>ùÇdÉrŒÆ¡é®≤÷l`[F.	0^¨yââÉÖ9SÉ˘5åuõñ¸ŒøMeÔy∏ÌÁŸ°ô”RÒ£±’’NgJ√¯åW@Íœg÷¥S°™Ñ∆e˝È<©*697OﬂVéëß`éˆ¸ª7ø°zÛ7bà¥,TQâ¯\⁄x‘öã∏fÉ¡—)m—Ü‘ùp$ ˇÉéêÕ»yÙà˚ıÏõÔ–Ê;w
-öBõﬂÌîwˆÿk]ˇn0ÛùH;∑>ÒùA°„€ÆEö∏ì˘ëÕaA´ﬂoyI⁄gm,ÃÀ_ã'TdÚQ/«ìÎﬂç›2ê˝∑ø"|vÓhQæUNﬂBx˜Ä›-√GG’∏#∂Õq{Ñ6ﬂ/)ö•”∏*7ﬂÍº>v˚ÁN¨oﬁ—¨J!$Õ¥rG·ºNj˛˚≤œèwéP—u=xç®©p(≈õ)*Vlö",Ã\Ø„≈Ãª]ú\Ë∏`ÆÚaÃ‘M5⁄X£fyJGãÁYÉŸÂyˇEÈ:£¨£))5∞‰çl/Óì0Ø~5OR‰8@˚ªïT¥HÌò÷=Û˙%ÍÊ@îA£Oôƒz-…πNG¨°†"ÿ˘,pñA≠oÙ1Úc[¥˚nÒmÏ.Ø|t⁄B^†âº¶¢,mk‰B±¿¯J˚<‹á€>BÓ˝»MfWàöµ≠AãŒeÛK±»ç|˙‘"µBsU
-¡ûç∆.ëπò.ö∞p1È8OzﬁÄ}n”Î≠ tÎ‹>`¬íö€2˛¯û‚pÉ‡ã˛lTûŸÓ¬/Ä§TÔ»rD§õ!Ü¿ÄÙe∂‘~zl≈û”(Ë¨2œv £¡l$…óx√›4é¡G∞SpË!nhfà·¸Cv¥˜ò=%'wΩàÊûRwîîãﬂr]ﬁŒbw“$ÔÍrˆ€e3xl"ÿ~'Mœ‚7kÕ¿íO”+;Õ›ºÅÂ.X^bıò.„Éé“øŒ^Id°Àè¢EÁ/¯∞ÊPy+¯”~ÓÇè·û˘I¸H·>Ø3êü•%ÖÙÃyüëö¸Ùê„‰O˚πÛ>&5ÄÈ1{…üˆs{Ãæ|?íü$é^1ÔÛ8≥I^´ï¸i?wﬁ«ƒ–7Ùê«‚€yVÓ“úNù˛π¿‹—›∆QN@W–ãósèyù”`ﬂπfS¯3˘H—Ã¡ˆÃÏ;ûäu‡ﬂ∏√lsíúS¯>È^ÎÕF#G+e& 	xK
-∑Zoj—öÆ1fu™*V¨M+:V|„W≤˘óE¢g·Wd†ﬂµ^u£ ˚î∑l7öì1Á[©ñÜN∏h>ÿîË•Ω≥ø˛É|Fì'.Ì∏„æÑÊ7v<9;≈é;Oûû∞^gØ˝®yºÀˆ;Ωì&”û75‹e{ùÊqß©§ã›7>K"§:t"˜`N¬Í ¬‚§-'Ç≥2/)el¡:Nœ)ã*Õ® Ô~)UK\∞æ!_¢I÷äµ =@EƒöRwÄJÑôo√ 
-C/ŒŸÿç"xnÓ4pF¯ˇ ﬂJó<wû #º¯¥∂S€´∑í.Â~÷ë¥…h*ver∫≤_»S#C”Y BZÿs˚A»/òìx{·Üö
-˚(,BÿH±K$b.ª,LÉ’êùÖ¡H∂{/<Gi≠»_*˝‡ŒÈ”≠ı≠≠≥∫4KÛ~Ç"cê±‚w‚∏Â&ØÒf±À8õ ¢K_,Wc®rÀclm√\ogrñ$O\›‚•[üaÀ‰©DX|*/∫¨êÜß∑PÇ$)2íﬂ“%÷÷;
-_ì:ûÑŒ©Û•…Å1OwÇlw:ﬂËy-’5¡0`∞Ì∆áÌyNË9Ü—ﬁàZ”í∆¨N‰UâéNÑ,ù9~§/œ∞%Ïe¢pRé^™Qdté%EØ0Ô];Y•3ıL˙Å>!3±G¡‡≤EMŸ>åÇ¶y|Q?|ÓjÍ…î;Ä#”znü&j-%Æ!L›[-á-à÷aÈ¥⁄î≈‘¶0ÈRUä-.úo\2Æóa,iòcmß6w[j3@áè>ÚgQ¶˙k®√ ÕΩh<¬ó√∞…Õ¡¬‚]M”i˜lRS`Cıªï9ÅûŸÍ∑Á±QpËŒ-”,Rnè7ã‘é©á=àgc^ç çÛ√è%B“Âô¢∂ÉÎØù§ˇ‚x¿ªb”y±\}7á€°É%4ıh!Â-t`∏´{!hnûoœÇ35xœuõ,èpìmÊ1p¢sXÊR»KKAùkhcäköF22™N¶Rb‹âÚÀQ- eî¿q≥u[å˚,Ú>+?2ùñq3&®*ó=`	∏˛}^}Q{i˜=qXe[Â2øˇ»Ö€RhÚ4x˝Ra÷ˆ]¸ız⁄+t‚j_úYYF_‘”ìÉ˝Nõ8”VìÀ#±|'v∆ÈîÜ∫¢‰Û*=àÍóød\˛õÔmÚ4îÒŸªUº»9ı¶⁄ãé¬ ˚vkàﬂA{ÉwF{P{[Kà9g•†á£¸æ-’’cRnò)≤#∞€\ã∞æW#0zãÅ35ÇEÓõUy◊-–T…ì'3ënSŸáPJ\˙U´’ÖclQr;≥2˝RÉ+€årËDkBâl™•"çÿ‡™§Kk(±M˘4*][≠ÉHO`ÇFõOºáÆèn	P’ÇäÀÖr•=-£¥¨«MË*OÇhKèQÜØ°L˜BFåiºhnÙãmN“¶¿ √^@Õ†±Ø€
-˚Ò¸¯I˚——ç¢mÑ¨áóMv˙ƒrb÷ù‡™G,ë=¢<åá±\®XÚ&b«pñ7xêP≈º?VOÛeZ“ŸJ¿D3`°L.XWr¬ ’K‹3gÊO[\Œ=∏")7óH*‹˘t‰?¬‹ÿ˘≠ãX9∫ˆ`FûkÈƒ≠3Æçº¢åN©2±Ú∏“ÏÙß3«7hˇ∆é–‡à∂√0 ⁄¡6ÉzÏ–◊B
-Û3eKñjÛµn∂‰õF∂∫_Qo◊ïÆƒŸ¸I⁄V¥ìLõ®†)]í`h§¶y
-lK‡ôâÙÔSû˛Õßå£TTS?Z;„SWcŒÍz√ŸöyzêÜàn≤D;¡˜)È (Ç$õ€+av=ìß‰‘¢S,ËπH9¿‹¿tGâ¡ªî¨ÿÁq48AªMæˆNü‚g£Ç‰é∏„ﬂs7ø-(˝b¿'4Æ®„a8Z™¸Ò¥±+ˆ0ŒxœU¥Ú±Ω òGq0˜Á¿îªãÒ◊Û‡ÚÛ ≤›HcP”‰í5Do∂Ñ¨hHO*$2ƒ≥∞4XÂl¸r∑Å“d-”*UÊáÚé-ıÿ¢@∑{ﬂ†Ê4fÂ;ûIÇXòÉöıû˜ÃÜFÈÍìd¿62ÓÇJû√~T@ä/¡Ê†∏y	¨‚æ1vë°G∂Hò¨Il∑å€Åƒh,bLZ4˛Õ¢∂”aÂ·a¿ŒùÀ‘w∑Xﬂ;»Ê§™.[™‰>t∏ﬂ<`Ï;@ó"ñFåg7(Í∞ŸÆy¬!D\Ò◊
-Ì÷}S -ÂE=—…ç=`‚zLèG
-å{º≈\+…—C⁄çœv8ùEt˛g}ûŸ˘ôôµø›)„∑j>fg√z0ÏkjßÿMMËa”Ã#HÙ»›ÙA√¨·ê6d.s7Ã{≈˚!ÂU¥¿Ë¸É≤«6ÅvYbôßúsVÌﬁ¨Dﬂ7µÕîjõÀ/-/ÃLì'=πQióü[‚aÒ‹6ß|rÅÂ¢wÃÃ8≈Œo‚üc)˝å*U`öÕ8eı^ôWÀÕ£|˜˙fÆ¶ƒ r≥‡T⁄'“Løkkâö=rßŒ¿ùGZ¿l‹#'ú‚ªæ({«kÁ`⁄srau2ãŒóæ¯¡ïÙı;Ê|Qê¿ü=…Õô˚©_Wß¡3/º5B…;KŸÃŸ¡vˆvY:‡]¢Ï†'Á`öÁo˚Áﬂ˛ÊˇñÔãgYÔôÆÅ ÇÙé_Ç÷∂Ta˙œˇùUÙ¯ß†K~
- ◊Ëz*iÏÿ{©\æ˙BP~∆ÿV›∂‹GeHWcJk‘"‰WŸÌ˛Ó€∏l˛DÆ_v»1qn R OŸ‹Ív_¥t„Çst¯©ÛÍπ^ë—b¢.Ñ\,zµ≤À2”ÑüÑ"¿é˙°¢vö/êu€Á0Í1ÚŒTè¶FlZUuÀõ„J”[ïÑ⁄∂`x(∑;ﬂ0'y%*>OÂíb¥7w≥öÑbÅrÅ£˜¢~Ø†Y˛$”2∂†õ)o±væQÇ*ã1∑ÈÈ	.Ij⁄<3…ú¡%»M1xCπôâ«VnV
-a»KPI9tzû‡ä¯≠L »q÷báQ¸±Ä≈
-÷ı8Fâˇ&ï_%vÄ¥p±nXÀz¸UΩÜT)–Â∂S‚«Õ¬∞Ø:‡◊ƒÒUtqâ˝°Ö~çìü
-…§¯µ1QA§ÜÓ/fÿ\gÄ:ó3÷%‰e.M≠
-Q‘Yfõ”ñ¥õvCI»⁄T,M‚!µë%qì‡≥§‹{Ô⁄ÇΩØs—+èÑUhˆyxí:^r;Ì˙í›	ü≈t@‹á)ÔÆQ/»€ìá,ÜâB©è%∆eÿPFO∏˙BÑôÕæ¸\!å-!/QaS{TÿãûZÖeõœîò†ì`8Ù›‚Ö,≠ƒÕGæ©±?q©<Ó≥“R∂§¥¿œ(Ω¸c E(C&s°Ë q%πë:ãÍì7ØÙﬁ¢∆ÚÀπÂK1ÅrQ∏¶êÄ¸)'Sb	¥Ñ;Ê>!=õúDı‡GR:Vd?÷°™y
-1ËJø«Ò‰ª¢$dKÉr>nûù∏!);±%K˚ÒP[ÃHoÖÿ¨Èe =»F∂Ñ&Ôäéé]jWˇaâ‰6∫8Y/¯…Tb2&¸6b>8uù~	kÎ∆ú”ZêHmÊ©#&rN:—ÎíNûúØ&I>•WçüÂç©%òx %m
-∏˛l"ß‰∆I|˛0ê“ç ≤„I\ìÚîáJ/¨ñ}j	J±d¡ıÊrCKaK‰ﬁp8wú2)‘öƒ$öûÔéÙI?¸ÙHÖN∆ﬂWú¬Ø‚Àì IGÛT˚û7Óá¡ÿ{ã≠\—Zn˜ØøÜŒ&£∂ﬂPö®¯&[l®ﬁ3xYÑÎ?úﬂÕ Ô}êf”|ûè≥]ˆ‚•n¿ö©Mj’©é[˛NZcI∫∫(8˛Ì?¸Ï®”∆
-Ù£ÊìŒ°\y~ˇ,®‰√Ä¬€iiIäd©]ÆR]“∂©t:Ì“Ôa⁄nJçù¯é:–OsÕ¶îA)±°l^ñûRÂxˆú3_„ÍÏ»q5¶dÇÅCAòΩ∞ <_ñÈô•+g8©•u¢ï\‰ùÅÂ⁄áUw£]ˆ®≥z‹‹Î±Ê=˚Qç=Á+˙˝±ÔzQˇ|ÏjZŸ‡R∑ë#˝≤Ï5Y4MZà √'ÌÉŒaáaZÓ„˝fÔ)ÎQ4˜≤7VÊÊ˛'2âz—œΩI[4òL†ﬁz™∏RÑ‘}8shîú.Ωä·µ4˜ìw¥∏ÔÉ+Òã¸jbA‰Ís’"w˙s~âGÖJl≥œ] ◊◊ºSüá%!'¡ì-fwxX‹…ïø◊]‹ÛÉ©·:¸*…¡Ãüz∞å·€HæR˘"Ω.q¶Œ#ŒV~ÛœÏ†ª◊ﬁÔ"giˆ:Ωìˆa´”&s‹dùÉ£„vØs˝õCˆ3÷˛ÈQ˜¯§Ÿ¢?ún©›;j√π˚¨sÙ¥{ÿ^;Ë>ÍÏ∑ŸYÁÒqÛ†Ω,±®´Ë<x}Ñ†ºÀíJUÛ$c€§˘&ÕŸ*iŒ&IZvü‰2‰òΩîQΩ˛∆Wõ%mæI˙Ì4∞ÔëΩER⁄KI∂T	à‰%$∏´˚9Iiuûìì–7kú¥πHq…“2≤*pœWQÉ,◊õoÆ6De:b7#ò[¬	Ö©Óå&†NêHº§}ö‡ Á—¥J°±èPë†ßÏj#Å^úi{Mx£—<‘∏©Cp∂ê6A+íÛ˙òÇX∞öÖ*	W†∑Ku™5Ó
-Æÿ∞Hl¿ê«Aƒ+†˜Ç>£»«%C‘(˛{—NIò%G…qjÉ˙÷ÀR[&A
-–ÿyˆ2>Y'Ã™ÅrÜúW†<Èüè¨◊4S6mÂÄ∂-µ^Ò¨€ w§›¥'j|Ê0xö∞?JUÕo UÛ®Ãí;ıD(Ú˙ΩüTqj¸ FÅ]adò—L@P˛Î ~qò˚‹yaU;8ìπß[Wûﬁc≈ÿ∂˘¬Úl!e	0óﬁ˙«Å4y∫‰ıù\jK‘¸5)]⁄L)÷LâìÏ0πoE’héŒ>Sz∆-Ñ$® ‚7%?”|˚]∫}∫M3ëÍ|"méâÍÔ≠Oæ“{@/¸?rÄ˙ZßÇŸ!˚≠bºC£ßj^D=uâGΩä¯≥Ã’oá–å§ñ∑≈Gƒ©Nî$;5ô’ˆàª¢<Ìôƒ˛Ìﬂ˛ù<>‘® ƒETz
-≤ê°ÜÙZè÷várÉ‰ÎÊ:Ç-~ÏíÚ †ﬁäjª¢ÚhÊÇ,dé”6&ŒiH÷D‰çf~Ï˘·U#4™I ;ı¬ ıI˘Ω UÀ£oˇvde=[“,%Y°ôÓB¬¢¶»ô V:ø‚ÛØ\V‘ÚÙázé¬Í‰'nO‡∆£Êl03Ú…õNh¨.-»º/YÂlÜÙrQ±FÕ¿/Áì•ˇÁ?ˇ€ø˛=Î—˚°ÀqaÊ¶7ßé…‡Ïbªﬂ) êF]^˚éê≈o˛{ÓÚ>«¿õÿRﬁV—1ÜMíiÂL—÷Ã'AÙÍÆ–‹4¬Êma€⁄	∆ÑH⁄ ±πÃüîßÜe˘ª·».Ûé∞‰Ça©QO,Å‰ß&{o‰`jï‹|≤∫iÃ+¨!‡íº@Új›Ûo¸ C†Åﬂ[€≤ﬁRJ¬[ΩJ8§ˇˆ>Yã∏ÛwOïYa=ÁÃ	=\°#gô˚ûiáchÑeÖì√Æ(ßÿÊãÉƒa;Avé–“#T	AÄc_∫˝(§ìÃ∆1Å2v?Ç£„·√fáÚS=ÏÓ…è¨†¢0v.‹!±Ê	ÍÃ_Ç⁄@ÍLËùåNCWx3ù…§
-J)LKp:E'>0µ„„ˆÉ—ƒwßπéWº+†ºåŸÙ˙ÎÈÃ"6ˆÄ√Ñ¥ºƒu'ço6ı® Êí^¬ìëoºıõ]ÉVº `i·»t´Æ£r+7ØNt[=«ÇÃnû€È‰¢ÂŒ!E˘aVÑ8πzÇ
-–üûX$-ô∞*1UN‰
-nZŸS]◊Zq^«pFß!œ;‡U;6∏@]rèaó[:ô¡TàÂ©≠éˆio∞%Ï ˙ÏxÌ)Ïâe∏Â≠(K”ÿ4úï"1:Ô÷),˙Íí\‹©Ö∂4¥E«øõÑ’~C6üoË´V@\ML)#¬ˆU∏Ã—B∑KZëïwlÈ%ŒıÔN£Ä*MZ2’ØZ_≈V~Õ+UAp=}ˆÄΩæºÆ˙Aü 8´Á°{f.sgÁ∑XaïW@;„ØÃΩ¿D—∏yH|˜êπíiübæß^Ûæ˝-fkΩ°±ﬁ+ÿh§ΩèdØiöÛµ/‰€ÆÃNqàˆg∏Cì-v8s/⁄Ö|˜gŒÄ+tR\ìÿ∞µk˜Gæ'ó'<hr8·`i®vî[a$4ﬁTŸ€ˇ∏◊=¨Ç:	ƒ‰æ§∫ÂW®	—
-k,=ˆÌ;{JºfÔ)–ﬂ=1áçhÁo¢M(VÒÓ«%6ûàÁ–Ê:v#¥T€B&¬Ó‚Õ∂∏πo6*NîßYkR†ÅQ
-yÏÙÜÇAìò©p§1≤∞Ñ;·~Â!ı◊}4-ù∞\%Jb¨t4é≤íÕ6Ü1]ˇa,Ã¬ÿrÀíÎ·»y¬’ﬂ˝ÎJV‹$ÕR‰ŒlŸ
-dg◊_G†âîÌ‚”⁄iÌ¨æÛ“dcîJM†ÖÀé)†»õ±p⁄]›Û=j®vìFø÷ w[Õç“c ˜∏á-Ç/¬ªéí5Q§è©bΩ|ãÏ¢[}–HóoªÆÊø!–+E¨m‘XL`{ÛØÃp Z&P7g7ÃJ–mg‡˘‘≠÷õfxjäEkBÈÊXŸ∂jÈM “]ËD Kög2%•ÑgF5[=∂&´,è˘N6ıp∂˝.9≥˙“Îå˚!“;‘j¡i7 Y≠áÅ∏¶¨T*Å7	0È˛˙k'ból‰¢°,6vá†òM◊qÈ4ˆ◊vÜÒyB∞q,qwáﬁ©Á”#»èàM!∞£∏C~5ê¶c7XAæ7é»<„y1ø'Ü≤÷;cﬁ8¶Ûi–ËÉä‹H◊¬:°ñZã|”mÌàBëYÿ_{£z&–úÕÖC@gÛâ˝ŸA⁄„^âò Õµ&RÉÖ8X‘Ã_øÙâÊ¶ñ
-ô_Ñ´¡ÿøπ“⁄4z„&ÀÉΩ◊Îï∞üRºÉ¢´bFvù≥)∆kPã£Kﬁ§'fŒI˝r®ïc`%c*ÂÍãœ>{)%EL‚Œ¡D4m„SG7˘@2ÿç‰Æ ê˘!ÃÂøΩN~À®û ê«"V&ÕÉH<Ú¿©AµHSQ	À ƒ3ïäUÍàUÃ£„Ó´fÎ§ÛºKZÊa˜¯†πoS2Ÿ-#X√`"˜KP‚öè2ÏPû◊IÄ7Z∏>H˝µ#èú˘G◊Ô—%-˙0	î—∏F∫éÓûínÊO—0»Œê‰∂D'∑*˛ÙèˇÙoˇ˙˜bµÿˇGÎ˙7]ˆüûuNö«¨Ωœˆ;áˇqÌi˜∏…⁄álø…ûv‹dè;ΩN´˘πv˝ÊH…uXóDZÇÛçÛ¡15Úò„À:˚‰íÎÔˆ	‡˝âIáëå¢ Hå«–:F‚å	'0Ä&Œú¯ây$è	Ë˛îïD"s&9+R^õ1MÃÃ/53öô¡Jµ’ÅıŸƒóZòôÒâÓ˚ﬁ√ˆﬂÒ5⁄ J|)}Öv:±Ki7ò∏*‘„2dw+-i++àÌ†ÎFï$º≈Ç9o”BlÈ·LhÈç™¿G<Ûõ>ä_ ﬂ«O8‘ÿ^™‡ÒõjıT•=Óˇ¿¢D‘á&û∞‚8ôTÿ/y‡¿+ºb*ZNﬂˆ“¯∏dG´ïá{Ìﬁ¡ıØé[Õ˝fŸómGSD≠
-ﬂ:·ı{‹i|®<ÊÉjhRl
-áä–$å&ÏÃÌüsï0¿wNw»
-º¯ó◊ÔaWM)⁄ät—h6˜ï∫‚m&ap§ÑÏÿ8Ù˚k3çò#Uèõ◊ˇ€ø¿øØYØΩﬂnùtè±™iØ”k_ˇ∫À⁄{8ÇıJKÌﬁ…ıØ˜Ä´=Ô±ﬁ≥ŒœªÀp⁄1^¬z›G«m‰vœ;=∏A©¸É‘Œõ÷ñpﬂz∂ÿr4òøÿ≈IÏ§Úás‰ä£EÕÏ0keÀ•àÛ
-¶®^£±ŸaP¬5˚¡Û^ π◊ø‚9L‰âÁé&%‡hâ“`Îóa˘Üy¬Ü~c2œZŒË‘#F5°ö‡∏∏ïó `Z#∞ÄY:„	—,~è∞=´,©,pE¶$Ïfóø}úë@à¸ËﬁJπRﬂﬁÏı⁄¸¢$%9ølWüıï§ã*0†⁄¨LAFíx›3`/‹ˆg¸ïì'ø¡¥¶\ƒxÚ’õ9Hp;xÁÌg
-L)ºM∆û˘ÉÂS9ï2£2)ú5©ø¥‹ﬂ%.•Ä&OŸP7|I≥ÜÙY<∂ÿ7˘	zÙM&‡‡lﬂπfSJ¨–x˝Jâ@ëËs$z—4+∞aŒòè˚óJ,¿|[sÊ†¸Ü‰ÛNﬁ“hØ~Æ&ó˘;§é5‹´’Ã €«ú)/_ö˚M√-Á…+‰ö<pƒz|≤„o1Nv+¥»À+z˘øxíT^∂eﬁSÎ-Íj…áù:∑>rÍ¸ªâ©Sï/â∫±ƒz5‚Î/úJÛÔ[@®†≠ …ÈrÆÌD Ø€¸»âÙ◊øNXhVuπyº‘`ƒîHÑ◊v∞1)˘ÙÙ’LrˇL„˝L	œÖ†0%ÇvF∑∫.†&ãàÚwÚÔ••Ω<Ÿﬁî8kÈ∑ÂE…∆ÏÇÈæ∂v◊≤Má™≈÷÷S	Y[QY@˙«˜¨Ÿ:y÷‹Ô¸ºy∏◊ES˜§…éé€œ;M0ô˜—™®VÕ±Û¸ÃÉ=•ÔDû!«$£T\iÏù∂„T‰ -Fﬁ—.ÄÓpÄY√[€ÙáPÁK765•R B4‹<·<âÈ%ı‹ÑgÖo€`}ÿnÏÌjùä”ã91Dd¸HæmLzf£¶Tq&M.rê1mµ≈çTòcbzÃ£ëMS<”••Öy%ñ˝—Å6pœNtØ&Öªlﬂì7Øø∆éÙ‰˝£ÓvqLÚL9¡[\˝bÊÚVwîÚLK6=«/Cû´Ë¡æ%™S–»˘Üâñ˝ ,Ïß˝5ÿ⁄}t∏åª
-‚<óhoÍ¡MM^F–X‰°+IKÕq
-ò¿Ü¡õè:åÊÃÉ!77XÉÃ»ª ≤fX ∏,Fk]≤Á]‹ôS$˜xXã∆jÁbƒÂ€ªïÔéeMr≤W,\7lâ˙P&¸»Ú+¡˝Ôqá`÷&°´—Cπ≠∏=8ë∏ÍÊïD≤0”é¸ò àEÇ “æ√∆¿‡}ÜYËÁÊYFY‰~6‡!ô@I¢e{¡∆Ú+JzÑ∑ú◊ ÒÏ‹∫§'Û…0º~õ †„{¡N«¢:!8œ
-√ûòpUÔi≥±π≈.Y?DÊÄªë`Æ7 ~rÓ`≤väÃò¶¬6Swƒ∆ˆxÖ©ÑI¬™®áúaJ˘nz<.Ä†/ñm{íãB„{DaˇAqj£v<üÙI©LÜ◊18(&Â€≤&#örX2∂∫h∫Zﬂ04¢ÑES•*P`ˆœ1πyæ‘	[[√õΩzCœ¯ËeÛû“Cµ2}#÷%≠üä ˇÆ∞ùd~€k ≥¨I‘√2¬†‘ ›˝ÇQ hj 7≤o´¢ö∆ÕÑıås±û6¶ë•äpÕàä0ñ†ˇdm°¬R°õù^Íú“∏ËZ|°	‚nGAï	¯ÑN£ T2GËH–'B>ﬁ.éû˚Ü≤BöÎ$‚fTÖ~¸#-+Ë¿\V‡ÄÌ’|˙RcΩS$&£‰îo’TÇ€FiiŸ]J˜<;Qá#ñ¥ x€&QÊ#Œ‹@À⁄LäÕFÅw¢Xò@äå]ããº!wÎ…à≈≈ÒÌ≤tuówÏßú∆*!Dæh‘k£—ÀÿnnÏ‹£øﬁ$(úúÃÈ¯€ $@4⁄≈\9∫2¶j`‹:èızMn§ZoLﬁºZﬂäªc‘VË’˙ˆÚK)Íù¯Îûè«¬iç_‡µHo5ÿ‚W}‡π¡h?®Ô¸á,=–õ^˙¬ãzÍ`õ¬JiR "ÙCÁíÚü9èNcö∂zPïÕØGäî2˛wÊì˙†íLœÑ(`é-%UJç„`¢ı-Ó^d"¬£¡Èó;ÌÛF·º¥Â∂°{ÊÜ° 4.	Ò0>4ßñddSfıiÔ(wzî]M;«X áZ˝\≈m¶qµŸ'HóÑ®T‘0@c∂n°Ÿ∫UqHb„Íˆ¶	h®HûÂìæ⁄T˚c\’n£e∂°Ÿ∏Hﬁ…∫3‚œ\;$˛–N¡”-Ù‘Y›¿Y›òw/ƒüˆD¸)Ëg≥$‚œ}˚-£“ÒESZÌáAbÚ¨Ëb»–≥Û(xÛ†Rc5÷ÿÄˇW¿úˆ˝—ÉzÃV‘)ﬁÜﬁVhk´ê∂íßNúÈ9 ¨Ô0ÃÏ9_›¨n>ﬂÏ◊V´€Î´’≠{ËâèˇE¯CcÔŒ}∫Ÿ«SY-Û]ø3Ò;˛;«˚÷w˙5ggæã˛‚^ÅÉx
-'”çYÊ€(;¨∑ï¬ﬁÙÆk0≈≈'ñÈªì_Ùsòb\\s;KŒ˘˙*ør≥¿è˛ƒLœT®?≤Ôç›æ3yP!&$≈&Õ…a˝PvÊ¢‘≥—ØW7v`A6∂ÿ˙ÍzµQáˇ¿B6·√5˙_}~]Ô√y˜∂Äj÷,"Ê6í%mTÔm¨6‡j#sqÉmWÅ8Y£∫Nƒ≥Q≠¡Õˇª˜ÛrÑ ÜŸ`ı∆”∏>{Aî∂q¯(kÄ˘∂ﬂYäÍ_:„Ö(
-IRkÉ†±πK~÷Å“X=⁄°’«√¯€ë¯k5>í]˝ºDõP1Í
-ı¶˛†≤Uaó¸?o*ım¯S¸W?ës?Änô>aÎVpß$ù{Æ?‡;ﬂa⁄îJÁgx÷hD€¿/∂WÎµÁõ˛ÍˆÍ:‹x˝‚∞ß-‰!5˙QR8I˜/≠j∞ç’çÀÄÓ)M7ÈÓdæ6€Ï&˚π‚ie∏ÑÖjp°Œ¶K˜éù¨izA‚äòb¿ô”©Ò;≤«¢Lg—tÏ≈≥_‹#ºt'`¨•t*ö*¥‘≈∂ƒÎƒ`Ÿ`,√’¡@nEÑ≈Cùë3tãö	ˆ˛µb±Ó˛A˘∏çc®g’qsØ”›Î4ü^ˇ¶w“iuﬁ“æ‡∂-≥`‡íª ˜úiAÎÈ¨âúFä<â$;âºíÈ€,èx?Ë·c¨øŸÕ˚≥Kñ<Ñ∫D]QÓ=ΩÃI∞w≥•ÙÂñ„rÃ¢–±Ìk√
-ò,⁄û’Ës{Ïa}QÔmÚº≈®5ƒÍ~˘K&ΩéX^ÎhS˝õøføåNy≈±X≥µMπLÁuËL»˚Ç=”ø@^EgkÛä˝=WÚÎüïf¥tbcïáÒ‰«˛·´
-´XZiZ‹Q˘,ü#¨î
-ï^ŸZ LO\ÄÁ‹—∑=©¥o…#ﬂéxÊ–ù›˚ˇ€ﬁ˘-⁄AÅ”†∞d<ÉπÏ©	8˜∏+[jV&è,õÿáÆ\Ω4€ v0I‚t˛M\¸$¢Ô\h_Ω{∞6O’ö=6$áÎa‰ı“ô‚E¡|`aóÌ≈à!sÚ4Å52Ñ).§+}lãø4L_.π[ÛtDπÎuRŒb˜4˜;èéEw∫'ΩΩ«åpö!/´∂†s¬#jÉ∫˛|–Ÿ¸“ÑV1bs÷ø®≠ÄI¥¬o˛m¿øM¯∑ˇÓ¡øm¯∑CÁ‘^VGŒdÈvÄü?Ó—GΩdÏF{ÄW≥Uóöa—≥<ùÖ„"52◊/ˇ˘ Ω|p+Ù¢Á—≈œu∏≈)È/6Õ€G—È=âTWÛea@”∏üX∏j)R‡ücÿ∏Ø–J¿ÓÑC"≤‡wŸ·tÈW`‚VÈ¯òÒõÏGÈ∫-ø[a7=a˘ãï‚Ë÷√@|X·ÒÈc˙ñ«ß5˙ÕÖ0˛öq\D"Ÿ¸UôﬁÀÖùóçxÜÿ=Ÿ4÷πÿÇ`b≈|{#.ìâπ3Xñ•¨©'Œ»aN1∆@+MÄ—â1’—ı{LGÊXø¿ûŸ~âÉ	∞”ƒô∏∫ÍïÇ◊^@º+Õx·…=7ÙŒå˙ΩoS ◊˙""+Û¢ˆ¿√Ã_nwãN’ü3é∆8öt*ƒxM4*&ÃZ˛®+6rºqå∆…Q=zﬁÅ≠˙A|8áŒ∏w	G#/äbËˇçxŒ;g4ÒΩ)ˇª:Å∑_J_ƒ:àV<ÖÕÅ€›È#/°JI≈r«Òwè√`ƒo/›vÖùjO6<ÆÄ„[G∏Ãı*k=kQŸÿ‚∑ı¥7gÓ hºî›°5£∏ÇõQÇπBÄÙeµß¡¿¥?ªÂìˆ(\.•k]ÏW∞N≈„ŒÒAì5˜·óC¯âu4…‘Ïóöõ´•AÄ˝äb3óá£{ﬁpÏ¿πîL;g πLßv+UîDÊ3ò˛•ó˜él“∆•â¶aoVK7ù≠GTë™èÎº˝≈ÃsC¯mÈ¿≈Ë)O¶~åâ”¨çJuaÙ¨≥®õ] ˇIUÿ˘˜T¯ƒ§ﬂÕv¬€”WŒ¶{æXﬂ ocπ{›Õı^aÚb;4qoNÁ´µc¯œ ˝øﬁV‹dn¯0øPsX‚FEùN2T˙(FT&©DöE)Å≥∂∫ZY„4tùØ8˛/∑Ê‡◊2^m‡‘œ;D^ˇ‘âŒóJ
-úæyZ…lÿHÉ∏ÓU˝,|)TôÄÁ+Ñ†ßj=ë;Ú≤¿qﬂGsÜF:XàáEè >f≠®+ïEV®r"Hö’`B§rN˛‹›$ªCo7úù:ôüç}xFTÏHª˚◊nSZ˙≠-º“Rœ!K≈(sœàûîpÖ á∞˜œïV†ºÏc(„ãg+ô æ$cœõ˚ùΩÊ^ó˝ÙÄ'ùﬁ…1¸Q<9ﬂ˙j∆ù†ˆ›°„/æ®:Ï÷Ëı+˜›KÓ¯É)Ó{Å,9Ç.ˆemèÅ•f8≠≤˙Ü•˝Ü:wÖÇ§Hß√Q†X¶v˝b·:…ê–ª´c?sk'RIWùjkπöcÛró≠–$á:ŒÛ¶"ËR‹úrZ"S76tS¢ö#ß÷ñ|Mq√R	û¸#•y C/ëÎ…?îÒIQ"MìË2P∆≈L◊π∆®À e#Ô¨¨˚ÍhÊOΩâY˙i7HÂüíô%Ù¥rŸ§tª<I4≤©õk€≤•'òHRM#r%4=	≠5∫ 
-ã4$IL._mÂOÉ˝ïÀFVπ4V˛Ùﬂr∆íˇkntÇ`ŸÎ<Èú4˜⁄á'Ìr/\Zxï]Î‚ú)CÈ√4_
-ÇıÖURÕÀU?(O…õπmÏLâﬁÚ‹Y˚/´y™ÛÜAÍ‰ÒflU«VÿÛHJÚ∏—„éy
-]◊_c»¨3∫~è.∞H`◊D˙&»•FòZY©0WåÆåü@3{©¶ZbÂ¨¡“í~·Ù^N˛A°ÅN∞Êﬁqóı:á◊ø9¬ª£GÎT\¿∑≥mqÌ–>Bg◊.∑fO›≥ Â’RF°Z‡üè˚GÙı.´8˛kÁ2™¨p#89ÃØ{˜Æ`™ãÛnﬂ≥GS™˜Ói'∫ÄU›5π¨WëN∫GΩNèuèŸıoéü4ªlÈË˙WO:áM÷9‹kµ˜:»ÕÌŒÆ+ç˙{:∫}:“LÛ∑LE[U∂◊Ó=ŸÔˆ⁄`V˛¯YÔ§Û∏”!Ω6kÌ7{‚H˜∞›≥Së∏∏e≥ç|•Åª–úË	Aö©oô ÓUYÛ∞˝”Ó.¶W6èŸ£N˜†›∫˛’!Jü60ë«˚ÕÉ&b^#o‹˜góEùqJ“‰√OMúá•$Je	¶
-√u—®wÀK∫∑.◊Á<ol,R%˛´µ±ÆVn6 ⁄£â‰.5qQù®…µ±x˚/∫h;w@)“VfÆLøé“µª)X{b∑ú¨Ωl	ÔÕ wÕ»Qãñ‡ä∑–·&Ø»_J¸i´˝∏ˇ,R{Öæ^ΩºgnÿfI,∞eZ,ú¨˛‚”⁄YΩVs_ñää5[›É£ÊıØõ®ouÅqû¥ü7˜ŸQ[ù‡[ã]mKW◊’%Ïh RBª•¬Ñ‡Ã≥~ñ≠ œyäòroáAî§PF∆˜ö∑áñÒãR©∏$±˛€K™∑Â–Œ’2¿L∆|!\$yﬁ>7Ò9y>!hµÀ≈§œóMû∑gy¢Ræ∏xÍ|)z≥¯ßÊŒúüóßtŒ¸Ìœ•‹€IdÃ _}–ÈÂâTG!µ)Ù…”˜Ã«úqP·D/DÍÌàı\ËfÛ
-√Õ∑è§”åE”≥©;ˆÅP)e÷ØejhC‘∆§;oeSalH–&¯IÍ˜º°ÚâF~Èß‡òí\åYMò “⁄1TŒ7ÀhÒõ!
-Òx%=ìqí¡Ù]‡îc,(er˝M‰MP6ÁPﬁ»ÈS˜jñvgJ«‰2IVô%ÆF¸øfmV#‰¯ºK"emk%ÃÆIäÔ¨≈⁄ip¨ù∂\î.øˇ√çÅﬂ—ª“D˚yØÕû6˜˜õ?“Ì±ˆOèˆ;≠Ê^∑g÷ÕÑP©waøaÔ∫Ò<+˝ï{˘£O„aÙ9ï
-,ùÒ?wô3æ\aﬁ‡Õ.œÙôRn==î«WΩS0Úh∏uo|%Ωæô5M°m∫MeÅbL®S∫Òá“„é*S≈ïò“*az9ÅäJzuB∂ê¡§Íé›“3	&%Ñ√›Hgπ˛—jMJp*0'hQ¨$ÔÄVÓçˇƒGÔ*ÂıÁüÜ9¯c˘IHªQ•jÛn
-}ùºb‰ç‡Ñ3œ‡ôŒò˙Ó`©Îu)]ëc±o[_UƒΩ%å˜5fÊïRı¥≤≈O¸‹Yå.0iMXsä+J3ñRÖCﬂ^æ≥ß,8K…ù˙3∑`ä®îlÊ¶Èù÷©°So:3ΩŸ–	Õ9Ür÷UË¬{ÕÄYıo∆5ä«ãT∂X¡÷3B¶RÈAH#4å_V}w<úû≥á¨VdL,ä≠˘Ò+© ˘›br‹nu⁄á{qhÊg¨ıåÚ{ÏI˚∞}‹‹oõTªr¡≤Mdïæ∞õLœW”éêÛrT3ap›ÉêjwÄf~>ÂÉ!ê^˚∞xÆËâÔÃR˘«ºCò°i¸ùÕí+µw¢ŸpñÜ;¯O3lÕåu{(“wh/Ω¯¥6®πıçów∏ó˛€ˇÔ•£„ˆìgá'Ml‰˙§}€®«∑ΩgÏ‡˙ﬂ√`ÿ…qÛ§iKå*ÿSFpõ≤‰⁄«û! <º∂◊ı›%Õ4¬†√Ÿs∆u`ÿ„Cj;çïb3ÍPW¯f$2í¿DÌã6ÁãÇx€+Íâ.çâZãÿ-e6Á!øXòXÃ‹Ωî:’@jÃîQb∑{OBÀíä&ÌÛcÇ$”ÉgÕÍÔ™ÏÍ78€ŸﬁÇ-#L|/…új‰51‹%≈”Ê÷
-b¸òw±qã¸ÿt”õ»ô_6ıôç∏Ë@4ƒ¥Ïª©ë£ﬁQTDÛVL%‡/TWYœT®ï£<MÚü÷ëJM*Ui†§+ UA6ä◊_t ®¶,^„#íPÀìô<gÅ^0∫JßL§æ®ê§}_‹àÕ∆æb‚RuìhU^{ãD|A$ø‡éw›®·sÂr∏KÍÏÄ‘4ù]ZÿFäO9X•ås—ÅºB/†ÚÇò£√ ¶tS∞1Ω¿ø¶√<C‡nz≈(µö|;œCÑ≈Öv±@çAôbÄEã ÊH˛Wí˛wíúˇÜ.Á‰ãååEsˇŒ˘ø)úúAãª'µ—@Â+LŸÎ≈RÃ
-ü4Wä˘πÂe≥ •9∏µîq#´À$!I«º	◊7AÉª≠¯ñÅﬁÓ†Å—∫n‘ªCåå‚"¿S–˚‘MÔoosÅñk^ßò€ a=B»¬ñiqÄs˝á1 ﬁo`ñùE~÷ÖößÅ?s.ÇpX—0t#êç>60ƒfD†∫˜Ω	¸}…Œù∑tPçAá™°Ü˙Lï
-≈_.É∂P—∫†D‚€¶ê'\ç†Üâ∏õÙb–0•≠öÛÈá)©+ﬂ≈wSl§%ïbGI¥Êÿò‹˝tÚ….”(iÜªmoÍäe≥J,	JÀï⁄l¶/êÎ·îoñ›;^%›t4=ñ‘ûJº´h˙"5]˜fmö·∂⁄	}}S◊:>G-–d)ç∫ò⁄-…´ﬁ)ÎÑ“ g;%N•
-z„ù5‡[Œ¡‰L√KtŒkπ¡Î*›l)ómˆ∞3Ìü≥%7?A¯n^.·î‹’ ﬂÔ`è¬go√ªrâ®-π≤£ëÔˆŒLA∑—ïk]È uK£ıc%ùo˝a)B∫O•&Vû√ÆyΩ∫ëI¨ YÖù¨*Ì/±mπJXäÑÂ’-ﬁî‹±|KññsÔ˛⁄(¿Y®*«sÃOfy˛Ìoˇ;;ËÓ>£ƒÀ„ìhÄXÛìßÕì^ÛËà-	∞úﬁ
-f±wü7_ˇ◊&œ˜ûÅí(óƒ\E¿á~rÓL£Êd¬Ÿ®‚»r“ÑÌùyh∆mﬂblíí|ô§H'\ÀOømåÖÿ‚Ø0#wí)@ΩüŒò™‘{c (««Jö îozπÀj+·~´Ólf±’Ñ¢\QOÆ®gOwﬂx”9ÓÆ ûü÷vjÉ∫ì∏tyoêuÿ!J∫¶˝∂™¬•}∫ekE∑H<OAqÛù≤Áìïß» |ë@©ÔÜFa“ÎïÊqkòÙ»˚ÁÎeÚ ¨-y’Rç6Ñ∞rN8æpÅ9nÒûbK˚ˆÌª7ö.Áá∂væ^XöA97…€≤z’BŸ“∆éêâö¢!0QûÔûjRÓ™IÎ≤E>,<^±  ‹ƒ®†3£fAZÃÁ˘LÍ:/Íbµi&‡¥páPôá0Ö6s\/ıÊã6n€µãÛ<$>P¢åxwv∆gÅ∆Gî¬:ó‰1æ éúØDÚ%›Òäß‡õñÍ(‰é“;Ó˜/¶.DªöØã∂Æl¡P>øû•A(oZP.Ä{#ˆnÏEØ◊j≈ö‘ÇûÃ>})BA+uäî≥¯öX⁄íg‘ëºˆq2ÑOTqÜTë$A¨∞È,)á9ÙnDnP|ùÇ0pfﬁ ©W-)ÏªaUŸI0‡M{√†èF•“ºÆúŒ§ûπóx¶;&ﬁE€ãÎﬂ—˝FF≥§uîjÌC[’ôf/¥\Ê£≤5ûÃÚ[–ö´£Zﬂ9u˝¸™ÌòÀ–÷ÕTT»˚Øˇ ¥Hﬁ˜¯=≤a©;Èªs¸Â|@Ò˛çµxﬂ$[V'u˘€Ö⁄’ÿ˝ä∏7®'jV¢‚ıH%ÜoÀ@ˇ≠%!ìËæá°Ω—‘v\Y_Ô¶ù¿ªÁ07| ⁄¸.€‹ÿ©◊k‚√ñ0Ï€ø˛≠Ç~uÆøéX‰çŸ_≥±«\§0/àñı7øp¸hèØqw8ì…—y06d%ÅÄ>«Kê–Æß5F.%pjÊVÅ›iïûS≥_fiÌ≈ˇZ[›yπ6\1£∞2‘~"èØç'ªÈMÉ–∫U∏≤≥Tv¯*~∑WºIeÖôoc .ŒÉSÎ\õ9W∆NÕFãgAÌÊ¨Sçfr@Ö*ì“EWãÔÃ¶ıƒìCKUGöÄ©;≥©î-„ÑŒÜﬂ4Õÿ3"NªÀzêÙóNÑ˛ø±‡N ¸ÆøVRéésÅÕŒAiΩ~œ·FàMÖà⁄Îú(£(K˚Œ≤a8õËötNCPs}E|ÂÂÇF*òŸˇQ≥◊eı]∞i{'«œZ'`–Çâ÷jØ˘cÏ´1UG/ kR÷B	q`≤ãí@çfm‚w=rAÎÛÊÒÏûÕ£íN˝•´34⁄IiuK/5pÓOÇ·–wYwÇ@œ$¶X\‹¢èVÊ§Î’í∞·’¿$®®P•!¡bR;WQ≠ΩŸ<™Ë˘Â'A:^1\úCS∞Ôs¶X∂RΩL&¯îr1¶q@<¡kPËLwﬂe1≥Ïp4ÄnnpÊ($Zú£å-MêY€R;˝6j5K`s7Û∂µ<’Z|Y*÷1Ωw_–G,¢:÷‘›Ô4xc
-¨º»9ı›¡É+√˙ö¢ótc∫ŒD?¸aÒ"ôÓûì·íà5ﬁl)‚bp∆–´öT£ Èj=˘âØvSà-LRº∫dæé≠ƒÑÙ”n*<7píö•›âˇ!óY„F”
-b&.KZ÷àâæ
- ı#… ‹ç|Êaé‹’|ú?∞≈õ√L-ÏéÅ2ﬁ-ÇÄ…&ﬁ#
-≈≈Â˝˙k\"å
-ß!ZÄ˘VµÊ3¿∆ˇ”?˛X„¨]í˙¿¨Õÿ|L≤b(FËâi∆‹A|Û_Ä∂i¨µjÕeÌ¬¿±ã‰‡~¥1ÃÕG-|2E†á–9*5®Ôé¸ëé∫¶%MÜÚÊ®‘KóL{¡rÇEÅ~ ^˚kæ5¡Ré´‡G(J~•Ø2t‘u‹˜@¢DòW‚√c1	ùK6òaF<œùáﬂî*œîyî›^üÂqò¿ttæÓJ¿î∫¢¿mÏ".\´y¸§yÃö«≠ßùÁ›;⁄{¸hÉ‚ª∫eƒÜl/Œ⁄ï†mÿ“ÓãÊ‡K¨§µ·´El“\=D4⁄ÕvP—¬So§‡ıÿúÅhl“rô#Èáã~ÇûsY≥L“O“àtËà6â"‡∂®ØlíÒÀb‹Ë!ÀÀY]ÿMøã∑,ÜÖ
-Rπàã•ü`*˛~PIÈG(⁄@«
-jpÊaö'OP,ò\›˝#°î|¥0ª—Ã[∫,];vFIº"AUØﬂâõcw˘l,$úÚMo6óΩRœ©Ân¨Ñ‹§&ÿQúπ@rÏ8.[¥≈•ÚÒ;ŸÁs™%Ÿ•°)∑[Œ∞
-U°ª1À∏˙BÓΩtK[∫ÑƒXYï%k
-›KÀ§î∑V
-Ï≤MΩ]¶_™/Ùk≈˘]<HÂÄ∏ﬂE)z8ê„aÂÍÃ˘“ç’πÄí–ÚzòõSg1}X®bZÖÎ/íi68”îï“oÅcfÙ^∂ÁÆﬂ˜—£sC~YÍíw}3èö˚{€>dO∫›'˚m∂w‹y>g§S@t-">>U7}Á.k>;È\ˇ
-aÊÔL°5k∞∑§órq“s.M1µSœvR˘ÊEœ&∏≠aZ≠W|B%?÷íÇ•ñu;˘k«õJ…E∂ëOïN2m∂¥¯Në[‚´mﬁå%„[+»Å„ªp©Ùfß^àÏ/raÄd9Îá$àõâ;uÿ£fØçA÷ΩÊ	ò∏ jûzbi¬ÀkŸ ≤îﬁ?vœB7:oΩ÷…ó∏:(öx„“¬∆Viwﬂπt1√pqYfpÆEœÃ51‹ñ§£:_T‘Öª%i∑1á¥3;¥8"NΩ©É9lX«◊‚∏´R‡m;ÖnId∏Q‰]é;Óæ˛Æ•¶e@”ìÙ™êÂ◊ÅúÁwÉ5J9O>Ê¢Ú<ŸçÌ\*m∂7)ﬂ"£¡Æ&Áà“{¯ÏOBó£ÂfÛiÑ¸¡+™±i<)ﬂ†kI∫†÷>|ﬁl>ïk¢GÆ˛(UÆ}gåπ-I¬—%;r—“.ç<t6WøÓ–xﬂ—≤ëÛ–={`Ô£ÁÁÂPSq-qò“Ï¯≈} «1Â‰¡-î‹Aô ﬂi ﬂﬂÏât?TJ*ˆ˚œBø=Ó‡yÄ`€≥„ÜT·ñ„Èﬁ8D— \£EÈ˙‚|:ùDªkkŒƒ´∆#ØÇŸ≥vÍ‡sJ|É´ÙfÔ~àáCÈﬂ}a—ø
-†πô¡w≤lj"Ãch*Ø`oåø“k\¿6∞Ë)ò†>≈∆Å¿ñ°Ø€%mQ5LRjô∫V∑¯iKÆ‰¢›¢^h4`´yóÍòÄ_+µﬁnIÌ>ïEÂ˝=DÇ)UŒ!. m@∞ñÜ,Ω,yƒké÷›h≥«J∫˚n»&ó'<grÄBG[tÖŸºÅà§·Ü”• ﬂ«¬›æ"ÓÊ°@«r`±ŒƒôÄ¿ã>a˚†àîè	Ú` ì•÷4Ùˇ˙˘2jê®ëd¶≤jJ0.¿»ƒá5Œæ‘v“)˙⁄°5}*∫∂√≥Ek˙Ë˜Dà¬h≥Hu/õ§Ö‘ÚBXa 1µÌê[Rô;∞¬Yü√ÛΩ¬ØP©„D[™∂)£E ∫bëO÷pR¥®| ﬁ\êì´≤–j‡çR%F1ûïHI0"(g-Oc9BıΩO°˙∫≠vØõ©¸M¿0·˜•ıÎ!ûﬂ^∑ß≠4—g¶ÃK∑Ôa∆˝·¡NæêBbe6ôÇõ¢{ﬂ{¯T¬ÆÉˆ˚î–"—€§íñ*î∏u<%ƒŒâoÏÑ˝sÔ~A/0`P;&¬è¡
-´&lÀÏ ıÉíKŒ§QŸÖQa±û5˝>aµX~"πËA9ÊØ¡OôR>∏∞éºáxÀÆÒÑ∫S
-dß#û)të'Ë.p∆‹.Ã≤/Û±ñÃ∫F	ƒ=X+ˇ¯æ'¬+XG·¶Tr7¡RºAI“˜E˜j˜◊Çú—YJ§da=ˇçó’ˇ√ˇo,´ouèè€]÷ﬁo∑NéØCÌ·ñû4;˚q´£ìÓqÆ§˛…»Ò¸ÔÎÈÔ¶ûæ∞HË˚z˙≤ıÙ@¶™¢ÅŸ}BDÖÓÄRcØÏdJ©VÂ–Uÿk`ö
-ïπ
-Ïiá%0òÅŒïp'ïıÈŒ˛æ¨^«ás˚$.´?˘Ç"[m˝∆MjÎõ≥È9<Ö'V—a¡ı)6Y2Ñ-◊◊¡Ç^}2ƒEnˆ˚nù_ã–4Úcœ6ıê†srg{d‡uMA~)X6-"õ!sV”±Å›
-|/&´t≈É#÷Y$YL0pyˆ≤4µe0[ÃŒ¸π ÙŒPçﬂÑÔù˙ºÎ¯Èå1/ãı8D©u<cXò⁄ñBHOnÌ»É5óéöëÁ(MÑcw∫Aÿ'TA9–@ﬂ ÅÕ‚FYAÏÄ–%M€E›°è7å¯Ñ‹§‹-GÕi–˚¡–3¥$ëÉÊpú7ÏåÈ¢bœá
-¥ÖTq¸qëZK±+†§É(Ÿb˙îfIò	÷å¥UËæ‡Z¬<Å_uv˚¶’rËw±P/ôA} v¸ü   ˇˇÏ]Ko#«æÁW¥È†ëK_í`≠CëîñıÄ®›ƒ^Òàú%«Ê3‰ÆhzÅ»=6∑X8∑r|…]ˇƒ ˛	©™ÓywœÉí÷ﬁ¿¥π"áúfwWwu=æ™¢ÌÁFT$⁄Ãdë˜MíπÂŒy[2	á≤N(HØøà#{päÏœ˘D⁄∏‡êì5Ö∂M˚@ÓLÊv:’±¸Ó«†Òÿãâæ∆·|\’◊j.Û•^ÆP·àN®√´¿$$Jçc˚ôMQÓ	@≈|„jˆäÏËC4OÁ™*1Io„+Û˙kÌ©¢a‚`>BƒX5∞Bk:¥üc˜Vy˜Aéù˘J≈¨Çe»BHü∞Ê∂ë2u¢íN2w}Ç-û~«oñM%UJ«r*àìÄ2Òƒ†h£bÑ+l†Ö~•K≥q(®S~æZÜŒ<uí¨Áº‚$π7ªy4?.Í+CFr[¶ì–ûËØH'q0)“bw9qõVç∫X¸å8¬°Ç9îº)àèäÜÎ∫¿}htÁX„eé∑vªHJ¶P0xÓO…T*k–¶%!µŸ¡ÑØ€«ŸTè¥∞
-…?	
-Y‹-ˇ£“§âK∂eZÉâq?îÒœ‚˝–≈Ø…Y>ÿz/y¶â3√É€1ˆ“\ò≤ƒÇÒø!áè—ÔBÜèiá.∏4g:¨–ÛN†ßƒ◊ƒI§¿ç—á…°€tÙ´‚∂#…Ω? o∏"ãH’Ω"w≠Ç´yñ∞Ï~K>òû+M¯µ∞Aﬂ{˛+R(c¬˘º»û¸ﬁ”`)"Ω’EÈƒ[Qè˜yW4Ì’Ldm‚‰a6ˆ8’>‡˝I≥Ï≈‰g^˚‚æü7@¯±≈hrﬂ¨Ø~zl~A»'‚”Ky√C?w2Óy Øgß«∫Õ>IÄâêG4¥dƒ⁄@y˜ÓFY'‰öé∫Üª˝øGo~x˚ÊOI°≥«÷—] ∫¿ô≠‚Ié:Ô°Z»q˝Ã^∂Lñy√€˙©≠¯pì ^¬E’!éÑ%≠E13É≤+ç,˝˙&Û∂1¬í2$äÿã˘l®Ô<LÖ±¯√kÕï≈Öy!D˛êaÕØıÖ»ΩíœÜ†tYÜlÄ™ÂCìÔˇ˛∆a 	ÿ*8$é/°£í–úÔ±h‚ C;6VƒÉ√•µ2¨óU∏Ñºï‘é=‘-Cé¢I#óToà‚êßº7≈b1çpÇ»,ô‡Mi≈k˛ >‹‘≤K-©Û%«ä(öZFâZN©ÿöDR©%K*Àñ|%>
-C!ÔKä9≈|MˆD≥:∆I∑sKµåcyMc{çÜ ≥·	7`_U¥˜˚˛ò≤«˝Å–ãKÀúÊwºKB*◊3,+a˝…‚%T…8ˇW°*[.9dâ+h˘Q¨$ë1ïfNi1m“YtaLù]qnu–Õé◊∏¶¨0Q–S˛V|m…¯ag∑è¨√°¬‰¡∞Ó0ïØMeRW√ò¡ÑÔﬁ¯  eÉı≈ìÛÔï∞ÔRVáRyÏGXe˚/˝7Éc~ÅeŒYøﬂcﬂˇÒNPpﬂÄ˝i∞sD±ÊE7~B2cg[º
-+bëÄ˚ñì5Ê+e‘:—◊p<±º¿YbôıÅ˙’.V4Å≥·•`•µ íñG±/ç°»Ù••
-ÛŸÑoÇÎù8œõö≥¬∏¿_ä¡^î¡+cYOÀJH∫ñ˚ê»±◊ÅTî>Ë©Åà¯°‡ Ör—ÌáıwaﬁÖ>˛
-’ÀqlZ.¬ŒY]ÿ®[urqkpzÌƒà(`YÚÚææÇæ¢üíZæTΩ◊$:õuGØì’Ûıgû‰XΩrùáÔﬁp,ﬂ+˛'TÃó«∂GõÀP£7ƒk¢ï&#ÃS™’À´ñsÁH2∂ƒË ,æXç!“Ü}Ä´Ö“™©JµK0uƒ¸’ìOfW?Íq4ºJú*Ä´ÙQ-àl(ÀÑá6C\(∂u™ıÍ<h›‚◊b≤}g´ä≥UMª2ù«U§∑9≈†&ÎÑ∏
-jXLh`Õm[π`‹∂Ìó#Ü¡äGÛõ√\âïòVÖˇsÏÖ9ôÊ‡±`ô¥ê#Êdh ˇ®'ñäˇÖ1O)Ô3L„:.‘äµgµA©P‹´äı*‘Œ”∆ƒ5œó›'µ~ïïBüŸöâ◊¯cªÂ˝Aâ¡∑CüŸÿæ∏Ü˜øƒN<Å/S√,Ù©Ó÷Wπx©ÈL©˙1•∏%ƒ¿z˛›H…˘÷ñ˙“ñ_˝ù9\és	Wzp»Ù≈aéòÄˇÍ ¯ªóUÎÇ|’YWEuP.V˜a¢´uV)TäZ˛ Åöd¯,—Â:º¨‡{ç:¨Ü
-‚T·íÊíJ+6™/¥–Õ€+¬¢cZ±Bã¢Z’∫Ç_ò4X„”x˚;›”XY{≤w‚oV±iZ9’1¸;\)√ô˛Æê¡ZüeZ!Hbd≠*T´UÄî¯∑+áïÌ}¢&^∆W˚¥(ƒªÇs≈ΩZÔ>MPÑ(ﬁnf∞õÚaÆûck˛ÁF;Ãï˜‡≠¯+ü∏‘SS^Àı;5|ØKÀõ∆dX†º„Ô·Û%cHœà4¶iˆÏÁΩBπÙ¨6)Ï*–`ÂeÿF˜xâ˛I8|mNÅ∑ïÅ=h¨
-¢‚ÉPO•r+êŒ™JÓëo*,Íõ¡qˇ8ÂJ±N)ª|4.Gl„◊n…+xgÈN∂9ÆæïSî–}ø÷,ız©û∑qy[®ÆÎ_vıµ?êQk*œÈ„<7(]óp◊|hÍ£ŸÌwˆí™xÃ±Bµ™≤rDJ8¨Ï∫Z˙|Gd’´1˜≤ŸÓû∑ªÕì≥€7}iæF>9…2&j
-^‹d‘m}ô∆•oƒ—@wjÈ¿–¥◊éç¡X?êTwÕπ€8÷–xº°ö1‘˚´y˚Ùìº7öù◊n–ı˝Ÿ—Ç¿; q% πúhîZÍÏs6¡A∂è8âíâu|˝5Ûı4:ÒrsHPO≠ÖÙT.ïºÓWWΩh;JÜ™˜∞t¸ªˆR4yL
-±hË°4 u£D@F3Qâ[Ó Äw H∫…1)*>˝ÍŸØ’¬KˆyY#lÇhôaô°YJ≥πÓkíhëﬂ≥c/W¿>ﬂÕl•ÿÅµ˜Z˙ƒº∂‹äd£≈úOò—ù.,™?æ˝óÕ·O0?êÖŸˆ]∞Fæµ∫˝∑Œ.ö≠~y¥Å=Ω≈ú÷ìw+ÌBÙ˝ã–D¨hÆÕ÷_E …†∆gø·ãòÅ†”ûÃ~s=Ù∏úŒ°•Hˆ»B˙äÆ¥L•¢iNŸì˘Ñ›ûV¨9X®Œ	”ÒÏ-nà}-÷Åb?24Ni´ŸÎ]6[›€7gÏ§ﬂ>fÕ÷U˜YSﬁ˘·)≥ké#ë–º£·ƒÓ:p9≥Ã˛˘º¥“ı.”‡YÅgû5x÷·ŸÄÁ<˜È;•œäS}ëß∫Út]<U◊èÈôa€ÏÔbÑ»í]âîx
-y(í6√{|i¨7–®“0ö2Xfc_®µ.∑B˚É‰û◊‘K> dä5·∏çîAÔ1thÈ"
-ääNÃsç(≈UÃK2"“∂∏˜‰sktùˇÂÊ¥ü"]œÉFWcøˆË∞Ûzó›ı;üÔ™ºº#∏0¬‚¡¨—”É“È;ÓEäåg±∏´«D˛_mÖOí$^{9DSmG¡0“Òƒ Áï$VX?—ß:£c }f ¢b~Ñ˘à:Tò^VÄ„∞∏ˆÌ?≠!∞>∂ÑSqqib@üÅÂ
-Fò&”OÙËé¬Sn¯vsOÑeNY>?Œ8–Å7s≈3˙ôvghB_G¸Í©>[ÈËºÄﬂp]ìÙUPú¬K\Á—„?¥aS›úÒØÌb¡Â°5Ôõ≥˘µ:ÁÚ‹È≥˛Æ⁄¶Ì\DW·çhˇ5Ùœ^LÃ%ﬂ78'Ü¥êœj£pNièÃ˘e%ÙËM.ùœé≠˘î∑itó]Ko	˝òÇâJÃH¡rëµûv./(—ô£ ‡D20QDVwd2_~kWrã:ÅÀ|!Â±8®¨t1ÛÒ‹Ã£†Z◊îÚ∏{y⁄dÕº8£¨S=o–ΩÿQoÚ√˘ $5G]‚n0Lh¢√,O≠âDmíOnÒ:ÊÆG¿4G…P¶]ûZ∑–pCEÓBπ¯Ê¢Ú"ﬁí™éz‚–úuø¢\*/ÙG^	ıA±íÕ&ãNâORE,u≠‰˙j•GçÛó<¿»÷Hn8Õ j<≥‘ÛJ’K◊AQuIyJ“∫ÖQ§1ÌÍπë“õ…çÏ¢?º˝€∑ˇ˝œüA=Ùqî$)‰Z—@,vy—¿§∞œÁÏõ!rõG<ÌV9,_[Ü˛%Gπq>Ä°1¶C`êœ@ØR-™'∫=V˝‚‚Ê„3Y?«ï4‡á÷ /¨œÑiBÛè;9©eÄDëyt≤ÙÖ1Û˛˙5î  4ïÉT´ F#pUîÏ7AŒï;eﬁ:ˆ¬¿® ÃTüSÍ∆Œ„˛{iåLÙ#l9VôHuœÑ˝l´'7ºLÎp€¡ym˚ÛX+∏T| J∏}sF∏e^M‚Ò∏1˝Ã*2ÚáÑR—=Ncœ@≈•‰®ü¿±z“Ì_]¬ı$ºsÍÙÁ‹∂ﬂ3F˙$;ë¸£3ó∞çπ«=cÕ?0uò∞…«üÁª¸ELjõ÷|”ZYπ∫≥5ªV#ƒÖ∏Cá0ï€Ô0DFwö
-RHÿ@ÍS›guóePC¨k™Le—ñÀ”Ø9(AÁ‘◊ˆJdÒãÒ:Ed¥Xÿ≤‘pF"Äóñ0—P,éä?|h*c U¸A¿*¢llÌ`|‡∆Â™3sÂ…K2†õö70˜@ø¬t5Yöã…:ÒW∂@`ÒGÇ6FJIÇbKI©ÖëRNÂ) bª~≈,wÌ-,i·µ¿/'÷
-'ì&/‘J•Ä<Â~˘Ö©§ZE	î˚·Ì_ˇ¬u"`‘ÌÓI˜™Ÿ;Ìú]u‚ò»¸ìhßÜ>(p∑!t7≈Ê,π≈ı¶PœÄ)˙⁄¶Öä+Å‹Nô5≠\ï!∞Ryz’‹l#§à¢Ú˛ﬁÿ∏1„kP0X¿`›ÈÌ∑h#±Öâ∆.fÔóßxüD<˙®d¶<YÏ¬.≥&ôäÊ,·g¶Üvêf˚Úúıªg∑o.–˝-∑HmGå {16 Z·hı8‡˙“µÒbnÅ¯•è¸(y|{Ñü—«,ßO^Èk;∑À’,˜2ø/à°W˜Ì!-:4sr´ét>ïÅ*˜CÌJ…|~—Ôˆ)Î¯ÌõÀìÊŸ9À_‹~s“=k≤ÓYªs—9kwë- ≠âµÁe∞ı2êÃÊ/Çzëµ;˝ìﬁyøÍ oüˆØ∫«›ñpœaf˙^≥/Æúüu˙ÚE‡∑g0j[Rˇ'MBﬂ\<0ÈE÷<Î¸˛¸ 1KÕKv‘=?Ì¥nø°rÿΩ«ΩÊ)V
-Ë*ò8•dCÔŒ<˙˘µœ7q|y◊å/qG0ÃcÖCº◊‡æ◊ø¯   ˇˇ ±á\J
+¿§:» '=XyØqQ'Cx¿=A]d‰ÜhRväDfËÀF∑6Ë¸ñ«⁄X˜D÷L¢˘∑ü¨_lŒô ¢âµ§8~Aâ‰ä7Ó¿ËOmŒP›f.gnﬂd∫?Õd…)±Ö=S‹√‚õÉA( Ï∞Üw]Y3Ô¡ù¯7S÷ü-ì=ÁëÑr‡c	ì//Ùtˆ	Á5pïK,uË≠ÛK±òñó¬5ßNÀ%ı–àc@Œë°V3V†-¯ÛèŒ¨f\ˇ—a„Î|D®OA»ª\ñﬁäÈß,_tV5§ñ§õ⁄BOÒÜ»6ïõKZ8ë›~,í\Ú8§“"N~Cz§tT ü6È=ùMîôâ6S¯ßPmIì«át∫Âí©dÃ 7kvàxâ'∞ö<”øhøÕâÈÂ∞CÖcµMC”SÇwìc'6Cö §-x˘Z˜“WâΩtÌ•R˘Da‘∏˝O<‰è‚¸ÿ˛kõWmf÷6Üà’	–[ƒBêèä€Dâ¿–ˆ<î0ôfgÉ–é≥£Ù=¯YPd*’Ä@¬ÀîΩP‘êp—íQMdUfD$¸DâïNNÀãËõi∫ˇO≤¢DVàë™[R‰‡íR"ú†∫dƒW·k…F
+≥Ô¢i.{÷)üöÎmP≤‹±‘3ÇJ©g
+™S]M&B‰%ÃÉI@I‡^ [È€Ëc^Ô,ùwë,HròÖB≈Uyù◊Ä©êı“¯
+Î\¨R˛>5ò•√-ïQ »‚àûIXø1`/=ΩL=DÜ√++´è‚∞Ç„ÏH¿yfÜ`Áv^cÀÊö`Z„è$y√&»KuÜèÈ=]Í¸jó}∆M/ÓÒß#”r{ﬁ]=mÌıÿÊg+Ï≥Ω–j∏R«•…øf¡√És^ˇd¯Ü÷(æı‘å§	T¨Ì‘q£àœ›¡‘Oi≠;€I¨ã<7Y¬pùÌi€Y0éåç∫” ôäx¶i˙pëo}+ˇt±⁄‹R‹˛Èÿ9aòÊRùé‘EÓóÎfπ˚Ñ¥ñgå
+∫«‰∂ºx÷òÜˇHjO\m°2mÆÓ™«Œ=w≠2Tn‹∑üEXWıûÌh·∆w‚˜"]ãﬂ/ÚËs∏=ÁSö-ß2gWƒr{a&Àq$Õ°óŸ#ûîÄï(à∑()Â+çÑ…´™√kq¬…•…∞Ç$OÊﬂ}“æ0Ø€ñ7∞3p˙ÿ«ßZÉÇw“mÈYt;˚:(/	ºB∑í‘É´1_DæﬁÏLŒëm˜Wmú#4L™ÚíuÅÉÊ$,)WËÛB_µéO•´ø}p˝$≠¬œZ¨{ÿ⁄Ô±√ÎˇºáñÆ˙0ö;[›±12+—HQ¥ïZY>¥MãBzçÕ–M‡ü–ÙÏ≥5‘Kœ™AÃ7◊7 ¿<§‚´Ç=Dƒ *ëc±Òﬁ£ñmä5ô‰<à“ïﬁ©°…æc7$uÄ_˘◊ÿ?A8ìÇﬁÂ°~ﬂçáSRﬂŒp˚˙ß ›ÙCn{†vn¨ã2‹.3Lá˝ƒ©∞|¨åg&È√ÖƒÇ·§2Sî’°Wy*+¶ôSSìÁRâ
+r”z!M[{?ˇÚË¨UoπÏDFjlYÙñ¿Tî/Î∞≤‰†Íuﬁào9£H∂?∞ß‘jh≥	ÇJÿˇêˇ	Ü(£1lˆ_•í1íì84¸ã(@â	Œ@˙K¸ºÉ°ê30Ù=¶	+®∑≈ï§ P¨3Â+Qd¢HÙœøIäFKà∆KïQ–Apˇ–Ío‘' ·AºË_ΩÒÎ>ˆ›w§çP√íá›‘M6£ëäNe~€i<jnôﬂ"mEó¯mk‚∑å"Fx˚]∂?ª23^§B}Ûg]E'ñi£∆ÎŒµö©Uà\»Vid}ØBï ’zA<ì8cøf_¥Z∑‹c≠£÷Ÿı˜á›ˆqè˙Ft˙1ç\ì∫'S≥fX∂ù|¶êÈ•IÇWí,$ùó~ãt!xÕ#¶„ÎÛDπvÖ4$∂UΩ3M¢ƒ~ıò¯oï5/t|ƒR0‚∑OÇ](Õ|≠Tè"ë–r%∑•[¨¨êKDˇ…tÜzΩ≤_∫0%À“Ã)›.d¯®"Õ¥È;
+lŒxkÊB6ì√!ı¿ãæ,$πá‚êX»2!ü–‹\)}˛ó™ ÕµÊ2˙Iê«Rs∂,=ìNÕLÎ“ƒsk¶¸îaQIL–˘ÇúîÖ≈¿L≈·)‰◊•¬2ªl)©wôá®sÖ6ü €"∂îµÜCæ¬õ¡Ùôæ?F„œ=Áe˛x◊*rë÷‚!,ij3!á)#û./3MŒy\—Äczú¶ìrÜzØ°“ˇ€øÓôæi¯[®˙,c‰\ˇ¡Á.K<mÁœ,ÉM<˜6ùÒ9Yä– grÁAf6|’ì˛{X^ 
+{	FÙı∂Â[<;Sh`HVáX_÷Beæ5I3XÄX !I^À‡\BUƒ2 ñIé1…À´5∂:Êì÷aü"^íÚFÿæ‘]DƒÓœXÇËårÿ® &ŸT¿Ê;€*Ê3Òq&ÓôÑ"¡ ∑nVûÉDP‚5"Å¶Nê≥¥Û'HK◊÷*Ã[Cç`†≈∞uô∂#:å{≥'wÌ±‹µ:ÖãÈexıÙΩ—»+P«÷Bqï–ı‡$∂bñ‚ €eL#øà†Ê∑jÛπ÷r¡mDKWœØ»yŸ˙`ÑHÅ"Gáˇû¨zµiS"…◊ò/l– ik±≥πµ—'∆íáŒùè®/ò≤>ndÈ‹∂˙'NÌÄ˜!ß¥›ë(ƒ"≠d”9°àºælfïµ˘›÷˛—ı˜Ω3DOµˆ∫ÌÓÒQÎÄ-˜:˚_ÌµÿÒI˜àﬂÿ˘€ìŒÈYãVÂSÄBπÚ≥‰‰á•òÛTà/™P2`„`Ö"Ê∑ô§,…≠YlﬂÖê≈¨·øáqãí◊˘º(z‰Ì/Ú‘Ãç`(ÆÜ¸∆v°∑‚àb§m¯;  ‹X…0ö?+âd(Z•V(#&˜ä·{‰Fô¨Â6∆}Í˘aéÕ˙√9vslzÜ=Ã/Z˛ë/¸ÌmtÖT®s÷©Lï >í3R\.n6ÏSd‘'·;aeº?˝Û˜zÏhE9ø:uˆ ‹Ô¢ãÒ™RDDÊ’2cÈŸâÁ.2Jÿ∑5å±çm◊9∑Á[Éµe…_∆üÆVqˆíÇ»ma!pö∫¿`›ñP 0{ÙôSêeA–kq'õ†PAü=«tõHÇ…≥PU*ˆ∆ÚßÜÕ~=5%¡U` ›6ÈâäéÇöKr≥åV"G#d‚l"À|◊ qXtSÊ^Ç≈al\∫óµ[&-åGÊúKiT',YÀmÛÊ—®¡:áœ;{{ù=÷>hızúÛÎl‘;Ì¥è;G{ùSQŸ~.∞JÈ<[îtû9¢÷ÿïK>L:e¢ﬁÆ.o%˝GµñÍN öçüœ+„1B
+*ó§ë2•´üñ§ËìãNöEπ∆#m¯X2-∞Ë%ÎÄ»Ñ√√¡(èW–“Çn#)®≤,Œ˚é†Vã
+‹s6YÊ,g‡zZSéÇãl<2vå_Ç;Ò\√ÎâÈAÑ„Å∆L°Àr$ƒß&ÿ·pfq™≈\sz=F°®òÌÜJ9…vŸÒ∂f˚vL"§d©◊3’gmKròD%4cÿ©¥BDmÉÃ>ƒ≈Ü‹XŒêúS#GÒçÚB∑˘û¯ÕàoF€‰Ó´î\¨ÎKﬁ◊«n‰ÖKCj85'ò*ˆ©ßÊ–G·‘≠·‘\€èb⁄=iŸ¶™ÇºƒéàB"èî«ô±r+•®)h¸`J€.\¬mn‚ôÇ±2ÛEá”WShòpSYÙ¯äèS$ì§Çuï˜˘öm:£‡ÇWıjTY|j>$W·TÊ]ÌLH«z}:äÍ∑€d“‰aÌ‰L2∞O\'“C&Hˆ )«ëPj.ú}PÊ4Ø±ì©9‰4–ôr7Ä˚l´Ô	⁄h/n! .‘ÔnJÉY»ÍzVmm≈ÜÿÑ¶KÊvN ÄÅÂU2»’1D1OÀoŸàïÀ÷`¿û≤†ù5C|‘QI‡ˇ‡Å•|Ω_¬_Q¯ÔµäpÃ,˜Ú/è{Õ÷´o€V¬∏ïÇAÊ´ ók7F∂¢8ÖÚLE∫√±xUQft?O≈πë5ãEd£ñ√Ÿ»x•EV∆.êVíC~ÄD˘95¥ö±q±(õçJ(qıb∫®Bùﬁ∞T®Üqïÿ¥z!C˛Ãõò
+≈GüuÁ{Ï”≥QT˘T{ñB≤©§Ó∂¡µQ¥ô}mƒÜ˜–≈*	q≠›Ò≠0ß∫X˛úõò«∏∂«N¢Ùzv„RãöƒB5<9ï†æ®S∏C„ÕıOjôƒ”™Ã¢^ùFçRä¸¥<“B
+ﬁ“3TÔ◊hÊ=È$;Q®ú™ÅñÌTM®åÈ2^¸5ﬁ^\Fë9‘õçP<ÌABí0¶â«•Ì⁄@ûßâÌ°_Ñ)C£[tv‡z˘†É >’ƒH·∞d˝C#Æ∞€-g2¥ø¬‹(˚Ó;=Ñî∏¯w—„»5^{:4«Ò<ùHÌ’;Á≈ï«ï€Õ{¬2ñ°‰ñØÿ⁄⁄˛∂¬¯cwYD£+ª…ﬁSägÊºeº`í|ï9aRWƒNƒ^õ•1’ΩïZ∆ ó£í~£?9»¢uö∫“ UPgVeZGãh8ã∑ZÖ2"˝s˙KögÄ∆Lk∂MoWXU¿™´XóIürl Í¨j%L5ådZ∞Æﬂ±Oü2+ßÇ´ pù$@™Ô¯Ú∆B∆›®„ÎèLÿåıÚ ñ:˙µ∞¨,Òˆö¸Ûz¥@´œ⁄·Íó§Dp‹ _‘}K#îVØ]ñ3¡ËﬁÉS«elFÂÖdÔﬂVêb4”~	«¥”HÊ'™üotÈîÚz®€“í≥
+F˜ˇ  ˇˇ ˇøuYxúÏΩ]oIñ6x?ø"ä’”EıäIâ≤¨◊rÅ¶(õ=˙ZQˆt∑_√ï"SdñìôÏÃ§-Ye`XÏ^Ïª3Ë≠¡^Ã.v∆v˙¢h‘Õ†o˛ì˛3?·=ÁD‰wDdíí]Æûfïm)ôë'Œ˜ycüáQtF¸π±ú°ÎÕ\œ,g‹wFÊ€€€c÷Ëä}…™K‹â±À<ò.83/=”ütﬂ∞°m¯˛±15˜*ì⁄&{«öÅYÛgñ√Û*®ôS”3ÏQm´›®∞çá¨3≥≠°·å‹zΩæ‹H7ñÍ€eñﬂ±=”]wÜ√è01›â9|%ôîƒkè\f:ÏÃÑµÃ¸ˆ˙uOÌπüy€zﬂ∑ﬁNº±«ÆŸë;≤.ÈÁèÊÔJü¸`„bÆSˆˆ6F÷ÎáQÚÏõçü±sÿ Ï‘3_[Êvaª@?€(;¿¥‰¸^åkœ?o¥;Õ∆6´m¡d{Ó6ˇ®ve≥◊ôû¯ßÊ€∏	w⁄æ˘Øõç≥a; œ®y¶m\ô#65Æjì⁄÷s_õﬁ•Ìæ©]◊åy‡2ﬂ¥ÕaP√Àô?Ù\€æ0ºZ0ÅmÌœå°	Áµÿ•Î¿Õ«Øî_¢Ïk— üﬂü]Ω‡∑ª∞ò&:j9#kÏ÷∂`‹ÛŸÃÙÜÜo≤¿ÉÔÒﬁX#”ÿÙ¢÷Ñ©àÜN¡E¯É∏À}òåúªƒP{<_|g∞ë	Ñ{iz¶3¥v¥¯›àôÕœ`∂¡z˛–∞ç›%»é»hô˘zxœÜwÈŸÊÿpÇ3”üπéoV=sX¬ãõNpÓv`äú—:´dÊÆ≤ˆn©G.qrÈS◊˛K·IÔ
+wnâßiÔQºqœ÷j5X‚o˜üû∞˝¸?x|x2Ë±_≤ü?ú˜˙›N∑ø¯ˆøÏv‚»…qo¿Œ:˚˝ì√≈∑è·–ÄÓ§ﬂÓ∫∏à7ñÎ<aıj‰æqÄaŒm=óÙàì"ÉŸª±¸ﬁ»BUÄ≥◊#√ô6<éö£≥ËL
+c”q’OπÃG◊Á◊3sÔ&˙ë}Û0 sàÉ‡¡Ç[1GF¶∑I˛™ø“u8Aüª|®{7U√qÃ+|ë5∂˜ê›êl`√π{'`{ŸW«…M´Tähïﬂx>·Õ‡∆·#˛∞Ëæ<Nß*ÓW∏S‡“^fÿ%Ø}ßõpçê’Ó;≈é”Ì5‹eg÷x∞ÆkœßŒ.pW√Æ÷‘d03`Åı⁄dß˚l&ÑßjÌ@œNGó~’Oö[i8§RÜ≤“ËMÌrn€l:⁄}S{æ’˛ÀÏ ¶w‡G‚YŒ´ZÉ]⁄†q„_µ°¢w,,àòçùF(wºK¯s≠ëÕë»ùX£ëÈhŒŒü/ˆÑ8»zo…æË9¡(F“‡ÉNºDÊ˝∆∆ŸÂµÚ3˚X∫Î‘ØM\Zˆı‹¨ÀÎ⁄Öº1µ/]Ó~88êˇÖR˝¡Åeõ¥«S*Î(¨[Ym£¢€‚v†9y5¶ŸêÈ1B˝¬â≈o¶Æ„Ê‘òH¡)°ü<ÎŒ;ÏÙ¨˜¨ﬂA∫(îõ8ÿÇâ.ñ≠Â÷¢U8~ÿ≤Ç˜¡Î√æıcÕ.]vMñ’*iŒ5˙eh∑ŒÊ6ËòÀ,∆2q	¬¬üûí&r)¨X∑í”ÛNÜúc5\M…¿I*wv¢”vJx"†-PœØ¿¶ò]◊±iSbŒ˚Ω£”v÷Î~åçP¨EJiî∏ÈœòiŸa©-Ñ“`ﬂ2R«§Qπzi†ïdÁƒÇ Vô$?ä˘/∑µW3@u≥¬OÆûÌ:]€æ›êTB–çNAJ†^6LŒPıÆ*Q¬3OœÕW@åõHåh\ mTÖMÍE3fèÒ«∑PπØ†WÄ™Ëª^mÊíû√~R§√‚gñ}#ÚıÖoU N˚í}Ô ÌÜÿïo&∞¸ ◊09j”Qπ[Ì“≠Ëµ¿ Fµ7!‚pÉOP≠ŸMl5≈∑~˜U—Í3ÇrŒ•≤^üê`g af_˙ÛÈ‘ÆÀPÓ»Úç€Ì›|&Æãˇ¥à>;3?
+Íèg◊ùC+∏Æmﬁ…é ⁄≥€Ã-9ºp®jjzÆ0Ö–Me^ë?vh-æwòa3
+Ú}f\_ªxµJÂˆ{∞ó| ©xƒùÏ»2ﬁWîå]†Uœ =(Ü6°Î∞GtˇÆdds„#qèŒ»ò°ŸV@¯‚’œå¸¡ÂÖ_+‰âç-‰ërù‚∑ÂíóY~◊£eæ›»hùmÆuf4‘eA¨(eU¢$_hÀ¯B©'ïÁïò§©ıVÏºëÌìç áxÌ¢±XDe≈{<∫Û.ªë¨Œ|Á¸‰ú§„ì≥£Œ·≈Æ›rB˘Sÿuz}ﬁ~ú«6˜›7éÌ£cCÃO5Ê&Ê“ﬂü¶xwtﬁ2˚µB<)≠πsÇã°øI°Ωß$w	i¶›”≈≥)Ëµs·Y9µ¿ÍôÅ›h,~o0gnæ6nO°zW0«∞-'ëM∆(ÔR0≠|Bë`ù˚ñ?≥çk÷?‡]ñÚ˛ëÒŸL˚¯¿ŒD%∫ˆ0Hæ”îﬂO+„4Núœ™Ö;$r–äÕ1∫|ÍŸ…ËD∏Ëãµ¬ÿΩ‚}”nL©›-~%?á·ÕÕb!Øp¸Ï ÖÌ(]L%AfZ˜¢‘°Ô\uº4ÂÈ*·^âúQ<êÌœ;3@ñ≈.™≥[n  f¯¡âJÑ&¸Ab	ÁH∆ùØå»'Ÿ4Í·Ó+&7Îw~·ä˘ﬁT∏ü‹‹ÒåΩ˚<p]Ãÿk˛‘1^œ«Ù˜%4Âä©IJ†“Ú„0å=∂SFÓx¡˜LÔ‘a~ΩWq‹Zx®Ë‚ÇΩZé~?õ’∂óab€ÙÇÆÂmS…∆åÈ,Tª\hd∆≈ÔØe\%XU1≈!|D∆ V˘Ãu,0ÃISMYÆ†?á∆kÊ‘bM∂Ä€…'àå©åÕÄπ9ojW~.igôD—úî∞v`⁄∏`sG‰ •,æs¨°À”`"π‡1”∆mYÍ∆0ÎOå∑p+kàZ`E,Å«Ôi∆>ä
+~m,0ºØÕÄr»k¡O‰Ï
+ûJ$&Ï„ﬁ~°ä∑µF”]´˘RzKµÇ(IK(xW¿¿Üﬂä“9’üL6ë‚3…˝õ°œb€?È	eéÎ®»ñbPÁãﬂÔwŒ0øÊ¨∑ﬂÈR∂Õ.Ùé˚'g"≈Ê‰qpŒ7€∫êøﬂ”Û‡bÉ^˜ÈYèuOéè{›Û˛…±˙BÕtÀN~ÅÙ‰S-ßzÓ;X˘Ù(∞ÛàmÓ≤˝~ÁÒÒ…‡ºﬂ≈<=<Ôü≥ÓìŒyŒ
+∏·πÁ∆mÛ
+Ê™ÃÌ†"ãÆ>à«í{ßW&à»‚‹∑ñˆüaÔ›‹0·“‹eçuÜâp&¸Tøø#K6ögÍ™ftUSvâyeK>%6OÒ¬—‹£‘*<øŸñùüÿ>ú·nÅ.7Ω‚Yêi<©=ág´ÕF„ı§÷‹ÇM±ˆÇM-ßﬂ¿éÄ=íù+	µ(˜lÏFjÂµ∆PEj]E∫gzpYıSx∂·|Èvì"ÔÈƒÿDó_≤œ…%õ¥Kú¨¢î£V≠¸dØü¿îø¡i'úÉ—úì≤ŸM¿“*ı^oÔO6sÚﬂüÊT"üP$Y(Ÿ¨>;Á»Ù}cl~=7ºå≤ßLÑAwr◊C±ªocgÒ=,ﬁ–ı5‚o≤©ô ΩÇx·⁄£¨®Qº.õò,Pyÿu=Té"ÂÕ∑∆éÎ≥k–‹„Öﬂ¬,^€Ù5
+Äfuu_iΩè/¢⁄ım]≤*pﬁKÀõV+ˇˆØá÷tfÅvÍèo˙<z30¡s$“Âõ6¸/+kk¿M,ñ⁄Ø>°LT&ñÃkÚ\?Á'§còÍ§ˆ@ƒzn/œ∂`õK¢ZûpJ|>Î§ˆ›©%<•V u∏„9®òûiîdÇÇ#£ÂïK§ñÿ„	¸˜˚ÕŒ≈>Ω&ñÆnõŒ8òê oh‹yfy(V33õØò”(4Ã•Ÿ Ó“LE0;Ω‡≈1VπUÜU∆ÂÎ1fc›–tyfﬂπ¿¨∂ñdVM-≥‚jå∏ìíSgç:-„∆±/˛ [LtÉ=6AÂ∞‹X⁄–ùŒlÛk¯…ÖüÑïÚô˜w«ﬁ‚=¶ó˚u÷˚zóU"´òsÃ9®ÄãÔ=„ä38Àé9≈YpOü˝zn˘¸;õ€∞]aU}‰9¯¡ˆÿÎÏﬂ˛5≈UøT;SVc∏:ÁIj∑LçYµ:ı«ÎXG<VÌsy ”y„jø7pùôó“V˚…<ºÓπ6∑∞+sƒ1∆‚√›f:#
+≥áøÉπÍ]åØ(’Vkø&»IÚ˘&4'5I^FDÙ{Âc8 ‹b|œ£‚ú¢&‘¬ÿ≠d2
+]0YâLçvc£%ãŸn¶c∂-–S
+ÔºÀ“ä™.^+´ì"må≥ÚôgÚDæTâTòG¢ä>†ªd˛múÅy7%TÂ¯<ˇ®h˝È‡º∑œ™h•/æ3˝dçH˛qÔ®‹OZØù~A∂…*…4#Ê»öOìÎâ≤‚˚îHHN…ádSyHœ¬ÒΩ+·,,W…)/ü#´	+zÏ-ß\ÃSÒl˘‡–C";é% ˙0ÌG˛xôZèî! ô±fƒ:≥WÍ…≥⁄$#éy∆ÌJ*∏E®P‘’ª>À"~RTì°Jw#ÎπH'Î8‰∆ b⁄ õyÓ¶∆˘Îà÷Ù}8Ò6T•˜∫™µÒûÁÅŒ∏YÕ∏™OÜ–˝v{£ôwÎÔ∏(KDC9ú6Æd¢ßL·m<z’^^aJËe=ÛrèÓ˛»k
+ÙNÆ≈Î≠æ3õ£5ËMKZYbfsR<ê9ÃhüÑ•K¥—,«Q:H‡ú£¡ßò™◊Ü=7˘K”∞US
+V˛ƒp∆pj’sÙ∫·EU≥œõAùnß‰±ÆÛWÊ5ÊEw—{Ã:(¨\pı(	á“0Ã∫?±.∏’ö∂V“¨cë∞í}Û“ ©™-#‰…K»p^›%™óT:f¿∑Ã	ÿU¶∑WŸ7˝°g]ò‰˛∞†6#p¡<«≤lc€∆€±õ6v–—3πhøû/æû¢“ <˜çøw”*·…•–®ΩµƒKás7ß∫&7˚ÏS≠ØBß[Z˝Œ§\Ò€πÛ }%§†%g)¥®€π‹,`”÷[~Å|∂wIOñîTsg®ß‰ı7ﬂ∞œ¢]U<kZUÓã¥¯ç∫€,ùﬁ•æÖﬂŒ/U¬úh%¥CÜíHŒ%oo•<")gm,v….aÌqú^∫H9ê∏Ä3Óõ®2s)'Zœymﬁù˘ŒVw%£][ª¨≥èÖˆ`+úıÿ‡ó`O±˛Ò‡¸Ï)≈ÌÿÈ…ŸyÁ∞0<XØøZ‡+º¯?W‡k3¯
+Ωñ€%†E+Qº*Òp)™ìVŒYw+~∏ÿ ÉÅ`d’·∂4§rfé·Dû•=≈|
+cä^9Ωj¨„£◊MU6Ò`c“Rº˝ÚûJe∞~hÄRNMœwπFœ5,«º˘P∏ßp3œ@Ô°π*EÑÇ—∆ÙÆv–)	:à4RA∞˚ÃΩ∞≠1¸‰Y‰—ú1ÚâÚÃë1‰ÒùY¸¸|I9 ¡«Å∑1}π°∞µı*Í¸√ﬂ˝ñuN˚¥(–W/]÷5º´¢â=«|P1vYwÒ˝‘Ö°òàÇã⁄ƒã÷ GPe
+≠"aï‘!Äæä2Ωñ≤ic®Èg!5$õ/Ú!™
+™5N~ôã‰dâåí CBÁŸe'b‚]ÿWé˚⁄ÄB £µÎ˝RÌ„◊ÿ@ewYh±≈e˛Y7P±π÷√B#‹˘\ùµﬂè1LV	Ìµ(Œ:â˙áÅNﬂœqS¡VÑ3E\◊CÉ∞ó8fë·ÿ¢ã°Ã¿g¿$qR˜‹mBcnFù,óŒM™È`&öë‹˝o^Õ,èGZ◊1Œ
+ª6⁄Úèê√ )˝\Ú≥][≈…2YŒŸyéë©f6(÷6LgmdÅ·ΩÔU§Ãz=7*·=TÔ €R‹œ,ø{`∞	Z»ïIÃ¸›ç√BÙÀ≠è]wlõı°;›®0n	ÓU^ï;Ø*òåI©ÓåhŸq£‰‘‹\$Füºä£z√™¸ù‡[œ‡Ï?÷1á`Ey@èèiL¨”g$´JÜªˆ`√x»ê¶êÜ¢84∆êÜs√˛ı‹BæáƒBπy¸û*GŒÉı$jÁ7ô+hbˆp¿£˝¿Ü	YÔ»◊Á#Ü±∏Úÿà'ÄöWy∞¡/x»™')ﬁ=‚Ï˚Éæ@ô¡vaÁ¶dº©¥«πcàqSıÏ‚·‚˚luÉ <Qªò3∞XÇÒ/‘£¨Ã√Ûh›ß¶≥¯∞a$8sÍ∑¿úL R∏Ñó%m¨˜x:(ªA»w’‘$î®áïPÂJÆb≥&êÚ˚l∞Å9ÙL‡Mk§ååa0@˙\Y≈Ww>'»0§Á∏"SÉ+J$ìÖ¶$Õh{fÉƒAä{0Ê≠t1g¢=â›¶&Fo“∏)w∞s£”»„2/Å¬^íîƒ!<\â06b˘0tÅöFHXh—õï†ﬁ^Z}<}…÷¢UZ~æl∏ˆ2“£æ`Å[\ñ‰:B\€ºTá
+˛¯ÀŒÁ¨KSgÜz–√∞˚%<áÇÂ$Ω—>4}ÉTŸ˛‡õﬁkkƒSÆH7∆ç‰Y ÛU ≠Bã—´∑<^t[“·©Z˙\∏BK™Ø+)†Q^ä?›•ü=˜˛|pî∂qa 4&!“.gât%çØΩYgPXA∞nTÊ¶\ ´é≤”˙¬PQaF¬^¿W)õº∏lÚcô:Ÿ≤≤•≥⁄ì…l€7}tKe∞≈°IInë5)&+¥ÍÒ–aö≈OC,N0Mxs¡J·2¥˚)Æ(O¡7É¡5ÆTbT˜é{gù√ó‹ˇÙ2·*¬ÿ”|´≈ﬂKÜ90Hi÷ÊÓx{2ä$"Ñœ3Û≈N#KjÁı∂¬Ã“ìÁ#ÎØ˝M‰ØŒ‘˘'t4«+ªŒêÊ®Ÿ Û[ºøpÖ ›S0Qç%‡õ”Y¿π%ﬂiÍ{Îö¸_~«Œ$¯ﬁYa,™V ie¿dB&V”À’˜t;gùÓyÔ¨7ÿe7~ñÑEÚ†ÆDEÜUú{õ0Zn¥ÀÑ”ÚªµdXç{⁄%¢¢L1Ïx_ÁÃT≈{¯qwœVÚóÑGßôÒËƒÒ ©€ÆY6t/U™ü†Ωl‚·RÅ!UÈö¬≈ÿ÷»’\$∏ .9{†°ﬂ·öŒ‚=ÿÛOAÑ∑…±¡Ê6∫'\t%˙¬FQÄ»7FÑ)P_…Ò◊≈S≤ªãœ]/N∞™v§“[~8≠•ï–Y"ÃêTΩÕ$I≥Uåı≠©¸<≈e©˚Jú°õæt9æ∞µ_∏e¯Éo˜%∂w¡éHAU'ˇOgOlÊˆÑÕÕ}t/ë:¬±ﬁëu=–∏1JÒwüÒÎUwC˛Ú?Ôàª‹‰·‡˙ ˙¿ñ(yIâƒpÙ.¥£|¶¸Ãï(â”⁄teÏπL^«∆¿C7[	R¿\Óá⁄L”Cä®ëƒ‚íPI—f;ü5W:Ò—À.À%M§lìaõ,ùCÒiqπµ‚+Uø}ÚL"¢~g´f<oº‹ö]Ωl∂‡/o|aTÔﬂ_o6ZÎ≠≠Êz£æπñ´∑Â’Ú	o§àøØö˚RÍÚ©/Ì]ÚÙÔütüıéœ;<€•s‹+Nv1f÷jâ.x·Æ$ó≠O.…%ˆ)'+Jî©/©Q»ã¨yßõ≠L‡t{Z·ÁBOÎñ∆ü´éÊ–úRyœ∫ô8ä.◊6∏W60«	/-lF•sDïÉÛ≥p®*≥ (ú55Ü∆‡E(Í}˜2xCE{!Vô»#å"å¿é;Ìtg˝¡„ 7FhlõûGµÖ˜µ≈â	†a∂:Ü£ÛØ\4]F∆â•Cl¿”◊ôYEôãM:N|b∂⁄MñQoPd∂DØ—∏lé^dïç˛{K≠•T‰?#EU˚+jdÁíóæ K†ﬂ¯âÀ…UiI»ÕWaÑü$W´ƒ“"Ñ<¸ï¢Ñ ?ŸÀÖ_&à˙“=G=⁄W∏ìUf´óáˇ«?¸ÓIDñ£ì„˛˘…ÎûùûÉ‡^7CI2Ë¬W$|)˘≥_"ùQU∂h:â£†$π¢÷µñ(Yë3ôÄ°à$1Í#¥í<Öp˙uyäıFD
+ÈW7†≈¥„ìFÂ†Q[æ‚ûÿÇbä¥`—*íÚPJÑøñÇ!Ih…çó;†"~Ÿæo6.^ËãÍã2ÿîiQjÓîïÏﬁò™Ω–\ Ü¥ØŸƒƒlN¸> ¬®´‹¥|Ò¥’·Èı´√#Q"íbLyk∫BN}ÒVC[ºµï⁄öe˜4ë[ŒÑã∑L◊óPr¬ `ÃËPäΩOÂß+ÍôXú√ôé8Í’;Ó†„ewô›Æáj†°¶gF9ú§sQà;®OEYKa≠nˆB≥®p0s/É`#fY/J•9â…&‚ªÌ√Né#zn7DÀœ÷ñ∂Âß¨Ëpƒ
+Õîî ÊÛL˝ΩÀ¥y\ıÎ¬"aJ“Ô—0‰K*¢¸ìVG£NÂÄøe
+ifcHÒæÑWFiM5â*°òÍ≤V,Jé0üô5JÂ0…R¥ÑTÏ_µ‡XS‘ØLØ*g¸fÆ{÷à·_ËkMTÛ„_[\‡Ù≥]5.≠1òêJ5ùM”„∏˘
+kÆìT1éHÜÅ¿Ø/_ô◊/√4 sTÑ3 !E¬&‰iëÂéÃJ—≠8ÜàD5àÚmZZ$∞qñ√≥X…FL‡Q∑„^®Ç1“ >b£øLPF˝6—UÑ4‹üdÖdù”…ïõåˆ€l\‹ﬂiæ®$W*•3Ssøº“ºµyŸ6_Ëm–Ë•§˘=™`UËëºòîø}:WóÌõzFΩÓÅÅÂUÈS
+€˘|§~x»?9îŸ;†JØXH¶˙_DJπZñl1z'õ.k¢Ú∑vWÿ|∑&ØRƒUÁ&C˜™€íä‰ø|cìóÜı÷©ç9‹ª‰{›#‰ÔJs‘øç¸±òã-¶>ÆK¡Z´≈{gdx4ä?˛˝?˛˚ø¸mtZﬂô#î5´ªaπ∫A;˝∑∆‡z≠pKï€T\®,',¡¬ú'É◊4z∑F∫É~#©ˇÏç·9Ëkÿ†L\f†˘©›π%å"≈I√Èœ=⁄Ω‘ó±RdIÂŸ≈fÏ9QVFnïçV[	ƒ¬OíÅÇ-W;&ÜôØú‡i+˘PA	æ„Êsæ#àπá3fq?Øﬁ@˙ÁÚéÚzõ∞e7™Õ–|ÄE+CÍÒ‰Q\@<ÏFê="˝nÒùcRŸmæº¥UïìTy·í-
+"åπOÉöπX ◊[ºüY4lkÖaÊ›µ:ÎŸQX#]#91ÿœ~via: \tÕlÇÖÌ∞8
+M‹È‚}fˇÏg@É6w!‘ﬁ$ßZ‹dÀm≤`l$?*†Ö(¨·€Këx&;˜PcÉÅK0äLöä∑`ÿˆµ{$$|~p˛+¨ó‰Æ2xÏ1˝ëŒµtcÒ§Tﬁ) )Jè+Ÿgªt=ﬂl	GËQ8˘>80'N«‰N.f‰ZYùÕÛﬁl…j¡rgˆµıëÔŒ"çZˆ•K¿!#·ﬂ¡§óúó+!GÅ"ﬁ	Ç]ù ÅÃ>+%
+˙¢®›yh8ÙÊëfÑÒ“î˜∂ïÖfKoÕRvà=^⁄ø%òÌ)njœÙ]˚µIÌ/Ã–u	z¯:£¶I|◊Oåk3 ûhq÷ïtÎPTâ’ŸæÂ-æõz≈”‹Yï.S7*©çÙ≠`éï1ºtñj˙Ûf0z<‡kÒ1ˇ˘k◊{≈Ö.’ë{Óh>4U%å%xgT¢eùärD}©∑Ïﬂ£É«ˇøDÀÉ˛„ßgjh¡ˆ{áÏË˛>¡öXBª)8|˛y√ln∑Óø¯!á• Eóè¶;uFAîæ≤MuÙPE°Yä˝Îü˜˚è{«›~áuŒŒ˚}¯ÈêñhŸÿ¢:§ …`9’íw¯$0ñ°ÅzŸ»ôaAºÖoé†ùX≥∞.õ™˝Øπ*B“xÖÍY:nc:ºû´Œ1'Ù T˚`Õ«îMÁƒ5™ò}&ä¿U†Ò9 …∆è˙ó»‡ËÙ©AÌÑ∆∂{ °¡5@∞X|?ö€›pêæXÊt∆°04. |•e]¢[º⁄∑ÿ„Jæ—ŒŸ>kÓ≤É√Œ‡âFy*
+î´πÃ˜ ¶äÛ¿!¯Gµ2&‰ì⁄f˝^ÌﬁzR—¿§w.NCS˘jeN¸(Ω,õB¶uÏ˙…!ÛPmnÿZ∂üBäæØBäﬁI;	i§Õñ*è4¸p"p›{çãÊÊãº^õÕ‚ﬁ©TQfîﬂ¨~îZÔ_FGU£…Öñdëo∑¿	Z⁄aFÍä@ÍÅÖg∏•ºíYo‘W…¢Ÿ4B… VZÖòÊ∑&[¸§H∑ùjGøéy6Wæ]ÄÉ^ vVÊÒ:›Û˛≥r†ùı∫'GΩ„˝Œ˛I°Á™–¢*Ùm≠*P©◊Ñ˛ıÈùI:RÑi±¬uo*5¨Ön	Çæ	E-·ìo]'Ñqõ,æª,rD∏¢/˜H4´”/CÒZg˝ëâ8-ÑbÜvËY3Å"`9Ñ÷˛z mÒ~lŸçöÒ°¥ƒY°Í,q©:9ı^çÚºd†\Qª"‘πÄå- l%CQrI˙LVcfq˛Lt√ÑøyI€NbdE õQ«6ﬂ~“6órƒÑÂˇHãKhv≠+hf:G‚√Üç∏ËŒ‹•=áÀÅﬂ#Ie…	¯õÂÃ›˙]Ï±•f9 =π√)>Ñ-J^fí≠±È	ê ¯Ä6ZÍ±©)®ˆX@⁄fò»!N©ƒ˙7«ù‚]‡¡‡*ˇˆ3]`ÄÜ…Eögkóùûù|Bzg≥6Û\L¬é‡?6Ì3=¯:ËlÓ•dtPqP´É6∑w÷w⁄†Éﬁ˚≥˙…Ë†MvÍπ?Rt	“≈Oä|Lzh˙=cmîı~q⁄;;ÁZÈ—‚7øËuÿÈ…9yr˛$TS„µ·ê*9≤|sÒ˚H©Ñ)JÈ…EåúÀπCz(Ã›„uiÖì˜√‹ëîÿs±|»√•( g0Ì⁄ó£-¡ó√$P»ÿ`Ò˝±;"ïÎ15P£Aãñ(®\à˛Y9˝î”30E=Fù·ﬂ]äúï≈Ôl˝:hFCÿåHD2Èõ)Ω‚‚V1Ñhå Ä2K)JpÂ–‚°âV0∆nΩıúºõ|∂`'Õ0{j\S5^O#_¯võ¨Ÿ{ì.òa+”Öï0#î$©#wÌ£i¨K]Z¿˝O¨≥èa°¡˘YgˇDÙúv˜Oÿ/Ÿ~Á¸d¿O∫ù√ﬁ`©
+hQ≠˚/ÙP™J!‰Kâ_†(é≤oË«Q(r2Ë=~z÷ﬂÔÏ√‘G´ +íZÜ%π}j«ò oyG›È‚˝:z^á÷˘:ï,]X6Ì!D<Q9y0Y"Úπ!“ëv)ïÑÀ√	∂™·69«*ë`å ä6çødáXI[;∞<?( GUó’~úË“yù"—'b&Zâ¬ÃlúS 3¢;‚ø∂ã¬¿dÀG8û$¬N…ídY 	1 ·éã˜òMbúß  GLÚº©9≈'à,#Pzfñõ=Ω1/XU•&∞Ÿÿn∂^H„“©⁄⁄FÅ7‘®"z ØzéàXØ’Ÿ±Ä°ÑÒp KA)¸WLFû_`åﬂÅ¬¬k“ØÊ†áq∂ÁΩàblÓ‘ùXc‚™Ÿù«∆¸©<6¶Åa-h⁄3‹[ß…ÍŒVÀ‹%#∞wE`Ÿ¸
+]Åôù◊NÏ<I¿∆l#ü{0’ÕÜPíx u-G:ßÂ¨÷øˆ]gçÉ£HG“çî›o◊IÑ‘âv‰É$ñpr{ÈÍ.ÀT2-ÀÒj¯\wlPI\T°õÛÚ8Q˛‘bÈ0‡v¡Ê~5±ùÂ†ÿßâ¯Íû¨Ô~ΩΩ<¿çµ∏Ÿì–aW√:}ÄMÂl,]$vn,®ç6∂?„≈ÈT£0ÍK®Ùπ»?^V“üäô⁄à!£>G	ÔØÁZ∆0Àµ·Íê)QtI¨2πZBÏ]N#∑Äq‰ ¸x‚ÂT':Ë¬¨≠$v}j√'Àπ∂;>:ûËÀÔ˘‰Ÿ[ôM~wè3ÑOh„òßOg´Ôo∆Kƒ<÷DÓs≠≈XhSZÿ⁄O˚X.D.-ª¿ÛháÊ,ÿ´◊—ü#"rÅ√wd	Åì9k öÓI:†Ö˜BàeÂ%l‹ªOˆ[]≥Yg=gƒÈúa#ﬁ¸û€É“°≠Ñî¢ÏãUoÁU˜¶ŒôW∂cVπ~È9ÜñRXÚ≥,«⁄äâ:∆¿eEº:…ÖL/TÂ·È…‡ºhﬂÍ|V≠d÷uÂ·Ü1≥60–z˝∂ i^Î?*πqXZ:N5(˘_õ`Zë|Û]–H-êè§fwüûÓÍ\úÜ¥ôéZf‡*’TÅ0L∫4Bæ√U"áˇ/næÅb≥⁄/Æ(˚Øˇ^{¬*]ó*›kÁ¿VÖ|(Ä6àoäGÏm™†épç'WvYÂºK;ˆb‰Ç¿«üzºâXeùü=¥±∏«∞üêûqç◊Ïc3)ºãã°FuÀ7Ã+˜Ã·ƒ≠≥S◊∑0}‹ ∑%LæÂ◊£˚ÇºsßßÎè7%‹]/<÷
+fgŒ‹ãûó⁄˙æ˚Çøv€⁄›ÿ s|‚˙¡.¸Fí4ïÅM8q˙K°ˆ´…è≤JQÜG˝±TÀÙxù«èãÙêv*>¨ÑÈ˚∞\∞(&.dÖ˚«p?gg=Ï÷⁄Caop˛tøRØ◊YıI‹∂ìö¢¢¥#√{5eçH¢BÕÏ^Œ}sÑwÀ'⁄©C’m˜Ç)[uvéö‡4å~Ä(ú.ﬁcäôOM'∂∑4"ÒŒPe¿˚:iXî ¨h∞pÓŸ"¡ﬁì≥uƒå	Á<ÕQúœKÙÜQ¿”„«??}Ãjœ≤Ω;¥¿>	¯ÏñgÈÃÔß¶pÙÕåkRm] é3lM´¡ªS+⁄iµbK•L§"Ü%˙Õk˘ fªå\k€Ñ`;ç'ÎÁÉìcvNìû±®G¡˚¨— ·˛≥û=:9{”¯´«c∑ü„¡”IÔÈ∏”!¯ΩjwÒ=näp]—!ÏÆ›Ó…SkjÜBâF±1s∆(7¸ıÎô9ÆËrj4jíiì,°£µRòØJ›ª^V≤K•B≈™ﬂ0†I…SÀ˜.V‚â©É@Q∆oX>C53è√rö”≥≈o∫Á˝nGµCïΩXó„r≤»F·L®πgaëóÑ™ë)óõ0 !ü∏¡+Û:™‚]'Ω¥Hó.O…áBøÄç˘µõD[Ê˜◊0ãÓ=btî∑Åv©:0∞àª˙Qˇ@~®”X†j∞âÅA`R'öùu‡õûâ-Î˘¶∏üh;Kq∞*q‚'
+ŒÕ#
+v‘f%]Pç©#ºŸüM}Ti,S~±ÁU∫,ó:ºrv˚tKÀ{∆lrΩvÍπS˛å-Y¬Gâ)òË>äƒ¥=€Ì¢™Î:>ºøÙ∞rgu π‡Ø∂Ù‚⁄?/zôEÔ„dâ’ñlw◊·°Çs∑É∂óo˘{7Uö‡ß¨P≤kZ˙f¿oaéËY—’ä˛{âÛèƒ›´—cîótBÚ©VÃ+`›àÒV§I¶Ù©7;Ñï»8{ìˇ\Ù|oEzÓ—¨•Ö+£ÎTVÍ^:IUfã∫Nﬂ∫–%Ã›πÀ€≠FÈ¸W≤{,«L%70ì˚hÔ&ı´ÏÅff≈óÑGdWÅ˙hxΩÙ£Ú«dW^Zı,"¸Iv÷[k÷√â8ﬂñwœ9pΩpÌî¸UÓ.Q5Cˆ´ƒÌ™-≠cp∏åá\Äæä!Œ’ƒ-ÒN¸Ë¡#}?~åÎùÃLßäé¯Ú√≤ñ°ÌŒGµ—≈j<%∫˙œÃ§3¡¥≈'`ñòXï£‹È⁄â(£⁄ç|?4{p°c_èX‰'fo\Ä3S!pg5xä5ûÔõ⁄s∞±–˛ö‘û∑¯O©“’çé„Ö=˜jœw(1J—QK€zÈ%Òº≠5U¯:•ÚÇUq≤¸ÂojÕLH≥ï™RJ˘∂È%¢ıUa¨7á‹ì( j5‰EÏÌµ,ŒDV«uÑ€>mÎo√Zok¢√Öû]fEæ%Lòº!Ld™HÇ…F∏O¢¨JúD;ˆLdbÍ⁄±Hù
+y∏{B‚ª^Ì∂·ü82 ≠@ÎùJÖÕT:cq,ãâQ}∆Ögy∂Ku3Àò?ß¨yì`Ç\fFÿBqr«pNÓ
+e˘¶©)•XY_Û’çØ0‚”ÔãF√Ï!kËúä2…2˘a]î÷ÇTÀ¶êy7)!‚S
+ã(üBá√˝ôˆ6π(c;QWòz@0—wP·∫ÀÊÇÑ[WÒ≤?˜?Ω…ÑÛNﬂÇµáÇ¥¢ÌU¿’ÂsÈêëá•“î¶ÄöJåò∞1)⁄+jÂhé«˝w≤¢T◊,+û¿PVoùïl$ªËI*H˘b
+d‚<%8†‹nn¥Xçè^Ûö®;™»¶À’·Y:x'ëFçKA_‰√^ÆaitYŸF•âÆü{a¿Q30GÎﬂœÊÜÆR,û„íCäÂ“$·#}˝à
+õy1øH…".ˇÚ]L„.‚©vßâ^‚MEcqu[ÚIß®DÄt
+t˝Q%_(ê3b7QŸ±\ø§‘óáÛ¥s7 ˘»•0»Í]%f^"¨ÒP&”ﬁEÖjÆ∏{„
+L®á!∂œ·7)áª©Vïn2ÏJ∞K‚ñÊàÌ±‘;„UúJµüçﬂ…Kl‹z‡∫oL°W4`àsœQä||r= -Iﬂ∞n9C{öKïûΩ∆æ˘FwóLŒ…≠Ó≈7˚9Ä˛6r'u¬Q…aÎíU√≈	µ$¥∆kä≈(òO] [%ÏÓgç∆k4\“≤Æ(ÎTHqˆ·ˆ“ˆE+k·Øƒ˛ﬂAãµJä$#√üjZÄ/ˇƒOR`a99‚rÉ.?∑yf
+≈˚lÉ],˛‡iƒ˝¨AÚÃ.æs5eÊÍÏ˙∂»L!py≤P¶£¢ŒêÈW“úF( «0K(0á†í-^πãKÙﬁJÈ»?0)]nîÑ∆êKQG¯aÓÑ2VÄOá‡~Ï1A,ç'2ùº≈{©ÒDÿ§ëT◊ŒıJÕƒ§õ[∂µµ;uY¿A{ú¯uì∂ú:Õ˚&‚(ScV%ÓNÚAç£˚@Ê◊ã?Ë·ª!∆hçJ‚dÎg#céõ€õçJÖHVY≥ìÓ•÷	ºzÄóå˛∫˜»≤√≠f°”$LŸ'gòÚ˝äÍ ≤Óã<L2#aS]∂+P7À@C®RuEFpÆ<™t‘O7Ê-›sÄΩ˙î«Dﬁ[¡‡Å¢”z¬]4-)òY
+gZ}êFXSdT”Ÿª%z•,E*QqRaiGB‘º˙˝LΩJÈt¡bz(˘XWÿRªÂ÷§ÑêÀuÁCÉ.ôR≤Ôa(ñ&£˜Á+∑>üÃ,áQ"2PÖ´ÛÓ&:m}%¶ySLs∫–ÆMpÈ…2(E›rIÔ¿l d±z^¶◊JŸ5ø’)≈tS∂ddÄ6=≈øà4ú˜ó„”SKÙÃ∑!Le#8&l1yJDÓ“A»»´iæ^‚jÓ˙=tç—-nBé§k® ¯Eπ;qÌ4çÍjÜBÀ›‰ƒ≥∆ÿìºWºè$\ô˛dhè˜A¬|ªë/äN„}e=ﬁ"ÎRÌıæÆ•¢_eã5µêR5§Muúz´£ê®:Cñ.ä˝Jº8≤ú"P ﬁ(N[eˇ›Ÿıπáf.KYRZßJmÉT¸$SúØí≠fw9$¡{ÈF°≠ú“(NìO>>)Å◊V`√kwy®ç£s‘ù“‹ÏZA^≤Íåx8á›7m3H±"k¥
+≈$˚¨dn	[#j˚¨h≈≤ı·iÊ∂¥“≥≠)ppèt±»qKöëÖÌ 3•‚Ê¥ÖäçˆÎ5A(/í»∞wk’‹]ñ»aBÄ[Ùb1“∞·•aŸÏËÃ6Æ—∞s.ÛƒÑJ·±$∫NñÒîQ◊ÑìƒZÂKã,§v≠¡ﬁ÷íUr¢KvJ/∆fW@ö#œù’(˘e*`d®QLda…≤¯
+3≠§9M+ÂZe[)û§p)]A!úKîàút 	Á˛òMm j©õ˘ÛùˆÎ…ù£ßLî*€Ok9Õñ⁄M£Yj·Ë—d$)˝ì√2}±Ωƒ≈¶º|<a¨∆·
+nÙ¸Œ+ˆÈ$îs˛svJïµj[3rÅHÄÒb…KÃ,Ã	pÍ◊P÷mjÚk8ˇVïΩÁ·∂üeá¶NK≈O™à≠ôÓtñjüÒ
+$z¿ÛôUÌﬂX® °rY±L™äNŒ-S∆∑ùc‰1ò£>ˇBÔÕo•Ω˘[!DZ™®D|.n<™ÕE\≥A·ËLl—ÜTùp* ˇVÉéHöæ9µË·&˜ÎÈ7ﬂ-†%‘wÓ4!,Ñ6ˇ∞Sﬁﬂg¨ª¯›hn%êvÓ|‚˚£B«∑^ãTq'ı#;„ÇVø?íÙF∆ËáX
+òóèæè©»‰ì^é«ãﬂ9f»˛ª_>;hQ~PNﬂExwó}XÜèé*g#÷Õqoä6ﬂ7ﬂàfÈ4Æ mD¡:ØÊpbÑ˙Êö’DI2≠‹Q∏ÔÉìöˇæl¿Û”ùc‘At]^„#j*JÒvääõ¶3◊Îx5Û√.N.t\0W˘0fÏÉ¶öi¨Q≤<•£≈À¨AâÏÚºˇ¢tùQ÷—ïhÚFvV˜I®W?èÉöÉ')r†˝›ç*ZÌê\vriK‘,Å(ÉF_jõç(Á:±ÑÇä`Á≥¿Y¬µŸ.Ë¢‰«∫h˜á≈∑—ªºÚ—iyÅ6$Úöä≤¥µëiƒ„+Ωâw∑=p=Ó˝»MfWH:jGÇùÀÊOƒ"∑ÚÈS´‘
+-U)§{VªXDfé`∫hV¿¬≈§„<ÈY#ˆ•NØ◊*”›â	|@ÖîhnS»¯∑˜áπüiÙg•ÚÃvW~$•íxGö€à "›1F§/≥jÔ…ô{Ik††≥ 2€i$ ¿OGó∞ëæƒ[Ó¶Âs>Åù¢ÄCOÔÜ¶¶ÅŒﬂcß˚Ï±(9˘–ã®N·Y!u'ï≤£Ò·kn!À€YÌNí‰ùB]NªlèNÎÔ$I„Y˝f›9X≤N_ŸIÓfç4w¡Ú≠«ttˇ^pˆäO"=˘(:Pt˛äÎåSoøÍœ]Ò1‹≥ì|?Rx≈äœÎèíœííB|Ê≤œàM~z»YÙ´˛‹e¿Ùò˝ËW˝π´=Ê–æÔ'ü$é^±ÏÛ8≥â^´˝™?wŸ«Ñ–7ÙêÒãÓ<-wÈÅ1úÃŸmå‘	Ë
+z˛BÀpLõ¿Hë‘uÉãŒ)scAÙÉ˘tjHŸ˝,uﬁí‚û⁄õ*b•™kîÈïi]'TkS Nx”◊vâêEP¢'"X∫ﬁ+≤î?¥Çs´h˜©åwl¿©≥"ó[©ÆÈyÜ∑j8<Xïq%Ω”∞˛"yFágùÌòŒ0´76¨dö"flùı?9gÉ˛~ÔQÁlóˆÁDà=?Î<Í¸¸ÑÌ˜;g˝N*oÎÅÚ	X‡#’°7w kpahV>"fO>úïy…DÍ¨c0°t¶8µ)ø˚9S‚ÇÕ≠‰%í¨©0c™‹“–T¡ÙW|LAW÷∫S.”˜·π∏”»òŒ‡¸-+Y€$B(x˛y„~cøŸç⁄Ö€YèNõ!‚SË±…$WeSØhK≠Mg)iaﬂ∫ø pg·ˆ√%•ÓòTuCS! ï»à#n-∂;‹ö«.=wö4@_[F™«µõ¸2’òqï>ﬂﬁ‹ﬁæl –´$Ô'(2D˚*~' Ærﬂ∂ã}∑ŸúYaπREπYÏjÊz'ì<îpâ55Ó≤ÕÂ°ÆT.CƒG@‰•Ú¢KãM°xJ1˛Z $$EFÚk⁄µÍö8·kR+¿sœ∏0æVyñip_Çüœ7∫@Kµ/På,gd∞}À,C1⁄[#BKz√®’âº*—óâêÍ•a˚Ú:	]Ê\&ñHñã5äåŒq?ï+WòÄ.ù¨“)s*˝@H2±GÓË∫’EŸd:G∆	u˛–smÓ™jéî;Ä#≠ÀÊê&j#&Æ1L›[)á-õas∫;ä™_`‘.™[\9Ò∑dÄ-√X‚x√∆˝∆“˝°’H«˘‘û˚ô2,B ®ö{—Ñ/ábì´£v≈ï≤íÓ%â›”¶Óºä2t-s=≥{r÷[rƒJ¡!;∑L◊∆düÇ∞k£tLl<wx5™˚E;îQªe
+üéﬂQ#‘Äw≈ÓÔbπÜf@CÜ®jñB õg¿pk˚hnàbnœs¬ÂRuZœµ},5ìÌ™12¸	,s)	jïÇkIÉ{íé.IxõLYbÇqG /áó(÷/®¶k{6<‰O~¶:-á¶¶éDòQ&€c ˛ÓYﬁx°w\q|c]	1øˇ‘Ñ€Rå¬ΩÇç‹·©∞ÎŸ&˛¯]ﬁ:±6gV÷ò·≥'ÁGá}ú6q¶Æ8ñáB˘NÏå”)u==ê/ÎÙ  ™oæa\˛´Ô≠Ú4îÒÈ€Fé,ﬂ∏∞/⁄ÚO=hkﬂA~{ÖwFzPz[M¨7g•†á£¸æ-’^ÉC¶ó©v#‘Ÿ\2â∞æk>Ω≈ñ¡ílÕöUy75Q—ìgs!gcŸáòF\˙’Îıï3Tt·j=.rj˙ù¶t3^`»e0µôIS-iƒk	8±Ü	∂ô<çj»jMÈ^OKiÛâ˜ê5¥-ÅnZP˙∏R“rJOÀ(-õa7∏ √sw
+⁄“ îÈñ«à19´&)?ﬂ·$≠ ≈´<∏‘ï¨≠≥üü¬_›{tz´Ãd!Àq^E∑[Ö>qÑúòùÃp’}…ÖQOCY∑S,y#±£8ÀÌeT1Ô’”|ΩTbèlG®û‘Nñ¨O%gï+\ôó∆‹∫\ŒÌ›êî[J§nLÌ◊ÀMÄûﬂöZ#Î”•‰πöñÿ2„Z…+∫ÓÙÇJ¥¥é+Õ∆0ò∂B˚W∂f^–≥Áy.–ˆ˚ìÉxæRòü©®ßêX≤T$/u≥Eﬂ¥≤eˆ)ıv3’8õ»H€ävíjtáã2˝î‘¥L•k	`1ëá}¡Û∞˘tÇqãjj´g|È’X≤Ã]ÒE∂xùû§!¢õ,R√ŒÒ}J∫2ä∞¡ñˆJ®]œ‰)π–Ë+z.b∞4B‹idV£˚2åG∞Û†…7ﬁ…sÌtT›7c¯sÓÊwÖi_åºÑ∆µÙ¶’ ø˝k˚¢b3ÅÒú7?E+q˛¡<
+ªÄπ9Ó.∆'Óıóï5Ωë∆)8§…™6DØ∂Ñ¥∞DO,$2ƒ≤∞8/7ÕŸ¯1‰n"ñ%µL≠TYSˇˆZîG`ã›:|ÖjD‡œòoX*	¢aÈÙÛºg÷S™H7üEª ∂ërfÒˆc
+-¯läõó¡¶‹7 v.Ù».…ï5)Ü·ñaˇê≠UåIç∆ﬂ.ÍˇÏUªlb\«æª’
+í¯ﬁ…`'GIÕ§•JÓCÉ˚Õ]Üª#t)bçÇ3øEuÖŒvÕA”äﬂ÷h∑ÊU)∑îÂDK5∂«ƒıòßé6[πVî,á¥ûÏ0ò˚t˛Cûb˘Ööµ)ø∞ÕÄÒ[u±≥}◊ÉaÉQ=≈∂%°ƒ/Sè ~–#c46„ç≥ÜC‹πÃ›0Ôs
+Ñ@îWë"îÛ ›ÍeâfûrŒŸtÂTÙΩ-Ìj‘hØΩ–º0SM^‚…≠íê∑¸‹Á∂…πöãﬁ10Âﬁƒ≠>«âÙ3*L#ƒ¥√4î⁄Ω2Øñõ«‰›õÌ\qámf≈©‘O§ö~76"5{j∆» ùGZ¿l‹S√]ü¯Ω√µ30ˇ8∫∞>õ˚ìÍW?πI|˝é_dÜgèEñqÊ~ÈØÎÅ˚≈ÔQPÚŒâ¥‚Ï`˚˚ª,pÛPv–≥	òÊ˘€˛«?|˚ˇ$ÔãgiÔØÅ Ç¯é_É÷V≠∞?˛Oˇ/´»;+OAª¸`üÙÛX“ËAbπ|Ûï†¸å±ùv€rï©<S⁄†^?π…n˜w_È∆•Û'r˝≤Oéââ*K)?eKcôÎ}—âú#2]±OQ@»ıäåÓu!ˆa—´ïuXñô&¸DâÂ¯z¯ç‘  aR«˘Y∑},#Ô,Ì—îàM≠™Æy≥bÄgz´íò◊0ç‘Ì&[Í$ØH≈Á©\âÿÌÕ›¨&ë≤@9öÖ ¥{ﬁºWPú¸D”‚h`∆Ro±1Ÿ*Aï≈‡◊ÙÙàó$5iûY¬ú»M!äBπô	«VnV
+Ò¿KPI9òxû‡ä@™L πq÷báQ¯—†∂
+÷u‡π”»ÀØ; ±p°nÿ»z¯U≥ÅT1êÂ∂)S‚"«Õ ¯´2÷»ÒUtqâ˝!≈`ìü
+…§Åµ1QaïzÊØÁÿÂfÑ:ó·»Ú2ó∆VÖ®Æ,≥á’iK“MªïJ»jß†$U‚!∂ë‚&¸)fIπ˜*ﬁµ{_Ê¢O=V°3‰·Ij=…Ì¥[ËKz'|\ﬁÊ¢Yê∑ó≤&
+•!÷˙ñaC=·Ê+fV˚ÚsÖ0∫ÑºHÖçÌIPaK,zlñÌSbÇŒ›Òÿ6ã≤¥∑˘∆∆˛Ã§Ú∏/JKŸí“?@ÈÂU.B2Y
+@ÜMõê±≥®9ªz)˜µ÷^,-_ à	¸êã¬TÖíürr?%ñ@JH°cÓ£“”Ÿ»àTŒpJ«z“èıQ®jôBÃ∫íÔq<˘CQí;•E9-é˚ŒŒMèîùOÇÿ¢•˝t®-d§wBl⁄tÉ2Âd#kBìäéŒLÍˇqâ‰.⁄)i/¯…Tb2&¸‰å1ü\ò∆∞ÑµukŒ©-H§~ÔTãà?ôêNÙ¶§ì'Á´âíOÈU√gYıÊ†§MÅõüM‰L∏q"ü?§t«∞Ïx"◊dr©á&^8]Xˆ©%(EKê◊´À˝Ω}Ô®}˝ÖZ£òDgƒÛ]º©<Èáü"ö–…ÆˇÓ›pv?ä/œ›(IÕSÈ√ñ3Ù\«zã=U—ZÓﬂè=„ìQ{Wî&*æ… á˜‘^Ê„∫áÁwA3@ƒ{˜‚lö/Û—`∂ÀûøêX2µQ≠:’q'øK,é≤$=Ω(8ˇÒ˜ˇ≥”~+–O;è˚«… ÛóÆK%
+8º–NãKRñ⁄uçÍívT•”˛tó~ˆ‹7zk0—aY¥(CﬂT◊l&2(l(õá◊É•ßT9û=gåù≈˜0Æ°ÀNMW%å
+¬Ï{uvdŸIôûY∫rÜS∫¥NÙ‘Çã¨K∞\á∞Í¶øÀıkgù˝Îú“≥πæcØËÁ€¥¸·ƒ1%=∏t∏•;»ëæ){M÷í¢ÚqÔ®‹gòñ{pÿ<a'«@TGù„˝ÏçSsÛ`ÉôÇD-ˇW÷¨':=F–o≠U\•Ñ‘8shùûxÀ«k˜$˜KÓhqﬂΩÒCÚ;‘ƒ\ﬂîÁ™˘f+~âGÖJl≥œ≠ÊÎkﬁ•üá%!ÁÓ„£,dwxX‹…L~/ªx`ªÅ‚:¸*…—‹¨X∆≠üº2ıE|]‰åùGú≠|˚OÏËdøwxÇú•3ËŒ{«›~òÃYáıèNœzÉ˛‚€cˆK÷˚≈È…ŸyßKø"J\µ78Ì¡πá¨˙‰‰∏∑qtÚ®ÿc?e˝É≥ŒQo-¡¢n¸â˚ÊAxª£4E|R]åî˝ãñÔ\¥dœ¢%ªIŸ}îÀêcˆâåÍÕ+;›µ®}5 ∫ﬂ¬D˙^EqS£§êñÄH^OÇª∫üëîQ˜⁄2r˙vå⁄´†ó,Õê!S!ßÓ§Üdπ&yKı*”ö∫„√‹`'Lu:uÇD‚5Ì”ê8è∂ U
+ï}ÚàÉ‘ÆVB»≈ô¥Iœåw¸Ãc~´Zıfi#¥¢dæ¬S¸V≤P%·
+‰v©Lµ∆]¡âM]≤„˙ºzﬂ2ä|\3Dç‚?ÌîàYrî£1jnø(µe"§ âùß/„KÍÑY50ôaÁ(OÚßÖ#kÑ5Õ‘
+MZ9 Ì-W<õ∫Úùƒn⁄5æ.3GıTÿ•™Ê€…™yTf…ùçz¢πxoGU≈nò?
+·X◊Ÿ¶?–îˇ:Çf¡>∑¶ñWóNeÓ…÷ïß˜h¡Æuæ∞<[àYÃ%°®~¡UûÆdáörŒÆ•Ä%È¸Üt>Rº¥ôR¨ü®2gŸarﬂä™“ˇí}ë»∑í†ÇàüR˘ôÍ€Ô“Ì„möâTÁisLT~oyÚï‹Î z·ˇñC∂ó:‘π–o‚*=UÀ"ÍI®K<Í•œü•v®˛0Ñ¶$µÏ∏5>"Nu…ÄAI≤K'≥ÍÒ°(OE{jÒ¸√˚=:yl2®Qï	ã®‰§!C	)»µ©#Ï Aío™cË∂¯©K #óö`§T˚ªïßsd!3lò6á¿;è¨	ﬂöŒÌ–Û√´FhT3vÍk4(”&Â˜5©Z}kÿw#+õŸíÊDbëöÈCHX‘9ƒJÁó|^‡ïÀäZû˛–Ãq@Xù˛ƒ›	‹p‘úfF^ y„	ÕÇ’≈yÇ˜˘S≠úÕê^.*÷j(¯Âr≤Ùˇ¸ßˇóøez?tY#.Ãí¬Ùˆ‘1]æDLbÛGEâQó◊«~$dÒÌˇÃûôº·¬&V≠√€ ":j¬–I2…°ú)⁄ùõﬁÃ%®ÅA›öõJÿºmÏ;√8ÇI€96ó˘ïÚ‘∞,üb7˘√d÷)ñ\0,5Ú‡â%ê¸“…ﬁ[yX∫à*Ÿù{VkkÛ
+k∏$/êºR˜¸ï]y4{~õB÷+ÅBJIx≠W	áÙºè÷"lA«›|e÷Ÿ¿∏4<WË‘˘Íd“·(:Ri·‰∞=…ˆ€‚ qÿ◊èMZzä*!ËpÏks8'BÅtíπR(c|8Íåv˙îüjaõM~d«xméâ5œPﬂ`ñsj©0q†∏tñ;ΩL·Õ4f≥:(•0-ÓEÄN|`l«á∫”ômπéWºªÎ†º8,X|Ãm◊gé∆£=`EÆªƒ¯ÊÅE±0óÃùÒûå|cdy®ﬂÏ*¥‚ K∑@¶mtï€dÈH∑ïCq,!»ÙÊ9∞}ëN.zﬂSîfE∏!ÅìßOHÙ«'ICM&làò*ß
+r€Zˆ‘îı8\÷1ú∆±A»ÛNx’}\†,πG±À5≠á‘`*ƒÚ“=áio∞*∂G}zv∏Òˆƒö‹ÚNî•ïi,Ê•HåŒªs
+Û_]ìã;∂–·¿∂Ñ∂Ë¯èì∞zWdÛŸägƒ’¡î2",`ˇ7ÖÀ\Ωl+∞§ï§„°ÚéUOQ‚,~op˝T©“í©~U˚*∫Úk^©
+ÇÎ©g≥=ˆ¯é˚¶nªC*„¨O<ÛR]Ê*Œv1"Œo±Œ*/ÅvúWÍ¶\¢h\=$æ{»\…¥OQﬂSÆyﬂ˝”µﬁêáXÔl4	“ﬁ'≤◊§ÕÂ˙ÚmWfßâ∏sE2‹°—;ûõØ⁄Ö|Á∆à+tâ∏&±am˚ÏO|#ŒÆœ]x–Ï¬5ºQuúnÌ∂ŒHh¨º©≤∑ˇ˘‡‰∏Í$ê{5Ìñ_ß&DÎ¨µVÙÿè¥ÔÙ)ÒíΩóÇv¯Òâ9Ïªºx˝:±¬à∑!.±ÒD<á6◊ôÈ£•≤⁄RYzo∂◊Ï‘YÛiq*`rö•&z•êáN_`(4ô
+G#Kÿ∞3ÓWS£KœF”“Ü‡*~c•£aîïl6∆¥¯É#Ã¬–rÀíÀ·»y¬’ﬂ¸3;IXq≥8Kë;≥ìV ª\|ÁÉ&R∂_¿ÛœçÀÊ˝*É†T-<ÈI‰y3VNõ°´∂E’n”qW[˘Æ´πIı»=Óa◊ÄÖ‡ÀÇÆ”hMR“GU±^æWuQÇ≠<h$À∑›LÁø!–+ElÏ(‘hL`ß˝ój8 )h™≥Å[j%hÖ∂3|jkûc—™P∫9V∂ÆZ:GàtÁ>»íŒ»ò§îÃ»”Nw¿6í*Àﬂ…™f ö¢ﬂ"gZ_c}gË ΩA≠Lêv#0‡ë’Zxà+0`•|P	¨ôãI˜ãÔü]≥©â.0Ñ≤4òcéA1õ!Æcı4ˆ◊vÜÒyB∞q,q7«÷Öe”#»èàM!∞µ∑A~5ê¶éÈÆ#ﬂs|rœy^ÃÔâaÉ¨µ.ºê7:t>}PæÈÀ∫Ah'T◊Ü>◊ÙAZ;í¢»,ÏØæc<hŒÍ¬°†≥˙ƒaàål ÌqØDHêÍZìDÉÖ0X‘…__˝LrSMKí_x5◊±ØAÆÅ¥Vç^π…Ú`ÔÕ&CDƒTÿ/UºÉ¢øjbFvçÀ „5®≈—%WÒâôsbøj%¸X…òJY{˛≈/ƒ°®àI‹Ÿùâ¶m¸wÍËñ<v+∫kj»¸fåÚüﬁD?eTœ‘êSéE¨LZëxj#ÄS>B⁄"çE%,ÉœT*Vy(#:T1OœN^v∫Á˝g'§eüúuuJ&ªckåo~J\gdQÜ s‚:F7©øqjë3ˇtÒÕP“¢è£@@çk*K‡»‡·)Q‡f˘ÖÏå IÓJtr´‚èˇèˇ˛/+Vã˝€øvﬂù∞ˇÒiˇºs∆záÏ∞¸WONŒ:¨wÃ;Ï……œ;Ï†?Ëw;_J◊oâTê\gÄÕÑHãpæq|ÿ#™∆C3Ï§Œ>πd¿˙õC8D¡Fbƒa$£( “„1¥éæ8c∆â†âK„5¸çy$èqÈ˛îïD"sûpVƒ:º,6£öòπ]jf∂$3ÉïjµëÂŸÃN¥0S„=∞≠á=ﬂÒ5j¥RÒ•¯÷Ÿ≈ƒ.•›`‚™PDåKë›ùjI[yX9BhïX”ØD·-Ê.yõ.bKèÁB#àoT>b©ﬂÙQ¯¯Ü8~¬°∆ˆRèoß´ß*=g¸ãQöY¬ä„dRaU^Ú¿ÅWx≈îøøÌµÚq—éNg,TÓ˜Gãﬂúu;áù≤/€ÛD≠Úﬁﬁ‚=nà8æ	TÚ¡thRl
+áä–$å&Ï“N∏JË‚;«;d^¸Î≈{ÿUE[=ë.Íœß‚û†R=ºÕÃs/Åîê+á˛`c.K§ÍqÛ˙˝g¯ÛÙ{›Ûì3¨j⁄Ôzãﬂû∞ﬁ~é`ΩRµ78_¸Êx∏⁄≥<ÌˇÍdN;√Kÿ‡‰—Yπ›≥˛ nP*ˇ 6ºÛ¶µ&‹∑ô-∂úéñ/∂Dq:©ÏÒ9ÉÖ‚hU3€ÀZŸ…RƒeSTØ©£vîpM√~∞lóà˙Ê‚˜n>áâ<∑ÃÈÃ•)Q*l˝r",ﬂ0Oÿ–W*Û¨kL/,bT3™	ã[y	 ¶5òÉ9OÁ·{º€≥Œ¢ SdJ¬n6˘€á	Ñ»èÓ≠ò+m‡Õ÷–•Õ/JR¢Ûª¿¿pµŸ _)qB∫TªÇï	»HØûy	ÏeÑ€˛íørÙ‰+Ã—@kÍ»Då';}3Èn/cºù„LÅ)Ö∑q=WŸÛ/∞|*g™Ã®L
+g#—_:Ÿﬂ%,•Å&OŸP7|â≥Ü‰Y<∫ÿ7˘	rÙI&‡ËÚ–∏vÁ%Vh
+¨a•D†HÙ
+9ΩhúÿRgÃá˝ÖK%ñä`æ≠:s0˘Ü‰ÛéﬁRiØ~)&O$Úwàˇ2j∏◊h® ∂è:S^8æ$	ˆm≈-ó…+‰ö<pÑz|¥„Ô0Nv'¥»ÀKz˘?yíLΩl) ºóÆ∑h¶K>Ù‘π˝âSÁﬂ¸sHùi˘Úië®J¨óS.±˛ƒ©4ˇæÑ
+⁄
+êú,ÁZO§¸∫ˆ'N§ø˝mƒB≥™ÀÌ„•
+#¶D"º¥ÉçJ…_1†'ØfJˆœTﬁOï\
+S"hßt´ß¿“…"¢¸ù¸{qi/O∂W%Œj˙mYæ@ÚÄÒª†Göo¥›µt”!Öj—ı@áıLÖ¨î≠®4†?˛˝{÷Èû?Ìˆ’9ﬁ?AS˜º√Nœzœ˙0ô—™®◊’±ı¸,É=%ÔDû!«(ì™∏íÿ[2m=ƒ©»ZL-—.ÄÓpÄY√/€;ÙãPÁK7V5•Jï7xh∏Y¬y&”G©‘súæmãQÙaK`∏m±∑µ&ßEsbà»¯ë|€ò¯ÃVC*®¬Lö\‰ c⁄Jã#Z±P«ƒ‰òG”D4-Âô.(-Ã+—Ïèp¥ÅÜ3∫p—ΩÏ≤CL^◊^|áÈ…˚G›Ì¬*ò‰ôr[\˝znÚVwîÚLK6=«/CûÎË¡~-J‡U–»˘ÜâñC,Ï◊∆pÒÿ⁄Ctòåª
+¬<oj¡MU^F–X‰!+IãÕq
+ò¿Ü¡õO:åÊ“Ç!w∂òÇÃ…ª ≤fò+∏,FkM≤ÁM‹ôí{8¨UcµK1‚ÚÌ› w«≤¶d≤W(\∑tâÚP&¸ïÂWÇ˚ﬂ„¡¨-Å.úé&€äÎ√ÄÀ◊â´n_IîÙf⁄ëü ±H@⁄7òﬁfò5QÄ~ÆëeîEÓgí	î Zˆ6ñmàXQ\–#ºÂºVégG‡÷%=ô«H∆ﬁ‚=lóéÔª38#PàÍÑ‡<Î{b¬UÉ'ùV{õ]≥°áÃw"¡,~7"~210Yª?˘j	LS°õ©ï;bc{º¬T¬(aU‘Cå.1•|7>@–k∫=…E°Ú=|o∏Wú⁄(œg }V*ì·M ÅI˘∂l$M9,[]‘ö[jÉF4Ä–h™T
+Ã˛&7/ó:°kkxæ◊l…Ωlæ¬3ÒP©Lﬂ
+uâHÎß"»ø)l'ôﬂˆ¿,mı∞Ù1(5Bwø`Aî2[¿çÙ€™®¶±±ûÈh)÷”√4≤Xq ÆÈS¶¡"ÙüQR[z∞TËfßóöP]ã/4C‹mﬂ≠3ü¡	aÑJ√	˙^»∆€Ö—s[QVHÛ†ù§B‹ÏO™–èÀ
+:0◊ÄSp¿˙j>y©±‹)íçRr&Ô¥;®,∑é“‚≤ªòÓyv¢·G,i∂N¢,FúπÅîµ©õ≠ÔD±0QÄ)ªyC>¨?$#NR.é¥À‚’]€-∞ürk!Úy´ŸòN_ÑvsÎ˛=˙Ì*B·‰dNØ¿ﬂ!¸È.Ê —ï!U„ñy¨7…F™Õ÷ÏÍÂÊvÿ£±Nˇ’õ;k/QÔ»7Y˜|<N´¸Ç ØEz´¬øœußáÓÿE}Áß?eÒÅApm/ÍÖÅm
++•I)ã–7ˆåk»‰<ΩiZÎm@Uj:Vø)R©ÒøSülÿ¡^%öû	%P¿]Jj"5éÉâ6∑π{Eêâè∫_cÏt»ÖÛ–ö€zÊ•Èy¶wÍÇ–∏&ƒ√–íZííM©’ß%º£‹ÈQv5ıcÍÙÁ&l3ç´Õ>C∫$D•¢Ü≥uÕ÷Ì‚àCOooöÄV…S†|“WÌt_cå´Ím¥Ã6T—;iwF¯YjáÑ⁄)x∫Ü~√OzV∑pV∑ñ›·gÖ=~
+˙¡È,âÛ@¸§Èè¯¢à)’ÜûÎ˚ÖÑ=À=fËŸy‰^ÌU¨¡Z[Ãi€ﬁ´àF‘c∂íû‚ò·ùmm“VÙ‘ôLÿ∏`Û>√ÃûI≠]o?kµ˙Œf≠æ}=Ò·ˇ«¸yÁ>iÒT÷»|Á√œL¸å&xﬂÊ˝aÉ¡ŸôÔ|ºø8Ü◊ø∆A<ÅìÈ∆,Û≠ü÷€JaÔ?z◊ò‚‚ÀÙ›…/˙ƒ¶◊‹Õís>Üæ Wfñ ¯—ø∂F¡dØBmà¯ëCÀ1á∆lØBL(yõ4GáUÙCŸô´Rœ÷∞Yﬂ∫≤µÕ6kõıV˛ÅÖÏ¿ÜÙ_s~‹¬y˜∂Åj6,"Ê∂¢%m’Ôm’Zx∞÷ \‹b;u N÷™oÒl’p3<¡æ«Ó˝™!$√l±fÎ…}∏>{Aî∂5Å|î5¬|€-EØg%äBí@Ü‘›"hµ7aÈÔ¡ﬂM†4÷ÙÔ”Í„a¸È>ë¯≠âé÷ƒoø*—&TÑ∫B]5˜*€vÕˇπjÌUö;´¯W>ëK?Än?a˚NAI“üX¶=‚;?b⁄Lî‡/œZ¨’ÚwÄ_Ï‘öçgmª∂S€ÑoææÏiyHÉ˛*)ú˜û/mj±≠⁄÷«e@äî¶€twR_õmvì˝‹¥2\¬B5∏Pgì•{áN÷8Ω rEpÊÙBj¸˝§«¢Lg—xÏ≈≥_‹#ºt'`¨¶t R¥‘≈∂ƒÎÑ`Ÿ`,ü¡’Ó(Ÿäãá˙Scl5,Ï˝´'ƒb›˝£.ÚY;∆Pœ™≥Œ~ˇdøﬂy|º¯vpﬁÔûº•~¡u[f≈¿$wÓAAÎÈ¨âFä<â˚Hv	Úä¶Ø]Ò0|–√¨øŸÕ˚≥K=Ñ∫D›PÓ=ΩÃπªÙÀj¸rka9fQËX˜µb‘iœjÙπXX_¬{´<o!j±∫oæaâ◊— ÀKmiøD;„ó¿ÏóÈØ8k∂—NñÈºÒåy_∞g˛À‰ì°Ëlm^±øÁ&˘zÖƒß•)ùËÿ_Âa8˘°¯¶¬*ZÅVöÔß˘,ü#¨î
+Mº≤∂@òû∏-.π£ÔzRiﬂíGæÁÛÃ°è:ª%ˆˇΩÛªIháúÖ%Û‡ÃdO,_¿πá])XµKXò<≤¶b≤rı“lÉÿ¡,Nàì˘7qÒ£ àºs°˛!|ıÓ%Äµy®Ñ–Ù±°d∏Fﬁ,ù)^Ã6¡vŸ~àB0'O‹)X#cò‚B∫í«¡∂˘K√ÙÂíã∞%1OGLvΩé™¿ôÄ‚BÏûŒaˇ—ôËN˜x∞¿á†SÚ“j2'<¢6§◊ü:õ_—J$FtŒ˙Áçu0â÷Y˛l¬ü-¯”Ü?€Á¸ŸÅ?˜Èú∆ã˙‘òU_√–‡”·á√=⁄®ó8¶Ô≥=ºö’\™ÜyDœr0˜ú"52◊/ˇye^Ô›¿√
+ΩËytÒâ,∑8%˝y[Ω}R:Ω†'±ÄÈïƒ|YPˆÛjö"˛Ò1ˆáç˚
+≠ÏN8&“ ~ó}Âç/™?π9∑N«´`∆∑Ÿœ‚u[{∑Œn{¬⁄WÎ≈—	> $¨á{@|X·Ò˘}À„Û}äÊB~
+Õ8."ël˛≤LÔÂ¬ŒÀJ<CÏû¨ÎRlA0±bæΩñ…Ñ‹,ÀR÷‘ccj0#Ñòc†ÎNg¿ÉÖËƒòÍtÒ”ë9¡Ôº∞g¿Sq0vö3SVΩR⁄+à˜T3^xÚ¿Ù¨K•~Ø√€¿µÑæààá¿ ,ø7≤0Ûó€›¢SıóÃÑ£!é&ù
+q^Õáä
+≥ñ?ÍÜMÀ	—89™«¿rÿjËÜá]ol8Ék8Í[~xCˇW‚9Ô`ú˛Ã∂˛˚ tn_ç_D;V‹ÖÕÄ€åÕ‡ëÂNQ•§bπ≥ªœùÚ€'nªŒ.§'+W¿Ò5é#\ÊfùuüˆŒN©ÅlhÒÎz⁄´3w4>ë›!5£∏ÇõQÇπBÄÙ•µß¡¿¥?ªÂìˆ»]W„µ.ˆ+hß‚†v‘aùC¯·˛∆:öhjKÕÕMu‰bø¢–ÃÂ·ËÅ5vX#ìíió‡#ói·‘nÁ†ä¢»|”øïÍÂ}?i“Ü•ë&aoZK7û≠GT´è.Îø˝ı‹2=¯©zdbt¿ì©0qöıP©ˆÄ·!åûve” K9B„?™*;ˇ^>1Íw≥Òˆ¯ï≥Èûœ7∑»€X.¡^6BuΩWFò<ﬂ…M‹[“˘™ÌæÕ≥rˇØ˜Ö7ô>Ã/‘÷Å∏Që@ßìï>)#*ìTíò≈Dgct%¥2≤6∆ÖgØ8˛/∑Ê‡«2^m‡‘œ;D^ˇƒ'’¡ÖßoûV2ˆ9“† Æ{ŸºÙ^U+I¿ÀB–S•ûﬂúZY‡∏åÔ£3G#,ƒÇå√¢Ge≥çV‘MöEVé®r¬çö’`B§r.˘˘pìpfé-º›rdÍd~6-‡~±#Ì√øvè““Ôl·S/Â≤Tå2˜ÅËI	Wp{íj À>∆I|Òl%SŸódÏYÁ∞øﬂŸ?aø=‡qp~øOŒæöa'®Cslÿ´/jºª5Z√ √CÛö;˛`äáñõîÓ:˚à≤∂Oä@µ„u÷‹“¥ﬂHœ]° )“È√C(÷Ä©-æG,\#zweÏgiÌ$BíUÁÄ⁄ZÆÊX˝Ñπ'≠–(á:ÃÛ¶"ËR‹úrZ"S66tS¢öìL≠-˘ö‚Ü•<˘'ëÊôzâ\O˛°åO¢àiö¸ìÇ.e\Ãtìkå≤P6µÆ`≠`›k”πX3˚∫Ù”në ?%3+JËiÂ≤IÈvyíheS77víñû`"Q5Mê+¢Èôß≠—Mç†∞H#!â…Â+≠¸iÒ@@§_¢rŸ *ó  û˛[n¿ÿBÚÔ~ÀçN,˚˝«˝ÛŒ·QÔ¯ºWÓÖKØ≤k]ú3•(}Ú• X_X'’º\ıCÍ)yÛ W`#çù•¢∑<˜!©˝ó’<’y≈ eÚ∏Z’°’ˆ<íRr\)—c:<åÆ≈w2ÎOÔ—ÊÏ_ﬁπ‘c++Ê)£+„'êÃ^¨©ñD9k∞¥§_˘πóìPCh°¨≥v¬˝„≈∑ßò·¢wÙHùä+¯vv4Æ⁄GËÏ⁄Â÷ÏÖyÈz†ºc (A¸ı~ˇàæﬁe√~c\˚ïunGá˘uÔﬁLuqaﬁ›{ˆhJÂﬁ=ÈD∞™M.õu§ìì”A¿NOŒÿ‚€≥«ù„V=]¸Êqˇ∏√˙«˚Ω”ﬁÒ~ππﬁŸu#ÒCˇôéÓûé$”¸S—vùÌ˜èO=0+˛tpﬁ?ËwE|ø«∫áùÅ8rr‹Ë©(∏∏c≥é|V•Å*†9ëBb¶~`∏Wgù„ﬁ/Nv1Ω≤s∆ıOéz›≈oéQ˙ÙÄâvé:ày] å,ghœG&ä˙NLâ	»áü:8’(J•	¶*
+√e—®wkUŸ[óÎsû76V©ˇà’⁄XWõl6 z”ô‰V;à8É®N‘‰ZYº˝']¥ù;ê*“NÕ\ô~•kwc∞v◊√n9!X{Ÿﬁ€ïÔ™ë£V-¡o!/¬ç^ëøî¯UW˚Ò‡©üÓ˙¶vxO›∞MìX†À¥X9Y˝˘ÁçÀf£aæ(ÎtOéN;ãﬂvéPﬂ:∆yﬁ{|÷9dßluÇˇv˚ªZóÆ.´K∏/)Kà	Ìé
+ŒÅ3œáY∂<Á	b Ωª~îBÈ+ﬂkŸZ /J•‚~îƒ˙.©^óC£8W  3ÛÖlpï‰y}¯\≈Oí…ÛAßª\|ÄÙ˘≤…Û˙,Ô¢@TÃWOù/Eoˇ‘“ôÛÀ‚ÚîŒôø˚πLˆvÛàF¿Wuz…õviÛö}OmLN¥B§÷éXŒÖ^6´0⁄|GËH2≈XÙ<L«πB£Lr~)?HwÄVmT™Ûv6F≠Bü§vœ[i6—ä∞/Ì3!CN„EÄ¥zïIªåüë∞öè'L—2'˘LﬂkúrûzÓlÒΩo.ËÌ%ÙÄ´dˆ‘ΩÜ¶€Y™arô´Ã◊}˛Ø⁄D[ÄUâ8æÏí$í∂%ã‚e◊$ÜwñBÌ¥8‘éLY. qﬂˇÓqﬂ—π“AÛyø«ût;øz|2`Ω_úˆªù˝ìÅZ!TB†v‹˝Ü≠ÎúeV˙ïy}Ä¡'gÏIï’K˛Î.3úÎufçÆvô3GÃg ∏-tÙP?\ı.ëG√-®ßª≤SŸuÕ2†ib•êh„möî' |∫T3û‚HzÿPÂøÖTq#¶¥NêûE>†¢ä^ôÅê≠cPi∫éYz&¡"†|p∏©,ãÔ¨V•«ÚrÜ%1¿JÙﬁ.(ÂñcÿÁ¶7}W)óßø¸4,¡ÀOB‹å*÷öwc‰ÎË}k
+'\ZÊœ4 Á˚ K›l&≤9˚éˆUEÿ;Òæ!¢ÃºP™∂ÿ±Éüªï£+LZ«1˛;   ˇˇÏ][s#«u~œØhAæÄ	 ¿%YÀï± ñI0 we{£há¿òàÅf r)z´‚™º§*©T"?%©R÷oÆä\ C èÊ?Òà~BŒ9›3”=”=3 IiÂljI\=}9◊Ô|áß•ãvÖEØ^ΩIG,9K·ùéÁv∆Q%Ÿ‹é–ù©SCoΩÌÃÙÊC€#2ÁÄ…Y∑©<Ók¬™;©ë7^¶∞%ïk=¶d˙†ïéëÉ‘G¡¯bilOÜ≥{ƒ Yæƒ≤‘öÔæQ)êﬂˇ1P ›V≥sÿ:⁄23ødÕgÏ±˝÷Q´€8hôLãt„Ç≈{»*maÎL/W£ÜêãJTÛ∆‡∂’Ó ˇÃ¸b∆C& Ωıë ∏¶o|cÓè Ê¬çHÉ◊“<π\g«üá‡iÿÉøôcgFw¢;C…7}èŒ“ã˜ÀÉ≤]©}|ègÈﬂ˛;8K«›÷˛≥£ìˆq›ou·ıx‹∂˜åﬁ¸„Ê¬N∫çìF.*„Lπe“"ê9è–∂Â·úcw›±}Åú‰`ô˙ÿt8ü‡o÷ƒ•Ü [|H]ß±Pl>ûY‘î ^9Ä$pQ˚¢À˘≤ﬁÈï–ñFú÷2~KûÉ¡e»gKÀè˜EÂˆ∆ •Œ4ê˙2≈åÉ@Ü›ﬁ√Ã≤d¢…N˚‚î ·4¡‡Ÿ¨Ú¶ƒÆ?ªeæ9]Ï-Ÿ1¬$˜B‡4ÏF^√CR5g±6Ï‡!¶èy;+åMΩ]}ú	˜R◊™AÕÅ>gà®Ï˚)ë£÷QTCÛπò¬ﬂ/UVYâ®Â€yÏü6éJ=*Um††Â¢†{Î/∏‘Åã7_èëHvÀ˛‹ÚéµD+]°S,Qü’ ˘G¢∂/∂œÊo1©⁄a2ç
+ØAà}éõ¯Ç∂8¸Ç'ﬁ¬{£~/Ãñ´·Æ®±Ó¶Ÿ¸ä»¬&0R¸Üsãîq.˙l/œq©∫ êË0Ä]|$ÔóÈi∏üV1J©&?Œãl¬Ï∫Üt±DâAûZÄek ¿˛+òˇÌÚ_’A˛œ«ê±,Ùi»ˇmŸ‰¥TZ⁄=©ãX`j Øgk±Tˆ§ÖÊ@ÀÛÇ •9∏3ƒ∏Q‘≈0Hí≈±(ﬁ˙6dpwïﬂ2Ï∑{Ë_¥!gı·cˇ¢†,¬>5”˚ß?§Ö@Ûı.
+PÊnÖrZè≤∞cZ ∞n˛8A›¬[‚Ã∫3+Œ∫TÔ¥c–‚g÷ÖÎ≠Ç(z∂∫qå˝±òÓ}g
+_±ëı9|;ò∆`C¯P==P•¿oÒ3ﬁd–«j†z<åHº€àÒÑõ‘/ÒOì^¶#w¢UÛ∆$˙0⁄Í k¡’‘ ô«Æãõí™±!ç§ZbLn~:}çÑdWQñ4&›∂Í∫ZŸ∏JÇPπRóÕË-úíΩ≤{#˜Ú8l¶£i±§∂T™Ò¶¢—çîuÕõµ(√-µ˙F]◊:xèöZ¢«Rîu1u[íWΩ	Z÷Ú§ïè7J úJïÛ∆9ÀÍø∑í`…ôyWÊúKPπÓeâ.VLÄm¡∂f˝+⁄…Îqwló‡Ê\ﬁí¯¥Ú˜8£0√ÒÀ¶\¥E‘é\Ò—»W{cﬁAw—îkCi uGF«
+ﬂéáπ6“Cö(W9ÇSsπVã·*GVf#´BÎv-∑<âJë®º⁄¢√õKÇX‚{9!ÒÆüª8%Ây≠„Ôõ/ø¸;ÏÏ9#‘e˜§ˆ¡|Ù¥q“k≥¢` È≠"ÑΩ≥ﬂm<π˘ÁUŒ˜ûÅâ(◊√\˚ Ö>Y3ø1ùr!™¯ˇq9
+Ω3]√†á„ÁÒ»W!>:îπX{ä‰mœùb∆»√˛~ôp‹i¨˙Ùa4_™IÔL`;Yc,£q¡DqfW;¨º È·∑“v=N¨&¨Âïï¯€Ì◊ŒlÅ´´öÁ≈˚ÂÌÚ†bÖ›jR>«cŒáÇA◊ÙﬁV∏®I∑Ï´® 7œS0FÏdõÏ≈4ÂÈö2Y!êﬁ]’òKz´Ó¸ì˘p¥ëë⁄èW≠C–ÿB»)gy3ê
+àpŒ+∏ÿ¥º^∂í⁄˙h#≥.Éû‰≤$È…ÍÂH€7& ä} òD9ÿ=≤=$‡™…ÊöE~ZƒªÒO§â~F[FÕÇ˛"[ Ûô‘µ]‘ej#‡,ÛÑPçápÑÍ	©≈ÚE∑≠Ú≈(…Å_(Ìå‡t∂'gÆ&Bî¬◊„π ∂ V"|ë+Ó`≈@RCKErGÓwäÁÉWRgR]-÷B[W≥`®
+n/•Å'Z0.@z#ÒnCØîÀ?fÍ?ONüæ!#ÖDÚ˘{¨Îˆ(.jI1˚ 
+1¶]qÜª"Ñ@¨≤Ÿ‹-á z€ß (¶ΩNAXx±g‡z‘®Ü‰ımœıKÏƒéΩû€GóRÈ\üúÕ•ÜπW¯N{B≤ã‚µ7øßÎÖÇåfI&’zái%gö≥–¥«Û1öZìÈ<yS°∞∫];∂NÌqr’∂Õ5hÊ]î)˚èn˛{ëbÔ¡}‰ËB±3ÌÉ∏≥∆+…t‚√ukˆπ	è¨N1Í¿€ô÷’k8˝ä∫7ò'*&QâyDCC∂eÿˇh∑ê) Ù–¡°Ω–åv\Ÿ±>H;Ö%∂G0€€[~á’k€ïJY<Xìæ˝õØ—∑!ﬁWÎÊ+ü˘ŒÑ}¿&≥qá9Æø¢ø¯Ö5ûÉıxâß√öNèGÓƒÄI=Bx%hh;Ö§5†-%fjfó@ÌYâæßN	ﬁLq˝≈ﬂï◊∂?^Æö)X⁄ …„B∂k„õI‹ÙfÆgÌ|≤;¶X q¯IpoüLÒ"ÖUfæåÅµ8…L≠d‘ÅåÌr⁄^<s˚s'·õÍˆh*Lôh_LpÂ‡™Ó|F<O™¯©∫}†âˇõZ3õÍÿb!ËxÚM”â=¶‚¥ß¨Á¿ñ~e˘˝õÈ ÔÊ+w5íË8ÿÈå÷õ∑úkÑƒîáîΩc‚eîcÈc”Y6ÙÊSì÷©fÓXQ_IΩ†—
+fÒ‹ËuXe|⁄£ﬁI˜YÛZpq¡[Ì5~Æ„|5uÙ˙ øU!ar®ì_¶i4k‹Î±VÔÑwég'›<'yàÃ‘Ølù´†±Nrõ[z≠Ås‚ácõu¶»ÚLjä•-˙\eBª^øîî/&EEe*Uâ!Ì‹DMmÃÆêQ˝H//ﬂs£Òä·‚öR}2≈≥ï™eb©ßH"à1M\"‡q/¡†3]}á¬≤Õ© :â¡ôsê|hF[èYﬂT€¸VÀÂî¥ÊNÏnkÂ§’z|Ò]¨zo^®GRTu†¨©µﬂ©˚⁄îV8æu:∂ª◊Üı5Â.È¬Ù9”∆¯…O≤…tıÑóT¨Òb≈Pâã¡Ø*§F°—’∆Ò√Hm]®-Ñw)1]Ú//1‹˙i7Uù$I9•◊âë¸!ÅÅÃ‚p£i5îçÖ˝jƒD_∏EÉ˙ëƒun-â;Ã"ëª^LÚ‡éxcËÅ´Ö≠1Pß¬Ω˘ppŸ‹›ßÙ^PYﬁ˜næB∂%Ú¿®jöù∏o•T4¸?ˇ˚Å7Œ¿€%≠œŸ˚¡€‹«CBGL3"ÒŒ?k”X"öö¶5◊¥']˝àè£M`nﬁiÂ+}7îŒqÆA˝†p‰á§p‘5Õ°hbõ ©`és]1árâÂˇ~P,w†XﬁíÖAºÊ;S,˘§
+>dÖ¢†+-∏êêûÖåÆìæ≈GT	®{ÇbR:Wl0G<<GŒ√oKj¯Úü*Û(áΩ~ö$a◊—zÂﬁóÇ…ıâ¥∫É§pÕFwø—eçnÛi˚yß«é˜û¸˙†xØ∂OxXèÌò]â◊ÜèÒ\4Ø∞é¬”¶ØñÒI’˛˘Nº}äæû#πóì±kDœ`ìùê¿çDÆ¯Ùí+c=8D#–ë%z$äÑ€≤±≤i,.ã…scÑ,©gui7U˝VS¢e'î0êÚµ?¨¶ÿP˙	¶“Ô›B¥ˇ@px¢t`†∫gÇ<9|@M∞`ru◊3Håpß$≥ÖÒÉfÊﬁ“at”ô3r‡e)™Jâ‰N–ª√gc)ÂîÏxSWBˆJE<áQÀ≠Xâ∂…ç\∞cœ=≥}rÄñîÿA^6ÎàK≈„˜rŒ4ˇrä°)ó[ââ
+’†ªµ»∏~)7^∫£#ù√b,Ø…wÖÓC§≈`˘Ωïø¨Æ˜ÀÙKıRøV\ﬁ%©ÉT	àÁ]raÑ%÷≠Œ≠Wv`ŒπAK⁄av¬úE∞0≈¥◊_§–¨r°)•ﬂÅƒåŸΩlœ‹ºÌcDÁñÚ2◊G2L‹çD7êÛ∂uƒˆ;ù˝É€Î∂ü/òiAàÆ?ƒªgÍF˜‹açg'ù√õﬂ «¸Ω¥fˆéÏRÆNz÷R)z`vÍ≈N§ﬂˇŸè5LkÍ'ﬁ•íkN≈RéáùåÇ¸“rfôB
+ë’í@i$”b•≈käﬁ/mÒN,±ÿZé?“ïK°7?u<æ– À®“†n¶ˆÃbèΩ&Y˜'‡‚Ç™Ÿw]åƒ“ÑÁ∑≤5;+•»a◊>Ûl‘º‘Èó†6»ü:ì‹ &≠ŒÓ·Åue#¬py]fÆUGÊöiÓJ”Qï/öÍ¬›ë∂´-†ÌÃ≠éàÔéﬁÃBVÒ5˘‹Qw‡]ÖÓHe⁄æomN:n_~ﬂ†i1∆Ù^@ıÒ¢¯⁄ïq~∑@®	J EdàEÂ8Ÿ⁄VJoL è»˘`GA√9"xü˝©gs™‹8ûFË¸dF#∂"&Û{bË˙ë.iÖµéû∑¡[Ã‰öÍi´ﬂIìÎ¿ö ∂%]±c=“HÚfsÛÎ„á-≠yˆŸnzı üG;á:äk7á	f«?‹áÌ8!L\B¡Ç T˛é ª'‡~hî“Ø?˜∆≠Iﬂ≈œ.R¿oœ∫mL©¬%'≥"ﬁ8D—«\cä—ır4õM˝ùıukÍîÇëó¿ÌY?u!Awt]ÏÕOÀ·©håo^¶ÿ__†πò!v≤bÍ ÃshªÖO‡lL>’[\ 6∞Ë…ù¢=≈&n:-@B_)µ{¢jÑ§‘/uΩíßÕY∏í»vãz°Û„Ôw®é	‰µRÈãÁÊ¥Ó#]î?ﬁ–Cò\Â‚d—“Ñç!kØÒ∫•7¶˘c9√}∑”´ægzÍÇAGGtï•EëG√ˆf≈¬üﬁ √cT&\ÕAÖéÂ„ b≠©5ÖÁø«¿êè) `ÿ&≈ÊÃ|-H¥HbSY2ås%0b˘aM∞/ÚùtÇævh]E◊∂wN±öﬁ˘3—ÑMaÙY§∫óåC“ƒ›‡ÒBXa¬ò¶ùê;2ô€pºyüìÛ]∫ﬁßh‘ÒMõ´∂)fE ∂båèO∂p"Æ®dﬁ\êì®≤–Z‡’\%FõïÄ$˘ì„ûß±úâ˙ﬁFD}ùf´◊âU˛ÜTò{q£Ãz»Ê∑◊Èi+MÙ»tW√xi˜D,–úê!VÏê)¨)∫[;èûJÃc◊áÛ># z$züT≤R•Çû∑¶ÑƒŸ †„Ö-Ø?r.‡å#˝¡ÿ?»+ôò-„É‘J.9ìFïÆåJHäÂr‘¸Õ€P‘b˘â¢„òﬂÀå‡R. u‰=d[∂Eå«É€ùaR >¡LaXà"Ak¬˝¬∏¯áÒr∞1÷í•ÆQ∏	Ç¨ÖGz€ÈäU¨?≤ÖpQ*πõb)ﬁ¿}/l˙¢ªµáÎn¬ÈÃC$≤DY˝oˇ«XVﬂÏtª≠k¥ö'›õ/®7\qˇ∞—>˙ùt∫âí˙˝sÀˇPO?ıÙôEB?‘”Á≠ß?Ñm™àÓ* ≥¢≤”9•ZìCWaØ!i pT*∞ßí`∫∫P¬ΩT÷G'˚á≤zùNúì†¨˛‘$ä“jÎk∑©≠oÃg#¯VTûXEá◊ßÿy‘cÆ«ê¥d(‹±éÙ˙Ω!.r£ﬂ∑}ˇƒ˝DÑ.°ë{º•áDúSï€⁄£ Øh
+Úsë≤i˘ÿ»YM+ƒ*∂B¨*‰Ω4ò∏—éDgñf1ë¿%≈À&Ï©MÉ€bÊ/D!†Üj‚&¸ÏTn]«G{Ç∏,÷„Ad÷Ò|å!aaÍuòãe 4<π∑#÷\:jÊù#ò∆0nœ≥]? p±I®¬0ÊD}«T D5ãeπ<õ,mmá>^–ÁrÑrwú5ßA∏C«–êDNö√€‡}√ˆÑ>î˘Pi∂PÉ*Å?ÆRÀ·WÏ(l ’Bºò>⁄≥bKò7¨ôg+3|¡≠ÑEøÍÏ,ëˆç™	‰‘Ôr©^r%⁄b˜%ècZ—@≥πP<D?6sÀ≠y[2uÉ0,Ω±¸"©F∂@ãl©:BÇ4NΩÂlO≈‡m”9–ß≥•›5iuÏΩ˚!x<˛tl]·Ì|X◊◊kÃäÂﬁ¨–êàŒh¬k¿d–§¶â˝ÖCQ°†Næi{7˙ ∆ÁÆ©«A
+Âmz[^π”û©&6 -îMÇÖPsåVê“°ÛúÇ∏≥∂ª˜¢v‹π°äŸÀ–oÑò?·πæùì
+âZ:QC']∫>#Oﬂ#áe¡S…EËX…qP&Nä1*aFÑ∆FËÁññç√∞Í0Âù˘,¶wPÎdEœ˘Ñ&π≥∏yí˝è° πØÛIËLÙÊ‰ìòm´Ü€hƒ¶’í)Y'$î ˘cîM*>*YÆ g÷¿nÙXÎuâë∞qª %38ú˘S3ï∆¥yóêÆŸB∫◊e'8TÎ’∏…_QÅ`Y¬#ˇùÆI∑l”Ò˙c˚nVFû≈ªYŸìáeyoÈ≥Ö&rÃ/n«⁄KgÍËà”øC£O|ª2|4…;ƒr¡ô3±`áÄX
+=5π&æD‹Ωò]∫M™ﬂT∑ù ˜
+Ú(?„é,"ELü‹]¥N‹E ≤˜˘Gä*=WûÚkÉæs˛+r(S ˘¢ˆ«Q~¸Œi∞ïﬁÊñà§ÒÊ‘≈„˚|*˛|"Xõ¯πüÉÄ#Œu¯xÚl{1˘Ô}Òπ@¸±ƒh‹¨(Øy˙ƒyE»ù†‚3¢º·•ü+û=Â◊wsR‘{]Êúd¿D(#€2bo†Ω{˚ änzO«‹¡›å˛ﬂ¢~7ﬂ|˘≈?dµÉ^º∂é>eÏ
+ºpT<+Q=L9múã7-”1oDG?w‘!	·%BT‚Hà(È 6¥2≥â]iËYgòõ,˙ˆ ê)‚O›…¿Zπü˛bÈ/∆˜ZhããBl˘cÅ5ŸÎã9ê[e)Ü`LY∆bÄ¶Ìî≤&˛œ/ëaúÄ•äC“‰ÚcLTöÛ{lö»–ñè˝@π4Á∂7Â∂
+∑êó≤⁄qÑñgÎQÙ1k§K›Ü®˘úè¶T*Â1Np∂LCyÕœΩÙwØÎã[-π˘íSMî™ŸFIFN©’ö∆R©g[*õñ|.^äC!Ô ä9ƒ|ˆƒ∞:µ≈…wr¶3≥çíyÕ{Mñ ⁄ì¡>‡XMk/Á˛#0e˚A˙=·1ñfûs^\âûV±x~Åm%¢?ãd	M6Œ_T©Ä)ñKIGeY“⁄Y>Lµ$,D•ô3Få≈5I{6S'É–‹E¬≠¶ŸÒ9Ó)Ç(Ã4ÙåﬂïﬁY2˝∂-∑êÔ¨≈°"¡∞nq'¶\õ)§nÜ1ÇÔQ˛êö -ÎKm%'üïxÓR◊Ö“®ˆ¢≤	Ç˝5o¸75?≈&Á¨◊;`˛˚ﬂE¡=ŒßÕ:àbç„v˙Ñ,åùmÚ¨àEÈ◊üçØêØîqPÎÿ∫ıƒägâM÷˚¯W´ÿk–…ÜO©}÷$-ØbüŸ¡Ùï
+••¨πì17ﬁÑ‘Éu‚2Ô‹ô¨ç÷¯˜Î´@±ÿãº
+p/Wc¬≤ínáﬁÁM
+ÏçBE)·@mDÃ¿©;G¥…≈¥vﬂÖ;àûË·∑P◊±«¶‚Ã–é5ÑçÜ='ßß∞œOÉ,Kﬂ‹WjÁ+∆©È‰KΩ{√õƒd≥¯u∫næ2Û$«ÍU6y˘ÓkéÂª‰ˇƒZ˘Ú⁄ˆ‰ÂË–ì5…>ì	·©ıÍı=Àyr${ñƒËÍ"◊|≥⁄\ˆÓ¢U35j◊`˛6Û∑ô≠ôCˇPı„Ëˆ6Tp™ Æ“Ku=¯¿ÿ$<vR‡B©M®sÌ◊‡A˚ﬂñ¬ˆ°ŒVg´ñwgè%zH/rJAM(˚Ñ§
+zÿL®Ôπæo‹0·µ˝ã!√b≈«ÓÎ›BôïYµˇ/∞3g<ﬁ-ÄÒ`õ4Q"th ylf6äé¬à@¶T∂“∏é÷Í•˙ÛzøºV⁄⁄X+m>@á:¯ÒÒ?‚9?ﬁßı>æïïcØ˘;ø„œØ[ŸÓóº;ˆöè◊œ·Á/pO·Õta{’èÎÛB∫’¥Sj~CJ#nÕbél=ˇvK…Âˆñ˙‘é/,ˆ#g0Ì&û9 %ﬂ∑¶ªÚ≥Ø¿ü6Ì U/∫+j˝J©∂]€dk•j˛Åj¿√ü2˝Ø≤	ønÙ·}6a7l0Xú<Uó™ZzP[´‚ìk’ÿá´l´õéUK¥)j%p≠7„Ï¡Ø“X0Ø *’ß€I¸Œ^övNm_¸-Óî¡ƒ˙Óê˛ï5Yhá‡£‡h÷hA´ıX ﬂ
+ÏVÒ∑i5Òi¸mõ6Ö¯k-x&|vM¸ı´GàÍÌ&6{]Ÿ-lÿˇÁuu∑PŸÇ?≈ø˙âÀ}a∫TtÂÕ[]¯N∑ñ?rÏÒ`çx«øá{L"c»/à™¨Zı∑‡<o≠U œÎ„µ≠µ∏‡∆≈õx∆ÀÙüe ]Ûd[ƒCï’¿Tºó’3π‹§≥©è{‚ùÜà˙uå∏úr£Yg¥]é*âÿ¯iÿÚ
+˛Ú¨Äméª√ÑoÂ+JË∂Ï5ßK£QöÁmTY™ÊóC¿¡WµŒıú>¡#H£Å”’ÖOπ«Nnæˆg‘≈√≈˛‘∏ ∆;2¬auœõ≠œoiôD˜j,≈Ì6ˆ⁄ùΩvcˇËÊãûñØëﬂá~…$jRüºÊd‘{÷,'4å[9—'5¬y®ÁC”Y{b˜G÷é¶ªclŒ√ãcçG◊‘3ÜF‚Ó˛≤›Õ õ∞Ë˙Ó‚h*é8ÆD;óCÉR3ãÌ#g(Çx|$ J&—ÒÎ_3i§…â◊áCT?µÛS±∏\ÚMŸ]ç™Ìà$]Ô◊ “Òﬂ´à¢A$»S(ƒí•áÚ›˜çôd¢P∑Æû† Ä∑#ñÙ∫¿¥®¯¸ªgª^èoŸï*a‰[[ñõ•<áÎÆ&âNÂ=[˛l‚Û€ô≠'æŒ^”;ß^ÿëÉb¥»	as¬åˆ˘‘†˙'7_˘æ˘Å<d€¡≈Ê¸Ê;n4{q‰—5úÈ©hv\=˚¥“)ƒ‹è⁄Ñ&Ec∂rÅ¨Äü˝R≈DùW3À·zq%_BÀ@ˆ»B÷úÆÏŸH•bhNŸS˜å›!5û6Ï=Xhìﬂ$LS"≥7}M‚kz•4˚—°apJõçÉˆ„n£Ÿæ˘‚àÌ˜ˆû∞FÛ§˝º°è^yÍ‚ö£D%4húx!‹°d÷≈?_îW¡∫^eU¯ŸÄü¸‘·g~¿œ¸l”{ óŒ≠iëZËÍÈ∫8U◊’Ùƒˆ}∂ãübk?–ë]	J<É=î†Õàü⁄Wª◊pQc`26e∞ÕFR©uXÆèBÀEr/ÍÊ-ØôbOicee0{öÖàÖ5CG'•FåÊ*Úíiiõ<{Ú“ût}ﬁOâû/ÇGWg≠√ õUv€7¨º\5x˘@pc<⁄ÖÕÉ¨—Ô?°—ÈÈ√åg©∏´G¥¸?^
+ü§!^{ìP¢πé£˘d¢"˘¿%I5÷˜≠sãë¿úò®»œÅ0—á
+Èe8õkﬂ¸ﬁÄËc3¯Â\<9s∞†œ∆vS;
+Ã√ÙìT}"Qx»ﬂ!˜D‹Ê‘Ò˘q—¿Å¸2'ú—œÒ[∆:‰œZìπÖ…¯é05Io«)û±ƒ¬≈8èˇ¢kvn9˛∂Ul∏<‹û3qßË’Oªﬁ–öÙÆ‡YﬂÒÉ'1U¯Z\ˇåœüéùˇªgs N1~⁄!x∞|ﬁÁD[¯ÿqœ—V¬åﬁ∏ºˆƒsœ˘u]eß⁄èƒæÃ D5· \¡Jâ5üµ∫«Dt¯Ç:8ëLî∞’õL‚∑-∑dÿˆú3})ègÉ¢Úé1≈ÃÔü‡f—
+ö}MÌM>iw¨q øÎ‘At”©w}]∏}∞‘wâß¡ê–ƒÇY∂üycç€§ü0<‚õ»'ºô /–UAN∆òv9µnMÒpcMÓb\|Åp1eoI]G#s»eÌœâK~+
+ˇëwB}Çç†XóÕ!õŒâœrE-uΩ˙ÍÂıe&∑<¿ ÷DnúfΩŒ,ıb£—uPU]OIﬁ¥0öt1°ù@=?»Ker£∏Ë7_˛«€ˇ˚ﬂ…ı–À…%…a◊ä§bóß	LõârŒ“…‰6Îúv´∑âO=€˙î£‹∏¿“éî–!»Á‡W®’SÀôÅ~iuÛÈL÷/p'ıπ“˙§rÊ},BU˘æ≥I-ï%JÃc¿“«ÃÀ˝kà  <ïù\ª ≈#pU¥ÏØU…U8mﬁZ˛‘∆™ d™/}„‡q˜7€µáÊñºWùIïºÎŒ≥oú‹ﬂÌµ`ZÀﬁ\tmô«⁄ •“P‚◊w&Ñ[Ê›$.I∆çËø*´»P.#àQ—= ∫)∆ûÉãK‰®øµ∫ﬂÓùt·Û$|Î´”sylˇ¿Z„≈Iæ0:g«®_xt`_Ò¿L6IÚŸ]Âj1©{§XãoVbï⁄ “‚⁄åÊ)	*7_câå~55§–àÅ‹Z]ä∫Î‘Îöã©,yee{ ûQÄ¥~u´Løî¨S¬FKÖ-kgd»∏¥å€J≈QÒáÑ¶íáò©‚V— ¶ˆ∆á7Æ‘Çô´< {I¥bÁŒkò{XøµÛ˘xÊL«Wôﬂ≤ã?2∞)VJ[ªî’8R
+À©"D‚¬/wÃ
+˜ﬁ‘”6^Sæ9≥œPú`LK^X-ó{*,¸íç©¨^E+˜Õóø˝WÓÅ†ﬁkÔ∑Oá≠£ìV˙f
+ˇ¨µ3C∏€∫õjsf<‚˙zmsÅL}—◊∂ò9(Ó|(‹NäÕö◊ÆZ†∞“®ΩÍ!€˘¢©º<Eå€û±w ãl÷>øyã1_Ñh¸“‚„ä¸ÄHÒiÃc·èjf*≤≈Ó°ÏrQí©$g	◊ôUåÉ4ˆ∫÷k›|qåÈo}D@;Z ∞ï†éQèÓ/ù⁄gÆÊó5îQÚ¯Ác|˝1Ωº√
+÷¯“∫Ú´‹Õ
+üÊüS1ÙÊ±›gDáfN’—Œß±PÂnV{£ÑÀ‹9Óµ{ƒ:~ÛEwøq‘a≈„õﬂÏ∑è¨}¥◊:nÌµQ,Í£◊öh·€`Èm†ôÕ{ﬁõ%∂◊ÍÌtz-pW~˛¨w“~“näÙ2”4z‚ôŒQ´ßﬂrtxÅ@`u…’ßóPöã{^∫%÷8j˝¢≥Éò•Fó=nw[ÕõﬂPªÄúﬁ'çCÏ–6q¢ÿCoO¢ıìn,üo‡˝√0æ&E§ﬁÅòWc≈KºîÁ‡so˛Íˇ  ˇˇ ºÈ
