@@ -3862,8 +3862,8 @@ Ejemplo:
         try {
           const autoStudy: CloudStudy = {
             id: newReport.id,
-            userId: "local",
-            userEmail: "anon@local.com",
+            userId: gmailUser?.uid || "local",
+            userEmail: gmailUser?.email || "anon@local.com",
             timestamp: newReport.timestamp,
             patientName: patientName || "Paciente Local",
             patientEmail: patientEmail || "No especificado",
@@ -3902,9 +3902,27 @@ Ejemplo:
           try {
             localStorage.setItem("rad_local_studies", JSON.stringify(studiesList));
           } catch (e) {}
-          
+
+          if (gmailUser?.uid) {
+            try {
+              const cloudStudy = {
+                ...autoStudy,
+                attachedImages: [],
+                findings3dRenders: [],
+                atlas3dData: null,
+                vascular3dData: null,
+                customLogoUrl: "",
+                customSignatureUrl: "",
+              };
+              const { userId: _userId, userEmail: _userEmail, ...studyPayload } = cloudStudy;
+              await saveStudyToCloud(gmailUser.uid, gmailUser.email || "", studyPayload);
+            } catch (cloudError) {
+              console.warn("El reporte se guardó localmente pero no pudo sincronizarse:", cloudError);
+            }
+          }
+
           // Re-fetch cloud/local studies to update UI
-          fetchCloudStudies();
+          fetchCloudStudies(gmailUser?.uid);
         } catch (autoErr) {
           console.warn("Error auto-saving study to local archive:", autoErr);
         }
@@ -15165,6 +15183,26 @@ const splitReportAndAnnex = (text: string) => {
             }
           });
           studies = Array.from(studyMap.values());
+
+          // Make synchronized text reports visible in the existing History UI
+          // on every computer without duplicating locally generated entries.
+          setSavedReports((currentReports) => {
+            const mergedReports = new Map<string, SavedReport>();
+            remoteStudies.forEach((study) => {
+              mergedReports.set(study.id, {
+                id: study.id,
+                timestamp: study.timestamp,
+                studyType: study.studyType,
+                clinicalHistory: study.clinicalHistory,
+                reportText: study.reportText,
+              });
+            });
+            currentReports.forEach((report) => mergedReports.set(report.id, report));
+            const synchronizedReports = Array.from(mergedReports.values()).slice(0, 50);
+            localStorage.setItem("radiology_reports_history", JSON.stringify(synchronizedReports));
+            idbSaveHistory(synchronizedReports);
+            return synchronizedReports;
+          });
         } catch (cloudError) {
           console.warn("No se pudo sincronizar Firestore; se conserva el archivo local:", cloudError);
           setCloudStudiesError("No se pudo sincronizar con la nube. Tus estudios locales siguen disponibles.");
