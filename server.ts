@@ -8131,6 +8131,100 @@ Retorna el resultado en formato JSON estructurado exactamente así:
 });
 
 /**
+ * Extracts the measurements and clinical assessment used by the prostate and
+ * urinary-dynamics module from an existing radiology report.
+ */
+app.post("/api/extract-prostate-urinary-data", async (req: express.Request, res: express.Response) => {
+  try {
+    const { reportText, model } = req.body;
+    if (!reportText || typeof reportText !== "string" || !reportText.trim()) {
+      return res.status(400).json({
+        success: false,
+        error: "Se requiere el parámetro 'reportText' para extraer los datos prostáticos y urinarios.",
+      });
+    }
+
+    const ai = getGeminiClient();
+    const selectedModel = getModelName(model);
+    const prompt = `Eres un radiólogo subespecialista en ultrasonido urológico.
+Extrae únicamente los datos presentes o calculables de forma directa a partir del siguiente reporte.
+
+Reglas:
+- Usa 0 para toda medida numérica ausente y una cadena vacía para todo texto ausente.
+- No inventes mediciones, diagnósticos ni recomendaciones.
+- Puedes calcular el volumen prostático con la fórmula elipsoide (L × AP × T × 0.52) solo si aparecen las tres dimensiones.
+- Puedes calcular el porcentaje de residuo postmiccional solo si aparecen los volúmenes pre y postmiccional.
+- Conserva las unidades del esquema: centímetros para dimensiones prostáticas, mililitros/cc para volúmenes y milímetros para IPP y pared vesical.
+- "booRisk" solo puede ser "Bajo", "Intermedio", "Alto" o una cadena vacía.
+- Las recomendaciones deben ser breves, prudentes y estar justificadas por hallazgos del reporte.
+
+REPORTE:
+"""
+${reportText}
+"""`;
+
+    const response = await ai.models.generateContent({
+      model: selectedModel,
+      contents: prompt,
+      config: {
+        temperature: 0.1,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            prostateVolumeCc: { type: Type.NUMBER },
+            prostateLengthCm: { type: Type.NUMBER },
+            prostateApCm: { type: Type.NUMBER },
+            prostateTransverseCm: { type: Type.NUMBER },
+            prostateGrade: { type: Type.STRING },
+            preVoidVolumeMl: { type: Type.NUMBER },
+            postVoidVolumeMl: { type: Type.NUMBER },
+            retentionGrade: { type: Type.STRING },
+            ippMm: { type: Type.NUMBER },
+            ippGrade: { type: Type.STRING },
+            bladderWallMm: { type: Type.NUMBER },
+            bladderTrabeculation: { type: Type.STRING },
+            kidneysUpperTract: { type: Type.STRING },
+            booRisk: { type: Type.STRING },
+            prostateMorphology: { type: Type.STRING },
+            clinicalConclusion: { type: Type.STRING },
+            urologicalRecommendations: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+            },
+          },
+          required: [
+            "prostateVolumeCc",
+            "prostateLengthCm",
+            "prostateApCm",
+            "prostateTransverseCm",
+            "prostateGrade",
+            "preVoidVolumeMl",
+            "postVoidVolumeMl",
+            "retentionGrade",
+            "ippMm",
+            "ippGrade",
+            "bladderWallMm",
+            "bladderTrabeculation",
+            "kidneysUpperTract",
+            "booRisk",
+            "prostateMorphology",
+            "clinicalConclusion",
+            "urologicalRecommendations",
+          ],
+        },
+      },
+    });
+
+    const data = JSON.parse(response.text || "{}");
+    res.json({ success: true, data });
+  } catch (error: any) {
+    console.error("Error en /api/extract-prostate-urinary-data:", error);
+    res.status(500).json({ success: false, error: handleGeminiError(error) });
+  }
+});
+
+/**
  * NEW API: DIGITALIZE DAILY WORKLIST FROM AN UPLOADED IMAGE
  * POST /api/parse-worklist
  * Payload: {
