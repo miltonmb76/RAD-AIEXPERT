@@ -4,7 +4,6 @@ dotenv.config();
 import express from "express";
 import path from "path";
 import fs from "fs";
-import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import sharp from "sharp";
 import { registerAtlas3DRoutes } from "./server_atlas3d";
@@ -423,6 +422,33 @@ const PORT = Number.parseInt(process.env.PORT || "3000", 10);
 // Enable JSON with elevated body limit because medical images can be large
 app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ limit: "20mb", extended: true }));
+
+// Cloud Run's direct IAP integration authenticates the request before it
+// reaches Express and overwrites this header with the verified identity.
+// Development remains unchanged unless AUTH_MODE=iap is explicitly enabled.
+app.use("/api", (req, res, next) => {
+  if (req.path === "/health" || process.env.AUTH_MODE !== "iap") {
+    return next();
+  }
+
+  const allowedEmail = process.env.ALLOWED_USER_EMAIL?.trim().toLowerCase();
+  if (!allowedEmail) {
+    console.error("[Seguridad] AUTH_MODE=iap requiere ALLOWED_USER_EMAIL.");
+    return res.status(503).json({ error: "La lista de acceso del servicio no está configurada." });
+  }
+
+  const iapEmailHeader = req.header("x-goog-authenticated-user-email") || "";
+  const authenticatedEmail = iapEmailHeader.replace(/^accounts\.google\.com:/i, "").trim().toLowerCase();
+
+  if (!authenticatedEmail) {
+    return res.status(401).json({ error: "Se requiere autenticación mediante Google IAP." });
+  }
+  if (authenticatedEmail !== allowedEmail) {
+    return res.status(403).json({ error: "Esta cuenta no está autorizada para usar la aplicación." });
+  }
+
+  next();
+});
 
 // Global response sanitizer: guarantees BAAF is always used and PAAF is never returned in any response
 app.use((req, res, next) => {
@@ -9116,6 +9142,7 @@ ${report}
 
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -9130,9 +9157,18 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`[Servidor] Asistente Radiológico corriendo correctamente en http://localhost:${PORT}`);
   });
+
+  const shutdown = (signal: string) => {
+    console.log(`[Servidor] ${signal} recibido; cerrando conexiones activas.`);
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(1), 9_000).unref();
+  };
+
+  process.once("SIGTERM", () => shutdown("SIGTERM"));
+  process.once("SIGINT", () => shutdown("SIGINT"));
 }
 
 startServer();

@@ -17,9 +17,11 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
 COPY --from=build /app/dist ./dist
+COPY --from=build /app/server.cjs ./server.cjs
+COPY --from=build /app/server.cjs.map ./server.cjs.map
 COPY firebase-applet-config.json ./
 
 USER node
 EXPOSE 8080
 
-CMD ["node", "dist/server.cjs"]
+CMD ["node", "server.cjs"]

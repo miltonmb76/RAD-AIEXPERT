@@ -81,7 +81,7 @@ gcloud run deploy rad-ai-expert \
   --no-allow-unauthenticated \
   --iap \
   --set-secrets GEMINI_API_KEY=gemini-api-key:latest \
-  --set-env-vars 'FIREBASE_CONFIG={"apiKey":"...","authDomain":"...","projectId":"...","storageBucket":"...","messagingSenderId":"...","appId":"..."}' \
+  --set-env-vars '^@^AUTH_MODE=iap@ALLOWED_USER_EMAIL=TU_CORREO@gmail.com@FIREBASE_CONFIG={"apiKey":"...","authDomain":"...","projectId":"...","storageBucket":"...","messagingSenderId":"...","appId":"..."}' \
   --memory 2Gi \
   --cpu 1 \
   --min 1 \
