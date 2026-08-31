@@ -119,11 +119,19 @@ export default function ZipDicomExtractor({
             meta = parseDicomMetadata(cleanDcmBuffer, dicomFileName);
             let visualUrl = "";
 
-            try {
-              visualUrl = await decodeDicomImage(cleanDcmBuffer, dicomFileName);
-            } catch (codecError) {
-              console.warn("El codec DICOM avanzado no pudo decodificar el archivo; usando compatibilidad básica:", codecError);
+            const isPackedUncompressedYbr =
+              meta.photometricInterpretation?.trim().toUpperCase() === "YBR_FULL_422" &&
+              ["1.2.840.10008.1.2", "1.2.840.10008.1.2.1"].includes(meta.transferSyntaxUID || "");
+
+            if (isPackedUncompressedYbr) {
               visualUrl = extractImageFromDicom(cleanDcmBuffer, meta) || "";
+            } else {
+              try {
+                visualUrl = await decodeDicomImage(cleanDcmBuffer, dicomFileName);
+              } catch (codecError) {
+                console.warn("El codec DICOM avanzado no pudo decodificar el archivo; usando compatibilidad básica:", codecError);
+                visualUrl = extractImageFromDicom(cleanDcmBuffer, meta) || "";
+              }
             }
             
             if (!visualUrl) {

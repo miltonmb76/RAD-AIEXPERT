@@ -16,6 +16,7 @@ export interface DicomMetadata {
   pixelSpacing?: string;
   samplesPerPixel?: number;
   planarConfiguration?: number;
+  transferSyntaxUID?: string;
   fileName: string;
   allTags: { tag: string; name: string; value: string }[];
 }
@@ -195,7 +196,29 @@ export function renderRawDicomPixels(
     const photoUpper = photometricInterpretation.trim().toUpperCase();
     const isColor = photoUpper.includes("RGB") || photoUpper.includes("YBR") || photoUpper.includes("PALETTE") || valLen >= numPixels * 3;
     
-    if (isColor) {
+    if (photoUpper === "YBR_FULL_422") {
+      const rawBytes = u8.subarray(valOffset, valOffset + Math.min(valLen, numPixels * 2));
+      const writeYbrPixel = (pixelIndex: number, y: number, cb: number, cr: number) => {
+        const idx = pixelIndex * 4;
+        data[idx] = Math.max(0, Math.min(255, Math.round(y + 1.402 * (cr - 128))));
+        data[idx + 1] = Math.max(0, Math.min(255, Math.round(y - 0.344136 * (cb - 128) - 0.714136 * (cr - 128))));
+        data[idx + 2] = Math.max(0, Math.min(255, Math.round(y + 1.772 * (cb - 128))));
+        data[idx + 3] = 255;
+      };
+
+      let sourceIndex = 0;
+      for (let pixelIndex = 0; pixelIndex < numPixels && sourceIndex + 3 < rawBytes.length; pixelIndex += 2) {
+        const y1 = rawBytes[sourceIndex];
+        const y2 = rawBytes[sourceIndex + 1];
+        const cb = rawBytes[sourceIndex + 2];
+        const cr = rawBytes[sourceIndex + 3];
+        writeYbrPixel(pixelIndex, y1, cb, cr);
+        if (pixelIndex + 1 < numPixels) {
+          writeYbrPixel(pixelIndex + 1, y2, cb, cr);
+        }
+        sourceIndex += 4;
+      }
+    } else if (isColor) {
       const rawBytes = u8.subarray(valOffset, valOffset + Math.min(valLen, numPixels * 3));
       const isYbr = photoUpper.includes("YBR");
       
@@ -546,6 +569,7 @@ export function parseDicomMetadata(buffer: ArrayBuffer, fileName: string): Dicom
     photometricInterpretation: "MONOCHROME2",
     pixelRepresentation: 0,
     pixelSpacing: "1\\1", // Default to 1mm per pixel
+    transferSyntaxUID: "",
     fileName,
     allTags: [],
   };
@@ -579,6 +603,7 @@ export function parseDicomMetadata(buffer: ArrayBuffer, fileName: string): Dicom
     { name: "pixelSpacing", tagStr: "0028,0030", bytes: [0x28, 0x00, 0x30, 0x00] },
     { name: "samplesPerPixel", tagStr: "0028,0002", bytes: [0x28, 0x00, 0x02, 0x00] },
     { name: "planarConfiguration", tagStr: "0028,0006", bytes: [0x28, 0x00, 0x06, 0x00] },
+    { name: "transferSyntaxUID", tagStr: "0002,0010", bytes: [0x02, 0x00, 0x10, 0x00] },
   ];
 
   const u8 = new Uint8Array(buffer);
@@ -667,6 +692,7 @@ export function parseDicomMetadata(buffer: ArrayBuffer, fileName: string): Dicom
     pixelRepresentation: "Representación (0028,0103)",
     pixelSpacing: "Espaciado de Píxeles (0028,0030)",
     photometricInterpretation: "Fotométrica (0008,0004)",
+    transferSyntaxUID: "Sintaxis de Transferencia (0002,0010)",
   };
 
   for (const [key, val] of Object.entries(metadata)) {
