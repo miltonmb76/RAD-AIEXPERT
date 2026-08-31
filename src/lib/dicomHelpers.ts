@@ -337,6 +337,7 @@ export function sanitizeDataUrl(url: string | null | undefined): string {
 
 let cornerstoneInitialization: Promise<{
   loader: typeof import("@cornerstonejs/dicom-image-loader").default;
+  imageLoader: typeof import("@cornerstonejs/core").imageLoader;
 }> | null = null;
 
 async function initializeCornerstoneDecoder() {
@@ -350,7 +351,10 @@ async function initializeCornerstoneDecoder() {
         maxWebWorkers: Math.max(1, Math.min(navigator.hardwareConcurrency || 1, 2)),
         strict: false,
       });
-      return { loader: dicomLoaderModule.default };
+      return {
+        loader: dicomLoaderModule.default,
+        imageLoader: core.imageLoader,
+      };
     });
   }
   return cornerstoneInitialization;
@@ -431,7 +435,7 @@ export async function decodeDicomImage(
   buffer: ArrayBuffer,
   fileName = "image.dcm"
 ): Promise<string> {
-  const { loader } = await initializeCornerstoneDecoder();
+  const { loader, imageLoader } = await initializeCornerstoneDecoder();
   const blob = new File([getCleanArrayBuffer(buffer)], fileName, {
     type: "application/dicom",
   });
@@ -439,7 +443,7 @@ export async function decodeDicomImage(
   const fileIndex = Number(imageId.substring(imageId.lastIndexOf(":") + 1));
 
   try {
-    const image = await loader.wadouri.loadImage(imageId).promise;
+    const image = await imageLoader.loadAndCacheImage(imageId);
     return renderCornerstoneImage(image);
   } finally {
     if (Number.isInteger(fileIndex)) {
