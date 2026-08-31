@@ -376,8 +376,41 @@ function renderCornerstoneImage(image: any): string {
 
   const output = context.createImageData(columns, rows);
   const numberOfPixels = rows * columns;
+  const photometricInterpretation = String(
+    image.photometricInterpretation || image.imageFrame?.photometricInterpretation || ""
+  ).toUpperCase();
 
-  if (image.color || image.numberOfComponents >= 3) {
+  if (
+    photometricInterpretation === "YBR_FULL_422" &&
+    pixelData.length >= numberOfPixels * 2 &&
+    pixelData.length < numberOfPixels * 3
+  ) {
+    const writeYbrPixel = (pixelIndex: number, y: number, cb: number, cr: number) => {
+      const outputIndex = pixelIndex * 4;
+      output.data[outputIndex] = Math.max(0, Math.min(255, Math.round(y + 1.402 * (cr - 128))));
+      output.data[outputIndex + 1] = Math.max(
+        0,
+        Math.min(255, Math.round(y - 0.344136 * (cb - 128) - 0.714136 * (cr - 128)))
+      );
+      output.data[outputIndex + 2] = Math.max(0, Math.min(255, Math.round(y + 1.772 * (cb - 128))));
+      output.data[outputIndex + 3] = 255;
+    };
+
+    // DICOM PS3.3 C.7.6.3.1.2 stores two luminance samples followed by
+    // their shared chroma samples: Y1, Y2, Cb, Cr.
+    let sourceIndex = 0;
+    for (let pixelIndex = 0; pixelIndex < numberOfPixels; pixelIndex += 2) {
+      const y1 = pixelData[sourceIndex] ?? 0;
+      const y2 = pixelData[sourceIndex + 1] ?? y1;
+      const cb = pixelData[sourceIndex + 2] ?? 128;
+      const cr = pixelData[sourceIndex + 3] ?? 128;
+      writeYbrPixel(pixelIndex, y1, cb, cr);
+      if (pixelIndex + 1 < numberOfPixels) {
+        writeYbrPixel(pixelIndex + 1, y2, cb, cr);
+      }
+      sourceIndex += 4;
+    }
+  } else if (image.color || image.numberOfComponents >= 3) {
     const components = pixelData.length >= numberOfPixels * 4 ? 4 : 3;
     for (let pixelIndex = 0; pixelIndex < numberOfPixels; pixelIndex++) {
       const sourceIndex = pixelIndex * components;
