@@ -335,6 +335,119 @@ export function sanitizeDataUrl(url: string | null | undefined): string {
   return clean;
 }
 
+let cornerstoneInitialization: Promise<{
+  loader: typeof import("@cornerstonejs/dicom-image-loader").default;
+}> | null = null;
+
+async function initializeCornerstoneDecoder() {
+  if (!cornerstoneInitialization) {
+    cornerstoneInitialization = Promise.all([
+      import("@cornerstonejs/core"),
+      import("@cornerstonejs/dicom-image-loader"),
+    ]).then(([core, dicomLoaderModule]) => {
+      core.init();
+      dicomLoaderModule.init({
+        maxWebWorkers: Math.max(1, Math.min(navigator.hardwareConcurrency || 1, 2)),
+        strict: false,
+      });
+      return { loader: dicomLoaderModule.default };
+    });
+  }
+  return cornerstoneInitialization;
+}
+
+function renderCornerstoneImage(image: any): string {
+  const rows = Number(image.rows || image.height);
+  const columns = Number(image.columns || image.width);
+  const pixelData = image.getPixelData();
+  if (!rows || !columns || !pixelData?.length) {
+    throw new Error("El DICOM no contiene una matriz de píxeles renderizable.");
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = columns;
+  canvas.height = rows;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("No se pudo crear el lienzo DICOM.");
+
+  const output = context.createImageData(columns, rows);
+  const numberOfPixels = rows * columns;
+
+  if (image.color || image.numberOfComponents >= 3) {
+    const components = pixelData.length >= numberOfPixels * 4 ? 4 : 3;
+    for (let pixelIndex = 0; pixelIndex < numberOfPixels; pixelIndex++) {
+      const sourceIndex = pixelIndex * components;
+      const outputIndex = pixelIndex * 4;
+      output.data[outputIndex] = pixelData[sourceIndex] || 0;
+      output.data[outputIndex + 1] = pixelData[sourceIndex + 1] || 0;
+      output.data[outputIndex + 2] = pixelData[sourceIndex + 2] || 0;
+      output.data[outputIndex + 3] = components === 4 ? pixelData[sourceIndex + 3] : 255;
+    }
+  } else {
+    const slope = Number.isFinite(image.slope) ? image.slope : 1;
+    const intercept = Number.isFinite(image.intercept) ? image.intercept : 0;
+    const rawCenter = Array.isArray(image.windowCenter) ? image.windowCenter[0] : image.windowCenter;
+    const rawWidth = Array.isArray(image.windowWidth) ? image.windowWidth[0] : image.windowWidth;
+
+    let lower = Number(rawCenter) - Number(rawWidth) / 2;
+    let upper = Number(rawCenter) + Number(rawWidth) / 2;
+
+    if (!Number.isFinite(lower) || !Number.isFinite(upper) || upper <= lower) {
+      const sampleStep = Math.max(1, Math.floor(pixelData.length / 100_000));
+      const sampledValues: number[] = [];
+      for (let index = 0; index < pixelData.length; index += sampleStep) {
+        sampledValues.push(pixelData[index] * slope + intercept);
+      }
+      sampledValues.sort((a, b) => a - b);
+      lower = sampledValues[Math.floor(sampledValues.length * 0.02)] ?? 0;
+      upper = sampledValues[Math.floor(sampledValues.length * 0.98)] ?? lower + 1;
+      if (upper <= lower) upper = lower + 1;
+    }
+
+    const range = upper - lower;
+    for (let pixelIndex = 0; pixelIndex < numberOfPixels; pixelIndex++) {
+      const modalityValue = (pixelData[pixelIndex] ?? 0) * slope + intercept;
+      let gray = Math.round(((modalityValue - lower) / range) * 255);
+      gray = Math.max(0, Math.min(255, gray));
+      if (image.invert) gray = 255 - gray;
+
+      const outputIndex = pixelIndex * 4;
+      output.data[outputIndex] = gray;
+      output.data[outputIndex + 1] = gray;
+      output.data[outputIndex + 2] = gray;
+      output.data[outputIndex + 3] = 255;
+    }
+  }
+
+  context.putImageData(output, 0, 0);
+  return canvas.toDataURL("image/png");
+}
+
+/**
+ * Decodes the first frame of a DICOM Part 10 file using Cornerstone's medical
+ * codecs (JPEG, JPEG-LS, JPEG 2000, RLE and uncompressed transfer syntaxes).
+ */
+export async function decodeDicomImage(
+  buffer: ArrayBuffer,
+  fileName = "image.dcm"
+): Promise<string> {
+  const { loader } = await initializeCornerstoneDecoder();
+  const blob = new File([getCleanArrayBuffer(buffer)], fileName, {
+    type: "application/dicom",
+  });
+  const imageId = loader.wadouri.fileManager.add(blob);
+  const fileIndex = Number(imageId.substring(imageId.lastIndexOf(":") + 1));
+
+  try {
+    const image = await loader.wadouri.loadImage(imageId).promise;
+    return renderCornerstoneImage(image);
+  } finally {
+    if (Number.isInteger(fileIndex)) {
+      loader.wadouri.fileManager.remove(fileIndex);
+    }
+  }
+}
+
 // Orchestrate multi-strategy picture retrieval from DICOM raw buffer
 export function extractImageFromDicom(buffer: ArrayBuffer, metadata: DicomMetadata): string | null {
   const cleanBuffer = getCleanArrayBuffer(buffer);
