@@ -418,7 +418,7 @@ function randomizeNormalValue(defaultValStr: string, rangeStr: string, structure
 }
 
 const app = express();
-const PORT = 3000;
+const PORT = Number.parseInt(process.env.PORT || "3000", 10);
 
 // Enable JSON with elevated body limit because medical images can be large
 app.use(express.json({ limit: "20mb" }));
@@ -463,9 +463,7 @@ app.get("/api/health", (req, res) => {
     if (cleanedKey) {
       length = cleanedKey.length;
       matchesFormat = cleanedKey.startsWith("AIzaSy");
-      const firstChars = cleanedKey.substring(0, Math.min(6, cleanedKey.length));
-      const lastChars = cleanedKey.substring(Math.max(0, cleanedKey.length - 4));
-      keyInfo = `Configurada (${firstChars}...${lastChars}), total: ${length} caracteres.`;
+      keyInfo = `Configurada, total: ${length} caracteres.`;
     }
 
     res.json({
@@ -8316,10 +8314,28 @@ REGLAS DE EXTRACCIÓN:
   }
 });
 
-// --- PERSISTENT FIREBASE CONFIG ENDPOINTS ---
+// --- FIREBASE CONFIG ENDPOINTS ---
+// Cloud Run has an ephemeral filesystem. In production, FIREBASE_CONFIG is the
+// source of truth; local development can continue using the JSON file.
+
+function getFirebaseConfigFromEnvironment(): Record<string, unknown> | null {
+  const rawConfig = process.env.FIREBASE_CONFIG?.trim();
+  if (!rawConfig) return null;
+
+  try {
+    const parsed = JSON.parse(rawConfig);
+    if (!parsed.apiKey || !parsed.projectId) {
+      throw new Error("FIREBASE_CONFIG debe incluir apiKey y projectId.");
+    }
+    return parsed;
+  } catch (error) {
+    console.error("[Servidor] FIREBASE_CONFIG no contiene un objeto JSON válido:", error);
+    return null;
+  }
+}
 
 // Automatic backup of original firebase-applet-config.json on startup
-try {
+if (process.env.NODE_ENV !== "production") try {
   const configPath = path.join(process.cwd(), "firebase-applet-config.json");
   const backupPath = path.join(process.cwd(), "firebase-applet-config.json.backup");
   if (fs.existsSync(configPath) && !fs.existsSync(backupPath)) {
@@ -8333,6 +8349,13 @@ try {
 // Endpoint to save custom Firebase config directly to the workspace file system
 app.post("/api/save-firebase-config", (req, res) => {
   try {
+    if (process.env.NODE_ENV === "production") {
+      return res.status(409).json({
+        success: false,
+        error: "En producción, configura Firebase mediante la variable FIREBASE_CONFIG.",
+      });
+    }
+
     const { config } = req.body;
     if (!config || !config.apiKey || !config.projectId) {
       return res.status(400).json({ success: false, error: "La configuración provista no contiene 'apiKey' o 'projectId'." });
@@ -8352,6 +8375,13 @@ app.post("/api/save-firebase-config", (req, res) => {
 // Endpoint to reset and restore the original AI Studio test database configuration
 app.post("/api/reset-firebase-config", (req, res) => {
   try {
+    if (process.env.NODE_ENV === "production") {
+      return res.status(409).json({
+        success: false,
+        error: "La configuración de Firebase de producción se administra mediante FIREBASE_CONFIG.",
+      });
+    }
+
     const configPath = path.join(process.cwd(), "firebase-applet-config.json");
     const backupPath = path.join(process.cwd(), "firebase-applet-config.json.backup");
     
@@ -8371,6 +8401,11 @@ app.post("/api/reset-firebase-config", (req, res) => {
 // Endpoint to fetch current Firebase config from the server disk
 app.get("/api/firebase-config", (req, res) => {
   try {
+    const environmentConfig = getFirebaseConfigFromEnvironment();
+    if (environmentConfig) {
+      return res.json(environmentConfig);
+    }
+
     const configPath = path.join(process.cwd(), "firebase-applet-config.json");
     if (fs.existsSync(configPath)) {
       const data = fs.readFileSync(configPath, "utf-8");

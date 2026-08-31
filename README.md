@@ -58,6 +58,13 @@ Para Google Drive/Gmail, habilita Google como proveedor de Authentication y
 agrega `localhost` a los dominios autorizados de Firebase. Los permisos de
 Google se solicitan al iniciar sesión.
 
+## Publicación personal en Google Cloud
+
+Para acceder desde varias computadoras sin exponer la aplicación al público,
+consulta la guía de [Cloud Run protegido con IAP](docs/DEPLOY_GOOGLE_CLOUD.md).
+El acceso queda limitado a la cuenta Google autorizada y los secretos no se
+incluyen en la imagen ni en GitHub.
+
 ## Comprobaciones
 
 ```bash
