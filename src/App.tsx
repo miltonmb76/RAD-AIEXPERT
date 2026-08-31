@@ -15154,6 +15154,23 @@ const splitReportAndAnnex = (text: string) => {
         }
       }
 
+      // Merge the authenticated user's Firestore studies. Local copies win
+      // when they contain richer browser-only data such as source images.
+      if (uid && uid !== "local") {
+        try {
+          const remoteStudies = await getStudiesFromCloud(uid);
+          remoteStudies.forEach((study) => {
+            if (!studyMap.has(study.id)) {
+              studyMap.set(study.id, study);
+            }
+          });
+          studies = Array.from(studyMap.values());
+        } catch (cloudError) {
+          console.warn("No se pudo sincronizar Firestore; se conserva el archivo local:", cloudError);
+          setCloudStudiesError("No se pudo sincronizar con la nube. Tus estudios locales siguen disponibles.");
+        }
+      }
+
       studies.sort((a, b) => {
         const tA = new Date(a.createdAt || a.timestamp || 0).getTime();
         const tB = new Date(b.createdAt || b.timestamp || 0).getTime();
@@ -15174,7 +15191,7 @@ const splitReportAndAnnex = (text: string) => {
   };
 
   useEffect(() => {
-    fetchCloudStudies();
+    fetchCloudStudies(gmailUser?.uid);
   }, [gmailUser]);
 
   const downloadPdfFromBase64 = (base64: string, filename: string) => {
@@ -15252,8 +15269,8 @@ const splitReportAndAnnex = (text: string) => {
 
       const newStudy: CloudStudy = {
         id: idToSave,
-        userId: "local",
-        userEmail: "anon@local.com",
+        userId: gmailUser?.uid || "local",
+        userEmail: gmailUser?.email || "anon@local.com",
         timestamp: customReport?.timestamp || new Date().toLocaleString("es-ES", {
           hour: "2-digit",
           minute: "2-digit"
@@ -15303,9 +15320,36 @@ const splitReportAndAnnex = (text: string) => {
         console.warn("LocalStorage lleno, estudio completo guardado de forma segura en IndexedDB:", lsErr);
       }
 
+      let synchronizedToCloud = false;
+      if (gmailUser?.uid) {
+        try {
+          // Firestore documents must remain below 1 MiB. Images, signatures
+          // and generated PDFs stay in IndexedDB; the clinical text and
+          // metadata synchronize across the owner's computers.
+          const cloudStudy = {
+            ...newStudy,
+            pdfBase64: "",
+            attachedImages: [],
+            findings3dRenders: [],
+            customLogoUrl: "",
+            customSignatureUrl: "",
+          };
+          const { userId: _userId, userEmail: _userEmail, ...studyPayload } = cloudStudy;
+          await saveStudyToCloud(gmailUser.uid, gmailUser.email || "", studyPayload);
+          synchronizedToCloud = true;
+        } catch (cloudError) {
+          console.error("Error synchronizing study with Firestore:", cloudError);
+          setCloudStudiesError("El estudio se guardó localmente, pero no pudo sincronizarse con la nube.");
+        }
+      }
+
       setCurrentCloudStudyId(idToSave);
-      setCloudStudiesSuccess("Â¡Estudio guardado con Ã©xito en tu Archivo Local!");
-      fetchCloudStudies();
+      setCloudStudiesSuccess(
+        synchronizedToCloud
+          ? "¡Estudio guardado y sincronizado con tu nube privada!"
+          : "¡Estudio guardado con éxito en tu Archivo Local!"
+      );
+      fetchCloudStudies(gmailUser?.uid);
       setTimeout(() => setCloudStudiesSuccess(null), 4500);
       return idToSave;
     } catch (e: any) {
@@ -15331,8 +15375,16 @@ const splitReportAndAnnex = (text: string) => {
           localStorage.setItem("rad_local_studies", JSON.stringify(studiesList));
         } catch (e) {}
       }
-      setCloudStudiesSuccess("Estudio eliminado de tu Archivo Local.");
-      fetchCloudStudies();
+      if (gmailUser?.uid) {
+        try {
+          await deleteStudyFromCloud(studyId);
+        } catch (cloudError) {
+          console.warn("No se pudo eliminar la copia de Firestore:", cloudError);
+          setCloudStudiesError("Se eliminó la copia local, pero no la copia sincronizada.");
+        }
+      }
+      setCloudStudiesSuccess("Estudio eliminado de tu archivo.");
+      fetchCloudStudies(gmailUser?.uid);
       setTimeout(() => setCloudStudiesSuccess(null), 3000);
     } catch (e: any) {
       console.error("Error deleting local study:", e);
