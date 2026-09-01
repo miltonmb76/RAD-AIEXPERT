@@ -30,8 +30,10 @@ import {
   subscribeBridgeEvents,
   type BridgeCaptureEvent,
 } from "./lib/localBridge";
+import type { CaptureMismatchInfo } from "./components/ActivePatientPanel";
 import { runBackgroundTask } from "./lib/backgroundTasks";
 import { BackgroundTasksBar } from "./components/BackgroundTasksBar";
+import { ActivePatientPanel } from "./components/ActivePatientPanel";
 import { Findings3dRenderModule, Create3dRenderModal, Finding3dRender } from "./components/Findings3dRenderModule";
 import CaseAnalysisRenderer from "./components/CaseAnalysisRenderer";
 import InteractiveCaseEditor from "./components/InteractiveCaseEditor";
@@ -1734,7 +1736,9 @@ export default function App() {
   const [worklistError, setWorklistError] = useState<string | null>(null);
   const [selectedWorklistPatientId, setSelectedWorklistPatientId] = useState<string | null>(null);
   const [bridgeOnline, setBridgeOnline] = useState<boolean>(false);
+  const [bridgeDicomReady, setBridgeDicomReady] = useState<boolean | null>(null);
   const [bridgePatientCount, setBridgePatientCount] = useState<number>(0);
+  const [bridgeCaptureMismatch, setBridgeCaptureMismatch] = useState<CaptureMismatchInfo | null>(null);
   const bridgeImportedKeysRef = useRef<Set<string>>(new Set());
   
   // Real-time voice dictation states using Web Speech API
@@ -15173,8 +15177,30 @@ const splitReportAndAnnex = (text: string) => {
   const handleSelectWorklistPatient = (patient: WorklistPatient) => {
     if (!worklist) return;
 
+    const hasSessionContent = Boolean(
+      generatedReport.trim() ||
+        clinicalHistory.trim() ||
+        attachedImages.length > 0
+    );
+    const switchingPatient =
+      selectedWorklistPatientId &&
+      patient.id !== selectedWorklistPatientId &&
+      hasSessionContent;
+    const currentPatientName =
+      worklist.patients.find((p) => p.id === selectedWorklistPatientId)?.name || "el paciente actual";
+
+    if (
+      switchingPatient &&
+      !window.confirm(
+        `¿Cambiar al paciente ${patient.name}? Tienes datos del reporte o imágenes de ${currentPatientName} sin finalizar.`
+      )
+    ) {
+      return;
+    }
+
     // Reset current cloud study ID for a new patient
     setCurrentCloudStudyId("");
+    setBridgeCaptureMismatch(null);
 
     // Update states in the main report generator form
     setPatientName(patient.name);
@@ -15281,8 +15307,63 @@ const splitReportAndAnnex = (text: string) => {
 
     if (shouldAttach) {
       void importBridgeCapturesForPatient(event.patientId);
+    } else if (currentPatientDicomId !== "" && event.patientId !== currentPatientDicomId) {
+      setBridgeCaptureMismatch({
+        patientId: event.patientId,
+        patientName: event.patientName,
+        fileName: event.fileName,
+      });
     }
   };
+
+  const handleFinishActivePatient = () => {
+    if (!worklist || !selectedWorklistPatientId) {
+      setIsWorklistSidebarOpen(true);
+      return;
+    }
+
+    const activePatient = worklist.patients.find((p) => p.id === selectedWorklistPatientId);
+    const activeName = activePatient?.name || "este paciente";
+    const hasSessionContent = Boolean(
+      generatedReport.trim() ||
+        clinicalHistory.trim() ||
+        attachedImages.length > 0
+    );
+
+    if (
+      hasSessionContent &&
+      !window.confirm(`¿Finalizar caso de ${activeName}? El paciente quedará marcado como atendido.`)
+    ) {
+      return;
+    }
+
+    handleUpdatePatientStatus(selectedWorklistPatientId, "attended");
+    setSelectedWorklistPatientId(null);
+    setBridgeCaptureMismatch(null);
+  };
+
+  const activeWorklistPatient = useMemo(() => {
+    if (!worklist) return null;
+    if (selectedWorklistPatientId) {
+      return worklist.patients.find((p) => p.id === selectedWorklistPatientId) || null;
+    }
+    return worklist.patients.find((p) => p.status === "current") || null;
+  }, [worklist, selectedWorklistPatientId]);
+
+  const activePatientCaptureCount = useMemo(() => {
+    const dicomId = (patientId || activeWorklistPatient?.patientId || "").trim();
+    if (!dicomId) return 0;
+    const prefix = `bridge-${dicomId.replace(/\//g, "-")}`;
+    return attachedImages.filter((img) => img.id.startsWith(prefix)).length;
+  }, [attachedImages, patientId, activeWorklistPatient?.patientId]);
+
+  useEffect(() => {
+    if (!worklist || selectedWorklistPatientId) return;
+    const currentPatient = worklist.patients.find((p) => p.status === "current");
+    if (currentPatient) {
+      setSelectedWorklistPatientId(currentPatient.id);
+    }
+  }, [worklist, selectedWorklistPatientId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -15293,6 +15374,18 @@ const splitReportAndAnnex = (text: string) => {
       setBridgeOnline(Boolean(health?.ok));
       if (health?.ok) {
         setBridgePatientCount(health.patients);
+        if (typeof health.dicomReady === "boolean") {
+          setBridgeDicomReady(health.dicomReady);
+        } else if (
+          typeof health.mwlListening === "boolean" &&
+          typeof health.storageListening === "boolean"
+        ) {
+          setBridgeDicomReady(health.mwlListening && health.storageListening);
+        } else {
+          setBridgeDicomReady(null);
+        }
+      } else {
+        setBridgeDicomReady(null);
       }
     };
 
@@ -16236,6 +16329,18 @@ const splitReportAndAnnex = (text: string) => {
           </div>
         </div>
       </header>
+
+      <ActivePatientPanel
+        patient={activeWorklistPatient}
+        bridgeOnline={bridgeOnline}
+        bridgeDicomReady={bridgeDicomReady}
+        captureCount={activePatientCaptureCount}
+        hasGeneratedReport={Boolean(generatedReport.trim())}
+        captureMismatch={bridgeCaptureMismatch}
+        onOpenWorklist={() => setIsWorklistSidebarOpen(true)}
+        onFinishCase={handleFinishActivePatient}
+        onDismissMismatch={() => setBridgeCaptureMismatch(null)}
+      />
 
       {/* ðŸ§­ MAIN CONTAINER WITH TABS (Aesthetic Upgrade 2 - Glassmorphic Medical Cockpit Navigation Rail) */}
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">

@@ -13,6 +13,9 @@ export interface BridgeHealth {
   storagePort: number;
   mwlAeTitle: string;
   storageAeTitle: string;
+  dicomReady?: boolean;
+  mwlListening?: boolean;
+  storageListening?: boolean;
 }
 
 export interface BridgeWorklistPatient {
