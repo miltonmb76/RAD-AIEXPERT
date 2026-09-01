@@ -22,6 +22,9 @@ import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
 from pydicom.dataset import Dataset
 from pynetdicom import AE, ALL_TRANSFER_SYNTAXES, evt, StoragePresentationContexts
 from pynetdicom.sop_class import ModalityWorklistInformationFind, Verification
@@ -229,11 +232,39 @@ def start_storage_server() -> None:
     ae.start_server(("0.0.0.0", STORAGE_PORT), block=True, evt_handlers=handlers)
 
 
+class PrivateNetworkAccessMiddleware(BaseHTTPMiddleware):
+    """Permite fetch desde Cloud Run (HTTPS) hacia localhost — requerido por Chrome PNA."""
+
+    async def dispatch(self, request: Request, call_next):
+        origin = request.headers.get("origin", "")
+
+        if request.method == "OPTIONS" and request.headers.get("access-control-request-private-network") == "true":
+            headers = {
+                "Access-Control-Allow-Origin": origin or "*",
+                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+                "Access-Control-Allow-Headers": request.headers.get(
+                    "access-control-request-headers", "Content-Type"
+                ),
+                "Access-Control-Allow-Private-Network": "true",
+                "Access-Control-Max-Age": "86400",
+                "Vary": "Origin",
+            }
+            return Response(status_code=204, headers=headers)
+
+        response = await call_next(request)
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Vary"] = "Origin"
+        response.headers["Access-Control-Allow-Private-Network"] = "true"
+        return response
+
+
 app = FastAPI(title="RAD-AIEXPERT Samsung V7 Bridge")
+app.add_middleware(PrivateNetworkAccessMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origin_regex=r"https?://.*",
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

@@ -46,10 +46,18 @@ export interface BridgeCaptureMeta {
 
 export async function checkBridgeHealth(baseUrl = DEFAULT_BRIDGE_URL): Promise<BridgeHealth | null> {
   try {
-    const res = await fetch(`${baseUrl}/api/health`, { signal: AbortSignal.timeout(2500) });
+    const res = await fetch(`${baseUrl}/api/health`, {
+      mode: "cors",
+      cache: "no-store",
+      signal: AbortSignal.timeout(5000),
+    });
     if (!res.ok) return null;
-    return (await res.json()) as BridgeHealth;
-  } catch {
+    const data = (await res.json()) as BridgeHealth;
+    return data?.ok ? data : null;
+  } catch (err) {
+    if (import.meta.env.DEV) {
+      console.warn("[bridge] health check failed:", err);
+    }
     return null;
   }
 }

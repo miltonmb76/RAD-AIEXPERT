@@ -966,7 +966,7 @@ ae.start_server(("0.0.0.0", 1040), evt_handlers=[(evt.EVT_C_FIND, handle_find)])
                 <p className="text-[9px] text-slate-400 leading-relaxed">
                   {bridgeOnline
                     ? `Agenda sincronizada (${bridgePatientCount} pacientes). Al seleccionar un paciente en la lista, las capturas del V7 se adjuntan solas al reporte cuando llegan por red.`
-                    : "En tu iMac ejecuta el puente una vez: cd bridge && bash install-mac.sh && source .venv/bin/activate && python3 samsung_bridge.py"}
+                    : "El puente corre en la terminal pero la app no lo ve. Abre RAD-AIEXPERT en Chrome/Safari en el mismo iMac, actualiza el puente (git pull) y reinícialo. Si Chrome pide permiso de red local, acepta."}
                 </p>
               </div>
 
@@ -978,10 +978,13 @@ ae.start_server(("0.0.0.0", 1040), evt_handlers=[(evt.EVT_C_FIND, handle_find)])
 
               {!bridgeOnline && (
                 <pre className="text-[8px] font-mono p-2 bg-slate-950 rounded-lg border border-slate-850 text-indigo-300 whitespace-pre-wrap">
-{`cd ~/rad-ai-expert-deploy/bridge
-bash install-mac.sh
-source .venv/bin/activate
-python3 samsung_bridge.py`}
+{`cd ~/rad-ai-expert-deploy
+git pull
+cd bridge && source .venv/bin/activate
+python3 samsung_bridge.py
+
+# Prueba en el navegador (mismo iMac):
+# http://127.0.0.1:8787/api/health  ?  {"ok":true,...}`}
                 </pre>
               )}
             </div>

@@ -62,6 +62,7 @@ No hay USB, no hay arrastrar archivos, no hay export manual.
 
 | Síntoma | Solución |
 |---------|----------|
+| Puente OFFLINE pero `/api/health` responde `ok:true` en terminal | Abre la app **en el mismo iMac** (no en otro dispositivo). Actualiza y reinicia el puente: `git pull` + `python3 samsung_bridge.py`. Chrome puede pedir permiso de **red local** — acéptalo. |
 | Puente OFFLINE en la app | Ejecutar `python3 samsung_bridge.py` en el iMac |
 | Worklist vacía en el V7 | Verificar Test MWL; revisar que la agenda tenga pacientes en la app |
 | Imágenes no llegan | Verificar servidor Storage `RAD_BRIDGE:11113`; confirmar envío DICOM al guardar |
