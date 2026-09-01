@@ -24,6 +24,7 @@ import {
   Plus
 } from "lucide-react";
 import { Atlas3DData, Atlas3DPanel, Atlas3DSynopticItem } from "../types";
+import { runBackgroundTask } from "../lib/backgroundTasks";
 
 // Helper to extract uppercase panel letters referenced in a string (e.g. "(Panel A)" -> ["A"], "Paneles A y B" -> ["A", "B"])
 const extractReferencedLetters = (panelRef?: string): string[] => {
@@ -194,25 +195,27 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
 
       const effectiveLaterality = selectedLaterality === "auto" ? (laterality || "") : selectedLaterality;
 
-      const response = await fetch("/api/generate-3d-atlas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          reportText,
-          organOrStudy: activeProtocol || "",
-          laterality: effectiveLaterality,
-          requestedModel: selectedModel || "gemini-3.7-flash",
-          customDirectives: customDirectives.trim() || undefined
-        })
+      await runBackgroundTask("atlas-3d", "Generando Atlas 3D", async () => {
+        const response = await fetch("/api/generate-3d-atlas", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            reportText,
+            organOrStudy: activeProtocol || "",
+            laterality: effectiveLaterality,
+            requestedModel: selectedModel || "gemini-3.7-flash",
+            customDirectives: customDirectives.trim() || undefined
+          })
+        });
+
+        const json = await response.json();
+        if (!response.ok || !json.success) {
+          throw new Error(json.error || "No se pudo generar la reconstrucción 3D.");
+        }
+
+        setAtlasData(json.data);
+        setIncludeInReport(true);
       });
-
-      const json = await response.json();
-      if (!response.ok || !json.success) {
-        throw new Error(json.error || "No se pudo generar la reconstrucción 3D.");
-      }
-
-      setAtlasData(json.data);
-      setIncludeInReport(true);
     } catch (err: any) {
       console.error("Error al generar Atlas 3D:", err);
       setErrorMessage(err.message || "Error al generar Atlas 3D.");

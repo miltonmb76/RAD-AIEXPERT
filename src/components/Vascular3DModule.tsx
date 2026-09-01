@@ -22,6 +22,7 @@ import {
   Gauge
 } from "lucide-react";
 import { Vascular3DData, Vascular3DPanel, VascularHemodynamicRow, VascularStudyType } from "../types";
+import { runBackgroundTask } from "../lib/backgroundTasks";
 
 interface Vascular3DModuleProps {
   reportText: string;
@@ -89,25 +90,27 @@ export const Vascular3DModule: React.FC<Vascular3DModuleProps> = ({
     try {
       setGenerationStep("Construyendo matriz hemodinámica y prompts macro-vasculares 3D...");
 
-      const response = await fetch("/api/generate-3d-vascular", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          reportText,
-          vascularType: selectedVascularType,
-          laterality: selectedLaterality !== "auto" ? selectedLaterality : undefined,
-          customDirectives: customDirectives.trim() ? customDirectives.trim() : undefined,
-          requestedModel: selectedModel
-        })
+      await runBackgroundTask("vascular-3d", "Generando Suite Vascular 3D", async () => {
+        const response = await fetch("/api/generate-3d-vascular", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            reportText,
+            vascularType: selectedVascularType,
+            laterality: selectedLaterality !== "auto" ? selectedLaterality : undefined,
+            customDirectives: customDirectives.trim() ? customDirectives.trim() : undefined,
+            requestedModel: selectedModel
+          })
+        });
+
+        const resData = await response.json();
+        if (!resData.success) {
+          throw new Error(resData.error || "Error al generar la Suite Vascular 3D.");
+        }
+
+        setVascularData(resData.data);
+        setIncludeInReport(true);
       });
-
-      const resData = await response.json();
-      if (!resData.success) {
-        throw new Error(resData.error || "Error al generar la Suite Vascular 3D.");
-      }
-
-      setVascularData(resData.data);
-      setIncludeInReport(true);
       setGenerationStep("");
     } catch (err: any) {
       console.error("Error generando Suite Vascular 3D:", err);

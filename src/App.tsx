@@ -27,6 +27,8 @@ import {
   subscribeBridgeEvents,
   type BridgeCaptureEvent,
 } from "./lib/localBridge";
+import { runBackgroundTask } from "./lib/backgroundTasks";
+import { BackgroundTasksBar } from "./components/BackgroundTasksBar";
 import { Findings3dRenderModule, Create3dRenderModal, Finding3dRender } from "./components/Findings3dRenderModule";
 import CaseAnalysisRenderer from "./components/CaseAnalysisRenderer";
 import InteractiveCaseEditor from "./components/InteractiveCaseEditor";
@@ -3310,8 +3312,8 @@ Ejemplo:
   const [isSchematicSummaryExpanded, setIsSchematicSummaryExpanded] = useState<boolean>(false);
   
   const [attachedImages, setAttachedImages] = useState<Array<{ id: string; url: string; label?: string; preview?: string; metadata?: any; isSelected?: boolean; notes?: string }>>([]);
-  const [loadingAiLabelId, setLoadingAiLabelId] = useState<string | null>(null);
-  const [loadingAutocompleteId, setLoadingAutocompleteId] = useState<string | null>(null);
+  const [loadingAiLabelIds, setLoadingAiLabelIds] = useState<Record<string, true>>({});
+  const [loadingAutocompleteIds, setLoadingAutocompleteIds] = useState<Record<string, true>>({});
   const [isLabelingAll, setIsLabelingAll] = useState<boolean>(false);
   const [isCorrelatingFigures, setIsCorrelatingFigures] = useState<boolean>(false);
 
@@ -6086,145 +6088,160 @@ Ejemplo:
 
   const handleAiLabelImage = async (id: string) => {
     const imgItem = attachedImages.find(item => item.id === id);
-    if (!imgItem) return;
-    
-    setLoadingAiLabelId(id);
+    if (!imgItem || loadingAiLabelIds[id]) return;
+
+    setLoadingAiLabelIds(prev => ({ ...prev, [id]: true }));
     try {
-      const response = await fetch("/api/classify-and-label-image", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          image: imgItem.base64 || imgItem.url,
-          filename: imgItem.name,
-          studyType: specificStudy || "Mamograf铆a y Ultrasonido",
-          clinicalHistory: clinicalHistory || "",
-          findings: findings || inputReport || "",
-        }),
+      await runBackgroundTask(`label-${id}`, "Rotulando imagen con IA", async () => {
+        const response = await fetch("/api/classify-and-label-image", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            image: imgItem.base64 || imgItem.url,
+            filename: imgItem.name,
+            studyType: specificStudy || "Mamograf韆 y Ultrasonido",
+            clinicalHistory: clinicalHistory || "",
+            findings: findings || inputReport || "",
+          }),
+        });
+
+        const data = await response.json();
+        if (response.ok && data.success) {
+          setAttachedImages(prev => prev.map(item => item.id === id ? {
+            ...item,
+            caption: data.label || item.caption,
+            modality: data.modality || item.modality || "US",
+            projection: data.projection || item.projection || "OTRO",
+            side: data.side || item.side || "Derecha"
+          } : item));
+        } else {
+          throw new Error(data.error || "No se pudo generar la rotulaci髇 con IA.");
+        }
       });
-      
-      const data = await response.json();
-      if (response.ok && data.success) {
-        setAttachedImages(prev => prev.map(item => item.id === id ? {
-          ...item,
-          caption: data.label || item.caption,
-          modality: data.modality || item.modality || "US",
-          projection: data.projection || item.projection || "OTRO",
-          side: data.side || item.side || "Derecha"
-        } : item));
-      } else {
-        alert(data.error || "No se pudo generar la rotulaci贸n con IA.");
-      }
     } catch (err) {
       console.error("Error al rotular con IA:", err);
-      alert("Error de conexi贸n al rotular la foto.");
+      alert(err instanceof Error ? err.message : "Error de conexi髇 al rotular la foto.");
     } finally {
-      setLoadingAiLabelId(null);
+      setLoadingAiLabelIds(prev => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
     }
   };
 
   const handleAutocompleteLabelFromReport = async (id: string) => {
     const imgItem = attachedImages.find(item => item.id === id);
-    if (!imgItem) return;
+    if (!imgItem || loadingAutocompleteIds[id]) return;
     
     if (!imgItem.caption || !imgItem.caption.trim()) {
-      alert("Por favor, escribe primero una palabra o frase clave en la descripci贸n (ej. 'ves铆cula', 'quiste' o 'car贸tida') para poder buscar y autocompletar desde el reporte.");
+      alert("Por favor, escribe primero una palabra o frase clave en la descripci髇 (ej. 'ves韈ula', 'quiste' o 'car髏ida') para poder buscar y autocompletar desde el reporte.");
       return;
     }
 
     const reportToUse = generatedReport || inputReport || findings;
     if (!reportToUse) {
-      alert("Por favor, redacta o genera el reporte primero para poder buscar y autocompletar la rotulaci贸n.");
+      alert("Por favor, redacta o genera el reporte primero para poder buscar y autocompletar la rotulaci髇.");
       return;
     }
 
-    setLoadingAutocompleteId(id);
+    setLoadingAutocompleteIds(prev => ({ ...prev, [id]: true }));
     try {
-      const response = await fetch("/api/autocomplete-label-from-report", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: selectedModel,
-          phrase: imgItem.caption,
-          currentReport: reportToUse,
-          studyType: specificStudy || "Mamograf铆a / Ecograf铆a",
-          clinicalHistory: clinicalHistory || "",
-        }),
-      });
+      await runBackgroundTask(`autocomplete-${id}`, "Completando rotulaci髇 desde reporte", async () => {
+        const response = await fetch("/api/autocomplete-label-from-report", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: selectedModel,
+            phrase: imgItem.caption,
+            currentReport: reportToUse,
+            studyType: specificStudy || "Mamograf韆 / Ecograf韆",
+            clinicalHistory: clinicalHistory || "",
+          }),
+        });
 
-      const data = await response.json();
-      if (response.ok && data.success && data.label) {
-        setAttachedImages(prev => prev.map(item => item.id === id ? { ...item, caption: data.label } : item));
-      } else {
-        alert(data.error || "No se pudo autocompletar la rotulaci贸n.");
-      }
+        const data = await response.json();
+        if (response.ok && data.success && data.label) {
+          setAttachedImages(prev => prev.map(item => item.id === id ? { ...item, caption: data.label } : item));
+        } else {
+          throw new Error(data.error || "No se pudo autocompletar la rotulaci髇.");
+        }
+      });
     } catch (err) {
-      console.error("Error al autocompletar rotulaci贸n:", err);
-      alert("Error de conexi贸n al autocompletar desde el reporte.");
+      console.error("Error al autocompletar rotulaci髇:", err);
+      alert(err instanceof Error ? err.message : "Error de conexi髇 al autocompletar desde el reporte.");
     } finally {
-      setLoadingAutocompleteId(null);
+      setLoadingAutocompleteIds(prev => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
     }
   };
 
-  const handleAiLabelAllImages = async () => {
-    if (attachedImages.length === 0) return;
+  const handleAiLabelAllImages = () => {
+    if (attachedImages.length === 0 || isLabelingAll) return;
+    const imagesToLabel = [...attachedImages];
     setIsLabelingAll(true);
-    try {
-      const promises = attachedImages.map(async (imgItem) => {
-        try {
-          const response = await fetch("/api/classify-and-label-image", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              image: imgItem.base64 || imgItem.url,
-              filename: imgItem.name,
-              studyType: specificStudy || "Mamograf铆a y Ultrasonido",
-              clinicalHistory: clinicalHistory || "",
-              findings: findings || inputReport || "",
-            }),
-          });
-          
-          const data = await response.json();
-          if (response.ok && data.success) {
+
+    void runBackgroundTask(
+      `label-all-${Date.now()}`,
+      `Rotulando ${imagesToLabel.length} im醙enes`,
+      async () => {
+        const promises = imagesToLabel.map(async (imgItem) => {
+          try {
+            const response = await fetch("/api/classify-and-label-image", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                image: imgItem.base64 || imgItem.url,
+                filename: imgItem.name,
+                studyType: specificStudy || "Mamograf韆 y Ultrasonido",
+                clinicalHistory: clinicalHistory || "",
+                findings: findings || inputReport || "",
+              }),
+            });
+
+            const data = await response.json();
+            if (response.ok && data.success) {
+              return {
+                id: imgItem.id,
+                label: data.label,
+                modality: data.modality,
+                projection: data.projection,
+                side: data.side
+              };
+            }
+          } catch (err) {
+            console.error(`Error labeling image ${imgItem.id}:`, err);
+          }
+          return null;
+        });
+
+        const results = await Promise.all(promises);
+        setAttachedImages(prev => prev.map(item => {
+          const found = results.find(r => r && r.id === item.id);
+          if (found) {
             return {
-              id: imgItem.id,
-              label: data.label,
-              modality: data.modality,
-              projection: data.projection,
-              side: data.side
+              ...item,
+              caption: found.label || item.caption,
+              modality: found.modality || item.modality || "US",
+              projection: found.projection || item.projection || "OTRO",
+              side: found.side || item.side || "Derecha"
             };
           }
-        } catch (err) {
-          console.error(`Error labeling image ${imgItem.id}:`, err);
-        }
-        return null;
-      });
-
-      const results = await Promise.all(promises);
-      setAttachedImages(prev => prev.map(item => {
-        const found = results.find(r => r && r.id === item.id);
-        if (found) {
-          return {
-            ...item,
-            caption: found.label || item.caption,
-            modality: found.modality || item.modality || "US",
-            projection: found.projection || item.projection || "OTRO",
-            side: found.side || item.side || "Derecha"
-          };
-        }
-        return item;
-      }));
-    } catch (err) {
-      console.error("Error al rotular todas las im谩genes:", err);
-      alert("Error al intentar rotular todas las im谩genes.");
-    } finally {
+          return item;
+        }));
+      }
+    ).finally(() => {
       setIsLabelingAll(false);
-    }
+    });
   };
 
   const handleCorrelateFigures = async () => {
@@ -18727,11 +18744,11 @@ const splitReportAndAnnex = (text: string) => {
                                             <div className="flex items-center gap-1">
                                               <button
                                                 onClick={() => handleAutocompleteLabelFromReport(img.id)}
-                                                disabled={loadingAutocompleteId === img.id}
+                                                disabled={!!loadingAutocompleteIds[img.id]}
                                                 className="text-[8px] font-black uppercase tracking-wider text-teal-450 hover:text-teal-300 disabled:opacity-50 transition-all flex items-center gap-1 bg-teal-500/10 hover:bg-teal-500/20 px-1.5 py-0.5 rounded border border-teal-500/15 cursor-pointer select-none"
                                                 title="Escribe una palabra o frase clave (ej. 'ves铆cula', 'quiste' o 'placa') y haz clic aqu铆 para que la IA la busque en el reporte y complete el r贸tulo"
                                               >
-                                                {loadingAutocompleteId === img.id ? (
+                                                {loadingAutocompleteIds[img.id] ? (
                                                   <>
                                                     <Loader2 className="h-2 w-2 animate-spin text-teal-400" />
                                                     <span>Completando...</span>
@@ -18746,11 +18763,11 @@ const splitReportAndAnnex = (text: string) => {
 
                                               <button
                                                 onClick={() => handleAiLabelImage(img.id)}
-                                                disabled={loadingAiLabelId === img.id}
+                                                disabled={!!loadingAiLabelIds[img.id]}
                                                 className="text-[8px] font-black uppercase tracking-wider text-indigo-400 hover:text-indigo-300 disabled:opacity-50 transition-all flex items-center gap-1 bg-indigo-500/10 hover:bg-indigo-500/20 px-1.5 py-0.5 rounded border border-indigo-500/15 cursor-pointer select-none"
                                                 title="Analizar imagen completa con IA"
                                               >
-                                                {loadingAiLabelId === img.id ? (
+                                                {loadingAiLabelIds[img.id] ? (
                                                   <>
                                                     <Loader2 className="h-2 w-2 animate-spin text-indigo-400" />
                                                     <span>Rotulando...</span>
@@ -23900,6 +23917,7 @@ const splitReportAndAnnex = (text: string) => {
           })()}
         </div>
       )}
+      <BackgroundTasksBar />
     </div>
   );
 }

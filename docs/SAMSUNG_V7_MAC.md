@@ -12,6 +12,8 @@ RAD-AIEXPERT (navegador)  ←→  Puente local (iMac)  ←→  Samsung V7
 
 La app web (Cloud Run o local) habla con `http://127.0.0.1:8787` en el **mismo iMac** donde abres el navegador. El puente recibe la agenda y las capturas DICOM del ecógrafo.
 
+> **Módulos en paralelo:** Puedes rotular imágenes y generar Atlas 3D al mismo tiempo. Verás un panel flotante abajo a la derecha con las tareas activas. Si todo va lento, redeploy Cloud Run con `--concurrency 80 --cpu 2` (ver `docs/DEPLOY_GOOGLE_CLOUD.md`).
+
 ## Instalación única en el iMac (Sequoia 15.5)
 
 ```bash
