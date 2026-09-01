@@ -14,4 +14,5 @@ fi
 
 cd "$BRIDGE_DIR"
 export PYTHONUNBUFFERED=1
+echo "===== $(date '+%Y-%m-%d %H:%M:%S') puente iniciado =====" >> "$LOG_DIR/bridge.log"
 exec "$VENV_PYTHON" -u "$BRIDGE_DIR/samsung_bridge.py" >> "$LOG_DIR/bridge.log" 2>&1

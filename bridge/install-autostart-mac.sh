@@ -4,24 +4,55 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LABEL="com.radaiexpert.samsung-bridge"
+DOMAIN="gui/$(id -u)"
 PLIST_DEST="$HOME/Library/LaunchAgents/${LABEL}.plist"
 START_SCRIPT="$SCRIPT_DIR/start-bridge.sh"
 LOG_DIR="$HOME/RAD-AIEXPERT-Bridge/logs"
 
 usage() {
   cat <<EOF
-Uso: bash install-autostart-mac.sh [--uninstall|--status]
+Uso: bash install-autostart-mac.sh [--uninstall|--status|--restart]
 
   (sin flags)  Instala arranque automático al iniciar sesión en macOS
+  --restart    Detiene el puente viejo y lo vuelve a cargar (sin borrar plist)
   --uninstall  Desactiva y elimina el agente
   --status     Muestra si el puente está registrado y corriendo
 EOF
 }
 
-uninstall() {
-  if launchctl list 2>/dev/null | grep -q "$LABEL"; then
-    launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || launchctl unload "$PLIST_DEST" 2>/dev/null || true
+stop_bridge_processes() {
+  echo "==> Deteniendo procesos del puente..."
+  launchctl bootout "${DOMAIN}/${LABEL}" 2>/dev/null || true
+  launchctl bootout "$DOMAIN" "$PLIST_DEST" 2>/dev/null || true
+  launchctl unload "$PLIST_DEST" 2>/dev/null || true
+
+  pkill -f "${SCRIPT_DIR}/samsung_bridge.py" 2>/dev/null || true
+  pkill -f "${SCRIPT_DIR}/start-bridge.sh" 2>/dev/null || true
+
+  local pid
+  pid="$(lsof -t -iTCP:8787 -sTCP:LISTEN 2>/dev/null || true)"
+  if [[ -n "$pid" ]]; then
+    kill "$pid" 2>/dev/null || true
+    sleep 1
+    kill -9 "$pid" 2>/dev/null || true
   fi
+  sleep 1
+}
+
+load_bridge_service() {
+  echo "==> Registrando puente en launchd..."
+  if ! launchctl bootstrap "$DOMAIN" "$PLIST_DEST" 2>/dev/null; then
+    stop_bridge_processes
+    launchctl bootstrap "$DOMAIN" "$PLIST_DEST"
+  fi
+  launchctl enable "${DOMAIN}/${LABEL}" 2>/dev/null || true
+  if ! launchctl kickstart -k "${DOMAIN}/${LABEL}" 2>/dev/null; then
+    launchctl kickstart "${DOMAIN}/${LABEL}" 2>/dev/null || true
+  fi
+}
+
+uninstall() {
+  stop_bridge_processes
   rm -f "$PLIST_DEST"
   echo "✅ Arranque automático desactivado."
 }
@@ -62,6 +93,11 @@ status() {
 
   if curl -sf "http://127.0.0.1:8787/api/health" >/dev/null 2>&1; then
     echo "Puente HTTP (app web): EN LÍNEA (8787) ✅"
+    if curl -sf "http://127.0.0.1:8787/api/health" | grep -q '"dicomReady": true'; then
+      echo "DICOM (health): listo ✅"
+    elif curl -sf "http://127.0.0.1:8787/api/health" | grep -q '"dicomReady"'; then
+      echo "DICOM (health): NO listo ❌ — el proceso puede ser una versión vieja; ejecuta --restart"
+    fi
   else
     echo "Puente HTTP (app web): no responde en 8787 ❌"
   fi
@@ -84,38 +120,19 @@ status() {
     tail -15 "$LOG_DIR/bridge.log"
     if ! lsof -nP -iTCP:1040 -sTCP:LISTEN >/dev/null 2>&1 || ! lsof -nP -iTCP:11113 -sTCP:LISTEN >/dev/null 2>&1; then
       echo ""
-      echo "Reiniciar puente:"
-      echo "  launchctl kickstart -k gui/$(id -u)/${LABEL}"
-      echo "Si sigue fallando, revisa errores DICOM:"
-      echo "  grep -E 'ERROR|Traceback|OSError|BOOT' \"$LOG_DIR/bridge.log\" | tail -20"
+      echo "Reinicio limpio:"
+      echo "  bash install-autostart-mac.sh --restart"
+      echo "Errores DICOM:"
+      echo "  grep -E 'ERROR|Traceback|OSError|BOOT|MWL|STORE' \"$LOG_DIR/bridge.log\" | tail -20"
     fi
   fi
 }
 
-if [[ "${1:-}" == "--uninstall" ]]; then
-  uninstall
-  exit 0
-fi
+write_plist() {
+  chmod +x "$START_SCRIPT"
+  mkdir -p "$LOG_DIR"
 
-if [[ "${1:-}" == "--status" ]]; then
-  status
-  exit 0
-fi
-
-if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-  usage
-  exit 0
-fi
-
-if [[ ! -x "$SCRIPT_DIR/.venv/bin/python3" ]]; then
-  echo "Error: ejecuta primero bash install-mac.sh en esta carpeta."
-  exit 1
-fi
-
-chmod +x "$START_SCRIPT"
-mkdir -p "$LOG_DIR"
-
-cat > "$PLIST_DEST" <<EOF
+  cat > "$PLIST_DEST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -150,14 +167,43 @@ cat > "$PLIST_DEST" <<EOF
 </dict>
 </plist>
 EOF
+}
 
-# macOS Ventura+ / Sequoia
-launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
-launchctl bootstrap "gui/$(id -u)" "$PLIST_DEST"
-launchctl enable "gui/$(id -u)/$LABEL"
-launchctl kickstart -k "gui/$(id -u)/$LABEL"
+install_or_restart() {
+  if [[ ! -x "$SCRIPT_DIR/.venv/bin/python3" ]]; then
+    echo "Error: ejecuta primero bash install-mac.sh en esta carpeta."
+    exit 1
+  fi
 
-sleep 2
+  write_plist
+  stop_bridge_processes
+  load_bridge_service
+  sleep 3
+}
+
+if [[ "${1:-}" == "--uninstall" ]]; then
+  uninstall
+  exit 0
+fi
+
+if [[ "${1:-}" == "--status" ]]; then
+  status
+  exit 0
+fi
+
+if [[ "${1:-}" == "--restart" ]]; then
+  install_or_restart
+  echo "✅ Puente reiniciado."
+  status
+  exit 0
+fi
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+install_or_restart
 
 cat <<EOF
 
@@ -170,15 +216,12 @@ cat <<EOF
 Comprobar estado:
   bash install-autostart-mac.sh --status
 
+Reinicio limpio (si quedó un proceso viejo):
+  bash install-autostart-mac.sh --restart
+
 Desactivar:
   bash install-autostart-mac.sh --uninstall
 
-Abre la app en el iMac; en Lista de trabajo debe decir Puente Samsung V7 → EN LÍNEA.
-
 EOF
 
-if curl -sf "http://127.0.0.1:8787/api/health" >/dev/null 2>&1; then
-  echo "Comprobación: puente respondiendo en http://127.0.0.1:8787 ✅"
-else
-  echo "Aviso: el puente aún no responde — revisa ${LOG_DIR}/bridge.log en unos segundos."
-fi
+status
