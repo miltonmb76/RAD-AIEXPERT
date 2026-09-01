@@ -33,11 +33,20 @@ export interface WorklistPatient {
 }
 
 export interface Worklist {
-  id: string; // e.g. `${userId}_${dateStr}`
+  id: string;
   userId: string;
-  date: string; // YYYY-MM-DD
+  date: string;
   patients: WorklistPatient[];
   createdAt?: any;
+  updatedAt?: number;
+}
+
+export interface UserSettingsDoc {
+  userId: string;
+  systemInstruction: string;
+  chatInstruction: string;
+  classifyInstruction: string;
+  updatedAt?: number;
 }
 
 export interface CloudStudy {
@@ -403,8 +412,10 @@ export const saveWorklistToCloud = async (
 
   // Always save to LocalStorage fallback first
   try {
-    const localKey = `fallback_worklist_${userId}_${worklist.date}`;
-    localStorage.setItem(localKey, JSON.stringify(worklist));
+    localStorage.setItem(`fallback_worklist_${userId}_active`, JSON.stringify(worklist));
+    if (worklist.date) {
+      localStorage.setItem(`fallback_worklist_${userId}_${worklist.date}`, JSON.stringify(worklist));
+    }
   } catch (localErr) {
     console.warn("Could not save worklist to local fallback storage:", localErr);
   }
@@ -415,6 +426,7 @@ export const saveWorklistToCloud = async (
     const dataToSave = {
       ...worklist,
       userId,
+      updatedAt: Date.now(),
       createdAt: serverTimestamp()
     };
     await promiseWithTimeout(
@@ -429,7 +441,7 @@ export const saveWorklistToCloud = async (
 };
 
 /**
- * Loads a daily worklist for a given ID (e.g., userId_YYYY-MM-DD)
+ * Loads a worklist for the given document id (e.g. userId_active).
  */
 export const getWorklistFromCloud = async (
   userId: string,
@@ -451,13 +463,12 @@ export const getWorklistFromCloud = async (
         userId: data.userId,
         date: data.date || "",
         patients: data.patients || [],
-        createdAt: data.createdAt
+        createdAt: data.createdAt,
+        updatedAt: data.updatedAt,
       };
 
-      // Sync to fallback cache
       try {
-        const localKey = `fallback_worklist_${userId}_${wlObj.date}`;
-        localStorage.setItem(localKey, JSON.stringify(wlObj));
+        localStorage.setItem(`fallback_worklist_${userId}_active`, JSON.stringify(wlObj));
       } catch (err) {}
 
       return wlObj;
@@ -465,19 +476,92 @@ export const getWorklistFromCloud = async (
     return null;
   } catch (error) {
     console.error("Firestore error in getWorklistFromCloud, falling back to local storage:", error);
-    // Parse the date from worklistId (it is format `${userId}_${dateStr}`)
     try {
-      const parts = worklistId.split("_");
-      const dateStr = parts[parts.length - 1]; // YYYY-MM-DD
-      const localKey = `fallback_worklist_${userId}_${dateStr}`;
-      const cached = localStorage.getItem(localKey);
+      const activeKey = `fallback_worklist_${userId}_active`;
+      const cached = localStorage.getItem(activeKey);
       if (cached) {
         return JSON.parse(cached) as Worklist;
+      }
+      const parts = worklistId.split("_");
+      const dateStr = parts[parts.length - 1];
+      const legacyKey = `fallback_worklist_${userId}_${dateStr}`;
+      const legacyCached = localStorage.getItem(legacyKey);
+      if (legacyCached) {
+        return JSON.parse(legacyCached) as Worklist;
       }
     } catch (e) {
       console.error("Failed to parse cached worklist:", e);
     }
     throw error;
+  }
+};
+
+/**
+ * Persists customized system prompts for report generation across devices.
+ */
+export const saveUserSettingsToCloud = async (
+  userId: string,
+  settings: Omit<UserSettingsDoc, "userId">
+): Promise<void> => {
+  if (!userId) return;
+
+  try {
+    localStorage.setItem("radiology_sys_inst", settings.systemInstruction);
+    localStorage.setItem("radiology_chat_inst", settings.chatInstruction);
+    localStorage.setItem("radiology_class_inst", settings.classifyInstruction);
+  } catch (localErr) {
+    console.warn("Could not save user settings to localStorage:", localErr);
+  }
+
+  try {
+    const docRef = doc(db, "user_settings", userId);
+    await promiseWithTimeout(
+      setDoc(
+        docRef,
+        {
+          userId,
+          ...settings,
+          updatedAt: settings.updatedAt || Date.now(),
+        },
+        { merge: true }
+      ),
+      15000,
+      "Timeout saving user settings to Firestore"
+    );
+  } catch (error) {
+    console.error("Firestore error in saveUserSettingsToCloud:", error);
+    throw error;
+  }
+};
+
+/**
+ * Loads persisted system prompts from Firestore.
+ */
+export const getUserSettingsFromCloud = async (
+  userId: string
+): Promise<UserSettingsDoc | null> => {
+  if (!userId) return null;
+
+  try {
+    const docRef = doc(db, "user_settings", userId);
+    const docSnap = await promiseWithTimeout(
+      getDoc(docRef),
+      15000,
+      "Timeout fetching user settings from Firestore"
+    );
+    if (!docSnap.exists()) return null;
+
+    const data = docSnap.data();
+    return {
+      userId: data.userId || userId,
+      systemInstruction: data.systemInstruction || "",
+      chatInstruction: data.chatInstruction || "",
+      classifyInstruction: data.classifyInstruction || "",
+      updatedAt: data.updatedAt,
+    };
+  } catch (error) {
+    console.error("Firestore error in getUserSettingsFromCloud:", error);
+    return null;
   }
 };
 

@@ -79,8 +79,8 @@ import {
   Box
 } from "lucide-react";
 import { initAuth, googleSignIn, logout as googleLogout, anonymousSignIn, emailSignIn, emailSignUp, getFirebaseConfig } from "./firebaseAuth";
-import { CloudStudy, saveStudyToCloud, getStudiesFromCloud, deleteStudyFromCloud, Worklist, WorklistPatient, saveWorklistToCloud, getWorklistFromCloud, getSingleStudyFromCloud, testFirebaseConfigConnection } from "./firebaseDb";
-import { idbSaveWorklist, idbGetWorklist, idbClearWorklist, idbSaveStudy, idbGetAllStudies, idbDeleteStudy, idbSaveHistory, idbGetHistory } from "./localDb";
+import { CloudStudy, saveStudyToCloud, getStudiesFromCloud, deleteStudyFromCloud, Worklist, WorklistPatient, saveWorklistToCloud, getWorklistFromCloud, getSingleStudyFromCloud, testFirebaseConfigConnection, saveUserSettingsToCloud, getUserSettingsFromCloud } from "./firebaseDb";
+import { idbSaveWorklist, idbGetWorklist, idbClearWorklist, idbSaveStudy, idbGetAllStudies, idbDeleteStudy, idbSaveHistory, idbGetHistory, idbSaveUserSettings, idbGetUserSettings, getActiveWorklistId } from "./localDb";
 import { uploadPdfToDrive } from "./lib/googleDrive";
 import { Mail, LogOut, Clock, Calendar, ListTodo, UserCheck, ImagePlus, Wifi, HelpCircle, Info, Laptop, Network, ChevronDown, Link } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
@@ -1156,9 +1156,20 @@ export default function App() {
   const [infographicError, setInfographicError] = useState<string | null>(null);
   const [attachInfographicToOfficialReport, setAttachInfographicToOfficialReport] = useState<boolean>(false);
   // Local storage customizable instructions
-  const [systemInstruction, setSystemInstruction] = useState<string>("");
-  const [chatInstruction, setChatInstruction] = useState<string>("");
-  const [classifyInstruction, setClassifyInstruction] = useState<string>("");
+  const [systemInstruction, setSystemInstruction] = useState<string>(() => {
+    if (typeof window === "undefined") return GENERAL_SYSTEM_INSTRUCTION;
+    return localStorage.getItem("radiology_sys_inst") || GENERAL_SYSTEM_INSTRUCTION;
+  });
+  const [chatInstruction, setChatInstruction] = useState<string>(() => {
+    if (typeof window === "undefined") return CHAT_SYSTEM_INSTRUCTION;
+    return localStorage.getItem("radiology_chat_inst") || CHAT_SYSTEM_INSTRUCTION;
+  });
+  const [classifyInstruction, setClassifyInstruction] = useState<string>(() => {
+    if (typeof window === "undefined") return CLASSIFICATION_SYSTEM_INSTRUCTION;
+    return localStorage.getItem("radiology_class_inst") || CLASSIFICATION_SYSTEM_INSTRUCTION;
+  });
+  const settingsLoadedRef = useRef(false);
+  const settingsSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [savedReports, setSavedReports] = useState<SavedReport[]>([]);
 
   // 1. STATE FOR REPORT GENERATOR
@@ -14534,21 +14545,107 @@ const splitReportAndAnnex = (text: string) => {
   };
 
   // Persistent settings save utilities
-  const handleSaveSettings = () => {
-    localStorage.setItem("radiology_sys_inst", systemInstruction);
-    localStorage.setItem("radiology_chat_inst", chatInstruction);
-    localStorage.setItem("radiology_class_inst", classifyInstruction);
-    alert("¡Instrucciones generales del sistema guardadas y actualizadas correctamente!");
+  const persistUserSettings = async (
+    settings: { systemInstruction: string; chatInstruction: string; classifyInstruction: string },
+    options: { silent?: boolean } = {}
+  ) => {
+    const updatedAt = Date.now();
+    try {
+      localStorage.setItem("radiology_sys_inst", settings.systemInstruction);
+      localStorage.setItem("radiology_chat_inst", settings.chatInstruction);
+      localStorage.setItem("radiology_class_inst", settings.classifyInstruction);
+    } catch (e) {
+      console.warn("Could not save settings to localStorage:", e);
+    }
+
+    await idbSaveUserSettings({ ...settings, updatedAt });
+
+    const activeUserId = gmailUser?.uid;
+    if (activeUserId) {
+      saveUserSettingsToCloud(activeUserId, { ...settings, updatedAt }).catch((err) => {
+        console.warn("Could not sync user settings to cloud:", err);
+      });
+    }
+
+    if (!options.silent) {
+      alert("Instrucciones generales del sistema guardadas y actualizadas correctamente.");
+    }
   };
+
+  const handleSaveSettings = () => {
+    persistUserSettings({ systemInstruction, chatInstruction, classifyInstruction });
+  };
+
+  useEffect(() => {
+    const loadUserSettings = async () => {
+      let sys = localStorage.getItem("radiology_sys_inst") || GENERAL_SYSTEM_INSTRUCTION;
+      let chat = localStorage.getItem("radiology_chat_inst") || CHAT_SYSTEM_INSTRUCTION;
+      let cls = localStorage.getItem("radiology_class_inst") || CLASSIFICATION_SYSTEM_INSTRUCTION;
+      let bestUpdatedAt = 0;
+
+      const idbSettings = await idbGetUserSettings();
+      if (idbSettings && (idbSettings.updatedAt || 0) >= bestUpdatedAt) {
+        sys = idbSettings.systemInstruction || sys;
+        chat = idbSettings.chatInstruction || chat;
+        cls = idbSettings.classifyInstruction || cls;
+        bestUpdatedAt = idbSettings.updatedAt || 0;
+      }
+
+      const activeUserId = gmailUser?.uid;
+      if (activeUserId) {
+        try {
+          const cloudSettings = await getUserSettingsFromCloud(activeUserId);
+          if (cloudSettings && (cloudSettings.updatedAt || 0) >= bestUpdatedAt) {
+            sys = cloudSettings.systemInstruction || sys;
+            chat = cloudSettings.chatInstruction || chat;
+            cls = cloudSettings.classifyInstruction || cls;
+          }
+        } catch (err) {
+          console.warn("Could not load user settings from cloud:", err);
+        }
+      }
+
+      setSystemInstruction(sys);
+      setChatInstruction(chat);
+      setClassifyInstruction(cls);
+      settingsLoadedRef.current = true;
+    };
+
+    settingsLoadedRef.current = false;
+    loadUserSettings();
+  }, [gmailUser?.uid]);
+
+  useEffect(() => {
+    if (!settingsLoadedRef.current) return;
+
+    if (settingsSaveTimerRef.current) {
+      clearTimeout(settingsSaveTimerRef.current);
+    }
+
+    settingsSaveTimerRef.current = setTimeout(() => {
+      persistUserSettings(
+        { systemInstruction, chatInstruction, classifyInstruction },
+        { silent: true }
+      );
+    }, 900);
+
+    return () => {
+      if (settingsSaveTimerRef.current) {
+        clearTimeout(settingsSaveTimerRef.current);
+      }
+    };
+  }, [systemInstruction, chatInstruction, classifyInstruction, gmailUser?.uid]);
 
   const handleResetSettings = () => {
     if (confirm("¿Estás seguro de que deseas restablecer todas las instrucciones a sus valores médicos por defecto?")) {
       setSystemInstruction(GENERAL_SYSTEM_INSTRUCTION);
       setChatInstruction(CHAT_SYSTEM_INSTRUCTION);
       setClassifyInstruction(CLASSIFICATION_SYSTEM_INSTRUCTION);
-      localStorage.setItem("radiology_sys_inst", GENERAL_SYSTEM_INSTRUCTION);
-      localStorage.setItem("radiology_chat_inst", CHAT_SYSTEM_INSTRUCTION);
-      localStorage.setItem("radiology_class_inst", CLASSIFICATION_SYSTEM_INSTRUCTION);
+      persistUserSettings({
+        systemInstruction: GENERAL_SYSTEM_INSTRUCTION,
+        chatInstruction: CHAT_SYSTEM_INSTRUCTION,
+        classifyInstruction: CLASSIFICATION_SYSTEM_INSTRUCTION,
+      }, { silent: true });
     }
   };
 
@@ -14581,7 +14678,10 @@ const splitReportAndAnnex = (text: string) => {
         selectedLogo: localStorage.getItem("rad_selected_logo"),
         customLogoStyle: localStorage.getItem("rad_custom_logo_style"),
         customSignature: localStorage.getItem("rad_custom_signature"),
-        pdfLayoutType: localStorage.getItem("radiology_pdf_layout")
+        pdfLayoutType: localStorage.getItem("radiology_pdf_layout"),
+        radiology_sys_inst: localStorage.getItem("radiology_sys_inst"),
+        radiology_chat_inst: localStorage.getItem("radiology_chat_inst"),
+        radiology_class_inst: localStorage.getItem("radiology_class_inst"),
       };
       
       const blob = new Blob([JSON.stringify(dataToBackup, null, 2)], { type: "application/json" });
@@ -14654,8 +14754,28 @@ const splitReportAndAnnex = (text: string) => {
           localStorage.setItem("radiology_pdf_layout", backup.pdfLayoutType);
           setPdfLayoutType(backup.pdfLayoutType as any);
         }
+        if (backup.radiology_sys_inst) {
+          localStorage.setItem("radiology_sys_inst", backup.radiology_sys_inst);
+          setSystemInstruction(backup.radiology_sys_inst);
+        }
+        if (backup.radiology_chat_inst) {
+          localStorage.setItem("radiology_chat_inst", backup.radiology_chat_inst);
+          setChatInstruction(backup.radiology_chat_inst);
+        }
+        if (backup.radiology_class_inst) {
+          localStorage.setItem("radiology_class_inst", backup.radiology_class_inst);
+          setClassifyInstruction(backup.radiology_class_inst);
+        }
+        if (backup.radiology_sys_inst || backup.radiology_chat_inst || backup.radiology_class_inst) {
+          void idbSaveUserSettings({
+            systemInstruction: backup.radiology_sys_inst || systemInstruction,
+            chatInstruction: backup.radiology_chat_inst || chatInstruction,
+            classifyInstruction: backup.radiology_class_inst || classifyInstruction,
+            updatedAt: Date.now(),
+          });
+        }
 
-        alert("¡Éxito! Respaldo de datos importado y restaurado correctamente.");
+        alert("��xito! Respaldo de datos importado y restaurado correctamente.");
         window.location.reload();
       } catch (err: any) {
         alert("El archivo de respaldo no es válido o está corrupto: " + err.message);
@@ -14677,74 +14797,116 @@ const splitReportAndAnnex = (text: string) => {
     try {
       const activeUserId = overrideUserId || gmailUser?.uid || "local";
       const dateStr = getTodayDateStr();
+      const activeWorklistId = getActiveWorklistId(activeUserId);
 
-      // 1. Check IndexedDB persistent store first
-      const idbWl = await idbGetWorklist();
-      if (idbWl && Array.isArray(idbWl.patients) && idbWl.patients.length > 0) {
-        setWorklist(idbWl);
-        const jsonStr = JSON.stringify(idbWl);
+      const commitWorklistLocally = async (wl: Worklist) => {
+        const normalized: Worklist = {
+          ...wl,
+          id: activeWorklistId,
+          userId: activeUserId,
+          date: wl.date || dateStr,
+          updatedAt: wl.updatedAt || Date.now(),
+        };
+        setWorklist(normalized);
+        await idbSaveWorklist(normalized);
+        const jsonStr = JSON.stringify(normalized);
         try {
           localStorage.setItem("rad_worklist_current", jsonStr);
           localStorage.setItem("rad_worklist_latest", jsonStr);
+          localStorage.setItem(`fallback_worklist_${activeUserId}_active`, jsonStr);
+          localStorage.removeItem("rad_worklist_explicitly_cleared");
         } catch (e) {}
-        return;
-      }
+      };
 
-      // 2. Check if user explicitly cleared the worklist
       if (localStorage.getItem("rad_worklist_explicitly_cleared") === "true") {
         setWorklist({
-          id: `${activeUserId}_${dateStr}`,
+          id: activeWorklistId,
           userId: activeUserId,
           date: dateStr,
-          patients: []
+          patients: [],
         });
         return;
       }
 
-      // 3. Read from local storage keys in priority order
-      const primaryKeys = [
+      const candidates: Worklist[] = [];
+
+      const idbWl = await idbGetWorklist();
+      if (idbWl?.patients?.length) {
+        candidates.push(idbWl);
+      }
+
+      const localKeys = new Set<string>([
         "rad_worklist_current",
         "rad_worklist_latest",
-        `rad_worklist_${activeUserId}_${dateStr}`,
-        `rad_worklist_local_${dateStr}`,
-        `fallback_worklist_${activeUserId}_${dateStr}`
-      ];
+        `fallback_worklist_${activeUserId}_active`,
+        `rad_worklist_${activeUserId}_active`,
+        `fallback_worklist_local_active`,
+      ]);
 
-      for (const key of primaryKeys) {
-        const val = localStorage.getItem(key);
-        if (val) {
-          try {
-            const parsed = JSON.parse(val) as Worklist;
-            if (parsed && Array.isArray(parsed.patients) && parsed.patients.length > 0) {
-              setWorklist(parsed);
-              idbSaveWorklist(parsed);
-              const jsonStr = JSON.stringify(parsed);
-              try {
-                localStorage.setItem("rad_worklist_current", jsonStr);
-                localStorage.setItem("rad_worklist_latest", jsonStr);
-              } catch (e) {}
-              return;
-            }
-          } catch (e) {}
+      if (activeUserId !== "local") {
+        localKeys.add("rad_worklist_local_active");
+        localKeys.add(`fallback_worklist_local_${dateStr}`);
+      }
+
+      if (typeof window !== "undefined" && window.localStorage) {
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (!key) continue;
+          if (
+            key.startsWith("fallback_worklist_") ||
+            key.startsWith("rad_worklist_")
+          ) {
+            localKeys.add(key);
+          }
         }
       }
 
-      // 4. Fallback: preserve existing React state if it already has patients
-      setWorklist(prev => {
-        if (prev && Array.isArray(prev.patients) && prev.patients.length > 0) {
-          idbSaveWorklist(prev);
-          const jsonStr = JSON.stringify(prev);
-          try {
-            localStorage.setItem("rad_worklist_current", jsonStr);
-            localStorage.setItem("rad_worklist_latest", jsonStr);
-          } catch (e) {}
+      for (const key of localKeys) {
+        const val = localStorage.getItem(key);
+        if (!val) continue;
+        try {
+          const parsed = JSON.parse(val) as Worklist;
+          if (parsed?.patients?.length) {
+            candidates.push(parsed);
+          }
+        } catch (e) {}
+      }
+
+      if (activeUserId !== "local") {
+        try {
+          const cloudWl = await getWorklistFromCloud(activeUserId, activeWorklistId);
+          if (cloudWl?.patients?.length) {
+            candidates.push(cloudWl);
+          }
+        } catch (err) {
+          console.warn("Could not load worklist from cloud:", err);
+        }
+      }
+
+      if (candidates.length > 0) {
+        const best = [...candidates].sort((a, b) => {
+          const patientDiff = (b.patients?.length || 0) - (a.patients?.length || 0);
+          if (patientDiff !== 0) return patientDiff;
+          return (b.updatedAt || 0) - (a.updatedAt || 0);
+        })[0];
+        await commitWorklistLocally(best);
+        return;
+      }
+
+      setWorklist((prev) => {
+        if (prev?.patients?.length) {
+          void commitWorklistLocally({
+            ...prev,
+            id: activeWorklistId,
+            userId: activeUserId,
+          });
           return prev;
         }
         return {
-          id: `${activeUserId}_${dateStr}`,
+          id: activeWorklistId,
           userId: activeUserId,
           date: dateStr,
-          patients: []
+          patients: [],
         };
       });
     } catch (e) {
@@ -14754,17 +14916,18 @@ const splitReportAndAnnex = (text: string) => {
 
   useEffect(() => {
     fetchWorklist();
-  }, [gmailUser]);
+  }, [gmailUser?.uid]);
 
   const saveWorklist = async (updatedPatients: WorklistPatient[]) => {
     const dateStr = getTodayDateStr();
     const activeUserId = gmailUser?.uid || "local";
-    const worklistId = `${activeUserId}_${dateStr}`;
+    const worklistId = getActiveWorklistId(activeUserId);
     const wlData: Worklist = {
       id: worklistId,
       userId: activeUserId,
-      date: dateStr,
-      patients: updatedPatients
+      date: worklist?.date || dateStr,
+      patients: updatedPatients,
+      updatedAt: Date.now(),
     };
 
     try {
@@ -14780,17 +14943,14 @@ const splitReportAndAnnex = (text: string) => {
         localStorage.setItem("rad_worklist_explicitly_cleared", "true");
         localStorage.removeItem("rad_worklist_current");
         localStorage.removeItem("rad_worklist_latest");
-        localStorage.removeItem(`rad_worklist_${activeUserId}_${dateStr}`);
-        localStorage.removeItem(`fallback_worklist_${activeUserId}_${dateStr}`);
+        localStorage.removeItem(`fallback_worklist_${activeUserId}_active`);
       } else {
         await idbSaveWorklist(wlData);
         localStorage.removeItem("rad_worklist_explicitly_cleared");
         try {
           localStorage.setItem("rad_worklist_current", jsonStr);
           localStorage.setItem("rad_worklist_latest", jsonStr);
-          localStorage.setItem(`rad_worklist_${activeUserId}_${dateStr}`, jsonStr);
-          localStorage.setItem(`rad_worklist_local_${dateStr}`, jsonStr);
-          localStorage.setItem(`fallback_worklist_${activeUserId}_${dateStr}`, jsonStr);
+          localStorage.setItem(`fallback_worklist_${activeUserId}_active`, jsonStr);
         } catch (e) {}
       }
 

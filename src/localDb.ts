@@ -1,13 +1,22 @@
 import { Worklist, CloudStudy } from "./firebaseDb";
 
 const DB_NAME = "RadiologyAppDB";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 const STORES = {
   WORKLIST: "worklists",
   STUDIES: "local_studies",
-  HISTORY: "reports_history"
+  HISTORY: "reports_history",
+  SETTINGS: "user_settings",
 };
+
+export interface PersistedUserSettings {
+  id: "current_user_settings";
+  systemInstruction: string;
+  chatInstruction: string;
+  classifyInstruction: string;
+  updatedAt: number;
+}
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -27,6 +36,9 @@ function openDB(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(STORES.HISTORY)) {
         db.createObjectStore(STORES.HISTORY, { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains(STORES.SETTINGS)) {
+        db.createObjectStore(STORES.SETTINGS, { keyPath: "id" });
       }
     };
 
@@ -165,4 +177,45 @@ export async function idbGetHistory(): Promise<any[]> {
   } catch (e) {
     return [];
   }
+}
+
+// --- USER SETTINGS (system prompts) ---
+export async function idbSaveUserSettings(settings: Omit<PersistedUserSettings, "id">): Promise<void> {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORES.SETTINGS, "readwrite");
+    const store = tx.objectStore(STORES.SETTINGS);
+    store.put({
+      id: "current_user_settings",
+      ...settings,
+      updatedAt: settings.updatedAt || Date.now(),
+    });
+    return new Promise((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) {
+    console.warn("[IndexedDB] Error saving user settings:", e);
+  }
+}
+
+export async function idbGetUserSettings(): Promise<PersistedUserSettings | null> {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORES.SETTINGS, "readonly");
+    const store = tx.objectStore(STORES.SETTINGS);
+    const req = store.get("current_user_settings");
+    return new Promise((resolve) => {
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    });
+  } catch (e) {
+    console.warn("[IndexedDB] Error getting user settings:", e);
+    return null;
+  }
+}
+
+/** Stable worklist document id — persists until the user edits or clears it. */
+export function getActiveWorklistId(userId: string): string {
+  return `${userId || "local"}_active`;
 }
