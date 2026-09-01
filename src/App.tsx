@@ -18,6 +18,15 @@ import { renderVascular3DPageToPdf } from "./utils/vascular3dPdfRenderer";
 import { renderUsImagesToPdf, getPanelLetter } from "./utils/usImagesPdfRenderer";
 import { renderMmgImagesToPdf } from "./utils/mmgImagesPdfRenderer";
 import { decodeDicomForDisplay, compressImageForAttachment } from "./lib/dicomHelpers";
+import {
+  checkBridgeHealth,
+  pushWorklistToBridge,
+  setBridgeActivePatient,
+  listBridgeCaptures,
+  fetchBridgeCaptureBuffer,
+  subscribeBridgeEvents,
+  type BridgeCaptureEvent,
+} from "./lib/localBridge";
 import { Findings3dRenderModule, Create3dRenderModal, Finding3dRender } from "./components/Findings3dRenderModule";
 import CaseAnalysisRenderer from "./components/CaseAnalysisRenderer";
 import InteractiveCaseEditor from "./components/InteractiveCaseEditor";
@@ -577,13 +586,15 @@ const ManualPatientAdder: React.FC<ManualPatientAdderProps> = ({ onAdd }) => {
 
 interface UltrasoundWorklistExporterProps {
   patients: WorklistPatient[];
+  bridgeOnline: boolean;
+  bridgePatientCount: number;
 }
 
-const UltrasoundWorklistExporter: React.FC<UltrasoundWorklistExporterProps> = ({ patients }) => {
+const UltrasoundWorklistExporter: React.FC<UltrasoundWorklistExporterProps> = ({ patients, bridgeOnline, bridgePatientCount }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState<"standard_csv" | "samsung_v7_csv" | "ge_csv" | "mindray_xml" | "json_bridge">("samsung_v7_csv");
   const [copiedScript, setCopiedScript] = useState(false);
-  const [activeTab, setActiveTab] = useState<"export" | "guide">("export");
+  const [activeTab, setActiveTab] = useState<"auto" | "export" | "guide">("auto");
 
   const handleExport = () => {
     if (patients.length === 0) {
@@ -900,7 +911,10 @@ ae.start_server(("0.0.0.0", 1040), evt_handlers=[(evt.EVT_C_FIND, handle_find)])
         className="w-full px-4 py-3 text-left text-[10px] font-black uppercase text-indigo-300 hover:text-indigo-200 hover:bg-indigo-950/10 flex items-center justify-between transition tracking-wider font-mono"
       >
         <span className="flex items-center gap-1.5">
-          <Network className="h-4 w-4 text-indigo-400 animate-pulse" /> Sincronizar con Samsung V7
+          <Network className="h-4 w-4 text-indigo-400 animate-pulse" /> Puente Samsung V7
+          <span className={`ml-1 px-1.5 py-0.5 rounded text-[7px] font-black tracking-wider ${bridgeOnline ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" : "bg-rose-500/15 text-rose-300 border border-rose-500/30"}`}>
+            {bridgeOnline ? "EN L�NEA" : "OFFLINE"}
+          </span>
         </span>
         <ChevronDown className={`h-3.5 w-3.5 text-indigo-400 transition-transform duration-300 ${isOpen ? "rotate-180" : ""}`} />
       </button>
@@ -910,6 +924,17 @@ ae.start_server(("0.0.0.0", 1040), evt_handlers=[(evt.EVT_C_FIND, handle_find)])
           <div className="flex border-b border-slate-850/60 pb-1.5">
             <button
               type="button"
+              onClick={() => setActiveTab("auto")}
+              className={`flex-1 text-[8.5px] font-black uppercase tracking-wider py-1 text-center transition cursor-pointer ${
+                activeTab === "auto"
+                  ? "text-indigo-400 border-b-2 border-indigo-500 pb-2 -mb-2 font-black"
+                  : "text-slate-500 hover:text-slate-300"
+              }`}
+            >
+              Autom�tico
+            </button>
+            <button
+              type="button"
               onClick={() => setActiveTab("export")}
               className={`flex-1 text-[8.5px] font-black uppercase tracking-wider py-1 text-center transition cursor-pointer ${
                 activeTab === "export"
@@ -917,7 +942,7 @@ ae.start_server(("0.0.0.0", 1040), evt_handlers=[(evt.EVT_C_FIND, handle_find)])
                   : "text-slate-500 hover:text-slate-300"
               }`}
             >
-              1. Exportar Lista
+              Export manual
             </button>
             <button
               type="button"
@@ -928,9 +953,39 @@ ae.start_server(("0.0.0.0", 1040), evt_handlers=[(evt.EVT_C_FIND, handle_find)])
                   : "text-slate-500 hover:text-slate-300"
               }`}
             >
-              2. Guía Samsung V7 (Wi-Fi)
+              Config V7
             </button>
           </div>
+
+          {activeTab === "auto" && (
+            <div className="space-y-3 text-left">
+              <div className={`rounded-lg p-3 border ${bridgeOnline ? "bg-emerald-950/20 border-emerald-800/40" : "bg-rose-950/15 border-rose-900/30"}`}>
+                <p className="text-[9px] font-black uppercase tracking-wider mb-1.5" style={{ color: bridgeOnline ? "#6ee7b7" : "#fda4af" }}>
+                  {bridgeOnline ? "Puente local conectado" : "Puente local no detectado"}
+                </p>
+                <p className="text-[9px] text-slate-400 leading-relaxed">
+                  {bridgeOnline
+                    ? `Agenda sincronizada (${bridgePatientCount} pacientes). Al seleccionar un paciente en la lista, las capturas del V7 se adjuntan solas al reporte cuando llegan por red.`
+                    : "En tu iMac ejecuta el puente una vez: cd bridge && bash install-mac.sh && source .venv/bin/activate && python3 samsung_bridge.py"}
+                </p>
+              </div>
+
+              <ol className="list-decimal list-inside text-[9px] text-slate-400 space-y-1.5">
+                <li>Selecciona al paciente en la lista de trabajo (carga el formulario del reporte).</li>
+                <li>En el <strong className="text-slate-300">Samsung V7</strong>: Patient ? Worklist ? Query ? elige al mismo paciente.</li>
+                <li>Realiza el estudio; al enviar/guardar en red, las im�genes aparecen en el anexo del PDF autom�ticamente.</li>
+              </ol>
+
+              {!bridgeOnline && (
+                <pre className="text-[8px] font-mono p-2 bg-slate-950 rounded-lg border border-slate-850 text-indigo-300 whitespace-pre-wrap">
+{`cd ~/rad-ai-expert-deploy/bridge
+bash install-mac.sh
+source .venv/bin/activate
+python3 samsung_bridge.py`}
+                </pre>
+              )}
+            </div>
+          )}
 
           {activeTab === "export" && (
             <div className="space-y-3.5">
@@ -1015,68 +1070,34 @@ ae.start_server(("0.0.0.0", 1040), evt_handlers=[(evt.EVT_C_FIND, handle_find)])
               <div className="bg-indigo-500/5 border border-indigo-500/10 rounded-lg p-2.5 flex gap-2">
                 <Wifi className="h-4 w-4 text-indigo-400 shrink-0" />
                 <p className="text-[9px] text-slate-300 leading-relaxed font-bold">
-                  ¡Excelente elección! Tu ecógrafo <span className="text-indigo-400">Samsung V7</span> está en red mediante cable y tu computadora a través de Wi-Fi en el mismo módem. Al estar en el mismo módem, pueden comunicarse de forma inalámbrica y privada.
+                  Configuraci�n �nica del <span className="text-indigo-400">Samsung V7</span> en la misma red que tu iMac (Wi?Fi).
                 </p>
               </div>
 
-              <div className="space-y-3">
-                <div className="border border-slate-850 rounded-lg p-2.5 space-y-1.5 bg-slate-900/10">
-                  <span className="text-[9px] font-black uppercase text-indigo-400 tracking-wider font-mono flex items-center gap-1">
-                    <Laptop className="h-3 w-3" /> Opción A: Carga local rápida por USB
-                  </span>
-                  <p className="text-[9px] text-slate-400 leading-normal">
-                    La forma más sencilla sin instalar nada es utilizar el puerto USB de tu Samsung V7:
-                  </p>
-                  <ol className="list-decimal list-inside text-[9px] text-slate-400 space-y-1">
-                    <li>Selecciona el formato <strong className="text-slate-300">Samsung V7 (.csv)</strong> arriba y descárgalo.</li>
-                    <li>Guárdalo en una memoria USB e insértala en el puerto de la consola del Samsung V7.</li>
-                    <li>En el ecógrafo, presiona la tecla de <strong className="text-slate-300">Patient</strong> en la consola táctil.</li>
-                    <li>Selecciona <strong className="text-slate-300">Import</strong>, selecciona el archivo CSV desde el USB y realiza el mapeo de columnas si es necesario. ¡La lista de pacientes se cargará al instante!</li>
-                  </ol>
-                </div>
-
-                <div className="border border-indigo-500/10 rounded-lg p-2.5 space-y-2 bg-[#090C17]">
-                  <span className="text-[9px] font-black uppercase text-emerald-400 tracking-wider font-mono flex items-center gap-1 animate-pulse">
-                    <Check className="h-3 w-3 text-emerald-500" /> Opción B: Puente DICOM Worklist Activo (Inalámbrico)
-                  </span>
-                  <p className="text-[9px] text-slate-400 leading-relaxed">
-                    Si quieres automatizarlo para que al presionar el botón <strong>"Search/Query"</strong> de tu <strong>Samsung V7</strong> jale la lista automáticamente por Wi-Fi sin usar USB:
-                  </p>
-                  
-                  <ol className="list-decimal list-inside text-[9px] text-slate-400 space-y-1.5">
-                    <li>Descarga la agenda en formato <strong className="text-indigo-300">Puente JSON (.json)</strong> de arriba y colócala en una carpeta de tu PC.</li>
-                    <li>Copia el script de Python de abajo y guárdalo como <code className="text-indigo-300">samsung_mwl.py</code> en esa misma carpeta.</li>
-                    <li>Ejecútalo en tu PC desde una consola con <code className="text-indigo-300">python samsung_mwl.py</code>.</li>
-                    <li>En tu ecógrafo <strong>Samsung V7</strong>:
-                      <ul className="list-disc list-inside pl-3 pt-1 space-y-0.5 text-slate-400">
-                        <li>Presiona el botón <strong className="text-slate-300">Utility</strong> (o Setup) en la consola física.</li>
-                        <li>Ve a la pestaña <strong className="text-slate-300">Connectivity</strong> y luego a <strong className="text-slate-300">DICOM</strong>.</li>
-                        <li>Haz clic en <strong className="text-slate-300">Add</strong> para añadir un servidor.</li>
-                        <li>Configura <strong className="text-indigo-300">Service Type: MWL</strong> (Modality Worklist).</li>
-                        <li>Establece el <strong className="text-indigo-300">AE Title: MWL_SERVER</strong>, la <strong className="text-indigo-300">IP</strong> de tu PC, y el Puerto <strong className="text-indigo-300">1040</strong>.</li>
-                        <li>Haz clic en <strong className="text-slate-300">Test</strong> para verificar la conexión.</li>
-                      </ul>
-                    </li>
-                    <li>¡Listo! Ahora ve a la pantalla de <strong className="text-slate-300">Patient</strong>, presiona <strong className="text-slate-300">Worklist</strong>, y haz clic en <strong className="text-slate-300">Query</strong> para descargar la agenda inalámbricamente.</li>
-                  </ol>
-
-                  <div className="space-y-1.5 pt-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[8.5px] font-black uppercase text-slate-500 font-mono">Script Python Local</span>
-                      <button
-                        type="button"
-                        onClick={copyToClipboard}
-                        className="text-[8px] font-black uppercase tracking-wider bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded flex items-center gap-1 transition cursor-pointer"
-                      >
-                        <Copy className="h-2.5 w-2.5" /> {copiedScript ? "Copiado" : "Copiar Código"}
-                      </button>
-                    </div>
-                    <pre className="text-[8px] font-mono p-2 bg-slate-950 rounded-lg border border-slate-850 max-h-[140px] overflow-y-auto text-indigo-300 whitespace-pre scrollbar-none select-all leading-normal">
-                      {pythonScript}
-                    </pre>
-                  </div>
-                </div>
+              <div className="border border-emerald-500/20 rounded-lg p-2.5 space-y-2 bg-emerald-950/10">
+                <span className="text-[9px] font-black uppercase text-emerald-400 tracking-wider font-mono">1. Servidor Worklist (MWL)</span>
+                <ul className="list-disc list-inside text-[9px] text-slate-400 space-y-0.5 pl-1">
+                  <li>Utility ? Connectivity ? DICOM ? Add</li>
+                  <li>Service Type: <strong className="text-indigo-300">MWL</strong></li>
+                  <li>AE Title: <strong className="text-indigo-300">MWL_SERVER</strong></li>
+                  <li>IP: IP del iMac � Puerto: <strong className="text-indigo-300">1040</strong></li>
+                </ul>
               </div>
+
+              <div className="border border-cyan-500/20 rounded-lg p-2.5 space-y-2 bg-cyan-950/10">
+                <span className="text-[9px] font-black uppercase text-cyan-400 tracking-wider font-mono">2. Servidor Storage (env�o de im�genes)</span>
+                <ul className="list-disc list-inside text-[9px] text-slate-400 space-y-0.5 pl-1">
+                  <li>Utility ? Connectivity ? DICOM ? Add</li>
+                  <li>Service Type: <strong className="text-cyan-300">Storage</strong> / PACS</li>
+                  <li>AE Title: <strong className="text-cyan-300">RAD_BRIDGE</strong></li>
+                  <li>IP: IP del iMac � Puerto: <strong className="text-cyan-300">11112</strong></li>
+                  <li>Activa env�o autom�tico al guardar/finalizar estudio si el men� lo permite.</li>
+                </ul>
+              </div>
+
+              <p className="text-[9px] text-slate-500 leading-relaxed">
+                Flujo diario: abre el puente en el Mac ? selecciona paciente en la app ? Query Worklist en el V7 ? al terminar el estudio las im�genes llegan solas al anexo del PDF.
+              </p>
             </div>
           )}
         </div>
@@ -1704,6 +1725,9 @@ export default function App() {
   const [isProcessingWorklist, setIsProcessingWorklist] = useState<boolean>(false);
   const [worklistError, setWorklistError] = useState<string | null>(null);
   const [selectedWorklistPatientId, setSelectedWorklistPatientId] = useState<string | null>(null);
+  const [bridgeOnline, setBridgeOnline] = useState<boolean>(false);
+  const [bridgePatientCount, setBridgePatientCount] = useState<number>(0);
+  const bridgeImportedKeysRef = useRef<Set<string>>(new Set());
   
   // Real-time voice dictation states using Web Speech API
   const [isListening, setIsListening] = useState<boolean>(false);
@@ -14959,6 +14983,23 @@ const splitReportAndAnnex = (text: string) => {
           console.warn("Could not sync worklist to cloud:", err);
         });
       }
+
+      if (updatedPatients.length > 0) {
+        pushWorklistToBridge(
+          updatedPatients.map((p, index) => ({
+            id: p.id,
+            internalId: p.id,
+            name: p.name,
+            patientId: p.patientId || `SS-${String(index + 1).padStart(4, "0")}`,
+            gender: p.gender,
+            age: p.age,
+            studyType: p.studyType,
+            time: p.time,
+          }))
+        ).then((ok) => {
+          if (ok) setBridgePatientCount(updatedPatients.length);
+        });
+      }
     } catch (e: any) {
       console.error("Error saving worklist:", e);
       setWorklistError("Error al guardar la lista de trabajo: " + (e.message || String(e)));
@@ -15128,7 +15169,113 @@ const splitReportAndAnnex = (text: string) => {
 
     setSelectedWorklistPatientId(patient.id);
     saveWorklist(updatedPatients);
+
+    const dicomPatientId = patient.patientId || "";
+    if (dicomPatientId) {
+      setBridgeActivePatient({
+        patientId: dicomPatientId,
+        internalId: patient.id,
+        name: patient.name,
+      });
+      void importBridgeCapturesForPatient(dicomPatientId);
+    }
   };
+
+  const importBridgeCapturesForPatient = async (patientId: string) => {
+    if (!patientId) return;
+    try {
+      const captures = await listBridgeCaptures(patientId);
+      if (captures.length === 0) return;
+
+      const loaded: {
+        id: string;
+        name: string;
+        url: string;
+        base64: string;
+        caption: string;
+        isDicom: boolean;
+        width?: number;
+        height?: number;
+        modality?: "MMG" | "US";
+      }[] = [];
+
+      for (const cap of captures) {
+        const importKey = `${patientId}/${cap.studyInstanceUid}/${cap.fileName}`;
+        if (bridgeImportedKeysRef.current.has(importKey)) continue;
+
+        const buffer = await fetchBridgeCaptureBuffer(patientId, cap.studyInstanceUid, cap.fileName);
+        if (!buffer || buffer.byteLength === 0) continue;
+
+        const { visualUrl, meta } = await decodeDicomForDisplay(buffer, cap.fileName);
+        const res = await compressImageForAttachment(visualUrl);
+        bridgeImportedKeysRef.current.add(importKey);
+
+        loaded.push({
+          id: "bridge-" + importKey.replace(/\//g, "-"),
+          name: cap.fileName,
+          url: res.dataUrl,
+          base64: res.dataUrl,
+          caption: "",
+          isDicom: true,
+          dicomMetaData: meta as any,
+          width: res.width,
+          height: res.height,
+          modality: "US",
+        });
+      }
+
+      if (loaded.length > 0) {
+        setAttachedImages((prev) => {
+          const existingIds = new Set(prev.map((img) => img.id));
+          const novel = loaded.filter((img) => !existingIds.has(img.id));
+          return novel.length > 0 ? [...prev, ...novel] : prev;
+        });
+      }
+    } catch (err) {
+      console.warn("No se pudieron importar capturas del puente local:", err);
+    }
+  };
+
+  const handleBridgeCaptureEvent = (event: BridgeCaptureEvent) => {
+    if (event.type !== "capture_received" || !event.patientId || !event.studyInstanceUid || !event.fileName) {
+      return;
+    }
+
+    const currentPatientDicomId = patientId?.trim() || "";
+    const shouldAttach =
+      event.autoAttach ||
+      (currentPatientDicomId !== "" && event.patientId === currentPatientDicomId);
+
+    if (shouldAttach) {
+      void importBridgeCapturesForPatient(event.patientId);
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const pollBridge = async () => {
+      const health = await checkBridgeHealth();
+      if (cancelled) return;
+      setBridgeOnline(Boolean(health?.ok));
+      if (health?.ok) {
+        setBridgePatientCount(health.patients);
+      }
+    };
+
+    pollBridge();
+    const interval = setInterval(pollBridge, 8000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!bridgeOnline) return;
+    const unsubscribe = subscribeBridgeEvents(handleBridgeCaptureEvent);
+    return unsubscribe;
+  }, [bridgeOnline, patientId]);
 
   const handleUpdatePatientStatus = (patientId: string, status: 'pending' | 'attended' | 'current') => {
     if (!worklist) return;
@@ -22290,7 +22437,11 @@ const splitReportAndAnnex = (text: string) => {
                 <ManualPatientAdder onAdd={handleAddPatientToWorklist} />
 
                 {/* Sincronizador de Ecógrafo / Exportador de Lista de Trabajo */}
-                <UltrasoundWorklistExporter patients={worklist ? worklist.patients : []} />
+                <UltrasoundWorklistExporter
+                  patients={worklist ? worklist.patients : []}
+                  bridgeOnline={bridgeOnline}
+                  bridgePatientCount={bridgePatientCount}
+                />
 
               </div>
             </motion.aside>
