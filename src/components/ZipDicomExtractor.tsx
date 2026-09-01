@@ -7,10 +7,7 @@ import {
 import { motion } from "motion/react";
 import { 
   uint8ToBase64, 
-  parseDicomMetadata, 
-  decodeDicomImage,
-  extractImageFromDicom, 
-  generateDicomVisualMockup,
+  decodeDicomForDisplay,
   DicomMetadata
 } from "../lib/dicomHelpers";
 
@@ -113,42 +110,15 @@ export default function ZipDicomExtractor({
           generatedVisualUrl = `data:${mimeType};base64,${rawBase64}`;
         } else if (isDicom) {
           try {
-            // Slice the buffer cleanly to release any pooled arrays
             const cleanDcmBuffer = u8Array.buffer.slice(u8Array.byteOffset, u8Array.byteOffset + u8Array.byteLength);
             const dicomFileName = filename.split("/").pop() || filename;
-            meta = parseDicomMetadata(cleanDcmBuffer, dicomFileName);
-            let visualUrl = "";
-
-            const isPackedUncompressedYbr =
-              meta.photometricInterpretation?.trim().toUpperCase() === "YBR_FULL_422" &&
-              ["1.2.840.10008.1.2", "1.2.840.10008.1.2.1"].includes(meta.transferSyntaxUID || "");
-
-            if (isPackedUncompressedYbr) {
-              visualUrl = extractImageFromDicom(cleanDcmBuffer, meta) || "";
-            } else {
-              try {
-                visualUrl = await decodeDicomImage(cleanDcmBuffer, dicomFileName);
-              } catch (codecError) {
-                console.warn("El codec DICOM avanzado no pudo decodificar el archivo; usando compatibilidad básica:", codecError);
-                visualUrl = extractImageFromDicom(cleanDcmBuffer, meta) || "";
-              }
-            }
-            
-            if (!visualUrl) {
-              visualUrl = generateDicomVisualMockup(meta);
-            }
-            
-            // Trim space/linebreak artifacts immediately to prevent serialization errors
-            generatedVisualUrl = visualUrl.trim().replace(/\s/g, "");
+            const decoded = await decodeDicomForDisplay(cleanDcmBuffer, dicomFileName);
+            meta = decoded.meta;
+            generatedVisualUrl = decoded.visualUrl;
             base64 = generatedVisualUrl.includes(",") ? generatedVisualUrl.split(",")[1] : generatedVisualUrl;
           } catch (err) {
             console.error("Error decoding zip-extracted DICOM raw pixel values:", err);
-            if (meta) {
-              generatedVisualUrl = generateDicomVisualMockup(meta);
-              base64 = generatedVisualUrl.split(",")[1] || "";
-            } else {
-              continue;
-            }
+            continue;
           }
         }
 

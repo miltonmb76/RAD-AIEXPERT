@@ -358,6 +358,105 @@ export function sanitizeDataUrl(url: string | null | undefined): string {
   return clean;
 }
 
+/**
+ * Decodes a DICOM buffer into a display-ready data URL using the same pipeline
+ * as Doble Valoración IA (YBR fast path, Cornerstone codecs, then fallbacks).
+ */
+export async function decodeDicomForDisplay(
+  buffer: ArrayBuffer,
+  fileName: string
+): Promise<{ visualUrl: string; meta: DicomMetadata }> {
+  const cleanBuffer = getCleanArrayBuffer(buffer);
+  const meta = parseDicomMetadata(cleanBuffer, fileName);
+  const isPackedUncompressedYbr =
+    meta.photometricInterpretation?.trim().toUpperCase() === "YBR_FULL_422" &&
+    ["1.2.840.10008.1.2", "1.2.840.10008.1.2.1"].includes(meta.transferSyntaxUID || "");
+
+  let visualUrl = "";
+  if (isPackedUncompressedYbr) {
+    visualUrl = extractImageFromDicom(cleanBuffer, meta) || "";
+  } else {
+    try {
+      visualUrl = await decodeDicomImage(cleanBuffer, fileName);
+    } catch (codecError) {
+      console.warn("El codec DICOM avanzado no pudo decodificar el archivo; usando compatibilidad básica:", codecError);
+      visualUrl = extractImageFromDicom(cleanBuffer, meta) || "";
+    }
+  }
+
+  visualUrl = sanitizeDataUrl(visualUrl);
+  if (!visualUrl) {
+    visualUrl = sanitizeDataUrl(generateDicomVisualMockup(meta));
+  }
+
+  return { visualUrl, meta };
+}
+
+/**
+ * Downscales and JPEG-compresses an image for PDF attachment while preserving
+ * diagnostic detail. Falls back to the original sanitized data URL on failure.
+ */
+export function compressImageForAttachment(
+  src: string,
+  maxDim = 750,
+  jpegQuality = 0.65
+): Promise<{ dataUrl: string; width: number; height: number }> {
+  const normalizedSrc = sanitizeDataUrl(src);
+  if (!normalizedSrc) {
+    return Promise.resolve({ dataUrl: "", width: 0, height: 0 });
+  }
+
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        let targetW = img.naturalWidth || img.width || 640;
+        let targetH = img.naturalHeight || img.height || 480;
+
+        if (targetW > maxDim || targetH > maxDim) {
+          if (targetW > targetH) {
+            targetH = Math.round((targetH * maxDim) / targetW);
+            targetW = maxDim;
+          } else {
+            targetW = Math.round((targetW * maxDim) / targetH);
+            targetH = maxDim;
+          }
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = targetW;
+        canvas.height = targetH;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve({ dataUrl: normalizedSrc, width: targetW, height: targetH });
+          return;
+        }
+
+        ctx.fillStyle = "#000000";
+        ctx.fillRect(0, 0, targetW, targetH);
+        ctx.drawImage(img, 0, 0, targetW, targetH);
+        resolve({
+          dataUrl: canvas.toDataURL("image/jpeg", jpegQuality),
+          width: targetW,
+          height: targetH,
+        });
+      } catch (err) {
+        console.warn("compressImageForAttachment failed:", err);
+        resolve({
+          dataUrl: normalizedSrc,
+          width: img.naturalWidth || 640,
+          height: img.naturalHeight || 480,
+        });
+      }
+    };
+    img.onerror = () => {
+      console.warn("compressImageForAttachment could not load decoded image");
+      resolve({ dataUrl: normalizedSrc, width: 640, height: 480 });
+    };
+    img.src = normalizedSrc;
+  });
+}
+
 let cornerstoneInitialization: Promise<{
   loader: typeof import("@cornerstonejs/dicom-image-loader").default;
   imageLoader: typeof import("@cornerstonejs/core").imageLoader;

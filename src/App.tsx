@@ -17,6 +17,7 @@ import { Vascular3DModule } from "./components/Vascular3DModule";
 import { renderVascular3DPageToPdf } from "./utils/vascular3dPdfRenderer";
 import { renderUsImagesToPdf, getPanelLetter } from "./utils/usImagesPdfRenderer";
 import { renderMmgImagesToPdf } from "./utils/mmgImagesPdfRenderer";
+import { decodeDicomForDisplay, compressImageForAttachment } from "./lib/dicomHelpers";
 import { Findings3dRenderModule, Create3dRenderModal, Finding3dRender } from "./components/Findings3dRenderModule";
 import CaseAnalysisRenderer from "./components/CaseAnalysisRenderer";
 import InteractiveCaseEditor from "./components/InteractiveCaseEditor";
@@ -5588,52 +5589,7 @@ Ejemplo:
     }
   };
 
-  const ensureCompatibleImageFormat = (src: string): Promise<{ dataUrl: string; width: number; height: number }> => {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => {
-        try {
-          const w = img.naturalWidth || img.width || 640;
-          const h = img.naturalHeight || img.height || 480;
-          
-          // Downscale to a maximum height/width of 750px to maintain pristine quality but reduce base64 size drastically
-          let targetW = w;
-          let targetH = h;
-          const maxDim = 750;
-          if (targetW > maxDim || targetH > maxDim) {
-            if (targetW > targetH) {
-              targetH = Math.round((targetH * maxDim) / targetW);
-              targetW = maxDim;
-            } else {
-              targetW = Math.round((targetW * maxDim) / targetH);
-              targetH = maxDim;
-            }
-          }
-          
-          const canvas = document.createElement("canvas");
-          canvas.width = targetW;
-          canvas.height = targetH;
-          const ctx = canvas.getContext("2d");
-          if (ctx) {
-            ctx.fillStyle = "#ffffff";
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.drawImage(img, 0, 0, targetW, targetH);
-            // Use JPEG (0.65) to drastically reduce the PDF file weight without losing diagnostic details!
-            const compressedUrl = canvas.toDataURL("image/jpeg", 0.65);
-            resolve({ dataUrl: compressedUrl, width: targetW, height: targetH });
-            return;
-          }
-        } catch (err) {
-          console.warn("Error converting image to compatible format:", err);
-        }
-        resolve({ dataUrl: src, width: img.naturalWidth || 640, height: img.naturalHeight || 480 });
-      };
-      img.onerror = () => {
-        resolve({ dataUrl: src, width: 640, height: 480 });
-      };
-      img.src = src;
-    });
-  };
+  const ensureCompatibleImageFormat = compressImageForAttachment;
 
   const decodeDicom = (inputBuffer: any) => {
     // Robust audit of input buffer type to extract safe, isolated ArrayBuffer boundaries
@@ -6408,34 +6364,8 @@ Ejemplo:
                     try {
                       const cleanDcmBuffer = u8Array.buffer.slice(u8Array.byteOffset, u8Array.byteOffset + u8Array.byteLength);
                       const dicomFileName = filename.split("/").pop() || filename;
-                      
-                      // Dynamic import of the advanced DICOM decoder used in Doble Valoración
-                      const { parseDicomMetadata, decodeDicomImage, extractImageFromDicom } = await import("./lib/dicomHelpers");
-                      
-                      const meta = parseDicomMetadata(cleanDcmBuffer, dicomFileName);
-                      const isPackedUncompressedYbr =
-                        meta.photometricInterpretation?.trim().toUpperCase() === "YBR_FULL_422" &&
-                        ["1.2.840.10008.1.2", "1.2.840.10008.1.2.1"].includes(meta.transferSyntaxUID || "");
-
-                      let visualUrl = "";
-                      if (isPackedUncompressedYbr) {
-                        visualUrl = extractImageFromDicom(cleanDcmBuffer, meta) || "";
-                      } else {
-                        try {
-                          visualUrl = await decodeDicomImage(cleanDcmBuffer, dicomFileName);
-                        } catch (codecError) {
-                          console.warn("El codec DICOM avanzado no pudo decodificar el archivo en el anexo; usando compatibilidad básica:", codecError);
-                          visualUrl = extractImageFromDicom(cleanDcmBuffer, meta) || "";
-                        }
-                      }
-
-                      let finalBase64 = visualUrl.includes(",") ? visualUrl.split(",")[1] : visualUrl;
-                      if (!finalBase64) {
-                        const legacyParsed = decodeDicom(cleanDcmBuffer);
-                        finalBase64 = legacyParsed.base64 || generateDicomCanvasFallback(dicomFileName, legacyParsed.meta);
-                      }
-
-                      const res = await ensureCompatibleImageFormat(visualUrl || finalBase64);
+                      const { visualUrl, meta } = await decodeDicomForDisplay(cleanDcmBuffer, dicomFileName);
+                      const res = await compressImageForAttachment(visualUrl);
                       const appMeta = detectImageMetaFromFilename(dicomFileName, meta as any);
                       loaded.push({
                         id: "attached-" + Math.random().toString(36).substring(2, 11),
@@ -6507,32 +6437,8 @@ Ejemplo:
               if (isRealDicom) {
                 (async () => {
                   const dicomFileName = file.name;
-                  const { parseDicomMetadata, decodeDicomImage, extractImageFromDicom } = await import("./lib/dicomHelpers");
-                  
-                  const meta = parseDicomMetadata(buf, dicomFileName);
-                  const isPackedUncompressedYbr =
-                    meta.photometricInterpretation?.trim().toUpperCase() === "YBR_FULL_422" &&
-                    ["1.2.840.10008.1.2", "1.2.840.10008.1.2.1"].includes(meta.transferSyntaxUID || "");
-
-                  let visualUrl = "";
-                  if (isPackedUncompressedYbr) {
-                    visualUrl = extractImageFromDicom(buf, meta) || "";
-                  } else {
-                    try {
-                      visualUrl = await decodeDicomImage(buf, dicomFileName);
-                    } catch (codecError) {
-                      console.warn("El codec DICOM avanzado no pudo decodificar el archivo anexado directamente; usando compatibilidad básica:", codecError);
-                      visualUrl = extractImageFromDicom(buf, meta) || "";
-                    }
-                  }
-
-                  let finalBase64 = visualUrl.includes(",") ? visualUrl.split(",")[1] : visualUrl;
-                  if (!finalBase64) {
-                    const legacyParsed = decodeDicom(buf);
-                    finalBase64 = legacyParsed.base64 || generateDicomCanvasFallback(dicomFileName, legacyParsed.meta);
-                  }
-
-                  const res = await ensureCompatibleImageFormat(visualUrl || finalBase64);
+                  const { visualUrl, meta } = await decodeDicomForDisplay(buf, dicomFileName);
+                  const res = await compressImageForAttachment(visualUrl);
                   const appMeta = detectImageMetaFromFilename(dicomFileName, meta as any);
                   loaded.push({
                     id: "attached-" + Math.random().toString(36).substring(2, 11),
