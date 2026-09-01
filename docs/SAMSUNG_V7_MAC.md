@@ -23,7 +23,32 @@ cd bridge
 bash install-mac.sh
 ```
 
-## Cada día de trabajo (1 comando)
+## Arranque automático (recomendado)
+
+Una sola vez, después de `install-mac.sh`:
+
+```bash
+cd ~/rad-ai-expert-deploy/bridge
+bash install-autostart-mac.sh
+```
+
+El puente se inicia **solo al encender el iMac e iniciar sesión**. No hace falta abrir Terminal cada mañana. Si el proceso falla, macOS lo reinicia.
+
+Comprobar estado:
+
+```bash
+bash install-autostart-mac.sh --status
+```
+
+Desactivar:
+
+```bash
+bash install-autostart-mac.sh --uninstall
+```
+
+Logs: `~/RAD-AIEXPERT-Bridge/logs/bridge.log`
+
+## Arranque manual (alternativa)
 
 ```bash
 cd ~/rad-ai-expert-deploy/bridge
@@ -65,7 +90,7 @@ No hay USB, no hay arrastrar archivos, no hay export manual.
 | Síntoma | Solución |
 |---------|----------|
 | Puente OFFLINE pero `/api/health` responde `ok:true` en terminal | Abre la app **en el mismo iMac** (no en otro dispositivo). Actualiza y reinicia el puente: `git pull` + `python3 samsung_bridge.py`. Chrome puede pedir permiso de **red local** — acéptalo. |
-| Puente OFFLINE en la app | Ejecutar `python3 samsung_bridge.py` en el iMac |
+| Puente OFFLINE en la app | Si usas autostart: `bash install-autostart-mac.sh --status` y revisa `~/RAD-AIEXPERT-Bridge/logs/bridge.log`. Si no: `python3 samsung_bridge.py` en el iMac |
 | Worklist vacía en el V7 | Verificar Test MWL; revisar que la agenda tenga pacientes en la app |
 | Imágenes no llegan | Verificar servidor Storage `RAD_BRIDGE:11113`; confirmar envío DICOM al guardar |
 | Nombre/ID no coinciden | Usa el mismo paciente de la lista; el ID DICOM debe coincidir |
