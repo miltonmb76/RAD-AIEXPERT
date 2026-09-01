@@ -6407,27 +6407,49 @@ Ejemplo:
                   } else if (isInnerDicom) {
                     try {
                       const cleanDcmBuffer = u8Array.buffer.slice(u8Array.byteOffset, u8Array.byteOffset + u8Array.byteLength);
-                      const parsed = decodeDicom(cleanDcmBuffer);
-                      let finalBase64 = parsed.base64;
-                      if (!finalBase64) {
-                        finalBase64 = generateDicomCanvasFallback(filename.split("/").pop() || filename, parsed.meta);
+                      const dicomFileName = filename.split("/").pop() || filename;
+                      
+                      // Dynamic import of the advanced DICOM decoder used in Doble Valoración
+                      const { parseDicomMetadata, decodeDicomImage, extractImageFromDicom } = await import("./lib/dicomHelpers");
+                      
+                      const meta = parseDicomMetadata(cleanDcmBuffer, dicomFileName);
+                      const isPackedUncompressedYbr =
+                        meta.photometricInterpretation?.trim().toUpperCase() === "YBR_FULL_422" &&
+                        ["1.2.840.10008.1.2", "1.2.840.10008.1.2.1"].includes(meta.transferSyntaxUID || "");
+
+                      let visualUrl = "";
+                      if (isPackedUncompressedYbr) {
+                        visualUrl = extractImageFromDicom(cleanDcmBuffer, meta) || "";
+                      } else {
+                        try {
+                          visualUrl = await decodeDicomImage(cleanDcmBuffer, dicomFileName);
+                        } catch (codecError) {
+                          console.warn("El codec DICOM avanzado no pudo decodificar el archivo en el anexo; usando compatibilidad básica:", codecError);
+                          visualUrl = extractImageFromDicom(cleanDcmBuffer, meta) || "";
+                        }
                       }
-                      const res = await ensureCompatibleImageFormat(finalBase64);
-                      const fname = filename.split("/").pop() || filename;
-                      const meta = detectImageMetaFromFilename(fname, parsed.meta);
+
+                      let finalBase64 = visualUrl.includes(",") ? visualUrl.split(",")[1] : visualUrl;
+                      if (!finalBase64) {
+                        const legacyParsed = decodeDicom(cleanDcmBuffer);
+                        finalBase64 = legacyParsed.base64 || generateDicomCanvasFallback(dicomFileName, legacyParsed.meta);
+                      }
+
+                      const res = await ensureCompatibleImageFormat(visualUrl || finalBase64);
+                      const appMeta = detectImageMetaFromFilename(dicomFileName, meta as any);
                       loaded.push({
                         id: "attached-" + Math.random().toString(36).substring(2, 11),
-                        name: fname,
+                        name: dicomFileName,
                         url: res.dataUrl,
                         base64: res.dataUrl,
                         caption: "",
                         isDicom: true,
-                        dicomMetaData: parsed.meta,
+                        dicomMetaData: meta as any,
                         width: res.width,
                         height: res.height,
-                        modality: meta.modality,
-                        projection: meta.projection,
-                        side: meta.side
+                        modality: appMeta.modality,
+                        projection: appMeta.projection,
+                        side: appMeta.side
                       });
                     } catch (err) {
                       console.error("Error decoding inner ZIP DICOM:", err);
@@ -6483,30 +6505,51 @@ Ejemplo:
               }
               
               if (isRealDicom) {
-                const parsed = decodeDicom(buf);
-                let finalBase64 = parsed.base64;
-                if (!finalBase64) {
-                   finalBase64 = generateDicomCanvasFallback(file.name, parsed.meta);
-                }
-                
-                ensureCompatibleImageFormat(finalBase64).then((res) => {
-                  const meta = detectImageMetaFromFilename(file.name, parsed.meta);
+                (async () => {
+                  const dicomFileName = file.name;
+                  const { parseDicomMetadata, decodeDicomImage, extractImageFromDicom } = await import("./lib/dicomHelpers");
+                  
+                  const meta = parseDicomMetadata(buf, dicomFileName);
+                  const isPackedUncompressedYbr =
+                    meta.photometricInterpretation?.trim().toUpperCase() === "YBR_FULL_422" &&
+                    ["1.2.840.10008.1.2", "1.2.840.10008.1.2.1"].includes(meta.transferSyntaxUID || "");
+
+                  let visualUrl = "";
+                  if (isPackedUncompressedYbr) {
+                    visualUrl = extractImageFromDicom(buf, meta) || "";
+                  } else {
+                    try {
+                      visualUrl = await decodeDicomImage(buf, dicomFileName);
+                    } catch (codecError) {
+                      console.warn("El codec DICOM avanzado no pudo decodificar el archivo anexado directamente; usando compatibilidad básica:", codecError);
+                      visualUrl = extractImageFromDicom(buf, meta) || "";
+                    }
+                  }
+
+                  let finalBase64 = visualUrl.includes(",") ? visualUrl.split(",")[1] : visualUrl;
+                  if (!finalBase64) {
+                    const legacyParsed = decodeDicom(buf);
+                    finalBase64 = legacyParsed.base64 || generateDicomCanvasFallback(dicomFileName, legacyParsed.meta);
+                  }
+
+                  const res = await ensureCompatibleImageFormat(visualUrl || finalBase64);
+                  const appMeta = detectImageMetaFromFilename(dicomFileName, meta as any);
                   loaded.push({
                     id: "attached-" + Math.random().toString(36).substring(2, 11),
-                    name: file.name,
+                    name: dicomFileName,
                     url: res.dataUrl,
                     base64: res.dataUrl,
                     caption: "", // Starts completely empty as requested by the user
                     isDicom: true,
-                    dicomMetaData: parsed.meta,
+                    dicomMetaData: meta as any,
                     width: res.width,
                     height: res.height,
-                    modality: meta.modality,
-                    projection: meta.projection,
-                    side: meta.side
+                    modality: appMeta.modality,
+                    projection: appMeta.projection,
+                    side: appMeta.side
                   });
                   resolve();
-                });
+                })();
               } else {
                 resolve();
               }
