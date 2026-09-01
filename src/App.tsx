@@ -34,6 +34,7 @@ import type { CaptureMismatchInfo } from "./components/ActivePatientPanel";
 import { runBackgroundTask } from "./lib/backgroundTasks";
 import { BackgroundTasksBar } from "./components/BackgroundTasksBar";
 import { ActivePatientPanel } from "./components/ActivePatientPanel";
+import { LabelingQueuePanel } from "./components/LabelingQueuePanel";
 import { Findings3dRenderModule, Create3dRenderModal, Finding3dRender } from "./components/Findings3dRenderModule";
 import CaseAnalysisRenderer from "./components/CaseAnalysisRenderer";
 import InteractiveCaseEditor from "./components/InteractiveCaseEditor";
@@ -1740,6 +1741,12 @@ export default function App() {
   const [bridgePatientCount, setBridgePatientCount] = useState<number>(0);
   const [bridgeCaptureMismatch, setBridgeCaptureMismatch] = useState<CaptureMismatchInfo | null>(null);
   const bridgeImportedKeysRef = useRef<Set<string>>(new Set());
+  const [isLabelQueueOpen, setIsLabelQueueOpen] = useState<boolean>(false);
+  const [labelQueueTrigger, setLabelQueueTrigger] = useState<number>(0);
+  const [labelingStats, setLabelingStats] = useState<{ confirmed: number; total: number }>({
+    confirmed: 0,
+    total: 0,
+  });
   
   // Real-time voice dictation states using Web Speech API
   const [isListening, setIsListening] = useState<boolean>(false);
@@ -3874,6 +3881,10 @@ Ejemplo:
         }
         setGeneratedReport(data.report);
         setOriginalBaseReport(data.report);
+        if (attachedImages.length > 0) {
+          setLabelQueueTrigger((value) => value + 1);
+          setIsLabelQueueOpen(true);
+        }
 
         // Resetear casillas del Sistema de Activación Rápida de Módulos: por defecto Resumen Operacional y Paciente marcados
         setSelectedBatchModules({
@@ -6101,6 +6112,12 @@ Ejemplo:
     }
 
     return { modality, projection, side };
+  };
+
+  const handleLabelQueueCaptionUpdate = (id: string, caption: string) => {
+    setAttachedImages((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, caption } : item))
+    );
   };
 
   const handleAiLabelImage = async (id: string) => {
@@ -15201,6 +15218,9 @@ const splitReportAndAnnex = (text: string) => {
     // Reset current cloud study ID for a new patient
     setCurrentCloudStudyId("");
     setBridgeCaptureMismatch(null);
+    setLabelQueueTrigger(0);
+    setLabelingStats({ confirmed: 0, total: 0 });
+    setIsLabelQueueOpen(false);
 
     // Update states in the main report generator form
     setPatientName(patient.name);
@@ -15340,6 +15360,9 @@ const splitReportAndAnnex = (text: string) => {
     handleUpdatePatientStatus(selectedWorklistPatientId, "attended");
     setSelectedWorklistPatientId(null);
     setBridgeCaptureMismatch(null);
+    setLabelQueueTrigger(0);
+    setLabelingStats({ confirmed: 0, total: 0 });
+    setIsLabelQueueOpen(false);
   };
 
   const activeWorklistPatient = useMemo(() => {
@@ -16336,8 +16359,11 @@ const splitReportAndAnnex = (text: string) => {
         bridgeDicomReady={bridgeDicomReady}
         captureCount={activePatientCaptureCount}
         hasGeneratedReport={Boolean(generatedReport.trim())}
+        labelingConfirmed={labelingStats.confirmed}
+        labelingTotal={labelingStats.total}
         captureMismatch={bridgeCaptureMismatch}
         onOpenWorklist={() => setIsWorklistSidebarOpen(true)}
+        onOpenLabelingQueue={() => setIsLabelQueueOpen(true)}
         onFinishCase={handleFinishActivePatient}
         onDismissMismatch={() => setBridgeCaptureMismatch(null)}
       />
@@ -24178,6 +24204,26 @@ const splitReportAndAnnex = (text: string) => {
           })()}
         </div>
       )}
+      <LabelingQueuePanel
+        key={selectedWorklistPatientId || patientId || "label-queue"}
+        isOpen={isLabelQueueOpen}
+        onOpenChange={setIsLabelQueueOpen}
+        trigger={labelQueueTrigger}
+        reportText={generatedReport}
+        studyType={studyType || specificStudy || "Ecografia US"}
+        clinicalHistory={clinicalHistory}
+        selectedModel={selectedModel}
+        attachedImages={attachedImages.map((img) => ({
+          id: img.id,
+          name: (img as { name?: string }).name,
+          url: img.url,
+          base64: (img as { base64?: string }).base64,
+          caption: (img as { caption?: string }).caption,
+          modality: (img as { modality?: string }).modality,
+        }))}
+        onUpdateImageCaption={handleLabelQueueCaptionUpdate}
+        onStatsChange={(confirmed, total) => setLabelingStats({ confirmed, total })}
+      />
       <BackgroundTasksBar />
     </div>
   );

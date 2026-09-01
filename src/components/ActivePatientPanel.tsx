@@ -23,8 +23,11 @@ export interface ActivePatientPanelProps {
   bridgeDicomReady: boolean | null;
   captureCount: number;
   hasGeneratedReport: boolean;
+  labelingConfirmed?: number;
+  labelingTotal?: number;
   captureMismatch: CaptureMismatchInfo | null;
   onOpenWorklist: () => void;
+  onOpenLabelingQueue?: () => void;
   onFinishCase: () => void;
   onDismissMismatch: () => void;
 }
@@ -42,8 +45,11 @@ export const ActivePatientPanel: React.FC<ActivePatientPanelProps> = ({
   bridgeDicomReady,
   captureCount,
   hasGeneratedReport,
+  labelingConfirmed = 0,
+  labelingTotal = 0,
   captureMismatch,
   onOpenWorklist,
+  onOpenLabelingQueue,
   onFinishCase,
   onDismissMismatch,
 }) => {
@@ -165,6 +171,19 @@ export const ActivePatientPanel: React.FC<ActivePatientPanelProps> = ({
                 {hasGeneratedReport ? "Generado" : "Pendiente"}
               </span>
             </div>
+
+            {hasGeneratedReport && labelingTotal > 0 && (
+              <button
+                type="button"
+                onClick={() => onOpenLabelingQueue?.()}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-violet-500/25 bg-violet-950/30 px-3 py-2 hover:bg-violet-900/30 transition cursor-pointer"
+              >
+                <span className="text-[10px] font-black uppercase tracking-wider text-violet-300">Rotulado</span>
+                <span className="text-sm font-black text-white font-mono">
+                  {labelingConfirmed}/{labelingTotal}
+                </span>
+              </button>
+            )}
 
             <div className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 ${bridgeClass}`}>
               <Network className="h-3.5 w-3.5 shrink-0" />
