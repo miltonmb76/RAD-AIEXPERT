@@ -1090,7 +1090,7 @@ python3 samsung_bridge.py`}
                   <li>Utility ? Connectivity ? DICOM ? Add</li>
                   <li>Service Type: <strong className="text-cyan-300">Storage</strong> / PACS</li>
                   <li>AE Title: <strong className="text-cyan-300">RAD_BRIDGE</strong></li>
-                  <li>IP: IP del iMac · Puerto: <strong className="text-cyan-300">11112</strong></li>
+                  <li>IP: IP del iMac · Puerto: <strong className="text-cyan-300">11113</strong> (Horos usa 11112)</li>
                   <li>Activa envío automático al guardar/finalizar estudio si el menú lo permite.</li>
                 </ul>
               </div>

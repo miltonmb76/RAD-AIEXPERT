@@ -28,7 +28,8 @@ from pynetdicom.sop_class import ModalityWorklistInformationFind, Verification
 
 HTTP_PORT = int(os.environ.get("BRIDGE_HTTP_PORT", "8787"))
 MWL_PORT = int(os.environ.get("BRIDGE_MWL_PORT", "1040"))
-STORAGE_PORT = int(os.environ.get("BRIDGE_STORAGE_PORT", "11112"))
+# 11113 evita conflicto con Horos (visor DICOM en Mac), que usa 11112 por defecto.
+STORAGE_PORT = int(os.environ.get("BRIDGE_STORAGE_PORT", "11113"))
 MWL_AE_TITLE = os.environ.get("BRIDGE_MWL_AE_TITLE", "MWL_SERVER").encode("ascii", "ignore")
 STORAGE_AE_TITLE = os.environ.get("BRIDGE_STORAGE_AE_TITLE", "RAD_BRIDGE").encode("ascii", "ignore")
 

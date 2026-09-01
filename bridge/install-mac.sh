@@ -39,7 +39,8 @@ Configuración única del Samsung V7 (Utility → Connectivity → DICOM):
   2) Servidor Storage (PACS / envío de imágenes)
      - AE Title : RAD_BRIDGE
      - IP       : misma IP del iMac
-     - Puerto   : 11112
+     - Puerto   : 11113
+     - (Horos usa 11112 en Mac; el puente usa 11113 para no chocar.)
      - Activar envío automático al finalizar estudio (si está disponible)
 
 EOF

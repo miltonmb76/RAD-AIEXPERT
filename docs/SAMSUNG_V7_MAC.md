@@ -7,7 +7,7 @@ Flujo pensado para reporte **inmediato** con el paciente al frente: mínimos pas
 ```
 RAD-AIEXPERT (navegador)  ←→  Puente local (iMac)  ←→  Samsung V7
      localhost:8787              DICOM MWL :1040
-                                 DICOM Storage :11112
+                                 DICOM Storage :11113
 ```
 
 La app web (Cloud Run o local) habla con `http://127.0.0.1:8787` en el **mismo iMac** donde abres el navegador. El puente recibe la agenda y las capturas DICOM del ecógrafo.
@@ -40,7 +40,9 @@ Utility → Connectivity → DICOM → Add (dos servidores):
 | Servicio | AE Title | IP | Puerto |
 |----------|----------|-----|--------|
 | **MWL** (Worklist) | `MWL_SERVER` | IP del iMac | **1040** |
-| **Storage** (PACS) | `RAD_BRIDGE` | IP del iMac | **11112** |
+| **Storage** (PACS) | `RAD_BRIDGE` | IP del iMac | **11113** |
+
+> Horos (visor DICOM en Mac) usa el puerto **11112** por defecto. El puente usa **11113** para que puedas tener ambos activos.
 
 En Storage, activa **envío automático** al finalizar/guardar el estudio si tu firmware lo ofrece.
 
@@ -62,7 +64,7 @@ No hay USB, no hay arrastrar archivos, no hay export manual.
 |---------|----------|
 | Puente OFFLINE en la app | Ejecutar `python3 samsung_bridge.py` en el iMac |
 | Worklist vacía en el V7 | Verificar Test MWL; revisar que la agenda tenga pacientes en la app |
-| Imágenes no llegan | Verificar servidor Storage `RAD_BRIDGE:11112`; confirmar envío DICOM al guardar |
+| Imágenes no llegan | Verificar servidor Storage `RAD_BRIDGE:11113`; confirmar envío DICOM al guardar |
 | Nombre/ID no coinciden | Usa el mismo paciente de la lista; el ID DICOM debe coincidir |
 
 ## Datos locales
