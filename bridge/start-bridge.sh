@@ -13,4 +13,5 @@ if [[ ! -x "$VENV_PYTHON" ]]; then
 fi
 
 cd "$BRIDGE_DIR"
-exec "$VENV_PYTHON" "$BRIDGE_DIR/samsung_bridge.py" >> "$LOG_DIR/bridge.log" 2>&1
+export PYTHONUNBUFFERED=1
+exec "$VENV_PYTHON" -u "$BRIDGE_DIR/samsung_bridge.py" >> "$LOG_DIR/bridge.log" 2>&1

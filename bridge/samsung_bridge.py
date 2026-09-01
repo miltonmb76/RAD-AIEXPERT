@@ -14,7 +14,10 @@ import datetime
 import json
 import os
 import re
+import socket
 import threading
+import time
+import traceback
 from pathlib import Path
 from typing import Any
 
@@ -218,7 +221,7 @@ def start_mwl_server() -> None:
     ae.add_supported_context(ModalityWorklistInformationFind)
     ae.add_supported_context(Verification)
     handlers = [(evt.EVT_C_FIND, handle_mwl_find)]
-    print(f"[MWL] Escuchando en 0.0.0.0:{MWL_PORT} AE={MWL_AE_TITLE.decode()}")
+    print(f"[MWL] Escuchando en 0.0.0.0:{MWL_PORT} AE={MWL_AE_TITLE.decode()}", flush=True)
     ae.start_server(("0.0.0.0", MWL_PORT), block=True, evt_handlers=handlers)
 
 
@@ -228,8 +231,60 @@ def start_storage_server() -> None:
         ae.add_supported_context(context.abstract_syntax, ALL_TRANSFER_SYNTAXES)
     ae.add_supported_context(Verification)
     handlers = [(evt.EVT_C_STORE, handle_store)]
-    print(f"[STORE] Escuchando en 0.0.0.0:{STORAGE_PORT} AE={STORAGE_AE_TITLE.decode()}")
+    print(f"[STORE] Escuchando en 0.0.0.0:{STORAGE_PORT} AE={STORAGE_AE_TITLE.decode()}", flush=True)
     ae.start_server(("0.0.0.0", STORAGE_PORT), block=True, evt_handlers=handlers)
+
+
+def port_is_open(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.5)
+        return sock.connect_ex(("127.0.0.1", port)) == 0
+
+
+def _run_dicom_server(label: str, starter) -> None:
+    try:
+        starter()
+    except Exception as exc:
+        print(f"[{label}] ERROR al iniciar servidor DICOM: {exc}", flush=True)
+        traceback.print_exc()
+        raise
+
+
+def bootstrap_dicom_servers() -> None:
+    """Inicia MWL y Storage antes de uvicorn (más fiable que solo on_event startup)."""
+    load_persisted_state()
+    threading.Thread(
+        target=lambda: _run_dicom_server("MWL", start_mwl_server),
+        daemon=True,
+        name="mwl-scp",
+    ).start()
+    threading.Thread(
+        target=lambda: _run_dicom_server("STORE", start_storage_server),
+        daemon=True,
+        name="storage-scp",
+    ).start()
+
+    for _ in range(20):
+        if port_is_open(MWL_PORT) and port_is_open(STORAGE_PORT):
+            print(f"[BOOT] DICOM listo — MWL:{MWL_PORT} Storage:{STORAGE_PORT}", flush=True)
+            return
+        time.sleep(0.25)
+
+    print(
+        f"[BOOT] AVISO: DICOM no responde en puertos {MWL_PORT}/{STORAGE_PORT}. "
+        "Revisa firewall macOS (Python → red local) o si otro programa usa esos puertos.",
+        flush=True,
+    )
+
+
+def print_banner() -> None:
+    print("=" * 56, flush=True)
+    print(" Puente RAD-AIEXPERT activo", flush=True)
+    print(f" HTTP API : http://127.0.0.1:{HTTP_PORT}", flush=True)
+    print(f" MWL      : puerto {MWL_PORT}  AE Title {MWL_AE_TITLE.decode()}", flush=True)
+    print(f" Storage  : puerto {STORAGE_PORT}  AE Title {STORAGE_AE_TITLE.decode()}", flush=True)
+    print(f" Datos    : {DATA_DIR}", flush=True)
+    print("=" * 56, flush=True)
 
 
 class PrivateNetworkAccessMiddleware(BaseHTTPMiddleware):
@@ -274,22 +329,17 @@ app.add_middleware(
 async def on_startup() -> None:
     global _loop
     _loop = asyncio.get_running_loop()
-    load_persisted_state()
-    threading.Thread(target=start_mwl_server, daemon=True, name="mwl-scp").start()
-    threading.Thread(target=start_storage_server, daemon=True, name="storage-scp").start()
-    print("=" * 56)
-    print(" Puente RAD-AIEXPERT activo")
-    print(f" HTTP API : http://127.0.0.1:{HTTP_PORT}")
-    print(f" MWL      : puerto {MWL_PORT}  AE Title {MWL_AE_TITLE.decode()}")
-    print(f" Storage  : puerto {STORAGE_PORT}  AE Title {STORAGE_AE_TITLE.decode()}")
-    print(f" Datos    : {DATA_DIR}")
-    print("=" * 56)
 
 
 @app.get("/api/health")
 def health() -> dict[str, Any]:
+    mwl_listening = port_is_open(MWL_PORT)
+    storage_listening = port_is_open(STORAGE_PORT)
     return {
         "ok": True,
+        "dicomReady": mwl_listening and storage_listening,
+        "mwlListening": mwl_listening,
+        "storageListening": storage_listening,
         "patients": len(worklist_patients),
         "activePatientId": active_patient.get("patientId", ""),
         "mwlPort": MWL_PORT,
@@ -393,4 +443,6 @@ async def stream_events():
 
 
 if __name__ == "__main__":
+    bootstrap_dicom_servers()
+    print_banner()
     uvicorn.run(app, host="127.0.0.1", port=HTTP_PORT, log_level="info")

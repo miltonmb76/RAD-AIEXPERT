@@ -82,6 +82,13 @@ status() {
   if [[ -f "$LOG_DIR/bridge.log" ]]; then
     echo "--- últimas líneas ---"
     tail -15 "$LOG_DIR/bridge.log"
+    if ! lsof -nP -iTCP:1040 -sTCP:LISTEN >/dev/null 2>&1 || ! lsof -nP -iTCP:11113 -sTCP:LISTEN >/dev/null 2>&1; then
+      echo ""
+      echo "Reiniciar puente:"
+      echo "  launchctl kickstart -k gui/$(id -u)/${LABEL}"
+      echo "Si sigue fallando, revisa errores DICOM:"
+      echo "  grep -E 'ERROR|Traceback|OSError|BOOT' \"$LOG_DIR/bridge.log\" | tail -20"
+    fi
   fi
 }
 
@@ -137,6 +144,8 @@ cat > "$PLIST_DEST" <<EOF
   <dict>
     <key>PATH</key>
     <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+    <key>PYTHONUNBUFFERED</key>
+    <string>1</string>
   </dict>
 </dict>
 </plist>
