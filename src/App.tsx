@@ -10,6 +10,9 @@ const ZipDicomExtractor = React.lazy(() => import("./components/ZipDicomExtracto
 const AsistenteMedidas = React.lazy(() => import("./components/AsistenteMedidas").then(m => ({ default: m.AsistenteMedidas })));
 const CreadorNotasPie = React.lazy(() => import("./components/CreadorNotasPie").then(m => ({ default: m.CreadorNotasPie })));
 const BiomechanicalRadarModule = React.lazy(() => import("./components/BiomechanicalRadarModule").then(m => ({ default: m.BiomechanicalRadarModule })));
+const CreadorCuadroSinoptico = React.lazy(() => import("./components/CreadorCuadroSinoptico").then(m => ({ default: m.CreadorCuadroSinoptico })));
+const CreadorSinopsisFracturas = React.lazy(() => import("./components/CreadorSinopsisFracturas").then(m => ({ default: m.CreadorSinopsisFracturas })));
+const ElastographyQUSPresentationModule = React.lazy(() => import("./components/ElastographyQUSPresentationModule").then(m => ({ default: m.ElastographyQUSPresentationModule })));
 import { Atlas3DModule } from "./components/Atlas3DModule";
 import { renderAtlas3DAnnexToPDF } from "./utils/atlas3dPdfRenderer";
 import { Atlas3DData, Vascular3DData, UsImagesGridMode } from "./types";
@@ -3167,6 +3170,13 @@ Ejemplo:
   const [isAsistenteMedidasOpen, setIsAsistenteMedidasOpen] = useState<boolean>(false);
   const [isCreadorNotasOpen, setIsCreadorNotasOpen] = useState<boolean>(false);
   const [isBiomechanicalRadarOpen, setIsBiomechanicalRadarOpen] = useState<boolean>(false);
+  const [isCreadorCuadroSinopticoOpen, setIsCreadorCuadroSinopticoOpen] = useState<boolean>(false);
+  const [isCreadorSinopsisFracturasOpen, setIsCreadorSinopsisFracturasOpen] = useState<boolean>(false);
+  const [isElastographyQUSModuleOpen, setIsElastographyQUSModuleOpen] = useState<boolean>(false);
+  const [includeElastographyInReport, setIncludeElastographyInReport] = useState<boolean>(true);
+  const [elastographyStiffness, setElastographyStiffness] = useState<number>(5.2);
+  const [elastographyCAP, setElastographyCAP] = useState<number>(230);
+  const [elastographyFatFraction, setElastographyFatFraction] = useState<number>(6.2);
   const [includeRadarInReport, setIncludeRadarInReport] = useState<boolean>(true);
 
   // States & Handlers for Sistema de ActivaciÃ³n RÃ¡pida de MÃ³dulos (Procesamiento en Lote)
@@ -3183,6 +3193,8 @@ Ejemplo:
     schematic: false,
     measurements: false,
     footnotes: false,
+    organ_synoptic: false,
+    fractures: false,
             classifications: false,
   });
   const [isActivatingBatch, setIsActivatingBatch] = useState<boolean>(false);
@@ -3202,6 +3214,8 @@ Ejemplo:
       schematic: select,
       measurements: select,
       footnotes: select,
+      organ_synoptic: select,
+      fractures: select,
                   classifications: select,
     });
   };
@@ -3220,9 +3234,8 @@ Ejemplo:
     if (selectedBatchModules.radar) setIsBiomechanicalRadarOpen(true);
     if (selectedBatchModules.measurements) setIsAsistenteMedidasOpen(true);
     if (selectedBatchModules.footnotes) setIsCreadorNotasOpen(true);
-    
-    
-
+    if (selectedBatchModules.organ_synoptic) setIsCreadorCuadroSinopticoOpen(true);
+    if (selectedBatchModules.fractures) setIsCreadorSinopsisFracturasOpen(true);
     // 2. Trigger async AI generation processes concurrently
     const promises: Promise<any>[] = [];
 
@@ -19525,6 +19538,93 @@ const splitReportAndAnnex = (text: string) => {
                               </button>
                             </div>
 
+                            {/* Card 8b: Cuadro Sinóptico de Órgano (IA) */}
+                            <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-cyan-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
+                              <div className="flex items-center gap-2 justify-between">
+                                <div className="flex items-center gap-2">
+                                  <Layers className="h-4 w-4 text-cyan-400" />
+                                  <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
+                                    Mapa Sinóptico por Órgano (IA)
+                                  </h4>
+                                </div>
+                                <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-cyan-950/40 text-cyan-400 border border-cyan-900/30 px-2 py-0.5 rounded">
+                                  CUADRO ÓRGANO
+                                </span>
+                              </div>
+                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
+                                Extrae hallazgos de un órgano o región del reporte y genera cuadro sinóptico con inyección inteligente al informe.
+                              </p>
+                              <button
+                                onClick={() => setIsCreadorCuadroSinopticoOpen(p => !p)}
+                                className={`w-full py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2 font-mono cursor-pointer border-2 ${
+                                  isCreadorCuadroSinopticoOpen
+                                    ? "bg-cyan-600/15 border-cyan-500/60 text-cyan-200"
+                                    : "bg-slate-950 border-slate-800 hover:border-cyan-500/30 text-cyan-400"
+                                }`}
+                              >
+                                <Layers className="h-4 w-4" />
+                                {isCreadorCuadroSinopticoOpen ? "Ocultar Cuadro Sinóptico" : "Abrir Cuadro Sinóptico"}
+                              </button>
+                            </div>
+
+                            {/* Card 8c: Elastografía y QUS (IA) */}
+                            <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-amber-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
+                              <div className="flex items-center gap-2 justify-between">
+                                <div className="flex items-center gap-2">
+                                  <Activity className="h-4 w-4 text-amber-400" />
+                                  <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
+                                    Elastografía y QUS (IA)
+                                  </h4>
+                                </div>
+                                <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-amber-950/40 text-amber-400 border border-amber-900/30 px-2 py-0.5 rounded">
+                                  3D HEPÁTICO
+                                </span>
+                              </div>
+                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
+                                Reconstrucción 3D con rigidez hepática (kPa), CAP y fracción grasa QUS extraídos del reporte.
+                              </p>
+                              <button
+                                onClick={() => setIsElastographyQUSModuleOpen(p => !p)}
+                                className={`w-full py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2 font-mono cursor-pointer border-2 ${
+                                  isElastographyQUSModuleOpen
+                                    ? "bg-amber-600/15 border-amber-500/60 text-amber-200"
+                                    : "bg-slate-950 border-slate-800 hover:border-amber-500/30 text-amber-400"
+                                }`}
+                              >
+                                <Activity className="h-4 w-4" />
+                                {isElastographyQUSModuleOpen ? "Ocultar Elastografía/QUS" : "Abrir Elastografía y QUS"}
+                              </button>
+                            </div>
+
+                            {/* Card 8d: Sinopsis de Fracturas (IA) */}
+                            <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-emerald-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
+                              <div className="flex items-center gap-2 justify-between">
+                                <div className="flex items-center gap-2">
+                                  <Bone className="h-4 w-4 text-emerald-400" />
+                                  <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
+                                    Sinopsis de Fracturas (IA)
+                                  </h4>
+                                </div>
+                                <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-emerald-950/40 text-emerald-400 border border-emerald-900/30 px-2 py-0.5 rounded">
+                                  FRACTURAS
+                                </span>
+                              </div>
+                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
+                                Clasifica y desglosa hallazgos traumatológicos en tabla sinóptica inyectable al informe.
+                              </p>
+                              <button
+                                onClick={() => setIsCreadorSinopsisFracturasOpen(p => !p)}
+                                className={`w-full py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2 font-mono cursor-pointer border-2 ${
+                                  isCreadorSinopsisFracturasOpen
+                                    ? "bg-emerald-600/15 border-emerald-500/60 text-emerald-200"
+                                    : "bg-slate-950 border-slate-800 hover:border-emerald-500/30 text-emerald-400"
+                                }`}
+                              >
+                                <Bone className="h-4 w-4" />
+                                {isCreadorSinopsisFracturasOpen ? "Ocultar Sinopsis" : "Abrir Sinopsis de Fracturas"}
+                              </button>
+                            </div>
+
                             {/* Card 9: Resumen Operacional para WhatsApp (IA) */}
                             <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-emerald-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
                               <div className="flex items-center gap-2 justify-between">
@@ -19675,6 +19775,62 @@ const splitReportAndAnnex = (text: string) => {
                                     setGeneratedReport(newReportText);
                                   }}
                                   onRadarDataUpdated={(data) => setBiomechanicalRadarData(data)}
+                                />
+                              </React.Suspense>
+                            </div>
+                          )}
+
+                          {isCreadorCuadroSinopticoOpen && (
+                            <div className="my-6">
+                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-cyan-400 bg-slate-900/60 rounded-xl border border-cyan-900/40 animate-pulse">Cargando Cuadro Sinóptico de Órgano...</div>}>
+                                <CreadorCuadroSinoptico
+                                  selectedModel={selectedModel}
+                                  reportText={isEditingReportManual ? editedReportText : generatedReport}
+                                  onReportUpdated={(newReportText) => {
+                                    setEditedReportText(newReportText);
+                                    setGeneratedReport(newReportText);
+                                  }}
+                                />
+                              </React.Suspense>
+                            </div>
+                          )}
+
+                          {isElastographyQUSModuleOpen && (
+                            <div className="my-6">
+                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-amber-400 bg-slate-900/60 rounded-xl border border-amber-900/40 animate-pulse">Cargando Elastografía y QUS...</div>}>
+                                <ElastographyQUSPresentationModule
+                                  selectedModel={selectedModel}
+                                  reportText={isEditingReportManual ? editedReportText : generatedReport}
+                                  initialStiffness={elastographyStiffness}
+                                  initialCAP={elastographyCAP}
+                                  initialFatFraction={elastographyFatFraction}
+                                  includeInReport={includeElastographyInReport}
+                                  onToggleIncludeInReport={setIncludeElastographyInReport}
+                                  onValuesChanged={(stiffness, cap, fatFraction) => {
+                                    setElastographyStiffness(stiffness);
+                                    setElastographyCAP(cap);
+                                    setElastographyFatFraction(fatFraction);
+                                  }}
+                                  onReportUpdated={(newReportText) => {
+                                    setEditedReportText(newReportText);
+                                    setGeneratedReport(newReportText);
+                                  }}
+                                  onClose={() => setIsElastographyQUSModuleOpen(false)}
+                                />
+                              </React.Suspense>
+                            </div>
+                          )}
+
+                          {isCreadorSinopsisFracturasOpen && (
+                            <div className="my-6">
+                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-emerald-400 bg-slate-900/60 rounded-xl border border-emerald-900/40 animate-pulse">Cargando Sinopsis de Fracturas...</div>}>
+                                <CreadorSinopsisFracturas
+                                  selectedModel={selectedModel}
+                                  reportText={isEditingReportManual ? editedReportText : generatedReport}
+                                  onReportUpdated={(newReportText) => {
+                                    setEditedReportText(newReportText);
+                                    setGeneratedReport(newReportText);
+                                  }}
                                 />
                               </React.Suspense>
                             </div>
