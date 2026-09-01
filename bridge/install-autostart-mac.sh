@@ -26,6 +26,16 @@ uninstall() {
   echo "✅ Arranque automático desactivado."
 }
 
+check_port() {
+  local port="$1"
+  local label="$2"
+  if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
+    echo "${label}: escuchando en puerto ${port} ✅"
+  else
+    echo "${label}: NO escucha en puerto ${port} ❌ (Samsung fallará el Test DICOM)"
+  fi
+}
+
 status() {
   echo "Plist: $PLIST_DEST"
   if [[ -f "$PLIST_DEST" ]]; then
@@ -33,17 +43,46 @@ status() {
   else
     echo "Instalado: no"
   fi
-  if launchctl list 2>/dev/null | grep "$LABEL"; then
-    echo "Estado launchd: registrado (ver 'launchctl list | grep radaiexpert')"
+
+  local launch_line
+  launch_line="$(launchctl list 2>/dev/null | grep "$LABEL" || true)"
+  if [[ -n "$launch_line" ]]; then
+    echo "launchd: $launch_line"
+    local pid exit_code
+    pid="$(echo "$launch_line" | awk '{print $1}')"
+    exit_code="$(echo "$launch_line" | awk '{print $2}')"
+    if [[ "$pid" == "-" ]]; then
+      echo "Proceso puente: NO está corriendo (último código salida: ${exit_code})"
+    else
+      echo "Proceso puente: PID ${pid} ✅"
+    fi
   else
     echo "Estado launchd: no activo"
   fi
+
   if curl -sf "http://127.0.0.1:8787/api/health" >/dev/null 2>&1; then
-    echo "Puente HTTP: EN LÍNEA (8787)"
+    echo "Puente HTTP (app web): EN LÍNEA (8787) ✅"
   else
-    echo "Puente HTTP: no responde en 8787"
+    echo "Puente HTTP (app web): no responde en 8787 ❌"
   fi
-  echo "Log: $LOG_DIR/bridge.log"
+
+  check_port 1040 "DICOM MWL (Samsung Worklist)"
+  check_port 11113 "DICOM Storage (Samsung envío)"
+
+  local ip
+  ip="$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true)"
+  if [[ -n "$ip" ]]; then
+    echo "IP del iMac (poner en el Samsung): ${ip}"
+  else
+    echo "IP del iMac: no detectada — revisa Ajustes → Red → Wi‑Fi"
+  fi
+
+  echo ""
+  echo "Log puente: $LOG_DIR/bridge.log"
+  if [[ -f "$LOG_DIR/bridge.log" ]]; then
+    echo "--- últimas líneas ---"
+    tail -15 "$LOG_DIR/bridge.log"
+  fi
 }
 
 if [[ "${1:-}" == "--uninstall" ]]; then

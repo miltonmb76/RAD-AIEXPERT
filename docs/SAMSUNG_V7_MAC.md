@@ -91,6 +91,7 @@ No hay USB, no hay arrastrar archivos, no hay export manual.
 |---------|----------|
 | Puente OFFLINE pero `/api/health` responde `ok:true` en terminal | Abre la app **en el mismo iMac** (no en otro dispositivo). Actualiza y reinicia el puente: `git pull` + `python3 samsung_bridge.py`. Chrome puede pedir permiso de **red local** — acéptalo. |
 | Puente OFFLINE en la app | Si usas autostart: `bash install-autostart-mac.sh --status` y revisa `~/RAD-AIEXPERT-Bridge/logs/bridge.log`. Si no: `python3 samsung_bridge.py` en el iMac |
+| App **EN LÍNEA** pero Samsung dice *comunicación falló* | Son canales distintos: la app usa HTTP `:8787`; el ecógrafo usa DICOM `:1040` y `:11113`. Ejecuta `bash install-autostart-mac.sh --status` — deben aparecer ✅ en MWL y Storage. Revisa IP del iMac en el Samsung, firewall macOS (permitir Python/red local) y que AE Title sea `MWL_SERVER` / `RAD_BRIDGE` |
 | Worklist vacía en el V7 | Verificar Test MWL; revisar que la agenda tenga pacientes en la app |
 | Imágenes no llegan | Verificar servidor Storage `RAD_BRIDGE:11113`; confirmar envío DICOM al guardar |
 | Nombre/ID no coinciden | Usa el mismo paciente de la lista; el ID DICOM debe coincidir |
