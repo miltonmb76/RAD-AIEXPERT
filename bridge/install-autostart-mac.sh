@@ -93,10 +93,12 @@ status() {
 
   if curl -sf "http://127.0.0.1:8787/api/health" >/dev/null 2>&1; then
     echo "Puente HTTP (app web): EN LÍNEA (8787) ✅"
-    if curl -sf "http://127.0.0.1:8787/api/health" | grep -q '"dicomReady": true'; then
+    local health_json
+    health_json="$(curl -sf "http://127.0.0.1:8787/api/health" || true)"
+    if echo "$health_json" | grep -q '"dicomReady"[[:space:]]*:[[:space:]]*true'; then
       echo "DICOM (health): listo ✅"
-    elif curl -sf "http://127.0.0.1:8787/api/health" | grep -q '"dicomReady"'; then
-      echo "DICOM (health): NO listo ❌ — el proceso puede ser una versión vieja; ejecuta --restart"
+    elif echo "$health_json" | grep -q '"dicomReady"'; then
+      echo "DICOM (health): NO listo ❌"
     fi
   else
     echo "Puente HTTP (app web): no responde en 8787 ❌"
