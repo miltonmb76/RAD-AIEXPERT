@@ -3891,12 +3891,12 @@ Ejemplo:
         setGeneratedReport(data.report);
         setOriginalBaseReport(data.report);
 
-        if (mode === "full") {
-          if (attachedImages.length > 0) {
-            setLabelQueueTrigger((value) => value + 1);
-            setIsLabelQueueOpen(true);
-          }
+        if (attachedImages.length > 0) {
+          setLabelQueueTrigger((value) => value + 1);
+          setIsLabelQueueOpen(true);
+        }
 
+        if (mode === "full") {
           const batchSelection = { ...FULL_REPORT_BATCH_MODULES };
           setSelectedBatchModules(batchSelection);
           handleEvaluateReport(data.report);

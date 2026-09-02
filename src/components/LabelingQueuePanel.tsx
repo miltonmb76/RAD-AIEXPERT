@@ -54,32 +54,55 @@ export const LabelingQueuePanel: React.FC<LabelingQueuePanelProps> = ({
 }) => {
   const [items, setItems] = useState<LabelQueueItem[]>([]);
   const [expanded, setExpanded] = useState(true);
-  const processingRef = useRef(false);
   const confirmedIdsRef = useRef<Set<string>>(new Set());
+  const lastProcessedTriggerRef = useRef(0);
+  const processingGenerationRef = useRef(0);
+
+  const attachedImagesRef = useRef(attachedImages);
+  attachedImagesRef.current = attachedImages;
+  const reportTextRef = useRef(reportText);
+  reportTextRef.current = reportText;
+  const studyTypeRef = useRef(studyType);
+  studyTypeRef.current = studyType;
+  const clinicalHistoryRef = useRef(clinicalHistory);
+  clinicalHistoryRef.current = clinicalHistory;
+  const selectedModelRef = useRef(selectedModel);
+  selectedModelRef.current = selectedModel;
 
   const buildQueueItems = useCallback((): LabelQueueItem[] => {
-    return attachedImages
+    return attachedImagesRef.current
       .filter((img) => img.url || img.base64)
       .filter((img) => !confirmedIdsRef.current.has(img.id))
       .map((img) => ({
         imageId: img.id,
         name: img.name || img.id,
-        previewUrl: img.url,
+        previewUrl: img.url || img.base64 || "",
         status: "waiting" as const,
         suggestedLabel: "",
         editedLabel: "",
         keyword: "",
       }));
-  }, [attachedImages]);
+  }, []);
 
   const updateItem = useCallback((imageId: string, patch: Partial<LabelQueueItem>) => {
     setItems((prev) => prev.map((item) => (item.imageId === imageId ? { ...item, ...patch } : item)));
   }, []);
 
-  const analyzeItem = useCallback(
-    async (imageId: string, keyword?: string) => {
-      const image = attachedImages.find((img) => img.id === imageId);
-      if (!image || !reportText.trim()) return;
+  const processItem = useCallback(
+    async (imageId: string, keyword?: string, generation?: number) => {
+      const image = attachedImagesRef.current.find((img) => img.id === imageId);
+      const report = reportTextRef.current.trim();
+      if (!image || !report) {
+        updateItem(imageId, {
+          status: "error",
+          error: !report ? "Falta el reporte generado." : "Imagen no encontrada.",
+        });
+        return;
+      }
+
+      if (generation !== undefined && generation !== processingGenerationRef.current) {
+        return;
+      }
 
       updateItem(imageId, {
         status: keyword ? "reorienting" : "analyzing",
@@ -89,12 +112,17 @@ export const LabelingQueuePanel: React.FC<LabelingQueuePanelProps> = ({
       try {
         const label = await fetchSuggestedLabel({
           image,
-          reportText,
-          studyType,
-          clinicalHistory,
+          reportText: report,
+          studyType: studyTypeRef.current,
+          clinicalHistory: clinicalHistoryRef.current,
           keyword,
-          model: selectedModel,
+          model: selectedModelRef.current,
         });
+
+        if (generation !== undefined && generation !== processingGenerationRef.current) {
+          return;
+        }
+
         updateItem(imageId, {
           status: "suggested",
           suggestedLabel: label,
@@ -102,20 +130,46 @@ export const LabelingQueuePanel: React.FC<LabelingQueuePanelProps> = ({
           keyword: keyword || "",
         });
       } catch (err) {
+        if (generation !== undefined && generation !== processingGenerationRef.current) {
+          return;
+        }
         updateItem(imageId, {
           status: "error",
           error: err instanceof Error ? err.message : "Error al analizar la imagen",
         });
       }
     },
-    [attachedImages, reportText, studyType, clinicalHistory, selectedModel, updateItem]
+    [updateItem]
   );
 
+  // Sync manual captions: remove already-labeled images without restarting the queue.
   useEffect(() => {
-    if (trigger <= 0 || !reportText.trim()) return;
+    const labeledIds = attachedImages
+      .filter((img) => img.caption?.trim())
+      .map((img) => img.id);
+
+    if (labeledIds.length === 0) return;
+
+    labeledIds.forEach((id) => confirmedIdsRef.current.add(id));
+
+    setItems((prev) => {
+      const labeledSet = new Set(labeledIds);
+      const next = prev.filter((item) => !labeledSet.has(item.imageId));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [attachedImages]);
+
+  // Start queue only when trigger increments (not on every attachedImages change).
+  useEffect(() => {
+    if (trigger <= 0 || trigger === lastProcessedTriggerRef.current) return;
+    if (!reportText.trim()) return;
+
+    lastProcessedTriggerRef.current = trigger;
+    const generation = trigger;
+    processingGenerationRef.current = generation;
 
     confirmedIdsRef.current = new Set(
-      attachedImages.filter((img) => img.caption?.trim()).map((img) => img.id)
+      attachedImagesRef.current.filter((img) => img.caption?.trim()).map((img) => img.id)
     );
 
     const nextItems = buildQueueItems();
@@ -123,26 +177,27 @@ export const LabelingQueuePanel: React.FC<LabelingQueuePanelProps> = ({
     onOpenChange(true);
     setExpanded(true);
 
+    const total = attachedImagesRef.current.filter((img) => img.url || img.base64).length;
     if (nextItems.length === 0) {
-      const total = attachedImages.filter((img) => img.url || img.base64).length;
       onStatsChange?.(confirmedIdsRef.current.size, total);
       return;
     }
 
     void (async () => {
-      if (processingRef.current) return;
-      processingRef.current = true;
       for (const item of nextItems) {
-        await analyzeItem(item.imageId);
+        if (processingGenerationRef.current !== generation) break;
+        await processItem(item.imageId, undefined, generation);
       }
-      processingRef.current = false;
     })();
-  }, [trigger, reportText, attachedImages, buildQueueItems, onOpenChange, onStatsChange, analyzeItem]);
+  }, [trigger, reportText, buildQueueItems, onOpenChange, onStatsChange, processItem]);
 
   useEffect(() => {
     const total = attachedImages.filter((img) => img.url || img.base64).length;
-    const confirmed = items.filter((item) => item.status === "confirmed").length + 
-      attachedImages.filter((img) => img.caption?.trim() && !items.some(i => i.imageId === img.id)).length;
+    const confirmed =
+      items.filter((item) => item.status === "confirmed").length +
+      attachedImages.filter(
+        (img) => img.caption?.trim() && !items.some((i) => i.imageId === img.id)
+      ).length;
     onStatsChange?.(Math.min(confirmed, total), total);
   }, [items, attachedImages, onStatsChange]);
 
@@ -152,6 +207,7 @@ export const LabelingQueuePanel: React.FC<LabelingQueuePanelProps> = ({
     onUpdateImageCaption(item.imageId, finalLabel);
     confirmedIdsRef.current.add(item.imageId);
     updateItem(item.imageId, { status: "confirmed", editedLabel: finalLabel, suggestedLabel: finalLabel });
+    setItems((prev) => prev.filter((i) => i.imageId !== item.imageId));
     const confirmed = confirmedIdsRef.current.size;
     const total = attachedImages.filter((img) => img.url || img.base64).length;
     onStatsChange?.(confirmed, total);
@@ -164,16 +220,28 @@ export const LabelingQueuePanel: React.FC<LabelingQueuePanelProps> = ({
   };
 
   const skipItem = (imageId: string) => {
-    updateItem(imageId, { status: "skipped" });
+    confirmedIdsRef.current.add(imageId);
+    setItems((prev) => prev.filter((item) => item.imageId !== imageId));
   };
 
   const stats = useMemo(() => {
-    const total = items.length;
-    const confirmed = items.filter((item) => item.status === "confirmed").length;
+    const total =
+      items.length +
+      attachedImages.filter(
+        (img) =>
+          (img.url || img.base64) &&
+          img.caption?.trim() &&
+          !items.some((i) => i.imageId === img.id)
+      ).length;
+    const confirmed =
+      items.filter((item) => item.status === "confirmed").length +
+      attachedImages.filter(
+        (img) => img.caption?.trim() && !items.some((i) => i.imageId === img.id)
+      ).length;
     const pending = items.filter((item) => item.status === "suggested").length;
     const working = items.filter((item) => item.status === "analyzing" || item.status === "reorienting").length;
     return { total, confirmed, pending, working };
-  }, [items]);
+  }, [items, attachedImages]);
 
   if (!reportText.trim()) return null;
 
@@ -209,7 +277,9 @@ export const LabelingQueuePanel: React.FC<LabelingQueuePanelProps> = ({
             <div className="max-h-[min(50vh,22rem)] overflow-y-auto px-3.5 py-2.5 space-y-3">
               {items.length === 0 ? (
                 <p className="text-[11px] text-slate-500 text-center py-4">
-                  No hay imagenes adjuntas para rotular.
+                  {stats.confirmed > 0
+                    ? "Todas las imagenes fueron rotuladas."
+                    : "No hay imagenes adjuntas para rotular."}
                 </p>
               ) : (
                 items.map((item) => (
@@ -260,7 +330,7 @@ export const LabelingQueuePanel: React.FC<LabelingQueuePanelProps> = ({
                             />
                             <button
                               type="button"
-                              onClick={() => void analyzeItem(item.imageId, item.keyword)}
+                              onClick={() => void processItem(item.imageId, item.keyword)}
                               className="inline-flex items-center gap-1 rounded-lg border border-violet-500/30 bg-violet-950/40 px-2 py-1.5 text-[9px] font-black uppercase tracking-wider text-violet-200 hover:bg-violet-900/40 transition cursor-pointer shrink-0"
                               title="Reorientar con palabra clave"
                             >
@@ -291,7 +361,7 @@ export const LabelingQueuePanel: React.FC<LabelingQueuePanelProps> = ({
                             {item.status === "error" && (
                               <button
                                 type="button"
-                                onClick={() => void analyzeItem(item.imageId)}
+                                onClick={() => void processItem(item.imageId)}
                                 className="inline-flex items-center gap-1 rounded-lg border border-slate-700 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-wider text-slate-300 hover:bg-slate-800 transition cursor-pointer"
                               >
                                 <Sparkles className="h-3 w-3" />
