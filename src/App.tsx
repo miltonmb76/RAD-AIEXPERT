@@ -3191,7 +3191,7 @@ Ejemplo:
   const [includeRadarInReport, setIncludeRadarInReport] = useState<boolean>(true);
 
   // States & Handlers for Sistema de Activación Rápida de Módulos (Procesamiento en Lote)
-  const [selectedBatchModules, setSelectedBatchModules] = useState<Record<string, boolean>>({
+  const DEFAULT_BATCH_MODULES: Record<string, boolean> = {
     atlas3d: true,
     vascular3d: true,
     radar: false,
@@ -3206,7 +3206,14 @@ Ejemplo:
     footnotes: false,
     organ_synoptic: false,
     fractures: false,
-            classifications: false,
+    classifications: false,
+  };
+
+  const [selectedBatchModules, setSelectedBatchModules] = useState<Record<string, boolean>>(DEFAULT_BATCH_MODULES);
+  const [autoActivateBatchOnGenerate, setAutoActivateBatchOnGenerate] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    const saved = localStorage.getItem("rad_auto_activate_batch_on_generate");
+    return saved !== "false";
   });
   const [isActivatingBatch, setIsActivatingBatch] = useState<boolean>(false);
   const [batchSuccessMessage, setBatchSuccessMessage] = useState<string | null>(null);
@@ -3231,8 +3238,19 @@ Ejemplo:
     });
   };
 
-  const handleActivateBatchModules = async () => {
-    const activeReport = isEditingReportManual ? editedReportText : (generatedReport || "");
+  const handleToggleAutoActivateBatch = (enabled: boolean) => {
+    setAutoActivateBatchOnGenerate(enabled);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("rad_auto_activate_batch_on_generate", String(enabled));
+    }
+  };
+
+  const handleActivateBatchModules = async (
+    reportOverride?: string,
+    modulesOverride?: Record<string, boolean>
+  ) => {
+    const activeReport = reportOverride || (isEditingReportManual ? editedReportText : (generatedReport || ""));
+    const modules = modulesOverride || selectedBatchModules;
     if (!activeReport) {
       setModifyError("Genera o redacta un reporte antes de activar los módulos en lote.");
       return;
@@ -3242,22 +3260,22 @@ Ejemplo:
     setBatchSuccessMessage(null);
 
     // 1. Activate interactive UI panels immediately
-    if (selectedBatchModules.radar) setIsBiomechanicalRadarOpen(true);
-    if (selectedBatchModules.measurements) setIsAsistenteMedidasOpen(true);
-    if (selectedBatchModules.footnotes) setIsCreadorNotasOpen(true);
-    if (selectedBatchModules.organ_synoptic) setIsCreadorCuadroSinopticoOpen(true);
-    if (selectedBatchModules.fractures) setIsCreadorSinopsisFracturasOpen(true);
+    if (modules.radar) setIsBiomechanicalRadarOpen(true);
+    if (modules.measurements) setIsAsistenteMedidasOpen(true);
+    if (modules.footnotes) setIsCreadorNotasOpen(true);
+    if (modules.organ_synoptic) setIsCreadorCuadroSinopticoOpen(true);
+    if (modules.fractures) setIsCreadorSinopsisFracturasOpen(true);
     // 2. Trigger async AI generation processes concurrently
     const promises: Promise<any>[] = [];
 
-    if (selectedBatchModules.case_analysis) promises.push(handleAnalyzeCase());
-    if (selectedBatchModules.quality_eval) promises.push(handleEvaluateReport(activeReport));
-    if (selectedBatchModules.bibliography) promises.push(handleSearchBibliography());
-    if (selectedBatchModules.operational_summary) promises.push(handleGenerateWhatsAppSummary());
-    if (selectedBatchModules.patient_summary) promises.push(handleGeneratePatientSummary());
-    if (selectedBatchModules.glossary) promises.push(handleGenerateDynamicGlossary());
-    if (selectedBatchModules.schematic) promises.push(handleGenerateSchematicSummary());
-    if (selectedBatchModules.vascular3d) {
+    if (modules.case_analysis) promises.push(handleAnalyzeCase());
+    if (modules.quality_eval) promises.push(handleEvaluateReport(activeReport));
+    if (modules.bibliography) promises.push(handleSearchBibliography());
+    if (modules.operational_summary) promises.push(handleGenerateWhatsAppSummary());
+    if (modules.patient_summary) promises.push(handleGeneratePatientSummary());
+    if (modules.glossary) promises.push(handleGenerateDynamicGlossary());
+    if (modules.schematic) promises.push(handleGenerateSchematicSummary());
+    if (modules.vascular3d) {
       promises.push((async () => {
         try {
           const resp = await fetch("/api/generate-3d-vascular", {
@@ -3278,7 +3296,7 @@ Ejemplo:
         }
       })());
     }
-    if (selectedBatchModules.atlas3d) {
+    if (modules.atlas3d) {
       promises.push((async () => {
         try {
           const resp = await fetch("/api/generate-3d-atlas", {
@@ -3304,7 +3322,7 @@ Ejemplo:
 
     try {
       await Promise.allSettled(promises);
-      const activeCount = Object.values(selectedBatchModules).filter(Boolean).length;
+      const activeCount = Object.values(modules).filter(Boolean).length;
       setBatchSuccessMessage(`¡Éxito! Se han activado y procesado ${activeCount} módulos seleccionados en lote.`);
       setTimeout(() => setBatchSuccessMessage(null), 6000);
     } catch (err) {
@@ -3886,25 +3904,17 @@ Ejemplo:
           setIsLabelQueueOpen(true);
         }
 
-        // Resetear casillas del Sistema de Activación Rápida de Módulos: por defecto Resumen Operacional y Paciente marcados
-        setSelectedBatchModules({
-          atlas3d: true,
-          vascular3d: true,
-          radar: false,
-          case_analysis: false,
-          quality_eval: false,
-          bibliography: false,
-          operational_summary: true,
-          patient_summary: true,
-          glossary: false,
-          schematic: false,
-          measurements: false,
-          footnotes: false,
-                              classifications: false,
-        });
+        // Restaurar seleccion por defecto del lote (Atlas 3D, Vascular 3D, resumenes)
+        const batchSelection = { ...DEFAULT_BATCH_MODULES };
+        setSelectedBatchModules(batchSelection);
 
         // Activación Automática de Evaluación de Calidad al Generar Reporte
         handleEvaluateReport(data.report);
+
+        // Activar en paralelo los modulos marcados (sin segundo clic en ACTIVAR)
+        if (autoActivateBatchOnGenerate && Object.values(batchSelection).some(Boolean)) {
+          void handleActivateBatchModules(data.report, batchSelection);
+        }
 
         // Auto-detect specific study protocol (e.g. Muslo Posterior, Hombro, Rodilla, etc.) and switch active components
         autoDetectSpecificStudyAndModality(data.report, studyType);
