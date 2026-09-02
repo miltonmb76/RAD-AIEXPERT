@@ -3240,10 +3240,13 @@ Ejemplo:
     reportOverride?: string,
     modulesOverride?: Record<string, boolean>
   ) => {
-    const activeReport = reportOverride || (isEditingReportManual ? editedReportText : (generatedReport || ""));
+    const activeReport =
+      typeof reportOverride === "string" && reportOverride.trim()
+        ? reportOverride.trim()
+        : (isEditingReportManual ? editedReportText : (generatedReport || "")).trim();
     const modules = modulesOverride || selectedBatchModules;
     if (!activeReport) {
-      setModifyError("Genera o redacta un reporte antes de activar los módulos en lote.");
+      setModifyError("Genera o redacta un reporte antes de activar los modulos en lote.");
       return;
     }
 
@@ -3262,8 +3265,70 @@ Ejemplo:
     if (modules.case_analysis) promises.push(handleAnalyzeCase());
     if (modules.quality_eval) promises.push(handleEvaluateReport(activeReport));
     if (modules.bibliography) promises.push(handleSearchBibliography());
-    if (modules.operational_summary) promises.push(handleGenerateWhatsAppSummary(activeReport));
-    if (modules.patient_summary) promises.push(handleGeneratePatientSummary(activeReport));
+
+    if (modules.operational_summary) {
+      setOperationalSummaryText("");
+      setIsGeneratingOperationalSummary(true);
+      promises.push((async () => {
+        try {
+          const response = await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: selectedModel,
+              messages: [{
+                role: "user",
+                text:
+                  "Resume de forma muy concisa UNICAMENTE los hallazgos clinicos principales de este reporte medico en 3 o 4 vinietas de texto asertivas y claras, redactadas con un lenguaje profesional pero comprensible, apto para ser compartido por WhatsApp y consultado digitalmente por el paciente. NO incluyas ninguna recomendacion, sugerencia de manejo ni plan a futuro, limitate estrictamente a los hallazgos de forma asertiva. No agregues preambulos, saludos, ni comentarios personales, devuelve directamente las vinietas con guiones '-'. Reporte:\n\n" +
+                  activeReport,
+              }],
+            }),
+          });
+          const data = await response.json();
+          if (response.ok && data.success && data.reply) {
+            setOperationalSummaryText(String(data.reply).trim());
+          } else {
+            console.error("Resumen operacional fallo:", data.error);
+          }
+        } catch (error) {
+          console.error("Error generando resumen operacional:", error);
+        } finally {
+          setIsGeneratingOperationalSummary(false);
+        }
+      })());
+    }
+
+    if (modules.patient_summary) {
+      setPatientSummary(null);
+      setPatientSummaryError(null);
+      setIsGeneratingPatientSummary(true);
+      setIsPatientSummaryExpanded(true);
+      promises.push((async () => {
+        try {
+          const response = await fetch("/api/generate-patient-summary", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: selectedModel,
+              report: activeReport,
+              studyType: studyType || "Estudio Radiologico",
+              clinicalHistory: clinicalHistory || "",
+            }),
+          });
+          const data = await response.json();
+          if (data.success && data.data) {
+            setPatientSummary(data.data);
+          } else {
+            setPatientSummaryError(data.error || "Error al generar el resumen del paciente.");
+          }
+        } catch (err: any) {
+          setPatientSummaryError(err?.message || String(err));
+        } finally {
+          setIsGeneratingPatientSummary(false);
+        }
+      })());
+    }
+
     if (modules.glossary) promises.push(handleGenerateDynamicGlossary());
     if (modules.schematic) promises.push(handleGenerateSchematicSummary());
     if (modules.vascular3d) {
@@ -3827,6 +3892,9 @@ Ejemplo:
     setBibliographySources([]);
     setReportEvaluation("");
     setReportEvaluationError(null);
+    setOperationalSummaryText("");
+    setPatientSummary(null);
+    setPatientSummaryError(null);
 
     // Setup visual steps for medical analysis feeling
     const steps = [
@@ -3898,9 +3966,10 @@ Ejemplo:
 
         if (mode === "full") {
           const batchSelection = { ...FULL_REPORT_BATCH_MODULES };
+          const reportText = String(data.report || "").trim();
           setSelectedBatchModules(batchSelection);
-          handleEvaluateReport(data.report);
-          void handleActivateBatchModules(data.report, batchSelection);
+          handleEvaluateReport(reportText);
+          void handleActivateBatchModules(reportText, batchSelection);
         } else {
           setSelectedBatchModules({ ...DEFAULT_BATCH_MODULES });
         }
@@ -19422,7 +19491,7 @@ const splitReportAndAnnex = (text: string) => {
                             <div className="pt-2 flex items-center justify-end">
                               <button
                                 type="button"
-                                onClick={handleActivateBatchModules}
+                                onClick={() => void handleActivateBatchModules()}
                                 disabled={isActivatingBatch || !Object.values(selectedBatchModules).some(Boolean)}
                                 className="w-full sm:w-auto px-8 py-4 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-black uppercase tracking-widest rounded-2xl transition-all shadow-xl shadow-indigo-950/50 flex items-center justify-center gap-3 font-mono cursor-pointer border border-indigo-400/40"
                               >
@@ -20526,6 +20595,35 @@ const splitReportAndAnnex = (text: string) => {
                                     </button>
                                   </div>
                                 )}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* ========================================================== */}
+                          {/* OPERATIONAL SUMMARY (IA) - visible after full report */}
+                          {/* ========================================================== */}
+                          {isGeneratingOperationalSummary && (
+                            <div className="bg-[#0a120f]/60 border-2 border-emerald-500/10 rounded-2xl p-6 flex flex-col items-center justify-center py-10 text-center space-y-3 shadow-lg animate-pulse my-4">
+                              <Loader2 className="h-6 w-6 text-emerald-400 animate-spin" />
+                              <p className="text-[10px] font-mono font-black text-slate-300 uppercase tracking-widest">
+                                Generando resumen operacional de hallazgos...
+                              </p>
+                              <p className="text-[9px] font-medium text-slate-500 uppercase tracking-wider max-w-sm">
+                                Sintetizando los hallazgos principales para consulta rapida y envio por WhatsApp.
+                              </p>
+                            </div>
+                          )}
+
+                          {operationalSummaryText && !isGeneratingOperationalSummary && (
+                            <div className="bg-black border-2 border-emerald-500/20 rounded-2xl p-6 space-y-4 shadow-xl my-4 text-left">
+                              <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
+                                <ListTodo className="h-4 w-4 text-emerald-400" />
+                                <h4 className="text-xs font-black text-emerald-300 uppercase tracking-widest font-mono">
+                                  Resumen Operacional de Hallazgos
+                                </h4>
+                              </div>
+                              <div className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap">
+                                {renderElegantPatientResumenDark(operationalSummaryText)}
                               </div>
                             </div>
                           )}
