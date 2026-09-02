@@ -3193,7 +3193,7 @@ Ejemplo:
   // States & Handlers for Sistema de Activación Rápida de Módulos (Procesamiento en Lote)
   const DEFAULT_BATCH_MODULES: Record<string, boolean> = {
     atlas3d: true,
-    vascular3d: true,
+    vascular3d: false,
     radar: false,
     case_analysis: false,
     quality_eval: false,
@@ -3204,17 +3204,15 @@ Ejemplo:
     schematic: false,
     measurements: false,
     footnotes: false,
-    organ_synoptic: false,
+    organ_synoptic: true,
     fractures: false,
     classifications: false,
   };
 
+  /** Modulos del boton "Reporte completo" (ecografia / estudios con anexos) */
+  const FULL_REPORT_BATCH_MODULES: Record<string, boolean> = { ...DEFAULT_BATCH_MODULES };
+
   const [selectedBatchModules, setSelectedBatchModules] = useState<Record<string, boolean>>(DEFAULT_BATCH_MODULES);
-  const [autoActivateBatchOnGenerate, setAutoActivateBatchOnGenerate] = useState<boolean>(() => {
-    if (typeof window === "undefined") return true;
-    const saved = localStorage.getItem("rad_auto_activate_batch_on_generate");
-    return saved !== "false";
-  });
   const [isActivatingBatch, setIsActivatingBatch] = useState<boolean>(false);
   const [batchSuccessMessage, setBatchSuccessMessage] = useState<string | null>(null);
 
@@ -3234,15 +3232,8 @@ Ejemplo:
       footnotes: select,
       organ_synoptic: select,
       fractures: select,
-                  classifications: select,
+      classifications: select,
     });
-  };
-
-  const handleToggleAutoActivateBatch = (enabled: boolean) => {
-    setAutoActivateBatchOnGenerate(enabled);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("rad_auto_activate_batch_on_generate", String(enabled));
-    }
   };
 
   const handleActivateBatchModules = async (
@@ -3810,7 +3801,7 @@ Ejemplo:
   };
 
   // 1. ACTION: SEND PAYLOAD TO GENERATE REPORT
-  const handleGenerateReport = async () => {
+  const handleGenerateReport = async (mode: "simple" | "full" = "full") => {
     if (!studyType.trim()) {
       setReportError("Por favor, especifica el Tipo de Estudio solicitado.");
       return;
@@ -3899,21 +3890,19 @@ Ejemplo:
         }
         setGeneratedReport(data.report);
         setOriginalBaseReport(data.report);
-        if (attachedImages.length > 0) {
-          setLabelQueueTrigger((value) => value + 1);
-          setIsLabelQueueOpen(true);
-        }
 
-        // Restaurar seleccion por defecto del lote (Atlas 3D, Vascular 3D, resumenes)
-        const batchSelection = { ...DEFAULT_BATCH_MODULES };
-        setSelectedBatchModules(batchSelection);
+        if (mode === "full") {
+          if (attachedImages.length > 0) {
+            setLabelQueueTrigger((value) => value + 1);
+            setIsLabelQueueOpen(true);
+          }
 
-        // Activación Automática de Evaluación de Calidad al Generar Reporte
-        handleEvaluateReport(data.report);
-
-        // Activar en paralelo los modulos marcados (sin segundo clic en ACTIVAR)
-        if (autoActivateBatchOnGenerate && Object.values(batchSelection).some(Boolean)) {
+          const batchSelection = { ...FULL_REPORT_BATCH_MODULES };
+          setSelectedBatchModules(batchSelection);
+          handleEvaluateReport(data.report);
           void handleActivateBatchModules(data.report, batchSelection);
+        } else {
+          setSelectedBatchModules({ ...DEFAULT_BATCH_MODULES });
         }
 
         // Auto-detect specific study protocol (e.g. Muslo Posterior, Hombro, Rodilla, etc.) and switch active components
@@ -17475,25 +17464,54 @@ const splitReportAndAnnex = (text: string) => {
 
 
 
-                    {/* Submit Button */}
-                    <button
-                      type="button"
-                      onClick={handleGenerateReport}
-                      disabled={isGenerating || !studyType.trim()}
-                      className="w-full bg-indigo-600 hover:bg-indigo-550 text-white font-black py-4 px-6 rounded-xl text-xs uppercase tracking-widest shadow-[0_4px_16px_rgba(99,102,241,0.4)] disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2.5 cursor-pointer"
-                    >
-                      {isGenerating ? (
-                        <>
-                          <RefreshCw className="h-4 w-4 animate-spin text-white" />
-                          <span>Analizando e Interpretando...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Sparkles className="h-4.5 w-4.5" />
-                          <span>Redactar Informe Médico</span>
-                        </>
-                      )}
-                    </button>
+                    {/* Submit Buttons: simple vs completo */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => handleGenerateReport("simple")}
+                        disabled={isGenerating || !studyType.trim()}
+                        className="w-full bg-slate-800 hover:bg-slate-750 text-slate-100 font-black py-4 px-5 rounded-xl text-[11px] uppercase tracking-widest border border-slate-600/80 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all flex flex-col items-center justify-center gap-1.5 cursor-pointer"
+                        title="Solo redacta el informe, sin modulos adicionales (ideal para radiografias simples)"
+                      >
+                        {isGenerating ? (
+                          <>
+                            <RefreshCw className="h-4 w-4 animate-spin text-white" />
+                            <span>Analizando...</span>
+                          </>
+                        ) : (
+                          <>
+                            <FileText className="h-4 w-4 text-slate-300" />
+                            <span>Reporte simple</span>
+                            <span className="text-[8px] font-bold normal-case tracking-normal text-slate-400">
+                              Solo el informe
+                            </span>
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleGenerateReport("full")}
+                        disabled={isGenerating || !studyType.trim()}
+                        className="w-full bg-indigo-600 hover:bg-indigo-550 text-white font-black py-4 px-5 rounded-xl text-[11px] uppercase tracking-widest shadow-[0_4px_16px_rgba(99,102,241,0.4)] disabled:opacity-50 disabled:cursor-not-allowed transition-all flex flex-col items-center justify-center gap-1.5 cursor-pointer border border-indigo-400/30"
+                        title="Informe + resumen operacional, resumen paciente, cuadro sinoptico y Atlas 3D"
+                      >
+                        {isGenerating ? (
+                          <>
+                            <RefreshCw className="h-4 w-4 animate-spin text-white" />
+                            <span>Analizando...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="h-4 w-4 text-amber-200" />
+                            <span>Reporte completo</span>
+                            <span className="text-[8px] font-bold normal-case tracking-normal text-indigo-100/80 text-center leading-snug">
+                              + Resumen, Paciente, Sinoptico y Atlas 3D
+                            </span>
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
 
                   {/* 💬 CHAT INTELIGENTE MÉDICO-RADIOLÓGICO */}
@@ -19227,6 +19245,10 @@ const splitReportAndAnnex = (text: string) => {
                                 </button>
                               </div>
                             </div>
+
+                            <p className="text-[10px] text-slate-500 leading-snug px-1">
+                              El boton <strong className="text-slate-300">Reporte completo</strong> activa por defecto: Resumen operacional, Resumen paciente, Cuadro sinoptico y Atlas 3D. Marca otros modulos aqui si quieres anadirlos manualmente con ACTIVAR.
+                            </p>
 
                             {/* Catalog Grid */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
