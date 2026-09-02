@@ -21,7 +21,11 @@ cat <<EOF
 
 ✅ Puente instalado.
 
-Para iniciarlo cada día (dejar esta terminal abierta):
+Arranque automático al encender el iMac (recomendado, una sola vez):
+
+  bash "$SCRIPT_DIR/install-autostart-mac.sh"
+
+O manualmente cada día (dejar esta terminal abierta):
 
   cd "$SCRIPT_DIR"
   source .venv/bin/activate
