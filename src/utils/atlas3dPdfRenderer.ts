@@ -73,15 +73,19 @@ export function renderAtlas3DAnnexToPDF(
   const isSinglePanel = numPanels === 1;
   const panelGap = (numPanels === 2 ? 6 : 4) * factor;
   let panelWidth = isSinglePanel
-    ? 58 * factor
+    ? contentWidth * 0.56
     : (contentWidth - panelGap * (numPanels - 1)) / numPanels;
   let singlePanelX = isSinglePanel ? marginX + (contentWidth - panelWidth) / 2 : marginX;
 
   // Calculate proportional heights (Header + 4:3 Image Container + Caption)
   const cardHeaderH = (numPanels === 2 || isSinglePanel ? 8.5 : 7.5) * factor;
-  let imgBoxH = isSinglePanel ? 38 * factor : panelWidth * 0.75;
+  let imgBoxH = panelWidth * 0.75;
   if (isSinglePanel) {
-    panelWidth = imgBoxH / 0.75;
+    const maxSingleImgH = 70 * factor;
+    if (imgBoxH > maxSingleImgH) {
+      imgBoxH = maxSingleImgH;
+      panelWidth = imgBoxH / 0.75;
+    }
     singlePanelX = marginX + (contentWidth - panelWidth) / 2;
   }
 
