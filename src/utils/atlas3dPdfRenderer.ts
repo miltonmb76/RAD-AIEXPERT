@@ -72,14 +72,22 @@ export function renderAtlas3DAnnexToPDF(
   const numPanels = validPanels.length;
   const isSinglePanel = numPanels === 1;
   const panelGap = (numPanels === 2 ? 6 : 4) * factor;
-  const panelWidth = isSinglePanel
-    ? contentWidth * 0.65
+  let panelWidth = isSinglePanel
+    ? contentWidth * 0.44
     : (contentWidth - panelGap * (numPanels - 1)) / numPanels;
-  const singlePanelX = isSinglePanel ? marginX + (contentWidth - panelWidth) / 2 : marginX;
+  let singlePanelX = isSinglePanel ? marginX + (contentWidth - panelWidth) / 2 : marginX;
 
   // Calculate proportional heights (Header + 4:3 Image Container + Caption)
   const cardHeaderH = (numPanels === 2 || isSinglePanel ? 8.5 : 7.5) * factor;
-  const imgBoxH = panelWidth * 0.75; // Exact 4:3 aspect ratio
+  let imgBoxH = panelWidth * 0.75; // Exact 4:3 aspect ratio
+  if (isSinglePanel) {
+    const maxSingleImgH = 50 * factor;
+    if (imgBoxH > maxSingleImgH) {
+      imgBoxH = maxSingleImgH;
+      panelWidth = imgBoxH / 0.75;
+      singlePanelX = marginX + (contentWidth - panelWidth) / 2;
+    }
+  }
 
   // Pre-calculate captions to ensure exact height fitting and no text overflow
   doc.setFont("helvetica", "normal");
@@ -194,24 +202,45 @@ export function renderAtlas3DAnnexToPDF(
     doc.text("CORRELACIÓN SEMIOLÓGICA DE HALLAZGOS EN RECONSTRUCCIÓN 3D", marginX + 6 * factor, yCoord);
     yCoord += 5.5 * factor;
 
-    // Table Column Widths
-    const colStructureW = contentWidth * 0.28;
-    const colRefW = contentWidth * 0.14;
+    // Table Column Widths — fixed panel column avoids header/body overlap
+    const colRefW = 18 * factor;
+    const colStructureW = contentWidth * 0.26;
     const colDescW = contentWidth - colStructureW - colRefW;
+    const colStructureX = marginX;
+    const colRefX = marginX + colStructureW;
+    const colDescX = marginX + colStructureW + colRefW;
+
+    const formatPanelRefForPdf = (panelRef?: string): string => {
+      const raw = (panelRef || "(Panel A)").trim();
+      const single = raw.match(/Panel\s+([A-C])/i);
+      if (single) return single[1].toUpperCase();
+      return raw.replace(/[()]/g, "").replace(/^Panel\s+/i, "P. ");
+    };
 
     // Table Header Row
-    const tableHeaderH = 7 * factor;
+    const tableHeaderH = 8 * factor;
     doc.setFillColor(241, 245, 249); // slate-100
     doc.setDrawColor(203, 213, 225); // slate-300
     doc.setLineWidth(0.35);
     doc.rect(marginX, yCoord, contentWidth, tableHeaderH, "FD");
 
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(8 * factor);
+    doc.setFontSize(7.2 * factor);
     doc.setTextColor(51, 65, 85); // slate-700
-    doc.text("ESTRUCTURA / FOCO ANATÓMICO", marginX + 4 * factor, yCoord + 4.8 * factor);
-    doc.text("PANEL", marginX + colStructureW + 4 * factor, yCoord + 4.8 * factor);
-    doc.text("DESCRIPCIÓN PATOLÓGICA Y CORRELACIÓN TRIDIMENSIONAL", marginX + colStructureW + colRefW + 4 * factor, yCoord + 4.8 * factor);
+    doc.text("ESTRUCTURA / FOCO", colStructureX + 4 * factor, yCoord + 5.2 * factor, {
+      maxWidth: colStructureW - 8 * factor,
+    });
+    doc.text("PANEL", colRefX + colRefW / 2, yCoord + 5.2 * factor, {
+      align: "center",
+      maxWidth: colRefW - 4 * factor,
+    });
+    doc.text("DESCRIPCIÓN Y CORRELACIÓN 3D", colDescX + 4 * factor, yCoord + 5.2 * factor, {
+      maxWidth: colDescW - 8 * factor,
+    });
+
+    doc.setDrawColor(203, 213, 225);
+    doc.line(colRefX, yCoord, colRefX, yCoord + tableHeaderH);
+    doc.line(colDescX, yCoord, colDescX, yCoord + tableHeaderH);
     yCoord += tableHeaderH;
 
     // Render Rows with calculated heights to prevent any text overflowing
@@ -231,27 +260,32 @@ export function renderAtlas3DAnnexToPDF(
       }
       doc.setDrawColor(226, 232, 240); // slate-200
       doc.rect(marginX, yCoord, contentWidth, rowH, "S");
+      doc.line(colRefX, yCoord, colRefX, yCoord + rowH);
+      doc.line(colDescX, yCoord, colDescX, yCoord + rowH);
 
       // Structure text
       doc.setFont("helvetica", "bold");
       doc.setTextColor(15, 23, 42); // slate-900
       let sY = yCoord + 5.2 * factor;
       structLines.forEach((sl: string) => {
-        doc.text(sl, marginX + 4 * factor, sY);
+        doc.text(sl, colStructureX + 4 * factor, sY);
         sY += rowLineH;
       });
 
-      // Panel Ref Badge
+      // Panel Ref Badge (compact: A, B, C...)
       doc.setFont("helvetica", "bold");
       doc.setTextColor(192, 38, 205); // Fuchsia-600 / Magenta
-      doc.text(row.panelRef || "(Panel A)", marginX + colStructureW + 4 * factor, yCoord + 5.2 * factor);
+      doc.text(formatPanelRefForPdf(row.panelRef), colRefX + colRefW / 2, yCoord + 5.2 * factor, {
+        align: "center",
+        maxWidth: colRefW - 4 * factor,
+      });
 
       // Description text
       doc.setFont("helvetica", "normal");
       doc.setTextColor(51, 65, 85); // slate-700
       let dY = yCoord + 5.2 * factor;
       descLines.forEach((dl: string) => {
-        doc.text(dl, marginX + colStructureW + colRefW + 4 * factor, dY);
+        doc.text(dl, colDescX + 4 * factor, dY);
         dY += rowLineH;
       });
 
