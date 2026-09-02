@@ -68,24 +68,28 @@ export function renderAtlas3DAnnexToPDF(
   });
   yCoord += bannerHeight + 6 * factor;
 
-  // 3. 3D PANELS GRID (2 or 3 Columns)
+  // 3. 3D PANELS GRID (1, 2 or 3 columns)
   const numPanels = validPanels.length;
+  const isSinglePanel = numPanels === 1;
   const panelGap = (numPanels === 2 ? 6 : 4) * factor;
-  const panelWidth = (contentWidth - panelGap * (numPanels - 1)) / numPanels;
-  
+  const panelWidth = isSinglePanel
+    ? contentWidth * 0.65
+    : (contentWidth - panelGap * (numPanels - 1)) / numPanels;
+  const singlePanelX = isSinglePanel ? marginX + (contentWidth - panelWidth) / 2 : marginX;
+
   // Calculate proportional heights (Header + 4:3 Image Container + Caption)
-  const cardHeaderH = (numPanels === 2 ? 8.5 : 7.5) * factor;
+  const cardHeaderH = (numPanels === 2 || isSinglePanel ? 8.5 : 7.5) * factor;
   const imgBoxH = panelWidth * 0.75; // Exact 4:3 aspect ratio
-  
+
   // Pre-calculate captions to ensure exact height fitting and no text overflow
   doc.setFont("helvetica", "normal");
-  const captionFontSize = (numPanels === 2 ? 8 : 7.2) * factor;
+  const captionFontSize = (numPanels === 2 || isSinglePanel ? 8 : 7.2) * factor;
   doc.setFontSize(captionFontSize);
-  const captionLineH = (numPanels === 2 ? 4.2 : 3.8) * factor;
+  const captionLineH = (numPanels === 2 || isSinglePanel ? 4.2 : 3.8) * factor;
 
   const panelCalculatedData = validPanels.map((panel) => {
     const focusText = panel.anatomicalFocus ? panel.anatomicalFocus.replace(/^Foco:\s*/i, "") : "Reconstrucción tridimensional";
-    const focusAvailableWidth = panelWidth - (numPanels === 2 ? 18 : 14) * factor;
+    const focusAvailableWidth = panelWidth - (numPanels === 2 || isSinglePanel ? 18 : 14) * factor;
     const focusLines = doc.splitTextToSize(focusText, focusAvailableWidth);
     return {
       focusText,
@@ -101,7 +105,7 @@ export function renderAtlas3DAnnexToPDF(
   for (let i = 0; i < numPanels; i++) {
     const panel = validPanels[i];
     const calcData = panelCalculatedData[i];
-    const panelX = marginX + i * (panelWidth + panelGap);
+    const panelX = isSinglePanel ? singlePanelX : marginX + i * (panelWidth + panelGap);
 
     // Card Outer Box
     doc.setFillColor(15, 23, 42); // slate-900
@@ -116,7 +120,7 @@ export function renderAtlas3DAnnexToPDF(
     doc.rect(panelX, yCoord + cardHeaderH - 2.5, panelWidth, 2.5, "F");
 
     doc.setFont("helvetica", "bold");
-    doc.setFontSize((numPanels === 2 ? 8.5 : 7.5) * factor);
+    doc.setFontSize((numPanels === 2 || isSinglePanel ? 8.5 : 7.5) * factor);
     doc.setTextColor(255, 255, 255);
     const panelHeaderTitle = `PANEL ${panel.panelLetter}: ${panel.panelTitle || ""}`;
     const headerTitleLines = doc.splitTextToSize(panelHeaderTitle, panelWidth - 6 * factor);
