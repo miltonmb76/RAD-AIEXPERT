@@ -3262,8 +3262,8 @@ Ejemplo:
     if (modules.case_analysis) promises.push(handleAnalyzeCase());
     if (modules.quality_eval) promises.push(handleEvaluateReport(activeReport));
     if (modules.bibliography) promises.push(handleSearchBibliography());
-    if (modules.operational_summary) promises.push(handleGenerateWhatsAppSummary());
-    if (modules.patient_summary) promises.push(handleGeneratePatientSummary());
+    if (modules.operational_summary) promises.push(handleGenerateWhatsAppSummary(activeReport));
+    if (modules.patient_summary) promises.push(handleGeneratePatientSummary(activeReport));
     if (modules.glossary) promises.push(handleGenerateDynamicGlossary());
     if (modules.schematic) promises.push(handleGenerateSchematicSummary());
     if (modules.vascular3d) {
@@ -4943,8 +4943,14 @@ Ejemplo:
   };
 
   // ACTION: GENERATE DEMOCRATIZED AND SIMPLIFIED PATIENT KEY FINDINGS & SUMMARY
-  const handleGeneratePatientSummary = async () => {
-    if (!generatedReport) return;
+  const handleGeneratePatientSummary = async (reportOverride?: string) => {
+    const reportContent =
+      typeof reportOverride === "string" && reportOverride.trim()
+        ? reportOverride
+        : isEditingReportManual
+          ? editedReportText
+          : generatedReport;
+    if (!reportContent) return;
     setIsGeneratingPatientSummary(true);
     setPatientSummaryError(null);
     setPatientSummary(null);
@@ -4955,8 +4961,8 @@ Ejemplo:
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: selectedModel,
-          report: generatedReport,
-          studyType: studyType || "Estudio RadiolÃ³gico",
+          report: reportContent,
+          studyType: studyType || "Estudio Radiológico",
           clinicalHistory: clinicalHistory || "",
         }),
       });
@@ -5005,8 +5011,13 @@ Ejemplo:
   };
 
   // ACTION: GENERATE OPERATIONAL SUMMARY FOR WHATSAPP
-  const handleGenerateWhatsAppSummary = async () => {
-    const reportContent = isEditingReportManual ? editedReportText : generatedReport;
+  const handleGenerateWhatsAppSummary = async (reportOverride?: string) => {
+    const reportContent =
+      typeof reportOverride === "string" && reportOverride.trim()
+        ? reportOverride
+        : isEditingReportManual
+          ? editedReportText
+          : generatedReport;
     if (!reportContent) return;
     setIsGeneratingOperationalSummary(true);
     try {
