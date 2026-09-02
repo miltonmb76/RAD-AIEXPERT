@@ -206,7 +206,7 @@ export function renderAtlas3DAnnexToPDF(
     doc.setFontSize(8 * factor);
     doc.setTextColor(51, 65, 85); // slate-700
     doc.text("ESTRUCTURA / FOCO ANATÓMICO", marginX + 4 * factor, yCoord + 4.8 * factor);
-    doc.text("REF. PANEL", marginX + colStructureW + 4 * factor, yCoord + 4.8 * factor);
+    doc.text("PANEL", marginX + colStructureW + 4 * factor, yCoord + 4.8 * factor);
     doc.text("DESCRIPCIÓN PATOLÓGICA Y CORRELACIÓN TRIDIMENSIONAL", marginX + colStructureW + colRefW + 4 * factor, yCoord + 4.8 * factor);
     yCoord += tableHeaderH;
 
