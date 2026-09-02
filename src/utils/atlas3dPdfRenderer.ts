@@ -73,20 +73,16 @@ export function renderAtlas3DAnnexToPDF(
   const isSinglePanel = numPanels === 1;
   const panelGap = (numPanels === 2 ? 6 : 4) * factor;
   let panelWidth = isSinglePanel
-    ? contentWidth * 0.44
+    ? 58 * factor
     : (contentWidth - panelGap * (numPanels - 1)) / numPanels;
   let singlePanelX = isSinglePanel ? marginX + (contentWidth - panelWidth) / 2 : marginX;
 
   // Calculate proportional heights (Header + 4:3 Image Container + Caption)
   const cardHeaderH = (numPanels === 2 || isSinglePanel ? 8.5 : 7.5) * factor;
-  let imgBoxH = panelWidth * 0.75; // Exact 4:3 aspect ratio
+  let imgBoxH = isSinglePanel ? 38 * factor : panelWidth * 0.75;
   if (isSinglePanel) {
-    const maxSingleImgH = 50 * factor;
-    if (imgBoxH > maxSingleImgH) {
-      imgBoxH = maxSingleImgH;
-      panelWidth = imgBoxH / 0.75;
-      singlePanelX = marginX + (contentWidth - panelWidth) / 2;
-    }
+    panelWidth = imgBoxH / 0.75;
+    singlePanelX = marginX + (contentWidth - panelWidth) / 2;
   }
 
   // Pre-calculate captions to ensure exact height fitting and no text overflow
@@ -203,8 +199,8 @@ export function renderAtlas3DAnnexToPDF(
     yCoord += 5.5 * factor;
 
     // Table Column Widths — fixed panel column avoids header/body overlap
-    const colRefW = 18 * factor;
-    const colStructureW = contentWidth * 0.26;
+    const colRefW = 22 * factor;
+    const colStructureW = contentWidth * 0.24;
     const colDescW = contentWidth - colStructureW - colRefW;
     const colStructureX = marginX;
     const colRefX = marginX + colStructureW;
@@ -217,37 +213,40 @@ export function renderAtlas3DAnnexToPDF(
       return raw.replace(/[()]/g, "").replace(/^Panel\s+/i, "P. ");
     };
 
+    const drawHeaderLabel = (label: string, cellX: number, cellW: number, align: "left" | "center") => {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7 * factor);
+      doc.setTextColor(51, 65, 85);
+      const safeLabel = doc.splitTextToSize(label, cellW - 6 * factor)[0] || label;
+      const textWidth = doc.getTextWidth(safeLabel);
+      const textX =
+        align === "center"
+          ? cellX + Math.max(3 * factor, (cellW - textWidth) / 2)
+          : cellX + 3 * factor;
+      doc.text(safeLabel, textX, yCoord + 5.2 * factor);
+    };
+
     // Table Header Row
     const tableHeaderH = 8 * factor;
     doc.setFillColor(241, 245, 249); // slate-100
     doc.setDrawColor(203, 213, 225); // slate-300
     doc.setLineWidth(0.35);
     doc.rect(marginX, yCoord, contentWidth, tableHeaderH, "FD");
+    doc.rect(colStructureX, yCoord, colStructureW, tableHeaderH, "S");
+    doc.rect(colRefX, yCoord, colRefW, tableHeaderH, "S");
+    doc.rect(colDescX, yCoord, colDescW, tableHeaderH, "S");
 
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(7.2 * factor);
-    doc.setTextColor(51, 65, 85); // slate-700
-    doc.text("ESTRUCTURA / FOCO", colStructureX + 4 * factor, yCoord + 5.2 * factor, {
-      maxWidth: colStructureW - 8 * factor,
-    });
-    doc.text("PANEL", colRefX + colRefW / 2, yCoord + 5.2 * factor, {
-      align: "center",
-      maxWidth: colRefW - 4 * factor,
-    });
-    doc.text("DESCRIPCIÓN Y CORRELACIÓN 3D", colDescX + 4 * factor, yCoord + 5.2 * factor, {
-      maxWidth: colDescW - 8 * factor,
-    });
-
-    doc.setDrawColor(203, 213, 225);
-    doc.line(colRefX, yCoord, colRefX, yCoord + tableHeaderH);
-    doc.line(colDescX, yCoord, colDescX, yCoord + tableHeaderH);
+    drawHeaderLabel("ESTRUCTURA", colStructureX, colStructureW, "left");
+    drawHeaderLabel("PANEL", colRefX, colRefW, "center");
+    drawHeaderLabel("CORRELACIÓN 3D", colDescX, colDescW, "left");
     yCoord += tableHeaderH;
 
     // Render Rows with calculated heights to prevent any text overflowing
     synopticRows.forEach((row, rIdx) => {
       doc.setFontSize(8 * factor);
 
-      const structLines = doc.splitTextToSize(row.structure || "", colStructureW - 8 * factor);
+      const structureText = (row.structure || "").replace(/\s*\(Panel[^)]*\)\s*/gi, " ").trim();
+      const structLines = doc.splitTextToSize(structureText, colStructureW - 8 * factor);
       const descLines = doc.splitTextToSize(row.findingDetail || "", colDescW - 8 * factor);
       const rowLinesCount = Math.max(descLines.length, structLines.length, 1);
       const rowLineH = 4.4 * factor;
@@ -277,7 +276,6 @@ export function renderAtlas3DAnnexToPDF(
       doc.setTextColor(192, 38, 205); // Fuchsia-600 / Magenta
       doc.text(formatPanelRefForPdf(row.panelRef), colRefX + colRefW / 2, yCoord + 5.2 * factor, {
         align: "center",
-        maxWidth: colRefW - 4 * factor,
       });
 
       // Description text
