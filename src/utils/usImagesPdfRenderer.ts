@@ -172,21 +172,21 @@ export function renderUsImagesToPdf(
     const figTitleFontSize = cols === 1 ? 8.2 : (maxRowsPerPage >= 4 ? 5.8 : (maxRowsPerPage === 3 ? 6.5 : 7.2));
     const captionBodyFontSize = cols === 1 ? 7.5 : (maxRowsPerPage >= 4 ? 5.2 : (maxRowsPerPage === 3 ? 5.8 : 6.5));
 
-    const subTitleText = imgItem.subtitle || (imgItem.side ? `Corte Ecográfico (${imgItem.side})` : "Registro Ecográfico");
-    const figureLabel = `Figura ${itemFigIdx}. ${subTitleText}`;
-    
+    const captionText =
+      imgItem.caption && imgItem.caption.trim() !== ""
+        ? imgItem.caption.trim()
+        : "Registro ecográfico en escala de grises con adecuada diferenciación tisular.";
+
+    // Use clinical caption directly after figure number (no generic lateral subtitle).
+    const figureLabel = `Figura ${itemFigIdx}. ${captionText}`;
+
     const maxCaptionW = cardWidth - innerPad * 2 - 1.5;
     const figLabelLines = doc.splitTextToSize(figureLabel, maxCaptionW);
-
-    const captionText = imgItem.caption && imgItem.caption.trim() !== ""
-      ? imgItem.caption.trim()
-      : "Registro ecográfico en escala de grises con adecuada diferenciación tisular.";
-    const captionLines = doc.splitTextToSize(captionText, maxCaptionW);
+    const captionLines: string[] = [];
 
     // Calculate caption height
     const figTitleLineH = figTitleFontSize * 0.42;
-    const captionLineH = captionBodyFontSize * 0.44;
-    const captionBlockH = (figLabelLines.length * figTitleLineH) + 1.5 + (captionLines.length * captionLineH) + 1.5;
+    const captionBlockH = figLabelLines.length * figTitleLineH + 1.5;
 
     // Card height hugs image + gap + caption + padding
     const cardHeight = innerPad + drawH + 3.0 + captionBlockH + innerPad;
@@ -299,33 +299,17 @@ export function renderUsImagesToPdf(
       const textLeftX = cardX + innerPad + 1;
       const maxCaptionW = layoutInfo.cardWidth - innerPad * 2 - 2;
 
-      // Figure Title (Figura X. Registro Ecográfico)
+      // Figure label: Figura X. [descripción clínica del ultrasonido]
       doc.setFont("helvetica", "bold");
       doc.setFontSize(layoutInfo.figTitleFontSize);
       doc.setTextColor(15, 23, 42); // slate-900
 
       const figTitleLineH = layoutInfo.figTitleFontSize * 0.42;
-      let textCursorY = captionStartY + (layoutInfo.figTitleFontSize * 0.32);
+      let textCursorY = captionStartY + layoutInfo.figTitleFontSize * 0.32;
 
       layoutInfo.figLabelLines.forEach((tLine) => {
         doc.text(tLine, textLeftX, textCursorY);
         textCursorY += figTitleLineH;
-      });
-
-      // Body text description
-      textCursorY += 0.8;
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(layoutInfo.captionBodyFontSize);
-      doc.setTextColor(71, 85, 105); // slate-600
-
-      const captionLineH = layoutInfo.captionBodyFontSize * 0.44;
-      const maxAllowedY = cardY + actualCardH - 1.5;
-
-      layoutInfo.captionLines.forEach((cLine) => {
-        if (textCursorY + captionLineH <= maxAllowedY + 1.0) {
-          doc.text(cLine, textLeftX, textCursorY);
-          textCursorY += captionLineH;
-        }
       });
     });
 
