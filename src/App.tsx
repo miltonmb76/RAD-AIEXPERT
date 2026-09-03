@@ -35,6 +35,13 @@ import { runBackgroundTask } from "./lib/backgroundTasks";
 import { BackgroundTasksBar } from "./components/BackgroundTasksBar";
 import { ActivePatientPanel } from "./components/ActivePatientPanel";
 import { LabelingQueuePanel } from "./components/LabelingQueuePanel";
+import {
+  describeActiveRouting,
+  MODEL_OPTIONS,
+  normalizeModelPreference,
+  resolveModelForTask,
+  type ModelTask,
+} from "./lib/modelRouting";
 import { Findings3dRenderModule, Create3dRenderModal, Finding3dRender } from "./components/Findings3dRenderModule";
 import CaseAnalysisRenderer from "./components/CaseAnalysisRenderer";
 import InteractiveCaseEditor from "./components/InteractiveCaseEditor";
@@ -1312,15 +1319,19 @@ export default function App() {
 
   const [selectedModel, setSelectedModel] = useState<string>(() => {
     const saved = localStorage.getItem("rad_selected_model");
-    if (!saved || saved === "gemini-3.6-flash" || saved === "gemini-2.5-flash" || saved === "gemini-1.5-flash") {
-      return "gemini-3.7-flash";
+    // Migrate previous sole-default (3.7) to Auto once, so routing activates by default.
+    if (saved === "gemini-3.7-flash" && !localStorage.getItem("rad_model_auto_migrated_v1")) {
+      localStorage.setItem("rad_model_auto_migrated_v1", "1");
+      return "auto";
     }
-    return saved;
+    return normalizeModelPreference(saved);
   });
 
   useEffect(() => {
     localStorage.setItem("rad_selected_model", selectedModel);
   }, [selectedModel]);
+
+  const modelFor = (task: ModelTask = "default") => resolveModelForTask(selectedModel, task);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -2603,7 +2614,7 @@ export default function App() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            model: selectedModel,
+            model: modelFor("report_modify"),
             paragraphs: paragraphsToAnalyze
           })
         });
@@ -2718,7 +2729,7 @@ export default function App() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: selectedModel,
+          model: modelFor("report_modify"),
           text: selectedParagraphText,
           action: actionType,
           customPrompt: customPromptText,
@@ -2883,7 +2894,7 @@ Ejemplo:
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: selectedModel,
+          model: modelFor("chat"),
           messages: updatedMessages.map(m => ({ role: m.role, text: m.text })),
           systemInstruction,
         }),
@@ -3048,7 +3059,7 @@ Ejemplo:
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ 
-              model: selectedModel,
+              model: modelFor("case_analysis"),
               analysisText: caseAnalysis,
               requestedFormat: selectedCaseFormat,
               elementsConfig: caseElements
@@ -3275,7 +3286,7 @@ Ejemplo:
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              model: selectedModel,
+              model: modelFor("operational_summary"),
               messages: [{
                 role: "user",
                 text:
@@ -3309,7 +3320,7 @@ Ejemplo:
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              model: selectedModel,
+              model: modelFor("patient_summary"),
               report: activeReport,
               studyType: studyType || "Estudio Radiologico",
               clinicalHistory: clinicalHistory || "",
@@ -3339,7 +3350,7 @@ Ejemplo:
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               reportText: activeReport,
-              requestedModel: selectedModel || "gemini-3.7-flash"
+              requestedModel: modelFor("vascular3d")
             })
           });
           const j = await resp.json();
@@ -3362,7 +3373,7 @@ Ejemplo:
               reportText: activeReport,
               organOrStudy: specificStudy || studyType || "",
               laterality: (patientGender || "").toLowerCase().includes("izq") ? "Izquierda" : "",
-              requestedModel: selectedModel || "gemini-3.7-flash"
+              requestedModel: modelFor("atlas3d")
             })
           });
           const j = await resp.json();
@@ -3800,7 +3811,7 @@ Ejemplo:
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: selectedModel,
+          model: modelFor("labeling"),
           image: base64Image,
           mimeType: selectedFile?.type || "image/png",
           studyType: studyType || "Estudio de Imagen",
@@ -3922,7 +3933,7 @@ Ejemplo:
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: selectedModel,
+          model: modelFor("report"),
           image: base64Image || undefined,
           mimeType: selectedFile ? selectedFile.type : undefined,
           studyType,
@@ -4095,7 +4106,7 @@ Ejemplo:
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: selectedModel,
+          model: modelFor("quality_eval"),
           image: img,
           mimeType: mime || "image/png",
           studyType: study,
@@ -4125,7 +4136,7 @@ Ejemplo:
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: selectedModel,
+          model: modelFor("report_modify"),
           clinicalHistory,
           studyType,
         }),
@@ -4153,7 +4164,7 @@ Ejemplo:
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: selectedModel,
+          model: modelFor("report_modify"),
           currentReport: generatedReport,
           instruction: instructionText,
           image: base64Image || undefined,
@@ -4215,7 +4226,7 @@ Ejemplo:
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            model: selectedModelRef.current,
+            model: resolveModelForTask(selectedModelRef.current, "report_modify"),
             currentReport: activeReport,
             instruction: `Integra de forma totalmente fluida, nativa y natural, actuando en todo momento como el radiólogo principal que redacta el informe desde el principio, la siguiente clasificación, escala o recomendación clínica: "${sanitizedRec}". REQUISITO CRÍTICO: NO debes justificar la recomendación, ni meter introducciones, explicaciones clínicas de por qué se usa ("para facilitar el manejo...", "se sugiere...", "como recomendación de auditoría..."), ni meta-comentarios. Escribe directo la categoría, el grado o el dato clínico en la sección adecuada del reporte (HALLAZGOS o IMPRESIÓN DIAGNÓSTICA). Conserva intacto todo el resto del reporte.`,
             image: base64ImageRef.current || undefined,
@@ -4333,7 +4344,7 @@ Ejemplo:
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: selectedModel,
+          model: modelFor("quality_eval"),
           image: base64Image,
           mimeType: selectedFile?.type || "image/png",
           studyType: studyType || "Estudio Radiológico",
@@ -4370,7 +4381,7 @@ Ejemplo:
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: selectedModel,
+          model: modelFor("case_analysis"),
           report: generatedReport,
           studyType: studyType || "Estudio Radiológico",
           clinicalHistory: clinicalHistory || "",
@@ -4402,7 +4413,7 @@ Ejemplo:
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: selectedModel,
+          model: modelFor("case_analysis"),
           currentReport: generatedReport,
           caseAnalysis: caseAnalysis,
         }),
@@ -4438,7 +4449,7 @@ Ejemplo:
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: selectedModel,
+          model: modelFor("bibliography"),
           report: generatedReport,
           studyType: studyType || "Estudio Radiológico",
           findings: findings || "",
@@ -4471,7 +4482,7 @@ Ejemplo:
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: selectedModel,
+          model: modelFor("bibliography"),
           report: generatedReport,
           studyType: studyType || "Estudio Radiológico",
           findings: findings || "",
@@ -4513,7 +4524,7 @@ Ejemplo:
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: selectedModel,
+          model: modelFor("quality_eval"),
           report: activeReport,
           studyType: studyType || "Estudio Radiológico",
           clinicalHistory: clinicalHistory || "",
@@ -5029,7 +5040,7 @@ Ejemplo:
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: selectedModel,
+          model: modelFor("patient_summary"),
           report: reportContent,
           studyType: studyType || "Estudio Radiol�gico",
           clinicalHistory: clinicalHistory || "",
@@ -5061,7 +5072,7 @@ Ejemplo:
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: selectedModel,
+          model: modelFor("glossary"),
           report: generatedReport,
         }),
       });
@@ -5096,7 +5107,7 @@ Ejemplo:
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: selectedModel,
+          model: modelFor("chat"),
           messages: [{
             role: "user",
             text: "Resume de forma muy concisa ÚNICAMENTE los hallazgos clínicos principales de este reporte médico en 3 o 4 viñetas de texto asertivas y claras, redactadas con un lenguaje profesional pero comprensible, apto para ser compartido por WhatsApp y consultado digitalmente por el paciente. NO incluyas ninguna recomendación, sugerencia de manejo ni plan a futuro, limítate estrictamente a los hallazgos de forma asertiva. No agregues preámbulos, saludos, ni comentarios personales, devuelve directamente las viñetas con guiones '-'. Reporte:\n\n" + reportContent
@@ -5165,7 +5176,7 @@ Ejemplo:
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: selectedModel,
+          model: modelFor("schematic"),
           report: generatedReport,
           studyType: studyType || "Estudio Radiológico"
         }),
@@ -5236,7 +5247,7 @@ Ejemplo:
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: selectedModel,
+          model: modelFor("case_analysis"),
           report: reportText,
           studyType: studyType || "Estudio Radiológico"
         }),
@@ -5325,7 +5336,7 @@ Ejemplo:
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: selectedModel,
+          model: modelFor("bibliography"),
           report: `Realiza una búsqueda de evidencia para el término médico: ${term}. Contexto adicional: ${query}`,
         }),
       });
@@ -5521,7 +5532,7 @@ Ejemplo:
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          model: selectedModel,
+          model: modelFor("classifications"),
           report: generatedReport
         })
       });
@@ -5576,7 +5587,7 @@ Ejemplo:
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          model: selectedModel,
+          model: modelFor("classifications"),
           report: generatedReport,
           classificationName: rec.name,
           whyRecommended: rec.whyRecommended,
@@ -5628,7 +5639,7 @@ Ejemplo:
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: selectedModel,
+          model: modelFor("chat"),
           messages: updatedMsgs,
           systemInstruction: chatInstruction || undefined,
         }),
@@ -5667,7 +5678,7 @@ Ejemplo:
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: selectedModel,
+          model: modelFor("classifications"),
           query: activeQuery,
           systemInstruction: classifyInstruction || undefined,
         }),
@@ -6212,6 +6223,7 @@ Ejemplo:
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
+            model: modelFor("labeling"),
             image: imgItem.base64 || imgItem.url,
             filename: imgItem.name,
             studyType: specificStudy || "Mamograf�a y Ultrasonido",
@@ -6269,7 +6281,7 @@ Ejemplo:
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            model: selectedModel,
+            model: modelFor("labeling"),
             phrase: imgItem.caption,
             currentReport: reportToUse,
             studyType: specificStudy || "Mamograf�a / Ecograf�a",
@@ -6313,6 +6325,7 @@ Ejemplo:
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({
+                model: modelFor("labeling"),
                 image: imgItem.base64 || imgItem.url,
                 filename: imgItem.name,
                 studyType: specificStudy || "Mamograf�a y Ultrasonido",
@@ -6376,7 +6389,7 @@ Ejemplo:
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: selectedModel,
+          model: modelFor("report_modify"),
           currentReport: reportToUse,
           attachedImages: attachedImages.map((img, idx) => ({
             id: img.id,
@@ -15162,7 +15175,7 @@ const splitReportAndAnnex = (text: string) => {
         body: JSON.stringify({
           image: base64Data,
           mimeType: file.type,
-          model: selectedModel
+          model: modelFor("labeling")
         })
       });
 
@@ -16367,30 +16380,39 @@ const splitReportAndAnnex = (text: string) => {
 
         <div className="flex flex-wrap items-center gap-4 relative z-10">
           {/* Selector de Modelo en Header */}
-          <div className="flex items-center gap-1 bg-slate-950/70 border border-slate-800/80 rounded-2xl p-1 shadow-2xl relative">
-            <span className="text-[8.5px] font-black tracking-widest text-slate-550 uppercase px-2 font-mono">IA Core:</span>
-            <button
-              onClick={() => setSelectedModel("gemini-3.7-flash")}
-              className={`px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${
-                selectedModel === "gemini-3.7-flash"
-                  ? "bg-indigo-600 text-white shadow-[0_0_15px_rgba(99,102,241,0.45)]"
-                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-900/60"
-              }`}
-              title="Gemini 3.7 Flash: Especial para velocidad y reportes de rutina"
-            >
-              <Zap className={`h-3.5 w-3.5 ${selectedModel === "gemini-3.7-flash" ? "text-amber-300 animate-pulse" : ""}`} /> Flash 3.7
-            </button>
-            <button
-              onClick={() => setSelectedModel("gemini-3.1-pro-preview")}
-              className={`px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${
-                selectedModel === "gemini-3.1-pro-preview"
-                  ? "bg-purple-600 text-white shadow-[0_0_15px_rgba(168,85,247,0.45)]"
-                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-900/60"
-              }`}
-              title="Gemini 3.1 Pro: Razonamiento clínico avanzado de alta complejidad"
-            >
-              <Brain className={`h-3.5 w-3.5 ${selectedModel === "gemini-3.1-pro-preview" ? "text-purple-300 animate-pulse" : ""}`} /> Pro 3.1
-            </button>
+                    <div className="flex items-center gap-1 bg-slate-950/70 border border-slate-800/80 rounded-2xl p-1 shadow-2xl relative max-w-full overflow-x-auto">
+            <span className="text-[8.5px] font-black tracking-widest text-slate-550 uppercase px-2 font-mono shrink-0">IA Core:</span>
+            {MODEL_OPTIONS.map((opt) => {
+              const active = selectedModel === opt.id;
+              const activeCls =
+                opt.id === "auto"
+                  ? "bg-emerald-600 text-white shadow-[0_0_15px_rgba(16,185,129,0.45)]"
+                  : opt.id === "gemini-3.1-pro-preview"
+                    ? "bg-purple-600 text-white shadow-[0_0_15px_rgba(168,85,247,0.45)]"
+                    : opt.id === "gemini-3.8-flash"
+                      ? "bg-sky-600 text-white shadow-[0_0_15px_rgba(2,132,199,0.45)]"
+                      : "bg-indigo-600 text-white shadow-[0_0_15px_rgba(99,102,241,0.45)]";
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setSelectedModel(opt.id)}
+                  className={`px-2.5 py-1.5 rounded-xl text-[9.5px] font-black tracking-wider uppercase transition-all duration-200 flex items-center gap-1.5 cursor-pointer shrink-0 ${
+                    active ? activeCls : "text-slate-400 hover:text-slate-200 hover:bg-slate-900/60"
+                  }`}
+                  title={opt.description}
+                >
+                  {opt.id === "auto" ? (
+                    <Sparkles className={`h-3.5 w-3.5 ${active ? "text-emerald-100 animate-pulse" : ""}`} />
+                  ) : opt.id === "gemini-3.1-pro-preview" ? (
+                    <Brain className={`h-3.5 w-3.5 ${active ? "text-purple-200 animate-pulse" : ""}`} />
+                  ) : (
+                    <Zap className={`h-3.5 w-3.5 ${active ? "text-amber-200 animate-pulse" : ""}`} />
+                  )}
+                  {opt.shortLabel}
+                </button>
+              );
+            })}
           </div>
 
           {/* Botón Lista de Trabajo */}
@@ -16419,7 +16441,7 @@ const splitReportAndAnnex = (text: string) => {
               <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500 shadow-[0_0_10px_#10b981]"></span>
             </div>
             <span className="text-[10px] font-black text-emerald-400 tracking-widest uppercase font-mono">
-              {selectedModel === "gemini-3.7-flash" ? "Flash-Active" : "Pro-Active"}
+              {selectedModel === "auto" ? "Auto-Routing" : selectedModel === "gemini-3.1-pro-preview" ? "Pro-Active" : "Flash-Active"}
             </span>
           </div>
 
@@ -16589,40 +16611,51 @@ const splitReportAndAnnex = (text: string) => {
             </div>
             
             <div className="space-y-1.5 font-sans">
-              <button
-                type="button"
-                onClick={() => setSelectedModel("gemini-3.7-flash")}
-                className={`w-full text-left px-2.5 py-2 rounded-lg border transition-all flex items-center justify-between ${
-                  selectedModel === "gemini-3.7-flash"
-                    ? "bg-indigo-950/30 border-indigo-500/60 shadow-[0_2px_8px_rgba(99,102,241,0.1)]"
-                    : "bg-transparent border-transparent hover:bg-slate-850 hover:border-slate-800"
-                }`}
-              >
-                <div className="flex flex-col">
-                  <span className={`text-[10px] font-bold tracking-wide uppercase ${selectedModel === "gemini-3.7-flash" ? "text-indigo-400" : "text-slate-300"}`}>Gemini 3.7 Flash</span>
-                  <span className="text-[8px] text-slate-500 font-medium">Dictados y reportes ágiles</span>
-                </div>
-                {selectedModel === "gemini-3.7-flash" && <Zap className="h-3.5 w-3.5 text-indigo-400 shrink-0" />}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setSelectedModel("gemini-3.1-pro-preview")}
-                className={`w-full text-left px-2.5 py-2 rounded-lg border transition-all flex items-center justify-between ${
-                  selectedModel === "gemini-3.1-pro-preview"
-                    ? "bg-purple-950/30 border-purple-500/60 shadow-[0_2px_8px_rgba(168,85,247,0.1)]"
-                    : "bg-transparent border-transparent hover:bg-slate-850 hover:border-slate-800"
-                }`}
-              >
-                <div className="flex flex-col">
-                  <span className={`text-[10px] font-bold tracking-wide uppercase ${selectedModel === "gemini-3.1-pro-preview" ? "text-purple-400" : "text-slate-300"}`}>Gemini 3.1 Pro</span>
-                  <span className="text-[8px] text-slate-500 font-medium">Razonamiento avanzado</span>
-                </div>
-                {selectedModel === "gemini-3.1-pro-preview" && <Brain className="h-3.5 w-3.5 text-purple-400 shrink-0" />}
-              </button>
+              {MODEL_OPTIONS.map((opt) => {
+                const active = selectedModel === opt.id;
+                const activeWrap =
+                  opt.id === "auto"
+                    ? "bg-emerald-950/30 border-emerald-500/60 shadow-[0_2px_8px_rgba(16,185,129,0.1)]"
+                    : opt.id === "gemini-3.1-pro-preview"
+                      ? "bg-purple-950/30 border-purple-500/60 shadow-[0_2px_8px_rgba(168,85,247,0.1)]"
+                      : opt.id === "gemini-3.8-flash"
+                        ? "bg-sky-950/30 border-sky-500/60 shadow-[0_2px_8px_rgba(2,132,199,0.1)]"
+                        : "bg-indigo-950/30 border-indigo-500/60 shadow-[0_2px_8px_rgba(99,102,241,0.1)]";
+                const activeText =
+                  opt.id === "auto"
+                    ? "text-emerald-400"
+                    : opt.id === "gemini-3.1-pro-preview"
+                      ? "text-purple-400"
+                      : opt.id === "gemini-3.8-flash"
+                        ? "text-sky-400"
+                        : "text-indigo-400";
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setSelectedModel(opt.id)}
+                    className={`w-full text-left px-2.5 py-2 rounded-lg border transition-all flex items-center justify-between ${
+                      active
+                        ? activeWrap
+                        : "bg-transparent border-transparent hover:bg-slate-850 hover:border-slate-800"
+                    }`}
+                    title={opt.description}
+                  >
+                    <div className="flex flex-col min-w-0">
+                      <span className={`text-[10px] font-bold tracking-wide uppercase ${active ? activeText : "text-slate-300"}`}>{opt.label}</span>
+                      <span className="text-[8px] text-slate-500 font-medium truncate">{opt.shortLabel === "Auto" ? "Enruta 3.8 / 3.7 por tarea" : opt.description}</span>
+                    </div>
+                    {active && (
+                      opt.id === "auto" ? <Sparkles className={`h-3.5 w-3.5 ${activeText} shrink-0`} /> :
+                      opt.id === "gemini-3.1-pro-preview" ? <Brain className={`h-3.5 w-3.5 ${activeText} shrink-0`} /> :
+                      <Zap className={`h-3.5 w-3.5 ${activeText} shrink-0`} />
+                    )}
+                  </button>
+                );
+              })}
             </div>
             <div className="text-[9px] text-slate-500 font-bold uppercase tracking-wider text-center font-mono pt-1">
-              Estado: <span className="text-emerald-500">Activo</span>
+              {describeActiveRouting(selectedModel)}
             </div>
           </div>
 
@@ -19116,7 +19149,7 @@ const splitReportAndAnnex = (text: string) => {
                             reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
                             activeProtocol={specificStudy || studyType || ""}
                             laterality=""
-                            selectedModel={selectedModel || "gemini-3.7-flash"}
+                            selectedModel={modelFor("atlas3d")}
                             atlasData={atlas3dData}
                             setAtlasData={setAtlas3dData}
                             includeInReport={includeAtlas3dInReport}
@@ -19128,7 +19161,7 @@ const splitReportAndAnnex = (text: string) => {
                             reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
                             activeProtocol={specificStudy || studyType || ""}
                             laterality=""
-                            selectedModel={selectedModel || "gemini-3.7-flash"}
+                            selectedModel={modelFor("vascular3d")}
                             vascularData={vascular3dData}
                             setVascularData={setVascular3dData}
                             includeInReport={includeVascular3dInReport}
@@ -19978,7 +20011,7 @@ const splitReportAndAnnex = (text: string) => {
                           {isAsistenteMedidasOpen && (
                             <div className="my-6">
                               <AsistenteMedidas
-                                selectedModel={selectedModel}
+                                selectedModel={modelFor("default")}
                                 reportText={isEditingReportManual ? editedReportText : generatedReport}
                                 studyType={specificStudy}
                                 onReportUpdated={(newReportText) => {
@@ -19993,7 +20026,7 @@ const splitReportAndAnnex = (text: string) => {
                           {isCreadorNotasOpen && (
                             <div className="my-6">
                               <CreadorNotasPie
-                                selectedModel={selectedModel}
+                                selectedModel={modelFor("default")}
                                 reportText={isEditingReportManual ? editedReportText : generatedReport}
                                 onReportUpdated={(newReportText) => {
                                   setEditedReportText(newReportText);
@@ -20008,7 +20041,7 @@ const splitReportAndAnnex = (text: string) => {
                             <div className="my-6">
                               <React.Suspense fallback={<div className="p-4 text-xs font-mono text-indigo-400 bg-slate-900/60 rounded-xl border border-indigo-900/40 animate-pulse">Cargando Radar Biomecánico...</div>}>
                                 <BiomechanicalRadarModule
-                                  selectedModel={selectedModel}
+                                  selectedModel={modelFor("default")}
                                   reportText={isEditingReportManual ? editedReportText : generatedReport}
                                   studyType={specificStudy}
                                   includeRadarInReport={includeRadarInReport}
@@ -20027,7 +20060,7 @@ const splitReportAndAnnex = (text: string) => {
                             <div className="my-6">
                               <React.Suspense fallback={<div className="p-4 text-xs font-mono text-cyan-400 bg-slate-900/60 rounded-xl border border-cyan-900/40 animate-pulse">Cargando Cuadro Sin�ptico de �rgano...</div>}>
                                 <CreadorCuadroSinoptico
-                                  selectedModel={selectedModel}
+                                  selectedModel={modelFor("default")}
                                   reportText={isEditingReportManual ? editedReportText : generatedReport}
                                   onReportUpdated={(newReportText) => {
                                     setEditedReportText(newReportText);
@@ -20042,7 +20075,7 @@ const splitReportAndAnnex = (text: string) => {
                             <div className="my-6">
                               <React.Suspense fallback={<div className="p-4 text-xs font-mono text-amber-400 bg-slate-900/60 rounded-xl border border-amber-900/40 animate-pulse">Cargando Elastograf�a y QUS...</div>}>
                                 <ElastographyQUSPresentationModule
-                                  selectedModel={selectedModel}
+                                  selectedModel={modelFor("default")}
                                   reportText={isEditingReportManual ? editedReportText : generatedReport}
                                   initialStiffness={elastographyStiffness}
                                   initialCAP={elastographyCAP}
@@ -20068,7 +20101,7 @@ const splitReportAndAnnex = (text: string) => {
                             <div className="my-6">
                               <React.Suspense fallback={<div className="p-4 text-xs font-mono text-emerald-400 bg-slate-900/60 rounded-xl border border-emerald-900/40 animate-pulse">Cargando Sinopsis de Fracturas...</div>}>
                                 <CreadorSinopsisFracturas
-                                  selectedModel={selectedModel}
+                                  selectedModel={modelFor("default")}
                                   reportText={isEditingReportManual ? editedReportText : generatedReport}
                                   onReportUpdated={(newReportText) => {
                                     setEditedReportText(newReportText);
@@ -21562,7 +21595,7 @@ const splitReportAndAnnex = (text: string) => {
                           <ClassificationBreakdownModule
                             reportText={isEditingReportManual ? editedReportText : generatedReport}
                             studyType={studyType || specificStudy}
-                            selectedModel={selectedModel}
+                            selectedModel={modelFor("default")}
                             onAppendToReport={(annexText) => {
                               const current = generatedReport || editedReportText || "";
                               const updated = current + annexText;
@@ -22088,75 +22121,58 @@ const splitReportAndAnnex = (text: string) => {
                     </p>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1 font-sans">
-                      {/* CARD 1: FLASH */}
-                      <button
-                        type="button"
-                        onClick={() => setSelectedModel("gemini-3.7-flash")}
-                        className={`text-left p-4 rounded-xl border-2 transition-all flex flex-col justify-between ${
-                          selectedModel === "gemini-3.7-flash"
-                            ? "bg-indigo-950/20 border-indigo-500/80 shadow-[0_0_12px_rgba(99,102,241,0.12)]"
-                            : "bg-[#070b13] border-slate-850 hover:bg-slate-900/60 hover:border-slate-800"
-                        }`}
-                      >
-                        <div>
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-xs font-black uppercase tracking-wider text-slate-200">Gemini 3.7 Flash</span>
-                            <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest ${
-                              selectedModel === "gemini-3.7-flash"
-                                ? "bg-indigo-500 text-white"
-                                : "bg-slate-800 text-slate-450"
-                            }`}>
-                              {selectedModel === "gemini-3.7-flash" ? "ACTIVO" : "RECOMENDADO"}
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-slate-400 leading-relaxed mb-3">
-                            Modelo de última generación ultra-rápido con capacidad de razonamiento híbrido y optimizado para dictado clínico. Ideal para transcripciones inmediatas, redacción ágil de reportes y clasificaciones estándar.
-                          </p>
-                        </div>
-                        <div className="border-t border-slate-850/60 pt-2.5 mt-2 w-full space-y-1.5 text-[10px]">
-                          <div className="flex items-start gap-1.5 text-emerald-400 leading-relaxed">
-                            <strong className="shrink-0">Fortalezas:</strong> <span className="text-slate-350">Velocidad superior, razonamiento híbrido multimodal, respuestas fluidas, óptimo para dictado continuo.</span>
-                          </div>
-                          <div className="flex items-start gap-1.5 text-rose-455 leading-relaxed">
-                            <strong className="shrink-0">Limitaciones:</strong> <span className="text-slate-350">Ligeramente menos analítico en correlaciones comparativas extremadamente complejas o anomalías ultra-raras.</span>
-                          </div>
-                        </div>
-                      </button>
-
-                      {/* CARD 2: PRO */}
-                      <button
-                        type="button"
-                        onClick={() => setSelectedModel("gemini-3.1-pro-preview")}
-                        className={`text-left p-4 rounded-xl border-2 transition-all flex flex-col justify-between ${
-                          selectedModel === "gemini-3.1-pro-preview"
-                            ? "bg-purple-950/20 border-purple-500/80 shadow-[0_0_12px_rgba(168,85,247,0.12)]"
-                            : "bg-[#070b13] border-slate-850 hover:bg-slate-900/60 hover:border-slate-800"
-                        }`}
-                      >
-                        <div>
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-xs font-black uppercase tracking-wider text-slate-200">Gemini 3.1 Pro</span>
-                            <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest ${
-                              selectedModel === "gemini-3.1-pro-preview"
-                                ? "bg-purple-500 text-white"
-                                : "bg-slate-800 text-slate-450"
-                            }`}>
-                              {selectedModel === "gemini-3.1-pro-preview" ? "ACTIVO EXPERTO" : "MÁXIMA POTENCIA"}
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-slate-400 leading-relaxed mb-3">
-                            Modelo avanzado diseñado para el razonamiento médico profundo y minucioso. Ideal para casos altamente complejos, segundas opiniones médicas, correlación anatómica comparativa multi-imagen y clasificaciones raras.
-                          </p>
-                        </div>
-                        <div className="border-t border-slate-850/60 pt-2.5 mt-2 w-full space-y-1.5 text-[10px]">
-                          <div className="flex items-start gap-1.5 text-emerald-400 leading-relaxed">
-                            <strong className="shrink-0">Fortalezas:</strong> <span className="text-slate-350">Rigor científico de élite, excelente para interpretar múltiples hallazgos comparativos de control, alta precisión diagnóstica.</span>
-                          </div>
-                          <div className="flex items-start gap-1.5 text-rose-455 leading-relaxed">
-                            <strong className="shrink-0">Limitaciones:</strong> <span className="text-slate-350">Tiempos de cómputo mayores (latencia de 6 a 12 segundos dependiendo de la densidad del caso clínico).</span>
-                          </div>
-                        </div>
-                      </button>
+                      {MODEL_OPTIONS.map((opt) => {
+                        const active = selectedModel === opt.id;
+                        const border =
+                          opt.id === "auto"
+                            ? "bg-emerald-950/20 border-emerald-500/80 shadow-[0_0_12px_rgba(16,185,129,0.12)]"
+                            : opt.id === "gemini-3.1-pro-preview"
+                              ? "bg-purple-950/20 border-purple-500/80 shadow-[0_0_12px_rgba(168,85,247,0.12)]"
+                              : opt.id === "gemini-3.8-flash"
+                                ? "bg-sky-950/20 border-sky-500/80 shadow-[0_0_12px_rgba(2,132,199,0.12)]"
+                                : "bg-indigo-950/20 border-indigo-500/80 shadow-[0_0_12px_rgba(99,102,241,0.12)]";
+                        const badge =
+                          opt.id === "auto"
+                            ? "bg-emerald-500 text-white"
+                            : opt.id === "gemini-3.1-pro-preview"
+                              ? "bg-purple-500 text-white"
+                              : opt.id === "gemini-3.8-flash"
+                                ? "bg-sky-500 text-white"
+                                : "bg-indigo-500 text-white";
+                        return (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => setSelectedModel(opt.id)}
+                            className={`text-left p-4 rounded-xl border-2 transition-all flex flex-col justify-between ${
+                              active
+                                ? border
+                                : "bg-[#070b13] border-slate-850 hover:bg-slate-900/60 hover:border-slate-800"
+                            }`}
+                          >
+                            <div>
+                              <div className="flex items-center justify-between mb-2 gap-2">
+                                <span className="text-xs font-black uppercase tracking-wider text-slate-200">{opt.label}</span>
+                                <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest shrink-0 ${
+                                  active ? badge : "bg-slate-800 text-slate-450"
+                                }`}>
+                                  {active ? "ACTIVO" : opt.id === "auto" ? "RECOMENDADO" : opt.shortLabel}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-slate-400 leading-relaxed mb-3">
+                                {opt.description}
+                              </p>
+                            </div>
+                            {opt.id === "auto" && (
+                              <div className="border-t border-slate-850/60 pt-2.5 mt-2 w-full space-y-1 text-[10px] text-slate-350">
+                                <div><strong className="text-emerald-400">3.8 Flash:</strong> reporte, Atlas/Vascular 3D, resumen paciente, caso, clasificaciones.</div>
+                                <div><strong className="text-indigo-400">3.7 Flash:</strong> rotulado masivo, bibliograf�a, glosario, resumen operacional, chat.</div>
+                                <div><strong className="text-purple-400">Pro:</strong> solo si lo eliges manualmente (casos dif�ciles).</div>
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -22302,7 +22318,7 @@ const splitReportAndAnnex = (text: string) => {
                 className="max-w-7xl mx-auto space-y-6"
               >
                 <ExpertImageAnalysis 
-                  selectedModel={selectedModel}
+                  selectedModel={modelFor("default")}
                   onIncorporateToReport={handleIncorporateToReport}
                   renderElegantResponse={renderElegantResponse} 
                   exportedImage={exportedImage}
@@ -24353,7 +24369,7 @@ const splitReportAndAnnex = (text: string) => {
         reportText={generatedReport}
         studyType={studyType || specificStudy || "Ecografia US"}
         clinicalHistory={clinicalHistory}
-        selectedModel={selectedModel}
+        selectedModel={modelFor("labeling")}
         attachedImages={attachedImages.map((img) => ({
           id: img.id,
           name: (img as { name?: string }).name,
