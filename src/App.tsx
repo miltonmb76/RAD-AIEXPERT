@@ -2538,7 +2538,7 @@ export default function App() {
   const [modal3dSourceImage, setModal3dSourceImage] = useState<any>(null);
   const [modal3dInitialFinding, setModal3dInitialFinding] = useState<string>("");
 
-  const [includeElastographyInReport, setIncludeElastographyInReport] = useState<boolean>(true);
+  const [includeElastographyInReport, setIncludeElastographyInReport] = useState<boolean>(false);
   const [elastographyStiffness, setElastographyStiffness] = useState<number>(5.2);
   const [elastographyCAP, setElastographyCAP] = useState<number>(230);
   const [elastographyFatFraction, setElastographyFatFraction] = useState<number>(6.2);
@@ -9564,9 +9564,10 @@ Ejemplo:
       }
 
       // --- 5.7. ANEXO: EVALUACION MULTIPARAMETRICA - ELASTOGRAFIA & QUS (PAGINA DEDICADA) ---
+      // Only include when the user explicitly enabled "Adjuntar al PDF" in the Elastografia module.
       const activeElastoInclude = studyOverride
-        ? (studyOverride as any).includeElastographyInReport !== false
-        : (pdfStateRef.current?.includeElastographyInReport !== false && includeElastographyInReport);
+        ? (studyOverride as any).includeElastographyInReport === true
+        : (pdfStateRef.current?.includeElastographyInReport === true || includeElastographyInReport === true);
       if (activeElastoInclude) {
         const elastoKpa: number = studyOverride ? ((studyOverride as any).elastographyStiffness ?? elastographyStiffness) : (pdfStateRef.current?.elastographyStiffness ?? elastographyStiffness);
         const elastoCap: number = studyOverride ? ((studyOverride as any).elastographyCAP ?? elastographyCAP) : (pdfStateRef.current?.elastographyCAP ?? elastographyCAP);
@@ -9575,9 +9576,7 @@ Ejemplo:
         const elastoOriginalImg: string | null = studyOverride ? ((studyOverride as any).elastographyOriginalImage ?? null) : (pdfStateRef.current?.elastographyOriginalImage ?? elastographyOriginalImage);
         const elastoEtiology: string = studyOverride ? ((studyOverride as any).elastographyEtiology ?? "masld") : (pdfStateRef.current?.elastographyEtiology ?? elastographyEtiology);
 
-        // Render if user explicitly enabled the module (includeElastographyInReport) OR if custom values/image are present
-        const hasElastographyData = activeElastoInclude || elastoImg3d || elastoOriginalImg || elastoKpa !== 5.2 || elastoCap !== 230 || elastoFat !== 6.2;
-        if (hasElastographyData) {
+        {
           let elastoFibrosisStage: "F0" | "F1" | "F2" | "F3" | "F4" = "F0";
           if (elastoKpa < 6.0) elastoFibrosisStage = "F0";
           else if (elastoKpa < 7.2) elastoFibrosisStage = "F1";

@@ -97,7 +97,7 @@ export const ElastographyQUSPresentationModule: React.FC<ElastographyQUSPresenta
   initialStiffness = 5.6,
   initialCAP = 235,
   initialFatFraction = 6.2,
-  includeInReport = true,
+  includeInReport = false,
   onToggleIncludeInReport,
   onValuesChanged,
   onImageChanged,
