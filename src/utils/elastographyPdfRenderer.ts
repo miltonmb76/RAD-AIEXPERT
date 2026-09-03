@@ -12,9 +12,7 @@ export interface ElastographyPdfData {
   velocityMs: number;
   iqrKpa: number;
   iqrMedianRatioPercent: number;
-  /** Original B-mode / elastogram photo (left panel) */
   originalImageBase64?: string | null;
-  /** AI 3D reconstruction (right panel) */
   image3dBase64?: string | null;
 }
 
@@ -60,7 +58,7 @@ function drawGradientBar(
   const segW = w / colors.length;
   colors.forEach((c, i) => {
     doc.setFillColor(c[0], c[1], c[2]);
-    doc.rect(x + i * segW, y, segW + 0.15, h, "F");
+    doc.rect(x + i * segW, y, segW + 0.2, h, "F");
   });
 }
 
@@ -73,10 +71,7 @@ function normalizeImageData(base64: string): { data: string; format: "JPEG" | "P
   return { data, format };
 }
 
-/**
- * Draw image inside a box preserving original aspect ratio (contain + center).
- * Never stretches width/height independently.
- */
+/** Draw image inside a box preserving aspect ratio (contain + center). */
 function drawImageContain(
   doc: jsPDF,
   base64: string,
@@ -94,7 +89,7 @@ function drawImageContain(
         aspect = props.width / props.height;
       }
     } catch {
-      // keep default 4:3
+      // keep default
     }
 
     let drawW = boxW;
@@ -108,29 +103,13 @@ function drawImageContain(
     doc.addImage(data, format, dx, dy, drawW, drawH, undefined, "FAST");
     return true;
   } catch {
-    try {
-      const { data, format } = normalizeImageData(base64);
-      // Fallback: still prefer 4:3 contain rather than stretch-fill
-      const aspect = 4 / 3;
-      let drawW = boxW;
-      let drawH = drawW / aspect;
-      if (drawH > boxH) {
-        drawH = boxH;
-        drawW = drawH * aspect;
-      }
-      const dx = boxX + (boxW - drawW) / 2;
-      const dy = boxY + (boxH - drawH) / 2;
-      doc.addImage(data, format, dx, dy, drawW, drawH, undefined, "FAST");
-      return true;
-    } catch {
-      return false;
-    }
+    return false;
   }
 }
 
 /**
- * Renders the dedicated elastography & QUS annex page.
- * Layout fills the page with comfortable spacing; images keep native aspect ratio.
+ * Single-page elastography annex. Layout is budgeted top-to-bottom so content
+ * never overflows past the running footer.
  */
 export function renderElastographyAnnexToPdf(
   doc: jsPDF,
@@ -140,95 +119,97 @@ export function renderElastographyAnnexToPdf(
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const marginX = 12;
-  const bottomSafe = 16;
+  // Leave room for the app's running footer ("REPORTE RADIOLOGICO" / page #)
+  const bottomSafe = 18;
   const contentWidth = pageWidth - marginX * 2;
   const factor = pageSize === "a4" ? 1.0 : 0.98;
 
   doc.addPage();
 
-  // Vertical budget: distribute remaining space so the page does not look compressed.
   const topY = 18 * factor;
-  const usableH = pageHeight - topY - bottomSafe;
+  const pageBottom = pageHeight - bottomSafe;
 
-  // Section height targets (sum ≈ usableH). Tuned for letter/A4.
-  const titleBlockH = 16 * factor;
-  const workstationH = Math.max(78 * factor, usableH * 0.38);
-  const scalesH = 32 * factor;
-  const cardH = 34 * factor;
-  const gapAfterWs = 7 * factor;
-  const gapAfterScales = 7 * factor;
-  const gapAfterCards = 7 * factor;
-  const reservedUpper =
-    titleBlockH + workstationH + gapAfterWs + scalesH + gapAfterScales + cardH + gapAfterCards;
-  const remainingForLower = Math.max(40 * factor, usableH - reservedUpper);
-  const interpShare = 0.58;
-  const interpTargetH = remainingForLower * interpShare;
-  const techTargetH = remainingForLower * (1 - interpShare) - 4 * factor;
+  // Fixed section sizes (mm) — sum must leave room for workstation + gaps.
+  const scalesH = 28 * factor;
+  const cardH = 30 * factor;
+  const gap = 4.5 * factor;
+  const titleReserve = 15 * factor;
+  const interpMin = 28 * factor;
+  const techMin = 28 * factor;
+
+  // Workstation gets leftover space, capped so images are not huge.
+  const fixedBelowWs = scalesH + cardH + interpMin + techMin + gap * 4;
+  const wsMax = 62 * factor; // ~moderate image block
+  const wsMin = 48 * factor;
+  const workstationH = Math.max(
+    wsMin,
+    Math.min(wsMax, pageBottom - topY - titleReserve - fixedBelowWs)
+  );
 
   let y = topY;
 
   // ── TITLE ────────────────────────────────────────────────────────────────
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(11.5 * factor);
+  doc.setFontSize(11 * factor);
   doc.setTextColor(15, 23, 42);
   doc.text(
     "ANEXO: EVALUACIÓN MULTIPARAMÉTRICA Y FUSIÓN 3D (ELASTOGRAFÍA & QUS)",
     marginX,
     y
   );
-  y += 4.2 * factor;
+  y += 3.8 * factor;
 
   doc.setDrawColor(56, 189, 248);
-  doc.setLineWidth(0.55);
+  doc.setLineWidth(0.5);
   doc.line(marginX, y, pageWidth - marginX, y);
-  y += 5.5 * factor;
+  y += 4.5 * factor;
 
   doc.setFont("helvetica", "italic");
-  doc.setFontSize(7.4 * factor);
+  doc.setFontSize(7 * factor);
   doc.setTextColor(100, 116, 139);
   const subtitle =
     "Mapeo multiparamétrico no invasivo de rigidez acústica tisular y fracción grasa cuantitativa, con renderización 3D híbrida predictiva del estado macroscópico del parénquima hepático.";
   const subLines = doc.splitTextToSize(subtitle, contentWidth);
   doc.text(subLines, marginX, y);
-  y += subLines.length * 3.6 * factor + 5 * factor;
+  y += subLines.length * 3.3 * factor + 3.5 * factor;
 
-  // ── WORKSTATION DUAL PANEL (DARK) ────────────────────────────────────────
+  // ── WORKSTATION ──────────────────────────────────────────────────────────
   const hasOriginal = !!data.originalImageBase64;
   const has3d = !!data.image3dBase64;
-  const headerBarH = 7 * factor;
-  const imgPad = 4 * factor;
-  const imgGap = 5 * factor;
-  const labelH = 6 * factor;
+  const headerBarH = 6 * factor;
+  const imgPad = 3 * factor;
+  const imgGap = 4 * factor;
+  const labelH = 5 * factor;
   const wsStartY = y;
 
   doc.setFillColor(30, 41, 59);
-  drawRoundedRect(doc, marginX, y, contentWidth, workstationH, 2.5, "F");
+  drawRoundedRect(doc, marginX, y, contentWidth, workstationH, 2.2, "F");
 
   doc.setFillColor(8, 145, 178);
-  doc.roundedRect(marginX, y, contentWidth, headerBarH, 2.5, 2.5, "F");
-  doc.rect(marginX, y + headerBarH - 2.5, contentWidth, 2.5, "F");
+  doc.roundedRect(marginX, y, contentWidth, headerBarH, 2.2, 2.2, "F");
+  doc.rect(marginX, y + headerBarH - 2, contentWidth, 2, "F");
 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(6.8 * factor);
+  doc.setFontSize(6.2 * factor);
   doc.setTextColor(255, 255, 255);
   doc.text(
     "WORKSTATION BIOMETRÍA TISULAR 2D/3D  •  MAPEO CROMÁTICO DE IMPEDANCIA Y ATENUACIÓN ACÚSTICA",
-    marginX + 3.5 * factor,
-    y + 4.6 * factor
+    marginX + 3 * factor,
+    y + 4 * factor
   );
 
   const panelTop = y + headerBarH + imgPad;
   const panelW = (contentWidth - imgPad * 2 - imgGap) / 2;
-  const panelImgH = workstationH - headerBarH - imgPad * 2 - labelH - 1;
+  const panelImgH = workstationH - headerBarH - imgPad * 2 - labelH;
 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(6.5 * factor);
+  doc.setFontSize(6 * factor);
   doc.setTextColor(125, 211, 252);
-  doc.text("ORIGINAL (MODO B / ELASTOGRAMA)", marginX + imgPad, panelTop + 4 * factor);
+  doc.text("ORIGINAL (MODO B / ELASTOGRAMA)", marginX + imgPad, panelTop + 3.5 * factor);
   doc.text(
     "RECONSTRUCCIÓN 3D (IA)",
     marginX + imgPad + panelW + imgGap,
-    panelTop + 4 * factor
+    panelTop + 3.5 * factor
   );
 
   const imgY = panelTop + labelH;
@@ -236,10 +217,10 @@ export function renderElastographyAnnexToPdf(
   const rightX = marginX + imgPad + panelW + imgGap;
 
   doc.setFillColor(15, 23, 42);
-  doc.roundedRect(leftX, imgY, panelW, panelImgH, 1.5, 1.5, "F");
-  doc.roundedRect(rightX, imgY, panelW, panelImgH, 1.5, 1.5, "F");
+  doc.roundedRect(leftX, imgY, panelW, panelImgH, 1.2, 1.2, "F");
+  doc.roundedRect(rightX, imgY, panelW, panelImgH, 1.2, 1.2, "F");
 
-  const imgInset = 2 * factor;
+  const imgInset = 1.5 * factor;
   if (hasOriginal) {
     drawImageContain(
       doc,
@@ -251,7 +232,7 @@ export function renderElastographyAnnexToPdf(
     );
   } else {
     doc.setFont("helvetica", "italic");
-    doc.setFontSize(7.5 * factor);
+    doc.setFontSize(7 * factor);
     doc.setTextColor(148, 163, 184);
     doc.text("Sin imagen original cargada", leftX + panelW / 2, imgY + panelImgH / 2, {
       align: "center",
@@ -268,99 +249,84 @@ export function renderElastographyAnnexToPdf(
       panelImgH - imgInset * 2
     );
     doc.setFillColor(8, 145, 178);
-    doc.roundedRect(rightX + 3, imgY + 3, 40 * factor, 5.5 * factor, 1, 1, "F");
+    doc.roundedRect(rightX + 2.5, imgY + 2.5, 36 * factor, 5 * factor, 1, 1, "F");
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(5.8 * factor);
+    doc.setFontSize(5.4 * factor);
     doc.setTextColor(255, 255, 255);
-    doc.text("RECONSTRUCCIÓN 3D (IA)", rightX + 4.5 * factor, imgY + 6.5 * factor);
+    doc.text("RECONSTRUCCIÓN 3D (IA)", rightX + 4 * factor, imgY + 5.8 * factor);
   } else {
     doc.setFont("helvetica", "italic");
-    doc.setFontSize(7.5 * factor);
+    doc.setFontSize(7 * factor);
     doc.setTextColor(148, 163, 184);
     doc.text("Sin reconstrucción 3D generada", rightX + panelW / 2, imgY + panelImgH / 2, {
       align: "center",
     });
   }
 
-  y = wsStartY + workstationH + gapAfterWs;
+  y = wsStartY + workstationH + gap;
 
-  // ── VISUAL STRATIFICATION SCALES ─────────────────────────────────────────
-  // Two independent rows with clear gap between bar and tick labels.
+  // ── SCALES ───────────────────────────────────────────────────────────────
   const scalesStartY = y;
   doc.setFillColor(248, 250, 252);
   doc.setDrawColor(203, 213, 225);
-  doc.setLineWidth(0.35);
+  doc.setLineWidth(0.3);
   drawRoundedRect(doc, marginX, y, contentWidth, scalesH, 2, "FD");
 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(7.2 * factor);
+  doc.setFontSize(6.8 * factor);
   doc.setTextColor(15, 23, 42);
   doc.text(
     "ESCALAS VISUALES DE ESTRATIFICACIÓN DIAGNÓSTICA (CONSENSO EFSUMB / SRU):",
-    marginX + 3.5 * factor,
-    y + 5.5 * factor
+    marginX + 3 * factor,
+    y + 5 * factor
   );
 
-  const labelColW = 46 * factor;
+  const labelColW = 44 * factor;
   const barX = marginX + labelColW;
-  const barW = contentWidth - labelColW - 8 * factor;
-  const barH = 3.6 * factor;
+  const barW = contentWidth - labelColW - 7 * factor;
+  const barH = 3.2 * factor;
   const metavirLabel = fibrosisMetavirLabel(data.fibrosisStage);
 
   // Row 1 — Rigidez
-  const row1LabelY = y + 12.5 * factor;
-  const row1BarY = y + 10.2 * factor;
-  const row1TickY = y + 17.5 * factor;
-
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(6.8 * factor);
+  doc.setFontSize(6.4 * factor);
   doc.setTextColor(51, 65, 85);
-  doc.text(`Rigidez (METAVIR): ${metavirLabel}`, marginX + 3.5 * factor, row1LabelY);
-
-  drawGradientBar(doc, barX, row1BarY, barW, barH, [
+  doc.text(`Rigidez (METAVIR): ${metavirLabel}`, marginX + 3 * factor, y + 11.5 * factor);
+  drawGradientBar(doc, barX, y + 9.2 * factor, barW, barH, [
     [16, 185, 129],
     [234, 179, 8],
     [249, 115, 22],
     [239, 68, 68],
   ]);
-
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(5.8 * factor);
+  doc.setFontSize(5.4 * factor);
   doc.setTextColor(100, 116, 139);
-  const tickLabels = ["F0-F1 (<6.0)", "F2 (6.0-7.9)", "F3 (8.0-12.4)", "F4 (≥12.5 kPa)"];
-  tickLabels.forEach((t, i) => {
-    doc.text(t, barX + (i + 0.5) * (barW / 4), row1TickY, { align: "center" });
+  ["F0-F1 (<6.0)", "F2 (6.0-7.9)", "F3 (8.0-12.4)", "F4 (>=12.5)"].forEach((t, i) => {
+    doc.text(t, barX + (i + 0.5) * (barW / 4), y + 16.2 * factor, { align: "center" });
   });
 
-  // Row 2 — Esteatosis (extra vertical separation so ticks never touch the bar)
-  const row2LabelY = y + 25.5 * factor;
-  const row2BarY = y + 23.2 * factor;
-  const row2TickY = y + 30.2 * factor;
-
+  // Row 2 — Esteatosis (clear gap under bar)
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(6.8 * factor);
+  doc.setFontSize(6.4 * factor);
   doc.setTextColor(51, 65, 85);
-  doc.text(`Esteatosis (QUS): ${data.steatosisGrade}`, marginX + 3.5 * factor, row2LabelY);
-
-  drawGradientBar(doc, barX, row2BarY, barW, barH, [
+  doc.text(`Esteatosis (QUS): ${data.steatosisGrade}`, marginX + 3 * factor, y + 22.5 * factor);
+  drawGradientBar(doc, barX, y + 20.2 * factor, barW, barH, [
     [16, 185, 129],
     [132, 204, 22],
     [234, 179, 8],
     [249, 115, 22],
   ]);
-
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(5.8 * factor);
+  doc.setFontSize(5.4 * factor);
   doc.setTextColor(100, 116, 139);
-  const fatTicks = ["S0 (<5.0%)", "S1 (5-12%)", "S2 (12-20%)", "S3 (>20.0%)"];
-  fatTicks.forEach((t, i) => {
-    doc.text(t, barX + (i + 0.5) * (barW / 4), row2TickY, { align: "center" });
+  ["S0 (<5.0%)", "S1 (5-12%)", "S2 (12-20%)", "S3 (>20%)"].forEach((t, i) => {
+    doc.text(t, barX + (i + 0.5) * (barW / 4), y + 27 * factor, { align: "center" });
   });
 
-  y = scalesStartY + scalesH + gapAfterScales;
+  y = scalesStartY + scalesH + gap;
 
   // ── 4 METRIC CARDS ───────────────────────────────────────────────────────
-  const cardGap = 3.5 * factor;
+  const cardGap = 3 * factor;
   const cardW = (contentWidth - cardGap * 3) / 4;
   const stiffColor = valueColorForStiffness(data.stiffnessKpa);
   const fatColor = valueColorForFat(data.fatFractionPercent);
@@ -368,11 +334,12 @@ export function renderElastographyAnnexToPdf(
   const iqrColor: [number, number, number] = iqrGood ? [139, 92, 246] : [249, 115, 22];
   const capCoeff = (data.capDbM / 100 / 3.5).toFixed(2);
 
+  // Short footers that fit inside ~42mm card width (ASCII only for Helvetica)
   const cards: Array<{
     title: string;
     value: string;
     sub: string;
-    footer: string;
+    footerLines: string[];
     border: [number, number, number];
     valueColor: [number, number, number];
   }> = [
@@ -380,7 +347,7 @@ export function renderElastographyAnnexToPdf(
       title: "RIGIDEZ HEPÁTICA",
       value: `${data.stiffnessKpa.toFixed(1)} kPa`,
       sub: `METAVIR: ${metavirLabel}`,
-      footer: "V.N. < 6.0 kPa  •  Corte F2: ≥ 7.0",
+      footerLines: ["V.N. < 6.0 kPa", "Corte F2: >= 7.0"],
       border: stiffColor,
       valueColor: stiffColor,
     },
@@ -388,15 +355,15 @@ export function renderElastographyAnnexToPdf(
       title: "FRACCIÓN GRASA (QUS)",
       value: `${data.fatFractionPercent.toFixed(1)} %`,
       sub: `Esteatosis: ${data.steatosisGrade}`,
-      footer: "V.N. < 5.0% (Consenso SRU)",
+      footerLines: ["V.N. < 5.0%", "(Consenso SRU)"],
       border: fatColor,
       valueColor: fatColor,
     },
     {
-      title: "ATENUACIÓN ACÚSTICA (CAP)",
+      title: "ATENUACIÓN ACÚSTICA",
       value: `${Math.round(data.capDbM)} dB/m`,
-      sub: `Coeficiente: ${capCoeff} dB/cm/MHz`,
-      footer: "Ref: S0 < 238  •  S3 ≥ 290 dB/m",
+      sub: `Coef: ${capCoeff} dB/cm/MHz`,
+      footerLines: ["S0 < 238 dB/m", "S3 >= 290 dB/m"],
       border: [56, 189, 248],
       valueColor: [14, 165, 233],
     },
@@ -405,8 +372,8 @@ export function renderElastographyAnnexToPdf(
       value: iqrGood
         ? `IQR/med < ${Math.max(15, Math.ceil(data.iqrMedianRatioPercent))}%`
         : `IQR/med ${data.iqrMedianRatioPercent.toFixed(0)}%`,
-      sub: "10/10 Adquisiciones Válidas",
-      footer: "Criterio EFSUMB/WFUMB: < 30%",
+      sub: "10/10 Adquisiciones",
+      footerLines: ["Criterio EFSUMB:", "< 30% IQR/med"],
       border: iqrColor,
       valueColor: iqrColor,
     },
@@ -414,37 +381,50 @@ export function renderElastographyAnnexToPdf(
 
   cards.forEach((card, i) => {
     const cx = marginX + i * (cardW + cardGap);
+    const padX = 2.5 * factor;
 
     doc.setFillColor(255, 255, 255);
     doc.setDrawColor(card.border[0], card.border[1], card.border[2]);
-    doc.setLineWidth(0.75);
-    drawRoundedRect(doc, cx, y, cardW, cardH, 2.2, "FD");
+    doc.setLineWidth(0.7);
+    drawRoundedRect(doc, cx, y, cardW, cardH, 2, "FD");
 
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(6 * factor);
+    doc.setFontSize(5.6 * factor);
     doc.setTextColor(71, 85, 105);
-    doc.text(card.title, cx + cardW / 2, y + 6 * factor, { align: "center" });
+    doc.text(card.title, cx + cardW / 2, y + 5 * factor, { align: "center" });
 
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(13.5 * factor);
+    doc.setFontSize(12 * factor);
     doc.setTextColor(card.valueColor[0], card.valueColor[1], card.valueColor[2]);
-    doc.text(card.value, cx + cardW / 2, y + 15.5 * factor, { align: "center" });
+    doc.text(card.value, cx + cardW / 2, y + 13 * factor, { align: "center" });
 
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(7 * factor);
+    doc.setFontSize(6.4 * factor);
     doc.setTextColor(30, 41, 59);
-    doc.text(card.sub, cx + cardW / 2, y + 22 * factor, { align: "center" });
+    doc.text(card.sub, cx + cardW / 2, y + 18.5 * factor, { align: "center" });
 
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(5.5 * factor);
+    doc.setFontSize(5.2 * factor);
     doc.setTextColor(100, 116, 139);
-    const footLines = doc.splitTextToSize(card.footer, cardW - 5 * factor);
-    doc.text(footLines, cx + cardW / 2, y + 27.5 * factor, { align: "center" });
+    card.footerLines.forEach((line, li) => {
+      const clipped = doc.splitTextToSize(line, cardW - padX * 2)[0];
+      doc.text(clipped, cx + cardW / 2, y + 23 * factor + li * 3.2 * factor, {
+        align: "center",
+      });
+    });
   });
 
-  y += cardH + gapAfterCards;
+  y += cardH + gap;
 
-  // ── MEDICAL INTERPRETATION ───────────────────────────────────────────────
+  // Remaining vertical space split between interpretation and tech specs
+  const remaining = pageBottom - y;
+  const interpH = Math.max(interpMin, remaining * 0.52);
+  const techH = Math.max(techMin, remaining - interpH - gap);
+  // Recompute if rounding overflow
+  const interpFinal = Math.min(interpH, remaining - techMin - gap);
+  const techFinal = Math.min(techH, pageBottom - (y + interpFinal + gap));
+
+  // ── INTERPRETATION ───────────────────────────────────────────────────────
   const fibDesc =
     data.fibrosisStage === "F0" || data.fibrosisStage === "F1"
       ? `compatible con parénquima hepático normal / sin fibrosis significativa (estadio ${metavirLabel}) según consenso EFSUMB/WFUMB`
@@ -469,91 +449,79 @@ export function renderElastographyAnnexToPdf(
     `Correlación Clínica: Se sugiere correlación con biomarcadores séricos (ALT/AST, FIB-4, APRI) y seguimiento clínico periódico según el perfil metabólico del paciente.`,
   ];
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7.4 * factor);
-  const lineH = 4.0 * factor;
-  const bulletGap = 2.2 * factor;
-  let contentNeeded = 10 * factor;
-  const wrappedBullets: string[][] = bullets.map((b) => {
-    const lines = doc.splitTextToSize(`•  ${b}`, contentWidth - 12 * factor);
-    contentNeeded += lines.length * lineH + bulletGap;
-    return lines;
-  });
-  contentNeeded += 3 * factor;
-  const interpH = Math.max(interpTargetH, contentNeeded);
-
   doc.setFillColor(255, 255, 255);
   doc.setDrawColor(226, 232, 240);
-  doc.setLineWidth(0.35);
-  drawRoundedRect(doc, marginX, y, contentWidth, interpH, 2.2, "FD");
-
+  doc.setLineWidth(0.3);
+  drawRoundedRect(doc, marginX, y, contentWidth, interpFinal, 2, "FD");
   doc.setFillColor(56, 189, 248);
-  doc.rect(marginX, y + 1.5, 2 * factor, interpH - 3, "F");
+  doc.rect(marginX, y + 1.2, 1.8 * factor, interpFinal - 2.4, "F");
 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(7.5 * factor);
+  doc.setFontSize(7 * factor);
   doc.setTextColor(15, 23, 42);
   doc.text(
     "INTERPRETACIÓN MÉDICA INTEGRADA Y CORRELACIÓN HISTOTISULAR:",
-    marginX + 6 * factor,
-    y + 7 * factor
+    marginX + 5 * factor,
+    y + 5.5 * factor
   );
 
-  let by = y + 13 * factor;
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(7.4 * factor);
+  doc.setFontSize(6.8 * factor);
   doc.setTextColor(51, 65, 85);
-  wrappedBullets.forEach((lines) => {
-    doc.text(lines, marginX + 6 * factor, by);
-    by += lines.length * lineH + bulletGap;
-  });
+  const lineH = 3.5 * factor;
+  let by = y + 11 * factor;
+  const maxBy = y + interpFinal - 2.5 * factor;
+  for (const b of bullets) {
+    const lines = doc.splitTextToSize(`•  ${b}`, contentWidth - 10 * factor);
+    for (const line of lines) {
+      if (by > maxBy) break;
+      doc.text(line, marginX + 5 * factor, by);
+      by += lineH;
+    }
+    by += 1.2 * factor;
+    if (by > maxBy) break;
+  }
 
-  y += interpH + 5 * factor;
+  y += interpFinal + gap;
 
-  // ── TECHNICAL SPECIFICATIONS (fill remaining page) ───────────────────────
+  // ── TECHNICAL SPECS (always fully inside page) ───────────────────────────
   const techBullets = [
-    "Transductor: Sonda Abdominal Convex multifrecuencia (1.5–5.0 MHz).",
+    "Transductor: Sonda Abdominal Convex multifrecuencia (1.5-5.0 MHz).",
     "Modo: Point Shear Wave Elastography (pSWE / 2D-SWE).",
-    "Muestreo: Profundidad ROI 2.0–5.0 cm de la cápsula hepática. Mapeo 3D: Reconstrucción volumétrica asistida por IA.",
-    "Estándar de Calidad: Calibración según Phantom NEMA y Estándares de Ultrasonografía Cuantitativa (QIBA / SRU / EFSUMB).",
+    "Muestreo: Profundidad ROI 2.0-5.0 cm de la cápsula hepática. Mapeo 3D: Reconstrucción volumétrica asistida por IA.",
+    "Estándar de Calidad: Calibración Phantom NEMA y estándares QIBA / SRU / EFSUMB.",
   ];
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7 * factor);
-  const techLineH = 3.8 * factor;
-  let techContent = 11 * factor;
-  const wrappedTech = techBullets.map((b) => {
-    const lines = doc.splitTextToSize(`•  ${b}`, contentWidth - 10 * factor);
-    techContent += lines.length * techLineH + 1.8 * factor;
-    return lines;
-  });
-  techContent += 3 * factor;
-
-  const maxTechH = pageHeight - y - bottomSafe;
-  const techH = Math.max(techTargetH, Math.min(techContent, maxTechH));
+  const techBoxH = Math.min(techFinal, pageBottom - y);
+  if (techBoxH < 12) return; // nothing left; avoid drawing past footer
 
   doc.setFillColor(248, 250, 252);
   doc.setDrawColor(203, 213, 225);
-  doc.setLineWidth(0.35);
-  drawRoundedRect(doc, marginX, y, contentWidth, techH, 2.2, "FD");
+  doc.setLineWidth(0.3);
+  drawRoundedRect(doc, marginX, y, contentWidth, techBoxH, 2, "FD");
 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(7.2 * factor);
+  doc.setFontSize(6.8 * factor);
   doc.setTextColor(15, 23, 42);
   doc.text(
     "ESPECIFICACIONES TÉCNICAS DEL EQUIPO Y PROTOCOLO DE ADQUISICIÓN:",
-    marginX + 4 * factor,
-    y + 7 * factor
+    marginX + 3.5 * factor,
+    y + 5.5 * factor
   );
 
-  let ty = y + 13 * factor;
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(7 * factor);
+  doc.setFontSize(6.5 * factor);
   doc.setTextColor(71, 85, 105);
-  wrappedTech.forEach((lines) => {
-    if (ty + lines.length * techLineH < y + techH - 2) {
-      doc.text(lines, marginX + 4 * factor, ty);
-      ty += lines.length * techLineH + 1.8 * factor;
+  const techLineH = 3.4 * factor;
+  let ty = y + 11 * factor;
+  const techMaxY = y + techBoxH - 2.5 * factor;
+  for (const b of techBullets) {
+    const lines = doc.splitTextToSize(`•  ${b}`, contentWidth - 8 * factor);
+    for (const line of lines) {
+      if (ty > techMaxY) return;
+      doc.text(line, marginX + 3.5 * factor, ty);
+      ty += techLineH;
     }
-  });
+    ty += 1.0 * factor;
+  }
 }
