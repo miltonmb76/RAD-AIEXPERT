@@ -74,6 +74,8 @@ interface ElastographyQUSPresentationModuleProps {
   includeInReport?: boolean;
   onToggleIncludeInReport?: (include: boolean) => void;
   onValuesChanged?: (stiffness: number, cap: number, fatFraction: number) => void;
+  onImageChanged?: (base64: string | null) => void;
+  onEtiologyChanged?: (etiology: string) => void;
 }
 
 const ETIOLOGY_OPTIONS = [
@@ -96,7 +98,9 @@ export const ElastographyQUSPresentationModule: React.FC<ElastographyQUSPresenta
   initialFatFraction = 6.2,
   includeInReport = true,
   onToggleIncludeInReport,
-  onValuesChanged
+  onValuesChanged,
+  onImageChanged,
+  onEtiologyChanged,
 }) => {
   const [stiffnessKpa, setStiffnessKpa] = useState<number>(initialStiffness);
   const [capDbM, setCapDbM] = useState<number>(initialCAP);
@@ -490,6 +494,7 @@ export const ElastographyQUSPresentationModule: React.FC<ElastographyQUSPresenta
       const img3d = data.render3dBase64 || data.image || data.render3dMacroBase64;
       if (img3d) {
         setGenerated3dImageBase64(img3d);
+        onImageChanged?.(img3d);
       } else if (data.error) {
         console.error("Error en respuesta 3D render:", data.error);
         alert("No se pudo generar el modelo 3D: " + data.error);
@@ -710,7 +715,7 @@ export const ElastographyQUSPresentationModule: React.FC<ElastographyQUSPresenta
           </div>
           <select
             value={selectedEtiology}
-            onChange={(e) => setSelectedEtiology(e.target.value as any)}
+            onChange={(e) => { setSelectedEtiology(e.target.value as any); onEtiologyChanged?.(e.target.value); }}
             className="w-full bg-slate-950 border border-slate-700 text-xs text-slate-200 rounded-xl p-2 font-mono font-semibold focus:outline-none focus:border-cyan-500 cursor-pointer"
           >
             {ETIOLOGY_OPTIONS.map((et) => (
