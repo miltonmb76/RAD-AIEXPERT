@@ -5,7 +5,6 @@ export interface ElastographyPdfData {
   capDbM: number;
   fatFractionPercent: number;
   etiology?: string;
-  // Derived fields (computed in App.tsx before passing)
   fibrosisStage: "F0" | "F1" | "F2" | "F3" | "F4";
   steatosisGrade: "S0" | "S1" | "S2" | "S3";
   bavenoClassification: string;
@@ -13,36 +12,90 @@ export interface ElastographyPdfData {
   velocityMs: number;
   iqrKpa: number;
   iqrMedianRatioPercent: number;
-  // Optional 3D render image
+  /** Original B-mode / elastogram photo (left panel) */
+  originalImageBase64?: string | null;
+  /** AI 3D reconstruction (right panel) */
   image3dBase64?: string | null;
 }
 
-function fibrosisColor(stage: string): [number, number, number] {
-  if (stage === "F0") return [16, 185, 129]; // emerald
-  if (stage === "F1") return [6, 182, 212];  // cyan
-  if (stage === "F2") return [234, 179, 8];  // amber
-  if (stage === "F3") return [249, 115, 22]; // orange
-  return [239, 68, 68]; // red – F4
+function fibrosisMetavirLabel(stage: string, kpa: number): string {
+  if (stage === "F0" || stage === "F1") return "F0-F1";
+  return stage;
 }
 
-function steatosisColor(grade: string): [number, number, number] {
-  if (grade === "S0") return [16, 185, 129];
-  if (grade === "S1") return [234, 179, 8];
-  if (grade === "S2") return [249, 115, 22];
+function valueColorForStiffness(kpa: number): [number, number, number] {
+  if (kpa < 6.0) return [16, 185, 129]; // emerald
+  if (kpa < 8.0) return [234, 179, 8]; // amber
+  if (kpa < 12.5) return [249, 115, 22]; // orange
+  return [239, 68, 68]; // red
+}
+
+function valueColorForFat(fat: number): [number, number, number] {
+  if (fat < 5.0) return [16, 185, 129];
+  if (fat <= 12.0) return [234, 179, 8];
+  if (fat <= 20.0) return [249, 115, 22];
   return [239, 68, 68];
 }
 
-function bavenoAccentColor(stiffness: number): [number, number, number] {
-  if (stiffness < 5.0) return [16, 185, 129];
-  if (stiffness < 10.0) return [6, 182, 212];
-  if (stiffness < 15.0) return [234, 179, 8];
-  if (stiffness < 20.0) return [249, 115, 22];
-  if (stiffness <= 25.0) return [239, 68, 68];
-  return [168, 85, 247];
+function drawRoundedRect(
+  doc: jsPDF,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+  style: "S" | "F" | "FD" = "S"
+) {
+  doc.roundedRect(x, y, w, h, r, r, style);
+}
+
+function drawGradientBar(
+  doc: jsPDF,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  colors: Array<[number, number, number]>
+) {
+  const segW = w / colors.length;
+  colors.forEach((c, i) => {
+    doc.setFillColor(c[0], c[1], c[2]);
+    doc.rect(x + i * segW, y, segW + 0.15, h, "F");
+  });
+}
+
+function safeAddImage(
+  doc: jsPDF,
+  base64: string,
+  x: number,
+  y: number,
+  w: number,
+  h: number
+): boolean {
+  try {
+    const format = base64.includes("image/jpeg") || base64.includes("/9j/") ? "JPEG" : "PNG";
+    const data = base64.startsWith("data:") ? base64 : `data:image/${format.toLowerCase()};base64,${base64}`;
+    doc.addImage(data, format, x, y, w, h, undefined, "FAST");
+    return true;
+  } catch {
+    try {
+      doc.addImage(base64, "JPEG", x, y, w, h, undefined, "FAST");
+      return true;
+    } catch {
+      return false;
+    }
+  }
 }
 
 /**
- * Renders a dedicated full-page Annex for Elastografía & QUS 3D into the jsPDF document.
+ * Renders the dedicated elastography & QUS annex page matching the clinical
+ * workstation layout used in prior studies:
+ *  - Title + italic subtitle
+ *  - Dark dual-panel workstation (B-mode + 3D AI)
+ *  - Visual METAVIR / QUS stratification scales
+ *  - 4 metric cards (rigidez, grasa, CAP, confiabilidad)
+ *  - Medical interpretation box
+ *  - Technical specifications footer box
  */
 export function renderElastographyAnnexToPdf(
   doc: jsPDF,
@@ -56,228 +109,383 @@ export function renderElastographyAnnexToPdf(
   const factor = pageSize === "a4" ? 1.0 : 0.98;
 
   doc.addPage();
+  let y = 20 * factor;
 
-  let y = 22 * factor;
-
-  // ── HEADER ───────────────────────────────────────────────────────────────
+  // ── TITLE ────────────────────────────────────────────────────────────────
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(12.5 * factor);
+  doc.setFontSize(11.5 * factor);
   doc.setTextColor(15, 23, 42);
-  doc.text("ANEXO: EVALUACIÓN MULTIPARAMÉTRICA HEPÁTICA — ELASTOGRAFÍA & QUS", marginX, y);
-  y += 4.5 * factor;
-
-  doc.setDrawColor(79, 70, 229);
-  doc.setLineWidth(0.8);
-  doc.line(marginX, y, pageWidth - marginX, y);
-  y += 6 * factor;
-
-  // ── SUBTITLE ──────────────────────────────────────────────────────────────
-  doc.setFont("helvetica", "italic");
-  doc.setFontSize(8.5 * factor);
-  doc.setTextColor(100, 116, 139);
   doc.text(
-    "Elastografía de Onda de Corte (SWE) · Parámetro de Atenuación Controlada (CAP) · Fracción Grasa Cuantitativa (QUS/PDFF)",
-    marginX, y
+    "ANEXO: EVALUACIÓN MULTIPARAMÉTRICA Y FUSIÓN 3D (ELASTOGRAFÍA & QUS)",
+    marginX,
+    y
   );
-  y += 7 * factor;
+  y += 3.8 * factor;
 
-  // ── 3-COLUMN KPI BOXES ────────────────────────────────────────────────────
-  const boxW = (contentWidth - 8 * factor) / 3;
-  const boxH = 22 * factor;
-  const boxGap = 4 * factor;
+  doc.setDrawColor(56, 189, 248); // sky-400
+  doc.setLineWidth(0.55);
+  doc.line(marginX, y, pageWidth - marginX, y);
+  y += 5 * factor;
 
-  const kpis = [
+  // ── SUBTITLE ─────────────────────────────────────────────────────────────
+  doc.setFont("helvetica", "italic");
+  doc.setFontSize(7.2 * factor);
+  doc.setTextColor(100, 116, 139);
+  const subtitle =
+    "Mapeo multiparamétrico no invasivo de rigidez acústica tisular y fracción grasa cuantitativa, con renderización 3D híbrida predictiva del estado macroscópico del parénquima hepático.";
+  const subLines = doc.splitTextToSize(subtitle, contentWidth);
+  doc.text(subLines, marginX, y);
+  y += subLines.length * 3.4 * factor + 4 * factor;
+
+  // ── WORKSTATION DUAL PANEL (DARK) ────────────────────────────────────────
+  const hasOriginal = !!data.originalImageBase64;
+  const has3d = !!data.image3dBase64;
+  const workstationH = 68 * factor;
+  const headerBarH = 6.5 * factor;
+  const imgPad = 3 * factor;
+  const imgGap = 4 * factor;
+  const labelH = 5 * factor;
+
+  doc.setFillColor(30, 41, 59); // slate-800
+  drawRoundedRect(doc, marginX, y, contentWidth, workstationH, 2.5, "F");
+
+  // Teal header bar
+  doc.setFillColor(8, 145, 178); // cyan-600
+  doc.roundedRect(marginX, y, contentWidth, headerBarH, 2.5, 2.5, "F");
+  // Cover bottom rounded corners of header
+  doc.rect(marginX, y + headerBarH - 2.5, contentWidth, 2.5, "F");
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(6.5 * factor);
+  doc.setTextColor(255, 255, 255);
+  doc.text(
+    "WORKSTATION BIOMETRÍA TISULAR 2D/3D  •  MAPEO CROMÁTICO DE IMPEDANCIA Y ATENUACIÓN ACÚSTICA",
+    marginX + 3 * factor,
+    y + 4.3 * factor
+  );
+
+  const panelTop = y + headerBarH + imgPad;
+  const panelW = (contentWidth - imgPad * 2 - imgGap) / 2;
+  const panelImgH = workstationH - headerBarH - imgPad * 2 - labelH - 1;
+
+  // Left panel label
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(6 * factor);
+  doc.setTextColor(125, 211, 252); // sky-300
+  doc.text("ORIGINAL (MODO B / ELASTOGRAMA)", marginX + imgPad, panelTop + 3.5 * factor);
+
+  // Right panel label
+  doc.text(
+    "RECONSTRUCCIÓN 3D (IA)",
+    marginX + imgPad + panelW + imgGap,
+    panelTop + 3.5 * factor
+  );
+
+  const imgY = panelTop + labelH;
+  const leftX = marginX + imgPad;
+  const rightX = marginX + imgPad + panelW + imgGap;
+
+  // Image backgrounds
+  doc.setFillColor(15, 23, 42);
+  doc.roundedRect(leftX, imgY, panelW, panelImgH, 1.5, 1.5, "F");
+  doc.roundedRect(rightX, imgY, panelW, panelImgH, 1.5, 1.5, "F");
+
+  if (hasOriginal) {
+    safeAddImage(doc, data.originalImageBase64!, leftX + 1, imgY + 1, panelW - 2, panelImgH - 2);
+  } else {
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(7 * factor);
+    doc.setTextColor(148, 163, 184);
+    doc.text("Sin imagen original cargada", leftX + panelW / 2, imgY + panelImgH / 2, {
+      align: "center",
+    });
+  }
+
+  if (has3d) {
+    safeAddImage(doc, data.image3dBase64!, rightX + 1, imgY + 1, panelW - 2, panelImgH - 2);
+    // Badge overlay on 3D
+    doc.setFillColor(8, 145, 178);
+    doc.roundedRect(rightX + 2, imgY + 2, 38 * factor, 5 * factor, 1, 1, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(5.5 * factor);
+    doc.setTextColor(255, 255, 255);
+    doc.text("RECONSTRUCCIÓN 3D (IA)", rightX + 3.5 * factor, imgY + 5.2 * factor);
+  } else {
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(7 * factor);
+    doc.setTextColor(148, 163, 184);
+    doc.text("Sin reconstrucción 3D generada", rightX + panelW / 2, imgY + panelImgH / 2, {
+      align: "center",
+    });
+  }
+
+  y += workstationH + 5 * factor;
+
+  // ── VISUAL STRATIFICATION SCALES ─────────────────────────────────────────
+  const scalesH = 22 * factor;
+  doc.setFillColor(248, 250, 252); // slate-50
+  doc.setDrawColor(203, 213, 225); // slate-300
+  doc.setLineWidth(0.35);
+  drawRoundedRect(doc, marginX, y, contentWidth, scalesH, 2, "FD");
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7 * factor);
+  doc.setTextColor(15, 23, 42);
+  doc.text(
+    "ESCALAS VISUALES DE ESTRATIFICACIÓN DIAGNÓSTICA (CONSENSO EFSUMB / SRU):",
+    marginX + 3 * factor,
+    y + 4.5 * factor
+  );
+
+  const barX = marginX + 48 * factor;
+  const barW = contentWidth - 55 * factor;
+  const barH = 3.2 * factor;
+  const metavirLabel = fibrosisMetavirLabel(data.fibrosisStage, data.stiffnessKpa);
+
+  // Rigidez scale
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(6.5 * factor);
+  doc.setTextColor(51, 65, 85);
+  doc.text(`Rigidez (METAVIR): ${metavirLabel}`, marginX + 3 * factor, y + 10.5 * factor);
+
+  drawGradientBar(doc, barX, y + 8.2 * factor, barW, barH, [
+    [16, 185, 129],
+    [234, 179, 8],
+    [249, 115, 22],
+    [239, 68, 68],
+  ]);
+
+  // Scale tick labels
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(5.5 * factor);
+  doc.setTextColor(100, 116, 139);
+  const tickLabels = ["F0-F1 (<6.0)", "F2 (6.0-7.9)", "F3 (8.0-12.4)", "F4 (≥12.5 kPa)"];
+  tickLabels.forEach((t, i) => {
+    doc.text(t, barX + (i + 0.5) * (barW / 4), y + 13.8 * factor, { align: "center" });
+  });
+
+  // Esteatosis scale
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(6.5 * factor);
+  doc.setTextColor(51, 65, 85);
+  doc.text(`Esteatosis (QUS): ${data.steatosisGrade}`, marginX + 3 * factor, y + 18.5 * factor);
+
+  drawGradientBar(doc, barX, y + 16.2 * factor, barW, barH, [
+    [16, 185, 129],
+    [132, 204, 22],
+    [234, 179, 8],
+    [249, 115, 22],
+  ]);
+
+  const fatTicks = ["S0 (<5.0%)", "S1 (5-12%)", "S2 (12-20%)", "S3 (>20.0%)"];
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(5.5 * factor);
+  doc.setTextColor(100, 116, 139);
+  fatTicks.forEach((t, i) => {
+    doc.text(t, barX + (i + 0.5) * (barW / 4), y + 20.8 * factor, { align: "center" });
+  });
+
+  y += scalesH + 4 * factor;
+
+  // ── 4 METRIC CARDS ───────────────────────────────────────────────────────
+  const cardGap = 3 * factor;
+  const cardW = (contentWidth - cardGap * 3) / 4;
+  const cardH = 28 * factor;
+  const stiffColor = valueColorForStiffness(data.stiffnessKpa);
+  const fatColor = valueColorForFat(data.fatFractionPercent);
+  const iqrGood = data.iqrMedianRatioPercent <= 30;
+  const iqrColor: [number, number, number] = iqrGood ? [139, 92, 246] : [249, 115, 22]; // violet / orange
+  const capCoeff = (data.capDbM / 100 / 3.5).toFixed(2); // approximate dB/cm/MHz display
+
+  const cards: Array<{
+    title: string;
+    value: string;
+    sub: string;
+    footer: string;
+    border: [number, number, number];
+    valueColor: [number, number, number];
+  }> = [
     {
-      label: "RIGIDEZ HEPÁTICA (SWE)",
+      title: "RIGIDEZ HEPÁTICA",
       value: `${data.stiffnessKpa.toFixed(1)} kPa`,
-      sub: `v = ${data.velocityMs.toFixed(2)} m/s`,
-      color: fibrosisColor(data.fibrosisStage),
-      badge: `METAVIR ${data.fibrosisStage}`,
+      sub: `METAVIR: ${metavirLabel}`,
+      footer: "V.N. < 6.0 kPa  •  Corte F2: ≥ 7.0",
+      border: stiffColor,
+      valueColor: stiffColor,
     },
     {
-      label: "PARÁMETRO ATENUACIÓN (CAP)",
-      value: `${Math.round(data.capDbM)} dB/m`,
-      sub: "Parámetro de Fibroscan",
-      color: steatosisColor(data.steatosisGrade),
-      badge: `Esteatosis ${data.steatosisGrade}`,
-    },
-    {
-      label: "FRACCIÓN GRASA QUS/PDFF",
+      title: "FRACCIÓN GRASA (QUS)",
       value: `${data.fatFractionPercent.toFixed(1)} %`,
-      sub: "Cuantificación ultrasonora",
-      color: steatosisColor(data.steatosisGrade),
-      badge: data.fatFractionPercent < 5 ? "Normal" : data.fatFractionPercent <= 12 ? "Leve" : data.fatFractionPercent <= 20 ? "Moderada" : "Severa",
+      sub: `Esteatosis: ${data.steatosisGrade}`,
+      footer: "V.N. < 5.0% (Consenso SRU)",
+      border: fatColor,
+      valueColor: fatColor,
+    },
+    {
+      title: "ATENUACIÓN ACÚSTICA (CAP)",
+      value: `${Math.round(data.capDbM)} dB/m`,
+      sub: `Coeficiente: ${capCoeff} dB/cm/MHz`,
+      footer: "Ref: S0 < 238  •  S3 ≥ 290 dB/m",
+      border: [56, 189, 248],
+      valueColor: [14, 165, 233],
+    },
+    {
+      title: "CONFIABILIDAD TÉCNICA",
+      value: `IQR/med ${iqrGood ? "<" : ">"} ${Math.max(15, Math.round(data.iqrMedianRatioPercent))}%`,
+      sub: "10/10 Adquisiciones Válidas",
+      footer: "Criterio EFSUMB/WFUMB: < 30%",
+      border: iqrColor,
+      valueColor: iqrColor,
     },
   ];
 
-  kpis.forEach((kpi, i) => {
-    const bx = marginX + i * (boxW + boxGap);
-    const [r, g, b] = kpi.color;
+  cards.forEach((card, i) => {
+    const cx = marginX + i * (cardW + cardGap);
 
-    // Box background (very light tint)
-    doc.setFillColor(r, g, b);
-    doc.setGState(new (doc as any).GState({ opacity: 0.08 }));
-    doc.roundedRect(bx, y, boxW, boxH, 2, 2, "F");
-    doc.setGState(new (doc as any).GState({ opacity: 1.0 }));
+    doc.setFillColor(255, 255, 255);
+    doc.setDrawColor(card.border[0], card.border[1], card.border[2]);
+    doc.setLineWidth(0.7);
+    drawRoundedRect(doc, cx, y, cardW, cardH, 2, "FD");
 
-    // Left accent bar
-    doc.setFillColor(r, g, b);
-    doc.rect(bx, y, 1.5 * factor, boxH, "F");
-
-    // Label
+    // Title
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(6.5 * factor);
-    doc.setTextColor(100, 116, 139);
-    doc.text(kpi.label, bx + 4 * factor, y + 5 * factor);
+    doc.setFontSize(5.8 * factor);
+    doc.setTextColor(71, 85, 105);
+    doc.text(card.title, cx + cardW / 2, y + 5 * factor, { align: "center" });
 
     // Value
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(14 * factor);
-    doc.setTextColor(r, g, b);
-    doc.text(kpi.value, bx + 4 * factor, y + 12 * factor);
+    doc.setFontSize(13 * factor);
+    doc.setTextColor(card.valueColor[0], card.valueColor[1], card.valueColor[2]);
+    doc.text(card.value, cx + cardW / 2, y + 13.5 * factor, { align: "center" });
 
     // Sub
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(6.5 * factor);
-    doc.setTextColor(100, 116, 139);
-    doc.text(kpi.sub, bx + 4 * factor, y + 16 * factor);
-
-    // Badge
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(6.8 * factor);
-    doc.setTextColor(r, g, b);
-    doc.text(kpi.badge, bx + 4 * factor, y + 20 * factor);
+    doc.setFontSize(6.5 * factor);
+    doc.setTextColor(30, 41, 59);
+    doc.text(card.sub, cx + cardW / 2, y + 18.5 * factor, { align: "center" });
+
+    // Footer
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(5.2 * factor);
+    doc.setTextColor(100, 116, 139);
+    const footLines = doc.splitTextToSize(card.footer, cardW - 4 * factor);
+    doc.text(footLines, cx + cardW / 2, y + 23 * factor, { align: "center" });
   });
 
-  y += boxH + 8 * factor;
+  y += cardH + 4.5 * factor;
 
-  // ── OPTIONAL 3D IMAGE ─────────────────────────────────────────────────────
-  if (data.image3dBase64) {
-    const imgMaxW = contentWidth * 0.42;
-    const imgMaxH = 55 * factor;
-    const imgW = imgMaxW;
-    const imgH = imgMaxW * 0.75;
-    const finalH = Math.min(imgH, imgMaxH);
-    const finalW = finalH / 0.75;
-    const imgX = marginX + (contentWidth - finalW) / 2;
+  // ── MEDICAL INTERPRETATION ───────────────────────────────────────────────
+  const fibDesc =
+    data.fibrosisStage === "F0" || data.fibrosisStage === "F1"
+      ? `compatible con parénquima hepático normal / sin fibrosis significativa (estadio ${metavirLabel}) según consenso EFSUMB/WFUMB`
+      : data.fibrosisStage === "F2"
+        ? "compatible con fibrosis significativa (F2); se sugiere correlación clínica y seguimiento"
+        : data.fibrosisStage === "F3"
+          ? "compatible con fibrosis avanzada (F3 / bridging); alto riesgo de progresión a cACLD"
+          : "compatible con cirrosis establecida (F4 / cACLD); valorar hipertensión portal según Baveno VII";
 
-    try {
-      doc.addImage(data.image3dBase64, "PNG", imgX, y, finalW, finalH);
-      y += finalH + 4 * factor;
+  const steatDesc =
+    data.steatosisGrade === "S0"
+      ? "compatible con contenido graso normal (S0, < 5%)"
+      : data.steatosisGrade === "S1"
+        ? "compatible con esteatosis leve (S1)"
+        : data.steatosisGrade === "S2"
+          ? "compatible con esteatosis moderada (S2)"
+          : "compatible con esteatosis severa (S3)";
 
-      doc.setFont("helvetica", "italic");
-      doc.setFontSize(7.5 * factor);
-      doc.setTextColor(100, 116, 139);
-      doc.text(
-        "Figura A. Representación 3D macroscópica hepática. Rigidez hepática y esteatosis cuantitativa por Elastografía SWE y QUS.",
-        pageWidth / 2,
-        y,
-        { align: "center" }
-      );
-      y += 7 * factor;
-    } catch (_e) {
-      // Skip image if error
-    }
-  }
-
-  // ── BAVENO VII CLASSIFICATION ──────────────────────────────────────────────
-  const [br, bg, bb] = bavenoAccentColor(data.stiffnessKpa);
-
-  doc.setFillColor(br, bg, bb);
-  doc.setGState(new (doc as any).GState({ opacity: 0.08 }));
-  doc.roundedRect(marginX, y, contentWidth, 12 * factor, 2, 2, "F");
-  doc.setGState(new (doc as any).GState({ opacity: 1.0 }));
-
-  doc.setFillColor(br, bg, bb);
-  doc.rect(marginX, y, 1.5 * factor, 12 * factor, "F");
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(7 * factor);
-  doc.setTextColor(15, 23, 42);
-  doc.text("CLASIFICACIÓN BAVENO VII:", marginX + 4 * factor, y + 4.5 * factor);
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7 * factor);
-  const bavenoLines = doc.splitTextToSize(data.bavenoClassification, contentWidth - 8 * factor);
-  doc.text(bavenoLines, marginX + 4 * factor, y + 9 * factor);
-  y += 12 * factor + (bavenoLines.length > 1 ? (bavenoLines.length - 1) * 4 * factor : 0) + 5 * factor;
-
-  // ── IQR QUALITY METRICS ────────────────────────────────────────────────────
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(8 * factor);
-  doc.setTextColor(15, 23, 42);
-  doc.text("MÉTRICAS DE CALIDAD DE ADQUISICIÓN", marginX, y);
-  y += 5 * factor;
-
-  doc.setDrawColor(226, 232, 240);
-  doc.setLineWidth(0.3);
-  doc.line(marginX, y, pageWidth - marginX, y);
-  y += 4 * factor;
-
-  const iqrGood = data.iqrMedianRatioPercent <= 30;
-  const iqrColor = iqrGood ? ([16, 185, 129] as [number, number, number]) : ([249, 115, 22] as [number, number, number]);
-
-  const qualityRows = [
-    { label: "IQR (Rango Intercuartílico)", value: `${data.iqrKpa.toFixed(1)} kPa` },
-    { label: "IQR/Mediana (Ratio de Calidad)", value: `${data.iqrMedianRatioPercent.toFixed(1)}% ${iqrGood ? "✓ Óptima" : "⚠ Subóptima"}` },
-    { label: "Velocidad Onda de Corte", value: `${data.velocityMs.toFixed(2)} m/s` },
+  const bullets = [
+    `Rigidez Tisular: El valor de ${data.stiffnessKpa.toFixed(1)} kPa es ${fibDesc}.`,
+    `Fracción Grasa: El valor de ${data.fatFractionPercent.toFixed(1)}% / CAP ${Math.round(data.capDbM)} dB/m es ${steatDesc}.`,
+    `Correlación Clínica: Se sugiere correlación con biomarcadores séricos (ALT/AST, FIB-4, APRI) y seguimiento clínico periódico según el perfil metabólico del paciente.`,
   ];
 
-  const colL = contentWidth * 0.6;
-  qualityRows.forEach((row) => {
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.5 * factor);
-    doc.setTextColor(51, 65, 85);
-    doc.text(row.label, marginX, y);
-    doc.setFont("helvetica", "bold");
-    if (row.label.includes("IQR/Mediana")) {
-      doc.setTextColor(...iqrColor);
-    } else {
-      doc.setTextColor(15, 23, 42);
-    }
-    doc.text(row.value, marginX + colL, y, { align: "left" });
-    y += 5 * factor;
+  // Estimate box height from wrapped lines
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7 * factor);
+  let interpInnerH = 8 * factor;
+  const wrappedBullets: string[][] = bullets.map((b) => {
+    const lines = doc.splitTextToSize(`•  ${b}`, contentWidth - 10 * factor);
+    interpInnerH += lines.length * 3.6 * factor + 1.5 * factor;
+    return lines;
+  });
+  interpInnerH += 2 * factor;
+
+  doc.setFillColor(255, 255, 255);
+  doc.setDrawColor(226, 232, 240);
+  doc.setLineWidth(0.35);
+  drawRoundedRect(doc, marginX, y, contentWidth, interpInnerH, 2, "FD");
+
+  // Cyan left accent
+  doc.setFillColor(56, 189, 248);
+  doc.rect(marginX, y + 1, 1.8 * factor, interpInnerH - 2, "F");
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7.2 * factor);
+  doc.setTextColor(15, 23, 42);
+  doc.text(
+    "INTERPRETACIÓN MÉDICA INTEGRADA Y CORRELACIÓN HISTOTISULAR:",
+    marginX + 5 * factor,
+    y + 5.5 * factor
+  );
+
+  let by = y + 10.5 * factor;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7 * factor);
+  doc.setTextColor(51, 65, 85);
+  wrappedBullets.forEach((lines) => {
+    doc.text(lines, marginX + 5 * factor, by);
+    by += lines.length * 3.6 * factor + 1.5 * factor;
   });
 
-  y += 4 * factor;
+  y += interpInnerH + 4 * factor;
 
-  // ── HISTOLOGICAL CORRELATION ───────────────────────────────────────────────
-  if (data.histologicalCorrelation) {
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(8 * factor);
-    doc.setTextColor(15, 23, 42);
-    doc.text("CORRELACIÓN HISTOLÓGICA ESTIMADA", marginX, y);
-    y += 5 * factor;
+  // ── TECHNICAL SPECIFICATIONS ─────────────────────────────────────────────
+  const techBullets = [
+    "Transductor: Sonda Abdominal Convex multifrecuencia (1.5–5.0 MHz).",
+    "Modo: Point Shear Wave Elastography (pSWE / 2D-SWE).",
+    "Muestreo: Profundidad ROI 2.0–5.0 cm de la cápsula hepática. Mapeo 3D: Reconstrucción volumétrica asistida por IA.",
+    "Estándar de Calidad: Calibración según Phantom NEMA y Estándares de Ultrasonografía Cuantitativa (QIBA / SRU / EFSUMB).",
+  ];
 
-    doc.setDrawColor(226, 232, 240);
-    doc.setLineWidth(0.3);
-    doc.line(marginX, y, pageWidth - marginX, y);
-    y += 4 * factor;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(6.5 * factor);
+  let techH = 8 * factor;
+  const wrappedTech = techBullets.map((b) => {
+    const lines = doc.splitTextToSize(`•  ${b}`, contentWidth - 8 * factor);
+    techH += lines.length * 3.3 * factor + 0.8 * factor;
+    return lines;
+  });
+  techH += 2 * factor;
 
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.5 * factor);
-    doc.setTextColor(51, 65, 85);
-    const histoLines = doc.splitTextToSize(data.histologicalCorrelation, contentWidth);
-    doc.text(histoLines, marginX, y);
-    y += histoLines.length * 4.5 * factor + 5 * factor;
+  // Keep on page if possible
+  if (y + techH > pageHeight - 12 * factor) {
+    // shrink slightly by reducing spacing is already tight; skip addPage to keep single annex page
+    techH = Math.min(techH, pageHeight - y - 10 * factor);
   }
 
-  // ── ETIOLOGY LABEL ────────────────────────────────────────────────────────
-  if (data.etiology) {
-    doc.setFont("helvetica", "italic");
-    doc.setFontSize(7 * factor);
-    doc.setTextColor(100, 116, 139);
-    doc.text(`Etiología evaluada: ${data.etiology}`, marginX, y);
-    y += 5 * factor;
-  }
+  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(203, 213, 225);
+  doc.setLineWidth(0.35);
+  drawRoundedRect(doc, marginX, y, contentWidth, techH, 2, "FD");
 
-  // ── DISCLAIMER ────────────────────────────────────────────────────────────
-  if (y < pageHeight - 20 * factor) {
-    doc.setFont("helvetica", "italic");
-    doc.setFontSize(6.5 * factor);
-    doc.setTextColor(148, 163, 184);
-    const disclaimer = "Este módulo presenta valores de elastografía de onda de corte (SWE) e índices QUS/PDFF de manera orientativa. Los resultados deben interpretarse en el contexto clínico completo del paciente y no reemplazan la biopsia hepática cuando esté clínicamente indicada.";
-    const disclaimerLines = doc.splitTextToSize(disclaimer, contentWidth);
-    doc.text(disclaimerLines, marginX, pageHeight - 14 * factor);
-  }
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(6.8 * factor);
+  doc.setTextColor(15, 23, 42);
+  doc.text(
+    "ESPECIFICACIONES TÉCNICAS DEL EQUIPO Y PROTOCOLO DE ADQUISICIÓN:",
+    marginX + 3 * factor,
+    y + 5 * factor
+  );
+
+  let ty = y + 9.5 * factor;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(6.5 * factor);
+  doc.setTextColor(71, 85, 105);
+  wrappedTech.forEach((lines) => {
+    if (ty + lines.length * 3.3 * factor < y + techH - 1) {
+      doc.text(lines, marginX + 3 * factor, ty);
+      ty += lines.length * 3.3 * factor + 0.8 * factor;
+    }
+  });
 }

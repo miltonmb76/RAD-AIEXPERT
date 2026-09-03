@@ -75,6 +75,7 @@ interface ElastographyQUSPresentationModuleProps {
   onToggleIncludeInReport?: (include: boolean) => void;
   onValuesChanged?: (stiffness: number, cap: number, fatFraction: number) => void;
   onImageChanged?: (base64: string | null) => void;
+  onOriginalImageChanged?: (base64: string | null) => void;
   onEtiologyChanged?: (etiology: string) => void;
 }
 
@@ -100,6 +101,7 @@ export const ElastographyQUSPresentationModule: React.FC<ElastographyQUSPresenta
   onToggleIncludeInReport,
   onValuesChanged,
   onImageChanged,
+  onOriginalImageChanged,
   onEtiologyChanged,
 }) => {
   const [stiffnessKpa, setStiffnessKpa] = useState<number>(initialStiffness);
@@ -454,7 +456,9 @@ export const ElastographyQUSPresentationModule: React.FC<ElastographyQUSPresenta
     reader.onload = (ev) => {
       if (typeof ev.target?.result === "string") {
         setCustomImageBase64(ev.target.result);
+        onOriginalImageChanged?.(ev.target.result);
         setGenerated3dImageBase64(null); // Reset generated image when new ultrasound is loaded
+        onImageChanged?.(null);
       }
     };
     reader.readAsDataURL(file);
@@ -796,7 +800,9 @@ export const ElastographyQUSPresentationModule: React.FC<ElastographyQUSPresenta
                     type="button"
                     onClick={() => {
                       setCustomImageBase64(null);
+                      onOriginalImageChanged?.(null);
                       setGenerated3dImageBase64(null);
+                      onImageChanged?.(null);
                     }}
                     className="p-1.5 bg-rose-950/80 text-rose-300 rounded-lg border border-rose-800 text-[9px] cursor-pointer"
                   >

@@ -2543,6 +2543,7 @@ export default function App() {
   const [elastographyCAP, setElastographyCAP] = useState<number>(230);
   const [elastographyFatFraction, setElastographyFatFraction] = useState<number>(6.2);
   const [elastographyImage3d, setElastographyImage3d] = useState<string | null>(null);
+  const [elastographyOriginalImage, setElastographyOriginalImage] = useState<string | null>(null);
   const [elastographyEtiology, setElastographyEtiology] = useState<string>("masld");
 
   const pdfStateRef = useRef<any>({});
@@ -2578,6 +2579,7 @@ export default function App() {
     elastographyCAP,
     elastographyFatFraction,
     elastographyImage3d,
+    elastographyOriginalImage,
     elastographyEtiology,
   };
 
@@ -9570,10 +9572,11 @@ Ejemplo:
         const elastoCap: number = studyOverride ? ((studyOverride as any).elastographyCAP ?? elastographyCAP) : (pdfStateRef.current?.elastographyCAP ?? elastographyCAP);
         const elastoFat: number = studyOverride ? ((studyOverride as any).elastographyFatFraction ?? elastographyFatFraction) : (pdfStateRef.current?.elastographyFatFraction ?? elastographyFatFraction);
         const elastoImg3d: string | null = studyOverride ? ((studyOverride as any).elastographyImage3d ?? null) : (pdfStateRef.current?.elastographyImage3d ?? elastographyImage3d);
+        const elastoOriginalImg: string | null = studyOverride ? ((studyOverride as any).elastographyOriginalImage ?? null) : (pdfStateRef.current?.elastographyOriginalImage ?? elastographyOriginalImage);
         const elastoEtiology: string = studyOverride ? ((studyOverride as any).elastographyEtiology ?? "masld") : (pdfStateRef.current?.elastographyEtiology ?? elastographyEtiology);
 
         // Render if user explicitly enabled the module (includeElastographyInReport) OR if custom values/image are present
-        const hasElastographyData = activeElastoInclude || elastoImg3d || elastoKpa !== 5.2 || elastoCap !== 230 || elastoFat !== 6.2;
+        const hasElastographyData = activeElastoInclude || elastoImg3d || elastoOriginalImg || elastoKpa !== 5.2 || elastoCap !== 230 || elastoFat !== 6.2;
         if (hasElastographyData) {
           let elastoFibrosisStage: "F0" | "F1" | "F2" | "F3" | "F4" = "F0";
           if (elastoKpa < 6.0) elastoFibrosisStage = "F0";
@@ -9634,6 +9637,7 @@ Ejemplo:
             iqrKpa: elastoIqr,
             iqrMedianRatioPercent: elastoIqrRatio,
             image3dBase64: elastoImg3d,
+            originalImageBase64: elastoOriginalImg,
           }, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter");
         }
       }
@@ -20175,6 +20179,7 @@ const splitReportAndAnnex = (text: string) => {
                                     setElastographyFatFraction(fatFraction);
                                   }}
                                   onImageChanged={(img) => setElastographyImage3d(img)}
+                                  onOriginalImageChanged={(img) => setElastographyOriginalImage(img)}
                                   onEtiologyChanged={(etiology) => setElastographyEtiology(etiology)}
                                   onReportUpdated={(newReportText) => {
                                     setEditedReportText(newReportText);
