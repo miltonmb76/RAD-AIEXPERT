@@ -234,14 +234,19 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
     setErrorMessage(null);
     setGenerationStep("Analizando hallazgos y lateralidad quirúrgica...");
 
+    const stepTimers: ReturnType<typeof setTimeout>[] = [];
     try {
-      setTimeout(() => {
-        setGenerationStep("Fijando anclajes espaciales (Spatial Canvas Anchors) y reparos anatómicos...");
-      }, 1200);
+      stepTimers.push(setTimeout(() => {
+        setGenerationStep("Fijando contrato espacial (izquierda/derecha, hitos y sitio de patología)...");
+      }, 1200));
 
-      setTimeout(() => {
-        setGenerationStep("Generando reconstrucciones fotolumínicas 3D hiperrealistas de alta fidelidad...");
-      }, 2500);
+      stepTimers.push(setTimeout(() => {
+        setGenerationStep("Renderizando paneles 3D con estilo clínico fiel al informe...");
+      }, 2800));
+
+      stepTimers.push(setTimeout(() => {
+        setGenerationStep("Verificando fidelidad anatómica/patológica y auto-corrigiendo paneles fallidos...");
+      }, 9000));
 
       const effectiveLaterality = selectedLaterality === "auto" ? (laterality || "") : selectedLaterality;
       const scorecardDirectives = buildAtlasDirectivesFromScorecard(scorecardData || null);
@@ -276,6 +281,7 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
       console.error("Error al generar Atlas 3D:", err);
       setErrorMessage(err.message || "Error al generar Atlas 3D.");
     } finally {
+      stepTimers.forEach(clearTimeout);
       setIsGenerating(false);
       setGenerationStep("");
     }
@@ -288,6 +294,8 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
 
     const userDirective = explicitDirectiveOverride || panelDirectives[panel.panelLetter] || "";
     const effectiveLaterality = selectedLaterality === "auto" ? (panel.laterality || laterality || "") : selectedLaterality;
+    const scorecardDirectives = buildAtlasDirectivesFromScorecard(scorecardData || null);
+    const mergedDirectives = [scorecardDirectives, customDirectives.trim()].filter(Boolean).join("\n\n");
 
     try {
       const response = await fetch("/api/regenerate-3d-panel", {
@@ -299,9 +307,11 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
           panel: panel,
           laterality: effectiveLaterality,
           userDirective: userDirective.trim() || undefined,
+          customDirectives: mergedDirectives || undefined,
           requestedModel: selectedModel || "gemini-3.7-flash"
         })
       });
+
 
       const json = await response.json();
       if (!response.ok || !json.success || !json.panel) {

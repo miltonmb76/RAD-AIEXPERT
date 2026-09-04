@@ -53,6 +53,26 @@ export interface CaseAnalysisData {
   managementRecommendation?: string;
 }
 
+export interface AtlasSpatialContract {
+  view?: string;
+  laterality?: string;
+  imageLeftStructure?: string;
+  imageRightStructure?: string;
+  superiorStructure?: string;
+  inferiorStructure?: string;
+  mustShowLandmarks?: string[];
+  pathologySite?: string;
+  pathologyAppearance?: string;
+  doNotInvent?: string[];
+}
+
+export interface AtlasPanelQualityFlags {
+  regenerated?: boolean;
+  issues?: string[];
+  lateralityOk?: boolean;
+  pathologyOk?: boolean;
+}
+
 export interface Atlas3DPanel {
   id?: string;
   panelLetter: string;
@@ -62,6 +82,8 @@ export interface Atlas3DPanel {
   imageUrl?: string;
   isCustomFlipped?: boolean;
   promptUsed?: string;
+  spatialContract?: AtlasSpatialContract;
+  qualityFlags?: AtlasPanelQualityFlags;
 }
 
 export interface Atlas3DSynopticItem {
@@ -83,6 +105,21 @@ export interface AtlasPathologyOverlay {
   evidence?: string;
 }
 
+export interface AtlasQualityAudit {
+  verified?: boolean;
+  synopticRewritten?: boolean;
+  panelNotes?: Array<{
+    panelLetter?: string;
+    pass?: boolean;
+    lateralityOk?: boolean;
+    pathologyOk?: boolean;
+    landmarksOk?: boolean;
+    issues?: string[];
+    surgicalCorrection?: string;
+  }>;
+  error?: string;
+}
+
 export interface Atlas3DData {
   title?: string;
   figureTitle?: string;
@@ -96,6 +133,7 @@ export interface Atlas3DData {
   /** Intelligent pathology overlays synced from Scorecard / clinical engine */
   pathologyOverlays?: AtlasPathologyOverlay[];
   overlaySource?: "scorecard" | "atlas" | "shared";
+  qualityAudit?: AtlasQualityAudit;
 }
 
 export type ScorecardCriterionStatus =

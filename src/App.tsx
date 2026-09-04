@@ -18,6 +18,7 @@ import { Atlas3DModule } from "./components/Atlas3DModule";
 import { renderAtlas3DAnnexToPDF } from "./utils/atlas3dPdfRenderer";
 import { renderScorecardAnnexToPDF } from "./utils/scorecardPdfRenderer";
 import { Atlas3DData, Vascular3DData, UsImagesGridMode, ClinicalScorecardData } from "./types";
+import { buildAtlasDirectivesFromScorecard } from "./lib/clinicalIntelligence";
 import { Vascular3DModule } from "./components/Vascular3DModule";
 import { renderVascular3DPageToPdf } from "./utils/vascular3dPdfRenderer";
 import { renderElastographyAnnexToPdf, ElastographyPdfData } from "./utils/elastographyPdfRenderer";
@@ -3416,6 +3417,7 @@ Ejemplo:
     if (modules.atlas3d) {
       promises.push((async () => {
         try {
+          const scorecardDirectives = buildAtlasDirectivesFromScorecard(clinicalScorecardData);
           const resp = await fetch("/api/generate-3d-atlas", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -3423,7 +3425,8 @@ Ejemplo:
               reportText: activeReport,
               organOrStudy: specificStudy || studyType || "",
               laterality: (patientGender || "").toLowerCase().includes("izq") ? "Izquierda" : "",
-              requestedModel: modelFor("atlas3d")
+              requestedModel: modelFor("atlas3d"),
+              customDirectives: scorecardDirectives || undefined
             })
           });
           const j = await resp.json();
