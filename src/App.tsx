@@ -1139,29 +1139,40 @@ const splitReportSections = (text: string) => {
   return { mainReport, cuadroSinopticoReport: "", organSynopsisReport: "", annexReport };
 };
 
-const getRadarTitle = (mode?: string): string => {
+const getRadarTitle = (modeOrData?: string | { radarMode?: string } | null): string => {
+  const mode = typeof modeOrData === "string"
+    ? modeOrData
+    : (modeOrData?.radarMode || "");
   switch (mode) {
-    case "rotator_cuff": return "RADAR BIOMECÁNICO DE MANGUITO ROTADOR";
-    case "knee_oa": return "RADAR BIOMECÁNICO DE GONARTROSIS";
-    case "cholecystitis": return "RADAR INFLAMATORIO VESICULAR";
-    case "ankle_trauma": return "RADAR BIOMECÁNICO DE TOBILLO";
-    case "hepatic": return "RADAR DE HEPATOPATÍA CRÓNICA";
-    case "renal": return "RADAR NEFROLÓGICO";
-    case "scrotal": return "RADAR ESCROTAL";
-    case "appendicitis": return "RADAR APENDICULAR";
-    case "thyroid": return "RADAR TIROIDEO";
-    case "knee_trauma": return "RADAR TRAUMA DE RODILLA";
-    case "muscle_injury": return "RADAR DE LESIÓN MUSCULAR";
-    case "visceral": return "RADAR VISCERAL / INFLAMATORIO";
-    case "oncology": return "RADAR ONCOLÓGICO / ESTRUCTURAL";
+    case "rotator_cuff": return "RADAR BIOMECÁNICO: MANGUITO ROTADOR";
+    case "knee_oa": return "RADAR BIOMECÁNICO: GONARTROSIS";
+    case "cholecystitis": return "RADAR: COLECISTITIS / VÍA BILIAR";
+    case "ankle_trauma": return "RADAR BIOMECÁNICO: TOBILLO";
+    case "hepatic": return "RADAR: HEPATOPATÍA / HÍGADO";
+    case "renal": return "RADAR: RIÑÓN INTEGRAL";
+    case "scrotal": return "RADAR: ESCROTO";
+    case "appendicitis": return "RADAR: APENDICITIS AGUDA";
+    case "thyroid": return "RADAR: TIROIDES";
+    case "knee_trauma": return "RADAR: TRAUMA DE RODILLA";
+    case "muscle_injury": return "RADAR: LESIÓN MUSCULAR";
+    case "visceral": return "RADAR: VISCERAL / INFLAMATORIO";
+    case "oncology": return "RADAR: ONCOLÓGICO / ESTRUCTURAL";
+    case "urinary_prostate": return "RADAR: VÍAS URINARIAS / PRÓSTATA";
+    case "diverticulitis": return "RADAR: DIVERTICULITIS";
+    case "msk": return "RADAR: MÚSCULO-ESQUELÉTICO";
     default: return "RADAR BIOMECÁNICO E INFLAMATORIO MULTIVECTOR";
   }
 };
 
-const getShortRadarAxisLabel = (label: string, maxLen: number = 25): string => {
-  if (!label) return "";
-  if (label.length <= maxLen) return label;
-  return label.substring(0, Math.max(0, maxLen - 3)) + "...";
+const getShortRadarAxisLabel = (label: string, maxLen: number = 22): string => {
+  const raw = (label || "").trim();
+  if (!raw) return "";
+  // Guard: if maxLen is accidentally a string (e.g. radarMode), ignore it
+  const limit = typeof maxLen === "number" && Number.isFinite(maxLen) && maxLen > 0
+    ? Math.floor(maxLen)
+    : 22;
+  if (raw.length <= limit) return raw;
+  return raw.substring(0, Math.max(1, limit - 1)) + "...";
 };
 
 const getBiomechanicalRadarDataFromReport = (reportText: string, radarData: any) => {
@@ -10881,7 +10892,7 @@ Ejemplo:
         doc.setFont("helvetica", "bold");
         doc.setFontSize(11 * factor);
         doc.setTextColor(15, 23, 42); // slate 900
-        const headerTitleText = getRadarTitle(radarDataToRender);
+        const headerTitleText = getRadarTitle(radarDataToRender?.radarMode || radarDataToRender);
         doc.text(headerTitleText, marginX, yCoord);
 
         yCoord += 4 * factor;
@@ -10938,7 +10949,7 @@ Ejemplo:
           doc.setFontSize(7.0 * factor);
           doc.setTextColor(30, 41, 59); // slate 800
 
-          const cleanLabel = getShortRadarAxisLabel(axis.label, radarDataToRender?.radarMode);
+          const cleanLabel = getShortRadarAxisLabel(axis.label, 18);
           let textAlign: "left" | "right" | "center" = "center";
           let labelX = lblPt.x;
           let labelY = lblPt.y;
@@ -11078,7 +11089,7 @@ Ejemplo:
           doc.roundedRect(cardX, cardY, colW, 7.8 * factor, 1, 1, "FD");
 
           doc.setFont("helvetica", "bold");
-          const displayLabel = getShortRadarAxisLabel(axis.label, radarDataToRender?.radarMode);
+          const displayLabel = getShortRadarAxisLabel(axis.label, 18);
           const maxLabelWidth = colW - 13 * factor;
           
           let labelFontSize = 7.5;
@@ -13298,7 +13309,7 @@ Ejemplo:
             {/* Axis Labels */}
             {data.axes.map((a: any, i: number) => {
               const lbl = getPt(i, 11.0);
-              const cleanLabel = getShortRadarAxisLabel(a.label, data?.radarMode);
+              const cleanLabel = getShortRadarAxisLabel(a.label, 18);
               let anchor = "middle";
               const cosVal = Math.cos(lbl.angle);
               const sinVal = Math.sin(lbl.angle);
@@ -13382,7 +13393,7 @@ Ejemplo:
                 return (
                   <div key={idx} className="bg-white border border-slate-200 rounded-lg p-3 flex items-center justify-between gap-2 shadow-2xs">
                     <span className="text-[10.5px] font-bold text-slate-800 font-sans truncate" title={axis.label}>
-                      {getShortRadarAxisLabel(axis.label, data?.radarMode)}
+                      {getShortRadarAxisLabel(axis.label, 18)}
                     </span>
                     <span className={`text-[9.5px] font-mono font-bold px-2 py-0.5 rounded border shrink-0 ${badgeClass}`}>
                       {axis.score}/10
