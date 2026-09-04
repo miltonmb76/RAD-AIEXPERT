@@ -9594,7 +9594,24 @@ Ejemplo:
         });
       }
 
+      // --- ANEXO: SCORECARD DE CRITERIOS CLINICOS ---
+      const activeScorecard = studyOverride ? (studyOverride as any).clinicalScorecardData : (pdfStateRef.current?.clinicalScorecardData || clinicalScorecardData);
+      const shouldIncludeScorecard = studyOverride
+        ? ((studyOverride as any).includeScorecardInReport !== false)
+        : ((pdfStateRef.current?.includeScorecardInReport !== false) && includeScorecardInReport);
+      if (activeScorecard && shouldIncludeScorecard && Array.isArray(activeScorecard.criteria) && activeScorecard.criteria.length > 0) {
+        renderScorecardAnnexToPDF(doc, activeScorecard, {
+          marginX,
+          pageWidth,
+          pageHeight,
+          contentWidth,
+          factor
+        });
+      }
+
+
       // --- 5.6. ANEXO: SUITE VASCULAR 3D & MAPA ANATOMO-HEMODINÁMICO (PÁGINA DEDICADA) ---
+      
       const activeVascularData = studyOverride ? studyOverride.vascular3dData : (pdfStateRef.current?.vascular3dData || vascular3dData);
       const shouldIncludeVascular = studyOverride ? (studyOverride.includeVascular3dInReport !== false) : (pdfStateRef.current?.includeVascular3dInReport !== false && includeVascular3dInReport);
       if (activeVascularData && shouldIncludeVascular && ((activeVascularData.panels && activeVascularData.panels.length > 0) || (activeVascularData.hemodynamicTable && activeVascularData.hemodynamicTable.length > 0))) {

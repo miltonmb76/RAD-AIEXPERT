@@ -631,7 +631,7 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
               </span>
               <span className="text-[10px] text-slate-400">
                 {(atlasData.pathologyOverlays?.length || 0) > 0
-                  ? `${atlasData.pathologyOverlays!.length} marcadores (${atlasData.overlaySource || "manual"}) — se imprimen en el anexo Atlas.`
+                  ? `${atlasData.pathologyOverlays!.length} pines (${atlasData.overlaySource || "manual"}) — el detalle va en la tabla sinóptica, no sobre la imagen.`
                   : "Sin marcadores aún. Sincroniza desde el Scorecard o genera desde el informe."}
               </span>
             </div>
@@ -978,23 +978,20 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
                       </div>
                     )}
 
-                    {/* Pathology overlay markers */}
+                    {/* Pathology pin markers (letter only — detail lives in synoptic table) */}
                     {overlaysForPanel(panel.panelLetter).length > 0 && (
-                      <div className="absolute top-2 left-2 flex flex-col gap-1 max-w-[85%] z-10 pointer-events-none">
+                      <div className="absolute top-2 left-2 flex flex-wrap gap-1.5 z-10">
                         {overlaysForPanel(panel.panelLetter).map((ov) => (
                           <div
                             key={ov.id}
-                            className={`flex items-start gap-1.5 px-2 py-1 rounded-lg border backdrop-blur-md text-[9px] leading-snug shadow-lg ${
+                            title={`${ov.structure}${ov.finding ? `: ${ov.finding}` : ""}${ov.severity ? ` (${ov.severity}/10)` : ""}`}
+                            className={`h-6 min-w-6 px-1.5 rounded-full border-2 flex items-center justify-center text-[10px] font-black shadow-md cursor-help ${
                               ov.status === "active"
-                                ? "bg-rose-950/75 border-rose-400/50 text-rose-100"
-                                : "bg-amber-950/70 border-amber-400/40 text-amber-100"
+                                ? "bg-rose-600/95 border-white text-white"
+                                : "bg-amber-500/95 border-white text-slate-950"
                             }`}
                           >
-                            <span className="font-black shrink-0 bg-white/15 rounded px-1">{ov.marker}</span>
-                            <span className="truncate">
-                              <strong>{ov.structure}</strong>
-                              {ov.finding ? ` — ${ov.finding}` : ""}
-                            </span>
+                            {ov.marker}
                           </div>
                         ))}
                       </div>
