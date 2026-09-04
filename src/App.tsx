@@ -1175,6 +1175,25 @@ const getShortRadarAxisLabel = (label: string, maxLen: number = 22): string => {
   return raw.substring(0, Math.max(1, limit - 1)) + "...";
 };
 
+const sanitizeRadarPdfText = (text: string): string => {
+  if (!text) return "";
+  return String(text)
+    .replace(/\u2264/g, "<=")
+    .replace(/\u2265/g, ">=")
+    .replace(/\u2260/g, "!=")
+    .replace(/\u00B1/g, "+/-")
+    .replace(/\u2248/g, "~")
+    .replace(/\u2192/g, "->")
+    .replace(/\u2190/g, "<-")
+    .replace(/\u2013|\u2014/g, "-")
+    .replace(/\u00D7/g, "x")
+    // Mojibake of UTF-8 <= / >= when decoded incorrectly
+    .replace(/\u00E2\u2030\u00A4/g, "<=")
+    .replace(/\u00E2\u2030\u00A5/g, ">=")
+    .replace(/\u00C2\u00B1/g, "+/-")
+    .trim();
+};
+
 const getBiomechanicalRadarDataFromReport = (reportText: string, radarData: any) => {
   return radarData || null;
 };
@@ -10949,7 +10968,7 @@ Ejemplo:
           doc.setFontSize(7.0 * factor);
           doc.setTextColor(30, 41, 59); // slate 800
 
-          const cleanLabel = getShortRadarAxisLabel(axis.label, 18);
+          const cleanLabel = getShortRadarAxisLabel(sanitizeRadarPdfText(axis.label), 18);
           let textAlign: "left" | "right" | "center" = "center";
           let labelX = lblPt.x;
           let labelY = lblPt.y;
@@ -11089,7 +11108,7 @@ Ejemplo:
           doc.roundedRect(cardX, cardY, colW, 7.8 * factor, 1, 1, "FD");
 
           doc.setFont("helvetica", "bold");
-          const displayLabel = getShortRadarAxisLabel(axis.label, 18);
+          const displayLabel = getShortRadarAxisLabel(sanitizeRadarPdfText(axis.label), 18);
           const maxLabelWidth = colW - 13 * factor;
           
           let labelFontSize = 7.5;
@@ -11134,18 +11153,20 @@ Ejemplo:
           doc.setFont("helvetica", "normal");
           doc.setFontSize(8.0 * factor);
 
-          // Compute lines for axisA
-          const findingA = axisA.finding ? `Hallazgo: ${axisA.finding}` : "";
-          const justA = axisA.justification && axisA.justification !== axisA.finding ? `Justificación: ${axisA.justification}` : "";
-          const textA = [findingA, justA].filter(Boolean).join(" ");
-          const linesA = doc.splitTextToSize(textA, detailColW - 7 * factor);
+          // Compute lines for axisA (sanitize >= / <= so Helvetica does not break layout)
+          const findingA = axisA.finding ? `Hallazgo: ${sanitizeRadarPdfText(axisA.finding)}` : "";
+          const justARaw = axisA.justification && axisA.justification !== axisA.finding ? axisA.justification : "";
+          const justA = justARaw ? `Justificación: ${sanitizeRadarPdfText(justARaw)}` : "";
+          const textA = [findingA, justA].filter(Boolean).join("\n");
+          const linesA = doc.splitTextToSize(textA, detailColW - 8 * factor);
 
           let linesB: string[] = [];
           if (axisB) {
-            const findingB = axisB.finding ? `Hallazgo: ${axisB.finding}` : "";
-            const justB = axisB.justification && axisB.justification !== axisB.finding ? `Justificación: ${axisB.justification}` : "";
-            const textB = [findingB, justB].filter(Boolean).join(" ");
-            linesB = doc.splitTextToSize(textB, detailColW - 7 * factor);
+            const findingB = axisB.finding ? `Hallazgo: ${sanitizeRadarPdfText(axisB.finding)}` : "";
+            const justBRaw = axisB.justification && axisB.justification !== axisB.finding ? axisB.justification : "";
+            const justB = justBRaw ? `Justificación: ${sanitizeRadarPdfText(justBRaw)}` : "";
+            const textB = [findingB, justB].filter(Boolean).join("\n");
+            linesB = doc.splitTextToSize(textB, detailColW - 8 * factor);
           }
 
           const maxLines = Math.max(linesA.length, linesB.length, 1);
@@ -11175,7 +11196,9 @@ Ejemplo:
           doc.setFontSize(8.0 * factor);
           doc.setTextColor(51, 65, 85); // slate 700
           let textY = yCoord + 10.5 * factor;
+          const textBottomA = yCoord + cardH - 2.5 * factor;
           linesA.forEach((l: string) => {
+            if (textY > textBottomA) return;
             doc.text(l, marginX + 3.5 * factor, textY);
             textY += 4.3 * factor;
           });
@@ -11206,7 +11229,9 @@ Ejemplo:
             doc.setFontSize(8.0 * factor);
             doc.setTextColor(51, 65, 85);
             textY = yCoord + 10.5 * factor;
+            const textBottomB = yCoord + cardH - 2.5 * factor;
             linesB.forEach((l: string) => {
+              if (textY > textBottomB) return;
               doc.text(l, cardBX + 3.5 * factor, textY);
               textY += 4.3 * factor;
             });
@@ -11228,7 +11253,7 @@ Ejemplo:
           doc.setFont("helvetica", "normal");
           doc.setFontSize(synthFontSize);
 
-          const wrappedSynth = doc.splitTextToSize(radarDataToRender.clinicalSummary, availableTextWidth);
+          const wrappedSynth = doc.splitTextToSize(sanitizeRadarPdfText(radarDataToRender.clinicalSummary), availableTextWidth);
           const boxH = 11 * factor + (wrappedSynth.length * lineHeight) + 4 * factor;
 
           doc.setFillColor(248, 250, 252);
@@ -13309,7 +13334,7 @@ Ejemplo:
             {/* Axis Labels */}
             {data.axes.map((a: any, i: number) => {
               const lbl = getPt(i, 11.0);
-              const cleanLabel = getShortRadarAxisLabel(a.label, 18);
+              const cleanLabel = getShortRadarAxisLabel(sanitizeRadarPdfText(a.label), 18);
               let anchor = "middle";
               const cosVal = Math.cos(lbl.angle);
               const sinVal = Math.sin(lbl.angle);
@@ -13393,7 +13418,7 @@ Ejemplo:
                 return (
                   <div key={idx} className="bg-white border border-slate-200 rounded-lg p-3 flex items-center justify-between gap-2 shadow-2xs">
                     <span className="text-[10.5px] font-bold text-slate-800 font-sans truncate" title={axis.label}>
-                      {getShortRadarAxisLabel(axis.label, 18)}
+                      {getShortRadarAxisLabel(sanitizeRadarPdfText(axis.label), 18)}
                     </span>
                     <span className={`text-[9.5px] font-mono font-bold px-2 py-0.5 rounded border shrink-0 ${badgeClass}`}>
                       {axis.score}/10
