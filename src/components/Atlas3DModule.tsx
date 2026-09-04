@@ -53,6 +53,35 @@ const formatPanelRef = (letters: string[]): string => {
   return `(Paneles ${letters.slice(0, -1).join(", ")} y ${letters[letters.length - 1]})`;
 };
 
+/** True when text is an image caption, not a short structure name for the synoptic table. */
+const looksLikeCaptionNotStructure = (text?: string): boolean => {
+  const t = (text || "").trim();
+  if (!t) return false;
+  if (/^foco\s*:/i.test(t)) return true;
+  if (t.length > 72) return true;
+  return false;
+};
+
+/** Prefer panel title / existing short structure; never use the full "Foco: ..." caption. */
+const structureLabelFromPanel = (
+  panel: { panelTitle?: string; anatomicalFocus?: string; panelLetter?: string },
+  existingStructure?: string
+): string => {
+  const title = (panel.panelTitle || "").trim();
+  if (title && !looksLikeCaptionNotStructure(title)) return title;
+
+  const existing = (existingStructure || "").trim();
+  if (existing && !looksLikeCaptionNotStructure(existing)) return existing;
+
+  const focus = (panel.anatomicalFocus || "").replace(/^foco\s*:\s*/i, "").trim();
+  if (focus) {
+    const short = focus.split(/[,.;]/)[0].trim();
+    if (short.length >= 6 && short.length <= 60) return short;
+  }
+
+  return title || `Estructura (Panel ${panel.panelLetter || "?"})`;
+};
+
 interface Atlas3DModuleProps {
   reportText: string;
   activeProtocol?: string;
@@ -283,14 +312,18 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
         p.panelLetter === panel.panelLetter ? json.panel : p
       );
 
-      // Sincronizar automáticamente la estructura en la tabla de correlación si correspondía a este panel
+      // Keep synoptic STRUCTURE as a short anatomical name.
+      // anatomicalFocus is the image caption ("Foco: ...") and must NOT overwrite ESTRUCTURA.
       const updatedSynoptic = (atlasData.synopticExplanation || []).map((item) => {
         const refs = extractReferencedLetters(item.panelRef);
-        if (refs.length === 1 && refs[0] === panel.panelLetter && json.panel.anatomicalFocus) {
-          return {
-            ...item,
-            structure: json.panel.anatomicalFocus
-          };
+        if (refs.length === 1 && refs[0] === panel.panelLetter) {
+          if (looksLikeCaptionNotStructure(item.structure)) {
+            return {
+              ...item,
+              structure: structureLabelFromPanel(json.panel, item.structure)
+            };
+          }
+          return item;
         }
         return item;
       });
@@ -418,9 +451,9 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
     // Si todos los hallazgos correspondían al panel eliminado, generar filas descriptivas para los paneles restantes
     if (updatedSynoptic.length === 0) {
       updatedSynoptic = updatedPanels.map((p) => ({
-        structure: p.anatomicalFocus || p.panelTitle || `Estructura (Panel ${p.panelLetter})`,
+        structure: structureLabelFromPanel(p),
         panelRef: `(Panel ${p.panelLetter})`,
-        findingDetail: `Reconstrucción anatómica tridimensional y correlación semiológica de ${p.panelTitle || p.anatomicalFocus || "la región evaluada"}.`
+        findingDetail: `Reconstrucción anatómica tridimensional y correlación semiológica de ${p.panelTitle || "la región evaluada"}.`
       }));
     }
 
@@ -454,19 +487,10 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
     const updatedPanels = atlasData.panels.map((p) =>
       p.panelLetter === panelLetter ? { ...p, anatomicalFocus: focusText } : p
     );
-    // Sincronizar reactivamente el nombre de la estructura en el cuadro de correlación
-    const updatedSynoptic = (atlasData.synopticExplanation || []).map((item) => {
-      const refs = extractReferencedLetters(item.panelRef);
-      if (refs.length === 1 && refs[0] === panelLetter && focusText.trim()) {
-        return { ...item, structure: focusText.trim() };
-      }
-      return item;
-    });
-
+    // Pie de imagen (anatomicalFocus) is independent from synoptic ESTRUCTURA column.
     setAtlasData({
       ...atlasData,
-      panels: updatedPanels,
-      synopticExplanation: updatedSynoptic
+      panels: updatedPanels
     });
     if (zoomPanel && zoomPanel.panelLetter === panelLetter) {
       setZoomPanel({ ...zoomPanel, anatomicalFocus: focusText });
