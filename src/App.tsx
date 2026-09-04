@@ -18,7 +18,7 @@ import { Atlas3DModule } from "./components/Atlas3DModule";
 import { renderAtlas3DAnnexToPDF } from "./utils/atlas3dPdfRenderer";
 import { renderScorecardAnnexToPDF } from "./utils/scorecardPdfRenderer";
 import { Atlas3DData, Vascular3DData, UsImagesGridMode, ClinicalScorecardData } from "./types";
-import { buildAtlasDirectivesFromScorecard } from "./lib/clinicalIntelligence";
+import { buildAtlasDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
 import { Vascular3DModule } from "./components/Vascular3DModule";
 import { renderVascular3DPageToPdf } from "./utils/vascular3dPdfRenderer";
 import { renderElastographyAnnexToPdf, ElastographyPdfData } from "./utils/elastographyPdfRenderer";
@@ -3254,6 +3254,7 @@ Ejemplo:
 
   // States & Handlers for Sistema de Activación Rápida de Módulos (Procesamiento en Lote)
   const DEFAULT_BATCH_MODULES: Record<string, boolean> = {
+    clinical_scorecard: true,
     atlas3d: true,
     vascular3d: false,
     radar: false,
@@ -3280,6 +3281,7 @@ Ejemplo:
 
   const handleToggleAllBatchModules = (select: boolean) => {
     setSelectedBatchModules({
+      clinical_scorecard: select,
       atlas3d: select,
       vascular3d: select,
       radar: select,
@@ -3414,28 +3416,66 @@ Ejemplo:
         }
       })());
     }
-    if (modules.atlas3d) {
+    // Scorecard first (findings-based), then Atlas guided by scorecard directives
+    if (modules.clinical_scorecard || modules.atlas3d) {
       promises.push((async () => {
-        try {
-          const scorecardDirectives = buildAtlasDirectivesFromScorecard(clinicalScorecardData);
-          const resp = await fetch("/api/generate-3d-atlas", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              reportText: activeReport,
-              organOrStudy: specificStudy || studyType || "",
-              laterality: (patientGender || "").toLowerCase().includes("izq") ? "Izquierda" : "",
-              requestedModel: modelFor("atlas3d"),
-              customDirectives: scorecardDirectives || undefined
-            })
-          });
-          const j = await resp.json();
-          if (j.success && j.data) {
-            setAtlas3dData(j.data);
-            setIncludeAtlas3dInReport(true);
+        let scorecardForAtlas = clinicalScorecardData;
+
+        if (modules.clinical_scorecard) {
+          setIsClinicalScorecardOpen(true);
+          try {
+            const scResp = await fetch("/api/generate-clinical-scorecard", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                model: modelFor("clinical_scorecard"),
+                report: activeReport,
+                studyType: specificStudy || studyType || "",
+                protocolId: "auto",
+                includeRecommendations: false,
+              }),
+            });
+            const scJson = await scResp.json();
+            if (scJson.success && scJson.data) {
+              scorecardForAtlas = scJson.data;
+              setClinicalScorecardData(scJson.data);
+              setIncludeScorecardInReport(true);
+              const directives = buildAtlasDirectivesFromScorecard(scJson.data);
+              if (directives) setAtlasDirectivesFromScorecard(directives);
+            } else {
+              console.error("Scorecard en lote fallo:", scJson.error);
+            }
+          } catch (scErr) {
+            console.error("Error al generar Scorecard en lote:", scErr);
           }
-        } catch (atlasErr) {
-          console.error("Error al generar Atlas 3D en lote:", atlasErr);
+        }
+
+        if (modules.atlas3d) {
+          try {
+            const scorecardDirectives = buildAtlasDirectivesFromScorecard(scorecardForAtlas);
+            const resp = await fetch("/api/generate-3d-atlas", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                reportText: activeReport,
+                organOrStudy: specificStudy || studyType || "",
+                laterality: (patientGender || "").toLowerCase().includes("izq") ? "Izquierda" : "",
+                requestedModel: modelFor("atlas3d"),
+                customDirectives: scorecardDirectives || undefined
+              })
+            });
+            const j = await resp.json();
+            if (j.success && j.data) {
+              let nextAtlas = j.data;
+              if (scorecardForAtlas?.atlasOverlays?.length) {
+                nextAtlas = mergeOverlaysOntoAtlas(nextAtlas, scorecardForAtlas.atlasOverlays, "shared") || nextAtlas;
+              }
+              setAtlas3dData(nextAtlas);
+              setIncludeAtlas3dInReport(true);
+            }
+          } catch (atlasErr) {
+            console.error("Error al generar Atlas 3D en lote:", atlasErr);
+          }
         }
       })());
     }
@@ -17773,7 +17813,7 @@ const splitReportAndAnnex = (text: string) => {
                             <Sparkles className="h-4 w-4 text-amber-200" />
                             <span>Reporte completo</span>
                             <span className="text-[8px] font-bold normal-case tracking-normal text-indigo-100/80 text-center leading-snug">
-                              + Resumen, Paciente, Sinoptico y Atlas 3D
+                              + Scorecard, Atlas 3D, Resumen, Paciente, Sinoptico
                             </span>
                           </>
                         )}
@@ -19516,7 +19556,7 @@ const splitReportAndAnnex = (text: string) => {
                             </div>
 
                             <p className="text-[10px] text-slate-500 leading-snug px-1">
-                              El boton <strong className="text-slate-300">Reporte completo</strong> activa por defecto: Resumen operacional, Resumen paciente, Cuadro sinoptico y Atlas 3D. Marca otros modulos aqui si quieres anadirlos manualmente con ACTIVAR.
+                              El boton <strong className="text-slate-300">Reporte completo</strong> activa por defecto: Scorecard clinico (primero), Atlas 3D (guiado por el Scorecard), Resumen operacional, Resumen paciente y Cuadro sinoptico. Marca otros modulos aqui si quieres anadirlos manualmente con ACTIVAR.
                             </p>
 
                             {/* Catalog Grid */}
@@ -19529,7 +19569,14 @@ const splitReportAndAnnex = (text: string) => {
                                   desc: "Reconstrucción macrovascular 3D fotorrealista (2 a 3 paneles), cálculo de estenosis y tabulación velocimétrica adaptada.",
                                   color: "text-rose-400 border-rose-500/30 bg-rose-950/20"
                                 },
-                                {
+                                                                {
+                                  id: "clinical_scorecard",
+                                  label: "Scorecard Clinico de Criterios (pre-Atlas)",
+                                  badge: "SCORECARD",
+                                  desc: "Extrae criterios y hallazgos activos del informe; se ejecuta antes del Atlas 3D para anclar la reconstruccion a la patologia real.",
+                                  color: "text-teal-400 border-teal-500/30 bg-teal-950/20"
+                                },
+{
                                   id: "atlas3d",
                                   label: "🧊 Atlas 3D Fotorrealista y Correlación Anatómica",
                                   badge: "ATLAS 3D",
