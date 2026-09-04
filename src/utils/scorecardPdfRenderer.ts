@@ -1,5 +1,5 @@
 import { ClinicalScorecardData } from "../types";
-import { criterionStatusLabel, scorecardTrafficLabel } from "../lib/clinicalIntelligence";
+import { criterionStatusLabel, criterionWeightLabel, scorecardTrafficLabel } from "../lib/clinicalIntelligence";
 
 function sanitizePdfText(input: string): string {
   return (input || "")
@@ -109,7 +109,7 @@ export function renderScorecardAnnexToPDF(
       sanitizePdfText(criterionStatusLabel(row.status)),
       sanitizePdfText(row.value || "-"),
       sanitizePdfText(row.evidence || ""),
-      sanitizePdfText(row.weight || ""),
+      sanitizePdfText(criterionWeightLabel(row.weight || "")),
     ];
     const wrapped = cells.map((text, i) => doc.splitTextToSize(text, cols[i].w - 3 * factor));
     const rowH = Math.max(8 * factor, Math.max(...wrapped.map((w: string[]) => w.length)) * 3.6 * factor + 3 * factor);
@@ -203,7 +203,7 @@ export function renderScorecardAnnexToPDF(
     doc.setTextColor(100, 116, 139);
     doc.text(
       sanitizePdfText(
-        `Integracion Atlas: ${scorecard.atlasOverlays.length} marcadores de patologia activa disponibles para overlay 3D.`
+        `Integracion Atlas: hallazgos activos sincronizados con la tabla sinoptica (${scorecard.atlasOverlays.length}).`
       ),
       marginX,
       y

@@ -115,13 +115,28 @@ export function criterionStatusLabel(status: ScorecardCriterion["status"]): stri
   }
 }
 
+export function criterionWeightLabel(weight: ScorecardCriterion["weight"] | string): string {
+  switch (weight) {
+    case "critical":
+      return "Crítico";
+    case "major":
+      return "Mayor";
+    case "minor":
+      return "Menor";
+    default:
+      return String(weight || "");
+  }
+}
+
 export const SCORECARD_PROTOCOL_OPTIONS: Array<{ id: string; label: string }> = [
   { id: "auto", label: "Detección automática" },
+  { id: "custom", label: "Personalizado (usar cuadro de texto)" },
   { id: "cholecystitis", label: "Colecistitis aguda" },
   { id: "appendicitis", label: "Apendicitis" },
   { id: "thyroid_tirads", label: "TI-RADS / Tiroides" },
   { id: "bosniak", label: "Bosniak / Quiste renal" },
   { id: "rotator_cuff", label: "Manguito rotador" },
+  { id: "achilles", label: "Tendón de Aquiles" },
   { id: "hepatic", label: "Hígado / Esteatosis-Fibrosis" },
   { id: "renal", label: "Riñón integral" },
   { id: "scrotal", label: "Escrotal / Testicular" },

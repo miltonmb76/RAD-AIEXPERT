@@ -8715,11 +8715,11 @@ ${report}
  * API: CLINICAL SCORECARD + ATLAS OVERLAY INTELLIGENCE
  * POST /api/generate-clinical-scorecard
  * Shared engine: criteria scorecard + pathology overlays for Atlas 3D.
- * Payload: { model?, report, studyType?, protocolId?, atlasPanels?: [{panelLetter,panelTitle,anatomicalFocus}] }
+ * Payload: { model?, report, studyType?, protocolId?, pathologyFocus?, atlasPanels?: [{panelLetter,panelTitle,anatomicalFocus}] }
  */
 app.post("/api/generate-clinical-scorecard", async (req: express.Request, res: express.Response) => {
   try {
-    const { model, report, studyType, protocolId, atlasPanels } = req.body;
+    const { model, report, studyType, protocolId, pathologyFocus, atlasPanels } = req.body;
     if (!report) {
       return res.status(400).json({ success: false, error: "Se requiere el parámetro 'report'." });
     }
@@ -8727,32 +8727,42 @@ app.post("/api/generate-clinical-scorecard", async (req: express.Request, res: e
     const ai = getGeminiClient();
     const modelToUse = getModelName(model);
     const requestedProtocol = (protocolId || "auto").toString();
+    const focusText = (pathologyFocus || "").toString().trim();
     const panelsHint = Array.isArray(atlasPanels) && atlasPanels.length
       ? atlasPanels.map((p: any) => `- Panel ${p.panelLetter}: ${p.panelTitle || ""} | Foco: ${p.anatomicalFocus || ""}`).join("\n")
       : "Sin paneles Atlas aún (propón panelLetter A/B/C según estructuras).";
 
-    const prompt = `Eres un radiólogo experto en criterios diagnósticos formales y correlación anatómica 3D.
-Analiza el informe y genera UN Scorecard de criterios clínicos + marcadores de overlay para Atlas 3D.
+    const prompt = `Eres un radiólogo hispanohablante experto en criterios diagnósticos formales.
+Analiza el informe y genera UN Scorecard de criterios clínicos + marcadores de correlación para Atlas 3D.
+
+IDIOMA (OBLIGATORIO E INQUEBRANTABLE):
+- TODO el texto visible al médico DEBE estar en ESPAÑOL médico: protocolName, categoryAssigned, clinicalSummary, recommendation, studyRegion, criterion, value, evidence, atlasStructure, suggestedPanelFocus, structure, finding.
+- PROHIBIDO inglés en esos campos (nada de "Tendon thickening", "Present", "Absent", "Major", "Critical", "Partial thickness tear", etc.).
+- Traduce criterios y valores al español aunque el protocolo interno sea anglosajón (ej. "Engrosamiento tendinoso (diámetro AP > 6 mm)", "Presente", "Ausente", "Rotura de espesor parcial").
+- Los ÚNICOS campos en inglés/código son: protocolId, status, weight, trafficLight, marker, panelLetter, id, linkedCriterionId.
 
 ESTUDIO: ${studyType || "No especificado"}
-PROTOCOLO SOLICITADO: ${requestedProtocol === "auto" ? "Detección automática del protocolo más específico" : requestedProtocol}
+PROTOCOLO PREDEFINIDO: ${requestedProtocol === "auto" ? "Detección automática del protocolo más específico" : requestedProtocol}
+${focusText ? `ENFOQUE EXPLÍCITO DEL MÉDICO (PRIORIDAD MÁXIMA): "${focusText}"
+Debes construir el scorecard alrededor de este órgano/región/patología. Si choca con el protocolo predefinido, prioriza el enfoque del médico.` : "Sin enfoque libre adicional: usa el protocolo predefinido o auto-detecta."}
 
 PANELES ATLAS DISPONIBLES:
 ${panelsHint}
 
-PROTOCOLOS POSIBLES (elige uno si AUTO): cholecystitis, appendicitis, thyroid_tirads, bosniak, rotator_cuff, hepatic, renal, scrotal, diverticulitis, generic.
+PROTOCOLOS POSIBLES (id interno si AUTO): cholecystitis, appendicitis, thyroid_tirads, bosniak, rotator_cuff, hepatic, renal, scrotal, diverticulitis, achilles, muscle_injury, generic.
 
 REGLAS DE FIDELIDAD (OBLIGATORIAS):
-1. Cada criterio debe anclarse SOLO al texto del informe (evidence = cita/paráfrasis fiel con medidas si constan).
+1. Cada criterio debe anclarse SOLO al texto del informe (evidence = cita/paráfrasis fiel en español con medidas si constan).
 2. status: "met" | "not_met" | "not_mentioned" | "equivocal".
 3. NO inventes hallazgos. Si no hay dato: not_mentioned.
-4. Incluye 6 a 12 criterios del protocolo (umbrales oficiales cuando aplique: p.ej. pared vesicular >3mm, TI-RADS ACR 2017, Bosniak).
-5. weight: "critical" | "major" | "minor".
+4. Incluye 6 a 12 criterios del protocolo (umbrales oficiales cuando aplique).
+5. weight: "critical" | "major" | "minor" (códigos internos; el texto del criterio va en español).
 6. severity 0-10 coherente con el hallazgo.
-7. atlasOverlays: SOLO para criterios met o equivocal con anatomía localizable (máx 5). Vincula linkedCriterionId.
-8. panelLetter debe coincidir con un panel existente si hay lista; si no, usa A/B/C.
-9. trafficLight: low | moderate | high | critical según carga de criterios positivos/críticos.
-10. scoreMet = cantidad de status "met"; scoreTotal = total de criterios.
+7. value en español ("Presente", "Ausente", "6.8 mm", "60% del espesor", etc.).
+8. atlasOverlays: SOLO para criterios met o equivocal con anatomía localizable (máx 5). Textos en español. Vincula linkedCriterionId.
+9. panelLetter debe coincidir con un panel existente si hay lista; si no, usa A/B/C.
+10. trafficLight: low | moderate | high | critical.
+11. protocolName y categoryAssigned en español (ej. "Valoración ecográfica del tendón de Aquiles", "Musculoesquelético").
 
 Responde JSON con:
 - protocolId, protocolName, categoryAssigned
@@ -8767,7 +8777,7 @@ ${report}
 """
 `;
 
-    const response = await ai.models.generateContent({
+const response = await ai.models.generateContent({
       model: modelToUse,
       contents: prompt,
       config: {
@@ -8845,16 +8855,49 @@ ${report}
     const allowedWeight = new Set(["critical", "major", "minor"]);
     const allowedLight = new Set(["low", "moderate", "high", "critical"]);
 
+    const localizeScorecardText = (raw: string): string => {
+      if (!raw) return raw;
+      let s = String(raw);
+      const pairs: Array<[RegExp, string]> = [
+        [/^Present$/i, "Presente"],
+        [/^Absent$/i, "Ausente"],
+        [/^Partial thickness tear$/i, "Rotura de espesor parcial"],
+        [/^Full.?thickness tear$/i, "Rotura de espesor completo"],
+        [/\bPresent\b/gi, "Presente"],
+        [/\bAbsent\b/gi, "Ausente"],
+        [/\bMajor\b/gi, "Mayor"],
+        [/\bCritical\b/gi, "Crítico"],
+        [/\bMinor\b/gi, "Menor"],
+        [/\bMusculoskeletal\b/gi, "Musculoesquelético"],
+        [/\bThickening\b/gi, "Engrosamiento"],
+        [/\bTendinosis\b/gi, "Tendinosis"],
+        [/\bBursitis\b/gi, "Bursitis"],
+        [/\bCalcifications?\b/gi, "Calcificaciones"],
+        [/\bInsertion\b/gi, "Inserción"],
+        [/\bDistal Achilles Tendon\b/gi, "Tendón de Aquiles distal"],
+        [/\bCalcaneal insertion\b/gi, "Inserción calcánea"],
+        [/\bAchilles Tendon Ultrasound Assessment\b/gi, "Valoración ecográfica del tendón de Aquiles"],
+        [/\bPartial thickness\b/gi, "Espesor parcial"],
+        [/\bFull thickness\b/gi, "Espesor completo"],
+        [/\bLoss of normal fibrillar pattern\b/gi, "Pérdida del patrón fibrilar normal"],
+        [/\bTendon thickening\b/gi, "Engrosamiento tendinoso"],
+        [/\bIntratendinous calcifications\b/gi, "Calcificaciones intratendinosas"],
+        [/\bRetrocalcaneal bursitis\b/gi, "Bursitis retrocalcánea"],
+      ];
+      for (const [re, rep] of pairs) s = s.replace(re, rep);
+      return s;
+    };
+
     const criteria = Array.isArray(parsed.criteria) ? parsed.criteria.map((c: any, i: number) => ({
       id: (c.id || `c${i + 1}`).toString(),
-      criterion: (c.criterion || "").toString(),
+      criterion: localizeScorecardText((c.criterion || "").toString()),
       status: allowedStatus.has(c.status) ? c.status : "not_mentioned",
-      value: c.value ? String(c.value) : undefined,
-      evidence: (c.evidence || "").toString(),
+      value: c.value ? localizeScorecardText(String(c.value)) : undefined,
+      evidence: localizeScorecardText((c.evidence || "").toString()),
       weight: allowedWeight.has(c.weight) ? c.weight : "major",
       severity: typeof c.severity === "number" ? Math.min(10, Math.max(0, Math.round(c.severity))) : 0,
-      atlasStructure: c.atlasStructure ? String(c.atlasStructure) : undefined,
-      suggestedPanelFocus: c.suggestedPanelFocus ? String(c.suggestedPanelFocus) : undefined
+      atlasStructure: c.atlasStructure ? localizeScorecardText(String(c.atlasStructure)) : undefined,
+      suggestedPanelFocus: c.suggestedPanelFocus ? localizeScorecardText(String(c.suggestedPanelFocus)) : undefined
     })) : [];
 
     const scoreMet = criteria.filter((c: any) => c.status === "met").length;
@@ -8890,16 +8933,21 @@ ${report}
 
     const data = {
       protocolId: (parsed.protocolId || requestedProtocol || "generic").toString(),
-      protocolName: (parsed.protocolName || "Scorecard clínico").toString(),
-      categoryAssigned: (parsed.categoryAssigned || "Sin categoría").toString(),
+      protocolName: localizeScorecardText((parsed.protocolName || "Scorecard clínico").toString()),
+      categoryAssigned: localizeScorecardText((parsed.categoryAssigned || "Sin categoría").toString()),
       scoreMet,
       scoreTotal,
       trafficLight,
-      clinicalSummary: (parsed.clinicalSummary || "").toString(),
-      recommendation: (parsed.recommendation || "").toString(),
-      studyRegion: parsed.studyRegion ? String(parsed.studyRegion) : undefined,
+      clinicalSummary: localizeScorecardText((parsed.clinicalSummary || "").toString()),
+      recommendation: localizeScorecardText((parsed.recommendation || "").toString()),
+      studyRegion: parsed.studyRegion ? localizeScorecardText(String(parsed.studyRegion)) : undefined,
       criteria,
-      atlasOverlays,
+      atlasOverlays: atlasOverlays.map((o: any) => ({
+        ...o,
+        structure: localizeScorecardText(o.structure || ""),
+        finding: localizeScorecardText(o.finding || ""),
+        evidence: o.evidence ? localizeScorecardText(o.evidence) : undefined
+      })),
       generatedAt: new Date().toISOString()
     };
 

@@ -68,32 +68,6 @@ export function renderAtlas3DAnnexToPDF(
   });
   yCoord += bannerHeight + 6 * factor;
 
-  // 2b. Compact pathology pin legend (detail remains in synoptic table — avoid duplicating text boxes)
-  const overlays = Array.isArray(atlasData.pathologyOverlays) ? atlasData.pathologyOverlays : [];
-  if (overlays.length > 0) {
-    const legend = overlays
-      .slice(0, 8)
-      .map((ov, idx) => `${ov.marker || String.fromCharCode(65 + idx)}→Panel ${ov.panelLetter}`)
-      .join("   ");
-    const safe = `Pines de patologia activa: ${legend}  |  Detalle en tabla sinoptica inferior`
-      .replace(/≥/g, ">=")
-      .replace(/≤/g, "<=");
-    const wrapped = doc.splitTextToSize(safe, contentWidth - 6 * factor);
-    const blockH = wrapped.length * 3.6 * factor + 4 * factor;
-    doc.setFillColor(255, 247, 237);
-    doc.setDrawColor(253, 186, 116);
-    doc.roundedRect(marginX, yCoord, contentWidth, blockH, 1.5, 1.5, "FD");
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.2 * factor);
-    doc.setTextColor(154, 52, 18);
-    let ly = yCoord + 4 * factor;
-    wrapped.forEach((w: string) => {
-      doc.text(w, marginX + 3 * factor, ly);
-      ly += 3.6 * factor;
-    });
-    yCoord += blockH + 4 * factor;
-  }
-
   // 3. 3D PANELS GRID (1, 2 or 3 columns)
   const numPanels = validPanels.length;
   const isSinglePanel = numPanels === 1;
@@ -187,27 +161,6 @@ export function renderAtlas3DAnnexToPDF(
     } catch (imgError) {
       console.warn("Error rendering panel image in PDF:", imgError);
     }
-
-    // Compact letter pins on image (no text boxes — detail in synoptic)
-    const panelPins = overlays.filter(
-      (o) => (o.panelLetter || "").toUpperCase() === (panel.panelLetter || "").toUpperCase()
-    );
-    panelPins.slice(0, 4).forEach((ov, pinIdx) => {
-      const r = 3.2 * factor;
-      const cx = panelX + 5 * factor + pinIdx * (r * 2 + 2 * factor);
-      const cy = imgY + 5 * factor;
-      const isActive = ov.status !== "secondary";
-      doc.setFillColor(isActive ? 225 : 245, isActive ? 29 : 158, isActive ? 72 : 11);
-      doc.circle(cx, cy, r, "F");
-      doc.setDrawColor(255, 255, 255);
-      doc.setLineWidth(0.4);
-      doc.circle(cx, cy, r, "S");
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(6.5 * factor);
-      doc.setTextColor(255, 255, 255);
-      const mark = (ov.marker || String.fromCharCode(65 + pinIdx)).toString().slice(0, 2);
-      doc.text(mark, cx, cy + 1.1 * factor, { align: "center" });
-    });
 
     // Caption Footer (Dark bottom box with Foco: description)
     const captionY = imgY + imgBoxH;

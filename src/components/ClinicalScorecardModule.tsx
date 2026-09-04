@@ -14,6 +14,7 @@ import {
   SCORECARD_PROTOCOL_OPTIONS,
   buildAtlasDirectivesFromScorecard,
   criterionStatusLabel,
+  criterionWeightLabel,
   mergeOverlaysOntoAtlas,
   scorecardTrafficLabel,
 } from "../lib/clinicalIntelligence";
@@ -72,6 +73,7 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
   onAtlasDirectivesSuggested,
 }) => {
   const [protocolId, setProtocolId] = useState("auto");
+  const [pathologyFocus, setPathologyFocus] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [synced, setSynced] = useState(false);
@@ -79,6 +81,10 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
   const handleGenerate = async () => {
     if (!reportText.trim()) {
       setError("El reporte clínico está vacío. Genera o redacta un informe primero.");
+      return;
+    }
+    if (protocolId === "custom" && !pathologyFocus.trim()) {
+      setError("Indica el órgano o patología a evaluar en el cuadro de texto.");
       return;
     }
     setIsLoading(true);
@@ -92,7 +98,8 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
           model: selectedModel,
           report: reportText,
           studyType: studyType || "",
-          protocolId,
+          protocolId: protocolId === "custom" ? "auto" : protocolId,
+          pathologyFocus: pathologyFocus.trim() || undefined,
           atlasPanels: (atlasData?.panels || []).map((p) => ({
             panelLetter: p.panelLetter,
             panelTitle: p.panelTitle,
@@ -158,8 +165,8 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
               Scorecard de Criterios Clínicos
             </h3>
             <p className="text-xs text-slate-400 mt-1 max-w-xl">
-              Checklist auditable anclado al informe. Se sincroniza automáticamente con el Atlas 3D
-              (overlays de patología activa).
+              Checklist auditable anclado al informe. Puedes fijar órgano/patología y sincronizar
+              hallazgos con la tabla sinóptica del Atlas 3D.
             </p>
           </div>
         </div>
@@ -176,7 +183,7 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
         )}
       </div>
 
-      <div className="flex flex-wrap items-end gap-3 mb-4">
+      <div className="flex flex-wrap items-end gap-3 mb-3">
         <div className="flex flex-col gap-1 min-w-[200px]">
           <label className="text-[10px] uppercase tracking-wider text-slate-500">Protocolo</label>
           <select
@@ -207,7 +214,7 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
             className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-indigo-500/40 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-200 text-xs font-medium"
           >
             <Layers className="w-3.5 h-3.5" />
-            {synced ? "Overlay Atlas actualizado" : "Aplicar overlay al Atlas"}
+            {synced ? "Tabla Atlas actualizada" : "Sincronizar con Atlas"}
           </button>
         )}
         {scorecardData && (
@@ -221,6 +228,22 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
             Regenerar
           </button>
         )}
+      </div>
+
+      <div className="mb-4">
+        <label className="text-[10px] uppercase tracking-wider text-slate-500 block mb-1">
+          Órgano / región / patología a evaluar
+        </label>
+        <input
+          type="text"
+          value={pathologyFocus}
+          onChange={(e) => setPathologyFocus(e.target.value)}
+          placeholder="Ej: tendón de Aquiles, manguito rotador, colecistitis, riñón derecho…"
+          className="w-full bg-slate-950/80 border border-slate-700 focus:border-teal-500/60 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder:text-slate-600"
+        />
+        <p className="text-[10px] text-slate-500 mt-1">
+          Si lo completas, tiene prioridad sobre el protocolo del desplegable.
+        </p>
       </div>
 
       {error && (
@@ -280,7 +303,7 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
                     </td>
                     <td className="px-3 py-2 text-slate-300 whitespace-nowrap">{row.value || "—"}</td>
                     <td className="px-3 py-2 text-slate-400 max-w-md">{row.evidence}</td>
-                    <td className="px-3 py-2 text-slate-400 capitalize">{row.weight}</td>
+                    <td className="px-3 py-2 text-slate-400">{criterionWeightLabel(row.weight)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -305,7 +328,7 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
           {synced && (
             <div className="text-[11px] text-indigo-300/90 flex items-center gap-2">
               <Layers className="w-3.5 h-3.5" />
-              Overlays de patología activa sincronizados con el Atlas 3D ({scorecardData.atlasOverlays?.length || 0} marcadores).
+              Hallazgos sincronizados con la tabla sinóptica del Atlas ({scorecardData.atlasOverlays?.length || 0}).
             </div>
           )}
         </div>
