@@ -74,6 +74,7 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
 }) => {
   const [protocolId, setProtocolId] = useState("auto");
   const [pathologyFocus, setPathologyFocus] = useState("");
+  const [includeRecommendations, setIncludeRecommendations] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [synced, setSynced] = useState(false);
@@ -100,6 +101,7 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
           studyType: studyType || "",
           protocolId: protocolId === "custom" ? "auto" : protocolId,
           pathologyFocus: pathologyFocus.trim() || undefined,
+          includeRecommendations,
           atlasPanels: (atlasData?.panels || []).map((p) => ({
             panelLetter: p.panelLetter,
             panelTitle: p.panelTitle,
@@ -239,11 +241,22 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
           value={pathologyFocus}
           onChange={(e) => setPathologyFocus(e.target.value)}
           placeholder="Ej: tendón de Aquiles, manguito rotador, colecistitis, riñón derecho…"
-          className="w-full bg-slate-950/80 border border-slate-700 focus:border-teal-500/60 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder:text-slate-600"
+          className="w-full bg-slate-950/80 border border-slate-700 focus:border-teal-500/60 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600"
         />
-        <p className="text-[10px] text-slate-500 mt-1">
-          Si lo completas, tiene prioridad sobre el protocolo del desplegable.
-        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-4">
+          <p className="text-[10px] text-slate-500">
+            Si lo completas, tiene prioridad sobre el protocolo del desplegable.
+          </p>
+          <label className="inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={includeRecommendations}
+              onChange={(e) => setIncludeRecommendations(e.target.checked)}
+              className="rounded border-slate-600"
+            />
+            Incluir recomendaciones
+          </label>
+        </div>
       </div>
 
       {error && (
@@ -277,52 +290,54 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
           </div>
 
           <div className="overflow-x-auto rounded-xl border border-slate-700/70">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-900/90 text-slate-400 uppercase tracking-wider text-[10px]">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-slate-900/90 text-slate-400 uppercase tracking-wider text-[11px]">
                 <tr>
-                  <th className="px-3 py-2 font-medium">Criterio</th>
-                  <th className="px-3 py-2 font-medium">Estado</th>
-                  <th className="px-3 py-2 font-medium">Valor</th>
-                  <th className="px-3 py-2 font-medium">Evidencia del informe</th>
-                  <th className="px-3 py-2 font-medium">Peso</th>
+                  <th className="px-3 py-2.5 font-medium">Criterio</th>
+                  <th className="px-3 py-2.5 font-medium">Estado</th>
+                  <th className="px-3 py-2.5 font-medium">Valor</th>
+                  <th className="px-3 py-2.5 font-medium">Evidencia del informe</th>
+                  <th className="px-3 py-2.5 font-medium">Peso</th>
                 </tr>
               </thead>
               <tbody>
                 {(scorecardData.criteria || []).map((row) => (
                   <tr key={row.id} className="border-t border-slate-800/80 align-top">
-                    <td className="px-3 py-2 text-slate-200 font-medium max-w-[160px]">
+                    <td className="px-3 py-2.5 text-slate-200 font-medium max-w-[180px]">
                       {row.criterion}
                       {row.atlasStructure && (
-                        <div className="text-[10px] text-indigo-300/80 mt-0.5">→ {row.atlasStructure}</div>
+                        <div className="text-[11px] text-indigo-300/80 mt-0.5">→ {row.atlasStructure}</div>
                       )}
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      <span className={`inline-flex px-2 py-0.5 rounded-md border text-[10px] ${statusStyle(row.status)}`}>
+                    <td className="px-3 py-2.5 whitespace-nowrap">
+                      <span className={`inline-flex px-2 py-0.5 rounded-md border text-[11px] ${statusStyle(row.status)}`}>
                         {criterionStatusLabel(row.status)}
                       </span>
                     </td>
-                    <td className="px-3 py-2 text-slate-300 whitespace-nowrap">{row.value || "—"}</td>
-                    <td className="px-3 py-2 text-slate-400 max-w-md">{row.evidence}</td>
-                    <td className="px-3 py-2 text-slate-400">{criterionWeightLabel(row.weight)}</td>
+                    <td className="px-3 py-2.5 text-slate-300 whitespace-nowrap">{row.value || "—"}</td>
+                    <td className="px-3 py-2.5 text-slate-300 max-w-md leading-relaxed">{row.evidence}</td>
+                    <td className="px-3 py-2.5 text-slate-300">{criterionWeightLabel(row.weight)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className={`grid grid-cols-1 gap-3 ${scorecardData.recommendation?.trim() ? "md:grid-cols-2" : ""}`}>
             <div className="rounded-xl border border-slate-700/60 bg-slate-950/40 p-3">
               <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-slate-500 mb-1">
                 <FileText className="w-3 h-3" /> Síntesis
               </div>
-              <p className="text-xs text-slate-300 leading-relaxed">{scorecardData.clinicalSummary}</p>
+              <p className="text-sm text-slate-300 leading-relaxed">{scorecardData.clinicalSummary}</p>
             </div>
-            <div className="rounded-xl border border-teal-800/40 bg-teal-950/20 p-3">
-              <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-teal-500/80 mb-1">
-                <Check className="w-3 h-3" /> Conducta sugerida
+            {scorecardData.recommendation?.trim() ? (
+              <div className="rounded-xl border border-teal-800/40 bg-teal-950/20 p-3">
+                <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-teal-500/80 mb-1">
+                  <Check className="w-3 h-3" /> Conducta sugerida
+                </div>
+                <p className="text-sm text-teal-100/90 leading-relaxed">{scorecardData.recommendation}</p>
               </div>
-              <p className="text-xs text-teal-100/90 leading-relaxed">{scorecardData.recommendation}</p>
-            </div>
+            ) : null}
           </div>
 
           {synced && (

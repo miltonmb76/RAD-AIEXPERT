@@ -8715,11 +8715,11 @@ ${report}
  * API: CLINICAL SCORECARD + ATLAS OVERLAY INTELLIGENCE
  * POST /api/generate-clinical-scorecard
  * Shared engine: criteria scorecard + pathology overlays for Atlas 3D.
- * Payload: { model?, report, studyType?, protocolId?, pathologyFocus?, atlasPanels?: [{panelLetter,panelTitle,anatomicalFocus}] }
+ * Payload: { model?, report, studyType?, protocolId?, pathologyFocus?, includeRecommendations?, atlasPanels?: [{panelLetter,panelTitle,anatomicalFocus}] }
  */
 app.post("/api/generate-clinical-scorecard", async (req: express.Request, res: express.Response) => {
   try {
-    const { model, report, studyType, protocolId, pathologyFocus, atlasPanels } = req.body;
+    const { model, report, studyType, protocolId, pathologyFocus, includeRecommendations, atlasPanels } = req.body;
     if (!report) {
       return res.status(400).json({ success: false, error: "Se requiere el parámetro 'report'." });
     }
@@ -8728,6 +8728,7 @@ app.post("/api/generate-clinical-scorecard", async (req: express.Request, res: e
     const modelToUse = getModelName(model);
     const requestedProtocol = (protocolId || "auto").toString();
     const focusText = (pathologyFocus || "").toString().trim();
+    const withRecommendations = includeRecommendations === true;
     const panelsHint = Array.isArray(atlasPanels) && atlasPanels.length
       ? atlasPanels.map((p: any) => `- Panel ${p.panelLetter}: ${p.panelTitle || ""} | Foco: ${p.anatomicalFocus || ""}`).join("\n")
       : "Sin paneles Atlas aún (propón panelLetter A/B/C según estructuras).";
@@ -8763,6 +8764,9 @@ REGLAS DE FIDELIDAD (OBLIGATORIAS):
 9. panelLetter debe coincidir con un panel existente si hay lista; si no, usa A/B/C.
 10. trafficLight: low | moderate | high | critical.
 11. protocolName y categoryAssigned en español (ej. "Valoración ecográfica del tendón de Aquiles", "Musculoesquelético").
+12. RECOMENDACIONES: ${withRecommendations
+  ? 'SÍ incluir "recommendation" con conducta/seguimiento breve en español (1-3 frases).'
+  : 'NO incluir recomendaciones. El campo "recommendation" DEBE ser exactamente "" (cadena vacía). PROHIBIDO sugerir conducta, seguimiento, tratamiento o disclaimers.'}
 
 Responde JSON con:
 - protocolId, protocolName, categoryAssigned
@@ -8939,7 +8943,9 @@ const response = await ai.models.generateContent({
       scoreTotal,
       trafficLight,
       clinicalSummary: localizeScorecardText((parsed.clinicalSummary || "").toString()),
-      recommendation: localizeScorecardText((parsed.recommendation || "").toString()),
+      recommendation: withRecommendations
+        ? localizeScorecardText((parsed.recommendation || "").toString())
+        : "",
       studyRegion: parsed.studyRegion ? localizeScorecardText(String(parsed.studyRegion)) : undefined,
       criteria,
       atlasOverlays: atlasOverlays.map((o: any) => ({
