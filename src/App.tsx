@@ -20167,7 +20167,7 @@ const splitReportAndAnnex = (text: string) => {
                             <div className="my-6">
                               <React.Suspense fallback={<div className="p-4 text-xs font-mono text-indigo-400 bg-slate-900/60 rounded-xl border border-indigo-900/40 animate-pulse">Cargando Radar Biomecánico...</div>}>
                                 <BiomechanicalRadarModule
-                                  selectedModel={modelFor("default")}
+                                  selectedModel={modelFor("radar")}
                                   reportText={isEditingReportManual ? editedReportText : generatedReport}
                                   studyType={specificStudy}
                                   includeRadarInReport={includeRadarInReport}
