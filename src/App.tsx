@@ -10,12 +10,14 @@ const ZipDicomExtractor = React.lazy(() => import("./components/ZipDicomExtracto
 const AsistenteMedidas = React.lazy(() => import("./components/AsistenteMedidas").then(m => ({ default: m.AsistenteMedidas })));
 const CreadorNotasPie = React.lazy(() => import("./components/CreadorNotasPie").then(m => ({ default: m.CreadorNotasPie })));
 const BiomechanicalRadarModule = React.lazy(() => import("./components/BiomechanicalRadarModule").then(m => ({ default: m.BiomechanicalRadarModule })));
+const ClinicalScorecardModule = React.lazy(() => import("./components/ClinicalScorecardModule").then(m => ({ default: m.ClinicalScorecardModule })));
 const CreadorCuadroSinoptico = React.lazy(() => import("./components/CreadorCuadroSinoptico").then(m => ({ default: m.CreadorCuadroSinoptico })));
 const CreadorSinopsisFracturas = React.lazy(() => import("./components/CreadorSinopsisFracturas").then(m => ({ default: m.CreadorSinopsisFracturas })));
 const ElastographyQUSPresentationModule = React.lazy(() => import("./components/ElastographyQUSPresentationModule").then(m => ({ default: m.ElastographyQUSPresentationModule })));
 import { Atlas3DModule } from "./components/Atlas3DModule";
 import { renderAtlas3DAnnexToPDF } from "./utils/atlas3dPdfRenderer";
-import { Atlas3DData, Vascular3DData, UsImagesGridMode } from "./types";
+import { renderScorecardAnnexToPDF } from "./utils/scorecardPdfRenderer";
+import { Atlas3DData, Vascular3DData, UsImagesGridMode, ClinicalScorecardData } from "./types";
 import { Vascular3DModule } from "./components/Vascular3DModule";
 import { renderVascular3DPageToPdf } from "./utils/vascular3dPdfRenderer";
 import { renderElastographyAnnexToPdf, ElastographyPdfData } from "./utils/elastographyPdfRenderer";
@@ -2554,6 +2556,10 @@ export default function App() {
   // Atlas 3D Fotorrealista y Correlación Anatómica Data
   const [atlas3dData, setAtlas3dData] = useState<Atlas3DData | null>(null);
   const [includeAtlas3dInReport, setIncludeAtlas3dInReport] = useState<boolean>(true);
+  const [clinicalScorecardData, setClinicalScorecardData] = useState<ClinicalScorecardData | null>(null);
+  const [includeScorecardInReport, setIncludeScorecardInReport] = useState<boolean>(true);
+  const [isClinicalScorecardOpen, setIsClinicalScorecardOpen] = useState<boolean>(false);
+  const [atlasDirectivesFromScorecard, setAtlasDirectivesFromScorecard] = useState<string>("");
 
   // Suite Vascular 3D & Mapa Ánatomo-Hemodinámico Data
   const [vascular3dData, setVascular3dData] = useState<Vascular3DData | null>(null);
@@ -2601,6 +2607,8 @@ export default function App() {
     findings3dRenders,
     atlas3dData,
     includeAtlas3dInReport,
+    clinicalScorecardData,
+    includeScorecardInReport,
     vascular3dData,
     includeVascular3dInReport,
     usImagesGridMode,
@@ -19280,6 +19288,8 @@ const splitReportAndAnnex = (text: string) => {
                             setAtlasData={setAtlas3dData}
                             includeInReport={includeAtlas3dInReport}
                             setIncludeInReport={setIncludeAtlas3dInReport}
+                            scorecardData={clinicalScorecardData}
+                            externalDirectives={atlasDirectivesFromScorecard}
                           />
 
                           {/* === SUITE VASCULAR 3D & MAPA ÁNATOMO-HEMODINÁMICO === */}
@@ -20103,7 +20113,31 @@ const splitReportAndAnnex = (text: string) => {
                               </button>
                             </div>
 
-                            {/* Card 11: Radar Biomecánico e Inflamatorio (IA) */}
+                            
+                            {/* Card: Scorecard de Criterios + sync Atlas Overlay */}
+                            <div className="p-4 rounded-2xl bg-slate-950/60 border border-teal-900/40 space-y-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <h4 className="text-sm font-semibold text-teal-200">Scorecard de Criterios (IA)</h4>
+                                  <p className="text-[11px] text-slate-400 mt-1">
+                                    Checklist auditable del informe, sincronizado con overlays del Atlas 3D.
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setIsClinicalScorecardOpen((v) => !v)}
+                                className={`w-full px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
+                                  isClinicalScorecardOpen
+                                    ? "bg-teal-700 text-white"
+                                    : "bg-teal-600/80 hover:bg-teal-500 text-white"
+                                }`}
+                              >
+                                {isClinicalScorecardOpen ? "Ocultar Scorecard" : "Abrir Scorecard de Criterios"}
+                              </button>
+                            </div>
+
+{/* Card 11: Radar Biomecánico e Inflamatorio (IA) */}
                             <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-indigo-500/30 rounded-2xl p-5 space-y-4 shadow-xl transition-all font-sans">
                               <div className="flex items-center gap-2 justify-between">
                                 <div className="flex items-center gap-2">
@@ -20162,7 +20196,27 @@ const splitReportAndAnnex = (text: string) => {
                             </div>
                           )}
 
-                          {/* Render Radar Biomecánico Panel */}
+                          
+                          {isClinicalScorecardOpen && (
+                            <div className="my-6">
+                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-teal-400 bg-slate-900/60 rounded-xl border border-teal-900/40 animate-pulse">Cargando Scorecard...</div>}>
+                                <ClinicalScorecardModule
+                                  selectedModel={modelFor("clinical_scorecard")}
+                                  reportText={isEditingReportManual ? editedReportText : generatedReport}
+                                  studyType={specificStudy || studyType}
+                                  scorecardData={clinicalScorecardData}
+                                  setScorecardData={setClinicalScorecardData}
+                                  includeInReport={includeScorecardInReport}
+                                  setIncludeInReport={setIncludeScorecardInReport}
+                                  atlasData={atlas3dData}
+                                  setAtlasData={setAtlas3dData}
+                                  onAtlasDirectivesSuggested={setAtlasDirectivesFromScorecard}
+                                />
+                              </React.Suspense>
+                            </div>
+                          )}
+
+{/* Render Radar Biomecánico Panel */}
                           {isBiomechanicalRadarOpen && (
                             <div className="my-6">
                               <React.Suspense fallback={<div className="p-4 text-xs font-mono text-indigo-400 bg-slate-900/60 rounded-xl border border-indigo-900/40 animate-pulse">Cargando Radar Biomecánico...</div>}>

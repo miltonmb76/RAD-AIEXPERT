@@ -68,6 +68,42 @@ export function renderAtlas3DAnnexToPDF(
   });
   yCoord += bannerHeight + 6 * factor;
 
+  // 2b. PATHOLOGY OVERLAY CALLOUTS (Scorecard sync)
+  const overlays = Array.isArray(atlasData.pathologyOverlays) ? atlasData.pathologyOverlays : [];
+  if (overlays.length > 0) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.5 * factor);
+    doc.setTextColor(190, 24, 93);
+    doc.text("PATOLOGIA ACTIVA (OVERLAY ATLAS + SCORECARD)", marginX, yCoord);
+    yCoord += 5 * factor;
+
+    overlays.slice(0, 6).forEach((ov, idx) => {
+      const line = `${ov.marker || String.fromCharCode(65 + idx)}. [Panel ${ov.panelLetter}] ${ov.structure}: ${ov.finding}${ov.severity ? ` (${ov.severity}/10)` : ""}`;
+      const safe = String(line)
+        .replace(/≥/g, ">=")
+        .replace(/≤/g, "<=");
+      const wrapped = doc.splitTextToSize(safe, contentWidth - 4 * factor);
+      const blockH = wrapped.length * 3.8 * factor + 2 * factor;
+      if (yCoord + blockH > pageHeight - 20 * factor) {
+        doc.addPage();
+        yCoord = 22 * factor;
+      }
+      doc.setFillColor(255, 241, 242);
+      doc.setDrawColor(251, 113, 133);
+      doc.roundedRect(marginX, yCoord, contentWidth, blockH + 2 * factor, 1.5, 1.5, "FD");
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5 * factor);
+      doc.setTextColor(136, 19, 55);
+      let ly = yCoord + 4.2 * factor;
+      wrapped.forEach((w: string) => {
+        doc.text(w, marginX + 3 * factor, ly);
+        ly += 3.8 * factor;
+      });
+      yCoord += blockH + 4 * factor;
+    });
+    yCoord += 2 * factor;
+  }
+
   // 3. 3D PANELS GRID (1, 2 or 3 columns)
   const numPanels = validPanels.length;
   const isSinglePanel = numPanels === 1;

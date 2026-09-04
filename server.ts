@@ -8710,6 +8710,206 @@ ${report}
   }
 });
 
+
+/**
+ * API: CLINICAL SCORECARD + ATLAS OVERLAY INTELLIGENCE
+ * POST /api/generate-clinical-scorecard
+ * Shared engine: criteria scorecard + pathology overlays for Atlas 3D.
+ * Payload: { model?, report, studyType?, protocolId?, atlasPanels?: [{panelLetter,panelTitle,anatomicalFocus}] }
+ */
+app.post("/api/generate-clinical-scorecard", async (req: express.Request, res: express.Response) => {
+  try {
+    const { model, report, studyType, protocolId, atlasPanels } = req.body;
+    if (!report) {
+      return res.status(400).json({ success: false, error: "Se requiere el parámetro 'report'." });
+    }
+
+    const ai = getGeminiClient();
+    const modelToUse = getModelName(model);
+    const requestedProtocol = (protocolId || "auto").toString();
+    const panelsHint = Array.isArray(atlasPanels) && atlasPanels.length
+      ? atlasPanels.map((p: any) => `- Panel ${p.panelLetter}: ${p.panelTitle || ""} | Foco: ${p.anatomicalFocus || ""}`).join("\n")
+      : "Sin paneles Atlas aún (propón panelLetter A/B/C según estructuras).";
+
+    const prompt = `Eres un radiólogo experto en criterios diagnósticos formales y correlación anatómica 3D.
+Analiza el informe y genera UN Scorecard de criterios clínicos + marcadores de overlay para Atlas 3D.
+
+ESTUDIO: ${studyType || "No especificado"}
+PROTOCOLO SOLICITADO: ${requestedProtocol === "auto" ? "Detección automática del protocolo más específico" : requestedProtocol}
+
+PANELES ATLAS DISPONIBLES:
+${panelsHint}
+
+PROTOCOLOS POSIBLES (elige uno si AUTO): cholecystitis, appendicitis, thyroid_tirads, bosniak, rotator_cuff, hepatic, renal, scrotal, diverticulitis, generic.
+
+REGLAS DE FIDELIDAD (OBLIGATORIAS):
+1. Cada criterio debe anclarse SOLO al texto del informe (evidence = cita/paráfrasis fiel con medidas si constan).
+2. status: "met" | "not_met" | "not_mentioned" | "equivocal".
+3. NO inventes hallazgos. Si no hay dato: not_mentioned.
+4. Incluye 6 a 12 criterios del protocolo (umbrales oficiales cuando aplique: p.ej. pared vesicular >3mm, TI-RADS ACR 2017, Bosniak).
+5. weight: "critical" | "major" | "minor".
+6. severity 0-10 coherente con el hallazgo.
+7. atlasOverlays: SOLO para criterios met o equivocal con anatomía localizable (máx 5). Vincula linkedCriterionId.
+8. panelLetter debe coincidir con un panel existente si hay lista; si no, usa A/B/C.
+9. trafficLight: low | moderate | high | critical según carga de criterios positivos/críticos.
+10. scoreMet = cantidad de status "met"; scoreTotal = total de criterios.
+
+Responde JSON con:
+- protocolId, protocolName, categoryAssigned
+- scoreMet, scoreTotal, trafficLight
+- clinicalSummary, recommendation, studyRegion
+- criteria: [{ id, criterion, status, value, evidence, weight, severity, atlasStructure, suggestedPanelFocus }]
+- atlasOverlays: [{ id, panelLetter, marker, structure, finding, severity, status ("active"|"secondary"), linkedCriterionId, evidence }]
+
+INFORME:
+"""
+${report}
+"""
+`;
+
+    const response = await ai.models.generateContent({
+      model: modelToUse,
+      contents: prompt,
+      config: {
+        temperature: 0.12,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            protocolId: { type: Type.STRING },
+            protocolName: { type: Type.STRING },
+            categoryAssigned: { type: Type.STRING },
+            scoreMet: { type: Type.INTEGER },
+            scoreTotal: { type: Type.INTEGER },
+            trafficLight: { type: Type.STRING },
+            clinicalSummary: { type: Type.STRING },
+            recommendation: { type: Type.STRING },
+            studyRegion: { type: Type.STRING },
+            criteria: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  id: { type: Type.STRING },
+                  criterion: { type: Type.STRING },
+                  status: { type: Type.STRING },
+                  value: { type: Type.STRING },
+                  evidence: { type: Type.STRING },
+                  weight: { type: Type.STRING },
+                  severity: { type: Type.INTEGER },
+                  atlasStructure: { type: Type.STRING },
+                  suggestedPanelFocus: { type: Type.STRING }
+                },
+                required: ["id", "criterion", "status", "evidence", "weight", "severity"]
+              }
+            },
+            atlasOverlays: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  id: { type: Type.STRING },
+                  panelLetter: { type: Type.STRING },
+                  marker: { type: Type.STRING },
+                  structure: { type: Type.STRING },
+                  finding: { type: Type.STRING },
+                  severity: { type: Type.INTEGER },
+                  status: { type: Type.STRING },
+                  linkedCriterionId: { type: Type.STRING },
+                  evidence: { type: Type.STRING }
+                },
+                required: ["id", "panelLetter", "marker", "structure", "finding", "severity", "status"]
+              }
+            }
+          },
+          required: [
+            "protocolId",
+            "protocolName",
+            "categoryAssigned",
+            "scoreMet",
+            "scoreTotal",
+            "trafficLight",
+            "clinicalSummary",
+            "recommendation",
+            "criteria",
+            "atlasOverlays"
+          ]
+        }
+      }
+    });
+
+    const rawText = response.text || "{}";
+    const parsed = JSON.parse(rawText);
+
+    const allowedStatus = new Set(["met", "not_met", "not_mentioned", "equivocal"]);
+    const allowedWeight = new Set(["critical", "major", "minor"]);
+    const allowedLight = new Set(["low", "moderate", "high", "critical"]);
+
+    const criteria = Array.isArray(parsed.criteria) ? parsed.criteria.map((c: any, i: number) => ({
+      id: (c.id || `c${i + 1}`).toString(),
+      criterion: (c.criterion || "").toString(),
+      status: allowedStatus.has(c.status) ? c.status : "not_mentioned",
+      value: c.value ? String(c.value) : undefined,
+      evidence: (c.evidence || "").toString(),
+      weight: allowedWeight.has(c.weight) ? c.weight : "major",
+      severity: typeof c.severity === "number" ? Math.min(10, Math.max(0, Math.round(c.severity))) : 0,
+      atlasStructure: c.atlasStructure ? String(c.atlasStructure) : undefined,
+      suggestedPanelFocus: c.suggestedPanelFocus ? String(c.suggestedPanelFocus) : undefined
+    })) : [];
+
+    const scoreMet = criteria.filter((c: any) => c.status === "met").length;
+    const scoreTotal = criteria.length || Number(parsed.scoreTotal) || 0;
+
+    let trafficLight = allowedLight.has(parsed.trafficLight) ? parsed.trafficLight : "low";
+    const criticalMet = criteria.some((c: any) => c.status === "met" && c.weight === "critical" && c.severity >= 7);
+    if (criticalMet) trafficLight = "critical";
+    else if (scoreTotal > 0 && scoreMet / scoreTotal >= 0.65) trafficLight = trafficLight === "low" ? "high" : trafficLight;
+    else if (scoreTotal > 0 && scoreMet / scoreTotal >= 0.35) trafficLight = trafficLight === "low" ? "moderate" : trafficLight;
+
+    const panelLetters = Array.isArray(atlasPanels)
+      ? atlasPanels.map((p: any) => String(p.panelLetter || "").toUpperCase()).filter(Boolean)
+      : [];
+    const fallbackLetter = panelLetters[0] || "A";
+
+    const atlasOverlays = (Array.isArray(parsed.atlasOverlays) ? parsed.atlasOverlays : [])
+      .slice(0, 5)
+      .map((o: any, i: number) => {
+        const letter = String(o.panelLetter || fallbackLetter).toUpperCase();
+        return {
+          id: (o.id || `ov${i + 1}`).toString(),
+          panelLetter: panelLetters.includes(letter) ? letter : fallbackLetter,
+          marker: (o.marker || String.fromCharCode(65 + i)).toString().slice(0, 2),
+          structure: (o.structure || "").toString(),
+          finding: (o.finding || "").toString(),
+          severity: typeof o.severity === "number" ? Math.min(10, Math.max(0, Math.round(o.severity))) : 0,
+          status: o.status === "secondary" ? "secondary" : "active",
+          linkedCriterionId: o.linkedCriterionId ? String(o.linkedCriterionId) : undefined,
+          evidence: o.evidence ? String(o.evidence) : undefined
+        };
+      });
+
+    const data = {
+      protocolId: (parsed.protocolId || requestedProtocol || "generic").toString(),
+      protocolName: (parsed.protocolName || "Scorecard clínico").toString(),
+      categoryAssigned: (parsed.categoryAssigned || "Sin categoría").toString(),
+      scoreMet,
+      scoreTotal,
+      trafficLight,
+      clinicalSummary: (parsed.clinicalSummary || "").toString(),
+      recommendation: (parsed.recommendation || "").toString(),
+      studyRegion: parsed.studyRegion ? String(parsed.studyRegion) : undefined,
+      criteria,
+      atlasOverlays,
+      generatedAt: new Date().toISOString()
+    };
+
+    res.json({ success: true, data });
+  } catch (error: any) {
+    console.error("Error en /api/generate-clinical-scorecard:", error);
+    res.status(500).json({ success: false, error: handleGeminiError(error) });
+  }
+});
+
 /**
  * 42. API: GENERATE BIOMECHANICAL & INFLAMMATORY RADAR
  * POST /api/generate-biomechanical-radar
