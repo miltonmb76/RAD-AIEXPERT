@@ -51,6 +51,7 @@ const QUALITY_TASKS: ReadonlySet<ModelTask> = new Set([
   "classifications",
   "organ_synoptic",
   "fractures",
+  "radar",
   "default",
 ]);
 
@@ -64,7 +65,6 @@ const EFFICIENCY_TASKS: ReadonlySet<ModelTask> = new Set([
   "schematic",
   "measurements",
   "footnotes",
-  "radar",
   "chat",
 ]);
 
