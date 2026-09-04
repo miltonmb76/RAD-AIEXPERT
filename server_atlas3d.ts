@@ -81,7 +81,13 @@ function getModelName(requestedModel?: string): string {
   if (requestedModel === "gemini-3.1-pro-preview" || requestedModel === "gemini-3.1-pro") {
     return "gemini-3.1-pro-preview";
   }
-  return "gemini-3.7-flash";
+  if (requestedModel === "gemini-3.8-flash") {
+    return "gemini-3.8-flash";
+  }
+  if (requestedModel === "gemini-3.7-flash") {
+    return "gemini-3.7-flash";
+  }
+  return "gemini-3.8-flash";
 }
 
 function handleGeminiError(error: any): string {
