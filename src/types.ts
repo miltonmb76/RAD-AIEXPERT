@@ -70,6 +70,19 @@ export interface Atlas3DSynopticItem {
   panelRef?: string;
 }
 
+/** Pathology callout linked to an Atlas 3D panel (from Scorecard sync or overlay AI). */
+export interface AtlasPathologyOverlay {
+  id: string;
+  panelLetter: string;
+  marker: string;
+  structure: string;
+  finding: string;
+  severity: number;
+  status: "active" | "secondary" | "resolved";
+  linkedCriterionId?: string;
+  evidence?: string;
+}
+
 export interface Atlas3DData {
   title?: string;
   figureTitle?: string;
@@ -80,6 +93,44 @@ export interface Atlas3DData {
   synopticExplanation?: Atlas3DSynopticItem[];
   synthesis?: string;
   biomechanicalSynthesis?: string;
+  /** Intelligent pathology overlays synced from Scorecard / clinical engine */
+  pathologyOverlays?: AtlasPathologyOverlay[];
+  overlaySource?: "scorecard" | "atlas" | "shared";
+}
+
+export type ScorecardCriterionStatus =
+  | "met"
+  | "not_met"
+  | "not_mentioned"
+  | "equivocal";
+
+export interface ScorecardCriterion {
+  id: string;
+  criterion: string;
+  status: ScorecardCriterionStatus;
+  value?: string;
+  evidence: string;
+  weight: "critical" | "major" | "minor";
+  severity: number;
+  /** Anatomical structure hint for Atlas overlay sync */
+  atlasStructure?: string;
+  suggestedPanelFocus?: string;
+}
+
+export interface ClinicalScorecardData {
+  protocolId: string;
+  protocolName: string;
+  categoryAssigned: string;
+  scoreMet: number;
+  scoreTotal: number;
+  trafficLight: "low" | "moderate" | "high" | "critical";
+  clinicalSummary: string;
+  recommendation: string;
+  criteria: ScorecardCriterion[];
+  /** Ready-to-merge Atlas overlays derived from met/partial criteria */
+  atlasOverlays: AtlasPathologyOverlay[];
+  studyRegion?: string;
+  generatedAt?: string;
 }
 
 export type VascularStudyType = 
