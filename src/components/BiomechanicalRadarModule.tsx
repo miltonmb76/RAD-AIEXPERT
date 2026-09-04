@@ -50,7 +50,7 @@ interface BiomechanicalRadarModuleProps {
 
 const PRESET_MATRICES_AXES: Record<string, BiomechanicalAxis[]> = {
   diverticulitis: [
-    { key: "engrosamiento_parietal", label: "Engrosamiento Parietal Cólico", score: 0, level: "Fisiológico", finding: "Espesor de la pared cólica normal (≤2.0-2.5 mm) con estratificación conservada.", justification: "Sin engrosamiento ni rigidez parietal segmentaria." },
+    { key: "engrosamiento_parietal", label: "Engrosamiento Parietal Cólico", score: 0, level: "Fisiológico", finding: "Espesor de la pared cólica normal (<=2.0-2.5 mm) con estratificación conservada.", justification: "Sin engrosamiento ni rigidez parietal segmentaria." },
     { key: "grasa_pericolica", label: "Grasa Pericólica / Flemón", score: 0, level: "Fisiológico", finding: "Grasa pericólica homogénea, compresible y de ecogenicidad habitual.", justification: "Sin halo hiperecogénico, flemón ni edema pericólico." },
     { key: "diverticulo_inflamado", label: "Divertículo Inflamado / Fecalito", score: 0, level: "Fisiológico", finding: "Sin divertículos inflamados evidentes ni fecalitos obstructivos con halo hipoecoico.", justification: "Ausencia de diverticulitis focal con dolor selectivo bajo transductor." },
     { key: "hiperemia_vascular", label: "Hiperemia Vascular (Doppler)", score: 0, level: "Fisiológico", finding: "Vascularización parietal y mesentérica en límites fisiológicos.", justification: "Sin hiperemia Doppler patológica ni áreas de isquemia." },
@@ -98,7 +98,7 @@ const PRESET_MATRICES_AXES: Record<string, BiomechanicalAxis[]> = {
     { key: "oseo", label: "Estructuras Óseas / Sindesmosis", score: 0, level: "Fisiológico", finding: "Corticales óseas continuas y sindesmosis alineada.", justification: "Sin avulsiones óseas ni diástasis sindesmótica." }
   ],
   cholecystitis: [
-    { key: "engrosamiento_pared", label: "Engrosamiento / Edema Parietal", score: 0, level: "Fisiológico", finding: "Pared vesicular fina ≤3.0mm.", justification: "Sin edema parietal ni estratificación." },
+    { key: "engrosamiento_pared", label: "Engrosamiento / Edema Parietal", score: 0, level: "Fisiológico", finding: "Pared vesicular fina <=3.0mm.", justification: "Sin edema parietal ni estratificación." },
     { key: "vascularidad", label: "Vascularidad Parietal (Doppler)", score: 0, level: "Fisiológico", finding: "Señal Doppler parietal normal.", justification: "Sin hiperemia inflamatoria de la pared." },
     { key: "necrosis_pared", label: "Necrosis Parietal / Gangrena", score: 0, level: "Fisiológico", finding: "Pared vesicular continua e intacta.", justification: "Sin gas intraparietal ni membranas desprendidas." },
     { key: "cambios_perivesiculares", label: "Cambios Perivesiculares / Lecho", score: 0, level: "Fisiológico", finding: "Grasa perivesicular limpia y libre.", justification: "Sin líquido ni colecciones perivesiculares." },
@@ -106,8 +106,8 @@ const PRESET_MATRICES_AXES: Record<string, BiomechanicalAxis[]> = {
     { key: "tamano_forma", label: "Tamaño / Hidrops Vesicular", score: 0, level: "Fisiológico", finding: "Dimensiones vesiculares normales.", justification: "Sin hidrops ni sobredistensión vesicular." }
   ],
   appendicitis: [
-    { key: "diametro_apendice", label: "Diámetro Apendicular", score: 0, level: "Fisiológico", finding: "Diámetro apendicular normal ≤6.0mm.", justification: "Estructura tubular compresible de fondo ciego." },
-    { key: "pared_apendice", label: "Pared / Signo de la Diana", score: 0, level: "Fisiológico", finding: "Pared fina ≤2.0mm con capas conservadas.", justification: "Sin edema submucoso ni signo de la diana." },
+    { key: "diametro_apendice", label: "Diámetro Apendicular", score: 0, level: "Fisiológico", finding: "Diámetro apendicular normal <=6.0mm.", justification: "Estructura tubular compresible de fondo ciego." },
+    { key: "pared_apendice", label: "Pared / Signo de la Diana", score: 0, level: "Fisiológico", finding: "Pared fina <=2.0mm con capas conservadas.", justification: "Sin edema submucoso ni signo de la diana." },
     { key: "vascularidad", label: "Vascularidad Parietal (Doppler)", score: 0, level: "Fisiológico", finding: "Flujo vascular parietal simétrico y fino.", justification: "Sin hiperemia reactiva en anillo." },
     { key: "cambios_inflamatorios", label: "Grasa Periapendicular / Flemón", score: 0, level: "Fisiológico", finding: "Grasa mesoapendicular de ecogenicidad normal.", justification: "Sin cambios inflamatorios ni flemón." },
     { key: "liquido_colecciones", label: "Líquido Libre / Colecciones", score: 0, level: "Fisiológico", finding: "Fosa ilíaca derecha libre de líquido.", justification: "Sin colecciones ni abscesos periapendiculares." },
@@ -139,7 +139,7 @@ const PRESET_MATRICES_AXES: Record<string, BiomechanicalAxis[]> = {
   ],
   renal: [
     { key: "tamano_renal", label: "Tamaño Renal", score: 0, level: "Fisiológico", finding: "Eje bipolar longitudinal conservado (100-120mm) con morfología reniforme simétrica.", justification: "Sin nefromegalia ni hipotrofia renal." },
-    { key: "grosor_cortical", label: "Grosor Cortical", score: 0, level: "Fisiológico", finding: "Espesor cortical normal ≥9-10mm con nítida diferenciación córtico-medular.", justification: "Sin adelgazamiento cortical ni hiperecogenicidad médica." },
+    { key: "grosor_cortical", label: "Grosor Cortical", score: 0, level: "Fisiológico", finding: "Espesor cortical normal >=9-10mm con nítida diferenciación córtico-medular.", justification: "Sin adelgazamiento cortical ni hiperecogenicidad médica." },
     { key: "vascularidad", label: "Vascularidad", score: 0, level: "Fisiológico", finding: "Perfusión periférica completa con índices de resistividad intrarrenal fisiológicos (RI 0.58-0.70).", justification: "Sin defectos segmentarios ni signos de estenosis arterial." },
     { key: "lesiones_focales", label: "Lesiones Focales", score: 0, level: "Fisiológico", finding: "Parénquima homogéneo sin masas sólidas ni quistes complicados (Bosniak I o libre de LOEs).", justification: "Ausencia de LOEs sospechosas ni angiomiolipomas complejos." },
     { key: "procesos_obstructivos", label: "Procesos Obstructivos", score: 0, level: "Fisiológico", finding: "Seno renal ecolucente sin ectasia pielocalicial ni litiasis obstructiva.", justification: "Sin hidronefrosis ni uropatía obstructiva." },
@@ -201,20 +201,11 @@ export const BiomechanicalRadarModule: React.FC<BiomechanicalRadarModuleProps> =
 
   const handleSelectMatrixMode = (mode: "auto" | "msk" | "visceral" | "oncology" | "rotator_cuff" | "knee_oa" | "cholecystitis" | "ankle_trauma" | "knee_trauma" | "appendicitis" | "thyroid" | "muscle_injury" | "hepatic" | "renal" | "scrotal" | "urinary_prostate" | "diverticulitis") => {
     setSelectedRadarMode(mode);
+    // Only update axis skeleton for UI while analyzing. Do NOT push generic
+    // preset "normal" findings into persisted radar/PDF data (that caused
+    // intermittent wrong findings boxes when mode changed).
     if (mode !== "auto" && PRESET_MATRICES_AXES[mode]) {
-      const newAxes = PRESET_MATRICES_AXES[mode];
-      setAxes(newAxes);
-      if (data) {
-        const updatedData = {
-          ...data,
-          radarMode: mode,
-          axes: newAxes
-        };
-        setData(updatedData);
-        if (onRadarDataUpdated) {
-          onRadarDataUpdated(updatedData);
-        }
-      }
+      setAxes(PRESET_MATRICES_AXES[mode]);
     }
     if (reportText.trim()) {
       handleAnalyze(mode);
@@ -253,15 +244,25 @@ export const BiomechanicalRadarModule: React.FC<BiomechanicalRadarModuleProps> =
 
       const resData = await response.json();
       if (resData.success && resData.data) {
-        setData(resData.data);
-        if (resData.data.radarMode) {
-          setSelectedRadarMode(resData.data.radarMode as any);
+        const incoming = resData.data;
+        // Keep only axes with concrete findings/scores from the model response.
+        if (Array.isArray(incoming.axes)) {
+          incoming.axes = incoming.axes.map((axis: BiomechanicalAxis) => ({
+            ...axis,
+            finding: (axis.finding || "").trim(),
+            justification: (axis.justification || "").trim(),
+            score: typeof axis.score === "number" ? Math.min(10, Math.max(0, Math.round(axis.score))) : 0,
+          }));
         }
-        if (resData.data.axes && Array.isArray(resData.data.axes)) {
-          setAxes(resData.data.axes);
+        setData(incoming);
+        if (incoming.radarMode) {
+          setSelectedRadarMode(incoming.radarMode as any);
+        }
+        if (incoming.axes && Array.isArray(incoming.axes)) {
+          setAxes(incoming.axes);
         }
         if (onRadarDataUpdated) {
-          onRadarDataUpdated(resData.data);
+          onRadarDataUpdated(incoming);
         }
       } else {
         setError(resData.error || "No se pudo calcular el Radar Biomecánico.");
