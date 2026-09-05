@@ -81,7 +81,13 @@ function getModelName(requestedModel?: string): string {
   if (requestedModel === "gemini-3.1-pro-preview" || requestedModel === "gemini-3.1-pro") {
     return "gemini-3.1-pro-preview";
   }
-  return "gemini-3.7-flash";
+  if (requestedModel === "gemini-3.8-flash") {
+    return "gemini-3.8-flash";
+  }
+  if (requestedModel === "gemini-3.7-flash") {
+    return "gemini-3.7-flash";
+  }
+  return "gemini-3.8-flash";
 }
 
 function handleGeminiError(error: any): string {
@@ -101,6 +107,98 @@ function handleGeminiError(error: any): string {
   return `Error en la generación con IA: ${errorMsg || "Comprueba la conexión y vuelve a intentar."}`;
 }
 
+
+const FAITHFUL_STYLE =
+  "High-fidelity photorealistic 3D medical anatomical render, volumetric surgical cutaway, accurate topographic relationships and true anatomical scale. Premium tissue materials: realistic fascia, muscle fiber microtexture, visceral parenchyma, periosteum and serosa with physically based subsurface scattering. Soft cinematic clinical studio lighting with gentle rim light and shallow depth cues for clarity—NOT neon, NOT bioluminescent, NOT exaggerated glow. Pathology highlighted with restrained chromatic accent ONLY where the report describes it. No invented lesions. Pure clean background. STRICTLY NO text, NO letters, NO numbers, NO arrows, NO labels inside the image.";
+
+type SpatialContract = {
+  view?: string;
+  laterality?: string;
+  imageLeftStructure?: string;
+  imageRightStructure?: string;
+  superiorStructure?: string;
+  inferiorStructure?: string;
+  mustShowLandmarks?: string[];
+  pathologySite?: string;
+  pathologyAppearance?: string;
+  doNotInvent?: string[];
+};
+
+function normalizeSpatialContract(raw: any, fallbackLaterality?: string): SpatialContract {
+  const landmarks = Array.isArray(raw?.mustShowLandmarks)
+    ? raw.mustShowLandmarks.map((x: any) => String(x || "").trim()).filter(Boolean).slice(0, 6)
+    : [];
+  const doNotInvent = Array.isArray(raw?.doNotInvent)
+    ? raw.doNotInvent.map((x: any) => String(x || "").trim()).filter(Boolean).slice(0, 6)
+    : [];
+  return {
+    view: raw?.view ? String(raw.view) : "AP / coronal clinical view",
+    laterality: raw?.laterality ? String(raw.laterality) : (fallbackLaterality || ""),
+    imageLeftStructure: raw?.imageLeftStructure ? String(raw.imageLeftStructure) : "",
+    imageRightStructure: raw?.imageRightStructure ? String(raw.imageRightStructure) : "",
+    superiorStructure: raw?.superiorStructure ? String(raw.superiorStructure) : "",
+    inferiorStructure: raw?.inferiorStructure ? String(raw.inferiorStructure) : "",
+    mustShowLandmarks: landmarks,
+    pathologySite: raw?.pathologySite ? String(raw.pathologySite) : "",
+    pathologyAppearance: raw?.pathologyAppearance ? String(raw.pathologyAppearance) : "",
+    doNotInvent
+  };
+}
+
+function buildImagePromptFromContract(args: {
+  panelTitle: string;
+  anatomicalFocus: string;
+  studyRegion: string;
+  contract: SpatialContract;
+  customDirectives?: string;
+  forcedLaterality?: string;
+  surgicalCorrection?: string;
+}): string {
+  const c = args.contract;
+  const laterality = (args.forcedLaterality && args.forcedLaterality !== "auto"
+    ? args.forcedLaterality
+    : c.laterality) || "as in report";
+  const landmarks = (c.mustShowLandmarks || []).length
+    ? c.mustShowLandmarks!.join(", ")
+    : "key osseous and soft-tissue landmarks for orientation";
+  const left = c.imageLeftStructure || "anatomically correct left-of-frame structure";
+  const right = c.imageRightStructure || "anatomically correct right-of-frame structure";
+  const patho = c.pathologySite
+    ? `Show ONLY the reported finding at: ${c.pathologySite}. Appearance: ${c.pathologyAppearance || args.anatomicalFocus}.`
+    : `If a finding is described, depict it faithfully at the reported site; otherwise show normal anatomy.`;
+  const forbid = (c.doNotInvent || []).length
+    ? `Do NOT invent: ${c.doNotInvent!.join("; ")}.`
+    : "Do NOT invent pathology not present in the report.";
+
+  const parts = [
+    FAITHFUL_STYLE,
+    `Subject: ${args.studyRegion}. Panel: ${args.panelTitle}.`,
+    `Focus: ${args.anatomicalFocus}.`,
+    `Camera/view: ${c.view || "standard clinical 3D view"}.`,
+    `Patient laterality: ${laterality}.`,
+    `SPATIAL CANVAS CONTRACT (mandatory): LEFT OF FRAME = ${left}; RIGHT OF FRAME = ${right}.`,
+    c.superiorStructure ? `SUPERIOR = ${c.superiorStructure}.` : "",
+    c.inferiorStructure ? `INFERIOR = ${c.inferiorStructure}.` : "",
+    `Must-show landmarks: ${landmarks}.`,
+    patho,
+    forbid,
+    "Preserve true anatomical relationships and scale; no mirrored anatomy unless the contract requires it.",
+    "Visual beauty is secondary: never invent structures, never move pathology, never break the spatial contract for aesthetics.",
+    args.customDirectives ? `[MANDATORY CLINICAL DIRECTIVE: ${args.customDirectives}]` : "",
+    args.surgicalCorrection ? `[MANDATORY SURGICAL CORRECTION: ${args.surgicalCorrection}]` : ""
+  ].filter(Boolean);
+
+  return parts.join(" ");
+}
+
+function stripDataUrl(imageUrl: string): { mime: string; data: string } | null {
+  if (!imageUrl || typeof imageUrl !== "string") return null;
+  const m = imageUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (!m) return null;
+  return { mime: m[1], data: m[2] };
+}
+
+
 export function registerAtlas3DRoutes(app: express.Express) {
   // Helper to generate a medical image using gemini-3.1-flash-image-preview or imagen-3.0
   async function generateMedicalImage(ai: any, prompt: string): Promise<string> {
@@ -109,7 +207,7 @@ export function registerAtlas3DRoutes(app: express.Express) {
         model: "gemini-3.1-flash-image-preview",
         contents: prompt,
         config: {
-          imageConfig: { aspectRatio: "4:3", imageSize: "1K" }
+          imageConfig: { aspectRatio: "4:3", imageSize: "2K" }
         }
       });
 
@@ -157,77 +255,72 @@ export function registerAtlas3DRoutes(app: express.Express) {
       const ai = getGeminiClient();
       const model = getModelName(requestedModel || "gemini-3.7-flash");
 
-      const promptPlan = `Eres un Médico Radiólogo Especialista en Diagnóstico por Imágenes, Catedrático de Anatomía Humana Quirúrgica y Director de Arte Médico 3D.
-Tu labor es analizar minuciosamente el siguiente informe radiológico/ecográfico para concebir y diseñar un ATLAS ANATÓMICO TRIDIMENSIONAL FOTORREALISTA de calidad médica superior (Journal/Atlas Quality).
+      const promptPlan = `Eres un Médico Radiólogo Especialista en Diagnóstico por Imágenes y Anatomía Quirúrgica Aplicada.
+Tu objetivo es planificar un ATLAS 3D con MÁXIMA FIDELIDAD anatómica y patológica al informe (no arte ornamental).
 
 ========================================================================
-INFORMACIÓN DEL ESTUDIO CLÍNICO:
+INFORMACIÓN DEL ESTUDIO:
 ========================================================================
 - Región / Protocolo: "${organOrStudy || "Estudio General"}"
 - Lateralidad Solicitada/Forzada: "${laterality || "Detectar del texto"}"
-- Directiva / Matiz Personalizado: "${customDirectives || "Ninguno"}"
+- Directiva Clínica (Scorecard / médico): "${customDirectives || "Ninguna"}"
 - INFORME RADIOLÓGICO:
 """
 ${reportText}
 """
 
 ========================================================================
-TAREA Y ESPECIFICACIÓN:
+TAREA:
 ========================================================================
-1. Identifica la región anatómica evaluada (ej: "Hombro Derecho", "Mama Izquierda", "Rodilla Izquierda", "Abdomen Superior / Hígado y Vía Biliar", "Testículo Izquierdo", etc.).
-2. Determina con exactitud la lateralidad del paciente (Derecha / Izquierda / Bilateral) y las relaciones de corte anatómico (Anterior AP, Posterior PA, Sagital o Coronal).
-3. Diseña de 2 a 3 PANELES VISUALES complementarios (Panel A, Panel B y opcionalmente Panel C) que ilustren tridimensionalmente la anatomía normal relevante y la alteración patológica descrita:
-   - Panel A: Visión focal o coronal/sagital de la estructura principal con su alteración tisular o hallazgo más relevante.
-   - Panel B: Visión complementaria (corte transversal, profundidad articular, relación topográfica vecina o visión ampliada).
-   - Panel C (opcional, si el caso lo amerita): Visión biomecánica adicional o comparativa.
-4. Redacta para cada panel un PROMPT EN INGLÉS ultradetallado para generar una imagen médica 3D fotorrealista:
-   - Formato de estilo: "Clean 3D medical volumetric cross-section render, cinema 4D octane render style, organic translucent parenchyma cutaway, glowing chromatic bioluminescent accents highlighting the specific pathology/finding, ultra-high fidelity medical visualization, soft studio rim lighting, pure clean background, strictly NO written words, NO text, NO numbers, NO arrows, NO letters inside the image."
-   - Incluye referencias anatómicas espaciales concretas acordes a la lateralidad del paciente.
-5. Construye la TABLA DE CORRELACIÓN SEMIOLÓGICA ("synopticExplanation") con 2 a 4 filas asociadas a cada panel.
-6. Redacta la SÍNTESIS BIOMECÁNICA, FUNCIONAL Y DIAGNÓSTICA ("biomechanicalSynthesis") integrando los hallazgos.
+1. Identifica región y lateralidad exactas.
+2. Diseña 2 a 3 paneles complementarios centrados en hallazgos REALES del informe.
+3. Para CADA panel define un CONTRATO ESPACIAL (spatialContract) obligatorio:
+   - view (AP/coronal/sagittal/axial/oblique)
+   - laterality
+   - imageLeftStructure / imageRightStructure (qué debe verse a la IZQUIERDA y DERECHA del cuadro)
+   - superiorStructure / inferiorStructure si aplica
+   - mustShowLandmarks[] (hitos óseos/blandos de orientación)
+   - pathologySite + pathologyAppearance (solo si el informe lo describe)
+   - doNotInvent[] (errores típicos a evitar, p.ej. invertir medial/lateral)
+4. "structure" en synopticExplanation = NOMBRE CORTO de estructura (NO el pie "Foco: ...").
+5. NO inventes lesiones. Si el informe es normal, paneles de anatomía preservada.
+6. Estilo deseado: fotorrealismo clínico de alta calidad (textura tisular rica, iluminación de estudio suave); SIN bioluminiscencia ni glow ornamental. La fidelidad anatómica/patológica manda sobre el efecto visual.
 
-RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON LA SIGUIENTE ESTRUCTURA:
+RESPONDE SOLO JSON VÁLIDO:
 {
-  "studyRegion": "Nombre de la región (ej. Rodilla Izquierda, Abdomen Completo, Hombro Derecho)",
-  "figureTitle": "FIGURA 1. RECONSTRUCCIÓN ANATÓMICA 3D Y CORRELACIÓN ULTRASONOGRÁFICA DE [REGIÓN]",
-  "detectedLaterality": "Izquierda" | "Derecha" | "Bilateral" | "Línea media",
+  "studyRegion": "string",
+  "figureTitle": "FIGURA 1. ...",
+  "detectedLaterality": "Izquierda|Derecha|Bilateral|Línea media",
   "panels": [
     {
       "panelLetter": "A",
-      "panelTitle": "Título corto y preciso del Panel A (ej. Corte Coronal - Compartimento Femorotibial Medial)",
-      "anatomicalFocus": "Foco: Breve descripción de 1 línea del hallazgo anatómico (ej. Desgarro del cuerno posterior del menisco medial)",
-      "laterality": "Izquierda" | "Derecha",
-      "imagePrompt": "Detailed English prompt for generating panel A 3D render..."
-    },
-    {
-      "panelLetter": "B",
-      "panelTitle": "Título corto y preciso del Panel B (ej. Visión Volumétrica Sagital y Relación Articular)",
-      "anatomicalFocus": "Foco: Breve descripción de 1 línea del hallazgo en Panel B",
-      "laterality": "Izquierda" | "Derecha",
-      "imagePrompt": "Detailed English prompt for generating panel B 3D render..."
+      "panelTitle": "Título corto",
+      "anatomicalFocus": "Foco: hallazgo en 1 línea",
+      "laterality": "Izquierda|Derecha",
+      "spatialContract": {
+        "view": "string",
+        "laterality": "string",
+        "imageLeftStructure": "string",
+        "imageRightStructure": "string",
+        "superiorStructure": "string",
+        "inferiorStructure": "string",
+        "mustShowLandmarks": ["string"],
+        "pathologySite": "string",
+        "pathologyAppearance": "string",
+        "doNotInvent": ["string"]
+      }
     }
   ],
   "synopticExplanation": [
-    {
-      "structure": "Estructura o complejo evaluado (ej. Menisco Medial (Cuerno Posterior))",
-      "panelRef": "(Panel A)",
-      "findingDetail": "Descripción detallada del hallazgo patológico y correlación tridimensional..."
-    },
-    {
-      "structure": "Estructura complementaria (ej. Cartílago Hialino y Espacio Articular)",
-      "panelRef": "(Panel B)",
-      "findingDetail": "Descripción de la correlación con la imagen..."
-    }
+    { "structure": "Nombre corto de estructura", "panelRef": "(Panel A)", "findingDetail": "Correlación fiel al informe..." }
   ],
-  "biomechanicalSynthesis": "Texto de 2 a 3 líneas integrando la repercusión funcional, biomecánica o diagnóstica del cuadro..."
+  "biomechanicalSynthesis": "2-3 líneas de síntesis funcional/diagnóstica fiel al informe"
 }`;
 
       const planResponse = await ai.models.generateContent({
         model: model,
         contents: [{ text: promptPlan }],
-        config: {
-          responseMimeType: "application/json"
-        }
+        config: { responseMimeType: "application/json" }
       });
 
       let planJson: any = {};
@@ -245,70 +338,199 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON LA SIGUIENTE ESTRUCTURA:
               panelTitle: "Reconstrucción Volumétrica Principal",
               anatomicalFocus: "Foco: Hallazgo anatómico correlacionado",
               laterality: laterality || "No especificada",
-              imagePrompt: `Clean 3D medical volumetric cross-section render of ${organOrStudy || "human anatomy finding"}, octane render style, glowing chromatic highlights, ultra-high resolution medical illustration, no text.`
+              spatialContract: {
+                view: "coronal/AP",
+                laterality: laterality || "",
+                imageLeftStructure: "anatomically correct left side",
+                imageRightStructure: "anatomically correct right side",
+                mustShowLandmarks: [],
+                pathologySite: "",
+                pathologyAppearance: "",
+                doNotInvent: ["mirrored laterality", "invented tears"]
+              }
             },
             {
               panelLetter: "B",
               panelTitle: "Perspectiva Regional y Relación Tisular",
               anatomicalFocus: "Foco: Relación topográfica y estructuras adyacentes",
               laterality: laterality || "No especificada",
-              imagePrompt: `Wide 3D medical volumetric render showing neighboring organs and tissues of ${organOrStudy || "human anatomy finding"}, cinematic studio lighting, translucent glass cutaway, high detail, no text.`
+              spatialContract: {
+                view: "sagittal/oblique",
+                laterality: laterality || "",
+                imageLeftStructure: "anatomically correct left side",
+                imageRightStructure: "anatomically correct right side",
+                mustShowLandmarks: [],
+                pathologySite: "",
+                pathologyAppearance: "",
+                doNotInvent: ["invented masses"]
+              }
             }
           ],
           synopticExplanation: [
-            {
-              structure: "Estructura Principal",
-              panelRef: "(Panel A)",
-              findingDetail: "Reconstrucción anatómica tridimensional con visualización de los hallazgos semiológicos descritos en el informe."
-            },
-            {
-              structure: "Estructuras Vecinas",
-              panelRef: "(Panel B)",
-              findingDetail: "Relación tisular y topográfica regional con preservación de la arquitectura adyacente."
-            }
+            { structure: "Estructura Principal", panelRef: "(Panel A)", findingDetail: "Correlación con los hallazgos del informe." },
+            { structure: "Estructuras Vecinas", panelRef: "(Panel B)", findingDetail: "Relación tisular regional." }
           ],
-          biomechanicalSynthesis: "La correlación de los planos volumétricos confirma la localización anatómica y la repercusión de los hallazgos descriptos en el estudio."
+          biomechanicalSynthesis: "La correlación volumétrica resume la localización y repercusión de los hallazgos del estudio."
         };
       }
 
-      // Generate images in parallel for each panel
-      const panelsWithImages = await Promise.all(
-        (planJson.panels || []).map(async (panel: any, idx: number) => {
-          let promptToUse = panel.imagePrompt || `3D medical volumetric render of ${panel.panelTitle || organOrStudy}, organic cutaway, studio lighting, no text.`;
-          if (customDirectives && customDirectives.trim()) {
-            promptToUse = `${promptToUse} [MANDATORY CLINICAL DIRECTIVE: ${customDirectives.trim()}].`;
-          }
-          if (laterality && laterality !== "auto") {
-            promptToUse = `[MANDATORY PATIENT LATERALITY: ${laterality.toUpperCase()}]. ${promptToUse}`;
+      const forcedLaterality = laterality && laterality !== "auto" ? laterality : "";
+
+      const buildPanelFromPlan = async (panel: any, idx: number, surgicalCorrection?: string) => {
+        const contract = normalizeSpatialContract(panel.spatialContract, panel.laterality || planJson.detectedLaterality || forcedLaterality);
+        const promptToUse = buildImagePromptFromContract({
+          panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
+          anatomicalFocus: panel.anatomicalFocus || "Foco anatómico correlacionado",
+          studyRegion: planJson.studyRegion || organOrStudy || "anatomy",
+          contract,
+          customDirectives,
+          forcedLaterality,
+          surgicalCorrection
+        });
+        try {
+          const imageUrl = await generateMedicalImage(ai, promptToUse);
+          return {
+            id: `panel-${idx}-${Date.now()}`,
+            panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
+            panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
+            anatomicalFocus: panel.anatomicalFocus || "Foco anatómico correlacionado",
+            laterality: panel.laterality || planJson.detectedLaterality || laterality || "",
+            spatialContract: contract,
+            imageUrl,
+            promptUsed: promptToUse,
+            isCustomFlipped: false
+          };
+        } catch (imgErr) {
+          console.error(`Error generando imagen para panel ${panel.panelLetter}:`, imgErr);
+          return {
+            id: `panel-${idx}-${Date.now()}`,
+            panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
+            panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
+            anatomicalFocus: panel.anatomicalFocus || "Foco anatómico correlacionado",
+            laterality: panel.laterality || planJson.detectedLaterality || laterality || "",
+            spatialContract: contract,
+            imageUrl: "",
+            promptUsed: promptToUse,
+            isCustomFlipped: false
+          };
+        }
+      };
+
+      let panelsWithImages = await Promise.all(
+        (planJson.panels || []).map((panel: any, idx: number) => buildPanelFromPlan(panel, idx))
+      );
+
+      // Vision verification pass: check anatomy/pathology fidelity and auto-correct once if needed
+      let qualityAudit: any = { verified: false, panelNotes: [], synopticRewritten: false };
+      try {
+        const verifiable = panelsWithImages.filter((p: any) => p.imageUrl && stripDataUrl(p.imageUrl));
+        if (verifiable.length > 0) {
+          const verifyParts: any[] = [
+            {
+              text: `Eres un radiólogo revisor de calidad de atlas 3D.
+Compara CADA imagen con el informe y el contrato espacial.
+Devuelve JSON:
+{
+  "panels": [
+    {
+      "panelLetter": "A",
+      "pass": true/false,
+      "lateralityOk": true/false,
+      "pathologyOk": true/false,
+      "landmarksOk": true/false,
+      "issues": ["..."],
+      "surgicalCorrection": "instrucción EN INGLÉS para regenerar si pass=false, vacía si pass=true"
+    }
+  ],
+  "synopticExplanation": [
+    { "structure": "nombre corto", "panelRef": "(Panel A)", "findingDetail": "texto fiel al informe y a lo visible" }
+  ],
+  "biomechanicalSynthesis": "síntesis breve fiel"
+}
+Reglas: structure corto (sin 'Foco:'); no inventes hallazgos; si la imagen falla lateralidad/hallazgo, pass=false y da surgicalCorrection concreta.
+INFORME:
+"""
+${reportText}
+"""
+PLAN/CONTRATOS:
+${JSON.stringify((planJson.panels || []).map((p: any, i: number) => ({
+  panelLetter: panelsWithImages[i]?.panelLetter || p.panelLetter,
+  panelTitle: p.panelTitle,
+  anatomicalFocus: p.anatomicalFocus,
+  spatialContract: panelsWithImages[i]?.spatialContract || p.spatialContract
+})), null, 2)}
+SYNOPTIC ACTUAL:
+${JSON.stringify(planJson.synopticExplanation || [], null, 2)}
+`
+            }
+          ];
+          for (const p of verifiable) {
+            const parsedImg = stripDataUrl(p.imageUrl);
+            if (!parsedImg) continue;
+            verifyParts.push({ text: `PANEL ${p.panelLetter} — ${p.panelTitle}` });
+            verifyParts.push({ inlineData: { mimeType: parsedImg.mime, data: parsedImg.data } });
           }
 
+          const verifyResp = await ai.models.generateContent({
+            model,
+            contents: { parts: verifyParts },
+            config: { responseMimeType: "application/json" }
+          });
+
+          let verifyJson: any = {};
           try {
-            const imageUrl = await generateMedicalImage(ai, promptToUse);
-            return {
-              id: `panel-${idx}-${Date.now()}`,
-              panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
-              panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
-              anatomicalFocus: panel.anatomicalFocus || "Foco anatómico correlacionado",
-              laterality: panel.laterality || planJson.detectedLaterality || laterality || "",
-              imageUrl: imageUrl,
-              promptUsed: promptToUse,
-              isCustomFlipped: false
-            };
-          } catch (imgErr) {
-            console.error(`Error generando imagen para panel ${panel.panelLetter}:`, imgErr);
-            return {
-              id: `panel-${idx}-${Date.now()}`,
-              panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
-              panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
-              anatomicalFocus: panel.anatomicalFocus || "Foco anatómico correlacionado",
-              laterality: panel.laterality || planJson.detectedLaterality || laterality || "",
-              imageUrl: "",
-              promptUsed: promptToUse,
-              isCustomFlipped: false
-            };
+            verifyJson = JSON.parse(verifyResp.text || "{}");
+          } catch {
+            verifyJson = {};
           }
-        })
-      );
+
+          qualityAudit.verified = true;
+          qualityAudit.panelNotes = Array.isArray(verifyJson.panels) ? verifyJson.panels : [];
+
+          // Auto-regenerate failing panels once
+          if (Array.isArray(verifyJson.panels)) {
+            const regenJobs: Promise<any>[] = [];
+            for (const note of verifyJson.panels) {
+              if (note?.pass !== false) continue;
+              const letter = String(note.panelLetter || "").toUpperCase();
+              const idx = panelsWithImages.findIndex((p: any) => String(p.panelLetter).toUpperCase() === letter);
+              if (idx < 0) continue;
+              const originalPlan = (planJson.panels || [])[idx] || panelsWithImages[idx];
+              const correction = String(note.surgicalCorrection || "Fix laterality landmarks and depict only reported pathology.").trim();
+              regenJobs.push(
+                buildPanelFromPlan(originalPlan, idx, correction).then((newPanel) => ({ idx, newPanel, note }))
+              );
+            }
+            const regenResults = await Promise.all(regenJobs);
+            for (const r of regenResults) {
+              panelsWithImages[r.idx] = {
+                ...r.newPanel,
+                qualityFlags: {
+                  regenerated: true,
+                  issues: r.note.issues || [],
+                  lateralityOk: false,
+                  pathologyOk: false
+                }
+              };
+            }
+          }
+
+          if (Array.isArray(verifyJson.synopticExplanation) && verifyJson.synopticExplanation.length) {
+            planJson.synopticExplanation = verifyJson.synopticExplanation.map((row: any) => ({
+              structure: String(row.structure || "").replace(/^foco\s*:\s*/i, "").trim() || "Estructura",
+              panelRef: row.panelRef || "(Panel A)",
+              findingDetail: String(row.findingDetail || "").trim()
+            }));
+            qualityAudit.synopticRewritten = true;
+          }
+          if (typeof verifyJson.biomechanicalSynthesis === "string" && verifyJson.biomechanicalSynthesis.trim()) {
+            planJson.biomechanicalSynthesis = verifyJson.biomechanicalSynthesis.trim();
+          }
+        }
+      } catch (verifyErr: any) {
+        console.warn("Verificación visual Atlas 3D omitida/fallida:", verifyErr?.message || verifyErr);
+        qualityAudit.error = String(verifyErr?.message || verifyErr);
+      }
 
       const finalAtlasData = {
         studyRegion: planJson.studyRegion || organOrStudy || "Estudio Actual",
@@ -318,7 +540,8 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON LA SIGUIENTE ESTRUCTURA:
         synopticExplanation: planJson.synopticExplanation || [],
         synopticTable: planJson.synopticExplanation || [],
         biomechanicalSynthesis: planJson.biomechanicalSynthesis || "",
-        synthesis: planJson.biomechanicalSynthesis || ""
+        synthesis: planJson.biomechanicalSynthesis || "",
+        qualityAudit
       };
 
       res.json({
@@ -332,10 +555,10 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON LA SIGUIENTE ESTRUCTURA:
     }
   });
 
-  // 2. Single Panel Regeneration with prompt tweak and laterality control
+  // 2. Single Panel Regeneration with spatial contract + faithful clinical style
   app.post("/api/regenerate-3d-panel", async (req: express.Request, res: express.Response) => {
     try {
-      const { reportText, studyRegion, panel, laterality, userDirective, requestedModel } = req.body;
+      const { reportText, studyRegion, panel, laterality, userDirective, requestedModel, customDirectives } = req.body;
 
       if (!panel) {
         return res.status(400).json({ success: false, error: "Se requiere el objeto de panel a regenerar." });
@@ -343,28 +566,40 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON LA SIGUIENTE ESTRUCTURA:
 
       const ai = getGeminiClient();
       const model = getModelName(requestedModel || "gemini-3.7-flash");
+      const forcedLaterality = laterality && laterality !== "auto" ? laterality : "";
+      const fullReport = typeof reportText === "string" ? reportText : "";
 
-      // Refine prompt for this specific panel
-      const refinementPrompt = `Eres un Director de Arte Médico 3D y Radiólogo.
-Diseña un prompt en inglés superdetallado para re-generar una única imagen 3D fotorrealista correspondiente al PANEL ${panel.panelLetter}.
+      const refinementPrompt = `Eres un Radiólogo y Anatomista Quirúrgico. Refina el CONTRATO ESPACIAL para regenerar el PANEL ${panel.panelLetter || "A"} con máxima fidelidad al informe (fotorrealismo clínico de alta calidad: textura e iluminación premium, sin arte bioluminiscente).
 
 DATOS DEL CASO:
 - Región: "${studyRegion || "Anatomía médica"}"
-- Título actual del Panel: "${panel.panelTitle || ""}"
+- Título actual: "${panel.panelTitle || ""}"
 - Foco actual: "${panel.anatomicalFocus || ""}"
-- Lateralidad requerida: "${laterality || panel.laterality || ""}"
-- Instrucción / Corrección del médico: "${userDirective || "Mejorar realismo y precisión anatómica"}"
-- Contexto del informe: """${(reportText || "").slice(0, 800)}"""
+- Lateralidad requerida: "${forcedLaterality || panel.laterality || ""}"
+- Contrato espacial previo: ${JSON.stringify(panel.spatialContract || {})}
+- Directiva clínica (Scorecard / médico): "${customDirectives || "Ninguna"}"
+- Corrección quirúrgica del médico: "${userDirective || "Mejorar precisión anatómica y patológica"}"
+- INFORME COMPLETO:
+"""
+${fullReport}
+"""
 
-REGLAS DE ESTILO:
-- Clean 3D medical volumetric cross-section render, cinema 4D octane render style, organic translucent parenchyma cutaway, glowing chromatic highlights for pathology, soft studio rim lighting, pure clean background.
-- STRICTLY NO text, NO numbers, NO letters, NO arrows inside the image.
-
-RESPONDE EN JSON:
+RESPONDE SOLO JSON:
 {
-  "panelTitle": "Título actualizado o confirmado para el panel",
-  "anatomicalFocus": "Foco: Breve descripción de 1 línea del hallazgo en este panel",
-  "imagePrompt": "Detailed English image generation prompt..."
+  "panelTitle": "string",
+  "anatomicalFocus": "Foco: 1 línea fiel al informe",
+  "spatialContract": {
+    "view": "string",
+    "laterality": "string",
+    "imageLeftStructure": "string",
+    "imageRightStructure": "string",
+    "superiorStructure": "string",
+    "inferiorStructure": "string",
+    "mustShowLandmarks": ["string"],
+    "pathologySite": "string",
+    "pathologyAppearance": "string",
+    "doNotInvent": ["string"]
+  }
 }`;
 
       const refineResponse = await ai.models.generateContent({
@@ -380,17 +615,24 @@ RESPONDE EN JSON:
         refineJson = {
           panelTitle: panel.panelTitle,
           anatomicalFocus: panel.anatomicalFocus,
-          imagePrompt: `Medical 3D volumetric render of ${panel.panelTitle || studyRegion}, organic cross section, octane render, soft studio lighting, no text.`
+          spatialContract: panel.spatialContract || {}
         };
       }
 
-      let finalPrompt = refineJson.imagePrompt || panel.promptUsed || `3D volumetric medical render of ${studyRegion}, no text.`;
-      if (userDirective && userDirective.trim()) {
-        finalPrompt = `${finalPrompt} [MANDATORY SURGICAL CORRECTION: ${userDirective.trim()}].`;
-      }
-      if (laterality && laterality !== "auto") {
-        finalPrompt = `[MANDATORY PATIENT LATERALITY: ${laterality.toUpperCase()}]. ${finalPrompt}`;
-      }
+      const contract = normalizeSpatialContract(
+        refineJson.spatialContract || panel.spatialContract,
+        forcedLaterality || panel.laterality
+      );
+
+      const finalPrompt = buildImagePromptFromContract({
+        panelTitle: refineJson.panelTitle || panel.panelTitle || `Panel ${panel.panelLetter || ""}`,
+        anatomicalFocus: refineJson.anatomicalFocus || panel.anatomicalFocus || "Foco anatómico correlacionado",
+        studyRegion: studyRegion || "anatomy",
+        contract,
+        customDirectives,
+        forcedLaterality,
+        surgicalCorrection: userDirective
+      });
 
       const imageUrl = await generateMedicalImage(ai, finalPrompt);
 
@@ -398,10 +640,12 @@ RESPONDE EN JSON:
         ...panel,
         panelTitle: refineJson.panelTitle || panel.panelTitle,
         anatomicalFocus: refineJson.anatomicalFocus || panel.anatomicalFocus,
-        laterality: laterality || panel.laterality,
+        laterality: forcedLaterality || panel.laterality,
+        spatialContract: contract,
         imageUrl: imageUrl,
         promptUsed: finalPrompt,
-        isCustomFlipped: false
+        isCustomFlipped: false,
+        qualityFlags: undefined
       };
 
       res.json({
