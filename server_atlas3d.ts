@@ -109,7 +109,7 @@ function handleGeminiError(error: any): string {
 
 
 const FAITHFUL_STYLE =
-  "Clean photorealistic 3D medical anatomical render, volumetric cutaway, accurate topographic relationships, subdued clinical lighting, pathology highlighted with restrained chromatic accent only where the report describes it, no invented lesions, pure clean background, STRICTLY NO text, NO letters, NO numbers, NO arrows, NO labels inside the image.";
+  "High-fidelity photorealistic 3D medical anatomical render, volumetric surgical cutaway, accurate topographic relationships and true anatomical scale. Premium tissue materials: realistic fascia, muscle fiber microtexture, visceral parenchyma, periosteum and serosa with physically based subsurface scattering. Soft cinematic clinical studio lighting with gentle rim light and shallow depth cues for clarity—NOT neon, NOT bioluminescent, NOT exaggerated glow. Pathology highlighted with restrained chromatic accent ONLY where the report describes it. No invented lesions. Pure clean background. STRICTLY NO text, NO letters, NO numbers, NO arrows, NO labels inside the image.";
 
 type SpatialContract = {
   view?: string;
@@ -183,6 +183,7 @@ function buildImagePromptFromContract(args: {
     patho,
     forbid,
     "Preserve true anatomical relationships and scale; no mirrored anatomy unless the contract requires it.",
+    "Visual beauty is secondary: never invent structures, never move pathology, never break the spatial contract for aesthetics.",
     args.customDirectives ? `[MANDATORY CLINICAL DIRECTIVE: ${args.customDirectives}]` : "",
     args.surgicalCorrection ? `[MANDATORY SURGICAL CORRECTION: ${args.surgicalCorrection}]` : ""
   ].filter(Boolean);
@@ -206,7 +207,7 @@ export function registerAtlas3DRoutes(app: express.Express) {
         model: "gemini-3.1-flash-image-preview",
         contents: prompt,
         config: {
-          imageConfig: { aspectRatio: "4:3", imageSize: "1K" }
+          imageConfig: { aspectRatio: "4:3", imageSize: "2K" }
         }
       });
 
@@ -283,7 +284,7 @@ TAREA:
    - doNotInvent[] (errores típicos a evitar, p.ej. invertir medial/lateral)
 4. "structure" en synopticExplanation = NOMBRE CORTO de estructura (NO el pie "Foco: ...").
 5. NO inventes lesiones. Si el informe es normal, paneles de anatomía preservada.
-6. Estilo deseado: fotorrealismo clínico sobrio (sin bioluminiscencia exagerada).
+6. Estilo deseado: fotorrealismo clínico de alta calidad (textura tisular rica, iluminación de estudio suave); SIN bioluminiscencia ni glow ornamental. La fidelidad anatómica/patológica manda sobre el efecto visual.
 
 RESPONDE SOLO JSON VÁLIDO:
 {
@@ -568,7 +569,7 @@ ${JSON.stringify(planJson.synopticExplanation || [], null, 2)}
       const forcedLaterality = laterality && laterality !== "auto" ? laterality : "";
       const fullReport = typeof reportText === "string" ? reportText : "";
 
-      const refinementPrompt = `Eres un Radiólogo y Anatomista Quirúrgico. Refina el CONTRATO ESPACIAL para regenerar el PANEL ${panel.panelLetter || "A"} con máxima fidelidad al informe (estilo clínico sobrio, no arte bioluminiscente).
+      const refinementPrompt = `Eres un Radiólogo y Anatomista Quirúrgico. Refina el CONTRATO ESPACIAL para regenerar el PANEL ${panel.panelLetter || "A"} con máxima fidelidad al informe (fotorrealismo clínico de alta calidad: textura e iluminación premium, sin arte bioluminiscente).
 
 DATOS DEL CASO:
 - Región: "${studyRegion || "Anatomía médica"}"
