@@ -64,7 +64,7 @@ export function mergeOverlaysOntoAtlas(
         (s.structure || "").toLowerCase().includes((ov.structure || "").toLowerCase().slice(0, 18)) ||
         (ov.structure || "").toLowerCase().includes((s.structure || "").toLowerCase().slice(0, 18))
     );
-    const detail = `[${ov.marker}] ${ov.finding}${ov.evidence ? ` — ${ov.evidence}` : ""}`;
+    const detail = `${ov.finding}${ov.evidence ? ` — ${ov.evidence}` : ""}`;
     if (idx >= 0) {
       synoptic[idx] = {
         ...synoptic[idx],
