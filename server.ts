@@ -76,7 +76,14 @@ function getModelName(requestedModel?: string): string {
   if (requestedModel === "gemini-3.1-pro-preview" || requestedModel === "gemini-3.1-pro") {
     return "gemini-3.1-pro-preview";
   }
-  return "gemini-3.7-flash";
+  if (requestedModel === "gemini-3.8-flash") {
+    return "gemini-3.8-flash";
+  }
+  if (requestedModel === "gemini-3.7-flash") {
+    return "gemini-3.7-flash";
+  }
+  // auto / unknown / empty → quality Flash default on server
+  return "gemini-3.8-flash";
 }
 
 // Global sanitizer to strictly enforce BAAF instead of PAAF across all reports, annexes, and modules
@@ -4445,13 +4452,13 @@ REGLAS DE RESPUESTA:
 
 app.post("/api/classify-and-label-image", async (req: express.Request, res: express.Response) => {
   try {
-    const { image, filename, studyType, clinicalHistory, findings } = req.body;
+    const { image, filename, studyType, clinicalHistory, findings, model } = req.body;
     if (!image) {
       return res.status(400).json({ success: false, error: "Se requiere la imagen." });
     }
 
     const ai = getGeminiClient();
-    const selectedModel = getModelName("gemini-3.7-flash");
+    const selectedModel = getModelName(model || "gemini-3.7-flash");
 
     let mimeType = "image/png";
     const mimeMatch = image.match(/^data:([^;]+);/);
@@ -4543,14 +4550,14 @@ Responde EXCLUSIVAMENTE en formato JSON estricto con la siguiente estructura:
 
 app.post("/api/auto-label-us-photo", async (req: express.Request, res: express.Response) => {
   try {
-    const { image, studyType, clinicalHistory, findings } = req.body;
+    const { image, studyType, clinicalHistory, findings, model } = req.body;
     
     if (!image) {
       return res.status(400).json({ success: false, error: "Se requiere la imagen." });
     }
 
     const ai = getGeminiClient();
-    const selectedModel = getModelName("gemini-3.7-flash");
+    const selectedModel = getModelName(model || "gemini-3.7-flash");
 
     // Check if image string is SVG or base64
     let mimeType = "image/png";
@@ -8703,10 +8710,264 @@ ${report}
   }
 });
 
+
+/**
+ * API: CLINICAL SCORECARD + ATLAS OVERLAY INTELLIGENCE
+ * POST /api/generate-clinical-scorecard
+ * Shared engine: criteria scorecard + pathology overlays for Atlas 3D.
+ * Payload: { model?, report, studyType?, protocolId?, pathologyFocus?, includeRecommendations?, atlasPanels?: [{panelLetter,panelTitle,anatomicalFocus}] }
+ */
+app.post("/api/generate-clinical-scorecard", async (req: express.Request, res: express.Response) => {
+  try {
+    const { model, report, studyType, protocolId, pathologyFocus, includeRecommendations, atlasPanels } = req.body;
+    if (!report) {
+      return res.status(400).json({ success: false, error: "Se requiere el parámetro 'report'." });
+    }
+
+    const ai = getGeminiClient();
+    const modelToUse = getModelName(model);
+    const requestedProtocol = (protocolId || "auto").toString();
+    const focusText = (pathologyFocus || "").toString().trim();
+    const withRecommendations = includeRecommendations === true;
+    const panelsHint = Array.isArray(atlasPanels) && atlasPanels.length
+      ? atlasPanels.map((p: any) => `- Panel ${p.panelLetter}: ${p.panelTitle || ""} | Foco: ${p.anatomicalFocus || ""}`).join("\n")
+      : "Sin paneles Atlas aún (propón panelLetter A/B/C según estructuras).";
+
+    const prompt = `Eres un radiólogo hispanohablante experto en criterios diagnósticos formales.
+Analiza el informe y genera UN Scorecard de criterios clínicos + marcadores de correlación para Atlas 3D.
+
+IDIOMA (OBLIGATORIO E INQUEBRANTABLE):
+- TODO el texto visible al médico DEBE estar en ESPAÑOL médico: protocolName, categoryAssigned, clinicalSummary, recommendation, studyRegion, criterion, value, evidence, atlasStructure, suggestedPanelFocus, structure, finding.
+- PROHIBIDO inglés en esos campos (nada de "Tendon thickening", "Present", "Absent", "Major", "Critical", "Partial thickness tear", etc.).
+- Traduce criterios y valores al español aunque el protocolo interno sea anglosajón (ej. "Engrosamiento tendinoso (diámetro AP > 6 mm)", "Presente", "Ausente", "Rotura de espesor parcial").
+- Los ÚNICOS campos en inglés/código son: protocolId, status, weight, trafficLight, marker, panelLetter, id, linkedCriterionId.
+
+ESTUDIO: ${studyType || "No especificado"}
+PROTOCOLO PREDEFINIDO: ${requestedProtocol === "auto" ? "Detección automática del protocolo más específico" : requestedProtocol}
+${focusText ? `ENFOQUE EXPLÍCITO DEL MÉDICO (PRIORIDAD MÁXIMA): "${focusText}"
+Debes construir el scorecard alrededor de este órgano/región/patología. Si choca con el protocolo predefinido, prioriza el enfoque del médico.` : "Sin enfoque libre adicional: usa el protocolo predefinido o auto-detecta."}
+
+PANELES ATLAS DISPONIBLES:
+${panelsHint}
+
+PROTOCOLOS POSIBLES (id interno si AUTO): cholecystitis, appendicitis, thyroid_tirads, bosniak, rotator_cuff, hepatic, renal, scrotal, diverticulitis, achilles, muscle_injury, generic.
+
+REGLAS DE FIDELIDAD (OBLIGATORIAS):
+1. Cada criterio debe anclarse SOLO al texto del informe (evidence = cita/paráfrasis fiel en español con medidas si constan).
+2. status: "met" | "not_met" | "not_mentioned" | "equivocal".
+3. NO inventes hallazgos. Si no hay dato: not_mentioned.
+4. Incluye 6 a 12 criterios del protocolo (umbrales oficiales cuando aplique).
+5. weight: "critical" | "major" | "minor" (códigos internos; el texto del criterio va en español).
+6. severity 0-10 coherente con el hallazgo.
+7. value en español ("Presente", "Ausente", "6.8 mm", "60% del espesor", etc.).
+8. atlasOverlays: SOLO para criterios met o equivocal con anatomía localizable (máx 5). Textos en español. Vincula linkedCriterionId.
+9. panelLetter debe coincidir con un panel existente si hay lista; si no, usa A/B/C.
+10. trafficLight: low | moderate | high | critical.
+11. protocolName y categoryAssigned en español (ej. "Valoración ecográfica del tendón de Aquiles", "Musculoesquelético").
+12. RECOMENDACIONES: ${withRecommendations
+  ? 'SÍ incluir "recommendation" con conducta/seguimiento breve en español (1-3 frases).'
+  : 'NO incluir recomendaciones. El campo "recommendation" DEBE ser exactamente "" (cadena vacía). PROHIBIDO sugerir conducta, seguimiento, tratamiento o disclaimers.'}
+
+Responde JSON con:
+- protocolId, protocolName, categoryAssigned
+- scoreMet, scoreTotal, trafficLight
+- clinicalSummary, recommendation, studyRegion
+- criteria: [{ id, criterion, status, value, evidence, weight, severity, atlasStructure, suggestedPanelFocus }]
+- atlasOverlays: [{ id, panelLetter, marker, structure, finding, severity, status ("active"|"secondary"), linkedCriterionId, evidence }]
+
+INFORME:
+"""
+${report}
+"""
+`;
+
+const response = await ai.models.generateContent({
+      model: modelToUse,
+      contents: prompt,
+      config: {
+        temperature: 0.12,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            protocolId: { type: Type.STRING },
+            protocolName: { type: Type.STRING },
+            categoryAssigned: { type: Type.STRING },
+            scoreMet: { type: Type.INTEGER },
+            scoreTotal: { type: Type.INTEGER },
+            trafficLight: { type: Type.STRING },
+            clinicalSummary: { type: Type.STRING },
+            recommendation: { type: Type.STRING },
+            studyRegion: { type: Type.STRING },
+            criteria: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  id: { type: Type.STRING },
+                  criterion: { type: Type.STRING },
+                  status: { type: Type.STRING },
+                  value: { type: Type.STRING },
+                  evidence: { type: Type.STRING },
+                  weight: { type: Type.STRING },
+                  severity: { type: Type.INTEGER },
+                  atlasStructure: { type: Type.STRING },
+                  suggestedPanelFocus: { type: Type.STRING }
+                },
+                required: ["id", "criterion", "status", "evidence", "weight", "severity"]
+              }
+            },
+            atlasOverlays: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  id: { type: Type.STRING },
+                  panelLetter: { type: Type.STRING },
+                  marker: { type: Type.STRING },
+                  structure: { type: Type.STRING },
+                  finding: { type: Type.STRING },
+                  severity: { type: Type.INTEGER },
+                  status: { type: Type.STRING },
+                  linkedCriterionId: { type: Type.STRING },
+                  evidence: { type: Type.STRING }
+                },
+                required: ["id", "panelLetter", "marker", "structure", "finding", "severity", "status"]
+              }
+            }
+          },
+          required: [
+            "protocolId",
+            "protocolName",
+            "categoryAssigned",
+            "scoreMet",
+            "scoreTotal",
+            "trafficLight",
+            "clinicalSummary",
+            "recommendation",
+            "criteria",
+            "atlasOverlays"
+          ]
+        }
+      }
+    });
+
+    const rawText = response.text || "{}";
+    const parsed = JSON.parse(rawText);
+
+    const allowedStatus = new Set(["met", "not_met", "not_mentioned", "equivocal"]);
+    const allowedWeight = new Set(["critical", "major", "minor"]);
+    const allowedLight = new Set(["low", "moderate", "high", "critical"]);
+
+    const localizeScorecardText = (raw: string): string => {
+      if (!raw) return raw;
+      let s = String(raw);
+      const pairs: Array<[RegExp, string]> = [
+        [/^Present$/i, "Presente"],
+        [/^Absent$/i, "Ausente"],
+        [/^Partial thickness tear$/i, "Rotura de espesor parcial"],
+        [/^Full.?thickness tear$/i, "Rotura de espesor completo"],
+        [/\bPresent\b/gi, "Presente"],
+        [/\bAbsent\b/gi, "Ausente"],
+        [/\bMajor\b/gi, "Mayor"],
+        [/\bCritical\b/gi, "Crítico"],
+        [/\bMinor\b/gi, "Menor"],
+        [/\bMusculoskeletal\b/gi, "Musculoesquelético"],
+        [/\bThickening\b/gi, "Engrosamiento"],
+        [/\bTendinosis\b/gi, "Tendinosis"],
+        [/\bBursitis\b/gi, "Bursitis"],
+        [/\bCalcifications?\b/gi, "Calcificaciones"],
+        [/\bInsertion\b/gi, "Inserción"],
+        [/\bDistal Achilles Tendon\b/gi, "Tendón de Aquiles distal"],
+        [/\bCalcaneal insertion\b/gi, "Inserción calcánea"],
+        [/\bAchilles Tendon Ultrasound Assessment\b/gi, "Valoración ecográfica del tendón de Aquiles"],
+        [/\bPartial thickness\b/gi, "Espesor parcial"],
+        [/\bFull thickness\b/gi, "Espesor completo"],
+        [/\bLoss of normal fibrillar pattern\b/gi, "Pérdida del patrón fibrilar normal"],
+        [/\bTendon thickening\b/gi, "Engrosamiento tendinoso"],
+        [/\bIntratendinous calcifications\b/gi, "Calcificaciones intratendinosas"],
+        [/\bRetrocalcaneal bursitis\b/gi, "Bursitis retrocalcánea"],
+      ];
+      for (const [re, rep] of pairs) s = s.replace(re, rep);
+      return s;
+    };
+
+    const criteria = Array.isArray(parsed.criteria) ? parsed.criteria.map((c: any, i: number) => ({
+      id: (c.id || `c${i + 1}`).toString(),
+      criterion: localizeScorecardText((c.criterion || "").toString()),
+      status: allowedStatus.has(c.status) ? c.status : "not_mentioned",
+      value: c.value ? localizeScorecardText(String(c.value)) : undefined,
+      evidence: localizeScorecardText((c.evidence || "").toString()),
+      weight: allowedWeight.has(c.weight) ? c.weight : "major",
+      severity: typeof c.severity === "number" ? Math.min(10, Math.max(0, Math.round(c.severity))) : 0,
+      atlasStructure: c.atlasStructure ? localizeScorecardText(String(c.atlasStructure)) : undefined,
+      suggestedPanelFocus: c.suggestedPanelFocus ? localizeScorecardText(String(c.suggestedPanelFocus)) : undefined
+    })) : [];
+
+    const scoreMet = criteria.filter((c: any) => c.status === "met").length;
+    const scoreTotal = criteria.length || Number(parsed.scoreTotal) || 0;
+
+    let trafficLight = allowedLight.has(parsed.trafficLight) ? parsed.trafficLight : "low";
+    const criticalMet = criteria.some((c: any) => c.status === "met" && c.weight === "critical" && c.severity >= 7);
+    if (criticalMet) trafficLight = "critical";
+    else if (scoreTotal > 0 && scoreMet / scoreTotal >= 0.65) trafficLight = trafficLight === "low" ? "high" : trafficLight;
+    else if (scoreTotal > 0 && scoreMet / scoreTotal >= 0.35) trafficLight = trafficLight === "low" ? "moderate" : trafficLight;
+
+    const panelLetters = Array.isArray(atlasPanels)
+      ? atlasPanels.map((p: any) => String(p.panelLetter || "").toUpperCase()).filter(Boolean)
+      : [];
+    const fallbackLetter = panelLetters[0] || "A";
+
+    const atlasOverlays = (Array.isArray(parsed.atlasOverlays) ? parsed.atlasOverlays : [])
+      .slice(0, 5)
+      .map((o: any, i: number) => {
+        const letter = String(o.panelLetter || fallbackLetter).toUpperCase();
+        return {
+          id: (o.id || `ov${i + 1}`).toString(),
+          panelLetter: panelLetters.includes(letter) ? letter : fallbackLetter,
+          marker: (o.marker || String.fromCharCode(65 + i)).toString().slice(0, 2),
+          structure: (o.structure || "").toString(),
+          finding: (o.finding || "").toString(),
+          severity: typeof o.severity === "number" ? Math.min(10, Math.max(0, Math.round(o.severity))) : 0,
+          status: o.status === "secondary" ? "secondary" : "active",
+          linkedCriterionId: o.linkedCriterionId ? String(o.linkedCriterionId) : undefined,
+          evidence: o.evidence ? String(o.evidence) : undefined
+        };
+      });
+
+    const data = {
+      protocolId: (parsed.protocolId || requestedProtocol || "generic").toString(),
+      protocolName: localizeScorecardText((parsed.protocolName || "Scorecard clínico").toString()),
+      categoryAssigned: localizeScorecardText((parsed.categoryAssigned || "Sin categoría").toString()),
+      scoreMet,
+      scoreTotal,
+      trafficLight,
+      clinicalSummary: localizeScorecardText((parsed.clinicalSummary || "").toString()),
+      recommendation: withRecommendations
+        ? localizeScorecardText((parsed.recommendation || "").toString())
+        : "",
+      studyRegion: parsed.studyRegion ? localizeScorecardText(String(parsed.studyRegion)) : undefined,
+      criteria,
+      atlasOverlays: atlasOverlays.map((o: any) => ({
+        ...o,
+        structure: localizeScorecardText(o.structure || ""),
+        finding: localizeScorecardText(o.finding || ""),
+        evidence: o.evidence ? localizeScorecardText(o.evidence) : undefined
+      })),
+      generatedAt: new Date().toISOString()
+    };
+
+    res.json({ success: true, data });
+  } catch (error: any) {
+    console.error("Error en /api/generate-clinical-scorecard:", error);
+    res.status(500).json({ success: false, error: handleGeminiError(error) });
+  }
+});
+
 /**
  * 42. API: GENERATE BIOMECHANICAL & INFLAMMATORY RADAR
  * POST /api/generate-biomechanical-radar
- * Payload: { model?: string, report: string, studyType?: string, radarMode?: "auto" | "msk" | "visceral" | "oncology" | "rotator_cuff" | "knee_oa" | "cholecystitis" | "ankle_trauma" | "knee_trauma" | "appendicitis" | "thyroid" | "muscle_injury" | "hepatic" }
+ * Payload: { model?: string, report: string, studyType?: string, radarMode?: "auto" | "msk" | "visceral" | "oncology" | "rotator_cuff" | "knee_oa" | "cholecystitis" | "ankle_trauma" | "knee_trauma" | "appendicitis" | "thyroid" | "muscle_injury" | "hepatic" | "renal" | "scrotal" }
  */
 
 const MATRIX_PRESETS: Record<string, { key: string; label: string; finding: string; justification: string }[]> = {
@@ -8824,39 +9085,119 @@ const MATRIX_PRESETS: Record<string, { key: string; label: string; finding: stri
   ]
 };
 
+function scoreToLevel(score: number): string {
+  if (score >= 9) return "Masivo / Crítico";
+  if (score >= 7) return "Severo";
+  if (score >= 5) return "Moderado";
+  if (score >= 2) return "Leve";
+  return "Fisiológico";
+}
+
+function normalizeRadarKey(value: string): string {
+  return (value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function tokenOverlapScore(a: string, b: string): number {
+  const ta = new Set(normalizeRadarKey(a).split("_").filter((t) => t.length > 2));
+  const tb = new Set(normalizeRadarKey(b).split("_").filter((t) => t.length > 2));
+  if (!ta.size || !tb.size) return 0;
+  let hit = 0;
+  for (const t of ta) if (tb.has(t)) hit += 1;
+  return hit / Math.max(ta.size, tb.size);
+}
+
+function looksLikeGenericNormalFinding(finding: string, presetFinding: string): boolean {
+  const f = (finding || "").trim().toLowerCase();
+  const p = (presetFinding || "").trim().toLowerCase();
+  if (!f) return true;
+  if (p && (f === p || f.includes(p.slice(0, Math.min(40, p.length))))) return true;
+  // Generic filler often used when the model invents normality
+  const generic =
+    /sin (evidencia|alteraci[oó]n|signos)|ausencia de|dentro de l[ií]mites|conservad[oa]s?|fisiol[oó]gic|normal(es)?\.?$/i;
+  return generic.test(f) && f.length < 90;
+}
+
+function pickBestAxisMatch(
+  itemSpec: { key: string; label: string },
+  returnedAxes: any[],
+  usedIndexes: Set<number>
+): { axis: any; index: number } | null {
+  let best: { axis: any; index: number; score: number } | null = null;
+  const specKey = normalizeRadarKey(itemSpec.key);
+  const specLabel = normalizeRadarKey(itemSpec.label);
+
+  for (let i = 0; i < returnedAxes.length; i++) {
+    if (usedIndexes.has(i)) continue;
+    const a = returnedAxes[i];
+    if (!a) continue;
+    const aKey = normalizeRadarKey(a.key || "");
+    const aLabel = normalizeRadarKey(a.label || "");
+    let score = 0;
+    if (aKey && aKey === specKey) score = 100;
+    else if (aKey && (aKey.includes(specKey) || specKey.includes(aKey))) score = 80;
+    else {
+      const byLabel = Math.max(
+        tokenOverlapScore(aLabel, specLabel),
+        tokenOverlapScore(aKey, specKey),
+        tokenOverlapScore(aLabel, specKey),
+        tokenOverlapScore(aKey, specLabel)
+      );
+      if (byLabel >= 0.45) score = 40 + byLabel * 40;
+      else if ((a.label || "").toLowerCase().includes((itemSpec.label.split(" / ")[0] || "").toLowerCase()) && (itemSpec.label.split(" / ")[0] || "").length > 4) {
+        score = 35;
+      }
+    }
+    if (score > 0 && (!best || score > best.score)) {
+      best = { axis: a, index: i, score };
+    }
+  }
+  return best ? { axis: best.axis, index: best.index } : null;
+}
+
 function normalizeAxesForMode(targetMode: string, returnedAxes: any[]): any[] {
   const presetSpec = MATRIX_PRESETS[targetMode] || MATRIX_PRESETS["msk"];
+  const axesIn = Array.isArray(returnedAxes) ? returnedAxes : [];
+  const usedIndexes = new Set<number>();
   const finalAxes: any[] = [];
 
   for (const itemSpec of presetSpec) {
-    const found = Array.isArray(returnedAxes)
-      ? returnedAxes.find((a: any) => {
-          if (!a) return false;
-          if (a.key === itemSpec.key) return true;
-          const aLabel = (a.label || "").toLowerCase();
-          const aKey = (a.key || "").toLowerCase();
-          const specLabel = itemSpec.label.toLowerCase();
-          const specKey = itemSpec.key.toLowerCase();
-          return aKey === specKey || aLabel.includes(specKey) || specLabel.includes(aLabel) || aLabel.includes(specLabel.split(" / ")[0]);
-        })
-      : null;
-
-    if (found) {
+    const matched = pickBestAxisMatch(itemSpec, axesIn, usedIndexes);
+    if (matched) {
+      usedIndexes.add(matched.index);
+      const found = matched.axis;
       const score = typeof found.score === "number" ? Math.min(10, Math.max(0, Math.round(found.score))) : 0;
-      let level = found.level || "Fisiológico";
-      if (score >= 9) level = "Masivo / Crítico";
-      else if (score >= 7) level = "Severo";
-      else if (score >= 5) level = "Moderado";
-      else if (score >= 2) level = "Leve";
-      else level = "Fisiológico";
+      const level = scoreToLevel(score);
+      const rawFinding = typeof found.finding === "string" ? found.finding.trim() : "";
+      const rawJustification = typeof found.justification === "string" ? found.justification.trim() : "";
+
+      // Never silently replace a pathological score with a canned "normal" finding template.
+      let finding = rawFinding;
+      if (!finding) {
+        finding = score <= 1
+          ? itemSpec.finding
+          : `Hallazgo del reporte no mapeado de forma literal para «${itemSpec.label}»; revisar texto clínico (score ${score}).`;
+      } else if (score >= 2 && looksLikeGenericNormalFinding(finding, itemSpec.finding)) {
+        // Keep model text but mark tension so UI/PDF don't look falsely normal.
+        finding = `${finding} (Verificar coherencia con score ${score} y el reporte).`;
+      }
+
+      let justification = rawJustification || itemSpec.justification;
+      if (score >= 2 && looksLikeGenericNormalFinding(justification, itemSpec.justification) && rawFinding) {
+        justification = `Score ${score} según hallazgo reportado: ${rawFinding}`;
+      }
 
       finalAxes.push({
         key: itemSpec.key,
         label: itemSpec.label,
         score,
         level,
-        finding: found.finding || itemSpec.finding,
-        justification: found.justification || itemSpec.justification
+        finding,
+        justification
       });
     } else {
       finalAxes.push({
@@ -8871,6 +9212,23 @@ function normalizeAxesForMode(targetMode: string, returnedAxes: any[]): any[] {
   }
 
   return finalAxes;
+}
+
+function refineRadarAggregate(data: any): any {
+  if (!data || !Array.isArray(data.axes) || data.axes.length === 0) return data;
+  const scores = data.axes.map((a: any) => (typeof a.score === "number" ? a.score : 0));
+  const avg = scores.reduce((s: number, n: number) => s + n, 0) / scores.length;
+  data.globalScore = Math.round(avg * 10) / 10;
+  if (data.globalScore >= 7.5) data.globalLoadIndex = "Crítica";
+  else if (data.globalScore >= 5) data.globalLoadIndex = "Elevada";
+  else if (data.globalScore >= 2.5) data.globalLoadIndex = "Moderada";
+  else data.globalLoadIndex = "Baja";
+
+  const dominant = [...data.axes].sort((a: any, b: any) => (b.score || 0) - (a.score || 0))[0];
+  if (dominant && (dominant.score || 0) > 0) {
+    data.dominantVector = dominant.label || data.dominantVector;
+  }
+  return data;
 }
 
 app.post("/api/generate-biomechanical-radar", async (req: express.Request, res: express.Response) => {
@@ -8894,6 +9252,11 @@ ${requestedMode !== "auto" ? `\nOBLIGACIÓN STRICTA DE MATRIZ EXCLUSIVA: EL USUA
 
 INSTRUCCIÓN DE MATRIZ VECTORIAL A APLICAR:
 
+PRIORIDAD ANTI-CONFUSIÓN (CRÍTICA):
+- Si el usuario fijó una matriz concreta (no AUTO), aplica SOLO esa matriz.
+- Si hay matriz específica 6D (renal, hepatic, scrotal, cholecystitis, appendicitis, thyroid, rotator_cuff, knee_oa, knee_trauma, ankle_trauma, muscle_injury) Y también aparece una genérica (msk/visceral/oncology), USA SOLO LA ESPECÍFICA.
+- Nunca mezcles keys de dos matrices distintas en el mismo JSON.
+
 ${(requestedMode === "rotator_cuff" || (requestedMode === "auto" && /manguito|supraespinoso|infraespinoso|subescapular|bursitis subacrom|hombro|tclb|b[ií]ceps/i.test(report))) ? `
 SI LA MATRIZ ES DE MANGUITO ROTADOR / PATOLOGÍA DE HOMBRO (ROTATOR CUFF 6D):
 Aplica la matriz de 6 vectores específicos para afección del manguito rotador y estructura bicipital:
@@ -8916,7 +9279,7 @@ Aplica la matriz de 6 vectores biomecánicos tradicionales:
 - "cronicidad": Cronicidad / Fibrosis (Tendinosis previa, fibrosis, calcificaciones, osteofitos, remodelado).
 ` : ""}
 
-${(requestedMode === "visceral" || (requestedMode === "auto" && /diverticul|pancreat|apendic|colecist|pielonefr|absceso|flem[oó]n|mastitis|prostat|adenitis|anex|periton/i.test(report) && !/tumor|oncolog|c[aá]ncer|malign|carcinom|neoplas|metast/i.test(report))) ? `
+${(requestedMode === "visceral" || (requestedMode === "auto" && /diverticul|pancreat|absceso|flem[oó]n|mastitis|prostat|adenitis|anex|periton/i.test(report) && !/apendic|ap[eé]ndice|colecist|ves[ií]cula|pielonefr|ri[nñ][oó]n|renal|tiroides|h[ií]gado|hep[aá]tic/i.test(report) && !/tumor|oncolog|c[aá]ncer|malign|carcinom|neoplas|metast/i.test(report))) ? `
 SI LA MATRIZ ES VISCERAL / ABDOMINAL / PÉLVICO / TEJIDOS BLANDOS / INFLAMATORIO:
 Aplica la matriz de 6 vectores adaptada a la fisiopatología visceral/parenquimatosa:
 - "inflamacion": Inflamación & Edema Parietal / Parenquimatoso (Engrosamiento edematoso de pared, edema peri-órgano, flemón, líquido libre/inflamatorio).
@@ -9012,7 +9375,23 @@ Aplica la matriz de 6 vectores específicos para la evaluación ecográfica de c
 1. "engrosamiento_pared": Engrosamiento y Edema Parietal Vesicular (0-1: Espesor normal ≤3.0mm, pared fina monocapa; 2-4: Engrosamiento leve 3.1-4.5mm; 5-6: Engrosamiento moderado 4.6-6.0mm con signo de doble pared o estriación; 7-8: Engrosamiento severo 6.1-8.0mm edematoso heterogéneo; 9-10: Engrosamiento masivo/destructivo >8.0mm con aspecto acartonado).
 2. "vascularidad": Vascularidad Parietal / Doppler Color (0-1: Señal vascular fisiológica normal; 2-4: Hiperemia sutil focal en cuello o cuerpo; 5-6: Hiperemia moderada difusa en pared vesicular; 7-8: Hiperemia intensa con velocidades elevadas en arteria cística; 9-10: Paro vascular / Isquemia parietal con ausencia focal/difusa de flujo por necrosis o trombosis).
 3. "necrosis_pared": Necrosis Parietal / Gangrena (0-1: Pared continua sin necrosis ni gas; 2-4: Irregularidad intraluminal discreta o membranas focales pequeñas; 5-6: Membranas intraluminales desprendidas / sloughing mucoso; 7-8: Microburbujas intraparietales / foco de discontinuidad parietal; 9-10: Colecistitis Gangrenosa/Enfisematosa establecida con abundante gas parietal/intraluminal o perforación transmural).
-4. "cambios_perivesiculares": Cambios Perivesiculares y Lecho Hepá${(requestedMode === "renal" || (requestedMode === "auto" && /ri[nñ][oó]n|renal|corteza renal|hidronefrosis|pielonefritis|ectasia|litiasis renal|c[aá]liz|seno renal|bosniak|angiomiolipoma|nefromegal|uropat[ií]a/i.test(report))) ? `
+4. "cambios_perivesiculares": Cambios Perivesiculares y Lecho Hepático (0-1: Grasa perivesicular limpia y lecho hepático libre; 2-4: Halo hiperecogénico perivesicular leve o mínima lámina líquida; 5-6: Líquido perivesicular moderado / fat stranding definido; 7-8: Colección perivesicular / absceso en lecho hepático; 9-10: Perforación contenida con absceso hepático contiguo o coleperitoneo).
+5. "via_biliar": Vía Biliar / Colédoco (0-1: Vía biliar intra y extrahepática de calibre normal; 2-4: Dilatación mínima o barro biliar sin coledocolitiasis; 5-6: Dilatación moderada del colédoco o coledocolitiasis no obstructiva; 7-8: Obstrucción biliar con dilatación marcada y coledocolitiasis; 9-10: Colangitis asociada / obstrucción biliar crítica con dilatación masiva).
+6. "tamano_forma": Tamaño / Hidrops Vesicular (0-1: Dimensiones vesiculares normales; 2-4: Distensión leve; 5-6: Hidrops / sobredistensión moderada; 7-8: Hidrops severo a tensión; 9-10: Hidrops masivo con riesgo de isquemia/perforación).
+` : ""}
+
+${(requestedMode === "hepatic" || (requestedMode === "auto" && /h[ií]gado|hep[aá]tic|esteatosis|cirrosis|fibrosis.*hep|elastograf|kpa|portal|suprahep|loe.*hep|lesi[oó]n.*focal.*hep/i.test(report))) ? `
+SI LA MATRIZ ES DE VALORACIÓN HEPÁTICA INTEGRAL (HEPATIC 6D):
+Aplica la matriz de 6 vectores específicos para valoración hepática:
+1. "tamano_forma": Tamaño y Forma (0-1: Dimensiones conservadas, borde inferior agudo, contornos lisos; 2-4: Hepatomegalia leve o irregularidad sutil de contorno; 5-6: Hepatomegalia moderada o lobulación capsular; 7-8: Hepatomegalia marcada o atrofia lobar con remodelado; 9-10: Hígado cirrótico desestructurado / atrofia severa con asimetría extrema).
+2. "vascularidad": Vascularidad (0-1: Vena porta calibre y flujo hepatópeto normales, suprahepáticas trifásicas; 2-4: Calibre portal limítrofe o atenuación sutil de fásicidad; 5-6: Signos de hipertensión portal leve-moderada; 7-8: Flujo portal atenuado/hepatófugo o colaterales significativas; 9-10: Trombosis portal / oclusión vascular mayor).
+3. "elasticidad": Elasticidad (0-1: Rigidez fisiológica <6.0 kPa / F0-F1; 2-4: Elevación leve 6-8 kPa; 5-6: Fibrosis intermedia 8-10 kPa / F2; 7-8: Fibrosis avanzada 10-14 kPa / F3; 9-10: Cirrosis >14 kPa / F4).
+4. "apariencia_parenquima": Apariencia del Parénquima (0-1: Ecoestructura homogénea granular fina; 2-4: Heterogeneidad leve; 5-6: Tosquedad moderada / patrón micronodular; 7-8: Patrón nodular difuso marcado; 9-10: Parénquima completamente desestructurado).
+5. "infiltracion_grasa": Infiltración Grasa (0-1: Sin esteatosis Grado 0; 2-4: Esteatosis leve Grado I; 5-6: Esteatosis moderada Grado II; 7-8: Esteatosis severa Grado III con atenuación marcada; 9-10: Esteatohepatitis / infiltración masiva con pérdida de visualización profunda).
+6. "lesiones_focales": Lesiones Focales (0-1: Sin LOEs; 2-4: Quiste simple o hemangioma típico pequeño; 5-6: LOE indeterminada o múltiples lesiones benignas; 7-8: LOE sospechosa / LI-RADS intermedio-alto; 9-10: Masa maligna franca / metástasis múltiples).
+` : ""}
+
+${(requestedMode === "renal" || (requestedMode === "auto" && /ri[nñ][oó]n|renal|corteza renal|hidronefrosis|pielonefritis|ectasia|litiasis renal|c[aá]liz|seno renal|bosniak|angiomiolipoma|nefromegal|uropat[ií]a/i.test(report))) ? `
 SI LA MATRIZ ES DE VALORACIÓN RENAL INTEGRAL (RENAL 6D):
 Aplica la matriz de 6 vectores específicos cuantitativos y cualitativos para valoración renal:
 1. "tamano_renal": Tamaño Renal (0-1: Fisiológico / Eje bipolar longitudinal normal 100-120mm, contornos reniformes simétricos; 2-4: Nefromegalia leve 121-130mm o riñón en límite inferior 90-99mm con asimetría discreta 10-15mm; 5-6: Nefromegalia moderada 131-145mm o hipotrofia renal moderada 75-89mm compatible con nefropatía crónica incipiente; 7-8: Hipotrofia/atrofia renal severa 60-74mm con pérdida de silueta o nefromegalia marcada >145mm; 9-10: Riñón atrófico terminal <60mm escleroatrófico o riñón gigante desestructurado >160mm).
@@ -9034,6 +9413,16 @@ Aplica la matriz de 6 vectores específicos cuantitativos y cualitativos para va
 6. "cambios_inflamatorios_hidrocele": Cambios Inflamatorios e Hidrocele (0-1: Líquido fisiológico en túnica vaginal <2 mL, pared escrotal normal 2-4 mm sin edema; 2-4: Hidrocele simple anecoico leve 10-30 mL o engrosamiento cutáneo escrotal reactivo leve 5-6 mm; 5-6: Hidrocele moderado a tensión 30-80 mL o paquivaginalitis con engrosamiento y trabéculas finas; 7-8: Hidrocele severo / hematocele o piocele con septos gruesos, nivel líquido-debris y celulitis parietal >8 mm; 9-10: Piocele a tensión con absceso de túnicas o fascitis necrotizante escrotal / Gangrena de Fournier con gas parietal).
 ` : ""}
 
+REGLAS CRÍTICAS DE FIDELIDAD AL REPORTE (OBLIGATORIAS):
+1. El campo "finding" DEBE basarse SOLO en el texto del reporte. Cita o parafrasea de forma fiel el fragmento relevante de ese eje (incluye medidas, grados, lateralidad y calificadores cuando consten).
+2. PROHIBIDO inventar hallazgos, medidas o diagnósticos que no figuren en el reporte.
+3. PROHIBIDO rellenar "finding" con frases genéricas de normalidad si el reporte describe patología, duda o alteración relacionada con ese eje.
+4. Si el reporte NO aporta dato para un eje: asigna score 0-1 y en "finding" indica explícitamente la ausencia de alteración descrita para ese vector (sin inventar detalles).
+5. "justification" debe vincular de forma explícita el score con el hallazgo citado del reporte (1-2 frases).
+6. Coherencia score↔hallazgo: patología severa/masiva ⇒ score alto; hallazgo normal/ausente ⇒ score 0-1. No contradigas el texto.
+7. Usa EXACTAMENTE las 6 keys de la matriz seleccionada. No mezcles vectores de otras matrices.
+8. En AUTO, elige UNA sola matriz (la más específica) y evalúa solo esa.
+
 REGLAS DE CALIFICACIÓN (0-10):
 - 0 a 1: Fisiológico / Benigno / Ausente / Sin alteración.
 - 2 a 4: Incipiente / Leve / Afectación focal o leve.
@@ -9044,43 +9433,18 @@ REGLAS DE CALIFICACIÓN (0-10):
 SE REQUIERE EL SIGUIENTE ESQUEMA JSON:
 - "globalLoadIndex": Categoría de carga/riesgo global ("Baja", "Moderada", "Elevada", "Crítica").
 - "globalScore": Promedio de los puntajes de los ejes (número flotante redondeado a 1 decimal).
-- "dominantVector": Nombre claro y descriptivo del vector patológico dominante.
+- "dominantVector": Nombre claro y descriptivo del vector patológico dominante (el de mayor score; si empate, el clínicamente más relevante).
 - "radarMode": La matriz efectivamente aplicada ("rotator_cuff", "knee_oa", "cholecystitis", "ankle_trauma", "knee_trauma", "appendicitis", "thyroid", "muscle_injury", "hepatic", "renal", "scrotal", "msk", "visceral", u "oncology").
-` : ""}
-
-${(requestedMode === "renal" || (requestedMode === "auto" && /ri[nñ][oó]n|renal|corteza renal|hidronefrosis|pielonefritis|ectasia|litiasis renal|c[aá]liz|seno renal|bosniak|angiomiolipoma|nefromegal|uropat[ií]a/i.test(report))) ? `
-SI LA MATRIZ ES DE VALORACIÓN RENAL INTEGRAL (RENAL 6D):
-Aplica la matriz de 6 vectores específicos cuantitativos y cualitativos para valoración renal:
-1. "tamano_renal": Tamaño Renal (0-1: Fisiológico / Eje bipolar longitudinal normal 100-120mm, contornos reniformes simétricos; 2-4: Nefromegalia leve 121-130mm o riñón en límite inferior 90-99mm con asimetría discreta 10-15mm; 5-6: Nefromegalia moderada 131-145mm o hipotrofia renal moderada 75-89mm compatible con nefropatía crónica incipiente; 7-8: Hipotrofia/atrofia renal severa 60-74mm con pérdida de silueta o nefromegalia marcada >145mm; 9-10: Riñón atrófico terminal <60mm escleroatrófico o riñón gigante desestructurado >160mm).
-2. "grosor_cortical": Grosor Cortical (0-1: Corteza normal preservada ≥9-10mm con nítida diferenciación córtico-medular y ecogenicidad normal; 2-4: Adelgazamiento cortical leve 7-8mm, atenuación sutil de diferenciación o ecogenicidad aumentada Grado I; 5-6: Adelgazamiento cortical moderado 5-6mm, ecogenicidad igual al hígado Grado II y pérdida parcial de pirámides medulares; 7-8: Adelgazamiento cortical severo 3-4mm, hiperecogenicidad marcada Grado III y pérdida completa de diferenciación; 9-10: Atrofia cortical extrema <3mm con desdiferenciación total y calcificaciones).
-3. "vascularidad": Vascularidad (0-1: Perfusión cortical periférica completa hasta la cápsula sin áreas avasculares, RI intrarrenal fisiológico 0.58-0.70, vena permeable; 2-4: Perfusión conservada con RI limítrofe 0.71-0.74 o 0.52-0.57; 5-6: Reducción difusa de microvascularización periférica o RI elevado 0.75-0.80 sugestivo de nefropatía médica; 7-8: Defecto de perfusión segmentario / cuña avascular de infarto, RI >0.80-0.85 o patrón tardus-parvus; 9-10: Trombosis de vena renal, oclusión de arteria renal, ausencia total de flujo vascular o inversión diastólica).
-4. "lesiones_focales": Lesiones Focales (0-1: Parénquima homogéneo sin LOEs o quiste cortical simple milimétrico solitario Bosniak I; 2-4: Quistes simples Bosniak I/II o angiomiolipoma típico hiperecogénico <10mm no complicado; 5-6: Quiste complejo Bosniak IIF con septos múltiples o angiomiolipoma 20-40mm; 7-8: Quiste sospechoso Bosniak III con paredes engrosadas >2mm o masa sólida indeterminada >20mm; 9-10: Masa sólida con signos francos de malignidad Bosniak IV / Carcinoma de Células Renales o invasión vascular tumoral).
-5. "procesos_obstructivos": Procesos Obstructivos (0-1: Seno renal ecolucente sin separación de la pelvis <5mm, sin hidronefrosis Grado 0 SFU y jets ureterales simétricos; 2-4: Ectasia piélica leve o pielocalicial mínima Grado I SFU 5-10mm o litiasis calicial no obstructiva; 5-6: Hidronefrosis moderada Grado II-III SFU con dilatación piélica y calicial pero parénquima respetado, litiasis obstructiva; 7-8: Hidronefrosis severa Grado IV SFU con compresión parenquimatosa marcada o pionefrosis; 9-10: Uropatía obstructiva descompensada / saco hidronefrótico a tensión con adelgazamiento extremo o rotura fornicial con urinoma).
-6. "cambios_inflamatorios": Cambios Inflamatorios (0-1: Grasa perirrenal limpia, fascia de Gerota fina y parénquima sin áreas de edema o hiperemia; 2-4: Engrosamiento urotelial piélico leve o edema reactivo inespecífico; 5-6: Pielonefritis aguda focal / nefronía lobar con área hipoecoica en cuña e hipoperfusión focal; 7-8: Pielonefritis complicada / microabscesos coalescentes o colección perirrenal; 9-10: Absceso renal mayor >3-5cm con extensión retroperitoneal o Pielonefritis Enfisematosa con gas parenquimatoso).
-` : ""}
-
-REGLAS DE CALIFICACIÓN (0-10):
-- 0 a 1: Fisiológico / Benigno / Ausente / Sin alteración.
-- 2 a 4: Incipiente / Leve / Afectación focal o leve.
-- 5 a 6: Moderado / Compromiso intermedio o dolor parcial.
-- 7 a 8: Severo / Gran compromiso funcional o desgarro transfixiante.
-- 9 a 10: Masivo / Crítico / Imposibilidad funcional o ruptura masiva.
-
-SE REQUIERE EL SIGUIENTE ESQUEMA JSON:
-- "globalLoadIndex": Categoría de carga/riesgo global ("Baja", "Moderada", "Elevada", "Crítica").
-- "globalScore": Promedio de los puntajes de los ejes (número flotante redondeado a 1 decimal).
-- "dominantVector": Nombre claro y descriptivo del vector patológico dominante.
-- "radarMode": La matriz efectivamente aplicada ("rotator_cuff", "knee_oa", "cholecystitis", "ankle_trauma", "knee_trauma", "appendicitis", "thyroid", "muscle_injury", "hepatic", "renal", "msk", "visceral", u "oncology").
 - "axes": Array de exactamente 6 objetos con todos los keys de la matriz seleccionada.
   Cada objeto contiene:
-  * "key": string de la key.
+  * "key": string de la key EXACTA de la matriz.
   * "label": Nombre legible en español adecuado a la matriz aplicada.
   * "score": entero entre 0 y 10.
   * "level": nivel cualitativo ("Fisiológico", "Leve", "Moderado", "Severo", "Masivo / Crítico").
-  * "finding": Fragmento o resumen del hallazgo del reporte que justifica este eje.
-  * "justification": Explicación clínica sucinta que justifica el puntaje asignado.
-- "clinicalSummary": Síntesis clínica integradora de 2 a 3 frases destacando el balance entre hallazgos tisulares, limitación funcional y lesión tendinosa.
-- "recommendation": Recomendación clínica, conducta quirúrgica/conservadora o estudio complementario sugerido.
+  * "finding": Texto fiel al reporte que fundamenta este eje (cita/paráfrasis; no plantilla genérica).
+  * "justification": Explicación clínica sucinta que justifica el puntaje asignado según ese hallazgo.
+- "clinicalSummary": Síntesis clínica integradora de 2 a 3 frases basada únicamente en los hallazgos del reporte.
+- "recommendation": Recomendación clínica, conducta quirúrgica/conservadora o estudio complementario sugerido, coherente con los scores.
 
 Reporte Médico a Analizar:
 ${report}
@@ -9090,6 +9454,7 @@ ${report}
       model: modelToUse,
       contents: prompt,
       config: {
+        temperature: 0.15,
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -9126,7 +9491,12 @@ ${report}
 
     const effectiveMode = requestedMode !== "auto" ? requestedMode : (parsedData.radarMode || "msk");
     parsedData.radarMode = effectiveMode;
-    parsedData.axes = normalizeAxesForMode(effectiveMode, parsedData.axes);
+    // Prefer explicit user matrix; clamp unknown auto modes to known presets.
+    if (!MATRIX_PRESETS[parsedData.radarMode]) {
+      parsedData.radarMode = MATRIX_PRESETS[effectiveMode] ? effectiveMode : "msk";
+    }
+    parsedData.axes = normalizeAxesForMode(parsedData.radarMode, parsedData.axes);
+    refineRadarAggregate(parsedData);
 
     res.json({
       success: true,

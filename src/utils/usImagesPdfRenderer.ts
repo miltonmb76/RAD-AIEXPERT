@@ -42,18 +42,17 @@ interface ImageLayoutInfo {
   drawH: number;
   cardWidth: number;
   cardHeight: number;
-  captionLines: string[];
   figLabelLines: string[];
   figTitleFontSize: number;
-  captionBodyFontSize: number;
+  figTitleLineH: number;
+  captionTopGap: number;
+  textBaselineOffset: number;
+  captionBottomPad: number;
 }
 
 /**
- * Renders Ultrasound Images into PDF in a true scientific journal figure format:
- * - Rounded soft-gray card container enclosing each image AND its complete explanation.
- * - Card dimensions adapt dynamically to the image aspect ratio and text height without stretching or excessive empty whitespace.
- * - Perfectly aligned multi-column rows with uniform row heights.
- * - Elegant panel badges (PANEL A, PANEL B...), bold figure titles, and high-contrast typography.
+ * Renders Ultrasound Images into PDF in a true scientific journal figure format.
+ * Captions are always fully contained inside each card for every grid mode (1x1, 2x1, 2x2, etc.).
  */
 export function renderUsImagesToPdf(
   doc: jsPDF,
@@ -81,7 +80,7 @@ export function renderUsImagesToPdf(
       maxRowsPerPage = 1;
     } else if (images.length === 2) {
       cols = 2;
-      maxRowsPerPage = 1; // 2 images side-by-side on 1 row
+      maxRowsPerPage = 1;
     } else if (images.length <= 4) {
       cols = 2;
       maxRowsPerPage = 2;
@@ -90,7 +89,7 @@ export function renderUsImagesToPdf(
       maxRowsPerPage = 3;
     } else {
       cols = 2;
-      maxRowsPerPage = 2; // Default 4 per page for clean multi-page document
+      maxRowsPerPage = 2;
     }
   } else if (gridMode === "1x1") {
     cols = 1;
@@ -120,76 +119,144 @@ export function renderUsImagesToPdf(
   const gridStartY = headerStartY + 9;
   const bottomMargin = 18;
   const maxAvailableHeightOnPage = pageHeight - gridStartY - bottomMargin;
+  // Hard ceiling per card so multi-row pages never overflow the page
+  const maxCardH =
+    (maxAvailableHeightOnPage - (maxRowsPerPage - 1) * gapY) / maxRowsPerPage;
 
   const renderPageHeader = (isContinuation = false) => {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(10.5 * factor);
-    doc.setTextColor(15, 23, 42); // slate-900
+    doc.setTextColor(15, 23, 42);
 
     const titleText = isContinuation
       ? "ANEXO: IMÁGENES Y CAPTURAS DE ULTRASONIDO (CONTINUACIÓN)"
       : "ANEXO: IMÁGENES Y CAPTURAS DE ULTRASONIDO";
     doc.text(titleText, marginX, headerStartY);
 
-    // Accent header divider
-    doc.setDrawColor(203, 213, 225); // slate-300
+    doc.setDrawColor(203, 213, 225);
     doc.setLineWidth(0.4);
     doc.line(marginX, headerLineY, pageWidth - marginX, headerLineY);
   };
 
   // 2. Pre-calculate layout info for each image item
-  const cardWidth = cols === 1
-    ? (maxRowsPerPage === 1 ? Math.min(contentWidth, 150) : contentWidth)
-    : (contentWidth - (cols - 1) * gapX) / cols;
+  const cardWidth =
+    cols === 1
+      ? maxRowsPerPage === 1
+        ? Math.min(contentWidth, 150)
+        : contentWidth
+      : (contentWidth - (cols - 1) * gapX) / cols;
 
   const innerPad = 2.5;
   const maxImgW = cardWidth - innerPad * 2;
+  const captionTopGap = 3.0;
+  const captionBottomPad = 2.2;
+  const textBaselineOffsetFactor = 0.35;
+  // Slightly generous line height so wrapped clinical captions stay inside the card
+  const lineHeightFactor = 0.48;
 
-  // Max image height limit to avoid page overflow based on rows
-  const maxImgHCap = maxRowsPerPage === 1
-    ? 105
-    : (maxRowsPerPage === 2 ? 68 : (maxRowsPerPage === 3 ? 46 : 34));
+  const maxImgHCap =
+    maxRowsPerPage === 1
+      ? 105
+      : maxRowsPerPage === 2
+        ? 68
+        : maxRowsPerPage === 3
+          ? 46
+          : 34;
 
   const itemsLayout: ImageLayoutInfo[] = images.map((imgItem, idx) => {
     const itemFigIdx = currentGlobalFigIdx + idx;
-    const aspect = (imgItem.width && imgItem.height && imgItem.height > 0)
-      ? imgItem.width / imgItem.height
-      : (4 / 3);
+    const aspect =
+      imgItem.width && imgItem.height && imgItem.height > 0
+        ? imgItem.width / imgItem.height
+        : 4 / 3;
 
-    // Calculate natural image dimensions
-    let drawW = maxImgW;
-    let drawH = drawW / aspect;
-
-    if (drawH > maxImgHCap) {
-      drawH = maxImgHCap;
-      drawW = drawH * aspect;
-      if (drawW > maxImgW) {
-        drawW = maxImgW;
-      }
-    }
-
-    // Typography sizing based on density
-    const figTitleFontSize = cols === 1 ? 8.2 : (maxRowsPerPage >= 4 ? 5.8 : (maxRowsPerPage === 3 ? 6.5 : 7.2));
-    const captionBodyFontSize = cols === 1 ? 7.5 : (maxRowsPerPage >= 4 ? 5.2 : (maxRowsPerPage === 3 ? 5.8 : 6.5));
+    const figTitleFontSize =
+      cols === 1
+        ? 8.2
+        : maxRowsPerPage >= 4
+          ? 5.8
+          : maxRowsPerPage === 3
+            ? 6.5
+            : 7.2;
+    const figTitleLineH = figTitleFontSize * lineHeightFactor;
+    const textBaselineOffset = figTitleFontSize * textBaselineOffsetFactor;
 
     const captionText =
       imgItem.caption && imgItem.caption.trim() !== ""
         ? imgItem.caption.trim()
         : "Registro ecográfico en escala de grises con adecuada diferenciación tisular.";
 
-    // Use clinical caption directly after figure number (no generic lateral subtitle).
     const figureLabel = `Figura ${itemFigIdx}. ${captionText}`;
+    const maxCaptionW = cardWidth - innerPad * 2 - 2;
 
-    const maxCaptionW = cardWidth - innerPad * 2 - 1.5;
-    const figLabelLines = doc.splitTextToSize(figureLabel, maxCaptionW);
-    const captionLines: string[] = [];
+    // IMPORTANT: set font before measuring wrap width
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(figTitleFontSize);
+    let figLabelLines = doc.splitTextToSize(figureLabel, maxCaptionW) as string[];
 
-    // Calculate caption height
-    const figTitleLineH = figTitleFontSize * 0.42;
-    const captionBlockH = figLabelLines.length * figTitleLineH + 1.5;
+    // Caption area needed for all lines (baseline + n lines)
+    const captionNeededH =
+      textBaselineOffset + figLabelLines.length * figTitleLineH + 1.0;
 
-    // Card height hugs image + gap + caption + padding
-    const cardHeight = innerPad + drawH + 3.0 + captionBlockH + innerPad;
+    // Reserve space for caption inside max card height; shrink image if needed
+    const nonImageH =
+      innerPad + captionTopGap + captionNeededH + captionBottomPad + innerPad;
+    let availableForImage = Math.min(
+      maxImgHCap,
+      Math.max(18, maxCardH - nonImageH)
+    );
+
+    // If caption is extremely long, cap visible lines and keep card within maxCardH
+    const maxCaptionAreaH = Math.max(
+      figTitleLineH * 2 + textBaselineOffset,
+      maxCardH - (innerPad + 18 + captionTopGap + captionBottomPad + innerPad)
+    );
+    if (captionNeededH > maxCaptionAreaH) {
+      const maxLines = Math.max(
+        1,
+        Math.floor((maxCaptionAreaH - textBaselineOffset - 1.0) / figTitleLineH)
+      );
+      if (figLabelLines.length > maxLines) {
+        figLabelLines = figLabelLines.slice(0, maxLines);
+        const last = figLabelLines[maxLines - 1];
+        figLabelLines[maxLines - 1] =
+          last.length > 3 ? `${last.replace(/\s+$/, "").slice(0, Math.max(1, last.length - 1))}…` : `${last}…`;
+      }
+      availableForImage = Math.min(
+        maxImgHCap,
+        Math.max(
+          18,
+          maxCardH -
+            (innerPad +
+              captionTopGap +
+              (textBaselineOffset + figLabelLines.length * figTitleLineH + 1.0) +
+              captionBottomPad +
+              innerPad)
+        )
+      );
+    }
+
+    let drawW = maxImgW;
+    let drawH = drawW / aspect;
+    if (drawH > availableForImage) {
+      drawH = availableForImage;
+      drawW = drawH * aspect;
+      if (drawW > maxImgW) {
+        drawW = maxImgW;
+        drawH = drawW / aspect;
+        if (drawH > availableForImage) {
+          drawH = availableForImage;
+          drawW = drawH * aspect;
+        }
+      }
+    }
+
+    const captionBlockH =
+      textBaselineOffset + figLabelLines.length * figTitleLineH + 1.0;
+    const cardHeight = Math.min(
+      maxCardH,
+      innerPad + drawH + captionTopGap + captionBlockH + captionBottomPad + innerPad
+    );
 
     return {
       imgItem,
@@ -199,10 +266,12 @@ export function renderUsImagesToPdf(
       drawH,
       cardWidth,
       cardHeight,
-      captionLines,
       figLabelLines,
       figTitleFontSize,
-      captionBodyFontSize
+      figTitleLineH,
+      captionTopGap,
+      textBaselineOffset,
+      captionBottomPad,
     };
   });
 
@@ -218,11 +287,14 @@ export function renderUsImagesToPdf(
   let rowsOnCurrentPage = 0;
 
   rowsList.forEach((rowItems) => {
-    // Determine uniform row height so all cards in this row align perfectly
-    const uniformRowHeight = Math.max(...rowItems.map(item => item.cardHeight));
+    const uniformRowHeight = Math.min(
+      maxCardH,
+      Math.max(...rowItems.map((item) => item.cardHeight))
+    );
 
-    // Check if row exceeds remaining page space OR exceeds maxRowsPerPage
-    const needsNewPage = (rowsOnCurrentPage >= maxRowsPerPage) || (currentY + uniformRowHeight > pageHeight - bottomMargin);
+    const needsNewPage =
+      rowsOnCurrentPage >= maxRowsPerPage ||
+      currentY + uniformRowHeight > pageHeight - bottomMargin;
 
     if (isFirstPage || needsNewPage) {
       doc.addPage();
@@ -232,26 +304,25 @@ export function renderUsImagesToPdf(
       isFirstPage = false;
     }
 
-    // Render each item in the row
     rowItems.forEach((layoutInfo, colIdx) => {
-      const cardX = cols === 1
-        ? marginX + (contentWidth - layoutInfo.cardWidth) / 2
-        : marginX + colIdx * (layoutInfo.cardWidth + gapX);
+      const cardX =
+        cols === 1
+          ? marginX + (contentWidth - layoutInfo.cardWidth) / 2
+          : marginX + colIdx * (layoutInfo.cardWidth + gapX);
       const cardY = currentY;
       const actualCardH = uniformRowHeight;
 
-      // --- A. SCIENTIFIC CARD RECTANGLE (Recuadro gris suave científico) ---
-      doc.setFillColor(248, 250, 252); // slate-50 (light scientific gray)
-      doc.setDrawColor(203, 213, 225); // slate-300
+      // --- A. SCIENTIFIC CARD ---
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(203, 213, 225);
       doc.setLineWidth(0.35);
       doc.roundedRect(cardX, cardY, layoutInfo.cardWidth, actualCardH, 2.5, 2.5, "FD");
 
-      // --- B. IMAGE FRAME (Centered in upper portion of card) ---
+      // --- B. IMAGE ---
       const imgFrameX = cardX + (layoutInfo.cardWidth - layoutInfo.drawW) / 2;
       const imgFrameY = cardY + innerPad;
 
-      // Dark backing container for high-contrast ultrasound rendering
-      doc.setFillColor(10, 15, 26); // dark slate/black
+      doc.setFillColor(10, 15, 26);
       doc.roundedRect(imgFrameX, imgFrameY, layoutInfo.drawW, layoutInfo.drawH, 1.2, 1.2, "F");
 
       let format = "JPEG";
@@ -260,30 +331,36 @@ export function renderUsImagesToPdf(
       else if (layoutInfo.imgItem.base64.includes("image/webp")) format = "WEBP";
 
       try {
-        doc.addImage(layoutInfo.imgItem.base64, format, imgFrameX, imgFrameY, layoutInfo.drawW, layoutInfo.drawH);
+        doc.addImage(
+          layoutInfo.imgItem.base64,
+          format,
+          imgFrameX,
+          imgFrameY,
+          layoutInfo.drawW,
+          layoutInfo.drawH
+        );
 
-        // Frame border
-        doc.setDrawColor(203, 213, 225); // slate-300
+        doc.setDrawColor(203, 213, 225);
         doc.setLineWidth(0.2);
         doc.roundedRect(imgFrameX, imgFrameY, layoutInfo.drawW, layoutInfo.drawH, 1.2, 1.2, "S");
 
-        // --- C. SCIENTIFIC BADGE (PANEL A, PANEL B...) ---
         const panelLetter = getPanelLetter(layoutInfo.imgIdx);
         const badgeW = maxRowsPerPage >= 4 ? 13 : 15.5;
         const badgeH = maxRowsPerPage >= 4 ? 3.4 : 3.8;
         const badgeX = imgFrameX + 1.5;
         const badgeY = imgFrameY + 1.5;
 
-        doc.setFillColor(15, 23, 42); // slate-900
-        doc.setDrawColor(2, 132, 199); // sky-600
+        doc.setFillColor(15, 23, 42);
+        doc.setDrawColor(2, 132, 199);
         doc.setLineWidth(0.3);
         doc.roundedRect(badgeX, badgeY, badgeW, badgeH, 0.6, 0.6, "FD");
 
         doc.setFont("helvetica", "bold");
         doc.setFontSize(maxRowsPerPage >= 4 ? 5.2 : 5.8);
         doc.setTextColor(255, 255, 255);
-        doc.text(`PANEL ${panelLetter}`, badgeX + badgeW / 2, badgeY + (badgeH * 0.72), { align: "center" });
-
+        doc.text(`PANEL ${panelLetter}`, badgeX + badgeW / 2, badgeY + badgeH * 0.72, {
+          align: "center",
+        });
       } catch (err) {
         console.error("Error drawing US image in PDF:", err);
         doc.setFillColor(241, 245, 249);
@@ -291,29 +368,28 @@ export function renderUsImagesToPdf(
         doc.setFont("helvetica", "italic");
         doc.setFontSize(7.5);
         doc.setTextColor(148, 163, 184);
-        doc.text("Imagen no disponible", imgFrameX + 4, imgFrameY + (layoutInfo.drawH / 2));
+        doc.text("Imagen no disponible", imgFrameX + 4, imgFrameY + layoutInfo.drawH / 2);
       }
 
-      // --- D. CAPTION & SCIENTIFIC EXPLANATION (Inside the card, directly below image) ---
-      const captionStartY = imgFrameY + layoutInfo.drawH + 3.2;
+      // --- C. CAPTION (strictly inside card) ---
+      const captionStartY = imgFrameY + layoutInfo.drawH + layoutInfo.captionTopGap;
       const textLeftX = cardX + innerPad + 1;
-      const maxCaptionW = layoutInfo.cardWidth - innerPad * 2 - 2;
+      const textBottomLimit =
+        cardY + actualCardH - layoutInfo.captionBottomPad - innerPad * 0.35;
 
-      // Figure label: Figura X. [descripción clínica del ultrasonido]
       doc.setFont("helvetica", "bold");
       doc.setFontSize(layoutInfo.figTitleFontSize);
-      doc.setTextColor(15, 23, 42); // slate-900
+      doc.setTextColor(15, 23, 42);
 
-      const figTitleLineH = layoutInfo.figTitleFontSize * 0.42;
-      let textCursorY = captionStartY + layoutInfo.figTitleFontSize * 0.32;
-
-      layoutInfo.figLabelLines.forEach((tLine) => {
+      let textCursorY = captionStartY + layoutInfo.textBaselineOffset;
+      for (const tLine of layoutInfo.figLabelLines) {
+        // Never draw past the inner bottom of the card
+        if (textCursorY > textBottomLimit) break;
         doc.text(tLine, textLeftX, textCursorY);
-        textCursorY += figTitleLineH;
-      });
+        textCursorY += layoutInfo.figTitleLineH;
+      }
     });
 
-    // Advance Y coordinate for the next row
     currentY += uniformRowHeight + gapY;
     rowsOnCurrentPage++;
   });
