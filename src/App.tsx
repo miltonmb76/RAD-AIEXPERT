@@ -19337,7 +19337,7 @@ const splitReportAndAnnex = (text: string) => {
                                   id: "vascular3d",
                                   label: "🫀 Suite Vascular 3D & Mapa Ánatomo-Hemodinámico",
                                   badge: "DOPPLER 3D",
-                                  desc: "Reconstrucción macrovascular 3D fotorrealista (2 a 3 paneles), cálculo de estenosis y tabulación velocimétrica adaptada.",
+                                  desc: "Reconstrucción vascular 3D Journal Quality (misma fidelidad que Atlas), estenosis y tabla hemodinámica anclada al informe.",
                                   color: "text-rose-400 border-rose-500/30 bg-rose-950/20"
                                 },
                                 {
