@@ -29,6 +29,23 @@ export function buildAtlasDirectivesFromScorecard(
   ].join("\n");
 }
 
+/**
+ * Build mandatory Vascular 3D directives from a (typically vascular) scorecard.
+ * Same clinical source as Atlas/Focal, with hemodynamics-first wording.
+ */
+export function buildVascularDirectivesFromScorecard(
+  scorecard: ClinicalScorecardData | null | undefined
+): string {
+  const base = buildAtlasDirectivesFromScorecard(scorecard);
+  if (!base) return "";
+  return [
+    "DIRECTIVA OBLIGATORIA DEL SCORECARD VASCULAR (debe gobernar paneles 3D y tabla hemodinámica):",
+    base,
+    "Representa fielmente estenosis, placa/trombo, patrón de flujo, índices y lateralidad del scorecard.",
+    "No inventes lesiones vasculares ni grados de estenosis ausentes en el scorecard/informe.",
+  ].join("\n");
+}
+
 /** Merge scorecard-derived overlays onto existing atlas data (panel letters remapped if needed). */
 export function mergeOverlaysOntoAtlas(
   atlas: Atlas3DData | null,
