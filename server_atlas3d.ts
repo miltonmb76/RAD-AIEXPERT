@@ -985,5 +985,456 @@ RESPONDE EN JSON:
       res.status(500).json({ success: false, error: handleGeminiError(error) });
     }
   });
+
+  // 5. Focal Lesion Cutaway 3D (on-demand: auto-detect or manual focus, 1–2 panels)
+  app.post("/api/generate-focal-lesion-3d", async (req: express.Request, res: express.Response) => {
+    try {
+      const {
+        reportText,
+        organOrStudy,
+        laterality,
+        requestedModel,
+        customDirectives,
+        focusMode,
+        focusText,
+        includeMacroPanel
+      } = req.body;
+
+      if (!reportText || !reportText.trim()) {
+        return res.status(400).json({ success: false, error: "Se requiere el texto del informe radiológico." });
+      }
+
+      const mode = focusMode === "manual" ? "manual" : "auto";
+      if (mode === "manual" && !(typeof focusText === "string" && focusText.trim())) {
+        return res.status(400).json({ success: false, error: "Indica la lesión o foco manual a reconstruir." });
+      }
+
+      const ai = getGeminiClient();
+      const model = getModelName(requestedModel || "gemini-3.7-flash");
+      const wantMacro = includeMacroPanel !== false;
+      const focusInstruction = mode === "manual"
+        ? `MODO MANUAL: la lesión/foco a reconstruir es exactamente: "${String(focusText).trim()}". Ignora otras lesiones salvo como contexto anatómico mínimo.`
+        : `MODO AUTO: identifica la LESIÓN DOMINANTE del informe (la de mayor relevancia diagnóstica). Si hay empate, prioriza la más específica/medible.`;
+
+      const promptPlan = `Eres un Radiólogo y Anatomista Quirúrgico. Planifica un CORTE FOCAL 3D de UNA lesión (no un atlas regional completo).
+
+========================================================================
+DATOS:
+========================================================================
+- Región / Protocolo: "${organOrStudy || "Estudio General"}"
+- Lateralidad: "${laterality || "Detectar del texto"}"
+- Directiva clínica (Scorecard / médico): "${customDirectives || "Ninguna"}"
+- ${focusInstruction}
+- INFORME:
+"""
+${reportText}
+"""
+
+========================================================================
+TAREA:
+========================================================================
+1. Define la lesión objetivo (label, sitio exacto, morfología, tamaño si consta, relaciones).
+2. Diseña ${wantMacro ? "2 paneles" : "1 panel"}:
+   - Panel A = CONTEXTO REGIONAL con la lesión visible y anclada (cutaway anatómico).
+   ${wantMacro ? "- Panel B = MACRO / ZOOM cutaway de la lesión (detalle morfológico fiel; conserva hitos de orientación para no perder lateralidad)." : ""}
+3. Cada panel DEBE incluir spatialContract (view, laterality, imageLeftStructure, imageRightStructure, superiorStructure/inferiorStructure, mustShowLandmarks, pathologySite, pathologyAppearance, doNotInvent).
+4. NO inventes hallazgos. Si el informe es normal y no hay foco manual, responde lesionFound=false.
+5. Estilo: fotorrealismo clínico premium (igual o superior al Atlas 3D); SIN bioluminiscencia.
+
+RESPONDE SOLO JSON:
+{
+  "lesionFound": true,
+  "lesionLabel": "string corto",
+  "lesionSite": "string",
+  "lesionSummary": "1-2 frases fieles al informe",
+  "lesionSize": "string o vacío",
+  "lesionMorphology": "string",
+  "lesionRelations": "string",
+  "keyPoints": ["string"],
+  "studyRegion": "string",
+  "figureTitle": "FIGURA. DETALLE 3D DEL HALLAZGO: ...",
+  "detectedLaterality": "Izquierda|Derecha|Bilateral|Línea media",
+  "panels": [
+    {
+      "panelLetter": "A",
+      "panelTitle": "Contexto regional",
+      "anatomicalFocus": "Foco: ...",
+      "laterality": "string",
+      "panelRole": "context|macro",
+      "spatialContract": {
+        "view": "string",
+        "laterality": "string",
+        "imageLeftStructure": "string",
+        "imageRightStructure": "string",
+        "superiorStructure": "string",
+        "inferiorStructure": "string",
+        "mustShowLandmarks": ["string"],
+        "pathologySite": "string",
+        "pathologyAppearance": "string",
+        "doNotInvent": ["string"]
+      }
+    }
+  ]
+}`;
+
+      const planResponse = await ai.models.generateContent({
+        model,
+        contents: [{ text: promptPlan }],
+        config: { responseMimeType: "application/json" }
+      });
+
+      let planJson: any = {};
+      try {
+        planJson = JSON.parse(planResponse.text || "{}");
+      } catch {
+        planJson = {};
+      }
+
+      if (planJson.lesionFound === false) {
+        return res.json({
+          success: false,
+          error: "No se identificó una lesión focal clara en el informe. Prueba modo manual indicando el foco."
+        });
+      }
+
+      let panelsPlan = Array.isArray(planJson.panels) ? planJson.panels.slice(0, wantMacro ? 2 : 1) : [];
+      if (!panelsPlan.length) {
+        panelsPlan = [{
+          panelLetter: "A",
+          panelTitle: "Contexto regional de la lesión",
+          anatomicalFocus: `Foco: ${focusText || planJson.lesionLabel || "lesión reportada"}`,
+          laterality: laterality || planJson.detectedLaterality || "",
+          panelRole: "context",
+          spatialContract: {
+            view: "oblique clinical cutaway",
+            laterality: laterality || "",
+            imageLeftStructure: "anatomically correct left-of-frame structure",
+            imageRightStructure: "anatomically correct right-of-frame structure",
+            mustShowLandmarks: [],
+            pathologySite: String(focusText || planJson.lesionSite || ""),
+            pathologyAppearance: String(planJson.lesionMorphology || ""),
+            doNotInvent: ["invented satellite lesions", "mirrored laterality"]
+          }
+        }];
+      }
+
+      const forcedLaterality = laterality && laterality !== "auto" ? laterality : "";
+      const lesionDirective = [
+        `FOCAL LESION TARGET: ${planJson.lesionLabel || focusText || "reported lesion"}`,
+        planJson.lesionSite ? `Site: ${planJson.lesionSite}` : "",
+        planJson.lesionMorphology ? `Morphology: ${planJson.lesionMorphology}` : "",
+        planJson.lesionSize ? `Size: ${planJson.lesionSize}` : "",
+        "Keep orientation landmarks visible; do not invent secondary pathology."
+      ].filter(Boolean).join(". ");
+
+      const mergedDirectives = [lesionDirective, customDirectives].filter(Boolean).join("\n");
+
+      const buildPanelFromPlan = async (panel: any, idx: number, surgicalCorrection?: string) => {
+        const contract = normalizeSpatialContract(
+          panel.spatialContract,
+          panel.laterality || planJson.detectedLaterality || forcedLaterality
+        );
+        if (!contract.pathologySite && (planJson.lesionSite || focusText)) {
+          contract.pathologySite = String(planJson.lesionSite || focusText);
+        }
+        if (!contract.pathologyAppearance && planJson.lesionMorphology) {
+          contract.pathologyAppearance = String(planJson.lesionMorphology);
+        }
+        const role = panel.panelRole === "macro" || idx === 1 ? "macro" : "context";
+        const promptToUse = buildImagePromptFromContract({
+          panelTitle: panel.panelTitle || (role === "macro" ? "Macro de la lesión" : "Contexto regional"),
+          anatomicalFocus: panel.anatomicalFocus || `Foco: ${planJson.lesionLabel || "lesión"}`,
+          studyRegion: planJson.studyRegion || organOrStudy || "anatomy",
+          contract,
+          customDirectives: mergedDirectives,
+          forcedLaterality,
+          surgicalCorrection: [
+            role === "macro"
+              ? "MACRO CUTAWAY: fill most of the frame with the lesion and immediate adjacent tissue; keep 1-2 orientation landmarks."
+              : "REGIONAL CONTEXT: show the lesion in situ within the correct anatomical compartment.",
+            surgicalCorrection || ""
+          ].filter(Boolean).join(" ")
+        });
+        try {
+          const imageUrl = await generateMedicalImage(ai, promptToUse);
+          return {
+            id: `focal-${idx}-${Date.now()}`,
+            panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
+            panelTitle: panel.panelTitle || (role === "macro" ? "Macro de la lesión" : "Contexto regional"),
+            anatomicalFocus: panel.anatomicalFocus || `Foco: ${planJson.lesionLabel || "lesión"}`,
+            laterality: panel.laterality || planJson.detectedLaterality || laterality || "",
+            spatialContract: contract,
+            imageUrl,
+            promptUsed: promptToUse,
+            isCustomFlipped: false,
+            panelRole: role
+          };
+        } catch (imgErr) {
+          console.error("Error imagen corte focal:", imgErr);
+          return {
+            id: `focal-${idx}-${Date.now()}`,
+            panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
+            panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
+            anatomicalFocus: panel.anatomicalFocus || "",
+            laterality: panel.laterality || "",
+            spatialContract: contract,
+            imageUrl: "",
+            promptUsed: promptToUse,
+            isCustomFlipped: false,
+            panelRole: role
+          };
+        }
+      };
+
+      let panelsWithImages = await Promise.all(
+        panelsPlan.map((panel: any, idx: number) => buildPanelFromPlan(panel, idx))
+      );
+
+      let qualityAudit: any = { verified: false, panelNotes: [], synopticRewritten: false };
+      try {
+        const verifiable = panelsWithImages.filter((p: any) => p.imageUrl && stripDataUrl(p.imageUrl));
+        if (verifiable.length > 0) {
+          const verifyParts: any[] = [{
+            text: `Eres un radiólogo revisor de calidad de CORTE FOCAL 3D.
+Compara CADA imagen con el informe y el contrato espacial de la lesión objetivo "${planJson.lesionLabel || focusText || ""}" en "${planJson.lesionSite || ""}".
+Devuelve JSON:
+{
+  "panels": [
+    {
+      "panelLetter": "A",
+      "pass": true/false,
+      "lateralityOk": true/false,
+      "pathologyOk": true/false,
+      "landmarksOk": true/false,
+      "issues": ["..."],
+      "surgicalCorrection": "English instruction if pass=false, else empty"
+    }
+  ],
+  "lesionSummary": "optional refined 1-2 sentence summary in Spanish"
+}
+Reglas: no inventes; si lateralidad/sitio/morfología fallan => pass=false.
+INFORME:
+"""
+${reportText}
+"""
+PLAN:
+${JSON.stringify(panelsPlan.map((p: any, i: number) => ({
+  panelLetter: panelsWithImages[i]?.panelLetter || p.panelLetter,
+  panelTitle: p.panelTitle,
+  panelRole: panelsWithImages[i]?.panelRole || p.panelRole,
+  anatomicalFocus: p.anatomicalFocus,
+  spatialContract: panelsWithImages[i]?.spatialContract || p.spatialContract
+})), null, 2)}
+`
+          }];
+          for (const p of verifiable) {
+            const parsedImg = stripDataUrl(p.imageUrl);
+            if (!parsedImg) continue;
+            verifyParts.push({ text: `PANEL ${p.panelLetter} (${p.panelRole || "context"}) — ${p.panelTitle}` });
+            verifyParts.push({ inlineData: { mimeType: parsedImg.mime, data: parsedImg.data } });
+          }
+
+          const verifyResp = await ai.models.generateContent({
+            model,
+            contents: { parts: verifyParts },
+            config: { responseMimeType: "application/json" }
+          });
+          let verifyJson: any = {};
+          try {
+            verifyJson = JSON.parse(verifyResp.text || "{}");
+          } catch {
+            verifyJson = {};
+          }
+
+          qualityAudit.verified = true;
+          qualityAudit.panelNotes = Array.isArray(verifyJson.panels) ? verifyJson.panels : [];
+
+          if (Array.isArray(verifyJson.panels)) {
+            const regenJobs: Promise<any>[] = [];
+            for (const note of verifyJson.panels) {
+              if (note?.pass !== false) continue;
+              const letter = String(note.panelLetter || "").toUpperCase();
+              const idx = panelsWithImages.findIndex((p: any) => String(p.panelLetter).toUpperCase() === letter);
+              if (idx < 0) continue;
+              const originalPlan = panelsPlan[idx] || panelsWithImages[idx];
+              const correction = String(note.surgicalCorrection || "Fix laterality landmarks and depict only the target lesion faithfully.").trim();
+              regenJobs.push(
+                buildPanelFromPlan(originalPlan, idx, correction).then((newPanel) => ({ idx, newPanel, note }))
+              );
+            }
+            const regenResults = await Promise.all(regenJobs);
+            for (const r of regenResults) {
+              panelsWithImages[r.idx] = {
+                ...r.newPanel,
+                qualityFlags: {
+                  regenerated: true,
+                  issues: r.note.issues || [],
+                  lateralityOk: false,
+                  pathologyOk: false
+                }
+              };
+            }
+          }
+
+          if (typeof verifyJson.lesionSummary === "string" && verifyJson.lesionSummary.trim()) {
+            planJson.lesionSummary = verifyJson.lesionSummary.trim();
+          }
+        }
+      } catch (verifyErr: any) {
+        console.warn("Verificación visual corte focal omitida/fallida:", verifyErr?.message || verifyErr);
+        qualityAudit.error = String(verifyErr?.message || verifyErr);
+      }
+
+      const data = {
+        lesionLabel: String(planJson.lesionLabel || focusText || "Lesión focal").trim(),
+        lesionSite: String(planJson.lesionSite || "").trim(),
+        lesionSummary: String(planJson.lesionSummary || "").trim(),
+        lesionSize: String(planJson.lesionSize || "").trim(),
+        lesionMorphology: String(planJson.lesionMorphology || "").trim(),
+        lesionRelations: String(planJson.lesionRelations || "").trim(),
+        keyPoints: Array.isArray(planJson.keyPoints)
+          ? planJson.keyPoints.map((x: any) => String(x || "").trim()).filter(Boolean).slice(0, 6)
+          : [],
+        detectionMode: mode,
+        focusText: mode === "manual" ? String(focusText).trim() : "",
+        studyRegion: planJson.studyRegion || organOrStudy || "Estudio Actual",
+        figureTitle: planJson.figureTitle || `FIGURA. DETALLE 3D DEL HALLAZGO: ${planJson.lesionLabel || "LESIÓN FOCAL"}`,
+        detectedLaterality: planJson.detectedLaterality || laterality || "",
+        panels: panelsWithImages,
+        qualityAudit
+      };
+
+      res.json({ success: true, data });
+    } catch (error: any) {
+      console.error("Error en /api/generate-focal-lesion-3d:", error);
+      res.status(500).json({ success: false, error: handleGeminiError(error) });
+    }
+  });
+
+  app.post("/api/regenerate-focal-lesion-panel", async (req: express.Request, res: express.Response) => {
+    try {
+      const {
+        reportText,
+        studyRegion,
+        panel,
+        laterality,
+        userDirective,
+        requestedModel,
+        customDirectives,
+        lesionLabel,
+        lesionSite,
+        lesionMorphology
+      } = req.body;
+
+      if (!panel) {
+        return res.status(400).json({ success: false, error: "Se requiere el panel a regenerar." });
+      }
+
+      const ai = getGeminiClient();
+      const model = getModelName(requestedModel || "gemini-3.7-flash");
+      const forcedLaterality = laterality && laterality !== "auto" ? laterality : "";
+      const fullReport = typeof reportText === "string" ? reportText : "";
+      const role = panel.panelRole === "macro" ? "macro" : "context";
+
+      const refinementPrompt = `Eres un Radiólogo y Anatomista Quirúrgico. Refina el CONTRATO ESPACIAL para regenerar el PANEL ${panel.panelLetter || "A"} de un CORTE FOCAL 3D.
+
+DATOS:
+- Región: "${studyRegion || "Anatomía médica"}"
+- Lesión objetivo: "${lesionLabel || ""}" en "${lesionSite || ""}"
+- Morfología: "${lesionMorphology || ""}"
+- Título panel: "${panel.panelTitle || ""}"
+- Foco: "${panel.anatomicalFocus || ""}"
+- Rol: "${role}"
+- Lateralidad: "${forcedLaterality || panel.laterality || ""}"
+- Contrato previo: ${JSON.stringify(panel.spatialContract || {})}
+- Directiva clínica: "${customDirectives || "Ninguna"}"
+- Corrección del médico: "${userDirective || "Mejorar precisión del sitio y morfología de la lesión"}"
+- INFORME:
+"""
+${fullReport}
+"""
+
+RESPONDE SOLO JSON:
+{
+  "panelTitle": "string",
+  "anatomicalFocus": "Foco: ...",
+  "spatialContract": {
+    "view": "string",
+    "laterality": "string",
+    "imageLeftStructure": "string",
+    "imageRightStructure": "string",
+    "superiorStructure": "string",
+    "inferiorStructure": "string",
+    "mustShowLandmarks": ["string"],
+    "pathologySite": "string",
+    "pathologyAppearance": "string",
+    "doNotInvent": ["string"]
+  }
+}`;
+
+      const refineResponse = await ai.models.generateContent({
+        model,
+        contents: [{ text: refinementPrompt }],
+        config: { responseMimeType: "application/json" }
+      });
+
+      let refineJson: any = {};
+      try {
+        refineJson = JSON.parse(refineResponse.text || "{}");
+      } catch {
+        refineJson = {
+          panelTitle: panel.panelTitle,
+          anatomicalFocus: panel.anatomicalFocus,
+          spatialContract: panel.spatialContract || {}
+        };
+      }
+
+      const contract = normalizeSpatialContract(
+        refineJson.spatialContract || panel.spatialContract,
+        forcedLaterality || panel.laterality
+      );
+
+      const finalPrompt = buildImagePromptFromContract({
+        panelTitle: refineJson.panelTitle || panel.panelTitle || `Panel ${panel.panelLetter || ""}`,
+        anatomicalFocus: refineJson.anatomicalFocus || panel.anatomicalFocus || "Foco lesion",
+        studyRegion: studyRegion || "anatomy",
+        contract,
+        customDirectives: [
+          lesionLabel ? `FOCAL LESION TARGET: ${lesionLabel}${lesionSite ? ` at ${lesionSite}` : ""}` : "",
+          customDirectives || ""
+        ].filter(Boolean).join("\n"),
+        forcedLaterality,
+        surgicalCorrection: [
+          role === "macro"
+            ? "MACRO CUTAWAY of the target lesion with orientation landmarks."
+            : "Regional context with lesion in correct compartment.",
+          userDirective || ""
+        ].filter(Boolean).join(" ")
+      });
+
+      const imageUrl = await generateMedicalImage(ai, finalPrompt);
+
+      res.json({
+        success: true,
+        panel: {
+          ...panel,
+          panelTitle: refineJson.panelTitle || panel.panelTitle,
+          anatomicalFocus: refineJson.anatomicalFocus || panel.anatomicalFocus,
+          laterality: forcedLaterality || panel.laterality,
+          spatialContract: contract,
+          imageUrl,
+          promptUsed: finalPrompt,
+          isCustomFlipped: false,
+          qualityFlags: undefined,
+          panelRole: role
+        }
+      });
+    } catch (error: any) {
+      console.error("Error en /api/regenerate-focal-lesion-panel:", error);
+      res.status(500).json({ success: false, error: handleGeminiError(error) });
+    }
+  });
+
+
 }
 

@@ -220,6 +220,28 @@ export interface Vascular3DData {
   morphologicalSynthesis?: string;
 }
 
+/** Panel for Focal Lesion Cutaway 3D (context or macro zoom). */
+export interface FocalLesion3DPanel extends Atlas3DPanel {
+  panelRole?: "context" | "macro";
+}
+
+export interface FocalLesion3DData {
+  lesionLabel: string;
+  lesionSite?: string;
+  lesionSummary?: string;
+  lesionSize?: string;
+  lesionMorphology?: string;
+  lesionRelations?: string;
+  keyPoints?: string[];
+  detectionMode?: "auto" | "manual";
+  focusText?: string;
+  studyRegion?: string;
+  figureTitle?: string;
+  detectedLaterality?: string;
+  panels: FocalLesion3DPanel[];
+  qualityAudit?: AtlasQualityAudit;
+}
+
 export type UsImagesGridMode = "auto" | "1x1" | "1x2" | "2x1" | "2x2" | "3x2" | "4x2";
 
 /** One quantitative measurement extracted from the report for gauge display. */
