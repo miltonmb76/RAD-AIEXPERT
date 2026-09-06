@@ -17,10 +17,12 @@ const ElastographyQUSPresentationModule = React.lazy(() => import("./components/
 import { Atlas3DModule } from "./components/Atlas3DModule";
 import { renderAtlas3DAnnexToPDF } from "./utils/atlas3dPdfRenderer";
 import { renderScorecardAnnexToPDF } from "./utils/scorecardPdfRenderer";
-import { Atlas3DData, Vascular3DData, UsImagesGridMode, ClinicalScorecardData } from "./types";
+import { Atlas3DData, Vascular3DData, FocalLesion3DData, UsImagesGridMode, ClinicalScorecardData } from "./types";
 import { buildAtlasDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
 import { Vascular3DModule } from "./components/Vascular3DModule";
+import { FocalLesion3DModule } from "./components/FocalLesion3DModule";
 import { renderVascular3DPageToPdf } from "./utils/vascular3dPdfRenderer";
+import { renderFocalLesion3DAnnexToPDF } from "./utils/focalLesion3dPdfRenderer";
 import { renderElastographyAnnexToPdf, ElastographyPdfData } from "./utils/elastographyPdfRenderer";
 import { renderUsImagesToPdf, getPanelLetter } from "./utils/usImagesPdfRenderer";
 import { renderMmgImagesToPdf } from "./utils/mmgImagesPdfRenderer";
@@ -1418,6 +1420,8 @@ export default function App() {
         if (localStudy.patientSummary) setPatientSummary(localStudy.patientSummary);
         if (localStudy.atlas3dData) setAtlas3dData(localStudy.atlas3dData);
         if (localStudy.vascular3dData) setVascular3dData(localStudy.vascular3dData);
+        if (localStudy.focalLesion3dData) setFocalLesion3dData(localStudy.focalLesion3dData);
+        if (localStudy.includeFocalLesion3dInReport !== undefined) setIncludeFocalLesion3dInReport(localStudy.includeFocalLesion3dInReport);
         if (localStudy.usImagesGridMode) setUsImagesGridMode(localStudy.usImagesGridMode as any);
         setIsPatientViewLoading(false);
       } else {
@@ -2566,6 +2570,10 @@ export default function App() {
   const [vascular3dData, setVascular3dData] = useState<Vascular3DData | null>(null);
   const [includeVascular3dInReport, setIncludeVascular3dInReport] = useState<boolean>(true);
 
+  // Focal Lesion Cutaway 3D (on-demand)
+  const [focalLesion3dData, setFocalLesion3dData] = useState<FocalLesion3DData | null>(null);
+  const [includeFocalLesion3dInReport, setIncludeFocalLesion3dInReport] = useState<boolean>(true);
+
   // Cuadr√≠cula y Presentaci√≥n Cient√≠fica para Fotos de Ultrasonido
   const [usImagesGridMode, setUsImagesGridMode] = useState<UsImagesGridMode>("auto");
 
@@ -2612,6 +2620,8 @@ export default function App() {
     includeScorecardInReport,
     vascular3dData,
     includeVascular3dInReport,
+    focalLesion3dData,
+    includeFocalLesion3dInReport,
     usImagesGridMode,
     includeElastographyInReport,
     elastographyStiffness,
@@ -4127,6 +4137,8 @@ Ejemplo:
             includeAtlas3dInReport: includeAtlas3dInReport,
             vascular3dData: vascular3dData || null,
             includeVascular3dInReport: includeVascular3dInReport,
+            focalLesion3dData: focalLesion3dData || null,
+            includeFocalLesion3dInReport: includeFocalLesion3dInReport,
             usImagesGridMode: usImagesGridMode || "auto",
             createdAt: new Date().toISOString(),
             specificStudy: specificStudy || "General",
@@ -4152,6 +4164,7 @@ Ejemplo:
                 findings3dRenders: [],
                 atlas3dData: null,
                 vascular3dData: null,
+                focalLesion3dData: null,
                 customLogoUrl: "",
                 customSignatureUrl: "",
               };
@@ -5242,6 +5255,8 @@ Ejemplo:
             includeAtlas3dInReport: includeAtlas3dInReport,
             vascular3dData: vascular3dData || null,
             includeVascular3dInReport: includeVascular3dInReport,
+            focalLesion3dData: focalLesion3dData || null,
+            includeFocalLesion3dInReport: includeFocalLesion3dInReport,
             usImagesGridMode: usImagesGridMode || "auto",
             patientSummary: patientSummary || null
           });
@@ -9660,6 +9675,20 @@ Ejemplo:
       if (activeVascularData && shouldIncludeVascular && ((activeVascularData.panels && activeVascularData.panels.length > 0) || (activeVascularData.hemodynamicTable && activeVascularData.hemodynamicTable.length > 0))) {
         await renderVascular3DPageToPdf(doc, activeVascularData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
       }
+
+      // --- 5.65. ANEXO: CORTE FOCAL 3D DE LA LESI”N (ON DEMAND) ---
+      const activeFocalLesionData = studyOverride ? studyOverride.focalLesion3dData : (pdfStateRef.current?.focalLesion3dData || focalLesion3dData);
+      const shouldIncludeFocalLesion = studyOverride ? (studyOverride.includeFocalLesion3dInReport !== false) : (pdfStateRef.current?.includeFocalLesion3dInReport !== false && includeFocalLesion3dInReport);
+      if (activeFocalLesionData && shouldIncludeFocalLesion && activeFocalLesionData.panels && activeFocalLesionData.panels.length > 0) {
+        renderFocalLesion3DAnnexToPDF(doc, activeFocalLesionData, {
+          marginX,
+          pageWidth,
+          pageHeight,
+          contentWidth,
+          factor
+        });
+      }
+
 
       // --- 5.7. ANEXO: EVALUACION MULTIPARAMETRICA - ELASTOGRAFIA & QUS (PAGINA DEDICADA) ---
       // Only include when the user explicitly enabled "Adjuntar al PDF" in the Elastografia module.
@@ -19364,6 +19393,21 @@ const splitReportAndAnnex = (text: string) => {
                             setIncludeInReport={setIncludeVascular3dInReport}
                           />
 
+                          {/* === CORTE FOCAL 3D DE LA LESI”N (ON DEMAND) === */}
+                          <FocalLesion3DModule
+                            reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
+                            activeProtocol={specificStudy || studyType || ""}
+                            laterality=""
+                            selectedModel={modelFor("focal_lesion3d")}
+                            focalData={focalLesion3dData}
+                            setFocalData={setFocalLesion3dData}
+                            includeInReport={includeFocalLesion3dInReport}
+                            setIncludeInReport={setIncludeFocalLesion3dInReport}
+                            scorecardData={clinicalScorecardData}
+                            externalDirectives={atlasDirectivesFromScorecard}
+                          />
+
+
                           {/* === 3D SCHEMATIC RENDERS FOR ULTRASOUND FINDINGS === */}
                           <Findings3dRenderModule
                             renders={findings3dRenders}
@@ -22858,7 +22902,9 @@ const splitReportAndAnnex = (text: string) => {
                         if (viewingCloudStudy.atlas3dData) setAtlas3dData(viewingCloudStudy.atlas3dData);
                         if (viewingCloudStudy.includeAtlas3dInReport !== undefined) setIncludeAtlas3dInReport(viewingCloudStudy.includeAtlas3dInReport);
                         if (viewingCloudStudy.vascular3dData) setVascular3dData(viewingCloudStudy.vascular3dData);
+                        if (viewingCloudStudy.focalLesion3dData) setFocalLesion3dData(viewingCloudStudy.focalLesion3dData);
                         if (viewingCloudStudy.includeVascular3dInReport !== undefined) setIncludeVascular3dInReport(viewingCloudStudy.includeVascular3dInReport);
+                        if (viewingCloudStudy.includeFocalLesion3dInReport !== undefined) setIncludeFocalLesion3dInReport(viewingCloudStudy.includeFocalLesion3dInReport);
                         if (viewingCloudStudy.usImagesGridMode) setUsImagesGridMode(viewingCloudStudy.usImagesGridMode as any);
                         setFindings3dRenders(viewingCloudStudy.findings3dRenders || []);
                         setPatientSummary(viewingCloudStudy.patientSummary || null);
