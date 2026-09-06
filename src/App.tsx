@@ -11,13 +11,15 @@ const AsistenteMedidas = React.lazy(() => import("./components/AsistenteMedidas"
 const CreadorNotasPie = React.lazy(() => import("./components/CreadorNotasPie").then(m => ({ default: m.CreadorNotasPie })));
 const BiomechanicalRadarModule = React.lazy(() => import("./components/BiomechanicalRadarModule").then(m => ({ default: m.BiomechanicalRadarModule })));
 const ClinicalScorecardModule = React.lazy(() => import("./components/ClinicalScorecardModule").then(m => ({ default: m.ClinicalScorecardModule })));
+const MeasurementsGaugeModule = React.lazy(() => import("./components/MeasurementsGaugeModule").then(m => ({ default: m.MeasurementsGaugeModule })));
 const CreadorCuadroSinoptico = React.lazy(() => import("./components/CreadorCuadroSinoptico").then(m => ({ default: m.CreadorCuadroSinoptico })));
 const CreadorSinopsisFracturas = React.lazy(() => import("./components/CreadorSinopsisFracturas").then(m => ({ default: m.CreadorSinopsisFracturas })));
 const ElastographyQUSPresentationModule = React.lazy(() => import("./components/ElastographyQUSPresentationModule").then(m => ({ default: m.ElastographyQUSPresentationModule })));
 import { Atlas3DModule } from "./components/Atlas3DModule";
 import { renderAtlas3DAnnexToPDF } from "./utils/atlas3dPdfRenderer";
 import { renderScorecardAnnexToPDF } from "./utils/scorecardPdfRenderer";
-import { Atlas3DData, Vascular3DData, UsImagesGridMode, ClinicalScorecardData } from "./types";
+import { renderMeasurementsGaugeAnnexToPDF } from "./utils/measurementsGaugePdfRenderer";
+import { Atlas3DData, Vascular3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData } from "./types";
 import { buildAtlasDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
 import { Vascular3DModule } from "./components/Vascular3DModule";
 import { renderVascular3DPageToPdf } from "./utils/vascular3dPdfRenderer";
@@ -2561,6 +2563,10 @@ export default function App() {
   const [includeScorecardInReport, setIncludeScorecardInReport] = useState<boolean>(true);
   const [isClinicalScorecardOpen, setIsClinicalScorecardOpen] = useState<boolean>(false);
   const [atlasDirectivesFromScorecard, setAtlasDirectivesFromScorecard] = useState<string>("");
+  const [measurementGaugeData, setMeasurementGaugeData] = useState<MeasurementGaugeData | null>(null);
+  const [includeMeasurementGaugesInReport, setIncludeMeasurementGaugesInReport] = useState<boolean>(true);
+  const [includeMeasurementNormalsInPdf, setIncludeMeasurementNormalsInPdf] = useState<boolean>(false);
+  const [isMeasurementsGaugeOpen, setIsMeasurementsGaugeOpen] = useState<boolean>(false);
 
   // Suite Vascular 3D & Mapa Ánatomo-Hemodinámico Data
   const [vascular3dData, setVascular3dData] = useState<Vascular3DData | null>(null);
@@ -2610,6 +2616,9 @@ export default function App() {
     includeAtlas3dInReport,
     clinicalScorecardData,
     includeScorecardInReport,
+    measurementGaugeData,
+    includeMeasurementGaugesInReport,
+    includeMeasurementNormalsInPdf,
     vascular3dData,
     includeVascular3dInReport,
     usImagesGridMode,
@@ -9649,6 +9658,32 @@ Ejemplo:
           pageHeight,
           contentWidth,
           factor
+        });
+      }
+
+      // --- ANEXO: MEDICIONES CUANTITATIVAS vs RANGO ---
+      const activeMeasurementGauges = studyOverride
+        ? (studyOverride as any).measurementGaugeData
+        : (pdfStateRef.current?.measurementGaugeData || measurementGaugeData);
+      const shouldIncludeMeasurementGauges = studyOverride
+        ? ((studyOverride as any).includeMeasurementGaugesInReport !== false)
+        : ((pdfStateRef.current?.includeMeasurementGaugesInReport !== false) && includeMeasurementGaugesInReport);
+      const includeNormalsInMeasurementPdf = studyOverride
+        ? ((studyOverride as any).includeMeasurementNormalsInPdf === true)
+        : !!(pdfStateRef.current?.includeMeasurementNormalsInPdf ?? includeMeasurementNormalsInPdf);
+      if (
+        activeMeasurementGauges &&
+        shouldIncludeMeasurementGauges &&
+        Array.isArray(activeMeasurementGauges.measurements) &&
+        activeMeasurementGauges.measurements.length > 0
+      ) {
+        renderMeasurementsGaugeAnnexToPDF(doc, activeMeasurementGauges, {
+          marginX,
+          pageWidth,
+          pageHeight,
+          contentWidth,
+          factor,
+          includeNormals: includeNormalsInMeasurementPdf,
         });
       }
 
@@ -20204,6 +20239,29 @@ const splitReportAndAnnex = (text: string) => {
                               </button>
                             </div>
 
+                            {/* Card: Extractor de medidas (gauges vs rango) */}
+                            <div className="p-4 rounded-2xl bg-slate-950/60 border border-blue-900/40 space-y-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <h4 className="text-sm font-semibold text-blue-200">Extractor de medidas</h4>
+                                  <p className="text-[11px] text-slate-400 mt-1">
+                                    Barras vs rango normal. Casilla para incluir o no las medidas normales en el PDF.
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setIsMeasurementsGaugeOpen((v) => !v)}
+                                className={`w-full px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
+                                  isMeasurementsGaugeOpen
+                                    ? "bg-blue-700 text-white"
+                                    : "bg-blue-600/80 hover:bg-blue-500 text-white"
+                                }`}
+                              >
+                                {isMeasurementsGaugeOpen ? "Ocultar Extractor" : "Abrir Extractor de medidas"}
+                              </button>
+                            </div>
+
 {/* Card 11: Radar Biomecánico e Inflamatorio (IA) */}
                             <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-indigo-500/30 rounded-2xl p-5 space-y-4 shadow-xl transition-all font-sans">
                               <div className="flex items-center gap-2 justify-between">
@@ -20278,6 +20336,24 @@ const splitReportAndAnnex = (text: string) => {
                                   atlasData={atlas3dData}
                                   setAtlasData={setAtlas3dData}
                                   onAtlasDirectivesSuggested={setAtlasDirectivesFromScorecard}
+                                />
+                              </React.Suspense>
+                            </div>
+                          )}
+
+                          {isMeasurementsGaugeOpen && (
+                            <div className="my-6">
+                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-blue-400 bg-slate-900/60 rounded-xl border border-blue-900/40 animate-pulse">Cargando Extractor de medidas...</div>}>
+                                <MeasurementsGaugeModule
+                                  selectedModel={modelFor("measurements")}
+                                  reportText={isEditingReportManual ? editedReportText : generatedReport}
+                                  studyType={specificStudy || studyType}
+                                  gaugeData={measurementGaugeData}
+                                  setGaugeData={setMeasurementGaugeData}
+                                  includeInReport={includeMeasurementGaugesInReport}
+                                  setIncludeInReport={setIncludeMeasurementGaugesInReport}
+                                  includeNormalsInPdf={includeMeasurementNormalsInPdf}
+                                  setIncludeNormalsInPdf={setIncludeMeasurementNormalsInPdf}
                                 />
                               </React.Suspense>
                             </div>

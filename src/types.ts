@@ -222,3 +222,30 @@ export interface Vascular3DData {
 
 export type UsImagesGridMode = "auto" | "1x1" | "1x2" | "2x1" | "2x2" | "3x2" | "4x2";
 
+/** One quantitative measurement extracted from the report for gauge display. */
+export type MeasurementGaugeStatus = "normal" | "borderline" | "altered" | "not_found";
+
+export interface MeasurementGaugeItem {
+  id: string;
+  name: string;
+  measuredValue: string;
+  valueNumeric: number | null;
+  unit: string;
+  normalRangeLabel: string;
+  /** Visual scale endpoints for the bar (same unit as valueNumeric). */
+  scaleMin: number;
+  scaleMax: number;
+  /** Reference band; null means open-ended on that side. */
+  rangeMin: number | null;
+  rangeMax: number | null;
+  status: MeasurementGaugeStatus;
+  interpretation: string;
+}
+
+export interface MeasurementGaugeData {
+  studyType: string;
+  referenceSource: string;
+  measurements: MeasurementGaugeItem[];
+  generatedAt?: string;
+}
+
