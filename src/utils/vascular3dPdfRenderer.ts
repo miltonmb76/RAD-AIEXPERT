@@ -80,16 +80,27 @@ export async function renderVascular3DPageToPdf(
     const imgWidth = cardWidth - 4;
     const imgHeight = imgWidth * (3 / 4); // Strict 4:3 ratio
 
-    // Pre-calculate caption heights to size card dynamically
-    let maxCaptionLines = 1;
-    panels.forEach(p => {
+    // Caption box hugs text tightly (no large empty footer) so the hemodynamic table keeps readable type
+    const measureCaptionH = (p: Vascular3DPanel): number => {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8 * factor);
       const titleLines = doc.splitTextToSize(p.panelTitle || `Panel ${p.panelLetter}`, cardWidth - 6);
-      const descLines = doc.splitTextToSize(p.anatomicalFocus || "", cardWidth - 6);
-      const totalL = titleLines.length + descLines.length;
-      if (totalL > maxCaptionLines) maxCaptionLines = totalL;
-    });
-
-    const captionAreaH = Math.max(18 * factor, (maxCaptionLines * 3.6 + 6) * factor);
+      let h = 3.2 * factor; // gap under image
+      h += titleLines.length * 3.4 * factor;
+      if (p.anatomicalFocus && String(p.anatomicalFocus).trim()) {
+        h += 1.0 * factor; // gap title → description
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7.2 * factor);
+        const descLines = doc.splitTextToSize(String(p.anatomicalFocus).trim(), cardWidth - 6);
+        h += descLines.length * 3.05 * factor;
+      }
+      h += 2.2 * factor; // bottom padding inside card border
+      return h;
+    };
+    const captionAreaH = Math.max(
+      ...panels.slice(0, panelCount).map(measureCaptionH),
+      7 * factor
+    );
     const cardH = imgHeight + captionAreaH + 4;
 
     for (let idx = 0; idx < panelCount; idx++) {
@@ -134,21 +145,22 @@ export async function renderVascular3DPageToPdf(
       doc.setTextColor(255, 255, 255);
       doc.text(`PANEL ${p.panelLetter || String.fromCharCode(65 + idx)}`, imgX + 3.5, imgY + 2 + 3.6);
 
-      // Panel Title
-      let textY = imgY + imgHeight + 3.5 * factor;
+      // Panel Title — metrics must match measureCaptionH()
+      let textY = imgY + imgHeight + 3.2 * factor;
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8 * factor);
       doc.setTextColor(15, 23, 42); // slate-900
       const titleLines = doc.splitTextToSize(p.panelTitle || `Panel ${p.panelLetter}`, cardWidth - 6);
       doc.text(titleLines, cardX + 3, textY);
-      textY += (titleLines.length * 3.4) + 1.5;
+      textY += titleLines.length * 3.4 * factor;
 
       // Anatomical Focus / Description
-      if (p.anatomicalFocus) {
+      if (p.anatomicalFocus && String(p.anatomicalFocus).trim()) {
+        textY += 1.0 * factor;
         doc.setFont("helvetica", "normal");
         doc.setFontSize(7.2 * factor);
         doc.setTextColor(71, 85, 105); // slate-600
-        const descLines = doc.splitTextToSize(p.anatomicalFocus, cardWidth - 6);
+        const descLines = doc.splitTextToSize(String(p.anatomicalFocus).trim(), cardWidth - 6);
         doc.text(descLines, cardX + 3, textY);
       }
     }
@@ -203,7 +215,7 @@ export async function renderVascular3DPageToPdf(
 
   // Calculate dynamic header height with automatic text wrapping
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(6.2 * factor);
+  doc.setFontSize(7.2 * factor);
   doc.setTextColor(51, 65, 85); // slate-700
 
   const wrappedHeaders = headerLabels.map((lbl, i) => {
@@ -211,7 +223,7 @@ export async function renderVascular3DPageToPdf(
   });
 
   const maxHeaderLines = Math.max(...wrappedHeaders.map(lines => lines.length), 1);
-  const headerH = Math.max(6.5 * factor, (maxHeaderLines * 2.8 + 2.5) * factor);
+  const headerH = Math.max(7.2 * factor, (maxHeaderLines * 3.1 + 2.8) * factor);
 
   // Table Header Background
   doc.setFillColor(241, 245, 249); // slate-100
@@ -236,7 +248,7 @@ export async function renderVascular3DPageToPdf(
   visibleRows.forEach((row, rIdx) => {
     // Split texts to calculate row height
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(6.5 * factor);
+    doc.setFontSize(7.4 * factor);
 
     const c1Lines = doc.splitTextToSize(row.vessel || "", colWidths[0] - 3);
     const c2Lines = doc.splitTextToSize(row.plaqueOrThrombus || "", colWidths[1] - 3);
@@ -246,7 +258,7 @@ export async function renderVascular3DPageToPdf(
     const c6Lines = doc.splitTextToSize(row.clinicalImpact || "", colWidths[5] - 3);
 
     const maxLines = Math.max(c1Lines.length, c2Lines.length, c3Lines.length, c4Lines.length, c5Lines.length, c6Lines.length, 1);
-    const rowH = Math.max(5.2 * factor, (maxLines * 3.0 + 2.2) * factor);
+    const rowH = Math.max(5.8 * factor, (maxLines * 3.3 + 2.4) * factor);
 
     // Zebra striping
     if (rIdx % 2 === 1) {
@@ -258,21 +270,21 @@ export async function renderVascular3DPageToPdf(
 
     // Col 1: Vaso (Bold)
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(6.5 * factor);
+    doc.setFontSize(7.4 * factor);
     doc.setTextColor(15, 23, 42);
     doc.text(c1Lines, cellX + 2, yCoord + 3.0 * factor);
     cellX += colWidths[0];
 
     // Col 2: Placa / Trombo / Compresibilidad
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(6.3 * factor);
+    doc.setFontSize(7.2 * factor);
     doc.setTextColor(71, 85, 105);
     doc.text(c2Lines, cellX + 2, yCoord + 3.0 * factor);
     cellX += colWidths[1];
 
     // Col 3: % Estenosis / Flujo Espontáneo / Diámetro (Color coding)
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(6.5 * factor);
+    doc.setFontSize(7.4 * factor);
     const stText = (row.stenosisPercent || "").trim().toLowerCase();
     if (
       stText.includes(">") || 
@@ -296,14 +308,14 @@ export async function renderVascular3DPageToPdf(
 
     // Col 4: Patrón (PSV/EDV) / Maniobra Aumento
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(6.3 * factor);
+    doc.setFontSize(7.2 * factor);
     doc.setTextColor(51, 65, 85);
     doc.text(c4Lines, cellX + 2, yCoord + 3.0 * factor);
     cellX += colWidths[3];
 
     // Col 5: Rel. / Índice / Reflujo
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(6.4 * factor);
+    doc.setFontSize(7.3 * factor);
     const refText = (row.hemodynamicIndex || "").toLowerCase();
     if (refText.includes("reflujo") || refText.includes("incompet") || refText.includes("patol") || refText.includes("oclus")) {
       doc.setTextColor(220, 38, 38); // Red-600
@@ -317,7 +329,7 @@ export async function renderVascular3DPageToPdf(
 
     // Col 6: Impacto Hemodinámico / Estado Clínico
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(6.3 * factor);
+    doc.setFontSize(7.2 * factor);
     doc.setTextColor(71, 85, 105);
     doc.text(c6Lines, cellX + 2, yCoord + 3.0 * factor);
 
