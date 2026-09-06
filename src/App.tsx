@@ -18,7 +18,7 @@ import { Atlas3DModule } from "./components/Atlas3DModule";
 import { renderAtlas3DAnnexToPDF } from "./utils/atlas3dPdfRenderer";
 import { renderScorecardAnnexToPDF } from "./utils/scorecardPdfRenderer";
 import { Atlas3DData, Vascular3DData, UsImagesGridMode, ClinicalScorecardData } from "./types";
-import { buildAtlasDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
+import { buildAtlasDirectivesFromScorecard, buildVascularDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
 import { Vascular3DModule } from "./components/Vascular3DModule";
 import { renderVascular3DPageToPdf } from "./utils/vascular3dPdfRenderer";
 import { renderElastographyAnnexToPdf, ElastographyPdfData } from "./utils/elastographyPdfRenderer";
@@ -3395,31 +3395,10 @@ Ejemplo:
 
     if (modules.glossary) promises.push(handleGenerateDynamicGlossary());
     if (modules.schematic) promises.push(handleGenerateSchematicSummary());
-    if (modules.vascular3d) {
+    // Scorecard first (findings-based), then Atlas and/or Vascular guided by scorecard directives
+    if (modules.clinical_scorecard || modules.atlas3d || modules.vascular3d) {
       promises.push((async () => {
-        try {
-          const resp = await fetch("/api/generate-3d-vascular", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              reportText: activeReport,
-              requestedModel: modelFor("vascular3d")
-            })
-          });
-          const j = await resp.json();
-          if (j.success && j.data) {
-            setVascular3dData(j.data);
-            setIncludeVascular3dInReport(true);
-          }
-        } catch (e) {
-          console.error("Error en batch vascular 3d:", e);
-        }
-      })());
-    }
-    // Scorecard first (findings-based), then Atlas guided by scorecard directives
-    if (modules.clinical_scorecard || modules.atlas3d) {
-      promises.push((async () => {
-        let scorecardForAtlas = clinicalScorecardData;
+        let scorecardForModules = clinicalScorecardData;
 
         if (modules.clinical_scorecard) {
           setIsClinicalScorecardOpen(true);
@@ -3437,7 +3416,7 @@ Ejemplo:
             });
             const scJson = await scResp.json();
             if (scJson.success && scJson.data) {
-              scorecardForAtlas = scJson.data;
+              scorecardForModules = scJson.data;
               setClinicalScorecardData(scJson.data);
               setIncludeScorecardInReport(true);
               const directives = buildAtlasDirectivesFromScorecard(scJson.data);
@@ -3452,7 +3431,7 @@ Ejemplo:
 
         if (modules.atlas3d) {
           try {
-            const scorecardDirectives = buildAtlasDirectivesFromScorecard(scorecardForAtlas);
+            const scorecardDirectives = buildAtlasDirectivesFromScorecard(scorecardForModules);
             const resp = await fetch("/api/generate-3d-atlas", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -3467,14 +3446,36 @@ Ejemplo:
             const j = await resp.json();
             if (j.success && j.data) {
               let nextAtlas = j.data;
-              if (scorecardForAtlas?.atlasOverlays?.length) {
-                nextAtlas = mergeOverlaysOntoAtlas(nextAtlas, scorecardForAtlas.atlasOverlays, "shared") || nextAtlas;
+              if (scorecardForModules?.atlasOverlays?.length) {
+                nextAtlas = mergeOverlaysOntoAtlas(nextAtlas, scorecardForModules.atlasOverlays, "shared") || nextAtlas;
               }
               setAtlas3dData(nextAtlas);
               setIncludeAtlas3dInReport(true);
             }
           } catch (atlasErr) {
             console.error("Error al generar Atlas 3D en lote:", atlasErr);
+          }
+        }
+
+        if (modules.vascular3d) {
+          try {
+            const vascularDirectives = buildVascularDirectivesFromScorecard(scorecardForModules);
+            const resp = await fetch("/api/generate-3d-vascular", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                reportText: activeReport,
+                requestedModel: modelFor("vascular3d"),
+                customDirectives: vascularDirectives || undefined
+              })
+            });
+            const j = await resp.json();
+            if (j.success && j.data) {
+              setVascular3dData(j.data);
+              setIncludeVascular3dInReport(true);
+            }
+          } catch (e) {
+            console.error("Error en batch vascular 3d:", e);
           }
         }
       })());
@@ -19362,6 +19363,8 @@ const splitReportAndAnnex = (text: string) => {
                             setVascularData={setVascular3dData}
                             includeInReport={includeVascular3dInReport}
                             setIncludeInReport={setIncludeVascular3dInReport}
+                            scorecardData={clinicalScorecardData}
+                            externalDirectives={buildVascularDirectivesFromScorecard(clinicalScorecardData) || atlasDirectivesFromScorecard}
                           />
 
                           {/* === 3D SCHEMATIC RENDERS FOR ULTRASOUND FINDINGS === */}

@@ -679,11 +679,19 @@ INFORMACIÓN DEL ESTUDIO VASCULAR:
 ========================================================================
 - Tipo de Estudio Sugerido / Seleccionado: "${vascularType || "Detectar automáticamente del informe"}"
 - Lateralidad Solicitada: "${laterality || "Detectar del informe"}"
-- Directiva Personalizada: "${customDirectives || "Ninguna"}"
+- DIRECTIVA CLÍNICA OBLIGATORIA (Scorecard vascular / médico — MANDATORY, no omitir): "${customDirectives || "Ninguna"}"
+IMPORTANTE: Si hay directiva clínica, DEBE gobernar la anatomía 3D, la morfología de placa/trombo, el grado de estenosis, la lateralidad y la tabla hemodinámica. No inventes lesiones ni grados ausentes en la directiva/informe.
 - INFORME DOPPLER VASCULAR:
 """
 ${reportText}
 """
+
+========================================================================
+REGLA DE SCORECARD / DIRECTIVA OBLIGATORIA:
+========================================================================
+Si "DIRECTIVA CLÍNICA OBLIGATORIA" no es "Ninguna", trátela como contrato clínico vinculante:
+- Los paneles 3D y la tabla hemodinámica DEBEN reflejar esos hallazgos (estenosis, placa/trombo, flujo, índices, lado).
+- Prohibido inventar lesiones o grados no respaldados por la directiva o el informe.
 
 ========================================================================
 DIRECTIVAS CLÍNICAS Y TIPOS DE ESTUDIO:
@@ -892,7 +900,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
   // 4. REGENERATE INDIVIDUAL VASCULAR 3D PANEL
   app.post("/api/regenerate-3d-vascular-panel", async (req: express.Request, res: express.Response) => {
     try {
-      const { reportText, vascularType, panel, laterality, userDirective, requestedModel } = req.body;
+      const { reportText, vascularType, panel, laterality, userDirective, requestedModel, customDirectives } = req.body;
 
       if (!panel) {
         return res.status(400).json({ success: false, error: "Se requiere el panel vascular a regenerar." });
@@ -910,6 +918,7 @@ DATOS DEL CASO:
 - Foco actual: "${panel.anatomicalFocus || ""}"
 - Lateralidad requerida: "${laterality || panel.laterality || ""}"
 - Instrucción / Corrección del médico: "${userDirective || "Mejorar precisión anatomopatológica y hemodinámica"}"
+- DIRECTIVA CLÍNICA OBLIGATORIA (Scorecard / médico): "${customDirectives || "Ninguna"}"
 - Contexto del informe: """${(reportText || "").slice(0, 800)}"""
 
 REGLAS DE ESTILO:
@@ -943,6 +952,9 @@ RESPONDE EN JSON:
       }
 
       let finalPrompt = refineJson.imagePrompt || panel.promptUsed || `3D macro vascular render of ${panel.panelTitle}, no text.`;
+      if (customDirectives && String(customDirectives).trim()) {
+        finalPrompt = `${finalPrompt} [MANDATORY CLINICAL DIRECTIVE: ${String(customDirectives).trim()}].`;
+      }
       if (userDirective && userDirective.trim()) {
         finalPrompt = `${finalPrompt} [MANDATORY SURGICAL CORRECTION: ${userDirective.trim()}].`;
       }
