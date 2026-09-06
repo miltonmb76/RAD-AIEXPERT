@@ -19,10 +19,18 @@ import {
   Plus,
   Heart,
   GitBranch,
-  Gauge
+  Gauge,
+  ShieldCheck
 } from "lucide-react";
-import { Vascular3DData, Vascular3DPanel, VascularHemodynamicRow, VascularStudyType } from "../types";
+import {
+  Vascular3DData,
+  Vascular3DPanel,
+  VascularHemodynamicRow,
+  VascularStudyType,
+  ClinicalScorecardData
+} from "../types";
 import { runBackgroundTask } from "../lib/backgroundTasks";
+import { buildVascularDirectivesFromScorecard } from "../lib/clinicalIntelligence";
 
 interface Vascular3DModuleProps {
   reportText: string;
@@ -34,6 +42,9 @@ interface Vascular3DModuleProps {
   includeInReport: boolean;
   setIncludeInReport: (include: boolean) => void;
   onClose?: () => void;
+  /** Vascular scorecard feeds mandatory generation directives (same pattern as Atlas/Focal). */
+  scorecardData?: ClinicalScorecardData | null;
+  externalDirectives?: string;
 }
 
 export const Vascular3DModule: React.FC<Vascular3DModuleProps> = ({
@@ -45,7 +56,9 @@ export const Vascular3DModule: React.FC<Vascular3DModuleProps> = ({
   setVascularData,
   includeInReport,
   setIncludeInReport,
-  onClose
+  onClose,
+  scorecardData,
+  externalDirectives
 }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStep, setGenerationStep] = useState("");
@@ -53,6 +66,57 @@ export const Vascular3DModule: React.FC<Vascular3DModuleProps> = ({
   const [zoomPanel, setZoomPanel] = useState<Vascular3DPanel | null>(null);
   const [isEditingText, setIsEditingText] = useState(false);
   const [customDirectives, setCustomDirectives] = useState<string>("");
+
+  // Pull Scorecard directives when parent pushes them (Atlas/Focal pattern)
+  React.useEffect(() => {
+    if (externalDirectives && externalDirectives.trim()) {
+      setCustomDirectives((prev) => {
+        if (
+          prev.includes("PATOLOGÍA ACTIVA DEL SCORECARD") ||
+          prev.includes("DIRECTIVA OBLIGATORIA DEL SCORECARD VASCULAR")
+        ) {
+          return externalDirectives.trim();
+        }
+        if (!prev.trim()) return externalDirectives.trim();
+        return prev;
+      });
+    }
+  }, [externalDirectives]);
+
+  // If Scorecard data arrives/changes, keep vascular mandatory directives in the box
+  React.useEffect(() => {
+    const fromScorecard = buildVascularDirectivesFromScorecard(scorecardData || null);
+    if (!fromScorecard) return;
+    setCustomDirectives((prev) => {
+      if (
+        !prev.trim() ||
+        prev.includes("PATOLOGÍA ACTIVA DEL SCORECARD") ||
+        prev.includes("DIRECTIVA OBLIGATORIA DEL SCORECARD VASCULAR")
+      ) {
+        return fromScorecard;
+      }
+      return prev;
+    });
+  }, [scorecardData]);
+
+  const mergeMandatoryDirectives = (extraPanelDirective?: string) => {
+    const scorecardDirectives = buildVascularDirectivesFromScorecard(scorecardData || null);
+    const userExtra = customDirectives.trim();
+    // Avoid duplicating scorecard text when the textarea already holds the mandatory block
+    const extraIsScorecardEcho =
+      !!scorecardDirectives &&
+      !!userExtra &&
+      (userExtra === scorecardDirectives ||
+        userExtra.includes("DIRECTIVA OBLIGATORIA DEL SCORECARD VASCULAR") ||
+        userExtra.includes("PATOLOGÍA ACTIVA DEL SCORECARD"));
+    return [
+      scorecardDirectives,
+      extraIsScorecardEcho ? "" : userExtra,
+      (extraPanelDirective || "").trim(),
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+  };
   
   // Selected vascular territory
   const [selectedVascularType, setSelectedVascularType] = useState<VascularStudyType>(() => {
@@ -90,6 +154,8 @@ export const Vascular3DModule: React.FC<Vascular3DModuleProps> = ({
     try {
       setGenerationStep("Construyendo matriz hemodinámica y prompts macro-vasculares 3D...");
 
+      const mergedDirectives = mergeMandatoryDirectives();
+
       await runBackgroundTask("vascular-3d", "Generando Suite Vascular 3D", async () => {
         const response = await fetch("/api/generate-3d-vascular", {
           method: "POST",
@@ -98,7 +164,7 @@ export const Vascular3DModule: React.FC<Vascular3DModuleProps> = ({
             reportText,
             vascularType: selectedVascularType,
             laterality: selectedLaterality !== "auto" ? selectedLaterality : undefined,
-            customDirectives: customDirectives.trim() ? customDirectives.trim() : undefined,
+            customDirectives: mergedDirectives || undefined,
             requestedModel: selectedModel
           })
         });
@@ -147,6 +213,7 @@ export const Vascular3DModule: React.FC<Vascular3DModuleProps> = ({
     setErrorMessage(null);
 
     const directive = panelDirectives[panel.panelLetter] || "";
+    const mergedDirectives = mergeMandatoryDirectives(directive);
 
     try {
       const response = await fetch("/api/regenerate-3d-vascular-panel", {
@@ -158,6 +225,7 @@ export const Vascular3DModule: React.FC<Vascular3DModuleProps> = ({
           panel,
           laterality: panel.laterality,
           userDirective: directive,
+          customDirectives: mergedDirectives || undefined,
           requestedModel: selectedModel
         })
       });
@@ -315,19 +383,32 @@ export const Vascular3DModule: React.FC<Vascular3DModuleProps> = ({
             </select>
           </div>
 
-          {/* Custom Directive Input */}
+          {/* Custom Directive Input (+ mandatory Scorecard when available) */}
           <div className="sm:col-span-2">
             <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
               <Wand2 className="w-3.5 h-3.5 text-indigo-600" />
-              Directivas Clínicas Adicionales (Opcional)
+              Directivas clínicas
+              {scorecardData?.criteria?.length ? (
+                <span className="inline-flex items-center gap-1 ml-1 px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 border border-teal-200 text-[10px] font-black uppercase tracking-wide">
+                  <ShieldCheck className="w-3 h-3" />
+                  Scorecard vascular obligatorio
+                </span>
+              ) : (
+                <span className="text-slate-400 font-medium normal-case">(adicionales opcionales)</span>
+              )}
             </label>
-            <input
-              type="text"
+            <textarea
               value={customDirectives}
               onChange={(e) => setCustomDirectives(e.target.value)}
               placeholder="Ej: Destacar placa ulcerada en bulbo derecho..."
-              className="w-full text-xs bg-white border border-slate-300 rounded-md px-2.5 py-1.5 text-slate-800 placeholder-slate-400 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+              rows={scorecardData?.criteria?.length ? 5 : 2}
+              className="w-full text-xs bg-white border border-slate-300 rounded-md px-2.5 py-1.5 text-slate-800 placeholder-slate-400 focus:ring-1 focus:ring-indigo-500 focus:outline-none font-mono leading-relaxed"
             />
+            {scorecardData?.criteria?.length ? (
+              <p className="mt-1 text-[10px] text-teal-700/90">
+                Los criterios activos del Scorecard se inyectan siempre como directiva obligatoria (igual que Atlas / Focal 3D).
+              </p>
+            ) : null}
           </div>
         </div>
 
