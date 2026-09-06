@@ -80,16 +80,27 @@ export async function renderVascular3DPageToPdf(
     const imgWidth = cardWidth - 4;
     const imgHeight = imgWidth * (3 / 4); // Strict 4:3 ratio
 
-    // Pre-calculate caption heights to size card dynamically
-    let maxCaptionLines = 1;
-    panels.forEach(p => {
+    // Caption box hugs text tightly (no large empty footer) so the hemodynamic table keeps readable type
+    const measureCaptionH = (p: Vascular3DPanel): number => {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8 * factor);
       const titleLines = doc.splitTextToSize(p.panelTitle || `Panel ${p.panelLetter}`, cardWidth - 6);
-      const descLines = doc.splitTextToSize(p.anatomicalFocus || "", cardWidth - 6);
-      const totalL = titleLines.length + descLines.length;
-      if (totalL > maxCaptionLines) maxCaptionLines = totalL;
-    });
-
-    const captionAreaH = Math.max(18 * factor, (maxCaptionLines * 3.6 + 6) * factor);
+      let h = 3.2 * factor; // gap under image
+      h += titleLines.length * 3.4 * factor;
+      if (p.anatomicalFocus && String(p.anatomicalFocus).trim()) {
+        h += 1.0 * factor; // gap title → description
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7.2 * factor);
+        const descLines = doc.splitTextToSize(String(p.anatomicalFocus).trim(), cardWidth - 6);
+        h += descLines.length * 3.05 * factor;
+      }
+      h += 2.2 * factor; // bottom padding inside card border
+      return h;
+    };
+    const captionAreaH = Math.max(
+      ...panels.slice(0, panelCount).map(measureCaptionH),
+      7 * factor
+    );
     const cardH = imgHeight + captionAreaH + 4;
 
     for (let idx = 0; idx < panelCount; idx++) {
@@ -134,21 +145,22 @@ export async function renderVascular3DPageToPdf(
       doc.setTextColor(255, 255, 255);
       doc.text(`PANEL ${p.panelLetter || String.fromCharCode(65 + idx)}`, imgX + 3.5, imgY + 2 + 3.6);
 
-      // Panel Title
-      let textY = imgY + imgHeight + 3.5 * factor;
+      // Panel Title — metrics must match measureCaptionH()
+      let textY = imgY + imgHeight + 3.2 * factor;
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8 * factor);
       doc.setTextColor(15, 23, 42); // slate-900
       const titleLines = doc.splitTextToSize(p.panelTitle || `Panel ${p.panelLetter}`, cardWidth - 6);
       doc.text(titleLines, cardX + 3, textY);
-      textY += (titleLines.length * 3.4) + 1.5;
+      textY += titleLines.length * 3.4 * factor;
 
       // Anatomical Focus / Description
-      if (p.anatomicalFocus) {
+      if (p.anatomicalFocus && String(p.anatomicalFocus).trim()) {
+        textY += 1.0 * factor;
         doc.setFont("helvetica", "normal");
         doc.setFontSize(7.2 * factor);
         doc.setTextColor(71, 85, 105); // slate-600
-        const descLines = doc.splitTextToSize(p.anatomicalFocus, cardWidth - 6);
+        const descLines = doc.splitTextToSize(String(p.anatomicalFocus).trim(), cardWidth - 6);
         doc.text(descLines, cardX + 3, textY);
       }
     }
@@ -203,7 +215,7 @@ export async function renderVascular3DPageToPdf(
 
   // Calculate dynamic header height with automatic text wrapping
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(6.2 * factor);
+  doc.setFontSize(7.2 * factor);
   doc.setTextColor(51, 65, 85); // slate-700
 
   const wrappedHeaders = headerLabels.map((lbl, i) => {
@@ -211,7 +223,7 @@ export async function renderVascular3DPageToPdf(
   });
 
   const maxHeaderLines = Math.max(...wrappedHeaders.map(lines => lines.length), 1);
-  const headerH = Math.max(6.5 * factor, (maxHeaderLines * 2.8 + 2.5) * factor);
+  const headerH = Math.max(7.2 * factor, (maxHeaderLines * 3.1 + 2.8) * factor);
 
   // Table Header Background
   doc.setFillColor(241, 245, 249); // slate-100
@@ -236,7 +248,7 @@ export async function renderVascular3DPageToPdf(
   visibleRows.forEach((row, rIdx) => {
     // Split texts to calculate row height
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(6.5 * factor);
+    doc.setFontSize(7.4 * factor);
 
     const c1Lines = doc.splitTextToSize(row.vessel || "", colWidths[0] - 3);
     const c2Lines = doc.splitTextToSize(row.plaqueOrThrombus || "", colWidths[1] - 3);
@@ -246,7 +258,7 @@ export async function renderVascular3DPageToPdf(
     const c6Lines = doc.splitTextToSize(row.clinicalImpact || "", colWidths[5] - 3);
 
     const maxLines = Math.max(c1Lines.length, c2Lines.length, c3Lines.length, c4Lines.length, c5Lines.length, c6Lines.length, 1);
-    const rowH = Math.max(5.2 * factor, (maxLines * 3.0 + 2.2) * factor);
+    const rowH = Math.max(5.8 * factor, (maxLines * 3.3 + 2.4) * factor);
 
     // Zebra striping
     if (rIdx % 2 === 1) {
@@ -258,21 +270,21 @@ export async function renderVascular3DPageToPdf(
 
     // Col 1: Vaso (Bold)
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(6.5 * factor);
+    doc.setFontSize(7.4 * factor);
     doc.setTextColor(15, 23, 42);
     doc.text(c1Lines, cellX + 2, yCoord + 3.0 * factor);
     cellX += colWidths[0];
 
     // Col 2: Placa / Trombo / Compresibilidad
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(6.3 * factor);
+    doc.setFontSize(7.2 * factor);
     doc.setTextColor(71, 85, 105);
     doc.text(c2Lines, cellX + 2, yCoord + 3.0 * factor);
     cellX += colWidths[1];
 
     // Col 3: % Estenosis / Flujo Espontáneo / Diámetro (Color coding)
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(6.5 * factor);
+    doc.setFontSize(7.4 * factor);
     const stText = (row.stenosisPercent || "").trim().toLowerCase();
     if (
       stText.includes(">") || 
@@ -296,14 +308,14 @@ export async function renderVascular3DPageToPdf(
 
     // Col 4: Patrón (PSV/EDV) / Maniobra Aumento
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(6.3 * factor);
+    doc.setFontSize(7.2 * factor);
     doc.setTextColor(51, 65, 85);
     doc.text(c4Lines, cellX + 2, yCoord + 3.0 * factor);
     cellX += colWidths[3];
 
     // Col 5: Rel. / Índice / Reflujo
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(6.4 * factor);
+    doc.setFontSize(7.3 * factor);
     const refText = (row.hemodynamicIndex || "").toLowerCase();
     if (refText.includes("reflujo") || refText.includes("incompet") || refText.includes("patol") || refText.includes("oclus")) {
       doc.setTextColor(220, 38, 38); // Red-600
@@ -317,7 +329,7 @@ export async function renderVascular3DPageToPdf(
 
     // Col 6: Impacto Hemodinámico / Estado Clínico
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(6.3 * factor);
+    doc.setFontSize(7.2 * factor);
     doc.setTextColor(71, 85, 105);
     doc.text(c6Lines, cellX + 2, yCoord + 3.0 * factor);
 
@@ -336,41 +348,93 @@ export async function renderVascular3DPageToPdf(
   yCoord += 4.5 * factor;
 
   // 5. MORPHOLOGICAL & HEMODYNAMIC SYNTHESIS BOX
+  // Keep clear of the gray running footer (~10mm from page bottom). Never overflow text past the box.
   const synthText = vascularData.morphologicalSynthesis || "";
   if (synthText && synthText.trim()) {
-    const bottomMargin = 14 * factor;
+    const footerSafeBottom = pageHeight - 18 * factor;
+    const synthTitle = vascularData.synthesisTitle || "SÍNTESIS MORFOLÓGICA Y HEMODINÁMICA:";
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.8 * factor);
-    const synthLineH = 4.0 * factor;
-    const synthLines = doc.splitTextToSize(synthText.trim(), contentWidth - 10);
-    
-    // Header height + text lines height + padding
-    const calculatedH = (synthLines.length * synthLineH) + (10 * factor);
-    const maxAvailableH = pageHeight - yCoord - bottomMargin;
-    const boxHeight = Math.min(calculatedH, maxAvailableH);
+    doc.setFontSize(7.6 * factor);
+    const synthLineH = 3.8 * factor;
+    const synthLines = doc.splitTextToSize(synthText.trim(), contentWidth - 12);
+    const titleBlockH = 9.5 * factor;
+    const bottomPad = 3.5 * factor;
 
-    if (boxHeight >= 12 * factor) {
-      // Soft rose/crimson container
+    const startSynthContinuationPage = () => {
+      doc.addPage();
+      yCoord = 22 * factor;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11 * factor);
+      doc.setTextColor(15, 23, 42);
+      doc.text("ANEXO: SUITE VASCULAR 3D & MAPA ANATOMO-HEMODINÁMICO", marginX, yCoord);
+      yCoord += 4 * factor;
+      doc.setDrawColor(79, 70, 229);
+      doc.setLineWidth(0.6);
+      doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
+      yCoord += 5 * factor;
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(8 * factor);
+      doc.setTextColor(100, 116, 139);
+      doc.text("Continuación — síntesis morfológica y hemodinámica", marginX, yCoord);
+      yCoord += 6 * factor;
+    };
+
+    const drawSynthChrome = (boxH: number, includeTitle: boolean) => {
       doc.setFillColor(254, 242, 242); // red-50
       doc.setDrawColor(254, 202, 202); // red-200
       doc.setLineWidth(0.4);
-      doc.roundedRect(marginX, yCoord, contentWidth, boxHeight, 2, 2, "FD");
+      doc.roundedRect(marginX, yCoord, contentWidth, boxH, 2, 2, "FD");
+      doc.setFillColor(225, 29, 72); // Rose-600
+      doc.rect(marginX, yCoord, 2.5, boxH, "F");
+      if (includeTitle) {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8.5 * factor);
+        doc.setTextColor(190, 18, 60); // Rose-700
+        doc.text(synthTitle, marginX + 6, yCoord + 5.5 * factor);
+      }
+    };
 
-      // Crimson left accent line
-      doc.setFillColor(225, 29, 72); // Rose-600 / Crimson
-      doc.rect(marginX, yCoord, 2.5, boxHeight, "F");
+    let lineIdx = 0;
+    let firstChunk = true;
 
-      // Title
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(8.5 * factor);
-      doc.setTextColor(190, 18, 60); // Rose-700
-      doc.text(vascularData.synthesisTitle || "SÍNTESIS MORFOLÓGICA Y HEMODINÁMICA:", marginX + 6, yCoord + 5.5 * factor);
+    // If almost no room left on this page, move synthesis to a clean continuation page
+    if (footerSafeBottom - yCoord < 18 * factor) {
+      startSynthContinuationPage();
+      firstChunk = true;
+    }
 
-      // Body text
+    while (lineIdx < synthLines.length) {
+      const headerH = firstChunk ? titleBlockH : 6.5 * factor;
+      const availableForLines = footerSafeBottom - yCoord - headerH - bottomPad;
+      let maxLinesHere = Math.floor(availableForLines / synthLineH);
+
+      if (maxLinesHere < 1) {
+        startSynthContinuationPage();
+        firstChunk = false;
+        continue;
+      }
+
+      const chunk = synthLines.slice(lineIdx, lineIdx + maxLinesHere);
+      const boxH = headerH + chunk.length * synthLineH + bottomPad;
+
+      drawSynthChrome(boxH, firstChunk);
+
       doc.setFont("helvetica", "normal");
       doc.setFontSize(7.6 * factor);
       doc.setTextColor(51, 65, 85); // slate-700
-      doc.text(synthLines, marginX + 6, yCoord + (9.5 * factor));
+      let curY = yCoord + headerH;
+      chunk.forEach((line: string) => {
+        doc.text(line, marginX + 6, curY);
+        curY += synthLineH;
+      });
+
+      lineIdx += chunk.length;
+      yCoord += boxH + 3 * factor;
+      firstChunk = false;
+
+      if (lineIdx < synthLines.length) {
+        startSynthContinuationPage();
+      }
     }
   }
 }

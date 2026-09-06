@@ -481,7 +481,7 @@ export const Vascular3DModule: React.FC<Vascular3DModuleProps> = ({
                   </div>
 
                   {/* Panel Details */}
-                  <div className="p-3.5 flex-1 flex flex-col justify-between space-y-2">
+                  <div className="p-3 space-y-2">
                     <div>
                       {isEditingText ? (
                         <input
