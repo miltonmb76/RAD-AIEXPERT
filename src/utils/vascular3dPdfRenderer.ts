@@ -348,41 +348,93 @@ export async function renderVascular3DPageToPdf(
   yCoord += 4.5 * factor;
 
   // 5. MORPHOLOGICAL & HEMODYNAMIC SYNTHESIS BOX
+  // Keep clear of the gray running footer (~10mm from page bottom). Never overflow text past the box.
   const synthText = vascularData.morphologicalSynthesis || "";
   if (synthText && synthText.trim()) {
-    const bottomMargin = 14 * factor;
+    const footerSafeBottom = pageHeight - 18 * factor;
+    const synthTitle = vascularData.synthesisTitle || "SÍNTESIS MORFOLÓGICA Y HEMODINÁMICA:";
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.8 * factor);
-    const synthLineH = 4.0 * factor;
-    const synthLines = doc.splitTextToSize(synthText.trim(), contentWidth - 10);
-    
-    // Header height + text lines height + padding
-    const calculatedH = (synthLines.length * synthLineH) + (10 * factor);
-    const maxAvailableH = pageHeight - yCoord - bottomMargin;
-    const boxHeight = Math.min(calculatedH, maxAvailableH);
+    doc.setFontSize(7.6 * factor);
+    const synthLineH = 3.8 * factor;
+    const synthLines = doc.splitTextToSize(synthText.trim(), contentWidth - 12);
+    const titleBlockH = 9.5 * factor;
+    const bottomPad = 3.5 * factor;
 
-    if (boxHeight >= 12 * factor) {
-      // Soft rose/crimson container
+    const startSynthContinuationPage = () => {
+      doc.addPage();
+      yCoord = 22 * factor;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11 * factor);
+      doc.setTextColor(15, 23, 42);
+      doc.text("ANEXO: SUITE VASCULAR 3D & MAPA ANATOMO-HEMODINÁMICO", marginX, yCoord);
+      yCoord += 4 * factor;
+      doc.setDrawColor(79, 70, 229);
+      doc.setLineWidth(0.6);
+      doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
+      yCoord += 5 * factor;
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(8 * factor);
+      doc.setTextColor(100, 116, 139);
+      doc.text("Continuación — síntesis morfológica y hemodinámica", marginX, yCoord);
+      yCoord += 6 * factor;
+    };
+
+    const drawSynthChrome = (boxH: number, includeTitle: boolean) => {
       doc.setFillColor(254, 242, 242); // red-50
       doc.setDrawColor(254, 202, 202); // red-200
       doc.setLineWidth(0.4);
-      doc.roundedRect(marginX, yCoord, contentWidth, boxHeight, 2, 2, "FD");
+      doc.roundedRect(marginX, yCoord, contentWidth, boxH, 2, 2, "FD");
+      doc.setFillColor(225, 29, 72); // Rose-600
+      doc.rect(marginX, yCoord, 2.5, boxH, "F");
+      if (includeTitle) {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8.5 * factor);
+        doc.setTextColor(190, 18, 60); // Rose-700
+        doc.text(synthTitle, marginX + 6, yCoord + 5.5 * factor);
+      }
+    };
 
-      // Crimson left accent line
-      doc.setFillColor(225, 29, 72); // Rose-600 / Crimson
-      doc.rect(marginX, yCoord, 2.5, boxHeight, "F");
+    let lineIdx = 0;
+    let firstChunk = true;
 
-      // Title
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(8.5 * factor);
-      doc.setTextColor(190, 18, 60); // Rose-700
-      doc.text(vascularData.synthesisTitle || "SÍNTESIS MORFOLÓGICA Y HEMODINÁMICA:", marginX + 6, yCoord + 5.5 * factor);
+    // If almost no room left on this page, move synthesis to a clean continuation page
+    if (footerSafeBottom - yCoord < 18 * factor) {
+      startSynthContinuationPage();
+      firstChunk = true;
+    }
 
-      // Body text
+    while (lineIdx < synthLines.length) {
+      const headerH = firstChunk ? titleBlockH : 6.5 * factor;
+      const availableForLines = footerSafeBottom - yCoord - headerH - bottomPad;
+      let maxLinesHere = Math.floor(availableForLines / synthLineH);
+
+      if (maxLinesHere < 1) {
+        startSynthContinuationPage();
+        firstChunk = false;
+        continue;
+      }
+
+      const chunk = synthLines.slice(lineIdx, lineIdx + maxLinesHere);
+      const boxH = headerH + chunk.length * synthLineH + bottomPad;
+
+      drawSynthChrome(boxH, firstChunk);
+
       doc.setFont("helvetica", "normal");
       doc.setFontSize(7.6 * factor);
       doc.setTextColor(51, 65, 85); // slate-700
-      doc.text(synthLines, marginX + 6, yCoord + (9.5 * factor));
+      let curY = yCoord + headerH;
+      chunk.forEach((line: string) => {
+        doc.text(line, marginX + 6, curY);
+        curY += synthLineH;
+      });
+
+      lineIdx += chunk.length;
+      yCoord += boxH + 3 * factor;
+      firstChunk = false;
+
+      if (lineIdx < synthLines.length) {
+        startSynthContinuationPage();
+      }
     }
   }
 }
