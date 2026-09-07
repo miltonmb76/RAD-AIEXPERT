@@ -8712,6 +8712,173 @@ ${report}
 
 
 /**
+ * API: EXTRACT MEASUREMENT GAUGES
+ * POST /api/extract-measurement-gauges
+ * Pulls numeric measurements from a report and maps them to gauge bars vs normal ranges.
+ */
+app.post("/api/extract-measurement-gauges", async (req: express.Request, res: express.Response) => {
+  try {
+    const { model, report, studyType } = req.body;
+    if (!report || !String(report).trim()) {
+      return res.status(400).json({ success: false, error: "Se requiere el parámetro 'report'." });
+    }
+
+    const ai = getGeminiClient();
+    const modelToUse = getModelName(model);
+
+    const prompt = `Eres un radiólogo experto en anatometría y Doppler.
+Del informe, EXTRAÉ SOLO mediciones numéricas mencionadas (con valor) y compáralas con rangos de referencia clínicos estándar (SRU carótidas, Mannheim GIM, RI renal, biometría orgánica, etc.).
+
+ESTUDIO SUGERIDO: ${studyType || "Detectar del informe"}
+
+INFORME:
+"""
+${String(report).slice(0, 28000)}
+"""
+
+REGLAS:
+- Incluye solo parámetros con valor medido en el informe (no inventes medidas ausentes).
+- status: "normal" | "borderline" | "altered" (borderline = en el límite / zona gris).
+- valueNumeric: número puro en la unidad indicada (usa punto decimal).
+- scaleMin/scaleMax: extremos de la barra visual (deben abarcar rango normal + valor medido con margen).
+- rangeMin/rangeMax: banda de normalidad (null = abierto en ese lado; ej. "< 125" => rangeMin null, rangeMax 125).
+- normalRangeLabel: texto clínico del rango (ej. "< 125 cm/s", "0.50-0.70").
+- measuredValue: valor tal como debe mostrarse (con unidad).
+- unit: unidad corta (mm, cm/s, kPa, etc.).
+- referenceSource: consenso o referencia breve (ej. "SRU carótidas / Mannheim").
+- Máximo 18 medidas; prioriza alteradas y las hemodinámicamente relevantes.
+- Idioma español en name e interpretation.
+
+Responde SOLO JSON válido con esta forma:
+{
+  "studyType": "string",
+  "referenceSource": "string",
+  "measurements": [
+    {
+      "id": "m1",
+      "name": "string",
+      "measuredValue": "string",
+      "valueNumeric": 0,
+      "unit": "string",
+      "normalRangeLabel": "string",
+      "scaleMin": 0,
+      "scaleMax": 1,
+      "rangeMin": 0,
+      "rangeMax": 1,
+      "status": "normal",
+      "interpretation": "string"
+    }
+  ]
+}`;
+
+    const response = await ai.models.generateContent({
+      model: modelToUse,
+      contents: prompt,
+      config: {
+        temperature: 0.15,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            studyType: { type: Type.STRING },
+            referenceSource: { type: Type.STRING },
+            measurements: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  id: { type: Type.STRING },
+                  name: { type: Type.STRING },
+                  measuredValue: { type: Type.STRING },
+                  valueNumeric: { type: Type.NUMBER },
+                  unit: { type: Type.STRING },
+                  normalRangeLabel: { type: Type.STRING },
+                  scaleMin: { type: Type.NUMBER },
+                  scaleMax: { type: Type.NUMBER },
+                  rangeMin: { type: Type.NUMBER },
+                  rangeMax: { type: Type.NUMBER },
+                  status: { type: Type.STRING },
+                  interpretation: { type: Type.STRING },
+                },
+                required: [
+                  "id",
+                  "name",
+                  "measuredValue",
+                  "valueNumeric",
+                  "unit",
+                  "normalRangeLabel",
+                  "scaleMin",
+                  "scaleMax",
+                  "status",
+                  "interpretation",
+                ],
+              },
+            },
+          },
+          required: ["studyType", "referenceSource", "measurements"],
+        },
+      },
+    });
+
+    const parsed = JSON.parse(response.text || "{}");
+    const allowed = new Set(["normal", "borderline", "altered", "not_found"]);
+    const measurements = Array.isArray(parsed.measurements)
+      ? parsed.measurements
+          .map((m: any, idx: number) => {
+            const status = allowed.has(String(m.status)) ? String(m.status) : "borderline";
+            let scaleMin = Number(m.scaleMin);
+            let scaleMax = Number(m.scaleMax);
+            const valueNumeric =
+              m.valueNumeric == null || m.valueNumeric === ""
+                ? null
+                : Number(m.valueNumeric);
+            let rangeMin = m.rangeMin == null || m.rangeMin === "" ? null : Number(m.rangeMin);
+            let rangeMax = m.rangeMax == null || m.rangeMax === "" ? null : Number(m.rangeMax);
+            if (!Number.isFinite(scaleMin) || !Number.isFinite(scaleMax) || scaleMax <= scaleMin) {
+              const v = valueNumeric != null && Number.isFinite(valueNumeric) ? valueNumeric : 1;
+              const hi = rangeMax != null && Number.isFinite(rangeMax) ? rangeMax : v;
+              const lo = rangeMin != null && Number.isFinite(rangeMin) ? rangeMin : 0;
+              scaleMin = Math.min(lo, v) * 0.85;
+              scaleMax = Math.max(hi, v) * 1.25 || 1;
+            }
+            if (rangeMin != null && !Number.isFinite(rangeMin)) rangeMin = null;
+            if (rangeMax != null && !Number.isFinite(rangeMax)) rangeMax = null;
+            return {
+              id: String(m.id || `m${idx + 1}`),
+              name: String(m.name || `Medida ${idx + 1}`),
+              measuredValue: String(m.measuredValue || ""),
+              valueNumeric: valueNumeric != null && Number.isFinite(valueNumeric) ? valueNumeric : null,
+              unit: String(m.unit || ""),
+              normalRangeLabel: String(m.normalRangeLabel || ""),
+              scaleMin,
+              scaleMax,
+              rangeMin,
+              rangeMax,
+              status,
+              interpretation: String(m.interpretation || ""),
+            };
+          })
+          .filter((m: any) => m.measuredValue || m.valueNumeric != null)
+          .slice(0, 18)
+      : [];
+
+    return res.json({
+      success: true,
+      data: {
+        studyType: String(parsed.studyType || studyType || "Estudio"),
+        referenceSource: String(parsed.referenceSource || "Rangos clínicos estándar"),
+        measurements,
+        generatedAt: new Date().toISOString(),
+      },
+    });
+  } catch (error: any) {
+    console.error("Error en /api/extract-measurement-gauges:", error);
+    res.status(500).json({ success: false, error: handleGeminiError(error) });
+  }
+});
+
+
+/**
  * API: CLINICAL SCORECARD + ATLAS OVERLAY INTELLIGENCE
  * POST /api/generate-clinical-scorecard
  * Shared engine: criteria scorecard + pathology overlays for Atlas 3D.

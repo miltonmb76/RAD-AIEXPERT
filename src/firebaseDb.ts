@@ -82,6 +82,8 @@ export interface CloudStudy {
   includeAtlas3dInReport?: boolean;
   vascular3dData?: any;
   includeVascular3dInReport?: boolean;
+  focalLesion3dData?: any;
+  includeFocalLesion3dInReport?: boolean;
   usImagesGridMode?: string;
   patientSummary?: any;
 }

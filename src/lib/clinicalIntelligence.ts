@@ -29,6 +29,53 @@ export function buildAtlasDirectivesFromScorecard(
   ].join("\n");
 }
 
+/**
+ * Build mandatory Vascular 3D directives from a (typically vascular) scorecard.
+ * Same clinical source as Atlas/Focal, with hemodynamics-first wording.
+ * Falls back to clinical summary when no criterion is marked met/equivocal.
+ */
+export function buildVascularDirectivesFromScorecard(
+  scorecard: ClinicalScorecardData | null | undefined
+): string {
+  if (!scorecard) return "";
+  const base = buildAtlasDirectivesFromScorecard(scorecard);
+  const summary = (scorecard.clinicalSummary || "").trim();
+  const reco = (scorecard.recommendation || "").trim();
+  const allCriteria = Array.isArray(scorecard.criteria) ? scorecard.criteria : [];
+
+  // If no "active" criteria lines, still inject summary / any criterion with evidence
+  let body = base;
+  if (!body) {
+    const evidenced = allCriteria
+      .filter((c) => (c.evidence || c.value || "").trim())
+      .slice(0, 8)
+      .map((c, i) => {
+        const val = c.value ? ` (${c.value})` : "";
+        return `${i + 1}. «${c.atlasStructure || c.criterion}»${val}: ${c.evidence || c.status}`;
+      });
+    if (evidenced.length || summary) {
+      body = [
+        `SCORECARD VASCULAR (${scorecard.protocolName || "protocolo"} — ${scorecard.categoryAssigned || ""}):`,
+        `Semáforo: ${scorecard.trafficLight}. Criterios: ${scorecard.scoreMet}/${scorecard.scoreTotal}.`,
+        summary ? `Síntesis: ${summary}` : "",
+        reco ? `Recomendación: ${reco}` : "",
+        evidenced.length ? "Hallazgos del scorecard a respetar en 3D/tabla:" : "",
+        ...evidenced,
+      ]
+        .filter(Boolean)
+        .join("\n");
+    }
+  }
+  if (!body) return "";
+
+  return [
+    "DIRECTIVA OBLIGATORIA DEL SCORECARD VASCULAR (debe gobernar paneles 3D y tabla hemodinámica):",
+    body,
+    "Representa fielmente estenosis, placa/trombo, patrón de flujo, índices y lateralidad del scorecard.",
+    "No inventes lesiones vasculares ni grados de estenosis ausentes en el scorecard/informe.",
+  ].join("\n");
+}
+
 /** Merge scorecard-derived overlays onto existing atlas data (panel letters remapped if needed). */
 export function mergeOverlaysOntoAtlas(
   atlas: Atlas3DData | null,
