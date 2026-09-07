@@ -31,6 +31,7 @@ import {
 } from "../types";
 import { runBackgroundTask } from "../lib/backgroundTasks";
 import { buildVascularDirectivesFromScorecard } from "../lib/clinicalIntelligence";
+import { flipImageDataUrl, swapLateralityLabel } from "../lib/imageFlip";
 
 interface Vascular3DModuleProps {
   reportText: string;
@@ -187,23 +188,34 @@ export const Vascular3DModule: React.FC<Vascular3DModuleProps> = ({
     }
   };
 
-  // Flip horizontal (Mirror image)
-  const handleFlipHorizontal = (panelLetter: string) => {
+  // Flip horizontal — bake into imageUrl so PDF/export see the same laterality fix as the UI
+  const handleFlipHorizontal = async (panelLetter: string) => {
     if (!vascularData) return;
-    const updatedPanels = vascularData.panels.map((p) => {
-      if (p.panelLetter === panelLetter) {
-        const currentFlipped = p.isCustomFlipped || false;
+    const panel = vascularData.panels.find((p) => p.panelLetter === panelLetter);
+    if (!panel?.imageUrl) return;
+    try {
+      const flippedDataUrl = await flipImageDataUrl(panel.imageUrl);
+      const updatedPanels = vascularData.panels.map((p) => {
+        if (p.panelLetter !== panelLetter) return p;
         return {
           ...p,
-          isCustomFlipped: !currentFlipped
+          imageUrl: flippedDataUrl,
+          isCustomFlipped: !p.isCustomFlipped,
+          laterality: swapLateralityLabel(p.laterality) || p.laterality,
         };
+      });
+      setVascularData({
+        ...vascularData,
+        panels: updatedPanels,
+      });
+      if (zoomPanel?.panelLetter === panelLetter) {
+        const updated = updatedPanels.find((p) => p.panelLetter === panelLetter);
+        if (updated) setZoomPanel(updated);
       }
-      return p;
-    });
-    setVascularData({
-      ...vascularData,
-      panels: updatedPanels
-    });
+    } catch (flipErr) {
+      console.error("Error al voltear panel vascular:", flipErr);
+      setErrorMessage("No se pudo voltear la imagen en espejo.");
+    }
   };
 
   // Single panel regeneration
@@ -516,9 +528,7 @@ export const Vascular3DModule: React.FC<Vascular3DModuleProps> = ({
                       <img
                         src={panel.imageUrl}
                         alt={panel.panelTitle}
-                        className={`w-full h-full object-cover transition-transform duration-300 group-hover:scale-105 ${
-                          panel.isCustomFlipped ? "scale-x-[-1]" : ""
-                        }`}
+                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                       />
                     ) : (
                       <div className="text-center p-4 text-slate-400">
@@ -820,9 +830,7 @@ export const Vascular3DModule: React.FC<Vascular3DModuleProps> = ({
               <img
                 src={zoomPanel.imageUrl}
                 alt={zoomPanel.panelTitle}
-                className={`w-full h-full object-contain ${
-                  zoomPanel.isCustomFlipped ? "scale-x-[-1]" : ""
-                }`}
+                className="w-full h-full object-contain"
               />
               <button
                 onClick={() => setZoomPanel(null)}

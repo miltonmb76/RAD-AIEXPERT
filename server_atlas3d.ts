@@ -111,6 +111,15 @@ function handleGeminiError(error: any): string {
 const FAITHFUL_STYLE =
   "High-fidelity photorealistic 3D medical anatomical render, volumetric surgical cutaway, accurate topographic relationships and true anatomical scale. Premium tissue materials: realistic fascia, muscle fiber microtexture, visceral parenchyma, periosteum and serosa with physically based subsurface scattering. Soft cinematic clinical studio lighting with gentle rim light and shallow depth cues for clarity—NOT neon, NOT bioluminescent, NOT exaggerated glow. Pathology highlighted with restrained chromatic accent ONLY where the report describes it. No invented lesions. Pure clean background. STRICTLY NO text, NO letters, NO numbers, NO arrows, NO labels inside the image.";
 
+/** Hard laterality rules shared by Atlas / Focal / Vascular image prompts. */
+const LATERALITY_HARD_RULES =
+  "LATERALITY HARD RULES (never violate): " +
+  "(1) Patient RIGHT vs LEFT must match the report and the spatial contract — do NOT mirror anatomy for aesthetics. " +
+  "(2) Image LEFT OF FRAME and RIGHT OF FRAME mean viewer-left/viewer-right as listed in the contract; place named landmarks accordingly. " +
+  "(3) If laterality is Derecha/Right, pathology and organ side must be on the patient's right; if Izquierda/Left, on the patient's left. " +
+  "(4) Bilateral studies: depict each side correctly; never swap sides between panels. " +
+  "(5) Prefer correct laterality over visual symmetry; a beautiful but mirrored image is a FAIL.";
+
 type SpatialContract = {
   view?: string;
   laterality?: string;
@@ -131,6 +140,12 @@ function normalizeSpatialContract(raw: any, fallbackLaterality?: string): Spatia
   const doNotInvent = Array.isArray(raw?.doNotInvent)
     ? raw.doNotInvent.map((x: any) => String(x || "").trim()).filter(Boolean).slice(0, 6)
     : [];
+  const lateralityGuards = ["mirrored laterality", "contralateral side swap"];
+  for (const g of lateralityGuards) {
+    if (!doNotInvent.some((x) => x.toLowerCase().includes(g.toLowerCase()))) {
+      doNotInvent.push(g);
+    }
+  }
   return {
     view: raw?.view ? String(raw.view) : "AP / coronal clinical view",
     laterality: raw?.laterality ? String(raw.laterality) : (fallbackLaterality || ""),
@@ -141,7 +156,7 @@ function normalizeSpatialContract(raw: any, fallbackLaterality?: string): Spatia
     mustShowLandmarks: landmarks,
     pathologySite: raw?.pathologySite ? String(raw.pathologySite) : "",
     pathologyAppearance: raw?.pathologyAppearance ? String(raw.pathologyAppearance) : "",
-    doNotInvent
+    doNotInvent: doNotInvent.slice(0, 8)
   };
 }
 
@@ -172,6 +187,7 @@ function buildImagePromptFromContract(args: {
 
   const parts = [
     FAITHFUL_STYLE,
+    LATERALITY_HARD_RULES,
     `Subject: ${args.studyRegion}. Panel: ${args.panelTitle}.`,
     `Focus: ${args.anatomicalFocus}.`,
     `Camera/view: ${c.view || "standard clinical 3D view"}.`,
@@ -282,6 +298,10 @@ TAREA:
    - mustShowLandmarks[] (hitos óseos/blandos de orientación)
    - pathologySite + pathologyAppearance (solo si el informe lo describe)
    - doNotInvent[] (errores típicos a evitar, p.ej. invertir medial/lateral)
+3b. REGLA CRÍTICA DE LATERALIDAD: el lado del paciente (Derecha/Izquierda) del informe manda.
+   - Nunca espejes anatomía "para que quede bonito".
+   - imageLeftStructure/imageRightStructure deben ser anclas REALES (ej. cabeza humeral derecha vs glenoides) coherentes con la vista.
+   - Si el hallazgo es unilateral, pathologySite debe nombrar el lado correcto; doNotInvent debe incluir "mirrored laterality" y "contralateral side swap".
 4. "structure" en synopticExplanation = NOMBRE CORTO de estructura (NO el pie "Foco: ...").
 5. NO inventes lesiones. Si el informe es normal, paneles de anatomía preservada.
 6. Estilo deseado: fotorrealismo clínico de alta calidad (textura tisular rica, iluminación de estudio suave); SIN bioluminiscencia ni glow ornamental. La fidelidad anatómica/patológica manda sobre el efecto visual.
@@ -429,6 +449,7 @@ RESPONDE SOLO JSON VÁLIDO:
             {
               text: `Eres un radiólogo revisor de calidad de atlas 3D.
 Compara CADA imagen con el informe y el contrato espacial.
+PRIORIDAD #1: LATERALIDAD. Si el lado del paciente (Derecha/Izquierda) o imageLeft/imageRight del contrato no coinciden con lo visible => lateralityOk=false y pass=false.
 Devuelve JSON:
 {
   "panels": [
@@ -714,8 +735,13 @@ DISEÑO DE PANELES 3D VASCULARES (Generar 2 o 3 Paneles):
 - Panel A: Vaso o bifurcación principal con la lesión más significativa (ej: Bulbo Carotídeo con placa mixta Gray-Weale Tipo II y reducción luminal, o AFS con estenosis/oclusión, o Vaso con trombo endoluminal).
 - Panel B: Vaso contralateral o segmento complementario (ej: Eje carotídeo contralateral o lecho distal).
 - Panel C (opcional, si el estudio involucra patología bilateral compleja o tercer territorio crítico).
+- LATERALIDAD OBLIGATORIA POR PANEL:
+  - Cada panel DEBE declarar "laterality" exacta (Derecha|Izquierda|Bilateral|Línea media) coherente con el informe y la directiva.
+  - El imagePrompt DEBE empezar con el lado del paciente y anclas espaciales (ej. "Patient RIGHT carotid bifurcation; viewer-left = ACC, viewer-right = ACI...").
+  - NUNCA intercambiar lados entre paneles ni espejar por estética. Si hay contralateral sano, márcalo explícitamente como el lado opuesto correcto.
+  - doNotInvent implícito: mirrored laterality, side swap, inventing contralateral disease.
 - PROMPT EN INGLÉS para cada panel:
-  "Ultra-realistic 3D medical macro vascular cross-section render of [detailed vessel name, exact wall layer cutaway, exact plaque/thrombus morphology (lipid core, fibrous cap, calcifications, ulceration, or clean healthy intima), intraluminal lumen opening with glowing chromatic laminar blood flow vectors, anatomical bone/soft tissue landmark background, cinema 4D octane render style, soft surgical studio lighting, clean background, strictly NO text, NO numbers, NO arrows, NO letters inside the image]."
+  "Ultra-realistic 3D medical macro vascular cross-section render of [PATIENT SIDE + detailed vessel name], exact wall layer cutaway, exact plaque/thrombus morphology (lipid core, fibrous cap, calcifications, ulceration, or clean healthy intima), intraluminal lumen opening with glowing chromatic laminar blood flow vectors, anatomical bone/soft tissue landmark background that locks laterality, cinema 4D octane render style, soft surgical studio lighting, clean background, strictly NO text, NO numbers, NO arrows, NO letters inside the image. Do NOT mirror anatomy."
 
 ========================================================================
 SÍNTESIS MORFOLÓGICA Y HEMODINÁMICA:
@@ -833,7 +859,9 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
             promptToUse = `${promptToUse} [MANDATORY CLINICAL DIRECTIVE: ${customDirectives.trim()}].`;
           }
           if (panel.laterality && panel.laterality !== "auto") {
-            promptToUse = `[MANDATORY PATIENT LATERALITY: ${panel.laterality.toUpperCase()}]. ${promptToUse}`;
+            promptToUse = `[MANDATORY PATIENT LATERALITY: ${panel.laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${promptToUse}`;
+          } else {
+            promptToUse = `${LATERALITY_HARD_RULES} ${promptToUse}`;
           }
 
           try {
@@ -959,7 +987,9 @@ RESPONDE EN JSON:
         finalPrompt = `${finalPrompt} [MANDATORY SURGICAL CORRECTION: ${userDirective.trim()}].`;
       }
       if (laterality && laterality !== "auto") {
-        finalPrompt = `[MANDATORY PATIENT LATERALITY: ${laterality.toUpperCase()}]. ${finalPrompt}`;
+        finalPrompt = `[MANDATORY PATIENT LATERALITY: ${laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${finalPrompt}`;
+      } else {
+        finalPrompt = `${LATERALITY_HARD_RULES} ${finalPrompt}`;
       }
 
       const imageUrl = await generateMedicalImage(ai, finalPrompt);
@@ -1038,6 +1068,7 @@ TAREA:
    - Panel A = CONTEXTO REGIONAL con la lesión visible y anclada (cutaway anatómico).
    ${wantMacro ? "- Panel B = MACRO / ZOOM cutaway de la lesión (detalle morfológico fiel; conserva hitos de orientación para no perder lateralidad)." : ""}
 3. Cada panel DEBE incluir spatialContract (view, laterality, imageLeftStructure, imageRightStructure, superiorStructure/inferiorStructure, mustShowLandmarks, pathologySite, pathologyAppearance, doNotInvent).
+3b. LATERALIDAD CRÍTICA: el lado del paciente del informe/foco manda. No espejes. imageLeft/imageRight deben anclar hitos reales coherentes con la vista. doNotInvent DEBE incluir "mirrored laterality" y "wrong side / contralateral swap". Si el foco es unilateral, pathologySite debe nombrar el lado correcto en ambos paneles (contexto y macro).
 4. NO inventes hallazgos. Si el informe es normal y no hay foco manual, responde lesionFound=false.
 5. Estilo: fotorrealismo clínico premium (igual o superior al Atlas 3D); SIN bioluminiscencia.
 
@@ -1197,6 +1228,7 @@ RESPONDE SOLO JSON:
           const verifyParts: any[] = [{
             text: `Eres un radiólogo revisor de calidad de CORTE FOCAL 3D.
 Compara CADA imagen con el informe y el contrato espacial de la lesión objetivo "${planJson.lesionLabel || focusText || ""}" en "${planJson.lesionSite || ""}".
+PRIORIDAD #1: LATERALIDAD del paciente y anclas izquierda/derecha del cuadro. Si fallan => lateralityOk=false y pass=false.
 Devuelve JSON:
 {
   "panels": [

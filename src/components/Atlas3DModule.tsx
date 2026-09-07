@@ -29,6 +29,7 @@ import {
   buildAtlasDirectivesFromScorecard,
   mergeOverlaysOntoAtlas,
 } from "../lib/clinicalIntelligence";
+import { flipImageDataUrl, swapLateralityLabel } from "../lib/imageFlip";
 
 // Helper to extract uppercase panel letters referenced in a string (e.g. "(Panel A)" -> ["A"], "Paneles A y B" -> ["A", "B"])
 const extractReferencedLetters = (panelRef?: string): string[] => {
@@ -354,47 +355,38 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
     }
   };
 
-  const handleFlipPanelHorizontal = (panel: Atlas3DPanel) => {
+  const handleFlipPanelHorizontal = async (panel: Atlas3DPanel) => {
     if (!panel.imageUrl || !atlasData) return;
     try {
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        canvas.width = img.naturalWidth || img.width;
-        canvas.height = img.naturalHeight || img.height;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-        ctx.translate(canvas.width, 0);
-        ctx.scale(-1, 1);
-        ctx.drawImage(img, 0, 0);
-        const flippedDataUrl = canvas.toDataURL("image/png");
+      const flippedDataUrl = await flipImageDataUrl(panel.imageUrl);
+      const updatedPanels = atlasData.panels.map((p) => {
+        if (p.panelLetter !== panel.panelLetter) return p;
+        const sc = p.spatialContract
+          ? {
+              ...p.spatialContract,
+              imageLeftStructure: p.spatialContract.imageRightStructure,
+              imageRightStructure: p.spatialContract.imageLeftStructure,
+              laterality: swapLateralityLabel(p.spatialContract.laterality || p.laterality),
+            }
+          : p.spatialContract;
+        return {
+          ...p,
+          imageUrl: flippedDataUrl,
+          isCustomFlipped: !p.isCustomFlipped,
+          laterality: swapLateralityLabel(p.laterality) || p.laterality,
+          spatialContract: sc,
+        };
+      });
 
-        const updatedPanels = atlasData.panels.map((p) => {
-          if (p.panelLetter === panel.panelLetter) {
-            return { 
-              ...p, 
-              imageUrl: flippedDataUrl,
-              isCustomFlipped: !p.isCustomFlipped
-            };
-          }
-          return p;
-        });
+      setAtlasData({
+        ...atlasData,
+        panels: updatedPanels,
+      });
 
-        setAtlasData({
-          ...atlasData,
-          panels: updatedPanels
-        });
-
-        if (zoomPanel && zoomPanel.panelLetter === panel.panelLetter) {
-          setZoomPanel({ 
-            ...zoomPanel, 
-            imageUrl: flippedDataUrl,
-            isCustomFlipped: !zoomPanel.isCustomFlipped
-          });
-        }
-      };
-      img.src = panel.imageUrl;
+      if (zoomPanel && zoomPanel.panelLetter === panel.panelLetter) {
+        const updated = updatedPanels.find((p) => p.panelLetter === panel.panelLetter);
+        if (updated) setZoomPanel(updated);
+      }
     } catch (flipErr) {
       console.error("Error al voltear imagen horizontalmente:", flipErr);
     }

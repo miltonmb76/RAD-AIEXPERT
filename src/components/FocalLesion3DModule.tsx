@@ -16,6 +16,7 @@ import {
 import { FocalLesion3DData, FocalLesion3DPanel, ClinicalScorecardData } from "../types";
 import { buildAtlasDirectivesFromScorecard } from "../lib/clinicalIntelligence";
 import { runBackgroundTask } from "../lib/backgroundTasks";
+import { flipImageDataUrl, swapLateralityLabel } from "../lib/imageFlip";
 
 interface FocalLesion3DModuleProps {
   reportText: string;
@@ -136,16 +137,39 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
     }
   };
 
-  const handleFlipPanel = (panelLetter: string) => {
+  const handleFlipPanel = async (panelLetter: string) => {
     if (!focalData) return;
-    setFocalData({
-      ...focalData,
-      panels: focalData.panels.map((p) =>
-        p.panelLetter === panelLetter
-          ? { ...p, isCustomFlipped: !p.isCustomFlipped }
-          : p
-      )
-    });
+    const panel = focalData.panels.find((p) => p.panelLetter === panelLetter);
+    if (!panel?.imageUrl) return;
+    try {
+      const flippedDataUrl = await flipImageDataUrl(panel.imageUrl);
+      const nextPanels = focalData.panels.map((p) => {
+        if (p.panelLetter !== panelLetter) return p;
+        const sc = p.spatialContract
+          ? {
+              ...p.spatialContract,
+              imageLeftStructure: p.spatialContract.imageRightStructure,
+              imageRightStructure: p.spatialContract.imageLeftStructure,
+              laterality: swapLateralityLabel(p.spatialContract.laterality || p.laterality),
+            }
+          : p.spatialContract;
+        return {
+          ...p,
+          imageUrl: flippedDataUrl,
+          isCustomFlipped: !p.isCustomFlipped,
+          laterality: swapLateralityLabel(p.laterality) || p.laterality,
+          spatialContract: sc,
+        };
+      });
+      setFocalData({ ...focalData, panels: nextPanels });
+      if (zoomPanel?.panelLetter === panelLetter) {
+        const updated = nextPanels.find((p) => p.panelLetter === panelLetter);
+        if (updated) setZoomPanel(updated);
+      }
+    } catch (flipErr) {
+      console.error("Error al voltear panel focal:", flipErr);
+      setErrorMessage("No se pudo voltear la imagen en espejo.");
+    }
   };
 
   const handleRegeneratePanel = async (panel: FocalLesion3DPanel) => {
@@ -437,9 +461,7 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
                     <img
                       src={panel.imageUrl}
                       alt={panel.panelTitle}
-                      className={`w-full h-full object-cover ${
-                        panel.isCustomFlipped ? "scale-x-[-1]" : ""
-                      }`}
+                      className="w-full h-full object-cover"
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-slate-600 text-xs font-mono">
@@ -546,7 +568,7 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
               <img
                 src={zoomPanel.imageUrl}
                 alt={zoomPanel.panelTitle}
-                className={`w-full rounded-xl ${zoomPanel.isCustomFlipped ? "scale-x-[-1]" : ""}`}
+                className="w-full rounded-xl"
               />
             )}
             <p className="mt-3 text-center text-sm text-slate-200 font-mono">
