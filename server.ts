@@ -7,6 +7,7 @@ import fs from "fs";
 import { GoogleGenAI, Type } from "@google/genai";
 import sharp from "sharp";
 import { registerAtlas3DRoutes } from "./server_atlas3d";
+import { normalizeReasoningChainData } from "./src/lib/reasoningChain";
 
 // Lazy-loaded GenAI client to prevent crash on startup if API key is missing
 let aiClient: GoogleGenAI | null = null;
@@ -9127,6 +9128,166 @@ const response = await ai.models.generateContent({
     res.json({ success: true, data });
   } catch (error: any) {
     console.error("Error en /api/generate-clinical-scorecard:", error);
+    res.status(500).json({ success: false, error: handleGeminiError(error) });
+  }
+});
+
+/**
+ * API: CADENA DE RAZONAMIENTO RADIOLÓGICO
+ * POST /api/generate-reasoning-chain
+ * Payload: { model?, report, studyType?, clinicalHistory?, focusText? }
+ */
+app.post("/api/generate-reasoning-chain", async (req: express.Request, res: express.Response) => {
+  try {
+    const { model, report, studyType, clinicalHistory, focusText } = req.body;
+    if (!report || !String(report).trim()) {
+      return res.status(400).json({ success: false, error: "Se requiere el parámetro 'report'." });
+    }
+
+    const ai = getGeminiClient();
+    const modelToUse = getModelName(model);
+    const focus = (focusText || "").toString().trim();
+    const history = (clinicalHistory || "").toString().trim();
+
+    const prompt = `Eres un radiólogo hispanohablante experto en semiología y razonamiento diagnóstico.
+Reconstruye la CADENA DE RAZONAMIENTO RADIOLOGICO del caso: el proceso lógico/semiológico que un radiólogo experto seguiría al analizar el informe.
+
+IDIOMA: TODO el texto visible en ESPAÑOL médico. PROHIBIDO inglés en campos visibles.
+
+ESTUDIO: ${studyType || "No especificado"}
+${history ? `HISTORIA CLINICA / DATOS APORTADOS:\n"""\n${history}\n"""` : "Sin historia clínica adicional (infiere solo lo que conste en el informe)."}
+${focus ? `ENFOQUE DEL MEDICO (prioridad): "${focus}"` : "Sin enfoque libre: deriva el hilo del informe."}
+
+OBJETIVO:
+Explicar la importancia SEMIOLOGICA de los hallazgos (principales y asociados), correlacionarlos con clinica/laboratorio cuando consten, y explicitar signos BUSCADOS, ENCONTRADOS y DESCARTADOS/AUSENTES.
+
+Estructura OBLIGATORIA de nodes (en este orden, 6 a 8 nodos):
+1. clinical_context — contexto clinico de partida (motivo, sintomas si constan)
+2. sought_signs — que signos se buscan ante esa sospecha (checklist mental)
+3. key_finding — hallazgo clave del informe (punto de anclaje)
+4. associated_signs — hallazgos asociados y por que refuerzan o matizan
+5. absent_signs — signos negativos criticos buscados y no hallados (o no mencionados con impacto)
+6. lab_correlation — correlacion clinica/laboratorio-imagen (si no hay lab, dilo sin inventar)
+7. synthesis — sintesis diagnostica
+8. management — conducta sugerida breve (si el informe no la implica, deja summary corto o vacio)
+
+REGLAS DE FIDELIDAD:
+- NO inventes hallazgos, labs ni clinicas. Si faltan: status "not_evaluated" o indica ausencia de dato.
+- Cada item debe tener "significance" (por que importa semiológicamente).
+- evidence = cita/parafrasis fiel del informe cuando exista.
+- status por nodo/item: present | absent | equivocal | not_evaluated | discarded | context
+- discardedDifferentials: hipotesis alternativas descartadas CON motivo (signo ausente / incompatible).
+- certaintyLabel: Alta | Media | Baja (cualitativa, sin inventar %).
+
+Responde SOLO JSON:
+{
+  "title": "Cadena de razonamiento radiologico",
+  "studyRegion": "string",
+  "workingDiagnosis": "string",
+  "certaintyLabel": "Alta|Media|Baja",
+  "clinicalContext": "string",
+  "nodes": [
+    {
+      "id": "n1",
+      "kind": "clinical_context|sought_signs|key_finding|associated_signs|absent_signs|lab_correlation|synthesis|management",
+      "title": "string",
+      "summary": "string",
+      "status": "present|absent|equivocal|not_evaluated|discarded|context",
+      "items": [
+        { "label": "string", "status": "present|absent|...", "significance": "string", "evidence": "string" }
+      ],
+      "clinicalLink": "string opcional",
+      "labLink": "string opcional"
+    }
+  ],
+  "discardedDifferentials": [{ "name": "string", "reason": "string" }],
+  "synthesis": "string",
+  "managementSuggestion": "string"
+}
+
+INFORME:
+"""
+${report}
+"""
+`;
+
+    const response = await ai.models.generateContent({
+      model: modelToUse,
+      contents: prompt,
+      config: {
+        temperature: 0.15,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            title: { type: Type.STRING },
+            studyRegion: { type: Type.STRING },
+            workingDiagnosis: { type: Type.STRING },
+            certaintyLabel: { type: Type.STRING },
+            clinicalContext: { type: Type.STRING },
+            nodes: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  id: { type: Type.STRING },
+                  kind: { type: Type.STRING },
+                  title: { type: Type.STRING },
+                  summary: { type: Type.STRING },
+                  status: { type: Type.STRING },
+                  items: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        label: { type: Type.STRING },
+                        status: { type: Type.STRING },
+                        significance: { type: Type.STRING },
+                        evidence: { type: Type.STRING },
+                      },
+                    },
+                  },
+                  clinicalLink: { type: Type.STRING },
+                  labLink: { type: Type.STRING },
+                },
+              },
+            },
+            discardedDifferentials: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  name: { type: Type.STRING },
+                  reason: { type: Type.STRING },
+                },
+              },
+            },
+            synthesis: { type: Type.STRING },
+            managementSuggestion: { type: Type.STRING },
+          },
+        },
+      },
+    });
+
+    const rawText = response.text || "{}";
+    let parsed: any = {};
+    try {
+      parsed = JSON.parse(rawText);
+    } catch {
+      parsed = {};
+    }
+
+    const data = normalizeReasoningChainData(parsed);
+    if (!data.nodes.length) {
+      return res.status(500).json({
+        success: false,
+        error: "La IA no devolvió nodos de razonamiento utilizables.",
+      });
+    }
+
+    res.json({ success: true, data });
+  } catch (error: any) {
+    console.error("Error en /api/generate-reasoning-chain:", error);
     res.status(500).json({ success: false, error: handleGeminiError(error) });
   }
 });

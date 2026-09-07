@@ -38,6 +38,7 @@ export type ModelTask =
   | "footnotes"
   | "radar"
   | "clinical_scorecard"
+  | "reasoning_chain"
   | "chat"
   | "default";
 
@@ -56,6 +57,7 @@ const QUALITY_TASKS: ReadonlySet<ModelTask> = new Set([
   "fractures",
   "radar",
   "clinical_scorecard",
+  "reasoning_chain",
   "default",
 ]);
 
