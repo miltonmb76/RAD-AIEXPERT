@@ -8,6 +8,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import sharp from "sharp";
 import { registerAtlas3DRoutes } from "./server_atlas3d";
 import { normalizeReasoningChainData, extractJsonObject } from "./src/lib/reasoningChain";
+import { normalizeDifferentialTreeData } from "./src/lib/differentialTree";
 
 // Lazy-loaded GenAI client to prevent crash on startup if API key is missing
 let aiClient: GoogleGenAI | null = null;
@@ -9366,6 +9367,196 @@ ${report}
     res.json({ success: true, data });
   } catch (error: any) {
     console.error("Error en /api/generate-reasoning-chain:", error);
+    res.status(500).json({ success: false, error: handleGeminiError(error) });
+  }
+});
+
+/**
+ * API: ÁRBOL DE DIFERENCIALES CON PODA
+ * POST /api/generate-differential-tree
+ */
+app.post("/api/generate-differential-tree", async (req: express.Request, res: express.Response) => {
+  try {
+    const { model, report, studyType, clinicalHistory, focusText, includeManagement } = req.body;
+    if (!report || !String(report).trim()) {
+      return res.status(400).json({ success: false, error: "Se requiere el parámetro 'report'." });
+    }
+
+    const ai = getGeminiClient();
+    const modelToUse = getModelName(model);
+    const focus = (focusText || "").toString().trim();
+    const history = (clinicalHistory || "").toString().trim();
+    const withManagement = includeManagement === true;
+
+    const prompt = `Eres un radiólogo hispanohablante experto en diagnóstico diferencial.
+Construye un ÁRBOL DE DIFERENCIALES CON PODA a partir del informe: hipótesis iniciales, criterios a favor/en contra, y poda explícita de ramas incompatibles hasta el diagnóstico más probable.
+
+IDIOMA: TODO el texto visible en ESPAÑOL médico.
+
+ESTUDIO: ${studyType || "No especificado"}
+${history ? `HISTORIA CLINICA:\n"""\n${history}\n"""` : "Sin historia adicional."}
+${focus ? `ENFOQUE DEL MEDICO (prioridad): "${focus}"` : "Sin enfoque libre: deriva del informe."}
+
+REGLAS:
+1. Genera 3 a 5 branches (hipótesis). Exactamente UNA con status "leading".
+2. Al menos 1 o 2 branches con status "pruned" y pruneReason claro (signo ausente, incompatible, lab, etc.).
+3. Las demás pueden ser "active" (aún posibles pero menos probables).
+4. criteriaFor / criteriaAgainst: arrays de { label, polarity ("for"|"against"), evidence? }.
+5. NO inventes hallazgos. Si falta dato, dilo en criteriaAgainst o summary.
+6. certaintyLabel por rama y global: Alta | Media | Baja.
+7. pruningNarrative: 2-4 frases explicando cómo se podó el árbol.
+8. PROPUESTA TERAPEUTICA / CONDUCTA: ${
+      withManagement
+        ? 'SÍ incluir managementSuggestion breve (1-3 frases).'
+        : 'NO incluir conducta/tratamiento. managementSuggestion debe ser "".'
+    }
+
+Claves JSON obligatorias en inglés:
+title, studyRegion, clinicalQuestion, leadingDiagnosis, certaintyLabel, branches, pruningNarrative, synthesis, managementSuggestion.
+Cada branch: id, name, status ("leading"|"active"|"pruned"), certaintyLabel, summary, criteriaFor[], criteriaAgainst[], pruneReason, confirmatoryTest.
+
+INFORME:
+"""
+${report}
+"""
+`;
+
+    const criterionSchema = {
+      type: Type.OBJECT,
+      properties: {
+        label: { type: Type.STRING },
+        polarity: { type: Type.STRING },
+        evidence: { type: Type.STRING },
+      },
+      required: ["label", "polarity"],
+    };
+
+    const branchSchema = {
+      type: Type.OBJECT,
+      properties: {
+        id: { type: Type.STRING },
+        name: { type: Type.STRING },
+        status: { type: Type.STRING },
+        certaintyLabel: { type: Type.STRING },
+        summary: { type: Type.STRING },
+        criteriaFor: { type: Type.ARRAY, items: criterionSchema },
+        criteriaAgainst: { type: Type.ARRAY, items: criterionSchema },
+        pruneReason: { type: Type.STRING },
+        confirmatoryTest: { type: Type.STRING },
+      },
+      required: ["id", "name", "status", "summary", "criteriaFor", "criteriaAgainst"],
+    };
+
+    const fullSchema = {
+      type: Type.OBJECT,
+      properties: {
+        title: { type: Type.STRING },
+        studyRegion: { type: Type.STRING },
+        clinicalQuestion: { type: Type.STRING },
+        leadingDiagnosis: { type: Type.STRING },
+        certaintyLabel: { type: Type.STRING },
+        branches: { type: Type.ARRAY, items: branchSchema },
+        pruningNarrative: { type: Type.STRING },
+        synthesis: { type: Type.STRING },
+        managementSuggestion: { type: Type.STRING },
+      },
+      required: [
+        "title",
+        "clinicalQuestion",
+        "leadingDiagnosis",
+        "branches",
+        "pruningNarrative",
+        "synthesis",
+      ],
+    };
+
+    const readModelText = (response: any): string => {
+      if (response?.text && String(response.text).trim()) return String(response.text);
+      const parts = response?.candidates?.[0]?.content?.parts;
+      if (Array.isArray(parts)) {
+        return parts
+          .map((p: any) => (typeof p?.text === "string" ? p.text : ""))
+          .filter(Boolean)
+          .join("\n");
+      }
+      return "";
+    };
+
+    let rawText = "";
+    let parsed: any = null;
+
+    try {
+      const response = await ai.models.generateContent({
+        model: modelToUse,
+        contents: prompt,
+        config: {
+          temperature: 0.2,
+          responseMimeType: "application/json",
+          responseSchema: fullSchema,
+        },
+      });
+      rawText = readModelText(response);
+      parsed = extractJsonObject(rawText);
+    } catch (schemaErr: any) {
+      console.warn(
+        "generate-differential-tree: schema attempt failed:",
+        schemaErr?.message || schemaErr
+      );
+    }
+
+    if (!parsed || !(parsed.branches || parsed.ramas || parsed.diferenciales)?.length) {
+      try {
+        const response2 = await ai.models.generateContent({
+          model: modelToUse,
+          contents: prompt + `\n\nResponde ÚNICAMENTE JSON válido. branches DEBE tener >=3 hipótesis.`,
+          config: { temperature: 0.25, responseMimeType: "application/json" },
+        });
+        rawText = readModelText(response2) || rawText;
+        parsed = extractJsonObject(rawText) || parsed;
+      } catch (e: any) {
+        console.warn("generate-differential-tree: mime retry failed:", e?.message || e);
+      }
+    }
+
+    if (!parsed || !(parsed.branches || parsed.ramas || parsed.diferenciales)?.length) {
+      try {
+        const response3 = await ai.models.generateContent({
+          model: modelToUse,
+          contents: prompt + `\n\nSOLO JSON (sin markdown).`,
+          config: { temperature: 0.3 },
+        });
+        rawText = readModelText(response3) || rawText;
+        parsed = extractJsonObject(rawText) || parsed;
+      } catch (e: any) {
+        console.warn("generate-differential-tree: freeform retry failed:", e?.message || e);
+      }
+    }
+
+    if (!parsed) {
+      console.error(
+        "generate-differential-tree: unparseable output:",
+        String(rawText || "").slice(0, 800)
+      );
+      return res.status(500).json({
+        success: false,
+        error: "No se pudo interpretar la respuesta de la IA (JSON inválido). Reintenta.",
+      });
+    }
+
+    const data = normalizeDifferentialTreeData(parsed);
+    if (!withManagement) {
+      data.managementSuggestion = undefined;
+    }
+    if (!data.branches.length) {
+      return res.status(500).json({
+        success: false,
+        error: "La IA no devolvió ramas diferenciales utilizables. Reintenta.",
+      });
+    }
+
+    res.json({ success: true, data });
+  } catch (error: any) {
+    console.error("Error en /api/generate-differential-tree:", error);
     res.status(500).json({ success: false, error: handleGeminiError(error) });
   }
 });

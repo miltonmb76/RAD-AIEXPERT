@@ -329,3 +329,39 @@ export interface ReasoningChainData {
   generatedAt?: string;
 }
 
+/** Branch fate in the differential prune tree. */
+export type DifferentialBranchStatus = "leading" | "active" | "pruned";
+
+export interface DifferentialCriterion {
+  label: string;
+  polarity: "for" | "against";
+  evidence?: string;
+}
+
+export interface DifferentialBranch {
+  id: string;
+  name: string;
+  status: DifferentialBranchStatus;
+  certaintyLabel?: string;
+  summary: string;
+  criteriaFor: DifferentialCriterion[];
+  criteriaAgainst: DifferentialCriterion[];
+  /** Required when status = pruned: why this hypothesis was cut. */
+  pruneReason?: string;
+  confirmatoryTest?: string;
+}
+
+/** Decision tree of differentials with explicit pruning of discarded hypotheses. */
+export interface DifferentialTreeData {
+  title: string;
+  studyRegion?: string;
+  clinicalQuestion: string;
+  leadingDiagnosis: string;
+  certaintyLabel?: string;
+  branches: DifferentialBranch[];
+  pruningNarrative: string;
+  synthesis: string;
+  managementSuggestion?: string;
+  generatedAt?: string;
+}
+
