@@ -11,6 +11,7 @@ const AsistenteMedidas = React.lazy(() => import("./components/AsistenteMedidas"
 const CreadorNotasPie = React.lazy(() => import("./components/CreadorNotasPie").then(m => ({ default: m.CreadorNotasPie })));
 const BiomechanicalRadarModule = React.lazy(() => import("./components/BiomechanicalRadarModule").then(m => ({ default: m.BiomechanicalRadarModule })));
 const ClinicalScorecardModule = React.lazy(() => import("./components/ClinicalScorecardModule").then(m => ({ default: m.ClinicalScorecardModule })));
+const ReasoningChainModule = React.lazy(() => import("./components/ReasoningChainModule").then(m => ({ default: m.ReasoningChainModule })));
 const MeasurementsGaugeModule = React.lazy(() => import("./components/MeasurementsGaugeModule").then(m => ({ default: m.MeasurementsGaugeModule })));
 const CreadorCuadroSinoptico = React.lazy(() => import("./components/CreadorCuadroSinoptico").then(m => ({ default: m.CreadorCuadroSinoptico })));
 const CreadorSinopsisFracturas = React.lazy(() => import("./components/CreadorSinopsisFracturas").then(m => ({ default: m.CreadorSinopsisFracturas })));
@@ -18,8 +19,9 @@ const ElastographyQUSPresentationModule = React.lazy(() => import("./components/
 import { Atlas3DModule } from "./components/Atlas3DModule";
 import { renderAtlas3DAnnexToPDF } from "./utils/atlas3dPdfRenderer";
 import { renderScorecardAnnexToPDF } from "./utils/scorecardPdfRenderer";
+import { renderReasoningChainAnnexToPDF } from "./utils/reasoningChainPdfRenderer";
 import { renderMeasurementsGaugeAnnexToPDF } from "./utils/measurementsGaugePdfRenderer";
-import { Atlas3DData, Vascular3DData, FocalLesion3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData } from "./types";
+import { Atlas3DData, Vascular3DData, FocalLesion3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData } from "./types";
 import { buildAtlasDirectivesFromScorecard, buildVascularDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
 import { Vascular3DModule } from "./components/Vascular3DModule";
 import { FocalLesion3DModule } from "./components/FocalLesion3DModule";
@@ -109,7 +111,8 @@ import {
   Ruler,
   Bookmark,
   Box,
-  Crosshair
+  Crosshair,
+  GitBranch
 } from "lucide-react";
 import { initAuth, googleSignIn, logout as googleLogout, anonymousSignIn, emailSignIn, emailSignUp, getFirebaseConfig } from "./firebaseAuth";
 import { CloudStudy, saveStudyToCloud, getStudiesFromCloud, deleteStudyFromCloud, Worklist, WorklistPatient, saveWorklistToCloud, getWorklistFromCloud, getSingleStudyFromCloud, testFirebaseConfigConnection, saveUserSettingsToCloud, getUserSettingsFromCloud } from "./firebaseDb";
@@ -2567,6 +2570,9 @@ export default function App() {
   const [clinicalScorecardData, setClinicalScorecardData] = useState<ClinicalScorecardData | null>(null);
   const [includeScorecardInReport, setIncludeScorecardInReport] = useState<boolean>(true);
   const [isClinicalScorecardOpen, setIsClinicalScorecardOpen] = useState<boolean>(false);
+  const [reasoningChainData, setReasoningChainData] = useState<ReasoningChainData | null>(null);
+  const [includeReasoningChainInReport, setIncludeReasoningChainInReport] = useState<boolean>(true);
+  const [isReasoningChainOpen, setIsReasoningChainOpen] = useState<boolean>(false);
   const [atlasDirectivesFromScorecard, setAtlasDirectivesFromScorecard] = useState<string>("");
   const [measurementGaugeData, setMeasurementGaugeData] = useState<MeasurementGaugeData | null>(null);
   const [includeMeasurementGaugesInReport, setIncludeMeasurementGaugesInReport] = useState<boolean>(true);
@@ -2625,6 +2631,8 @@ export default function App() {
     includeAtlas3dInReport,
     clinicalScorecardData,
     includeScorecardInReport,
+    reasoningChainData,
+    includeReasoningChainInReport,
     measurementGaugeData,
     includeMeasurementGaugesInReport,
     includeMeasurementNormalsInPdf,
@@ -3275,6 +3283,7 @@ Ejemplo:
   // States & Handlers for Sistema de Activaci贸n R谩pida de M贸dulos (Procesamiento en Lote)
   const DEFAULT_BATCH_MODULES: Record<string, boolean> = {
     clinical_scorecard: true,
+    reasoning_chain: false,
     atlas3d: true,
     vascular3d: false,
     radar: false,
@@ -3343,6 +3352,7 @@ Ejemplo:
     if (modules.footnotes) setIsCreadorNotasOpen(true);
     if (modules.organ_synoptic) setIsCreadorCuadroSinopticoOpen(true);
     if (modules.fractures) setIsCreadorSinopsisFracturasOpen(true);
+    if (modules.reasoning_chain) setIsReasoningChainOpen(true);
     // 2. Trigger async AI generation processes concurrently
     const promises: Promise<any>[] = [];
 
@@ -3497,6 +3507,34 @@ Ejemplo:
           } catch (e) {
             console.error("Error en batch vascular 3d:", e);
           }
+        }
+      })());
+    }
+
+    if (modules.reasoning_chain) {
+      promises.push((async () => {
+        setIsReasoningChainOpen(true);
+        try {
+          const resp = await fetch("/api/generate-reasoning-chain", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: modelFor("reasoning_chain"),
+              report: activeReport,
+              studyType: specificStudy || studyType || "",
+              clinicalHistory: clinicalHistory || "",
+              includeManagement: false,
+            }),
+          });
+          const j = await resp.json();
+          if (j.success && j.data) {
+            setReasoningChainData(j.data);
+            setIncludeReasoningChainInReport(true);
+          } else {
+            console.error("Cadena de razonamiento en lote fallo:", j.error);
+          }
+        } catch (e) {
+          console.error("Error al generar cadena de razonamiento en lote:", e);
         }
       })());
     }
@@ -9675,6 +9713,28 @@ Ejemplo:
           pageHeight,
           contentWidth,
           factor
+        });
+      }
+
+      // --- ANEXO: CADENA DE RAZONAMIENTO RADIOLOGICO ---
+      const activeReasoningChain = studyOverride
+        ? (studyOverride as any).reasoningChainData
+        : (pdfStateRef.current?.reasoningChainData || reasoningChainData);
+      const shouldIncludeReasoningChain = studyOverride
+        ? ((studyOverride as any).includeReasoningChainInReport !== false)
+        : ((pdfStateRef.current?.includeReasoningChainInReport !== false) && includeReasoningChainInReport);
+      if (
+        activeReasoningChain &&
+        shouldIncludeReasoningChain &&
+        Array.isArray(activeReasoningChain.nodes) &&
+        activeReasoningChain.nodes.length > 0
+      ) {
+        renderReasoningChainAnnexToPDF(doc, activeReasoningChain, {
+          marginX,
+          pageWidth,
+          pageHeight,
+          contentWidth,
+          factor,
         });
       }
 
@@ -19661,6 +19721,13 @@ const splitReportAndAnnex = (text: string) => {
                                   desc: "Extrae criterios y hallazgos activos del informe; se ejecuta antes del Atlas 3D para anclar la reconstruccion a la patologia real.",
                                   color: "text-teal-400 border-teal-500/30 bg-teal-950/20"
                                 },
+                                {
+                                  id: "reasoning_chain",
+                                  label: "Cadena de razonamiento radiologico",
+                                  badge: "SEMIOLOGIA",
+                                  desc: "Flujograma del pensamiento diagnostico: clinica, signos buscados/encontrados/descartados, correlacion y sintesis.",
+                                  color: "text-violet-400 border-violet-500/30 bg-violet-950/20"
+                                },
 {
                                   id: "atlas3d",
                                   label: "馃 Atlas 3D Fotorrealista y Correlaci贸n Anat贸mica",
@@ -20289,6 +20356,31 @@ const splitReportAndAnnex = (text: string) => {
                               </button>
                             </div>
 
+                            <div className="p-4 rounded-2xl bg-slate-950/60 border border-violet-900/40 space-y-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <h4 className="text-sm font-semibold text-violet-200 flex items-center gap-2">
+                                    <GitBranch className="h-4 w-4 text-violet-400" />
+                                    Cadena de razonamiento
+                                  </h4>
+                                  <p className="text-[11px] text-slate-400 mt-1">
+                                    Flujograma semiol骻ico: signos buscados, hallados y descartados, con correlaci髇 cl韓ica/lab.
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setIsReasoningChainOpen((v) => !v)}
+                                className={`w-full px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
+                                  isReasoningChainOpen
+                                    ? "bg-violet-700 text-white"
+                                    : "bg-violet-600/80 hover:bg-violet-500 text-white"
+                                }`}
+                              >
+                                {isReasoningChainOpen ? "Ocultar cadena" : "Abrir cadena de razonamiento"}
+                              </button>
+                            </div>
+
                             {/* Card: Corte Focal 3D */}
                             <div className="p-4 rounded-2xl bg-slate-950/60 border border-cyan-900/40 space-y-3">
                               <div className="flex items-start justify-between gap-3">
@@ -20411,6 +20503,23 @@ const splitReportAndAnnex = (text: string) => {
                                   atlasData={atlas3dData}
                                   setAtlasData={setAtlas3dData}
                                   onAtlasDirectivesSuggested={setAtlasDirectivesFromScorecard}
+                                />
+                              </React.Suspense>
+                            </div>
+                          )}
+
+                          {isReasoningChainOpen && (
+                            <div className="my-6">
+                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-violet-400 bg-slate-900/60 rounded-xl border border-violet-900/40 animate-pulse">Cargando cadena de razonamiento...</div>}>
+                                <ReasoningChainModule
+                                  selectedModel={modelFor("reasoning_chain")}
+                                  reportText={isEditingReportManual ? editedReportText : generatedReport}
+                                  studyType={specificStudy || studyType}
+                                  clinicalHistory={clinicalHistory}
+                                  chainData={reasoningChainData}
+                                  setChainData={setReasoningChainData}
+                                  includeInReport={includeReasoningChainInReport}
+                                  setIncludeInReport={setIncludeReasoningChainInReport}
                                 />
                               </React.Suspense>
                             </div>

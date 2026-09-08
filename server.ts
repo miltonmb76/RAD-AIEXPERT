@@ -7,6 +7,7 @@ import fs from "fs";
 import { GoogleGenAI, Type } from "@google/genai";
 import sharp from "sharp";
 import { registerAtlas3DRoutes } from "./server_atlas3d";
+import { normalizeReasoningChainData, extractJsonObject } from "./src/lib/reasoningChain";
 
 // Lazy-loaded GenAI client to prevent crash on startup if API key is missing
 let aiClient: GoogleGenAI | null = null;
@@ -9127,6 +9128,244 @@ const response = await ai.models.generateContent({
     res.json({ success: true, data });
   } catch (error: any) {
     console.error("Error en /api/generate-clinical-scorecard:", error);
+    res.status(500).json({ success: false, error: handleGeminiError(error) });
+  }
+});
+
+/**
+ * API: CADENA DE RAZONAMIENTO RADIOLÓGICO
+ * POST /api/generate-reasoning-chain
+ * Payload: { model?, report, studyType?, clinicalHistory?, focusText? }
+ */
+app.post("/api/generate-reasoning-chain", async (req: express.Request, res: express.Response) => {
+  try {
+    const { model, report, studyType, clinicalHistory, focusText, includeManagement } = req.body;
+    if (!report || !String(report).trim()) {
+      return res.status(400).json({ success: false, error: "Se requiere el parámetro 'report'." });
+    }
+
+    const ai = getGeminiClient();
+    const modelToUse = getModelName(model);
+    const focus = (focusText || "").toString().trim();
+    const history = (clinicalHistory || "").toString().trim();
+    const withManagement = includeManagement === true;
+
+    const prompt = `Eres un radiólogo hispanohablante experto en semiología y razonamiento diagnóstico.
+Reconstruye la CADENA DE RAZONAMIENTO RADIOLOGICO del caso: el proceso lógico/semiológico que un radiólogo experto seguiría al analizar el informe.
+
+IDIOMA: TODO el texto visible en ESPAÑOL médico. PROHIBIDO inglés en campos visibles.
+
+ESTUDIO: ${studyType || "No especificado"}
+${history ? `HISTORIA CLINICA / DATOS APORTADOS:\n"""\n${history}\n"""` : "Sin historia clínica adicional (infiere solo lo que conste en el informe)."}
+${focus ? `ENFOQUE DEL MEDICO (prioridad): "${focus}"` : "Sin enfoque libre: deriva el hilo del informe."}
+
+OBJETIVO:
+Explicar la importancia SEMIOLOGICA de los hallazgos (principales y asociados), correlacionarlos con clinica/laboratorio cuando consten, y explicitar signos BUSCADOS, ENCONTRADOS y DESCARTADOS/AUSENTES.
+
+Devuelve SIEMPRE el campo "nodes" como array (NUNCA vacío), en este orden de kind:
+1. clinical_context
+2. sought_signs
+3. key_finding
+4. associated_signs
+5. absent_signs
+6. lab_correlation
+7. synthesis
+${withManagement ? "8. management" : ""}
+
+PROPUESTA TERAPEUTICA / CONDUCTA: ${
+      withManagement
+        ? 'SÍ incluir nodo "management" y campo "managementSuggestion" con conducta/seguimiento breve en español (1-3 frases).'
+        : 'NO incluir propuesta terapéutica ni conducta. PROHIBIDO sugerir tratamiento, seguimiento, interconsulta o manejo. NO incluyas nodo kind "management". El campo "managementSuggestion" DEBE ser exactamente "" (cadena vacía).'
+    }
+
+REGLAS DE FIDELIDAD:
+- NO inventes hallazgos, labs ni clinicas. Si faltan: status "not_evaluated" o indica ausencia de dato.
+- Cada item debe tener "significance" (por que importa semiológicamente).
+- evidence = cita/parafrasis fiel del informe cuando exista.
+- status por nodo/item: present | absent | equivocal | not_evaluated | discarded | context
+- discardedDifferentials: hipotesis alternativas descartadas CON motivo.
+- certaintyLabel: Alta | Media | Baja.
+
+Claves JSON OBLIGATORIAS en inglés exacto: title, studyRegion, workingDiagnosis, certaintyLabel, clinicalContext, nodes, discardedDifferentials, synthesis, managementSuggestion.
+Cada nodo DEBE tener: id, kind, title, summary, status, items (array; puede ser []).
+
+INFORME:
+"""
+${report}
+"""
+`;
+
+    const nodeItemSchema = {
+      type: Type.OBJECT,
+      properties: {
+        label: { type: Type.STRING },
+        status: { type: Type.STRING },
+        significance: { type: Type.STRING },
+        evidence: { type: Type.STRING },
+      },
+      required: ["label", "status", "significance"],
+    };
+
+    const nodeSchema = {
+      type: Type.OBJECT,
+      properties: {
+        id: { type: Type.STRING },
+        kind: { type: Type.STRING },
+        title: { type: Type.STRING },
+        summary: { type: Type.STRING },
+        status: { type: Type.STRING },
+        items: { type: Type.ARRAY, items: nodeItemSchema },
+        clinicalLink: { type: Type.STRING },
+        labLink: { type: Type.STRING },
+      },
+      required: ["id", "kind", "title", "summary", "status", "items"],
+    };
+
+    const fullSchema = {
+      type: Type.OBJECT,
+      properties: {
+        title: { type: Type.STRING },
+        studyRegion: { type: Type.STRING },
+        workingDiagnosis: { type: Type.STRING },
+        certaintyLabel: { type: Type.STRING },
+        clinicalContext: { type: Type.STRING },
+        nodes: { type: Type.ARRAY, items: nodeSchema },
+        discardedDifferentials: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              name: { type: Type.STRING },
+              reason: { type: Type.STRING },
+            },
+            required: ["name", "reason"],
+          },
+        },
+        synthesis: { type: Type.STRING },
+        managementSuggestion: { type: Type.STRING },
+      },
+      required: [
+        "title",
+        "workingDiagnosis",
+        "clinicalContext",
+        "nodes",
+        "discardedDifferentials",
+        "synthesis",
+      ],
+    };
+
+    const readModelText = (response: any): string => {
+      if (response?.text && String(response.text).trim()) return String(response.text);
+      const parts = response?.candidates?.[0]?.content?.parts;
+      if (Array.isArray(parts)) {
+        return parts
+          .map((p: any) => (typeof p?.text === "string" ? p.text : ""))
+          .filter(Boolean)
+          .join("\n");
+      }
+      return "";
+    };
+
+    let rawText = "";
+    let parsed: any = null;
+
+    // Attempt 1: structured JSON schema (most reliable when supported)
+    try {
+      const response = await ai.models.generateContent({
+        model: modelToUse,
+        contents: prompt,
+        config: {
+          temperature: 0.2,
+          responseMimeType: "application/json",
+          responseSchema: fullSchema,
+        },
+      });
+      rawText = readModelText(response);
+      parsed = extractJsonObject(rawText);
+    } catch (schemaErr: any) {
+      console.warn(
+        "generate-reasoning-chain: schema attempt failed, retrying without schema:",
+        schemaErr?.message || schemaErr
+      );
+    }
+
+    // Attempt 2: JSON mime without schema
+    if (!parsed || !Array.isArray(parsed?.nodes || parsed?.nodos) || !(parsed.nodes || parsed.nodos).length) {
+      try {
+        const response2 = await ai.models.generateContent({
+          model: modelToUse,
+          contents:
+            prompt +
+            `\n\nIMPORTANTE: responde ÚNICAMENTE un objeto JSON válido. El array "nodes" DEBE tener al menos 6 elementos.`,
+          config: {
+            temperature: 0.25,
+            responseMimeType: "application/json",
+          },
+        });
+        rawText = readModelText(response2) || rawText;
+        parsed = extractJsonObject(rawText) || parsed;
+      } catch (retryErr: any) {
+        console.warn(
+          "generate-reasoning-chain: mime-json retry failed:",
+          retryErr?.message || retryErr
+        );
+      }
+    }
+
+    // Attempt 3: free-form + extract JSON
+    if (!parsed || !Array.isArray(parsed?.nodes || parsed?.nodos) || !(parsed.nodes || parsed.nodos).length) {
+      try {
+        const response3 = await ai.models.generateContent({
+          model: modelToUse,
+          contents:
+            prompt +
+            `\n\nResponde SOLO JSON (sin markdown). Campo nodes obligatorio con >=6 pasos.`,
+          config: { temperature: 0.3 },
+        });
+        rawText = readModelText(response3) || rawText;
+        parsed = extractJsonObject(rawText) || parsed;
+      } catch (retryErr2: any) {
+        console.warn(
+          "generate-reasoning-chain: freeform retry failed:",
+          retryErr2?.message || retryErr2
+        );
+      }
+    }
+
+    if (!parsed) {
+      console.error(
+        "generate-reasoning-chain: unparseable model output (first 800 chars):",
+        String(rawText || "").slice(0, 800)
+      );
+      return res.status(500).json({
+        success: false,
+        error:
+          "No se pudo interpretar la respuesta de la IA (JSON inválido). Reintenta o cambia el modelo.",
+      });
+    }
+
+    const data = normalizeReasoningChainData(parsed);
+    if (!withManagement) {
+      data.nodes = (data.nodes || []).filter((n) => n.kind !== "management");
+      data.managementSuggestion = undefined;
+    }
+    if (!data.nodes.length) {
+      console.error(
+        "generate-reasoning-chain: parsed but empty nodes. keys=",
+        Object.keys(parsed || {}),
+        "preview=",
+        String(rawText || "").slice(0, 800)
+      );
+      return res.status(500).json({
+        success: false,
+        error:
+          "La IA no devolvió nodos de razonamiento utilizables. Reintenta; si persiste, prueba otro modelo (Flash 3.8 / Pro).",
+      });
+    }
+
+    res.json({ success: true, data });
+  } catch (error: any) {
+    console.error("Error en /api/generate-reasoning-chain:", error);
     res.status(500).json({ success: false, error: handleGeminiError(error) });
   }
 });

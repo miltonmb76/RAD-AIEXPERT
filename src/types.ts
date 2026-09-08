@@ -271,3 +271,61 @@ export interface MeasurementGaugeData {
   generatedAt?: string;
 }
 
+/** Status of a node/sign in the radiological reasoning chain. */
+export type ReasoningNodeStatus =
+  | "present"
+  | "absent"
+  | "equivocal"
+  | "not_evaluated"
+  | "discarded"
+  | "context";
+
+/** Kind of step in the semiological reasoning chain. */
+export type ReasoningNodeKind =
+  | "clinical_context"
+  | "sought_signs"
+  | "key_finding"
+  | "associated_signs"
+  | "absent_signs"
+  | "lab_correlation"
+  | "synthesis"
+  | "management";
+
+export interface ReasoningSignItem {
+  label: string;
+  status: ReasoningNodeStatus;
+  /** Why this sign matters semiologically for the case. */
+  significance: string;
+  evidence?: string;
+}
+
+export interface ReasoningChainNode {
+  id: string;
+  kind: ReasoningNodeKind;
+  title: string;
+  summary: string;
+  status: ReasoningNodeStatus;
+  items?: ReasoningSignItem[];
+  clinicalLink?: string;
+  labLink?: string;
+}
+
+export interface ReasoningDiscardedItem {
+  name: string;
+  reason: string;
+}
+
+/** Vertical chain of radiological semiological reasoning for a case. */
+export interface ReasoningChainData {
+  title: string;
+  studyRegion?: string;
+  workingDiagnosis: string;
+  certaintyLabel?: string;
+  clinicalContext: string;
+  nodes: ReasoningChainNode[];
+  discardedDifferentials: ReasoningDiscardedItem[];
+  synthesis: string;
+  managementSuggestion?: string;
+  generatedAt?: string;
+}
+
