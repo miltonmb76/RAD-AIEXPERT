@@ -12,6 +12,7 @@ const CreadorNotasPie = React.lazy(() => import("./components/CreadorNotasPie").
 const BiomechanicalRadarModule = React.lazy(() => import("./components/BiomechanicalRadarModule").then(m => ({ default: m.BiomechanicalRadarModule })));
 const ClinicalScorecardModule = React.lazy(() => import("./components/ClinicalScorecardModule").then(m => ({ default: m.ClinicalScorecardModule })));
 const ReasoningChainModule = React.lazy(() => import("./components/ReasoningChainModule").then(m => ({ default: m.ReasoningChainModule })));
+const DifferentialTreeModule = React.lazy(() => import("./components/DifferentialTreeModule").then(m => ({ default: m.DifferentialTreeModule })));
 const MeasurementsGaugeModule = React.lazy(() => import("./components/MeasurementsGaugeModule").then(m => ({ default: m.MeasurementsGaugeModule })));
 const CreadorCuadroSinoptico = React.lazy(() => import("./components/CreadorCuadroSinoptico").then(m => ({ default: m.CreadorCuadroSinoptico })));
 const CreadorSinopsisFracturas = React.lazy(() => import("./components/CreadorSinopsisFracturas").then(m => ({ default: m.CreadorSinopsisFracturas })));
@@ -20,8 +21,9 @@ import { Atlas3DModule } from "./components/Atlas3DModule";
 import { renderAtlas3DAnnexToPDF } from "./utils/atlas3dPdfRenderer";
 import { renderScorecardAnnexToPDF } from "./utils/scorecardPdfRenderer";
 import { renderReasoningChainAnnexToPDF } from "./utils/reasoningChainPdfRenderer";
+import { renderDifferentialTreeAnnexToPDF } from "./utils/differentialTreePdfRenderer";
 import { renderMeasurementsGaugeAnnexToPDF } from "./utils/measurementsGaugePdfRenderer";
-import { Atlas3DData, Vascular3DData, FocalLesion3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData } from "./types";
+import { Atlas3DData, Vascular3DData, FocalLesion3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData } from "./types";
 import { buildAtlasDirectivesFromScorecard, buildVascularDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
 import { Vascular3DModule } from "./components/Vascular3DModule";
 import { FocalLesion3DModule } from "./components/FocalLesion3DModule";
@@ -112,7 +114,8 @@ import {
   Bookmark,
   Box,
   Crosshair,
-  GitBranch
+  GitBranch,
+  GitFork
 } from "lucide-react";
 import { initAuth, googleSignIn, logout as googleLogout, anonymousSignIn, emailSignIn, emailSignUp, getFirebaseConfig } from "./firebaseAuth";
 import { CloudStudy, saveStudyToCloud, getStudiesFromCloud, deleteStudyFromCloud, Worklist, WorklistPatient, saveWorklistToCloud, getWorklistFromCloud, getSingleStudyFromCloud, testFirebaseConfigConnection, saveUserSettingsToCloud, getUserSettingsFromCloud } from "./firebaseDb";
@@ -2573,6 +2576,9 @@ export default function App() {
   const [reasoningChainData, setReasoningChainData] = useState<ReasoningChainData | null>(null);
   const [includeReasoningChainInReport, setIncludeReasoningChainInReport] = useState<boolean>(true);
   const [isReasoningChainOpen, setIsReasoningChainOpen] = useState<boolean>(false);
+  const [differentialTreeData, setDifferentialTreeData] = useState<DifferentialTreeData | null>(null);
+  const [includeDifferentialTreeInReport, setIncludeDifferentialTreeInReport] = useState<boolean>(true);
+  const [isDifferentialTreeOpen, setIsDifferentialTreeOpen] = useState<boolean>(false);
   const [atlasDirectivesFromScorecard, setAtlasDirectivesFromScorecard] = useState<string>("");
   const [measurementGaugeData, setMeasurementGaugeData] = useState<MeasurementGaugeData | null>(null);
   const [includeMeasurementGaugesInReport, setIncludeMeasurementGaugesInReport] = useState<boolean>(true);
@@ -2633,6 +2639,8 @@ export default function App() {
     includeScorecardInReport,
     reasoningChainData,
     includeReasoningChainInReport,
+    differentialTreeData,
+    includeDifferentialTreeInReport,
     measurementGaugeData,
     includeMeasurementGaugesInReport,
     includeMeasurementNormalsInPdf,
@@ -3284,6 +3292,7 @@ Ejemplo:
   const DEFAULT_BATCH_MODULES: Record<string, boolean> = {
     clinical_scorecard: true,
     reasoning_chain: false,
+    differential_tree: false,
     atlas3d: true,
     vascular3d: false,
     radar: false,
@@ -3353,6 +3362,7 @@ Ejemplo:
     if (modules.organ_synoptic) setIsCreadorCuadroSinopticoOpen(true);
     if (modules.fractures) setIsCreadorSinopsisFracturasOpen(true);
     if (modules.reasoning_chain) setIsReasoningChainOpen(true);
+    if (modules.differential_tree) setIsDifferentialTreeOpen(true);
     // 2. Trigger async AI generation processes concurrently
     const promises: Promise<any>[] = [];
 
@@ -3535,6 +3545,34 @@ Ejemplo:
           }
         } catch (e) {
           console.error("Error al generar cadena de razonamiento en lote:", e);
+        }
+      })());
+    }
+
+    if (modules.differential_tree) {
+      promises.push((async () => {
+        setIsDifferentialTreeOpen(true);
+        try {
+          const resp = await fetch("/api/generate-differential-tree", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: modelFor("differential_tree"),
+              report: activeReport,
+              studyType: specificStudy || studyType || "",
+              clinicalHistory: clinicalHistory || "",
+              includeManagement: false,
+            }),
+          });
+          const j = await resp.json();
+          if (j.success && j.data) {
+            setDifferentialTreeData(j.data);
+            setIncludeDifferentialTreeInReport(true);
+          } else {
+            console.error("Arbol de diferenciales en lote fallo:", j.error);
+          }
+        } catch (e) {
+          console.error("Error al generar arbol de diferenciales en lote:", e);
         }
       })());
     }
@@ -9730,6 +9768,28 @@ Ejemplo:
         activeReasoningChain.nodes.length > 0
       ) {
         renderReasoningChainAnnexToPDF(doc, activeReasoningChain, {
+          marginX,
+          pageWidth,
+          pageHeight,
+          contentWidth,
+          factor,
+        });
+      }
+
+      // --- ANEXO: ARBOL DE DIFERENCIALES CON PODA ---
+      const activeDifferentialTree = studyOverride
+        ? (studyOverride as any).differentialTreeData
+        : (pdfStateRef.current?.differentialTreeData || differentialTreeData);
+      const shouldIncludeDifferentialTree = studyOverride
+        ? ((studyOverride as any).includeDifferentialTreeInReport !== false)
+        : ((pdfStateRef.current?.includeDifferentialTreeInReport !== false) && includeDifferentialTreeInReport);
+      if (
+        activeDifferentialTree &&
+        shouldIncludeDifferentialTree &&
+        Array.isArray(activeDifferentialTree.branches) &&
+        activeDifferentialTree.branches.length > 0
+      ) {
+        renderDifferentialTreeAnnexToPDF(doc, activeDifferentialTree, {
           marginX,
           pageWidth,
           pageHeight,
@@ -19728,6 +19788,13 @@ const splitReportAndAnnex = (text: string) => {
                                   desc: "Flujograma del pensamiento diagnostico: clinica, signos buscados/encontrados/descartados, correlacion y sintesis.",
                                   color: "text-violet-400 border-violet-500/30 bg-violet-950/20"
                                 },
+                                {
+                                  id: "differential_tree",
+                                  label: "Arbol de diferenciales con poda",
+                                  badge: "DIFERENCIALES",
+                                  desc: "Hipótesis a favor/en contra, poda de ramas incompatibles y diagnostico mas probable.",
+                                  color: "text-orange-400 border-orange-500/30 bg-orange-950/20"
+                                },
 {
                                   id: "atlas3d",
                                   label: "ðŸ§Š Atlas 3D Fotorrealista y CorrelaciÃ³n AnatÃ³mica",
@@ -20381,6 +20448,31 @@ const splitReportAndAnnex = (text: string) => {
                               </button>
                             </div>
 
+                            <div className="p-4 rounded-2xl bg-slate-950/60 border border-orange-900/40 space-y-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <h4 className="text-sm font-semibold text-orange-200 flex items-center gap-2">
+                                    <GitFork className="h-4 w-4 text-orange-400" />
+                                    Árbol de diferenciales
+                                  </h4>
+                                  <p className="text-[11px] text-slate-400 mt-1">
+                                    Hipótesis con criterios a favor/en contra y poda de ramas descartadas.
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setIsDifferentialTreeOpen((v) => !v)}
+                                className={`w-full px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
+                                  isDifferentialTreeOpen
+                                    ? "bg-orange-700 text-white"
+                                    : "bg-orange-600/80 hover:bg-orange-500 text-white"
+                                }`}
+                              >
+                                {isDifferentialTreeOpen ? "Ocultar árbol" : "Abrir árbol de diferenciales"}
+                              </button>
+                            </div>
+
                             {/* Card: Corte Focal 3D */}
                             <div className="p-4 rounded-2xl bg-slate-950/60 border border-cyan-900/40 space-y-3">
                               <div className="flex items-start justify-between gap-3">
@@ -20520,6 +20612,23 @@ const splitReportAndAnnex = (text: string) => {
                                   setChainData={setReasoningChainData}
                                   includeInReport={includeReasoningChainInReport}
                                   setIncludeInReport={setIncludeReasoningChainInReport}
+                                />
+                              </React.Suspense>
+                            </div>
+                          )}
+
+                          {isDifferentialTreeOpen && (
+                            <div className="my-6">
+                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-orange-400 bg-slate-900/60 rounded-xl border border-orange-900/40 animate-pulse">Cargando árbol de diferenciales...</div>}>
+                                <DifferentialTreeModule
+                                  selectedModel={modelFor("differential_tree")}
+                                  reportText={isEditingReportManual ? editedReportText : generatedReport}
+                                  studyType={specificStudy || studyType}
+                                  clinicalHistory={clinicalHistory}
+                                  treeData={differentialTreeData}
+                                  setTreeData={setDifferentialTreeData}
+                                  includeInReport={includeDifferentialTreeInReport}
+                                  setIncludeInReport={setIncludeDifferentialTreeInReport}
                                 />
                               </React.Suspense>
                             </div>

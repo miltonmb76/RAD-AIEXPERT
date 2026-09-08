@@ -39,6 +39,7 @@ export type ModelTask =
   | "radar"
   | "clinical_scorecard"
   | "reasoning_chain"
+  | "differential_tree"
   | "chat"
   | "default";
 
@@ -58,6 +59,7 @@ const QUALITY_TASKS: ReadonlySet<ModelTask> = new Set([
   "radar",
   "clinical_scorecard",
   "reasoning_chain",
+  "differential_tree",
   "default",
 ]);
 
