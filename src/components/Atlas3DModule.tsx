@@ -786,7 +786,7 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
               ))}
             </div>
             <p className="text-[9px] text-slate-500 font-mono leading-snug">
-              Un hallazgo muy importante adicional puede ir al módulo Focal de forma manual.
+              Regenerá el Scorecard si faltan lesiones secundarias en el inventario. Un hallazgo muy importante adicional puede ir al módulo Focal de forma manual.
             </p>
           </div>
         )}

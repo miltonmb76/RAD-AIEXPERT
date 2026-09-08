@@ -9110,7 +9110,7 @@ const response = await ai.models.generateContent({
     const criticalMet = criteria.some((c: any) => c.status === "met" && c.weight === "critical" && c.severity >= 7);
     if (criticalMet) trafficLight = "critical";
     else if (scoreTotal > 0 && scoreMet / scoreTotal >= 0.65) trafficLight = trafficLight === "low" ? "high" : trafficLight;
-    else if (scoreTotal > 0 && scoreMet / scoreTotal >= 0.35) trafficLight = trafficLight === "moderate" ? "moderate" : trafficLight === "low" ? "moderate" : trafficLight;
+    else if (scoreTotal > 0 && scoreMet / scoreTotal >= 0.35) trafficLight = trafficLight === "low" ? "moderate" : trafficLight;
 
     const panelLetters = Array.isArray(atlasPanels)
       ? atlasPanels.map((p: any) => String(p.panelLetter || "").toUpperCase()).filter(Boolean)
