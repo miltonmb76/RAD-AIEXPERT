@@ -138,6 +138,7 @@ export const ReasoningChainModule: React.FC<ReasoningChainModuleProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [focusText, setFocusText] = useState("");
+  const [includeManagement, setIncludeManagement] = useState(false);
 
   const handleGenerate = async () => {
     if (!reportText.trim()) {
@@ -156,6 +157,7 @@ export const ReasoningChainModule: React.FC<ReasoningChainModuleProps> = ({
           studyType: studyType || "",
           clinicalHistory: clinicalHistory || "",
           focusText: focusText.trim() || undefined,
+          includeManagement,
         }),
       });
       const json = await response.json();
@@ -196,15 +198,26 @@ export const ReasoningChainModule: React.FC<ReasoningChainModuleProps> = ({
             </p>
           </div>
         </div>
-        <label className="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer select-none shrink-0">
-          <input
-            type="checkbox"
-            checked={includeInReport}
-            onChange={(e) => setIncludeInReport(e.target.checked)}
-            className="rounded border-slate-600 bg-slate-800 text-violet-500 focus:ring-violet-500"
-          />
-          Incluir en PDF
-        </label>
+        <div className="flex flex-col items-end gap-2 shrink-0">
+          <label className="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={includeInReport}
+              onChange={(e) => setIncludeInReport(e.target.checked)}
+              className="rounded border-slate-600 bg-slate-800 text-violet-500 focus:ring-violet-500"
+            />
+            Incluir en PDF
+          </label>
+          <label className="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={includeManagement}
+              onChange={(e) => setIncludeManagement(e.target.checked)}
+              className="rounded border-slate-600 bg-slate-800 text-violet-500 focus:ring-violet-500"
+            />
+            Incluir propuesta terapéutica / conducta
+          </label>
+        </div>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-2">
@@ -268,7 +281,9 @@ export const ReasoningChainModule: React.FC<ReasoningChainModuleProps> = ({
           <div className="relative pl-1">
             <div className="absolute left-[22px] top-3 bottom-3 w-px border-l border-dashed border-slate-700 z-0" />
             <div className="space-y-3 relative z-10">
-              {chainData.nodes.map((node, idx) => {
+              {chainData.nodes
+                .filter((node) => includeManagement || node.kind !== "management")
+                .map((node, idx) => {
                 const accent = kindAccent(node.kind);
                 return (
                   <div key={node.id || idx} className="flex gap-3 items-start">
@@ -357,7 +372,7 @@ export const ReasoningChainModule: React.FC<ReasoningChainModuleProps> = ({
             </div>
           )}
 
-          {(chainData.synthesis || chainData.managementSuggestion) && (
+          {(chainData.synthesis || (includeManagement && chainData.managementSuggestion)) && (
             <div className="rounded-2xl border border-teal-800/40 bg-teal-950/20 p-4 space-y-2">
               {chainData.synthesis && (
                 <div>
@@ -365,7 +380,7 @@ export const ReasoningChainModule: React.FC<ReasoningChainModuleProps> = ({
                   <p className="text-[11px] text-slate-300 mt-1 leading-relaxed">{chainData.synthesis}</p>
                 </div>
               )}
-              {chainData.managementSuggestion && (
+              {includeManagement && chainData.managementSuggestion && (
                 <div>
                   <p className="text-[10px] font-black uppercase tracking-widest text-indigo-300 font-mono">Conducta sugerida</p>
                   <p className="text-[11px] text-slate-300 mt-1 leading-relaxed">{chainData.managementSuggestion}</p>

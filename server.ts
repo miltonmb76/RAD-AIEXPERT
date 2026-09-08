@@ -9139,7 +9139,7 @@ const response = await ai.models.generateContent({
  */
 app.post("/api/generate-reasoning-chain", async (req: express.Request, res: express.Response) => {
   try {
-    const { model, report, studyType, clinicalHistory, focusText } = req.body;
+    const { model, report, studyType, clinicalHistory, focusText, includeManagement } = req.body;
     if (!report || !String(report).trim()) {
       return res.status(400).json({ success: false, error: "Se requiere el parámetro 'report'." });
     }
@@ -9148,6 +9148,7 @@ app.post("/api/generate-reasoning-chain", async (req: express.Request, res: expr
     const modelToUse = getModelName(model);
     const focus = (focusText || "").toString().trim();
     const history = (clinicalHistory || "").toString().trim();
+    const withManagement = includeManagement === true;
 
     const prompt = `Eres un radiólogo hispanohablante experto en semiología y razonamiento diagnóstico.
 Reconstruye la CADENA DE RAZONAMIENTO RADIOLOGICO del caso: el proceso lógico/semiológico que un radiólogo experto seguiría al analizar el informe.
@@ -9161,7 +9162,7 @@ ${focus ? `ENFOQUE DEL MEDICO (prioridad): "${focus}"` : "Sin enfoque libre: der
 OBJETIVO:
 Explicar la importancia SEMIOLOGICA de los hallazgos (principales y asociados), correlacionarlos con clinica/laboratorio cuando consten, y explicitar signos BUSCADOS, ENCONTRADOS y DESCARTADOS/AUSENTES.
 
-Devuelve SIEMPRE el campo "nodes" como array con 6 a 8 objetos (NUNCA vacío), en este orden de kind:
+Devuelve SIEMPRE el campo "nodes" como array (NUNCA vacío), en este orden de kind:
 1. clinical_context
 2. sought_signs
 3. key_finding
@@ -9169,7 +9170,13 @@ Devuelve SIEMPRE el campo "nodes" como array con 6 a 8 objetos (NUNCA vacío), e
 5. absent_signs
 6. lab_correlation
 7. synthesis
-8. management
+${withManagement ? "8. management" : ""}
+
+PROPUESTA TERAPEUTICA / CONDUCTA: ${
+      withManagement
+        ? 'SÍ incluir nodo "management" y campo "managementSuggestion" con conducta/seguimiento breve en español (1-3 frases).'
+        : 'NO incluir propuesta terapéutica ni conducta. PROHIBIDO sugerir tratamiento, seguimiento, interconsulta o manejo. NO incluyas nodo kind "management". El campo "managementSuggestion" DEBE ser exactamente "" (cadena vacía).'
+    }
 
 REGLAS DE FIDELIDAD:
 - NO inventes hallazgos, labs ni clinicas. Si faltan: status "not_evaluated" o indica ausencia de dato.
@@ -9338,6 +9345,10 @@ ${report}
     }
 
     const data = normalizeReasoningChainData(parsed);
+    if (!withManagement) {
+      data.nodes = (data.nodes || []).filter((n) => n.kind !== "management");
+      data.managementSuggestion = undefined;
+    }
     if (!data.nodes.length) {
       console.error(
         "generate-reasoning-chain: parsed but empty nodes. keys=",

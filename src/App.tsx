@@ -3523,6 +3523,7 @@ Ejemplo:
               report: activeReport,
               studyType: specificStudy || studyType || "",
               clinicalHistory: clinicalHistory || "",
+              includeManagement: false,
             }),
           });
           const j = await resp.json();
