@@ -7,11 +7,108 @@
     <meta name="description" content="Generador de reportes clínicos y analizador de imágenes médicas con plantillas e instrucciones personalizables." />
     <meta property="og:title" content="Asistente Radiológico Experto" />
     <meta property="og:description" content="Generador de reportes clínicos y analizador de imágenes médicas con plantillas e instrucciones personalizables." />
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2500/svg' viewBox='0 0 24 24' fill='none' stroke='%236366f1' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 12h-4l-3 9L9 3l-3 9H2'/%3E%3C/svg%3E" />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236366f1' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 12h-4l-3 9L9 3l-3 9H2'/%3E%3C/svg%3E" />
+    <style>
+      html, body {
+        margin: 0;
+        min-height: 100%;
+        background: #0f172a;
+        color: #e2e8f0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+      }
+      #root { min-height: 100vh; }
+      #boot-splash {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        padding: 24px;
+        text-align: center;
+        box-sizing: border-box;
+      }
+      #boot-splash .boot-title {
+        font-size: 15px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #c7d2fe;
+      }
+      #boot-splash .boot-sub {
+        font-size: 13px;
+        color: #94a3b8;
+        max-width: 28rem;
+        line-height: 1.45;
+      }
+      #boot-splash .boot-spinner {
+        width: 28px;
+        height: 28px;
+        border: 3px solid #334155;
+        border-top-color: #818cf8;
+        border-radius: 50%;
+        animation: boot-spin 0.8s linear infinite;
+      }
+      #boot-splash .boot-retry {
+        display: none;
+        margin-top: 8px;
+        padding: 10px 16px;
+        border-radius: 10px;
+        border: 1px solid #6366f1;
+        background: #312e81;
+        color: #e0e7ff;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      @keyframes boot-spin { to { transform: rotate(360deg); } }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="boot-splash" role="status" aria-live="polite">
+        <div class="boot-spinner" aria-hidden="true"></div>
+        <div class="boot-title">RAD AI Expert</div>
+        <div class="boot-sub" id="boot-msg">Cargando la aplicación…</div>
+        <button type="button" class="boot-retry" id="boot-retry" onclick="window.location.reload()">
+          Reintentar carga
+        </button>
+      </div>
+    </div>
+    <script>
+      (function () {
+        var shown = false;
+        function showRetry(msg) {
+          if (shown) return;
+          var splash = document.getElementById("boot-splash");
+          if (!splash || !splash.isConnected) return;
+          shown = true;
+          var msgEl = document.getElementById("boot-msg");
+          var btn = document.getElementById("boot-retry");
+          var spin = splash.querySelector(".boot-spinner");
+          if (msgEl) msgEl.textContent = msg;
+          if (spin) spin.style.display = "none";
+          if (btn) btn.style.display = "inline-block";
+        }
+        // If React never mounts (stale asset / cold start), offer an explicit retry.
+        setTimeout(function () {
+          showRetry("La carga está tardando más de lo habitual (posible reinicio del servidor). Pulsa Reintentar.");
+        }, 12000);
+        window.addEventListener("error", function (ev) {
+          var msg = String((ev && ev.message) || "");
+          if (/Loading chunk|Failed to fetch|Importing a module script failed|error loading dynamically imported module/i.test(msg)) {
+            showRetry("No se pudo cargar un módulo de la app. Pulsa Reintentar.");
+          }
+        });
+        window.addEventListener("unhandledrejection", function (ev) {
+          var reason = ev && ev.reason;
+          var msg = String((reason && (reason.message || reason)) || "");
+          if (/Loading chunk|Failed to fetch|Importing a module script failed|error loading dynamically imported module/i.test(msg)) {
+            showRetry("No se pudo cargar un módulo de la app. Pulsa Reintentar.");
+          }
+        });
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

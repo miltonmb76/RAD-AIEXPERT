@@ -10231,9 +10231,43 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    // Serve index.html for all other routes
+    const assetsPath = path.join(distPath, "assets");
+
+    // Hashed Vite assets: long-cache, and NEVER fall through to SPA HTML
+    // (serving index.html as JS causes a permanent blank white screen).
+    app.use(
+      "/assets",
+      express.static(assetsPath, {
+        fallthrough: false,
+        maxAge: "1y",
+        immutable: true,
+        setHeaders: (res) => {
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        },
+      })
+    );
+
+    app.use(
+      express.static(distPath, {
+        index: false,
+        setHeaders: (res, filePath) => {
+          if (filePath.endsWith("index.html")) {
+            res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+            res.setHeader("Pragma", "no-cache");
+            res.setHeader("Expires", "0");
+          }
+        },
+      })
+    );
+
+    // SPA fallback — only for non-asset routes; always no-cache index.html
     app.get("*", (req, res) => {
+      if (req.path.startsWith("/assets/")) {
+        return res.status(404).type("text/plain").send("Asset not found");
+      }
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
       res.sendFile(path.join(distPath, "index.html"));
     });
   }

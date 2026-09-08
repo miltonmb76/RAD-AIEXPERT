@@ -1523,20 +1523,45 @@ export default function App() {
             })
             .catch(err => console.error("Error al sincronizar Firebase personalizado con el servidor:", err));
           } else if (serverConfig && serverConfig.projectId !== localCustom.projectId) {
-            // El servidor tiene una configuraciÃ³n personalizada diferente de la local. El servidor manda.
-            console.log("Sincronizando configuraciÃ³n de Firebase desde el servidor...");
-            localStorage.setItem("rad_custom_firebase_config", JSON.stringify(serverConfig));
-            localStorage.setItem("rad_custom_firebase_config_raw", JSON.stringify(serverConfig, null, 2));
-            window.location.reload();
+            // El servidor tiene una configuración personalizada diferente de la local. El servidor manda.
+            // One-shot reload guard: avoid blank-screen reload loops during cold start.
+            const reloadKey = "rad_firebase_config_reload_once";
+            if (typeof sessionStorage !== "undefined" && sessionStorage.getItem(reloadKey) === "1") {
+              console.warn("Firebase config sync ya recargó una vez en esta sesión; se omite reload.");
+              localStorage.setItem("rad_custom_firebase_config", JSON.stringify(serverConfig));
+              localStorage.setItem("rad_custom_firebase_config_raw", JSON.stringify(serverConfig, null, 2));
+            } else {
+              console.log("Sincronizando configuración de Firebase desde el servidor...");
+              localStorage.setItem("rad_custom_firebase_config", JSON.stringify(serverConfig));
+              localStorage.setItem("rad_custom_firebase_config_raw", JSON.stringify(serverConfig, null, 2));
+              try {
+                sessionStorage.setItem(reloadKey, "1");
+              } catch {
+                /* ignore */
+              }
+              window.location.reload();
+            }
           }
         } else {
-          // El navegador NO tiene una configuraciÃ³n en localStorage.
+          // El navegador NO tiene una configuración en localStorage.
           if (serverConfig && serverConfig.projectId && serverConfig.projectId !== "gen-lang-client-0578019690") {
-            // Pero el servidor sÃ­ tiene una personalizada. La descargamos y recargamos.
-            console.log("Descargando configuraciÃ³n de Firebase personalizada del servidor...");
-            localStorage.setItem("rad_custom_firebase_config", JSON.stringify(serverConfig));
-            localStorage.setItem("rad_custom_firebase_config_raw", JSON.stringify(serverConfig, null, 2));
-            window.location.reload();
+            // Pero el servidor sí tiene una personalizada. La descargamos y recargamos.
+            const reloadKey = "rad_firebase_config_reload_once";
+            if (typeof sessionStorage !== "undefined" && sessionStorage.getItem(reloadKey) === "1") {
+              console.warn("Firebase config download ya recargó una vez en esta sesión; se omite reload.");
+              localStorage.setItem("rad_custom_firebase_config", JSON.stringify(serverConfig));
+              localStorage.setItem("rad_custom_firebase_config_raw", JSON.stringify(serverConfig, null, 2));
+            } else {
+              console.log("Descargando configuración de Firebase personalizada del servidor...");
+              localStorage.setItem("rad_custom_firebase_config", JSON.stringify(serverConfig));
+              localStorage.setItem("rad_custom_firebase_config_raw", JSON.stringify(serverConfig, null, 2));
+              try {
+                sessionStorage.setItem(reloadKey, "1");
+              } catch {
+                /* ignore */
+              }
+              window.location.reload();
+            }
           }
         }
       })
