@@ -212,7 +212,17 @@ export const ReasoningChainModule: React.FC<ReasoningChainModuleProps> = ({
             <input
               type="checkbox"
               checked={includeManagement}
-              onChange={(e) => setIncludeManagement(e.target.checked)}
+              onChange={(e) => {
+                const next = e.target.checked;
+                setIncludeManagement(next);
+                if (!next && chainData) {
+                  setChainData({
+                    ...chainData,
+                    nodes: chainData.nodes.filter((n) => n.kind !== "management"),
+                    managementSuggestion: undefined,
+                  });
+                }
+              }}
               className="rounded border-slate-600 bg-slate-800 text-violet-500 focus:ring-violet-500"
             />
             Incluir propuesta terapéutica / conducta
