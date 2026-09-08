@@ -13,6 +13,7 @@ import { ClinicalScorecardData, Atlas3DData } from "../types";
 import {
   SCORECARD_PROTOCOL_OPTIONS,
   buildAtlasDirectivesFromScorecard,
+  collectAtlasLesionFindings,
   criterionStatusLabel,
   criterionWeightLabel,
   mergeOverlaysOntoAtlas,
@@ -167,8 +168,8 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
               Scorecard de Criterios Clínicos
             </h3>
             <p className="text-xs text-slate-400 mt-1 max-w-xl">
-              Checklist auditable anclado al informe. Puedes fijar órgano/patología y sincronizar
-              hallazgos con la tabla sinóptica del Atlas 3D.
+              Checklist auditable del protocolo principal + inventario de lesiones del informe
+              (principales y secundarias) para inyectar al Atlas 3D: un panel por hallazgo cuando hay varios.
             </p>
           </div>
         </div>
@@ -322,6 +323,49 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
               </tbody>
             </table>
           </div>
+
+          {(() => {
+            const lesions = collectAtlasLesionFindings(scorecardData);
+            if (!lesions.length) return null;
+            const roleLabel = (role: string) =>
+              role === "primary" ? "Principal" : role === "incidental" ? "Incidental" : "Secundario";
+            return (
+              <div className="rounded-xl border border-cyan-500/25 bg-cyan-950/15 p-3 space-y-2">
+                <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-cyan-400/90">
+                  <Layers className="w-3 h-3" />
+                  Inventario Atlas ({lesions.length} lesión{lesions.length === 1 ? "" : "es"} localizable
+                  {lesions.length === 1
+                    ? " → todos los paneles"
+                    : lesions.length <= 3
+                      ? " → 1 panel cada una"
+                      : " → top 3 paneles"})
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {lesions.map((f) => (
+                    <div
+                      key={f.id}
+                      className="min-w-[10rem] max-w-xs flex-1 rounded-lg border border-slate-700/70 bg-slate-950/60 px-2.5 py-2"
+                      title={f.evidence}
+                    >
+                      <div className="flex items-center justify-between gap-2 mb-0.5">
+                        <span className="text-[10px] font-mono font-bold text-cyan-300 uppercase">
+                          {roleLabel(f.role)}
+                        </span>
+                        <span className="text-[10px] text-slate-500">
+                          {criterionWeightLabel(f.weight)} · sev {f.severity}
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-100 font-medium truncate">{f.structure}</div>
+                      <div className="text-[11px] text-slate-400 truncate">{f.label}</div>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[10px] text-slate-500 leading-snug">
+                  No altera el score del protocolo. Alimenta la asignación Scorecard → paneles del Atlas.
+                </p>
+              </div>
+            );
+          })()}
 
           <div className={`grid grid-cols-1 gap-3 ${scorecardData.recommendation?.trim() ? "md:grid-cols-2" : ""}`}>
             <div className="rounded-xl border border-slate-700/60 bg-slate-950/40 p-3">

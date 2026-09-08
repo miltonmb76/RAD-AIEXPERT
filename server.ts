@@ -8903,18 +8903,19 @@ app.post("/api/generate-clinical-scorecard", async (req: express.Request, res: e
       : "Sin paneles Atlas aún (propón panelLetter A/B/C según estructuras).";
 
     const prompt = `Eres un radiólogo hispanohablante experto en criterios diagnósticos formales.
-Analiza el informe y genera UN Scorecard de criterios clínicos + marcadores de correlación para Atlas 3D.
+Analiza el informe y genera UN Scorecard de criterios clínicos + inventario de lesiones para Atlas 3D.
 
 IDIOMA (OBLIGATORIO E INQUEBRANTABLE):
-- TODO el texto visible al médico DEBE estar en ESPAÑOL médico: protocolName, categoryAssigned, clinicalSummary, recommendation, studyRegion, criterion, value, evidence, atlasStructure, suggestedPanelFocus, structure, finding.
+- TODO el texto visible al médico DEBE estar en ESPAÑOL médico: protocolName, categoryAssigned, clinicalSummary, recommendation, studyRegion, criterion, value, evidence, atlasStructure, suggestedPanelFocus, structure, finding, label.
 - PROHIBIDO inglés en esos campos (nada de "Tendon thickening", "Present", "Absent", "Major", "Critical", "Partial thickness tear", etc.).
 - Traduce criterios y valores al español aunque el protocolo interno sea anglosajón (ej. "Engrosamiento tendinoso (diámetro AP > 6 mm)", "Presente", "Ausente", "Rotura de espesor parcial").
-- Los ÚNICOS campos en inglés/código son: protocolId, status, weight, trafficLight, marker, panelLetter, id, linkedCriterionId.
+- Los ÚNICOS campos en inglés/código son: protocolId, status, weight, trafficLight, marker, panelLetter, id, linkedCriterionId, role.
 
 ESTUDIO: ${studyType || "No especificado"}
 PROTOCOLO PREDEFINIDO: ${requestedProtocol === "auto" ? "Detección automática del protocolo más específico" : requestedProtocol}
 ${focusText ? `ENFOQUE EXPLÍCITO DEL MÉDICO (PRIORIDAD MÁXIMA): "${focusText}"
-Debes construir el scorecard alrededor de este órgano/región/patología. Si choca con el protocolo predefinido, prioriza el enfoque del médico.` : "Sin enfoque libre adicional: usa el protocolo predefinido o auto-detecta."}
+Debes construir el scorecard (checklist de criterios) alrededor de este órgano/región/patología. Si choca con el protocolo predefinido, prioriza el enfoque del médico.
+IMPORTANTE: aunque el checklist sea de ese enfoque, atlasFindings DEBE incluir también otras lesiones localizables del informe.` : "Sin enfoque libre adicional: usa el protocolo predefinido o auto-detecta."}
 
 PANELES ATLAS DISPONIBLES:
 ${panelsHint}
@@ -8925,23 +8926,31 @@ REGLAS DE FIDELIDAD (OBLIGATORIAS):
 1. Cada criterio debe anclarse SOLO al texto del informe (evidence = cita/paráfrasis fiel en español con medidas si constan).
 2. status: "met" | "not_met" | "not_mentioned" | "equivocal".
 3. NO inventes hallazgos. Si no hay dato: not_mentioned.
-4. Incluye 6 a 12 criterios del protocolo (umbrales oficiales cuando aplique).
+4. Incluye 6 a 12 criterios del protocolo (umbrales oficiales cuando aplique). Estos criterios definen scoreMet/scoreTotal.
 5. weight: "critical" | "major" | "minor" (códigos internos; el texto del criterio va en español).
 6. severity 0-10 coherente con el hallazgo.
 7. value en español ("Presente", "Ausente", "6.8 mm", "60% del espesor", etc.).
-8. atlasOverlays: SOLO para criterios met o equivocal con anatomía localizable (máx 5). Textos en español. Vincula linkedCriterionId.
-9. panelLetter debe coincidir con un panel existente si hay lista; si no, usa A/B/C.
+8. atlasOverlays: para lesiones localizables (máx 5). Textos en español. Vincula linkedCriterionId si aplica.
+9. panelLetter debe coincidir con un panel existente si hay lista; si no, usa A/B/C en orden de prioridad de atlasFindings.
 10. trafficLight: low | moderate | high | critical.
 11. protocolName y categoryAssigned en español (ej. "Valoración ecográfica del tendón de Aquiles", "Musculoesquelético").
 12. RECOMENDACIONES: ${withRecommendations
   ? 'SÍ incluir "recommendation" con conducta/seguimiento breve en español (1-3 frases).'
   : 'NO incluir recomendaciones. El campo "recommendation" DEBE ser exactamente "" (cadena vacía). PROHIBIDO sugerir conducta, seguimiento, tratamiento o disclaimers.'}
+13. atlasFindings (OBLIGATORIO — inventario DISTINTO del checklist):
+   - Lista de lesiones/hallazgos LOCALIZABLES DISTINTOS del INFORME COMPLETO (no solo del protocolo).
+   - 1 entrada por estructura/lesión distinta. Ejemplo: colecistitis + nódulo hepático = 2 entradas (vesícula / hígado).
+   - role: "primary" (foco del protocolo), "secondary" (patología asociada relevante), "incidental" (hallazgo incidental localizable).
+   - Incluye SIEMPRE las secundarias/incidentales si constan en el informe, aunque NO entren en los criterios del protocolo.
+   - NO inventes. Máximo 5. NO afectan scoreMet/scoreTotal.
+   - Este inventario alimenta el Atlas 3D: si hay 2–3 lesiones → 1 panel por lesión.
 
 Responde JSON con:
 - protocolId, protocolName, categoryAssigned
 - scoreMet, scoreTotal, trafficLight
 - clinicalSummary, recommendation, studyRegion
 - criteria: [{ id, criterion, status, value, evidence, weight, severity, atlasStructure, suggestedPanelFocus }]
+- atlasFindings: [{ id, label, structure, evidence, value, weight, severity, role ("primary"|"secondary"|"incidental"), linkedCriterionId, suggestedPanelFocus }]
 - atlasOverlays: [{ id, panelLetter, marker, structure, finding, severity, status ("active"|"secondary"), linkedCriterionId, evidence }]
 
 INFORME:
@@ -9003,6 +9012,25 @@ const response = await ai.models.generateContent({
                 },
                 required: ["id", "panelLetter", "marker", "structure", "finding", "severity", "status"]
               }
+            },
+            atlasFindings: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  id: { type: Type.STRING },
+                  label: { type: Type.STRING },
+                  structure: { type: Type.STRING },
+                  evidence: { type: Type.STRING },
+                  value: { type: Type.STRING },
+                  weight: { type: Type.STRING },
+                  severity: { type: Type.INTEGER },
+                  role: { type: Type.STRING },
+                  linkedCriterionId: { type: Type.STRING },
+                  suggestedPanelFocus: { type: Type.STRING }
+                },
+                required: ["id", "label", "structure", "evidence", "weight", "severity", "role"]
+              }
             }
           },
           required: [
@@ -9015,6 +9043,7 @@ const response = await ai.models.generateContent({
             "clinicalSummary",
             "recommendation",
             "criteria",
+            "atlasFindings",
             "atlasOverlays"
           ]
         }
@@ -9027,6 +9056,7 @@ const response = await ai.models.generateContent({
     const allowedStatus = new Set(["met", "not_met", "not_mentioned", "equivocal"]);
     const allowedWeight = new Set(["critical", "major", "minor"]);
     const allowedLight = new Set(["low", "moderate", "high", "critical"]);
+    const allowedRole = new Set(["primary", "secondary", "incidental"]);
 
     const localizeScorecardText = (raw: string): string => {
       if (!raw) return raw;
@@ -9080,29 +9110,115 @@ const response = await ai.models.generateContent({
     const criticalMet = criteria.some((c: any) => c.status === "met" && c.weight === "critical" && c.severity >= 7);
     if (criticalMet) trafficLight = "critical";
     else if (scoreTotal > 0 && scoreMet / scoreTotal >= 0.65) trafficLight = trafficLight === "low" ? "high" : trafficLight;
-    else if (scoreTotal > 0 && scoreMet / scoreTotal >= 0.35) trafficLight = trafficLight === "low" ? "moderate" : trafficLight;
+    else if (scoreTotal > 0 && scoreMet / scoreTotal >= 0.35) trafficLight = trafficLight === "moderate" ? "moderate" : trafficLight === "low" ? "moderate" : trafficLight;
 
     const panelLetters = Array.isArray(atlasPanels)
       ? atlasPanels.map((p: any) => String(p.panelLetter || "").toUpperCase()).filter(Boolean)
       : [];
     const fallbackLetter = panelLetters[0] || "A";
 
-    const atlasOverlays = (Array.isArray(parsed.atlasOverlays) ? parsed.atlasOverlays : [])
+    const weightRank: Record<string, number> = { critical: 30, major: 15, minor: 5 };
+    const roleRank: Record<string, number> = { primary: 8, secondary: 4, incidental: 1 };
+
+    let atlasFindings = (Array.isArray(parsed.atlasFindings) ? parsed.atlasFindings : [])
+      .slice(0, 5)
+      .map((f: any, i: number) => ({
+        id: (f.id || `af${i + 1}`).toString(),
+        label: localizeScorecardText((f.label || f.structure || `Hallazgo ${i + 1}`).toString()),
+        structure: localizeScorecardText((f.structure || f.label || "").toString()),
+        evidence: localizeScorecardText((f.evidence || "").toString()),
+        value: f.value ? localizeScorecardText(String(f.value)) : undefined,
+        weight: allowedWeight.has(f.weight) ? f.weight : "major",
+        severity: typeof f.severity === "number" ? Math.min(10, Math.max(0, Math.round(f.severity))) : 0,
+        role: allowedRole.has(f.role) ? f.role : "secondary",
+        linkedCriterionId: f.linkedCriterionId ? String(f.linkedCriterionId) : undefined,
+        suggestedPanelFocus: f.suggestedPanelFocus
+          ? localizeScorecardText(String(f.suggestedPanelFocus))
+          : undefined,
+      }))
+      .filter((f: any) => f.structure);
+
+    // Fallback: seed atlasFindings from met/equivocal criteria if model omitted them
+    if (!atlasFindings.length) {
+      const seen = new Set<string>();
+      atlasFindings = criteria
+        .filter((c: any) => c.status === "met" || c.status === "equivocal")
+        .map((c: any, i: number) => {
+          const structure = c.atlasStructure || c.criterion;
+          const key = String(structure || "").toLowerCase().trim();
+          if (!key || seen.has(key)) return null;
+          seen.add(key);
+          return {
+            id: c.id || `af${i + 1}`,
+            label: c.criterion,
+            structure,
+            evidence: c.evidence || "",
+            value: c.value,
+            weight: c.weight,
+            severity: c.severity,
+            role: "primary" as const,
+            linkedCriterionId: c.id,
+            suggestedPanelFocus: c.suggestedPanelFocus,
+          };
+        })
+        .filter(Boolean)
+        .slice(0, 5);
+    }
+
+    atlasFindings = atlasFindings
+      .slice()
+      .sort((a: any, b: any) => {
+        const sa = (weightRank[a.weight] || 0) + (a.severity || 0) + (roleRank[a.role] || 0);
+        const sb = (weightRank[b.weight] || 0) + (b.severity || 0) + (roleRank[b.role] || 0);
+        return sb - sa;
+      });
+
+    // Assign default panel letters A/B/C by ranking for overlay sync
+    const findingPanelLetter = (idx: number) => {
+      const wanted = String.fromCharCode(65 + Math.min(idx, 2));
+      return panelLetters.includes(wanted) ? wanted : panelLetters[idx] || wanted || fallbackLetter;
+    };
+
+    let atlasOverlays = (Array.isArray(parsed.atlasOverlays) ? parsed.atlasOverlays : [])
       .slice(0, 5)
       .map((o: any, i: number) => {
-        const letter = String(o.panelLetter || fallbackLetter).toUpperCase();
+        const letter = String(o.panelLetter || findingPanelLetter(i)).toUpperCase();
         return {
           id: (o.id || `ov${i + 1}`).toString(),
-          panelLetter: panelLetters.includes(letter) ? letter : fallbackLetter,
+          panelLetter: panelLetters.includes(letter) ? letter : findingPanelLetter(i),
           marker: (o.marker || String.fromCharCode(65 + i)).toString().slice(0, 2),
-          structure: (o.structure || "").toString(),
-          finding: (o.finding || "").toString(),
+          structure: localizeScorecardText((o.structure || "").toString()),
+          finding: localizeScorecardText((o.finding || "").toString()),
           severity: typeof o.severity === "number" ? Math.min(10, Math.max(0, Math.round(o.severity))) : 0,
           status: o.status === "secondary" ? "secondary" : "active",
           linkedCriterionId: o.linkedCriterionId ? String(o.linkedCriterionId) : undefined,
-          evidence: o.evidence ? String(o.evidence) : undefined
+          evidence: o.evidence ? localizeScorecardText(String(o.evidence)) : undefined
         };
       });
+
+    // Ensure every atlasFinding has a matching overlay (esp. secondary lesions outside protocol)
+    for (let i = 0; i < atlasFindings.length; i++) {
+      const f = atlasFindings[i];
+      const key = String(f.structure || "").toLowerCase().slice(0, 18);
+      const exists = atlasOverlays.some(
+        (o: any) =>
+          (o.structure || "").toLowerCase().includes(key) ||
+          key.includes((o.structure || "").toLowerCase().slice(0, 18))
+      );
+      if (exists) continue;
+      atlasOverlays.push({
+        id: `ov-af-${f.id}`,
+        panelLetter: findingPanelLetter(i),
+        marker: String.fromCharCode(65 + Math.min(i, 25)),
+        structure: f.structure,
+        finding: f.label,
+        severity: f.severity,
+        status: f.role === "primary" ? "active" : "secondary",
+        linkedCriterionId: f.linkedCriterionId,
+        evidence: f.evidence,
+      });
+    }
+    atlasOverlays = atlasOverlays.slice(0, 5);
 
     const data = {
       protocolId: (parsed.protocolId || requestedProtocol || "generic").toString(),
@@ -9117,12 +9233,8 @@ const response = await ai.models.generateContent({
         : "",
       studyRegion: parsed.studyRegion ? localizeScorecardText(String(parsed.studyRegion)) : undefined,
       criteria,
-      atlasOverlays: atlasOverlays.map((o: any) => ({
-        ...o,
-        structure: localizeScorecardText(o.structure || ""),
-        finding: localizeScorecardText(o.finding || ""),
-        evidence: o.evidence ? localizeScorecardText(o.evidence) : undefined
-      })),
+      atlasFindings,
+      atlasOverlays,
       generatedAt: new Date().toISOString()
     };
 

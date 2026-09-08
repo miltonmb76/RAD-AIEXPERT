@@ -1,5 +1,6 @@
 import {
   Atlas3DData,
+  AtlasLesionFinding,
   AtlasPanelFindingAssignment,
   AtlasPathologyOverlay,
   ClinicalScorecardData,
@@ -7,8 +8,23 @@ import {
 } from "../types";
 
 const WEIGHT_SCORE: Record<string, number> = { critical: 30, major: 15, minor: 5 };
+const ROLE_SCORE: Record<string, number> = { primary: 8, secondary: 4, incidental: 1 };
 
-/** Active localizable findings from scorecard, ranked by clinical weight. */
+function normalizeStructureKey(raw: string): string {
+  return (raw || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function lesionRankScore(f: AtlasLesionFinding): number {
+  return (WEIGHT_SCORE[f.weight] || 0) + (f.severity || 0) + (ROLE_SCORE[f.role] || 0);
+}
+
+/** Active localizable findings from scorecard criteria, ranked by clinical weight. */
 export function rankActiveScorecardFindings(
   scorecard: ClinicalScorecardData | null | undefined
 ): ScorecardCriterion[] {
@@ -23,31 +39,109 @@ export function rankActiveScorecardFindings(
     });
 }
 
+/**
+ * Distinct lesions for Atlas: prefer scorecard.atlasFindings (full-report inventory);
+ * fallback groups met/equivocal criteria by atlasStructure so checklist facets ≠ separate lesions.
+ */
+export function collectAtlasLesionFindings(
+  scorecard: ClinicalScorecardData | null | undefined
+): AtlasLesionFinding[] {
+  if (!scorecard) return [];
+
+  if (scorecard.atlasFindings?.length) {
+    const byKey = new Map<string, AtlasLesionFinding>();
+    for (const raw of scorecard.atlasFindings) {
+      const structure = (raw.structure || raw.label || "").trim();
+      if (!structure) continue;
+      const key = normalizeStructureKey(structure);
+      const next: AtlasLesionFinding = {
+        id: raw.id || `lesion-${byKey.size + 1}`,
+        label: (raw.label || structure).trim(),
+        structure,
+        evidence: (raw.evidence || "").trim(),
+        value: raw.value,
+        weight: raw.weight || "major",
+        severity: typeof raw.severity === "number" ? raw.severity : 0,
+        role: raw.role || "secondary",
+        linkedCriterionId: raw.linkedCriterionId,
+        suggestedPanelFocus: raw.suggestedPanelFocus,
+      };
+      const prev = byKey.get(key);
+      if (!prev || lesionRankScore(next) > lesionRankScore(prev)) {
+        byKey.set(key, next);
+      }
+    }
+    return Array.from(byKey.values()).sort((a, b) => lesionRankScore(b) - lesionRankScore(a));
+  }
+
+  // Fallback: collapse protocol criteria into distinct structures
+  const ranked = rankActiveScorecardFindings(scorecard);
+  const byKey = new Map<string, AtlasLesionFinding>();
+  for (const c of ranked) {
+    const structure = (c.atlasStructure || c.criterion || "").trim();
+    if (!structure) continue;
+    const key = normalizeStructureKey(structure);
+    const next: AtlasLesionFinding = {
+      id: c.id,
+      label: c.criterion,
+      structure,
+      evidence: c.evidence || "",
+      value: c.value,
+      weight: c.weight,
+      severity: c.severity,
+      role: "primary",
+      linkedCriterionId: c.id,
+      suggestedPanelFocus: c.suggestedPanelFocus,
+    };
+    const prev = byKey.get(key);
+    if (!prev || lesionRankScore(next) > lesionRankScore(prev)) {
+      byKey.set(key, next);
+    }
+  }
+  return Array.from(byKey.values()).sort((a, b) => lesionRankScore(b) - lesionRankScore(a));
+}
+
 function formatFindingLine(c: ScorecardCriterion, idx: number): string {
   const val = c.value ? ` (${c.value})` : "";
   return `${idx + 1}. «${c.atlasStructure || c.criterion}»${val}: ${c.evidence || c.criterion}`;
 }
 
-/** Build a rich, panel-scoped Scorecard directive for ONE finding (keeps accuracy, avoids dominant bias). */
+function formatLesionLine(f: AtlasLesionFinding, idx: number): string {
+  const val = f.value ? ` (${f.value})` : "";
+  const role =
+    f.role === "primary" ? "principal" : f.role === "incidental" ? "incidental" : "secundario";
+  return `${idx + 1}. [${role}] «${f.structure}»${val}: ${f.evidence || f.label}`;
+}
+
+/** Build a rich, panel-scoped Scorecard directive for ONE lesion (keeps accuracy, avoids dominant bias). */
 export function buildPanelScopedFindingDirective(
   scorecard: ClinicalScorecardData,
-  finding: ScorecardCriterion,
+  finding: AtlasLesionFinding | ScorecardCriterion,
   opts: { mode: "shared_single" | "dedicated"; panelLetter: string; siblingHints?: string }
 ): string {
-  const structure = finding.atlasStructure || finding.criterion;
+  const isLesion = "structure" in finding && "role" in finding;
+  const structure = isLesion
+    ? (finding as AtlasLesionFinding).structure || (finding as AtlasLesionFinding).label
+    : (finding as ScorecardCriterion).atlasStructure || (finding as ScorecardCriterion).criterion;
+  const evidence = finding.evidence || "según informe";
+  const label = isLesion
+    ? (finding as AtlasLesionFinding).label
+    : (finding as ScorecardCriterion).criterion;
+  const role = isLesion ? (finding as AtlasLesionFinding).role : "primary";
   const val = finding.value ? ` Valor/medida: ${finding.value}.` : "";
   const sharedNote =
     opts.mode === "shared_single"
-      ? `Este panel es una vista complementaria del ÚNICO hallazgo activo del scorecard. Variá el ángulo/cutaway, pero NO cambies de lesión.`
-      : `Este panel está DEDICADO en exclusiva a ESTE hallazgo. NO redibujes ni priorices otras lesiones del scorecard. Otras lesiones solo como contexto anatómico mínimo si ayudan a orientar.`;
+      ? `Este panel es una vista complementaria del ÚNICO hallazgo activo para Atlas. Variá el ángulo/cutaway, pero NO cambies de lesión.`
+      : `Este panel está DEDICADO en exclusiva a ESTE hallazgo (${role}). NO redibujes ni priorices otras lesiones. Otras lesiones solo como contexto anatómico mínimo si ayudan a orientar.`;
 
   return [
     `DIRECTIVA SCORECARD ACOTADA AL PANEL ${opts.panelLetter} (${scorecard.protocolName} — ${scorecard.categoryAssigned}):`,
-    `Hallazgo asignado: «${structure}».`,
-    `Evidencia del scorecard:${val} ${finding.evidence || "según informe"}.`,
+    `Hallazgo asignado: «${structure}» (${label}).`,
+    `Rol en el estudio: ${role}.`,
+    `Evidencia del scorecard/informe:${val} ${evidence}.`,
     `Peso: ${finding.weight || "major"}; severidad: ${finding.severity ?? "n/d"}.`,
     sharedNote,
-    "Mantén exactitud morfométrica/morfológica del scorecard (medidas, lado, aspecto).",
+    "Mantén exactitud morfométrica/morfológica (medidas, lado, aspecto).",
     "Highlight cromático / cutaway SOLO en el hallazgo asignado a este panel.",
     "No inventes hallazgos fuera de esta directiva acotada.",
     opts.siblingHints ? `Contexto de otros hallazgos del estudio (NO dibujar como foco): ${opts.siblingHints}` : "",
@@ -57,15 +151,15 @@ export function buildPanelScopedFindingDirective(
 }
 
 /**
- * Assign Scorecard findings to Atlas panels:
- * - 1 finding  → 2–3 panels all on that finding (shared_single)
- * - 2 findings → 2 panels, one each (dedicated)
- * - 3+ findings → 3 panels, top 3 by weight/severity (dedicated)
+ * Assign distinct Scorecard lesions to Atlas panels:
+ * - 1 lesion  → 2–3 panels all on that finding (shared_single)
+ * - 2 lesions → 2 panels, one each (dedicated)
+ * - 3+ lesions → 3 panels, top 3 by weight/severity (dedicated)
  */
 export function buildAtlasPanelFindingAssignments(
   scorecard: ClinicalScorecardData | null | undefined
 ): AtlasPanelFindingAssignment[] {
-  const ranked = rankActiveScorecardFindings(scorecard);
+  const ranked = collectAtlasLesionFindings(scorecard);
   if (!scorecard || !ranked.length) return [];
 
   const top = ranked.slice(0, 3);
@@ -78,13 +172,13 @@ export function buildAtlasPanelFindingAssignments(
     const finding = mode === "shared_single" ? top[0] : top[idx];
     const siblings = top
       .filter((f) => f.id !== finding.id)
-      .map((f) => f.atlasStructure || f.criterion)
+      .map((f) => f.structure || f.label)
       .join("; ");
     return {
       panelLetter,
       findingId: finding.id,
-      label: finding.criterion,
-      structure: finding.atlasStructure || finding.criterion,
+      label: finding.label,
+      structure: finding.structure,
       evidence: finding.evidence || "",
       value: finding.value,
       weight: finding.weight,
@@ -135,20 +229,30 @@ export function formatAtlasFindingAssignmentPlan(
 export function buildAtlasDirectivesFromScorecard(
   scorecard: ClinicalScorecardData | null | undefined
 ): string {
-  if (!scorecard?.criteria?.length) return "";
+  if (!scorecard) return "";
+  const lesions = collectAtlasLesionFindings(scorecard);
   const active = rankActiveScorecardFindings(scorecard);
-  if (!active.length) return "";
+  if (!lesions.length && !active.length) return "";
 
-  const lines = active.slice(0, 8).map((c, i) => formatFindingLine(c, i));
+  const lesionLines = lesions.slice(0, 5).map((f, i) => formatLesionLine(f, i));
+  const criterionLines = active.slice(0, 8).map((c, i) => formatFindingLine(c, i));
 
   return [
     `PATOLOGÍA ACTIVA DEL SCORECARD (${scorecard.protocolName} — ${scorecard.categoryAssigned}):`,
     `Semáforo: ${scorecard.trafficLight}. Criterios positivos: ${scorecard.scoreMet}/${scorecard.scoreTotal}.`,
-    "Hallazgos activos (ordenados por peso/severidad):",
-    ...lines,
+    lesionLines.length
+      ? "Lesiones localizables del informe (inventario Atlas — principales y secundarias):"
+      : "",
+    ...lesionLines,
+    criterionLines.length && !lesionLines.length
+      ? "Hallazgos activos del protocolo (ordenados por peso/severidad):"
+      : "",
+    ...(!lesionLines.length ? criterionLines : []),
     "Si hay asignación por panel, cada panel debe respetar SU hallazgo acotado (no diluir con el dominante ajeno).",
     "No inventes hallazgos fuera de esta lista.",
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 /**
@@ -199,6 +303,35 @@ export function buildVascularDirectivesFromScorecard(
 }
 
 /** Merge scorecard-derived overlays onto existing atlas data (panel letters remapped if needed). */
+export function alignOverlaysToPanelAssignments(
+  overlays: AtlasPathologyOverlay[] | undefined,
+  assignments: AtlasPanelFindingAssignment[] | undefined
+): AtlasPathologyOverlay[] {
+  if (!overlays?.length) return [];
+  if (!assignments?.length) return overlays;
+
+  return overlays.map((o, idx) => {
+    const key = normalizeStructureKey(o.structure || o.finding || "");
+    const match =
+      assignments.find((a) => {
+        const ak = normalizeStructureKey(a.structure || a.label);
+        return (
+          !!key &&
+          !!ak &&
+          (ak.includes(key.slice(0, 14)) || key.includes(ak.slice(0, 14)))
+        );
+      }) || assignments[Math.min(idx, assignments.length - 1)];
+    return {
+      ...o,
+      panelLetter: match?.panelLetter || o.panelLetter,
+      status:
+        match && assignments[0]?.mode === "dedicated" && idx > 0
+          ? o.status || "secondary"
+          : o.status,
+    };
+  });
+}
+
 export function mergeOverlaysOntoAtlas(
   atlas: Atlas3DData | null,
   overlays: AtlasPathologyOverlay[] | undefined,
@@ -206,12 +339,17 @@ export function mergeOverlaysOntoAtlas(
 ): Atlas3DData | null {
   if (!atlas || !overlays?.length) return atlas;
 
+  const aligned = alignOverlaysToPanelAssignments(
+    overlays,
+    atlas.panelFindingAssignments
+  );
+
   const panelLetters = (atlas.panels || [])
     .map((p) => (p.panelLetter || "").toUpperCase())
     .filter(Boolean);
   const fallbackLetter = panelLetters[0] || "A";
 
-  const normalized = overlays.map((o, idx) => {
+  const normalized = aligned.map((o, idx) => {
     const letter = (o.panelLetter || "").toUpperCase();
     const panelLetter = panelLetters.includes(letter) ? letter : fallbackLetter;
     return {

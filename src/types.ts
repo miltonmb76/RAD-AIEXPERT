@@ -176,6 +176,24 @@ export interface AtlasPanelFindingAssignment {
   directive: string;
 }
 
+/**
+ * Distinct localizable lesion for Atlas (protocol primary + secondary/incidental).
+ * Does NOT affect scoreMet/scoreTotal — those stay protocol-checklist fidelity.
+ */
+export interface AtlasLesionFinding {
+  id: string;
+  label: string;
+  structure: string;
+  evidence: string;
+  value?: string;
+  weight: "critical" | "major" | "minor";
+  severity: number;
+  /** primary = protocol focus; secondary/incidental = other report lesions */
+  role: "primary" | "secondary" | "incidental";
+  linkedCriterionId?: string;
+  suggestedPanelFocus?: string;
+}
+
 export interface ClinicalScorecardData {
   protocolId: string;
   protocolName: string;
@@ -186,6 +204,11 @@ export interface ClinicalScorecardData {
   clinicalSummary: string;
   recommendation: string;
   criteria: ScorecardCriterion[];
+  /**
+   * Distinct lesions across the FULL report (not only the protocol checklist).
+   * Drives Atlas panel assignment: 1 finding → all panels; 2–3 → one panel each.
+   */
+  atlasFindings?: AtlasLesionFinding[];
   /** Ready-to-merge Atlas overlays derived from met/partial criteria */
   atlasOverlays: AtlasPathologyOverlay[];
   studyRegion?: string;
