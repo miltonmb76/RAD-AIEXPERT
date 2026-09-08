@@ -1,4 +1,4 @@
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
   getAuth, 
   signInWithPopup, 
@@ -31,8 +31,28 @@ export function getFirebaseConfig() {
 
 const activeConfig = getFirebaseConfig();
 
-// Initialize Firebase
-export const app = initializeApp(activeConfig);
+// Initialize Firebase — never throw at import time (blank screen on bad cached config).
+function createFirebaseApp(config: Record<string, unknown>) {
+  if (getApps().length) return getApp();
+  return initializeApp(config);
+}
+
+let appInstance: ReturnType<typeof initializeApp>;
+try {
+  appInstance = createFirebaseApp(activeConfig);
+} catch (err) {
+  console.error("Firebase initializeApp falló con config activa; reintentando con default.", err);
+  try {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("rad_custom_firebase_config");
+      localStorage.removeItem("rad_custom_firebase_config_raw");
+    }
+  } catch {
+    /* ignore */
+  }
+  appInstance = createFirebaseApp(firebaseConfig as Record<string, unknown>);
+}
+export const app = appInstance;
 export const auth = getAuth(app);
 
 // Configure Google OAuth Provider
