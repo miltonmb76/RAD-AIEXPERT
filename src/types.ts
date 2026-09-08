@@ -331,7 +331,6 @@ export type ReasoningNodeKind =
   | "key_finding"
   | "associated_signs"
   | "absent_signs"
-  | "lab_correlation"
   | "synthesis"
   | "management";
 
