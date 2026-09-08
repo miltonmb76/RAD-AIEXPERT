@@ -7,7 +7,7 @@ import fs from "fs";
 import { GoogleGenAI, Type } from "@google/genai";
 import sharp from "sharp";
 import { registerAtlas3DRoutes } from "./server_atlas3d";
-import { normalizeReasoningChainData } from "./src/lib/reasoningChain";
+import { normalizeReasoningChainData, extractJsonObject } from "./src/lib/reasoningChain";
 
 // Lazy-loaded GenAI client to prevent crash on startup if API key is missing
 let aiClient: GoogleGenAI | null = null;
@@ -9161,49 +9161,26 @@ ${focus ? `ENFOQUE DEL MEDICO (prioridad): "${focus}"` : "Sin enfoque libre: der
 OBJETIVO:
 Explicar la importancia SEMIOLOGICA de los hallazgos (principales y asociados), correlacionarlos con clinica/laboratorio cuando consten, y explicitar signos BUSCADOS, ENCONTRADOS y DESCARTADOS/AUSENTES.
 
-Estructura OBLIGATORIA de nodes (en este orden, 6 a 8 nodos):
-1. clinical_context — contexto clinico de partida (motivo, sintomas si constan)
-2. sought_signs — que signos se buscan ante esa sospecha (checklist mental)
-3. key_finding — hallazgo clave del informe (punto de anclaje)
-4. associated_signs — hallazgos asociados y por que refuerzan o matizan
-5. absent_signs — signos negativos criticos buscados y no hallados (o no mencionados con impacto)
-6. lab_correlation — correlacion clinica/laboratorio-imagen (si no hay lab, dilo sin inventar)
-7. synthesis — sintesis diagnostica
-8. management — conducta sugerida breve (si el informe no la implica, deja summary corto o vacio)
+Devuelve SIEMPRE el campo "nodes" como array con 6 a 8 objetos (NUNCA vacío), en este orden de kind:
+1. clinical_context
+2. sought_signs
+3. key_finding
+4. associated_signs
+5. absent_signs
+6. lab_correlation
+7. synthesis
+8. management
 
 REGLAS DE FIDELIDAD:
 - NO inventes hallazgos, labs ni clinicas. Si faltan: status "not_evaluated" o indica ausencia de dato.
 - Cada item debe tener "significance" (por que importa semiológicamente).
 - evidence = cita/parafrasis fiel del informe cuando exista.
 - status por nodo/item: present | absent | equivocal | not_evaluated | discarded | context
-- discardedDifferentials: hipotesis alternativas descartadas CON motivo (signo ausente / incompatible).
-- certaintyLabel: Alta | Media | Baja (cualitativa, sin inventar %).
+- discardedDifferentials: hipotesis alternativas descartadas CON motivo.
+- certaintyLabel: Alta | Media | Baja.
 
-Responde SOLO JSON:
-{
-  "title": "Cadena de razonamiento radiologico",
-  "studyRegion": "string",
-  "workingDiagnosis": "string",
-  "certaintyLabel": "Alta|Media|Baja",
-  "clinicalContext": "string",
-  "nodes": [
-    {
-      "id": "n1",
-      "kind": "clinical_context|sought_signs|key_finding|associated_signs|absent_signs|lab_correlation|synthesis|management",
-      "title": "string",
-      "summary": "string",
-      "status": "present|absent|equivocal|not_evaluated|discarded|context",
-      "items": [
-        { "label": "string", "status": "present|absent|...", "significance": "string", "evidence": "string" }
-      ],
-      "clinicalLink": "string opcional",
-      "labLink": "string opcional"
-    }
-  ],
-  "discardedDifferentials": [{ "name": "string", "reason": "string" }],
-  "synthesis": "string",
-  "managementSuggestion": "string"
-}
+Claves JSON OBLIGATORIAS en inglés exacto: title, studyRegion, workingDiagnosis, certaintyLabel, clinicalContext, nodes, discardedDifferentials, synthesis, managementSuggestion.
+Cada nodo DEBE tener: id, kind, title, summary, status, items (array; puede ser []).
 
 INFORME:
 """
@@ -9211,77 +9188,167 @@ ${report}
 """
 `;
 
-    const response = await ai.models.generateContent({
-      model: modelToUse,
-      contents: prompt,
-      config: {
-        temperature: 0.15,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            title: { type: Type.STRING },
-            studyRegion: { type: Type.STRING },
-            workingDiagnosis: { type: Type.STRING },
-            certaintyLabel: { type: Type.STRING },
-            clinicalContext: { type: Type.STRING },
-            nodes: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  id: { type: Type.STRING },
-                  kind: { type: Type.STRING },
-                  title: { type: Type.STRING },
-                  summary: { type: Type.STRING },
-                  status: { type: Type.STRING },
-                  items: {
-                    type: Type.ARRAY,
-                    items: {
-                      type: Type.OBJECT,
-                      properties: {
-                        label: { type: Type.STRING },
-                        status: { type: Type.STRING },
-                        significance: { type: Type.STRING },
-                        evidence: { type: Type.STRING },
-                      },
-                    },
-                  },
-                  clinicalLink: { type: Type.STRING },
-                  labLink: { type: Type.STRING },
-                },
-              },
+    const nodeItemSchema = {
+      type: Type.OBJECT,
+      properties: {
+        label: { type: Type.STRING },
+        status: { type: Type.STRING },
+        significance: { type: Type.STRING },
+        evidence: { type: Type.STRING },
+      },
+      required: ["label", "status", "significance"],
+    };
+
+    const nodeSchema = {
+      type: Type.OBJECT,
+      properties: {
+        id: { type: Type.STRING },
+        kind: { type: Type.STRING },
+        title: { type: Type.STRING },
+        summary: { type: Type.STRING },
+        status: { type: Type.STRING },
+        items: { type: Type.ARRAY, items: nodeItemSchema },
+        clinicalLink: { type: Type.STRING },
+        labLink: { type: Type.STRING },
+      },
+      required: ["id", "kind", "title", "summary", "status", "items"],
+    };
+
+    const fullSchema = {
+      type: Type.OBJECT,
+      properties: {
+        title: { type: Type.STRING },
+        studyRegion: { type: Type.STRING },
+        workingDiagnosis: { type: Type.STRING },
+        certaintyLabel: { type: Type.STRING },
+        clinicalContext: { type: Type.STRING },
+        nodes: { type: Type.ARRAY, items: nodeSchema },
+        discardedDifferentials: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              name: { type: Type.STRING },
+              reason: { type: Type.STRING },
             },
-            discardedDifferentials: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  name: { type: Type.STRING },
-                  reason: { type: Type.STRING },
-                },
-              },
-            },
-            synthesis: { type: Type.STRING },
-            managementSuggestion: { type: Type.STRING },
+            required: ["name", "reason"],
           },
         },
+        synthesis: { type: Type.STRING },
+        managementSuggestion: { type: Type.STRING },
       },
-    });
+      required: [
+        "title",
+        "workingDiagnosis",
+        "clinicalContext",
+        "nodes",
+        "discardedDifferentials",
+        "synthesis",
+      ],
+    };
 
-    const rawText = response.text || "{}";
-    let parsed: any = {};
+    const readModelText = (response: any): string => {
+      if (response?.text && String(response.text).trim()) return String(response.text);
+      const parts = response?.candidates?.[0]?.content?.parts;
+      if (Array.isArray(parts)) {
+        return parts
+          .map((p: any) => (typeof p?.text === "string" ? p.text : ""))
+          .filter(Boolean)
+          .join("\n");
+      }
+      return "";
+    };
+
+    let rawText = "";
+    let parsed: any = null;
+
+    // Attempt 1: structured JSON schema (most reliable when supported)
     try {
-      parsed = JSON.parse(rawText);
-    } catch {
-      parsed = {};
+      const response = await ai.models.generateContent({
+        model: modelToUse,
+        contents: prompt,
+        config: {
+          temperature: 0.2,
+          responseMimeType: "application/json",
+          responseSchema: fullSchema,
+        },
+      });
+      rawText = readModelText(response);
+      parsed = extractJsonObject(rawText);
+    } catch (schemaErr: any) {
+      console.warn(
+        "generate-reasoning-chain: schema attempt failed, retrying without schema:",
+        schemaErr?.message || schemaErr
+      );
+    }
+
+    // Attempt 2: JSON mime without schema
+    if (!parsed || !Array.isArray(parsed?.nodes || parsed?.nodos) || !(parsed.nodes || parsed.nodos).length) {
+      try {
+        const response2 = await ai.models.generateContent({
+          model: modelToUse,
+          contents:
+            prompt +
+            `\n\nIMPORTANTE: responde ÚNICAMENTE un objeto JSON válido. El array "nodes" DEBE tener al menos 6 elementos.`,
+          config: {
+            temperature: 0.25,
+            responseMimeType: "application/json",
+          },
+        });
+        rawText = readModelText(response2) || rawText;
+        parsed = extractJsonObject(rawText) || parsed;
+      } catch (retryErr: any) {
+        console.warn(
+          "generate-reasoning-chain: mime-json retry failed:",
+          retryErr?.message || retryErr
+        );
+      }
+    }
+
+    // Attempt 3: free-form + extract JSON
+    if (!parsed || !Array.isArray(parsed?.nodes || parsed?.nodos) || !(parsed.nodes || parsed.nodos).length) {
+      try {
+        const response3 = await ai.models.generateContent({
+          model: modelToUse,
+          contents:
+            prompt +
+            `\n\nResponde SOLO JSON (sin markdown). Campo nodes obligatorio con >=6 pasos.`,
+          config: { temperature: 0.3 },
+        });
+        rawText = readModelText(response3) || rawText;
+        parsed = extractJsonObject(rawText) || parsed;
+      } catch (retryErr2: any) {
+        console.warn(
+          "generate-reasoning-chain: freeform retry failed:",
+          retryErr2?.message || retryErr2
+        );
+      }
+    }
+
+    if (!parsed) {
+      console.error(
+        "generate-reasoning-chain: unparseable model output (first 800 chars):",
+        String(rawText || "").slice(0, 800)
+      );
+      return res.status(500).json({
+        success: false,
+        error:
+          "No se pudo interpretar la respuesta de la IA (JSON inválido). Reintenta o cambia el modelo.",
+      });
     }
 
     const data = normalizeReasoningChainData(parsed);
     if (!data.nodes.length) {
+      console.error(
+        "generate-reasoning-chain: parsed but empty nodes. keys=",
+        Object.keys(parsed || {}),
+        "preview=",
+        String(rawText || "").slice(0, 800)
+      );
       return res.status(500).json({
         success: false,
-        error: "La IA no devolvió nodos de razonamiento utilizables.",
+        error:
+          "La IA no devolvió nodos de razonamiento utilizables. Reintenta; si persiste, prueba otro modelo (Flash 3.8 / Pro).",
       });
     }
 
