@@ -13,6 +13,7 @@ const BiomechanicalRadarModule = React.lazy(() => import("./components/Biomechan
 const ClinicalScorecardModule = React.lazy(() => import("./components/ClinicalScorecardModule").then(m => ({ default: m.ClinicalScorecardModule })));
 const ReasoningChainModule = React.lazy(() => import("./components/ReasoningChainModule").then(m => ({ default: m.ReasoningChainModule })));
 const DifferentialTreeModule = React.lazy(() => import("./components/DifferentialTreeModule").then(m => ({ default: m.DifferentialTreeModule })));
+const ScorecardReasoningBridgeModule = React.lazy(() => import("./components/ScorecardReasoningBridgeModule").then(m => ({ default: m.ScorecardReasoningBridgeModule })));
 const MeasurementsGaugeModule = React.lazy(() => import("./components/MeasurementsGaugeModule").then(m => ({ default: m.MeasurementsGaugeModule })));
 const CreadorCuadroSinoptico = React.lazy(() => import("./components/CreadorCuadroSinoptico").then(m => ({ default: m.CreadorCuadroSinoptico })));
 const CreadorSinopsisFracturas = React.lazy(() => import("./components/CreadorSinopsisFracturas").then(m => ({ default: m.CreadorSinopsisFracturas })));
@@ -22,8 +23,9 @@ import { renderAtlas3DAnnexToPDF } from "./utils/atlas3dPdfRenderer";
 import { renderScorecardAnnexToPDF } from "./utils/scorecardPdfRenderer";
 import { renderReasoningChainAnnexToPDF } from "./utils/reasoningChainPdfRenderer";
 import { renderDifferentialTreeAnnexToPDF } from "./utils/differentialTreePdfRenderer";
+import { renderScorecardDecisionGraphAnnexToPDF } from "./utils/scorecardDecisionGraphPdfRenderer";
 import { renderMeasurementsGaugeAnnexToPDF } from "./utils/measurementsGaugePdfRenderer";
-import { Atlas3DData, Vascular3DData, FocalLesion3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData } from "./types";
+import { Atlas3DData, Vascular3DData, FocalLesion3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData, ProtocolDecisionGraphData } from "./types";
 import { buildAtlasDirectivesFromScorecard, buildVascularDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
 import { Vascular3DModule } from "./components/Vascular3DModule";
 import { FocalLesion3DModule } from "./components/FocalLesion3DModule";
@@ -115,7 +117,8 @@ import {
   Box,
   Crosshair,
   GitBranch,
-  GitFork
+  GitFork,
+  Waypoints
 } from "lucide-react";
 import { initAuth, googleSignIn, logout as googleLogout, anonymousSignIn, emailSignIn, emailSignUp, getFirebaseConfig } from "./firebaseAuth";
 import { CloudStudy, saveStudyToCloud, getStudiesFromCloud, deleteStudyFromCloud, Worklist, WorklistPatient, saveWorklistToCloud, getWorklistFromCloud, getSingleStudyFromCloud, testFirebaseConfigConnection, saveUserSettingsToCloud, getUserSettingsFromCloud } from "./firebaseDb";
@@ -2579,6 +2582,9 @@ export default function App() {
   const [differentialTreeData, setDifferentialTreeData] = useState<DifferentialTreeData | null>(null);
   const [includeDifferentialTreeInReport, setIncludeDifferentialTreeInReport] = useState<boolean>(true);
   const [isDifferentialTreeOpen, setIsDifferentialTreeOpen] = useState<boolean>(false);
+  const [protocolGraphData, setProtocolGraphData] = useState<ProtocolDecisionGraphData | null>(null);
+  const [includeProtocolGraphInReport, setIncludeProtocolGraphInReport] = useState<boolean>(true);
+  const [isProtocolGraphOpen, setIsProtocolGraphOpen] = useState<boolean>(false);
   const [atlasDirectivesFromScorecard, setAtlasDirectivesFromScorecard] = useState<string>("");
   const [measurementGaugeData, setMeasurementGaugeData] = useState<MeasurementGaugeData | null>(null);
   const [includeMeasurementGaugesInReport, setIncludeMeasurementGaugesInReport] = useState<boolean>(true);
@@ -2641,6 +2647,8 @@ export default function App() {
     includeReasoningChainInReport,
     differentialTreeData,
     includeDifferentialTreeInReport,
+    protocolGraphData,
+    includeProtocolGraphInReport,
     measurementGaugeData,
     includeMeasurementGaugesInReport,
     includeMeasurementNormalsInPdf,
@@ -3291,6 +3299,7 @@ Ejemplo:
   // States & Handlers for Sistema de ActivaciÃ³n RÃ¡pida de MÃ³dulos (Procesamiento en Lote)
   const DEFAULT_BATCH_MODULES: Record<string, boolean> = {
     clinical_scorecard: true,
+    scorecard_bridge: false,
     reasoning_chain: false,
     differential_tree: false,
     atlas3d: true,
@@ -3363,6 +3372,7 @@ Ejemplo:
     if (modules.fractures) setIsCreadorSinopsisFracturasOpen(true);
     if (modules.reasoning_chain) setIsReasoningChainOpen(true);
     if (modules.differential_tree) setIsDifferentialTreeOpen(true);
+    if (modules.scorecard_bridge) setIsProtocolGraphOpen(true);
     // 2. Trigger async AI generation processes concurrently
     const promises: Promise<any>[] = [];
 
@@ -3435,12 +3445,12 @@ Ejemplo:
 
     if (modules.glossary) promises.push(handleGenerateDynamicGlossary());
     if (modules.schematic) promises.push(handleGenerateSchematicSummary());
-    // Scorecard first (findings-based), then Atlas and/or Vascular guided by scorecard directives
-    if (modules.clinical_scorecard || modules.atlas3d || modules.vascular3d) {
+    // Scorecard first (findings-based), then bridge / Atlas / Vascular guided by scorecard
+    if (modules.clinical_scorecard || modules.scorecard_bridge || modules.atlas3d || modules.vascular3d) {
       promises.push((async () => {
         let scorecardForModules = clinicalScorecardData;
 
-        if (modules.clinical_scorecard) {
+        if (modules.clinical_scorecard || modules.scorecard_bridge) {
           setIsClinicalScorecardOpen(true);
           try {
             const scResp = await fetch("/api/generate-clinical-scorecard", {
@@ -3466,6 +3476,32 @@ Ejemplo:
             }
           } catch (scErr) {
             console.error("Error al generar Scorecard en lote:", scErr);
+          }
+        }
+
+        if (modules.scorecard_bridge && scorecardForModules) {
+          setIsProtocolGraphOpen(true);
+          try {
+            const bridgeResp = await fetch("/api/generate-scorecard-decision-graph", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                model: modelFor("scorecard_bridge"),
+                report: activeReport,
+                studyType: specificStudy || studyType || "",
+                scorecard: scorecardForModules,
+                protocolId: scorecardForModules.protocolId || "auto",
+              }),
+            });
+            const bridgeJson = await bridgeResp.json();
+            if (bridgeJson.success && bridgeJson.data) {
+              setProtocolGraphData(bridgeJson.data);
+              setIncludeProtocolGraphInReport(true);
+            } else {
+              console.error("Puente Scorecard en lote fallo:", bridgeJson.error);
+            }
+          } catch (bridgeErr) {
+            console.error("Error al generar puente Scorecard en lote:", bridgeErr);
           }
         }
 
@@ -9751,6 +9787,28 @@ Ejemplo:
           pageHeight,
           contentWidth,
           factor
+        });
+      }
+
+      // --- ANEXO: PUENTE SCORECARD ? GRAFO DE DECISION ---
+      const activeProtocolGraph = studyOverride
+        ? (studyOverride as any).protocolGraphData
+        : (pdfStateRef.current?.protocolGraphData || protocolGraphData);
+      const shouldIncludeProtocolGraph = studyOverride
+        ? ((studyOverride as any).includeProtocolGraphInReport !== false)
+        : ((pdfStateRef.current?.includeProtocolGraphInReport !== false) && includeProtocolGraphInReport);
+      if (
+        activeProtocolGraph &&
+        shouldIncludeProtocolGraph &&
+        Array.isArray(activeProtocolGraph.nodes) &&
+        activeProtocolGraph.nodes.length > 0
+      ) {
+        renderScorecardDecisionGraphAnnexToPDF(doc, activeProtocolGraph, {
+          marginX,
+          pageWidth,
+          pageHeight,
+          contentWidth,
+          factor,
         });
       }
 
@@ -19782,6 +19840,13 @@ const splitReportAndAnnex = (text: string) => {
                                   color: "text-teal-400 border-teal-500/30 bg-teal-950/20"
                                 },
                                 {
+                                  id: "scorecard_bridge",
+                                  label: "Puente Scorecard ? grafo de decision",
+                                  badge: "PROTOCOLO",
+                                  desc: "Convierte el Scorecard en grafo de decision del protocolo (criterios iluminados + narrativa del recorrido).",
+                                  color: "text-cyan-400 border-cyan-500/30 bg-cyan-950/20"
+                                },
+                                {
                                   id: "reasoning_chain",
                                   label: "Cadena de razonamiento radiologico",
                                   badge: "SEMIOLOGIA",
@@ -20423,6 +20488,31 @@ const splitReportAndAnnex = (text: string) => {
                               </button>
                             </div>
 
+                            <div className="p-4 rounded-2xl bg-slate-950/60 border border-cyan-900/40 space-y-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <h4 className="text-sm font-semibold text-cyan-200 flex items-center gap-2">
+                                    <Waypoints className="h-4 w-4 text-cyan-400" />
+                                    Puente Scorecard ? razonamiento
+                                  </h4>
+                                  <p className="text-[11px] text-slate-400 mt-1">
+                                    Grafo de decisión del protocolo iluminado con los criterios del Scorecard.
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setIsProtocolGraphOpen((v) => !v)}
+                                className={`w-full px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
+                                  isProtocolGraphOpen
+                                    ? "bg-cyan-700 text-white"
+                                    : "bg-cyan-600/80 hover:bg-cyan-500 text-white"
+                                }`}
+                              >
+                                {isProtocolGraphOpen ? "Ocultar grafo" : "Abrir grafo de decisión"}
+                              </button>
+                            </div>
+
                             <div className="p-4 rounded-2xl bg-slate-950/60 border border-violet-900/40 space-y-3">
                               <div className="flex items-start justify-between gap-3">
                                 <div>
@@ -20595,6 +20685,24 @@ const splitReportAndAnnex = (text: string) => {
                                   atlasData={atlas3dData}
                                   setAtlasData={setAtlas3dData}
                                   onAtlasDirectivesSuggested={setAtlasDirectivesFromScorecard}
+                                />
+                              </React.Suspense>
+                            </div>
+                          )}
+
+                          {isProtocolGraphOpen && (
+                            <div className="my-6">
+                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-cyan-400 bg-slate-900/60 rounded-xl border border-cyan-900/40 animate-pulse">Cargando grafo de decisión...</div>}>
+                                <ScorecardReasoningBridgeModule
+                                  selectedModel={modelFor("scorecard_bridge")}
+                                  reportText={isEditingReportManual ? editedReportText : generatedReport}
+                                  studyType={specificStudy || studyType}
+                                  scorecardData={clinicalScorecardData}
+                                  setScorecardData={setClinicalScorecardData}
+                                  graphData={protocolGraphData}
+                                  setGraphData={setProtocolGraphData}
+                                  includeInReport={includeProtocolGraphInReport}
+                                  setIncludeInReport={setIncludeProtocolGraphInReport}
                                 />
                               </React.Suspense>
                             </div>

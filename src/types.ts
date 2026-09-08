@@ -365,3 +365,52 @@ export interface DifferentialTreeData {
   generatedAt?: string;
 }
 
+/** Node kinds in the Scorecard → protocol decision graph bridge. */
+export type ProtocolGraphNodeKind =
+  | "start"
+  | "criterion"
+  | "gate"
+  | "category"
+  | "action";
+
+export interface ProtocolGraphNode {
+  id: string;
+  kind: ProtocolGraphNodeKind;
+  label: string;
+  /** Links to ClinicalScorecardData.criteria[].id when kind=criterion. */
+  linkedCriterionId?: string;
+  /** Painted from scorecard when available. */
+  status?: ScorecardCriterionStatus | "path" | "outcome" | "neutral";
+  value?: string;
+  evidence?: string;
+  weight?: "critical" | "major" | "minor";
+  detail?: string;
+}
+
+export interface ProtocolGraphEdge {
+  id: string;
+  from: string;
+  to: string;
+  label?: string;
+  /** True when this edge lies on the case's traversed path. */
+  active?: boolean;
+}
+
+/** Protocol decision graph illuminated by live Scorecard criteria. */
+export interface ProtocolDecisionGraphData {
+  title: string;
+  protocolId: string;
+  protocolName: string;
+  categoryAssigned: string;
+  trafficLight: "low" | "moderate" | "high" | "critical";
+  scoreMet: number;
+  scoreTotal: number;
+  studyRegion?: string;
+  nodes: ProtocolGraphNode[];
+  edges: ProtocolGraphEdge[];
+  pathNarrative: string;
+  outcomeLabel: string;
+  clinicalSummary?: string;
+  generatedAt?: string;
+}
+

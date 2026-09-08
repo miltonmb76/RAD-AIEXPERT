@@ -40,6 +40,7 @@ export type ModelTask =
   | "clinical_scorecard"
   | "reasoning_chain"
   | "differential_tree"
+  | "scorecard_bridge"
   | "chat"
   | "default";
 
@@ -60,6 +61,7 @@ const QUALITY_TASKS: ReadonlySet<ModelTask> = new Set([
   "clinical_scorecard",
   "reasoning_chain",
   "differential_tree",
+  "scorecard_bridge",
   "default",
 ]);
 
