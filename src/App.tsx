@@ -24,7 +24,7 @@ import { renderReasoningChainAnnexToPDF } from "./utils/reasoningChainPdfRendere
 import { renderDifferentialTreeAnnexToPDF } from "./utils/differentialTreePdfRenderer";
 import { renderMeasurementsGaugeAnnexToPDF } from "./utils/measurementsGaugePdfRenderer";
 import { Atlas3DData, Vascular3DData, FocalLesion3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData } from "./types";
-import { buildAtlasDirectivesFromScorecard, buildVascularDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
+import { buildAtlasDirectivesFromScorecard, buildAtlasPanelFindingAssignments, buildVascularDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
 import { Vascular3DModule } from "./components/Vascular3DModule";
 import { FocalLesion3DModule } from "./components/FocalLesion3DModule";
 import { renderVascular3DPageToPdf } from "./utils/vascular3dPdfRenderer";
@@ -3471,7 +3471,11 @@ Ejemplo:
 
         if (modules.atlas3d) {
           try {
-            const scorecardDirectives = buildAtlasDirectivesFromScorecard(scorecardForModules);
+            const panelAssignments = buildAtlasPanelFindingAssignments(scorecardForModules);
+            // With per-panel assignments, skip global Scorecard blob to avoid dominant-lesion bias.
+            const scorecardDirectives = panelAssignments.length
+              ? ""
+              : buildAtlasDirectivesFromScorecard(scorecardForModules);
             const resp = await fetch("/api/generate-3d-atlas", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -3480,7 +3484,8 @@ Ejemplo:
                 organOrStudy: specificStudy || studyType || "",
                 laterality: (patientGender || "").toLowerCase().includes("izq") ? "Izquierda" : "",
                 requestedModel: modelFor("atlas3d"),
-                customDirectives: scorecardDirectives || undefined
+                customDirectives: scorecardDirectives || undefined,
+                panelAssignments: panelAssignments.length ? panelAssignments : undefined,
               })
             });
             const j = await resp.json();

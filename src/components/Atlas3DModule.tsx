@@ -23,10 +23,11 @@ import {
   ShieldAlert,
   Plus
 } from "lucide-react";
-import { Atlas3DData, Atlas3DPanel, Atlas3DSynopticItem, ClinicalScorecardData, AtlasPathologyOverlay } from "../types";
+import { Atlas3DData, Atlas3DPanel, Atlas3DSynopticItem, AtlasPanelFindingAssignment, ClinicalScorecardData, AtlasPathologyOverlay } from "../types";
 import { runBackgroundTask } from "../lib/backgroundTasks";
 import {
   buildAtlasDirectivesFromScorecard,
+  buildAtlasPanelFindingAssignments,
   mergeOverlaysOntoAtlas,
 } from "../lib/clinicalIntelligence";
 import { flipImageDataUrl, swapLateralityLabel } from "../lib/imageFlip";
@@ -128,6 +129,8 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
   const [regeneratingPanelLetter, setRegeneratingPanelLetter] = useState<string | null>(null);
   const [editingFocusLetter, setEditingFocusLetter] = useState<string | null>(null);
   const [isSyncingOverlay, setIsSyncingOverlay] = useState(false);
+
+  const plannedFindingAssignments = buildAtlasPanelFindingAssignments(scorecardData || null);
 
   // Pull suggested directives from Scorecard when parent pushes them
   React.useEffect(() => {
@@ -250,8 +253,14 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
       }, 9000));
 
       const effectiveLaterality = selectedLaterality === "auto" ? (laterality || "") : selectedLaterality;
-      const scorecardDirectives = buildAtlasDirectivesFromScorecard(scorecardData || null);
-      const mergedDirectives = [scorecardDirectives, customDirectives.trim()].filter(Boolean).join("\n\n");
+      const panelAssignments = buildAtlasPanelFindingAssignments(scorecardData || null);
+      // When panels are assigned per finding, do NOT inject the global Scorecard blob
+      // (it re-biases every panel to the dominant lesion). Scoped directives live on each assignment.
+      const scorecardDirectives = panelAssignments.length
+        ? ""
+        : buildAtlasDirectivesFromScorecard(scorecardData || null);
+      const doctorDirectives = [externalDirectives, customDirectives.trim()].filter(Boolean).join("\n\n");
+      const mergedDirectives = [scorecardDirectives, doctorDirectives].filter(Boolean).join("\n\n");
 
       await runBackgroundTask("atlas-3d", "Generando Atlas 3D", async () => {
         const response = await fetch("/api/generate-3d-atlas", {
@@ -262,7 +271,8 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
             organOrStudy: activeProtocol || "",
             laterality: effectiveLaterality,
             requestedModel: selectedModel || "gemini-3.7-flash",
-            customDirectives: mergedDirectives || undefined
+            customDirectives: mergedDirectives || undefined,
+            panelAssignments: panelAssignments.length ? panelAssignments : undefined,
           })
         });
 
@@ -295,8 +305,19 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
 
     const userDirective = explicitDirectiveOverride || panelDirectives[panel.panelLetter] || "";
     const effectiveLaterality = selectedLaterality === "auto" ? (panel.laterality || laterality || "") : selectedLaterality;
-    const scorecardDirectives = buildAtlasDirectivesFromScorecard(scorecardData || null);
-    const mergedDirectives = [scorecardDirectives, customDirectives.trim()].filter(Boolean).join("\n\n");
+    const letter = String(panel.panelLetter || "").toUpperCase();
+    const fromStored = (atlasData.panelFindingAssignments || []).find(
+      (a) => String(a.panelLetter || "").toUpperCase() === letter
+    );
+    const rebuilt = buildAtlasPanelFindingAssignments(scorecardData || null);
+    const panelAssignment: AtlasPanelFindingAssignment | undefined =
+      fromStored ||
+      rebuilt.find((a) => String(a.panelLetter || "").toUpperCase() === letter) ||
+      (panel.assignedFindingId
+        ? rebuilt.find((a) => a.findingId === panel.assignedFindingId)
+        : undefined);
+    // Doctor nuance only — scoped Scorecard accuracy travels via panelAssignment.directive
+    const doctorDirectives = [externalDirectives, customDirectives.trim()].filter(Boolean).join("\n\n");
 
     try {
       const response = await fetch("/api/regenerate-3d-panel", {
@@ -308,7 +329,8 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
           panel: panel,
           laterality: effectiveLaterality,
           userDirective: userDirective.trim() || undefined,
-          customDirectives: mergedDirectives || undefined,
+          customDirectives: doctorDirectives || undefined,
+          panelAssignment: panelAssignment || undefined,
           requestedModel: selectedModel || "gemini-3.7-flash"
         })
       });
@@ -743,6 +765,32 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
           )}
         </div>
 
+        {plannedFindingAssignments.length > 0 && (
+          <div className="rounded-xl border border-cyan-500/25 bg-cyan-950/20 px-3 py-2 space-y-1.5">
+            <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-cyan-300">
+              {plannedFindingAssignments[0].mode === "shared_single"
+                ? "1 hallazgo Scorecard → 2–3 paneles (vistas complementarias del mismo foco)"
+                : `${plannedFindingAssignments.length} hallazgos → 1 panel dedicado por hallazgo (fidelidad Scorecard completa)`}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {plannedFindingAssignments.map((a) => (
+                <span
+                  key={`${a.panelLetter}-${a.findingId}`}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-900/80 border border-slate-700 text-[10px] font-mono text-slate-300"
+                  title={a.evidence || a.label}
+                >
+                  <span className="text-cyan-400 font-black">Panel {a.panelLetter}</span>
+                  <span className="text-slate-500">→</span>
+                  <span className="truncate max-w-[14rem]">{a.structure}</span>
+                </span>
+              ))}
+            </div>
+            <p className="text-[9px] text-slate-500 font-mono leading-snug">
+              Un hallazgo muy importante adicional puede ir al módulo Focal de forma manual.
+            </p>
+          </div>
+        )}
+
         <textarea
           value={customDirectives}
           onChange={(e) => setCustomDirectives(e.target.value)}
@@ -880,6 +928,11 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
               const isRegeneratingThis = regeneratingPanelLetter === panel.panelLetter;
               const currentDirective = panelDirectives[panel.panelLetter] || "";
               const compass = getCompassInfo(panel);
+              const assignedLabel =
+                panel.assignedFindingLabel ||
+                (atlasData.panelFindingAssignments || []).find(
+                  (a) => String(a.panelLetter).toUpperCase() === String(panel.panelLetter).toUpperCase()
+                )?.structure;
 
               return (
                 <div 
@@ -962,6 +1015,12 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
                       )}
                     </div>
                   </div>
+
+                  {assignedLabel && (
+                    <div className="px-3 py-1.5 bg-cyan-950/30 border-b border-cyan-500/20 text-[10px] font-mono text-cyan-200/90 truncate" title={assignedLabel}>
+                      Hallazgo Scorecard: <span className="font-bold text-cyan-100">{assignedLabel}</span>
+                    </div>
+                  )}
 
                   {/* Anatomical Compass / Spatial Canvas Guide Banner */}
                   <div className="px-2.5 py-1 bg-slate-950/90 border-b border-slate-800 text-[8.5px] font-mono flex items-center justify-between text-slate-400">
