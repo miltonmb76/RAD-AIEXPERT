@@ -27,8 +27,6 @@ function nodeFill(kind: string): [number, number, number] {
       return [6, 182, 212];
     case "absent_signs":
       return [244, 63, 94];
-    case "lab_correlation":
-      return [245, 158, 11];
     case "synthesis":
       return [20, 184, 166];
     case "management":
@@ -121,7 +119,7 @@ export function renderReasoningChainAnnexToPDF(
   const cardX = marginX + leftGutter;
   const cardW = contentWidth - leftGutter;
 
-  chain.nodes.forEach((node, idx) => {
+  chain.nodes.filter((node) => (node.kind as string) !== "lab_correlation").forEach((node, idx) => {
     const fill = nodeFill(node.kind);
     const title = sanitizePdfText(`${idx + 1}. ${node.title || reasoningKindLabel(node.kind)}`);
     const summary = sanitizePdfText(node.summary || "");

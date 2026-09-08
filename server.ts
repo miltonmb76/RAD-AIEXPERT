@@ -9273,7 +9273,7 @@ ${history ? `HISTORIA CLINICA / DATOS APORTADOS:\n"""\n${history}\n"""` : "Sin h
 ${focus ? `ENFOQUE DEL MEDICO (prioridad): "${focus}"` : "Sin enfoque libre: deriva el hilo del informe."}
 
 OBJETIVO:
-Explicar la importancia SEMIOLOGICA de los hallazgos (principales y asociados), correlacionarlos con clinica/laboratorio cuando consten, y explicitar signos BUSCADOS, ENCONTRADOS y DESCARTADOS/AUSENTES.
+Explicar la importancia SEMIOLOGICA de los hallazgos (principales y asociados), y explicitar signos BUSCADOS, ENCONTRADOS y DESCARTADOS/AUSENTES.
 
 Devuelve SIEMPRE el campo "nodes" como array (NUNCA vacío), en este orden de kind:
 1. clinical_context
@@ -9281,9 +9281,9 @@ Devuelve SIEMPRE el campo "nodes" como array (NUNCA vacío), en este orden de ki
 3. key_finding
 4. associated_signs
 5. absent_signs
-6. lab_correlation
-7. synthesis
-${withManagement ? "8. management" : ""}
+6. synthesis
+${withManagement ? "7. management" : ""}
+NO incluyas nodos de correlación clínica/laboratorio (kind "lab_correlation"): esa sección fue retirada.
 
 PROPUESTA TERAPEUTICA / CONDUCTA: ${
       withManagement
@@ -9292,7 +9292,7 @@ PROPUESTA TERAPEUTICA / CONDUCTA: ${
     }
 
 REGLAS DE FIDELIDAD:
-- NO inventes hallazgos, labs ni clinicas. Si faltan: status "not_evaluated" o indica ausencia de dato.
+- NO inventes hallazgos. Si faltan: status "not_evaluated" o indica ausencia de dato.
 - Cada item debe tener "significance" (por que importa semiológicamente).
 - evidence = cita/parafrasis fiel del informe cuando exista.
 - status por nodo/item: present | absent | equivocal | not_evaluated | discarded | context
@@ -9458,6 +9458,8 @@ ${report}
     }
 
     const data = normalizeReasoningChainData(parsed);
+    // Sección retirada: clínica/laboratorio
+    data.nodes = (data.nodes || []).filter((n) => n.kind !== ("lab_correlation" as any));
     if (!withManagement) {
       data.nodes = (data.nodes || []).filter((n) => n.kind !== "management");
       data.managementSuggestion = undefined;

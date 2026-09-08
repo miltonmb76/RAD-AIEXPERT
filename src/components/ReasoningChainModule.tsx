@@ -8,7 +8,6 @@ import {
   Crosshair,
   Layers,
   Ban,
-  FlaskConical,
   CheckCircle2,
   ClipboardList,
   Sparkles,
@@ -39,8 +38,6 @@ const kindIcon = (kind: ReasoningNodeKind) => {
       return <Layers className="h-4 w-4" />;
     case "absent_signs":
       return <Ban className="h-4 w-4" />;
-    case "lab_correlation":
-      return <FlaskConical className="h-4 w-4" />;
     case "synthesis":
       return <CheckCircle2 className="h-4 w-4" />;
     case "management":
@@ -81,12 +78,6 @@ const kindAccent = (kind: ReasoningNodeKind) => {
         ring: "border-rose-500/50 bg-rose-500/15 text-rose-300",
         bar: "bg-rose-500",
         badge: "bg-rose-500/15 text-rose-300 border-rose-500/40",
-      };
-    case "lab_correlation":
-      return {
-        ring: "border-amber-500/50 bg-amber-500/15 text-amber-300",
-        bar: "bg-amber-500",
-        badge: "bg-amber-500/15 text-amber-300 border-amber-500/40",
       };
     case "synthesis":
       return {
@@ -292,6 +283,7 @@ export const ReasoningChainModule: React.FC<ReasoningChainModuleProps> = ({
             <div className="absolute left-[22px] top-3 bottom-3 w-px border-l border-dashed border-slate-700 z-0" />
             <div className="space-y-3 relative z-10">
               {chainData.nodes
+                .filter((node) => (node.kind as string) !== "lab_correlation")
                 .filter((node) => includeManagement || node.kind !== "management")
                 .map((node, idx) => {
                 const accent = kindAccent(node.kind);

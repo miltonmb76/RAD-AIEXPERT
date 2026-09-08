@@ -11,7 +11,6 @@ const NODE_KINDS: ReasoningNodeKind[] = [
   "key_finding",
   "associated_signs",
   "absent_signs",
-  "lab_correlation",
   "synthesis",
   "management",
 ];
@@ -43,10 +42,6 @@ const KIND_ALIASES: Record<string, ReasoningNodeKind> = {
   signos_ausentes: "absent_signs",
   ausentes: "absent_signs",
   negativos: "absent_signs",
-  lab_correlation: "lab_correlation",
-  correlacion: "lab_correlation",
-  correlacion_clinica: "lab_correlation",
-  laboratorio: "lab_correlation",
   synthesis: "synthesis",
   sintesis: "synthesis",
   management: "management",
@@ -85,8 +80,6 @@ export function reasoningKindLabel(kind?: string): string {
       return "Signos asociados";
     case "absent_signs":
       return "Signos ausentes";
-    case "lab_correlation":
-      return "Clínica / laboratorio";
     case "synthesis":
       return "Síntesis";
     case "management":
@@ -168,6 +161,22 @@ export function normalizeReasoningChainData(raw: any): ReasoningChainData {
   const nodesIn = pickNodesArray(root);
   const nodes = nodesIn
     .map((n: any, idx: number) => {
+      const rawKind = String(n?.kind || n?.tipo || n?.etapa || "")
+        .trim()
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/\s+/g, "_");
+      // Drop the retired lab_correlation step entirely (do not remap into synthesis).
+      if (
+        rawKind === "lab_correlation" ||
+        rawKind.includes("lab_correlation") ||
+        rawKind === "laboratorio" ||
+        rawKind.includes("correlacion_clinica") ||
+        /clinica\s*\/\s*laboratorio/i.test(String(n?.title || n?.titulo || ""))
+      ) {
+        return null;
+      }
       const kind = asKind(
         n?.kind || n?.tipo || n?.etapa,
         NODE_KINDS[Math.min(idx, NODE_KINDS.length - 1)]
@@ -197,6 +206,7 @@ export function normalizeReasoningChainData(raw: any): ReasoningChainData {
           : undefined,
       };
     })
+    .filter(Boolean)
     .filter((n: any) => n.title || n.summary || (n.items && n.items.length));
 
   const discardedRaw =
