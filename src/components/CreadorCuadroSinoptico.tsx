@@ -709,7 +709,7 @@ export const CreadorCuadroSinoptico: React.FC<CreadorCuadroSinopticoProps> = ({
       <div className="flex justify-end pt-2 border-t border-slate-800/40">
         <button
           onClick={handleGenerate}
-          disabled={isLoading || !organ.trim() || !reportText.trim()}
+          disabled={!canGenerate}
           className={`px-6 py-3.5 rounded-xl font-mono text-[11px] font-black uppercase tracking-widest cursor-pointer transition-all flex items-center gap-2 border shadow-lg ${
             isLoading
               ? "bg-slate-950 border-slate-900 text-slate-500"
