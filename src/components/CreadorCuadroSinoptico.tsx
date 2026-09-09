@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Sparkles,
@@ -20,7 +20,9 @@ import {
   CheckSquare,
   Square,
   Edit2,
-  CornerUpLeft
+  CornerUpLeft,
+  X,
+  Crosshair
 } from "lucide-react";
 
 interface OrganAspect {
@@ -94,6 +96,24 @@ export const CreadorCuadroSinoptico: React.FC<CreadorCuadroSinopticoProps> = ({
   const [editedValue, setEditedValue] = useState<string>("");
   const [editedSentence, setEditedSentence] = useState<string>("");
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  /** Sticky quick bar so organ can be chosen while other modules/images load. */
+  const [quickBarVisible, setQuickBarVisible] = useState<boolean>(true);
+  const [quickBarCollapsed, setQuickBarCollapsed] = useState<boolean>(false);
+  const quickOrganRef = useRef<HTMLInputElement>(null);
+  const panelOrganRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    // Focus immediately when the module opens (batch auto-open or manual).
+    const t = window.setTimeout(() => {
+      if (quickBarVisible && !quickBarCollapsed) {
+        quickOrganRef.current?.focus();
+        quickOrganRef.current?.select();
+      } else {
+        panelOrganRef.current?.focus();
+      }
+    }, 80);
+    return () => window.clearTimeout(t);
+  }, []);
 
   const handlePresetSelect = (presetText: string) => {
     setAspectsText(presetText);
@@ -136,6 +156,14 @@ export const CreadorCuadroSinoptico: React.FC<CreadorCuadroSinopticoProps> = ({
         setAspects(mappedAspects);
         if (mappedAspects.length === 0) {
           setError(`No se encontraron hallazgos específicos ni aspectos relevantes para '${organ}' en el reporte.`);
+        } else {
+          // Results ready: collapse quick bar so it doesn't cover the table.
+          setQuickBarCollapsed(true);
+          requestAnimationFrame(() => {
+            document
+              .getElementById("creador-cuadro-sinoptico-container")
+              ?.scrollIntoView({ behavior: "smooth", block: "start" });
+          });
         }
       } else {
         setError(data.error || "Error al confeccionar el cuadro sinóptico.");
@@ -410,8 +438,152 @@ export const CreadorCuadroSinoptico: React.FC<CreadorCuadroSinopticoProps> = ({
     setAspects(prev => prev.map(a => ({ ...a, approvedForReportText: val })));
   };
 
+  const canGenerate = !isLoading && !!organ.trim() && !!reportText.trim();
+
+  const scrollToFullPanel = () => {
+    document
+      .getElementById("creador-cuadro-sinoptico-container")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   return (
     <div id="creador-cuadro-sinoptico-container" className="bg-slate-900/60 border-2 border-indigo-500/30 rounded-3xl p-6 shadow-2xl space-y-6">
+      {/* Sticky quick bar: reachable while Atlas/images/other modules load */}
+      <AnimatePresence>
+        {quickBarVisible && (
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 24 }}
+            className="fixed bottom-3 left-3 right-3 md:left-1/2 md:right-auto md:-translate-x-1/2 md:w-[min(720px,calc(100vw-1.5rem))] z-[70] pointer-events-auto"
+          >
+            <div className="rounded-2xl border border-indigo-400/40 bg-slate-950/95 backdrop-blur-md shadow-2xl shadow-indigo-950/50 overflow-hidden">
+              <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-indigo-900/40 bg-indigo-950/40">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Crosshair className="h-3.5 w-3.5 text-indigo-300 shrink-0" />
+                  <span className="text-[10px] font-black uppercase tracking-wider text-indigo-200 font-mono truncate">
+                    Sinopsis por órgano — acceso rápido
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={scrollToFullPanel}
+                    className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-400 hover:text-indigo-300 px-2 py-1 rounded-lg hover:bg-slate-900 cursor-pointer"
+                    title="Ir al panel completo"
+                  >
+                    Panel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuickBarCollapsed((v) => !v)}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-900 cursor-pointer"
+                    title={quickBarCollapsed ? "Expandir" : "Minimizar"}
+                  >
+                    {quickBarCollapsed ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuickBarVisible(false)}
+                    className="p-1.5 rounded-lg text-slate-500 hover:text-rose-300 hover:bg-slate-900 cursor-pointer"
+                    title="Cerrar barra rápida"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              {!quickBarCollapsed && (
+                <div className="p-3 space-y-2.5">
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      ref={quickOrganRef}
+                      type="text"
+                      value={organ}
+                      onChange={(e) => setOrgan(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && canGenerate) {
+                          e.preventDefault();
+                          handleGenerate();
+                        }
+                      }}
+                      placeholder="Órgano o sistema (ej. Hígado, Tiroides…)"
+                      className="flex-1 bg-slate-900 border border-slate-700 focus:border-indigo-500 rounded-xl px-3 py-2.5 text-sm text-slate-100 placeholder-slate-500 outline-none font-semibold"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleGenerate}
+                      disabled={!canGenerate}
+                      className={`shrink-0 px-4 py-2.5 rounded-xl font-mono text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-2 border transition-all cursor-pointer ${
+                        canGenerate
+                          ? "bg-indigo-600 hover:bg-indigo-500 border-indigo-400 text-white"
+                          : "bg-slate-900 border-slate-800 text-slate-600 cursor-not-allowed"
+                      }`}
+                    >
+                      {isLoading ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          Generando…
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="h-3.5 w-3.5" />
+                          Generar
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  <div className="flex flex-wrap gap-1.5 max-h-[72px] overflow-y-auto">
+                    {POPULAR_ORGANS.map((item) => (
+                      <button
+                        key={item}
+                        type="button"
+                        onClick={() => {
+                          setOrgan(item);
+                          requestAnimationFrame(() => quickOrganRef.current?.focus());
+                        }}
+                        className={`px-2 py-1 text-[10px] font-mono rounded-lg border transition-all cursor-pointer ${
+                          organ.toLowerCase() === item.toLowerCase()
+                            ? "bg-indigo-500/20 border-indigo-400/60 text-indigo-200"
+                            : "bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700"
+                        }`}
+                      >
+                        {item}
+                      </button>
+                    ))}
+                  </div>
+
+                  {error && (
+                    <p className="text-[10px] text-rose-300 font-mono leading-snug">{error}</p>
+                  )}
+                  {!reportText.trim() && (
+                    <p className="text-[10px] text-amber-300/90 font-mono">
+                      Esperando el informe… la barra queda lista; genera cuando el texto esté disponible.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {!quickBarVisible && (
+        <button
+          type="button"
+          onClick={() => {
+            setQuickBarVisible(true);
+            setQuickBarCollapsed(false);
+            window.setTimeout(() => quickOrganRef.current?.focus(), 100);
+          }}
+          className="fixed bottom-4 right-4 z-[70] px-3 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-black uppercase tracking-wider font-mono shadow-lg border border-indigo-400/40 flex items-center gap-2 cursor-pointer"
+        >
+          <Crosshair className="h-3.5 w-3.5" />
+          Sinopsis
+        </button>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between border-b border-indigo-950/50 pb-4">
         <div className="flex items-center gap-3">
@@ -435,6 +607,10 @@ export const CreadorCuadroSinoptico: React.FC<CreadorCuadroSinopticoProps> = ({
       {/* Description */}
       <p className="text-xs text-slate-400 leading-relaxed">
         Ingresa el nombre de cualquier estructura u órgano descrito en tu informe (ej. <strong>Hígado</strong>, <strong>Recto Anterior</strong>, <strong>Tiroides</strong>, etc.). La Inteligencia Artificial auditará el informe activo en busca de sus características, permitiéndote además guiar el análisis para agregar clasificaciones médicas, sugerencias, diagnósticos diferenciales u otros parámetros específicos de tu interés.
+        {" "}
+        <span className="text-indigo-300/90">
+          Mientras cargan imágenes u otros módulos, usa la barra fija inferior para elegir el órgano al instante.
+        </span>
       </p>
 
       {/* Inputs Section */}
@@ -446,9 +622,16 @@ export const CreadorCuadroSinoptico: React.FC<CreadorCuadroSinopticoProps> = ({
               1. Nombre del Órgano o Estructura:
             </label>
             <input
+              ref={panelOrganRef}
               type="text"
               value={organ}
               onChange={e => setOrgan(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && canGenerate) {
+                  e.preventDefault();
+                  handleGenerate();
+                }
+              }}
               placeholder="Ej. Hígado, Tiroides, Bazo..."
               className="w-full bg-slate-950/80 border border-slate-800 focus:border-indigo-500/50 rounded-xl px-4 py-2.5 text-xs text-slate-200 placeholder-slate-600 outline-none transition-all font-semibold font-sans"
             />
