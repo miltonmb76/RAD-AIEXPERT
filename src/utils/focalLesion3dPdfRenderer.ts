@@ -148,10 +148,11 @@ export function renderFocalLesion3DAnnexToPDF(
     textBoxes.push({ title: "Puntos clave", bodyLines: kpLines, bullet: true });
   }
 
-  const boxTitleH = 5.2 * factor;
-  const boxPad = 3.2 * factor;
-  const boxLineH = 3.7 * factor;
-  const boxGap = 3 * factor;
+  // Title baseline + descent + gap before first body baseline (avoids title/body overlap).
+  const boxTitleH = 8.4 * factor;
+  const boxPad = 3.4 * factor;
+  const boxLineH = 4 * factor;
+  const boxGap = 3.2 * factor;
   let reservedTextH = 0;
   if (textBoxes.length) {
     reservedTextH += 3.5 * factor;
@@ -318,10 +319,12 @@ export function renderFocalLesion3DAnnexToPDF(
     doc.setFillColor(13, 148, 136);
     doc.roundedRect(marginX, yCoord, 2.2 * factor, boxH, 1.1, 1.1, "F");
 
+    // jsPDF y is baseline: keep title ascent inside padding, then clear gap to body.
+    const titleBaseline = yCoord + boxPad + 3.6 * factor;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(10 * factor);
     doc.setTextColor(15, 118, 110);
-    doc.text(title, marginX + 6 * factor, yCoord + boxPad + 3.4 * factor);
+    doc.text(title, marginX + 6 * factor, titleBaseline);
 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9.4 * factor);
