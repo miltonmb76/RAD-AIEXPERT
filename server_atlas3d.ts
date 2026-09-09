@@ -262,7 +262,7 @@ export function registerAtlas3DRoutes(app: express.Express) {
   // 1. Full 3D Atlas Generation (2 to 3 panels + Synoptic Correlation + Biomechanical Synthesis)
   app.post("/api/generate-3d-atlas", async (req: express.Request, res: express.Response) => {
     try {
-      const { reportText, organOrStudy, laterality, requestedModel, customDirectives } = req.body;
+      const { reportText, organOrStudy, laterality, requestedModel, customDirectives, panelAssignments } = req.body;
 
       if (!reportText || !reportText.trim()) {
         return res.status(400).json({ success: false, error: "Se requiere el texto del informe radiológico." });
@@ -270,6 +270,32 @@ export function registerAtlas3DRoutes(app: express.Express) {
 
       const ai = getGeminiClient();
       const model = getModelName(requestedModel || "gemini-3.7-flash");
+      const assignments: any[] = Array.isArray(panelAssignments) ? panelAssignments : [];
+      const assignmentPlanText = assignments.length
+        ? assignments
+            .map((a: any) => {
+              const letter = String(a.panelLetter || "").toUpperCase();
+              const structure = a.structure || a.label || "";
+              const mode = a.mode || "dedicated";
+              return [
+                `PANEL ${letter} [${mode}] → «${structure}»`,
+                `  Criterio: ${a.label || structure}`,
+                a.value ? `  Valor: ${a.value}` : null,
+                `  Evidencia: ${a.evidence || "n/d"}`,
+                `  pathologySite DEBE ser: ${structure}`,
+                a.directive ? `  Directiva acotada:\n${a.directive}` : null,
+              ]
+                .filter(Boolean)
+                .join("\n");
+            })
+            .join("\n\n")
+        : "";
+
+      const modeHint = !assignments.length
+        ? "Sin asignación Scorecard por panel: diseña 2–3 paneles complementarios según el informe."
+        : assignments[0]?.mode === "shared_single"
+          ? "MODO 1 HALLAZGO: genera 2 o 3 paneles como vistas complementarias del MISMO hallazgo asignado (distinto ángulo/cutaway; misma lesión)."
+          : `MODO ${assignments.length} HALLAZGOS: genera exactamente ${assignments.length} paneles, UNO por hallazgo asignado. Cada panel dedicado a su hallazgo (no mezclar focos).`;
 
       const promptPlan = `Eres un Médico Radiólogo Especialista en Diagnóstico por Imágenes y Anatomía Quirúrgica Aplicada.
 Tu objetivo es planificar un ATLAS 3D con MÁXIMA FIDELIDAD anatómica y patológica al informe (no arte ornamental).
@@ -279,7 +305,9 @@ INFORMACIÓN DEL ESTUDIO:
 ========================================================================
 - Región / Protocolo: "${organOrStudy || "Estudio General"}"
 - Lateralidad Solicitada/Forzada: "${laterality || "Detectar del texto"}"
-- Directiva Clínica (Scorecard / médico): "${customDirectives || "Ninguna"}"
+- Directiva clínica adicional (médico): "${customDirectives || "Ninguna"}"
+- ${modeHint}
+${assignmentPlanText ? `\nASIGNACIÓN OBLIGATORIA SCORECARD → PANELES:\n${assignmentPlanText}\n` : ""}
 - INFORME RADIOLÓGICO:
 """
 ${reportText}
@@ -289,19 +317,20 @@ ${reportText}
 TAREA:
 ========================================================================
 1. Identifica región y lateralidad exactas.
-2. Diseña 2 a 3 paneles complementarios centrados en hallazgos REALES del informe.
+2. Diseña paneles según la asignación Scorecard (si existe). Si hay 1 hallazgo → 2–3 vistas del mismo; si 2 → 2 paneles (1 cada uno); si 3 → 3 paneles (1 cada uno).
 3. Para CADA panel define un CONTRATO ESPACIAL (spatialContract) obligatorio:
    - view (AP/coronal/sagittal/axial/oblique)
    - laterality
    - imageLeftStructure / imageRightStructure (qué debe verse a la IZQUIERDA y DERECHA del cuadro)
    - superiorStructure / inferiorStructure si aplica
    - mustShowLandmarks[] (hitos óseos/blandos de orientación)
-   - pathologySite + pathologyAppearance (solo si el informe lo describe)
+   - pathologySite + pathologyAppearance (DEBE coincidir con el hallazgo asignado al panel si hay asignación)
    - doNotInvent[] (errores típicos a evitar, p.ej. invertir medial/lateral)
 3b. REGLA CRÍTICA DE LATERALIDAD: el lado del paciente (Derecha/Izquierda) del informe manda.
    - Nunca espejes anatomía "para que quede bonito".
-   - imageLeftStructure/imageRightStructure deben ser anclas REALES (ej. cabeza humeral derecha vs glenoides) coherentes con la vista.
+   - imageLeftStructure/imageRightStructure deben ser anclas REALES coherentes con la vista.
    - Si el hallazgo es unilateral, pathologySite debe nombrar el lado correcto; doNotInvent debe incluir "mirrored laterality" y "contralateral side swap".
+3c. Si hay asignación por panel: anatomicalFocus y pathologySite deben nombrar EXPLÍCITAMENTE el hallazgo de ese panel. PROHIBIDO que un panel dedicado dibuje el hallazgo de otro panel como foco.
 4. "structure" en synopticExplanation = NOMBRE CORTO de estructura (NO el pie "Foco: ...").
 5. NO inventes lesiones. Si el informe es normal, paneles de anatomía preservada.
 6. Estilo deseado: fotorrealismo clínico de alta calidad (textura tisular rica, iluminación de estudio suave); SIN bioluminiscencia ni glow ornamental. La fidelidad anatómica/patológica manda sobre el efecto visual.
@@ -396,14 +425,56 @@ RESPONDE SOLO JSON VÁLIDO:
 
       const forcedLaterality = laterality && laterality !== "auto" ? laterality : "";
 
+      const resolveAssignment = (panel: any, idx: number) => {
+        const letter = String(panel?.panelLetter || String.fromCharCode(65 + idx)).toUpperCase();
+        return (
+          assignments.find((a: any) => String(a.panelLetter || "").toUpperCase() === letter) ||
+          assignments[idx] ||
+          null
+        );
+      };
+
+      // If dedicated multi-finding mode, keep panel count aligned to assignments
+      if (assignments.length && assignments[0]?.mode === "dedicated") {
+        const wanted = assignments.length;
+        if (Array.isArray(planJson.panels) && planJson.panels.length > wanted) {
+          planJson.panels = planJson.panels.slice(0, wanted);
+        }
+        // Ensure letters A.. match assignments
+        planJson.panels = (planJson.panels || []).map((p: any, i: number) => ({
+          ...p,
+          panelLetter: assignments[i]?.panelLetter || p.panelLetter || String.fromCharCode(65 + i),
+        }));
+      }
+
       const buildPanelFromPlan = async (panel: any, idx: number, surgicalCorrection?: string) => {
-        const contract = normalizeSpatialContract(panel.spatialContract, panel.laterality || planJson.detectedLaterality || forcedLaterality);
+        const assignment = resolveAssignment(panel, idx);
+        let contract = normalizeSpatialContract(
+          panel.spatialContract,
+          panel.laterality || planJson.detectedLaterality || forcedLaterality
+        );
+        if (assignment?.structure) {
+          contract = {
+            ...contract,
+            pathologySite: String(assignment.structure),
+            pathologyAppearance:
+              [assignment.value, assignment.evidence].filter(Boolean).join(" — ") ||
+              contract.pathologyAppearance,
+          };
+        }
+        const panelDirective = [assignment?.directive, customDirectives]
+          .filter((x: any) => typeof x === "string" && x.trim())
+          .join("\n\n");
+        const focusFromAssignment = assignment?.structure
+          ? `Foco: ${assignment.structure}${assignment.value ? ` (${assignment.value})` : ""}`
+          : null;
         const promptToUse = buildImagePromptFromContract({
           panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
-          anatomicalFocus: panel.anatomicalFocus || "Foco anatómico correlacionado",
+          anatomicalFocus:
+            panel.anatomicalFocus || focusFromAssignment || "Foco anatómico correlacionado",
           studyRegion: planJson.studyRegion || organOrStudy || "anatomy",
           contract,
-          customDirectives,
+          customDirectives: panelDirective || undefined,
           forcedLaterality,
           surgicalCorrection
         });
@@ -413,12 +484,15 @@ RESPONDE SOLO JSON VÁLIDO:
             id: `panel-${idx}-${Date.now()}`,
             panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
             panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
-            anatomicalFocus: panel.anatomicalFocus || "Foco anatómico correlacionado",
+            anatomicalFocus:
+              panel.anatomicalFocus || focusFromAssignment || "Foco anatómico correlacionado",
             laterality: panel.laterality || planJson.detectedLaterality || laterality || "",
             spatialContract: contract,
             imageUrl,
             promptUsed: promptToUse,
-            isCustomFlipped: false
+            isCustomFlipped: false,
+            assignedFindingId: assignment?.findingId || undefined,
+            assignedFindingLabel: assignment?.structure || assignment?.label || undefined
           };
         } catch (imgErr) {
           console.error(`Error generando imagen para panel ${panel.panelLetter}:`, imgErr);
@@ -426,12 +500,15 @@ RESPONDE SOLO JSON VÁLIDO:
             id: `panel-${idx}-${Date.now()}`,
             panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
             panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
-            anatomicalFocus: panel.anatomicalFocus || "Foco anatómico correlacionado",
+            anatomicalFocus:
+              panel.anatomicalFocus || focusFromAssignment || "Foco anatómico correlacionado",
             laterality: panel.laterality || planJson.detectedLaterality || laterality || "",
             spatialContract: contract,
             imageUrl: "",
             promptUsed: promptToUse,
-            isCustomFlipped: false
+            isCustomFlipped: false,
+            assignedFindingId: assignment?.findingId || undefined,
+            assignedFindingLabel: assignment?.structure || assignment?.label || undefined
           };
         }
       };
@@ -562,7 +639,8 @@ ${JSON.stringify(planJson.synopticExplanation || [], null, 2)}
         synopticTable: planJson.synopticExplanation || [],
         biomechanicalSynthesis: planJson.biomechanicalSynthesis || "",
         synthesis: planJson.biomechanicalSynthesis || "",
-        qualityAudit
+        qualityAudit,
+        panelFindingAssignments: assignments.length ? assignments : undefined
       };
 
       res.json({
@@ -579,7 +657,16 @@ ${JSON.stringify(planJson.synopticExplanation || [], null, 2)}
   // 2. Single Panel Regeneration with spatial contract + faithful clinical style
   app.post("/api/regenerate-3d-panel", async (req: express.Request, res: express.Response) => {
     try {
-      const { reportText, studyRegion, panel, laterality, userDirective, requestedModel, customDirectives } = req.body;
+      const {
+        reportText,
+        studyRegion,
+        panel,
+        laterality,
+        userDirective,
+        requestedModel,
+        customDirectives,
+        panelAssignment
+      } = req.body;
 
       if (!panel) {
         return res.status(400).json({ success: false, error: "Se requiere el objeto de panel a regenerar." });
@@ -589,6 +676,16 @@ ${JSON.stringify(planJson.synopticExplanation || [], null, 2)}
       const model = getModelName(requestedModel || "gemini-3.7-flash");
       const forcedLaterality = laterality && laterality !== "auto" ? laterality : "";
       const fullReport = typeof reportText === "string" ? reportText : "";
+      const scopedDirective = [
+        panelAssignment?.directive,
+        customDirectives
+      ]
+        .filter((x: any) => typeof x === "string" && String(x).trim())
+        .join("\n\n");
+      const lockedFinding =
+        panelAssignment?.structure ||
+        panel.assignedFindingLabel ||
+        "";
 
       const refinementPrompt = `Eres un Radiólogo y Anatomista Quirúrgico. Refina el CONTRATO ESPACIAL para regenerar el PANEL ${panel.panelLetter || "A"} con máxima fidelidad al informe (fotorrealismo clínico de alta calidad: textura e iluminación premium, sin arte bioluminiscente).
 
@@ -598,12 +695,15 @@ DATOS DEL CASO:
 - Foco actual: "${panel.anatomicalFocus || ""}"
 - Lateralidad requerida: "${forcedLaterality || panel.laterality || ""}"
 - Contrato espacial previo: ${JSON.stringify(panel.spatialContract || {})}
-- Directiva clínica (Scorecard / médico): "${customDirectives || "Ninguna"}"
+- Hallazgo BLOQUEADO para este panel (Scorecard): "${lockedFinding || "Ninguno"}"
+- Directiva clínica ACOTADA a este panel: "${scopedDirective || "Ninguna"}"
 - Corrección quirúrgica del médico: "${userDirective || "Mejorar precisión anatómica y patológica"}"
 - INFORME COMPLETO:
 """
 ${fullReport}
 """
+
+REGLA: Si hay hallazgo bloqueado, pathologySite/pathologyAppearance DEBEN describirlo. No cambies el foco a otra lesión del scorecard.
 
 RESPONDE SOLO JSON:
 {
@@ -644,13 +744,21 @@ RESPONDE SOLO JSON:
         refineJson.spatialContract || panel.spatialContract,
         forcedLaterality || panel.laterality
       );
+      if (lockedFinding) {
+        contract.pathologySite = lockedFinding;
+        if (panelAssignment?.evidence || panelAssignment?.value) {
+          contract.pathologyAppearance = [panelAssignment.value, panelAssignment.evidence]
+            .filter(Boolean)
+            .join(" — ") || contract.pathologyAppearance;
+        }
+      }
 
       const finalPrompt = buildImagePromptFromContract({
         panelTitle: refineJson.panelTitle || panel.panelTitle || `Panel ${panel.panelLetter || ""}`,
         anatomicalFocus: refineJson.anatomicalFocus || panel.anatomicalFocus || "Foco anatómico correlacionado",
         studyRegion: studyRegion || "anatomy",
         contract,
-        customDirectives,
+        customDirectives: scopedDirective || undefined,
         forcedLaterality,
         surgicalCorrection: userDirective
       });
@@ -666,7 +774,12 @@ RESPONDE SOLO JSON:
         imageUrl: imageUrl,
         promptUsed: finalPrompt,
         isCustomFlipped: false,
-        qualityFlags: undefined
+        qualityFlags: undefined,
+        assignedFindingId: panelAssignment?.findingId || panel.assignedFindingId,
+        assignedFindingLabel:
+          panelAssignment?.structure ||
+          panelAssignment?.label ||
+          panel.assignedFindingLabel,
       };
 
       res.json({
