@@ -585,31 +585,37 @@ export const CreadorCuadroSinoptico: React.FC<CreadorCuadroSinopticoProps> = ({
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-indigo-950/50 pb-4">
+      <div className="flex items-center justify-between border-b border-teal-900/40 pb-4">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-indigo-500/10 rounded-xl border border-indigo-500/20 text-indigo-400">
-            <Sparkles className="h-5 w-5 animate-pulse" />
+          <div className="p-2.5 bg-teal-500/10 rounded-xl border border-teal-500/25 text-teal-300">
+            <FileSpreadsheet className="h-5 w-5" />
           </div>
           <div>
             <h3 className="text-sm font-black text-slate-100 uppercase tracking-widest font-mono">
-              Creador de Cuadro Sinóptico de Órgano (IA)
+              Sinopsis por órgano
             </h3>
             <p className="text-[10px] text-slate-400 uppercase font-mono tracking-wider mt-0.5">
-              Análisis Estructurado y Redacción de Co-Inferencia Médica
+              Ficha clínica estructurada del informe
             </p>
           </div>
         </div>
-        <span className="text-[9px] font-black uppercase font-mono tracking-widest bg-indigo-950 text-indigo-400 border border-indigo-900/40 px-3 py-1 rounded-full">
-          NUEVA FUNCIÓN IA
-        </span>
+        {organ.trim() ? (
+          <span className="text-[10px] font-bold uppercase font-mono tracking-wider bg-teal-950/60 text-teal-200 border border-teal-700/40 px-3 py-1 rounded-full truncate max-w-[12rem]">
+            {organ.trim()}
+          </span>
+        ) : (
+          <span className="text-[9px] font-black uppercase font-mono tracking-widest bg-slate-950 text-slate-500 border border-slate-800 px-3 py-1 rounded-full">
+            Sin órgano aún
+          </span>
+        )}
       </div>
 
       {/* Description */}
       <p className="text-xs text-slate-400 leading-relaxed">
-        Ingresa el nombre de cualquier estructura u órgano descrito en tu informe (ej. <strong>Hígado</strong>, <strong>Recto Anterior</strong>, <strong>Tiroides</strong>, etc.). La Inteligencia Artificial auditará el informe activo en busca de sus características, permitiéndote además guiar el análisis para agregar clasificaciones médicas, sugerencias, diagnósticos diferenciales u otros parámetros específicos de tu interés.
+        Elige el órgano o estructura y genera una ficha <strong className="text-slate-300">Aspecto → Hallazgo</strong> lista para revisar e inyectar al informe.
         {" "}
-        <span className="text-indigo-300/90">
-          Mientras cargan imágenes u otros módulos, usa la barra fija inferior para elegir el órgano al instante.
+        <span className="text-teal-300/90">
+          Mientras cargan imágenes u otros módulos, usa la barra fija inferior.
         </span>
       </p>
 
@@ -769,305 +775,275 @@ export const CreadorCuadroSinoptico: React.FC<CreadorCuadroSinopticoProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Result Section (Provisional Table Editor and Previews) */}
+      {/* Result Section — ficha clínica (Aspecto | Hallazgo, sin columna Origen) */}
       <AnimatePresence>
         {aspects.length > 0 && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="space-y-6 pt-6 border-t border-slate-800"
+            className="space-y-5 pt-6 border-t border-slate-800"
           >
-            {/* Aspect Table Header Controls */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-950/60 p-4 rounded-2xl border border-slate-850">
-              <div>
-                <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
-                  Cuadro Provisional: {organ}
-                </h4>
-                <p className="text-[10px] text-slate-500 uppercase tracking-wider font-mono mt-0.5">
-                  Revisa y aprueba cada fila de forma independiente para la tabla y el texto redactado.
-                </p>
-              </div>
-              <div className="flex gap-2 flex-wrap">
-                <button
-                  onClick={() => selectAllTable(true)}
-                  className="px-3 py-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-[9px] font-black text-indigo-400 hover:text-indigo-300 uppercase tracking-widest rounded-lg font-mono cursor-pointer transition-all"
-                >
-                  Aprobar Toda la Tabla
-                </button>
-                <button
-                  onClick={() => selectAllReport(true)}
-                  className="px-3 py-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-[9px] font-black text-emerald-400 hover:text-emerald-300 uppercase tracking-widest rounded-lg font-mono cursor-pointer transition-all"
-                >
-                  Aprobar Todo el Texto
-                </button>
+            <div className="relative overflow-hidden rounded-2xl border border-teal-500/25 bg-gradient-to-br from-slate-950 via-slate-950 to-teal-950/30">
+              <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-teal-400/50 to-transparent" />
+              <div className="p-5 md:p-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-teal-400/90">
+                    Sinopsis estructurada
+                  </p>
+                  <h4 className="mt-1 text-2xl md:text-3xl font-semibold text-slate-50 tracking-tight truncate">
+                    {organ.trim() || "Órgano"}
+                  </h4>
+                  <p className="mt-2 text-[11px] text-slate-400 font-mono">
+                    {aspects.length} aspecto{aspects.length === 1 ? "" : "s"}
+                    {" · "}
+                    {aspects.filter((a) => a.approvedForTable).length} en tabla
+                    {" · "}
+                    {aspects.filter((a) => a.approvedForReportText).length} en texto
+                  </p>
+                </div>
+                <div className="flex gap-2 flex-wrap shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => selectAllTable(true)}
+                    className="px-3 py-1.5 bg-slate-900/80 hover:bg-slate-900 border border-slate-700 text-[9px] font-black text-teal-300 hover:text-teal-200 uppercase tracking-widest rounded-lg font-mono cursor-pointer transition-all"
+                  >
+                    Toda la tabla
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => selectAllReport(true)}
+                    className="px-3 py-1.5 bg-slate-900/80 hover:bg-slate-900 border border-slate-700 text-[9px] font-black text-emerald-400 hover:text-emerald-300 uppercase tracking-widest rounded-lg font-mono cursor-pointer transition-all"
+                  >
+                    Todo el texto
+                  </button>
+                </div>
               </div>
             </div>
 
-            {/* Provisional Table Grid */}
-            <div className="overflow-x-auto border border-slate-900 rounded-2xl bg-slate-950/30">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-slate-950 border-b border-slate-900 text-[10px] font-bold text-slate-400 uppercase tracking-widest font-mono">
-                    <th className="py-3 px-4 w-[15%]">Aspecto</th>
-                    <th className="py-3 px-4 w-[25%]">Detalle Clínico / Valor</th>
-                    <th className="py-3 px-4 w-[12%]">Origen</th>
-                    <th className="py-3 px-4 w-[25%]">Frase Narrativa Propuesta</th>
-                    <th className="py-3 px-4 w-[10%] text-center">Incluir Tabla</th>
-                    <th className="py-3 px-4 w-[10%] text-center">Incluir Texto</th>
-                    <th className="py-3 px-4 w-[8%] text-center">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-900 text-xs">
-                  {aspects.map((aspect, idx) => (
-                    <tr
+            <div className="rounded-2xl border border-slate-800 overflow-hidden bg-slate-950/40">
+              <div className="grid grid-cols-[minmax(7rem,28%)_1fr] gap-0 px-4 py-2.5 bg-slate-950 border-b border-slate-800 text-[10px] font-bold text-slate-500 uppercase tracking-widest font-mono">
+                <div>Aspecto</div>
+                <div className="flex items-center justify-between gap-2">
+                  <span>Hallazgo</span>
+                  <span className="text-[9px] text-slate-600 normal-case tracking-normal font-medium hidden sm:inline">
+                    Tabla · Texto · Acciones
+                  </span>
+                </div>
+              </div>
+
+              <div className="divide-y divide-slate-800/80">
+                {aspects.map((aspect, idx) => {
+                  const dimmed = !aspect.approvedForTable && !aspect.approvedForReportText;
+                  const isAiInfer = aspect.clinicalSource !== "Hallazgo de Reporte";
+                  return (
+                    <div
                       key={idx}
-                      className={`hover:bg-slate-950/20 transition-colors ${
-                        !aspect.approvedForTable && !aspect.approvedForReportText
-                          ? "opacity-40"
-                          : ""
+                      className={`grid grid-cols-1 sm:grid-cols-[minmax(7rem,28%)_1fr] gap-2 sm:gap-0 px-4 py-3.5 transition-colors ${
+                        dimmed ? "opacity-45" : "hover:bg-slate-900/30"
                       }`}
                     >
-                      {/* Key */}
-                      <td className="py-4 px-4 font-bold text-slate-200">
-                        {aspect.key}
-                      </td>
+                      <div className="pr-3">
+                        <p className="text-sm font-semibold text-slate-100 leading-snug">
+                          {aspect.key}
+                        </p>
+                      </div>
 
-                      {/* Value (Edit or Show) */}
-                      <td className="py-4 px-4 text-slate-300">
-                        {editingIndex === idx ? (
-                          <input
-                            type="text"
-                            value={editedValue}
-                            onChange={e => setEditedValue(e.target.value)}
-                            className="w-full bg-slate-950 border border-indigo-500/40 rounded px-2 py-1 text-xs text-white"
-                          />
-                        ) : (
-                          <div>
-                            <span className="font-sans font-medium">{aspect.value}</span>
-                            {aspect.explanation && (
-                              <p className="text-[9px] text-slate-500 italic mt-0.5 font-mono leading-tight">
-                                {aspect.explanation}
+                      <div className="flex flex-col sm:flex-row sm:items-start gap-3 min-w-0">
+                        <div className="flex-1 min-w-0 space-y-1.5">
+                          {editingIndex === idx ? (
+                            <div className="space-y-2">
+                              <input
+                                type="text"
+                                value={editedValue}
+                                onChange={(e) => setEditedValue(e.target.value)}
+                                className="w-full bg-slate-950 border border-teal-500/40 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none"
+                                placeholder="Hallazgo / valor"
+                              />
+                              <textarea
+                                value={editedSentence}
+                                onChange={(e) => setEditedSentence(e.target.value)}
+                                rows={2}
+                                className="w-full bg-slate-950 border border-teal-500/40 rounded-lg px-2.5 py-1.5 text-xs text-white resize-none outline-none"
+                                placeholder="Frase narrativa"
+                              />
+                            </div>
+                          ) : (
+                            <>
+                              <p className="text-sm text-slate-200 font-medium leading-relaxed">
+                                {aspect.value}
                               </p>
-                            )}
-                          </div>
-                        )}
-                      </td>
+                              {aspect.explanation && (
+                                <p className="text-[11px] text-slate-500 leading-snug">
+                                  {aspect.explanation}
+                                </p>
+                              )}
+                              {aspect.narrativeSentence && (
+                                <p className="text-[11px] text-slate-400 italic leading-relaxed border-l-2 border-teal-800/50 pl-2.5">
+                                  {aspect.narrativeSentence}
+                                </p>
+                              )}
+                              {isAiInfer && !aspect.retroInserted && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRetroactiveInsert(idx)}
+                                  className="inline-flex items-center gap-1 mt-1 px-2 py-1 rounded-md bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-[9px] font-bold text-amber-300 font-mono cursor-pointer"
+                                  title="Inyectar este dato sugerido en el reporte base"
+                                >
+                                  <CornerUpLeft className="h-2.5 w-2.5" />
+                                  Inyectar al texto base
+                                </button>
+                              )}
+                              {aspect.retroInserted && (
+                                <span className="inline-flex items-center gap-1 text-[9px] text-emerald-400 font-mono font-bold">
+                                  <Check className="h-3 w-3" /> Inyectado al texto base
+                                </span>
+                              )}
+                            </>
+                          )}
+                        </div>
 
-                      {/* Source */}
-                      <td className="py-4 px-4">
-                        {aspect.clinicalSource === "Hallazgo de Reporte" ? (
-                          <span className="inline-block px-2 py-0.5 text-[8px] font-bold uppercase rounded font-mono border bg-slate-950 text-indigo-400 border-indigo-900/30">
-                            Reportado
-                          </span>
-                        ) : (
-                          <div className="space-y-1.5">
-                            <span className="inline-block px-2 py-0.5 text-[8px] font-bold uppercase rounded font-mono border bg-slate-950 text-amber-400 border-amber-900/30">
-                              IA Inferencia
-                            </span>
-                            {aspect.retroInserted ? (
-                              <div className="text-[9px] text-emerald-400 font-bold flex items-center gap-0.5 font-mono">
-                                <Check className="h-3 w-3" /> Inyectado
-                              </div>
+                        <div className="flex items-center gap-1.5 shrink-0 self-start">
+                          <button
+                            type="button"
+                            onClick={() => toggleTableApproval(idx)}
+                            className="p-1.5 rounded-lg bg-slate-950 border border-slate-800 text-teal-300 hover:border-teal-500/40 cursor-pointer"
+                            title="Incluir en tabla"
+                          >
+                            {aspect.approvedForTable ? (
+                              <CheckSquare className="h-4 w-4" />
                             ) : (
-                              <button
-                                onClick={() => handleRetroactiveInsert(idx)}
-                                className="flex items-center justify-center gap-1 w-full py-1 px-1.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-[9px] font-bold text-amber-300 rounded hover:scale-105 active:scale-95 transition-all cursor-pointer font-mono"
-                                title="Inyectar este dato sugerido de manera retrógrada en el reporte base"
-                              >
-                                <CornerUpLeft className="h-2.5 w-2.5 text-amber-400" />
-                                Inyectar Base
-                              </button>
+                              <Square className="h-4 w-4 text-slate-600" />
                             )}
-                          </div>
-                        )}
-                      </td>
-
-                      {/* Sentence */}
-                      <td className="py-4 px-4 text-slate-400">
-                        {editingIndex === idx ? (
-                          <textarea
-                            value={editedSentence}
-                            onChange={e => setEditedSentence(e.target.value)}
-                            rows={2}
-                            className="w-full bg-slate-950 border border-indigo-500/40 rounded px-2 py-1 text-xs text-white resize-none"
-                          />
-                        ) : (
-                          <span className="italic leading-relaxed font-sans">{aspect.narrativeSentence || "—"}</span>
-                        )}
-                      </td>
-
-                      {/* Checkbox Table */}
-                      <td className="py-4 px-4 text-center">
-                        <button
-                          onClick={() => toggleTableApproval(idx)}
-                          className="mx-auto p-1.5 bg-slate-950/80 rounded-lg hover:bg-slate-900 text-indigo-400 hover:text-indigo-300 transition-all border border-slate-900 cursor-pointer"
-                        >
-                          {aspect.approvedForTable ? (
-                            <CheckSquare className="h-4 w-4" />
-                          ) : (
-                            <Square className="h-4 w-4 text-slate-700" />
-                          )}
-                        </button>
-                      </td>
-
-                      {/* Checkbox Report */}
-                      <td className="py-4 px-4 text-center">
-                        <button
-                          onClick={() => toggleReportApproval(idx)}
-                          className="mx-auto p-1.5 bg-slate-950/80 rounded-lg hover:bg-slate-900 text-emerald-400 hover:text-emerald-300 transition-all border border-slate-900 cursor-pointer"
-                        >
-                          {aspect.approvedForReportText ? (
-                            <CheckSquare className="h-4 w-4" />
-                          ) : (
-                            <Square className="h-4 w-4 text-slate-700" />
-                          )}
-                        </button>
-                      </td>
-
-                      {/* Actions */}
-                      <td className="py-4 px-4 text-center">
-                        <div className="flex items-center justify-center gap-1">
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => toggleReportApproval(idx)}
+                            className="p-1.5 rounded-lg bg-slate-950 border border-slate-800 text-emerald-400 hover:border-emerald-500/40 cursor-pointer"
+                            title="Incluir en texto"
+                          >
+                            {aspect.approvedForReportText ? (
+                              <CheckSquare className="h-4 w-4" />
+                            ) : (
+                              <Square className="h-4 w-4 text-slate-600" />
+                            )}
+                          </button>
                           {editingIndex === idx ? (
                             <button
+                              type="button"
                               onClick={() => handleSaveEdit(idx)}
-                              className="p-1 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-md transition-all cursor-pointer"
-                              title="Guardar cambios"
+                              className="p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 cursor-pointer"
+                              title="Guardar"
                             >
-                              <Check className="h-3 w-3" />
+                              <Check className="h-3.5 w-3.5" />
                             </button>
                           ) : (
                             <button
+                              type="button"
                               onClick={() => handleStartEdit(idx)}
-                              className="p-1 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-400 hover:text-slate-200 rounded-md transition-all cursor-pointer"
-                              title="Editar clínicamente"
+                              className="p-1.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-400 hover:text-slate-200 cursor-pointer"
+                              title="Editar"
                             >
-                              <Edit2 className="h-3 w-3" />
+                              <Edit2 className="h-3.5 w-3.5" />
                             </button>
                           )}
                           <button
+                            type="button"
                             onClick={() => handleDeleteAspect(idx)}
-                            className="p-1 bg-slate-900 hover:bg-rose-950/30 border border-slate-800 hover:border-rose-900/40 text-slate-400 hover:text-rose-400 rounded-md transition-all cursor-pointer"
-                            title="Descartar aspecto"
+                            className="p-1.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-500 hover:text-rose-400 cursor-pointer"
+                            title="Descartar"
                           >
-                            <Trash2 className="h-3 w-3" />
+                            <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Split Previews: Markdown Table & Narrative Sentence */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Table Preview */}
-              <div className="bg-slate-950/40 border border-slate-900 p-5 rounded-2xl space-y-3">
-                <div className="flex items-center gap-2 border-b border-slate-900 pb-2">
-                  <Table className="h-4 w-4 text-indigo-400" />
-                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-300 font-mono">
-                    Vista Previa: Cuadro Sinóptico
-                  </span>
-                </div>
-                {generateMarkdownTable() ? (
-                  <div className="text-xs text-slate-400 font-mono space-y-1 bg-slate-950/80 p-3 rounded-xl border border-slate-900 overflow-x-auto max-h-[160px] leading-relaxed">
-                    {generateMarkdownTable().split("\n").map((line, i) => (
-                      <div key={i}>{line}</div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-[10px] font-bold text-slate-600 uppercase tracking-wider italic text-center py-6 font-mono">
-                    Ningún aspecto seleccionado para la tabla.
-                  </p>
-                )}
-              </div>
-
-              {/* Narrative Text Preview */}
-              <div className="bg-slate-950/40 border border-slate-900 p-5 rounded-2xl space-y-3">
-                <div className="flex items-center gap-2 border-b border-slate-900 pb-2">
-                  <FileText className="h-4 w-4 text-emerald-400" />
-                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-300 font-mono">
-                    Vista Previa: Texto Narrativo
-                  </span>
-                </div>
-                {generateNarrativeParagraph() ? (
-                  <div className="text-xs text-slate-300 bg-slate-950/80 p-4 rounded-xl border border-slate-900 max-h-[160px] overflow-y-auto leading-relaxed">
-                    {generateNarrativeParagraph()}
-                  </div>
-                ) : (
-                  <p className="text-[10px] font-bold text-slate-600 uppercase tracking-wider italic text-center py-6 font-mono">
-                    Ninguna frase aprobada para el informe.
-                  </p>
-                )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
-            {/* Options Panel for Insertion & Retrograde Injection */}
-            <div className="bg-slate-950/60 p-4 rounded-2xl border border-indigo-900/30 space-y-3">
-              <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400 font-mono block">
-                Configuración de Inserción e Inyección Retrógrada Inteligente:
+            <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4 space-y-2">
+              <div className="flex items-center gap-2">
+                <FileText className="h-4 w-4 text-emerald-400" />
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-300 font-mono">
+                  Texto narrativo aprobado
+                </span>
+              </div>
+              {generateNarrativeParagraph() ? (
+                <p className="text-sm text-slate-300 leading-relaxed">
+                  {generateNarrativeParagraph()}
+                </p>
+              ) : (
+                <p className="text-[11px] text-slate-600 italic">
+                  Ninguna frase aprobada para el informe.
+                </p>
+              )}
+            </div>
+
+            <div className="bg-slate-950/60 p-4 rounded-2xl border border-teal-900/30 space-y-3">
+              <span className="text-[10px] font-black uppercase tracking-widest text-teal-400 font-mono block">
+                Inserción al informe
               </span>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-slate-300">
-                <label className="flex items-start gap-2.5 cursor-pointer select-none bg-slate-900/80 p-3 rounded-xl border border-slate-800 hover:border-indigo-500/40 transition-all">
+                <label className="flex items-start gap-2.5 cursor-pointer select-none bg-slate-900/80 p-3 rounded-xl border border-slate-800 hover:border-teal-500/40 transition-all">
                   <input
                     type="checkbox"
                     checked={autoRetrogradeInject}
                     onChange={e => setAutoRetrogradeInject(e.target.checked)}
-                    className="rounded text-indigo-500 focus:ring-indigo-500 h-4 w-4 bg-slate-950 border-slate-700 cursor-pointer mt-0.5"
+                    className="rounded text-teal-500 focus:ring-teal-500 h-4 w-4 bg-slate-950 border-slate-700 cursor-pointer mt-0.5"
                   />
                   <div>
                     <span className="font-bold text-slate-200 block text-[11px]">
-                      Inyección Retrógrada e Imperceptible en el Texto Base
+                      Inyección retrógrada en el texto base
                     </span>
                     <span className="text-[9.5px] text-slate-400 font-sans block leading-relaxed mt-0.5">
-                      Incrusta suavemente los puntos aprobados en la sección anatómica correspondiente de {organ || "órgano"} en el cuerpo del informe, fusionándolo de forma fluida e indetectable.
+                      Integra los puntos aprobados en la sección de {organ || "órgano"} del cuerpo del informe.
                     </span>
                   </div>
                 </label>
 
-                <label className="flex items-start gap-2.5 cursor-pointer select-none bg-slate-900/80 p-3 rounded-xl border border-slate-800 hover:border-indigo-500/40 transition-all">
+                <label className="flex items-start gap-2.5 cursor-pointer select-none bg-slate-900/80 p-3 rounded-xl border border-slate-800 hover:border-teal-500/40 transition-all">
                   <input
                     type="checkbox"
                     checked={includeSynopticSection}
                     onChange={e => setIncludeSynopticSection(e.target.checked)}
-                    className="rounded text-indigo-500 focus:ring-indigo-500 h-4 w-4 bg-slate-950 border-slate-700 cursor-pointer mt-0.5"
+                    className="rounded text-teal-500 focus:ring-teal-500 h-4 w-4 bg-slate-950 border-slate-700 cursor-pointer mt-0.5"
                   />
                   <div>
                     <span className="font-bold text-slate-200 block text-[11px]">
-                      Adjuntar Sección de Cuadro Sinóptico en Tabla
+                      Adjuntar cuadro sinóptico
                     </span>
                     <span className="text-[9.5px] text-slate-400 font-sans block leading-relaxed mt-0.5">
-                      Agrega o actualiza la sección <strong>### SINOPSIS CLÍNICA DE {organ ? organ.toUpperCase() : "ÓRGANO"}</strong> con la tabla de datos estructurados al final del informe.
+                      Agrega <strong>### SINOPSIS CLÍNICA DE {organ ? organ.toUpperCase() : "ÓRGANO"}</strong> al final del informe.
                     </span>
                   </div>
                 </label>
               </div>
             </div>
 
-            {/* Action Panel to apply elements to report */}
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-5 bg-indigo-950/15 border border-indigo-500/30 rounded-2xl">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-5 bg-teal-950/20 border border-teal-500/25 rounded-2xl">
               <div className="flex items-start gap-2.5">
-                <Info className="h-5 w-5 text-indigo-400 flex-shrink-0 mt-0.5" />
-                <p className="text-xs text-indigo-200 leading-normal max-w-xl">
-                  Al ejecutar esta acción, los hallazgos aprobados se <strong>incrustarán e inyectarán de manera retrógrada en el cuerpo del reporte original</strong> para que la adición sea totalmente imperceptible y coherente con el estilo radiológico.
+                <Info className="h-5 w-5 text-teal-400 flex-shrink-0 mt-0.5" />
+                <p className="text-xs text-teal-100/90 leading-normal max-w-xl">
+                  Los hallazgos aprobados se incorporarán al informe activo según las opciones de arriba.
                 </p>
               </div>
 
               <button
                 onClick={handleInsertIntoReport}
                 disabled={isInjecting}
-                className="w-full sm:w-auto px-6 py-3.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-900/60 disabled:cursor-not-allowed text-white rounded-xl text-[11px] font-black uppercase tracking-widest cursor-pointer transition-all flex items-center justify-center gap-2 font-mono shadow-xl border border-indigo-500 shadow-indigo-600/10 hover:scale-[1.02] active:scale-[0.98]"
+                className="w-full sm:w-auto px-6 py-3.5 bg-teal-600 hover:bg-teal-500 disabled:bg-teal-900/60 disabled:cursor-not-allowed text-white rounded-xl text-[11px] font-black uppercase tracking-widest cursor-pointer transition-all flex items-center justify-center gap-2 font-mono shadow-xl border border-teal-400/30 hover:scale-[1.02] active:scale-[0.98]"
               >
                 {isInjecting ? (
                   <>
-                    <Loader2 className="h-4 w-4 animate-spin text-indigo-200" />
+                    <Loader2 className="h-4 w-4 animate-spin text-teal-100" />
                     <span>Inyectando al Reporte...</span>
                   </>
                 ) : (
                   <>
                     <BookmarkCheck className="h-4 w-4" />
-                    <span>Inyectar e Incrustar al Informe</span>
+                    <span>Inyectar al informe</span>
                   </>
                 )}
               </button>
