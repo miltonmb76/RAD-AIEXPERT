@@ -63,60 +63,105 @@ export function renderFocalLesion3DAnnexToPDF(
   });
   yCoord += bannerHeight + 3.5 * factor;
 
-  // --- Meta strip (one compact line when possible) ---
-  const metaParts = [
-    data.lesionLabel ? `Lesión: ${data.lesionLabel}` : "",
-    data.lesionSite ? `Sitio: ${data.lesionSite}` : "",
-    data.lesionSize ? `Tamaño: ${data.lesionSize}` : "",
-    data.detectedLaterality ? `Lateralidad: ${data.detectedLaterality}` : "",
-    data.detectionMode ? `Modo: ${data.detectionMode === "manual" ? "Manual" : "Auto"}` : ""
-  ].filter(Boolean);
-  if (metaParts.length) {
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9 * factor);
-    doc.setTextColor(71, 85, 105);
-    const metaLines = doc.splitTextToSize(metaParts.join("  ·  "), contentWidth);
-    metaLines.slice(0, 2).forEach((line: string) => {
-      doc.text(line, marginX, yCoord);
-      yCoord += 3.3 * factor;
-    });
-    yCoord += 1.5 * factor;
+  // --- Clinical meta chips (no detection mode) ---
+  const metaChips: { label: string; value: string }[] = [
+    data.lesionLabel ? { label: "Lesión", value: data.lesionLabel } : null,
+    data.lesionSite ? { label: "Sitio", value: data.lesionSite } : null,
+    data.lesionSize ? { label: "Tamaño", value: data.lesionSize } : null,
+    data.detectedLaterality ? { label: "Lateralidad", value: data.detectedLaterality } : null,
+  ].filter(Boolean) as { label: string; value: string }[];
+
+  if (metaChips.length) {
+    const chipGap = 2.2 * factor;
+    const chipPadX = 2.4 * factor;
+    const chipH = 7.2 * factor;
+    let chipX = marginX;
+    let chipY = yCoord;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7.4 * factor);
+    for (const chip of metaChips) {
+      const label = `${chip.label}: `;
+      const labelW = doc.getTextWidth(label);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.4 * factor);
+      const valueLines = doc.splitTextToSize(chip.value, contentWidth * 0.42);
+      const valueW = Math.max(...valueLines.map((l: string) => doc.getTextWidth(l)));
+      const chipW = Math.min(contentWidth, labelW + valueW + chipPadX * 2 + 1.5 * factor);
+      if (chipX + chipW > marginX + contentWidth + 0.01) {
+        chipX = marginX;
+        chipY += chipH + chipGap;
+      }
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(203, 213, 225);
+      doc.setLineWidth(0.3);
+      doc.roundedRect(chipX, chipY, chipW, chipH, 1.4, 1.4, "FD");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7.4 * factor);
+      doc.setTextColor(13, 148, 136);
+      doc.text(label, chipX + chipPadX, chipY + 4.6 * factor);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.4 * factor);
+      doc.setTextColor(30, 41, 59);
+      doc.text(valueLines[0], chipX + chipPadX + labelW, chipY + 4.6 * factor);
+      chipX += chipW + chipGap;
+    }
+    yCoord = chipY + chipH + 3.2 * factor;
   }
 
   const figuresTop = yCoord;
 
-  // --- Reserve footer text (summary + keypoints) so figures can grow into leftover space ---
-  const summaryText = data.lesionSummary?.trim() || "";
-  const keyPoints = Array.isArray(data.keyPoints) ? data.keyPoints.filter(Boolean).slice(0, 6) : [];
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9 * factor);
-  const summaryLines = summaryText
-    ? doc.splitTextToSize(summaryText, contentWidth)
+  // --- Clinical text blocks to reserve under figures ---
+  const summaryText = (data.lesionSummary || "").trim();
+  const morphologyText = (data.lesionMorphology || "").trim();
+  const relationsText = (data.lesionRelations || "").trim();
+  const keyPoints = Array.isArray(data.keyPoints)
+    ? data.keyPoints.map((k) => String(k || "").trim()).filter(Boolean).slice(0, 8)
     : [];
-  doc.setFontSize(8.6 * factor);
-  const keyPointLineCounts = keyPoints.map((kp: string) =>
-    doc.splitTextToSize(`• ${kp}`, contentWidth - 2 * factor).length
-  );
-  const keyPointsLinesTotal = keyPointLineCounts.reduce((a: number, b: number) => a + b, 0);
 
-  let reservedTextH = 0;
-  if (summaryText || keyPoints.length) {
-    reservedTextH += 4 * factor; // gap under figures
-    if (summaryText) {
-      reservedTextH += 4.2 * factor; // section title
-      reservedTextH += summaryLines.length * 3.6 * factor;
+  type TextBox = { title: string; bodyLines: string[]; bullet?: boolean };
+  const textBoxes: TextBox[] = [];
+
+  const measureBoxBody = (raw: string, bullet = false): string[] => {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9.4 * factor);
+    const prefix = bullet ? "• " : "";
+    return doc.splitTextToSize(`${prefix}${raw}`, contentWidth - 10 * factor);
+  };
+
+  if (summaryText) {
+    textBoxes.push({ title: "Síntesis del hallazgo", bodyLines: measureBoxBody(summaryText) });
+  }
+  if (morphologyText) {
+    textBoxes.push({ title: "Morfología", bodyLines: measureBoxBody(morphologyText) });
+  }
+  if (relationsText) {
+    textBoxes.push({ title: "Relaciones anatómicas", bodyLines: measureBoxBody(relationsText) });
+  }
+  if (keyPoints.length) {
+    const kpLines: string[] = [];
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9.2 * factor);
+    for (const kp of keyPoints) {
+      const lines = doc.splitTextToSize(`• ${kp}`, contentWidth - 10 * factor);
+      kpLines.push(...lines);
     }
-    if (keyPoints.length) {
-      reservedTextH += (summaryText ? 2.5 : 0) * factor + 4.2 * factor;
-      reservedTextH += keyPointsLinesTotal * 3.4 * factor;
-    }
-    reservedTextH += 2 * factor;
+    textBoxes.push({ title: "Puntos clave", bodyLines: kpLines, bullet: true });
   }
 
-  // Prefer keeping text on the same page; if text is huge, allow figures more room
-  // and spill text to a continuation page.
-  const minFigureBudget = 78 * factor;
+  const boxTitleH = 5.2 * factor;
+  const boxPad = 3.2 * factor;
+  const boxLineH = 3.7 * factor;
+  const boxGap = 3 * factor;
+  let reservedTextH = 0;
+  if (textBoxes.length) {
+    reservedTextH += 3.5 * factor;
+    for (const box of textBoxes) {
+      reservedTextH += boxPad + boxTitleH + box.bodyLines.length * boxLineH + boxPad + boxGap;
+    }
+  }
+
+  // Prefer text on same page; if too tall, give figures more room and continue text later.
+  const minFigureBudget = 72 * factor;
   let textOnSamePage = true;
   let availableForFigures = pageBottom - figuresTop - reservedTextH;
   if (availableForFigures < minFigureBudget && reservedTextH > 0) {
@@ -124,14 +169,13 @@ export function renderFocalLesion3DAnnexToPDF(
     availableForFigures = pageBottom - figuresTop - 2 * factor;
   }
 
-  // --- Figure block: maximize width/height, keep 4:3 and equal panels ---
+  // --- Figure block (unchanged drawing approach: equal 4:3 panels) ---
   const numPanels = Math.min(validPanels.length, 2);
   const isSingle = numPanels === 1;
   const panelGap = isSingle ? 0 : 5 * factor;
   const cardPad = 2 * factor;
   const captionGap = 2.6 * factor;
 
-  // Caption height estimate (tight, shared across panels so cards stay equal)
   const measureCaption = (panelW: number): number => {
     let maxH = 0;
     for (let i = 0; i < numPanels; i++) {
@@ -146,10 +190,8 @@ export function renderFocalLesion3DAnnexToPDF(
       if (p.anatomicalFocus?.trim()) {
         doc.setFont("helvetica", "normal");
         doc.setFontSize(7.8 * factor);
-        const desc = doc.splitTextToSize(p.anatomicalFocus.trim(), panelW - 5 * factor);
-        // Cap caption lines so figures can stay large
-        const capped = desc.slice(0, 3);
-        h += 0.8 * factor + capped.length * 2.9 * factor;
+        const desc = doc.splitTextToSize(p.anatomicalFocus.trim(), panelW - 5 * factor).slice(0, 3);
+        h += 0.8 * factor + desc.length * 2.9 * factor;
       }
       h += 1.8 * factor;
       maxH = Math.max(maxH, h);
@@ -157,28 +199,23 @@ export function renderFocalLesion3DAnnexToPDF(
     return Math.max(maxH, 7 * factor);
   };
 
-  // Max panel width from page width
   const maxPanelWFromWidth = isSingle
     ? contentWidth * 0.92
     : (contentWidth - panelGap) / 2;
 
-  // Iterate once with provisional caption, then refine
   let panelWidth = maxPanelWFromWidth;
   let captionH = measureCaption(panelWidth);
   let imgW = panelWidth - cardPad * 2;
   let imgH = imgW * (3 / 4);
   let cardH = cardPad + imgH + captionH;
 
-  // If card is taller than budget, shrink by height while keeping 4:3
   if (cardH > availableForFigures) {
     const maxImgH = Math.max(40 * factor, availableForFigures - captionH - cardPad);
     imgH = maxImgH;
     imgW = imgH * (4 / 3);
     panelWidth = imgW + cardPad * 2;
-    // Re-measure caption at new width (may shrink slightly)
     captionH = measureCaption(panelWidth);
     cardH = cardPad + imgH + captionH;
-    // If caption grew and overflows, trim img a bit more
     if (cardH > availableForFigures) {
       imgH = Math.max(36 * factor, availableForFigures - captionH - cardPad);
       imgW = imgH * (4 / 3);
@@ -187,11 +224,9 @@ export function renderFocalLesion3DAnnexToPDF(
     }
   }
 
-  // Never exceed content width after height-driven sizing
-  const maxRowW = isSingle ? contentWidth : contentWidth;
   const rowW = isSingle ? panelWidth : panelWidth * 2 + panelGap;
-  if (rowW > maxRowW + 0.01) {
-    const scale = maxRowW / rowW;
+  if (rowW > contentWidth + 0.01) {
+    const scale = contentWidth / rowW;
     panelWidth *= scale;
     imgW = panelWidth - cardPad * 2;
     imgH = imgW * (3 / 4);
@@ -262,73 +297,59 @@ export function renderFocalLesion3DAnnexToPDF(
 
   yCoord += cardH + 4 * factor;
 
-  const drawTextBlock = () => {
-    if (summaryText) {
-      if (yCoord + 12 * factor > pageBottom) {
-        doc.addPage();
-        yCoord = 22 * factor;
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(11 * factor);
-        doc.setTextColor(15, 23, 42);
-        doc.text("ANEXO: CORTE FOCAL 3D (continuación)", marginX, yCoord);
-        yCoord += 6 * factor;
-      }
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(9.5 * factor);
-      doc.setTextColor(15, 23, 42);
-      doc.text("Síntesis del hallazgo focal", marginX, yCoord);
-      yCoord += 4 * factor;
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(9 * factor);
-      doc.setTextColor(51, 65, 85);
-      summaryLines.forEach((line: string) => {
-        if (yCoord > pageBottom - 4 * factor) {
-          doc.addPage();
-          yCoord = 22 * factor;
-        }
-        doc.text(line, marginX, yCoord);
-        yCoord += 3.6 * factor;
-      });
-    }
+  const ensureSpace = (needed: number) => {
+    if (yCoord + needed <= pageBottom) return;
+    doc.addPage();
+    yCoord = 20 * factor;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11 * factor);
+    doc.setTextColor(15, 23, 42);
+    doc.text("ANEXO: CORTE FOCAL 3D (continuación)", marginX, yCoord);
+    yCoord += 7 * factor;
+  };
 
-    if (keyPoints.length) {
-      yCoord += summaryText ? 2.5 * factor : 0;
-      if (yCoord + 10 * factor > pageBottom) {
-        doc.addPage();
-        yCoord = 22 * factor;
-      }
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(9.5 * factor);
-      doc.setTextColor(15, 23, 42);
-      doc.text("Puntos clave", marginX, yCoord);
-      yCoord += 4 * factor;
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8.6 * factor);
-      doc.setTextColor(51, 65, 85);
-      for (const kp of keyPoints) {
-        const lines = doc.splitTextToSize(`• ${kp}`, contentWidth - 2 * factor);
-        lines.forEach((line: string) => {
-          if (yCoord > pageBottom - 4 * factor) {
-            doc.addPage();
-            yCoord = 22 * factor;
-          }
-          doc.text(line, marginX, yCoord);
-          yCoord += 3.4 * factor;
-        });
-      }
+  const drawElegantBox = (title: string, bodyLines: string[]) => {
+    const boxH = boxPad + boxTitleH + bodyLines.length * boxLineH + boxPad;
+    ensureSpace(boxH + 2 * factor);
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(186, 230, 253);
+    doc.setLineWidth(0.35);
+    doc.roundedRect(marginX, yCoord, contentWidth, boxH, 2.2, 2.2, "FD");
+    doc.setFillColor(13, 148, 136);
+    doc.roundedRect(marginX, yCoord, 2.2 * factor, boxH, 1.1, 1.1, "F");
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10 * factor);
+    doc.setTextColor(15, 118, 110);
+    doc.text(title, marginX + 6 * factor, yCoord + boxPad + 3.4 * factor);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9.4 * factor);
+    doc.setTextColor(51, 65, 85);
+    let ty = yCoord + boxPad + boxTitleH;
+    bodyLines.forEach((line: string) => {
+      doc.text(line, marginX + 6 * factor, ty);
+      ty += boxLineH;
+    });
+    yCoord += boxH + boxGap;
+  };
+
+  const drawTextBlocks = () => {
+    for (const box of textBoxes) {
+      drawElegantBox(box.title, box.bodyLines);
     }
   };
 
-  if (summaryText || keyPoints.length) {
+  if (textBoxes.length) {
     if (!textOnSamePage) {
       doc.addPage();
-      yCoord = 22 * factor;
+      yCoord = 20 * factor;
       doc.setFont("helvetica", "bold");
       doc.setFontSize(11 * factor);
       doc.setTextColor(15, 23, 42);
       doc.text("ANEXO: CORTE FOCAL 3D (continuación)", marginX, yCoord);
-      yCoord += 6 * factor;
+      yCoord += 7 * factor;
     }
-    drawTextBlock();
+    drawTextBlocks();
   }
 }

@@ -422,28 +422,83 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
 
       {focalData && (
         <div className="space-y-4">
-          <div className="p-4 bg-teal-950/20 border border-teal-500/20 rounded-2xl space-y-2">
-            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <h4 className="text-sm font-black text-teal-200 font-mono uppercase tracking-wider">
-                {focalData.lesionLabel}
-              </h4>
-              {focalData.lesionSite && (
-                <span className="text-[11px] text-slate-400">{focalData.lesionSite}</span>
+          <div className="relative overflow-hidden rounded-2xl border border-teal-500/30 bg-gradient-to-br from-slate-950 via-slate-950 to-teal-950/40 p-5 space-y-4">
+            <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-teal-400/50 to-transparent" />
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[10px] font-mono font-bold uppercase tracking-[0.18em] text-teal-400/90">
+                  Hallazgo focal
+                </p>
+                <h4 className="mt-1 text-lg md:text-xl font-semibold text-teal-50 tracking-tight">
+                  {focalData.lesionLabel}
+                </h4>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {focalData.lesionSite && (
+                  <span className="px-2.5 py-1 rounded-lg bg-slate-900/80 border border-slate-700 text-[12px] text-slate-300">
+                    {focalData.lesionSite}
+                  </span>
+                )}
+                {focalData.lesionSize && (
+                  <span className="px-2.5 py-1 rounded-lg bg-cyan-950/40 border border-cyan-700/40 text-[12px] font-mono text-cyan-200">
+                    {focalData.lesionSize}
+                  </span>
+                )}
+                {focalData.detectedLaterality && (
+                  <span className="px-2.5 py-1 rounded-lg bg-slate-900/80 border border-slate-700 text-[12px] text-slate-300">
+                    {focalData.detectedLaterality}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {focalData.lesionSummary && (
+                <div className="md:col-span-2 rounded-xl border border-teal-800/40 bg-slate-950/70 p-4">
+                  <p className="text-[10px] font-mono font-black uppercase tracking-widest text-teal-300 mb-2">
+                    Síntesis del hallazgo
+                  </p>
+                  <p className="text-[13px] md:text-sm text-slate-200 leading-relaxed">
+                    {focalData.lesionSummary}
+                  </p>
+                </div>
               )}
-              {focalData.lesionSize && (
-                <span className="text-[10px] font-mono text-cyan-300/80">{focalData.lesionSize}</span>
+              {focalData.lesionMorphology && (
+                <div className="rounded-xl border border-slate-700/70 bg-slate-950/70 p-4">
+                  <p className="text-[10px] font-mono font-black uppercase tracking-widest text-cyan-300 mb-2">
+                    Morfología
+                  </p>
+                  <p className="text-[13px] text-slate-200 leading-relaxed">
+                    {focalData.lesionMorphology}
+                  </p>
+                </div>
+              )}
+              {focalData.lesionRelations && (
+                <div className="rounded-xl border border-slate-700/70 bg-slate-950/70 p-4">
+                  <p className="text-[10px] font-mono font-black uppercase tracking-widest text-amber-300 mb-2">
+                    Relaciones anatómicas
+                  </p>
+                  <p className="text-[13px] text-slate-200 leading-relaxed">
+                    {focalData.lesionRelations}
+                  </p>
+                </div>
+              )}
+              {focalData.keyPoints && focalData.keyPoints.length > 0 && (
+                <div className="md:col-span-2 rounded-xl border border-emerald-800/40 bg-slate-950/70 p-4">
+                  <p className="text-[10px] font-mono font-black uppercase tracking-widest text-emerald-300 mb-2">
+                    Puntos clave
+                  </p>
+                  <ul className="space-y-1.5">
+                    {focalData.keyPoints.map((kp, i) => (
+                      <li key={i} className="text-[13px] text-slate-200 leading-relaxed flex gap-2">
+                        <span className="text-emerald-400/90 shrink-0">•</span>
+                        <span>{kp}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )}
             </div>
-            {focalData.lesionSummary && (
-              <p className="text-xs text-slate-300 leading-relaxed">{focalData.lesionSummary}</p>
-            )}
-            {focalData.keyPoints && focalData.keyPoints.length > 0 && (
-              <ul className="text-[11px] text-slate-400 list-disc list-inside space-y-0.5">
-                {focalData.keyPoints.map((kp, i) => (
-                  <li key={i}>{kp}</li>
-                ))}
-              </ul>
-            )}
           </div>
 
           <div
