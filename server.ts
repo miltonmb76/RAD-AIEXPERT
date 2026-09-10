@@ -76,7 +76,14 @@ function getModelName(requestedModel?: string): string {
   if (requestedModel === "gemini-3.1-pro-preview" || requestedModel === "gemini-3.1-pro") {
     return "gemini-3.1-pro-preview";
   }
-  return "gemini-3.7-flash";
+  if (requestedModel === "gemini-3.8-flash") {
+    return "gemini-3.8-flash";
+  }
+  if (requestedModel === "gemini-3.7-flash") {
+    return "gemini-3.7-flash";
+  }
+  // auto / unknown / empty → quality Flash default on server
+  return "gemini-3.8-flash";
 }
 
 // Global sanitizer to strictly enforce BAAF instead of PAAF across all reports, annexes, and modules
@@ -4445,13 +4452,13 @@ REGLAS DE RESPUESTA:
 
 app.post("/api/classify-and-label-image", async (req: express.Request, res: express.Response) => {
   try {
-    const { image, filename, studyType, clinicalHistory, findings } = req.body;
+    const { image, filename, studyType, clinicalHistory, findings, model } = req.body;
     if (!image) {
       return res.status(400).json({ success: false, error: "Se requiere la imagen." });
     }
 
     const ai = getGeminiClient();
-    const selectedModel = getModelName("gemini-3.7-flash");
+    const selectedModel = getModelName(model || "gemini-3.7-flash");
 
     let mimeType = "image/png";
     const mimeMatch = image.match(/^data:([^;]+);/);
@@ -4543,14 +4550,14 @@ Responde EXCLUSIVAMENTE en formato JSON estricto con la siguiente estructura:
 
 app.post("/api/auto-label-us-photo", async (req: express.Request, res: express.Response) => {
   try {
-    const { image, studyType, clinicalHistory, findings } = req.body;
+    const { image, studyType, clinicalHistory, findings, model } = req.body;
     
     if (!image) {
       return res.status(400).json({ success: false, error: "Se requiere la imagen." });
     }
 
     const ai = getGeminiClient();
-    const selectedModel = getModelName("gemini-3.7-flash");
+    const selectedModel = getModelName(model || "gemini-3.7-flash");
 
     // Check if image string is SVG or base64
     let mimeType = "image/png";
