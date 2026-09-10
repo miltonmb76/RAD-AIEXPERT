@@ -714,7 +714,7 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
               Control de Lateralidad Anatómica Estricta:
             </span>
             <span className="text-[10px] text-slate-400">
-              Fija de forma determinante el lado para evitar inversiones en el render 3D:
+              Convención AP: Derecha = lado derecho del paciente de frente (queda a la izquierda de la imagen, como radiografía AP).
             </span>
           </div>
         </div>

@@ -312,12 +312,18 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
         )}
       </div>
 
-      <div className="p-3.5 bg-slate-950/90 border border-slate-800 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-3">
+      <div className="p-3.5 bg-slate-950/90 border border-slate-800 rounded-2xl flex flex-col gap-2">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Compass className="h-4 w-4 text-amber-400 shrink-0" />
-          <span className="text-[11px] font-black uppercase tracking-wider text-slate-200 font-mono">
-            Lateralidad
-          </span>
+          <div>
+            <span className="text-[11px] font-black uppercase tracking-wider text-slate-200 font-mono block">
+              Lateralidad
+            </span>
+            <span className="text-[10px] text-slate-400">
+              Convención AP: Derecha = lado derecho del paciente de frente (izquierda de la imagen).
+            </span>
+          </div>
         </div>
         <div className="flex flex-wrap gap-1.5">
           {[
@@ -342,6 +348,7 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
               </button>
             );
           })}
+        </div>
         </div>
       </div>
 
