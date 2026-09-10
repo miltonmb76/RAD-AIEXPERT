@@ -98,6 +98,7 @@ export async function fetchSuggestedLabel(params: {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
+      model,
       image: imageData,
       filename: image.name,
       studyType,
@@ -120,6 +121,7 @@ export async function fetchSuggestedLabel(params: {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
+      model,
       image: imageData,
       studyType,
       clinicalHistory,
@@ -132,4 +134,92 @@ export async function fetchSuggestedLabel(params: {
   }
 
   return String(fallback.data.label).trim();
+}
+
+
+export type AutoLabelProgress = {
+  done: number;
+  total: number;
+  currentImageId?: string;
+  error?: string;
+};
+
+/**
+ * Labels unlabeled attached images with the same AI engine as the queue,
+ * applying captions immediately (no confirmation step).
+ */
+export async function autoLabelAttachedImages(params: {
+  images: AttachedImageForLabeling[];
+  reportText: string;
+  studyType: string;
+  clinicalHistory: string;
+  model: string;
+  onlyUnlabeled?: boolean;
+  concurrency?: number;
+  shouldCancel?: () => boolean;
+  onProgress?: (progress: AutoLabelProgress) => void;
+  onLabeled?: (imageId: string, label: string) => void;
+}): Promise<{ labeled: number; failed: number }> {
+  const {
+    images,
+    reportText,
+    studyType,
+    clinicalHistory,
+    model,
+    onlyUnlabeled = true,
+    concurrency = 2,
+    shouldCancel,
+    onProgress,
+    onLabeled,
+  } = params;
+
+  const targets = images.filter((img) => {
+    if (!(img.url || img.base64)) return false;
+    if (onlyUnlabeled && img.caption?.trim()) return false;
+    return true;
+  });
+
+  let labeled = 0;
+  let failed = 0;
+  let cursor = 0;
+
+  onProgress?.({ done: 0, total: targets.length });
+
+  async function worker() {
+    while (cursor < targets.length) {
+      if (shouldCancel?.()) return;
+      const index = cursor++;
+      const image = targets[index];
+      onProgress?.({ done: labeled + failed, total: targets.length, currentImageId: image.id });
+      try {
+        const label = await fetchSuggestedLabel({
+          image,
+          reportText,
+          studyType,
+          clinicalHistory,
+          model,
+        });
+        if (shouldCancel?.()) return;
+        if (label.trim()) {
+          onLabeled?.(image.id, label.trim());
+          labeled += 1;
+        } else {
+          failed += 1;
+        }
+      } catch (err) {
+        failed += 1;
+        onProgress?.({
+          done: labeled + failed,
+          total: targets.length,
+          currentImageId: image.id,
+          error: err instanceof Error ? err.message : "Error de rotulado",
+        });
+      }
+      onProgress?.({ done: labeled + failed, total: targets.length });
+    }
+  }
+
+  const workers = Array.from({ length: Math.max(1, Math.min(concurrency, targets.length || 1)) }, () => worker());
+  await Promise.all(workers);
+  return { labeled, failed };
 }

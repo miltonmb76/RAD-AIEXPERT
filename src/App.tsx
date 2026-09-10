@@ -46,7 +46,7 @@ import type { CaptureMismatchInfo } from "./components/ActivePatientPanel";
 import { runBackgroundTask } from "./lib/backgroundTasks";
 import { BackgroundTasksBar } from "./components/BackgroundTasksBar";
 import { ActivePatientPanel } from "./components/ActivePatientPanel";
-import { LabelingQueuePanel } from "./components/LabelingQueuePanel";
+import { autoLabelAttachedImages, type AttachedImageForLabeling } from "./lib/labelingQueue";
 import {
   describeActiveRouting,
   MODEL_OPTIONS,
@@ -4191,8 +4191,11 @@ Ejemplo:
         setOriginalBaseReport(data.report);
 
         if (attachedImages.length > 0) {
-          setLabelQueueTrigger((value) => value + 1);
-          setIsLabelQueueOpen(true);
+          void autoLabelImagesAfterReport(String(data.report || ""));
+          // Lleva al usuario a la galeria donde veran las fotos ya rotuladas.
+          window.setTimeout(() => {
+            document.getElementById("attached-images-gallery")?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }, 250);
         }
 
         if (mode === "full") {
@@ -6429,6 +6432,76 @@ Ejemplo:
     return { modality, projection, side };
   };
 
+  const autoLabelRunIdRef = useRef(0);
+
+  useEffect(() => {
+    if (isLabelingAll) return;
+    const total = attachedImages.length;
+    const confirmed = attachedImages.filter((img) => Boolean((img as { caption?: string }).caption?.trim())).length;
+    setLabelingStats({ confirmed, total });
+  }, [attachedImages, isLabelingAll]);
+
+
+  const autoLabelImagesAfterReport = async (reportText: string) => {
+    const report = String(reportText || "").trim();
+    if (!report || attachedImages.length === 0) return;
+
+    const runId = ++autoLabelRunIdRef.current;
+    const imagesSnapshot = [...attachedImages];
+    const unlabeledCount = imagesSnapshot.filter((img) => !(img as { caption?: string }).caption?.trim()).length;
+    const total = unlabeledCount > 0 ? unlabeledCount : imagesSnapshot.length;
+    setIsLabelingAll(true);
+    setLabelingStats({ confirmed: 0, total });
+
+    try {
+      await runBackgroundTask(
+        `auto-label-after-report-${runId}`,
+        `Rotulando automaticamente ${total} imagenes`,
+        async () => {
+          const payload: AttachedImageForLabeling[] = imagesSnapshot.map((img) => ({
+            id: img.id,
+            name: (img as { name?: string }).name,
+            url: img.url,
+            base64: (img as { base64?: string }).base64,
+            caption: (img as { caption?: string }).caption,
+            modality: (img as { modality?: string }).modality,
+          }));
+
+          await autoLabelAttachedImages({
+            images: payload,
+            reportText: report,
+            studyType: studyType || specificStudy || "Ecografia US",
+            clinicalHistory: clinicalHistory || "",
+            model: modelFor("labeling"),
+            onlyUnlabeled: true,
+            concurrency: 2,
+            shouldCancel: () => autoLabelRunIdRef.current !== runId,
+            onProgress: ({ done, total: t }) => {
+              if (autoLabelRunIdRef.current !== runId) return;
+              setLabelingStats({ confirmed: done, total: t });
+            },
+            onLabeled: (imageId, label) => {
+              if (autoLabelRunIdRef.current !== runId) return;
+              setAttachedImages((prev) =>
+                prev.map((item) => (item.id === imageId ? { ...item, caption: label } : item))
+              );
+            },
+          });
+        }
+      );
+    } catch (err) {
+      console.error("Error en rotulado automatico post-reporte:", err);
+    } finally {
+      if (autoLabelRunIdRef.current === runId) {
+        setIsLabelingAll(false);
+        setLabelingStats((prev) => ({
+          confirmed: attachedImages.filter((img) => (img as { caption?: string }).caption?.trim()).length || prev.confirmed,
+          total: attachedImages.length || prev.total,
+        }));
+      }
+    }
+  };
+
   const handleLabelQueueCaptionUpdate = (id: string, caption: string) => {
     setAttachedImages((prev) =>
       prev.map((item) => (item.id === id ? { ...item, caption } : item))
@@ -6535,65 +6608,14 @@ Ejemplo:
 
   const handleAiLabelAllImages = () => {
     if (attachedImages.length === 0 || isLabelingAll) return;
-    const imagesToLabel = [...attachedImages];
-    setIsLabelingAll(true);
-
-    void runBackgroundTask(
-      `label-all-${Date.now()}`,
-      `Rotulando ${imagesToLabel.length} imágenes`,
-      async () => {
-        const promises = imagesToLabel.map(async (imgItem) => {
-          try {
-            const response = await fetch("/api/classify-and-label-image", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                model: modelFor("labeling"),
-                image: imgItem.base64 || imgItem.url,
-                filename: imgItem.name,
-                studyType: specificStudy || "Mamografía y Ultrasonido",
-                clinicalHistory: clinicalHistory || "",
-                findings: findings || inputReport || "",
-              }),
-            });
-
-            const data = await response.json();
-            if (response.ok && data.success) {
-              return {
-                id: imgItem.id,
-                label: data.label,
-                modality: data.modality,
-                projection: data.projection,
-                side: data.side
-              };
-            }
-          } catch (err) {
-            console.error(`Error labeling image ${imgItem.id}:`, err);
-          }
-          return null;
-        });
-
-        const results = await Promise.all(promises);
-        setAttachedImages(prev => prev.map(item => {
-          const found = results.find(r => r && r.id === item.id);
-          if (found) {
-            return {
-              ...item,
-              caption: found.label || item.caption,
-              modality: found.modality || item.modality || "US",
-              projection: found.projection || item.projection || "OTRO",
-              side: found.side || item.side || "Derecha"
-            };
-          }
-          return item;
-        }));
-      }
-    ).finally(() => {
-      setIsLabelingAll(false);
-    });
+    const report = String(generatedReport || inputReport || findings || "").trim();
+    if (!report) {
+      alert("Genera el reporte primero para rotular las imagenes automaticamente.");
+      return;
+    }
+    void autoLabelImagesAfterReport(report);
   };
+
 
   const handleCorrelateFigures = async () => {
     const reportToUse = generatedReport || inputReport || findings;
@@ -16884,7 +16906,10 @@ const splitReportAndAnnex = (text: string) => {
         labelingTotal={labelingStats.total}
         captureMismatch={bridgeCaptureMismatch}
         onOpenWorklist={() => setIsWorklistSidebarOpen(true)}
-        onOpenLabelingQueue={() => setIsLabelQueueOpen(true)}
+        onOpenLabelingQueue={() => {
+          const el = document.getElementById("attached-images-gallery");
+          if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+        }}
         onFinishCase={handleFinishActivePatient}
         onDismissMismatch={() => setBridgeCaptureMismatch(null)}
       />
@@ -19252,7 +19277,7 @@ const splitReportAndAnnex = (text: string) => {
 
                             {/* List/Grid of Thumbnails with caption modification & reorder & delete */}
                             {attachedImages.length > 0 && (
-                              <div className="space-y-3 pt-2">
+                              <div id="attached-images-gallery" className="space-y-3 pt-2">
                                 <div className="flex items-center justify-between">
                                   <span className="text-[10px] font-mono text-slate-450 uppercase font-black tracking-wider">
                                     ImÃ¡genes Cargadas ({attachedImages.length})
@@ -25022,26 +25047,6 @@ const splitReportAndAnnex = (text: string) => {
           })()}
         </div>
       )}
-      <LabelingQueuePanel
-        key={selectedWorklistPatientId || patientId || "label-queue"}
-        isOpen={isLabelQueueOpen}
-        onOpenChange={setIsLabelQueueOpen}
-        trigger={labelQueueTrigger}
-        reportText={generatedReport}
-        studyType={studyType || specificStudy || "Ecografia US"}
-        clinicalHistory={clinicalHistory}
-        selectedModel={modelFor("labeling")}
-        attachedImages={attachedImages.map((img) => ({
-          id: img.id,
-          name: (img as { name?: string }).name,
-          url: img.url,
-          base64: (img as { base64?: string }).base64,
-          caption: (img as { caption?: string }).caption,
-          modality: (img as { modality?: string }).modality,
-        }))}
-        onUpdateImageCaption={handleLabelQueueCaptionUpdate}
-        onStatsChange={(confirmed, total) => setLabelingStats({ confirmed, total })}
-      />
       <BackgroundTasksBar />
     </div>
   );
