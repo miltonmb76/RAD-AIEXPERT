@@ -23,8 +23,12 @@ import {
   ShieldAlert,
   Plus
 } from "lucide-react";
-import { Atlas3DData, Atlas3DPanel, Atlas3DSynopticItem } from "../types";
+import { Atlas3DData, Atlas3DPanel, Atlas3DSynopticItem, ClinicalScorecardData, AtlasPathologyOverlay } from "../types";
 import { runBackgroundTask } from "../lib/backgroundTasks";
+import {
+  buildAtlasDirectivesFromScorecard,
+  mergeOverlaysOntoAtlas,
+} from "../lib/clinicalIntelligence";
 
 // Helper to extract uppercase panel letters referenced in a string (e.g. "(Panel A)" -> ["A"], "Paneles A y B" -> ["A", "B"])
 const extractReferencedLetters = (panelRef?: string): string[] => {
@@ -59,6 +63,9 @@ interface Atlas3DModuleProps {
   includeInReport: boolean;
   setIncludeInReport: (include: boolean) => void;
   onClose?: () => void;
+  /** Intelligent link: Scorecard feeds pathology overlays + generation directives */
+  scorecardData?: ClinicalScorecardData | null;
+  externalDirectives?: string;
 }
 
 export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
@@ -70,7 +77,9 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
   setAtlasData,
   includeInReport,
   setIncludeInReport,
-  onClose
+  onClose,
+  scorecardData,
+  externalDirectives,
 }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStep, setGenerationStep] = useState("");
@@ -88,6 +97,18 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
   const [panelDirectives, setPanelDirectives] = useState<{ [letter: string]: string }>({});
   const [regeneratingPanelLetter, setRegeneratingPanelLetter] = useState<string | null>(null);
   const [editingFocusLetter, setEditingFocusLetter] = useState<string | null>(null);
+  const [isSyncingOverlay, setIsSyncingOverlay] = useState(false);
+
+  // Pull suggested directives from Scorecard when parent pushes them
+  React.useEffect(() => {
+    if (externalDirectives && externalDirectives.trim()) {
+      setCustomDirectives((prev) => {
+        if (prev.includes("PATOLOGÍA ACTIVA DEL SCORECARD")) return externalDirectives.trim();
+        if (!prev.trim()) return externalDirectives.trim();
+        return prev;
+      });
+    }
+  }, [externalDirectives]);
 
   // Helper to determine anatomical canvas orientation guide (compass)
   const getCompassInfo = (panel: Atlas3DPanel) => {
@@ -194,6 +215,8 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
       }, 2500);
 
       const effectiveLaterality = selectedLaterality === "auto" ? (laterality || "") : selectedLaterality;
+      const scorecardDirectives = buildAtlasDirectivesFromScorecard(scorecardData || null);
+      const mergedDirectives = [scorecardDirectives, customDirectives.trim()].filter(Boolean).join("\n\n");
 
       await runBackgroundTask("atlas-3d", "Generando Atlas 3D", async () => {
         const response = await fetch("/api/generate-3d-atlas", {
@@ -204,7 +227,7 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
             organOrStudy: activeProtocol || "",
             laterality: effectiveLaterality,
             requestedModel: selectedModel || "gemini-3.7-flash",
-            customDirectives: customDirectives.trim() || undefined
+            customDirectives: mergedDirectives || undefined
           })
         });
 
@@ -213,7 +236,11 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
           throw new Error(json.error || "No se pudo generar la reconstrucción 3D.");
         }
 
-        setAtlasData(json.data);
+        let nextData = json.data as Atlas3DData;
+        if (scorecardData?.atlasOverlays?.length) {
+          nextData = mergeOverlaysOntoAtlas(nextData, scorecardData.atlasOverlays, "shared") || nextData;
+        }
+        setAtlasData(nextData);
         setIncludeInReport(true);
       });
     } catch (err: any) {
@@ -495,6 +522,53 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
     setAtlasData({ ...atlasData, biomechanicalSynthesis: synthesis });
   };
 
+  const handleApplyScorecardOverlay = () => {
+    if (!atlasData || !scorecardData?.atlasOverlays?.length) return;
+    const merged = mergeOverlaysOntoAtlas(atlasData, scorecardData.atlasOverlays, "scorecard");
+    if (merged) setAtlasData(merged);
+    const directives = buildAtlasDirectivesFromScorecard(scorecardData);
+    if (directives) setCustomDirectives(directives);
+  };
+
+  const handleGenerateOverlayFromReport = async () => {
+    if (!reportText.trim() || !atlasData) return;
+    setIsSyncingOverlay(true);
+    setErrorMessage(null);
+    try {
+      const response = await fetch("/api/generate-clinical-scorecard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: selectedModel,
+          report: reportText,
+          studyType: activeProtocol || "",
+          protocolId: scorecardData?.protocolId || "auto",
+          atlasPanels: atlasData.panels.map((p) => ({
+            panelLetter: p.panelLetter,
+            panelTitle: p.panelTitle,
+            anatomicalFocus: p.anatomicalFocus,
+          })),
+        }),
+      });
+      const json = await response.json();
+      if (!json.success || !json.data) {
+        throw new Error(json.error || "No se pudo generar el overlay.");
+      }
+      const overlays = (json.data.atlasOverlays || []) as AtlasPathologyOverlay[];
+      const merged = mergeOverlaysOntoAtlas(atlasData, overlays, "atlas");
+      if (merged) setAtlasData(merged);
+    } catch (err: any) {
+      setErrorMessage(err?.message || "Error al generar overlay de patología.");
+    } finally {
+      setIsSyncingOverlay(false);
+    }
+  };
+
+  const overlaysForPanel = (letter: string): AtlasPathologyOverlay[] =>
+    (atlasData?.pathologyOverlays || []).filter(
+      (o) => (o.panelLetter || "").toUpperCase() === (letter || "").toUpperCase()
+    );
+
   return (
     <div className="bg-slate-900/95 border-2 border-indigo-500/30 rounded-3xl p-5 md:p-7 shadow-2xl space-y-6 text-slate-100 animate-fadeIn">
       {/* Header Bar */}
@@ -545,6 +619,44 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
           )}
         </div>
       </div>
+
+      {/* Pathology Overlay — intelligent Scorecard sync */}
+      {atlasData && (
+        <div className="p-3.5 bg-indigo-950/30 border border-indigo-500/25 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="flex items-start gap-2">
+            <ShieldAlert className="h-4 w-4 text-pink-400 shrink-0 mt-0.5" />
+            <div>
+              <span className="text-[11px] font-black uppercase tracking-wider text-indigo-200 font-mono block">
+                Overlay de patología activa
+              </span>
+              <span className="text-[10px] text-slate-400">
+                {(atlasData.pathologyOverlays?.length || 0) > 0
+                  ? `${atlasData.pathologyOverlays!.length} marcadores (${atlasData.overlaySource || "manual"}) — se imprimen en el anexo Atlas.`
+                  : "Sin marcadores aún. Sincroniza desde el Scorecard o genera desde el informe."}
+              </span>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {scorecardData?.atlasOverlays?.length ? (
+              <button
+                type="button"
+                onClick={handleApplyScorecardOverlay}
+                className="px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider bg-teal-600/90 hover:bg-teal-500 text-white cursor-pointer"
+              >
+                Aplicar Scorecard
+              </button>
+            ) : null}
+            <button
+              type="button"
+              disabled={isSyncingOverlay}
+              onClick={handleGenerateOverlayFromReport}
+              className="px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider border border-pink-500/40 bg-pink-500/10 hover:bg-pink-500/20 text-pink-200 cursor-pointer disabled:opacity-50"
+            >
+              {isSyncingOverlay ? "Generando…" : "Generar overlay IA"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Anatomical Laterality Lock Selector */}
       <div className="p-3.5 bg-slate-950/90 border border-slate-800 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-3">
@@ -863,6 +975,28 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
                         >
                           {isRegeneratingThis ? "Generando..." : "Reintentar render de este panel"}
                         </button>
+                      </div>
+                    )}
+
+                    {/* Pathology overlay markers */}
+                    {overlaysForPanel(panel.panelLetter).length > 0 && (
+                      <div className="absolute top-2 left-2 flex flex-col gap-1 max-w-[85%] z-10 pointer-events-none">
+                        {overlaysForPanel(panel.panelLetter).map((ov) => (
+                          <div
+                            key={ov.id}
+                            className={`flex items-start gap-1.5 px-2 py-1 rounded-lg border backdrop-blur-md text-[9px] leading-snug shadow-lg ${
+                              ov.status === "active"
+                                ? "bg-rose-950/75 border-rose-400/50 text-rose-100"
+                                : "bg-amber-950/70 border-amber-400/40 text-amber-100"
+                            }`}
+                          >
+                            <span className="font-black shrink-0 bg-white/15 rounded px-1">{ov.marker}</span>
+                            <span className="truncate">
+                              <strong>{ov.structure}</strong>
+                              {ov.finding ? ` — ${ov.finding}` : ""}
+                            </span>
+                          </div>
+                        ))}
                       </div>
                     )}
 
