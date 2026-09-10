@@ -76,6 +76,61 @@ export const Vascular3DModule: React.FC<Vascular3DModuleProps> = ({
   const [regeneratingPanelLetter, setRegeneratingPanelLetter] = useState<string | null>(null);
   const [editingFocusLetter, setEditingFocusLetter] = useState<string | null>(null);
 
+  // Anatomical orientation guide (parity with Atlas compass)
+  const getVascularCompassInfo = (panel: Vascular3DPanel) => {
+    const fullText = `${selectedVascularType} ${vascularData?.territoryLabel || ""} ${panel.panelTitle || ""} ${panel.anatomicalFocus || ""} ${panel.vesselName || ""} ${panel.laterality || selectedLaterality || ""}`.toLowerCase();
+    const isLeft =
+      (panel.laterality || selectedLaterality || "").toLowerCase().includes("izq") ||
+      (panel.laterality || selectedLaterality || "").toLowerCase().includes("left") ||
+      fullText.includes("izquierda") ||
+      fullText.includes("izquierdo");
+
+    if (fullText.includes("carot") || fullText.includes("vertebr") || selectedVascularType === "carotideo_vertebral") {
+      if (isLeft) {
+        return {
+          side: "EJE CAROTÍDEO IZQUIERDO",
+          leftSideTag: "MEDIAL (Tráquea / Línea media)",
+          rightSideTag: "LATERAL (SCM / Yugular)",
+          color: "border-indigo-500/40 text-indigo-200"
+        };
+      }
+      return {
+        side: "EJE CAROTÍDEO DERECHO",
+        leftSideTag: "LATERAL (SCM / Yugular)",
+        rightSideTag: "MEDIAL (Tráquea / Línea media)",
+        color: "border-cyan-500/40 text-cyan-200"
+      };
+    }
+
+    if (selectedVascularType === "arterial_mmii" || selectedVascularType === "venoso_mmii" || fullText.includes("femoral") || fullText.includes("poplit")) {
+      if (isLeft) {
+        return {
+          side: "MIEMBRO INFERIOR IZQUIERDO",
+          leftSideTag: "MEDIAL (Adductores)",
+          rightSideTag: "LATERAL (Vastus / Peroné)",
+          color: "border-indigo-500/40 text-indigo-200"
+        };
+      }
+      return {
+        side: "MIEMBRO INFERIOR DERECHO",
+        leftSideTag: "LATERAL (Vastus / Peroné)",
+        rightSideTag: "MEDIAL (Adductores)",
+        color: "border-cyan-500/40 text-cyan-200"
+      };
+    }
+
+    if (selectedVascularType === "arterias_renales" || fullText.includes("renal")) {
+      return {
+        side: isLeft ? "ARTERIA RENAL IZQUIERDA" : "ARTERIA RENAL DERECHA",
+        leftSideTag: "OSTIUM / AORTA",
+        rightSideTag: "HILIO RENAL",
+        color: "border-rose-500/40 text-rose-200"
+      };
+    }
+
+    return null;
+  };
+
   // Generate Vascular Suite with AI
   const handleGenerate = async () => {
     if (!reportText || !reportText.trim()) {
@@ -156,7 +211,7 @@ export const Vascular3DModule: React.FC<Vascular3DModuleProps> = ({
           reportText,
           vascularType: selectedVascularType,
           panel,
-          laterality: panel.laterality,
+          laterality: selectedLaterality !== "auto" ? selectedLaterality : panel.laterality,
           userDirective: directive,
           requestedModel: selectedModel
         })
@@ -238,12 +293,12 @@ export const Vascular3DModule: React.FC<Vascular3DModuleProps> = ({
               <h3 className="font-bold text-base md:text-lg tracking-wide text-white">
                 Suite Vascular 3D & Mapa Ánatomo-Hemodinámico
               </h3>
-              <span className="bg-indigo-500/30 text-indigo-200 border border-indigo-400/40 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full">
-                Doppler Pro
+              <span className="bg-gradient-to-r from-indigo-500 to-rose-500 text-white border border-indigo-300/30 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full shadow-sm">
+                3D Journal Quality
               </span>
             </div>
             <p className="text-xs text-indigo-200/80">
-              Reconstrucción macrovascular 3D de alta fidelidad, cálculo de estenosis y tabulación de velocidades
+              Misma fidelidad y belleza que el Atlas 3D: reconstrucción vascular fotorrealista, lateralidad estricta y tabla hemodinámica anclada al informe
             </p>
           </div>
         </div>
@@ -451,6 +506,24 @@ export const Vascular3DModule: React.FC<Vascular3DModuleProps> = ({
                       PANEL {panel.panelLetter}
                     </div>
 
+                    {/* Anatomical compass (Atlas parity) */}
+                    {(() => {
+                      const compass = getVascularCompassInfo(panel);
+                      if (!compass) return null;
+                      return (
+                        <div className={`absolute bottom-2 left-2 right-2 bg-slate-950/75 backdrop-blur-sm border ${compass.color} rounded-lg px-2 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity`}>
+                          <div className="flex items-center gap-1 mb-0.5">
+                            <Compass className="w-3 h-3 shrink-0" />
+                            <span className="text-[9px] font-black uppercase tracking-wider">{compass.side}</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2 text-[8px] font-semibold uppercase tracking-wide text-slate-300">
+                            <span>← {compass.leftSideTag}</span>
+                            <span>{compass.rightSideTag} →</span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
                     {/* Quick Tools Overlay */}
                     <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 backdrop-blur-sm p-1 rounded-lg">
                       <button
@@ -515,7 +588,8 @@ export const Vascular3DModule: React.FC<Vascular3DModuleProps> = ({
                         />
                       ) : (
                         <p className="text-[11px] text-slate-600 mt-1 leading-relaxed line-clamp-3">
-                          {panel.anatomicalFocus}
+                          <span className="font-bold text-indigo-600">Foco: </span>
+                          {(panel.anatomicalFocus || "").replace(/^Foco:\s*/i, "")}
                         </p>
                       )}
                     </div>

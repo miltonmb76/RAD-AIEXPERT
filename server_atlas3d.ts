@@ -427,24 +427,33 @@ RESPONDE EN JSON:
       const ai = getGeminiClient();
       const model = getModelName(requestedModel || "gemini-3.7-flash");
 
-      const vascularPrompt = `Eres un Cirujano Vascular, Médico Especialista en Ecografía Doppler Vascular de Alta Resolución y Director de Arte Médico 3D.
-Tu misión es analizar el informe Doppler ecográfico adjunto para estructurar la "SUITE VASCULAR 3D & MAPA ANATOMO-HEMODINÁMICO" con máxima fidelidad anatomopatológica y hemodinámica.
+      const vascularPrompt = `Eres un Cirujano Vascular, Médico Especialista en Ecografía Doppler Vascular de Alta Resolución, Catedrático de Anatomía Quirúrgica Vascular y Director de Arte Médico 3D.
+Tu labor es analizar minuciosamente el informe Doppler adjunto para concebir y diseñar una SUITE VASCULAR 3D FOTORREALISTA de calidad médica superior (Journal/Atlas Quality) — exactamente el mismo estándar visual y de exactitud anatomopatológica del Atlas Anatómico 3D — con correlación hemodinámica rigurosa.
 
 ========================================================================
 INFORMACIÓN DEL ESTUDIO VASCULAR:
 ========================================================================
 - Tipo de Estudio Sugerido / Seleccionado: "${vascularType || "Detectar automáticamente del informe"}"
-- Lateralidad Solicitada: "${laterality || "Detectar del informe"}"
-- Directiva Personalizada: "${customDirectives || "Ninguna"}"
+- Lateralidad Solicitada/Forzada: "${laterality || "Detectar del informe"}"
+- Directiva / Matiz Personalizado: "${customDirectives || "Ninguno"}"
 - INFORME DOPPLER VASCULAR:
 """
 ${reportText}
 """
 
 ========================================================================
+REGLA SUPREMA DE EXACTITUD (NO INVENTAR):
+========================================================================
+1. Extrae ÚNICAMENTE hallazgos, velocidades (PSV/EDV), índices (ICA/CCA, RAR, RI, VR), porcentajes de estenosis, morfología de placa/trombo y lateralidad que aparezcan en el informe.
+2. Si un segmento no se menciona, NO lo inventes con patología; omítelo o márcalo como "No evaluado / No descrito".
+3. La morfología visual de cada placa/trombo en el render DEBE coincidir con el texto (Gray-Weale I–V, blanda/hipoecoica, mixta, calcificada, ulcerada, hemorrágica, trombo fresco/organizado, o íntima limpia).
+4. El % de reducción luminal ilustrado DEBE ser coherente con la categoría reportada (ej. <50%, 50–69%, 70–99%, oclusión).
+5. Respeta lateralidad estricta: vaso DERECHO vs IZQUIERDO, y referencias óseas/musculares correctas (mandíbula, esternocleidomastoideo, vértebras cervicales, fémur, tibia, aorta, hilio renal).
+
+========================================================================
 DIRECTIVAS CLÍNICAS Y TIPOS DE ESTUDIO:
 ========================================================================
-Clasifica el estudio en uno de los 5 tipos canónicos y genera la tabla hemodinámica correspondiente:
+Clasifica el estudio en uno de los 5 tipos canónicos y genera la tabla hemodinámica correspondiente con filas SOLO para segmentos verdaderamente descritos:
 1. "carotideo_vertebral": Doppler Carotídeo y Vertebral (ACC, Bulbo, ACI proximal/media, ACE, Arteria Vertebral V1/V2 bilateral o unilateral).
    - Encabezados: VASO / SEGMENTO | PLACA / TROMBO | % ESTENOSIS | PATRÓN (PSV/EDV) | REL. ACC/ACI | IMPACTO HEMODIN.
 2. "arterial_mmii": Doppler Arterial de Miembros Inferiores (AFC, AFP, AFS proximal/media/distal, A. Poplítea, ATA, ATP, A. Peronea, Pedial).
@@ -457,25 +466,27 @@ Clasifica el estudio en uno de los 5 tipos canónicos y genera la tabla hemodin�
    - Encabezados: SEGMENTO VASCULAR | PLACA / CALCIFICACIÓN / TROMBO | DIÁMETRO / ECTASIA / ANEURISMA | % ESTENOSIS | PSV (cm/s) / PATRÓN | IMPACTO HEMODIN.
 
 ========================================================================
-DISEÑO DE PANELES 3D VASCULARES (Generar 2 o 3 Paneles):
+DISEÑO DE PANELES 3D VASCULARES (Journal/Atlas Quality — Generar 2 o 3 Paneles):
 ========================================================================
-- Panel A: Vaso o bifurcación principal con la lesión más significativa (ej: Bulbo Carotídeo con placa mixta Gray-Weale Tipo II y reducción luminal, o AFS con estenosis/oclusión, o Vaso con trombo endoluminal).
-- Panel B: Vaso contralateral o segmento complementario (ej: Eje carotídeo contralateral o lecho distal).
-- Panel C (opcional, si el estudio involucra patología bilateral compleja o tercer territorio crítico).
-- PROMPT EN INGLÉS para cada panel:
-  "Ultra-realistic 3D medical macro vascular cross-section render of [detailed vessel name, exact wall layer cutaway, exact plaque/thrombus morphology (lipid core, fibrous cap, calcifications, ulceration, or clean healthy intima), intraluminal lumen opening with glowing chromatic laminar blood flow vectors, anatomical bone/soft tissue landmark background, cinema 4D octane render style, soft surgical studio lighting, clean background, strictly NO text, NO numbers, NO arrows, NO letters inside the image]."
+- Panel A: Vaso o bifurcación principal con la lesión más significativa (ej: Bulbo Carotídeo con placa mixta Gray-Weale Tipo II y reducción luminal, o AFS con estenosis/oclusión, o vaso con trombo endoluminal).
+- Panel B: Vaso contralateral, segmento distal/proximal complementario, o visión axial/transversal del mismo eje (relación topográfica).
+- Panel C (opcional): solo si hay patología bilateral crítica o un tercer territorio decisivo.
+- Cada panel debe anclarse a landmarks anatómicos concretos (hueso, músculo, nervio o víscera vecina) y a la lateralidad del paciente.
+- PROMPT EN INGLÉS para cada panel — MISMO ESTÁNDAR VISUAL QUE EL ATLAS 3D:
+  "Clean 3D medical volumetric vascular cross-section render, cinema 4D octane render style, organic translucent vessel wall cutaway with accurate intima-media-adventitia layers, glowing chromatic bioluminescent accents highlighting the specific plaque/thrombus/stenosis or clean healthy lumen, ultra-high fidelity medical visualization, soft studio rim lighting, translucent subsurface scattering of blood and soft tissue, pure clean background, strictly NO written words, NO text, NO numbers, NO arrows, NO letters inside the image."
+- Incluye en cada imagePrompt: nombre exacto del vaso + lado, morfología exacta de la lesión (o íntima limpia), grado de estenosis visual coherente, patrón de flujo (laminar / acelerado / turbulento / ausente) como vectores cromáticos sutiles, y landmarks óseos/blandos del territorio.
 
 ========================================================================
 SÍNTESIS MORFOLÓGICA Y HEMODINÁMICA:
 ========================================================================
-Redacta un texto integrador de 3 a 5 líneas con las conclusiones del estudio, consensos (SRU/NASCET/Intersocietal), repercusión hemodinámica y permeabilidad.
+Redacta un texto integrador de 2 a 4 líneas con las conclusiones del estudio, consensos (SRU/NASCET/Intersocietal cuando apliquen), repercusión hemodinámica y permeabilidad — sin inventar hallazgos ausentes del informe.
 
 RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
 {
   "studyTypeCategory": "carotideo_vertebral" | "arterial_mmii" | "venoso_mmii" | "arterias_renales" | "aorto_iliaco" | "general_vascular",
   "territoryLabel": "DOPPLER CAROTÍDEO Y VERTEBRAL" | "DOPPLER ARTERIAL DE MIEMBRO INFERIOR" | "DOPPLER VENOSO DE MIEMBRO INFERIOR" | "DOPPLER DE ARTERIAS RENALES" | "DOPPLER AORTO-ILÍACO",
   "laterality": "Bilateral" | "Derecha" | "Izquierda" | "Línea media",
-  "figureTitle": "FIGURA 1. ATLAS 3D DE CORRELACIÓN ANATOMOPATOLÓGICA Y HEMODINÁMICA [TERRITORIO]",
+  "figureTitle": "FIGURA 1. RECONSTRUCCIÓN VASCULAR 3D Y CORRELACIÓN HEMODINÁMICA DE [TERRITORIO]",
   "tableTitle": "TABLA HEMODINÁMICA Y CARACTERIZACIÓN DE LESIONES [TERRITORIO]:",
   "tableHeaders": {
     "col1": "VASO / SEGMENTO",
@@ -488,19 +499,19 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
   "panels": [
     {
       "panelLetter": "A",
-      "panelTitle": "Panel A: Bifurcación Carotídea Derecha: Ateromatosis Mixta Tipo II (Bulbo y ACI Proximal)",
+      "panelTitle": "Corte Longitudinal - Bifurcación Carotídea Derecha",
       "vesselName": "Bifurcación Carotídea Derecha",
-      "anatomicalFocus": "Placas de ateroma Gray-Weale Tipo II en pared anterior de bulbo...",
+      "anatomicalFocus": "Foco: Placa mixta Gray-Weale Tipo II en pared posterior del bulbo con estenosis <50%",
       "laterality": "Derecha",
-      "imagePrompt": "Ultra-realistic 3D medical macro vascular render..."
+      "imagePrompt": "Clean 3D medical volumetric vascular cross-section render..."
     },
     {
       "panelLetter": "B",
-      "panelTitle": "Panel B: Arteria Carótida Común Izquierda: Engrosamiento Miointimal Difuso",
+      "panelTitle": "Visión Complementaria - Eje Contralateral o Segmento Distal",
       "vesselName": "Arteria Carótida Común Izquierda",
-      "anatomicalFocus": "Corte longitudinal macro del eje carotídeo común izquierdo...",
+      "anatomicalFocus": "Foco: Engrosamiento miointimal difuso sin placa estenosante",
       "laterality": "Izquierda",
-      "imagePrompt": "Ultra-realistic 3D medical macro vascular render..."
+      "imagePrompt": "Clean 3D medical volumetric vascular cross-section render..."
     }
   ],
   "hemodynamicTable": [
@@ -508,7 +519,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
       "vessel": "Arteria Carótida Común Derecha",
       "plaqueOrThrombus": "Sin placas",
       "stenosisPercent": "< 50%",
-      "patternOrVelocity": "Flujo laminar de resistencia intermedia",
+      "patternOrVelocity": "Flujo laminar de resistencia intermedia (PSV xx cm/s)",
       "hemodynamicIndex": "N/A",
       "clinicalImpact": "Normal"
     }
@@ -532,7 +543,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
           studyTypeCategory: vascularType || "carotideo_vertebral",
           territoryLabel: "DOPPLER VASCULAR",
           laterality: laterality || "Bilateral",
-          figureTitle: "FIGURA 1. ATLAS 3D DE CORRELACIÓN VASCULAR Y HEMODINÁMICA",
+          figureTitle: "FIGURA 1. RECONSTRUCCIÓN VASCULAR 3D Y CORRELACIÓN HEMODINÁMICA",
           tableTitle: "TABLA HEMODINÁMICA Y CARACTERIZACIÓN VASCULAR:",
           tableHeaders: {
             col1: "VASO / SEGMENTO",
@@ -545,17 +556,17 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
           panels: [
             {
               panelLetter: "A",
-              panelTitle: "Panel A: Reconstrucción Vascular de Alta Resolución",
-              anatomicalFocus: "Evaluación morfológica parietal y luminal del eje vascular principal.",
-              laterality: "Derecha",
-              imagePrompt: "Ultra-realistic 3D medical macro vascular cross-section render showing blood vessel wall, translucent lumen with chromatic laminar flow vectors, studio lighting, octane render, no text."
+              panelTitle: "Reconstrucción Volumétrica del Eje Vascular Principal",
+              anatomicalFocus: "Foco: Evaluación morfológica parietal y luminal del eje vascular principal.",
+              laterality: laterality && laterality !== "auto" ? laterality : "Derecha",
+              imagePrompt: "Clean 3D medical volumetric vascular cross-section render showing accurate intima-media-adventitia vessel wall layers, translucent lumen with glowing chromatic bioluminescent laminar flow accents, soft studio rim lighting, cinema 4D octane render, ultra-high fidelity medical visualization, pure clean background, no text."
             },
             {
               panelLetter: "B",
-              panelTitle: "Panel B: Eje Complementario / Contralateral",
-              anatomicalFocus: "Permeabilidad y morfología parietal del vaso complementario.",
-              laterality: "Izquierda",
-              imagePrompt: "Ultra-realistic 3D medical macro vascular render of contralateral blood vessel, smooth endothelial intima, clean studio background, octane render, no text."
+              panelTitle: "Perspectiva Complementaria / Contralateral",
+              anatomicalFocus: "Foco: Permeabilidad y morfología parietal del vaso complementario.",
+              laterality: laterality && laterality !== "auto" && laterality !== "Bilateral" ? laterality : "Izquierda",
+              imagePrompt: "Clean 3D medical volumetric vascular cross-section render of contralateral complementary vessel, smooth healthy endothelial intima, translucent soft-tissue landmarks, soft studio rim lighting, cinema 4D octane render, ultra-high fidelity medical visualization, pure clean background, no text."
             }
           ],
           hemodynamicTable: [
@@ -573,15 +584,22 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
         };
       }
 
-      // Generate images in parallel for each vascular panel
+      // Generate images in parallel for each vascular panel (Atlas Journal Quality pipeline)
       const panelsWithImages = await Promise.all(
         (planJson.panels || []).map(async (panel: any, idx: number) => {
-          let promptToUse = panel.imagePrompt || `Ultra-realistic 3D medical macro vascular render of ${panel.vesselName || panel.panelTitle}, octane render, no text.`;
+          let promptToUse = panel.imagePrompt || `Clean 3D medical volumetric vascular cross-section render of ${panel.vesselName || panel.panelTitle}, cinema 4D octane render style, translucent vessel wall cutaway, glowing chromatic bioluminescent flow accents, ultra-high fidelity medical visualization, soft studio rim lighting, pure clean background, no text.`;
+          // Enforce Atlas-parity style tokens if the model returned a thinner prompt
+          if (!/octane|bioluminescent|ultra-high fidelity|studio rim/i.test(promptToUse)) {
+            promptToUse = `${promptToUse}. Clean 3D medical volumetric vascular cross-section render, cinema 4D octane render style, organic translucent vessel wall cutaway with accurate intima-media-adventitia layers, glowing chromatic bioluminescent accents, ultra-high fidelity medical visualization, soft studio rim lighting, pure clean background, strictly NO text, NO numbers, NO arrows, NO letters.`;
+          }
           if (customDirectives && customDirectives.trim()) {
             promptToUse = `${promptToUse} [MANDATORY CLINICAL DIRECTIVE: ${customDirectives.trim()}].`;
           }
-          if (panel.laterality && panel.laterality !== "auto") {
-            promptToUse = `[MANDATORY PATIENT LATERALITY: ${panel.laterality.toUpperCase()}]. ${promptToUse}`;
+          const effectiveLaterality =
+            (laterality && laterality !== "auto" ? laterality : null) ||
+            (panel.laterality && panel.laterality !== "auto" ? panel.laterality : null);
+          if (effectiveLaterality) {
+            promptToUse = `[MANDATORY PATIENT LATERALITY: ${effectiveLaterality.toUpperCase()}]. ${promptToUse}`;
           }
 
           try {
@@ -591,7 +609,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
               panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
               panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
               vesselName: panel.vesselName || panel.panelTitle || "",
-              anatomicalFocus: panel.anatomicalFocus || "Evaluación vascular anatómica y hemodinámica",
+              anatomicalFocus: panel.anatomicalFocus || "Foco: Evaluación vascular anatómica y hemodinámica",
               laterality: panel.laterality || planJson.laterality || laterality || "",
               imageUrl: imageUrl,
               promptUsed: promptToUse,
@@ -604,7 +622,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
               panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
               panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
               vesselName: panel.vesselName || panel.panelTitle || "",
-              anatomicalFocus: panel.anatomicalFocus || "Evaluación vascular anatómica y hemodinámica",
+              anatomicalFocus: panel.anatomicalFocus || "Foco: Evaluación vascular anatómica y hemodinámica",
               laterality: panel.laterality || planJson.laterality || laterality || "",
               imageUrl: "",
               promptUsed: promptToUse,
@@ -618,7 +636,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
         studyTypeCategory: planJson.studyTypeCategory || vascularType || "carotideo_vertebral",
         territoryLabel: planJson.territoryLabel || "DOPPLER VASCULAR",
         laterality: planJson.laterality || laterality || "Bilateral",
-        figureTitle: planJson.figureTitle || `FIGURA 1. ATLAS 3D DE CORRELACIÓN VASCULAR Y HEMODINÁMICA`,
+        figureTitle: planJson.figureTitle || `FIGURA 1. RECONSTRUCCIÓN VASCULAR 3D Y CORRELACIÓN HEMODINÁMICA`,
         tableTitle: planJson.tableTitle || `TABLA HEMODINÁMICA Y CARACTERIZACIÓN DE LESIONES:`,
         tableHeaders: planJson.tableHeaders || {
           col1: "VASO / SEGMENTO",
@@ -657,26 +675,30 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
       const ai = getGeminiClient();
       const model = getModelName(requestedModel || "gemini-3.7-flash");
 
-      const refinePrompt = `Eres un Cirujano Vascular y Director de Arte Médico 3D.
-Diseña un prompt en inglés superdetallado para re-generar una única imagen vascular macrofotorrealista 3D correspondiente al PANEL ${panel.panelLetter}.
+      const refinePrompt = `Eres un Cirujano Vascular, Catedrático de Anatomía Quirúrgica Vascular y Director de Arte Médico 3D.
+Diseña un prompt en inglés superdetallado para re-generar una única imagen vascular 3D fotorrealista de calidad Journal/Atlas Quality correspondiente al PANEL ${panel.panelLetter}.
 
 DATOS DEL CASO:
 - Territorio: "${vascularType || "Doppler Vascular"}"
 - Vaso: "${panel.vesselName || panel.panelTitle || ""}"
 - Foco actual: "${panel.anatomicalFocus || ""}"
 - Lateralidad requerida: "${laterality || panel.laterality || ""}"
-- Instrucción / Corrección del médico: "${userDirective || "Mejorar precisión anatomopatológica y hemodinámica"}"
-- Contexto del informe: """${(reportText || "").slice(0, 800)}"""
+- Instrucción / Corrección del médico: "${userDirective || "Mejorar realismo, precisión anatomopatológica y belleza de atlas médico"}"
+- Contexto del informe: """${(reportText || "").slice(0, 1200)}"""
 
-REGLAS DE ESTILO:
-- Ultra-realistic 3D medical macro vascular cross-section render, cinema 4D octane render style, accurate vascular wall layers (intima, media, adventitia), realistic plaque/thrombus (lipid core, fibrous cap, calcium) or smooth clean lumen, glowing chromatic laminar blood flow vectors, soft surgical studio lighting, pure clean background.
+REGLAS DE EXACTITUD:
+- La morfología de placa/trombo, el % de estenosis y la lateralidad DEBEN coincidir con el informe (no inventar).
+- Ancla el vaso a landmarks óseos/blandos reales del territorio.
+
+REGLAS DE ESTILO (idénticas al Atlas 3D):
+- Clean 3D medical volumetric vascular cross-section render, cinema 4D octane render style, organic translucent vessel wall cutaway with accurate intima-media-adventitia layers, glowing chromatic bioluminescent accents highlighting the specific pathology or clean lumen, ultra-high fidelity medical visualization, soft studio rim lighting, translucent subsurface scattering, pure clean background.
 - STRICTLY NO text, NO numbers, NO letters, NO arrows inside the image.
 
 RESPONDE EN JSON:
 {
   "panelTitle": "Título actualizado o confirmado para el panel",
   "vesselName": "Nombre del vaso",
-  "anatomicalFocus": "Foco anatomopatológico y hemodinámico de 1 a 2 líneas",
+  "anatomicalFocus": "Foco: Breve descripción de 1 línea del hallazgo en este panel",
   "imagePrompt": "Detailed English image generation prompt..."
 }`;
 
@@ -694,11 +716,14 @@ RESPONDE EN JSON:
           panelTitle: panel.panelTitle,
           vesselName: panel.vesselName || panel.panelTitle,
           anatomicalFocus: panel.anatomicalFocus,
-          imagePrompt: `Ultra-realistic 3D medical macro vascular render of ${panel.vesselName || panel.panelTitle}, octane render, studio lighting, no text.`
+          imagePrompt: `Clean 3D medical volumetric vascular cross-section render of ${panel.vesselName || panel.panelTitle}, cinema 4D octane render style, translucent vessel wall cutaway, glowing chromatic bioluminescent accents, ultra-high fidelity medical visualization, soft studio rim lighting, pure clean background, no text.`
         };
       }
 
-      let finalPrompt = refineJson.imagePrompt || panel.promptUsed || `3D macro vascular render of ${panel.panelTitle}, no text.`;
+      let finalPrompt = refineJson.imagePrompt || panel.promptUsed || `Clean 3D medical volumetric vascular cross-section render of ${panel.panelTitle}, octane render, soft studio rim lighting, no text.`;
+      if (!/octane|bioluminescent|ultra-high fidelity|studio rim/i.test(finalPrompt)) {
+        finalPrompt = `${finalPrompt}. Clean 3D medical volumetric vascular cross-section render, cinema 4D octane render style, organic translucent vessel wall cutaway, glowing chromatic bioluminescent accents, ultra-high fidelity medical visualization, soft studio rim lighting, pure clean background, strictly NO text.`;
+      }
       if (userDirective && userDirective.trim()) {
         finalPrompt = `${finalPrompt} [MANDATORY SURGICAL CORRECTION: ${userDirective.trim()}].`;
       }
