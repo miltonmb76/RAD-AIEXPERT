@@ -142,6 +142,7 @@ export function buildPanelScopedFindingDirective(
     `Peso: ${finding.weight || "major"}; severidad: ${finding.severity ?? "n/d"}.`,
     sharedNote,
     "Mantén exactitud morfométrica/morfológica (medidas, lado, aspecto).",
+    "LATERALIDAD AP: «Derecha/Izquierda» = lado anatómico del paciente de frente (como radiografía AP). En vista AP/coronal, lado derecho del paciente = izquierda del cuadro; lado izquierdo del paciente = derecha del cuadro.",
     "Highlight cromático / cutaway SOLO en el hallazgo asignado a este panel.",
     "No inventes hallazgos fuera de esta directiva acotada.",
     opts.siblingHints ? `Contexto de otros hallazgos del estudio (NO dibujar como foco): ${opts.siblingHints}` : "",

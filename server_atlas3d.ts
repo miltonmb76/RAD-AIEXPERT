@@ -111,14 +111,106 @@ function handleGeminiError(error: any): string {
 const FAITHFUL_STYLE =
   "High-fidelity photorealistic 3D medical anatomical render, volumetric surgical cutaway, accurate topographic relationships and true anatomical scale. Premium tissue materials: realistic fascia, muscle fiber microtexture, visceral parenchyma, periosteum and serosa with physically based subsurface scattering. Soft cinematic clinical studio lighting with gentle rim light and shallow depth cues for clarity—NOT neon, NOT bioluminescent, NOT exaggerated glow. Pathology highlighted with restrained chromatic accent ONLY where the report describes it. No invented lesions. Pure clean background. STRICTLY NO text, NO letters, NO numbers, NO arrows, NO labels inside the image.";
 
-/** Hard laterality rules shared by Atlas / Focal / Vascular image prompts. */
+/**
+ * Radiographic AP laterality (shared by Atlas / Focal / Vascular).
+ * "Derecha" = patient's anatomical right when facing the camera (radiografía AP),
+ * which appears on the VIEWER'S LEFT of the frame — never the observer's right hand.
+ */
 const LATERALITY_HARD_RULES =
-  "LATERALITY HARD RULES (never violate): " +
-  "(1) Patient RIGHT vs LEFT must match the report and the spatial contract — do NOT mirror anatomy for aesthetics. " +
-  "(2) Image LEFT OF FRAME and RIGHT OF FRAME mean viewer-left/viewer-right as listed in the contract; place named landmarks accordingly. " +
-  "(3) If laterality is Derecha/Right, pathology and organ side must be on the patient's right; if Izquierda/Left, on the patient's left. " +
-  "(4) Bilateral studies: depict each side correctly; never swap sides between panels. " +
-  "(5) Prefer correct laterality over visual symmetry; a beautiful but mirrored image is a FAIL.";
+  "LATERALITY HARD RULES (never violate — radiografía AP / patient facing camera): " +
+  "(0) 'Derecha/Right' ALWAYS means the PATIENT'S anatomical right, NEVER the viewer's right-hand side of the screen. " +
+  "(1) DEFAULT VIEW = AP / coronal / anterior / frontal (patient faces observer, like a frontal AP radiograph): " +
+  "PATIENT'S RIGHT anatomy and pathology MUST appear on the VIEWER'S LEFT of the image frame; " +
+  "PATIENT'S LEFT anatomy and pathology MUST appear on the VIEWER'S RIGHT of the image frame. " +
+  "(2) POSTERIOR / DORSAL view only (explicit): patient right → viewer right; patient left → viewer left. " +
+  "(3) imageLeftStructure / imageRightStructure are VIEWER-left / VIEWER-right anchors and MUST obey (1) or (2) for the chosen view. " +
+  "(4) Do NOT mirror anatomy for aesthetics; bilateral: never swap sides between panels. " +
+  "(5) A beautiful but laterality-wrong image is a CRITICAL FAIL.";
+
+/** Spanish planning block for Atlas / Focal planners. */
+const LATERALITY_PLAN_RULES_ES =
+  "REGLA SUPREMA DE LATERALIDAD (como radiografía AP / paciente visto de frente):\n" +
+  "- \"Derecha\" / \"Izquierda\" = lado ANATÓMICO DEL PACIENTE, NUNCA el lado de la mano del observador.\n" +
+  "- Vista AP / coronal / anterior / frontal (por defecto): el LADO DERECHO DEL PACIENTE queda a la IZQUIERDA DEL CUADRO; " +
+  "el LADO IZQUIERDO DEL PACIENTE queda a la DERECHA DEL CUADRO.\n" +
+  "- Vista posterior / dorsal (solo si se declara explícitamente): lado derecho del paciente a la derecha del cuadro; izquierdo a la izquierda.\n" +
+  "- imageLeftStructure / imageRightStructure = anclas del OBSERVADOR coherentes con esa convención " +
+  "(ej. rodilla derecha AP: compartimento lateral/peroné a la IZQUIERDA del cuadro; medial a la DERECHA).\n" +
+  "- pathologySite debe nombrar el lado del paciente. PROHIBIDO espejar \"para que quede bonito\".\n" +
+  "- doNotInvent DEBE incluir: \"mirrored laterality\", \"contralateral side swap\", \"patient-right drawn on viewer-right in AP\".";
+
+function classifyViewOrientation(view?: string): "anterior" | "posterior" | "other" {
+  const v = String(view || "").toLowerCase();
+  if (/posterior|dorsal|espalda|back view|from behind|viewed from behind/.test(v)) return "posterior";
+  if (/ap\b|pa\b|coronal|anterior|frontal|frente|palmar|ventral|face[- ]?on|facing/.test(v)) return "anterior";
+  // Atlas / Focal clinical default is AP-like (patient facing observer).
+  return "anterior";
+}
+
+/** Explicit screen placement constraint for image prompts. */
+function buildScreenLateralityConstraint(laterality?: string, view?: string): string {
+  const lat = String(laterality || "").toLowerCase();
+  const orient = classifyViewOrientation(view);
+  const isBilateral = /bilateral|ambos|both/.test(lat);
+  const isRight =
+    (/derech|right|\bdcha\b/.test(lat) || /\bright\b/.test(lat)) &&
+    !/izquier|left|bilateral|ambos/.test(lat);
+  const isLeft =
+    (/izquier|left|\bizq\b/.test(lat) || /\bleft\b/.test(lat)) &&
+    !/derech|right|bilateral|ambos/.test(lat);
+
+  if (isBilateral) {
+    return (
+      "SCREEN MAP (AP radiographic): patient's RIGHT half of anatomy on VIEWER'S LEFT of frame; " +
+      "patient's LEFT half on VIEWER'S RIGHT. Never swap halves."
+    );
+  }
+
+  if (orient === "posterior") {
+    if (isRight) {
+      return "SCREEN MAP (posterior/dorsal): PATIENT'S RIGHT pathology MUST be on VIEWER'S RIGHT of the frame. Do NOT apply AP mirroring.";
+    }
+    if (isLeft) {
+      return "SCREEN MAP (posterior/dorsal): PATIENT'S LEFT pathology MUST be on VIEWER'S LEFT of the frame. Do NOT apply AP mirroring.";
+    }
+    return "SCREEN MAP (posterior/dorsal): patient right→viewer right; patient left→viewer left.";
+  }
+
+  if (isRight) {
+    return (
+      "SCREEN MAP (AP / patient facing camera, like radiografía AP): PATIENT'S RIGHT pathology MUST be drawn on the VIEWER'S LEFT side of the frame. " +
+      "Patient's left anatomy stays on viewer-right. Drawing patient's right on viewer-right is a CRITICAL FAIL."
+    );
+  }
+  if (isLeft) {
+    return (
+      "SCREEN MAP (AP / patient facing camera, like radiografía AP): PATIENT'S LEFT pathology MUST be drawn on the VIEWER'S RIGHT side of the frame. " +
+      "Patient's right anatomy stays on viewer-left. Drawing patient's left on viewer-left is a CRITICAL FAIL."
+    );
+  }
+  return (
+    "SCREEN MAP (AP default): patient's anatomical RIGHT = VIEWER'S LEFT of frame; " +
+    "patient's anatomical LEFT = VIEWER'S RIGHT of frame (radiografía AP convention)."
+  );
+}
+
+function reinforceLateralityCorrection(
+  surgicalCorrection: string,
+  laterality?: string,
+  view?: string,
+  lateralityFailed?: boolean
+): string {
+  const base = String(surgicalCorrection || "").trim() ||
+    "Fix laterality landmarks and depict only reported pathology.";
+  if (!lateralityFailed && !/lateral|lado|right|left|derech|izquier|mirror|espej/i.test(base)) {
+    return base;
+  }
+  const screen = buildScreenLateralityConstraint(laterality, view);
+  if (base.toLowerCase().includes("screen map") || base.toLowerCase().includes("viewer's left")) {
+    return base;
+  }
+  return `${screen} ${base}`;
+}
 
 type SpatialContract = {
   view?: string;
@@ -140,7 +232,12 @@ function normalizeSpatialContract(raw: any, fallbackLaterality?: string): Spatia
   const doNotInvent = Array.isArray(raw?.doNotInvent)
     ? raw.doNotInvent.map((x: any) => String(x || "").trim()).filter(Boolean).slice(0, 6)
     : [];
-  const lateralityGuards = ["mirrored laterality", "contralateral side swap"];
+  const lateralityGuards = [
+    "mirrored laterality",
+    "contralateral side swap",
+    "patient-right drawn on viewer-right in AP",
+    "patient-left drawn on viewer-left in AP"
+  ];
   for (const g of lateralityGuards) {
     if (!doNotInvent.some((x) => x.toLowerCase().includes(g.toLowerCase()))) {
       doNotInvent.push(g);
@@ -156,7 +253,7 @@ function normalizeSpatialContract(raw: any, fallbackLaterality?: string): Spatia
     mustShowLandmarks: landmarks,
     pathologySite: raw?.pathologySite ? String(raw.pathologySite) : "",
     pathologyAppearance: raw?.pathologyAppearance ? String(raw.pathologyAppearance) : "",
-    doNotInvent: doNotInvent.slice(0, 8)
+    doNotInvent: doNotInvent.slice(0, 10)
   };
 }
 
@@ -188,18 +285,19 @@ function buildImagePromptFromContract(args: {
   const parts = [
     FAITHFUL_STYLE,
     LATERALITY_HARD_RULES,
+    buildScreenLateralityConstraint(laterality, c.view),
     `Subject: ${args.studyRegion}. Panel: ${args.panelTitle}.`,
     `Focus: ${args.anatomicalFocus}.`,
-    `Camera/view: ${c.view || "standard clinical 3D view"}.`,
-    `Patient laterality: ${laterality}.`,
-    `SPATIAL CANVAS CONTRACT (mandatory): LEFT OF FRAME = ${left}; RIGHT OF FRAME = ${right}.`,
+    `Camera/view: ${c.view || "AP / coronal clinical view (patient facing observer)"}.`,
+    `Patient laterality (anatomical side of the PATIENT, not the viewer): ${laterality}.`,
+    `SPATIAL CANVAS CONTRACT (mandatory, viewer-left / viewer-right): LEFT OF FRAME = ${left}; RIGHT OF FRAME = ${right}.`,
     c.superiorStructure ? `SUPERIOR = ${c.superiorStructure}.` : "",
     c.inferiorStructure ? `INFERIOR = ${c.inferiorStructure}.` : "",
     `Must-show landmarks: ${landmarks}.`,
     patho,
     forbid,
-    "Preserve true anatomical relationships and scale; no mirrored anatomy unless the contract requires it.",
-    "Visual beauty is secondary: never invent structures, never move pathology, never break the spatial contract for aesthetics.",
+    "Preserve true anatomical relationships and scale; never mirror anatomy to make the image prettier.",
+    "Visual beauty is secondary: never invent structures, never move pathology, never break laterality or the spatial contract for aesthetics.",
     args.customDirectives ? `[MANDATORY CLINICAL DIRECTIVE: ${args.customDirectives}]` : "",
     args.surgicalCorrection ? `[MANDATORY SURGICAL CORRECTION: ${args.surgicalCorrection}]` : ""
   ].filter(Boolean);
@@ -326,10 +424,7 @@ TAREA:
    - mustShowLandmarks[] (hitos óseos/blandos de orientación)
    - pathologySite + pathologyAppearance (DEBE coincidir con el hallazgo asignado al panel si hay asignación)
    - doNotInvent[] (errores típicos a evitar, p.ej. invertir medial/lateral)
-3b. REGLA CRÍTICA DE LATERALIDAD: el lado del paciente (Derecha/Izquierda) del informe manda.
-   - Nunca espejes anatomía "para que quede bonito".
-   - imageLeftStructure/imageRightStructure deben ser anclas REALES coherentes con la vista.
-   - Si el hallazgo es unilateral, pathologySite debe nombrar el lado correcto; doNotInvent debe incluir "mirrored laterality" y "contralateral side swap".
+3b. ${LATERALITY_PLAN_RULES_ES}
 3c. Si hay asignación por panel: anatomicalFocus y pathologySite deben nombrar EXPLÍCITAMENTE el hallazgo de ese panel. PROHIBIDO que un panel dedicado dibuje el hallazgo de otro panel como foco.
 4. "structure" en synopticExplanation = NOMBRE CORTO de estructura (NO el pie "Foco: ...").
 5. NO inventes lesiones. Si el informe es normal, paneles de anatomía preservada.
@@ -526,7 +621,11 @@ RESPONDE SOLO JSON VÁLIDO:
             {
               text: `Eres un radiólogo revisor de calidad de atlas 3D.
 Compara CADA imagen con el informe y el contrato espacial.
-PRIORIDAD #1: LATERALIDAD. Si el lado del paciente (Derecha/Izquierda) o imageLeft/imageRight del contrato no coinciden con lo visible => lateralityOk=false y pass=false.
+PRIORIDAD #1: LATERALIDAD CON CONVENCIÓN AP (paciente de frente / radiografía AP).
+- "Derecha/Izquierda" = lado ANATÓMICO DEL PACIENTE, no el lado de la mano del observador.
+- En vistas AP/coronal/anterior/frontal: el lado DERECHO del paciente debe verse a la IZQUIERDA del cuadro; el lado IZQUIERDO del paciente a la DERECHA del cuadro.
+- Si el lado del paciente o imageLeft/imageRight del contrato no coinciden con lo visible (o se violó la convención AP) => lateralityOk=false y pass=false.
+- En surgicalCorrection (inglés) indica explícitamente viewer-left / viewer-right según la convención AP.
 Devuelve JSON:
 {
   "panels": [
@@ -594,7 +693,14 @@ ${JSON.stringify(planJson.synopticExplanation || [], null, 2)}
               const idx = panelsWithImages.findIndex((p: any) => String(p.panelLetter).toUpperCase() === letter);
               if (idx < 0) continue;
               const originalPlan = (planJson.panels || [])[idx] || panelsWithImages[idx];
-              const correction = String(note.surgicalCorrection || "Fix laterality landmarks and depict only reported pathology.").trim();
+              const contract = panelsWithImages[idx]?.spatialContract || originalPlan?.spatialContract || {};
+              const latFail = note?.lateralityOk !== true;
+              const correction = reinforceLateralityCorrection(
+                String(note.surgicalCorrection || "Fix laterality landmarks and depict only reported pathology."),
+                contract.laterality || panelsWithImages[idx]?.laterality || planJson.detectedLaterality || laterality,
+                contract.view,
+                latFail
+              );
               regenJobs.push(
                 buildPanelFromPlan(originalPlan, idx, correction).then((newPanel) => ({ idx, newPanel, note }))
               );
@@ -848,11 +954,12 @@ DISEÑO DE PANELES 3D VASCULARES (Generar 2 o 3 Paneles):
 - Panel A: Vaso o bifurcación principal con la lesión más significativa (ej: Bulbo Carotídeo con placa mixta Gray-Weale Tipo II y reducción luminal, o AFS con estenosis/oclusión, o Vaso con trombo endoluminal).
 - Panel B: Vaso contralateral o segmento complementario (ej: Eje carotídeo contralateral o lecho distal).
 - Panel C (opcional, si el estudio involucra patología bilateral compleja o tercer territorio crítico).
-- LATERALIDAD OBLIGATORIA POR PANEL:
-  - Cada panel DEBE declarar "laterality" exacta (Derecha|Izquierda|Bilateral|Línea media) coherente con el informe y la directiva.
-  - El imagePrompt DEBE empezar con el lado del paciente y anclas espaciales (ej. "Patient RIGHT carotid bifurcation; viewer-left = ACC, viewer-right = ACI...").
+- LATERALIDAD OBLIGATORIA POR PANEL (convención radiografía AP / paciente de frente):
+  - Cada panel DEBE declarar "laterality" exacta (Derecha|Izquierda|Bilateral|Línea media) = lado ANATÓMICO DEL PACIENTE.
+  - Vista AP/frontal por defecto: lado DERECHO del paciente a la IZQUIERDA del cuadro; lado IZQUIERDO del paciente a la DERECHA del cuadro.
+  - El imagePrompt DEBE empezar con el lado del paciente y anclas de pantalla (ej. "Patient RIGHT carotid bifurcation on VIEWER'S LEFT of frame (AP convention); viewer-right = contralateral/left side landmarks...").
   - NUNCA intercambiar lados entre paneles ni espejar por estética. Si hay contralateral sano, márcalo explícitamente como el lado opuesto correcto.
-  - doNotInvent implícito: mirrored laterality, side swap, inventing contralateral disease.
+  - doNotInvent implícito: mirrored laterality, side swap, patient-right on viewer-right in AP, inventing contralateral disease.
 - PROMPT EN INGLÉS para cada panel:
   "Ultra-realistic 3D medical macro vascular cross-section render of [PATIENT SIDE + detailed vessel name], exact wall layer cutaway, exact plaque/thrombus morphology (lipid core, fibrous cap, calcifications, ulceration, or clean healthy intima), intraluminal lumen opening with glowing chromatic laminar blood flow vectors, anatomical bone/soft tissue landmark background that locks laterality, cinema 4D octane render style, soft surgical studio lighting, clean background, strictly NO text, NO numbers, NO arrows, NO letters inside the image. Do NOT mirror anatomy."
 
@@ -971,10 +1078,13 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
           if (customDirectives && customDirectives.trim()) {
             promptToUse = `${promptToUse} [MANDATORY CLINICAL DIRECTIVE: ${customDirectives.trim()}].`;
           }
-          if (panel.laterality && panel.laterality !== "auto") {
-            promptToUse = `[MANDATORY PATIENT LATERALITY: ${panel.laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${promptToUse}`;
-          } else {
-            promptToUse = `${LATERALITY_HARD_RULES} ${promptToUse}`;
+          {
+            const screenMap = buildScreenLateralityConstraint(panel.laterality || planJson.laterality || laterality, "AP / coronal");
+            if (panel.laterality && panel.laterality !== "auto") {
+              promptToUse = `[MANDATORY PATIENT LATERALITY: ${panel.laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${screenMap} ${promptToUse}`;
+            } else {
+              promptToUse = `${LATERALITY_HARD_RULES} ${screenMap} ${promptToUse}`;
+            }
           }
 
           try {
@@ -1100,9 +1210,11 @@ RESPONDE EN JSON:
         finalPrompt = `${finalPrompt} [MANDATORY SURGICAL CORRECTION: ${userDirective.trim()}].`;
       }
       if (laterality && laterality !== "auto") {
-        finalPrompt = `[MANDATORY PATIENT LATERALITY: ${laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${finalPrompt}`;
+        const screenMap = buildScreenLateralityConstraint(laterality, "AP / coronal");
+        finalPrompt = `[MANDATORY PATIENT LATERALITY: ${laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${screenMap} ${finalPrompt}`;
       } else {
-        finalPrompt = `${LATERALITY_HARD_RULES} ${finalPrompt}`;
+        const screenMap = buildScreenLateralityConstraint(laterality, "AP / coronal");
+        finalPrompt = `${LATERALITY_HARD_RULES} ${screenMap} ${finalPrompt}`;
       }
 
       const imageUrl = await generateMedicalImage(ai, finalPrompt);
@@ -1181,7 +1293,8 @@ TAREA:
    - Panel A = CONTEXTO REGIONAL con la lesión visible y anclada (cutaway anatómico).
    ${wantMacro ? "- Panel B = MACRO / ZOOM cutaway de la lesión (detalle morfológico fiel; conserva hitos de orientación para no perder lateralidad)." : ""}
 3. Cada panel DEBE incluir spatialContract (view, laterality, imageLeftStructure, imageRightStructure, superiorStructure/inferiorStructure, mustShowLandmarks, pathologySite, pathologyAppearance, doNotInvent).
-3b. LATERALIDAD CRÍTICA: el lado del paciente del informe/foco manda. No espejes. imageLeft/imageRight deben anclar hitos reales coherentes con la vista. doNotInvent DEBE incluir "mirrored laterality" y "wrong side / contralateral swap". Si el foco es unilateral, pathologySite debe nombrar el lado correcto en ambos paneles (contexto y macro).
+3b. ${LATERALITY_PLAN_RULES_ES}
+   Si el foco es unilateral, pathologySite debe nombrar el lado correcto en ambos paneles (contexto y macro).
 4. NO inventes hallazgos. Si el informe es normal y no hay foco manual, responde lesionFound=false.
 5. Estilo: fotorrealismo clínico premium (igual o superior al Atlas 3D); SIN bioluminiscencia.
 
@@ -1341,7 +1454,11 @@ RESPONDE SOLO JSON:
           const verifyParts: any[] = [{
             text: `Eres un radiólogo revisor de calidad de CORTE FOCAL 3D.
 Compara CADA imagen con el informe y el contrato espacial de la lesión objetivo "${planJson.lesionLabel || focusText || ""}" en "${planJson.lesionSite || ""}".
-PRIORIDAD #1: LATERALIDAD del paciente y anclas izquierda/derecha del cuadro. Si fallan => lateralityOk=false y pass=false.
+PRIORIDAD #1: LATERALIDAD CON CONVENCIÓN AP (paciente de frente / radiografía AP).
+- Lado del paciente ≠ lado de la mano del observador.
+- AP/coronal/anterior: paciente-derecha → izquierda del cuadro; paciente-izquierda → derecha del cuadro.
+- Si fallan lateralidad o anclas izquierda/derecha del cuadro => lateralityOk=false y pass=false.
+- surgicalCorrection debe mandar explícitamente viewer-left / viewer-right según la convención.
 Devuelve JSON:
 {
   "panels": [
@@ -1402,7 +1519,14 @@ ${JSON.stringify(panelsPlan.map((p: any, i: number) => ({
               const idx = panelsWithImages.findIndex((p: any) => String(p.panelLetter).toUpperCase() === letter);
               if (idx < 0) continue;
               const originalPlan = panelsPlan[idx] || panelsWithImages[idx];
-              const correction = String(note.surgicalCorrection || "Fix laterality landmarks and depict only the target lesion faithfully.").trim();
+              const contract = panelsWithImages[idx]?.spatialContract || originalPlan?.spatialContract || {};
+              const latFail = note?.lateralityOk !== true;
+              const correction = reinforceLateralityCorrection(
+                String(note.surgicalCorrection || "Fix laterality landmarks and depict only the target lesion faithfully."),
+                contract.laterality || panelsWithImages[idx]?.laterality || planJson.detectedLaterality || laterality,
+                contract.view,
+                latFail
+              );
               regenJobs.push(
                 buildPanelFromPlan(originalPlan, idx, correction).then((newPanel) => ({ idx, newPanel, note }))
               );
