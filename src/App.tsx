@@ -4202,7 +4202,8 @@ Ejemplo:
           const batchSelection = { ...FULL_REPORT_BATCH_MODULES };
           const reportText = String(data.report || "").trim();
           setSelectedBatchModules(batchSelection);
-          handleEvaluateReport(reportText);
+          // Evaluacion de calidad NO se activa por defecto; el usuario la lanza manualmente
+          // o la marca en el lote (quality_eval) si la necesita.
           void handleActivateBatchModules(reportText, batchSelection);
         } else {
           setSelectedBatchModules({ ...DEFAULT_BATCH_MODULES });
