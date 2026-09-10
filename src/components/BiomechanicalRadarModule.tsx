@@ -201,20 +201,11 @@ export const BiomechanicalRadarModule: React.FC<BiomechanicalRadarModuleProps> =
 
   const handleSelectMatrixMode = (mode: "auto" | "msk" | "visceral" | "oncology" | "rotator_cuff" | "knee_oa" | "cholecystitis" | "ankle_trauma" | "knee_trauma" | "appendicitis" | "thyroid" | "muscle_injury" | "hepatic" | "renal" | "scrotal" | "urinary_prostate" | "diverticulitis") => {
     setSelectedRadarMode(mode);
+    // Only update axis skeleton for UI while analyzing. Do NOT push generic
+    // preset "normal" findings into persisted radar/PDF data (that caused
+    // intermittent wrong findings boxes when mode changed).
     if (mode !== "auto" && PRESET_MATRICES_AXES[mode]) {
-      const newAxes = PRESET_MATRICES_AXES[mode];
-      setAxes(newAxes);
-      if (data) {
-        const updatedData = {
-          ...data,
-          radarMode: mode,
-          axes: newAxes
-        };
-        setData(updatedData);
-        if (onRadarDataUpdated) {
-          onRadarDataUpdated(updatedData);
-        }
-      }
+      setAxes(PRESET_MATRICES_AXES[mode]);
     }
     if (reportText.trim()) {
       handleAnalyze(mode);
@@ -253,15 +244,25 @@ export const BiomechanicalRadarModule: React.FC<BiomechanicalRadarModuleProps> =
 
       const resData = await response.json();
       if (resData.success && resData.data) {
-        setData(resData.data);
-        if (resData.data.radarMode) {
-          setSelectedRadarMode(resData.data.radarMode as any);
+        const incoming = resData.data;
+        // Keep only axes with concrete findings/scores from the model response.
+        if (Array.isArray(incoming.axes)) {
+          incoming.axes = incoming.axes.map((axis: BiomechanicalAxis) => ({
+            ...axis,
+            finding: (axis.finding || "").trim(),
+            justification: (axis.justification || "").trim(),
+            score: typeof axis.score === "number" ? Math.min(10, Math.max(0, Math.round(axis.score))) : 0,
+          }));
         }
-        if (resData.data.axes && Array.isArray(resData.data.axes)) {
-          setAxes(resData.data.axes);
+        setData(incoming);
+        if (incoming.radarMode) {
+          setSelectedRadarMode(incoming.radarMode as any);
+        }
+        if (incoming.axes && Array.isArray(incoming.axes)) {
+          setAxes(incoming.axes);
         }
         if (onRadarDataUpdated) {
-          onRadarDataUpdated(resData.data);
+          onRadarDataUpdated(incoming);
         }
       } else {
         setError(resData.error || "No se pudo calcular el Radar Biomecánico.");
