@@ -11456,6 +11456,9 @@ Ejemplo:
           const maxLines = Math.max(linesA.length, linesB.length, 1);
           const cardH = 9.0 * factor + (maxLines * 4.3 * factor) + 4.0 * factor;
 
+          // Keep detail cards above the footer line / page number
+          checkPageBreak(cardH + 6 * factor);
+
           // Render Card A
           doc.setFillColor(250, 252, 255);
           doc.setDrawColor(226, 232, 240);
@@ -11538,7 +11541,12 @@ Ejemplo:
           doc.setFontSize(synthFontSize);
 
           const wrappedSynth = doc.splitTextToSize(sanitizeRadarPdfText(radarDataToRender.clinicalSummary), availableTextWidth);
-          const boxH = 11 * factor + (wrappedSynth.length * lineHeight) + 4 * factor;
+          // Extra bottom pad so the box never collides with footer text / gray baseline
+          const boxBottomPad = 5 * factor;
+          const boxH = 11 * factor + (wrappedSynth.length * lineHeight) + boxBottomPad;
+
+          // Move to next page if the synthesis box would overlap footer (pageHeight - 10)
+          checkPageBreak(boxH + 8 * factor);
 
           doc.setFillColor(248, 250, 252);
           doc.setDrawColor(199, 210, 254); // indigo 200
@@ -11555,12 +11563,14 @@ Ejemplo:
           doc.setTextColor(30, 41, 59);
 
           let synthY = yCoord + 13.2 * factor;
+          const synthTextBottom = yCoord + boxH - 3 * factor;
           wrappedSynth.forEach((line: string) => {
+            if (synthY > synthTextBottom) return;
             doc.text(line, marginX + innerPadding, synthY);
             synthY += lineHeight;
           });
 
-          yCoord += boxH + 4 * factor;
+          yCoord += boxH + 6 * factor;
         }
       }
 
