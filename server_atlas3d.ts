@@ -194,36 +194,153 @@ function buildScreenLateralityConstraint(laterality?: string, view?: string): st
   );
 }
 
+
+/** Detect breast / mama context from free text. */
+function isBreastContext(...parts: Array<string | undefined | null>): boolean {
+  const t = parts.map((p) => String(p || "").toLowerCase()).join(" ");
+  return /mama|mamari|breast|mamograf|birads|bi-rads|cuadrante|csi|cse|cii|cie|axila mam/.test(t);
+}
+
+/** Extract clock-face hour (1-12) from Spanish/English report phrasing. */
+function extractBreastClockHour(...parts: Array<string | undefined | null>): number | null {
+  const t = parts.map((p) => String(p || "")).join(" ");
+  const patterns = [
+    /\b(?:eje|hora|hours?|o['’]?clock|h)\s*[:\-]?\s*(1[0-2]|[1-9])\b/i,
+    /\b(1[0-2]|[1-9])\s*(?:h|hrs?|horas?|o['’]?clock)\b/i,
+    /\bradio\s*(1[0-2]|[1-9])\b/i,
+  ];
+  for (const re of patterns) {
+    const m = t.match(re);
+    if (m) {
+      const n = Number(m[1]);
+      if (n >= 1 && n <= 12) return n;
+    }
+  }
+  return null;
+}
+
+/**
+ * Breast clock-face + laterality rules (AP / patient facing examiner).
+ * RIGHT breast: 3 = LATERAL (axilla), 9 = MEDIAL (sternum).
+ * LEFT breast: 3 = MEDIAL (sternum), 9 = LATERAL (axilla).
+ * Never swap 3↔9 (classic laterality mirror error).
+ */
+function buildBreastClockConstraint(opts: {
+  laterality?: string;
+  view?: string;
+  pathologySite?: string;
+  anatomicalFocus?: string;
+  studyRegion?: string;
+  panelTitle?: string;
+}): string {
+  if (!isBreastContext(opts.laterality, opts.pathologySite, opts.anatomicalFocus, opts.studyRegion, opts.panelTitle)) {
+    return "";
+  }
+
+  const lat = String(opts.laterality || opts.pathologySite || opts.anatomicalFocus || "").toLowerCase();
+  const isRight =
+    (/mama\s*derech|breast\s*right|right\s*breast|derech/.test(lat) || /\bright\b/.test(lat)) &&
+    !/izquier|left|bilateral|ambos/.test(lat);
+  const isLeft =
+    (/mama\s*izquier|breast\s*left|left\s*breast|izquier/.test(lat) || /\bleft\b/.test(lat)) &&
+    !/derech|right|bilateral|ambos/.test(lat);
+
+  const hour = extractBreastClockHour(opts.pathologySite, opts.anatomicalFocus, opts.panelTitle, opts.studyRegion);
+
+  const common =
+    "BREAST CLOCK-FACE HARD RULES (AP / patient facing examiner — never violate): " +
+    "(B0) Clock positions are clinical breast-clock, NOT a mirrored UI decoration. " +
+    "(B1) 12 o'clock = SUPERIOR (cephalad); 6 o'clock = INFERIOR (caudal). " +
+    "(B2) NEVER swap 3 o'clock with 9 o'clock. Confusing eje/hora 3 with 9 is a CRITICAL LATERALITY FAIL. " +
+    "(B3) Quadrants: CSE/UO = upper OUTER (lateral); CSI/UI = upper INNER (medial); " +
+    "CIE/LO = lower OUTER; CII/LI = lower INNER. Do NOT swap outer↔inner. ";
+
+  let sideRules = "";
+  if (isRight) {
+    sideRules =
+      "RIGHT BREAST (patient's right; in AP appears on VIEWER'S LEFT of a bilateral figure): " +
+      "3 o'clock = LATERAL / axilla / OUTER (VIEWER'S LEFT of the nipple); " +
+      "9 o'clock = MEDIAL / sternum / INNER (VIEWER'S RIGHT of the nipple). " +
+      "CSE (upper outer) sits toward the axillary/lateral side (near 12→3). " +
+      "CSI (upper inner) sits toward the sternal/medial side (near 9→12). " +
+      "imageLeftStructure should anchor LATERAL/axillary landmarks; imageRightStructure should anchor MEDIAL/sternal landmarks. ";
+  } else if (isLeft) {
+    sideRules =
+      "LEFT BREAST (patient's left; in AP appears on VIEWER'S RIGHT of a bilateral figure): " +
+      "3 o'clock = MEDIAL / sternum / INNER (VIEWER'S LEFT of the nipple); " +
+      "9 o'clock = LATERAL / axilla / OUTER (VIEWER'S RIGHT of the nipple). " +
+      "CSE (upper outer) sits toward the axillary/lateral side (near 9→12). " +
+      "CSI (upper inner) sits toward the sternal/medial side (near 12→3). " +
+      "imageLeftStructure should anchor MEDIAL/sternal landmarks; imageRightStructure should anchor LATERAL/axillary landmarks. ";
+  } else {
+    sideRules =
+      "If side is unknown, still obey: RIGHT breast 3=LATERAL / 9=MEDIAL; LEFT breast 3=MEDIAL / 9=LATERAL. Never mirror. ";
+  }
+
+  let hourRule = "";
+  if (hour != null) {
+    if (isRight) {
+      if (hour === 3) {
+        hourRule = `MANDATORY TARGET CLOCK: ${hour} o'clock on RIGHT breast = LATERAL/axillary side of the nipple (VIEWER'S LEFT of nipple). Do NOT place at 9. `;
+      } else if (hour === 9) {
+        hourRule = `MANDATORY TARGET CLOCK: ${hour} o'clock on RIGHT breast = MEDIAL/sternal side of the nipple (VIEWER'S RIGHT of nipple). Do NOT place at 3. `;
+      } else {
+        hourRule = `MANDATORY TARGET CLOCK: place the lesion at ${hour} o'clock on the RIGHT breast using the RIGHT-breast map (3=lateral/viewer-left of nipple; 9=medial/viewer-right of nipple). `;
+      }
+    } else if (isLeft) {
+      if (hour === 3) {
+        hourRule = `MANDATORY TARGET CLOCK: ${hour} o'clock on LEFT breast = MEDIAL/sternal side of the nipple (VIEWER'S LEFT of nipple). Do NOT place at 9. `;
+      } else if (hour === 9) {
+        hourRule = `MANDATORY TARGET CLOCK: ${hour} o'clock on LEFT breast = LATERAL/axillary side of the nipple (VIEWER'S RIGHT of nipple). Do NOT place at 3. `;
+      } else {
+        hourRule = `MANDATORY TARGET CLOCK: place the lesion at ${hour} o'clock on the LEFT breast using the LEFT-breast map (3=medial/viewer-left of nipple; 9=lateral/viewer-right of nipple). `;
+      }
+    } else {
+      hourRule = `MANDATORY TARGET CLOCK: lesion at ${hour} o'clock — apply the correct side map; never swap 3↔9. `;
+    }
+  }
+
+  return common + sideRules + hourRule;
+}
+
+const BREAST_CLOCK_PLAN_RULES_ES =
+  "REGLAS DE RELOJ / EJES EN MAMA (AP, paciente de frente al examinador):\n" +
+  "- Mama DERECHA: 12 superior; 3 = LATERAL/axila (exterior); 6 inferior; 9 = MEDIAL/esternón (interior).\n" +
+  "- Mama IZQUIERDA: 12 superior; 3 = MEDIAL/esternón (interior); 6 inferior; 9 = LATERAL/axila (exterior).\n" +
+  "- NUNCA intercambiar eje/hora 3 con 9 (error clásico de espejo). CSE≠CSI; externo≠interno.\n" +
+  "- En el contrato espacial AP de mama derecha: izquierda del cuadro = lateral/axila; derecha del cuadro = medial/esternón.\n" +
+  "- En mama izquierda AP: izquierda del cuadro = medial/esternón; derecha del cuadro = lateral/axila.\n" +
+  "- pathologySite debe incluir lado + eje/hora o cuadrante exactos del informe.\n" +
+  "- doNotInvent DEBE incluir: \"clock 3/9 swap\", \"CSE/CSI swap\", \"outer/inner quadrant swap\".";
+
 function reinforceLateralityCorrection(
   surgicalCorrection: string,
   laterality?: string,
   view?: string,
-  lateralityFailed?: boolean
+  lateralityFailed?: boolean,
+  extraContext?: string
 ): string {
   const base = String(surgicalCorrection || "").trim() ||
     "Fix laterality landmarks and depict only reported pathology.";
-  if (!lateralityFailed && !/lateral|lado|right|left|derech|izquier|mirror|espej/i.test(base)) {
+  const clockFail = /clock|eje|hora|cse|csi|3\/9|9\/3|cuadrante|breast|mama/i.test(
+    base + " " + String(extraContext || "")
+  );
+  if (!lateralityFailed && !clockFail && !/lateral|lado|right|left|derech|izquier|mirror|espej/i.test(base)) {
     return base;
   }
   const screen = buildScreenLateralityConstraint(laterality, view);
-  if (base.toLowerCase().includes("screen map") || base.toLowerCase().includes("viewer's left")) {
+  const breast = buildBreastClockConstraint({
+    laterality,
+    view,
+    pathologySite: extraContext,
+    anatomicalFocus: base,
+  });
+  if (base.toLowerCase().includes("screen map") && (!breast || base.toLowerCase().includes("breast clock"))) {
     return base;
   }
-  return `${screen} ${base}`;
+  return [screen, breast, base].filter(Boolean).join(" ");
 }
 
-type SpatialContract = {
-  view?: string;
-  laterality?: string;
-  imageLeftStructure?: string;
-  imageRightStructure?: string;
-  superiorStructure?: string;
-  inferiorStructure?: string;
-  mustShowLandmarks?: string[];
-  pathologySite?: string;
-  pathologyAppearance?: string;
-  doNotInvent?: string[];
-};
 
 function normalizeSpatialContract(raw: any, fallbackLaterality?: string): SpatialContract {
   const landmarks = Array.isArray(raw?.mustShowLandmarks)
@@ -236,7 +353,10 @@ function normalizeSpatialContract(raw: any, fallbackLaterality?: string): Spatia
     "mirrored laterality",
     "contralateral side swap",
     "patient-right drawn on viewer-right in AP",
-    "patient-left drawn on viewer-left in AP"
+    "patient-left drawn on viewer-left in AP",
+    "clock 3/9 swap",
+    "CSE/CSI swap",
+    "outer/inner quadrant swap"
   ];
   for (const g of lateralityGuards) {
     if (!doNotInvent.some((x) => x.toLowerCase().includes(g.toLowerCase()))) {
@@ -282,10 +402,20 @@ function buildImagePromptFromContract(args: {
     ? `Do NOT invent: ${c.doNotInvent!.join("; ")}.`
     : "Do NOT invent pathology not present in the report.";
 
+  const breastClock = buildBreastClockConstraint({
+    laterality,
+    view: c.view,
+    pathologySite: c.pathologySite,
+    anatomicalFocus: args.anatomicalFocus,
+    studyRegion: args.studyRegion,
+    panelTitle: args.panelTitle,
+  });
+
   const parts = [
     FAITHFUL_STYLE,
     LATERALITY_HARD_RULES,
     buildScreenLateralityConstraint(laterality, c.view),
+    breastClock,
     `Subject: ${args.studyRegion}. Panel: ${args.panelTitle}.`,
     `Focus: ${args.anatomicalFocus}.`,
     `Camera/view: ${c.view || "AP / coronal clinical view (patient facing observer)"}.`,
@@ -425,6 +555,7 @@ TAREA:
    - pathologySite + pathologyAppearance (DEBE coincidir con el hallazgo asignado al panel si hay asignación)
    - doNotInvent[] (errores típicos a evitar, p.ej. invertir medial/lateral)
 3b. ${LATERALITY_PLAN_RULES_ES}
+3b2. ${BREAST_CLOCK_PLAN_RULES_ES}
 3c. Si hay asignación por panel: anatomicalFocus y pathologySite deben nombrar EXPLÍCITAMENTE el hallazgo de ese panel. PROHIBIDO que un panel dedicado dibuje el hallazgo de otro panel como foco.
 4. "structure" en synopticExplanation = NOMBRE CORTO de estructura (NO el pie "Foco: ...").
 5. NO inventes lesiones. Si el informe es normal, paneles de anatomía preservada.
@@ -625,7 +756,8 @@ PRIORIDAD #1: LATERALIDAD CON CONVENCIÓN AP (paciente de frente / radiografía 
 - "Derecha/Izquierda" = lado ANATÓMICO DEL PACIENTE, no el lado de la mano del observador.
 - En vistas AP/coronal/anterior/frontal: el lado DERECHO del paciente debe verse a la IZQUIERDA del cuadro; el lado IZQUIERDO del paciente a la DERECHA del cuadro.
 - Si el lado del paciente o imageLeft/imageRight del contrato no coinciden con lo visible (o se violó la convención AP) => lateralityOk=false y pass=false.
-- En surgicalCorrection (inglés) indica explícitamente viewer-left / viewer-right según la convención AP.
+- MAMA / BREAST CLOCK: mama derecha → 3=LATERAL/axila, 9=MEDIAL/esternón; mama izquierda → 3=MEDIAL/esternón, 9=LATERAL/axila. Si confunde eje 3 con 9 o CSE con CSI => lateralityOk=false y pass=false.
+- En surgicalCorrection (inglés) indica explícitamente viewer-left / viewer-right y, si aplica, el clock-hour correcto (3≠9).
 Devuelve JSON:
 {
   "panels": [
@@ -1294,6 +1426,7 @@ TAREA:
    ${wantMacro ? "- Panel B = MACRO / ZOOM cutaway de la lesión (detalle morfológico fiel; conserva hitos de orientación para no perder lateralidad)." : ""}
 3. Cada panel DEBE incluir spatialContract (view, laterality, imageLeftStructure, imageRightStructure, superiorStructure/inferiorStructure, mustShowLandmarks, pathologySite, pathologyAppearance, doNotInvent).
 3b. ${LATERALITY_PLAN_RULES_ES}
+3b2. ${BREAST_CLOCK_PLAN_RULES_ES}
    Si el foco es unilateral, pathologySite debe nombrar el lado correcto en ambos paneles (contexto y macro).
 4. NO inventes hallazgos. Si el informe es normal y no hay foco manual, responde lesionFound=false.
 5. Estilo: fotorrealismo clínico premium (igual o superior al Atlas 3D); SIN bioluminiscencia.
@@ -1458,7 +1591,8 @@ PRIORIDAD #1: LATERALIDAD CON CONVENCIÓN AP (paciente de frente / radiografía 
 - Lado del paciente ≠ lado de la mano del observador.
 - AP/coronal/anterior: paciente-derecha → izquierda del cuadro; paciente-izquierda → derecha del cuadro.
 - Si fallan lateralidad o anclas izquierda/derecha del cuadro => lateralityOk=false y pass=false.
-- surgicalCorrection debe mandar explícitamente viewer-left / viewer-right según la convención.
+- Si es mama: no confundir eje 3 con 9 ni CSE con CSI (derecha: 3 lateral / 9 medial; izquierda: 3 medial / 9 lateral).
+- surgicalCorrection debe mandar explícitamente viewer-left / viewer-right y clock-hour si aplica.
 Devuelve JSON:
 {
   "panels": [

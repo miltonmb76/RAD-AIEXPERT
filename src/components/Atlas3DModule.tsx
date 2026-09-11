@@ -190,16 +190,16 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
     if (fullText.includes("mama") || fullText.includes("breast") || fullText.includes("mamari")) {
       if (isLeft) {
         return {
-          side: "MAMA IZQUIERDA (Frontal)",
-          leftSideTag: "MEDIAL (CSI / CII / Esternón)",
-          rightSideTag: "LATERAL (CSE / CIE / Axila)",
+          side: "MAMA IZQUIERDA (Frontal) · reloj: 3=medial, 9=lateral",
+          leftSideTag: "MEDIAL / eje 3 (CSI·CII·Esternón)",
+          rightSideTag: "LATERAL / eje 9 (CSE·CIE·Axila)",
           color: "border-pink-500/40 text-pink-300"
         };
       } else {
         return {
-          side: "MAMA DERECHA (Frontal)",
-          leftSideTag: "LATERAL (CSE / CIE / Axila)",
-          rightSideTag: "MEDIAL (CSI / CII / Esternón)",
+          side: "MAMA DERECHA (Frontal) · reloj: 3=lateral, 9=medial",
+          leftSideTag: "LATERAL / eje 3 (CSE·CIE·Axila)",
+          rightSideTag: "MEDIAL / eje 9 (CSI·CII·Esternón)",
           color: "border-pink-500/40 text-pink-300"
         };
       }
@@ -1134,6 +1134,20 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
                           >
                             🎯 Rodilla Der: Menisco Externo
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRegenerateSinglePanel(panel, "CORRECCIÓN ESTRICTA MAMA DERECHA AP: reloj clínico. 3 en hora = LATERAL/axila (izquierda del pezón en la imagen). 9 en hora = MEDIAL/esternón (derecha del pezón). NUNCA intercambiar 3 con 9. CSE=superior externo/lateral; CSI=superior interno/medial.")}
+                            className="text-[9px] bg-slate-900 hover:bg-pink-900/60 border border-slate-700 hover:border-pink-400 text-pink-200 p-1.5 rounded-lg text-left font-mono transition-colors cursor-pointer"
+                          >
+                            🎯 Mama Der: 3 lateral / 9 medial
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRegenerateSinglePanel(panel, "CORRECCIÓN ESTRICTA MAMA IZQUIERDA AP: reloj clínico. 3 en hora = MEDIAL/esternón (izquierda del pezón en la imagen). 9 en hora = LATERAL/axila (derecha del pezón). NUNCA intercambiar 3 con 9. CSE=superior externo/lateral; CSI=superior interno/medial.")}
+                            className="text-[9px] bg-slate-900 hover:bg-pink-900/60 border border-slate-700 hover:border-pink-400 text-pink-200 p-1.5 rounded-lg text-left font-mono transition-colors cursor-pointer"
+                          >
+                            🎯 Mama Izq: 3 medial / 9 lateral
+                          </button>
                         </div>
                       </div>
 
@@ -1151,7 +1165,11 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
                           "Rodilla Izquierda AP (Peroné a la derecha)",
                           "Rodilla Derecha AP (Peroné a la izquierda)",
                           "Mama Derecha CSE radio 10",
+                          "Mama Derecha eje 3 lateral (axila)",
+                          "Mama Derecha eje 9 medial (esternón)",
                           "Mama Izquierda CSI",
+                          "Mama Izquierda eje 3 medial (esternón)",
+                          "Mama Izquierda eje 9 lateral (axila)",
                           "Hombro Derecho coronal",
                           "Hombro Izquierdo coronal",
                           "Corte coronal AP",
