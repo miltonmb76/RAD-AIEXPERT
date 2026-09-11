@@ -48,7 +48,9 @@ export function renderScorecardAnnexToPDF(
   const headerH = 8.5 * factor;
 
   doc.addPage();
-  let y = 20 * factor;
+  // Keep clear of global running header line at y=14 (large title ascent would otherwise collide).
+  const contentTop = 26 * factor;
+  let y = contentTop;
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(fsTitle);
@@ -137,7 +139,7 @@ export function renderScorecardAnnexToPDF(
 
     if (y + rowH > pageBottom - reserveForSummary) {
       doc.addPage();
-      y = 20 * factor;
+      y = 24 * factor; // below running header line (y=14)
       doc.setFont("helvetica", "bold");
       doc.setFontSize(11 * factor);
       doc.setTextColor(15, 23, 42);
@@ -189,7 +191,7 @@ export function renderScorecardAnnexToPDF(
     const boxH = 12 * factor + lines.length * lineBody;
     if (allowNewPage && y + boxH > pageBottom) {
       doc.addPage();
-      y = 20 * factor;
+      y = 24 * factor; // below running header line (y=14)
     }
     doc.setFillColor(fill[0], fill[1], fill[2]);
     doc.setDrawColor(stroke[0], stroke[1], stroke[2]);
