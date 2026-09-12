@@ -1732,7 +1732,7 @@ RESPONDE SOLO JSON:
       const mergedDirectives = [lesionDirective, customDirectives].filter(Boolean).join("\n");
 
       const buildPanelFromPlan = async (panel: any, idx: number, surgicalCorrection?: string) => {
-        const contract = normalizeSpatialContract(
+        let contract = normalizeSpatialContract(
           panel.spatialContract,
           panel.laterality || planJson.detectedLaterality || forcedLaterality
         );
