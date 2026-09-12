@@ -17,6 +17,7 @@ import { FocalLesion3DData, FocalLesion3DPanel, ClinicalScorecardData } from "..
 import { buildAtlasDirectivesFromScorecard } from "../lib/clinicalIntelligence";
 import { runBackgroundTask } from "../lib/backgroundTasks";
 import { flipImageDataUrl, swapLateralityLabel } from "../lib/imageFlip";
+import { sanitizeFocalClinicalProse } from "../utils/sanitizeFocalClinicalProse";
 
 interface FocalLesion3DModuleProps {
   reportText: string;
@@ -466,7 +467,7 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
                     Síntesis del hallazgo
                   </p>
                   <p className="text-[13px] md:text-sm text-slate-200 leading-relaxed">
-                    {focalData.lesionSummary}
+                    {sanitizeFocalClinicalProse(focalData.lesionSummary)}
                   </p>
                 </div>
               )}
@@ -476,7 +477,7 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
                     Morfología
                   </p>
                   <p className="text-[13px] text-slate-200 leading-relaxed">
-                    {focalData.lesionMorphology}
+                    {sanitizeFocalClinicalProse(focalData.lesionMorphology)}
                   </p>
                 </div>
               )}
@@ -486,7 +487,7 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
                     Relaciones anatómicas
                   </p>
                   <p className="text-[13px] text-slate-200 leading-relaxed">
-                    {focalData.lesionRelations}
+                    {sanitizeFocalClinicalProse(focalData.lesionRelations)}
                   </p>
                 </div>
               )}
@@ -499,7 +500,7 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
                     {focalData.keyPoints.map((kp, i) => (
                       <li key={i} className="text-[13px] text-slate-200 leading-relaxed flex gap-2">
                         <span className="text-emerald-400/90 shrink-0">•</span>
-                        <span>{kp}</span>
+                        <span>{sanitizeFocalClinicalProse(kp)}</span>
                       </li>
                     ))}
                   </ul>
@@ -564,7 +565,9 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
                 </div>
                 <div className="p-3 space-y-2 border-t border-slate-800">
                   <p className="text-xs font-bold text-slate-100">{panel.panelTitle}</p>
-                  <p className="text-[11px] text-slate-400 leading-snug">{panel.anatomicalFocus}</p>
+                  <p className="text-[11px] text-slate-400 leading-snug">
+                    {sanitizeFocalClinicalProse(panel.anatomicalFocus || "")}
+                  </p>
                   {editingPanelLetter === panel.panelLetter ? (
                     <div className="space-y-2 pt-1">
                       <input
