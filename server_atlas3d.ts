@@ -468,6 +468,74 @@ const BREAST_CLOCK_PLAN_RULES_ES =
   "- pathologySite debe incluir lado + eje/hora o cuadrante exactos del informe.\n" +
   "- doNotInvent DEBE incluir: \"left-breast 3 placed medially\", \"clock 3/9 swap\", \"mirrored breast clock between sides\".";
 
+/**
+ * Clinical prose for Focal cutaway cards must NEVER explain how the AI placed the lesion
+ * on screen (viewer-left/right, image half, clock-hands method, etc.). Keep anatomy only.
+ */
+const FOCAL_CLINICAL_PROSE_RULES_ES =
+  "REDACCIÓN CLÍNICA DE CUADROS (síntesis, morfología, relaciones, puntos clave, focos de panel):\n" +
+  "- Escribe SOLO lenguaje de informe radiológico: anatomía, morfología, eje/hora o cuadrante, lateralidad del paciente.\n" +
+  "- PROHIBIDO mencionar método de dibujo, manecillas del reloj como instrucción, mitad de la imagen, " +
+  "derecha/izquierda del cuadro, viewer-left/right, observador, proyección anterior respecto al pezón, " +
+  "o cualquier aclaración de cómo se ve en la reconstrucción 3D.\n" +
+  "- Ejemplo MAL: «eje 3 lateral (a la derecha de la imagen respecto al pezón en proyección anterior)».\n" +
+  "- Ejemplo BIEN: «eje 3 / radio lateral (axilar) de la mama izquierda».\n" +
+  "- Las reglas de reloj/lateralidad sirven para spatialContract e imagePrompt; NO se vuelcan a los textos clínicos.";
+
+/** Strip AI/screen-method leakage from Focal clinical text boxes. */
+function sanitizeFocalClinicalProse(text: string): string {
+  let s = String(text || "").trim();
+  if (!s) return "";
+
+  // Parentheticals that explain screen/viewer placement or drawing method
+  s = s.replace(
+    /\s*[\(\[\{][^)\]\}]{0,240}?(?:derecha|izquierda|mitad)?[^)\]\}]{0,100}?(?:de\s+la\s+imagen|del\s+cuadro|del\s+frame|viewer|observador|respecto\s+al\s+pez[oó]n|proyecci[oó]n\s+anterior|manecillas|clock[- ]?hands|VIEWER'?S?\s+(?:LEFT|RIGHT)|mitad\s+(?:derecha|izquierda)\s+de\s+la\s+mama\s+en)[^)\]\}]{0,140}?[\)\]\}]/giu,
+    ""
+  );
+
+  const inlinePatterns = [
+    /\s*[,:;–—-]?\s*a\s+la\s+(?:derecha|izquierda)\s+de\s+la\s+imagen(?:\s+respecto\s+al\s+pez[oó]n)?(?:\s+en\s+proyecci[oó]n\s+anterior)?/giu,
+    /\s*[,:;–—-]?\s*(?:en\s+)?(?:la\s+)?mitad\s+(?:derecha|izquierda)\s+de\s+la\s+(?:mama|lesi[oó]n)\s+en\s+(?:la\s+)?imagen/giu,
+    /\s*[,:;–—-]?\s*(?:viewer'?s?\s+)?(?:left|right)\s+of\s+(?:the\s+)?(?:nipple|frame|image)/giu,
+    /\s*[,:;–—-]?\s*seg[uú]n\s+(?:el\s+)?(?:mapa\s+de\s+)?manecillas(?:\s+(?:id[eé]nticas|del\s+reloj))?/giu,
+    /\s*[,:;–—-]?\s*(?:con\s+)?reloj\s+con\s+manecillas\s+id[eé]nticas/giu,
+    /\s*[,:;–—-]?\s*como\s+se\s+ve\s+en\s+la\s+(?:reconstrucci[oó]n|imagen)\s*3?D?/giu,
+  ];
+  for (const re of inlinePatterns) {
+    s = s.replace(re, "");
+  }
+
+  return s
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([,.;:!?])/g, "$1")
+    .replace(/\(\s*\)/g, "")
+    .replace(/\[\s*\]/g, "")
+    .replace(/\.\s*\./g, ".")
+    .trim();
+}
+
+function sanitizeFocalClinicalFields<T extends Record<string, any>>(payload: T): T {
+  const next: any = { ...payload };
+  for (const key of ["lesionSummary", "lesionMorphology", "lesionRelations", "lesionSite", "lesionLabel"]) {
+    if (typeof next[key] === "string") {
+      next[key] = sanitizeFocalClinicalProse(next[key]);
+    }
+  }
+  if (Array.isArray(next.keyPoints)) {
+    next.keyPoints = next.keyPoints
+      .map((x: any) => sanitizeFocalClinicalProse(String(x || "")))
+      .filter(Boolean)
+      .slice(0, 6);
+  }
+  if (Array.isArray(next.panels)) {
+    next.panels = next.panels.map((p: any) => ({
+      ...p,
+      anatomicalFocus: sanitizeFocalClinicalProse(String(p?.anatomicalFocus || "")),
+    }));
+  }
+  return next;
+}
+
 
 function reinforceLateralityCorrection(
   surgicalCorrection: string,
@@ -1639,9 +1707,11 @@ TAREA:
 3. Cada panel DEBE incluir spatialContract (view, laterality, imageLeftStructure, imageRightStructure, superiorStructure/inferiorStructure, mustShowLandmarks, pathologySite, pathologyAppearance, doNotInvent).
 3b. ${LATERALITY_PLAN_RULES_ES}
 3b2. ${BREAST_CLOCK_PLAN_RULES_ES}
+3c. ${FOCAL_CLINICAL_PROSE_RULES_ES}
    Si el foco es unilateral, pathologySite debe nombrar el lado correcto en ambos paneles (contexto y macro).
 4. NO inventes hallazgos. Si el informe es normal y no hay foco manual, responde lesionFound=false.
 5. Estilo: fotorrealismo clínico premium (igual o superior al Atlas 3D); SIN bioluminiscencia.
+6. lesionSummary, lesionMorphology, lesionRelations y keyPoints: prosa clínica pura (regla 3c). Nunca expliques cómo se ubica en la imagen.
 
 RESPONDE SOLO JSON:
 {
@@ -1812,6 +1882,7 @@ PRIORIDAD #1: LATERALIDAD CON CONVENCIÓN AP (paciente de frente / radiografía 
 - Si fallan lateralidad o anclas izquierda/derecha del cuadro => lateralityOk=false y pass=false.
 - Si es mama: reloj idéntico en ambas (3=derecha del pezón / 9=izquierda del pezón). Mama izquierda eje 3 = LATERAL/axila = mitad derecha de la mama en imagen (NUNCA medial/esternón). No confundir 3↔9 ni CSE↔CSI.
 - surgicalCorrection debe mandar explícitamente viewer-left / viewer-right y clock-hour si aplica.
+- lesionSummary (si lo reescribes): SOLO prosa clínica de informe. PROHIBIDO explicar método de ubicación en pantalla (p. ej. «a la derecha de la imagen respecto al pezón»).
 Devuelve JSON:
 {
   "panels": [
@@ -1907,7 +1978,7 @@ ${JSON.stringify(panelsPlan.map((p: any, i: number) => ({
         qualityAudit.error = String(verifyErr?.message || verifyErr);
       }
 
-      const data = {
+      const data = sanitizeFocalClinicalFields({
         lesionLabel: String(planJson.lesionLabel || focusText || "Lesión focal").trim(),
         lesionSite: String(planJson.lesionSite || "").trim(),
         lesionSummary: String(planJson.lesionSummary || "").trim(),
@@ -1924,7 +1995,7 @@ ${JSON.stringify(panelsPlan.map((p: any, i: number) => ({
         detectedLaterality: planJson.detectedLaterality || laterality || "",
         panels: panelsWithImages,
         qualityAudit
-      };
+      });
 
       res.json({ success: true, data });
     } catch (error: any) {

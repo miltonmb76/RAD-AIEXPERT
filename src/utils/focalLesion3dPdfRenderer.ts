@@ -1,4 +1,5 @@
 import { FocalLesion3DData } from "../types";
+import { sanitizeFocalClinicalProse } from "./sanitizeFocalClinicalProse";
 
 /**
  * Atlas-style annex for Focal Lesion Cutaway 3D.
@@ -111,11 +112,11 @@ export function renderFocalLesion3DAnnexToPDF(
   const figuresTop = yCoord;
 
   // --- Clinical text blocks to reserve under figures ---
-  const summaryText = (data.lesionSummary || "").trim();
-  const morphologyText = (data.lesionMorphology || "").trim();
-  const relationsText = (data.lesionRelations || "").trim();
+  const summaryText = sanitizeFocalClinicalProse(data.lesionSummary || "");
+  const morphologyText = sanitizeFocalClinicalProse(data.lesionMorphology || "");
+  const relationsText = sanitizeFocalClinicalProse(data.lesionRelations || "");
   const keyPoints = Array.isArray(data.keyPoints)
-    ? data.keyPoints.map((k) => String(k || "").trim()).filter(Boolean).slice(0, 8)
+    ? data.keyPoints.map((k) => sanitizeFocalClinicalProse(String(k || ""))).filter(Boolean).slice(0, 8)
     : [];
 
   type TextBox = { title: string; bodyLines: string[]; bullet?: boolean };
