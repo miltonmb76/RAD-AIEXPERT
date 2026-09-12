@@ -143,7 +143,7 @@ export function buildPanelScopedFindingDirective(
     sharedNote,
     "Mantén exactitud morfométrica/morfológica (medidas, lado, aspecto).",
     "LATERALIDAD AP: «Derecha/Izquierda» = lado anatómico del paciente de frente (como radiografía AP). En vista AP/coronal, lado derecho del paciente = izquierda del cuadro; lado izquierdo del paciente = derecha del cuadro.",
-    "MAMA / RELOJ: mama derecha → 3=LATERAL/axila y 9=MEDIAL/esternón; mama izquierda → 3=MEDIAL/esternón y 9=LATERAL/axila. Nunca intercambiar eje 3 con 9 ni CSE con CSI.",
+    "MAMA / RELOJ (manecillas idénticas en ambas): 12 arriba; 3 = siempre derecha del pezón (vista de frente); 9 = siempre izquierda del pezón. Mama izquierda eje 3 = LATERAL/axila (NUNCA medial/esternón). Mama derecha eje 3 = MEDIAL/esternón. Si el scorecard dice eje 3 izquierda, el panel DEBE anclar la lesión al lado axilar (derecha de la imagen respecto al pezón).",
     "Highlight cromático / cutaway SOLO en el hallazgo asignado a este panel.",
     "No inventes hallazgos fuera de esta directiva acotada.",
     opts.siblingHints ? `Contexto de otros hallazgos del estudio (NO dibujar como foco): ${opts.siblingHints}` : "",
