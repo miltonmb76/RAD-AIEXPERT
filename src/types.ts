@@ -286,6 +286,64 @@ export interface FocalLesion3DData {
   qualityAudit?: AtlasQualityAudit;
 }
 
+
+export type ThyroidStudyType =
+  | "tiroides_b_mode"
+  | "tiroides_doppler"
+  | "tiroides_nodos"
+  | "general_thyroid";
+
+export interface Thyroid3DPanel {
+  id?: string;
+  panelLetter: string;
+  panelTitle: string;
+  anatomicalFocus: string;
+  laterality?: string;
+  lobeOrNode?: string;
+  panelRole?: "gland" | "nodule" | "nodes";
+  imageUrl?: string;
+  isCustomFlipped?: boolean;
+  promptUsed?: string;
+}
+
+export interface ThyroidNoduleRow {
+  location: string;
+  size: string;
+  composition: string;
+  echogenicity: string;
+  margins: string;
+  echogenicFoci: string;
+  tiradsCategory: string;
+  clinicalImpact: string;
+}
+
+export interface Thyroid3DData {
+  studyTypeCategory?: ThyroidStudyType;
+  territoryLabel?: string;
+  laterality?: string;
+  figureTitle?: string;
+  tableTitle?: string;
+  tableHeaders?: {
+    col1: string;
+    col2: string;
+    col3: string;
+    col4: string;
+    col5: string;
+    col6: string;
+    col7: string;
+    col8: string;
+  };
+  panels: Thyroid3DPanel[];
+  noduleTable: ThyroidNoduleRow[];
+  /** Rich clinical blocks under / with the figure */
+  glandSummary?: string;
+  morphologyNotes?: string;
+  nodalStatus?: string;
+  keyPoints?: string[];
+  synthesisTitle?: string;
+  morphologicalSynthesis?: string;
+}
+
 export type UsImagesGridMode = "auto" | "1x1" | "1x2" | "2x1" | "2x2" | "3x2" | "4x2";
 
 /** One quantitative measurement extracted from the report for gauge display. */

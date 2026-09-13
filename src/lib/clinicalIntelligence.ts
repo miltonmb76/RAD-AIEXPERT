@@ -398,6 +398,60 @@ export function mergeOverlaysOntoAtlas(
   };
 }
 
+
+/**
+ * Build mandatory Thyroid 3D directives from a TI-RADS / thyroid scorecard.
+ * Mirrors vascular: scorecard governs nodules, category and laterality.
+ */
+export function buildThyroidDirectivesFromScorecard(
+  scorecard: ClinicalScorecardData | null | undefined
+): string {
+  if (!scorecard) return "";
+  const base = buildAtlasDirectivesFromScorecard(scorecard);
+  const summary = (scorecard.clinicalSummary || "").trim();
+  const reco = (scorecard.recommendation || "").trim();
+  const protocol = (scorecard.protocolName || scorecard.protocolId || "").toLowerCase();
+  const isThyroid =
+    protocol.includes("tirads") ||
+    protocol.includes("ti-rads") ||
+    protocol.includes("tiroid") ||
+    protocol.includes("thyroid");
+
+  let body = base;
+  if (!body) {
+    const allCriteria = Array.isArray(scorecard.criteria) ? scorecard.criteria : [];
+    const evidenced = allCriteria
+      .filter((c) => (c.evidence || c.value || "").trim())
+      .slice(0, 10)
+      .map((c, i) => {
+        const val = c.value ? ` (${c.value})` : "";
+        return `${i + 1}. «${c.atlasStructure || c.criterion}»${val}: ${c.evidence || c.status}`;
+      });
+    if (evidenced.length || summary) {
+      body = [
+        `SCORECARD TIROIDES (${scorecard.protocolName || "protocolo"} — ${scorecard.categoryAssigned || ""}):`,
+        `Semáforo: ${scorecard.trafficLight}. Criterios: ${scorecard.scoreMet}/${scorecard.scoreTotal}.`,
+        summary ? `Síntesis: ${summary}` : "",
+        reco ? `Recomendación: ${reco}` : "",
+        evidenced.length ? "Hallazgos del scorecard a respetar en 3D/tabla TI-RADS:" : "",
+        ...evidenced,
+      ]
+        .filter(Boolean)
+        .join("\n");
+    }
+  }
+  if (!body) return "";
+
+  return [
+    "DIRECTIVA OBLIGATORIA DEL SCORECARD TIROIDES (debe gobernar paneles 3D, ficha y tabla de nódulos):",
+    body,
+    isThyroid
+      ? "Prioriza categoría TI-RADS, localización por lóbulo/istmo, tamaño en 3 ejes, composición y focos ecogénicos."
+      : "Si el scorecard no es TI-RADS, extrae solo hallazgos cervicales/tiroideos aplicables; no inventes nódulos.",
+    "No inventes nódulos, ganglios ni categorías TI-RADS ausentes en el scorecard/informe.",
+  ].join("\n");
+}
+
 export function scorecardTrafficLabel(light: ClinicalScorecardData["trafficLight"]): string {
   switch (light) {
     case "critical":

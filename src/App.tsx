@@ -23,12 +23,14 @@ import { renderScorecardAnnexToPDF } from "./utils/scorecardPdfRenderer";
 import { renderReasoningChainAnnexToPDF } from "./utils/reasoningChainPdfRenderer";
 import { renderDifferentialTreeAnnexToPDF } from "./utils/differentialTreePdfRenderer";
 import { renderMeasurementsGaugeAnnexToPDF } from "./utils/measurementsGaugePdfRenderer";
-import { Atlas3DData, Vascular3DData, FocalLesion3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData } from "./types";
-import { buildAtlasDirectivesFromScorecard, buildAtlasPanelFindingAssignments, buildVascularDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
+import { Atlas3DData, Vascular3DData, FocalLesion3DData, Thyroid3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData } from "./types";
+import { buildAtlasDirectivesFromScorecard, buildAtlasPanelFindingAssignments, buildVascularDirectivesFromScorecard, buildThyroidDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
 import { Vascular3DModule } from "./components/Vascular3DModule";
 import { FocalLesion3DModule } from "./components/FocalLesion3DModule";
+import { Thyroid3DModule } from "./components/Thyroid3DModule";
 import { renderVascular3DPageToPdf } from "./utils/vascular3dPdfRenderer";
 import { renderFocalLesion3DAnnexToPDF } from "./utils/focalLesion3dPdfRenderer";
+import { renderThyroid3DPageToPdf } from "./utils/thyroid3dPdfRenderer";
 import { renderElastographyAnnexToPdf, ElastographyPdfData } from "./utils/elastographyPdfRenderer";
 import { renderUsImagesToPdf, getPanelLetter } from "./utils/usImagesPdfRenderer";
 import { renderMmgImagesToPdf } from "./utils/mmgImagesPdfRenderer";
@@ -943,7 +945,7 @@ ae.start_server(("0.0.0.0", 1040), evt_handlers=[(evt.EVT_C_FIND, handle_find)])
         <span className="flex items-center gap-1.5">
           <Network className="h-4 w-4 text-indigo-400 animate-pulse" /> Puente Samsung V7
           <span className={`ml-1 px-1.5 py-0.5 rounded text-[7px] font-black tracking-wider ${bridgeOnline ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" : "bg-rose-500/15 text-rose-300 border border-rose-500/30"}`}>
-            {bridgeOnline ? "EN LÍNEA" : "OFFLINE"}
+            {bridgeOnline ? "EN Lï¿½NEA" : "OFFLINE"}
           </span>
         </span>
         <ChevronDown className={`h-3.5 w-3.5 text-indigo-400 transition-transform duration-300 ${isOpen ? "rotate-180" : ""}`} />
@@ -961,7 +963,7 @@ ae.start_server(("0.0.0.0", 1040), evt_handlers=[(evt.EVT_C_FIND, handle_find)])
                   : "text-slate-500 hover:text-slate-300"
               }`}
             >
-              Automático
+              Automï¿½tico
             </button>
             <button
               type="button"
@@ -996,14 +998,14 @@ ae.start_server(("0.0.0.0", 1040), evt_handlers=[(evt.EVT_C_FIND, handle_find)])
                 <p className="text-[9px] text-slate-400 leading-relaxed">
                   {bridgeOnline
                     ? `Agenda sincronizada (${bridgePatientCount} pacientes). Al seleccionar un paciente en la lista, las capturas del V7 se adjuntan solas al reporte cuando llegan por red.`
-                    : "El puente corre en la terminal pero la app no lo ve. Abre RAD-AIEXPERT en Chrome/Safari en el mismo iMac, actualiza el puente (git pull) y reinícialo. Si Chrome pide permiso de red local, acepta."}
+                    : "El puente corre en la terminal pero la app no lo ve. Abre RAD-AIEXPERT en Chrome/Safari en el mismo iMac, actualiza el puente (git pull) y reinï¿½cialo. Si Chrome pide permiso de red local, acepta."}
                 </p>
               </div>
 
               <ol className="list-decimal list-inside text-[9px] text-slate-400 space-y-1.5">
                 <li>Selecciona al paciente en la lista de trabajo (carga el formulario del reporte).</li>
                 <li>En el <strong className="text-slate-300">Samsung V7</strong>: Patient ? Worklist ? Query ? elige al mismo paciente.</li>
-                <li>Realiza el estudio; al enviar/guardar en red, las imágenes aparecen en el anexo del PDF automáticamente.</li>
+                <li>Realiza el estudio; al enviar/guardar en red, las imï¿½genes aparecen en el anexo del PDF automï¿½ticamente.</li>
               </ol>
 
               {!bridgeOnline && (
@@ -1103,7 +1105,7 @@ python3 samsung_bridge.py
               <div className="bg-indigo-500/5 border border-indigo-500/10 rounded-lg p-2.5 flex gap-2">
                 <Wifi className="h-4 w-4 text-indigo-400 shrink-0" />
                 <p className="text-[9px] text-slate-300 leading-relaxed font-bold">
-                  Configuración única del <span className="text-indigo-400">Samsung V7</span> en la misma red que tu iMac (Wi?Fi).
+                  Configuraciï¿½n ï¿½nica del <span className="text-indigo-400">Samsung V7</span> en la misma red que tu iMac (Wi?Fi).
                 </p>
               </div>
 
@@ -1113,23 +1115,23 @@ python3 samsung_bridge.py
                   <li>Utility ? Connectivity ? DICOM ? Add</li>
                   <li>Service Type: <strong className="text-indigo-300">MWL</strong></li>
                   <li>AE Title: <strong className="text-indigo-300">MWL_SERVER</strong></li>
-                  <li>IP: IP del iMac · Puerto: <strong className="text-indigo-300">1040</strong></li>
+                  <li>IP: IP del iMac ï¿½ Puerto: <strong className="text-indigo-300">1040</strong></li>
                 </ul>
               </div>
 
               <div className="border border-cyan-500/20 rounded-lg p-2.5 space-y-2 bg-cyan-950/10">
-                <span className="text-[9px] font-black uppercase text-cyan-400 tracking-wider font-mono">2. Servidor Storage (envío de imágenes)</span>
+                <span className="text-[9px] font-black uppercase text-cyan-400 tracking-wider font-mono">2. Servidor Storage (envï¿½o de imï¿½genes)</span>
                 <ul className="list-disc list-inside text-[9px] text-slate-400 space-y-0.5 pl-1">
                   <li>Utility ? Connectivity ? DICOM ? Add</li>
                   <li>Service Type: <strong className="text-cyan-300">Storage</strong> / PACS</li>
                   <li>AE Title: <strong className="text-cyan-300">RAD_BRIDGE</strong></li>
-                  <li>IP: IP del iMac · Puerto: <strong className="text-cyan-300">11113</strong> (Horos usa 11112)</li>
-                  <li>Activa envío automático al guardar/finalizar estudio si el menú lo permite.</li>
+                  <li>IP: IP del iMac ï¿½ Puerto: <strong className="text-cyan-300">11113</strong> (Horos usa 11112)</li>
+                  <li>Activa envï¿½o automï¿½tico al guardar/finalizar estudio si el menï¿½ lo permite.</li>
                 </ul>
               </div>
 
               <p className="text-[9px] text-slate-500 leading-relaxed">
-                Flujo diario: abre el puente en el Mac ? selecciona paciente en la app ? Query Worklist en el V7 ? al terminar el estudio las imágenes llegan solas al anexo del PDF.
+                Flujo diario: abre el puente en el Mac ? selecciona paciente en la app ? Query Worklist en el V7 ? al terminar el estudio las imï¿½genes llegan solas al anexo del PDF.
               </p>
             </div>
           )}
@@ -1430,6 +1432,8 @@ export default function App() {
         if (localStudy.atlas3dData) setAtlas3dData(localStudy.atlas3dData);
         if (localStudy.vascular3dData) setVascular3dData(localStudy.vascular3dData);
         if (localStudy.focalLesion3dData) setFocalLesion3dData(localStudy.focalLesion3dData);
+        if (localStudy.thyroid3dData) setThyroid3dData(localStudy.thyroid3dData);
+        if (localStudy.includeThyroid3dInReport !== undefined) setIncludeThyroid3dInReport(localStudy.includeThyroid3dInReport);
         if (localStudy.includeFocalLesion3dInReport !== undefined) setIncludeFocalLesion3dInReport(localStudy.includeFocalLesion3dInReport);
         if (localStudy.usImagesGridMode) setUsImagesGridMode(localStudy.usImagesGridMode as any);
         setIsPatientViewLoading(false);
@@ -1523,15 +1527,15 @@ export default function App() {
             })
             .catch(err => console.error("Error al sincronizar Firebase personalizado con el servidor:", err));
           } else if (serverConfig && serverConfig.projectId !== localCustom.projectId) {
-            // El servidor tiene una configuración personalizada diferente de la local. El servidor manda.
+            // El servidor tiene una configuraciï¿½n personalizada diferente de la local. El servidor manda.
             // One-shot reload guard: avoid blank-screen reload loops during cold start.
             const reloadKey = "rad_firebase_config_reload_once";
             if (typeof sessionStorage !== "undefined" && sessionStorage.getItem(reloadKey) === "1") {
-              console.warn("Firebase config sync ya recargó una vez en esta sesión; se omite reload.");
+              console.warn("Firebase config sync ya recargï¿½ una vez en esta sesiï¿½n; se omite reload.");
               localStorage.setItem("rad_custom_firebase_config", JSON.stringify(serverConfig));
               localStorage.setItem("rad_custom_firebase_config_raw", JSON.stringify(serverConfig, null, 2));
             } else {
-              console.log("Sincronizando configuración de Firebase desde el servidor...");
+              console.log("Sincronizando configuraciï¿½n de Firebase desde el servidor...");
               localStorage.setItem("rad_custom_firebase_config", JSON.stringify(serverConfig));
               localStorage.setItem("rad_custom_firebase_config_raw", JSON.stringify(serverConfig, null, 2));
               try {
@@ -1543,16 +1547,16 @@ export default function App() {
             }
           }
         } else {
-          // El navegador NO tiene una configuración en localStorage.
+          // El navegador NO tiene una configuraciï¿½n en localStorage.
           if (serverConfig && serverConfig.projectId && serverConfig.projectId !== "gen-lang-client-0578019690") {
-            // Pero el servidor sí tiene una personalizada. La descargamos y recargamos.
+            // Pero el servidor sï¿½ tiene una personalizada. La descargamos y recargamos.
             const reloadKey = "rad_firebase_config_reload_once";
             if (typeof sessionStorage !== "undefined" && sessionStorage.getItem(reloadKey) === "1") {
-              console.warn("Firebase config download ya recargó una vez en esta sesión; se omite reload.");
+              console.warn("Firebase config download ya recargï¿½ una vez en esta sesiï¿½n; se omite reload.");
               localStorage.setItem("rad_custom_firebase_config", JSON.stringify(serverConfig));
               localStorage.setItem("rad_custom_firebase_config_raw", JSON.stringify(serverConfig, null, 2));
             } else {
-              console.log("Descargando configuración de Firebase personalizada del servidor...");
+              console.log("Descargando configuraciï¿½n de Firebase personalizada del servidor...");
               localStorage.setItem("rad_custom_firebase_config", JSON.stringify(serverConfig));
               localStorage.setItem("rad_custom_firebase_config_raw", JSON.stringify(serverConfig, null, 2));
               try {
@@ -2617,6 +2621,8 @@ export default function App() {
   // Focal Lesion Cutaway 3D (on-demand)
   const [focalLesion3dData, setFocalLesion3dData] = useState<FocalLesion3DData | null>(null);
   const [includeFocalLesion3dInReport, setIncludeFocalLesion3dInReport] = useState<boolean>(true);
+  const [thyroid3dData, setThyroid3dData] = useState<Thyroid3DData | null>(null);
+  const [includeThyroid3dInReport, setIncludeThyroid3dInReport] = useState<boolean>(true);
 
   // CuadrÃ­cula y PresentaciÃ³n CientÃ­fica para Fotos de Ultrasonido
   const [usImagesGridMode, setUsImagesGridMode] = useState<UsImagesGridMode>("auto");
@@ -2671,6 +2677,8 @@ export default function App() {
     includeMeasurementNormalsInPdf,
     vascular3dData,
     includeVascular3dInReport,
+    thyroid3dData,
+    includeThyroid3dInReport,
     focalLesion3dData,
     includeFocalLesion3dInReport,
     usImagesGridMode,
@@ -3320,6 +3328,7 @@ Ejemplo:
     differential_tree: false,
     atlas3d: true,
     vascular3d: false,
+    thyroid3d: false,
     radar: false,
     case_analysis: false,
     quality_eval: false,
@@ -3347,6 +3356,7 @@ Ejemplo:
       clinical_scorecard: select,
       atlas3d: select,
       vascular3d: select,
+      thyroid3d: select,
       radar: select,
       case_analysis: select,
       quality_eval: select,
@@ -3546,6 +3556,29 @@ Ejemplo:
             }
           } catch (e) {
             console.error("Error en batch vascular 3d:", e);
+          }
+        }
+
+        if (modules.thyroid3d) {
+          try {
+            const thyroidDirectives = buildThyroidDirectivesFromScorecard(scorecardForModules);
+            const resp = await fetch("/api/generate-3d-thyroid", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                reportText: activeReport,
+                thyroidType: "general_thyroid",
+                requestedModel: modelFor("thyroid3d"),
+                customDirectives: thyroidDirectives || undefined
+              })
+            });
+            const j = await resp.json();
+            if (j.success && j.data) {
+              setThyroid3dData(j.data);
+              setIncludeThyroid3dInReport(true);
+            }
+          } catch (e) {
+            console.error("Error en batch thyroid 3d:", e);
           }
         }
       })());
@@ -4258,6 +4291,8 @@ Ejemplo:
             includeAtlas3dInReport: includeAtlas3dInReport,
             vascular3dData: vascular3dData || null,
             includeVascular3dInReport: includeVascular3dInReport,
+            thyroid3dData: thyroid3dData || null,
+            includeThyroid3dInReport: includeThyroid3dInReport,
             focalLesion3dData: focalLesion3dData || null,
             includeFocalLesion3dInReport: includeFocalLesion3dInReport,
             usImagesGridMode: usImagesGridMode || "auto",
@@ -4285,6 +4320,7 @@ Ejemplo:
                 findings3dRenders: [],
                 atlas3dData: null,
                 vascular3dData: null,
+                thyroid3dData: null,
                 focalLesion3dData: null,
                 customLogoUrl: "",
                 customSignatureUrl: "",
@@ -4292,7 +4328,7 @@ Ejemplo:
               const { userId: _userId, userEmail: _userEmail, ...studyPayload } = cloudStudy;
               await saveStudyToCloud(gmailUser.uid, gmailUser.email || "", studyPayload);
             } catch (cloudError) {
-              console.warn("El reporte se guardó localmente pero no pudo sincronizarse:", cloudError);
+              console.warn("El reporte se guardï¿½ localmente pero no pudo sincronizarse:", cloudError);
             }
           }
 
@@ -5269,7 +5305,7 @@ Ejemplo:
         body: JSON.stringify({
           model: modelFor("patient_summary"),
           report: reportContent,
-          studyType: studyType || "Estudio Radiológico",
+          studyType: studyType || "Estudio Radiolï¿½gico",
           clinicalHistory: clinicalHistory || "",
         }),
       });
@@ -5376,6 +5412,8 @@ Ejemplo:
             includeAtlas3dInReport: includeAtlas3dInReport,
             vascular3dData: vascular3dData || null,
             includeVascular3dInReport: includeVascular3dInReport,
+            thyroid3dData: thyroid3dData || null,
+            includeThyroid3dInReport: includeThyroid3dInReport,
             focalLesion3dData: focalLesion3dData || null,
             includeFocalLesion3dInReport: includeFocalLesion3dInReport,
             usImagesGridMode: usImagesGridMode || "auto",
@@ -6525,7 +6563,7 @@ Ejemplo:
             model: modelFor("labeling"),
             image: imgItem.base64 || imgItem.url,
             filename: imgItem.name,
-            studyType: specificStudy || "Mamografía y Ultrasonido",
+            studyType: specificStudy || "Mamografï¿½a y Ultrasonido",
             clinicalHistory: clinicalHistory || "",
             findings: findings || inputReport || "",
           }),
@@ -6541,12 +6579,12 @@ Ejemplo:
             side: data.side || item.side || "Derecha"
           } : item));
         } else {
-          throw new Error(data.error || "No se pudo generar la rotulación con IA.");
+          throw new Error(data.error || "No se pudo generar la rotulaciï¿½n con IA.");
         }
       });
     } catch (err) {
       console.error("Error al rotular con IA:", err);
-      alert(err instanceof Error ? err.message : "Error de conexión al rotular la foto.");
+      alert(err instanceof Error ? err.message : "Error de conexiï¿½n al rotular la foto.");
     } finally {
       setLoadingAiLabelIds(prev => {
         const next = { ...prev };
@@ -6561,19 +6599,19 @@ Ejemplo:
     if (!imgItem || loadingAutocompleteIds[id]) return;
     
     if (!imgItem.caption || !imgItem.caption.trim()) {
-      alert("Por favor, escribe primero una palabra o frase clave en la descripción (ej. 'vesícula', 'quiste' o 'carótida') para poder buscar y autocompletar desde el reporte.");
+      alert("Por favor, escribe primero una palabra o frase clave en la descripciï¿½n (ej. 'vesï¿½cula', 'quiste' o 'carï¿½tida') para poder buscar y autocompletar desde el reporte.");
       return;
     }
 
     const reportToUse = generatedReport || inputReport || findings;
     if (!reportToUse) {
-      alert("Por favor, redacta o genera el reporte primero para poder buscar y autocompletar la rotulación.");
+      alert("Por favor, redacta o genera el reporte primero para poder buscar y autocompletar la rotulaciï¿½n.");
       return;
     }
 
     setLoadingAutocompleteIds(prev => ({ ...prev, [id]: true }));
     try {
-      await runBackgroundTask(`autocomplete-${id}`, "Completando rotulación desde reporte", async () => {
+      await runBackgroundTask(`autocomplete-${id}`, "Completando rotulaciï¿½n desde reporte", async () => {
         const response = await fetch("/api/autocomplete-label-from-report", {
           method: "POST",
           headers: {
@@ -6583,7 +6621,7 @@ Ejemplo:
             model: modelFor("labeling"),
             phrase: imgItem.caption,
             currentReport: reportToUse,
-            studyType: specificStudy || "Mamografía / Ecografía",
+            studyType: specificStudy || "Mamografï¿½a / Ecografï¿½a",
             clinicalHistory: clinicalHistory || "",
           }),
         });
@@ -6592,12 +6630,12 @@ Ejemplo:
         if (response.ok && data.success && data.label) {
           setAttachedImages(prev => prev.map(item => item.id === id ? { ...item, caption: data.label } : item));
         } else {
-          throw new Error(data.error || "No se pudo autocompletar la rotulación.");
+          throw new Error(data.error || "No se pudo autocompletar la rotulaciï¿½n.");
         }
       });
     } catch (err) {
-      console.error("Error al autocompletar rotulación:", err);
-      alert(err instanceof Error ? err.message : "Error de conexión al autocompletar desde el reporte.");
+      console.error("Error al autocompletar rotulaciï¿½n:", err);
+      alert(err instanceof Error ? err.message : "Error de conexiï¿½n al autocompletar desde el reporte.");
     } finally {
       setLoadingAutocompleteIds(prev => {
         const next = { ...prev };
@@ -9886,7 +9924,15 @@ Ejemplo:
         await renderVascular3DPageToPdf(doc, activeVascularData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
       }
 
-      // --- 5.65. ANEXO: CORTE FOCAL 3D DE LA LESIÓN (ON DEMAND) ---
+      // --- 5.64. ANEXO: SUITE TIROIDES 3D (PÃGINA COMPLETA) ---
+      const activeThyroidData = studyOverride ? studyOverride.thyroid3dData : (pdfStateRef.current?.thyroid3dData || thyroid3dData);
+      const shouldIncludeThyroid = studyOverride ? (studyOverride.includeThyroid3dInReport !== false) : (pdfStateRef.current?.includeThyroid3dInReport !== false && includeThyroid3dInReport);
+      if (activeThyroidData && shouldIncludeThyroid && (activeThyroidData.panels?.length || activeThyroidData.noduleTable?.length)) {
+        await renderThyroid3DPageToPdf(doc, activeThyroidData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+      }
+
+
+      // --- 5.65. ANEXO: CORTE FOCAL 3D DE LA LESIÃ“N (ON DEMAND) ---
       const activeFocalLesionData = studyOverride ? studyOverride.focalLesion3dData : (pdfStateRef.current?.focalLesion3dData || focalLesion3dData);
       const shouldIncludeFocalLesion = studyOverride ? (studyOverride.includeFocalLesion3dInReport !== false) : (pdfStateRef.current?.includeFocalLesion3dInReport !== false && includeFocalLesion3dInReport);
       if (activeFocalLesionData && shouldIncludeFocalLesion && activeFocalLesionData.panels && activeFocalLesionData.panels.length > 0) {
@@ -15388,7 +15434,7 @@ const splitReportAndAnnex = (text: string) => {
           });
         }
 
-        alert("¡Éxito! Respaldo de datos importado y restaurado correctamente.");
+        alert("ï¿½ï¿½xito! Respaldo de datos importado y restaurado correctamente.");
         window.location.reload();
       } catch (err: any) {
         alert("El archivo de respaldo no es vÃ¡lido o estÃ¡ corrupto: " + err.message);
@@ -15744,7 +15790,7 @@ const splitReportAndAnnex = (text: string) => {
     if (
       switchingPatient &&
       !window.confirm(
-        `¿Cambiar al paciente ${patient.name}? Tienes datos del reporte o imágenes de ${currentPatientName} sin finalizar.`
+        `ï¿½Cambiar al paciente ${patient.name}? Tienes datos del reporte o imï¿½genes de ${currentPatientName} sin finalizar.`
       )
     ) {
       return;
@@ -15887,7 +15933,7 @@ const splitReportAndAnnex = (text: string) => {
 
     if (
       hasSessionContent &&
-      !window.confirm(`¿Finalizar caso de ${activeName}? El paciente quedará marcado como atendido.`)
+      !window.confirm(`ï¿½Finalizar caso de ${activeName}? El paciente quedarï¿½ marcado como atendido.`)
     ) {
       return;
     }
@@ -16317,15 +16363,15 @@ const splitReportAndAnnex = (text: string) => {
           synchronizedToCloud = true;
         } catch (cloudError) {
           console.error("Error synchronizing study with Firestore:", cloudError);
-          setCloudStudiesError("El estudio se guardó localmente, pero no pudo sincronizarse con la nube.");
+          setCloudStudiesError("El estudio se guardï¿½ localmente, pero no pudo sincronizarse con la nube.");
         }
       }
 
       setCurrentCloudStudyId(idToSave);
       setCloudStudiesSuccess(
         synchronizedToCloud
-          ? "¡Estudio guardado y sincronizado con tu nube privada!"
-          : "¡Estudio guardado con éxito en tu Archivo Local!"
+          ? "ï¿½Estudio guardado y sincronizado con tu nube privada!"
+          : "ï¿½Estudio guardado con ï¿½xito en tu Archivo Local!"
       );
       fetchCloudStudies(gmailUser?.uid);
       setTimeout(() => setCloudStudiesSuccess(null), 4500);
@@ -16358,7 +16404,7 @@ const splitReportAndAnnex = (text: string) => {
           await deleteStudyFromCloud(studyId);
         } catch (cloudError) {
           console.warn("No se pudo eliminar la copia de Firestore:", cloudError);
-          setCloudStudiesError("Se eliminó la copia local, pero no la copia sincronizada.");
+          setCloudStudiesError("Se eliminï¿½ la copia local, pero no la copia sincronizada.");
         }
       }
       setCloudStudiesSuccess("Estudio eliminado de tu archivo.");
@@ -19618,8 +19664,22 @@ const splitReportAndAnnex = (text: string) => {
                             externalDirectives={buildVascularDirectivesFromScorecard(clinicalScorecardData) || atlasDirectivesFromScorecard}
                           />
 
-                          {/* === CORTE FOCAL 3D DE LA LESIÓN (ON DEMAND) === */}
-                          <div id="focal-lesion-3d-module">
+                          {/* === CORTE FOCAL 3D DE LA LESIï¿½N (ON DEMAND) === */}
+                          
+                          <Thyroid3DModule
+                            reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
+                            activeProtocol={specificStudy || studyType || ""}
+                            laterality=""
+                            selectedModel={modelFor("thyroid3d")}
+                            thyroidData={thyroid3dData}
+                            setThyroidData={setThyroid3dData}
+                            includeInReport={includeThyroid3dInReport}
+                            setIncludeInReport={setIncludeThyroid3dInReport}
+                            scorecardData={clinicalScorecardData}
+                            externalDirectives={buildThyroidDirectivesFromScorecard(clinicalScorecardData) || atlasDirectivesFromScorecard}
+                          />
+
+<div id="focal-lesion-3d-module">
                           <FocalLesion3DModule
                             reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
                             activeProtocol={specificStudy || studyType || ""}
@@ -19840,6 +19900,13 @@ const splitReportAndAnnex = (text: string) => {
                                   desc: "ReconstrucciÃ³n macrovascular 3D fotorrealista (2 a 3 paneles), cÃ¡lculo de estenosis y tabulaciÃ³n velocimÃ©trica adaptada.",
                                   color: "text-rose-400 border-rose-500/30 bg-rose-950/20"
                                 },
+                                {
+                                  id: "thyroid3d",
+                                  label: "ðŸ¦‹ Suite Tiroides 3D & Ficha TI-RADS",
+                                  badge: "TIROIDES 3D",
+                                  desc: "GlÃ¡ndula/nÃ³dulo 3D, ficha clÃ­nica rica bajo la imagen, tabla TI-RADS y anexo PDF a pÃ¡gina completa.",
+                                  color: "text-teal-400 border-teal-500/30 bg-teal-950/20"
+                                },
                                                                 {
                                   id: "clinical_scorecard",
                                   label: "Scorecard Clinico de Criterios (pre-Atlas)",
@@ -19858,7 +19925,7 @@ const splitReportAndAnnex = (text: string) => {
                                   id: "differential_tree",
                                   label: "Arbol de diferenciales con poda",
                                   badge: "DIFERENCIALES",
-                                  desc: "Hipótesis a favor/en contra, poda de ramas incompatibles y diagnostico mas probable.",
+                                  desc: "Hipï¿½tesis a favor/en contra, poda de ramas incompatibles y diagnostico mas probable.",
                                   color: "text-orange-400 border-orange-500/30 bg-orange-950/20"
                                 },
 {
@@ -20302,21 +20369,21 @@ const splitReportAndAnnex = (text: string) => {
                               </button>
                             </div>
 
-                            {/* Card 8b: Cuadro Sinóptico de Órgano (IA) */}
+                            {/* Card 8b: Cuadro Sinï¿½ptico de ï¿½rgano (IA) */}
                             <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-cyan-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
                               <div className="flex items-center gap-2 justify-between">
                                 <div className="flex items-center gap-2">
                                   <Layers className="h-4 w-4 text-cyan-400" />
                                   <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
-                                    Mapa Sinóptico por Órgano (IA)
+                                    Mapa Sinï¿½ptico por ï¿½rgano (IA)
                                   </h4>
                                 </div>
                                 <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-cyan-950/40 text-cyan-400 border border-cyan-900/30 px-2 py-0.5 rounded">
-                                  CUADRO ÓRGANO
+                                  CUADRO ï¿½RGANO
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Extrae hallazgos de un órgano o región del reporte y genera cuadro sinóptico con inyección inteligente al informe.
+                                Extrae hallazgos de un ï¿½rgano o regiï¿½n del reporte y genera cuadro sinï¿½ptico con inyecciï¿½n inteligente al informe.
                               </p>
                               <button
                                 onClick={() => setIsCreadorCuadroSinopticoOpen(p => !p)}
@@ -20327,25 +20394,25 @@ const splitReportAndAnnex = (text: string) => {
                                 }`}
                               >
                                 <Layers className="h-4 w-4" />
-                                {isCreadorCuadroSinopticoOpen ? "Ocultar Cuadro Sinóptico" : "Abrir Cuadro Sinóptico"}
+                                {isCreadorCuadroSinopticoOpen ? "Ocultar Cuadro Sinï¿½ptico" : "Abrir Cuadro Sinï¿½ptico"}
                               </button>
                             </div>
 
-                            {/* Card 8c: Elastografía y QUS (IA) */}
+                            {/* Card 8c: Elastografï¿½a y QUS (IA) */}
                             <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-amber-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
                               <div className="flex items-center gap-2 justify-between">
                                 <div className="flex items-center gap-2">
                                   <Activity className="h-4 w-4 text-amber-400" />
                                   <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
-                                    Elastografía y QUS (IA)
+                                    Elastografï¿½a y QUS (IA)
                                   </h4>
                                 </div>
                                 <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-amber-950/40 text-amber-400 border border-amber-900/30 px-2 py-0.5 rounded">
-                                  3D HEPÁTICO
+                                  3D HEPï¿½TICO
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Reconstrucción 3D con rigidez hepática (kPa), CAP y fracción grasa QUS extraídos del reporte.
+                                Reconstrucciï¿½n 3D con rigidez hepï¿½tica (kPa), CAP y fracciï¿½n grasa QUS extraï¿½dos del reporte.
                               </p>
                               <button
                                 onClick={() => setIsElastographyQUSModuleOpen(p => !p)}
@@ -20356,7 +20423,7 @@ const splitReportAndAnnex = (text: string) => {
                                 }`}
                               >
                                 <Activity className="h-4 w-4" />
-                                {isElastographyQUSModuleOpen ? "Ocultar Elastografía/QUS" : "Abrir Elastografía y QUS"}
+                                {isElastographyQUSModuleOpen ? "Ocultar Elastografï¿½a/QUS" : "Abrir Elastografï¿½a y QUS"}
                               </button>
                             </div>
 
@@ -20374,7 +20441,7 @@ const splitReportAndAnnex = (text: string) => {
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Clasifica y desglosa hallazgos traumatológicos en tabla sinóptica inyectable al informe.
+                                Clasifica y desglosa hallazgos traumatolï¿½gicos en tabla sinï¿½ptica inyectable al informe.
                               </p>
                               <button
                                 onClick={() => setIsCreadorSinopsisFracturasOpen(p => !p)}
@@ -20497,7 +20564,7 @@ const splitReportAndAnnex = (text: string) => {
                                     Cadena de razonamiento
                                   </h4>
                                   <p className="text-[11px] text-slate-400 mt-1">
-                                    Flujograma semiológico: signos buscados, hallados y descartados, con correlación clínica/lab.
+                                    Flujograma semiolï¿½gico: signos buscados, hallados y descartados, con correlaciï¿½n clï¿½nica/lab.
                                   </p>
                                 </div>
                               </div>
@@ -20519,10 +20586,10 @@ const splitReportAndAnnex = (text: string) => {
                                 <div>
                                   <h4 className="text-sm font-semibold text-orange-200 flex items-center gap-2">
                                     <GitFork className="h-4 w-4 text-orange-400" />
-                                    Árbol de diferenciales
+                                    ï¿½rbol de diferenciales
                                   </h4>
                                   <p className="text-[11px] text-slate-400 mt-1">
-                                    Hipótesis con criterios a favor/en contra y poda de ramas descartadas.
+                                    Hipï¿½tesis con criterios a favor/en contra y poda de ramas descartadas.
                                   </p>
                                 </div>
                               </div>
@@ -20535,7 +20602,7 @@ const splitReportAndAnnex = (text: string) => {
                                     : "bg-orange-600/80 hover:bg-orange-500 text-white"
                                 }`}
                               >
-                                {isDifferentialTreeOpen ? "Ocultar árbol" : "Abrir árbol de diferenciales"}
+                                {isDifferentialTreeOpen ? "Ocultar ï¿½rbol" : "Abrir ï¿½rbol de diferenciales"}
                               </button>
                             </div>
 
@@ -20548,7 +20615,7 @@ const splitReportAndAnnex = (text: string) => {
                                     Corte Focal 3D
                                   </h4>
                                   <p className="text-[11px] text-slate-400 mt-1">
-                                    Cutaway de la lesión (auto/manual), fidelidad Atlas, paneles CTX + MACRO e inclusión en PDF.
+                                    Cutaway de la lesiï¿½n (auto/manual), fidelidad Atlas, paneles CTX + MACRO e inclusiï¿½n en PDF.
                                   </p>
                                 </div>
                               </div>
@@ -20685,7 +20752,7 @@ const splitReportAndAnnex = (text: string) => {
 
                           {isDifferentialTreeOpen && (
                             <div className="my-6">
-                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-orange-400 bg-slate-900/60 rounded-xl border border-orange-900/40 animate-pulse">Cargando árbol de diferenciales...</div>}>
+                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-orange-400 bg-slate-900/60 rounded-xl border border-orange-900/40 animate-pulse">Cargando ï¿½rbol de diferenciales...</div>}>
                                 <DifferentialTreeModule
                                   selectedModel={modelFor("differential_tree")}
                                   reportText={isEditingReportManual ? editedReportText : generatedReport}
@@ -20740,7 +20807,7 @@ const splitReportAndAnnex = (text: string) => {
 
                           {isCreadorCuadroSinopticoOpen && (
                             <div className="my-6">
-                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-cyan-400 bg-slate-900/60 rounded-xl border border-cyan-900/40 animate-pulse">Cargando Cuadro Sinóptico de Órgano...</div>}>
+                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-cyan-400 bg-slate-900/60 rounded-xl border border-cyan-900/40 animate-pulse">Cargando Cuadro Sinï¿½ptico de ï¿½rgano...</div>}>
                                 <CreadorCuadroSinoptico
                                   selectedModel={modelFor("default")}
                                   reportText={isEditingReportManual ? editedReportText : generatedReport}
@@ -20755,7 +20822,7 @@ const splitReportAndAnnex = (text: string) => {
 
                           {isElastographyQUSModuleOpen && (
                             <div className="my-6">
-                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-amber-400 bg-slate-900/60 rounded-xl border border-amber-900/40 animate-pulse">Cargando Elastografía y QUS...</div>}>
+                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-amber-400 bg-slate-900/60 rounded-xl border border-amber-900/40 animate-pulse">Cargando Elastografï¿½a y QUS...</div>}>
                                 <ElastographyQUSPresentationModule
                                   selectedModel={modelFor("default")}
                                   reportText={isEditingReportManual ? editedReportText : generatedReport}
@@ -22851,8 +22918,8 @@ const splitReportAndAnnex = (text: string) => {
                             {opt.id === "auto" && (
                               <div className="border-t border-slate-850/60 pt-2.5 mt-2 w-full space-y-1 text-[10px] text-slate-350">
                                 <div><strong className="text-emerald-400">3.8 Flash:</strong> reporte, Atlas/Vascular 3D, resumen paciente, caso, clasificaciones.</div>
-                                <div><strong className="text-indigo-400">3.7 Flash:</strong> rotulado masivo, bibliografía, glosario, resumen operacional, chat.</div>
-                                <div><strong className="text-purple-400">Pro:</strong> solo si lo eliges manualmente (casos difíciles).</div>
+                                <div><strong className="text-indigo-400">3.7 Flash:</strong> rotulado masivo, bibliografï¿½a, glosario, resumen operacional, chat.</div>
+                                <div><strong className="text-purple-400">Pro:</strong> solo si lo eliges manualmente (casos difï¿½ciles).</div>
                               </div>
                             )}
                           </button>
@@ -23293,6 +23360,8 @@ const splitReportAndAnnex = (text: string) => {
                         if (viewingCloudStudy.atlas3dData) setAtlas3dData(viewingCloudStudy.atlas3dData);
                         if (viewingCloudStudy.includeAtlas3dInReport !== undefined) setIncludeAtlas3dInReport(viewingCloudStudy.includeAtlas3dInReport);
                         if (viewingCloudStudy.vascular3dData) setVascular3dData(viewingCloudStudy.vascular3dData);
+                        if (viewingCloudStudy.thyroid3dData) setThyroid3dData(viewingCloudStudy.thyroid3dData);
+                        if (viewingCloudStudy.includeThyroid3dInReport !== undefined) setIncludeThyroid3dInReport(viewingCloudStudy.includeThyroid3dInReport);
                         if (viewingCloudStudy.focalLesion3dData) setFocalLesion3dData(viewingCloudStudy.focalLesion3dData);
                         if (viewingCloudStudy.includeVascular3dInReport !== undefined) setIncludeVascular3dInReport(viewingCloudStudy.includeVascular3dInReport);
                         if (viewingCloudStudy.includeFocalLesion3dInReport !== undefined) setIncludeFocalLesion3dInReport(viewingCloudStudy.includeFocalLesion3dInReport);
