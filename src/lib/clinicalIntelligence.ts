@@ -760,6 +760,121 @@ export function buildKneeDirectivesFromScorecard(
 }
 
 
+/** Hard topography rules for kidneys & urinary tract (shared with suite prompts). */
+export const KIDNEY_URINARY_TOPOGRAPHY_DIRECTIVE = [
+  "TOPOGRAFÍA RENAL Y VÍAS URINARIAS OBLIGATORIA (nunca intercambiar):",
+  "- Riñón DERECHO ≠ Riñón IZQUIERDO del paciente. Lateralidad anatómica del paciente manda.",
+  "- Vista AP/frontal: lado DERECHO del paciente a la IZQUIERDA del cuadro; IZQUIERDO a la DERECHA.",
+  "- Polo SUPERIOR ≠ polo INFERIOR; corteza ≠ médula ≠ seno ≠ pelvis ≠ cálices.",
+  "- Uréter proximal / medio / distal y vejiga son estructuras distintas — no fusionar hallazgos.",
+  "- Hidronefrosis/ectasia: grado 0–IV según informe; no inventar obstrucción ni litiasis ausentes.",
+  "- Quistes: si hay Bosniak, respetar categoría exacta (I / II / IIF / III / IV); no subir ni bajar grado.",
+  "- En paneles, ficha y tabla nombra siempre: riñón derecho|izquierdo + estructura (corteza/seno/pelvis/uréter/vejiga).",
+  "- Doppler renal (si aplica): RI / estenosis / perfusión solo si el informe/scorecard lo respaldan.",
+].join("\n");
+
+export function buildKidneyDirectivesFromScorecard(
+  scorecard: ClinicalScorecardData | null | undefined,
+  radarData?: { radarMode?: string; globalScore?: number | string; dominantVector?: string; clinicalSummary?: string; axes?: Array<{ id?: string; name?: string; label?: string; score?: number; interpretation?: string }> }
+): string {
+  const protocol = (
+    scorecard?.protocolName ||
+    scorecard?.protocolId ||
+    radarData?.radarMode ||
+    ""
+  ).toLowerCase();
+  const isKidney =
+    protocol.includes("renal") ||
+    protocol.includes("riñon") ||
+    protocol.includes("rinon") ||
+    protocol.includes("kidney") ||
+    protocol.includes("bosniak") ||
+    protocol.includes("urin") ||
+    protocol.includes("vejiga") ||
+    protocol.includes("ureter") ||
+    protocol.includes("uréter") ||
+    protocol.includes("hidronef") ||
+    protocol.includes("litiasis");
+
+  let body = "";
+  if (scorecard) {
+    const base = buildAtlasDirectivesFromScorecard(scorecard);
+    const summary = (scorecard.clinicalSummary || "").trim();
+    const reco = (scorecard.recommendation || "").trim();
+    body = base;
+    if (!body) {
+      const allCriteria = Array.isArray(scorecard.criteria) ? scorecard.criteria : [];
+      const evidenced = allCriteria
+        .filter((c) => (c.evidence || c.value || "").trim())
+        .slice(0, 12)
+        .map((c, i) => {
+          const val = c.value ? ` (${c.value})` : "";
+          return `${i + 1}. «${c.atlasStructure || c.criterion}»${val}: ${c.evidence || c.status}`;
+        });
+      if (evidenced.length || summary) {
+        body = [
+          `SCORECARD RENAL / VÍAS URINARIAS (${scorecard.protocolName || "protocolo"} — ${scorecard.categoryAssigned || ""}):`,
+          `Semáforo: ${scorecard.trafficLight}. Criterios: ${scorecard.scoreMet}/${scorecard.scoreTotal}.`,
+          summary ? `Síntesis: ${summary}` : "",
+          reco ? `Recomendación: ${reco}` : "",
+          evidenced.length ? "Hallazgos del scorecard a respetar en 3D/tabla renal:" : "",
+          ...evidenced,
+        ]
+          .filter(Boolean)
+          .join("\n");
+      }
+    }
+  }
+
+  const radarBits: string[] = [];
+  const axes = Array.isArray(radarData?.axes) ? radarData!.axes! : [];
+  const radarMode = String(radarData?.radarMode || "").toLowerCase();
+  const axisKeyBlob = axes
+    .map((a) => `${a.id || ""} ${a.name || ""} ${a.label || ""}`.toLowerCase())
+    .join(" ");
+  const looksLikeKidneyRadar =
+    radarMode.includes("renal") ||
+    radarMode.includes("urin") ||
+    radarMode.includes("prostate") ||
+    /riñon|rinon|kidney|bosniak|hidronef|ectasia|litiasis|vejiga|ureter|pielocalic|cortical|resistiv/.test(
+      axisKeyBlob
+    );
+  if (axes.length && looksLikeKidneyRadar) {
+    radarBits.push(
+      `RADAR RENAL / VÍAS URINARIAS (${radarData?.radarMode || "renal"} — score global ${radarData?.globalScore ?? "n/d"}):`
+    );
+    if (radarData?.dominantVector) {
+      radarBits.push(`Vector dominante: ${radarData.dominantVector}`);
+    }
+    if (radarData?.clinicalSummary) {
+      radarBits.push(`Síntesis radar: ${radarData.clinicalSummary}`);
+    }
+    radarBits.push("Ejes a respetar en ficha/tabla 3D:");
+    axes.slice(0, 8).forEach((axis, i) => {
+      const label = axis.label || axis.name || axis.id || `Eje ${i + 1}`;
+      const score = axis.score != null ? ` score=${axis.score}` : "";
+      const interp = axis.interpretation ? ` — ${axis.interpretation}` : "";
+      radarBits.push(`${i + 1}. ${label}${score}${interp}`);
+    });
+  }
+
+  if (!body && !radarBits.length) return "";
+
+  return [
+    "DIRECTIVA OBLIGATORIA DEL SCORECARD RENAL (debe gobernar paneles 3D, ficha y tabla de riñones-vías):",
+    body,
+    radarBits.length ? radarBits.join("\n") : "",
+    isKidney
+      ? "Prioriza: (1) lado renal del paciente (D/I), (2) corteza/médula/seno/pelvis/cálices, (3) grado de hidronefrosis, (4) litiasis/quiste-Bosniak, (5) uréteres y vejiga si están en el informe. NUNCA intercambiar riñón derecho↔izquierdo ni inventar obstrucción."
+      : "Si el scorecard/radar no es renal, extrae solo hallazgos renales/urinarios aplicables; no inventes patología renal.",
+    "No inventes hidronefrosis, litiasis, quistes Bosniak, estenosis ni grados de severidad ausentes en el scorecard/radar/informe.",
+    KIDNEY_URINARY_TOPOGRAPHY_DIRECTIVE,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+
 export function scorecardTrafficLabel(light: ClinicalScorecardData["trafficLight"]): string {
   switch (light) {
     case "critical":
@@ -812,6 +927,7 @@ export const SCORECARD_PROTOCOL_OPTIONS: Array<{ id: string; label: string }> = 
   { id: "achilles", label: "Tendón de Aquiles" },
   { id: "hepatic", label: "Hígado / Esteatosis-Fibrosis" },
   { id: "renal", label: "Riñón integral" },
+  { id: "kidney_urinary", label: "Riñón y vías urinarias" },
   { id: "scrotal", label: "Escrotal / Testicular" },
   { id: "diverticulitis", label: "Diverticulitis" },
   { id: "generic", label: "Criterios genéricos del informe" },

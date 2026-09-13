@@ -521,6 +521,64 @@ export interface Knee3DData {
   morphologicalSynthesis?: string;
 }
 
+
+export type KidneyStudyType =
+  | "renal_b_mode"
+  | "renal_doppler"
+  | "vias_urinarias"
+  | "general_kidney";
+
+export interface Kidney3DPanel {
+  id?: string;
+  panelLetter: string;
+  panelTitle: string;
+  anatomicalFocus: string;
+  laterality?: string;
+  structureOrSite?: string;
+  panelRole?: "overview" | "collecting_obstruction" | "cyst_stone" | "bladder_ureter";
+  imageUrl?: string;
+  isCustomFlipped?: boolean;
+  promptUsed?: string;
+}
+
+export interface KidneyFindingRow {
+  location: string;           // ej: "Riñón derecho" / "Vejiga"
+  structure: string;          // corteza / médula / seno / pelvis / ureter / vejiga
+  sizeOrThickness: string;    // eje bipolar, grosor cortical, pared vesical (mm)
+  echoPattern: string;        // ecoestructura / litiasis / quiste
+  hydronephrosis: string;     // grado de ectasia / hidronefrosis
+  cystOrStone: string;        // Bosniak / litiasis / sin lesiones
+  severity: string;           // leve / moderada / severa
+  clinicalImpact: string;
+}
+
+export interface Kidney3DData {
+  studyTypeCategory?: KidneyStudyType;
+  territoryLabel?: string;
+  laterality?: string;
+  figureTitle?: string;
+  tableTitle?: string;
+  tableHeaders?: {
+    col1: string;
+    col2: string;
+    col3: string;
+    col4: string;
+    col5: string;
+    col6: string;
+    col7: string;
+    col8: string;
+  };
+  panels: Kidney3DPanel[];
+  findingTable: KidneyFindingRow[];
+  /** Rich clinical blocks under / with the figure */
+  kidneySummary?: string;
+  morphologyNotes?: string;
+  urinaryTractStatus?: string;
+  keyPoints?: string[];
+  synthesisTitle?: string;
+  morphologicalSynthesis?: string;
+}
+
 export type UsImagesGridMode = "auto" | "1x1" | "1x2" | "2x1" | "2x2" | "3x2" | "4x2";
 
 /** One quantitative measurement extracted from the report for gauge display. */
