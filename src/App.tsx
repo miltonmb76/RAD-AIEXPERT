@@ -23,16 +23,18 @@ import { renderScorecardAnnexToPDF } from "./utils/scorecardPdfRenderer";
 import { renderReasoningChainAnnexToPDF } from "./utils/reasoningChainPdfRenderer";
 import { renderDifferentialTreeAnnexToPDF } from "./utils/differentialTreePdfRenderer";
 import { renderMeasurementsGaugeAnnexToPDF } from "./utils/measurementsGaugePdfRenderer";
-import { Atlas3DData, Vascular3DData, FocalLesion3DData, Thyroid3DData, Breast3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData } from "./types";
-import { buildAtlasDirectivesFromScorecard, buildAtlasPanelFindingAssignments, buildVascularDirectivesFromScorecard, buildThyroidDirectivesFromScorecard, buildBreastDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
+import { Atlas3DData, Vascular3DData, FocalLesion3DData, Thyroid3DData, Breast3DData, Shoulder3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData } from "./types";
+import { buildAtlasDirectivesFromScorecard, buildAtlasPanelFindingAssignments, buildVascularDirectivesFromScorecard, buildThyroidDirectivesFromScorecard, buildBreastDirectivesFromScorecard, buildShoulderDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
 import { Vascular3DModule } from "./components/Vascular3DModule";
 import { FocalLesion3DModule } from "./components/FocalLesion3DModule";
 import { Thyroid3DModule } from "./components/Thyroid3DModule";
 import { Breast3DModule } from "./components/Breast3DModule";
+import { Shoulder3DModule } from "./components/Shoulder3DModule";
 import { renderVascular3DPageToPdf } from "./utils/vascular3dPdfRenderer";
 import { renderFocalLesion3DAnnexToPDF } from "./utils/focalLesion3dPdfRenderer";
 import { renderThyroid3DPageToPdf } from "./utils/thyroid3dPdfRenderer";
 import { renderBreast3DPageToPdf } from "./utils/breast3dPdfRenderer";
+import { renderShoulder3DPageToPdf } from "./utils/shoulder3dPdfRenderer";
 import { renderElastographyAnnexToPdf, ElastographyPdfData } from "./utils/elastographyPdfRenderer";
 import { renderUsImagesToPdf, getPanelLetter } from "./utils/usImagesPdfRenderer";
 import { renderMmgImagesToPdf } from "./utils/mmgImagesPdfRenderer";
@@ -1436,7 +1438,9 @@ export default function App() {
         if (localStudy.focalLesion3dData) setFocalLesion3dData(localStudy.focalLesion3dData);
         if (localStudy.thyroid3dData) setThyroid3dData(localStudy.thyroid3dData);
         if (localStudy.breast3dData) setBreast3dData(localStudy.breast3dData);
+        if (localStudy.shoulder3dData) setShoulder3dData(localStudy.shoulder3dData);
         if (localStudy.includeBreast3dInReport !== undefined) setIncludeBreast3dInReport(localStudy.includeBreast3dInReport);
+        if (localStudy.includeShoulder3dInReport !== undefined) setIncludeShoulder3dInReport(localStudy.includeShoulder3dInReport);
         if (localStudy.includeThyroid3dInReport !== undefined) setIncludeThyroid3dInReport(localStudy.includeThyroid3dInReport);
         if (localStudy.includeFocalLesion3dInReport !== undefined) setIncludeFocalLesion3dInReport(localStudy.includeFocalLesion3dInReport);
         if (localStudy.usImagesGridMode) setUsImagesGridMode(localStudy.usImagesGridMode as any);
@@ -2629,6 +2633,8 @@ export default function App() {
   const [includeThyroid3dInReport, setIncludeThyroid3dInReport] = useState<boolean>(true);
   const [breast3dData, setBreast3dData] = useState<Breast3DData | null>(null);
   const [includeBreast3dInReport, setIncludeBreast3dInReport] = useState<boolean>(true);
+  const [shoulder3dData, setShoulder3dData] = useState<Shoulder3DData | null>(null);
+  const [includeShoulder3dInReport, setIncludeShoulder3dInReport] = useState<boolean>(true);
 
   // Cuadrícula y Presentación Científica para Fotos de Ultrasonido
   const [usImagesGridMode, setUsImagesGridMode] = useState<UsImagesGridMode>("auto");
@@ -2687,6 +2693,8 @@ export default function App() {
     includeThyroid3dInReport,
     breast3dData,
     includeBreast3dInReport,
+    shoulder3dData,
+    includeShoulder3dInReport,
     focalLesion3dData,
     includeFocalLesion3dInReport,
     usImagesGridMode,
@@ -3329,6 +3337,7 @@ Ejemplo:
   const [isElastographyQUSModuleOpen, setIsElastographyQUSModuleOpen] = useState<boolean>(false);
   const [isThyroid3dSuiteOpen, setIsThyroid3dSuiteOpen] = useState<boolean>(false);
   const [isBreast3dSuiteOpen, setIsBreast3dSuiteOpen] = useState<boolean>(false);
+  const [isShoulder3dSuiteOpen, setIsShoulder3dSuiteOpen] = useState<boolean>(false);
   const [includeRadarInReport, setIncludeRadarInReport] = useState<boolean>(true);
 
   // States & Handlers for Sistema de Activación Rápida de Módulos (Procesamiento en Lote)
@@ -3340,6 +3349,7 @@ Ejemplo:
     vascular3d: false,
     thyroid3d: false,
     breast3d: false,
+    shoulder3d: false,
     radar: false,
     case_analysis: false,
     quality_eval: false,
@@ -3369,6 +3379,7 @@ Ejemplo:
       vascular3d: select,
       thyroid3d: select,
       breast3d: select,
+      shoulder3d: select,
       radar: select,
       case_analysis: select,
       quality_eval: select,
@@ -3618,6 +3629,40 @@ Ejemplo:
             console.error("Error en batch breast 3d:", e);
           }
         }
+
+        if (modules.shoulder3d) {
+          try {
+            const radarForShoulder = biomechanicalRadarData
+              ? {
+                  radarMode: biomechanicalRadarData.radarMode,
+                  dominantVector: biomechanicalRadarData.dominantVector,
+                  clinicalSummary: biomechanicalRadarData.clinicalSummary,
+                  globalScore: biomechanicalRadarData.globalScore,
+                  axes: biomechanicalRadarData.axes,
+                }
+              : undefined;
+            const shoulderDirectives = buildShoulderDirectivesFromScorecard(scorecardForModules, radarForShoulder);
+            const resp = await fetch("/api/generate-3d-shoulder", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                reportText: activeReport,
+                shoulderType: "hombro_manguito",
+                requestedModel: modelFor("shoulder3d"),
+                customDirectives: shoulderDirectives || undefined
+              })
+            });
+            const j = await resp.json();
+            if (j.success && j.data) {
+              setShoulder3dData(j.data);
+              setIncludeShoulder3dInReport(true);
+              setIsShoulder3dSuiteOpen(true);
+            }
+          } catch (e) {
+            console.error("Error en batch shoulder 3d:", e);
+          }
+        }
+
       })());
     }
 
@@ -4332,6 +4377,8 @@ Ejemplo:
             includeThyroid3dInReport: includeThyroid3dInReport,
             breast3dData: breast3dData || null,
             includeBreast3dInReport: includeBreast3dInReport,
+            shoulder3dData: shoulder3dData || null,
+            includeShoulder3dInReport: includeShoulder3dInReport,
             focalLesion3dData: focalLesion3dData || null,
             includeFocalLesion3dInReport: includeFocalLesion3dInReport,
             usImagesGridMode: usImagesGridMode || "auto",
@@ -4361,6 +4408,7 @@ Ejemplo:
                 vascular3dData: null,
                 thyroid3dData: null,
                 breast3dData: null,
+                shoulder3dData: null,
                 focalLesion3dData: null,
                 customLogoUrl: "",
                 customSignatureUrl: "",
@@ -5456,6 +5504,8 @@ Ejemplo:
             includeThyroid3dInReport: includeThyroid3dInReport,
             breast3dData: breast3dData || null,
             includeBreast3dInReport: includeBreast3dInReport,
+            shoulder3dData: shoulder3dData || null,
+            includeShoulder3dInReport: includeShoulder3dInReport,
             focalLesion3dData: focalLesion3dData || null,
             includeFocalLesion3dInReport: includeFocalLesion3dInReport,
             usImagesGridMode: usImagesGridMode || "auto",
@@ -9977,6 +10027,12 @@ Ejemplo:
       const shouldIncludeBreast = studyOverride ? (studyOverride.includeBreast3dInReport !== false) : (pdfStateRef.current?.includeBreast3dInReport !== false && includeBreast3dInReport);
       if (activeBreastData && shouldIncludeBreast && (activeBreastData.panels?.length || activeBreastData.lesionTable?.length)) {
         await renderBreast3DPageToPdf(doc, activeBreastData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+      }
+
+      const activeShoulderData = studyOverride ? studyOverride.shoulder3dData : (pdfStateRef.current?.shoulder3dData || shoulder3dData);
+      const shouldIncludeShoulder = studyOverride ? (studyOverride.includeShoulder3dInReport !== false) : (pdfStateRef.current?.includeShoulder3dInReport !== false && includeShoulder3dInReport);
+      if (activeShoulderData && shouldIncludeShoulder && (activeShoulderData.panels?.length || activeShoulderData.findingTable?.length)) {
+        await renderShoulder3DPageToPdf(doc, activeShoulderData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
       }
 
 
@@ -19951,6 +20007,13 @@ const splitReportAndAnnex = (text: string) => {
                                   desc: "Reloj mamario, nódulo, axila, ficha BI-RADS y anexo PDF a página completa.",
                                   color: "text-pink-400 border-pink-500/30 bg-pink-950/20"
                                 },
+                                {
+                                  id: "shoulder3d",
+                                  label: "Suite Hombro 3D & Ficha Manguito Rotador",
+                                  badge: "MANGUITO 3D",
+                                  desc: "Overview del hombro, cutaway del manguito, TCLB/bursa/AC, ficha clinica y anexo PDF.",
+                                  color: "text-amber-400 border-amber-500/30 bg-amber-950/20"
+                                },
                                                                 {
                                   id: "clinical_scorecard",
                                   label: "Scorecard Clinico de Criterios (pre-Atlas)",
@@ -20544,6 +20607,42 @@ const splitReportAndAnnex = (text: string) => {
                               </button>
                             </div>
 
+                            {/* Card: Suite Hombro 3D */}
+                            <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-amber-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
+                              <div className="flex items-center gap-2 justify-between">
+                                <div className="flex items-center gap-2">
+                                  <Activity className="h-4 w-4 text-amber-400" />
+                                  <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
+                                    Suite Hombro 3D
+                                  </h4>
+                                </div>
+                                <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-amber-950/40 text-amber-400 border border-amber-900/30 px-2 py-0.5 rounded">
+                                  MANGUITO 3D
+                                </span>
+                              </div>
+                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
+                                Manguito rotador, TCLB, bursa SAD y AC con ficha clínica bajo imagen; inyecta scorecard y radar biomecánico para mayor exactitud.
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsShoulder3dSuiteOpen(p => {
+                                    const next = !p;
+                                    if (next) setTimeout(() => document.getElementById("shoulder-3d-suite-module")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+                                    return next;
+                                  });
+                                }}
+                                className={`w-full py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2 font-mono cursor-pointer border-2 ${
+                                  isShoulder3dSuiteOpen
+                                    ? "bg-amber-600/15 border-amber-500/60 text-amber-200"
+                                    : "bg-slate-950 border-slate-800 hover:border-amber-500/30 text-amber-400"
+                                }`}
+                              >
+                                <Activity className="h-4 w-4" />
+                                {isShoulder3dSuiteOpen ? "Ocultar Suite Hombro" : "Abrir Suite Hombro 3D"}
+                              </button>
+                            </div>
+
 {/* Card 8d: Sinopsis de Fracturas (IA) */}
                             <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-emerald-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
                               <div className="flex items-center gap-2 justify-between">
@@ -20999,6 +21098,35 @@ const splitReportAndAnnex = (text: string) => {
                                 scorecardData={clinicalScorecardData}
                                 externalDirectives={buildBreastDirectivesFromScorecard(clinicalScorecardData) || atlasDirectivesFromScorecard}
                                 onClose={() => setIsBreast3dSuiteOpen(false)}
+                              />
+                            </div>
+                          )}
+
+                          {isShoulder3dSuiteOpen && (
+                            <div id="shoulder-3d-suite-module" className="my-6">
+                              <Shoulder3DModule
+                                reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
+                                activeProtocol={specificStudy || studyType || ""}
+                                laterality=""
+                                selectedModel={modelFor("shoulder3d")}
+                                shoulderData={shoulder3dData}
+                                setShoulderData={setShoulder3dData}
+                                includeInReport={includeShoulder3dInReport}
+                                setIncludeInReport={setIncludeShoulder3dInReport}
+                                scorecardData={clinicalScorecardData}
+                                externalDirectives={buildShoulderDirectivesFromScorecard(
+                                  clinicalScorecardData,
+                                  biomechanicalRadarData
+                                    ? {
+                                        radarMode: biomechanicalRadarData.radarMode,
+                                        dominantVector: biomechanicalRadarData.dominantVector,
+                                        clinicalSummary: biomechanicalRadarData.clinicalSummary,
+                                        globalScore: biomechanicalRadarData.globalScore,
+                                        axes: biomechanicalRadarData.axes,
+                                      }
+                                    : undefined
+                                ) || atlasDirectivesFromScorecard}
+                                onClose={() => setIsShoulder3dSuiteOpen(false)}
                               />
                             </div>
                           )}
@@ -23517,6 +23645,8 @@ const splitReportAndAnnex = (text: string) => {
                         if (viewingCloudStudy.thyroid3dData) setThyroid3dData(viewingCloudStudy.thyroid3dData);
                         if (viewingCloudStudy.breast3dData) setBreast3dData(viewingCloudStudy.breast3dData);
                         if (viewingCloudStudy.includeBreast3dInReport !== undefined) setIncludeBreast3dInReport(viewingCloudStudy.includeBreast3dInReport);
+                        if (viewingCloudStudy.shoulder3dData) setShoulder3dData(viewingCloudStudy.shoulder3dData);
+                        if (viewingCloudStudy.includeShoulder3dInReport !== undefined) setIncludeShoulder3dInReport(viewingCloudStudy.includeShoulder3dInReport);
                         if (viewingCloudStudy.includeThyroid3dInReport !== undefined) setIncludeThyroid3dInReport(viewingCloudStudy.includeThyroid3dInReport);
                         if (viewingCloudStudy.focalLesion3dData) setFocalLesion3dData(viewingCloudStudy.focalLesion3dData);
                         if (viewingCloudStudy.includeVascular3dInReport !== undefined) setIncludeVascular3dInReport(viewingCloudStudy.includeVascular3dInReport);

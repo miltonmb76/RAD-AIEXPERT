@@ -507,6 +507,123 @@ export function buildBreastDirectivesFromScorecard(
   ].join("\n");
 }
 
+/**
+ * Optional biomechanical radar payload (rotator_cuff) to harden Shoulder 3D fidelity.
+ */
+export type ShoulderRadarDirectiveInput = {
+  radarMode?: string;
+  dominantVector?: string;
+  clinicalSummary?: string;
+  globalScore?: number | string;
+  axes?: Array<{
+    name?: string;
+    id?: string;
+    score?: number | string;
+    interpretation?: string;
+    label?: string;
+  }>;
+} | null | undefined;
+
+/**
+ * Build mandatory Shoulder 3D directives from rotator-cuff / MSK scorecard,
+ * optionally enriched with biomechanical radar axes for higher anatomic fidelity.
+ */
+export function buildShoulderDirectivesFromScorecard(
+  scorecard: ClinicalScorecardData | null | undefined,
+  radarData?: ShoulderRadarDirectiveInput
+): string {
+  const protocol = (
+    scorecard?.protocolName ||
+    scorecard?.protocolId ||
+    radarData?.radarMode ||
+    ""
+  ).toLowerCase();
+  const isShoulder =
+    protocol.includes("rotator") ||
+    protocol.includes("manguito") ||
+    protocol.includes("hombro") ||
+    protocol.includes("shoulder") ||
+    protocol.includes("supraespin") ||
+    protocol.includes("infraespin") ||
+    protocol.includes("subescap") ||
+    protocol.includes("tclb") ||
+    protocol.includes("biceps");
+
+  let body = "";
+  if (scorecard) {
+    const base = buildAtlasDirectivesFromScorecard(scorecard);
+    const summary = (scorecard.clinicalSummary || "").trim();
+    const reco = (scorecard.recommendation || "").trim();
+    body = base;
+    if (!body) {
+      const allCriteria = Array.isArray(scorecard.criteria) ? scorecard.criteria : [];
+      const evidenced = allCriteria
+        .filter((c) => (c.evidence || c.value || "").trim())
+        .slice(0, 12)
+        .map((c, i) => {
+          const val = c.value ? ` (${c.value})` : "";
+          return `${i + 1}. «${c.atlasStructure || c.criterion}»${val}: ${c.evidence || c.status}`;
+        });
+      if (evidenced.length || summary) {
+        body = [
+          `SCORECARD HOMBRO / MANGUITO (${scorecard.protocolName || "protocolo"} — ${scorecard.categoryAssigned || ""}):`,
+          `Semáforo: ${scorecard.trafficLight}. Criterios: ${scorecard.scoreMet}/${scorecard.scoreTotal}.`,
+          summary ? `Síntesis: ${summary}` : "",
+          reco ? `Recomendación: ${reco}` : "",
+          evidenced.length ? "Hallazgos del scorecard a respetar en 3D/tabla del manguito:" : "",
+          ...evidenced,
+        ]
+          .filter(Boolean)
+          .join("\n");
+      }
+    }
+  }
+
+  const radarBits: string[] = [];
+  const axes = Array.isArray(radarData?.axes) ? radarData!.axes! : [];
+  const radarMode = String(radarData?.radarMode || "").toLowerCase();
+  const axisKeyBlob = axes
+    .map((a) => `${a.id || ""} ${a.name || ""} ${a.label || ""}`.toLowerCase())
+    .join(" ");
+  const looksLikeRotatorRadar =
+    radarMode.includes("rotator") ||
+    /ruptura_supraespinoso|bursitis|pinzamiento|otros_tendones|tendinosis_supraespinoso|\btclb\b/.test(
+      axisKeyBlob
+    );
+  if (axes.length && looksLikeRotatorRadar) {
+    radarBits.push(
+      `RADAR BIOMECÁNICO MANGUITO (${radarData?.radarMode || "rotator_cuff"} — score global ${radarData?.globalScore ?? "n/d"}):`
+    );
+    if (radarData?.dominantVector) {
+      radarBits.push(`Vector dominante: ${radarData.dominantVector}`);
+    }
+    if (radarData?.clinicalSummary) {
+      radarBits.push(`Síntesis radar: ${radarData.clinicalSummary}`);
+    }
+    radarBits.push("Ejes a respetar en ficha/tabla 3D:");
+    axes.slice(0, 8).forEach((axis, i) => {
+      const label = axis.label || axis.name || axis.id || `Eje ${i + 1}`;
+      const score = axis.score != null ? ` score=${axis.score}` : "";
+      const interp = axis.interpretation ? ` — ${axis.interpretation}` : "";
+      radarBits.push(`${i + 1}. ${label}${score}${interp}`);
+    });
+  }
+
+  if (!body && !radarBits.length) return "";
+
+  return [
+    "DIRECTIVA OBLIGATORIA DEL SCORECARD HOMBRO (debe gobernar paneles 3D, ficha y tabla del manguito rotador):",
+    body,
+    radarBits.length ? radarBits.join("\n") : "",
+    isShoulder
+      ? "Prioriza laterality, tendones (supraespinoso, infraespinoso, subescapular, TCLB), grosor/gap en mm, rotura parcial vs completa (bursal/articular/intrasustancia), bursitis subacromiodeltoidea, pinzamiento dinámico y articulación AC. No inventes roturas ni grados ausentes."
+      : "Si el scorecard/radar no es de manguito, extrae solo hallazgos glenohumerales/tendinosos aplicables; no inventes patología del manguito.",
+    "No inventes roturas, calcificaciones, bursitis ni grados de severidad ausentes en el scorecard/radar/informe.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 export function scorecardTrafficLabel(light: ClinicalScorecardData["trafficLight"]): string {
   switch (light) {
     case "critical":
