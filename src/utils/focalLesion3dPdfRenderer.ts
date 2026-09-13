@@ -2,8 +2,8 @@ import { FocalLesion3DData } from "../types";
 import { sanitizeFocalClinicalProse } from "./sanitizeFocalClinicalProse";
 
 /**
- * Atlas-style annex for Focal Lesion Cutaway 3D.
- * Side-by-side annex (4:3, equal panels) with slightly larger typography.
+ * Annex for Focal Lesion Cutaway 3D — always ONE page.
+ * Images on top; clinical boxes stacked full-width underneath (one under another).
  */
 export function renderFocalLesion3DAnnexToPDF(
   doc: any,
@@ -22,49 +22,49 @@ export function renderFocalLesion3DAnnexToPDF(
   if (validPanels.length === 0) return;
 
   const { marginX, pageWidth, pageHeight, contentWidth, factor } = options;
-  const bottomMargin = 16 * factor;
+  const bottomMargin = 12 * factor;
   const pageBottom = pageHeight - bottomMargin;
 
   doc.addPage();
-  let yCoord = 20 * factor;
+  let y = 16 * factor;
 
-  // --- Header (compact) ---
+  // --- Header ---
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(13 * factor);
+  doc.setFontSize(12 * factor);
   doc.setTextColor(15, 23, 42);
-  doc.text("ANEXO: CORTE FOCAL 3D DE LA LESIÓN", marginX, yCoord);
-  yCoord += 4 * factor;
+  doc.text("ANEXO: CORTE FOCAL 3D DE LA LESIÓN", marginX, y);
+  y += 3.5 * factor;
 
   doc.setDrawColor(13, 148, 136);
-  doc.setLineWidth(0.75);
-  doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
-  yCoord += 5.5 * factor;
+  doc.setLineWidth(0.7);
+  doc.line(marginX, y, pageWidth - marginX, y);
+  y += 4.2 * factor;
 
   const figTitle =
     data.figureTitle ||
     `FIGURA. DETALLE 3D DEL HALLAZGO: ${(data.lesionLabel || "LESIÓN FOCAL").toUpperCase()}`;
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(11 * factor);
-  const figTitleLines = doc.splitTextToSize(figTitle, contentWidth - 14 * factor);
-  const figLineH = 4.2 * factor;
-  const bannerHeight = Math.max(8.5 * factor, figTitleLines.length * figLineH + 4.5 * factor);
+  doc.setFontSize(10 * factor);
+  const figTitleLines = doc.splitTextToSize(figTitle, contentWidth - 12 * factor).slice(0, 2);
+  const figLineH = 3.7 * factor;
+  const bannerH = Math.max(7.2 * factor, figTitleLines.length * figLineH + 3.2 * factor);
 
   doc.setFillColor(240, 253, 250);
   doc.setDrawColor(153, 246, 228);
   doc.setLineWidth(0.3);
-  doc.roundedRect(marginX, yCoord, contentWidth, bannerHeight, 1.8, 1.8, "FD");
+  doc.roundedRect(marginX, y, contentWidth, bannerH, 1.6, 1.6, "FD");
   doc.setFillColor(13, 148, 136);
-  doc.rect(marginX, yCoord, 3 * factor, bannerHeight, "F");
+  doc.rect(marginX, y, 2.6 * factor, bannerH, "F");
 
   doc.setTextColor(30, 41, 59);
-  let curTitleY = yCoord + 4.8 * factor;
+  let titleY = y + 4 * factor;
   figTitleLines.forEach((line: string) => {
-    doc.text(line, marginX + 7 * factor, curTitleY);
-    curTitleY += figLineH;
+    doc.text(line, marginX + 6 * factor, titleY);
+    titleY += figLineH;
   });
-  yCoord += bannerHeight + 3.5 * factor;
+  y += bannerH + 2.4 * factor;
 
-  // --- Clinical meta chips (no detection mode) ---
+  // --- Meta chips ---
   const metaChips: { label: string; value: string }[] = [
     data.lesionLabel ? { label: "Lesión", value: data.lesionLabel } : null,
     data.lesionSite ? { label: "Sitio", value: data.lesionSite } : null,
@@ -73,153 +73,175 @@ export function renderFocalLesion3DAnnexToPDF(
   ].filter(Boolean) as { label: string; value: string }[];
 
   if (metaChips.length) {
-    const chipGap = 2.2 * factor;
-    const chipPadX = 2.4 * factor;
-    const chipH = 7.2 * factor;
+    const chipGap = 1.6 * factor;
+    const chipPadX = 2 * factor;
+    const chipH = 5.8 * factor;
     let chipX = marginX;
-    let chipY = yCoord;
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(7.4 * factor);
+    let chipY = y;
     for (const chip of metaChips) {
       const label = `${chip.label}: `;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(6.6 * factor);
       const labelW = doc.getTextWidth(label);
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(8.4 * factor);
-      const valueLines = doc.splitTextToSize(chip.value, contentWidth * 0.42);
-      const valueW = Math.max(...valueLines.map((l: string) => doc.getTextWidth(l)));
-      const chipW = Math.min(contentWidth, labelW + valueW + chipPadX * 2 + 1.5 * factor);
+      doc.setFontSize(7.4 * factor);
+      const value = String(chip.value || "").slice(0, 48);
+      const valueW = doc.getTextWidth(value);
+      const chipW = Math.min(contentWidth, labelW + valueW + chipPadX * 2 + 1 * factor);
       if (chipX + chipW > marginX + contentWidth + 0.01) {
         chipX = marginX;
         chipY += chipH + chipGap;
       }
       doc.setFillColor(248, 250, 252);
       doc.setDrawColor(203, 213, 225);
-      doc.setLineWidth(0.3);
-      doc.roundedRect(chipX, chipY, chipW, chipH, 1.4, 1.4, "FD");
+      doc.setLineWidth(0.25);
+      doc.roundedRect(chipX, chipY, chipW, chipH, 1.2, 1.2, "FD");
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(7.4 * factor);
+      doc.setFontSize(6.6 * factor);
       doc.setTextColor(13, 148, 136);
-      doc.text(label, chipX + chipPadX, chipY + 4.6 * factor);
+      doc.text(label, chipX + chipPadX, chipY + 3.8 * factor);
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(8.4 * factor);
+      doc.setFontSize(7.4 * factor);
       doc.setTextColor(30, 41, 59);
-      doc.text(valueLines[0], chipX + chipPadX + labelW, chipY + 4.6 * factor);
+      doc.text(value, chipX + chipPadX + labelW, chipY + 3.8 * factor);
       chipX += chipW + chipGap;
     }
-    yCoord = chipY + chipH + 3.2 * factor;
+    y = chipY + chipH + 2.2 * factor;
   }
 
-  const figuresTop = yCoord;
+  const figuresTop = y;
 
-  // --- Clinical text blocks to reserve under figures ---
+  // --- Stacked clinical boxes (full width, one under another) ---
   const summaryText = sanitizeFocalClinicalProse(data.lesionSummary || "");
   const morphologyText = sanitizeFocalClinicalProse(data.lesionMorphology || "");
   const relationsText = sanitizeFocalClinicalProse(data.lesionRelations || "");
   const keyPoints = Array.isArray(data.keyPoints)
-    ? data.keyPoints.map((k) => sanitizeFocalClinicalProse(String(k || ""))).filter(Boolean).slice(0, 8)
+    ? data.keyPoints
+        .map((k) => sanitizeFocalClinicalProse(String(k || "")))
+        .filter(Boolean)
+        .slice(0, 6)
     : [];
 
-  type TextBox = { title: string; bodyLines: string[]; bullet?: boolean };
+  type TextBox = { title: string; bodyLines: string[] };
   const textBoxes: TextBox[] = [];
 
-  const measureBoxBody = (raw: string, bullet = false): string[] => {
+  // Compact metrics so stacked boxes fit under figures on one page.
+  const boxPad = 2.4 * factor;
+  const boxTitleH = 5.4 * factor;
+  const boxLineH = 3.25 * factor;
+  const boxGapMin = 2.2 * factor;
+  const maxLinesPerBox = 4;
+
+  const measureBoxBody = (raw: string): string[] => {
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(9.4 * factor);
-    const prefix = bullet ? "• " : "";
-    return doc.splitTextToSize(`${prefix}${raw}`, contentWidth - 10 * factor);
+    doc.setFontSize(8.2 * factor);
+    const lines = doc.splitTextToSize(raw, contentWidth - 11 * factor);
+    if (lines.length <= maxLinesPerBox) return lines;
+    const clipped = lines.slice(0, maxLinesPerBox);
+    const last = String(clipped[maxLinesPerBox - 1] || "");
+    clipped[maxLinesPerBox - 1] = (last.length > 4 ? last.slice(0, -3) : last) + "…";
+    return clipped;
   };
 
-  if (summaryText) {
-    textBoxes.push({ title: "Síntesis del hallazgo", bodyLines: measureBoxBody(summaryText) });
-  }
-  if (morphologyText) {
-    textBoxes.push({ title: "Morfología", bodyLines: measureBoxBody(morphologyText) });
-  }
-  if (relationsText) {
-    textBoxes.push({ title: "Relaciones anatómicas", bodyLines: measureBoxBody(relationsText) });
-  }
+  if (summaryText) textBoxes.push({ title: "Síntesis del hallazgo", bodyLines: measureBoxBody(summaryText) });
+  if (morphologyText) textBoxes.push({ title: "Morfología", bodyLines: measureBoxBody(morphologyText) });
+  if (relationsText) textBoxes.push({ title: "Relaciones anatómicas", bodyLines: measureBoxBody(relationsText) });
   if (keyPoints.length) {
     const kpLines: string[] = [];
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(9.2 * factor);
+    doc.setFontSize(8.2 * factor);
     for (const kp of keyPoints) {
-      const lines = doc.splitTextToSize(`• ${kp}`, contentWidth - 10 * factor);
-      kpLines.push(...lines);
+      const lines = doc.splitTextToSize(`• ${kp}`, contentWidth - 11 * factor);
+      for (const line of lines) {
+        if (kpLines.length >= maxLinesPerBox) break;
+        kpLines.push(line);
+      }
+      if (kpLines.length >= maxLinesPerBox) break;
     }
-    textBoxes.push({ title: "Puntos clave", bodyLines: kpLines, bullet: true });
+    textBoxes.push({ title: "Puntos clave", bodyLines: kpLines });
   }
 
-  // Title baseline + descent + gap before first body baseline (avoids title/body overlap).
-  const boxTitleH = 8.4 * factor;
-  const boxPad = 3.4 * factor;
-  const boxLineH = 4 * factor;
-  const boxGap = 5.5 * factor;
-  let reservedTextH = 0;
-  if (textBoxes.length) {
-    reservedTextH += 3.5 * factor;
-    for (const box of textBoxes) {
-      reservedTextH += boxPad + boxTitleH + box.bodyLines.length * boxLineH + boxPad + boxGap;
-    }
-  }
+  const boxHeight = (box: TextBox) =>
+    boxPad + boxTitleH + Math.max(1, box.bodyLines.length) * boxLineH + boxPad;
 
-  // Prefer text on same page; if too tall, give figures more room and continue text later.
-  const minFigureBudget = 72 * factor;
-  let textOnSamePage = true;
+  const measureStackedH = (boxes: TextBox[], gap: number) => {
+    if (!boxes.length) return 0;
+    let total = 2 * factor; // gap under figures
+    boxes.forEach((b, i) => {
+      total += boxHeight(b) + (i < boxes.length - 1 ? gap : 0);
+    });
+    return total;
+  };
+
+  let boxes = [...textBoxes];
+  let boxGap = boxGapMin;
+  let reservedTextH = measureStackedH(boxes, boxGap);
   let availableForFigures = pageBottom - figuresTop - reservedTextH;
-  if (availableForFigures < minFigureBudget && reservedTextH > 0) {
-    textOnSamePage = false;
-    availableForFigures = pageBottom - figuresTop - 2 * factor;
+
+  // Prefer shrinking figures; if still impossible, drop least-critical boxes
+  // (never open a second page).
+  while (boxes.length > 1 && availableForFigures < 46 * factor) {
+    const dropIdx =
+      boxes.findIndex((b) => b.title === "Relaciones anatómicas") >= 0
+        ? boxes.findIndex((b) => b.title === "Relaciones anatómicas")
+        : boxes.findIndex((b) => b.title === "Puntos clave") >= 0
+          ? boxes.findIndex((b) => b.title === "Puntos clave")
+          : boxes.length - 1;
+    boxes.splice(dropIdx, 1);
+    reservedTextH = measureStackedH(boxes, boxGap);
+    availableForFigures = pageBottom - figuresTop - reservedTextH;
   }
 
-  // --- Figure block (unchanged drawing approach: equal 4:3 panels) ---
+  availableForFigures = Math.max(40 * factor, availableForFigures);
+
+  // If leftover space after images, distribute as extra gap between stacked boxes.
+  // (Computed after figures are sized.)
+
+  // --- Figures ---
   const numPanels = Math.min(validPanels.length, 2);
   const isSingle = numPanels === 1;
-  const panelGap = isSingle ? 0 : 5 * factor;
-  const cardPad = 2 * factor;
-  const captionGap = 2.6 * factor;
+  const panelGap = isSingle ? 0 : 4 * factor;
+  const cardPad = 1.8 * factor;
+  const captionGap = 1.8 * factor;
 
   const measureCaption = (panelW: number): number => {
     let maxH = 0;
     for (let i = 0; i < numPanels; i++) {
       const p = validPanels[i];
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(8.6 * factor);
-      const titleLines = doc.splitTextToSize(
-        `${p.panelLetter}. ${p.panelTitle || ""}`,
-        panelW - 5 * factor
-      );
-      let h = captionGap + titleLines.length * 3.2 * factor;
+      doc.setFontSize(7.6 * factor);
+      const titleLines = doc
+        .splitTextToSize(`${p.panelLetter}. ${p.panelTitle || ""}`, panelW - 4 * factor)
+        .slice(0, 2);
+      let h = captionGap + titleLines.length * 2.8 * factor;
       if (p.anatomicalFocus?.trim()) {
         doc.setFont("helvetica", "normal");
-        doc.setFontSize(7.8 * factor);
-        const desc = doc.splitTextToSize(p.anatomicalFocus.trim(), panelW - 5 * factor).slice(0, 3);
-        h += 0.8 * factor + desc.length * 2.9 * factor;
+        doc.setFontSize(6.8 * factor);
+        const desc = doc
+          .splitTextToSize(p.anatomicalFocus.trim(), panelW - 4 * factor)
+          .slice(0, 2);
+        h += 0.4 * factor + desc.length * 2.45 * factor;
       }
-      h += 1.8 * factor;
+      h += 1.1 * factor;
       maxH = Math.max(maxH, h);
     }
-    return Math.max(maxH, 7 * factor);
+    return Math.max(maxH, 5 * factor);
   };
 
-  const maxPanelWFromWidth = isSingle
-    ? contentWidth * 0.92
-    : (contentWidth - panelGap) / 2;
-
-  let panelWidth = maxPanelWFromWidth;
+  let panelWidth = isSingle ? contentWidth * 0.9 : (contentWidth - panelGap) / 2;
   let captionH = measureCaption(panelWidth);
   let imgW = panelWidth - cardPad * 2;
   let imgH = imgW * (3 / 4);
   let cardH = cardPad + imgH + captionH;
 
   if (cardH > availableForFigures) {
-    const maxImgH = Math.max(40 * factor, availableForFigures - captionH - cardPad);
-    imgH = maxImgH;
+    imgH = Math.max(32 * factor, availableForFigures - captionH - cardPad);
     imgW = imgH * (4 / 3);
     panelWidth = imgW + cardPad * 2;
     captionH = measureCaption(panelWidth);
     cardH = cardPad + imgH + captionH;
     if (cardH > availableForFigures) {
-      imgH = Math.max(36 * factor, availableForFigures - captionH - cardPad);
+      imgH = Math.max(28 * factor, availableForFigures - captionH - cardPad);
       imgW = imgH * (4 / 3);
       panelWidth = imgW + cardPad * 2;
       cardH = cardPad + imgH + captionH;
@@ -246,11 +268,11 @@ export function renderFocalLesion3DAnnexToPDF(
 
     doc.setFillColor(255, 255, 255);
     doc.setDrawColor(203, 213, 225);
-    doc.setLineWidth(0.35);
-    doc.roundedRect(cardX, yCoord, panelWidth, cardH, 1.8, 1.8, "FD");
+    doc.setLineWidth(0.3);
+    doc.roundedRect(cardX, y, panelWidth, cardH, 1.5, 1.5, "FD");
 
     const imgX = cardX + cardPad;
-    const imgY = yCoord + cardPad;
+    const imgY = y + cardPad;
 
     if (p.imageUrl && String(p.imageUrl).startsWith("data:image")) {
       try {
@@ -262,98 +284,84 @@ export function renderFocalLesion3DAnnexToPDF(
       }
     }
 
-    const badgeW = 20 * factor;
-    const badgeH = 4.6 * factor;
+    const badgeW = 18 * factor;
+    const badgeH = 4 * factor;
     doc.setFillColor(13, 148, 136);
-    doc.roundedRect(imgX + 1.5, imgY + 1.5, badgeW, badgeH, 0.8, 0.8, "F");
+    doc.roundedRect(imgX + 1.2, imgY + 1.2, badgeW, badgeH, 0.7, 0.7, "F");
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(7 * factor);
+    doc.setFontSize(6.2 * factor);
     doc.setTextColor(255, 255, 255);
     const roleTag = p.panelRole === "macro" ? "MACRO" : "CTX";
-    doc.text(`PANEL ${p.panelLetter} · ${roleTag}`, imgX + 2.6, imgY + 1.5 + 3.2);
+    doc.text(`PANEL ${p.panelLetter} · ${roleTag}`, imgX + 2.1, imgY + 1.2 + 2.75);
 
     let textY = imgY + imgH + captionGap;
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(8.6 * factor);
+    doc.setFontSize(7.6 * factor);
     doc.setTextColor(15, 23, 42);
-    const titleLines = doc.splitTextToSize(
-      `${p.panelLetter}. ${p.panelTitle || ""}`,
-      panelWidth - 5 * factor
-    );
+    const titleLines = doc
+      .splitTextToSize(`${p.panelLetter}. ${p.panelTitle || ""}`, panelWidth - 4 * factor)
+      .slice(0, 2);
     titleLines.forEach((line: string) => {
-      doc.text(line, imgX + 0.5, textY);
-      textY += 3.2 * factor;
+      doc.text(line, imgX + 0.4, textY);
+      textY += 2.8 * factor;
     });
     if (p.anatomicalFocus?.trim()) {
-      textY += 0.8 * factor;
+      textY += 0.35 * factor;
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(7.8 * factor);
+      doc.setFontSize(6.8 * factor);
       doc.setTextColor(71, 85, 105);
-      const desc = doc.splitTextToSize(p.anatomicalFocus.trim(), panelWidth - 5 * factor).slice(0, 3);
+      const desc = doc
+        .splitTextToSize(p.anatomicalFocus.trim(), panelWidth - 4 * factor)
+        .slice(0, 2);
       desc.forEach((line: string) => {
-        doc.text(line, imgX + 0.5, textY);
-        textY += 2.9 * factor;
+        doc.text(line, imgX + 0.4, textY);
+        textY += 2.45 * factor;
       });
     }
   }
 
-  yCoord += cardH + 4 * factor;
+  y += cardH + 2.2 * factor;
 
-  const ensureSpace = (needed: number) => {
-    if (yCoord + needed <= pageBottom) return;
-    doc.addPage();
-    yCoord = 20 * factor;
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11 * factor);
-    doc.setTextColor(15, 23, 42);
-    doc.text("ANEXO: CORTE FOCAL 3D (continuación)", marginX, yCoord);
-    yCoord += 7 * factor;
-  };
+  // Distribute leftover vertical space as gaps between stacked full-width boxes.
+  if (boxes.length > 1) {
+    const boxesOnlyH = boxes.reduce((acc, b) => acc + boxHeight(b), 0);
+    const leftover = pageBottom - y - boxesOnlyH;
+    if (leftover > 0) {
+      const maxGap = 8 * factor;
+      boxGap = Math.min(maxGap, Math.max(boxGapMin, leftover / (boxes.length - 1)));
+    }
+  }
 
-  const drawElegantBox = (title: string, bodyLines: string[]) => {
-    const boxH = boxPad + boxTitleH + bodyLines.length * boxLineH + boxPad;
-    ensureSpace(boxH + 2 * factor);
+  const drawStackedBox = (box: TextBox) => {
+    const boxH = boxHeight(box);
+    // Clamp — never addPage.
+    if (y + boxH > pageBottom + 0.5 * factor) return false;
+
     doc.setFillColor(248, 250, 252);
     doc.setDrawColor(186, 230, 253);
-    doc.setLineWidth(0.35);
-    doc.roundedRect(marginX, yCoord, contentWidth, boxH, 2.2, 2.2, "FD");
+    doc.setLineWidth(0.3);
+    doc.roundedRect(marginX, y, contentWidth, boxH, 1.8, 1.8, "FD");
     doc.setFillColor(13, 148, 136);
-    doc.roundedRect(marginX, yCoord, 2.2 * factor, boxH, 1.1, 1.1, "F");
+    doc.roundedRect(marginX, y, 1.8 * factor, boxH, 0.9, 0.9, "F");
 
-    // jsPDF y is baseline: keep title ascent inside padding, then clear gap to body.
-    const titleBaseline = yCoord + boxPad + 3.6 * factor;
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(10 * factor);
+    doc.setFontSize(8.4 * factor);
     doc.setTextColor(15, 118, 110);
-    doc.text(title, marginX + 6 * factor, titleBaseline);
+    doc.text(box.title, marginX + 5.5 * factor, y + boxPad + 3.2 * factor);
 
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(9.4 * factor);
+    doc.setFontSize(8.2 * factor);
     doc.setTextColor(51, 65, 85);
-    let ty = yCoord + boxPad + boxTitleH;
-    bodyLines.forEach((line: string) => {
-      doc.text(line, marginX + 6 * factor, ty);
+    let ty = y + boxPad + boxTitleH;
+    box.bodyLines.forEach((line) => {
+      doc.text(line, marginX + 5.5 * factor, ty);
       ty += boxLineH;
     });
-    yCoord += boxH + boxGap;
+    y += boxH + boxGap;
+    return true;
   };
 
-  const drawTextBlocks = () => {
-    for (const box of textBoxes) {
-      drawElegantBox(box.title, box.bodyLines);
-    }
-  };
-
-  if (textBoxes.length) {
-    if (!textOnSamePage) {
-      doc.addPage();
-      yCoord = 20 * factor;
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(11 * factor);
-      doc.setTextColor(15, 23, 42);
-      doc.text("ANEXO: CORTE FOCAL 3D (continuación)", marginX, yCoord);
-      yCoord += 7 * factor;
-    }
-    drawTextBlocks();
+  for (const box of boxes) {
+    if (!drawStackedBox(box)) break;
   }
 }
