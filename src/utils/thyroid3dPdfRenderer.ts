@@ -2,7 +2,7 @@ import jsPDF from "jspdf";
 import { Thyroid3DData, Thyroid3DPanel, ThyroidNoduleRow } from "../types";
 
 /**
- * Renders an exclusive, full-page "ANEXO: SUITE TIROIDES 3D & FICHA TI-RADS Y CORRELACIÓN 3D" into the provided jsPDF document.
+ * Renders an exclusive, two-page "ANEXO: SUITE TIROIDES 3D & FICHA TI-RADS Y CORRELACIÓN 3D" into the provided jsPDF document.
  * 
  * Guarantees:
  * 1. Safe top margin starting at y = 22mm (never collides with running header).
@@ -209,7 +209,7 @@ export async function renderThyroid3DPageToPdf(
       doc.setFont("helvetica", "normal");
       doc.setFontSize(7.0 * factor);
       const lines = doc.splitTextToSize(b.text, boxW - 6);
-      const maxLines = cols === 2 ? 5 : 4;
+      const maxLines = cols === 2 ? 12 : 14;
       const used = lines.slice(0, maxLines);
       const textH = used.length * 3.05 * factor;
       const boxH = titleH + textH + 4 * factor;
@@ -244,6 +244,19 @@ export async function renderThyroid3DPageToPdf(
   
 // 4. TAILORED HEMODYNAMIC TABLE
   const tableData: ThyroidNoduleRow[] = thyroidData.noduleTable || [];
+  // ========== PAGE 2: tabla ecográfica (letra mayor) + síntesis ==========
+  doc.addPage();
+  yCoord = 22 * factor;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12 * factor);
+  doc.setTextColor(15, 23, 42);
+  doc.text("ANEXO: SUITE TIROIDES 3D — TABLA Y SÍNTESIS", marginX, yCoord);
+  yCoord += 4.2 * factor;
+  doc.setDrawColor(13, 148, 136);
+  doc.setLineWidth(0.7);
+  doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
+  yCoord += 6 * factor;
+
   const tableTitle = thyroidData.tableTitle || `TABLA TI-RADS Y CARACTERIZACIÓN DE LESIONES:`;
   const headers = thyroidData.tableHeaders || {
     col1: "LOCALIZACIÓN",
@@ -289,7 +302,7 @@ export async function renderThyroid3DPageToPdf(
 
   // Calculate dynamic header height with automatic text wrapping
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(7.2 * factor);
+  doc.setFontSize(8.4 * factor);
   doc.setTextColor(51, 65, 85); // slate-700
 
   const wrappedHeaders = headerLabels.map((lbl, i) => {
@@ -322,7 +335,7 @@ export async function renderThyroid3DPageToPdf(
   visibleRows.forEach((row, rIdx) => {
     // Split texts to calculate row height
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.4 * factor);
+    doc.setFontSize(10 * factor);
 
     const c1Lines = doc.splitTextToSize(row.location || "", colWidths[0] - 3);
     const c2Lines = doc.splitTextToSize(row.composition || "", colWidths[1] - 3);
@@ -344,21 +357,21 @@ export async function renderThyroid3DPageToPdf(
 
     // Col 1: Vaso (Bold)
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(7.4 * factor);
+    doc.setFontSize(10 * factor);
     doc.setTextColor(15, 23, 42);
     doc.text(c1Lines, cellX + 2, yCoord + 3.0 * factor);
     cellX += colWidths[0];
 
     // Col 2: Placa / Trombo / Compresibilidad
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.2 * factor);
+    doc.setFontSize(8.4 * factor);
     doc.setTextColor(71, 85, 105);
     doc.text(c2Lines, cellX + 2, yCoord + 3.0 * factor);
     cellX += colWidths[1];
 
     // Col 3: % Estenosis / Flujo Espontáneo / Diámetro (Color coding)
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(7.4 * factor);
+    doc.setFontSize(8.5 * factor);
     const stText = (row.size || "").trim().toLowerCase();
     if (
       stText.includes(">") || 
@@ -382,7 +395,7 @@ export async function renderThyroid3DPageToPdf(
 
     // Col 4: Patrón (PSV/EDV) / Maniobra Aumento
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.2 * factor);
+    doc.setFontSize(8.4 * factor);
     doc.setTextColor(51, 65, 85);
     doc.text(c4Lines, cellX + 2, yCoord + 3.0 * factor);
     cellX += colWidths[3];
@@ -428,7 +441,7 @@ export async function renderThyroid3DPageToPdf(
     const footerSafeBottom = pageHeight - 18 * factor;
     const synthTitle = thyroidData.synthesisTitle || "SÍNTESIS MORFOLÓGICA Y HEMODINÁMICA:";
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.6 * factor);
+    doc.setFontSize(9.0 * factor);
     const synthLineH = 3.8 * factor;
     const synthLines = doc.splitTextToSize(synthText.trim(), contentWidth - 12);
     const titleBlockH = 9.5 * factor;
@@ -494,7 +507,7 @@ export async function renderThyroid3DPageToPdf(
       drawSynthChrome(boxH, firstChunk);
 
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(7.6 * factor);
+      doc.setFontSize(9.0 * factor);
       doc.setTextColor(51, 65, 85); // slate-700
       let curY = yCoord + headerH;
       chunk.forEach((line: string) => {

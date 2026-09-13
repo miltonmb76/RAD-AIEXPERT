@@ -2,7 +2,7 @@ import jsPDF from "jspdf";
 import { Breast3DData, Breast3DPanel, BreastLesionRow } from "../types";
 
 /**
- * Renders an exclusive, full-page "ANEXO: SUITE MAMA 3D & FICHA BI-RADS Y CORRELACIÓN 3D" into the provided jsPDF document.
+ * Renders an exclusive, two-page "ANEXO: SUITE MAMA 3D & FICHA BI-RADS Y CORRELACIÓN 3D" into the provided jsPDF document.
  * 
  * Guarantees:
  * 1. Safe top margin starting at y = 22mm (never collides with running header).
@@ -214,7 +214,7 @@ export async function renderBreast3DPageToPdf(
       doc.setFont("helvetica", "normal");
       doc.setFontSize(7.0 * factor);
       const lines = doc.splitTextToSize(b.text, boxW - 6);
-      const maxLines = cols === 2 ? 5 : 4;
+      const maxLines = cols === 2 ? 12 : 14;
       const used = lines.slice(0, maxLines);
       const textH = used.length * 3.05 * factor;
       const boxH = titleH + textH + 4 * factor;
@@ -249,6 +249,19 @@ export async function renderBreast3DPageToPdf(
   
 // 4. BI-RADS LESION TABLE (fixed headers — never trust model col order for PDF)
   const tableData: BreastLesionRow[] = breastData.lesionTable || [];
+  // ========== PAGE 2: tabla ecográfica (letra mayor) + síntesis ==========
+  doc.addPage();
+  yCoord = 22 * factor;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12 * factor);
+  doc.setTextColor(15, 23, 42);
+  doc.text("ANEXO: SUITE MAMA 3D — TABLA Y SÍNTESIS", marginX, yCoord);
+  yCoord += 4.2 * factor;
+  doc.setDrawColor(219, 39, 119);
+  doc.setLineWidth(0.7);
+  doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
+  yCoord += 6 * factor;
+
   const tableTitle = breastData.tableTitle || `TABLA ECOGRÁFICA Y CARACTERIZACIÓN DE LESIONES MAMARIAS:`;
 
   // Section Header
@@ -280,7 +293,7 @@ export async function renderBreast3DPageToPdf(
 
   // Calculate dynamic header height with automatic text wrapping
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(6.8 * factor);
+  doc.setFontSize(8.2 * factor);
   doc.setTextColor(51, 65, 85); // slate-700
 
   const wrappedHeaders = headerLabels.map((lbl, i) => {
@@ -313,7 +326,7 @@ export async function renderBreast3DPageToPdf(
   visibleRows.forEach((row, rIdx) => {
     // Split texts to calculate row height
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.4 * factor);
+    doc.setFontSize(10 * factor);
 
     const compositionText = (row.composition || row.shape || "—").trim() || "—";
     const sizeText = (row.size || "—").trim() || "—";
@@ -343,35 +356,35 @@ export async function renderBreast3DPageToPdf(
 
     // Col 1: Localización
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(7.4 * factor);
+    doc.setFontSize(10 * factor);
     doc.setTextColor(15, 23, 42);
     doc.text(c1Lines, cellX + 2, yCoord + 3.0 * factor);
     cellX += colWidths[0];
 
     // Col 2: Composición
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.2 * factor);
+    doc.setFontSize(8.4 * factor);
     doc.setTextColor(22, 101, 52); // green — morphology cue
     doc.text(c2Lines, cellX + 2, yCoord + 3.0 * factor);
     cellX += colWidths[1];
 
     // Col 3: Tamaño
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(7.4 * factor);
+    doc.setFontSize(8.5 * factor);
     doc.setTextColor(51, 65, 85);
     doc.text(c3Lines, cellX + 2, yCoord + 3.0 * factor);
     cellX += colWidths[2];
 
     // Col 4: Ecogenicidad (+ orient. / vasc.)
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.2 * factor);
+    doc.setFontSize(8.4 * factor);
     doc.setTextColor(51, 65, 85);
     doc.text(c4Lines, cellX + 2, yCoord + 3.0 * factor);
     cellX += colWidths[3];
 
     // Col 5: Márgenes
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.2 * factor);
+    doc.setFontSize(8.4 * factor);
     doc.setTextColor(71, 85, 105);
     doc.text(c5Lines, cellX + 2, yCoord + 3.0 * factor);
     cellX += colWidths[4];
@@ -403,7 +416,7 @@ export async function renderBreast3DPageToPdf(
     const footerSafeBottom = pageHeight - 18 * factor;
     const synthTitle = breastData.synthesisTitle || "SÍNTESIS MORFOLÓGICA Y HEMODINÁMICA:";
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.6 * factor);
+    doc.setFontSize(9.0 * factor);
     const synthLineH = 3.8 * factor;
     const synthLines = doc.splitTextToSize(synthText.trim(), contentWidth - 12);
     const titleBlockH = 9.5 * factor;
@@ -469,7 +482,7 @@ export async function renderBreast3DPageToPdf(
       drawSynthChrome(boxH, firstChunk);
 
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(7.6 * factor);
+      doc.setFontSize(9.0 * factor);
       doc.setTextColor(51, 65, 85); // slate-700
       let curY = yCoord + headerH;
       chunk.forEach((line: string) => {
