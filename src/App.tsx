@@ -9896,6 +9896,36 @@ Ejemplo:
         });
       }
 
+      // --- 4. SUITES ESPECÍFICAS DE ÓRGANO (vascular/tiroides/mama/hombro) ---
+      // Después de la sinopsis por órgano si está presente; si no, después del cuerpo/cuadro.
+
+      // --- 5.6. ANEXO: SUITE VASCULAR 3D & MAPA ANATOMO-HEMODINÁMICO (PÁGINA DEDICADA) ---
+      
+      const activeVascularData = studyOverride ? studyOverride.vascular3dData : (pdfStateRef.current?.vascular3dData || vascular3dData);
+      const shouldIncludeVascular = studyOverride ? (studyOverride.includeVascular3dInReport !== false) : (pdfStateRef.current?.includeVascular3dInReport !== false && includeVascular3dInReport);
+      if (activeVascularData && shouldIncludeVascular && ((activeVascularData.panels && activeVascularData.panels.length > 0) || (activeVascularData.hemodynamicTable && activeVascularData.hemodynamicTable.length > 0))) {
+        await renderVascular3DPageToPdf(doc, activeVascularData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+      }
+
+      // --- 5.64. ANEXO: SUITE TIROIDES 3D (PÁGINA COMPLETA) ---
+      const activeThyroidData = studyOverride ? studyOverride.thyroid3dData : (pdfStateRef.current?.thyroid3dData || thyroid3dData);
+      const shouldIncludeThyroid = studyOverride ? (studyOverride.includeThyroid3dInReport !== false) : (pdfStateRef.current?.includeThyroid3dInReport !== false && includeThyroid3dInReport);
+      if (activeThyroidData && shouldIncludeThyroid && (activeThyroidData.panels?.length || activeThyroidData.noduleTable?.length)) {
+        await renderThyroid3DPageToPdf(doc, activeThyroidData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+      }
+
+      const activeBreastData = studyOverride ? studyOverride.breast3dData : (pdfStateRef.current?.breast3dData || breast3dData);
+      const shouldIncludeBreast = studyOverride ? (studyOverride.includeBreast3dInReport !== false) : (pdfStateRef.current?.includeBreast3dInReport !== false && includeBreast3dInReport);
+      if (activeBreastData && shouldIncludeBreast && (activeBreastData.panels?.length || activeBreastData.lesionTable?.length)) {
+        await renderBreast3DPageToPdf(doc, activeBreastData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+      }
+
+      const activeShoulderData = studyOverride ? studyOverride.shoulder3dData : (pdfStateRef.current?.shoulder3dData || shoulder3dData);
+      const shouldIncludeShoulder = studyOverride ? (studyOverride.includeShoulder3dInReport !== false) : (pdfStateRef.current?.includeShoulder3dInReport !== false && includeShoulder3dInReport);
+      if (activeShoulderData && shouldIncludeShoulder && (activeShoulderData.panels?.length || activeShoulderData.findingTable?.length)) {
+        await renderShoulder3DPageToPdf(doc, activeShoulderData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+      }
+
       // Restore standard margins and content widths for any diagrams, annexes, and signature block
       marginX = 20;
       contentWidth = pageWidth - (2 * marginX);
@@ -10005,34 +10035,6 @@ Ejemplo:
           factor,
           includeNormals: includeNormalsInMeasurementPdf,
         });
-      }
-
-
-      // --- 5.6. ANEXO: SUITE VASCULAR 3D & MAPA ANATOMO-HEMODINÁMICO (PÁGINA DEDICADA) ---
-      
-      const activeVascularData = studyOverride ? studyOverride.vascular3dData : (pdfStateRef.current?.vascular3dData || vascular3dData);
-      const shouldIncludeVascular = studyOverride ? (studyOverride.includeVascular3dInReport !== false) : (pdfStateRef.current?.includeVascular3dInReport !== false && includeVascular3dInReport);
-      if (activeVascularData && shouldIncludeVascular && ((activeVascularData.panels && activeVascularData.panels.length > 0) || (activeVascularData.hemodynamicTable && activeVascularData.hemodynamicTable.length > 0))) {
-        await renderVascular3DPageToPdf(doc, activeVascularData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
-      }
-
-      // --- 5.64. ANEXO: SUITE TIROIDES 3D (PÁGINA COMPLETA) ---
-      const activeThyroidData = studyOverride ? studyOverride.thyroid3dData : (pdfStateRef.current?.thyroid3dData || thyroid3dData);
-      const shouldIncludeThyroid = studyOverride ? (studyOverride.includeThyroid3dInReport !== false) : (pdfStateRef.current?.includeThyroid3dInReport !== false && includeThyroid3dInReport);
-      if (activeThyroidData && shouldIncludeThyroid && (activeThyroidData.panels?.length || activeThyroidData.noduleTable?.length)) {
-        await renderThyroid3DPageToPdf(doc, activeThyroidData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
-      }
-
-      const activeBreastData = studyOverride ? studyOverride.breast3dData : (pdfStateRef.current?.breast3dData || breast3dData);
-      const shouldIncludeBreast = studyOverride ? (studyOverride.includeBreast3dInReport !== false) : (pdfStateRef.current?.includeBreast3dInReport !== false && includeBreast3dInReport);
-      if (activeBreastData && shouldIncludeBreast && (activeBreastData.panels?.length || activeBreastData.lesionTable?.length)) {
-        await renderBreast3DPageToPdf(doc, activeBreastData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
-      }
-
-      const activeShoulderData = studyOverride ? studyOverride.shoulder3dData : (pdfStateRef.current?.shoulder3dData || shoulder3dData);
-      const shouldIncludeShoulder = studyOverride ? (studyOverride.includeShoulder3dInReport !== false) : (pdfStateRef.current?.includeShoulder3dInReport !== false && includeShoulder3dInReport);
-      if (activeShoulderData && shouldIncludeShoulder && (activeShoulderData.panels?.length || activeShoulderData.findingTable?.length)) {
-        await renderShoulder3DPageToPdf(doc, activeShoulderData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
       }
 
 
