@@ -888,8 +888,7 @@ export const ABDOMEN_TOPOGRAPHY_DIRECTIVE = [
   "- Esteatosis / litiasis / ectasia renal / engrosamiento parietal: grados solo si el informe/scorecard los respaldan.",
   "- En paneles, ficha y tabla nombra siempre: órgano + lado (si aplica) + estructura concreta.",
   "- Si el hallazgo dominante es renal, biliares o FID, priorízalo en el panel B sin omitir el overview.",
-].join("
-");
+].join("\n");
 
 export function buildAbdomenDirectivesFromScorecard(
   scorecard: ClinicalScorecardData | null | undefined,
@@ -943,8 +942,7 @@ export function buildAbdomenDirectivesFromScorecard(
           ...evidenced,
         ]
           .filter(Boolean)
-          .join("
-");
+          .join("\n");
       }
     }
   }
@@ -990,8 +988,7 @@ export function buildAbdomenDirectivesFromScorecard(
   return [
     "DIRECTIVA OBLIGATORIA DEL SCORECARD ABDOMINAL (debe gobernar paneles 3D, ficha y tabla multi-órgano):",
     body,
-    radarBits.length ? radarBits.join("
-") : "",
+    radarBits.length ? radarBits.join("\n") : "",
     isAbdomen
       ? "Prioriza: (1) overview abdominal, (2) hallazgo dominante hepato-biliar / pancreático / esplénico / renal / FID, (3) líquido libre, (4) no inventar apendicitis/colecistitis/colecciones ausentes. NUNCA intercambiar hígado↔bazo ni lados renales."
       : "Si el scorecard/radar no es abdominal, extrae solo hallazgos abdominales aplicables; no inventes patología abdominal.",
@@ -999,8 +996,7 @@ export function buildAbdomenDirectivesFromScorecard(
     ABDOMEN_TOPOGRAPHY_DIRECTIVE,
   ]
     .filter(Boolean)
-    .join("
-");
+    .join("\n");
 }
 
 
