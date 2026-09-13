@@ -219,6 +219,74 @@ export const Vascular3DModule: React.FC<Vascular3DModuleProps> = ({
   };
 
   // Single panel regeneration
+
+  const handleDeleteSinglePanel = (panelLetter: string) => {
+    if (!vascularData || vascularData.panels.length <= 1) return;
+
+    const remainingPanels = vascularData.panels.filter((p) => p.panelLetter !== panelLetter);
+    const alphabet = ["A", "B", "C", "D", "E", "F"];
+    const letterMap: Record<string, string> = {};
+
+    const updatedPanels = remainingPanels.map((p, idx) => {
+      const newLetter = alphabet[idx] || String.fromCharCode(65 + idx);
+      letterMap[p.panelLetter] = newLetter;
+      return {
+        ...p,
+        panelLetter: newLetter
+      };
+    });
+
+    let updatedTitle = vascularData.figureTitle;
+    if (updatedTitle) {
+      if (updatedPanels.length === 1) {
+        updatedTitle = updatedTitle
+          .replace(/Paneles\s+A\s*(?:y|,)\s*B/gi, "Panel A")
+          .replace(/Paneles\s+A,\s*B\s*y\s*C/gi, "Panel A")
+          .replace(/\bPaneles\b/gi, "Panel");
+      } else if (updatedPanels.length === 2) {
+        updatedTitle = updatedTitle.replace(/Paneles\s+A,\s*B\s*y\s*C/gi, "Paneles A y B");
+      }
+    }
+
+    setPanelDirectives((prev) => {
+      const next: Record<string, string> = {};
+      for (const letter of Object.keys(prev)) {
+        if (letter === panelLetter) continue;
+        const mapped = letterMap[letter] || letter;
+        next[mapped] = prev[letter];
+      }
+      return next;
+    });
+    if (editingPanelLetter === panelLetter) {
+      setEditingPanelLetter(null);
+    } else if (editingPanelLetter && letterMap[editingPanelLetter]) {
+      setEditingPanelLetter(letterMap[editingPanelLetter]);
+    }
+    if (regeneratingPanelLetter === panelLetter) {
+      setRegeneratingPanelLetter(null);
+    } else if (regeneratingPanelLetter && letterMap[regeneratingPanelLetter]) {
+      setRegeneratingPanelLetter(letterMap[regeneratingPanelLetter]);
+    }
+
+    if (editingFocusLetter === panelLetter) {
+      setEditingFocusLetter(null);
+    } else if (editingFocusLetter && letterMap[editingFocusLetter]) {
+      setEditingFocusLetter(letterMap[editingFocusLetter]);
+    }
+    if (zoomPanel?.panelLetter === panelLetter) {
+      setZoomPanel(null);
+    } else if (zoomPanel && letterMap[zoomPanel.panelLetter]) {
+      const remapped = updatedPanels.find((p) => p.panelLetter === letterMap[zoomPanel.panelLetter]);
+      if (remapped) setZoomPanel(remapped);
+    }
+
+    setVascularData({
+      ...vascularData,
+      figureTitle: updatedTitle,
+      panels: updatedPanels
+    });
+  };
+
   const handleRegenerateSinglePanel = async (panel: Vascular3DPanel) => {
     if (!vascularData) return;
     setRegeneratingPanelLetter(panel.panelLetter);
@@ -560,6 +628,15 @@ export const Vascular3DModule: React.FC<Vascular3DModuleProps> = ({
                       >
                         <Maximize2 className="w-3.5 h-3.5" />
                       </button>
+                      {vascularData.panels.length > 1 && (
+                        <button
+                          onClick={() => handleDeleteSinglePanel(panel.panelLetter)}
+                          className="p-1 rounded text-white hover:bg-rose-500/40 transition-colors"
+                          title="Eliminar este panel"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
 
                     {/* Regenerating overlay */}

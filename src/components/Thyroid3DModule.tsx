@@ -217,6 +217,73 @@ export const Thyroid3DModule: React.FC<Thyroid3DModuleProps> = ({
   };
 
   // Single panel regeneration
+
+  const handleDeleteSinglePanel = (panelLetter: string) => {
+    if (!thyroidData || thyroidData.panels.length <= 1) return;
+
+    const remainingPanels = thyroidData.panels.filter((p) => p.panelLetter !== panelLetter);
+    const alphabet = ["A", "B", "C", "D", "E", "F"];
+    const letterMap: Record<string, string> = {};
+
+    const updatedPanels = remainingPanels.map((p, idx) => {
+      const newLetter = alphabet[idx] || String.fromCharCode(65 + idx);
+      letterMap[p.panelLetter] = newLetter;
+      return {
+        ...p,
+        panelLetter: newLetter
+      };
+    });
+
+    let updatedTitle = thyroidData.figureTitle;
+    if (updatedTitle) {
+      if (updatedPanels.length === 1) {
+        updatedTitle = updatedTitle
+          .replace(/Paneles\s+A\s*(?:y|,)\s*B/gi, "Panel A")
+          .replace(/Paneles\s+A,\s*B\s*y\s*C/gi, "Panel A")
+          .replace(/\bPaneles\b/gi, "Panel");
+      } else if (updatedPanels.length === 2) {
+        updatedTitle = updatedTitle.replace(/Paneles\s+A,\s*B\s*y\s*C/gi, "Paneles A y B");
+      }
+    }
+
+    setPanelDirectives((prev) => {
+      const next: Record<string, string> = {};
+      for (const letter of Object.keys(prev)) {
+        if (letter === panelLetter) continue;
+        const mapped = letterMap[letter] || letter;
+        next[mapped] = prev[letter];
+      }
+      return next;
+    });
+    if (editingPanelLetter === panelLetter) {
+      setEditingPanelLetter(null);
+    } else if (editingPanelLetter && letterMap[editingPanelLetter]) {
+      setEditingPanelLetter(letterMap[editingPanelLetter]);
+    }
+    if (regeneratingPanelLetter === panelLetter) {
+      setRegeneratingPanelLetter(null);
+    } else if (regeneratingPanelLetter && letterMap[regeneratingPanelLetter]) {
+      setRegeneratingPanelLetter(letterMap[regeneratingPanelLetter]);
+    }
+    if (editingFocusLetter === panelLetter) {
+      setEditingFocusLetter(null);
+    } else if (editingFocusLetter && letterMap[editingFocusLetter]) {
+      setEditingFocusLetter(letterMap[editingFocusLetter]);
+    }
+    if (zoomPanel?.panelLetter === panelLetter) {
+      setZoomPanel(null);
+    } else if (zoomPanel && letterMap[zoomPanel.panelLetter]) {
+      const remapped = updatedPanels.find((p) => p.panelLetter === letterMap[zoomPanel.panelLetter]);
+      if (remapped) setZoomPanel(remapped);
+    }
+
+    setThyroidData({
+      ...thyroidData,
+      figureTitle: updatedTitle,
+      panels: updatedPanels
+    });
+  };
+
   const handleRegenerateSinglePanel = async (panel: Thyroid3DPanel) => {
     if (!thyroidData) return;
     setRegeneratingPanelLetter(panel.panelLetter);
@@ -558,6 +625,15 @@ export const Thyroid3DModule: React.FC<Thyroid3DModuleProps> = ({
                       >
                         <Maximize2 className="w-3.5 h-3.5" />
                       </button>
+                      {thyroidData.panels.length > 1 && (
+                        <button
+                          onClick={() => handleDeleteSinglePanel(panel.panelLetter)}
+                          className="p-1 rounded text-white hover:bg-rose-500/40 transition-colors"
+                          title="Eliminar este panel"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
 
                     {/* Regenerating overlay */}
@@ -665,7 +741,7 @@ export const Thyroid3DModule: React.FC<Thyroid3DModuleProps> = ({
           {/* Ficha clínica rica DEBAJO de las imágenes */}
           <div className="rounded-2xl border border-teal-500/30 bg-gradient-to-br from-slate-950 via-slate-950 to-teal-950/40 p-4 space-y-5 text-slate-100">
             <p className="text-[10px] font-mono font-bold uppercase tracking-[0.18em] text-teal-300">Ficha clínica tiroidea</p>
-            <div className="grid grid-cols-1 gap-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div className="md:col-span-2 rounded-xl border border-teal-800/40 bg-slate-950/70 p-3">
                 <p className="text-[10px] font-mono font-black uppercase tracking-widest text-teal-300 mb-1">Resumen glandular</p>
                 {isEditingText ? (
@@ -676,7 +752,7 @@ export const Thyroid3DModule: React.FC<Thyroid3DModuleProps> = ({
                   <p className="text-[13px] text-slate-200 leading-relaxed whitespace-pre-wrap">{thyroidData.glandSummary || "Sin resumen glandular."}</p>
                 )}
               </div>
-              <div className="rounded-xl border border-slate-700/70 bg-slate-950/70 p-3">
+              <div className="min-w-0 rounded-xl border border-slate-700/70 bg-slate-950/70 p-3">
                 <p className="text-[10px] font-mono font-black uppercase tracking-widest text-cyan-300 mb-1">Morfología / nódulo dominante</p>
                 {isEditingText ? (
                   <textarea rows={5} className="w-full text-xs bg-slate-900 border border-slate-700 rounded p-2 text-slate-100"
@@ -686,7 +762,7 @@ export const Thyroid3DModule: React.FC<Thyroid3DModuleProps> = ({
                   <p className="text-[13px] text-slate-200 leading-relaxed whitespace-pre-wrap">{thyroidData.morphologyNotes || "Sin notas morfológicas."}</p>
                 )}
               </div>
-              <div className="rounded-xl border border-slate-700/70 bg-slate-950/70 p-3">
+              <div className="min-w-0 rounded-xl border border-slate-700/70 bg-slate-950/70 p-3">
                 <p className="text-[10px] font-mono font-black uppercase tracking-widest text-amber-300 mb-1">Ganglios cervicales</p>
                 {isEditingText ? (
                   <textarea rows={5} className="w-full text-xs bg-slate-900 border border-slate-700 rounded p-2 text-slate-100"
