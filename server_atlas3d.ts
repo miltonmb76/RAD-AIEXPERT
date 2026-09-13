@@ -2817,6 +2817,371 @@ RESPONDE EN JSON:
     }
   });
 
+  app.post("/api/generate-3d-knee", async (req: express.Request, res: express.Response) => {
+    try {
+      const { reportText, kneeType, laterality, requestedModel, customDirectives } = req.body;
+
+      if (!reportText || !reportText.trim()) {
+        return res.status(400).json({ success: false, error: "Se requiere el texto del informe de rodilla." });
+      }
+
+      const ai = getGeminiClient();
+      const model = getModelName(requestedModel || "gemini-3.7-flash");
+
+      const kneePrompt = `Eres un Radiólogo musculoesquelético experto en ecografía de rodilla y ligamentos y meniscos, y director de arte médico 3D osteomuscular.
+Tu misión es analizar el informe de ecografía de rodilla adjunto para estructurar la "SUITE RODILLA 3D & FICHA LIGAMENTOS Y MENISCOS" con máxima fidelidad anatomopatológica.
+
+========================================================================
+INFORMACIÓN DEL ESTUDIO DE RODILLA:
+========================================================================
+- Tipo de Estudio Sugerido / Seleccionado: "${kneeType || "Detectar automáticamente del informe"}"
+- Lateralidad Solicitada: "${laterality || "Detectar del informe"}"
+- DIRECTIVA CLÍNICA OBLIGATORIA (Scorecard ligamentos-meniscos / radar biomecánico — MANDATORY, no omitir): "${customDirectives || "Ninguna"}"
+IMPORTANTE: Si hay directiva clínica, DEBE gobernar la anatomía 3D, meniscos/ligamentos afectados, grosor/extrusión/gap, derrame, dinámica, lateralidad y la tabla del ligamentos-meniscos. No inventes roturas ni grados ausentes en la directiva/informe.
+- INFORME ECOGRÁFICO DE RODILLA:
+"""
+${reportText}
+"""
+
+========================================================================
+REGLA DE SCORECARD / DIRECTIVA OBLIGATORIA:
+========================================================================
+Si "DIRECTIVA CLÍNICA OBLIGATORIA" no es "Ninguna", trátela como contrato clínico vinculante:
+- Los paneles 3D y la tabla del ligamentos-meniscos DEBEN reflejar esos hallazgos (meniscos/LCM/LCL/ligamento patelar, grosor/extrusión/gap, derrame, quiste de Baker, cartílago).
+- Prohibido inventar desgarros meniscales, esguinces, rotura de LCA/LCP o quistes no respaldados por la directiva o el informe.
+
+========================================================================
+TIPOS DE ESTUDIO (clasifica en uno):
+========================================================================
+1. "rodilla_b_mode": Ecografía B-mode de rodilla (anatomía estática del ligamentos-meniscos).
+2. "rodilla_doppler": Ecografía de rodilla con Doppler / neovascularización tendinosa.
+3. "rodilla_ligamentos": Enfoque específico ligamentos y meniscos + ligamento patelar + bursa + estrés valgo/varo.
+4. "general_knee": Detectar del informe / estudio mixto de rodilla.
+
+========================================================================
+DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
+========================================================================
+- Panel A (panelRole "overview"): visión anatómica de ambas rodillas o de la rodilla afectado (fémur distal, platillos tibiales, rótula, meniscos, LCM/LCL y mecanismo extensor).
+- Panel B (panelRole "meniscus_ligament"): cutaway macro de la patología dominante del ligamentos-meniscos (usualmente menisco medial: tendinosis, rotura parcial bursal/articular/intrasustancia, o completa con gap/retracción).
+- Panel C opcional (panelRole "extensor_effusion" | "baker_cartilage"): surco bicipital/ligamento patelar + recesos articulares / hidrartrosis, O quiste de Baker / cartílago femorotibial según el hallazgo dominante.
+- LATERALIDAD OBLIGATORIA POR PANEL (convención radiografía AP / paciente de frente):
+  - Cada panel DEBE declarar "laterality" exacta (Derecha|Izquierda|Bilateral) = lado ANATÓMICO DEL PACIENTE.
+  - Vista AP/frontal por defecto: lado DERECHO del paciente a la IZQUIERDA del cuadro; lado IZQUIERDO del paciente a la DERECHA del cuadro.
+  - El imagePrompt DEBE empezar con el lado del paciente y anclas de pantalla.
+  - NUNCA intercambiar lados entre paneles ni espejar por estética.
+- PROMPT EN INGLÉS para cada panel:
+  "Ultra-realistic 3D medical knee anatomy render of [PATIENT SIDE + tendon/site], accurate femoral condyles/tibial plateau/patella landmarks, exact meniscus and collateral ligament morphology (intact fibrillar pattern, mucoid degeneration, partial tear, extrusion, or full-thickness discontinuity), optional joint effusion or Baker cyst when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, strictly NO text, NO numbers, NO arrows, NO letters inside the image. Do NOT mirror anatomy."
+
+========================================================================
+TABLA Y FICHA CLÍNICA:
+========================================================================
+- findingTable filas con: location, structure, thicknessOrGap, echoPattern, effusionStatus, dynamicFinding, severity, clinicalImpact.
+- Incluye kneeSummary, morphologyNotes, ligamentMeniscusStatus (textos clínicos ricos en español) y keyPoints (array 3-6 bullets).
+- tableHeaders col1..col8 FIJOS: LOCALIZACIÓN | ESTRUCTURA | GROSOR / GAP | PATRÓN ECO | DERRAME | DINÁMICA | SEVERIDAD | IMPACTO
+- Evalúa estructuras relevantes: menisco medial/lateral, LCM, LCL, ligamento/tendón patelar, derrame, quiste de Baker, cartílago femorotibial. No inventes rotura de LCA salvo evidencia explícita en el informe/scorecard.
+- No inventes lesiones ausentes. Distingue claramente parcial vs completo / extrusión / degenerativo.
+
+RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
+{
+  "studyTypeCategory": "rodilla_b_mode" | "rodilla_doppler" | "rodilla_ligamentos" | "general_knee",
+  "territoryLabel": "ECOGRAFÍA DE RODILLA" | "ECOGRAFÍA RODILLA + DOPPLER" | "ECOGRAFÍA LIGAMENTOS Y MENISCOS",
+  "laterality": "Bilateral" | "Derecha" | "Izquierda",
+  "figureTitle": "FIGURA 1. ATLAS 3D RODILLA Y CORRELACIÓN LIGAMENTOS Y MENISCOS",
+  "tableTitle": "TABLA ECOGRÁFICA DEL LIGAMENTOS Y MENISCOS Y ESTRUCTURAS PERIARTICULARES:",
+  "tableHeaders": {
+    "col1": "LOCALIZACIÓN",
+    "col2": "ESTRUCTURA",
+    "col3": "GROSOR / GAP",
+    "col4": "PATRÓN ECO",
+    "col5": "DERRAME",
+    "col6": "DINÁMICA",
+    "col7": "SEVERIDAD",
+    "col8": "IMPACTO"
+  },
+  "panels": [
+    {
+      "panelLetter": "A",
+      "panelTitle": "Panel A: Anatomía de la rodilla afectado — vista de conjunto",
+      "structureOrSite": "Rodilla derecho — visión general",
+      "anatomicalFocus": "Cóndilos femorales, rótula, platillos tibiales, meniscos y colaterales...",
+      "laterality": "Derecha",
+      "panelRole": "overview",
+      "imagePrompt": "Ultra-realistic 3D medical knee anatomy render..."
+    },
+    {
+      "panelLetter": "B",
+      "panelTitle": "Panel B: Cutaway del menisco medial — patología dominante",
+      "structureOrSite": "Menisco medial",
+      "anatomicalFocus": "Detalle del menisco medial y surco coronario con patrón ecográfico correlacionado...",
+      "laterality": "Derecha",
+      "panelRole": "meniscus_ligament",
+      "imagePrompt": "Ultra-realistic 3D medical knee ligaments-menisci cutaway render..."
+    }
+  ],
+  "findingTable": [
+    {
+      "location": "Rodilla derecho, cara anterolateral",
+      "structure": "Menisco medial",
+      "thicknessOrGap": "5,2 mm (sin gap)",
+      "echoPattern": "Tendinosis hipoecoica sin solución de continuidad",
+      "effusionStatus": "Sin derrame articular significativo",
+      "dynamicFinding": "Estrés valgo leve en arco medio",
+      "severity": "Leve-moderada",
+      "clinicalImpact": "Correlacionar con clínica; rehabilitación dirigida"
+    }
+  ],
+  "kneeSummary": "...",
+  "morphologyNotes": "...",
+  "ligamentMeniscusStatus": "...",
+  "keyPoints": ["...", "..."],
+  "synthesisTitle": "SÍNTESIS MORFOLÓGICA Y FUNCIONAL DE RODILLA:",
+  "morphologicalSynthesis": "El estudio ecográfico de la rodilla evidencia..."
+}`;
+
+      const planResponse = await ai.models.generateContent({
+        model: model,
+        contents: [{ text: kneePrompt }],
+        config: { responseMimeType: "application/json" }
+      });
+
+      let planJson: any = {};
+      try {
+        planJson = JSON.parse(planResponse.text || "{}");
+      } catch (parseErr) {
+        console.error("Error parseando plan JSON Shoulder 3D:", parseErr);
+        planJson = {
+          studyTypeCategory: kneeType || "rodilla_ligamentos",
+          territoryLabel: "ECOGRAFÍA DE RODILLA",
+          laterality: laterality || "Derecha",
+          figureTitle: "FIGURA 1. ATLAS 3D RODILLA Y CORRELACIÓN LIGAMENTOS Y MENISCOS",
+          tableTitle: "TABLA ECOGRÁFICA DEL LIGAMENTOS Y MENISCOS Y ESTRUCTURAS PERIARTICULARES:",
+          tableHeaders: {
+            col1: "LOCALIZACIÓN",
+            col2: "ESTRUCTURA",
+            col3: "GROSOR / GAP",
+            col4: "PATRÓN ECO",
+            col5: "DERRAME",
+            col6: "DINÁMICA",
+            col7: "SEVERIDAD",
+            col8: "IMPACTO"
+          },
+          panels: [
+            {
+              panelLetter: "A",
+              panelTitle: "Panel A: Anatomía de la rodilla — visión de conjunto",
+              structureOrSite: "Rodilla — overview",
+              anatomicalFocus: "Reconstrucción anatómica de la rodilla con ligamentos y meniscos.",
+              laterality: laterality || "Derecha",
+              panelRole: "overview",
+              imagePrompt: "Ultra-realistic 3D medical knee anatomy render showing cóndilo femoral, patella, quadriceps and knee ligaments-menisci footprint, studio lighting, octane render, no text."
+            },
+            {
+              panelLetter: "B",
+              panelTitle: "Panel B: Cutaway del ligamentos-meniscos — menisco medial",
+              structureOrSite: "Menisco medial",
+              anatomicalFocus: "Corte macro del menisco/ligamento menisco medial según hallazgos del informe.",
+              laterality: laterality || "Derecha",
+              panelRole: "meniscus_ligament",
+              imagePrompt: "Ultra-realistic 3D medical knee ligaments-menisci cutaway of supraspinatus tendon, fibrillar pattern, cinema 4D octane render, no text."
+            }
+          ],
+          findingTable: [],
+          synthesisTitle: "SÍNTESIS MORFOLÓGICA Y FUNCIONAL DE RODILLA:",
+          morphologicalSynthesis: "La correlación anatomopatológica del ligamentos y meniscos se basa en los hallazgos descritos en el informe."
+        };
+      }
+
+      const kneePanelsWithImages = await Promise.all(
+        (planJson.panels || []).map(async (panel: any, idx: number) => {
+          let promptToUse = panel.imagePrompt || `Ultra-realistic 3D medical knee / knee ligaments-menisci render of ${panel.structureOrSite || panel.panelTitle}, octane render, no text.`;
+          if (customDirectives && customDirectives.trim()) {
+            promptToUse = `${promptToUse} [MANDATORY CLINICAL DIRECTIVE: ${customDirectives.trim()}].`;
+          }
+          {
+            const screenMap = buildScreenLateralityConstraint(panel.laterality || planJson.laterality || laterality, "AP / coronal");
+            if (panel.laterality && panel.laterality !== "auto") {
+              promptToUse = `[MANDATORY PATIENT LATERALITY: ${panel.laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${screenMap} ${promptToUse}`;
+            } else {
+              promptToUse = `${LATERALITY_HARD_RULES} ${screenMap} ${promptToUse}`;
+            }
+          }
+
+          const defaultRole = idx === 0 ? "overview" : idx === 1 ? "meniscus_ligament" : "extensor_effusion";
+          try {
+            const imageUrl = await generateMedicalImage(ai, promptToUse);
+            return {
+              id: `knee-panel-${idx}-${Date.now()}`,
+              panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
+              panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
+              structureOrSite: panel.structureOrSite || panel.panelTitle || "",
+              anatomicalFocus: panel.anatomicalFocus || "Evaluación anatómica de la rodilla y ligamentos y meniscos",
+              laterality: panel.laterality || planJson.laterality || laterality || "",
+              imageUrl: imageUrl,
+              promptUsed: promptToUse,
+              isCustomFlipped: false,
+              panelRole: panel.panelRole || defaultRole
+            };
+          } catch (imgErr) {
+            console.error(`Error generando imagen para panel knee ${panel.panelLetter}:`, imgErr);
+            return {
+              id: `knee-panel-${idx}-${Date.now()}`,
+              panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
+              panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
+              structureOrSite: panel.structureOrSite || panel.panelTitle || "",
+              anatomicalFocus: panel.anatomicalFocus || "Evaluación anatómica de la rodilla y ligamentos y meniscos",
+              laterality: panel.laterality || planJson.laterality || laterality || "",
+              imageUrl: "",
+              promptUsed: promptToUse,
+              isCustomFlipped: false,
+              panelRole: panel.panelRole || defaultRole
+            };
+          }
+        })
+      );
+
+      const forcedHeaders = {
+        col1: "LOCALIZACIÓN",
+        col2: "ESTRUCTURA",
+        col3: "GROSOR / GAP",
+        col4: "PATRÓN ECO",
+        col5: "DERRAME",
+        col6: "DINÁMICA",
+        col7: "SEVERIDAD",
+        col8: "IMPACTO"
+      };
+
+      const finalKneeData = {
+        studyTypeCategory: planJson.studyTypeCategory || kneeType || "rodilla_ligamentos",
+        territoryLabel: planJson.territoryLabel || "ECOGRAFÍA DE RODILLA",
+        laterality: planJson.laterality || laterality || "Derecha",
+        figureTitle: planJson.figureTitle || "FIGURA 1. ATLAS 3D RODILLA Y CORRELACIÓN LIGAMENTOS Y MENISCOS",
+        tableTitle: planJson.tableTitle || "TABLA ECOGRÁFICA DEL LIGAMENTOS Y MENISCOS Y ESTRUCTURAS PERIARTICULARES:",
+        tableHeaders: forcedHeaders,
+        panels: kneePanelsWithImages,
+        findingTable: (planJson.findingTable || planJson.lesionTable || planJson.noduleTable || []).map((row: any) => ({
+          location: row.location || "",
+          structure: row.structure || row.tendon || row.composition || "",
+          thicknessOrGap: row.thicknessOrGap || row.size || row.gap || "",
+          echoPattern: row.echoPattern || row.echogenicity || row.pattern || "",
+          effusionStatus: row.effusionStatus || row.bursa || "",
+          dynamicFinding: row.dynamicFinding || row.dynamic || row.stressFinding || "",
+          severity: row.severity || row.grade || "",
+          clinicalImpact: row.clinicalImpact || ""
+        })),
+        kneeSummary: planJson.kneeSummary || "",
+        morphologyNotes: planJson.morphologyNotes || "",
+        ligamentMeniscusStatus: planJson.ligamentMeniscusStatus || "",
+        keyPoints: Array.isArray(planJson.keyPoints) ? planJson.keyPoints : [],
+        synthesisTitle: planJson.synthesisTitle || "SÍNTESIS MORFOLÓGICA Y FUNCIONAL DE RODILLA:",
+        morphologicalSynthesis: planJson.morphologicalSynthesis || ""
+      };
+
+      res.json({
+        success: true,
+        data: finalKneeData
+      });
+
+    } catch (error: any) {
+      console.error("Error en /api/generate-3d-knee:", error);
+      res.status(500).json({ success: false, error: handleGeminiError(error) });
+    }
+  });
+
+  app.post("/api/regenerate-3d-knee-panel", async (req: express.Request, res: express.Response) => {
+    try {
+      const { reportText, kneeType, panel, laterality, userDirective, requestedModel, customDirectives } = req.body;
+
+      if (!panel) {
+        return res.status(400).json({ success: false, error: "Se requiere el panel knee a regenerar." });
+      }
+
+      const ai = getGeminiClient();
+      const model = getModelName(requestedModel || "gemini-3.7-flash");
+
+      const refinePrompt = `Eres un Radiólogo MSK experto en rodilla/ligamentos y meniscos y Director de Arte Médico 3D.
+Diseña un prompt en inglés superdetallado para re-generar una única imagen 3D fotorrealista correspondiente al PANEL ${panel.panelLetter}.
+
+DATOS DEL CASO:
+- Territorio: "${kneeType || "Ecografía de rodilla / ligamentos y meniscos"}"
+- Tendón / sitio: "${panel.structureOrSite || panel.panelTitle || ""}"
+- Foco actual: "${panel.anatomicalFocus || ""}"
+- Rol del panel: "${panel.panelRole || ""}"
+- Lateralidad requerida: "${laterality || panel.laterality || ""}"
+- Instrucción / Corrección del médico: "${userDirective || "Mejorar precisión anatomopatológica del ligamentos-meniscos"}"
+- DIRECTIVA CLÍNICA OBLIGATORIA (Scorecard / radar / médico): "${customDirectives || "Ninguna"}"
+- Contexto del informe: """${(reportText || "").slice(0, 800)}"""
+
+REGLAS DE ESTILO:
+- Ultra-realistic 3D medical knee / knee ligaments-menisci macro render, cinema 4D octane, accurate cóndilo femoral/patella/quadriceps landmarks, exact tendon morphology (intact / tendinosis / partial tear / full-thickness gap), optional SAD bursa fluid or AC joint changes only if indicated, soft surgical studio lighting, pure clean background.
+- STRICTLY NO text, NO numbers, NO letters, NO arrows inside the image.
+- Respect patient laterality (AP: patient RIGHT on viewer's LEFT).
+
+RESPONDE EN JSON:
+{
+  "panelTitle": "Título actualizado o confirmado para el panel",
+  "structureOrSite": "Nombre del tendón o sitio anatómico",
+  "anatomicalFocus": "Foco anatomopatológico de 1 a 2 líneas",
+  "imagePrompt": "Detailed English image generation prompt..."
+}`;
+
+      const refineResponse = await ai.models.generateContent({
+        model: model,
+        contents: [{ text: refinePrompt }],
+        config: { responseMimeType: "application/json" }
+      });
+
+      let refineJson: any = {};
+      try {
+        refineJson = JSON.parse(refineResponse.text || "{}");
+      } catch (e) {
+        refineJson = {
+          panelTitle: panel.panelTitle,
+          structureOrSite: panel.structureOrSite || panel.panelTitle,
+          anatomicalFocus: panel.anatomicalFocus,
+          imagePrompt: `Ultra-realistic 3D medical knee / knee ligaments-menisci render of ${panel.structureOrSite || panel.panelTitle}, octane render, studio lighting, no text.`
+        };
+      }
+
+      let finalPrompt = refineJson.imagePrompt || panel.promptUsed || `3D macro shoulder knee ligaments-menisci render of ${panel.panelTitle}, no text.`;
+      if (customDirectives && String(customDirectives).trim()) {
+        finalPrompt = `${finalPrompt} [MANDATORY CLINICAL DIRECTIVE: ${String(customDirectives).trim()}].`;
+      }
+      if (userDirective && userDirective.trim()) {
+        finalPrompt = `${finalPrompt} [MANDATORY SURGICAL CORRECTION: ${userDirective.trim()}].`;
+      }
+      if (laterality && laterality !== "auto") {
+        const screenMap = buildScreenLateralityConstraint(laterality, "AP / coronal");
+        finalPrompt = `[MANDATORY PATIENT LATERALITY: ${laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${screenMap} ${finalPrompt}`;
+      } else {
+        const screenMap = buildScreenLateralityConstraint(laterality, "AP / coronal");
+        finalPrompt = `${LATERALITY_HARD_RULES} ${screenMap} ${finalPrompt}`;
+      }
+
+      const imageUrl = await generateMedicalImage(ai, finalPrompt);
+
+      const updatedPanel = {
+        ...panel,
+        panelTitle: refineJson.panelTitle || panel.panelTitle,
+        structureOrSite: refineJson.structureOrSite || panel.structureOrSite,
+        anatomicalFocus: refineJson.anatomicalFocus || panel.anatomicalFocus,
+        laterality: laterality || panel.laterality,
+        imageUrl: imageUrl,
+        promptUsed: finalPrompt,
+        isCustomFlipped: false
+      };
+
+      res.json({
+        success: true,
+        panel: updatedPanel
+      });
+
+    } catch (error: any) {
+      console.error("Error en /api/regenerate-3d-knee-panel:", error);
+      res.status(500).json({ success: false, error: handleGeminiError(error) });
+    }
+  });
+
+
   // 5. Focal Lesion Cutaway 3D (on-demand: auto-detect or manual focus, 1–2 panels)
   
   

@@ -629,6 +629,122 @@ export function buildShoulderDirectivesFromScorecard(
     .join("\n");
 }
 
+
+export type KneeRadarDirectiveInput = {
+  radarMode?: string;
+  dominantVector?: string;
+  clinicalSummary?: string;
+  globalScore?: number | string;
+  axes?: Array<{
+    name?: string;
+    id?: string;
+    score?: number | string;
+    interpretation?: string;
+    label?: string;
+  }>;
+} | null | undefined;
+
+/**
+ * Build mandatory Knee 3D directives from knee-cuff / MSK scorecard,
+ * optionally enriched with biomechanical radar axes for higher anatomic fidelity.
+ */
+export function buildKneeDirectivesFromScorecard(
+  scorecard: ClinicalScorecardData | null | undefined,
+  radarData?: KneeRadarDirectiveInput
+): string {
+  const protocol = (
+    scorecard?.protocolName ||
+    scorecard?.protocolId ||
+    radarData?.radarMode ||
+    ""
+  ).toLowerCase();
+  const isKnee =
+    protocol.includes("knee") ||
+    protocol.includes("rodilla") ||
+    protocol.includes("rodilla") ||
+    protocol.includes("knee") ||
+    protocol.includes("menisc") ||
+    protocol.includes("ligamento") ||
+    protocol.includes("colateral") ||
+    protocol.includes("patelar") ||
+    protocol.includes("cuadriceps");
+
+  let body = "";
+  if (scorecard) {
+    const base = buildAtlasDirectivesFromScorecard(scorecard);
+    const summary = (scorecard.clinicalSummary || "").trim();
+    const reco = (scorecard.recommendation || "").trim();
+    body = base;
+    if (!body) {
+      const allCriteria = Array.isArray(scorecard.criteria) ? scorecard.criteria : [];
+      const evidenced = allCriteria
+        .filter((c) => (c.evidence || c.value || "").trim())
+        .slice(0, 12)
+        .map((c, i) => {
+          const val = c.value ? ` (${c.value})` : "";
+          return `${i + 1}. «${c.atlasStructure || c.criterion}»${val}: ${c.evidence || c.status}`;
+        });
+      if (evidenced.length || summary) {
+        body = [
+          `SCORECARD RODILLA / RODILLA (${scorecard.protocolName || "protocolo"} — ${scorecard.categoryAssigned || ""}):`,
+          `Semáforo: ${scorecard.trafficLight}. Criterios: ${scorecard.scoreMet}/${scorecard.scoreTotal}.`,
+          summary ? `Síntesis: ${summary}` : "",
+          reco ? `Recomendación: ${reco}` : "",
+          evidenced.length ? "Hallazgos del scorecard a respetar en 3D/tabla del rodilla:" : "",
+          ...evidenced,
+        ]
+          .filter(Boolean)
+          .join("\n");
+      }
+    }
+  }
+
+  const radarBits: string[] = [];
+  const axes = Array.isArray(radarData?.axes) ? radarData!.axes! : [];
+  const radarMode = String(radarData?.radarMode || "").toLowerCase();
+  const axisKeyBlob = axes
+    .map((a) => `${a.id || ""} ${a.name || ""} ${a.label || ""}`.toLowerCase())
+    .join(" ");
+  const looksLikeKneeRadar =
+    radarMode.includes("knee") || radarMode.includes("rodilla") || radarMode.includes("knee_trauma") || radarMode.includes("knee_oa") ||
+    /ruptura_meniscoso|bursitis|pinzamiento|otros_tendones|tendinosis_meniscoso|\bpatelar\b/.test(
+      axisKeyBlob
+    );
+  if (axes.length && looksLikeKneeRadar) {
+    radarBits.push(
+      `RADAR BIOMECÁNICO RODILLA (${radarData?.radarMode || "knee_msk"} — score global ${radarData?.globalScore ?? "n/d"}):`
+    );
+    if (radarData?.dominantVector) {
+      radarBits.push(`Vector dominante: ${radarData.dominantVector}`);
+    }
+    if (radarData?.clinicalSummary) {
+      radarBits.push(`Síntesis radar: ${radarData.clinicalSummary}`);
+    }
+    radarBits.push("Ejes a respetar en ficha/tabla 3D:");
+    axes.slice(0, 8).forEach((axis, i) => {
+      const label = axis.label || axis.name || axis.id || `Eje ${i + 1}`;
+      const score = axis.score != null ? ` score=${axis.score}` : "";
+      const interp = axis.interpretation ? ` — ${axis.interpretation}` : "";
+      radarBits.push(`${i + 1}. ${label}${score}${interp}`);
+    });
+  }
+
+  if (!body && !radarBits.length) return "";
+
+  return [
+    "DIRECTIVA OBLIGATORIA DEL SCORECARD RODILLA (debe gobernar paneles 3D, ficha y tabla del rodilla rotador):",
+    body,
+    radarBits.length ? radarBits.join("\n") : "",
+    isKnee
+      ? "Prioriza laterality, tendones (meniscoso, ligamentooso, colateralular, TCLB), grosor/gap en mm, rotura parcial vs completa (bursal/articular/intrasustancia), bursitis subacromiodeltoidea, pinzamiento dinámico y articulación AC. No inventes roturas ni grados ausentes."
+      : "Si el scorecard/radar no es de rodilla, extrae solo hallazgos femorotibiales/meniscales/ligamentosos aplicables; no inventes patología del rodilla.",
+    "No inventes desgarros meniscales, esguinces, roturas de LCA/LCP, quistes ni grados de severidad ausentes en el scorecard/radar/informe.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+
 export function scorecardTrafficLabel(light: ClinicalScorecardData["trafficLight"]): string {
   switch (light) {
     case "critical":
@@ -677,6 +793,7 @@ export const SCORECARD_PROTOCOL_OPTIONS: Array<{ id: string; label: string }> = 
   { id: "breast_birads", label: "BI-RADS / Mama" },
   { id: "bosniak", label: "Bosniak / Quiste renal" },
   { id: "rotator_cuff", label: "Manguito rotador" },
+  { id: "knee_msk", label: "Rodilla MSK" },
   { id: "achilles", label: "Tendón de Aquiles" },
   { id: "hepatic", label: "Hígado / Esteatosis-Fibrosis" },
   { id: "renal", label: "Riñón integral" },

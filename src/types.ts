@@ -463,6 +463,64 @@ export interface Shoulder3DData {
   morphologicalSynthesis?: string;
 }
 
+
+export type KneeStudyType =
+  | "rodilla_b_mode"
+  | "rodilla_doppler"
+  | "rodilla_ligamentos"
+  | "general_knee";
+
+export interface Knee3DPanel {
+  id?: string;
+  panelLetter: string;
+  panelTitle: string;
+  anatomicalFocus: string;
+  laterality?: string;
+  structureOrSite?: string;
+  panelRole?: "overview" | "meniscus_ligament" | "extensor_effusion" | "baker_cartilage";
+  imageUrl?: string;
+  isCustomFlipped?: boolean;
+  promptUsed?: string;
+}
+
+export interface KneeFindingRow {
+  location: string;           // ej: "Rodilla derecha, cara medial"
+  structure: string;          // menisco medial / LCM / LCL / lig. patelar / quiste Baker / cartílago
+  thicknessOrGap: string;     // grosor, gap, extrusión (mm)
+  echoPattern: string;        // esguince / desgarro / tendinopatía / degenerativo
+  effusionStatus: string;     // hidrartrosis / hemartrosis / sin derrame
+  dynamicFinding: string;     // valgo/varo estrés / normal
+  severity: string;           // leve / moderada / severa
+  clinicalImpact: string;
+}
+
+export interface Knee3DData {
+  studyTypeCategory?: KneeStudyType;
+  territoryLabel?: string;
+  laterality?: string;
+  figureTitle?: string;
+  tableTitle?: string;
+  tableHeaders?: {
+    col1: string;
+    col2: string;
+    col3: string;
+    col4: string;
+    col5: string;
+    col6: string;
+    col7: string;
+    col8: string;
+  };
+  panels: Knee3DPanel[];
+  findingTable: KneeFindingRow[];
+  /** Rich clinical blocks under / with the figure */
+  kneeSummary?: string;
+  morphologyNotes?: string;
+  ligamentMeniscusStatus?: string;
+  keyPoints?: string[];
+  synthesisTitle?: string;
+  morphologicalSynthesis?: string;
+}
+
 export type UsImagesGridMode = "auto" | "1x1" | "1x2" | "2x1" | "2x2" | "3x2" | "4x2";
 
 /** One quantitative measurement extracted from the report for gauge display. */
