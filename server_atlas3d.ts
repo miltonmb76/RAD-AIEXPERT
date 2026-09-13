@@ -2261,7 +2261,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
       try {
         planJson = JSON.parse(planResponse.text || "{}");
       } catch (parseErr) {
-        console.error("Error parseando plan JSON Shoulder 3D:", parseErr);
+        console.error("Error parseando plan JSON Abdomen 3D:", parseErr);
         planJson = {
           studyTypeCategory: abdomenType || "abdomen_completo",
           territoryLabel: "ECOGRAFÍA DE ABDOMEN COMPLETO",
@@ -2282,25 +2282,25 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
             {
               panelLetter: "A",
               panelTitle: "Panel A: Anatomía abdominal — visión de conjunto",
-              structureOrSite: "Abdomen — overview",
-              anatomicalFocus: "Reconstrucción anatómica abdominal con órganos abdominales.",
+              structureOrSite: "Abdomen superior — overview",
+              anatomicalFocus: "Reconstrucción de abdomen superior: hígado, vesícula, páncreas y bazo con anclas de lateralidad.",
               laterality: laterality || "Bilateral",
               panelRole: "overview",
-              imagePrompt: "Ultra-realistic 3D medical abdomen anatomy render showing cóndilo femoral, patella, quadriceps and abdomen multi-organ footprint, studio lighting, octane render, no text."
+              imagePrompt: "Ultra-realistic 3D medical complete abdomen anatomy render showing liver, gallbladder, pancreas and spleen with clear patient right/left landmarks, cinema 4D octane render, soft surgical studio lighting, clean background, no text."
             },
             {
               panelLetter: "B",
-              panelTitle: "Panel B: Cutaway hepato-biliar — según informe (medial/lateral + A/P)",
-              structureOrSite: "Territorio dominante según informe",
-              anatomicalFocus: "Corte macro del abdomen indicado en el informe (interno/externo y cuerno anterior/posterior), sin intercambiar lados.",
+              panelTitle: "Panel B: Cutaway hepato-biliar — según informe",
+              structureOrSite: "Territorio hepato-biliar dominante según informe",
+              anatomicalFocus: "Corte macro del hallazgo dominante (hígado, vesícula/vías o páncreas) sin intercambiar órganos ni lados.",
               laterality: laterality || "Bilateral",
               panelRole: "hepatobiliary",
-              imagePrompt: "Ultra-realistic 3D medical abdomen meniscus cutaway with explicit medial or lateral (fibular) compartment and anterior or posterior horn per report, fibular head landmark visible for lateral side, cinema 4D octane render, no text."
+              imagePrompt: "Ultra-realistic 3D medical abdomen hepatobiliary cutaway render with accurate liver/gallbladder/bile duct landmarks and pathology only when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, no text."
             }
           ],
           findingTable: [],
           synthesisTitle: "SÍNTESIS MORFOLÓGICA DE ABDOMEN COMPLETO:",
-          morphologicalSynthesis: "La correlación anatomopatológica del órganos abdominales se basa en los hallazgos descritos en el informe."
+          morphologicalSynthesis: "La correlación anatomopatológica de los órganos abdominales se basa en los hallazgos descritos en el informe."
         };
       }
 
@@ -2327,7 +2327,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
               panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
               panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
               structureOrSite: panel.structureOrSite || panel.panelTitle || "",
-              anatomicalFocus: panel.anatomicalFocus || "Evaluación anatómica abdominal y vías urinarias",
+              anatomicalFocus: panel.anatomicalFocus || "Evaluación anatómica abdominal multi-órgano",
               laterality: panel.laterality || planJson.laterality || laterality || "",
               imageUrl: imageUrl,
               promptUsed: promptToUse,
@@ -2341,7 +2341,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
               panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
               panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
               structureOrSite: panel.structureOrSite || panel.panelTitle || "",
-              anatomicalFocus: panel.anatomicalFocus || "Evaluación anatómica abdominal y vías urinarias",
+              anatomicalFocus: panel.anatomicalFocus || "Evaluación anatómica abdominal multi-órgano",
               laterality: panel.laterality || planJson.laterality || laterality || "",
               imageUrl: "",
               promptUsed: promptToUse,
@@ -2462,7 +2462,7 @@ RESPONDE EN JSON:
         };
       }
 
-      let finalPrompt = refineJson.imagePrompt || panel.promptUsed || `3D macro shoulder abdomen multi-organ render of ${panel.panelTitle}, no text.`;
+      let finalPrompt = refineJson.imagePrompt || panel.promptUsed || `Ultra-realistic 3D medical abdomen multi-organ render of ${panel.panelTitle}, cinema 4D octane, no text.`;
       if (customDirectives && String(customDirectives).trim()) {
         finalPrompt = `${finalPrompt} [MANDATORY CLINICAL DIRECTIVE: ${String(customDirectives).trim()}].`;
       }
