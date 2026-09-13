@@ -21049,7 +21049,7 @@ const splitReportAndAnnex = (text: string) => {
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                LPAA/ATFL, LPC/CFL, deltoides, Aquiles y derrame con ficha clínica; inyecta scorecard y radar de Aquiles/trauma de tobillo.
+                                LPAA/ATFL, LPC/CFL, deltoides, Aquiles y derrame con ficha clÃ­nica; inyecta scorecard y radar de Aquiles/trauma de tobillo.
                               </p>
                               <button
                                 type="button"
