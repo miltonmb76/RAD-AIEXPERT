@@ -2376,19 +2376,20 @@ DATOS DEL CASO:
 - Vaso: "${panel.clockPositionOrSite || panel.panelTitle || ""}"
 - Foco actual: "${panel.anatomicalFocus || ""}"
 - Lateralidad requerida: "${laterality || panel.laterality || ""}"
-- Instrucción / Corrección del médico: "${userDirective || "Mejorar precisión anatomopatológica y hemodinámica"}"
-- DIRECTIVA CLÍNICA OBLIGATORIA (Scorecard / médico): "${customDirectives || "Ninguna"}"
+- Instrucción / Corrección del médico: "${userDirective || "Mejorar precisión anatomopatológica mamaria y BI-RADS"}"
+- DIRECTIVA CLÍNICA OBLIGATORIA (Scorecard BI-RADS / mama): "${customDirectives || "Ninguna"}"
 - Contexto del informe: """${(reportText || "").slice(0, 800)}"""
 
 REGLAS DE ESTILO:
-- Ultra-realistic 3D medical macro breast cross-section render, cinema 4D octane render style, accurate breast parenchyma and capsule, dominant nodule cutaway with composition/margins/echogenic foci cues, tracheal and carotid landmarks for laterality, soft surgical studio lighting, pure clean background.
+- Ultra-realistic 3D medical macro breast cross-section render, cinema 4D octane render style, accurate breast parenchyma and nipple-areola complex, dominant nodule cutaway with composition/margins/orientation cues, soft surgical studio lighting, pure clean background.
 - STRICTLY NO text, NO numbers, NO letters, NO arrows inside the image.
+- Respect patient laterality (AP: patient RIGHT on viewer's LEFT).
 
 RESPONDE EN JSON:
 {
   "panelTitle": "Título actualizado o confirmado para el panel",
-  "clockPositionOrSite": "Nombre del vaso",
-  "anatomicalFocus": "Foco anatomopatológico y hemodinámico de 1 a 2 líneas",
+  "clockPositionOrSite": "Reloj / sitio anatómico",
+  "anatomicalFocus": "Foco anatomopatológico mamario de 1 a 2 líneas",
   "imagePrompt": "Detailed English image generation prompt..."
 }`;
 
