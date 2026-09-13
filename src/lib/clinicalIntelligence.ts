@@ -875,6 +875,131 @@ export function buildKidneyDirectivesFromScorecard(
 }
 
 
+
+
+/** Hard topography rules for complete abdominal US (shared with suite prompts). */
+export const ABDOMEN_TOPOGRAPHY_DIRECTIVE = [
+  "TOPOGRAFÍA ABDOMINAL OBLIGATORIA (nunca intercambiar):",
+  "- Hígado (derecha) ≠ bazo (izquierda). Lateralidad anatómica del paciente manda.",
+  "- Vista AP/frontal: lado DERECHO del paciente a la IZQUIERDA del cuadro; IZQUIERDO a la DERECHA.",
+  "- Vesícula ≠ vías biliares (intra/extrahepáticas / colédoco); no fusionar hallazgos.",
+  "- Páncreas (cabeza/cuerpo/cola), bazo, ambos riñones y asas/apéndice son territorios distintos.",
+  "- No inventar colecistitis, apendicitis, diverticulitis, líquido libre ni LOE ausentes en el informe.",
+  "- Esteatosis / litiasis / ectasia renal / engrosamiento parietal: grados solo si el informe/scorecard los respaldan.",
+  "- En paneles, ficha y tabla nombra siempre: órgano + lado (si aplica) + estructura concreta.",
+  "- Si el hallazgo dominante es renal, biliares o FID, priorízalo en el panel B sin omitir el overview.",
+].join("\n");
+
+export function buildAbdomenDirectivesFromScorecard(
+  scorecard: ClinicalScorecardData | null | undefined,
+  radarData?: { radarMode?: string; globalScore?: number | string; dominantVector?: string; clinicalSummary?: string; axes?: Array<{ id?: string; name?: string; label?: string; score?: number; interpretation?: string }> }
+): string {
+  const protocol = (
+    scorecard?.protocolName ||
+    scorecard?.protocolId ||
+    radarData?.radarMode ||
+    ""
+  ).toLowerCase();
+  const isAbdomen =
+    protocol.includes("abdomen") ||
+    protocol.includes("abdominal") ||
+    protocol.includes("hepatic") ||
+    protocol.includes("higado") ||
+    protocol.includes("hígado") ||
+    protocol.includes("cholecyst") ||
+    protocol.includes("colecist") ||
+    protocol.includes("vesicula") ||
+    protocol.includes("vesícula") ||
+    protocol.includes("appendic") ||
+    protocol.includes("apendic") ||
+    protocol.includes("diverticul") ||
+    protocol.includes("pancrea") ||
+    protocol.includes("visceral") ||
+    protocol.includes("biliar");
+
+  let body = "";
+  if (scorecard) {
+    const base = buildAtlasDirectivesFromScorecard(scorecard);
+    const summary = (scorecard.clinicalSummary || "").trim();
+    const reco = (scorecard.recommendation || "").trim();
+    body = base;
+    if (!body) {
+      const allCriteria = Array.isArray(scorecard.criteria) ? scorecard.criteria : [];
+      const evidenced = allCriteria
+        .filter((c) => (c.evidence || c.value || "").trim())
+        .slice(0, 12)
+        .map((c, i) => {
+          const val = c.value ? ` (${c.value})` : "";
+          return `${i + 1}. «${c.atlasStructure || c.criterion}»${val}: ${c.evidence || c.status}`;
+        });
+      if (evidenced.length || summary) {
+        body = [
+          `SCORECARD ABDOMEN COMPLETO (${scorecard.protocolName || "protocolo"} — ${scorecard.categoryAssigned || ""}):`,
+          `Semáforo: ${scorecard.trafficLight}. Criterios: ${scorecard.scoreMet}/${scorecard.scoreTotal}.`,
+          summary ? `Síntesis: ${summary}` : "",
+          reco ? `Recomendación: ${reco}` : "",
+          evidenced.length ? "Hallazgos del scorecard a respetar en 3D/tabla abdominal:" : "",
+          ...evidenced,
+        ]
+          .filter(Boolean)
+          .join("\n");
+      }
+    }
+  }
+
+  const radarBits: string[] = [];
+  const axes = Array.isArray(radarData?.axes) ? radarData!.axes! : [];
+  const radarMode = String(radarData?.radarMode || "").toLowerCase();
+  const axisKeyBlob = axes
+    .map((a) => `${a.id || ""} ${a.name || ""} ${a.label || ""}`.toLowerCase())
+    .join(" ");
+  const looksLikeAbdomenRadar =
+    radarMode.includes("abdomen") ||
+    radarMode.includes("hepatic") ||
+    radarMode.includes("cholecyst") ||
+    radarMode.includes("appendic") ||
+    radarMode.includes("diverticul") ||
+    radarMode.includes("visceral") ||
+    radarMode.includes("renal") ||
+    /higado|hígado|vesicula|vesícula|pancrea|bazo|apendic|diverticul|biliar|coledoco|colédoco|esteatos|parenquim/.test(
+      axisKeyBlob
+    );
+  if (axes.length && looksLikeAbdomenRadar) {
+    radarBits.push(
+      `RADAR ABDOMINAL / VISCERAL (${radarData?.radarMode || "visceral"} — score global ${radarData?.globalScore ?? "n/d"}):`
+    );
+    if (radarData?.dominantVector) {
+      radarBits.push(`Vector dominante: ${radarData.dominantVector}`);
+    }
+    if (radarData?.clinicalSummary) {
+      radarBits.push(`Síntesis radar: ${radarData.clinicalSummary}`);
+    }
+    radarBits.push("Ejes a respetar en ficha/tabla 3D:");
+    axes.slice(0, 8).forEach((axis, i) => {
+      const label = axis.label || axis.name || axis.id || `Eje ${i + 1}`;
+      const score = axis.score != null ? ` score=${axis.score}` : "";
+      const interp = axis.interpretation ? ` — ${axis.interpretation}` : "";
+      radarBits.push(`${i + 1}. ${label}${score}${interp}`);
+    });
+  }
+
+  if (!body && !radarBits.length) return "";
+
+  return [
+    "DIRECTIVA OBLIGATORIA DEL SCORECARD ABDOMINAL (debe gobernar paneles 3D, ficha y tabla multi-órgano):",
+    body,
+    radarBits.length ? radarBits.join("\n") : "",
+    isAbdomen
+      ? "Prioriza: (1) overview abdominal, (2) hallazgo dominante hepato-biliar / pancreático / esplénico / renal / FID, (3) líquido libre, (4) no inventar apendicitis/colecistitis/colecciones ausentes. NUNCA intercambiar hígado↔bazo ni lados renales."
+      : "Si el scorecard/radar no es abdominal, extrae solo hallazgos abdominales aplicables; no inventes patología abdominal.",
+    "No inventes esteatosis, litiasis, ectasia, apendicitis, diverticulitis, líquido libre ni grados ausentes en el scorecard/radar/informe.",
+    ABDOMEN_TOPOGRAPHY_DIRECTIVE,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+
 export function scorecardTrafficLabel(light: ClinicalScorecardData["trafficLight"]): string {
   switch (light) {
     case "critical":
@@ -928,6 +1053,7 @@ export const SCORECARD_PROTOCOL_OPTIONS: Array<{ id: string; label: string }> = 
   { id: "hepatic", label: "Hígado / Esteatosis-Fibrosis" },
   { id: "renal", label: "Riñón integral" },
   { id: "kidney_urinary", label: "Riñón y vías urinarias" },
+  { id: "abdomen_completo", label: "Abdomen completo" },
   { id: "scrotal", label: "Escrotal / Testicular" },
   { id: "diverticulitis", label: "Diverticulitis" },
   { id: "generic", label: "Criterios genéricos del informe" },

@@ -195,6 +195,27 @@ const KIDNEY_URINARY_TOPOGRAPHY_RULES_ES =
   "riñón derecho|izquierdo + estructura (corteza/seno/pelvis/uréter/vejiga).\n" +
   "8) Una imagen/tabla bella con lado renal o nivel colector equivocado es FALLO CRÍTICO.";
 
+const ABDOMEN_TOPOGRAPHY_HARD_RULES =
+  "ABDOMEN TOPOGRAPHY HARD RULES (never violate): " +
+  "(1) Liver (patient RIGHT) ≠ spleen (patient LEFT). " +
+  "(2) AP/frontal: patient RIGHT on VIEWER'S LEFT; patient LEFT on VIEWER'S RIGHT. " +
+  "(3) Gallbladder ≠ biliary tree (intra/extrahepatic / CBD). " +
+  "(4) Pancreas / spleen / kidneys / bowel-appendix are distinct territories. " +
+  "(5) Never invent cholecystitis, appendicitis, free fluid or LOE absent from the report. " +
+  "(6) Name organ + side (when applicable) + structure in structureOrSite / anatomicalFocus / findingTable. " +
+  "(7) A beautiful image with wrong organ side or wrong territory is a CRITICAL FAIL.";
+
+const ABDOMEN_TOPOGRAPHY_RULES_ES =
+  "REGLAS DURAS DE TOPOGRAFÍA ABDOMINAL (nunca violar):\n" +
+  "1) Hígado (derecha del paciente) ≠ bazo (izquierda).\n" +
+  "2) Vista AP/frontal: lado DERECHO del paciente a la IZQUIERDA del cuadro; IZQUIERDO a la DERECHA.\n" +
+  "3) Vesícula ≠ vías biliares (intra/extrahepáticas / colédoco).\n" +
+  "4) Páncreas, bazo, ambos riñones y asas/apéndice son territorios distintos.\n" +
+  "5) No inventar colecistitis, apendicitis, líquido libre ni LOE ausentes en el informe.\n" +
+  "6) En structureOrSite, anatomicalFocus, findingTable e imagePrompt nombra: órgano + lado + estructura.\n" +
+  "7) Una imagen/tabla bella con órgano o lado equivocado es FALLO CRÍTICO.";
+
+
 
 function classifyViewOrientation(view?: string): "anterior" | "posterior" | "other" {
   const v = String(view || "").toLowerCase();
@@ -2102,6 +2123,389 @@ RESPONDE EN JSON:
   // 5. Focal Lesion Cutaway 3D (on-demand: auto-detect or manual focus, 1–2 panels)
   
   
+  app.post("/api/generate-3d-abdomen", async (req: express.Request, res: express.Response) => {
+    try {
+      const { reportText, abdomenType, laterality, requestedModel, customDirectives } = req.body;
+
+      if (!reportText || !reportText.trim()) {
+        return res.status(400).json({ success: false, error: "Se requiere el texto del informe de abdomen completo." });
+      }
+
+      const ai = getGeminiClient();
+      const model = getModelName(requestedModel || "gemini-3.7-flash");
+
+      const abdomenPrompt = `Eres un Radiólogo experto en ecografía de abdomen completo y director de arte médico 3D visceral.
+Tu misión es analizar el informe de ecografía abdominal adjunto para estructurar la "SUITE ABDOMEN 3D & FICHA MULTI-ÓRGANO" con máxima fidelidad anatomopatológica.
+
+========================================================================
+INFORMACIÓN DEL ESTUDIO ABDOMINAL:
+========================================================================
+- Tipo de Estudio Sugerido / Seleccionado: "${abdomenType || "Detectar automáticamente del informe"}"
+- Lateralidad Solicitada: "${laterality || "Detectar del informe"}"
+- DIRECTIVA CLÍNICA OBLIGATORIA (Scorecard abdominal / radar visceral — MANDATORY, no omitir): "${customDirectives || "Ninguna"}"
+IMPORTANTE: Si hay directiva clínica, DEBE gobernar la anatomía 3D, órganos afectados, tamaños/grosor, litiasis/LOE, líquido libre, lateralidad y la tabla multi-órgano. No inventes colecistitis, apendicitis ni colecciones ausentes.
+- INFORME ECOGRÁFICO DE ABDOMEN:
+"""
+${reportText}
+"""
+
+========================================================================
+REGLA DE SCORECARD / DIRECTIVA OBLIGATORIA:
+========================================================================
+Si "DIRECTIVA CLÍNICA OBLIGATORIA" no es "Ninguna", trátela como contrato clínico vinculante:
+- Los paneles 3D y la tabla DEBEN reflejar esos hallazgos (hígado, vesícula/vías, páncreas, bazo, riñones, FID/asas, líquido libre).
+- Prohibido inventar esteatosis, litiasis, ectasia, apendicitis, diverticulitis o líquido libre no respaldados.
+
+========================================================================
+TOPOGRAFÍA ABDOMINAL (OBLIGATORIA):
+========================================================================
+${ABDOMEN_TOPOGRAPHY_RULES_ES}
+
+CRITICO: extrae del informe, para CADA hallazgo, órgano + lado (si aplica) + estructura y NO los intercambies.
+Si el informe dice "litiasis vesicular" o "esteatosis hepática grado II", structureOrSite / anatomicalFocus / findingTable / imagePrompt deben decirlo explícitamente.
+
+========================================================================
+TIPOS DE ESTUDIO (clasifica en uno):
+========================================================================
+1. "abdomen_completo": Ecografía de abdomen completo (superior + riñones ± pelvis).
+2. "abdomen_superior": Enfoque hepato-biliar-pancreático-esplénico.
+3. "abdomen_agudo": Dolor agudo / FID / apéndice / divertículo / líquido libre.
+4. "general_abdomen": Detectar del informe / estudio mixto.
+
+========================================================================
+DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
+========================================================================
+- Panel A (panelRole "overview"): visión de abdomen superior — hígado, vesícula, porta, páncreas, bazo; anclas de derecha/izquierda del paciente.
+- Panel B (panelRole "hepatobiliary"): cutaway del hallazgo dominante SEGÚN EL INFORME (esteatosis, litiasis vesicular, dilatación biliar, páncreas, etc.).
+- Panel C opcional (panelRole "renal_spleen" | "bowel_fluid"): ambos riñones / bazo, O FID-apéndice / líquido libre según el caso.
+- LATERALIDAD OBLIGATORIA POR PANEL (convención radiografía AP / paciente de frente):
+  - Cada panel DEBE declarar "laterality" exacta (Derecha|Izquierda|Bilateral) = lado ANATÓMICO DEL PACIENTE.
+  - Vista AP/frontal: lado DERECHO del paciente a la IZQUIERDA del cuadro; IZQUIERDO a la DERECHA.
+  - El imagePrompt DEBE empezar con el órgano/lado del paciente y anclas de pantalla.
+  - NUNCA intercambiar hígado↔bazo ni riñón derecho↔izquierdo.
+- PROMPT EN INGLÉS para cada panel:
+  "Ultra-realistic 3D medical complete abdomen anatomy render of [ORGAN + PATIENT SIDE], accurate liver/gallbladder/pancreas/spleen/kidneys landmarks, exact pathology only when clinically indicated (steatosis, gallstones, hydronephrosis, free fluid), cinema 4D octane render, soft surgical studio lighting, clean background, strictly NO text, NO numbers, NO arrows, NO letters inside the image. Do NOT mirror anatomy. Obey ABDOMEN TOPOGRAPHY HARD RULES."
+
+========================================================================
+TABLA Y FICHA CLÍNICA:
+========================================================================
+- findingTable filas con: location, structure, sizeOrThickness, echoPattern, stoneOrLesion, fluidOrDoppler, severity, clinicalImpact.
+- Incluye abdomenSummary, morphologyNotes, hepatobiliaryStatus (textos clínicos ricos en español) y keyPoints (array 3-6 bullets).
+- tableHeaders col1..col8 FIJOS: LOCALIZACIÓN | ESTRUCTURA | TAMAÑO / GROSOR | PATRÓN ECO | LITIASIS / LOE | FLUIDO / DOPPLER | SEVERIDAD | IMPACTO
+- Evalúa: hígado, vesícula/vías, páncreas, bazo, riñón D/I, asas/apéndice si aplica, líquido libre. No inventes lesiones ausentes.
+
+RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
+{
+  "studyTypeCategory": "abdomen_completo" | "abdomen_superior" | "abdomen_agudo" | "general_abdomen",
+  "territoryLabel": "ECOGRAFÍA DE ABDOMEN COMPLETO" | "ECOGRAFÍA DE ABDOMEN SUPERIOR" | "ECOGRAFÍA ABDOMEN AGUDO",
+  "laterality": "Bilateral" | "Derecha" | "Izquierda",
+  "figureTitle": "FIGURA 1. ATLAS 3D ABDOMEN Y CORRELACIÓN MULTI-ÓRGANO",
+  "tableTitle": "TABLA ECOGRÁFICA DE ABDOMEN COMPLETO:",
+  "tableHeaders": {
+    "col1": "LOCALIZACIÓN",
+    "col2": "ESTRUCTURA",
+    "col3": "TAMAÑO / GROSOR",
+    "col4": "PATRÓN ECO",
+    "col5": "LITIASIS / LOE",
+    "col6": "FLUIDO / DOPPLER",
+    "col7": "SEVERIDAD",
+    "col8": "IMPACTO"
+  },
+  "panels": [
+    {
+      "panelLetter": "A",
+      "panelTitle": "Panel A: Abdomen superior — vista de conjunto",
+      "structureOrSite": "Abdomen superior — overview",
+      "anatomicalFocus": "Hígado, vesícula, páncreas y bazo con anclas de lateralidad...",
+      "laterality": "Bilateral",
+      "panelRole": "overview",
+      "imagePrompt": "Ultra-realistic 3D medical complete abdomen anatomy render..."
+    },
+    {
+      "panelLetter": "B",
+      "panelTitle": "Panel B: Cutaway del hallazgo dominante",
+      "structureOrSite": "Órgano dominante según informe",
+      "anatomicalFocus": "Detalle del hallazgo principal con topografía exacta...",
+      "laterality": "Derecha",
+      "panelRole": "hepatobiliary",
+      "imagePrompt": "Ultra-realistic 3D medical abdomen cutaway render..."
+    }
+  ],
+  "findingTable": [
+    {
+      "location": "Hígado, lóbulo derecho",
+      "structure": "Parénquima hepático",
+      "sizeOrThickness": "Span craniocaudal conservado",
+      "echoPattern": "Esteatosis grado I-II",
+      "stoneOrLesion": "Sin LOE sólidas",
+      "fluidOrDoppler": "Sin líquido libre",
+      "severity": "Leve-moderada",
+      "clinicalImpact": "Correlacionar metabólico; control ecográfico"
+    }
+  ],
+  "abdomenSummary": "...",
+  "morphologyNotes": "...",
+  "hepatobiliaryStatus": "...",
+  "keyPoints": ["...", "..."],
+  "synthesisTitle": "SÍNTESIS MORFOLÓGICA DE ABDOMEN COMPLETO:",
+  "morphologicalSynthesis": "El estudio de abdomen completo evidencia..."
+}`;
+
+      const planResponse = await ai.models.generateContent({
+        model: model,
+        contents: [{ text: abdomenPrompt }],
+        config: { responseMimeType: "application/json" }
+      });
+
+      let planJson: any = {};
+      try {
+        planJson = JSON.parse(planResponse.text || "{}");
+      } catch (parseErr) {
+        console.error("Error parseando plan JSON Abdomen 3D:", parseErr);
+        planJson = {
+          studyTypeCategory: abdomenType || "abdomen_completo",
+          territoryLabel: "ECOGRAFÍA DE ABDOMEN COMPLETO",
+          laterality: laterality || "Bilateral",
+          figureTitle: "FIGURA 1. ATLAS 3D ABDOMEN Y CORRELACIÓN MULTI-ÓRGANO",
+          tableTitle: "TABLA ECOGRÁFICA DE ABDOMEN COMPLETO:",
+          tableHeaders: {
+            col1: "LOCALIZACIÓN",
+            col2: "ESTRUCTURA",
+            col3: "TAMAÑO / GROSOR",
+            col4: "PATRÓN ECO",
+            col5: "LITIASIS / LOE",
+            col6: "FLUIDO / DOPPLER",
+            col7: "SEVERIDAD",
+            col8: "IMPACTO"
+          },
+          panels: [
+            {
+              panelLetter: "A",
+              panelTitle: "Panel A: Anatomía abdominal — visión de conjunto",
+              structureOrSite: "Abdomen superior — overview",
+              anatomicalFocus: "Reconstrucción de abdomen superior: hígado, vesícula, páncreas y bazo con anclas de lateralidad.",
+              laterality: laterality || "Bilateral",
+              panelRole: "overview",
+              imagePrompt: "Ultra-realistic 3D medical complete abdomen anatomy render showing liver, gallbladder, pancreas and spleen with clear patient right/left landmarks, cinema 4D octane render, soft surgical studio lighting, clean background, no text."
+            },
+            {
+              panelLetter: "B",
+              panelTitle: "Panel B: Cutaway hepato-biliar — según informe",
+              structureOrSite: "Territorio hepato-biliar dominante según informe",
+              anatomicalFocus: "Corte macro del hallazgo dominante (hígado, vesícula/vías o páncreas) sin intercambiar órganos ni lados.",
+              laterality: laterality || "Bilateral",
+              panelRole: "hepatobiliary",
+              imagePrompt: "Ultra-realistic 3D medical abdomen hepatobiliary cutaway render with accurate liver/gallbladder/bile duct landmarks and pathology only when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, no text."
+            }
+          ],
+          findingTable: [],
+          synthesisTitle: "SÍNTESIS MORFOLÓGICA DE ABDOMEN COMPLETO:",
+          morphologicalSynthesis: "La correlación anatomopatológica de los órganos abdominales se basa en los hallazgos descritos en el informe."
+        };
+      }
+
+      const abdomenPanelsWithImages = await Promise.all(
+        (planJson.panels || []).map(async (panel: any, idx: number) => {
+          let promptToUse = panel.imagePrompt || `Ultra-realistic 3D medical abdomen / abdomen multi-organ render of ${panel.structureOrSite || panel.panelTitle}, octane render, no text.`;
+          if (customDirectives && customDirectives.trim()) {
+            promptToUse = `${promptToUse} [MANDATORY CLINICAL DIRECTIVE: ${customDirectives.trim()}].`;
+          }
+          {
+            const screenMap = buildScreenLateralityConstraint(panel.laterality || planJson.laterality || laterality, "AP / coronal");
+            if (panel.laterality && panel.laterality !== "auto") {
+              promptToUse = `[MANDATORY PATIENT LATERALITY: ${panel.laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${ABDOMEN_TOPOGRAPHY_HARD_RULES} ${screenMap} ${promptToUse}`;
+            } else {
+              promptToUse = `${LATERALITY_HARD_RULES} ${ABDOMEN_TOPOGRAPHY_HARD_RULES} ${screenMap} ${promptToUse}`;
+            }
+          }
+
+          const defaultRole = idx === 0 ? "overview" : idx === 1 ? "hepatobiliary" : "bowel_fluid";
+          try {
+            const imageUrl = await generateMedicalImage(ai, promptToUse);
+            return {
+              id: `abdomen-panel-${idx}-${Date.now()}`,
+              panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
+              panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
+              structureOrSite: panel.structureOrSite || panel.panelTitle || "",
+              anatomicalFocus: panel.anatomicalFocus || "Evaluación anatómica abdominal multi-órgano",
+              laterality: panel.laterality || planJson.laterality || laterality || "",
+              imageUrl: imageUrl,
+              promptUsed: promptToUse,
+              isCustomFlipped: false,
+              panelRole: panel.panelRole || defaultRole
+            };
+          } catch (imgErr) {
+            console.error(`Error generando imagen para panel abdomen ${panel.panelLetter}:`, imgErr);
+            return {
+              id: `abdomen-panel-${idx}-${Date.now()}`,
+              panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
+              panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
+              structureOrSite: panel.structureOrSite || panel.panelTitle || "",
+              anatomicalFocus: panel.anatomicalFocus || "Evaluación anatómica abdominal multi-órgano",
+              laterality: panel.laterality || planJson.laterality || laterality || "",
+              imageUrl: "",
+              promptUsed: promptToUse,
+              isCustomFlipped: false,
+              panelRole: panel.panelRole || defaultRole
+            };
+          }
+        })
+      );
+
+      const forcedHeaders = {
+        col1: "LOCALIZACIÓN",
+        col2: "ESTRUCTURA",
+        col3: "TAMAÑO / GROSOR",
+        col4: "PATRÓN ECO",
+        col5: "LITIASIS / LOE",
+        col6: "FLUIDO / DOPPLER",
+        col7: "SEVERIDAD",
+        col8: "IMPACTO"
+      };
+
+      const finalAbdomenData = {
+        studyTypeCategory: planJson.studyTypeCategory || abdomenType || "abdomen_completo",
+        territoryLabel: planJson.territoryLabel || "ECOGRAFÍA DE ABDOMEN COMPLETO",
+        laterality: planJson.laterality || laterality || "Bilateral",
+        figureTitle: planJson.figureTitle || "FIGURA 1. ATLAS 3D ABDOMEN Y CORRELACIÓN MULTI-ÓRGANO",
+        tableTitle: planJson.tableTitle || "TABLA ECOGRÁFICA DE ABDOMEN COMPLETO:",
+        tableHeaders: forcedHeaders,
+        panels: abdomenPanelsWithImages,
+        findingTable: (planJson.findingTable || planJson.lesionTable || planJson.noduleTable || []).map((row: any) => ({
+          location: row.location || "",
+          structure: row.structure || row.tendon || row.composition || "",
+          sizeOrThickness: row.sizeOrThickness || row.size || row.gap || "",
+          echoPattern: row.echoPattern || row.echogenicity || row.pattern || "",
+          stoneOrLesion: row.stoneOrLesion || row.lesion || row.bosniak || row.stone || "",
+          fluidOrDoppler: row.fluidOrDoppler || row.freeFluid || row.doppler || row.dynamic || "",
+          severity: row.severity || row.grade || "",
+          clinicalImpact: row.clinicalImpact || ""
+        })),
+        abdomenSummary: planJson.abdomenSummary || "",
+        morphologyNotes: planJson.morphologyNotes || "",
+        hepatobiliaryStatus: planJson.hepatobiliaryStatus || "",
+        keyPoints: Array.isArray(planJson.keyPoints) ? planJson.keyPoints : [],
+        synthesisTitle: planJson.synthesisTitle || "SÍNTESIS MORFOLÓGICA DE ABDOMEN COMPLETO:",
+        morphologicalSynthesis: planJson.morphologicalSynthesis || ""
+      };
+
+      res.json({
+        success: true,
+        data: finalAbdomenData
+      });
+
+    } catch (error: any) {
+      console.error("Error en /api/generate-3d-abdomen:", error);
+      res.status(500).json({ success: false, error: handleGeminiError(error) });
+    }
+  });
+
+  app.post("/api/regenerate-3d-abdomen-panel", async (req: express.Request, res: express.Response) => {
+    try {
+      const { reportText, abdomenType, panel, laterality, userDirective, requestedModel, customDirectives } = req.body;
+
+      if (!panel) {
+        return res.status(400).json({ success: false, error: "Se requiere el panel abdomen a regenerar." });
+      }
+
+      const ai = getGeminiClient();
+      const model = getModelName(requestedModel || "gemini-3.7-flash");
+
+      const refinePrompt = `Eres un Radiólogo experto en ecografía de abdomen completo y Director de Arte Médico 3D visceral.
+Diseña un prompt en inglés superdetallado para re-generar una única imagen 3D fotorrealista correspondiente al PANEL ${panel.panelLetter}.
+
+DATOS DEL CASO:
+- Territorio: "${abdomenType || "Ecografía de abdomen completo"}"
+- Órgano / sitio: "${panel.structureOrSite || panel.panelTitle || ""}"
+- Foco actual: "${panel.anatomicalFocus || ""}"
+- Rol del panel: "${panel.panelRole || ""}"
+- Lateralidad requerida: "${laterality || panel.laterality || ""}"
+- Instrucción / Corrección del médico: "${userDirective || "Mejorar precisión anatomopatológica abdominal"}"
+- DIRECTIVA CLÍNICA OBLIGATORIA (Scorecard / radar / médico): "${customDirectives || "Ninguna"}"
+- Contexto del informe: """${(reportText || "").slice(0, 800)}"""
+
+TOPOGRAFÍA ABDOMINAL OBLIGATORIA:
+${ABDOMEN_TOPOGRAPHY_RULES_ES}
+Si structureOrSite / foco / instrucción / informe mencionan un órgano, conserva EXACTAS las coordenadas
+(órgano, lado del paciente, estructura). NUNCA intercambiar hígado↔bazo ni riñón derecho↔izquierdo.
+
+REGLAS DE ESTILO:
+- Ultra-realistic 3D medical abdomen / visceral macro render, cinema 4D octane, accurate organ landmarks.
+- Exact named organ and laterality in the English imagePrompt.
+- Exact morphology only if indicated; soft surgical studio lighting; pure clean background.
+- STRICTLY NO text, NO numbers, NO letters, NO arrows inside the image.
+- Respect patient laterality (AP: patient RIGHT on viewer's LEFT).
+
+RESPONDE EN JSON:
+{
+  "panelTitle": "Título actualizado o confirmado para el panel",
+  "structureOrSite": "Nombre exacto (p.ej. Hígado derecho / Vesícula biliar)",
+  "anatomicalFocus": "Foco anatomopatológico de 1 a 2 líneas con órgano y lado",
+  "imagePrompt": "Detailed English image generation prompt with explicit organ and laterality..."
+}`;
+
+      const refineResponse = await ai.models.generateContent({
+        model: model,
+        contents: [{ text: refinePrompt }],
+        config: { responseMimeType: "application/json" }
+      });
+
+      let refineJson: any = {};
+      try {
+        refineJson = JSON.parse(refineResponse.text || "{}");
+      } catch (e) {
+        refineJson = {
+          panelTitle: panel.panelTitle,
+          structureOrSite: panel.structureOrSite || panel.panelTitle,
+          anatomicalFocus: panel.anatomicalFocus,
+          imagePrompt: `Ultra-realistic 3D medical abdomen / abdomen multi-organ render of ${panel.structureOrSite || panel.panelTitle}, octane render, studio lighting, no text.`
+        };
+      }
+
+      let finalPrompt = refineJson.imagePrompt || panel.promptUsed || `Ultra-realistic 3D medical abdomen multi-organ render of ${panel.panelTitle}, cinema 4D octane, no text.`;
+      if (customDirectives && String(customDirectives).trim()) {
+        finalPrompt = `${finalPrompt} [MANDATORY CLINICAL DIRECTIVE: ${String(customDirectives).trim()}].`;
+      }
+      if (userDirective && userDirective.trim()) {
+        finalPrompt = `${finalPrompt} [MANDATORY SURGICAL CORRECTION: ${userDirective.trim()}].`;
+      }
+      if (laterality && laterality !== "auto") {
+        const screenMap = buildScreenLateralityConstraint(laterality, "AP / coronal");
+        finalPrompt = `[MANDATORY PATIENT LATERALITY: ${laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${ABDOMEN_TOPOGRAPHY_HARD_RULES} ${screenMap} ${finalPrompt}`;
+      } else {
+        const screenMap = buildScreenLateralityConstraint(laterality, "AP / coronal");
+        finalPrompt = `${LATERALITY_HARD_RULES} ${ABDOMEN_TOPOGRAPHY_HARD_RULES} ${screenMap} ${finalPrompt}`;
+      }
+
+      const imageUrl = await generateMedicalImage(ai, finalPrompt);
+
+      const updatedPanel = {
+        ...panel,
+        panelTitle: refineJson.panelTitle || panel.panelTitle,
+        structureOrSite: refineJson.structureOrSite || panel.structureOrSite,
+        anatomicalFocus: refineJson.anatomicalFocus || panel.anatomicalFocus,
+        laterality: laterality || panel.laterality,
+        imageUrl: imageUrl,
+        promptUsed: finalPrompt,
+        isCustomFlipped: false
+      };
+
+      res.json({
+        success: true,
+        panel: updatedPanel
+      });
+
+    } catch (error: any) {
+      console.error("Error en /api/regenerate-3d-abdomen-panel:", error);
+      res.status(500).json({ success: false, error: handleGeminiError(error) });
+    }
+  });
+
+
+  // 5. Focal Lesion Cutaway 3D (on-demand: auto-detect or manual focus, 1–2 panels)
+  
+  
+
   app.post("/api/generate-3d-thyroid", async (req: express.Request, res: express.Response) => {
     try {
       const { reportText, thyroidType, laterality, requestedModel, customDirectives } = req.body;
