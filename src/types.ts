@@ -522,6 +522,64 @@ export interface Knee3DData {
 }
 
 
+export type AnkleStudyType =
+  | "tobillo_completo"
+  | "tobillo_ligamentos"
+  | "aquiles_tendon"
+  | "general_tobillo";
+
+export interface Ankle3DPanel {
+  id?: string;
+  panelLetter: string;
+  panelTitle: string;
+  anatomicalFocus: string;
+  laterality?: string;
+  structureOrSite?: string;
+  panelRole?: "overview" | "ligaments_lateral_medial" | "achilles_tendon" | "joint_effusion";
+  imageUrl?: string;
+  isCustomFlipped?: boolean;
+  promptUsed?: string;
+}
+
+export interface AnkleFindingRow {
+  location: string;           // ej: "Tobillo derecho, cara lateral"
+  structure: string;          // LPAA/ATFL / LPC/CFL / deltoides / Aquiles / sindesmosis / peroneos
+  thicknessOrGap: string;     // grosor, gap, separación (mm)
+  echoPattern: string;        // esguince / desgarro / tendinopatía / degenerativo
+  effusionStatus: string;     // derrame / bursitis / sin derrame
+  dynamicFinding: string;     // inestabilidad / estrés / normal
+  severity: string;           // leve / moderada / severa
+  clinicalImpact: string;
+}
+
+export interface Ankle3DData {
+  studyTypeCategory?: AnkleStudyType;
+  territoryLabel?: string;
+  laterality?: string;
+  figureTitle?: string;
+  tableTitle?: string;
+  tableHeaders?: {
+    col1: string;
+    col2: string;
+    col3: string;
+    col4: string;
+    col5: string;
+    col6: string;
+    col7: string;
+    col8: string;
+  };
+  panels: Ankle3DPanel[];
+  findingTable: AnkleFindingRow[];
+  /** Rich clinical blocks under / with the figure */
+  ankleSummary?: string;
+  morphologyNotes?: string;
+  ligamentAchillesStatus?: string;
+  keyPoints?: string[];
+  synthesisTitle?: string;
+  morphologicalSynthesis?: string;
+}
+
+
 export type KidneyStudyType =
   | "renal_b_mode"
   | "renal_doppler"

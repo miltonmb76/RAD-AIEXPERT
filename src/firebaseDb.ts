@@ -92,6 +92,8 @@ export interface CloudStudy {
   includeShoulder3dInReport?: boolean;
   knee3dData?: any;
   includeKnee3dInReport?: boolean;
+  ankle3dData?: any;
+  includeAnkle3dInReport?: boolean;
   kidney3dData?: any;
   includeKidney3dInReport?: boolean;
   abdomen3dData?: any;

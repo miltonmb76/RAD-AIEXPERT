@@ -760,6 +760,127 @@ export function buildKneeDirectivesFromScorecard(
 }
 
 
+export type AnkleRadarDirectiveInput = KneeRadarDirectiveInput;
+
+/** Hard topography rules for ankle ligaments & Achilles (shared with suite prompts). */
+export const ANKLE_LIGAMENT_TOPOGRAPHY_DIRECTIVE = [
+  "TOPOGRAFÍA DE TOBILLO / AQUILES OBLIGATORIA (nunca intercambiar):",
+  "- Complejo LATERAL = lado FIBULAR / peroné: LPAA/ATFL, LPC/CFL, LPTP/PTFL. NUNCA intercambiar con deltoides.",
+  "- Complejo MEDIAL = DELTOIDES = lado TIBIAL.",
+  "- Tendón de Aquiles = línea media POSTERIOR; distinguir midportion vs insercional.",
+  "- Lateralidad del TOBILLO del paciente (derecha/izquierda) es independiente de medial/lateral ligamentoso.",
+  "- Vista AP: lado DERECHO del paciente a la IZQUIERDA del cuadro; IZQUIERDO a la DERECHA.",
+  "- Sindesmosis, tendones peroneos y bursa retrocalcánea son territorios DISTINTOS — no fusionar hallazgos.",
+  "- En paneles, ficha y tabla nombra siempre: complejo lateral|medial|Aquiles + estructura exacta + lado de tobillo.",
+  "- No inventes roturas ni grados (I–III) ausentes en el informe/scorecard.",
+].join("\n");
+
+export function buildAnkleDirectivesFromScorecard(
+  scorecard: ClinicalScorecardData | null | undefined,
+  radarData?: AnkleRadarDirectiveInput
+): string {
+  const protocol = (
+    scorecard?.protocolName ||
+    scorecard?.protocolId ||
+    radarData?.radarMode ||
+    ""
+  ).toLowerCase();
+  const isAnkle =
+    protocol.includes("ankle") ||
+    protocol.includes("tobillo") ||
+    protocol.includes("achilles") ||
+    protocol.includes("aquiles") ||
+    protocol.includes("atfl") ||
+    protocol.includes("lpaa") ||
+    protocol.includes("cfl") ||
+    protocol.includes("lpc") ||
+    protocol.includes("deltoid") ||
+    protocol.includes("deltoides") ||
+    protocol.includes("sindesmosis") ||
+    protocol.includes("peroneo") ||
+    protocol.includes("ankle_trauma");
+
+  let body = "";
+  if (scorecard) {
+    const base = buildAtlasDirectivesFromScorecard(scorecard);
+    const summary = (scorecard.clinicalSummary || "").trim();
+    const reco = (scorecard.recommendation || "").trim();
+    body = base;
+    if (!body) {
+      const allCriteria = Array.isArray(scorecard.criteria) ? scorecard.criteria : [];
+      const evidenced = allCriteria
+        .filter((c) => (c.evidence || c.value || "").trim())
+        .slice(0, 12)
+        .map((c, i) => {
+          const val = c.value ? ` (${c.value})` : "";
+          return `${i + 1}. «${c.atlasStructure || c.criterion}»${val}: ${c.evidence || c.status}`;
+        });
+      if (evidenced.length || summary) {
+        body = [
+          `SCORECARD TOBILLO MSK (${scorecard.protocolName || "protocolo"} — ${scorecard.categoryAssigned || ""}):`,
+          `Semáforo: ${scorecard.trafficLight}. Criterios: ${scorecard.scoreMet}/${scorecard.scoreTotal}.`,
+          summary ? `Síntesis: ${summary}` : "",
+          reco ? `Recomendación: ${reco}` : "",
+          evidenced.length ? "Hallazgos del scorecard a respetar en 3D/tabla de tobillo:" : "",
+          ...evidenced,
+        ]
+          .filter(Boolean)
+          .join("\n");
+      }
+    }
+  }
+
+  const radarBits: string[] = [];
+  const axes = Array.isArray(radarData?.axes) ? radarData!.axes! : [];
+  const radarMode = String(radarData?.radarMode || "").toLowerCase();
+  const axisKeyBlob = axes
+    .map((a) => `${a.id || ""} ${a.name || ""} ${a.label || ""}`.toLowerCase())
+    .join(" ");
+  const looksLikeAnkleRadar =
+    radarMode.includes("ankle") ||
+    radarMode.includes("tobillo") ||
+    radarMode.includes("achilles") ||
+    radarMode.includes("aquiles") ||
+    radarMode.includes("ankle_trauma") ||
+    /tobillo|ankle|aquiles|achilles|atfl|lpaa|cfl|lpc|deltoid|deltoides|sindesmosis|peroneo|ankle_trauma/.test(
+      axisKeyBlob
+    );
+  if (axes.length && looksLikeAnkleRadar) {
+    radarBits.push(
+      `RADAR BIOMECÁNICO TOBILLO / AQUILES (${radarData?.radarMode || "ankle_trauma"} — score global ${radarData?.globalScore ?? "n/d"}):`
+    );
+    if (radarData?.dominantVector) {
+      radarBits.push(`Vector dominante: ${radarData.dominantVector}`);
+    }
+    if (radarData?.clinicalSummary) {
+      radarBits.push(`Síntesis radar: ${radarData.clinicalSummary}`);
+    }
+    radarBits.push("Ejes a respetar en ficha/tabla 3D:");
+    axes.slice(0, 8).forEach((axis, i) => {
+      const label = axis.label || axis.name || axis.id || `Eje ${i + 1}`;
+      const score = axis.score != null ? ` score=${axis.score}` : "";
+      const interp = axis.interpretation ? ` — ${axis.interpretation}` : "";
+      radarBits.push(`${i + 1}. ${label}${score}${interp}`);
+    });
+  }
+
+  if (!body && !radarBits.length) return "";
+
+  return [
+    "DIRECTIVA OBLIGATORIA DEL SCORECARD TOBILLO (debe gobernar paneles 3D, ficha y tabla de ligamentos-Aquiles):",
+    body,
+    radarBits.length ? radarBits.join("\n") : "",
+    isAnkle
+      ? "Prioriza: (1) lado de tobillo del paciente, (2) complejo lateral=fibular (LPAA/ATFL, LPC/CFL, PTFL) vs medial=deltoides/tibial, (3) Aquiles midportion vs insercional, (4) sindesmosis/peroneos/bursa como territorios distintos, derrame. NUNCA intercambiar lateral↔deltoides. No inventes roturas ni grados ausentes."
+      : "Si el scorecard/radar no es de tobillo/Aquiles, extrae solo hallazgos tibiotalares/ligamentosos/aquíleos aplicables; no inventes patología de tobillo.",
+    "No inventes desgarros ligamentosos, roturas de Aquiles, bursitis ni grados de severidad ausentes en el scorecard/radar/informe.",
+    ANKLE_LIGAMENT_TOPOGRAPHY_DIRECTIVE,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+
 /** Hard topography rules for kidneys & urinary tract (shared with suite prompts). */
 export const KIDNEY_URINARY_TOPOGRAPHY_DIRECTIVE = [
   "TOPOGRAFÍA RENAL Y VÍAS URINARIAS OBLIGATORIA (nunca intercambiar):",
@@ -1050,6 +1171,7 @@ export const SCORECARD_PROTOCOL_OPTIONS: Array<{ id: string; label: string }> = 
   { id: "rotator_cuff", label: "Manguito rotador" },
   { id: "knee_msk", label: "Rodilla MSK" },
   { id: "achilles", label: "Tendón de Aquiles" },
+  { id: "tobillo_msk", label: "Tobillo MSK" },
   { id: "hepatic", label: "Hígado / Esteatosis-Fibrosis" },
   { id: "renal", label: "Riñón integral" },
   { id: "kidney_urinary", label: "Riñón y vías urinarias" },
