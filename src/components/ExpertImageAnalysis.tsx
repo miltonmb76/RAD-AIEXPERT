@@ -1104,10 +1104,18 @@ export default function ExpertImageAnalysis({
   const isFractureProtocolActive = React.useMemo(() => {
     if (fractureProtocolOverride === 'active') return true;
     if (fractureProtocolOverride === 'inactive') return false;
+    // Avoid matching "radio" inside "radiografía"; include elbow/trauma anatomy.
     const keywords = [
-      "fractura", "fractur", "trazos", "trazo", "desplazamiento", "fisura", "compromiso articular", 
-      "luxación", "subluxación", "fx", "fémur", "peroné", "tibia", "radio", "cúbito", "húmero", "fissure"
+      "fractura", "fractur", "trazos", "trazo", "desplazamiento", "fisura", "compromiso articular",
+      "luxación", "luxacion", "subluxación", "subluxacion", "fx", "conminut", "fragmento",
+      "fémur", "femur", "peroné", "perone", "tibia", "cúbito", "cubito", "húmero", "humero",
+      "codo", "elbow", "olécranon", "olecranon", "cóndilo", "condilo", "epicóndilo", "epicondilo",
+      "cabeza radial", "muñeca", "muneca", "escafoides", "tobillo", "hombro", "rodilla",
+      "falange", "metacarp", "metatars", "clavícula", "clavicula", "trauma", "traumatismo",
+      "contusión", "contusion", "caída", "caida", "golpe", "accidente", "ortoped"
     ];
+    // Word-boundary-ish bone "radio" only (not radiografía)
+    const boneRadio = /(^|[^a-záéíóúñ])radio([^a-záéíóúñ]|$)/i;
     const textToSearch = [
       patientInfo,
       clinicalSuspicion,
@@ -1120,7 +1128,11 @@ export default function ExpertImageAnalysis({
       ...annotations3.map(a => a.label || "")
     ].join(" ").toLowerCase();
 
-    return keywords.some(kw => textToSearch.includes(kw));
+    const stripped = textToSearch
+      .replace(/radiograf[ií]a[s]?/g, " ")
+      .replace(/radiolog[ií][caos]*/g, " ");
+
+    return keywords.some(kw => stripped.includes(kw)) || boneRadio.test(stripped);
   }, [fractureProtocolOverride, patientInfo, clinicalSuspicion, radiologicalQuestions, desc1, desc2, desc3, annotations1, annotations2, annotations3]);
 
   // Pulmonary parenchyma & Hila high accuracy protocol states & detection keywords

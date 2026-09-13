@@ -184,6 +184,48 @@ function handleGeminiError(error: any): string {
   return (errorMsg || "Error de comunicación con Gemini AI. Por favor, revisa la configuración.") + rawDetails;
 }
 
+/**
+ * Detect fracture/trauma/MSK context without false-matching "radio" inside "radiografía".
+ * Includes elbow and common trauma anatomy that previously failed to trigger the protocol.
+ */
+function textSuggestsFractureOrTrauma(...parts: Array<string | undefined | null>): boolean {
+  const raw = parts.filter(Boolean).join(" ").toLowerCase();
+  if (!raw.trim()) return false;
+  // Strip modality words that contain "radio" as a substring
+  const t = raw
+    .replace(/radiograf[ií]a[s]?/g, " ")
+    .replace(/radiolog[ií][caos]*/g, " ")
+    .replace(/radioscop/g, " ");
+
+  return (
+    /fractur|fisura|trazo[s]?|desplazam|conminut|fragment|cabalg|di[aá]stasis|compromiso articular|luxac|subluxac|\bfx\b/.test(t) ||
+    /f[eé]mur|peron[eé]|tibia|\bc[uú]bito\b|\bh[uú]mero\b|\bradio\b|ol[eé]cranon|codo|elbow|c[oó]ndilo|epicondil|cabeza radial|escafoides|falange|metacarp|metatars|clav[ií]cula|hombro|rodilla|tobillo|mu[nñ]eca|pelvis|acet[aá]bul|calc[aá]neo/.test(t) ||
+    /trauma|traumatism|contusi[oó]n|ca[ií]da|golpe|accidente|ortoped|osteo[s]?/.test(t)
+  );
+}
+
+const FRACTURE_PROTOCOL_BLOCK_ES = `
+## ⚡️ PROTOCOLO ESPECIAL DE MÁXIMA EXACTITUD PARA FRACTURAS / TRAUMA ÓSEO ⚡️
+(Disparado por sospecha clínica, anatomía de trauma/MSK o protocolo forzado. Prioriza SENSIBILIDAD ante falsos negativos de fracturas evidentes.)
+
+*   **⚠️ REGLA #1 — PROHIBIDO FALSO NEGATIVO DE FRACTURA CONSPICUA (CRÍTICO):**
+    Si hay CUALQUIER interrupción cortical, trazo radiolúcido que cruza cortical, fragmento óseo libre/desplazado, diástasis, cabalgamiento, angulación patológica o incongruencia articular evidente, DEBES reportarlo como FRACTURA/LESIÓN ÓSEA ANORMAL en el primer párrafo.
+    Queda TERMINANTEMENTE PROHIBIDO dictaminar "normal", "estructuras óseas íntegras" o "no se observan trazos de fractura" cuando existan fragmentos desplazados o discontinuidades corticales visibles.
+    El miedo a "alucinar" NUNCA justifica omitir una fractura obvia.
+
+*   **⚠️ REGLA #2 — NORMAL SOLO COMO ÚLTIMO RECURSO:**
+    Solo puedes declarar ausencia de fractura DESPUÉS de verificar continuidad cortical en TODOS los segmentos visibles y congruencia articular. Si la imagen es dudosa o de calidad limitada, describe la sospecha y recomienda proyecciones adicionales; NO digas "normal" por defecto.
+
+*   **⚠️ REGLA #3 — CHECKLIST MSK OBLIGATORIO (codo/extremidades):**
+    Evalúa y menciona explícitamente: (a) continuidad de corticales, (b) número/orientación de trazos, (c) desplazamiento/rotación de fragmentos, (d) compromiso articular, (e) alineación ósea, (f) tejidos blandos / fat pads si aplica (codo).
+
+- **1. Presencia y localización**: sitio anatómico exacto (diáfisis/metáfisis/epífisis/cóndilo/olécranon/cabeza radial, etc.).
+- **2. Número y dirección de trazos**: transverso/oblicuo/espiroideo/conminuto; contar fragmentos libres.
+- **3. Compromiso articular**: sí/no; escalón o diástasis estimada.
+- **4. Desplazamiento y alineación**: diástasis, cabalgamiento, angulación varo/valgo, luxación/subluxación.
+- **5. Evidencia visual**: cita el hallazgo en píxeles (cortical interrumpida, fragmento desplazado, etc.).
+`;
+
 function getBaseAndSide(name: string): { baseName: string, side: 'der' | 'izq' } | null {
   const nameLower = name.toLowerCase();
   
@@ -1845,12 +1887,8 @@ app.post("/api/expert-image-analysis", async (req: express.Request, res: express
     const selectedModel = getModelName(model);
     const parts: any[] = [];
 
-    const isFractureCase = !!fractureProtocol || 
-      [clinicalSuspicion, radiologicalQuestions, desc1, desc2, desc3]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-        .match(/(fractur|trazo|trazos|desplazam|fisura|compromiso articular|luxac|subluxac|fx|fémur|peroné|tibia|radio|cúbito|húmero)/);
+    const isFractureCase = !!fractureProtocol ||
+      textSuggestsFractureOrTrauma(clinicalSuspicion, radiologicalQuestions, desc1, desc2, desc3);
 
     const isPulmonaryCase = !!pulmonaryProtocol || 
       [clinicalSuspicion, radiologicalQuestions, desc1, desc2, desc3, modality1, modality2, modality3]
@@ -1944,9 +1982,10 @@ Para lograr la máxima exactitud científica equilibrada, debes operar bajo un r
 5. **EQUILIBRIO ACTIVO Y PREVENCIÓN DE ALUCINACIONES (Evitación Rigurosa de Falsos Positivos)**:
    - No debes sobrediagnosticar ni inventar patologías basándote en artificios técnicos (pliegues cutáneos, líneas de superposición costal o escapular normal), ruidos de la placa, variantes anatómicas sanas (canales nutricios, suturas accesorias) o marcas de posición.
    - Si un hallazgo es compatible con una variante anatómica inofensiva o un artefacto, indícalo con objetividad científica como un diagnóstico diferencial probable ("Variante de la normalidad vs. lesión incipiente").
+   - **CRÍTICO — NO CONVERTIR EL FILTRO ANTI-FP EN FALSOS NEGATIVOS:** Si observas fragmentos óseos desplazados, cortical claramente interrumpida, diástasis o luxación evidente, DEBES reportarlo como patológico. Está prohibido llamar "normal" a una fractura conspicua por exceso de cautela.
 
 6. **CONSISTENCIA Y EXACTITUD ABSOLUTA ANTE HALLAZGOS ESTRUCTURALES EVIDENTES**:
-   - Es mandatorio que no suavices, invisibilices ni subestimes alteraciones reales y patológicas observables (neumotórax extenso, colapso pulmonar, reducciones severas de espacio articular, discontinuidades corticales francas, o desviaciones mediastinales marcadas). Deben reportarse con la terminología adecuada y el nivel de gravedad correspondiente.
+   - Es mandatorio que no suavices, invisibilices ni subestimes alteraciones reales y patológicas observables (neumotórax extenso, colapso pulmonar, reducciones severas de espacio articular, discontinuidades corticales francas, fragmentos desplazados, o desviaciones mediastinales marcadas). Deben reportarse con la terminología adecuada y el nivel de gravedad correspondiente.
 
 7. **FUNCIÓN DE VALIDACIÓN DE CONFIANZA Y CITA DE EVIDENCIA VISUAL PARA EXCLUSIÓN**:
    - Antes de considerar normal, preservado o negativo cualquier signo, campo o espacio articular principal de riesgo, describe brevemente la evidencia visual directa (continuidad cortical perfecta e ininterrumpida, trama vascular alcanzando la pared torácica, etc.) que ampara de manera objetiva tu conclusión.
@@ -2074,16 +2113,7 @@ Proporciona una valoración de máxima exactitud científica estructurada bajo l
     }
 
     if (isFractureCase) {
-      promptText += `
-## ⚡️ PROTOCOLO ESPECIAL DE MÁXIMA EXACTITUD PARA FRACTURAS (MÚLTIPLE VALORACIÓN BIOMECÁNICA) ⚡️
-(Este apartado especial se ha disparado obligatoriamente por sospecha, mención o hallazgo visual de fractura en la indicación o consulta. Debes caracterizar los hallazgos con máxima precisión, basándote rigurosamente en la evidencia física real visible de la imagen):
-*   **⚠️ REGLA DE PRESENCIA OBLIGATORIA (CONTROL ANTI-ALUCINACIÓN):** Si tras un escaneo cuidadoso de la imagen confirmas que NO existe fractura, fisura ni trazo de discontinuidad cortical, DEBES declararlo categóricamente en el primer párrafo: *"NO SE OBSERVAN TRAZOS DE FRACTURA NI DISCONTINUIDADES CORTICALES EN LOS SEGMENTOS EVALUADOS. Estructuras óseas íntegras y conservadas."* En este caso, marca todos los sub-puntos siguientes como "No aplicable". Queda terminantemente prohibido inventar trazos de fractura por complacer la sospecha clínica.
-- **1. Presencia, Densidad y Localización Anatomopatológica Precisa**: (Identifica con exactitud diagnóstica la localización anatómica: diáfisis, metáfisis, epífisis, cuello, cabeza, etc., describiendo la discontinuidad cortical).
-- **2. Número y Dirección Tridimensional de Trazos**: (Describe el número exacto de trazos óseos identificados. Clasifica rigurosamente su orientación geométrica: transverso, oblicuo corto/largo, espiroideo o helicoidal, longitudinal, ala de mariposa, conminuto con múltiples fragmentos libres, etc. Si no hay fractura, reportar 'No aplicable').
-- **3. Extensión y Compromiso Articular Estricto**: (Especificar de forma obligatoria e inflexible si existe afección, interrupción o extensión del trazo hacia la carilla, cavidad o cartílago articular. Detalla si hay escalón o hundimiento articular en milímetros estimados, pérdida de congruencia o diástasis intraarticular. Si no hay fractura, reportar 'No aplicable').
-- **4. Desplazamiento Espacial de Fragmentos y Alineación**: (Describe minuciosamente la dirección y grado de desplazamiento óseo: diástasis o separación en mm, cabalgamiento con acortamiento longitudinal, luxación o subluxación articular, desviación angular en varo/valgo o antero/retrocurvatum, o rotación fragmentaria. Si no hay fractura, reportar 'No aplicable').
-- **5. Cita de Evidencia Visual de Integridad**: (Proporciona la confirmación estricta de cada hallazgo con correlato clínico directo. ¡No tolerar alucinación de líneas vasculares normales ni subestimación de trazos corticales sutiles!)
-`;
+      promptText += FRACTURE_PROTOCOL_BLOCK_ES;
     }
 
     if (isPulmonaryCase) {
@@ -2153,8 +2183,9 @@ Mantén un lenguaje impecable, sumamente formal y científico, digno de un comit
 
     const systemInstruction = 
       "Eres un consultor radiólogo internacional senior de diagnóstico, y el estándar supremo de precisión diagnóstica clínica de esta plataforma. Este módulo ('Doble Valoración') exige un equilibrio científico idóneo entre alta sensibilidad visual ante patologías reales y un riguroso filtro anti-alucinaciones:\n" +
-      "1. RECONOCIMIENTO Y VALIDACIÓN DE PATOLOGÍAS EVIDENTES O ASEVERADAS POR EL CLÍNICO: Es mandatorio que identifiques y confirmes con absoluta precisión cualquier hallazgo o alteración estructural patológica patente, evidente o relevante (por ejemplo, neumotórax extenso o apical, colapso pulmonar, atelectasia, derrame pleural, fractura o fisura, marcada disminución del espacio articular, o masa). Cuando el médico tratante, la sospecha clínica o la consulta indiquen o aseveren que existe un hallazgo específico o 'no discutible' (como 'neumotórax extenso' o 'hallazgo evidente'), NUNCA asumas por defecto que es una trampa o intento de inducción de error. Ejecuta de inmediato una revisión dirigida con el 100% de tu sensibilidad en esa zona anatómica para verificar, caracterizar y describir detalladamente la severidad del hallazgo (ej. en neumotórax: ubicación de la línea pleural visceral, separación en mm, porcentaje de radiolucidez periférica desprovista de trama vascular, colapso pulmonar o desviación mediastínica). NUNCA minimices ni refutes obstinadamente hallazgos patológicos reales por un hiper-escepticismo inapropiado.\n" +
-      "2. FILTRO ANTI-ALUCINACIÓN BASADO EN EVIDENCIA FÍSICA REAL: Mantén una estricta fidelidad a la imagen real. Está prohibido inventar o alucinar elementos totalmente inexistentes (como material de osteosíntesis inexistente o placas/tornillos si la placa no muestra ningún implante metálico). Si tras una verificación exhaustiva y meticulosa un hallazgo sugerido realmente no es identificable en la imagen, explica objetivamente la anatomía observada (ej. citando la presencia de trama vascular normal que se extiende hasta la pared torácica parietal interna) de forma profesional y fundamentada, sin ser agresivo ni prejuzgar al especialista.\n" +
+      "0. PRIORIDAD ANTI-FALSO-NEGATIVO EN TRAUMA/MSK: Si la imagen muestra cortical interrumpida, fragmentos óseos desplazados, diástasis, cabalgamiento o incongruencia articular evidente (p. ej. fractura de codo conminuta), DEBES reportarlo como ANORMAL. Queda PROHIBIDO dictaminar 'normal' u 'óseas íntegras' ante fracturas conspicuas. El filtro anti-alucinación NO autoriza omitir patología obvia.\n" +
+      "1. RECONOCIMIENTO Y VALIDACIÓN DE PATOLOGÍAS EVIDENTES O ASEVERADAS POR EL CLÍNICO: Es mandatorio que identifiques y confirmes con absoluta precisión cualquier hallazgo o alteración estructural patológica patente, evidente o relevante (por ejemplo, neumotórax extenso o apical, colapso pulmonar, atelectasia, derrame pleural, fractura o fisura, marcada disminución del espacio articular, o masa). Cuando el médico tratante, la sospecha clínica o la consulta indiquen o aseveren que existe un hallazgo específico o 'no discutible' (como 'neumotórax extenso', 'fractura evidente' o 'hallazgo evidente'), NUNCA asumas por defecto que es una trampa o intento de inducción de error. Ejecuta de inmediato una revisión dirigida con el 100% de tu sensibilidad en esa zona anatómica para verificar, caracterizar y describir detalladamente la severidad del hallazgo (ej. en neumotórax: ubicación de la línea pleural visceral, separación en mm, porcentaje de radiolucidez periférica desprovista de trama vascular, colapso pulmonar o desviación mediastínica; en fractura: número de fragmentos, desplazamiento, compromiso articular). NUNCA minimices ni refutes obstinadamente hallazgos patológicos reales por un hiper-escepticismo inapropiado.\n" +
+      "2. FILTRO ANTI-ALUCINACIÓN BASADO EN EVIDENCIA FÍSICA REAL: Mantén una estricta fidelidad a la imagen real. Está prohibido inventar o alucinar elementos totalmente inexistentes (como material de osteosíntesis inexistente o placas/tornillos si la placa no muestra ningún implante metálico). Si tras una verificación exhaustiva y meticulosa un hallazgo sugerido realmente no es identificable en la imagen, explica objetivamente la anatomía observada (ej. citando la presencia de trama vascular normal que se extiende hasta la pared torácica parietal interna) de forma profesional y fundamentada, sin ser agresivo ni prejuzgar al especialista. IMPORTANTE: esta regla evita inventar lo que NO está; NUNCA usarla para negar lo que SÍ está visible.\n" +
       "3. VARIANTES DE LA NORMALIDAD: Diferencia con claridad variaciones anatómicas fisiológicas (canales nutricios, suturas, pliegues cutáneos, superposiciones de escápula/costillas) de patologías verdaderas, basando tu dictamen en la evidencia objetiva de los píxeles.\n" +
       "4. CONVENCIÓN ANATÓMICA DE LATERALIDAD EN ESPEJO Y DERECHA/IZQUIERDA: En proyecciones frontales PA/AP, la DERECHA VISUAL de la pantalla es el HEIMITÓRAX/LADO IZQUIERDO del paciente. La IZQUIERDA VISUAL de la pantalla es el HEIMITÓRAX/LADO DERECHO del paciente. Si la sospecha o indicación del usuario dice 'Neumotórax Izquierdo', evalúa la mitad VISUAL DERECHA de la placa (hemitórax izquierdo del paciente). Si allí se observa la línea pleural visceral y radiolucidez sin trama, CONFIRMA Y VALIDA COMO 'NEUMOTÓRAX IZQUIERDO'. Queda ESTRICTAMENTE PROHIBIDO invertir la lateralidad diciendo 'derecho' por confusión de lados de la pantalla.";
 
@@ -2494,12 +2525,8 @@ app.post("/api/expert-image-followup", async (req: express.Request, res: express
       promptNote = `\n[Nota del sistema: Los archivos provistos son representaciones vectoriales/metadatos sin imagen rasterizada binaria. Por favor, genera tu respuesta basándose en los metadatos de diagnóstico y la descripción provista de manera altamente coherente].\n`;
     }
 
-    const isFractureCase = !!fractureProtocol || 
-      [clinicalSuspicion, queryText, previousAnalysis]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-        .match(/(fractur|trazo|trazos|desplazam|fisura|compromiso articular|luxac|subluxac|fx|fémur|peroné|tibia|radio|cúbito|húmero)/);
+    const isFractureCase = !!fractureProtocol ||
+      textSuggestsFractureOrTrauma(clinicalSuspicion, queryText, previousAnalysis);
 
     const isPulmonaryCase = !!pulmonaryProtocol || 
       [clinicalSuspicion, queryText, previousAnalysis]
@@ -2525,11 +2552,11 @@ app.post("/api/expert-image-followup", async (req: express.Request, res: express
     let protocolInstructions = "";
     if (isFractureCase) {
       protocolInstructions += `
-⚠️ RECORDATORIO PROTOCOLO DE FRACTURAS DE ALTA EXACTITUD:
-- Caracteriza microscópicamente el número y dirección tridimensional de los trazos.
-- Especifica rigurosamente el compromiso de carillas articulares (escalón articular/diástasis).
-- Detalla grado de desplazamiento espacial (cabalgamiento, diástasis, angulación).
-- Basa tus conclusiones únicamente en la evidencia visual real sin omitir ni alucinar.
+⚠️ RECORDATORIO PROTOCOLO DE FRACTURAS / TRAUMA (PRIORIDAD ANTI-FALSO-NEGATIVO):
+- Si hay cortical interrumpida, fragmento desplazado o incongruencia articular, DEBES reportar FRACTURA/LESIÓN ANORMAL. PROHIBIDO decir "normal" u "óseas íntegras" ante fracturas evidentes.
+- Solo declara ausencia de fractura tras verificar continuidad cortical completa; si hay duda, describe sospecha (no digas normal por defecto).
+- Caracteriza número/dirección de trazos, compromiso articular y desplazamiento (diástasis, cabalgamiento, angulación).
+- Checklist MSK: corticales, fragmentos, articulación, alineación, tejidos blandos/fat pads (codo).
 `;
     }
 
