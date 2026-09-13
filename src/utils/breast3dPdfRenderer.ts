@@ -138,7 +138,7 @@ export async function renderBreast3DPageToPdf(
         doc.setFont("helvetica", "normal");
         doc.setFontSize(8 * factor);
         doc.setTextColor(148, 163, 184);
-        doc.text("Reconstrucción 3D Tiroidea", imgX + (imgWidth / 2) - 18, imgY + (imgHeight / 2));
+        doc.text("Reconstrucción 3D Mama", imgX + (imgWidth / 2) - 18, imgY + (imgHeight / 2));
       }
 
       // Panel Badge (e.g. PANEL A, PANEL B)
