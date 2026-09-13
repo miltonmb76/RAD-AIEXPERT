@@ -171,6 +171,31 @@ const KNEE_MENISCUS_TOPOGRAPHY_RULES_ES =
   "9) PROHIBIDO confundir LCM (medial) con LCL (lateral/peroné). LCL y menisco externo viven del lado del peroné.\n" +
   "10) Una imagen/tabla bella con menisco o cuerno equivocado es FALLO CRÍTICO.";
 
+
+const KIDNEY_URINARY_TOPOGRAPHY_HARD_RULES =
+  "KIDNEY & URINARY TRACT TOPOGRAPHY HARD RULES (never violate): " +
+  "(1) RIGHT kidney ≠ LEFT kidney — patient anatomic laterality governs. " +
+  "(2) AP/frontal: patient RIGHT on VIEWER'S LEFT; patient LEFT on VIEWER'S RIGHT. " +
+  "(3) Superior pole ≠ inferior pole; cortex ≠ medulla ≠ sinus ≠ pelvis ≠ calyces. " +
+  "(4) Proximal / mid / distal ureter and bladder are distinct — never merge findings. " +
+  "(5) Hydronephrosis grade 0–IV only as stated; never invent obstruction or stones. " +
+  "(6) Bosniak category must match report exactly (I/II/IIF/III/IV). " +
+  "(7) Name structureOrSite / anatomicalFocus / findingTable with kidney side + structure. " +
+  "(8) A beautiful image with wrong kidney side or wrong collecting-system level is a CRITICAL FAIL.";
+
+const KIDNEY_URINARY_TOPOGRAPHY_RULES_ES =
+  "REGLAS DURAS DE TOPOGRAFÍA RENAL Y VÍAS URINARIAS (nunca violar):\n" +
+  "1) Riñón DERECHO ≠ Riñón IZQUIERDO del paciente. La lateralidad anatómica del paciente manda.\n" +
+  "2) Vista AP/frontal: lado DERECHO del paciente a la IZQUIERDA del cuadro; IZQUIERDO a la DERECHA.\n" +
+  "3) Polo SUPERIOR ≠ polo INFERIOR; corteza ≠ médula ≠ seno ≠ pelvis ≠ cálices.\n" +
+  "4) Uréter proximal / medio / distal y vejiga son estructuras distintas — no fusionar hallazgos.\n" +
+  "5) Hidronefrosis/ectasia: grado 0–IV según informe; no inventar obstrucción ni litiasis ausentes.\n" +
+  "6) Quistes: si hay Bosniak, respetar categoría exacta (I / II / IIF / III / IV).\n" +
+  "7) En structureOrSite, anatomicalFocus, findingTable e imagePrompt nombra siempre: " +
+  "riñón derecho|izquierdo + estructura (corteza/seno/pelvis/uréter/vejiga).\n" +
+  "8) Una imagen/tabla bella con lado renal o nivel colector equivocado es FALLO CRÍTICO.";
+
+
 function classifyViewOrientation(view?: string): "anterior" | "posterior" | "other" {
   const v = String(view || "").toLowerCase();
   if (/posterior|dorsal|espalda|back view|from behind|viewed from behind/.test(v)) return "posterior";
@@ -1688,7 +1713,395 @@ RESPONDE EN JSON:
     }
   });
 
+
+  app.post("/api/generate-3d-kidney", async (req: express.Request, res: express.Response) => {
+    try {
+      const { reportText, kidneyType, laterality, requestedModel, customDirectives } = req.body;
+
+      if (!reportText || !reportText.trim()) {
+        return res.status(400).json({ success: false, error: "Se requiere el texto del informe renal / vías urinarias." });
+      }
+
+      const ai = getGeminiClient();
+      const model = getModelName(requestedModel || "gemini-3.7-flash");
+
+      const kidneyPrompt = `Eres un Radiólogo experto en ecografía renal y vías urinarias y riñones y vías urinarias, y director de arte médico 3D urogenital.
+Tu misión es analizar el informe de ecografía renal adjunto para estructurar la "SUITE RIÑÓN 3D & FICHA VÍAS URINARIAS" con máxima fidelidad anatomopatológica.
+
+========================================================================
+INFORMACIÓN DEL ESTUDIO RENAL:
+========================================================================
+- Tipo de Estudio Sugerido / Seleccionado: "${kidneyType || "Detectar automáticamente del informe"}"
+- Lateralidad Solicitada: "${laterality || "Detectar del informe"}"
+- DIRECTIVA CLÍNICA OBLIGATORIA (Scorecard renal-vías / radar biomecánico — MANDATORY, no omitir): "${customDirectives || "Ninguna"}"
+IMPORTANTE: Si hay directiva clínica, DEBE gobernar la anatomía 3D, riñóns/ligamentos afectados, grosor/extrusión/gap, derrame, dinámica, lateralidad y la tabla del renal-vías. No inventes roturas ni grados ausentes en la directiva/informe.
+- INFORME ECOGRÁFICO DE riñón:
+"""
+${reportText}
+"""
+
+========================================================================
+REGLA DE SCORECARD / DIRECTIVA OBLIGATORIA:
+========================================================================
+Si "DIRECTIVA CLÍNICA OBLIGATORIA" no es "Ninguna", trátela como contrato clínico vinculante:
+- Los paneles 3D y la tabla del renal-vías DEBEN reflejar esos hallazgos (riñóns/LCM/LCL/ligamento patelar, grosor/extrusión/gap, derrame, quiste de Baker, cartílago).
+- Prohibido inventar desgarros renales, esguinces, rotura de LCA/LCP o quistes no respaldados por la directiva o el informe.
+
+========================================================================
+TOPOGRAFÍA RENAL Y VÍAS (OBLIGATORIA — lateralidad + anterior/posterior):
+========================================================================
+${KIDNEY_URINARY_TOPOGRAPHY_RULES_ES}
+
+CRITICO: extrae del informe, para CADA lesión renal, las tres coordenadas y NO las intercambies:
+  (a) lado de la riñón del paciente (derecha/izquierda),
+  (b) riñón MEDIAL/interno (tibial) vs LATERAL/externo (peroné),
+  (c) cuerno ANTERIOR vs CUERPO vs cuerno POSTERIOR.
+Si el informe dice "riñón externo cuerno posterior", structureOrSite / anatomicalFocus / findingTable / imagePrompt
+deben decir explícitamente "lateral/fibular + posterior horn" (nunca medial ni anterior).
+
+========================================================================
+TIPOS DE ESTUDIO (clasifica en uno):
+========================================================================
+1. "renal_b_mode": Ecografía B-mode renal (anatomía, quistes, litiasis, ectasia).
+2. "renal_doppler": Ecografía renal con Doppler / neovascularización tendinosa.
+3. "vias_urinarias": Enfoque vías urinarias + vejiga (+ uréteres / residuo si aplica).
+4. "general_kidney": Detectar del informe / estudio mixto renal-vías.
+
+========================================================================
+DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
+========================================================================
+- Panel A (panelRole "overview"): visión anatómica de ambas riñóns o renal afectado (fémur distal, platillos tibiales, rótula, riñóns, LCM/LCL y mecanismo extensor).
+- Panel B (panelRole "collecting_obstruction"): cutaway macro de la patología renal/ligamentosa dominante SEGÚN EL INFORME (respetar medial=interno/tibial vs lateral=externo/peroné, y cuerno anterior vs cuerpo vs cuerno posterior; NUNCA asumir riñón medial por defecto si el informe dice externo/lateral).
+- Panel C opcional (panelRole "bladder_ureter" | "cyst_stone"): surco bicipital/ligamento patelar + recesos articulares / hidrartrosis, O quiste de Baker / cartílago femorotibial según el hallazgo dominante.
+- LATERALIDAD OBLIGATORIA POR PANEL (convención radiografía AP / paciente de frente):
+  - Cada panel DEBE declarar "laterality" exacta (Derecha|Izquierda|Bilateral) = lado ANATÓMICO DEL PACIENTE.
+  - Vista AP/frontal por defecto: lado DERECHO del paciente a la IZQUIERDA del cuadro; lado IZQUIERDO del paciente a la DERECHA del cuadro.
+  - El imagePrompt DEBE empezar con el lado del paciente y anclas de pantalla.
+  - NUNCA intercambiar lados entre paneles ni espejar por estética.
+- PROMPT EN INGLÉS para cada panel:
+  "Ultra-realistic 3D medical kidney anatomy render of [PATIENT SIDE + MEDIAL(tibial)/LATERAL(fibular) compartment + meniscus ANTERIOR horn/BODY/POSTERIOR horn or ligament], accurate femoral condyles/tibial plateau/patella/fibular head landmarks, exact named meniscus topography (never swap medial↔lateral or anterior↔posterior), exact collateral ligament morphology, optional joint effusion or Baker cyst when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, strictly NO text, NO numbers, NO arrows, NO letters inside the image. Do NOT mirror anatomy. Obey KIDNEY & URINARY TRACT TOPOGRAPHY HARD RULES."
+
+========================================================================
+TABLA Y FICHA CLÍNICA:
+========================================================================
+- findingTable filas con: location, structure, sizeOrThickness, echoPattern, hydronephrosis, cystOrStone, severity, clinicalImpact.
+- Incluye kidneySummary, morphologyNotes, urinaryTractStatus (textos clínicos ricos en español) y keyPoints (array 3-6 bullets).
+- tableHeaders col1..col8 FIJOS: LOCALIZACIÓN | ESTRUCTURA | TAMAÑO / GROSOR | PATRÓN ECO | HIDRONEFROSIS | QUISTE / LITIASIS | SEVERIDAD | IMPACTO
+- Evalúa estructuras relevantes: riñón medial(interno/tibial)/lateral(externo/peroné) con cuerno anterior/cuerpo/posterior explícitos, LCM, LCL (peroné), ligamento/tendón patelar, derrame, quiste de Baker, cartílago femorotibial. En cada fila renal de findingTable.structure escribe p.ej. "Riñón lateral (peroné), cuerno posterior". No inventes rotura de LCA salvo evidencia explícita en el informe/scorecard.
+- No inventes lesiones ausentes. Distingue claramente parcial vs completo / extrusión / degenerativo.
+
+RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
+{
+  "studyTypeCategory": "renal_b_mode" | "renal_doppler" | "vias_urinarias" | "general_kidney",
+  "territoryLabel": "ECOGRAFÍA RENAL Y VÍAS URINARIAS" | "ECOGRAFÍA RENAL + DOPPLER" | "ECOGRAFÍA RENAL Y VÍAS URINARIAS",
+  "laterality": "Bilateral" | "Derecha" | "Izquierda",
+  "figureTitle": "FIGURA 1. ATLAS 3D RENAL Y CORRELACIÓN VÍAS URINARIAS",
+  "tableTitle": "TABLA ECOGRÁFICA RENAL Y VÍAS URINARIAS:",
+  "tableHeaders": {
+    "col1": "LOCALIZACIÓN",
+    "col2": "ESTRUCTURA",
+    "col3": "TAMAÑO / GROSOR",
+    "col4": "PATRÓN ECO",
+    "col5": "HIDRONEFROSIS",
+    "col6": "QUISTE / LITIASIS",
+    "col7": "SEVERIDAD",
+    "col8": "IMPACTO"
+  },
+  "panels": [
+    {
+      "panelLetter": "A",
+      "panelTitle": "Panel A: Anatomía renal afectado — vista de conjunto",
+      "structureOrSite": "Riñón derecho — visión general",
+      "anatomicalFocus": "Cóndilos femorales, rótula, platillos tibiales, riñóns y colaterales...",
+      "laterality": "Derecha",
+      "panelRole": "overview",
+      "imagePrompt": "Ultra-realistic 3D medical kidney anatomy render..."
+    },
+    {
+      "panelLetter": "B",
+      "panelTitle": "Panel B: Cutaway del riñón medial — patología dominante",
+      "structureOrSite": "Pelvis / seno renal",
+      "anatomicalFocus": "Detalle del riñón medial y surco coronario con patrón ecográfico correlacionado...",
+      "laterality": "Derecha",
+      "panelRole": "collecting_obstruction",
+      "imagePrompt": "Ultra-realistic 3D medical kidney ligaments-menisci cutaway render..."
+    }
+  ],
+  "findingTable": [
+    {
+      "location": "Riñón derecho, cara anterolateral",
+      "structure": "Pelvis / seno renal",
+      "sizeOrThickness": "5,2 mm (sin gap)",
+      "echoPattern": "Tendinosis hipoecoica sin solución de continuidad",
+      "hydronephrosis": "Sin derrame articular significativo",
+      "cystOrStone": "Estrés valgo leve en arco medio",
+      "severity": "Leve-moderada",
+      "clinicalImpact": "Correlacionar con clínica; rehabilitación dirigida"
+    }
+  ],
+  "kidneySummary": "...",
+  "morphologyNotes": "...",
+  "urinaryTractStatus": "...",
+  "keyPoints": ["...", "..."],
+  "synthesisTitle": "SÍNTESIS MORFOLÓGICA Y FUNCIONAL RENAL:",
+  "morphologicalSynthesis": "El estudio ecográfico renal evidencia..."
+}`;
+
+      const planResponse = await ai.models.generateContent({
+        model: model,
+        contents: [{ text: kidneyPrompt }],
+        config: { responseMimeType: "application/json" }
+      });
+
+      let planJson: any = {};
+      try {
+        planJson = JSON.parse(planResponse.text || "{}");
+      } catch (parseErr) {
+        console.error("Error parseando plan JSON Shoulder 3D:", parseErr);
+        planJson = {
+          studyTypeCategory: kidneyType || "renal_b_mode",
+          territoryLabel: "ECOGRAFÍA RENAL Y VÍAS URINARIAS",
+          laterality: laterality || "Derecha",
+          figureTitle: "FIGURA 1. ATLAS 3D RENAL Y CORRELACIÓN VÍAS URINARIAS",
+          tableTitle: "TABLA ECOGRÁFICA RENAL Y VÍAS URINARIAS:",
+          tableHeaders: {
+            col1: "LOCALIZACIÓN",
+            col2: "ESTRUCTURA",
+            col3: "TAMAÑO / GROSOR",
+            col4: "PATRÓN ECO",
+            col5: "HIDRONEFROSIS",
+            col6: "QUISTE / LITIASIS",
+            col7: "SEVERIDAD",
+            col8: "IMPACTO"
+          },
+          panels: [
+            {
+              panelLetter: "A",
+              panelTitle: "Panel A: Anatomía renal — visión de conjunto",
+              structureOrSite: "Riñones — overview",
+              anatomicalFocus: "Reconstrucción anatómica renal con riñones y vías urinarias.",
+              laterality: laterality || "Derecha",
+              panelRole: "overview",
+              imagePrompt: "Ultra-realistic 3D medical kidney anatomy render showing cóndilo femoral, patella, quadriceps and kidney urinary-tract footprint, studio lighting, octane render, no text."
+            },
+            {
+              panelLetter: "B",
+              panelTitle: "Panel B: Cutaway sistema colector — según informe (medial/lateral + A/P)",
+              structureOrSite: "Sistema colector (lado según informe)",
+              anatomicalFocus: "Corte macro del riñón indicado en el informe (interno/externo y cuerno anterior/posterior), sin intercambiar lados.",
+              laterality: laterality || "Derecha",
+              panelRole: "collecting_obstruction",
+              imagePrompt: "Ultra-realistic 3D medical kidney meniscus cutaway with explicit medial or lateral (fibular) compartment and anterior or posterior horn per report, fibular head landmark visible for lateral side, cinema 4D octane render, no text."
+            }
+          ],
+          findingTable: [],
+          synthesisTitle: "SÍNTESIS MORFOLÓGICA Y FUNCIONAL RENAL:",
+          morphologicalSynthesis: "La correlación anatomopatológica del riñones y vías urinarias se basa en los hallazgos descritos en el informe."
+        };
+      }
+
+      const kidneyPanelsWithImages = await Promise.all(
+        (planJson.panels || []).map(async (panel: any, idx: number) => {
+          let promptToUse = panel.imagePrompt || `Ultra-realistic 3D medical kidney / kidney urinary-tract render of ${panel.structureOrSite || panel.panelTitle}, octane render, no text.`;
+          if (customDirectives && customDirectives.trim()) {
+            promptToUse = `${promptToUse} [MANDATORY CLINICAL DIRECTIVE: ${customDirectives.trim()}].`;
+          }
+          {
+            const screenMap = buildScreenLateralityConstraint(panel.laterality || planJson.laterality || laterality, "AP / coronal");
+            if (panel.laterality && panel.laterality !== "auto") {
+              promptToUse = `[MANDATORY PATIENT LATERALITY: ${panel.laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${KIDNEY_URINARY_TOPOGRAPHY_HARD_RULES} ${screenMap} ${promptToUse}`;
+            } else {
+              promptToUse = `${LATERALITY_HARD_RULES} ${KIDNEY_URINARY_TOPOGRAPHY_HARD_RULES} ${screenMap} ${promptToUse}`;
+            }
+          }
+
+          const defaultRole = idx === 0 ? "overview" : idx === 1 ? "collecting_obstruction" : "bladder_ureter";
+          try {
+            const imageUrl = await generateMedicalImage(ai, promptToUse);
+            return {
+              id: `kidney-panel-${idx}-${Date.now()}`,
+              panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
+              panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
+              structureOrSite: panel.structureOrSite || panel.panelTitle || "",
+              anatomicalFocus: panel.anatomicalFocus || "Evaluación anatómica renal y vías urinarias",
+              laterality: panel.laterality || planJson.laterality || laterality || "",
+              imageUrl: imageUrl,
+              promptUsed: promptToUse,
+              isCustomFlipped: false,
+              panelRole: panel.panelRole || defaultRole
+            };
+          } catch (imgErr) {
+            console.error(`Error generando imagen para panel kidney ${panel.panelLetter}:`, imgErr);
+            return {
+              id: `kidney-panel-${idx}-${Date.now()}`,
+              panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
+              panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
+              structureOrSite: panel.structureOrSite || panel.panelTitle || "",
+              anatomicalFocus: panel.anatomicalFocus || "Evaluación anatómica renal y vías urinarias",
+              laterality: panel.laterality || planJson.laterality || laterality || "",
+              imageUrl: "",
+              promptUsed: promptToUse,
+              isCustomFlipped: false,
+              panelRole: panel.panelRole || defaultRole
+            };
+          }
+        })
+      );
+
+      const forcedHeaders = {
+        col1: "LOCALIZACIÓN",
+        col2: "ESTRUCTURA",
+        col3: "TAMAÑO / GROSOR",
+        col4: "PATRÓN ECO",
+        col5: "HIDRONEFROSIS",
+        col6: "QUISTE / LITIASIS",
+        col7: "SEVERIDAD",
+        col8: "IMPACTO"
+      };
+
+      const finalKidneyData = {
+        studyTypeCategory: planJson.studyTypeCategory || kidneyType || "renal_b_mode",
+        territoryLabel: planJson.territoryLabel || "ECOGRAFÍA RENAL Y VÍAS URINARIAS",
+        laterality: planJson.laterality || laterality || "Derecha",
+        figureTitle: planJson.figureTitle || "FIGURA 1. ATLAS 3D RENAL Y CORRELACIÓN VÍAS URINARIAS",
+        tableTitle: planJson.tableTitle || "TABLA ECOGRÁFICA RENAL Y VÍAS URINARIAS:",
+        tableHeaders: forcedHeaders,
+        panels: kidneyPanelsWithImages,
+        findingTable: (planJson.findingTable || planJson.lesionTable || planJson.noduleTable || []).map((row: any) => ({
+          location: row.location || "",
+          structure: row.structure || row.tendon || row.composition || "",
+          sizeOrThickness: row.sizeOrThickness || row.size || row.gap || "",
+          echoPattern: row.echoPattern || row.echogenicity || row.pattern || "",
+          hydronephrosis: row.hydronephrosis || row.ectasia || row.bursa || "",
+          cystOrStone: row.cystOrStone || row.dynamic || row.stressFinding || "",
+          severity: row.severity || row.grade || "",
+          clinicalImpact: row.clinicalImpact || ""
+        })),
+        kidneySummary: planJson.kidneySummary || "",
+        morphologyNotes: planJson.morphologyNotes || "",
+        urinaryTractStatus: planJson.urinaryTractStatus || "",
+        keyPoints: Array.isArray(planJson.keyPoints) ? planJson.keyPoints : [],
+        synthesisTitle: planJson.synthesisTitle || "SÍNTESIS MORFOLÓGICA Y FUNCIONAL RENAL:",
+        morphologicalSynthesis: planJson.morphologicalSynthesis || ""
+      };
+
+      res.json({
+        success: true,
+        data: finalKidneyData
+      });
+
+    } catch (error: any) {
+      console.error("Error en /api/generate-3d-kidney:", error);
+      res.status(500).json({ success: false, error: handleGeminiError(error) });
+    }
+  });
+
+  app.post("/api/regenerate-3d-kidney-panel", async (req: express.Request, res: express.Response) => {
+    try {
+      const { reportText, kidneyType, panel, laterality, userDirective, requestedModel, customDirectives } = req.body;
+
+      if (!panel) {
+        return res.status(400).json({ success: false, error: "Se requiere el panel kidney a regenerar." });
+      }
+
+      const ai = getGeminiClient();
+      const model = getModelName(requestedModel || "gemini-3.7-flash");
+
+      const refinePrompt = `Eres un Radiólogo MSK experto en renal/vías urinarias y Director de Arte Médico 3D.
+Diseña un prompt en inglés superdetallado para re-generar una única imagen 3D fotorrealista correspondiente al PANEL ${panel.panelLetter}.
+
+DATOS DEL CASO:
+- Territorio: "${kidneyType || "Ecografía renal / vías urinarias"}"
+- Tendón / sitio: "${panel.structureOrSite || panel.panelTitle || ""}"
+- Foco actual: "${panel.anatomicalFocus || ""}"
+- Rol del panel: "${panel.panelRole || ""}"
+- Lateralidad requerida: "${laterality || panel.laterality || ""}"
+- Instrucción / Corrección del médico: "${userDirective || "Mejorar precisión anatomopatológica renal"}"
+- DIRECTIVA CLÍNICA OBLIGATORIA (Scorecard / radar / médico): "${customDirectives || "Ninguna"}"
+- Contexto del informe: """${(reportText || "").slice(0, 800)}"""
+
+TOPOGRAFÍA RENAL Y VÍAS OBLIGATORIA:
+${KIDNEY_URINARY_TOPOGRAPHY_RULES_ES}
+Si structureOrSite / foco / instrucción / informe mencionan riñón, conserva EXACTAS las tres coordenadas
+(lado renal del paciente, medial=interno/tibial vs lateral=externo/peroné, cuerno anterior/cuerpo/posterior).
+NUNCA las "corrijas" ni asumas riñón medial/anterior por defecto.
+
+REGLAS DE ESTILO:
+- Ultra-realistic 3D medical kidney / meniscus-ligament macro render, cinema 4D octane, accurate femoral condyle/tibial plateau/patella/fibular head landmarks.
+- Exact named meniscus topography in the English imagePrompt (medial|lateral + anterior|body|posterior + patient knee side).
+- Exact morphology (intact / degeneration / partial tear / extrusion / full-thickness gap); optional effusion/Baker cyst only if indicated; soft surgical studio lighting; pure clean background.
+- STRICTLY NO text, NO numbers, NO letters, NO arrows inside the image.
+- Respect patient laterality (AP: patient RIGHT on viewer's LEFT).
+
+RESPONDE EN JSON:
+{
+  "panelTitle": "Título actualizado o confirmado para el panel",
+  "structureOrSite": "Nombre exacto del riñón/ligamento (p.ej. Riñón lateral/peroné, cuerno posterior)",
+  "anatomicalFocus": "Foco anatomopatológico de 1 a 2 líneas con medial/lateral y A/P",
+  "imagePrompt": "Detailed English image generation prompt with explicit medial/lateral and anterior/posterior site..."
+}`;
+
+      const refineResponse = await ai.models.generateContent({
+        model: model,
+        contents: [{ text: refinePrompt }],
+        config: { responseMimeType: "application/json" }
+      });
+
+      let refineJson: any = {};
+      try {
+        refineJson = JSON.parse(refineResponse.text || "{}");
+      } catch (e) {
+        refineJson = {
+          panelTitle: panel.panelTitle,
+          structureOrSite: panel.structureOrSite || panel.panelTitle,
+          anatomicalFocus: panel.anatomicalFocus,
+          imagePrompt: `Ultra-realistic 3D medical kidney / kidney urinary-tract render of ${panel.structureOrSite || panel.panelTitle}, octane render, studio lighting, no text.`
+        };
+      }
+
+      let finalPrompt = refineJson.imagePrompt || panel.promptUsed || `3D macro shoulder kidney urinary-tract render of ${panel.panelTitle}, no text.`;
+      if (customDirectives && String(customDirectives).trim()) {
+        finalPrompt = `${finalPrompt} [MANDATORY CLINICAL DIRECTIVE: ${String(customDirectives).trim()}].`;
+      }
+      if (userDirective && userDirective.trim()) {
+        finalPrompt = `${finalPrompt} [MANDATORY SURGICAL CORRECTION: ${userDirective.trim()}].`;
+      }
+      if (laterality && laterality !== "auto") {
+        const screenMap = buildScreenLateralityConstraint(laterality, "AP / coronal");
+        finalPrompt = `[MANDATORY PATIENT LATERALITY: ${laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${KIDNEY_URINARY_TOPOGRAPHY_HARD_RULES} ${screenMap} ${finalPrompt}`;
+      } else {
+        const screenMap = buildScreenLateralityConstraint(laterality, "AP / coronal");
+        finalPrompt = `${LATERALITY_HARD_RULES} ${KIDNEY_URINARY_TOPOGRAPHY_HARD_RULES} ${screenMap} ${finalPrompt}`;
+      }
+
+      const imageUrl = await generateMedicalImage(ai, finalPrompt);
+
+      const updatedPanel = {
+        ...panel,
+        panelTitle: refineJson.panelTitle || panel.panelTitle,
+        structureOrSite: refineJson.structureOrSite || panel.structureOrSite,
+        anatomicalFocus: refineJson.anatomicalFocus || panel.anatomicalFocus,
+        laterality: laterality || panel.laterality,
+        imageUrl: imageUrl,
+        promptUsed: finalPrompt,
+        isCustomFlipped: false
+      };
+
+      res.json({
+        success: true,
+        panel: updatedPanel
+      });
+
+    } catch (error: any) {
+      console.error("Error en /api/regenerate-3d-kidney-panel:", error);
+      res.status(500).json({ success: false, error: handleGeminiError(error) });
+    }
+  });
+
+
   // 5. Focal Lesion Cutaway 3D (on-demand: auto-detect or manual focus, 1–2 panels)
+  
+  
   app.post("/api/generate-3d-thyroid", async (req: express.Request, res: express.Response) => {
     try {
       const { reportText, thyroidType, laterality, requestedModel, customDirectives } = req.body;
