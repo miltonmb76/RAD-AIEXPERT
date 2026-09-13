@@ -8947,7 +8947,13 @@ IMPORTANTE: aunque el checklist sea de ese enfoque, atlasFindings DEBE incluir t
 PANELES ATLAS DISPONIBLES:
 ${panelsHint}
 
-PROTOCOLOS POSIBLES (id interno si AUTO): cholecystitis, appendicitis, thyroid_tirads, bosniak, rotator_cuff, hepatic, renal, scrotal, diverticulitis, achilles, muscle_injury, generic.
+PROTOCOLOS POSIBLES (id interno si AUTO): cholecystitis, appendicitis, thyroid_tirads, breast_birads, bosniak, rotator_cuff, hepatic, renal, scrotal, diverticulitis, achilles, muscle_injury, generic.
+
+GUÍA RÁPIDA DE PROTOCOLOS (cuando AUTO o id forzado):
+- thyroid_tirads: nódulos tiroideos / ACR TI-RADS (composición, ecogenicidad, forma, márgenes, focos ecogénicos).
+- breast_birads: ecografía mamaria / ACR BI-RADS (lado, reloj/distancia al pezón, composición, forma, márgenes, orientación, ecogenicidad, vascularidad, axila). Si el informe menciona mama, BI-RADS, cuadrante, pezón o axila mamaria, PREFIERE breast_birads sobre generic.
+- rotator_cuff: manguito rotador / hombro (supraespinoso, infraespinoso, subescapular, TCLB, bursa, pinzamiento).
+- Si el texto es claramente mamario y no eliges breast_birads, igual incluye criterios BI-RADS accionables (localización, tamaño, morfología, categoría).
 
 REGLAS DE FIDELIDAD (OBLIGATORIAS):
 1. Cada criterio debe anclarse SOLO al texto del informe (evidence = cita/paráfrasis fiel en español con medidas si constan).
