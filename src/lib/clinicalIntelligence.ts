@@ -455,7 +455,8 @@ export function buildThyroidDirectivesFromScorecard(
 
 /**
  * Build mandatory Breast 3D directives from a BI-RADS / breast scorecard.
- * Mirrors thyroid: scorecard governs lesions, category and laterality/clock site.
+ * Mirrors thyroid/shoulder: scorecard governs lesions, category and laterality/clock site.
+ * Also accepts generic/auto scorecards when criteria/summary clearly describe breast findings.
  */
 export function buildBreastDirectivesFromScorecard(
   scorecard: ClinicalScorecardData | null | undefined
@@ -465,19 +466,23 @@ export function buildBreastDirectivesFromScorecard(
   const summary = (scorecard.clinicalSummary || "").trim();
   const reco = (scorecard.recommendation || "").trim();
   const protocol = (scorecard.protocolName || scorecard.protocolId || "").toLowerCase();
+  const region = (scorecard.studyRegion || "").toLowerCase();
+  const criteriaText = (Array.isArray(scorecard.criteria) ? scorecard.criteria : [])
+    .map((c) => `${c.criterion || ""} ${c.atlasStructure || ""} ${c.evidence || ""} ${c.value || ""}`)
+    .join(" ")
+    .toLowerCase();
+  const haystack = `${protocol} ${region} ${summary} ${criteriaText}`;
   const isBreast =
-    protocol.includes("birads") ||
-    protocol.includes("bi-rads") ||
-    protocol.includes("mama") ||
-    protocol.includes("breast") ||
-    protocol.includes("mamaria");
+    /birads|bi-?rads|mama|mamaria|breast|axil|cuadrante|pez[oó]n|reloj|qu[ií]stic|n[oó]dulo mam/.test(
+      haystack
+    );
 
   let body = base;
   if (!body) {
     const allCriteria = Array.isArray(scorecard.criteria) ? scorecard.criteria : [];
     const evidenced = allCriteria
       .filter((c) => (c.evidence || c.value || "").trim())
-      .slice(0, 10)
+      .slice(0, 12)
       .map((c, i) => {
         const val = c.value ? ` (${c.value})` : "";
         return `${i + 1}. «${c.atlasStructure || c.criterion}»${val}: ${c.evidence || c.status}`;
@@ -501,7 +506,7 @@ export function buildBreastDirectivesFromScorecard(
     "DIRECTIVA OBLIGATORIA DEL SCORECARD MAMA (debe gobernar paneles 3D, ficha y tabla de lesiones):",
     body,
     isBreast
-      ? "Prioriza BI-RADS, lado, posición en reloj, distancia al pezón, morfología y estado axilar. Reloj: 3 = derecha del pezón en la imagen (manos de reloj idénticas en ambas mamas)."
+      ? "Prioriza BI-RADS, lado, posición en reloj, distancia al pezón, composición, márgenes, orientación, vascularidad y estado axilar. Reloj: 3 = derecha del pezón en la imagen (manos de reloj idénticas en ambas mamas). NUNCA intercambies composición y tamaño."
       : "Si el scorecard no es BI-RADS, extrae solo hallazgos mamarios/axilares aplicables; no inventes lesiones.",
     "No inventes nódulos, calcificaciones ni categorías BI-RADS ausentes en el scorecard/informe.",
   ].join("\n");
@@ -669,6 +674,7 @@ export const SCORECARD_PROTOCOL_OPTIONS: Array<{ id: string; label: string }> = 
   { id: "cholecystitis", label: "Colecistitis aguda" },
   { id: "appendicitis", label: "Apendicitis" },
   { id: "thyroid_tirads", label: "TI-RADS / Tiroides" },
+  { id: "breast_birads", label: "BI-RADS / Mama" },
   { id: "bosniak", label: "Bosniak / Quiste renal" },
   { id: "rotator_cuff", label: "Manguito rotador" },
   { id: "achilles", label: "Tendón de Aquiles" },

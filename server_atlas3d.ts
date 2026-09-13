@@ -2041,13 +2041,13 @@ RESPONDE EN JSON:
 Tu misión es analizar el informe de ecografía de mama/cuello adjunto para estructurar la "SUITE MAMA 3D & FICHA BI-RADS" con máxima fidelidad anatomopatológica y tiroidea.
 
 ========================================================================
-INFORMACIÓN DEL ESTUDIO VASCULAR:
+INFORMACIÓN DEL ESTUDIO MAMARIO:
 ========================================================================
 - Tipo de Estudio Sugerido / Seleccionado: "${breastType || "Detectar automáticamente del informe"}"
 - Lateralidad Solicitada: "${laterality || "Detectar del informe"}"
-- DIRECTIVA CLÍNICA OBLIGATORIA (Scorecard vascular / médico — MANDATORY, no omitir): "${customDirectives || "Ninguna"}"
-IMPORTANTE: Si hay directiva clínica, DEBE gobernar la anatomía 3D, la morfología de placa/trombo, el grado de estenosis, la lateralidad y la tabla tiroidea. No inventes lesiones ni grados ausentes en la directiva/informe.
-- INFORME DOPPLER VASCULAR:
+- DIRECTIVA CLÍNICA OBLIGATORIA (Scorecard BI-RADS / mama — MANDATORY, no omitir): "${customDirectives || "Ninguna"}"
+IMPORTANTE: Si hay directiva clínica/scorecard, DEBE gobernar la anatomía 3D mamaria, la morfología lesional, la categoría BI-RADS, la lateralidad/reloj, la axila y la tabla de lesiones. No inventes lesiones ni categorías ausentes en la directiva/informe.
+- INFORME DE ECOGRAFÍA MAMARIA:
 """
 ${reportText}
 """
@@ -2056,8 +2056,9 @@ ${reportText}
 REGLA DE SCORECARD / DIRECTIVA OBLIGATORIA:
 ========================================================================
 Si "DIRECTIVA CLÍNICA OBLIGATORIA" no es "Ninguna", trátela como contrato clínico vinculante:
-- Los paneles 3D y la tabla tiroidea DEBEN reflejar esos hallazgos (nódulos, categoría BI-RADS, focos ecogénicos, flujo, índices, lado).
-- Prohibido inventar lesiones o grados no respaldados por la directiva o el informe.
+- Los paneles 3D y la tabla BI-RADS DEBEN reflejar esos hallazgos (localización reloj, composición, tamaño, márgenes, orientación, vascularidad, axila, categoría BI-RADS).
+- Prohibido inventar lesiones o categorías no respaldadas por la directiva o el informe.
+- NUNCA intercambiar composición y tamaño en la tabla.
 
 ========================================================================
 DIRECTIVAS CLÍNICAS Y TIPOS DE ESTUDIO:

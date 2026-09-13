@@ -43,7 +43,7 @@ interface Breast3DModuleProps {
   includeInReport: boolean;
   setIncludeInReport: (include: boolean) => void;
   onClose?: () => void;
-  /** Vascular scorecard feeds mandatory generation directives (same pattern as Atlas/Focal). */
+  /** BI-RADS / breast scorecard feeds mandatory generation directives (same pattern as Atlas/Thyroid/Shoulder). */
   scorecardData?: ClinicalScorecardData | null;
   externalDirectives?: string;
 }
@@ -84,7 +84,7 @@ export const Breast3DModule: React.FC<Breast3DModuleProps> = ({
     }
   }, [externalDirectives]);
 
-  // If Scorecard data arrives/changes, keep vascular mandatory directives in the box
+  // If Scorecard data arrives/changes, keep BI-RADS mandatory directives in the box
   React.useEffect(() => {
     const fromScorecard = buildBreastDirectivesFromScorecard(scorecardData || null);
     if (!fromScorecard) return;
@@ -403,7 +403,7 @@ export const Breast3DModule: React.FC<Breast3DModuleProps> = ({
               {scorecardData?.criteria?.length ? (
                 <span className="inline-flex items-center gap-1 ml-1 px-1.5 py-0.5 rounded bg-pink-50 text-pink-700 border border-pink-200 text-[10px] font-black uppercase tracking-wide">
                   <ShieldCheck className="w-3 h-3" />
-                  Scorecard vascular obligatorio
+                  Scorecard BI-RADS obligatorio
                 </span>
               ) : (
                 <span className="text-slate-400 font-medium normal-case">(adicionales opcionales)</span>
@@ -412,13 +412,13 @@ export const Breast3DModule: React.FC<Breast3DModuleProps> = ({
             <textarea
               value={customDirectives}
               onChange={(e) => setCustomDirectives(e.target.value)}
-              placeholder="Ej: Destacar placa ulcerada en bulbo derecho..."
+              placeholder="Ej: Destacar nódulo sólido irregular en 3h de mama derecha..."
               rows={scorecardData?.criteria?.length ? 5 : 2}
               className="w-full text-xs bg-white border border-slate-300 rounded-md px-2.5 py-1.5 text-slate-800 placeholder-slate-400 focus:ring-1 focus:ring-pink-500 focus:outline-none font-mono leading-relaxed"
             />
             {scorecardData?.criteria?.length ? (
               <p className="mt-1 text-[10px] text-pink-700/90">
-                Los criterios activos del Scorecard se inyectan siempre como directiva obligatoria (igual que Atlas / Focal 3D).
+                Los criterios activos del Scorecard BI-RADS se inyectan siempre como directiva obligatoria (igual que Atlas / Tiroides / Hombro).
               </p>
             ) : null}
           </div>
