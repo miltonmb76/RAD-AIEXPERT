@@ -19,7 +19,7 @@ export async function renderAnkle3DPageToPdf(
   const marginX = 14;
   const contentWidth = pageWidth - (marginX * 2);
   const factor = pageSize === "a4" ? 1.0 : 0.98;
-  const accent: [number, number, number] = [101, 163, 13]; // sky-600
+  const accent: [number, number, number] = [101, 163, 13]; // lime-600
 
   doc.addPage();
 
