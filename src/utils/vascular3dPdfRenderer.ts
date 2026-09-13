@@ -74,11 +74,11 @@ export async function renderVascular3DPageToPdf(
   const panelCount = Math.min(Math.max(panels.length, 1), 3);
 
   if (panelCount > 0) {
-    const gap = panelCount === 3 ? 3.5 : 5;
+    const gap = panelCount === 3 ? 2.2 : 3.0;
     const totalGaps = (panelCount - 1) * gap;
     const cardWidth = (contentWidth - totalGaps) / panelCount;
-    const imgWidth = cardWidth - 4;
-    const imgHeight = imgWidth * (3 / 4); // Strict 4:3 ratio
+    const imgWidth = cardWidth - 2;
+    const imgHeight = imgWidth * (3 / 4); // keep aspect ratio, do not stretch // Strict 4:3 ratio
 
     // Caption box hugs text tightly (no large empty footer) so the hemodynamic table keeps readable type
     const measureCaptionH = (p: Vascular3DPanel): number => {
@@ -114,8 +114,8 @@ export async function renderVascular3DPageToPdf(
       doc.roundedRect(cardX, yCoord, cardWidth, cardH, 2, 2, "FD");
 
       // Image Render
-      const imgX = cardX + 2;
-      const imgY = yCoord + 2;
+      const imgX = cardX + 1;
+      const imgY = yCoord + 1;
 
       if (p.imageUrl && p.imageUrl.startsWith("data:image")) {
         try {

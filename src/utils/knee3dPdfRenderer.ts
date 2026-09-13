@@ -60,11 +60,11 @@ export async function renderKnee3DPageToPdf(
   const panelCount = Math.min(Math.max(panels.length, 1), 3);
 
   if (panelCount > 0) {
-    const gap = panelCount === 3 ? 3.5 : 5;
+    const gap = panelCount === 3 ? 2.2 : 3.0;
     const totalGaps = (panelCount - 1) * gap;
     const cardWidth = (contentWidth - totalGaps) / panelCount;
-    const imgWidth = cardWidth - 4;
-    const imgHeight = imgWidth * (3 / 4);
+    const imgWidth = cardWidth - 2;
+    const imgHeight = imgWidth * (3 / 4); // keep aspect ratio, do not stretch
 
     const measureCaptionH = (p: Knee3DPanel): number => {
       doc.setFont("helvetica", "bold");
@@ -97,8 +97,8 @@ export async function renderKnee3DPageToPdf(
       doc.setLineWidth(0.4);
       doc.roundedRect(cardX, yCoord, cardWidth, cardH, 2, 2, "FD");
 
-      const imgX = cardX + 2;
-      const imgY = yCoord + 2;
+      const imgX = cardX + 1;
+      const imgY = yCoord + 1;
 
       if (p.imageUrl && p.imageUrl.startsWith("data:image")) {
         try {
@@ -165,64 +165,42 @@ export async function renderKnee3DPageToPdf(
   const dossierTexts = dossierBlocks.filter((b) => b.text);
   if (dossierTexts.length) {
     let dossierY = yCoord;
-    const colGap = 3.5;
-    const cols = dossierTexts.length >= 3 ? 2 : 1;
-    const boxW = cols === 2 ? (contentWidth - colGap) / 2 : contentWidth;
-    let col = 0;
-    let rowY = dossierY;
-    let maxRowH = 0;
+    // Single column: each box hugs its text (no forced equal height / empty space)
+    const boxW = contentWidth;
+    const titleH = 4.2 * factor;
+    const lineH = 3.4 * factor;
+    const boxGap = 2.2 * factor;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9.0 * factor);
     doc.setTextColor(15, 23, 42);
     doc.text("FICHA CLÍNICA RODILLA / LIGAMENTOS-MENISCOS (CORRELACIÓN CON LA FIGURA 3D)", marginX, dossierY);
-    dossierY += 3.2 * factor;
-    rowY = dossierY;
-
-    // Equal-height boxes filling the rest of page 1
-    const titleH = 4 * factor;
-    const lineH = 3.35 * factor;
-    const footerSafe = pageHeight - 14 * factor;
-    const totalRows = Math.max(1, Math.ceil(dossierTexts.length / cols));
-    const remainingH = Math.max(18 * factor, footerSafe - rowY);
-    const gapBudget = Math.max(0, totalRows - 1) * (2.5 * factor);
-    const targetBoxH = Math.max(titleH + 10 * factor, (remainingH - gapBudget) / totalRows);
-    const maxLines = Math.max(4, Math.floor((targetBoxH - titleH - 5 * factor) / lineH));
+    dossierY += 3.4 * factor;
 
     for (let i = 0; i < dossierTexts.length; i++) {
       const b = dossierTexts[i];
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(7.8 * factor);
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8.0 * factor);
-      const lines = doc.splitTextToSize(b.text, boxW - 6);
-      const used = lines.slice(0, maxLines);
-      const textH = used.length * lineH;
-      const boxH = Math.max(targetBoxH, titleH + textH + 5 * factor);
-      const x = marginX + col * (boxW + colGap);
+      const lines = doc.splitTextToSize(b.text, boxW - 8);
+      // Show full text; height follows content only
+      const textH = Math.max(lineH, lines.length * lineH);
+      const boxH = titleH + textH + 4.5 * factor;
       doc.setFillColor(240, 249, 255);
       doc.setDrawColor(186, 230, 253);
       doc.setLineWidth(0.3);
-      doc.roundedRect(x, rowY, boxW, boxH, 1.2, 1.2, "FD");
+      doc.roundedRect(marginX, dossierY, boxW, boxH, 1.2, 1.2, "FD");
       doc.setFillColor(b.color[0], b.color[1], b.color[2]);
-      doc.rect(x, rowY, 2.0, boxH, "F");
+      doc.rect(marginX, dossierY, 2.2, boxH, "F");
       doc.setFont("helvetica", "bold");
       doc.setFontSize(7.8 * factor);
       doc.setTextColor(b.color[0], b.color[1], b.color[2]);
-      doc.text(b.title, x + 4, rowY + 3.6 * factor);
+      doc.text(b.title, marginX + 5, dossierY + 3.6 * factor);
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8.0 * factor);
       doc.setTextColor(51, 65, 85);
-      doc.text(used, x + 4, rowY + titleH + 2.4 * factor);
-      maxRowH = Math.max(maxRowH, boxH);
-      col += 1;
-      if (col >= cols) {
-        col = 0;
-        rowY += maxRowH + 2.5 * factor;
-        maxRowH = 0;
-      }
+      doc.text(lines, marginX + 5, dossierY + titleH + 2.2 * factor);
+      dossierY += boxH + boxGap;
     }
-    if (col !== 0) rowY += maxRowH + 2.5 * factor;
-    yCoord = rowY + 1.5 * factor;
+    yCoord = dossierY + 0.5 * factor;
   }
 
   // ========== PAGE 2: tabla ecográfica (letra mayor) + síntesis ==========
