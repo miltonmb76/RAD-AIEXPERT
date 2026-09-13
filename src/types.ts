@@ -405,6 +405,64 @@ export interface Breast3DData {
   morphologicalSynthesis?: string;
 }
 
+
+export type ShoulderStudyType =
+  | "hombro_b_mode"
+  | "hombro_doppler"
+  | "hombro_manguito"
+  | "general_shoulder";
+
+export interface Shoulder3DPanel {
+  id?: string;
+  panelLetter: string;
+  panelTitle: string;
+  anatomicalFocus: string;
+  laterality?: string;
+  tendonOrSite?: string;
+  panelRole?: "overview" | "cuff" | "biceps_bursae" | "ac_joint";
+  imageUrl?: string;
+  isCustomFlipped?: boolean;
+  promptUsed?: string;
+}
+
+export interface ShoulderFindingRow {
+  location: string;           // ej: "Hombro derecho, cara anterolateral"
+  structure: string;          // supraespinoso / infraespinoso / subescapular / TCLB / bursa / AC
+  thicknessOrGap: string;     // grosor tendinoso o gap de rotura (mm)
+  echoPattern: string;        // tendinosis / rotura parcial / completa / calcificación
+  bursalStatus: string;       // bursa subacromiodeltoidea
+  dynamicFinding: string;     // pinzamiento / subluxación TCLB / normal
+  severity: string;           // leve / moderada / severa o grado de rotura
+  clinicalImpact: string;
+}
+
+export interface Shoulder3DData {
+  studyTypeCategory?: ShoulderStudyType;
+  territoryLabel?: string;
+  laterality?: string;
+  figureTitle?: string;
+  tableTitle?: string;
+  tableHeaders?: {
+    col1: string;
+    col2: string;
+    col3: string;
+    col4: string;
+    col5: string;
+    col6: string;
+    col7: string;
+    col8: string;
+  };
+  panels: Shoulder3DPanel[];
+  findingTable: ShoulderFindingRow[];
+  /** Rich clinical blocks under / with the figure */
+  shoulderSummary?: string;
+  morphologyNotes?: string;
+  cuffStatus?: string;
+  keyPoints?: string[];
+  synthesisTitle?: string;
+  morphologicalSynthesis?: string;
+}
+
 export type UsImagesGridMode = "auto" | "1x1" | "1x2" | "2x1" | "2x2" | "3x2" | "4x2";
 
 /** One quantitative measurement extracted from the report for gauge display. */

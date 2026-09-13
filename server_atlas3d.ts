@@ -2448,6 +2448,373 @@ RESPONDE EN JSON:
     }
   });
 
+  // ========================================================================
+  // SHOULDER / ROTATOR CUFF 3D SUITE
+  // ========================================================================
+  app.post("/api/generate-3d-shoulder", async (req: express.Request, res: express.Response) => {
+    try {
+      const { reportText, shoulderType, laterality, requestedModel, customDirectives } = req.body;
+
+      if (!reportText || !reportText.trim()) {
+        return res.status(400).json({ success: false, error: "Se requiere el texto del informe de hombro." });
+      }
+
+      const ai = getGeminiClient();
+      const model = getModelName(requestedModel || "gemini-3.7-flash");
+
+      const shoulderPrompt = `Eres un Radiólogo musculoesquelético experto en ecografía de hombro y manguito rotador, y director de arte médico 3D osteomuscular.
+Tu misión es analizar el informe de ecografía de hombro adjunto para estructurar la "SUITE HOMBRO 3D & FICHA MANGUITO ROTADOR" con máxima fidelidad anatomopatológica.
+
+========================================================================
+INFORMACIÓN DEL ESTUDIO DE HOMBRO:
+========================================================================
+- Tipo de Estudio Sugerido / Seleccionado: "${shoulderType || "Detectar automáticamente del informe"}"
+- Lateralidad Solicitada: "${laterality || "Detectar del informe"}"
+- DIRECTIVA CLÍNICA OBLIGATORIA (Scorecard manguito / radar biomecánico — MANDATORY, no omitir): "${customDirectives || "Ninguna"}"
+IMPORTANTE: Si hay directiva clínica, DEBE gobernar la anatomía 3D, tendones afectados, grosor/gap, bursitis, pinzamiento, lateralidad y la tabla del manguito. No inventes roturas ni grados ausentes en la directiva/informe.
+- INFORME ECOGRÁFICO DE HOMBRO:
+"""
+${reportText}
+"""
+
+========================================================================
+REGLA DE SCORECARD / DIRECTIVA OBLIGATORIA:
+========================================================================
+Si "DIRECTIVA CLÍNICA OBLIGATORIA" no es "Ninguna", trátela como contrato clínico vinculante:
+- Los paneles 3D y la tabla del manguito DEBEN reflejar esos hallazgos (SS/IS/subescapular/TCLB, grosor o gap, parcial vs completa, bursitis, pinzamiento, AC).
+- Prohibido inventar roturas, bursitis, pinzamiento o lesiones AC no respaldadas por la directiva o el informe.
+
+========================================================================
+TIPOS DE ESTUDIO (clasifica en uno):
+========================================================================
+1. "hombro_b_mode": Ecografía B-mode de hombro (anatomía estática del manguito).
+2. "hombro_doppler": Ecografía de hombro con Doppler / neovascularización tendinosa.
+3. "hombro_manguito": Enfoque específico manguito rotador + TCLB + bursa + pinzamiento.
+4. "general_shoulder": Detectar del informe / estudio mixto de hombro.
+
+========================================================================
+DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
+========================================================================
+- Panel A (panelRole "overview"): visión anatómica de ambos hombros o del hombro afectado (acromion, clavícula distal, cabeza humeral, deltoides, trayectoria del manguito).
+- Panel B (panelRole "cuff"): cutaway macro de la patología dominante del manguito (usualmente supraespinoso: tendinosis, rotura parcial bursal/articular/intrasustancia, o completa con gap/retracción).
+- Panel C opcional (panelRole "biceps_bursae" | "ac_joint"): surco bicipital/TCLB + bursa subacromiodeltoidea, O articulación acromioclavicular según el hallazgo dominante.
+- LATERALIDAD OBLIGATORIA POR PANEL (convención radiografía AP / paciente de frente):
+  - Cada panel DEBE declarar "laterality" exacta (Derecha|Izquierda|Bilateral) = lado ANATÓMICO DEL PACIENTE.
+  - Vista AP/frontal por defecto: lado DERECHO del paciente a la IZQUIERDA del cuadro; lado IZQUIERDO del paciente a la DERECHA del cuadro.
+  - El imagePrompt DEBE empezar con el lado del paciente y anclas de pantalla.
+  - NUNCA intercambiar lados entre paneles ni espejar por estética.
+- PROMPT EN INGLÉS para cada panel:
+  "Ultra-realistic 3D medical shoulder / rotator cuff anatomy render of [PATIENT SIDE + tendon/site], accurate deltoid/acromion/humeral head landmarks, exact cuff tendon morphology (intact fibrillar pattern, tendinosis thickening, partial tear cleavage, or full-thickness gap with retraction), optional subacromial bursa fluid or AC joint osteophytes when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, strictly NO text, NO numbers, NO arrows, NO letters inside the image. Do NOT mirror anatomy."
+
+========================================================================
+TABLA Y FICHA CLÍNICA:
+========================================================================
+- findingTable filas con: location, structure, thicknessOrGap, echoPattern, bursalStatus, dynamicFinding, severity, clinicalImpact.
+- Incluye shoulderSummary, morphologyNotes, cuffStatus (textos clínicos ricos en español) y keyPoints (array 3-6 bullets).
+- tableHeaders col1..col8 FIJOS: LOCALIZACIÓN | ESTRUCTURA | GROSOR / GAP | PATRÓN ECO | BURSA | DINÁMICA | SEVERIDAD | IMPACTO
+- Evalúa tendones relevantes presentes en el informe: supraespinoso (SS), infraespinoso (IS), subescapular, TCLB/LHBT; bursa SAD; pinzamiento; AC si aplica.
+- No inventes roturas ausentes. Distingue claramente parcial vs completa.
+
+RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
+{
+  "studyTypeCategory": "hombro_b_mode" | "hombro_doppler" | "hombro_manguito" | "general_shoulder",
+  "territoryLabel": "ECOGRAFÍA DE HOMBRO" | "ECOGRAFÍA HOMBRO + DOPPLER" | "ECOGRAFÍA MANGUITO ROTADOR",
+  "laterality": "Bilateral" | "Derecha" | "Izquierda",
+  "figureTitle": "FIGURA 1. ATLAS 3D HOMBRO Y CORRELACIÓN MANGUITO ROTADOR",
+  "tableTitle": "TABLA ECOGRÁFICA DEL MANGUITO ROTADOR Y ESTRUCTURAS PERIARTICULARES:",
+  "tableHeaders": {
+    "col1": "LOCALIZACIÓN",
+    "col2": "ESTRUCTURA",
+    "col3": "GROSOR / GAP",
+    "col4": "PATRÓN ECO",
+    "col5": "BURSA",
+    "col6": "DINÁMICA",
+    "col7": "SEVERIDAD",
+    "col8": "IMPACTO"
+  },
+  "panels": [
+    {
+      "panelLetter": "A",
+      "panelTitle": "Panel A: Anatomía del hombro afectado — vista de conjunto",
+      "tendonOrSite": "Hombro derecho — visión general",
+      "anatomicalFocus": "Acromion, cabeza humeral, deltoides y trayecto del manguito...",
+      "laterality": "Derecha",
+      "panelRole": "overview",
+      "imagePrompt": "Ultra-realistic 3D medical shoulder anatomy render..."
+    },
+    {
+      "panelLetter": "B",
+      "panelTitle": "Panel B: Cutaway del supraespinoso — patología dominante",
+      "tendonOrSite": "Supraespinoso",
+      "anatomicalFocus": "Detalle de tendón supraespinoso con patrón ecográfico correlacionado...",
+      "laterality": "Derecha",
+      "panelRole": "cuff",
+      "imagePrompt": "Ultra-realistic 3D medical rotator cuff cutaway render..."
+    }
+  ],
+  "findingTable": [
+    {
+      "location": "Hombro derecho, cara anterolateral",
+      "structure": "Supraespinoso",
+      "thicknessOrGap": "5,2 mm (sin gap)",
+      "echoPattern": "Tendinosis hipoecoica sin solución de continuidad",
+      "bursalStatus": "Bursa SAD sin distensión significativa",
+      "dynamicFinding": "Pinzamiento leve en arco medio",
+      "severity": "Leve-moderada",
+      "clinicalImpact": "Correlacionar con clínica; rehabilitación dirigida"
+    }
+  ],
+  "shoulderSummary": "...",
+  "morphologyNotes": "...",
+  "cuffStatus": "...",
+  "keyPoints": ["...", "..."],
+  "synthesisTitle": "SÍNTESIS MORFOLÓGICA Y FUNCIONAL DEL MANGUITO:",
+  "morphologicalSynthesis": "El estudio ecográfico del hombro evidencia..."
+}`;
+
+      const planResponse = await ai.models.generateContent({
+        model: model,
+        contents: [{ text: shoulderPrompt }],
+        config: { responseMimeType: "application/json" }
+      });
+
+      let planJson: any = {};
+      try {
+        planJson = JSON.parse(planResponse.text || "{}");
+      } catch (parseErr) {
+        console.error("Error parseando plan JSON Shoulder 3D:", parseErr);
+        planJson = {
+          studyTypeCategory: shoulderType || "hombro_manguito",
+          territoryLabel: "ECOGRAFÍA DE HOMBRO",
+          laterality: laterality || "Derecha",
+          figureTitle: "FIGURA 1. ATLAS 3D HOMBRO Y CORRELACIÓN MANGUITO ROTADOR",
+          tableTitle: "TABLA ECOGRÁFICA DEL MANGUITO ROTADOR Y ESTRUCTURAS PERIARTICULARES:",
+          tableHeaders: {
+            col1: "LOCALIZACIÓN",
+            col2: "ESTRUCTURA",
+            col3: "GROSOR / GAP",
+            col4: "PATRÓN ECO",
+            col5: "BURSA",
+            col6: "DINÁMICA",
+            col7: "SEVERIDAD",
+            col8: "IMPACTO"
+          },
+          panels: [
+            {
+              panelLetter: "A",
+              panelTitle: "Panel A: Anatomía del hombro — visión de conjunto",
+              tendonOrSite: "Hombro — overview",
+              anatomicalFocus: "Reconstrucción anatómica del hombro con manguito rotador.",
+              laterality: laterality || "Derecha",
+              panelRole: "overview",
+              imagePrompt: "Ultra-realistic 3D medical shoulder anatomy render showing acromion, humeral head, deltoid and rotator cuff footprint, studio lighting, octane render, no text."
+            },
+            {
+              panelLetter: "B",
+              panelTitle: "Panel B: Cutaway del manguito — supraespinoso",
+              tendonOrSite: "Supraespinoso",
+              anatomicalFocus: "Corte macro del tendón supraespinoso según hallazgos del informe.",
+              laterality: laterality || "Derecha",
+              panelRole: "cuff",
+              imagePrompt: "Ultra-realistic 3D medical rotator cuff cutaway of supraspinatus tendon, fibrillar pattern, cinema 4D octane render, no text."
+            }
+          ],
+          findingTable: [],
+          synthesisTitle: "SÍNTESIS MORFOLÓGICA Y FUNCIONAL DEL MANGUITO:",
+          morphologicalSynthesis: "La correlación anatomopatológica del manguito rotador se basa en los hallazgos descritos en el informe."
+        };
+      }
+
+      const shoulderPanelsWithImages = await Promise.all(
+        (planJson.panels || []).map(async (panel: any, idx: number) => {
+          let promptToUse = panel.imagePrompt || `Ultra-realistic 3D medical shoulder / rotator cuff render of ${panel.tendonOrSite || panel.panelTitle}, octane render, no text.`;
+          if (customDirectives && customDirectives.trim()) {
+            promptToUse = `${promptToUse} [MANDATORY CLINICAL DIRECTIVE: ${customDirectives.trim()}].`;
+          }
+          {
+            const screenMap = buildScreenLateralityConstraint(panel.laterality || planJson.laterality || laterality, "AP / coronal");
+            if (panel.laterality && panel.laterality !== "auto") {
+              promptToUse = `[MANDATORY PATIENT LATERALITY: ${panel.laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${screenMap} ${promptToUse}`;
+            } else {
+              promptToUse = `${LATERALITY_HARD_RULES} ${screenMap} ${promptToUse}`;
+            }
+          }
+
+          const defaultRole = idx === 0 ? "overview" : idx === 1 ? "cuff" : "biceps_bursae";
+          try {
+            const imageUrl = await generateMedicalImage(ai, promptToUse);
+            return {
+              id: `shoulder-panel-${idx}-${Date.now()}`,
+              panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
+              panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
+              tendonOrSite: panel.tendonOrSite || panel.panelTitle || "",
+              anatomicalFocus: panel.anatomicalFocus || "Evaluación anatómica del hombro y manguito rotador",
+              laterality: panel.laterality || planJson.laterality || laterality || "",
+              imageUrl: imageUrl,
+              promptUsed: promptToUse,
+              isCustomFlipped: false,
+              panelRole: panel.panelRole || defaultRole
+            };
+          } catch (imgErr) {
+            console.error(`Error generando imagen para panel shoulder ${panel.panelLetter}:`, imgErr);
+            return {
+              id: `shoulder-panel-${idx}-${Date.now()}`,
+              panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
+              panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
+              tendonOrSite: panel.tendonOrSite || panel.panelTitle || "",
+              anatomicalFocus: panel.anatomicalFocus || "Evaluación anatómica del hombro y manguito rotador",
+              laterality: panel.laterality || planJson.laterality || laterality || "",
+              imageUrl: "",
+              promptUsed: promptToUse,
+              isCustomFlipped: false,
+              panelRole: panel.panelRole || defaultRole
+            };
+          }
+        })
+      );
+
+      const forcedHeaders = {
+        col1: "LOCALIZACIÓN",
+        col2: "ESTRUCTURA",
+        col3: "GROSOR / GAP",
+        col4: "PATRÓN ECO",
+        col5: "BURSA",
+        col6: "DINÁMICA",
+        col7: "SEVERIDAD",
+        col8: "IMPACTO"
+      };
+
+      const finalShoulderData = {
+        studyTypeCategory: planJson.studyTypeCategory || shoulderType || "hombro_manguito",
+        territoryLabel: planJson.territoryLabel || "ECOGRAFÍA DE HOMBRO",
+        laterality: planJson.laterality || laterality || "Derecha",
+        figureTitle: planJson.figureTitle || "FIGURA 1. ATLAS 3D HOMBRO Y CORRELACIÓN MANGUITO ROTADOR",
+        tableTitle: planJson.tableTitle || "TABLA ECOGRÁFICA DEL MANGUITO ROTADOR Y ESTRUCTURAS PERIARTICULARES:",
+        tableHeaders: forcedHeaders,
+        panels: shoulderPanelsWithImages,
+        findingTable: (planJson.findingTable || planJson.lesionTable || planJson.noduleTable || []).map((row: any) => ({
+          location: row.location || "",
+          structure: row.structure || row.tendon || row.composition || "",
+          thicknessOrGap: row.thicknessOrGap || row.size || row.gap || "",
+          echoPattern: row.echoPattern || row.echogenicity || row.pattern || "",
+          bursalStatus: row.bursalStatus || row.bursa || "",
+          dynamicFinding: row.dynamicFinding || row.dynamic || row.pinzamiento || "",
+          severity: row.severity || row.grade || "",
+          clinicalImpact: row.clinicalImpact || ""
+        })),
+        shoulderSummary: planJson.shoulderSummary || "",
+        morphologyNotes: planJson.morphologyNotes || "",
+        cuffStatus: planJson.cuffStatus || "",
+        keyPoints: Array.isArray(planJson.keyPoints) ? planJson.keyPoints : [],
+        synthesisTitle: planJson.synthesisTitle || "SÍNTESIS MORFOLÓGICA Y FUNCIONAL DEL MANGUITO:",
+        morphologicalSynthesis: planJson.morphologicalSynthesis || ""
+      };
+
+      res.json({
+        success: true,
+        data: finalShoulderData
+      });
+
+    } catch (error: any) {
+      console.error("Error en /api/generate-3d-shoulder:", error);
+      res.status(500).json({ success: false, error: handleGeminiError(error) });
+    }
+  });
+
+  app.post("/api/regenerate-3d-shoulder-panel", async (req: express.Request, res: express.Response) => {
+    try {
+      const { reportText, shoulderType, panel, laterality, userDirective, requestedModel, customDirectives } = req.body;
+
+      if (!panel) {
+        return res.status(400).json({ success: false, error: "Se requiere el panel shoulder a regenerar." });
+      }
+
+      const ai = getGeminiClient();
+      const model = getModelName(requestedModel || "gemini-3.7-flash");
+
+      const refinePrompt = `Eres un Radiólogo MSK experto en hombro/manguito rotador y Director de Arte Médico 3D.
+Diseña un prompt en inglés superdetallado para re-generar una única imagen 3D fotorrealista correspondiente al PANEL ${panel.panelLetter}.
+
+DATOS DEL CASO:
+- Territorio: "${shoulderType || "Ecografía de hombro / manguito rotador"}"
+- Tendón / sitio: "${panel.tendonOrSite || panel.panelTitle || ""}"
+- Foco actual: "${panel.anatomicalFocus || ""}"
+- Rol del panel: "${panel.panelRole || ""}"
+- Lateralidad requerida: "${laterality || panel.laterality || ""}"
+- Instrucción / Corrección del médico: "${userDirective || "Mejorar precisión anatomopatológica del manguito"}"
+- DIRECTIVA CLÍNICA OBLIGATORIA (Scorecard / radar / médico): "${customDirectives || "Ninguna"}"
+- Contexto del informe: """${(reportText || "").slice(0, 800)}"""
+
+REGLAS DE ESTILO:
+- Ultra-realistic 3D medical shoulder / rotator cuff macro render, cinema 4D octane, accurate acromion/humeral head/deltoid landmarks, exact tendon morphology (intact / tendinosis / partial tear / full-thickness gap), optional SAD bursa fluid or AC joint changes only if indicated, soft surgical studio lighting, pure clean background.
+- STRICTLY NO text, NO numbers, NO letters, NO arrows inside the image.
+- Respect patient laterality (AP: patient RIGHT on viewer's LEFT).
+
+RESPONDE EN JSON:
+{
+  "panelTitle": "Título actualizado o confirmado para el panel",
+  "tendonOrSite": "Nombre del tendón o sitio anatómico",
+  "anatomicalFocus": "Foco anatomopatológico de 1 a 2 líneas",
+  "imagePrompt": "Detailed English image generation prompt..."
+}`;
+
+      const refineResponse = await ai.models.generateContent({
+        model: model,
+        contents: [{ text: refinePrompt }],
+        config: { responseMimeType: "application/json" }
+      });
+
+      let refineJson: any = {};
+      try {
+        refineJson = JSON.parse(refineResponse.text || "{}");
+      } catch (e) {
+        refineJson = {
+          panelTitle: panel.panelTitle,
+          tendonOrSite: panel.tendonOrSite || panel.panelTitle,
+          anatomicalFocus: panel.anatomicalFocus,
+          imagePrompt: `Ultra-realistic 3D medical shoulder / rotator cuff render of ${panel.tendonOrSite || panel.panelTitle}, octane render, studio lighting, no text.`
+        };
+      }
+
+      let finalPrompt = refineJson.imagePrompt || panel.promptUsed || `3D macro shoulder rotator cuff render of ${panel.panelTitle}, no text.`;
+      if (customDirectives && String(customDirectives).trim()) {
+        finalPrompt = `${finalPrompt} [MANDATORY CLINICAL DIRECTIVE: ${String(customDirectives).trim()}].`;
+      }
+      if (userDirective && userDirective.trim()) {
+        finalPrompt = `${finalPrompt} [MANDATORY SURGICAL CORRECTION: ${userDirective.trim()}].`;
+      }
+      if (laterality && laterality !== "auto") {
+        const screenMap = buildScreenLateralityConstraint(laterality, "AP / coronal");
+        finalPrompt = `[MANDATORY PATIENT LATERALITY: ${laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${screenMap} ${finalPrompt}`;
+      } else {
+        const screenMap = buildScreenLateralityConstraint(laterality, "AP / coronal");
+        finalPrompt = `${LATERALITY_HARD_RULES} ${screenMap} ${finalPrompt}`;
+      }
+
+      const imageUrl = await generateMedicalImage(ai, finalPrompt);
+
+      const updatedPanel = {
+        ...panel,
+        panelTitle: refineJson.panelTitle || panel.panelTitle,
+        tendonOrSite: refineJson.tendonOrSite || panel.tendonOrSite,
+        anatomicalFocus: refineJson.anatomicalFocus || panel.anatomicalFocus,
+        laterality: laterality || panel.laterality,
+        imageUrl: imageUrl,
+        promptUsed: finalPrompt,
+        isCustomFlipped: false
+      };
+
+      res.json({
+        success: true,
+        panel: updatedPanel
+      });
+
+    } catch (error: any) {
+      console.error("Error en /api/regenerate-3d-shoulder-panel:", error);
+      res.status(500).json({ success: false, error: handleGeminiError(error) });
+    }
+  });
+
   // 5. Focal Lesion Cutaway 3D (on-demand: auto-detect or manual focus, 1–2 panels)
   
   
