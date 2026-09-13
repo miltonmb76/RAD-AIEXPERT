@@ -139,6 +139,38 @@ const LATERALITY_PLAN_RULES_ES =
   "- pathologySite debe nombrar el lado del paciente. PROHIBIDO espejar \"para que quede bonito\".\n" +
   "- doNotInvent DEBE incluir: \"mirrored laterality\", \"contralateral side swap\", \"patient-right drawn on viewer-right in AP\".";
 
+/**
+ * Knee meniscus topography: medial/lateral (fibula) and anterior/posterior horns.
+ * Injected into knee suite planning + image prompts to stop left/right and A/P swaps.
+ */
+const KNEE_MENISCUS_TOPOGRAPHY_HARD_RULES =
+  "KNEE MENISCUS TOPOGRAPHY HARD RULES (never violate): " +
+  "(1) Synonyms: INTERNAL meniscus = MEDIAL meniscus = tibial side (OPPOSITE the fibula). " +
+  "EXTERNAL meniscus = LATERAL meniscus = FIBULAR / peroneal side (NEXT TO the fibula). " +
+  "(2) Anterior horn ≠ body ≠ posterior horn — NEVER swap A/P zones. " +
+  "(3) Knee side (patient right/left) is independent from medial/lateral compartment — do not confuse them. " +
+  "(4) RIGHT knee AP: lateral/fibular compartment on VIEWER'S LEFT; medial/tibial on VIEWER'S RIGHT. " +
+  "(5) LEFT knee AP: lateral/fibular compartment on VIEWER'S RIGHT; medial/tibial on VIEWER'S LEFT. " +
+  "(6) If the report says 'menisco externo/lateral cuerno posterior' you MUST depict the LATERAL (fibular) meniscus POSTERIOR horn — never medial and never anterior. " +
+  "(7) If the report says 'menisco interno/medial cuerno anterior' you MUST depict the MEDIAL (tibial) meniscus ANTERIOR horn. " +
+  "(8) A beautiful image with wrong meniscus side or wrong A/P horn is a CRITICAL FAIL.";
+
+const KNEE_MENISCUS_TOPOGRAPHY_RULES_ES =
+  "REGLAS DURAS DE TOPOGRAFÍA MENISCAL (nunca violar):\n" +
+  "1) Sinónimos obligatorios:\n" +
+  "   - Menisco INTERNO = menisco MEDIAL = lado TIBIAL (contrario al peroné).\n" +
+  "   - Menisco EXTERNO = menisco LATERAL = lado del PERONÉ / fibular.\n" +
+  "2) Dentro de cada menisco: cuerno ANTERIOR ≠ cuerpo ≠ cuerno POSTERIOR. NUNCA intercambiar.\n" +
+  "3) Lateralidad de la RODILLA (derecha/izquierda del paciente) es independiente del compartimento medial/lateral.\n" +
+  "4) Rodilla DERECHA en vista AP: compartimento lateral/peroné a la IZQUIERDA del cuadro; medial/tibial a la DERECHA.\n" +
+  "5) Rodilla IZQUIERDA en vista AP: compartimento lateral/peroné a la DERECHA del cuadro; medial/tibial a la IZQUIERDA.\n" +
+  "6) Si el informe dice «menisco externo/lateral, cuerno posterior», dibuja/describe EXACTAMENTE menisco LATERAL (peroné) + cuerno POSTERIOR.\n" +
+  "7) Si el informe dice «menisco interno/medial, cuerno anterior», dibuja/describe EXACTAMENTE menisco MEDIAL (tibial) + cuerno ANTERIOR.\n" +
+  "8) En structureOrSite, anatomicalFocus, findingTable.structure e imagePrompt nombra siempre: " +
+  "menisco medial|lateral + cuerno anterior|cuerpo|cuerno posterior + lado de rodilla del paciente.\n" +
+  "9) PROHIBIDO confundir LCM (medial) con LCL (lateral/peroné). LCL y menisco externo viven del lado del peroné.\n" +
+  "10) Una imagen/tabla bella con menisco o cuerno equivocado es FALLO CRÍTICO.";
+
 function classifyViewOrientation(view?: string): "anterior" | "posterior" | "other" {
   const v = String(view || "").toLowerCase();
   if (/posterior|dorsal|espalda|back view|from behind|viewed from behind/.test(v)) return "posterior";
@@ -1580,6 +1612,9 @@ DATOS DEL CASO:
 - Vaso: "${panel.vesselName || panel.panelTitle || ""}"
 - Foco actual: "${panel.anatomicalFocus || ""}"
 - Lateralidad requerida: "${laterality || panel.laterality || ""}"
+- TOPOGRAFÍA MENISCAL OBLIGATORIA EN REGENERACIÓN:
+${KNEE_MENISCUS_TOPOGRAPHY_RULES_ES}
+Si structureOrSite/foco/instrucción mencionan menisco, conserva EXACTAS las tres coordenadas (lado de rodilla, medial/lateral-peroné, cuerno A/P). No las "corrijas" ni las asumas.
 - Instrucción / Corrección del médico: "${userDirective || "Mejorar precisión anatomopatológica y hemodinámica"}"
 - DIRECTIVA CLÍNICA OBLIGATORIA (Scorecard / médico): "${customDirectives || "Ninguna"}"
 - Contexto del informe: """${(reportText || "").slice(0, 800)}"""
@@ -2851,6 +2886,18 @@ Si "DIRECTIVA CLÍNICA OBLIGATORIA" no es "Ninguna", trátela como contrato clí
 - Prohibido inventar desgarros meniscales, esguinces, rotura de LCA/LCP o quistes no respaldados por la directiva o el informe.
 
 ========================================================================
+TOPOGRAFÍA MENISCAL (OBLIGATORIA — lateralidad + anterior/posterior):
+========================================================================
+${KNEE_MENISCUS_TOPOGRAPHY_RULES_ES}
+
+CRITICO: extrae del informe, para CADA lesión meniscal, las tres coordenadas y NO las intercambies:
+  (a) lado de la RODILLA del paciente (derecha/izquierda),
+  (b) menisco MEDIAL/interno (tibial) vs LATERAL/externo (peroné),
+  (c) cuerno ANTERIOR vs CUERPO vs cuerno POSTERIOR.
+Si el informe dice "menisco externo cuerno posterior", structureOrSite / anatomicalFocus / findingTable / imagePrompt
+deben decir explícitamente "lateral/fibular + posterior horn" (nunca medial ni anterior).
+
+========================================================================
 TIPOS DE ESTUDIO (clasifica en uno):
 ========================================================================
 1. "rodilla_b_mode": Ecografía B-mode de rodilla (anatomía estática del ligamentos-meniscos).
@@ -2862,7 +2909,7 @@ TIPOS DE ESTUDIO (clasifica en uno):
 DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
 ========================================================================
 - Panel A (panelRole "overview"): visión anatómica de ambas rodillas o de la rodilla afectado (fémur distal, platillos tibiales, rótula, meniscos, LCM/LCL y mecanismo extensor).
-- Panel B (panelRole "meniscus_ligament"): cutaway macro de la patología dominante del ligamentos-meniscos (usualmente menisco medial: tendinosis, rotura parcial bursal/articular/intrasustancia, o completa con gap/retracción).
+- Panel B (panelRole "meniscus_ligament"): cutaway macro de la patología meniscal/ligamentosa dominante SEGÚN EL INFORME (respetar medial=interno/tibial vs lateral=externo/peroné, y cuerno anterior vs cuerpo vs cuerno posterior; NUNCA asumir menisco medial por defecto si el informe dice externo/lateral).
 - Panel C opcional (panelRole "extensor_effusion" | "baker_cartilage"): surco bicipital/ligamento patelar + recesos articulares / hidrartrosis, O quiste de Baker / cartílago femorotibial según el hallazgo dominante.
 - LATERALIDAD OBLIGATORIA POR PANEL (convención radiografía AP / paciente de frente):
   - Cada panel DEBE declarar "laterality" exacta (Derecha|Izquierda|Bilateral) = lado ANATÓMICO DEL PACIENTE.
@@ -2870,7 +2917,7 @@ DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
   - El imagePrompt DEBE empezar con el lado del paciente y anclas de pantalla.
   - NUNCA intercambiar lados entre paneles ni espejar por estética.
 - PROMPT EN INGLÉS para cada panel:
-  "Ultra-realistic 3D medical knee anatomy render of [PATIENT SIDE + tendon/site], accurate femoral condyles/tibial plateau/patella landmarks, exact meniscus and collateral ligament morphology (intact fibrillar pattern, mucoid degeneration, partial tear, extrusion, or full-thickness discontinuity), optional joint effusion or Baker cyst when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, strictly NO text, NO numbers, NO arrows, NO letters inside the image. Do NOT mirror anatomy."
+  "Ultra-realistic 3D medical knee anatomy render of [PATIENT SIDE + MEDIAL(tibial)/LATERAL(fibular) compartment + meniscus ANTERIOR horn/BODY/POSTERIOR horn or ligament], accurate femoral condyles/tibial plateau/patella/fibular head landmarks, exact named meniscus topography (never swap medial↔lateral or anterior↔posterior), exact collateral ligament morphology, optional joint effusion or Baker cyst when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, strictly NO text, NO numbers, NO arrows, NO letters inside the image. Do NOT mirror anatomy. Obey KNEE MENISCUS TOPOGRAPHY HARD RULES."
 
 ========================================================================
 TABLA Y FICHA CLÍNICA:
@@ -2878,7 +2925,7 @@ TABLA Y FICHA CLÍNICA:
 - findingTable filas con: location, structure, thicknessOrGap, echoPattern, effusionStatus, dynamicFinding, severity, clinicalImpact.
 - Incluye kneeSummary, morphologyNotes, ligamentMeniscusStatus (textos clínicos ricos en español) y keyPoints (array 3-6 bullets).
 - tableHeaders col1..col8 FIJOS: LOCALIZACIÓN | ESTRUCTURA | GROSOR / GAP | PATRÓN ECO | DERRAME | DINÁMICA | SEVERIDAD | IMPACTO
-- Evalúa estructuras relevantes: menisco medial/lateral, LCM, LCL, ligamento/tendón patelar, derrame, quiste de Baker, cartílago femorotibial. No inventes rotura de LCA salvo evidencia explícita en el informe/scorecard.
+- Evalúa estructuras relevantes: menisco medial(interno/tibial)/lateral(externo/peroné) con cuerno anterior/cuerpo/posterior explícitos, LCM, LCL (peroné), ligamento/tendón patelar, derrame, quiste de Baker, cartílago femorotibial. En cada fila meniscal de findingTable.structure escribe p.ej. "Menisco lateral (peroné), cuerno posterior". No inventes rotura de LCA salvo evidencia explícita en el informe/scorecard.
 - No inventes lesiones ausentes. Distingue claramente parcial vs completo / extrusión / degenerativo.
 
 RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
@@ -2977,12 +3024,12 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
             },
             {
               panelLetter: "B",
-              panelTitle: "Panel B: Cutaway del ligamentos-meniscos — menisco medial",
-              structureOrSite: "Menisco medial",
-              anatomicalFocus: "Corte macro del menisco/ligamento menisco medial según hallazgos del informe.",
+              panelTitle: "Panel B: Cutaway meniscal — según informe (medial/lateral + A/P)",
+              structureOrSite: "Menisco (medial=tibial / lateral=peroné) — cuerno según informe",
+              anatomicalFocus: "Corte macro del menisco indicado en el informe (interno/externo y cuerno anterior/posterior), sin intercambiar lados.",
               laterality: laterality || "Derecha",
               panelRole: "meniscus_ligament",
-              imagePrompt: "Ultra-realistic 3D medical knee ligaments-menisci cutaway of supraspinatus tendon, fibrillar pattern, cinema 4D octane render, no text."
+              imagePrompt: "Ultra-realistic 3D medical knee meniscus cutaway with explicit medial or lateral (fibular) compartment and anterior or posterior horn per report, fibular head landmark visible for lateral side, cinema 4D octane render, no text."
             }
           ],
           findingTable: [],
@@ -3000,9 +3047,9 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
           {
             const screenMap = buildScreenLateralityConstraint(panel.laterality || planJson.laterality || laterality, "AP / coronal");
             if (panel.laterality && panel.laterality !== "auto") {
-              promptToUse = `[MANDATORY PATIENT LATERALITY: ${panel.laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${screenMap} ${promptToUse}`;
+              promptToUse = `[MANDATORY PATIENT LATERALITY: ${panel.laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${KNEE_MENISCUS_TOPOGRAPHY_HARD_RULES} ${screenMap} ${promptToUse}`;
             } else {
-              promptToUse = `${LATERALITY_HARD_RULES} ${screenMap} ${promptToUse}`;
+              promptToUse = `${LATERALITY_HARD_RULES} ${KNEE_MENISCUS_TOPOGRAPHY_HARD_RULES} ${screenMap} ${promptToUse}`;
             }
           }
 
@@ -3111,17 +3158,25 @@ DATOS DEL CASO:
 - DIRECTIVA CLÍNICA OBLIGATORIA (Scorecard / radar / médico): "${customDirectives || "Ninguna"}"
 - Contexto del informe: """${(reportText || "").slice(0, 800)}"""
 
+TOPOGRAFÍA MENISCAL OBLIGATORIA:
+${KNEE_MENISCUS_TOPOGRAPHY_RULES_ES}
+Si structureOrSite / foco / instrucción / informe mencionan menisco, conserva EXACTAS las tres coordenadas
+(lado de rodilla del paciente, medial=interno/tibial vs lateral=externo/peroné, cuerno anterior/cuerpo/posterior).
+NUNCA las "corrijas" ni asumas menisco medial/anterior por defecto.
+
 REGLAS DE ESTILO:
-- Ultra-realistic 3D medical knee / knee ligaments-menisci macro render, cinema 4D octane, accurate cóndilo femoral/patella/quadriceps landmarks, exact tendon morphology (intact / tendinosis / partial tear / full-thickness gap), optional SAD bursa fluid or AC joint changes only if indicated, soft surgical studio lighting, pure clean background.
+- Ultra-realistic 3D medical knee / meniscus-ligament macro render, cinema 4D octane, accurate femoral condyle/tibial plateau/patella/fibular head landmarks.
+- Exact named meniscus topography in the English imagePrompt (medial|lateral + anterior|body|posterior + patient knee side).
+- Exact morphology (intact / degeneration / partial tear / extrusion / full-thickness gap); optional effusion/Baker cyst only if indicated; soft surgical studio lighting; pure clean background.
 - STRICTLY NO text, NO numbers, NO letters, NO arrows inside the image.
 - Respect patient laterality (AP: patient RIGHT on viewer's LEFT).
 
 RESPONDE EN JSON:
 {
   "panelTitle": "Título actualizado o confirmado para el panel",
-  "structureOrSite": "Nombre del tendón o sitio anatómico",
-  "anatomicalFocus": "Foco anatomopatológico de 1 a 2 líneas",
-  "imagePrompt": "Detailed English image generation prompt..."
+  "structureOrSite": "Nombre exacto del menisco/ligamento (p.ej. Menisco lateral/peroné, cuerno posterior)",
+  "anatomicalFocus": "Foco anatomopatológico de 1 a 2 líneas con medial/lateral y A/P",
+  "imagePrompt": "Detailed English image generation prompt with explicit medial/lateral and anterior/posterior site..."
 }`;
 
       const refineResponse = await ai.models.generateContent({
@@ -3151,10 +3206,10 @@ RESPONDE EN JSON:
       }
       if (laterality && laterality !== "auto") {
         const screenMap = buildScreenLateralityConstraint(laterality, "AP / coronal");
-        finalPrompt = `[MANDATORY PATIENT LATERALITY: ${laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${screenMap} ${finalPrompt}`;
+        finalPrompt = `[MANDATORY PATIENT LATERALITY: ${laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${KNEE_MENISCUS_TOPOGRAPHY_HARD_RULES} ${screenMap} ${finalPrompt}`;
       } else {
         const screenMap = buildScreenLateralityConstraint(laterality, "AP / coronal");
-        finalPrompt = `${LATERALITY_HARD_RULES} ${screenMap} ${finalPrompt}`;
+        finalPrompt = `${LATERALITY_HARD_RULES} ${KNEE_MENISCUS_TOPOGRAPHY_HARD_RULES} ${screenMap} ${finalPrompt}`;
       }
 
       const imageUrl = await generateMedicalImage(ai, finalPrompt);

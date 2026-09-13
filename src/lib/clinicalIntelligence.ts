@@ -648,6 +648,20 @@ export type KneeRadarDirectiveInput = {
  * Build mandatory Knee 3D directives from knee-cuff / MSK scorecard,
  * optionally enriched with biomechanical radar axes for higher anatomic fidelity.
  */
+
+/** Hard topography rules for knee menisci (shared with suite prompts). */
+export const KNEE_MENISCUS_TOPOGRAPHY_DIRECTIVE = [
+  "TOPOGRAFÍA MENISCAL OBLIGATORIA (nunca intercambiar):",
+  "- Menisco INTERNO = MEDIAL = lado TIBIAL (contrario al peroné).",
+  "- Menisco EXTERNO = LATERAL = lado del PERONÉ / fibular.",
+  "- Cuerno ANTERIOR ≠ CUERPO ≠ cuerno POSTERIOR.",
+  "- Lateralidad de la RODILLA (derecha/izquierda del paciente) es independiente del compartimento medial/lateral.",
+  "- Rodilla derecha AP: compartimento lateral/peroné a la IZQUIERDA del cuadro; medial a la DERECHA.",
+  "- Rodilla izquierda AP: compartimento lateral/peroné a la DERECHA del cuadro; medial a la IZQUIERDA.",
+  "- En paneles, ficha y tabla nombra siempre: menisco medial|lateral + cuerno anterior|cuerpo|posterior + lado de rodilla.",
+  "- LCL y menisco externo viven del lado del peroné; LCM y menisco interno del lado tibial.",
+].join("\n");
+
 export function buildKneeDirectivesFromScorecard(
   scorecard: ClinicalScorecardData | null | undefined,
   radarData?: KneeRadarDirectiveInput
@@ -686,11 +700,11 @@ export function buildKneeDirectivesFromScorecard(
         });
       if (evidenced.length || summary) {
         body = [
-          `SCORECARD RODILLA / RODILLA (${scorecard.protocolName || "protocolo"} — ${scorecard.categoryAssigned || ""}):`,
+          `SCORECARD RODILLA MSK (${scorecard.protocolName || "protocolo"} — ${scorecard.categoryAssigned || ""}):`,
           `Semáforo: ${scorecard.trafficLight}. Criterios: ${scorecard.scoreMet}/${scorecard.scoreTotal}.`,
           summary ? `Síntesis: ${summary}` : "",
           reco ? `Recomendación: ${reco}` : "",
-          evidenced.length ? "Hallazgos del scorecard a respetar en 3D/tabla del rodilla:" : "",
+          evidenced.length ? "Hallazgos del scorecard a respetar en 3D/tabla de rodilla:" : "",
           ...evidenced,
         ]
           .filter(Boolean)
@@ -707,7 +721,7 @@ export function buildKneeDirectivesFromScorecard(
     .join(" ");
   const looksLikeKneeRadar =
     radarMode.includes("knee") || radarMode.includes("rodilla") || radarMode.includes("knee_trauma") || radarMode.includes("knee_oa") ||
-    /ruptura_meniscoso|bursitis|pinzamiento|otros_tendones|tendinosis_meniscoso|\bpatelar\b/.test(
+    /menisc|ligamento_colateral|lcm|lcl|baker|derrame|cartilago|gonartrosis|patelar|cuadriceps|knee_trauma|knee_oa/.test(
       axisKeyBlob
     );
   if (axes.length && looksLikeKneeRadar) {
@@ -732,13 +746,14 @@ export function buildKneeDirectivesFromScorecard(
   if (!body && !radarBits.length) return "";
 
   return [
-    "DIRECTIVA OBLIGATORIA DEL SCORECARD RODILLA (debe gobernar paneles 3D, ficha y tabla del rodilla rotador):",
+    "DIRECTIVA OBLIGATORIA DEL SCORECARD RODILLA (debe gobernar paneles 3D, ficha y tabla de ligamentos-meniscos):",
     body,
     radarBits.length ? radarBits.join("\n") : "",
     isKnee
-      ? "Prioriza laterality, tendones (meniscoso, ligamentooso, colateralular, TCLB), grosor/gap en mm, rotura parcial vs completa (bursal/articular/intrasustancia), bursitis subacromiodeltoidea, pinzamiento dinámico y articulación AC. No inventes roturas ni grados ausentes."
-      : "Si el scorecard/radar no es de rodilla, extrae solo hallazgos femorotibiales/meniscales/ligamentosos aplicables; no inventes patología del rodilla.",
+      ? "Prioriza: (1) lado de rodilla del paciente, (2) menisco medial=interno/tibial vs lateral=externo/peroné, (3) cuerno anterior vs cuerpo vs posterior, (4) LCM/LCL, mecanismo extensor, derrame/Baker y cartílago. NUNCA intercambiar medial↔lateral ni anterior↔posterior. No inventes roturas ni grados ausentes."
+      : "Si el scorecard/radar no es de rodilla, extrae solo hallazgos femorotibiales/meniscales/ligamentosos aplicables; no inventes patología de rodilla.",
     "No inventes desgarros meniscales, esguinces, roturas de LCA/LCP, quistes ni grados de severidad ausentes en el scorecard/radar/informe.",
+    KNEE_MENISCUS_TOPOGRAPHY_DIRECTIVE,
   ]
     .filter(Boolean)
     .join("\n");

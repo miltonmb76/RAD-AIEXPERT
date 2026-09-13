@@ -26,7 +26,7 @@ import {
   ClinicalScorecardData
 } from "../types";
 import { runBackgroundTask } from "../lib/backgroundTasks";
-import { buildKneeDirectivesFromScorecard } from "../lib/clinicalIntelligence";
+import { buildKneeDirectivesFromScorecard, KNEE_MENISCUS_TOPOGRAPHY_DIRECTIVE } from "../lib/clinicalIntelligence";
 import { flipImageDataUrl, swapLateralityLabel } from "../lib/imageFlip";
 
 interface Knee3DModuleProps {
@@ -103,6 +103,7 @@ export const Knee3DModule: React.FC<Knee3DModuleProps> = ({
         userExtra.includes("DIRECTIVA OBLIGATORIA DEL SCORECARD RODILLA") ||
         userExtra.includes("PATOLOGÍA ACTIVA DEL SCORECARD"));
     return [
+      KNEE_MENISCUS_TOPOGRAPHY_DIRECTIVE,
       scorecardDirectives,
       extraIsScorecardEcho ? "" : userExtra,
       (extraPanelDirective || "").trim(),
@@ -139,7 +140,7 @@ export const Knee3DModule: React.FC<Knee3DModuleProps> = ({
     setGenerationStep("Analizando ligamentos y meniscos y estructuras periarticulares...");
 
     try {
-      setGenerationStep("Construyendo paneles 3D y ficha dlos ligamentos/meniscos...");
+      setGenerationStep("Construyendo paneles 3D y ficha de los ligamentos/meniscos...");
 
       const mergedDirectives = mergeMandatoryDirectives();
 
@@ -305,7 +306,7 @@ export const Knee3DModule: React.FC<Knee3DModuleProps> = ({
               </span>
             </div>
             <p className="text-xs text-sky-100/80">
-              Reconstrucción 3D dlos ligamentos/meniscos, ligamento patelar, derrame y correlación dinámico-funcional
+              Reconstrucción 3D de los ligamentos/meniscos, ligamento patelar, derrame y correlación dinámico-funcional
             </p>
           </div>
         </div>
@@ -387,7 +388,7 @@ export const Knee3DModule: React.FC<Knee3DModuleProps> = ({
             <textarea
               value={customDirectives}
               onChange={(e) => setCustomDirectives(e.target.value)}
-              placeholder="Ej: Destacar rotura parcial derramel del menisco medial derecho..."
+              placeholder="Ej: Menisco EXTERNO (peroné) cuerno POSTERIOR derecho — no confundir con medial/anterior..."
               rows={scorecardData?.criteria?.length ? 5 : 2}
               className="w-full text-xs bg-white border border-slate-300 rounded-md px-2.5 py-1.5 text-slate-800 placeholder-slate-400 focus:ring-1 focus:ring-sky-500 focus:outline-none font-mono leading-relaxed"
             />
@@ -407,7 +408,7 @@ export const Knee3DModule: React.FC<Knee3DModuleProps> = ({
                 Suite Rodilla 3D sincronizada ({kneeData.panels?.length || 0} paneles generados)
               </span>
             ) : (
-              "Presiona Generar para construir los modelos 3D y la tabla dlos ligamentos/meniscos"
+              "Presiona Generar para construir los modelos 3D y la tabla de los ligamentos/meniscos"
             )}
           </div>
 
@@ -450,7 +451,7 @@ export const Knee3DModule: React.FC<Knee3DModuleProps> = ({
           <div>
             <h4 className="font-bold text-slate-800 text-sm">{generationStep || "Generando reconstrucción 3D de rodilla..."}</h4>
             <p className="text-xs text-slate-500 max-w-md mx-auto mt-1">
-              Renderizando anatomía dlos ligamentos/meniscos, derrame y correlación dinámico-funcional.
+              Renderizando anatomía de los ligamentos/meniscos, derrame y correlación dinámico-funcional.
             </p>
           </div>
         </div>
@@ -590,7 +591,7 @@ export const Knee3DModule: React.FC<Knee3DModuleProps> = ({
                                 [panel.panelLetter]: e.target.value
                               }))
                             }
-                            placeholder="Ej: Mostrar gap completo del menisco medial..."
+                            placeholder="Ej: Menisco LATERAL/peroné, cuerno POSTERIOR — mantener lado y A/P exactos..."
                             className="w-full text-xs bg-white border border-slate-300 rounded px-2 py-1"
                           />
                           <div className="flex items-center justify-end gap-1.5">
@@ -650,13 +651,13 @@ export const Knee3DModule: React.FC<Knee3DModuleProps> = ({
                 )}
               </div>
               <div className="rounded-xl border border-slate-700/70 bg-slate-950/70 p-3">
-                <p className="text-[10px] font-mono font-black uppercase tracking-widest text-yellow-300 mb-1">Estado dlos ligamentos/meniscos</p>
+                <p className="text-[10px] font-mono font-black uppercase tracking-widest text-yellow-300 mb-1">Estado de los ligamentos/meniscos</p>
                 {isEditingText ? (
                   <textarea rows={5} className="w-full text-xs bg-slate-900 border border-slate-700 rounded p-2 text-slate-100"
                     value={kneeData.ligamentMeniscusStatus || ""}
                     onChange={(e) => setKneeData({ ...kneeData, ligamentMeniscusStatus: e.target.value })} />
                 ) : (
-                  <p className="text-[13px] text-slate-200 leading-relaxed whitespace-pre-wrap">{kneeData.ligamentMeniscusStatus || "Sin descripción dlos ligamentos/meniscos."}</p>
+                  <p className="text-[13px] text-slate-200 leading-relaxed whitespace-pre-wrap">{kneeData.ligamentMeniscusStatus || "Sin descripción de los ligamentos/meniscos."}</p>
                 )}
               </div>
               <div className="md:col-span-2 rounded-xl border border-emerald-800/40 bg-slate-950/70 p-3">
