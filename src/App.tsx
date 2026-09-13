@@ -23,14 +23,16 @@ import { renderScorecardAnnexToPDF } from "./utils/scorecardPdfRenderer";
 import { renderReasoningChainAnnexToPDF } from "./utils/reasoningChainPdfRenderer";
 import { renderDifferentialTreeAnnexToPDF } from "./utils/differentialTreePdfRenderer";
 import { renderMeasurementsGaugeAnnexToPDF } from "./utils/measurementsGaugePdfRenderer";
-import { Atlas3DData, Vascular3DData, FocalLesion3DData, Thyroid3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData } from "./types";
-import { buildAtlasDirectivesFromScorecard, buildAtlasPanelFindingAssignments, buildVascularDirectivesFromScorecard, buildThyroidDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
+import { Atlas3DData, Vascular3DData, FocalLesion3DData, Thyroid3DData, Breast3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData } from "./types";
+import { buildAtlasDirectivesFromScorecard, buildAtlasPanelFindingAssignments, buildVascularDirectivesFromScorecard, buildThyroidDirectivesFromScorecard, buildBreastDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
 import { Vascular3DModule } from "./components/Vascular3DModule";
 import { FocalLesion3DModule } from "./components/FocalLesion3DModule";
 import { Thyroid3DModule } from "./components/Thyroid3DModule";
+import { Breast3DModule } from "./components/Breast3DModule";
 import { renderVascular3DPageToPdf } from "./utils/vascular3dPdfRenderer";
 import { renderFocalLesion3DAnnexToPDF } from "./utils/focalLesion3dPdfRenderer";
 import { renderThyroid3DPageToPdf } from "./utils/thyroid3dPdfRenderer";
+import { renderBreast3DPageToPdf } from "./utils/breast3dPdfRenderer";
 import { renderElastographyAnnexToPdf, ElastographyPdfData } from "./utils/elastographyPdfRenderer";
 import { renderUsImagesToPdf, getPanelLetter } from "./utils/usImagesPdfRenderer";
 import { renderMmgImagesToPdf } from "./utils/mmgImagesPdfRenderer";
@@ -1433,6 +1435,8 @@ export default function App() {
         if (localStudy.vascular3dData) setVascular3dData(localStudy.vascular3dData);
         if (localStudy.focalLesion3dData) setFocalLesion3dData(localStudy.focalLesion3dData);
         if (localStudy.thyroid3dData) setThyroid3dData(localStudy.thyroid3dData);
+        if (localStudy.breast3dData) setBreast3dData(localStudy.breast3dData);
+        if (localStudy.includeBreast3dInReport !== undefined) setIncludeBreast3dInReport(localStudy.includeBreast3dInReport);
         if (localStudy.includeThyroid3dInReport !== undefined) setIncludeThyroid3dInReport(localStudy.includeThyroid3dInReport);
         if (localStudy.includeFocalLesion3dInReport !== undefined) setIncludeFocalLesion3dInReport(localStudy.includeFocalLesion3dInReport);
         if (localStudy.usImagesGridMode) setUsImagesGridMode(localStudy.usImagesGridMode as any);
@@ -2623,6 +2627,8 @@ export default function App() {
   const [includeFocalLesion3dInReport, setIncludeFocalLesion3dInReport] = useState<boolean>(true);
   const [thyroid3dData, setThyroid3dData] = useState<Thyroid3DData | null>(null);
   const [includeThyroid3dInReport, setIncludeThyroid3dInReport] = useState<boolean>(true);
+  const [breast3dData, setBreast3dData] = useState<Breast3DData | null>(null);
+  const [includeBreast3dInReport, setIncludeBreast3dInReport] = useState<boolean>(true);
 
   // Cuadrícula y Presentación Científica para Fotos de Ultrasonido
   const [usImagesGridMode, setUsImagesGridMode] = useState<UsImagesGridMode>("auto");
@@ -2679,6 +2685,8 @@ export default function App() {
     includeVascular3dInReport,
     thyroid3dData,
     includeThyroid3dInReport,
+    breast3dData,
+    includeBreast3dInReport,
     focalLesion3dData,
     includeFocalLesion3dInReport,
     usImagesGridMode,
@@ -3320,7 +3328,7 @@ Ejemplo:
   const [isCreadorSinopsisFracturasOpen, setIsCreadorSinopsisFracturasOpen] = useState<boolean>(false);
   const [isElastographyQUSModuleOpen, setIsElastographyQUSModuleOpen] = useState<boolean>(false);
   const [isThyroid3dSuiteOpen, setIsThyroid3dSuiteOpen] = useState<boolean>(false);
-  const [isBreast3dSuiteOpen, setIsBreast3dSuiteOpen] = useState<boolean>(false); // Suite Mama (próxima)
+  const [isBreast3dSuiteOpen, setIsBreast3dSuiteOpen] = useState<boolean>(false);
   const [includeRadarInReport, setIncludeRadarInReport] = useState<boolean>(true);
 
   // States & Handlers for Sistema de Activación Rápida de Módulos (Procesamiento en Lote)
@@ -3331,6 +3339,7 @@ Ejemplo:
     atlas3d: true,
     vascular3d: false,
     thyroid3d: false,
+    breast3d: false,
     radar: false,
     case_analysis: false,
     quality_eval: false,
@@ -3359,6 +3368,7 @@ Ejemplo:
       atlas3d: select,
       vascular3d: select,
       thyroid3d: select,
+      breast3d: select,
       radar: select,
       case_analysis: select,
       quality_eval: select,
@@ -3582,6 +3592,30 @@ Ejemplo:
             }
           } catch (e) {
             console.error("Error en batch thyroid 3d:", e);
+          }
+        }
+
+        if (modules.breast3d) {
+          try {
+            const breastDirectives = buildBreastDirectivesFromScorecard(scorecardForModules);
+            const resp = await fetch("/api/generate-3d-breast", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                reportText: activeReport,
+                breastType: "general_breast",
+                requestedModel: modelFor("breast3d"),
+                customDirectives: breastDirectives || undefined
+              })
+            });
+            const j = await resp.json();
+            if (j.success && j.data) {
+              setBreast3dData(j.data);
+              setIncludeBreast3dInReport(true);
+              setIsBreast3dSuiteOpen(true);
+            }
+          } catch (e) {
+            console.error("Error en batch breast 3d:", e);
           }
         }
       })());
@@ -4296,6 +4330,8 @@ Ejemplo:
             includeVascular3dInReport: includeVascular3dInReport,
             thyroid3dData: thyroid3dData || null,
             includeThyroid3dInReport: includeThyroid3dInReport,
+            breast3dData: breast3dData || null,
+            includeBreast3dInReport: includeBreast3dInReport,
             focalLesion3dData: focalLesion3dData || null,
             includeFocalLesion3dInReport: includeFocalLesion3dInReport,
             usImagesGridMode: usImagesGridMode || "auto",
@@ -4324,6 +4360,7 @@ Ejemplo:
                 atlas3dData: null,
                 vascular3dData: null,
                 thyroid3dData: null,
+                breast3dData: null,
                 focalLesion3dData: null,
                 customLogoUrl: "",
                 customSignatureUrl: "",
@@ -5417,6 +5454,8 @@ Ejemplo:
             includeVascular3dInReport: includeVascular3dInReport,
             thyroid3dData: thyroid3dData || null,
             includeThyroid3dInReport: includeThyroid3dInReport,
+            breast3dData: breast3dData || null,
+            includeBreast3dInReport: includeBreast3dInReport,
             focalLesion3dData: focalLesion3dData || null,
             includeFocalLesion3dInReport: includeFocalLesion3dInReport,
             usImagesGridMode: usImagesGridMode || "auto",
@@ -9932,6 +9971,12 @@ Ejemplo:
       const shouldIncludeThyroid = studyOverride ? (studyOverride.includeThyroid3dInReport !== false) : (pdfStateRef.current?.includeThyroid3dInReport !== false && includeThyroid3dInReport);
       if (activeThyroidData && shouldIncludeThyroid && (activeThyroidData.panels?.length || activeThyroidData.noduleTable?.length)) {
         await renderThyroid3DPageToPdf(doc, activeThyroidData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+      }
+
+      const activeBreastData = studyOverride ? studyOverride.breast3dData : (pdfStateRef.current?.breast3dData || breast3dData);
+      const shouldIncludeBreast = studyOverride ? (studyOverride.includeBreast3dInReport !== false) : (pdfStateRef.current?.includeBreast3dInReport !== false && includeBreast3dInReport);
+      if (activeBreastData && shouldIncludeBreast && (activeBreastData.panels?.length || activeBreastData.lesionTable?.length)) {
+        await renderBreast3DPageToPdf(doc, activeBreastData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
       }
 
 
@@ -19899,6 +19944,13 @@ const splitReportAndAnnex = (text: string) => {
                                   desc: "Glándula/nódulo 3D, ficha clínica rica bajo la imagen, tabla TI-RADS y anexo PDF a página completa.",
                                   color: "text-teal-400 border-teal-500/30 bg-teal-950/20"
                                 },
+                                {
+                                  id: "breast3d",
+                                  label: "🦋 Suite Mama 3D & Ficha BI-RADS",
+                                  badge: "MAMA 3D",
+                                  desc: "Reloj mamario, nódulo, axila, ficha BI-RADS y anexo PDF a página completa.",
+                                  color: "text-pink-400 border-pink-500/30 bg-pink-950/20"
+                                },
                                                                 {
                                   id: "clinical_scorecard",
                                   label: "Scorecard Clinico de Criterios (pre-Atlas)",
@@ -20470,11 +20522,17 @@ const splitReportAndAnnex = (text: string) => {
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Reloj mamario bilateral, nódulo dominante, axilas y ficha BI-RADS — se despliega al activar (en construcción).
+                                Reloj mamario bilateral, nódulo dominante, axilas, ficha BI-RADS bajo imagen y anexo PDF a página completa.
                               </p>
                               <button
                                 type="button"
-                                onClick={() => setIsBreast3dSuiteOpen(p => !p)}
+                                onClick={() => {
+                                  setIsBreast3dSuiteOpen(p => {
+                                    const next = !p;
+                                    if (next) setTimeout(() => document.getElementById("breast-3d-suite-module")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+                                    return next;
+                                  });
+                                }}
                                 className={`w-full py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2 font-mono cursor-pointer border-2 ${
                                   isBreast3dSuiteOpen
                                     ? "bg-pink-600/15 border-pink-500/60 text-pink-200"
@@ -20928,27 +20986,20 @@ const splitReportAndAnnex = (text: string) => {
                           )}
 
                           {isBreast3dSuiteOpen && (
-                            <div id="breast-3d-suite-module" className="my-6 rounded-2xl border border-pink-800/40 bg-slate-950/80 p-5 space-y-3">
-                              <div className="flex items-center justify-between gap-3">
-                                <div>
-                                  <h3 className="text-sm font-black uppercase tracking-widest text-pink-300 font-mono">Suite Mama 3D</h3>
-                                  <p className="text-xs text-slate-400 mt-1">
-                                    Misma arquitectura que Tiroides: paneles 3D (ambas mamas + zoom de lesión + axila), ficha BI-RADS rica bajo la imagen y anexo PDF a página completa. Módulo completo en la siguiente entrega.
-                                  </p>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => setIsBreast3dSuiteOpen(false)}
-                                  className="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest bg-pink-900/40 text-pink-200 border border-pink-700/40"
-                                >
-                                  Cerrar
-                                </button>
-                              </div>
-                              <ul className="text-[11px] text-slate-300 space-y-1 list-disc pl-4">
-                                <li>Contrato espacial de reloj mamario (3 = derecha del pezón en imagen).</li>
-                                <li>Tabla de lesiones BI-RADS (composición, forma, márgenes, eco, vascularidad).</li>
-                                <li>Estado axilar y síntesis de seguimiento/biopsia.</li>
-                              </ul>
+                            <div id="breast-3d-suite-module" className="my-6">
+                              <Breast3DModule
+                                reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
+                                activeProtocol={specificStudy || studyType || ""}
+                                laterality=""
+                                selectedModel={modelFor("breast3d")}
+                                breastData={breast3dData}
+                                setBreastData={setBreast3dData}
+                                includeInReport={includeBreast3dInReport}
+                                setIncludeInReport={setIncludeBreast3dInReport}
+                                scorecardData={clinicalScorecardData}
+                                externalDirectives={buildBreastDirectivesFromScorecard(clinicalScorecardData) || atlasDirectivesFromScorecard}
+                                onClose={() => setIsBreast3dSuiteOpen(false)}
+                              />
                             </div>
                           )}
 
@@ -23464,6 +23515,8 @@ const splitReportAndAnnex = (text: string) => {
                         if (viewingCloudStudy.includeAtlas3dInReport !== undefined) setIncludeAtlas3dInReport(viewingCloudStudy.includeAtlas3dInReport);
                         if (viewingCloudStudy.vascular3dData) setVascular3dData(viewingCloudStudy.vascular3dData);
                         if (viewingCloudStudy.thyroid3dData) setThyroid3dData(viewingCloudStudy.thyroid3dData);
+                        if (viewingCloudStudy.breast3dData) setBreast3dData(viewingCloudStudy.breast3dData);
+                        if (viewingCloudStudy.includeBreast3dInReport !== undefined) setIncludeBreast3dInReport(viewingCloudStudy.includeBreast3dInReport);
                         if (viewingCloudStudy.includeThyroid3dInReport !== undefined) setIncludeThyroid3dInReport(viewingCloudStudy.includeThyroid3dInReport);
                         if (viewingCloudStudy.focalLesion3dData) setFocalLesion3dData(viewingCloudStudy.focalLesion3dData);
                         if (viewingCloudStudy.includeVascular3dInReport !== undefined) setIncludeVascular3dInReport(viewingCloudStudy.includeVascular3dInReport);
