@@ -153,7 +153,7 @@ export function renderFocalLesion3DAnnexToPDF(
   const boxTitleH = 8.4 * factor;
   const boxPad = 3.4 * factor;
   const boxLineH = 4 * factor;
-  const boxGap = 3.2 * factor;
+  const boxGap = 5.5 * factor;
   let reservedTextH = 0;
   if (textBoxes.length) {
     reservedTextH += 3.5 * factor;
