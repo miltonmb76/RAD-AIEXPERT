@@ -627,9 +627,9 @@ export const Knee3DModule: React.FC<Knee3DModuleProps> = ({
             </div>
           </div>
 
-          <div className="rounded-2xl border border-sky-500/30 bg-gradient-to-br from-slate-950 via-slate-950 to-sky-950/40 p-4 space-y-3 text-slate-100">
+          <div className="rounded-2xl border border-sky-500/30 bg-gradient-to-br from-slate-950 via-slate-950 to-sky-950/40 p-4 space-y-5 text-slate-100">
             <p className="text-[10px] font-mono font-bold uppercase tracking-[0.18em] text-sky-300">Ficha clínica rodilla / ligamentos-meniscos</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-5">
               <div className="md:col-span-2 rounded-xl border border-sky-800/40 bg-slate-950/70 p-3">
                 <p className="text-[10px] font-mono font-black uppercase tracking-widest text-sky-300 mb-1">Resumen del rodilla</p>
                 {isEditingText ? (

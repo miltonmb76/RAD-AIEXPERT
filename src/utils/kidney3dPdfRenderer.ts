@@ -165,25 +165,39 @@ export async function renderKidney3DPageToPdf(
   const dossierTexts = dossierBlocks.filter((b) => b.text);
   if (dossierTexts.length) {
     let dossierY = yCoord;
-    // Single column: each box hugs its text (no forced equal height / empty space)
+    // Single column: each box hugs its text; gaps expand to fill remaining page height
     const boxW = contentWidth;
     const titleH = 4.2 * factor;
     const lineH = 3.4 * factor;
-    const boxGap = 2.2 * factor;
+    const minBoxGap = 5.5 * factor;
+    const maxBoxGap = 12 * factor;
+    let boxGap = minBoxGap;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9.0 * factor);
     doc.setTextColor(15, 23, 42);
     doc.text("FICHA CLÍNICA RENAL / VÍAS URINARIAS (CORRELACIÓN CON LA FIGURA 3D)", marginX, dossierY);
     dossierY += 3.4 * factor;
 
-    for (let i = 0; i < dossierTexts.length; i++) {
-      const b = dossierTexts[i];
+    // Measure box heights first, then distribute leftover page space as inter-box gaps
+    const measured = dossierTexts.map((b) => {
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8.0 * factor);
       const lines = doc.splitTextToSize(b.text, boxW - 8);
-      // Show full text; height follows content only
       const textH = Math.max(lineH, lines.length * lineH);
-      const boxH = titleH + textH + 4.5 * factor;
+      return { lines, boxH: titleH + textH + 4.5 * factor };
+    });
+    const totalBoxesH = measured.reduce((sum, m) => sum + m.boxH, 0);
+    const gapCount = Math.max(1, dossierTexts.length - 1);
+    const pageBottom = pageHeight - 16 * factor;
+    const leftover = pageBottom - dossierY - totalBoxesH;
+    if (leftover > minBoxGap * gapCount) {
+      boxGap = Math.min(maxBoxGap, leftover / gapCount);
+    }
+
+    for (let i = 0; i < dossierTexts.length; i++) {
+      const b = dossierTexts[i];
+      const lines = measured[i].lines;
+      const boxH = measured[i].boxH;
       doc.setFillColor(240, 253, 250);
       doc.setDrawColor(153, 246, 228);
       doc.setLineWidth(0.3);
@@ -198,7 +212,7 @@ export async function renderKidney3DPageToPdf(
       doc.setFontSize(8.0 * factor);
       doc.setTextColor(51, 65, 85);
       doc.text(lines, marginX + 5, dossierY + titleH + 2.2 * factor);
-      dossierY += boxH + boxGap;
+      dossierY += boxH + (i < dossierTexts.length - 1 ? boxGap : 0);
     }
     yCoord = dossierY + 0.5 * factor;
   }
