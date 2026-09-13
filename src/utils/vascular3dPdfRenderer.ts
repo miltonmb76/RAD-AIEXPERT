@@ -2,7 +2,7 @@ import jsPDF from "jspdf";
 import { Vascular3DData, Vascular3DPanel, VascularHemodynamicRow } from "../types";
 
 /**
- * Renders an exclusive, full-page "ANEXO: SUITE VASCULAR 3D & MAPA ANATOMO-HEMODINÁMICO" into the provided jsPDF document.
+ * Renders an exclusive, two-page "ANEXO: SUITE VASCULAR 3D & MAPA ANATOMO-HEMODINÁMICO" into the provided jsPDF document.
  * 
  * Guarantees:
  * 1. Safe top margin starting at y = 22mm (never collides with running header).
@@ -74,11 +74,11 @@ export async function renderVascular3DPageToPdf(
   const panelCount = Math.min(Math.max(panels.length, 1), 3);
 
   if (panelCount > 0) {
-    const gap = panelCount === 3 ? 3.5 : 5;
+    const gap = panelCount === 3 ? 2.2 : 3.0;
     const totalGaps = (panelCount - 1) * gap;
     const cardWidth = (contentWidth - totalGaps) / panelCount;
-    const imgWidth = cardWidth - 4;
-    const imgHeight = imgWidth * (3 / 4); // Strict 4:3 ratio
+    const imgWidth = cardWidth - 2;
+    const imgHeight = imgWidth * (3 / 4); // keep aspect ratio, do not stretch // Strict 4:3 ratio
 
     // Caption box hugs text tightly (no large empty footer) so the hemodynamic table keeps readable type
     const measureCaptionH = (p: Vascular3DPanel): number => {
@@ -114,8 +114,8 @@ export async function renderVascular3DPageToPdf(
       doc.roundedRect(cardX, yCoord, cardWidth, cardH, 2, 2, "FD");
 
       // Image Render
-      const imgX = cardX + 2;
-      const imgY = yCoord + 2;
+      const imgX = cardX + 1;
+      const imgY = yCoord + 1;
 
       if (p.imageUrl && p.imageUrl.startsWith("data:image")) {
         try {
@@ -170,6 +170,19 @@ export async function renderVascular3DPageToPdf(
 
   // 4. TAILORED HEMODYNAMIC TABLE
   const tableData: VascularHemodynamicRow[] = vascularData.hemodynamicTable || [];
+  // ========== PAGE 2: tabla ecográfica (letra mayor) + síntesis ==========
+  doc.addPage();
+  yCoord = 22 * factor;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12 * factor);
+  doc.setTextColor(15, 23, 42);
+  doc.text("ANEXO: SUITE VASCULAR 3D — TABLA Y SÍNTESIS", marginX, yCoord);
+  yCoord += 4.2 * factor;
+  doc.setDrawColor(79, 70, 229);
+  doc.setLineWidth(0.7);
+  doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
+  yCoord += 6 * factor;
+
   const tableTitle = vascularData.tableTitle || `TABLA HEMODINÁMICA Y CARACTERIZACIÓN DE LESIONES:`;
   const headers = vascularData.tableHeaders || {
     col1: "VASO / SEGMENTO",
@@ -215,7 +228,7 @@ export async function renderVascular3DPageToPdf(
 
   // Calculate dynamic header height with automatic text wrapping
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(7.2 * factor);
+  doc.setFontSize(8.4 * factor);
   doc.setTextColor(51, 65, 85); // slate-700
 
   const wrappedHeaders = headerLabels.map((lbl, i) => {
@@ -248,7 +261,7 @@ export async function renderVascular3DPageToPdf(
   visibleRows.forEach((row, rIdx) => {
     // Split texts to calculate row height
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.4 * factor);
+    doc.setFontSize(10 * factor);
 
     const c1Lines = doc.splitTextToSize(row.vessel || "", colWidths[0] - 3);
     const c2Lines = doc.splitTextToSize(row.plaqueOrThrombus || "", colWidths[1] - 3);
@@ -270,21 +283,21 @@ export async function renderVascular3DPageToPdf(
 
     // Col 1: Vaso (Bold)
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(7.4 * factor);
+    doc.setFontSize(10 * factor);
     doc.setTextColor(15, 23, 42);
     doc.text(c1Lines, cellX + 2, yCoord + 3.0 * factor);
     cellX += colWidths[0];
 
     // Col 2: Placa / Trombo / Compresibilidad
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.2 * factor);
+    doc.setFontSize(8.4 * factor);
     doc.setTextColor(71, 85, 105);
     doc.text(c2Lines, cellX + 2, yCoord + 3.0 * factor);
     cellX += colWidths[1];
 
     // Col 3: % Estenosis / Flujo Espontáneo / Diámetro (Color coding)
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(7.4 * factor);
+    doc.setFontSize(8.5 * factor);
     const stText = (row.stenosisPercent || "").trim().toLowerCase();
     if (
       stText.includes(">") || 
@@ -308,7 +321,7 @@ export async function renderVascular3DPageToPdf(
 
     // Col 4: Patrón (PSV/EDV) / Maniobra Aumento
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.2 * factor);
+    doc.setFontSize(8.4 * factor);
     doc.setTextColor(51, 65, 85);
     doc.text(c4Lines, cellX + 2, yCoord + 3.0 * factor);
     cellX += colWidths[3];
@@ -354,7 +367,7 @@ export async function renderVascular3DPageToPdf(
     const footerSafeBottom = pageHeight - 18 * factor;
     const synthTitle = vascularData.synthesisTitle || "SÍNTESIS MORFOLÓGICA Y HEMODINÁMICA:";
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.6 * factor);
+    doc.setFontSize(9.0 * factor);
     const synthLineH = 3.8 * factor;
     const synthLines = doc.splitTextToSize(synthText.trim(), contentWidth - 12);
     const titleBlockH = 9.5 * factor;
@@ -420,7 +433,7 @@ export async function renderVascular3DPageToPdf(
       drawSynthChrome(boxH, firstChunk);
 
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(7.6 * factor);
+      doc.setFontSize(9.0 * factor);
       doc.setTextColor(51, 65, 85); // slate-700
       let curY = yCoord + headerH;
       chunk.forEach((line: string) => {

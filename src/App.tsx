@@ -23,18 +23,20 @@ import { renderScorecardAnnexToPDF } from "./utils/scorecardPdfRenderer";
 import { renderReasoningChainAnnexToPDF } from "./utils/reasoningChainPdfRenderer";
 import { renderDifferentialTreeAnnexToPDF } from "./utils/differentialTreePdfRenderer";
 import { renderMeasurementsGaugeAnnexToPDF } from "./utils/measurementsGaugePdfRenderer";
-import { Atlas3DData, Vascular3DData, FocalLesion3DData, Thyroid3DData, Breast3DData, Shoulder3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData } from "./types";
-import { buildAtlasDirectivesFromScorecard, buildAtlasPanelFindingAssignments, buildVascularDirectivesFromScorecard, buildThyroidDirectivesFromScorecard, buildBreastDirectivesFromScorecard, buildShoulderDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
+import { Atlas3DData, Vascular3DData, FocalLesion3DData, Thyroid3DData, Breast3DData, Shoulder3DData, Knee3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData } from "./types";
+import { buildAtlasDirectivesFromScorecard, buildAtlasPanelFindingAssignments, buildVascularDirectivesFromScorecard, buildThyroidDirectivesFromScorecard, buildBreastDirectivesFromScorecard, buildShoulderDirectivesFromScorecard, buildKneeDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
 import { Vascular3DModule } from "./components/Vascular3DModule";
 import { FocalLesion3DModule } from "./components/FocalLesion3DModule";
 import { Thyroid3DModule } from "./components/Thyroid3DModule";
 import { Breast3DModule } from "./components/Breast3DModule";
 import { Shoulder3DModule } from "./components/Shoulder3DModule";
+import { Knee3DModule } from "./components/Knee3DModule";
 import { renderVascular3DPageToPdf } from "./utils/vascular3dPdfRenderer";
 import { renderFocalLesion3DAnnexToPDF } from "./utils/focalLesion3dPdfRenderer";
 import { renderThyroid3DPageToPdf } from "./utils/thyroid3dPdfRenderer";
 import { renderBreast3DPageToPdf } from "./utils/breast3dPdfRenderer";
 import { renderShoulder3DPageToPdf } from "./utils/shoulder3dPdfRenderer";
+import { renderKnee3DPageToPdf } from "./utils/knee3dPdfRenderer";
 import { renderElastographyAnnexToPdf, ElastographyPdfData } from "./utils/elastographyPdfRenderer";
 import { renderUsImagesToPdf, getPanelLetter } from "./utils/usImagesPdfRenderer";
 import { renderMmgImagesToPdf } from "./utils/mmgImagesPdfRenderer";
@@ -1439,8 +1441,10 @@ export default function App() {
         if (localStudy.thyroid3dData) setThyroid3dData(localStudy.thyroid3dData);
         if (localStudy.breast3dData) setBreast3dData(localStudy.breast3dData);
         if (localStudy.shoulder3dData) setShoulder3dData(localStudy.shoulder3dData);
+        if (localStudy.knee3dData) setKnee3dData(localStudy.knee3dData);
         if (localStudy.includeBreast3dInReport !== undefined) setIncludeBreast3dInReport(localStudy.includeBreast3dInReport);
         if (localStudy.includeShoulder3dInReport !== undefined) setIncludeShoulder3dInReport(localStudy.includeShoulder3dInReport);
+        if (localStudy.includeKnee3dInReport !== undefined) setIncludeKnee3dInReport(localStudy.includeKnee3dInReport);
         if (localStudy.includeThyroid3dInReport !== undefined) setIncludeThyroid3dInReport(localStudy.includeThyroid3dInReport);
         if (localStudy.includeFocalLesion3dInReport !== undefined) setIncludeFocalLesion3dInReport(localStudy.includeFocalLesion3dInReport);
         if (localStudy.usImagesGridMode) setUsImagesGridMode(localStudy.usImagesGridMode as any);
@@ -2635,6 +2639,8 @@ export default function App() {
   const [includeBreast3dInReport, setIncludeBreast3dInReport] = useState<boolean>(true);
   const [shoulder3dData, setShoulder3dData] = useState<Shoulder3DData | null>(null);
   const [includeShoulder3dInReport, setIncludeShoulder3dInReport] = useState<boolean>(true);
+  const [knee3dData, setKnee3dData] = useState<Knee3DData | null>(null);
+  const [includeKnee3dInReport, setIncludeKnee3dInReport] = useState<boolean>(true);
 
   // Cuadrícula y Presentación Científica para Fotos de Ultrasonido
   const [usImagesGridMode, setUsImagesGridMode] = useState<UsImagesGridMode>("auto");
@@ -2695,6 +2701,8 @@ export default function App() {
     includeBreast3dInReport,
     shoulder3dData,
     includeShoulder3dInReport,
+    knee3dData,
+    includeKnee3dInReport,
     focalLesion3dData,
     includeFocalLesion3dInReport,
     usImagesGridMode,
@@ -3338,6 +3346,7 @@ Ejemplo:
   const [isThyroid3dSuiteOpen, setIsThyroid3dSuiteOpen] = useState<boolean>(false);
   const [isBreast3dSuiteOpen, setIsBreast3dSuiteOpen] = useState<boolean>(false);
   const [isShoulder3dSuiteOpen, setIsShoulder3dSuiteOpen] = useState<boolean>(false);
+  const [isKnee3dSuiteOpen, setIsKnee3dSuiteOpen] = useState<boolean>(false);
   const [includeRadarInReport, setIncludeRadarInReport] = useState<boolean>(true);
 
   // States & Handlers for Sistema de Activación Rápida de Módulos (Procesamiento en Lote)
@@ -3350,6 +3359,7 @@ Ejemplo:
     thyroid3d: false,
     breast3d: false,
     shoulder3d: false,
+    knee3d: false,
     radar: false,
     case_analysis: false,
     quality_eval: false,
@@ -3380,6 +3390,7 @@ Ejemplo:
       thyroid3d: select,
       breast3d: select,
       shoulder3d: select,
+      knee3d: select,
       radar: select,
       case_analysis: select,
       quality_eval: select,
@@ -3660,6 +3671,39 @@ Ejemplo:
             }
           } catch (e) {
             console.error("Error en batch shoulder 3d:", e);
+          }
+        }
+
+        if (modules.knee3d) {
+          try {
+            const radarForKnee = biomechanicalRadarData
+              ? {
+                  radarMode: biomechanicalRadarData.radarMode,
+                  dominantVector: biomechanicalRadarData.dominantVector,
+                  clinicalSummary: biomechanicalRadarData.clinicalSummary,
+                  globalScore: biomechanicalRadarData.globalScore,
+                  axes: biomechanicalRadarData.axes,
+                }
+              : undefined;
+            const kneeDirectives = buildKneeDirectivesFromScorecard(scorecardForModules, radarForKnee);
+            const resp = await fetch("/api/generate-3d-knee", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                reportText: activeReport,
+                kneeType: "rodilla_ligamentos",
+                requestedModel: modelFor("knee3d"),
+                customDirectives: kneeDirectives || undefined
+              })
+            });
+            const j = await resp.json();
+            if (j.success && j.data) {
+              setKnee3dData(j.data);
+              setIncludeKnee3dInReport(true);
+              setIsKnee3dSuiteOpen(true);
+            }
+          } catch (e) {
+            console.error("Error en batch knee 3d:", e);
           }
         }
 
@@ -4379,6 +4423,8 @@ Ejemplo:
             includeBreast3dInReport: includeBreast3dInReport,
             shoulder3dData: shoulder3dData || null,
             includeShoulder3dInReport: includeShoulder3dInReport,
+            knee3dData: knee3dData || null,
+            includeKnee3dInReport: includeKnee3dInReport,
             focalLesion3dData: focalLesion3dData || null,
             includeFocalLesion3dInReport: includeFocalLesion3dInReport,
             usImagesGridMode: usImagesGridMode || "auto",
@@ -4409,6 +4455,7 @@ Ejemplo:
                 thyroid3dData: null,
                 breast3dData: null,
                 shoulder3dData: null,
+                knee3dData: null,
                 focalLesion3dData: null,
                 customLogoUrl: "",
                 customSignatureUrl: "",
@@ -5506,6 +5553,8 @@ Ejemplo:
             includeBreast3dInReport: includeBreast3dInReport,
             shoulder3dData: shoulder3dData || null,
             includeShoulder3dInReport: includeShoulder3dInReport,
+            knee3dData: knee3dData || null,
+            includeKnee3dInReport: includeKnee3dInReport,
             focalLesion3dData: focalLesion3dData || null,
             includeFocalLesion3dInReport: includeFocalLesion3dInReport,
             usImagesGridMode: usImagesGridMode || "auto",
@@ -9924,6 +9973,12 @@ Ejemplo:
       const shouldIncludeShoulder = studyOverride ? (studyOverride.includeShoulder3dInReport !== false) : (pdfStateRef.current?.includeShoulder3dInReport !== false && includeShoulder3dInReport);
       if (activeShoulderData && shouldIncludeShoulder && (activeShoulderData.panels?.length || activeShoulderData.findingTable?.length)) {
         await renderShoulder3DPageToPdf(doc, activeShoulderData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+      }
+
+      const activeKneeData = studyOverride ? studyOverride.knee3dData : (pdfStateRef.current?.knee3dData || knee3dData);
+      const shouldIncludeKnee = studyOverride ? (studyOverride.includeKnee3dInReport !== false) : (pdfStateRef.current?.includeKnee3dInReport !== false && includeKnee3dInReport);
+      if (activeKneeData && shouldIncludeKnee && (activeKneeData.panels?.length || activeKneeData.findingTable?.length)) {
+        await renderKnee3DPageToPdf(doc, activeKneeData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
       }
 
       // Restore standard margins and content widths for any diagrams, annexes, and signature block
@@ -20016,6 +20071,13 @@ const splitReportAndAnnex = (text: string) => {
                                   desc: "Overview del hombro, cutaway del manguito, TCLB/bursa/AC, ficha clinica y anexo PDF.",
                                   color: "text-amber-400 border-amber-500/30 bg-amber-950/20"
                                 },
+                                {
+                                  id: "knee3d",
+                                  label: "Suite Rodilla 3D & Ficha Ligamentos-Meniscos",
+                                  badge: "RODILLA 3D",
+                                  desc: "Overview de rodilla, meniscos/LCM-LCL, mecanismo extensor/derrame, ficha clinica y anexo PDF.",
+                                  color: "text-sky-400 border-sky-500/30 bg-sky-950/20"
+                                },
                                                                 {
                                   id: "clinical_scorecard",
                                   label: "Scorecard Clinico de Criterios (pre-Atlas)",
@@ -20751,6 +20813,148 @@ const splitReportAndAnnex = (text: string) => {
                             </div>
 
                             
+                            {/* Card: Suite Rodilla 3D */}
+                            <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-sky-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
+                              <div className="flex items-center gap-2 justify-between">
+                                <div className="flex items-center gap-2">
+                                  <Activity className="h-4 w-4 text-sky-400" />
+                                  <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
+                                    Suite Rodilla 3D
+                                  </h4>
+                                </div>
+                                <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-sky-950/40 text-sky-400 border border-sky-900/30 px-2 py-0.5 rounded">
+                                  RODILLA 3D
+                                </span>
+                              </div>
+                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
+                                Meniscos, LCM/LCL, mecanismo extensor y derrame con ficha clínica; inyecta scorecard y radar biomecánico de rodilla.
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsKnee3dSuiteOpen(p => {
+                                    const next = !p;
+                                    if (next) setTimeout(() => document.getElementById("knee-3d-suite-module")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+                                    return next;
+                                  });
+                                }}
+                                className={`w-full py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2 font-mono cursor-pointer border-2 ${
+                                  isKnee3dSuiteOpen
+                                    ? "bg-sky-600/15 border-sky-500/60 text-sky-200"
+                                    : "bg-slate-950 border-slate-800 hover:border-sky-500/30 text-sky-400"
+                                }`}
+                              >
+                                <Activity className="h-4 w-4" />
+                                {isKnee3dSuiteOpen ? "Ocultar Suite Rodilla" : "Abrir Suite Rodilla 3D"}
+                              </button>
+                            </div>
+
+{/* Card 8d: Sinopsis de Fracturas (IA) */}
+                            <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-emerald-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
+                              <div className="flex items-center gap-2 justify-between">
+                                <div className="flex items-center gap-2">
+                                  <Bone className="h-4 w-4 text-emerald-400" />
+                                  <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
+                                    Sinopsis de Fracturas (IA)
+                                  </h4>
+                                </div>
+                                <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-emerald-950/40 text-emerald-400 border border-emerald-900/30 px-2 py-0.5 rounded">
+                                  FRACTURAS
+                                </span>
+                              </div>
+                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
+                                Clasifica y desglosa hallazgos traumatol�gicos en tabla sin�ptica inyectable al informe.
+                              </p>
+                              <button
+                                onClick={() => setIsCreadorSinopsisFracturasOpen(p => !p)}
+                                className={`w-full py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2 font-mono cursor-pointer border-2 ${
+                                  isCreadorSinopsisFracturasOpen
+                                    ? "bg-emerald-600/15 border-emerald-500/60 text-emerald-200"
+                                    : "bg-slate-950 border-slate-800 hover:border-emerald-500/30 text-emerald-400"
+                                }`}
+                              >
+                                <Bone className="h-4 w-4" />
+                                {isCreadorSinopsisFracturasOpen ? "Ocultar Sinopsis" : "Abrir Sinopsis de Fracturas"}
+                              </button>
+                            </div>
+
+                            {/* Card 9: Resumen Operacional para WhatsApp (IA) */}
+                            <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-emerald-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
+                              <div className="flex items-center gap-2 justify-between">
+                                <div className="flex items-center gap-2">
+                                  <ListTodo className="h-4 w-4 text-emerald-400" />
+                                  <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
+                                    Resumen Operacional (IA)
+                                  </h4>
+                                </div>
+                                <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-emerald-950/40 text-emerald-400 border border-emerald-900/30 px-2 py-0.5 rounded">
+                                  WhatsApp
+                                </span>
+                              </div>
+                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
+                                Extrae un resumen de hallazgos del reporte de manera automática para inyectarlo en el WhatsApp y mostrarlo al paciente.
+                              </p>
+                              <button
+                                onClick={handleGenerateWhatsAppSummary}
+                                disabled={isGeneratingOperationalSummary || !(isEditingReportManual ? editedReportText : generatedReport)}
+                                className={`w-full py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2 font-mono cursor-pointer border-2 ${
+                                  operationalSummaryText
+                                    ? "bg-emerald-600/15 border-emerald-500/60 text-emerald-200"
+                                    : "bg-slate-950 border-slate-800 hover:border-emerald-500/30 text-emerald-450"
+                                }`}
+                              >
+                                {isGeneratingOperationalSummary ? (
+                                  <RefreshCw className="h-4 w-4 animate-spin text-emerald-400" />
+                                ) : (
+                                  <ListTodo className="h-4 w-4 text-emerald-450" />
+                                )}
+                                {isGeneratingOperationalSummary
+                                  ? "Generando Resumen..."
+                                  : operationalSummaryText
+                                  ? "Resumen Listo ✓ (Generar de Nuevo)"
+                                  : "Crear Resumen 📋"}
+                              </button>
+                            </div>
+
+                            {/* Card 10: Cuadro de Semiología por Imágenes (IA) */}
+                            <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-cyan-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all animate-fade-in">
+                              <div className="flex items-center gap-2 justify-between">
+                                <div className="flex items-center gap-2">
+                                  <ShieldCheck className="h-4 w-4 text-cyan-400" />
+                                  <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
+                                    Semiología por Imágenes (IA)
+                                  </h4>
+                                </div>
+                                <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-cyan-950/40 text-cyan-400 border border-cyan-900/30 px-2 py-0.5 rounded">
+                                  SEMIOLOGÍA
+                                </span>
+                              </div>
+                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
+                                Realiza un cuadro de semiología por imágenes para justificar clínicamente cada uno de los diagnósticos establecidos y detallar las patologías descartadas.
+                              </p>
+                              <button
+                                onClick={handleGenerateSemiologyTable}
+                                disabled={isGeneratingSemiology || !(isEditingReportManual ? editedReportText : generatedReport)}
+                                className={`w-full py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2 font-mono cursor-pointer border-2 ${
+                                  semiologyData
+                                    ? "bg-cyan-600/15 border-cyan-500/60 text-cyan-200 font-bold"
+                                    : "bg-slate-950 border-slate-800 hover:border-cyan-500/30 text-cyan-450"
+                                }`}
+                              >
+                                {isGeneratingSemiology ? (
+                                  <RefreshCw className="h-4 w-4 animate-spin text-cyan-400" />
+                                ) : (
+                                  <ShieldCheck className="h-4 w-4" />
+                                )}
+                                {isGeneratingSemiology
+                                  ? "Confeccionando Cuadro..."
+                                  : semiologyData
+                                  ? "Cuadro Listo ✓ (Confeccionar Nuevo)"
+                                  : "Confeccionar Cuadro Semiológico"}
+                              </button>
+                            </div>
+
+                            
                             {/* Card: Scorecard de Criterios + sync Atlas Overlay */}
                             <div className="p-4 rounded-2xl bg-slate-950/60 border border-teal-900/40 space-y-3">
                               <div className="flex items-start justify-between gap-3">
@@ -21129,6 +21333,35 @@ const splitReportAndAnnex = (text: string) => {
                                     : undefined
                                 ) || atlasDirectivesFromScorecard}
                                 onClose={() => setIsShoulder3dSuiteOpen(false)}
+                              />
+                            </div>
+                          )}
+
+{isKnee3dSuiteOpen && (
+                            <div id="knee-3d-suite-module" className="my-6">
+                              <Knee3DModule
+                                reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
+                                activeProtocol={specificStudy || studyType || ""}
+                                laterality=""
+                                selectedModel={modelFor("knee3d")}
+                                kneeData={knee3dData}
+                                setKneeData={setKnee3dData}
+                                includeInReport={includeKnee3dInReport}
+                                setIncludeInReport={setIncludeKnee3dInReport}
+                                scorecardData={clinicalScorecardData}
+                                externalDirectives={buildKneeDirectivesFromScorecard(
+                                  clinicalScorecardData,
+                                  biomechanicalRadarData
+                                    ? {
+                                        radarMode: biomechanicalRadarData.radarMode,
+                                        dominantVector: biomechanicalRadarData.dominantVector,
+                                        clinicalSummary: biomechanicalRadarData.clinicalSummary,
+                                        globalScore: biomechanicalRadarData.globalScore,
+                                        axes: biomechanicalRadarData.axes,
+                                      }
+                                    : undefined
+                                ) || atlasDirectivesFromScorecard}
+                                onClose={() => setIsKnee3dSuiteOpen(false)}
                               />
                             </div>
                           )}
@@ -23648,7 +23881,9 @@ const splitReportAndAnnex = (text: string) => {
                         if (viewingCloudStudy.breast3dData) setBreast3dData(viewingCloudStudy.breast3dData);
                         if (viewingCloudStudy.includeBreast3dInReport !== undefined) setIncludeBreast3dInReport(viewingCloudStudy.includeBreast3dInReport);
                         if (viewingCloudStudy.shoulder3dData) setShoulder3dData(viewingCloudStudy.shoulder3dData);
+                        if (viewingCloudStudy.knee3dData) setKnee3dData(viewingCloudStudy.knee3dData);
                         if (viewingCloudStudy.includeShoulder3dInReport !== undefined) setIncludeShoulder3dInReport(viewingCloudStudy.includeShoulder3dInReport);
+                        if (viewingCloudStudy.includeKnee3dInReport !== undefined) setIncludeKnee3dInReport(viewingCloudStudy.includeKnee3dInReport);
                         if (viewingCloudStudy.includeThyroid3dInReport !== undefined) setIncludeThyroid3dInReport(viewingCloudStudy.includeThyroid3dInReport);
                         if (viewingCloudStudy.focalLesion3dData) setFocalLesion3dData(viewingCloudStudy.focalLesion3dData);
                         if (viewingCloudStudy.includeVascular3dInReport !== undefined) setIncludeVascular3dInReport(viewingCloudStudy.includeVascular3dInReport);

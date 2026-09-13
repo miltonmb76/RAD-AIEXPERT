@@ -2,7 +2,7 @@ import jsPDF from "jspdf";
 import { Thyroid3DData, Thyroid3DPanel, ThyroidNoduleRow } from "../types";
 
 /**
- * Renders an exclusive, full-page "ANEXO: SUITE TIROIDES 3D & FICHA TI-RADS Y CORRELACIÓN 3D" into the provided jsPDF document.
+ * Renders an exclusive, two-page "ANEXO: SUITE TIROIDES 3D & FICHA TI-RADS Y CORRELACIÓN 3D" into the provided jsPDF document.
  * 
  * Guarantees:
  * 1. Safe top margin starting at y = 22mm (never collides with running header).
@@ -75,11 +75,11 @@ export async function renderThyroid3DPageToPdf(
   const panelCount = Math.min(Math.max(panels.length, 1), 3);
 
   if (panelCount > 0) {
-    const gap = panelCount === 3 ? 3.5 : 5;
+    const gap = panelCount === 3 ? 2.2 : 3.0;
     const totalGaps = (panelCount - 1) * gap;
     const cardWidth = (contentWidth - totalGaps) / panelCount;
-    const imgWidth = cardWidth - 4;
-    const imgHeight = imgWidth * (3 / 4); // Strict 4:3 ratio
+    const imgWidth = cardWidth - 2;
+    const imgHeight = imgWidth * (3 / 4); // keep aspect ratio, do not stretch // Strict 4:3 ratio
 
     // Caption box hugs text tightly (no large empty footer) so the hemodynamic table keeps readable type
     const measureCaptionH = (p: Thyroid3DPanel): number => {
@@ -115,8 +115,8 @@ export async function renderThyroid3DPageToPdf(
       doc.roundedRect(cardX, yCoord, cardWidth, cardH, 2, 2, "FD");
 
       // Image Render
-      const imgX = cardX + 2;
-      const imgY = yCoord + 2;
+      const imgX = cardX + 1;
+      const imgY = yCoord + 1;
 
       if (p.imageUrl && p.imageUrl.startsWith("data:image")) {
         try {
@@ -186,64 +186,62 @@ export async function renderThyroid3DPageToPdf(
 
   const dossierTexts = dossierBlocks.filter((b) => b.text);
   if (dossierTexts.length) {
-    const availableBeforePanels = Math.max(28 * factor, 36 * factor);
     let dossierY = yCoord;
-    const colGap = 3.5;
-    const cols = dossierTexts.length >= 3 ? 2 : 1;
-    const boxW = cols === 2 ? (contentWidth - colGap) / 2 : contentWidth;
-    let col = 0;
-    let rowY = dossierY;
-    let maxRowH = 0;
+    // Single column: each box hugs its text (no forced equal height / empty space)
+    const boxW = contentWidth;
+    const titleH = 4.2 * factor;
+    const lineH = 3.4 * factor;
+    const boxGap = 2.2 * factor;
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(8.2 * factor);
+    doc.setFontSize(9.0 * factor);
     doc.setTextColor(15, 23, 42);
     doc.text("FICHA CLÍNICA TIROIDEA (CORRELACIÓN CON LA FIGURA 3D)", marginX, dossierY);
-    dossierY += 3.2 * factor;
-    rowY = dossierY;
+    dossierY += 3.4 * factor;
 
     for (let i = 0; i < dossierTexts.length; i++) {
       const b = dossierTexts[i];
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(7.2 * factor);
-      const titleH = 4 * factor;
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(7.0 * factor);
-      const lines = doc.splitTextToSize(b.text, boxW - 6);
-      const maxLines = cols === 2 ? 5 : 4;
-      const used = lines.slice(0, maxLines);
-      const textH = used.length * 3.05 * factor;
-      const boxH = titleH + textH + 4 * factor;
-      const x = marginX + col * (boxW + colGap);
+      doc.setFontSize(8.0 * factor);
+      const lines = doc.splitTextToSize(b.text, boxW - 8);
+      // Show full text; height follows content only
+      const textH = Math.max(lineH, lines.length * lineH);
+      const boxH = titleH + textH + 4.5 * factor;
       doc.setFillColor(248, 250, 252);
       doc.setDrawColor(203, 213, 225);
       doc.setLineWidth(0.3);
-      doc.roundedRect(x, rowY, boxW, boxH, 1.2, 1.2, "FD");
+      doc.roundedRect(marginX, dossierY, boxW, boxH, 1.2, 1.2, "FD");
       doc.setFillColor(b.color[0], b.color[1], b.color[2]);
-      doc.rect(x, rowY, 2.0, boxH, "F");
+      doc.rect(marginX, dossierY, 2.2, boxH, "F");
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(7.0 * factor);
+      doc.setFontSize(7.8 * factor);
       doc.setTextColor(b.color[0], b.color[1], b.color[2]);
-      doc.text(b.title, x + 4, rowY + 3.6 * factor);
+      doc.text(b.title, marginX + 5, dossierY + 3.6 * factor);
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(6.8 * factor);
+      doc.setFontSize(8.0 * factor);
       doc.setTextColor(51, 65, 85);
-      doc.text(used, x + 4, rowY + titleH + 2.2 * factor);
-      maxRowH = Math.max(maxRowH, boxH);
-      col += 1;
-      if (col >= cols) {
-        col = 0;
-        rowY += maxRowH + 2.5 * factor;
-        maxRowH = 0;
-      }
+      doc.text(lines, marginX + 5, dossierY + titleH + 2.2 * factor);
+      dossierY += boxH + boxGap;
     }
-    if (col !== 0) rowY += maxRowH + 2.5 * factor;
-    yCoord = rowY + 1.5 * factor;
+    yCoord = dossierY + 0.5 * factor;
   }
 
 
   
 // 4. TAILORED HEMODYNAMIC TABLE
   const tableData: ThyroidNoduleRow[] = thyroidData.noduleTable || [];
+  // ========== PAGE 2: tabla ecográfica (letra mayor) + síntesis ==========
+  doc.addPage();
+  yCoord = 22 * factor;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12 * factor);
+  doc.setTextColor(15, 23, 42);
+  doc.text("ANEXO: SUITE TIROIDES 3D — TABLA Y SÍNTESIS", marginX, yCoord);
+  yCoord += 4.2 * factor;
+  doc.setDrawColor(13, 148, 136);
+  doc.setLineWidth(0.7);
+  doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
+  yCoord += 6 * factor;
+
   const tableTitle = thyroidData.tableTitle || `TABLA TI-RADS Y CARACTERIZACIÓN DE LESIONES:`;
   const headers = thyroidData.tableHeaders || {
     col1: "LOCALIZACIÓN",
@@ -289,7 +287,7 @@ export async function renderThyroid3DPageToPdf(
 
   // Calculate dynamic header height with automatic text wrapping
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(7.2 * factor);
+  doc.setFontSize(8.4 * factor);
   doc.setTextColor(51, 65, 85); // slate-700
 
   const wrappedHeaders = headerLabels.map((lbl, i) => {
@@ -322,7 +320,7 @@ export async function renderThyroid3DPageToPdf(
   visibleRows.forEach((row, rIdx) => {
     // Split texts to calculate row height
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.4 * factor);
+    doc.setFontSize(10 * factor);
 
     const c1Lines = doc.splitTextToSize(row.location || "", colWidths[0] - 3);
     const c2Lines = doc.splitTextToSize(row.composition || "", colWidths[1] - 3);
@@ -344,21 +342,21 @@ export async function renderThyroid3DPageToPdf(
 
     // Col 1: Vaso (Bold)
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(7.4 * factor);
+    doc.setFontSize(10 * factor);
     doc.setTextColor(15, 23, 42);
     doc.text(c1Lines, cellX + 2, yCoord + 3.0 * factor);
     cellX += colWidths[0];
 
     // Col 2: Placa / Trombo / Compresibilidad
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.2 * factor);
+    doc.setFontSize(8.4 * factor);
     doc.setTextColor(71, 85, 105);
     doc.text(c2Lines, cellX + 2, yCoord + 3.0 * factor);
     cellX += colWidths[1];
 
     // Col 3: % Estenosis / Flujo Espontáneo / Diámetro (Color coding)
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(7.4 * factor);
+    doc.setFontSize(8.5 * factor);
     const stText = (row.size || "").trim().toLowerCase();
     if (
       stText.includes(">") || 
@@ -382,7 +380,7 @@ export async function renderThyroid3DPageToPdf(
 
     // Col 4: Patrón (PSV/EDV) / Maniobra Aumento
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.2 * factor);
+    doc.setFontSize(8.4 * factor);
     doc.setTextColor(51, 65, 85);
     doc.text(c4Lines, cellX + 2, yCoord + 3.0 * factor);
     cellX += colWidths[3];
@@ -428,7 +426,7 @@ export async function renderThyroid3DPageToPdf(
     const footerSafeBottom = pageHeight - 18 * factor;
     const synthTitle = thyroidData.synthesisTitle || "SÍNTESIS MORFOLÓGICA Y HEMODINÁMICA:";
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.6 * factor);
+    doc.setFontSize(9.0 * factor);
     const synthLineH = 3.8 * factor;
     const synthLines = doc.splitTextToSize(synthText.trim(), contentWidth - 12);
     const titleBlockH = 9.5 * factor;
@@ -494,7 +492,7 @@ export async function renderThyroid3DPageToPdf(
       drawSynthChrome(boxH, firstChunk);
 
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(7.6 * factor);
+      doc.setFontSize(9.0 * factor);
       doc.setTextColor(51, 65, 85); // slate-700
       let curY = yCoord + headerH;
       chunk.forEach((line: string) => {
