@@ -84,6 +84,8 @@ export interface CloudStudy {
   includeVascular3dInReport?: boolean;
   focalLesion3dData?: any;
   includeFocalLesion3dInReport?: boolean;
+  thyroid3dData?: any;
+  includeThyroid3dInReport?: boolean;
   usImagesGridMode?: string;
   patientSummary?: any;
 }
