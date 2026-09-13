@@ -2024,7 +2024,434 @@ RESPONDE EN JSON:
 
   // 5. Focal Lesion Cutaway 3D (on-demand: auto-detect or manual focus, 1–2 panels)
   
-  app.post("/api/generate-focal-lesion-3d", async (req: express.Request, res: express.Response) => {
+  
+  // BREAST 3D SUITE
+  app.post("/api/generate-3d-breast", async (req: express.Request, res: express.Response) => {
+    try {
+      const { reportText, breastType, laterality, requestedModel, customDirectives } = req.body;
+
+      if (!reportText || !reportText.trim()) {
+        return res.status(400).json({ success: false, error: "Se requiere el texto del informe mama." });
+      }
+
+      const ai = getGeminiClient();
+      const model = getModelName(requestedModel || "gemini-3.7-flash");
+
+      const breastPrompt = `Eres un Radiólogo experto en ecografía tiroidea y cuello, especialista ACR BI-RADS y director de arte médico 3D cervical.
+Tu misión es analizar el informe de ecografía de mama/cuello adjunto para estructurar la "SUITE MAMA 3D & FICHA BI-RADS" con máxima fidelidad anatomopatológica y tiroidea.
+
+========================================================================
+INFORMACIÓN DEL ESTUDIO VASCULAR:
+========================================================================
+- Tipo de Estudio Sugerido / Seleccionado: "${breastType || "Detectar automáticamente del informe"}"
+- Lateralidad Solicitada: "${laterality || "Detectar del informe"}"
+- DIRECTIVA CLÍNICA OBLIGATORIA (Scorecard vascular / médico — MANDATORY, no omitir): "${customDirectives || "Ninguna"}"
+IMPORTANTE: Si hay directiva clínica, DEBE gobernar la anatomía 3D, la morfología de placa/trombo, el grado de estenosis, la lateralidad y la tabla tiroidea. No inventes lesiones ni grados ausentes en la directiva/informe.
+- INFORME DOPPLER VASCULAR:
+"""
+${reportText}
+"""
+
+========================================================================
+REGLA DE SCORECARD / DIRECTIVA OBLIGATORIA:
+========================================================================
+Si "DIRECTIVA CLÍNICA OBLIGATORIA" no es "Ninguna", trátela como contrato clínico vinculante:
+- Los paneles 3D y la tabla tiroidea DEBEN reflejar esos hallazgos (nódulos, categoría BI-RADS, focos ecogénicos, flujo, índices, lado).
+- Prohibido inventar lesiones o grados no respaldados por la directiva o el informe.
+
+========================================================================
+DIRECTIVAS CLÍNICAS Y TIPOS DE ESTUDIO:
+========================================================================
+Clasifica el estudio en uno de los 5 tipos canónicos y genera la tabla tiroidea correspondiente:
+1. "mama_b_mode": Doppler Carotídeo y Vertebral (ACC, Bulbo, ACI proximal/media, ACE, Arteria Vertebral V1/V2 bilateral o unilateral).
+   - Encabezados: LOCALIZACIÓN | COMPOSICIÓN | TAMAÑO | ECOGENICIDAD | MÁRGENES | IMPACTO
+2. "mama_doppler": Doppler Arterial de Miembros Inferiores (AFC, AFP, AFS proximal/media/distal, A. Poplítea, ATA, ATP, A. Peronea, Pedial).
+   - Encabezados: LOCALIZACIÓN | PLACA / MORFOLOGÍA | TAMAÑO | ONDA / PSV (cm/s) | REL. VELOCIDAD (VR) | IMPACTO
+3. "mama_nodos": Doppler Venoso de Miembros Inferiores (VFC, VF, VFP, V. Poplítea, V. Tibiales, Safena Mayor, Safena Menor).
+   - Encabezados: SEGMENTO VENOSO | COMPRESIBILIDAD / TROMBO | FLUJO ESPONTÁNEO / FÁSICO | MANIOBRA DE AUMENTO | REFLUJO / COMPETENCIA | ESTADO CLÍNICO
+4. "general_breast": Doppler de Arterias Renales (Aorta Abdominal, A. Renal Principal Derecha/Izquierda ostium/cuerpo/hilio, Ramas Interlobares).
+   - Encabezados: LOCALIZACIÓN EVALUADO | PLACA / HALLAZGO LUMINAL | PSV (cm/s) / EDV | ÍNDICE RENOAÓRTICO (RAR) | ÍNDICE DE RESISTIVIDAD (RI) | INTERPRETACIÓN
+5. "general_breast": Doppler Aorto-Ilíaco (Aorta Suprarrenal, Infrarrenal, Bifurcación, A. Ilíaca Común Derecha/Izquierda, Ilíaca Externa/Interna).
+   - Encabezados: SEGMENTO VASCULAR | PLACA / CALCIFICACIÓN / TROMBO | DIÁMETRO / ECTASIA / ANEURISMA | TAMAÑO | PSV (cm/s) / PATRÓN | IMPACTO
+
+========================================================================
+DISEÑO DE PANELES 3D VASCULARES (Generar 2 o 3 Paneles):
+========================================================================
+- Panel A: Vaso o bifurcación principal con la lesión más significativa (ej: Bulbo Carotídeo con placa mixta Gray-Weale Tipo II y reducción luminal, o AFS con estenosis/oclusión, o Vaso con trombo endoluminal).
+- Panel B: Vaso contralateral o segmento complementario (ej: Eje carotídeo contralateral o lecho distal).
+- Panel C (opcional, si el estudio involucra patología bilateral compleja o tercer territorio crítico).
+- LATERALIDAD OBLIGATORIA POR PANEL (convención radiografía AP / paciente de frente):
+  - Cada panel DEBE declarar "laterality" exacta (Derecha|Izquierda|Bilateral|Línea media) = lado ANATÓMICO DEL PACIENTE.
+  - Vista AP/frontal por defecto: lado DERECHO del paciente a la IZQUIERDA del cuadro; lado IZQUIERDO del paciente a la DERECHA del cuadro.
+  - El imagePrompt DEBE empezar con el lado del paciente y anclas de pantalla (ej. "Patient RIGHT carotid bifurcation on VIEWER'S LEFT of frame (AP convention); viewer-right = contralateral/left side landmarks...").
+  - NUNCA intercambiar lados entre paneles ni espejar por estética. Si hay contralateral sano, márcalo explícitamente como el lado opuesto correcto.
+  - doNotInvent implícito: mirrored laterality, side swap, patient-right on viewer-right in AP, inventing contralateral disease.
+- PROMPT EN INGLÉS para cada panel:
+  "Ultra-realistic 3D medical breast gland cross-section render of [PATIENT SIDE + detailed location name], exact wall layer cutaway, exact breast nodule morphology (lipid core, fibrous cap, calcifications, ulceration, or clean healthy intima), intraluminal lumen opening with glowing chromatic laminar blood flow vectors, anatomical bone/soft tissue landmark background that locks laterality, cinema 4D octane render style, soft surgical studio lighting, clean background, strictly NO text, NO numbers, NO arrows, NO letters inside the image. Do NOT mirror anatomy."
+
+========================================================================
+SÍNTESIS MORFOLÓGICA Y HEMODINÁMICA:
+========================================================================
+Redacta un texto integrador de 3 a 5 líneas con las conclusiones del estudio, consensos (SRU/NASCET/Intersocietal), repercusión tiroidea y permeabilidad.
+
+
+IMPORTANTE MAMA / BI-RADS:
+- Genera 2 o 3 paneles: (A) glándula mama anterior con ambos lóbulos e istmo, (B) nódulo dominante en cutaway macro, (C opcional) mapa ganglionar cervical.
+- Cada panel incluye panelRole: "gland" | "nodule" | "nodes", clockPositionOrSite, anatomicalFocus detallado (3-5 líneas clínicas).
+- noduleTable filas con: location, size, composition, echogenicity, margins, echogenicFoci, tiradsCategory, clinicalImpact.
+- Incluye breastSummary, morphologyNotes, axillaryStatus (textos clínicos ricos en español) y keyPoints (array 3-6 bullets).
+- tableHeaders col1..col8: LOCALIZACIÓN, COMPOSICIÓN, TAMAÑO, ECOGENICIDAD, MÁRGENES, FOCOS ECOGÉNICOS, BI-RADS, IMPACTO.
+- No inventes nódulos ni categorías BI-RADS ausentes del informe/directiva.
+- Prompts de imagen en inglés, fotorrealismo anatómico, sin texto dentro de la imagen, lateralidad AP (derecha del paciente a la izquierda del cuadro).
+
+ADEMÁS DEL JSON PREVIO, DEBE INCLUIR:
+"breastSummary": "...",
+"morphologyNotes": "...",
+"axillaryStatus": "...",
+"keyPoints": ["...", "..."],
+"noduleTable": [ { "location":"...", "size":"...", "composition":"...", "echogenicity":"...", "margins":"...", "echogenicFoci":"...", "tiradsCategory":"TR3", "clinicalImpact":"..." } ],
+paneles con "panelRole" y "clockPositionOrSite".
+
+
+REGLAS ESPECÍFICAS MAMA / BI-RADS:
+- 2–3 paneles: (A) ambas mamas vista frontal con pezones y cuadrantes/reloj; (B) cutaway macro del nódulo dominante; (C opcional) axila ipsilateral.
+- Contrato de reloj OBLIGATORIO: manos idénticas en ambas mamas; las 3 = derecha del pezón en la imagen (derecha del observador); las 9 = izquierda del pezón. Nunca invertir por estética.
+- laterality por panel = lado anatómico del paciente (Derecha|Izquierda|Bilateral).
+- lesionTable filas con: location (reloj + distancia al pezón), composition (quística/sólida/mixta), size (mm/cm), shape, margins, echogenicity, orientation, vascularity, biradsCategory, clinicalImpact.
+- NUNCA intercambiar composition y size. size solo medidas (ej. "8 × 5 mm"); composition solo morfología (ej. "Quística pura").
+- Incluir breastSummary, morphologyNotes, axillaryStatus, keyPoints[].
+- No inventar lesiones ni categorías BI-RADS ausentes del informe/directiva.
+- Prompts de imagen en inglés, fotorrealismo anatómico femenino clínico, sin texto en la imagen.
+
+RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
+{
+  "studyTypeCategory": "mama_b_mode" | "mama_doppler" | "mama_nodos" | "general_breast",
+  "territoryLabel": "ECOGRAFÍA DE MAMAS" | "ECOGRAFÍA MAMA + DOPPLER" | "ECOGRAFÍA MAMA + GANGLIOS",
+  "laterality": "Bilateral" | "Derecha" | "Izquierda" | "Línea media",
+  "figureTitle": "FIGURA 1. ATLAS 3D MAMARIO Y CORRELACIÓN BI-RADS",
+  "tableTitle": "TABLA ECOGRÁFICA Y CARACTERIZACIÓN DE LESIONES MAMARIAS:",
+  "tableHeaders": {
+    "col1": "LOCALIZACIÓN",
+    "col2": "COMPOSICIÓN",
+    "col3": "TAMAÑO",
+    "col4": "ECOGENICIDAD",
+    "col5": "MÁRGENES",
+    "col6": "ORIENTACIÓN",
+    "col7": "VASCULARIDAD",
+    "col8": "BI-RADS",
+    "col9": "IMPACTO"
+  },
+  "panels": [
+    {
+      "panelLetter": "A",
+      "panelTitle": "Panel A: Ambas mamas — vista frontal con pezones y reloj",
+      "clockPositionOrSite": "Ambas mamas",
+      "anatomicalFocus": "Parénquima mamario bilateral con pezones y cuadrantes...",
+      "laterality": "Bilateral",
+      "panelRole": "both_breasts",
+      "imagePrompt": "Ultra-realistic 3D medical breast gland render..."
+    },
+    {
+      "panelLetter": "B",
+      "panelTitle": "Panel B: Cutaway del nódulo dominante",
+      "clockPositionOrSite": "Mama derecha, 3h",
+      "anatomicalFocus": "Lesión dominante con márgenes y composición...",
+      "laterality": "Derecha",
+      "panelRole": "lesion",
+      "imagePrompt": "Ultra-realistic 3D medical breast gland render..."
+    }
+  ],
+  "lesionTable": [
+    {
+      "location": "Mama derecha, 3h, 2 cm del pezón",
+      "composition": "Quística pura",
+      "size": "< 5 mm",
+      "shape": "Oval",
+      "margins": "Circunscritos, regulares",
+      "echogenicity": "Anecoica con refuerzo posterior",
+      "orientation": "Paralela",
+      "vascularity": "Ausente",
+      "biradsCategory": "BI-RADS 2",
+      "clinicalImpact": "Quiste simple benigno"
+    }
+  ],
+  "synthesisTitle": "SÍNTESIS MORFOLÓGICA Y CATEGORIZACIÓN BI-RADS:",
+  "morphologicalSynthesis": "El estudio ecográfico mamario bilateral evidencia..."
+}`;
+
+      const planResponse = await ai.models.generateContent({
+        model: model,
+        contents: [{ text: breastPrompt }],
+        config: { responseMimeType: "application/json" }
+      });
+
+      let planJson: any = {};
+      try {
+        planJson = JSON.parse(planResponse.text || "{}");
+      } catch (parseErr) {
+        console.error("Error parseando plan JSON Vascular 3D:", parseErr);
+        planJson = {
+          studyTypeCategory: breastType || "mama_b_mode",
+          territoryLabel: "DOPPLER VASCULAR",
+          laterality: laterality || "Bilateral",
+          figureTitle: "FIGURA 1. ATLAS 3D DE CORRELACIÓN VASCULAR Y HEMODINÁMICA",
+          tableTitle: "TABLA HEMODINÁMICA Y CARACTERIZACIÓN VASCULAR:",
+          tableHeaders: {
+            col1: "LOCALIZACIÓN",
+            col2: "COMPOSICIÓN",
+            col3: "TAMAÑO",
+            col4: "ECOGENICIDAD",
+            col5: "REL. / ÍNDICE",
+            col6: "IMPACTO"
+          },
+          panels: [
+            {
+              panelLetter: "A",
+              panelTitle: "Panel A: Reconstrucción Vascular de Alta Resolución",
+              anatomicalFocus: "Evaluación morfológica parietal y luminal del eje vascular principal.",
+              laterality: "Derecha",
+              imagePrompt: "Ultra-realistic 3D medical breast gland cross-section render showing blood location wall, translucent lumen with chromatic laminar flow vectors, studio lighting, octane render, no text."
+            },
+            {
+              panelLetter: "B",
+              panelTitle: "Panel B: Eje Complementario / Contralateral",
+              anatomicalFocus: "Permeabilidad y morfología parietal del vaso complementario.",
+              laterality: "Izquierda",
+              imagePrompt: "Ultra-realistic 3D medical breast gland render of contralateral blood location, smooth endothelial intima, clean studio background, octane render, no text."
+            }
+          ],
+          lesionTable: [
+            {
+              location: "Eje Vascular Principal",
+              composition: "Morfología evaluada",
+              size: "0%",
+              echogenicity: "Flujo laminar normal",
+              margins: "Normal",
+              clinicalImpact: "Sin repercusión tiroidea"
+            }
+          ],
+          synthesisTitle: "SÍNTESIS MORFOLÓGICA Y HEMODINÁMICA:",
+          morphologicalSynthesis: "La correlación anatomopatológica y velocimétrica confirma la permeabilidad y características tiroideas descriptas en el estudio."
+        };
+      }
+
+      // Generate images in parallel for each vascular panel
+      const breastPanelsWithImages = await Promise.all(
+        (planJson.panels || []).map(async (panel: any, idx: number) => {
+          let promptToUse = panel.imagePrompt || `Ultra-realistic 3D medical breast gland render of ${panel.clockPositionOrSite || panel.panelTitle}, octane render, no text.`;
+          if (customDirectives && customDirectives.trim()) {
+            promptToUse = `${promptToUse} [MANDATORY CLINICAL DIRECTIVE: ${customDirectives.trim()}].`;
+          }
+          {
+            const screenMap = buildScreenLateralityConstraint(panel.laterality || planJson.laterality || laterality, "AP / coronal");
+            if (panel.laterality && panel.laterality !== "auto") {
+              promptToUse = `[MANDATORY PATIENT LATERALITY: ${panel.laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${screenMap} ${promptToUse}`;
+            } else {
+              promptToUse = `${LATERALITY_HARD_RULES} ${screenMap} ${promptToUse}`;
+            }
+          }
+
+          try {
+            const imageUrl = await generateMedicalImage(ai, promptToUse);
+            return {
+              id: `breast-panel-${idx}-${Date.now()}`,
+              panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
+              panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
+              clockPositionOrSite: panel.clockPositionOrSite || panel.panelTitle || "",
+              anatomicalFocus: panel.anatomicalFocus || "Evaluación vascular anatómica y tiroidea",
+              laterality: panel.laterality || planJson.laterality || laterality || "",
+              imageUrl: imageUrl,
+              promptUsed: promptToUse,
+              isCustomFlipped: false,
+              panelRole: panel.panelRole || (idx === 0 ? "both_breasts" : idx === 1 ? "lesion" : "axilla")
+            };
+          } catch (imgErr) {
+            console.error(`Error generando imagen para panel vascular ${panel.panelLetter}:`, imgErr);
+            return {
+              id: `breast-panel-${idx}-${Date.now()}`,
+              panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
+              panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
+              clockPositionOrSite: panel.clockPositionOrSite || panel.panelTitle || "",
+              anatomicalFocus: panel.anatomicalFocus || "Evaluación vascular anatómica y tiroidea",
+              laterality: panel.laterality || planJson.laterality || laterality || "",
+              imageUrl: "",
+              promptUsed: promptToUse,
+              isCustomFlipped: false,
+              panelRole: panel.panelRole || (idx === 0 ? "both_breasts" : idx === 1 ? "lesion" : "axilla")
+            };
+          }
+        })
+      );
+
+      const finalBreastData = {
+        studyTypeCategory: planJson.studyTypeCategory || breastType || "mama_b_mode",
+        territoryLabel: planJson.territoryLabel || "ECOGRAFÍA DE MAMAS",
+        laterality: planJson.laterality || laterality || "Bilateral",
+        figureTitle: planJson.figureTitle || "FIGURA 1. ATLAS 3D MAMARIO Y CORRELACIÓN BI-RADS",
+        tableTitle: planJson.tableTitle || "TABLA DE LESIONES Y CATEGORIZACIÓN BI-RADS:",
+        tableHeaders: {
+          col1: "LOCALIZACIÓN",
+          col2: "COMPOSICIÓN",
+          col3: "TAMAÑO",
+          col4: "ECOGENICIDAD",
+          col5: "MÁRGENES",
+          col6: "ORIENTACIÓN",
+          col7: "VASCULARIDAD",
+          col8: "BI-RADS",
+          col9: "IMPACTO"
+        },
+        panels: breastPanelsWithImages,
+        lesionTable: (planJson.lesionTable || planJson.noduleTable || []).map((row: any) => {
+          // Evitar invertir composición/tamaño si el modelo los cruza
+          const rawSize = String(row.size || "").trim();
+          const rawComposition = String(row.composition || row.shape || "").trim();
+          const looksLikeSize = (t: string) =>
+            /\d/.test(t) && /(mm|cm|≤|≥|<|>|×|x\s*\d)/i.test(t);
+          const looksLikeComposition = (t: string) =>
+            /(quíst|quist|sólid|solid|mixt|complej|espong|conserv|ganglion|oval|redond|irreg)/i.test(t);
+          let size = rawSize;
+          let composition = rawComposition;
+          if (looksLikeSize(rawComposition) && !looksLikeSize(rawSize)) {
+            size = rawComposition;
+            composition = rawSize || row.shape || "";
+          } else if (
+            looksLikeComposition(rawSize) &&
+            !looksLikeSize(rawSize) &&
+            looksLikeSize(rawComposition)
+          ) {
+            size = rawComposition;
+            composition = rawSize;
+          }
+          return {
+            location: row.location || "",
+            size: size || "",
+            composition: composition || row.shape || "",
+            shape: row.shape || composition || "",
+            margins: row.margins || "",
+            echogenicity: row.echogenicity || "",
+            orientation: row.orientation || row.echogenicFoci || "",
+            vascularity: row.vascularity || "",
+            biradsCategory: row.biradsCategory || row.tiradsCategory || "",
+            clinicalImpact: row.clinicalImpact || ""
+          };
+        }),
+        breastSummary: planJson.breastSummary || "",
+        morphologyNotes: planJson.morphologyNotes || "",
+        axillaryStatus: planJson.axillaryStatus || "",
+        keyPoints: Array.isArray(planJson.keyPoints) ? planJson.keyPoints : [],
+        synthesisTitle: planJson.synthesisTitle || "SÍNTESIS MORFOLÓGICA Y CATEGORIZACIÓN BI-RADS:",
+        morphologicalSynthesis: planJson.morphologicalSynthesis || ""
+      };
+
+      res.json({
+        success: true,
+        data: finalBreastData
+      });
+
+    } catch (error: any) {
+      console.error("Error en /api/generate-3d-breast:", error);
+      res.status(500).json({ success: false, error: handleGeminiError(error) });
+    }
+  });
+
+  // 4. REGENERATE INDIVIDUAL VASCULAR 3D PANEL
+  
+  app.post("/api/regenerate-3d-breast-panel", async (req: express.Request, res: express.Response) => {
+    try {
+      const { reportText, breastType, panel, laterality, userDirective, requestedModel, customDirectives } = req.body;
+
+      if (!panel) {
+        return res.status(400).json({ success: false, error: "Se requiere el panel breast a regenerar." });
+      }
+
+      const ai = getGeminiClient();
+      const model = getModelName(requestedModel || "gemini-3.7-flash");
+
+      const refinePrompt = `Eres un Radiólogo experto en mama y Director de Arte Médico 3D.
+Diseña un prompt en inglés superdetallado para re-generar una única imagen breast macrofotorrealista 3D correspondiente al PANEL ${panel.panelLetter}.
+
+DATOS DEL CASO:
+- Territorio: "${breastType || "Ecografía de mama"}"
+- Vaso: "${panel.clockPositionOrSite || panel.panelTitle || ""}"
+- Foco actual: "${panel.anatomicalFocus || ""}"
+- Lateralidad requerida: "${laterality || panel.laterality || ""}"
+- Instrucción / Corrección del médico: "${userDirective || "Mejorar precisión anatomopatológica y hemodinámica"}"
+- DIRECTIVA CLÍNICA OBLIGATORIA (Scorecard / médico): "${customDirectives || "Ninguna"}"
+- Contexto del informe: """${(reportText || "").slice(0, 800)}"""
+
+REGLAS DE ESTILO:
+- Ultra-realistic 3D medical macro breast cross-section render, cinema 4D octane render style, accurate breast parenchyma and capsule, dominant nodule cutaway with composition/margins/echogenic foci cues, tracheal and carotid landmarks for laterality, soft surgical studio lighting, pure clean background.
+- STRICTLY NO text, NO numbers, NO letters, NO arrows inside the image.
+
+RESPONDE EN JSON:
+{
+  "panelTitle": "Título actualizado o confirmado para el panel",
+  "clockPositionOrSite": "Nombre del vaso",
+  "anatomicalFocus": "Foco anatomopatológico y hemodinámico de 1 a 2 líneas",
+  "imagePrompt": "Detailed English image generation prompt..."
+}`;
+
+      const refineResponse = await ai.models.generateContent({
+        model: model,
+        contents: [{ text: refinePrompt }],
+        config: { responseMimeType: "application/json" }
+      });
+
+      let refineJson: any = {};
+      try {
+        refineJson = JSON.parse(refineResponse.text || "{}");
+      } catch (e) {
+        refineJson = {
+          panelTitle: panel.panelTitle,
+          clockPositionOrSite: panel.clockPositionOrSite || panel.panelTitle,
+          anatomicalFocus: panel.anatomicalFocus,
+          imagePrompt: `Ultra-realistic 3D medical macro breast render of ${panel.clockPositionOrSite || panel.panelTitle}, octane render, studio lighting, no text.`
+        };
+      }
+
+      let finalPrompt = refineJson.imagePrompt || panel.promptUsed || `3D macro breast render of ${panel.panelTitle}, no text.`;
+      if (customDirectives && String(customDirectives).trim()) {
+        finalPrompt = `${finalPrompt} [MANDATORY CLINICAL DIRECTIVE: ${String(customDirectives).trim()}].`;
+      }
+      if (userDirective && userDirective.trim()) {
+        finalPrompt = `${finalPrompt} [MANDATORY SURGICAL CORRECTION: ${userDirective.trim()}].`;
+      }
+      if (laterality && laterality !== "auto") {
+        const screenMap = buildScreenLateralityConstraint(laterality, "AP / coronal");
+        finalPrompt = `[MANDATORY PATIENT LATERALITY: ${laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${screenMap} ${finalPrompt}`;
+      } else {
+        const screenMap = buildScreenLateralityConstraint(laterality, "AP / coronal");
+        finalPrompt = `${LATERALITY_HARD_RULES} ${screenMap} ${finalPrompt}`;
+      }
+
+      const imageUrl = await generateMedicalImage(ai, finalPrompt);
+
+      const updatedPanel = {
+        ...panel,
+        panelTitle: refineJson.panelTitle || panel.panelTitle,
+        clockPositionOrSite: refineJson.clockPositionOrSite || panel.clockPositionOrSite,
+        anatomicalFocus: refineJson.anatomicalFocus || panel.anatomicalFocus,
+        laterality: laterality || panel.laterality,
+        imageUrl: imageUrl,
+        promptUsed: finalPrompt,
+        isCustomFlipped: false
+      };
+
+      res.json({
+        success: true,
+        panel: updatedPanel
+      });
+
+    } catch (error: any) {
+      console.error("Error en /api/regenerate-3d-breast-panel:", error);
+      res.status(500).json({ success: false, error: handleGeminiError(error) });
+    }
+  });
+
+  // 5. Focal Lesion Cutaway 3D (on-demand: auto-detect or manual focus, 1–2 panels)
+  
+  
+app.post("/api/generate-focal-lesion-3d", async (req: express.Request, res: express.Response) => {
     try {
       const {
         reportText,

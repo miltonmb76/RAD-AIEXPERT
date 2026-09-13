@@ -452,6 +452,61 @@ export function buildThyroidDirectivesFromScorecard(
   ].join("\n");
 }
 
+
+/**
+ * Build mandatory Breast 3D directives from a BI-RADS / breast scorecard.
+ * Mirrors thyroid: scorecard governs lesions, category and laterality/clock site.
+ */
+export function buildBreastDirectivesFromScorecard(
+  scorecard: ClinicalScorecardData | null | undefined
+): string {
+  if (!scorecard) return "";
+  const base = buildAtlasDirectivesFromScorecard(scorecard);
+  const summary = (scorecard.clinicalSummary || "").trim();
+  const reco = (scorecard.recommendation || "").trim();
+  const protocol = (scorecard.protocolName || scorecard.protocolId || "").toLowerCase();
+  const isBreast =
+    protocol.includes("birads") ||
+    protocol.includes("bi-rads") ||
+    protocol.includes("mama") ||
+    protocol.includes("breast") ||
+    protocol.includes("mamaria");
+
+  let body = base;
+  if (!body) {
+    const allCriteria = Array.isArray(scorecard.criteria) ? scorecard.criteria : [];
+    const evidenced = allCriteria
+      .filter((c) => (c.evidence || c.value || "").trim())
+      .slice(0, 10)
+      .map((c, i) => {
+        const val = c.value ? ` (${c.value})` : "";
+        return `${i + 1}. «${c.atlasStructure || c.criterion}»${val}: ${c.evidence || c.status}`;
+      });
+    if (evidenced.length || summary) {
+      body = [
+        `SCORECARD MAMA (${scorecard.protocolName || "protocolo"} — ${scorecard.categoryAssigned || ""}):`,
+        `Semáforo: ${scorecard.trafficLight}. Criterios: ${scorecard.scoreMet}/${scorecard.scoreTotal}.`,
+        summary ? `Síntesis: ${summary}` : "",
+        reco ? `Recomendación: ${reco}` : "",
+        evidenced.length ? "Hallazgos del scorecard a respetar en 3D/tabla BI-RADS:" : "",
+        ...evidenced,
+      ]
+        .filter(Boolean)
+        .join("\n");
+    }
+  }
+  if (!body) return "";
+
+  return [
+    "DIRECTIVA OBLIGATORIA DEL SCORECARD MAMA (debe gobernar paneles 3D, ficha y tabla de lesiones):",
+    body,
+    isBreast
+      ? "Prioriza BI-RADS, lado, posición en reloj, distancia al pezón, morfología y estado axilar. Reloj: 3 = derecha del pezón en la imagen (manos de reloj idénticas en ambas mamas)."
+      : "Si el scorecard no es BI-RADS, extrae solo hallazgos mamarios/axilares aplicables; no inventes lesiones.",
+    "No inventes nódulos, calcificaciones ni categorías BI-RADS ausentes en el scorecard/informe.",
+  ].join("\n");
+}
+
 export function scorecardTrafficLabel(light: ClinicalScorecardData["trafficLight"]): string {
   switch (light) {
     case "critical":

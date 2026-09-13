@@ -344,6 +344,67 @@ export interface Thyroid3DData {
   morphologicalSynthesis?: string;
 }
 
+
+export type BreastStudyType =
+  | "mama_b_mode"
+  | "mama_doppler"
+  | "mama_axilas"
+  | "general_breast";
+
+export interface Breast3DPanel {
+  id?: string;
+  panelLetter: string;
+  panelTitle: string;
+  anatomicalFocus: string;
+  laterality?: string;
+  clockPositionOrSite?: string;
+  panelRole?: "both_breasts" | "lesion" | "axilla";
+  imageUrl?: string;
+  isCustomFlipped?: boolean;
+  promptUsed?: string;
+}
+
+export interface BreastLesionRow {
+  location: string;          // ej: "Mama derecha, 3h, 3 cm del pezón"
+  size: string;
+  composition?: string;      // quística / sólida / mixta
+  shape: string;             // oval / redondo / irregular
+  margins: string;
+  echogenicity: string;
+  orientation: string;       // paralelo / no paralelo
+  vascularity: string;
+  biradsCategory: string;    // BI-RADS 2..5
+  clinicalImpact: string;
+}
+
+export interface Breast3DData {
+  studyTypeCategory?: BreastStudyType;
+  territoryLabel?: string;
+  laterality?: string;
+  figureTitle?: string;
+  tableTitle?: string;
+  tableHeaders?: {
+    col1: string;
+    col2: string;
+    col3: string;
+    col4: string;
+    col5: string;
+    col6: string;
+    col7: string;
+    col8: string;
+    col9: string;
+  };
+  panels: Breast3DPanel[];
+  lesionTable: BreastLesionRow[];
+  /** Rich clinical blocks under / with the figure */
+  breastSummary?: string;
+  morphologyNotes?: string;
+  axillaryStatus?: string;
+  keyPoints?: string[];
+  synthesisTitle?: string;
+  morphologicalSynthesis?: string;
+}
+
 export type UsImagesGridMode = "auto" | "1x1" | "1x2" | "2x1" | "2x2" | "3x2" | "4x2";
 
 /** One quantitative measurement extracted from the report for gauge display. */
