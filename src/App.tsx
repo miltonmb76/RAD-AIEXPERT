@@ -20247,7 +20247,7 @@ const splitReportAndAnnex = (text: string) => {
                                   id: "ankle3d",
                                   label: "Suite Tobillo 3D & Ficha Ligamentos-Aquiles",
                                   badge: "TOBILLO 3D",
-                                  desc: "Overview de tobillo, LPAA/ATFL-LPC/CFL-deltoides, Aquiles, derrame, ficha clinica y anexo PDF.",
+                                  desc: "Overview de tobillo, LPAA/ATFL-LPC/CFL-deltoides, Aquiles, derrame, ficha clínica y anexo PDF.",
                                   color: "text-lime-400 border-lime-500/30 bg-lime-950/20"
                                 },
                                 {
