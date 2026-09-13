@@ -579,6 +579,64 @@ export interface Kidney3DData {
   morphologicalSynthesis?: string;
 }
 
+
+export type AbdomenStudyType =
+  | "abdomen_completo"
+  | "abdomen_superior"
+  | "abdomen_agudo"
+  | "general_abdomen";
+
+export interface Abdomen3DPanel {
+  id?: string;
+  panelLetter: string;
+  panelTitle: string;
+  anatomicalFocus: string;
+  laterality?: string;
+  structureOrSite?: string;
+  panelRole?: "overview" | "hepatobiliary" | "renal_spleen" | "bowel_fluid";
+  imageUrl?: string;
+  isCustomFlipped?: boolean;
+  promptUsed?: string;
+}
+
+export interface AbdomenFindingRow {
+  location: string;           // ej: "Hígado / lobulo derecho" / "FID"
+  structure: string;          // parenquima / vesicula / pancreas / bazo / rinon / asas
+  sizeOrThickness: string;    // diametro, grosor parietal, eje bipolar (mm)
+  echoPattern: string;        // ecoestructura / esteatosis / litiasis
+  stoneOrLesion: string;      // litiasis / LOE / quiste / sin lesiones
+  fluidOrDoppler: string;     // liquido libre / Doppler / sin fluido
+  severity: string;           // leve / moderada / severa
+  clinicalImpact: string;
+}
+
+export interface Abdomen3DData {
+  studyTypeCategory?: AbdomenStudyType;
+  territoryLabel?: string;
+  laterality?: string;
+  figureTitle?: string;
+  tableTitle?: string;
+  tableHeaders?: {
+    col1: string;
+    col2: string;
+    col3: string;
+    col4: string;
+    col5: string;
+    col6: string;
+    col7: string;
+    col8: string;
+  };
+  panels: Abdomen3DPanel[];
+  findingTable: AbdomenFindingRow[];
+  /** Rich clinical blocks under / with the figure */
+  abdomenSummary?: string;
+  morphologyNotes?: string;
+  hepatobiliaryStatus?: string;
+  keyPoints?: string[];
+  synthesisTitle?: string;
+  morphologicalSynthesis?: string;
+}
+
 export type UsImagesGridMode = "auto" | "1x1" | "1x2" | "2x1" | "2x2" | "3x2" | "4x2";
 
 /** One quantitative measurement extracted from the report for gauge display. */

@@ -23,8 +23,8 @@ import { renderScorecardAnnexToPDF } from "./utils/scorecardPdfRenderer";
 import { renderReasoningChainAnnexToPDF } from "./utils/reasoningChainPdfRenderer";
 import { renderDifferentialTreeAnnexToPDF } from "./utils/differentialTreePdfRenderer";
 import { renderMeasurementsGaugeAnnexToPDF } from "./utils/measurementsGaugePdfRenderer";
-import { Atlas3DData, Vascular3DData, FocalLesion3DData, Thyroid3DData, Breast3DData, Shoulder3DData, Knee3DData, Kidney3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData } from "./types";
-import { buildAtlasDirectivesFromScorecard, buildAtlasPanelFindingAssignments, buildVascularDirectivesFromScorecard, buildThyroidDirectivesFromScorecard, buildBreastDirectivesFromScorecard, buildShoulderDirectivesFromScorecard, buildKneeDirectivesFromScorecard, buildKidneyDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
+import { Atlas3DData, Vascular3DData, FocalLesion3DData, Thyroid3DData, Breast3DData, Shoulder3DData, Knee3DData, Kidney3DData, Abdomen3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData } from "./types";
+import { buildAtlasDirectivesFromScorecard, buildAtlasPanelFindingAssignments, buildVascularDirectivesFromScorecard, buildThyroidDirectivesFromScorecard, buildBreastDirectivesFromScorecard, buildShoulderDirectivesFromScorecard, buildKneeDirectivesFromScorecard, buildKidneyDirectivesFromScorecard, buildAbdomenDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
 import { Vascular3DModule } from "./components/Vascular3DModule";
 import { FocalLesion3DModule } from "./components/FocalLesion3DModule";
 import { Thyroid3DModule } from "./components/Thyroid3DModule";
@@ -32,6 +32,7 @@ import { Breast3DModule } from "./components/Breast3DModule";
 import { Shoulder3DModule } from "./components/Shoulder3DModule";
 import { Knee3DModule } from "./components/Knee3DModule";
 import { Kidney3DModule } from "./components/Kidney3DModule";
+import { Abdomen3DModule } from "./components/Abdomen3DModule";
 import { renderVascular3DPageToPdf } from "./utils/vascular3dPdfRenderer";
 import { renderFocalLesion3DAnnexToPDF } from "./utils/focalLesion3dPdfRenderer";
 import { renderThyroid3DPageToPdf } from "./utils/thyroid3dPdfRenderer";
@@ -39,6 +40,7 @@ import { renderBreast3DPageToPdf } from "./utils/breast3dPdfRenderer";
 import { renderShoulder3DPageToPdf } from "./utils/shoulder3dPdfRenderer";
 import { renderKnee3DPageToPdf } from "./utils/knee3dPdfRenderer";
 import { renderKidney3DPageToPdf } from "./utils/kidney3dPdfRenderer";
+import { renderAbdomen3DPageToPdf } from "./utils/abdomen3dPdfRenderer";
 import { renderElastographyAnnexToPdf, ElastographyPdfData } from "./utils/elastographyPdfRenderer";
 import { renderUsImagesToPdf, getPanelLetter } from "./utils/usImagesPdfRenderer";
 import { renderMmgImagesToPdf } from "./utils/mmgImagesPdfRenderer";
@@ -1445,10 +1447,12 @@ export default function App() {
         if (localStudy.shoulder3dData) setShoulder3dData(localStudy.shoulder3dData);
         if (localStudy.knee3dData) setKnee3dData(localStudy.knee3dData);
         if (localStudy.kidney3dData) setKidney3dData(localStudy.kidney3dData);
+        if (localStudy.abdomen3dData) setAbdomen3dData(localStudy.abdomen3dData);
         if (localStudy.includeBreast3dInReport !== undefined) setIncludeBreast3dInReport(localStudy.includeBreast3dInReport);
         if (localStudy.includeShoulder3dInReport !== undefined) setIncludeShoulder3dInReport(localStudy.includeShoulder3dInReport);
         if (localStudy.includeKnee3dInReport !== undefined) setIncludeKnee3dInReport(localStudy.includeKnee3dInReport);
         if (localStudy.includeKidney3dInReport !== undefined) setIncludeKidney3dInReport(localStudy.includeKidney3dInReport);
+        if (localStudy.includeAbdomen3dInReport !== undefined) setIncludeAbdomen3dInReport(localStudy.includeAbdomen3dInReport);
         if (localStudy.includeThyroid3dInReport !== undefined) setIncludeThyroid3dInReport(localStudy.includeThyroid3dInReport);
         if (localStudy.includeFocalLesion3dInReport !== undefined) setIncludeFocalLesion3dInReport(localStudy.includeFocalLesion3dInReport);
         if (localStudy.usImagesGridMode) setUsImagesGridMode(localStudy.usImagesGridMode as any);
@@ -2645,8 +2649,10 @@ export default function App() {
   const [includeShoulder3dInReport, setIncludeShoulder3dInReport] = useState<boolean>(true);
   const [knee3dData, setKnee3dData] = useState<Knee3DData | null>(null);
   const [kidney3dData, setKidney3dData] = useState<Kidney3DData | null>(null);
+  const [abdomen3dData, setAbdomen3dData] = useState<Abdomen3DData | null>(null);
   const [includeKnee3dInReport, setIncludeKnee3dInReport] = useState<boolean>(true);
   const [includeKidney3dInReport, setIncludeKidney3dInReport] = useState<boolean>(true);
+  const [includeAbdomen3dInReport, setIncludeAbdomen3dInReport] = useState<boolean>(true);
 
   // Cuadrícula y Presentación Científica para Fotos de Ultrasonido
   const [usImagesGridMode, setUsImagesGridMode] = useState<UsImagesGridMode>("auto");
@@ -2709,8 +2715,10 @@ export default function App() {
     includeShoulder3dInReport,
     knee3dData,
     kidney3dData,
+    abdomen3dData,
     includeKnee3dInReport,
     includeKidney3dInReport,
+    includeAbdomen3dInReport,
     focalLesion3dData,
     includeFocalLesion3dInReport,
     usImagesGridMode,
@@ -3356,6 +3364,7 @@ Ejemplo:
   const [isShoulder3dSuiteOpen, setIsShoulder3dSuiteOpen] = useState<boolean>(false);
   const [isKnee3dSuiteOpen, setIsKnee3dSuiteOpen] = useState<boolean>(false);
   const [isKidney3dSuiteOpen, setIsKidney3dSuiteOpen] = useState<boolean>(false);
+  const [isAbdomen3dSuiteOpen, setIsAbdomen3dSuiteOpen] = useState<boolean>(false);
   const [includeRadarInReport, setIncludeRadarInReport] = useState<boolean>(true);
 
   // States & Handlers for Sistema de Activación Rápida de Módulos (Procesamiento en Lote)
@@ -3370,6 +3379,7 @@ Ejemplo:
     shoulder3d: false,
     knee3d: false,
     kidney3d: false,
+    abdomen3d: false,
     radar: false,
     case_analysis: false,
     quality_eval: false,
@@ -3402,6 +3412,7 @@ Ejemplo:
       shoulder3d: select,
       knee3d: select,
       kidney3d: select,
+      abdomen3d: select,
       radar: select,
       case_analysis: select,
       quality_eval: select,
@@ -3748,6 +3759,39 @@ Ejemplo:
             }
           } catch (e) {
             console.error("Error en batch kidney 3d:", e);
+          }
+        }
+
+        if (modules.abdomen3d) {
+          try {
+            const radarForAbdomen = biomechanicalRadarData
+              ? {
+                  radarMode: biomechanicalRadarData.radarMode,
+                  dominantVector: biomechanicalRadarData.dominantVector,
+                  clinicalSummary: biomechanicalRadarData.clinicalSummary,
+                  globalScore: biomechanicalRadarData.globalScore,
+                  axes: biomechanicalRadarData.axes,
+                }
+              : undefined;
+            const abdomenDirectives = buildAbdomenDirectivesFromScorecard(scorecardForModules, radarForAbdomen);
+            const resp = await fetch("/api/generate-3d-abdomen", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                reportText: activeReport,
+                abdomenType: "abdomen_completo",
+                requestedModel: modelFor("abdomen3d"),
+                customDirectives: abdomenDirectives || undefined
+              })
+            });
+            const jAbd = await resp.json();
+            if (jAbd.success && jAbd.data) {
+              setAbdomen3dData(jAbd.data);
+              setIncludeAbdomen3dInReport(true);
+              setIsAbdomen3dSuiteOpen(true);
+            }
+          } catch (e) {
+            console.error("Error en batch abdomen 3d:", e);
           }
         }
 
@@ -4469,8 +4513,10 @@ Ejemplo:
             includeShoulder3dInReport: includeShoulder3dInReport,
             knee3dData: knee3dData || null,
             kidney3dData: kidney3dData || null,
+            abdomen3dData: abdomen3dData || null,
             includeKnee3dInReport: includeKnee3dInReport,
             includeKidney3dInReport: includeKidney3dInReport,
+            includeAbdomen3dInReport: includeAbdomen3dInReport,
             focalLesion3dData: focalLesion3dData || null,
             includeFocalLesion3dInReport: includeFocalLesion3dInReport,
             usImagesGridMode: usImagesGridMode || "auto",
@@ -4503,6 +4549,7 @@ Ejemplo:
                 shoulder3dData: null,
                 knee3dData: null,
                 kidney3dData: null,
+                abdomen3dData: null,
                 focalLesion3dData: null,
                 customLogoUrl: "",
                 customSignatureUrl: "",
@@ -5602,8 +5649,10 @@ Ejemplo:
             includeShoulder3dInReport: includeShoulder3dInReport,
             knee3dData: knee3dData || null,
             kidney3dData: kidney3dData || null,
+            abdomen3dData: abdomen3dData || null,
             includeKnee3dInReport: includeKnee3dInReport,
             includeKidney3dInReport: includeKidney3dInReport,
+            includeAbdomen3dInReport: includeAbdomen3dInReport,
             focalLesion3dData: focalLesion3dData || null,
             includeFocalLesion3dInReport: includeFocalLesion3dInReport,
             usImagesGridMode: usImagesGridMode || "auto",
@@ -10034,6 +10083,12 @@ Ejemplo:
       const shouldIncludeKidney = studyOverride ? (studyOverride.includeKidney3dInReport !== false) : (pdfStateRef.current?.includeKidney3dInReport !== false && includeKidney3dInReport);
       if (activeKidneyData && shouldIncludeKidney && (activeKidneyData.panels?.length || activeKidneyData.findingTable?.length)) {
         await renderKidney3DPageToPdf(doc, activeKidneyData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+      }
+
+      const activeAbdomenData = studyOverride ? studyOverride.abdomen3dData : (pdfStateRef.current?.abdomen3dData || abdomen3dData);
+      const shouldIncludeAbdomen = studyOverride ? (studyOverride.includeAbdomen3dInReport !== false) : (pdfStateRef.current?.includeAbdomen3dInReport !== false && includeAbdomen3dInReport);
+      if (activeAbdomenData && shouldIncludeAbdomen && (activeAbdomenData.panels?.length || activeAbdomenData.findingTable?.length)) {
+        await renderAbdomen3DPageToPdf(doc, activeAbdomenData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
       }
 
       // Restore standard margins and content widths for any diagrams, annexes, and signature block
@@ -20140,6 +20195,13 @@ const splitReportAndAnnex = (text: string) => {
                                   desc: "Riñones, sistema colector, litiasis/quistes Bosniak, vejiga/uréteres, ficha clínica y anexo PDF.",
                                   color: "text-teal-400 border-teal-500/30 bg-teal-950/20"
                                 },
+                                {
+                                  id: "abdomen3d",
+                                  label: "Suite Abdomen 3D & Ficha Multi-órgano",
+                                  badge: "ABDOMEN 3D",
+                                  desc: "Overview abdominal, hallazgo hepato-biliar/renal/FID dominante, ficha clínica y anexo PDF.",
+                                  color: "text-amber-400 border-amber-500/30 bg-amber-950/20"
+                                },
                                                                 {
                                   id: "clinical_scorecard",
                                   label: "Scorecard Clinico de Criterios (pre-Atlas)",
@@ -20946,6 +21008,42 @@ const splitReportAndAnnex = (text: string) => {
                               </button>
                             </div>
 
+                            <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-amber-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
+                              <div className="flex items-center gap-2 justify-between">
+                                <div className="flex items-center gap-2">
+                                  <Activity className="h-4 w-4 text-amber-400" />
+                                  <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
+                                    Suite Abdomen 3D & Multi-órgano
+                                  </h4>
+                                </div>
+                                <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-amber-950/40 text-amber-400 border border-amber-900/30 px-2 py-0.5 rounded">
+                                  ABDOMEN 3D
+                                </span>
+                              </div>
+                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
+                                Hígado, vesícula, páncreas, bazo, riñones y FID con ficha clínica; inyecta scorecard abdominal.
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsAbdomen3dSuiteOpen(p => {
+                                    const next = !p;
+                                    if (next) setTimeout(() => document.getElementById("abdomen-3d-suite-module")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+                                    return next;
+                                  });
+                                }}
+                                className={`w-full py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2 font-mono cursor-pointer border-2 ${
+                                  isAbdomen3dSuiteOpen
+                                    ? "bg-amber-600/15 border-amber-500/60 text-amber-200"
+                                    : "bg-slate-950 border-slate-800 hover:border-amber-500/30 text-amber-400"
+                                }`}
+                              >
+                                <Activity className="h-4 w-4" />
+                                {isAbdomen3dSuiteOpen ? "Ocultar Suite Abdomen" : "Abrir Suite Abdomen 3D"}
+                              </button>
+                            </div>
+
+
 {/* Card 8d: Sinopsis de Fracturas (IA) */}
                             <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-emerald-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
                               <div className="flex items-center gap-2 justify-between">
@@ -21488,6 +21586,35 @@ const splitReportAndAnnex = (text: string) => {
                                     : undefined
                                 ) || atlasDirectivesFromScorecard}
                                 onClose={() => setIsKidney3dSuiteOpen(false)}
+                              />
+                            </div>
+                          )}
+
+                          {isAbdomen3dSuiteOpen && (
+                            <div id="abdomen-3d-suite-module" className="my-6">
+                              <Abdomen3DModule
+                                reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
+                                activeProtocol={specificStudy || studyType || ""}
+                                laterality=""
+                                selectedModel={modelFor("abdomen3d")}
+                                abdomenData={abdomen3dData}
+                                setAbdomenData={setAbdomen3dData}
+                                includeInReport={includeAbdomen3dInReport}
+                                setIncludeInReport={setIncludeAbdomen3dInReport}
+                                scorecardData={clinicalScorecardData}
+                                externalDirectives={buildAbdomenDirectivesFromScorecard(
+                                  clinicalScorecardData,
+                                  biomechanicalRadarData
+                                    ? {
+                                        radarMode: biomechanicalRadarData.radarMode,
+                                        dominantVector: biomechanicalRadarData.dominantVector,
+                                        clinicalSummary: biomechanicalRadarData.clinicalSummary,
+                                        globalScore: biomechanicalRadarData.globalScore,
+                                        axes: biomechanicalRadarData.axes,
+                                      }
+                                    : undefined
+                                ) || atlasDirectivesFromScorecard}
+                                onClose={() => setIsAbdomen3dSuiteOpen(false)}
                               />
                             </div>
                           )}
@@ -24009,9 +24136,11 @@ const splitReportAndAnnex = (text: string) => {
                         if (viewingCloudStudy.shoulder3dData) setShoulder3dData(viewingCloudStudy.shoulder3dData);
                         if (viewingCloudStudy.knee3dData) setKnee3dData(viewingCloudStudy.knee3dData);
                         if (viewingCloudStudy.kidney3dData) setKidney3dData(viewingCloudStudy.kidney3dData);
+                        if (viewingCloudStudy.abdomen3dData) setAbdomen3dData(viewingCloudStudy.abdomen3dData);
                         if (viewingCloudStudy.includeShoulder3dInReport !== undefined) setIncludeShoulder3dInReport(viewingCloudStudy.includeShoulder3dInReport);
                         if (viewingCloudStudy.includeKnee3dInReport !== undefined) setIncludeKnee3dInReport(viewingCloudStudy.includeKnee3dInReport);
                         if (viewingCloudStudy.includeKidney3dInReport !== undefined) setIncludeKidney3dInReport(viewingCloudStudy.includeKidney3dInReport);
+                        if (viewingCloudStudy.includeAbdomen3dInReport !== undefined) setIncludeAbdomen3dInReport(viewingCloudStudy.includeAbdomen3dInReport);
                         if (viewingCloudStudy.includeThyroid3dInReport !== undefined) setIncludeThyroid3dInReport(viewingCloudStudy.includeThyroid3dInReport);
                         if (viewingCloudStudy.focalLesion3dData) setFocalLesion3dData(viewingCloudStudy.focalLesion3dData);
                         if (viewingCloudStudy.includeVascular3dInReport !== undefined) setIncludeVascular3dInReport(viewingCloudStudy.includeVascular3dInReport);
