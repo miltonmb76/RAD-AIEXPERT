@@ -105,7 +105,12 @@ export async function renderBreast3DPageToPdf(
     const cardH = imgHeight + captionAreaH + 4;
 
     for (let idx = 0; idx < panelCount; idx++) {
-      const p = panels[idx];
+      const p = panels[idx] || {
+        panelLetter: String.fromCharCode(65 + idx),
+        panelTitle: `Panel ${String.fromCharCode(65 + idx)}`,
+        anatomicalFocus: "",
+        imageUrl: ""
+      } as Breast3DPanel;
       const cardX = marginX + idx * (cardWidth + gap);
 
       // Card Background with soft border
@@ -242,17 +247,9 @@ export async function renderBreast3DPageToPdf(
 
 
   
-// 4. TAILORED HEMODYNAMIC TABLE
+// 4. BI-RADS LESION TABLE (fixed headers — never trust model col order for PDF)
   const tableData: BreastLesionRow[] = breastData.lesionTable || [];
-  const tableTitle = breastData.tableTitle || `TABLA BI-RADS Y CARACTERIZACIÓN DE LESIONES:`;
-  const headers = breastData.tableHeaders || {
-    col1: "LOCALIZACIÓN (RELOJ)",
-    col2: "TAMAÑO",
-    col3: "FORMA / MÁRGENES",
-    col4: "ECO / ORIENT. / VASC.",
-    col5: "BI-RADS",
-    col6: "IMPACTO"
-  };
+  const tableTitle = breastData.tableTitle || `TABLA ECOGRÁFICA Y CARACTERIZACIÓN DE LESIONES MAMARIAS:`;
 
   // Section Header
   doc.setFont("helvetica", "bold");
@@ -261,39 +258,33 @@ export async function renderBreast3DPageToPdf(
   doc.text(tableTitle.toUpperCase(), marginX, yCoord);
   yCoord += 3.5 * factor;
 
-  // Column Widths dynamically tuned to prevent header & content overlap
-  // Total: contentWidth
-  // Col 1: Vaso / Segmento (23%)
-  // Col 2: Placa / Morfología / Compresibilidad (23%)
-  // Col 3: % Estenosis / Flujo / Diámetro (13%)
-  // Col 4: Patrón / Velocidad / Maniobras (15%)
-  // Col 5: Índice / Reflujo / Doppler (13%)
-  // Col 6: Impacto / Estado Clínico (13%)
+  // Fixed 6-col layout matching UI semantics: composition BEFORE size
+  // Wider COMPOSICIÓN so the accented header does not wrap as "COMPOSICI / ÓN"
   const colWidths = [
-    contentWidth * 0.22,
-    contentWidth * 0.10,
-    contentWidth * 0.18,
-    contentWidth * 0.22,
+    contentWidth * 0.20,
+    contentWidth * 0.16,
     contentWidth * 0.12,
-    contentWidth * 0.16
+    contentWidth * 0.18,
+    contentWidth * 0.14,
+    contentWidth * 0.20
   ];
 
   const headerLabels = [
-    headers.col1 || "LOCALIZACIÓN (RELOJ)",
-    headers.col2 || "TAMAÑO",
-    headers.col3 || "FORMA / MÁRGENES",
-    headers.col4 || "ECO / ORIENT. / VASC.",
-    headers.col5 || "BI-RADS",
-    headers.col6 || "IMPACTO"
+    "LOCALIZACIÓN",
+    "COMPOSICIÓN",
+    "TAMAÑO",
+    "ECOGENICIDAD",
+    "MÁRGENES",
+    "BI-RADS / IMPACTO"
   ];
 
   // Calculate dynamic header height with automatic text wrapping
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(7.2 * factor);
+  doc.setFontSize(6.8 * factor);
   doc.setTextColor(51, 65, 85); // slate-700
 
   const wrappedHeaders = headerLabels.map((lbl, i) => {
-    return doc.splitTextToSize(lbl.toUpperCase(), colWidths[i] - 3.5);
+    return doc.splitTextToSize(lbl, colWidths[i] - 3.5);
   });
 
   const maxHeaderLines = Math.max(...wrappedHeaders.map(lines => lines.length), 1);
@@ -324,12 +315,20 @@ export async function renderBreast3DPageToPdf(
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.4 * factor);
 
+    const compositionText = (row.composition || row.shape || "—").trim() || "—";
+    const sizeText = (row.size || "—").trim() || "—";
+    const echoText = [row.echogenicity, row.orientation, row.vascularity].filter(Boolean).join(" · ") || "—";
+    const marginsText = (row.margins || "—").trim() || "—";
+    const impactText = row.biradsCategory
+      ? `${row.biradsCategory}${row.clinicalImpact ? ` — ${row.clinicalImpact}` : ""}`
+      : (row.clinicalImpact || "—");
+
     const c1Lines = doc.splitTextToSize(row.location || "", colWidths[0] - 3);
-    const c2Lines = doc.splitTextToSize(row.size || "—", colWidths[1] - 3);
-    const c3Lines = doc.splitTextToSize([row.shape, row.margins].filter(Boolean).join(" · ") || "—", colWidths[2] - 3);
-    const c4Lines = doc.splitTextToSize([row.echogenicity, row.orientation, row.vascularity].filter(Boolean).join(" · ") || "—", colWidths[3] - 3);
-    const c5Lines = doc.splitTextToSize(row.biradsCategory || "—", colWidths[4] - 3);
-    const c6Lines = doc.splitTextToSize(row.clinicalImpact || "—", colWidths[5] - 3);
+    const c2Lines = doc.splitTextToSize(compositionText, colWidths[1] - 3);
+    const c3Lines = doc.splitTextToSize(sizeText, colWidths[2] - 3);
+    const c4Lines = doc.splitTextToSize(echoText, colWidths[3] - 3);
+    const c5Lines = doc.splitTextToSize(marginsText, colWidths[4] - 3);
+    const c6Lines = doc.splitTextToSize(impactText, colWidths[5] - 3);
 
     const maxLines = Math.max(c1Lines.length, c2Lines.length, c3Lines.length, c4Lines.length, c5Lines.length, c6Lines.length, 1);
     const rowH = Math.max(5.8 * factor, (maxLines * 3.3 + 2.4) * factor);
@@ -342,69 +341,45 @@ export async function renderBreast3DPageToPdf(
 
     let cellX = marginX;
 
-    // Col 1: Vaso (Bold)
+    // Col 1: Localización
     doc.setFont("helvetica", "bold");
     doc.setFontSize(7.4 * factor);
     doc.setTextColor(15, 23, 42);
     doc.text(c1Lines, cellX + 2, yCoord + 3.0 * factor);
     cellX += colWidths[0];
 
-    // Col 2: Placa / Trombo / Compresibilidad
+    // Col 2: Composición
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.2 * factor);
-    doc.setTextColor(71, 85, 105);
+    doc.setTextColor(22, 101, 52); // green — morphology cue
     doc.text(c2Lines, cellX + 2, yCoord + 3.0 * factor);
     cellX += colWidths[1];
 
-    // Col 3: % Estenosis / Flujo Espontáneo / Diámetro (Color coding)
+    // Col 3: Tamaño
     doc.setFont("helvetica", "bold");
     doc.setFontSize(7.4 * factor);
-    const stText = (row.size || "").trim().toLowerCase();
-    if (
-      stText.includes(">") || 
-      stText.includes("70") || 
-      stText.includes("80") || 
-      stText.includes("90") || 
-      stText.includes("100") || 
-      stText.includes("oclus") ||
-      stText.includes("ausente") ||
-      stText.includes("tromb") ||
-      stText.includes("sever")
-    ) {
-      doc.setTextColor(220, 38, 38); // Red-600
-    } else if (stText.includes("50") || stText.includes("60") || stText.includes("< 50") || stText.includes("moderad") || stText.includes("parcial")) {
-      doc.setTextColor(217, 119, 6); // Amber-600
-    } else {
-      doc.setTextColor(22, 101, 52); // Green-800
-    }
+    doc.setTextColor(51, 65, 85);
     doc.text(c3Lines, cellX + 2, yCoord + 3.0 * factor);
     cellX += colWidths[2];
 
-    // Col 4: Patrón (PSV/EDV) / Maniobra Aumento
+    // Col 4: Ecogenicidad (+ orient. / vasc.)
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.2 * factor);
     doc.setTextColor(51, 65, 85);
     doc.text(c4Lines, cellX + 2, yCoord + 3.0 * factor);
     cellX += colWidths[3];
 
-    // Col 5: Rel. / Índice / Reflujo
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(7.3 * factor);
-    const refText = (row.margins || "").toLowerCase();
-    if (refText.includes("reflujo") || refText.includes("incompet") || refText.includes("patol") || refText.includes("oclus")) {
-      doc.setTextColor(220, 38, 38); // Red-600
-    } else if (refText.includes("competente") || refText.includes("normal") || refText.includes("sin reflujo")) {
-      doc.setTextColor(14, 116, 144); // Cyan-700
-    } else {
-      doc.setTextColor(14, 116, 144); // Cyan-700
-    }
-    doc.text(c5Lines, cellX + 2, yCoord + 3.0 * factor);
-    cellX += colWidths[4];
-
-    // Col 6: Impacto Hemodinámico / Estado Clínico
+    // Col 5: Márgenes
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.2 * factor);
     doc.setTextColor(71, 85, 105);
+    doc.text(c5Lines, cellX + 2, yCoord + 3.0 * factor);
+    cellX += colWidths[4];
+
+    // Col 6: BI-RADS / Impacto
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.2 * factor);
+    doc.setTextColor(37, 99, 235); // blue for category + impact
     doc.text(c6Lines, cellX + 2, yCoord + 3.0 * factor);
 
     // Row bottom separator line

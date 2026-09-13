@@ -270,6 +270,7 @@ export const Breast3DModule: React.FC<Breast3DModuleProps> = ({
     const newRow: BreastLesionRow = {
       location: "Mama derecha, 12h",
       size: "—",
+      composition: "Sólida",
       shape: "Oval",
       margins: "Circunscritos",
       echogenicity: "Hipoecoico",
@@ -736,7 +737,7 @@ export const Breast3DModule: React.FC<Breast3DModuleProps> = ({
                 <thead>
                   <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 text-[11px]">
                     <th className="py-2.5 px-3">{breastData.tableHeaders?.col1 || "LOCALIZACIÓN (RELOJ)"}</th>
-                    <th className="py-2.5 px-3">{breastData.tableHeaders?.col2 || "FORMA"}</th>
+                    <th className="py-2.5 px-3">{breastData.tableHeaders?.col2 || "COMPOSICIÓN"}</th>
                     <th className="py-2.5 px-3">{breastData.tableHeaders?.col3 || "TAMAÑO"}</th>
                     <th className="py-2.5 px-3">{breastData.tableHeaders?.col4 || "ECO"}</th>
                     <th className="py-2.5 px-3">{breastData.tableHeaders?.col5 || "MÁRGENES"}</th>
@@ -766,12 +767,12 @@ export const Breast3DModule: React.FC<Breast3DModuleProps> = ({
                         {isEditingText ? (
                           <input
                             type="text"
-                            value={row.shape}
-                            onChange={(e) => handleUpdateTableRow(idx, "shape", e.target.value)}
+                            value={row.composition || row.shape}
+                            onChange={(e) => handleUpdateTableRow(idx, "composition", e.target.value)}
                             className="w-full text-xs border border-slate-300 rounded px-1.5 py-0.5"
                           />
                         ) : (
-                          row.shape
+                          row.composition || row.shape
                         )}
                       </td>
                       <td className="py-2 px-3 font-bold">

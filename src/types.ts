@@ -367,6 +367,7 @@ export interface Breast3DPanel {
 export interface BreastLesionRow {
   location: string;          // ej: "Mama derecha, 3h, 3 cm del pezón"
   size: string;
+  composition?: string;      // quística / sólida / mixta
   shape: string;             // oval / redondo / irregular
   margins: string;
   echogenicity: string;

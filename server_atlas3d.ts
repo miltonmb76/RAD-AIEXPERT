@@ -2117,56 +2117,66 @@ REGLAS ESPECÍFICAS MAMA / BI-RADS:
 - 2–3 paneles: (A) ambas mamas vista frontal con pezones y cuadrantes/reloj; (B) cutaway macro del nódulo dominante; (C opcional) axila ipsilateral.
 - Contrato de reloj OBLIGATORIO: manos idénticas en ambas mamas; las 3 = derecha del pezón en la imagen (derecha del observador); las 9 = izquierda del pezón. Nunca invertir por estética.
 - laterality por panel = lado anatómico del paciente (Derecha|Izquierda|Bilateral).
-- lesionTable: location (reloj + distancia al pezón), size, shape, margins, echogenicity, orientation, vascularity, biradsCategory, clinicalImpact.
+- lesionTable filas con: location (reloj + distancia al pezón), composition (quística/sólida/mixta), size (mm/cm), shape, margins, echogenicity, orientation, vascularity, biradsCategory, clinicalImpact.
+- NUNCA intercambiar composition y size. size solo medidas (ej. "8 × 5 mm"); composition solo morfología (ej. "Quística pura").
 - Incluir breastSummary, morphologyNotes, axillaryStatus, keyPoints[].
 - No inventar lesiones ni categorías BI-RADS ausentes del informe/directiva.
 - Prompts de imagen en inglés, fotorrealismo anatómico femenino clínico, sin texto en la imagen.
 
 RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
 {
-  "studyTypeCategory": "mama_b_mode" | "mama_doppler" | "mama_nodos" | "general_breast" | "general_breast" | "general_breast",
-  "territoryLabel": "ECOGRAFÍA DE MAMAS" | "ECOGRAFÍA MAMA + DOPPLER" | "ECOGRAFÍA MAMA + GANGLIOS" | "ECOGRAFÍA DE MAMAS" | "ECOGRAFÍA DE MAMAS",
+  "studyTypeCategory": "mama_b_mode" | "mama_doppler" | "mama_nodos" | "general_breast",
+  "territoryLabel": "ECOGRAFÍA DE MAMAS" | "ECOGRAFÍA MAMA + DOPPLER" | "ECOGRAFÍA MAMA + GANGLIOS",
   "laterality": "Bilateral" | "Derecha" | "Izquierda" | "Línea media",
-  "figureTitle": "FIGURA 1. ATLAS 3D DE CORRELACIÓN ANATOMOPATOLÓGICA Y HEMODINÁMICA [TERRITORIO]",
-  "tableTitle": "TABLA HEMODINÁMICA Y CARACTERIZACIÓN DE LESIONES [TERRITORIO]:",
+  "figureTitle": "FIGURA 1. ATLAS 3D MAMARIO Y CORRELACIÓN BI-RADS",
+  "tableTitle": "TABLA ECOGRÁFICA Y CARACTERIZACIÓN DE LESIONES MAMARIAS:",
   "tableHeaders": {
     "col1": "LOCALIZACIÓN",
     "col2": "COMPOSICIÓN",
     "col3": "TAMAÑO",
     "col4": "ECOGENICIDAD",
     "col5": "MÁRGENES",
-    "col6": "IMPACTO"
+    "col6": "ORIENTACIÓN",
+    "col7": "VASCULARIDAD",
+    "col8": "BI-RADS",
+    "col9": "IMPACTO"
   },
   "panels": [
     {
       "panelLetter": "A",
-      "panelTitle": "Panel A: Bifurcación Carotídea Derecha: Ateromatosis Mixta Tipo II (Bulbo y ACI Proximal)",
-      "clockPositionOrSite": "Bifurcación Carotídea Derecha",
-      "anatomicalFocus": "Placas de ateroma Gray-Weale Tipo II en pared anterior de bulbo...",
-      "laterality": "Derecha",
+      "panelTitle": "Panel A: Ambas mamas — vista frontal con pezones y reloj",
+      "clockPositionOrSite": "Ambas mamas",
+      "anatomicalFocus": "Parénquima mamario bilateral con pezones y cuadrantes...",
+      "laterality": "Bilateral",
+      "panelRole": "both_breasts",
       "imagePrompt": "Ultra-realistic 3D medical breast gland render..."
     },
     {
       "panelLetter": "B",
-      "panelTitle": "Panel B: Arteria Carótida Común Izquierda: Engrosamiento Miointimal Difuso",
-      "clockPositionOrSite": "Arteria Carótida Común Izquierda",
-      "anatomicalFocus": "Corte longitudinal macro del eje carotídeo común izquierdo...",
-      "laterality": "Izquierda",
+      "panelTitle": "Panel B: Cutaway del nódulo dominante",
+      "clockPositionOrSite": "Mama derecha, 3h",
+      "anatomicalFocus": "Lesión dominante con márgenes y composición...",
+      "laterality": "Derecha",
+      "panelRole": "lesion",
       "imagePrompt": "Ultra-realistic 3D medical breast gland render..."
     }
   ],
-  "noduleTable": [
+  "lesionTable": [
     {
-      "location": "Arteria Carótida Común Derecha",
-      "composition": "Sin placas",
-      "size": "< 50%",
-      "echogenicity": "Flujo laminar de resistencia intermedia",
-      "margins": "N/A",
-      "clinicalImpact": "Normal"
+      "location": "Mama derecha, 3h, 2 cm del pezón",
+      "composition": "Quística pura",
+      "size": "< 5 mm",
+      "shape": "Oval",
+      "margins": "Circunscritos, regulares",
+      "echogenicity": "Anecoica con refuerzo posterior",
+      "orientation": "Paralela",
+      "vascularity": "Ausente",
+      "biradsCategory": "BI-RADS 2",
+      "clinicalImpact": "Quiste simple benigno"
     }
   ],
-  "synthesisTitle": "SÍNTESIS MORFOLÓGICA Y HEMODINÁMICA:",
-  "morphologicalSynthesis": "El estudio Doppler carotídeo y vertebral bilateral evidencia..."
+  "synthesisTitle": "SÍNTESIS MORFOLÓGICA Y CATEGORIZACIÓN BI-RADS:",
+  "morphologicalSynthesis": "El estudio ecográfico mamario bilateral evidencia..."
 }`;
 
       const planResponse = await ai.models.generateContent({
@@ -2279,11 +2289,11 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
         laterality: planJson.laterality || laterality || "Bilateral",
         figureTitle: planJson.figureTitle || "FIGURA 1. ATLAS 3D MAMARIO Y CORRELACIÓN BI-RADS",
         tableTitle: planJson.tableTitle || "TABLA DE LESIONES Y CATEGORIZACIÓN BI-RADS:",
-        tableHeaders: planJson.tableHeaders || {
-          col1: "LOCALIZACIÓN (RELOJ)",
-          col2: "FORMA",
+        tableHeaders: {
+          col1: "LOCALIZACIÓN",
+          col2: "COMPOSICIÓN",
           col3: "TAMAÑO",
-          col4: "ECO",
+          col4: "ECOGENICIDAD",
           col5: "MÁRGENES",
           col6: "ORIENTACIÓN",
           col7: "VASCULARIDAD",
@@ -2291,17 +2301,40 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
           col9: "IMPACTO"
         },
         panels: breastPanelsWithImages,
-        lesionTable: (planJson.lesionTable || planJson.noduleTable || []).map((row: any) => ({
-          location: row.location || "",
-          size: row.size || "",
-          shape: row.shape || row.composition || "",
-          margins: row.margins || "",
-          echogenicity: row.echogenicity || "",
-          orientation: row.orientation || row.echogenicFoci || "",
-          vascularity: row.vascularity || "",
-          biradsCategory: row.biradsCategory || row.tiradsCategory || "",
-          clinicalImpact: row.clinicalImpact || ""
-        })),
+        lesionTable: (planJson.lesionTable || planJson.noduleTable || []).map((row: any) => {
+          // Evitar invertir composición/tamaño si el modelo los cruza
+          const rawSize = String(row.size || "").trim();
+          const rawComposition = String(row.composition || row.shape || "").trim();
+          const looksLikeSize = (t: string) =>
+            /\d/.test(t) && /(mm|cm|≤|≥|<|>|×|x\s*\d)/i.test(t);
+          const looksLikeComposition = (t: string) =>
+            /(quíst|quist|sólid|solid|mixt|complej|espong|conserv|ganglion|oval|redond|irreg)/i.test(t);
+          let size = rawSize;
+          let composition = rawComposition;
+          if (looksLikeSize(rawComposition) && !looksLikeSize(rawSize)) {
+            size = rawComposition;
+            composition = rawSize || row.shape || "";
+          } else if (
+            looksLikeComposition(rawSize) &&
+            !looksLikeSize(rawSize) &&
+            looksLikeSize(rawComposition)
+          ) {
+            size = rawComposition;
+            composition = rawSize;
+          }
+          return {
+            location: row.location || "",
+            size: size || "",
+            composition: composition || row.shape || "",
+            shape: row.shape || composition || "",
+            margins: row.margins || "",
+            echogenicity: row.echogenicity || "",
+            orientation: row.orientation || row.echogenicFoci || "",
+            vascularity: row.vascularity || "",
+            biradsCategory: row.biradsCategory || row.tiradsCategory || "",
+            clinicalImpact: row.clinicalImpact || ""
+          };
+        }),
         breastSummary: planJson.breastSummary || "",
         morphologyNotes: planJson.morphologyNotes || "",
         axillaryStatus: planJson.axillaryStatus || "",
