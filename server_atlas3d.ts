@@ -172,6 +172,39 @@ const KNEE_MENISCUS_TOPOGRAPHY_RULES_ES =
   "10) Una imagen/tabla bella con menisco o cuerno equivocado es FALLO CRÍTICO.";
 
 
+/**
+ * Ankle ligament / Achilles topography: lateral (fibular) vs medial (deltoid), midportion vs insertional Achilles.
+ * Injected into ankle suite planning + image prompts to stop side swaps and territory merges.
+ */
+const ANKLE_LIGAMENT_TOPOGRAPHY_HARD_RULES =
+  "ANKLE LIGAMENT & ACHILLES TOPOGRAPHY HARD RULES (never violate): " +
+  "(1) LATERAL complex = FIBULAR / peroneal side: ATFL/LPAA, CFL/LPC, PTFL — NEVER swap with deltoid. " +
+  "(2) MEDIAL complex = DELTOID = TIBIAL side. " +
+  "(3) Achilles tendon = midline POSTERIOR; midportion ≠ insertional. " +
+  "(4) Patient ankle side (right/left) is independent from medial/lateral ligament naming — do not confuse them. " +
+  "(5) AP view: patient RIGHT on VIEWER'S LEFT; patient LEFT on VIEWER'S RIGHT. " +
+  "(6) Syndesmosis, peroneal tendons, and retrocalcaneal bursa are DISTINCT territories — never merge findings. " +
+  "(7) If the report says 'LPAA/ATFL lateral' you MUST depict the LATERAL (fibular) ATFL — never deltoid. " +
+  "(8) If the report says 'Aquiles midportion' you MUST depict midportion Achilles — never insertional by default. " +
+  "(9) A beautiful image with wrong lateral↔medial complex or wrong Achilles zone is a CRITICAL FAIL. " +
+  "(10) Do NOT invent tears or grades absent from the report/scorecard.";
+
+const ANKLE_LIGAMENT_TOPOGRAPHY_RULES_ES =
+  "REGLAS DURAS DE TOPOGRAFÍA DE TOBILLO / AQUILES (nunca violar):\n" +
+  "1) Complejo LATERAL = lado FIBULAR / peroné: LPAA/ATFL, LPC/CFL, LPTP/PTFL. NUNCA intercambiar con deltoides.\n" +
+  "2) Complejo MEDIAL = DELTOIDES = lado TIBIAL.\n" +
+  "3) Tendón de Aquiles = línea media POSTERIOR; midportion ≠ insercional.\n" +
+  "4) Lateralidad del TOBILLO (derecha/izquierda del paciente) es independiente de medial/lateral ligamentoso.\n" +
+  "5) Vista AP: lado DERECHO del paciente a la IZQUIERDA del cuadro; IZQUIERDO a la DERECHA.\n" +
+  "6) Sindesmosis, tendones peroneos y bursa retrocalcánea son territorios DISTINTOS — no fusionar hallazgos.\n" +
+  "7) Si el informe dice «LPAA/ATFL lateral», dibuja/describe EXACTAMENTE complejo LATERAL (peroné) + ATFL.\n" +
+  "8) Si el informe dice «Aquiles midportion», dibuja/describe EXACTAMENTE Aquiles midportion (no insercional por defecto).\n" +
+  "9) En structureOrSite, anatomicalFocus, findingTable.structure e imagePrompt nombra siempre: " +
+  "complejo lateral|medial|Aquiles + estructura exacta + lado de tobillo del paciente.\n" +
+  "10) PROHIBIDO confundir LPAA/ATFL (lateral) con deltoides (medial). No inventes roturas ni grados ausentes.\n" +
+  "11) Una imagen/tabla bella con complejo o zona de Aquiles equivocada es FALLO CRÍTICO.";
+
+
 const KIDNEY_URINARY_TOPOGRAPHY_HARD_RULES =
   "KIDNEY & URINARY TRACT TOPOGRAPHY HARD RULES (never violate): " +
   "(1) RIGHT kidney ≠ LEFT kidney — patient anatomic laterality governs. " +
@@ -4049,6 +4082,390 @@ RESPONDE EN JSON:
 
     } catch (error: any) {
       console.error("Error en /api/regenerate-3d-knee-panel:", error);
+      res.status(500).json({ success: false, error: handleGeminiError(error) });
+    }
+  });
+
+  app.post("/api/generate-3d-ankle", async (req: express.Request, res: express.Response) => {
+    try {
+      const { reportText, ankleType, laterality, requestedModel, customDirectives } = req.body;
+
+      if (!reportText || !reportText.trim()) {
+        return res.status(400).json({ success: false, error: "Se requiere el texto del informe de tobillo." });
+      }
+
+      const ai = getGeminiClient();
+      const model = getModelName(requestedModel || "gemini-3.7-flash");
+
+      const anklePrompt = `Eres un Radiólogo musculoesquelético experto en ecografía de tobillo, ligamentos laterales/mediales y tendón de Aquiles, y director de arte médico 3D osteomuscular.
+Tu misión es analizar el informe de ecografía de tobillo adjunto para estructurar la "SUITE TOBILLO 3D & FICHA LIGAMENTOS Y AQUILES" con máxima fidelidad anatomopatológica.
+
+========================================================================
+INFORMACIÓN DEL ESTUDIO DE TOBILLO:
+========================================================================
+- Tipo de Estudio Sugerido / Seleccionado: "${ankleType || "Detectar automáticamente del informe"}"
+- Lateralidad Solicitada: "${laterality || "Detectar del informe"}"
+- DIRECTIVA CLÍNICA OBLIGATORIA (Scorecard tobillo/Aquiles / radar biomecánico — MANDATORY, no omitir): "${customDirectives || "Ninguna"}"
+IMPORTANTE: Si hay directiva clínica, DEBE gobernar la anatomía 3D, ligamentos/Aquiles afectados, grosor/gap, derrame, dinámica, lateralidad y la tabla. No inventes roturas ni grados ausentes en la directiva/informe.
+- INFORME ECOGRÁFICO DE TOBILLO:
+"""
+${reportText}
+"""
+
+========================================================================
+REGLA DE SCORECARD / DIRECTIVA OBLIGATORIA:
+========================================================================
+Si "DIRECTIVA CLÍNICA OBLIGATORIA" no es "Ninguna", trátela como contrato clínico vinculante:
+- Los paneles 3D y la tabla DEBEN reflejar esos hallazgos (LPAA/ATFL, LPC/CFL, deltoides, Aquiles, sindesmosis, peroneos, bursa, derrame).
+- Prohibido inventar desgarros ligamentosos, rotura de Aquiles o bursitis no respaldados por la directiva o el informe.
+
+========================================================================
+TOPOGRAFÍA DE TOBILLO / AQUILES (OBLIGATORIA):
+========================================================================
+${ANKLE_LIGAMENT_TOPOGRAPHY_RULES_ES}
+
+CRITICO: extrae del informe, para CADA lesión, las coordenadas y NO las intercambies:
+  (a) lado del TOBILLO del paciente (derecha/izquierda),
+  (b) complejo LATERAL/fibular (LPAA/ATFL, LPC/CFL, PTFL) vs MEDIAL/deltoides (tibial) vs Aquiles (midline posterior),
+  (c) zona: midportion vs insercional (Aquiles); o ligamento nominado exacto.
+Si el informe dice "LPAA/ATFL lateral", structureOrSite / anatomicalFocus / findingTable / imagePrompt
+deben decir explícitamente "lateral/fibular ATFL" (nunca deltoides).
+
+========================================================================
+TIPOS DE ESTUDIO (clasifica en uno):
+========================================================================
+1. "tobillo_completo": Ecografía completa de tobillo (anatomía estática multi-territorio).
+2. "tobillo_ligamentos": Enfoque ligamentos laterales y mediales + estrés dinámico.
+3. "aquiles_tendon": Enfoque tendón de Aquiles (midportion / insercional) + bursa.
+4. "general_tobillo": Detectar del informe / estudio mixto de tobillo.
+
+========================================================================
+DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
+========================================================================
+- Panel A (panelRole "overview"): visión anatómica del tobillo afectado (tibia distal, peroné, astrágalo, calcáneo, complejos ligamentarios y Aquiles).
+- Panel B (panelRole "ligaments_lateral_medial"): cutaway macro de la patología ligamentosa dominante SEGÚN EL INFORME (respetar lateral=fibular vs medial=deltoides; NUNCA asumir deltoides por defecto si el informe dice LPAA/ATFL).
+- Panel C opcional (panelRole "achilles_tendon" | "joint_effusion"): Aquiles midportion/insercional + bursa retrocalcánea, O derrame articular / tendones peroneos / sindesmosis según el hallazgo dominante.
+- LATERALIDAD OBLIGATORIA POR PANEL (convención radiografía AP / paciente de frente):
+  - Cada panel DEBE declarar "laterality" exacta (Derecha|Izquierda|Bilateral) = lado ANATÓMICO DEL PACIENTE.
+  - Vista AP/frontal por defecto: lado DERECHO del paciente a la IZQUIERDA del cuadro; lado IZQUIERDO del paciente a la DERECHA del cuadro.
+  - El imagePrompt DEBE empezar con el lado del paciente y anclas de pantalla.
+  - NUNCA intercambiar lados entre paneles ni espejar por estética.
+- PROMPT EN INGLÉS para cada panel:
+  "Ultra-realistic 3D medical ankle anatomy render of [PATIENT SIDE + LATERAL(fibular) ATFL/CFL/PTFL or MEDIAL deltoid or ACHILLES midportion/insertional], accurate distal tibia/fibula/talus/calcaneus landmarks, exact named ligament/Achilles topography (never swap lateral↔deltoid or midportion↔insertional), optional joint effusion or retrocalcaneal bursa when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, strictly NO text, NO numbers, NO arrows, NO letters inside the image. Do NOT mirror anatomy. Obey ANKLE LIGAMENT & ACHILLES TOPOGRAPHY HARD RULES."
+
+========================================================================
+TABLA Y FICHA CLÍNICA:
+========================================================================
+- findingTable filas con: location, structure, thicknessOrGap, echoPattern, effusionStatus, dynamicFinding, severity, clinicalImpact.
+- Incluye ankleSummary, morphologyNotes, ligamentAchillesStatus (textos clínicos ricos en español) y keyPoints (array 3-6 bullets).
+- tableHeaders col1..col8 FIJOS: LOCALIZACIÓN | ESTRUCTURA | GROSOR / GAP | PATRÓN ECO | DERRAME | DINÁMICA | SEVERIDAD | IMPACTO
+- Evalúa estructuras relevantes: LPAA/ATFL, LPC/CFL, PTFL (lateral/fibular), deltoides (medial/tibial), Aquiles midportion/insercional, sindesmosis, tendones peroneos, bursa retrocalcánea, derrame. En cada fila de findingTable.structure escribe p.ej. "LPAA/ATFL (lateral, peroné)". No inventes roturas ni grados ausentes.
+- No inventes lesiones ausentes. Distingue claramente parcial vs completo / midportion vs insercional / degenerativo.
+
+RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
+{
+  "studyTypeCategory": "tobillo_completo" | "tobillo_ligamentos" | "aquiles_tendon" | "general_tobillo",
+  "territoryLabel": "ECOGRAFÍA DE TOBILLO" | "ECOGRAFÍA LIGAMENTOS DE TOBILLO" | "ECOGRAFÍA TENDÓN DE AQUILES",
+  "laterality": "Bilateral" | "Derecha" | "Izquierda",
+  "figureTitle": "FIGURA 1. ATLAS 3D TOBILLO Y CORRELACIÓN LIGAMENTOS / AQUILES",
+  "tableTitle": "TABLA ECOGRÁFICA DE LIGAMENTOS, AQUILES Y ESTRUCTURAS PERIARTICULARES:",
+  "tableHeaders": {
+    "col1": "LOCALIZACIÓN",
+    "col2": "ESTRUCTURA",
+    "col3": "GROSOR / GAP",
+    "col4": "PATRÓN ECO",
+    "col5": "DERRAME",
+    "col6": "DINÁMICA",
+    "col7": "SEVERIDAD",
+    "col8": "IMPACTO"
+  },
+  "panels": [
+    {
+      "panelLetter": "A",
+      "panelTitle": "Panel A: Anatomía del tobillo afectado — vista de conjunto",
+      "structureOrSite": "Tobillo derecho — visión general",
+      "anatomicalFocus": "Tibia distal, peroné, astrágalo, complejos laterales/mediales y Aquiles...",
+      "laterality": "Derecha",
+      "panelRole": "overview",
+      "imagePrompt": "Ultra-realistic 3D medical ankle anatomy render..."
+    },
+    {
+      "panelLetter": "B",
+      "panelTitle": "Panel B: Cutaway del complejo lateral — LPAA/ATFL",
+      "structureOrSite": "LPAA / ATFL (lateral, peroné)",
+      "anatomicalFocus": "Detalle del LPAA/ATFL en el complejo lateral fibular con patrón ecográfico correlacionado...",
+      "laterality": "Derecha",
+      "panelRole": "ligaments_lateral_medial",
+      "imagePrompt": "Ultra-realistic 3D medical ankle ligament cutaway render..."
+    }
+  ],
+  "findingTable": [
+    {
+      "location": "Tobillo derecho, cara lateral",
+      "structure": "LPAA / ATFL (lateral, peroné)",
+      "thicknessOrGap": "2,8 mm (sin gap)",
+      "echoPattern": "Engrosamiento hipoecoico sin solución de continuidad",
+      "effusionStatus": "Sin derrame articular significativo",
+      "dynamicFinding": "Estabilidad conservada a estrés en inversión",
+      "severity": "Leve-moderada",
+      "clinicalImpact": "Correlacionar con clínica; rehabilitación dirigida"
+    }
+  ],
+  "ankleSummary": "...",
+  "morphologyNotes": "...",
+  "ligamentAchillesStatus": "...",
+  "keyPoints": ["...", "..."],
+  "synthesisTitle": "SÍNTESIS MORFOLÓGICA Y FUNCIONAL DE TOBILLO:",
+  "morphologicalSynthesis": "El estudio ecográfico del tobillo evidencia..."
+}`;
+
+      const planResponse = await ai.models.generateContent({
+        model: model,
+        contents: [{ text: anklePrompt }],
+        config: { responseMimeType: "application/json" }
+      });
+
+      let planJson: any = {};
+      try {
+        planJson = JSON.parse(planResponse.text || "{}");
+      } catch (parseErr) {
+        console.error("Error parseando plan JSON Ankle 3D:", parseErr);
+        planJson = {
+          studyTypeCategory: ankleType || "tobillo_ligamentos",
+          territoryLabel: "ECOGRAFÍA DE TOBILLO",
+          laterality: laterality || "Derecha",
+          figureTitle: "FIGURA 1. ATLAS 3D TOBILLO Y CORRELACIÓN LIGAMENTOS / AQUILES",
+          tableTitle: "TABLA ECOGRÁFICA DE LIGAMENTOS, AQUILES Y ESTRUCTURAS PERIARTICULARES:",
+          tableHeaders: {
+            col1: "LOCALIZACIÓN",
+            col2: "ESTRUCTURA",
+            col3: "GROSOR / GAP",
+            col4: "PATRÓN ECO",
+            col5: "DERRAME",
+            col6: "DINÁMICA",
+            col7: "SEVERIDAD",
+            col8: "IMPACTO"
+          },
+          panels: [
+            {
+              panelLetter: "A",
+              panelTitle: "Panel A: Anatomía del tobillo — visión de conjunto",
+              structureOrSite: "Tobillo — overview",
+              anatomicalFocus: "Reconstrucción anatómica del tobillo con ligamentos laterales/mediales y Aquiles.",
+              laterality: laterality || "Derecha",
+              panelRole: "overview",
+              imagePrompt: "Ultra-realistic 3D medical ankle anatomy render showing distal tibia, fibula, talus, calcaneus, lateral and medial ligament complexes and Achilles footprint, studio lighting, octane render, no text."
+            },
+            {
+              panelLetter: "B",
+              panelTitle: "Panel B: Cutaway ligamentoso — según informe (lateral/medial)",
+              structureOrSite: "Complejo lateral (peroné) o deltoides (tibial) — según informe",
+              anatomicalFocus: "Corte macro del ligamento indicado en el informe (LPAA/ATFL, LPC/CFL o deltoides), sin intercambiar lados.",
+              laterality: laterality || "Derecha",
+              panelRole: "ligaments_lateral_medial",
+              imagePrompt: "Ultra-realistic 3D medical ankle ligament cutaway with explicit lateral (fibular) ATFL/CFL or medial deltoid per report, fibular landmark visible for lateral side, cinema 4D octane render, no text."
+            }
+          ],
+          findingTable: [],
+          synthesisTitle: "SÍNTESIS MORFOLÓGICA Y FUNCIONAL DE TOBILLO:",
+          morphologicalSynthesis: "La correlación anatomopatológica de ligamentos y Aquiles se basa en los hallazgos descritos en el informe."
+        };
+      }
+
+      const anklePanelsWithImages = await Promise.all(
+        (planJson.panels || []).map(async (panel: any, idx: number) => {
+          let promptToUse = panel.imagePrompt || `Ultra-realistic 3D medical ankle / ankle ligaments-Achilles render of ${panel.structureOrSite || panel.panelTitle}, octane render, no text.`;
+          if (customDirectives && customDirectives.trim()) {
+            promptToUse = `${promptToUse} [MANDATORY CLINICAL DIRECTIVE: ${customDirectives.trim()}].`;
+          }
+          {
+            const screenMap = buildScreenLateralityConstraint(panel.laterality || planJson.laterality || laterality, "AP / coronal");
+            if (panel.laterality && panel.laterality !== "auto") {
+              promptToUse = `[MANDATORY PATIENT LATERALITY: ${panel.laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${ANKLE_LIGAMENT_TOPOGRAPHY_HARD_RULES} ${screenMap} ${promptToUse}`;
+            } else {
+              promptToUse = `${LATERALITY_HARD_RULES} ${ANKLE_LIGAMENT_TOPOGRAPHY_HARD_RULES} ${screenMap} ${promptToUse}`;
+            }
+          }
+
+          const defaultRole = idx === 0 ? "overview" : idx === 1 ? "ligaments_lateral_medial" : "achilles_tendon";
+          try {
+            const imageUrl = await generateMedicalImage(ai, promptToUse);
+            return {
+              id: `ankle-panel-${idx}-${Date.now()}`,
+              panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
+              panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
+              structureOrSite: panel.structureOrSite || panel.panelTitle || "",
+              anatomicalFocus: panel.anatomicalFocus || "Evaluación anatómica del tobillo, ligamentos y Aquiles",
+              laterality: panel.laterality || planJson.laterality || laterality || "",
+              imageUrl: imageUrl,
+              promptUsed: promptToUse,
+              isCustomFlipped: false,
+              panelRole: panel.panelRole || defaultRole
+            };
+          } catch (imgErr) {
+            console.error(`Error generando imagen para panel ankle ${panel.panelLetter}:`, imgErr);
+            return {
+              id: `ankle-panel-${idx}-${Date.now()}`,
+              panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
+              panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
+              structureOrSite: panel.structureOrSite || panel.panelTitle || "",
+              anatomicalFocus: panel.anatomicalFocus || "Evaluación anatómica del tobillo, ligamentos y Aquiles",
+              laterality: panel.laterality || planJson.laterality || laterality || "",
+              imageUrl: "",
+              promptUsed: promptToUse,
+              isCustomFlipped: false,
+              panelRole: panel.panelRole || defaultRole
+            };
+          }
+        })
+      );
+
+      const forcedHeaders = {
+        col1: "LOCALIZACIÓN",
+        col2: "ESTRUCTURA",
+        col3: "GROSOR / GAP",
+        col4: "PATRÓN ECO",
+        col5: "DERRAME",
+        col6: "DINÁMICA",
+        col7: "SEVERIDAD",
+        col8: "IMPACTO"
+      };
+
+      const finalAnkleData = {
+        studyTypeCategory: planJson.studyTypeCategory || ankleType || "tobillo_ligamentos",
+        territoryLabel: planJson.territoryLabel || "ECOGRAFÍA DE TOBILLO",
+        laterality: planJson.laterality || laterality || "Derecha",
+        figureTitle: planJson.figureTitle || "FIGURA 1. ATLAS 3D TOBILLO Y CORRELACIÓN LIGAMENTOS / AQUILES",
+        tableTitle: planJson.tableTitle || "TABLA ECOGRÁFICA DE LIGAMENTOS, AQUILES Y ESTRUCTURAS PERIARTICULARES:",
+        tableHeaders: forcedHeaders,
+        panels: anklePanelsWithImages,
+        findingTable: (planJson.findingTable || planJson.lesionTable || planJson.noduleTable || []).map((row: any) => ({
+          location: row.location || "",
+          structure: row.structure || row.tendon || row.composition || "",
+          thicknessOrGap: row.thicknessOrGap || row.size || row.gap || "",
+          echoPattern: row.echoPattern || row.echogenicity || row.pattern || "",
+          effusionStatus: row.effusionStatus || row.bursa || "",
+          dynamicFinding: row.dynamicFinding || row.dynamic || row.stressFinding || "",
+          severity: row.severity || row.grade || "",
+          clinicalImpact: row.clinicalImpact || ""
+        })),
+        ankleSummary: planJson.ankleSummary || "",
+        morphologyNotes: planJson.morphologyNotes || "",
+        ligamentAchillesStatus: planJson.ligamentAchillesStatus || "",
+        keyPoints: Array.isArray(planJson.keyPoints) ? planJson.keyPoints : [],
+        synthesisTitle: planJson.synthesisTitle || "SÍNTESIS MORFOLÓGICA Y FUNCIONAL DE TOBILLO:",
+        morphologicalSynthesis: planJson.morphologicalSynthesis || ""
+      };
+
+      res.json({
+        success: true,
+        data: finalAnkleData
+      });
+
+    } catch (error: any) {
+      console.error("Error en /api/generate-3d-ankle:", error);
+      res.status(500).json({ success: false, error: handleGeminiError(error) });
+    }
+  });
+
+  app.post("/api/regenerate-3d-ankle-panel", async (req: express.Request, res: express.Response) => {
+    try {
+      const { reportText, ankleType, panel, laterality, userDirective, requestedModel, customDirectives } = req.body;
+
+      if (!panel) {
+        return res.status(400).json({ success: false, error: "Se requiere el panel ankle a regenerar." });
+      }
+
+      const ai = getGeminiClient();
+      const model = getModelName(requestedModel || "gemini-3.7-flash");
+
+      const refinePrompt = `Eres un Radiólogo MSK experto en tobillo/ligamentos/Aquiles y Director de Arte Médico 3D.
+Diseña un prompt en inglés superdetallado para re-generar una única imagen 3D fotorrealista correspondiente al PANEL ${panel.panelLetter}.
+
+DATOS DEL CASO:
+- Territorio: "${ankleType || "Ecografía de tobillo / ligamentos y Aquiles"}"
+- Tendón / sitio: "${panel.structureOrSite || panel.panelTitle || ""}"
+- Foco actual: "${panel.anatomicalFocus || ""}"
+- Rol del panel: "${panel.panelRole || ""}"
+- Lateralidad requerida: "${laterality || panel.laterality || ""}"
+- Instrucción / Corrección del médico: "${userDirective || "Mejorar precisión anatomopatológica de ligamentos/Aquiles"}"
+- DIRECTIVA CLÍNICA OBLIGATORIA (Scorecard / radar / médico): "${customDirectives || "Ninguna"}"
+- Contexto del informe: """${(reportText || "").slice(0, 800)}"""
+
+TOPOGRAFÍA DE TOBILLO / AQUILES OBLIGATORIA:
+${ANKLE_LIGAMENT_TOPOGRAPHY_RULES_ES}
+Si structureOrSite / foco / instrucción / informe mencionan ligamento o Aquiles, conserva EXACTAS las coordenadas
+(lado de tobillo del paciente, lateral=fibular vs medial=deltoides, Aquiles midportion/insercional).
+NUNCA las "corrijas" ni asumas deltoides/insercional por defecto.
+
+REGLAS DE ESTILO:
+- Ultra-realistic 3D medical ankle / ligament-Achilles macro render, cinema 4D octane, accurate distal tibia/fibula/talus/calcaneus landmarks.
+- Exact named ligament/Achilles topography in the English imagePrompt (lateral|medial|Achilles + ATFL/CFL/deltoid/midportion/insertional + patient ankle side).
+- Exact morphology (intact / sprain / partial tear / full-thickness gap / tendinopathy); optional effusion/bursa only if indicated; soft surgical studio lighting; pure clean background.
+- STRICTLY NO text, NO numbers, NO letters, NO arrows inside the image.
+- Respect patient laterality (AP: patient RIGHT on viewer's LEFT).
+
+RESPONDE EN JSON:
+{
+  "panelTitle": "Título actualizado o confirmado para el panel",
+  "structureOrSite": "Nombre exacto del ligamento/Aquiles (p.ej. LPAA/ATFL lateral/peroné)",
+  "anatomicalFocus": "Foco anatomopatológico de 1 a 2 líneas con lateral/medial o midportion/insercional",
+  "imagePrompt": "Detailed English image generation prompt with explicit lateral/medial and Achilles zone..."
+}`;
+
+      const refineResponse = await ai.models.generateContent({
+        model: model,
+        contents: [{ text: refinePrompt }],
+        config: { responseMimeType: "application/json" }
+      });
+
+      let refineJson: any = {};
+      try {
+        refineJson = JSON.parse(refineResponse.text || "{}");
+      } catch (e) {
+        refineJson = {
+          panelTitle: panel.panelTitle,
+          structureOrSite: panel.structureOrSite || panel.panelTitle,
+          anatomicalFocus: panel.anatomicalFocus,
+          imagePrompt: `Ultra-realistic 3D medical ankle / ankle ligaments-Achilles render of ${panel.structureOrSite || panel.panelTitle}, octane render, studio lighting, no text.`
+        };
+      }
+
+      let finalPrompt = refineJson.imagePrompt || panel.promptUsed || `3D macro ankle ligaments-Achilles render of ${panel.panelTitle}, no text.`;
+      if (customDirectives && String(customDirectives).trim()) {
+        finalPrompt = `${finalPrompt} [MANDATORY CLINICAL DIRECTIVE: ${String(customDirectives).trim()}].`;
+      }
+      if (userDirective && userDirective.trim()) {
+        finalPrompt = `${finalPrompt} [MANDATORY SURGICAL CORRECTION: ${userDirective.trim()}].`;
+      }
+      if (laterality && laterality !== "auto") {
+        const screenMap = buildScreenLateralityConstraint(laterality, "AP / coronal");
+        finalPrompt = `[MANDATORY PATIENT LATERALITY: ${laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${ANKLE_LIGAMENT_TOPOGRAPHY_HARD_RULES} ${screenMap} ${finalPrompt}`;
+      } else {
+        const screenMap = buildScreenLateralityConstraint(laterality, "AP / coronal");
+        finalPrompt = `${LATERALITY_HARD_RULES} ${ANKLE_LIGAMENT_TOPOGRAPHY_HARD_RULES} ${screenMap} ${finalPrompt}`;
+      }
+
+      const imageUrl = await generateMedicalImage(ai, finalPrompt);
+
+      const updatedPanel = {
+        ...panel,
+        panelTitle: refineJson.panelTitle || panel.panelTitle,
+        structureOrSite: refineJson.structureOrSite || panel.structureOrSite,
+        anatomicalFocus: refineJson.anatomicalFocus || panel.anatomicalFocus,
+        laterality: laterality || panel.laterality,
+        imageUrl: imageUrl,
+        promptUsed: finalPrompt,
+        isCustomFlipped: false
+      };
+
+      res.json({
+        success: true,
+        panel: updatedPanel
+      });
+
+    } catch (error: any) {
+      console.error("Error en /api/regenerate-3d-ankle-panel:", error);
       res.status(500).json({ success: false, error: handleGeminiError(error) });
     }
   });
