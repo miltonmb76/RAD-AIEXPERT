@@ -3319,6 +3319,8 @@ Ejemplo:
   const [isCreadorCuadroSinopticoOpen, setIsCreadorCuadroSinopticoOpen] = useState<boolean>(false);
   const [isCreadorSinopsisFracturasOpen, setIsCreadorSinopsisFracturasOpen] = useState<boolean>(false);
   const [isElastographyQUSModuleOpen, setIsElastographyQUSModuleOpen] = useState<boolean>(false);
+  const [isThyroid3dSuiteOpen, setIsThyroid3dSuiteOpen] = useState<boolean>(false);
+  const [isBreast3dSuiteOpen, setIsBreast3dSuiteOpen] = useState<boolean>(false); // Suite Mama (próxima)
   const [includeRadarInReport, setIncludeRadarInReport] = useState<boolean>(true);
 
   // States & Handlers for Sistema de Activación Rápida de Módulos (Procesamiento en Lote)
@@ -3576,6 +3578,7 @@ Ejemplo:
             if (j.success && j.data) {
               setThyroid3dData(j.data);
               setIncludeThyroid3dInReport(true);
+              setIsThyroid3dSuiteOpen(true);
             }
           } catch (e) {
             console.error("Error en batch thyroid 3d:", e);
@@ -19665,19 +19668,8 @@ const splitReportAndAnnex = (text: string) => {
                           />
 
                           {/* === CORTE FOCAL 3D DE LA LESI�N (ON DEMAND) === */}
-                          
-                          <Thyroid3DModule
-                            reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
-                            activeProtocol={specificStudy || studyType || ""}
-                            laterality=""
-                            selectedModel={modelFor("thyroid3d")}
-                            thyroidData={thyroid3dData}
-                            setThyroidData={setThyroid3dData}
-                            includeInReport={includeThyroid3dInReport}
-                            setIncludeInReport={setIncludeThyroid3dInReport}
-                            scorecardData={clinicalScorecardData}
-                            externalDirectives={buildThyroidDirectivesFromScorecard(clinicalScorecardData) || atlasDirectivesFromScorecard}
-                          />
+                          {/* Suite Tiroides: tarjeta colapsable en módulos */}
+
 
 <div id="focal-lesion-3d-module">
                           <FocalLesion3DModule
@@ -20427,7 +20419,74 @@ const splitReportAndAnnex = (text: string) => {
                               </button>
                             </div>
 
-                            {/* Card 8d: Sinopsis de Fracturas (IA) */}
+                            
+                            {/* Card: Suite Tiroides 3D */}
+                            <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-teal-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
+                              <div className="flex items-center gap-2 justify-between">
+                                <div className="flex items-center gap-2">
+                                  <Activity className="h-4 w-4 text-teal-400" />
+                                  <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
+                                    Suite Tiroides 3D
+                                  </h4>
+                                </div>
+                                <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-teal-950/40 text-teal-400 border border-teal-900/30 px-2 py-0.5 rounded">
+                                  TI-RADS 3D
+                                </span>
+                              </div>
+                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
+                                Glándula/nódulo/ganglios 3D, ficha clínica bajo imagen, tabla TI-RADS y anexo PDF a página completa.
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsThyroid3dSuiteOpen(p => {
+                                    const next = !p;
+                                    if (next) setTimeout(() => document.getElementById("thyroid-3d-suite-module")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+                                    return next;
+                                  });
+                                }}
+                                className={`w-full py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2 font-mono cursor-pointer border-2 ${
+                                  isThyroid3dSuiteOpen
+                                    ? "bg-teal-600/15 border-teal-500/60 text-teal-200"
+                                    : "bg-slate-950 border-slate-800 hover:border-teal-500/30 text-teal-400"
+                                }`}
+                              >
+                                <Activity className="h-4 w-4" />
+                                {isThyroid3dSuiteOpen ? "Ocultar Suite Tiroides" : "Abrir Suite Tiroides 3D"}
+                              </button>
+                            </div>
+
+                            {/* Card: Suite Mama 3D (misma UX; módulo en siguiente iteración) */}
+                            <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-pink-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
+                              <div className="flex items-center gap-2 justify-between">
+                                <div className="flex items-center gap-2">
+                                  <Sparkles className="h-4 w-4 text-pink-400" />
+                                  <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
+                                    Suite Mama 3D
+                                  </h4>
+                                </div>
+                                <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-pink-950/40 text-pink-400 border border-pink-900/30 px-2 py-0.5 rounded">
+                                  BI-RADS 3D
+                                </span>
+                              </div>
+                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
+                                Reloj mamario bilateral, nódulo dominante, axilas y ficha BI-RADS — se despliega al activar (en construcción).
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => setIsBreast3dSuiteOpen(p => !p)}
+                                className={`w-full py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2 font-mono cursor-pointer border-2 ${
+                                  isBreast3dSuiteOpen
+                                    ? "bg-pink-600/15 border-pink-500/60 text-pink-200"
+                                    : "bg-slate-950 border-slate-800 hover:border-pink-500/30 text-pink-400"
+                                }`}
+                              >
+                                <Sparkles className="h-4 w-4" />
+                                {isBreast3dSuiteOpen ? "Ocultar Suite Mama" : "Abrir Suite Mama 3D"}
+                              </button>
+                            </div>
+
+{/* Card 8d: Sinopsis de Fracturas (IA) */}
                             <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-emerald-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
                               <div className="flex items-center gap-2 justify-between">
                                 <div className="flex items-center gap-2">
@@ -20849,7 +20908,51 @@ const splitReportAndAnnex = (text: string) => {
                             </div>
                           )}
 
-                          {isCreadorSinopsisFracturasOpen && (
+                          
+                          {isThyroid3dSuiteOpen && (
+                            <div id="thyroid-3d-suite-module" className="my-6">
+                              <Thyroid3DModule
+                                reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
+                                activeProtocol={specificStudy || studyType || ""}
+                                laterality=""
+                                selectedModel={modelFor("thyroid3d")}
+                                thyroidData={thyroid3dData}
+                                setThyroidData={setThyroid3dData}
+                                includeInReport={includeThyroid3dInReport}
+                                setIncludeInReport={setIncludeThyroid3dInReport}
+                                scorecardData={clinicalScorecardData}
+                                externalDirectives={buildThyroidDirectivesFromScorecard(clinicalScorecardData) || atlasDirectivesFromScorecard}
+                                onClose={() => setIsThyroid3dSuiteOpen(false)}
+                              />
+                            </div>
+                          )}
+
+                          {isBreast3dSuiteOpen && (
+                            <div id="breast-3d-suite-module" className="my-6 rounded-2xl border border-pink-800/40 bg-slate-950/80 p-5 space-y-3">
+                              <div className="flex items-center justify-between gap-3">
+                                <div>
+                                  <h3 className="text-sm font-black uppercase tracking-widest text-pink-300 font-mono">Suite Mama 3D</h3>
+                                  <p className="text-xs text-slate-400 mt-1">
+                                    Misma arquitectura que Tiroides: paneles 3D (ambas mamas + zoom de lesión + axila), ficha BI-RADS rica bajo la imagen y anexo PDF a página completa. Módulo completo en la siguiente entrega.
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setIsBreast3dSuiteOpen(false)}
+                                  className="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest bg-pink-900/40 text-pink-200 border border-pink-700/40"
+                                >
+                                  Cerrar
+                                </button>
+                              </div>
+                              <ul className="text-[11px] text-slate-300 space-y-1 list-disc pl-4">
+                                <li>Contrato espacial de reloj mamario (3 = derecha del pezón en imagen).</li>
+                                <li>Tabla de lesiones BI-RADS (composición, forma, márgenes, eco, vascularidad).</li>
+                                <li>Estado axilar y síntesis de seguimiento/biopsia.</li>
+                              </ul>
+                            </div>
+                          )}
+
+{isCreadorSinopsisFracturasOpen && (
                             <div className="my-6">
                               <React.Suspense fallback={<div className="p-4 text-xs font-mono text-emerald-400 bg-slate-900/60 rounded-xl border border-emerald-900/40 animate-pulse">Cargando Sinopsis de Fracturas...</div>}>
                                 <CreadorSinopsisFracturas
