@@ -493,11 +493,50 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
       }
     }
 
+    const updatedOverlays = (atlasData.pathologyOverlays || [])
+      .filter((o) => o.panelLetter !== panelLetter)
+      .map((o) => ({
+        ...o,
+        panelLetter: letterMap[o.panelLetter] || o.panelLetter,
+      }));
+
+    const updatedAssignments = (atlasData.panelFindingAssignments || [])
+      .filter((a) => a.panelLetter !== panelLetter)
+      .map((a) => ({
+        ...a,
+        panelLetter: letterMap[a.panelLetter] || a.panelLetter,
+      }));
+
+    // Remap local UI state keyed by panel letter
+    setPanelDirectives((prev) => {
+      const next: Record<string, string> = {};
+      for (const letter of Object.keys(prev)) {
+        if (letter === panelLetter) continue;
+        next[letterMap[letter] || letter] = prev[letter];
+      }
+      return next;
+    });
+    if (editingPanelLetter === panelLetter) setEditingPanelLetter(null);
+    else if (editingPanelLetter && letterMap[editingPanelLetter]) {
+      setEditingPanelLetter(letterMap[editingPanelLetter]);
+    }
+    if (regeneratingPanelLetter === panelLetter) setRegeneratingPanelLetter(null);
+    else if (regeneratingPanelLetter && letterMap[regeneratingPanelLetter]) {
+      setRegeneratingPanelLetter(letterMap[regeneratingPanelLetter]);
+    }
+    if (zoomPanel?.panelLetter === panelLetter) setZoomPanel(null);
+    else if (zoomPanel && letterMap[zoomPanel.panelLetter]) {
+      const remapped = updatedPanels.find((p) => p.panelLetter === letterMap[zoomPanel.panelLetter]);
+      if (remapped) setZoomPanel(remapped);
+    }
+
     setAtlasData({
       ...atlasData,
       figureTitle: updatedTitle,
       panels: updatedPanels,
-      synopticExplanation: updatedSynoptic
+      synopticExplanation: updatedSynoptic,
+      pathologyOverlays: updatedOverlays,
+      panelFindingAssignments: updatedAssignments,
     });
   };
 
@@ -1007,10 +1046,11 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
                         <button
                           type="button"
                           onClick={() => handleDeleteSinglePanel(panel.panelLetter)}
-                          className="p-1 text-slate-500 hover:text-rose-400 rounded bg-slate-800/60 hover:bg-rose-950/40 transition-colors cursor-pointer"
+                          className="px-2 py-1 text-[10px] font-mono font-bold rounded flex items-center gap-1 bg-slate-800 hover:bg-rose-950 text-rose-300 hover:text-rose-200 border border-slate-700 hover:border-rose-500/50 transition-colors cursor-pointer"
                           title="Eliminar este panel"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
+                          <span className="hidden sm:inline">Borrar</span>
                         </button>
                       )}
                     </div>
@@ -1065,6 +1105,21 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
                     {/* On-image pathology pins intentionally disabled:
                         imprecise AI placement would cost consult time to fix.
                         Scorecard sync updates the synoptic table only. */}
+
+
+                    {atlasData.panels.length > 1 && panel.imageUrl && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteSinglePanel(panel.panelLetter);
+                        }}
+                        className="absolute top-2 right-2 z-10 p-1.5 rounded-lg bg-slate-950/85 border border-slate-700 text-slate-200 hover:text-rose-300 hover:border-rose-500/50 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                        title="Eliminar este panel"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
 
                     {/* Regeneration Overlay for this panel */}
                     {isRegeneratingThis && (
