@@ -1352,8 +1352,12 @@ export default function App() {
     return "none";
   });
 
+  const [selectedLogoRight, setSelectedLogoRight] = useState<string>(() => {
+    return localStorage.getItem("rad_selected_logo_right") || "none";
+  });
+
   const [customLogoStyle, setCustomLogoStyle] = useState<string>(() => {
-    return localStorage.getItem("rad_custom_logo_style") || "left"; // "left" or "banner"
+    return localStorage.getItem("rad_custom_logo_style") || "left"; // "left" | "banner" | "dual"
   });
 
   useEffect(() => {
@@ -1363,6 +1367,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("rad_selected_logo", selectedLogo);
   }, [selectedLogo]);
+
+  useEffect(() => {
+    localStorage.setItem("rad_selected_logo_right", selectedLogoRight);
+  }, [selectedLogoRight]);
 
   const customLogoUrl = useMemo(() => {
     if (isPatientPublicView && patientLogoUrl) {
@@ -1375,6 +1383,17 @@ export default function App() {
     }
     return "";
   }, [isPatientPublicView, patientLogoUrl, selectedLogo, customLogos]);
+
+  const [patientLogoRightUrl, setPatientLogoRightUrl] = useState<string>("");
+
+  const customLogoRightUrl = useMemo(() => {
+    if (isPatientPublicView && patientLogoRightUrl) {
+      return patientLogoRightUrl;
+    }
+    const matched = customLogos.find(l => l.id === selectedLogoRight);
+    if (matched) return matched.url;
+    return "";
+  }, [isPatientPublicView, patientLogoRightUrl, selectedLogoRight, customLogos]);
 
   const [selectedModel, setSelectedModel] = useState<string>(() => {
     const saved = localStorage.getItem("rad_selected_model");
@@ -1432,12 +1451,14 @@ export default function App() {
         setGeneratedReport(localStudy.reportText || "");
         setLoadedCloudPdfBase64(localStudy.pdfBase64 || "");
         setPatientLogoUrl(localStudy.customLogoUrl || "");
+        setPatientLogoRightUrl(localStudy.customLogoRightUrl || "");
         setCustomLogoStyle(localStudy.customLogoStyle || "logo");
         setCustomSignatureUrl(localStudy.customSignatureUrl || "");
         setOperationalSummaryText(localStudy.operationalSummaryText || "");
         if (localStudy.specificStudy) setSpecificStudy(localStudy.specificStudy);
         if (localStudy.pdfLayoutType) setPdfLayoutType(localStudy.pdfLayoutType as any);
         if (localStudy.selectedLogo) setSelectedLogo(localStudy.selectedLogo);
+        if (localStudy.selectedLogoRight) setSelectedLogoRight(localStudy.selectedLogoRight);
         if (localStudy.attachedImages) setAttachedImages(localStudy.attachedImages);
         if (localStudy.findings3dRenders) setFindings3dRenders(localStudy.findings3dRenders);
         if (localStudy.patientSummary) setPatientSummary(localStudy.patientSummary);
@@ -1481,12 +1502,14 @@ export default function App() {
               setGeneratedReport(study.reportText || "");
               setLoadedCloudPdfBase64(study.pdfBase64 || "");
               setPatientLogoUrl(study.customLogoUrl || "");
+              setPatientLogoRightUrl(study.customLogoRightUrl || "");
               setCustomLogoStyle(study.customLogoStyle || "logo");
               setCustomSignatureUrl(study.customSignatureUrl || "");
               setOperationalSummaryText(study.operationalSummaryText || "");
               if (study.specificStudy) setSpecificStudy(study.specificStudy);
               if (study.pdfLayoutType) setPdfLayoutType(study.pdfLayoutType as any);
               if (study.selectedLogo) setSelectedLogo(study.selectedLogo);
+              if (study.selectedLogoRight) setSelectedLogoRight(study.selectedLogoRight);
               if (study.attachedImages) setAttachedImages(study.attachedImages);
               if (study.findings3dRenders) setFindings3dRenders(study.findings3dRenders);
               if (study.patientSummary) setPatientSummary(study.patientSummary);
@@ -1691,6 +1714,9 @@ export default function App() {
       if (selectedLogo === id) {
         setSelectedLogo("none");
       }
+      if (selectedLogoRight === id) {
+        setSelectedLogoRight("none");
+      }
     }
   };
 
@@ -1705,6 +1731,14 @@ export default function App() {
   const handleChangeCustomLogoStyle = (style: string) => {
     setCustomLogoStyle(style);
     localStorage.setItem("rad_custom_logo_style", style);
+    if (style === "dual" && (!selectedLogoRight || selectedLogoRight === "none")) {
+      const other = customLogos.find((l) => l.id !== selectedLogo);
+      if (other) {
+        setSelectedLogoRight(other.id);
+      } else if (customLogos.length > 0) {
+        setSelectedLogoRight(customLogos[0].id);
+      }
+    }
   };
 
   // Custom doctor's signature upload states
@@ -2693,11 +2727,13 @@ export default function App() {
     findings,
     studyType,
     customLogoUrl,
+    customLogoRightUrl,
     customLogoStyle,
     customSignatureUrl,
     specificStudy,
     pdfLayoutType,
     selectedLogo,
+    selectedLogoRight,
     biomechanicalRadarData,
     findings3dRenders,
     atlas3dData,
@@ -4569,7 +4605,11 @@ Ejemplo:
             createdAt: new Date().toISOString(),
             specificStudy: specificStudy || "General",
             pdfLayoutType: pdfLayoutType || "classic",
-            selectedLogo: selectedLogo || "none"
+            selectedLogo: selectedLogo || "none",
+            selectedLogoRight: selectedLogoRight || "none",
+            customLogoStyle: customLogoStyle || "left",
+            customLogoUrl: customLogoUrl || "",
+            customLogoRightUrl: customLogoRightUrl || "",
           };
 
           // Save into IndexedDB reliably
@@ -5680,8 +5720,11 @@ Ejemplo:
             pdfBase64: pdfB64,
             operationalSummaryText: summary,
             customLogoUrl: customLogoUrl || "",
+            customLogoRightUrl: customLogoRightUrl || "",
             customLogoStyle: customLogoStyle || "logo",
             customSignatureUrl: customSignatureUrl || "",
+            selectedLogo: selectedLogo || "none",
+            selectedLogoRight: selectedLogoRight || "none",
             attachedImages: attachedImages || [],
             findings3dRenders: findings3dRenders || [],
             atlas3dData: atlas3dData || null,
@@ -7472,6 +7515,7 @@ Ejemplo:
     const findingsLocal = studyOverride ? (studyOverride.findings || "No especificadas") : (pdfStateRef.current.findings || "No especificadas");
     const studyTypeLocal = studyOverride ? (studyOverride.studyType || "Estudio General") : (pdfStateRef.current.studyType || "Estudio General");
     const customLogoUrlLocal = studyOverride ? (studyOverride.customLogoUrl || "") : (pdfStateRef.current.customLogoUrl || "");
+    const customLogoRightUrlLocal = studyOverride ? (studyOverride.customLogoRightUrl || "") : (pdfStateRef.current.customLogoRightUrl || "");
     const customLogoStyleLocal = studyOverride ? (studyOverride.customLogoStyle || "logo") : (pdfStateRef.current.customLogoStyle || "logo");
     const customSignatureUrlLocal = studyOverride ? (studyOverride.customSignatureUrl || "") : (pdfStateRef.current.customSignatureUrl || "");
     const specificStudyLocal = studyOverride && studyOverride.specificStudy ? studyOverride.specificStudy : pdfStateRef.current.specificStudy;
@@ -7494,6 +7538,7 @@ Ejemplo:
     const findings = findingsLocal;
     const studyType = studyTypeLocal;
     const customLogoUrl = customLogoUrlLocal;
+    const customLogoRightUrl = customLogoRightUrlLocal;
     const customLogoStyle = customLogoStyleLocal;
     const customSignatureUrl = customSignatureUrlLocal;
     const specificStudy = specificStudyLocal || "Tórax";
@@ -7516,6 +7561,7 @@ Ejemplo:
 
       // Load virtual image dimensions to prevent any layout distortion on any device
       const logoDims = await getImageDimensionsVirtual(customLogoUrl);
+      const logoRightDims = await getImageDimensionsVirtual(customLogoRightUrl);
       const signatureDims = await getImageDimensionsVirtual(customSignatureUrl);
 
       const drawAsymmetricSidebar = (docObj: any, pageNum: number, startY: number = 20) => {
@@ -7947,6 +7993,60 @@ Ejemplo:
             doc.text(displayClinicName, pageWidth / 2, yCoord, { align: "center" });
             yCoord += 5;
           }
+        } else if (customLogoStyle === "dual") {
+          // Dual logos: left + right with clinic name centered
+          const fitDualLogo = (dims: { width: number; height: number }) => {
+            let w = 42;
+            let h = 38;
+            if (dims.width && dims.height) {
+              const aspect = dims.width / dims.height;
+              const maxWidth = 52;
+              const maxHeight = 38;
+              if (aspect > maxWidth / maxHeight) {
+                w = maxWidth;
+                h = maxWidth / aspect;
+              } else {
+                h = maxHeight;
+                w = maxHeight * aspect;
+              }
+            }
+            return { w, h };
+          };
+          const leftFit = fitDualLogo(logoDims);
+          const rightFit = customLogoRightUrl ? fitDualLogo(logoRightDims) : { w: 0, h: 0 };
+          const rowH = Math.max(leftFit.h, rightFit.h || 0, 16);
+
+          try {
+            const formatL = customLogoUrl.toLowerCase().includes("image/png") ? "PNG" : "JPEG";
+            doc.addImage(customLogoUrl, formatL, marginX, yCoord + (rowH - leftFit.h) / 2, leftFit.w, leftFit.h);
+          } catch (err) {
+            console.warn("Could not draw left dual logo", err);
+          }
+          if (customLogoRightUrl) {
+            try {
+              const formatR = customLogoRightUrl.toLowerCase().includes("image/png") ? "PNG" : "JPEG";
+              doc.addImage(
+                customLogoRightUrl,
+                formatR,
+                pageWidth - marginX - rightFit.w,
+                yCoord + (rowH - rightFit.h) / 2,
+                rightFit.w,
+                rightFit.h
+              );
+            } catch (err) {
+              console.warn("Could not draw right dual logo", err);
+            }
+          }
+
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(12);
+          doc.setTextColor(15, 23, 42);
+          doc.text(displayClinicName || "REPORTE DE RADIODIAGNÓSTICO", pageWidth / 2, yCoord + rowH / 2 - 1, { align: "center" });
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8);
+          doc.setTextColor(100, 116, 139);
+          doc.text("REPORTE DE RADIODIAGNÓSTICO POR IMAGEN", pageWidth / 2, yCoord + rowH / 2 + 4, { align: "center" });
+          yCoord += rowH + 6;
         } else {
           // Left Aligned Logo Style
           let logoWidth = 36;
@@ -8447,6 +8547,19 @@ Ejemplo:
           }
           estimatedHeight += bannerHeight + 5;
           if (displayClinicName) estimatedHeight += 5;
+        } else if (customLogoStyle === "dual") {
+          const fitH = (dims: { width: number; height: number }) => {
+            if (dims.width && dims.height) {
+              const aspect = dims.width / dims.height;
+              const maxWidth = 52;
+              const maxHeight = 38;
+              return aspect > maxWidth / maxHeight ? maxWidth / aspect : maxHeight;
+            }
+            return 38;
+          };
+          const leftH = fitH(logoDims);
+          const rightH = customLogoRightUrl ? fitH(logoRightDims) : 0;
+          estimatedHeight += Math.max(leftH, rightH, 16) + 6;
         } else {
           let logoHeight = 36;
           if (logoDims.width && logoDims.height) {
@@ -12410,6 +12523,7 @@ Ejemplo:
 
       // Load virtual image dimensions to prevent any layout distortion on any device
       const logoDims = await getImageDimensionsVirtual(customLogoUrl);
+      const logoRightDims = await getImageDimensionsVirtual(customLogoRightUrl);
       const signatureDims = await getImageDimensionsVirtual(customSignatureUrl);
 
       // Strip emojis helper to prevent visual square errors in default fonts
@@ -12436,6 +12550,19 @@ Ejemplo:
           }
           estimatedHeight += bannerHeight + 5;
           if (displayClinicName) estimatedHeight += 5;
+        } else if (customLogoStyle === "dual") {
+          const fitH = (dims: { width: number; height: number }) => {
+            if (dims.width && dims.height) {
+              const aspect = dims.width / dims.height;
+              const maxWidth = 52;
+              const maxHeight = 38;
+              return aspect > maxWidth / maxHeight ? maxWidth / aspect : maxHeight;
+            }
+            return 38;
+          };
+          const leftH = fitH(logoDims);
+          const rightH = customLogoRightUrl ? fitH(logoRightDims) : 0;
+          estimatedHeight += Math.max(leftH, rightH, 16) + 6;
         } else {
           let logoHeight = 36;
           if (logoDims.width && logoDims.height) {
@@ -12574,6 +12701,59 @@ Ejemplo:
             doc.text(displayClinicName, pageWidth / 2, yCoord, { align: "center" });
             yCoord += 5;
           }
+        } else if (customLogoStyle === "dual") {
+          const fitDualLogo = (dims: { width: number; height: number }) => {
+            let w = 42;
+            let h = 38;
+            if (dims.width && dims.height) {
+              const aspect = dims.width / dims.height;
+              const maxWidth = 52;
+              const maxHeight = 38;
+              if (aspect > maxWidth / maxHeight) {
+                w = maxWidth;
+                h = maxWidth / aspect;
+              } else {
+                h = maxHeight;
+                w = maxHeight * aspect;
+              }
+            }
+            return { w, h };
+          };
+          const leftFit = fitDualLogo(logoDims);
+          const rightFit = customLogoRightUrl ? fitDualLogo(logoRightDims) : { w: 0, h: 0 };
+          const rowH = Math.max(leftFit.h, rightFit.h || 0, 16);
+
+          try {
+            const formatL = customLogoUrl.toLowerCase().includes("image/png") ? "PNG" : "JPEG";
+            doc.addImage(customLogoUrl, formatL, marginX, yCoord + (rowH - leftFit.h) / 2, leftFit.w, leftFit.h);
+          } catch (err) {
+            console.warn("Could not draw left dual logo in patient PDF", err);
+          }
+          if (customLogoRightUrl) {
+            try {
+              const formatR = customLogoRightUrl.toLowerCase().includes("image/png") ? "PNG" : "JPEG";
+              doc.addImage(
+                customLogoRightUrl,
+                formatR,
+                pageWidth - marginX - rightFit.w,
+                yCoord + (rowH - rightFit.h) / 2,
+                rightFit.w,
+                rightFit.h
+              );
+            } catch (err) {
+              console.warn("Could not draw right dual logo in patient PDF", err);
+            }
+          }
+
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(12);
+          doc.setTextColor(15, 23, 42);
+          doc.text(displayClinicName || "ACOMPAÑAMIENTO EXPLICATIVO", pageWidth / 2, yCoord + rowH / 2 - 1, { align: "center" });
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8);
+          doc.setTextColor(100, 116, 139);
+          doc.text("EXPLICACIÓN MÉDICA COMPRENSIBLE PARA EL PACIENTE", pageWidth / 2, yCoord + rowH / 2 + 4, { align: "center" });
+          yCoord += rowH + 6;
         } else {
           let logoWidth = 36;
           let logoHeight = 36;
@@ -15661,6 +15841,7 @@ const splitReportAndAnnex = (text: string) => {
         clinicName: localStorage.getItem("radiology_clinic_name"),
         customLogos: localStorage.getItem("rad_custom_logos"),
         selectedLogo: localStorage.getItem("rad_selected_logo"),
+        selectedLogoRight: localStorage.getItem("rad_selected_logo_right"),
         customLogoStyle: localStorage.getItem("rad_custom_logo_style"),
         customSignature: localStorage.getItem("rad_custom_signature"),
         pdfLayoutType: localStorage.getItem("radiology_pdf_layout"),
@@ -15726,6 +15907,10 @@ const splitReportAndAnnex = (text: string) => {
         if (backup.selectedLogo) {
           localStorage.setItem("rad_selected_logo", backup.selectedLogo);
           setSelectedLogo(backup.selectedLogo);
+        }
+        if (backup.selectedLogoRight) {
+          localStorage.setItem("rad_selected_logo_right", backup.selectedLogoRight);
+          setSelectedLogoRight(backup.selectedLogoRight);
         }
         if (backup.customLogoStyle) {
           localStorage.setItem("rad_custom_logo_style", backup.customLogoStyle);
@@ -16601,12 +16786,20 @@ const splitReportAndAnnex = (text: string) => {
       let pdfB64 = "";
 
       let compressedLogo = customLogoUrl || "";
+      let compressedLogoRight = customLogoRightUrl || "";
       let compressedSignature = customSignatureUrl || "";
       if (compressedLogo && compressedLogo.startsWith("data:image")) {
         try {
           compressedLogo = await compressImageBase64(compressedLogo, 2400, 0.95);
         } catch (compErr) {
           console.error("Error compressing logo inside save to cloud:", compErr);
+        }
+      }
+      if (compressedLogoRight && compressedLogoRight.startsWith("data:image")) {
+        try {
+          compressedLogoRight = await compressImageBase64(compressedLogoRight, 2400, 0.95);
+        } catch (compErr) {
+          console.error("Error compressing right logo inside save to cloud:", compErr);
         }
       }
       if (compressedSignature && compressedSignature.startsWith("data:image")) {
@@ -16641,11 +16834,13 @@ const splitReportAndAnnex = (text: string) => {
         pdfBase64: pdfB64,
         operationalSummaryText: operationalSummaryText,
         customLogoUrl: compressedLogo,
+        customLogoRightUrl: compressedLogoRight,
         customLogoStyle: customLogoStyle || "logo",
         customSignatureUrl: compressedSignature,
         specificStudy: specificStudy || "Tórax",
         pdfLayoutType: pdfLayoutType || "classic",
         selectedLogo: selectedLogo || "none",
+        selectedLogoRight: selectedLogoRight || "none",
         attachedImages: attachedImages || [],
         findings3dRenders: findings3dRenders || [],
         patientSummary: patientSummary || null
@@ -16682,6 +16877,7 @@ const splitReportAndAnnex = (text: string) => {
             attachedImages: [],
             findings3dRenders: [],
             customLogoUrl: "",
+            customLogoRightUrl: "",
             customSignatureUrl: "",
           };
           const { userId: _userId, userEmail: _userEmail, ...studyPayload } = cloudStudy;
@@ -16885,11 +17081,13 @@ const splitReportAndAnnex = (text: string) => {
             findings,
             reportText: generatedReport,
             customLogoUrl: patientLogoUrl,
+            customLogoRightUrl: patientLogoRightUrl,
             customLogoStyle,
             customSignatureUrl,
             specificStudy,
             pdfLayoutType,
-            selectedLogo
+            selectedLogo,
+            selectedLogoRight
           });
         }
       } else {
@@ -16908,11 +17106,13 @@ const splitReportAndAnnex = (text: string) => {
           findings,
           reportText: generatedReport,
           customLogoUrl: patientLogoUrl,
+          customLogoRightUrl: patientLogoRightUrl,
           customLogoStyle,
           customSignatureUrl,
           specificStudy,
           pdfLayoutType,
-          selectedLogo
+          selectedLogo,
+          selectedLogoRight
         });
       }
     };
@@ -18192,7 +18392,9 @@ const splitReportAndAnnex = (text: string) => {
                                 <span className="text-[9px] font-black text-slate-400 block uppercase tracking-widest leading-none">Logotipos Personalizados Cargados ({customLogos.length}):</span>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                   {customLogos.map((logo) => {
-                                    const isActive = selectedLogo === logo.id;
+                                    const isActiveLeft = selectedLogo === logo.id;
+                                    const isActiveRight = selectedLogoRight === logo.id;
+                                    const isActive = customLogoStyle === "dual" ? (isActiveLeft || isActiveRight) : isActiveLeft;
                                     return (
                                       <div
                                         key={logo.id}
@@ -18215,10 +18417,45 @@ const splitReportAndAnnex = (text: string) => {
                                           </span>
                                         </div>
                                         <div className="flex items-center gap-1.5 shrink-0">
-                                          {isActive && (
-                                            <span className="text-[10px]" title="Activo">
-                                              ✅
-                                            </span>
+                                          {customLogoStyle === "dual" ? (
+                                            <>
+                                              <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setSelectedLogo(logo.id);
+                                                }}
+                                                className={`text-[8px] font-black px-1.5 py-0.5 rounded border ${
+                                                  isActiveLeft
+                                                    ? "bg-indigo-700 border-indigo-500 text-white"
+                                                    : "bg-slate-950 border-slate-700 text-slate-500 hover:text-slate-200"
+                                                }`}
+                                                title="Usar como logo izquierdo"
+                                              >
+                                                Izq
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setSelectedLogoRight(logo.id);
+                                                }}
+                                                className={`text-[8px] font-black px-1.5 py-0.5 rounded border ${
+                                                  isActiveRight
+                                                    ? "bg-indigo-700 border-indigo-500 text-white"
+                                                    : "bg-slate-950 border-slate-700 text-slate-500 hover:text-slate-200"
+                                                }`}
+                                                title="Usar como logo derecho"
+                                              >
+                                                Der
+                                              </button>
+                                            </>
+                                          ) : (
+                                            isActiveLeft && (
+                                              <span className="text-[10px]" title="Activo">
+                                                ✓
+                                              </span>
+                                            )
                                           )}
                                           <button
                                             type="button"
@@ -18280,8 +18517,48 @@ const splitReportAndAnnex = (text: string) => {
                                     >
                                       Banner Ancho
                                     </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleChangeCustomLogoStyle("dual")}
+                                      className={`px-3 py-1 rounded-lg text-[8.5px] font-black uppercase border select-none transition-all cursor-pointer ${
+                                        customLogoStyle === "dual"
+                                          ? "bg-indigo-900 border-indigo-700 text-white"
+                                          : "bg-slate-950 border-slate-800 text-slate-500 hover:text-slate-300"
+                                      }`}
+                                      title="Dos logotipos: uno a la izquierda y otro a la derecha"
+                                    >
+                                      Doble Logo
+                                    </button>
                                   </div>
                                 </div>
+
+                                {customLogoStyle === "dual" && customLogos.length > 0 && (
+                                  <div className="bg-slate-900/40 border border-slate-850 rounded-xl p-3 space-y-2 text-left">
+                                    <span className="text-[8.5px] font-black text-indigo-400 uppercase tracking-widest block">Asignación Doble Logo</span>
+                                    <p className="text-[8px] text-slate-500 font-bold leading-relaxed">
+                                      Elige el logo izquierdo y el derecho desde la biblioteca (botones Izq / Der). Quedarán más grandes y legibles que un banner combinado.
+                                    </p>
+                                    <div className="flex items-center gap-3">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-[8px] font-black text-slate-400 uppercase">Izq</span>
+                                        {customLogoUrl ? (
+                                          <img src={customLogoUrl} alt="Logo izquierdo" className="h-9 max-w-[70px] bg-white rounded border border-slate-700 object-contain p-0.5" referrerPolicy="no-referrer" />
+                                        ) : (
+                                          <span className="text-[8px] text-slate-600">Sin asignar</span>
+                                        )}
+                                      </div>
+                                      <div className="flex-1 h-px bg-slate-800" />
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-[8px] font-black text-slate-400 uppercase">Der</span>
+                                        {customLogoRightUrl ? (
+                                          <img src={customLogoRightUrl} alt="Logo derecho" className="h-9 max-w-[70px] bg-white rounded border border-slate-700 object-contain p-0.5" referrerPolicy="no-referrer" />
+                                        ) : (
+                                          <span className="text-[8px] text-amber-500/90">Seleccione logo derecho</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
 
                                 {/* Interactive real-time A4 printable document limits mockup */}
                                 <div className="bg-slate-900/30 border border-slate-850/60 rounded-xl p-3.5 space-y-2.5 text-left">
@@ -18330,6 +18607,23 @@ const splitReportAndAnnex = (text: string) => {
                                                 className="h-full w-full object-contain" 
                                                 referrerPolicy="no-referrer"
                                               />
+                                            </div>
+                                          ) : customLogoStyle === "dual" ? (
+                                            <div className="flex items-center justify-between gap-1 w-full">
+                                              <div className="w-5 h-5 bg-slate-50 border border-slate-200/80 rounded p-0.5 shrink-0 overflow-hidden">
+                                                <img src={customLogoUrl} alt="Logo izquierdo A4" className="h-full w-full object-contain" referrerPolicy="no-referrer" />
+                                              </div>
+                                              <div className="flex-1 space-y-0.5 px-0.5">
+                                                <div className="h-1 bg-slate-400 rounded w-full max-w-[28px] mx-auto"></div>
+                                                <div className="h-[2px] bg-slate-300 rounded w-full max-w-[36px] mx-auto"></div>
+                                              </div>
+                                              <div className="w-5 h-5 bg-slate-50 border border-slate-200/80 rounded p-0.5 shrink-0 overflow-hidden">
+                                                {customLogoRightUrl ? (
+                                                  <img src={customLogoRightUrl} alt="Logo derecho A4" className="h-full w-full object-contain" referrerPolicy="no-referrer" />
+                                                ) : (
+                                                  <div className="h-full w-full bg-slate-100" />
+                                                )}
+                                              </div>
                                             </div>
                                           ) : (
                                             /* Left Style: Corner-anchored Logo with medical tags simulator */
@@ -18380,9 +18674,11 @@ const splitReportAndAnnex = (text: string) => {
 
                                   <div className="text-[7.5px] text-slate-450 leading-relaxed font-mono">
                                     {customLogoStyle === "banner" ? (
-                                      <p>🌐 <strong className="text-slate-300">Formato Centrado Horizontal:</strong> El logotipo ocupará de forma equilibrada la posición de membrete ancho, alineando toda la documentación exactamente debajo del separador del encabezado.</p>
+                                      <p><strong className="text-slate-300">Formato Centrado Horizontal:</strong> El logotipo ocupará de forma equilibrada la posición de membrete ancho, alineando toda la documentación exactamente debajo del separador del encabezado.</p>
+                                    ) : customLogoStyle === "dual" ? (
+                                      <p><strong className="text-slate-300">Formato Doble Logo:</strong> Un logotipo a cada extremo del encabezado y el nombre de la clinica al centro. Ideal cuando usas marca institucional + marca personal o dos logos separados.</p>
                                     ) : (
-                                      <p>📌 <strong className="text-slate-300">Formato Esquina Superior Izquierda:</strong> El logotipo respetará el margen de encuadre técnico lateral, liberando espacio para las líneas secundarias del destinatario y datos del paciente.</p>
+                                      <p><strong className="text-slate-300">Formato Esquina Superior Izquierda:</strong> El logotipo respetará el margen de encuadre técnico lateral, liberando espacio para las líneas secundarias del destinatario y datos del paciente.</p>
                                     )}
                                   </div>
                                 </div>

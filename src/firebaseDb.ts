@@ -71,11 +71,13 @@ export interface CloudStudy {
   pdfBase64?: string; // Stored compiled jsPDF Base64
   operationalSummaryText?: string;
   customLogoUrl?: string;
+  customLogoRightUrl?: string;
   customLogoStyle?: string;
   customSignatureUrl?: string;
   specificStudy?: string;
   pdfLayoutType?: string;
   selectedLogo?: string;
+  selectedLogoRight?: string;
   attachedImages?: any[];
   findings3dRenders?: any[];
   atlas3dData?: any;
