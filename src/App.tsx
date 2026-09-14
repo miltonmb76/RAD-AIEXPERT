@@ -3381,7 +3381,7 @@ Ejemplo:
     clinical_scorecard: true,
     reasoning_chain: false,
     differential_tree: false,
-    atlas3d: true,
+    atlas3d: false,
     vascular3d: false,
     thyroid3d: false,
     breast3d: false,
@@ -20202,7 +20202,7 @@ const splitReportAndAnnex = (text: string) => {
                             </div>
 
                             <p className="text-[10px] text-slate-500 leading-snug px-1">
-                              El boton <strong className="text-slate-300">Reporte completo</strong> activa por defecto: Scorecard clinico (primero), Atlas 3D (guiado por el Scorecard), Resumen operacional, Resumen paciente y Cuadro sinoptico. Marca otros modulos aqui si quieres anadirlos manualmente con ACTIVAR.
+                              El boton <strong className="text-slate-300">Reporte completo</strong> activa por defecto: Scorecard clinico (primero), Resumen operacional, Resumen paciente y Cuadro sinoptico. El Atlas 3D ya no se lanza solo: marcalo aqui o abrilo manualmente si lo necesitas. Marca otros modulos aqui si quieres anadirlos con ACTIVAR.
                             </p>
 
                             {/* Catalog Grid */}
