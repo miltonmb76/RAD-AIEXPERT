@@ -18,6 +18,17 @@ export interface PersistedUserSettings {
   updatedAt: number;
 }
 
+/** Clinic branding assets — logos can exceed localStorage quota; IndexedDB is the durable store. */
+export interface PersistedBranding {
+  id: "current_branding";
+  customLogos: Array<{ id: string; name: string; url: string }>;
+  selectedLogo: string;
+  selectedLogoRight: string;
+  customLogoStyle: string;
+  customSignatureUrl?: string;
+  updatedAt: number;
+}
+
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     if (typeof window === "undefined" || !window.indexedDB) {
@@ -211,6 +222,42 @@ export async function idbGetUserSettings(): Promise<PersistedUserSettings | null
     });
   } catch (e) {
     console.warn("[IndexedDB] Error getting user settings:", e);
+    return null;
+  }
+}
+
+// --- BRANDING (logos / banner / signature) ---
+export async function idbSaveBranding(branding: Omit<PersistedBranding, "id">): Promise<void> {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORES.SETTINGS, "readwrite");
+    const store = tx.objectStore(STORES.SETTINGS);
+    store.put({
+      id: "current_branding",
+      ...branding,
+      updatedAt: branding.updatedAt || Date.now(),
+    });
+    return new Promise((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) {
+    console.warn("[IndexedDB] Error saving branding:", e);
+  }
+}
+
+export async function idbGetBranding(): Promise<PersistedBranding | null> {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORES.SETTINGS, "readonly");
+    const store = tx.objectStore(STORES.SETTINGS);
+    const req = store.get("current_branding");
+    return new Promise((resolve) => {
+      req.onsuccess = () => resolve((req.result as PersistedBranding) || null);
+      req.onerror = () => resolve(null);
+    });
+  } catch (e) {
+    console.warn("[IndexedDB] Error getting branding:", e);
     return null;
   }
 }
