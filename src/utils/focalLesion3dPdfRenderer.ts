@@ -126,8 +126,10 @@ export function renderFocalLesion3DAnnexToPDF(
   const textBoxes: TextBox[] = [];
 
   // Compact metrics so stacked boxes fit under figures on one page.
+  // boxTitleH must clear title ascent + a visible gap before the first body baseline
+  // (jsPDF y is baseline — too-small title blocks look "stuck" to the text).
   const boxPad = 2.4 * factor;
-  const boxTitleH = 5.4 * factor;
+  const boxTitleH = 8.2 * factor;
   const boxLineH = 3.25 * factor;
   const boxGapMin = 2.2 * factor;
   const maxLinesPerBox = 4;
@@ -344,10 +346,13 @@ export function renderFocalLesion3DAnnexToPDF(
     doc.setFillColor(13, 148, 136);
     doc.roundedRect(marginX, y, 1.8 * factor, boxH, 0.9, 0.9, "F");
 
+    // Title baseline sits inside top padding; body starts after boxTitleH so the
+    // gap under the title stays readable (~4–5pt clear air).
+    const titleBaseline = y + boxPad + 3.6 * factor;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(8.4 * factor);
     doc.setTextColor(15, 118, 110);
-    doc.text(box.title, marginX + 5.5 * factor, y + boxPad + 3.2 * factor);
+    doc.text(box.title, marginX + 5.5 * factor, titleBaseline);
 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8.2 * factor);
