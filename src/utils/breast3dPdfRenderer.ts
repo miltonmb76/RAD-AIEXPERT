@@ -221,6 +221,9 @@ export async function renderBreast3DPageToPdf(
     const leftover = footerSafeBottom - dossierY - totalBoxesH;
     if (leftover > minBoxGap * gapCount) {
       boxGap = Math.min(maxBoxGap, leftover / gapCount);
+    } else if (leftover < 0) {
+      // Content taller than remaining page: keep gaps tight so more text fits above the footer.
+      boxGap = Math.min(minBoxGap, 2.2 * factor);
     }
 
     for (let i = 0; i < dossierTexts.length; i++) {
