@@ -167,10 +167,10 @@ export async function renderAbdomen3DPageToPdf(
     let dossierY = yCoord;
     // Single column: each box hugs its text; gaps expand to fill remaining page height
     const boxW = contentWidth;
-    const titleH = 4.2 * factor;
+    const titleH = 5.6 * factor;
     const lineH = 3.4 * factor;
-    const minBoxGap = 5.5 * factor;
-    const maxBoxGap = 12 * factor;
+    const minBoxGap = 4.2 * factor;
+    const maxBoxGap = 9 * factor;
     let boxGap = minBoxGap;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9.0 * factor);
@@ -184,7 +184,7 @@ export async function renderAbdomen3DPageToPdf(
       doc.setFontSize(8.0 * factor);
       const lines = doc.splitTextToSize(b.text, boxW - 8);
       const textH = Math.max(lineH, lines.length * lineH);
-      return { lines, boxH: titleH + textH + 4.5 * factor };
+      return { lines, boxH: titleH + textH + 4.8 * factor };
     });
     const totalBoxesH = measured.reduce((sum, m) => sum + m.boxH, 0);
     const gapCount = Math.max(1, dossierTexts.length - 1);

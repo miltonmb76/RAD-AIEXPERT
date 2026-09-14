@@ -743,9 +743,9 @@ export const Breast3DModule: React.FC<Breast3DModuleProps> = ({
           {/* Ficha clínica rica DEBAJO de las imágenes */}
           <div className="rounded-2xl border border-pink-500/30 bg-gradient-to-br from-slate-950 via-slate-950 to-pink-950/40 p-4 space-y-5 text-slate-100">
             <p className="text-[10px] font-mono font-bold uppercase tracking-[0.18em] text-pink-300">Ficha clínica mamaria</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="md:col-span-2 rounded-xl border border-pink-800/40 bg-slate-950/70 p-3">
-                <p className="text-[10px] font-mono font-black uppercase tracking-widest text-pink-300 mb-1">Resumen mamario</p>
+                <p className="text-[10px] font-mono font-black uppercase tracking-widest text-pink-300 mb-2">Resumen mamario</p>
                 {isEditingText ? (
                   <textarea rows={3} className="w-full text-xs bg-slate-900 border border-slate-700 rounded p-2 text-slate-100"
                     value={breastData.breastSummary || ""}
@@ -755,7 +755,7 @@ export const Breast3DModule: React.FC<Breast3DModuleProps> = ({
                 )}
               </div>
               <div className="min-w-0 rounded-xl border border-slate-700/70 bg-slate-950/70 p-3">
-                <p className="text-[10px] font-mono font-black uppercase tracking-widest text-fuchsia-300 mb-1">Morfología / lesión dominante</p>
+                <p className="text-[10px] font-mono font-black uppercase tracking-widest text-fuchsia-300 mb-2">Morfología / lesión dominante</p>
                 {isEditingText ? (
                   <textarea rows={5} className="w-full text-xs bg-slate-900 border border-slate-700 rounded p-2 text-slate-100"
                     value={breastData.morphologyNotes || ""}
@@ -765,7 +765,7 @@ export const Breast3DModule: React.FC<Breast3DModuleProps> = ({
                 )}
               </div>
               <div className="min-w-0 rounded-xl border border-slate-700/70 bg-slate-950/70 p-3">
-                <p className="text-[10px] font-mono font-black uppercase tracking-widest text-amber-300 mb-1">Axilas / drenaje</p>
+                <p className="text-[10px] font-mono font-black uppercase tracking-widest text-amber-300 mb-2">Axilas / drenaje</p>
                 {isEditingText ? (
                   <textarea rows={5} className="w-full text-xs bg-slate-900 border border-slate-700 rounded p-2 text-slate-100"
                     value={breastData.axillaryStatus || ""}
@@ -775,7 +775,7 @@ export const Breast3DModule: React.FC<Breast3DModuleProps> = ({
                 )}
               </div>
               <div className="md:col-span-2 rounded-xl border border-emerald-800/40 bg-slate-950/70 p-3">
-                <p className="text-[10px] font-mono font-black uppercase tracking-widest text-emerald-300 mb-1">Puntos clave</p>
+                <p className="text-[10px] font-mono font-black uppercase tracking-widest text-emerald-300 mb-2">Puntos clave</p>
                 {isEditingText ? (
                   <textarea rows={4} className="w-full text-xs bg-slate-900 border border-slate-700 rounded p-2 text-slate-100"
                     value={(breastData.keyPoints || []).join("\n")}
