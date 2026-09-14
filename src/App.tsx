@@ -18639,7 +18639,7 @@ const splitReportAndAnnex = (text: string) => {
                                     />
                                     <div className="space-y-0.5">
                                       <span className="text-[8.5px] font-black text-indigo-400 uppercase tracking-widest block leading-none">Estilo en el PDF:</span>
-                                      <span className="text-[8px] text-slate-500 font-bold block">Ajusta cómo se proyecta tu logotipo</span>
+                                      <span className="text-[8px] text-slate-500 font-bold block">Se guarda de forma permanente (como la firma), incluso al reiniciar</span>
                                     </div>
                                   </div>
                                   
