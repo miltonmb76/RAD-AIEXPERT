@@ -700,9 +700,9 @@ export const Knee3DModule: React.FC<Knee3DModuleProps> = ({
 
           <div className="rounded-2xl border border-sky-500/30 bg-gradient-to-br from-slate-950 via-slate-950 to-sky-950/40 p-4 space-y-5 text-slate-100">
             <p className="text-[10px] font-mono font-bold uppercase tracking-[0.18em] text-sky-300">Ficha clínica rodilla / ligamentos-meniscos</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="md:col-span-2 rounded-xl border border-sky-800/40 bg-slate-950/70 p-3">
-                <p className="text-[10px] font-mono font-black uppercase tracking-widest text-sky-300 mb-1">Resumen del rodilla</p>
+                <p className="text-[10px] font-mono font-black uppercase tracking-widest text-sky-300 mb-2">Resumen del rodilla</p>
                 {isEditingText ? (
                   <textarea rows={3} className="w-full text-xs bg-slate-900 border border-slate-700 rounded p-2 text-slate-100"
                     value={kneeData.kneeSummary || ""}
@@ -712,7 +712,7 @@ export const Knee3DModule: React.FC<Knee3DModuleProps> = ({
                 )}
               </div>
               <div className="min-w-0 rounded-xl border border-slate-700/70 bg-slate-950/70 p-3">
-                <p className="text-[10px] font-mono font-black uppercase tracking-widest text-cyan-300 mb-1">Morfología / tendón dominante</p>
+                <p className="text-[10px] font-mono font-black uppercase tracking-widest text-cyan-300 mb-2">Morfología / tendón dominante</p>
                 {isEditingText ? (
                   <textarea rows={5} className="w-full text-xs bg-slate-900 border border-slate-700 rounded p-2 text-slate-100"
                     value={kneeData.morphologyNotes || ""}
@@ -722,7 +722,7 @@ export const Knee3DModule: React.FC<Knee3DModuleProps> = ({
                 )}
               </div>
               <div className="min-w-0 rounded-xl border border-slate-700/70 bg-slate-950/70 p-3">
-                <p className="text-[10px] font-mono font-black uppercase tracking-widest text-yellow-300 mb-1">Estado de los ligamentos/meniscos</p>
+                <p className="text-[10px] font-mono font-black uppercase tracking-widest text-yellow-300 mb-2">Estado de los ligamentos/meniscos</p>
                 {isEditingText ? (
                   <textarea rows={5} className="w-full text-xs bg-slate-900 border border-slate-700 rounded p-2 text-slate-100"
                     value={kneeData.ligamentMeniscusStatus || ""}
@@ -732,7 +732,7 @@ export const Knee3DModule: React.FC<Knee3DModuleProps> = ({
                 )}
               </div>
               <div className="md:col-span-2 rounded-xl border border-emerald-800/40 bg-slate-950/70 p-3">
-                <p className="text-[10px] font-mono font-black uppercase tracking-widest text-emerald-300 mb-1">Puntos clave</p>
+                <p className="text-[10px] font-mono font-black uppercase tracking-widest text-emerald-300 mb-2">Puntos clave</p>
                 {isEditingText ? (
                   <textarea rows={4} className="w-full text-xs bg-slate-900 border border-slate-700 rounded p-2 text-slate-100"
                     value={(kneeData.keyPoints || []).join("\n")}
