@@ -205,26 +205,43 @@ export async function renderBreast3DPageToPdf(
     doc.text("FICHA CLÍNICA MAMARIA (CORRELACIÓN CON LA FIGURA 3D)", marginX, dossierY);
     dossierY += 3.4 * factor;
 
-    // Measure box heights first, then distribute leftover page space as inter-box gaps
+    // Measure box heights first, then distribute leftover page space as inter-box gaps.
+    // Stay clear of the running footer (~10mm from page bottom) — never let boxes overlap it.
+    const footerSafeBottom = pageHeight - 18 * factor;
+    const padBottom = 4.8 * factor;
     const measured = dossierTexts.map((b) => {
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8.0 * factor);
       const lines = doc.splitTextToSize(b.text, boxW - 8);
       const textH = Math.max(lineH, lines.length * lineH);
-      return { lines, boxH: titleH + textH + 4.8 * factor };
+      return { lines, boxH: titleH + textH + padBottom };
     });
     const totalBoxesH = measured.reduce((sum, m) => sum + m.boxH, 0);
     const gapCount = Math.max(1, dossierTexts.length - 1);
-    const pageBottom = pageHeight - 16 * factor;
-    const leftover = pageBottom - dossierY - totalBoxesH;
+    const leftover = footerSafeBottom - dossierY - totalBoxesH;
     if (leftover > minBoxGap * gapCount) {
       boxGap = Math.min(maxBoxGap, leftover / gapCount);
+    } else if (leftover < 0) {
+      // Content taller than remaining page: keep gaps tight so more text fits above the footer.
+      boxGap = Math.min(minBoxGap, 2.2 * factor);
     }
 
     for (let i = 0; i < dossierTexts.length; i++) {
       const b = dossierTexts[i];
-      const lines = measured[i].lines;
-      const boxH = measured[i].boxH;
+      let lines = measured[i].lines as string[];
+      let boxH = measured[i].boxH;
+      const available = footerSafeBottom - dossierY;
+      const minBoxH = titleH + lineH + padBottom;
+      if (available < minBoxH - 0.2 * factor) {
+        break; // no room left above the footer
+      }
+      if (dossierY + boxH > footerSafeBottom + 0.2 * factor) {
+        // Clamp text so the card ends above the footer instead of overlapping it.
+        const maxTextH = Math.max(lineH, available - titleH - padBottom);
+        const maxLines = Math.max(1, Math.floor(maxTextH / lineH));
+        lines = lines.slice(0, maxLines);
+        boxH = titleH + lines.length * lineH + padBottom;
+      }
       doc.setFillColor(253, 242, 248);
       doc.setDrawColor(251, 207, 232);
       doc.setLineWidth(0.3);
@@ -240,8 +257,11 @@ export async function renderBreast3DPageToPdf(
       doc.setTextColor(51, 65, 85);
       doc.text(lines, marginX + 5, dossierY + titleH + 2.2 * factor);
       dossierY += boxH + (i < dossierTexts.length - 1 ? boxGap : 0);
+      if (dossierY >= footerSafeBottom - 0.5 * factor) {
+        break;
+      }
     }
-    yCoord = dossierY + 0.5 * factor;
+    yCoord = Math.min(dossierY + 0.5 * factor, footerSafeBottom);
   }
 
   // ========== PAGE 2: tabla ecográfica (letra mayor) + síntesis ==========
