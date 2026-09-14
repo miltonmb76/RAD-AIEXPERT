@@ -173,6 +173,64 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
     }
   };
 
+
+  const handleDeleteSinglePanel = (panelLetter: string) => {
+    if (!focalData || focalData.panels.length <= 1) return;
+
+    const remaining = focalData.panels.filter((p) => p.panelLetter !== panelLetter);
+    const alphabet = ["A", "B", "C", "D", "E", "F"];
+    const letterMap: Record<string, string> = {};
+
+    const updatedPanels = remaining.map((p, idx) => {
+      const newLetter = alphabet[idx] || String.fromCharCode(65 + idx);
+      letterMap[p.panelLetter] = newLetter;
+      return { ...p, panelLetter: newLetter };
+    });
+
+    let updatedTitle = focalData.figureTitle;
+    if (updatedTitle) {
+      if (updatedPanels.length === 1) {
+        updatedTitle = updatedTitle
+          .replace(/Paneles\s+A\s*(?:y|,)\s*B/gi, "Panel A")
+          .replace(/Paneles\s+A,\s*B\s*y\s*C/gi, "Panel A")
+          .replace(/\bPaneles\b/gi, "Panel");
+      } else if (updatedPanels.length === 2) {
+        updatedTitle = updatedTitle.replace(/Paneles\s+A,\s*B\s*y\s*C/gi, "Paneles A y B");
+      }
+    }
+
+    setPanelDirectives((prev) => {
+      const next: Record<string, string> = {};
+      for (const letter of Object.keys(prev)) {
+        if (letter === panelLetter) continue;
+        next[letterMap[letter] || letter] = prev[letter];
+      }
+      return next;
+    });
+
+    if (editingPanelLetter === panelLetter) setEditingPanelLetter(null);
+    else if (editingPanelLetter && letterMap[editingPanelLetter]) {
+      setEditingPanelLetter(letterMap[editingPanelLetter]);
+    }
+
+    if (regeneratingPanelLetter === panelLetter) setRegeneratingPanelLetter(null);
+    else if (regeneratingPanelLetter && letterMap[regeneratingPanelLetter]) {
+      setRegeneratingPanelLetter(letterMap[regeneratingPanelLetter]);
+    }
+
+    if (zoomPanel?.panelLetter === panelLetter) setZoomPanel(null);
+    else if (zoomPanel && letterMap[zoomPanel.panelLetter]) {
+      const remapped = updatedPanels.find((p) => p.panelLetter === letterMap[zoomPanel.panelLetter]);
+      if (remapped) setZoomPanel(remapped);
+    }
+
+    setFocalData({
+      ...focalData,
+      figureTitle: updatedTitle,
+      panels: updatedPanels,
+    });
+  };
+
   const handleRegeneratePanel = async (panel: FocalLesion3DPanel) => {
     if (!focalData) return;
     setRegeneratingPanelLetter(panel.panelLetter);
@@ -556,6 +614,16 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
                     >
                       <FlipHorizontal className="h-3.5 w-3.5" />
                     </button>
+                    {focalData.panels.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteSinglePanel(panel.panelLetter)}
+                        className="p-1.5 bg-slate-950/90 border border-slate-700 rounded-lg text-slate-200 hover:text-rose-400 hover:border-rose-500/50 cursor-pointer"
+                        title="Eliminar este panel"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                   </div>
                   {regeneratingPanelLetter === panel.panelLetter && (
                     <div className="absolute inset-0 bg-slate-950/70 flex items-center justify-center">
