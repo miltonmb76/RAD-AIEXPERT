@@ -133,7 +133,7 @@ import {
 } from "lucide-react";
 import { initAuth, googleSignIn, logout as googleLogout, anonymousSignIn, emailSignIn, emailSignUp, getFirebaseConfig } from "./firebaseAuth";
 import { CloudStudy, saveStudyToCloud, getStudiesFromCloud, deleteStudyFromCloud, Worklist, WorklistPatient, saveWorklistToCloud, getWorklistFromCloud, getSingleStudyFromCloud, testFirebaseConfigConnection, saveUserSettingsToCloud, getUserSettingsFromCloud } from "./firebaseDb";
-import { idbSaveWorklist, idbGetWorklist, idbClearWorklist, idbSaveStudy, idbGetAllStudies, idbDeleteStudy, idbSaveHistory, idbGetHistory, idbSaveUserSettings, idbGetUserSettings, getActiveWorklistId } from "./localDb";
+import { idbSaveWorklist, idbGetWorklist, idbClearWorklist, idbSaveStudy, idbGetAllStudies, idbDeleteStudy, idbSaveHistory, idbGetHistory, idbSaveUserSettings, idbGetUserSettings, idbSaveBranding, idbGetBranding, getActiveWorklistId } from "./localDb";
 import { uploadPdfToDrive } from "./lib/googleDrive";
 import { Mail, LogOut, Clock, Calendar, ListTodo, UserCheck, ImagePlus, Wifi, HelpCircle, Info, Laptop, Network, ChevronDown, Link } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
@@ -1360,17 +1360,130 @@ export default function App() {
     return localStorage.getItem("rad_custom_logo_style") || "left"; // "left" | "banner" | "dual"
   });
 
-  useEffect(() => {
-    localStorage.setItem("rad_custom_logos", JSON.stringify(customLogos));
-  }, [customLogos]);
+  // Custom doctor's signature ? declared early so branding persistence can mirror it.
+  const [customSignatureUrl, setCustomSignatureUrl] = useState<string>(() => {
+    return localStorage.getItem("rad_custom_signature") || "";
+  });
+
+  // Branding (logos/banner) must survive restarts. localStorage often rejects large
+  // banner base64 blobs (QuotaExceeded); IndexedDB is the durable source of truth.
+  const brandingHydratedRef = useRef(false);
+
+  const persistBrandingAssets = async (overrides?: {
+    customLogos?: Array<{ id: string; name: string; url: string }>;
+    selectedLogo?: string;
+    selectedLogoRight?: string;
+    customLogoStyle?: string;
+    customSignatureUrl?: string;
+  }) => {
+    const logos = overrides?.customLogos ?? customLogos;
+    const leftId = overrides?.selectedLogo ?? selectedLogo;
+    const rightId = overrides?.selectedLogoRight ?? selectedLogoRight;
+    const style = overrides?.customLogoStyle ?? customLogoStyle;
+    const signature = overrides?.customSignatureUrl ?? customSignatureUrl;
+
+    try {
+      await idbSaveBranding({
+        customLogos: logos,
+        selectedLogo: leftId,
+        selectedLogoRight: rightId,
+        customLogoStyle: style,
+        customSignatureUrl: signature || "",
+        updatedAt: Date.now(),
+      });
+    } catch (e) {
+      console.warn("Could not persist branding to IndexedDB:", e);
+    }
+
+    try {
+      localStorage.setItem("rad_selected_logo", leftId);
+      localStorage.setItem("rad_selected_logo_right", rightId);
+      localStorage.setItem("rad_custom_logo_style", style);
+    } catch (e) {
+      console.warn("Could not persist logo selection keys:", e);
+    }
+
+    try {
+      localStorage.setItem("rad_custom_logos", JSON.stringify(logos));
+    } catch (e) {
+      // Banner images often exceed the ~5MB localStorage quota. Keep IndexedDB copy.
+      console.warn("localStorage full for logos/banner; kept durable copy in IndexedDB:", e);
+      try {
+        localStorage.removeItem("rad_custom_logos");
+      } catch {
+        /* ignore */
+      }
+    }
+
+    if (typeof signature === "string" && signature) {
+      try {
+        localStorage.setItem("rad_custom_signature", signature);
+      } catch (e) {
+        console.warn("localStorage full for signature; kept durable copy in IndexedDB:", e);
+      }
+    }
+  };
 
   useEffect(() => {
-    localStorage.setItem("rad_selected_logo", selectedLogo);
-  }, [selectedLogo]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const fromIdb = await idbGetBranding();
+        if (cancelled) return;
+
+        if (fromIdb && Array.isArray(fromIdb.customLogos) && fromIdb.customLogos.length > 0) {
+          // Do not clobber a logo uploaded while this hydrate was in flight.
+          setCustomLogos((prev) =>
+            prev.length > fromIdb.customLogos.length ? prev : fromIdb.customLogos
+          );
+          if (fromIdb.selectedLogo) setSelectedLogo(fromIdb.selectedLogo);
+          if (fromIdb.selectedLogoRight) setSelectedLogoRight(fromIdb.selectedLogoRight);
+          if (fromIdb.customLogoStyle) setCustomLogoStyle(fromIdb.customLogoStyle);
+          if (fromIdb.customSignatureUrl && !localStorage.getItem("rad_custom_signature")) {
+            setCustomSignatureUrl(fromIdb.customSignatureUrl);
+            try {
+              localStorage.setItem("rad_custom_signature", fromIdb.customSignatureUrl);
+            } catch {
+              /* ignore */
+            }
+          }
+        } else {
+          // One-time migrate of any logos that still fit in localStorage.
+          const raw = localStorage.getItem("rad_custom_logos");
+          if (raw) {
+            try {
+              const parsed = JSON.parse(raw);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                await idbSaveBranding({
+                  customLogos: parsed,
+                  selectedLogo: localStorage.getItem("rad_selected_logo") || "none",
+                  selectedLogoRight: localStorage.getItem("rad_selected_logo_right") || "none",
+                  customLogoStyle: localStorage.getItem("rad_custom_logo_style") || "left",
+                  customSignatureUrl: localStorage.getItem("rad_custom_signature") || "",
+                  updatedAt: Date.now(),
+                });
+              }
+            } catch {
+              /* ignore corrupt localStorage */
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("Could not hydrate branding from IndexedDB:", e);
+      } finally {
+        if (!cancelled) brandingHydratedRef.current = true;
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
-    localStorage.setItem("rad_selected_logo_right", selectedLogoRight);
-  }, [selectedLogoRight]);
+    if (!brandingHydratedRef.current) return;
+    void persistBrandingAssets();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customLogos, selectedLogo, selectedLogoRight, customLogoStyle]);
 
   const customLogoUrl = useMemo(() => {
     if (isPatientPublicView && patientLogoUrl) {
@@ -1695,28 +1808,43 @@ export default function App() {
     const reader = new FileReader();
     reader.onloadend = async () => {
       const rawBase64 = reader.result as string;
-      const compressedBase64 = await compressImageBase64(rawBase64, 2400, 0.95);
+      // Keep banners readable in PDF, but prefer a size that can also fit localStorage fallback.
+      let compressedBase64 = await compressImageBase64(rawBase64, 2000, 0.9);
+      if (compressedBase64.length > 2_500_000) {
+        compressedBase64 = await compressImageBase64(rawBase64, 1600, 0.82);
+      }
       const newLogoId = "custom-logo-" + Date.now();
       const newLogo = {
         id: newLogoId,
         name: cleanName,
         url: compressedBase64
       };
-      setCustomLogos(prev => [...prev, newLogo]);
+      const nextLogos = [...customLogos, newLogo];
+      setCustomLogos(nextLogos);
       setSelectedLogo(newLogoId);
+      // Persist immediately (do not wait for React effect) so restart never loses the banner.
+      brandingHydratedRef.current = true;
+      void persistBrandingAssets({
+        customLogos: nextLogos,
+        selectedLogo: newLogoId,
+      });
     };
     reader.readAsDataURL(file);
   };
 
   const handleRemoveCustomLogoById = (id: string) => {
     if (confirm("¿Estás seguro de eliminar este logotipo de la lista?")) {
-      setCustomLogos(prev => prev.filter(l => l.id !== id));
-      if (selectedLogo === id) {
-        setSelectedLogo("none");
-      }
-      if (selectedLogoRight === id) {
-        setSelectedLogoRight("none");
-      }
+      const nextLogos = customLogos.filter(l => l.id !== id);
+      const nextSelected = selectedLogo === id ? "none" : selectedLogo;
+      const nextRight = selectedLogoRight === id ? "none" : selectedLogoRight;
+      setCustomLogos(nextLogos);
+      if (selectedLogo === id) setSelectedLogo("none");
+      if (selectedLogoRight === id) setSelectedLogoRight("none");
+      void persistBrandingAssets({
+        customLogos: nextLogos,
+        selectedLogo: nextSelected,
+        selectedLogoRight: nextRight,
+      });
     }
   };
 
@@ -1730,22 +1858,24 @@ export default function App() {
 
   const handleChangeCustomLogoStyle = (style: string) => {
     setCustomLogoStyle(style);
-    localStorage.setItem("rad_custom_logo_style", style);
+    let nextRight = selectedLogoRight;
     if (style === "dual" && (!selectedLogoRight || selectedLogoRight === "none")) {
       const other = customLogos.find((l) => l.id !== selectedLogo);
       if (other) {
+        nextRight = other.id;
         setSelectedLogoRight(other.id);
       } else if (customLogos.length > 0) {
+        nextRight = customLogos[0].id;
         setSelectedLogoRight(customLogos[0].id);
       }
     }
+    void persistBrandingAssets({
+      customLogoStyle: style,
+      selectedLogoRight: nextRight,
+    });
   };
 
-  // Custom doctor's signature upload states
-  const [customSignatureUrl, setCustomSignatureUrl] = useState<string>(() => {
-    return localStorage.getItem("rad_custom_signature") || "";
-  });
-
+  // Uploaded report file states
   const [uploadedReportContent, setUploadedReportContent] = useState<string>("");
   const [uploadedReportName, setUploadedReportName] = useState<string | null>(null);
   const [uploadedReportMimeType, setUploadedReportMimeType] = useState<string>("");
@@ -1759,7 +1889,12 @@ export default function App() {
       const rawBase64 = reader.result as string;
       const compressedBase64 = await compressImageBase64(rawBase64, 1600, 0.95);
       setCustomSignatureUrl(compressedBase64);
-      localStorage.setItem("rad_custom_signature", compressedBase64);
+      try {
+        localStorage.setItem("rad_custom_signature", compressedBase64);
+      } catch (err) {
+        console.warn("Could not save signature to localStorage:", err);
+      }
+      void persistBrandingAssets({ customSignatureUrl: compressedBase64 });
     };
     reader.readAsDataURL(file);
   };
@@ -1794,6 +1929,7 @@ export default function App() {
   const handleRemoveCustomSignature = () => {
     setCustomSignatureUrl("");
     localStorage.removeItem("rad_custom_signature");
+    void persistBrandingAssets({ customSignatureUrl: "" });
   };
 
   const [showPatientDetails, setShowPatientDetails] = useState<boolean>(false);
@@ -15839,11 +15975,12 @@ const splitReportAndAnnex = (text: string) => {
         doctorName: localStorage.getItem("radiology_doctor_name"),
         doctorLicense: localStorage.getItem("radiology_doctor_license"),
         clinicName: localStorage.getItem("radiology_clinic_name"),
-        customLogos: localStorage.getItem("rad_custom_logos"),
-        selectedLogo: localStorage.getItem("rad_selected_logo"),
-        selectedLogoRight: localStorage.getItem("rad_selected_logo_right"),
-        customLogoStyle: localStorage.getItem("rad_custom_logo_style"),
-        customSignature: localStorage.getItem("rad_custom_signature"),
+        // Prefer in-memory logos (IndexedDB-backed) ? localStorage may be empty after quota overflow.
+        customLogos: JSON.stringify(customLogos),
+        selectedLogo: selectedLogo || localStorage.getItem("rad_selected_logo"),
+        selectedLogoRight: selectedLogoRight || localStorage.getItem("rad_selected_logo_right"),
+        customLogoStyle: customLogoStyle || localStorage.getItem("rad_custom_logo_style"),
+        customSignature: customSignatureUrl || localStorage.getItem("rad_custom_signature"),
         pdfLayoutType: localStorage.getItem("radiology_pdf_layout"),
         radiology_sys_inst: localStorage.getItem("radiology_sys_inst"),
         radiology_chat_inst: localStorage.getItem("radiology_chat_inst"),
@@ -15899,26 +16036,39 @@ const splitReportAndAnnex = (text: string) => {
           setClinicName(backup.clinicName);
         }
         if (backup.customLogos) {
-          localStorage.setItem("rad_custom_logos", backup.customLogos);
           try {
-            setCustomLogos(JSON.parse(backup.customLogos));
+            localStorage.setItem("rad_custom_logos", backup.customLogos);
+          } catch (e) {
+            console.warn("Backup logos too large for localStorage; restoring via IndexedDB only:", e);
+          }
+          try {
+            const parsedLogos = JSON.parse(backup.customLogos);
+            setCustomLogos(parsedLogos);
+            void persistBrandingAssets({
+              customLogos: parsedLogos,
+              selectedLogo: backup.selectedLogo || selectedLogo,
+              selectedLogoRight: backup.selectedLogoRight || selectedLogoRight,
+              customLogoStyle: backup.customLogoStyle || customLogoStyle,
+              customSignatureUrl: backup.customSignature || customSignatureUrl,
+            });
           } catch (e) {}
         }
         if (backup.selectedLogo) {
-          localStorage.setItem("rad_selected_logo", backup.selectedLogo);
+          try { localStorage.setItem("rad_selected_logo", backup.selectedLogo); } catch (e) {}
           setSelectedLogo(backup.selectedLogo);
         }
         if (backup.selectedLogoRight) {
-          localStorage.setItem("rad_selected_logo_right", backup.selectedLogoRight);
+          try { localStorage.setItem("rad_selected_logo_right", backup.selectedLogoRight); } catch (e) {}
           setSelectedLogoRight(backup.selectedLogoRight);
         }
         if (backup.customLogoStyle) {
-          localStorage.setItem("rad_custom_logo_style", backup.customLogoStyle);
+          try { localStorage.setItem("rad_custom_logo_style", backup.customLogoStyle); } catch (e) {}
           setCustomLogoStyle(backup.customLogoStyle);
         }
         if (backup.customSignature) {
-          localStorage.setItem("rad_custom_signature", backup.customSignature);
+          try { localStorage.setItem("rad_custom_signature", backup.customSignature); } catch (e) {}
           setCustomSignatureUrl(backup.customSignature);
+          void persistBrandingAssets({ customSignatureUrl: backup.customSignature });
         }
         if (backup.pdfLayoutType) {
           localStorage.setItem("radiology_pdf_layout", backup.pdfLayoutType);
@@ -18489,7 +18639,7 @@ const splitReportAndAnnex = (text: string) => {
                                     />
                                     <div className="space-y-0.5">
                                       <span className="text-[8.5px] font-black text-indigo-400 uppercase tracking-widest block leading-none">Estilo en el PDF:</span>
-                                      <span className="text-[8px] text-slate-500 font-bold block">Ajusta cómo se proyecta tu logotipo</span>
+                                      <span className="text-[8px] text-slate-500 font-bold block">Se guarda de forma permanente (como la firma), incluso al reiniciar</span>
                                     </div>
                                   </div>
                                   
