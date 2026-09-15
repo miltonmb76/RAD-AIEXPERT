@@ -21762,17 +21762,7 @@ const splitReportAndAnnex = (text: string) => {
                             </div>
 
 
-{/* Card 8d: Sinopsis de Fracturas (IA) */}
-                            <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-emerald-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
-                              <div className="flex items-center gap-2 justify-between">
-                                <div className="flex items-center gap-2">
-                                  <Bone className="h-4 w-4 text-emerald-400" />
-                                  <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
-                                    Sinopsis de Fracturas (IA)
-                                  </h4>
-                                </div>
-
-
+{/* Card 8c2: Suite Escroto 3D */}
                             <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-yellow-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
                               <div className="flex items-center gap-2 justify-between">
                                 <div className="flex items-center gap-2">
@@ -21808,6 +21798,15 @@ const splitReportAndAnnex = (text: string) => {
                               </button>
                             </div>
 
+                            {/* Card 8d: Sinopsis de Fracturas (IA) */}
+                            <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-emerald-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
+                              <div className="flex items-center gap-2 justify-between">
+                                <div className="flex items-center gap-2">
+                                  <Bone className="h-4 w-4 text-emerald-400" />
+                                  <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
+                                    Sinopsis de Fracturas (IA)
+                                  </h4>
+                                </div>
                                 <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-emerald-950/40 text-emerald-400 border border-emerald-900/30 px-2 py-0.5 rounded">
                                   FRACTURAS
                                 </span>
