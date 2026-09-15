@@ -1,19 +1,7 @@
 import { ClinicalScorecardData } from "../types";
 import { criterionStatusLabel, criterionWeightLabel, scorecardTrafficLabel } from "../lib/clinicalIntelligence";
 
-function sanitizePdfText(input: string): string {
-  return (input || "")
-    .replace(/≥/g, ">=")
-    .replace(/≤/g, "<=")
-    .replace(/–|—/g, "-")
-    .replace(/[^\x00-\x7F]/g, (ch) => {
-      try {
-        return ch.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-      } catch {
-        return "?";
-      }
-    });
-}
+import { sanitizePdfText } from "./sanitizePdfText";
 
 /**
  * Larger, page-filling scorecard annex.

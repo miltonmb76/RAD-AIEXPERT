@@ -1,3 +1,4 @@
+import { sanitizePdfText } from "./sanitizePdfText";
 import jsPDF from "jspdf";
 
 export interface ElastographyPdfData {
@@ -117,7 +118,7 @@ function wrapBullets(
 ): { lines: string[][]; height: number } {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(fontSize);
-  const lines = bullets.map((b) => doc.splitTextToSize(`•  ${b}`, maxW) as string[]);
+  const lines = bullets.map((b) => doc.splitTextToSize(sanitizePdfText(`-  ${b}`), maxW) as string[]);
   let height = 0;
   lines.forEach((block, i) => {
     height += block.length * lineH;

@@ -1,6 +1,7 @@
 import jsPDF from "jspdf";
 import { Breast3DData, Breast3DPanel, BreastLesionRow } from "../types";
 import { pdfCutawayToCorte } from "./pdfCutawayToCorte";
+import { sanitizePdfText } from "./sanitizePdfText";
 
 /**
  * Renders an exclusive, two-page "ANEXO: SUITE MAMA 3D & FICHA BI-RADS Y CORRELACIÓN 3D" into the provided jsPDF document.
@@ -353,7 +354,7 @@ export async function renderBreast3DPageToPdf(
       ? `${row.biradsCategory}${row.clinicalImpact ? ` — ${row.clinicalImpact}` : ""}`
       : (row.clinicalImpact || "—");
 
-    const c1Lines = doc.splitTextToSize(row.location || "", colWidths[0] - 3);
+    const c1Lines = doc.splitTextToSize(sanitizePdfText(row.location || ""), colWidths[0] - 3);
     const c2Lines = doc.splitTextToSize(compositionText, colWidths[1] - 3);
     const c3Lines = doc.splitTextToSize(sizeText, colWidths[2] - 3);
     const c4Lines = doc.splitTextToSize(echoText, colWidths[3] - 3);
@@ -435,7 +436,7 @@ export async function renderBreast3DPageToPdf(
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9.0 * factor);
     const synthLineH = 3.8 * factor;
-    const synthLines = doc.splitTextToSize(synthText.trim(), contentWidth - 12);
+    const synthLines = doc.splitTextToSize(sanitizePdfText(synthText.trim()), contentWidth - 12);
     const titleBlockH = 9.5 * factor;
     const bottomPad = 3.5 * factor;
 

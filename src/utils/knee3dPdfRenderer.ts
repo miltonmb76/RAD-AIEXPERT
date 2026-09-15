@@ -1,6 +1,7 @@
 import jsPDF from "jspdf";
 import { Knee3DData, Knee3DPanel, KneeFindingRow } from "../types";
 import { pdfCutawayToCorte } from "./pdfCutawayToCorte";
+import { sanitizePdfText } from "./sanitizePdfText";
 
 /**
  * Renders a two-page "ANEXO: SUITE RODILLA 3D & FICHA LIGAMENTOS Y MENISCOS" into the provided jsPDF document.
@@ -303,7 +304,7 @@ export async function renderKnee3DPageToPdf(
       row.severity || "",
       row.clinicalImpact || ""
     ];
-    const cellLines = cells.map((c, i) => doc.splitTextToSize(c, colWidths[i] - 2.5));
+    const cellLines = cells.map((c, i) => doc.splitTextToSize(sanitizePdfText(c), colWidths[i] - 2.5));
     const maxLines = Math.max(...cellLines.map(l => l.length), 1);
     const rowH = Math.max(7.2 * factor, (maxLines * 3.5 + 2.6) * factor);
 
@@ -355,7 +356,7 @@ export async function renderKnee3DPageToPdf(
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9.0 * factor);
     const synthLineH = 4.4 * factor;
-    const synthLines = doc.splitTextToSize(synthText.trim(), contentWidth - 12);
+    const synthLines = doc.splitTextToSize(sanitizePdfText(synthText.trim()), contentWidth - 12);
     const titleBlockH = 11 * factor;
     const bottomPad = 3.5 * factor;
 
