@@ -10567,6 +10567,7 @@ Ejemplo:
       const shouldIncludeScrotum = studyOverride ? (studyOverride.includeScrotum3dInReport !== false) : (pdfStateRef.current?.includeScrotum3dInReport !== false && includeScrotum3dInReport);
       if (activeScrotumData && shouldIncludeScrotum && (activeScrotumData.panels?.length || activeScrotumData.findingTable?.length)) {
         await renderScrotum3DPageToPdf(doc, activeScrotumData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+      }
 
       const activeMuscleTendonData = studyOverride ? studyOverride.muscleTendon3dData : (pdfStateRef.current?.muscleTendon3dData || muscleTendon3dData);
       const shouldIncludeMuscleTendon = studyOverride ? (studyOverride.includeMuscleTendon3dInReport !== false) : (pdfStateRef.current?.includeMuscleTendon3dInReport !== false && includeMuscleTendon3dInReport);
