@@ -27,19 +27,20 @@ export function renderFocalLesion3DAnnexToPDF(
   const pageBottom = pageHeight - bottomMargin;
 
   doc.addPage();
-  let y = 16 * factor;
+  // Start below the global running header line drawn at y=14 on pages 2+
+  let y = 22 * factor;
 
   // --- Header ---
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12 * factor);
   doc.setTextColor(15, 23, 42);
   doc.text("ANEXO: CORTE FOCAL 3D DE LA LESIÓN", marginX, y);
-  y += 3.5 * factor;
+  y += 4.5 * factor;
 
   doc.setDrawColor(13, 148, 136);
   doc.setLineWidth(0.7);
   doc.line(marginX, y, pageWidth - marginX, y);
-  y += 4.2 * factor;
+  y += 5.5 * factor;
 
   const figTitle =
     data.figureTitle ||
