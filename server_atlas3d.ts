@@ -270,6 +270,28 @@ const ABDOMINAL_WALL_TOPOGRAPHY_RULES_ES =
   "7) En structureOrSite, anatomicalFocus, findingTable e imagePrompt nombra: sitio + capa/orificio + contenido + dinámica.\n" +
   "8) Una imagen/tabla bella con lado de ingle o territorio de pared equivocado es FALLO CRÍTICO.";
 
+const SCROTUM_TOPOGRAPHY_HARD_RULES =
+  "SCROTUM TOPOGRAPHY HARD RULES (never violate): " +
+  "(1) RIGHT testis ≠ LEFT testis — never swap sides. " +
+  "(2) Testis ≠ epididymis ≠ spermatic cord ≠ scrotal wall/sac. " +
+  "(3) Landmarks: mediastinum testis / rete testis; epididymal head/body/tail. " +
+  "(4) Doppler: testicular hilar arterial flow + venous pampiniform plexus (varicocele). " +
+  "(5) AP/frontal: patient RIGHT on VIEWER'S LEFT; patient LEFT on VIEWER'S RIGHT. " +
+  "(6) Never invent torsion, ischemia, tumor, varicocele or hydrocele absent from the report. " +
+  "(7) Name side/site + structure + echo/Doppler + fluid/mass in structureOrSite / anatomicalFocus / findingTable. " +
+  "(8) A beautiful image with wrong testis side or wrong scrotal territory is a CRITICAL FAIL.";
+
+const SCROTUM_TOPOGRAPHY_RULES_ES =
+  "REGLAS DURAS DE TOPOGRAFÍA ESCROTAL (nunca violar):\n" +
+  "1) Testículo DERECHO ≠ testículo IZQUIERDO. Nunca intercambiar lados.\n" +
+  "2) Testículo ≠ epidídimo ≠ cordón espermático ≠ pared/bolsa escrotal.\n" +
+  "3) Landmarks: mediastino testicular / rete testis; cabeza/cuerpo/cola de epidídimo.\n" +
+  "4) Doppler: flujo arterial hiliar testicular + plexo pampiniforme venoso (varicocele).\n" +
+  "5) Vista AP/frontal: DERECHO del paciente a la IZQUIERDA del cuadro; IZQUIERDO a la DERECHA.\n" +
+  "6) No inventar torsión, isquemia, tumor, varicocele ni hidrocele ausentes en el informe.\n" +
+  "7) En structureOrSite, anatomicalFocus, findingTable e imagePrompt nombra: lado/sitio + estructura + ecopatrón/Doppler + líquido/masa.\n" +
+  "8) Una imagen/tabla bella con lado testicular o territorio escrotal equivocado es FALLO CRÍTICO.";
+
 
 
 function classifyViewOrientation(view?: string): "anterior" | "posterior" | "other" {
@@ -2931,6 +2953,385 @@ RESPONDE EN JSON:
 
     } catch (error: any) {
       console.error("Error en /api/regenerate-3d-abdominal-wall-panel:", error);
+      res.status(500).json({ success: false, error: handleGeminiError(error) });
+    }
+  });
+
+
+  app.post("/api/generate-3d-scrotum", async (req: express.Request, res: express.Response) => {
+    try {
+      const { reportText, scrotumType, laterality, requestedModel, customDirectives } = req.body;
+
+      if (!reportText || !reportText.trim()) {
+        return res.status(400).json({ success: false, error: "Se requiere el texto del informe de escroto." });
+      }
+
+      const ai = getGeminiClient();
+      const model = getModelName(requestedModel || "gemini-3.7-flash");
+
+      const scrotumPrompt = `Eres un Radiólogo experto en ecografía escrotal (testículos, epidídimo, cordón, Doppler) y director de arte médico 3D escrotal.
+Tu misión es analizar el informe de ecografía de escroto adjunto para estructurar la "SUITE ESCROTO 3D & FICHA ESCROTAL" con máxima fidelidad anatomopatológica.
+
+========================================================================
+INFORMACIÓN DEL ESTUDIO DE ESCROTO:
+========================================================================
+- Tipo de Estudio Sugerido / Seleccionado: "${scrotumType || "Detectar automáticamente del informe"}"
+- Lateralidad Solicitada: "${laterality || "Detectar del informe"}"
+- DIRECTIVA CLÍNICA OBLIGATORIA (Scorecard escrotal / radar — MANDATORY, no omitir): "${customDirectives || "Ninguna"}"
+IMPORTANTE: Si hay directiva clínica, DEBE gobernar la anatomía 3D escrotal, parénquima, epidídimo/cordón, Doppler, líquido/masa, lateralidad y la tabla. No inventes torsión, isquemia, tumor, varicocele ni hidrocele ausentes.
+- INFORME ECOGRÁFICO DE ESCROTO:
+"""
+${reportText}
+"""
+
+========================================================================
+REGLA DE SCORECARD / DIRECTIVA OBLIGATORIA:
+========================================================================
+Si "DIRECTIVA CLÍNICA OBLIGATORIA" no es "Ninguna", trátela como contrato clínico vinculante:
+- Los paneles 3D y la tabla DEBEN reflejar esos hallazgos (lado/sitio, estructura, ecopatrón, Doppler, líquido/masa).
+- Prohibido inventar torsión, isquemia, tumor o grados no respaldados.
+
+========================================================================
+TOPOGRAFÍA ESCROTAL (OBLIGATORIA):
+========================================================================
+${SCROTUM_TOPOGRAPHY_RULES_ES}
+
+CRITICO: extrae del informe, para CADA hallazgo, lado/sitio + estructura + ecopatrón/Doppler + líquido/masa y NO los intercambies.
+Si el informe dice "testículo derecho homogéneo con flujo hiliar presente" o "varicocele izquierdo grado II", structureOrSite / anatomicalFocus / findingTable / imagePrompt deben decirlo explícitamente.
+
+========================================================================
+TIPOS DE ESTUDIO (clasifica en uno):
+========================================================================
+1. "scrotum_acute": Agudo — torsión / epidídimo-orquitis / inflamación aguda.
+2. "scrotum_chronic": Crónico — varicocele / hidrocele / cambios crónicos.
+3. "scrotum_mass": Masa testicular / extratesticular.
+4. "general_scrotum": Detectar del informe / estudio mixto de escroto.
+
+========================================================================
+DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
+========================================================================
+- Panel A (panelRole "overview"): visión escrotal bilateral — ambos testículos, bolsa, anclas derecha/izquierda.
+- Panel B (panelRole "testis_parenchyma"): cutaway del parénquima testicular dominante SEGÚN EL INFORME (mediastino/rete, ecopatrón, tamaño).
+- Panel C opcional (panelRole "epididymis_cord" | "doppler_flow"): epidídimo/cordón, O Doppler hiliar + plexo pampiniforme.
+- LATERALIDAD OBLIGATORIA POR PANEL (convención radiografía AP / paciente de frente):
+  - Cada panel DEBE declarar "laterality" exacta (Derecha|Izquierda|Bilateral) = lado ANATÓMICO DEL PACIENTE.
+  - Vista AP/frontal: lado DERECHO del paciente a la IZQUIERDA del cuadro; IZQUIERDO a la DERECHA.
+  - El imagePrompt DEBE empezar con el sitio/lado del paciente y anclas de pantalla.
+  - NUNCA intercambiar testículo derecho↔izquierdo ni testículo↔epidídimo↔cordón sin respaldo.
+- PROMPT EN INGLÉS para cada panel:
+  "Ultra-realistic 3D medical scrotal anatomy render of [SITE + PATIENT SIDE], accurate testis/epididymis/cord/mediastinum landmarks, exact Doppler or pathology only when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, strictly NO text, NO numbers, NO arrows, NO letters inside the image. Do NOT mirror anatomy. Obey SCROTUM TOPOGRAPHY HARD RULES."
+
+========================================================================
+TABLA Y FICHA CLÍNICA:
+========================================================================
+- findingTable filas con: sideOrSite, structure, sizeOrVolume, echoPattern, vascularOrDoppler, fluidOrMass, severity, clinicalImpact.
+- Incluye scrotumSummary, morphologyNotes, dopplerVascularStatus (textos clínicos ricos en español) y keyPoints (array 3-6 bullets).
+- tableHeaders col1..col8 FIJOS: LADO / SITIO | ESTRUCTURA | TAMAÑO / VOLUMEN | ECOPATRÓN | DOPPLER / VASCULAR | LÍQUIDO / MASA | SEVERIDAD | IMPACTO
+- Evalúa: lado testicular, parénquima, epidídimo/cordón, Doppler hiliar/pampiniforme, hidrocele/masa. No inventes patología ausente.
+
+RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
+{
+  "studyTypeCategory": "scrotum_acute" | "scrotum_chronic" | "scrotum_mass" | "general_scrotum",
+  "territoryLabel": "ECOGRAFÍA DE ESCROTO" | "ECOGRAFÍA ESCROTAL AGUDA" | "ECOGRAFÍA ESCROTAL CRÓNICA" | "ECOGRAFÍA DE MASA ESCROTAL",
+  "laterality": "Bilateral" | "Derecha" | "Izquierda",
+  "figureTitle": "FIGURA 1. ATLAS 3D ESCROTO Y CORRELACIÓN ANATOMOPATOLÓGICA",
+  "tableTitle": "TABLA ECOGRÁFICA DE ESCROTO:",
+  "tableHeaders": {
+    "col1": "LADO / SITIO",
+    "col2": "ESTRUCTURA",
+    "col3": "TAMAÑO / VOLUMEN",
+    "col4": "ECOPATRÓN",
+    "col5": "DOPPLER / VASCULAR",
+    "col6": "LÍQUIDO / MASA",
+    "col7": "SEVERIDAD",
+    "col8": "IMPACTO"
+  },
+  "panels": [
+    {
+      "panelLetter": "A",
+      "panelTitle": "Panel A: Escroto — vista de conjunto",
+      "structureOrSite": "Escroto — overview bilateral",
+      "anatomicalFocus": "Ambos testículos, bolsa escrotal y anclas de lateralidad...",
+      "laterality": "Bilateral",
+      "panelRole": "overview",
+      "imagePrompt": "Ultra-realistic 3D medical scrotal anatomy render..."
+    },
+    {
+      "panelLetter": "B",
+      "panelTitle": "Panel B: Cutaway del parénquima testicular",
+      "structureOrSite": "Parénquima testicular dominante según informe",
+      "anatomicalFocus": "Detalle de parénquima, mediastino/rete y ecopatrón con topografía exacta...",
+      "laterality": "Derecha",
+      "panelRole": "testis_parenchyma",
+      "imagePrompt": "Ultra-realistic 3D medical testis parenchyma cutaway render..."
+    }
+  ],
+  "findingTable": [
+    {
+      "sideOrSite": "Testículo derecho",
+      "structure": "Parénquima testicular",
+      "sizeOrVolume": "4,2 x 2,8 x 2,5 cm (~15 mL)",
+      "echoPattern": "Homogéneo",
+      "vascularOrDoppler": "Flujo hiliar arterial presente",
+      "fluidOrMass": "Sin hidrocele significativo",
+      "severity": "Normal / leve",
+      "clinicalImpact": "Sin signos de torsión; correlacionar clínica"
+    }
+  ],
+  "scrotumSummary": "...",
+  "morphologyNotes": "...",
+  "dopplerVascularStatus": "...",
+  "keyPoints": ["...", "..."],
+  "synthesisTitle": "SÍNTESIS MORFOLÓGICA ESCROTAL:",
+  "morphologicalSynthesis": "El estudio de escroto evidencia..."
+}`;
+
+      const planResponse = await ai.models.generateContent({
+        model: model,
+        contents: [{ text: scrotumPrompt }],
+        config: { responseMimeType: "application/json" }
+      });
+
+      let planJson: any = {};
+      try {
+        planJson = JSON.parse(planResponse.text || "{}");
+      } catch (parseErr) {
+        console.error("Error parseando plan JSON Escroto 3D:", parseErr);
+        planJson = {
+          studyTypeCategory: scrotumType || "general_scrotum",
+          territoryLabel: "ECOGRAFÍA DE ESCROTO",
+          laterality: laterality || "Bilateral",
+          figureTitle: "FIGURA 1. ATLAS 3D ESCROTO Y CORRELACIÓN ANATOMOPATOLÓGICA",
+          tableTitle: "TABLA ECOGRÁFICA DE ESCROTO:",
+          tableHeaders: {
+            col1: "LADO / SITIO",
+            col2: "ESTRUCTURA",
+            col3: "TAMAÑO / VOLUMEN",
+            col4: "ECOPATRÓN",
+            col5: "DOPPLER / VASCULAR",
+            col6: "LÍQUIDO / MASA",
+            col7: "SEVERIDAD",
+            col8: "IMPACTO"
+          },
+          panels: [
+            {
+              panelLetter: "A",
+              panelTitle: "Panel A: Anatomía escrotal — visión de conjunto",
+              structureOrSite: "Escroto — overview bilateral",
+              anatomicalFocus: "Reconstrucción escrotal: ambos testículos, bolsa y anclas de lateralidad.",
+              laterality: laterality || "Bilateral",
+              panelRole: "overview",
+              imagePrompt: "Ultra-realistic 3D medical scrotal anatomy render showing both testes, scrotal sac and clear patient right/left landmarks, cinema 4D octane render, soft surgical studio lighting, clean background, no text."
+            },
+            {
+              panelLetter: "B",
+              panelTitle: "Panel B: Cutaway del parénquima testicular — según informe",
+              structureOrSite: "Parénquima testicular dominante según informe",
+              anatomicalFocus: "Corte macro del parénquima con mediastino/rete sin intercambiar lados.",
+              laterality: laterality || "Bilateral",
+              panelRole: "testis_parenchyma",
+              imagePrompt: "Ultra-realistic 3D medical testis parenchyma cutaway render with accurate mediastinum testis landmarks and pathology only when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, no text."
+            }
+          ],
+          findingTable: [],
+          synthesisTitle: "SÍNTESIS MORFOLÓGICA ESCROTAL:",
+          morphologicalSynthesis: "La correlación anatomopatológica escrotal se basa en los hallazgos descritos en el informe."
+        };
+      }
+
+      const scrotumPanelsWithImages = await Promise.all(
+        (planJson.panels || []).map(async (panel: any, idx: number) => {
+          let promptToUse = panel.imagePrompt || `Ultra-realistic 3D medical scrotal render of ${panel.structureOrSite || panel.panelTitle}, octane render, no text.`;
+          if (customDirectives && customDirectives.trim()) {
+            promptToUse = `${promptToUse} [MANDATORY CLINICAL DIRECTIVE: ${customDirectives.trim()}].`;
+          }
+          {
+            const screenMap = buildScreenLateralityConstraint(panel.laterality || planJson.laterality || laterality, "AP / coronal");
+            if (panel.laterality && panel.laterality !== "auto") {
+              promptToUse = `[MANDATORY PATIENT LATERALITY: ${panel.laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${SCROTUM_TOPOGRAPHY_HARD_RULES} ${screenMap} ${promptToUse}`;
+            } else {
+              promptToUse = `${LATERALITY_HARD_RULES} ${SCROTUM_TOPOGRAPHY_HARD_RULES} ${screenMap} ${promptToUse}`;
+            }
+          }
+
+          const defaultRole = idx === 0 ? "overview" : idx === 1 ? "testis_parenchyma" : "doppler_flow";
+          try {
+            const imageUrl = await generateMedicalImage(ai, promptToUse);
+            return {
+              id: `scrotum-panel-${idx}-${Date.now()}`,
+              panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
+              panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
+              structureOrSite: panel.structureOrSite || panel.panelTitle || "",
+              anatomicalFocus: panel.anatomicalFocus || "Evaluación anatómica de escroto",
+              laterality: panel.laterality || planJson.laterality || laterality || "",
+              imageUrl: imageUrl,
+              promptUsed: promptToUse,
+              isCustomFlipped: false,
+              panelRole: panel.panelRole || defaultRole
+            };
+          } catch (imgErr) {
+            console.error(`Error generando imagen para panel de escroto ${panel.panelLetter}:`, imgErr);
+            return {
+              id: `scrotum-panel-${idx}-${Date.now()}`,
+              panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
+              panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
+              structureOrSite: panel.structureOrSite || panel.panelTitle || "",
+              anatomicalFocus: panel.anatomicalFocus || "Evaluación anatómica de escroto",
+              laterality: panel.laterality || planJson.laterality || laterality || "",
+              imageUrl: "",
+              promptUsed: promptToUse,
+              isCustomFlipped: false,
+              panelRole: panel.panelRole || defaultRole
+            };
+          }
+        })
+      );
+
+      const forcedHeaders = {
+        col1: "LADO / SITIO",
+        col2: "ESTRUCTURA",
+        col3: "TAMAÑO / VOLUMEN",
+        col4: "ECOPATRÓN",
+        col5: "DOPPLER / VASCULAR",
+        col6: "LÍQUIDO / MASA",
+        col7: "SEVERIDAD",
+        col8: "IMPACTO"
+      };
+
+      const finalScrotumData = {
+        studyTypeCategory: planJson.studyTypeCategory || scrotumType || "general_scrotum",
+        territoryLabel: planJson.territoryLabel || "ECOGRAFÍA DE ESCROTO",
+        laterality: planJson.laterality || laterality || "Bilateral",
+        figureTitle: planJson.figureTitle || "FIGURA 1. ATLAS 3D ESCROTO Y CORRELACIÓN ANATOMOPATOLÓGICA",
+        tableTitle: planJson.tableTitle || "TABLA ECOGRÁFICA DE ESCROTO:",
+        tableHeaders: forcedHeaders,
+        panels: scrotumPanelsWithImages,
+        findingTable: (planJson.findingTable || planJson.lesionTable || planJson.noduleTable || []).map((row: any) => ({
+          sideOrSite: row.sideOrSite || row.location || row.side || "",
+          structure: row.structure || row.tendon || row.composition || "",
+          sizeOrVolume: row.sizeOrVolume || row.sizeOrGap || row.sizeOrThickness || row.size || row.volume || "",
+          echoPattern: row.echoPattern || row.wallLayers || row.echogenicity || "",
+          vascularOrDoppler: row.vascularOrDoppler || row.content || row.doppler || row.vascular || "",
+          fluidOrMass: row.fluidOrMass || row.reducibilityOrDynamic || row.fluid || row.mass || "",
+          severity: row.severity || row.grade || "",
+          clinicalImpact: row.clinicalImpact || ""
+        })),
+        scrotumSummary: planJson.scrotumSummary || planJson.wallSummary || planJson.abdomenSummary || "",
+        morphologyNotes: planJson.morphologyNotes || "",
+        dopplerVascularStatus: planJson.dopplerVascularStatus || planJson.wallLayersStatus || "",
+        keyPoints: Array.isArray(planJson.keyPoints) ? planJson.keyPoints : [],
+        synthesisTitle: planJson.synthesisTitle || "SÍNTESIS MORFOLÓGICA ESCROTAL:",
+        morphologicalSynthesis: planJson.morphologicalSynthesis || ""
+      };
+
+      res.json({
+        success: true,
+        data: finalScrotumData
+      });
+
+    } catch (error: any) {
+      console.error("Error en /api/generate-3d-scrotum:", error);
+      res.status(500).json({ success: false, error: handleGeminiError(error) });
+    }
+  });
+
+  app.post("/api/regenerate-3d-scrotum-panel", async (req: express.Request, res: express.Response) => {
+    try {
+      const { reportText, scrotumType, panel, laterality, userDirective, requestedModel, customDirectives } = req.body;
+
+      if (!panel) {
+        return res.status(400).json({ success: false, error: "Se requiere el panel de escroto a regenerar." });
+      }
+
+      const ai = getGeminiClient();
+      const model = getModelName(requestedModel || "gemini-3.7-flash");
+
+      const refinePrompt = `Eres un Radiólogo experto en ecografía escrotal y Director de Arte Médico 3D de escroto.
+Diseña un prompt en inglés superdetallado para re-generar una única imagen 3D fotorrealista correspondiente al PANEL ${panel.panelLetter}.
+
+DATOS DEL CASO:
+- Territorio: "${scrotumType || "Ecografía de escroto"}"
+- Sitio / estructura: "${panel.structureOrSite || panel.panelTitle || ""}"
+- Foco actual: "${panel.anatomicalFocus || ""}"
+- Rol del panel: "${panel.panelRole || ""}"
+- Lateralidad requerida: "${laterality || panel.laterality || ""}"
+- Instrucción / Corrección del médico: "${userDirective || "Mejorar precisión anatomopatológica escrotal"}"
+- DIRECTIVA CLÍNICA OBLIGATORIA (Scorecard / radar / médico): "${customDirectives || "Ninguna"}"
+- Contexto del informe: """${(reportText || "").slice(0, 800)}"""
+
+TOPOGRAFÍA ESCROTAL OBLIGATORIA:
+${SCROTUM_TOPOGRAPHY_RULES_ES}
+Si structureOrSite / foco / instrucción / informe mencionan un sitio escrotal, conserva EXACTAS las coordenadas
+(lado, testículo/epidídimo/cordón, Doppler). NUNCA intercambiar testículo derecho↔izquierdo ni testículo↔epidídimo sin respaldo.
+
+REGLAS DE ESTILO:
+- Ultra-realistic 3D medical scrotal macro render, cinema 4D octane, accurate testis/epididymis/cord/mediastinum landmarks.
+- Exact named site, structure and laterality in the English imagePrompt.
+- Exact morphology only if indicated; soft surgical studio lighting; pure clean background.
+- STRICTLY NO text, NO numbers, NO letters, NO arrows inside the image.
+- Respect patient laterality (AP: patient RIGHT on viewer's LEFT).
+
+RESPONDE EN JSON:
+{
+  "panelTitle": "Título actualizado o confirmado para el panel",
+  "structureOrSite": "Nombre exacto (p.ej. Testículo derecho / Epidídimo izquierdo)",
+  "anatomicalFocus": "Foco anatomopatológico de 1 a 2 líneas con lado, estructura y Doppler",
+  "imagePrompt": "Detailed English image generation prompt with explicit organ and laterality..."
+}`;
+
+      const refineResponse = await ai.models.generateContent({
+        model: model,
+        contents: [{ text: refinePrompt }],
+        config: { responseMimeType: "application/json" }
+      });
+
+      let refineJson: any = {};
+      try {
+        refineJson = JSON.parse(refineResponse.text || "{}");
+      } catch (e) {
+        refineJson = {
+          panelTitle: panel.panelTitle,
+          structureOrSite: panel.structureOrSite || panel.panelTitle,
+          anatomicalFocus: panel.anatomicalFocus,
+          imagePrompt: `Ultra-realistic 3D medical scrotal render of ${panel.structureOrSite || panel.panelTitle}, octane render, studio lighting, no text.`
+        };
+      }
+
+      let finalPrompt = refineJson.imagePrompt || panel.promptUsed || `Ultra-realistic 3D medical scrotal render of ${panel.panelTitle}, cinema 4D octane, no text.`;
+      if (customDirectives && String(customDirectives).trim()) {
+        finalPrompt = `${finalPrompt} [MANDATORY CLINICAL DIRECTIVE: ${String(customDirectives).trim()}].`;
+      }
+      if (userDirective && userDirective.trim()) {
+        finalPrompt = `${finalPrompt} [MANDATORY SURGICAL CORRECTION: ${userDirective.trim()}].`;
+      }
+      if (laterality && laterality !== "auto") {
+        const screenMap = buildScreenLateralityConstraint(laterality, "AP / coronal");
+        finalPrompt = `[MANDATORY PATIENT LATERALITY: ${laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${SCROTUM_TOPOGRAPHY_HARD_RULES} ${screenMap} ${finalPrompt}`;
+      } else {
+        const screenMap = buildScreenLateralityConstraint(laterality, "AP / coronal");
+        finalPrompt = `${LATERALITY_HARD_RULES} ${SCROTUM_TOPOGRAPHY_HARD_RULES} ${screenMap} ${finalPrompt}`;
+      }
+
+      const imageUrl = await generateMedicalImage(ai, finalPrompt);
+
+      const updatedPanel = {
+        ...panel,
+        panelTitle: refineJson.panelTitle || panel.panelTitle,
+        structureOrSite: refineJson.structureOrSite || panel.structureOrSite,
+        anatomicalFocus: refineJson.anatomicalFocus || panel.anatomicalFocus,
+        laterality: laterality || panel.laterality,
+        imageUrl: imageUrl,
+        promptUsed: finalPrompt,
+        isCustomFlipped: false
+      };
+
+      res.json({
+        success: true,
+        panel: updatedPanel
+      });
+
+    } catch (error: any) {
+      console.error("Error en /api/regenerate-3d-scrotum-panel:", error);
       res.status(500).json({ success: false, error: handleGeminiError(error) });
     }
   });

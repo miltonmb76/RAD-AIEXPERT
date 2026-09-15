@@ -102,6 +102,8 @@ export interface CloudStudy {
   includeAbdomen3dInReport?: boolean;
   abdominalWall3dData?: any;
   includeAbdominalWall3dInReport?: boolean;
+  scrotum3dData?: any;
+  includeScrotum3dInReport?: boolean;
   usImagesGridMode?: string;
   patientSummary?: any;
 }

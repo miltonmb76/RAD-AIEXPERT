@@ -752,6 +752,63 @@ export interface AbdominalWall3DData {
   morphologicalSynthesis?: string;
 }
 
+export type ScrotumStudyType =
+  | "scrotum_acute"
+  | "scrotum_chronic"
+  | "scrotum_mass"
+  | "general_scrotum";
+
+export interface Scrotum3DPanel {
+  id?: string;
+  panelLetter: string;
+  panelTitle: string;
+  anatomicalFocus: string;
+  laterality?: string;
+  structureOrSite?: string;
+  panelRole?: "overview" | "testis_parenchyma" | "epididymis_cord" | "doppler_flow";
+  imageUrl?: string;
+  isCustomFlipped?: boolean;
+  promptUsed?: string;
+}
+
+export interface ScrotumFindingRow {
+  sideOrSite: string;          // testículo derecho/izquierdo, epidídimo, cordón, bolsa
+  structure: string;           // parénquima / mediastino / cabeza epidídimo / plexo pampiniforme
+  sizeOrVolume: string;        // mm / mL
+  echoPattern: string;         // homogéneo / heterogéneo / microlitiasis / lesión
+  vascularOrDoppler: string;   // flujo hiliar / ausente / varicocele grados
+  fluidOrMass: string;         // hidrocele / espermatocele / masa
+  severity: string;
+  clinicalImpact: string;
+}
+
+export interface Scrotum3DData {
+  studyTypeCategory?: ScrotumStudyType;
+  territoryLabel?: string;
+  laterality?: string;
+  figureTitle?: string;
+  tableTitle?: string;
+  tableHeaders?: {
+    col1: string;
+    col2: string;
+    col3: string;
+    col4: string;
+    col5: string;
+    col6: string;
+    col7: string;
+    col8: string;
+  };
+  panels: Scrotum3DPanel[];
+  findingTable: ScrotumFindingRow[];
+  /** Rich clinical blocks under / with the figure */
+  scrotumSummary?: string;
+  morphologyNotes?: string;
+  dopplerVascularStatus?: string;
+  keyPoints?: string[];
+  synthesisTitle?: string;
+  morphologicalSynthesis?: string;
+}
+
 export type UsImagesGridMode = "auto" | "1x1" | "1x2" | "2x1" | "2x2" | "3x2" | "4x2";
 
 /** One quantitative measurement extracted from the report for gauge display. */
