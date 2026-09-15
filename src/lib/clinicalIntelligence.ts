@@ -1121,6 +1121,125 @@ export function buildAbdomenDirectivesFromScorecard(
 }
 
 
+/** Hard topography rules for abdominal wall US (hernia, diastasis, eventration). */
+export const ABDOMINAL_WALL_TOPOGRAPHY_DIRECTIVE = [
+  "TOPOGRAFÍA DE PARED ABDOMINAL OBLIGATORIA (nunca intercambiar):",
+  "- Capas: piel → tejido subcutáneo → fascia / aponeurosis → músculo (recto / oblicuos) → peritoneo.",
+  "- Orificio herniario ≠ saco ≠ contenido (grasa / omento / asa). No fusionar hallazgos.",
+  "- Diástasis de rectos (separación de vientres en línea alba) ≠ hernia (defecto fascial con protrusión).",
+  "- Eventración / hernia incisional: relacionar con cicatriz/malla si el informe lo indica.",
+  "- Lateralidad: ingle derecha ≠ izquierda; epigastrio ≠ umbilical ≠ supraumbilical ≠ infraumbilical.",
+  "- Vista AP/frontal: lado DERECHO del paciente a la IZQUIERDA del cuadro; IZQUIERDO a la DERECHA.",
+  "- Dinámica: reposo vs Valsalva / bipedestación; reducible vs incarcerada solo si el informe lo respalda.",
+  "- No inventar incarceración, estrangulación, diástasis ni orificios ausentes en el informe.",
+  "- En paneles, ficha y tabla nombra siempre: sitio + capa/orificio + contenido + dinámica.",
+].join("\n");
+
+export function buildAbdominalWallDirectivesFromScorecard(
+  scorecard: ClinicalScorecardData | null | undefined,
+  radarData?: { radarMode?: string; globalScore?: number | string; dominantVector?: string; clinicalSummary?: string; axes?: Array<{ id?: string; name?: string; label?: string; score?: number; interpretation?: string }> }
+): string {
+  const protocol = (
+    scorecard?.protocolName ||
+    scorecard?.protocolId ||
+    radarData?.radarMode ||
+    ""
+  ).toLowerCase();
+  const isWall =
+    protocol.includes("pared") ||
+    protocol.includes("hernia") ||
+    protocol.includes("diastasis") ||
+    protocol.includes("diástasis") ||
+    protocol.includes("eventrac") ||
+    protocol.includes("inguinal") ||
+    protocol.includes("crural") ||
+    protocol.includes("femoral") ||
+    protocol.includes("umbilical") ||
+    protocol.includes("epigastr") ||
+    protocol.includes("linea alba") ||
+    protocol.includes("línea alba") ||
+    protocol.includes("abdominal wall");
+
+  let body = "";
+  if (scorecard) {
+    const base = buildAtlasDirectivesFromScorecard(scorecard);
+    const summary = (scorecard.clinicalSummary || "").trim();
+    const reco = (scorecard.recommendation || "").trim();
+    body = base;
+    if (!body) {
+      const allCriteria = Array.isArray(scorecard.criteria) ? scorecard.criteria : [];
+      const evidenced = allCriteria
+        .filter((c) => (c.evidence || c.value || "").trim())
+        .slice(0, 12)
+        .map((c, i) => {
+          const val = c.value ? ` (${c.value})` : "";
+          return `${i + 1}. «${c.atlasStructure || c.criterion}»${val}: ${c.evidence || c.status}`;
+        });
+      if (evidenced.length || summary) {
+        body = [
+          `SCORECARD PARED ABDOMINAL (${scorecard.protocolName || "protocolo"} — ${scorecard.categoryAssigned || ""}):`,
+          `Semáforo: ${scorecard.trafficLight}. Criterios: ${scorecard.scoreMet}/${scorecard.scoreTotal}.`,
+          summary ? `Síntesis: ${summary}` : "",
+          reco ? `Recomendación: ${reco}` : "",
+          evidenced.length ? "Hallazgos del scorecard a respetar en 3D/tabla de pared:" : "",
+          ...evidenced,
+        ]
+          .filter(Boolean)
+          .join("\n");
+      }
+    }
+  }
+
+  const radarBits: string[] = [];
+  const axes = Array.isArray(radarData?.axes) ? radarData!.axes! : [];
+  const radarMode = String(radarData?.radarMode || "").toLowerCase();
+  const axisKeyBlob = axes
+    .map((a) => `${a.id || ""} ${a.name || ""} ${a.label || ""}`.toLowerCase())
+    .join(" ");
+  const looksLikeWallRadar =
+    radarMode.includes("pared") ||
+    radarMode.includes("hernia") ||
+    radarMode.includes("diastasis") ||
+    radarMode.includes("wall") ||
+    /hernia|diastasis|diástasis|eventrac|inguinal|crural|umbilical|epigastr|fascia|orificio|valsalva|recto/.test(
+      axisKeyBlob
+    );
+  if (axes.length && looksLikeWallRadar) {
+    radarBits.push(
+      `RADAR PARED ABDOMINAL (${radarData?.radarMode || "pared"} — score global ${radarData?.globalScore ?? "n/d"}):`
+    );
+    if (radarData?.dominantVector) {
+      radarBits.push(`Vector dominante: ${radarData.dominantVector}`);
+    }
+    if (radarData?.clinicalSummary) {
+      radarBits.push(`Síntesis radar: ${radarData.clinicalSummary}`);
+    }
+    radarBits.push("Ejes a respetar en ficha/tabla 3D:");
+    axes.slice(0, 8).forEach((axis, i) => {
+      const label = axis.label || axis.name || axis.id || `Eje ${i + 1}`;
+      const score = axis.score != null ? ` score=${axis.score}` : "";
+      const interp = axis.interpretation ? ` — ${axis.interpretation}` : "";
+      radarBits.push(`${i + 1}. ${label}${score}${interp}`);
+    });
+  }
+
+  if (!body && !radarBits.length) return "";
+
+  return [
+    "DIRECTIVA OBLIGATORIA DEL SCORECARD DE PARED ABDOMINAL (debe gobernar paneles 3D, ficha y tabla):",
+    body,
+    radarBits.length ? radarBits.join("\n") : "",
+    isWall
+      ? "Prioriza: (1) overview de pared, (2) orificio/defecto dominante, (3) contenido y dinámica (Valsalva/reducibilidad), (4) capas/fascia o diástasis. NUNCA inventar incarceración ni intercambiar ingle D↔I."
+      : "Si el scorecard/radar no es de pared, extrae solo hallazgos de pared/hernia aplicables; no inventes defectos.",
+    "No inventes orificios, diástasis, contenido visceral, incarceración ni grados ausentes en el scorecard/radar/informe.",
+    ABDOMINAL_WALL_TOPOGRAPHY_DIRECTIVE,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+
 export function scorecardTrafficLabel(light: ClinicalScorecardData["trafficLight"]): string {
   switch (light) {
     case "critical":
@@ -1176,6 +1295,7 @@ export const SCORECARD_PROTOCOL_OPTIONS: Array<{ id: string; label: string }> = 
   { id: "renal", label: "Riñón integral" },
   { id: "kidney_urinary", label: "Riñón y vías urinarias" },
   { id: "abdomen_completo", label: "Abdomen completo" },
+  { id: "pared_abdominal", label: "Pared abdominal" },
   { id: "scrotal", label: "Escrotal / Testicular" },
   { id: "diverticulitis", label: "Diverticulitis" },
   { id: "generic", label: "Criterios genéricos del informe" },

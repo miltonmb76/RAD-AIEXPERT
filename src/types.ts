@@ -695,6 +695,63 @@ export interface Abdomen3DData {
   morphologicalSynthesis?: string;
 }
 
+export type AbdominalWallStudyType =
+  | "hernia_inguinal_crural"
+  | "hernia_umbilical_epigastrica"
+  | "diastasis_recto_eventracion"
+  | "general_pared_abdominal";
+
+export interface AbdominalWall3DPanel {
+  id?: string;
+  panelLetter: string;
+  panelTitle: string;
+  anatomicalFocus: string;
+  laterality?: string;
+  structureOrSite?: string;
+  panelRole?: "overview" | "defect_orifice" | "content_valsalva" | "rectus_linea";
+  imageUrl?: string;
+  isCustomFlipped?: boolean;
+  promptUsed?: string;
+}
+
+export interface AbdominalWallFindingRow {
+  location: string;              // ej: "Umbilical" / "Ingle derecha" / "Linea alba"
+  structure: string;             // piel/SC/fascia/recto/orificio
+  sizeOrGap: string;             // diametro defecto / diastasis mm
+  wallLayers: string;            // capas / continuidad fascial
+  content: string;               // grasa / asa / omento / vacio
+  reducibilityOrDynamic: string; // reducible / incarcerada / Valsalva
+  severity: string;
+  clinicalImpact: string;
+}
+
+export interface AbdominalWall3DData {
+  studyTypeCategory?: AbdominalWallStudyType;
+  territoryLabel?: string;
+  laterality?: string;
+  figureTitle?: string;
+  tableTitle?: string;
+  tableHeaders?: {
+    col1: string;
+    col2: string;
+    col3: string;
+    col4: string;
+    col5: string;
+    col6: string;
+    col7: string;
+    col8: string;
+  };
+  panels: AbdominalWall3DPanel[];
+  findingTable: AbdominalWallFindingRow[];
+  /** Rich clinical blocks under / with the figure */
+  wallSummary?: string;
+  morphologyNotes?: string;
+  wallLayersStatus?: string;
+  keyPoints?: string[];
+  synthesisTitle?: string;
+  morphologicalSynthesis?: string;
+}
+
 export type UsImagesGridMode = "auto" | "1x1" | "1x2" | "2x1" | "2x2" | "3x2" | "4x2";
 
 /** One quantitative measurement extracted from the report for gauge display. */

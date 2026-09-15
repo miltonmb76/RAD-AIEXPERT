@@ -248,6 +248,28 @@ const ABDOMEN_TOPOGRAPHY_RULES_ES =
   "6) En structureOrSite, anatomicalFocus, findingTable e imagePrompt nombra: órgano + lado + estructura.\n" +
   "7) Una imagen/tabla bella con órgano o lado equivocado es FALLO CRÍTICO.";
 
+const ABDOMINAL_WALL_TOPOGRAPHY_HARD_RULES =
+  "ABDOMINAL WALL TOPOGRAPHY HARD RULES (never violate): " +
+  "(1) Layers: skin → subcutaneous → fascia/aponeurosis → muscle (rectus/obliques) → peritoneum. " +
+  "(2) Hernia orifice ≠ sac ≠ content (fat/omentum/bowel). " +
+  "(3) Rectus diastasis (linea alba gap) ≠ hernia (fascial defect with protrusion). " +
+  "(4) Right groin ≠ left groin; epigastric ≠ umbilical ≠ supra/infraumbilical. " +
+  "(5) AP/frontal: patient RIGHT on VIEWER'S LEFT; patient LEFT on VIEWER'S RIGHT. " +
+  "(6) Never invent incarceration, strangulation, diastasis or orifices absent from the report. " +
+  "(7) Name site + layer/orifice + content + dynamic (Valsalva/reducibility) in structureOrSite / anatomicalFocus / findingTable. " +
+  "(8) A beautiful image with wrong groin side or wrong wall territory is a CRITICAL FAIL.";
+
+const ABDOMINAL_WALL_TOPOGRAPHY_RULES_ES =
+  "REGLAS DURAS DE TOPOGRAFÍA DE PARED ABDOMINAL (nunca violar):\n" +
+  "1) Capas: piel → subcutáneo → fascia/aponeurosis → músculo (recto/oblicuos) → peritoneo.\n" +
+  "2) Orificio herniario ≠ saco ≠ contenido (grasa/omento/asa).\n" +
+  "3) Diástasis de rectos (línea alba) ≠ hernia (defecto fascial con protrusión).\n" +
+  "4) Ingle derecha ≠ izquierda; epigastrio ≠ umbilical ≠ supra/infraumbilical.\n" +
+  "5) Vista AP/frontal: DERECHO del paciente a la IZQUIERDA del cuadro; IZQUIERDO a la DERECHA.\n" +
+  "6) No inventar incarceración, estrangulación, diástasis ni orificios ausentes en el informe.\n" +
+  "7) En structureOrSite, anatomicalFocus, findingTable e imagePrompt nombra: sitio + capa/orificio + contenido + dinámica.\n" +
+  "8) Una imagen/tabla bella con lado de ingle o territorio de pared equivocado es FALLO CRÍTICO.";
+
 
 
 function classifyViewOrientation(view?: string): "anterior" | "posterior" | "other" {
@@ -2533,6 +2555,386 @@ RESPONDE EN JSON:
       res.status(500).json({ success: false, error: handleGeminiError(error) });
     }
   });
+
+
+  app.post("/api/generate-3d-abdominal-wall", async (req: express.Request, res: express.Response) => {
+    try {
+      const { reportText, abdominalWallType, laterality, requestedModel, customDirectives } = req.body;
+
+      if (!reportText || !reportText.trim()) {
+        return res.status(400).json({ success: false, error: "Se requiere el texto del informe de pared abdominal." });
+      }
+
+      const ai = getGeminiClient();
+      const model = getModelName(requestedModel || "gemini-3.7-flash");
+
+      const abdominalWallPrompt = `Eres un Radiólogo experto en ecografía de pared abdominal (hernias, diástasis, eventración) y director de arte médico 3D de pared.
+Tu misión es analizar el informe de ecografía de pared abdominal adjunto para estructurar la "SUITE PARED ABDOMINAL 3D & FICHA DE PARED" con máxima fidelidad anatomopatológica.
+
+========================================================================
+INFORMACIÓN DEL ESTUDIO DE PARED ABDOMINAL:
+========================================================================
+- Tipo de Estudio Sugerido / Seleccionado: "${abdominalWallType || "Detectar automáticamente del informe"}"
+- Lateralidad Solicitada: "${laterality || "Detectar del informe"}"
+- DIRECTIVA CLÍNICA OBLIGATORIA (Scorecard de pared / radar hernia-diástasis — MANDATORY, no omitir): "${customDirectives || "Ninguna"}"
+IMPORTANTE: Si hay directiva clínica, DEBE gobernar la anatomía 3D de pared, orificio/defecto, capas/fascia, contenido, reducibilidad/Valsalva, lateralidad y la tabla de pared. No inventes incarceración, diástasis ni orificios ausentes.
+- INFORME ECOGRÁFICO DE PARED ABDOMINAL:
+"""
+${reportText}
+"""
+
+========================================================================
+REGLA DE SCORECARD / DIRECTIVA OBLIGATORIA:
+========================================================================
+Si "DIRECTIVA CLÍNICA OBLIGATORIA" no es "Ninguna", trátela como contrato clínico vinculante:
+- Los paneles 3D y la tabla DEBEN reflejar esos hallazgos (sitio, orificio, capas/fascia, contenido, reducibilidad/Valsalva, diástasis).
+- Prohibido inventar incarceración, estrangulación, diástasis o orificios no respaldados.
+
+========================================================================
+TOPOGRAFÍA DE PARED ABDOMINAL (OBLIGATORIA):
+========================================================================
+${ABDOMINAL_WALL_TOPOGRAPHY_RULES_ES}
+
+CRITICO: extrae del informe, para CADA hallazgo, sitio + capa/orificio + contenido + dinámica y NO los intercambies.
+Si el informe dice "hernia umbilical de 18 mm con grasa omental reducible" o "diástasis de 22 mm", structureOrSite / anatomicalFocus / findingTable / imagePrompt deben decirlo explícitamente.
+
+========================================================================
+TIPOS DE ESTUDIO (clasifica en uno):
+========================================================================
+1. "hernia_inguinal_crural": Hernia inguinal / crural (femoral) — ingle, orificio, saco, contenido.
+2. "hernia_umbilical_epigastrica": Hernia umbilical / epigástrica / línea alba.
+3. "diastasis_recto_eventracion": Diástasis de rectos / eventración / hernia incisional.
+4. "general_pared_abdominal": Detectar del informe / estudio mixto de pared.
+
+========================================================================
+DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
+========================================================================
+- Panel A (panelRole "overview"): visión de pared abdominal — capas, línea alba/rectos o ingle según el caso; anclas de derecha/izquierda.
+- Panel B (panelRole "defect_orifice"): cutaway del orificio/defecto dominante SEGÚN EL INFORME (diámetro, bordes fasciales, saco).
+- Panel C opcional (panelRole "content_valsalva" | "rectus_linea"): contenido + dinámica Valsalva/reducibilidad, O diástasis de rectos / línea alba.
+- LATERALIDAD OBLIGATORIA POR PANEL (convención radiografía AP / paciente de frente):
+  - Cada panel DEBE declarar "laterality" exacta (Derecha|Izquierda|Bilateral) = lado ANATÓMICO DEL PACIENTE.
+  - Vista AP/frontal: lado DERECHO del paciente a la IZQUIERDA del cuadro; IZQUIERDO a la DERECHA.
+  - El imagePrompt DEBE empezar con el sitio/lado del paciente y anclas de pantalla.
+  - NUNCA intercambiar ingle derecha↔izquierda ni umbilical↔epigástrico sin respaldo.
+- PROMPT EN INGLÉS para cada panel:
+  "Ultra-realistic 3D medical abdominal wall anatomy render of [SITE + PATIENT SIDE], accurate skin/subcutaneous/fascia/rectus landmarks, exact hernia orifice/diastasis/content only when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, strictly NO text, NO numbers, NO arrows, NO letters inside the image. Do NOT mirror anatomy. Obey ABDOMINAL WALL TOPOGRAPHY HARD RULES."
+
+========================================================================
+TABLA Y FICHA CLÍNICA:
+========================================================================
+- findingTable filas con: location, structure, sizeOrGap, wallLayers, content, reducibilityOrDynamic, severity, clinicalImpact.
+- Incluye wallSummary, morphologyNotes, wallLayersStatus (textos clínicos ricos en español) y keyPoints (array 3-6 bullets).
+- tableHeaders col1..col8 FIJOS: LOCALIZACIÓN | ESTRUCTURA | DIÁMETRO / DIÁSTASIS | CAPAS / FASCIA | CONTENIDO | REDUCIBILIDAD / VALSALVA | SEVERIDAD | IMPACTO
+- Evalúa: sitio del defecto, orificio, capas/fascia, contenido, dinámica (Valsalva/reducibilidad), diástasis si aplica. No inventes defectos ausentes.
+
+RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
+{
+  "studyTypeCategory": "hernia_inguinal_crural" | "hernia_umbilical_epigastrica" | "diastasis_recto_eventracion" | "general_pared_abdominal",
+  "territoryLabel": "ECOGRAFÍA DE PARED ABDOMINAL" | "ECOGRAFÍA DE HERNIA INGUINAL" | "ECOGRAFÍA DE DIÁSTASIS / EVENTRACIÓN",
+  "laterality": "Bilateral" | "Derecha" | "Izquierda",
+  "figureTitle": "FIGURA 1. ATLAS 3D PARED ABDOMINAL Y CORRELACIÓN DE DEFECTOS",
+  "tableTitle": "TABLA ECOGRÁFICA DE PARED ABDOMINAL:",
+  "tableHeaders": {
+    "col1": "LOCALIZACIÓN",
+    "col2": "ESTRUCTURA",
+    "col3": "DIÁMETRO / DIÁSTASIS",
+    "col4": "CAPAS / FASCIA",
+    "col5": "CONTENIDO",
+    "col6": "REDUCIBILIDAD / VALSALVA",
+    "col7": "SEVERIDAD",
+    "col8": "IMPACTO"
+  },
+  "panels": [
+    {
+      "panelLetter": "A",
+      "panelTitle": "Panel A: Pared abdominal — vista de conjunto",
+      "structureOrSite": "Pared abdominal — overview",
+      "anatomicalFocus": "Capas de pared y territorio del defecto con anclas de lateralidad...",
+      "laterality": "Bilateral",
+      "panelRole": "overview",
+      "imagePrompt": "Ultra-realistic 3D medical abdominal wall anatomy render..."
+    },
+    {
+      "panelLetter": "B",
+      "panelTitle": "Panel B: Cutaway del orificio / defecto",
+      "structureOrSite": "Orificio dominante según informe",
+      "anatomicalFocus": "Detalle del orificio fascial, saco y bordes con topografía exacta...",
+      "laterality": "Derecha",
+      "panelRole": "defect_orifice",
+      "imagePrompt": "Ultra-realistic 3D medical abdominal wall hernia orifice cutaway render..."
+    }
+  ],
+  "findingTable": [
+    {
+      "location": "Umbilical",
+      "structure": "Orificio fascial / línea alba",
+      "sizeOrGap": "18 mm",
+      "wallLayers": "Fascia interrumpida; capas subcutáneas conservadas",
+      "content": "Grasa omental",
+      "reducibilityOrDynamic": "Reducible; protruye con Valsalva",
+      "severity": "Leve-moderada",
+      "clinicalImpact": "Correlacionar clínica; valoración quirúrgica si sintomática"
+    }
+  ],
+  "wallSummary": "...",
+  "morphologyNotes": "...",
+  "wallLayersStatus": "...",
+  "keyPoints": ["...", "..."],
+  "synthesisTitle": "SÍNTESIS MORFOLÓGICA DE PARED ABDOMINAL:",
+  "morphologicalSynthesis": "El estudio de pared abdominal evidencia..."
+}`;
+
+      const planResponse = await ai.models.generateContent({
+        model: model,
+        contents: [{ text: abdominalWallPrompt }],
+        config: { responseMimeType: "application/json" }
+      });
+
+      let planJson: any = {};
+      try {
+        planJson = JSON.parse(planResponse.text || "{}");
+      } catch (parseErr) {
+        console.error("Error parseando plan JSON Pared Abdominal 3D:", parseErr);
+        planJson = {
+          studyTypeCategory: abdominalWallType || "general_pared_abdominal",
+          territoryLabel: "ECOGRAFÍA DE PARED ABDOMINAL",
+          laterality: laterality || "Bilateral",
+          figureTitle: "FIGURA 1. ATLAS 3D PARED ABDOMINAL Y CORRELACIÓN DE DEFECTOS",
+          tableTitle: "TABLA ECOGRÁFICA DE PARED ABDOMINAL:",
+          tableHeaders: {
+            col1: "LOCALIZACIÓN",
+            col2: "ESTRUCTURA",
+            col3: "DIÁMETRO / DIÁSTASIS",
+            col4: "CAPAS / FASCIA",
+            col5: "CONTENIDO",
+            col6: "REDUCIBILIDAD / VALSALVA",
+            col7: "SEVERIDAD",
+            col8: "IMPACTO"
+          },
+          panels: [
+            {
+              panelLetter: "A",
+              panelTitle: "Panel A: Anatomía de pared abdominal — visión de conjunto",
+              structureOrSite: "Pared abdominal — overview",
+              anatomicalFocus: "Reconstrucción de pared abdominal: capas, línea alba/rectos o ingle con anclas de lateralidad.",
+              laterality: laterality || "Bilateral",
+              panelRole: "overview",
+              imagePrompt: "Ultra-realistic 3D medical abdominal wall anatomy render showing skin, fascia, rectus muscles and linea alba with clear patient right/left landmarks, cinema 4D octane render, soft surgical studio lighting, clean background, no text."
+            },
+            {
+              panelLetter: "B",
+              panelTitle: "Panel B: Cutaway del orificio / defecto — según informe",
+              structureOrSite: "Orificio / defecto dominante según informe",
+              anatomicalFocus: "Corte macro del orificio fascial y saco herniario sin intercambiar lados ni sitios.",
+              laterality: laterality || "Bilateral",
+              panelRole: "defect_orifice",
+              imagePrompt: "Ultra-realistic 3D medical abdominal wall hernia orifice cutaway render with accurate fascia/rectus landmarks and pathology only when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, no text."
+            }
+          ],
+          findingTable: [],
+          synthesisTitle: "SÍNTESIS MORFOLÓGICA DE PARED ABDOMINAL:",
+          morphologicalSynthesis: "La correlación anatomopatológica de la pared abdominal se basa en los hallazgos descritos en el informe."
+        };
+      }
+
+      const abdominalWallPanelsWithImages = await Promise.all(
+        (planJson.panels || []).map(async (panel: any, idx: number) => {
+          let promptToUse = panel.imagePrompt || `Ultra-realistic 3D medical abdominal wall render of ${panel.structureOrSite || panel.panelTitle}, octane render, no text.`;
+          if (customDirectives && customDirectives.trim()) {
+            promptToUse = `${promptToUse} [MANDATORY CLINICAL DIRECTIVE: ${customDirectives.trim()}].`;
+          }
+          {
+            const screenMap = buildScreenLateralityConstraint(panel.laterality || planJson.laterality || laterality, "AP / coronal");
+            if (panel.laterality && panel.laterality !== "auto") {
+              promptToUse = `[MANDATORY PATIENT LATERALITY: ${panel.laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${ABDOMINAL_WALL_TOPOGRAPHY_HARD_RULES} ${screenMap} ${promptToUse}`;
+            } else {
+              promptToUse = `${LATERALITY_HARD_RULES} ${ABDOMINAL_WALL_TOPOGRAPHY_HARD_RULES} ${screenMap} ${promptToUse}`;
+            }
+          }
+
+          const defaultRole = idx === 0 ? "overview" : idx === 1 ? "defect_orifice" : "content_valsalva";
+          try {
+            const imageUrl = await generateMedicalImage(ai, promptToUse);
+            return {
+              id: `abdominal-wall-panel-${idx}-${Date.now()}`,
+              panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
+              panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
+              structureOrSite: panel.structureOrSite || panel.panelTitle || "",
+              anatomicalFocus: panel.anatomicalFocus || "Evaluación anatómica de pared abdominal",
+              laterality: panel.laterality || planJson.laterality || laterality || "",
+              imageUrl: imageUrl,
+              promptUsed: promptToUse,
+              isCustomFlipped: false,
+              panelRole: panel.panelRole || defaultRole
+            };
+          } catch (imgErr) {
+            console.error(`Error generando imagen para panel de pared abdominal ${panel.panelLetter}:`, imgErr);
+            return {
+              id: `abdominal-wall-panel-${idx}-${Date.now()}`,
+              panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
+              panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
+              structureOrSite: panel.structureOrSite || panel.panelTitle || "",
+              anatomicalFocus: panel.anatomicalFocus || "Evaluación anatómica de pared abdominal",
+              laterality: panel.laterality || planJson.laterality || laterality || "",
+              imageUrl: "",
+              promptUsed: promptToUse,
+              isCustomFlipped: false,
+              panelRole: panel.panelRole || defaultRole
+            };
+          }
+        })
+      );
+
+      const forcedHeaders = {
+        col1: "LOCALIZACIÓN",
+        col2: "ESTRUCTURA",
+        col3: "DIÁMETRO / DIÁSTASIS",
+        col4: "CAPAS / FASCIA",
+        col5: "CONTENIDO",
+        col6: "REDUCIBILIDAD / VALSALVA",
+        col7: "SEVERIDAD",
+        col8: "IMPACTO"
+      };
+
+      const finalAbdominalWallData = {
+        studyTypeCategory: planJson.studyTypeCategory || abdominalWallType || "general_pared_abdominal",
+        territoryLabel: planJson.territoryLabel || "ECOGRAFÍA DE PARED ABDOMINAL",
+        laterality: planJson.laterality || laterality || "Bilateral",
+        figureTitle: planJson.figureTitle || "FIGURA 1. ATLAS 3D PARED ABDOMINAL Y CORRELACIÓN DE DEFECTOS",
+        tableTitle: planJson.tableTitle || "TABLA ECOGRÁFICA DE PARED ABDOMINAL:",
+        tableHeaders: forcedHeaders,
+        panels: abdominalWallPanelsWithImages,
+        findingTable: (planJson.findingTable || planJson.lesionTable || planJson.noduleTable || []).map((row: any) => ({
+          location: row.location || "",
+          structure: row.structure || row.tendon || row.composition || "",
+          sizeOrGap: row.sizeOrGap || row.sizeOrThickness || row.size || row.gap || "",
+          wallLayers: row.wallLayers || row.echoPattern || row.layers || row.fascia || "",
+          content: row.content || row.stoneOrLesion || row.herniaContent || "",
+          reducibilityOrDynamic: row.reducibilityOrDynamic || row.fluidOrDoppler || row.valsalva || row.dynamic || "",
+          severity: row.severity || row.grade || "",
+          clinicalImpact: row.clinicalImpact || ""
+        })),
+        wallSummary: planJson.wallSummary || planJson.abdomenSummary || "",
+        morphologyNotes: planJson.morphologyNotes || "",
+        wallLayersStatus: planJson.wallLayersStatus || planJson.hepatobiliaryStatus || "",
+        keyPoints: Array.isArray(planJson.keyPoints) ? planJson.keyPoints : [],
+        synthesisTitle: planJson.synthesisTitle || "SÍNTESIS MORFOLÓGICA DE PARED ABDOMINAL:",
+        morphologicalSynthesis: planJson.morphologicalSynthesis || ""
+      };
+
+      res.json({
+        success: true,
+        data: finalAbdominalWallData
+      });
+
+    } catch (error: any) {
+      console.error("Error en /api/generate-3d-abdominal-wall:", error);
+      res.status(500).json({ success: false, error: handleGeminiError(error) });
+    }
+  });
+
+  app.post("/api/regenerate-3d-abdominal-wall-panel", async (req: express.Request, res: express.Response) => {
+    try {
+      const { reportText, abdominalWallType, panel, laterality, userDirective, requestedModel, customDirectives } = req.body;
+
+      if (!panel) {
+        return res.status(400).json({ success: false, error: "Se requiere el panel de pared abdominal a regenerar." });
+      }
+
+      const ai = getGeminiClient();
+      const model = getModelName(requestedModel || "gemini-3.7-flash");
+
+      const refinePrompt = `Eres un Radiólogo experto en ecografía de pared abdominal y Director de Arte Médico 3D de pared.
+Diseña un prompt en inglés superdetallado para re-generar una única imagen 3D fotorrealista correspondiente al PANEL ${panel.panelLetter}.
+
+DATOS DEL CASO:
+- Territorio: "${abdominalWallType || "Ecografía de pared abdominal"}"
+- Sitio / estructura: "${panel.structureOrSite || panel.panelTitle || ""}"
+- Foco actual: "${panel.anatomicalFocus || ""}"
+- Rol del panel: "${panel.panelRole || ""}"
+- Lateralidad requerida: "${laterality || panel.laterality || ""}"
+- Instrucción / Corrección del médico: "${userDirective || "Mejorar precisión anatomopatológica de pared"}"
+- DIRECTIVA CLÍNICA OBLIGATORIA (Scorecard / radar / médico): "${customDirectives || "Ninguna"}"
+- Contexto del informe: """${(reportText || "").slice(0, 800)}"""
+
+TOPOGRAFÍA DE PARED ABDOMINAL OBLIGATORIA:
+${ABDOMINAL_WALL_TOPOGRAPHY_RULES_ES}
+Si structureOrSite / foco / instrucción / informe mencionan un sitio de pared, conserva EXACTAS las coordenadas
+(sitio, capa/orificio, contenido, lado). NUNCA intercambiar ingle derecha↔izquierda ni umbilical↔epigástrico sin respaldo.
+
+REGLAS DE ESTILO:
+- Ultra-realistic 3D medical abdominal wall macro render, cinema 4D octane, accurate fascia/rectus/hernia landmarks.
+- Exact named site, orifice and laterality in the English imagePrompt.
+- Exact morphology only if indicated; soft surgical studio lighting; pure clean background.
+- STRICTLY NO text, NO numbers, NO letters, NO arrows inside the image.
+- Respect patient laterality (AP: patient RIGHT on viewer's LEFT).
+
+RESPONDE EN JSON:
+{
+  "panelTitle": "Título actualizado o confirmado para el panel",
+  "structureOrSite": "Nombre exacto (p.ej. Orificio umbilical / Ingle derecha)",
+  "anatomicalFocus": "Foco anatomopatológico de 1 a 2 líneas con sitio, orificio y dinámica",
+  "imagePrompt": "Detailed English image generation prompt with explicit organ and laterality..."
+}`;
+
+      const refineResponse = await ai.models.generateContent({
+        model: model,
+        contents: [{ text: refinePrompt }],
+        config: { responseMimeType: "application/json" }
+      });
+
+      let refineJson: any = {};
+      try {
+        refineJson = JSON.parse(refineResponse.text || "{}");
+      } catch (e) {
+        refineJson = {
+          panelTitle: panel.panelTitle,
+          structureOrSite: panel.structureOrSite || panel.panelTitle,
+          anatomicalFocus: panel.anatomicalFocus,
+          imagePrompt: `Ultra-realistic 3D medical abdominal wall render of ${panel.structureOrSite || panel.panelTitle}, octane render, studio lighting, no text.`
+        };
+      }
+
+      let finalPrompt = refineJson.imagePrompt || panel.promptUsed || `Ultra-realistic 3D medical abdominal wall render of ${panel.panelTitle}, cinema 4D octane, no text.`;
+      if (customDirectives && String(customDirectives).trim()) {
+        finalPrompt = `${finalPrompt} [MANDATORY CLINICAL DIRECTIVE: ${String(customDirectives).trim()}].`;
+      }
+      if (userDirective && userDirective.trim()) {
+        finalPrompt = `${finalPrompt} [MANDATORY SURGICAL CORRECTION: ${userDirective.trim()}].`;
+      }
+      if (laterality && laterality !== "auto") {
+        const screenMap = buildScreenLateralityConstraint(laterality, "AP / coronal");
+        finalPrompt = `[MANDATORY PATIENT LATERALITY: ${laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${ABDOMINAL_WALL_TOPOGRAPHY_HARD_RULES} ${screenMap} ${finalPrompt}`;
+      } else {
+        const screenMap = buildScreenLateralityConstraint(laterality, "AP / coronal");
+        finalPrompt = `${LATERALITY_HARD_RULES} ${ABDOMINAL_WALL_TOPOGRAPHY_HARD_RULES} ${screenMap} ${finalPrompt}`;
+      }
+
+      const imageUrl = await generateMedicalImage(ai, finalPrompt);
+
+      const updatedPanel = {
+        ...panel,
+        panelTitle: refineJson.panelTitle || panel.panelTitle,
+        structureOrSite: refineJson.structureOrSite || panel.structureOrSite,
+        anatomicalFocus: refineJson.anatomicalFocus || panel.anatomicalFocus,
+        laterality: laterality || panel.laterality,
+        imageUrl: imageUrl,
+        promptUsed: finalPrompt,
+        isCustomFlipped: false
+      };
+
+      res.json({
+        success: true,
+        panel: updatedPanel
+      });
+
+    } catch (error: any) {
+      console.error("Error en /api/regenerate-3d-abdominal-wall-panel:", error);
+      res.status(500).json({ success: false, error: handleGeminiError(error) });
+    }
+  });
+
 
 
   // 5. Focal Lesion Cutaway 3D (on-demand: auto-detect or manual focus, 1–2 panels)
