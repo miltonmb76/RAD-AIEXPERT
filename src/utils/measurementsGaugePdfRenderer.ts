@@ -1,18 +1,6 @@
 import { MeasurementGaugeData, MeasurementGaugeItem } from "../types";
 
-function sanitizePdfText(input: string): string {
-  return (input || "")
-    .replace(/≥/g, ">=")
-    .replace(/≤/g, "<=")
-    .replace(/–|—/g, "-")
-    .replace(/[^\x00-\x7F]/g, (ch) => {
-      try {
-        return ch.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-      } catch {
-        return "?";
-      }
-    });
-}
+import { sanitizePdfText } from "./sanitizePdfText";
 
 function statusRgb(status: MeasurementGaugeItem["status"]): [number, number, number] {
   switch (status) {

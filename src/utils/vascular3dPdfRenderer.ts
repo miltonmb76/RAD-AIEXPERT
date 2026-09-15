@@ -1,6 +1,7 @@
 import jsPDF from "jspdf";
 import { Vascular3DData, Vascular3DPanel, VascularHemodynamicRow } from "../types";
 import { pdfCutawayToCorte } from "./pdfCutawayToCorte";
+import { sanitizePdfText } from "./sanitizePdfText";
 
 /**
  * Renders an exclusive, two-page "ANEXO: SUITE VASCULAR 3D & MAPA ANATOMO-HEMODINÁMICO" into the provided jsPDF document.
@@ -264,12 +265,12 @@ export async function renderVascular3DPageToPdf(
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10 * factor);
 
-    const c1Lines = doc.splitTextToSize(row.vessel || "", colWidths[0] - 3);
-    const c2Lines = doc.splitTextToSize(row.plaqueOrThrombus || "", colWidths[1] - 3);
-    const c3Lines = doc.splitTextToSize(row.stenosisPercent || "0%", colWidths[2] - 3);
-    const c4Lines = doc.splitTextToSize(row.patternOrVelocity || "", colWidths[3] - 3);
-    const c5Lines = doc.splitTextToSize(row.hemodynamicIndex || "N/A", colWidths[4] - 3);
-    const c6Lines = doc.splitTextToSize(row.clinicalImpact || "", colWidths[5] - 3);
+    const c1Lines = doc.splitTextToSize(sanitizePdfText(row.vessel || ""), colWidths[0] - 3);
+    const c2Lines = doc.splitTextToSize(sanitizePdfText(row.plaqueOrThrombus || ""), colWidths[1] - 3);
+    const c3Lines = doc.splitTextToSize(sanitizePdfText(row.stenosisPercent || "0%"), colWidths[2] - 3);
+    const c4Lines = doc.splitTextToSize(sanitizePdfText(row.patternOrVelocity || ""), colWidths[3] - 3);
+    const c5Lines = doc.splitTextToSize(sanitizePdfText(row.hemodynamicIndex || "N/A"), colWidths[4] - 3);
+    const c6Lines = doc.splitTextToSize(sanitizePdfText(row.clinicalImpact || ""), colWidths[5] - 3);
 
     const maxLines = Math.max(c1Lines.length, c2Lines.length, c3Lines.length, c4Lines.length, c5Lines.length, c6Lines.length, 1);
     const rowH = Math.max(5.8 * factor, (maxLines * 3.3 + 2.4) * factor);
@@ -370,7 +371,7 @@ export async function renderVascular3DPageToPdf(
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9.0 * factor);
     const synthLineH = 3.8 * factor;
-    const synthLines = doc.splitTextToSize(synthText.trim(), contentWidth - 12);
+    const synthLines = doc.splitTextToSize(sanitizePdfText(synthText.trim()), contentWidth - 12);
     const titleBlockH = 9.5 * factor;
     const bottomPad = 3.5 * factor;
 

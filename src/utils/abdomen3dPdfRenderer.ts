@@ -1,6 +1,7 @@
 import jsPDF from "jspdf";
 import { Abdomen3DData, Abdomen3DPanel, AbdomenFindingRow } from "../types";
 import { pdfCutawayToCorte } from "./pdfCutawayToCorte";
+import { sanitizePdfText } from "./sanitizePdfText";
 
 /**
  * Renders a two-page "ANEXO: SUITE ABDOMEN 3D & FICHA MULTI-ÓRGANO" into the provided jsPDF document.
@@ -303,7 +304,7 @@ export async function renderAbdomen3DPageToPdf(
       row.severity || "",
       row.clinicalImpact || ""
     ];
-    const cellLines = cells.map((c, i) => doc.splitTextToSize(c, colWidths[i] - 2.5));
+    const cellLines = cells.map((c, i) => doc.splitTextToSize(sanitizePdfText(c), colWidths[i] - 2.5));
     const maxLines = Math.max(...cellLines.map(l => l.length), 1);
     const rowH = Math.max(7.2 * factor, (maxLines * 3.5 + 2.6) * factor);
 
@@ -355,7 +356,7 @@ export async function renderAbdomen3DPageToPdf(
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9.0 * factor);
     const synthLineH = 4.4 * factor;
-    const synthLines = doc.splitTextToSize(synthText.trim(), contentWidth - 12);
+    const synthLines = doc.splitTextToSize(sanitizePdfText(synthText.trim()), contentWidth - 12);
     const titleBlockH = 11 * factor;
     const bottomPad = 3.5 * factor;
 

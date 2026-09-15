@@ -1,6 +1,7 @@
 import jsPDF from "jspdf";
 import { Thyroid3DData, Thyroid3DPanel, ThyroidNoduleRow } from "../types";
 import { pdfCutawayToCorte } from "./pdfCutawayToCorte";
+import { sanitizePdfText } from "./sanitizePdfText";
 
 /**
  * Renders an exclusive, two-page "ANEXO: SUITE TIROIDES 3D & FICHA TI-RADS Y CORRELACIÓN 3D" into the provided jsPDF document.
@@ -337,12 +338,12 @@ export async function renderThyroid3DPageToPdf(
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10 * factor);
 
-    const c1Lines = doc.splitTextToSize(row.location || "", colWidths[0] - 3);
-    const c2Lines = doc.splitTextToSize(row.composition || "", colWidths[1] - 3);
-    const c3Lines = doc.splitTextToSize(row.size || "0%", colWidths[2] - 3);
-    const c4Lines = doc.splitTextToSize(row.echogenicity || "", colWidths[3] - 3);
-    const c5Lines = doc.splitTextToSize(row.margins || "N/A", colWidths[4] - 3);
-    const c6Lines = doc.splitTextToSize(row.tiradsCategory ? `${row.tiradsCategory} — ${row.clinicalImpact || ""}` : (row.clinicalImpact || "") || "", colWidths[5] - 3);
+    const c1Lines = doc.splitTextToSize(sanitizePdfText(row.location || ""), colWidths[0] - 3);
+    const c2Lines = doc.splitTextToSize(sanitizePdfText(row.composition || ""), colWidths[1] - 3);
+    const c3Lines = doc.splitTextToSize(sanitizePdfText(row.size || "0%"), colWidths[2] - 3);
+    const c4Lines = doc.splitTextToSize(sanitizePdfText(row.echogenicity || ""), colWidths[3] - 3);
+    const c5Lines = doc.splitTextToSize(sanitizePdfText(row.margins || "N/A"), colWidths[4] - 3);
+    const c6Lines = doc.splitTextToSize(sanitizePdfText(row.tiradsCategory) ? `${row.tiradsCategory} — ${row.clinicalImpact || ""}` : (row.clinicalImpact || "") || "", colWidths[5] - 3);
 
     const maxLines = Math.max(c1Lines.length, c2Lines.length, c3Lines.length, c4Lines.length, c5Lines.length, c6Lines.length, 1);
     const rowH = Math.max(5.8 * factor, (maxLines * 3.3 + 2.4) * factor);
@@ -443,7 +444,7 @@ export async function renderThyroid3DPageToPdf(
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9.0 * factor);
     const synthLineH = 3.8 * factor;
-    const synthLines = doc.splitTextToSize(synthText.trim(), contentWidth - 12);
+    const synthLines = doc.splitTextToSize(sanitizePdfText(synthText.trim()), contentWidth - 12);
     const titleBlockH = 9.5 * factor;
     const bottomPad = 3.5 * factor;
 

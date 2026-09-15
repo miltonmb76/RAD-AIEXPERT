@@ -1,5 +1,6 @@
 import { Atlas3DData } from "../types";
 import { pdfCutawayToCorte } from "./pdfCutawayToCorte";
+import { sanitizePdfText } from "./sanitizePdfText";
 
 export function renderAtlas3DAnnexToPDF(
   doc: any,
@@ -46,7 +47,7 @@ export function renderAtlas3DAnnexToPDF(
   const figTitle = atlasData.figureTitle || `FIGURA 1. RECONSTRUCCIÓN ANATÓMICA 3D Y CORRELACIÓN ULTRASONOGRÁFICA DE ${regionLabel.toUpperCase()}`;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9.5 * factor);
-  const figTitleLines = doc.splitTextToSize(figTitle, contentWidth - 18 * factor);
+  const figTitleLines = doc.splitTextToSize(sanitizePdfText(figTitle), contentWidth - 18 * factor);
   const figLineH = 4.8 * factor;
   const bannerHeight = Math.max(10 * factor, figTitleLines.length * figLineH + 6 * factor);
 
@@ -286,8 +287,8 @@ export function renderAtlas3DAnnexToPDF(
       doc.setFontSize(8 * factor);
 
       const structureText = (row.structure || "").replace(/\s*\(Panel[^)]*\)\s*/gi, " ").trim();
-      const structLines = doc.splitTextToSize(structureText, colStructureW - 8 * factor);
-      const descLines = doc.splitTextToSize(row.findingDetail || "", colDescW - 8 * factor);
+      const structLines = doc.splitTextToSize(sanitizePdfText(structureText), colStructureW - 8 * factor);
+      const descLines = doc.splitTextToSize(sanitizePdfText(row.findingDetail || ""), colDescW - 8 * factor);
       const rowLinesCount = Math.max(descLines.length, structLines.length, 1);
       const rowLineH = 4.4 * factor;
       const rowH = Math.max(9 * factor, rowLinesCount * rowLineH + 6 * factor);
@@ -343,7 +344,7 @@ export function renderAtlas3DAnnexToPDF(
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8.2 * factor);
     const synthLineH = 4.5 * factor;
-    const synthLines = doc.splitTextToSize(synthText, contentWidth - 18 * factor);
+    const synthLines = doc.splitTextToSize(sanitizePdfText(synthText), contentWidth - 18 * factor);
     const synthBoxH = Math.max(16 * factor, synthLines.length * synthLineH + 13 * factor);
 
     if (yCoord + synthBoxH > pageContentBottom) {

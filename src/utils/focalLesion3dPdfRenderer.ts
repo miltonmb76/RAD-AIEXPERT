@@ -1,6 +1,7 @@
 import { FocalLesion3DData } from "../types";
 import { sanitizeFocalClinicalProse } from "./sanitizeFocalClinicalProse";
 import { pdfCutawayToCorte } from "./pdfCutawayToCorte";
+import { sanitizePdfText } from "./sanitizePdfText";
 
 /**
  * Annex for Focal Lesion Corte 3D — always ONE page.
