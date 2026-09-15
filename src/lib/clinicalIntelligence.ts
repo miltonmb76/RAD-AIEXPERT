@@ -1240,6 +1240,124 @@ export function buildAbdominalWallDirectivesFromScorecard(
 }
 
 
+/** Hard topography rules for scrotal US (testis, epididymis, cord, Doppler). */
+export const SCROTUM_TOPOGRAPHY_DIRECTIVE = [
+  "TOPOGRAFÍA ESCROTAL OBLIGATORIA (nunca intercambiar):",
+  "- Testículo DERECHO ≠ testículo IZQUIERDO. Nunca intercambiar lados.",
+  "- Testículo ≠ epidídimo ≠ cordón espermático ≠ pared/bolsa escrotal.",
+  "- Landmarks: mediastino testicular / rete testis; cabeza/cuerpo/cola de epidídimo.",
+  "- Doppler: arteria hiliar testicular + plexo pampiniforme venoso (varicocele).",
+  "- Vista AP/frontal: lado DERECHO del paciente a la IZQUIERDA del cuadro; IZQUIERDO a la DERECHA.",
+  "- No inventar torsión, isquemia, tumor, varicocele ni hidrocele ausentes en el informe.",
+  "- En paneles, ficha y tabla nombra siempre: lado/sitio + estructura + ecopatrón/Doppler + líquido/masa.",
+].join("\n");
+
+export function buildScrotumDirectivesFromScorecard(
+  scorecard: ClinicalScorecardData | null | undefined,
+  radarData?: { radarMode?: string; globalScore?: number | string; dominantVector?: string; clinicalSummary?: string; axes?: Array<{ id?: string; name?: string; label?: string; score?: number; interpretation?: string }> }
+): string {
+  const protocol = (
+    scorecard?.protocolName ||
+    scorecard?.protocolId ||
+    radarData?.radarMode ||
+    ""
+  ).toLowerCase();
+  const isScrotum =
+    protocol.includes("escroto") ||
+    protocol.includes("escrotal") ||
+    protocol.includes("scrotum") ||
+    protocol.includes("scrotal") ||
+    protocol.includes("testiculo") ||
+    protocol.includes("testículo") ||
+    protocol.includes("testicular") ||
+    protocol.includes("epididimo") ||
+    protocol.includes("epidídimo") ||
+    protocol.includes("varicocele") ||
+    protocol.includes("hidrocele") ||
+    protocol.includes("torsion") ||
+    protocol.includes("torsión") ||
+    protocol.includes("orquitis");
+
+  let body = "";
+  if (scorecard) {
+    const base = buildAtlasDirectivesFromScorecard(scorecard);
+    const summary = (scorecard.clinicalSummary || "").trim();
+    const reco = (scorecard.recommendation || "").trim();
+    body = base;
+    if (!body) {
+      const allCriteria = Array.isArray(scorecard.criteria) ? scorecard.criteria : [];
+      const evidenced = allCriteria
+        .filter((c) => (c.evidence || c.value || "").trim())
+        .slice(0, 12)
+        .map((c, i) => {
+          const val = c.value ? ` (${c.value})` : "";
+          return `${i + 1}. «${c.atlasStructure || c.criterion}»${val}: ${c.evidence || c.status}`;
+        });
+      if (evidenced.length || summary) {
+        body = [
+          `SCORECARD ESCROTO (${scorecard.protocolName || "protocolo"} — ${scorecard.categoryAssigned || ""}):`,
+          `Semáforo: ${scorecard.trafficLight}. Criterios: ${scorecard.scoreMet}/${scorecard.scoreTotal}.`,
+          summary ? `Síntesis: ${summary}` : "",
+          reco ? `Recomendación: ${reco}` : "",
+          evidenced.length ? "Hallazgos del scorecard a respetar en 3D/tabla escrotal:" : "",
+          ...evidenced,
+        ]
+          .filter(Boolean)
+          .join("\n");
+      }
+    }
+  }
+
+  const radarBits: string[] = [];
+  const axes = Array.isArray(radarData?.axes) ? radarData!.axes! : [];
+  const radarMode = String(radarData?.radarMode || "").toLowerCase();
+  const axisKeyBlob = axes
+    .map((a) => `${a.id || ""} ${a.name || ""} ${a.label || ""}`.toLowerCase())
+    .join(" ");
+  const looksLikeScrotumRadar =
+    radarMode.includes("escroto") ||
+    radarMode.includes("escrotal") ||
+    radarMode.includes("scrotum") ||
+    radarMode.includes("testic") ||
+    /escroto|testic|epididim|varicocele|hidrocele|torsion|torsión|orquitis|doppler hiliar|pampiniforme/.test(
+      axisKeyBlob
+    );
+  if (axes.length && looksLikeScrotumRadar) {
+    radarBits.push(
+      `RADAR ESCROTO (${radarData?.radarMode || "escroto"} — score global ${radarData?.globalScore ?? "n/d"}):`
+    );
+    if (radarData?.dominantVector) {
+      radarBits.push(`Vector dominante: ${radarData.dominantVector}`);
+    }
+    if (radarData?.clinicalSummary) {
+      radarBits.push(`Síntesis radar: ${radarData.clinicalSummary}`);
+    }
+    radarBits.push("Ejes a respetar en ficha/tabla 3D:");
+    axes.slice(0, 8).forEach((axis, i) => {
+      const label = axis.label || axis.name || axis.id || `Eje ${i + 1}`;
+      const score = axis.score != null ? ` score=${axis.score}` : "";
+      const interp = axis.interpretation ? ` — ${axis.interpretation}` : "";
+      radarBits.push(`${i + 1}. ${label}${score}${interp}`);
+    });
+  }
+
+  if (!body && !radarBits.length) return "";
+
+  return [
+    "DIRECTIVA OBLIGATORIA DEL SCORECARD DE ESCROTO (debe gobernar paneles 3D, ficha y tabla):",
+    body,
+    radarBits.length ? radarBits.join("\n") : "",
+    isScrotum
+      ? "Prioriza: (1) overview escrotal bilateral, (2) parénquima testicular dominante, (3) epidídimo/cordón, (4) Doppler hiliar + plexo pampiniforme. NUNCA inventar torsión/isquemia/tumor ni intercambiar testículo D↔I."
+      : "Si el scorecard/radar no es escrotal, extrae solo hallazgos escrotales aplicables; no inventes patología.",
+    "No inventes torsión, isquemia, tumor, grados de varicocele ni hidrocele ausentes en el scorecard/radar/informe.",
+    SCROTUM_TOPOGRAPHY_DIRECTIVE,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+
 export function scorecardTrafficLabel(light: ClinicalScorecardData["trafficLight"]): string {
   switch (light) {
     case "critical":
