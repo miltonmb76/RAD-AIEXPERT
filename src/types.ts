@@ -809,6 +809,65 @@ export interface Scrotum3DData {
   morphologicalSynthesis?: string;
 }
 
+export type MuscleTendonStudyType =
+  | "lesion_muscular"
+  | "union_miotendinosa"
+  | "aquiles_tendon"
+  | "general_musculo_tendon";
+
+export interface MuscleTendon3DPanel {
+  id?: string;
+  panelLetter: string;
+  panelTitle: string;
+  anatomicalFocus: string;
+  laterality?: string;
+  structureOrSite?: string;
+  panelRole?: "overview" | "tear_myotendinous" | "achilles_tendon" | "tendon_detail";
+  imageUrl?: string;
+  isCustomFlipped?: boolean;
+  promptUsed?: string;
+}
+
+export interface MuscleTendonFindingRow {
+  location: string;           // ej: "Muslo derecho / pantorrilla izquierda / Aquiles"
+  structure: string;          // vientre muscular / unión miotendinosa / tendón
+  thicknessOrGap: string;     // grosor, gap, separación, extensión (mm)
+  echoPattern: string;        // desgarro Peetrons / tendinopatía / rotura / hematoma
+  hematomaOrFluid: string;    // hematoma / líquido / bursitis / sin colección
+  dynamicFinding: string;     // retracción / gap dinámico / estrés / normal
+  severity: string;           // leve / moderada / severa / completa
+  clinicalImpact: string;
+}
+
+export interface MuscleTendon3DData {
+  studyTypeCategory?: MuscleTendonStudyType;
+  territoryLabel?: string;
+  laterality?: string;
+  figureTitle?: string;
+  tableTitle?: string;
+  tableHeaders?: {
+    col1: string;
+    col2: string;
+    col3: string;
+    col4: string;
+    col5: string;
+    col6: string;
+    col7: string;
+    col8: string;
+  };
+  panels: MuscleTendon3DPanel[];
+  findingTable: MuscleTendonFindingRow[];
+  /** Rich clinical blocks under / with the figure */
+  muscleTendonSummary?: string;
+  morphologyNotes?: string;
+  tearTendonStatus?: string;
+  keyPoints?: string[];
+  synthesisTitle?: string;
+  morphologicalSynthesis?: string;
+}
+
+
+
 export type UsImagesGridMode = "auto" | "1x1" | "1x2" | "2x1" | "2x2" | "3x2" | "4x2";
 
 /** One quantitative measurement extracted from the report for gauge display. */

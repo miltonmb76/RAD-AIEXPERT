@@ -23,8 +23,8 @@ import { renderScorecardAnnexToPDF } from "./utils/scorecardPdfRenderer";
 import { renderReasoningChainAnnexToPDF } from "./utils/reasoningChainPdfRenderer";
 import { renderDifferentialTreeAnnexToPDF } from "./utils/differentialTreePdfRenderer";
 import { renderMeasurementsGaugeAnnexToPDF } from "./utils/measurementsGaugePdfRenderer";
-import { Atlas3DData, Vascular3DData, FocalLesion3DData, Thyroid3DData, Breast3DData, Shoulder3DData, Knee3DData, Ankle3DData, Kidney3DData, Abdomen3DData, AbdominalWall3DData, Scrotum3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData } from "./types";
-import { buildAtlasDirectivesFromScorecard, buildAtlasPanelFindingAssignments, buildVascularDirectivesFromScorecard, buildThyroidDirectivesFromScorecard, buildBreastDirectivesFromScorecard, buildShoulderDirectivesFromScorecard, buildKneeDirectivesFromScorecard, buildAnkleDirectivesFromScorecard, buildKidneyDirectivesFromScorecard, buildAbdomenDirectivesFromScorecard, buildAbdominalWallDirectivesFromScorecard, buildScrotumDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
+import { Atlas3DData, Vascular3DData, FocalLesion3DData, Thyroid3DData, Breast3DData, Shoulder3DData, Knee3DData, Ankle3DData, Kidney3DData, Abdomen3DData, AbdominalWall3DData, Scrotum3DData, MuscleTendon3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData } from "./types";
+import { buildAtlasDirectivesFromScorecard, buildAtlasPanelFindingAssignments, buildVascularDirectivesFromScorecard, buildThyroidDirectivesFromScorecard, buildBreastDirectivesFromScorecard, buildShoulderDirectivesFromScorecard, buildKneeDirectivesFromScorecard, buildAnkleDirectivesFromScorecard, buildKidneyDirectivesFromScorecard, buildAbdomenDirectivesFromScorecard, buildAbdominalWallDirectivesFromScorecard, buildScrotumDirectivesFromScorecard, buildMuscleTendonDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
 import { Vascular3DModule } from "./components/Vascular3DModule";
 import { FocalLesion3DModule } from "./components/FocalLesion3DModule";
 import { Thyroid3DModule } from "./components/Thyroid3DModule";
@@ -36,6 +36,7 @@ import { Kidney3DModule } from "./components/Kidney3DModule";
 import { Abdomen3DModule } from "./components/Abdomen3DModule";
 import { AbdominalWall3DModule } from "./components/AbdominalWall3DModule";
 import { Scrotum3DModule } from "./components/Scrotum3DModule";
+import { MuscleTendon3DModule } from "./components/MuscleTendon3DModule";
 import { renderVascular3DPageToPdf } from "./utils/vascular3dPdfRenderer";
 import { renderFocalLesion3DAnnexToPDF } from "./utils/focalLesion3dPdfRenderer";
 import { renderThyroid3DPageToPdf } from "./utils/thyroid3dPdfRenderer";
@@ -47,6 +48,7 @@ import { renderKidney3DPageToPdf } from "./utils/kidney3dPdfRenderer";
 import { renderAbdomen3DPageToPdf } from "./utils/abdomen3dPdfRenderer";
 import { renderAbdominalWall3DPageToPdf } from "./utils/abdominalWall3dPdfRenderer";
 import { renderScrotum3DPageToPdf } from "./utils/scrotum3dPdfRenderer";
+import { renderMuscleTendon3DPageToPdf } from "./utils/muscleTendon3dPdfRenderer";
 import { renderElastographyAnnexToPdf, ElastographyPdfData } from "./utils/elastographyPdfRenderer";
 import { renderUsImagesToPdf, getPanelLetter } from "./utils/usImagesPdfRenderer";
 import { renderMmgImagesToPdf } from "./utils/mmgImagesPdfRenderer";
@@ -1591,6 +1593,7 @@ export default function App() {
         if (localStudy.abdomen3dData) setAbdomen3dData(localStudy.abdomen3dData);
         if (localStudy.abdominalWall3dData) setAbdominalWall3dData(localStudy.abdominalWall3dData);
         if (localStudy.scrotum3dData) setScrotum3dData(localStudy.scrotum3dData);
+        if (localStudy.muscleTendon3dData) setMuscleTendon3dData(localStudy.muscleTendon3dData);
         if (localStudy.includeBreast3dInReport !== undefined) setIncludeBreast3dInReport(localStudy.includeBreast3dInReport);
         if (localStudy.includeShoulder3dInReport !== undefined) setIncludeShoulder3dInReport(localStudy.includeShoulder3dInReport);
         if (localStudy.includeKnee3dInReport !== undefined) setIncludeKnee3dInReport(localStudy.includeKnee3dInReport);
@@ -1599,6 +1602,7 @@ export default function App() {
         if (localStudy.includeAbdomen3dInReport !== undefined) setIncludeAbdomen3dInReport(localStudy.includeAbdomen3dInReport);
         if (localStudy.includeAbdominalWall3dInReport !== undefined) setIncludeAbdominalWall3dInReport(localStudy.includeAbdominalWall3dInReport);
         if (localStudy.includeScrotum3dInReport !== undefined) setIncludeScrotum3dInReport(localStudy.includeScrotum3dInReport);
+        if (localStudy.includeMuscleTendon3dInReport !== undefined) setIncludeMuscleTendon3dInReport(localStudy.includeMuscleTendon3dInReport);
         if (localStudy.includeThyroid3dInReport !== undefined) setIncludeThyroid3dInReport(localStudy.includeThyroid3dInReport);
         if (localStudy.includeFocalLesion3dInReport !== undefined) setIncludeFocalLesion3dInReport(localStudy.includeFocalLesion3dInReport);
         if (localStudy.usImagesGridMode) setUsImagesGridMode(localStudy.usImagesGridMode as any);
@@ -2851,12 +2855,14 @@ export default function App() {
   const [abdomen3dData, setAbdomen3dData] = useState<Abdomen3DData | null>(null);
   const [abdominalWall3dData, setAbdominalWall3dData] = useState<AbdominalWall3DData | null>(null);
   const [scrotum3dData, setScrotum3dData] = useState<Scrotum3DData | null>(null);
+  const [muscleTendon3dData, setMuscleTendon3dData] = useState<MuscleTendon3DData | null>(null);
   const [includeKnee3dInReport, setIncludeKnee3dInReport] = useState<boolean>(true);
   const [includeAnkle3dInReport, setIncludeAnkle3dInReport] = useState<boolean>(true);
   const [includeKidney3dInReport, setIncludeKidney3dInReport] = useState<boolean>(true);
   const [includeAbdomen3dInReport, setIncludeAbdomen3dInReport] = useState<boolean>(true);
   const [includeAbdominalWall3dInReport, setIncludeAbdominalWall3dInReport] = useState<boolean>(true);
   const [includeScrotum3dInReport, setIncludeScrotum3dInReport] = useState<boolean>(true);
+  const [includeMuscleTendon3dInReport, setIncludeMuscleTendon3dInReport] = useState<boolean>(true);
 
   // Cuadrícula y Presentación Científica para Fotos de Ultrasonido
   const [usImagesGridMode, setUsImagesGridMode] = useState<UsImagesGridMode>("auto");
@@ -2925,12 +2931,14 @@ export default function App() {
     abdomen3dData,
     abdominalWall3dData,
     scrotum3dData,
+    muscleTendon3dData,
     includeKnee3dInReport,
     includeAnkle3dInReport,
     includeKidney3dInReport,
     includeAbdomen3dInReport,
     includeAbdominalWall3dInReport,
     includeScrotum3dInReport,
+    includeMuscleTendon3dInReport,
     focalLesion3dData,
     includeFocalLesion3dInReport,
     usImagesGridMode,
@@ -3580,6 +3588,7 @@ Ejemplo:
   const [isAbdomen3dSuiteOpen, setIsAbdomen3dSuiteOpen] = useState<boolean>(false);
   const [isAbdominalWall3dSuiteOpen, setIsAbdominalWall3dSuiteOpen] = useState<boolean>(false);
   const [isScrotum3dSuiteOpen, setIsScrotum3dSuiteOpen] = useState<boolean>(false);
+  const [isMuscleTendon3dSuiteOpen, setIsMuscleTendon3dSuiteOpen] = useState<boolean>(false);
   const [includeRadarInReport, setIncludeRadarInReport] = useState<boolean>(true);
 
   // States & Handlers for Sistema de Activación Rápida de Módulos (Procesamiento en Lote)
@@ -3598,6 +3607,7 @@ Ejemplo:
     abdomen3d: false,
     abdominalWall3d: false,
     scrotum3d: false,
+    muscleTendon3d: false,
     radar: false,
     case_analysis: false,
     quality_eval: false,
@@ -3634,6 +3644,7 @@ Ejemplo:
       abdomen3d: select,
       abdominalWall3d: select,
       scrotum3d: select,
+      muscleTendon3d: select,
       radar: select,
       case_analysis: select,
       quality_eval: select,
@@ -4112,6 +4123,39 @@ Ejemplo:
             }
           } catch (e) {
             console.error("Error en batch scrotum 3d:", e);
+          }
+        }
+
+        if (modules.muscleTendon3d) {
+          try {
+            const radarForMuscleTendon = biomechanicalRadarData
+              ? {
+                  radarMode: biomechanicalRadarData.radarMode,
+                  dominantVector: biomechanicalRadarData.dominantVector,
+                  clinicalSummary: biomechanicalRadarData.clinicalSummary,
+                  globalScore: biomechanicalRadarData.globalScore,
+                  axes: biomechanicalRadarData.axes,
+                }
+              : undefined;
+            const muscleTendonDirectives = buildMuscleTendonDirectivesFromScorecard(scorecardForModules, radarForMuscleTendon);
+            const resp = await fetch("/api/generate-3d-muscle-tendon", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                reportText: activeReport,
+                muscleTendonType: "general_musculo_tendon",
+                requestedModel: modelFor("muscleTendon3d"),
+                customDirectives: muscleTendonDirectives || undefined
+              })
+            });
+            const jMt = await resp.json();
+            if (jMt.success && jMt.data) {
+              setMuscleTendon3dData(jMt.data);
+              setIncludeMuscleTendon3dInReport(true);
+              setIsMuscleTendon3dSuiteOpen(true);
+            }
+          } catch (e) {
+            console.error("Error en batch muscle-tendon 3d:", e);
           }
         }
 
@@ -4837,12 +4881,14 @@ Ejemplo:
             abdomen3dData: abdomen3dData || null,
             abdominalWall3dData: abdominalWall3dData || null,
             scrotum3dData: scrotum3dData || null,
+            muscleTendon3dData: muscleTendon3dData || null,
             includeKnee3dInReport: includeKnee3dInReport,
             includeAnkle3dInReport: includeAnkle3dInReport,
             includeKidney3dInReport: includeKidney3dInReport,
             includeAbdomen3dInReport: includeAbdomen3dInReport,
             includeAbdominalWall3dInReport: includeAbdominalWall3dInReport,
             includeScrotum3dInReport: includeScrotum3dInReport,
+            includeMuscleTendon3dInReport: includeMuscleTendon3dInReport,
             focalLesion3dData: focalLesion3dData || null,
             includeFocalLesion3dInReport: includeFocalLesion3dInReport,
             usImagesGridMode: usImagesGridMode || "auto",
@@ -4883,6 +4929,7 @@ Ejemplo:
                 abdomen3dData: null,
                 abdominalWall3dData: null,
                 scrotum3dData: null,
+                muscleTendon3dData: null,
                 focalLesion3dData: null,
                 customLogoUrl: "",
                 customSignatureUrl: "",
@@ -5989,12 +6036,14 @@ Ejemplo:
             abdomen3dData: abdomen3dData || null,
             abdominalWall3dData: abdominalWall3dData || null,
             scrotum3dData: scrotum3dData || null,
+            muscleTendon3dData: muscleTendon3dData || null,
             includeKnee3dInReport: includeKnee3dInReport,
             includeAnkle3dInReport: includeAnkle3dInReport,
             includeKidney3dInReport: includeKidney3dInReport,
             includeAbdomen3dInReport: includeAbdomen3dInReport,
             includeAbdominalWall3dInReport: includeAbdominalWall3dInReport,
             includeScrotum3dInReport: includeScrotum3dInReport,
+            includeMuscleTendon3dInReport: includeMuscleTendon3dInReport,
             focalLesion3dData: focalLesion3dData || null,
             includeFocalLesion3dInReport: includeFocalLesion3dInReport,
             usImagesGridMode: usImagesGridMode || "auto",
@@ -10518,6 +10567,11 @@ Ejemplo:
       const shouldIncludeScrotum = studyOverride ? (studyOverride.includeScrotum3dInReport !== false) : (pdfStateRef.current?.includeScrotum3dInReport !== false && includeScrotum3dInReport);
       if (activeScrotumData && shouldIncludeScrotum && (activeScrotumData.panels?.length || activeScrotumData.findingTable?.length)) {
         await renderScrotum3DPageToPdf(doc, activeScrotumData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+
+      const activeMuscleTendonData = studyOverride ? studyOverride.muscleTendon3dData : (pdfStateRef.current?.muscleTendon3dData || muscleTendon3dData);
+      const shouldIncludeMuscleTendon = studyOverride ? (studyOverride.includeMuscleTendon3dInReport !== false) : (pdfStateRef.current?.includeMuscleTendon3dInReport !== false && includeMuscleTendon3dInReport);
+      if (activeMuscleTendonData && shouldIncludeMuscleTendon && (activeMuscleTendonData.panels?.length || activeMuscleTendonData.findingTable?.length)) {
+        await renderMuscleTendon3DPageToPdf(doc, activeMuscleTendonData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
       }
 
       // Restore standard margins and content widths for any diagrams, annexes, and signature block
@@ -20849,6 +20903,13 @@ const splitReportAndAnnex = (text: string) => {
                                   desc: "Testículos, epidídimo, cordón, Doppler hiliar/pampiniforme, ficha clínica y anexo PDF.",
                                   color: "text-yellow-400 border-yellow-500/30 bg-yellow-950/20"
                                 },
+                                {
+                                  id: "muscleTendon3d",
+                                  label: "Suite Muscular / Tendinosa 3D & Ficha Músculo-Tendón",
+                                  badge: "MÚSCULO 3D",
+                                  desc: "Desgarros musculares, MTJ, Aquiles y tendones de miembros inferiores; ficha clínica y anexo PDF.",
+                                  color: "text-rose-400 border-rose-500/30 bg-rose-950/20"
+                                },
                                                                 {
                                   id: "clinical_scorecard",
                                   label: "Scorecard Clinico de Criterios (pre-Atlas)",
@@ -21798,6 +21859,42 @@ const splitReportAndAnnex = (text: string) => {
                               </button>
                             </div>
 
+                            {/* Card 8c3: Suite Muscular / Tendinosa 3D */}
+                            <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-rose-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
+                              <div className="flex items-center gap-2 justify-between">
+                                <div className="flex items-center gap-2">
+                                  <Activity className="h-4 w-4 text-rose-400" />
+                                  <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
+                                    Suite Muscular / Tendinosa 3D
+                                  </h4>
+                                </div>
+                                <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-rose-950/40 text-rose-400 border border-rose-900/30 px-2 py-0.5 rounded">
+                                  MÚSCULO 3D
+                                </span>
+                              </div>
+                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
+                                Desgarros, uniones miotendinosas, Aquiles y tendones de MI; inyecta scorecard músculo-tendón.
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsMuscleTendon3dSuiteOpen(p => {
+                                    const next = !p;
+                                    if (next) setTimeout(() => document.getElementById("muscle-tendon-3d-suite-module")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+                                    return next;
+                                  });
+                                }}
+                                className={`w-full py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2 font-mono cursor-pointer border-2 ${
+                                  isMuscleTendon3dSuiteOpen
+                                    ? "bg-rose-600/15 border-rose-500/60 text-rose-200"
+                                    : "bg-slate-950 border-slate-800 hover:border-rose-500/30 text-rose-400"
+                                }`}
+                              >
+                                <Activity className="h-4 w-4" />
+                                {isMuscleTendon3dSuiteOpen ? "Ocultar Suite Muscular / Tendinosa" : "Abrir Suite Muscular / Tendinosa 3D"}
+                              </button>
+                            </div>
+
                             {/* Card 8d: Sinopsis de Fracturas (IA) */}
                             <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-emerald-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
                               <div className="flex items-center gap-2 justify-between">
@@ -22456,6 +22553,35 @@ const splitReportAndAnnex = (text: string) => {
                                     : undefined
                                 ) || atlasDirectivesFromScorecard}
                                 onClose={() => setIsScrotum3dSuiteOpen(false)}
+                              />
+                            </div>
+                          )}
+
+                          {isMuscleTendon3dSuiteOpen && (
+                            <div id="muscle-tendon-3d-suite-module" className="my-6">
+                              <MuscleTendon3DModule
+                                reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
+                                activeProtocol={specificStudy || studyType || ""}
+                                laterality=""
+                                selectedModel={modelFor("muscleTendon3d")}
+                                muscleTendonData={muscleTendon3dData}
+                                setMuscleTendonData={setMuscleTendon3dData}
+                                includeInReport={includeMuscleTendon3dInReport}
+                                setIncludeInReport={setIncludeMuscleTendon3dInReport}
+                                scorecardData={clinicalScorecardData}
+                                externalDirectives={buildMuscleTendonDirectivesFromScorecard(
+                                  clinicalScorecardData,
+                                  biomechanicalRadarData
+                                    ? {
+                                        radarMode: biomechanicalRadarData.radarMode,
+                                        dominantVector: biomechanicalRadarData.dominantVector,
+                                        clinicalSummary: biomechanicalRadarData.clinicalSummary,
+                                        globalScore: biomechanicalRadarData.globalScore,
+                                        axes: biomechanicalRadarData.axes,
+                                      }
+                                    : undefined
+                                ) || atlasDirectivesFromScorecard}
+                                onClose={() => setIsMuscleTendon3dSuiteOpen(false)}
                               />
                             </div>
                           )}
@@ -24982,6 +25108,7 @@ const splitReportAndAnnex = (text: string) => {
                         if (viewingCloudStudy.abdomen3dData) setAbdomen3dData(viewingCloudStudy.abdomen3dData);
                         if (viewingCloudStudy.abdominalWall3dData) setAbdominalWall3dData(viewingCloudStudy.abdominalWall3dData);
                         if (viewingCloudStudy.scrotum3dData) setScrotum3dData(viewingCloudStudy.scrotum3dData);
+                        if (viewingCloudStudy.muscleTendon3dData) setMuscleTendon3dData(viewingCloudStudy.muscleTendon3dData);
                         if (viewingCloudStudy.includeShoulder3dInReport !== undefined) setIncludeShoulder3dInReport(viewingCloudStudy.includeShoulder3dInReport);
                         if (viewingCloudStudy.includeKnee3dInReport !== undefined) setIncludeKnee3dInReport(viewingCloudStudy.includeKnee3dInReport);
                         if (viewingCloudStudy.includeAnkle3dInReport !== undefined) setIncludeAnkle3dInReport(viewingCloudStudy.includeAnkle3dInReport);

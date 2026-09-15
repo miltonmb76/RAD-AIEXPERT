@@ -1358,6 +1358,129 @@ export function buildScrotumDirectivesFromScorecard(
 }
 
 
+
+
+/** Hard topography rules for muscle / tendon US (belly, MTJ, Achilles). */
+export const MUSCLE_TENDON_TOPOGRAPHY_DIRECTIVE = [
+  "TOPOGRAFÍA MÚSCULO-TENDINOSA OBLIGATORIA (nunca intercambiar):",
+  "- Lado DERECHO ≠ IZQUIERDO. Nunca intercambiar hemicuerpos.",
+  "- Vientre muscular ≠ unión miotendinosa (MTJ) ≠ tendón (midportion ≠ insercional).",
+  "- Landmarks LE: isquiotibiales, cuádriceps/recto femoral, aductores, gastrocnemio/sóleo, Aquiles, plantares.",
+  "- Desgarro: grado Peetrons / gap / retracción / hematoma; no inventar rotura completa si el informe dice parcial.",
+  "- Aquiles: midportion ≠ insercional ≠ bursa; no inventar tendinopatía ni rotura ausentes.",
+  "- Vista AP/frontal: lado DERECHO del paciente a la IZQUIERDA del cuadro; IZQUIERDO a la DERECHA.",
+  "- En paneles, ficha y tabla nombra siempre: localización/lado + estructura + grosor/gap + ecopatrón + hematoma + dinámica.",
+].join("\n");
+
+export function buildMuscleTendonDirectivesFromScorecard(
+  scorecard: ClinicalScorecardData | null | undefined,
+  radarData?: { radarMode?: string; globalScore?: number | string; dominantVector?: string; clinicalSummary?: string; axes?: Array<{ id?: string; name?: string; label?: string; score?: number; interpretation?: string }> }
+): string {
+  const protocol = (
+    scorecard?.protocolName ||
+    scorecard?.protocolId ||
+    radarData?.radarMode ||
+    ""
+  ).toLowerCase();
+  const isMuscleTendon =
+    protocol.includes("muscle") ||
+    protocol.includes("muscul") ||
+    protocol.includes("tendon") ||
+    protocol.includes("tendón") ||
+    protocol.includes("tendin") ||
+    protocol.includes("miotendin") ||
+    protocol.includes("myotendin") ||
+    protocol.includes("aquiles") ||
+    protocol.includes("achilles") ||
+    protocol.includes("desgarro") ||
+    protocol.includes("isquiotibial") ||
+    protocol.includes("gemelo") ||
+    protocol.includes("gastrocnemio") ||
+    protocol.includes("peetrons") ||
+    protocol.includes("muscle_injury");
+
+  let body = "";
+  if (scorecard) {
+    const base = buildAtlasDirectivesFromScorecard(scorecard);
+    const summary = (scorecard.clinicalSummary || "").trim();
+    const reco = (scorecard.recommendation || "").trim();
+    body = base;
+    if (!body) {
+      const allCriteria = Array.isArray(scorecard.criteria) ? scorecard.criteria : [];
+      const evidenced = allCriteria
+        .filter((c) => (c.evidence || c.value || "").trim())
+        .slice(0, 12)
+        .map((c, i) => {
+          const val = c.value ? ` (${c.value})` : "";
+          return `${i + 1}. «${c.atlasStructure || c.criterion}»${val}: ${c.evidence || c.status}`;
+        });
+      if (evidenced.length || summary) {
+        body = [
+          `SCORECARD MÚSCULO-TENDÓN (${scorecard.protocolName || "protocolo"} — ${scorecard.categoryAssigned || ""}):`,
+          `Semáforo: ${scorecard.trafficLight}. Criterios: ${scorecard.scoreMet}/${scorecard.scoreTotal}.`,
+          summary ? `Síntesis: ${summary}` : "",
+          reco ? `Recomendación: ${reco}` : "",
+          evidenced.length ? "Hallazgos del scorecard a respetar en 3D/tabla músculo-tendón:" : "",
+          ...evidenced,
+        ]
+          .filter(Boolean)
+          .join("\n");
+      }
+    }
+  }
+
+  const radarBits: string[] = [];
+  const axes = Array.isArray(radarData?.axes) ? radarData!.axes! : [];
+  const radarMode = String(radarData?.radarMode || "").toLowerCase();
+  const axisKeyBlob = axes
+    .map((a) => `${a.id || ""} ${a.name || ""} ${a.label || ""}`.toLowerCase())
+    .join(" ");
+  const looksLikeMuscleRadar =
+    radarMode.includes("muscle") ||
+    radarMode.includes("muscul") ||
+    radarMode.includes("tendon") ||
+    radarMode.includes("tendón") ||
+    radarMode.includes("aquiles") ||
+    radarMode.includes("desgarro") ||
+    /muscle_injury|desgarro|miotendin|aquiles|isquiotibial|gemelo|gastrocnemio|peetrons|tendinopat/.test(
+      axisKeyBlob + " " + radarMode
+    );
+  if (axes.length && looksLikeMuscleRadar) {
+    radarBits.push(
+      `RADAR LESIÓN MUSCULAR (${radarData?.radarMode || "muscle_injury"} — score global ${radarData?.globalScore ?? "n/d"}):`
+    );
+    if (radarData?.dominantVector) {
+      radarBits.push(`Vector dominante: ${radarData.dominantVector}`);
+    }
+    if (radarData?.clinicalSummary) {
+      radarBits.push(`Síntesis radar: ${radarData.clinicalSummary}`);
+    }
+    radarBits.push("Ejes a respetar en ficha/tabla 3D:");
+    axes.slice(0, 8).forEach((axis, i) => {
+      const label = axis.label || axis.name || axis.id || `Eje ${i + 1}`;
+      const score = axis.score != null ? ` score=${axis.score}` : "";
+      const interp = axis.interpretation ? ` — ${axis.interpretation}` : "";
+      radarBits.push(`${i + 1}. ${label}${score}${interp}`);
+    });
+  }
+
+  if (!body && !radarBits.length) return "";
+
+  return [
+    "DIRECTIVA OBLIGATORIA DEL SCORECARD MÚSCULO-TENDÓN (debe gobernar paneles 3D, ficha y tabla):",
+    body,
+    radarBits.length ? radarBits.join("\n") : "",
+    isMuscleTendon
+      ? "Prioriza: (1) overview regional del compartimento, (2) corte del desgarro/MTJ dominante, (3) Aquiles u otro tendón si aplica. NUNCA inventar rotura completa ni intercambiar lado D↔I."
+      : "Si el scorecard/radar no es músculo-tendón, extrae solo hallazgos musculares/tendinosos aplicables; no inventes patología.",
+    "No inventes desgarros, gaps, retracciones, hematomas ni tendinopatías ausentes en el scorecard/radar/informe.",
+    MUSCLE_TENDON_TOPOGRAPHY_DIRECTIVE,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+
 export function scorecardTrafficLabel(light: ClinicalScorecardData["trafficLight"]): string {
   switch (light) {
     case "critical":
@@ -1408,6 +1531,7 @@ export const SCORECARD_PROTOCOL_OPTIONS: Array<{ id: string; label: string }> = 
   { id: "rotator_cuff", label: "Manguito rotador" },
   { id: "knee_msk", label: "Rodilla MSK" },
   { id: "achilles", label: "Tendón de Aquiles" },
+  { id: "muscle_injury", label: "Lesión muscular / miotendinosa" },
   { id: "tobillo_msk", label: "Tobillo MSK" },
   { id: "hepatic", label: "Hígado / Esteatosis-Fibrosis" },
   { id: "renal", label: "Riñón integral" },
