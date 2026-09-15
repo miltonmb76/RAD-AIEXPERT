@@ -29,6 +29,7 @@ export type ModelTask =
   | "ankle3d"
   | "kidney3d"
   | "abdomen3d"
+  | "abdominalWall3d"
   | "patient_summary"
   | "case_analysis"
   | "pathology"
@@ -64,6 +65,7 @@ const QUALITY_TASKS: ReadonlySet<ModelTask> = new Set([
   "ankle3d",
   "kidney3d",
   "abdomen3d",
+  "abdominalWall3d",
   "patient_summary",
   "case_analysis",
   "pathology",
