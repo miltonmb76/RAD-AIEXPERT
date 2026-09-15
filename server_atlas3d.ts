@@ -293,6 +293,30 @@ const SCROTUM_TOPOGRAPHY_RULES_ES =
   "8) Una imagen/tabla bella con lado testicular o territorio escrotal equivocado es FALLO CRÍTICO.";
 
 
+const MUSCLE_TENDON_TOPOGRAPHY_HARD_RULES =
+  "MUSCLE/TENDON TOPOGRAPHY HARD RULES (never violate): " +
+  "(1) RIGHT side ≠ LEFT side — never swap laterality. " +
+  "(2) Muscle belly ≠ myotendinous junction (MTJ) ≠ tendon midportion ≠ insertional footprint. " +
+  "(3) LE landmarks: hamstrings, quadriceps/rectus femoris, adductors, gastrocnemius/soleus, Achilles. " +
+  "(4) Tear: Peetrons grade / gap / retraction / hematoma — never invent complete tear if report says partial. " +
+  "(5) Achilles: midportion ≠ insertional ≠ bursa. " +
+  "(6) AP/frontal: patient RIGHT on VIEWER'S LEFT; patient LEFT on VIEWER'S RIGHT. " +
+  "(7) Name location/side + structure + thickness/gap + echo + hematoma + dynamics in structureOrSite / anatomicalFocus / findingTable. " +
+  "(8) A beautiful image with wrong side or wrong muscle/tendon territory is a CRITICAL FAIL.";
+
+const MUSCLE_TENDON_TOPOGRAPHY_RULES_ES =
+  "REGLAS DURAS DE TOPOGRAFÍA MÚSCULO-TENDINOSA (nunca violar):\n" +
+  "1) Lado DERECHO ≠ IZQUIERDO. Nunca intercambiar hemicuerpos.\n" +
+  "2) Vientre muscular ≠ unión miotendinosa (MTJ) ≠ tendón midportion ≠ inserción.\n" +
+  "3) Landmarks LE: isquiotibiales, cuádriceps/recto femoral, aductores, gastrocnemio/sóleo, Aquiles.\n" +
+  "4) Desgarro: grado Peetrons / gap / retracción / hematoma. No inventar rotura completa si el informe dice parcial.\n" +
+  "5) Aquiles: midportion ≠ insercional ≠ bursa.\n" +
+  "6) Vista AP/frontal: DERECHO del paciente a la IZQUIERDA del cuadro; IZQUIERDO a la DERECHA.\n" +
+  "7) En structureOrSite, anatomicalFocus, findingTable e imagePrompt nombra: localización/lado + estructura + grosor/gap + ecopatrón + hematoma + dinámica.\n" +
+  "8) Una imagen/tabla bella con lado o territorio músculo-tendón equivocado es FALLO CRÍTICO.";
+
+
+
 
 function classifyViewOrientation(view?: string): "anterior" | "posterior" | "other" {
   const v = String(view || "").toLowerCase();
@@ -624,7 +648,7 @@ const BREAST_CLOCK_PLAN_RULES_ES =
   "- doNotInvent DEBE incluir: \"left-breast 3 placed medially\", \"clock 3/9 swap\", \"mirrored breast clock between sides\".";
 
 /**
- * Clinical prose for Focal cutaway cards must NEVER explain how the AI placed the lesion
+ * Clinical prose for Focal corte cards must NEVER explain how the AI placed the lesion
  * on screen (viewer-left/right, image half, clock-hands method, etc.). Keep anatomy only.
  */
 const FOCAL_CLINICAL_PROSE_RULES_ES =
@@ -933,7 +957,7 @@ export function registerAtlas3DRoutes(app: express.Express) {
       const modeHint = !assignments.length
         ? "Sin asignación Scorecard por panel: diseña 2–3 paneles complementarios según el informe."
         : assignments[0]?.mode === "shared_single"
-          ? "MODO 1 HALLAZGO: genera 2 o 3 paneles como vistas complementarias del MISMO hallazgo asignado (distinto ángulo/cutaway; misma lesión)."
+          ? "MODO 1 HALLAZGO: genera 2 o 3 paneles como vistas complementarias del MISMO hallazgo asignado (distinto ángulo/corte; misma lesión)."
           : `MODO ${assignments.length} HALLAZGOS: genera exactamente ${assignments.length} paneles, UNO por hallazgo asignado. Cada panel dedicado a su hallazgo (no mezclar focos).`;
 
       const promptPlan = `Eres un Médico Radiólogo Especialista en Diagnóstico por Imágenes y Anatomía Quirúrgica Aplicada.
@@ -1869,7 +1893,7 @@ TIPOS DE ESTUDIO (clasifica en uno):
 DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
 ========================================================================
 - Panel A (panelRole "overview"): visión anatómica de ambas riñóns o renal afectado (fémur distal, platillos tibiales, rótula, riñóns, LCM/LCL y mecanismo extensor).
-- Panel B (panelRole "collecting_obstruction"): cutaway macro de la patología renal/ligamentosa dominante SEGÚN EL INFORME (respetar medial=interno/tibial vs lateral=externo/peroné, y cuerno anterior vs cuerpo vs cuerno posterior; NUNCA asumir riñón medial por defecto si el informe dice externo/lateral).
+- Panel B (panelRole "collecting_obstruction"): corte macro de la patología renal/ligamentosa dominante SEGÚN EL INFORME (respetar medial=interno/tibial vs lateral=externo/peroné, y cuerno anterior vs cuerpo vs cuerno posterior; NUNCA asumir riñón medial por defecto si el informe dice externo/lateral).
 - Panel C opcional (panelRole "bladder_ureter" | "cyst_stone"): surco bicipital/ligamento patelar + recesos articulares / hidrartrosis, O quiste de Baker / cartílago femorotibial según el hallazgo dominante.
 - LATERALIDAD OBLIGATORIA POR PANEL (convención radiografía AP / paciente de frente):
   - Cada panel DEBE declarar "laterality" exacta (Derecha|Izquierda|Bilateral) = lado ANATÓMICO DEL PACIENTE.
@@ -1917,7 +1941,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
     },
     {
       "panelLetter": "B",
-      "panelTitle": "Panel B: Cutaway del riñón medial — patología dominante",
+      "panelTitle": "Panel B: Corte del riñón medial — patología dominante",
       "structureOrSite": "Pelvis / seno renal",
       "anatomicalFocus": "Detalle del riñón medial y surco coronario con patrón ecográfico correlacionado...",
       "laterality": "Derecha",
@@ -1984,7 +2008,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
             },
             {
               panelLetter: "B",
-              panelTitle: "Panel B: Cutaway sistema colector — según informe (medial/lateral + A/P)",
+              panelTitle: "Panel B: Corte sistema colector — según informe (medial/lateral + A/P)",
               structureOrSite: "Sistema colector (lado según informe)",
               anatomicalFocus: "Corte macro del riñón indicado en el informe (interno/externo y cuerno anterior/posterior), sin intercambiar lados.",
               laterality: laterality || "Derecha",
@@ -2197,7 +2221,7 @@ RESPONDE EN JSON:
   });
 
 
-  // 5. Focal Lesion Cutaway 3D (on-demand: auto-detect or manual focus, 1–2 panels)
+  // 5. Focal Lesion Corte 3D (on-demand: auto-detect or manual focus, 1–2 panels)
   
   
   app.post("/api/generate-3d-abdomen", async (req: express.Request, res: express.Response) => {
@@ -2253,7 +2277,7 @@ TIPOS DE ESTUDIO (clasifica en uno):
 DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
 ========================================================================
 - Panel A (panelRole "overview"): visión de abdomen superior — hígado, vesícula, porta, páncreas, bazo; anclas de derecha/izquierda del paciente.
-- Panel B (panelRole "hepatobiliary"): cutaway del hallazgo dominante SEGÚN EL INFORME (esteatosis, litiasis vesicular, dilatación biliar, páncreas, etc.).
+- Panel B (panelRole "hepatobiliary"): corte del hallazgo dominante SEGÚN EL INFORME (esteatosis, litiasis vesicular, dilatación biliar, páncreas, etc.).
 - Panel C opcional (panelRole "renal_spleen" | "bowel_fluid"): ambos riñones / bazo, O FID-apéndice / líquido libre según el caso.
 - LATERALIDAD OBLIGATORIA POR PANEL (convención radiografía AP / paciente de frente):
   - Cada panel DEBE declarar "laterality" exacta (Derecha|Izquierda|Bilateral) = lado ANATÓMICO DEL PACIENTE.
@@ -2300,7 +2324,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
     },
     {
       "panelLetter": "B",
-      "panelTitle": "Panel B: Cutaway del hallazgo dominante",
+      "panelTitle": "Panel B: Corte del hallazgo dominante",
       "structureOrSite": "Órgano dominante según informe",
       "anatomicalFocus": "Detalle del hallazgo principal con topografía exacta...",
       "laterality": "Derecha",
@@ -2367,7 +2391,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
             },
             {
               panelLetter: "B",
-              panelTitle: "Panel B: Cutaway hepato-biliar — según informe",
+              panelTitle: "Panel B: Corte hepato-biliar — según informe",
               structureOrSite: "Territorio hepato-biliar dominante según informe",
               anatomicalFocus: "Corte macro del hallazgo dominante (hígado, vesícula/vías o páncreas) sin intercambiar órganos ni lados.",
               laterality: laterality || "Bilateral",
@@ -2632,7 +2656,7 @@ TIPOS DE ESTUDIO (clasifica en uno):
 DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
 ========================================================================
 - Panel A (panelRole "overview"): visión de pared abdominal — capas, línea alba/rectos o ingle según el caso; anclas de derecha/izquierda.
-- Panel B (panelRole "defect_orifice"): cutaway del orificio/defecto dominante SEGÚN EL INFORME (diámetro, bordes fasciales, saco).
+- Panel B (panelRole "defect_orifice"): corte del orificio/defecto dominante SEGÚN EL INFORME (diámetro, bordes fasciales, saco).
 - Panel C opcional (panelRole "content_valsalva" | "rectus_linea"): contenido + dinámica Valsalva/reducibilidad, O diástasis de rectos / línea alba.
 - LATERALIDAD OBLIGATORIA POR PANEL (convención radiografía AP / paciente de frente):
   - Cada panel DEBE declarar "laterality" exacta (Derecha|Izquierda|Bilateral) = lado ANATÓMICO DEL PACIENTE.
@@ -2679,7 +2703,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
     },
     {
       "panelLetter": "B",
-      "panelTitle": "Panel B: Cutaway del orificio / defecto",
+      "panelTitle": "Panel B: Corte del orificio / defecto",
       "structureOrSite": "Orificio dominante según informe",
       "anatomicalFocus": "Detalle del orificio fascial, saco y bordes con topografía exacta...",
       "laterality": "Derecha",
@@ -2746,7 +2770,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
             },
             {
               panelLetter: "B",
-              panelTitle: "Panel B: Cutaway del orificio / defecto — según informe",
+              panelTitle: "Panel B: Corte del orificio / defecto — según informe",
               structureOrSite: "Orificio / defecto dominante según informe",
               anatomicalFocus: "Corte macro del orificio fascial y saco herniario sin intercambiar lados ni sitios.",
               laterality: laterality || "Bilateral",
@@ -3011,7 +3035,7 @@ TIPOS DE ESTUDIO (clasifica en uno):
 DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
 ========================================================================
 - Panel A (panelRole "overview"): visión escrotal bilateral — ambos testículos, bolsa, anclas derecha/izquierda.
-- Panel B (panelRole "testis_parenchyma"): cutaway del parénquima testicular dominante SEGÚN EL INFORME (mediastino/rete, ecopatrón, tamaño).
+- Panel B (panelRole "testis_parenchyma"): corte del parénquima testicular dominante SEGÚN EL INFORME (mediastino/rete, ecopatrón, tamaño).
 - Panel C opcional (panelRole "epididymis_cord" | "doppler_flow"): epidídimo/cordón, O Doppler hiliar + plexo pampiniforme.
 - LATERALIDAD OBLIGATORIA POR PANEL (convención radiografía AP / paciente de frente):
   - Cada panel DEBE declarar "laterality" exacta (Derecha|Izquierda|Bilateral) = lado ANATÓMICO DEL PACIENTE.
@@ -3058,7 +3082,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
     },
     {
       "panelLetter": "B",
-      "panelTitle": "Panel B: Cutaway del parénquima testicular",
+      "panelTitle": "Panel B: Corte del parénquima testicular",
       "structureOrSite": "Parénquima testicular dominante según informe",
       "anatomicalFocus": "Detalle de parénquima, mediastino/rete y ecopatrón con topografía exacta...",
       "laterality": "Derecha",
@@ -3125,7 +3149,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
             },
             {
               panelLetter: "B",
-              panelTitle: "Panel B: Cutaway del parénquima testicular — según informe",
+              panelTitle: "Panel B: Corte del parénquima testicular — según informe",
               structureOrSite: "Parénquima testicular dominante según informe",
               anatomicalFocus: "Corte macro del parénquima con mediastino/rete sin intercambiar lados.",
               laterality: laterality || "Bilateral",
@@ -3338,9 +3362,394 @@ RESPONDE EN JSON:
 
 
 
-  // 5. Focal Lesion Cutaway 3D (on-demand: auto-detect or manual focus, 1–2 panels)
+  // 5. Focal Lesion Corte 3D (on-demand: auto-detect or manual focus, 1–2 panels)
   
   
+
+  app.post("/api/generate-3d-muscle-tendon", async (req: express.Request, res: express.Response) => {
+    try {
+      const { reportText, muscleTendonType, laterality, requestedModel, customDirectives } = req.body;
+
+      if (!reportText || !reportText.trim()) {
+        return res.status(400).json({ success: false, error: "Se requiere el texto del informe músculo-tendón." });
+      }
+
+      const ai = getGeminiClient();
+      const model = getModelName(requestedModel || "gemini-3.7-flash");
+
+      const muscleTendonPrompt = `Eres un Radiólogo experto en ecografía músculo-tendinosa (desgarros, MTJ, Aquiles, miembros inferiores) y director de arte médico 3D MSK.
+Tu misión es analizar el informe de ecografía de músculo-tendón adjunto para estructurar la "SUITE MUSCULAR / TENDINOSA 3D & FICHA MÚSCULO-TENDÓN" con máxima fidelidad anatomopatológica.
+
+========================================================================
+INFORMACIÓN DEL ESTUDIO MÚSCULO-TENDÓN:
+========================================================================
+- Tipo de Estudio Sugerido / Seleccionado: "${muscleTendonType || "Detectar automáticamente del informe"}"
+- Lateralidad Solicitada: "${laterality || "Detectar del informe"}"
+- DIRECTIVA CLÍNICA OBLIGATORIA (Scorecard músculo-tendón / radar — MANDATORY, no omitir): "${customDirectives || "Ninguna"}"
+IMPORTANTE: Si hay directiva clínica, DEBE gobernar la anatomía 3D músculo-tendón, vientre/MTJ/tendón, gap/retracción, hematoma, dinámica, lateralidad y la tabla. No inventes desgarro completo, gap, retracción ni tendinopatía ausentes.
+- INFORME ECOGRÁFICO MÚSCULO-TENDÓN:
+"""
+${reportText}
+"""
+
+========================================================================
+REGLA DE SCORECARD / DIRECTIVA OBLIGATORIA:
+========================================================================
+Si "DIRECTIVA CLÍNICA OBLIGATORIA" no es "Ninguna", trátela como contrato clínico vinculante:
+- Los paneles 3D y la tabla DEBEN reflejar esos hallazgos (lado/sitio, estructura, ecopatrón, Doppler, líquido/masa).
+- Prohibido inventar rotura completa, gaps o tendinopatías no respaldadas.
+
+========================================================================
+TOPOGRAFÍA MÚSCULO-TENDINOSA (OBLIGATORIA):
+========================================================================
+${MUSCLE_TENDON_TOPOGRAPHY_RULES_ES}
+
+CRITICO: extrae del informe, para CADA hallazgo, localización/lado + estructura + grosor/gap + ecopatrón + hematoma + dinámica y NO los intercambies.
+Si el informe dice "desgarro isquiotibial derecho en MTJ con flujo hiliar presente" o "Aquiles midportion con tendinopatía", structureOrSite / anatomicalFocus / findingTable / imagePrompt deben decirlo explícitamente.
+
+========================================================================
+TIPOS DE ESTUDIO (clasifica en uno):
+========================================================================
+1. "lesion_muscular": Lesión muscular / desgarro (vientre o fascículo).
+2. "union_miotendinosa": Unión miotendinosa / MTJ.
+3. "aquiles_tendon": Masa testicular / extratesticular.
+4. "general_musculo_tendon": Detectar del informe / estudio mixto de músculo-tendón.
+
+========================================================================
+DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
+========================================================================
+- Panel A (panelRole "overview"): visión regional del compartimento (muslo/pantorrilla/Aquiles) con anclas de lado.
+- Panel B (panelRole "tear_myotendinous"): corte del desgarro / unión miotendinosa dominante SEGÚN EL INFORME (gap, retracción, hematoma, Peetrons).
+- Panel C opcional (panelRole "achilles_tendon" | "tendon_detail"): Aquiles u otro tendón dominante, O detalle tendinoso (midportion/insercional).
+- LATERALIDAD OBLIGATORIA POR PANEL (convención radiografía AP / paciente de frente):
+  - Cada panel DEBE declarar "laterality" exacta (Derecha|Izquierda|Bilateral) = lado ANATÓMICO DEL PACIENTE.
+  - Vista AP/frontal: lado DERECHO del paciente a la IZQUIERDA del cuadro; IZQUIERDO a la DERECHA.
+  - El imagePrompt DEBE empezar con el sitio/lado del paciente y anclas de pantalla.
+  - NUNCA intercambiar lado D↔I ni vientre↔MTJ↔tendón sin respaldo.
+- PROMPT EN INGLÉS para cada panel:
+  "Ultra-realistic 3D medical muscle-tendon anatomy render of [SITE + PATIENT SIDE], accurate muscle belly/MTJ/tendon/Achilles landmarks, exact tear gap hematoma or pathology only when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, strictly NO text, NO numbers, NO arrows, NO letters inside the image. Do NOT mirror anatomy. Obey MUSCLE/TENDON TOPOGRAPHY HARD RULES."
+
+========================================================================
+TABLA Y FICHA CLÍNICA:
+========================================================================
+- findingTable filas con: location, structure, thicknessOrGap, echoPattern, hematomaOrFluid, dynamicFinding, severity, clinicalImpact.
+- Incluye muscleTendonSummary, morphologyNotes, tearTendonStatus (textos clínicos ricos en español) y keyPoints (array 3-6 bullets).
+- tableHeaders col1..col8 FIJOS: LOCALIZACIÓN / LADO | ESTRUCTURA | GROSOR / GAP | ECOPATRÓN | HEMATOMA / LÍQUIDO | DINÁMICA / RETRACCIÓN | SEVERIDAD | IMPACTO
+- Evalúa: localización/lado, vientre/MTJ/tendón, grosor/gap, ecopatrón, hematoma, dinámica/retracción. No inventes patología ausente.
+
+RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
+{
+  "studyTypeCategory": "lesion_muscular" | "union_miotendinosa" | "aquiles_tendon" | "general_musculo_tendon",
+  "territoryLabel": "ECOGRAFÍA MÚSCULO-TENDÓN" | "ECOGRAFÍA DE LESIÓN MUSCULAR" | "ECOGRAFÍA DE UNIÓN MIOTENDINOSA" | "ECOGRAFÍA DE TENDÓN DE AQUILES",
+  "laterality": "Bilateral" | "Derecha" | "Izquierda",
+  "figureTitle": "FIGURA 1. ATLAS 3D MÚSCULO-TENDÓN Y CORRELACIÓN ANATOMOPATOLÓGICA",
+  "tableTitle": "TABLA ECOGRÁFICA MÚSCULO-TENDÓN:",
+  "tableHeaders": {
+    "col1": "LOCALIZACIÓN / LADO",
+    "col2": "ESTRUCTURA",
+    "col3": "GROSOR / GAP",
+    "col4": "ECOPATRÓN",
+    "col5": "HEMATOMA / LÍQUIDO",
+    "col6": "DINÁMICA / RETRACCIÓN",
+    "col7": "SEVERIDAD",
+    "col8": "IMPACTO"
+  },
+  "panels": [
+    {
+      "panelLetter": "A",
+      "panelTitle": "Panel A: Músculo-tendón — vista de conjunto",
+      "structureOrSite": "Compartimento — overview regional",
+      "anatomicalFocus": "Compartimento muscular/tendinoso con anclas de lateralidad...",
+      "laterality": "Bilateral",
+      "panelRole": "overview",
+      "imagePrompt": "Ultra-realistic 3D medical muscle-tendon anatomy render..."
+    },
+    {
+      "panelLetter": "B",
+      "panelTitle": "Panel B: Corte del desgarro / MTJ",
+      "structureOrSite": "Parénquima testicular dominante según informe",
+      "anatomicalFocus": "Detalle de parénquima, mediastino/rete y ecopatrón con topografía exacta...",
+      "laterality": "Derecha",
+      "panelRole": "tear_myotendinous",
+      "imagePrompt": "Ultra-realistic 3D medical muscle tear / MTJ corte render..."
+    }
+  ],
+  "findingTable": [
+    {
+      "location": "Testículo derecho",
+      "structure": "Parénquima testicular",
+      "thicknessOrGap": "4,2 x 2,8 x 2,5 cm (~15 mL)",
+      "echoPattern": "Homogéneo",
+      "hematomaOrFluid": "Flujo hiliar arterial presente",
+      "dynamicFinding": "Sin retracción franca",
+      "severity": "Normal / leve",
+      "clinicalImpact": "Correlacionar con clínica y grado Peetrons"
+    }
+  ],
+  "muscleTendonSummary": "...",
+  "morphologyNotes": "...",
+  "tearTendonStatus": "...",
+  "keyPoints": ["...", "..."],
+  "synthesisTitle": "SÍNTESIS MORFOLÓGICA MÚSCULO-TENDINOSA:",
+  "morphologicalSynthesis": "El estudio de músculo-tendón evidencia..."
+}`;
+
+      const planResponse = await ai.models.generateContent({
+        model: model,
+        contents: [{ text: muscleTendonPrompt }],
+        config: { responseMimeType: "application/json" }
+      });
+
+      let planJson: any = {};
+      try {
+        planJson = JSON.parse(planResponse.text || "{}");
+      } catch (parseErr) {
+        console.error("Error parseando plan JSON Músculo-tendón 3D:", parseErr);
+        planJson = {
+          studyTypeCategory: muscleTendonType || "general_musculo_tendon",
+          territoryLabel: "ECOGRAFÍA MÚSCULO-TENDÓN",
+          laterality: laterality || "Bilateral",
+          figureTitle: "FIGURA 1. ATLAS 3D MÚSCULO-TENDÓN Y CORRELACIÓN ANATOMOPATOLÓGICA",
+          tableTitle: "TABLA ECOGRÁFICA MÚSCULO-TENDÓN:",
+          tableHeaders: {
+            col1: "LADO / SITIO",
+            col2: "ESTRUCTURA",
+            col3: "TAMAÑO / VOLUMEN",
+            col4: "ECOPATRÓN",
+            col5: "DOPPLER / VASCULAR",
+            col6: "LÍQUIDO / MASA",
+            col7: "SEVERIDAD",
+            col8: "IMPACTO"
+          },
+          panels: [
+            {
+              panelLetter: "A",
+              panelTitle: "Panel A: Anatomía músculo-tendinosa — visión de conjunto",
+              structureOrSite: "Compartimento — overview regional",
+              anatomicalFocus: "Reconstrucción músculo-tendinosa: ambos testículos, bolsa y anclas de lateralidad.",
+              laterality: laterality || "Bilateral",
+              panelRole: "overview",
+              imagePrompt: "Ultra-realistic 3D medical muscle-tendon anatomy render showing both testes, scrotal sac and clear patient right/left landmarks, cinema 4D octane render, soft surgical studio lighting, clean background, no text."
+            },
+            {
+              panelLetter: "B",
+              panelTitle: "Panel B: Corte del desgarro / MTJ — según informe",
+              structureOrSite: "Parénquima testicular dominante según informe",
+              anatomicalFocus: "Corte macro del parénquima con mediastino/rete sin intercambiar lados.",
+              laterality: laterality || "Bilateral",
+              panelRole: "tear_myotendinous",
+              imagePrompt: "Ultra-realistic 3D medical muscle tear / MTJ corte render with accurate muscle belly / MTJ landmarks and pathology only when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, no text."
+            }
+          ],
+          findingTable: [],
+          synthesisTitle: "SÍNTESIS MORFOLÓGICA MÚSCULO-TENDINOSA:",
+          morphologicalSynthesis: "La correlación anatomopatológica músculo-tendinosa se basa en los hallazgos descritos en el informe."
+        };
+      }
+
+      const muscleTendonPanelsWithImages = await Promise.all(
+        (planJson.panels || []).map(async (panel: any, idx: number) => {
+          let promptToUse = panel.imagePrompt || `Ultra-realistic 3D medical scrotal render of ${panel.structureOrSite || panel.panelTitle}, octane render, no text.`;
+          if (customDirectives && customDirectives.trim()) {
+            promptToUse = `${promptToUse} [MANDATORY CLINICAL DIRECTIVE: ${customDirectives.trim()}].`;
+          }
+          {
+            const screenMap = buildScreenLateralityConstraint(panel.laterality || planJson.laterality || laterality, "AP / coronal");
+            if (panel.laterality && panel.laterality !== "auto") {
+              promptToUse = `[MANDATORY PATIENT LATERALITY: ${panel.laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${MUSCLE_TENDON_TOPOGRAPHY_HARD_RULES} ${screenMap} ${promptToUse}`;
+            } else {
+              promptToUse = `${LATERALITY_HARD_RULES} ${MUSCLE_TENDON_TOPOGRAPHY_HARD_RULES} ${screenMap} ${promptToUse}`;
+            }
+          }
+
+          const defaultRole = idx === 0 ? "overview" : idx === 1 ? "tear_myotendinous" : "tendon_detail";
+          try {
+            const imageUrl = await generateMedicalImage(ai, promptToUse);
+            return {
+              id: `muscle-tendon-panel-${idx}-${Date.now()}`,
+              panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
+              panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
+              structureOrSite: panel.structureOrSite || panel.panelTitle || "",
+              anatomicalFocus: panel.anatomicalFocus || "Evaluación anatómica de músculo-tendón",
+              laterality: panel.laterality || planJson.laterality || laterality || "",
+              imageUrl: imageUrl,
+              promptUsed: promptToUse,
+              isCustomFlipped: false,
+              panelRole: panel.panelRole || defaultRole
+            };
+          } catch (imgErr) {
+            console.error(`Error generando imagen para panel de músculo-tendón ${panel.panelLetter}:`, imgErr);
+            return {
+              id: `muscle-tendon-panel-${idx}-${Date.now()}`,
+              panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
+              panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
+              structureOrSite: panel.structureOrSite || panel.panelTitle || "",
+              anatomicalFocus: panel.anatomicalFocus || "Evaluación anatómica de músculo-tendón",
+              laterality: panel.laterality || planJson.laterality || laterality || "",
+              imageUrl: "",
+              promptUsed: promptToUse,
+              isCustomFlipped: false,
+              panelRole: panel.panelRole || defaultRole
+            };
+          }
+        })
+      );
+
+      const forcedHeaders = {
+        col1: "LADO / SITIO",
+        col2: "ESTRUCTURA",
+        col3: "TAMAÑO / VOLUMEN",
+        col4: "ECOPATRÓN",
+        col5: "DOPPLER / VASCULAR",
+        col6: "LÍQUIDO / MASA",
+        col7: "SEVERIDAD",
+        col8: "IMPACTO"
+      };
+
+      const finalMuscleTendonData = {
+        studyTypeCategory: planJson.studyTypeCategory || muscleTendonType || "general_musculo_tendon",
+        territoryLabel: planJson.territoryLabel || "ECOGRAFÍA MÚSCULO-TENDÓN",
+        laterality: planJson.laterality || laterality || "Bilateral",
+        figureTitle: planJson.figureTitle || "FIGURA 1. ATLAS 3D MÚSCULO-TENDÓN Y CORRELACIÓN ANATOMOPATOLÓGICA",
+        tableTitle: planJson.tableTitle || "TABLA ECOGRÁFICA MÚSCULO-TENDÓN:",
+        tableHeaders: forcedHeaders,
+        panels: muscleTendonPanelsWithImages,
+        findingTable: (planJson.findingTable || planJson.lesionTable || planJson.noduleTable || []).map((row: any) => ({
+          location: row.location || row.location || row.side || "",
+          structure: row.structure || row.tendon || row.composition || "",
+          thicknessOrGap: row.thicknessOrGap || row.sizeOrGap || row.sizeOrThickness || row.size || row.volume || "",
+          echoPattern: row.echoPattern || row.wallLayers || row.echogenicity || "",
+          hematomaOrFluid: row.hematomaOrFluid || row.content || row.doppler || row.vascular || "",
+          dynamicFinding: row.dynamicFinding || row.reducibilityOrDynamic || row.fluid || row.mass || "",
+          severity: row.severity || row.grade || "",
+          clinicalImpact: row.clinicalImpact || ""
+        })),
+        muscleTendonSummary: planJson.muscleTendonSummary || planJson.wallSummary || planJson.abdomenSummary || "",
+        morphologyNotes: planJson.morphologyNotes || "",
+        tearTendonStatus: planJson.tearTendonStatus || planJson.wallLayersStatus || "",
+        keyPoints: Array.isArray(planJson.keyPoints) ? planJson.keyPoints : [],
+        synthesisTitle: planJson.synthesisTitle || "SÍNTESIS MORFOLÓGICA MÚSCULO-TENDINOSA:",
+        morphologicalSynthesis: planJson.morphologicalSynthesis || ""
+      };
+
+      res.json({
+        success: true,
+        data: finalMuscleTendonData
+      });
+
+    } catch (error: any) {
+      console.error("Error en /api/generate-3d-muscle-tendon:", error);
+      res.status(500).json({ success: false, error: handleGeminiError(error) });
+    }
+  });
+
+  app.post("/api/regenerate-3d-muscle-tendon-panel", async (req: express.Request, res: express.Response) => {
+    try {
+      const { reportText, muscleTendonType, panel, laterality, userDirective, requestedModel, customDirectives } = req.body;
+
+      if (!panel) {
+        return res.status(400).json({ success: false, error: "Se requiere el panel de músculo-tendón a regenerar." });
+      }
+
+      const ai = getGeminiClient();
+      const model = getModelName(requestedModel || "gemini-3.7-flash");
+
+      const refinePrompt = `Eres un Radiólogo experto en ecografía músculo-tendinosa y Director de Arte Médico 3D de músculo-tendón.
+Diseña un prompt en inglés superdetallado para re-generar una única imagen 3D fotorrealista correspondiente al PANEL ${panel.panelLetter}.
+
+DATOS DEL CASO:
+- Territorio: "${muscleTendonType || "Ecografía de músculo-tendón"}"
+- Sitio / estructura: "${panel.structureOrSite || panel.panelTitle || ""}"
+- Foco actual: "${panel.anatomicalFocus || ""}"
+- Rol del panel: "${panel.panelRole || ""}"
+- Lateralidad requerida: "${laterality || panel.laterality || ""}"
+- Instrucción / Corrección del médico: "${userDirective || "Mejorar precisión anatomopatológica músculo-tendinosa"}"
+- DIRECTIVA CLÍNICA OBLIGATORIA (Scorecard / radar / médico): "${customDirectives || "Ninguna"}"
+- Contexto del informe: """${(reportText || "").slice(0, 800)}"""
+
+TOPOGRAFÍA MÚSCULO-TENDINOSA OBLIGATORIA:
+${MUSCLE_TENDON_TOPOGRAPHY_RULES_ES}
+Si structureOrSite / foco / instrucción / informe mencionan un sitio músculo-tendinosa, conserva EXACTAS las coordenadas
+(lado, testículo/epidídimo/cordón, Doppler). NUNCA intercambiar testículo derecho↔izquierdo ni testículo↔epidídimo sin respaldo.
+
+REGLAS DE ESTILO:
+- Ultra-realistic 3D medical scrotal macro render, cinema 4D octane, accurate muscle belly/MTJ/tendon/Achilles landmarks.
+- Exact named site, structure and laterality in the English imagePrompt.
+- Exact morphology only if indicated; soft surgical studio lighting; pure clean background.
+- STRICTLY NO text, NO numbers, NO letters, NO arrows inside the image.
+- Respect patient laterality (AP: patient RIGHT on viewer's LEFT).
+
+RESPONDE EN JSON:
+{
+  "panelTitle": "Título actualizado o confirmado para el panel",
+  "structureOrSite": "Nombre exacto (p.ej. Testículo derecho / Epidídimo izquierdo)",
+  "anatomicalFocus": "Foco anatomopatológico de 1 a 2 líneas con lado, estructura y Doppler",
+  "imagePrompt": "Detailed English image generation prompt with explicit organ and laterality..."
+}`;
+
+      const refineResponse = await ai.models.generateContent({
+        model: model,
+        contents: [{ text: refinePrompt }],
+        config: { responseMimeType: "application/json" }
+      });
+
+      let refineJson: any = {};
+      try {
+        refineJson = JSON.parse(refineResponse.text || "{}");
+      } catch (e) {
+        refineJson = {
+          panelTitle: panel.panelTitle,
+          structureOrSite: panel.structureOrSite || panel.panelTitle,
+          anatomicalFocus: panel.anatomicalFocus,
+          imagePrompt: `Ultra-realistic 3D medical scrotal render of ${panel.structureOrSite || panel.panelTitle}, octane render, studio lighting, no text.`
+        };
+      }
+
+      let finalPrompt = refineJson.imagePrompt || panel.promptUsed || `Ultra-realistic 3D medical scrotal render of ${panel.panelTitle}, cinema 4D octane, no text.`;
+      if (customDirectives && String(customDirectives).trim()) {
+        finalPrompt = `${finalPrompt} [MANDATORY CLINICAL DIRECTIVE: ${String(customDirectives).trim()}].`;
+      }
+      if (userDirective && userDirective.trim()) {
+        finalPrompt = `${finalPrompt} [MANDATORY SURGICAL CORRECTION: ${userDirective.trim()}].`;
+      }
+      if (laterality && laterality !== "auto") {
+        const screenMap = buildScreenLateralityConstraint(laterality, "AP / coronal");
+        finalPrompt = `[MANDATORY PATIENT LATERALITY: ${laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${MUSCLE_TENDON_TOPOGRAPHY_HARD_RULES} ${screenMap} ${finalPrompt}`;
+      } else {
+        const screenMap = buildScreenLateralityConstraint(laterality, "AP / coronal");
+        finalPrompt = `${LATERALITY_HARD_RULES} ${MUSCLE_TENDON_TOPOGRAPHY_HARD_RULES} ${screenMap} ${finalPrompt}`;
+      }
+
+      const imageUrl = await generateMedicalImage(ai, finalPrompt);
+
+      const updatedPanel = {
+        ...panel,
+        panelTitle: refineJson.panelTitle || panel.panelTitle,
+        structureOrSite: refineJson.structureOrSite || panel.structureOrSite,
+        anatomicalFocus: refineJson.anatomicalFocus || panel.anatomicalFocus,
+        laterality: laterality || panel.laterality,
+        imageUrl: imageUrl,
+        promptUsed: finalPrompt,
+        isCustomFlipped: false
+      };
+
+      res.json({
+        success: true,
+        panel: updatedPanel
+      });
+
+    } catch (error: any) {
+      console.error("Error en /api/regenerate-3d-muscle-tendon-panel:", error);
+      res.status(500).json({ success: false, error: handleGeminiError(error) });
+    }
+  });
+
+
+
+  // 5. Focal Lesion Corte 3D (on-demand: auto-detect or manual focus, 1–2 panels)
+  
+  
+
 
   app.post("/api/generate-3d-thyroid", async (req: express.Request, res: express.Response) => {
     try {
@@ -3412,7 +3821,7 @@ Redacta un texto integrador de 3 a 5 líneas con las conclusiones del estudio, c
 
 
 IMPORTANTE TIROIDES / TI-RADS:
-- Genera 2 o 3 paneles: (A) glándula tiroides anterior con ambos lóbulos e istmo, (B) nódulo dominante en cutaway macro, (C opcional) mapa ganglionar cervical.
+- Genera 2 o 3 paneles: (A) glándula tiroides anterior con ambos lóbulos e istmo, (B) nódulo dominante en corte macro, (C opcional) mapa ganglionar cervical.
 - Cada panel incluye panelRole: "gland" | "nodule" | "nodes", lobeOrNode, anatomicalFocus detallado (3-5 líneas clínicas).
 - noduleTable filas con: location, size, composition, echogenicity, margins, echogenicFoci, tiradsCategory, clinicalImpact.
 - Incluye glandSummary, morphologyNotes, nodalStatus (textos clínicos ricos en español) y keyPoints (array 3-6 bullets).
@@ -3710,7 +4119,7 @@ RESPONDE EN JSON:
     }
   });
 
-  // 5. Focal Lesion Cutaway 3D (on-demand: auto-detect or manual focus, 1–2 panels)
+  // 5. Focal Lesion Corte 3D (on-demand: auto-detect or manual focus, 1–2 panels)
   
   
   // BREAST 3D SUITE
@@ -3785,7 +4194,7 @@ Redacta un texto integrador de 3 a 5 líneas con las conclusiones del estudio, c
 
 
 IMPORTANTE MAMA / BI-RADS:
-- Genera 2 o 3 paneles: (A) glándula mama anterior con ambos lóbulos e istmo, (B) nódulo dominante en cutaway macro, (C opcional) mapa ganglionar cervical.
+- Genera 2 o 3 paneles: (A) glándula mama anterior con ambos lóbulos e istmo, (B) nódulo dominante en corte macro, (C opcional) mapa ganglionar cervical.
 - Cada panel incluye panelRole: "gland" | "nodule" | "nodes", clockPositionOrSite, anatomicalFocus detallado (3-5 líneas clínicas).
 - noduleTable filas con: location, size, composition, echogenicity, margins, echogenicFoci, tiradsCategory, clinicalImpact.
 - Incluye breastSummary, morphologyNotes, axillaryStatus (textos clínicos ricos en español) y keyPoints (array 3-6 bullets).
@@ -3803,7 +4212,7 @@ paneles con "panelRole" y "clockPositionOrSite".
 
 
 REGLAS ESPECÍFICAS MAMA / BI-RADS:
-- 2–3 paneles: (A) ambas mamas vista frontal con pezones y cuadrantes/reloj; (B) cutaway macro del nódulo dominante; (C opcional) axila ipsilateral.
+- 2–3 paneles: (A) ambas mamas vista frontal con pezones y cuadrantes/reloj; (B) corte macro del nódulo dominante; (C opcional) axila ipsilateral.
 - Contrato de reloj OBLIGATORIO: manos idénticas en ambas mamas; las 3 = derecha del pezón en la imagen (derecha del observador); las 9 = izquierda del pezón. Nunca invertir por estética.
 - laterality por panel = lado anatómico del paciente (Derecha|Izquierda|Bilateral).
 - lesionTable filas con: location (reloj + distancia al pezón), composition (quística/sólida/mixta), size (mm/cm), shape, margins, echogenicity, orientation, vascularity, biradsCategory, clinicalImpact.
@@ -3842,7 +4251,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
     },
     {
       "panelLetter": "B",
-      "panelTitle": "Panel B: Cutaway del nódulo dominante",
+      "panelTitle": "Panel B: Corte del nódulo dominante",
       "clockPositionOrSite": "Mama derecha, 3h",
       "anatomicalFocus": "Lesión dominante con márgenes y composición...",
       "laterality": "Derecha",
@@ -4186,7 +4595,7 @@ TIPOS DE ESTUDIO (clasifica en uno):
 DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
 ========================================================================
 - Panel A (panelRole "overview"): visión anatómica de ambos hombros o del hombro afectado (acromion, clavícula distal, cabeza humeral, deltoides, trayectoria del manguito).
-- Panel B (panelRole "cuff"): cutaway macro de la patología dominante del manguito (usualmente supraespinoso: tendinosis, rotura parcial bursal/articular/intrasustancia, o completa con gap/retracción).
+- Panel B (panelRole "cuff"): corte macro de la patología dominante del manguito (usualmente supraespinoso: tendinosis, rotura parcial bursal/articular/intrasustancia, o completa con gap/retracción).
 - Panel C opcional (panelRole "biceps_bursae" | "ac_joint"): surco bicipital/TCLB + bursa subacromiodeltoidea, O articulación acromioclavicular según el hallazgo dominante.
 - LATERALIDAD OBLIGATORIA POR PANEL (convención radiografía AP / paciente de frente):
   - Cada panel DEBE declarar "laterality" exacta (Derecha|Izquierda|Bilateral) = lado ANATÓMICO DEL PACIENTE.
@@ -4234,7 +4643,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
     },
     {
       "panelLetter": "B",
-      "panelTitle": "Panel B: Cutaway del supraespinoso — patología dominante",
+      "panelTitle": "Panel B: Corte del supraespinoso — patología dominante",
       "tendonOrSite": "Supraespinoso",
       "anatomicalFocus": "Detalle de tendón supraespinoso con patrón ecográfico correlacionado...",
       "laterality": "Derecha",
@@ -4301,7 +4710,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
             },
             {
               panelLetter: "B",
-              panelTitle: "Panel B: Cutaway del manguito — supraespinoso",
+              panelTitle: "Panel B: Corte del manguito — supraespinoso",
               tendonOrSite: "Supraespinoso",
               anatomicalFocus: "Corte macro del tendón supraespinoso según hallazgos del informe.",
               laterality: laterality || "Derecha",
@@ -4562,7 +4971,7 @@ TIPOS DE ESTUDIO (clasifica en uno):
 DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
 ========================================================================
 - Panel A (panelRole "overview"): visión anatómica de ambas rodillas o de la rodilla afectado (fémur distal, platillos tibiales, rótula, meniscos, LCM/LCL y mecanismo extensor).
-- Panel B (panelRole "meniscus_ligament"): cutaway macro de la patología meniscal/ligamentosa dominante SEGÚN EL INFORME (respetar medial=interno/tibial vs lateral=externo/peroné, y cuerno anterior vs cuerpo vs cuerno posterior; NUNCA asumir menisco medial por defecto si el informe dice externo/lateral).
+- Panel B (panelRole "meniscus_ligament"): corte macro de la patología meniscal/ligamentosa dominante SEGÚN EL INFORME (respetar medial=interno/tibial vs lateral=externo/peroné, y cuerno anterior vs cuerpo vs cuerno posterior; NUNCA asumir menisco medial por defecto si el informe dice externo/lateral).
 - Panel C opcional (panelRole "extensor_effusion" | "baker_cartilage"): surco bicipital/ligamento patelar + recesos articulares / hidrartrosis, O quiste de Baker / cartílago femorotibial según el hallazgo dominante.
 - LATERALIDAD OBLIGATORIA POR PANEL (convención radiografía AP / paciente de frente):
   - Cada panel DEBE declarar "laterality" exacta (Derecha|Izquierda|Bilateral) = lado ANATÓMICO DEL PACIENTE.
@@ -4610,7 +5019,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
     },
     {
       "panelLetter": "B",
-      "panelTitle": "Panel B: Cutaway del menisco medial — patología dominante",
+      "panelTitle": "Panel B: Corte del menisco medial — patología dominante",
       "structureOrSite": "Menisco medial",
       "anatomicalFocus": "Detalle del menisco medial y surco coronario con patrón ecográfico correlacionado...",
       "laterality": "Derecha",
@@ -4677,7 +5086,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
             },
             {
               panelLetter: "B",
-              panelTitle: "Panel B: Cutaway meniscal — según informe (medial/lateral + A/P)",
+              panelTitle: "Panel B: Corte meniscal — según informe (medial/lateral + A/P)",
               structureOrSite: "Menisco (medial=tibial / lateral=peroné) — cuerno según informe",
               anatomicalFocus: "Corte macro del menisco indicado en el informe (interno/externo y cuerno anterior/posterior), sin intercambiar lados.",
               laterality: laterality || "Derecha",
@@ -4946,7 +5355,7 @@ TIPOS DE ESTUDIO (clasifica en uno):
 DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
 ========================================================================
 - Panel A (panelRole "overview"): visión anatómica del tobillo afectado (tibia distal, peroné, astrágalo, calcáneo, complejos ligamentarios y Aquiles).
-- Panel B (panelRole "ligaments_lateral_medial"): cutaway macro de la patología ligamentosa dominante SEGÚN EL INFORME (respetar lateral=fibular vs medial=deltoides; NUNCA asumir deltoides por defecto si el informe dice LPAA/ATFL).
+- Panel B (panelRole "ligaments_lateral_medial"): corte macro de la patología ligamentosa dominante SEGÚN EL INFORME (respetar lateral=fibular vs medial=deltoides; NUNCA asumir deltoides por defecto si el informe dice LPAA/ATFL).
 - Panel C opcional (panelRole "achilles_tendon" | "joint_effusion"): Aquiles midportion/insercional + bursa retrocalcánea, O derrame articular / tendones peroneos / sindesmosis según el hallazgo dominante.
 - LATERALIDAD OBLIGATORIA POR PANEL (convención radiografía AP / paciente de frente):
   - Cada panel DEBE declarar "laterality" exacta (Derecha|Izquierda|Bilateral) = lado ANATÓMICO DEL PACIENTE.
@@ -4994,7 +5403,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
     },
     {
       "panelLetter": "B",
-      "panelTitle": "Panel B: Cutaway del complejo lateral — LPAA/ATFL",
+      "panelTitle": "Panel B: Corte del complejo lateral — LPAA/ATFL",
       "structureOrSite": "LPAA / ATFL (lateral, peroné)",
       "anatomicalFocus": "Detalle del LPAA/ATFL en el complejo lateral fibular con patrón ecográfico correlacionado...",
       "laterality": "Derecha",
@@ -5061,7 +5470,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
             },
             {
               panelLetter: "B",
-              panelTitle: "Panel B: Cutaway ligamentoso — según informe (lateral/medial)",
+              panelTitle: "Panel B: Corte ligamentoso — según informe (lateral/medial)",
               structureOrSite: "Complejo lateral (peroné) o deltoides (tibial) — según informe",
               anatomicalFocus: "Corte macro del ligamento indicado en el informe (LPAA/ATFL, LPC/CFL o deltoides), sin intercambiar lados.",
               laterality: laterality || "Derecha",
@@ -5274,7 +5683,7 @@ RESPONDE EN JSON:
   });
 
 
-  // 5. Focal Lesion Cutaway 3D (on-demand: auto-detect or manual focus, 1–2 panels)
+  // 5. Focal Lesion Corte 3D (on-demand: auto-detect or manual focus, 1–2 panels)
   
   
 app.post("/api/generate-focal-lesion-3d", async (req: express.Request, res: express.Response) => {
@@ -5325,8 +5734,9 @@ TAREA:
 ========================================================================
 1. Define la lesión objetivo (label, sitio exacto, morfología, tamaño si consta, relaciones).
 2. Diseña ${wantMacro ? "2 paneles" : "1 panel"}:
-   - Panel A = CONTEXTO REGIONAL con la lesión visible y anclada (cutaway anatómico).
-   ${wantMacro ? "- Panel B = MACRO / ZOOM cutaway de la lesión (detalle morfológico fiel; conserva hitos de orientación para no perder lateralidad)." : ""}
+   - Panel A = CONTEXTO REGIONAL con la lesión visible y anclada (corte anatómico).
+   - En panelTitle y textos clínicos del anexo usa siempre «Corte» (nunca Cutaway/CUTAWAY).
+   ${wantMacro ? "- Panel B = MACRO / ZOOM corte de la lesión (detalle morfológico fiel; conserva hitos de orientación para no perder lateralidad)." : ""}
 3. Cada panel DEBE incluir spatialContract (view, laterality, imageLeftStructure, imageRightStructure, superiorStructure/inferiorStructure, mustShowLandmarks, pathologySite, pathologyAppearance, doNotInvent).
 3b. ${LATERALITY_PLAN_RULES_ES}
 3b2. ${BREAST_CLOCK_PLAN_RULES_ES}

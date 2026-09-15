@@ -1,8 +1,10 @@
 import { FocalLesion3DData } from "../types";
 import { sanitizeFocalClinicalProse } from "./sanitizeFocalClinicalProse";
+import { pdfCutawayToCorte } from "./pdfCutawayToCorte";
+import { sanitizePdfText } from "./sanitizePdfText";
 
 /**
- * Annex for Focal Lesion Cutaway 3D — always ONE page.
+ * Annex for Focal Lesion Corte 3D — always ONE page.
  * Images on top; clinical boxes stacked full-width underneath (one under another).
  */
 export function renderFocalLesion3DAnnexToPDF(
@@ -26,19 +28,20 @@ export function renderFocalLesion3DAnnexToPDF(
   const pageBottom = pageHeight - bottomMargin;
 
   doc.addPage();
-  let y = 16 * factor;
+  // Start below the global running header line drawn at y=14 on pages 2+
+  let y = 22 * factor;
 
   // --- Header ---
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12 * factor);
   doc.setTextColor(15, 23, 42);
   doc.text("ANEXO: CORTE FOCAL 3D DE LA LESIÓN", marginX, y);
-  y += 3.5 * factor;
+  y += 4.5 * factor;
 
   doc.setDrawColor(13, 148, 136);
   doc.setLineWidth(0.7);
   doc.line(marginX, y, pageWidth - marginX, y);
-  y += 4.2 * factor;
+  y += 5.5 * factor;
 
   const figTitle =
     data.figureTitle ||
@@ -213,14 +216,14 @@ export function renderFocalLesion3DAnnexToPDF(
       doc.setFont("helvetica", "bold");
       doc.setFontSize(7.6 * factor);
       const titleLines = doc
-        .splitTextToSize(`${p.panelLetter}. ${p.panelTitle || ""}`, panelW - 4 * factor)
+        .splitTextToSize(pdfCutawayToCorte(`${p.panelLetter}. ${p.panelTitle || ""}`), panelW - 4 * factor)
         .slice(0, 2);
       let h = captionGap + titleLines.length * 2.8 * factor;
       if (p.anatomicalFocus?.trim()) {
         doc.setFont("helvetica", "normal");
         doc.setFontSize(6.8 * factor);
         const desc = doc
-          .splitTextToSize(p.anatomicalFocus.trim(), panelW - 4 * factor)
+          .splitTextToSize(pdfCutawayToCorte(p.anatomicalFocus.trim()), panelW - 4 * factor)
           .slice(0, 2);
         h += 0.4 * factor + desc.length * 2.45 * factor;
       }
@@ -301,7 +304,7 @@ export function renderFocalLesion3DAnnexToPDF(
     doc.setFontSize(7.6 * factor);
     doc.setTextColor(15, 23, 42);
     const titleLines = doc
-      .splitTextToSize(`${p.panelLetter}. ${p.panelTitle || ""}`, panelWidth - 4 * factor)
+      .splitTextToSize(pdfCutawayToCorte(`${p.panelLetter}. ${p.panelTitle || ""}`), panelWidth - 4 * factor)
       .slice(0, 2);
     titleLines.forEach((line: string) => {
       doc.text(line, imgX + 0.4, textY);
@@ -313,7 +316,7 @@ export function renderFocalLesion3DAnnexToPDF(
       doc.setFontSize(6.8 * factor);
       doc.setTextColor(71, 85, 105);
       const desc = doc
-        .splitTextToSize(p.anatomicalFocus.trim(), panelWidth - 4 * factor)
+        .splitTextToSize(pdfCutawayToCorte(p.anatomicalFocus.trim()), panelWidth - 4 * factor)
         .slice(0, 2);
       desc.forEach((line: string) => {
         doc.text(line, imgX + 0.4, textY);

@@ -1,19 +1,7 @@
 import { DifferentialTreeData } from "../types";
 import { differentialStatusLabel } from "../lib/differentialTree";
 
-function sanitizePdfText(input: string): string {
-  return (input || "")
-    .replace(/≥/g, ">=")
-    .replace(/≤/g, "<=")
-    .replace(/–|—/g, "-")
-    .replace(/[^\x00-\x7F]/g, (ch) => {
-      try {
-        return ch.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-      } catch {
-        return "?";
-      }
-    });
-}
+import { sanitizePdfText } from "./sanitizePdfText";
 
 function statusFill(status: string): [number, number, number] {
   if (status === "leading") return [16, 185, 129];

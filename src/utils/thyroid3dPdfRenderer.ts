@@ -1,5 +1,7 @@
 import jsPDF from "jspdf";
 import { Thyroid3DData, Thyroid3DPanel, ThyroidNoduleRow } from "../types";
+import { pdfCutawayToCorte } from "./pdfCutawayToCorte";
+import { sanitizePdfText } from "./sanitizePdfText";
 
 /**
  * Renders an exclusive, two-page "ANEXO: SUITE TIROIDES 3D & FICHA TI-RADS Y CORRELACIÓN 3D" into the provided jsPDF document.
@@ -85,14 +87,14 @@ export async function renderThyroid3DPageToPdf(
     const measureCaptionH = (p: Thyroid3DPanel): number => {
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8 * factor);
-      const titleLines = doc.splitTextToSize(p.panelTitle || `Panel ${p.panelLetter}`, cardWidth - 6);
+      const titleLines = doc.splitTextToSize(pdfCutawayToCorte(p.panelTitle || `Panel ${p.panelLetter}`), cardWidth - 6);
       let h = 3.2 * factor; // gap under image
       h += titleLines.length * 3.4 * factor;
-      if (p.anatomicalFocus && String(p.anatomicalFocus).trim()) {
+      if (p.anatomicalFocus && pdfCutawayToCorte(String(p.anatomicalFocus).trim())) {
         h += 1.0 * factor; // gap title → description
         doc.setFont("helvetica", "normal");
         doc.setFontSize(7.2 * factor);
-        const descLines = doc.splitTextToSize(String(p.anatomicalFocus).trim(), cardWidth - 6);
+        const descLines = doc.splitTextToSize(pdfCutawayToCorte(String(p.anatomicalFocus).trim()), cardWidth - 6);
         h += descLines.length * 3.05 * factor;
       }
       h += 2.2 * factor; // bottom padding inside card border
@@ -151,17 +153,17 @@ export async function renderThyroid3DPageToPdf(
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8 * factor);
       doc.setTextColor(15, 23, 42); // slate-900
-      const titleLines = doc.splitTextToSize(p.panelTitle || `Panel ${p.panelLetter}`, cardWidth - 6);
+      const titleLines = doc.splitTextToSize(pdfCutawayToCorte(p.panelTitle || `Panel ${p.panelLetter}`), cardWidth - 6);
       doc.text(titleLines, cardX + 3, textY);
       textY += titleLines.length * 3.4 * factor;
 
       // Anatomical Focus / Description
-      if (p.anatomicalFocus && String(p.anatomicalFocus).trim()) {
+      if (p.anatomicalFocus && pdfCutawayToCorte(String(p.anatomicalFocus).trim())) {
         textY += 1.0 * factor;
         doc.setFont("helvetica", "normal");
         doc.setFontSize(7.2 * factor);
         doc.setTextColor(71, 85, 105); // slate-600
-        const descLines = doc.splitTextToSize(String(p.anatomicalFocus).trim(), cardWidth - 6);
+        const descLines = doc.splitTextToSize(pdfCutawayToCorte(String(p.anatomicalFocus).trim()), cardWidth - 6);
         doc.text(descLines, cardX + 3, textY);
       }
     }
@@ -171,15 +173,15 @@ export async function renderThyroid3DPageToPdf(
 
   // 2b. RICH CLINICAL DOSSIER (fills page with substantial info under the figure concept)
   const dossierBlocks: Array<{ title: string; text: string; color: [number, number, number] }> = [
-    { title: "RESUMEN GLANDULAR", text: String(thyroidData.glandSummary || "").trim(), color: [13, 148, 136] },
-    { title: "MORFOLOGÍA / NÓDULO DOMINANTE", text: String(thyroidData.morphologyNotes || "").trim(), color: [8, 145, 178] },
-    { title: "GANGLIOS CERVICALES", text: String(thyroidData.nodalStatus || "").trim(), color: [217, 119, 6] },
+    { title: "RESUMEN GLANDULAR", text: pdfCutawayToCorte(String(thyroidData.glandSummary || "").trim()), color: [13, 148, 136] },
+    { title: "MORFOLOGÍA / NÓDULO DOMINANTE", text: pdfCutawayToCorte(String(thyroidData.morphologyNotes || "").trim()), color: [8, 145, 178] },
+    { title: "GANGLIOS CERVICALES", text: pdfCutawayToCorte(String(thyroidData.nodalStatus || "").trim()), color: [217, 119, 6] },
   ];
   const keyPoints = Array.isArray(thyroidData.keyPoints) ? thyroidData.keyPoints.filter(Boolean) : [];
   if (keyPoints.length) {
     dossierBlocks.push({
       title: "PUNTOS CLAVE",
-      text: keyPoints.map((k) => `• ${k}`).join("\n"),
+      text: pdfCutawayToCorte(keyPoints.map((k) => `• ${k}`).join("\n")),
       color: [5, 150, 105],
     });
   }
@@ -336,12 +338,12 @@ export async function renderThyroid3DPageToPdf(
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10 * factor);
 
-    const c1Lines = doc.splitTextToSize(row.location || "", colWidths[0] - 3);
-    const c2Lines = doc.splitTextToSize(row.composition || "", colWidths[1] - 3);
-    const c3Lines = doc.splitTextToSize(row.size || "0%", colWidths[2] - 3);
-    const c4Lines = doc.splitTextToSize(row.echogenicity || "", colWidths[3] - 3);
-    const c5Lines = doc.splitTextToSize(row.margins || "N/A", colWidths[4] - 3);
-    const c6Lines = doc.splitTextToSize(row.tiradsCategory ? `${row.tiradsCategory} — ${row.clinicalImpact || ""}` : (row.clinicalImpact || "") || "", colWidths[5] - 3);
+    const c1Lines = doc.splitTextToSize(sanitizePdfText(row.location || ""), colWidths[0] - 3);
+    const c2Lines = doc.splitTextToSize(sanitizePdfText(row.composition || ""), colWidths[1] - 3);
+    const c3Lines = doc.splitTextToSize(sanitizePdfText(row.size || "0%"), colWidths[2] - 3);
+    const c4Lines = doc.splitTextToSize(sanitizePdfText(row.echogenicity || ""), colWidths[3] - 3);
+    const c5Lines = doc.splitTextToSize(sanitizePdfText(row.margins || "N/A"), colWidths[4] - 3);
+    const c6Lines = doc.splitTextToSize(sanitizePdfText(row.tiradsCategory) ? `${row.tiradsCategory} — ${row.clinicalImpact || ""}` : (row.clinicalImpact || "") || "", colWidths[5] - 3);
 
     const maxLines = Math.max(c1Lines.length, c2Lines.length, c3Lines.length, c4Lines.length, c5Lines.length, c6Lines.length, 1);
     const rowH = Math.max(5.8 * factor, (maxLines * 3.3 + 2.4) * factor);
@@ -442,7 +444,7 @@ export async function renderThyroid3DPageToPdf(
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9.0 * factor);
     const synthLineH = 3.8 * factor;
-    const synthLines = doc.splitTextToSize(synthText.trim(), contentWidth - 12);
+    const synthLines = doc.splitTextToSize(sanitizePdfText(synthText.trim()), contentWidth - 12);
     const titleBlockH = 9.5 * factor;
     const bottomPad = 3.5 * factor;
 

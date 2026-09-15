@@ -1,5 +1,7 @@
 import jsPDF from "jspdf";
 import { Breast3DData, Breast3DPanel, BreastLesionRow } from "../types";
+import { pdfCutawayToCorte } from "./pdfCutawayToCorte";
+import { sanitizePdfText } from "./sanitizePdfText";
 
 /**
  * Renders an exclusive, two-page "ANEXO: SUITE MAMA 3D & FICHA BI-RADS Y CORRELACIÓN 3D" into the provided jsPDF document.
@@ -85,14 +87,14 @@ export async function renderBreast3DPageToPdf(
     const measureCaptionH = (p: Breast3DPanel): number => {
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8 * factor);
-      const titleLines = doc.splitTextToSize(p.panelTitle || `Panel ${p.panelLetter}`, cardWidth - 6);
+      const titleLines = doc.splitTextToSize(pdfCutawayToCorte(p.panelTitle || `Panel ${p.panelLetter}`), cardWidth - 6);
       let h = 3.2 * factor; // gap under image
       h += titleLines.length * 3.4 * factor;
-      if (p.anatomicalFocus && String(p.anatomicalFocus).trim()) {
+      if (p.anatomicalFocus && pdfCutawayToCorte(String(p.anatomicalFocus).trim())) {
         h += 1.0 * factor; // gap title → description
         doc.setFont("helvetica", "normal");
         doc.setFontSize(7.2 * factor);
-        const descLines = doc.splitTextToSize(String(p.anatomicalFocus).trim(), cardWidth - 6);
+        const descLines = doc.splitTextToSize(pdfCutawayToCorte(String(p.anatomicalFocus).trim()), cardWidth - 6);
         h += descLines.length * 3.05 * factor;
       }
       h += 2.2 * factor; // bottom padding inside card border
@@ -156,17 +158,17 @@ export async function renderBreast3DPageToPdf(
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8 * factor);
       doc.setTextColor(15, 23, 42); // slate-900
-      const titleLines = doc.splitTextToSize(p.panelTitle || `Panel ${p.panelLetter}`, cardWidth - 6);
+      const titleLines = doc.splitTextToSize(pdfCutawayToCorte(p.panelTitle || `Panel ${p.panelLetter}`), cardWidth - 6);
       doc.text(titleLines, cardX + 3, textY);
       textY += titleLines.length * 3.4 * factor;
 
       // Anatomical Focus / Description
-      if (p.anatomicalFocus && String(p.anatomicalFocus).trim()) {
+      if (p.anatomicalFocus && pdfCutawayToCorte(String(p.anatomicalFocus).trim())) {
         textY += 1.0 * factor;
         doc.setFont("helvetica", "normal");
         doc.setFontSize(7.2 * factor);
         doc.setTextColor(71, 85, 105); // slate-600
-        const descLines = doc.splitTextToSize(String(p.anatomicalFocus).trim(), cardWidth - 6);
+        const descLines = doc.splitTextToSize(pdfCutawayToCorte(String(p.anatomicalFocus).trim()), cardWidth - 6);
         doc.text(descLines, cardX + 3, textY);
       }
     }
@@ -176,15 +178,15 @@ export async function renderBreast3DPageToPdf(
 
   // 2b. RICH CLINICAL DOSSIER (fills page with substantial info under the figure concept)
   const dossierBlocks: Array<{ title: string; text: string; color: [number, number, number] }> = [
-    { title: "RESUMEN MAMARIO", text: String(breastData.breastSummary || "").trim(), color: [219, 39, 119] },
-    { title: "MORFOLOGÍA / NÓDULO DOMINANTE", text: String(breastData.morphologyNotes || "").trim(), color: [192, 38, 211] },
-    { title: "AXILAS / DRENAJE", text: String(breastData.axillaryStatus || "").trim(), color: [217, 119, 6] },
+    { title: "RESUMEN MAMARIO", text: pdfCutawayToCorte(String(breastData.breastSummary || "").trim()), color: [219, 39, 119] },
+    { title: "MORFOLOGÍA / NÓDULO DOMINANTE", text: pdfCutawayToCorte(String(breastData.morphologyNotes || "").trim()), color: [192, 38, 211] },
+    { title: "AXILAS / DRENAJE", text: pdfCutawayToCorte(String(breastData.axillaryStatus || "").trim()), color: [217, 119, 6] },
   ];
   const keyPoints = Array.isArray(breastData.keyPoints) ? breastData.keyPoints.filter(Boolean) : [];
   if (keyPoints.length) {
     dossierBlocks.push({
       title: "PUNTOS CLAVE",
-      text: keyPoints.map((k) => `• ${k}`).join("\n"),
+      text: pdfCutawayToCorte(keyPoints.map((k) => `• ${k}`).join("\n")),
       color: [5, 150, 105],
     });
   }
@@ -352,7 +354,7 @@ export async function renderBreast3DPageToPdf(
       ? `${row.biradsCategory}${row.clinicalImpact ? ` — ${row.clinicalImpact}` : ""}`
       : (row.clinicalImpact || "—");
 
-    const c1Lines = doc.splitTextToSize(row.location || "", colWidths[0] - 3);
+    const c1Lines = doc.splitTextToSize(sanitizePdfText(row.location || ""), colWidths[0] - 3);
     const c2Lines = doc.splitTextToSize(compositionText, colWidths[1] - 3);
     const c3Lines = doc.splitTextToSize(sizeText, colWidths[2] - 3);
     const c4Lines = doc.splitTextToSize(echoText, colWidths[3] - 3);
@@ -434,7 +436,7 @@ export async function renderBreast3DPageToPdf(
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9.0 * factor);
     const synthLineH = 3.8 * factor;
-    const synthLines = doc.splitTextToSize(synthText.trim(), contentWidth - 12);
+    const synthLines = doc.splitTextToSize(sanitizePdfText(synthText.trim()), contentWidth - 12);
     const titleBlockH = 9.5 * factor;
     const bottomPad = 3.5 * factor;
 

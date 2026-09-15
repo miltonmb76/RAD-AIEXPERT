@@ -1,18 +1,18 @@
 import jsPDF from "jspdf";
-import { Kidney3DData, Kidney3DPanel, KidneyFindingRow } from "../types";
+import { MuscleTendon3DData, MuscleTendon3DPanel, MuscleTendonFindingRow } from "../types";
 import { pdfCutawayToCorte } from "./pdfCutawayToCorte";
 import { sanitizePdfText } from "./sanitizePdfText";
 
 /**
- * Renders a two-page "ANEXO: SUITE RIÑÓN 3D & FICHA VÍAS URINARIAS" into the provided jsPDF document.
+ * Renders a two-page "ANEXO: SUITE MUSCULAR / TENDINOSA 3D & FICHA MÚSCULO-TENDÓN" into the provided jsPDF document.
  */
-export async function renderKidney3DPageToPdf(
+export async function renderMuscleTendon3DPageToPdf(
   doc: jsPDF,
-  kidneyData: Kidney3DData,
+  muscleTendonData: MuscleTendon3DData,
   pageSize: "letter" | "a4" = "letter",
   pdfLayoutType: string = "modern"
 ): Promise<void> {
-  if (!kidneyData || (!kidneyData.panels?.length && !kidneyData.findingTable?.length)) {
+  if (!muscleTendonData || (!muscleTendonData.panels?.length && !muscleTendonData.findingTable?.length)) {
     return;
   }
 
@@ -21,7 +21,7 @@ export async function renderKidney3DPageToPdf(
   const marginX = 14;
   const contentWidth = pageWidth - (marginX * 2);
   const factor = pageSize === "a4" ? 1.0 : 0.98;
-  const accent: [number, number, number] = [13, 148, 136]; // sky-600
+  const accent: [number, number, number] = [217, 119, 6]; // sky-600
 
   doc.addPage();
 
@@ -30,7 +30,7 @@ export async function renderKidney3DPageToPdf(
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12.5 * factor);
   doc.setTextColor(15, 23, 42);
-  doc.text("ANEXO: SUITE RIÑÓN 3D & FICHA VÍAS URINARIAS", marginX, yCoord);
+  doc.text("ANEXO: SUITE MUSCULAR / TENDINOSA 3D & FICHA MÚSCULO-TENDÓN", marginX, yCoord);
   yCoord += 4.5 * factor;
 
   doc.setDrawColor(accent[0], accent[1], accent[2]);
@@ -38,8 +38,8 @@ export async function renderKidney3DPageToPdf(
   doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
   yCoord += 6.5 * factor;
 
-  const territory = kidneyData.territoryLabel || "ECOGRAFÍA RENAL Y VÍAS URINARIAS";
-  const figTitle = kidneyData.figureTitle || `FIGURA 1. ATLAS 3D RENAL Y CORRELACIÓN VÍAS URINARIAS — ${territory.toUpperCase()}`;
+  const territory = muscleTendonData.territoryLabel || "ECOGRAFÍA DE ESCROTO";
+  const figTitle = muscleTendonData.figureTitle || `FIGURA 1. ATLAS 3D ESCROTO Y CORRELACIÓN ANATOMOPATOLÓGICA — ${territory.toUpperCase()}`;
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9.5 * factor);
@@ -47,8 +47,8 @@ export async function renderKidney3DPageToPdf(
   const figTitleLines = doc.splitTextToSize(figTitle.toUpperCase(), contentWidth - 10);
   const figBannerH = Math.max(7.5 * factor, (figTitleLines.length * 4.2 + 3) * factor);
 
-  doc.setFillColor(240, 253, 250); // sky-50
-  doc.setDrawColor(153, 246, 228); // sky-200
+  doc.setFillColor(255, 251, 235); // sky-50
+  doc.setDrawColor(253, 230, 138); // sky-200
   doc.setLineWidth(0.3);
   doc.roundedRect(marginX, yCoord, contentWidth, figBannerH, 1.5, 1.5, "FD");
 
@@ -58,7 +58,7 @@ export async function renderKidney3DPageToPdf(
   doc.text(figTitleLines, marginX + 5, yCoord + (figBannerH / 2) + 1.2);
   yCoord += figBannerH + 4 * factor;
 
-  const panels: Kidney3DPanel[] = (kidneyData.panels || []).filter(p => p && (p.imageUrl || p.panelTitle));
+  const panels: MuscleTendon3DPanel[] = (muscleTendonData.panels || []).filter(p => p && (p.imageUrl || p.panelTitle));
   const panelCount = Math.min(Math.max(panels.length, 1), 3);
 
   if (panelCount > 0) {
@@ -68,7 +68,7 @@ export async function renderKidney3DPageToPdf(
     const imgWidth = cardWidth - 2;
     const imgHeight = imgWidth * (3 / 4); // keep aspect ratio, do not stretch
 
-    const measureCaptionH = (p: Kidney3DPanel): number => {
+    const measureCaptionH = (p: MuscleTendon3DPanel): number => {
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8 * factor);
       const titleLines = doc.splitTextToSize(pdfCutawayToCorte(p.panelTitle || `Panel ${p.panelLetter}`), cardWidth - 6);
@@ -107,7 +107,7 @@ export async function renderKidney3DPageToPdf(
           const imgFormat = p.imageUrl.includes("image/png") ? "PNG" : "JPEG";
           doc.addImage(p.imageUrl, imgFormat, imgX, imgY, imgWidth, imgHeight);
         } catch (imgErr) {
-          console.warn("Error drawing kidney 3D image to PDF:", imgErr);
+          console.warn("Error drawing muscle-tendon 3D image to PDF:", imgErr);
           doc.setFillColor(241, 245, 249);
           doc.rect(imgX, imgY, imgWidth, imgHeight, "F");
         }
@@ -117,7 +117,7 @@ export async function renderKidney3DPageToPdf(
         doc.setFont("helvetica", "normal");
         doc.setFontSize(8 * factor);
         doc.setTextColor(148, 163, 184);
-        doc.text("Reconstrucción 3D Renal", imgX + (imgWidth / 2) - 18, imgY + (imgHeight / 2));
+        doc.text("Reconstrucción 3D Músculo-Tendón", imgX + (imgWidth / 2) - 18, imgY + (imgHeight / 2));
       }
 
       const badgeW = 20 * factor;
@@ -151,11 +151,11 @@ export async function renderKidney3DPageToPdf(
   }
 
   const dossierBlocks: Array<{ title: string; text: string; color: [number, number, number] }> = [
-    { title: "RESUMEN RENAL", text: pdfCutawayToCorte(String(kidneyData.kidneySummary || "").trim()), color: accent },
-    { title: "MORFOLOGÍA / ECOESTRUCTURA", text: pdfCutawayToCorte(String(kidneyData.morphologyNotes || "").trim()), color: [3, 105, 161] },
-    { title: "ESTADO DE VÍAS URINARIAS", text: pdfCutawayToCorte(String(kidneyData.urinaryTractStatus || "").trim()), color: [12, 74, 110] },
+    { title: "RESUMEN MÚSCULO-TENDÓN", text: pdfCutawayToCorte(String(muscleTendonData.muscleTendonSummary || "").trim()), color: accent },
+    { title: "MORFOLOGÍA MUSCULAR / TENDINOSA", text: pdfCutawayToCorte(String(muscleTendonData.morphologyNotes || "").trim()), color: [3, 105, 161] },
+    { title: "DESGARRO / TENDÓN", text: pdfCutawayToCorte(String(muscleTendonData.tearTendonStatus || "").trim()), color: [12, 74, 110] },
   ];
-  const keyPoints = Array.isArray(kidneyData.keyPoints) ? kidneyData.keyPoints.filter(Boolean) : [];
+  const keyPoints = Array.isArray(muscleTendonData.keyPoints) ? muscleTendonData.keyPoints.filter(Boolean) : [];
   if (keyPoints.length) {
     dossierBlocks.push({
       title: "PUNTOS CLAVE",
@@ -177,7 +177,7 @@ export async function renderKidney3DPageToPdf(
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9.0 * factor);
     doc.setTextColor(15, 23, 42);
-    doc.text("FICHA CLÍNICA RENAL / VÍAS URINARIAS (CORRELACIÓN CON LA FIGURA 3D)", marginX, dossierY);
+    doc.text("FICHA CLÍNICA MÚSCULO-TENDÓN (CORRELACIÓN CON LA FIGURA 3D)", marginX, dossierY);
     dossierY += 3.4 * factor;
 
     // Measure box heights first, then distribute leftover page space as inter-box gaps
@@ -200,8 +200,8 @@ export async function renderKidney3DPageToPdf(
       const b = dossierTexts[i];
       const lines = measured[i].lines;
       const boxH = measured[i].boxH;
-      doc.setFillColor(240, 253, 250);
-      doc.setDrawColor(153, 246, 228);
+      doc.setFillColor(255, 251, 235);
+      doc.setDrawColor(253, 230, 138);
       doc.setLineWidth(0.3);
       doc.roundedRect(marginX, dossierY, boxW, boxH, 1.2, 1.2, "FD");
       doc.setFillColor(b.color[0], b.color[1], b.color[2]);
@@ -225,15 +225,15 @@ export async function renderKidney3DPageToPdf(
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12 * factor);
   doc.setTextColor(15, 23, 42);
-  doc.text("ANEXO: SUITE RIÑÓN 3D — TABLA Y SÍNTESIS", marginX, yCoord);
+  doc.text("ANEXO: SUITE MUSCULAR / TENDINOSA 3D — TABLA Y SÍNTESIS", marginX, yCoord);
   yCoord += 4.2 * factor;
   doc.setDrawColor(accent[0], accent[1], accent[2]);
   doc.setLineWidth(0.7);
   doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
   yCoord += 6 * factor;
   // Fixed 8-col finding table (matches UI / API contract)
-  const tableData: KidneyFindingRow[] = kidneyData.findingTable || [];
-  const tableTitle = kidneyData.tableTitle || "TABLA ECOGRÁFICA RENAL Y VÍAS URINARIAS Y ESTRUCTURAS PERIARTICULARES:";
+  const tableData: MuscleTendonFindingRow[] = muscleTendonData.findingTable || [];
+  const tableTitle = muscleTendonData.tableTitle || "TABLA ECOGRÁFICA MÚSCULO-TENDÓN:";
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10.5 * factor);
@@ -253,12 +253,12 @@ export async function renderKidney3DPageToPdf(
   ];
 
   const headerLabels = [
-    "LOCALIZACIÓN",
+    "LOCALIZACIÓN / LADO",
     "ESTRUCTURA",
-    "TAMAÑO / GROSOR",
-    "PATRÓN ECO",
-    "HIDRONEFROSIS",
-    "QUISTE / LITIASIS",
+    "GROSOR / GAP",
+    "ECOPATRÓN",
+    "HEMATOMA / LÍQUIDO",
+    "DINÁMICA / RETRACCIÓN",
     "SEVERIDAD",
     "IMPACTO"
   ];
@@ -274,7 +274,7 @@ export async function renderKidney3DPageToPdf(
   const maxHeaderLines = Math.max(...wrappedHeaders.map(lines => lines.length), 1);
   const headerH = Math.max(9.0 * factor, (maxHeaderLines * 3.4 + 3.0) * factor);
 
-  doc.setFillColor(204, 251, 241); // cyan-50
+  doc.setFillColor(254, 243, 199); // cyan-50
   doc.rect(marginX, yCoord, contentWidth, headerH, "F");
 
   let curX = marginX;
@@ -283,7 +283,7 @@ export async function renderKidney3DPageToPdf(
     curX += colWidths[i];
   });
 
-  doc.setDrawColor(45, 212, 191);
+  doc.setDrawColor(251, 191, 36);
   doc.setLineWidth(0.4);
   doc.line(marginX, yCoord + headerH, marginX + contentWidth, yCoord + headerH);
   yCoord += headerH;
@@ -297,10 +297,10 @@ export async function renderKidney3DPageToPdf(
     const cells = [
       row.location || "",
       row.structure || "",
-      row.sizeOrThickness || "",
+      row.thicknessOrGap || "",
       row.echoPattern || "",
-      row.hydronephrosis || "",
-      row.cystOrStone || "",
+      row.hematomaOrFluid || "",
+      row.dynamicFinding || "",
       row.severity || "",
       row.clinicalImpact || ""
     ];
@@ -309,7 +309,7 @@ export async function renderKidney3DPageToPdf(
     const rowH = Math.max(7.2 * factor, (maxLines * 3.5 + 2.6) * factor);
 
     if (rIdx % 2 === 1) {
-      doc.setFillColor(240, 253, 250);
+      doc.setFillColor(255, 251, 235);
       doc.rect(marginX, yCoord, contentWidth, rowH, "F");
     }
 
@@ -337,22 +337,22 @@ export async function renderKidney3DPageToPdf(
       cellX += colWidths[i];
     });
 
-    doc.setDrawColor(153, 246, 228);
+    doc.setDrawColor(253, 230, 138);
     doc.setLineWidth(0.2);
     doc.line(marginX, yCoord + rowH, marginX + contentWidth, yCoord + rowH);
 
     yCoord += rowH;
   });
 
-  doc.setDrawColor(45, 212, 191);
+  doc.setDrawColor(251, 191, 36);
   doc.setLineWidth(0.4);
   doc.line(marginX, yCoord, marginX + contentWidth, yCoord);
   yCoord += 4.5 * factor;
 
-  const synthText = kidneyData.morphologicalSynthesis || "";
+  const synthText = muscleTendonData.morphologicalSynthesis || "";
   if (synthText && synthText.trim()) {
     const footerSafeBottom = pageHeight - 18 * factor;
-    const synthTitle = kidneyData.synthesisTitle || "SÍNTESIS MORFOLÓGICA Y FUNCIONAL RENAL:";
+    const synthTitle = muscleTendonData.synthesisTitle || "SÍNTESIS MORFOLÓGICA ESCROTAL:";
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9.0 * factor);
     const synthLineH = 4.4 * factor;
@@ -366,7 +366,7 @@ export async function renderKidney3DPageToPdf(
       doc.setFont("helvetica", "bold");
       doc.setFontSize(11 * factor);
       doc.setTextColor(15, 23, 42);
-      doc.text("ANEXO: SUITE RIÑÓN 3D & FICHA VÍAS URINARIAS", marginX, yCoord);
+      doc.text("ANEXO: SUITE MUSCULAR / TENDINOSA 3D & FICHA MÚSCULO-TENDÓN", marginX, yCoord);
       yCoord += 4 * factor;
       doc.setDrawColor(accent[0], accent[1], accent[2]);
       doc.setLineWidth(0.6);
@@ -375,13 +375,13 @@ export async function renderKidney3DPageToPdf(
       doc.setFont("helvetica", "italic");
       doc.setFontSize(8 * factor);
       doc.setTextColor(100, 116, 139);
-      doc.text("Continuación — síntesis morfológica y funcional renal / vías urinarias", marginX, yCoord);
+      doc.text("Continuación — síntesis morfológica músculo-tendinosa", marginX, yCoord);
       yCoord += 6 * factor;
     };
 
     const drawSynthChrome = (boxH: number, includeTitle: boolean) => {
-      doc.setFillColor(204, 251, 241);
-      doc.setDrawColor(45, 212, 191);
+      doc.setFillColor(254, 243, 199);
+      doc.setDrawColor(251, 191, 36);
       doc.setLineWidth(0.4);
       doc.roundedRect(marginX, yCoord, contentWidth, boxH, 2, 2, "FD");
       doc.setFillColor(accent[0], accent[1], accent[2]);
@@ -389,7 +389,7 @@ export async function renderKidney3DPageToPdf(
       if (includeTitle) {
         doc.setFont("helvetica", "bold");
         doc.setFontSize(10 * factor);
-        doc.setTextColor(17, 94, 89);
+        doc.setTextColor(146, 64, 14);
         doc.text(synthTitle, marginX + 6, yCoord + 5.5 * factor);
       }
     };
