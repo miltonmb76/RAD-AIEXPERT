@@ -1,5 +1,6 @@
 import jsPDF from "jspdf";
 import { Ankle3DData, Ankle3DPanel, AnkleFindingRow } from "../types";
+import { pdfCutawayToCorte } from "./pdfCutawayToCorte";
 
 /**
  * Renders a two-page "ANEXO: SUITE TOBILLO 3D & FICHA LIGAMENTOS Y AQUILES" into the provided jsPDF document.
@@ -69,14 +70,14 @@ export async function renderAnkle3DPageToPdf(
     const measureCaptionH = (p: Ankle3DPanel): number => {
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8 * factor);
-      const titleLines = doc.splitTextToSize(p.panelTitle || `Panel ${p.panelLetter}`, cardWidth - 6);
+      const titleLines = doc.splitTextToSize(pdfCutawayToCorte(p.panelTitle || `Panel ${p.panelLetter}`), cardWidth - 6);
       let h = 3.2 * factor;
       h += titleLines.length * 3.4 * factor;
-      if (p.anatomicalFocus && String(p.anatomicalFocus).trim()) {
+      if (p.anatomicalFocus && pdfCutawayToCorte(String(p.anatomicalFocus).trim())) {
         h += 1.0 * factor;
         doc.setFont("helvetica", "normal");
         doc.setFontSize(7.2 * factor);
-        const descLines = doc.splitTextToSize(String(p.anatomicalFocus).trim(), cardWidth - 6);
+        const descLines = doc.splitTextToSize(pdfCutawayToCorte(String(p.anatomicalFocus).trim()), cardWidth - 6);
         h += descLines.length * 3.05 * factor;
       }
       h += 2.2 * factor;
@@ -131,16 +132,16 @@ export async function renderAnkle3DPageToPdf(
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8 * factor);
       doc.setTextColor(15, 23, 42);
-      const titleLines = doc.splitTextToSize(p.panelTitle || `Panel ${p.panelLetter}`, cardWidth - 6);
+      const titleLines = doc.splitTextToSize(pdfCutawayToCorte(p.panelTitle || `Panel ${p.panelLetter}`), cardWidth - 6);
       doc.text(titleLines, cardX + 3, textY);
       textY += titleLines.length * 3.4 * factor;
 
-      if (p.anatomicalFocus && String(p.anatomicalFocus).trim()) {
+      if (p.anatomicalFocus && pdfCutawayToCorte(String(p.anatomicalFocus).trim())) {
         textY += 1.0 * factor;
         doc.setFont("helvetica", "normal");
         doc.setFontSize(7.2 * factor);
         doc.setTextColor(71, 85, 105);
-        const descLines = doc.splitTextToSize(String(p.anatomicalFocus).trim(), cardWidth - 6);
+        const descLines = doc.splitTextToSize(pdfCutawayToCorte(String(p.anatomicalFocus).trim()), cardWidth - 6);
         doc.text(descLines, cardX + 3, textY);
       }
     }
@@ -149,15 +150,15 @@ export async function renderAnkle3DPageToPdf(
   }
 
   const dossierBlocks: Array<{ title: string; text: string; color: [number, number, number] }> = [
-    { title: "RESUMEN DEL TOBILLO", text: String(ankleData.ankleSummary || "").trim(), color: accent },
-    { title: "MORFOLOGÍA / NOTAS ESTRUCTURALES", text: String(ankleData.morphologyNotes || "").trim(), color: [77, 124, 15] },
-    { title: "ESTADO LIGAMENTOS / AQUILES", text: String(ankleData.ligamentAchillesStatus || "").trim(), color: [54, 83, 20] },
+    { title: "RESUMEN DEL TOBILLO", text: pdfCutawayToCorte(String(ankleData.ankleSummary || "").trim()), color: accent },
+    { title: "MORFOLOGÍA / NOTAS ESTRUCTURALES", text: pdfCutawayToCorte(String(ankleData.morphologyNotes || "").trim()), color: [77, 124, 15] },
+    { title: "ESTADO LIGAMENTOS / AQUILES", text: pdfCutawayToCorte(String(ankleData.ligamentAchillesStatus || "").trim()), color: [54, 83, 20] },
   ];
   const keyPoints = Array.isArray(ankleData.keyPoints) ? ankleData.keyPoints.filter(Boolean) : [];
   if (keyPoints.length) {
     dossierBlocks.push({
       title: "PUNTOS CLAVE",
-      text: keyPoints.map((k) => `• ${k}`).join("\n"),
+      text: pdfCutawayToCorte(keyPoints.map((k) => `• ${k}`).join("\n")),
       color: [5, 150, 105],
     });
   }

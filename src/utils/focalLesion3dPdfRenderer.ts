@@ -1,8 +1,9 @@
 import { FocalLesion3DData } from "../types";
 import { sanitizeFocalClinicalProse } from "./sanitizeFocalClinicalProse";
+import { pdfCutawayToCorte } from "./pdfCutawayToCorte";
 
 /**
- * Annex for Focal Lesion Cutaway 3D — always ONE page.
+ * Annex for Focal Lesion Corte 3D — always ONE page.
  * Images on top; clinical boxes stacked full-width underneath (one under another).
  */
 export function renderFocalLesion3DAnnexToPDF(
@@ -213,14 +214,14 @@ export function renderFocalLesion3DAnnexToPDF(
       doc.setFont("helvetica", "bold");
       doc.setFontSize(7.6 * factor);
       const titleLines = doc
-        .splitTextToSize(`${p.panelLetter}. ${p.panelTitle || ""}`, panelW - 4 * factor)
+        .splitTextToSize(pdfCutawayToCorte(`${p.panelLetter}. ${p.panelTitle || ""}`), panelW - 4 * factor)
         .slice(0, 2);
       let h = captionGap + titleLines.length * 2.8 * factor;
       if (p.anatomicalFocus?.trim()) {
         doc.setFont("helvetica", "normal");
         doc.setFontSize(6.8 * factor);
         const desc = doc
-          .splitTextToSize(p.anatomicalFocus.trim(), panelW - 4 * factor)
+          .splitTextToSize(pdfCutawayToCorte(p.anatomicalFocus.trim()), panelW - 4 * factor)
           .slice(0, 2);
         h += 0.4 * factor + desc.length * 2.45 * factor;
       }
@@ -301,7 +302,7 @@ export function renderFocalLesion3DAnnexToPDF(
     doc.setFontSize(7.6 * factor);
     doc.setTextColor(15, 23, 42);
     const titleLines = doc
-      .splitTextToSize(`${p.panelLetter}. ${p.panelTitle || ""}`, panelWidth - 4 * factor)
+      .splitTextToSize(pdfCutawayToCorte(`${p.panelLetter}. ${p.panelTitle || ""}`), panelWidth - 4 * factor)
       .slice(0, 2);
     titleLines.forEach((line: string) => {
       doc.text(line, imgX + 0.4, textY);
@@ -313,7 +314,7 @@ export function renderFocalLesion3DAnnexToPDF(
       doc.setFontSize(6.8 * factor);
       doc.setTextColor(71, 85, 105);
       const desc = doc
-        .splitTextToSize(p.anatomicalFocus.trim(), panelWidth - 4 * factor)
+        .splitTextToSize(pdfCutawayToCorte(p.anatomicalFocus.trim()), panelWidth - 4 * factor)
         .slice(0, 2);
       desc.forEach((line: string) => {
         doc.text(line, imgX + 0.4, textY);

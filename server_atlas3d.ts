@@ -624,7 +624,7 @@ const BREAST_CLOCK_PLAN_RULES_ES =
   "- doNotInvent DEBE incluir: \"left-breast 3 placed medially\", \"clock 3/9 swap\", \"mirrored breast clock between sides\".";
 
 /**
- * Clinical prose for Focal cutaway cards must NEVER explain how the AI placed the lesion
+ * Clinical prose for Focal corte cards must NEVER explain how the AI placed the lesion
  * on screen (viewer-left/right, image half, clock-hands method, etc.). Keep anatomy only.
  */
 const FOCAL_CLINICAL_PROSE_RULES_ES =
@@ -933,7 +933,7 @@ export function registerAtlas3DRoutes(app: express.Express) {
       const modeHint = !assignments.length
         ? "Sin asignación Scorecard por panel: diseña 2–3 paneles complementarios según el informe."
         : assignments[0]?.mode === "shared_single"
-          ? "MODO 1 HALLAZGO: genera 2 o 3 paneles como vistas complementarias del MISMO hallazgo asignado (distinto ángulo/cutaway; misma lesión)."
+          ? "MODO 1 HALLAZGO: genera 2 o 3 paneles como vistas complementarias del MISMO hallazgo asignado (distinto ángulo/corte; misma lesión)."
           : `MODO ${assignments.length} HALLAZGOS: genera exactamente ${assignments.length} paneles, UNO por hallazgo asignado. Cada panel dedicado a su hallazgo (no mezclar focos).`;
 
       const promptPlan = `Eres un Médico Radiólogo Especialista en Diagnóstico por Imágenes y Anatomía Quirúrgica Aplicada.
@@ -1869,7 +1869,7 @@ TIPOS DE ESTUDIO (clasifica en uno):
 DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
 ========================================================================
 - Panel A (panelRole "overview"): visión anatómica de ambas riñóns o renal afectado (fémur distal, platillos tibiales, rótula, riñóns, LCM/LCL y mecanismo extensor).
-- Panel B (panelRole "collecting_obstruction"): cutaway macro de la patología renal/ligamentosa dominante SEGÚN EL INFORME (respetar medial=interno/tibial vs lateral=externo/peroné, y cuerno anterior vs cuerpo vs cuerno posterior; NUNCA asumir riñón medial por defecto si el informe dice externo/lateral).
+- Panel B (panelRole "collecting_obstruction"): corte macro de la patología renal/ligamentosa dominante SEGÚN EL INFORME (respetar medial=interno/tibial vs lateral=externo/peroné, y cuerno anterior vs cuerpo vs cuerno posterior; NUNCA asumir riñón medial por defecto si el informe dice externo/lateral).
 - Panel C opcional (panelRole "bladder_ureter" | "cyst_stone"): surco bicipital/ligamento patelar + recesos articulares / hidrartrosis, O quiste de Baker / cartílago femorotibial según el hallazgo dominante.
 - LATERALIDAD OBLIGATORIA POR PANEL (convención radiografía AP / paciente de frente):
   - Cada panel DEBE declarar "laterality" exacta (Derecha|Izquierda|Bilateral) = lado ANATÓMICO DEL PACIENTE.
@@ -1917,7 +1917,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
     },
     {
       "panelLetter": "B",
-      "panelTitle": "Panel B: Cutaway del riñón medial — patología dominante",
+      "panelTitle": "Panel B: Corte del riñón medial — patología dominante",
       "structureOrSite": "Pelvis / seno renal",
       "anatomicalFocus": "Detalle del riñón medial y surco coronario con patrón ecográfico correlacionado...",
       "laterality": "Derecha",
@@ -1984,7 +1984,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
             },
             {
               panelLetter: "B",
-              panelTitle: "Panel B: Cutaway sistema colector — según informe (medial/lateral + A/P)",
+              panelTitle: "Panel B: Corte sistema colector — según informe (medial/lateral + A/P)",
               structureOrSite: "Sistema colector (lado según informe)",
               anatomicalFocus: "Corte macro del riñón indicado en el informe (interno/externo y cuerno anterior/posterior), sin intercambiar lados.",
               laterality: laterality || "Derecha",
@@ -2197,7 +2197,7 @@ RESPONDE EN JSON:
   });
 
 
-  // 5. Focal Lesion Cutaway 3D (on-demand: auto-detect or manual focus, 1–2 panels)
+  // 5. Focal Lesion Corte 3D (on-demand: auto-detect or manual focus, 1–2 panels)
   
   
   app.post("/api/generate-3d-abdomen", async (req: express.Request, res: express.Response) => {
@@ -2253,7 +2253,7 @@ TIPOS DE ESTUDIO (clasifica en uno):
 DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
 ========================================================================
 - Panel A (panelRole "overview"): visión de abdomen superior — hígado, vesícula, porta, páncreas, bazo; anclas de derecha/izquierda del paciente.
-- Panel B (panelRole "hepatobiliary"): cutaway del hallazgo dominante SEGÚN EL INFORME (esteatosis, litiasis vesicular, dilatación biliar, páncreas, etc.).
+- Panel B (panelRole "hepatobiliary"): corte del hallazgo dominante SEGÚN EL INFORME (esteatosis, litiasis vesicular, dilatación biliar, páncreas, etc.).
 - Panel C opcional (panelRole "renal_spleen" | "bowel_fluid"): ambos riñones / bazo, O FID-apéndice / líquido libre según el caso.
 - LATERALIDAD OBLIGATORIA POR PANEL (convención radiografía AP / paciente de frente):
   - Cada panel DEBE declarar "laterality" exacta (Derecha|Izquierda|Bilateral) = lado ANATÓMICO DEL PACIENTE.
@@ -2300,7 +2300,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
     },
     {
       "panelLetter": "B",
-      "panelTitle": "Panel B: Cutaway del hallazgo dominante",
+      "panelTitle": "Panel B: Corte del hallazgo dominante",
       "structureOrSite": "Órgano dominante según informe",
       "anatomicalFocus": "Detalle del hallazgo principal con topografía exacta...",
       "laterality": "Derecha",
@@ -2367,7 +2367,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
             },
             {
               panelLetter: "B",
-              panelTitle: "Panel B: Cutaway hepato-biliar — según informe",
+              panelTitle: "Panel B: Corte hepato-biliar — según informe",
               structureOrSite: "Territorio hepato-biliar dominante según informe",
               anatomicalFocus: "Corte macro del hallazgo dominante (hígado, vesícula/vías o páncreas) sin intercambiar órganos ni lados.",
               laterality: laterality || "Bilateral",
@@ -2632,7 +2632,7 @@ TIPOS DE ESTUDIO (clasifica en uno):
 DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
 ========================================================================
 - Panel A (panelRole "overview"): visión de pared abdominal — capas, línea alba/rectos o ingle según el caso; anclas de derecha/izquierda.
-- Panel B (panelRole "defect_orifice"): cutaway del orificio/defecto dominante SEGÚN EL INFORME (diámetro, bordes fasciales, saco).
+- Panel B (panelRole "defect_orifice"): corte del orificio/defecto dominante SEGÚN EL INFORME (diámetro, bordes fasciales, saco).
 - Panel C opcional (panelRole "content_valsalva" | "rectus_linea"): contenido + dinámica Valsalva/reducibilidad, O diástasis de rectos / línea alba.
 - LATERALIDAD OBLIGATORIA POR PANEL (convención radiografía AP / paciente de frente):
   - Cada panel DEBE declarar "laterality" exacta (Derecha|Izquierda|Bilateral) = lado ANATÓMICO DEL PACIENTE.
@@ -2679,7 +2679,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
     },
     {
       "panelLetter": "B",
-      "panelTitle": "Panel B: Cutaway del orificio / defecto",
+      "panelTitle": "Panel B: Corte del orificio / defecto",
       "structureOrSite": "Orificio dominante según informe",
       "anatomicalFocus": "Detalle del orificio fascial, saco y bordes con topografía exacta...",
       "laterality": "Derecha",
@@ -2746,7 +2746,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
             },
             {
               panelLetter: "B",
-              panelTitle: "Panel B: Cutaway del orificio / defecto — según informe",
+              panelTitle: "Panel B: Corte del orificio / defecto — según informe",
               structureOrSite: "Orificio / defecto dominante según informe",
               anatomicalFocus: "Corte macro del orificio fascial y saco herniario sin intercambiar lados ni sitios.",
               laterality: laterality || "Bilateral",
@@ -3011,7 +3011,7 @@ TIPOS DE ESTUDIO (clasifica en uno):
 DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
 ========================================================================
 - Panel A (panelRole "overview"): visión escrotal bilateral — ambos testículos, bolsa, anclas derecha/izquierda.
-- Panel B (panelRole "testis_parenchyma"): cutaway del parénquima testicular dominante SEGÚN EL INFORME (mediastino/rete, ecopatrón, tamaño).
+- Panel B (panelRole "testis_parenchyma"): corte del parénquima testicular dominante SEGÚN EL INFORME (mediastino/rete, ecopatrón, tamaño).
 - Panel C opcional (panelRole "epididymis_cord" | "doppler_flow"): epidídimo/cordón, O Doppler hiliar + plexo pampiniforme.
 - LATERALIDAD OBLIGATORIA POR PANEL (convención radiografía AP / paciente de frente):
   - Cada panel DEBE declarar "laterality" exacta (Derecha|Izquierda|Bilateral) = lado ANATÓMICO DEL PACIENTE.
@@ -3058,7 +3058,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
     },
     {
       "panelLetter": "B",
-      "panelTitle": "Panel B: Cutaway del parénquima testicular",
+      "panelTitle": "Panel B: Corte del parénquima testicular",
       "structureOrSite": "Parénquima testicular dominante según informe",
       "anatomicalFocus": "Detalle de parénquima, mediastino/rete y ecopatrón con topografía exacta...",
       "laterality": "Derecha",
@@ -3125,7 +3125,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
             },
             {
               panelLetter: "B",
-              panelTitle: "Panel B: Cutaway del parénquima testicular — según informe",
+              panelTitle: "Panel B: Corte del parénquima testicular — según informe",
               structureOrSite: "Parénquima testicular dominante según informe",
               anatomicalFocus: "Corte macro del parénquima con mediastino/rete sin intercambiar lados.",
               laterality: laterality || "Bilateral",
@@ -3338,7 +3338,7 @@ RESPONDE EN JSON:
 
 
 
-  // 5. Focal Lesion Cutaway 3D (on-demand: auto-detect or manual focus, 1–2 panels)
+  // 5. Focal Lesion Corte 3D (on-demand: auto-detect or manual focus, 1–2 panels)
   
   
 
@@ -3412,7 +3412,7 @@ Redacta un texto integrador de 3 a 5 líneas con las conclusiones del estudio, c
 
 
 IMPORTANTE TIROIDES / TI-RADS:
-- Genera 2 o 3 paneles: (A) glándula tiroides anterior con ambos lóbulos e istmo, (B) nódulo dominante en cutaway macro, (C opcional) mapa ganglionar cervical.
+- Genera 2 o 3 paneles: (A) glándula tiroides anterior con ambos lóbulos e istmo, (B) nódulo dominante en corte macro, (C opcional) mapa ganglionar cervical.
 - Cada panel incluye panelRole: "gland" | "nodule" | "nodes", lobeOrNode, anatomicalFocus detallado (3-5 líneas clínicas).
 - noduleTable filas con: location, size, composition, echogenicity, margins, echogenicFoci, tiradsCategory, clinicalImpact.
 - Incluye glandSummary, morphologyNotes, nodalStatus (textos clínicos ricos en español) y keyPoints (array 3-6 bullets).
@@ -3710,7 +3710,7 @@ RESPONDE EN JSON:
     }
   });
 
-  // 5. Focal Lesion Cutaway 3D (on-demand: auto-detect or manual focus, 1–2 panels)
+  // 5. Focal Lesion Corte 3D (on-demand: auto-detect or manual focus, 1–2 panels)
   
   
   // BREAST 3D SUITE
@@ -3785,7 +3785,7 @@ Redacta un texto integrador de 3 a 5 líneas con las conclusiones del estudio, c
 
 
 IMPORTANTE MAMA / BI-RADS:
-- Genera 2 o 3 paneles: (A) glándula mama anterior con ambos lóbulos e istmo, (B) nódulo dominante en cutaway macro, (C opcional) mapa ganglionar cervical.
+- Genera 2 o 3 paneles: (A) glándula mama anterior con ambos lóbulos e istmo, (B) nódulo dominante en corte macro, (C opcional) mapa ganglionar cervical.
 - Cada panel incluye panelRole: "gland" | "nodule" | "nodes", clockPositionOrSite, anatomicalFocus detallado (3-5 líneas clínicas).
 - noduleTable filas con: location, size, composition, echogenicity, margins, echogenicFoci, tiradsCategory, clinicalImpact.
 - Incluye breastSummary, morphologyNotes, axillaryStatus (textos clínicos ricos en español) y keyPoints (array 3-6 bullets).
@@ -3803,7 +3803,7 @@ paneles con "panelRole" y "clockPositionOrSite".
 
 
 REGLAS ESPECÍFICAS MAMA / BI-RADS:
-- 2–3 paneles: (A) ambas mamas vista frontal con pezones y cuadrantes/reloj; (B) cutaway macro del nódulo dominante; (C opcional) axila ipsilateral.
+- 2–3 paneles: (A) ambas mamas vista frontal con pezones y cuadrantes/reloj; (B) corte macro del nódulo dominante; (C opcional) axila ipsilateral.
 - Contrato de reloj OBLIGATORIO: manos idénticas en ambas mamas; las 3 = derecha del pezón en la imagen (derecha del observador); las 9 = izquierda del pezón. Nunca invertir por estética.
 - laterality por panel = lado anatómico del paciente (Derecha|Izquierda|Bilateral).
 - lesionTable filas con: location (reloj + distancia al pezón), composition (quística/sólida/mixta), size (mm/cm), shape, margins, echogenicity, orientation, vascularity, biradsCategory, clinicalImpact.
@@ -3842,7 +3842,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
     },
     {
       "panelLetter": "B",
-      "panelTitle": "Panel B: Cutaway del nódulo dominante",
+      "panelTitle": "Panel B: Corte del nódulo dominante",
       "clockPositionOrSite": "Mama derecha, 3h",
       "anatomicalFocus": "Lesión dominante con márgenes y composición...",
       "laterality": "Derecha",
@@ -4186,7 +4186,7 @@ TIPOS DE ESTUDIO (clasifica en uno):
 DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
 ========================================================================
 - Panel A (panelRole "overview"): visión anatómica de ambos hombros o del hombro afectado (acromion, clavícula distal, cabeza humeral, deltoides, trayectoria del manguito).
-- Panel B (panelRole "cuff"): cutaway macro de la patología dominante del manguito (usualmente supraespinoso: tendinosis, rotura parcial bursal/articular/intrasustancia, o completa con gap/retracción).
+- Panel B (panelRole "cuff"): corte macro de la patología dominante del manguito (usualmente supraespinoso: tendinosis, rotura parcial bursal/articular/intrasustancia, o completa con gap/retracción).
 - Panel C opcional (panelRole "biceps_bursae" | "ac_joint"): surco bicipital/TCLB + bursa subacromiodeltoidea, O articulación acromioclavicular según el hallazgo dominante.
 - LATERALIDAD OBLIGATORIA POR PANEL (convención radiografía AP / paciente de frente):
   - Cada panel DEBE declarar "laterality" exacta (Derecha|Izquierda|Bilateral) = lado ANATÓMICO DEL PACIENTE.
@@ -4234,7 +4234,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
     },
     {
       "panelLetter": "B",
-      "panelTitle": "Panel B: Cutaway del supraespinoso — patología dominante",
+      "panelTitle": "Panel B: Corte del supraespinoso — patología dominante",
       "tendonOrSite": "Supraespinoso",
       "anatomicalFocus": "Detalle de tendón supraespinoso con patrón ecográfico correlacionado...",
       "laterality": "Derecha",
@@ -4301,7 +4301,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
             },
             {
               panelLetter: "B",
-              panelTitle: "Panel B: Cutaway del manguito — supraespinoso",
+              panelTitle: "Panel B: Corte del manguito — supraespinoso",
               tendonOrSite: "Supraespinoso",
               anatomicalFocus: "Corte macro del tendón supraespinoso según hallazgos del informe.",
               laterality: laterality || "Derecha",
@@ -4562,7 +4562,7 @@ TIPOS DE ESTUDIO (clasifica en uno):
 DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
 ========================================================================
 - Panel A (panelRole "overview"): visión anatómica de ambas rodillas o de la rodilla afectado (fémur distal, platillos tibiales, rótula, meniscos, LCM/LCL y mecanismo extensor).
-- Panel B (panelRole "meniscus_ligament"): cutaway macro de la patología meniscal/ligamentosa dominante SEGÚN EL INFORME (respetar medial=interno/tibial vs lateral=externo/peroné, y cuerno anterior vs cuerpo vs cuerno posterior; NUNCA asumir menisco medial por defecto si el informe dice externo/lateral).
+- Panel B (panelRole "meniscus_ligament"): corte macro de la patología meniscal/ligamentosa dominante SEGÚN EL INFORME (respetar medial=interno/tibial vs lateral=externo/peroné, y cuerno anterior vs cuerpo vs cuerno posterior; NUNCA asumir menisco medial por defecto si el informe dice externo/lateral).
 - Panel C opcional (panelRole "extensor_effusion" | "baker_cartilage"): surco bicipital/ligamento patelar + recesos articulares / hidrartrosis, O quiste de Baker / cartílago femorotibial según el hallazgo dominante.
 - LATERALIDAD OBLIGATORIA POR PANEL (convención radiografía AP / paciente de frente):
   - Cada panel DEBE declarar "laterality" exacta (Derecha|Izquierda|Bilateral) = lado ANATÓMICO DEL PACIENTE.
@@ -4610,7 +4610,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
     },
     {
       "panelLetter": "B",
-      "panelTitle": "Panel B: Cutaway del menisco medial — patología dominante",
+      "panelTitle": "Panel B: Corte del menisco medial — patología dominante",
       "structureOrSite": "Menisco medial",
       "anatomicalFocus": "Detalle del menisco medial y surco coronario con patrón ecográfico correlacionado...",
       "laterality": "Derecha",
@@ -4677,7 +4677,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
             },
             {
               panelLetter: "B",
-              panelTitle: "Panel B: Cutaway meniscal — según informe (medial/lateral + A/P)",
+              panelTitle: "Panel B: Corte meniscal — según informe (medial/lateral + A/P)",
               structureOrSite: "Menisco (medial=tibial / lateral=peroné) — cuerno según informe",
               anatomicalFocus: "Corte macro del menisco indicado en el informe (interno/externo y cuerno anterior/posterior), sin intercambiar lados.",
               laterality: laterality || "Derecha",
@@ -4946,7 +4946,7 @@ TIPOS DE ESTUDIO (clasifica en uno):
 DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
 ========================================================================
 - Panel A (panelRole "overview"): visión anatómica del tobillo afectado (tibia distal, peroné, astrágalo, calcáneo, complejos ligamentarios y Aquiles).
-- Panel B (panelRole "ligaments_lateral_medial"): cutaway macro de la patología ligamentosa dominante SEGÚN EL INFORME (respetar lateral=fibular vs medial=deltoides; NUNCA asumir deltoides por defecto si el informe dice LPAA/ATFL).
+- Panel B (panelRole "ligaments_lateral_medial"): corte macro de la patología ligamentosa dominante SEGÚN EL INFORME (respetar lateral=fibular vs medial=deltoides; NUNCA asumir deltoides por defecto si el informe dice LPAA/ATFL).
 - Panel C opcional (panelRole "achilles_tendon" | "joint_effusion"): Aquiles midportion/insercional + bursa retrocalcánea, O derrame articular / tendones peroneos / sindesmosis según el hallazgo dominante.
 - LATERALIDAD OBLIGATORIA POR PANEL (convención radiografía AP / paciente de frente):
   - Cada panel DEBE declarar "laterality" exacta (Derecha|Izquierda|Bilateral) = lado ANATÓMICO DEL PACIENTE.
@@ -4994,7 +4994,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
     },
     {
       "panelLetter": "B",
-      "panelTitle": "Panel B: Cutaway del complejo lateral — LPAA/ATFL",
+      "panelTitle": "Panel B: Corte del complejo lateral — LPAA/ATFL",
       "structureOrSite": "LPAA / ATFL (lateral, peroné)",
       "anatomicalFocus": "Detalle del LPAA/ATFL en el complejo lateral fibular con patrón ecográfico correlacionado...",
       "laterality": "Derecha",
@@ -5061,7 +5061,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
             },
             {
               panelLetter: "B",
-              panelTitle: "Panel B: Cutaway ligamentoso — según informe (lateral/medial)",
+              panelTitle: "Panel B: Corte ligamentoso — según informe (lateral/medial)",
               structureOrSite: "Complejo lateral (peroné) o deltoides (tibial) — según informe",
               anatomicalFocus: "Corte macro del ligamento indicado en el informe (LPAA/ATFL, LPC/CFL o deltoides), sin intercambiar lados.",
               laterality: laterality || "Derecha",
@@ -5274,7 +5274,7 @@ RESPONDE EN JSON:
   });
 
 
-  // 5. Focal Lesion Cutaway 3D (on-demand: auto-detect or manual focus, 1–2 panels)
+  // 5. Focal Lesion Corte 3D (on-demand: auto-detect or manual focus, 1–2 panels)
   
   
 app.post("/api/generate-focal-lesion-3d", async (req: express.Request, res: express.Response) => {
@@ -5325,8 +5325,9 @@ TAREA:
 ========================================================================
 1. Define la lesión objetivo (label, sitio exacto, morfología, tamaño si consta, relaciones).
 2. Diseña ${wantMacro ? "2 paneles" : "1 panel"}:
-   - Panel A = CONTEXTO REGIONAL con la lesión visible y anclada (cutaway anatómico).
-   ${wantMacro ? "- Panel B = MACRO / ZOOM cutaway de la lesión (detalle morfológico fiel; conserva hitos de orientación para no perder lateralidad)." : ""}
+   - Panel A = CONTEXTO REGIONAL con la lesión visible y anclada (corte anatómico).
+   - En panelTitle y textos clínicos del anexo usa siempre «Corte» (nunca Cutaway/CUTAWAY).
+   ${wantMacro ? "- Panel B = MACRO / ZOOM corte de la lesión (detalle morfológico fiel; conserva hitos de orientación para no perder lateralidad)." : ""}
 3. Cada panel DEBE incluir spatialContract (view, laterality, imageLeftStructure, imageRightStructure, superiorStructure/inferiorStructure, mustShowLandmarks, pathologySite, pathologyAppearance, doNotInvent).
 3b. ${LATERALITY_PLAN_RULES_ES}
 3b2. ${BREAST_CLOCK_PLAN_RULES_ES}

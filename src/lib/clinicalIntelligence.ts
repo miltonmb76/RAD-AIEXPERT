@@ -131,7 +131,7 @@ export function buildPanelScopedFindingDirective(
   const val = finding.value ? ` Valor/medida: ${finding.value}.` : "";
   const sharedNote =
     opts.mode === "shared_single"
-      ? `Este panel es una vista complementaria del ÚNICO hallazgo activo para Atlas. Variá el ángulo/cutaway, pero NO cambies de lesión.`
+      ? `Este panel es una vista complementaria del ÚNICO hallazgo activo para Atlas. Variá el ángulo/corte, pero NO cambies de lesión.`
       : `Este panel está DEDICADO en exclusiva a ESTE hallazgo (${role}). NO redibujes ni priorices otras lesiones. Otras lesiones solo como contexto anatómico mínimo si ayudan a orientar.`;
 
   return [
@@ -144,7 +144,7 @@ export function buildPanelScopedFindingDirective(
     "Mantén exactitud morfométrica/morfológica (medidas, lado, aspecto).",
     "LATERALIDAD AP: «Derecha/Izquierda» = lado anatómico del paciente de frente (como radiografía AP). En vista AP/coronal, lado derecho del paciente = izquierda del cuadro; lado izquierdo del paciente = derecha del cuadro.",
     "MAMA / RELOJ (manecillas idénticas en ambas): 12 arriba; 3 = siempre derecha del pezón (vista de frente); 9 = siempre izquierda del pezón. Mama izquierda eje 3 = LATERAL/axila (NUNCA medial/esternón). Mama derecha eje 3 = MEDIAL/esternón. Si el scorecard dice eje 3 izquierda, ancla la lesión al lado axilar. NO vuelques en textos clínicos explicaciones de método/pantalla (p. ej. «a la derecha de la imagen respecto al pezón»).",
-    "Highlight cromático / cutaway SOLO en el hallazgo asignado a este panel.",
+    "Highlight cromático / corte SOLO en el hallazgo asignado a este panel.",
     "No inventes hallazgos fuera de esta directiva acotada.",
     opts.siblingHints ? `Contexto de otros hallazgos del estudio (NO dibujar como foco): ${opts.siblingHints}` : "",
   ]
@@ -204,7 +204,7 @@ export function formatAtlasFindingAssignmentPlan(
   const mode = assignments[0].mode;
   const header =
     mode === "shared_single"
-      ? "MODO 1 HALLAZGO: usa 2–3 paneles como vistas complementarias del MISMO hallazgo (distinto ángulo/cutaway)."
+      ? "MODO 1 HALLAZGO: usa 2–3 paneles como vistas complementarias del MISMO hallazgo (distinto ángulo/corte)."
       : `MODO ${assignments.length} HALLAZGOS: exactamente 1 panel por hallazgo asignado. Cada panel DEDICADO a su hallazgo (scorecard completo de ese hallazgo).`;
 
   const lines = assignments.map((a) => {

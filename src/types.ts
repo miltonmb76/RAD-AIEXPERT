@@ -264,7 +264,7 @@ export interface Vascular3DData {
   morphologicalSynthesis?: string;
 }
 
-/** Panel for Focal Lesion Cutaway 3D (context or macro zoom). */
+/** Panel for Focal Lesion Corte 3D (context or macro zoom). */
 export interface FocalLesion3DPanel extends Atlas3DPanel {
   panelRole?: "context" | "macro";
 }

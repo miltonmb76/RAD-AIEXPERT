@@ -2836,7 +2836,7 @@ export default function App() {
   const [vascular3dData, setVascular3dData] = useState<Vascular3DData | null>(null);
   const [includeVascular3dInReport, setIncludeVascular3dInReport] = useState<boolean>(true);
 
-  // Focal Lesion Cutaway 3D (on-demand)
+  // Focal Lesion Corte 3D (on-demand)
   const [focalLesion3dData, setFocalLesion3dData] = useState<FocalLesion3DData | null>(null);
   const [includeFocalLesion3dInReport, setIncludeFocalLesion3dInReport] = useState<boolean>(true);
   const [thyroid3dData, setThyroid3dData] = useState<Thyroid3DData | null>(null);
@@ -20804,7 +20804,7 @@ const splitReportAndAnnex = (text: string) => {
                                   id: "shoulder3d",
                                   label: "Suite Hombro 3D & Ficha Manguito Rotador",
                                   badge: "MANGUITO 3D",
-                                  desc: "Overview del hombro, cutaway del manguito, TCLB/bursa/AC, ficha clinica y anexo PDF.",
+                                  desc: "Overview del hombro, corte del manguito, TCLB/bursa/AC, ficha clinica y anexo PDF.",
                                   color: "text-amber-400 border-amber-500/30 bg-amber-950/20"
                                 },
                                 {
@@ -21987,7 +21987,7 @@ const splitReportAndAnnex = (text: string) => {
                                     Corte Focal 3D
                                   </h4>
                                   <p className="text-[11px] text-slate-400 mt-1">
-                                    Cutaway de la lesi�n (auto/manual), fidelidad Atlas, paneles CTX + MACRO e inclusi�n en PDF.
+                                    Corte de la lesi�n (auto/manual), fidelidad Atlas, paneles CTX + MACRO e inclusi�n en PDF.
                                   </p>
                                 </div>
                               </div>

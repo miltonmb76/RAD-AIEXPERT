@@ -1,9 +1,11 @@
+import { pdfCutawayToCorte } from "./pdfCutawayToCorte";
+
 /**
- * Strip AI/screen-method leakage from Focal cutaway clinical text boxes.
+ * Strip AI/screen-method leakage from Focal corte clinical text boxes.
  * Keeps anatomy (eje, cuadrante, lateral/medial) but removes viewer/image placement notes.
  */
 export function sanitizeFocalClinicalProse(text: string): string {
-  let s = String(text || "").trim();
+  let s = pdfCutawayToCorte(String(text || "").trim());
   if (!s) return "";
 
   s = s.replace(
