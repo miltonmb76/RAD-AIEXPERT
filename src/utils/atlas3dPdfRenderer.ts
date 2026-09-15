@@ -1,4 +1,5 @@
 import { Atlas3DData } from "../types";
+import { pdfCutawayToCorte } from "./pdfCutawayToCorte";
 
 export function renderAtlas3DAnnexToPDF(
   doc: any,
@@ -96,7 +97,9 @@ export function renderAtlas3DAnnexToPDF(
   const captionLineH = (numPanels === 2 || isSinglePanel ? 4.2 : 3.8) * factor;
 
   const panelCalculatedData = validPanels.map((panel) => {
-    const focusText = panel.anatomicalFocus ? panel.anatomicalFocus.replace(/^Foco:\s*/i, "") : "Reconstrucción tridimensional";
+    const focusText = pdfCutawayToCorte(
+      panel.anatomicalFocus ? panel.anatomicalFocus.replace(/^Foco:\s*/i, "") : "Reconstrucción tridimensional"
+    );
     const focusAvailableWidth = panelWidth - (numPanels === 2 || isSinglePanel ? 18 : 14) * factor;
     const focusLines = doc.splitTextToSize(focusText, focusAvailableWidth);
     return {
@@ -130,7 +133,7 @@ export function renderAtlas3DAnnexToPDF(
     doc.setFont("helvetica", "bold");
     doc.setFontSize((numPanels === 2 || isSinglePanel ? 8.5 : 7.5) * factor);
     doc.setTextColor(255, 255, 255);
-    const panelHeaderTitle = `PANEL ${panel.panelLetter}: ${panel.panelTitle || ""}`;
+    const panelHeaderTitle = pdfCutawayToCorte(`PANEL ${panel.panelLetter}: ${panel.panelTitle || ""}`);
     const headerTitleLines = doc.splitTextToSize(panelHeaderTitle, panelWidth - 6 * factor);
     doc.text(headerTitleLines[0] || panelHeaderTitle, panelX + 3.5 * factor, yCoord + 5.5 * factor);
 

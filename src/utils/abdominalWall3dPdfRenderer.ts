@@ -1,5 +1,6 @@
 import jsPDF from "jspdf";
 import { AbdominalWall3DData, AbdominalWall3DPanel, AbdominalWallFindingRow } from "../types";
+import { pdfCutawayToCorte } from "./pdfCutawayToCorte";
 
 /**
  * Renders a two-page "ANEXO: SUITE PARED ABDOMINAL 3D & FICHA DE PARED" into the provided jsPDF document.
@@ -69,14 +70,14 @@ export async function renderAbdominalWall3DPageToPdf(
     const measureCaptionH = (p: AbdominalWall3DPanel): number => {
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8 * factor);
-      const titleLines = doc.splitTextToSize(p.panelTitle || `Panel ${p.panelLetter}`, cardWidth - 6);
+      const titleLines = doc.splitTextToSize(pdfCutawayToCorte(p.panelTitle || `Panel ${p.panelLetter}`), cardWidth - 6);
       let h = 3.2 * factor;
       h += titleLines.length * 3.4 * factor;
-      if (p.anatomicalFocus && String(p.anatomicalFocus).trim()) {
+      if (p.anatomicalFocus && pdfCutawayToCorte(String(p.anatomicalFocus).trim())) {
         h += 1.0 * factor;
         doc.setFont("helvetica", "normal");
         doc.setFontSize(7.2 * factor);
-        const descLines = doc.splitTextToSize(String(p.anatomicalFocus).trim(), cardWidth - 6);
+        const descLines = doc.splitTextToSize(pdfCutawayToCorte(String(p.anatomicalFocus).trim()), cardWidth - 6);
         h += descLines.length * 3.05 * factor;
       }
       h += 2.2 * factor;
@@ -131,16 +132,16 @@ export async function renderAbdominalWall3DPageToPdf(
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8 * factor);
       doc.setTextColor(15, 23, 42);
-      const titleLines = doc.splitTextToSize(p.panelTitle || `Panel ${p.panelLetter}`, cardWidth - 6);
+      const titleLines = doc.splitTextToSize(pdfCutawayToCorte(p.panelTitle || `Panel ${p.panelLetter}`), cardWidth - 6);
       doc.text(titleLines, cardX + 3, textY);
       textY += titleLines.length * 3.4 * factor;
 
-      if (p.anatomicalFocus && String(p.anatomicalFocus).trim()) {
+      if (p.anatomicalFocus && pdfCutawayToCorte(String(p.anatomicalFocus).trim())) {
         textY += 1.0 * factor;
         doc.setFont("helvetica", "normal");
         doc.setFontSize(7.2 * factor);
         doc.setTextColor(71, 85, 105);
-        const descLines = doc.splitTextToSize(String(p.anatomicalFocus).trim(), cardWidth - 6);
+        const descLines = doc.splitTextToSize(pdfCutawayToCorte(String(p.anatomicalFocus).trim()), cardWidth - 6);
         doc.text(descLines, cardX + 3, textY);
       }
     }
@@ -149,15 +150,15 @@ export async function renderAbdominalWall3DPageToPdf(
   }
 
   const dossierBlocks: Array<{ title: string; text: string; color: [number, number, number] }> = [
-    { title: "RESUMEN DE PARED", text: String(abdominalWallData.wallSummary || "").trim(), color: accent },
-    { title: "MORFOLOGÍA DEL DEFECTO", text: String(abdominalWallData.morphologyNotes || "").trim(), color: [3, 105, 161] },
-    { title: "CAPAS / FASCIA", text: String(abdominalWallData.wallLayersStatus || "").trim(), color: [12, 74, 110] },
+    { title: "RESUMEN DE PARED", text: pdfCutawayToCorte(String(abdominalWallData.wallSummary || "").trim()), color: accent },
+    { title: "MORFOLOGÍA DEL DEFECTO", text: pdfCutawayToCorte(String(abdominalWallData.morphologyNotes || "").trim()), color: [3, 105, 161] },
+    { title: "CAPAS / FASCIA", text: pdfCutawayToCorte(String(abdominalWallData.wallLayersStatus || "").trim()), color: [12, 74, 110] },
   ];
   const keyPoints = Array.isArray(abdominalWallData.keyPoints) ? abdominalWallData.keyPoints.filter(Boolean) : [];
   if (keyPoints.length) {
     dossierBlocks.push({
       title: "PUNTOS CLAVE",
-      text: keyPoints.map((k) => `• ${k}`).join("\n"),
+      text: pdfCutawayToCorte(keyPoints.map((k) => `• ${k}`).join("\n")),
       color: [5, 150, 105],
     });
   }

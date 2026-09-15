@@ -97,7 +97,7 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
     const stepTimers: ReturnType<typeof setTimeout>[] = [];
     try {
       stepTimers.push(
-        setTimeout(() => setGenerationStep("Renderizando cutaway 3D con fidelidad Atlas..."), 2000)
+        setTimeout(() => setGenerationStep("Renderizando corte 3D con fidelidad Atlas..."), 2000)
       );
       stepTimers.push(
         setTimeout(
@@ -289,7 +289,7 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
               </span>
             </div>
             <p className="text-[11px] text-slate-400 font-medium mt-0.5">
-              Cutaway 3D de una sola lesión (auto o manual). No se ejecuta en lote; solo bajo demanda.
+              Corte 3D de una sola lesión (auto o manual). No se ejecuta en lote; solo bajo demanda.
             </p>
           </div>
         </div>
@@ -473,7 +473,7 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
           <div className="flex justify-center items-center gap-2">
             <Loader2 className="h-5 w-5 text-teal-400 animate-spin" />
             <span className="text-xs font-black uppercase tracking-widest text-teal-300 font-mono">
-              Motor de cutaway focal
+              Motor de corte focal
             </span>
           </div>
           <p className="text-xs font-bold text-slate-300">{generationStep}</p>

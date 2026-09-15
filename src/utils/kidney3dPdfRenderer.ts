@@ -1,5 +1,6 @@
 import jsPDF from "jspdf";
 import { Kidney3DData, Kidney3DPanel, KidneyFindingRow } from "../types";
+import { pdfCutawayToCorte } from "./pdfCutawayToCorte";
 
 /**
  * Renders a two-page "ANEXO: SUITE RIÑÓN 3D & FICHA VÍAS URINARIAS" into the provided jsPDF document.
@@ -69,14 +70,14 @@ export async function renderKidney3DPageToPdf(
     const measureCaptionH = (p: Kidney3DPanel): number => {
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8 * factor);
-      const titleLines = doc.splitTextToSize(p.panelTitle || `Panel ${p.panelLetter}`, cardWidth - 6);
+      const titleLines = doc.splitTextToSize(pdfCutawayToCorte(p.panelTitle || `Panel ${p.panelLetter}`), cardWidth - 6);
       let h = 3.2 * factor;
       h += titleLines.length * 3.4 * factor;
-      if (p.anatomicalFocus && String(p.anatomicalFocus).trim()) {
+      if (p.anatomicalFocus && pdfCutawayToCorte(String(p.anatomicalFocus).trim())) {
         h += 1.0 * factor;
         doc.setFont("helvetica", "normal");
         doc.setFontSize(7.2 * factor);
-        const descLines = doc.splitTextToSize(String(p.anatomicalFocus).trim(), cardWidth - 6);
+        const descLines = doc.splitTextToSize(pdfCutawayToCorte(String(p.anatomicalFocus).trim()), cardWidth - 6);
         h += descLines.length * 3.05 * factor;
       }
       h += 2.2 * factor;
@@ -131,16 +132,16 @@ export async function renderKidney3DPageToPdf(
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8 * factor);
       doc.setTextColor(15, 23, 42);
-      const titleLines = doc.splitTextToSize(p.panelTitle || `Panel ${p.panelLetter}`, cardWidth - 6);
+      const titleLines = doc.splitTextToSize(pdfCutawayToCorte(p.panelTitle || `Panel ${p.panelLetter}`), cardWidth - 6);
       doc.text(titleLines, cardX + 3, textY);
       textY += titleLines.length * 3.4 * factor;
 
-      if (p.anatomicalFocus && String(p.anatomicalFocus).trim()) {
+      if (p.anatomicalFocus && pdfCutawayToCorte(String(p.anatomicalFocus).trim())) {
         textY += 1.0 * factor;
         doc.setFont("helvetica", "normal");
         doc.setFontSize(7.2 * factor);
         doc.setTextColor(71, 85, 105);
-        const descLines = doc.splitTextToSize(String(p.anatomicalFocus).trim(), cardWidth - 6);
+        const descLines = doc.splitTextToSize(pdfCutawayToCorte(String(p.anatomicalFocus).trim()), cardWidth - 6);
         doc.text(descLines, cardX + 3, textY);
       }
     }
@@ -149,15 +150,15 @@ export async function renderKidney3DPageToPdf(
   }
 
   const dossierBlocks: Array<{ title: string; text: string; color: [number, number, number] }> = [
-    { title: "RESUMEN RENAL", text: String(kidneyData.kidneySummary || "").trim(), color: accent },
-    { title: "MORFOLOGÍA / ECOESTRUCTURA", text: String(kidneyData.morphologyNotes || "").trim(), color: [3, 105, 161] },
-    { title: "ESTADO DE VÍAS URINARIAS", text: String(kidneyData.urinaryTractStatus || "").trim(), color: [12, 74, 110] },
+    { title: "RESUMEN RENAL", text: pdfCutawayToCorte(String(kidneyData.kidneySummary || "").trim()), color: accent },
+    { title: "MORFOLOGÍA / ECOESTRUCTURA", text: pdfCutawayToCorte(String(kidneyData.morphologyNotes || "").trim()), color: [3, 105, 161] },
+    { title: "ESTADO DE VÍAS URINARIAS", text: pdfCutawayToCorte(String(kidneyData.urinaryTractStatus || "").trim()), color: [12, 74, 110] },
   ];
   const keyPoints = Array.isArray(kidneyData.keyPoints) ? kidneyData.keyPoints.filter(Boolean) : [];
   if (keyPoints.length) {
     dossierBlocks.push({
       title: "PUNTOS CLAVE",
-      text: keyPoints.map((k) => `• ${k}`).join("\n"),
+      text: pdfCutawayToCorte(keyPoints.map((k) => `• ${k}`).join("\n")),
       color: [5, 150, 105],
     });
   }

@@ -1,5 +1,6 @@
 import jsPDF from "jspdf";
 import { Abdomen3DData, Abdomen3DPanel, AbdomenFindingRow } from "../types";
+import { pdfCutawayToCorte } from "./pdfCutawayToCorte";
 
 /**
  * Renders a two-page "ANEXO: SUITE ABDOMEN 3D & FICHA MULTI-ÓRGANO" into the provided jsPDF document.
@@ -69,14 +70,14 @@ export async function renderAbdomen3DPageToPdf(
     const measureCaptionH = (p: Abdomen3DPanel): number => {
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8 * factor);
-      const titleLines = doc.splitTextToSize(p.panelTitle || `Panel ${p.panelLetter}`, cardWidth - 6);
+      const titleLines = doc.splitTextToSize(pdfCutawayToCorte(p.panelTitle || `Panel ${p.panelLetter}`), cardWidth - 6);
       let h = 3.2 * factor;
       h += titleLines.length * 3.4 * factor;
-      if (p.anatomicalFocus && String(p.anatomicalFocus).trim()) {
+      if (p.anatomicalFocus && pdfCutawayToCorte(String(p.anatomicalFocus).trim())) {
         h += 1.0 * factor;
         doc.setFont("helvetica", "normal");
         doc.setFontSize(7.2 * factor);
-        const descLines = doc.splitTextToSize(String(p.anatomicalFocus).trim(), cardWidth - 6);
+        const descLines = doc.splitTextToSize(pdfCutawayToCorte(String(p.anatomicalFocus).trim()), cardWidth - 6);
         h += descLines.length * 3.05 * factor;
       }
       h += 2.2 * factor;
@@ -131,16 +132,16 @@ export async function renderAbdomen3DPageToPdf(
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8 * factor);
       doc.setTextColor(15, 23, 42);
-      const titleLines = doc.splitTextToSize(p.panelTitle || `Panel ${p.panelLetter}`, cardWidth - 6);
+      const titleLines = doc.splitTextToSize(pdfCutawayToCorte(p.panelTitle || `Panel ${p.panelLetter}`), cardWidth - 6);
       doc.text(titleLines, cardX + 3, textY);
       textY += titleLines.length * 3.4 * factor;
 
-      if (p.anatomicalFocus && String(p.anatomicalFocus).trim()) {
+      if (p.anatomicalFocus && pdfCutawayToCorte(String(p.anatomicalFocus).trim())) {
         textY += 1.0 * factor;
         doc.setFont("helvetica", "normal");
         doc.setFontSize(7.2 * factor);
         doc.setTextColor(71, 85, 105);
-        const descLines = doc.splitTextToSize(String(p.anatomicalFocus).trim(), cardWidth - 6);
+        const descLines = doc.splitTextToSize(pdfCutawayToCorte(String(p.anatomicalFocus).trim()), cardWidth - 6);
         doc.text(descLines, cardX + 3, textY);
       }
     }
@@ -149,15 +150,15 @@ export async function renderAbdomen3DPageToPdf(
   }
 
   const dossierBlocks: Array<{ title: string; text: string; color: [number, number, number] }> = [
-    { title: "RESUMEN ABDOMINAL", text: String(abdomenData.abdomenSummary || "").trim(), color: accent },
-    { title: "MORFOLOGÍA / ECOESTRUCTURA", text: String(abdomenData.morphologyNotes || "").trim(), color: [3, 105, 161] },
-    { title: "ESTADO HEPATO-BILIAR-PANCREÁTICO", text: String(abdomenData.hepatobiliaryStatus || "").trim(), color: [12, 74, 110] },
+    { title: "RESUMEN ABDOMINAL", text: pdfCutawayToCorte(String(abdomenData.abdomenSummary || "").trim()), color: accent },
+    { title: "MORFOLOGÍA / ECOESTRUCTURA", text: pdfCutawayToCorte(String(abdomenData.morphologyNotes || "").trim()), color: [3, 105, 161] },
+    { title: "ESTADO HEPATO-BILIAR-PANCREÁTICO", text: pdfCutawayToCorte(String(abdomenData.hepatobiliaryStatus || "").trim()), color: [12, 74, 110] },
   ];
   const keyPoints = Array.isArray(abdomenData.keyPoints) ? abdomenData.keyPoints.filter(Boolean) : [];
   if (keyPoints.length) {
     dossierBlocks.push({
       title: "PUNTOS CLAVE",
-      text: keyPoints.map((k) => `• ${k}`).join("\n"),
+      text: pdfCutawayToCorte(keyPoints.map((k) => `• ${k}`).join("\n")),
       color: [5, 150, 105],
     });
   }
