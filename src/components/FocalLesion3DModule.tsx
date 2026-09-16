@@ -589,11 +589,11 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
                       Sin imagen
                     </div>
                   )}
-                  <div className="absolute top-2 left-2 flex gap-1.5">
-                    <span className="text-[9px] font-black uppercase bg-teal-700/90 text-white px-2 py-0.5 rounded-md font-mono">
+                  <div className="absolute top-2 left-2 flex gap-1.5 max-w-[calc(100%-3rem)] flex-wrap">
+                    <span className="text-[9px] font-black uppercase bg-teal-700/90 text-white px-2 py-0.5 rounded-md font-mono whitespace-nowrap shrink-0">
                       Panel {panel.panelLetter}
                     </span>
-                    <span className="text-[9px] font-black uppercase bg-slate-900/80 text-teal-200 px-2 py-0.5 rounded-md font-mono border border-teal-500/30">
+                    <span className="text-[9px] font-black uppercase bg-slate-900/80 text-teal-200 px-2 py-0.5 rounded-md font-mono border border-teal-500/30 whitespace-nowrap shrink-0">
                       {panel.panelRole === "macro" ? "Macro" : "Contexto"}
                     </span>
                   </div>
@@ -631,8 +631,8 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
                     </div>
                   )}
                 </div>
-                <div className="p-3 space-y-2 border-t border-slate-800">
-                  <p className="text-xs font-bold text-slate-100">{panel.panelTitle}</p>
+                <div className="px-3.5 pt-4 pb-3 space-y-2 border-t border-slate-800">
+                  <p className="text-xs font-bold text-slate-100 leading-snug">{panel.panelTitle}</p>
                   <p className="text-[11px] text-slate-400 leading-snug">
                     {sanitizeFocalClinicalProse(panel.anatomicalFocus || "")}
                   </p>
