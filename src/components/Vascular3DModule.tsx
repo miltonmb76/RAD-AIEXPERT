@@ -32,6 +32,7 @@ import {
 import { runBackgroundTask } from "../lib/backgroundTasks";
 import { buildVascularDirectivesFromScorecard } from "../lib/clinicalIntelligence";
 import { flipImageDataUrl, swapLateralityLabel } from "../lib/imageFlip";
+import { vascularDossierLabels } from "../utils/vascularDossierLabels";
 
 interface Vascular3DModuleProps {
   reportText: string;
@@ -739,6 +740,116 @@ export const Vascular3DModule: React.FC<Vascular3DModuleProps> = ({
               ))}
             </div>
           </div>
+
+          {/* Clinical dossier under figures (PDF page 1) — all vascular modalities */}
+          {(() => {
+            const labels = vascularDossierLabels(vascularData.studyTypeCategory);
+            return (
+              <div className="rounded-2xl border border-indigo-500/30 bg-gradient-to-br from-slate-950 via-slate-950 to-indigo-950/40 p-4 space-y-5 text-slate-100">
+                <p className="text-[10px] font-mono font-bold uppercase tracking-[0.18em] text-indigo-300">
+                  {labels.fichaTitle}
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="md:col-span-2 rounded-xl border border-indigo-800/40 bg-slate-950/70 p-3">
+                    <p className="text-[10px] font-mono font-black uppercase tracking-widest text-indigo-300 mb-2">
+                      {labels.summary}
+                    </p>
+                    {isEditingText ? (
+                      <textarea
+                        rows={3}
+                        className="w-full text-xs bg-slate-900 border border-slate-700 rounded p-2 text-slate-100"
+                        value={vascularData.vascularSummary || ""}
+                        onChange={(e) =>
+                          setVascularData({ ...vascularData, vascularSummary: e.target.value })
+                        }
+                      />
+                    ) : (
+                      <p className="text-[13px] text-slate-200 leading-relaxed whitespace-pre-wrap">
+                        {vascularData.vascularSummary || "Sin síntesis hemodinámica."}
+                      </p>
+                    )}
+                  </div>
+                  <div className="min-w-0 rounded-xl border border-slate-700/70 bg-slate-950/70 p-3">
+                    <p className="text-[10px] font-mono font-black uppercase tracking-widest text-violet-300 mb-2">
+                      {labels.wallPlaque}
+                    </p>
+                    {isEditingText ? (
+                      <textarea
+                        rows={5}
+                        className="w-full text-xs bg-slate-900 border border-slate-700 rounded p-2 text-slate-100"
+                        value={vascularData.wallPlaqueNotes || ""}
+                        onChange={(e) =>
+                          setVascularData({ ...vascularData, wallPlaqueNotes: e.target.value })
+                        }
+                      />
+                    ) : (
+                      <p className="text-[13px] text-slate-200 leading-relaxed whitespace-pre-wrap">
+                        {vascularData.wallPlaqueNotes || "Sin notas de pared/placa/trombo."}
+                      </p>
+                    )}
+                  </div>
+                  <div className="min-w-0 rounded-xl border border-slate-700/70 bg-slate-950/70 p-3">
+                    <p className="text-[10px] font-mono font-black uppercase tracking-widest text-sky-300 mb-2">
+                      {labels.velocity}
+                    </p>
+                    {isEditingText ? (
+                      <textarea
+                        rows={5}
+                        className="w-full text-xs bg-slate-900 border border-slate-700 rounded p-2 text-slate-100"
+                        value={vascularData.velocityHemodynamicStatus || ""}
+                        onChange={(e) =>
+                          setVascularData({
+                            ...vascularData,
+                            velocityHemodynamicStatus: e.target.value,
+                          })
+                        }
+                      />
+                    ) : (
+                      <p className="text-[13px] text-slate-200 leading-relaxed whitespace-pre-wrap">
+                        {vascularData.velocityHemodynamicStatus ||
+                          "Sin velocidades/índices destacados."}
+                      </p>
+                    )}
+                  </div>
+                  <div className="md:col-span-2 rounded-xl border border-emerald-800/40 bg-slate-950/70 p-3">
+                    <p className="text-[10px] font-mono font-black uppercase tracking-widest text-emerald-300 mb-2">
+                      {labels.keyPoints}
+                    </p>
+                    {isEditingText ? (
+                      <textarea
+                        rows={4}
+                        className="w-full text-xs bg-slate-900 border border-slate-700 rounded p-2 text-slate-100"
+                        value={(vascularData.keyPoints || []).join("\n")}
+                        onChange={(e) =>
+                          setVascularData({
+                            ...vascularData,
+                            keyPoints: e.target.value
+                              .split("\n")
+                              .map((s) => s.trim())
+                              .filter(Boolean),
+                          })
+                        }
+                        placeholder="Un punto por línea"
+                      />
+                    ) : (
+                      <ul className="space-y-1.5">
+                        {(vascularData.keyPoints || []).length ? (
+                          vascularData.keyPoints!.map((kp, i) => (
+                            <li key={i} className="text-[13px] text-slate-200 flex gap-2">
+                              <span className="text-emerald-400">•</span>
+                              <span>{kp}</span>
+                            </li>
+                          ))
+                        ) : (
+                          <li className="text-[13px] text-slate-400">Sin puntos clave.</li>
+                        )}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Section: Tailored Hemodynamic Table */}
           <div>

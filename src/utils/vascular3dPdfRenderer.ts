@@ -8,6 +8,7 @@ import {
   softBorderFromAccent,
   softFillFromAccent,
 } from "./pdfAnnexChrome";
+import { vascularDossierLabels } from "./vascularDossierLabels";
 
 /**
  * Renders an exclusive, two-page "ANEXO: SUITE VASCULAR 3D & MAPA ANATOMO-HEMODINÁMICO" into the provided jsPDF document.
@@ -178,6 +179,115 @@ export async function renderVascular3DPageToPdf(
     }
 
     yCoord += cardH + 5 * factor;
+  }
+
+  // 3b. CLINICAL DOSSIER under figures (fills empty lower half — all vascular modalities)
+  {
+    const labels = vascularDossierLabels(vascularData.studyTypeCategory);
+    const dossierBlocks: Array<{ title: string; text: string; color: [number, number, number] }> = [
+      {
+        title: labels.summary,
+        text: pdfCutawayToCorte(String(vascularData.vascularSummary || "").trim()),
+        color: accent,
+      },
+      {
+        title: labels.wallPlaque,
+        text: pdfCutawayToCorte(String(vascularData.wallPlaqueNotes || "").trim()),
+        color: [67, 56, 202],
+      },
+      {
+        title: labels.velocity,
+        text: pdfCutawayToCorte(String(vascularData.velocityHemodynamicStatus || "").trim()),
+        color: [49, 46, 129],
+      },
+    ];
+    const keyPoints = Array.isArray(vascularData.keyPoints)
+      ? vascularData.keyPoints.filter(Boolean)
+      : [];
+    if (keyPoints.length) {
+      dossierBlocks.push({
+        title: labels.keyPoints,
+        text: pdfCutawayToCorte(keyPoints.map((k) => `• ${k}`).join("\n")),
+        color: [5, 150, 105],
+      });
+    }
+
+    const dossierTexts = dossierBlocks.filter((b) => b.text);
+    if (dossierTexts.length) {
+      let dossierY = yCoord;
+      const boxW = contentWidth;
+      const titleH = 5.6 * factor;
+      const lineH = 3.4 * factor;
+      const minBoxGap = 3.6 * factor;
+      const maxBoxGap = 8 * factor;
+      let boxGap = minBoxGap;
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9.0 * factor);
+      doc.setTextColor(15, 23, 42);
+      doc.text(labels.fichaTitle, marginX, dossierY);
+      dossierY += 3.4 * factor;
+
+      const measured = dossierTexts.map((b) => {
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8.0 * factor);
+        const lines = doc.splitTextToSize(b.text, boxW - 8);
+        // Cap lines so dossier + figures stay on one page
+        const capped = lines.slice(0, 5);
+        if (lines.length > 5) {
+          const last = String(capped[4] || "");
+          capped[4] = (last.length > 4 ? last.slice(0, -3) : last) + "...";
+        }
+        const textH = Math.max(lineH, capped.length * lineH);
+        return { lines: capped, boxH: titleH + textH + 4.8 * factor };
+      });
+
+      const totalBoxesH = measured.reduce((sum, m) => sum + m.boxH, 0);
+      const gapCount = Math.max(1, dossierTexts.length - 1);
+      const pageBottom = pageHeight - 16 * factor;
+      const leftover = pageBottom - dossierY - totalBoxesH;
+      if (leftover > minBoxGap * gapCount) {
+        boxGap = Math.min(maxBoxGap, leftover / gapCount);
+      }
+
+      // If still overflowing, shrink by dropping least-critical blocks (velocity first, then wall)
+      let blocks = dossierTexts;
+      let measures = measured;
+      while (blocks.length > 1 && dossierY + measures.reduce((s, m) => s + m.boxH, 0) + minBoxGap * (blocks.length - 1) > pageBottom) {
+        const dropIdx =
+          blocks.findIndex((b) => b.title === labels.velocity) >= 0
+            ? blocks.findIndex((b) => b.title === labels.velocity)
+            : blocks.findIndex((b) => b.title === labels.wallPlaque) >= 0
+              ? blocks.findIndex((b) => b.title === labels.wallPlaque)
+              : blocks.length - 1;
+        blocks = blocks.filter((_, i) => i !== dropIdx);
+        measures = measures.filter((_, i) => i !== dropIdx);
+      }
+
+      for (let i = 0; i < blocks.length; i++) {
+        const b = blocks[i];
+        const lines = measures[i].lines;
+        const boxH = measures[i].boxH;
+        if (dossierY + boxH > pageBottom + 0.5) break;
+
+        doc.setFillColor(softFill[0], softFill[1], softFill[2]);
+        doc.setDrawColor(softBorder[0], softBorder[1], softBorder[2]);
+        doc.setLineWidth(0.3);
+        doc.roundedRect(marginX, dossierY, boxW, boxH, 1.2, 1.2, "FD");
+        doc.setFillColor(b.color[0], b.color[1], b.color[2]);
+        doc.rect(marginX, dossierY, 2.2, boxH, "F");
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(7.8 * factor);
+        doc.setTextColor(b.color[0], b.color[1], b.color[2]);
+        doc.text(b.title, marginX + 5, dossierY + 3.6 * factor);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8.0 * factor);
+        doc.setTextColor(51, 65, 85);
+        doc.text(lines, marginX + 5, dossierY + titleH + 2.2 * factor);
+        dossierY += boxH + (i < blocks.length - 1 ? boxGap : 0);
+      }
+      yCoord = dossierY + 0.5 * factor;
+    }
   }
 
   // 4. TAILORED HEMODYNAMIC TABLE

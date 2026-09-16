@@ -260,6 +260,11 @@ export interface Vascular3DData {
   };
   panels: Vascular3DPanel[];
   hemodynamicTable: VascularHemodynamicRow[];
+  /** Page-1 clinical dossier under the 3D figure (carotid / arterial / venous). */
+  vascularSummary?: string;
+  wallPlaqueNotes?: string;
+  velocityHemodynamicStatus?: string;
+  keyPoints?: string[];
   synthesisTitle?: string;
   morphologicalSynthesis?: string;
 }
