@@ -2,6 +2,7 @@ import { FocalLesion3DData } from "../types";
 import { sanitizeFocalClinicalProse } from "./sanitizeFocalClinicalProse";
 import { pdfCutawayToCorte } from "./pdfCutawayToCorte";
 import { sanitizePdfText } from "./sanitizePdfText";
+import { ANNEX_CAPTION_GAP } from "./pdfAnnexChrome";
 
 /**
  * Annex for Focal Lesion Corte 3D — always ONE page.
@@ -208,7 +209,7 @@ export function renderFocalLesion3DAnnexToPDF(
   const panelGap = isSingle ? 0 : 4 * factor;
   const cardPad = 1.8 * factor;
   // Match other organ suites (e.g. Escroto uses ~3.2): keep clear air under the photo.
-  const captionGap = 3.4 * factor;
+  const captionGap = ANNEX_CAPTION_GAP * factor;
 
   const measureCaption = (panelW: number): number => {
     let maxH = 0;

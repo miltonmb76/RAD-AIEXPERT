@@ -2,6 +2,12 @@ import jsPDF from "jspdf";
 import { Knee3DData, Knee3DPanel, KneeFindingRow } from "../types";
 import { pdfCutawayToCorte } from "./pdfCutawayToCorte";
 import { sanitizePdfText } from "./sanitizePdfText";
+import {
+  ANNEX_CAPTION_GAP,
+  drawAnnexPanelBadge,
+  softBorderFromAccent,
+  softFillFromAccent,
+} from "./pdfAnnexChrome";
 
 /**
  * Renders a two-page "ANEXO: SUITE RODILLA 3D & FICHA LIGAMENTOS Y MENISCOS" into the provided jsPDF document.
@@ -22,6 +28,9 @@ export async function renderKnee3DPageToPdf(
   const contentWidth = pageWidth - (marginX * 2);
   const factor = pageSize === "a4" ? 1.0 : 0.98;
   const accent: [number, number, number] = [2, 132, 199]; // sky-600
+  const softFill = softFillFromAccent(accent);
+  const softBorder = softBorderFromAccent(accent);
+  const tableHeaderFill = softFillFromAccent(accent, 0.82);
 
   doc.addPage();
 
@@ -47,8 +56,8 @@ export async function renderKnee3DPageToPdf(
   const figTitleLines = doc.splitTextToSize(figTitle.toUpperCase(), contentWidth - 10);
   const figBannerH = Math.max(7.5 * factor, (figTitleLines.length * 4.2 + 3) * factor);
 
-  doc.setFillColor(240, 249, 255); // sky-50
-  doc.setDrawColor(186, 230, 253); // sky-200
+  doc.setFillColor(softFill[0], softFill[1], softFill[2]);
+  doc.setDrawColor(softBorder[0], softBorder[1], softBorder[2]);
   doc.setLineWidth(0.3);
   doc.roundedRect(marginX, yCoord, contentWidth, figBannerH, 1.5, 1.5, "FD");
 
@@ -72,7 +81,7 @@ export async function renderKnee3DPageToPdf(
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8 * factor);
       const titleLines = doc.splitTextToSize(pdfCutawayToCorte(p.panelTitle || `Panel ${p.panelLetter}`), cardWidth - 6);
-      let h = 3.2 * factor;
+      let h = ANNEX_CAPTION_GAP * factor;
       h += titleLines.length * 3.4 * factor;
       if (p.anatomicalFocus && pdfCutawayToCorte(String(p.anatomicalFocus).trim())) {
         h += 1.0 * factor;
@@ -120,16 +129,17 @@ export async function renderKnee3DPageToPdf(
         doc.text("Reconstrucción 3D Rodilla", imgX + (imgWidth / 2) - 18, imgY + (imgHeight / 2));
       }
 
-      const badgeW = 20 * factor;
-      const badgeH = 5 * factor;
-      doc.setFillColor(accent[0], accent[1], accent[2]);
-      doc.roundedRect(imgX + 2, imgY + 2, badgeW, badgeH, 1, 1, "F");
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(6.8 * factor);
-      doc.setTextColor(255, 255, 255);
-      doc.text(`PANEL ${p.panelLetter || String.fromCharCode(65 + idx)}`, imgX + 3.5, imgY + 2 + 3.6);
+      const badgeLabel = `PANEL ${p.panelLetter || String.fromCharCode(65 + idx)}`;
+      drawAnnexPanelBadge(doc, {
+        label: badgeLabel,
+        x: imgX + 2,
+        y: imgY + 2,
+        factor,
+        accent,
+        maxWidth: imgWidth - 4,
+      });
 
-      let textY = imgY + imgHeight + 3.2 * factor;
+      let textY = imgY + imgHeight + ANNEX_CAPTION_GAP * factor;
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8 * factor);
       doc.setTextColor(15, 23, 42);
@@ -151,9 +161,9 @@ export async function renderKnee3DPageToPdf(
   }
 
   const dossierBlocks: Array<{ title: string; text: string; color: [number, number, number] }> = [
-    { title: "RESUMEN DEL RODILLA", text: pdfCutawayToCorte(String(kneeData.kneeSummary || "").trim()), color: accent },
+    { title: "RESUMEN DE RODILLA", text: pdfCutawayToCorte(String(kneeData.kneeSummary || "").trim()), color: accent },
     { title: "MORFOLOGÍA / TENDÓN DOMINANTE", text: pdfCutawayToCorte(String(kneeData.morphologyNotes || "").trim()), color: [3, 105, 161] },
-    { title: "ESTADO DEL RODILLA", text: pdfCutawayToCorte(String(kneeData.ligamentMeniscusStatus || "").trim()), color: [12, 74, 110] },
+    { title: "ESTADO DE RODILLA", text: pdfCutawayToCorte(String(kneeData.ligamentMeniscusStatus || "").trim()), color: [12, 74, 110] },
   ];
   const keyPoints = Array.isArray(kneeData.keyPoints) ? kneeData.keyPoints.filter(Boolean) : [];
   if (keyPoints.length) {

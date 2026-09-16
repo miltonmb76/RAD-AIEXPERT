@@ -2,6 +2,12 @@ import jsPDF from "jspdf";
 import { Breast3DData, Breast3DPanel, BreastLesionRow } from "../types";
 import { pdfCutawayToCorte } from "./pdfCutawayToCorte";
 import { sanitizePdfText } from "./sanitizePdfText";
+import {
+  ANNEX_CAPTION_GAP,
+  drawAnnexPanelBadge,
+  softBorderFromAccent,
+  softFillFromAccent,
+} from "./pdfAnnexChrome";
 
 /**
  * Renders an exclusive, two-page "ANEXO: SUITE MAMA 3D & FICHA BI-RADS Y CORRELACIÓN 3D" into the provided jsPDF document.
@@ -30,6 +36,10 @@ export async function renderBreast3DPageToPdf(
 
   // Scaling factor for A4 vs Letter
   const factor = pageSize === "a4" ? 1.0 : 0.98;
+  const accent: [number, number, number] = [219, 39, 119];
+  const softFill = softFillFromAccent(accent);
+  const softBorder = softBorderFromAccent(accent);
+  const tableHeaderFill = softFillFromAccent(accent, 0.82);
 
   // Add dedicated exclusive page
   doc.addPage();
@@ -59,13 +69,13 @@ export async function renderBreast3DPageToPdf(
   const figTitleLines = doc.splitTextToSize(figTitle.toUpperCase(), contentWidth - 10);
   const figBannerH = Math.max(7.5 * factor, (figTitleLines.length * 4.2 + 3) * factor);
 
-  doc.setFillColor(248, 250, 252); // slate-50
-  doc.setDrawColor(226, 232, 240); // slate-200
+  doc.setFillColor(softFill[0], softFill[1], softFill[2]);
+  doc.setDrawColor(softBorder[0], softBorder[1], softBorder[2]);
   doc.setLineWidth(0.3);
   doc.roundedRect(marginX, yCoord, contentWidth, figBannerH, 1.5, 1.5, "FD");
 
   // Left accent bar
-  doc.setFillColor(219, 39, 119);
+  doc.setFillColor(accent[0], accent[1], accent[2]);
   doc.rect(marginX, yCoord, 2.5, figBannerH, "F");
 
   doc.text(figTitleLines, marginX + 5, yCoord + (figBannerH / 2) + 1.2);
@@ -88,7 +98,7 @@ export async function renderBreast3DPageToPdf(
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8 * factor);
       const titleLines = doc.splitTextToSize(pdfCutawayToCorte(p.panelTitle || `Panel ${p.panelLetter}`), cardWidth - 6);
-      let h = 3.2 * factor; // gap under image
+      let h = ANNEX_CAPTION_GAP * factor; // gap under image
       h += titleLines.length * 3.4 * factor;
       if (p.anatomicalFocus && pdfCutawayToCorte(String(p.anatomicalFocus).trim())) {
         h += 1.0 * factor; // gap title → description
@@ -143,18 +153,18 @@ export async function renderBreast3DPageToPdf(
         doc.text("Reconstrucción 3D Mama", imgX + (imgWidth / 2) - 18, imgY + (imgHeight / 2));
       }
 
-      // Panel Badge (e.g. PANEL A, PANEL B)
-      const badgeW = 20 * factor;
-      const badgeH = 5 * factor;
-      doc.setFillColor(219, 39, 119); // Teal-600
-      doc.roundedRect(imgX + 2, imgY + 2, badgeW, badgeH, 1, 1, "F");
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(6.8 * factor);
-      doc.setTextColor(255, 255, 255);
-      doc.text(`PANEL ${p.panelLetter || String.fromCharCode(65 + idx)}`, imgX + 3.5, imgY + 2 + 3.6);
+      const badgeLabel = `PANEL ${p.panelLetter || String.fromCharCode(65 + idx)}`;
+      drawAnnexPanelBadge(doc, {
+        label: badgeLabel,
+        x: imgX + 2,
+        y: imgY + 2,
+        factor,
+        accent,
+        maxWidth: imgWidth - 4,
+      });
 
       // Panel Title — metrics must match measureCaptionH()
-      let textY = imgY + imgHeight + 3.2 * factor;
+      let textY = imgY + imgHeight + ANNEX_CAPTION_GAP * factor;
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8 * factor);
       doc.setTextColor(15, 23, 42); // slate-900
@@ -180,7 +190,7 @@ export async function renderBreast3DPageToPdf(
   const dossierBlocks: Array<{ title: string; text: string; color: [number, number, number] }> = [
     { title: "RESUMEN MAMARIO", text: pdfCutawayToCorte(String(breastData.breastSummary || "").trim()), color: [219, 39, 119] },
     { title: "MORFOLOGÍA / NÓDULO DOMINANTE", text: pdfCutawayToCorte(String(breastData.morphologyNotes || "").trim()), color: [192, 38, 211] },
-    { title: "AXILAS / DRENAJE", text: pdfCutawayToCorte(String(breastData.axillaryStatus || "").trim()), color: [217, 119, 6] },
+    { title: "AXILAS / DRENAJE", text: pdfCutawayToCorte(String(breastData.axillaryStatus || "").trim()), color: softBorder },
   ];
   const keyPoints = Array.isArray(breastData.keyPoints) ? breastData.keyPoints.filter(Boolean) : [];
   if (keyPoints.length) {
@@ -366,7 +376,7 @@ export async function renderBreast3DPageToPdf(
 
     // Zebra striping
     if (rIdx % 2 === 1) {
-      doc.setFillColor(248, 250, 252); // slate-50
+      doc.setFillColor(softFill[0], softFill[1], softFill[2]);
       doc.rect(marginX, yCoord, contentWidth, rowH, "F");
     }
 

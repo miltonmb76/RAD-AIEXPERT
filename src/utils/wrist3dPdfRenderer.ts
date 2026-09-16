@@ -2,6 +2,12 @@ import jsPDF from "jspdf";
 import { Wrist3DData, Wrist3DPanel, WristFindingRow } from "../types";
 import { pdfCutawayToCorte } from "./pdfCutawayToCorte";
 import { sanitizePdfText } from "./sanitizePdfText";
+import {
+  ANNEX_CAPTION_GAP,
+  drawAnnexPanelBadge,
+  softBorderFromAccent,
+  softFillFromAccent,
+} from "./pdfAnnexChrome";
 
 /**
  * Renders a two-page "ANEXO: SUITE MUÑECA 3D & FICHA DE MUÑECA" into the provided jsPDF document.
@@ -22,6 +28,9 @@ export async function renderWrist3DPageToPdf(
   const contentWidth = pageWidth - (marginX * 2);
   const factor = pageSize === "a4" ? 1.0 : 0.98;
   const accent: [number, number, number] = [2, 132, 199]; // sky-600
+  const softFill = softFillFromAccent(accent);
+  const softBorder = softBorderFromAccent(accent);
+  const tableHeaderFill = softFillFromAccent(accent, 0.82);
 
   doc.addPage();
 
@@ -38,8 +47,8 @@ export async function renderWrist3DPageToPdf(
   doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
   yCoord += 6.5 * factor;
 
-  const territory = wristData.territoryLabel || "ECOGRAFÍA DE ESCROTO";
-  const figTitle = wristData.figureTitle || `FIGURA 1. ATLAS 3D ESCROTO Y CORRELACIÓN ANATOMOPATOLÓGICA — ${territory.toUpperCase()}`;
+  const territory = wristData.territoryLabel || "ECOGRAFÍA DE MUÑECA";
+  const figTitle = wristData.figureTitle || `FIGURA 1. ATLAS 3D DE MUÑECA Y CORRELACIÓN ANATOMOPATOLÓGICA — ${territory.toUpperCase()}`;
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9.5 * factor);
@@ -47,8 +56,8 @@ export async function renderWrist3DPageToPdf(
   const figTitleLines = doc.splitTextToSize(figTitle.toUpperCase(), contentWidth - 10);
   const figBannerH = Math.max(7.5 * factor, (figTitleLines.length * 4.2 + 3) * factor);
 
-  doc.setFillColor(255, 251, 235); // sky-50
-  doc.setDrawColor(253, 230, 138); // sky-200
+  doc.setFillColor(softFill[0], softFill[1], softFill[2]);
+  doc.setDrawColor(softBorder[0], softBorder[1], softBorder[2]);
   doc.setLineWidth(0.3);
   doc.roundedRect(marginX, yCoord, contentWidth, figBannerH, 1.5, 1.5, "FD");
 
@@ -72,7 +81,7 @@ export async function renderWrist3DPageToPdf(
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8 * factor);
       const titleLines = doc.splitTextToSize(pdfCutawayToCorte(p.panelTitle || `Panel ${p.panelLetter}`), cardWidth - 6);
-      let h = 3.2 * factor;
+      let h = ANNEX_CAPTION_GAP * factor;
       h += titleLines.length * 3.4 * factor;
       if (p.anatomicalFocus && pdfCutawayToCorte(String(p.anatomicalFocus).trim())) {
         h += 1.0 * factor;
@@ -120,16 +129,17 @@ export async function renderWrist3DPageToPdf(
         doc.text("Reconstrucción 3D Muñeca", imgX + (imgWidth / 2) - 18, imgY + (imgHeight / 2));
       }
 
-      const badgeW = 20 * factor;
-      const badgeH = 5 * factor;
-      doc.setFillColor(accent[0], accent[1], accent[2]);
-      doc.roundedRect(imgX + 2, imgY + 2, badgeW, badgeH, 1, 1, "F");
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(6.8 * factor);
-      doc.setTextColor(255, 255, 255);
-      doc.text(`PANEL ${p.panelLetter || String.fromCharCode(65 + idx)}`, imgX + 3.5, imgY + 2 + 3.6);
+      const badgeLabel = `PANEL ${p.panelLetter || String.fromCharCode(65 + idx)}`;
+      drawAnnexPanelBadge(doc, {
+        label: badgeLabel,
+        x: imgX + 2,
+        y: imgY + 2,
+        factor,
+        accent,
+        maxWidth: imgWidth - 4,
+      });
 
-      let textY = imgY + imgHeight + 3.2 * factor;
+      let textY = imgY + imgHeight + ANNEX_CAPTION_GAP * factor;
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8 * factor);
       doc.setTextColor(15, 23, 42);
@@ -200,8 +210,8 @@ export async function renderWrist3DPageToPdf(
       const b = dossierTexts[i];
       const lines = measured[i].lines;
       const boxH = measured[i].boxH;
-      doc.setFillColor(255, 251, 235);
-      doc.setDrawColor(253, 230, 138);
+      doc.setFillColor(softFill[0], softFill[1], softFill[2]);
+      doc.setDrawColor(softBorder[0], softBorder[1], softBorder[2]);
       doc.setLineWidth(0.3);
       doc.roundedRect(marginX, dossierY, boxW, boxH, 1.2, 1.2, "FD");
       doc.setFillColor(b.color[0], b.color[1], b.color[2]);
@@ -274,7 +284,7 @@ export async function renderWrist3DPageToPdf(
   const maxHeaderLines = Math.max(...wrappedHeaders.map(lines => lines.length), 1);
   const headerH = Math.max(9.0 * factor, (maxHeaderLines * 3.4 + 3.0) * factor);
 
-  doc.setFillColor(254, 243, 199); // cyan-50
+  doc.setFillColor(tableHeaderFill[0], tableHeaderFill[1], tableHeaderFill[2]);
   doc.rect(marginX, yCoord, contentWidth, headerH, "F");
 
   let curX = marginX;
@@ -283,7 +293,7 @@ export async function renderWrist3DPageToPdf(
     curX += colWidths[i];
   });
 
-  doc.setDrawColor(251, 191, 36);
+  doc.setDrawColor(softBorder[0], softBorder[1], softBorder[2]);
   doc.setLineWidth(0.4);
   doc.line(marginX, yCoord + headerH, marginX + contentWidth, yCoord + headerH);
   yCoord += headerH;
@@ -309,7 +319,7 @@ export async function renderWrist3DPageToPdf(
     const rowH = Math.max(7.2 * factor, (maxLines * 3.5 + 2.6) * factor);
 
     if (rIdx % 2 === 1) {
-      doc.setFillColor(255, 251, 235);
+      doc.setFillColor(softFill[0], softFill[1], softFill[2]);
       doc.rect(marginX, yCoord, contentWidth, rowH, "F");
     }
 
@@ -337,14 +347,14 @@ export async function renderWrist3DPageToPdf(
       cellX += colWidths[i];
     });
 
-    doc.setDrawColor(253, 230, 138);
+    doc.setDrawColor(softBorder[0], softBorder[1], softBorder[2]);
     doc.setLineWidth(0.2);
     doc.line(marginX, yCoord + rowH, marginX + contentWidth, yCoord + rowH);
 
     yCoord += rowH;
   });
 
-  doc.setDrawColor(251, 191, 36);
+  doc.setDrawColor(softBorder[0], softBorder[1], softBorder[2]);
   doc.setLineWidth(0.4);
   doc.line(marginX, yCoord, marginX + contentWidth, yCoord);
   yCoord += 4.5 * factor;
@@ -352,7 +362,7 @@ export async function renderWrist3DPageToPdf(
   const synthText = wristData.morphologicalSynthesis || "";
   if (synthText && synthText.trim()) {
     const footerSafeBottom = pageHeight - 18 * factor;
-    const synthTitle = wristData.synthesisTitle || "SÍNTESIS MORFOLÓGICA ESCROTAL:";
+    const synthTitle = wristData.synthesisTitle || "SÍNTESIS MORFOLÓGICA DE MUÑECA:";
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9.0 * factor);
     const synthLineH = 4.4 * factor;
@@ -380,8 +390,8 @@ export async function renderWrist3DPageToPdf(
     };
 
     const drawSynthChrome = (boxH: number, includeTitle: boolean) => {
-      doc.setFillColor(254, 243, 199);
-      doc.setDrawColor(251, 191, 36);
+      doc.setFillColor(tableHeaderFill[0], tableHeaderFill[1], tableHeaderFill[2]);
+      doc.setDrawColor(softBorder[0], softBorder[1], softBorder[2]);
       doc.setLineWidth(0.4);
       doc.roundedRect(marginX, yCoord, contentWidth, boxH, 2, 2, "FD");
       doc.setFillColor(accent[0], accent[1], accent[2]);
