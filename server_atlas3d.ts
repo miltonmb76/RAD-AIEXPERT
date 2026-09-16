@@ -1581,7 +1581,25 @@ DISEÑO DE PANELES 3D VASCULARES (Generar 2 o 3 Paneles):
   "Ultra-realistic 3D medical macro vascular cross-section render of [PATIENT SIDE + detailed vessel name], exact wall layer cutaway, exact plaque/thrombus morphology (lipid core, fibrous cap, calcifications, ulceration, or clean healthy intima), intraluminal lumen opening with glowing chromatic laminar blood flow vectors, anatomical bone/soft tissue landmark background that locks laterality, cinema 4D octane render style, soft surgical studio lighting, clean background, strictly NO text, NO numbers, NO arrows, NO letters inside the image. Do NOT mirror anatomy."
 
 ========================================================================
-SÍNTESIS MORFOLÓGICA Y HEMODINÁMICA:
+FICHA CLÍNICA BAJO LA FIGURA 3D (OBLIGATORIA — carótidas / arterial / venoso):
+========================================================================
+Genera textos ricos en español para llenar el espacio bajo los paneles 3D (NO inventar hallazgos):
+- vascularSummary: 3–5 líneas. Territorio, lateralidad y hallazgo dominante (estenosis / permeabilidad / trombo / reflujo).
+- wallPlaqueNotes: morfología de pared/placa/trombo/compresibilidad según modalidad:
+  · carotideo_vertebral → CIMT, Gray-Weale, ulceración, calcificación.
+  · arterial_mmii / aorto_iliaco → placa, calcificación, oclusión, ectasia/aneurisma.
+  · venoso_mmii → compresibilidad, trombo endoluminal, engrosamiento parietal.
+  · arterias_renales → hallazgo luminal ostium/cuerpo/hilio.
+- velocityHemodynamicStatus: velocidades/índices clave del segmento crítico (no toda la tabla):
+  · carótidas → PSV/EDV, RAR / ACC-ACI.
+  · arterial → onda (tri/bi/mono), PSV, VR.
+  · venoso → flujo espontáneo/fásico, maniobra de aumento, reflujo/competencia.
+  · renales → PSV, RAR, RI.
+- keyPoints: array de 3 a 6 bullets cortos y accionables.
+Adapta el tono al studyTypeCategory detectado. Prohibido inventar estenosis, trombos o reflujos ausentes.
+
+========================================================================
+SÍNTESIS MORFOLÓGICA Y HEMODINÁMICA (página 2):
 ========================================================================
 Redacta un texto integrador de 3 a 5 líneas con las conclusiones del estudio, consensos (SRU/NASCET/Intersocietal), repercusión hemodinámica y permeabilidad.
 
@@ -1628,6 +1646,10 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
       "clinicalImpact": "Normal"
     }
   ],
+  "vascularSummary": "Estudio Doppler carotídeo-vertebral bilateral: ...",
+  "wallPlaqueNotes": "CIMT y morfología parietal/placa según informe...",
+  "velocityHemodynamicStatus": "PSV/EDV e índices del segmento crítico...",
+  "keyPoints": ["...", "...", "..."],
   "synthesisTitle": "SÍNTESIS MORFOLÓGICA Y HEMODINÁMICA:",
   "morphologicalSynthesis": "El estudio Doppler carotídeo y vertebral bilateral evidencia..."
 }`;
@@ -1684,7 +1706,11 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
             }
           ],
           synthesisTitle: "SÍNTESIS MORFOLÓGICA Y HEMODINÁMICA:",
-          morphologicalSynthesis: "La correlación anatomopatológica y velocimétrica confirma la permeabilidad y características hemodinámicas descriptas en el estudio."
+          morphologicalSynthesis: "La correlación anatomopatológica y velocimétrica confirma la permeabilidad y características hemodinámicas descriptas en el estudio.",
+          vascularSummary: "",
+          wallPlaqueNotes: "",
+          velocityHemodynamicStatus: "",
+          keyPoints: []
         };
       }
 
@@ -1750,6 +1776,10 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
         },
         panels: panelsWithImages,
         hemodynamicTable: planJson.hemodynamicTable || [],
+        vascularSummary: planJson.vascularSummary || planJson.summary || "",
+        wallPlaqueNotes: planJson.wallPlaqueNotes || planJson.morphologyNotes || "",
+        velocityHemodynamicStatus: planJson.velocityHemodynamicStatus || planJson.hemodynamicStatus || "",
+        keyPoints: Array.isArray(planJson.keyPoints) ? planJson.keyPoints.filter(Boolean).slice(0, 6) : [],
         synthesisTitle: planJson.synthesisTitle || "SÍNTESIS MORFOLÓGICA Y HEMODINÁMICA:",
         morphologicalSynthesis: planJson.morphologicalSynthesis || planJson.biomechanicalSynthesis || ""
       };
