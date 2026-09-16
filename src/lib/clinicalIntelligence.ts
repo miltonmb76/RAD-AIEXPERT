@@ -1481,6 +1481,124 @@ export function buildMuscleTendonDirectivesFromScorecard(
 }
 
 
+
+
+/** Hard topography rules for wrist US (extensors, carpal tunnel, TFCC). */
+export const WRIST_TOPOGRAPHY_DIRECTIVE = [
+  "TOPOGRAFÍA DE MUÑECA OBLIGATORIA (nunca intercambiar):",
+  "- Lado DERECHO ≠ IZQUIERDO. Nunca intercambiar hemicuerpos.",
+  "- Tendones dorsales (compartimentos 1–6) ≠ flexores / túnel del carpo ≠ TFCC ≠ ligamentos carpianos.",
+  "- Landmarks: radio-cubital distal, escafoides, semilunar, piramidal, pisiforme, gancho del ganchoso, retináculos.",
+  "- De Quervain = 1er compartimento (APL/EPB); ECU = 6º; mediano en túnel del carpo (área seccional).",
+  "- TFCC: disco + ligamentos ulnocarpianos / radio-cubital distal; no inventar rotura ausente.",
+  "- Vista AP/frontal: lado DERECHO del paciente a la IZQUIERDA del cuadro; IZQUIERDO a la DERECHA.",
+  "- En paneles, ficha y tabla nombra siempre: lado/sitio + estructura + grosor/área + ecopatrón + líquido + dinámica.",
+].join("\n");
+
+export function buildWristDirectivesFromScorecard(
+  scorecard: ClinicalScorecardData | null | undefined,
+  radarData?: { radarMode?: string; globalScore?: number | string; dominantVector?: string; clinicalSummary?: string; axes?: Array<{ id?: string; name?: string; label?: string; score?: number; interpretation?: string }> }
+): string {
+  const protocol = (
+    scorecard?.protocolName ||
+    scorecard?.protocolId ||
+    radarData?.radarMode ||
+    ""
+  ).toLowerCase();
+  const isWrist =
+    protocol.includes("wrist") ||
+    protocol.includes("muñeca") ||
+    protocol.includes("muneca") ||
+    protocol.includes("carpal") ||
+    protocol.includes("carpo") ||
+    protocol.includes("tfcc") ||
+    protocol.includes("quervain") ||
+    protocol.includes("túnel del carpo") ||
+    protocol.includes("tunel del carpo") ||
+    protocol.includes("mediano") ||
+    protocol.includes("extensor") ||
+    protocol.includes("flexor digitorum");
+
+  let body = "";
+  if (scorecard) {
+    const base = buildAtlasDirectivesFromScorecard(scorecard);
+    const summary = (scorecard.clinicalSummary || "").trim();
+    const reco = (scorecard.recommendation || "").trim();
+    body = base;
+    if (!body) {
+      const allCriteria = Array.isArray(scorecard.criteria) ? scorecard.criteria : [];
+      const evidenced = allCriteria
+        .filter((c) => (c.evidence || c.value || "").trim())
+        .slice(0, 12)
+        .map((c, i) => {
+          const val = c.value ? ` (${c.value})` : "";
+          return `${i + 1}. «${c.atlasStructure || c.criterion}»${val}: ${c.evidence || c.status}`;
+        });
+      if (evidenced.length || summary) {
+        body = [
+          `SCORECARD DE MUÑECA (${scorecard.protocolName || "protocolo"} — ${scorecard.categoryAssigned || ""}):`,
+          `Semáforo: ${scorecard.trafficLight}. Criterios: ${scorecard.scoreMet}/${scorecard.scoreTotal}.`,
+          summary ? `Síntesis: ${summary}` : "",
+          reco ? `Recomendación: ${reco}` : "",
+          evidenced.length ? "Hallazgos del scorecard a respetar en 3D/tabla de muñeca:" : "",
+          ...evidenced,
+        ]
+          .filter(Boolean)
+          .join("\n");
+      }
+    }
+  }
+
+  const radarBits: string[] = [];
+  const axes = Array.isArray(radarData?.axes) ? radarData!.axes! : [];
+  const radarMode = String(radarData?.radarMode || "").toLowerCase();
+  const axisKeyBlob = axes
+    .map((a) => `${a.id || ""} ${a.name || ""} ${a.label || ""}`.toLowerCase())
+    .join(" ");
+  const looksLikeWristRadar =
+    radarMode.includes("wrist") ||
+    radarMode.includes("muñeca") ||
+    radarMode.includes("muneca") ||
+    radarMode.includes("carpal") ||
+    radarMode.includes("tfcc") ||
+    /wrist|muñeca|muneca|carpo|carpal|tfcc|quervain|túnel|tunel|mediano|extensor|flexor/.test(
+      axisKeyBlob + " " + radarMode
+    );
+  if (axes.length && looksLikeWristRadar) {
+    radarBits.push(
+      `RADAR MUÑECA (${radarData?.radarMode || "wrist"} — score global ${radarData?.globalScore ?? "n/d"}):`
+    );
+    if (radarData?.dominantVector) {
+      radarBits.push(`Vector dominante: ${radarData.dominantVector}`);
+    }
+    if (radarData?.clinicalSummary) {
+      radarBits.push(`Síntesis radar: ${radarData.clinicalSummary}`);
+    }
+    radarBits.push("Ejes a respetar en ficha/tabla 3D:");
+    axes.slice(0, 8).forEach((axis, i) => {
+      const label = axis.label || axis.name || axis.id || `Eje ${i + 1}`;
+      const score = axis.score != null ? ` score=${axis.score}` : "";
+      const interp = axis.interpretation ? ` — ${axis.interpretation}` : "";
+      radarBits.push(`${i + 1}. ${label}${score}${interp}`);
+    });
+  }
+
+  if (!body && !radarBits.length) return "";
+
+  return [
+    "DIRECTIVA OBLIGATORIA DEL SCORECARD DE MUÑECA (debe gobernar paneles 3D, ficha y tabla):",
+    body,
+    radarBits.length ? radarBits.join("\n") : "",
+    isWrist
+      ? "Prioriza: (1) overview regional de muñeca, (2) corte del hallazgo dominante (tenosinovitis/túnel/TFCC), (3) detalle tendinoso o ligamentario si aplica. NUNCA inventar rotura completa ni intercambiar lado D↔I."
+      : "Si el scorecard/radar no es de muñeca, extrae solo hallazgos carpianos/tendinosos aplicables; no inventes patología.",
+    "No inventes tenosinovitis, neuropatía del mediano, roturas de TFCC ni engatillamientos ausentes en el scorecard/radar/informe.",
+    WRIST_TOPOGRAPHY_DIRECTIVE,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 export function scorecardTrafficLabel(light: ClinicalScorecardData["trafficLight"]): string {
   switch (light) {
     case "critical":

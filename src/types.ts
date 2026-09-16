@@ -868,6 +868,66 @@ export interface MuscleTendon3DData {
 
 
 
+
+
+export type WristStudyType =
+  | "tenosinovitis_dorsal"
+  | "tunel_carpiano"
+  | "tfcc_ligamentos"
+  | "general_muneca";
+
+export interface Wrist3DPanel {
+  id?: string;
+  panelLetter: string;
+  panelTitle: string;
+  anatomicalFocus: string;
+  laterality?: string;
+  structureOrSite?: string;
+  panelRole?: "overview" | "tendons_extensor" | "tendons_flexor" | "tfcc_carpal";
+  imageUrl?: string;
+  isCustomFlipped?: boolean;
+  promptUsed?: string;
+}
+
+export interface WristFindingRow {
+  location: string;           // ej: "Muñeca derecha / 1er compartimento / túnel del carpo"
+  structure: string;          // tendón extensor/flexor / TFCC / ligamento / nervio mediano
+  thicknessOrGap: string;     // grosor, área seccional, gap (mm)
+  echoPattern: string;        // tenosinovitis / tendinopatía / rotura / neuropatía
+  hematomaOrFluid: string;    // líquido sinovial / quiste / sin colección
+  dynamicFinding: string;     // engatillamiento / estrés / normal
+  severity: string;           // leve / moderada / severa / completa
+  clinicalImpact: string;
+}
+
+export interface Wrist3DData {
+  studyTypeCategory?: WristStudyType;
+  territoryLabel?: string;
+  laterality?: string;
+  figureTitle?: string;
+  tableTitle?: string;
+  tableHeaders?: {
+    col1: string;
+    col2: string;
+    col3: string;
+    col4: string;
+    col5: string;
+    col6: string;
+    col7: string;
+    col8: string;
+  };
+  panels: Wrist3DPanel[];
+  findingTable: WristFindingRow[];
+  /** Rich clinical blocks under / with the figure */
+  wristSummary?: string;
+  morphologyNotes?: string;
+  tendonLigamentStatus?: string;
+  keyPoints?: string[];
+  synthesisTitle?: string;
+  morphologicalSynthesis?: string;
+}
+
+
 export type UsImagesGridMode = "auto" | "1x1" | "1x2" | "2x1" | "2x2" | "3x2" | "4x2";
 
 /** One quantitative measurement extracted from the report for gauge display. */
