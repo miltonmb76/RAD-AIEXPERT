@@ -207,7 +207,8 @@ export function renderFocalLesion3DAnnexToPDF(
   const isSingle = numPanels === 1;
   const panelGap = isSingle ? 0 : 4 * factor;
   const cardPad = 1.8 * factor;
-  const captionGap = 1.8 * factor;
+  // Match other organ suites (e.g. Escroto uses ~3.2): keep clear air under the photo.
+  const captionGap = 3.4 * factor;
 
   const measureCaption = (panelW: number): number => {
     let maxH = 0;
@@ -289,15 +290,20 @@ export function renderFocalLesion3DAnnexToPDF(
       }
     }
 
-    const badgeW = 18 * factor;
-    const badgeH = 4 * factor;
-    doc.setFillColor(13, 148, 136);
-    doc.roundedRect(imgX + 1.2, imgY + 1.2, badgeW, badgeH, 0.7, 0.7, "F");
+    const roleTag = p.panelRole === "macro" ? "MACRO" : "CTX";
+    const badgeLabel = `PANEL ${p.panelLetter} · ${roleTag}`;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(6.2 * factor);
+    const badgePadX = 1.5 * factor;
+    const badgeW = Math.min(
+      imgW - 2.4 * factor,
+      Math.max(18 * factor, doc.getTextWidth(badgeLabel) + badgePadX * 2)
+    );
+    const badgeH = 4.2 * factor;
+    doc.setFillColor(13, 148, 136);
+    doc.roundedRect(imgX + 1.2, imgY + 1.2, badgeW, badgeH, 0.7, 0.7, "F");
     doc.setTextColor(255, 255, 255);
-    const roleTag = p.panelRole === "macro" ? "MACRO" : "CTX";
-    doc.text(`PANEL ${p.panelLetter} · ${roleTag}`, imgX + 2.1, imgY + 1.2 + 2.75);
+    doc.text(badgeLabel, imgX + 1.2 + badgePadX, imgY + 1.2 + 2.9);
 
     let textY = imgY + imgH + captionGap;
     doc.setFont("helvetica", "bold");
