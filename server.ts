@@ -8,6 +8,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import sharp from "sharp";
 import { registerAtlas3DRoutes } from "./server_atlas3d";
 import { normalizeReasoningChainData, extractJsonObject } from "./src/lib/reasoningChain";
+import { normalizeNegativityChecklistData } from "./src/lib/negativityChecklist";
 import { normalizeDifferentialTreeData } from "./src/lib/differentialTree";
 
 // Lazy-loaded GenAI client to prevent crash on startup if API key is missing
@@ -9516,6 +9517,120 @@ ${report}
   } catch (error: any) {
     console.error("Error en /api/generate-reasoning-chain:", error);
     res.status(500).json({ success: false, error: handleGeminiError(error) });
+
+
+/**
+ * API: CHECKLIST DE NEGATIVIDAD DIRIGIDA (1 página PDF)
+ * POST /api/generate-negativity-checklist
+ * Nada queda "sin evaluar" salvo limitación técnica; lo no mencionado → pending_closure + suggestedInsert.
+ */
+app.post("/api/generate-negativity-checklist", async (req: express.Request, res: express.Response) => {
+  try {
+    const { model, report, studyType, clinicalHistory, protocolName } = req.body;
+    if (!report || !String(report).trim()) {
+      return res.status(400).json({ success: false, error: "Se requiere el parámetro 'report'." });
+    }
+
+    const ai = getGeminiClient();
+    const modelToUse = getModelName(model);
+    const history = (clinicalHistory || "").toString().trim();
+    const study = (studyType || protocolName || "").toString().trim();
+
+    const prompt = `Eres un radiólogo hispanohablante experto en protocolos y control de calidad del informe.
+Genera un CHECKLIST DE NEGATIVIDAD DIRIGIDA para el estudio.
+
+REGLA DE ORO:
+- NADA puede quedar como "no evaluado" genérico.
+- Si el signo crítico del protocolo NO se menciona en el informe → status "pending_closure" y DEBES proponer "suggestedInsert" (frase clínica lista para insertar en el informe, en español).
+- Solo status "limited_technical" cuando haya limitación técnica explícita o claramente inferible (ventana acústica, no cooperación, dolor, obesidad extrema, etc.) y entonces "technicalReason" es OBLIGATORIO.
+- status "negative" solo si el informe ya niega el hallazgo (con evidence citada/parafraseada).
+- status "positive" si el hallazgo está presente.
+
+IDIOMA: TODO el texto visible en ESPAÑOL médico.
+
+ESTUDIO / PROTOCOLO: ${study || "Detectar del informe"}
+${history ? `HISTORIA CLINICA:\n"""\n${history}\n"""` : "Sin historia adicional."}
+
+INFORME:
+"""
+${report}
+"""
+
+Devuelve 6 a 14 ítems críticos del protocolo (no inventes patología).
+Para cada pending_closure, suggestedInsert debe ser una frase afirmativa de negatividad dirigida, p.ej.:
+"No se identifican placas ulceradas en la arteria carótida interna derecha."
+insertTarget: "negativity_block" | "findings" | "impression"
+
+JSON OBLIGATORIO:
+{
+  "title": "Checklist de negatividad dirigida",
+  "protocolName": "...",
+  "studyRegion": "...",
+  "laterality": "Bilateral|Derecha|Izquierda|",
+  "closureSummary": "...",
+  "openGapsCount": 0,
+  "items": [
+    {
+      "id": "neg-1",
+      "sign": "...",
+      "laterality": "Derecha",
+      "status": "negative|positive|limited_technical|pending_closure",
+      "whyItMatters": "...",
+      "evidence": "...",
+      "technicalReason": "",
+      "suggestedInsert": "...",
+      "insertTarget": "negativity_block",
+      "confidence": "alta|media|baja"
+    }
+  ],
+  "technicalGaps": [],
+  "recommendation": "..."
+}
+`;
+
+    let rawText = "";
+    let parsed: any = {};
+    try {
+      const response = await ai.models.generateContent({
+        model: modelToUse,
+        contents: [{ text: prompt }],
+        config: { responseMimeType: "application/json" },
+      });
+      rawText = response.text || "";
+      parsed = JSON.parse(rawText || "{}");
+    } catch (e1) {
+      try {
+        const response2 = await ai.models.generateContent({
+          model: modelToUse,
+          contents: [{ text: prompt + "\n\nResponde SOLO JSON válido." }],
+        });
+        rawText = response2.text || "";
+        const extracted = extractJsonObject(rawText);
+        parsed = extracted ? JSON.parse(extracted) : JSON.parse(rawText || "{}");
+      } catch (e2) {
+        console.error("generate-negativity-checklist parse fail:", e2, String(rawText).slice(0, 500));
+        return res.status(500).json({
+          success: false,
+          error: "No se pudo parsear el checklist de negatividad. Reintenta con otro modelo.",
+        });
+      }
+    }
+
+    const data = normalizeNegativityChecklistData(parsed);
+    if (!data.items.length) {
+      return res.status(500).json({
+        success: false,
+        error: "La IA no devolvió ítems de negatividad utilizables.",
+      });
+    }
+
+    res.json({ success: true, data });
+  } catch (error: any) {
+    console.error("Error en /api/generate-negativity-checklist:", error);
+    res.status(500).json({ success: false, error: handleGeminiError(error) });
+  }
+});
+
   }
 });
 

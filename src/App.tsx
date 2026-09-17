@@ -12,6 +12,7 @@ const CreadorNotasPie = React.lazy(() => import("./components/CreadorNotasPie").
 const BiomechanicalRadarModule = React.lazy(() => import("./components/BiomechanicalRadarModule").then(m => ({ default: m.BiomechanicalRadarModule })));
 const ClinicalScorecardModule = React.lazy(() => import("./components/ClinicalScorecardModule").then(m => ({ default: m.ClinicalScorecardModule })));
 const ReasoningChainModule = React.lazy(() => import("./components/ReasoningChainModule").then(m => ({ default: m.ReasoningChainModule })));
+const NegativityChecklistModule = React.lazy(() => import("./components/NegativityChecklistModule").then(m => ({ default: m.NegativityChecklistModule })));
 const DifferentialTreeModule = React.lazy(() => import("./components/DifferentialTreeModule").then(m => ({ default: m.DifferentialTreeModule })));
 const MeasurementsGaugeModule = React.lazy(() => import("./components/MeasurementsGaugeModule").then(m => ({ default: m.MeasurementsGaugeModule })));
 const CreadorCuadroSinoptico = React.lazy(() => import("./components/CreadorCuadroSinoptico").then(m => ({ default: m.CreadorCuadroSinoptico })));
@@ -21,9 +22,10 @@ import { Atlas3DModule } from "./components/Atlas3DModule";
 import { renderAtlas3DAnnexToPDF } from "./utils/atlas3dPdfRenderer";
 import { renderScorecardAnnexToPDF } from "./utils/scorecardPdfRenderer";
 import { renderReasoningChainAnnexToPDF } from "./utils/reasoningChainPdfRenderer";
+import { renderNegativityChecklistAnnexToPDF } from "./utils/negativityChecklistPdfRenderer";
 import { renderDifferentialTreeAnnexToPDF } from "./utils/differentialTreePdfRenderer";
 import { renderMeasurementsGaugeAnnexToPDF } from "./utils/measurementsGaugePdfRenderer";
-import { Atlas3DData, Vascular3DData, FocalLesion3DData, Thyroid3DData, Breast3DData, Shoulder3DData, Knee3DData, Ankle3DData, Kidney3DData, Abdomen3DData, AbdominalWall3DData, Scrotum3DData, MuscleTendon3DData, Wrist3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData } from "./types";
+import { Atlas3DData, Vascular3DData, FocalLesion3DData, Thyroid3DData, Breast3DData, Shoulder3DData, Knee3DData, Ankle3DData, Kidney3DData, Abdomen3DData, AbdominalWall3DData, Scrotum3DData, MuscleTendon3DData, Wrist3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData, NegativityChecklistData } from "./types";
 import { buildAtlasDirectivesFromScorecard, buildAtlasPanelFindingAssignments, buildVascularDirectivesFromScorecard, buildThyroidDirectivesFromScorecard, buildBreastDirectivesFromScorecard, buildShoulderDirectivesFromScorecard, buildKneeDirectivesFromScorecard, buildAnkleDirectivesFromScorecard, buildKidneyDirectivesFromScorecard, buildAbdomenDirectivesFromScorecard, buildAbdominalWallDirectivesFromScorecard, buildScrotumDirectivesFromScorecard, buildMuscleTendonDirectivesFromScorecard, buildWristDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
 import { Vascular3DModule } from "./components/Vascular3DModule";
 import { FocalLesion3DModule } from "./components/FocalLesion3DModule";
@@ -2831,6 +2833,9 @@ export default function App() {
   const [reasoningChainData, setReasoningChainData] = useState<ReasoningChainData | null>(null);
   const [includeReasoningChainInReport, setIncludeReasoningChainInReport] = useState<boolean>(true);
   const [isReasoningChainOpen, setIsReasoningChainOpen] = useState<boolean>(false);
+  const [negativityChecklistData, setNegativityChecklistData] = useState<NegativityChecklistData | null>(null);
+  const [includeNegativityChecklistInReport, setIncludeNegativityChecklistInReport] = useState<boolean>(true);
+  const [isNegativityChecklistOpen, setIsNegativityChecklistOpen] = useState<boolean>(false);
   const [differentialTreeData, setDifferentialTreeData] = useState<DifferentialTreeData | null>(null);
   const [includeDifferentialTreeInReport, setIncludeDifferentialTreeInReport] = useState<boolean>(true);
   const [isDifferentialTreeOpen, setIsDifferentialTreeOpen] = useState<boolean>(false);
@@ -2918,6 +2923,8 @@ export default function App() {
     includeScorecardInReport,
     reasoningChainData,
     includeReasoningChainInReport,
+    negativityChecklistData,
+    includeNegativityChecklistInReport,
     differentialTreeData,
     includeDifferentialTreeInReport,
     measurementGaugeData,
@@ -3604,6 +3611,7 @@ Ejemplo:
   const DEFAULT_BATCH_MODULES: Record<string, boolean> = {
     clinical_scorecard: true,
     reasoning_chain: false,
+    negativity_checklist: false,
     differential_tree: false,
     atlas3d: false,
     vascular3d: false,
@@ -3696,6 +3704,7 @@ Ejemplo:
     if (modules.organ_synoptic) setIsCreadorCuadroSinopticoOpen(true);
     if (modules.fractures) setIsCreadorSinopsisFracturasOpen(true);
     if (modules.reasoning_chain) setIsReasoningChainOpen(true);
+    if (modules.negativity_checklist) setIsNegativityChecklistOpen(true);
     if (modules.differential_tree) setIsDifferentialTreeOpen(true);
     // 2. Trigger async AI generation processes concurrently
     const promises: Promise<any>[] = [];
@@ -4230,6 +4239,33 @@ Ejemplo:
           }
         } catch (e) {
           console.error("Error al generar cadena de razonamiento en lote:", e);
+        }
+      })());
+    }
+
+    if (modules.negativity_checklist) {
+      promises.push((async () => {
+        setIsNegativityChecklistOpen(true);
+        try {
+          const resp = await fetch("/api/generate-negativity-checklist", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: modelFor("negativity_checklist"),
+              report: activeReport,
+              studyType: specificStudy || studyType || "",
+              clinicalHistory: clinicalHistory || "",
+            }),
+          });
+          const j = await resp.json();
+          if (j.success && j.data) {
+            setNegativityChecklistData(j.data);
+            setIncludeNegativityChecklistInReport(true);
+          } else {
+            console.error("Checklist de negatividad en lote fallo:", j.error);
+          }
+        } catch (e) {
+          console.error("Error al generar checklist de negatividad en lote:", e);
         }
       })());
     }
@@ -10685,6 +10721,28 @@ Ejemplo:
         activeReasoningChain.nodes.length > 0
       ) {
         renderReasoningChainAnnexToPDF(doc, activeReasoningChain, {
+          marginX,
+          pageWidth,
+          pageHeight,
+          contentWidth,
+          factor,
+        });
+      }
+
+      // --- ANEXO: CHECKLIST DE NEGATIVIDAD DIRIGIDA (1 página) ---
+      const activeNegativityChecklist = studyOverride
+        ? (studyOverride as any).negativityChecklistData
+        : (pdfStateRef.current?.negativityChecklistData || negativityChecklistData);
+      const shouldIncludeNegativityChecklist = studyOverride
+        ? ((studyOverride as any).includeNegativityChecklistInReport !== false)
+        : ((pdfStateRef.current?.includeNegativityChecklistInReport !== false) && includeNegativityChecklistInReport);
+      if (
+        activeNegativityChecklist &&
+        shouldIncludeNegativityChecklist &&
+        Array.isArray(activeNegativityChecklist.items) &&
+        activeNegativityChecklist.items.length > 0
+      ) {
+        renderNegativityChecklistAnnexToPDF(doc, activeNegativityChecklist, {
           marginX,
           pageWidth,
           pageHeight,
@@ -20988,6 +21046,13 @@ const splitReportAndAnnex = (text: string) => {
                                   color: "text-violet-400 border-violet-500/30 bg-violet-950/20"
                                 },
                                 {
+                                  id: "negativity_checklist",
+                                  label: "Checklist de negatividad dirigida",
+                                  badge: "NEGATIVIDAD",
+                                  desc: "Cierra signos criticos del protocolo: inserta al reporte lo no mencionado; solo limita por causa tecnica.",
+                                  color: "text-teal-400 border-teal-500/30 bg-teal-950/20"
+                                },
+                                {
                                   id: "differential_tree",
                                   label: "Arbol de diferenciales con poda",
                                   badge: "DIFERENCIALES",
@@ -22148,6 +22213,30 @@ const splitReportAndAnnex = (text: string) => {
                               </button>
                             </div>
 
+                            <div className="p-4 rounded-2xl bg-slate-950/60 border border-teal-900/40 space-y-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <h4 className="text-sm font-semibold text-teal-200 flex items-center gap-2">
+                                    Checklist de negatividad dirigida
+                                  </h4>
+                                  <p className="text-[11px] text-slate-400 mt-1">
+                                    Nada sin evaluar salvo limitacion tecnica. Inserta al reporte lo no mencionado.
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setIsNegativityChecklistOpen((v) => !v)}
+                                className={`w-full px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
+                                  isNegativityChecklistOpen
+                                    ? "bg-teal-700 text-white"
+                                    : "bg-teal-600/80 hover:bg-teal-500 text-white"
+                                }`}
+                              >
+                                {isNegativityChecklistOpen ? "Ocultar checklist" : "Abrir checklist de negatividad"}
+                              </button>
+                            </div>
+
                             <div className="p-4 rounded-2xl bg-slate-950/60 border border-orange-900/40 space-y-3">
                               <div className="flex items-start justify-between gap-3">
                                 <div>
@@ -22312,6 +22401,31 @@ const splitReportAndAnnex = (text: string) => {
                                   setChainData={setReasoningChainData}
                                   includeInReport={includeReasoningChainInReport}
                                   setIncludeInReport={setIncludeReasoningChainInReport}
+                                />
+                              </React.Suspense>
+                            </div>
+                          )}
+
+                          {isNegativityChecklistOpen && (
+                            <div className="my-6">
+                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-teal-400 bg-slate-900/60 rounded-xl border border-teal-900/40 animate-pulse">Cargando checklist de negatividad...</div>}>
+                                <NegativityChecklistModule
+                                  selectedModel={modelFor("negativity_checklist")}
+                                  reportText={isEditingReportManual ? editedReportText : generatedReport}
+                                  studyType={specificStudy || studyType}
+                                  clinicalHistory={clinicalHistory}
+                                  checklistData={negativityChecklistData}
+                                  setChecklistData={setNegativityChecklistData}
+                                  includeInReport={includeNegativityChecklistInReport}
+                                  setIncludeInReport={setIncludeNegativityChecklistInReport}
+                                  onInsertIntoReport={(next) => {
+                                    if (generatedReport) {
+                                      setReportHistory((prev) => [...prev, generatedReport]);
+                                      setReportRedoHistory([]);
+                                    }
+                                    setGeneratedReport(next);
+                                    setEditedReportText(next);
+                                  }}
                                 />
                               </React.Suspense>
                             </div>

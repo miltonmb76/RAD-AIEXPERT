@@ -1055,3 +1055,49 @@ export interface DifferentialTreeData {
   generatedAt?: string;
 }
 
+/** Final/allowed statuses for directed negativity checklist items. */
+export type NegativityItemStatus =
+  | "negative"
+  | "positive"
+  | "limited_technical"
+  | "pending_closure";
+
+export type NegativityInsertTarget =
+  | "findings"
+  | "negativity_block"
+  | "impression";
+
+export interface NegativityChecklistItem {
+  id: string;
+  sign: string;
+  laterality?: string;
+  status: NegativityItemStatus;
+  /** Why this sign matters for the active protocol. */
+  whyItMatters: string;
+  /** Quote/paraphrase from the report when present. */
+  evidence?: string;
+  /** Required when status is limited_technical. */
+  technicalReason?: string;
+  /** Ready-to-insert Spanish clinical prose for pending items. */
+  suggestedInsert?: string;
+  insertTarget?: NegativityInsertTarget;
+  inserted?: boolean;
+  insertedAt?: string;
+  confidence?: "alta" | "media" | "baja";
+}
+
+export interface NegativityChecklistData {
+  title: string;
+  protocolName?: string;
+  studyRegion?: string;
+  laterality?: string;
+  /** Human summary of closure state. */
+  closureSummary: string;
+  openGapsCount: number;
+  items: NegativityChecklistItem[];
+  /** Technical limitations only (never generic "not evaluated"). */
+  technicalGaps: string[];
+  recommendation?: string;
+  generatedAt?: string;
+}
+
