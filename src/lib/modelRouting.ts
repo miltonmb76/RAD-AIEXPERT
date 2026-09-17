@@ -32,6 +32,7 @@ export type ModelTask =
   | "abdominalWall3d"
   | "scrotum3d"
   | "muscleTendon3d"
+  | "wrist3d"
   | "patient_summary"
   | "case_analysis"
   | "pathology"
@@ -50,6 +51,7 @@ export type ModelTask =
   | "clinical_scorecard"
   | "reasoning_chain"
   | "differential_tree"
+  | "negativity_checklist"
   | "chat"
   | "default";
 
@@ -70,6 +72,7 @@ const QUALITY_TASKS: ReadonlySet<ModelTask> = new Set([
   "abdominalWall3d",
   "scrotum3d",
   "muscleTendon3d",
+  "wrist3d",
   "patient_summary",
   "case_analysis",
   "pathology",
@@ -80,6 +83,7 @@ const QUALITY_TASKS: ReadonlySet<ModelTask> = new Set([
   "clinical_scorecard",
   "reasoning_chain",
   "differential_tree",
+  "negativity_checklist",
   "default",
 ]);
 

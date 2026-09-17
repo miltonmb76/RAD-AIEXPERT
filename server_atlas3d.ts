@@ -316,6 +316,32 @@ const MUSCLE_TENDON_TOPOGRAPHY_RULES_ES =
   "8) Una imagen/tabla bella con lado o territorio músculo-tendón equivocado es FALLO CRÍTICO.";
 
 
+const WRIST_TOPOGRAPHY_HARD_RULES =
+  "WRIST TOPOGRAPHY HARD RULES (never violate): " +
+  "(1) RIGHT side ≠ LEFT side — never swap laterality. " +
+  "(2) Dorsal extensor compartments 1–6 ≠ flexor/carpal tunnel ≠ TFCC ≠ carpal ligaments. " +
+  "(3) Landmarks: distal radioulnar joint, scaphoid, lunate, triquetrum, pisiform, hamate hook, retinacula. " +
+  "(4) De Quervain = 1st compartment (APL/EPB); ECU = 6th; median nerve CSA in carpal tunnel. " +
+  "(5) TFCC: disc + ulnocarpal / DRUJ ligaments — never invent tear if report says intact. " +
+  "(6) AP/frontal: patient RIGHT on VIEWER'S LEFT; patient LEFT on VIEWER'S RIGHT. " +
+  "(7) Name side/site + structure + thickness/CSA + echo + fluid + dynamics in structureOrSite / anatomicalFocus / findingTable. " +
+  "(8) A beautiful image with wrong side or wrong wrist territory is a CRITICAL FAIL.";
+
+const WRIST_TOPOGRAPHY_RULES_ES =
+  "REGLAS DURAS DE TOPOGRAFÍA DE MUÑECA (nunca violar):\n" +
+  "1) Lado DERECHO ≠ IZQUIERDO. Nunca intercambiar hemicuerpos.\n" +
+  "2) Tendones dorsales (compartimentos 1–6) ≠ flexores / túnel del carpo ≠ TFCC ≠ ligamentos carpianos.\n" +
+  "3) Landmarks: articulación radio-cubital distal, escafoides, semilunar, piramidal, pisiforme, gancho del ganchoso, retináculos.\n" +
+  "4) De Quervain = 1er compartimento (APL/EPB); ECU = 6º; nervio mediano (área seccional) en túnel del carpo.\n" +
+  "5) TFCC: disco + ligamentos ulnocarpianos / radio-cubital distal. No inventar rotura si el informe dice intacto.\n" +
+  "6) Vista AP/frontal: DERECHO del paciente a la IZQUIERDA del cuadro; IZQUIERDO a la DERECHA.\n" +
+  "7) En structureOrSite, anatomicalFocus, findingTable e imagePrompt nombra: lado/sitio + estructura + grosor/área + ecopatrón + líquido + dinámica.\n" +
+  "8) Una imagen/tabla bella con lado o territorio de muñeca equivocado es FALLO CRÍTICO.";
+
+
+
+
+
 
 
 function classifyViewOrientation(view?: string): "anterior" | "posterior" | "other" {
@@ -1555,7 +1581,25 @@ DISEÑO DE PANELES 3D VASCULARES (Generar 2 o 3 Paneles):
   "Ultra-realistic 3D medical macro vascular cross-section render of [PATIENT SIDE + detailed vessel name], exact wall layer cutaway, exact plaque/thrombus morphology (lipid core, fibrous cap, calcifications, ulceration, or clean healthy intima), intraluminal lumen opening with glowing chromatic laminar blood flow vectors, anatomical bone/soft tissue landmark background that locks laterality, cinema 4D octane render style, soft surgical studio lighting, clean background, strictly NO text, NO numbers, NO arrows, NO letters inside the image. Do NOT mirror anatomy."
 
 ========================================================================
-SÍNTESIS MORFOLÓGICA Y HEMODINÁMICA:
+FICHA CLÍNICA BAJO LA FIGURA 3D (OBLIGATORIA — carótidas / arterial / venoso):
+========================================================================
+Genera textos ricos en español para llenar el espacio bajo los paneles 3D (NO inventar hallazgos):
+- vascularSummary: 3–5 líneas. Territorio, lateralidad y hallazgo dominante (estenosis / permeabilidad / trombo / reflujo).
+- wallPlaqueNotes: morfología de pared/placa/trombo/compresibilidad según modalidad:
+  · carotideo_vertebral → CIMT, Gray-Weale, ulceración, calcificación.
+  · arterial_mmii / aorto_iliaco → placa, calcificación, oclusión, ectasia/aneurisma.
+  · venoso_mmii → compresibilidad, trombo endoluminal, engrosamiento parietal.
+  · arterias_renales → hallazgo luminal ostium/cuerpo/hilio.
+- velocityHemodynamicStatus: velocidades/índices clave del segmento crítico (no toda la tabla):
+  · carótidas → PSV/EDV, RAR / ACC-ACI.
+  · arterial → onda (tri/bi/mono), PSV, VR.
+  · venoso → flujo espontáneo/fásico, maniobra de aumento, reflujo/competencia.
+  · renales → PSV, RAR, RI.
+- keyPoints: array de 3 a 6 bullets cortos y accionables.
+Adapta el tono al studyTypeCategory detectado. Prohibido inventar estenosis, trombos o reflujos ausentes.
+
+========================================================================
+SÍNTESIS MORFOLÓGICA Y HEMODINÁMICA (página 2):
 ========================================================================
 Redacta un texto integrador de 3 a 5 líneas con las conclusiones del estudio, consensos (SRU/NASCET/Intersocietal), repercusión hemodinámica y permeabilidad.
 
@@ -1602,6 +1646,10 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
       "clinicalImpact": "Normal"
     }
   ],
+  "vascularSummary": "Estudio Doppler carotídeo-vertebral bilateral: ...",
+  "wallPlaqueNotes": "CIMT y morfología parietal/placa según informe...",
+  "velocityHemodynamicStatus": "PSV/EDV e índices del segmento crítico...",
+  "keyPoints": ["...", "...", "..."],
   "synthesisTitle": "SÍNTESIS MORFOLÓGICA Y HEMODINÁMICA:",
   "morphologicalSynthesis": "El estudio Doppler carotídeo y vertebral bilateral evidencia..."
 }`;
@@ -1658,7 +1706,11 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
             }
           ],
           synthesisTitle: "SÍNTESIS MORFOLÓGICA Y HEMODINÁMICA:",
-          morphologicalSynthesis: "La correlación anatomopatológica y velocimétrica confirma la permeabilidad y características hemodinámicas descriptas en el estudio."
+          morphologicalSynthesis: "La correlación anatomopatológica y velocimétrica confirma la permeabilidad y características hemodinámicas descriptas en el estudio.",
+          vascularSummary: "",
+          wallPlaqueNotes: "",
+          velocityHemodynamicStatus: "",
+          keyPoints: []
         };
       }
 
@@ -1724,6 +1776,10 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
         },
         panels: panelsWithImages,
         hemodynamicTable: planJson.hemodynamicTable || [],
+        vascularSummary: planJson.vascularSummary || planJson.summary || "",
+        wallPlaqueNotes: planJson.wallPlaqueNotes || planJson.morphologyNotes || "",
+        velocityHemodynamicStatus: planJson.velocityHemodynamicStatus || planJson.hemodynamicStatus || "",
+        keyPoints: Array.isArray(planJson.keyPoints) ? planJson.keyPoints.filter(Boolean).slice(0, 6) : [],
         synthesisTitle: planJson.synthesisTitle || "SÍNTESIS MORFOLÓGICA Y HEMODINÁMICA:",
         morphologicalSynthesis: planJson.morphologicalSynthesis || planJson.biomechanicalSynthesis || ""
       };
@@ -3743,6 +3799,386 @@ RESPONDE EN JSON:
       res.status(500).json({ success: false, error: handleGeminiError(error) });
     }
   });
+
+
+  app.post("/api/generate-3d-wrist", async (req: express.Request, res: express.Response) => {
+    try {
+      const { reportText, wristType, laterality, requestedModel, customDirectives } = req.body;
+
+      if (!reportText || !reportText.trim()) {
+        return res.status(400).json({ success: false, error: "Se requiere el texto del informe de muñeca." });
+      }
+
+      const ai = getGeminiClient();
+      const model = getModelName(requestedModel || "gemini-3.7-flash");
+
+      const wristPrompt = `Eres un Radiólogo experto en ecografía de muñeca (tendones dorsales/flexores, túnel del carpo, TFCC, ligamentos carpianos) y director de arte médico 3D MSK.
+Tu misión es analizar el informe de ecografía de muñeca adjunto para estructurar la "SUITE MUÑECA 3D & FICHA DE MUÑECA" con máxima fidelidad anatomopatológica.
+
+========================================================================
+INFORMACIÓN DEL ESTUDIO DE MUÑECA:
+========================================================================
+- Tipo de Estudio Sugerido / Seleccionado: "${wristType || "Detectar automáticamente del informe"}"
+- Lateralidad Solicitada: "${laterality || "Detectar del informe"}"
+- DIRECTIVA CLÍNICA OBLIGATORIA (Scorecard de muñeca / radar — MANDATORY, no omitir): "${customDirectives || "Ninguna"}"
+IMPORTANTE: Si hay directiva clínica, DEBE gobernar la anatomía 3D de muñeca, compartimentos/túnel/TFCC, grosor/área, líquido sinovial, dinámica, lateralidad y la tabla. No inventes rotura completa, neuropatía ni tenosinovitis ausentes.
+- INFORME ECOGRÁFICO DE MUÑECA:
+"""
+${reportText}
+"""
+
+========================================================================
+REGLA DE SCORECARD / DIRECTIVA OBLIGATORIA:
+========================================================================
+Si "DIRECTIVA CLÍNICA OBLIGATORIA" no es "Ninguna", trátela como contrato clínico vinculante:
+- Los paneles 3D y la tabla DEBEN reflejar esos hallazgos (lado/sitio, estructura, ecopatrón, líquido, dinámica).
+- Prohibido inventar rotura completa, neuropatía del mediano o rotura de TFCC no respaldadas.
+
+========================================================================
+TOPOGRAFÍA DE MUÑECA (OBLIGATORIA):
+========================================================================
+${WRIST_TOPOGRAPHY_RULES_ES}
+
+CRITICO: extrae del informe, para CADA hallazgo, lado/sitio + estructura + grosor/área + ecopatrón + líquido + dinámica y NO los intercambies.
+Si el informe dice "tenosinovitis del 1er compartimento derecho (De Quervain)" o "TFCC ulnar intacto", structureOrSite / anatomicalFocus / findingTable / imagePrompt deben decirlo explícitamente.
+
+========================================================================
+TIPOS DE ESTUDIO (clasifica en uno):
+========================================================================
+1. "tenosinovitis_dorsal": Tenosinovitis / tendones dorsales (compartimentos 1–6, De Quervain, ECU).
+2. "tunel_carpiano": Túnel del carpo / flexores / nervio mediano.
+3. "tfcc_ligamentos": TFCC / ligamentos carpianos / radio-cubital distal.
+4. "general_muneca": Detectar del informe / estudio mixto de muñeca.
+
+========================================================================
+DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
+========================================================================
+- Panel A (panelRole "overview"): visión regional de la muñeca con anclas de lado (dorsal o palmar según informe).
+- Panel B (panelRole "tendons_extensor" | "tendons_flexor" | "tfcc_carpal"): corte del hallazgo dominante SEGÚN EL INFORME.
+- Panel C opcional (panelRole restante): segundo territorio (p. ej. túnel si B fue dorsal, o TFCC).
+- LATERALIDAD OBLIGATORIA POR PANEL (convención radiografía AP / paciente de frente):
+  - Cada panel DEBE declarar "laterality" exacta (Derecha|Izquierda|Bilateral) = lado ANATÓMICO DEL PACIENTE.
+  - Vista AP/frontal: lado DERECHO del paciente a la IZQUIERDA del cuadro; IZQUIERDO a la DERECHA.
+  - El imagePrompt DEBE empezar con el sitio/lado del paciente y anclas de pantalla.
+  - NUNCA intercambiar lado D↔I ni compartimento dorsal↔túnel↔TFCC sin respaldo.
+- PROMPT EN INGLÉS para cada panel:
+  "Ultra-realistic 3D medical wrist anatomy render of [SITE + PATIENT SIDE], accurate extensor compartments / flexor retinaculum / carpal tunnel / TFCC / carpal ligament landmarks, exact tenosynovitis fluid or pathology only when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, strictly NO text, NO numbers, NO arrows, NO letters inside the image. Do NOT mirror anatomy. Obey WRIST TOPOGRAPHY HARD RULES."
+
+========================================================================
+TABLA Y FICHA CLÍNICA:
+========================================================================
+- findingTable filas con: location, structure, thicknessOrGap, echoPattern, hematomaOrFluid, dynamicFinding, severity, clinicalImpact.
+- Incluye wristSummary, morphologyNotes, tendonLigamentStatus (textos clínicos ricos en español) y keyPoints (array 3-6 bullets).
+- tableHeaders col1..col8 FIJOS: LADO / SITIO | ESTRUCTURA | GROSOR / ÁREA | ECOPATRÓN | LÍQUIDO / SINOVIAL | DINÁMICA / ENGATILLAMIENTO | SEVERIDAD | IMPACTO
+- Evalúa: lado/sitio, tendón/ligamento/nervio, grosor/área, ecopatrón, líquido, dinámica. No inventes patología ausente.
+
+RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
+{
+  "studyTypeCategory": "tenosinovitis_dorsal" | "tunel_carpiano" | "tfcc_ligamentos" | "general_muneca",
+  "territoryLabel": "ECOGRAFÍA DE MUÑECA" | "ECOGRAFÍA DE TENOSINOVITIS DORSAL" | "ECOGRAFÍA DE TÚNEL DEL CARPO" | "ECOGRAFÍA DE TFCC / LIGAMENTOS",
+  "laterality": "Bilateral" | "Derecha" | "Izquierda",
+  "figureTitle": "FIGURA 1. ATLAS 3D DE MUÑECA Y CORRELACIÓN ANATOMOPATOLÓGICA",
+  "tableTitle": "TABLA ECOGRÁFICA DE MUÑECA:",
+  "tableHeaders": {
+    "col1": "LADO / SITIO",
+    "col2": "ESTRUCTURA",
+    "col3": "GROSOR / ÁREA",
+    "col4": "ECOPATRÓN",
+    "col5": "LÍQUIDO / SINOVIAL",
+    "col6": "DINÁMICA / ENGATILLAMIENTO",
+    "col7": "SEVERIDAD",
+    "col8": "IMPACTO"
+  },
+  "panels": [
+    {
+      "panelLetter": "A",
+      "panelTitle": "Panel A: Muñeca — vista de conjunto",
+      "structureOrSite": "Muñeca — overview regional",
+      "anatomicalFocus": "Muñeca con anclas de lateralidad y retináculos...",
+      "laterality": "Bilateral",
+      "panelRole": "overview",
+      "imagePrompt": "Ultra-realistic 3D medical wrist anatomy render..."
+    },
+    {
+      "panelLetter": "B",
+      "panelTitle": "Panel B: Corte del hallazgo dominante",
+      "structureOrSite": "1er compartimento derecho / túnel / TFCC según informe",
+      "anatomicalFocus": "Detalle topográfico exacto del hallazgo dominante...",
+      "laterality": "Derecha",
+      "panelRole": "tendons_extensor",
+      "imagePrompt": "Ultra-realistic 3D medical wrist compartment / tunnel / TFCC corte render..."
+    }
+  ],
+  "findingTable": [
+    {
+      "location": "Muñeca derecha / 1er compartimento",
+      "structure": "APL / EPB",
+      "thicknessOrGap": "Grosor tendinoso / área seccional",
+      "echoPattern": "Tenosinovitis",
+      "hematomaOrFluid": "Líquido peritendinoso",
+      "dynamicFinding": "Dolor a la abducción / sin engatillamiento",
+      "severity": "Leve / moderada",
+      "clinicalImpact": "Correlacionar con clínica (De Quervain)"
+    }
+  ],
+  "wristSummary": "...",
+  "morphologyNotes": "...",
+  "tendonLigamentStatus": "...",
+  "keyPoints": ["...", "..."],
+  "synthesisTitle": "SÍNTESIS MORFOLÓGICA DE MUÑECA:",
+  "morphologicalSynthesis": "El estudio de muñeca evidencia..."
+}`;
+
+      const planResponse = await ai.models.generateContent({
+        model: model,
+        contents: [{ text: wristPrompt }],
+        config: { responseMimeType: "application/json" }
+      });
+
+      let planJson: any = {};
+      try {
+        planJson = JSON.parse(planResponse.text || "{}");
+      } catch (parseErr) {
+        console.error("Error parseando plan JSON Muñeca 3D:", parseErr);
+        planJson = {
+          studyTypeCategory: wristType || "general_muneca",
+          territoryLabel: "ECOGRAFÍA DE MUÑECA",
+          laterality: laterality || "Bilateral",
+          figureTitle: "FIGURA 1. ATLAS 3D DE MUÑECA Y CORRELACIÓN ANATOMOPATOLÓGICA",
+          tableTitle: "TABLA ECOGRÁFICA DE MUÑECA:",
+          tableHeaders: {
+            col1: "LADO / SITIO",
+            col2: "ESTRUCTURA",
+            col3: "GROSOR / ÁREA",
+            col4: "ECOPATRÓN",
+            col5: "LÍQUIDO / SINOVIAL",
+            col6: "DINÁMICA / ENGATILLAMIENTO",
+            col7: "SEVERIDAD",
+            col8: "IMPACTO"
+          },
+          panels: [
+            {
+              panelLetter: "A",
+              panelTitle: "Panel A: Anatomía de muñeca — visión de conjunto",
+              structureOrSite: "Muñeca — overview regional",
+              anatomicalFocus: "Reconstrucción de muñeca con retináculos y anclas de lateralidad.",
+              laterality: laterality || "Bilateral",
+              panelRole: "overview",
+              imagePrompt: "Ultra-realistic 3D medical wrist anatomy render showing dorsal and volar landmarks with clear patient right/left anchors, cinema 4D octane render, soft surgical studio lighting, clean background, no text."
+            },
+            {
+              panelLetter: "B",
+              panelTitle: "Panel B: Corte del hallazgo dominante — según informe",
+              structureOrSite: "Hallazgo dominante según informe",
+              anatomicalFocus: "Corte macro del territorio dominante sin intercambiar lados.",
+              laterality: laterality || "Bilateral",
+              panelRole: "tendons_extensor",
+              imagePrompt: "Ultra-realistic 3D medical wrist pathology corte render with accurate extensor/flexor/TFCC landmarks and pathology only when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, no text."
+            }
+          ],
+          findingTable: [],
+          synthesisTitle: "SÍNTESIS MORFOLÓGICA DE MUÑECA:",
+          morphologicalSynthesis: "La correlación anatomopatológica de muñeca se basa en los hallazgos descritos en el informe."
+        };
+      }
+
+      const wristPanelsWithImages = await Promise.all(
+        (planJson.panels || []).map(async (panel: any, idx: number) => {
+          let promptToUse = panel.imagePrompt || `Ultra-realistic 3D medical wrist render of ${panel.structureOrSite || panel.panelTitle}, octane render, no text.`;
+          if (customDirectives && customDirectives.trim()) {
+            promptToUse = `${promptToUse} [MANDATORY CLINICAL DIRECTIVE: ${customDirectives.trim()}].`;
+          }
+          {
+            const screenMap = buildScreenLateralityConstraint(panel.laterality || planJson.laterality || laterality, "AP / coronal");
+            if (panel.laterality && panel.laterality !== "auto") {
+              promptToUse = `[MANDATORY PATIENT LATERALITY: ${panel.laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${WRIST_TOPOGRAPHY_HARD_RULES} ${screenMap} ${promptToUse}`;
+            } else {
+              promptToUse = `${LATERALITY_HARD_RULES} ${WRIST_TOPOGRAPHY_HARD_RULES} ${screenMap} ${promptToUse}`;
+            }
+          }
+
+          const defaultRole = idx === 0 ? "overview" : idx === 1 ? "tendons_extensor" : "tfcc_carpal";
+          try {
+            const imageUrl = await generateMedicalImage(ai, promptToUse);
+            return {
+              id: `wrist-panel-${idx}-${Date.now()}`,
+              panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
+              panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
+              structureOrSite: panel.structureOrSite || panel.panelTitle || "",
+              anatomicalFocus: panel.anatomicalFocus || "Evaluación anatómica de muñeca",
+              laterality: panel.laterality || planJson.laterality || laterality || "",
+              imageUrl: imageUrl,
+              promptUsed: promptToUse,
+              isCustomFlipped: false,
+              panelRole: panel.panelRole || defaultRole
+            };
+          } catch (imgErr) {
+            console.error(`Error generando imagen para panel de muñeca ${panel.panelLetter}:`, imgErr);
+            return {
+              id: `wrist-panel-${idx}-${Date.now()}`,
+              panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
+              panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
+              structureOrSite: panel.structureOrSite || panel.panelTitle || "",
+              anatomicalFocus: panel.anatomicalFocus || "Evaluación anatómica de muñeca",
+              laterality: panel.laterality || planJson.laterality || laterality || "",
+              imageUrl: "",
+              promptUsed: promptToUse,
+              isCustomFlipped: false,
+              panelRole: panel.panelRole || defaultRole
+            };
+          }
+        })
+      );
+
+      const forcedHeaders = {
+        col1: "LADO / SITIO",
+        col2: "ESTRUCTURA",
+        col3: "GROSOR / ÁREA",
+        col4: "ECOPATRÓN",
+        col5: "LÍQUIDO / SINOVIAL",
+        col6: "DINÁMICA / ENGATILLAMIENTO",
+        col7: "SEVERIDAD",
+        col8: "IMPACTO"
+      };
+
+      const finalWristData = {
+        studyTypeCategory: planJson.studyTypeCategory || wristType || "general_muneca",
+        territoryLabel: planJson.territoryLabel || "ECOGRAFÍA DE MUÑECA",
+        laterality: planJson.laterality || laterality || "Bilateral",
+        figureTitle: planJson.figureTitle || "FIGURA 1. ATLAS 3D DE MUÑECA Y CORRELACIÓN ANATOMOPATOLÓGICA",
+        tableTitle: planJson.tableTitle || "TABLA ECOGRÁFICA DE MUÑECA:",
+        tableHeaders: forcedHeaders,
+        panels: wristPanelsWithImages,
+        findingTable: (planJson.findingTable || planJson.lesionTable || planJson.noduleTable || []).map((row: any) => ({
+          location: row.location || row.side || "",
+          structure: row.structure || row.tendon || row.composition || "",
+          thicknessOrGap: row.thicknessOrGap || row.sizeOrGap || row.sizeOrThickness || row.size || row.volume || "",
+          echoPattern: row.echoPattern || row.wallLayers || row.echogenicity || "",
+          hematomaOrFluid: row.hematomaOrFluid || row.content || row.fluid || row.synovial || "",
+          dynamicFinding: row.dynamicFinding || row.reducibilityOrDynamic || row.triggering || "",
+          severity: row.severity || row.grade || "",
+          clinicalImpact: row.clinicalImpact || ""
+        })),
+        wristSummary: planJson.wristSummary || planJson.muscleTendonSummary || planJson.wallSummary || "",
+        morphologyNotes: planJson.morphologyNotes || "",
+        tendonLigamentStatus: planJson.tendonLigamentStatus || planJson.tearTendonStatus || "",
+        keyPoints: Array.isArray(planJson.keyPoints) ? planJson.keyPoints : [],
+        synthesisTitle: planJson.synthesisTitle || "SÍNTESIS MORFOLÓGICA DE MUÑECA:",
+        morphologicalSynthesis: planJson.morphologicalSynthesis || ""
+      };
+
+      res.json({
+        success: true,
+        data: finalWristData
+      });
+
+    } catch (error: any) {
+      console.error("Error en /api/generate-3d-wrist:", error);
+      res.status(500).json({ success: false, error: handleGeminiError(error) });
+    }
+  });
+
+  app.post("/api/regenerate-3d-wrist-panel", async (req: express.Request, res: express.Response) => {
+    try {
+      const { reportText, wristType, panel, laterality, userDirective, requestedModel, customDirectives } = req.body;
+
+      if (!panel) {
+        return res.status(400).json({ success: false, error: "Se requiere el panel de muñeca a regenerar." });
+      }
+
+      const ai = getGeminiClient();
+      const model = getModelName(requestedModel || "gemini-3.7-flash");
+
+      const refinePrompt = `Eres un Radiólogo experto en ecografía de muñeca y Director de Arte Médico 3D de muñeca.
+Diseña un prompt en inglés superdetallado para re-generar una única imagen 3D fotorrealista correspondiente al PANEL ${panel.panelLetter}.
+
+DATOS DEL CASO:
+- Territorio: "${wristType || "Ecografía de muñeca"}"
+- Sitio / estructura: "${panel.structureOrSite || panel.panelTitle || ""}"
+- Foco actual: "${panel.anatomicalFocus || ""}"
+- Rol del panel: "${panel.panelRole || ""}"
+- Lateralidad requerida: "${laterality || panel.laterality || ""}"
+- Instrucción / Corrección del médico: "${userDirective || "Mejorar precisión anatomopatológica de muñeca"}"
+- DIRECTIVA CLÍNICA OBLIGATORIA (Scorecard / radar / médico): "${customDirectives || "Ninguna"}"
+- Contexto del informe: """${(reportText || "").slice(0, 800)}"""
+
+TOPOGRAFÍA DE MUÑECA OBLIGATORIA:
+${WRIST_TOPOGRAPHY_RULES_ES}
+Si structureOrSite / foco / instrucción / informe mencionan un sitio de muñeca, conserva EXACTAS las coordenadas
+(lado, compartimento/túnel/TFCC). NUNCA intercambiar lado derecho↔izquierdo ni dorsal↔túnel↔TFCC sin respaldo.
+
+REGLAS DE ESTILO:
+- Ultra-realistic 3D medical wrist macro render, cinema 4D octane, accurate extensor/flexor/TFCC/carpal landmarks.
+- Exact named site, structure and laterality in the English imagePrompt.
+- Exact morphology only if indicated; soft surgical studio lighting; pure clean background.
+- STRICTLY NO text, NO numbers, NO letters, NO arrows inside the image.
+- Respect patient laterality (AP: patient RIGHT on viewer's LEFT).
+
+RESPONDE EN JSON:
+{
+  "panelTitle": "Título actualizado o confirmado para el panel",
+  "structureOrSite": "Nombre exacto (p.ej. 1er compartimento derecho / túnel del carpo izquierdo)",
+  "anatomicalFocus": "Foco anatomopatológico de 1 a 2 líneas con lado, estructura y hallazgo",
+  "imagePrompt": "Detailed English image generation prompt with explicit organ and laterality..."
+}`;
+
+      const refineResponse = await ai.models.generateContent({
+        model: model,
+        contents: [{ text: refinePrompt }],
+        config: { responseMimeType: "application/json" }
+      });
+
+      let refineJson: any = {};
+      try {
+        refineJson = JSON.parse(refineResponse.text || "{}");
+      } catch (e) {
+        refineJson = {
+          panelTitle: panel.panelTitle,
+          structureOrSite: panel.structureOrSite || panel.panelTitle,
+          anatomicalFocus: panel.anatomicalFocus,
+          imagePrompt: `Ultra-realistic 3D medical wrist render of ${panel.structureOrSite || panel.panelTitle}, octane render, studio lighting, no text.`
+        };
+      }
+
+      let finalPrompt = refineJson.imagePrompt || panel.promptUsed || `Ultra-realistic 3D medical wrist render of ${panel.panelTitle}, cinema 4D octane, no text.`;
+      if (customDirectives && String(customDirectives).trim()) {
+        finalPrompt = `${finalPrompt} [MANDATORY CLINICAL DIRECTIVE: ${String(customDirectives).trim()}].`;
+      }
+      if (userDirective && userDirective.trim()) {
+        finalPrompt = `${finalPrompt} [MANDATORY SURGICAL CORRECTION: ${userDirective.trim()}].`;
+      }
+      if (laterality && laterality !== "auto") {
+        const screenMap = buildScreenLateralityConstraint(laterality, "AP / coronal");
+        finalPrompt = `[MANDATORY PATIENT LATERALITY: ${laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${WRIST_TOPOGRAPHY_HARD_RULES} ${screenMap} ${finalPrompt}`;
+      } else {
+        const screenMap = buildScreenLateralityConstraint(laterality, "AP / coronal");
+        finalPrompt = `${LATERALITY_HARD_RULES} ${WRIST_TOPOGRAPHY_HARD_RULES} ${screenMap} ${finalPrompt}`;
+      }
+
+      const imageUrl = await generateMedicalImage(ai, finalPrompt);
+
+      const updatedPanel = {
+        ...panel,
+        panelTitle: refineJson.panelTitle || panel.panelTitle,
+        structureOrSite: refineJson.structureOrSite || panel.structureOrSite,
+        anatomicalFocus: refineJson.anatomicalFocus || panel.anatomicalFocus,
+        laterality: laterality || panel.laterality,
+        imageUrl: imageUrl,
+        promptUsed: finalPrompt,
+        isCustomFlipped: false
+      };
+
+      res.json({
+        success: true,
+        panel: updatedPanel
+      });
+
+    } catch (error: any) {
+      console.error("Error en /api/regenerate-3d-wrist-panel:", error);
+      res.status(500).json({ success: false, error: handleGeminiError(error) });
+    }
+  });
+
 
 
 

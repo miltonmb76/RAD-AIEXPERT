@@ -105,7 +105,9 @@ export interface CloudStudy {
   scrotum3dData?: any;
   includeScrotum3dInReport?: boolean;
   muscleTendon3dData?: any;
+  wrist3dData?: any;
   includeMuscleTendon3dInReport?: boolean;
+  includeWrist3dInReport?: boolean;
   usImagesGridMode?: string;
   patientSummary?: any;
 }

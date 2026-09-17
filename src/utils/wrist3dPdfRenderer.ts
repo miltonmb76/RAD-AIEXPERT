@@ -1,5 +1,5 @@
 import jsPDF from "jspdf";
-import { Knee3DData, Knee3DPanel, KneeFindingRow } from "../types";
+import { Wrist3DData, Wrist3DPanel, WristFindingRow } from "../types";
 import { pdfCutawayToCorte } from "./pdfCutawayToCorte";
 import { sanitizePdfText } from "./sanitizePdfText";
 import {
@@ -10,15 +10,15 @@ import {
 } from "./pdfAnnexChrome";
 
 /**
- * Renders a two-page "ANEXO: SUITE RODILLA 3D & FICHA LIGAMENTOS Y MENISCOS" into the provided jsPDF document.
+ * Renders a two-page "ANEXO: SUITE MUÑECA 3D & FICHA DE MUÑECA" into the provided jsPDF document.
  */
-export async function renderKnee3DPageToPdf(
+export async function renderWrist3DPageToPdf(
   doc: jsPDF,
-  kneeData: Knee3DData,
+  wristData: Wrist3DData,
   pageSize: "letter" | "a4" = "letter",
   pdfLayoutType: string = "modern"
 ): Promise<void> {
-  if (!kneeData || (!kneeData.panels?.length && !kneeData.findingTable?.length)) {
+  if (!wristData || (!wristData.panels?.length && !wristData.findingTable?.length)) {
     return;
   }
 
@@ -39,7 +39,7 @@ export async function renderKnee3DPageToPdf(
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12.5 * factor);
   doc.setTextColor(15, 23, 42);
-  doc.text("ANEXO: SUITE RODILLA 3D & FICHA LIGAMENTOS Y MENISCOS", marginX, yCoord);
+  doc.text("ANEXO: SUITE MUÑECA 3D & FICHA DE MUÑECA", marginX, yCoord);
   yCoord += 4.5 * factor;
 
   doc.setDrawColor(accent[0], accent[1], accent[2]);
@@ -47,8 +47,8 @@ export async function renderKnee3DPageToPdf(
   doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
   yCoord += 6.5 * factor;
 
-  const territory = kneeData.territoryLabel || "ECOGRAFÍA DE RODILLA";
-  const figTitle = kneeData.figureTitle || `FIGURA 1. ATLAS 3D RODILLA Y CORRELACIÓN RODILLA — ${territory.toUpperCase()}`;
+  const territory = wristData.territoryLabel || "ECOGRAFÍA DE MUÑECA";
+  const figTitle = wristData.figureTitle || `FIGURA 1. ATLAS 3D DE MUÑECA Y CORRELACIÓN ANATOMOPATOLÓGICA — ${territory.toUpperCase()}`;
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9.5 * factor);
@@ -67,7 +67,7 @@ export async function renderKnee3DPageToPdf(
   doc.text(figTitleLines, marginX + 5, yCoord + (figBannerH / 2) + 1.2);
   yCoord += figBannerH + 4 * factor;
 
-  const panels: Knee3DPanel[] = (kneeData.panels || []).filter(p => p && (p.imageUrl || p.panelTitle));
+  const panels: Wrist3DPanel[] = (wristData.panels || []).filter(p => p && (p.imageUrl || p.panelTitle));
   const panelCount = Math.min(Math.max(panels.length, 1), 3);
 
   if (panelCount > 0) {
@@ -77,7 +77,7 @@ export async function renderKnee3DPageToPdf(
     const imgWidth = cardWidth - 2;
     const imgHeight = imgWidth * (3 / 4); // keep aspect ratio, do not stretch
 
-    const measureCaptionH = (p: Knee3DPanel): number => {
+    const measureCaptionH = (p: Wrist3DPanel): number => {
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8 * factor);
       const titleLines = doc.splitTextToSize(pdfCutawayToCorte(p.panelTitle || `Panel ${p.panelLetter}`), cardWidth - 6);
@@ -116,7 +116,7 @@ export async function renderKnee3DPageToPdf(
           const imgFormat = p.imageUrl.includes("image/png") ? "PNG" : "JPEG";
           doc.addImage(p.imageUrl, imgFormat, imgX, imgY, imgWidth, imgHeight);
         } catch (imgErr) {
-          console.warn("Error drawing knee 3D image to PDF:", imgErr);
+          console.warn("Error drawing wrist 3D image to PDF:", imgErr);
           doc.setFillColor(241, 245, 249);
           doc.rect(imgX, imgY, imgWidth, imgHeight, "F");
         }
@@ -126,7 +126,7 @@ export async function renderKnee3DPageToPdf(
         doc.setFont("helvetica", "normal");
         doc.setFontSize(8 * factor);
         doc.setTextColor(148, 163, 184);
-        doc.text("Reconstrucción 3D Rodilla", imgX + (imgWidth / 2) - 18, imgY + (imgHeight / 2));
+        doc.text("Reconstrucción 3D Muñeca", imgX + (imgWidth / 2) - 18, imgY + (imgHeight / 2));
       }
 
       const badgeLabel = `PANEL ${p.panelLetter || String.fromCharCode(65 + idx)}`;
@@ -161,11 +161,11 @@ export async function renderKnee3DPageToPdf(
   }
 
   const dossierBlocks: Array<{ title: string; text: string; color: [number, number, number] }> = [
-    { title: "RESUMEN DE RODILLA", text: pdfCutawayToCorte(String(kneeData.kneeSummary || "").trim()), color: accent },
-    { title: "MORFOLOGÍA / TENDÓN DOMINANTE", text: pdfCutawayToCorte(String(kneeData.morphologyNotes || "").trim()), color: [3, 105, 161] },
-    { title: "ESTADO DE RODILLA", text: pdfCutawayToCorte(String(kneeData.ligamentMeniscusStatus || "").trim()), color: [12, 74, 110] },
+    { title: "RESUMEN DE MUÑECA", text: pdfCutawayToCorte(String(wristData.wristSummary || "").trim()), color: accent },
+    { title: "MORFOLOGÍA TENDINOSA / LIGAMENTARIA", text: pdfCutawayToCorte(String(wristData.morphologyNotes || "").trim()), color: [3, 105, 161] },
+    { title: "TENDONES / LIGAMENTOS", text: pdfCutawayToCorte(String(wristData.tendonLigamentStatus || "").trim()), color: [12, 74, 110] },
   ];
-  const keyPoints = Array.isArray(kneeData.keyPoints) ? kneeData.keyPoints.filter(Boolean) : [];
+  const keyPoints = Array.isArray(wristData.keyPoints) ? wristData.keyPoints.filter(Boolean) : [];
   if (keyPoints.length) {
     dossierBlocks.push({
       title: "PUNTOS CLAVE",
@@ -187,7 +187,7 @@ export async function renderKnee3DPageToPdf(
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9.0 * factor);
     doc.setTextColor(15, 23, 42);
-    doc.text("FICHA CLÍNICA RODILLA / LIGAMENTOS-MENISCOS (CORRELACIÓN CON LA FIGURA 3D)", marginX, dossierY);
+    doc.text("FICHA CLÍNICA DE MUÑECA (CORRELACIÓN CON LA FIGURA 3D)", marginX, dossierY);
     dossierY += 3.4 * factor;
 
     // Measure box heights first, then distribute leftover page space as inter-box gaps
@@ -210,8 +210,8 @@ export async function renderKnee3DPageToPdf(
       const b = dossierTexts[i];
       const lines = measured[i].lines;
       const boxH = measured[i].boxH;
-      doc.setFillColor(240, 249, 255);
-      doc.setDrawColor(186, 230, 253);
+      doc.setFillColor(softFill[0], softFill[1], softFill[2]);
+      doc.setDrawColor(softBorder[0], softBorder[1], softBorder[2]);
       doc.setLineWidth(0.3);
       doc.roundedRect(marginX, dossierY, boxW, boxH, 1.2, 1.2, "FD");
       doc.setFillColor(b.color[0], b.color[1], b.color[2]);
@@ -235,15 +235,15 @@ export async function renderKnee3DPageToPdf(
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12 * factor);
   doc.setTextColor(15, 23, 42);
-  doc.text("ANEXO: SUITE RODILLA 3D — TABLA Y SÍNTESIS", marginX, yCoord);
+  doc.text("ANEXO: SUITE MUÑECA 3D — TABLA Y SÍNTESIS", marginX, yCoord);
   yCoord += 4.2 * factor;
   doc.setDrawColor(accent[0], accent[1], accent[2]);
   doc.setLineWidth(0.7);
   doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
   yCoord += 6 * factor;
   // Fixed 8-col finding table (matches UI / API contract)
-  const tableData: KneeFindingRow[] = kneeData.findingTable || [];
-  const tableTitle = kneeData.tableTitle || "TABLA ECOGRÁFICA DEL LIGAMENTOS Y MENISCOS Y ESTRUCTURAS PERIARTICULARES:";
+  const tableData: WristFindingRow[] = wristData.findingTable || [];
+  const tableTitle = wristData.tableTitle || "TABLA ECOGRÁFICA MÚSCULO-TENDÓN:";
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10.5 * factor);
@@ -263,12 +263,12 @@ export async function renderKnee3DPageToPdf(
   ];
 
   const headerLabels = [
-    "LOCALIZACIÓN",
+    "LADO / SITIO",
     "ESTRUCTURA",
-    "GROSOR / GAP",
-    "PATRÓN ECO",
-    "DERRAME",
-    "DINÁMICA",
+    "GROSOR / ÁREA",
+    "ECOPATRÓN",
+    "LÍQUIDO / SINOVIAL",
+    "DINÁMICA / ENGATILLAMIENTO",
     "SEVERIDAD",
     "IMPACTO"
   ];
@@ -284,7 +284,7 @@ export async function renderKnee3DPageToPdf(
   const maxHeaderLines = Math.max(...wrappedHeaders.map(lines => lines.length), 1);
   const headerH = Math.max(9.0 * factor, (maxHeaderLines * 3.4 + 3.0) * factor);
 
-  doc.setFillColor(224, 242, 254); // cyan-50
+  doc.setFillColor(tableHeaderFill[0], tableHeaderFill[1], tableHeaderFill[2]);
   doc.rect(marginX, yCoord, contentWidth, headerH, "F");
 
   let curX = marginX;
@@ -293,7 +293,7 @@ export async function renderKnee3DPageToPdf(
     curX += colWidths[i];
   });
 
-  doc.setDrawColor(125, 211, 252);
+  doc.setDrawColor(softBorder[0], softBorder[1], softBorder[2]);
   doc.setLineWidth(0.4);
   doc.line(marginX, yCoord + headerH, marginX + contentWidth, yCoord + headerH);
   yCoord += headerH;
@@ -309,7 +309,7 @@ export async function renderKnee3DPageToPdf(
       row.structure || "",
       row.thicknessOrGap || "",
       row.echoPattern || "",
-      row.effusionStatus || "",
+      row.hematomaOrFluid || "",
       row.dynamicFinding || "",
       row.severity || "",
       row.clinicalImpact || ""
@@ -319,7 +319,7 @@ export async function renderKnee3DPageToPdf(
     const rowH = Math.max(7.2 * factor, (maxLines * 3.5 + 2.6) * factor);
 
     if (rIdx % 2 === 1) {
-      doc.setFillColor(240, 249, 255);
+      doc.setFillColor(softFill[0], softFill[1], softFill[2]);
       doc.rect(marginX, yCoord, contentWidth, rowH, "F");
     }
 
@@ -347,22 +347,22 @@ export async function renderKnee3DPageToPdf(
       cellX += colWidths[i];
     });
 
-    doc.setDrawColor(186, 230, 253);
+    doc.setDrawColor(softBorder[0], softBorder[1], softBorder[2]);
     doc.setLineWidth(0.2);
     doc.line(marginX, yCoord + rowH, marginX + contentWidth, yCoord + rowH);
 
     yCoord += rowH;
   });
 
-  doc.setDrawColor(125, 211, 252);
+  doc.setDrawColor(softBorder[0], softBorder[1], softBorder[2]);
   doc.setLineWidth(0.4);
   doc.line(marginX, yCoord, marginX + contentWidth, yCoord);
   yCoord += 4.5 * factor;
 
-  const synthText = kneeData.morphologicalSynthesis || "";
+  const synthText = wristData.morphologicalSynthesis || "";
   if (synthText && synthText.trim()) {
     const footerSafeBottom = pageHeight - 18 * factor;
-    const synthTitle = kneeData.synthesisTitle || "SÍNTESIS MORFOLÓGICA Y FUNCIONAL DE RODILLA:";
+    const synthTitle = wristData.synthesisTitle || "SÍNTESIS MORFOLÓGICA DE MUÑECA:";
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9.0 * factor);
     const synthLineH = 4.4 * factor;
@@ -376,7 +376,7 @@ export async function renderKnee3DPageToPdf(
       doc.setFont("helvetica", "bold");
       doc.setFontSize(11 * factor);
       doc.setTextColor(15, 23, 42);
-      doc.text("ANEXO: SUITE RODILLA 3D & FICHA LIGAMENTOS Y MENISCOS", marginX, yCoord);
+      doc.text("ANEXO: SUITE MUÑECA 3D & FICHA DE MUÑECA", marginX, yCoord);
       yCoord += 4 * factor;
       doc.setDrawColor(accent[0], accent[1], accent[2]);
       doc.setLineWidth(0.6);
@@ -385,13 +385,13 @@ export async function renderKnee3DPageToPdf(
       doc.setFont("helvetica", "italic");
       doc.setFontSize(8 * factor);
       doc.setTextColor(100, 116, 139);
-      doc.text("Continuación — síntesis morfológica y funcional dlos ligamentos/meniscos", marginX, yCoord);
+      doc.text("Continuación — síntesis morfológica de muñeca", marginX, yCoord);
       yCoord += 6 * factor;
     };
 
     const drawSynthChrome = (boxH: number, includeTitle: boolean) => {
-      doc.setFillColor(224, 242, 254);
-      doc.setDrawColor(125, 211, 252);
+      doc.setFillColor(tableHeaderFill[0], tableHeaderFill[1], tableHeaderFill[2]);
+      doc.setDrawColor(softBorder[0], softBorder[1], softBorder[2]);
       doc.setLineWidth(0.4);
       doc.roundedRect(marginX, yCoord, contentWidth, boxH, 2, 2, "FD");
       doc.setFillColor(accent[0], accent[1], accent[2]);
@@ -399,7 +399,7 @@ export async function renderKnee3DPageToPdf(
       if (includeTitle) {
         doc.setFont("helvetica", "bold");
         doc.setFontSize(10 * factor);
-        doc.setTextColor(154, 52, 18);
+        doc.setTextColor(146, 64, 14);
         doc.text(synthTitle, marginX + 6, yCoord + 5.5 * factor);
       }
     };

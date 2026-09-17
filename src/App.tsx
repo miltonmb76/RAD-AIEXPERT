@@ -12,6 +12,7 @@ const CreadorNotasPie = React.lazy(() => import("./components/CreadorNotasPie").
 const BiomechanicalRadarModule = React.lazy(() => import("./components/BiomechanicalRadarModule").then(m => ({ default: m.BiomechanicalRadarModule })));
 const ClinicalScorecardModule = React.lazy(() => import("./components/ClinicalScorecardModule").then(m => ({ default: m.ClinicalScorecardModule })));
 const ReasoningChainModule = React.lazy(() => import("./components/ReasoningChainModule").then(m => ({ default: m.ReasoningChainModule })));
+const NegativityChecklistModule = React.lazy(() => import("./components/NegativityChecklistModule").then(m => ({ default: m.NegativityChecklistModule })));
 const DifferentialTreeModule = React.lazy(() => import("./components/DifferentialTreeModule").then(m => ({ default: m.DifferentialTreeModule })));
 const MeasurementsGaugeModule = React.lazy(() => import("./components/MeasurementsGaugeModule").then(m => ({ default: m.MeasurementsGaugeModule })));
 const CreadorCuadroSinoptico = React.lazy(() => import("./components/CreadorCuadroSinoptico").then(m => ({ default: m.CreadorCuadroSinoptico })));
@@ -21,10 +22,11 @@ import { Atlas3DModule } from "./components/Atlas3DModule";
 import { renderAtlas3DAnnexToPDF } from "./utils/atlas3dPdfRenderer";
 import { renderScorecardAnnexToPDF } from "./utils/scorecardPdfRenderer";
 import { renderReasoningChainAnnexToPDF } from "./utils/reasoningChainPdfRenderer";
+import { renderNegativityChecklistAnnexToPDF } from "./utils/negativityChecklistPdfRenderer";
 import { renderDifferentialTreeAnnexToPDF } from "./utils/differentialTreePdfRenderer";
 import { renderMeasurementsGaugeAnnexToPDF } from "./utils/measurementsGaugePdfRenderer";
-import { Atlas3DData, Vascular3DData, FocalLesion3DData, Thyroid3DData, Breast3DData, Shoulder3DData, Knee3DData, Ankle3DData, Kidney3DData, Abdomen3DData, AbdominalWall3DData, Scrotum3DData, MuscleTendon3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData } from "./types";
-import { buildAtlasDirectivesFromScorecard, buildAtlasPanelFindingAssignments, buildVascularDirectivesFromScorecard, buildThyroidDirectivesFromScorecard, buildBreastDirectivesFromScorecard, buildShoulderDirectivesFromScorecard, buildKneeDirectivesFromScorecard, buildAnkleDirectivesFromScorecard, buildKidneyDirectivesFromScorecard, buildAbdomenDirectivesFromScorecard, buildAbdominalWallDirectivesFromScorecard, buildScrotumDirectivesFromScorecard, buildMuscleTendonDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
+import { Atlas3DData, Vascular3DData, FocalLesion3DData, Thyroid3DData, Breast3DData, Shoulder3DData, Knee3DData, Ankle3DData, Kidney3DData, Abdomen3DData, AbdominalWall3DData, Scrotum3DData, MuscleTendon3DData, Wrist3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData, NegativityChecklistData } from "./types";
+import { buildAtlasDirectivesFromScorecard, buildAtlasPanelFindingAssignments, buildVascularDirectivesFromScorecard, buildThyroidDirectivesFromScorecard, buildBreastDirectivesFromScorecard, buildShoulderDirectivesFromScorecard, buildKneeDirectivesFromScorecard, buildAnkleDirectivesFromScorecard, buildKidneyDirectivesFromScorecard, buildAbdomenDirectivesFromScorecard, buildAbdominalWallDirectivesFromScorecard, buildScrotumDirectivesFromScorecard, buildMuscleTendonDirectivesFromScorecard, buildWristDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
 import { Vascular3DModule } from "./components/Vascular3DModule";
 import { FocalLesion3DModule } from "./components/FocalLesion3DModule";
 import { Thyroid3DModule } from "./components/Thyroid3DModule";
@@ -37,6 +39,7 @@ import { Abdomen3DModule } from "./components/Abdomen3DModule";
 import { AbdominalWall3DModule } from "./components/AbdominalWall3DModule";
 import { Scrotum3DModule } from "./components/Scrotum3DModule";
 import { MuscleTendon3DModule } from "./components/MuscleTendon3DModule";
+import { Wrist3DModule } from "./components/Wrist3DModule";
 import { renderVascular3DPageToPdf } from "./utils/vascular3dPdfRenderer";
 import { renderFocalLesion3DAnnexToPDF } from "./utils/focalLesion3dPdfRenderer";
 import { renderThyroid3DPageToPdf } from "./utils/thyroid3dPdfRenderer";
@@ -49,6 +52,7 @@ import { renderAbdomen3DPageToPdf } from "./utils/abdomen3dPdfRenderer";
 import { renderAbdominalWall3DPageToPdf } from "./utils/abdominalWall3dPdfRenderer";
 import { renderScrotum3DPageToPdf } from "./utils/scrotum3dPdfRenderer";
 import { renderMuscleTendon3DPageToPdf } from "./utils/muscleTendon3dPdfRenderer";
+import { renderWrist3DPageToPdf } from "./utils/wrist3dPdfRenderer";
 import { renderElastographyAnnexToPdf, ElastographyPdfData } from "./utils/elastographyPdfRenderer";
 import { renderUsImagesToPdf, getPanelLetter } from "./utils/usImagesPdfRenderer";
 import { renderMmgImagesToPdf } from "./utils/mmgImagesPdfRenderer";
@@ -1594,6 +1598,7 @@ export default function App() {
         if (localStudy.abdominalWall3dData) setAbdominalWall3dData(localStudy.abdominalWall3dData);
         if (localStudy.scrotum3dData) setScrotum3dData(localStudy.scrotum3dData);
         if (localStudy.muscleTendon3dData) setMuscleTendon3dData(localStudy.muscleTendon3dData);
+        if (localStudy.wrist3dData) setWrist3dData(localStudy.wrist3dData);
         if (localStudy.includeBreast3dInReport !== undefined) setIncludeBreast3dInReport(localStudy.includeBreast3dInReport);
         if (localStudy.includeShoulder3dInReport !== undefined) setIncludeShoulder3dInReport(localStudy.includeShoulder3dInReport);
         if (localStudy.includeKnee3dInReport !== undefined) setIncludeKnee3dInReport(localStudy.includeKnee3dInReport);
@@ -1603,6 +1608,7 @@ export default function App() {
         if (localStudy.includeAbdominalWall3dInReport !== undefined) setIncludeAbdominalWall3dInReport(localStudy.includeAbdominalWall3dInReport);
         if (localStudy.includeScrotum3dInReport !== undefined) setIncludeScrotum3dInReport(localStudy.includeScrotum3dInReport);
         if (localStudy.includeMuscleTendon3dInReport !== undefined) setIncludeMuscleTendon3dInReport(localStudy.includeMuscleTendon3dInReport);
+        if (localStudy.includeWrist3dInReport !== undefined) setIncludeWrist3dInReport(localStudy.includeWrist3dInReport);
         if (localStudy.includeThyroid3dInReport !== undefined) setIncludeThyroid3dInReport(localStudy.includeThyroid3dInReport);
         if (localStudy.includeFocalLesion3dInReport !== undefined) setIncludeFocalLesion3dInReport(localStudy.includeFocalLesion3dInReport);
         if (localStudy.usImagesGridMode) setUsImagesGridMode(localStudy.usImagesGridMode as any);
@@ -2827,6 +2833,9 @@ export default function App() {
   const [reasoningChainData, setReasoningChainData] = useState<ReasoningChainData | null>(null);
   const [includeReasoningChainInReport, setIncludeReasoningChainInReport] = useState<boolean>(true);
   const [isReasoningChainOpen, setIsReasoningChainOpen] = useState<boolean>(false);
+  const [negativityChecklistData, setNegativityChecklistData] = useState<NegativityChecklistData | null>(null);
+  const [includeNegativityChecklistInReport, setIncludeNegativityChecklistInReport] = useState<boolean>(true);
+  const [isNegativityChecklistOpen, setIsNegativityChecklistOpen] = useState<boolean>(false);
   const [differentialTreeData, setDifferentialTreeData] = useState<DifferentialTreeData | null>(null);
   const [includeDifferentialTreeInReport, setIncludeDifferentialTreeInReport] = useState<boolean>(true);
   const [isDifferentialTreeOpen, setIsDifferentialTreeOpen] = useState<boolean>(false);
@@ -2856,6 +2865,7 @@ export default function App() {
   const [abdominalWall3dData, setAbdominalWall3dData] = useState<AbdominalWall3DData | null>(null);
   const [scrotum3dData, setScrotum3dData] = useState<Scrotum3DData | null>(null);
   const [muscleTendon3dData, setMuscleTendon3dData] = useState<MuscleTendon3DData | null>(null);
+  const [wrist3dData, setWrist3dData] = useState<Wrist3DData | null>(null);
   const [includeKnee3dInReport, setIncludeKnee3dInReport] = useState<boolean>(true);
   const [includeAnkle3dInReport, setIncludeAnkle3dInReport] = useState<boolean>(true);
   const [includeKidney3dInReport, setIncludeKidney3dInReport] = useState<boolean>(true);
@@ -2863,6 +2873,7 @@ export default function App() {
   const [includeAbdominalWall3dInReport, setIncludeAbdominalWall3dInReport] = useState<boolean>(true);
   const [includeScrotum3dInReport, setIncludeScrotum3dInReport] = useState<boolean>(true);
   const [includeMuscleTendon3dInReport, setIncludeMuscleTendon3dInReport] = useState<boolean>(true);
+  const [includeWrist3dInReport, setIncludeWrist3dInReport] = useState<boolean>(true);
 
   // Cuadrícula y Presentación Científica para Fotos de Ultrasonido
   const [usImagesGridMode, setUsImagesGridMode] = useState<UsImagesGridMode>("auto");
@@ -2912,6 +2923,8 @@ export default function App() {
     includeScorecardInReport,
     reasoningChainData,
     includeReasoningChainInReport,
+    negativityChecklistData,
+    includeNegativityChecklistInReport,
     differentialTreeData,
     includeDifferentialTreeInReport,
     measurementGaugeData,
@@ -2932,6 +2945,7 @@ export default function App() {
     abdominalWall3dData,
     scrotum3dData,
     muscleTendon3dData,
+    wrist3dData,
     includeKnee3dInReport,
     includeAnkle3dInReport,
     includeKidney3dInReport,
@@ -2939,6 +2953,7 @@ export default function App() {
     includeAbdominalWall3dInReport,
     includeScrotum3dInReport,
     includeMuscleTendon3dInReport,
+    includeWrist3dInReport,
     focalLesion3dData,
     includeFocalLesion3dInReport,
     usImagesGridMode,
@@ -3589,12 +3604,14 @@ Ejemplo:
   const [isAbdominalWall3dSuiteOpen, setIsAbdominalWall3dSuiteOpen] = useState<boolean>(false);
   const [isScrotum3dSuiteOpen, setIsScrotum3dSuiteOpen] = useState<boolean>(false);
   const [isMuscleTendon3dSuiteOpen, setIsMuscleTendon3dSuiteOpen] = useState<boolean>(false);
+  const [isWrist3dSuiteOpen, setIsWrist3dSuiteOpen] = useState<boolean>(false);
   const [includeRadarInReport, setIncludeRadarInReport] = useState<boolean>(true);
 
   // States & Handlers for Sistema de Activación Rápida de Módulos (Procesamiento en Lote)
   const DEFAULT_BATCH_MODULES: Record<string, boolean> = {
     clinical_scorecard: true,
     reasoning_chain: false,
+    negativity_checklist: false,
     differential_tree: false,
     atlas3d: false,
     vascular3d: false,
@@ -3608,6 +3625,7 @@ Ejemplo:
     abdominalWall3d: false,
     scrotum3d: false,
     muscleTendon3d: false,
+    wrist3d: false,
     radar: false,
     case_analysis: false,
     quality_eval: false,
@@ -3633,6 +3651,9 @@ Ejemplo:
   const handleToggleAllBatchModules = (select: boolean) => {
     setSelectedBatchModules({
       clinical_scorecard: select,
+      reasoning_chain: select,
+      negativity_checklist: select,
+      differential_tree: select,
       atlas3d: select,
       vascular3d: select,
       thyroid3d: select,
@@ -3645,6 +3666,7 @@ Ejemplo:
       abdominalWall3d: select,
       scrotum3d: select,
       muscleTendon3d: select,
+      wrist3d: select,
       radar: select,
       case_analysis: select,
       quality_eval: select,
@@ -3685,6 +3707,7 @@ Ejemplo:
     if (modules.organ_synoptic) setIsCreadorCuadroSinopticoOpen(true);
     if (modules.fractures) setIsCreadorSinopsisFracturasOpen(true);
     if (modules.reasoning_chain) setIsReasoningChainOpen(true);
+    if (modules.negativity_checklist) setIsNegativityChecklistOpen(true);
     if (modules.differential_tree) setIsDifferentialTreeOpen(true);
     // 2. Trigger async AI generation processes concurrently
     const promises: Promise<any>[] = [];
@@ -4159,6 +4182,39 @@ Ejemplo:
           }
         }
 
+        if (modules.wrist3d) {
+          try {
+            const radarForWrist = biomechanicalRadarData
+              ? {
+                  radarMode: biomechanicalRadarData.radarMode,
+                  dominantVector: biomechanicalRadarData.dominantVector,
+                  clinicalSummary: biomechanicalRadarData.clinicalSummary,
+                  globalScore: biomechanicalRadarData.globalScore,
+                  axes: biomechanicalRadarData.axes,
+                }
+              : undefined;
+            const wristDirectives = buildWristDirectivesFromScorecard(scorecardForModules, radarForWrist);
+            const resp = await fetch("/api/generate-3d-wrist", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                reportText: activeReport,
+                wristType: "general_muneca",
+                requestedModel: modelFor("wrist3d"),
+                customDirectives: wristDirectives || undefined
+              })
+            });
+            const jWr = await resp.json();
+            if (jWr.success && jWr.data) {
+              setWrist3dData(jWr.data);
+              setIncludeWrist3dInReport(true);
+              setIsWrist3dSuiteOpen(true);
+            }
+          } catch (e) {
+            console.error("Error en batch wrist 3d:", e);
+          }
+        }
+
       })());
     }
 
@@ -4186,6 +4242,33 @@ Ejemplo:
           }
         } catch (e) {
           console.error("Error al generar cadena de razonamiento en lote:", e);
+        }
+      })());
+    }
+
+    if (modules.negativity_checklist) {
+      promises.push((async () => {
+        setIsNegativityChecklistOpen(true);
+        try {
+          const resp = await fetch("/api/generate-negativity-checklist", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: modelFor("negativity_checklist"),
+              report: activeReport,
+              studyType: specificStudy || studyType || "",
+              clinicalHistory: clinicalHistory || "",
+            }),
+          });
+          const j = await resp.json();
+          if (j.success && j.data) {
+            setNegativityChecklistData(j.data);
+            setIncludeNegativityChecklistInReport(true);
+          } else {
+            console.error("Checklist de negatividad en lote fallo:", j.error);
+          }
+        } catch (e) {
+          console.error("Error al generar checklist de negatividad en lote:", e);
         }
       })());
     }
@@ -4882,6 +4965,7 @@ Ejemplo:
             abdominalWall3dData: abdominalWall3dData || null,
             scrotum3dData: scrotum3dData || null,
             muscleTendon3dData: muscleTendon3dData || null,
+            wrist3dData: wrist3dData || null,
             includeKnee3dInReport: includeKnee3dInReport,
             includeAnkle3dInReport: includeAnkle3dInReport,
             includeKidney3dInReport: includeKidney3dInReport,
@@ -4889,6 +4973,7 @@ Ejemplo:
             includeAbdominalWall3dInReport: includeAbdominalWall3dInReport,
             includeScrotum3dInReport: includeScrotum3dInReport,
             includeMuscleTendon3dInReport: includeMuscleTendon3dInReport,
+            includeWrist3dInReport: includeWrist3dInReport,
             focalLesion3dData: focalLesion3dData || null,
             includeFocalLesion3dInReport: includeFocalLesion3dInReport,
             usImagesGridMode: usImagesGridMode || "auto",
@@ -4930,6 +5015,7 @@ Ejemplo:
                 abdominalWall3dData: null,
                 scrotum3dData: null,
                 muscleTendon3dData: null,
+                wrist3dData: null,
                 focalLesion3dData: null,
                 customLogoUrl: "",
                 customSignatureUrl: "",
@@ -6037,6 +6123,7 @@ Ejemplo:
             abdominalWall3dData: abdominalWall3dData || null,
             scrotum3dData: scrotum3dData || null,
             muscleTendon3dData: muscleTendon3dData || null,
+            wrist3dData: wrist3dData || null,
             includeKnee3dInReport: includeKnee3dInReport,
             includeAnkle3dInReport: includeAnkle3dInReport,
             includeKidney3dInReport: includeKidney3dInReport,
@@ -6044,6 +6131,7 @@ Ejemplo:
             includeAbdominalWall3dInReport: includeAbdominalWall3dInReport,
             includeScrotum3dInReport: includeScrotum3dInReport,
             includeMuscleTendon3dInReport: includeMuscleTendon3dInReport,
+            includeWrist3dInReport: includeWrist3dInReport,
             focalLesion3dData: focalLesion3dData || null,
             includeFocalLesion3dInReport: includeFocalLesion3dInReport,
             usImagesGridMode: usImagesGridMode || "auto",
@@ -10575,6 +10663,12 @@ Ejemplo:
         await renderMuscleTendon3DPageToPdf(doc, activeMuscleTendonData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
       }
 
+      const activeWristData = studyOverride ? studyOverride.wrist3dData : (pdfStateRef.current?.wrist3dData || wrist3dData);
+      const shouldIncludeWrist = studyOverride ? (studyOverride.includeWrist3dInReport !== false) : (pdfStateRef.current?.includeWrist3dInReport !== false && includeWrist3dInReport);
+      if (activeWristData && shouldIncludeWrist && (activeWristData.panels?.length || activeWristData.findingTable?.length)) {
+        await renderWrist3DPageToPdf(doc, activeWristData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+      }
+
       // Restore standard margins and content widths for any diagrams, annexes, and signature block
       marginX = 20;
       contentWidth = pageWidth - (2 * marginX);
@@ -10630,6 +10724,28 @@ Ejemplo:
         activeReasoningChain.nodes.length > 0
       ) {
         renderReasoningChainAnnexToPDF(doc, activeReasoningChain, {
+          marginX,
+          pageWidth,
+          pageHeight,
+          contentWidth,
+          factor,
+        });
+      }
+
+      // --- ANEXO: CHECKLIST DE NEGATIVIDAD DIRIGIDA (1 página) ---
+      const activeNegativityChecklist = studyOverride
+        ? (studyOverride as any).negativityChecklistData
+        : (pdfStateRef.current?.negativityChecklistData || negativityChecklistData);
+      const shouldIncludeNegativityChecklist = studyOverride
+        ? ((studyOverride as any).includeNegativityChecklistInReport !== false)
+        : ((pdfStateRef.current?.includeNegativityChecklistInReport !== false) && includeNegativityChecklistInReport);
+      if (
+        activeNegativityChecklist &&
+        shouldIncludeNegativityChecklist &&
+        Array.isArray(activeNegativityChecklist.items) &&
+        activeNegativityChecklist.items.length > 0
+      ) {
+        renderNegativityChecklistAnnexToPDF(doc, activeNegativityChecklist, {
           marginX,
           pageWidth,
           pageHeight,
@@ -20911,6 +21027,13 @@ const splitReportAndAnnex = (text: string) => {
                                   desc: "Desgarros musculares, MTJ, Aquiles y tendones de miembros inferiores; ficha clínica y anexo PDF.",
                                   color: "text-rose-400 border-rose-500/30 bg-rose-950/20"
                                 },
+                                {
+                                  id: "wrist3d",
+                                  label: "Suite Muñeca 3D & Ficha de Muñeca",
+                                  badge: "MUÑECA 3D",
+                                  desc: "Tendones dorsales/flexores, túnel del carpo, TFCC y ligamentos; ficha clínica y anexo PDF.",
+                                  color: "text-sky-400 border-sky-500/30 bg-sky-950/20"
+                                },
                                                                 {
                                   id: "clinical_scorecard",
                                   label: "Scorecard Clinico de Criterios (pre-Atlas)",
@@ -20924,6 +21047,13 @@ const splitReportAndAnnex = (text: string) => {
                                   badge: "SEMIOLOGIA",
                                   desc: "Flujograma del pensamiento diagnostico: clinica, signos buscados/encontrados/descartados, correlacion y sintesis.",
                                   color: "text-violet-400 border-violet-500/30 bg-violet-950/20"
+                                },
+                                {
+                                  id: "negativity_checklist",
+                                  label: "Checklist de negatividad dirigida",
+                                  badge: "NEGATIVIDAD",
+                                  desc: "Cierra signos criticos del protocolo: inserta al reporte lo no mencionado; solo limita por causa tecnica.",
+                                  color: "text-teal-400 border-teal-500/30 bg-teal-950/20"
                                 },
                                 {
                                   id: "differential_tree",
@@ -21896,6 +22026,42 @@ const splitReportAndAnnex = (text: string) => {
                               </button>
                             </div>
 
+                            {/* Card 8c4: Suite Muñeca 3D */}
+                            <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-sky-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
+                              <div className="flex items-center gap-2 justify-between">
+                                <div className="flex items-center gap-2">
+                                  <Activity className="h-4 w-4 text-sky-400" />
+                                  <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
+                                    Suite Muñeca 3D
+                                  </h4>
+                                </div>
+                                <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-sky-950/40 text-sky-400 border border-sky-900/30 px-2 py-0.5 rounded">
+                                  MUÑECA 3D
+                                </span>
+                              </div>
+                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
+                                Tendones dorsales/flexores, túnel del carpo, TFCC y ligamentos; inyecta scorecard de muñeca.
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsWrist3dSuiteOpen(p => {
+                                    const next = !p;
+                                    if (next) setTimeout(() => document.getElementById("wrist-3d-suite-module")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+                                    return next;
+                                  });
+                                }}
+                                className={`w-full py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2 font-mono cursor-pointer border-2 ${
+                                  isWrist3dSuiteOpen
+                                    ? "bg-sky-600/15 border-sky-500/60 text-sky-200"
+                                    : "bg-slate-950 border-slate-800 hover:border-sky-500/30 text-sky-400"
+                                }`}
+                              >
+                                <Activity className="h-4 w-4" />
+                                {isWrist3dSuiteOpen ? "Ocultar Suite Muñeca" : "Abrir Suite Muñeca 3D"}
+                              </button>
+                            </div>
+
                             {/* Card 8d: Sinopsis de Fracturas (IA) */}
                             <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-emerald-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
                               <div className="flex items-center gap-2 justify-between">
@@ -22047,6 +22213,30 @@ const splitReportAndAnnex = (text: string) => {
                                 }`}
                               >
                                 {isReasoningChainOpen ? "Ocultar cadena" : "Abrir cadena de razonamiento"}
+                              </button>
+                            </div>
+
+                            <div className="p-4 rounded-2xl bg-slate-950/60 border border-teal-900/40 space-y-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <h4 className="text-sm font-semibold text-teal-200 flex items-center gap-2">
+                                    Checklist de negatividad dirigida
+                                  </h4>
+                                  <p className="text-[11px] text-slate-400 mt-1">
+                                    Nada sin evaluar salvo limitacion tecnica. Inserta al reporte lo no mencionado.
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setIsNegativityChecklistOpen((v) => !v)}
+                                className={`w-full px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
+                                  isNegativityChecklistOpen
+                                    ? "bg-teal-700 text-white"
+                                    : "bg-teal-600/80 hover:bg-teal-500 text-white"
+                                }`}
+                              >
+                                {isNegativityChecklistOpen ? "Ocultar checklist" : "Abrir checklist de negatividad"}
                               </button>
                             </div>
 
@@ -22214,6 +22404,31 @@ const splitReportAndAnnex = (text: string) => {
                                   setChainData={setReasoningChainData}
                                   includeInReport={includeReasoningChainInReport}
                                   setIncludeInReport={setIncludeReasoningChainInReport}
+                                />
+                              </React.Suspense>
+                            </div>
+                          )}
+
+                          {isNegativityChecklistOpen && (
+                            <div className="my-6">
+                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-teal-400 bg-slate-900/60 rounded-xl border border-teal-900/40 animate-pulse">Cargando checklist de negatividad...</div>}>
+                                <NegativityChecklistModule
+                                  selectedModel={modelFor("negativity_checklist")}
+                                  reportText={isEditingReportManual ? editedReportText : generatedReport}
+                                  studyType={specificStudy || studyType}
+                                  clinicalHistory={clinicalHistory}
+                                  checklistData={negativityChecklistData}
+                                  setChecklistData={setNegativityChecklistData}
+                                  includeInReport={includeNegativityChecklistInReport}
+                                  setIncludeInReport={setIncludeNegativityChecklistInReport}
+                                  onInsertIntoReport={(next) => {
+                                    if (generatedReport) {
+                                      setReportHistory((prev) => [...prev, generatedReport]);
+                                      setReportRedoHistory([]);
+                                    }
+                                    setGeneratedReport(next);
+                                    setEditedReportText(next);
+                                  }}
                                 />
                               </React.Suspense>
                             </div>
@@ -22583,6 +22798,35 @@ const splitReportAndAnnex = (text: string) => {
                                     : undefined
                                 ) || atlasDirectivesFromScorecard}
                                 onClose={() => setIsMuscleTendon3dSuiteOpen(false)}
+                              />
+                            </div>
+                          )}
+
+                          {isWrist3dSuiteOpen && (
+                            <div id="wrist-3d-suite-module" className="my-6">
+                              <Wrist3DModule
+                                reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
+                                activeProtocol={specificStudy || studyType || ""}
+                                laterality=""
+                                selectedModel={modelFor("wrist3d")}
+                                wristData={wrist3dData}
+                                setWristData={setWrist3dData}
+                                includeInReport={includeWrist3dInReport}
+                                setIncludeInReport={setIncludeWrist3dInReport}
+                                scorecardData={clinicalScorecardData}
+                                externalDirectives={buildWristDirectivesFromScorecard(
+                                  clinicalScorecardData,
+                                  biomechanicalRadarData
+                                    ? {
+                                        radarMode: biomechanicalRadarData.radarMode,
+                                        dominantVector: biomechanicalRadarData.dominantVector,
+                                        clinicalSummary: biomechanicalRadarData.clinicalSummary,
+                                        globalScore: biomechanicalRadarData.globalScore,
+                                        axes: biomechanicalRadarData.axes,
+                                      }
+                                    : undefined
+                                ) || atlasDirectivesFromScorecard}
+                                onClose={() => setIsWrist3dSuiteOpen(false)}
                               />
                             </div>
                           )}
@@ -25110,6 +25354,7 @@ const splitReportAndAnnex = (text: string) => {
                         if (viewingCloudStudy.abdominalWall3dData) setAbdominalWall3dData(viewingCloudStudy.abdominalWall3dData);
                         if (viewingCloudStudy.scrotum3dData) setScrotum3dData(viewingCloudStudy.scrotum3dData);
                         if (viewingCloudStudy.muscleTendon3dData) setMuscleTendon3dData(viewingCloudStudy.muscleTendon3dData);
+                        if (viewingCloudStudy.wrist3dData) setWrist3dData(viewingCloudStudy.wrist3dData);
                         if (viewingCloudStudy.includeShoulder3dInReport !== undefined) setIncludeShoulder3dInReport(viewingCloudStudy.includeShoulder3dInReport);
                         if (viewingCloudStudy.includeKnee3dInReport !== undefined) setIncludeKnee3dInReport(viewingCloudStudy.includeKnee3dInReport);
                         if (viewingCloudStudy.includeAnkle3dInReport !== undefined) setIncludeAnkle3dInReport(viewingCloudStudy.includeAnkle3dInReport);
@@ -25117,6 +25362,8 @@ const splitReportAndAnnex = (text: string) => {
                         if (viewingCloudStudy.includeAbdomen3dInReport !== undefined) setIncludeAbdomen3dInReport(viewingCloudStudy.includeAbdomen3dInReport);
                         if (viewingCloudStudy.includeAbdominalWall3dInReport !== undefined) setIncludeAbdominalWall3dInReport(viewingCloudStudy.includeAbdominalWall3dInReport);
                         if (viewingCloudStudy.includeScrotum3dInReport !== undefined) setIncludeScrotum3dInReport(viewingCloudStudy.includeScrotum3dInReport);
+                        if (viewingCloudStudy.includeMuscleTendon3dInReport !== undefined) setIncludeMuscleTendon3dInReport(viewingCloudStudy.includeMuscleTendon3dInReport);
+                        if (viewingCloudStudy.includeWrist3dInReport !== undefined) setIncludeWrist3dInReport(viewingCloudStudy.includeWrist3dInReport);
                         if (viewingCloudStudy.includeThyroid3dInReport !== undefined) setIncludeThyroid3dInReport(viewingCloudStudy.includeThyroid3dInReport);
                         if (viewingCloudStudy.focalLesion3dData) setFocalLesion3dData(viewingCloudStudy.focalLesion3dData);
                         if (viewingCloudStudy.includeVascular3dInReport !== undefined) setIncludeVascular3dInReport(viewingCloudStudy.includeVascular3dInReport);
