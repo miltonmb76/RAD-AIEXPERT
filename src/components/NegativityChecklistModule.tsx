@@ -9,6 +9,7 @@ import {
   Wrench,
   FilePlus2,
   ShieldAlert,
+  Trash2,
 } from "lucide-react";
 import { NegativityChecklistData, NegativityChecklistItem } from "../types";
 import {
@@ -119,6 +120,26 @@ export const NegativityChecklistModule: React.FC<NegativityChecklistModuleProps>
     const items = checklistData.items.map((it) =>
       it.id === id ? { ...it, ...patch } : it
     );
+    setChecklistData(refreshNegativityChecklistClosure({ ...checklistData, items }));
+  };
+
+  const removeItem = (id: string) => {
+    if (!checklistData) return;
+    const items = checklistData.items.filter((it) => it.id !== id);
+    setDraftInserts((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setTechDrafts((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    if (!items.length) {
+      setChecklistData(null);
+      return;
+    }
     setChecklistData(refreshNegativityChecklistClosure({ ...checklistData, items }));
   };
 
@@ -325,20 +346,30 @@ REGLAS OBLIGATORIAS:
                   className="rounded-xl border border-slate-800 bg-slate-900/70 p-3 space-y-2"
                 >
                   <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div>
+                    <div className="min-w-0 flex-1">
                       <p className="text-sm font-semibold text-slate-100">{item.sign}</p>
                       <p className="text-[11px] text-slate-400 mt-0.5">
                         {item.laterality ? `${item.laterality} · ` : ""}
                         {item.whyItMatters || "Signo crítico del protocolo"}
                       </p>
                     </div>
-                    <span
-                      className={`text-[10px] font-black uppercase tracking-wide px-2 py-1 rounded-md border ${statusStyles(
-                        item.status
-                      )}`}
-                    >
-                      {negativityStatusLabel(item.status)}
-                    </span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span
+                        className={`text-[10px] font-black uppercase tracking-wide px-2 py-1 rounded-md border ${statusStyles(
+                          item.status
+                        )}`}
+                      >
+                        {negativityStatusLabel(item.status)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removeItem(item.id)}
+                        title="Eliminar ítem del checklist (no aparecerá en el PDF)"
+                        className="p-1.5 rounded-lg border border-slate-700 bg-slate-950/80 text-slate-400 hover:text-rose-300 hover:border-rose-600/50 hover:bg-rose-950/30 transition-colors"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
 
                   {item.evidence && item.status !== "pending_closure" && (
