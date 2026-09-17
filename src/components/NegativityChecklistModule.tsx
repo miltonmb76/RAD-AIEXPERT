@@ -21,6 +21,7 @@ import {
 
 interface NegativityChecklistModuleProps {
   selectedModel: string;
+  modifyModel: string;
   reportText: string;
   studyType?: string;
   clinicalHistory?: string;
@@ -28,7 +29,7 @@ interface NegativityChecklistModuleProps {
   setChecklistData: (data: NegativityChecklistData | null) => void;
   includeInReport: boolean;
   setIncludeInReport: (include: boolean) => void;
-  /** Smart-insert snippet into the live report text. */
+  /** Apply rewritten report text after narrative weave. */
   onInsertIntoReport: (nextReportText: string) => void;
 }
 
@@ -49,6 +50,7 @@ const statusStyles = (status: NegativityChecklistItem["status"]) => {
 
 export const NegativityChecklistModule: React.FC<NegativityChecklistModuleProps> = ({
   selectedModel,
+  modifyModel,
   reportText,
   studyType,
   clinicalHistory,
@@ -62,6 +64,7 @@ export const NegativityChecklistModule: React.FC<NegativityChecklistModuleProps>
   const [error, setError] = useState<string | null>(null);
   const [draftInserts, setDraftInserts] = useState<Record<string, string>>({});
   const [techDrafts, setTechDrafts] = useState<Record<string, string>>({});
+  const [incorporatingId, setIncorporatingId] = useState<string | null>(null);
 
   const pendingCount = useMemo(
     () => (checklistData?.items || []).filter((i) => i.status === "pending_closure").length,
@@ -119,26 +122,97 @@ export const NegativityChecklistModule: React.FC<NegativityChecklistModuleProps>
     setChecklistData(refreshNegativityChecklistClosure({ ...checklistData, items }));
   };
 
-  const handleInsert = (item: NegativityChecklistItem) => {
+  const handleInsert = async (item: NegativityChecklistItem) => {
     const snippet = (draftInserts[item.id] ?? item.suggestedInsert ?? "").trim();
     if (!snippet) {
       setError("Escribe o confirma el texto a integrar en la descripción.");
       return;
     }
-    const next = insertNegativityIntoReport(
-      reportText || "",
-      snippet,
-      item.insertTarget || "findings",
-      item.sign
-    );
-    onInsertIntoReport(next);
-    updateItem(item.id, {
-      status: "negative",
-      evidence: snippet,
-      suggestedInsert: snippet,
-      inserted: true,
-      insertedAt: new Date().toISOString(),
-    });
+    if (!reportText?.trim()) {
+      setError("No hay informe activo para integrar la negatividad.");
+      return;
+    }
+
+    const placement =
+      item.placementHint?.trim() ||
+      [item.sign, item.laterality].filter(Boolean).join(" — ") ||
+      "la anatomía o párrafo semiológico correspondiente";
+    const sectionHint =
+      item.insertTarget === "impression"
+        ? "Si corresponde a la conclusión, intégralo en la IMPRESIÓN de forma natural (una línea diagnóstica, no un apéndice)."
+        : "Intégralo en el CUERPO NARRATIVO del informe (descripción por órganos/estructuras), NO como lista al final de HALLAZGOS ni como bloque 'NEGATIVIDADES DIRIGIDAS'.";
+
+    setIncorporatingId(item.id);
+    setError(null);
+    try {
+      const response = await fetch("/api/modify-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: modifyModel,
+          currentReport: reportText,
+          instruction: `Eres el radiólogo que redactó este informe. Debes REESCRIBIR el informe incorporando de forma nativa la siguiente negatividad dirigida dentro de la redacción, en el párrafo/sección anatómica adecuada.
+
+CONTENIDO A INTEGRAR:
+"${snippet}"
+
+ANCLAJE DE UBICACIÓN (prioridad): ${placement}
+SIGNO/ESTRUCTURA: ${item.sign}${item.laterality ? ` (${item.laterality})` : ""}
+${sectionHint}
+
+REGLAS OBLIGATORIAS:
+1) Colócalo DENTRO del flujo narrativo junto a la anatomía relacionada (p. ej. tiroides, vaso, articulación), no al final genérico de "HALLAZGOS:".
+2) Si hace falta, reordena o fusiona 1-2 oraciones vecinas para que el texto fluya como si siempre hubiera estado ahí.
+3) PROHIBIDO: encabezados nuevos, bloque "NEGATIVIDADES DIRIGIDAS", viñetas de "agregado", "checklist", "inserción", "auditoría" o cualquier meta-comentario.
+4) PROHIBIDO: duplicar si el concepto ya está dicho; en ese caso solo refuerza o aclara en el mismo sitio.
+5) Conserva el resto del informe intacto en sentido clínico.
+6) Devuelve el informe completo ya reescrito.`,
+        }),
+      });
+      const data = await response.json();
+      if (data.success && data.report) {
+        onInsertIntoReport(data.report);
+      } else {
+        // Fallback: local contextual splice if modify-report fails
+        console.warn("modify-report fallo; usando inserción local contextual:", data.error);
+        const next = insertNegativityIntoReport(
+          reportText,
+          snippet,
+          item.insertTarget || "findings",
+          item.sign
+        );
+        onInsertIntoReport(next);
+      }
+      updateItem(item.id, {
+        status: "negative",
+        evidence: snippet,
+        suggestedInsert: snippet,
+        inserted: true,
+        insertedAt: new Date().toISOString(),
+      });
+    } catch (e: any) {
+      console.error(e);
+      try {
+        const next = insertNegativityIntoReport(
+          reportText,
+          snippet,
+          item.insertTarget || "findings",
+          item.sign
+        );
+        onInsertIntoReport(next);
+        updateItem(item.id, {
+          status: "negative",
+          evidence: snippet,
+          suggestedInsert: snippet,
+          inserted: true,
+          insertedAt: new Date().toISOString(),
+        });
+      } catch (e2: any) {
+        setError(e.message || e2?.message || "Error al integrar la negatividad.");
+      }
+    } finally {
+      setIncorporatingId(null);
+    }
   };
 
   const handleMarkLimited = (item: NegativityChecklistItem) => {
@@ -170,7 +244,7 @@ export const NegativityChecklistModule: React.FC<NegativityChecklistModuleProps>
               Checklist de negatividad dirigida
             </h3>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              Nada queda sin evaluar salvo limitación técnica. Los pendientes se integran al cuerpo del informe.
+              Nada queda sin evaluar salvo limitación técnica. Los pendientes se tejen en la sección adecuada del cuerpo del informe.
             </p>
           </div>
         </div>
@@ -284,8 +358,8 @@ export const NegativityChecklistModule: React.FC<NegativityChecklistModuleProps>
                   {item.status === "pending_closure" && (
                     <div className="space-y-2 rounded-lg border border-orange-700/40 bg-orange-950/20 p-2.5">
                       <label className="block text-[10px] font-black uppercase tracking-wider text-orange-300">
-                        Frase a integrar en la descripción (
-                        {negativityInsertTargetLabel(item.insertTarget)})
+                        Frase a tejer en el cuerpo del informe (
+                        {item.placementHint || negativityInsertTargetLabel(item.insertTarget)})
                       </label>
                       <textarea
                         rows={2}
@@ -299,9 +373,14 @@ export const NegativityChecklistModule: React.FC<NegativityChecklistModuleProps>
                         <button
                           type="button"
                           onClick={() => handleInsert(item)}
-                          className="px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white text-[10px] font-black uppercase tracking-wide flex items-center gap-1.5"
+                          disabled={incorporatingId === item.id}
+                          className="px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-[10px] font-black uppercase tracking-wide flex items-center gap-1.5"
                         >
-                          <FilePlus2 className="h-3.5 w-3.5" />
+                          {incorporatingId === item.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <FilePlus2 className="h-3.5 w-3.5" />
+                          )}
                           Integrar en el informe
                         </button>
                         <button

@@ -219,9 +219,13 @@ export function normalizeNegativityChecklistData(raw: any): NegativityChecklistD
     const status = asStatus(it?.status);
     const technicalReason = String(it?.technicalReason || it?.limitation || "").trim();
     const suggestedInsert = String(it?.suggestedInsert || it?.insertText || "").trim();
+    const sign = String(it?.sign || it?.structureOrSign || it?.label || `Signo ${idx + 1}`).trim();
+    const placementHint = String(
+      it?.placementHint || it?.anchor || it?.sectionHint || it?.where || ""
+    ).trim();
     return {
       id: String(it?.id || `neg-${idx + 1}`),
-      sign: String(it?.sign || it?.structureOrSign || it?.label || `Signo ${idx + 1}`).trim(),
+      sign,
       laterality: String(it?.laterality || it?.side || "").trim() || undefined,
       status:
         status === "limited_technical" && !technicalReason ? "pending_closure" : status,
@@ -230,6 +234,7 @@ export function normalizeNegativityChecklistData(raw: any): NegativityChecklistD
       technicalReason: technicalReason || undefined,
       suggestedInsert: suggestedInsert || undefined,
       insertTarget: asTarget(it?.insertTarget),
+      placementHint: placementHint || sign || undefined,
       inserted: it?.inserted === true,
       insertedAt: it?.insertedAt ? String(it.insertedAt) : undefined,
       confidence: (["alta", "media", "baja"].includes(String(it?.confidence || "").toLowerCase())

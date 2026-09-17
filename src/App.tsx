@@ -22478,6 +22478,7 @@ const splitReportAndAnnex = (text: string) => {
                               <React.Suspense fallback={<div className="p-4 text-xs font-mono text-teal-400 bg-slate-900/60 rounded-xl border border-teal-900/40 animate-pulse">Cargando checklist de negatividad...</div>}>
                                 <NegativityChecklistModule
                                   selectedModel={modelFor("negativity_checklist")}
+                                  modifyModel={modelFor("report_modify")}
                                   reportText={isEditingReportManual ? editedReportText : generatedReport}
                                   studyType={specificStudy || studyType}
                                   clinicalHistory={clinicalHistory}

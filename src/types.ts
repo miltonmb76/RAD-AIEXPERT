@@ -1081,6 +1081,8 @@ export interface NegativityChecklistItem {
   /** Ready-to-insert Spanish clinical prose for pending items. */
   suggestedInsert?: string;
   insertTarget?: NegativityInsertTarget;
+  /** Narrative anchor for weaving into the report body. */
+  placementHint?: string;
   inserted?: boolean;
   insertedAt?: string;
   confidence?: "alta" | "media" | "baja";

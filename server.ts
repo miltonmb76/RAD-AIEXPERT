@@ -9543,8 +9543,9 @@ Genera un CHECKLIST DE NEGATIVIDAD DIRIGIDA para el estudio.
 
 REGLA DE ORO:
 - NADA puede quedar como "no evaluado" genérico.
-- Si el signo crítico del protocolo NO se menciona en el informe → status "pending_closure" y DEBES proponer "suggestedInsert" (frase clínica lista para integrar EN EL CUERPO/DESCRIPCIÓN del informe, en español, tono del propio radiólogo).
+- Si el signo crítico del protocolo NO se menciona en el informe → status "pending_closure" y DEBES proponer "suggestedInsert" (frase clínica lista para tejer EN EL CUERPO NARRATIVO del informe, en español, tono del propio radiólogo).
 - suggestedInsert debe sonar como prosa del informe (p.ej. "No se observa extensión intratorácica del bocio."), NUNCA como nota de sistema ni bloque aparte.
+- placementHint: ancla concreta de ubicación narrativa (p. ej. "Tras la descripción del tamaño tiroideo", "En el párrafo de carótida interna derecha").
 - Solo status "limited_technical" cuando haya limitación técnica explícita o claramente inferible (ventana acústica, no cooperación, dolor, obesidad extrema, etc.) y entonces "technicalReason" es OBLIGATORIO.
 - status "negative" solo si el informe ya niega el hallazgo (con evidence citada/parafraseada).
 - status "positive" si el hallazgo está presente.
@@ -9561,9 +9562,10 @@ ${report}
 """
 
 Devuelve 6 a 14 ítems críticos del protocolo (no inventes patología).
-Para cada pending_closure, suggestedInsert debe ser una frase afirmativa de negatividad dirigida integrable en la descripción, p.ej.:
+Para cada pending_closure, suggestedInsert debe ser una frase afirmativa de negatividad dirigida integrable EN EL PÁRRAFO ANATÓMICO CORRECTO, p.ej.:
 "No se identifican placas ulceradas en la arteria carótida interna derecha."
-insertTarget: preferir siempre "findings" (cuerpo del informe). Usa "impression" solo si la negatividad corresponde a la conclusión.
+insertTarget: preferir siempre "findings" (cuerpo narrativo). Usa "impression" solo si la negatividad corresponde a la conclusión.
+REGLA: el destino NO es "al final de HALLAZGOS" ni un bloque "NEGATIVIDADES DIRIGIDAS"; es el sitio semiológico correcto dentro de la prosa.
 
 discardedSynopsis: sinopsis clínica breve de los hallazgos YA descartados (status negative), en prosa de informe. Sin mencionar herramientas ni inserciones.
 
@@ -9578,13 +9580,14 @@ JSON OBLIGATORIO:
   "items": [
     {
       "id": "neg-1",
-      "sign": "...",
-      "laterality": "Derecha",
-      "status": "negative|positive|limited_technical|pending_closure",
+      "sign": "Extensión intratorácica",
+      "laterality": "",
+      "status": "pending_closure",
       "whyItMatters": "...",
-      "evidence": "...",
+      "evidence": "",
       "technicalReason": "",
-      "suggestedInsert": "...",
+      "suggestedInsert": "No se observa extensión intratorácica.",
+      "placementHint": "Tras la descripción del tamaño/contorno tiroideo",
       "insertTarget": "findings",
       "confidence": "alta|media|baja"
     }
