@@ -1,10 +1,14 @@
 import { NegativityChecklistData } from "../types";
-import { negativityStatusLabel } from "../lib/negativityChecklist";
+import {
+  buildDiscardedFindingsSynopsis,
+  negativityStatusLabel,
+} from "../lib/negativityChecklist";
 import { sanitizePdfText } from "./sanitizePdfText";
 
 /**
  * One-page annex: Checklist de negatividad dirigida.
- * Never opens a second page — clips rows / drops recommendation if needed.
+ * Never opens a second page — clips rows / drops synopsis if needed.
+ * Patient-facing: no "insertado" / "acción" language.
  */
 export function renderNegativityChecklistAnnexToPDF(
   doc: any,
@@ -24,6 +28,7 @@ export function renderNegativityChecklistAnnexToPDF(
   const accent: [number, number, number] = [13, 148, 136]; // teal-600
   const softFill: [number, number, number] = [240, 253, 250];
   const softBorder: [number, number, number] = [153, 246, 228];
+  const pad = 1.8 * factor;
 
   doc.addPage();
   let y = 22 * factor;
@@ -96,24 +101,28 @@ export function renderNegativityChecklistAnnexToPDF(
     y += boxH + 4 * factor;
   }
 
+  // Wider sign + relevance; tighter lado; evidence gets remaining room
   const cols = [
-    { label: "Signo / estructura", w: contentWidth * 0.26 },
-    { label: "Lado", w: contentWidth * 0.1 },
-    { label: "Estado", w: contentWidth * 0.16 },
-    { label: "Evidencia / texto", w: contentWidth * 0.32 },
-    { label: "Nota", w: contentWidth * 0.16 },
+    { label: "Signo / estructura", w: contentWidth * 0.28 },
+    { label: "Lado", w: contentWidth * 0.08 },
+    { label: "Estado", w: contentWidth * 0.15 },
+    { label: "Evidencia", w: contentWidth * 0.28 },
+    { label: "Relevancia", w: contentWidth * 0.21 },
   ];
   const headerH = 7.2 * factor;
+  const lineH = 3.15 * factor;
+  const maxLinesByCol = [3, 2, 2, 4, 4];
 
   const drawHeader = () => {
     doc.setFillColor(15, 118, 110);
     doc.rect(marginX, y, contentWidth, headerH, "F");
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(7.6 * factor);
+    doc.setFontSize(7.2 * factor);
     doc.setTextColor(255, 255, 255);
-    let x = marginX + 1.5 * factor;
+    let x = marginX + pad;
     cols.forEach((c) => {
-      doc.text(c.label, x, y + 4.8 * factor);
+      const labelLines = doc.splitTextToSize(c.label, c.w - pad * 1.2).slice(0, 1);
+      doc.text(labelLines, x, y + 4.8 * factor);
       x += c.w;
     });
     y += headerH;
@@ -121,50 +130,70 @@ export function renderNegativityChecklistAnnexToPDF(
 
   drawHeader();
 
-  // Prefer pending first so incompleteness is visible, then limited, then rest
   const ordered = [...data.items].sort((a, b) => {
     const rank = (s: string) =>
       s === "pending_closure" ? 0 : s === "limited_technical" ? 1 : s === "positive" ? 2 : 3;
     return rank(a.status) - rank(b.status);
   });
 
-  const maxRows = 12;
+  const noteForRow = (row: (typeof ordered)[number]): string => {
+    // Never expose insertion automation on the patient PDF
+    if (row.status === "pending_closure") return "Sin mención en el informe";
+    if (row.status === "limited_technical") {
+      return row.whyItMatters || "Evaluación limitada por técnica";
+    }
+    return row.whyItMatters || "—";
+  };
+
+  const maxRows = 11;
   for (let i = 0; i < Math.min(ordered.length, maxRows); i++) {
     const row = ordered[i];
     const evidence =
       row.status === "limited_technical"
         ? row.technicalReason || ""
-        : row.evidence || (row.inserted ? row.suggestedInsert || "" : row.suggestedInsert || "");
-    const note =
-      row.status === "pending_closure"
-        ? "Insertar en reporte"
-        : row.inserted
-          ? "Insertado"
-          : row.whyItMatters || "";
+        : row.evidence || row.suggestedInsert || "";
 
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.4 * factor);
+    doc.setFontSize(7 * factor);
     const cells = [
       sanitizePdfText(row.sign || ""),
       sanitizePdfText(row.laterality || "—"),
       sanitizePdfText(negativityStatusLabel(row.status)),
       sanitizePdfText(evidence || "—"),
-      sanitizePdfText(note || "—"),
+      sanitizePdfText(noteForRow(row)),
     ];
-    const wrapped = cells.map((t, ci) =>
-      doc.splitTextToSize(t, cols[ci].w - 2.5 * factor).slice(0, 3)
-    );
-    const rowH = Math.max(6.8 * factor, Math.max(...wrapped.map((w) => w.length)) * 3.2 * factor + 2.4 * factor);
 
-    if (y + rowH > pageBottom - 18 * factor) break;
+    // Measure with the fonts we will actually paint (bold for sign/estado)
+    const wrapped = cells.map((t, ci) => {
+      const maxW = Math.max(4 * factor, cols[ci].w - pad * 2);
+      if (ci === 0 || ci === 2) doc.setFont("helvetica", "bold");
+      else doc.setFont("helvetica", "normal");
+      doc.setFontSize(ci === 0 || ci === 4 ? 6.8 * factor : 7 * factor);
+      return doc.splitTextToSize(t, maxW).slice(0, maxLinesByCol[ci]);
+    });
+    const rowH = Math.max(
+      7.2 * factor,
+      Math.max(...wrapped.map((w) => w.length)) * lineH + 2.6 * factor
+    );
+
+    if (y + rowH > pageBottom - 22 * factor) break;
 
     if (i % 2 === 1) {
       doc.setFillColor(softFill[0], softFill[1], softFill[2]);
       doc.rect(marginX, y, contentWidth, rowH, "F");
     }
 
-    let x = marginX + 1.5 * factor;
+    // Soft vertical guides to keep columns readable
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.15);
+    let gx = marginX;
+    for (let ci = 0; ci < cols.length - 1; ci++) {
+      gx += cols[ci].w;
+      doc.line(gx, y, gx, y + rowH);
+    }
+
     wrapped.forEach((lines, ci) => {
+      const colLeft = marginX + cols.slice(0, ci).reduce((a, c) => a + c.w, 0);
       if (ci === 2) {
         doc.setFont("helvetica", "bold");
         if (row.status === "pending_closure") doc.setTextColor(180, 83, 9);
@@ -178,9 +207,8 @@ export function renderNegativityChecklistAnnexToPDF(
         doc.setFont("helvetica", "normal");
         doc.setTextColor(71, 85, 105);
       }
-      doc.setFontSize(7.4 * factor);
-      doc.text(lines, x, y + 3.2 * factor);
-      x += cols[ci].w;
+      doc.setFontSize(ci === 0 || ci === 4 ? 6.8 * factor : 7 * factor);
+      doc.text(lines, colLeft + pad, y + 3.1 * factor);
     });
 
     doc.setDrawColor(226, 232, 240);
@@ -189,9 +217,9 @@ export function renderNegativityChecklistAnnexToPDF(
     y += rowH;
   }
 
-  // Technical gaps / recommendation footer if space remains
+  // Technical gaps if space remains
   const gaps = (data.technicalGaps || []).filter(Boolean).slice(0, 3);
-  if (gaps.length && y + 16 * factor < pageBottom) {
+  if (gaps.length && y + 14 * factor < pageBottom) {
     y += 3 * factor;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(8 * factor);
@@ -203,25 +231,30 @@ export function renderNegativityChecklistAnnexToPDF(
     doc.setTextColor(71, 85, 105);
     gaps.forEach((g) => {
       const lines = doc.splitTextToSize(sanitizePdfText(`• ${g}`), contentWidth).slice(0, 2);
-      if (y + lines.length * 3.2 * factor > pageBottom) return;
+      if (y + lines.length * 3.2 * factor > pageBottom - 12 * factor) return;
       doc.text(lines, marginX, y);
       y += lines.length * 3.2 * factor;
     });
   }
 
-  if (data.recommendation && y + 12 * factor < pageBottom) {
-    y += 3 * factor;
+  // Final clinical synopsis of discarded findings (never "ACCIÓN" / insert language)
+  const synopsis = sanitizePdfText(
+    data.discardedSynopsis ||
+      buildDiscardedFindingsSynopsis(data.items, data.recommendation) ||
+      ""
+  );
+  if (synopsis && y + 14 * factor < pageBottom) {
+    y += 3.5 * factor;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(8 * factor);
     doc.setTextColor(15, 118, 110);
-    doc.text("ACCION", marginX, y);
+    doc.text("SINOPSIS DE HALLAZGOS DESCARTADOS", marginX, y);
     y += 3.5 * factor;
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.6 * factor);
     doc.setTextColor(51, 65, 85);
-    const reco = doc
-      .splitTextToSize(sanitizePdfText(data.recommendation), contentWidth)
-      .slice(0, 3);
-    doc.text(reco, marginX, y);
+    const remaining = Math.max(2, Math.floor((pageBottom - y) / (3.2 * factor)));
+    const lines = doc.splitTextToSize(synopsis, contentWidth).slice(0, Math.min(5, remaining));
+    doc.text(lines, marginX, y);
   }
 }

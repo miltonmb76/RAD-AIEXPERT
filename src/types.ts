@@ -1097,6 +1097,9 @@ export interface NegativityChecklistData {
   items: NegativityChecklistItem[];
   /** Technical limitations only (never generic "not evaluated"). */
   technicalGaps: string[];
+  /** Patient-facing synopsis of discarded (negative) findings for the PDF footer. */
+  discardedSynopsis?: string;
+  /** @deprecated Prefer discardedSynopsis — kept for older saved sessions. */
   recommendation?: string;
   generatedAt?: string;
 }

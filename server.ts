@@ -9542,12 +9542,14 @@ Genera un CHECKLIST DE NEGATIVIDAD DIRIGIDA para el estudio.
 
 REGLA DE ORO:
 - NADA puede quedar como "no evaluado" genérico.
-- Si el signo crítico del protocolo NO se menciona en el informe → status "pending_closure" y DEBES proponer "suggestedInsert" (frase clínica lista para insertar en el informe, en español).
+- Si el signo crítico del protocolo NO se menciona en el informe → status "pending_closure" y DEBES proponer "suggestedInsert" (frase clínica lista para integrar EN EL CUERPO/DESCRIPCIÓN del informe, en español, tono del propio radiólogo).
+- suggestedInsert debe sonar como prosa del informe (p.ej. "No se observa extensión intratorácica del bocio."), NUNCA como nota de sistema ni bloque aparte.
 - Solo status "limited_technical" cuando haya limitación técnica explícita o claramente inferible (ventana acústica, no cooperación, dolor, obesidad extrema, etc.) y entonces "technicalReason" es OBLIGATORIO.
 - status "negative" solo si el informe ya niega el hallazgo (con evidence citada/parafraseada).
 - status "positive" si el hallazgo está presente.
 
 IDIOMA: TODO el texto visible en ESPAÑOL médico.
+PROHIBIDO: lenguaje de "inserción automática", "acción", "checklist incompleto para el paciente" en discardedSynopsis.
 
 ESTUDIO / PROTOCOLO: ${study || "Detectar del informe"}
 ${history ? `HISTORIA CLINICA:\n"""\n${history}\n"""` : "Sin historia adicional."}
@@ -9558,9 +9560,11 @@ ${report}
 """
 
 Devuelve 6 a 14 ítems críticos del protocolo (no inventes patología).
-Para cada pending_closure, suggestedInsert debe ser una frase afirmativa de negatividad dirigida, p.ej.:
+Para cada pending_closure, suggestedInsert debe ser una frase afirmativa de negatividad dirigida integrable en la descripción, p.ej.:
 "No se identifican placas ulceradas en la arteria carótida interna derecha."
-insertTarget: "negativity_block" | "findings" | "impression"
+insertTarget: preferir siempre "findings" (cuerpo del informe). Usa "impression" solo si la negatividad corresponde a la conclusión.
+
+discardedSynopsis: sinopsis clínica breve de los hallazgos YA descartados (status negative), en prosa de informe. Sin mencionar herramientas ni inserciones.
 
 JSON OBLIGATORIO:
 {
@@ -9580,12 +9584,12 @@ JSON OBLIGATORIO:
       "evidence": "...",
       "technicalReason": "",
       "suggestedInsert": "...",
-      "insertTarget": "negativity_block",
+      "insertTarget": "findings",
       "confidence": "alta|media|baja"
     }
   ],
   "technicalGaps": [],
-  "recommendation": "..."
+  "discardedSynopsis": "Se descartaron de forma dirigida: ..."
 }
 `;
 

@@ -122,13 +122,14 @@ export const NegativityChecklistModule: React.FC<NegativityChecklistModuleProps>
   const handleInsert = (item: NegativityChecklistItem) => {
     const snippet = (draftInserts[item.id] ?? item.suggestedInsert ?? "").trim();
     if (!snippet) {
-      setError("Escribe o confirma el texto a insertar.");
+      setError("Escribe o confirma el texto a integrar en la descripción.");
       return;
     }
     const next = insertNegativityIntoReport(
       reportText || "",
       snippet,
-      item.insertTarget || "negativity_block"
+      item.insertTarget || "findings",
+      item.sign
     );
     onInsertIntoReport(next);
     updateItem(item.id, {
@@ -169,7 +170,7 @@ export const NegativityChecklistModule: React.FC<NegativityChecklistModuleProps>
               Checklist de negatividad dirigida
             </h3>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              Nada queda sin evaluar salvo limitación técnica. Los pendientes se insertan al reporte.
+              Nada queda sin evaluar salvo limitación técnica. Los pendientes se integran al cuerpo del informe.
             </p>
           </div>
         </div>
@@ -206,8 +207,8 @@ export const NegativityChecklistModule: React.FC<NegativityChecklistModuleProps>
         {!checklistData && !isLoading && (
           <div className="rounded-xl border border-dashed border-slate-700 p-6 text-center text-sm text-slate-400">
             Genera el checklist a partir del informe. Los signos no mencionados aparecerán como{" "}
-            <span className="text-orange-300 font-semibold">pendientes de cierre</span> con opción de
-            inserción inteligente al reporte.
+            <span className="text-orange-300 font-semibold">pendientes de cierre</span> para integrarlos
+            en la descripción del informe.
           </div>
         )}
 
@@ -283,7 +284,7 @@ export const NegativityChecklistModule: React.FC<NegativityChecklistModuleProps>
                   {item.status === "pending_closure" && (
                     <div className="space-y-2 rounded-lg border border-orange-700/40 bg-orange-950/20 p-2.5">
                       <label className="block text-[10px] font-black uppercase tracking-wider text-orange-300">
-                        Texto a insertar en el reporte (
+                        Frase a integrar en la descripción (
                         {negativityInsertTargetLabel(item.insertTarget)})
                       </label>
                       <textarea
@@ -301,7 +302,7 @@ export const NegativityChecklistModule: React.FC<NegativityChecklistModuleProps>
                           className="px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white text-[10px] font-black uppercase tracking-wide flex items-center gap-1.5"
                         >
                           <FilePlus2 className="h-3.5 w-3.5" />
-                          Insertar en reporte
+                          Integrar en el informe
                         </button>
                         <button
                           type="button"
