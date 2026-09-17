@@ -9517,7 +9517,8 @@ ${report}
   } catch (error: any) {
     console.error("Error en /api/generate-reasoning-chain:", error);
     res.status(500).json({ success: false, error: handleGeminiError(error) });
-
+  }
+});
 
 /**
  * API: CHECKLIST DE NEGATIVIDAD DIRIGIDA (1 página PDF)
@@ -9628,9 +9629,6 @@ JSON OBLIGATORIO:
   } catch (error: any) {
     console.error("Error en /api/generate-negativity-checklist:", error);
     res.status(500).json({ success: false, error: handleGeminiError(error) });
-  }
-});
-
   }
 });
 

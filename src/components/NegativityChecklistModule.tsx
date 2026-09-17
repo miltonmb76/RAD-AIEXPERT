@@ -86,6 +86,14 @@ export const NegativityChecklistModule: React.FC<NegativityChecklistModuleProps>
           clinicalHistory: clinicalHistory || "",
         }),
       });
+      const contentType = resp.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        throw new Error(
+          resp.status === 404
+            ? "El endpoint del checklist no está disponible en este despliegue. Redeploya la última versión del servidor."
+            : `Respuesta no JSON del servidor (HTTP ${resp.status}). Revisa el despliegue o reintenta.`
+        );
+      }
       const json = await resp.json();
       if (!json.success || !json.data) {
         throw new Error(json.error || "No se pudo generar el checklist.");
