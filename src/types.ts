@@ -1104,3 +1104,42 @@ export interface NegativityChecklistData {
   generatedAt?: string;
 }
 
+/** Simulated second-reader peer review of a finished report. */
+export type SecondReaderSeverity = "alta" | "media" | "baja";
+export type SecondReaderInsertTarget = "findings" | "impression";
+
+export interface SecondReaderObjection {
+  id: string;
+  severity: SecondReaderSeverity;
+  /** What in the report is being challenged. */
+  claim: string;
+  objection: string;
+  evidenceGap?: string;
+}
+
+export interface SecondReaderSustain {
+  id: string;
+  statement: string;
+  why: string;
+}
+
+export interface SecondReaderAddition {
+  id: string;
+  title: string;
+  reason: string;
+  /** Clinical prose ready to weave into the report body. */
+  suggestedText: string;
+  insertTarget: SecondReaderInsertTarget;
+  incorporated?: boolean;
+}
+
+export interface SecondReaderData {
+  title: string;
+  overallStance: string;
+  objections: SecondReaderObjection[];
+  sustain: SecondReaderSustain[];
+  additions: SecondReaderAddition[];
+  reviewSummary: string;
+  generatedAt?: string;
+}
+

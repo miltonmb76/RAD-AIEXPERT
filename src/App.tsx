@@ -13,6 +13,7 @@ const BiomechanicalRadarModule = React.lazy(() => import("./components/Biomechan
 const ClinicalScorecardModule = React.lazy(() => import("./components/ClinicalScorecardModule").then(m => ({ default: m.ClinicalScorecardModule })));
 const ReasoningChainModule = React.lazy(() => import("./components/ReasoningChainModule").then(m => ({ default: m.ReasoningChainModule })));
 const NegativityChecklistModule = React.lazy(() => import("./components/NegativityChecklistModule").then(m => ({ default: m.NegativityChecklistModule })));
+const SecondReaderModule = React.lazy(() => import("./components/SecondReaderModule").then(m => ({ default: m.SecondReaderModule })));
 const DifferentialTreeModule = React.lazy(() => import("./components/DifferentialTreeModule").then(m => ({ default: m.DifferentialTreeModule })));
 const MeasurementsGaugeModule = React.lazy(() => import("./components/MeasurementsGaugeModule").then(m => ({ default: m.MeasurementsGaugeModule })));
 const CreadorCuadroSinoptico = React.lazy(() => import("./components/CreadorCuadroSinoptico").then(m => ({ default: m.CreadorCuadroSinoptico })));
@@ -25,7 +26,7 @@ import { renderReasoningChainAnnexToPDF } from "./utils/reasoningChainPdfRendere
 import { renderNegativityChecklistAnnexToPDF } from "./utils/negativityChecklistPdfRenderer";
 import { renderDifferentialTreeAnnexToPDF } from "./utils/differentialTreePdfRenderer";
 import { renderMeasurementsGaugeAnnexToPDF } from "./utils/measurementsGaugePdfRenderer";
-import { Atlas3DData, Vascular3DData, FocalLesion3DData, Thyroid3DData, Breast3DData, Shoulder3DData, Knee3DData, Ankle3DData, Kidney3DData, Abdomen3DData, AbdominalWall3DData, Scrotum3DData, MuscleTendon3DData, Wrist3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData, NegativityChecklistData } from "./types";
+import { Atlas3DData, Vascular3DData, FocalLesion3DData, Thyroid3DData, Breast3DData, Shoulder3DData, Knee3DData, Ankle3DData, Kidney3DData, Abdomen3DData, AbdominalWall3DData, Scrotum3DData, MuscleTendon3DData, Wrist3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData, NegativityChecklistData, SecondReaderData } from "./types";
 import { buildAtlasDirectivesFromScorecard, buildAtlasPanelFindingAssignments, buildVascularDirectivesFromScorecard, buildThyroidDirectivesFromScorecard, buildBreastDirectivesFromScorecard, buildShoulderDirectivesFromScorecard, buildKneeDirectivesFromScorecard, buildAnkleDirectivesFromScorecard, buildKidneyDirectivesFromScorecard, buildAbdomenDirectivesFromScorecard, buildAbdominalWallDirectivesFromScorecard, buildScrotumDirectivesFromScorecard, buildMuscleTendonDirectivesFromScorecard, buildWristDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
 import { Vascular3DModule } from "./components/Vascular3DModule";
 import { FocalLesion3DModule } from "./components/FocalLesion3DModule";
@@ -2836,6 +2837,8 @@ export default function App() {
   const [negativityChecklistData, setNegativityChecklistData] = useState<NegativityChecklistData | null>(null);
   const [includeNegativityChecklistInReport, setIncludeNegativityChecklistInReport] = useState<boolean>(true);
   const [isNegativityChecklistOpen, setIsNegativityChecklistOpen] = useState<boolean>(false);
+  const [secondReaderData, setSecondReaderData] = useState<SecondReaderData | null>(null);
+  const [isSecondReaderOpen, setIsSecondReaderOpen] = useState<boolean>(false);
   const [differentialTreeData, setDifferentialTreeData] = useState<DifferentialTreeData | null>(null);
   const [includeDifferentialTreeInReport, setIncludeDifferentialTreeInReport] = useState<boolean>(true);
   const [isDifferentialTreeOpen, setIsDifferentialTreeOpen] = useState<boolean>(false);
@@ -2925,6 +2928,7 @@ export default function App() {
     includeReasoningChainInReport,
     negativityChecklistData,
     includeNegativityChecklistInReport,
+    secondReaderData,
     differentialTreeData,
     includeDifferentialTreeInReport,
     measurementGaugeData,
@@ -3612,6 +3616,7 @@ Ejemplo:
     clinical_scorecard: true,
     reasoning_chain: false,
     negativity_checklist: false,
+    second_reader: false,
     differential_tree: false,
     atlas3d: false,
     vascular3d: false,
@@ -3653,6 +3658,7 @@ Ejemplo:
       clinical_scorecard: select,
       reasoning_chain: select,
       negativity_checklist: select,
+      second_reader: select,
       differential_tree: select,
       atlas3d: select,
       vascular3d: select,
@@ -3708,6 +3714,7 @@ Ejemplo:
     if (modules.fractures) setIsCreadorSinopsisFracturasOpen(true);
     if (modules.reasoning_chain) setIsReasoningChainOpen(true);
     if (modules.negativity_checklist) setIsNegativityChecklistOpen(true);
+    if (modules.second_reader) setIsSecondReaderOpen(true);
     if (modules.differential_tree) setIsDifferentialTreeOpen(true);
     // 2. Trigger async AI generation processes concurrently
     const promises: Promise<any>[] = [];
@@ -4269,6 +4276,32 @@ Ejemplo:
           }
         } catch (e) {
           console.error("Error al generar checklist de negatividad en lote:", e);
+        }
+      })());
+    }
+
+    if (modules.second_reader) {
+      promises.push((async () => {
+        setIsSecondReaderOpen(true);
+        try {
+          const resp = await fetch("/api/generate-second-reader", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: modelFor("second_reader"),
+              report: activeReport,
+              studyType: specificStudy || studyType || "",
+              clinicalHistory: clinicalHistory || "",
+            }),
+          });
+          const j = await resp.json();
+          if (j.success && j.data) {
+            setSecondReaderData(j.data);
+          } else {
+            console.error("Segundo lector en lote fallo:", j.error);
+          }
+        } catch (e) {
+          console.error("Error al generar segundo lector en lote:", e);
         }
       })());
     }
@@ -21056,10 +21089,17 @@ const splitReportAndAnnex = (text: string) => {
                                   color: "text-teal-400 border-teal-500/30 bg-teal-950/20"
                                 },
                                 {
+                                  id: "second_reader",
+                                  label: "Segundo lector simulado",
+                                  badge: "PEER REVIEW",
+                                  desc: "Objeciones al informe, que sostener y sugerencias con boton para agregar al cuerpo del reporte.",
+                                  color: "text-indigo-400 border-indigo-500/30 bg-indigo-950/20"
+                                },
+                                {
                                   id: "differential_tree",
                                   label: "Arbol de diferenciales con poda",
                                   badge: "DIFERENCIALES",
-                                  desc: "Hipï¿½tesis a favor/en contra, poda de ramas incompatibles y diagnostico mas probable.",
+                                  desc: "Hipótesis a favor/en contra, poda de ramas incompatibles y diagnostico mas probable.",
                                   color: "text-orange-400 border-orange-500/30 bg-orange-950/20"
                                 },
 {
@@ -22240,6 +22280,30 @@ const splitReportAndAnnex = (text: string) => {
                               </button>
                             </div>
 
+                            <div className="p-4 rounded-2xl bg-slate-950/60 border border-indigo-900/40 space-y-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <h4 className="text-sm font-semibold text-indigo-200 flex items-center gap-2">
+                                    Segundo lector simulado
+                                  </h4>
+                                  <p className="text-[11px] text-slate-400 mt-1">
+                                    Peer review: objeciones, que sostener y agregar al cuerpo del informe con un clic.
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setIsSecondReaderOpen((v) => !v)}
+                                className={`w-full px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
+                                  isSecondReaderOpen
+                                    ? "bg-indigo-700 text-white"
+                                    : "bg-indigo-600/80 hover:bg-indigo-500 text-white"
+                                }`}
+                              >
+                                {isSecondReaderOpen ? "Ocultar segundo lector" : "Abrir segundo lector"}
+                              </button>
+                            </div>
+
                             <div className="p-4 rounded-2xl bg-slate-950/60 border border-orange-900/40 space-y-3">
                               <div className="flex items-start justify-between gap-3">
                                 <div>
@@ -22422,6 +22486,30 @@ const splitReportAndAnnex = (text: string) => {
                                   includeInReport={includeNegativityChecklistInReport}
                                   setIncludeInReport={setIncludeNegativityChecklistInReport}
                                   onInsertIntoReport={(next) => {
+                                    if (generatedReport) {
+                                      setReportHistory((prev) => [...prev, generatedReport]);
+                                      setReportRedoHistory([]);
+                                    }
+                                    setGeneratedReport(next);
+                                    setEditedReportText(next);
+                                  }}
+                                />
+                              </React.Suspense>
+                            </div>
+                          )}
+
+                          {isSecondReaderOpen && (
+                            <div className="my-6">
+                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-indigo-400 bg-slate-900/60 rounded-xl border border-indigo-900/40 animate-pulse">Cargando segundo lector...</div>}>
+                                <SecondReaderModule
+                                  selectedModel={modelFor("second_reader")}
+                                  modifyModel={modelFor("report_modify")}
+                                  reportText={isEditingReportManual ? editedReportText : generatedReport}
+                                  studyType={specificStudy || studyType}
+                                  clinicalHistory={clinicalHistory}
+                                  readerData={secondReaderData}
+                                  setReaderData={setSecondReaderData}
+                                  onReportUpdated={(next) => {
                                     if (generatedReport) {
                                       setReportHistory((prev) => [...prev, generatedReport]);
                                       setReportRedoHistory([]);

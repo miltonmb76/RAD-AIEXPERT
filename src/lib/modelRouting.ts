@@ -52,6 +52,7 @@ export type ModelTask =
   | "reasoning_chain"
   | "differential_tree"
   | "negativity_checklist"
+  | "second_reader"
   | "chat"
   | "default";
 
@@ -84,6 +85,7 @@ const QUALITY_TASKS: ReadonlySet<ModelTask> = new Set([
   "reasoning_chain",
   "differential_tree",
   "negativity_checklist",
+  "second_reader",
   "default",
 ]);
 

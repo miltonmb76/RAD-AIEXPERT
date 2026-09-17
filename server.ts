@@ -10,6 +10,7 @@ import { registerAtlas3DRoutes } from "./server_atlas3d";
 import { normalizeReasoningChainData, extractJsonObject } from "./src/lib/reasoningChain";
 import { normalizeNegativityChecklistData } from "./src/lib/negativityChecklist";
 import { normalizeDifferentialTreeData } from "./src/lib/differentialTree";
+import { normalizeSecondReaderData } from "./src/lib/secondReader";
 
 // Lazy-loaded GenAI client to prevent crash on startup if API key is missing
 let aiClient: GoogleGenAI | null = null;
@@ -9632,6 +9633,113 @@ JSON OBLIGATORIO:
     res.json({ success: true, data });
   } catch (error: any) {
     console.error("Error en /api/generate-negativity-checklist:", error);
+    res.status(500).json({ success: false, error: handleGeminiError(error) });
+  }
+});
+
+/**
+ * API: SEGUNDO LECTOR SIMULADO (peer review del informe)
+ * POST /api/generate-second-reader
+ * Objeciones + qué sostener + sugerencias agregables al cuerpo del informe.
+ */
+app.post("/api/generate-second-reader", async (req: express.Request, res: express.Response) => {
+  try {
+    const { model, report, studyType, clinicalHistory } = req.body;
+    if (!report || !String(report).trim()) {
+      return res.status(400).json({ success: false, error: "Se requiere el parámetro 'report'." });
+    }
+
+    const ai = getGeminiClient();
+    const modelToUse = getModelName(model);
+    const history = (clinicalHistory || "").toString().trim();
+    const study = (studyType || "").toString().trim();
+
+    const prompt = `Eres un radiólogo senior hispanohablante que actúa como SEGUNDO LECTOR (peer review) del informe de un colega.
+NO reescribes el informe completo. Devuelves una revisión estructurada.
+
+ESTUDIO: ${study || "Detectar del informe"}
+${history ? `HISTORIA CLINICA:\n"""\n${history}\n"""` : "Sin historia adicional."}
+
+INFORME A REVISAR:
+"""
+${report}
+"""
+
+TAREAS:
+1) objections (3-7): puntos que un segundo lector cuestionaría (sobrellamado, subllamado, inconsistencia hallazgo↔impresión, lateralidad, escala, certeza excesiva/insuficiente). Cada una con severity alta|media|baja.
+2) sustain (2-6): afirmaciones del informe que SÍ conviene sostener y por qué.
+3) additions (3-8): contenido concreto que FALTA y debería agregarse al cuerpo. Para cada uno:
+   - title corto
+   - reason (por qué agregarlo)
+   - suggestedText: prosa clínica lista para integrar (tono del radiólogo, español médico; NUNCA meta-comentarios ni "se sugiere agregar")
+   - insertTarget: "findings" (descripción/hallazgos) o "impression" (solo si corresponde a la conclusión)
+
+IDIOMA: TODO en ESPAÑOL médico.
+overallStance: 1-2 frases con la postura global del revisor.
+reviewSummary: síntesis breve de la revisión.
+
+JSON OBLIGATORIO:
+{
+  "title": "Segundo lector simulado",
+  "overallStance": "...",
+  "reviewSummary": "...",
+  "objections": [
+    { "id": "obj-1", "severity": "media", "claim": "...", "objection": "...", "evidenceGap": "..." }
+  ],
+  "sustain": [
+    { "id": "sus-1", "statement": "...", "why": "..." }
+  ],
+  "additions": [
+    {
+      "id": "add-1",
+      "title": "...",
+      "reason": "...",
+      "suggestedText": "No se observa extensión intratorácica.",
+      "insertTarget": "findings"
+    }
+  ]
+}
+`;
+
+    let rawText = "";
+    let parsed: any = {};
+    try {
+      const response = await ai.models.generateContent({
+        model: modelToUse,
+        contents: [{ text: prompt }],
+        config: { responseMimeType: "application/json" },
+      });
+      rawText = response.text || "";
+      parsed = JSON.parse(rawText || "{}");
+    } catch (e1) {
+      try {
+        const response2 = await ai.models.generateContent({
+          model: modelToUse,
+          contents: [{ text: prompt + "\n\nResponde SOLO JSON válido." }],
+        });
+        rawText = response2.text || "";
+        const extracted = extractJsonObject(rawText);
+        parsed = extracted ? JSON.parse(extracted) : JSON.parse(rawText || "{}");
+      } catch (e2) {
+        console.error("generate-second-reader parse fail:", e2, String(rawText).slice(0, 500));
+        return res.status(500).json({
+          success: false,
+          error: "No se pudo parsear la revisión del segundo lector. Reintenta con otro modelo.",
+        });
+      }
+    }
+
+    const data = normalizeSecondReaderData(parsed);
+    if (!data.objections.length && !data.additions.length && !data.sustain.length) {
+      return res.status(500).json({
+        success: false,
+        error: "La IA no devolvió una revisión utilizable.",
+      });
+    }
+
+    res.json({ success: true, data });
+  } catch (error: any) {
+    console.error("Error en /api/generate-second-reader:", error);
     res.status(500).json({ success: false, error: handleGeminiError(error) });
   }
 });
