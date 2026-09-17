@@ -3393,14 +3393,7 @@ Ejemplo:
   const [isEvaluatingImage, setIsEvaluatingImage] = useState<boolean>(false);
   const [currentModInstruction, setCurrentModInstruction] = useState<string>("");
   const [isModifyingReport, setIsModifyingReport] = useState<boolean>(false);
-  const [pendingRecText, setPendingRecText] = useState<string | null>(null);
-  const [pendingRecs, setPendingRecs] = useState<Record<string, boolean>>({});
-  const [incorporatedAuditRecs, setIncorporatedAuditRecs] = useState<Record<string, boolean>>({});
   const [modifyError, setModifyError] = useState<string | null>(null);
-
-  // Queue references for simultaneous / sequential recommendation processing
-  const recQueueRef = useRef<string[]>([]);
-  const isProcessingRecQueueRef = useRef<boolean>(false);
 
   const generatedReportRef = useRef(generatedReport);
   generatedReportRef.current = generatedReport;
@@ -3582,10 +3575,6 @@ Ejemplo:
   const [bibliographyError, setBibliographyError] = useState<string | null>(null);
   const [bibliographySources, setBibliographySources] = useState<Array<{ uri: string; title: string; summary?: string }>>([]);
 
-  const [reportEvaluation, setReportEvaluation] = useState<string>("");
-  const [isEvaluatingReport, setIsEvaluatingReport] = useState<boolean>(false);
-  const [reportEvaluationError, setReportEvaluationError] = useState<string | null>(null);
-
   // States for Patient Summary (Interactive & Demystifying)
   const [patientSummary, setPatientSummary] = useState<any | null>(null);
   const [isGeneratingPatientSummary, setIsGeneratingPatientSummary] = useState<boolean>(false);
@@ -3633,7 +3622,6 @@ Ejemplo:
     wrist3d: false,
     radar: false,
     case_analysis: false,
-    quality_eval: false,
     bibliography: false,
     operational_summary: true,
     patient_summary: true,
@@ -3675,7 +3663,6 @@ Ejemplo:
       wrist3d: select,
       radar: select,
       case_analysis: select,
-      quality_eval: select,
       bibliography: select,
       operational_summary: select,
       patient_summary: select,
@@ -3720,7 +3707,6 @@ Ejemplo:
     const promises: Promise<any>[] = [];
 
     if (modules.case_analysis) promises.push(handleAnalyzeCase());
-    if (modules.quality_eval) promises.push(handleEvaluateReport(activeReport));
     if (modules.bibliography) promises.push(handleSearchBibliography());
 
     if (modules.operational_summary) {
@@ -4361,7 +4347,6 @@ Ejemplo:
   const [isMainReportExpanded, setIsMainReportExpanded] = useState<boolean>(false);
   const [isSmartChatExpanded, setIsSmartChatExpanded] = useState<boolean>(false);
   const [isCaseAnalysisExpanded, setIsCaseAnalysisExpanded] = useState<boolean>(false);
-  const [isReportEvaluationExpanded, setIsReportEvaluationExpanded] = useState<boolean>(false);
   const [isBibliographyExpanded, setIsBibliographyExpanded] = useState<boolean>(false);
   const [isPatientSummaryExpanded, setIsPatientSummaryExpanded] = useState<boolean>(false);
   const [isGlossaryExpanded, setIsGlossaryExpanded] = useState<boolean>(false);
@@ -4506,9 +4491,6 @@ Ejemplo:
     setIsSearchingBibliography(false);
     setBibliographyError(null);
     setBibliographySources([]);
-    setReportEvaluation("");
-    setIsEvaluatingReport(false);
-    setReportEvaluationError(null);
     setAnnotations([]);
     setIsDrawingBox(false);
     setDrawStartPercent(null);
@@ -4848,8 +4830,6 @@ Ejemplo:
     setBibliography("");
     setBibliographyError(null);
     setBibliographySources([]);
-    setReportEvaluation("");
-    setReportEvaluationError(null);
     setOperationalSummaryText("");
     setPatientSummary(null);
     setPatientSummaryError(null);
@@ -4929,8 +4909,6 @@ Ejemplo:
           const batchSelection = { ...FULL_REPORT_BATCH_MODULES };
           const reportText = String(data.report || "").trim();
           setSelectedBatchModules(batchSelection);
-          // Evaluacion de calidad NO se activa por defecto; el usuario la lanza manualmente
-          // o la marca en el lote (quality_eval) si la necesita.
           void handleActivateBatchModules(reportText, batchSelection);
         } else {
           setSelectedBatchModules({ ...DEFAULT_BATCH_MODULES });
@@ -5186,86 +5164,6 @@ Ejemplo:
     }
   };
 
-  const processRecQueue = async () => {
-    if (isProcessingRecQueueRef.current) return;
-    isProcessingRecQueueRef.current = true;
-    setIsModifyingReport(true);
-    setModifyError(null);
-
-    while (recQueueRef.current.length > 0) {
-      const recText = recQueueRef.current[0];
-      const activeReport = isEditingReportManualRef.current ? editedReportTextRef.current : (generatedReportRef.current || "");
-
-      if (!activeReport) {
-        recQueueRef.current.shift();
-        setPendingRecs(prev => {
-          const next = { ...prev };
-          delete next[recText];
-          return next;
-        });
-        continue;
-      }
-
-      let sanitizedRec = recText.trim();
-      sanitizedRec = sanitizedRec.replace(/^\*\*|\*\*$/g, "").trim();
-      sanitizedRec = sanitizedRec.replace(/^["']|["']$/g, "").trim();
-
-      setPendingRecText(recText);
-
-      try {
-        const response = await fetch("/api/modify-report", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model: resolveModelForTask(selectedModelRef.current, "report_modify"),
-            currentReport: activeReport,
-            instruction: `Integra de forma totalmente fluida, nativa y natural, actuando en todo momento como el radiólogo principal que redacta el informe desde el principio, la siguiente clasificación, escala o recomendación clínica: "${sanitizedRec}". REQUISITO CRÍTICO: NO debes justificar la recomendación, ni meter introducciones, explicaciones clínicas de por qué se usa ("para facilitar el manejo...", "se sugiere...", "como recomendación de auditoría..."), ni meta-comentarios. Escribe directo la categoría, el grado o el dato clínico en la sección adecuada del reporte (HALLAZGOS o IMPRESIÓN DIAGNÓSTICA). Conserva intacto todo el resto del reporte.`,
-            image: base64ImageRef.current || undefined,
-            mimeType: selectedFileRef.current?.type || undefined,
-          }),
-        });
-        const data = await response.json();
-        if (data.success && data.report) {
-          setReportHistory((prev) => [...prev, activeReport]);
-          setReportRedoHistory([]);
-          setGeneratedReport(data.report);
-          setEditedReportText(data.report);
-          generatedReportRef.current = data.report;
-          editedReportTextRef.current = data.report;
-
-          setIncorporatedAuditRecs(prev => ({
-            ...prev,
-            [recText]: true
-          }));
-        } else {
-          setModifyError(data.error || "Ocurrió un error al intentar incorporar de manera inteligente la recomendación.");
-        }
-      } catch (err: any) {
-        console.error("Error al incorporar recomendación de auditoría:", err);
-        setModifyError(err?.message || String(err));
-      } finally {
-        recQueueRef.current.shift();
-        setPendingRecs(prev => {
-          const next = { ...prev };
-          delete next[recText];
-          return next;
-        });
-        setPendingRecText(null);
-      }
-    }
-
-    isProcessingRecQueueRef.current = false;
-    setIsModifyingReport(false);
-  };
-
-  const handleIncorporateRecommendation = (recText: string) => {
-    if (!recText || incorporatedAuditRecs[recText] || pendingRecs[recText]) return;
-
-    setPendingRecs(prev => ({ ...prev, [recText]: true }));
-    recQueueRef.current.push(recText);
-    processRecQueue();
-  };
-
   const handleIncorporateToReport = (analysisText: string, studyTitle: string, medicalHistoryCombined: string, isAutoSync: boolean = false) => {
     // Check if it is a structured Case Analysis with JSON
     const jsonMatch = analysisText.match(/\[CASE_ANALYSIS_JSON\]\s*([\s\S]*?)\s*\[\/CASE_ANALYSIS_JSON\]/);
@@ -5500,39 +5398,6 @@ Ejemplo:
       setBibliographyError(err?.message || String(err));
     } finally {
       setIsSearchingMoreBibliography(false);
-    }
-  };
-
-  // ACTION: EVALUATE GENERATED REPORT
-  const handleEvaluateReport = async (overrideReportText?: string) => {
-    const activeReport = overrideReportText || (isEditingReportManual ? editedReportText : (generatedReport || ""));
-    if (!activeReport) return;
-    setIsEvaluatingReport(true);
-    setReportEvaluationError(null);
-    setReportEvaluation("");
-    try {
-      const response = await fetch("/api/evaluate-report", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: modelFor("quality_eval"),
-          report: activeReport,
-          studyType: studyType || "Estudio Radiológico",
-          clinicalHistory: clinicalHistory || "",
-          findings: findings || "",
-        }),
-      });
-      const data = await response.json();
-      if (data.success && data.evaluation) {
-        setReportEvaluation(data.evaluation);
-      } else {
-        setReportEvaluationError(data.error || "Error al realizar la evaluación del reporte.");
-      }
-    } catch (err: any) {
-      console.error("Error al evaluar reporte:", err);
-      setReportEvaluationError(err?.message || String(err));
-    } finally {
-      setIsEvaluatingReport(false);
     }
   };
 
@@ -15312,87 +15177,6 @@ const splitReportAndAnnex = (text: string) => {
               <div key={elem.id} className="space-y-1.5 font-sans">
                 {elem.items?.map((item, itemIdx) => {
                   const trimmedItem = item.trim();
-                  // Detect recommendation items within list items
-                  const isRecItem = /(?:\[?RECOMENDACI[OÓ]N|RECOMENDACIONES|SUGERENCIA)/i.test(trimmedItem);
-                  if (isRecItem) {
-                    let content = trimmedItem
-                      .replace(/^[\d\.\*\-\s\•\▪\>]+/, "")
-                      .replace(/^\*\*|\*\*$/g, "")
-                      .replace(/^\[?(?:RECOMENDACI[OÓ]N|RECOMENDACIONES|SUGERENCIA)(?:[^\n\]:]*?)\]?[:*\-\s\]]*/i, "")
-                      .replace(/^\*\*|\*\*$/g, "")
-                      .replace(/^[:*\-\s\]]+/, "")
-                      .replace(/^["']|["']$/g, "")
-                      .trim();
-
-                    if (!content) content = trimmedItem;
-                    
-                    const isPending = !!pendingRecs[content] || pendingRecText === content;
-                    const isAdded = !!incorporatedAuditRecs[content];
-                    
-                    return (
-                      <div 
-                        key={`rec-item-${idx}-${itemIdx}`}
-                        className={`w-full p-4.5 rounded-xl border transition-all duration-300 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-md my-2.5 ${
-                          isAdded 
-                            ? "bg-emerald-950/20 border-emerald-500/25 text-emerald-200 shadow-[0_2px_12px_rgba(16,185,129,0.06)]" 
-                            : isPending
-                            ? "bg-indigo-950/35 border-indigo-550/45 text-indigo-150 animate-pulse"
-                            : "bg-slate-900/40 border-slate-800 hover:border-indigo-500/25 text-slate-300 hover:bg-slate-900/60"
-                        }`}
-                      >
-                        <div className="flex items-start gap-3 flex-1 min-w-0">
-                          {isAdded ? (
-                            <div className="p-2 shrink-0 bg-emerald-950/60 border border-emerald-500/30 rounded-lg text-emerald-400">
-                              <Check className="h-4 w-4" />
-                            </div>
-                          ) : (
-                            <div className={`p-2 shrink-0 rounded-lg border font-black text-xs ${isPending ? 'bg-indigo-950/80 border-indigo-500/35 text-indigo-400' : 'bg-slate-950 border-slate-800 text-slate-400'}`}>
-                              💡
-                            </div>
-                          )}
-                          <div className="space-y-1">
-                            <span className={`text-[9px] font-black uppercase tracking-widest font-mono flex items-center gap-1.5 ${isAdded ? 'text-emerald-400' : 'text-indigo-400'}`}>
-                              Recomendación de Auditoría
-                            </span>
-                            <p className="text-xs font-semibold leading-relaxed text-slate-200">
-                              {content}
-                            </p>
-                          </div>
-                        </div>
-                        
-                        <button
-                          type="button"
-                          onClick={() => handleIncorporateRecommendation(content)}
-                          disabled={isPending || isAdded}
-                          className={`text-[9.5px] font-black uppercase tracking-widest px-4 py-2.5 rounded-xl border transition-all flex items-center justify-center gap-2 font-mono w-full sm:w-auto shrink-0 select-none cursor-pointer duration-250 ${
-                            isAdded
-                              ? "bg-emerald-950/20 border-emerald-500/25 text-emerald-400 cursor-not-allowed"
-                              : isPending
-                              ? "bg-indigo-950/40 border-indigo-500/40 text-indigo-300 cursor-wait"
-                              : "bg-indigo-600/20 hover:bg-indigo-600 hover:text-white text-indigo-300 border-indigo-500/30 hover:border-transparent active:scale-[0.98]"
-                          }`}
-                        >
-                          {isPending ? (
-                            <>
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              <span>Incorporando...</span>
-                            </>
-                          ) : isAdded ? (
-                            <>
-                              <Check className="h-3.5 w-3.5" />
-                              <span>Incorporado</span>
-                            </>
-                          ) : (
-                            <>
-                              <Sparkles className="h-3.5 w-3.5 animate-pulse" />
-                              <span>Incorporar</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    );
-                  }
-
                   let cleanItem = item.trim();
                   let isNumbered = /^\d+\.\s+/.test(cleanItem);
                   let bulletSpan: React.ReactNode = <span className={`h-1.5 w-1.5 rounded-full ${accentColorClass} mt-1.5 shrink-0`} />;
@@ -15479,87 +15263,6 @@ const splitReportAndAnnex = (text: string) => {
               {elem.lines?.map((line, lIdx) => {
                 const trimmedLine = line.trim();
                 if (!trimmedLine) return null;
-
-                // Detect recommendation buttons
-                const isRecLine = /(?:\[?RECOMENDACI[OÓ]N|RECOMENDACIONES|SUGERENCIA)/i.test(trimmedLine);
-                if (isRecLine) {
-                  let content = trimmedLine
-                    .replace(/^[\d\.\*\-\s\•\▪\>]+/, "")
-                    .replace(/^\*\*|\*\*$/g, "")
-                    .replace(/^\[?(?:RECOMENDACI[OÓ]N|RECOMENDACIONES|SUGERENCIA)(?:[^\n\]:]*?)\]?[:*\-\s\]]*/i, "")
-                    .replace(/^\*\*|\*\*$/g, "")
-                    .replace(/^[:*\-\s\]]+/, "")
-                    .replace(/^["']|["']$/g, "")
-                    .trim();
-
-                  if (!content) content = trimmedLine;
-                  
-                  const isPending = !!pendingRecs[content] || pendingRecText === content;
-                  const isAdded = !!incorporatedAuditRecs[content];
-                  
-                  return (
-                    <div 
-                      key={`rec-${lIdx}`}
-                      className={`w-full p-4.5 rounded-xl border transition-all duration-300 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-md my-2.5 ${
-                        isAdded 
-                          ? "bg-emerald-950/20 border-emerald-500/25 text-emerald-200 shadow-[0_2px_12px_rgba(16,185,129,0.06)]" 
-                          : isPending
-                          ? "bg-indigo-950/35 border-indigo-550/45 text-indigo-150 animate-pulse"
-                          : "bg-slate-900/40 border-slate-800 hover:border-indigo-500/25 text-slate-300 hover:bg-slate-900/60"
-                      }`}
-                    >
-                      <div className="flex items-start gap-3 flex-1 min-w-0">
-                        {isAdded ? (
-                          <div className="p-2 shrink-0 bg-emerald-950/60 border border-emerald-500/30 rounded-lg text-emerald-400">
-                            <Check className="h-4 w-4" />
-                          </div>
-                        ) : (
-                          <div className={`p-2 shrink-0 rounded-lg border font-black text-xs ${isPending ? 'bg-indigo-950/80 border-indigo-500/35 text-indigo-400' : 'bg-slate-950 border-slate-800 text-slate-400'}`}>
-                            💡
-                          </div>
-                        )}
-                        <div className="space-y-1">
-                          <span className={`text-[9px] font-black uppercase tracking-widest font-mono flex items-center gap-1.5 ${isAdded ? 'text-emerald-400' : 'text-indigo-400'}`}>
-                            Recomendación de Auditoría
-                          </span>
-                          <p className="text-xs font-semibold leading-relaxed text-slate-200">
-                            {content}
-                          </p>
-                        </div>
-                      </div>
-                      
-                      <button
-                        type="button"
-                        onClick={() => handleIncorporateRecommendation(content)}
-                        disabled={isPending || isAdded}
-                        className={`text-[9.5px] font-black uppercase tracking-widest px-4 py-2.5 rounded-xl border transition-all flex items-center justify-center gap-2 font-mono w-full sm:w-auto shrink-0 select-none cursor-pointer duration-250 ${
-                          isAdded
-                            ? "bg-emerald-950/20 border-emerald-500/25 text-emerald-400 cursor-not-allowed"
-                            : isPending
-                            ? "bg-indigo-950/40 border-indigo-500/40 text-indigo-300 cursor-wait"
-                            : "bg-indigo-600/20 hover:bg-indigo-600 hover:text-white text-indigo-300 border-indigo-500/30 hover:border-transparent active:scale-[0.98]"
-                        }`}
-                      >
-                        {isPending ? (
-                          <>
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            <span>Incorporando...</span>
-                          </>
-                        ) : isAdded ? (
-                          <>
-                            <Check className="h-3.5 w-3.5" />
-                            <span>Incorporado</span>
-                          </>
-                        ) : (
-                          <>
-                            <Sparkles className="h-3.5 w-3.5 animate-pulse" />
-                            <span>Incorporar</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  );
-                }
 
                 const isHeader = (trimmedLine.startsWith("**") && trimmedLine.endsWith("**"));
                 const cleanHeaderTxt = trimmedLine.replace(/\*\*/g, "");
@@ -20825,116 +20528,6 @@ const splitReportAndAnnex = (text: string) => {
                             }}
                           />
 
-                          {/* --- MÓDULO DE AUDITORÍA Y EVALUACIÓN DE CALIDAD DE REPORTE (UBICACIÓN INMEDIATA POST-GENERACIÓN) --- */}
-                          {isEvaluatingReport && (
-                            <div className="my-6 bg-[#120f1a]/80 border-2 border-violet-500/30 rounded-3xl p-6 flex flex-col items-center justify-center py-10 text-center space-y-3 shadow-2xl animate-pulse">
-                              <CheckCircle2 className="h-7 w-7 text-violet-400 animate-spin" />
-                              <p className="text-xs font-mono font-black text-slate-200 uppercase tracking-widest">
-                                Ejecutando Auditoría Médica y Evaluación de Calidad...
-                              </p>
-                              <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider max-w-md">
-                                Analizando exhaustivamente aspectos redactados, información omitida y clasificaciones o escalas radiológicas sugeridas para adjuntar.
-                              </p>
-                            </div>
-                          )}
-
-                          {reportEvaluationError && (
-                            <div className="my-6 p-4 bg-rose-950/20 border border-rose-900/40 rounded-2xl text-rose-300 text-xs font-mono font-bold uppercase tracking-tight">
-                              🚨 Error en auditoría: {reportEvaluationError}
-                            </div>
-                          )}
-
-                          {reportEvaluation && (
-                            <div className={isReportEvaluationExpanded 
-                              ? "fixed inset-4 md:inset-10 z-50 bg-[#0f0b16]/98 backdrop-blur-2xl border-2 border-violet-500/50 rounded-3xl p-6 md:p-8 flex flex-col space-y-4 shadow-2xl overflow-y-auto transition-all duration-350"
-                              : "my-6 bg-[#0f0b16] border-2 border-violet-500/30 rounded-3xl p-6 space-y-4 shadow-2xl relative overflow-hidden animate-fade-in transition-all duration-350"
-                            }>
-                              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-violet-950/80 pb-4 gap-3 font-sans">
-                                <div className="flex items-center gap-3">
-                                  <div className="p-2 bg-violet-950/80 border border-violet-500/40 rounded-2xl text-violet-400 shrink-0">
-                                    <CheckCircle2 className="h-5 w-5 text-violet-400" />
-                                  </div>
-                                  <div>
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                      <h4 className="text-xs md:text-sm font-black text-violet-300 uppercase tracking-widest font-mono">
-                                        INFORME DE AUDITORÍA Y EVALUACIÓN DE CALIDAD DE REPORTE
-                                      </h4>
-                                      <span className="text-[8.5px] font-black uppercase tracking-widest bg-violet-950 text-violet-300 border border-violet-500/40 px-2.5 py-0.5 rounded-full font-mono">
-                                        AUDITORÍA ACTIVA
-                                      </span>
-                                    </div>
-                                    <p className="text-[11px] font-medium text-slate-400 mt-0.5">
-                                      Revisa las observaciones y haz clic en &quot;Incorporar&quot; en cualquier recomendación o clasificación sugerida antes de proceder.
-                                    </p>
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
-                                  <button
-                                    type="button"
-                                    onClick={() => setIsReportEvaluationExpanded(p => !p)}
-                                    className={`p-2 rounded-xl border transition-all duration-200 cursor-pointer flex items-center justify-center ${
-                                      isReportEvaluationExpanded
-                                        ? "bg-violet-950/90 border-violet-500/50 text-violet-300 ring-1 ring-violet-500/30"
-                                        : "bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-100"
-                                    }`}
-                                    title={isReportEvaluationExpanded ? "Restaurar tamaño estándar de componente" : "Maximizar área de lectura (Modo Expandido)"}
-                                  >
-                                    {isReportEvaluationExpanded ? (
-                                      <Minimize2 className="h-4.5 w-4.5" />
-                                    ) : (
-                                      <Maximize2 className="h-4.5 w-4.5" />
-                                    )}
-                                  </button>
-                                  <button
-                                    onClick={() => copyToClipboard(reportEvaluation, false)}
-                                    className="text-[9px] font-black text-slate-400 hover:text-violet-400 border border-slate-800 hover:border-violet-500/20 px-3 py-2 rounded-xl bg-slate-950/40 uppercase tracking-wider font-mono transition-all cursor-pointer"
-                                  >
-                                    Copiar Evaluación
-                                  </button>
-                                </div>
-                              </div>
-
-                              {modifyError && (
-                                <div className="p-3.5 bg-rose-950/30 border border-rose-500/30 rounded-xl text-rose-200 text-[11px] font-mono leading-relaxed font-semibold flex items-center justify-between gap-3 animate-fade-in">
-                                  <div className="flex items-center gap-2 font-sans">
-                                    <span className="text-rose-450 font-black font-mono">🚨 ERROR DE INTEGRACIÓN:</span>
-                                    <span>{modifyError}</span>
-                                  </div>
-                                  <button
-                                    onClick={() => setModifyError(null)}
-                                    className="px-2 py-1 bg-rose-950/60 hover:bg-rose-900 border border-rose-500/20 text-rose-400 rounded text-[9px] uppercase tracking-wider font-mono shrink-0 cursor-pointer"
-                                  >
-                                    Cerrar
-                                  </button>
-                                </div>
-                              )}
-
-                              {(isModifyingReport || Object.keys(pendingRecs).length > 0) && (
-                                <div className="p-3.5 bg-indigo-950/30 border border-indigo-500/30 rounded-xl text-indigo-200 text-[11px] font-mono leading-relaxed font-semibold flex items-center justify-between gap-2.5 animate-pulse">
-                                  <div className="flex items-center gap-2.5">
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-400 shrink-0" />
-                                    <span>
-                                      {Object.keys(pendingRecs).length > 1
-                                        ? `Incorporando ${Object.keys(pendingRecs).length} recomendaciones seleccionadas en el informe activo...`
-                                        : "Integrando recomendación / clasificación de auditoría en el informe activo de forma automática..."}
-                                    </span>
-                                  </div>
-                                  {Object.keys(pendingRecs).length > 0 && (
-                                    <span className="text-[9px] font-black uppercase tracking-widest bg-indigo-900/60 border border-indigo-500/40 text-indigo-300 px-2.5 py-1 rounded-md shrink-0">
-                                      {Object.keys(pendingRecs).length} EN COLA
-                                    </span>
-                                  )}
-                                </div>
-                              )}
-
-                              <div className={`bg-[#0c0814] p-6 rounded-2xl border border-violet-950/40 shadow-inner overflow-x-auto overflow-y-auto ${
-                                isReportEvaluationExpanded ? "flex-1 max-h-none" : "max-h-[500px]"
-                              }`}>
-                                {renderElegantResponse(reportEvaluation, "text-violet-400")}
-                              </div>
-                            </div>
-                          )}
-
                           {/* --- SISTEMA DE ACTIVACIÓN RÁPIDA DE MÓDULOS (PROCESAMIENTO EN LOTE) --- */}
                           <div className="my-6 p-5 sm:p-6 bg-slate-900/70 border-2 border-indigo-500/30 rounded-3xl shadow-2xl space-y-5 transition-all">
                             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
@@ -21122,13 +20715,6 @@ const splitReportAndAnnex = (text: string) => {
                                   badge: "CORRELACIÓN & PDF",
                                   desc: "Desarrolla correlación fisiopatológica y flujograma para exportar al PDF.",
                                   color: "text-emerald-400 border-emerald-500/30 bg-emerald-950/20"
-                                },
-                                {
-                                  id: "quality_eval",
-                                  label: "🔍 Evaluación de Calidad del Reporte",
-                                  badge: "AUDITORÍA",
-                                  desc: "Audita el reporte para señalar fortalezas, datos faltantes y recomendaciones.",
-                                  color: "text-violet-400 border-violet-500/30 bg-violet-950/20"
                                 },
                                 {
                                   id: "bibliography",
@@ -21362,36 +20948,6 @@ const splitReportAndAnnex = (text: string) => {
                                   <Search className="h-4 w-4 text-teal-400" />
                                 )}
                                 Búsqueda Bibliográfica de Soporte
-                              </button>
-                            </div>
-
-                            {/* Card 3: Evaluación del reporte */}
-                            <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-violet-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
-                              <div className="flex items-center gap-2 justify-between">
-                                <div className="flex items-center gap-2">
-                                  <CheckCircle2 className="h-4 w-4 text-violet-400" />
-                                  <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
-                                    Evaluación de Calidad
-                                  </h4>
-                                </div>
-                                <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-violet-950 text-violet-400 border border-violet-900/30 px-2 py-0.5 rounded">
-                                  AUDITORÍA
-                                </span>
-                              </div>
-                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Analiza y evalúa el reporte redactado para destacar qué datos clave se incluyeron, cuáles faltarían y qué recomendaciones clínicas debe conocer el médico solicitante.
-                              </p>
-                              <button
-                                onClick={handleEvaluateReport}
-                                disabled={isEvaluatingReport}
-                                className="w-full py-3 bg-slate-950 hover:bg-slate-900/60 disabled:opacity-50 border-2 border-slate-800 hover:border-violet-500/30 text-violet-400 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2 font-mono cursor-pointer"
-                              >
-                                {isEvaluatingReport ? (
-                                  <RefreshCw className="h-4 w-4 animate-spin text-violet-450" />
-                                ) : (
-                                  <CheckCircle2 className="h-4 w-4 text-violet-400" />
-                                )}
-                                Evaluación del Reporte
                               </button>
                             </div>
 
