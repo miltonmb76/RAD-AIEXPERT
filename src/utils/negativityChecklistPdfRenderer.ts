@@ -6,9 +6,9 @@ import {
 import { sanitizePdfText } from "./sanitizePdfText";
 
 /**
- * One-page annex: Checklist de negatividad dirigida.
- * Typography aligned with suite fichas (thyroid/kidney ~8–8.5 pt body).
- * Patient-facing: no "insertado" / "acción" language.
+ * Annex: Checklist de negatividad dirigida.
+ * Typography aligned with suite fichas (~8.2–8.4 pt).
+ * Cell text wraps fully (no hard truncation); continues on a new page if needed.
  */
 export function renderNegativityChecklistAnnexToPDF(
   doc: any,
@@ -25,12 +25,12 @@ export function renderNegativityChecklistAnnexToPDF(
 
   const { marginX, pageWidth, pageHeight, contentWidth, factor } = options;
   const pageBottom = pageHeight - 14 * factor;
-  const accent: [number, number, number] = [13, 148, 136]; // teal-600
+  const accent: [number, number, number] = [13, 148, 136];
   const softFill: [number, number, number] = [240, 253, 250];
   const softBorder: [number, number, number] = [153, 246, 228];
   const pad = 1.6 * factor;
+  const topY = 22 * factor;
 
-  // Suite-aligned type scale (thyroid/kidney fichas use ~8.0–8.4 body, ~8.4 header)
   const fsTitle = 12.5 * factor;
   const fsBanner = 9.5 * factor;
   const fsBannerMeta = 8.4 * factor;
@@ -41,19 +41,62 @@ export function renderNegativityChecklistAnnexToPDF(
   const fsFooterLabel = 8.8 * factor;
   const fsFooterBody = 8.2 * factor;
 
-  doc.addPage();
-  let y = 22 * factor;
+  const cols = [
+    { label: "Signo / estructura", w: contentWidth * 0.28 },
+    { label: "Lado", w: contentWidth * 0.08 },
+    { label: "Estado", w: contentWidth * 0.15 },
+    { label: "Evidencia", w: contentWidth * 0.28 },
+    { label: "Relevancia", w: contentWidth * 0.21 },
+  ];
+  const headerH = 8.2 * factor;
+  const lineH = 3.55 * factor;
 
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(fsTitle);
-  doc.setTextColor(15, 23, 42);
-  doc.text("ANEXO: CHECKLIST DE NEGATIVIDAD DIRIGIDA", marginX, y);
-  y += 4.5 * factor;
+  let y = topY;
 
-  doc.setDrawColor(accent[0], accent[1], accent[2]);
-  doc.setLineWidth(0.8);
-  doc.line(marginX, y, pageWidth - marginX, y);
-  y += 5.5 * factor;
+  const startPageChrome = (continued: boolean) => {
+    doc.addPage();
+    y = topY;
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(fsTitle);
+    doc.setTextColor(15, 23, 42);
+    doc.text(
+      continued
+        ? "ANEXO: CHECKLIST DE NEGATIVIDAD DIRIGIDA (cont.)"
+        : "ANEXO: CHECKLIST DE NEGATIVIDAD DIRIGIDA",
+      marginX,
+      y
+    );
+    y += 4.5 * factor;
+
+    doc.setDrawColor(accent[0], accent[1], accent[2]);
+    doc.setLineWidth(0.8);
+    doc.line(marginX, y, pageWidth - marginX, y);
+    y += 5 * factor;
+  };
+
+  const drawTableHeader = () => {
+    doc.setFillColor(15, 118, 110);
+    doc.rect(marginX, y, contentWidth, headerH, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(fsHeader);
+    doc.setTextColor(255, 255, 255);
+    let x = marginX + pad;
+    cols.forEach((c) => {
+      const labelLines = doc.splitTextToSize(c.label, c.w - pad * 1.2);
+      doc.text(labelLines[0] || c.label, x, y + 5.4 * factor);
+      x += c.w;
+    });
+    y += headerH;
+  };
+
+  const ensureSpace = (needed: number, continuedHeader: boolean) => {
+    if (y + needed <= pageBottom) return;
+    startPageChrome(true);
+    if (continuedHeader) drawTableHeader();
+  };
+
+  startPageChrome(false);
 
   const closed = (data.openGapsCount || 0) === 0;
   const bannerTitle = sanitizePdfText(
@@ -67,7 +110,7 @@ export function renderNegativityChecklistAnnexToPDF(
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(fsBanner);
-  const titleLines = doc.splitTextToSize(bannerTitle, contentWidth - 14 * factor).slice(0, 2);
+  const titleLines = doc.splitTextToSize(bannerTitle, contentWidth - 14 * factor);
   const bannerH = Math.max(15 * factor, titleLines.length * 4.4 * factor + 11 * factor);
   doc.setFillColor(softFill[0], softFill[1], softFill[2]);
   doc.setDrawColor(softBorder[0], softBorder[1], softBorder[2]);
@@ -89,15 +132,15 @@ export function renderNegativityChecklistAnnexToPDF(
   doc.setFontSize(fsBannerMeta);
   doc.setTextColor(closed ? 22 : 153, closed ? 101 : 27, closed ? 52 : 27);
   doc.text(sanitizePdfText(bannerMeta), marginX + 6 * factor, y + bannerH - 3.8 * factor);
-  y += bannerH + 4 * factor;
+  y += bannerH + 3.5 * factor;
 
-  // Closure summary box
   const summary = sanitizePdfText(data.closureSummary || "");
   if (summary) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(fsSummary);
-    const sumLines = doc.splitTextToSize(summary, contentWidth - 10 * factor).slice(0, 3);
+    const sumLines = doc.splitTextToSize(summary, contentWidth - 10 * factor);
     const boxH = sumLines.length * 3.8 * factor + 5.5 * factor;
+    ensureSpace(boxH + 4 * factor, false);
     doc.setFillColor(248, 250, 252);
     doc.setDrawColor(203, 213, 225);
     doc.roundedRect(marginX, y, contentWidth, boxH, 1.4, 1.4, "FD");
@@ -109,36 +152,10 @@ export function renderNegativityChecklistAnnexToPDF(
       doc.text(line, marginX + 5 * factor, sy);
       sy += 3.8 * factor;
     });
-    y += boxH + 4 * factor;
+    y += boxH + 3.5 * factor;
   }
 
-  const cols = [
-    { label: "Signo / estructura", w: contentWidth * 0.28 },
-    { label: "Lado", w: contentWidth * 0.08 },
-    { label: "Estado", w: contentWidth * 0.15 },
-    { label: "Evidencia", w: contentWidth * 0.28 },
-    { label: "Relevancia", w: contentWidth * 0.21 },
-  ];
-  const headerH = 8.2 * factor;
-  const lineH = 3.5 * factor;
-  const maxLinesByCol = [3, 2, 2, 3, 3];
-
-  const drawHeader = () => {
-    doc.setFillColor(15, 118, 110);
-    doc.rect(marginX, y, contentWidth, headerH, "F");
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(fsHeader);
-    doc.setTextColor(255, 255, 255);
-    let x = marginX + pad;
-    cols.forEach((c) => {
-      const labelLines = doc.splitTextToSize(c.label, c.w - pad * 1.2).slice(0, 1);
-      doc.text(labelLines, x, y + 5.4 * factor);
-      x += c.w;
-    });
-    y += headerH;
-  };
-
-  drawHeader();
+  drawTableHeader();
 
   const ordered = [...data.items].sort((a, b) => {
     const rank = (s: string) =>
@@ -154,9 +171,7 @@ export function renderNegativityChecklistAnnexToPDF(
     return row.whyItMatters || "—";
   };
 
-  const maxRows = 10;
-  for (let i = 0; i < Math.min(ordered.length, maxRows); i++) {
-    const row = ordered[i];
+  ordered.forEach((row, i) => {
     const evidence =
       row.status === "limited_technical"
         ? row.technicalReason || ""
@@ -170,19 +185,20 @@ export function renderNegativityChecklistAnnexToPDF(
       sanitizePdfText(noteForRow(row)),
     ];
 
+    // Full wrap — no .slice() truncation so phrases stay complete
     const wrapped = cells.map((t, ci) => {
       const maxW = Math.max(4 * factor, cols[ci].w - pad * 2);
       if (ci === 0 || ci === 2) doc.setFont("helvetica", "bold");
       else doc.setFont("helvetica", "normal");
       doc.setFontSize(ci === 0 || ci === 2 ? fsBodyEm : fsBody);
-      return doc.splitTextToSize(t, maxW).slice(0, maxLinesByCol[ci]);
+      return doc.splitTextToSize(t, maxW) as string[];
     });
     const rowH = Math.max(
       8.0 * factor,
-      Math.max(...wrapped.map((w) => w.length)) * lineH + 2.8 * factor
+      Math.max(...wrapped.map((w) => w.length), 1) * lineH + 2.8 * factor
     );
 
-    if (y + rowH > pageBottom - 24 * factor) break;
+    ensureSpace(rowH + 1 * factor, true);
 
     if (i % 2 === 1) {
       doc.setFillColor(softFill[0], softFill[1], softFill[2]);
@@ -220,10 +236,11 @@ export function renderNegativityChecklistAnnexToPDF(
     doc.setLineWidth(0.2);
     doc.line(marginX, y + rowH, marginX + contentWidth, y + rowH);
     y += rowH;
-  }
+  });
 
-  const gaps = (data.technicalGaps || []).filter(Boolean).slice(0, 3);
-  if (gaps.length && y + 14 * factor < pageBottom) {
+  const gaps = (data.technicalGaps || []).filter(Boolean);
+  if (gaps.length) {
+    ensureSpace(16 * factor, false);
     y += 3.5 * factor;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(fsFooterLabel);
@@ -234,8 +251,11 @@ export function renderNegativityChecklistAnnexToPDF(
     doc.setFontSize(fsFooterBody);
     doc.setTextColor(71, 85, 105);
     gaps.forEach((g) => {
-      const lines = doc.splitTextToSize(sanitizePdfText(`• ${g}`), contentWidth).slice(0, 2);
-      if (y + lines.length * 3.5 * factor > pageBottom - 12 * factor) return;
+      const lines = doc.splitTextToSize(sanitizePdfText(`• ${g}`), contentWidth) as string[];
+      ensureSpace(lines.length * 3.5 * factor + 2 * factor, false);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(fsFooterBody);
+      doc.setTextColor(71, 85, 105);
       doc.text(lines, marginX, y);
       y += lines.length * 3.5 * factor;
     });
@@ -246,7 +266,11 @@ export function renderNegativityChecklistAnnexToPDF(
       buildDiscardedFindingsSynopsis(data.items, data.recommendation) ||
       ""
   );
-  if (synopsis && y + 14 * factor < pageBottom) {
+  if (synopsis) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(fsFooterBody);
+    const lines = doc.splitTextToSize(synopsis, contentWidth) as string[];
+    ensureSpace(lines.length * 3.5 * factor + 12 * factor, false);
     y += 4 * factor;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(fsFooterLabel);
@@ -256,8 +280,6 @@ export function renderNegativityChecklistAnnexToPDF(
     doc.setFont("helvetica", "normal");
     doc.setFontSize(fsFooterBody);
     doc.setTextColor(51, 65, 85);
-    const remaining = Math.max(2, Math.floor((pageBottom - y) / (3.5 * factor)));
-    const lines = doc.splitTextToSize(synopsis, contentWidth).slice(0, Math.min(4, remaining));
     doc.text(lines, marginX, y);
   }
 }
