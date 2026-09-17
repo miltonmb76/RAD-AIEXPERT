@@ -38,7 +38,9 @@ export function secondReaderSeverityLabel(severity?: string): string {
 }
 
 export function secondReaderTargetLabel(target?: string): string {
-  return target === "impression" ? "Impresión" : "Hallazgos / descripción";
+  return target === "impression"
+    ? "Impresión / conclusión"
+    : "Cuerpo del informe (sección adecuada)";
 }
 
 export function normalizeSecondReaderData(raw: any): SecondReaderData {
@@ -82,14 +84,19 @@ export function normalizeSecondReaderData(raw: any): SecondReaderData {
     const suggestedText = String(
       it?.suggestedText || it?.insertText || it?.text || it?.prose || ""
     ).trim();
+    const title = String(it?.title || it?.label || it?.sign || `Sugerencia ${idx + 1}`).trim();
+    const placementHint = String(
+      it?.placementHint || it?.anchor || it?.sectionHint || it?.where || ""
+    ).trim();
     return {
       id: String(it?.id || `add-${idx + 1}`),
-      title: String(it?.title || it?.label || it?.sign || `Sugerencia ${idx + 1}`).trim(),
+      title,
       reason: String(it?.reason || it?.why || it?.rationale || "").trim(),
       suggestedText:
         suggestedText ||
-        `Incluir mención dirigida de ${String(it?.title || "el hallazgo pendiente").toLowerCase()}.`,
+        `Incluir mención dirigida de ${title.toLowerCase()}.`,
       insertTarget: asTarget(it?.insertTarget || it?.target),
+      placementHint: placementHint || title || undefined,
       incorporated: it?.incorporated === true,
     };
   });

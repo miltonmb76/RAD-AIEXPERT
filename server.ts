@@ -9668,11 +9668,14 @@ ${report}
 TAREAS:
 1) objections (3-7): puntos que un segundo lector cuestionaría (sobrellamado, subllamado, inconsistencia hallazgo↔impresión, lateralidad, escala, certeza excesiva/insuficiente). Cada una con severity alta|media|baja.
 2) sustain (2-6): afirmaciones del informe que SÍ conviene sostener y por qué.
-3) additions (3-8): contenido concreto que FALTA y debería agregarse al cuerpo. Para cada uno:
+3) additions (3-8): contenido concreto que FALTA y debe tejerse DENTRO de la redacción del cuerpo del informe (no como apéndice). Para cada uno:
    - title corto
    - reason (por qué agregarlo)
-   - suggestedText: prosa clínica lista para integrar (tono del radiólogo, español médico; NUNCA meta-comentarios ni "se sugiere agregar")
-   - insertTarget: "findings" (descripción/hallazgos) o "impression" (solo si corresponde a la conclusión)
+   - suggestedText: prosa clínica lista para fundirse en el párrafo correcto (tono del radiólogo; NUNCA "se sugiere agregar" ni meta-comentarios)
+   - placementHint: ancla concreta de ubicación narrativa (p. ej. "párrafo del lóbulo tiroideo derecho", "descripción de carótida interna", "junto a la mención del istmo")
+   - insertTarget: "findings" = cuerpo descriptivo (DEFAULT); "impression" SOLO si es una línea conclusiva de la impresión
+
+REGLA DE ORO PARA additions: el destino NO es "al final de HALLAZGOS". Es el sitio anatómico/semiológico correcto dentro de la prosa existente.
 
 IDIOMA: TODO en ESPAÑOL médico.
 overallStance: 1-2 frases con la postura global del revisor.
@@ -9692,9 +9695,10 @@ JSON OBLIGATORIO:
   "additions": [
     {
       "id": "add-1",
-      "title": "...",
-      "reason": "...",
+      "title": "Extensión intratorácica",
+      "reason": "No se menciona pese a bocio",
       "suggestedText": "No se observa extensión intratorácica.",
+      "placementHint": "Tras la descripción del tamaño/contorno tiroideo",
       "insertTarget": "findings"
     }
   ]

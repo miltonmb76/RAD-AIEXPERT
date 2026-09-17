@@ -1130,6 +1130,8 @@ export interface SecondReaderAddition {
   /** Clinical prose ready to weave into the report body. */
   suggestedText: string;
   insertTarget: SecondReaderInsertTarget;
+  /** Where in the narrative to weave (anatomy, organ, paragraph cue). */
+  placementHint?: string;
   incorporated?: boolean;
 }
 

@@ -120,10 +120,14 @@ export const SecondReaderModule: React.FC<SecondReaderModuleProps> = ({
     }
     setIncorporatingId(item.id);
     setError(null);
-    const targetLabel =
+    const placement =
+      item.placementHint?.trim() ||
+      item.title?.trim() ||
+      "la anatomía o párrafo semiológico correspondiente";
+    const sectionHint =
       item.insertTarget === "impression"
-        ? "IMPRESIÓN DIAGNÓSTICA / CONCLUSIÓN"
-        : "HALLAZGOS / DESCRIPCIÓN";
+        ? "Si el contenido es conclusivo, intégralo en la IMPRESIÓN/CONCLUSIÓN de forma natural (una línea diagnóstica, no un apéndice)."
+        : "Intégralo en el CUERPO NARRATIVO del informe (descripción por órganos/estructuras), NO como lista al final de HALLAZGOS ni como bloque aparte.";
     try {
       const response = await fetch("/api/modify-report", {
         method: "POST",
@@ -131,7 +135,21 @@ export const SecondReaderModule: React.FC<SecondReaderModuleProps> = ({
         body: JSON.stringify({
           model: modifyModel,
           currentReport: reportText,
-          instruction: `Integra de forma totalmente fluida, nativa y natural, actuando en todo momento como el radiólogo principal que redacta el informe desde el principio, el siguiente contenido clínico en la sección adecuada (${targetLabel}): "${snippet}". REQUISITO CRÍTICO: NO justifiques la incorporación, ni metas introducciones, ni meta-comentarios del tipo "se agrega", "según revisión", "segundo lector" o "auditoría". Escribe solo la prosa clínica en el lugar anatómico/semiológico correcto del cuerpo del informe. Conserva intacto todo el resto del reporte.`,
+          instruction: `Eres el radiólogo que redactó este informe. Debes REESCRIBIR el informe incorporando de forma nativa el siguiente contenido clínico dentro de la redacción, en el párrafo/sección anatómica adecuada.
+
+CONTENIDO A INTEGRAR:
+"${snippet}"
+
+ANCLAJE DE UBICACIÓN (prioridad): ${placement}
+${sectionHint}
+
+REGLAS OBLIGATORIAS:
+1) Colócalo DENTRO del flujo narrativo (p. ej. junto al lóbulo tiroideo, vaso, articulación o estructura relacionada), no al final genérico de "HALLAZGOS:".
+2) Si hace falta, reordena o fusiona 1-2 oraciones vecinas para que el texto fluya como si siempre hubiera estado ahí.
+3) PROHIBIDO: encabezados nuevos, viñetas de "agregado", "según revisión", "segundo lector", "auditoría", "se recomienda agregar", o cualquier meta-comentario.
+4) PROHIBIDO: duplicar si el concepto ya está dicho; en ese caso solo refuerza o aclara en el mismo sitio.
+5) Conserva el resto del informe intacto en sentido clínico (mismas conclusiones salvo el ajuste local).
+6) Devuelve el informe completo ya reescrito.`,
         }),
       });
       const data = await response.json();
@@ -163,7 +181,7 @@ export const SecondReaderModule: React.FC<SecondReaderModuleProps> = ({
               Segundo lector simulado
             </h3>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              Peer review del informe: objeciones, qué sostener y qué agregar al cuerpo con un clic.
+              Peer review: objeciones, qué sostener y prosa que se teje en la sección adecuada del cuerpo del informe.
             </p>
           </div>
         </div>
@@ -233,7 +251,7 @@ export const SecondReaderModule: React.FC<SecondReaderModuleProps> = ({
                     <div>
                       <p className="text-sm font-semibold text-slate-100">{item.title}</p>
                       <p className="text-[11px] text-slate-400 mt-0.5">
-                        Destino: {secondReaderTargetLabel(item.insertTarget)}
+                        Ubicar en: {item.placementHint || secondReaderTargetLabel(item.insertTarget)}
                         {item.reason ? ` · ${item.reason}` : ""}
                       </p>
                     </div>
