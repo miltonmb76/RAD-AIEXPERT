@@ -33,8 +33,7 @@ export function renderNegativityChecklistAnnexToPDF(
 
   const fsTitle = 12.5 * factor;
   const fsBanner = 9.5 * factor;
-  const fsBannerMeta = 8.4 * factor;
-  const fsSummary = 8.6 * factor;
+  const fsMainFindings = 8.4 * factor;
   const fsHeader = 8.4 * factor;
   const fsBody = 8.2 * factor;
   const fsBodyEm = 8.4 * factor;
@@ -98,62 +97,60 @@ export function renderNegativityChecklistAnnexToPDF(
 
   startPageChrome(false);
 
-  const closed = (data.openGapsCount || 0) === 0;
-  const bannerTitle = sanitizePdfText(
-    `${data.protocolName || data.title || "Protocolo"} — ${data.studyRegion || "Estudio"}`
-  );
-  const bannerMeta = closed
-    ? data.technicalGaps?.length
-      ? "CERRADO CON LIMITACIONES TECNICAS"
-      : "CHECKLIST CERRADO"
-    : `INCOMPLETO — ${data.openGapsCount} pendiente(s) de cierre`;
+  const studyParts = [data.protocolName, data.studyRegion]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .filter((value, index, values) => values.indexOf(value) === index);
+  const studyName = sanitizePdfText(studyParts.join(" — ") || "Estudio");
+  const mainFindingLabels = data.items
+    .filter((item) => item.status === "positive")
+    .map((item) => {
+      const side = item.laterality ? ` (${item.laterality})` : "";
+      return `${item.sign}${side}`.trim();
+    })
+    .filter(Boolean);
+  const mainFindings = mainFindingLabels.length
+    ? sanitizePdfText(`Hallazgos principales: ${mainFindingLabels.join("; ")}.`)
+    : "";
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(fsBanner);
-  const titleLines = doc.splitTextToSize(bannerTitle, contentWidth - 14 * factor);
-  const bannerH = Math.max(15 * factor, titleLines.length * 4.4 * factor + 11 * factor);
+  const studyLines = doc.splitTextToSize(studyName, contentWidth - 14 * factor);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(fsMainFindings);
+  const findingLines = mainFindings
+    ? doc.splitTextToSize(mainFindings, contentWidth - 14 * factor)
+    : [];
+  const bannerH = Math.max(
+    12 * factor,
+    studyLines.length * 4.4 * factor +
+      findingLines.length * 3.8 * factor +
+      6 * factor
+  );
   doc.setFillColor(softFill[0], softFill[1], softFill[2]);
   doc.setDrawColor(softBorder[0], softBorder[1], softBorder[2]);
   doc.roundedRect(marginX, y, contentWidth, bannerH, 1.8, 1.8, "FD");
-  doc.setFillColor(
-    closed ? (data.technicalGaps?.length ? 217 : 5) : 220,
-    closed ? (data.technicalGaps?.length ? 119 : 150) : 38,
-    closed ? (data.technicalGaps?.length ? 6 : 105) : 38
-  );
+  doc.setFillColor(accent[0], accent[1], accent[2]);
   doc.rect(marginX, y, 2.8 * factor, bannerH, "F");
 
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(fsBanner);
   doc.setTextColor(15, 118, 110);
   let ty = y + 5.2 * factor;
-  titleLines.forEach((line: string) => {
+  studyLines.forEach((line: string) => {
     doc.text(line, marginX + 6 * factor, ty);
     ty += 4.4 * factor;
   });
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(fsBannerMeta);
-  doc.setTextColor(closed ? 22 : 153, closed ? 101 : 27, closed ? 52 : 27);
-  doc.text(sanitizePdfText(bannerMeta), marginX + 6 * factor, y + bannerH - 3.8 * factor);
-  y += bannerH + 3.5 * factor;
-
-  const summary = sanitizePdfText(data.closureSummary || "");
-  if (summary) {
+  if (findingLines.length) {
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(fsSummary);
-    const sumLines = doc.splitTextToSize(summary, contentWidth - 10 * factor);
-    const boxH = sumLines.length * 3.8 * factor + 5.5 * factor;
-    ensureSpace(boxH + 4 * factor, false);
-    doc.setFillColor(248, 250, 252);
-    doc.setDrawColor(203, 213, 225);
-    doc.roundedRect(marginX, y, contentWidth, boxH, 1.4, 1.4, "FD");
-    doc.setFillColor(accent[0], accent[1], accent[2]);
-    doc.rect(marginX, y, 2 * factor, boxH, "F");
+    doc.setFontSize(fsMainFindings);
     doc.setTextColor(51, 65, 85);
-    let sy = y + 4.6 * factor;
-    sumLines.forEach((line: string) => {
-      doc.text(line, marginX + 5 * factor, sy);
-      sy += 3.8 * factor;
+    findingLines.forEach((line: string) => {
+      doc.text(line, marginX + 6 * factor, ty);
+      ty += 3.8 * factor;
     });
-    y += boxH + 3.5 * factor;
   }
+  y += bannerH + 3.5 * factor;
 
   drawTableHeader();
 
