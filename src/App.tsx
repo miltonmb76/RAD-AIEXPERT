@@ -3651,6 +3651,9 @@ Ejemplo:
   const handleToggleAllBatchModules = (select: boolean) => {
     setSelectedBatchModules({
       clinical_scorecard: select,
+      reasoning_chain: select,
+      negativity_checklist: select,
+      differential_tree: select,
       atlas3d: select,
       vascular3d: select,
       thyroid3d: select,
