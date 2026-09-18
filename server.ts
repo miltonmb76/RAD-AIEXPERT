@@ -9452,7 +9452,7 @@ ${report}
  */
 app.post("/api/generate-negativity-checklist", async (req: express.Request, res: express.Response) => {
   try {
-    const { model, report, studyType, clinicalHistory, protocolName } = req.body;
+    const { model, report, studyType, clinicalHistory, protocolName, focusText } = req.body;
     if (!report || !String(report).trim()) {
       return res.status(400).json({ success: false, error: "Se requiere el parámetro 'report'." });
     }
@@ -9461,6 +9461,7 @@ app.post("/api/generate-negativity-checklist", async (req: express.Request, res:
     const modelToUse = getModelName(model);
     const history = (clinicalHistory || "").toString().trim();
     const study = (studyType || protocolName || "").toString().trim();
+    const focus = (focusText || "").toString().trim();
 
     const prompt = `Eres un radiólogo hispanohablante experto en protocolos y control de calidad del informe.
 Genera un CHECKLIST DE NEGATIVIDAD DIRIGIDA para el estudio.
@@ -9479,6 +9480,10 @@ PROHIBIDO: lenguaje de "inserción automática", "acción", "checklist incomplet
 
 ESTUDIO / PROTOCOLO: ${study || "Detectar del informe"}
 ${history ? `HISTORIA CLINICA:\n"""\n${history}\n"""` : "Sin historia adicional."}
+${focus
+  ? `\nOBJETIVO MANUAL SELECCIONADO POR EL RADIOLOGO: "${focus}"
+REGLA DE ENFOQUE: centra el checklist en este órgano o patología, incluyendo sus signos críticos, extensión, complicaciones y negatividades dirigidas pertinentes. No sustituyas este objetivo por una selección automática genérica.`
+  : "\nENFOQUE: automático; identifica el órgano o patología principal a partir del estudio y del informe."}
 
 INFORME:
 """

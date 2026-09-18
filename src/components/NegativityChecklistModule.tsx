@@ -66,6 +66,7 @@ export const NegativityChecklistModule: React.FC<NegativityChecklistModuleProps>
   const [draftInserts, setDraftInserts] = useState<Record<string, string>>({});
   const [techDrafts, setTechDrafts] = useState<Record<string, string>>({});
   const [incorporatingId, setIncorporatingId] = useState<string | null>(null);
+  const [checklistFocus, setChecklistFocus] = useState("");
 
   const pendingCount = useMemo(
     () => (checklistData?.items || []).filter((i) => i.status === "pending_closure").length,
@@ -88,6 +89,7 @@ export const NegativityChecklistModule: React.FC<NegativityChecklistModuleProps>
           report: reportText,
           studyType: studyType || "",
           clinicalHistory: clinicalHistory || "",
+          focusText: checklistFocus.trim() || undefined,
         }),
       });
       const contentType = resp.headers.get("content-type") || "";
@@ -292,6 +294,27 @@ REGLAS OBLIGATORIAS:
       </div>
 
       <div className="p-4 space-y-4">
+        <div className="rounded-xl border border-teal-900/50 bg-slate-900/60 p-3 space-y-1.5">
+          <label
+            htmlFor="negativity-checklist-focus"
+            className="block text-[10px] font-black uppercase tracking-wider text-teal-300"
+          >
+            Órgano o patología objetivo (opcional)
+          </label>
+          <input
+            id="negativity-checklist-focus"
+            type="text"
+            value={checklistFocus}
+            onChange={(e) => setChecklistFocus(e.target.value)}
+            placeholder="Ej.: tiroides, bocio multinodular, carótidas, trombosis venosa..."
+            className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100 outline-none placeholder:text-slate-600 focus:border-teal-500"
+          />
+          <p className="text-[10px] leading-relaxed text-slate-500">
+            Déjalo vacío para detección automática. Si escribes un objetivo, el checklist se
+            centrará en ese órgano o patología y sus signos críticos.
+          </p>
+        </div>
+
         {error && (
           <div className="rounded-xl border border-rose-700/50 bg-rose-950/40 px-3 py-2 text-xs text-rose-200 flex gap-2">
             <AlertTriangle className="h-4 w-4 shrink-0" />
