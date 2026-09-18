@@ -269,6 +269,8 @@ export function normalizeNegativityChecklistData(raw: any): NegativityChecklistD
 
   return {
     title: String(root.title || "Checklist de negatividad dirigida").trim(),
+    requestedFocus:
+      String(root.requestedFocus || root.focusText || root.focus || "").trim() || undefined,
     protocolName: String(root.protocolName || root.protocol || "").trim() || undefined,
     studyRegion: String(root.studyRegion || root.territory || "").trim() || undefined,
     laterality: String(root.laterality || "").trim() || undefined,

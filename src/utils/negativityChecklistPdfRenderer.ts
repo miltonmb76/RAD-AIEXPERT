@@ -49,6 +49,7 @@ export function renderNegativityChecklistAnnexToPDF(
   ];
   const headerH = 8.2 * factor;
   const lineH = 3.55 * factor;
+  const requestedFocus = sanitizePdfText(String(data.requestedFocus || "").trim());
 
   let y = topY;
 
@@ -59,14 +60,18 @@ export function renderNegativityChecklistAnnexToPDF(
     doc.setFont("helvetica", "bold");
     doc.setFontSize(fsTitle);
     doc.setTextColor(15, 23, 42);
-    doc.text(
-      continued
-        ? "ANEXO: CHECKLIST DE NEGATIVIDAD DIRIGIDA (cont.)"
-        : "ANEXO: CHECKLIST DE NEGATIVIDAD DIRIGIDA",
-      marginX,
-      y
+    const baseTitle = continued
+      ? "ANEXO: CHECKLIST DE NEGATIVIDAD DIRIGIDA (cont.)"
+      : "ANEXO: CHECKLIST DE NEGATIVIDAD DIRIGIDA";
+    const pageTitle = requestedFocus ? `${baseTitle} — ${requestedFocus}` : baseTitle;
+    const pageTitleLines = doc.splitTextToSize(
+      pageTitle,
+      pageWidth - marginX * 2
     );
-    y += 4.5 * factor;
+    pageTitleLines.forEach((line: string) => {
+      doc.text(line, marginX, y);
+      y += 4.8 * factor;
+    });
 
     doc.setDrawColor(accent[0], accent[1], accent[2]);
     doc.setLineWidth(0.8);

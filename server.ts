@@ -9481,8 +9481,15 @@ PROHIBIDO: lenguaje de "inserción automática", "acción", "checklist incomplet
 ESTUDIO / PROTOCOLO: ${study || "Detectar del informe"}
 ${history ? `HISTORIA CLINICA:\n"""\n${history}\n"""` : "Sin historia adicional."}
 ${focus
-  ? `\nOBJETIVO MANUAL SELECCIONADO POR EL RADIOLOGO: "${focus}"
-REGLA DE ENFOQUE: centra el checklist en este órgano o patología, incluyendo sus signos críticos, extensión, complicaciones y negatividades dirigidas pertinentes. No sustituyas este objetivo por una selección automática genérica.`
+  ? `\nORIENTACION MANUAL SELECCIONADA POR EL RADIOLOGO: "${focus}"
+Puede corresponder a un ORGANO, una PATOLOGIA, un SIGNO o un SINTOMA.
+REGLA DE ENFOQUE:
+- Centra TODO el checklist en esta orientación y adapta los aspectos a descartar según su naturaleza.
+- Si es órgano: cubre signos críticos, lesiones, extensión y complicaciones pertinentes.
+- Si es patología: cubre manifestaciones, severidad, extensión, complicaciones y alternativas peligrosas pertinentes.
+- Si es signo o síntoma: cubre causas imagenológicas relevantes, signos asociados y diagnósticos urgentes que esta modalidad pueda evaluar.
+- Incluye solo aspectos aplicables al estudio actual. No inventes que algo fue evaluado ni sustituyas la orientación por una selección automática genérica.
+- Conserva literalmente "${focus}" en requestedFocus para usarlo en el título.`
   : "\nENFOQUE: automático; identifica el órgano o patología principal a partir del estudio y del informe."}
 
 INFORME:
@@ -9501,6 +9508,7 @@ discardedSynopsis: sinopsis clínica breve de los hallazgos YA descartados (stat
 JSON OBLIGATORIO:
 {
   "title": "Checklist de negatividad dirigida",
+  "requestedFocus": "${focus}",
   "protocolName": "...",
   "studyRegion": "...",
   "laterality": "Bilateral|Derecha|Izquierda|",
@@ -9555,6 +9563,7 @@ JSON OBLIGATORIO:
     }
 
     const data = normalizeNegativityChecklistData(parsed);
+    data.requestedFocus = focus || data.requestedFocus;
     if (!data.items.length) {
       return res.status(500).json({
         success: false,

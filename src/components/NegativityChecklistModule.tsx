@@ -105,7 +105,8 @@ export const NegativityChecklistModule: React.FC<NegativityChecklistModuleProps>
         throw new Error(json.error || "No se pudo generar el checklist.");
       }
       const data = normalizeNegativityChecklistData(json.data);
-      setChecklistData(data);
+      const requestedFocus = checklistFocus.trim();
+      setChecklistData(requestedFocus ? { ...data, requestedFocus } : data);
       setIncludeInReport(true);
       setDraftInserts({});
       setTechDrafts({});
@@ -265,6 +266,7 @@ REGLAS OBLIGATORIAS:
           <div>
             <h3 className="text-sm font-black uppercase tracking-wider text-teal-100">
               Checklist de negatividad dirigida
+              {checklistData?.requestedFocus ? ` — ${checklistData.requestedFocus}` : ""}
             </h3>
             <p className="text-[11px] text-slate-400 mt-0.5">
               Nada queda sin evaluar salvo limitación técnica. Los pendientes se tejen en la sección adecuada del cuerpo del informe.
@@ -299,19 +301,19 @@ REGLAS OBLIGATORIAS:
             htmlFor="negativity-checklist-focus"
             className="block text-[10px] font-black uppercase tracking-wider text-teal-300"
           >
-            Órgano o patología objetivo (opcional)
+            Orientación del checklist (opcional)
           </label>
           <input
             id="negativity-checklist-focus"
             type="text"
             value={checklistFocus}
             onChange={(e) => setChecklistFocus(e.target.value)}
-            placeholder="Ej.: tiroides, bocio multinodular, carótidas, trombosis venosa..."
+            placeholder="Ej.: dolor en hipocondrio derecho, ictericia, IRC, tiroides..."
             className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100 outline-none placeholder:text-slate-600 focus:border-teal-500"
           />
           <p className="text-[10px] leading-relaxed text-slate-500">
-            Déjalo vacío para detección automática. Si escribes un objetivo, el checklist se
-            centrará en ese órgano o patología y sus signos críticos.
+            Puede ser un órgano, patología, signo o síntoma. La IA adaptará los aspectos
+            pertinentes que deben descartarse. Déjalo vacío para detección automática.
           </p>
         </div>
 

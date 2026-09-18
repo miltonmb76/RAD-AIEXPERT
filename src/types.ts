@@ -1090,6 +1090,8 @@ export interface NegativityChecklistItem {
 
 export interface NegativityChecklistData {
   title: string;
+  /** Optional user-selected organ, pathology, sign, or symptom that scopes the checklist. */
+  requestedFocus?: string;
   protocolName?: string;
   studyRegion?: string;
   laterality?: string;
