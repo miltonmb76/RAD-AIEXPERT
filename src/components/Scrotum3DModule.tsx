@@ -664,7 +664,7 @@ export const Scrotum3DModule: React.FC<Scrotum3DModuleProps> = ({
                               }))
                             }
                             placeholder="Ej: Testículo derecho / Doppler hiliar / varicocele izquierdo — topografía exacta según informe..."
-                            className="w-full text-xs bg-white border border-slate-300 rounded px-2 py-1"
+                            className="w-full text-xs text-slate-900 placeholder:text-slate-400 bg-white border border-slate-300 rounded px-2 py-1"
                           />
                           <div className="flex items-center justify-end gap-1.5">
                             <button

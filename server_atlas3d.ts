@@ -1815,12 +1815,13 @@ DATOS DEL CASO:
 - Vaso: "${panel.vesselName || panel.panelTitle || ""}"
 - Foco actual: "${panel.anatomicalFocus || ""}"
 - Lateralidad requerida: "${laterality || panel.laterality || ""}"
-- TOPOGRAFÍA MENISCAL OBLIGATORIA EN REGENERACIÓN:
-${KNEE_MENISCUS_TOPOGRAPHY_RULES_ES}
-Si structureOrSite/foco/instrucción mencionan menisco, conserva EXACTAS las tres coordenadas (lado de rodilla, medial/lateral-peroné, cuerno A/P). No las "corrijas" ni las asumas.
 - Instrucción / Corrección del médico: "${userDirective || "Mejorar precisión anatomopatológica y hemodinámica"}"
 - DIRECTIVA CLÍNICA OBLIGATORIA (Scorecard / médico): "${customDirectives || "Ninguna"}"
 - Contexto del informe: """${(reportText || "").slice(0, 800)}"""
+
+REGLA DE TOPOGRAFÍA VASCULAR:
+- Conserva exactamente el territorio, vaso, segmento y lateralidad indicados por el informe y la corrección del médico.
+- No intercambies arteria con vena, carótida interna con externa, ni lado derecho con izquierdo.
 
 REGLAS DE ESTILO:
 - Ultra-realistic 3D medical macro vascular cross-section render, cinema 4D octane render style, accurate vascular wall layers (intima, media, adventitia), realistic plaque/thrombus (lipid core, fibrous cap, calcium) or smooth clean lumen, glowing chromatic laminar blood flow vectors, soft surgical studio lighting, pure clean background.
@@ -2185,12 +2186,12 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
       const ai = getGeminiClient();
       const model = getModelName(requestedModel || "gemini-3.7-flash");
 
-      const refinePrompt = `Eres un Radiólogo MSK experto en renal/vías urinarias y Director de Arte Médico 3D.
+      const refinePrompt = `Eres un Radiólogo experto en ecografía renal y vías urinarias y Director de Arte Médico 3D.
 Diseña un prompt en inglés superdetallado para re-generar una única imagen 3D fotorrealista correspondiente al PANEL ${panel.panelLetter}.
 
 DATOS DEL CASO:
 - Territorio: "${kidneyType || "Ecografía renal / vías urinarias"}"
-- Tendón / sitio: "${panel.structureOrSite || panel.panelTitle || ""}"
+- Riñón / estructura / sitio: "${panel.structureOrSite || panel.panelTitle || ""}"
 - Foco actual: "${panel.anatomicalFocus || ""}"
 - Rol del panel: "${panel.panelRole || ""}"
 - Lateralidad requerida: "${laterality || panel.laterality || ""}"
@@ -2200,23 +2201,23 @@ DATOS DEL CASO:
 
 TOPOGRAFÍA RENAL Y VÍAS OBLIGATORIA:
 ${KIDNEY_URINARY_TOPOGRAPHY_RULES_ES}
-Si structureOrSite / foco / instrucción / informe mencionan riñón, conserva EXACTAS las tres coordenadas
-(lado renal del paciente, medial=interno/tibial vs lateral=externo/peroné, cuerno anterior/cuerpo/posterior).
-NUNCA las "corrijas" ni asumas riñón medial/anterior por defecto.
+Si structureOrSite / foco / instrucción / informe mencionan una lesión, conserva EXACTAMENTE:
+(lado renal del paciente + polo superior/interpolar/inferior + corteza/seno/pelvis/cálices/uréter/vejiga).
+No intercambies riñón derecho con izquierdo, polo superior con inferior, ni corteza con sistema colector.
 
 REGLAS DE ESTILO:
-- Ultra-realistic 3D medical kidney / meniscus-ligament macro render, cinema 4D octane, accurate femoral condyle/tibial plateau/patella/fibular head landmarks.
-- Exact named meniscus topography in the English imagePrompt (medial|lateral + anterior|body|posterior + patient knee side).
-- Exact morphology (intact / degeneration / partial tear / extrusion / full-thickness gap); optional effusion/Baker cyst only if indicated; soft surgical studio lighting; pure clean background.
+- Ultra-realistic 3D medical kidney / urinary-tract macro render, cinema 4D octane, with accurate renal cortex, medulla, sinus, pelvis, calyces, ureter and bladder landmarks as applicable.
+- Preserve exact side and level in the English imagePrompt (right|left + superior|interpolar|inferior + cortex|sinus|collecting system|ureter|bladder).
+- Depict only report-supported morphology (hydronephrosis/ectasia, calculus, cyst/Bosniak features, mass or parenchymal change); soft surgical studio lighting; pure clean background.
 - STRICTLY NO text, NO numbers, NO letters, NO arrows inside the image.
 - Respect patient laterality (AP: patient RIGHT on viewer's LEFT).
 
 RESPONDE EN JSON:
 {
   "panelTitle": "Título actualizado o confirmado para el panel",
-  "structureOrSite": "Nombre exacto del riñón/ligamento (p.ej. Riñón lateral/peroné, cuerno posterior)",
-  "anatomicalFocus": "Foco anatomopatológico de 1 a 2 líneas con medial/lateral y A/P",
-  "imagePrompt": "Detailed English image generation prompt with explicit medial/lateral and anterior/posterior site..."
+  "structureOrSite": "Nombre exacto del órgano/sitio (p.ej. Riñón derecho — polo inferior / pelvis renal)",
+  "anatomicalFocus": "Foco anatomopatológico renal de 1 a 2 líneas con lado y nivel colector/parénquima",
+  "imagePrompt": "Detailed English image generation prompt with explicit kidney side, pole and urinary-tract level..."
 }`;
 
       const refineResponse = await ai.models.generateContent({
@@ -2237,7 +2238,7 @@ RESPONDE EN JSON:
         };
       }
 
-      let finalPrompt = refineJson.imagePrompt || panel.promptUsed || `3D macro shoulder kidney urinary-tract render of ${panel.panelTitle}, no text.`;
+      let finalPrompt = refineJson.imagePrompt || panel.promptUsed || `3D macro kidney / urinary-tract render of ${panel.panelTitle}, no text.`;
       if (customDirectives && String(customDirectives).trim()) {
         finalPrompt = `${finalPrompt} [MANDATORY CLINICAL DIRECTIVE: ${String(customDirectives).trim()}].`;
       }
@@ -2598,7 +2599,7 @@ RESPONDE EN JSON:
   "panelTitle": "Título actualizado o confirmado para el panel",
   "structureOrSite": "Nombre exacto (p.ej. Hígado derecho / Vesícula biliar)",
   "anatomicalFocus": "Foco anatomopatológico de 1 a 2 líneas con órgano y lado",
-  "imagePrompt": "Detailed English image generation prompt with explicit organ and laterality..."
+  "imagePrompt": "Detailed English image generation prompt with explicit abdominal-wall site, layer/orifice, content and laterality..."
 }`;
 
       const refineResponse = await ai.models.generateContent({
@@ -2977,7 +2978,7 @@ RESPONDE EN JSON:
   "panelTitle": "Título actualizado o confirmado para el panel",
   "structureOrSite": "Nombre exacto (p.ej. Orificio umbilical / Ingle derecha)",
   "anatomicalFocus": "Foco anatomopatológico de 1 a 2 líneas con sitio, orificio y dinámica",
-  "imagePrompt": "Detailed English image generation prompt with explicit organ and laterality..."
+  "imagePrompt": "Detailed English image generation prompt with explicit scrotal structure/site and laterality..."
 }`;
 
       const refineResponse = await ai.models.generateContent({
@@ -3726,10 +3727,10 @@ DATOS DEL CASO:
 TOPOGRAFÍA MÚSCULO-TENDINOSA OBLIGATORIA:
 ${MUSCLE_TENDON_TOPOGRAPHY_RULES_ES}
 Si structureOrSite / foco / instrucción / informe mencionan un sitio músculo-tendinosa, conserva EXACTAS las coordenadas
-(lado, testículo/epidídimo/cordón, Doppler). NUNCA intercambiar testículo derecho↔izquierdo ni testículo↔epidídimo sin respaldo.
+(lado, vientre muscular/unión miotendinosa/tendón/inserción). NUNCA intercambiar derecha↔izquierda ni vientre↔unión miotendinosa↔tendón sin respaldo.
 
 REGLAS DE ESTILO:
-- Ultra-realistic 3D medical scrotal macro render, cinema 4D octane, accurate muscle belly/MTJ/tendon/Achilles landmarks.
+- Ultra-realistic 3D medical muscle-tendon macro render, cinema 4D octane, accurate muscle belly/MTJ/tendon/Achilles landmarks.
 - Exact named site, structure and laterality in the English imagePrompt.
 - Exact morphology only if indicated; soft surgical studio lighting; pure clean background.
 - STRICTLY NO text, NO numbers, NO letters, NO arrows inside the image.
@@ -3738,9 +3739,9 @@ REGLAS DE ESTILO:
 RESPONDE EN JSON:
 {
   "panelTitle": "Título actualizado o confirmado para el panel",
-  "structureOrSite": "Nombre exacto (p.ej. Testículo derecho / Epidídimo izquierdo)",
-  "anatomicalFocus": "Foco anatomopatológico de 1 a 2 líneas con lado, estructura y Doppler",
-  "imagePrompt": "Detailed English image generation prompt with explicit organ and laterality..."
+  "structureOrSite": "Nombre exacto (p.ej. Isquiotibial derecho — unión miotendinosa / Aquiles izquierdo — inserción)",
+  "anatomicalFocus": "Foco anatomopatológico de 1 a 2 líneas con lado, músculo/tendón, nivel, grado, gap o hematoma",
+  "imagePrompt": "Detailed English image generation prompt with explicit muscle/tendon site, level and laterality..."
 }`;
 
       const refineResponse = await ai.models.generateContent({
@@ -3757,11 +3758,11 @@ RESPONDE EN JSON:
           panelTitle: panel.panelTitle,
           structureOrSite: panel.structureOrSite || panel.panelTitle,
           anatomicalFocus: panel.anatomicalFocus,
-          imagePrompt: `Ultra-realistic 3D medical scrotal render of ${panel.structureOrSite || panel.panelTitle}, octane render, studio lighting, no text.`
+          imagePrompt: `Ultra-realistic 3D medical muscle-tendon render of ${panel.structureOrSite || panel.panelTitle}, octane render, studio lighting, no text.`
         };
       }
 
-      let finalPrompt = refineJson.imagePrompt || panel.promptUsed || `Ultra-realistic 3D medical scrotal render of ${panel.panelTitle}, cinema 4D octane, no text.`;
+      let finalPrompt = refineJson.imagePrompt || panel.promptUsed || `Ultra-realistic 3D medical muscle-tendon render of ${panel.panelTitle}, cinema 4D octane, no text.`;
       if (customDirectives && String(customDirectives).trim()) {
         finalPrompt = `${finalPrompt} [MANDATORY CLINICAL DIRECTIVE: ${String(customDirectives).trim()}].`;
       }
@@ -4119,7 +4120,7 @@ RESPONDE EN JSON:
   "panelTitle": "Título actualizado o confirmado para el panel",
   "structureOrSite": "Nombre exacto (p.ej. 1er compartimento derecho / túnel del carpo izquierdo)",
   "anatomicalFocus": "Foco anatomopatológico de 1 a 2 líneas con lado, estructura y hallazgo",
-  "imagePrompt": "Detailed English image generation prompt with explicit organ and laterality..."
+  "imagePrompt": "Detailed English image generation prompt with explicit wrist compartment/tunnel/TFCC site and laterality..."
 }`;
 
       const refineResponse = await ai.models.generateContent({
@@ -4479,10 +4480,10 @@ Diseña un prompt en inglés superdetallado para re-generar una única imagen th
 
 DATOS DEL CASO:
 - Territorio: "${thyroidType || "Ecografía de tiroides"}"
-- Vaso: "${panel.lobeOrNode || panel.panelTitle || ""}"
+- Lóbulo / nódulo / ganglio: "${panel.lobeOrNode || panel.panelTitle || ""}"
 - Foco actual: "${panel.anatomicalFocus || ""}"
 - Lateralidad requerida: "${laterality || panel.laterality || ""}"
-- Instrucción / Corrección del médico: "${userDirective || "Mejorar precisión anatomopatológica y hemodinámica"}"
+- Instrucción / Corrección del médico: "${userDirective || "Mejorar precisión anatomopatológica tiroidea y TI-RADS"}"
 - DIRECTIVA CLÍNICA OBLIGATORIA (Scorecard / médico): "${customDirectives || "Ninguna"}"
 - Contexto del informe: """${(reportText || "").slice(0, 800)}"""
 
@@ -4493,8 +4494,8 @@ REGLAS DE ESTILO:
 RESPONDE EN JSON:
 {
   "panelTitle": "Título actualizado o confirmado para el panel",
-  "lobeOrNode": "Nombre del vaso",
-  "anatomicalFocus": "Foco anatomopatológico y hemodinámico de 1 a 2 líneas",
+  "lobeOrNode": "Lóbulo / nódulo / ganglio (p.ej. Lóbulo derecho — nódulo inferior)",
+  "anatomicalFocus": "Foco anatomopatológico tiroideo de 1 a 2 líneas con morfología nodular / TI-RADS",
   "imagePrompt": "Detailed English image generation prompt..."
 }`;
 
@@ -4906,7 +4907,7 @@ Diseña un prompt en inglés superdetallado para re-generar una única imagen br
 
 DATOS DEL CASO:
 - Territorio: "${breastType || "Ecografía de mama"}"
-- Vaso: "${panel.clockPositionOrSite || panel.panelTitle || ""}"
+- Posición reloj / cuadrante / sitio: "${panel.clockPositionOrSite || panel.panelTitle || ""}"
 - Foco actual: "${panel.anatomicalFocus || ""}"
 - Lateralidad requerida: "${laterality || panel.laterality || ""}"
 - Instrucción / Corrección del médico: "${userDirective || "Mejorar precisión anatomopatológica mamaria y BI-RADS"}"
@@ -5648,7 +5649,7 @@ Diseña un prompt en inglés superdetallado para re-generar una única imagen 3D
 
 DATOS DEL CASO:
 - Territorio: "${kneeType || "Ecografía de rodilla / ligamentos y meniscos"}"
-- Tendón / sitio: "${panel.structureOrSite || panel.panelTitle || ""}"
+- Menisco / ligamento / sitio: "${panel.structureOrSite || panel.panelTitle || ""}"
 - Foco actual: "${panel.anatomicalFocus || ""}"
 - Rol del panel: "${panel.panelRole || ""}"
 - Lateralidad requerida: "${laterality || panel.laterality || ""}"
@@ -5695,7 +5696,7 @@ RESPONDE EN JSON:
         };
       }
 
-      let finalPrompt = refineJson.imagePrompt || panel.promptUsed || `3D macro shoulder knee ligaments-menisci render of ${panel.panelTitle}, no text.`;
+      let finalPrompt = refineJson.imagePrompt || panel.promptUsed || `3D macro knee / meniscus-ligament render of ${panel.panelTitle}, no text.`;
       if (customDirectives && String(customDirectives).trim()) {
         finalPrompt = `${finalPrompt} [MANDATORY CLINICAL DIRECTIVE: ${String(customDirectives).trim()}].`;
       }
@@ -6032,7 +6033,7 @@ Diseña un prompt en inglés superdetallado para re-generar una única imagen 3D
 
 DATOS DEL CASO:
 - Territorio: "${ankleType || "Ecografía de tobillo / ligamentos y Aquiles"}"
-- Tendón / sitio: "${panel.structureOrSite || panel.panelTitle || ""}"
+- Ligamento / Aquiles / sitio: "${panel.structureOrSite || panel.panelTitle || ""}"
 - Foco actual: "${panel.anatomicalFocus || ""}"
 - Rol del panel: "${panel.panelRole || ""}"
 - Lateralidad requerida: "${laterality || panel.laterality || ""}"
