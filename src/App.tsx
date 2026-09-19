@@ -1237,6 +1237,64 @@ const getBiomechanicalRadarDataFromReport = (reportText: string, radarData: any)
   return radarData || null;
 };
 
+type SpecificSuiteShortcut = { id: string; label: string };
+
+/**
+ * Maps the study explicitly selected by the physician to its dedicated suite.
+ * This intentionally does not inspect the generated report: protocol selection stays manual.
+ */
+const getSpecificSuiteShortcut = (
+  specificStudy: string,
+  modality: string
+): SpecificSuiteShortcut | null => {
+  const selected = `${specificStudy || ""} ${modality || ""}`
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+  if (selected.includes("doppler") || selected.includes("carotid")) {
+    return { id: "vascular3d", label: "Suite Vascular 3D" };
+  }
+  if (selected.includes("mama") || selected.includes("momografia")) {
+    return { id: "breast3d", label: "Suite Mama 3D" };
+  }
+  if (selected.includes("cuello") || selected.includes("tiroid")) {
+    return { id: "thyroid3d", label: "Suite Tiroides 3D" };
+  }
+  if (selected.includes("hombro")) {
+    return { id: "shoulder3d", label: "Suite Hombro 3D" };
+  }
+  if (selected.includes("rodilla")) {
+    return { id: "knee3d", label: "Suite Rodilla 3D" };
+  }
+  if (selected.includes("tobillo")) {
+    return { id: "ankle3d", label: "Suite Tobillo 3D" };
+  }
+  if (
+    selected.includes("muslo") ||
+    selected.includes("pantorrilla") ||
+    selected.includes("aquiles")
+  ) {
+    return { id: "muscleTendon3d", label: "Suite Músculo-Tendón 3D" };
+  }
+  if (selected.includes("muneca") || selected.includes("carpo")) {
+    return { id: "wrist3d", label: "Suite Muñeca 3D" };
+  }
+  if (selected.includes("vias urinarias") || selected.includes("renal") || selected.includes("rinon")) {
+    return { id: "kidney3d", label: "Suite Riñón 3D" };
+  }
+  if (selected.includes("pared abdominal")) {
+    return { id: "abdominalWall3d", label: "Suite Pared Abdominal 3D" };
+  }
+  if (selected.includes("escroto") || selected.includes("testicul")) {
+    return { id: "scrotum3d", label: "Suite Escroto 3D" };
+  }
+  if (selected.includes("abdomen")) {
+    return { id: "abdomen3d", label: "Suite Abdomen 3D" };
+  }
+  return null;
+};
+
 export default function App() {
   // Public Patient View System
   const [currentCloudStudyId, setCurrentCloudStudyId] = useState<string>("");
@@ -3629,7 +3687,7 @@ Ejemplo:
     schematic: false,
     measurements: false,
     footnotes: false,
-    organ_synoptic: true,
+    organ_synoptic: false,
     fractures: false,
     classifications: false,
   };
@@ -3640,6 +3698,8 @@ Ejemplo:
   const [selectedBatchModules, setSelectedBatchModules] = useState<Record<string, boolean>>(DEFAULT_BATCH_MODULES);
   const [isActivatingBatch, setIsActivatingBatch] = useState<boolean>(false);
   const [batchSuccessMessage, setBatchSuccessMessage] = useState<string | null>(null);
+  const [autoActivateSpecificSuite, setAutoActivateSpecificSuite] = useState<boolean>(true);
+  const selectedSpecificSuite = getSpecificSuiteShortcut(specificStudy, modality);
 
   const handleToggleAllBatchModules = (select: boolean) => {
     setSelectedBatchModules({
@@ -4815,6 +4875,8 @@ Ejemplo:
     // Reset current cloud study ID for the newly generated report
     setCurrentCloudStudyId("");
 
+    // Open the report workspace immediately so generation progress and the result stay in focus.
+    setIsMainReportExpanded(true);
     setIsGenerating(true);
     setReportError(null);
     setGeneratedReport("");
@@ -4907,6 +4969,12 @@ Ejemplo:
 
         if (mode === "full") {
           const batchSelection = { ...FULL_REPORT_BATCH_MODULES };
+          const suiteShortcut = autoActivateSpecificSuite
+            ? getSpecificSuiteShortcut(specificStudy, modality)
+            : null;
+          if (suiteShortcut) {
+            batchSelection[suiteShortcut.id] = true;
+          }
           const reportText = String(data.report || "").trim();
           setSelectedBatchModules(batchSelection);
           void handleActivateBatchModules(reportText, batchSelection);
@@ -18873,6 +18941,32 @@ const splitReportAndAnnex = (text: string) => {
 
 
 
+                    <label
+                      className={`flex items-center gap-3 rounded-xl border px-4 py-3 transition-colors ${
+                        selectedSpecificSuite
+                          ? "border-indigo-500/30 bg-indigo-950/25 cursor-pointer"
+                          : "border-slate-800 bg-slate-950/50"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={autoActivateSpecificSuite && !!selectedSpecificSuite}
+                        onChange={(e) => setAutoActivateSpecificSuite(e.target.checked)}
+                        disabled={!selectedSpecificSuite}
+                        className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-indigo-500 focus:ring-indigo-500 disabled:opacity-40"
+                      />
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-black uppercase tracking-wider text-slate-200">
+                          Activar suite 3D específica con Reporte completo
+                        </p>
+                        <p className="mt-0.5 text-[9px] leading-relaxed text-slate-500">
+                          {selectedSpecificSuite
+                            ? `${selectedSpecificSuite.label} se generará automáticamente porque seleccionaste ?${specificStudy}?.`
+                            : "El estudio seleccionado no tiene una suite 3D específica; podrás elegir Atlas u otros módulos después."}
+                        </p>
+                      </div>
+                    </label>
+
                     {/* Submit Buttons: simple vs completo */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <button
@@ -18903,7 +18997,7 @@ const splitReportAndAnnex = (text: string) => {
                         onClick={() => handleGenerateReport("full")}
                         disabled={isGenerating || !studyType.trim()}
                         className="w-full bg-indigo-600 hover:bg-indigo-550 text-white font-black py-4 px-5 rounded-xl text-[11px] uppercase tracking-widest shadow-[0_4px_16px_rgba(99,102,241,0.4)] disabled:opacity-50 disabled:cursor-not-allowed transition-all flex flex-col items-center justify-center gap-1.5 cursor-pointer border border-indigo-400/30"
-                        title="Informe + resumen operacional, resumen paciente, cuadro sinoptico y Atlas 3D"
+                        title="Informe + módulos predeterminados y suite 3D del estudio seleccionado"
                       >
                         {isGenerating ? (
                           <>
@@ -18915,7 +19009,7 @@ const splitReportAndAnnex = (text: string) => {
                             <Sparkles className="h-4 w-4 text-amber-200" />
                             <span>Reporte completo</span>
                             <span className="text-[8px] font-bold normal-case tracking-normal text-indigo-100/80 text-center leading-snug">
-                              + Scorecard, Atlas 3D, Resumen, Paciente, Sinoptico
+                              + Scorecard, Resúmenes y suite 3D seleccionada
                             </span>
                           </>
                         )}
@@ -20570,7 +20664,7 @@ const splitReportAndAnnex = (text: string) => {
                             </div>
 
                             <p className="text-[10px] text-slate-500 leading-snug px-1">
-                              El boton <strong className="text-slate-300">Reporte completo</strong> activa por defecto: Scorecard clinico (primero), Resumen operacional, Resumen paciente y Cuadro sinoptico. El Atlas 3D ya no se lanza solo: marcalo aqui o abrilo manualmente si lo necesitas. Marca otros modulos aqui si quieres anadirlos con ACTIVAR.
+                              El botón <strong className="text-slate-300">Reporte completo</strong> activa por defecto Scorecard clínico, Resumen operacional y Resumen del paciente. El Cuadro sinóptico de órgano ya no se genera automáticamente. Si habilitaste el acceso rápido, también se activa la suite 3D correspondiente al estudio que seleccionaste manualmente. Marca otros módulos aquí y pulsa ACTIVAR.
                             </p>
 
                             {/* Catalog Grid */}
