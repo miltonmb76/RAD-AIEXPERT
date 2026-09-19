@@ -1081,6 +1081,8 @@ export interface NegativityChecklistItem {
   /** Ready-to-insert Spanish clinical prose for pending items. */
   suggestedInsert?: string;
   insertTarget?: NegativityInsertTarget;
+  /** Narrative anchor for weaving into the report body. */
+  placementHint?: string;
   inserted?: boolean;
   insertedAt?: string;
   confidence?: "alta" | "media" | "baja";
@@ -1088,6 +1090,8 @@ export interface NegativityChecklistItem {
 
 export interface NegativityChecklistData {
   title: string;
+  /** Optional user-selected organ, pathology, sign, or symptom that scopes the checklist. */
+  requestedFocus?: string;
   protocolName?: string;
   studyRegion?: string;
   laterality?: string;
@@ -1101,6 +1105,47 @@ export interface NegativityChecklistData {
   discardedSynopsis?: string;
   /** @deprecated Prefer discardedSynopsis — kept for older saved sessions. */
   recommendation?: string;
+  generatedAt?: string;
+}
+
+/** Simulated second-reader peer review of a finished report. */
+export type SecondReaderSeverity = "alta" | "media" | "baja";
+export type SecondReaderInsertTarget = "findings" | "impression";
+
+export interface SecondReaderObjection {
+  id: string;
+  severity: SecondReaderSeverity;
+  /** What in the report is being challenged. */
+  claim: string;
+  objection: string;
+  evidenceGap?: string;
+}
+
+export interface SecondReaderSustain {
+  id: string;
+  statement: string;
+  why: string;
+}
+
+export interface SecondReaderAddition {
+  id: string;
+  title: string;
+  reason: string;
+  /** Clinical prose ready to weave into the report body. */
+  suggestedText: string;
+  insertTarget: SecondReaderInsertTarget;
+  /** Where in the narrative to weave (anatomy, organ, paragraph cue). */
+  placementHint?: string;
+  incorporated?: boolean;
+}
+
+export interface SecondReaderData {
+  title: string;
+  overallStance: string;
+  objections: SecondReaderObjection[];
+  sustain: SecondReaderSustain[];
+  additions: SecondReaderAddition[];
+  reviewSummary: string;
   generatedAt?: string;
 }
 

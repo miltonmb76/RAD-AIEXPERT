@@ -10,6 +10,7 @@ import { registerAtlas3DRoutes } from "./server_atlas3d";
 import { normalizeReasoningChainData, extractJsonObject } from "./src/lib/reasoningChain";
 import { normalizeNegativityChecklistData } from "./src/lib/negativityChecklist";
 import { normalizeDifferentialTreeData } from "./src/lib/differentialTree";
+import { normalizeSecondReaderData } from "./src/lib/secondReader";
 
 // Lazy-loaded GenAI client to prevent crash on startup if API key is missing
 let aiClient: GoogleGenAI | null = null;
@@ -2973,82 +2974,6 @@ Genera una transcripción técnica radiológica exhaustiva y limpia, lista para 
     });
   } catch (error: any) {
     console.error("Error en /api/extract-essential-findings:", error);
-    const friendlyError = handleGeminiError(error);
-    res.status(500).json({
-      success: false,
-      error: friendlyError,
-    });
-  }
-});
-
-/**
- * NEW API: CLINICAL ASSESSMENT & REPORT EVALUATION FOR CLINICIANS
- * POST /api/evaluate-report
- * Payload: {
- *   report: string
- *   studyType?: string
- *   clinicalHistory?: string
- *   findings?: string
- * }
- */
-app.post("/api/evaluate-report", async (req: express.Request, res: express.Response) => {
-  try {
-    const { model, report, studyType, clinicalHistory, findings } = req.body;
-    if (!report) {
-      return res.status(400).json({ success: false, error: "Se requiere el 'report' para realizar la evaluación del reporte." });
-    }
-
-    const ai = getGeminiClient();
-    const selectedModel = getModelName(model);
-
-    const promptText = `
-Estudio clínico / tipo de estudio: ${studyType || "No especificado"}
-Indicación clínica / Sospecha: ${clinicalHistory || "No especificada"}
-Hallazgos preliminares o cargados: ${findings || "No proporcionados"}
-
-Reporte Radiológico generado:
-"""
-${report}
-"""
-
-Por favor, realiza una EVALUACIÓN Y AUDITORÍA DE CALIDAD DEL REPORTE médico interpretado. Tu tarea principal es:
-1. Analizar el informe elaborado de forma meticulosa.
-2. Identificar y recomendar los aspectos clave de gran relevancia diagnóstica o terapéutica que el médico clínico solicitante debería conocer obligatoriamente.
-3. **Clasificaciones y Escalas Radiológicas Sugeridas**: Identifica de forma activa y explícita qué clasificaciones radiológicas internacionales, escalas de riesgo o sistemas de gradación son pertinentes o requeridos según los hallazgos del reporte (por ejemplo: BI-RADS, O-RADS, LI-RADS, TI-RADS, PI-RADS, Bosniak, Neer, Rockwood, Gartland, Kellgren-Lawrence, AO, Balthazar, Fleischner, Stanford/DeBakey, etc.). Si el reporte ya cuenta con una escala, evalúa si es correcta o precisa; si le falta una escala pertinente, sugiere la categorización o grado exacto a incluir.
-4. Diferenciar de manera sumamente clara y visible:
-   - **Aspectos y Clasificaciones ya incluidos en el reporte actual** (aquellos que ya están redactados y documentados en el informe).
-   - **Aspectos, Recomendaciones y Clasificaciones Sugeridas para agregar** (aquellos que no están o podrían complementar y mejorar sustancialmente el manejo clínico o la toma de decisiones).
-
-Por favor, estructura tu respuesta en español con formato Markdown elegante, limpio y profesional. No agregues notas introductorias ni comentarios fuera del análisis. Clasifica los aspectos en secciones claras y utiliza viñetas o tablas según sea más agradable de leer.
-
-⚠️ REQUISITO TECNOLÓGICO CRÍTICO:
-Para cada uno de tus puntos de la sección de "Aspectos, Recomendaciones y Clasificaciones Sugeridas para agregar" (tanto recomendaciones clínicas como sugerencias de clasificaciones/escalas radiológicas), DEBES iniciar el punto obligatoriamente con la etiqueta exacta "[RECOMENDACION]: " (en mayúsculas, comillas no, corchetes rígidos exactamente de esta forma: \`[RECOMENDACION]: \`).
-Ejemplos correctos:
-- [RECOMENDACION]: Clasificación BI-RADS Categoría 4A - Sospecha baja de malignidad. Se sugiere correlación histopatológica o biopsia percutánea.
-- [RECOMENDACION]: Clasificación de Bosniak Categoría II - Quiste renal benigno mínimamente complejo sin necesidad de seguimiento quirúrgico.
-- [RECOMENDACION]: Medir el espesor de la fascia renal si está engrosada en la sección de hallazgos.
-
-No agregues cursivas ni negritas dentro de los corchetes. El software lee este identificador exacto de forma automatizada para renderizar un botón en la interfaz de usuario que permite al radiólogo incorporar la recomendación o clasificación al informe con un solo clic.
-`;
-
-    const systemInstruction = 
-      "Eres un consultor de auditoría y calidad clínica radiológica con máxima credencial académica. Evalúas la precisión y completitud de informes de imagen, asegurando la comunicación óptima de aspectos de seguridad, clasificaciones de riesgo y hallazgos críticos para que el médico tratante tenga toda la información necesaria.";
-
-    const response = await ai.models.generateContent({
-      model: selectedModel,
-      contents: promptText,
-      config: {
-        systemInstruction: systemInstruction,
-        temperature: 0.2,
-      },
-    });
-
-    res.json({
-      success: true,
-      evaluation: response.text,
-    });
-  } catch (error: any) {
-    console.error("Error en /api/evaluate-report:", error);
     const friendlyError = handleGeminiError(error);
     res.status(500).json({
       success: false,
@@ -9527,7 +9452,7 @@ ${report}
  */
 app.post("/api/generate-negativity-checklist", async (req: express.Request, res: express.Response) => {
   try {
-    const { model, report, studyType, clinicalHistory, protocolName } = req.body;
+    const { model, report, studyType, clinicalHistory, protocolName, focusText } = req.body;
     if (!report || !String(report).trim()) {
       return res.status(400).json({ success: false, error: "Se requiere el parámetro 'report'." });
     }
@@ -9536,14 +9461,16 @@ app.post("/api/generate-negativity-checklist", async (req: express.Request, res:
     const modelToUse = getModelName(model);
     const history = (clinicalHistory || "").toString().trim();
     const study = (studyType || protocolName || "").toString().trim();
+    const focus = (focusText || "").toString().trim();
 
     const prompt = `Eres un radiólogo hispanohablante experto en protocolos y control de calidad del informe.
 Genera un CHECKLIST DE NEGATIVIDAD DIRIGIDA para el estudio.
 
 REGLA DE ORO:
 - NADA puede quedar como "no evaluado" genérico.
-- Si el signo crítico del protocolo NO se menciona en el informe → status "pending_closure" y DEBES proponer "suggestedInsert" (frase clínica lista para integrar EN EL CUERPO/DESCRIPCIÓN del informe, en español, tono del propio radiólogo).
+- Si el signo crítico del protocolo NO se menciona en el informe → status "pending_closure" y DEBES proponer "suggestedInsert" (frase clínica lista para tejer EN EL CUERPO NARRATIVO del informe, en español, tono del propio radiólogo).
 - suggestedInsert debe sonar como prosa del informe (p.ej. "No se observa extensión intratorácica del bocio."), NUNCA como nota de sistema ni bloque aparte.
+- placementHint: ancla concreta de ubicación narrativa (p. ej. "Tras la descripción del tamaño tiroideo", "En el párrafo de carótida interna derecha").
 - Solo status "limited_technical" cuando haya limitación técnica explícita o claramente inferible (ventana acústica, no cooperación, dolor, obesidad extrema, etc.) y entonces "technicalReason" es OBLIGATORIO.
 - status "negative" solo si el informe ya niega el hallazgo (con evidence citada/parafraseada).
 - status "positive" si el hallazgo está presente.
@@ -9553,6 +9480,17 @@ PROHIBIDO: lenguaje de "inserción automática", "acción", "checklist incomplet
 
 ESTUDIO / PROTOCOLO: ${study || "Detectar del informe"}
 ${history ? `HISTORIA CLINICA:\n"""\n${history}\n"""` : "Sin historia adicional."}
+${focus
+  ? `\nORIENTACION MANUAL SELECCIONADA POR EL RADIOLOGO: "${focus}"
+Puede corresponder a un ORGANO, una PATOLOGIA, un SIGNO o un SINTOMA.
+REGLA DE ENFOQUE:
+- Centra TODO el checklist en esta orientación y adapta los aspectos a descartar según su naturaleza.
+- Si es órgano: cubre signos críticos, lesiones, extensión y complicaciones pertinentes.
+- Si es patología: cubre manifestaciones, severidad, extensión, complicaciones y alternativas peligrosas pertinentes.
+- Si es signo o síntoma: cubre causas imagenológicas relevantes, signos asociados y diagnósticos urgentes que esta modalidad pueda evaluar.
+- Incluye solo aspectos aplicables al estudio actual. No inventes que algo fue evaluado ni sustituyas la orientación por una selección automática genérica.
+- Conserva literalmente "${focus}" en requestedFocus para usarlo en el título.`
+  : "\nENFOQUE: automático; identifica el órgano o patología principal a partir del estudio y del informe."}
 
 INFORME:
 """
@@ -9560,15 +9498,17 @@ ${report}
 """
 
 Devuelve 6 a 14 ítems críticos del protocolo (no inventes patología).
-Para cada pending_closure, suggestedInsert debe ser una frase afirmativa de negatividad dirigida integrable en la descripción, p.ej.:
+Para cada pending_closure, suggestedInsert debe ser una frase afirmativa de negatividad dirigida integrable EN EL PÁRRAFO ANATÓMICO CORRECTO, p.ej.:
 "No se identifican placas ulceradas en la arteria carótida interna derecha."
-insertTarget: preferir siempre "findings" (cuerpo del informe). Usa "impression" solo si la negatividad corresponde a la conclusión.
+insertTarget: preferir siempre "findings" (cuerpo narrativo). Usa "impression" solo si la negatividad corresponde a la conclusión.
+REGLA: el destino NO es "al final de HALLAZGOS" ni un bloque "NEGATIVIDADES DIRIGIDAS"; es el sitio semiológico correcto dentro de la prosa.
 
 discardedSynopsis: sinopsis clínica breve de los hallazgos YA descartados (status negative), en prosa de informe. Sin mencionar herramientas ni inserciones.
 
 JSON OBLIGATORIO:
 {
   "title": "Checklist de negatividad dirigida",
+  "requestedFocus": "${focus}",
   "protocolName": "...",
   "studyRegion": "...",
   "laterality": "Bilateral|Derecha|Izquierda|",
@@ -9577,13 +9517,14 @@ JSON OBLIGATORIO:
   "items": [
     {
       "id": "neg-1",
-      "sign": "...",
-      "laterality": "Derecha",
-      "status": "negative|positive|limited_technical|pending_closure",
+      "sign": "Extensión intratorácica",
+      "laterality": "",
+      "status": "pending_closure",
       "whyItMatters": "...",
-      "evidence": "...",
+      "evidence": "",
       "technicalReason": "",
-      "suggestedInsert": "...",
+      "suggestedInsert": "No se observa extensión intratorácica.",
+      "placementHint": "Tras la descripción del tamaño/contorno tiroideo",
       "insertTarget": "findings",
       "confidence": "alta|media|baja"
     }
@@ -9622,6 +9563,7 @@ JSON OBLIGATORIO:
     }
 
     const data = normalizeNegativityChecklistData(parsed);
+    data.requestedFocus = focus || data.requestedFocus;
     if (!data.items.length) {
       return res.status(500).json({
         success: false,
@@ -9632,6 +9574,117 @@ JSON OBLIGATORIO:
     res.json({ success: true, data });
   } catch (error: any) {
     console.error("Error en /api/generate-negativity-checklist:", error);
+    res.status(500).json({ success: false, error: handleGeminiError(error) });
+  }
+});
+
+/**
+ * API: SEGUNDO LECTOR SIMULADO (peer review del informe)
+ * POST /api/generate-second-reader
+ * Objeciones + qué sostener + sugerencias agregables al cuerpo del informe.
+ */
+app.post("/api/generate-second-reader", async (req: express.Request, res: express.Response) => {
+  try {
+    const { model, report, studyType, clinicalHistory } = req.body;
+    if (!report || !String(report).trim()) {
+      return res.status(400).json({ success: false, error: "Se requiere el parámetro 'report'." });
+    }
+
+    const ai = getGeminiClient();
+    const modelToUse = getModelName(model);
+    const history = (clinicalHistory || "").toString().trim();
+    const study = (studyType || "").toString().trim();
+
+    const prompt = `Eres un radiólogo senior hispanohablante que actúa como SEGUNDO LECTOR (peer review) del informe de un colega.
+NO reescribes el informe completo. Devuelves una revisión estructurada.
+
+ESTUDIO: ${study || "Detectar del informe"}
+${history ? `HISTORIA CLINICA:\n"""\n${history}\n"""` : "Sin historia adicional."}
+
+INFORME A REVISAR:
+"""
+${report}
+"""
+
+TAREAS:
+1) objections (3-7): puntos que un segundo lector cuestionaría (sobrellamado, subllamado, inconsistencia hallazgo↔impresión, lateralidad, escala, certeza excesiva/insuficiente). Cada una con severity alta|media|baja.
+2) sustain (2-6): afirmaciones del informe que SÍ conviene sostener y por qué.
+3) additions (3-8): contenido concreto que FALTA y debe tejerse DENTRO de la redacción del cuerpo del informe (no como apéndice). Para cada uno:
+   - title corto
+   - reason (por qué agregarlo)
+   - suggestedText: prosa clínica lista para fundirse en el párrafo correcto (tono del radiólogo; NUNCA "se sugiere agregar" ni meta-comentarios)
+   - placementHint: ancla concreta de ubicación narrativa (p. ej. "párrafo del lóbulo tiroideo derecho", "descripción de carótida interna", "junto a la mención del istmo")
+   - insertTarget: "findings" = cuerpo descriptivo (DEFAULT); "impression" SOLO si es una línea conclusiva de la impresión
+
+REGLA DE ORO PARA additions: el destino NO es "al final de HALLAZGOS". Es el sitio anatómico/semiológico correcto dentro de la prosa existente.
+
+IDIOMA: TODO en ESPAÑOL médico.
+overallStance: 1-2 frases con la postura global del revisor.
+reviewSummary: síntesis breve de la revisión.
+
+JSON OBLIGATORIO:
+{
+  "title": "Segundo lector simulado",
+  "overallStance": "...",
+  "reviewSummary": "...",
+  "objections": [
+    { "id": "obj-1", "severity": "media", "claim": "...", "objection": "...", "evidenceGap": "..." }
+  ],
+  "sustain": [
+    { "id": "sus-1", "statement": "...", "why": "..." }
+  ],
+  "additions": [
+    {
+      "id": "add-1",
+      "title": "Extensión intratorácica",
+      "reason": "No se menciona pese a bocio",
+      "suggestedText": "No se observa extensión intratorácica.",
+      "placementHint": "Tras la descripción del tamaño/contorno tiroideo",
+      "insertTarget": "findings"
+    }
+  ]
+}
+`;
+
+    let rawText = "";
+    let parsed: any = {};
+    try {
+      const response = await ai.models.generateContent({
+        model: modelToUse,
+        contents: [{ text: prompt }],
+        config: { responseMimeType: "application/json" },
+      });
+      rawText = response.text || "";
+      parsed = JSON.parse(rawText || "{}");
+    } catch (e1) {
+      try {
+        const response2 = await ai.models.generateContent({
+          model: modelToUse,
+          contents: [{ text: prompt + "\n\nResponde SOLO JSON válido." }],
+        });
+        rawText = response2.text || "";
+        const extracted = extractJsonObject(rawText);
+        parsed = extracted ? JSON.parse(extracted) : JSON.parse(rawText || "{}");
+      } catch (e2) {
+        console.error("generate-second-reader parse fail:", e2, String(rawText).slice(0, 500));
+        return res.status(500).json({
+          success: false,
+          error: "No se pudo parsear la revisión del segundo lector. Reintenta con otro modelo.",
+        });
+      }
+    }
+
+    const data = normalizeSecondReaderData(parsed);
+    if (!data.objections.length && !data.additions.length && !data.sustain.length) {
+      return res.status(500).json({
+        success: false,
+        error: "La IA no devolvió una revisión utilizable.",
+      });
+    }
+
+    res.json({ success: true, data });
+  } catch (error: any) {
+    console.error("Error en /api/generate-second-reader:", error);
     res.status(500).json({ success: false, error: handleGeminiError(error) });
   }
 });
