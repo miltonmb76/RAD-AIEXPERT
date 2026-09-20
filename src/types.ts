@@ -1149,3 +1149,35 @@ export interface SecondReaderData {
   generatedAt?: string;
 }
 
+/** Clinical polish / enrichment orchestrator (auto-apply safe gaps into the report). */
+export type ReportEnrichmentSource = "negativity_checklist" | "second_reader";
+export type ReportEnrichmentChangeStatus = "applied" | "pending" | "rejected" | "skipped";
+export type ReportEnrichmentRunStatus = "idle" | "running" | "done" | "error";
+
+export interface ReportEnrichmentChange {
+  id: string;
+  source: ReportEnrichmentSource;
+  sourceItemId: string;
+  title: string;
+  reason: string;
+  suggestedText: string;
+  insertTarget: "findings" | "impression";
+  placementHint?: string;
+  status: ReportEnrichmentChangeStatus;
+  /** True when the orchestrator considered this safe for automatic weave. */
+  autoSafe: boolean;
+  /** High-severity second-reader objections are review-only (no prose weave). */
+  reviewOnly?: boolean;
+}
+
+export interface ReportEnrichmentSession {
+  id: string;
+  status: ReportEnrichmentRunStatus;
+  beforeReport: string;
+  afterReport: string;
+  changes: ReportEnrichmentChange[];
+  error?: string;
+  startedAt: string;
+  finishedAt?: string;
+}
+

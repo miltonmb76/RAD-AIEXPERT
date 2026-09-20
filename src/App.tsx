@@ -14,6 +14,7 @@ const ClinicalScorecardModule = React.lazy(() => import("./components/ClinicalSc
 const ReasoningChainModule = React.lazy(() => import("./components/ReasoningChainModule").then(m => ({ default: m.ReasoningChainModule })));
 const NegativityChecklistModule = React.lazy(() => import("./components/NegativityChecklistModule").then(m => ({ default: m.NegativityChecklistModule })));
 const SecondReaderModule = React.lazy(() => import("./components/SecondReaderModule").then(m => ({ default: m.SecondReaderModule })));
+const ReportEnrichmentPanel = React.lazy(() => import("./components/ReportEnrichmentPanel").then(m => ({ default: m.ReportEnrichmentPanel })));
 const DifferentialTreeModule = React.lazy(() => import("./components/DifferentialTreeModule").then(m => ({ default: m.DifferentialTreeModule })));
 const MeasurementsGaugeModule = React.lazy(() => import("./components/MeasurementsGaugeModule").then(m => ({ default: m.MeasurementsGaugeModule })));
 const CreadorCuadroSinoptico = React.lazy(() => import("./components/CreadorCuadroSinoptico").then(m => ({ default: m.CreadorCuadroSinoptico })));
@@ -26,8 +27,13 @@ import { renderReasoningChainAnnexToPDF } from "./utils/reasoningChainPdfRendere
 import { renderNegativityChecklistAnnexToPDF } from "./utils/negativityChecklistPdfRenderer";
 import { renderDifferentialTreeAnnexToPDF } from "./utils/differentialTreePdfRenderer";
 import { renderMeasurementsGaugeAnnexToPDF } from "./utils/measurementsGaugePdfRenderer";
-import { Atlas3DData, Vascular3DData, FocalLesion3DData, Thyroid3DData, Breast3DData, Shoulder3DData, Knee3DData, Ankle3DData, Kidney3DData, Abdomen3DData, AbdominalWall3DData, Scrotum3DData, MuscleTendon3DData, Wrist3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData, NegativityChecklistData, SecondReaderData } from "./types";
+import { Atlas3DData, Vascular3DData, FocalLesion3DData, Thyroid3DData, Breast3DData, Shoulder3DData, Knee3DData, Ankle3DData, Kidney3DData, Abdomen3DData, AbdominalWall3DData, Scrotum3DData, MuscleTendon3DData, Wrist3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData, NegativityChecklistData, SecondReaderData, ReportEnrichmentSession } from "./types";
 import { buildAtlasDirectivesFromScorecard, buildAtlasPanelFindingAssignments, buildVascularDirectivesFromScorecard, buildThyroidDirectivesFromScorecard, buildBreastDirectivesFromScorecard, buildShoulderDirectivesFromScorecard, buildKneeDirectivesFromScorecard, buildAnkleDirectivesFromScorecard, buildKidneyDirectivesFromScorecard, buildAbdomenDirectivesFromScorecard, buildAbdominalWallDirectivesFromScorecard, buildScrotumDirectivesFromScorecard, buildMuscleTendonDirectivesFromScorecard, buildWristDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
+import {
+  applyPendingEnrichmentChanges,
+  createRunningEnrichmentSession,
+  runReportEnrichmentPipeline,
+} from "./lib/reportEnrichment";
 import { Vascular3DModule } from "./components/Vascular3DModule";
 import { FocalLesion3DModule } from "./components/FocalLesion3DModule";
 import { Thyroid3DModule } from "./components/Thyroid3DModule";
@@ -2897,6 +2903,9 @@ export default function App() {
   const [isNegativityChecklistOpen, setIsNegativityChecklistOpen] = useState<boolean>(false);
   const [secondReaderData, setSecondReaderData] = useState<SecondReaderData | null>(null);
   const [isSecondReaderOpen, setIsSecondReaderOpen] = useState<boolean>(false);
+  const [reportEnrichmentSession, setReportEnrichmentSession] = useState<ReportEnrichmentSession | null>(null);
+  const [isEnrichingReport, setIsEnrichingReport] = useState<boolean>(false);
+  const [applyingEnrichmentIds, setApplyingEnrichmentIds] = useState<string[]>([]);
   const [differentialTreeData, setDifferentialTreeData] = useState<DifferentialTreeData | null>(null);
   const [includeDifferentialTreeInReport, setIncludeDifferentialTreeInReport] = useState<boolean>(true);
   const [isDifferentialTreeOpen, setIsDifferentialTreeOpen] = useState<boolean>(false);
@@ -3699,7 +3708,154 @@ Ejemplo:
   const [isActivatingBatch, setIsActivatingBatch] = useState<boolean>(false);
   const [batchSuccessMessage, setBatchSuccessMessage] = useState<string | null>(null);
   const [autoActivateSpecificSuite, setAutoActivateSpecificSuite] = useState<boolean>(true);
+  const [autoClinicalPolish, setAutoClinicalPolish] = useState<boolean>(true);
   const selectedSpecificSuite = getSpecificSuiteShortcut(specificStudy, modality);
+
+  const applyEnrichedReportToEditor = (nextReport: string, previousReport?: string) => {
+    const prev = (previousReport ?? generatedReport ?? "").trim();
+    if (prev && prev !== nextReport) {
+      setReportHistory((h) => [...h, prev]);
+      setReportRedoHistory([]);
+    }
+    setGeneratedReport(nextReport);
+    setEditedReportText(nextReport);
+  };
+
+  const runClinicalPolishForReport = async (reportText: string) => {
+    const draft = String(reportText || "").trim();
+    if (!draft || !autoClinicalPolish) return;
+
+    setIsEnrichingReport(true);
+    setReportEnrichmentSession(createRunningEnrichmentSession(draft));
+    setIsNegativityChecklistOpen(true);
+    setIsSecondReaderOpen(true);
+
+    try {
+      const result = await runReportEnrichmentPipeline({
+        report: draft,
+        studyType: specificStudy || studyType || "",
+        clinicalHistory: clinicalHistory || "",
+        checklistModel: modelFor("negativity_checklist"),
+        readerModel: modelFor("second_reader"),
+        modifyModel: modelFor("report_modify"),
+      });
+
+      if (result.checklist) {
+        setNegativityChecklistData(result.checklist);
+        setIncludeNegativityChecklistInReport(true);
+      }
+      if (result.reader) {
+        setSecondReaderData(result.reader);
+      }
+
+      setReportEnrichmentSession(result.session);
+
+      if (
+        result.session.status === "done" &&
+        result.report.trim() &&
+        result.report.trim() !== draft
+      ) {
+        applyEnrichedReportToEditor(result.report, draft);
+      }
+    } catch (err: any) {
+      console.error("Pulido clÌnico fallÛ:", err);
+      setReportEnrichmentSession((prev) =>
+        prev
+          ? {
+              ...prev,
+              status: "error",
+              error: err?.message || String(err),
+              finishedAt: new Date().toISOString(),
+            }
+          : null
+      );
+    } finally {
+      setIsEnrichingReport(false);
+    }
+  };
+
+  const handleUndoClinicalPolish = () => {
+    if (!reportEnrichmentSession?.beforeReport) return;
+    const before = reportEnrichmentSession.beforeReport;
+    applyEnrichedReportToEditor(before, generatedReport || undefined);
+    setReportEnrichmentSession({
+      ...reportEnrichmentSession,
+      afterReport: before,
+      changes: reportEnrichmentSession.changes.map((c) =>
+        c.status === "applied"
+          ? { ...c, status: "pending" as const, autoSafe: false }
+          : c
+      ),
+    });
+  };
+
+  const handleRejectEnrichmentChange = (changeId: string) => {
+    setReportEnrichmentSession((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        changes: prev.changes.map((c) =>
+          c.id === changeId ? { ...c, status: "rejected" as const } : c
+        ),
+      };
+    });
+  };
+
+  const handleApplyEnrichmentChange = async (changeId: string) => {
+    if (!reportEnrichmentSession || !generatedReport) return;
+    setApplyingEnrichmentIds([changeId]);
+    try {
+      const result = await applyPendingEnrichmentChanges({
+        report: generatedReport,
+        modifyModel: modelFor("report_modify"),
+        session: reportEnrichmentSession,
+        changeIds: [changeId],
+        checklist: negativityChecklistData,
+        reader: secondReaderData,
+      });
+      if (result.checklist) setNegativityChecklistData(result.checklist);
+      if (result.reader) setSecondReaderData(result.reader);
+      setReportEnrichmentSession(result.session);
+      if (result.report.trim() && result.report !== generatedReport) {
+        applyEnrichedReportToEditor(result.report);
+      }
+    } catch (err: any) {
+      console.error("Error aplicando cambio de pulido:", err);
+      setModifyError(err?.message || String(err));
+    } finally {
+      setApplyingEnrichmentIds([]);
+    }
+  };
+
+  const handleApplyRemainingEnrichment = async () => {
+    if (!reportEnrichmentSession || !generatedReport) return;
+    const ids = reportEnrichmentSession.changes
+      .filter((c) => c.status === "pending" && !c.reviewOnly && c.suggestedText.trim())
+      .map((c) => c.id);
+    if (!ids.length) return;
+    setApplyingEnrichmentIds(ids);
+    try {
+      const result = await applyPendingEnrichmentChanges({
+        report: generatedReport,
+        modifyModel: modelFor("report_modify"),
+        session: reportEnrichmentSession,
+        changeIds: ids,
+        checklist: negativityChecklistData,
+        reader: secondReaderData,
+      });
+      if (result.checklist) setNegativityChecklistData(result.checklist);
+      if (result.reader) setSecondReaderData(result.reader);
+      setReportEnrichmentSession(result.session);
+      if (result.report.trim() && result.report !== generatedReport) {
+        applyEnrichedReportToEditor(result.report);
+      }
+    } catch (err: any) {
+      console.error("Error aplicando cambios restantes de pulido:", err);
+      setModifyError(err?.message || String(err));
+    } finally {
+      setApplyingEnrichmentIds([]);
+    }
+  };
 
   const handleToggleAllBatchModules = (select: boolean) => {
     setSelectedBatchModules({
@@ -4958,6 +5114,7 @@ Ejemplo:
         }
         setGeneratedReport(data.report);
         setOriginalBaseReport(data.report);
+        setReportEnrichmentSession(null);
 
         if (attachedImages.length > 0) {
           void autoLabelImagesAfterReport(String(data.report || ""));
@@ -4978,6 +5135,9 @@ Ejemplo:
           const reportText = String(data.report || "").trim();
           setSelectedBatchModules(batchSelection);
           void handleActivateBatchModules(reportText, batchSelection);
+          if (autoClinicalPolish) {
+            void runClinicalPolishForReport(reportText);
+          }
         } else {
           setSelectedBatchModules({ ...DEFAULT_BATCH_MODULES });
         }
@@ -18961,8 +19121,25 @@ const splitReportAndAnnex = (text: string) => {
                         </p>
                         <p className="mt-0.5 text-[9px] leading-relaxed text-slate-500">
                           {selectedSpecificSuite
-                            ? `${selectedSpecificSuite.label} se generar· autom·ticamente porque seleccionaste ?${specificStudy}?.`
+                            ? `${selectedSpecificSuite.label} se generar· autom·ticamente porque seleccionaste ´${specificStudy}ª.`
                             : "El estudio seleccionado no tiene una suite 3D especÌfica; podr·s elegir Atlas u otros mÛdulos despuÈs."}
+                        </p>
+                      </div>
+                    </label>
+
+                    <label className="flex items-center gap-3 rounded-xl border border-cyan-500/25 bg-cyan-950/20 px-4 py-3 cursor-pointer transition-colors hover:border-cyan-500/40">
+                      <input
+                        type="checkbox"
+                        checked={autoClinicalPolish}
+                        onChange={(e) => setAutoClinicalPolish(e.target.checked)}
+                        className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-cyan-500 focus:ring-cyan-500"
+                      />
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-black uppercase tracking-wider text-slate-200">
+                          Pulido clÌnico autom·tico con Reporte completo
+                        </p>
+                        <p className="mt-0.5 text-[9px] leading-relaxed text-slate-500">
+                          Cierra negatividades pendientes y aplica sugerencias seguras del segundo lector; t˙ revisas un diff corto.
                         </p>
                       </div>
                     </label>
@@ -18997,7 +19174,7 @@ const splitReportAndAnnex = (text: string) => {
                         onClick={() => handleGenerateReport("full")}
                         disabled={isGenerating || !studyType.trim()}
                         className="w-full bg-indigo-600 hover:bg-indigo-550 text-white font-black py-4 px-5 rounded-xl text-[11px] uppercase tracking-widest shadow-[0_4px_16px_rgba(99,102,241,0.4)] disabled:opacity-50 disabled:cursor-not-allowed transition-all flex flex-col items-center justify-center gap-1.5 cursor-pointer border border-indigo-400/30"
-                        title="Informe + mÛdulos predeterminados y suite 3D del estudio seleccionado"
+                        title="Informe + mÛdulos predeterminados, suite 3D del estudio y pulido clÌnico autom·tico"
                       >
                         {isGenerating ? (
                           <>
@@ -19009,7 +19186,7 @@ const splitReportAndAnnex = (text: string) => {
                             <Sparkles className="h-4 w-4 text-amber-200" />
                             <span>Reporte completo</span>
                             <span className="text-[8px] font-bold normal-case tracking-normal text-indigo-100/80 text-center leading-snug">
-                              + Scorecard, Res˙menes y suite 3D seleccionada
+                              + Scorecard, suite 3D y pulido clÌnico
                             </span>
                           </>
                         )}
@@ -19535,7 +19712,29 @@ const splitReportAndAnnex = (text: string) => {
                             </div>
                           </div>
 
-                          {/* üõ†Ô∏è ADVANCED MEDICAL REPORT HUD TOOLING BAR */}
+                          {(isEnrichingReport || reportEnrichmentSession) && (
+                            <div className="my-2">
+                              <React.Suspense
+                                fallback={
+                                  <div className="p-4 text-xs font-mono text-cyan-400 bg-slate-900/60 rounded-xl border border-cyan-900/40 animate-pulse">
+                                    Cargando pulido clÌnico...
+                                  </div>
+                                }
+                              >
+                                <ReportEnrichmentPanel
+                                  session={reportEnrichmentSession}
+                                  isRunning={isEnrichingReport}
+                                  onUndoAll={handleUndoClinicalPolish}
+                                  onApplyChange={handleApplyEnrichmentChange}
+                                  onApplyRemaining={handleApplyRemainingEnrichment}
+                                  onRejectChange={handleRejectEnrichmentChange}
+                                  applyingIds={applyingEnrichmentIds}
+                                />
+                              </React.Suspense>
+                            </div>
+                          )}
+
+                          {/* ADVANCED MEDICAL REPORT HUD TOOLING BAR */}
                           {!isEditingReportManual && (
                             <div className="space-y-4 bg-slate-900/95 border-2 border-slate-850 rounded-2xl p-5 shadow-xl select-none">
                               {/* AI Style & Format Modifiers Row */}
