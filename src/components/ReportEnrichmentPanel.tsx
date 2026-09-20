@@ -31,7 +31,9 @@ const ChangeRow: React.FC<{
   const sourceColor =
     change.source === "negativity_checklist"
       ? "border-teal-500/40 text-teal-300 bg-teal-500/10"
-      : "border-indigo-500/40 text-indigo-300 bg-indigo-500/10";
+      : change.source === "classification"
+        ? "border-amber-500/40 text-amber-300 bg-amber-500/10"
+        : "border-indigo-500/40 text-indigo-300 bg-indigo-500/10";
 
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-950/70 px-3.5 py-3 space-y-2">
@@ -69,7 +71,9 @@ const ChangeRow: React.FC<{
             <p className="text-[10px] text-slate-500 leading-relaxed">{change.reason}</p>
           )}
         </div>
-        {change.status === "pending" && !change.reviewOnly && change.suggestedText && (
+        {change.status === "pending" &&
+          !change.reviewOnly &&
+          (change.suggestedText || change.classificationMeta?.name) && (
           <div className="flex items-center gap-1.5 shrink-0">
             <button
               type="button"
@@ -131,7 +135,13 @@ export const ReportEnrichmentPanel: React.FC<ReportEnrichmentPanelProps> = ({
 
   const applied = session?.changes.filter((c) => c.status === "applied") || [];
   const pending = session?.changes.filter((c) => c.status === "pending") || [];
-  const pendingActionable = pending.filter((c) => !c.reviewOnly && c.suggestedText.trim());
+  const pendingActionable = pending.filter(
+    (c) =>
+      !c.reviewOnly &&
+      (c.source === "classification"
+        ? !!c.classificationMeta?.name
+        : !!c.suggestedText.trim())
+  );
   const reportChanged =
     !!session &&
     session.beforeReport.trim() !== session.afterReport.trim() &&
@@ -158,7 +168,7 @@ export const ReportEnrichmentPanel: React.FC<ReportEnrichmentPanelProps> = ({
             </h3>
             <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
               {isRunning || session?.status === "running"
-                ? "Auditando negatividades y segundo lector; integrando cambios seguros…"
+                ? "Auditando negatividades, segundo lector y clasificaciones; integrando cambios seguros…"
                 : session?.status === "error"
                   ? session.error || "Error en el pulido."
                   : applied.length || pending.length

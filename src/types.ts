@@ -1150,9 +1150,19 @@ export interface SecondReaderData {
 }
 
 /** Clinical polish / enrichment orchestrator (auto-apply safe gaps into the report). */
-export type ReportEnrichmentSource = "negativity_checklist" | "second_reader";
+export type ReportEnrichmentSource =
+  | "negativity_checklist"
+  | "second_reader"
+  | "classification";
 export type ReportEnrichmentChangeStatus = "applied" | "pending" | "rejected" | "skipped";
 export type ReportEnrichmentRunStatus = "idle" | "running" | "done" | "error";
+
+export interface ReportEnrichmentClassificationMeta {
+  name: string;
+  whyRecommended: string;
+  contentToAppend: string;
+  alreadyIncorporated?: boolean;
+}
 
 export interface ReportEnrichmentChange {
   id: string;
@@ -1168,6 +1178,8 @@ export interface ReportEnrichmentChange {
   autoSafe: boolean;
   /** High-severity second-reader objections are review-only (no prose weave). */
   reviewOnly?: boolean;
+  /** Payload for /api/incorporate-classification when source is classification. */
+  classificationMeta?: ReportEnrichmentClassificationMeta;
 }
 
 export interface ReportEnrichmentSession {
@@ -1179,5 +1191,13 @@ export interface ReportEnrichmentSession {
   error?: string;
   startedAt: string;
   finishedAt?: string;
+}
+
+/** Raw recommendation row from /api/recommend-classifications. */
+export interface ClassificationRecommendation {
+  name: string;
+  whyRecommended: string;
+  contentToAppend: string;
+  alreadyIncorporated?: boolean;
 }
 

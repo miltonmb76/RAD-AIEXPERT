@@ -1,4 +1,5 @@
 import type {
+  ClassificationRecommendation,
   NegativityChecklistData,
   ReportEnrichmentChange,
   ReportEnrichmentSession,
@@ -11,11 +12,18 @@ import {
 import { normalizeSecondReaderData } from "./secondReader";
 
 export const MAX_AUTO_ENRICHMENT_CHANGES = 6;
+export const MAX_AUTO_CLASSIFICATIONS = 2;
 
 const CONFIDENCE_RANK: Record<string, number> = { alta: 0, media: 1, baja: 2 };
 
 function newId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function previewText(raw: string, max = 220): string {
+  const t = String(raw || "").replace(/\s+/g, " ").trim();
+  if (t.length <= max) return t;
+  return `${t.slice(0, max - 1)}…`;
 }
 
 /** Pick safe auto-weave items + review-only pending notes from checklist + second reader. */
@@ -95,9 +103,58 @@ export function selectEnrichmentChanges(
   return changes;
 }
 
+/** Convert classification recommendations into enrichment changes (auto up to maxAuto). */
+export function selectClassificationChanges(
+  recommendations: ClassificationRecommendation[] | null | undefined,
+  maxAuto: number = MAX_AUTO_CLASSIFICATIONS
+): ReportEnrichmentChange[] {
+  const changes: ReportEnrichmentChange[] = [];
+  const list = Array.isArray(recommendations) ? recommendations : [];
+  let autoCount = 0;
+
+  list.forEach((rec, idx) => {
+    const name = String(rec?.name || "").trim();
+    if (!name) return;
+    const already = !!rec.alreadyIncorporated;
+    const content = String(rec.contentToAppend || "").trim();
+    const why = String(rec.whyRecommended || "").trim();
+    const autoSafe = !already && !!content && autoCount < maxAuto;
+    if (autoSafe) autoCount += 1;
+
+    changes.push({
+      id: newId("enr-cls"),
+      source: "classification",
+      sourceItemId: `cls-${idx + 1}`,
+      title: name,
+      reason: why || (already ? "Ya figura en el informe." : "Escala aplicable al caso."),
+      suggestedText: already
+        ? "Ya incorporada en el informe."
+        : previewText(content || why || name),
+      insertTarget: "impression",
+      placementHint: "Impresión diagnóstica / clasificación aplicada",
+      status: already ? "skipped" : autoSafe ? "applied" : "pending",
+      autoSafe,
+      reviewOnly: false,
+      classificationMeta: {
+        name,
+        whyRecommended: why,
+        contentToAppend: content,
+        alreadyIncorporated: already,
+      },
+    });
+  });
+
+  return changes;
+}
+
 export function buildEnrichmentMergeInstruction(changes: ReportEnrichmentChange[]): string {
   const blocks = changes
-    .filter((c) => c.autoSafe && c.suggestedText.trim())
+    .filter(
+      (c) =>
+        c.autoSafe &&
+        c.suggestedText.trim() &&
+        c.source !== "classification"
+    )
     .map((c, idx) => {
       const origen =
         c.source === "negativity_checklist" ? "Checklist de negatividad" : "Segundo lector";
@@ -177,7 +234,14 @@ export function markSourcesAfterAutoEnrichment(
 }
 
 export function enrichmentSourceLabel(source: ReportEnrichmentChange["source"]): string {
-  return source === "negativity_checklist" ? "Checklist" : "Segundo lector";
+  switch (source) {
+    case "negativity_checklist":
+      return "Checklist";
+    case "classification":
+      return "Clasificación";
+    default:
+      return "Segundo lector";
+  }
 }
 
 export function createRunningEnrichmentSession(beforeReport: string): ReportEnrichmentSession {
@@ -196,10 +260,39 @@ export interface EnrichmentPipelineResult {
   checklist: NegativityChecklistData | null;
   reader: SecondReaderData | null;
   report: string;
+  classifications?: ClassificationRecommendation[];
+}
+
+async function incorporateOneClassification(opts: {
+  report: string;
+  model: string;
+  studyType?: string;
+  includeManagement?: boolean;
+  change: ReportEnrichmentChange;
+}): Promise<string | null> {
+  const meta = opts.change.classificationMeta;
+  if (!meta?.name) return null;
+  const resp = await fetch("/api/incorporate-classification", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: opts.model,
+      report: opts.report,
+      classificationName: meta.name,
+      whyRecommended: meta.whyRecommended,
+      contentToAppend: meta.contentToAppend,
+      studyType: opts.studyType || "",
+      includeManagementRecommendation: !!opts.includeManagement,
+    }),
+  });
+  const json = await resp.json().catch(() => ({}));
+  if (!json?.success || !json.modifiedReport) return null;
+  return String(json.modifiedReport).trim() || null;
 }
 
 /**
- * Generate checklist + second reader in parallel, auto-weave safe gaps in one modify-report call.
+ * Generate checklist + second reader + classification recommendations in parallel.
+ * Weave safe gaps, then incorporate up to MAX_AUTO_CLASSIFICATIONS scales into impression.
  */
 export async function runReportEnrichmentPipeline(opts: {
   report: string;
@@ -208,6 +301,8 @@ export async function runReportEnrichmentPipeline(opts: {
   checklistModel: string;
   readerModel: string;
   modifyModel: string;
+  classificationsModel?: string;
+  includeManagementRecommendations?: boolean;
 }): Promise<EnrichmentPipelineResult> {
   const beforeReport = String(opts.report || "").trim();
   const baseSession = createRunningEnrichmentSession(beforeReport);
@@ -223,14 +318,17 @@ export async function runReportEnrichmentPipeline(opts: {
       checklist: null,
       reader: null,
       report: beforeReport,
+      classifications: [],
     };
   }
 
   let checklist: NegativityChecklistData | null = null;
   let reader: SecondReaderData | null = null;
+  let classifications: ClassificationRecommendation[] = [];
 
   try {
-    const [negResp, srResp] = await Promise.all([
+    const classModel = opts.classificationsModel || opts.modifyModel;
+    const [negResp, srResp, classResp] = await Promise.all([
       fetch("/api/generate-negativity-checklist", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -251,10 +349,19 @@ export async function runReportEnrichmentPipeline(opts: {
           clinicalHistory: opts.clinicalHistory || "",
         }),
       }),
+      fetch("/api/recommend-classifications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: classModel,
+          report: beforeReport,
+        }),
+      }),
     ]);
 
     const negJson = await negResp.json().catch(() => ({}));
     const srJson = await srResp.json().catch(() => ({}));
+    const classJson = await classResp.json().catch(() => ({}));
 
     if (negJson?.success && negJson.data) {
       checklist = normalizeNegativityChecklistData(negJson.data);
@@ -262,10 +369,21 @@ export async function runReportEnrichmentPipeline(opts: {
     if (srJson?.success && srJson.data) {
       reader = normalizeSecondReaderData(srJson.data);
     }
+    if (classJson?.success && Array.isArray(classJson.recommendations)) {
+      classifications = classJson.recommendations.map((r: any) => ({
+        name: String(r?.name || "").trim(),
+        whyRecommended: String(r?.whyRecommended || "").trim(),
+        contentToAppend: String(r?.contentToAppend || "").trim(),
+        alreadyIncorporated: !!r?.alreadyIncorporated,
+      }));
+    }
 
-    if (!checklist && !reader) {
+    if (!checklist && !reader && !classifications.length) {
       const detail =
-        negJson?.error || srJson?.error || "No se pudo generar checklist ni segundo lector.";
+        negJson?.error ||
+        srJson?.error ||
+        classJson?.error ||
+        "No se pudo generar checklist, segundo lector ni clasificaciones.";
       return {
         session: {
           ...baseSession,
@@ -276,57 +394,75 @@ export async function runReportEnrichmentPipeline(opts: {
         checklist: null,
         reader: null,
         report: beforeReport,
+        classifications: [],
       };
     }
 
-    const changes = selectEnrichmentChanges(checklist, reader);
-    const toApply = changes.filter((c) => c.autoSafe && c.suggestedText.trim());
+    const proseChanges = selectEnrichmentChanges(checklist, reader);
+    const classChanges = selectClassificationChanges(classifications);
+    let changes = [...proseChanges, ...classChanges];
+    let workingReport = beforeReport;
 
-    if (!toApply.length) {
-      return {
-        session: {
-          ...baseSession,
-          status: "done",
-          changes,
-          afterReport: beforeReport,
-          finishedAt: new Date().toISOString(),
-        },
-        checklist,
-        reader,
-        report: beforeReport,
-      };
+    // Pass A: weave checklist + second-reader prose
+    const proseToApply = proseChanges.filter((c) => c.autoSafe && c.suggestedText.trim());
+    if (proseToApply.length) {
+      const instruction = buildEnrichmentMergeInstruction(proseToApply);
+      const modResp = await fetch("/api/modify-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: opts.modifyModel,
+          currentReport: workingReport,
+          instruction,
+        }),
+      });
+      const modJson = await modResp.json().catch(() => ({}));
+      if (modJson?.success && modJson.report) {
+        workingReport = String(modJson.report).trim() || workingReport;
+      } else {
+        // Downgrade failed auto prose items to pending
+        changes = changes.map((c) =>
+          c.source !== "classification" && c.autoSafe
+            ? { ...c, status: "pending" as const, autoSafe: false }
+            : c
+        );
+      }
     }
 
-    const instruction = buildEnrichmentMergeInstruction(toApply);
-    const modResp = await fetch("/api/modify-report", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: opts.modifyModel,
-        currentReport: beforeReport,
-        instruction,
-      }),
+    // Pass B: incorporate auto-safe classifications into impression/follow-up
+    for (const change of changes) {
+      if (change.source !== "classification" || !change.autoSafe || change.status !== "applied") {
+        continue;
+      }
+      const next = await incorporateOneClassification({
+        report: workingReport,
+        model: classModel,
+        studyType: opts.studyType,
+        includeManagement: opts.includeManagementRecommendations !== false,
+        change,
+      });
+      if (next) {
+        workingReport = next;
+        if (change.classificationMeta) {
+          change.classificationMeta.alreadyIncorporated = true;
+        }
+      } else {
+        change.status = "pending";
+        change.autoSafe = false;
+      }
+    }
+
+    // Sync recommendations list with applied state
+    classifications = classifications.map((rec) => {
+      const hit = changes.find(
+        (c) =>
+          c.source === "classification" &&
+          c.classificationMeta?.name === rec.name &&
+          c.status === "applied"
+      );
+      return hit ? { ...rec, alreadyIncorporated: true } : rec;
     });
-    const modJson = await modResp.json().catch(() => ({}));
 
-    if (!modJson?.success || !modJson.report) {
-      return {
-        session: {
-          ...baseSession,
-          status: "error",
-          changes: changes.map((c) =>
-            c.autoSafe ? { ...c, status: "pending" as const, autoSafe: false } : c
-          ),
-          error: modJson?.error || "No se pudo integrar el pulido en el informe.",
-          finishedAt: new Date().toISOString(),
-        },
-        checklist,
-        reader,
-        report: beforeReport,
-      };
-    }
-
-    const afterReport = String(modJson.report).trim() || beforeReport;
     const marked = markSourcesAfterAutoEnrichment(checklist, reader, changes);
 
     return {
@@ -334,12 +470,13 @@ export async function runReportEnrichmentPipeline(opts: {
         ...baseSession,
         status: "done",
         changes,
-        afterReport,
+        afterReport: workingReport,
         finishedAt: new Date().toISOString(),
       },
       checklist: marked.checklist,
       reader: marked.reader,
-      report: afterReport,
+      report: workingReport,
+      classifications,
     };
   } catch (e: any) {
     return {
@@ -352,14 +489,18 @@ export async function runReportEnrichmentPipeline(opts: {
       checklist,
       reader,
       report: beforeReport,
+      classifications,
     };
   }
 }
 
-/** Apply a single pending change (or several) onto the current report via modify-report. */
+/** Apply pending prose and/or classification changes onto the current report. */
 export async function applyPendingEnrichmentChanges(opts: {
   report: string;
   modifyModel: string;
+  classificationsModel?: string;
+  studyType?: string;
+  includeManagementRecommendations?: boolean;
   session: ReportEnrichmentSession;
   changeIds: string[];
   checklist: NegativityChecklistData | null;
@@ -370,7 +511,9 @@ export async function applyPendingEnrichmentChanges(opts: {
       opts.changeIds.includes(c.id) &&
       c.status === "pending" &&
       !c.reviewOnly &&
-      c.suggestedText.trim()
+      (c.source === "classification"
+        ? !!c.classificationMeta?.name
+        : !!c.suggestedText.trim())
   );
 
   if (!selected.length) {
@@ -382,38 +525,78 @@ export async function applyPendingEnrichmentChanges(opts: {
     };
   }
 
-  const toApply = selected.map((c) => ({ ...c, autoSafe: true, status: "applied" as const }));
-  const instruction = buildEnrichmentMergeInstruction(toApply);
-  const modResp = await fetch("/api/modify-report", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: opts.modifyModel,
-      currentReport: opts.report,
-      instruction,
-    }),
-  });
-  const modJson = await modResp.json().catch(() => ({}));
-  if (!modJson?.success || !modJson.report) {
-    throw new Error(modJson?.error || "No se pudieron aplicar los cambios pendientes.");
+  let workingReport = opts.report;
+  let nextChanges = [...opts.session.changes];
+  const classModel = opts.classificationsModel || opts.modifyModel;
+
+  const proseSelected = selected.filter((c) => c.source !== "classification");
+  if (proseSelected.length) {
+    const toApply = proseSelected.map((c) => ({
+      ...c,
+      autoSafe: true,
+      status: "applied" as const,
+    }));
+    const instruction = buildEnrichmentMergeInstruction(toApply);
+    const modResp = await fetch("/api/modify-report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: opts.modifyModel,
+        currentReport: workingReport,
+        instruction,
+      }),
+    });
+    const modJson = await modResp.json().catch(() => ({}));
+    if (!modJson?.success || !modJson.report) {
+      throw new Error(modJson?.error || "No se pudieron aplicar los cambios de prosa pendientes.");
+    }
+    workingReport = String(modJson.report).trim() || workingReport;
+    nextChanges = nextChanges.map((c) => {
+      const hit = toApply.find((t) => t.id === c.id);
+      return hit ? { ...c, autoSafe: true, status: "applied" as const } : c;
+    });
   }
 
-  const afterReport = String(modJson.report).trim() || opts.report;
-  const nextChanges = opts.session.changes.map((c) => {
-    const hit = toApply.find((t) => t.id === c.id);
-    return hit ? { ...c, autoSafe: true, status: "applied" as const } : c;
-  });
+  const classSelected = selected.filter((c) => c.source === "classification");
+  for (const change of classSelected) {
+    const next = await incorporateOneClassification({
+      report: workingReport,
+      model: classModel,
+      studyType: opts.studyType,
+      includeManagement: opts.includeManagementRecommendations !== false,
+      change,
+    });
+    if (!next) {
+      throw new Error(
+        `No se pudo incorporar la clasificación «${change.classificationMeta?.name || change.title}».`
+      );
+    }
+    workingReport = next;
+    nextChanges = nextChanges.map((c) =>
+      c.id === change.id
+        ? {
+            ...c,
+            autoSafe: true,
+            status: "applied" as const,
+            classificationMeta: c.classificationMeta
+              ? { ...c.classificationMeta, alreadyIncorporated: true }
+              : c.classificationMeta,
+          }
+        : c
+    );
+  }
+
   const marked = markSourcesAfterAutoEnrichment(opts.checklist, opts.reader, nextChanges);
 
   return {
     session: {
       ...opts.session,
       changes: nextChanges,
-      afterReport,
+      afterReport: workingReport,
       status: "done",
     },
     checklist: marked.checklist,
     reader: marked.reader,
-    report: afterReport,
+    report: workingReport,
   };
 }

@@ -3738,6 +3738,8 @@ Ejemplo:
         checklistModel: modelFor("negativity_checklist"),
         readerModel: modelFor("second_reader"),
         modifyModel: modelFor("report_modify"),
+        classificationsModel: modelFor("classifications"),
+        includeManagementRecommendations: true,
       });
 
       if (result.checklist) {
@@ -3746,6 +3748,14 @@ Ejemplo:
       }
       if (result.reader) {
         setSecondReaderData(result.reader);
+      }
+      if (result.classifications && result.classifications.length > 0) {
+        setClassRecommendations(result.classifications);
+        const incorporated: Record<number, boolean> = {};
+        result.classifications.forEach((rec, idx) => {
+          if (rec.alreadyIncorporated) incorporated[idx] = true;
+        });
+        setIncorporatedRecs(incorporated);
       }
 
       setReportEnrichmentSession(result.session);
@@ -3808,6 +3818,9 @@ Ejemplo:
       const result = await applyPendingEnrichmentChanges({
         report: generatedReport,
         modifyModel: modelFor("report_modify"),
+        classificationsModel: modelFor("classifications"),
+        studyType: specificStudy || studyType || "",
+        includeManagementRecommendations: true,
         session: reportEnrichmentSession,
         changeIds: [changeId],
         checklist: negativityChecklistData,
@@ -3819,6 +3832,19 @@ Ejemplo:
       if (result.report.trim() && result.report !== generatedReport) {
         applyEnrichedReportToEditor(result.report);
       }
+      // Keep classRecommendations board in sync when a classification was applied
+      setClassRecommendations((prev) => {
+        if (!prev) return prev;
+        return prev.map((rec) => {
+          const hit = result.session.changes.find(
+            (c) =>
+              c.source === "classification" &&
+              c.status === "applied" &&
+              c.classificationMeta?.name === rec.name
+          );
+          return hit ? { ...rec, alreadyIncorporated: true } : rec;
+        });
+      });
     } catch (err: any) {
       console.error("Error aplicando cambio de pulido:", err);
       setModifyError(err?.message || String(err));
@@ -3830,7 +3856,14 @@ Ejemplo:
   const handleApplyRemainingEnrichment = async () => {
     if (!reportEnrichmentSession || !generatedReport) return;
     const ids = reportEnrichmentSession.changes
-      .filter((c) => c.status === "pending" && !c.reviewOnly && c.suggestedText.trim())
+      .filter(
+        (c) =>
+          c.status === "pending" &&
+          !c.reviewOnly &&
+          (c.source === "classification"
+            ? !!c.classificationMeta?.name
+            : !!c.suggestedText.trim())
+      )
       .map((c) => c.id);
     if (!ids.length) return;
     setApplyingEnrichmentIds(ids);
@@ -3838,6 +3871,9 @@ Ejemplo:
       const result = await applyPendingEnrichmentChanges({
         report: generatedReport,
         modifyModel: modelFor("report_modify"),
+        classificationsModel: modelFor("classifications"),
+        studyType: specificStudy || studyType || "",
+        includeManagementRecommendations: true,
         session: reportEnrichmentSession,
         changeIds: ids,
         checklist: negativityChecklistData,
@@ -3849,6 +3885,18 @@ Ejemplo:
       if (result.report.trim() && result.report !== generatedReport) {
         applyEnrichedReportToEditor(result.report);
       }
+      setClassRecommendations((prev) => {
+        if (!prev) return prev;
+        return prev.map((rec) => {
+          const hit = result.session.changes.find(
+            (c) =>
+              c.source === "classification" &&
+              c.status === "applied" &&
+              c.classificationMeta?.name === rec.name
+          );
+          return hit ? { ...rec, alreadyIncorporated: true } : rec;
+        });
+      });
     } catch (err: any) {
       console.error("Error aplicando cambios restantes de pulido:", err);
       setModifyError(err?.message || String(err));
@@ -19139,7 +19187,7 @@ const splitReportAndAnnex = (text: string) => {
                           Pulido clínico automático con Reporte completo
                         </p>
                         <p className="mt-0.5 text-[9px] leading-relaxed text-slate-500">
-                          Cierra negatividades pendientes y aplica sugerencias seguras del segundo lector; tú revisas un diff corto.
+                          Cierra negatividades, aplica sugerencias seguras del segundo lector e incorpora clasificaciones (BI-RADS, TI-RADS, Fleischner?); tú revisas un diff corto.
                         </p>
                       </div>
                     </label>
