@@ -33,7 +33,9 @@ const ChangeRow: React.FC<{
       ? "border-teal-500/40 text-teal-300 bg-teal-500/10"
       : change.source === "classification"
         ? "border-amber-500/40 text-amber-300 bg-amber-500/10"
-        : "border-indigo-500/40 text-indigo-300 bg-indigo-500/10";
+        : change.source === "scorecard"
+          ? "border-emerald-500/40 text-emerald-300 bg-emerald-500/10"
+          : "border-indigo-500/40 text-indigo-300 bg-indigo-500/10";
 
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-950/70 px-3.5 py-3 space-y-2">
@@ -168,7 +170,7 @@ export const ReportEnrichmentPanel: React.FC<ReportEnrichmentPanelProps> = ({
             </h3>
             <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
               {isRunning || session?.status === "running"
-                ? "Auditando negatividades, segundo lector y clasificaciones; integrando cambios seguros…"
+                ? "Auditando scorecard, negatividades, segundo lector y clasificaciones; integrando cambios seguros…"
                 : session?.status === "error"
                   ? session.error || "Error en el pulido."
                   : applied.length || pending.length

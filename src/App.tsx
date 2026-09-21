@@ -174,10 +174,10 @@ try {
       try {
         originalSetItem.call(window.localStorage, key, value);
       } catch (error: any) {
-        console.warn(`[SafeLocalStorage] Cuota de localStorage excedida para '${key}'. Se usará almacenamiento persistente IndexedDB.`);
+        console.warn(`[SafeLocalStorage] Cuota de localStorage excedida para '${key}'. Se usarÃ¡ almacenamiento persistente IndexedDB.`);
         if (key === "rad_local_studies") {
           try {
-            // Guardar versión ligera sin PDF base64 pesado para fallback en localStorage
+            // Guardar versiÃ³n ligera sin PDF base64 pesado para fallback en localStorage
             const parsed = JSON.parse(value);
             if (Array.isArray(parsed)) {
               const light = parsed.map((s: any) => ({ ...s, pdfBase64: "", attachedImages: [] }));
@@ -208,68 +208,68 @@ export const DIAGNOSTIC_GLOSSARY = [
   {
     acronym: "BI-RADS",
     name: "Breast Imaging-Reporting and Data System",
-    category: "Mamografía",
-    desc: "Escala estandarizada oficial para mamografía, ultrasonido y resonancia de mamas. Categorías del 0 (estudio incompleto) al 6 (malignidad comprobada por biopsia). El BI-RADS 4 indica sospecha de lesión y amerita biopsia histológica."
+    category: "MamografÃ­a",
+    desc: "Escala estandarizada oficial para mamografÃ­a, ultrasonido y resonancia de mamas. CategorÃ­as del 0 (estudio incompleto) al 6 (malignidad comprobada por biopsia). El BI-RADS 4 indica sospecha de lesiÃ³n y amerita biopsia histolÃ³gica."
   },
   {
     acronym: "ACR",
     name: "American College of Radiology",
     category: "General",
-    desc: "Asociación médica norteamericana responsable de estandarizar la nomenclatura radiológica, guías de práctica clínica y control de calidad de dosis de radiación ionizante."
+    desc: "AsociaciÃ³n mÃ©dica norteamericana responsable de estandarizar la nomenclatura radiolÃ³gica, guÃ­as de prÃ¡ctica clÃ­nica y control de calidad de dosis de radiaciÃ³n ionizante."
   },
   {
     acronym: "U. Hounsfield (HU)",
     name: "Unidades Hounsfield",
-    category: "Tomografía",
-    desc: "Escala lineal que cuantifica cuantitativamente la atenuación física de los rayos X en tejidos. Referencias clave: Aire (-1000 HU), Grasa (-120 a -80 HU), Agua pura (0 HU), Sangre coagulada (+60 a +80 HU), e Hueso cortical (+1000 HU)."
+    category: "TomografÃ­a",
+    desc: "Escala lineal que cuantifica cuantitativamente la atenuaciÃ³n fÃ­sica de los rayos X en tejidos. Referencias clave: Aire (-1000 HU), Grasa (-120 a -80 HU), Agua pura (0 HU), Sangre coagulada (+60 a +80 HU), e Hueso cortical (+1000 HU)."
   },
   {
     acronym: "FLAIR",
     name: "Fluid-Attenuated Inversion Recovery",
     category: "Resonancia",
-    desc: "Atenuación de Fluido por Recuperación de Inversión. Secuencia de resonancia magnética ponderada en T2 donde se cancela la señal libre del líquido cefalorraquídeo. Es de vital importancia para visualizar la esclerosis múltiple, infartos cerebrales tempranos y otras patologías con edema perilesional."
+    desc: "AtenuaciÃ³n de Fluido por RecuperaciÃ³n de InversiÃ³n. Secuencia de resonancia magnÃ©tica ponderada en T2 donde se cancela la seÃ±al libre del lÃ­quido cefalorraquÃ­deo. Es de vital importancia para visualizar la esclerosis mÃºltiple, infartos cerebrales tempranos y otras patologÃ­as con edema perilesional."
   },
   {
     acronym: "CIE-10 (CIE10)",
-    name: "Clasificación Internacional de Enfermedades",
+    name: "ClasificaciÃ³n Internacional de Enfermedades",
     category: "General",
-    desc: "Código de clasificación diagnóstica administrado por la Organización Mundial de la Salud (OMS). Facilita el cruce internacional de morbimortalidad y estandariza la facturación médica (ej. M54.5 para lumbalgia)."
+    desc: "CÃ³digo de clasificaciÃ³n diagnÃ³stica administrado por la OrganizaciÃ³n Mundial de la Salud (OMS). Facilita el cruce internacional de morbimortalidad y estandariza la facturaciÃ³n mÃ©dica (ej. M54.5 para lumbalgia)."
   },
   {
     acronym: "TI-RADS",
     name: "Thyroid Imaging-Reporting and Data System",
     category: "Ultrasonido",
-    desc: "Escala ecográfica para evaluar el riesgo de malignidad en nódulos tiroideos. Basado en composición, ecogenicidad, forma, márgenes y focos ecogénicos. Facilita decidir de forma objetiva la indicación de biopsia por aspiración con aguja fina (BAAF)."
+    desc: "Escala ecogrÃ¡fica para evaluar el riesgo de malignidad en nÃ³dulos tiroideos. Basado en composiciÃ³n, ecogenicidad, forma, mÃ¡rgenes y focos ecogÃ©nicos. Facilita decidir de forma objetiva la indicaciÃ³n de biopsia por aspiraciÃ³n con aguja fina (BAAF)."
   },
   {
     acronym: "PI-RADS",
     name: "Prostate Imaging-Reporting and Data System",
     category: "Resonancia",
-    desc: "Estándar clínico de informe para RM multiparamétrica de próstata. Valora zonas periférica e transicional con escalas de 1 (altamente improbable) a 5 (alta sospecha de cáncer clínicamente significativo)."
+    desc: "EstÃ¡ndar clÃ­nico de informe para RM multiparamÃ©trica de prÃ³stata. Valora zonas perifÃ©rica e transicional con escalas de 1 (altamente improbable) a 5 (alta sospecha de cÃ¡ncer clÃ­nicamente significativo)."
   },
   {
     acronym: "LI-RADS",
     name: "Liver Imaging-Reporting and Data System",
-    category: "Tomografía",
-    desc: "Sistema estandarizado de categorización para hallazgos hepáticos en pacientes cirróticos o con sospecha diagnóstica de carcinoma hepatocelular (CHC)."
+    category: "TomografÃ­a",
+    desc: "Sistema estandarizado de categorizaciÃ³n para hallazgos hepÃ¡ticos en pacientes cirrÃ³ticos o con sospecha diagnÃ³stica de carcinoma hepatocelular (CHC)."
   },
   {
     acronym: "Opacidad Alveolar",
-    name: "Consolidación de Espacio Aéreo",
-    category: "Radiografía",
-    desc: "Hallazgo en tele de tórax caracterizado por el reemplazo del aire gas alveolar por exudado, sangre o pus. Clínicamente compatible con neumonía clásica, contusión pulmonar o edema agudo de pulmón. Produce signo de broncograma aéreo."
+    name: "ConsolidaciÃ³n de Espacio AÃ©reo",
+    category: "RadiografÃ­a",
+    desc: "Hallazgo en tele de tÃ³rax caracterizado por el reemplazo del aire gas alveolar por exudado, sangre o pus. ClÃ­nicamente compatible con neumonÃ­a clÃ¡sica, contusiÃ³n pulmonar o edema agudo de pulmÃ³n. Produce signo de broncograma aÃ©reo."
   },
   {
     acronym: "Atelectasia",
-    name: "Colapso Parcial de Parénquima",
-    category: "Radiografía",
-    desc: "Pérdida localizada de volumen pulmonar por reabsorción u obstrucción bronquial. Radiográficamente se presenta como una opacidad lineal o densa con desplazamiento de estructuras anatómicas."
+    name: "Colapso Parcial de ParÃ©nquima",
+    category: "RadiografÃ­a",
+    desc: "PÃ©rdida localizada de volumen pulmonar por reabsorciÃ³n u obstrucciÃ³n bronquial. RadiogrÃ¡ficamente se presenta como una opacidad lineal o densa con desplazamiento de estructuras anatÃ³micas."
   },
   {
     acronym: "KOSS",
-    name: "Clasificación de Kellgren & Lawrence",
+    name: "ClasificaciÃ³n de Kellgren & Lawrence",
     category: "General",
-    desc: "Criterio radiológico clave para diagnosticar y medir el grado de osteoartritis de rodilla. Grados de 0 (normal) a 4 (severo, con grandes osteofitos y deformación ósea articular marcada)."
+    desc: "Criterio radiolÃ³gico clave para diagnosticar y medir el grado de osteoartritis de rodilla. Grados de 0 (normal) a 4 (severo, con grandes osteofitos y deformaciÃ³n Ã³sea articular marcada)."
   }
 ];
 
@@ -343,14 +343,14 @@ const extractSectionContent = (reportText: string, sectionKeywords: string[]): s
 
   const allHeaders = [
     "tipo de estudio", "estudio",
-    "historia clínica", "historia clinica", "indicaciones", "historia clínica / indicaciones", "historia clinica / indicaciones",
-    "técnica del examen", "tecnica del examen", "técnica", "tecnica",
+    "historia clÃ­nica", "historia clinica", "indicaciones", "historia clÃ­nica / indicaciones", "historia clinica / indicaciones",
+    "tÃ©cnica del examen", "tecnica del examen", "tÃ©cnica", "tecnica",
     "hallazgos", "hallazgos principales", "resultados",
-    "impresión diagnóstica", "impresion diagnostica", "impresiones diagnósticas", "impresiones diagnosticas", "impresión", "impresion",
-    "conclusión", "conclusiones", "conclusion",
-    "diagnóstico", "diagnostico",
+    "impresiÃ³n diagnÃ³stica", "impresion diagnostica", "impresiones diagnÃ³sticas", "impresiones diagnosticas", "impresiÃ³n", "impresion",
+    "conclusiÃ³n", "conclusiones", "conclusion",
+    "diagnÃ³stico", "diagnostico",
     "resumen operacional de hallazgos", "resumen operacional", "resumen ejecutivo", "resumen de hallazgos", "resumen",
-    "fdo", "médico", "medico", "firma"
+    "fdo", "mÃ©dico", "medico", "firma"
   ];
 
   for (const key of sectionKeywords) {
@@ -391,9 +391,9 @@ const extractSectionContent = (reportText: string, sectionKeywords: string[]): s
 
 const extractImpresionDiagnostica = (reportText: string): string => {
   return extractSectionContent(reportText, [
-    "impresión diagnóstica", "impresion diagnostica", "impresión diagnostica", "impresion diagnóstica", 
-    "impresiones diagnósticas", "impresiones diagnosticas", "conclusión", "conclusiones", "conclusion", 
-    "diagnóstico", "diagnostico", "impresión", "impresion"
+    "impresiÃ³n diagnÃ³stica", "impresion diagnostica", "impresiÃ³n diagnostica", "impresion diagnÃ³stica", 
+    "impresiones diagnÃ³sticas", "impresiones diagnosticas", "conclusiÃ³n", "conclusiones", "conclusion", 
+    "diagnÃ³stico", "diagnostico", "impresiÃ³n", "impresion"
   ]);
 };
 
@@ -410,7 +410,7 @@ const extractResumenOperacional = (reportText: string): string => {
   ]);
   if (explicitResumen) return explicitResumen;
 
-  // 2nd Priority: Impresión Diagnóstica / Conclusión / Diagnóstico
+  // 2nd Priority: ImpresiÃ³n DiagnÃ³stica / ConclusiÃ³n / DiagnÃ³stico
   const impresion = extractImpresionDiagnostica(reportText);
   if (impresion) return impresion;
 
@@ -431,14 +431,14 @@ const extractResumenOperacional = (reportText: string): string => {
 
   const allHeaders = [
     "tipo de estudio", "estudio",
-    "historia clínica", "historia clinica", "indicaciones", "historia clínica / indicaciones", "historia clinica / indicaciones",
-    "técnica del examen", "tecnica del examen", "técnica", "tecnica",
+    "historia clÃ­nica", "historia clinica", "indicaciones", "historia clÃ­nica / indicaciones", "historia clinica / indicaciones",
+    "tÃ©cnica del examen", "tecnica del examen", "tÃ©cnica", "tecnica",
     "hallazgos", "hallazgos principales", "resultados",
-    "impresión diagnóstica", "impresion diagnostica", "impresiones diagnósticas", "impresiones diagnosticas", "impresión", "impresion",
-    "conclusión", "conclusiones", "conclusion",
-    "diagnóstico", "diagnostico",
+    "impresiÃ³n diagnÃ³stica", "impresion diagnostica", "impresiones diagnÃ³sticas", "impresiones diagnosticas", "impresiÃ³n", "impresion",
+    "conclusiÃ³n", "conclusiones", "conclusion",
+    "diagnÃ³stico", "diagnostico",
     "resumen operacional de hallazgos", "resumen operacional", "resumen ejecutivo", "resumen de hallazgos", "resumen",
-    "fdo", "médico", "medico", "firma"
+    "fdo", "mÃ©dico", "medico", "firma"
   ];
 
   const cleanBulletLines = lines.filter(line => {
@@ -544,7 +544,7 @@ const ManualPatientAdder: React.FC<ManualPatientAdderProps> = ({ onAdd }) => {
         className="w-full px-4 py-2.5 text-left text-[10px] font-black uppercase text-slate-400 hover:text-slate-200 hover:bg-slate-900/30 flex items-center justify-between transition tracking-wider font-mono"
       >
         <span className="flex items-center gap-1.5">
-          <Plus className="h-3.5 w-3.5 text-indigo-400" /> Añadir Paciente Manual
+          <Plus className="h-3.5 w-3.5 text-indigo-400" /> AÃ±adir Paciente Manual
         </span>
         <ChevronRight className={`h-3 w-3 text-slate-500 transition-transform ${isOpen ? "rotate-90" : ""}`} />
       </button>
@@ -556,7 +556,7 @@ const ManualPatientAdder: React.FC<ManualPatientAdderProps> = ({ onAdd }) => {
             <input
               type="text"
               required
-              placeholder="Ej. Carlos Pérez"
+              placeholder="Ej. Carlos PÃ©rez"
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="w-full text-xs bg-slate-950 border border-slate-850 rounded-lg px-2.5 py-1.5 text-white focus:outline-none focus:border-indigo-500 font-bold"
@@ -575,7 +575,7 @@ const ManualPatientAdder: React.FC<ManualPatientAdderProps> = ({ onAdd }) => {
               />
             </div>
             <div>
-              <label className="text-[8.5px] font-black uppercase text-slate-500 tracking-wider font-mono block mb-1">Género</label>
+              <label className="text-[8.5px] font-black uppercase text-slate-500 tracking-wider font-mono block mb-1">GÃ©nero</label>
               <select
                 value={gender}
                 onChange={(e) => setGender(e.target.value)}
@@ -590,10 +590,10 @@ const ManualPatientAdder: React.FC<ManualPatientAdderProps> = ({ onAdd }) => {
 
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="text-[8.5px] font-black uppercase text-slate-500 tracking-wider font-mono block mb-1">Identificación</label>
+              <label className="text-[8.5px] font-black uppercase text-slate-500 tracking-wider font-mono block mb-1">IdentificaciÃ³n</label>
               <input
                 type="text"
-                placeholder="Cédula / ID"
+                placeholder="CÃ©dula / ID"
                 value={patientId}
                 onChange={(e) => setPatientId(e.target.value)}
                 className="w-full text-xs bg-slate-950 border border-slate-850 rounded-lg px-2.5 py-1.5 text-white focus:outline-none focus:border-indigo-500 font-mono font-bold"
@@ -615,7 +615,7 @@ const ManualPatientAdder: React.FC<ManualPatientAdderProps> = ({ onAdd }) => {
             <label className="text-[8.5px] font-black uppercase text-slate-500 tracking-wider font-mono block mb-1">Estudio Solicitado</label>
             <input
               type="text"
-              placeholder="Ej. Ecografía Renal"
+              placeholder="Ej. EcografÃ­a Renal"
               value={studyType}
               onChange={(e) => setStudyType(e.target.value)}
               className="w-full text-xs bg-slate-950 border border-slate-850 rounded-lg px-2.5 py-1.5 text-white focus:outline-none focus:border-indigo-500 font-bold"
@@ -623,7 +623,7 @@ const ManualPatientAdder: React.FC<ManualPatientAdderProps> = ({ onAdd }) => {
           </div>
 
           <div>
-            <label className="text-[8.5px] font-black uppercase text-slate-500 tracking-wider font-mono block mb-1">Teléfono o Celular (Costa Rica)</label>
+            <label className="text-[8.5px] font-black uppercase text-slate-500 tracking-wider font-mono block mb-1">TelÃ©fono o Celular (Costa Rica)</label>
             <input
               type="text"
               placeholder="Ej. 8888-8888"
@@ -700,7 +700,7 @@ const UltrasoundWorklistExporter: React.FC<UltrasoundWorklistExporterProps> = ({
         }
         
         // Para el Samsung V7, exportamos el nombre completo sin delimitadores de careto "^" ni cortes.
-        // Al enviarlo como un solo string continuo, el ecógrafo muestra el nombre completo con todos sus apellidos y nombres.
+        // Al enviarlo como un solo string continuo, el ecÃ³grafo muestra el nombre completo con todos sus apellidos y nombres.
         const cleanName = p.name.trim();
         
         return [
@@ -827,12 +827,12 @@ def formatear_nombre_dicom(nombre_completo):
     if not palabras:
         return "Paciente^Anonimo"
         
-    # Heurística robusta de nombres en español para evitar nombres cortados o mal ordenados:
+    # HeurÃ­stica robusta de nombres en espaÃ±ol para evitar nombres cortados o mal ordenados:
     # 1 palabra: "Luz" -> "Luz"
     # 2 palabras: "Milton Maldonado" -> "Maldonado^Milton"
     # 3 palabras: "Milton Maldonado Brizuela" -> "Maldonado Brizuela^Milton"
-    # 4 o más palabras: "Maria del Carmen Gomez Perez" -> Surnames: "Gomez Perez", GivenNames: "Maria del Carmen"
-    # Esto asegura que el ecógrafo Samsung V7 reciba todos los apellidos y nombres sin recortar nada.
+    # 4 o mÃ¡s palabras: "Maria del Carmen Gomez Perez" -> Surnames: "Gomez Perez", GivenNames: "Maria del Carmen"
+    # Esto asegura que el ecÃ³grafo Samsung V7 reciba todos los apellidos y nombres sin recortar nada.
     
     if len(palabras) == 1:
         return palabras[0]
@@ -842,7 +842,7 @@ def formatear_nombre_dicom(nombre_completo):
         # e.g., Milton Maldonado Brizuela -> Apellidos: Maldonado Brizuela, Nombre: Milton
         return f"{palabras[1]} {palabras[2]}^{palabras[0]}"
     else:
-        # 4 o más palabras: e.g., Maria del Carmen Gomez Perez -> Apellidos: Gomez Perez, Nombres: Maria del Carmen
+        # 4 o mÃ¡s palabras: e.g., Maria del Carmen Gomez Perez -> Apellidos: Gomez Perez, Nombres: Maria del Carmen
         apellidos = f"{palabras[-2]} {palabras[-1]}"
         nombres = " ".join(palabras[:-2])
         return f"{apellidos}^{nombres}"
@@ -861,9 +861,9 @@ def parse_patient_age_and_dob(edad_raw):
     val = str(edad_raw).strip()
     
     # 1. Intentar detectar formato fecha de nacimiento: YYYY-MM-DD o DD-MM-YYYY
-    # Patrón YYYY-MM-DD / YYYY/MM/DD
+    # PatrÃ³n YYYY-MM-DD / YYYY/MM/DD
     match_iso = re.search(r'(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})', val)
-    # Patrón DD-MM-YYYY / DD/MM/YYYY
+    # PatrÃ³n DD-MM-YYYY / DD/MM/YYYY
     match_lat = re.search(r'(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})', val)
     
     dt = None
@@ -887,7 +887,7 @@ def parse_patient_age_and_dob(edad_raw):
         age_str = f"{calculated_age:03d}Y"
         return dob_str, age_str
         
-    # 2. Si no es fecha, intentar extraer un número (ej. "45", "45 años", "45a")
+    # 2. Si no es fecha, intentar extraer un nÃºmero (ej. "45", "45 aÃ±os", "45a")
     match_num = re.search(r'\d+', val)
     if match_num:
         try:
@@ -895,7 +895,7 @@ def parse_patient_age_and_dob(edad_raw):
             if 0 <= years <= 130:
                 age_str = f"{years:03d}Y"
                 hoy = datetime.date.today()
-                # Estimamos fecha de nacimiento usando el año y un mes/día promedio (06 de junio)
+                # Estimamos fecha de nacimiento usando el aÃ±o y un mes/dÃ­a promedio (06 de junio)
                 birth_year = hoy.year - years
                 dob_str = f"{birth_year}0601"
                 return dob_str, age_str
@@ -974,7 +974,7 @@ ae.start_server(("0.0.0.0", 1040), evt_handlers=[(evt.EVT_C_FIND, handle_find)])
         <span className="flex items-center gap-1.5">
           <Network className="h-4 w-4 text-indigo-400 animate-pulse" /> Puente Samsung V7
           <span className={`ml-1 px-1.5 py-0.5 rounded text-[7px] font-black tracking-wider ${bridgeOnline ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" : "bg-rose-500/15 text-rose-300 border border-rose-500/30"}`}>
-            {bridgeOnline ? "EN L�NEA" : "OFFLINE"}
+            {bridgeOnline ? "EN Lï¿½NEA" : "OFFLINE"}
           </span>
         </span>
         <ChevronDown className={`h-3.5 w-3.5 text-indigo-400 transition-transform duration-300 ${isOpen ? "rotate-180" : ""}`} />
@@ -992,7 +992,7 @@ ae.start_server(("0.0.0.0", 1040), evt_handlers=[(evt.EVT_C_FIND, handle_find)])
                   : "text-slate-500 hover:text-slate-300"
               }`}
             >
-              Autom�tico
+              Automï¿½tico
             </button>
             <button
               type="button"
@@ -1027,14 +1027,14 @@ ae.start_server(("0.0.0.0", 1040), evt_handlers=[(evt.EVT_C_FIND, handle_find)])
                 <p className="text-[9px] text-slate-400 leading-relaxed">
                   {bridgeOnline
                     ? `Agenda sincronizada (${bridgePatientCount} pacientes). Al seleccionar un paciente en la lista, las capturas del V7 se adjuntan solas al reporte cuando llegan por red.`
-                    : "El puente corre en la terminal pero la app no lo ve. Abre RAD-AIEXPERT en Chrome/Safari en el mismo iMac, actualiza el puente (git pull) y rein�cialo. Si Chrome pide permiso de red local, acepta."}
+                    : "El puente corre en la terminal pero la app no lo ve. Abre RAD-AIEXPERT en Chrome/Safari en el mismo iMac, actualiza el puente (git pull) y reinï¿½cialo. Si Chrome pide permiso de red local, acepta."}
                 </p>
               </div>
 
               <ol className="list-decimal list-inside text-[9px] text-slate-400 space-y-1.5">
                 <li>Selecciona al paciente en la lista de trabajo (carga el formulario del reporte).</li>
                 <li>En el <strong className="text-slate-300">Samsung V7</strong>: Patient ? Worklist ? Query ? elige al mismo paciente.</li>
-                <li>Realiza el estudio; al enviar/guardar en red, las im�genes aparecen en el anexo del PDF autom�ticamente.</li>
+                <li>Realiza el estudio; al enviar/guardar en red, las imï¿½genes aparecen en el anexo del PDF automï¿½ticamente.</li>
               </ol>
 
               {!bridgeOnline && (
@@ -1054,7 +1054,7 @@ python3 samsung_bridge.py
           {activeTab === "export" && (
             <div className="space-y-3.5">
               <p className="text-[9.5px] text-slate-400 leading-normal">
-                Genera un archivo optimizado para el ecógrafo <strong className="text-indigo-400">Samsung V7</strong>. Descárgalo para transferirlo localmente por USB o cargarlo mediante el puente de red de tu consultorio.
+                Genera un archivo optimizado para el ecÃ³grafo <strong className="text-indigo-400">Samsung V7</strong>. DescÃ¡rgalo para transferirlo localmente por USB o cargarlo mediante el puente de red de tu consultorio.
               </p>
 
               <div className="space-y-2">
@@ -1080,7 +1080,7 @@ python3 samsung_bridge.py
                         : "bg-slate-900/40 border-slate-850 text-slate-400 hover:border-slate-800"
                     }`}
                   >
-                    CSV Estándar (.csv)
+                    CSV EstÃ¡ndar (.csv)
                   </button>
                   <button
                     type="button"
@@ -1134,7 +1134,7 @@ python3 samsung_bridge.py
               <div className="bg-indigo-500/5 border border-indigo-500/10 rounded-lg p-2.5 flex gap-2">
                 <Wifi className="h-4 w-4 text-indigo-400 shrink-0" />
                 <p className="text-[9px] text-slate-300 leading-relaxed font-bold">
-                  Configuraci�n �nica del <span className="text-indigo-400">Samsung V7</span> en la misma red que tu iMac (Wi?Fi).
+                  Configuraciï¿½n ï¿½nica del <span className="text-indigo-400">Samsung V7</span> en la misma red que tu iMac (Wi?Fi).
                 </p>
               </div>
 
@@ -1144,23 +1144,23 @@ python3 samsung_bridge.py
                   <li>Utility ? Connectivity ? DICOM ? Add</li>
                   <li>Service Type: <strong className="text-indigo-300">MWL</strong></li>
                   <li>AE Title: <strong className="text-indigo-300">MWL_SERVER</strong></li>
-                  <li>IP: IP del iMac � Puerto: <strong className="text-indigo-300">1040</strong></li>
+                  <li>IP: IP del iMac ï¿½ Puerto: <strong className="text-indigo-300">1040</strong></li>
                 </ul>
               </div>
 
               <div className="border border-cyan-500/20 rounded-lg p-2.5 space-y-2 bg-cyan-950/10">
-                <span className="text-[9px] font-black uppercase text-cyan-400 tracking-wider font-mono">2. Servidor Storage (env�o de im�genes)</span>
+                <span className="text-[9px] font-black uppercase text-cyan-400 tracking-wider font-mono">2. Servidor Storage (envï¿½o de imï¿½genes)</span>
                 <ul className="list-disc list-inside text-[9px] text-slate-400 space-y-0.5 pl-1">
                   <li>Utility ? Connectivity ? DICOM ? Add</li>
                   <li>Service Type: <strong className="text-cyan-300">Storage</strong> / PACS</li>
                   <li>AE Title: <strong className="text-cyan-300">RAD_BRIDGE</strong></li>
-                  <li>IP: IP del iMac � Puerto: <strong className="text-cyan-300">11113</strong> (Horos usa 11112)</li>
-                  <li>Activa env�o autom�tico al guardar/finalizar estudio si el men� lo permite.</li>
+                  <li>IP: IP del iMac ï¿½ Puerto: <strong className="text-cyan-300">11113</strong> (Horos usa 11112)</li>
+                  <li>Activa envï¿½o automï¿½tico al guardar/finalizar estudio si el menï¿½ lo permite.</li>
                 </ul>
               </div>
 
               <p className="text-[9px] text-slate-500 leading-relaxed">
-                Flujo diario: abre el puente en el Mac ? selecciona paciente en la app ? Query Worklist en el V7 ? al terminar el estudio las im�genes llegan solas al anexo del PDF.
+                Flujo diario: abre el puente en el Mac ? selecciona paciente en la app ? Query Worklist en el V7 ? al terminar el estudio las imï¿½genes llegan solas al anexo del PDF.
               </p>
             </div>
           )}
@@ -1189,23 +1189,23 @@ const getRadarTitle = (modeOrData?: string | { radarMode?: string } | null): str
     ? modeOrData
     : (modeOrData?.radarMode || "");
   switch (mode) {
-    case "rotator_cuff": return "RADAR BIOMECÁNICO: MANGUITO ROTADOR";
-    case "knee_oa": return "RADAR BIOMECÁNICO: GONARTROSIS";
-    case "cholecystitis": return "RADAR: COLECISTITIS / VÍA BILIAR";
-    case "ankle_trauma": return "RADAR BIOMECÁNICO: TOBILLO";
-    case "hepatic": return "RADAR: HEPATOPATÍA / HÍGADO";
-    case "renal": return "RADAR: RIÑÓN INTEGRAL";
+    case "rotator_cuff": return "RADAR BIOMECÃNICO: MANGUITO ROTADOR";
+    case "knee_oa": return "RADAR BIOMECÃNICO: GONARTROSIS";
+    case "cholecystitis": return "RADAR: COLECISTITIS / VÃA BILIAR";
+    case "ankle_trauma": return "RADAR BIOMECÃNICO: TOBILLO";
+    case "hepatic": return "RADAR: HEPATOPATÃA / HÃGADO";
+    case "renal": return "RADAR: RIÃÃN INTEGRAL";
     case "scrotal": return "RADAR: ESCROTO";
     case "appendicitis": return "RADAR: APENDICITIS AGUDA";
     case "thyroid": return "RADAR: TIROIDES";
     case "knee_trauma": return "RADAR: TRAUMA DE RODILLA";
-    case "muscle_injury": return "RADAR: LESIÓN MUSCULAR";
+    case "muscle_injury": return "RADAR: LESIÃN MUSCULAR";
     case "visceral": return "RADAR: VISCERAL / INFLAMATORIO";
-    case "oncology": return "RADAR: ONCOLÓGICO / ESTRUCTURAL";
-    case "urinary_prostate": return "RADAR: VÍAS URINARIAS / PRÓSTATA";
+    case "oncology": return "RADAR: ONCOLÃGICO / ESTRUCTURAL";
+    case "urinary_prostate": return "RADAR: VÃAS URINARIAS / PRÃSTATA";
     case "diverticulitis": return "RADAR: DIVERTICULITIS";
-    case "msk": return "RADAR: MÚSCULO-ESQUELÉTICO";
-    default: return "RADAR BIOMECÁNICO E INFLAMATORIO MULTIVECTOR";
+    case "msk": return "RADAR: MÃSCULO-ESQUELÃTICO";
+    default: return "RADAR BIOMECÃNICO E INFLAMATORIO MULTIVECTOR";
   }
 };
 
@@ -1281,13 +1281,13 @@ const getSpecificSuiteShortcut = (
     selected.includes("pantorrilla") ||
     selected.includes("aquiles")
   ) {
-    return { id: "muscleTendon3d", label: "Suite M�sculo-Tend�n 3D" };
+    return { id: "muscleTendon3d", label: "Suite Músculo-Tendón 3D" };
   }
   if (selected.includes("muneca") || selected.includes("carpo")) {
-    return { id: "wrist3d", label: "Suite Mu�eca 3D" };
+    return { id: "wrist3d", label: "Suite Muñeca 3D" };
   }
   if (selected.includes("vias urinarias") || selected.includes("renal") || selected.includes("rinon")) {
-    return { id: "kidney3d", label: "Suite Ri��n 3D" };
+    return { id: "kidney3d", label: "Suite Riñón 3D" };
   }
   if (selected.includes("pared abdominal")) {
     return { id: "abdominalWall3d", label: "Suite Pared Abdominal 3D" };
@@ -1379,8 +1379,8 @@ export default function App() {
   const [doctorLicense, setDoctorLicense] = useState<string>(() => {
     const saved = localStorage.getItem("rad_doctor_license");
     if (!saved || saved === "M.S.P. Reg: 6025 / Senescyt: 1005-12-7489") {
-      localStorage.setItem("rad_doctor_license", "Código Profesional 6025");
-      return "Código Profesional 6025";
+      localStorage.setItem("rad_doctor_license", "CÃ³digo Profesional 6025");
+      return "CÃ³digo Profesional 6025";
     }
     return saved;
   });
@@ -1710,7 +1710,7 @@ export default function App() {
               if (study.findings3dRenders) setFindings3dRenders(study.findings3dRenders);
               if (study.patientSummary) setPatientSummary(study.patientSummary);
             } else {
-              setPatientViewError("El estudio clínico solicitado no existe o el enlace es incorrecto.");
+              setPatientViewError("El estudio clÃ­nico solicitado no existe o el enlace es incorrecto.");
             }
           })
           .catch((err) => {
@@ -1723,10 +1723,10 @@ export default function App() {
             
             if (isQuota) {
               setPatientViewError(
-                "El servidor de base de datos temporal ha superado su límite de cuota diaria gratuita de Google Cloud (Plan Free de AI Studio). Por favor, contacte a su especialista de salud o reintente más tarde cuando se reinicie la cuota diaria de Google. Su reporte clínico está guardado de forma 100% segura en la nube."
+                "El servidor de base de datos temporal ha superado su lÃ­mite de cuota diaria gratuita de Google Cloud (Plan Free de AI Studio). Por favor, contacte a su especialista de salud o reintente mÃ¡s tarde cuando se reinicie la cuota diaria de Google. Su reporte clÃ­nico estÃ¡ guardado de forma 100% segura en la nube."
               );
             } else {
-              setPatientViewError("Error de conexión al cargar el estudio clínico. Por favor, reintente.");
+              setPatientViewError("Error de conexiÃ³n al cargar el estudio clÃ­nico. Por favor, reintente.");
             }
           })
           .finally(() => {
@@ -1752,10 +1752,10 @@ export default function App() {
         }
 
         if (localCustom && localCustom.apiKey && localCustom.projectId) {
-          // El navegador tiene una configuración personalizada en localStorage.
+          // El navegador tiene una configuraciÃ³n personalizada en localStorage.
           if (serverConfig && (serverConfig.projectId === "gen-lang-client-0578019690" || !serverConfig.projectId)) {
             // El servidor tiene la base de datos predeterminada de AI Studio.
-            // Sincronizamos subiendo nuestra configuración personalizada al servidor.
+            // Sincronizamos subiendo nuestra configuraciÃ³n personalizada al servidor.
             console.log("Detectado Firebase personalizado en localStorage local. Sincronizando con el servidor para fijarlo...");
             fetch("/api/save-firebase-config", {
               method: "POST",
@@ -1765,20 +1765,20 @@ export default function App() {
             .then(res => res.json())
             .then(data => {
               if (data.success) {
-                console.log("¡Configuración de Firebase personalizada fijada en el servidor!");
+                console.log("Â¡ConfiguraciÃ³n de Firebase personalizada fijada en el servidor!");
               }
             })
             .catch(err => console.error("Error al sincronizar Firebase personalizado con el servidor:", err));
           } else if (serverConfig && serverConfig.projectId !== localCustom.projectId) {
-            // El servidor tiene una configuraci�n personalizada diferente de la local. El servidor manda.
+            // El servidor tiene una configuraciï¿½n personalizada diferente de la local. El servidor manda.
             // One-shot reload guard: avoid blank-screen reload loops during cold start.
             const reloadKey = "rad_firebase_config_reload_once";
             if (typeof sessionStorage !== "undefined" && sessionStorage.getItem(reloadKey) === "1") {
-              console.warn("Firebase config sync ya recarg� una vez en esta sesi�n; se omite reload.");
+              console.warn("Firebase config sync ya recargï¿½ una vez en esta sesiï¿½n; se omite reload.");
               localStorage.setItem("rad_custom_firebase_config", JSON.stringify(serverConfig));
               localStorage.setItem("rad_custom_firebase_config_raw", JSON.stringify(serverConfig, null, 2));
             } else {
-              console.log("Sincronizando configuraci�n de Firebase desde el servidor...");
+              console.log("Sincronizando configuraciï¿½n de Firebase desde el servidor...");
               localStorage.setItem("rad_custom_firebase_config", JSON.stringify(serverConfig));
               localStorage.setItem("rad_custom_firebase_config_raw", JSON.stringify(serverConfig, null, 2));
               try {
@@ -1790,16 +1790,16 @@ export default function App() {
             }
           }
         } else {
-          // El navegador NO tiene una configuraci�n en localStorage.
+          // El navegador NO tiene una configuraciï¿½n en localStorage.
           if (serverConfig && serverConfig.projectId && serverConfig.projectId !== "gen-lang-client-0578019690") {
-            // Pero el servidor s� tiene una personalizada. La descargamos y recargamos.
+            // Pero el servidor sï¿½ tiene una personalizada. La descargamos y recargamos.
             const reloadKey = "rad_firebase_config_reload_once";
             if (typeof sessionStorage !== "undefined" && sessionStorage.getItem(reloadKey) === "1") {
-              console.warn("Firebase config download ya recarg� una vez en esta sesi�n; se omite reload.");
+              console.warn("Firebase config download ya recargï¿½ una vez en esta sesiï¿½n; se omite reload.");
               localStorage.setItem("rad_custom_firebase_config", JSON.stringify(serverConfig));
               localStorage.setItem("rad_custom_firebase_config_raw", JSON.stringify(serverConfig, null, 2));
             } else {
-              console.log("Descargando configuraci�n de Firebase personalizada del servidor...");
+              console.log("Descargando configuraciï¿½n de Firebase personalizada del servidor...");
               localStorage.setItem("rad_custom_firebase_config", JSON.stringify(serverConfig));
               localStorage.setItem("rad_custom_firebase_config_raw", JSON.stringify(serverConfig, null, 2));
               try {
@@ -1813,7 +1813,7 @@ export default function App() {
         }
       })
       .catch((err) => {
-        console.warn("No se pudo sincronizar la configuración de Firebase con el servidor:", err);
+        console.warn("No se pudo sincronizar la configuraciÃ³n de Firebase con el servidor:", err);
       });
   }, []);
 
@@ -1916,7 +1916,7 @@ export default function App() {
   };
 
   const handleRemoveCustomLogoById = (id: string) => {
-    if (confirm("¿Estás seguro de eliminar este logotipo de la lista?")) {
+    if (confirm("Â¿EstÃ¡s seguro de eliminar este logotipo de la lista?")) {
       const nextLogos = customLogos.filter(l => l.id !== id);
       const nextSelected = selectedLogo === id ? "none" : selectedLogo;
       const nextRight = selectedLogoRight === id ? "none" : selectedLogoRight;
@@ -2139,7 +2139,7 @@ export default function App() {
       // Determine modern mimeType, fallback to standard
       let mimeType = "audio/webm";
       if (typeof MediaRecorder === "undefined") {
-        setSpeechError("El navegador no soporta grabación de Voz/Dictado directa.");
+        setSpeechError("El navegador no soporta grabaciÃ³n de Voz/Dictado directa.");
         return;
       }
 
@@ -2184,7 +2184,7 @@ export default function App() {
         
         const audioBlob = new Blob(audioChunksRef.current, { type: actualMime });
         if (audioBlob.size === 0) {
-          setSpeechError("La grabación de voz está vacía.");
+          setSpeechError("La grabaciÃ³n de voz estÃ¡ vacÃ­a.");
           return;
         }
 
@@ -2222,7 +2222,7 @@ export default function App() {
             }
           } catch (e: any) {
             console.error("Transcription API error:", e);
-            setSpeechError("Error de conexión: no se pudo enviar el audio al servidor de IA.");
+            setSpeechError("Error de conexiÃ³n: no se pudo enviar el audio al servidor de IA.");
           } finally {
             setTranscribing(false);
           }
@@ -2239,7 +2239,7 @@ export default function App() {
 
     } catch (err: any) {
       console.error("Microphone access error:", err);
-      setSpeechError("No se pudo acceder al micrófono para realizar la grabación de dictado.");
+      setSpeechError("No se pudo acceder al micrÃ³fono para realizar la grabaciÃ³n de dictado.");
     }
   };
 
@@ -2262,11 +2262,11 @@ export default function App() {
     setSpeechError(null);
     const SpeechRecognitionDefault = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognitionDefault) {
-      setSpeechError("La API de Dictado por Voz no está soportada de forma nativa en este navegador. Recomendamos usar Safari (iOS/macOS) o Google Chrome en computador.");
+      setSpeechError("La API de Dictado por Voz no estÃ¡ soportada de forma nativa en este navegador. Recomendamos usar Safari (iOS/macOS) o Google Chrome en computador.");
       return;
     }
 
-    // Detectar si está en iOS o iPadOS
+    // Detectar si estÃ¡ en iOS o iPadOS
     const isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
                         (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
@@ -2298,11 +2298,11 @@ export default function App() {
         errorTimeRef.current = Date.now();
         
         if (event.error === "not-allowed") {
-          setSpeechError("Acceso denegado al micrófono. Por favor, asigne permisos de micrófono en la barra del navegador para dictar.");
+          setSpeechError("Acceso denegado al micrÃ³fono. Por favor, asigne permisos de micrÃ³fono en la barra del navegador para dictar.");
           isListeningRef.current = false;
           setIsListening(false);
         } else if (event.error === "service-not-allowed") {
-          // Si falló con continuous = true, baja automáticamente al modo alternativo (single shot)
+          // Si fallÃ³ con continuous = true, baja automÃ¡ticamente al modo alternativo (single shot)
           if (useContinuousRef.current) {
             console.log("Reintentando dictado en modo alternativo compatible...");
             useContinuousRef.current = false;
@@ -2327,9 +2327,9 @@ export default function App() {
       recognition.onend = () => {
         const timeSinceLastError = Date.now() - errorTimeRef.current;
         // Si el usuario quiere seguir dictando (isListeningRef.current es true)
-        // y estamos en modo no continuo, reiniciamos la sesión inmediatamente (emula dictado ilimitado en iPhone!)
+        // y estamos en modo no continuo, reiniciamos la sesiÃ³n inmediatamente (emula dictado ilimitado en iPhone!)
         if (isListeningRef.current && !useContinuousRef.current && timeSinceLastError > 1500) {
-          console.log("Reiniciando sesión de audio para dictado continuo...");
+          console.log("Reiniciando sesiÃ³n de audio para dictado continuo...");
           try {
             recognition.start();
           } catch (e) {
@@ -2351,7 +2351,7 @@ export default function App() {
           setFindings((prev) => {
             const trimmedPrev = prev.trim();
             const addition = resultText.trim();
-            // Evitar acumulaciones dobles instantáneas del buffer
+            // Evitar acumulaciones dobles instantÃ¡neas del buffer
             if (trimmedPrev.endsWith(addition)) {
               return prev;
             }
@@ -2405,8 +2405,8 @@ export default function App() {
   }, []);
   
   // Custom smart selection states
-  const [modality, setModality] = useState<string>("Radiografía");
-  const [specificStudy, setSpecificStudy] = useState<string>("Tórax");
+  const [modality, setModality] = useState<string>("RadiografÃ­a");
+  const [specificStudy, setSpecificStudy] = useState<string>("TÃ³rax");
   const [customStudy, setCustomStudy] = useState<string>("");
   const [laterality, setLaterality] = useState<string>(""); // "" | "Derecha" | "Izquierda" | "Bilateral"
   const [projections, setProjections] = useState<string[]>([]);
@@ -2417,8 +2417,8 @@ export default function App() {
     if (!lat || lat === "Bilateral") return lat;
     const masculineStudies = [
       "Hombro", "Tobillo", "Pie", "Doppler venoso de miembro inferior",
-      "Doppler arterial de miembro inferior", "Cráneo", "Abdomen", "Pared abdominal",
-      "Escroto", "Cuello", "Tórax", "Codo", "Muslo Anterior", "Muslo Posterior"
+      "Doppler arterial de miembro inferior", "CrÃ¡neo", "Abdomen", "Pared abdominal",
+      "Escroto", "Cuello", "TÃ³rax", "Codo", "Muslo Anterior", "Muslo Posterior"
     ];
 
     if (masculineStudies.map(s => s.toLowerCase()).includes(study.toLowerCase())) {
@@ -2452,10 +2452,10 @@ export default function App() {
 
     const mainStudyLower = mainStudy.toLowerCase();
 
-    // Custom alignment for Mamografía/Momografía
-    if (mod === "Mamografía" && (mainStudyLower === "mamas" || mainStudyLower === "momografia" || mainStudyLower === "mamografía")) {
+    // Custom alignment for MamografÃ­a/MomografÃ­a
+    if (mod === "MamografÃ­a" && (mainStudyLower === "mamas" || mainStudyLower === "momografia" || mainStudyLower === "mamografÃ­a")) {
       const gLat = getGenderedLaterality(lat, mainStudy);
-      return gLat ? `Mamografía ${gLat}` : "Mamografía";
+      return gLat ? `MamografÃ­a ${gLat}` : "MamografÃ­a";
     }
 
     let preposition = "de";
@@ -2471,7 +2471,7 @@ export default function App() {
       base = `${base} ${gLat}`;
     }
 
-    if (mod === "Radiografía" && projs && projs.length > 0) {
+    if (mod === "RadiografÃ­a" && projs && projs.length > 0) {
       const formattedProjs = getFormattedProjections(projs, customProj);
       base = `${base} ${formattedProjs}`;
     }
@@ -2482,8 +2482,8 @@ export default function App() {
   // Synchronise form dropdowns when parsing a string
   const handleLoadStudyType = (fullStudy: string) => {
     if (!fullStudy) {
-      setModality("Radiografía");
-      setSpecificStudy("Tórax");
+      setModality("RadiografÃ­a");
+      setSpecificStudy("TÃ³rax");
       setCustomStudy("");
       setLaterality("");
       setProjections([]);
@@ -2491,12 +2491,12 @@ export default function App() {
     }
 
     // 1. Detect Modality
-    let detectedModality = "Radiografía";
-    if (/ultrasonido|ecografía|eco|ud|usg/i.test(fullStudy)) {
+    let detectedModality = "RadiografÃ­a";
+    if (/ultrasonido|ecografÃ­a|eco|ud|usg/i.test(fullStudy)) {
       detectedModality = "Ultrasonido";
-    } else if (/mamografía|mamografia|momografía|momografia/i.test(fullStudy)) {
-      detectedModality = "Mamografía";
-    } else if (/tomografía|tomografia|tc|tac|ct/i.test(fullStudy)) {
+    } else if (/mamografÃ­a|mamografia|momografÃ­a|momografia/i.test(fullStudy)) {
+      detectedModality = "MamografÃ­a";
+    } else if (/tomografÃ­a|tomografia|tc|tac|ct/i.test(fullStudy)) {
       detectedModality = "TAC";
     }
     setModality(detectedModality);
@@ -2514,20 +2514,20 @@ export default function App() {
       "Tobillo",
       "Muslo Anterior",
       "Muslo Posterior",
-      "Muñeca",
+      "MuÃ±eca",
       "Mano",
       "Pie",
-      "Doppler de carótidas",
+      "Doppler de carÃ³tidas",
       "Doppler venoso de miembro inferior",
       "Doppler arterial de miembro inferior",
       "Columna lumbosacra",
       "Columna dorsal",
       "Columna cervical",
-      "Momografía",
-      "Tórax",
-      "Cráneo",
+      "MomografÃ­a",
+      "TÃ³rax",
+      "CrÃ¡neo",
       "Cadera",
-      "Pantorrilla y Tendón de Aquiles"
+      "Pantorrilla y TendÃ³n de Aquiles"
     ];
 
     let foundSpecific = "Otro";
@@ -2541,7 +2541,7 @@ export default function App() {
         cleanFull.includes(cleanStudy) || 
         (study === "Muslo Posterior" && cleanFull.includes("muslo posterior")) ||
         (study === "Muslo Anterior" && cleanFull.includes("muslo") && !cleanFull.includes("posterior")) ||
-        (study === "Pantorrilla y Tendón de Aquiles" && (cleanFull.includes("pantorilla") || cleanFull.includes("pantorrilla") || cleanFull.includes("aquiles") || cleanFull.includes("achilles")))
+        (study === "Pantorrilla y TendÃ³n de Aquiles" && (cleanFull.includes("pantorilla") || cleanFull.includes("pantorrilla") || cleanFull.includes("aquiles") || cleanFull.includes("achilles")))
       ) {
         foundSpecific = study;
         break;
@@ -2551,7 +2551,7 @@ export default function App() {
     if (foundSpecific === "Otro") {
       let cleaned = fullStudy;
       // Remove modality names
-      cleaned = cleaned.replace(/radiografía|ultrasonido|mamografía|mamografia|momografía|tomografía|tomografia|tc|tac|ct/gi, "");
+      cleaned = cleaned.replace(/radiografÃ­a|ultrasonido|mamografÃ­a|mamografia|momografÃ­a|tomografÃ­a|tomografia|tc|tac|ct/gi, "");
       // Remove starting prepositions / separators
       cleaned = cleaned.replace(/^\s*(de|-|\s+)\s*/i, "").trim();
       // Remove projections if present
@@ -2579,7 +2579,7 @@ export default function App() {
 
     // 4. Detect Projections
     const detectedProjections: string[] = [];
-    if (detectedModality === "Radiografía") {
+    if (detectedModality === "RadiografÃ­a") {
       if (/ap\b|anteroposterior/i.test(fullStudy)) {
         detectedProjections.push("AP");
       }
@@ -2722,10 +2722,10 @@ export default function App() {
       return;
     }
 
-    // 7.5 Detect Muñeca
+    // 7.5 Detect MuÃ±eca
     if (
       combined.includes("muneca") ||
-      combined.includes("muñeca") ||
+      combined.includes("muÃ±eca") ||
       combined.includes("carpo") ||
       combined.includes("carpiano") ||
       combined.includes("nervio mediano") ||
@@ -2734,7 +2734,7 @@ export default function App() {
       combined.includes("extensor carpi ulnaris") ||
       combined.includes("fibrocartilago triangular")
     ) {
-      setSpecificStudy("Muñeca");
+      setSpecificStudy("MuÃ±eca");
       setModality("Ultrasonido");
       return;
     }
@@ -2757,14 +2757,14 @@ export default function App() {
       return;
     }
 
-    // 9. Detect Doppler Carótidas
+    // 9. Detect Doppler CarÃ³tidas
     if (
       combined.includes("carotida") ||
       combined.includes("carotideo") ||
       combined.includes("carotidas") ||
       combined.includes("doppler de carotidas")
     ) {
-      setSpecificStudy("Doppler de carótidas");
+      setSpecificStudy("Doppler de carÃ³tidas");
       setModality("Ultrasonido");
       return;
     }
@@ -2788,7 +2788,7 @@ export default function App() {
       return;
     }
 
-    // 10. Detect Vías Urinarias (Renal and Urinary Tract)
+    // 10. Detect VÃ­as Urinarias (Renal and Urinary Tract)
     const pointsToUrinaryOnly = 
       combined.includes("vias urinarias") || 
       combined.includes("vias urinaria") || 
@@ -2804,9 +2804,9 @@ export default function App() {
       combined.includes("hernia umbilical") ||
       combined.includes("hernia epigastr") ||
       combined.includes("diastasis") ||
-      combined.includes("diástasis") ||
+      combined.includes("diÃ¡stasis") ||
       combined.includes("eventracion") ||
-      combined.includes("eventración");
+      combined.includes("eventraciÃ³n");
 
     if (mentionsParedAbdominal) {
       setSpecificStudy("Pared abdominal");
@@ -2845,9 +2845,9 @@ export default function App() {
     setStudyType(computed);
   }, [modality, specificStudy, laterality, customStudy, projections, customProjection]);
 
-  // Auto-detect specific study from pasted/draft report, findings, or clinical history if specificStudy is the default "Tórax"
+  // Auto-detect specific study from pasted/draft report, findings, or clinical history if specificStudy is the default "TÃ³rax"
   useEffect(() => {
-    if (specificStudy === "Tórax") {
+    if (specificStudy === "TÃ³rax") {
       const combinedText = `${inputReport || ""} ${findings || ""} ${clinicalHistory || ""}`;
       if (combinedText.trim()) {
         autoDetectSpecificStudyAndModality(combinedText, "");
@@ -2889,7 +2889,7 @@ export default function App() {
   // Biomechanical Radar Data
   const [biomechanicalRadarData, setBiomechanicalRadarData] = useState<any | null>(null);
 
-  // Atlas 3D Fotorrealista y Correlación Anatómica Data
+  // Atlas 3D Fotorrealista y CorrelaciÃ³n AnatÃ³mica Data
   const [atlas3dData, setAtlas3dData] = useState<Atlas3DData | null>(null);
   const [includeAtlas3dInReport, setIncludeAtlas3dInReport] = useState<boolean>(true);
   const [clinicalScorecardData, setClinicalScorecardData] = useState<ClinicalScorecardData | null>(null);
@@ -2915,7 +2915,7 @@ export default function App() {
   const [includeMeasurementNormalsInPdf, setIncludeMeasurementNormalsInPdf] = useState<boolean>(false);
   const [isMeasurementsGaugeOpen, setIsMeasurementsGaugeOpen] = useState<boolean>(false);
 
-  // Suite Vascular 3D & Mapa Ánatomo-Hemodinámico Data
+  // Suite Vascular 3D & Mapa Ãnatomo-HemodinÃ¡mico Data
   const [vascular3dData, setVascular3dData] = useState<Vascular3DData | null>(null);
   const [includeVascular3dInReport, setIncludeVascular3dInReport] = useState<boolean>(true);
 
@@ -2945,7 +2945,7 @@ export default function App() {
   const [includeMuscleTendon3dInReport, setIncludeMuscleTendon3dInReport] = useState<boolean>(true);
   const [includeWrist3dInReport, setIncludeWrist3dInReport] = useState<boolean>(true);
 
-  // Cuadrícula y Presentación Científica para Fotos de Ultrasonido
+  // CuadrÃ­cula y PresentaciÃ³n CientÃ­fica para Fotos de Ultrasonido
   const [usImagesGridMode, setUsImagesGridMode] = useState<UsImagesGridMode>("auto");
 
   // 3D Schematic Volumetric Renders for Findings
@@ -3213,11 +3213,11 @@ export default function App() {
       if (data.success) {
         setParagraphActionResult(data.result);
       } else {
-        setParagraphActionError(data.error || "Ocurrió un error inesperado al procesar la acción de párrafo.");
+        setParagraphActionError(data.error || "OcurriÃ³ un error inesperado al procesar la acciÃ³n de pÃ¡rrafo.");
       }
     } catch (err: any) {
       console.error("Error executing paragraph action:", err);
-      setParagraphActionError("Error de conexión con el servidor de IA.");
+      setParagraphActionError("Error de conexiÃ³n con el servidor de IA.");
     } finally {
       setParagraphActionLoading(false);
     }
@@ -3301,7 +3301,7 @@ export default function App() {
     setIsEditingReportManual(false);
   };
 
-  // --- CONTROLES DE CHAT INTELIGENTE MÉDICO-RADIOLÓGICO ---
+  // --- CONTROLES DE CHAT INTELIGENTE MÃDICO-RADIOLÃGICO ---
   const [showVersionComparison, setShowVersionComparison] = useState<boolean>(false);
   const [smartChatMessages, setSmartChatMessages] = useState<Array<{
     id: string;
@@ -3313,7 +3313,7 @@ export default function App() {
       {
         id: "welcome",
         role: "model",
-        text: "¡Hola! Soy tu **Asistente Inteligente Médico-Radiológico**. Consulta clasificaciones (ej. Neer o Bosniak), dosis de contraste o términos. Te brindaré resúmenes exportables para inyectarlos directo en el reporte."
+        text: "Â¡Hola! Soy tu **Asistente Inteligente MÃ©dico-RadiolÃ³gico**. Consulta clasificaciones (ej. Neer o Bosniak), dosis de contraste o tÃ©rminos. Te brindarÃ© resÃºmenes exportables para inyectarlos directo en el reporte."
       }
     ];
   });
@@ -3344,18 +3344,18 @@ export default function App() {
     }, 60);
 
     try {
-      const systemInstruction = `Eres un consultor e inteligencia conversacional médica y radiológica de élite. Tienes un dominio absoluto de la terminología de salud, enfermedades, dosificaciones de medicamentos, dosificaciones de medios de contraste, y clasificaciones radiológicas internacionales (como Neer de húmero proximal, Bosniak, BI-RADS, Fleischner, etc.).
-Tu objetivo es dar respuestas sumamente claras, científicamente precisas, profesionales y estructuradas.
+      const systemInstruction = `Eres un consultor e inteligencia conversacional mÃ©dica y radiolÃ³gica de Ã©lite. Tienes un dominio absoluto de la terminologÃ­a de salud, enfermedades, dosificaciones de medicamentos, dosificaciones de medios de contraste, y clasificaciones radiolÃ³gicas internacionales (como Neer de hÃºmero proximal, Bosniak, BI-RADS, Fleischner, etc.).
+Tu objetivo es dar respuestas sumamente claras, cientÃ­ficamente precisas, profesionales y estructuradas.
 
-${generatedReport ? `Contexto del informe radiológico activo actualmente en el que trabaja el médico en su workspace:\n"""\n${generatedReport}\n"""\n` : ""}
+${generatedReport ? `Contexto del informe radiolÃ³gico activo actualmente en el que trabaja el mÃ©dico en su workspace:\n"""\n${generatedReport}\n"""\n` : ""}
 
-REGLAS CRÍTICAS PARA CLASIFICACIONES Y RESÚMENES:
-1. Explica con total claridad y detalle los grados de la clasificación o temas que se te consultan.
-2. Si el usuario te consulta o solicita clasificar un hallazgo en términos clínicos o escalas (por ejemplo, 'escala de Neer', 'clasificación de fracturas de húmero proximal', 'Bosniak', 'Fleischner', etc.), DEBES incluir al final de tu respuesta un bloque especial de resumen de clasificación opcional encerrado EXACTAMENTE entre los delimitadores [RESUMEN_CLASIFICACION]...[/RESUMEN_CLASIFICACION] para que el médico pueda exportarlo.
-3. El contenido dentro de [RESUMEN_CLASIFICACION] debe ser redactado en formato Markdown limpio, sin rodeos, listo para ser acoplado directamente en el reporte de estudio bajo una sección de conclusión o impresión diagnóstica. No repitas la escala completa aquí, solo aplica un resumen personalizado y conciso del hallazgo aplicable al caso.
+REGLAS CRÃTICAS PARA CLASIFICACIONES Y RESÃMENES:
+1. Explica con total claridad y detalle los grados de la clasificaciÃ³n o temas que se te consultan.
+2. Si el usuario te consulta o solicita clasificar un hallazgo en tÃ©rminos clÃ­nicos o escalas (por ejemplo, 'escala de Neer', 'clasificaciÃ³n de fracturas de hÃºmero proximal', 'Bosniak', 'Fleischner', etc.), DEBES incluir al final de tu respuesta un bloque especial de resumen de clasificaciÃ³n opcional encerrado EXACTAMENTE entre los delimitadores [RESUMEN_CLASIFICACION]...[/RESUMEN_CLASIFICACION] para que el mÃ©dico pueda exportarlo.
+3. El contenido dentro de [RESUMEN_CLASIFICACION] debe ser redactado en formato Markdown limpio, sin rodeos, listo para ser acoplado directamente en el reporte de estudio bajo una secciÃ³n de conclusiÃ³n o impresiÃ³n diagnÃ³stica. No repitas la escala completa aquÃ­, solo aplica un resumen personalizado y conciso del hallazgo aplicable al caso.
 Ejemplo:
 [RESUMEN_CLASIFICACION]
-**Clasificación de Neer (Húmero Proximal):** Fractura-luxación en 3 partes con desplazamiento del troquiter > 1 cm y angulación de la cabeza humeral > 45°. Impresión diagnóstica de inestabilidad articular que requiere interconsulta con traumatología.
+**ClasificaciÃ³n de Neer (HÃºmero Proximal):** Fractura-luxaciÃ³n en 3 partes con desplazamiento del troquiter > 1 cm y angulaciÃ³n de la cabeza humeral > 45Â°. ImpresiÃ³n diagnÃ³stica de inestabilidad articular que requiere interconsulta con traumatologÃ­a.
 [/RESUMEN_CLASIFICACION]`;
 
       const response = await fetch("/api/chat", {
@@ -3393,11 +3393,11 @@ Ejemplo:
           summary: summaryText
         }]);
       } else {
-        setSmartChatError(data.error || "No se pudo obtener una respuesta válida de Gemini.");
+        setSmartChatError(data.error || "No se pudo obtener una respuesta vÃ¡lida de Gemini.");
       }
     } catch (err) {
       console.error(err);
-      setSmartChatError("Error de conexión médica con el servidor de inteligencia.");
+      setSmartChatError("Error de conexiÃ³n mÃ©dica con el servidor de inteligencia.");
     } finally {
       setIsSmartChatLoading(false);
       setTimeout(() => {
@@ -3553,7 +3553,7 @@ Ejemplo:
           }
         } catch (err: any) {
           console.error("Error al estructurar el caso:", err);
-          setCaseDataError("Error de comunicación/red al estructurar el flujograma.");
+          setCaseDataError("Error de comunicaciÃ³n/red al estructurar el flujograma.");
         } finally {
           setIsExtractingCaseData(false);
         }
@@ -3604,18 +3604,18 @@ Ejemplo:
       const jsonBlock = `[CASE_ANALYSIS_JSON]\n${JSON.stringify(finalCaseData, null, 2)}\n[/CASE_ANALYSIS_JSON]\n\n`;
 
       // Construct the formatted markdown text summary accompanying the JSON
-      let textSummary = `**ANÁLISIS INTEGRADO DE CASO (${selectedCaseFormat.toUpperCase().replace("_", " ")})**\n\n`;
+      let textSummary = `**ANÃLISIS INTEGRADO DE CASO (${selectedCaseFormat.toUpperCase().replace("_", " ")})**\n\n`;
       if (caseElements.includeSonographic && finalCaseData.sonographicPillar) {
-        textSummary += `• **Pilar Sonográfico Fundamental**: ${finalCaseData.sonographicPillar.primaryFinding}\n`;
+        textSummary += `â¢ **Pilar SonogrÃ¡fico Fundamental**: ${finalCaseData.sonographicPillar.primaryFinding}\n`;
       }
       if (caseElements.includeClinicalCorr && finalCaseData.clinicalCorrelation) {
-        textSummary += `• **Correlación Clínica/Lab**: ${finalCaseData.clinicalCorrelation}\n`;
+        textSummary += `â¢ **CorrelaciÃ³n ClÃ­nica/Lab**: ${finalCaseData.clinicalCorrelation}\n`;
       }
       if (caseElements.includeDifferentials && finalCaseData.diagnostics?.length) {
-        textSummary += `• **Diagnóstico Principal**: ${finalCaseData.diagnostics[0]?.name}\n`;
+        textSummary += `â¢ **DiagnÃ³stico Principal**: ${finalCaseData.diagnostics[0]?.name}\n`;
       }
       if (caseElements.includeManagement && finalCaseData.managementRecommendation) {
-        textSummary += `• **Conducta Recomendada**: ${finalCaseData.managementRecommendation}\n`;
+        textSummary += `â¢ **Conducta Recomendada**: ${finalCaseData.managementRecommendation}\n`;
       }
 
       setGeneratedReport(prev => {
@@ -3629,8 +3629,8 @@ Ejemplo:
         setDiffsIncorporated(false);
       }, 3000);
     } catch (err: any) {
-      console.error("Error al formatear e incorporar el análisis:", err);
-      setDiffsError(err?.message || "Error al procesar la inserción de datos.");
+      console.error("Error al formatear e incorporar el anÃ¡lisis:", err);
+      setDiffsError(err?.message || "Error al procesar la inserciÃ³n de datos.");
     } finally {
       setIsFormattingCaseJSON(false);
     }
@@ -3667,7 +3667,7 @@ Ejemplo:
   const [isWrist3dSuiteOpen, setIsWrist3dSuiteOpen] = useState<boolean>(false);
   const [includeRadarInReport, setIncludeRadarInReport] = useState<boolean>(true);
 
-  // States & Handlers for Sistema de Activación Rápida de Módulos (Procesamiento en Lote)
+  // States & Handlers for Sistema de ActivaciÃ³n RÃ¡pida de MÃ³dulos (Procesamiento en Lote)
   const DEFAULT_BATCH_MODULES: Record<string, boolean> = {
     clinical_scorecard: true,
     reasoning_chain: false,
@@ -3729,6 +3729,7 @@ Ejemplo:
     setReportEnrichmentSession(createRunningEnrichmentSession(draft));
     setIsNegativityChecklistOpen(true);
     setIsSecondReaderOpen(true);
+    setIsClinicalScorecardOpen(true);
 
     try {
       const result = await runReportEnrichmentPipeline({
@@ -3739,7 +3740,9 @@ Ejemplo:
         readerModel: modelFor("second_reader"),
         modifyModel: modelFor("report_modify"),
         classificationsModel: modelFor("classifications"),
+        scorecardModel: modelFor("clinical_scorecard"),
         includeManagementRecommendations: true,
+        existingScorecard: clinicalScorecardData,
       });
 
       if (result.checklist) {
@@ -3748,6 +3751,10 @@ Ejemplo:
       }
       if (result.reader) {
         setSecondReaderData(result.reader);
+      }
+      if (result.scorecard) {
+        setClinicalScorecardData(result.scorecard);
+        setIncludeScorecardInReport(true);
       }
       if (result.classifications && result.classifications.length > 0) {
         setClassRecommendations(result.classifications);
@@ -3768,7 +3775,7 @@ Ejemplo:
         applyEnrichedReportToEditor(result.report, draft);
       }
     } catch (err: any) {
-      console.error("Pulido cl�nico fall�:", err);
+      console.error("Pulido clínico falló:", err);
       setReportEnrichmentSession((prev) =>
         prev
           ? {
@@ -4587,10 +4594,10 @@ Ejemplo:
     try {
       await Promise.allSettled(promises);
       const activeCount = Object.values(modules).filter(Boolean).length;
-      setBatchSuccessMessage(`¡Éxito! Se han activado y procesado ${activeCount} módulos seleccionados en lote.`);
+      setBatchSuccessMessage(`Â¡Ãxito! Se han activado y procesado ${activeCount} mÃ³dulos seleccionados en lote.`);
       setTimeout(() => setBatchSuccessMessage(null), 6000);
     } catch (err) {
-      console.error("Error al procesar módulos en lote:", err);
+      console.error("Error al procesar mÃ³dulos en lote:", err);
     } finally {
       setIsActivatingBatch(false);
     }
@@ -4717,8 +4724,8 @@ Ejemplo:
 
   const resetGeneratorForm = () => {
     setCurrentCloudStudyId("");
-    setModality("Radiografía");
-    setSpecificStudy("Tórax");
+    setModality("RadiografÃ­a");
+    setSpecificStudy("TÃ³rax");
     setCustomStudy("");
     setLaterality("");
     setProjections([]);
@@ -4779,7 +4786,7 @@ Ejemplo:
     
     // File size safety check
     if (file.size > 15 * 1024 * 1024) {
-      alert("La imagen excede el límite recomendado de 15MB.");
+      alert("La imagen excede el lÃ­mite recomendado de 15MB.");
       return;
     }
 
@@ -4990,7 +4997,7 @@ Ejemplo:
 
   const handleAutoLabelAnnotation = async () => {
     if (!pendingAnnotation || !base64Image) {
-      setAutoLabelError("No hay una imagen cargada o región seleccionada.");
+      setAutoLabelError("No hay una imagen cargada o regiÃ³n seleccionada.");
       return;
     }
 
@@ -5027,7 +5034,7 @@ Ejemplo:
       if (data.label) {
         setPendingLabel(data.label);
       } else {
-        setAutoLabelError("La IA no pudo sugerir una etiqueta clara para esta región.");
+        setAutoLabelError("La IA no pudo sugerir una etiqueta clara para esta regiÃ³n.");
       }
     } catch (err: any) {
       console.error("Error al obtener etiqueta IA:", err);
@@ -5039,7 +5046,7 @@ Ejemplo:
 
   const handleSaveAnnotation = () => {
     if (!pendingAnnotation) return;
-    const labelToSave = pendingLabel.trim() || (pendingAnnotation.type === "point" ? `Punto de Interés #${annotations.length + 1}` : `Zona de Sospecha #${annotations.length + 1}`);
+    const labelToSave = pendingLabel.trim() || (pendingAnnotation.type === "point" ? `Punto de InterÃ©s #${annotations.length + 1}` : `Zona de Sospecha #${annotations.length + 1}`);
     
     const newAnn: ImageAnnotation = {
       id: Math.random().toString(36).substring(2, 11),
@@ -5102,10 +5109,10 @@ Ejemplo:
 
     // Setup visual steps for medical analysis feeling
     const steps = [
-      "Extrayendo metadatos clínicos...",
+      "Extrayendo metadatos clÃ­nicos...",
       "Estableciendo canal seguro con Gemini...",
-      selectedFile ? "Renderizando densidades anatómicas complejas..." : "Analizando concordancia sintáctica...",
-      "Aplicando reglas de redacción radiológica...",
+      selectedFile ? "Renderizando densidades anatÃ³micas complejas..." : "Analizando concordancia sintÃ¡ctica...",
+      "Aplicando reglas de redacciÃ³n radiolÃ³gica...",
       "Compilando informe estructurado..."
     ];
 
@@ -5150,7 +5157,7 @@ Ejemplo:
         data = await response.json();
       } catch (jsonErr) {
         const textResponse = await response.text().catch(() => "");
-        throw new Error(`La respuesta del servidor no es JSON válido (Código HTTP ${response.status}). Detalle: ${textResponse.slice(0, 200) || "Sin respuesta del servidor"}`);
+        throw new Error(`La respuesta del servidor no es JSON vÃ¡lido (CÃ³digo HTTP ${response.status}). Detalle: ${textResponse.slice(0, 200) || "Sin respuesta del servidor"}`);
       }
 
       clearInterval(stepInterval);
@@ -5224,12 +5231,12 @@ Ejemplo:
             patientGender: patientGender || "",
             patientId: patientId || "",
             reportDate: reportDate || new Date().toISOString().split('T')[0],
-            doctorName: doctorName || "Médico Radiólogo",
+            doctorName: doctorName || "MÃ©dico RadiÃ³logo",
             doctorLicense: doctorLicense || "No especificada",
-            clinicName: clinicName || "Clínica Privada",
+            clinicName: clinicName || "ClÃ­nica Privada",
             studyType,
             clinicalHistory: clinicalHistory || "No especificada",
-            findings: findings || "Hallazgos guardados automáticamente.",
+            findings: findings || "Hallazgos guardados automÃ¡ticamente.",
             reportText: data.report,
             attachedImages: attachedImages || [],
             operationalSummaryText: "",
@@ -5310,7 +5317,7 @@ Ejemplo:
               const { userId: _userId, userEmail: _userEmail, ...studyPayload } = cloudStudy;
               await saveStudyToCloud(gmailUser.uid, gmailUser.email || "", studyPayload);
             } catch (cloudError) {
-              console.warn("El reporte se guard� localmente pero no pudo sincronizarse:", cloudError);
+              console.warn("El reporte se guardï¿½ localmente pero no pudo sincronizarse:", cloudError);
             }
           }
 
@@ -5325,11 +5332,11 @@ Ejemplo:
           triggerAutoImageEvaluation(base64Image, selectedFile?.type, studyType, clinicalHistory, findings, annotations);
         }
       } else {
-        setReportError(data.error || `Error del servidor (Código ${response.status}): ${JSON.stringify(data)}`);
+        setReportError(data.error || `Error del servidor (CÃ³digo ${response.status}): ${JSON.stringify(data)}`);
       }
     } catch (error: any) {
       clearInterval(stepInterval);
-      setReportError(`Falla de red o de servidor: ${error?.message || String(error)}. Asegúrate de que el servidor está encendido y que tu API Key en la pestaña de Configuración es correcta.`);
+      setReportError(`Falla de red o de servidor: ${error?.message || String(error)}. AsegÃºrate de que el servidor estÃ¡ encendido y que tu API Key en la pestaÃ±a de ConfiguraciÃ³n es correcta.`);
       console.error(error);
     } finally {
       setIsGenerating(false);
@@ -5390,10 +5397,10 @@ Ejemplo:
       if (data.success && data.polishedText) {
         setClinicalHistory(data.polishedText);
       } else {
-        console.error("No se pudo pulir la indicación:", data.error);
+        console.error("No se pudo pulir la indicaciÃ³n:", data.error);
       }
     } catch (e) {
-      console.error("Error al asistir con la indicación clínica:", e);
+      console.error("Error al asistir con la indicaciÃ³n clÃ­nica:", e);
     } finally {
       setIsAssistingHistory(false);
     }
@@ -5430,7 +5437,7 @@ Ejemplo:
         setGeneratedReport(data.report);
         setCurrentModInstruction("");
       } else {
-        setModifyError(data.error || "Ocurrió un error al intentar modificar el informe.");
+        setModifyError(data.error || "OcurriÃ³ un error al intentar modificar el informe.");
       }
     } catch (err: any) {
       console.error("Error al modificar informe:", err);
@@ -5457,18 +5464,18 @@ Ejemplo:
         return mergeCaseAnalysisBlock(prev || "", format, jsonBlock, textSummary);
       });
     } else {
-      const wrappedContent = `=== VALORACIÓN EXPERTA DE IMAGEN ANEXADA ===\n${analysisText}\n=== FIN DE VALORACIÓN EXPERTA ===`;
+      const wrappedContent = `=== VALORACIÃN EXPERTA DE IMAGEN ANEXADA ===\n${analysisText}\n=== FIN DE VALORACIÃN EXPERTA ===`;
       
       setFindings(prev => {
         if (!prev) return `${wrappedContent}\n\n`;
         
-        const regex = /=== VALORACIÓN EXPERTA DE IMAGEN ANEXADA ===[\s\S]*?=== FIN DE VALORACIÓN EXPERTA ===/;
+        const regex = /=== VALORACIÃN EXPERTA DE IMAGEN ANEXADA ===[\s\S]*?=== FIN DE VALORACIÃN EXPERTA ===/;
         if (regex.test(prev)) {
           return prev.replace(regex, wrappedContent);
         }
         
-        if (prev.includes("=== VALORACIÓN EXPERTA DE IMAGEN ANEXADA ===")) {
-          const splitted = prev.split("=== VALORACIÓN EXPERTA DE IMAGEN ANEXADA ===");
+        if (prev.includes("=== VALORACIÃN EXPERTA DE IMAGEN ANEXADA ===")) {
+          const splitted = prev.split("=== VALORACIÃN EXPERTA DE IMAGEN ANEXADA ===");
           const afterPart = splitted.slice(1).join(" ");
           const cleanedAfter = afterPart.replace(/^[\s\S]*?\n\n/, "");
           return `${wrappedContent}\n\n${splitted[0]}${cleanedAfter}`;
@@ -5483,7 +5490,7 @@ Ejemplo:
       setClinicalHistory(prev => {
         if (!prev || prev.trim() === "") return medicalHistoryCombined;
         if (prev.includes(medicalHistoryCombined)) return prev;
-        return `${prev}\n\n[Contexto Doble Valoración]: ${medicalHistoryCombined}`;
+        return `${prev}\n\n[Contexto Doble ValoraciÃ³n]: ${medicalHistoryCombined}`;
       });
     }
 
@@ -5512,7 +5519,7 @@ Ejemplo:
           model: modelFor("quality_eval"),
           image: base64Image,
           mimeType: selectedFile?.type || "image/png",
-          studyType: studyType || "Estudio Radiológico",
+          studyType: studyType || "Estudio RadiolÃ³gico",
           clinicalHistory: clinicalHistory || "",
           findings: findings || "",
           isAdditional: true,
@@ -5523,7 +5530,7 @@ Ejemplo:
       if (data.success && data.evaluation) {
         setAdditionalEvaluation(data.evaluation);
       } else {
-        setAdditionalEvalError(data.error || "Error al realizar la valoración adicional.");
+        setAdditionalEvalError(data.error || "Error al realizar la valoraciÃ³n adicional.");
       }
     } catch (err: any) {
       console.error("Error al evaluar imagen:", err);
@@ -5548,7 +5555,7 @@ Ejemplo:
         body: JSON.stringify({
           model: modelFor("case_analysis"),
           report: generatedReport,
-          studyType: studyType || "Estudio Radiológico",
+          studyType: studyType || "Estudio RadiolÃ³gico",
           clinicalHistory: clinicalHistory || "",
           findings: findings || "",
         }),
@@ -5557,7 +5564,7 @@ Ejemplo:
       if (data.success && data.analysis) {
         setCaseAnalysis(data.analysis);
       } else {
-        setCaseAnalysisError(data.error || "Error al realizar el análisis del caso.");
+        setCaseAnalysisError(data.error || "Error al realizar el anÃ¡lisis del caso.");
       }
     } catch (err: any) {
       console.error("Error al analizar caso:", err);
@@ -5592,10 +5599,10 @@ Ejemplo:
         setGeneratedReport(data.report);
         setDiffsIncorporated(true);
       } else {
-        setDiffsError(data.error || "Error al incorporar los diagnósticos diferenciales sintetizados.");
+        setDiffsError(data.error || "Error al incorporar los diagnÃ³sticos diferenciales sintetizados.");
       }
     } catch (err: any) {
-      console.error("Error al incorporar diagnósticos diferenciales:", err);
+      console.error("Error al incorporar diagnÃ³sticos diferenciales:", err);
       setDiffsError(err?.message || String(err));
     } finally {
       setIsIncorporatingDiffs(false);
@@ -5616,7 +5623,7 @@ Ejemplo:
         body: JSON.stringify({
           model: modelFor("bibliography"),
           report: generatedReport,
-          studyType: studyType || "Estudio Radiológico",
+          studyType: studyType || "Estudio RadiolÃ³gico",
           findings: findings || "",
         }),
       });
@@ -5627,10 +5634,10 @@ Ejemplo:
           setBibliographySources(data.sources);
         }
       } else {
-        setBibliographyError(data.error || "Error al buscar la bibliografía médica.");
+        setBibliographyError(data.error || "Error al buscar la bibliografÃ­a mÃ©dica.");
       }
     } catch (err: any) {
-      console.error("Error al buscar bibliografía:", err);
+      console.error("Error al buscar bibliografÃ­a:", err);
       setBibliographyError(err?.message || String(err));
     } finally {
       setIsSearchingBibliography(false);
@@ -5649,7 +5656,7 @@ Ejemplo:
         body: JSON.stringify({
           model: modelFor("bibliography"),
           report: generatedReport,
-          studyType: studyType || "Estudio Radiológico",
+          studyType: studyType || "Estudio RadiolÃ³gico",
           findings: findings || "",
           searchMore: true,
           existingSources: bibliographySources,
@@ -5667,10 +5674,10 @@ Ejemplo:
           });
         }
       } else {
-        setBibliographyError(data.error || "Error al buscar fuentes bibliográficas adicionales.");
+        setBibliographyError(data.error || "Error al buscar fuentes bibliogrÃ¡ficas adicionales.");
       }
     } catch (err: any) {
-      console.error("Error al buscar más bibliografía:", err);
+      console.error("Error al buscar mÃ¡s bibliografÃ­a:", err);
       setBibliographyError(err?.message || String(err));
     } finally {
       setIsSearchingMoreBibliography(false);
@@ -5691,10 +5698,10 @@ Ejemplo:
     
     // Construct default subject & email body nicely for the official report
     const clientName = patientName || "Paciente";
-    let subject = `Reporte de Estudio Clínico - ${clientName}`;
-    let body = `Estimado(a) ${clientName},\n\nLe enviamos adjunto a este correo el Reporte de Estudio Clínico Oficial realizado.\n\n`;
+    let subject = `Reporte de Estudio ClÃ­nico - ${clientName}`;
+    let body = `Estimado(a) ${clientName},\n\nLe enviamos adjunto a este correo el Reporte de Estudio ClÃ­nico Oficial realizado.\n\n`;
 
-    body += `Quedamos a su entera disposición para cualquier aclaración o consulta adicional.\n\nAtentamente,\n${doctorName || "Médico Especialista"}`;
+    body += `Quedamos a su entera disposiciÃ³n para cualquier aclaraciÃ³n o consulta adicional.\n\nAtentamente,\n${doctorName || "MÃ©dico Especialista"}`;
     
     setGmailSubject(subject);
     setGmailBody(body);
@@ -5741,7 +5748,7 @@ Ejemplo:
       }
     } catch (err: any) {
       console.error("Anonymous authentication failed:", err);
-      setGmailErrorMessage("Error al iniciar acceso instantáneo: " + (err.message || String(err)));
+      setGmailErrorMessage("Error al iniciar acceso instantÃ¡neo: " + (err.message || String(err)));
     } finally {
       setIsLoggingInGmail(false);
     }
@@ -5749,7 +5756,7 @@ Ejemplo:
 
   const handleEmailLogin = async () => {
     if (!authEmail || !authPassword) {
-      setGmailErrorMessage("Por favor ingrese correo y contraseña.");
+      setGmailErrorMessage("Por favor ingrese correo y contraseÃ±a.");
       return;
     }
     setIsLoggingInGmail(true);
@@ -5766,9 +5773,9 @@ Ejemplo:
       if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
         friendlyMsg = "Credenciales incorrectas o usuario no registrado.";
       } else if (err.code === 'auth/invalid-email') {
-        friendlyMsg = "El formato del correo es inválido.";
+        friendlyMsg = "El formato del correo es invÃ¡lido.";
       }
-      setGmailErrorMessage("Error de inicio de sesión: " + friendlyMsg);
+      setGmailErrorMessage("Error de inicio de sesiÃ³n: " + friendlyMsg);
     } finally {
       setIsLoggingInGmail(false);
     }
@@ -5776,11 +5783,11 @@ Ejemplo:
 
   const handleEmailRegister = async () => {
     if (!authEmail || !authPassword) {
-      setGmailErrorMessage("Por favor ingrese correo y contraseña.");
+      setGmailErrorMessage("Por favor ingrese correo y contraseÃ±a.");
       return;
     }
     if (authPassword.length < 6) {
-      setGmailErrorMessage("La contraseña debe tener al menos 6 caracteres.");
+      setGmailErrorMessage("La contraseÃ±a debe tener al menos 6 caracteres.");
       return;
     }
     setIsLoggingInGmail(true);
@@ -5795,11 +5802,11 @@ Ejemplo:
       console.error("Email registration failed:", err);
       let friendlyMsg = err.message || String(err);
       if (err.code === 'auth/email-already-in-use') {
-        friendlyMsg = "Este correo electrónico ya está registrado.";
+        friendlyMsg = "Este correo electrÃ³nico ya estÃ¡ registrado.";
       } else if (err.code === 'auth/invalid-email') {
-        friendlyMsg = "El formato del correo es inválido.";
+        friendlyMsg = "El formato del correo es invÃ¡lido.";
       } else if (err.code === 'auth/weak-password') {
-        friendlyMsg = "La contraseña es muy débil (mínimo 6 caracteres).";
+        friendlyMsg = "La contraseÃ±a es muy dÃ©bil (mÃ­nimo 6 caracteres).";
       }
       setGmailErrorMessage("Error al registrar especialista: " + friendlyMsg);
     } finally {
@@ -5819,11 +5826,11 @@ Ejemplo:
 
   const handleSendGmailAction = async () => {
     if (!gmailAccessToken) {
-      setGmailErrorMessage("Debes iniciar sesión con Google antes de realizar el envío.");
+      setGmailErrorMessage("Debes iniciar sesiÃ³n con Google antes de realizar el envÃ­o.");
       return;
     }
     if (!gmailTo) {
-      setGmailErrorMessage("Por favor, especifica el correo electrónico del destinatario.");
+      setGmailErrorMessage("Por favor, especifica el correo electrÃ³nico del destinatario.");
       return;
     }
     if (!gmailAttachReport && !gmailAttachSummary && !gmailAttachInfographic) {
@@ -5854,7 +5861,7 @@ Ejemplo:
       // 1. Generate PDFs in-memory as Base64 strings if selected/checked
       if (gmailAttachSummary) {
         if (!patientSummary) {
-          throw new Error("Debe generar primero la 'Traducción Empática y Explicación' para poder adjuntarla.");
+          throw new Error("Debe generar primero la 'TraducciÃ³n EmpÃ¡tica y ExplicaciÃ³n' para poder adjuntarla.");
         }
         const rawSummaryB64 = await handleDownloadPatientSummaryPDF(false, false, true) || "";
         explanationPDFBase64 = chunkBase64WithCRLF(rawSummaryB64);
@@ -5871,7 +5878,7 @@ Ejemplo:
       // 2. Fetch and convert infographic image if selected/checked
       if (gmailAttachInfographic) {
         if (!infographicUrl) {
-          throw new Error("Debe generar primero la 'Infografía' para poder adjuntarla.");
+          throw new Error("Debe generar primero la 'InfografÃ­a' para poder adjuntarla.");
         }
         try {
           let plainInfographicBase64 = "";
@@ -5881,7 +5888,7 @@ Ejemplo:
               infographicContentType = match[1];
               plainInfographicBase64 = match[2];
             } else {
-              throw new Error("Formato de URL de datos de infografía no reconocido.");
+              throw new Error("Formato de URL de datos de infografÃ­a no reconocido.");
             }
           } else {
             const res = await fetch(infographicUrl);
@@ -5898,7 +5905,7 @@ Ejemplo:
           }
           infographicBase64 = chunkBase64WithCRLF(plainInfographicBase64);
         } catch (imageErr: any) {
-          throw new Error("Error al preparar la imagen de la infografía: " + (imageErr.message || String(imageErr)));
+          throw new Error("Error al preparar la imagen de la infografÃ­a: " + (imageErr.message || String(imageErr)));
         }
       }
 
@@ -5911,7 +5918,7 @@ Ejemplo:
           .trim()
           .normalize("NFD")
           .replace(/[\u0300-\u036f]/g, "")
-          .replace(/ñ/gi, "n")
+          .replace(/Ã±/gi, "n")
           .replace(/[^a-zA-Z0-9_\.-]/g, "_")
           .replace(/\s+/g, "_");
       };
@@ -6011,13 +6018,13 @@ Ejemplo:
         if (response.status === 401) {
           setGmailAccessToken(null);
           localStorage.removeItem("rad_gmail_access_token");
-          throw new Error("Su sesión de Gmail ha expirado por seguridad (las sesiones de Google duran 1 hora). Como hemos habilitado el acceso rápido, simplemente haga clic en 'Autorizar Gmail' para renovarla en 1 segundo sin tener que volver a elegir su cuenta ni ingresar sus datos.");
+          throw new Error("Su sesiÃ³n de Gmail ha expirado por seguridad (las sesiones de Google duran 1 hora). Como hemos habilitado el acceso rÃ¡pido, simplemente haga clic en 'Autorizar Gmail' para renovarla en 1 segundo sin tener que volver a elegir su cuenta ni ingresar sus datos.");
         }
         const errorText = await response.text();
-        throw new Error(`Gmail API reportó un error de envío: ${errorText}`);
+        throw new Error(`Gmail API reportÃ³ un error de envÃ­o: ${errorText}`);
       }
 
-      setGmailSuccessMessage("¡Correo electrónico enviado con éxito vía Gmail!");
+      setGmailSuccessMessage("Â¡Correo electrÃ³nico enviado con Ã©xito vÃ­a Gmail!");
     } catch (err: any) {
       console.error("Failed to send email via Gmail:", err);
       setGmailErrorMessage("Error al enviar el correo: " + (err.message || String(err)));
@@ -6044,19 +6051,19 @@ Ejemplo:
   };
 
   const getWhatsAppTextPreview = (overrideId?: string) => {
-    let text = `*REPORTE RADIOLÓGICO DIGITAL*\n`;
-    text += `*━━━━━━━━━━━━━━━━━━━━━*\n\n`;
+    let text = `*REPORTE RADIOLÃGICO DIGITAL*\n`;
+    text += `*âââââââââââââââââââââ*\n\n`;
 
     if (patientName) text += `*Paciente:* ${patientName}\n`;
     if (patientAge) text += `*Edad:* ${patientAge}\n`;
-    if (patientGender) text += `*Género:* ${patientGender}\n`;
-    if (patientId) text += `*ID/Cédula:* ${patientId}\n`;
+    if (patientGender) text += `*GÃ©nero:* ${patientGender}\n`;
+    if (patientId) text += `*ID/CÃ©dula:* ${patientId}\n`;
     if (studyType) text += `*Estudio:* ${studyType}\n`;
     if (reportDate) text += `*Fecha:* ${formatDateToDMY(reportDate)}\n`;
     if (doctorName) text += `*Especialista:* ${doctorName}\n`;
     text += `\n`;
 
-    // 1. Resumen Clínico Operativo (Conclusions)
+    // 1. Resumen ClÃ­nico Operativo (Conclusions)
     if (whatsappIncludeOperationalSummary && operationalSummaryText) {
       const cleanOperationalSummary = operationalSummaryText
         .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F900}-\u{1F9FF}\u{1F1E6}-\u{1F1FF}\u{1F191}-\u{1F251}\u{1F004}\u{1F0CF}\u{1F170}-\u{1F171}\u{1F17E}-\u{1F17F}\u{1F18E}\u{3030}\u{2B50}\u{2B55}\u{2934}-\u{2935}\u{2B05}-\u{2B07}\u{2B1B}-\u{2B1C}\u{3297}\u{3299}\u{303D}\u{00A9}\u{00AE}\u{2122}\u{2139}\u{24C2}\u{25AA}-\u{25AB}\u{25B6}\u{25C0}\u{25FB}-\u{25FE}\u{1F000}-\u{1F9FF}]/gu, "")
@@ -6065,16 +6072,16 @@ Ejemplo:
         .replace(/  +/g, ' ')
         .trim();
 
-      text += `*RESUMEN CLÍNICO OPERATIVO*\n`;
-      text += `*━━━━━━━━━━━━━━━━━━━━━*\n`;
+      text += `*RESUMEN CLÃNICO OPERATIVO*\n`;
+      text += `*âââââââââââââââââââââ*\n`;
       text += `${cleanOperationalSummary}\n\n`;
     }
 
-    // 2. Acompañamiento Explicativo para el Paciente
+    // 2. AcompaÃ±amiento Explicativo para el Paciente
     if (whatsappIncludePatientSummary && patientSummary) {
-      text += `*EXPLICACIÓN PARA EL PACIENTE*\n`;
-      text += `_Traducción de hallazgos médicos a un lenguaje claro_\n`;
-      text += `*━━━━━━━━━━━━━━━━━━━━━*\n\n`;
+      text += `*EXPLICACIÃN PARA EL PACIENTE*\n`;
+      text += `_TraducciÃ³n de hallazgos mÃ©dicos a un lenguaje claro_\n`;
+      text += `*âââââââââââââââââââââ*\n\n`;
 
       if (patientSummary.summary) {
         text += `*Resumen de su estado:*\n${patientSummary.summary.trim()}\n\n`;
@@ -6091,8 +6098,8 @@ Ejemplo:
       }
     }
 
-    text += `*━━━━━━━━━━━━━━━━━━━━━*\n`;
-    text += `_Por favor, descargue y conserve los documentos PDF oficiales adjuntos para presentarlos en su próxima consulta de seguimiento._`;
+    text += `*âââââââââââââââââââââ*\n`;
+    text += `_Por favor, descargue y conserve los documentos PDF oficiales adjuntos para presentarlos en su prÃ³xima consulta de seguimiento._`;
     return text;
   };
 
@@ -6139,8 +6146,8 @@ Ejemplo:
           if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
             navigator.share({
               files: [file],
-              title: "Infografía Paciente",
-              text: `Infografía de ${patientName || "Paciente"}`
+              title: "InfografÃ­a Paciente",
+              text: `InfografÃ­a de ${patientName || "Paciente"}`
             }).catch(err => {
               console.warn("Native Share failed for infographic image:", err);
             });
@@ -6174,7 +6181,7 @@ Ejemplo:
         body: JSON.stringify({
           model: modelFor("patient_summary"),
           report: reportContent,
-          studyType: studyType || "Estudio Radiol�gico",
+          studyType: studyType || "Estudio Radiolï¿½gico",
           clinicalHistory: clinicalHistory || "",
         }),
       });
@@ -6215,7 +6222,7 @@ Ejemplo:
         setDynamicGlossaryError(data.error || "Error al construir el glosario del reporte.");
       }
     } catch (err: any) {
-      console.error("Error al construir glosario dinámico:", err);
+      console.error("Error al construir glosario dinÃ¡mico:", err);
       setDynamicGlossaryError(err?.message || String(err));
     } finally {
       setIsGeneratingDynamicGlossary(false);
@@ -6242,7 +6249,7 @@ Ejemplo:
           model: modelFor("chat"),
           messages: [{
             role: "user",
-            text: "Resume de forma muy concisa ÚNICAMENTE los hallazgos clínicos principales de este reporte médico en 3 o 4 viñetas de texto asertivas y claras, redactadas con un lenguaje profesional pero comprensible, apto para ser compartido por WhatsApp y consultado digitalmente por el paciente. NO incluyas ninguna recomendación, sugerencia de manejo ni plan a futuro, limítate estrictamente a los hallazgos de forma asertiva. No agregues preámbulos, saludos, ni comentarios personales, devuelve directamente las viñetas con guiones '-'. Reporte:\n\n" + reportContent
+            text: "Resume de forma muy concisa ÃNICAMENTE los hallazgos clÃ­nicos principales de este reporte mÃ©dico en 3 o 4 viÃ±etas de texto asertivas y claras, redactadas con un lenguaje profesional pero comprensible, apto para ser compartido por WhatsApp y consultado digitalmente por el paciente. NO incluyas ninguna recomendaciÃ³n, sugerencia de manejo ni plan a futuro, limÃ­tate estrictamente a los hallazgos de forma asertiva. No agregues preÃ¡mbulos, saludos, ni comentarios personales, devuelve directamente las viÃ±etas con guiones '-'. Reporte:\n\n" + reportContent
           }]
         })
       });
@@ -6257,15 +6264,15 @@ Ejemplo:
           await saveStudyToCloud(gmailUser.uid, gmailUser.email || "", {
             id: currentCloudStudyId,
             timestamp: new Date().toLocaleString("es-ES", { hour: "2-digit", minute: "2-digit" }),
-            patientName: patientName || "Paciente Anónimo",
+            patientName: patientName || "Paciente AnÃ³nimo",
             patientEmail: patientEmail || "No especificado",
             patientAge: patientAge || "",
             patientGender: patientGender || "",
             patientId: patientId || "",
             reportDate: reportDate || new Date().toISOString().split('T')[0],
-            doctorName: doctorName || "Médico Radiólogo",
+            doctorName: doctorName || "MÃ©dico RadiÃ³logo",
             doctorLicense: doctorLicense || "No especificada",
-            clinicName: clinicName || "Clínica Privada",
+            clinicName: clinicName || "ClÃ­nica Privada",
             studyType: studyType || "Estudio General",
             clinicalHistory: clinicalHistory || "No especificada",
             findings: findings || "No especificadas",
@@ -6314,7 +6321,7 @@ Ejemplo:
           fetchCloudStudies(gmailUser.uid);
         }
       } else {
-        alert("Ocurrió un error al generar el resumen. Por favor, intente de nuevo.");
+        alert("OcurriÃ³ un error al generar el resumen. Por favor, intente de nuevo.");
       }
     } catch (error) {
       console.error("Error generating WhatsApp summary:", error);
@@ -6337,7 +6344,7 @@ Ejemplo:
         body: JSON.stringify({
           model: modelFor("schematic"),
           report: generatedReport,
-          studyType: studyType || "Estudio Radiológico"
+          studyType: studyType || "Estudio RadiolÃ³gico"
         }),
       });
       const data = await response.json();
@@ -6347,7 +6354,7 @@ Ejemplo:
         setSchematicSummaryError(data.error || "Error al estructurar el esquema del reporte.");
       }
     } catch (err: any) {
-      console.error("Error al construir esquema dinámico:", err);
+      console.error("Error al construir esquema dinÃ¡mico:", err);
       setSchematicSummaryError(err?.message || String(err));
     } finally {
       setIsGeneratingSchematicSummary(false);
@@ -6358,7 +6365,7 @@ Ejemplo:
   const getSelectedSchematicContent = () => {
     if (!schematicSummary) return "";
     if (schematicFormat === "blocks") {
-      let text = "### ESQUEMA CLÍNICO DE HALLAZGOS PRINCIPALES\n\n";
+      let text = "### ESQUEMA CLÃNICO DE HALLAZGOS PRINCIPALES\n\n";
       schematicSummary.findings.forEach((f: any, idx: number) => {
         const id = f.findingId || `H${idx + 1}`;
         text += `**[${id}] ${f.anatomicalSite.toUpperCase()}**\n`;
@@ -6389,7 +6396,7 @@ Ejemplo:
     const newReportText = activeText + separator + contentToAppend;
     setGeneratedReport(newReportText);
     setEditedReportText(newReportText);
-    alert(`¡Esquema de hallazgos clínico (${schematicFormat === "blocks" ? "en Bloques" : "en Tabla"}) insertado con éxito al final de tu informe!`);
+    alert(`Â¡Esquema de hallazgos clÃ­nico (${schematicFormat === "blocks" ? "en Bloques" : "en Tabla"}) insertado con Ã©xito al final de tu informe!`);
   };
 
   // ACTION: GENERATE SEMIOLOGY AND JUSTIFICATION TABLE
@@ -6408,7 +6415,7 @@ Ejemplo:
         body: JSON.stringify({
           model: modelFor("case_analysis"),
           report: reportText,
-          studyType: studyType || "Estudio Radiológico"
+          studyType: studyType || "Estudio RadiolÃ³gico"
         }),
       });
       const data = await response.json();
@@ -6417,10 +6424,10 @@ Ejemplo:
         setSelectedConfirmedDiagnoses(new Array(data.data.confirmedDiagnoses?.length || 0).fill(true));
         setSelectedRuledOutPathologies(new Array(data.data.ruledOutPathologies?.length || 0).fill(true));
       } else {
-        setSemiologyError(data.error || "Error al estructurar el cuadro de semiología.");
+        setSemiologyError(data.error || "Error al estructurar el cuadro de semiologÃ­a.");
       }
     } catch (err: any) {
-      console.error("Error al construir cuadro de semiología:", err);
+      console.error("Error al construir cuadro de semiologÃ­a:", err);
       setSemiologyError(err?.message || String(err));
     } finally {
       setIsGeneratingSemiology(false);
@@ -6431,14 +6438,14 @@ Ejemplo:
   const buildDynamicSemiologyMarkdownTable = () => {
     if (!semiologyData) return "";
     
-    let md = "### CUADRO DE SEMIOLOGÍA Y JUSTIFICACIÓN RADIOLÓGICA\n\n";
+    let md = "### CUADRO DE SEMIOLOGÃA Y JUSTIFICACIÃN RADIOLÃGICA\n\n";
     
     const filteredDiagnoses = (semiologyData.confirmedDiagnoses || []).filter((_: any, idx: number) => selectedConfirmedDiagnoses[idx]);
     const filteredRuledOut = (semiologyData.ruledOutPathologies || []).filter((_: any, idx: number) => selectedRuledOutPathologies[idx]);
     
     if (filteredDiagnoses.length > 0) {
-      md += "#### 1. Diagnósticos Confirmados y Justificación Semiológica\n\n";
-      md += "| INTERPRETACIÓN SEMIOLÓGICA | HALLAZGOS |\n";
+      md += "#### 1. DiagnÃ³sticos Confirmados y JustificaciÃ³n SemiolÃ³gica\n\n";
+      md += "| INTERPRETACIÃN SEMIOLÃGICA | HALLAZGOS |\n";
       md += "| :--- | :--- |\n";
       filteredDiagnoses.forEach((d: any) => {
         md += `| ${d.diagnosis.replace(/\|/g, "\\|")} | ${d.justification.replace(/\|/g, "\\|")} |\n`;
@@ -6447,8 +6454,8 @@ Ejemplo:
     }
     
     if (filteredRuledOut.length > 0) {
-      md += "#### 2. Patologías Diferenciales Descartadas y Evidencia de Exclusión\n\n";
-      md += "| INTERPRETACIÓN SEMIOLÓGICA | HALLAZGOS |\n";
+      md += "#### 2. PatologÃ­as Diferenciales Descartadas y Evidencia de ExclusiÃ³n\n\n";
+      md += "| INTERPRETACIÃN SEMIOLÃGICA | HALLAZGOS |\n";
       md += "| :--- | :--- |\n";
       filteredRuledOut.forEach((r: any) => {
         md += `| ${r.pathology.replace(/\|/g, "\\|")} | ${r.exclusionCriteria.replace(/\|/g, "\\|")} |\n`;
@@ -6473,7 +6480,7 @@ Ejemplo:
     
     const contentToAppend = buildDynamicSemiologyMarkdownTable();
     if (!contentToAppend) {
-      alert("No has seleccionado ningún punto para insertar.");
+      alert("No has seleccionado ningÃºn punto para insertar.");
       return;
     }
 
@@ -6481,7 +6488,7 @@ Ejemplo:
     const newReportText = activeText + separator + contentToAppend;
     setGeneratedReport(newReportText);
     setEditedReportText(newReportText);
-    alert("¡Cuadro de semiología por imágenes insertado con éxito al final de tu informe para el PDF formal!");
+    alert("Â¡Cuadro de semiologÃ­a por imÃ¡genes insertado con Ã©xito al final de tu informe para el PDF formal!");
   };
 
   // ACTION: SEARCH TECHNICAL LITERATURE FOR A GLOSSARY TERM DIRECTLY WITHIN PANEL
@@ -6496,7 +6503,7 @@ Ejemplo:
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: modelFor("bibliography"),
-          report: `Realiza una búsqueda de evidencia para el término médico: ${term}. Contexto adicional: ${query}`,
+          report: `Realiza una bÃºsqueda de evidencia para el tÃ©rmino mÃ©dico: ${term}. Contexto adicional: ${query}`,
         }),
       });
       const data = await response.json();
@@ -6514,17 +6521,17 @@ Ejemplo:
           ...prev,
           [term]: { 
             loading: false, 
-            error: data.error || "No se pudo recuperar la revisión científica sobre este concepto." 
+            error: data.error || "No se pudo recuperar la revisiÃ³n cientÃ­fica sobre este concepto." 
           }
         }));
       }
     } catch (err: any) {
-      console.error("Error buscando literatura para término:", err);
+      console.error("Error buscando literatura para tÃ©rmino:", err);
       setGlossaryLitSearch(prev => ({
         ...prev,
         [term]: { 
           loading: false, 
-          error: "Error de comunicación con el servidor central." 
+          error: "Error de comunicaciÃ³n con el servidor central." 
         }
       }));
     }
@@ -6535,17 +6542,17 @@ Ejemplo:
     if (!patientSummary) return;
     const printWindow = window.open("", "_blank");
     if (!printWindow) {
-      alert("Por favor, permite ventanas emergentes para abrir el formato de impresión.");
+      alert("Por favor, permite ventanas emergentes para abrir el formato de impresiÃ³n.");
       return;
     }
     
     const findingsHtml = patientSummary.keyFindings.map((finding: any) => `
       <div style="margin-bottom: 22px; padding: 18px; border: 1px solid #e5e7eb; border-radius: 8px; page-break-inside: avoid; background-color: #fafafa;">
         <h3 style="margin: 0 0 6px 0; color: #1e3a8a; font-family: system-ui, sans-serif; font-size: 16px; font-weight: 700;">${finding.title}</h3>
-        <p style="margin: 0 0 12px 0; font-size: 11px; font-style: italic; color: #4b5563; font-family: monospace;">Término original en informe técnico: "${finding.originalTerm}"</p>
-        <p style="margin: 0 0 12px 0; font-size: 13.5px; font-family: system-ui, sans-serif; color: #1f2937; line-height: 1.55;"><strong>Explicación:</strong> ${finding.simplifiedExplanation}</p>
-        <p style="margin: 0 0 8px 0; font-size: 12.5px; font-family: system-ui, sans-serif; color: #7c2d12; background-color: #fff7ed; padding: 10px; border-radius: 6px; border-left: 3px solid #f97316;">🔍 <strong>Analogía de comprensión:</strong> ${finding.analogy}</p>
-        <p style="margin: 0; font-size: 12.5px; font-family: system-ui, sans-serif; color: #1e3a8a; font-weight: 600; background-color: #eff6ff; padding: 10px; border-radius: 6px; border-left: 3px solid #3b82f6;">🩺 <strong>Contexto Clínico y Perspectiva Médica:</strong> ${finding.reassurance}</p>
+        <p style="margin: 0 0 12px 0; font-size: 11px; font-style: italic; color: #4b5563; font-family: monospace;">TÃ©rmino original en informe tÃ©cnico: "${finding.originalTerm}"</p>
+        <p style="margin: 0 0 12px 0; font-size: 13.5px; font-family: system-ui, sans-serif; color: #1f2937; line-height: 1.55;"><strong>ExplicaciÃ³n:</strong> ${finding.simplifiedExplanation}</p>
+        <p style="margin: 0 0 8px 0; font-size: 12.5px; font-family: system-ui, sans-serif; color: #7c2d12; background-color: #fff7ed; padding: 10px; border-radius: 6px; border-left: 3px solid #f97316;">ð <strong>AnalogÃ­a de comprensiÃ³n:</strong> ${finding.analogy}</p>
+        <p style="margin: 0; font-size: 12.5px; font-family: system-ui, sans-serif; color: #1e3a8a; font-weight: 600; background-color: #eff6ff; padding: 10px; border-radius: 6px; border-left: 3px solid #3b82f6;">ð©º <strong>Contexto ClÃ­nico y Perspectiva MÃ©dica:</strong> ${finding.reassurance}</p>
       </div>
     `).join("");
 
@@ -6562,7 +6569,7 @@ Ejemplo:
       <html>
         <head>
           <meta charset="utf-8">
-          <title>Acompañamiento Radiológico Explicativo</title>
+          <title>AcompaÃ±amiento RadiolÃ³gico Explicativo</title>
           <style>
             @media print {
               body { margin: 0; padding: 15px; font-size: 12pt; }
@@ -6645,30 +6652,30 @@ Ejemplo:
             <button class="btn-print" onclick="window.print()">Imprimir de Inmediato</button>
           </div>
           <div class="header-banner">
-            <h1>Guía Médica Explicativa para el Paciente</h1>
-            <p style="margin: 0; font-size: 14px; font-weight: 500; color: #4b5563;">Traducción Empática y Comprensión Humana Asistida por Inteligencia Artificial</p>
+            <h1>GuÃ­a MÃ©dica Explicativa para el Paciente</h1>
+            <p style="margin: 0; font-size: 14px; font-weight: 500; color: #4b5563;">TraducciÃ³n EmpÃ¡tica y ComprensiÃ³n Humana Asistida por Inteligencia Artificial</p>
           </div>
           
           <div style="font-size: 13.5px; margin-bottom: 25px; color: #4b5563;">
-            Estimado paciente: La siguiente guía interactiva simplifica y explica los hallazgos descritos en el reporte clínico oficial de su estudio diagnóstico. Este material tiene carácter informativo y educativo; está diseñado para calmar su inquietud y dotarlo de pautas saludables de conversación con su especialista tratante.
+            Estimado paciente: La siguiente guÃ­a interactiva simplifica y explica los hallazgos descritos en el reporte clÃ­nico oficial de su estudio diagnÃ³stico. Este material tiene carÃ¡cter informativo y educativo; estÃ¡ diseÃ±ado para calmar su inquietud y dotarlo de pautas saludables de conversaciÃ³n con su especialista tratante.
           </div>
           
           <div class="meta-grid">
             <div>
-              <strong>ESTUDIO DIAGNÓSTICO:</strong> ${STUDY_PRESETS?.find((p: any) => p.id === studyType)?.name || studyType || "Estudio Radiológico"}<br>
+              <strong>ESTUDIO DIAGNÃSTICO:</strong> ${STUDY_PRESETS?.find((p: any) => p.id === studyType)?.name || studyType || "Estudio RadiolÃ³gico"}<br>
               <strong>IMPRESO EL:</strong> ${new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
             </div>
             <div style="text-align: right;">
-              <strong>INDICACIÓN INMEDIATA:</strong> ${clinicalHistory || "Sin indicación reportada"}<br>
+              <strong>INDICACIÃN INMEDIATA:</strong> ${clinicalHistory || "Sin indicaciÃ³n reportada"}<br>
               <strong>PROGRAMA ASOCIADO:</strong> AI Radiologist Suite Pro
             </div>
           </div>
           
-          <div class="section-title">Desglose Detallado de Hallazgos Clínicos Explicados</div>
+          <div class="section-title">Desglose Detallado de Hallazgos ClÃ­nicos Explicados</div>
           ${findingsHtml}
           
           <div class="footer">
-            <strong>ADVERTENCIA CLÍNICA IMPORTANTE:</strong> Esta guía simplificada de orientación formativa complementa -pero nunca invalida- el informe radiológico oficial firmado digitalmente por el especialista médico ni sustituye la indicación prescriptiva del cirujano o médico clínico.
+            <strong>ADVERTENCIA CLÃNICA IMPORTANTE:</strong> Esta guÃ­a simplificada de orientaciÃ³n formativa complementa -pero nunca invalida- el informe radiolÃ³gico oficial firmado digitalmente por el especialista mÃ©dico ni sustituye la indicaciÃ³n prescriptiva del cirujano o mÃ©dico clÃ­nico.
           </div>
         </body>
       </html>
@@ -6703,7 +6710,7 @@ Ejemplo:
       }
     } catch (err: any) {
       console.error(err);
-      setRecommenderError("Error de conexión al obtener recomendaciones de escalas.");
+      setRecommenderError("Error de conexiÃ³n al obtener recomendaciones de escalas.");
     } finally {
       setIsRecommendingClassifications(false);
     }
@@ -6725,10 +6732,10 @@ Ejemplo:
       if (data.success) {
         setInfographicUrl(data.imageUrl);
       } else {
-        setInfographicError(data.error || "Error generando la infografía.");
+        setInfographicError(data.error || "Error generando la infografÃ­a.");
       }
     } catch (err: any) {
-      setInfographicError(err.message || "Error al conectar con la API de infografías.");
+      setInfographicError(err.message || "Error al conectar con la API de infografÃ­as.");
     } finally {
       setIsGeneratingInfographic(false);
     }
@@ -6765,11 +6772,11 @@ Ejemplo:
           setClassRecommendations(updated);
         }
       } else {
-        setRecommenderError(data.error || "No se pudo incorporar la clasificación de forma inteligente en el reporte.");
+        setRecommenderError(data.error || "No se pudo incorporar la clasificaciÃ³n de forma inteligente en el reporte.");
       }
     } catch (err: any) {
       console.error(err);
-      setRecommenderError("Error de conexión al incorporar la clasificación de forma inteligente.");
+      setRecommenderError("Error de conexiÃ³n al incorporar la clasificaciÃ³n de forma inteligente.");
     } finally {
       setIncorporatingIndex(null);
     }
@@ -6811,7 +6818,7 @@ Ejemplo:
         setChatError(data.error || "Error al obtener respuesta de Gemini Consultor.");
       }
     } catch (e) {
-      setChatError("Falla de conexión con la API del servidor local.");
+      setChatError("Falla de conexiÃ³n con la API del servidor local.");
       console.error(e);
     } finally {
       setIsSendingMsg(false);
@@ -6847,10 +6854,10 @@ Ejemplo:
       if (data.success) {
         setClassificationResult(data.info);
       } else {
-        setClassificationError(data.error || "No se pudo obtener información de la escala.");
+        setClassificationError(data.error || "No se pudo obtener informaciÃ³n de la escala.");
       }
     } catch (e) {
-      setClassificationError("Error de comunicación con el servidor de consulta.");
+      setClassificationError("Error de comunicaciÃ³n con el servidor de consulta.");
       console.error(e);
     } finally {
       setIsLoadingClassification(false);
@@ -6871,7 +6878,7 @@ Ejemplo:
     if (optionSelected?.category) {
       // Direct category identified
       const categoryName = optionSelected.category;
-      setWizardOutput(INTERACTIVE_RESULTS[categoryName] || `Cálculo exitoso: Categoría sugerida ${categoryName}`);
+      setWizardOutput(INTERACTIVE_RESULTS[categoryName] || `CÃ¡lculo exitoso: CategorÃ­a sugerida ${categoryName}`);
     } else if (stepIndex === 0 && selectedClassSystem === "fleischner" && optionValue.startsWith("solid_")) {
       // Fleischner requires risk level (step index 1)
       // Wait for step 1 selection
@@ -6880,15 +6887,15 @@ Ejemplo:
       const noduleType = newAnswers[0];
       const riskLevel = optionValue;
       const keyCombined = `${noduleType}_${riskLevel}`;
-      setWizardOutput(INTERACTIVE_RESULTS[keyCombined] || "No se encontró un criterio específico en las guías estándar para esta combinación.");
+      setWizardOutput(INTERACTIVE_RESULTS[keyCombined] || "No se encontrÃ³ un criterio especÃ­fico en las guÃ­as estÃ¡ndar para esta combinaciÃ³n.");
     } else if (selectedClassSystem === "bosniak" && optionValue === "complex") {
       // Ask no further questions
       const optionsBosniakStep2 = [
-        { label: "TC: Septos nodulares o engrosamiento parietal visible sin verdadero nódulo sólido", category: "Bosniak III" },
-        { label: "TC: Nódulos blandos medibles con realce o componentes sólidos invasivos", category: "Bosniak IV" }
+        { label: "TC: Septos nodulares o engrosamiento parietal visible sin verdadero nÃ³dulo sÃ³lido", category: "Bosniak III" },
+        { label: "TC: NÃ³dulos blandos medibles con realce o componentes sÃ³lidos invasivos", category: "Bosniak IV" }
       ];
       // Quick fallback
-      setWizardOutput(`**Requirió mayor especificación:**\nSi los septos son simplemente engrosados con realce parcial, entra en **Bosniak III** (cirugía o biopsia). Si presenta masas de partes blandas o nódulos con realce evidente, entra en **Bosniak IV** (malignidad confirmada).`);
+      setWizardOutput(`**RequiriÃ³ mayor especificaciÃ³n:**\nSi los septos son simplemente engrosados con realce parcial, entra en **Bosniak III** (cirugÃ­a o biopsia). Si presenta masas de partes blandas o nÃ³dulos con realce evidente, entra en **Bosniak IV** (malignidad confirmada).`);
     } else {
       setWizardOutput("No se pudo clasificar interactivamente. Por favor consulte el buscador general de escalas.");
     }
@@ -7302,7 +7309,7 @@ Ejemplo:
       ctx.font = "bold 10px monospace";
       ctx.fillText("PW doppler: +114.5 cm/s", 90, 290);
       ctx.fillText("V_diastolic: -22.4 cm/s", 90, 305);
-      ctx.fillText("RI (Índice Resist.): 0.70", 90, 320);
+      ctx.fillText("RI (Ãndice Resist.): 0.70", 90, 320);
       
       ctx.fillStyle = "#ffffff";
       ctx.font = "bold 11px monospace";
@@ -7310,7 +7317,7 @@ Ejemplo:
       
       ctx.fillStyle = "#38bdf8";
       ctx.font = "bold 9px monospace";
-      ctx.fillText("MOD: US (ECOGRAFÍA DOPPLER)", 30, 60);
+      ctx.fillText("MOD: US (ECOGRAFÃA DOPPLER)", 30, 60);
       if (meta?.institucion) {
         ctx.fillStyle = "#94a3b8";
         ctx.fillText("HOSPITAL: " + meta.institucion.toUpperCase(), 30, 75);
@@ -7455,7 +7462,7 @@ Ejemplo:
             model: modelFor("labeling"),
             image: imgItem.base64 || imgItem.url,
             filename: imgItem.name,
-            studyType: specificStudy || "Mamograf�a y Ultrasonido",
+            studyType: specificStudy || "Mamografï¿½a y Ultrasonido",
             clinicalHistory: clinicalHistory || "",
             findings: findings || inputReport || "",
           }),
@@ -7471,12 +7478,12 @@ Ejemplo:
             side: data.side || item.side || "Derecha"
           } : item));
         } else {
-          throw new Error(data.error || "No se pudo generar la rotulaci�n con IA.");
+          throw new Error(data.error || "No se pudo generar la rotulaciï¿½n con IA.");
         }
       });
     } catch (err) {
       console.error("Error al rotular con IA:", err);
-      alert(err instanceof Error ? err.message : "Error de conexi�n al rotular la foto.");
+      alert(err instanceof Error ? err.message : "Error de conexiï¿½n al rotular la foto.");
     } finally {
       setLoadingAiLabelIds(prev => {
         const next = { ...prev };
@@ -7491,19 +7498,19 @@ Ejemplo:
     if (!imgItem || loadingAutocompleteIds[id]) return;
     
     if (!imgItem.caption || !imgItem.caption.trim()) {
-      alert("Por favor, escribe primero una palabra o frase clave en la descripci�n (ej. 'ves�cula', 'quiste' o 'car�tida') para poder buscar y autocompletar desde el reporte.");
+      alert("Por favor, escribe primero una palabra o frase clave en la descripciï¿½n (ej. 'vesï¿½cula', 'quiste' o 'carï¿½tida') para poder buscar y autocompletar desde el reporte.");
       return;
     }
 
     const reportToUse = generatedReport || inputReport || findings;
     if (!reportToUse) {
-      alert("Por favor, redacta o genera el reporte primero para poder buscar y autocompletar la rotulaci�n.");
+      alert("Por favor, redacta o genera el reporte primero para poder buscar y autocompletar la rotulaciï¿½n.");
       return;
     }
 
     setLoadingAutocompleteIds(prev => ({ ...prev, [id]: true }));
     try {
-      await runBackgroundTask(`autocomplete-${id}`, "Completando rotulaci�n desde reporte", async () => {
+      await runBackgroundTask(`autocomplete-${id}`, "Completando rotulaciï¿½n desde reporte", async () => {
         const response = await fetch("/api/autocomplete-label-from-report", {
           method: "POST",
           headers: {
@@ -7513,7 +7520,7 @@ Ejemplo:
             model: modelFor("labeling"),
             phrase: imgItem.caption,
             currentReport: reportToUse,
-            studyType: specificStudy || "Mamograf�a / Ecograf�a",
+            studyType: specificStudy || "Mamografï¿½a / Ecografï¿½a",
             clinicalHistory: clinicalHistory || "",
           }),
         });
@@ -7522,12 +7529,12 @@ Ejemplo:
         if (response.ok && data.success && data.label) {
           setAttachedImages(prev => prev.map(item => item.id === id ? { ...item, caption: data.label } : item));
         } else {
-          throw new Error(data.error || "No se pudo autocompletar la rotulaci�n.");
+          throw new Error(data.error || "No se pudo autocompletar la rotulaciï¿½n.");
         }
       });
     } catch (err) {
-      console.error("Error al autocompletar rotulaci�n:", err);
-      alert(err instanceof Error ? err.message : "Error de conexi�n al autocompletar desde el reporte.");
+      console.error("Error al autocompletar rotulaciï¿½n:", err);
+      alert(err instanceof Error ? err.message : "Error de conexiï¿½n al autocompletar desde el reporte.");
     } finally {
       setLoadingAutocompleteIds(prev => {
         const next = { ...prev };
@@ -7555,7 +7562,7 @@ Ejemplo:
       return;
     }
     if (attachedImages.length === 0) {
-      alert("No hay imágenes cargadas para correlacionar. Por favor sube imágenes primero.");
+      alert("No hay imÃ¡genes cargadas para correlacionar. Por favor sube imÃ¡genes primero.");
       return;
     }
 
@@ -7602,7 +7609,7 @@ Ejemplo:
           });
         }
       } else {
-        alert(data.error || "Ocurrió un error al intentar correlacionar las figuras.");
+        alert(data.error || "OcurriÃ³ un error al intentar correlacionar las figuras.");
       }
     } catch (err) {
       console.error("Error al correlacionar figuras:", err);
@@ -7980,7 +7987,7 @@ Ejemplo:
         "esplenomegalia", "colelitiasis", "lodo biliar", "adenopatia", "adenopatias",
         "heterogeneo", "heterogenea", "moderado", "moderada", "leve", "litiasis", "lesion", "lesiones",
         "insuficiencia", "insuficiente", "insuficiencias", "reflujo", "reflujos", "incompetente", "incompetentes",
-        "incompetencia", "retrogado", "retrógrado", "retrogrado", "dilatado", "dilatada", "dilataciones", "dilatacion",
+        "incompetencia", "retrogado", "retrÃ³grado", "retrogrado", "dilatado", "dilatada", "dilataciones", "dilatacion",
         "ectasico", "ectasica", "tortuoso", "tortuosa"
       ];
 
@@ -8063,15 +8070,15 @@ Ejemplo:
     const generatedReportLocal = studyOverride ? studyOverride.reportText : pdfStateRef.current.generatedReport;
     if (!generatedReportLocal) return;
 
-    const patientNameLocal = studyOverride ? (studyOverride.patientName || "Paciente Anónimo") : (pdfStateRef.current.patientName || "Paciente Anónimo");
+    const patientNameLocal = studyOverride ? (studyOverride.patientName || "Paciente AnÃ³nimo") : (pdfStateRef.current.patientName || "Paciente AnÃ³nimo");
     const patientEmailLocal = studyOverride ? (studyOverride.patientEmail || "No especificado") : (pdfStateRef.current.patientEmail || "No especificado");
     const patientAgeLocal = studyOverride ? (studyOverride.patientAge || "") : pdfStateRef.current.patientAge;
     const patientGenderLocal = studyOverride ? (studyOverride.patientGender || "") : pdfStateRef.current.patientGender;
     const patientIdLocal = studyOverride ? (studyOverride.patientId || "") : pdfStateRef.current.patientId;
     const reportDateLocal = studyOverride ? (studyOverride.reportDate || "") : pdfStateRef.current.reportDate;
-    const doctorNameLocal = studyOverride ? (studyOverride.doctorName || "Médico Radiólogo") : (pdfStateRef.current.doctorName || "Médico Radiólogo");
+    const doctorNameLocal = studyOverride ? (studyOverride.doctorName || "MÃ©dico RadiÃ³logo") : (pdfStateRef.current.doctorName || "MÃ©dico RadiÃ³logo");
     const doctorLicenseLocal = studyOverride ? (studyOverride.doctorLicense || "No especificada") : (pdfStateRef.current.doctorLicense || "No especificada");
-    const clinicNameLocal = studyOverride ? (studyOverride.clinicName || "Clínica Privada") : (pdfStateRef.current.clinicName || "Clínica Privada");
+    const clinicNameLocal = studyOverride ? (studyOverride.clinicName || "ClÃ­nica Privada") : (pdfStateRef.current.clinicName || "ClÃ­nica Privada");
     const clinicalHistoryLocal = studyOverride ? (studyOverride.clinicalHistory || "No especificada") : (pdfStateRef.current.clinicalHistory || "No especificada");
     const findingsLocal = studyOverride ? (studyOverride.findings || "No especificadas") : (pdfStateRef.current.findings || "No especificadas");
     const studyTypeLocal = studyOverride ? (studyOverride.studyType || "Estudio General") : (pdfStateRef.current.studyType || "Estudio General");
@@ -8094,7 +8101,7 @@ Ejemplo:
     const doctorName = doctorNameLocal;
     const doctorLicense = doctorLicenseLocal;
     const clinicName = clinicNameLocal;
-    const displayClinicName = clinicName && clinicName.trim().toUpperCase() !== "CLÍNICA PRIVADA" && clinicName.trim().toUpperCase() !== "CLINICA PRIVADA" ? clinicName.toUpperCase() : "";
+    const displayClinicName = clinicName && clinicName.trim().toUpperCase() !== "CLÃNICA PRIVADA" && clinicName.trim().toUpperCase() !== "CLINICA PRIVADA" ? clinicName.toUpperCase() : "";
     const clinicalHistory = clinicalHistoryLocal;
     const findings = findingsLocal;
     const studyType = studyTypeLocal;
@@ -8102,7 +8109,7 @@ Ejemplo:
     const customLogoRightUrl = customLogoRightUrlLocal;
     const customLogoStyle = customLogoStyleLocal;
     const customSignatureUrl = customSignatureUrlLocal;
-    const specificStudy = specificStudyLocal || "Tórax";
+    const specificStudy = specificStudyLocal || "TÃ³rax";
     const pdfLayoutType = pdfLayoutTypeLocal || "classic";
     const selectedLogo = selectedLogoLocal || "none";
     
@@ -8154,7 +8161,7 @@ Ejemplo:
           docObj.setFont("helvetica", "bold");
           docObj.setFontSize(7.5);
           docObj.setTextColor(100, 116, 139); // slate-500
-          docObj.text("INFORMACIÓN", 24, textY);
+          docObj.text("INFORMACIÃN", 24, textY);
           textY += 4.5;
 
           // PACIENTE
@@ -8198,7 +8205,7 @@ Ejemplo:
           docObj.setFont("helvetica", "bold");
           docObj.setFontSize(8);
           docObj.setTextColor(15, 23, 42);
-          const studyClean = (specificStudy || "ECOGRAFÍA").toUpperCase();
+          const studyClean = (specificStudy || "ECOGRAFÃA").toUpperCase();
           const studyLines = docObj.splitTextToSize(studyClean, cardW - 8);
           studyLines.forEach((l: string) => {
             docObj.text(l, 24, textY);
@@ -8206,12 +8213,12 @@ Ejemplo:
           });
           textY += 2;
 
-          // MÉDICO
+          // MÃDICO
           if (doctorName) {
             docObj.setFont("helvetica", "bold");
             docObj.setFontSize(7);
             docObj.setTextColor(148, 163, 184);
-            docObj.text("MÉDICO", 24, textY);
+            docObj.text("MÃDICO", 24, textY);
             textY += 3.5;
 
             docObj.setFont("helvetica", "bold");
@@ -8236,7 +8243,7 @@ Ejemplo:
         boxH: number,
         
       ) => {
-        // Aligned Anatomical Cards format for Appendix / Synopses in PDF (Opción 1: Fichas Anatómicas Alineadas)
+        // Aligned Anatomical Cards format for Appendix / Synopses in PDF (OpciÃ³n 1: Fichas AnatÃ³micas Alineadas)
         const isLargeSingleMode = boxH > 100;
         const paddingX = 2.5;
         const paddingY = isLargeSingleMode ? 10.5 : 8.5; // Starts after header text space
@@ -8266,7 +8273,7 @@ Ejemplo:
           let badgeText = [67, 56, 202];       // indigo-700
           let drawBorder = [226, 232, 240];    // light border
 
-          if (stateClean === "normal" || stateClean === "sin_lesiones" || stateClean === "normales" || stateClean === "dentro de límites normales") {
+          if (stateClean === "normal" || stateClean === "sin_lesiones" || stateClean === "normales" || stateClean === "dentro de lÃ­mites normales") {
             dotColor = [16, 185, 129];        // emerald-500
             badgeBg = [240, 253, 244];         // emerald-50
             badgeText = [21, 128, 61];          // emerald-700
@@ -8281,7 +8288,7 @@ Ejemplo:
             stateClean.includes("severo") || 
             stateClean.includes("masa") || 
             stateClean.includes("solido") || 
-            stateClean.includes("sólido") || 
+            stateClean.includes("sÃ³lido") || 
             stateClean.includes("maligno") || 
             stateClean.includes("birads_4") || 
             stateClean.includes("birads_5") || 
@@ -8290,7 +8297,7 @@ Ejemplo:
             stateClean.includes("aneurisma") ||
             stateClean.includes("trombosis") ||
             stateClean.includes("critico") ||
-            stateClean.includes("crítico")
+            stateClean.includes("crÃ­tico")
           ) {
             dotColor = [239, 68, 68];          // rose-500
             badgeBg = [254, 242, 242];         // rose-50
@@ -8314,7 +8321,7 @@ Ejemplo:
             badgeText = [180, 83, 9];           // amber-800
             drawBorder = [254, 243, 199];       // amber-200
           } else {
-            if (stateClean === "normal" || stateClean === "sin_lesiones" || stateClean === "normales" || stateClean === "dentro de límites normales") {
+            if (stateClean === "normal" || stateClean === "sin_lesiones" || stateClean === "normales" || stateClean === "dentro de lÃ­mites normales") {
               dotColor = [16, 185, 129];        // emerald-500
               badgeBg = [240, 253, 244];         // emerald-50
               badgeText = [21, 128, 61];          // emerald-700
@@ -8329,7 +8336,7 @@ Ejemplo:
               stateClean.includes("severo") || 
               stateClean.includes("masa") || 
               stateClean.includes("solido") || 
-              stateClean.includes("sólido") || 
+              stateClean.includes("sÃ³lido") || 
               stateClean.includes("maligno") || 
               stateClean.includes("birads_4") || 
               stateClean.includes("birads_5") || 
@@ -8338,7 +8345,7 @@ Ejemplo:
               stateClean.includes("aneurisma") ||
               stateClean.includes("trombosis") ||
               stateClean.includes("critico") ||
-              stateClean.includes("crítico")
+              stateClean.includes("crÃ­tico")
             ) {
               dotColor = [239, 68, 68];          // rose-500
               badgeBg = [254, 242, 242];         // rose-50
@@ -8543,7 +8550,7 @@ Ejemplo:
             doc.setFont("helvetica", "bold");
             doc.setFontSize(14);
             doc.setTextColor(15, 23, 42);
-            doc.text(displayClinicName || "REPORTE DE RADIODIAGNÓSTICO", pageWidth / 2, yCoord, { align: "center" });
+            doc.text(displayClinicName || "REPORTE DE RADIODIAGNÃSTICO", pageWidth / 2, yCoord, { align: "center" });
             yCoord += 6;
           }
 
@@ -8602,11 +8609,11 @@ Ejemplo:
           doc.setFont("helvetica", "bold");
           doc.setFontSize(12);
           doc.setTextColor(15, 23, 42);
-          doc.text(displayClinicName || "REPORTE DE RADIODIAGNÓSTICO", pageWidth / 2, yCoord + rowH / 2 - 1, { align: "center" });
+          doc.text(displayClinicName || "REPORTE DE RADIODIAGNÃSTICO", pageWidth / 2, yCoord + rowH / 2 - 1, { align: "center" });
           doc.setFont("helvetica", "bold");
           doc.setFontSize(8);
           doc.setTextColor(100, 116, 139);
-          doc.text("REPORTE DE RADIODIAGNÓSTICO POR IMAGEN", pageWidth / 2, yCoord + rowH / 2 + 4, { align: "center" });
+          doc.text("REPORTE DE RADIODIAGNÃSTICO POR IMAGEN", pageWidth / 2, yCoord + rowH / 2 + 4, { align: "center" });
           yCoord += rowH + 6;
         } else {
           // Left Aligned Logo Style
@@ -8636,12 +8643,12 @@ Ejemplo:
           doc.setFont("helvetica", "bold");
           doc.setFontSize(14);
           doc.setTextColor(15, 23, 42);
-          doc.text(displayClinicName || "REPORTE DE RADIODIAGNÓSTICO", textX, yCoord + (logoHeight / 2) - 1.5);
+          doc.text(displayClinicName || "REPORTE DE RADIODIAGNÃSTICO", textX, yCoord + (logoHeight / 2) - 1.5);
           
           doc.setFont("helvetica", "bold");
           doc.setFontSize(9);
           doc.setTextColor(100, 116, 139);
-          doc.text("REPORTE DE RADIODIAGNÓSTICO POR IMAGEN", textX, yCoord + (logoHeight / 2) + 4);
+          doc.text("REPORTE DE RADIODIAGNÃSTICO POR IMAGEN", textX, yCoord + (logoHeight / 2) + 4);
           
           yCoord += Math.max(logoHeight, 15) + 6;
         }
@@ -8673,12 +8680,12 @@ Ejemplo:
           doc.setFont("helvetica", "bold");
           doc.setFontSize(14);
           doc.setTextColor(15, 23, 42);
-          doc.text(displayClinicName || "REPORTE DE RADIODIAGNÓSTICO", textX, yCoord + 5);
+          doc.text(displayClinicName || "REPORTE DE RADIODIAGNÃSTICO", textX, yCoord + 5);
           
           doc.setFont("helvetica", "bold");
           doc.setFontSize(9);
           doc.setTextColor(100, 116, 139);
-          doc.text("REPORTE DE RADIODIAGNÓSTICO POR IMAGEN", textX, yCoord + 10.5);
+          doc.text("REPORTE DE RADIODIAGNÃSTICO POR IMAGEN", textX, yCoord + 10.5);
           
           yCoord += 18;
         } else {
@@ -8693,13 +8700,13 @@ Ejemplo:
             doc.setFont("helvetica", "bold");
             doc.setFontSize(9);
             doc.setTextColor(100, 116, 139); // slate-500
-            doc.text("REPORTE DE RADIODIAGNÓSTICO POR IMAGEN", pageWidth / 2, yCoord, { align: "center" });
+            doc.text("REPORTE DE RADIODIAGNÃSTICO POR IMAGEN", pageWidth / 2, yCoord, { align: "center" });
             yCoord += 8;
           } else {
             doc.setFont("helvetica", "bold");
             doc.setFontSize(14);
             doc.setTextColor(15, 23, 42);
-            doc.text("REPORTE DE RADIODIAGNÓSTICO", pageWidth / 2, yCoord, { align: "center" });
+            doc.text("REPORTE DE RADIODIAGNÃSTICO", pageWidth / 2, yCoord, { align: "center" });
             yCoord += 11;
           }
         }
@@ -8729,7 +8736,7 @@ Ejemplo:
         const extraCols: { label: string; value: string }[] = [];
         if (patientId && patientId.trim() !== "") {
           extraCols.push({
-            label: "ID / HISTORIA CLÍNICA",
+            label: "ID / HISTORIA CLÃNICA",
             value: patientId.trim().toUpperCase()
           });
         }
@@ -8745,7 +8752,7 @@ Ejemplo:
             label = "EDAD";
             combinedVal = agePart;
           } else {
-            label = "SEXO / GÉNERO";
+            label = "SEXO / GÃNERO";
             combinedVal = genderPart;
           }
           extraCols.push({
@@ -8844,7 +8851,7 @@ Ejemplo:
         const extraCols: { label: string; value: string }[] = [];
         if (patientId && patientId.trim() !== "") {
           extraCols.push({
-            label: "ID / HISTORIA CLÍNICA",
+            label: "ID / HISTORIA CLÃNICA",
             value: patientId.trim().toUpperCase()
           });
         }
@@ -8860,7 +8867,7 @@ Ejemplo:
             label = "EDAD";
             combinedVal = agePart;
           } else {
-            label = "SEXO / GÉNERO";
+            label = "SEXO / GÃNERO";
             combinedVal = genderPart;
           }
           extraCols.push({
@@ -9088,10 +9095,10 @@ Ejemplo:
       }
 
       // --- DYNAMIC PAGE BUDGET & COMPLETE WIDOW/ORPHAN CONTROL ---
-      const isVascularStudy = specificStudy === "Doppler de carótidas" || 
+      const isVascularStudy = specificStudy === "Doppler de carÃ³tidas" || 
                               specificStudy === "Doppler venoso de miembro inferior" || 
                               specificStudy === "Doppler arterial de miembro inferior";
-      const isCarotidasForPDF = specificStudy.toLowerCase().includes("carót") || specificStudy.toLowerCase().includes("carot");
+      const isCarotidasForPDF = specificStudy.toLowerCase().includes("carÃ³t") || specificStudy.toLowerCase().includes("carot");
 
       let factor = 1.0;
       let estimatedHeight = 20; // Start at top margin
@@ -9155,15 +9162,15 @@ Ejemplo:
         if (legacyIdxLocal !== -1) {
           cleanReportLocal = cleanReportLocal.substring(0, legacyIdxLocal).trim();
         }
-        const summaryIdxLocal = cleanReportLocal.indexOf("**ANÁLISIS INTEGRADO DE CASO");
+        const summaryIdxLocal = cleanReportLocal.indexOf("**ANÃLISIS INTEGRADO DE CASO");
         if (summaryIdxLocal !== -1) {
           cleanReportLocal = cleanReportLocal.substring(0, summaryIdxLocal).trim();
         }
         cleanReportLocal = cleanReportLocal.trim();
         const normalizedReportLocal = cleanReportLocal
           .replace(/\n+\s*(---\s*)/g, "\n\n$1")
-          .replace(/\n+\s*((?:\*+)?\s*(?:pie de página|nota de pie|nota de pie de página|pie de pagina|nota de pie de pagina)\b)/gi, "\n\n$1")
-          .replace(/\n+\s*(\s*(?:##+|#|\*\*)\s*(?:conclusi[oó]n(?:es)?|impresi[oó]n(?:es)?\s+diagn[oó]stica(?:s)?|diagn[oó]stico(?:s)?|hallazgos)\b)/gi, "\n\n$1");
+          .replace(/\n+\s*((?:\*+)?\s*(?:pie de pÃ¡gina|nota de pie|nota de pie de pÃ¡gina|pie de pagina|nota de pie de pagina)\b)/gi, "\n\n$1")
+          .replace(/\n+\s*(\s*(?:##+|#|\*\*)\s*(?:conclusi[oÃ³]n(?:es)?|impresi[oÃ³]n(?:es)?\s+diagn[oÃ³]stica(?:s)?|diagn[oÃ³]stico(?:s)?|hallazgos)\b)/gi, "\n\n$1");
         const rawParagraphsLocal = normalizedReportLocal.split(/\n\n+/);
         const paragraphsLocal: string[] = [];
         let inConclusionLocal = false;
@@ -9173,14 +9180,14 @@ Ejemplo:
           const trimmed = p.trim();
           if (!trimmed) return;
 
-          const isSemiologyLineLocal = /semiolog[ií]a|justificaci[oó]n|exclusi[oó]n/i.test(trimmed);
-          const isConclusionHeader = !isSemiologyLineLocal && /^\s*(?:#+|\*+|-|_|\d+\.)*\s*(?:conclusión|conclusiones|conclusion|impresión\s+diagnóstica|impresion\s+diagnostica|impresiones\s+diagnósticas|impresiones\s+diagnosticas|diagnósticos|diagnóstico|diagnostico|diagnosticos)\b/i.test(trimmed);
+          const isSemiologyLineLocal = /semiolog[iÃ­]a|justificaci[oÃ³]n|exclusi[oÃ³]n/i.test(trimmed);
+          const isConclusionHeader = !isSemiologyLineLocal && /^\s*(?:#+|\*+|-|_|\d+\.)*\s*(?:conclusiÃ³n|conclusiones|conclusion|impresiÃ³n\s+diagnÃ³stica|impresion\s+diagnostica|impresiones\s+diagnÃ³sticas|impresiones\s+diagnosticas|diagnÃ³sticos|diagnÃ³stico|diagnostico|diagnosticos)\b/i.test(trimmed);
 
           const isFootnoteOrDividerLocal = trimmed === "---" || /^---+\s*$/.test(trimmed) ||
-            /^\s*(?:\*+)?\s*(?:pie de página|nota de pie|nota de pie de página|pie de pagina|nota de pie de pagina)\b/i.test(trimmed);
+            /^\s*(?:\*+)?\s*(?:pie de pÃ¡gina|nota de pie|nota de pie de pÃ¡gina|pie de pagina|nota de pie de pagina)\b/i.test(trimmed);
 
           const isOtherSectionHeader = /^\s*(?:##+|#)\s+/i.test(trimmed) ||
-            /^\s*\*\*(?:hallazgos|estudio|técnica|tecnica|método|metodo|exploración|exploracion|motivo|comparación|comparacion|datos\s+clínicos|indicación|indicacion|antecedentes|pie\s+de\s+página|nota\s+de\s+pie)\b/i.test(trimmed) ||
+            /^\s*\*\*(?:hallazgos|estudio|tÃ©cnica|tecnica|mÃ©todo|metodo|exploraciÃ³n|exploracion|motivo|comparaciÃ³n|comparacion|datos\s+clÃ­nicos|indicaciÃ³n|indicacion|antecedentes|pie\s+de\s+pÃ¡gina|nota\s+de\s+pie)\b/i.test(trimmed) ||
             isFootnoteOrDividerLocal;
 
           if (isFootnoteOrDividerLocal) {
@@ -9302,9 +9309,9 @@ Ejemplo:
       const stripEmojis = (str: string): string => {
         if (!str) return "";
         return str
-          // Strip surrogate pairs (handles 4-byte emojis like 🫁, 🫀, 🦴, 🧠, 📋, 🔍, etc.)
+          // Strip surrogate pairs (handles 4-byte emojis like ð«, ð«, ð¦´, ð§ , ð, ð, etc.)
           .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "")
-          // Strip miscellaneous symbol emojis & shapes in the BMP (like ⚠️, ⏱, ⚕, ✔️, ❌, ⭐, etc.)
+          // Strip miscellaneous symbol emojis & shapes in the BMP (like â ï¸, â±, â, âï¸, â, â­, etc.)
           .replace(/[\u2600-\u27BF]|[\u2300-\u23FF]|[\u2B50]|[\u2190-\u21FF]/g, "");
       };
 
@@ -9312,12 +9319,12 @@ Ejemplo:
       const cleanTextForJSPDF = (text: string): string => {
         if (!text) return "";
         return text
-          .replace(/[“”„«»‟]/g, '"')
-          .replace(/[‘’`´′″]/g, "'")
-          .replace(/[—–‒―]/g, "-")
+          .replace(/[âââÂ«Â»â]/g, '"')
+          .replace(/[ââ`Â´â²â³]/g, "'")
+          .replace(/[ââââ]/g, "-")
           .replace(/[\u2022\u25E6\u2023\u2043\u25AA\u25FE\u25C6\u25C7\u25B6\u25B7\u25C0\u25C1]/g, "-")
           .replace(/[\u00A0\u200B\u2009\u202F\u2000-\u200A]/g, " ")
-          .replace(/…/g, "...");
+          .replace(/â¦/g, "...");
       };
 
       const reportToRender = isEditingReportManual ? editedReportText : generatedReport;
@@ -9348,7 +9355,7 @@ Ejemplo:
       if (legacyIdx !== -1) {
         cleanReport = cleanReport.substring(0, legacyIdx).trim();
       }
-      const summaryIdx = cleanReport.indexOf("**ANÁLISIS INTEGRADO DE CASO");
+      const summaryIdx = cleanReport.indexOf("**ANÃLISIS INTEGRADO DE CASO");
       if (summaryIdx !== -1) {
         cleanReport = cleanReport.substring(0, summaryIdx).trim();
       }
@@ -9356,8 +9363,8 @@ Ejemplo:
 
       const normalizedReport = cleanReport
         .replace(/\n+\s*(---\s*)/g, "\n\n$1")
-        .replace(/\n+\s*((?:\*+)?\s*(?:pie de página|nota de pie|nota de pie de página|pie de pagina|nota de pie de pagina)\b)/gi, "\n\n$1")
-        .replace(/\n+\s*(\s*(?:##+|#|\*\*)\s*(?:conclusi[oó]n(?:es)?|impresi[oó]n(?:es)?\s+diagn[oó]stica(?:s)?|diagn[oó]stico(?:s)?|hallazgos)\b)/gi, "\n\n$1");
+        .replace(/\n+\s*((?:\*+)?\s*(?:pie de pÃ¡gina|nota de pie|nota de pie de pÃ¡gina|pie de pagina|nota de pie de pagina)\b)/gi, "\n\n$1")
+        .replace(/\n+\s*(\s*(?:##+|#|\*\*)\s*(?:conclusi[oÃ³]n(?:es)?|impresi[oÃ³]n(?:es)?\s+diagn[oÃ³]stica(?:s)?|diagn[oÃ³]stico(?:s)?|hallazgos)\b)/gi, "\n\n$1");
       const rawParagraphs = normalizedReport.split(/\n\n+/);
       const paragraphs: string[] = [];
       let inConclusion = false;
@@ -9378,16 +9385,16 @@ Ejemplo:
           return;
         }
 
-        const isSemiologyLine = /semiolog[ií]a|justificaci[oó]n|exclusi[oó]n/i.test(trimmed);
-        const isConclusionHeader = !isSemiologyLine && /^\s*(?:#+|\*+|-|_|\d+\.)*\s*(?:conclusión|conclusiones|conclusion|impresión\s+diagnóstica|impresion\s+diagnostica|impresiones\s+diagnósticas|impresiones\s+diagnosticas|diagnósticos|diagnóstico|diagnostico|diagnosticos)\b/i.test(trimmed);
+        const isSemiologyLine = /semiolog[iÃ­]a|justificaci[oÃ³]n|exclusi[oÃ³]n/i.test(trimmed);
+        const isConclusionHeader = !isSemiologyLine && /^\s*(?:#+|\*+|-|_|\d+\.)*\s*(?:conclusiÃ³n|conclusiones|conclusion|impresiÃ³n\s+diagnÃ³stica|impresion\s+diagnostica|impresiones\s+diagnÃ³sticas|impresiones\s+diagnosticas|diagnÃ³sticos|diagnÃ³stico|diagnostico|diagnosticos)\b/i.test(trimmed);
 
         const isFootnoteOrDivider = trimmed === "---" || /^---+\s*$/.test(trimmed) ||
-          /^\s*(?:\*+)?\s*(?:pie de página|nota de pie|nota de pie de página|pie de pagina|nota de pie de pagina)\b/i.test(trimmed);
+          /^\s*(?:\*+)?\s*(?:pie de pÃ¡gina|nota de pie|nota de pie de pÃ¡gina|pie de pagina|nota de pie de pagina)\b/i.test(trimmed);
 
         const isOtherSectionHeader = /^\s*(?:##+|#)\s+/i.test(trimmed) ||
-          /^\s*\*\*(?:hallazgos|estudio|técnica|tecnica|método|metodo|exploración|exploracion|motivo|comparación|comparacion|datos\s+clínicos|indicación|indicacion|antecedentes|pie\s+de\s+página|nota\s+de\s+pie)\b/i.test(trimmed) ||
-          trimmed.includes("ANEXO DIAGNÓSTICO") ||
-          trimmed.includes("DESGLOSE Y JUSTIFICACIÓN") ||
+          /^\s*\*\*(?:hallazgos|estudio|tÃ©cnica|tecnica|mÃ©todo|metodo|exploraciÃ³n|exploracion|motivo|comparaciÃ³n|comparacion|datos\s+clÃ­nicos|indicaciÃ³n|indicacion|antecedentes|pie\s+de\s+pÃ¡gina|nota\s+de\s+pie)\b/i.test(trimmed) ||
+          trimmed.includes("ANEXO DIAGNÃSTICO") ||
+          trimmed.includes("DESGLOSE Y JUSTIFICACIÃN") ||
           isFootnoteOrDivider;
 
         if (isFootnoteOrDivider) {
@@ -9442,7 +9449,7 @@ Ejemplo:
 
           const startY = yCoord;
 
-          // Dibujar borde gris claro con fondo suave en la columna izquierda (Caja de verificación)
+          // Dibujar borde gris claro con fondo suave en la columna izquierda (Caja de verificaciÃ³n)
           const boxX = marginX;
           const boxY = startY;
           const boxW = (pageWidth - marginX * 2) * 0.48; // Columna izquierda (48% de ancho)
@@ -9462,10 +9469,10 @@ Ejemplo:
           doc.setFont("helvetica", "bold");
           doc.setFontSize(6.5);
           doc.setTextColor(71, 85, 105); // slate 600
-          doc.text("VERIFICACIÓN INTEGRIDAD DE DOCUMENTO", boxX + 3, internalY);
+          doc.text("VERIFICACIÃN INTEGRIDAD DE DOCUMENTO", boxX + 3, internalY);
           internalY += 3.5;
 
-          // Obtener el Hash generado determinísticamente
+          // Obtener el Hash generado determinÃ­sticamente
           const sSeedCombine = `${patientName || ""}-${doctorName || ""}-${reportDate || ""}-${clinicName || ""}`;
           let sHashVal = 0;
           for (let i = 0; i < sSeedCombine.length; i++) {
@@ -9491,25 +9498,25 @@ Ejemplo:
           const stateW = doc.getTextWidth("ESTADO DEL DOCUMENTO: ");
           doc.setFont("helvetica", "bold");
           doc.setTextColor(21, 128, 61); // green 700
-          doc.text("FIRMADO ELECTRÓNICAMENTE", boxX + 3 + stateW, internalY);
+          doc.text("FIRMADO ELECTRÃNICAMENTE", boxX + 3 + stateW, internalY);
           internalY += 2.8;
 
           doc.setFont("helvetica", "normal");
           doc.setFontSize(5.1);
           doc.setTextColor(100, 116, 139); // slate 500
-          doc.text(`REG. MÉDICO: ${doctorLicense || "M.S.P. Reg: 6025 / Senescyt: 1005-12-7489"}`, boxX + 3, internalY);
+          doc.text(`REG. MÃDICO: ${doctorLicense || "M.S.P. Reg: 6025 / Senescyt: 1005-12-7489"}`, boxX + 3, internalY);
           internalY += 2.8;
 
-          doc.text(`FECHA DE VALIDACIÓN: ${reportDate} (AUTÓNOMO)`, boxX + 3, internalY);
+          doc.text(`FECHA DE VALIDACIÃN: ${reportDate} (AUTÃNOMO)`, boxX + 3, internalY);
           internalY += 2.8;
 
           doc.setFont("helvetica", "italic");
-          doc.text("Firma de Validez Homologada según Normativa Sanitaria.", boxX + 3, internalY);
+          doc.text("Firma de Validez Homologada segÃºn Normativa Sanitaria.", boxX + 3, internalY);
 
-          // --- Columna Derecha: Área de Firma Digital / Autógrafa ---
+          // --- Columna Derecha: Ãrea de Firma Digital / AutÃ³grafa ---
           const rightColX = pageWidth - marginX;
           
-          // Agregar firma física si está cargada
+          // Agregar firma fÃ­sica si estÃ¡ cargada
           if (customSignatureUrl) {
             try {
               let sigWidth = 35;
@@ -9534,14 +9541,14 @@ Ejemplo:
               console.warn("Could not render custom signature image inside jsPDF", imgError);
             }
           } else {
-            // Si no hay firma física, mostrar sello digital elegante
+            // Si no hay firma fÃ­sica, mostrar sello digital elegante
             doc.setFont("helvetica", "oblique");
             doc.setFontSize(7);
             doc.setTextColor(30, 64, 175); // blue 800
-            doc.text("FIRMADO ELECTRÓNICAMENTE CON TOKEN", rightColX - 62, boxY + 8);
+            doc.text("FIRMADO ELECTRÃNICAMENTE CON TOKEN", rightColX - 62, boxY + 8);
           }
 
-          // Línea horizontal para firma del doctor (solo del lado derecho)
+          // LÃ­nea horizontal para firma del doctor (solo del lado derecho)
           const lineStart = rightColX - 70;
           doc.setDrawColor(203, 213, 225); // slate 300
           doc.setLineWidth(0.3);
@@ -9559,7 +9566,7 @@ Ejemplo:
           doc.setFont("helvetica", "normal");
           doc.setFontSize(6.5);
           doc.setTextColor(100, 116, 139);
-          const titleText = "Especialista en Radiología e Imágenes Medicas.";
+          const titleText = "Especialista en RadiologÃ­a e ImÃ¡genes Medicas.";
           const titleTextWidth = doc.getTextWidth(titleText);
           doc.text(titleText, rightColX - titleTextWidth, boxY + boxH - 1.5);
           
@@ -9573,7 +9580,7 @@ Ejemplo:
         if (!trimmedBlock) return;
 
         // Check for explicit page break tag
-        if (/^(?:\[(?:salto(?:_de_p[aá]gina)?|page_break|salto_pagina)\]|<pagebreak>)$/i.test(trimmedBlock)) {
+        if (/^(?:\[(?:salto(?:_de_p[aÃ¡]gina)?|page_break|salto_pagina)\]|<pagebreak>)$/i.test(trimmedBlock)) {
           doc.addPage();
           yCoord = 20;
           if (pdfLayoutType === "asymmetric") {
@@ -9590,32 +9597,32 @@ Ejemplo:
           return;
         }
 
-        // Skip inline Case Analysis JSON blocks as they are rendered in Step 5 (Diagnóstico Avanzado)
+        // Skip inline Case Analysis JSON blocks as they are rendered in Step 5 (DiagnÃ³stico Avanzado)
         if (trimmedBlock.includes("[CASE_ANALYSIS_JSON]")) {
           return;
         }
 
 
-        // Check if the block is a footnote (for Creador de Notas de Pie de Página)
+        // Check if the block is a footnote (for Creador de Notas de Pie de PÃ¡gina)
         const blockLower = trimmedBlock.toLowerCase();
         
         const isHeadingOrTableOrCode = trimmedBlock.startsWith("#") || 
                                        trimmedBlock.startsWith("**") || 
                                        trimmedBlock.startsWith("|") || 
                                        trimmedBlock.startsWith("```") || 
-                                       (trimmedBlock.startsWith("===") && (trimmedBlock.includes("SÍNTESIS VASCULAR") || trimmedBlock.includes("SÍNTESIS DE ANATOMÍA")));
+                                       (trimmedBlock.startsWith("===") && (trimmedBlock.includes("SÃNTESIS VASCULAR") || trimmedBlock.includes("SÃNTESIS DE ANATOMÃA")));
         
         if (isHeadingOrTableOrCode) {
           inFootnoteSection = false;
         }
 
         const isFootnote = inFootnoteSection ||
-                            blockLower.startsWith("*pie de página:") || 
-                            blockLower.startsWith("pie de página:") ||
+                            blockLower.startsWith("*pie de pÃ¡gina:") || 
+                            blockLower.startsWith("pie de pÃ¡gina:") ||
                             blockLower.startsWith("*nota de pie:") ||
                             blockLower.startsWith("nota de pie:") ||
-                            blockLower.startsWith("*nota de pie de página:") ||
-                            blockLower.startsWith("nota de pie de página:");
+                            blockLower.startsWith("*nota de pie de pÃ¡gina:") ||
+                            blockLower.startsWith("nota de pie de pÃ¡gina:");
 
         if (isFootnote) {
           checkPageBreak(8 * factor);
@@ -9624,8 +9631,8 @@ Ejemplo:
           doc.setTextColor(115, 125, 140); // Slate-500 (dim gray)
           
           let cleanTxt = trimmedBlock;
-          // Strip "Pie de página: " or similar prefixes if they exist
-          const prefixRegex = /^\s*(?:\*+)?\s*(?:pie de página|nota de pie|nota de pie de página)\s*(?:\*+)?\s*:\s*(?:\*+)?\s*/i;
+          // Strip "Pie de pÃ¡gina: " or similar prefixes if they exist
+          const prefixRegex = /^\s*(?:\*+)?\s*(?:pie de pÃ¡gina|nota de pie|nota de pie de pÃ¡gina)\s*(?:\*+)?\s*:\s*(?:\*+)?\s*/i;
           cleanTxt = cleanTxt.replace(prefixRegex, "");
 
           if (cleanTxt.startsWith("*")) {
@@ -9648,8 +9655,8 @@ Ejemplo:
           return;
         }
 
-        // 1. Check if the block is a conclusion/diagnostic impression block (Sugerencia 1: Cuadro de Conclusión)
-        const isConclusionBlock = /^\s*(?:#+|\*+|-|_|\d+\.)*\s*(?:conclusión|conclusiones|conclusion|impresión\s+diagnóstica|impresion\s+diagnostica|impresiones\s+diagnósticas|impresiones\s+diagnosticas|diagnósticos|diagnóstico|diagnostico|diagnosticos)\b/i.test(trimmedBlock);
+        // 1. Check if the block is a conclusion/diagnostic impression block (Sugerencia 1: Cuadro de ConclusiÃ³n)
+        const isConclusionBlock = /^\s*(?:#+|\*+|-|_|\d+\.)*\s*(?:conclusiÃ³n|conclusiones|conclusion|impresiÃ³n\s+diagnÃ³stica|impresion\s+diagnostica|impresiones\s+diagnÃ³sticas|impresiones\s+diagnosticas|diagnÃ³sticos|diagnÃ³stico|diagnostico|diagnosticos)\b/i.test(trimmedBlock);
 
         if (isConclusionBlock) {
           const blockLines = trimmedBlock.split("\n");
@@ -9679,7 +9686,7 @@ Ejemplo:
               return;
             }
             const isFootnoteLineInBox = lineTrimmed === "---" || /^---+\s*$/.test(lineTrimmed) ||
-              /^\s*(?:\*+)?\s*(?:pie de página|nota de pie|nota de pie de página|pie de pagina|nota de pie de pagina)\b/i.test(lineTrimmed);
+              /^\s*(?:\*+)?\s*(?:pie de pÃ¡gina|nota de pie|nota de pie de pÃ¡gina|pie de pagina|nota de pie de pagina)\b/i.test(lineTrimmed);
             if (isFootnoteLineInBox) {
               return;
             }
@@ -9693,15 +9700,15 @@ Ejemplo:
             const lineLower = lineTrimmed.toLowerCase();
             const isHeader = isMarkdownHeading || 
               (lineTrimmed.startsWith("**") && lineTrimmed.includes("**")) ||
-              lineLower.startsWith("conclusión") ||
+              lineLower.startsWith("conclusiÃ³n") ||
               lineLower.startsWith("conclusiones") ||
               lineLower.startsWith("conclusion") ||
-              lineLower.startsWith("impresión diagnóstica") ||
+              lineLower.startsWith("impresiÃ³n diagnÃ³stica") ||
               lineLower.startsWith("impresion diagnostica") ||
-              lineLower.startsWith("impresiones diagnósticas") ||
+              lineLower.startsWith("impresiones diagnÃ³sticas") ||
               lineLower.startsWith("impresiones diagnosticas") ||
-              lineLower.startsWith("diagnósticos") ||
-              lineLower.startsWith("diagnóstico") ||
+              lineLower.startsWith("diagnÃ³sticos") ||
+              lineLower.startsWith("diagnÃ³stico") ||
               lineLower.startsWith("diagnostico") ||
               lineLower.startsWith("diagnosticos");
             
@@ -9742,24 +9749,24 @@ Ejemplo:
             }
           });
           
-          // Calcular la altura para el título de la cabecera si existe
+          // Calcular la altura para el tÃ­tulo de la cabecera si existe
           let wrappedHeaderLines: string[] = [];
           let headerHeight = 0;
           if (headerTitle) {
             wrappedHeaderLines = doc.splitTextToSize(headerTitle.toUpperCase(), boxContentWidth);
-            headerHeight = (wrappedHeaderLines.length * 5.5 + 3.0) * factor; // Altura de línea + espaciado debajo
+            headerHeight = (wrappedHeaderLines.length * 5.5 + 3.0) * factor; // Altura de lÃ­nea + espaciado debajo
           }
           
           const finalBoxHeight = totalBlockHeight + headerHeight + (boxPaddingTop + boxPaddingBottom) * factor;
           
-          // Margen de seguridad para evitar saltos huérfanos
+          // Margen de seguridad para evitar saltos huÃ©rfanos
           checkPageBreak(finalBoxHeight + 6);
           
-          // Colores de Opción 3 (Sombreado Clínico Sutil sin bordes laterales)
+          // Colores de OpciÃ³n 3 (Sombreado ClÃ­nico Sutil sin bordes laterales)
           let bgColor = [248, 250, 252]; // Tono pizarra extremadamente sutil (slate-50)
-          let lineAccentColor = [148, 163, 184]; // Delicada línea pizarra (slate-400)
+          let lineAccentColor = [148, 163, 184]; // Delicada lÃ­nea pizarra (slate-400)
           let textColor = [30, 41, 59]; // slate-800
-          let headerColor = [15, 23, 42]; // slate-900 para el título interno
+          let headerColor = [15, 23, 42]; // slate-900 para el tÃ­tulo interno
           
           if (pdfLayoutType === "clinical_slate") {
             bgColor = [241, 245, 249]; // slate-100
@@ -9768,31 +9775,31 @@ Ejemplo:
             headerColor = [71, 85, 105];
           } else if (pdfLayoutType === "executive_medical") {
             bgColor = [253, 251, 247]; // Crema sutil (warm white)
-            lineAccentColor = [197, 160, 89]; // Línea dorada de cierre
+            lineAccentColor = [197, 160, 89]; // LÃ­nea dorada de cierre
             textColor = [15, 23, 42];
             headerColor = [141, 110, 50]; // Bronce profundo
           } else if (pdfLayoutType === "asymmetric") {
-            bgColor = [249, 250, 254]; // Índigo extremadamente sutil
-            lineAccentColor = [129, 140, 248]; // Índigo suave (indigo-400)
+            bgColor = [249, 250, 254]; // Ãndigo extremadamente sutil
+            lineAccentColor = [129, 140, 248]; // Ãndigo suave (indigo-400)
             textColor = [15, 23, 42];
             headerColor = [79, 70, 229];
           }
           
-          // Dibujar el sombreado de fondo sin bordes perimetrales rígidos
+          // Dibujar el sombreado de fondo sin bordes perimetrales rÃ­gidos
           doc.setFillColor(bgColor[0], bgColor[1], bgColor[2]);
           doc.rect(marginX, yCoord, contentWidth, finalBoxHeight, "F");
           
-          // Dibujar la delgada línea horizontal superior para abrir el bloque
+          // Dibujar la delgada lÃ­nea horizontal superior para abrir el bloque
           doc.setDrawColor(lineAccentColor[0], lineAccentColor[1], lineAccentColor[2]);
           doc.setLineWidth(0.35); // Grosor fino y elegante (0.35mm)
           doc.line(marginX, yCoord, marginX + contentWidth, yCoord);
           
-          // Dibujar la delgada línea horizontal inferior para cerrar el bloque
+          // Dibujar la delgada lÃ­nea horizontal inferior para cerrar el bloque
           doc.line(marginX, yCoord + finalBoxHeight, marginX + contentWidth, yCoord + finalBoxHeight);
           
           let currentY = yCoord + boxPaddingTop * factor;
           
-          // Renderizar el título de la cabecera si existe
+          // Renderizar el tÃ­tulo de la cabecera si existe
           if (headerTitle) {
             doc.setFont("times", "bold");
             doc.setFontSize(10.5);
@@ -9802,7 +9809,7 @@ Ejemplo:
               doc.text(wLine, marginX + boxPaddingLeft, currentY);
               currentY += 5.5 * factor;
             });
-            currentY += 3.0 * factor; // Espaciado elegante bajo el título
+            currentY += 3.0 * factor; // Espaciado elegante bajo el tÃ­tulo
           }
           
           parsedLines.forEach((pLine) => {
@@ -9862,7 +9869,7 @@ Ejemplo:
         }
 
         // 2. Check if the block is a code block (starts/ends with triple backticks, or is a raw EMR segment)
-        const isCodeBlockSegment = trimmedBlock.startsWith("```") || (trimmedBlock.startsWith("===") && (trimmedBlock.includes("SÍNTESIS VASCULAR") || trimmedBlock.includes("SÍNTESIS DE ANATOMÍA")));
+        const isCodeBlockSegment = trimmedBlock.startsWith("```") || (trimmedBlock.startsWith("===") && (trimmedBlock.includes("SÃNTESIS VASCULAR") || trimmedBlock.includes("SÃNTESIS DE ANATOMÃA")));
 
         if (isCodeBlockSegment) {
           const linesOfBlock = trimmedBlock.split("\n");
@@ -10011,8 +10018,8 @@ Ejemplo:
               if (isClassificationTable) {
                 colWidths.push(contentWidth * 0.24); // Criterio Evaluado
                 colWidths.push(contentWidth * 0.28); // Hallazgo en el Reporte
-                colWidths.push(contentWidth * 0.16); // Ponderación / Score
-                colWidths.push(contentWidth * 0.32); // Justificación Diagnóstica
+                colWidths.push(contentWidth * 0.16); // PonderaciÃ³n / Score
+                colWidths.push(contentWidth * 0.32); // JustificaciÃ³n DiagnÃ³stica
               } else if (isAsistenteBilateral) {
                 colWidths.push(contentWidth * 0.25);
                 colWidths.push(contentWidth * 0.30);
@@ -10026,7 +10033,7 @@ Ejemplo:
               } else {
                 colWidths.push(contentWidth * 0.12); // ID Column (e.g. H1, H2, H3)
                 colWidths.push(contentWidth * 0.28); // Estructura / Sitio
-                colWidths.push(contentWidth * 0.22); // Categoría
+                colWidths.push(contentWidth * 0.22); // CategorÃ­a
                 colWidths.push(contentWidth * 0.38); // Hallazgo Principal
               }
             } else {
@@ -10241,17 +10248,17 @@ Ejemplo:
             headers.forEach((headerTxt, hIdx) => {
               let hClean = headerTxt.replace(/\*\*/g, "").trim();
               if (colCount === 2) {
-                // Force headers to read exactly "INTERPRETACIÓN" and "Hallazgos" ONLY if header explicitly indicates semiology or interpretation
+                // Force headers to read exactly "INTERPRETACIÃN" and "Hallazgos" ONLY if header explicitly indicates semiology or interpretation
                 const isSynoptic = headers.some(h => {
                   const l = h.toLowerCase();
-                  return l.includes("aspecto") || l.includes("detalle") || l.includes("sinopsis") || l.includes("evaluado") || l.includes("clínico") || l.includes("sistema") || l.includes("categoría") || l.includes("criterio") || l.includes("paso") || l.includes("parámetro") || l.includes("definición") || l.includes("estadio") || l.includes("ponderación") || l.includes("justificación");
+                  return l.includes("aspecto") || l.includes("detalle") || l.includes("sinopsis") || l.includes("evaluado") || l.includes("clÃ­nico") || l.includes("sistema") || l.includes("categorÃ­a") || l.includes("criterio") || l.includes("paso") || l.includes("parÃ¡metro") || l.includes("definiciÃ³n") || l.includes("estadio") || l.includes("ponderaciÃ³n") || l.includes("justificaciÃ³n");
                 });
                 const isExplicitSemiology = headers.some(h => {
                   const l = h.toLowerCase();
                   return l.includes("interpretaci") || l.includes("semiol");
                 });
                 if (!isSynoptic && isExplicitSemiology) {
-                  if (hIdx === 0) hClean = "INTERPRETACIÓN";
+                  if (hIdx === 0) hClean = "INTERPRETACIÃN";
                   if (hIdx === 1) hClean = "Hallazgos";
                 }
               } else if (isVascularTable) {
@@ -10380,7 +10387,7 @@ Ejemplo:
           const cleanHeaderTxt = trimmed.replace(/\*\*/g, "");
 
           // Determine if first visual line is the main title of study
-          const isMainTitle = isFirstLine && (isHeader || /REPORTE|INFORME|ESTUDIO|DIAGNÓSTICO|VALORACIÓN/i.test(trimmed));
+          const isMainTitle = isFirstLine && (isHeader || /REPORTE|INFORME|ESTUDIO|DIAGNÃSTICO|VALORACIÃN/i.test(trimmed));
 
           if (isMainTitle) {
             isFirstLine = false;
@@ -10445,7 +10452,7 @@ Ejemplo:
                   const nextBlock = paragraphs[nextBlockIdx].trim();
                   if (!nextBlock) continue;
                   
-                  if (nextBlock.startsWith("```") || nextBlock.startsWith("|") || (nextBlock.startsWith("===") && (nextBlock.includes("SÍNTESIS VASCULAR") || nextBlock.includes("SÍNTESIS DE ANATOMÍA")))) {
+                  if (nextBlock.startsWith("```") || nextBlock.startsWith("|") || (nextBlock.startsWith("===") && (nextBlock.includes("SÃNTESIS VASCULAR") || nextBlock.includes("SÃNTESIS DE ANATOMÃA")))) {
                     lookAheadHeight += 15 * factor;
                     countLinesLookedAt += 2;
                     break;
@@ -10524,7 +10531,7 @@ Ejemplo:
 
             // Underlines for headings
             const isAnnexHeading = cleanHeaderTxt.toUpperCase().includes("ANEXO") || 
-                                   cleanHeaderTxt.toUpperCase().includes("DESGLOSE Y JUSTIFICACIÓN");
+                                   cleanHeaderTxt.toUpperCase().includes("DESGLOSE Y JUSTIFICACIÃN");
             if (isAnnexHeading) {
               doc.setDrawColor(203, 213, 225); // slate-300
               doc.setLineWidth(0.3);
@@ -10664,30 +10671,30 @@ Ejemplo:
 
         const upperBlock = trimmedBlock.toUpperCase();
         if (
-          upperBlock.includes("RADAR BIOMECÁNICO") ||
+          upperBlock.includes("RADAR BIOMECÃNICO") ||
           upperBlock.includes("RADAR BIOMECANICO") ||
           upperBlock.includes("PUNTAJE GLOBAL DE CARGA TISULAR:") ||
-          upperBlock.includes("VECTOR PATOLÓGICO DOMINANTE:") ||
+          upperBlock.includes("VECTOR PATOLÃGICO DOMINANTE:") ||
           upperBlock.includes("MATRIZ DE VECTORES CLAVE:") ||
-          upperBlock.includes("SÍNTESIS BIOMECÁNICO-INFLAMATORIA:") ||
-          upperBlock.includes("RECOMENDACIÓN DINÁMICA:") ||
-          (upperBlock.startsWith("•") && (upperBlock.includes("/10") || upperBlock.includes("[")))
+          upperBlock.includes("SÃNTESIS BIOMECÃNICO-INFLAMATORIA:") ||
+          upperBlock.includes("RECOMENDACIÃN DINÃMICA:") ||
+          (upperBlock.startsWith("â¢") && (upperBlock.includes("/10") || upperBlock.includes("[")))
         ) {
           return;
         }
 
         const isHeaderMarker = /^\s*(?:#{1,6}\s+|\*\*\s*)/.test(trimmedBlock) || trimmedBlock.toUpperCase().startsWith("ANEXO:");
-        const isImpressionHeader = /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:IMPRESI[OÓ]N\s+DIAGN[OÓ]STICA|IMPRESI[OÓ]N\b|CONCLUSI[OÓ]N|CONCLUSIONES|DIAGN[OÓ]STICO|DIAGN[OÓ]STICOS)\b/i.test(trimmedBlock) ||
-                                    upperBlock.includes("IMPRESIÓN DIAGNÓSTICA") || upperBlock.includes("IMPRESION DIAGNOSTICA") ||
-                                    upperBlock.includes("CONCLUSIÓN:") || upperBlock.includes("CONCLUSIONES:");
-        const isCuadroHeader = isHeaderMarker && /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:ESQUEMA\s+CLÍNICO\s+DE\s+HALLAZGOS\s+PRINCIPALES|CUADRO\s+SINÓPTICO|MATRIZ\s+SEMIÓTICA)\b/i.test(trimmedBlock) && !isImpressionHeader;
-        const isOrganHeader = isHeaderMarker && /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:SINOPSIS\s+CLÍNICA|SINOPSIS\s+POR\s+[OÓ]RGANO|SINOPSIS\s+DE\s+[OÓ]RGANO)\b/i.test(trimmedBlock) && !isCuadroHeader && !isImpressionHeader;
-        const isMeasurementHeader = isHeaderMarker && /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:ASISTENTE\s+DE\s+MEDIDAS|CUADRO\s+DE\s+ASISTENTE\s+DE\s+MEDIDAS|TABLA\s+DE\s+MEDIDAS|MEDICIONES\s+Y\s+PARÁMETROS|PARÁMETROS\s+Y\s+MEDIDAS)\b/i.test(trimmedBlock) && !isCuadroHeader && !isOrganHeader && !isImpressionHeader;
-        const isAnnexHeader = isHeaderMarker && (trimmedBlock.includes("ANEXO DIAGNÓSTICO") || 
-                              trimmedBlock.includes("DESGLOSE Y JUSTIFICACIÓN DE CLASIFICACIÓN") || 
-                              trimmedBlock.includes("DESGLOSE Y JUSTIFICACIÓN") ||
-                              trimmedBlock.includes("CLASIFICACIÓN DE") ||
-                              /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:ANEXO|CLASIFICACI[OÓ]N)\b/i.test(trimmedBlock)) && !isCuadroHeader && !isOrganHeader && !isMeasurementHeader && !isImpressionHeader;
+        const isImpressionHeader = /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:IMPRESI[OÃ]N\s+DIAGN[OÃ]STICA|IMPRESI[OÃ]N\b|CONCLUSI[OÃ]N|CONCLUSIONES|DIAGN[OÃ]STICO|DIAGN[OÃ]STICOS)\b/i.test(trimmedBlock) ||
+                                    upperBlock.includes("IMPRESIÃN DIAGNÃSTICA") || upperBlock.includes("IMPRESION DIAGNOSTICA") ||
+                                    upperBlock.includes("CONCLUSIÃN:") || upperBlock.includes("CONCLUSIONES:");
+        const isCuadroHeader = isHeaderMarker && /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:ESQUEMA\s+CLÃNICO\s+DE\s+HALLAZGOS\s+PRINCIPALES|CUADRO\s+SINÃPTICO|MATRIZ\s+SEMIÃTICA)\b/i.test(trimmedBlock) && !isImpressionHeader;
+        const isOrganHeader = isHeaderMarker && /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:SINOPSIS\s+CLÃNICA|SINOPSIS\s+POR\s+[OÃ]RGANO|SINOPSIS\s+DE\s+[OÃ]RGANO)\b/i.test(trimmedBlock) && !isCuadroHeader && !isImpressionHeader;
+        const isMeasurementHeader = isHeaderMarker && /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:ASISTENTE\s+DE\s+MEDIDAS|CUADRO\s+DE\s+ASISTENTE\s+DE\s+MEDIDAS|TABLA\s+DE\s+MEDIDAS|MEDICIONES\s+Y\s+PARÃMETROS|PARÃMETROS\s+Y\s+MEDIDAS)\b/i.test(trimmedBlock) && !isCuadroHeader && !isOrganHeader && !isImpressionHeader;
+        const isAnnexHeader = isHeaderMarker && (trimmedBlock.includes("ANEXO DIAGNÃSTICO") || 
+                              trimmedBlock.includes("DESGLOSE Y JUSTIFICACIÃN DE CLASIFICACIÃN") || 
+                              trimmedBlock.includes("DESGLOSE Y JUSTIFICACIÃN") ||
+                              trimmedBlock.includes("CLASIFICACIÃN DE") ||
+                              /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:ANEXO|CLASIFICACI[OÃ]N)\b/i.test(trimmedBlock)) && !isCuadroHeader && !isOrganHeader && !isMeasurementHeader && !isImpressionHeader;
 
         if (isImpressionHeader) {
           pdfSectionTarget = "main";
@@ -10717,9 +10724,9 @@ Ejemplo:
       // Safety recovery pass for jsPDF: Ensure Impression & Conclusions are NEVER trapped inside annexes
       const isImpressionBlockText = (bText: string) => {
         const u = bText.toUpperCase();
-        return u.includes("IMPRESIÓN DIAGNÓSTICA") || u.includes("IMPRESION DIAGNOSTICA") ||
-               u.includes("CONCLUSIÓN:") || u.includes("CONCLUSIONES:") ||
-               /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:IMPRESI[OÓ]N|CONCLUSI[OÓ]N|CONCLUSIONES|DIAGN[OÓ]STICO)\b/i.test(bText);
+        return u.includes("IMPRESIÃN DIAGNÃSTICA") || u.includes("IMPRESION DIAGNOSTICA") ||
+               u.includes("CONCLUSIÃN:") || u.includes("CONCLUSIONES:") ||
+               /^\s*(?:#{1,6}\s*|\*\*)*\s*(?:IMPRESI[OÃ]N|CONCLUSI[OÃ]N|CONCLUSIONES|DIAGN[OÃ]STICO)\b/i.test(bText);
       };
 
       const recoverImpressionForPDF = (sourceArr: string[]) => {
@@ -10748,7 +10755,7 @@ Ejemplo:
         renderSignatureBlock();
       }
 
-      // --- 2. CUADRO SINÓPTICO ---
+      // --- 2. CUADRO SINÃPTICO ---
       if (cuadroSinopticoBlocks.length > 0) {
         doc.addPage();
         yCoord = 20;
@@ -10757,7 +10764,7 @@ Ejemplo:
         });
       }
 
-      // --- 3. SINOPSIS POR ÓRGANO (PÁGINA INDEPENDIENTE DESPUÉS DEL CUERPO DEL REPORTE) ---
+      // --- 3. SINOPSIS POR ÃRGANO (PÃGINA INDEPENDIENTE DESPUÃS DEL CUERPO DEL REPORTE) ---
       if (organSynopsisBlocks.length > 0) {
         doc.addPage();
         yCoord = 20;
@@ -10766,10 +10773,10 @@ Ejemplo:
         });
       }
 
-      // --- 4. SUITES ESPECÍFICAS DE ÓRGANO (vascular/tiroides/mama/hombro) ---
-      // Después de la sinopsis por órgano si está presente; si no, después del cuerpo/cuadro.
+      // --- 4. SUITES ESPECÃFICAS DE ÃRGANO (vascular/tiroides/mama/hombro) ---
+      // DespuÃ©s de la sinopsis por Ã³rgano si estÃ¡ presente; si no, despuÃ©s del cuerpo/cuadro.
 
-      // --- 5.6. ANEXO: SUITE VASCULAR 3D & MAPA ANATOMO-HEMODINÁMICO (PÁGINA DEDICADA) ---
+      // --- 5.6. ANEXO: SUITE VASCULAR 3D & MAPA ANATOMO-HEMODINÃMICO (PÃGINA DEDICADA) ---
       
       const activeVascularData = studyOverride ? studyOverride.vascular3dData : (pdfStateRef.current?.vascular3dData || vascular3dData);
       const shouldIncludeVascular = studyOverride ? (studyOverride.includeVascular3dInReport !== false) : (pdfStateRef.current?.includeVascular3dInReport !== false && includeVascular3dInReport);
@@ -10777,7 +10784,7 @@ Ejemplo:
         await renderVascular3DPageToPdf(doc, activeVascularData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
       }
 
-      // --- 5.64. ANEXO: SUITE TIROIDES 3D (PÁGINA COMPLETA) ---
+      // --- 5.64. ANEXO: SUITE TIROIDES 3D (PÃGINA COMPLETA) ---
       const activeThyroidData = studyOverride ? studyOverride.thyroid3dData : (pdfStateRef.current?.thyroid3dData || thyroid3dData);
       const shouldIncludeThyroid = studyOverride ? (studyOverride.includeThyroid3dInReport !== false) : (pdfStateRef.current?.includeThyroid3dInReport !== false && includeThyroid3dInReport);
       if (activeThyroidData && shouldIncludeThyroid && (activeThyroidData.panels?.length || activeThyroidData.noduleTable?.length)) {
@@ -10856,7 +10863,7 @@ Ejemplo:
         });
       }
 
-      // --- 5.5. ANEXO: ATLAS 3D FOTORREALISTA Y CORRELACIÓN ANATÓMICA (PÁGINA DEDICADA) ---
+      // --- 5.5. ANEXO: ATLAS 3D FOTORREALISTA Y CORRELACIÃN ANATÃMICA (PÃGINA DEDICADA) ---
       const activeAtlasData = studyOverride ? studyOverride.atlas3dData : (pdfStateRef.current?.atlas3dData || atlas3dData);
       const shouldIncludeAtlas = studyOverride ? (studyOverride.includeAtlas3dInReport !== false) : (pdfStateRef.current?.includeAtlas3dInReport !== false && includeAtlas3dInReport);
       if (activeAtlasData && shouldIncludeAtlas && activeAtlasData.panels && activeAtlasData.panels.length > 0) {
@@ -10906,7 +10913,7 @@ Ejemplo:
         });
       }
 
-      // --- ANEXO: CHECKLIST DE NEGATIVIDAD DIRIGIDA (1 página) ---
+      // --- ANEXO: CHECKLIST DE NEGATIVIDAD DIRIGIDA (1 pÃ¡gina) ---
       const activeNegativityChecklist = studyOverride
         ? (studyOverride as any).negativityChecklistData
         : (pdfStateRef.current?.negativityChecklistData || negativityChecklistData);
@@ -10977,7 +10984,7 @@ Ejemplo:
       }
 
 
-      // --- 5.65. ANEXO: CORTE FOCAL 3D DE LA LESIÓN (ON DEMAND) ---
+      // --- 5.65. ANEXO: CORTE FOCAL 3D DE LA LESIÃN (ON DEMAND) ---
       const activeFocalLesionData = studyOverride ? studyOverride.focalLesion3dData : (pdfStateRef.current?.focalLesion3dData || focalLesion3dData);
       const shouldIncludeFocalLesion = studyOverride ? (studyOverride.includeFocalLesion3dInReport !== false) : (pdfStateRef.current?.includeFocalLesion3dInReport !== false && includeFocalLesion3dInReport);
       if (activeFocalLesionData && shouldIncludeFocalLesion && activeFocalLesionData.panels && activeFocalLesionData.panels.length > 0) {
@@ -11069,7 +11076,7 @@ Ejemplo:
         }
       }
 
-      // --- 6. ANEXOS DE IMÁGENES DIAGNÓSTICAS (MAMOGRAFÍA Y ULTRASONIDO) ---
+      // --- 6. ANEXOS DE IMÃGENES DIAGNÃSTICAS (MAMOGRAFÃA Y ULTRASONIDO) ---
       if (attachedImages.length > 0) {
         const mmgImages = attachedImages.filter(img => (img.modality || detectImageMetaFromFilename(img.name, img.dicomMetaData).modality) === "MMG");
         const usImages = attachedImages.filter(img => !mmgImages.includes(img));
@@ -11101,17 +11108,17 @@ Ejemplo:
 
         let globalFigIdx = 1;
 
-        // 6A. ANEXO DE IMÁGENES DE MAMOGRAFÍA (MMG) - FORMATO ELEGANTE DE REVISTA CIENTÍFICA
+        // 6A. ANEXO DE IMÃGENES DE MAMOGRAFÃA (MMG) - FORMATO ELEGANTE DE REVISTA CIENTÃFICA
         if (sortedMmgImages.length > 0) {
           globalFigIdx = renderMmgImagesToPdf(doc, sortedMmgImages, {
             startFigIdx: globalFigIdx,
-            studyTitle: specificStudy || studyType || "MAMOGRAFÍA",
+            studyTitle: specificStudy || studyType || "MAMOGRAFÃA",
             factor,
             detectMetaFn: (name, meta) => detectImageMetaFromFilename(name, meta)
           });
         }
 
-        // 6B. ANEXO DE IMÁGENES Y CAPTURAS DE ULTRASONIDO (US) - FORMATO REVISTA CIENTÍFICA
+        // 6B. ANEXO DE IMÃGENES Y CAPTURAS DE ULTRASONIDO (US) - FORMATO REVISTA CIENTÃFICA
         if (usImages.length > 0) {
           const activeGridMode = (studyOverride ? studyOverride.usImagesGridMode : (pdfStateRef.current?.usImagesGridMode || usImagesGridMode)) || "auto";
           globalFigIdx = renderUsImagesToPdf(doc, usImages, {
@@ -11123,7 +11130,7 @@ Ejemplo:
         }
       }
 
-      // --- 6.5. ANEXO: REPRESENTACIÓN ESQUEMÁTICA 3D DEL HALLAZGO ---
+      // --- 6.5. ANEXO: REPRESENTACIÃN ESQUEMÃTICA 3D DEL HALLAZGO ---
       const active3dRenders = (studyOverride ? (studyOverride.findings3dRenders || []) : (pdfStateRef.current?.findings3dRenders || findings3dRenders || [])).filter((r: any) => r && r.includeInPdf !== false);
 
       if (active3dRenders.length > 0) {
@@ -11134,7 +11141,7 @@ Ejemplo:
         doc.setFont("helvetica", "bold");
         doc.setFontSize(12 * factor);
         doc.setTextColor(15, 23, 42); // slate-900
-        doc.text("ANEXO: REPRESENTACIÓN ESQUEMÁTICA 3D DEL HALLAZGO", marginX, yCoord);
+        doc.text("ANEXO: REPRESENTACIÃN ESQUEMÃTICA 3D DEL HALLAZGO", marginX, yCoord);
         yCoord += 4 * factor;
 
         doc.setDrawColor(6, 182, 212); // Cyan 500
@@ -11146,7 +11153,7 @@ Ejemplo:
         doc.setFont("helvetica", "italic");
         doc.setFontSize(7.5 * factor);
         doc.setTextColor(100, 116, 139); // slate-500
-        const subtitleText = "Representación volumétrica tridimensional orientativa correlacionada con la ecografía 2D. Ilustración didáctica de alta resolución diseñada para facilitar la comprensión espacial y anatómica del hallazgo.";
+        const subtitleText = "RepresentaciÃ³n volumÃ©trica tridimensional orientativa correlacionada con la ecografÃ­a 2D. IlustraciÃ³n didÃ¡ctica de alta resoluciÃ³n diseÃ±ada para facilitar la comprensiÃ³n espacial y anatÃ³mica del hallazgo.";
         const subLines = doc.splitTextToSize(subtitleText, contentWidth);
         subLines.forEach((line: string) => {
           doc.text(line, marginX, yCoord);
@@ -11168,7 +11175,7 @@ Ejemplo:
           }
 
           // Card header with Title and Badge (prevent text overlap)
-          const badgeText = isDual ? "RENDER 3D DUAL: FOCAL + TOPOGRÁFICO" : "RENDER VOLUMÉTRICO DIDÁCTICO";
+          const badgeText = isDual ? "RENDER 3D DUAL: FOCAL + TOPOGRÃFICO" : "RENDER VOLUMÃTRICO DIDÃCTICO";
           doc.setFont("helvetica", "bold");
           doc.setFontSize(7 * factor);
           const badgeWidth = (doc as any).getTextWidth ? (doc as any).getTextWidth(badgeText) : 52;
@@ -11176,7 +11183,7 @@ Ejemplo:
 
           doc.setFont("helvetica", "bold");
           doc.setFontSize(8.5 * factor);
-          const titleText = renderItem.title || `Ilustración 3D del Hallazgo #${rIdx + 1}`;
+          const titleText = renderItem.title || `IlustraciÃ³n 3D del Hallazgo #${rIdx + 1}`;
           const titleLines = doc.splitTextToSize(titleText, maxTitleWidth);
           const headerHeight = Math.max(7, titleLines.length * 4 + 2) * factor;
 
@@ -11205,12 +11212,12 @@ Ejemplo:
 
           if (isGrid2x2) {
             // ==========================================
-            // OPTION B: CUADRÍCULA 2x2 (GRID LAYOUT)
+            // OPTION B: CUADRÃCULA 2x2 (GRID LAYOUT)
             // ==========================================
             const pairWidth = (contentWidth - 6) / 2;
             const pairHeight = pairWidth * 0.75;
 
-            // Row 1 - Left: 2D Ecografía
+            // Row 1 - Left: 2D EcografÃ­a
             try {
               if (renderItem.sourceImageBase64) {
                 doc.addImage(renderItem.sourceImageBase64, "JPEG", marginX, imageRowY, pairWidth, pairHeight, undefined, "FAST");
@@ -11224,7 +11231,7 @@ Ejemplo:
               doc.setFont("helvetica", "bold");
               doc.setFontSize(6.5);
               doc.setTextColor(255, 255, 255);
-              doc.text("1. ECOGRAFÍA 2D ORIGINAL", marginX + 2, imageRowY + pairHeight - 1.5);
+              doc.text("1. ECOGRAFÃA 2D ORIGINAL", marginX + 2, imageRowY + pairHeight - 1.5);
             } catch (err2d) {
               doc.setDrawColor(203, 213, 225);
               doc.rect(marginX, imageRowY, pairWidth, pairHeight);
@@ -11262,7 +11269,7 @@ Ejemplo:
               doc.setFont("helvetica", "bold");
               doc.setFontSize(6.5);
               doc.setTextColor(199, 210, 254); // indigo-200
-              doc.text("3. VISTA MACRO TOPOGRÁFICA", marginX + 2, row2Y + pairHeight - 1.5);
+              doc.text("3. VISTA MACRO TOPOGRÃFICA", marginX + 2, row2Y + pairHeight - 1.5);
             } catch (err3dMacro) {
               doc.setDrawColor(203, 213, 225);
               doc.rect(marginX, row2Y, pairWidth, pairHeight);
@@ -11309,12 +11316,12 @@ Ejemplo:
 
           } else if (isDual) {
             // ==========================================
-            // OPTION A: TRÍPTICO HORIZONTAL (3 COLUMNS)
+            // OPTION A: TRÃPTICO HORIZONTAL (3 COLUMNS)
             // ==========================================
             const colWidth = (contentWidth - 8) / 3;
             const colHeight = colWidth * 0.75;
 
-            // Col 1: 2D Ecografía
+            // Col 1: 2D EcografÃ­a
             try {
               if (renderItem.sourceImageBase64) {
                 doc.addImage(renderItem.sourceImageBase64, "JPEG", marginX, imageRowY, colWidth, colHeight, undefined, "FAST");
@@ -11328,7 +11335,7 @@ Ejemplo:
               doc.setFont("helvetica", "bold");
               doc.setFontSize(5.8);
               doc.setTextColor(255, 255, 255);
-              doc.text("1. ECOGRAFÍA 2D", marginX + 1.5, imageRowY + colHeight - 1.2);
+              doc.text("1. ECOGRAFÃA 2D", marginX + 1.5, imageRowY + colHeight - 1.2);
             } catch (err2d) {
               doc.setDrawColor(203, 213, 225);
               doc.rect(marginX, imageRowY, colWidth, colHeight);
@@ -11366,7 +11373,7 @@ Ejemplo:
               doc.setFont("helvetica", "bold");
               doc.setFontSize(5.8);
               doc.setTextColor(199, 210, 254);
-              doc.text("3. 3D PANORÁMICO (MACRO)", col3X + 1.5, imageRowY + colHeight - 1.2);
+              doc.text("3. 3D PANORÃMICO (MACRO)", col3X + 1.5, imageRowY + colHeight - 1.2);
             } catch (err3dMacro) {
               doc.setDrawColor(203, 213, 225);
               doc.rect(col3X, imageRowY, colWidth, colHeight);
@@ -11375,7 +11382,7 @@ Ejemplo:
             yCoord += colHeight + 4 * factor;
 
             // Full-width Structured text block below 3-columns
-            const findingLabel = `Hallazgo Ecográfico Base: ${renderItem.findingDescription || "No especificado"}`;
+            const findingLabel = `Hallazgo EcogrÃ¡fico Base: ${renderItem.findingDescription || "No especificado"}`;
             doc.setFont("helvetica", "bold");
             doc.setFontSize(7.5 * factor);
             const findingLines = doc.splitTextToSize(findingLabel, contentWidth - 6);
@@ -11424,7 +11431,7 @@ Ejemplo:
               const pairWidth = (contentWidth - 6) / 2;
               const pairHeight = pairWidth * 0.75;
 
-              // Left: 2D Ecografía
+              // Left: 2D EcografÃ­a
               try {
                 doc.addImage(renderItem.sourceImageBase64, "JPEG", marginX, imageRowY, pairWidth, pairHeight, undefined, "FAST");
                 doc.setDrawColor(148, 163, 184);
@@ -11437,7 +11444,7 @@ Ejemplo:
                 doc.setFont("helvetica", "bold");
                 doc.setFontSize(6.5);
                 doc.setTextColor(255, 255, 255);
-                doc.text("ECOGRAFÍA 2D ORIGINAL", marginX + 2, imageRowY + pairHeight - 1.5);
+                doc.text("ECOGRAFÃA 2D ORIGINAL", marginX + 2, imageRowY + pairHeight - 1.5);
               } catch (err2d) {
                 doc.setDrawColor(203, 213, 225);
                 doc.rect(marginX, imageRowY, pairWidth, pairHeight);
@@ -11460,7 +11467,7 @@ Ejemplo:
                 doc.setFont("helvetica", "bold");
                 doc.setFontSize(6.5);
                 doc.setTextColor(103, 232, 249); // cyan-300
-                doc.text("RECONSTRUCCIÓN ESQUEMÁTICA 3D", marginX + pairWidth + 8, imageRowY + pairHeight - 1.5);
+                doc.text("RECONSTRUCCIÃN ESQUEMÃTICA 3D", marginX + pairWidth + 8, imageRowY + pairHeight - 1.5);
               } catch (err3d) {
                 doc.setDrawColor(203, 213, 225);
                 doc.rect(marginX + pairWidth + 6, imageRowY, pairWidth, pairHeight);
@@ -11484,7 +11491,7 @@ Ejemplo:
             }
 
             // Measure explanation height
-            const findingLabel = `Hallazgo Ecográfico Base: ${renderItem.findingDescription || "No especificado"}`;
+            const findingLabel = `Hallazgo EcogrÃ¡fico Base: ${renderItem.findingDescription || "No especificado"}`;
             doc.setFont("helvetica", "bold");
             doc.setFontSize(7.5 * factor);
             const findingLines = doc.splitTextToSize(findingLabel, contentWidth - 6);
@@ -11531,7 +11538,7 @@ Ejemplo:
         }
       }
 
-      // --- 7. DIAGNÓSTICO AVANZADO Y ANÁLISIS DEL CASO ---
+      // --- 7. DIAGNÃSTICO AVANZADO Y ANÃLISIS DEL CASO ---
       if (caseAnalysisBlocks.length > 0) {
         doc.addPage();
         yCoord = 20;
@@ -11540,7 +11547,7 @@ Ejemplo:
         doc.setFont("helvetica", "bold");
         doc.setFontSize(12 * factor);
         doc.setTextColor(15, 23, 42); // slate-900
-        doc.text("ANEXO: DIAGNÓSTICO AVANZADO Y ANÁLISIS DEL CASO", marginX, yCoord);
+        doc.text("ANEXO: DIAGNÃSTICO AVANZADO Y ANÃLISIS DEL CASO", marginX, yCoord);
         yCoord += 4 * factor;
         doc.setDrawColor(203, 213, 225);
         doc.setLineWidth(0.4);
@@ -11643,18 +11650,18 @@ Ejemplo:
             includeManagement: true,
           };
 
-          let formatTitle = caseData.title || "ANÁLISIS DEL CASO";
+          let formatTitle = caseData.title || "ANÃLISIS DEL CASO";
           if (!caseData.title) {
             if (caseData.format === "flujograma_semiologico") {
-              formatTitle = "FLUJOGRAMA SEMIOLÓGICO";
+              formatTitle = "FLUJOGRAMA SEMIOLÃGICO";
             } else if (caseData.format === "flujograma_algoritmico") {
-              formatTitle = "FLUJOGRAMA ALGORÍTMICO / ÁRBOL DE DECISIÓN";
+              formatTitle = "FLUJOGRAMA ALGORÃTMICO / ÃRBOL DE DECISIÃN";
             } else if (caseData.format === "esquema_pilares") {
               formatTitle = "ESQUEMA INTEGRADOR POR PILARES";
             } else if (caseData.format === "mapa_diferenciales") {
-              formatTitle = "MAPA DE DIAGNÓSTICOS DIFERENCIALES";
+              formatTitle = "MAPA DE DIAGNÃSTICOS DIFERENCIALES";
             } else if (caseData.format === "matriz_semiotica") {
-              formatTitle = "MATRIZ SEMIÓTICA COMPARATIVA";
+              formatTitle = "MATRIZ SEMIÃTICA COMPARATIVA";
             }
           }
 
@@ -11669,7 +11676,7 @@ Ejemplo:
 
           yCoord += 16 * factor;
 
-          // --- FORMAT 1: FLUJOGRAMA SEMIOLÓGICO ---
+          // --- FORMAT 1: FLUJOGRAMA SEMIOLÃGICO ---
           if (caseData.format === "flujograma_semiologico") {
             const semiologyStepsToDraw: Array<{
               title: string;
@@ -11682,8 +11689,8 @@ Ejemplo:
 
             if (cfg.includeSonographic && caseData.sonographicPillar) {
               semiologyStepsToDraw.push({
-                title: "HALLAZGO ECOGRÁFICO PRINCIPAL",
-                subtitle: "Punto de Partida Semiológico",
+                title: "HALLAZGO ECOGRÃFICO PRINCIPAL",
+                subtitle: "Punto de Partida SemiolÃ³gico",
                 content: cleanTextForJSPDF(caseData.sonographicPillar.primaryFinding),
                 bullets: (cfg.includeSonographicDetails !== false && caseData.sonographicPillar.details) ? caseData.sonographicPillar.details.map(cleanTextForJSPDF) : undefined,
                 accentColor: cardsStyle.sonographic.border,
@@ -11693,8 +11700,8 @@ Ejemplo:
 
             if (cfg.includeClinicalCorr && caseData.clinicalCorrelation) {
               semiologyStepsToDraw.push({
-                title: "INTEGRACIÓN CLÍNICO-ANATÓMICA",
-                subtitle: "Correlación de Síntomas y Laboratorio",
+                title: "INTEGRACIÃN CLÃNICO-ANATÃMICA",
+                subtitle: "CorrelaciÃ³n de SÃ­ntomas y Laboratorio",
                 content: cleanTextForJSPDF(caseData.clinicalCorrelation),
                 accentColor: cardsStyle.clinical.border,
                 bgColor: cardsStyle.clinical.bg
@@ -11711,7 +11718,7 @@ Ejemplo:
               semiologyStepsToDraw.push({
                 title: "CRITERIOS DESCARTADOS Y EXCLUSIONES",
                 subtitle: "Diferenciales Desestimados",
-                content: "Criterios que permitieron descartar otras sospechas clínicas:",
+                content: "Criterios que permitieron descartar otras sospechas clÃ­nicas:",
                 bullets: discardedDifferentials,
                 accentColor: [185, 28, 28], // Red/Rose tone
                 bgColor: [254, 242, 242] // Light Rose bg
@@ -11730,8 +11737,8 @@ Ejemplo:
               }
 
               semiologyStepsToDraw.push({
-                title: "DIAGNÓSTICO PRESUNTIVO DEFINITIVO",
-                subtitle: "Conclusión del Juicio Radiológico",
+                title: "DIAGNÃSTICO PRESUNTIVO DEFINITIVO",
+                subtitle: "ConclusiÃ³n del Juicio RadiolÃ³gico",
                 content: conclusionText,
                 bullets: bulletsArr,
                 accentColor: cardsStyle.differentials.border,
@@ -11822,12 +11829,12 @@ Ejemplo:
             yCoord += 6 * factor;
           }
 
-          // --- FORMAT 2: FLUJOGRAMA ALGORÍTMICO ---
+          // --- FORMAT 2: FLUJOGRAMA ALGORÃTMICO ---
           else if (caseData.format === "flujograma_algoritmico") {
             const steps = caseData.decisionFlow || [
-              ...(cfg.includeSonographic && caseData.sonographicPillar ? [{ title: "Punto de Partida Sonográfico", desc: caseData.sonographicPillar.primaryFinding }] : []),
-              ...(cfg.includeClinicalCorr && caseData.clinicalCorrelation ? [{ title: "Integración Clínico-Laboratorial", desc: caseData.clinicalCorrelation }] : []),
-              ...(cfg.includeDifferentials && caseData.diagnostics && caseData.diagnostics.length > 0 ? [{ title: "Conclusión Diagnóstica", desc: `Diagnóstico principal: ${caseData.diagnostics[0].name}.` }] : []),
+              ...(cfg.includeSonographic && caseData.sonographicPillar ? [{ title: "Punto de Partida SonogrÃ¡fico", desc: caseData.sonographicPillar.primaryFinding }] : []),
+              ...(cfg.includeClinicalCorr && caseData.clinicalCorrelation ? [{ title: "IntegraciÃ³n ClÃ­nico-Laboratorial", desc: caseData.clinicalCorrelation }] : []),
+              ...(cfg.includeDifferentials && caseData.diagnostics && caseData.diagnostics.length > 0 ? [{ title: "ConclusiÃ³n DiagnÃ³stica", desc: `DiagnÃ³stico principal: ${caseData.diagnostics[0].name}.` }] : []),
               ...(cfg.includeManagement && caseData.managementRecommendation ? [{ title: "Conducta y Manejo Sugerido", desc: caseData.managementRecommendation }] : []),
             ];
 
@@ -11893,31 +11900,31 @@ Ejemplo:
           else if (caseData.format === "esquema_pilares") {
             const pillars = [
               {
-                title: "PILAR 1 — HALLAZGOS ECOGRÁFICOS",
+                title: "PILAR 1 â HALLAZGOS ECOGRÃFICOS",
                 content: caseData.sonographicPillar ? caseData.sonographicPillar.primaryFinding : "",
                 subContent: caseData.sonographicPillar?.details ? caseData.sonographicPillar.details.map(cleanTextForJSPDF).join(" - ") : "",
                 borderColor: pillar1Color,
                 included: cfg.includeSonographic && !!caseData.sonographicPillar
               },
               {
-                title: "PILAR 2 — CORRELACIÓN CLÍNICO-LAB",
-                content: caseData.clinicalCorrelation || "Sin datos de laboratorio o clínica adicionales.",
+                title: "PILAR 2 â CORRELACIÃN CLÃNICO-LAB",
+                content: caseData.clinicalCorrelation || "Sin datos de laboratorio o clÃ­nica adicionales.",
                 subContent: "",
                 borderColor: pillar2Color,
                 included: cfg.includeClinicalCorr
               },
               {
-                title: "PILAR 3 — CONCLUSIÓN & DIAGNÓSTICO",
+                title: "PILAR 3 â CONCLUSIÃN & DIAGNÃSTICO",
                 content: caseData.diagnostics && caseData.diagnostics.length > 0 
                   ? `Diag. Principal: ${caseData.diagnostics[0].name}` 
-                  : "Diagnóstico diferencial sustentado.",
+                  : "DiagnÃ³stico diferencial sustentado.",
                 subContent: "",
                 borderColor: pillar3Color,
                 included: cfg.includeDifferentials
               },
               {
-                title: "PILAR 4 — CONDUCTA Y MANEJO",
-                content: caseData.managementRecommendation || "Seguimiento ecográfico según evolución clínica.",
+                title: "PILAR 4 â CONDUCTA Y MANEJO",
+                content: caseData.managementRecommendation || "Seguimiento ecogrÃ¡fico segÃºn evoluciÃ³n clÃ­nica.",
                 subContent: "",
                 borderColor: pillar4Color,
                 included: cfg.includeManagement
@@ -11981,7 +11988,7 @@ Ejemplo:
             });
           }
 
-          // --- FORMAT 4: MAPA DE DIAGNÓSTICOS DIFERENCIALES ---
+          // --- FORMAT 4: MAPA DE DIAGNÃSTICOS DIFERENCIALES ---
           else if (caseData.format === "mapa_diferenciales") {
             if (cfg.includeSonographic && caseData.sonographicPillar) {
               doc.setFont("helvetica", "normal");
@@ -12004,7 +12011,7 @@ Ejemplo:
               doc.setFont("helvetica", "bold");
               doc.setFontSize(8 * factor); // Spacious, readable (increased from 7)
               doc.setTextColor(activeThemeAccent[0], activeThemeAccent[1], activeThemeAccent[2]);
-              doc.text("HALLAZGO SONOGRÁFICO PRIMARIO", marginX + 19 * factor, yCoord + 5 * factor);
+              doc.text("HALLAZGO SONOGRÃFICO PRIMARIO", marginX + 19 * factor, yCoord + 5 * factor);
 
               // Text content
               doc.setFont("helvetica", "normal");
@@ -12037,7 +12044,7 @@ Ejemplo:
                 doc.setFont("helvetica", "normal");
                 doc.setFontSize(9 * factor);
                 const wrappedSup = diag.supportingCriteria 
-                  ? doc.splitTextToSize(`- A favor (Sonográfico): ${cleanTextForJSPDF(diag.supportingCriteria)}`, contentWidth - 14 * factor)
+                  ? doc.splitTextToSize(`- A favor (SonogrÃ¡fico): ${cleanTextForJSPDF(diag.supportingCriteria)}`, contentWidth - 14 * factor)
                   : [];
                 const wrappedRef = diag.refutingCriteria 
                   ? doc.splitTextToSize(`- En contra / Ausente: ${cleanTextForJSPDF(diag.refutingCriteria)}`, contentWidth - 14 * factor)
@@ -12119,7 +12126,7 @@ Ejemplo:
             }
           }
 
-          // --- FORMAT 5: MATRIZ SEMIÓTICA COMPARATIVA ---
+          // --- FORMAT 5: MATRIZ SEMIÃTICA COMPARATIVA ---
           else if (caseData.format === "matriz_semiotica") {
             const requestingSigns: string[] = [];
             if (caseData.semioticMatrix?.requestingSigns && caseData.semioticMatrix.requestingSigns.length > 0) {
@@ -12144,7 +12151,7 @@ Ejemplo:
               const pDiag = caseData.diagnostics[0];
               caseData.diagnostics.forEach(d => {
                 if (d.refutingCriteria && d !== pDiag && (!pDiag || d.name.toLowerCase() !== pDiag.name.toLowerCase())) {
-                  discardSigns.push(`[Exclusión ${d.name}] ${d.refutingCriteria}`);
+                  discardSigns.push(`[ExclusiÃ³n ${d.name}] ${d.refutingCriteria}`);
                 }
               });
             }
@@ -12228,7 +12235,7 @@ Ejemplo:
             // Bottom Synthesis Box
             const showMgmt = cfg.includeManagement && !!caseData.managementRecommendation;
             if (caseData.clinicalCorrelation || showMgmt) {
-              const wrappedCorr = caseData.clinicalCorrelation ? doc.splitTextToSize(`Correlación Clínica: ${caseData.clinicalCorrelation}`, contentWidth - 10 * factor) : [];
+              const wrappedCorr = caseData.clinicalCorrelation ? doc.splitTextToSize(`CorrelaciÃ³n ClÃ­nica: ${caseData.clinicalCorrelation}`, contentWidth - 10 * factor) : [];
               const wrappedMgmt = showMgmt ? doc.splitTextToSize(`Conducta y Manejo: ${caseData.managementRecommendation}`, contentWidth - 10 * factor) : [];
               
               let synthHeight = 9 * factor + (wrappedCorr.length * 4.2 * factor) + (wrappedMgmt.length * 4.2 * factor) + 5 * factor;
@@ -12242,7 +12249,7 @@ Ejemplo:
               doc.setFont("helvetica", "bold");
               doc.setFontSize(8.5 * factor); // Spacious, readable (increased from 7.5)
               doc.setTextColor(79, 70, 229);
-              doc.text("SÍNTESIS DIAGNÓSTICA Y BALANCE SEMIÓTICO", marginX + 5 * factor, yCoord + 6 * factor);
+              doc.text("SÃNTESIS DIAGNÃSTICA Y BALANCE SEMIÃTICO", marginX + 5 * factor, yCoord + 6 * factor);
 
               let synthY = yCoord + 11 * factor;
               if (wrappedCorr.length > 0) {
@@ -12274,7 +12281,7 @@ Ejemplo:
         });
       }
 
-      // --- 8. DESGLOSE Y JUSTIFICACIÓN DE CLASIFICACIONES ---
+      // --- 8. DESGLOSE Y JUSTIFICACIÃN DE CLASIFICACIONES ---
       if (classificationAnnexBlocks.length > 0) {
         doc.addPage();
         yCoord = 20;
@@ -12283,7 +12290,7 @@ Ejemplo:
         doc.setFont("helvetica", "bold");
         doc.setFontSize(12 * factor);
         doc.setTextColor(15, 23, 42);
-        doc.text("ANEXO: DESGLOSE Y JUSTIFICACIÓN DE CLASIFICACIONES RADIOLÓGICAS", marginX, yCoord);
+        doc.text("ANEXO: DESGLOSE Y JUSTIFICACIÃN DE CLASIFICACIONES RADIOLÃGICAS", marginX, yCoord);
         yCoord += 4 * factor;
         doc.setDrawColor(203, 213, 225);
         doc.setLineWidth(0.4);
@@ -12295,7 +12302,7 @@ Ejemplo:
         });
       }
 
-      // --- 8.5 ANEXO: RADAR BIOMECÁNICO E INFLAMATORIO (ANÁLISIS MULTIVECTOR 6D) ---
+      // --- 8.5 ANEXO: RADAR BIOMECÃNICO E INFLAMATORIO (ANÃLISIS MULTIVECTOR 6D) ---
       const radarDataToRender = getBiomechanicalRadarDataFromReport(
         generatedReportLocal,
         pdfStateRef.current.biomechanicalRadarData || biomechanicalRadarData
@@ -12443,7 +12450,7 @@ Ejemplo:
         doc.setFont("helvetica", "italic");
         doc.setFontSize(7.5 * factor);
         doc.setTextColor(100, 116, 139);
-        doc.text("Representación gráfica vectorial en araña (0-10)", chartCenterX, chartCenterY + maxR + 9 * factor, { align: "center" });
+        doc.text("RepresentaciÃ³n grÃ¡fica vectorial en araÃ±a (0-10)", chartCenterX, chartCenterY + maxR + 9 * factor, { align: "center" });
 
         // RIGHT SIDE PANEL: Global Load Index & 6-Axis Matrix (Positioned cleanly at marginX + 94mm)
         let rightY = yCoord;
@@ -12533,11 +12540,11 @@ Ejemplo:
         rightY += Math.ceil(radarDataToRender.axes.length / 2) * 8.5 * factor + 4 * factor;
         yCoord = Math.max(chartCenterY + maxR + 15 * factor, rightY);
 
-        // MIDDLE SECTION: DETALLE Y JUSTIFICACIÓN DE LOS VECTORES
+        // MIDDLE SECTION: DETALLE Y JUSTIFICACIÃN DE LOS VECTORES
         doc.setFont("helvetica", "bold");
         doc.setFontSize(10 * factor);
         doc.setTextColor(15, 23, 42);
-        doc.text("DETALLE Y JUSTIFICACIÓN DE LOS VECTORES (HALLAZGOS Y SOBRECARGA)", marginX, yCoord);
+        doc.text("DETALLE Y JUSTIFICACIÃN DE LOS VECTORES (HALLAZGOS Y SOBRECARGA)", marginX, yCoord);
         yCoord += 6.5 * factor;
 
         const detailColW = (contentWidth - 5 * factor) / 2;
@@ -12554,7 +12561,7 @@ Ejemplo:
           // Compute lines for axisA (sanitize >= / <= so Helvetica does not break layout)
           const findingA = axisA.finding ? `Hallazgo: ${sanitizeRadarPdfText(axisA.finding)}` : "";
           const justARaw = axisA.justification && axisA.justification !== axisA.finding ? axisA.justification : "";
-          const justA = justARaw ? `Justificación: ${sanitizeRadarPdfText(justARaw)}` : "";
+          const justA = justARaw ? `JustificaciÃ³n: ${sanitizeRadarPdfText(justARaw)}` : "";
           const textA = [findingA, justA].filter(Boolean).join("\n");
           const linesA = doc.splitTextToSize(textA, detailColW - 8 * factor);
 
@@ -12562,7 +12569,7 @@ Ejemplo:
           if (axisB) {
             const findingB = axisB.finding ? `Hallazgo: ${sanitizeRadarPdfText(axisB.finding)}` : "";
             const justBRaw = axisB.justification && axisB.justification !== axisB.finding ? axisB.justification : "";
-            const justB = justBRaw ? `Justificación: ${sanitizeRadarPdfText(justBRaw)}` : "";
+            const justB = justBRaw ? `JustificaciÃ³n: ${sanitizeRadarPdfText(justBRaw)}` : "";
             const textB = [findingB, justB].filter(Boolean).join("\n");
             linesB = doc.splitTextToSize(textB, detailColW - 8 * factor);
           }
@@ -12643,7 +12650,7 @@ Ejemplo:
 
         yCoord += 4 * factor;
 
-        // BOTTOM SECTION: SÍNTESIS BIOMECÁNICO-INFLAMATORIA FINAL
+        // BOTTOM SECTION: SÃNTESIS BIOMECÃNICO-INFLAMATORIA FINAL
         if (radarDataToRender.clinicalSummary) {
           const innerPadding = 7 * factor;
           const availableTextWidth = contentWidth - (innerPadding * 2);
@@ -12670,7 +12677,7 @@ Ejemplo:
           doc.setFont("helvetica", "bold");
           doc.setFontSize(9.8 * factor);
           doc.setTextColor(79, 70, 229); // indigo 600
-          doc.text("SÍNTESIS BIOMECÁNICO-INFLAMATORIA FINAL", marginX + innerPadding, yCoord + 7.5 * factor);
+          doc.text("SÃNTESIS BIOMECÃNICO-INFLAMATORIA FINAL", marginX + innerPadding, yCoord + 7.5 * factor);
 
           doc.setFont("helvetica", "normal");
           doc.setFontSize(synthFontSize);
@@ -12696,7 +12703,7 @@ Ejemplo:
         doc.setFont("helvetica", "bold");
         doc.setFontSize(11);
         doc.setTextColor(15, 23, 42); // slate 900
-        doc.text("ANEXO: EXPLICACIÓN DE INFORME PARA EL PACIENTE", marginX, yCoord);
+        doc.text("ANEXO: EXPLICACIÃN DE INFORME PARA EL PACIENTE", marginX, yCoord);
 
         // Simple divider
         yCoord += 4;
@@ -12732,10 +12739,10 @@ Ejemplo:
           const reassurance0 = stripEmojis(firstFinding.reassurance || "");
 
           const splitTitle0 = doc.splitTextToSize(title0, contentWidth - 10);
-          const splitOrig0 = doc.splitTextToSize(`Término original en informe técnico: "${originalTerm0}"`, contentWidth - 10);
-          const splitExp0 = doc.splitTextToSize(`Explicación: ${simplifiedExplanation0}`, contentWidth - 14);
-          const splitAnalogy0 = doc.splitTextToSize(`Analogía de comprensión: ${analogy0}`, contentWidth - 14);
-          const splitReassurance0 = doc.splitTextToSize(`Contexto Clínico y Perspectiva Médica: ${reassurance0}`, contentWidth - 14);
+          const splitOrig0 = doc.splitTextToSize(`TÃ©rmino original en informe tÃ©cnico: "${originalTerm0}"`, contentWidth - 10);
+          const splitExp0 = doc.splitTextToSize(`ExplicaciÃ³n: ${simplifiedExplanation0}`, contentWidth - 14);
+          const splitAnalogy0 = doc.splitTextToSize(`AnalogÃ­a de comprensiÃ³n: ${analogy0}`, contentWidth - 14);
+          const splitReassurance0 = doc.splitTextToSize(`Contexto ClÃ­nico y Perspectiva MÃ©dica: ${reassurance0}`, contentWidth - 14);
 
           const neededHeight0 = ((splitTitle0.length * 5) + 
                                (splitOrig0.length * 4) + 
@@ -12763,11 +12770,11 @@ Ejemplo:
             
             doc.setFont("times", "italic");
             doc.setFontSize(9);
-            const splitOrig = doc.splitTextToSize(`Término original en informe técnico: "${originalTerm}"`, contentWidth - 10);
+            const splitOrig = doc.splitTextToSize(`TÃ©rmino original en informe tÃ©cnico: "${originalTerm}"`, contentWidth - 10);
             
             doc.setFont("times", "normal");
             doc.setFontSize(10);
-            const splitExp = doc.splitTextToSize(`Explicación: ${simplifiedExplanation}`, contentWidth - 14);
+            const splitExp = doc.splitTextToSize(`ExplicaciÃ³n: ${simplifiedExplanation}`, contentWidth - 14);
 
             doc.setFont("times", "normal");
             doc.setFontSize(9.5);
@@ -12880,7 +12887,7 @@ Ejemplo:
             doc.setFont("helvetica", "bold");
             doc.setFontSize(10.5);
             doc.setTextColor(15, 23, 42);
-            doc.text("•", marginX + 2, yCoord);
+            doc.text("â¢", marginX + 2, yCoord);
 
             doc.setFont("times", "normal");
             doc.setFontSize(10.5);
@@ -12905,7 +12912,7 @@ Ejemplo:
           doc.setFont("helvetica", "bold");
           doc.setFontSize(11);
           doc.setTextColor(15, 23, 42);
-          doc.text("PREGUNTAS SUGERIDAS PARA SU CONSULTA MÉDICA:", marginX, yCoord);
+          doc.text("PREGUNTAS SUGERIDAS PARA SU CONSULTA MÃDICA:", marginX, yCoord);
           yCoord += 7 * factor;
 
           patientSummary.suggestedQuestions.forEach((q: string, idx: number) => {
@@ -12930,7 +12937,7 @@ Ejemplo:
         }
       }
 
-      // --- 10. INFOGRAFÍA DEL PACIENTE (SI CORRESPONDE) ---
+      // --- 10. INFOGRAFÃA DEL PACIENTE (SI CORRESPONDE) ---
       if (attachInfographicToOfficialReport && infographicUrl) {
         try {
           let base64Image = infographicUrl;
@@ -12952,7 +12959,7 @@ Ejemplo:
           doc.setFont("helvetica", "bold");
           doc.setFontSize(11);
           doc.setTextColor(15, 23, 42); // slate 900
-          doc.text("ANEXO: INFOGRAFÍA EXPLICATIVA PARA EL PACIENTE", marginX, yCoord);
+          doc.text("ANEXO: INFOGRAFÃA EXPLICATIVA PARA EL PACIENTE", marginX, yCoord);
 
           // Simple divider
           yCoord += 4;
@@ -13017,11 +13024,11 @@ Ejemplo:
         } else {
           doc.setTextColor(148, 163, 184); // slate-400
         }
-        const footerPageStr = `Pág. ${i} de ${totalPages}`;
+        const footerPageStr = `PÃ¡g. ${i} de ${totalPages}`;
         doc.text(footerPageStr, pageWidth - marginX - doc.getTextWidth(footerPageStr), pageHeight - 10);
         
         // Faint, small watermark or clinic name on the left of footer
-        const footerLeftText = displayClinicName || "REPORTE RADIOLÓGICO";
+        const footerLeftText = displayClinicName || "REPORTE RADIOLÃGICO";
         doc.text(footerLeftText, marginX, pageHeight - 10);
 
         // Header for page 2 onwards (Running Header)
@@ -13050,13 +13057,13 @@ Ejemplo:
             doc.setTextColor(100, 116, 139); // slate-500
           }
           
-          let studyLabel = studyType ? studyType.toUpperCase() : "REPORTE DE RADIODIAGNÓSTICO";
+          let studyLabel = studyType ? studyType.toUpperCase() : "REPORTE DE RADIODIAGNÃSTICO";
           
           doc.text(studyLabel, marginX, 11);
 
           // Draw pagination aligned to the right inside the running header
           doc.setFont("helvetica", "normal");
-          const runningHeaderPageStr = `Pág. ${i} de ${totalPages}`;
+          const runningHeaderPageStr = `PÃ¡g. ${i} de ${totalPages}`;
           const rWidth = doc.getTextWidth(runningHeaderPageStr);
           doc.text(runningHeaderPageStr, pageWidth - marginX - rWidth, 11);
         }
@@ -13098,7 +13105,7 @@ Ejemplo:
       }
     } catch (err) {
       console.error("Error generating native PDF through jsPDF:", err);
-      alert("Ocurrió un error al generar el PDF: " + String(err));
+      alert("OcurriÃ³ un error al generar el PDF: " + String(err));
     }
   };
 
@@ -13111,7 +13118,7 @@ Ejemplo:
   ): Promise<any> => {
     if (!patientSummary) return;
 
-    const displayClinicName = clinicName && clinicName.trim().toUpperCase() !== "CLÍNICA PRIVADA" && clinicName.trim().toUpperCase() !== "CLINICA PRIVADA" ? clinicName.toUpperCase() : "";
+    const displayClinicName = clinicName && clinicName.trim().toUpperCase() !== "CLÃNICA PRIVADA" && clinicName.trim().toUpperCase() !== "CLINICA PRIVADA" ? clinicName.toUpperCase() : "";
 
     try {
       const doc = new jsPDF({
@@ -13140,7 +13147,7 @@ Ejemplo:
           .replace(/[\u2600-\u27BF]|[\u2300-\u23FF]|[\u2B50]|[\u2190-\u21FF]/g, "");
       };
 
-      // --- DYNAMIC PAGE BUDGET & COMPLETE WIDOW/ORPHAN CONTROL (ALGORITMO DE CORRECCIÓN DE VIUDAS Y HUÉRFANOS) ---
+      // --- DYNAMIC PAGE BUDGET & COMPLETE WIDOW/ORPHAN CONTROL (ALGORITMO DE CORRECCIÃN DE VIUDAS Y HUÃRFANOS) ---
       let factor = 1.0;
       let estimatedHeight = 20; // Start at top margin
 
@@ -13211,10 +13218,10 @@ Ejemplo:
           const reassurance = stripEmojis(finding.reassurance || "");
 
           const splitTitle = tempDoc.splitTextToSize(title, contentWidth - 10);
-          const splitOrig = tempDoc.splitTextToSize(`Término original en informe técnico: "${originalTerm}"`, contentWidth - 10);
-          const splitExp = tempDoc.splitTextToSize(`Explicación: ${simplifiedExplanation}`, contentWidth - 14);
-          const splitAnalogy = tempDoc.splitTextToSize(`Analogía de comprensión: ${analogy}`, contentWidth - 14);
-          const splitReassurance = tempDoc.splitTextToSize(`Contexto Clínico y Perspectiva Médica: ${reassurance}`, contentWidth - 14);
+          const splitOrig = tempDoc.splitTextToSize(`TÃ©rmino original en informe tÃ©cnico: "${originalTerm}"`, contentWidth - 10);
+          const splitExp = tempDoc.splitTextToSize(`ExplicaciÃ³n: ${simplifiedExplanation}`, contentWidth - 14);
+          const splitAnalogy = tempDoc.splitTextToSize(`AnalogÃ­a de comprensiÃ³n: ${analogy}`, contentWidth - 14);
+          const splitReassurance = tempDoc.splitTextToSize(`Contexto ClÃ­nico y Perspectiva MÃ©dica: ${reassurance}`, contentWidth - 14);
 
           const neededHeight = (splitTitle.length * 5) + 
                                (splitOrig.length * 4) + 
@@ -13296,7 +13303,7 @@ Ejemplo:
             doc.setFont("helvetica", "bold");
             doc.setFontSize(14);
             doc.setTextColor(15, 23, 42);
-            doc.text(displayClinicName || "ACOMPAÑAMIENTO EXPLICATIVO", pageWidth / 2, yCoord, { align: "center" });
+            doc.text(displayClinicName || "ACOMPAÃAMIENTO EXPLICATIVO", pageWidth / 2, yCoord, { align: "center" });
             yCoord += 6;
           }
 
@@ -13354,11 +13361,11 @@ Ejemplo:
           doc.setFont("helvetica", "bold");
           doc.setFontSize(12);
           doc.setTextColor(15, 23, 42);
-          doc.text(displayClinicName || "ACOMPAÑAMIENTO EXPLICATIVO", pageWidth / 2, yCoord + rowH / 2 - 1, { align: "center" });
+          doc.text(displayClinicName || "ACOMPAÃAMIENTO EXPLICATIVO", pageWidth / 2, yCoord + rowH / 2 - 1, { align: "center" });
           doc.setFont("helvetica", "bold");
           doc.setFontSize(8);
           doc.setTextColor(100, 116, 139);
-          doc.text("EXPLICACIÓN MÉDICA COMPRENSIBLE PARA EL PACIENTE", pageWidth / 2, yCoord + rowH / 2 + 4, { align: "center" });
+          doc.text("EXPLICACIÃN MÃDICA COMPRENSIBLE PARA EL PACIENTE", pageWidth / 2, yCoord + rowH / 2 + 4, { align: "center" });
           yCoord += rowH + 6;
         } else {
           let logoWidth = 36;
@@ -13387,12 +13394,12 @@ Ejemplo:
           doc.setFont("helvetica", "bold");
           doc.setFontSize(14);
           doc.setTextColor(15, 23, 42);
-          doc.text(displayClinicName || "ACOMPAÑAMIENTO EXPLICATIVO", textX, yCoord + (logoHeight / 2) - 1.5);
+          doc.text(displayClinicName || "ACOMPAÃAMIENTO EXPLICATIVO", textX, yCoord + (logoHeight / 2) - 1.5);
           
           doc.setFont("helvetica", "bold");
           doc.setFontSize(9);
           doc.setTextColor(100, 116, 139);
-          doc.text("EXPLICACIÓN MÉDICA COMPRENSIBLE PARA EL PACIENTE", textX, yCoord + (logoHeight / 2) + 4);
+          doc.text("EXPLICACIÃN MÃDICA COMPRENSIBLE PARA EL PACIENTE", textX, yCoord + (logoHeight / 2) + 4);
           
           yCoord += Math.max(logoHeight, 15) + 6;
         }
@@ -13423,12 +13430,12 @@ Ejemplo:
           doc.setFont("helvetica", "bold");
           doc.setFontSize(14);
           doc.setTextColor(15, 23, 42);
-          doc.text(displayClinicName || "ACOMPAÑAMIENTO EXPLICATIVO", textX, yCoord + 5);
+          doc.text(displayClinicName || "ACOMPAÃAMIENTO EXPLICATIVO", textX, yCoord + 5);
           
           doc.setFont("helvetica", "bold");
           doc.setFontSize(9);
           doc.setTextColor(100, 116, 139);
-          doc.text("EXPLICACIÓN MÉDICA COMPRENSIBLE PARA EL PACIENTE", textX, yCoord + 10.5);
+          doc.text("EXPLICACIÃN MÃDICA COMPRENSIBLE PARA EL PACIENTE", textX, yCoord + 10.5);
           
           yCoord += 18;
         } else {
@@ -13442,13 +13449,13 @@ Ejemplo:
             doc.setFont("helvetica", "bold");
             doc.setFontSize(9);
             doc.setTextColor(100, 116, 139);
-            doc.text("EXPLICACIÓN MÉDICA COMPRENSIBLE PARA EL PACIENTE", pageWidth / 2, yCoord, { align: "center" });
+            doc.text("EXPLICACIÃN MÃDICA COMPRENSIBLE PARA EL PACIENTE", pageWidth / 2, yCoord, { align: "center" });
             yCoord += 8;
           } else {
             doc.setFont("helvetica", "bold");
             doc.setFontSize(14);
             doc.setTextColor(15, 23, 42);
-            doc.text("EXPLICACIÓN COMPRENSIBLE DE ESTUDIO RADIOLÓGICO", pageWidth / 2, yCoord, { align: "center" });
+            doc.text("EXPLICACIÃN COMPRENSIBLE DE ESTUDIO RADIOLÃGICO", pageWidth / 2, yCoord, { align: "center" });
             yCoord += 11;
           }
         }
@@ -13520,7 +13527,7 @@ Ejemplo:
       doc.setFont("helvetica", "bold");
       doc.setFontSize(12);
       doc.setTextColor(15, 23, 42);
-      doc.text("INFORME DE ACOMPAÑAMIENTO Y EXPLICACIÓN SIMPLIFICADA", pageWidth / 2, yCoord, { align: "center" });
+      doc.text("INFORME DE ACOMPAÃAMIENTO Y EXPLICACIÃN SIMPLIFICADA", pageWidth / 2, yCoord, { align: "center" });
       yCoord += 8 * factor;
 
       // Introduction Summary
@@ -13550,10 +13557,10 @@ Ejemplo:
         const reassurance0 = stripEmojis(firstFinding.reassurance || "");
 
         const splitTitle0 = doc.splitTextToSize(title0, contentWidth - 10);
-        const splitOrig0 = doc.splitTextToSize(`Término original en informe técnico: "${originalTerm0}"`, contentWidth - 10);
-        const splitExp0 = doc.splitTextToSize(`Explicación: ${simplifiedExplanation0}`, contentWidth - 14);
-        const splitAnalogy0 = doc.splitTextToSize(`Analogía de comprensión: ${analogy0}`, contentWidth - 14);
-        const splitReassurance0 = doc.splitTextToSize(`Contexto Clínico y Perspectiva Médica: ${reassurance0}`, contentWidth - 14);
+        const splitOrig0 = doc.splitTextToSize(`TÃ©rmino original en informe tÃ©cnico: "${originalTerm0}"`, contentWidth - 10);
+        const splitExp0 = doc.splitTextToSize(`ExplicaciÃ³n: ${simplifiedExplanation0}`, contentWidth - 14);
+        const splitAnalogy0 = doc.splitTextToSize(`AnalogÃ­a de comprensiÃ³n: ${analogy0}`, contentWidth - 14);
+        const splitReassurance0 = doc.splitTextToSize(`Contexto ClÃ­nico y Perspectiva MÃ©dica: ${reassurance0}`, contentWidth - 14);
 
         const neededHeight0 = ((splitTitle0.length * 5) + 
                              (splitOrig0.length * 4) + 
@@ -13582,17 +13589,17 @@ Ejemplo:
           
           doc.setFont("times", "italic");
           doc.setFontSize(9);
-          const splitOrig = doc.splitTextToSize(`Término original en informe técnico: "${originalTerm}"`, contentWidth - 10);
+          const splitOrig = doc.splitTextToSize(`TÃ©rmino original en informe tÃ©cnico: "${originalTerm}"`, contentWidth - 10);
           
           doc.setFont("times", "normal");
           doc.setFontSize(10);
-          const splitExp = doc.splitTextToSize(`Explicación: ${simplifiedExplanation}`, contentWidth - 14);
+          const splitExp = doc.splitTextToSize(`ExplicaciÃ³n: ${simplifiedExplanation}`, contentWidth - 14);
 
           doc.setFont("times", "normal");
           doc.setFontSize(9.5);
-          const splitAnalogy = doc.splitTextToSize(`Analogía de comprensión: ${analogy}`, contentWidth - 14);
+          const splitAnalogy = doc.splitTextToSize(`AnalogÃ­a de comprensiÃ³n: ${analogy}`, contentWidth - 14);
 
-          const splitReassurance = doc.splitTextToSize(`Contexto Clínico y Perspectiva Médica: ${reassurance}`, contentWidth - 14);
+          const splitReassurance = doc.splitTextToSize(`Contexto ClÃ­nico y Perspectiva MÃ©dica: ${reassurance}`, contentWidth - 14);
 
           const neededHeight = ((splitTitle.length * 5) + 
                                (splitOrig.length * 4) + 
@@ -13699,7 +13706,7 @@ Ejemplo:
           doc.setFont("helvetica", "bold");
           doc.setFontSize(10.5);
           doc.setTextColor(15, 23, 42);
-          doc.text("•", marginX + 2, yCoord);
+          doc.text("â¢", marginX + 2, yCoord);
 
           doc.setFont("times", "normal");
           doc.setFontSize(10.5);
@@ -13724,7 +13731,7 @@ Ejemplo:
         doc.setFont("helvetica", "bold");
         doc.setFontSize(11);
         doc.setTextColor(15, 23, 42);
-        doc.text("PREGUNTAS SUGERIDAS PARA SU CONSULTA MÉDICA:", marginX, yCoord);
+        doc.text("PREGUNTAS SUGERIDAS PARA SU CONSULTA MÃDICA:", marginX, yCoord);
         yCoord += 7 * factor;
 
         patientSummary.suggestedQuestions.forEach((q: string, idx: number) => {
@@ -13755,7 +13762,7 @@ Ejemplo:
 
         const startY = yCoord;
 
-        // Dibujar borde gris claro con fondo suave en la columna izquierda (Caja de verificación)
+        // Dibujar borde gris claro con fondo suave en la columna izquierda (Caja de verificaciÃ³n)
         const boxX = marginX;
         const boxY = startY;
         const boxW = (pageWidth - marginX * 2) * 0.48; // Columna izquierda (48% de ancho)
@@ -13775,10 +13782,10 @@ Ejemplo:
         doc.setFont("helvetica", "bold");
         doc.setFontSize(6.5);
         doc.setTextColor(71, 85, 105); // slate 600
-        doc.text("VERIFICACIÓN INTEGRIDAD DE DOCUMENTO", boxX + 3, internalY);
+        doc.text("VERIFICACIÃN INTEGRIDAD DE DOCUMENTO", boxX + 3, internalY);
         internalY += 3.5;
 
-        // Obtener el Hash generado determinísticamente
+        // Obtener el Hash generado determinÃ­sticamente
         const sSeedCombine = `${patientName || ""}-${doctorName || ""}-${reportDate || ""}-${clinicName || ""}`;
         let sHashVal = 0;
         for (let i = 0; i < sSeedCombine.length; i++) {
@@ -13804,25 +13811,25 @@ Ejemplo:
         const stateW = doc.getTextWidth("ESTADO DEL DOCUMENTO: ");
         doc.setFont("helvetica", "bold");
         doc.setTextColor(21, 128, 61); // green 700
-        doc.text("FIRMADO ELECTRÓNICAMENTE", boxX + 3 + stateW, internalY);
+        doc.text("FIRMADO ELECTRÃNICAMENTE", boxX + 3 + stateW, internalY);
         internalY += 2.8;
 
         doc.setFont("helvetica", "normal");
         doc.setFontSize(5.1);
         doc.setTextColor(100, 116, 139); // slate 500
-        doc.text(`REG. MÉDICO: ${doctorLicense || "M.S.P. Reg: 6025 / Senescyt: 1005-12-7489"}`, boxX + 3, internalY);
+        doc.text(`REG. MÃDICO: ${doctorLicense || "M.S.P. Reg: 6025 / Senescyt: 1005-12-7489"}`, boxX + 3, internalY);
         internalY += 2.8;
 
-        doc.text(`FECHA DE VALIDACIÓN: ${reportDate} (AUTÓNOMO)`, boxX + 3, internalY);
+        doc.text(`FECHA DE VALIDACIÃN: ${reportDate} (AUTÃNOMO)`, boxX + 3, internalY);
         internalY += 2.8;
 
         doc.setFont("helvetica", "italic");
-        doc.text("Firma de Validez Homologada según Normativa Sanitaria.", boxX + 3, internalY);
+        doc.text("Firma de Validez Homologada segÃºn Normativa Sanitaria.", boxX + 3, internalY);
 
-        // --- Columna Derecha: Área de Firma Digital / Autógrafa ---
+        // --- Columna Derecha: Ãrea de Firma Digital / AutÃ³grafa ---
         const rightColX = pageWidth - marginX;
         
-        // Agregar firma física si está cargada
+        // Agregar firma fÃ­sica si estÃ¡ cargada
         if (customSignatureUrl) {
           try {
             let sigWidth = 35;
@@ -13847,14 +13854,14 @@ Ejemplo:
             console.warn("Could not render custom signature image inside jsPDF", imgError);
           }
         } else {
-          // Si no hay firma física, mostrar sello digital elegante
+          // Si no hay firma fÃ­sica, mostrar sello digital elegante
           doc.setFont("helvetica", "oblique");
           doc.setFontSize(7);
           doc.setTextColor(30, 64, 175); // blue 800
-          doc.text("FIRMADO ELECTRÓNICAMENTE CON TOKEN", rightColX - 62, boxY + 8);
+          doc.text("FIRMADO ELECTRÃNICAMENTE CON TOKEN", rightColX - 62, boxY + 8);
         }
 
-        // Línea horizontal para firma del doctor (solo del lado derecho)
+        // LÃ­nea horizontal para firma del doctor (solo del lado derecho)
         const lineStart = rightColX - 70;
         doc.setDrawColor(203, 213, 225); // slate 300
         doc.setLineWidth(0.3);
@@ -13872,7 +13879,7 @@ Ejemplo:
         doc.setFont("helvetica", "normal");
         doc.setFontSize(6.5);
         doc.setTextColor(100, 116, 139);
-        const titleText = "Especialista en Radiología e Imágenes Medicas.";
+        const titleText = "Especialista en RadiologÃ­a e ImÃ¡genes Medicas.";
         const titleTextWidth = doc.getTextWidth(titleText);
         doc.text(titleText, rightColX - titleTextWidth, boxY + boxH - 1.5);
         
@@ -13888,11 +13895,11 @@ Ejemplo:
         doc.setFont("helvetica", "normal");
         doc.setFontSize(7.5);
         doc.setTextColor(148, 163, 184); // slate-400
-        const footerPageStr = `Pág. ${i} de ${totalPages}`;
+        const footerPageStr = `PÃ¡g. ${i} de ${totalPages}`;
         doc.text(footerPageStr, pageWidth - marginX - doc.getTextWidth(footerPageStr), pageHeight - 10);
         
         // Faint, small watermark or clinic name on the left of footer
-        const footerLeftText = displayClinicName || "EXPLICACIÓN DEL ESTUDIO";
+        const footerLeftText = displayClinicName || "EXPLICACIÃN DEL ESTUDIO";
         doc.text(footerLeftText, marginX, pageHeight - 10);
 
         // Header for page 2 onwards (Running Header)
@@ -13907,13 +13914,13 @@ Ejemplo:
           doc.setFontSize(7);
           doc.setTextColor(100, 116, 139); // slate-500
           
-          let studyLabel = studyType ? `EXPLICACIÓN PACIENTE - ${studyType.toUpperCase()}` : "EXPLICACIÓN PACIENTE";
+          let studyLabel = studyType ? `EXPLICACIÃN PACIENTE - ${studyType.toUpperCase()}` : "EXPLICACIÃN PACIENTE";
           
           doc.text(studyLabel, marginX, 11);
 
           // Draw pagination aligned to the right inside the running header
           doc.setFont("helvetica", "normal");
-          const runningHeaderPageStr = `Pág. ${i} de ${totalPages}`;
+          const runningHeaderPageStr = `PÃ¡g. ${i} de ${totalPages}`;
           const rWidth = doc.getTextWidth(runningHeaderPageStr);
           doc.text(runningHeaderPageStr, pageWidth - marginX - rWidth, 11);
         }
@@ -13937,8 +13944,8 @@ Ejemplo:
         if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
           await navigator.share({
             files: [file],
-            title: "Explicación del Estudio",
-            text: `Explicación amigable del estudio para ${patientName || "Paciente"}`
+            title: "ExplicaciÃ³n del Estudio",
+            text: `ExplicaciÃ³n amigable del estudio para ${patientName || "Paciente"}`
           });
         } else {
           doc.save(filename);
@@ -13953,14 +13960,14 @@ Ejemplo:
       }
     } catch (err) {
       console.error("Error generating native explanation PDF through jsPDF:", err);
-      alert("Ocurrió un error al generar el PDF explicativo: " + String(err));
+      alert("OcurriÃ³ un error al generar el PDF explicativo: " + String(err));
     }
   };
 
   const handleSaveToDrive = async () => {
     try {
       setIsUploadingToDrive(true);
-      setDriveUploadStatus("Verificando sesión...");
+      setDriveUploadStatus("Verificando sesiÃ³n...");
       
       const { getAccessToken, googleSignIn } = await import("./firebaseAuth");
       let token = await getAccessToken();
@@ -14016,7 +14023,7 @@ Ejemplo:
       }
 
       if (patientSummary) {
-        setDriveUploadStatus("Subiendo Explicación a Drive...");
+        setDriveUploadStatus("Subiendo ExplicaciÃ³n a Drive...");
         const summaryBlob = await handleDownloadPatientSummaryPDF(false, false, false, false, true);
         if (summaryBlob) {
           const summaryName = patientName ? `Explicacion_${patientName.trim().replace(/\s+/gi, "_")}.pdf` : "explicacion_paciente.pdf";
@@ -14024,7 +14031,7 @@ Ejemplo:
         }
       }
 
-      setDriveUploadStatus("¡Guardado Exitosamente en Drive!");
+      setDriveUploadStatus("Â¡Guardado Exitosamente en Drive!");
       setTimeout(() => setDriveUploadStatus(""), 4000);
     } catch (error) {
       console.error("Error al subir a Google Drive:", error);
@@ -14131,7 +14138,7 @@ Ejemplo:
           .replace(/\\ge/g, ">=")
           .replace(/\\le/g, "<=")
           .replace(/\\text\{(.*?)\}/g, "$1")
-          .replace(/\\circ/g, "°");
+          .replace(/\\circ/g, "Â°");
         return mathContent;
       });
 
@@ -14143,24 +14150,24 @@ Ejemplo:
       .replace(/&quot;/g, '"')
       .replace(/&#39;/g, "'")
       .replace(/&#039;/g, "'")
-      .replace(/&deg;/g, "°")
-      .replace(/&plusmn;/g, "±")
-      .replace(/&times;/g, "×")
-      .replace(/&divide;/g, "÷")
+      .replace(/&deg;/g, "Â°")
+      .replace(/&plusmn;/g, "Â±")
+      .replace(/&times;/g, "Ã")
+      .replace(/&divide;/g, "Ã·")
       .replace(/&nbsp;/g, " ")
-      .replace(/&aacute;/g, "á")
-      .replace(/&eacute;/g, "é")
-      .replace(/&iacute;/g, "í")
-      .replace(/&oacute;/g, "ó")
-      .replace(/&uacute;/g, "ú")
-      .replace(/&Aacute;/g, "Á")
-      .replace(/&Eacute;/g, "É")
-      .replace(/&Iacute;/g, "Í")
-      .replace(/&Oacute;/g, "Ó")
-      .replace(/&Uacute;/g, "Ú")
+      .replace(/&aacute;/g, "Ã¡")
+      .replace(/&eacute;/g, "Ã©")
+      .replace(/&iacute;/g, "Ã­")
+      .replace(/&oacute;/g, "Ã³")
+      .replace(/&uacute;/g, "Ãº")
+      .replace(/&Aacute;/g, "Ã")
+      .replace(/&Eacute;/g, "Ã")
+      .replace(/&Iacute;/g, "Ã")
+      .replace(/&Oacute;/g, "Ã")
+      .replace(/&Uacute;/g, "Ã")
       .replace(/&html;/g, "")
-      .replace(/&ntilde;/g, "ñ")
-      .replace(/&Ntilde;/g, "Ñ");
+      .replace(/&ntilde;/g, "Ã±")
+      .replace(/&Ntilde;/g, "Ã");
 
     // Clean LaTeX syntax elements from text representation to look clean and professional
     clean = clean
@@ -14169,9 +14176,9 @@ Ejemplo:
       .replace(/\\pm\b/gi, "+/-")
       .replace(/\\approx\b/gi, "~")
       .replace(/\\times\b/gi, "x")
-      .replace(/\\cdot\b/gi, "·")
-      .replace(/\\circ\b/gi, "°")
-      .replace(/\\degree\b/gi, "°")
+      .replace(/\\cdot\b/gi, "Â·")
+      .replace(/\\circ\b/gi, "Â°")
+      .replace(/\\degree\b/gi, "Â°")
       .replace(/\\alpha\b/gi, "alfa")
       .replace(/\\beta\b/gi, "beta")
       .replace(/\\gamma\b/gi, "gamma")
@@ -14185,17 +14192,17 @@ Ejemplo:
       .replace(/\\\(/g, "")
       .replace(/\\\)/g, "");
 
-    // Also transform raw unicode characters directly to prevent compatibility "square box (□)" gaps in standard document fonts (jsPDF/MS Word)
+    // Also transform raw unicode characters directly to prevent compatibility "square box (â¡)" gaps in standard document fonts (jsPDF/MS Word)
     clean = clean
-      .replace(/≤/g, "<=")
-      .replace(/≥/g, ">=")
-      .replace(/±/g, "+/-")
-      .replace(/≈/g, "~")
-      .replace(/α/g, "alfa")
-      .replace(/β/g, "beta")
-      .replace(/γ/g, "gamma")
-      .replace(/θ/g, "theta")
-      .replace(/μ/g, "u");
+      .replace(/â¤/g, "<=")
+      .replace(/â¥/g, ">=")
+      .replace(/Â±/g, "+/-")
+      .replace(/â/g, "~")
+      .replace(/Î±/g, "alfa")
+      .replace(/Î²/g, "beta")
+      .replace(/Î³/g, "gamma")
+      .replace(/Î¸/g, "theta")
+      .replace(/Î¼/g, "u");
 
     return clean.trim();
   };
@@ -14275,7 +14282,7 @@ Ejemplo:
     
     // Legacy stripping
     textToParse = textToParse.replace(/\[CASE_ANALYSIS_JSON\]\s*[\s\S]*?\[\/CASE_ANALYSIS_JSON\]/g, "");
-    const summaryIdx = textToParse.indexOf("**ANÁLISIS INTEGRADO DE CASO");
+    const summaryIdx = textToParse.indexOf("**ANÃLISIS INTEGRADO DE CASO");
     if (summaryIdx !== -1) {
       textToParse = textToParse.substring(0, summaryIdx).trim();
     }
@@ -14430,7 +14437,7 @@ Ejemplo:
         continue;
       }
 
-      if (/^(?:\[(?:salto(?:_de_p[aá]gina)?|page_break|salto_pagina)\]|<pagebreak>)$/i.test(trimmed)) {
+      if (/^(?:\[(?:salto(?:_de_p[aÃ¡]gina)?|page_break|salto_pagina)\]|<pagebreak>)$/i.test(trimmed)) {
         flushParagraph();
         flushList();
         flushTable();
@@ -14603,63 +14610,63 @@ Ejemplo:
       // Pathologies / Anomalies
       const pathologies = [
         "fractura", "fractur", "trazos", "trazo", "desplazamiento", "fisura", "compromiso articular", 
-        "luxación", "subluxación", "fx", "reducción", "rediccion", "pinzamiento", "osteofito", "osteofitos", 
-        "osteofitosis", "esclerosis", "derrame", "nódulo", "nodulo", "infiltrado", "estenosis", "hernia", 
-        "protusión", "desgarro", "tendinopatía", "disminuido", "disminución", "patológico", "anómalo", 
-        "ruptura", "calcificación", "lesión", "lesion", "inflamación"
+        "luxaciÃ³n", "subluxaciÃ³n", "fx", "reducciÃ³n", "rediccion", "pinzamiento", "osteofito", "osteofitos", 
+        "osteofitosis", "esclerosis", "derrame", "nÃ³dulo", "nodulo", "infiltrado", "estenosis", "hernia", 
+        "protusiÃ³n", "desgarro", "tendinopatÃ­a", "disminuido", "disminuciÃ³n", "patolÃ³gico", "anÃ³malo", 
+        "ruptura", "calcificaciÃ³n", "lesiÃ³n", "lesion", "inflamaciÃ³n"
       ];
       if (showPathology && pathologies.some(p => w.includes(p) || p.includes(w) && w.length > 4)) {
         return {
-          category: "Patología / Alteración",
+          category: "PatologÃ­a / AlteraciÃ³n",
           colorClass: "text-rose-450 bg-rose-500/10 hover:bg-rose-500/20 border-b border-rose-500/50",
-          indicator: "🔴",
-          description: "Hallazgo patológico o alteración estructural detectada en el estudio."
+          indicator: "ð´",
+          description: "Hallazgo patolÃ³gico o alteraciÃ³n estructural detectada en el estudio."
         };
       }
 
       // Anatomy
       const anatomy = [
-        "fémur", "femur", "tibia", "peroné", "perone", "rótula", "rotula", "patelar", "codo", "húmero", "humero", 
-        "radio", "cúbito", "cubito", "carótida", "carotida", "menisco", "ligamento", "pulmón", "pulmon", 
-        "pulmonar", "hilio", "hiliar", "mediastino", "columna", "vértebra", "vertebra", "cervical", 
-        "lumbar", "dorsal", "articulación", "articulacion", "muscular", "esquelético", "femoral", 
-        "femorotibial", "tíbioperonea", "tibiofibular", "meniscos", "pulmones", "carotídeo"
+        "fÃ©mur", "femur", "tibia", "peronÃ©", "perone", "rÃ³tula", "rotula", "patelar", "codo", "hÃºmero", "humero", 
+        "radio", "cÃºbito", "cubito", "carÃ³tida", "carotida", "menisco", "ligamento", "pulmÃ³n", "pulmon", 
+        "pulmonar", "hilio", "hiliar", "mediastino", "columna", "vÃ©rtebra", "vertebra", "cervical", 
+        "lumbar", "dorsal", "articulaciÃ³n", "articulacion", "muscular", "esquelÃ©tico", "femoral", 
+        "femorotibial", "tÃ­bioperonea", "tibiofibular", "meniscos", "pulmones", "carotÃ­deo"
       ];
       if (showAnatomy && anatomy.some(a => w.includes(a) || a.includes(w) && w.length > 4)) {
         return {
-          category: "Anatomía",
+          category: "AnatomÃ­a",
           colorClass: "text-cyan-400 bg-cyan-500/10 hover:bg-cyan-500/20 border-b border-cyan-500/50",
-          indicator: "🔵",
-          description: "Mención de estructura anatómica o región evaluada."
+          indicator: "ðµ",
+          description: "MenciÃ³n de estructura anatÃ³mica o regiÃ³n evaluada."
         };
       }
 
       // Normal findings
       const normals = [
         "conservado", "conservada", "sin hallazgos", "normal", "respetado", "respetada", "adecuado", 
-        "adecuada", "libre", "no se aprecia", "no se observa", "negativo", "integro", "íntegro", 
-        "estables", "preservada", "preservado", "uniforme", "homogéneo", "homogénea"
+        "adecuada", "libre", "no se aprecia", "no se observa", "negativo", "integro", "Ã­ntegro", 
+        "estables", "preservada", "preservado", "uniforme", "homogÃ©neo", "homogÃ©nea"
       ];
       if (showNormal && normals.some(n => w.includes(n) || n.includes(w) && w.length > 5)) {
         return {
           category: "Normalidad / Conservado",
           colorClass: "text-emerald-450 bg-emerald-500/10 hover:bg-emerald-500/20 border-b border-emerald-500/50",
-          indicator: "🟢",
-          description: "Signo o estructura anatómica con morfología conservada o normal."
+          indicator: "ð¢",
+          description: "Signo o estructura anatÃ³mica con morfologÃ­a conservada o normal."
         };
       }
 
       // Measurements / parameters / scales / technical
       const technical = [
         "mm", "cm", "grados", "kv", "mas", "secuencia", "t1", "t2", "axial", "sagital", 
-        "coronal", "escala", "criterio", "clasificación", "clasificacion", "cie-10", "icd-10"
+        "coronal", "escala", "criterio", "clasificaciÃ³n", "clasificacion", "cie-10", "icd-10"
       ];
       if (showTechnical && technical.some(t => w === t || w.includes(t) && w.length > 2)) {
         return {
-          category: "Técnica / Medida",
+          category: "TÃ©cnica / Medida",
           colorClass: "text-purple-450 bg-purple-500/10 hover:bg-purple-500/20 border-b border-purple-500/50",
-          indicator: "🟣",
-          description: "Métrica, escala clínica, clasificación o parámetro de adquisición."
+          indicator: "ð£",
+          description: "MÃ©trica, escala clÃ­nica, clasificaciÃ³n o parÃ¡metro de adquisiciÃ³n."
         };
       }
 
@@ -14667,7 +14674,7 @@ Ejemplo:
     };
 
     const processTextSegment = (plainText: string, isBold: boolean, segmentKey: string) => {
-      const wordPattern = /([a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\d-]+)/g;
+      const wordPattern = /([a-zA-ZÃ¡Ã©Ã­Ã³ÃºÃÃÃÃÃÃ±ÃÃ¼Ã\d-]+)/g;
       const subParts: React.ReactNode[] = [];
       let lastSubIndex = 0;
       let subMatch;
@@ -14779,10 +14786,10 @@ Ejemplo:
     <div className="mt-8 pt-6 border-t-2 border-slate-300 print:break-before-page font-sans select-text text-left space-y-6">
       <div className="w-full text-left pb-2.5 border-b border-slate-200">
         <h3 className="text-lg font-mono font-bold uppercase tracking-wider text-slate-900 flex items-center gap-2">
-          <span className="text-indigo-600">🎯</span> {getRadarTitle(data)}
+          <span className="text-indigo-600">ð¯</span> {getRadarTitle(data)}
         </h3>
         <p className="text-xs text-slate-500 font-mono mt-0.5">
-          Modelado vectorial cuantitativo e índice de carga tisular sistémico-funcional
+          Modelado vectorial cuantitativo e Ã­ndice de carga tisular sistÃ©mico-funcional
         </p>
       </div>
 
@@ -14852,7 +14859,7 @@ Ejemplo:
             })}
           </svg>
           <p className="text-[10.5px] font-mono font-medium text-slate-400 mt-2.5 text-center uppercase tracking-wide">
-            Representación vectorial en araña (Escala 0-10)
+            RepresentaciÃ³n vectorial en araÃ±a (Escala 0-10)
           </p>
         </div>
 
@@ -14909,7 +14916,7 @@ Ejemplo:
       {/* Vector Details & Justification Section */}
       <div className="space-y-2.5 text-left">
         <h4 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-800 border-b border-slate-200 pb-2">
-          Detalle y Justificación de los Vectores (Hallazgos y Sobrecarga)
+          Detalle y JustificaciÃ³n de los Vectores (Hallazgos y Sobrecarga)
         </h4>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
           {data.axes.map((axis: any, idx: number) => (
@@ -14929,7 +14936,7 @@ Ejemplo:
               )}
               {axis.justification && axis.justification !== axis.finding && (
                 <p className="text-[10px] text-slate-600 italic leading-relaxed font-sans">
-                  <strong className="text-slate-700 not-italic">Justificación:</strong> {axis.justification}
+                  <strong className="text-slate-700 not-italic">JustificaciÃ³n:</strong> {axis.justification}
                 </p>
               )}
             </div>
@@ -14941,7 +14948,7 @@ Ejemplo:
       {data.clinicalSummary && (
         <div className="mt-5 bg-indigo-50/60 border border-indigo-200 rounded-xl p-4 text-left w-full max-w-full box-border min-w-0 overflow-hidden">
           <h4 className="text-xs font-mono font-bold uppercase tracking-wider text-indigo-900 flex items-center gap-1.5 mb-2">
-            <span className="text-indigo-600">⚡</span> Síntesis Biomecánico-Inflamatoria Final
+            <span className="text-indigo-600">â¡</span> SÃ­ntesis BiomecÃ¡nico-Inflamatoria Final
           </h4>
           <p className="text-xs text-slate-800 leading-relaxed font-sans w-full max-w-full box-border break-words whitespace-normal overflow-wrap-anywhere m-0">
             {data.clinicalSummary}
@@ -14990,8 +14997,8 @@ const splitReportAndAnnex = (text: string) => {
 
       if (elem.type === "heading") {
         const hText = elem.text || "";
-        const isMainTitle = idx === 0 && hText && /REPORTE|INFORME|ESTUDIO|DIAGNÓSTICO|VALORACIÓN/i.test(hText);
-        const isAnnexHeading = hText && (hText.toUpperCase().includes("ANEXO") || hText.toUpperCase().includes("DESGLOSE Y JUSTIFICACIÓN"));
+        const isMainTitle = idx === 0 && hText && /REPORTE|INFORME|ESTUDIO|DIAGNÃSTICO|VALORACIÃN/i.test(hText);
+        const isAnnexHeading = hText && (hText.toUpperCase().includes("ANEXO") || hText.toUpperCase().includes("DESGLOSE Y JUSTIFICACIÃN"));
         const pageBreakStyle = isAnnexHeading 
           ? { pageBreakBefore: "always" as const, breakBefore: "page" as const } 
           : { pageBreakAfter: "avoid" as const, breakAfter: "avoid" as const };
@@ -15207,7 +15214,7 @@ const splitReportAndAnnex = (text: string) => {
             const isHeader = (trimmedLine.startsWith("**") && trimmedLine.endsWith("**"));
             const cleanHeaderTxt = trimmedLine.replace(/\*\"/g, "");
             
-            const isMainTitle = idx === 0 && lIdx === 0 && /REPORTE|INFORME|ESTUDIO|DIAGNÓSTICO|VALORACIÓN/i.test(trimmedLine);
+            const isMainTitle = idx === 0 && lIdx === 0 && /REPORTE|INFORME|ESTUDIO|DIAGNÃSTICO|VALORACIÃN/i.test(trimmedLine);
 
             if (isMainTitle) {
               return (
@@ -15568,7 +15575,7 @@ const splitReportAndAnnex = (text: string) => {
     if (!rawText) {
       return (
         <p className="text-slate-500 italic text-xs md:text-sm">
-          Su resumen operacional clínico se está compilando. Por favor, descargue el PDF oficial para consultar la versión final firmada.
+          Su resumen operacional clÃ­nico se estÃ¡ compilando. Por favor, descargue el PDF oficial para consultar la versiÃ³n final firmada.
         </p>
       );
     }
@@ -15600,7 +15607,7 @@ const splitReportAndAnnex = (text: string) => {
                   let isNumbered = /^\d+[\.\)]\s+/.test(cleanItem);
                   let bulletSpan: React.ReactNode = (
                     <span className="text-emerald-400 font-black text-base select-none shrink-0 mt-[-2px] leading-none">
-                      •
+                      â¢
                     </span>
                   );
                   let bulletNumber = "";
@@ -15618,15 +15625,15 @@ const splitReportAndAnnex = (text: string) => {
                     }
                   } else {
                     // Clean up all typical leading bullets/spaces/hyphens to prevent stray markers at start of sentence
-                    cleanItem = cleanItem.replace(/^[\s\-\*\•\▪\o\+\—\u2022\u25E6\u2023\u2043]+/g, "").trim();
+                    cleanItem = cleanItem.replace(/^[\s\-\*\â¢\âª\o\+\â\u2022\u25E6\u2023\u2043]+/g, "").trim();
                   }
 
                   // Capitalize the first letter properly (including cases where there's bold markdown at start like **hallazgo**)
                   if (cleanItem.startsWith("**")) {
-                    const match = cleanItem.match(/^\*\*(\s*[a-zñáéíóúü])/i);
+                    const match = cleanItem.match(/^\*\*(\s*[a-zÃ±Ã¡Ã©Ã­Ã³ÃºÃ¼])/i);
                     if (match) {
                       const firstChar = match[1];
-                      cleanItem = cleanItem.replace(/^\*\*(\s*[a-zñáéíóúü])/i, `**${firstChar.toUpperCase()}`);
+                      cleanItem = cleanItem.replace(/^\*\*(\s*[a-zÃ±Ã¡Ã©Ã­Ã³ÃºÃ¼])/i, `**${firstChar.toUpperCase()}`);
                     }
                   } else {
                     cleanItem = cleanItem.charAt(0).toUpperCase() + cleanItem.slice(1);
@@ -15716,7 +15723,7 @@ const splitReportAndAnnex = (text: string) => {
     if (!rawText) {
       return (
         <p className="text-slate-400 italic text-xs md:text-sm">
-          Su resumen operacional clínico se está compilando. Por favor, descargue el PDF oficial para consultar la versión final firmada.
+          Su resumen operacional clÃ­nico se estÃ¡ compilando. Por favor, descargue el PDF oficial para consultar la versiÃ³n final firmada.
         </p>
       );
     }
@@ -15749,7 +15756,7 @@ const splitReportAndAnnex = (text: string) => {
                   // Beautiful, clean black bullet point matching the screenshot
                   let bulletSpan: React.ReactNode = (
                     <span className="text-slate-900 font-black text-base select-none shrink-0 mt-[-2px] leading-none">
-                      •
+                      â¢
                     </span>
                   );
                   let bulletNumber = "";
@@ -15871,7 +15878,7 @@ const splitReportAndAnnex = (text: string) => {
             <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
           </span>
           <span>
-            <strong>Funciones IA de Párrafo:</strong> Selecciona cualquier texto con tu ratón o haz clic directo sobre un párrafo/lista para marcarlo y abrir el panel de acciones clínicas especiales (Analizar, Mejorar, Hacer exhaustivo, Explicar, Clasificar).
+            <strong>Funciones IA de PÃ¡rrafo:</strong> Selecciona cualquier texto con tu ratÃ³n o haz clic directo sobre un pÃ¡rrafo/lista para marcarlo y abrir el panel de acciones clÃ­nicas especiales (Analizar, Mejorar, Hacer exhaustivo, Explicar, Clasificar).
           </span>
         </div>
 
@@ -15889,10 +15896,10 @@ const splitReportAndAnnex = (text: string) => {
               <div key={elem.id} className="my-6 border-y border-dashed border-teal-500/40 bg-teal-950/30 py-2.5 px-4 rounded-xl flex items-center justify-between text-teal-300 font-mono text-[11px] select-none">
                 <span className="flex items-center gap-2 font-bold uppercase tracking-wider">
                   <FileDown className="h-4 w-4 text-teal-400" />
-                  ─── Salto de Página PDF (Forzado Manual) ───
+                  âââ Salto de PÃ¡gina PDF (Forzado Manual) âââ
                 </span>
                 <span className="text-[9px] bg-teal-900/60 px-2 py-0.5 rounded border border-teal-500/30 font-bold text-teal-200">
-                  Inicia Nueva Página PDF
+                  Inicia Nueva PÃ¡gina PDF
                 </span>
               </div>
             );
@@ -15903,7 +15910,7 @@ const splitReportAndAnnex = (text: string) => {
               <div key={elem.id} className="my-3 border border-dotted border-indigo-500/30 bg-indigo-950/20 py-1.5 px-3 rounded-lg flex items-center justify-between text-indigo-300 font-mono text-[10px] select-none">
                 <span className="flex items-center gap-1.5 font-semibold">
                   <ArrowDown className="h-3.5 w-3.5 text-indigo-400" />
-                  Espacio en Blanco Vertical (Alineación PDF)
+                  Espacio en Blanco Vertical (AlineaciÃ³n PDF)
                 </span>
                 <span className="text-[9px] text-slate-400 font-mono">{elem.text}</span>
               </div>
@@ -15926,7 +15933,7 @@ const splitReportAndAnnex = (text: string) => {
 
           if (elem.type === "heading") {
             const hText = elem.text || "";
-            const isMainTitle = idx === 0 && hText && /REPORTE|INFORME|ESTUDIO|DIAGNÓSTICO|VALORACIÓN/i.test(hText);
+            const isMainTitle = idx === 0 && hText && /REPORTE|INFORME|ESTUDIO|DIAGNÃSTICO|VALORACIÃN/i.test(hText);
 
             if (isMainTitle) {
               return (
@@ -15948,7 +15955,7 @@ const splitReportAndAnnex = (text: string) => {
                       ? "bg-indigo-950/40 border-l-2 border-indigo-500 pl-3 pr-2 shadow-sm font-bold" 
                       : "hover:bg-slate-900/35"
                   }`}
-                  title="Haz clic para marcar esta sección"
+                  title="Haz clic para marcar esta secciÃ³n"
                 >
                   {renderBoldTextSafe(hText, `screen-h-${idx}`)}
                 </h1>
@@ -15963,7 +15970,7 @@ const splitReportAndAnnex = (text: string) => {
                       ? "bg-indigo-950/40 border-l-2 border-indigo-500 pl-3 pr-2 shadow-sm font-bold" 
                       : "hover:bg-slate-900/35"
                   }`}
-                  title="Haz clic para marcar esta sección"
+                  title="Haz clic para marcar esta secciÃ³n"
                 >
                   {renderBoldTextSafe(hText, `screen-h-${idx}`)}
                 </h2>
@@ -15978,7 +15985,7 @@ const splitReportAndAnnex = (text: string) => {
                       ? "bg-indigo-950/40 border-l-2 border-indigo-500 pl-3 pr-2 shadow-sm font-bold" 
                       : `${accentColorClass} hover:bg-slate-900/35`
                   }`}
-                  title="Haz clic para marcar esta sección"
+                  title="Haz clic para marcar esta secciÃ³n"
                 >
                   {renderBoldTextSafe(hText, `screen-h-${idx}`)}
                 </h3>
@@ -16101,7 +16108,7 @@ const splitReportAndAnnex = (text: string) => {
                 const isHeader = (trimmedLine.startsWith("**") && trimmedLine.endsWith("**"));
                 const cleanHeaderTxt = trimmedLine.replace(/\*\*/g, "");
 
-                const isMainTitle = idx === 0 && lIdx === 0 && /REPORTE|INFORME|ESTUDIO|DIAGNÓSTICO|VALORACIÓN/i.test(trimmedLine);
+                const isMainTitle = idx === 0 && lIdx === 0 && /REPORTE|INFORME|ESTUDIO|DIAGNÃSTICO|VALORACIÃN/i.test(trimmedLine);
 
                 if (isMainTitle) {
                   return (
@@ -16140,7 +16147,7 @@ const splitReportAndAnnex = (text: string) => {
                         ? "bg-indigo-950/30 border-l-[1.5px] border-indigo-500 text-white pl-2.5 font-medium shadow-sm" 
                         : bgBorderClass
                     }`}
-                    title="Haz clic para marcar este párrafo"
+                    title="Haz clic para marcar este pÃ¡rrafo"
                   >
                     {renderBoldTextSafe(trimmedLine, `screen-text-${idx}-${lIdx}`)}
                   </p>
@@ -16246,7 +16253,7 @@ const splitReportAndAnnex = (text: string) => {
   }, [systemInstruction, chatInstruction, classifyInstruction, gmailUser?.uid]);
 
   const handleResetSettings = () => {
-    if (confirm("¿Estás seguro de que deseas restablecer todas las instrucciones a sus valores médicos por defecto?")) {
+    if (confirm("Â¿EstÃ¡s seguro de que deseas restablecer todas las instrucciones a sus valores mÃ©dicos por defecto?")) {
       setSystemInstruction(GENERAL_SYSTEM_INSTRUCTION);
       setChatInstruction(CHAT_SYSTEM_INSTRUCTION);
       setClassifyInstruction(CLASSIFICATION_SYSTEM_INSTRUCTION);
@@ -16267,7 +16274,7 @@ const splitReportAndAnnex = (text: string) => {
   };
 
   const handleClearHistory = () => {
-    if (confirm("¿Deseas vacilar todo el historial local de reportes guardados? (No afectará tu trabajo actual)")) {
+    if (confirm("Â¿Deseas vacilar todo el historial local de reportes guardados? (No afectarÃ¡ tu trabajo actual)")) {
       setSavedReports([]);
       localStorage.removeItem("radiology_reports_history");
       idbSaveHistory([]);
@@ -16403,10 +16410,10 @@ const splitReportAndAnnex = (text: string) => {
           });
         }
 
-        alert("��xito! Respaldo de datos importado y restaurado correctamente.");
+        alert("ï¿½ï¿½xito! Respaldo de datos importado y restaurado correctamente.");
         window.location.reload();
       } catch (err: any) {
-        alert("El archivo de respaldo no es válido o está corrupto: " + err.message);
+        alert("El archivo de respaldo no es vÃ¡lido o estÃ¡ corrupto: " + err.message);
       }
     };
     reader.readAsText(file);
@@ -16662,8 +16669,8 @@ const splitReportAndAnnex = (text: string) => {
       if (mergeExisting && worklist) {
         const existingPatients = worklist.patients;
         
-        // Función para normalizar nombres para la comparación
-        const normalizeName = (name: string) => name.toLowerCase().replace(/[^a-z0-9áéíóúüñ]/g, "").trim();
+        // FunciÃ³n para normalizar nombres para la comparaciÃ³n
+        const normalizeName = (name: string) => name.toLowerCase().replace(/[^a-z0-9Ã¡Ã©Ã­Ã³ÃºÃ¼Ã±]/g, "").trim();
         
         // Mapeo de nombres normalizados de pacientes existentes
         const existingMap = new Map<string, WorklistPatient>();
@@ -16690,7 +16697,7 @@ const splitReportAndAnnex = (text: string) => {
           }
         });
 
-        // Para cualquier paciente existente que no se haya detectado en la nueva digitalización,
+        // Para cualquier paciente existente que no se haya detectado en la nueva digitalizaciÃ³n,
         // lo reinsertamos de forma inteligente respetando su orden relativo original para evitar perderlo.
         const remainingExisting = existingPatients.filter(p => !usedExistingIds.has(p.id));
         
@@ -16759,7 +16766,7 @@ const splitReportAndAnnex = (text: string) => {
     if (
       switchingPatient &&
       !window.confirm(
-        `�Cambiar al paciente ${patient.name}? Tienes datos del reporte o im�genes de ${currentPatientName} sin finalizar.`
+        `ï¿½Cambiar al paciente ${patient.name}? Tienes datos del reporte o imï¿½genes de ${currentPatientName} sin finalizar.`
       )
     ) {
       return;
@@ -16902,7 +16909,7 @@ const splitReportAndAnnex = (text: string) => {
 
     if (
       hasSessionContent &&
-      !window.confirm(`�Finalizar caso de ${activeName}? El paciente quedar� marcado como atendido.`)
+      !window.confirm(`ï¿½Finalizar caso de ${activeName}? El paciente quedarï¿½ marcado como atendido.`)
     ) {
       return;
     }
@@ -17033,7 +17040,7 @@ const splitReportAndAnnex = (text: string) => {
                 patientGender: "",
                 patientId: "",
                 reportDate: new Date().toISOString().split('T')[0],
-                doctorName: doctorName || "Médico Radiólogo",
+                doctorName: doctorName || "MÃ©dico RadiÃ³logo",
                 doctorLicense: doctorLicense || "",
                 clinicName: clinicName || "",
                 studyType: rep.studyType,
@@ -17104,9 +17111,9 @@ const splitReportAndAnnex = (text: string) => {
                   patientGender: "",
                   patientId: "",
                   reportDate: new Date().toISOString().split('T')[0],
-                  doctorName: doctorName || "Médico Radiólogo",
+                  doctorName: doctorName || "MÃ©dico RadiÃ³logo",
                   doctorLicense: doctorLicense || "No especificada",
-                  clinicName: clinicName || "Clínica Privada",
+                  clinicName: clinicName || "ClÃ­nica Privada",
                   studyType: rep.studyType,
                   clinicalHistory: rep.clinicalHistory,
                   findings: "Hallazgos guardados localmente.",
@@ -17180,7 +17187,7 @@ const splitReportAndAnnex = (text: string) => {
   };
 
   const migrateBackupStudiesToFirebase = async () => {
-    setMigrationProgress("Sincronización Cloud desactivada. Tus estudios ya están respaldados localmente de forma segura.");
+    setMigrationProgress("SincronizaciÃ³n Cloud desactivada. Tus estudios ya estÃ¡n respaldados localmente de forma segura.");
   };
 
   useEffect(() => {
@@ -17276,15 +17283,15 @@ const splitReportAndAnnex = (text: string) => {
           hour: "2-digit",
           minute: "2-digit"
         }),
-        patientName: patientName || "Paciente Anónimo",
+        patientName: patientName || "Paciente AnÃ³nimo",
         patientEmail: patientEmail || "No especificado",
         patientAge: patientAge || "",
         patientGender: patientGender || "",
         patientId: patientId || "",
         reportDate: reportDate || new Date().toISOString().split('T')[0],
-        doctorName: doctorName || "Médico Radiólogo",
+        doctorName: doctorName || "MÃ©dico RadiÃ³logo",
         doctorLicense: doctorLicense || "No especificada",
-        clinicName: clinicName || "Clínica Privada",
+        clinicName: clinicName || "ClÃ­nica Privada",
         studyType: studyTypeToSave,
         clinicalHistory: clinicalHistoryToSave,
         findings: findings || "No especificadas",
@@ -17295,7 +17302,7 @@ const splitReportAndAnnex = (text: string) => {
         customLogoRightUrl: compressedLogoRight,
         customLogoStyle: customLogoStyle || "logo",
         customSignatureUrl: compressedSignature,
-        specificStudy: specificStudy || "Tórax",
+        specificStudy: specificStudy || "TÃ³rax",
         pdfLayoutType: pdfLayoutType || "classic",
         selectedLogo: selectedLogo || "none",
         selectedLogoRight: selectedLogoRight || "none",
@@ -17343,15 +17350,15 @@ const splitReportAndAnnex = (text: string) => {
           synchronizedToCloud = true;
         } catch (cloudError) {
           console.error("Error synchronizing study with Firestore:", cloudError);
-          setCloudStudiesError("El estudio se guard� localmente, pero no pudo sincronizarse con la nube.");
+          setCloudStudiesError("El estudio se guardï¿½ localmente, pero no pudo sincronizarse con la nube.");
         }
       }
 
       setCurrentCloudStudyId(idToSave);
       setCloudStudiesSuccess(
         synchronizedToCloud
-          ? "�Estudio guardado y sincronizado con tu nube privada!"
-          : "�Estudio guardado con �xito en tu Archivo Local!"
+          ? "ï¿½Estudio guardado y sincronizado con tu nube privada!"
+          : "ï¿½Estudio guardado con ï¿½xito en tu Archivo Local!"
       );
       fetchCloudStudies(gmailUser?.uid);
       setTimeout(() => setCloudStudiesSuccess(null), 4500);
@@ -17365,7 +17372,7 @@ const splitReportAndAnnex = (text: string) => {
   };
 
   const handleDeleteFromCloud = async (studyId: string) => {
-    if (!confirm("¿Estás seguro de que deseas eliminar este estudio de tu archivo local? Esta acción no se puede deshacer.")) return;
+    if (!confirm("Â¿EstÃ¡s seguro de que deseas eliminar este estudio de tu archivo local? Esta acciÃ³n no se puede deshacer.")) return;
     
     setCloudStudiesError(null);
     setCloudStudiesSuccess(null);
@@ -17384,7 +17391,7 @@ const splitReportAndAnnex = (text: string) => {
           await deleteStudyFromCloud(studyId);
         } catch (cloudError) {
           console.warn("No se pudo eliminar la copia de Firestore:", cloudError);
-          setCloudStudiesError("Se elimin� la copia local, pero no la copia sincronizada.");
+          setCloudStudiesError("Se eliminï¿½ la copia local, pero no la copia sincronizada.");
         }
       }
       setCloudStudiesSuccess("Estudio eliminado de tu archivo.");
@@ -17416,13 +17423,13 @@ const splitReportAndAnnex = (text: string) => {
       setTimeout(() => setCopiedEhrStudyId(null), 2500);
     } catch (err) {
       console.error("Failed to copy EHR link text:", err);
-      alert("No se pudo copiar el enlace automáticamente: " + shareUrl);
+      alert("No se pudo copiar el enlace automÃ¡ticamente: " + shareUrl);
     }
   };
 
   const handleCopyEhrPortalLink = async () => {
     if (!gmailUser) {
-      alert("Debe iniciar sesión con Google para usar el archivo en la nube y generar enlaces.");
+      alert("Debe iniciar sesiÃ³n con Google para usar el archivo en la nube y generar enlaces.");
       return;
     }
 
@@ -17430,7 +17437,7 @@ const splitReportAndAnnex = (text: string) => {
     
     // If not saved to cloud yet, automatically save it first!
     if (!activeStudyId) {
-      if (!confirm("El reporte aún no se ha guardado en la nube. ¿Deseas guardarlo automáticamente ahora en tu Archivo Cloud para poder generar su enlace de expediente?")) {
+      if (!confirm("El reporte aÃºn no se ha guardado en la nube. Â¿Deseas guardarlo automÃ¡ticamente ahora en tu Archivo Cloud para poder generar su enlace de expediente?")) {
         return;
       }
       try {
@@ -17442,7 +17449,7 @@ const splitReportAndAnnex = (text: string) => {
         }
       } catch (err) {
         console.error("Auto-save failed inside EHR copy link:", err);
-        alert("Ocurrió un error al intentar guardar el estudio automáticamente.");
+        alert("OcurriÃ³ un error al intentar guardar el estudio automÃ¡ticamente.");
         return;
       }
     }
@@ -17457,7 +17464,7 @@ const splitReportAndAnnex = (text: string) => {
       setTimeout(() => setCopiedEhrStudyId(null), 2500);
     } catch (err) {
       console.error("Failed to copy EHR link text:", err);
-      alert("No se pudo copiar el enlace automáticamente. El enlace es: " + shareUrl);
+      alert("No se pudo copiar el enlace automÃ¡ticamente. El enlace es: " + shareUrl);
     }
   };
 
@@ -17471,7 +17478,7 @@ const splitReportAndAnnex = (text: string) => {
               Cargando Portal de Consulta Digital...
             </p>
             <p className="text-[10px] text-slate-500 font-sans">
-              Buscando estudio médico seguro en la nube.
+              Buscando estudio mÃ©dico seguro en la nube.
             </p>
           </div>
         </div>
@@ -17482,7 +17489,7 @@ const splitReportAndAnnex = (text: string) => {
       return (
         <div className="min-h-screen bg-[#070A13] flex flex-col items-center justify-center p-4">
           <div className="bg-slate-900 border-2 border-red-500/20 p-8 rounded-3xl max-w-md w-full text-center space-y-6 shadow-2xl">
-            <span className="text-4xl">⚠️</span>
+            <span className="text-4xl">â ï¸</span>
             <div className="space-y-2">
               <h2 className="text-sm font-black text-white uppercase tracking-widest font-mono">
                 Error de Acceso
@@ -17581,19 +17588,19 @@ const splitReportAndAnnex = (text: string) => {
         <header className="px-6 py-5 border-b border-slate-850 bg-slate-950/60 backdrop-blur-md flex items-center justify-between shadow-lg">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 bg-gradient-to-tr from-emerald-600 to-teal-500 rounded-lg flex items-center justify-center text-white shrink-0 shadow-lg">
-              <span className="text-sm font-sans">🩺</span>
+              <span className="text-sm font-sans">ð©º</span>
             </div>
             <div>
               <h1 className="text-xs font-black uppercase tracking-widest text-slate-400 font-mono">
                 Portal de Consulta Digital
               </h1>
               <p className="text-[11px] font-black text-white uppercase tracking-tight mt-0.5">
-                {clinicName || "Clínica Radiológica"}
+                {clinicName || "ClÃ­nica RadiolÃ³gica"}
               </p>
             </div>
           </div>
           <span className="text-[8px] font-black tracking-widest uppercase bg-emerald-950/80 text-emerald-400 border border-emerald-500/20 px-2 py-1 rounded-md font-mono">
-            Conexión Segura SSL
+            ConexiÃ³n Segura SSL
           </span>
         </header>
 
@@ -17603,17 +17610,17 @@ const splitReportAndAnnex = (text: string) => {
           <div className="p-6 bg-gradient-to-r from-indigo-950/30 to-slate-950 border border-indigo-500/10 rounded-3xl flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="text-center md:text-left space-y-1">
               <h2 className="text-lg font-black text-white tracking-tight leading-tight">
-                ¡Hola, {patientName || "Paciente"}!
+                Â¡Hola, {patientName || "Paciente"}!
               </h2>
               <p className="text-xs text-slate-400">
-                Tu reporte de estudio clínico ya está disponible para consulta y descarga digital.
+                Tu reporte de estudio clÃ­nico ya estÃ¡ disponible para consulta y descarga digital.
               </p>
             </div>
             <button
               onClick={handleDownloadCloudPDF}
               className="shrink-0 px-6 py-3 bg-emerald-600 hover:bg-emerald-550 border border-emerald-500/20 rounded-xl text-xs font-black uppercase tracking-wider font-mono text-white transition-all shadow-md active:scale-95 cursor-pointer flex items-center gap-2"
             >
-              <span>📥 Descargar PDF Oficial Completo</span>
+              <span>ð¥ Descargar PDF Oficial Completo</span>
             </button>
           </div>
 
@@ -17626,7 +17633,7 @@ const splitReportAndAnnex = (text: string) => {
                 <div className="mt-2 pt-1.5 border-t border-slate-900 space-y-0.5 text-[10px] text-slate-400">
                   {patientId && <p><span className="font-mono text-[9px] uppercase tracking-wider text-slate-500">ID:</span> <span className="font-semibold text-slate-300 uppercase">{patientId}</span></p>}
                   {patientAge && <p><span className="font-mono text-[9px] uppercase tracking-wider text-slate-500">Edad:</span> <span className="font-semibold text-slate-300 uppercase">{patientAge}</span></p>}
-                  {patientGender && <p><span className="font-mono text-[9px] uppercase tracking-wider text-slate-500">Género:</span> <span className="font-semibold text-slate-300 uppercase">{patientGender}</span></p>}
+                  {patientGender && <p><span className="font-mono text-[9px] uppercase tracking-wider text-slate-500">GÃ©nero:</span> <span className="font-semibold text-slate-300 uppercase">{patientGender}</span></p>}
                 </div>
               )}
             </div>
@@ -17639,7 +17646,7 @@ const splitReportAndAnnex = (text: string) => {
               <p className="text-xs font-extrabold text-emerald-400 mt-1 font-mono text-left">{formatDateToDMY(reportDate) || "No especificada"}</p>
             </div>
             <div className="bg-slate-950/40 border border-slate-850 p-4 rounded-2xl text-left">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-mono">Médico Informante</span>
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-mono">MÃ©dico Informante</span>
               <p className="text-xs font-extrabold text-white mt-1 uppercase">{doctorName || "No especificado"}</p>
               {doctorLicense && <p className="text-[9px] text-slate-400 font-mono mt-0.5 uppercase">Reg. {doctorLicense}</p>}
             </div>
@@ -17660,22 +17667,22 @@ const splitReportAndAnnex = (text: string) => {
               </div>
               <div>
                 <h3 className="text-white font-sans font-black text-base md:text-lg uppercase tracking-wider flex items-center gap-2 select-none">
-                  📋 Resumen Operacional del Estudio
+                  ð Resumen Operacional del Estudio
                 </h3>
                 <p className="text-slate-450 text-xs mt-1">
-                  Resumen estructurado de los hallazgos principales y la impresión diagnóstica del estudio clínico para consulta ágil del paciente.
+                  Resumen estructurado de los hallazgos principales y la impresiÃ³n diagnÃ³stica del estudio clÃ­nico para consulta Ã¡gil del paciente.
                 </p>
               </div>
               <div className="bg-slate-950/80 border border-slate-850 rounded-2xl p-6 text-slate-200 font-sans leading-relaxed text-sm space-y-4">
                 {renderElegantPatientResumenDark(operationalSummaryText)}
               </div>
               <p className="text-[9px] text-slate-500 font-mono uppercase tracking-widest text-center select-none pt-2">
-                Generado por el Asistente Clínico de RAD-AI • Verificado por el médico tratante
+                Generado por el Asistente ClÃ­nico de RAD-AI â¢ Verificado por el mÃ©dico tratante
               </p>
             </div>
           )}
 
-          {/* Patient Explanation / Acompañamiento del Paciente */}
+          {/* Patient Explanation / AcompaÃ±amiento del Paciente */}
           {patientSummary && (
             <div className="bg-slate-950/60 border border-slate-850 rounded-3xl p-6 md:p-8 space-y-6 text-left">
               <div className="flex items-center gap-2 border-b border-slate-850 pb-4">
@@ -17683,12 +17690,12 @@ const splitReportAndAnnex = (text: string) => {
                   PORTAL PACIENTE
                 </span>
                 <h3 className="text-white font-sans font-black text-base md:text-lg uppercase tracking-wider">
-                  🤝 Acompañamiento y Explicación Empática
+                  ð¤ AcompaÃ±amiento y ExplicaciÃ³n EmpÃ¡tica
                 </h3>
               </div>
               
               <div className="p-4 bg-amber-500/5 border-l-4 border-amber-500/70 rounded-r-xl">
-                <h5 className="text-[10px] font-black tracking-widest uppercase text-amber-400">Resumen de Bienvenida y Propósito</h5>
+                <h5 className="text-[10px] font-black tracking-widest uppercase text-amber-400">Resumen de Bienvenida y PropÃ³sito</h5>
                 <p className="text-xs text-slate-300 leading-relaxed font-sans font-medium mt-1">
                   {patientSummary.summary}
                 </p>
@@ -17697,30 +17704,30 @@ const splitReportAndAnnex = (text: string) => {
               {/* Glossary/Findings */}
               <div className="space-y-4">
                 <h4 className="text-[11px] font-black tracking-wider uppercase text-slate-300 border-b border-slate-850 pb-1.5 flex items-center gap-1.5 font-mono">
-                  <span>🔍</span> GLOSARIO DE HALLAZGOS EXPLICADOS
+                  <span>ð</span> GLOSARIO DE HALLAZGOS EXPLICADOS
                 </h4>
                 <div className="grid grid-cols-1 gap-4">
                   {patientSummary.keyFindings?.map((finding: any, idx: number) => (
                     <div key={idx} className="p-4 border border-slate-850 rounded-2xl bg-slate-900/40 space-y-3">
                       <p className="text-xs font-black text-amber-400 uppercase flex items-center gap-1.5 justify-start">
-                        <span>📌</span> {finding.title || finding.originalTerm}
+                        <span>ð</span> {finding.title || finding.originalTerm}
                       </p>
                       {finding.originalTerm && (
                         <p className="text-[9.5px] font-mono text-slate-500 leading-none">
-                          Término científico original: <span className="font-bold text-pink-400">"{finding.originalTerm}"</span>
+                          TÃ©rmino cientÃ­fico original: <span className="font-bold text-pink-400">"{finding.originalTerm}"</span>
                         </p>
                       )}
                       <p className="text-xs text-slate-300 leading-relaxed font-sans">
-                        <strong>Explicación:</strong> {finding.simplifiedExplanation}
+                        <strong>ExplicaciÃ³n:</strong> {finding.simplifiedExplanation}
                       </p>
                       {finding.analogy && (
                         <p className="text-[11.5px] text-amber-300/90 leading-relaxed font-sans italic bg-amber-950/20 px-3 py-2 border-l-2 border-amber-500 rounded-r">
-                          <strong>Analogía sencilla:</strong> "{finding.analogy}"
+                          <strong>AnalogÃ­a sencilla:</strong> "{finding.analogy}"
                         </p>
                       )}
                       {finding.reassurance && (
                         <p className="text-[11.5px] text-sky-300/90 leading-relaxed font-sans bg-sky-950/20 px-3 py-2 border-l-2 border-sky-500 rounded-r">
-                          <strong>Sugerencia médica:</strong> {finding.reassurance}
+                          <strong>Sugerencia mÃ©dica:</strong> {finding.reassurance}
                         </p>
                       )}
                     </div>
@@ -17732,7 +17739,7 @@ const splitReportAndAnnex = (text: string) => {
               {patientSummary.carePoints && patientSummary.carePoints.length > 0 && (
                 <div className="space-y-2">
                   <h4 className="text-[11px] font-black tracking-wider uppercase text-slate-300 border-b border-slate-850 pb-1.5 flex items-center gap-1.5 font-mono">
-                    <span>🩺</span> RECOMENDACIONES Y CUIDADOS GENERALES
+                    <span>ð©º</span> RECOMENDACIONES Y CUIDADOS GENERALES
                   </h4>
                   <ul className="list-disc pl-5 text-xs text-slate-300 space-y-1.5 font-sans">
                     {patientSummary.carePoints.map((point: string, idx: number) => (
@@ -17746,10 +17753,10 @@ const splitReportAndAnnex = (text: string) => {
               {patientSummary.suggestedQuestions && patientSummary.suggestedQuestions.length > 0 && (
                 <div className="space-y-3">
                   <h4 className="text-[11px] font-black tracking-wider uppercase text-slate-300 border-b border-slate-850 pb-1.5 flex items-center gap-1.5 font-mono">
-                    <span>💬</span> PREGUNTAS SUGERIDAS PARA SU MÉDICO TRATANTE
+                    <span>ð¬</span> PREGUNTAS SUGERIDAS PARA SU MÃDICO TRATANTE
                   </h4>
                   <p className="text-[10px] text-slate-500 leading-normal font-mono uppercase tracking-wide">
-                    Le sugerimos llevar estas preguntas anotadas a su siguiente consulta con su médico de cabecera:
+                    Le sugerimos llevar estas preguntas anotadas a su siguiente consulta con su mÃ©dico de cabecera:
                   </p>
                   <div className="grid grid-cols-1 gap-2">
                     {patientSummary.suggestedQuestions.map((q: string, idx: number) => (
@@ -17768,21 +17775,21 @@ const splitReportAndAnnex = (text: string) => {
             <div className="bg-slate-950/60 border border-slate-850 rounded-3xl p-6 md:p-8 space-y-4 text-left">
               <div className="flex items-center gap-2 border-b border-slate-850 pb-4">
                 <span className="p-1 px-2 text-[8px] font-black uppercase font-mono tracking-widest bg-emerald-950/40 text-emerald-300 border border-emerald-500/20 rounded">
-                  ECOGRAFÍA
+                  ECOGRAFÃA
                 </span>
                 <h3 className="text-white font-sans font-black text-base md:text-lg uppercase tracking-wider">
-                  🖼️ Registro de Capturas Diagnósticas ({attachedImages.length})
+                  ð¼ï¸ Registro de Capturas DiagnÃ³sticas ({attachedImages.length})
                 </h3>
               </div>
               <p className="text-slate-400 text-xs">
-                Imágenes capturadas e integradas por el radiólogo especialista asociadas a este estudio clínico.
+                ImÃ¡genes capturadas e integradas por el radiÃ³logo especialista asociadas a este estudio clÃ­nico.
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
                 {attachedImages.map((img: any) => (
                   <div key={img.id} className="bg-slate-900/50 p-3.5 rounded-2xl border border-slate-850 flex flex-col gap-3">
                     <img src={img.url} alt={img.name} className="w-full aspect-[4/3] object-cover rounded-xl bg-black border border-slate-950" />
                     {img.caption && (
-                      <div className="text-xs font-semibold text-slate-300 italic text-center">“{img.caption}”</div>
+                      <div className="text-xs font-semibold text-slate-300 italic text-center">â{img.caption}â</div>
                     )}
                   </div>
                 ))}
@@ -17792,13 +17799,13 @@ const splitReportAndAnnex = (text: string) => {
 
           {/* Quick PDF disclaimer */}
           <div className="p-4 bg-slate-950/20 border border-slate-850 rounded-2xl text-[10px] text-slate-400 text-left leading-relaxed font-mono uppercase tracking-wide">
-            💡 <strong>Nota de descarga:</strong> El archivo PDF oficial descargado desde este portal se extrae directamente desde su registro en la nube de forma segura. El documento contiene el reporte radiológico formal firmado por el especialista, los esquemas y dibujos explicativos, el acompañamiento para el paciente y las imágenes de ultrasonido asociadas a su estudio.
+            ð¡ <strong>Nota de descarga:</strong> El archivo PDF oficial descargado desde este portal se extrae directamente desde su registro en la nube de forma segura. El documento contiene el reporte radiolÃ³gico formal firmado por el especialista, los esquemas y dibujos explicativos, el acompaÃ±amiento para el paciente y las imÃ¡genes de ultrasonido asociadas a su estudio.
           </div>
         </main>
 
         <footer className="py-8 border-t border-slate-850/40 bg-slate-950/20 text-center">
           <p className="text-[9px] text-slate-500 font-mono uppercase tracking-wider">
-            RAD-AI CLOUD DIGITAL VIEWER — SISTEMA DE GESTIÓN CLÍNICA AVANZADO
+            RAD-AI CLOUD DIGITAL VIEWER â SISTEMA DE GESTIÃN CLÃNICA AVANZADO
           </p>
         </footer>
       </div>
@@ -17808,7 +17815,7 @@ const splitReportAndAnnex = (text: string) => {
   return (
     <div className="min-h-screen bg-[#0F172A] text-slate-100 font-sans flex flex-col antialiased">
       <div className="no-print flex-1 flex flex-col">
-      {/* 🚀 CLINICAL HEADER (Aesthetic Upgrade 1 - Premium Futuristic Glassmorphic Header with ECG heartwave visualizer) */}
+      {/* ð CLINICAL HEADER (Aesthetic Upgrade 1 - Premium Futuristic Glassmorphic Header with ECG heartwave visualizer) */}
       <header className="flex flex-col md:flex-row md:items-center justify-between px-8 py-5 border-b border-slate-800/80 bg-slate-950/40 backdrop-blur-md gap-4 shadow-2xl select-none relative overflow-hidden">
         {/* Decorative background element */}
         <div className="absolute top-0 left-1/4 w-[300px] h-[150px] bg-indigo-500/5 rounded-full blur-[80px]" />
@@ -17826,7 +17833,7 @@ const splitReportAndAnnex = (text: string) => {
               <span className="text-[9.5px] font-black tracking-widest uppercase bg-indigo-950/40 text-indigo-300 border border-indigo-500/25 px-2.5 py-0.5 rounded-md font-mono shadow-[0_2px_10px_rgba(99,102,241,0.1)]">v1.5 Premium</span>
             </div>
             <div className="flex items-center gap-3 mt-1.5 flex-wrap">
-              <p className="text-[10px] font-black text-indigo-300/90 uppercase tracking-widest bg-indigo-950/50 px-2 py-0.5 rounded border border-indigo-500/10">Asistente Diagnóstico Experto</p>
+              <p className="text-[10px] font-black text-indigo-300/90 uppercase tracking-widest bg-indigo-950/50 px-2 py-0.5 rounded border border-indigo-500/10">Asistente DiagnÃ³stico Experto</p>
               <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-indigo-500/60 animate-ping" />
                 Dr. Milton Benavides S. Cod.6025
@@ -17888,7 +17895,7 @@ const splitReportAndAnnex = (text: string) => {
             })}
           </div>
 
-          {/* Botón Lista de Trabajo */}
+          {/* BotÃ³n Lista de Trabajo */}
           <button
             onClick={() => setIsWorklistSidebarOpen(!isWorklistSidebarOpen)}
             className={`px-3.5 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase transition-all duration-200 flex items-center gap-2 cursor-pointer border ${
@@ -17921,7 +17928,7 @@ const splitReportAndAnnex = (text: string) => {
           <div className="text-right hidden xl:block font-mono text-[9.5px] font-black text-slate-500 uppercase tracking-widest leading-none select-none">
             <div className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
-              <span>Conexión Segura</span>
+              <span>ConexiÃ³n Segura</span>
             </div>
           </div>
         </div>
@@ -17945,7 +17952,7 @@ const splitReportAndAnnex = (text: string) => {
         onDismissMismatch={() => setBridgeCaptureMismatch(null)}
       />
 
-      {/* 🧭 MAIN CONTAINER WITH TABS (Aesthetic Upgrade 2 - Glassmorphic Medical Cockpit Navigation Rail) */}
+      {/* ð§­ MAIN CONTAINER WITH TABS (Aesthetic Upgrade 2 - Glassmorphic Medical Cockpit Navigation Rail) */}
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
         {/* Left Drawer / Navigation Rail */}
         <nav className="w-full lg:w-64 bg-[#0A0E1A]/95 border-b lg:border-b-0 lg:border-r border-slate-805/80 p-5 flex flex-row lg:flex-col gap-2.5 overflow-x-auto shrink-0 select-none scrollbar-none relative z-10 backdrop-blur-md">
@@ -17955,7 +17962,7 @@ const splitReportAndAnnex = (text: string) => {
           <div className="hidden lg:flex items-center gap-2 px-1.5 mb-3 select-none">
             <span className="w-1.5 h-3.5 rounded bg-indigo-500/80 shadow-[0_0_10px_rgba(99,102,241,0.5)]" />
             <span className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.22em] font-mono">
-              Módulos Clínicos
+              MÃ³dulos ClÃ­nicos
             </span>
           </div>
           
@@ -17986,7 +17993,7 @@ const splitReportAndAnnex = (text: string) => {
               <span className="absolute left-0 top-1.5 bottom-1.5 w-1 bg-indigo-500 rounded-r-md shadow-[0_0_10px_#6366f1]" />
             )}
             <MessageSquare className={`h-4 w-4 shrink-0 transition-transform duration-300 group-hover:scale-105 ${activeTab === "consult" ? "text-indigo-400 drop-shadow-[0_0_4px_rgba(99,102,241,0.3)]" : "text-slate-500"}`} />
-            Casos Clínicos
+            Casos ClÃ­nicos
           </button>
 
           <button
@@ -18016,7 +18023,7 @@ const splitReportAndAnnex = (text: string) => {
               <span className="absolute left-0 top-1.5 bottom-1.5 w-1 bg-indigo-500 rounded-r-md shadow-[0_0_10px_#6366f1]" />
             )}
             <Code className={`h-4 w-4 shrink-0 transition-transform duration-300 group-hover:scale-105 ${activeTab === "api" ? "text-indigo-400 drop-shadow-[0_0_4px_rgba(99,102,241,0.3)]" : "text-slate-500"}`} />
-            Conexión API
+            ConexiÃ³n API
           </button>
 
           <button
@@ -18031,7 +18038,7 @@ const splitReportAndAnnex = (text: string) => {
               <span className="absolute left-0 top-1.5 bottom-1.5 w-1 bg-indigo-500 rounded-r-md shadow-[0_0_10px_#6366f1]" />
             )}
             <Search className={`h-4 w-4 shrink-0 transition-transform duration-300 group-hover:scale-105 ${activeTab === "bibliography" ? "text-indigo-400 drop-shadow-[0_0_4px_rgba(99,102,241,0.3)]" : "text-slate-500"}`} />
-            Bibliografía
+            BibliografÃ­a
           </button>
           
           <button
@@ -18046,7 +18053,7 @@ const splitReportAndAnnex = (text: string) => {
               <span className="absolute left-0 top-1.5 bottom-1.5 w-1 bg-indigo-500 rounded-r-md shadow-[0_0_10px_#6366f1]" />
             )}
             <Sparkles className={`h-4 w-4 shrink-0 transition-transform duration-300 group-hover:scale-105 ${activeTab === "expert-analysis" ? "text-amber-400 drop-shadow-[0_0_4px_rgba(245,158,11,0.4)]" : "text-slate-500"}`} />
-            Doble Valoración IA
+            Doble ValoraciÃ³n IA
           </button>
 
           <button
@@ -18061,7 +18068,7 @@ const splitReportAndAnnex = (text: string) => {
               <span className="absolute left-0 top-1.5 bottom-1.5 w-1 bg-indigo-500 rounded-r-md shadow-[0_0_10px_#6366f1]" />
             )}
             <ImageIcon className={`h-4 w-4 shrink-0 transition-transform duration-300 group-hover:scale-105 ${activeTab === "images" ? "text-indigo-400 drop-shadow-[0_0_4px_rgba(99,102,241,0.3)]" : "text-slate-500"}`} />
-            Imágenes Médicas
+            ImÃ¡genes MÃ©dicas
           </button>
 
           <button
@@ -18079,11 +18086,11 @@ const splitReportAndAnnex = (text: string) => {
             Historial Local
           </button>
 
-          {/* 🧠 SELECTOR DE MODELO OMNIPRESENTE (STATION SIDEBAR) */}
+          {/* ð§  SELECTOR DE MODELO OMNIPRESENTE (STATION SIDEBAR) */}
           <div className="hidden lg:flex flex-col bg-[#0b101d] border border-slate-800/80 rounded-xl p-3 mt-2 shrink-0 space-y-2">
             <div className="flex items-center gap-1.5 border-b border-slate-850 pb-1.5">
               <Sparkles className="h-3.5 w-3.5 text-indigo-400 animate-pulse" />
-              <span className="text-[9px] font-black tracking-widest text-[#a5b4fc] uppercase font-mono">Modelo Núcleo IA</span>
+              <span className="text-[9px] font-black tracking-widest text-[#a5b4fc] uppercase font-mono">Modelo NÃºcleo IA</span>
             </div>
             
             <div className="space-y-1.5 font-sans">
@@ -18208,7 +18215,7 @@ const splitReportAndAnnex = (text: string) => {
                   <div className="bg-slate-900 border-2 border-slate-850 rounded-2xl p-6 shadow-2xl space-y-6">
                     <div className="flex items-center justify-between border-b border-slate-800 pb-4">
                       <h2 className="text-sm font-black text-white uppercase tracking-wider flex items-center gap-2">
-                        <Activity className="h-4 w-4 text-indigo-400" /> Parámetros del Estudio
+                        <Activity className="h-4 w-4 text-indigo-400" /> ParÃ¡metros del Estudio
                       </h2>
                       <button
                         onClick={resetGeneratorForm}
@@ -18218,20 +18225,20 @@ const splitReportAndAnnex = (text: string) => {
                       </button>
                     </div>
 
-                    {/* Parámetros de Selección de Estudio */}
+                    {/* ParÃ¡metros de SelecciÃ³n de Estudio */}
                     <div className="space-y-4 bg-slate-950/40 p-4 rounded-xl border border-slate-800/60">
 
                       {/* 1. Modalidad */}
                       <div className="space-y-2">
                         <label className="text-[10px] font-black text-slate-500 block uppercase tracking-widest">Modalidad:</label>
                         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-                          {["Radiografía", "Ultrasonido", "Mamografía", "TAC", "Mamografía y Ultrasonido de Mamas"].map((mod) => (
+                          {["RadiografÃ­a", "Ultrasonido", "MamografÃ­a", "TAC", "MamografÃ­a y Ultrasonido de Mamas"].map((mod) => (
                             <button
                               key={mod}
                               type="button"
                               onClick={() => {
                                 setModality(mod);
-                                if (mod === "Mamografía y Ultrasonido de Mamas") {
+                                if (mod === "MamografÃ­a y Ultrasonido de Mamas") {
                                   setSpecificStudy("");
                                 }
                               }}
@@ -18247,10 +18254,10 @@ const splitReportAndAnnex = (text: string) => {
                         </div>
                       </div>
 
-                      {/* 2. Estudio Específico (conditional) */}
-                      {modality !== "Mamografía y Ultrasonido de Mamas" && (
+                      {/* 2. Estudio EspecÃ­fico (conditional) */}
+                      {modality !== "MamografÃ­a y Ultrasonido de Mamas" && (
                         <div className="space-y-2">
-                          <label className="text-[10px] font-black text-slate-500 block uppercase tracking-widest">Estudio Específico:</label>
+                          <label className="text-[10px] font-black text-slate-500 block uppercase tracking-widest">Estudio EspecÃ­fico:</label>
                           <select
                             value={specificStudy}
                             onChange={(e) => setSpecificStudy(e.target.value)}
@@ -18258,7 +18265,7 @@ const splitReportAndAnnex = (text: string) => {
                           >
                             <option value="Abdomen">Abdomen</option>
                             <option value="Mamas">Mamas</option>
-                            <option value="Vias urinarias">Vías Urinarias</option>
+                            <option value="Vias urinarias">VÃ­as Urinarias</option>
                             <option value="Escroto">Escroto</option>
                             <option value="Cuello">Cuello</option>
                             <option value="Rodilla">Rodilla</option>
@@ -18266,21 +18273,21 @@ const splitReportAndAnnex = (text: string) => {
                             <option value="Tobillo">Tobillo</option>
                             <option value="Muslo Anterior">Muslo Anterior</option>
                             <option value="Muslo Posterior">Muslo Posterior</option>
-                            <option value="Muñeca">Muñeca</option>
+                            <option value="MuÃ±eca">MuÃ±eca</option>
                             <option value="Mano">Mano</option>
                             <option value="Pie">Pie</option>
                             <option value="Cadera">Cadera</option>
                             <option value="Codo">Codo</option>
-                            <option value="Doppler de carótidas">Doppler de carótidas</option>
+                            <option value="Doppler de carÃ³tidas">Doppler de carÃ³tidas</option>
                             <option value="Doppler venoso de miembro inferior">Doppler venoso de miembro inferior</option>
                             <option value="Doppler arterial de miembro inferior">Doppler arterial de miembro inferior</option>
                             <option value="Columna lumbosacra">Columna lumbosacra</option>
                             <option value="Columna dorsal">Columna dorsal</option>
                             <option value="Columna cervical">Columna cervical</option>
-                            <option value="Momografía">Momografía</option>
-                            <option value="Tórax">Tórax</option>
-                            <option value="Cráneo">Cráneo</option>
-                            <option value="Pantorrilla y Tendón de Aquiles">Pantorrilla y Tendón de Aquiles</option>
+                            <option value="MomografÃ­a">MomografÃ­a</option>
+                            <option value="TÃ³rax">TÃ³rax</option>
+                            <option value="CrÃ¡neo">CrÃ¡neo</option>
+                            <option value="Pantorrilla y TendÃ³n de Aquiles">Pantorrilla y TendÃ³n de Aquiles</option>
                             <option value="Cerebro Neonatal">Cerebro Neonatal</option>
                             <option value="Otro">Otro (Especificar)</option>
                           </select>
@@ -18288,21 +18295,21 @@ const splitReportAndAnnex = (text: string) => {
                       )}
 
                       {/* 3. Otro estudio (Custom input) */}
-                      {modality !== "Mamografía y Ultrasonido de Mamas" && specificStudy === "Otro" && (
+                      {modality !== "MamografÃ­a y Ultrasonido de Mamas" && specificStudy === "Otro" && (
                         <div className="space-y-2 animate-fadeIn">
                           <label className="text-[10px] font-black text-slate-500 block uppercase tracking-widest">Especificar Estudio:</label>
                           <input
                             type="text"
                             value={customStudy}
                             onChange={(e) => setCustomStudy(e.target.value)}
-                            placeholder="Ej. Codo, Antebrazo, Ecografía Obstétrica..."
+                            placeholder="Ej. Codo, Antebrazo, EcografÃ­a ObstÃ©trica..."
                             className="w-full bg-slate-950/90 border-2 border-slate-850 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 rounded-xl py-3 px-4 text-xs font-bold text-slate-100 focus:outline-none placeholder-slate-650 transition-all duration-200 uppercase tracking-wider"
                           />
                         </div>
                       )}
 
                       {/* 4. Lateralidad (conditional) */}
-                      {["Mamas", "Momografía", "Rodilla", "Hombro", "Tobillo", "Muslo Anterior", "Muslo Posterior", "Muñeca", "Mano", "Pie", "Cadera", "Codo", "Pantorrilla y Tendón de Aquiles", "Mamografía y Ultrasonido de Mamas", "Doppler venoso de miembro inferior", "Doppler arterial de miembro inferior", "Otro"].includes(specificStudy) || modality === "Mamografía y Ultrasonido de Mamas" ? (
+                      {["Mamas", "MomografÃ­a", "Rodilla", "Hombro", "Tobillo", "Muslo Anterior", "Muslo Posterior", "MuÃ±eca", "Mano", "Pie", "Cadera", "Codo", "Pantorrilla y TendÃ³n de Aquiles", "MamografÃ­a y Ultrasonido de Mamas", "Doppler venoso de miembro inferior", "Doppler arterial de miembro inferior", "Otro"].includes(specificStudy) || modality === "MamografÃ­a y Ultrasonido de Mamas" ? (
                         <div className="space-y-2 animate-fadeIn">
                           <label className="text-[10px] font-black text-slate-500 block uppercase tracking-widest">Lateralidad:</label>
                           <div className="grid grid-cols-4 gap-2">
@@ -18329,8 +18336,8 @@ const splitReportAndAnnex = (text: string) => {
                         </div>
                       ) : null}
 
-                      {/* 5. Proyecciones (conditional for selection in Radiografía) */}
-                      {modality === "Radiografía" && (
+                      {/* 5. Proyecciones (conditional for selection in RadiografÃ­a) */}
+                      {modality === "RadiografÃ­a" && (
                         <div className="space-y-2 animate-fadeIn border-t border-slate-800/40 pt-4">
                           <div className="flex items-center justify-between">
                             <label className="text-[10px] font-black text-slate-500 block uppercase tracking-widest">Proyecciones Realizadas:</label>
@@ -18382,12 +18389,12 @@ const splitReportAndAnnex = (text: string) => {
 
                           {projections.includes("Otra") && (
                             <div className="animate-fadeIn pt-1.5 space-y-1.5">
-                              <label className="text-[9px] font-black text-indigo-400 block uppercase tracking-widest">Especificar otra proyección:</label>
+                              <label className="text-[9px] font-black text-indigo-400 block uppercase tracking-widest">Especificar otra proyecciÃ³n:</label>
                               <input
                                 type="text"
                                 value={customProjection}
                                 onChange={(e) => setCustomProjection(e.target.value)}
-                                placeholder="Ej: Tangencial, Transtorácica, Decúbito lateral con rayo horizontal..."
+                                placeholder="Ej: Tangencial, TranstorÃ¡cica, DecÃºbito lateral con rayo horizontal..."
                                 className="w-full px-3 py-2 text-xs font-semibold text-slate-200 placeholder-slate-600 bg-slate-950 border border-slate-850 focus:border-indigo-500 focus:outline-none rounded-xl transition-all shadow-[inset_0_1px_3px_rgba(0,0,0,0.5)] font-sans"
                               />
                             </div>
@@ -18404,17 +18411,17 @@ const splitReportAndAnnex = (text: string) => {
                       </div>
                     </div>
 
-                    {/* Indicación */}
+                    {/* IndicaciÃ³n */}
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <label className="text-[10px] font-black text-slate-500 block uppercase tracking-widest">Indicación:</label>
+                        <label className="text-[10px] font-black text-slate-500 block uppercase tracking-widest">IndicaciÃ³n:</label>
                         {clinicalHistory.trim() && (
                           <button
                             type="button"
                             onClick={handleAssistClinicalHistory}
                             disabled={isAssistingHistory}
                             className="text-[9px] font-black text-indigo-400 hover:text-indigo-300 uppercase tracking-widest font-mono cursor-pointer flex items-center gap-1 bg-indigo-950/40 hover:bg-indigo-950/80 border border-indigo-900/30 hover:border-indigo-500/30 px-2 py-0.5 rounded transition-all select-none active:scale-95"
-                            title="Pulir indicación: corregir ortografía, redactar profesionalmente y arreglar mayúsculas/minúsculas"
+                            title="Pulir indicaciÃ³n: corregir ortografÃ­a, redactar profesionalmente y arreglar mayÃºsculas/minÃºsculas"
                           >
                             {isAssistingHistory ? (
                               <>
@@ -18424,7 +18431,7 @@ const splitReportAndAnnex = (text: string) => {
                             ) : (
                               <>
                                 <Sparkles className="h-2.5 w-2.5 text-indigo-400 animate-pulse" />
-                                <span>Asistir con IA (Casing & Redacción)</span>
+                                <span>Asistir con IA (Casing & RedacciÃ³n)</span>
                               </>
                             )}
                           </button>
@@ -18433,7 +18440,7 @@ const splitReportAndAnnex = (text: string) => {
                       <textarea
                         value={clinicalHistory}
                         onChange={(e) => setClinicalHistory(e.target.value)}
-                        placeholder="Sospecha o justificación clínica para realizar el estudio..."
+                        placeholder="Sospecha o justificaciÃ³n clÃ­nica para realizar el estudio..."
                         rows={3}
                         className="w-full bg-slate-950/90 border-2 border-slate-855 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 rounded-xl py-3 px-4 text-xs font-bold text-slate-100 focus:outline-none placeholder-slate-600 transition-all duration-200 resize-none"
                       />
@@ -18473,7 +18480,7 @@ const splitReportAndAnnex = (text: string) => {
                               type="button"
                               onClick={stopRecordingAudio}
                               className="px-2.5 py-1 bg-amber-600 hover:bg-amber-550 border-amber-500/35 text-white flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg border-2 transition-all select-none active:scale-95 shadow-md"
-                              title="Detener grabación y transcribir automáticamente"
+                              title="Detener grabaciÃ³n y transcribir automÃ¡ticamente"
                             >
                               <Square className="h-3 w-3 text-white fill-white" />
                               <span>Detener y Transcribir</span>
@@ -18499,10 +18506,10 @@ const splitReportAndAnnex = (text: string) => {
                                     ? "opacity-50 cursor-not-allowed bg-slate-950 border-slate-900 text-slate-600"
                                     : "bg-indigo-900 hover:bg-indigo-800 border-indigo-700/50 text-indigo-200 hover:text-white shadow-lg shadow-indigo-955/20"
                                 }`}
-                                title="Graba un clip de audio del dictado y transcríbelo con la IA de Gemini de forma 100% estable"
+                                title="Graba un clip de audio del dictado y transcrÃ­belo con la IA de Gemini de forma 100% estable"
                               >
                                 <Mic className="h-3 w-3 text-indigo-400" />
-                                <span>Dictar por Grabación IA (Estable)</span>
+                                <span>Dictar por GrabaciÃ³n IA (Estable)</span>
                               </button>
 
                               {/* Web Speech Dictado en Vivo button */}
@@ -18536,23 +18543,23 @@ const splitReportAndAnnex = (text: string) => {
                       {speechError && (
                         <div className="text-xs font-bold text-rose-450 bg-rose-950/30 border-2 border-rose-905/30 p-4 rounded-xl leading-relaxed space-y-3 text-left">
                           <div className="flex items-start gap-2.5">
-                            <span className="text-lg animate-bounce">⚠️</span>
+                            <span className="text-lg animate-bounce">â ï¸</span>
                             <div className="space-y-1.5 flex-1">
                               {speechError === "service-not-allowed" ? (
                                 <>
                                   <p className="font-extrabold uppercase text-white text-[11.5px] tracking-wider">Servicio de Dictado No Permitido o Inactivo</p>
                                   <p className="text-slate-300 font-normal leading-normal text-[11px] normal-case">
-                                    En dispositivos Apple (iPhone, iPad, Mac) u otros navegadores móviles, Apple requiere configuraciones específicas para el dictado web:
+                                    En dispositivos Apple (iPhone, iPad, Mac) u otros navegadores mÃ³viles, Apple requiere configuraciones especÃ­ficas para el dictado web:
                                   </p>
                                   <ul className="list-disc pl-4 text-slate-350 font-normal text-[10.5px] normal-case space-y-1">
                                     <li>
-                                      <strong className="text-slate-200">Usa Safari Obligatoriamente:</strong> En iPhone/iPad, Apple bloquea el uso de la API de reconocimiento de voz en navegadores externos como Chrome, Firefox o Brave. Abre este enlace únicamente en <strong className="text-indigo-300">Safari</strong>.
+                                      <strong className="text-slate-200">Usa Safari Obligatoriamente:</strong> En iPhone/iPad, Apple bloquea el uso de la API de reconocimiento de voz en navegadores externos como Chrome, Firefox o Brave. Abre este enlace Ãºnicamente en <strong className="text-indigo-300">Safari</strong>.
                                     </li>
                                     <li>
-                                      <strong className="text-slate-200">Activa el Dictado del Sistema:</strong> Vaya a <strong className="text-slate-200">Ajustes → General → Teclado</strong> en su iPhone y verifique que la opción <strong className="text-white bg-indigo-950 px-1 py-0.5 rounded">"Activar dictado"</strong> esté habilitada.
+                                      <strong className="text-slate-200">Activa el Dictado del Sistema:</strong> Vaya a <strong className="text-slate-200">Ajustes â General â Teclado</strong> en su iPhone y verifique que la opciÃ³n <strong className="text-white bg-indigo-950 px-1 py-0.5 rounded">"Activar dictado"</strong> estÃ© habilitada.
                                     </li>
                                     <li>
-                                      <strong className="text-slate-200">Evita el Simulador (Iframe):</strong> El dictado en tiempo real no puede acceder al micrófono dentro de un entorno encastrado (iframe). Pulsa el botón inferior para abrirlo de forma independiente.
+                                      <strong className="text-slate-200">Evita el Simulador (Iframe):</strong> El dictado en tiempo real no puede acceder al micrÃ³fono dentro de un entorno encastrado (iframe). Pulsa el botÃ³n inferior para abrirlo de forma independiente.
                                     </li>
                                   </ul>
                                 </>
@@ -18584,7 +18591,7 @@ const splitReportAndAnnex = (text: string) => {
                       <textarea
                         value={findings}
                         onChange={(e) => setFindings(e.target.value)}
-                        placeholder="Ocurrencias anatómicas, anomalías o hallazgos radiológicos visualizados..."
+                        placeholder="Ocurrencias anatÃ³micas, anomalÃ­as o hallazgos radiolÃ³gicos visualizados..."
                         rows={3}
                         className={`w-full bg-slate-950/90 border-2 rounded-xl py-3 px-4 text-xs font-bold text-slate-100 focus:outline-none placeholder-slate-600 transition-all duration-200 resize-none ${
                           isListening ? "border-rose-500/60 ring-4 ring-rose-500/10 shadow-inner" : "border-slate-855 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
@@ -18629,15 +18636,15 @@ const splitReportAndAnnex = (text: string) => {
                          </div>
                      </div>
 
-                    {/* Sección Expandible: Datos del Paciente y Personalización del Membrete (PDF) */}
+                    {/* SecciÃ³n Expandible: Datos del Paciente y PersonalizaciÃ³n del Membrete (PDF) */}
                     <div className="border border-slate-800 bg-slate-950/20 rounded-xl p-4 space-y-4">
                       <div className="flex items-center justify-between cursor-pointer select-none" onClick={() => setShowPatientDetails(!showPatientDetails)}>
                         <div className="flex items-center gap-2">
                           <User className="h-4 w-4 text-indigo-400" />
-                          <span className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">🩺 Datos del Paciente y Membrete</span>
+                          <span className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">ð©º Datos del Paciente y Membrete</span>
                         </div>
                         <span className="text-xs text-indigo-400 font-bold hover:text-indigo-350">
-                          {showPatientDetails ? "Ocultar ▲" : "Configurar ▼"}
+                          {showPatientDetails ? "Ocultar â²" : "Configurar â¼"}
                         </span>
                       </div>
 
@@ -18650,13 +18657,13 @@ const splitReportAndAnnex = (text: string) => {
                               type="text"
                               value={patientName}
                               onChange={(e) => setPatientName(e.target.value)}
-                              placeholder="Ej: Juan Pérez Pérez"
+                              placeholder="Ej: Juan PÃ©rez PÃ©rez"
                               className="w-full bg-slate-950 border border-slate-800 focus:border-indigo-500 rounded-lg py-2 px-3 text-xs font-bold text-slate-100 focus:outline-none placeholder-slate-650 transition-all"
                             />
                           </div>
 
                           <div className="space-y-1.5">
-                            <label className="text-[9px] font-black text-slate-500 block uppercase tracking-widest leading-none">ID / Historia Clínica:</label>
+                            <label className="text-[9px] font-black text-slate-500 block uppercase tracking-widest leading-none">ID / Historia ClÃ­nica:</label>
                             <input
                               type="text"
                               value={patientId}
@@ -18682,13 +18689,13 @@ const splitReportAndAnnex = (text: string) => {
                               type="text"
                               value={patientAge}
                               onChange={(e) => setPatientAge(e.target.value)}
-                              placeholder="Ej: 45 años o 45A"
+                              placeholder="Ej: 45 aÃ±os o 45A"
                               className="w-full bg-slate-950 border border-slate-800 focus:border-indigo-500 rounded-lg py-2 px-3 text-xs font-bold text-slate-100 focus:outline-none placeholder-slate-650 transition-all"
                             />
                           </div>
 
                           <div className="space-y-1.5">
-                            <label className="text-[9px] font-black text-slate-500 block uppercase tracking-widest leading-none">Sexo / Género:</label>
+                            <label className="text-[9px] font-black text-slate-500 block uppercase tracking-widest leading-none">Sexo / GÃ©nero:</label>
                             <input
                               type="text"
                               value={patientGender}
@@ -18699,7 +18706,7 @@ const splitReportAndAnnex = (text: string) => {
                           </div>
 
                           <div className="space-y-1.5 sm:col-span-2">
-                            <label className="text-[9px] font-black text-slate-500 block uppercase tracking-widest leading-none">Correo Electrónico del Paciente (Opcional):</label>
+                            <label className="text-[9px] font-black text-slate-500 block uppercase tracking-widest leading-none">Correo ElectrÃ³nico del Paciente (Opcional):</label>
                             <input
                               type="email"
                               value={patientEmail}
@@ -18713,7 +18720,7 @@ const splitReportAndAnnex = (text: string) => {
                           </div>
 
                           <div className="space-y-1.5 sm:col-span-2 border-t border-slate-800/60 pt-3">
-                            <label className="text-[9px] font-black text-slate-500 block uppercase tracking-widest leading-none">Médico Radiólogo (Opcional - No se mostrará si está vacío):</label>
+                            <label className="text-[9px] font-black text-slate-500 block uppercase tracking-widest leading-none">MÃ©dico RadiÃ³logo (Opcional - No se mostrarÃ¡ si estÃ¡ vacÃ­o):</label>
                             <input
                               type="text"
                               value={doctorName}
@@ -18721,13 +18728,13 @@ const splitReportAndAnnex = (text: string) => {
                                 setDoctorName(e.target.value);
                                 localStorage.setItem("rad_doctor_name", e.target.value);
                               }}
-                              placeholder="Ej: Dr. Milton Benavides S. Radiólogo"
+                              placeholder="Ej: Dr. Milton Benavides S. RadiÃ³logo"
                               className="w-full bg-slate-950 border border-slate-800 focus:border-indigo-500 rounded-lg py-2 px-3 text-xs font-bold text-slate-100 focus:outline-none placeholder-slate-650 transition-all"
                             />
                           </div>
 
                           <div className="space-y-1.5 sm:col-span-2">
-                            <label className="text-[9px] font-black text-slate-500 block uppercase tracking-widest leading-none">Cédula Profesional / Registro Médico / Licencia:</label>
+                            <label className="text-[9px] font-black text-slate-500 block uppercase tracking-widest leading-none">CÃ©dula Profesional / Registro MÃ©dico / Licencia:</label>
                             <input
                               type="text"
                               value={doctorLicense}
@@ -18740,7 +18747,7 @@ const splitReportAndAnnex = (text: string) => {
                             />
                           </div>
 
-                          {/* Foto de Firma del Médico */}
+                          {/* Foto de Firma del MÃ©dico */}
                           <div className="space-y-1.5 sm:col-span-2">
                             <label className="text-[9px] font-black text-slate-500 block uppercase tracking-widest leading-none">Foto de Firma / Sello (Opcional):</label>
                             <div className="flex flex-col sm:flex-row gap-2.5 items-start sm:items-center bg-slate-900/40 p-2.5 rounded-lg border border-slate-800/80 w-full">
@@ -18749,7 +18756,7 @@ const splitReportAndAnnex = (text: string) => {
                                 onClick={() => document.getElementById("doctor-signature-file")?.click()}
                                 className="px-3 py-1.5 bg-slate-950 hover:bg-slate-850 text-indigo-400 hover:text-indigo-350 border border-slate-800 rounded-lg text-xs font-mono font-bold tracking-wide transition-all uppercase select-none w-full sm:w-auto text-center shrink-0"
                               >
-                                {customSignatureUrl ? "Cambiar Firma 🖋️" : "Subir Firma 🖋️"}
+                                {customSignatureUrl ? "Cambiar Firma ðï¸" : "Subir Firma ðï¸"}
                               </button>
                               <input
                                 id="doctor-signature-file"
@@ -18784,27 +18791,27 @@ const splitReportAndAnnex = (text: string) => {
                           </div>
 
                           <div className="space-y-1.5 sm:col-span-2">
-                            <label className="text-[9px] font-black text-slate-500 block uppercase tracking-widest leading-none">Nombre de la Institución / Clínica (Opcional - No se mostrará si está vacío):</label>
+                            <label className="text-[9px] font-black text-slate-500 block uppercase tracking-widest leading-none">Nombre de la InstituciÃ³n / ClÃ­nica (Opcional - No se mostrarÃ¡ si estÃ¡ vacÃ­o):</label>
                             <input
                               type="text"
                               value={clinicName}
                               onChange={(e) => setClinicName(e.target.value)}
-                              placeholder="Ej: Clínica de Diagnóstico por Imagen"
+                              placeholder="Ej: ClÃ­nica de DiagnÃ³stico por Imagen"
                               className="w-full bg-slate-950 border border-slate-850 focus:border-indigo-500 rounded-lg py-2 px-3 text-xs font-bold text-slate-100 focus:outline-none placeholder-slate-650 transition-all"
                             />
                           </div>
 
                           <div className="space-y-2 sm:col-span-2">
-                            <label className="text-[9.5px] font-black text-slate-400 block uppercase tracking-widest leading-none">Símbolo / Logotipo del Reporte:</label>
+                            <label className="text-[9.5px] font-black text-slate-400 block uppercase tracking-widest leading-none">SÃ­mbolo / Logotipo del Reporte:</label>
                             
                             {/* Standard Symbols Row & Upload Trigger */}
                             <div className="grid grid-cols-2 md:grid-cols-6 gap-1.5">
                               {[
-                                { id: "none", label: "Ninguno", subtitle: "Sin ilustración" },
-                                { id: "medical-cross", label: "Cruz", subtitle: "Médica tradicional" },
-                                { id: "heart-pulse", label: "Corazón", subtitle: "Cardiorrespiratorio" },
-                                { id: "dna", label: "ADN", subtitle: "Estructura genética" },
-                                { id: "shield-check", label: "Escudo", subtitle: "Protección / Aval" },
+                                { id: "none", label: "Ninguno", subtitle: "Sin ilustraciÃ³n" },
+                                { id: "medical-cross", label: "Cruz", subtitle: "MÃ©dica tradicional" },
+                                { id: "heart-pulse", label: "CorazÃ³n", subtitle: "Cardiorrespiratorio" },
+                                { id: "dna", label: "ADN", subtitle: "Estructura genÃ©tica" },
+                                { id: "shield-check", label: "Escudo", subtitle: "ProtecciÃ³n / Aval" },
                               ].map(logoOpt => (
                                 <button
                                   key={logoOpt.id}
@@ -18911,7 +18918,7 @@ const splitReportAndAnnex = (text: string) => {
                                           ) : (
                                             isActiveLeft && (
                                               <span className="text-[10px]" title="Activo">
-                                                ✓
+                                                â
                                               </span>
                                             )
                                           )}
@@ -18992,9 +18999,9 @@ const splitReportAndAnnex = (text: string) => {
 
                                 {customLogoStyle === "dual" && customLogos.length > 0 && (
                                   <div className="bg-slate-900/40 border border-slate-850 rounded-xl p-3 space-y-2 text-left">
-                                    <span className="text-[8.5px] font-black text-indigo-400 uppercase tracking-widest block">Asignación Doble Logo</span>
+                                    <span className="text-[8.5px] font-black text-indigo-400 uppercase tracking-widest block">AsignaciÃ³n Doble Logo</span>
                                     <p className="text-[8px] text-slate-500 font-bold leading-relaxed">
-                                      Elige el logo izquierdo y el derecho desde la biblioteca (botones Izq / Der). Quedarán más grandes y legibles que un banner combinado.
+                                      Elige el logo izquierdo y el derecho desde la biblioteca (botones Izq / Der). QuedarÃ¡n mÃ¡s grandes y legibles que un banner combinado.
                                     </p>
                                     <div className="flex items-center gap-3">
                                       <div className="flex items-center gap-2">
@@ -19021,8 +19028,8 @@ const splitReportAndAnnex = (text: string) => {
                                 {/* Interactive real-time A4 printable document limits mockup */}
                                 <div className="bg-slate-900/30 border border-slate-850/60 rounded-xl p-3.5 space-y-2.5 text-left">
                                   <div className="flex justify-between items-center">
-                                    <span className="text-[8.5px] font-black text-indigo-400 uppercase tracking-widest font-mono block">Margen de Impresión A4 de Referencia:</span>
-                                    <span className="text-[7.5px] text-slate-400 font-bold block bg-slate-950 px-1.5 py-0.5 rounded border border-slate-850">Previsualización Física</span>
+                                    <span className="text-[8.5px] font-black text-indigo-400 uppercase tracking-widest font-mono block">Margen de ImpresiÃ³n A4 de Referencia:</span>
+                                    <span className="text-[7.5px] text-slate-400 font-bold block bg-slate-950 px-1.5 py-0.5 rounded border border-slate-850">PrevisualizaciÃ³n FÃ­sica</span>
                                   </div>
 
                                   <div className="flex justify-center py-2 bg-slate-950/40 rounded-lg">
@@ -19030,7 +19037,7 @@ const splitReportAndAnnex = (text: string) => {
                                       className="relative bg-white border border-gray-200 shadow-md p-2 flex flex-col justify-between select-none overflow-hidden"
                                       style={{ width: "130px", height: "184px" }}
                                     >
-                                      {/* Margen A4 Guías de Esquina / Trim Marks */}
+                                      {/* Margen A4 GuÃ­as de Esquina / Trim Marks */}
                                       <div className="absolute top-2 left-0 w-2 h-[0.5px] bg-red-400/60"></div>
                                       <div className="absolute top-0 left-2 w-[0.5px] h-2 bg-red-400/60"></div>
                                       <div className="absolute top-2 right-0 w-2 h-[0.5px] bg-red-400/60"></div>
@@ -19040,13 +19047,13 @@ const splitReportAndAnnex = (text: string) => {
                                       <div className="absolute bottom-2 right-0 w-2 h-[0.5px] bg-red-400/60"></div>
                                       <div className="absolute bottom-0 right-2 w-[0.5px] h-2 bg-red-400/60"></div>
 
-                                      {/* Guías de regla de margen de impresión lateral y superior */}
+                                      {/* GuÃ­as de regla de margen de impresiÃ³n lateral y superior */}
                                       <div className="absolute left-2 top-0 bottom-0 border-l border-dashed border-rose-200/50 pointer-events-none"></div>
                                       <div className="absolute right-2 top-0 bottom-0 border-r border-dashed border-rose-200/50 pointer-events-none"></div>
                                       <div className="absolute top-2 left-0 right-0 border-t border-dashed border-rose-200/50 pointer-events-none"></div>
                                       <div className="absolute bottom-2 left-0 right-0 border-b border-dashed border-rose-200/50 pointer-events-none"></div>
 
-                                      {/* Indicador de Límites de impresión */}
+                                      {/* Indicador de LÃ­mites de impresiÃ³n */}
                                       <div className="absolute top-0.5 left-2.5 text-[3.5px] font-black text-rose-500 font-mono leading-none pointer-events-none scale-75 origin-left">
                                         MARGEN 15mm
                                       </div>
@@ -19122,8 +19129,8 @@ const splitReportAndAnnex = (text: string) => {
 
                                         {/* Safe document bottom signature block */}
                                         <div className="w-full flex justify-between items-center border-t border-slate-100 pt-0.5 text-[3.5px] text-slate-300 tracking-tight">
-                                          <span>Reporte Clínico</span>
-                                          <span>Pág. 1 de 1</span>
+                                          <span>Reporte ClÃ­nico</span>
+                                          <span>PÃ¡g. 1 de 1</span>
                                         </div>
 
                                       </div>
@@ -19132,11 +19139,11 @@ const splitReportAndAnnex = (text: string) => {
 
                                   <div className="text-[7.5px] text-slate-450 leading-relaxed font-mono">
                                     {customLogoStyle === "banner" ? (
-                                      <p><strong className="text-slate-300">Formato Centrado Horizontal:</strong> El logotipo ocupará de forma equilibrada la posición de membrete ancho, alineando toda la documentación exactamente debajo del separador del encabezado.</p>
+                                      <p><strong className="text-slate-300">Formato Centrado Horizontal:</strong> El logotipo ocuparÃ¡ de forma equilibrada la posiciÃ³n de membrete ancho, alineando toda la documentaciÃ³n exactamente debajo del separador del encabezado.</p>
                                     ) : customLogoStyle === "dual" ? (
                                       <p><strong className="text-slate-300">Formato Doble Logo:</strong> Un logotipo a cada extremo del encabezado y el nombre de la clinica al centro. Ideal cuando usas marca institucional + marca personal o dos logos separados.</p>
                                     ) : (
-                                      <p><strong className="text-slate-300">Formato Esquina Superior Izquierda:</strong> El logotipo respetará el margen de encuadre técnico lateral, liberando espacio para las líneas secundarias del destinatario y datos del paciente.</p>
+                                      <p><strong className="text-slate-300">Formato Esquina Superior Izquierda:</strong> El logotipo respetarÃ¡ el margen de encuadre tÃ©cnico lateral, liberando espacio para las lÃ­neas secundarias del destinatario y datos del paciente.</p>
                                     )}
                                   </div>
                                 </div>
@@ -19165,12 +19172,12 @@ const splitReportAndAnnex = (text: string) => {
                       />
                       <div className="min-w-0">
                         <p className="text-[10px] font-black uppercase tracking-wider text-slate-200">
-                          Activar suite 3D espec�fica con Reporte completo
+                          Activar suite 3D específica con Reporte completo
                         </p>
                         <p className="mt-0.5 text-[9px] leading-relaxed text-slate-500">
                           {selectedSpecificSuite
-                            ? `${selectedSpecificSuite.label} se generar� autom�ticamente porque seleccionaste �${specificStudy}�.`
-                            : "El estudio seleccionado no tiene una suite 3D espec�fica; podr�s elegir Atlas u otros m�dulos despu�s."}
+                            ? `${selectedSpecificSuite.label} se generará automáticamente porque seleccionaste «${specificStudy}».`
+                            : "El estudio seleccionado no tiene una suite 3D específica; podrás elegir Atlas u otros módulos después."}
                         </p>
                       </div>
                     </label>
@@ -19184,10 +19191,10 @@ const splitReportAndAnnex = (text: string) => {
                       />
                       <div className="min-w-0">
                         <p className="text-[10px] font-black uppercase tracking-wider text-slate-200">
-                          Pulido cl�nico autom�tico con Reporte completo
+                          Pulido clínico automático con Reporte completo
                         </p>
                         <p className="mt-0.5 text-[9px] leading-relaxed text-slate-500">
-                          Cierra negatividades, aplica sugerencias seguras del segundo lector e incorpora clasificaciones (BI-RADS, TI-RADS, Fleischner?); t� revisas un diff corto.
+                          Scorecard → prosa, negatividades, segundo lector y clasificaciones (BI-RADS, TI-RADS, Fleischner…); tú revisas un diff corto.
                         </p>
                       </div>
                     </label>
@@ -19222,7 +19229,7 @@ const splitReportAndAnnex = (text: string) => {
                         onClick={() => handleGenerateReport("full")}
                         disabled={isGenerating || !studyType.trim()}
                         className="w-full bg-indigo-600 hover:bg-indigo-550 text-white font-black py-4 px-5 rounded-xl text-[11px] uppercase tracking-widest shadow-[0_4px_16px_rgba(99,102,241,0.4)] disabled:opacity-50 disabled:cursor-not-allowed transition-all flex flex-col items-center justify-center gap-1.5 cursor-pointer border border-indigo-400/30"
-                        title="Informe + m�dulos predeterminados, suite 3D del estudio y pulido cl�nico autom�tico"
+                        title="Informe + módulos predeterminados, suite 3D del estudio y pulido clínico automático"
                       >
                         {isGenerating ? (
                           <>
@@ -19234,7 +19241,7 @@ const splitReportAndAnnex = (text: string) => {
                             <Sparkles className="h-4 w-4 text-amber-200" />
                             <span>Reporte completo</span>
                             <span className="text-[8px] font-bold normal-case tracking-normal text-indigo-100/80 text-center leading-snug">
-                              + Scorecard, suite 3D y pulido cl�nico
+                              + Scorecard, suite 3D y pulido clínico
                             </span>
                           </>
                         )}
@@ -19242,7 +19249,7 @@ const splitReportAndAnnex = (text: string) => {
                     </div>
                   </div>
 
-                  {/* 💬 CHAT INTELIGENTE MÉDICO-RADIOLÓGICO */}
+                  {/* ð¬ CHAT INTELIGENTE MÃDICO-RADIOLÃGICO */}
                   <div className={isSmartChatExpanded
                     ? "fixed inset-4 md:inset-10 z-50 bg-[#090D1A]/98 backdrop-blur-2xl border-2 border-indigo-500/40 rounded-3xl p-6 md:p-8 flex flex-col space-y-4 shadow-2xl overflow-hidden transition-all duration-355"
                     : "bg-[#090D1A] border-2 border-slate-855 rounded-3xl p-5 shadow-2xl space-y-4 flex flex-col h-[520px] justify-between transition-all duration-355"
@@ -19251,10 +19258,10 @@ const splitReportAndAnnex = (text: string) => {
                       <div className="flex flex-col gap-0.5">
                         <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest font-mono flex items-center gap-1.5 select-none">
                           <Activity className="h-4 w-4 text-indigo-400 animate-pulse" />
-                          Chat Inteligente Médico-Radiológico
+                          Chat Inteligente MÃ©dico-RadiolÃ³gico
                         </span>
                         <span className="text-[9px] text-slate-500 font-bold uppercase select-none flex items-center gap-1">
-                          Consulta clasificaciones, dosis, nomenclatura y patologías
+                          Consulta clasificaciones, dosis, nomenclatura y patologÃ­as
                         </span>
                       </div>
                       <div className="flex items-center gap-3">
@@ -19266,7 +19273,7 @@ const splitReportAndAnnex = (text: string) => {
                               ? "bg-indigo-950/90 border-indigo-500/50 text-indigo-300 ring-1 ring-indigo-500/30"
                               : "bg-slate-900 hover:bg-slate-850 border-slate-800 text-slate-400 hover:text-slate-100"
                           }`}
-                          title={isSmartChatExpanded ? "Restaurar tamaño estándar de chat" : "Maximizar área de chat (Modo Expandido)"}
+                          title={isSmartChatExpanded ? "Restaurar tamaÃ±o estÃ¡ndar de chat" : "Maximizar Ã¡rea de chat (Modo Expandido)"}
                         >
                           {isSmartChatExpanded ? (
                             <Minimize2 className="h-4 w-4" />
@@ -19281,7 +19288,7 @@ const splitReportAndAnnex = (text: string) => {
                               {
                                 id: "welcome",
                                 role: "model",
-                                text: "¡Hola! Soy tu **Asistente Inteligente Médico-Radiológico**. Consulta clasificaciones (ej. Neer o Bosniak), dosis de contraste o términos. Te brindaré resúmenes exportables para inyectarlos directo en el reporte."
+                                text: "Â¡Hola! Soy tu **Asistente Inteligente MÃ©dico-RadiolÃ³gico**. Consulta clasificaciones (ej. Neer o Bosniak), dosis de contraste o tÃ©rminos. Te brindarÃ© resÃºmenes exportables para inyectarlos directo en el reporte."
                               }
                             ]);
                             setSmartChatError(null);
@@ -19314,12 +19321,12 @@ const splitReportAndAnnex = (text: string) => {
                               {msg.role === "user" ? (
                                 <>
                                   <User className="h-3 w-3 text-indigo-400" />
-                                  <span>Médico Radiólogo</span>
+                                  <span>MÃ©dico RadiÃ³logo</span>
                                 </>
                               ) : (
                                 <>
                                   <Brain className="h-3 w-3 text-indigo-400 animate-pulse" />
-                                  <span className="text-indigo-400 font-bold">Gemini Médico AI</span>
+                                  <span className="text-indigo-400 font-bold">Gemini MÃ©dico AI</span>
                                 </>
                               )}
                             </div>
@@ -19343,20 +19350,20 @@ const splitReportAndAnnex = (text: string) => {
                                         }
                                       }}
                                       className="px-2 py-1 bg-slate-900 hover:bg-slate-850 text-slate-400 hover:text-slate-250 rounded-md border border-slate-800 transition-all flex items-center gap-1 cursor-pointer"
-                                      title="Copiar respuesta médica sin la escala"
+                                      title="Copiar respuesta mÃ©dica sin la escala"
                                     >
-                                      <span>📋 Copiar Nota</span>
+                                      <span>ð Copiar Nota</span>
                                     </button>
                                     <button
                                       type="button"
                                       onClick={() => {
                                         const cleanText = msg.text.replace(/\[RESUMEN_CLASIFICACION\][\s\S]*?\[\/RESUMEN_CLASIFICACION\]/g, "").trim();
-                                        handleAppendBlockToReport(`\n\n**Nota de Consulta Radiológica:**\n${cleanText}`);
+                                        handleAppendBlockToReport(`\n\n**Nota de Consulta RadiolÃ³gica:**\n${cleanText}`);
                                       }}
                                       className="px-2 py-1 bg-slate-900 hover:bg-indigo-950 text-indigo-350 hover:text-indigo-250 rounded-md border border-slate-800/80 transition-all flex items-center gap-1 cursor-pointer"
                                       title="Inyectar esta respuesta al final del reporte en progreso"
                                     >
-                                      <span>📥 Inyectar Nota</span>
+                                      <span>ð¥ Inyectar Nota</span>
                                     </button>
                                   </div>
 
@@ -19365,7 +19372,7 @@ const splitReportAndAnnex = (text: string) => {
                                     <div className="mt-3.5 p-3.5 bg-emerald-950/20 border-2 border-emerald-500/15 rounded-xl space-y-2.5 animate-fadeIn text-left">
                                       <div className="text-[8.5px] font-black text-emerald-450 uppercase tracking-widest font-mono flex items-center gap-1.5">
                                         <Sparkles className="h-3.5 w-3.5 text-emerald-400 animate-pulse" />
-                                        <span>Resumen de Clasificación Listo:</span>
+                                        <span>Resumen de ClasificaciÃ³n Listo:</span>
                                       </div>
                                       <div className="text-[10px] text-slate-300 bg-slate-950/60 p-2.5 rounded-lg border border-slate-900/60 font-semibold italic whitespace-pre-wrap leading-normal select-text">
                                         {msg.summary}
@@ -19373,12 +19380,12 @@ const splitReportAndAnnex = (text: string) => {
                                       <button
                                         type="button"
                                         onClick={() => {
-                                          handleAppendBlockToReport(`\n\n### CONCLUSIÓN DE CLASIFICACIÓN\n${msg.summary}`);
+                                          handleAppendBlockToReport(`\n\n### CONCLUSIÃN DE CLASIFICACIÃN\n${msg.summary}`);
                                         }}
                                         className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer shadow-md"
                                       >
                                         <span>Inyectar Escala Resumida al Reporte</span>
-                                        <span>📥</span>
+                                        <span>ð¥</span>
                                       </button>
                                     </div>
                                   )}
@@ -19394,7 +19401,7 @@ const splitReportAndAnnex = (text: string) => {
                           <div className="bg-slate-950 border border-slate-850 rounded-2xl p-3.5 max-w-[85%] shadow-md">
                             <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-indigo-400 font-mono">
                               <Loader2 className="h-4.5 w-4.5 animate-spin" />
-                              <span>Consultando escalas y base médica...</span>
+                              <span>Consultando escalas y base mÃ©dica...</span>
                             </div>
                           </div>
                         </div>
@@ -19402,7 +19409,7 @@ const splitReportAndAnnex = (text: string) => {
 
                       {smartChatError && (
                         <div className="p-3 bg-rose-955/20 border border-rose-900/40 rounded-xl text-[10px] text-rose-450 font-bold select-text text-left">
-                          ⚠️ {smartChatError}
+                          â ï¸ {smartChatError}
                         </div>
                       )}
 
@@ -19419,7 +19426,7 @@ const splitReportAndAnnex = (text: string) => {
                     >
                       <input
                         type="text"
-                        placeholder="Consulta: dosis, clasificaciones, términos..."
+                        placeholder="Consulta: dosis, clasificaciones, tÃ©rminos..."
                         value={smartChatInput}
                         onChange={(e) => setSmartChatInput(e.target.value)}
                         className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs font-bold text-slate-200 placeholder-slate-650 focus:outline-none focus:border-indigo-500 font-sans"
@@ -19455,7 +19462,7 @@ const splitReportAndAnnex = (text: string) => {
                           {isAnalyzingParagraphs && (
                             <div className="flex items-center gap-1.5 bg-indigo-950/40 border border-indigo-800/45 px-2 py-0.5 rounded text-[9px] font-bold text-indigo-300 animate-pulse font-mono uppercase tracking-wider">
                               <span className="w-1 h-1 rounded-full bg-indigo-400 animate-ping" />
-                              IA Analizando Selección...
+                              IA Analizando SelecciÃ³n...
                             </div>
                           )}
                         </div>
@@ -19467,7 +19474,7 @@ const splitReportAndAnnex = (text: string) => {
                               ? "bg-indigo-950/90 border-indigo-500/50 text-indigo-300 ring-1 ring-indigo-500/30"
                               : "bg-slate-900 hover:bg-slate-850 border-slate-800 text-slate-400 hover:text-slate-100"
                           }`}
-                          title={isMainReportExpanded ? "Restaurar tamaño estándar de componente" : "Maximizar área de lectura (Modo Expandido)"}
+                          title={isMainReportExpanded ? "Restaurar tamaÃ±o estÃ¡ndar de componente" : "Maximizar Ã¡rea de lectura (Modo Expandido)"}
                         >
                           {isMainReportExpanded ? (
                             <Minimize2 className="h-4 w-4" />
@@ -19483,14 +19490,14 @@ const splitReportAndAnnex = (text: string) => {
                             onClick={handleGenerateInfographic}
                             disabled={isGeneratingInfographic}
                             className="px-3 md:px-4 py-1.5 md:py-2 bg-pink-700 hover:bg-pink-600 border-2 border-pink-500/30 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider text-white transition-all flex items-center gap-1.5 md:gap-2 shadow-lg select-none whitespace-nowrap cursor-pointer"
-                            title="Generar infografía explicativa para el paciente"
+                            title="Generar infografÃ­a explicativa para el paciente"
                           >
                             {isGeneratingInfographic ? (
                               <>
                                 <Loader2 className="h-3.5 w-3.5 animate-spin" /> Generando...
                               </>
                             ) : (
-                                "Infografía Paciente"
+                                "InfografÃ­a Paciente"
                             )}
                           </button>
                           <button
@@ -19509,7 +19516,7 @@ const splitReportAndAnnex = (text: string) => {
                           <button
                             onClick={handlePrintPDF}
                             className="px-3 md:px-4 py-1.5 md:py-2 bg-indigo-600 hover:bg-indigo-550 border-2 border-indigo-500/30 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider text-white transition-all flex items-center gap-1.5 md:gap-2 shadow-lg select-none whitespace-nowrap cursor-pointer"
-                            title="Imprimir o exportar diseño de informe a PDF listo"
+                            title="Imprimir o exportar diseÃ±o de informe a PDF listo"
                           >
                             <Printer className="h-3.5 w-3.5" /> PDF / Imprimir
                           </button>
@@ -19552,11 +19559,11 @@ const splitReportAndAnnex = (text: string) => {
                             onClick={handleCopyEhrPortalLink}
                             disabled={isSavingToCloud}
                             className="px-3 md:px-4 py-1.5 md:py-2 bg-indigo-950/40 hover:bg-indigo-950/80 border-2 border-indigo-500/40 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider text-indigo-300 transition-all flex items-center gap-1.5 md:gap-2 shadow-lg select-none whitespace-nowrap cursor-pointer"
-                            title="Copiar texto con el enlace del reporte en la nube para el expediente clínico"
+                            title="Copiar texto con el enlace del reporte en la nube para el expediente clÃ­nico"
                           >
                             {copiedEhrStudyId === "current_active_report" ? (
                               <>
-                                <Check className="h-3.5 w-3.5 text-emerald-400" /> ¡Enlace Copiado!
+                                <Check className="h-3.5 w-3.5 text-emerald-400" /> Â¡Enlace Copiado!
                               </>
                             ) : (
                               <>
@@ -19575,7 +19582,7 @@ const splitReportAndAnnex = (text: string) => {
                         {infographicUrl && (
                           <div className="mb-6 p-4 bg-slate-800 rounded-xl border border-pink-600/30">
                              <div className="flex justify-between items-center mb-2 flex-wrap gap-2">
-                               <h4 className="text-sm font-bold text-pink-300">Infografía Generada:</h4>
+                               <h4 className="text-sm font-bold text-pink-300">InfografÃ­a Generada:</h4>
                                <button
                                  type="button"
                                  onClick={() => setAttachInfographicToOfficialReport(prev => !prev)}
@@ -19584,7 +19591,7 @@ const splitReportAndAnnex = (text: string) => {
                                      ? "bg-emerald-950/80 border-emerald-500/50 text-emerald-350 shadow-[0_2px_8px_rgba(16,185,129,0.2)]"
                                      : "bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-100"
                                  }`}
-                                 title={attachInfographicToOfficialReport ? "La infografía se incluirá al final del reporte original como un anexo" : "Adjuntar esta infografía como un anexo al reporte original"}
+                                 title={attachInfographicToOfficialReport ? "La infografÃ­a se incluirÃ¡ al final del reporte original como un anexo" : "Adjuntar esta infografÃ­a como un anexo al reporte original"}
                                >
                                  {attachInfographicToOfficialReport ? (
                                    <>
@@ -19599,12 +19606,12 @@ const splitReportAndAnnex = (text: string) => {
                                  )}
                                </button>
                              </div>
-                             <img src={infographicUrl} alt="Infografía Paciente" className="w-full rounded-lg" referrerPolicy="no-referrer" />
+                             <img src={infographicUrl} alt="InfografÃ­a Paciente" className="w-full rounded-lg" referrerPolicy="no-referrer" />
                              <div className="mt-3 flex justify-end gap-2">
                                <button
                                  onClick={() => handleOpenWhatsAppShare('patient_infographic')}
                                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-550 border-2 border-emerald-500/30 rounded-xl text-xs font-black uppercase tracking-wider text-white transition-all flex items-center gap-2 shadow-lg cursor-pointer"
-                                 title="Compartir infografía visual por WhatsApp directamente"
+                                 title="Compartir infografÃ­a visual por WhatsApp directamente"
                                >
                                  <MessageSquare className="h-4 w-4" /> Enviar por WhatsApp
                                 </button>
@@ -19612,7 +19619,7 @@ const splitReportAndAnnex = (text: string) => {
                                   type="button"
                                   onClick={() => handleOpenGmailShare('patient_infographic')}
                                   className="px-4 py-2 bg-red-750 hover:bg-red-700 border-2 border-red-500/30 rounded-xl text-xs font-black uppercase tracking-wider text-white transition-all flex items-center gap-2 shadow-lg cursor-pointer animate-fadeIn"
-                                  title="Compartir infografía visual por Correo Electrónico usando Gmail"
+                                  title="Compartir infografÃ­a visual por Correo ElectrÃ³nico usando Gmail"
                                 >
                                   <Mail className="h-4 w-4 text-white" /> Enviar por Gmail
                                 </button>
@@ -19631,7 +19638,7 @@ const splitReportAndAnnex = (text: string) => {
                           </div>
                           <h3 className="text-sm font-black text-slate-200 uppercase tracking-widest">Sin Reporte de Estudio redactado</h3>
                           <p className="text-[11px] font-bold text-slate-500 max-w-sm mt-2 uppercase tracking-wide leading-relaxed">
-                            Rellena los parámetros en el panel izquierdo y presiona "Redactar Informe Médico" para recibir un informe estructurado impecable, listo para copiar y pegar.
+                            Rellena los parÃ¡metros en el panel izquierdo y presiona "Redactar Informe MÃ©dico" para recibir un informe estructurado impecable, listo para copiar y pegar.
                           </p>
                         </div>
                       )}
@@ -19644,9 +19651,9 @@ const splitReportAndAnnex = (text: string) => {
                               <span className="h-12 w-12 rounded-full border-4 border-indigo-900/20 border-t-indigo-500 animate-spin"></span>
                               <Activity className="h-5 w-5 text-indigo-400 absolute inset-0 m-auto animate-pulse" />
                             </div>
-                            <div className="text-xs font-black text-slate-300 uppercase tracking-widest font-mono">Procesador Diagnóstico AI</div>
+                            <div className="text-xs font-black text-slate-300 uppercase tracking-widest font-mono">Procesador DiagnÃ³stico AI</div>
                             <div className="text-[11px] font-black text-indigo-400 animate-pulse font-mono max-w-xs uppercase tracking-widest">{generationSteps}</div>
-                            <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider max-w-md">Gemini está interpretando la anatomía clínica con reglas radiológicas académicas...</div>
+                            <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider max-w-md">Gemini estÃ¡ interpretando la anatomÃ­a clÃ­nica con reglas radiolÃ³gicas acadÃ©micas...</div>
                           </div>
                         </div>
                       )}
@@ -19656,10 +19663,10 @@ const splitReportAndAnnex = (text: string) => {
                         <div className="p-5 bg-rose-950/10 border-2 border-rose-900/40 rounded-2xl text-rose-400 flex items-start gap-4">
                           <AlertCircle className="h-6 w-6 shrink-0 mt-0.5 text-rose-400" />
                           <div>
-                            <h4 className="text-xs font-black uppercase tracking-wider">Error de Generación:</h4>
+                            <h4 className="text-xs font-black uppercase tracking-wider">Error de GeneraciÃ³n:</h4>
                             <p className="text-xs text-rose-300 font-bold mt-1.5 leading-relaxed whitespace-pre-wrap">{reportError}</p>
                             <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-2">
-                              Sugerencia: Revisa los secretos de tu API key en "Settings" o reitera el prompt con instrucciones más sencillas.
+                              Sugerencia: Revisa los secretos de tu API key en "Settings" o reitera el prompt con instrucciones mÃ¡s sencillas.
                             </p>
                           </div>
                         </div>
@@ -19687,7 +19694,7 @@ const splitReportAndAnnex = (text: string) => {
                                 onClick={handleRevertReport}
                                 disabled={reportHistory.length === 0}
                                 className="px-3 py-2 bg-slate-900 hover:bg-slate-850 disabled:bg-slate-950 disabled:opacity-30 border border-slate-800 disabled:border-slate-900 text-indigo-450 hover:text-indigo-450 disabled:text-slate-600 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center gap-1.5 font-mono select-none"
-                                title="Volver a la versión previa del reporte"
+                                title="Volver a la versiÃ³n previa del reporte"
                               >
                                 <Undo className="h-3.5 w-3.5" />
                                 Revertir ({reportHistory.length})
@@ -19699,7 +19706,7 @@ const splitReportAndAnnex = (text: string) => {
                                   id="btn-redo-report"
                                   onClick={handleRedoReport}
                                   className="px-3 py-2 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-emerald-400 hover:text-emerald-300 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center gap-1.5 font-mono select-none"
-                                  title="Avanzar a la versión más reciente"
+                                  title="Avanzar a la versiÃ³n mÃ¡s reciente"
                                 >
                                   <RotateCcw className="h-3.5 w-3.5 transform scale-x-[-1]" />
                                   Rehacer ({reportRedoHistory.length})
@@ -19719,7 +19726,7 @@ const splitReportAndAnnex = (text: string) => {
                                         ? "bg-amber-600 border-amber-500 text-white shadow-md shadow-amber-950"
                                         : "bg-slate-900 hover:bg-slate-850 border-slate-800 text-amber-500 hover:text-amber-400"
                                     }`}
-                                    title="Ver comparación visual lado a lado con el reporte original"
+                                    title="Ver comparaciÃ³n visual lado a lado con el reporte original"
                                   >
                                     <Layers className="h-3.5 w-3.5" />
                                     {showVersionComparison ? "Ver Reporte Final" : "Comparar Versiones"}
@@ -19765,7 +19772,7 @@ const splitReportAndAnnex = (text: string) => {
                               <React.Suspense
                                 fallback={
                                   <div className="p-4 text-xs font-mono text-cyan-400 bg-slate-900/60 rounded-xl border border-cyan-900/40 animate-pulse">
-                                    Cargando pulido cl�nico...
+                                    Cargando pulido clínico...
                                   </div>
                                 }
                               >
@@ -19790,7 +19797,7 @@ const splitReportAndAnnex = (text: string) => {
                                 <div className="flex items-center justify-between">
                                   <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest font-mono flex items-center gap-2">
                                     <Zap className="h-3.5 w-3.5 text-indigo-400 animate-pulse" />
-                                    Herramientas de Reformateo Clínico Posterior (IA)
+                                    Herramientas de Reformateo ClÃ­nico Posterior (IA)
                                   </span>
                                   {originalBaseReport && originalBaseReport !== generatedReport && (
                                     <button
@@ -19804,7 +19811,7 @@ const splitReportAndAnnex = (text: string) => {
                                         setEditedReportText(originalBaseReport);
                                       }}
                                       className="px-2.5 py-1 bg-rose-950/40 hover:bg-rose-950/80 border border-rose-500/30 hover:border-rose-500/70 text-rose-350 hover:text-rose-300 text-[8.5px] font-black uppercase tracking-wider rounded-lg transition-all duration-200 cursor-pointer flex items-center gap-1.5 font-mono"
-                                      title="Restaurar el informe clínico a la versión original de generación"
+                                      title="Restaurar el informe clÃ­nico a la versiÃ³n original de generaciÃ³n"
                                     >
                                       <RotateCcw className="h-3 w-3" />
                                       Restablecer Original Base
@@ -19812,55 +19819,55 @@ const splitReportAndAnnex = (text: string) => {
                                   )}
                                 </div>
                                 <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider leading-relaxed">
-                                  Modifica el estilo, extensión o idioma del reporte actual al instante sin alterar de forma permanente tus instrucciones de prompt personalizadas.
+                                  Modifica el estilo, extensiÃ³n o idioma del reporte actual al instante sin alterar de forma permanente tus instrucciones de prompt personalizadas.
                                 </p>
 
                                 <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 pt-1 font-mono">
                                   <button
                                     type="button"
-                                    onClick={() => handleModifyReport("Reescribe este informe clínico entero para que sea sumamente breve y directo: prioriza únicamente los hallazgos anormales relevantes y las conclusiones críticas o sospechas diagnósticas clave. Elimina información redundante o confirmaciones de normalidad extensas. Conserva el formato markdown original de forma idéntica.")}
+                                    onClick={() => handleModifyReport("Reescribe este informe clÃ­nico entero para que sea sumamente breve y directo: prioriza Ãºnicamente los hallazgos anormales relevantes y las conclusiones crÃ­ticas o sospechas diagnÃ³sticas clave. Elimina informaciÃ³n redundante o confirmaciones de normalidad extensas. Conserva el formato markdown original de forma idÃ©ntica.")}
                                     disabled={isModifyingReport}
                                     className="px-2 py-2 bg-slate-950 hover:bg-slate-850 border border-slate-800 hover:border-indigo-500/45 disabled:opacity-40 text-slate-350 hover:text-indigo-400 text-[8.5px] font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer font-mono"
-                                    title="Reducir el informe a hallazgos críticos de forma asertiva"
+                                    title="Reducir el informe a hallazgos crÃ­ticos de forma asertiva"
                                   >
-                                    {isModifyingReport ? "Procesando..." : "Redacción Corta ⚡"}
+                                    {isModifyingReport ? "Procesando..." : "RedacciÃ³n Corta â¡"}
                                   </button>
 
                                   <button
                                     type="button"
-                                    onClick={() => handleModifyReport("Por favor, incrementa LIGERAMENTE el nivel de detalle y la extensión de este informe de forma muy controlada y asertiva en comparación con el original. Añade precisiones clínicas pertinentes, discute de forma concisa detalles anatómicos o de simetrías clave, pero evita a toda costa descripciones excesivamente largas, redundancias, párrafos gigantescos o reiteraciones innecesarias. El aumento en la extensión debe ser muy moderado. Conserva el formato de secciones markdown original de manera idéntica.")}
+                                    onClick={() => handleModifyReport("Por favor, incrementa LIGERAMENTE el nivel de detalle y la extensiÃ³n de este informe de forma muy controlada y asertiva en comparaciÃ³n con el original. AÃ±ade precisiones clÃ­nicas pertinentes, discute de forma concisa detalles anatÃ³micos o de simetrÃ­as clave, pero evita a toda costa descripciones excesivamente largas, redundancias, pÃ¡rrafos gigantescos o reiteraciones innecesarias. El aumento en la extensiÃ³n debe ser muy moderado. Conserva el formato de secciones markdown original de manera idÃ©ntica.")}
                                     disabled={isModifyingReport}
                                     className="px-2 py-2 bg-slate-950 hover:bg-slate-850 border border-slate-800 hover:border-indigo-500/45 disabled:opacity-40 text-slate-350 hover:text-indigo-400 text-[8.5px] font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer font-mono"
-                                    title="Incrementar levemente el detalle clínico sin excederse en la extensión"
+                                    title="Incrementar levemente el detalle clÃ­nico sin excederse en la extensiÃ³n"
                                   >
-                                    {isModifyingReport ? "Procesando..." : "Exhaustivo Clínico 🔬"}
+                                    {isModifyingReport ? "Procesando..." : "Exhaustivo ClÃ­nico ð¬"}
                                   </button>
 
                                   <button
                                     type="button"
-                                    onClick={() => handleModifyReport("Analiza el reporte clínico actual y asocia rigurosamente el código diagnóstico de clasificación internacional CIE-10 (ICD-10) apropiado al lado de cada hallazgo patológico detectado y de cada impresión diagnóstica final. Reescribe el informe insertando estos códigos sin omitir ninguna otra información.")}
+                                    onClick={() => handleModifyReport("Analiza el reporte clÃ­nico actual y asocia rigurosamente el cÃ³digo diagnÃ³stico de clasificaciÃ³n internacional CIE-10 (ICD-10) apropiado al lado de cada hallazgo patolÃ³gico detectado y de cada impresiÃ³n diagnÃ³stica final. Reescribe el informe insertando estos cÃ³digos sin omitir ninguna otra informaciÃ³n.")}
                                     disabled={isModifyingReport}
                                     className="px-2 py-2 bg-slate-950 hover:bg-slate-850 border border-slate-800 hover:border-indigo-500/45 disabled:opacity-40 text-slate-350 hover:text-indigo-400 text-[8.5px] font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer font-mono"
-                                    title="Codificar patologías según la norma internacional CIE-10"
+                                    title="Codificar patologÃ­as segÃºn la norma internacional CIE-10"
                                   >
-                                    {isModifyingReport ? "Procesando..." : "Formato CIE-10 🏷️"}
+                                    {isModifyingReport ? "Procesando..." : "Formato CIE-10 ð·ï¸"}
                                   </button>
 
                                   <button
                                     type="button"
-                                    onClick={() => handleModifyReport("Traduce todo el informe clínico actual al inglés médico académico utilizando estrictamente la terminología estándar oficial de la ACR. Traduce todo el texto de hallazgos, conclusiones, datos del paciente y títulos, pero mantén el formato markdown estructurado original de forma idéntica.")}
+                                    onClick={() => handleModifyReport("Traduce todo el informe clÃ­nico actual al inglÃ©s mÃ©dico acadÃ©mico utilizando estrictamente la terminologÃ­a estÃ¡ndar oficial de la ACR. Traduce todo el texto de hallazgos, conclusiones, datos del paciente y tÃ­tulos, pero mantÃ©n el formato markdown estructurado original de forma idÃ©ntica.")}
                                     disabled={isModifyingReport}
                                     className="px-2 py-2 bg-slate-950 hover:bg-slate-850 border border-slate-800 hover:border-indigo-500/45 disabled:opacity-40 text-slate-350 hover:text-indigo-400 text-[8.5px] font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer font-mono"
-                                    title="Traducir reporte a inglés médico ACR estándar"
+                                    title="Traducir reporte a inglÃ©s mÃ©dico ACR estÃ¡ndar"
                                   >
-                                    {isModifyingReport ? "Procesando..." : "Inglés Médico 🇺🇸"}
+                                    {isModifyingReport ? "Procesando..." : "InglÃ©s MÃ©dico ðºð¸"}
                                   </button>
                                 </div>
                               </div>
 
                               <div className="border-t border-slate-850 pt-3 flex flex-col sm:flex-row items-center justify-between gap-3">
                                 <span className="text-[9px] text-slate-500 font-extrabold uppercase tracking-wider font-mono">
-                                  Integración de Datos Hospitalarios (RIS/PACS)
+                                  IntegraciÃ³n de Datos Hospitalarios (RIS/PACS)
                                 </span>
                                 <button
                                   type="button"
@@ -19869,7 +19876,7 @@ const splitReportAndAnnex = (text: string) => {
                                       reportId: `REP-${Math.floor(Math.random() * 90000) + 10000}`,
                                       timestamp: new Date().toISOString(),
                                       modalidad: modality,
-                                      doctor: doctorName || "Doble Valoración IA",
+                                      doctor: doctorName || "Doble ValoraciÃ³n IA",
                                       paciente: patientName || "Sin Nombre Registrado",
                                       estudio: specificStudy || "General",
                                       informe_borrador_raw: editedReportText || generatedReport
@@ -19883,10 +19890,10 @@ const splitReportAndAnnex = (text: string) => {
                                     downloadAnchor.remove();
                                   }}
                                   className="w-full sm:w-auto px-4 py-2.5 bg-emerald-950/40 hover:bg-emerald-950/80 border border-emerald-900/30 hover:border-emerald-500/50 text-emerald-400 hover:text-emerald-350 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-200 flex items-center justify-center gap-2 font-mono cursor-pointer"
-                                  title="Exportar archivo de integración PACS/EHR RIS"
+                                  title="Exportar archivo de integraciÃ³n PACS/EHR RIS"
                                 >
                                   <Database className="h-4 w-4 text-emerald-555" />
-                                  <span>Exportar a PACS (JSON) 💾</span>
+                                  <span>Exportar a PACS (JSON) ð¾</span>
                                 </button>
                               </div>
                             </div>
@@ -19906,7 +19913,7 @@ const splitReportAndAnnex = (text: string) => {
                                   </span>
                                 </div>
                                 <div className="flex-1 overflow-y-auto select-text text-xs leading-relaxed text-slate-400 font-mono whitespace-pre-wrap scrollbar-thin p-1 bg-slate-900/20 rounded-xl border border-slate-900">
-                                  {originalBaseReport || "No hay versión original registrada todavía de este dictado."}
+                                  {originalBaseReport || "No hay versiÃ³n original registrada todavÃ­a de este dictado."}
                                 </div>
                               </div>
 
@@ -19915,14 +19922,14 @@ const splitReportAndAnnex = (text: string) => {
                                 <div className="pb-3 border-b border-indigo-900/20 flex items-center justify-between mb-3 shrink-0">
                                   <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest font-mono flex items-center gap-1.5">
                                     <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
-                                    Versión Modificada Actual (v{reportHistory.length + 1})
+                                    VersiÃ³n Modificada Actual (v{reportHistory.length + 1})
                                   </span>
                                   <span className="text-[9px] text-indigo-450 font-mono uppercase font-bold">
                                     {generatedReport ? `${generatedReport.length} caract.` : "0 caract."}
                                   </span>
                                 </div>
                                 <div className="flex-1 overflow-y-auto select-text text-xs leading-relaxed text-slate-200 font-mono whitespace-pre-wrap scrollbar-thin p-1 bg-indigo-950/5 rounded-xl border border-indigo-950/30">
-                                  {generatedReport || "No hay versión modificada registrada todavía."}
+                                  {generatedReport || "No hay versiÃ³n modificada registrada todavÃ­a."}
                                 </div>
                               </div>
                             </div>
@@ -19930,18 +19937,18 @@ const splitReportAndAnnex = (text: string) => {
                             <div className="space-y-3">
                               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                                 <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest font-mono">
-                                  Editor de Texto Radiológico (Manual)
+                                  Editor de Texto RadiolÃ³gico (Manual)
                                 </label>
                                 <span className="text-[9px] font-mono text-slate-500 uppercase">
-                                  Escribe libremente • Los cambios se guardarán en el historial
+                                  Escribe libremente â¢ Los cambios se guardarÃ¡n en el historial
                                 </span>
                               </div>
 
-                              {/* BARRA DE BOTONES DE ALINEACIÓN Y SALTO DE PÁGINA PDF */}
+                              {/* BARRA DE BOTONES DE ALINEACIÃN Y SALTO DE PÃGINA PDF */}
                               <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-900/90 border border-slate-800 rounded-xl p-2.5">
                                 <div className="flex flex-wrap items-center gap-2">
                                   <span className="text-[9.5px] font-black text-slate-400 uppercase tracking-wider font-mono">
-                                    Alineación PDF:
+                                    AlineaciÃ³n PDF:
                                   </span>
                                   <button
                                     type="button"
@@ -19963,10 +19970,10 @@ const splitReportAndAnnex = (text: string) => {
                                       }
                                     }}
                                     className="px-2.5 py-1 bg-teal-950/60 hover:bg-teal-900/80 border border-teal-500/40 text-teal-300 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all duration-150 cursor-pointer flex items-center gap-1.5 font-mono"
-                                    title="Fuerza que el texto siguiente comience al inicio de la siguiente página del PDF"
+                                    title="Fuerza que el texto siguiente comience al inicio de la siguiente pÃ¡gina del PDF"
                                   >
                                     <FileDown className="h-3 w-3 text-teal-400" />
-                                    + Insertar Salto de Página
+                                    + Insertar Salto de PÃ¡gina
                                   </button>
 
                                   <button
@@ -19989,14 +19996,14 @@ const splitReportAndAnnex = (text: string) => {
                                       }
                                     }}
                                     className="px-2.5 py-1 bg-indigo-950/60 hover:bg-indigo-900/80 border border-indigo-500/40 text-indigo-300 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all duration-150 cursor-pointer flex items-center gap-1.5 font-mono"
-                                    title="Inserta un espacio vertical adicional de 10mm en el PDF para empujar títulos huérfanos"
+                                    title="Inserta un espacio vertical adicional de 10mm en el PDF para empujar tÃ­tulos huÃ©rfanos"
                                   >
                                     <ArrowDown className="h-3 w-3 text-indigo-400" />
                                     + Espacio Blanco (+10mm)
                                   </button>
                                 </div>
                                 <span className="text-[9px] text-slate-500 font-mono italic">
-                                  Ideal para evitar títulos huérfanos al final de página
+                                  Ideal para evitar tÃ­tulos huÃ©rfanos al final de pÃ¡gina
                                 </span>
                               </div>
 
@@ -20007,7 +20014,7 @@ const splitReportAndAnnex = (text: string) => {
                                 className={`w-full bg-slate-950 border-2 border-slate-850 hover:border-slate-800 focus:border-indigo-600 rounded-2xl p-6 text-xs sm:text-sm font-semibold text-slate-100 placeholder:text-slate-650 outline-none transition-all resize-y font-mono leading-relaxed ${
                                   isMainReportExpanded ? "h-[calc(100vh-340px)] min-h-[450px]" : "h-96"
                                 }`}
-                                placeholder="Escribe o modifica el informe médico aquí..."
+                                placeholder="Escribe o modifica el informe mÃ©dico aquÃ­..."
                               />
                             </div>
                           ) : (
@@ -20015,7 +20022,7 @@ const splitReportAndAnnex = (text: string) => {
                               <div className="p-6 sm:p-8 rounded-2xl border-2 bg-slate-950 border-slate-850 text-slate-100 selection:bg-indigo-900 selection:text-white shadow-inner overflow-x-auto select-text">
                                 {renderClinicalReport(generatedReport)}
 
-                                {/* PANEL DE ACCIONES DE PÁRRAFO POR IA (SOLICITADO POR EL USUARIO) */}
+                                {/* PANEL DE ACCIONES DE PÃRRAFO POR IA (SOLICITADO POR EL USUARIO) */}
                                 {selectedParagraphText && (
                                   <div className="mt-8 pt-8 border-t border-slate-800/80 animate-fadeIn space-y-4">
                                     <div className="flex items-center justify-between">
@@ -20025,10 +20032,10 @@ const splitReportAndAnnex = (text: string) => {
                                         </div>
                                         <div>
                                           <h4 className="text-xs font-black uppercase tracking-widest text-white animate-fadeIn">
-                                            Asistente de Párrafo Activo (IA)
+                                            Asistente de PÃ¡rrafo Activo (IA)
                                           </h4>
                                           <p className="text-[10px] text-slate-400 font-medium">
-                                            {selectedParagraphOriginal ? "Fragmento del informe marcado" : "Selección de texto personalizada"}
+                                            {selectedParagraphOriginal ? "Fragmento del informe marcado" : "SelecciÃ³n de texto personalizada"}
                                           </p>
                                         </div>
                                       </div>
@@ -20042,7 +20049,7 @@ const splitReportAndAnnex = (text: string) => {
                                           setParagraphActionError(null);
                                         }}
                                         className="p-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg text-slate-400 hover:text-slate-100 transition-colors cursor-pointer"
-                                        title="Cerrar asistente de párrafo"
+                                        title="Cerrar asistente de pÃ¡rrafo"
                                       >
                                         <X className="h-3.5 w-3.5" />
                                       </button>
@@ -20064,7 +20071,7 @@ const splitReportAndAnnex = (text: string) => {
                                           <div className="flex items-center gap-1.5">
                                             <Sliders className="h-3.5 w-3.5 text-indigo-400" />
                                             <span className="text-[10.5px] font-black uppercase tracking-wider text-slate-200 font-mono">
-                                              Resaltado Sintáctico Manual
+                                              Resaltado SintÃ¡ctico Manual
                                             </span>
                                           </div>
                                           {selectedParagraphOriginal in manualSeverityOverrides || selectedParagraphOriginal.trim() in manualSeverityOverrides ? (
@@ -20074,13 +20081,13 @@ const splitReportAndAnnex = (text: string) => {
                                           ) : (
                                             <span className="text-[9px] bg-emerald-950/40 text-emerald-400 border border-emerald-900/40 px-2.5 py-0.5 rounded font-black font-mono tracking-wider uppercase flex items-center gap-1">
                                               <span className="w-1 h-1 rounded-full bg-emerald-450 animate-ping" />
-                                              IA Médica Activa
+                                              IA MÃ©dica Activa
                                             </span>
                                           )}
                                         </div>
                                         
                                         <p className="text-[11px] text-slate-400 leading-normal font-medium">
-                                          ¿No estás de acuerdo con la clasificación automática de esta línea? Puedes cambiar o quitar su contraste cromático bilateral (se aplicará inmediatamente en pantalla y en la exportación PDF):
+                                          Â¿No estÃ¡s de acuerdo con la clasificaciÃ³n automÃ¡tica de esta lÃ­nea? Puedes cambiar o quitar su contraste cromÃ¡tico bilateral (se aplicarÃ¡ inmediatamente en pantalla y en la exportaciÃ³n PDF):
                                         </p>
 
                                         <div className="grid grid-cols-3 gap-2">
@@ -20120,7 +20127,7 @@ const splitReportAndAnnex = (text: string) => {
                                             }`}
                                           >
                                             <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
-                                            <span>Crítico</span>
+                                            <span>CrÃ­tico</span>
                                           </button>
                                         </div>
                                         {(selectedParagraphOriginal in manualSeverityOverrides || selectedParagraphOriginal.trim() in manualSeverityOverrides) && (
@@ -20136,14 +20143,14 @@ const splitReportAndAnnex = (text: string) => {
                                               className="text-[10px] text-indigo-400 hover:text-indigo-300 font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-colors"
                                             >
                                               <RefreshCw className="h-2.5 w-2.5" />
-                                              Restablecer a detección automática
+                                              Restablecer a detecciÃ³n automÃ¡tica
                                             </button>
                                           </div>
                                         )}
                                       </div>
                                     )}
 
-                                    {/* Botones de acción de la IA */}
+                                    {/* Botones de acciÃ³n de la IA */}
                                     <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-2">
                                       <button
                                         type="button"
@@ -20216,12 +20223,12 @@ const splitReportAndAnnex = (text: string) => {
                                       </button>
                                     </div>
 
-                                    {/* CUADRO DE DIÁLOGO IA LIBRE PARA ACCIÓN PERSONALIZADA */}
+                                    {/* CUADRO DE DIÃLOGO IA LIBRE PARA ACCIÃN PERSONALIZADA */}
                                     <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-850/80 space-y-3 animate-fadeIn">
                                       <div className="flex items-center gap-2">
                                         <MessageSquare className="h-3.5 w-3.5 text-indigo-400" />
                                         <span className="text-[10px] font-black uppercase tracking-widest text-slate-200 font-mono">
-                                          Petición / Instrucción Libre para la IA
+                                          PeticiÃ³n / InstrucciÃ³n Libre para la IA
                                         </span>
                                       </div>
                                       <div className="flex gap-2">
@@ -20234,7 +20241,7 @@ const splitReportAndAnnex = (text: string) => {
                                               executeParagraphAction("custom", customParagraphPrompt.trim());
                                             }
                                           }}
-                                          placeholder="Ej: Traduce al inglés, cambia la lateralidad a derecha, resume en una frase..."
+                                          placeholder="Ej: Traduce al inglÃ©s, cambia la lateralidad a derecha, resume en una frase..."
                                           className="flex-1 bg-slate-950 border border-slate-800 focus:border-indigo-500 rounded-xl px-3 py-2 text-xs text-slate-100 placeholder:text-slate-650 outline-none transition-all"
                                         />
                                         <button
@@ -20258,7 +20265,7 @@ const splitReportAndAnnex = (text: string) => {
                                       <div className="bg-slate-900/40 p-6 rounded-xl border border-slate-850/80 flex flex-col items-center justify-center gap-2.5 animate-pulse">
                                         <Loader2 className="h-5 w-5 text-indigo-400 animate-spin" />
                                         <p className="text-xs text-slate-400 font-medium font-mono uppercase tracking-wider">
-                                          Procesando consulta clínica mediante IA...
+                                          Procesando consulta clÃ­nica mediante IA...
                                         </p>
                                       </div>
                                     )}
@@ -20268,7 +20275,7 @@ const splitReportAndAnnex = (text: string) => {
                                       <div className="bg-red-950/30 border border-red-900/50 rounded-xl p-4 text-xs text-red-350 flex items-start gap-2.5 leading-relaxed">
                                         <AlertCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
                                         <div>
-                                          <strong>Error al procesar acción:</strong> {paragraphActionError}
+                                          <strong>Error al procesar acciÃ³n:</strong> {paragraphActionError}
                                         </div>
                                       </div>
                                     )}
@@ -20279,14 +20286,14 @@ const splitReportAndAnnex = (text: string) => {
                                         <div className="flex items-center justify-between border-b border-slate-800/60 pb-2">
                                           <div className="flex items-center gap-1.5 text-xs text-indigo-300 font-black uppercase tracking-wider">
                                             <Zap className="h-3.5 w-3.5 text-indigo-400" />
-                                            <span>Resultado de la Contribución</span>
+                                            <span>Resultado de la ContribuciÃ³n</span>
                                           </div>
                                           <span className="text-[9px] bg-indigo-950 text-indigo-400 border border-indigo-900/35 px-2 py-0.5 rounded uppercase font-bold font-mono">
-                                            {paragraphActionActive === "analyze" ? "Análisis Clínico" :
-                                             paragraphActionActive === "improve" ? "Redacción Pulida" :
+                                            {paragraphActionActive === "analyze" ? "AnÃ¡lisis ClÃ­nico" :
+                                             paragraphActionActive === "improve" ? "RedacciÃ³n Pulida" :
                                              paragraphActionActive === "expand" ? "Detalle Exhaustivo" :
-                                             paragraphActionActive === "explain" ? "Explicación Didáctica" :
-                                             paragraphActionActive === "classify" ? "Cálculo de Escala" :
+                                             paragraphActionActive === "explain" ? "ExplicaciÃ³n DidÃ¡ctica" :
+                                             paragraphActionActive === "classify" ? "CÃ¡lculo de Escala" :
                                              "Consulta IA Libre"}
                                           </span>
                                         </div>
@@ -20298,7 +20305,7 @@ const splitReportAndAnnex = (text: string) => {
 
                                         {/* Acciones para incorporar o usar el resultado */}
                                         <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-slate-800/60">
-                                          {/* Reemplazar (solo si se seleccionó desde un fragmento real existente) */}
+                                          {/* Reemplazar (solo si se seleccionÃ³ desde un fragmento real existente) */}
                                           {selectedParagraphOriginal && (paragraphActionActive === "improve" || paragraphActionActive === "expand" || paragraphActionActive === "custom") && (
                                             <button
                                               type="button"
@@ -20310,13 +20317,13 @@ const splitReportAndAnnex = (text: string) => {
                                             </button>
                                           )}
 
-                                          {/* Insertar debajo (siempre útil) */}
+                                          {/* Insertar debajo (siempre Ãºtil) */}
                                           {selectedParagraphOriginal && (
                                             <button
                                               type="button"
                                               onClick={() => handleInsertBelowParagraph(paragraphActionResult)}
                                               className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-slate-750 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm cursor-pointer select-none"
-                                              title="Insertar este bloque de texto directamente debajo del párrafo original"
+                                              title="Insertar este bloque de texto directamente debajo del pÃ¡rrafo original"
                                             >
                                               <ChevronRight className="h-3.5 w-3.5 text-indigo-400" /> Insertar Debajo
                                             </button>
@@ -20327,7 +20334,7 @@ const splitReportAndAnnex = (text: string) => {
                                             type="button"
                                             onClick={() => handleAppendParagraphToReport(paragraphActionResult)}
                                             className="px-3.5 py-2 bg-slate-850 hover:bg-slate-800 text-slate-200 border border-slate-750 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm cursor-pointer select-none"
-                                            title="Agregar esta contribución al final de todo el informe de estudio"
+                                            title="Agregar esta contribuciÃ³n al final de todo el informe de estudio"
                                           >
                                             <Plus className="h-3.5 w-3.5 text-slate-400" /> Agregar al Final
                                           </button>
@@ -20356,7 +20363,7 @@ const splitReportAndAnnex = (text: string) => {
                                     <div className="flex items-center gap-2 mb-4">
                                       <FileImage className="h-4 w-4 text-indigo-400" />
                                       <h3 className="text-xs font-black uppercase tracking-widest text-slate-205">
-                                        Anexo: Registro de Capturas Diagnósticas ({attachedImages.length})
+                                        Anexo: Registro de Capturas DiagnÃ³sticas ({attachedImages.length})
                                       </h3>
                                     </div>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -20364,7 +20371,7 @@ const splitReportAndAnnex = (text: string) => {
                                         <div key={img.id} className="bg-slate-900/60 p-3 rounded-xl border border-slate-800 flex flex-col gap-2">
                                           <img src={img.url} alt={img.name} className="w-full aspect-[4/3] object-cover rounded bg-black border border-slate-950" />
                                           {img.caption && (
-                                            <div className="text-xs font-semibold text-slate-300 italic text-center mt-1">“{img.caption}”</div>
+                                            <div className="text-xs font-semibold text-slate-300 italic text-center mt-1">â{img.caption}â</div>
                                           )}
                                         </div>
                                       ))}
@@ -20381,7 +20388,7 @@ const splitReportAndAnnex = (text: string) => {
                               <div className="flex items-center gap-2">
                                 <FileImage className="h-4.5 w-4.5 text-cyan-400" />
                                 <h3 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
-                                  Anexar Imágenes e Informes de Ultrasonido / DICOM
+                                  Anexar ImÃ¡genes e Informes de Ultrasonido / DICOM
                                 </h3>
                               </div>
                               <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-cyan-950 text-cyan-400 border border-cyan-900/30 px-2 py-0.5 rounded">
@@ -20390,7 +20397,7 @@ const splitReportAndAnnex = (text: string) => {
                             </div>
                             
                             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                              Selecciona archivos individuales o una carpeta completa de imágenes DICOM/ultrasonido de tu computadora. Las acomodaremos al final del reporte y se añadirán de forma automática en tu PDF final para exportar todo el archivo.
+                              Selecciona archivos individuales o una carpeta completa de imÃ¡genes DICOM/ultrasonido de tu computadora. Las acomodaremos al final del reporte y se aÃ±adirÃ¡n de forma automÃ¡tica en tu PDF final para exportar todo el archivo.
                             </p>
 
                             {/* Drag and Drop Zone and File Input Triggers */}
@@ -20411,10 +20418,10 @@ const splitReportAndAnnex = (text: string) => {
                               </div>
                               <div className="text-center space-y-1">
                                 <p className="text-[11px] font-bold text-slate-350 uppercase tracking-wider">
-                                  Arrastra tus imágenes o archivos DICOM aquí
+                                  Arrastra tus imÃ¡genes o archivos DICOM aquÃ­
                                 </p>
                                 <p className="text-[9px] font-mono text-slate-500">
-                                  O utiliza una de las opciones de selección directa de abajo
+                                  O utiliza una de las opciones de selecciÃ³n directa de abajo
                                 </p>
                               </div>
                               
@@ -20462,7 +20469,7 @@ const splitReportAndAnnex = (text: string) => {
                                   onClick={() => setDicomNotification(null)}
                                   className="text-slate-400 hover:text-emerald-400 transition-colors cursor-pointer text-xs font-bold px-1"
                                 >
-                                  ×
+                                  Ã
                                 </button>
                               </div>
                             )}
@@ -20472,14 +20479,14 @@ const splitReportAndAnnex = (text: string) => {
                               <div id="attached-images-gallery" className="space-y-3 pt-2">
                                 <div className="flex items-center justify-between">
                                   <span className="text-[10px] font-mono text-slate-450 uppercase font-black tracking-wider">
-                                    Imágenes Cargadas ({attachedImages.length})
+                                    ImÃ¡genes Cargadas ({attachedImages.length})
                                   </span>
                                   <div className="flex items-center gap-2">
                                     <button 
                                       onClick={handleCorrelateFigures}
                                       disabled={isCorrelatingFigures || attachedImages.length === 0}
                                       className="px-2.5 py-1 bg-teal-950/40 hover:bg-teal-950/80 border border-teal-500/20 text-teal-400 text-[9px] font-black uppercase tracking-widest rounded-lg transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 select-none"
-                                      title="Inserta de forma retrógrada e inteligente las referencias (ver Figura 1, 2, etc.) en el texto del informe"
+                                      title="Inserta de forma retrÃ³grada e inteligente las referencias (ver Figura 1, 2, etc.) en el texto del informe"
                                     >
                                       {isCorrelatingFigures ? (
                                         <>
@@ -20507,7 +20514,7 @@ const splitReportAndAnnex = (text: string) => {
                                       ) : (
                                         <>
                                           <Sparkles className="h-3 w-3 text-indigo-400" />
-                                          <span>Rotular todas las imágenes</span>
+                                          <span>Rotular todas las imÃ¡genes</span>
                                         </>
                                       )}
                                     </button>
@@ -20521,32 +20528,32 @@ const splitReportAndAnnex = (text: string) => {
                                   </div>
                                 </div>
                                 
-                                {/* Scientific Grid Layout Bar (Modo Revista Científica) */}
+                                {/* Scientific Grid Layout Bar (Modo Revista CientÃ­fica) */}
                                 <div className="p-3 bg-slate-900/90 border border-slate-800 rounded-xl space-y-2.5">
                                   <div className="flex flex-wrap items-center justify-between gap-2">
                                     <div className="flex items-center gap-2">
                                       <span className="text-[10px] font-black uppercase tracking-wider text-sky-400 font-mono flex items-center gap-1.5">
                                         <Layers className="h-3.5 w-3.5" />
-                                        Disposición en PDF (Formato Revista Científica)
+                                        DisposiciÃ³n en PDF (Formato Revista CientÃ­fica)
                                       </span>
                                       <span className="text-[9px] px-2 py-0.5 rounded-md bg-sky-950/80 text-sky-300 border border-sky-800/50 font-mono font-bold">
-                                        {usImagesGridMode === "auto" ? "Automático Inteligente" : `${usImagesGridMode} por página`}
+                                        {usImagesGridMode === "auto" ? "AutomÃ¡tico Inteligente" : `${usImagesGridMode} por pÃ¡gina`}
                                       </span>
                                     </div>
                                     <span className="text-[9px] text-slate-400 font-mono">
-                                      {attachedImages.length} {attachedImages.length === 1 ? "captura" : "capturas"} • Marcos redondeados con etiquetas PANEL A, B...
+                                      {attachedImages.length} {attachedImages.length === 1 ? "captura" : "capturas"} â¢ Marcos redondeados con etiquetas PANEL A, B...
                                     </span>
                                   </div>
 
                                   <div className="flex flex-wrap items-center gap-1.5 pt-1">
                                     {[
-                                      { id: "auto", label: "⚡ Automático", desc: "Ajuste dinámico según cantidad (1x1, 1x2, 2x2)" },
-                                      { id: "1x1", label: "1 × 1 (1 / pág.)", desc: "Vista ampliada de alta resolución" },
-                                      { id: "1x2", label: "1 × 2 (2 / pág. horiz.)", desc: "1 fila de 2 columnas" },
-                                      { id: "2x1", label: "2 × 1 (2 / pág. vert.)", desc: "2 filas de 1 columna" },
-                                      { id: "2x2", label: "2 × 2 (4 / pág. Revista)", desc: "Estándar de revista científica (4 por hoja)" },
-                                      { id: "3x2", label: "3 × 2 (6 / pág.)", desc: "3 filas de 2 columnas (6 por hoja)" },
-                                      { id: "4x2", label: "4 × 2 (8 / pág.)", desc: "4 filas de 2 columnas compactas" }
+                                      { id: "auto", label: "â¡ AutomÃ¡tico", desc: "Ajuste dinÃ¡mico segÃºn cantidad (1x1, 1x2, 2x2)" },
+                                      { id: "1x1", label: "1 Ã 1 (1 / pÃ¡g.)", desc: "Vista ampliada de alta resoluciÃ³n" },
+                                      { id: "1x2", label: "1 Ã 2 (2 / pÃ¡g. horiz.)", desc: "1 fila de 2 columnas" },
+                                      { id: "2x1", label: "2 Ã 1 (2 / pÃ¡g. vert.)", desc: "2 filas de 1 columna" },
+                                      { id: "2x2", label: "2 Ã 2 (4 / pÃ¡g. Revista)", desc: "EstÃ¡ndar de revista cientÃ­fica (4 por hoja)" },
+                                      { id: "3x2", label: "3 Ã 2 (6 / pÃ¡g.)", desc: "3 filas de 2 columnas (6 por hoja)" },
+                                      { id: "4x2", label: "4 Ã 2 (8 / pÃ¡g.)", desc: "4 filas de 2 columnas compactas" }
                                     ].map((opt) => {
                                       const isSelected = usImagesGridMode === opt.id;
                                       return (
@@ -20661,14 +20668,14 @@ const splitReportAndAnnex = (text: string) => {
                                         <div className="space-y-1.5">
                                           <div className="flex flex-wrap items-center justify-between gap-1.5">
                                             <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest block font-mono">
-                                              Descripción / Hallazgo:
+                                              DescripciÃ³n / Hallazgo:
                                             </label>
                                             <div className="flex items-center gap-1">
                                               <button
                                                 onClick={() => handleAutocompleteLabelFromReport(img.id)}
                                                 disabled={!!loadingAutocompleteIds[img.id]}
                                                 className="text-[8px] font-black uppercase tracking-wider text-teal-450 hover:text-teal-300 disabled:opacity-50 transition-all flex items-center gap-1 bg-teal-500/10 hover:bg-teal-500/20 px-1.5 py-0.5 rounded border border-teal-500/15 cursor-pointer select-none"
-                                                title="Escribe una palabra o frase clave (ej. 'vesícula', 'quiste' o 'placa') y haz clic aquí para que la IA la busque en el reporte y complete el rótulo"
+                                                title="Escribe una palabra o frase clave (ej. 'vesÃ­cula', 'quiste' o 'placa') y haz clic aquÃ­ para que la IA la busque en el reporte y complete el rÃ³tulo"
                                               >
                                                 {loadingAutocompleteIds[img.id] ? (
                                                   <>
@@ -20711,14 +20718,14 @@ const splitReportAndAnnex = (text: string) => {
                                               setAttachedImages(prev => prev.map(item => item.id === img.id ? { ...item, caption: val } : item));
                                             }}
                                             className="w-full bg-slate-900 border border-slate-800 focus:border-indigo-500 px-2.5 py-1.5 text-[11px] font-medium text-slate-200 outline-none rounded-lg transition-all focus:ring-1 focus:ring-indigo-500/30"
-                                            placeholder="Escribe 'vesícula' o 'lito' y haz clic en Completar de Reporte"
+                                            placeholder="Escribe 'vesÃ­cula' o 'lito' y haz clic en Completar de Reporte"
                                           />
                                         </div>
 
                                         {/* Rearrange buttons */}
                                         <div className="flex items-center justify-between pt-1">
                                           <span className="text-[8px] font-mono text-slate-600">
-                                            Posición: {idx + 1} de {attachedImages.length}
+                                            PosiciÃ³n: {idx + 1} de {attachedImages.length}
                                           </span>
                                           
                                           <div className="flex gap-1">
@@ -20736,7 +20743,7 @@ const splitReportAndAnnex = (text: string) => {
                                               className="p-1 bg-slate-900 hover:bg-slate-800 disabled:opacity-20 border border-slate-800 text-slate-350 rounded transition-all cursor-pointer text-[10px]"
                                               title="Mover Anterior"
                                             >
-                                              ←
+                                              â
                                             </button>
                                             <button 
                                               disabled={idx === attachedImages.length - 1}
@@ -20752,7 +20759,7 @@ const splitReportAndAnnex = (text: string) => {
                                               className="p-1 bg-slate-900 hover:bg-slate-800 disabled:opacity-20 border border-slate-800 text-slate-350 rounded transition-all cursor-pointer text-[10px]"
                                               title="Mover Siguiente"
                                             >
-                                              →
+                                              â
                                             </button>
                                           </div>
                                         </div>
@@ -20766,7 +20773,7 @@ const splitReportAndAnnex = (text: string) => {
                                             setIs3dRenderModalOpen(true);
                                           }}
                                           className="w-full mt-2 py-1.5 px-2 bg-gradient-to-r from-cyan-950/90 via-indigo-950/90 to-purple-950/90 hover:from-cyan-900 hover:via-indigo-900 hover:to-purple-900 border border-cyan-500/40 hover:border-cyan-400 text-cyan-200 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md shadow-cyan-950/40 group"
-                                          title="Generar ilustración renderizada en 3D volumétrico para este hallazgo"
+                                          title="Generar ilustraciÃ³n renderizada en 3D volumÃ©trico para este hallazgo"
                                         >
                                           <Box className="h-3.5 w-3.5 text-cyan-400 group-hover:scale-110 transition-transform" />
                                           <span>Render 3D del Hallazgo</span>
@@ -20781,7 +20788,7 @@ const splitReportAndAnnex = (text: string) => {
                             )}
                           </div>
 
-                          {/* === ATLAS 3D FOTORREALISTA Y CORRELACIÓN ANATÓMICA === */}
+                          {/* === ATLAS 3D FOTORREALISTA Y CORRELACIÃN ANATÃMICA === */}
                           <Atlas3DModule
                             reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
                             activeProtocol={specificStudy || studyType || ""}
@@ -20795,7 +20802,7 @@ const splitReportAndAnnex = (text: string) => {
                             externalDirectives={atlasDirectivesFromScorecard}
                           />
 
-                          {/* === SUITE VASCULAR 3D & MAPA ÁNATOMO-HEMODINÁMICO === */}
+                          {/* === SUITE VASCULAR 3D & MAPA ÃNATOMO-HEMODINÃMICO === */}
                           <Vascular3DModule
                             reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
                             activeProtocol={specificStudy || studyType || ""}
@@ -20809,8 +20816,8 @@ const splitReportAndAnnex = (text: string) => {
                             externalDirectives={buildVascularDirectivesFromScorecard(clinicalScorecardData) || atlasDirectivesFromScorecard}
                           />
 
-                          {/* === CORTE FOCAL 3D DE LA LESI�N (ON DEMAND) === */}
-                          {/* Suite Tiroides: tarjeta colapsable en módulos */}
+                          {/* === CORTE FOCAL 3D DE LA LESIï¿½N (ON DEMAND) === */}
+                          {/* Suite Tiroides: tarjeta colapsable en mÃ³dulos */}
 
 
 <div id="focal-lesion-3d-module">
@@ -20862,14 +20869,14 @@ const splitReportAndAnnex = (text: string) => {
                             attachedImages={attachedImages}
                             sourceImage={modal3dSourceImage}
                             initialFinding={modal3dInitialFinding}
-                            studyType={specificStudy || studyType || "Ecografía"}
+                            studyType={specificStudy || studyType || "EcografÃ­a"}
                             clinicalHistory={clinicalHistory}
                             onSaveRender={(newRender) => {
                               setFindings3dRenders(prev => [newRender, ...prev]);
                             }}
                           />
 
-                          {/* --- SISTEMA DE ACTIVACIÓN RÁPIDA DE MÓDULOS (PROCESAMIENTO EN LOTE) --- */}
+                          {/* --- SISTEMA DE ACTIVACIÃN RÃPIDA DE MÃDULOS (PROCESAMIENTO EN LOTE) --- */}
                           <div className="my-6 p-5 sm:p-6 bg-slate-900/70 border-2 border-indigo-500/30 rounded-3xl shadow-2xl space-y-5 transition-all">
                             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
                               <div className="flex items-center gap-3">
@@ -20879,14 +20886,14 @@ const splitReportAndAnnex = (text: string) => {
                                 <div>
                                   <div className="flex items-center gap-2 flex-wrap">
                                     <h3 className="text-sm font-black text-slate-100 uppercase tracking-wider font-mono">
-                                      Sistema de Activación Rápida de Módulos
+                                      Sistema de ActivaciÃ³n RÃ¡pida de MÃ³dulos
                                     </h3>
                                     <span className="text-[9px] font-black uppercase tracking-widest bg-indigo-950 text-indigo-300 border border-indigo-500/40 px-2.5 py-0.5 rounded-full font-mono">
                                       PROCESAMIENTO EN LOTE
                                     </span>
                                   </div>
                                   <p className="text-[11px] font-medium text-slate-400 mt-0.5">
-                                    Selecciona los anexos, esquemas y cuadros que deseas calcular o desplegar simultáneamente para el reporte activo.
+                                    Selecciona los anexos, esquemas y cuadros que deseas calcular o desplegar simultÃ¡neamente para el reporte activo.
                                   </p>
                                 </div>
                               </div>
@@ -20911,7 +20918,7 @@ const splitReportAndAnnex = (text: string) => {
                             </div>
 
                             <p className="text-[10px] text-slate-500 leading-snug px-1">
-                              El bot�n <strong className="text-slate-300">Reporte completo</strong> activa por defecto Scorecard cl�nico, Resumen operacional y Resumen del paciente. El Cuadro sin�ptico de �rgano ya no se genera autom�ticamente. Si habilitaste el acceso r�pido, tambi�n se activa la suite 3D correspondiente al estudio que seleccionaste manualmente. Marca otros m�dulos aqu� y pulsa ACTIVAR.
+                              El botón <strong className="text-slate-300">Reporte completo</strong> activa por defecto Scorecard clínico, Resumen operacional y Resumen del paciente. El Cuadro sinóptico de órgano ya no se genera automáticamente. Si habilitaste el acceso rápido, también se activa la suite 3D correspondiente al estudio que seleccionaste manualmente. Marca otros módulos aquí y pulsa ACTIVAR.
                             </p>
 
                             {/* Catalog Grid */}
@@ -20919,23 +20926,23 @@ const splitReportAndAnnex = (text: string) => {
                               {[
                                 {
                                   id: "vascular3d",
-                                  label: "🫀 Suite Vascular 3D & Mapa Ánatomo-Hemodinámico",
+                                  label: "ð« Suite Vascular 3D & Mapa Ãnatomo-HemodinÃ¡mico",
                                   badge: "DOPPLER 3D",
-                                  desc: "Reconstrucción macrovascular 3D fotorrealista (2 a 3 paneles), cálculo de estenosis y tabulación velocimétrica adaptada.",
+                                  desc: "ReconstrucciÃ³n macrovascular 3D fotorrealista (2 a 3 paneles), cÃ¡lculo de estenosis y tabulaciÃ³n velocimÃ©trica adaptada.",
                                   color: "text-rose-400 border-rose-500/30 bg-rose-950/20"
                                 },
                                 {
                                   id: "thyroid3d",
-                                  label: "🦋 Suite Tiroides 3D & Ficha TI-RADS",
+                                  label: "ð¦ Suite Tiroides 3D & Ficha TI-RADS",
                                   badge: "TIROIDES 3D",
-                                  desc: "Glándula/nódulo 3D, ficha clínica rica bajo la imagen, tabla TI-RADS y anexo PDF a página completa.",
+                                  desc: "GlÃ¡ndula/nÃ³dulo 3D, ficha clÃ­nica rica bajo la imagen, tabla TI-RADS y anexo PDF a pÃ¡gina completa.",
                                   color: "text-teal-400 border-teal-500/30 bg-teal-950/20"
                                 },
                                 {
                                   id: "breast3d",
-                                  label: "🦋 Suite Mama 3D & Ficha BI-RADS",
+                                  label: "ð¦ Suite Mama 3D & Ficha BI-RADS",
                                   badge: "MAMA 3D",
-                                  desc: "Reloj mamario, nódulo, axila, ficha BI-RADS y anexo PDF a página completa.",
+                                  desc: "Reloj mamario, nÃ³dulo, axila, ficha BI-RADS y anexo PDF a pÃ¡gina completa.",
                                   color: "text-pink-400 border-pink-500/30 bg-pink-950/20"
                                 },
                                 {
@@ -20956,49 +20963,49 @@ const splitReportAndAnnex = (text: string) => {
                                   id: "ankle3d",
                                   label: "Suite Tobillo 3D & Ficha Ligamentos-Aquiles",
                                   badge: "TOBILLO 3D",
-                                  desc: "Overview de tobillo, LPAA/ATFL-LPC/CFL-deltoides, Aquiles, derrame, ficha clínica y anexo PDF.",
+                                  desc: "Overview de tobillo, LPAA/ATFL-LPC/CFL-deltoides, Aquiles, derrame, ficha clÃ­nica y anexo PDF.",
                                   color: "text-lime-400 border-lime-500/30 bg-lime-950/20"
                                 },
                                 {
                                   id: "kidney3d",
-                                  label: "Suite Riñón 3D & Ficha Vías Urinarias",
+                                  label: "Suite RiÃ±Ã³n 3D & Ficha VÃ­as Urinarias",
                                   badge: "RENAL 3D",
-                                  desc: "Riñones, sistema colector, litiasis/quistes Bosniak, vejiga/uréteres, ficha clínica y anexo PDF.",
+                                  desc: "RiÃ±ones, sistema colector, litiasis/quistes Bosniak, vejiga/urÃ©teres, ficha clÃ­nica y anexo PDF.",
                                   color: "text-teal-400 border-teal-500/30 bg-teal-950/20"
                                 },
                                 {
                                   id: "abdomen3d",
-                                  label: "Suite Abdomen 3D & Ficha Multi-órgano",
+                                  label: "Suite Abdomen 3D & Ficha Multi-Ã³rgano",
                                   badge: "ABDOMEN 3D",
-                                  desc: "Overview abdominal, hallazgo hepato-biliar/renal/FID dominante, ficha clínica y anexo PDF.",
+                                  desc: "Overview abdominal, hallazgo hepato-biliar/renal/FID dominante, ficha clÃ­nica y anexo PDF.",
                                   color: "text-amber-400 border-amber-500/30 bg-amber-950/20"
                                 },
                                 {
                                   id: "abdominalWall3d",
                                   label: "Suite Pared Abdominal 3D & Ficha de Pared",
                                   badge: "PARED 3D",
-                                  desc: "Hernias, diástasis, orificio, capas/fascia, Valsalva, ficha clínica y anexo PDF.",
+                                  desc: "Hernias, diÃ¡stasis, orificio, capas/fascia, Valsalva, ficha clÃ­nica y anexo PDF.",
                                   color: "text-orange-400 border-orange-500/30 bg-orange-950/20"
                                 },
                                 {
                                   id: "scrotum3d",
                                   label: "Suite Escroto 3D & Ficha Escrotal",
                                   badge: "ESCROTO 3D",
-                                  desc: "Testículos, epidídimo, cordón, Doppler hiliar/pampiniforme, ficha clínica y anexo PDF.",
+                                  desc: "TestÃ­culos, epidÃ­dimo, cordÃ³n, Doppler hiliar/pampiniforme, ficha clÃ­nica y anexo PDF.",
                                   color: "text-yellow-400 border-yellow-500/30 bg-yellow-950/20"
                                 },
                                 {
                                   id: "muscleTendon3d",
-                                  label: "Suite Muscular / Tendinosa 3D & Ficha Músculo-Tendón",
-                                  badge: "MÚSCULO 3D",
-                                  desc: "Desgarros musculares, MTJ, Aquiles y tendones de miembros inferiores; ficha clínica y anexo PDF.",
+                                  label: "Suite Muscular / Tendinosa 3D & Ficha MÃºsculo-TendÃ³n",
+                                  badge: "MÃSCULO 3D",
+                                  desc: "Desgarros musculares, MTJ, Aquiles y tendones de miembros inferiores; ficha clÃ­nica y anexo PDF.",
                                   color: "text-rose-400 border-rose-500/30 bg-rose-950/20"
                                 },
                                 {
                                   id: "wrist3d",
-                                  label: "Suite Muñeca 3D & Ficha de Muñeca",
-                                  badge: "MUÑECA 3D",
-                                  desc: "Tendones dorsales/flexores, túnel del carpo, TFCC y ligamentos; ficha clínica y anexo PDF.",
+                                  label: "Suite MuÃ±eca 3D & Ficha de MuÃ±eca",
+                                  badge: "MUÃECA 3D",
+                                  desc: "Tendones dorsales/flexores, tÃºnel del carpo, TFCC y ligamentos; ficha clÃ­nica y anexo PDF.",
                                   color: "text-sky-400 border-sky-500/30 bg-sky-950/20"
                                 },
                                                                 {
@@ -21033,98 +21040,98 @@ const splitReportAndAnnex = (text: string) => {
                                   id: "differential_tree",
                                   label: "Arbol de diferenciales con poda",
                                   badge: "DIFERENCIALES",
-                                  desc: "Hip�tesis a favor/en contra, poda de ramas incompatibles y diagnostico mas probable.",
+                                  desc: "Hipótesis a favor/en contra, poda de ramas incompatibles y diagnostico mas probable.",
                                   color: "text-orange-400 border-orange-500/30 bg-orange-950/20"
                                 },
 {
                                   id: "atlas3d",
-                                  label: "🧊 Atlas 3D Fotorrealista y Correlación Anatómica",
+                                  label: "ð§ Atlas 3D Fotorrealista y CorrelaciÃ³n AnatÃ³mica",
                                   badge: "ATLAS 3D",
-                                  desc: "Reconstrucción volumétrica fotorrealista de alta resolución (2 a 3 paneles) con tabla de correlación y síntesis biomecánica.",
+                                  desc: "ReconstrucciÃ³n volumÃ©trica fotorrealista de alta resoluciÃ³n (2 a 3 paneles) con tabla de correlaciÃ³n y sÃ­ntesis biomecÃ¡nica.",
                                   color: "text-indigo-400 border-indigo-500/30 bg-indigo-950/20"
                                 },
                                 {
                                   id: "radar",
-                                  label: "🎯 Radar Biomecánico e Inflamatorio (Análisis 6D)",
+                                  label: "ð¯ Radar BiomecÃ¡nico e Inflamatorio (AnÃ¡lisis 6D)",
                                   badge: "RADAR 6D",
-                                  desc: "Cuantifica 6 vectores biomecánicos, inflamatorios y de sobrecarga.",
+                                  desc: "Cuantifica 6 vectores biomecÃ¡nicos, inflamatorios y de sobrecarga.",
                                   color: "text-indigo-400 border-indigo-500/30 bg-indigo-950/20"
                                 },
                                 {
                                   id: "case_analysis",
-                                  label: "🩺 Análisis de Caso Clinico / Diagnóstico Avanzado (Anexo de Correlación PDF)",
-                                  badge: "CORRELACIÓN & PDF",
-                                  desc: "Desarrolla correlación fisiopatológica y flujograma para exportar al PDF.",
+                                  label: "ð©º AnÃ¡lisis de Caso Clinico / DiagnÃ³stico Avanzado (Anexo de CorrelaciÃ³n PDF)",
+                                  badge: "CORRELACIÃN & PDF",
+                                  desc: "Desarrolla correlaciÃ³n fisiopatolÃ³gica y flujograma para exportar al PDF.",
                                   color: "text-emerald-400 border-emerald-500/30 bg-emerald-950/20"
                                 },
                                 {
                                   id: "bibliography",
-                                  label: "📚 Búsqueda Bibliográfica de Soporte (Grounding)",
+                                  label: "ð BÃºsqueda BibliogrÃ¡fica de Soporte (Grounding)",
                                   badge: "GROUNDING",
-                                  desc: "Ejecuta búsqueda científica grounded basada en los hallazgos reales.",
+                                  desc: "Ejecuta bÃºsqueda cientÃ­fica grounded basada en los hallazgos reales.",
                                   color: "text-teal-400 border-teal-500/30 bg-teal-950/20"
                                 },
                                 {
                                   id: "operational_summary",
-                                  label: "📋 Resumen Operacional de Hallazgos (WhatsApp / Resumen Clínico)",
+                                  label: "ð Resumen Operacional de Hallazgos (WhatsApp / Resumen ClÃ­nico)",
                                   badge: "RESUMEN OPERACIONAL",
-                                  desc: "Sintetiza de forma ejecutiva los hallazgos e impresión diagnóstica para consulta ágil y envío por WhatsApp.",
+                                  desc: "Sintetiza de forma ejecutiva los hallazgos e impresiÃ³n diagnÃ³stica para consulta Ã¡gil y envÃ­o por WhatsApp.",
                                   color: "text-emerald-400 border-emerald-500/30 bg-emerald-950/20"
                                 },
                                 {
                                   id: "patient_summary",
-                                  label: "👤 Explicación / Resumen para el Paciente",
+                                  label: "ð¤ ExplicaciÃ³n / Resumen para el Paciente",
                                   badge: "PACIENTE",
-                                  desc: "Traduce la jerga técnica a lenguaje accesible y comprensible.",
+                                  desc: "Traduce la jerga tÃ©cnica a lenguaje accesible y comprensible.",
                                   color: "text-orange-400 border-orange-500/30 bg-orange-950/20"
                                 },
                                 {
                                   id: "glossary",
-                                  label: "📖 Glosario Dinámico de Términos",
+                                  label: "ð Glosario DinÃ¡mico de TÃ©rminos",
                                   badge: "GLOSARIO",
-                                  desc: "Identifica y define signos, síndromes y conceptos del reporte.",
+                                  desc: "Identifica y define signos, sÃ­ndromes y conceptos del reporte.",
                                   color: "text-pink-400 border-pink-500/30 bg-pink-950/20"
                                 },
                                 {
                                   id: "schematic",
-                                  label: "📐 Esquema Sinóptico de Hallazgos",
+                                  label: "ð Esquema SinÃ³ptico de Hallazgos",
                                   badge: "SINOPSIS",
                                   desc: "Organiza los hallazgos en un esquema visual e inyectable al informe.",
                                   color: "text-amber-400 border-amber-500/30 bg-amber-950/20"
                                 },
                                 {
                                   id: "measurements",
-                                  label: "📏 Asistente de Medidas Clínicas",
+                                  label: "ð Asistente de Medidas ClÃ­nicas",
                                   badge: "MEDIDAS",
                                   desc: "Identifica estructuras inyectando sus rangos de referencia normales.",
                                   color: "text-indigo-400 border-indigo-500/30 bg-indigo-950/20"
                                 },
                                 {
                                   id: "footnotes",
-                                  label: "🔖 Creador de Notas de Pie de Página",
-                                  badge: "PIE DE PÁGINA",
+                                  label: "ð Creador de Notas de Pie de PÃ¡gina",
+                                  badge: "PIE DE PÃGINA",
                                   desc: "Genera aclaraciones y notas al pie para recomendaciones complejas.",
                                   color: "text-purple-400 border-purple-500/30 bg-purple-950/20"
                                 },
                                 {
                                   id: "organ_synoptic",
-                                  label: "🫀 Cuadro Sinóptico de Órgano",
-                                  badge: "CUADRO ÓRGANO",
-                                  desc: "Sintetiza la semiología de un órgano específico en tabla sinóptica.",
+                                  label: "ð« Cuadro SinÃ³ptico de Ãrgano",
+                                  badge: "CUADRO ÃRGANO",
+                                  desc: "Sintetiza la semiologÃ­a de un Ã³rgano especÃ­fico en tabla sinÃ³ptica.",
                                   color: "text-cyan-400 border-cyan-500/30 bg-cyan-950/20"
                                 },
                                 {
                                   id: "fractures",
-                                  label: "🦴 Sinopsis de Fracturas y Luxaciones",
+                                  label: "ð¦´ Sinopsis de Fracturas y Luxaciones",
                                   badge: "FRACTURAS",
-                                  desc: "Clasifica y desglosa hallazgos traumatológicos y sus pautas de manejo.",
+                                  desc: "Clasifica y desglosa hallazgos traumatolÃ³gicos y sus pautas de manejo.",
                                   color: "text-emerald-400 border-emerald-500/30 bg-emerald-950/20"
                                 },
                                 {
                                   id: "classifications",
-                                  label: "📊 Desglose de Clasificaciones Radiológicas",
+                                  label: "ð Desglose de Clasificaciones RadiolÃ³gicas",
                                   badge: "CLASIFICACIONES",
-                                  desc: "Desglosa la matriz de criterios para escalas estándar (BI-RADS, O-RADS, etc.).",
+                                  desc: "Desglosa la matriz de criterios para escalas estÃ¡ndar (BI-RADS, O-RADS, etc.).",
                                   color: "text-blue-400 border-blue-500/30 bg-blue-950/20"
                                 },
                               ].map((mod) => {
@@ -21187,35 +21194,35 @@ const splitReportAndAnnex = (text: string) => {
                                 {isActivatingBatch ? (
                                   <>
                                     <RefreshCw className="h-4 w-4 animate-spin text-white" />
-                                    <span>Procesando Módulos Seleccionados...</span>
+                                    <span>Procesando MÃ³dulos Seleccionados...</span>
                                   </>
                                 ) : (
                                   <>
                                     <Zap className="h-4 w-4 text-indigo-200" />
-                                    <span>ACTIVAR ({Object.values(selectedBatchModules).filter(Boolean).length} MÓDULOS)</span>
+                                    <span>ACTIVAR ({Object.values(selectedBatchModules).filter(Boolean).length} MÃDULOS)</span>
                                   </>
                                 )}
                               </button>
                             </div>
                           </div>
 
-                          {/* --- NUEVA SECCIÓN DE ANÁLISIS DE CASO Y BÚSQUEDA DE BIBLIOGRAFÍA --- */}
+                          {/* --- NUEVA SECCIÃN DE ANÃLISIS DE CASO Y BÃSQUEDA DE BIBLIOGRAFÃA --- */}
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {/* Card 1: Caso Clínico completo */}
+                            {/* Card 1: Caso ClÃ­nico completo */}
                             <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-emerald-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
                               <div className="flex items-center gap-2 justify-between">
                                 <div className="flex items-center gap-2">
                                   <Activity className="h-4 w-4 text-emerald-400" />
                                   <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
-                                    Diagnóstico Avanzado
+                                    DiagnÃ³stico Avanzado
                                   </h4>
                                 </div>
                                 <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-emerald-950 text-emerald-400 border border-emerald-900/30 px-2 py-0.5 rounded">
-                                  CORRELACIÓN & FORMATOS PDF
+                                  CORRELACIÃN & FORMATOS PDF
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Desarrolla una correlación fisiopatológica sobre los hallazgos principales y permite elegir el formato de exportación a PDF (Flujograma Semiológico, Flujograma Algorítmico, Pilares o Mapa).
+                                Desarrolla una correlaciÃ³n fisiopatolÃ³gica sobre los hallazgos principales y permite elegir el formato de exportaciÃ³n a PDF (Flujograma SemiolÃ³gico, Flujograma AlgorÃ­tmico, Pilares o Mapa).
                               </p>
 
                               {/* Formats Selection Buttons */}
@@ -21225,11 +21232,11 @@ const splitReportAndAnnex = (text: string) => {
                                 </span>
                                 <div className="grid grid-cols-2 gap-1.5">
                                   {[
-                                    { id: "flujograma_semiologico", label: "Opción 1: Semiológico", desc: "Ciclo Pensamiento" },
-                                    { id: "flujograma_algoritmico", label: "Opción 2: Flujograma", desc: "Árbol de Decisión" },
-                                    { id: "esquema_pilares", label: "Opción 3: Pilares", desc: "Integración" },
-                                    { id: "mapa_diferenciales", label: "Opción 4: Mapa", desc: "Diferenciales" },
-                                    { id: "matriz_semiotica", label: "Opción 5: Matriz", desc: "Semiótica Comparativa" },
+                                    { id: "flujograma_semiologico", label: "OpciÃ³n 1: SemiolÃ³gico", desc: "Ciclo Pensamiento" },
+                                    { id: "flujograma_algoritmico", label: "OpciÃ³n 2: Flujograma", desc: "Ãrbol de DecisiÃ³n" },
+                                    { id: "esquema_pilares", label: "OpciÃ³n 3: Pilares", desc: "IntegraciÃ³n" },
+                                    { id: "mapa_diferenciales", label: "OpciÃ³n 4: Mapa", desc: "Diferenciales" },
+                                    { id: "matriz_semiotica", label: "OpciÃ³n 5: Matriz", desc: "SemiÃ³tica Comparativa" },
                                   ].map(fmt => (
                                     <button
                                       key={fmt.id}
@@ -21258,17 +21265,17 @@ const splitReportAndAnnex = (text: string) => {
                                 ) : (
                                   <Sparkles className="h-4 w-4 text-emerald-400" />
                                 )}
-                                Análisis de Caso (Generar)
+                                AnÃ¡lisis de Caso (Generar)
                               </button>
                             </div>
 
-                            {/* Card 2: Búsqueda bibliográfica inteligente */}
+                            {/* Card 2: BÃºsqueda bibliogrÃ¡fica inteligente */}
                             <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-teal-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
                               <div className="flex items-center gap-2 justify-between">
                                 <div className="flex items-center gap-2">
                                   <BookOpen className="h-4 w-4 text-teal-400" />
                                   <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
-                                    Búsqueda Inteligente
+                                    BÃºsqueda Inteligente
                                   </h4>
                                 </div>
                                 <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-teal-950 text-teal-400 border border-teal-900/30 px-2 py-0.5 rounded">
@@ -21276,7 +21283,7 @@ const splitReportAndAnnex = (text: string) => {
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Ejecuta una búsqueda científica grounded basada en los hallazgos radiológicos reales. Obtén referencias internacionales acreditadas y enlaces directos de sociedades médicas.
+                                Ejecuta una bÃºsqueda cientÃ­fica grounded basada en los hallazgos radiolÃ³gicos reales. ObtÃ©n referencias internacionales acreditadas y enlaces directos de sociedades mÃ©dicas.
                               </p>
                               <button
                                 onClick={handleSearchBibliography}
@@ -21288,11 +21295,11 @@ const splitReportAndAnnex = (text: string) => {
                                 ) : (
                                   <Search className="h-4 w-4 text-teal-400" />
                                 )}
-                                Búsqueda Bibliográfica de Soporte
+                                BÃºsqueda BibliogrÃ¡fica de Soporte
                               </button>
                             </div>
 
-                            {/* Card 4: Generación Interactiva de Hallazgos para el Paciente (Resumen Simplificado) */}
+                            {/* Card 4: GeneraciÃ³n Interactiva de Hallazgos para el Paciente (Resumen Simplificado) */}
                             <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-orange-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
                               <div className="flex items-center gap-2 justify-between">
                                 <div className="flex items-center gap-2">
@@ -21306,7 +21313,7 @@ const splitReportAndAnnex = (text: string) => {
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Traduce la jerga compleja del reporte en un resumen empático y tranquilizador con analogías cotidianas y hábitos de bienestar físico.
+                                Traduce la jerga compleja del reporte en un resumen empÃ¡tico y tranquilizador con analogÃ­as cotidianas y hÃ¡bitos de bienestar fÃ­sico.
                               </p>
                               <button
                                 onClick={handleGeneratePatientSummary}
@@ -21328,7 +21335,7 @@ const splitReportAndAnnex = (text: string) => {
                                 <div className="flex items-center gap-2">
                                   <BookOpenText className="h-4 w-4 text-pink-400" />
                                   <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
-                                    Glosario Dinámico (IA)
+                                    Glosario DinÃ¡mico (IA)
                                   </h4>
                                 </div>
                                 <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-pink-950/40 text-pink-450 border border-pink-900/30 px-2 py-0.5 rounded">
@@ -21336,7 +21343,7 @@ const splitReportAndAnnex = (text: string) => {
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Identifica y explica signos, clasificaciones clínicas y patologías complejas halladas, permitiendo buscar literatura científica de soporte directa.
+                                Identifica y explica signos, clasificaciones clÃ­nicas y patologÃ­as complejas halladas, permitiendo buscar literatura cientÃ­fica de soporte directa.
                               </p>
                               <button
                                 onClick={handleGenerateDynamicGlossary}
@@ -21358,7 +21365,7 @@ const splitReportAndAnnex = (text: string) => {
                                 <div className="flex items-center gap-2">
                                   <Layers className="h-4 w-4 text-amber-400" />
                                   <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
-                                    Esquema Sinóptico (IA)
+                                    Esquema SinÃ³ptico (IA)
                                   </h4>
                                 </div>
                                 <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-amber-950/45 text-amber-400 border border-amber-900/30 px-2 py-0.5 rounded">
@@ -21366,7 +21373,7 @@ const splitReportAndAnnex = (text: string) => {
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Extrae y organiza los hallazgos en un esquema clínico interactivo y altamente atractivo, que se puede insertar directamente al final del reporte radiológico activo.
+                                Extrae y organiza los hallazgos en un esquema clÃ­nico interactivo y altamente atractivo, que se puede insertar directamente al final del reporte radiolÃ³gico activo.
                               </p>
                               <button
                                 onClick={handleGenerateSchematicSummary}
@@ -21382,7 +21389,7 @@ const splitReportAndAnnex = (text: string) => {
                               </button>
                             </div>
 
-                            {/* Card 7: Asistente de Medidas Clínicas */}
+                            {/* Card 7: Asistente de Medidas ClÃ­nicas */}
                             <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-indigo-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
                               <div className="flex items-center gap-2 justify-between">
                                 <div className="flex items-center gap-2">
@@ -21396,7 +21403,7 @@ const splitReportAndAnnex = (text: string) => {
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Analiza el reporte clínico activo para identificar estructuras anatómicas susceptibles de medición e inyecta medidas normales de forma automática.
+                                Analiza el reporte clÃ­nico activo para identificar estructuras anatÃ³micas susceptibles de mediciÃ³n e inyecta medidas normales de forma automÃ¡tica.
                               </p>
                               <button
                                 onClick={() => setIsAsistenteMedidasOpen(p => !p)}
@@ -21411,7 +21418,7 @@ const splitReportAndAnnex = (text: string) => {
                               </button>
                             </div>
 
-                            {/* Card 8: Creador de Notas de Pie de Página (IA) */}
+                            {/* Card 8: Creador de Notas de Pie de PÃ¡gina (IA) */}
                             <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-purple-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
                               <div className="flex items-center gap-2 justify-between">
                                 <div className="flex items-center gap-2">
@@ -21421,11 +21428,11 @@ const splitReportAndAnnex = (text: string) => {
                                   </h4>
                                 </div>
                                 <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-purple-950/40 text-purple-400 border border-purple-900/30 px-2 py-0.5 rounded">
-                                  PIE DE PÁGINA
+                                  PIE DE PÃGINA
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Audita el reporte de manera íntegra para proponer pies de páginas con guías, controles y aclaraciones de forma personalizada.
+                                Audita el reporte de manera Ã­ntegra para proponer pies de pÃ¡ginas con guÃ­as, controles y aclaraciones de forma personalizada.
                               </p>
                               <button
                                 onClick={() => setIsCreadorNotasOpen(p => !p)}
@@ -21440,21 +21447,21 @@ const splitReportAndAnnex = (text: string) => {
                               </button>
                             </div>
 
-                            {/* Card 8b: Cuadro Sin�ptico de �rgano (IA) */}
+                            {/* Card 8b: Cuadro Sinï¿½ptico de ï¿½rgano (IA) */}
                             <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-cyan-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
                               <div className="flex items-center gap-2 justify-between">
                                 <div className="flex items-center gap-2">
                                   <Layers className="h-4 w-4 text-cyan-400" />
                                   <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
-                                    Mapa Sin�ptico por �rgano (IA)
+                                    Mapa Sinï¿½ptico por ï¿½rgano (IA)
                                   </h4>
                                 </div>
                                 <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-cyan-950/40 text-cyan-400 border border-cyan-900/30 px-2 py-0.5 rounded">
-                                  CUADRO �RGANO
+                                  CUADRO ï¿½RGANO
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Extrae hallazgos de un �rgano o regi�n del reporte y genera cuadro sin�ptico con inyecci�n inteligente al informe.
+                                Extrae hallazgos de un ï¿½rgano o regiï¿½n del reporte y genera cuadro sinï¿½ptico con inyecciï¿½n inteligente al informe.
                               </p>
                               <button
                                 onClick={() => setIsCreadorCuadroSinopticoOpen(p => !p)}
@@ -21465,25 +21472,25 @@ const splitReportAndAnnex = (text: string) => {
                                 }`}
                               >
                                 <Layers className="h-4 w-4" />
-                                {isCreadorCuadroSinopticoOpen ? "Ocultar Cuadro Sin�ptico" : "Abrir Cuadro Sin�ptico"}
+                                {isCreadorCuadroSinopticoOpen ? "Ocultar Cuadro Sinï¿½ptico" : "Abrir Cuadro Sinï¿½ptico"}
                               </button>
                             </div>
 
-                            {/* Card 8c: Elastograf�a y QUS (IA) */}
+                            {/* Card 8c: Elastografï¿½a y QUS (IA) */}
                             <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-amber-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
                               <div className="flex items-center gap-2 justify-between">
                                 <div className="flex items-center gap-2">
                                   <Activity className="h-4 w-4 text-amber-400" />
                                   <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
-                                    Elastograf�a y QUS (IA)
+                                    Elastografï¿½a y QUS (IA)
                                   </h4>
                                 </div>
                                 <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-amber-950/40 text-amber-400 border border-amber-900/30 px-2 py-0.5 rounded">
-                                  3D HEP�TICO
+                                  3D HEPï¿½TICO
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Reconstrucci�n 3D con rigidez hep�tica (kPa), CAP y fracci�n grasa QUS extra�dos del reporte.
+                                Reconstrucciï¿½n 3D con rigidez hepï¿½tica (kPa), CAP y fracciï¿½n grasa QUS extraï¿½dos del reporte.
                               </p>
                               <button
                                 onClick={() => setIsElastographyQUSModuleOpen(p => !p)}
@@ -21494,7 +21501,7 @@ const splitReportAndAnnex = (text: string) => {
                                 }`}
                               >
                                 <Activity className="h-4 w-4" />
-                                {isElastographyQUSModuleOpen ? "Ocultar Elastograf�a/QUS" : "Abrir Elastograf�a y QUS"}
+                                {isElastographyQUSModuleOpen ? "Ocultar Elastografï¿½a/QUS" : "Abrir Elastografï¿½a y QUS"}
                               </button>
                             </div>
 
@@ -21513,7 +21520,7 @@ const splitReportAndAnnex = (text: string) => {
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Glándula/nódulo/ganglios 3D, ficha clínica bajo imagen, tabla TI-RADS y anexo PDF a página completa.
+                                GlÃ¡ndula/nÃ³dulo/ganglios 3D, ficha clÃ­nica bajo imagen, tabla TI-RADS y anexo PDF a pÃ¡gina completa.
                               </p>
                               <button
                                 type="button"
@@ -21535,7 +21542,7 @@ const splitReportAndAnnex = (text: string) => {
                               </button>
                             </div>
 
-                            {/* Card: Suite Mama 3D (misma UX; módulo en siguiente iteración) */}
+                            {/* Card: Suite Mama 3D (misma UX; mÃ³dulo en siguiente iteraciÃ³n) */}
                             <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-pink-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
                               <div className="flex items-center gap-2 justify-between">
                                 <div className="flex items-center gap-2">
@@ -21549,7 +21556,7 @@ const splitReportAndAnnex = (text: string) => {
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Reloj mamario bilateral, nódulo dominante, axilas, ficha BI-RADS bajo imagen y anexo PDF a página completa.
+                                Reloj mamario bilateral, nÃ³dulo dominante, axilas, ficha BI-RADS bajo imagen y anexo PDF a pÃ¡gina completa.
                               </p>
                               <button
                                 type="button"
@@ -21585,7 +21592,7 @@ const splitReportAndAnnex = (text: string) => {
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Manguito rotador, TCLB, bursa SAD y AC con ficha clínica bajo imagen; inyecta scorecard y radar biomecánico para mayor exactitud.
+                                Manguito rotador, TCLB, bursa SAD y AC con ficha clÃ­nica bajo imagen; inyecta scorecard y radar biomecÃ¡nico para mayor exactitud.
                               </p>
                               <button
                                 type="button"
@@ -21621,7 +21628,7 @@ const splitReportAndAnnex = (text: string) => {
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Clasifica y desglosa hallazgos traumatol�gicos en tabla sin�ptica inyectable al informe.
+                                Clasifica y desglosa hallazgos traumatolï¿½gicos en tabla sinï¿½ptica inyectable al informe.
                               </p>
                               <button
                                 onClick={() => setIsCreadorSinopsisFracturasOpen(p => !p)}
@@ -21650,7 +21657,7 @@ const splitReportAndAnnex = (text: string) => {
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Extrae un resumen de hallazgos del reporte de manera automática para inyectarlo en el WhatsApp y mostrarlo al paciente.
+                                Extrae un resumen de hallazgos del reporte de manera automÃ¡tica para inyectarlo en el WhatsApp y mostrarlo al paciente.
                               </p>
                               <button
                                 onClick={handleGenerateWhatsAppSummary}
@@ -21669,26 +21676,26 @@ const splitReportAndAnnex = (text: string) => {
                                 {isGeneratingOperationalSummary
                                   ? "Generando Resumen..."
                                   : operationalSummaryText
-                                  ? "Resumen Listo ✓ (Generar de Nuevo)"
-                                  : "Crear Resumen 📋"}
+                                  ? "Resumen Listo â (Generar de Nuevo)"
+                                  : "Crear Resumen ð"}
                               </button>
                             </div>
 
-                            {/* Card 10: Cuadro de Semiología por Imágenes (IA) */}
+                            {/* Card 10: Cuadro de SemiologÃ­a por ImÃ¡genes (IA) */}
                             <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-cyan-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all animate-fade-in">
                               <div className="flex items-center gap-2 justify-between">
                                 <div className="flex items-center gap-2">
                                   <ShieldCheck className="h-4 w-4 text-cyan-400" />
                                   <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
-                                    Semiología por Imágenes (IA)
+                                    SemiologÃ­a por ImÃ¡genes (IA)
                                   </h4>
                                 </div>
                                 <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-cyan-950/40 text-cyan-400 border border-cyan-900/30 px-2 py-0.5 rounded">
-                                  SEMIOLOGÍA
+                                  SEMIOLOGÃA
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Realiza un cuadro de semiología por imágenes para justificar clínicamente cada uno de los diagnósticos establecidos y detallar las patologías descartadas.
+                                Realiza un cuadro de semiologÃ­a por imÃ¡genes para justificar clÃ­nicamente cada uno de los diagnÃ³sticos establecidos y detallar las patologÃ­as descartadas.
                               </p>
                               <button
                                 onClick={handleGenerateSemiologyTable}
@@ -21707,8 +21714,8 @@ const splitReportAndAnnex = (text: string) => {
                                 {isGeneratingSemiology
                                   ? "Confeccionando Cuadro..."
                                   : semiologyData
-                                  ? "Cuadro Listo ✓ (Confeccionar Nuevo)"
-                                  : "Confeccionar Cuadro Semiológico"}
+                                  ? "Cuadro Listo â (Confeccionar Nuevo)"
+                                  : "Confeccionar Cuadro SemiolÃ³gico"}
                               </button>
                             </div>
 
@@ -21727,7 +21734,7 @@ const splitReportAndAnnex = (text: string) => {
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Meniscos, LCM/LCL, mecanismo extensor y derrame con ficha clínica; inyecta scorecard y radar biomecánico de rodilla.
+                                Meniscos, LCM/LCL, mecanismo extensor y derrame con ficha clÃ­nica; inyecta scorecard y radar biomecÃ¡nico de rodilla.
                               </p>
                               <button
                                 type="button"
@@ -21763,7 +21770,7 @@ const splitReportAndAnnex = (text: string) => {
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                LPAA/ATFL, LPC/CFL, deltoides, Aquiles y derrame con ficha clínica; inyecta scorecard y radar de Aquiles/trauma de tobillo.
+                                LPAA/ATFL, LPC/CFL, deltoides, Aquiles y derrame con ficha clÃ­nica; inyecta scorecard y radar de Aquiles/trauma de tobillo.
                               </p>
                               <button
                                 type="button"
@@ -21790,7 +21797,7 @@ const splitReportAndAnnex = (text: string) => {
                                 <div className="flex items-center gap-2">
                                   <Activity className="h-4 w-4 text-teal-400" />
                                   <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
-                                    Suite Riñón 3D & Vías Urinarias
+                                    Suite RiÃ±Ã³n 3D & VÃ­as Urinarias
                                   </h4>
                                 </div>
                                 <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-teal-950/40 text-teal-400 border border-teal-900/30 px-2 py-0.5 rounded">
@@ -21798,7 +21805,7 @@ const splitReportAndAnnex = (text: string) => {
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Riñones, ectasia, litiasis/Bosniak, uréteres y vejiga con ficha clínica; inyecta scorecard renal y radar.
+                                RiÃ±ones, ectasia, litiasis/Bosniak, urÃ©teres y vejiga con ficha clÃ­nica; inyecta scorecard renal y radar.
                               </p>
                               <button
                                 type="button"
@@ -21816,7 +21823,7 @@ const splitReportAndAnnex = (text: string) => {
                                 }`}
                               >
                                 <Activity className="h-4 w-4" />
-                                {isKidney3dSuiteOpen ? "Ocultar Suite Riñón" : "Abrir Suite Riñón 3D"}
+                                {isKidney3dSuiteOpen ? "Ocultar Suite RiÃ±Ã³n" : "Abrir Suite RiÃ±Ã³n 3D"}
                               </button>
                             </div>
 
@@ -21825,7 +21832,7 @@ const splitReportAndAnnex = (text: string) => {
                                 <div className="flex items-center gap-2">
                                   <Activity className="h-4 w-4 text-amber-400" />
                                   <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
-                                    Suite Abdomen 3D & Multi-órgano
+                                    Suite Abdomen 3D & Multi-Ã³rgano
                                   </h4>
                                 </div>
                                 <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-amber-950/40 text-amber-400 border border-amber-900/30 px-2 py-0.5 rounded">
@@ -21833,7 +21840,7 @@ const splitReportAndAnnex = (text: string) => {
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Hígado, vesícula, páncreas, bazo, riñones y FID con ficha clínica; inyecta scorecard abdominal.
+                                HÃ­gado, vesÃ­cula, pÃ¡ncreas, bazo, riÃ±ones y FID con ficha clÃ­nica; inyecta scorecard abdominal.
                               </p>
                               <button
                                 type="button"
@@ -21868,7 +21875,7 @@ const splitReportAndAnnex = (text: string) => {
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Hernias, diástasis, orificio, capas/fascia y dinámica con Valsalva; inyecta scorecard de pared.
+                                Hernias, diÃ¡stasis, orificio, capas/fascia y dinÃ¡mica con Valsalva; inyecta scorecard de pared.
                               </p>
                               <button
                                 type="button"
@@ -21905,7 +21912,7 @@ const splitReportAndAnnex = (text: string) => {
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Testículos, epidídimo, cordón y Doppler escrotal; inyecta scorecard de escroto.
+                                TestÃ­culos, epidÃ­dimo, cordÃ³n y Doppler escrotal; inyecta scorecard de escroto.
                               </p>
                               <button
                                 type="button"
@@ -21937,11 +21944,11 @@ const splitReportAndAnnex = (text: string) => {
                                   </h4>
                                 </div>
                                 <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-rose-950/40 text-rose-400 border border-rose-900/30 px-2 py-0.5 rounded">
-                                  MÚSCULO 3D
+                                  MÃSCULO 3D
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Desgarros, uniones miotendinosas, Aquiles y tendones de MI; inyecta scorecard músculo-tendón.
+                                Desgarros, uniones miotendinosas, Aquiles y tendones de MI; inyecta scorecard mÃºsculo-tendÃ³n.
                               </p>
                               <button
                                 type="button"
@@ -21963,21 +21970,21 @@ const splitReportAndAnnex = (text: string) => {
                               </button>
                             </div>
 
-                            {/* Card 8c4: Suite Muñeca 3D */}
+                            {/* Card 8c4: Suite MuÃ±eca 3D */}
                             <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-sky-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
                               <div className="flex items-center gap-2 justify-between">
                                 <div className="flex items-center gap-2">
                                   <Activity className="h-4 w-4 text-sky-400" />
                                   <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
-                                    Suite Muñeca 3D
+                                    Suite MuÃ±eca 3D
                                   </h4>
                                 </div>
                                 <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-sky-950/40 text-sky-400 border border-sky-900/30 px-2 py-0.5 rounded">
-                                  MUÑECA 3D
+                                  MUÃECA 3D
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Tendones dorsales/flexores, túnel del carpo, TFCC y ligamentos; inyecta scorecard de muñeca.
+                                Tendones dorsales/flexores, tÃºnel del carpo, TFCC y ligamentos; inyecta scorecard de muÃ±eca.
                               </p>
                               <button
                                 type="button"
@@ -21995,7 +22002,7 @@ const splitReportAndAnnex = (text: string) => {
                                 }`}
                               >
                                 <Activity className="h-4 w-4" />
-                                {isWrist3dSuiteOpen ? "Ocultar Suite Muñeca" : "Abrir Suite Muñeca 3D"}
+                                {isWrist3dSuiteOpen ? "Ocultar Suite MuÃ±eca" : "Abrir Suite MuÃ±eca 3D"}
                               </button>
                             </div>
 
@@ -22013,7 +22020,7 @@ const splitReportAndAnnex = (text: string) => {
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Clasifica y desglosa hallazgos traumatol�gicos en tabla sin�ptica inyectable al informe.
+                                Clasifica y desglosa hallazgos traumatolï¿½gicos en tabla sinï¿½ptica inyectable al informe.
                               </p>
                               <button
                                 onClick={() => setIsCreadorSinopsisFracturasOpen(p => !p)}
@@ -22042,7 +22049,7 @@ const splitReportAndAnnex = (text: string) => {
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Extrae un resumen de hallazgos del reporte de manera automática para inyectarlo en el WhatsApp y mostrarlo al paciente.
+                                Extrae un resumen de hallazgos del reporte de manera automÃ¡tica para inyectarlo en el WhatsApp y mostrarlo al paciente.
                               </p>
                               <button
                                 onClick={handleGenerateWhatsAppSummary}
@@ -22061,26 +22068,26 @@ const splitReportAndAnnex = (text: string) => {
                                 {isGeneratingOperationalSummary
                                   ? "Generando Resumen..."
                                   : operationalSummaryText
-                                  ? "Resumen Listo ✓ (Generar de Nuevo)"
-                                  : "Crear Resumen 📋"}
+                                  ? "Resumen Listo â (Generar de Nuevo)"
+                                  : "Crear Resumen ð"}
                               </button>
                             </div>
 
-                            {/* Card 10: Cuadro de Semiología por Imágenes (IA) */}
+                            {/* Card 10: Cuadro de SemiologÃ­a por ImÃ¡genes (IA) */}
                             <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-cyan-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all animate-fade-in">
                               <div className="flex items-center gap-2 justify-between">
                                 <div className="flex items-center gap-2">
                                   <ShieldCheck className="h-4 w-4 text-cyan-400" />
                                   <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
-                                    Semiología por Imágenes (IA)
+                                    SemiologÃ­a por ImÃ¡genes (IA)
                                   </h4>
                                 </div>
                                 <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-cyan-950/40 text-cyan-400 border border-cyan-900/30 px-2 py-0.5 rounded">
-                                  SEMIOLOGÍA
+                                  SEMIOLOGÃA
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Realiza un cuadro de semiología por imágenes para justificar clínicamente cada uno de los diagnósticos establecidos y detallar las patologías descartadas.
+                                Realiza un cuadro de semiologÃ­a por imÃ¡genes para justificar clÃ­nicamente cada uno de los diagnÃ³sticos establecidos y detallar las patologÃ­as descartadas.
                               </p>
                               <button
                                 onClick={handleGenerateSemiologyTable}
@@ -22099,8 +22106,8 @@ const splitReportAndAnnex = (text: string) => {
                                 {isGeneratingSemiology
                                   ? "Confeccionando Cuadro..."
                                   : semiologyData
-                                  ? "Cuadro Listo ✓ (Confeccionar Nuevo)"
-                                  : "Confeccionar Cuadro Semiológico"}
+                                  ? "Cuadro Listo â (Confeccionar Nuevo)"
+                                  : "Confeccionar Cuadro SemiolÃ³gico"}
                               </button>
                             </div>
 
@@ -22136,7 +22143,7 @@ const splitReportAndAnnex = (text: string) => {
                                     Cadena de razonamiento
                                   </h4>
                                   <p className="text-[11px] text-slate-400 mt-1">
-                                    Flujograma semiol�gico: signos buscados, hallados y descartados, con correlaci�n cl�nica/lab.
+                                    Flujograma semiolï¿½gico: signos buscados, hallados y descartados, con correlaciï¿½n clï¿½nica/lab.
                                   </p>
                                 </div>
                               </div>
@@ -22206,10 +22213,10 @@ const splitReportAndAnnex = (text: string) => {
                                 <div>
                                   <h4 className="text-sm font-semibold text-orange-200 flex items-center gap-2">
                                     <GitFork className="h-4 w-4 text-orange-400" />
-                                    �rbol de diferenciales
+                                    ï¿½rbol de diferenciales
                                   </h4>
                                   <p className="text-[11px] text-slate-400 mt-1">
-                                    Hip�tesis con criterios a favor/en contra y poda de ramas descartadas.
+                                    Hipï¿½tesis con criterios a favor/en contra y poda de ramas descartadas.
                                   </p>
                                 </div>
                               </div>
@@ -22222,7 +22229,7 @@ const splitReportAndAnnex = (text: string) => {
                                     : "bg-orange-600/80 hover:bg-orange-500 text-white"
                                 }`}
                               >
-                                {isDifferentialTreeOpen ? "Ocultar �rbol" : "Abrir �rbol de diferenciales"}
+                                {isDifferentialTreeOpen ? "Ocultar ï¿½rbol" : "Abrir ï¿½rbol de diferenciales"}
                               </button>
                             </div>
 
@@ -22235,7 +22242,7 @@ const splitReportAndAnnex = (text: string) => {
                                     Corte Focal 3D
                                   </h4>
                                   <p className="text-[11px] text-slate-400 mt-1">
-                                    Corte de la lesi�n (auto/manual), fidelidad Atlas, paneles CTX + MACRO e inclusi�n en PDF.
+                                    Corte de la lesiï¿½n (auto/manual), fidelidad Atlas, paneles CTX + MACRO e inclusiï¿½n en PDF.
                                   </p>
                                 </div>
                               </div>
@@ -22274,13 +22281,13 @@ const splitReportAndAnnex = (text: string) => {
                               </button>
                             </div>
 
-{/* Card 11: Radar Biomecánico e Inflamatorio (IA) */}
+{/* Card 11: Radar BiomecÃ¡nico e Inflamatorio (IA) */}
                             <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-indigo-500/30 rounded-2xl p-5 space-y-4 shadow-xl transition-all font-sans">
                               <div className="flex items-center gap-2 justify-between">
                                 <div className="flex items-center gap-2">
                                   <Activity className="h-4 w-4 text-indigo-400" />
                                   <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
-                                    Radar Biomecánico (IA)
+                                    Radar BiomecÃ¡nico (IA)
                                   </h4>
                                 </div>
                                 <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-indigo-950/40 text-indigo-400 border border-indigo-900/30 px-2 py-0.5 rounded">
@@ -22288,7 +22295,7 @@ const splitReportAndAnnex = (text: string) => {
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Cuantifica 6 vectores biomecánicos, inflamatorios y de sobrecarga en un diagrama spider interactivo e inyectable al reporte.
+                                Cuantifica 6 vectores biomecÃ¡nicos, inflamatorios y de sobrecarga en un diagrama spider interactivo e inyectable al reporte.
                               </p>
                               <button
                                 onClick={() => setIsBiomechanicalRadarOpen(p => !p)}
@@ -22299,12 +22306,12 @@ const splitReportAndAnnex = (text: string) => {
                                 }`}
                               >
                                 <Activity className="h-4 w-4" />
-                                {isBiomechanicalRadarOpen ? "Ocultar Radar" : "Abrir Radar Biomecánico"}
+                                {isBiomechanicalRadarOpen ? "Ocultar Radar" : "Abrir Radar BiomecÃ¡nico"}
                               </button>
                             </div>
                           </div>
 
-                          {/* Render Asistente de Medidas Clínicas Panel */}
+                          {/* Render Asistente de Medidas ClÃ­nicas Panel */}
                           {isAsistenteMedidasOpen && (
                             <div className="my-6">
                               <AsistenteMedidas
@@ -22319,7 +22326,7 @@ const splitReportAndAnnex = (text: string) => {
                             </div>
                           )}
 
-                          {/* Render Creador de Notas de Pie de Página Panel */}
+                          {/* Render Creador de Notas de Pie de PÃ¡gina Panel */}
                           {isCreadorNotasOpen && (
                             <div className="my-6">
                               <CreadorNotasPie
@@ -22422,7 +22429,7 @@ const splitReportAndAnnex = (text: string) => {
 
                           {isDifferentialTreeOpen && (
                             <div className="my-6">
-                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-orange-400 bg-slate-900/60 rounded-xl border border-orange-900/40 animate-pulse">Cargando �rbol de diferenciales...</div>}>
+                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-orange-400 bg-slate-900/60 rounded-xl border border-orange-900/40 animate-pulse">Cargando ï¿½rbol de diferenciales...</div>}>
                                 <DifferentialTreeModule
                                   selectedModel={modelFor("differential_tree")}
                                   reportText={isEditingReportManual ? editedReportText : generatedReport}
@@ -22455,10 +22462,10 @@ const splitReportAndAnnex = (text: string) => {
                             </div>
                           )}
 
-{/* Render Radar Biomecánico Panel */}
+{/* Render Radar BiomecÃ¡nico Panel */}
                           {isBiomechanicalRadarOpen && (
                             <div className="my-6">
-                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-indigo-400 bg-slate-900/60 rounded-xl border border-indigo-900/40 animate-pulse">Cargando Radar Biomecánico...</div>}>
+                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-indigo-400 bg-slate-900/60 rounded-xl border border-indigo-900/40 animate-pulse">Cargando Radar BiomecÃ¡nico...</div>}>
                                 <BiomechanicalRadarModule
                                   selectedModel={modelFor("radar")}
                                   reportText={isEditingReportManual ? editedReportText : generatedReport}
@@ -22477,7 +22484,7 @@ const splitReportAndAnnex = (text: string) => {
 
                           {isCreadorCuadroSinopticoOpen && (
                             <div className="my-6">
-                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-cyan-400 bg-slate-900/60 rounded-xl border border-cyan-900/40 animate-pulse">Cargando Cuadro Sin�ptico de �rgano...</div>}>
+                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-cyan-400 bg-slate-900/60 rounded-xl border border-cyan-900/40 animate-pulse">Cargando Cuadro Sinï¿½ptico de ï¿½rgano...</div>}>
                                 <CreadorCuadroSinoptico
                                   selectedModel={modelFor("default")}
                                   reportText={isEditingReportManual ? editedReportText : generatedReport}
@@ -22492,7 +22499,7 @@ const splitReportAndAnnex = (text: string) => {
 
                           {isElastographyQUSModuleOpen && (
                             <div className="my-6">
-                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-amber-400 bg-slate-900/60 rounded-xl border border-amber-900/40 animate-pulse">Cargando Elastograf�a y QUS...</div>}>
+                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-amber-400 bg-slate-900/60 rounded-xl border border-amber-900/40 animate-pulse">Cargando Elastografï¿½a y QUS...</div>}>
                                 <ElastographyQUSPresentationModule
                                   selectedModel={modelFor("default")}
                                   reportText={isEditingReportManual ? editedReportText : generatedReport}
@@ -22840,10 +22847,10 @@ const splitReportAndAnnex = (text: string) => {
                             <div className="bg-[#090d16]/60 border-2 border-cyan-500/10 rounded-2xl p-6 flex flex-col items-center justify-center py-10 text-center space-y-3 shadow-lg animate-pulse my-4">
                               <Loader2 className="h-6 w-6 text-cyan-400 animate-spin" />
                               <p className="text-[10px] font-mono font-black text-slate-300 uppercase tracking-widest">
-                                Confeccionando cuadro de semiología por imágenes...
+                                Confeccionando cuadro de semiologÃ­a por imÃ¡genes...
                               </p>
                               <p className="text-[9px] font-medium text-slate-500 uppercase tracking-wider max-w-sm">
-                                Extrayendo signos radiológicos de soporte, ponderando hallazgos patológicos y deduciendo diagnósticos diferenciales excluidos basados en la evidencia clínica.
+                                Extrayendo signos radiolÃ³gicos de soporte, ponderando hallazgos patolÃ³gicos y deduciendo diagnÃ³sticos diferenciales excluidos basados en la evidencia clÃ­nica.
                               </p>
                             </div>
                           )}
@@ -22867,10 +22874,10 @@ const splitReportAndAnnex = (text: string) => {
                                   <ShieldCheck className="h-5 w-5 text-cyan-400" />
                                   <div>
                                     <h4 className="text-xs font-black text-cyan-400 uppercase tracking-widest font-mono">
-                                      Cuadro de Semiología por Imágenes y Justificación
+                                      Cuadro de SemiologÃ­a por ImÃ¡genes y JustificaciÃ³n
                                     </h4>
                                     <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wide mt-0.5">
-                                      Correlación interpretativa formal entre signos radiográficos, confirmación diagnóstica y exclusiones diferenciales. Selecciona los puntos que deseas incluir.
+                                      CorrelaciÃ³n interpretativa formal entre signos radiogrÃ¡ficos, confirmaciÃ³n diagnÃ³stica y exclusiones diferenciales. Selecciona los puntos que deseas incluir.
                                     </p>
                                   </div>
                                 </div>
@@ -22883,7 +22890,7 @@ const splitReportAndAnnex = (text: string) => {
                                         ? "bg-cyan-950/90 border-cyan-500/50 text-cyan-300 ring-1 ring-cyan-500/30"
                                         : "bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-100"
                                     }`}
-                                    title={isSemiologyExpanded ? "Restaurar tamaño estándar de componente" : "Maximizar área de lectura (Modo Expandido)"}
+                                    title={isSemiologyExpanded ? "Restaurar tamaÃ±o estÃ¡ndar de componente" : "Maximizar Ã¡rea de lectura (Modo Expandido)"}
                                   >
                                     {isSemiologyExpanded ? (
                                       <Minimize2 className="h-4.5 w-4.5" />
@@ -22909,18 +22916,18 @@ const splitReportAndAnnex = (text: string) => {
                               </div>
 
                               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2 font-sans text-left">
-                                {/* Diagnósticos Confirmados */}
+                                {/* DiagnÃ³sticos Confirmados */}
                                 <div className="space-y-3">
                                   <div className="flex items-center gap-2 text-cyan-400 text-[10px] font-black uppercase tracking-wider font-mono">
                                     <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
-                                    1. Diagnósticos Confirmados y Justificación
+                                    1. DiagnÃ³sticos Confirmados y JustificaciÃ³n
                                   </div>
                                   <div className="border border-slate-800/60 rounded-xl overflow-hidden bg-slate-950/20">
                                     <table className="w-full text-xs border-collapse">
                                       <thead>
                                         <tr className="bg-slate-950 border-b border-slate-850/60 text-slate-400 text-[9px] font-bold uppercase tracking-wider">
                                           <th className="p-3 text-center w-12">Inc.</th>
-                                          <th className="p-3 text-left w-1/3">INTERPRETACIÓN SEMIOLÓGICA</th>
+                                          <th className="p-3 text-left w-1/3">INTERPRETACIÃN SEMIOLÃGICA</th>
                                           <th className="p-3 text-left w-2/3 border-l border-slate-850/60">HALLAZGOS</th>
                                         </tr>
                                       </thead>
@@ -22945,7 +22952,7 @@ const splitReportAndAnnex = (text: string) => {
                                         ))}
                                         {(!semiologyData.confirmedDiagnoses || semiologyData.confirmedDiagnoses.length === 0) && (
                                           <tr>
-                                            <td colSpan={3} className="p-4 text-center text-slate-500 italic text-[11px]">No se hallaron diagnósticos confirmados descritos.</td>
+                                            <td colSpan={3} className="p-4 text-center text-slate-500 italic text-[11px]">No se hallaron diagnÃ³sticos confirmados descritos.</td>
                                           </tr>
                                         )}
                                       </tbody>
@@ -22953,18 +22960,18 @@ const splitReportAndAnnex = (text: string) => {
                                   </div>
                                 </div>
 
-                                {/* Patologías Descartadas */}
+                                {/* PatologÃ­as Descartadas */}
                                 <div className="space-y-3">
                                   <div className="flex items-center gap-2 text-slate-400 text-[10px] font-black uppercase tracking-wider font-mono">
                                     <span className="h-1.5 w-1.5 rounded-full bg-slate-500" />
-                                    2. Diagnósticos Diferenciales Descartados
+                                    2. DiagnÃ³sticos Diferenciales Descartados
                                   </div>
                                   <div className="border border-slate-800/60 rounded-xl overflow-hidden bg-slate-950/20">
                                     <table className="w-full text-xs border-collapse">
                                       <thead>
                                         <tr className="bg-slate-950 border-b border-slate-850/60 text-slate-400 text-[9px] font-bold uppercase tracking-wider">
                                           <th className="p-3 text-center w-12">Inc.</th>
-                                          <th className="p-3 text-left w-1/3">INTERPRETACIÓN SEMIOLÓGICA</th>
+                                          <th className="p-3 text-left w-1/3">INTERPRETACIÃN SEMIOLÃGICA</th>
                                           <th className="p-3 text-left w-2/3 border-l border-slate-850/60">HALLAZGOS</th>
                                         </tr>
                                       </thead>
@@ -22989,7 +22996,7 @@ const splitReportAndAnnex = (text: string) => {
                                         ))}
                                         {(!semiologyData.ruledOutPathologies || semiologyData.ruledOutPathologies.length === 0) && (
                                           <tr>
-                                            <td colSpan={3} className="p-4 text-center text-slate-500 italic text-[11px]">No se listaron patologías descartadas en el análisis.</td>
+                                            <td colSpan={3} className="p-4 text-center text-slate-500 italic text-[11px]">No se listaron patologÃ­as descartadas en el anÃ¡lisis.</td>
                                           </tr>
                                         )}
                                       </tbody>
@@ -23000,7 +23007,7 @@ const splitReportAndAnnex = (text: string) => {
 
                               <div className="pt-2 text-left bg-slate-950/40 border border-slate-850/50 rounded-xl p-4 space-y-1.5">
                                 <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider font-mono">
-                                  Representación en Tabla Formal para PDF (Dinámica):
+                                  RepresentaciÃ³n en Tabla Formal para PDF (DinÃ¡mica):
                                 </span>
                                 <pre className="text-[10px] text-slate-300 font-mono overflow-x-auto whitespace-pre-wrap p-2 bg-slate-950 rounded border border-slate-900 leading-relaxed max-h-40">
                                   {buildDynamicSemiologyMarkdownTable()}
@@ -23014,10 +23021,10 @@ const splitReportAndAnnex = (text: string) => {
                             <div className="bg-[#0b1219]/60 border-2 border-emerald-500/10 rounded-2xl p-6 flex flex-col items-center justify-center py-10 text-center space-y-3 shadow-lg animate-pulse">
                               <Activity className="h-6 w-6 text-emerald-450 animate-spin" />
                               <p className="text-[10px] font-mono font-black text-slate-300 uppercase tracking-widest">
-                                Estructurando análisis caso clínico completo...
+                                Estructurando anÃ¡lisis caso clÃ­nico completo...
                               </p>
                               <p className="text-[9px] font-medium text-slate-500 uppercase tracking-wider max-w-sm">
-                                Se están evaluando los diagnósticos diferenciales prioritarios y correlaciones fisiopatológicas del informe.
+                                Se estÃ¡n evaluando los diagnÃ³sticos diferenciales prioritarios y correlaciones fisiopatolÃ³gicas del informe.
                               </p>
                             </div>
                           )}
@@ -23037,7 +23044,7 @@ const splitReportAndAnnex = (text: string) => {
                                 <div className="flex items-center gap-2">
                                   <Activity className="h-4 w-4 text-emerald-400" />
                                   <h4 className="text-xs font-black text-emerald-400 uppercase tracking-widest font-mono">
-                                    INFORME DE ANÁLISIS DE CASO COMPLETO
+                                    INFORME DE ANÃLISIS DE CASO COMPLETO
                                   </h4>
                                 </div>
                                 <div className="flex items-center gap-2">
@@ -23049,7 +23056,7 @@ const splitReportAndAnnex = (text: string) => {
                                         ? "bg-emerald-950/90 border-emerald-500/50 text-emerald-300 ring-1 ring-emerald-500/30"
                                         : "bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-100"
                                     }`}
-                                    title={isCaseAnalysisExpanded ? "Restaurar tamaño estándar de componente" : "Maximizar área de lectura (Modo Expandido)"}
+                                    title={isCaseAnalysisExpanded ? "Restaurar tamaÃ±o estÃ¡ndar de componente" : "Maximizar Ã¡rea de lectura (Modo Expandido)"}
                                   >
                                     {isCaseAnalysisExpanded ? (
                                       <Minimize2 className="h-4.5 w-4.5" />
@@ -23061,14 +23068,14 @@ const splitReportAndAnnex = (text: string) => {
                                     onClick={() => copyToClipboard(caseAnalysis, false)}
                                     className="text-[9px] font-black text-slate-400 hover:text-emerald-400 border border-slate-800 hover:border-emerald-500/20 px-2.5 py-1 rounded bg-slate-950/40 uppercase tracking-wider font-mono transition-all cursor-pointer"
                                   >
-                                    Copiar Análisis
+                                    Copiar AnÃ¡lisis
                                   </button>
                                 </div>
                               </div>
 
                               {diffsError && (
                                 <div className="p-3 bg-rose-950/20 border border-rose-500/30 rounded-xl text-rose-200 text-[10.5px] font-semibold leading-relaxed font-sans select-none">
-                                  ⚠️ Error al incorporar: {diffsError}
+                                  â ï¸ Error al incorporar: {diffsError}
                                 </div>
                               )}
 
@@ -23078,7 +23085,7 @@ const splitReportAndAnnex = (text: string) => {
                                   <div className="flex items-center gap-2">
                                     <Sparkles className="h-4.5 w-4.5 text-emerald-400 animate-pulse" />
                                     <h5 className="text-xs font-black uppercase font-mono tracking-wider text-emerald-300">
-                                      OPCIONES DE FORMATO E INSERCIÓN PARA PDF Y REPORTE
+                                      OPCIONES DE FORMATO E INSERCIÃN PARA PDF Y REPORTE
                                     </h5>
                                   </div>
                                   <span className="text-[9px] font-mono text-emerald-400 font-extrabold bg-emerald-950 border border-emerald-800 px-2.5 py-0.5 rounded uppercase tracking-wider">
@@ -23087,17 +23094,17 @@ const splitReportAndAnnex = (text: string) => {
                                 </div>
 
                                 <p className="text-[11px] text-slate-300 font-medium leading-relaxed">
-                                  Selecciona el formato deseado para estructurar este análisis de caso. Cada elemento e hipótesis tendrá su propia casilla para que puedas aceptarlo o desecharlo, y podrás ver la representación gráfica del PDF en tiempo real antes de insertarla:
+                                  Selecciona el formato deseado para estructurar este anÃ¡lisis de caso. Cada elemento e hipÃ³tesis tendrÃ¡ su propia casilla para que puedas aceptarlo o desecharlo, y podrÃ¡s ver la representaciÃ³n grÃ¡fica del PDF en tiempo real antes de insertarla:
                                 </p>
 
                                 {/* Grid of 4 Formats */}
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
                                   {[
-                                    { id: "flujograma_semiologico", label: "Opción 1: Flujograma Semiológico", icon: "✨", desc: "Ciclo de Pensamiento Radiológico" },
-                                    { id: "flujograma_algoritmico", label: "Opción 2: Flujograma", icon: "🔀", desc: "Árbol Algorítmico de Decisión" },
-                                    { id: "esquema_pilares", label: "Opción 3: Esquema por Pilares", icon: "🏛️", desc: "Integración Multidisciplinaria" },
-                                    { id: "mapa_diferenciales", label: "Opción 4: Mapa Diferencial", icon: "🗺️", desc: "Mapa de Diagnósticos" },
-                                    { id: "matriz_semiotica", label: "Opción 5: Matriz Semiótica", icon: "⚖️", desc: "Matriz Semiótica Comparativa" },
+                                    { id: "flujograma_semiologico", label: "OpciÃ³n 1: Flujograma SemiolÃ³gico", icon: "â¨", desc: "Ciclo de Pensamiento RadiolÃ³gico" },
+                                    { id: "flujograma_algoritmico", label: "OpciÃ³n 2: Flujograma", icon: "ð", desc: "Ãrbol AlgorÃ­tmico de DecisiÃ³n" },
+                                    { id: "esquema_pilares", label: "OpciÃ³n 3: Esquema por Pilares", icon: "ðï¸", desc: "IntegraciÃ³n Multidisciplinaria" },
+                                    { id: "mapa_diferenciales", label: "OpciÃ³n 4: Mapa Diferencial", icon: "ðºï¸", desc: "Mapa de DiagnÃ³sticos" },
+                                    { id: "matriz_semiotica", label: "OpciÃ³n 5: Matriz SemiÃ³tica", icon: "âï¸", desc: "Matriz SemiÃ³tica Comparativa" },
                                   ].map(fmt => (
                                     <button
                                       key={fmt.id}
@@ -23130,8 +23137,8 @@ const splitReportAndAnnex = (text: string) => {
                                   </div>
                                 ) : caseDataError ? (
                                   <div className="p-4 bg-rose-950/10 border border-rose-900/35 rounded-2xl text-rose-400 text-[10px] font-mono font-bold uppercase tracking-tight flex items-center gap-2">
-                                    <span>⚠️</span>
-                                    <span>{caseDataError} (Puedes regenerar el análisis para reintentar)</span>
+                                    <span>â ï¸</span>
+                                    <span>{caseDataError} (Puedes regenerar el anÃ¡lisis para reintentar)</span>
                                   </div>
                                 ) : editableCaseData ? (
                                   <div className="pt-2">
@@ -23151,7 +23158,7 @@ const splitReportAndAnnex = (text: string) => {
                                   </div>
                                 ) : (
                                   <div className="bg-[#0b1219]/30 border border-slate-800/50 rounded-2xl p-6 text-center text-slate-400 text-[11px] font-medium">
-                                    Genera un análisis completo de caso arriba para habilitar el editor interactivo y la previsualización del PDF.
+                                    Genera un anÃ¡lisis completo de caso arriba para habilitar el editor interactivo y la previsualizaciÃ³n del PDF.
                                   </div>
                                 )}
 
@@ -23179,12 +23186,12 @@ const splitReportAndAnnex = (text: string) => {
                                     ) : diffsIncorporated ? (
                                       <>
                                         <Check className="h-4 w-4 text-emerald-400" />
-                                        <span>Análisis Estructurado Insertado (Para PDF)</span>
+                                        <span>AnÃ¡lisis Estructurado Insertado (Para PDF)</span>
                                       </>
                                     ) : (
                                       <>
                                         <Sparkles className="h-4 w-4 text-slate-950" />
-                                        <span>Insertar Análisis Estructurado en Reporte Activo (PDF)</span>
+                                        <span>Insertar AnÃ¡lisis Estructurado en Reporte Activo (PDF)</span>
                                       </>
                                     )}
                                   </button>
@@ -23218,10 +23225,10 @@ const splitReportAndAnnex = (text: string) => {
                             <div className="bg-[#0b1517]/60 border-2 border-teal-500/10 rounded-2xl p-6 flex flex-col items-center justify-center py-10 text-center space-y-3 shadow-lg animate-pulse">
                               <BookOpen className="h-6 w-6 text-teal-450 animate-spin" />
                               <p className="text-[10px] font-mono font-black text-slate-300 uppercase tracking-widest">
-                                Consultando literatura médica de alta precisión...
+                                Consultando literatura mÃ©dica de alta precisiÃ³n...
                               </p>
                               <p className="text-[9px] font-medium text-slate-500 uppercase tracking-wider max-w-sm">
-                                Realizando grounding académico contra publicaciones, directrices clínicas de consenso y Radiopaedia.
+                                Realizando grounding acadÃ©mico contra publicaciones, directrices clÃ­nicas de consenso y Radiopaedia.
                               </p>
                             </div>
                           )}
@@ -23241,7 +23248,7 @@ const splitReportAndAnnex = (text: string) => {
                                 <div className="flex items-center gap-2">
                                   <BookOpen className="h-4 w-4 text-teal-400" />
                                   <h4 className="text-xs font-black text-teal-400 uppercase tracking-widest font-mono">
-                                    BÚSQUEDA BIBLIOGRÁFICA Y GUÍAS CLÍNICAS
+                                    BÃSQUEDA BIBLIOGRÃFICA Y GUÃAS CLÃNICAS
                                   </h4>
                                 </div>
                                 <div className="flex items-center gap-2">
@@ -23253,7 +23260,7 @@ const splitReportAndAnnex = (text: string) => {
                                         ? "bg-teal-950/90 border-teal-500/50 text-teal-300 ring-1 ring-teal-500/30"
                                         : "bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-100"
                                     }`}
-                                    title={isBibliographyExpanded ? "Restaurar tamaño estándar de componente" : "Maximizar área de lectura (Modo Expandido)"}
+                                    title={isBibliographyExpanded ? "Restaurar tamaÃ±o estÃ¡ndar de componente" : "Maximizar Ã¡rea de lectura (Modo Expandido)"}
                                   >
                                     {isBibliographyExpanded ? (
                                       <Minimize2 className="h-4.5 w-4.5" />
@@ -23265,7 +23272,7 @@ const splitReportAndAnnex = (text: string) => {
                                     onClick={() => copyToClipboard(bibliography, false)}
                                     className="text-[9px] font-black text-slate-400 hover:text-teal-400 border border-slate-800 hover:border-teal-500/20 px-3 py-2 rounded-xl bg-slate-950/40 uppercase tracking-wider font-mono transition-all cursor-pointer"
                                   >
-                                    Copiar Bibliografía
+                                    Copiar BibliografÃ­a
                                   </button>
                                 </div>
                               </div>
@@ -23282,7 +23289,7 @@ const splitReportAndAnnex = (text: string) => {
                                   <div className="flex items-center gap-2">
                                     <ExternalLink className="h-3.5 w-3.5 text-teal-400" />
                                     <h5 className="text-[10px] font-black text-teal-300 uppercase tracking-widest font-mono">
-                                      Fuentes de Grounding Clínico y Enlaces Consultados
+                                      Fuentes de Grounding ClÃ­nico y Enlaces Consultados
                                     </h5>
                                   </div>
                                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -23297,7 +23304,7 @@ const splitReportAndAnnex = (text: string) => {
                                       >
                                         <div className="space-y-1.5 overflow-hidden text-left">
                                           <p className="text-[10px] font-black text-slate-350 uppercase tracking-wide group-hover:text-teal-400 transition-colors leading-snug">
-                                            {source.title || "Artículo Científico / Guía"}
+                                            {source.title || "ArtÃ­culo CientÃ­fico / GuÃ­a"}
                                           </p>
 
                                           {source.summary && (
@@ -23317,7 +23324,7 @@ const splitReportAndAnnex = (text: string) => {
                                 </div>
                               )}
 
-                              {/* ACCIONES DE BÚSQUEDA ADICIONAL (LOAD MORE / PAGINACIÓN) */}
+                              {/* ACCIONES DE BÃSQUEDA ADICIONAL (LOAD MORE / PAGINACIÃN) */}
                               <div className="pt-4 border-t border-teal-950/60 mt-4 space-y-3">
                                 {isSearchingMoreBibliography ? (
                                   <div className="bg-[#0b1517]/40 border border-teal-500/20 rounded-2xl p-4 flex flex-col items-center justify-center gap-2.5 animate-pulse text-center">
@@ -23326,17 +23333,17 @@ const splitReportAndAnnex = (text: string) => {
                                       Buscando fuentes complementarias adicionales...
                                     </p>
                                     <p className="text-[9px] font-medium text-slate-500 uppercase tracking-wider max-w-sm">
-                                      Consultando nuevas publicaciones indexadas y actualizando la síntesis bibliográfica de soporte.
+                                      Consultando nuevas publicaciones indexadas y actualizando la sÃ­ntesis bibliogrÃ¡fica de soporte.
                                     </p>
                                   </div>
                                 ) : (
                                   <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-teal-950/20 border border-teal-900/30 p-4 rounded-2xl">
                                     <div className="text-left space-y-1">
                                       <p className="text-[10px] font-black text-teal-400 uppercase tracking-widest font-mono">
-                                        ¿Deseas profundizar más en la literatura?
+                                        Â¿Deseas profundizar mÃ¡s en la literatura?
                                       </p>
                                       <p className="text-[9px] text-slate-400 font-medium normal-case leading-normal max-w-md">
-                                        Realiza una segunda ronda de búsqueda avanzada en PubMed y Radiopaedia para añadir de 6 a 10 recursos adicionales de alta relevancia científica sin duplicar los enlaces actuales.
+                                        Realiza una segunda ronda de bÃºsqueda avanzada en PubMed y Radiopaedia para aÃ±adir de 6 a 10 recursos adicionales de alta relevancia cientÃ­fica sin duplicar los enlaces actuales.
                                       </p>
                                     </div>
                                     <button
@@ -23345,7 +23352,7 @@ const splitReportAndAnnex = (text: string) => {
                                       className="px-5 py-3 bg-teal-500/10 hover:bg-teal-500 hover:text-white border border-teal-500/30 hover:border-transparent text-teal-300 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer font-mono shrink-0 w-full sm:w-auto"
                                     >
                                       <Plus className="h-4 w-4" />
-                                      <span>Buscar Más Resultados</span>
+                                      <span>Buscar MÃ¡s Resultados</span>
                                     </button>
                                   </div>
                                 )}
@@ -23389,10 +23396,10 @@ const splitReportAndAnnex = (text: string) => {
                             <div className="bg-[#140f0a]/60 border-2 border-orange-500/10 rounded-2xl p-6 flex flex-col items-center justify-center py-10 text-center space-y-3 shadow-lg animate-pulse my-4">
                               <Loader2 className="h-6 w-6 text-orange-450 animate-spin" />
                               <p className="text-[10px] font-mono font-black text-slate-300 uppercase tracking-widest">
-                                Traduciendo informe radiológico para el paciente...
+                                Traduciendo informe radiolÃ³gico para el paciente...
                               </p>
                               <p className="text-[9px] font-medium text-slate-500 uppercase tracking-wider max-w-sm">
-                                Se está traduciendo la terminología técnica a un tono empático, cálido y comprensible con analogías cotidianas y pautas de bienestar general.
+                                Se estÃ¡ traduciendo la terminologÃ­a tÃ©cnica a un tono empÃ¡tico, cÃ¡lido y comprensible con analogÃ­as cotidianas y pautas de bienestar general.
                               </p>
                             </div>
                           )}
@@ -23416,10 +23423,10 @@ const splitReportAndAnnex = (text: string) => {
                                   <User className="h-5 w-5 text-orange-400" />
                                   <div className="text-left">
                                     <h4 className="text-xs font-black text-orange-400 uppercase tracking-widest font-mono">
-                                      TRADUCCIÓN EMPÁTICA Y EXPLICACIÓN DE INFORME
+                                      TRADUCCIÃN EMPÃTICA Y EXPLICACIÃN DE INFORME
                                     </h4>
                                     <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wide mt-0.5">
-                                      Acompañamiento personalizado y traducción de conceptos clínicos a analogías amigables.
+                                      AcompaÃ±amiento personalizado y traducciÃ³n de conceptos clÃ­nicos a analogÃ­as amigables.
                                     </p>
                                   </div>
                                 </div>
@@ -23432,7 +23439,7 @@ const splitReportAndAnnex = (text: string) => {
                                         ? "bg-emerald-950/80 border-emerald-500/50 text-emerald-350 shadow-[0_2px_8px_rgba(16,185,129,0.2)]"
                                         : "bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-100"
                                     }`}
-                                    title={attachSummaryToOfficialReport ? "El resumen se incluirá al final del reporte original como un anexo" : "Adjuntar este resumen como un anexo al reporte original"}
+                                    title={attachSummaryToOfficialReport ? "El resumen se incluirÃ¡ al final del reporte original como un anexo" : "Adjuntar este resumen como un anexo al reporte original"}
                                   >
                                     {attachSummaryToOfficialReport ? (
                                       <>
@@ -23454,7 +23461,7 @@ const splitReportAndAnnex = (text: string) => {
                                         ? "bg-orange-950/90 border-orange-500/50 text-orange-300 ring-1 ring-orange-500/30"
                                         : "bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-100"
                                     }`}
-                                    title={isPatientSummaryExpanded ? "Restaurar tamaño estándar de componente" : "Maximizar área de lectura (Modo Expandido)"}
+                                    title={isPatientSummaryExpanded ? "Restaurar tamaÃ±o estÃ¡ndar de componente" : "Maximizar Ã¡rea de lectura (Modo Expandido)"}
                                   >
                                     {isPatientSummaryExpanded ? (
                                       <Minimize2 className="h-4.5 w-4.5" />
@@ -23465,15 +23472,15 @@ const splitReportAndAnnex = (text: string) => {
                                   <button
                                     onClick={() => handleDownloadPatientSummaryPDF(false)}
                                     className="text-[9px] font-black text-[#0f100e] hover:bg-orange-300 border border-orange-400 px-3 py-1.5 rounded-xl bg-orange-400 uppercase tracking-wider font-mono transition-all flex items-center gap-1.5 cursor-pointer"
-                                    title="Descargar el PDF explicativo para el paciente en formato impreso/digital de alta definición"
+                                    title="Descargar el PDF explicativo para el paciente en formato impreso/digital de alta definiciÃ³n"
                                   >
                                     <Download className="h-3 w-3" />
-                                    Descargar PDF Explicación
+                                    Descargar PDF ExplicaciÃ³n
                                   </button>
                                   <button
                                     onClick={handlePrintPatientSummary}
                                     className="text-[9px] font-black text-slate-150 hover:text-orange-400 border border-orange-500/25 hover:border-orange-500/50 px-3 py-1.5 rounded-xl bg-orange-950/20 uppercase tracking-wider font-mono transition-all flex items-center gap-1.5 cursor-pointer"
-                                    title="Imprimir formato de visualización web"
+                                    title="Imprimir formato de visualizaciÃ³n web"
                                   >
                                     <Printer className="h-3 w-3" />
                                     Imprimir Formato
@@ -23481,18 +23488,18 @@ const splitReportAndAnnex = (text: string) => {
                                   <button
                                     onClick={() => handleOpenWhatsAppShare('patient_summary')}
                                     className="text-[9px] font-black text-white hover:text-emerald-400 border-2 border-emerald-500/25 hover:border-emerald-500/50 px-3 py-1.5 rounded-xl bg-slate-950/40 uppercase tracking-wider font-mono transition-all flex items-center gap-1.5 cursor-pointer"
-                                    title="Enviar explicación estructurada y amigable al paciente por WhatsApp con descarga de PDF"
+                                    title="Enviar explicaciÃ³n estructurada y amigable al paciente por WhatsApp con descarga de PDF"
                                   >
                                     <MessageSquare className="h-3 w-3 text-emerald-400" />
-                                    WhatsApp Explicación (PDF)
+                                    WhatsApp ExplicaciÃ³n (PDF)
                                   </button>
                                   <button
                                     onClick={() => handleOpenGmailShare('patient_summary')}
                                     className="text-[9px] font-black text-white hover:text-red-400 border-2 border-red-500/25 hover:border-red-500/50 px-3 py-1.5 rounded-xl bg-slate-950/40 uppercase tracking-wider font-mono transition-all flex items-center gap-1.5 cursor-pointer"
-                                    title="Enviar explicación estructurada y amigable al paciente por Correo Electrónico usando Gmail"
+                                    title="Enviar explicaciÃ³n estructurada y amigable al paciente por Correo ElectrÃ³nico usando Gmail"
                                   >
                                     <Mail className="h-3 w-3 text-red-400" />
-                                    Gmail Explicación (PDF)
+                                    Gmail ExplicaciÃ³n (PDF)
                                   </button>
                                   <button
                                     onClick={() => copyToClipboard(JSON.stringify(patientSummary, null, 2), false)}
@@ -23506,9 +23513,9 @@ const splitReportAndAnnex = (text: string) => {
                               {/* Findings List accordion */}
                               <div className="space-y-3.5 text-left">
                                 <div className="flex items-center gap-1.5 border-b border-orange-950/20 pb-2">
-                                  <span className="text-xs">🔍</span>
+                                  <span className="text-xs">ð</span>
                                   <h5 className="text-[10px] font-black text-slate-300 uppercase tracking-widest font-mono">
-                                    Desglose de Hallazgos Anatómicos Explicados (Haz clic para expandir y comprender)
+                                    Desglose de Hallazgos AnatÃ³micos Explicados (Haz clic para expandir y comprender)
                                   </h5>
                                 </div>
 
@@ -23526,15 +23533,15 @@ const splitReportAndAnnex = (text: string) => {
                                         >
                                           <div className="space-y-1">
                                             <p className="text-xs font-black text-orange-100 uppercase tracking-wide flex items-center gap-2">
-                                              <span>📌</span>
+                                              <span>ð</span>
                                               {finding.title}
                                             </p>
                                             <p className="text-[9px] font-mono text-slate-400 tracking-wider">
-                                              Término en informe técnico: <span className="text-pink-400 font-semibold font-mono font-xs">"{finding.originalTerm}"</span>
+                                              TÃ©rmino en informe tÃ©cnico: <span className="text-pink-400 font-semibold font-mono font-xs">"{finding.originalTerm}"</span>
                                             </p>
                                           </div>
                                           <span className="text-slate-400 text-xs font-mono px-2.5 py-1 border border-slate-850 rounded-lg bg-slate-900 shrink-0">
-                                            {isExpanded ? "▲ Ocultar" : "▼ Comprender"}
+                                            {isExpanded ? "â² Ocultar" : "â¼ Comprender"}
                                           </span>
                                         </button>
 
@@ -23543,7 +23550,7 @@ const splitReportAndAnnex = (text: string) => {
                                             {/* Detailed layout inside expanded finding */}
                                             <div className="space-y-1">
                                               <p className="text-[9px] font-black text-amber-500 uppercase tracking-widest font-mono">
-                                                Explicación Médica Sencilla:
+                                                ExplicaciÃ³n MÃ©dica Sencilla:
                                               </p>
                                               <p className="text-xs text-slate-300 leading-relaxed font-sans">
                                                 {finding.simplifiedExplanation}
@@ -23552,7 +23559,7 @@ const splitReportAndAnnex = (text: string) => {
 
                                             <div className="p-3.5 bg-amber-950/10 border-l-2 border-amber-500/30 rounded-r-xl space-y-1">
                                               <p className="text-[8px] font-black text-amber-450 uppercase tracking-widest font-mono flex items-center gap-1.5">
-                                                <span>💡</span> Analogía Cotidiana de Comprensión:
+                                                <span>ð¡</span> AnalogÃ­a Cotidiana de ComprensiÃ³n:
                                               </p>
                                               <p className="text-xs text-amber-100 leading-relaxed font-sans italic">
                                                 "{finding.analogy}"
@@ -23561,7 +23568,7 @@ const splitReportAndAnnex = (text: string) => {
 
                                             <div className="p-3.5 bg-blue-950/20 border-l-2 border-blue-500/40 rounded-r-xl space-y-1">
                                               <p className="text-[8px] font-black text-blue-400 uppercase tracking-widest font-mono flex items-center gap-1.5">
-                                                <span>🩺</span> Contexto Clínico y Perspectiva Médica:
+                                                <span>ð©º</span> Contexto ClÃ­nico y Perspectiva MÃ©dica:
                                               </p>
                                               <p className="text-[11px] text-blue-200 leading-relaxed font-sans">
                                                 {finding.reassurance}
@@ -23584,10 +23591,10 @@ const splitReportAndAnnex = (text: string) => {
                             <div className="bg-[#100f14]/60 border-2 border-pink-500/10 rounded-2xl p-6 flex flex-col items-center justify-center py-10 text-center space-y-3 shadow-lg animate-pulse my-4">
                               <Loader2 className="h-6 w-6 text-pink-450 animate-spin" />
                               <p className="text-[10px] font-mono font-black text-slate-300 uppercase tracking-widest">
-                                Construyendo glosario y analizando clasificaciones médicas...
+                                Construyendo glosario y analizando clasificaciones mÃ©dicas...
                               </p>
                               <p className="text-[9px] font-medium text-slate-500 uppercase tracking-wider max-w-sm">
-                                Extrayendo signos radiológicos específicos, escalas internacionales de dosificación y términos complejos del reporte médico.
+                                Extrayendo signos radiolÃ³gicos especÃ­ficos, escalas internacionales de dosificaciÃ³n y tÃ©rminos complejos del reporte mÃ©dico.
                               </p>
                             </div>
                           )}
@@ -23611,10 +23618,10 @@ const splitReportAndAnnex = (text: string) => {
                                   <BookOpenText className="h-5 w-5 text-pink-400" />
                                   <div>
                                     <h4 className="text-xs font-black text-pink-400 uppercase tracking-widest font-mono">
-                                      GLOSARIO DINÁMICO DE SIGNOS Y CLASIFICACIONES
+                                      GLOSARIO DINÃMICO DE SIGNOS Y CLASIFICACIONES
                                     </h4>
                                     <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wide mt-0.5">
-                                      Académico, científico y didáctico para estudiantes, docentes y especialistas.
+                                      AcadÃ©mico, cientÃ­fico y didÃ¡ctico para estudiantes, docentes y especialistas.
                                     </p>
                                   </div>
                                 </div>
@@ -23627,7 +23634,7 @@ const splitReportAndAnnex = (text: string) => {
                                         ? "bg-pink-950/90 border-pink-500/50 text-pink-300 ring-1 ring-pink-500/30"
                                         : "bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-100"
                                     }`}
-                                    title={isGlossaryExpanded ? "Restaurar tamaño estándar de componente" : "Maximizar área de lectura (Modo Expandido)"}
+                                    title={isGlossaryExpanded ? "Restaurar tamaÃ±o estÃ¡ndar de componente" : "Maximizar Ã¡rea de lectura (Modo Expandido)"}
                                   >
                                     {isGlossaryExpanded ? (
                                       <Minimize2 className="h-4.5 w-4.5" />
@@ -23648,13 +23655,13 @@ const splitReportAndAnnex = (text: string) => {
                                 {dynamicGlossary.terms.map((item: any, idx: number) => {
                                   // Category background styling map
                                   let catColor = "bg-blue-950 text-blue-400 border-blue-900/40";
-                                  if (item.category === "Signo Radiológico") {
+                                  if (item.category === "Signo RadiolÃ³gico") {
                                     catColor = "bg-teal-950 text-teal-450 border-teal-900/40";
-                                  } else if (item.category === "Clasificación") {
+                                  } else if (item.category === "ClasificaciÃ³n") {
                                     catColor = "bg-pink-950 text-pink-400 border-pink-900/40";
-                                  } else if (item.category === "Anatomía") {
+                                  } else if (item.category === "AnatomÃ­a") {
                                     catColor = "bg-purple-950 text-purple-400 border-purple-900/40";
-                                  } else if (item.category === "Patología/Otros") {
+                                  } else if (item.category === "PatologÃ­a/Otros") {
                                     catColor = "bg-orange-950 text-orange-450 border-orange-900/40";
                                   }
 
@@ -23674,7 +23681,7 @@ const splitReportAndAnnex = (text: string) => {
                                             </h5>
                                             {item.pronunciation && (
                                               <p className="text-[9px] font-mono text-slate-450 uppercase tracking-wide">
-                                                Epónimo/Origen: {item.pronunciation}
+                                                EpÃ³nimo/Origen: {item.pronunciation}
                                               </p>
                                             )}
                                           </div>
@@ -23684,11 +23691,11 @@ const splitReportAndAnnex = (text: string) => {
                                         </div>
 
                                         <p className="text-xs text-slate-300 normal-case leading-relaxed font-sans border-l border-slate-800 pl-2.5 text-left">
-                                          <strong className="text-slate-400">Definición:</strong> {item.definition}
+                                          <strong className="text-slate-400">DefiniciÃ³n:</strong> {item.definition}
                                         </p>
 
                                         <p className="text-[11px] text-slate-400 normal-case leading-relaxed font-sans bg-[#050306] p-2.5 rounded-lg border border-slate-900 text-left">
-                                          <strong className="text-pink-400 font-mono text-[9px] uppercase tracking-wider block mb-1">Relevancia Clínica:</strong>
+                                          <strong className="text-pink-400 font-mono text-[9px] uppercase tracking-wider block mb-1">Relevancia ClÃ­nica:</strong>
                                           {item.clinicalRelevance}
                                         </p>
                                       </div>
@@ -23712,7 +23719,7 @@ const splitReportAndAnnex = (text: string) => {
                                             ) : (
                                               <>
                                                 <Search className="h-2.5 w-2.5" />
-                                                Soporte Científico
+                                                Soporte CientÃ­fico
                                               </>
                                             )}
                                           </button>
@@ -23722,7 +23729,7 @@ const splitReportAndAnnex = (text: string) => {
                                         {litSearchInfo.text && (
                                           <div className="mt-2 bg-[#050306] border border-slate-850 p-3 rounded-xl space-y-3 animate-fade-in text-left">
                                             <p className="text-[10px] font-mono font-black text-pink-400 uppercase tracking-widest border-b border-pink-950/40 pb-1 flex items-center gap-1 font-sans">
-                                              <span>🎓</span> Evidencia Científica registrada:
+                                              <span>ð</span> Evidencia CientÃ­fica registrada:
                                             </p>
                                             <div className="max-h-[160px] overflow-y-auto pr-1 text-[11px] text-slate-350 leading-relaxed font-sans">
                                               {renderElegantResponse(litSearchInfo.text, "text-pink-450")}
@@ -23732,7 +23739,7 @@ const splitReportAndAnnex = (text: string) => {
                                             {litSearchInfo.sources && litSearchInfo.sources.length > 0 && (
                                               <div className="space-y-1.5 border-t border-pink-950/40 pt-2 font-sans">
                                                 <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest font-mono">
-                                                  Enlaces Bibliográficos de Respaldo:
+                                                  Enlaces BibliogrÃ¡ficos de Respaldo:
                                                 </p>
                                                 <div className="flex flex-col gap-1">
                                                   {litSearchInfo.sources.map((src: any, srcIdx: number) => (
@@ -23744,7 +23751,7 @@ const splitReportAndAnnex = (text: string) => {
                                                       referrerPolicy="no-referrer"
                                                       className="text-[9px] text-pink-400 hover:text-pink-300 hover:underline leading-snug font-medium flex items-center gap-1 truncate"
                                                     >
-                                                      <span>🔗</span> {src.title || src.uri}
+                                                      <span>ð</span> {src.title || src.uri}
                                                     </a>
                                                   ))}
                                                 </div>
@@ -23776,7 +23783,7 @@ const splitReportAndAnnex = (text: string) => {
                                 Estructurando esquema de hallazgos principales...
                               </p>
                               <p className="text-[9px] font-medium text-slate-500 uppercase tracking-wider max-w-sm">
-                                Extrayendo estructuras anatómicas específicas, determinando severidades relativas y deduciendo impactos clínicos directos para el cuadro sinóptico.
+                                Extrayendo estructuras anatÃ³micas especÃ­ficas, determinando severidades relativas y deduciendo impactos clÃ­nicos directos para el cuadro sinÃ³ptico.
                               </p>
                             </div>
                           )}
@@ -23800,10 +23807,10 @@ const splitReportAndAnnex = (text: string) => {
                                   <Layers className="h-5 w-5 text-amber-400" />
                                   <div>
                                     <h4 className="text-xs font-black text-amber-400 uppercase tracking-widest font-mono">
-                                      Esquema de Hallazgos Principales (Cuadro Sinóptico)
+                                      Esquema de Hallazgos Principales (Cuadro SinÃ³ptico)
                                     </h4>
                                     <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wide mt-0.5">
-                                      Estructuración resumida interactiva y formal de alta relevancia clínica.
+                                      EstructuraciÃ³n resumida interactiva y formal de alta relevancia clÃ­nica.
                                     </p>
                                   </div>
                                 </div>
@@ -23819,7 +23826,7 @@ const splitReportAndAnnex = (text: string) => {
                                           : "text-slate-400 hover:text-slate-200 border border-transparent"
                                       }`}
                                     >
-                                      Opción 1: Bloques
+                                      OpciÃ³n 1: Bloques
                                     </button>
                                     <button
                                       type="button"
@@ -23830,7 +23837,7 @@ const splitReportAndAnnex = (text: string) => {
                                           : "text-slate-400 hover:text-slate-200 border border-transparent"
                                       }`}
                                     >
-                                      Opción 2: Tabla
+                                      OpciÃ³n 2: Tabla
                                     </button>
                                   </div>
 
@@ -23842,7 +23849,7 @@ const splitReportAndAnnex = (text: string) => {
                                         ? "bg-amber-950/90 border-amber-500/50 text-amber-300 ring-1 ring-amber-500/30"
                                         : "bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-100"
                                     }`}
-                                    title={isSchematicSummaryExpanded ? "Restaurar tamaño estándar de componente" : "Maximizar área de lectura (Modo Expandido)"}
+                                    title={isSchematicSummaryExpanded ? "Restaurar tamaÃ±o estÃ¡ndar de componente" : "Maximizar Ã¡rea de lectura (Modo Expandido)"}
                                   >
                                     {isSchematicSummaryExpanded ? (
                                       <Minimize2 className="h-4.5 w-4.5" />
@@ -23901,7 +23908,7 @@ const splitReportAndAnnex = (text: string) => {
                                     <thead>
                                       <tr className="border-b border-amber-950/50 text-[9px] font-mono font-black text-slate-500 uppercase tracking-widest font-sans">
                                         <th className="py-3 px-3">ID</th>
-                                        <th className="py-3 px-3">Región / Estructura</th>
+                                        <th className="py-3 px-3">RegiÃ³n / Estructura</th>
                                         <th className="py-3 px-3">Hallazgo Principal</th>
                                       </tr>
                                     </thead>
@@ -23919,7 +23926,7 @@ const splitReportAndAnnex = (text: string) => {
                                               {f.anatomicalSite}
                                             </td>
                                             <td className="py-3 px-3 font-sans text-slate-300">
-                                              <span className="mr-1.5">{f.iconSuggested || "📌"}</span>
+                                              <span className="mr-1.5">{f.iconSuggested || "ð"}</span>
                                               {f.description}
                                             </td>
                                           </tr>
@@ -23931,29 +23938,29 @@ const splitReportAndAnnex = (text: string) => {
                               )}
 
                               <div className="p-3 bg-amber-950/10 border border-amber-900/20 rounded-xl text-amber-250 text-[10px] text-left leading-relaxed flex items-start gap-2">
-                                <span className="text-amber-500 text-sm">💡</span>
+                                <span className="text-amber-500 text-sm">ð¡</span>
                                 <span>
-                                  <strong>Consejo práctico de compatibilidad:</strong> Usa la <strong>Opción 1 (En Bloques)</strong> para copiar y pegar de forma 100% segura en sistemas o cuadros de texto externos susceptibles a distorsiones de formato. Ambas opciones insertan el esquema al final del reporte para tus descargas de PDF.
+                                  <strong>Consejo prÃ¡ctico de compatibilidad:</strong> Usa la <strong>OpciÃ³n 1 (En Bloques)</strong> para copiar y pegar de forma 100% segura en sistemas o cuadros de texto externos susceptibles a distorsiones de formato. Ambas opciones insertan el esquema al final del reporte para tus descargas de PDF.
                                 </span>
                               </div>
                             </div>
                           )}
 
-                          {/* --- SECCIÓN DE REFINAMIENTO DE INFORME & DIÁLOGO DE MODIFICACIÓN --- */}
+                          {/* --- SECCIÃN DE REFINAMIENTO DE INFORME & DIÃLOGO DE MODIFICACIÃN --- */}
                           <div className="bg-slate-900/60 border-2 border-slate-800/80 rounded-2xl p-6 space-y-5 shadow-xl relative overflow-hidden">
                             <div>
                               <h3 className="text-xs font-black text-slate-200 uppercase tracking-widest flex items-center gap-2 font-mono">
                                 <Sparkles className="h-4 w-4 text-indigo-400" /> Refinar e Instruir Cambios del Reporte
                               </h3>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mt-1">
-                                Mejora el vocabulario técnico o describe ajustes específicos para reescribir secciones del informe.
+                                Mejora el vocabulario tÃ©cnico o describe ajustes especÃ­ficos para reescribir secciones del informe.
                               </p>
                             </div>
 
                             {/* Quick Refine Buttons */}
                             <div className="flex flex-wrap gap-2.5 pb-2">
                               <button
-                                onClick={() => handleModifyReport("Refinar vocabulario y redacción técnica radiológica, haciéndolo aún más riguroso y formal")}
+                                onClick={() => handleModifyReport("Refinar vocabulario y redacciÃ³n tÃ©cnica radiolÃ³gica, haciÃ©ndolo aÃºn mÃ¡s riguroso y formal")}
                                 disabled={isModifyingReport}
                                 className="px-4 py-2.5 bg-indigo-950/40 hover:bg-indigo-900/30 disabled:opacity-50 border-2 border-indigo-500/10 hover:border-indigo-500/30 text-indigo-400 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center gap-2 font-mono"
                               >
@@ -23962,11 +23969,11 @@ const splitReportAndAnnex = (text: string) => {
                                 ) : (
                                   <Sparkles className="h-3.5 w-3.5 text-indigo-400" />
                                 )}
-                                Refinar Vocabulario y Redacción
+                                Refinar Vocabulario y RedacciÃ³n
                               </button>
 
                               <button
-                                onClick={() => handleModifyReport("Proporciona una versión ampliada detallada de este informe radiológico, enriqueciendo los hallazgos anatómicos normales y especificidades técnicas")}
+                                onClick={() => handleModifyReport("Proporciona una versiÃ³n ampliada detallada de este informe radiolÃ³gico, enriqueciendo los hallazgos anatÃ³micos normales y especificidades tÃ©cnicas")}
                                 disabled={isModifyingReport}
                                 className="px-4 py-2.5 bg-blue-950/40 hover:bg-blue-900/30 disabled:opacity-50 border-2 border-blue-500/10 hover:border-blue-500/30 text-blue-400 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center gap-2 font-mono"
                               >
@@ -23975,7 +23982,7 @@ const splitReportAndAnnex = (text: string) => {
                                 ) : (
                                   <Plus className="h-3.5 w-3.5 text-blue-400" />
                                 )}
-                                Versión Ampliada
+                                VersiÃ³n Ampliada
                               </button>
                             </div>
 
@@ -23983,14 +23990,14 @@ const splitReportAndAnnex = (text: string) => {
                             <div className="space-y-3.5 border-t border-slate-800/80 pt-4">
                               <div className="flex items-center justify-between">
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-mono">
-                                  Instrucción del Radiólogo para Modificación
+                                  InstrucciÃ³n del RadiÃ³logo para ModificaciÃ³n
                                 </label>
                               </div>
                               <div className="flex gap-2.5">
                                 <textarea
                                   value={currentModInstruction}
                                   onChange={(e) => setCurrentModInstruction(e.target.value)}
-                                  placeholder="Ej: 'Cambia la sugerencia a BI-RADS 3', 'Describe con más detalle la silueta cardíaca', etc."
+                                  placeholder="Ej: 'Cambia la sugerencia a BI-RADS 3', 'Describe con mÃ¡s detalle la silueta cardÃ­aca', etc."
                                   className="flex-1 bg-slate-950 border-2 border-slate-850 hover:border-slate-800 focus:border-indigo-650 rounded-xl px-4 py-3 text-xs font-semibold text-slate-200 placeholder:text-slate-650 outline-none transition-all resize-none h-14 font-mono leading-relaxed"
                                   disabled={isModifyingReport}
                                 />
@@ -24018,7 +24025,7 @@ const splitReportAndAnnex = (text: string) => {
                             </div>
                           </div>
 
-                          {/* --- SECCIÓN DE VALORACIÓN CLÍNICA DE LA IMAGEN MÉDICA --- */}
+                          {/* --- SECCIÃN DE VALORACIÃN CLÃNICA DE LA IMAGEN MÃDICA --- */}
                           {base64Image && (
                             <div className="bg-slate-950 border-2 border-slate-850 rounded-2xl p-6 space-y-5 shadow-2xl relative overflow-hidden animate-fade-in">
                               <div className="absolute top-0 right-0 w-36 h-36 bg-blue-500/5 blur-3xl pointer-events-none rounded-full"></div>
@@ -24026,10 +24033,10 @@ const splitReportAndAnnex = (text: string) => {
                               <div className="flex items-center gap-3 border-b border-slate-850 pb-4 justify-between">
                                 <div>
                                   <h3 className="text-xs font-black text-blue-400 uppercase tracking-widest flex items-center gap-2 font-mono">
-                                    <FileImage className="h-4 w-4" /> Informe de Valoración de Imagen Médica
+                                    <FileImage className="h-4 w-4" /> Informe de ValoraciÃ³n de Imagen MÃ©dica
                                   </h3>
                                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mt-1">
-                                    Valoración analítica de la placa/estudio aportado y desglose de hallazgos anatómicos.
+                                    ValoraciÃ³n analÃ­tica de la placa/estudio aportado y desglose de hallazgos anatÃ³micos.
                                   </p>
                                 </div>
                                 <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-blue-950 text-blue-400 border border-blue-900/40 px-2 py-1 rounded">
@@ -24042,7 +24049,7 @@ const splitReportAndAnnex = (text: string) => {
                                 <div className="flex flex-col items-center justify-center py-8 text-center space-y-3 bg-[#0a0d1b]/40 rounded-xl border border-dashed border-slate-850 animate-pulse">
                                   <Activity className="h-6 w-6 text-blue-450 animate-pulse animate-spin" />
                                   <p className="text-[11px] font-mono font-black text-slate-400 uppercase tracking-widest">
-                                    Generando valoración de imagen y hallazgos paso a paso...
+                                    Generando valoraciÃ³n de imagen y hallazgos paso a paso...
                                   </p>
                                 </div>
                               )}
@@ -24057,7 +24064,7 @@ const splitReportAndAnnex = (text: string) => {
                                     <div className="flex items-center gap-2">
                                       <FileImage className="h-4 w-4 text-blue-400" />
                                       <h4 className="text-xs font-black text-blue-400 uppercase tracking-widest font-mono">
-                                        VALORACIÓN DE IMAGEN Y HALLAZGOS ANATÓMICOS
+                                        VALORACIÃN DE IMAGEN Y HALLAZGOS ANATÃMICOS
                                       </h4>
                                     </div>
                                     <div className="flex items-center gap-2">
@@ -24069,7 +24076,7 @@ const splitReportAndAnnex = (text: string) => {
                                             ? "bg-blue-950/90 border-blue-500/50 text-blue-300 ring-1 ring-blue-500/30"
                                             : "bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-100"
                                         }`}
-                                        title={isImageEvaluationExpanded ? "Restaurar tamaño estándar de componente" : "Maximizar área de lectura (Modo Expandido)"}
+                                        title={isImageEvaluationExpanded ? "Restaurar tamaÃ±o estÃ¡ndar de componente" : "Maximizar Ã¡rea de lectura (Modo Expandido)"}
                                       >
                                         {isImageEvaluationExpanded ? (
                                           <Minimize2 className="h-4 w-4" />
@@ -24081,7 +24088,7 @@ const splitReportAndAnnex = (text: string) => {
                                         onClick={() => copyToClipboard(imageEvaluation, false)}
                                         className="text-[9px] font-black text-slate-400 hover:text-blue-400 border border-slate-800 hover:border-blue-500/20 px-3 py-1.5 rounded-xl bg-slate-950/40 uppercase tracking-wider font-mono transition-all cursor-pointer"
                                       >
-                                        Copiar Valoración
+                                        Copiar ValoraciÃ³n
                                       </button>
                                     </div>
                                   </div>
@@ -24096,10 +24103,10 @@ const splitReportAndAnnex = (text: string) => {
                                   <div className="border-t border-slate-900/80 pt-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
                                     <div className="max-w-md">
                                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">
-                                        ¿Deseas una valoración diagnóstica complementaria profunda?
+                                        Â¿Deseas una valoraciÃ³n diagnÃ³stica complementaria profunda?
                                       </p>
                                       <p className="text-[9px] font-semibold text-slate-500 uppercase tracking-wider mt-0.5 leading-relaxed">
-                                        Solicita un análisis de segunda opinión buscando signos sutiles, diagnósticos diferenciales y opciones complementarias.
+                                        Solicita un anÃ¡lisis de segunda opiniÃ³n buscando signos sutiles, diagnÃ³sticos diferenciales y opciones complementarias.
                                       </p>
                                     </div>
                                     <button
@@ -24109,11 +24116,11 @@ const splitReportAndAnnex = (text: string) => {
                                     >
                                       {isEvaluatingAdditional ? (
                                         <>
-                                          <RefreshCw className="h-3.5 w-3.5 animate-spin text-indigo-400" /> Evaluando Segunda Opinión...
+                                          <RefreshCw className="h-3.5 w-3.5 animate-spin text-indigo-400" /> Evaluando Segunda OpiniÃ³n...
                                         </>
                                       ) : (
                                         <>
-                                          <Search className="h-4 w-4" /> Solicitar Valoración Adicional de Imagen y Hallazgos
+                                          <Search className="h-4 w-4" /> Solicitar ValoraciÃ³n Adicional de Imagen y Hallazgos
                                         </>
                                       )}
                                     </button>
@@ -24137,7 +24144,7 @@ const splitReportAndAnnex = (text: string) => {
                                     <div className="flex items-center gap-2">
                                       <Sparkles className="h-3.5 w-3.5 text-indigo-400" />
                                       <h4 className="text-[10px] font-black text-indigo-300 uppercase tracking-widest font-mono">
-                                        VALORACIÓN DIAGNÓSTICA ADICIONAL (SEGUNDA OPINIÓN EXPERTA)
+                                        VALORACIÃN DIAGNÃSTICA ADICIONAL (SEGUNDA OPINIÃN EXPERTA)
                                       </h4>
                                     </div>
                                     <div className="flex items-center gap-2">
@@ -24149,7 +24156,7 @@ const splitReportAndAnnex = (text: string) => {
                                             ? "bg-indigo-950/90 border-indigo-500/50 text-indigo-300 ring-1 ring-indigo-500/30"
                                             : "bg-slate-950 hover:bg-slate-900 border-slate-850 text-slate-400 hover:text-slate-100"
                                         }`}
-                                        title={isAdditionalEvaluationExpanded ? "Restaurar tamaño estándar de componente" : "Maximizar área de lectura (Modo Expandido)"}
+                                        title={isAdditionalEvaluationExpanded ? "Restaurar tamaÃ±o estÃ¡ndar de componente" : "Maximizar Ã¡rea de lectura (Modo Expandido)"}
                                       >
                                         {isAdditionalEvaluationExpanded ? (
                                           <Minimize2 className="h-4 w-4" />
@@ -24161,7 +24168,7 @@ const splitReportAndAnnex = (text: string) => {
                                         onClick={() => copyToClipboard(additionalEvaluation, false)}
                                         className="text-[9px] font-black text-slate-400 hover:text-indigo-400 border border-slate-805 hover:border-indigo-500/20 px-3 py-1.5 rounded-xl bg-slate-950/40 uppercase tracking-wider font-mono transition-all cursor-pointer"
                                       >
-                                        Copiar Segunda Opinión
+                                        Copiar Segunda OpiniÃ³n
                                       </button>
                                     </div>
                                   </div>
@@ -24169,10 +24176,10 @@ const splitReportAndAnnex = (text: string) => {
                                     isAdditionalEvaluationExpanded ? "flex-grow max-h-none" : "max-h-[350px]"
                                   }`}>
                                     <div className="bg-emerald-950/20 border border-emerald-500/25 rounded-xl p-3 flex items-start gap-2.5 text-left animate-fade-in mb-3">
-                                      <span className="text-emerald-400 text-xs font-black mt-0.5">✓</span>
+                                      <span className="text-emerald-400 text-xs font-black mt-0.5">â</span>
                                       <div className="space-y-0.5">
-                                        <p className="text-[9px] font-black font-sans uppercase text-emerald-400 tracking-wider">Protocolo de Validación de Confianza Clínico Activo</p>
-                                        <p className="text-[9px] font-mono text-slate-400 leading-relaxed font-semibold">La IA está configurada para citar formalmente la evidencia radiológica visual que descarta o confirma de forma rigurosa la reducción de espacios articulares u otros hallazgos mayores.</p>
+                                        <p className="text-[9px] font-black font-sans uppercase text-emerald-400 tracking-wider">Protocolo de ValidaciÃ³n de Confianza ClÃ­nico Activo</p>
+                                        <p className="text-[9px] font-mono text-slate-400 leading-relaxed font-semibold">La IA estÃ¡ configurada para citar formalmente la evidencia radiolÃ³gica visual que descarta o confirma de forma rigurosa la reducciÃ³n de espacios articulares u otros hallazgos mayores.</p>
                                       </div>
                                     </div>
                                     {renderElegantResponse(additionalEvaluation, "text-indigo-400")}
@@ -24190,10 +24197,10 @@ const splitReportAndAnnex = (text: string) => {
                             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-850 pb-4">
                               <div>
                                 <h3 className="text-xs font-black text-indigo-400 uppercase tracking-widest flex items-center gap-2 font-mono">
-                                  <Sparkles className="h-4 w-4" /> Clasificaciones y Escalas Clínicas
+                                  <Sparkles className="h-4 w-4" /> Clasificaciones y Escalas ClÃ­nicas
                                 </h3>
                                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mt-1">
-                                  Analiza los hallazgos descritos para sugerir e incorporar escalas oficiales y criterios académicos.
+                                  Analiza los hallazgos descritos para sugerir e incorporar escalas oficiales y criterios acadÃ©micos.
                                 </p>
                               </div>
                               <button
@@ -24225,7 +24232,7 @@ const splitReportAndAnnex = (text: string) => {
                             {classRecommendations && classRecommendations.length === 0 && (
                               <div className="text-center p-4 bg-slate-900/40 rounded-xl border border-dashed border-slate-800">
                                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider font-mono italic">
-                                  No se detectaron escalas preestablecidas para este estudio. Puedes incluir notas libres de recomendaciones clínicas.
+                                  No se detectaron escalas preestablecidas para este estudio. Puedes incluir notas libres de recomendaciones clÃ­nicas.
                                 </p>
                               </div>
                             )}
@@ -24248,7 +24255,7 @@ const splitReportAndAnnex = (text: string) => {
                                               </span>
                                             ) : (
                                               <span className="inline-block text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded bg-amber-950/60 text-amber-400 border border-amber-900/30 font-mono flex items-center gap-1">
-                                                <AlertCircle className="h-2.5 w-2.5" /> No incorporado todavía
+                                                <AlertCircle className="h-2.5 w-2.5" /> No incorporado todavÃ­a
                                               </span>
                                             )}
                                           </div>
@@ -24265,7 +24272,7 @@ const splitReportAndAnnex = (text: string) => {
                                                   onChange={(e) => setIncludeManagementRecs(prev => ({ ...prev, [idx]: e.target.checked }))}
                                                   className="rounded border-slate-800 bg-slate-950 text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5 cursor-pointer accent-indigo-650"
                                                 />
-                                                <span>Incluir recomendación de manejo / conducta</span>
+                                                <span>Incluir recomendaciÃ³n de manejo / conducta</span>
                                               </label>
                                             </div>
                                           )}
@@ -24301,7 +24308,7 @@ const splitReportAndAnnex = (text: string) => {
                                       {/* Text Preview block */}
                                       <div className="bg-[#050810] p-4.5 rounded-xl border border-slate-850 text-slate-300 leading-relaxed max-h-48 overflow-y-auto select-text scrollbar-thin space-y-2 font-sans">
                                         <div className="text-[9px] font-black text-indigo-400 uppercase tracking-widest mb-1.5 font-sans border-b border-indigo-950 pb-1">
-                                          Guía de Referencia Médica para la Escala:
+                                          GuÃ­a de Referencia MÃ©dica para la Escala:
                                         </div>
                                         <div>{renderElegantResponse(rec.contentToAppend, "text-indigo-400")}</div>
                                       </div>
@@ -24312,7 +24319,7 @@ const splitReportAndAnnex = (text: string) => {
                             )}
                           </div>
 
-                          {/* --- MÓDULO DE DESGLOSE Y JUSTIFICACIÓN DE CLASIFICACIONES RADIOLÓGICAS --- */}
+                          {/* --- MÃDULO DE DESGLOSE Y JUSTIFICACIÃN DE CLASIFICACIONES RADIOLÃGICAS --- */}
                           <ClassificationBreakdownModule
                             reportText={isEditingReportManual ? editedReportText : generatedReport}
                             studyType={studyType || specificStudy}
@@ -24376,9 +24383,9 @@ const splitReportAndAnnex = (text: string) => {
                                     ? 'bg-indigo-600 text-white shadow-md'
                                     : 'bg-transparent text-slate-400 hover:text-slate-200 disabled:opacity-30'
                                 }`}
-                                title={!patientSummary ? "Primero genera la explicación al paciente abajo" : ""}
+                                title={!patientSummary ? "Primero genera la explicaciÃ³n al paciente abajo" : ""}
                               >
-                                Explicación Paciente
+                                ExplicaciÃ³n Paciente
                               </button>
                             </div>
 
@@ -24392,7 +24399,7 @@ const splitReportAndAnnex = (text: string) => {
                                     ? 'bg-indigo-950/60 border-indigo-500/40 text-indigo-400'
                                     : 'bg-slate-900 border-slate-800 text-slate-500 hover:text-slate-400'
                                 }`}
-                                title="Optimización de Contraste Adaptativo PDF"
+                                title="OptimizaciÃ³n de Contraste Adaptativo PDF"
                               >
                                 Contraste: {adaptivePDFContrast ? 'ALTO' : 'NORMAL'}
                               </button>
@@ -24401,7 +24408,7 @@ const splitReportAndAnnex = (text: string) => {
                                 type="button"
                                 onClick={() => printModalDocType === 'report' ? handleDownloadNativePDF(true) : handleDownloadPatientSummaryPDF(true)}
                                 className="p-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 rounded-lg text-slate-400 hover:text-slate-200 transition-all cursor-pointer"
-                                title="Abrir PDF en pestaña nueva"
+                                title="Abrir PDF en pestaÃ±a nueva"
                               >
                                 <ExternalLink className="h-3.5 w-3.5" />
                               </button>
@@ -24415,7 +24422,7 @@ const splitReportAndAnnex = (text: string) => {
                             <div className="flex-1 flex flex-col items-center justify-center text-center space-y-3">
                               <RefreshCw className="h-8 w-8 text-indigo-400 animate-spin" />
                               <p className="text-[10px] font-mono font-black text-slate-400 uppercase tracking-widest animate-pulse">
-                                Generando Previsualización PDF...
+                                Generando PrevisualizaciÃ³n PDF...
                               </p>
                             </div>
                           ) : (printModalDocType === 'report' ? generatedNativePdfUrl : generatedSummaryPdfUrl) ? (
@@ -24431,12 +24438,12 @@ const splitReportAndAnnex = (text: string) => {
                             <div className="flex-1 flex flex-col items-center justify-center text-center p-6 space-y-3">
                               <AlertCircle className="h-8 w-8 text-amber-500" />
                               <p className="text-[10px] font-mono font-black text-amber-400 uppercase tracking-widest">
-                                {printModalDocType === 'report' ? 'Reporte no disponible' : 'Explicación de Paciente no disponible'}
+                                {printModalDocType === 'report' ? 'Reporte no disponible' : 'ExplicaciÃ³n de Paciente no disponible'}
                               </p>
                               <p className="text-[9px] text-slate-500 max-w-xs leading-relaxed uppercase">
                                 {printModalDocType === 'report' 
-                                  ? 'Genera un reporte clínico para visualizar el PDF' 
-                                  : 'Haz clic en "Explicar para el paciente" en la tarjeta de abajo para generar esta versión'}
+                                  ? 'Genera un reporte clÃ­nico para visualizar el PDF' 
+                                  : 'Haz clic en "Explicar para el paciente" en la tarjeta de abajo para generar esta versiÃ³n'}
                               </p>
                             </div>
                           )}
@@ -24446,7 +24453,7 @@ const splitReportAndAnnex = (text: string) => {
                   </div>
 
                   <div className="bg-slate-950 px-6 py-4 border-t border-slate-800 flex justify-between items-center text-[10px] text-slate-500 font-mono font-black uppercase tracking-wider select-none">
-                    <span>STÁNDAR DE REDACCIÓN: SENIOR RADIOLOGIST G15</span>
+                    <span>STÃNDAR DE REDACCIÃN: SENIOR RADIOLOGIST G15</span>
                     <span>UTF-8 SECURE CONNECTION</span>
                   </div>
 
@@ -24476,18 +24483,18 @@ const splitReportAndAnnex = (text: string) => {
                       <div className="h-2 w-2 bg-indigo-500 rounded-full animate-ping"></div>
                       <div>
                         <h3 className="text-sm font-black text-white flex items-center gap-2 uppercase tracking-wider">
-                          <MessageSquare className="h-4 w-4 text-indigo-400" /> Consultor de Diagnósticos
+                          <MessageSquare className="h-4 w-4 text-indigo-400" /> Consultor de DiagnÃ³sticos
                         </h3>
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mt-0.5">Correlación de signos y diagnósticos diferenciales</p>
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mt-0.5">CorrelaciÃ³n de signos y diagnÃ³sticos diferenciales</p>
                       </div>
                     </div>
                     <button
                       onClick={() => {
-                        if (confirm("¿Limpiar la sesión actual de interconsultas?")) setChatMessages([]);
+                        if (confirm("Â¿Limpiar la sesiÃ³n actual de interconsultas?")) setChatMessages([]);
                       }}
                       className="text-[10px] font-black text-rose-400 hover:text-rose-350 uppercase tracking-widest font-mono underline"
                     >
-                      Limpiar Sesión
+                      Limpiar SesiÃ³n
                     </button>
                   </div>
 
@@ -24496,9 +24503,9 @@ const splitReportAndAnnex = (text: string) => {
                     {chatMessages.length === 0 ? (
                       <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-500 select-none">
                         <MessageSquare className="h-10 w-10 text-slate-600 mb-3" />
-                        <h4 className="text-sm font-black text-slate-300 uppercase tracking-widest">Consultor Clínico Vacío</h4>
+                        <h4 className="text-sm font-black text-slate-300 uppercase tracking-widest">Consultor ClÃ­nico VacÃ­o</h4>
                         <p className="text-[11px] font-bold text-slate-500 max-w-sm mt-2 uppercase tracking-wide leading-relaxed">
-                          Consúltale a Gemini casos complejos o correlaciones radiográficas. Ej: "Paciente con neumotórax apical y múltiples quistes pulmonares de pared delgada, ¿diferenciales?"
+                          ConsÃºltale a Gemini casos complejos o correlaciones radiogrÃ¡ficas. Ej: "Paciente con neumotÃ³rax apical y mÃºltiples quistes pulmonares de pared delgada, Â¿diferenciales?"
                         </p>
                       </div>
                     ) : (
@@ -24515,7 +24522,7 @@ const splitReportAndAnnex = (text: string) => {
                             }`}
                           >
                             <div className="font-mono text-[9px] font-black text-indigo-400 uppercase tracking-widest mb-1.5 select-none">
-                              {msg.role === "user" ? "USTED (RADIÓLOGO)" : "GEMINI CONSULTANT AI"}
+                              {msg.role === "user" ? "USTED (RADIÃLOGO)" : "GEMINI CONSULTANT AI"}
                             </div>
                             <div className="font-medium text-slate-200">
                               {msg.role === "user" ? (
@@ -24533,7 +24540,7 @@ const splitReportAndAnnex = (text: string) => {
                       <div className="flex justify-start">
                         <div className="bg-slate-950 border border-slate-850 rounded-2xl p-4.5 max-w-[85%] shadow-md">
                           <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-indigo-400 font-mono">
-                            <RefreshCw className="h-3.5 w-3.5 animate-spin" /> Analizando diagnósticos probables, espera...
+                            <RefreshCw className="h-3.5 w-3.5 animate-spin" /> Analizando diagnÃ³sticos probables, espera...
                           </div>
                         </div>
                       </div>
@@ -24559,7 +24566,7 @@ const splitReportAndAnnex = (text: string) => {
                           handleSendChatMessage();
                         }
                       }}
-                      placeholder="Describe la sintomatología o hallazgos radiográficos dudosos aquí..."
+                      placeholder="Describe la sintomatologÃ­a o hallazgos radiogrÃ¡ficos dudosos aquÃ­..."
                       rows={2}
                       className="flex-1 bg-slate-900 border-2 border-slate-800 focus:border-indigo-500 rounded-xl py-3 px-4 text-xs md:text-sm text-slate-200 focus:outline-none placeholder-slate-650 transition-all resize-none"
                     />
@@ -24592,33 +24599,33 @@ const splitReportAndAnnex = (text: string) => {
                       <Settings className="h-5 w-5 text-indigo-400" /> Reglas de Comportamiento del Asistente
                     </h2>
                     <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mt-1">
-                      Personaliza las instrucciones maestras que Gemini consulta tras bambalinas. Define formatos obligatorios o pautas de redacción personalizadas para tus informes.
+                      Personaliza las instrucciones maestras que Gemini consulta tras bambalinas. Define formatos obligatorios o pautas de redacciÃ³n personalizadas para tus informes.
                     </p>
                   </div>
 
-                  {/* 🔑 API Key Info Card (Respuestas a: Cómo obtener clave API) */}
+                  {/* ð API Key Info Card (Respuestas a: CÃ³mo obtener clave API) */}
                   <div className="bg-indigo-950/20 border-2 border-indigo-500/20 rounded-xl p-5 space-y-3">
                     <div className="flex items-center gap-2 text-white">
                       <Key className="h-4.5 w-4.5 text-indigo-400 animate-pulse" />
-                      <h4 className="text-xs font-black uppercase tracking-wider">Guía: Obtener o Renovar tu Gemini API KEY</h4>
+                      <h4 className="text-xs font-black uppercase tracking-wider">GuÃ­a: Obtener o Renovar tu Gemini API KEY</h4>
                     </div>
                     
                     <p className="text-xs text-slate-350 leading-relaxed font-sans">
-                      Este asistente radiológico realiza consultas directas y seguras a los modelos de inteligencia artificial mediante tu clave personal y gratuita. Si encuentras errores de expiración, sigue estos pasos:
+                      Este asistente radiolÃ³gico realiza consultas directas y seguras a los modelos de inteligencia artificial mediante tu clave personal y gratuita. Si encuentras errores de expiraciÃ³n, sigue estos pasos:
                     </p>
                     
                     <ol className="text-[11px] text-slate-400 leading-relaxed space-y-2 pl-4 list-decimal marker:text-indigo-400 font-sans font-medium">
                       <li>
-                        Visita <a href="https://aistudio.google.com/" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:text-indigo-350 underline font-extrabold transition-colors">Google AI Studio (aistudio.google.com)</a> e inicia sesión con cualquier cuenta de Google.
+                        Visita <a href="https://aistudio.google.com/" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:text-indigo-350 underline font-extrabold transition-colors">Google AI Studio (aistudio.google.com)</a> e inicia sesiÃ³n con cualquier cuenta de Google.
                       </li>
                       <li>
-                        Haz clic en el botón destacado <strong className="text-slate-200">"Get API key"</strong> (Obtener clave de API).
+                        Haz clic en el botÃ³n destacado <strong className="text-slate-200">"Get API key"</strong> (Obtener clave de API).
                       </li>
                       <li>
-                        Haz clic en <strong className="text-slate-200">"Create API key"</strong> para generar una clave nueva y cópiala al portapapeles.
+                        Haz clic en <strong className="text-slate-200">"Create API key"</strong> para generar una clave nueva y cÃ³piala al portapapeles.
                       </li>
                       <li>
-                        En la barra de menú o extremo de esta interfaz de AI Studio, haz clic en la sección <strong className="text-indigo-400">"Settings"</strong> (Configuración / Secretos) que gestiona tus secretos.
+                        En la barra de menÃº o extremo de esta interfaz de AI Studio, haz clic en la secciÃ³n <strong className="text-indigo-400">"Settings"</strong> (ConfiguraciÃ³n / Secretos) que gestiona tus secretos.
                       </li>
                       <li>
                         Selecciona o actualiza la variable de entorno denominada <code className="bg-slate-950 font-mono text-indigo-350 px-1.5 py-0.5 rounded text-[10px] border border-indigo-950">GEMINI_API_KEY</code>, pega tu clave copiada y presiona <strong className="text-slate-200">Save (Guardar)</strong>.
@@ -24626,7 +24633,7 @@ const splitReportAndAnnex = (text: string) => {
                     </ol>
                     
                     <div className="text-[9px] font-black uppercase tracking-widest text-slate-500 font-mono pt-1 text-left">
-                      ✓ Tu Clave es completamente confidencial y se procesa del lado del servidor de forma estricta.
+                      â Tu Clave es completamente confidencial y se procesa del lado del servidor de forma estricta.
                     </div>
                   </div>
 
@@ -24634,20 +24641,20 @@ const splitReportAndAnnex = (text: string) => {
                   <div className="space-y-3">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <label className="text-[10px] font-black text-slate-400 block uppercase tracking-widest font-mono">
-                        1. Instrucciones de Sistema de Generación de Informes:
+                        1. Instrucciones de Sistema de GeneraciÃ³n de Informes:
                       </label>
                       <div className="flex items-center gap-3">
                         <button
                           type="button"
                           onClick={() => {
-                            if (confirm("¿Deseas restablecer la instrucción de informes a la configuración médica predeterminada de base?")) {
+                            if (confirm("Â¿Deseas restablecer la instrucciÃ³n de informes a la configuraciÃ³n mÃ©dica predeterminada de base?")) {
                               setSystemInstruction(GENERAL_SYSTEM_INSTRUCTION);
                             }
                           }}
                           className="px-2 py-0.5 border border-dashed border-rose-500/30 hover:border-rose-500/80 text-rose-450 hover:text-rose-400 text-[8px] font-black uppercase tracking-wider rounded transition-all duration-200 cursor-pointer select-none"
-                          title="Restaurar de fábrica únicamente este prompt del sistema"
+                          title="Restaurar de fÃ¡brica Ãºnicamente este prompt del sistema"
                         >
-                          ↩ Restablecer Base
+                          â© Restablecer Base
                         </button>
                         <span className="text-[9px] font-mono text-slate-500 font-extrabold uppercase">
                           CARACTERES: {systemInstruction.length}
@@ -24661,13 +24668,13 @@ const splitReportAndAnnex = (text: string) => {
                       rows={5}
                       className="w-full bg-slate-950/90 border-2 border-slate-850 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 rounded-xl p-4 text-xs font-bold text-slate-100 focus:outline-none placeholder-slate-700 transition font-mono leading-relaxed"
                     />
-                    <p className="text-[9px] font-bold text-slate-505 uppercase tracking-widest leading-relaxed">Aplica para los borradores y análisis de placas / ultrasonidos de la primera pestaña.</p>
+                    <p className="text-[9px] font-bold text-slate-505 uppercase tracking-widest leading-relaxed">Aplica para los borradores y anÃ¡lisis de placas / ultrasonidos de la primera pestaÃ±a.</p>
                   </div>
 
                   {/* Case Diagnosis consultant Textarea */}
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-slate-400 block uppercase tracking-widest font-mono">
-                      2. Instrucción de Correlación del Consultor Clínico (Chat):
+                      2. InstrucciÃ³n de CorrelaciÃ³n del Consultor ClÃ­nico (Chat):
                     </label>
                     <textarea
                       value={chatInstruction}
@@ -24680,7 +24687,7 @@ const splitReportAndAnnex = (text: string) => {
                   {/* Classification Instructions Textarea */}
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-slate-400 block uppercase tracking-widest font-mono">
-                      3. Instrucción del Buscador de Escalas y Criterios:
+                      3. InstrucciÃ³n del Buscador de Escalas y Criterios:
                     </label>
                     <textarea
                       value={classifyInstruction}
@@ -24697,7 +24704,7 @@ const splitReportAndAnnex = (text: string) => {
                       onClick={handleResetSettings}
                       className="px-4.5 py-3 bg-slate-950 hover:bg-slate-800/60 border-2 border-slate-800 text-slate-400 hover:text-slate-350 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all"
                     >
-                      Restaurar de Fábrica
+                      Restaurar de FÃ¡brica
                     </button>
                     <button
                       type="button"
@@ -24725,10 +24732,10 @@ const splitReportAndAnnex = (text: string) => {
                   <div className="border-b border-slate-850 pb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div>
                       <h2 className="text-base font-black text-white flex items-center gap-2 uppercase tracking-wider font-sans">
-                        <Code className="h-5 w-5 text-indigo-400" /> Consola de Integración de API
+                        <Code className="h-5 w-5 text-indigo-400" /> Consola de IntegraciÃ³n de API
                       </h2>
                       <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mt-1">
-                        Conecta tus macros personales, softwares clínicos de dictado (PACS/RIS) o disparadores externos con este asistente local.
+                        Conecta tus macros personales, softwares clÃ­nicos de dictado (PACS/RIS) o disparadores externos con este asistente local.
                       </p>
                     </div>
                     <button
@@ -24738,14 +24745,14 @@ const splitReportAndAnnex = (text: string) => {
                       className="px-4 py-2 bg-[#0a0f1d] hover:bg-slate-950 border-2 border-slate-850 rounded-xl text-[10px] font-black uppercase tracking-wider text-indigo-400 hover:text-indigo-350 transition-all flex items-center gap-2 shrink-0 self-start md:self-center"
                     >
                       <RefreshCw className={`h-3 w-3 ${checkingApi ? "animate-spin" : ""}`} />
-                      {checkingApi ? "Diagnosticando..." : "Diagnosticar Conexión"}
+                      {checkingApi ? "Diagnosticando..." : "Diagnosticar ConexiÃ³n"}
                     </button>
                   </div>
 
-                  {/* 🩺 DIAGNOSTIC MONITOR COMPONENT */}
+                  {/* ð©º DIAGNOSTIC MONITOR COMPONENT */}
                   <div className="bg-slate-950 border-2 border-slate-850/80 rounded-xl p-5 space-y-4">
                     <h3 className="text-xs font-black text-slate-300 uppercase tracking-widest font-mono flex items-center gap-2 border-b border-slate-900 pb-2.5">
-                      <Settings className="h-4 w-4 text-slate-500" /> Monitor de Diagnóstico de la Clave de API
+                      <Settings className="h-4 w-4 text-slate-500" /> Monitor de DiagnÃ³stico de la Clave de API
                     </h3>
 
                     {apiDiagnostics === null ? (
@@ -24758,7 +24765,7 @@ const splitReportAndAnnex = (text: string) => {
                         <div className="flex items-start gap-3">
                           <AlertCircle className="h-5 w-5 text-rose-500 shrink-0 mt-0.5" />
                           <div className="space-y-1">
-                            <h4 className="text-xs font-black text-rose-400 uppercase tracking-wider font-mono">Error de Diagnóstico</h4>
+                            <h4 className="text-xs font-black text-rose-400 uppercase tracking-wider font-mono">Error de DiagnÃ³stico</h4>
                             <p className="text-xs text-slate-300 font-medium leading-relaxed">{apiDiagnostics.message}</p>
                             {apiDiagnostics.error && (
                               <pre className="mt-2 p-3 bg-slate-950 rounded-lg text-[10px] text-rose-455 font-mono border border-rose-950/50 max-h-24 overflow-y-auto select-text whitespace-pre-wrap leading-relaxed">
@@ -24772,7 +24779,7 @@ const splitReportAndAnnex = (text: string) => {
                             onClick={checkApiHealth}
                             className="px-3 py-1.5 bg-slate-900 hover:bg-slate-850 border-2 border-slate-850 text-slate-300 hover:text-slate-200 rounded-lg text-[10px] font-black uppercase tracking-wider font-mono transition-all flex items-center gap-2"
                           >
-                            <RefreshCw className="h-3 w-3" /> Reintentar Diagnóstico
+                            <RefreshCw className="h-3 w-3" /> Reintentar DiagnÃ³stico
                           </button>
                         </div>
                       </div>
@@ -24796,11 +24803,11 @@ const splitReportAndAnnex = (text: string) => {
 
                           {/* Length / Format Card */}
                           <div className="p-4 bg-slate-900/60 border-2 border-slate-850 rounded-xl">
-                            <div className="text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Diagnóstico de Formato</div>
+                            <div className="text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">DiagnÃ³stico de Formato</div>
                             <div className="text-xs font-bold text-slate-200">
                               {apiDiagnostics.api_key_configured ? (
                                 <span className={apiDiagnostics.api_key_starts_with_aizasy ? "text-emerald-400" : "text-amber-400"}>
-                                  {apiDiagnostics.api_key_starts_with_aizasy ? "✓ Formato de Google Estándar" : "⚠️ Formato Inusual (No inicia con AIzaSy)"}
+                                  {apiDiagnostics.api_key_starts_with_aizasy ? "â Formato de Google EstÃ¡ndar" : "â ï¸ Formato Inusual (No inicia con AIzaSy)"}
                                 </span>
                               ) : "Sin clave para analizar"}
                             </div>
@@ -24810,8 +24817,8 @@ const splitReportAndAnnex = (text: string) => {
                         {/* Whitespace warning / info alert */}
                         {apiDiagnostics.api_key_configured && apiDiagnostics.api_key_has_surrounding_whitespace && (
                           <div className="p-3 bg-amber-950/20 border-2 border-amber-500/25 rounded-xl text-xs text-amber-300 leading-relaxed font-sans font-medium">
-                            <strong className="block text-[11px] font-black uppercase tracking-wider text-amber-400 mb-1">⚠️ Espacios de copiado detectados en la variable:</strong>
-                            Se encontraron espacios o saltos de línea al inicio o final de tu clave (generalmente causados por un copiado rápido desalineado). El software radiológico ha **filtrado y limpiado la clave automáticamente** aplicando <code className="bg-slate-950 text-amber-450 px-1 py-0.5 rounded font-mono text-[10px]">.trim()</code> para que la conexión no falle por este motivo.
+                            <strong className="block text-[11px] font-black uppercase tracking-wider text-amber-400 mb-1">â ï¸ Espacios de copiado detectados en la variable:</strong>
+                            Se encontraron espacios o saltos de lÃ­nea al inicio o final de tu clave (generalmente causados por un copiado rÃ¡pido desalineado). El software radiolÃ³gico ha **filtrado y limpiado la clave automÃ¡ticamente** aplicando <code className="bg-slate-950 text-amber-450 px-1 py-0.5 rounded font-mono text-[10px]">.trim()</code> para que la conexiÃ³n no falle por este motivo.
                           </div>
                         )}
 
@@ -24823,7 +24830,7 @@ const splitReportAndAnnex = (text: string) => {
                           </div>
                           {!apiDiagnostics.api_key_configured && (
                             <p className="text-xs text-rose-300 font-bold mt-1 bg-rose-950/20 border border-rose-900/30 p-2.5 rounded-lg leading-relaxed">
-                              ⚠️ Para resolver el error de API, revisa que hayas definido la variable correctamente. Dirígete a la opción de <strong className="text-slate-200">"Settings"</strong> situada en el menú superior exterior de este Workspace e introduce la variable de entorno <code className="bg-slate-950 text-rose-450 px-1 py-0.5 rounded font-mono">GEMINI_API_KEY</code>.
+                              â ï¸ Para resolver el error de API, revisa que hayas definido la variable correctamente. DirÃ­gete a la opciÃ³n de <strong className="text-slate-200">"Settings"</strong> situada en el menÃº superior exterior de este Workspace e introduce la variable de entorno <code className="bg-slate-950 text-rose-450 px-1 py-0.5 rounded font-mono">GEMINI_API_KEY</code>.
                             </p>
                           )}
                         </div>
@@ -24831,14 +24838,14 @@ const splitReportAndAnnex = (text: string) => {
                     )}
                   </div>
 
-                  {/* 🧠 CONFIGURACIÓN DEL MODELO AI CORE */}
+                  {/* ð§  CONFIGURACIÃN DEL MODELO AI CORE */}
                   <div className="bg-[#0e1629] border-2 border-slate-850/80 rounded-xl p-5 space-y-4">
                     <h3 className="text-xs font-black text-indigo-400 uppercase tracking-widest font-mono flex items-center gap-2 border-b border-indigo-950/60 pb-2.5">
-                      <Sparkles className="h-4 w-4 text-indigo-400 animate-pulse" /> CONFIGURACIÓN DEL MODELO DE INTELIGENCIA ARTIFICIAL CORE
+                      <Sparkles className="h-4 w-4 text-indigo-400 animate-pulse" /> CONFIGURACIÃN DEL MODELO DE INTELIGENCIA ARTIFICIAL CORE
                     </h3>
 
                     <p className="text-[11px] text-slate-400 leading-relaxed font-sans font-medium">
-                      Adapta las capacidades de la IA según el tipo de estudio y la complejidad del caso clínico en curso. Los cambios se guardan de forma persistente en tu navegador y afectan de manera global a todos los módulos y pestañas en tiempo real.
+                      Adapta las capacidades de la IA segÃºn el tipo de estudio y la complejidad del caso clÃ­nico en curso. Los cambios se guardan de forma persistente en tu navegador y afectan de manera global a todos los mÃ³dulos y pestaÃ±as en tiempo real.
                     </p>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1 font-sans">
@@ -24887,8 +24894,8 @@ const splitReportAndAnnex = (text: string) => {
                             {opt.id === "auto" && (
                               <div className="border-t border-slate-850/60 pt-2.5 mt-2 w-full space-y-1 text-[10px] text-slate-350">
                                 <div><strong className="text-emerald-400">3.8 Flash:</strong> reporte, Atlas/Vascular 3D, resumen paciente, caso, clasificaciones.</div>
-                                <div><strong className="text-indigo-400">3.7 Flash:</strong> rotulado masivo, bibliograf�a, glosario, resumen operacional, chat.</div>
-                                <div><strong className="text-purple-400">Pro:</strong> solo si lo eliges manualmente (casos dif�ciles).</div>
+                                <div><strong className="text-indigo-400">3.7 Flash:</strong> rotulado masivo, bibliografï¿½a, glosario, resumen operacional, chat.</div>
+                                <div><strong className="text-purple-400">Pro:</strong> solo si lo eliges manualmente (casos difï¿½ciles).</div>
                               </div>
                             )}
                           </button>
@@ -24897,23 +24904,23 @@ const splitReportAndAnnex = (text: string) => {
                     </div>
                   </div>
 
-                  {/* 🔥 ADMINISTRADOR DE RESPALDO Y DATOS LOCALES */}
+                  {/* ð¥ ADMINISTRADOR DE RESPALDO Y DATOS LOCALES */}
                   <div className="bg-[#0b1329]/60 border-2 border-slate-800 rounded-xl p-5 space-y-4 text-left">
                     <h3 className="text-xs font-black text-indigo-400 uppercase tracking-widest font-mono flex items-center gap-2 border-b border-slate-800 pb-2.5">
                       <Database className="h-4 w-4 text-indigo-400" /> SEGURIDAD Y RESPALDO DE DATOS LOCALES
                     </h3>
 
                     <p className="text-[11px] text-slate-300 leading-relaxed font-sans font-medium">
-                      Para garantizar la máxima velocidad, estabilidad y privacidad de tus reportes médicos, la aplicación ha sido configurada como <strong>100% Local-First</strong>.
+                      Para garantizar la mÃ¡xima velocidad, estabilidad y privacidad de tus reportes mÃ©dicos, la aplicaciÃ³n ha sido configurada como <strong>100% Local-First</strong>.
                     </p>
                     <p className="text-[11px] text-slate-400 leading-relaxed font-sans font-medium">
-                      Todos los datos de tus pacientes, plantillas, firmas, logos e historial de estudios clínicos se guardan de forma instantánea y segura únicamente dentro de la memoria de tu propio navegador web (<code className="bg-[#030612] px-1 py-0.5 rounded text-indigo-300 font-mono text-[10px]">localStorage</code>). Nada de tu información confidencial se sube a nubes externas, cumpliendo al 100% con estándares de privacidad médica.
+                      Todos los datos de tus pacientes, plantillas, firmas, logos e historial de estudios clÃ­nicos se guardan de forma instantÃ¡nea y segura Ãºnicamente dentro de la memoria de tu propio navegador web (<code className="bg-[#030612] px-1 py-0.5 rounded text-indigo-300 font-mono text-[10px]">localStorage</code>). Nada de tu informaciÃ³n confidencial se sube a nubes externas, cumpliendo al 100% con estÃ¡ndares de privacidad mÃ©dica.
                     </p>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
                       <div className="p-4 bg-slate-950/60 border border-slate-850 rounded-xl space-y-2">
                         <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-200">Exportar Todo</h4>
-                        <p className="text-[10px] text-slate-500 leading-normal">Descarga un archivo copia de seguridad (.json) con todo tu historial de estudios, firmas, logos y configuraciones de doctor de forma instantánea.</p>
+                        <p className="text-[10px] text-slate-500 leading-normal">Descarga un archivo copia de seguridad (.json) con todo tu historial de estudios, firmas, logos y configuraciones de doctor de forma instantÃ¡nea.</p>
                         <button
                           type="button"
                           onClick={handleExportAllData}
@@ -24944,7 +24951,7 @@ const splitReportAndAnnex = (text: string) => {
                   </div>
 
                   <div className="space-y-4">
-                    <h3 className="text-xs font-black text-indigo-400 block uppercase tracking-widest font-mono">1. End-point de Análisis e Informes</h3>
+                    <h3 className="text-xs font-black text-indigo-400 block uppercase tracking-widest font-mono">1. End-point de AnÃ¡lisis e Informes</h3>
                     <div className="bg-slate-950 border-2 border-slate-850 rounded-xl p-5 space-y-3.5 font-mono text-[11px]">
                       <div className="flex items-center gap-2 select-none">
                         <span className="bg-indigo-950 text-indigo-400 border-2 border-indigo-900/60 px-2 py-0.5 rounded text-[10px] uppercase font-black tracking-widest">POST</span>
@@ -24958,7 +24965,7 @@ const splitReportAndAnnex = (text: string) => {
   -d '{
     "studyType": "TC de Abdomen de Urgencia",
     "clinicalHistory": "Dolor severo cuadrante inferior derecho. Posible apendicitis.",
-    "customPrompt": "Buscar apendicolito u obstrucción."
+    "customPrompt": "Buscar apendicolito u obstrucciÃ³n."
   }' \\
   http://localhost:3000/api/analyze`}
                       </pre>
@@ -24973,24 +24980,24 @@ const splitReportAndAnnex = (text: string) => {
                       </pre>
                     </div>
 
-                    <h3 className="text-xs font-black text-indigo-400 block uppercase tracking-widest font-mono">2. Transmisión de Imágenes Base64</h3>
+                    <h3 className="text-xs font-black text-indigo-400 block uppercase tracking-widest font-mono">2. TransmisiÃ³n de ImÃ¡genes Base64</h3>
                     <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest leading-relaxed">
-                      Para analizar imágenes desde tu PACS/EHR, puedes transcodificar cualquier imagen PNG/JPG a base64 estándar y transmitirla como parámetro de payload opcional:
+                      Para analizar imÃ¡genes desde tu PACS/EHR, puedes transcodificar cualquier imagen PNG/JPG a base64 estÃ¡ndar y transmitirla como parÃ¡metro de payload opcional:
                     </p>
 
                     <div className="bg-slate-950 border-2 border-slate-855 rounded-xl p-4.5 font-mono text-[11px] space-y-1.5 shadow-inner">
-                      <div className="text-slate-350 font-black uppercase tracking-widest text-[9px]">Parámetro JSON Opcional:</div>
-                      <div className="text-slate-400">"image": "iVBORw0KGgoAAAANSUhEUgAA..." (Código base64 plano)</div>
+                      <div className="text-slate-350 font-black uppercase tracking-widest text-[9px]">ParÃ¡metro JSON Opcional:</div>
+                      <div className="text-slate-400">"image": "iVBORw0KGgoAAAANSUhEUgAA..." (CÃ³digo base64 plano)</div>
                       <div className="text-slate-400">"mimeType": "image/png" (o "image/jpeg")</div>
                     </div>
                   </div>
 
                   <div className="p-5 bg-indigo-950/10 border-2 border-indigo-900/20 rounded-2xl">
                     <h4 className="text-xs font-black text-indigo-400 flex items-center gap-2 mb-1.5 text-left uppercase tracking-wider">
-                      <AlertCircle className="h-4 w-4 text-indigo-400" /> RECOMENDACIÓN DE INTEGRACIÓN PRÁCTICA:
+                      <AlertCircle className="h-4 w-4 text-indigo-400" /> RECOMENDACIÃN DE INTEGRACIÃN PRÃCTICA:
                     </h4>
                     <p className="text-[11px] font-bold text-slate-400 leading-relaxed text-left uppercase tracking-wide">
-                      Puedes configurar un script de AutoHotkey para que, con solo un comando o un atajo de dictado en Windows, transmita el texto que tienes seleccionado en pantalla hacia esta API local, y reemplace ese texto directamente en el editor de tu PACS con el borrador radiológico profesional listo en milisegundos.
+                      Puedes configurar un script de AutoHotkey para que, con solo un comando o un atajo de dictado en Windows, transmita el texto que tienes seleccionado en pantalla hacia esta API local, y reemplace ese texto directamente en el editor de tu PACS con el borrador radiolÃ³gico profesional listo en milisegundos.
                     </p>
                   </div>
                 </div>
@@ -25073,7 +25080,7 @@ const splitReportAndAnnex = (text: string) => {
                       <div>
                         <h2 className="text-xl font-black text-white tracking-tight uppercase">Historial Local de Reportes</h2>
                         <p className="text-xs text-slate-400 mt-1 max-w-2xl">
-                          Todos los estudios que generes se guardan automáticamente en tu navegador. Puedes abrirlos, copiar su contenido o limpiar el historial cuando lo desees.
+                          Todos los estudios que generes se guardan automÃ¡ticamente en tu navegador. Puedes abrirlos, copiar su contenido o limpiar el historial cuando lo desees.
                         </p>
                       </div>
                     </div>
@@ -25097,7 +25104,7 @@ const splitReportAndAnnex = (text: string) => {
                       type="text"
                       value={cloudSearch}
                       onChange={(e) => setCloudSearch(e.target.value)}
-                      placeholder="Buscar por tipo de estudio, historia clínica o texto del reporte..."
+                      placeholder="Buscar por tipo de estudio, historia clÃ­nica o texto del reporte..."
                       className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all font-medium"
                     />
                   </div>
@@ -25122,12 +25129,12 @@ const splitReportAndAnnex = (text: string) => {
                       <div className="bg-slate-950/40 border border-slate-900 rounded-2xl py-12 flex flex-col items-center justify-center gap-4 text-center px-6">
                         <History className="h-12 w-12 text-slate-600 mb-1" />
                         <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider">
-                          {cloudSearch ? "Sin resultados para la búsqueda" : "Historial Local Vacío"}
+                          {cloudSearch ? "Sin resultados para la bÃºsqueda" : "Historial Local VacÃ­o"}
                         </h3>
                         <p className="text-xs text-slate-500 max-w-md mt-1">
                           {cloudSearch
-                            ? "Ningún estudio coincide con tu búsqueda."
-                            : "Cuando generes o edites un reporte en la pestaña Generador, se guardará automáticamente en este historial."}
+                            ? "NingÃºn estudio coincide con tu bÃºsqueda."
+                            : "Cuando generes o edites un reporte en la pestaÃ±a Generador, se guardarÃ¡ automÃ¡ticamente en este historial."}
                         </p>
                       </div>
                     );
@@ -25150,7 +25157,7 @@ const splitReportAndAnnex = (text: string) => {
 
                             <div className="space-y-2.5">
                               <div>
-                                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest block font-mono">Historia Clínica:</span>
+                                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest block font-mono">Historia ClÃ­nica:</span>
                                 <p className="text-xs text-slate-300 font-medium line-clamp-2 mt-0.5">{item.clinicalHistory}</p>
                               </div>
 
@@ -25237,7 +25244,7 @@ const splitReportAndAnnex = (text: string) => {
                       </div>
                       {viewingCloudStudy.patientId && (
                         <div>
-                          <span className="text-slate-500 font-mono font-bold uppercase block tracking-wider text-[9px]">ID / Cédula</span>
+                          <span className="text-slate-500 font-mono font-bold uppercase block tracking-wider text-[9px]">ID / CÃ©dula</span>
                           <span className="text-white font-semibold block mt-0.5">{viewingCloudStudy.patientId}</span>
                         </div>
                       )}
@@ -25249,7 +25256,7 @@ const splitReportAndAnnex = (text: string) => {
                       )}
                       {viewingCloudStudy.patientGender && (
                         <div>
-                          <span className="text-slate-500 font-mono font-bold uppercase block tracking-wider text-[9px]">Género</span>
+                          <span className="text-slate-500 font-mono font-bold uppercase block tracking-wider text-[9px]">GÃ©nero</span>
                           <span className="text-white font-semibold block mt-0.5">{viewingCloudStudy.patientGender}</span>
                         </div>
                       )}
@@ -25268,13 +25275,13 @@ const splitReportAndAnnex = (text: string) => {
                     </div>
 
                     <div className="p-4 bg-slate-950/20 border border-slate-900 rounded-xl text-xs">
-                      <span className="text-slate-500 font-mono font-bold uppercase block tracking-wider text-[9px]">Historia Clínica</span>
+                      <span className="text-slate-500 font-mono font-bold uppercase block tracking-wider text-[9px]">Historia ClÃ­nica</span>
                       <p className="text-slate-200 mt-1 whitespace-pre-wrap">{viewingCloudStudy.clinicalHistory}</p>
                     </div>
 
                     <div className="border border-slate-800/80 rounded-xl overflow-hidden">
                       <div className="bg-slate-950/80 px-4 py-2 border-b border-slate-800/80 flex items-center justify-between">
-                        <span className="text-[10px] font-black text-indigo-400 font-mono uppercase tracking-widest">Contenido del Reporte Clínico Oficial</span>
+                        <span className="text-[10px] font-black text-indigo-400 font-mono uppercase tracking-widest">Contenido del Reporte ClÃ­nico Oficial</span>
                       </div>
                       <div className="p-6 bg-slate-950/10 text-xs font-mono whitespace-pre-wrap text-slate-300 leading-relaxed overflow-x-auto max-h-[350px]">
                         {viewingCloudStudy.reportText}
@@ -25290,7 +25297,7 @@ const splitReportAndAnnex = (text: string) => {
                       {copiedEhrStudyId === viewingCloudStudy.id ? (
                         <>
                           <Check className="h-4 w-4 text-emerald-400" />
-                          ¡Copiado!
+                          Â¡Copiado!
                         </>
                       ) : (
                         <>
@@ -25431,7 +25438,7 @@ const splitReportAndAnnex = (text: string) => {
                   </div>
                   
                   <p className="text-[10px] text-slate-400 leading-normal">
-                    Sube una foto de tu lista de pacientes del día para que la IA la digitalice automáticamente.
+                    Sube una foto de tu lista de pacientes del dÃ­a para que la IA la digitalice automÃ¡ticamente.
                   </p>
 
                   {/* Drag-n-Drop File Upload Target */}
@@ -25487,7 +25494,7 @@ const splitReportAndAnnex = (text: string) => {
                   <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-xl p-3 text-[10px] leading-relaxed flex gap-2">
                     <AlertCircle className="h-4 w-4 shrink-0" />
                     <div>
-                      <span className="font-bold uppercase tracking-wider block mb-0.5">Error de Digitalización</span>
+                      <span className="font-bold uppercase tracking-wider block mb-0.5">Error de DigitalizaciÃ³n</span>
                       {worklistError}
                     </div>
                   </div>
@@ -25502,7 +25509,7 @@ const splitReportAndAnnex = (text: string) => {
                     {worklist && worklist.patients.length > 0 && (
                       <button
                         onClick={() => {
-                          if (confirm("¿Estás seguro de que deseas limpiar la lista de trabajo de hoy?")) {
+                          if (confirm("Â¿EstÃ¡s seguro de que deseas limpiar la lista de trabajo de hoy?")) {
                             saveWorklist([]);
                           }
                         }}
@@ -25519,7 +25526,7 @@ const splitReportAndAnnex = (text: string) => {
                       <div className="text-center py-8 px-4 rounded-xl border border-slate-850 bg-slate-900/10">
                         <Clock className="h-6 w-6 text-slate-650 mx-auto mb-2" />
                         <span className="text-[10px] font-bold text-slate-500 block uppercase tracking-wider">No hay pacientes</span>
-                        <span className="text-[9px] text-slate-600 block mt-1">Digitaliza una agenda o añade uno manual</span>
+                        <span className="text-[9px] text-slate-600 block mt-1">Digitaliza una agenda o aÃ±ade uno manual</span>
                       </div>
                     ) : (
                       worklist.patients.map((patient, index) => {
@@ -25544,8 +25551,8 @@ const splitReportAndAnnex = (text: string) => {
                         if (patient.age) metaParts.push(`${patient.age} a`);
                         if (patient.gender) metaParts.push(patient.gender.toUpperCase());
                         if (patient.patientId) metaParts.push(`ID: ${patient.patientId}`);
-                        if (patient.phone) metaParts.push(`📞 ${patient.phone}`);
-                        const metaText = metaParts.join(" • ");
+                        if (patient.phone) metaParts.push(`ð ${patient.phone}`);
+                        const metaText = metaParts.join(" â¢ ");
 
                         return (
                           <div
@@ -25645,7 +25652,7 @@ const splitReportAndAnnex = (text: string) => {
                 {/* Manual Patient Adder form */}
                 <ManualPatientAdder onAdd={handleAddPatientToWorklist} />
 
-                {/* Sincronizador de Ecógrafo / Exportador de Lista de Trabajo */}
+                {/* Sincronizador de EcÃ³grafo / Exportador de Lista de Trabajo */}
                 <UltrasoundWorklistExporter
                   patients={worklist ? worklist.patients : []}
                   bridgeOnline={bridgeOnline}
@@ -25658,13 +25665,13 @@ const splitReportAndAnnex = (text: string) => {
         </AnimatePresence>
       </div>
 
-      {/* 🔮 PIE DE PAGINA */}
+      {/* ð® PIE DE PAGINA */}
       <footer className="bg-slate-950 border-t-2 border-slate-850 py-5 px-8 shrink-0 flex flex-col sm:flex-row items-center justify-between gap-4 text-[10px] font-black text-slate-500 font-mono uppercase tracking-widest select-none">
         <div>
-          Estación de Diagnóstico Personalizada • Dr. Milton
+          EstaciÃ³n de DiagnÃ³stico Personalizada â¢ Dr. Milton
         </div>
         <div className="flex items-center gap-3">
-          <span>Clasificaciones: BI-RADS AP • Bosniak • Fleischner</span>
+          <span>Clasificaciones: BI-RADS AP â¢ Bosniak â¢ Fleischner</span>
           <span className="text-slate-800">|</span>
           <span className="text-indigo-400 font-black">GEMINI 3.5 FLASH ON DEMAND</span>
         </div>
@@ -25685,7 +25692,7 @@ const splitReportAndAnnex = (text: string) => {
         />
       )}
 
-      {/* 📥 MODELO DE ASISTENCIA PARA IMPRESIÓN Y EXPORTACIÓN PDF (ESPECIAL IPHONE/MOBILE & IFRAME) */}
+      {/* ð¥ MODELO DE ASISTENCIA PARA IMPRESIÃN Y EXPORTACIÃN PDF (ESPECIAL IPHONE/MOBILE & IFRAME) */}
       {showPrintModal && (
         <div className="no-print fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
           <motion.div 
@@ -25698,7 +25705,7 @@ const splitReportAndAnnex = (text: string) => {
             <div className="bg-slate-950 px-6 py-4 border-b border-slate-850 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Printer className="h-5 w-5 text-indigo-400" />
-                <h3 className="text-sm font-black text-white uppercase tracking-wider font-mono">Asistente de Impresión y PDF Oficial</h3>
+                <h3 className="text-sm font-black text-white uppercase tracking-wider font-mono">Asistente de ImpresiÃ³n y PDF Oficial</h3>
               </div>
               <button 
                 onClick={() => setShowPrintModal(false)}
@@ -25713,7 +25720,7 @@ const splitReportAndAnnex = (text: string) => {
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                 <div className="space-y-0.5 text-left">
                   <p className="text-xs font-black text-slate-100 uppercase tracking-wider font-mono">Documento a generar</p>
-                  <p className="text-[10px] text-slate-450 leading-none">Selecciona cuál documento deseas descargar, previsualizar o mandar a imprimir.</p>
+                  <p className="text-[10px] text-slate-450 leading-none">Selecciona cuÃ¡l documento deseas descargar, previsualizar o mandar a imprimir.</p>
                 </div>
                 <div className="flex gap-2 shrink-0">
                   <button
@@ -25724,7 +25731,7 @@ const splitReportAndAnnex = (text: string) => {
                         : 'bg-slate-850 hover:bg-slate-800 text-slate-400 hover:text-white'
                     }`}
                   >
-                    📋 Reporte Clínico
+                    ð Reporte ClÃ­nico
                   </button>
                   {patientSummary && (
                     <button
@@ -25735,7 +25742,7 @@ const splitReportAndAnnex = (text: string) => {
                           : 'bg-slate-850 hover:bg-slate-800 text-slate-400 hover:text-white'
                       }`}
                     >
-                      🌱 Explicación Paciente
+                      ð± ExplicaciÃ³n Paciente
                     </button>
                   )}
                 </div>
@@ -25744,7 +25751,7 @@ const splitReportAndAnnex = (text: string) => {
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pt-3 border-t border-slate-850/60">
                 <div className="space-y-0.5 text-left">
                   <p className="text-xs font-black text-slate-100 uppercase tracking-wider font-mono">Modo de Vista Previa</p>
-                  <p className="text-[10px] text-slate-450 leading-none">Puedes alternar entre la simulación digital responsiva y el PDF vectorial real.</p>
+                  <p className="text-[10px] text-slate-450 leading-none">Puedes alternar entre la simulaciÃ³n digital responsiva y el PDF vectorial real.</p>
                 </div>
                 <div className="flex gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-850 shrink-0">
                   <button
@@ -25755,7 +25762,7 @@ const splitReportAndAnnex = (text: string) => {
                         : 'text-slate-450 hover:text-slate-200'
                     }`}
                   >
-                    🖥️ Simulador HTML
+                    ð¥ï¸ Simulador HTML
                   </button>
                   <button
                     onClick={() => setPrintModalViewType('pdf_viewer')}
@@ -25765,7 +25772,7 @@ const splitReportAndAnnex = (text: string) => {
                         : 'text-slate-450 hover:text-slate-200'
                     }`}
                   >
-                    📄 Ver PDF Real (.pdf)
+                    ð Ver PDF Real (.pdf)
                   </button>
                 </div>
               </div>
@@ -25777,11 +25784,11 @@ const splitReportAndAnnex = (text: string) => {
               {/* Alerta de Soporte iPhone e iframe */}
               <div className="bg-indigo-950/40 border-2 border-indigo-500/20 rounded-2xl p-5 space-y-3">
                 <div className="flex items-start gap-3 text-left">
-                  <span className="text-xl">📱</span>
+                  <span className="text-xl">ð±</span>
                   <div className="space-y-1">
-                    <p className="text-xs font-black text-white uppercase tracking-wide">💡 Soporte Especial para iPhone, Safari e iPads</p>
+                    <p className="text-xs font-black text-white uppercase tracking-wide">ð¡ Soporte Especial para iPhone, Safari e iPads</p>
                     <p className="text-xs text-slate-300 leading-normal">
-                      Debido a que esta herramienta se ejecuta dentro de un iframe en <strong>AI Studio</strong>, el navegador puede inyectar enlaces o el nombre de la app. Para obtener un documento <strong>completamente limpio, sin títulos ni hora de impresión</strong>, utiliza las opciones de PDF directo:
+                      Debido a que esta herramienta se ejecuta dentro de un iframe en <strong>AI Studio</strong>, el navegador puede inyectar enlaces o el nombre de la app. Para obtener un documento <strong>completamente limpio, sin tÃ­tulos ni hora de impresiÃ³n</strong>, utiliza las opciones de PDF directo:
                     </p>
                   </div>
                 </div>
@@ -25799,7 +25806,7 @@ const splitReportAndAnnex = (text: string) => {
                     className="flex items-center justify-center gap-2.5 p-3 bg-sky-700 hover:bg-sky-650 border-2 border-sky-600/10 rounded-xl text-xs font-black text-white uppercase tracking-wider transition-all shadow-md active:scale-95 text-center cursor-pointer"
                   >
                     <ExternalLink className="h-4 w-4" />
-                    <span>Abrir PDF en {printModalDocType === 'report' ? "Informe" : "Explicación"} (Pestaña Limpia)</span>
+                    <span>Abrir PDF en {printModalDocType === 'report' ? "Informe" : "ExplicaciÃ³n"} (PestaÃ±a Limpia)</span>
                   </button>
                   <button
                     onClick={() => {
@@ -25813,7 +25820,7 @@ const splitReportAndAnnex = (text: string) => {
                     className="flex items-center justify-center gap-2.5 p-3 bg-slate-800 hover:bg-slate-750 border-2 border-slate-700/10 rounded-xl text-xs font-bold text-slate-300 uppercase tracking-wider transition-all shadow-md active:scale-95 text-center cursor-pointer"
                   >
                     <Printer className="h-4 w-4 text-indigo-400" />
-                    <span>{printModalDocType === 'report' ? "Imprimir original en Pestaña Nueva" : "Abrir cuadro de Impresión Nativo"}</span>
+                    <span>{printModalDocType === 'report' ? "Imprimir original en PestaÃ±a Nueva" : "Abrir cuadro de ImpresiÃ³n Nativo"}</span>
                   </button>
                   <button
                     onClick={() => {
@@ -25830,24 +25837,24 @@ const splitReportAndAnnex = (text: string) => {
                   </button>
                 </div>
                 <p className="text-[10px] text-indigo-300 font-medium font-mono uppercase tracking-wide text-center">
-                  * Al abrir el PDF en una pestaña limpia de iPhone, puedes guardarlo a archivos o mandarlo a imprimir sin ningún enlace ni hora.
+                  * Al abrir el PDF en una pestaÃ±a limpia de iPhone, puedes guardarlo a archivos o mandarlo a imprimir sin ningÃºn enlace ni hora.
                 </p>
 
-                {/* 🎨 Opciones de personalización e impresión física */}
+                {/* ð¨ Opciones de personalizaciÃ³n e impresiÃ³n fÃ­sica */}
                 <div className="bg-[#0b0f19] border-2 border-indigo-950/50 p-4.5 rounded-2xl space-y-3.5 text-left">
                   <div className="flex items-center gap-2">
                     <Sliders className="h-4 w-4 text-emerald-400" />
-                    <h4 className="text-xs font-black uppercase tracking-widest font-mono text-emerald-400">Canales de Optimización de Impresión</h4>
+                    <h4 className="text-xs font-black uppercase tracking-widest font-mono text-emerald-400">Canales de OptimizaciÃ³n de ImpresiÃ³n</h4>
                   </div>
 
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-slate-950/60 p-3 rounded-xl border border-slate-850/80">
                     <div className="space-y-0.5 max-w-[85%]">
                       <p className="text-[11px] font-black text-slate-200 uppercase tracking-wide flex items-center gap-1.5">
                         <Activity className="h-3.5 w-3.5 text-indigo-400 animate-pulse" />
-                        Optimización de Contraste Adaptativo PDF (PACS / Impresión Física)
+                        OptimizaciÃ³n de Contraste Adaptativo PDF (PACS / ImpresiÃ³n FÃ­sica)
                       </p>
                       <p className="text-[10px] text-slate-450 leading-normal">
-                        Incrementa la densidad de tinta en tablas, tipografías y membretes a negro puro (True Black), optimizando la legibilidad para fotocopias o escaneo, e inserta una cuña de calibración en escala de grises.
+                        Incrementa la densidad de tinta en tablas, tipografÃ­as y membretes a negro puro (True Black), optimizando la legibilidad para fotocopias o escaneo, e inserta una cuÃ±a de calibraciÃ³n en escala de grises.
                       </p>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer shrink-0">
@@ -25863,31 +25870,31 @@ const splitReportAndAnnex = (text: string) => {
                   </div>
                 </div>
 
-                {/* Consejos Adicionales para Eliminar Cabecera/Pie de Página del Navegador */}
+                {/* Consejos Adicionales para Eliminar Cabecera/Pie de PÃ¡gina del Navegador */}
                 <div className="mt-3 border-t border-indigo-950/60 pt-3 space-y-1 text-left">
                   <p className="text-[11px] font-black text-rose-400 uppercase tracking-wide flex items-center gap-1.5">
-                    <span>⚠️</span> ¿CÓMO QUITAR EL LINK/HORA EN LA HOJA FISICA?
+                    <span>â ï¸</span> Â¿CÃMO QUITAR EL LINK/HORA EN LA HOJA FISICA?
                   </p>
                   <p className="text-[10.5px] text-slate-350 leading-relaxed font-sans">
-                    Si al imprimir sigue apareciendo el link de la app o la hora en los bordes de la página, por favor realiza lo siguiente en tu cuadro de impresión:
+                    Si al imprimir sigue apareciendo el link de la app o la hora en los bordes de la pÃ¡gina, por favor realiza lo siguiente en tu cuadro de impresiÃ³n:
                   </p>
                   <ul className="text-[10.5px] text-slate-450 leading-relaxed list-disc pl-4 space-y-0.5">
-                    <li>En la ventana de opciones de impresión, busca la sección de <strong className="text-slate-300 font-bold">"Más ajustes"</strong> o <strong className="text-slate-300 font-bold">"Configuración"</strong>.</li>
-                    <li>Busca la opción que dice <strong className="text-slate-350 font-black">"Encabezados y pies de página" (Headers and footers)</strong> y <strong className="text-rose-400 font-extrabold">DESMÁRCALA</strong>.</li>
-                    <li>Esto forzará al navegador a eliminar completamente el link, el título y la fecha en todos los bordes, dejándote un reporte sumamente pulcro y profesional.</li>
+                    <li>En la ventana de opciones de impresiÃ³n, busca la secciÃ³n de <strong className="text-slate-300 font-bold">"MÃ¡s ajustes"</strong> o <strong className="text-slate-300 font-bold">"ConfiguraciÃ³n"</strong>.</li>
+                    <li>Busca la opciÃ³n que dice <strong className="text-slate-350 font-black">"Encabezados y pies de pÃ¡gina" (Headers and footers)</strong> y <strong className="text-rose-400 font-extrabold">DESMÃRCALA</strong>.</li>
+                    <li>Esto forzarÃ¡ al navegador a eliminar completamente el link, el tÃ­tulo y la fecha en todos los bordes, dejÃ¡ndote un reporte sumamente pulcro y profesional.</li>
                   </ul>
                 </div>
               </div>
 
-              {/* 🇨🇭 SELECTOR DE DISEÑO EDITORIAL (ESTÁNDAR VS SUIZO) DIRECTO SOBRE EL VISOR */}
+              {/* ð¨ð­ SELECTOR DE DISEÃO EDITORIAL (ESTÃNDAR VS SUIZO) DIRECTO SOBRE EL VISOR */}
               <div className="bg-[#0b0f19] p-4.5 rounded-2xl border-2 border-indigo-500/30 flex flex-col md:flex-row items-center justify-between gap-4 text-left shadow-lg">
                 <div className="space-y-1 text-left">
                   <h4 className="text-xs font-black uppercase tracking-wider font-mono text-indigo-400 flex items-center gap-1.5">
                     <Columns className="h-4 w-4 text-indigo-400" />
-                    Estilo de Diseño de PDF en Tiempo Real
+                    Estilo de DiseÃ±o de PDF en Tiempo Real
                   </h4>
                   <p className="text-[10.5px] text-slate-400 leading-normal max-w-xl">
-                    Cambia la presentación visual y estructura de su PDF en vivo. Seleccione entre el estilo <strong>Estándar</strong> clásico, el moderno <strong>Clinical Slate</strong> con tonos pizarra, o el refinado y formal <strong>Executive Medical</strong> con acentos en azul marino y oro.
+                    Cambia la presentaciÃ³n visual y estructura de su PDF en vivo. Seleccione entre el estilo <strong>EstÃ¡ndar</strong> clÃ¡sico, el moderno <strong>Clinical Slate</strong> con tonos pizarra, o el refinado y formal <strong>Executive Medical</strong> con acentos en azul marino y oro.
                   </p>
                 </div>
                 <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-800 shrink-0 select-none w-full md:w-auto justify-center md:justify-start gap-1">
@@ -25900,7 +25907,7 @@ const splitReportAndAnnex = (text: string) => {
                         : "text-slate-400 hover:text-slate-250 hover:bg-slate-850"
                     }`}
                   >
-                    <span>📋</span> Estándar
+                    <span>ð</span> EstÃ¡ndar
                   </button>
                   <button
                     type="button"
@@ -25911,7 +25918,7 @@ const splitReportAndAnnex = (text: string) => {
                         : "text-slate-400 hover:text-slate-250 hover:bg-slate-850"
                     }`}
                   >
-                    <span>🎨</span> Clinical Slate
+                    <span>ð¨</span> Clinical Slate
                   </button>
                   <button
                     type="button"
@@ -25922,7 +25929,7 @@ const splitReportAndAnnex = (text: string) => {
                         : "text-slate-400 hover:text-slate-250 hover:bg-slate-850"
                     }`}
                   >
-                    <span>👑</span> Executive Medical
+                    <span>ð</span> Executive Medical
                   </button>
                 </div>
               </div>
@@ -25931,21 +25938,21 @@ const splitReportAndAnnex = (text: string) => {
                 <div className="space-y-3.5 text-left">
                   <div className="flex justify-between items-center text-left">
                     <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest font-mono">
-                      Vista Previa de Impresión Oficial del Documento (.pdf):
+                      Vista Previa de ImpresiÃ³n Oficial del Documento (.pdf):
                     </span>
                     {isGeneratingPdfPreview && (
                       <span className="text-[10px] text-indigo-400 font-mono flex items-center gap-1.5 animate-pulse font-extrabold uppercase">
-                        ⚡ ACTUALIZANDO VISTA PREVIA DEL PDF...
+                        â¡ ACTUALIZANDO VISTA PREVIA DEL PDF...
                       </span>
                     )}
                   </div>
                   
                   <div className="relative bg-slate-950 rounded-2xl border-4 border-slate-800 shadow-2xl overflow-hidden min-h-[500px] md:h-[680px] w-full flex flex-col items-center justify-center">
-                    {/* Alerta de restricción iframe del navegador */}
+                    {/* Alerta de restricciÃ³n iframe del navegador */}
                     <div className="absolute top-4 left-4 right-4 z-15 bg-amber-500/10 text-amber-300 border border-amber-500/20 px-3.5 py-2 rounded-xl text-[10px] font-bold leading-normal flex items-start gap-2 shadow-md">
-                      <span className="text-sm shrink-0">⚠️</span>
+                      <span className="text-sm shrink-0">â ï¸</span>
                       <p className="font-mono uppercase tracking-wide">
-                        Entorno Sandboxed AI Studio: Las políticas de seguridad de su navegador pueden bloquear la carga del visor de PDF inline. Si ve esta pantalla en blanco o vacía, cambie a la pestaña superior <strong className="text-white">🖥️ Simulador HTML</strong> para ver la maqueta fiel A4 o descargue el archivo oficial libre con el botón superior.
+                        Entorno Sandboxed AI Studio: Las polÃ­ticas de seguridad de su navegador pueden bloquear la carga del visor de PDF inline. Si ve esta pantalla en blanco o vacÃ­a, cambie a la pestaÃ±a superior <strong className="text-white">ð¥ï¸ Simulador HTML</strong> para ver la maqueta fiel A4 o descargue el archivo oficial libre con el botÃ³n superior.
                       </p>
                     </div>
 
@@ -25955,7 +25962,7 @@ const splitReportAndAnnex = (text: string) => {
                         <div className="space-y-1">
                           <p className="text-xs font-black text-white uppercase tracking-wider font-mono animate-pulse">Renderizando PDF a nivel PACS</p>
                           <p className="text-[11px] text-slate-400 max-w-sm leading-relaxed">
-                            Ensamblando el documento completo con tablas de medición, gráficos de Doppler si existen, firmas SHA256 y credenciales médicas habilitadas...
+                            Ensamblando el documento completo con tablas de mediciÃ³n, grÃ¡ficos de Doppler si existen, firmas SHA256 y credenciales mÃ©dicas habilitadas...
                           </p>
                         </div>
                       </div>
@@ -25963,11 +25970,11 @@ const splitReportAndAnnex = (text: string) => {
                       <iframe
                         src={printModalDocType === 'report' ? generatedNativePdfUrl! : generatedSummaryPdfUrl!}
                         className="w-full h-full border-0 absolute inset-0 bg-white pt-14"
-                        title="Vista Previa de Impresión Real en Vivo"
+                        title="Vista Previa de ImpresiÃ³n Real en Vivo"
                       />
                     ) : (
                       <div className="flex flex-col items-center justify-center p-12 text-center space-y-4 pt-16">
-                        <span className="text-4xl text-slate-500">📎</span>
+                        <span className="text-4xl text-slate-500">ð</span>
                         <p className="text-sm font-black text-slate-300 uppercase font-mono">No se pudo Renderizar el Documento PDF</p>
                         <p className="text-xs text-slate-500 max-w-md leading-relaxed">
                           Este navegador no soporta visualizador de PDF incrustado o se ha denegado el permiso. Puedes descargarlo directamente para visualizarlo o imprimirlo:
@@ -25976,7 +25983,7 @@ const splitReportAndAnnex = (text: string) => {
                           onClick={() => printModalDocType === 'report' ? handleDownloadNativePDF(false) : handleDownloadPatientSummaryPDF(false)}
                           className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-550 border border-indigo-500/20 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer"
                         >
-                          Descargar Documento Físico
+                          Descargar Documento FÃ­sico
                         </button>
                       </div>
                     )}
@@ -25986,7 +25993,7 @@ const splitReportAndAnnex = (text: string) => {
                 <div className="space-y-4 text-left">
                   {printModalDocType === 'report' ? (
                     <div className="space-y-2 text-left">
-                      <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest font-mono">Vista Previa del Documento (Formato Físico):</span>
+                      <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest font-mono">Vista Previa del Documento (Formato FÃ­sico):</span>
                       <div className="w-full max-w-[210mm] min-h-[297mm] mx-auto bg-white text-black p-6 sm:p-[20mm] rounded-sm border border-slate-300 shadow-[0_12px_36px_rgba(0,0,0,0.18)] text-left relative overflow-x-auto">
                         
                         {/* Membrete */}
@@ -25994,7 +26001,7 @@ const splitReportAndAnnex = (text: string) => {
                     <div className="border-b border-gray-300 pb-4 mb-4 text-center">
                       <img 
                         src={customLogoUrl} 
-                        alt="Membrete de la Clínica" 
+                        alt="Membrete de la ClÃ­nica" 
                         className="max-h-[160px] mx-auto w-auto object-contain block" 
                         referrerPolicy="no-referrer"
                       />
@@ -26048,12 +26055,12 @@ const splitReportAndAnnex = (text: string) => {
                                 {clinicName}
                               </h4>
                               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none mt-1">
-                                Reporte de Radiodiagnóstico por Imagen
+                                Reporte de RadiodiagnÃ³stico por Imagen
                               </p>
                             </>
                           ) : (
                             <h4 className="text-sm font-extrabold tracking-tight text-gray-900 uppercase">
-                              REPORTE DE RADIODIAGNÓSTICO
+                              REPORTE DE RADIODIAGNÃSTICO
                             </h4>
                           )}
                         </div>
@@ -26084,12 +26091,12 @@ const splitReportAndAnnex = (text: string) => {
                     </div>
                   )}
 
-                  {/* Calibración de Contraste para Impresión Física e Historial Clínico (Cuña PACS) */}
+                  {/* CalibraciÃ³n de Contraste para ImpresiÃ³n FÃ­sica e Historial ClÃ­nico (CuÃ±a PACS) */}
                   {adaptivePDFContrast && (
                     <div className="mb-6 p-2 rounded border border-gray-400 bg-white select-none">
                       <div className="text-[7.5px] font-mono font-bold text-gray-500 uppercase tracking-widest text-center mb-1 flex items-center justify-center gap-1.5">
                         <span>Pauta de Densidad PACS Homologada</span>
-                        <span className="text-[6.5px] bg-black text-white px-1.5 py-0.5 rounded font-sans scale-90">CALIBRACIÓN GSDF ACTIVA</span>
+                        <span className="text-[6.5px] bg-black text-white px-1.5 py-0.5 rounded font-sans scale-90">CALIBRACIÃN GSDF ACTIVA</span>
                       </div>
                       <div className="flex h-5 border border-black overflow-hidden rounded bg-gray-50">
                         {[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map(val => {
@@ -26109,12 +26116,12 @@ const splitReportAndAnnex = (text: string) => {
                         })}
                       </div>
                       <div className="text-[6px] font-mono font-bold text-gray-400 text-center mt-1 uppercase">
-                        Gama adaptativa: Compensación automática de pérdida térmica de tinta en papel
+                        Gama adaptativa: CompensaciÃ³n automÃ¡tica de pÃ©rdida tÃ©rmica de tinta en papel
                       </div>
                     </div>
                   )}
 
-                  {/* Diagnóstico en Serif */}
+                  {/* DiagnÃ³stico en Serif */}
                   {(() => {
                     const activeText = isEditingReportManual ? editedReportText : (generatedReport || "");
                     const { mainReport, cuadroSinopticoReport, organSynopsisReport, annexReport } = splitReportSections(activeText);
@@ -26129,18 +26136,18 @@ const splitReportAndAnnex = (text: string) => {
                         {/* FIRMA AL FINAL DEL CUERPO DEL REPORTE */}
                         {(doctorName || customSignatureUrl) && (
                           <div className="mt-12 pt-6 border-t border-gray-200 grid grid-cols-2 gap-4 text-[9px] leading-normal font-sans text-gray-400 text-left">
-                            {/* Bloque Homologado Izquierdo (Metadatos de Firma Electrónica) */}
+                            {/* Bloque Homologado Izquierdo (Metadatos de Firma ElectrÃ³nica) */}
                             <div className="border border-slate-250 bg-slate-50/70 p-3 rounded-lg text-[8px] font-sans text-slate-500 max-w-[340px] space-y-1">
                               <div className="flex items-center gap-1.5 font-bold text-[8.5px] text-slate-700 uppercase">
-                                <span className="text-indigo-600">🛡️</span>
-                                <span>Firma Electrónica Homologada</span>
+                                <span className="text-indigo-600">ð¡ï¸</span>
+                                <span>Firma ElectrÃ³nica Homologada</span>
                               </div>
                               <p className="font-mono text-[7.5px] text-indigo-700 font-bold bg-indigo-50/55 px-1 py-0.5 rounded break-all select-all">
                                 {getValidationHash()}
                               </p>
                               <div className="grid grid-cols-[max-content_1fr] gap-x-2 text-[8px] leading-relaxed">
                                 <span className="font-semibold text-slate-400 uppercase">Autoridad:</span>
-                                <span className="font-bold text-slate-650">{doctorName || "Médico Especialista"}</span>
+                                <span className="font-bold text-slate-650">{doctorName || "MÃ©dico Especialista"}</span>
                                 
                                 <span className="font-semibold text-slate-400 uppercase">Registro:</span>
                                 <span className="font-mono font-bold text-slate-650">{doctorLicense}</span>
@@ -26152,11 +26159,11 @@ const splitReportAndAnnex = (text: string) => {
                                 </span>
                                 
                                 <span className="font-semibold text-slate-400 uppercase">Soporte Legal:</span>
-                                <span className="text-slate-450 italic">Ley de Comercio Electrónico, Firmas y Datos (Art. 14)</span>
+                                <span className="text-slate-450 italic">Ley de Comercio ElectrÃ³nico, Firmas y Datos (Art. 14)</span>
                               </div>
                             </div>
 
-                            {/* Firma Autógrafa y Datos del Médico Especialista */}
+                            {/* Firma AutÃ³grafa y Datos del MÃ©dico Especialista */}
                             <div className="text-right flex flex-col items-end justify-center">
                               <div className="inline-block text-center relative max-w-[280px]">
                                 {customSignatureUrl ? (
@@ -26171,13 +26178,13 @@ const splitReportAndAnnex = (text: string) => {
                                 ) : (
                                   <div className="mb-2 text-indigo-600/80 font-serif italic text-xs select-none relative pr-4">
                                     <span className="text-[10px] font-mono font-black border border-indigo-200 bg-indigo-50 px-2 py-0.5 rounded uppercase tracking-wider block">
-                                      🔑 FIRMADO DIGITALMENTE
+                                      ð FIRMADO DIGITALMENTE
                                     </span>
                                   </div>
                                 )}
                                 <div className="border-t border-slate-300 pt-1.5 px-4 text-center">
-                                  <p className="font-black text-slate-900 uppercase text-[11px] leading-tight select-all">{doctorName || "Médico Especialista"}</p>
-                                  <p className="font-semibold text-slate-500 text-[8.5px] mt-0.5 select-all">Especialista en Radiología e Imágenes Medicas.</p>
+                                  <p className="font-black text-slate-900 uppercase text-[11px] leading-tight select-all">{doctorName || "MÃ©dico Especialista"}</p>
+                                  <p className="font-semibold text-slate-500 text-[8.5px] mt-0.5 select-all">Especialista en RadiologÃ­a e ImÃ¡genes Medicas.</p>
                                   <p className="font-mono text-slate-450 text-[7.5px] leading-normal select-all">{doctorLicense}</p>
                                 </div>
                               </div>
@@ -26185,7 +26192,7 @@ const splitReportAndAnnex = (text: string) => {
                           </div>
                         )}
 
-                        {/* 2. CUADRO SINÓPTICO */}
+                        {/* 2. CUADRO SINÃPTICO */}
                         {cuadroSinopticoReport && (
                           <div className="mt-8 pt-6 border-t border-gray-300 print:break-before-page" style={{ pageBreakBefore: "always", breakBefore: "page" }}>
                             <div className="space-y-4 text-left leading-relaxed text-[12px] text-gray-900 font-serif">
@@ -26194,7 +26201,7 @@ const splitReportAndAnnex = (text: string) => {
                           </div>
                         )}
 
-                        {/* 3. SINOPSIS POR ÓRGANO (PÁGINA INDEPENDIENTE) */}
+                        {/* 3. SINOPSIS POR ÃRGANO (PÃGINA INDEPENDIENTE) */}
                         {organSynopsisReport && (
                           <div className="mt-8 pt-6 border-t border-gray-300 print:break-before-page" style={{ pageBreakBefore: "always", breakBefore: "page" }}>
                             <div className="space-y-4 text-left leading-relaxed text-[12px] text-gray-900 font-serif">
@@ -26203,7 +26210,7 @@ const splitReportAndAnnex = (text: string) => {
                           </div>
                         )}
 
-                        {/* 6. DESGLOSE Y JUSTIFICACIÓN DE CLASIFICACIONES */}
+                        {/* 6. DESGLOSE Y JUSTIFICACIÃN DE CLASIFICACIONES */}
                         {annexReport && (
                           <div className="mt-12 pt-6 border-t border-gray-300 print:break-before-page">
                             <div className="space-y-4 pt-2 text-left leading-relaxed text-[12px] text-gray-900 font-serif">
@@ -26212,7 +26219,7 @@ const splitReportAndAnnex = (text: string) => {
                           </div>
                         )}
 
-                        {/* 7. ANEXO: RADAR BIOMECÁNICO E INFLAMATORIO */}
+                        {/* 7. ANEXO: RADAR BIOMECÃNICO E INFLAMATORIO */}
                         {includeRadarInReport && renderPrintBiomechanicalRadarAnnex(radarData)}
                       </>
                     );
@@ -26222,10 +26229,10 @@ const splitReportAndAnnex = (text: string) => {
               </div>
           ) : (
             <div className="space-y-4 text-left">
-              <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest font-mono">Vista Previa de la Explicación Empática (Acompañamiento):</span>
+              <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest font-mono">Vista Previa de la ExplicaciÃ³n EmpÃ¡tica (AcompaÃ±amiento):</span>
               <div className="w-full max-w-[210mm] min-h-[297mm] mx-auto bg-white text-black p-6 sm:p-[20mm] rounded-sm border border-slate-300 shadow-[0_12px_36px_rgba(0,0,0,0.18)] text-left relative overflow-x-auto">
                 
-                {/* Membrete Explicación */}
+                {/* Membrete ExplicaciÃ³n */}
                 <div className="flex justify-between items-start border-b-2 border-orange-500/30 pb-4 mb-4 text-left">
                   <div className="flex items-center gap-3">
                     <div className="w-11 h-11 flex items-center justify-center shrink-0 border border-orange-200 rounded-lg p-1 bg-orange-50 text-orange-600">
@@ -26233,10 +26240,10 @@ const splitReportAndAnnex = (text: string) => {
                     </div>
                     <div>
                       <h4 className="text-sm font-extrabold tracking-tight text-[#0f100e] uppercase">
-                        ACOMPAÑAMIENTO INTEGRAL PARA EL PACIENTE
+                        ACOMPAÃAMIENTO INTEGRAL PARA EL PACIENTE
                       </h4>
                       <p className="text-[9px] font-bold text-orange-500 uppercase tracking-widest leading-none mt-1">
-                        Traducción Empática de Hallazgos Clínicos
+                        TraducciÃ³n EmpÃ¡tica de Hallazgos ClÃ­nicos
                       </p>
                     </div>
                   </div>
@@ -26247,7 +26254,7 @@ const splitReportAndAnnex = (text: string) => {
                   )}
                 </div>
 
-                {/* Ficha Paciente Explicación */}
+                {/* Ficha Paciente ExplicaciÃ³n */}
                 {(patientName || reportDate) && (
                   <div className="border border-orange-200 rounded-lg p-3.5 mb-6 bg-orange-50/30 flex flex-wrap gap-x-8 gap-y-1.5 text-[11px] leading-relaxed text-left">
                     {patientName && (
@@ -26259,17 +26266,17 @@ const splitReportAndAnnex = (text: string) => {
                     {reportDate && (
                       <div>
                         <span className="font-bold text-orange-600 uppercase font-sans">Estudio Realizado:</span>{" "}
-                        <span className="font-extrabold text-slate-900 uppercase text-[12px]">{specificStudy || "Ultrasonografía / Imagenologia"}</span>
+                        <span className="font-extrabold text-slate-900 uppercase text-[12px]">{specificStudy || "UltrasonografÃ­a / Imagenologia"}</span>
                       </div>
                     )}
                   </div>
                 )}
 
-                {/* Contenido de la Traducción */}
+                {/* Contenido de la TraducciÃ³n */}
                 {patientSummary ? (
                   <div className="space-y-6 font-sans text-left">
                     <div className="space-y-1.5 p-4 bg-orange-50/20 border-l-4 border-orange-500 rounded-r-xl text-left">
-                      <h5 className="text-[10px] font-black tracking-widest uppercase text-orange-700">Resumen de Bienvenida y Propósito</h5>
+                      <h5 className="text-[10px] font-black tracking-widest uppercase text-orange-700">Resumen de Bienvenida y PropÃ³sito</h5>
                       <p className="text-xs text-gray-700 leading-relaxed font-sans font-medium text-left">
                         {patientSummary.summary}
                       </p>
@@ -26277,25 +26284,25 @@ const splitReportAndAnnex = (text: string) => {
 
                     <div className="space-y-3">
                       <h5 className="text-[10.5px] font-black tracking-wider uppercase text-slate-800 border-b border-gray-200 pb-1 flex items-center gap-1">
-                        <span>🔍</span> GLOSARIO DE HALLAZGOS EXPLICADOS
+                        <span>ð</span> GLOSARIO DE HALLAZGOS EXPLICADOS
                       </h5>
                       <div className="space-y-3.5 text-left bg-transparent">
                         {patientSummary.keyFindings?.map((finding: any, idx: number) => (
                           <div key={idx} className="p-3.5 border border-gray-250 rounded-xl bg-slate-50/50 space-y-2 text-left">
                             <p className="text-xs font-black text-orange-700 uppercase flex items-center gap-1.5 justify-start">
-                              <span>📌</span> {finding.title}
+                              <span>ð</span> {finding.title}
                             </p>
                             <p className="text-[9.5px] font-mono text-gray-500 leading-none text-left">
-                              Término científico: <span className="font-bold text-pink-700">"{finding.originalTerm}"</span>
+                              TÃ©rmino cientÃ­fico: <span className="font-bold text-pink-700">"{finding.originalTerm}"</span>
                             </p>
                             <p className="text-xs text-gray-700 leading-relaxed font-sans text-left">
-                              <strong>Explicación:</strong> {finding.simplifiedExplanation}
+                              <strong>ExplicaciÃ³n:</strong> {finding.simplifiedExplanation}
                             </p>
                             <p className="text-[11.5px] text-amber-800 leading-relaxed font-sans italic bg-amber-50/50 px-2.5 py-1.5 border-l-2 border-amber-400 rounded-r text-left">
-                              <strong>Analogía:</strong> "{finding.analogy}"
+                              <strong>AnalogÃ­a:</strong> "{finding.analogy}"
                             </p>
                             <p className="text-[11px] text-blue-800 leading-relaxed font-sans bg-blue-50/55 px-2.5 py-1.5 border-l-2 border-blue-400 rounded-r text-left">
-                              <strong>Sugerencia médica:</strong> {finding.reassurance}
+                              <strong>Sugerencia mÃ©dica:</strong> {finding.reassurance}
                             </p>
                           </div>
                         ))}
@@ -26305,7 +26312,7 @@ const splitReportAndAnnex = (text: string) => {
                     {patientSummary.carePoints && patientSummary.carePoints.length > 0 && (
                       <div className="space-y-2 text-left">
                         <h5 className="text-[10.5px] font-black tracking-wider uppercase text-slate-800 border-b border-gray-200 pb-1 flex items-center gap-1">
-                          <span>🩺</span> RECOMENDACIONES Y CUIDADOS GENERALES
+                          <span>ð©º</span> RECOMENDACIONES Y CUIDADOS GENERALES
                         </h5>
                         <ul className="list-disc pl-5 text-xs text-gray-700 space-y-1 font-sans text-left">
                           {patientSummary.carePoints.map((point: string, idx: number) => (
@@ -26318,10 +26325,10 @@ const splitReportAndAnnex = (text: string) => {
                     {patientSummary.suggestedQuestions && patientSummary.suggestedQuestions.length > 0 && (
                       <div className="space-y-2 text-left">
                         <h5 className="text-[10.5px] font-black tracking-wider uppercase text-[#0d0e14] border-b border-gray-200 pb-1 flex items-center gap-1">
-                          <span>💬</span> PREGUNTAS SUGERIDAS PARA SU MÉDICO TRATANTE
+                          <span>ð¬</span> PREGUNTAS SUGERIDAS PARA SU MÃDICO TRATANTE
                         </h5>
                         <p className="text-[10px] text-gray-500 leading-normal text-left">
-                          Le sugerimos llevar estas preguntas anotadas a su siguiente consulta con su médico de cabecera:
+                          Le sugerimos llevar estas preguntas anotadas a su siguiente consulta con su mÃ©dico de cabecera:
                         </p>
                         <div className="grid grid-cols-1 gap-1.5 pt-1 text-left bg-transparent">
                           {patientSummary.suggestedQuestions.map((q: string, idx: number) => (
@@ -26333,14 +26340,14 @@ const splitReportAndAnnex = (text: string) => {
                       </div>
                     )}
 
-                    {/* Firma de Validación Médica Integrada a la explicación */}
+                    {/* Firma de ValidaciÃ³n MÃ©dica Integrada a la explicaciÃ³n */}
                     {(doctorName || customSignatureUrl) && (
                       <div className="mt-8 pt-5 border-t border-gray-200 flex justify-between items-end text-[9px] leading-normal font-sans text-gray-400 text-left">
-                        {/* Autorización Legal */}
+                        {/* AutorizaciÃ³n Legal */}
                         <div className="space-y-1 max-w-[340px] text-left">
-                          <p className="font-extrabold text-slate-700 tracking-wider text-[8.5px] uppercase">Avalado Médicamente por el Radiólogo de Guardia</p>
+                          <p className="font-extrabold text-slate-700 tracking-wider text-[8.5px] uppercase">Avalado MÃ©dicamente por el RadiÃ³logo de Guardia</p>
                           <p className="text-[8px] leading-relaxed text-slate-500">
-                            Este documento es una traducción empática automatizada validada mediante firma electrónica y no sustituye de ninguna manera el criterio del médico tratante encargado del tratamiento.
+                            Este documento es una traducciÃ³n empÃ¡tica automatizada validada mediante firma electrÃ³nica y no sustituye de ninguna manera el criterio del mÃ©dico tratante encargado del tratamiento.
                           </p>
                         </div>
                         {/* Bloque Firma */}
@@ -26353,10 +26360,10 @@ const splitReportAndAnnex = (text: string) => {
                               referrerPolicy="no-referrer"
                             />
                           ) : (
-                            <div className="text-[10px] font-bold text-indigo-600 pb-1">🔑 FIRMADO DIGITALMENTE</div>
+                            <div className="text-[10px] font-bold text-indigo-600 pb-1">ð FIRMADO DIGITALMENTE</div>
                           )}
                           <div className="border-t border-slate-300 pt-1 text-center">
-                            <p className="font-black text-slate-900 text-[10px]">{doctorName || "Médico Especialista"}</p>
+                            <p className="font-black text-slate-900 text-[10px]">{doctorName || "MÃ©dico Especialista"}</p>
                             <p className="text-[8px] text-slate-500 font-medium">{doctorLicense}</p>
                           </div>
                         </div>
@@ -26365,10 +26372,10 @@ const splitReportAndAnnex = (text: string) => {
                   </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center p-12 text-center space-y-3 font-sans">
-                    <span className="text-4xl animate-bounce">🌱</span>
-                    <p className="text-sm font-black text-gray-800 uppercase tracking-wide">Traducción para el Paciente aún no Generada</p>
+                    <span className="text-4xl animate-bounce">ð±</span>
+                    <p className="text-sm font-black text-gray-800 uppercase tracking-wide">TraducciÃ³n para el Paciente aÃºn no Generada</p>
                     <p className="text-xs text-gray-400 max-w-sm leading-relaxed">
-                      Por favor, regresa al panel principal y haz clic en "Generar Traducción Empática" para que el sistema redacte automáticamente esta vista.
+                      Por favor, regresa al panel principal y haz clic en "Generar TraducciÃ³n EmpÃ¡tica" para que el sistema redacte automÃ¡ticamente esta vista.
                     </p>
                   </div>
                 )}
@@ -26404,14 +26411,14 @@ const splitReportAndAnnex = (text: string) => {
           className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-550 border border-indigo-500/30 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 shadow-lg cursor-pointer"
         >
           <Printer className="h-4 w-4" />
-          <span>{printModalDocType === 'report' ? "Ejecutar Impresión" : "Imprimir Explicación"}</span>
+          <span>{printModalDocType === 'report' ? "Ejecutar ImpresiÃ³n" : "Imprimir ExplicaciÃ³n"}</span>
         </button>
       </div>
           </motion.div>
         </div>
       )}
 
-      {/* 🟢 MODAL DE COMPARTIDO POR WHATSAPP (REPORTES, INFOGRAFÍA Y RESUMEN) */}
+      {/* ð¢ MODAL DE COMPARTIDO POR WHATSAPP (REPORTES, INFOGRAFÃA Y RESUMEN) */}
       {showWhatsAppModal && (
         <div className="no-print fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
           <motion.div 
@@ -26423,9 +26430,9 @@ const splitReportAndAnnex = (text: string) => {
             {/* Header */}
             <div className="bg-slate-950 px-6 py-4 border-b border-slate-850 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <span className="text-xl">🟢</span>
+                <span className="text-xl">ð¢</span>
                 <h3 className="text-xs font-black text-white uppercase tracking-widest font-mono">
-                  Compartir vía WhatsApp (Local-First)
+                  Compartir vÃ­a WhatsApp (Local-First)
                 </h3>
               </div>
               <button 
@@ -26440,11 +26447,11 @@ const splitReportAndAnnex = (text: string) => {
             <div className="p-6 space-y-5 overflow-y-auto text-left max-h-[80vh]">
               {/* Local-First Header Info */}
               <div className="p-3.5 bg-emerald-950/20 border border-emerald-900/30 rounded-2xl flex gap-3 items-start">
-                <span className="text-base mt-0.5">🛡️</span>
+                <span className="text-base mt-0.5">ð¡ï¸</span>
                 <div className="space-y-1">
-                  <h4 className="text-[10px] font-black text-emerald-400 uppercase tracking-wider font-mono">Privacidad Médica 100% Asegurada</h4>
+                  <h4 className="text-[10px] font-black text-emerald-400 uppercase tracking-wider font-mono">Privacidad MÃ©dica 100% Asegurada</h4>
                   <p className="text-[10px] text-slate-300 leading-relaxed">
-                    Al ser una aplicación <strong>local-first</strong>, tus informes no se suben a servidores de terceros. Todo se procesa directamente en tu navegador y se envía a través de WhatsApp seguro.
+                    Al ser una aplicaciÃ³n <strong>local-first</strong>, tus informes no se suben a servidores de terceros. Todo se procesa directamente en tu navegador y se envÃ­a a travÃ©s de WhatsApp seguro.
                   </p>
                 </div>
               </div>
@@ -26452,7 +26459,7 @@ const splitReportAndAnnex = (text: string) => {
               {/* Celular Input */}
               <div className="space-y-1.5">
                 <label className="text-[9px] font-black text-slate-300 uppercase tracking-widest font-mono">
-                  Número de Celular del Paciente (Opcional):
+                  NÃºmero de Celular del Paciente (Opcional):
                 </label>
                 <div className="flex gap-2">
                   <span className="flex items-center justify-center px-3 bg-slate-950 border-2 border-slate-850 rounded-xl text-xs text-slate-400 font-mono font-bold">
@@ -26460,7 +26467,7 @@ const splitReportAndAnnex = (text: string) => {
                   </span>
                   <input
                     type="tel"
-                    placeholder="Ej: 5491100000000 (con código de país sin + ni espacios)"
+                    placeholder="Ej: 5491100000000 (con cÃ³digo de paÃ­s sin + ni espacios)"
                     value={whatsappPhone}
                     onChange={(e) => {
                       const val = e.target.value.replace(/[^0-9]/g, "");
@@ -26471,7 +26478,7 @@ const splitReportAndAnnex = (text: string) => {
                   />
                 </div>
                 <p className="text-[9px] text-slate-500 leading-relaxed uppercase font-mono tracking-wider">
-                  Si dejas el número vacío, WhatsApp te permitirá seleccionar cualquier contacto o grupo al abrir la aplicación.
+                  Si dejas el nÃºmero vacÃ­o, WhatsApp te permitirÃ¡ seleccionar cualquier contacto o grupo al abrir la aplicaciÃ³n.
                 </p>
               </div>
 
@@ -26498,11 +26505,11 @@ const splitReportAndAnnex = (text: string) => {
                       className="mt-0.5 rounded border-slate-800 text-indigo-555 focus:ring-indigo-600 h-3.5 w-3.5 bg-slate-950"
                     />
                     <div className="space-y-0.5">
-                      <span className="text-[10.5px] font-black uppercase tracking-wider block">Incluir Resumen Clínico Operativo</span>
+                      <span className="text-[10.5px] font-black uppercase tracking-wider block">Incluir Resumen ClÃ­nico Operativo</span>
                       <span className="text-[9px] text-slate-400 leading-normal block">
                         {operationalSummaryText 
-                          ? "Agrega las conclusiones médicas y hallazgos críticos de forma compacta." 
-                          : "⚠️ Primero genera un informe médico para incluir este bloque."}
+                          ? "Agrega las conclusiones mÃ©dicas y hallazgos crÃ­ticos de forma compacta." 
+                          : "â ï¸ Primero genera un informe mÃ©dico para incluir este bloque."}
                       </span>
                     </div>
                   </label>
@@ -26523,11 +26530,11 @@ const splitReportAndAnnex = (text: string) => {
                       className="mt-0.5 rounded border-slate-800 text-indigo-555 focus:ring-indigo-600 h-3.5 w-3.5 bg-slate-950"
                     />
                     <div className="space-y-0.5">
-                      <span className="text-[10.5px] font-black uppercase tracking-wider block">Incluir Explicación para Paciente</span>
+                      <span className="text-[10.5px] font-black uppercase tracking-wider block">Incluir ExplicaciÃ³n para Paciente</span>
                       <span className="text-[9px] text-slate-400 leading-normal block">
                         {patientSummary 
-                          ? "Agrega la traducción a palabras sencillas, recomendaciones y dudas sugeridas." 
-                          : "⚠️ Primero genera la 'Explicación del Paciente' (Acompañamiento) abajo."}
+                          ? "Agrega la traducciÃ³n a palabras sencillas, recomendaciones y dudas sugeridas." 
+                          : "â ï¸ Primero genera la 'ExplicaciÃ³n del Paciente' (AcompaÃ±amiento) abajo."}
                       </span>
                     </div>
                   </label>
@@ -26537,7 +26544,7 @@ const splitReportAndAnnex = (text: string) => {
               {/* PASO 2: DESCARGAR ARCHIVOS PDF */}
               <div className="space-y-2.5">
                 <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest font-mono border-b border-slate-800 pb-1">
-                  PASO 2: Descargar Documentos Clínicos (Para Adjuntar)
+                  PASO 2: Descargar Documentos ClÃ­nicos (Para Adjuntar)
                 </h4>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -26548,12 +26555,12 @@ const splitReportAndAnnex = (text: string) => {
                       handleDownloadNativePDF(false);
                     }}
                     className="p-3 bg-slate-950/80 hover:bg-slate-900 border border-slate-850 hover:border-slate-750 text-slate-200 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer select-none"
-                    title="Descargar el reporte médico oficial firmado en PDF"
+                    title="Descargar el reporte mÃ©dico oficial firmado en PDF"
                   >
                     <Download className="h-4 w-4 text-indigo-400" />
                     <div className="text-left">
                       <span className="text-[10px] font-black uppercase tracking-wider block">1. PDF Reporte Oficial</span>
-                      <span className="text-[8.5px] text-slate-500 font-mono leading-none block uppercase">Formato Clínico Profesional</span>
+                      <span className="text-[8.5px] text-slate-500 font-mono leading-none block uppercase">Formato ClÃ­nico Profesional</span>
                     </div>
                   </button>
 
@@ -26569,12 +26576,12 @@ const splitReportAndAnnex = (text: string) => {
                         ? "bg-slate-950/80 hover:bg-slate-900 border border-slate-850 hover:border-slate-750 text-slate-200 cursor-pointer" 
                         : "bg-slate-950/20 border-slate-900 text-slate-500 cursor-not-allowed"
                     }`}
-                    title={patientSummary ? "Descargar el PDF explicativo en lenguaje sencillo" : "Primero genera la explicación para el paciente"}
+                    title={patientSummary ? "Descargar el PDF explicativo en lenguaje sencillo" : "Primero genera la explicaciÃ³n para el paciente"}
                   >
                     <Download className="h-4 w-4 text-indigo-400" />
                     <div className="text-left">
-                      <span className="text-[10px] font-black uppercase tracking-wider block">2. PDF Explicación</span>
-                      <span className="text-[8.5px] text-slate-500 font-mono leading-none block uppercase">Acompañamiento Didáctico</span>
+                      <span className="text-[10px] font-black uppercase tracking-wider block">2. PDF ExplicaciÃ³n</span>
+                      <span className="text-[8.5px] text-slate-500 font-mono leading-none block uppercase">AcompaÃ±amiento DidÃ¡ctico</span>
                     </div>
                   </button>
                 </div>
@@ -26583,7 +26590,7 @@ const splitReportAndAnnex = (text: string) => {
               {/* PASO 3: RESPALDAR EN GOOGLE DRIVE */}
               <div className="space-y-2.5 mt-4">
                 <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest font-mono border-b border-slate-800 pb-1">
-                  PASO 3: RESPALDO AUTOMÁTICO
+                  PASO 3: RESPALDO AUTOMÃTICO
                 </h4>
                 
                 <div className="grid grid-cols-1 gap-3">
@@ -26651,7 +26658,7 @@ const splitReportAndAnnex = (text: string) => {
                     onClick={() => {
                       const text = getWhatsAppTextPreview();
                       copyToClipboard(text, false);
-                      alert("¡Mensaje completo copiado al portapapeles! Listo para pegarse (Ctrl+V) en el chat de WhatsApp.");
+                      alert("Â¡Mensaje completo copiado al portapapeles! Listo para pegarse (Ctrl+V) en el chat de WhatsApp.");
                     }}
                     className="p-3.5 bg-slate-950 hover:bg-slate-900/60 border-2 border-slate-850 hover:border-slate-700/50 rounded-xl text-xs font-bold text-slate-300 uppercase tracking-wider transition-all shadow-md active:scale-95 text-center cursor-pointer flex items-center justify-center gap-2 font-mono"
                   >
@@ -26664,12 +26671,12 @@ const splitReportAndAnnex = (text: string) => {
               {/* Instructions workflow alert */}
               <div className="p-4 bg-slate-950 rounded-2xl space-y-2 text-[10px] font-sans text-slate-400 leading-relaxed">
                 <div className="font-black text-slate-200 uppercase tracking-wider font-mono text-[9.5px] flex items-center gap-1.5 text-indigo-400">
-                  <span>💡</span> PROCESO DE COMPARTIDO RECOMENDADO (30 SEGUNDOS):
+                  <span>ð¡</span> PROCESO DE COMPARTIDO RECOMENDADO (30 SEGUNDOS):
                 </div>
                 <ol className="list-decimal list-inside space-y-1 text-slate-300 font-medium">
                   <li>Haz clic en los botones del <span className="text-indigo-400 font-bold">PASO 2</span> para descargar los archivos PDF que quieras enviar.</li>
-                  <li>Haz clic en <span className="text-emerald-400 font-bold">Lanzar Chat de WhatsApp</span>. Esto abrirá el chat con el paciente y cargará el texto explicativo.</li>
-                  <li>Simplemente arrastra los archivos PDF descargados a la ventana del chat de WhatsApp y envíalos. <span className="text-indigo-300 font-semibold">¡Sencillo, profesional y 100% privado!</span></li>
+                  <li>Haz clic en <span className="text-emerald-400 font-bold">Lanzar Chat de WhatsApp</span>. Esto abrirÃ¡ el chat con el paciente y cargarÃ¡ el texto explicativo.</li>
+                  <li>Simplemente arrastra los archivos PDF descargados a la ventana del chat de WhatsApp y envÃ­alos. <span className="text-indigo-300 font-semibold">Â¡Sencillo, profesional y 100% privado!</span></li>
                 </ol>
               </div>
             </div>
@@ -26677,7 +26684,7 @@ const splitReportAndAnnex = (text: string) => {
         </div>
       )}
 
-      {/* 🔴 MODAL DE COMPARTIDO POR CORREO ELECTRÓNICO (GMAIL INTEGRATOR) */}
+      {/* ð´ MODAL DE COMPARTIDO POR CORREO ELECTRÃNICO (GMAIL INTEGRATOR) */}
       {showGmailModal && (
         <div className="no-print fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
           <motion.div 
@@ -26691,7 +26698,7 @@ const splitReportAndAnnex = (text: string) => {
               <div className="flex items-center gap-2">
                 <Mail className="h-5 w-5 text-red-555 animate-pulse" />
                 <h3 className="text-sm font-black text-white uppercase tracking-wider font-mono">
-                  Compartir vía Gmail Integrado
+                  Compartir vÃ­a Gmail Integrado
                 </h3>
               </div>
               <button 
@@ -26712,10 +26719,10 @@ const splitReportAndAnnex = (text: string) => {
                   </div>
                   <div className="space-y-1">
                     <h4 className="text-xs font-black text-slate-100 uppercase tracking-widest font-mono">
-                      Inicia Sesión con Google
+                      Inicia SesiÃ³n con Google
                     </h4>
                     <p className="text-[10px] text-slate-400 font-sans tracking-wide leading-relaxed uppercase">
-                      Para enviar correos en tu nombre a través del servicio seguro de Gmail, se requiere iniciar sesión.
+                      Para enviar correos en tu nombre a travÃ©s del servicio seguro de Gmail, se requiere iniciar sesiÃ³n.
                     </p>
                   </div>
                   <button
@@ -26727,7 +26734,7 @@ const splitReportAndAnnex = (text: string) => {
                     {isLoggingInGmail ? (
                       <RefreshCw className="h-3.5 w-3.5 animate-spin" />
                     ) : (
-                      <span>Iniciar Sesión con Google</span>
+                      <span>Iniciar SesiÃ³n con Google</span>
                     )}
                   </button>
                 </div>
@@ -26750,10 +26757,10 @@ const splitReportAndAnnex = (text: string) => {
                     type="button"
                     onClick={handleGmailLogout}
                     className="text-[8.5px] font-black text-slate-400 hover:text-rose-400 uppercase tracking-wider font-mono px-2 py-1 bg-slate-950 border border-slate-850 hover:border-rose-950 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
-                    title="Cerrar la sesión de Gmail actual"
+                    title="Cerrar la sesiÃ³n de Gmail actual"
                   >
                     <LogOut className="h-3 w-3" />
-                    <span>Cerrar Sesión</span>
+                    <span>Cerrar SesiÃ³n</span>
                   </button>
                 </div>
               )}
@@ -26803,25 +26810,25 @@ const splitReportAndAnnex = (text: string) => {
                     />
                   </div>
 
-                  {/* Archivo Adjunto (Fijo al Reporte Clínico Oficial) */}
+                  {/* Archivo Adjunto (Fijo al Reporte ClÃ­nico Oficial) */}
                   <div className="space-y-2">
                     <label className="text-[9px] font-black text-slate-300 uppercase tracking-widest font-mono">
                       Archivo Adjunto:
                     </label>
                     <div className="p-4 bg-slate-950/80 border-2 border-red-500/20 rounded-2xl flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <span className="text-[18px]">📄</span>
+                        <span className="text-[18px]">ð</span>
                         <div className="text-left">
                           <p className="text-[11px] font-black text-slate-100 uppercase tracking-wider font-mono">
-                            Reporte Clínico Oficial
+                            Reporte ClÃ­nico Oficial
                           </p>
                           <p className="text-[9px] text-slate-400 font-sans leading-normal">
-                            Documento PDF completo que incluye traducción empática e infografía (según corresponda).
+                            Documento PDF completo que incluye traducciÃ³n empÃ¡tica e infografÃ­a (segÃºn corresponda).
                           </p>
                         </div>
                       </div>
                       <span className="shrink-0 text-[8px] font-black font-mono text-emerald-400 bg-emerald-950/80 px-2 py-1 rounded-lg border border-emerald-500/30 uppercase tracking-wider">
-                        ✓ Adjunto
+                        â Adjunto
                       </span>
                     </div>
                   </div>
@@ -26856,7 +26863,7 @@ const splitReportAndAnnex = (text: string) => {
                       ) : (
                         <>
                           <Send className="h-4 w-4" />
-                          <span>Enviar Correo vía Gmail</span>
+                          <span>Enviar Correo vÃ­a Gmail</span>
                         </>
                       )}
                     </button>
@@ -26867,7 +26874,7 @@ const splitReportAndAnnex = (text: string) => {
             
             {/* Footer */}
             <div className="bg-slate-950 p-4 border-t border-slate-850 text-center font-mono text-[8px] text-slate-500 uppercase tracking-widest">
-              Conexión Encriptada SSL • Google Secure OAuth API
+              ConexiÃ³n Encriptada SSL â¢ Google Secure OAuth API
             </div>
           </motion.div>
         </div>
@@ -26881,7 +26888,7 @@ const splitReportAndAnnex = (text: string) => {
             <div className="border-b border-gray-400 pb-4 mb-4 text-center">
               <img 
                 src={customLogoUrl} 
-                alt="Membrete de la Clínica" 
+                alt="Membrete de la ClÃ­nica" 
                 className="max-h-[160px] mx-auto w-auto object-contain block" 
                 referrerPolicy="no-referrer"
               />
@@ -26935,12 +26942,12 @@ const splitReportAndAnnex = (text: string) => {
                         {clinicName}
                       </h1>
                       <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none mt-1">
-                        Reporte de Radiodiagnóstico por Imagen
+                        Reporte de RadiodiagnÃ³stico por Imagen
                       </p>
                     </>
                   ) : (
                     <h1 className="text-base font-extrabold tracking-tight text-gray-900 uppercase">
-                      REPORTE DE RADIODIAGNÓSTICO
+                      REPORTE DE RADIODIAGNÃSTICO
                     </h1>
                   )}
                 </div>
@@ -26971,12 +26978,12 @@ const splitReportAndAnnex = (text: string) => {
             </div>
           )}
 
-          {/* Calibración de Contraste para Impresión Física e Historial Clínico (Cuña PACS) */}
+          {/* CalibraciÃ³n de Contraste para ImpresiÃ³n FÃ­sica e Historial ClÃ­nico (CuÃ±a PACS) */}
           {adaptivePDFContrast && (
             <div className="mb-6 p-2 rounded border border-gray-400 bg-white select-none">
               <div className="text-[7.5px] font-mono font-bold text-gray-400 uppercase tracking-widest text-center mb-1 flex items-center justify-center gap-1.5">
                 <span>Pauta de Densidad PACS Homologada</span>
-                <span className="text-[6.5px] bg-black text-white px-1.5 py-0.5 rounded font-sans leading-none">CALIBRACIÓN GSDF ACTIVA</span>
+                <span className="text-[6.5px] bg-black text-white px-1.5 py-0.5 rounded font-sans leading-none">CALIBRACIÃN GSDF ACTIVA</span>
               </div>
               <div className="flex h-5 border border-black overflow-hidden rounded bg-gray-50">
                 {[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map(val => {
@@ -26996,7 +27003,7 @@ const splitReportAndAnnex = (text: string) => {
                 })}
               </div>
               <div className="text-[6px] font-mono font-bold text-gray-400 text-center mt-1 uppercase">
-                Gama adaptativa: Compensación automática de pérdida térmica de tinta en papel
+                Gama adaptativa: CompensaciÃ³n automÃ¡tica de pÃ©rdida tÃ©rmica de tinta en papel
               </div>
             </div>
           )}
@@ -27016,18 +27023,18 @@ const splitReportAndAnnex = (text: string) => {
                 {/* FIRMA AL FINAL DEL CUERPO DEL REPORTE */}
                 {(doctorName || customSignatureUrl) && (
                   <div className="mt-16 pt-6 border-t border-gray-250 grid grid-cols-2 gap-4 text-[10px] leading-normal font-sans text-gray-400">
-                    {/* Bloque Homologado Izquierdo (Metadatos de Firma Electrónica) */}
+                    {/* Bloque Homologado Izquierdo (Metadatos de Firma ElectrÃ³nica) */}
                     <div className="border border-slate-250 bg-slate-50/70 p-3 rounded-lg text-[8.5px] font-sans text-slate-500 max-w-[340px] text-left space-y-1">
                       <div className="flex items-center gap-1.5 font-bold text-[9px] text-slate-700 uppercase">
-                        <span className="text-indigo-600">🛡️</span>
-                        <span>Firma Electrónica Homologada</span>
+                        <span className="text-indigo-600">ð¡ï¸</span>
+                        <span>Firma ElectrÃ³nica Homologada</span>
                       </div>
                       <p className="font-mono text-[8px] text-indigo-700 font-bold bg-indigo-50/50 px-1 py-0.5 rounded break-all select-all">
                         {getValidationHash()}
                       </p>
                       <div className="grid grid-cols-[max-content_1fr] gap-x-2 text-[8px] leading-relaxed">
                         <span className="font-semibold text-slate-400 uppercase">Autoridad:</span>
-                        <span className="font-bold text-slate-650">{doctorName || "Médico Especialista"}</span>
+                        <span className="font-bold text-slate-650">{doctorName || "MÃ©dico Especialista"}</span>
                         
                         <span className="font-semibold text-slate-400 uppercase">Registro:</span>
                         <span className="font-mono font-bold text-slate-650">{doctorLicense}</span>
@@ -27039,11 +27046,11 @@ const splitReportAndAnnex = (text: string) => {
                         </span>
                         
                         <span className="font-semibold text-slate-400 uppercase">Soporte Legal:</span>
-                        <span className="text-slate-450 italic">Ley de Comercio Electrónico, Firmas y Datos (Art. 14)</span>
+                        <span className="text-slate-450 italic">Ley de Comercio ElectrÃ³nico, Firmas y Datos (Art. 14)</span>
                       </div>
                     </div>
 
-                    {/* Firma Autógrafa y Datos del Médico Especialista */}
+                    {/* Firma AutÃ³grafa y Datos del MÃ©dico Especialista */}
                     <div className="text-right flex flex-col items-end justify-center">
                       <div className="inline-block text-center relative max-w-[280px]">
                         {customSignatureUrl ? (
@@ -27058,13 +27065,13 @@ const splitReportAndAnnex = (text: string) => {
                         ) : (
                           <div className="mb-2 text-indigo-600/80 font-serif italic text-xs select-none relative pr-4">
                             <span className="text-[10px] font-mono font-black border border-indigo-200 bg-indigo-50 px-2 py-0.5 rounded uppercase tracking-wider block">
-                              🔑 FIRMADO DIGITALMENTE
+                              ð FIRMADO DIGITALMENTE
                             </span>
                           </div>
                         )}
                         <div className="border-t border-slate-300 pt-1.5 px-6">
-                          <p className="font-black text-slate-900 uppercase text-[11.5px] leading-tight select-all">{doctorName || "Médico Especialista"}</p>
-                          <p className="font-semibold text-slate-500 text-[9px] mt-0.5 select-all">Especialista en Radiología e Imágenes Medicas.</p>
+                          <p className="font-black text-slate-900 uppercase text-[11.5px] leading-tight select-all">{doctorName || "MÃ©dico Especialista"}</p>
+                          <p className="font-semibold text-slate-500 text-[9px] mt-0.5 select-all">Especialista en RadiologÃ­a e ImÃ¡genes Medicas.</p>
                           <p className="font-mono text-slate-450 text-[8px] leading-normal select-all">{doctorLicense}</p>
                         </div>
                       </div>
@@ -27072,7 +27079,7 @@ const splitReportAndAnnex = (text: string) => {
                   </div>
                 )}
 
-                {/* 2. CUADRO SINÓPTICO */}
+                {/* 2. CUADRO SINÃPTICO */}
                 {cuadroSinopticoReport && (
                   <div className="mt-8 pt-6 border-t border-gray-300 print:break-before-page" style={{ pageBreakBefore: "always", breakBefore: "page" }}>
                     <div className="pt-2 leading-relaxed text-[12.5px] text-gray-955 select-text font-serif">
@@ -27081,7 +27088,7 @@ const splitReportAndAnnex = (text: string) => {
                   </div>
                 )}
 
-                {/* 3. SINOPSIS POR ÓRGANO (PÁGINA INDEPENDIENTE) */}
+                {/* 3. SINOPSIS POR ÃRGANO (PÃGINA INDEPENDIENTE) */}
                 {organSynopsisReport && (
                   <div className="mt-8 pt-6 border-t border-gray-300 print:break-before-page" style={{ pageBreakBefore: "always", breakBefore: "page" }}>
                     <div className="pt-2 leading-relaxed text-[12.5px] text-gray-955 select-text font-serif">
@@ -27090,7 +27097,7 @@ const splitReportAndAnnex = (text: string) => {
                   </div>
                 )}
 
-                {/* 6. DESGLOSE Y JUSTIFICACIÓN DE CLASIFICACIONES */}
+                {/* 6. DESGLOSE Y JUSTIFICACIÃN DE CLASIFICACIONES */}
                 {annexReport && (
                   <div className="mt-12 pt-6 border-t border-gray-300 print:break-before-page">
                     <div className="pt-2 leading-relaxed text-[12.5px] text-gray-955 select-text font-serif">
@@ -27099,7 +27106,7 @@ const splitReportAndAnnex = (text: string) => {
                   </div>
                 )}
 
-                {/* 7. ANEXO: RADAR BIOMECÁNICO E INFLAMATORIO */}
+                {/* 7. ANEXO: RADAR BIOMECÃNICO E INFLAMATORIO */}
                 {includeRadarInReport && renderPrintBiomechanicalRadarAnnex(radarData)}
               </>
             );

@@ -1153,7 +1153,8 @@ export interface SecondReaderData {
 export type ReportEnrichmentSource =
   | "negativity_checklist"
   | "second_reader"
-  | "classification";
+  | "classification"
+  | "scorecard";
 export type ReportEnrichmentChangeStatus = "applied" | "pending" | "rejected" | "skipped";
 export type ReportEnrichmentRunStatus = "idle" | "running" | "done" | "error";
 
