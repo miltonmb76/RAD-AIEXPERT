@@ -11,6 +11,13 @@ import { normalizeReasoningChainData, extractJsonObject } from "./src/lib/reason
 import { normalizeNegativityChecklistData } from "./src/lib/negativityChecklist";
 import { normalizeDifferentialTreeData } from "./src/lib/differentialTree";
 import { normalizeSecondReaderData } from "./src/lib/secondReader";
+import {
+  classifyMeasurementStudyFamily,
+  filterStructuresForStudyType,
+  isPeripheralArterialStructure,
+  shouldEnforceAbdomenProtocol,
+  shouldEnforceArterialMmiiProtocol,
+} from "./src/lib/measurementStudyGuard";
 
 // Lazy-loaded GenAI client to prevent crash on startup if API key is missing
 let aiClient: GoogleGenAI | null = null;
@@ -5548,8 +5555,10 @@ app.post("/api/analyze-measurements", async (req: express.Request, res: express.
 
     const systemInstruction = 
       "Eres un radiólogo senior y experto en anatometría clínica y hemodinámica vascular. Tu tarea es analizar rigurosamente el informe radiológico proporcionado para:\n" +
-      "1. Determinar con la máxima precisión posible el tipo de estudio radiológico realizado basándote en el contenido del reporte (por ejemplo: 'Doppler de Carótidas', 'Ultrasonido Abdominal Completo', 'Doppler Renal', 'Doppler Venoso de Miembros Inferiores', 'Ultrasonido de Tiroides', 'Ultrasonido Pélvico', 'Ultrasonido de Partes Blandas', etc.) y guardarlo en el campo 'detectedStudyType'.\n" +
+      "1. Determinar el tipo de estudio radiológico. Si el usuario/sistema indica un TIPO DE ESTUDIO DECLARADO, ese valor es AUTORITATIVO y debe usarse como 'detectedStudyType' (no lo cambies por alucinación del texto). Solo infiere el tipo desde el informe cuando NO hay tipo declarado.\n" +
+      "   Ejemplos: 'Doppler de Carótidas', 'Ultrasonido Abdominal Completo', 'Doppler Renal', 'Doppler Venoso de Miembros Inferiores', 'Ultrasonido de Tiroides', etc.\n" +
       "2. Identificar de manera dinámica todas las estructuras anatómicas, vasos sanguíneos, velocidades o parámetros que son típicamente susceptibles de medición clínica e indispensables para ese tipo de estudio específico:\n" +
+      "   - REGLA DE EXCLUSIÓN CRUZADA: Si el estudio es ABDOMEN / VÍAS URINARIAS / RENAL (no Doppler arterial de extremidades), está ESTRICTAMENTE PROHIBIDO incluir arterias de miembro inferior (ilíaca, femoral, poplítea, tibiales, peronea, pedía) ni venas de MMII. No uses la palabra 'inferior' (vena cava inferior, polo inferior) como señal de Doppler de extremidades.\n" +
       "   - Si detectas que es un DOPPLER DE CARÓTIDAS o DOPPLER CAROTÍDEO: Debes incluir de forma obligatoria y exhaustiva las siguientes 22 mediciones y parámetros bilateralmente, buscando sus valores reales en el reporte, o sugiriendo sus valores normales por defecto correspondientes si no se mencionan:\n" +
       "     1. Arteria Carótida Común Derecha (VPS) [Rango: 50 - 100 cm/s, Default: 75 cm/s]\n" +
       "     2. Arteria Carótida Común Derecha (VED) [Rango: < 35 cm/s, Default: 20 cm/s]\n" +
@@ -5598,13 +5607,17 @@ app.post("/api/analyze-measurements", async (req: express.Request, res: express.
       "   - Proponer un valor normal por defecto representativo y saludable ('defaultNormalValue') con unidades (ej. '105 mm', '12 mm', '75 cm/s', '0.60', etc.) que cumpla el rango normal y se pueda asignar directamente si el usuario lo desea.\n" +
       "Debes estructurar la respuesta exclusivamente como un objeto JSON con tres propiedades: 'detectedStudyType', 'detectedSide' y 'structures'.";
 
+    const declaredStudy = String(studyType || "").trim();
     const promptText = `Analiza detenidamente este informe radiológico para el Asistente de Medidas:
+
+TIPO DE ESTUDIO DECLARADO POR EL USUARIO (autoritativo si no está vacío): "${declaredStudy || "No especificado — infiere solo del informe"}"
 
 """
 ${report}
 """
 
-Detecta el tipo de estudio médico, el lado analizado si es unilateral (der, izq, both), identifica todas las estructuras, vasos o parámetros relevantes a medir para dicho estudio, indica sus rangos normales, busca si el reporte ya contiene medidas para ellos, califica su estado e interpretación, y sugiere un valor normal predeterminado saludable.
+Si hay tipo declarado, úsalo como detectedStudyType y limita las estructuras SOLO a ese protocolo. No mezcles protocolos (p. ej. no inventes Doppler arterial de MMII en un ultrasonido de abdomen).
+Detecta el lado analizado si es unilateral (der, izq, both), identifica todas las estructuras, vasos o parámetros relevantes a medir para dicho estudio, indica sus rangos normales, busca si el reporte ya contiene medidas para ellos, califica su estado e interpretación, y sugiere un valor normal predeterminado saludable.
 Devuelve el JSON estructurado según el esquema solicitado.`;
 
     const response = await ai.models.generateContent({
@@ -6261,13 +6274,13 @@ Devuelve el JSON estructurado según el esquema solicitado.`;
     }
 
     // Post-processing to enforce the 14 mandatory lower limb arterial Doppler parameters
-    let isArterialMiembrosInferiores = false;
-    if (
-      (studyLower.includes("arterial") && (studyLower.includes("miembro") || studyLower.includes("pierna") || studyLower.includes("inferior") || studyLower.includes("extre"))) ||
-      (reportLower.includes("doppler") && reportLower.includes("arterial") && (reportLower.includes("miembro") || reportLower.includes("pierna") || reportLower.includes("inferior") || reportLower.includes("extremidad") || reportLower.includes("femoral") || reportLower.includes("poplítea") || reportLower.includes("pedio")))
-    ) {
-      isArterialMiembrosInferiores = true;
-    }
+    // CRITICAL: do NOT trigger on bare "inferior" (vena cava inferior / polo inferior in abdomen).
+    // User-declared studyType (Abdomen, etc.) wins over mis-detection.
+    let isArterialMiembrosInferiores = shouldEnforceArterialMmiiProtocol({
+      studyType: studyType || "",
+      detectedStudyType: parsedData.detectedStudyType || "",
+      report: report || "",
+    });
 
     if (isArterialMiembrosInferiores) {
       // Determine if study is unilateral (and which side) or bilateral
@@ -6891,12 +6904,36 @@ Devuelve el JSON estructurado según el esquema solicitado.`;
     }
 
     // --- DOPPLER VENOSO DE MIEMBROS INFERIORES POST-PROCESSING ---
+    // Same trap as arterial: bare "inferior" must not trigger on abdomen reports.
+    const inputFamily = classifyMeasurementStudyFamily(studyType || "");
     let isVenosoMiembrosInferiores = false;
     if (
-      (studyLower.includes("venoso") && (studyLower.includes("miembro") || studyLower.includes("pierna") || studyLower.includes("inferior") || studyLower.includes("extre"))) ||
-      (reportLower.includes("doppler") && reportLower.includes("venoso") && (reportLower.includes("miembro") || reportLower.includes("pierna") || reportLower.includes("inferior") || reportLower.includes("extremidad") || reportLower.includes("femoral") || reportLower.includes("poplítea") || reportLower.includes("safena")))
+      inputFamily !== "abdomen" &&
+      inputFamily !== "renal_vias" &&
+      inputFamily !== "tiroides_cuello" &&
+      inputFamily !== "mama" &&
+      inputFamily !== "pelvico" &&
+      inputFamily !== "arterial_mmii"
     ) {
-      isVenosoMiembrosInferiores = true;
+      if (inputFamily === "venoso_mmii") {
+        isVenosoMiembrosInferiores = true;
+      } else if (
+        (studyLower.includes("venoso") &&
+          (studyLower.includes("miembro") ||
+            studyLower.includes("pierna") ||
+            studyLower.includes("extrem"))) ||
+        (reportLower.includes("doppler") &&
+          reportLower.includes("venoso") &&
+          (reportLower.includes("miembro inferior") ||
+            reportLower.includes("miembros inferiores") ||
+            reportLower.includes("extremidad inferior") ||
+            reportLower.includes("safena") ||
+            reportLower.includes("vena femoral") ||
+            reportLower.includes("vena poplítea") ||
+            reportLower.includes("vena poplitea")))
+      ) {
+        isVenosoMiembrosInferiores = true;
+      }
     }
 
     if (isVenosoMiembrosInferiores) {
@@ -7442,16 +7479,23 @@ Devuelve el JSON estructurado según el esquema solicitado.`;
     }
 
     // --- ABDOMEN POST-PROCESSING ---
-    let isAbdomenStudy = 
-      (parsedData.detectedStudyType || "").toLowerCase().includes("abdomen") ||
-      (parsedData.detectedStudyType || "").toLowerCase().includes("abdominal") ||
-      (report || "").toLowerCase().includes("abdomen") ||
-      (report || "").toLowerCase().includes("abdominal") ||
-      (report || "").toLowerCase().includes("hígado") ||
-      (report || "").toLowerCase().includes("higado") ||
-      (report || "").toLowerCase().includes("bazo") ||
-      (report || "").toLowerCase().includes("hepática") ||
-      (report || "").toLowerCase().includes("hepatica");
+    let isAbdomenStudy = shouldEnforceAbdomenProtocol({
+      studyType: studyType || "",
+      detectedStudyType: parsedData.detectedStudyType || "",
+      report: report || "",
+    });
+
+    // If the user declared Abdomen, lock detectedStudyType even if the model hallucinated MMII
+    if (
+      classifyMeasurementStudyFamily(studyType || "") === "abdomen" ||
+      classifyMeasurementStudyFamily(studyType || "") === "renal_vias"
+    ) {
+      isAbdomenStudy = true;
+      if (!(parsedData.detectedStudyType || "").toLowerCase().includes("abdomen") &&
+          !(parsedData.detectedStudyType || "").toLowerCase().includes("urin")) {
+        parsedData.detectedStudyType = String(studyType || "Ultrasonido de Abdomen").trim();
+      }
+    }
 
     if (isAbdomenStudy) {
       const mandatoryAbdomen = [
@@ -7541,8 +7585,11 @@ Devuelve el JSON estructurado según el esquema solicitado.`;
 
         if (matchedKey) {
           matchedKeys.add(matchedKey);
+          updatedStructures.push(s);
+        } else if (!isPeripheralArterialStructure(s.structure || "")) {
+          // Keep non-MMII structures (kidneys, gallbladder, etc.); drop leaked arterial vessels
+          updatedStructures.push(s);
         }
-        updatedStructures.push(s);
       });
 
       // Add missing ones
@@ -7560,6 +7607,14 @@ Devuelve el JSON estructurado según el esquema solicitado.`;
       });
 
       parsedData.structures = updatedStructures;
+    }
+
+    // Final hard filter by declared studyType (defense in depth)
+    if (parsedData.structures && Array.isArray(parsedData.structures) && studyType) {
+      parsedData.structures = filterStructuresForStudyType(
+        parsedData.structures,
+        String(studyType)
+      );
     }
 
     // Enforce standard medical ranges for thyroid (lobes and isthmus) and recalculate status if present

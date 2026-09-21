@@ -17,6 +17,7 @@ import {
   matchGuidelinesForReport,
   selectGuidelineBinderChanges,
 } from "./guidelineBinder";
+import { filterStructuresForStudyType } from "./measurementStudyGuard";
 
 export const MAX_AUTO_ENRICHMENT_CHANGES = 6;
 export const MAX_AUTO_CLASSIFICATIONS = 2;
@@ -320,9 +321,13 @@ export function reportAlreadyHasMeasurement(
 export function selectMeasurementBodyChanges(
   structures: AnalyzedMeasurementStructure[] | null | undefined,
   report: string,
-  maxAuto: number = MAX_AUTO_MEASUREMENTS
+  maxAuto: number = MAX_AUTO_MEASUREMENTS,
+  studyType: string = ""
 ): ReportEnrichmentChange[] {
-  const list = Array.isArray(structures) ? structures : [];
+  const list = filterStructuresForStudyType(
+    Array.isArray(structures) ? structures : [],
+    studyType
+  );
   const changes: ReportEnrichmentChange[] = [];
   let autoCount = 0;
 
@@ -747,7 +752,10 @@ export async function runReportEnrichmentPipeline(opts: {
       scorecard = scJson.data as ClinicalScorecardData;
     }
     if (measJson?.success) {
-      measurements = normalizeAnalyzedMeasurements(measJson);
+      measurements = filterStructuresForStudyType(
+        normalizeAnalyzedMeasurements(measJson),
+        opts.studyType || ""
+      );
     }
 
     if (!checklist && !reader && !classifications.length && !scorecard && !measurements.length) {
@@ -774,7 +782,12 @@ export async function runReportEnrichmentPipeline(opts: {
       };
     }
 
-    const measChanges = selectMeasurementBodyChanges(measurements, beforeReport);
+    const measChanges = selectMeasurementBodyChanges(
+      measurements,
+      beforeReport,
+      MAX_AUTO_MEASUREMENTS,
+      opts.studyType || ""
+    );
     const proseChanges = [
       ...selectEnrichmentChanges(checklist, reader),
       ...selectScorecardProseChanges(scorecard, beforeReport),
