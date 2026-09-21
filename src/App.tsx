@@ -15,6 +15,7 @@ const ReasoningChainModule = React.lazy(() => import("./components/ReasoningChai
 const NegativityChecklistModule = React.lazy(() => import("./components/NegativityChecklistModule").then(m => ({ default: m.NegativityChecklistModule })));
 const SecondReaderModule = React.lazy(() => import("./components/SecondReaderModule").then(m => ({ default: m.SecondReaderModule })));
 const ReportEnrichmentPanel = React.lazy(() => import("./components/ReportEnrichmentPanel").then(m => ({ default: m.ReportEnrichmentPanel })));
+const ReportQaGateModal = React.lazy(() => import("./components/ReportQaGateModal").then(m => ({ default: m.ReportQaGateModal })));
 const DifferentialTreeModule = React.lazy(() => import("./components/DifferentialTreeModule").then(m => ({ default: m.DifferentialTreeModule })));
 const MeasurementsGaugeModule = React.lazy(() => import("./components/MeasurementsGaugeModule").then(m => ({ default: m.MeasurementsGaugeModule })));
 const CreadorCuadroSinoptico = React.lazy(() => import("./components/CreadorCuadroSinoptico").then(m => ({ default: m.CreadorCuadroSinoptico })));
@@ -34,6 +35,10 @@ import {
   createRunningEnrichmentSession,
   runReportEnrichmentPipeline,
 } from "./lib/reportEnrichment";
+import {
+  runReportQaGate,
+  type ReportQaGateResult,
+} from "./lib/reportQaGate";
 import { Vascular3DModule } from "./components/Vascular3DModule";
 import { FocalLesion3DModule } from "./components/FocalLesion3DModule";
 import { Thyroid3DModule } from "./components/Thyroid3DModule";
@@ -2906,6 +2911,9 @@ export default function App() {
   const [reportEnrichmentSession, setReportEnrichmentSession] = useState<ReportEnrichmentSession | null>(null);
   const [isEnrichingReport, setIsEnrichingReport] = useState<boolean>(false);
   const [applyingEnrichmentIds, setApplyingEnrichmentIds] = useState<string[]>([]);
+  const [qaGateResult, setQaGateResult] = useState<ReportQaGateResult | null>(null);
+  const [qaGateAckFingerprint, setQaGateAckFingerprint] = useState<string>("");
+  const qaGatePendingActionRef = useRef<null | (() => void)>(null);
   const [differentialTreeData, setDifferentialTreeData] = useState<DifferentialTreeData | null>(null);
   const [includeDifferentialTreeInReport, setIncludeDifferentialTreeInReport] = useState<boolean>(true);
   const [isDifferentialTreeOpen, setIsDifferentialTreeOpen] = useState<boolean>(false);
@@ -6901,16 +6909,71 @@ Ejemplo:
     }
   };
 
-  // PDF Printing Utilities
-  const handlePrintPDF = () => {
-    if (!generatedReport) return;
-    setShowPrintModal(true);
-    // Attempt window.print() but also show the on-screen helper modal
-    try {
-      window.print();
-    } catch (e) {
-      console.warn("window.print block protected", e);
+  // PDF Printing Utilities ? QA Gate before export / print / share
+  const buildReportQaFingerprint = () => {
+    const pending =
+      reportEnrichmentSession?.changes?.filter((c) => c.status === "pending").length || 0;
+    return [
+      (generatedReport || "").length,
+      laterality || "",
+      studyType || "",
+      clinicalScorecardData?.categoryAssigned || "",
+      clinicalScorecardData?.recommendation?.slice(0, 40) || "",
+      String(pending),
+    ].join("|");
+  };
+
+  const guardReportPdfExport = (action: () => void | Promise<void>) => {
+    if (!generatedReport) {
+      void action();
+      return;
     }
+    const fingerprint = buildReportQaFingerprint();
+    if (qaGateAckFingerprint && qaGateAckFingerprint === fingerprint) {
+      void action();
+      return;
+    }
+    const result = runReportQaGate({
+      reportText: generatedReport,
+      laterality,
+      studyType,
+      scorecard: clinicalScorecardData,
+      enrichmentSession: reportEnrichmentSession,
+    });
+    if (result.ok) {
+      void action();
+      return;
+    }
+    qaGatePendingActionRef.current = () => {
+      setQaGateAckFingerprint(fingerprint);
+      setQaGateResult(null);
+      qaGatePendingActionRef.current = null;
+      void action();
+    };
+    setQaGateResult(result);
+  };
+
+  const handleDismissQaGate = () => {
+    qaGatePendingActionRef.current = null;
+    setQaGateResult(null);
+  };
+
+  const handleProceedQaGateAnyway = () => {
+    const pending = qaGatePendingActionRef.current;
+    if (pending) pending();
+    else setQaGateResult(null);
+  };
+
+  const handlePrintPDF = () => {
+    guardReportPdfExport(() => {
+      if (!generatedReport) return;
+      setShowPrintModal(true);
+      try {
+        window.print();
+      } catch (e) {
+        console.warn("window.print block protected", e);
+      }
+    });
   };
 
   const ensureCompatibleImageFormat = compressImageForAttachment;
@@ -19521,21 +19584,21 @@ const splitReportAndAnnex = (text: string) => {
                             <Printer className="h-3.5 w-3.5" /> PDF / Imprimir
                           </button>
                           <button
-                            onClick={() => handleDownloadNativePDF(false)}
+                            onClick={() => guardReportPdfExport(() => handleDownloadNativePDF(false))}
                             className="px-3 md:px-4 py-1.5 md:py-2 bg-slate-900 border-2 border-slate-800 hover:border-slate-700 hover:bg-slate-850 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider text-slate-200 transition-all flex items-center gap-1.5 md:gap-2 shadow-lg select-none cursor-pointer whitespace-nowrap"
                             title="Descargar archivo PDF limpio directo sin URL ni hora"
                           >
                             <Download className="h-3.5 w-3.5 text-indigo-400" /> Descargar PDF
                           </button>
                           <button
-                            onClick={() => handleOpenWhatsAppShare('report_pdf')}
+                            onClick={() => guardReportPdfExport(() => handleOpenWhatsAppShare('report_pdf'))}
                             className="px-3 md:px-4 py-1.5 md:py-2 bg-emerald-600 hover:bg-emerald-550 border-2 border-emerald-500/30 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider text-white transition-all flex items-center gap-1.5 md:gap-2 shadow-lg select-none whitespace-nowrap cursor-pointer"
                             title="Enviar reporte PDF firmado directamente a WhatsApp"
                           >
                             <MessageSquare className="h-3.5 w-3.5 text-white" /> WhatsApp PDF
                           </button>
                           <button
-                            onClick={() => handleOpenGmailShare('report_pdf')}
+                            onClick={() => guardReportPdfExport(() => handleOpenGmailShare('report_pdf'))}
                             className="px-3 md:px-4 py-1.5 md:py-2 bg-red-700 hover:bg-red-650 border-2 border-red-500/30 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider text-white transition-all flex items-center gap-1.5 md:gap-2 shadow-lg select-none whitespace-nowrap cursor-pointer"
                             title="Enviar reporte PDF firmado directamente por Correo usando Gmail"
                           >
@@ -24406,7 +24469,13 @@ const splitReportAndAnnex = (text: string) => {
                               
                               <button
                                 type="button"
-                                onClick={() => printModalDocType === 'report' ? handleDownloadNativePDF(true) : handleDownloadPatientSummaryPDF(true)}
+                                onClick={() => {
+                      if (printModalDocType === 'report') {
+                        guardReportPdfExport(() => handleDownloadNativePDF(true));
+                      } else {
+                        handleDownloadPatientSummaryPDF(true);
+                      }
+                    }}
                                 className="p-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 rounded-lg text-slate-400 hover:text-slate-200 transition-all cursor-pointer"
                                 title="Abrir PDF en pestaÃ±a nueva"
                               >
@@ -25692,7 +25761,17 @@ const splitReportAndAnnex = (text: string) => {
         />
       )}
 
-      {/* ð¥ MODELO DE ASISTENCIA PARA IMPRESIÃN Y EXPORTACIÃN PDF (ESPECIAL IPHONE/MOBILE & IFRAME) */}
+      {qaGateResult && (
+        <React.Suspense fallback={null}>
+          <ReportQaGateModal
+            result={qaGateResult}
+            onClose={handleDismissQaGate}
+            onProceedAnyway={handleProceedQaGateAnyway}
+          />
+        </React.Suspense>
+      )}
+
+      {/* MODELO DE ASISTENCIA PARA IMPRESI�N Y EXPORTACI�N PDF (ESPECIAL IPHONE/MOBILE & IFRAME) */}
       {showPrintModal && (
         <div className="no-print fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
           <motion.div 
@@ -25795,14 +25874,26 @@ const splitReportAndAnnex = (text: string) => {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                   <button
-                    onClick={() => printModalDocType === 'report' ? handleDownloadNativePDF(false) : handleDownloadPatientSummaryPDF(false)}
+                    onClick={() => {
+                      if (printModalDocType === 'report') {
+                        guardReportPdfExport(() => handleDownloadNativePDF(false));
+                      } else {
+                        handleDownloadPatientSummaryPDF(false);
+                      }
+                    }}
                     className="flex items-center justify-center gap-2.5 p-3 bg-indigo-600 hover:bg-indigo-550 border-2 border-indigo-500/10 rounded-xl text-xs font-black text-white uppercase tracking-wider transition-all shadow-md active:scale-95 text-center cursor-pointer"
                   >
                     <Download className="h-4 w-4" />
                     <span>Descargar PDF Limpio (Sin URL/Hora)</span>
                   </button>
                   <button
-                    onClick={() => printModalDocType === 'report' ? handleDownloadNativePDF(true) : handleDownloadPatientSummaryPDF(true)}
+                    onClick={() => {
+                      if (printModalDocType === 'report') {
+                        guardReportPdfExport(() => handleDownloadNativePDF(true));
+                      } else {
+                        handleDownloadPatientSummaryPDF(true);
+                      }
+                    }}
                     className="flex items-center justify-center gap-2.5 p-3 bg-sky-700 hover:bg-sky-650 border-2 border-sky-600/10 rounded-xl text-xs font-black text-white uppercase tracking-wider transition-all shadow-md active:scale-95 text-center cursor-pointer"
                   >
                     <ExternalLink className="h-4 w-4" />
@@ -25980,7 +26071,13 @@ const splitReportAndAnnex = (text: string) => {
                           Este navegador no soporta visualizador de PDF incrustado o se ha denegado el permiso. Puedes descargarlo directamente para visualizarlo o imprimirlo:
                         </p>
                         <button
-                          onClick={() => printModalDocType === 'report' ? handleDownloadNativePDF(false) : handleDownloadPatientSummaryPDF(false)}
+                          onClick={() => {
+                      if (printModalDocType === 'report') {
+                        guardReportPdfExport(() => handleDownloadNativePDF(false));
+                      } else {
+                        handleDownloadPatientSummaryPDF(false);
+                      }
+                    }}
                           className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-550 border border-indigo-500/20 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer"
                         >
                           Descargar Documento FÃ­sico
@@ -26552,7 +26649,7 @@ const splitReportAndAnnex = (text: string) => {
                   <button
                     type="button"
                     onClick={() => {
-                      handleDownloadNativePDF(false);
+                      guardReportPdfExport(() => handleDownloadNativePDF(false));
                     }}
                     className="p-3 bg-slate-950/80 hover:bg-slate-900 border border-slate-850 hover:border-slate-750 text-slate-200 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer select-none"
                     title="Descargar el reporte mÃ©dico oficial firmado en PDF"
@@ -26851,7 +26948,13 @@ const splitReportAndAnnex = (text: string) => {
                   <div className="pt-2">
                     <button
                       type="button"
-                      onClick={handleSendGmailAction}
+                      onClick={() => {
+                        if (gmailAttachReport) {
+                          guardReportPdfExport(() => handleSendGmailAction());
+                        } else {
+                          handleSendGmailAction();
+                        }
+                      }}
                       disabled={isSendingGmail || !gmailTo.trim() || !gmailSubject.trim()}
                       className="w-full p-3 bg-red-600 hover:bg-red-550 disabled:opacity-50 border-2 border-red-500/10 rounded-xl text-xs font-black text-white uppercase tracking-wider transition-all shadow-md active:scale-95 text-center cursor-pointer flex items-center justify-center gap-2 font-mono"
                     >

@@ -55,16 +55,25 @@ export function buildCanonicalScorecardPhrase(c: ScorecardCriterion): string {
   }
 
   if (c.status === "equivocal") {
-    return value
-      ? `Hallazgo equívoco en relación con ${structure} (${value}).`
+    if (value && structure) {
+      return evidence
+        ? `Hallazgo equívoco en relación con ${structure} (${value}): ${evidence.replace(/[.!?]$/, "")}.`
+        : `Hallazgo equívoco en relación con ${structure} (${value}).`;
+    }
+    return evidence
+      ? `Hallazgo equívoco en relación con ${structure}: ${evidence.replace(/[.!?]$/, "")}.`
       : `Hallazgo equívoco en relación con ${structure}.`;
   }
 
   if (value && structure) {
-    return `Se documenta ${structure} (${value}).`;
+    return evidence
+      ? `Se documenta ${structure} (${value}): ${evidence.replace(/[.!?]$/, "")}.`
+      : `Se documenta ${structure} (${value}).`;
   }
   if (structure) {
-    return `Se documenta ${structure}.`;
+    return evidence
+      ? `Se documenta ${structure}: ${evidence.replace(/[.!?]$/, "")}.`
+      : `Se documenta ${structure}.`;
   }
   return evidence || "Hallazgo positivo del protocolo clínico.";
 }
