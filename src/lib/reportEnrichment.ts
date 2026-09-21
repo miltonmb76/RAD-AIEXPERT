@@ -177,30 +177,26 @@ export function selectScorecardProseChanges(
     });
   }
 
-  // Optional: weave category into impression if missing
-  const category = String(scorecard.categoryAssigned || "").trim();
-  if (category && category.length >= 3) {
-    const catPhrase = `Categoría / impresión protocolar: ${category}.`;
-    const alreadyCat = normalizeForMatch(report).includes(normalizeForMatch(category).slice(0, 40));
-    if (!alreadyCat) {
-      const autoSafe = autoCount < maxAuto;
-      if (autoSafe) autoCount += 1;
-      changes.push({
-        id: newId("enr-sc-cat"),
-        source: "scorecard",
-        sourceItemId: "categoryAssigned",
-        title: "Categoría del protocolo",
-        reason: `${scorecard.protocolName || "Scorecard"} → impresión`,
-        suggestedText: catPhrase,
-        insertTarget: "impression",
-        placementHint: "Impresión diagnóstica",
-        status: autoSafe ? "applied" : "pending",
-        autoSafe,
-      });
-    }
-  }
+  // Do NOT weave "Categoría / impresión protocolar: …" into the impression —
+  // category stays on the scorecard UI/PDF only.
 
   return changes;
+}
+
+/** Remove legacy "Categoría / impresión protocolar: …" lines from report prose. */
+export function stripProtocolCategoryImpressionLines(report: string): string {
+  if (!report) return report;
+  const cleaned = String(report)
+    .split(/\r?\n/)
+    .filter((line) => {
+      const t = line.trim();
+      if (!t) return true;
+      return !/^(\*{0,2}|_{0,2})?\s*Categor[ií]a\s*\/\s*[Ii]mpresi[oó]n\s+protocolar\s*:/i.test(
+        t
+      );
+    })
+    .join("\n");
+  return cleaned.replace(/\n{3,}/g, "\n\n").trimEnd();
 }
 
 /** Pick safe auto-weave items + review-only pending notes from checklist + second reader. */
@@ -909,6 +905,7 @@ export async function runReportEnrichmentPipeline(opts: {
     }
 
     const marked = markSourcesAfterAutoEnrichment(checklist, reader, changes);
+    workingReport = stripProtocolCategoryImpressionLines(workingReport);
 
     return {
       session: {
@@ -1122,6 +1119,7 @@ export async function applyPendingEnrichmentChanges(opts: {
   }
 
   const marked = markSourcesAfterAutoEnrichment(opts.checklist, opts.reader, nextChanges);
+  workingReport = stripProtocolCategoryImpressionLines(workingReport);
 
   return {
     session: {
