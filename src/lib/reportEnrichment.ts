@@ -20,7 +20,8 @@ import {
 import { filterStructuresForStudyType } from "./measurementStudyGuard";
 
 export const MAX_AUTO_ENRICHMENT_CHANGES = 6;
-export const MAX_AUTO_CLASSIFICATIONS = 2;
+/** Classifications are never auto-inserted — always pending physician approval. */
+export const MAX_AUTO_CLASSIFICATIONS = 0;
 export const MAX_AUTO_SCORECARD_PROSE = 4;
 export const MAX_AUTO_MEASUREMENTS = 4;
 export { MAX_AUTO_GUIDELINES } from "./guidelineBinder";
@@ -387,14 +388,13 @@ export function normalizeAnalyzedMeasurements(raw: any): AnalyzedMeasurementStru
     .filter((s) => s.structure.length >= 2);
 }
 
-/** Convert classification recommendations into enrichment changes (auto up to maxAuto). */
+/** Convert classification recommendations into enrichment changes (always pending approval). */
 export function selectClassificationChanges(
   recommendations: ClassificationRecommendation[] | null | undefined,
-  maxAuto: number = MAX_AUTO_CLASSIFICATIONS
+  _maxAuto: number = MAX_AUTO_CLASSIFICATIONS
 ): ReportEnrichmentChange[] {
   const changes: ReportEnrichmentChange[] = [];
   const list = Array.isArray(recommendations) ? recommendations : [];
-  let autoCount = 0;
 
   list.forEach((rec, idx) => {
     const name = String(rec?.name || "").trim();
@@ -402,22 +402,21 @@ export function selectClassificationChanges(
     const already = !!rec.alreadyIncorporated;
     const content = String(rec.contentToAppend || "").trim();
     const why = String(rec.whyRecommended || "").trim();
-    const autoSafe = !already && !!content && autoCount < maxAuto;
-    if (autoSafe) autoCount += 1;
 
     changes.push({
       id: newId("enr-cls"),
       source: "classification",
       sourceItemId: `cls-${idx + 1}`,
       title: name,
-      reason: why || (already ? "Ya figura en el informe." : "Escala aplicable al caso."),
+      reason: why || (already ? "Ya figura en el informe." : "Escala aplicable al caso — pendiente de aprobación."),
       suggestedText: already
         ? "Ya incorporada en el informe."
         : previewText(content || why || name),
       insertTarget: "impression",
       placementHint: "Impresión diagnóstica / clasificación aplicada",
-      status: already ? "skipped" : autoSafe ? "applied" : "pending",
-      autoSafe,
+      // Never auto-insert: physician must Aplicar in the Pulido panel
+      status: already ? "skipped" : "pending",
+      autoSafe: false,
       reviewOnly: false,
       classificationMeta: {
         name,
