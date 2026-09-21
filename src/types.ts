@@ -1154,7 +1154,8 @@ export type ReportEnrichmentSource =
   | "negativity_checklist"
   | "second_reader"
   | "classification"
-  | "scorecard";
+  | "scorecard"
+  | "measurement";
 export type ReportEnrichmentChangeStatus = "applied" | "pending" | "rejected" | "skipped";
 export type ReportEnrichmentRunStatus = "idle" | "running" | "done" | "error";
 
@@ -1163,6 +1164,12 @@ export interface ReportEnrichmentClassificationMeta {
   whyRecommended: string;
   contentToAppend: string;
   alreadyIncorporated?: boolean;
+}
+
+/** Payload for /api/assign-measurements when source is measurement. */
+export interface ReportEnrichmentMeasurementMeta {
+  structure: string;
+  value: string;
 }
 
 export interface ReportEnrichmentChange {
@@ -1181,6 +1188,8 @@ export interface ReportEnrichmentChange {
   reviewOnly?: boolean;
   /** Payload for /api/incorporate-classification when source is classification. */
   classificationMeta?: ReportEnrichmentClassificationMeta;
+  /** Payload for /api/assign-measurements when source is measurement. */
+  measurementMeta?: ReportEnrichmentMeasurementMeta;
 }
 
 export interface ReportEnrichmentSession {

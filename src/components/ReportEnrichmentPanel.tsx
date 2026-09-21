@@ -35,7 +35,9 @@ const ChangeRow: React.FC<{
         ? "border-amber-500/40 text-amber-300 bg-amber-500/10"
         : change.source === "scorecard"
           ? "border-emerald-500/40 text-emerald-300 bg-emerald-500/10"
-          : "border-indigo-500/40 text-indigo-300 bg-indigo-500/10";
+          : change.source === "measurement"
+            ? "border-sky-500/40 text-sky-300 bg-sky-500/10"
+            : "border-indigo-500/40 text-indigo-300 bg-indigo-500/10";
 
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-950/70 px-3.5 py-3 space-y-2">
@@ -75,7 +77,9 @@ const ChangeRow: React.FC<{
         </div>
         {change.status === "pending" &&
           !change.reviewOnly &&
-          (change.suggestedText || change.classificationMeta?.name) && (
+          (change.suggestedText ||
+            change.classificationMeta?.name ||
+            change.measurementMeta?.structure) && (
           <div className="flex items-center gap-1.5 shrink-0">
             <button
               type="button"

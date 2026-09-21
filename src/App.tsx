@@ -3749,6 +3749,7 @@ Ejemplo:
         modifyModel: modelFor("report_modify"),
         classificationsModel: modelFor("classifications"),
         scorecardModel: modelFor("clinical_scorecard"),
+        measurementsModel: modelFor("measurements"),
         includeManagementRecommendations: true,
         existingScorecard: clinicalScorecardData,
       });
@@ -3763,6 +3764,9 @@ Ejemplo:
       if (result.scorecard) {
         setClinicalScorecardData(result.scorecard);
         setIncludeScorecardInReport(true);
+      }
+      if (result.measurements && result.measurements.length > 0) {
+        setIsAsistenteMedidasOpen(true);
       }
       if (result.classifications && result.classifications.length > 0) {
         setClassRecommendations(result.classifications);
@@ -3834,6 +3838,7 @@ Ejemplo:
         report: generatedReport,
         modifyModel: modelFor("report_modify"),
         classificationsModel: modelFor("classifications"),
+        measurementsModel: modelFor("measurements"),
         studyType: specificStudy || studyType || "",
         includeManagementRecommendations: true,
         session: reportEnrichmentSession,
@@ -3877,7 +3882,9 @@ Ejemplo:
           !c.reviewOnly &&
           (c.source === "classification"
             ? !!c.classificationMeta?.name
-            : !!c.suggestedText.trim())
+            : c.source === "measurement"
+              ? !!(c.measurementMeta?.structure && c.measurementMeta?.value)
+              : !!c.suggestedText.trim())
       )
       .map((c) => c.id);
     if (!ids.length) return;
@@ -3887,6 +3894,7 @@ Ejemplo:
         report: generatedReport,
         modifyModel: modelFor("report_modify"),
         classificationsModel: modelFor("classifications"),
+        measurementsModel: modelFor("measurements"),
         studyType: specificStudy || studyType || "",
         includeManagementRecommendations: true,
         session: reportEnrichmentSession,
@@ -19257,7 +19265,7 @@ const splitReportAndAnnex = (text: string) => {
                           Pulido clínico automático con Reporte completo
                         </p>
                         <p className="mt-0.5 text-[9px] leading-relaxed text-slate-500">
-                          Scorecard → prosa, negatividades, segundo lector y clasificaciones (BI-RADS, TI-RADS, Fleischner…); tú revisas un diff corto.
+                          Scorecard ? prosa, medidas ? cuerpo, negatividades, segundo lector y clasificaciones (BI-RADS, TI-RADS, Fleischner?); t� revisas un diff corto.
                         </p>
                       </div>
                     </label>

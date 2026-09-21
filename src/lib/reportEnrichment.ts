@@ -16,6 +16,17 @@ import { normalizeSecondReaderData } from "./secondReader";
 export const MAX_AUTO_ENRICHMENT_CHANGES = 6;
 export const MAX_AUTO_CLASSIFICATIONS = 2;
 export const MAX_AUTO_SCORECARD_PROSE = 4;
+export const MAX_AUTO_MEASUREMENTS = 4;
+
+/** Row from /api/analyze-measurements `structures`. */
+export interface AnalyzedMeasurementStructure {
+  structure: string;
+  normalRange: string;
+  measuredValue: string;
+  status: string;
+  interpretation: string;
+  defaultNormalValue: string;
+}
 
 const CONFIDENCE_RANK: Record<string, number> = { alta: 0, media: 1, baja: 2 };
 const WEIGHT_RANK: Record<string, number> = { critical: 0, major: 1, minor: 2 };
@@ -261,6 +272,110 @@ export function selectEnrichmentChanges(
   return changes;
 }
 
+/** True if the report already states a measurement for this anatomical structure. */
+export function reportAlreadyHasMeasurement(
+  report: string,
+  structure: string,
+  value: string
+): boolean {
+  const r = normalizeForMatch(report);
+  if (!r) return false;
+
+  const valueN = normalizeForMatch(value);
+  const numToken = valueN.match(/\d+(?:[.,]\d+)?/);
+  const structureTokens = normalizeForMatch(structure)
+    .split(" ")
+    .filter((w) => w.length > 2 && !["de", "del", "la", "el", "los", "las", "y"].includes(w));
+
+  if (structureTokens.length === 0) return false;
+  const structHits = structureTokens.filter((t) => r.includes(t)).length;
+  const structurePresent = structHits >= Math.ceil(structureTokens.length * 0.6);
+  if (!structurePresent) return false;
+
+  // Structure mentioned and a numeric value from the proposed measure already nearby in report
+  if (numToken && r.includes(numToken[0].replace(",", "."))) return true;
+  if (numToken && r.includes(numToken[0].replace(".", ","))) return true;
+
+  // Structure already has any clear numeric measure in the report
+  const structIdx = r.indexOf(structureTokens[0]);
+  if (structIdx >= 0) {
+    const window = r.slice(Math.max(0, structIdx - 40), structIdx + 120);
+    if (/\d+(?:[.,]\d+)?\s*(mm|cm|cm\/s|m\/s|kpa|ml|cc|%|ir)?/.test(window)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Turn missing protocol measurements (not_found) into body-weave enrichment changes.
+ * Uses defaultNormalValue — same intent as Asistente de Medidas → asignar.
+ */
+export function selectMeasurementBodyChanges(
+  structures: AnalyzedMeasurementStructure[] | null | undefined,
+  report: string,
+  maxAuto: number = MAX_AUTO_MEASUREMENTS
+): ReportEnrichmentChange[] {
+  const list = Array.isArray(structures) ? structures : [];
+  const changes: ReportEnrichmentChange[] = [];
+  let autoCount = 0;
+
+  const candidates = list
+    .filter((s) => {
+      const status = normalizeForMatch(s.status || "");
+      const structure = String(s.structure || "").trim();
+      const value = String(s.defaultNormalValue || s.measuredValue || "").trim();
+      if (!structure || structure.length < 2) return false;
+      if (!value || value.length < 1) return false;
+      // Only fill gaps — never invent over an already-stated measure
+      if (status !== "not_found" && status !== "not found" && status !== "pendiente") {
+        return false;
+      }
+      return !reportAlreadyHasMeasurement(report, structure, value);
+    })
+    .slice(0, 12);
+
+  for (const s of candidates) {
+    const structure = String(s.structure).trim();
+    const value = String(s.defaultNormalValue || s.measuredValue).trim();
+    const autoSafe = autoCount < maxAuto;
+    if (autoSafe) autoCount += 1;
+    const range = String(s.normalRange || "").trim();
+    changes.push({
+      id: newId("enr-meas"),
+      source: "measurement",
+      sourceItemId: normalizeForMatch(structure).slice(0, 48) || newId("meas"),
+      title: structure,
+      reason: range
+        ? `Medida ausente — valor normal de protocolo (${range})`
+        : "Medida ausente del protocolo — inyectar en cuerpo narrativo",
+      suggestedText: `${structure}: ${value}`,
+      insertTarget: "findings",
+      placementHint: structure,
+      status: autoSafe ? "applied" : "pending",
+      autoSafe,
+      measurementMeta: { structure, value },
+    });
+  }
+
+  return changes;
+}
+
+export function normalizeAnalyzedMeasurements(raw: any): AnalyzedMeasurementStructure[] {
+  const root = raw?.structures || raw?.data?.structures || raw;
+  const list = Array.isArray(root) ? root : [];
+  return list
+    .map((s: any) => ({
+      structure: String(s?.structure || s?.name || "").trim(),
+      normalRange: String(s?.normalRange || s?.normalRangeLabel || "").trim(),
+      measuredValue: String(s?.measuredValue || "").trim(),
+      status: String(s?.status || "").trim().toLowerCase(),
+      interpretation: String(s?.interpretation || "").trim(),
+      defaultNormalValue: String(s?.defaultNormalValue || s?.defaultVal || "").trim(),
+    }))
+    .filter((s) => s.structure.length >= 2);
+}
+
 /** Convert classification recommendations into enrichment changes (auto up to maxAuto). */
 export function selectClassificationChanges(
   recommendations: ClassificationRecommendation[] | null | undefined,
@@ -311,7 +426,8 @@ export function buildEnrichmentMergeInstruction(changes: ReportEnrichmentChange[
       (c) =>
         c.autoSafe &&
         c.suggestedText.trim() &&
-        c.source !== "classification"
+        c.source !== "classification" &&
+        c.source !== "measurement"
     )
     .map((c, idx) => {
       const origen =
@@ -403,6 +519,8 @@ export function enrichmentSourceLabel(source: ReportEnrichmentChange["source"]):
       return "Clasificación";
     case "scorecard":
       return "Scorecard";
+    case "measurement":
+      return "Medidas";
     default:
       return "Segundo lector";
   }
@@ -426,6 +544,7 @@ export interface EnrichmentPipelineResult {
   report: string;
   classifications?: ClassificationRecommendation[];
   scorecard?: ClinicalScorecardData | null;
+  measurements?: AnalyzedMeasurementStructure[];
 }
 
 async function incorporateOneClassification(opts: {
@@ -455,9 +574,31 @@ async function incorporateOneClassification(opts: {
   return String(json.modifiedReport).trim() || null;
 }
 
+/** Surgical weave of structure→value pairs into findings via /api/assign-measurements. */
+async function assignMeasurementsToReport(opts: {
+  report: string;
+  model: string;
+  measurements: Array<{ structure: string; value: string }>;
+}): Promise<string | null> {
+  const list = opts.measurements.filter((m) => m.structure.trim() && m.value.trim());
+  if (!list.length) return opts.report;
+  const resp = await fetch("/api/assign-measurements", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: opts.model,
+      currentReport: opts.report,
+      measurementsToAssign: list,
+    }),
+  });
+  const json = await resp.json().catch(() => ({}));
+  if (!json?.success || !json.modifiedReport) return null;
+  return String(json.modifiedReport).trim() || null;
+}
+
 /**
- * Generate checklist + second reader + classification recommendations + scorecard in parallel.
- * Weave safe gaps (incl. scorecard prose), then incorporate up to MAX_AUTO_CLASSIFICATIONS scales.
+ * Generate checklist + second reader + classifications + scorecard + measurements in parallel.
+ * Weave safe gaps (scorecard prose, missing medidas), then classifications.
  */
 export async function runReportEnrichmentPipeline(opts: {
   report: string;
@@ -468,6 +609,7 @@ export async function runReportEnrichmentPipeline(opts: {
   modifyModel: string;
   classificationsModel?: string;
   scorecardModel?: string;
+  measurementsModel?: string;
   includeManagementRecommendations?: boolean;
   /** Optional precomputed scorecard (avoids a second generation if batch already has one). */
   existingScorecard?: ClinicalScorecardData | null;
@@ -488,6 +630,7 @@ export async function runReportEnrichmentPipeline(opts: {
       report: beforeReport,
       classifications: [],
       scorecard: null,
+      measurements: [],
     };
   }
 
@@ -495,10 +638,12 @@ export async function runReportEnrichmentPipeline(opts: {
   let reader: SecondReaderData | null = null;
   let classifications: ClassificationRecommendation[] = [];
   let scorecard: ClinicalScorecardData | null = opts.existingScorecard || null;
+  let measurements: AnalyzedMeasurementStructure[] = [];
 
   try {
     const classModel = opts.classificationsModel || opts.modifyModel;
     const scoreModel = opts.scorecardModel || opts.modifyModel;
+    const measModel = opts.measurementsModel || opts.modifyModel;
 
     const fetchTasks: Promise<Response>[] = [
       fetch("/api/generate-negativity-checklist", {
@@ -531,7 +676,9 @@ export async function runReportEnrichmentPipeline(opts: {
       }),
     ];
 
+    let scoreFetchIdx = -1;
     if (!scorecard) {
+      scoreFetchIdx = fetchTasks.length;
       fetchTasks.push(
         fetch("/api/generate-clinical-scorecard", {
           method: "POST",
@@ -547,16 +694,31 @@ export async function runReportEnrichmentPipeline(opts: {
       );
     }
 
+    const measFetchIdx = fetchTasks.length;
+    fetchTasks.push(
+      fetch("/api/analyze-measurements", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: measModel,
+          report: beforeReport,
+          studyType: opts.studyType || "",
+        }),
+      })
+    );
+
     const responses = await Promise.all(fetchTasks);
     const negResp = responses[0];
     const srResp = responses[1];
     const classResp = responses[2];
-    const scResp = scorecard ? null : responses[3];
+    const scResp = scoreFetchIdx >= 0 ? responses[scoreFetchIdx] : null;
+    const measResp = responses[measFetchIdx];
 
     const negJson = await negResp.json().catch(() => ({}));
     const srJson = await srResp.json().catch(() => ({}));
     const classJson = await classResp.json().catch(() => ({}));
     const scJson = scResp ? await scResp.json().catch(() => ({})) : null;
+    const measJson = await measResp.json().catch(() => ({}));
 
     if (negJson?.success && negJson.data) {
       checklist = normalizeNegativityChecklistData(negJson.data);
@@ -575,14 +737,18 @@ export async function runReportEnrichmentPipeline(opts: {
     if (!scorecard && scJson?.success && scJson.data) {
       scorecard = scJson.data as ClinicalScorecardData;
     }
+    if (measJson?.success) {
+      measurements = normalizeAnalyzedMeasurements(measJson);
+    }
 
-    if (!checklist && !reader && !classifications.length && !scorecard) {
+    if (!checklist && !reader && !classifications.length && !scorecard && !measurements.length) {
       const detail =
         negJson?.error ||
         srJson?.error ||
         classJson?.error ||
         scJson?.error ||
-        "No se pudo generar checklist, segundo lector, clasificaciones ni scorecard.";
+        measJson?.error ||
+        "No se pudo generar checklist, segundo lector, clasificaciones, scorecard ni medidas.";
       return {
         session: {
           ...baseSession,
@@ -595,15 +761,17 @@ export async function runReportEnrichmentPipeline(opts: {
         report: beforeReport,
         classifications: [],
         scorecard: null,
+        measurements: [],
       };
     }
 
+    const measChanges = selectMeasurementBodyChanges(measurements, beforeReport);
     const proseChanges = [
       ...selectEnrichmentChanges(checklist, reader),
       ...selectScorecardProseChanges(scorecard, beforeReport),
     ];
     const classChanges = selectClassificationChanges(classifications);
-    let changes = [...proseChanges, ...classChanges];
+    let changes = [...proseChanges, ...classChanges, ...measChanges];
     let workingReport = beforeReport;
 
     // Pass A: weave checklist + second-reader + scorecard prose
@@ -624,7 +792,7 @@ export async function runReportEnrichmentPipeline(opts: {
         workingReport = String(modJson.report).trim() || workingReport;
       } else {
         changes = changes.map((c) =>
-          c.source !== "classification" && c.autoSafe
+          c.source !== "classification" && c.source !== "measurement" && c.autoSafe
             ? { ...c, status: "pending" as const, autoSafe: false }
             : c
         );
@@ -654,6 +822,34 @@ export async function runReportEnrichmentPipeline(opts: {
       }
     }
 
+    // Pass C: inject missing protocol measurements into findings body
+    const measToApply = changes.filter(
+      (c) =>
+        c.source === "measurement" &&
+        c.autoSafe &&
+        c.status === "applied" &&
+        c.measurementMeta?.structure &&
+        c.measurementMeta?.value
+    );
+    if (measToApply.length) {
+      const next = await assignMeasurementsToReport({
+        report: workingReport,
+        model: measModel,
+        measurements: measToApply.map((c) => ({
+          structure: c.measurementMeta!.structure,
+          value: c.measurementMeta!.value,
+        })),
+      });
+      if (next) {
+        workingReport = next;
+      } else {
+        for (const c of measToApply) {
+          c.status = "pending";
+          c.autoSafe = false;
+        }
+      }
+    }
+
     classifications = classifications.map((rec) => {
       const hit = changes.find(
         (c) =>
@@ -679,6 +875,7 @@ export async function runReportEnrichmentPipeline(opts: {
       report: workingReport,
       classifications,
       scorecard,
+      measurements,
     };
   } catch (e: any) {
     return {
@@ -693,15 +890,17 @@ export async function runReportEnrichmentPipeline(opts: {
       report: beforeReport,
       classifications,
       scorecard,
+      measurements,
     };
   }
 }
 
-/** Apply pending prose and/or classification changes onto the current report. */
+/** Apply pending prose, measurement, and/or classification changes onto the current report. */
 export async function applyPendingEnrichmentChanges(opts: {
   report: string;
   modifyModel: string;
   classificationsModel?: string;
+  measurementsModel?: string;
   studyType?: string;
   includeManagementRecommendations?: boolean;
   session: ReportEnrichmentSession;
@@ -716,7 +915,9 @@ export async function applyPendingEnrichmentChanges(opts: {
       !c.reviewOnly &&
       (c.source === "classification"
         ? !!c.classificationMeta?.name
-        : !!c.suggestedText.trim())
+        : c.source === "measurement"
+          ? !!(c.measurementMeta?.structure && c.measurementMeta?.value)
+          : !!c.suggestedText.trim())
   );
 
   if (!selected.length) {
@@ -731,8 +932,11 @@ export async function applyPendingEnrichmentChanges(opts: {
   let workingReport = opts.report;
   let nextChanges = [...opts.session.changes];
   const classModel = opts.classificationsModel || opts.modifyModel;
+  const measModel = opts.measurementsModel || opts.modifyModel;
 
-  const proseSelected = selected.filter((c) => c.source !== "classification");
+  const proseSelected = selected.filter(
+    (c) => c.source !== "classification" && c.source !== "measurement"
+  );
   if (proseSelected.length) {
     const toApply = proseSelected.map((c) => ({
       ...c,
@@ -756,6 +960,26 @@ export async function applyPendingEnrichmentChanges(opts: {
     workingReport = String(modJson.report).trim() || workingReport;
     nextChanges = nextChanges.map((c) => {
       const hit = toApply.find((t) => t.id === c.id);
+      return hit ? { ...c, autoSafe: true, status: "applied" as const } : c;
+    });
+  }
+
+  const measSelected = selected.filter((c) => c.source === "measurement");
+  if (measSelected.length) {
+    const next = await assignMeasurementsToReport({
+      report: workingReport,
+      model: measModel,
+      measurements: measSelected.map((c) => ({
+        structure: c.measurementMeta!.structure,
+        value: c.measurementMeta!.value,
+      })),
+    });
+    if (!next) {
+      throw new Error("No se pudieron inyectar las medidas pendientes en el cuerpo del informe.");
+    }
+    workingReport = next;
+    nextChanges = nextChanges.map((c) => {
+      const hit = measSelected.find((t) => t.id === c.id);
       return hit ? { ...c, autoSafe: true, status: "applied" as const } : c;
     });
   }
