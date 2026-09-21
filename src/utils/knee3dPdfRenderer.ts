@@ -7,6 +7,7 @@ import {
   drawAnnexPanelBadge,
   softBorderFromAccent,
   softFillFromAccent,
+  computeSuitePanelLayout
 } from "./pdfAnnexChrome";
 
 /**
@@ -71,11 +72,11 @@ export async function renderKnee3DPageToPdf(
   const panelCount = Math.min(Math.max(panels.length, 1), 3);
 
   if (panelCount > 0) {
-    const gap = panelCount === 3 ? 2.2 : 3.0;
-    const totalGaps = (panelCount - 1) * gap;
-    const cardWidth = (contentWidth - totalGaps) / panelCount;
-    const imgWidth = cardWidth - 2;
-    const imgHeight = imgWidth * (3 / 4); // keep aspect ratio, do not stretch
+    const { gap, cardWidth, imgWidth, imgHeight, startOffsetX } = computeSuitePanelLayout(
+      contentWidth,
+      panelCount,
+      factor
+    ); // keep aspect ratio, do not stretch
 
     const measureCaptionH = (p: Knee3DPanel): number => {
       doc.setFont("helvetica", "bold");
@@ -101,7 +102,7 @@ export async function renderKnee3DPageToPdf(
 
     for (let idx = 0; idx < panelCount; idx++) {
       const p = panels[idx];
-      const cardX = marginX + idx * (cardWidth + gap);
+      const cardX = marginX + startOffsetX + idx * (cardWidth + gap);
 
       doc.setFillColor(255, 255, 255);
       doc.setDrawColor(203, 213, 225);

@@ -57,3 +57,60 @@ export function drawAnnexPanelBadge(
   doc.text(label, x + padX, y + badgeH * 0.72);
   return { width: badgeW, height: badgeH };
 }
+
+export interface SuitePanelLayout {
+  panelCount: number;
+  gap: number;
+  cardWidth: number;
+  imgWidth: number;
+  imgHeight: number;
+  /** Extra X offset from marginX (centers a single panel). */
+  startOffsetX: number;
+}
+
+/**
+ * Shared 1–3 panel figure layout for organ-suite PDFs.
+ * Single panel uses ~62% width (height-capped) so the clinical dossier
+ * below still fits on the same page instead of overflowing.
+ */
+export function computeSuitePanelLayout(
+  contentWidth: number,
+  panelCount: number,
+  factor: number = 1
+): SuitePanelLayout {
+  const count = Math.min(Math.max(Math.floor(panelCount) || 1, 1), 3);
+  const gap = count === 3 ? 2.2 : 3.0;
+  const totalGaps = (count - 1) * gap;
+
+  if (count === 1) {
+    let cardWidth = Math.min(contentWidth * 0.62, contentWidth);
+    let imgWidth = Math.max(1, cardWidth - 2);
+    let imgHeight = imgWidth * (3 / 4);
+    const maxImgH = 62 * factor;
+    if (imgHeight > maxImgH) {
+      imgHeight = maxImgH;
+      imgWidth = imgHeight * (4 / 3);
+      cardWidth = imgWidth + 2;
+    }
+    return {
+      panelCount: count,
+      gap,
+      cardWidth,
+      imgWidth,
+      imgHeight,
+      startOffsetX: Math.max(0, (contentWidth - cardWidth) / 2),
+    };
+  }
+
+  const cardWidth = (contentWidth - totalGaps) / count;
+  const imgWidth = Math.max(1, cardWidth - 2);
+  const imgHeight = imgWidth * (3 / 4);
+  return {
+    panelCount: count,
+    gap,
+    cardWidth,
+    imgWidth,
+    imgHeight,
+    startOffsetX: 0,
+  };
+}
