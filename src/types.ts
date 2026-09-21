@@ -1155,7 +1155,8 @@ export type ReportEnrichmentSource =
   | "second_reader"
   | "classification"
   | "scorecard"
-  | "measurement";
+  | "measurement"
+  | "guideline";
 export type ReportEnrichmentChangeStatus = "applied" | "pending" | "rejected" | "skipped";
 export type ReportEnrichmentRunStatus = "idle" | "running" | "done" | "error";
 
@@ -1170,6 +1171,17 @@ export interface ReportEnrichmentClassificationMeta {
 export interface ReportEnrichmentMeasurementMeta {
   structure: string;
   value: string;
+}
+
+/** ACR / Fleischner (etc.) citation bound as report footnote + panel tooltip. */
+export interface ReportEnrichmentGuidelineMeta {
+  id: string;
+  title: string;
+  footnote: string;
+  source: string;
+  tooltip: string;
+  viaClassification?: string;
+  alreadyBound?: boolean;
 }
 
 export interface ReportEnrichmentChange {
@@ -1190,6 +1202,8 @@ export interface ReportEnrichmentChange {
   classificationMeta?: ReportEnrichmentClassificationMeta;
   /** Payload for /api/assign-measurements when source is measurement. */
   measurementMeta?: ReportEnrichmentMeasurementMeta;
+  /** Payload for Guideline Binder footnotes when source is guideline. */
+  guidelineMeta?: ReportEnrichmentGuidelineMeta;
 }
 
 export interface ReportEnrichmentSession {

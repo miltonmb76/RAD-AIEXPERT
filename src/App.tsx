@@ -19265,7 +19265,7 @@ const splitReportAndAnnex = (text: string) => {
                           Pulido clínico automático con Reporte completo
                         </p>
                         <p className="mt-0.5 text-[9px] leading-relaxed text-slate-500">
-                          Scorecard ? prosa, medidas ? cuerpo, negatividades, segundo lector y clasificaciones (BI-RADS, TI-RADS, Fleischner?); tú revisas un diff corto.
+                          Scorecard → prosa, medidas → cuerpo, guías ACR/Fleischner en pie, negatividades, segundo lector y clasificaciones; tú revisas un diff corto.
                         </p>
                       </div>
                     </label>

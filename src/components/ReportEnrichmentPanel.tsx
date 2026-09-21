@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import type { ReportEnrichmentChange, ReportEnrichmentSession } from "../types";
 import { enrichmentSourceLabel } from "../lib/reportEnrichment";
+import { tooltipForClassificationName } from "../lib/guidelineBinder";
 
 interface ReportEnrichmentPanelProps {
   session: ReportEnrichmentSession | null;
@@ -37,15 +38,27 @@ const ChangeRow: React.FC<{
           ? "border-emerald-500/40 text-emerald-300 bg-emerald-500/10"
           : change.source === "measurement"
             ? "border-sky-500/40 text-sky-300 bg-sky-500/10"
-            : "border-indigo-500/40 text-indigo-300 bg-indigo-500/10";
+            : change.source === "guideline"
+              ? "border-violet-500/40 text-violet-300 bg-violet-500/10"
+              : "border-indigo-500/40 text-indigo-300 bg-indigo-500/10";
+
+  const tip =
+    change.guidelineMeta?.tooltip ||
+    (change.source === "classification"
+      ? tooltipForClassificationName(change.classificationMeta?.name || change.title)
+      : null);
 
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-950/70 px-3.5 py-3 space-y-2">
+    <div
+      className="rounded-xl border border-slate-800 bg-slate-950/70 px-3.5 py-3 space-y-2"
+      title={tip || undefined}
+    >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
             <span
               className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md border ${sourceColor}`}
+              title={tip || enrichmentSourceLabel(change.source)}
             >
               {enrichmentSourceLabel(change.source)}
             </span>
@@ -74,12 +87,16 @@ const ChangeRow: React.FC<{
           {change.reason && (
             <p className="text-[10px] text-slate-500 leading-relaxed">{change.reason}</p>
           )}
+          {tip && (
+            <p className="text-[9px] text-violet-300/80 leading-relaxed">{tip}</p>
+          )}
         </div>
         {change.status === "pending" &&
           !change.reviewOnly &&
           (change.suggestedText ||
             change.classificationMeta?.name ||
-            change.measurementMeta?.structure) && (
+            change.measurementMeta?.structure ||
+            change.guidelineMeta?.footnote) && (
           <div className="flex items-center gap-1.5 shrink-0">
             <button
               type="button"
@@ -146,7 +163,11 @@ export const ReportEnrichmentPanel: React.FC<ReportEnrichmentPanelProps> = ({
       !c.reviewOnly &&
       (c.source === "classification"
         ? !!c.classificationMeta?.name
-        : !!c.suggestedText.trim())
+        : c.source === "measurement"
+          ? !!(c.measurementMeta?.structure && c.measurementMeta?.value)
+          : c.source === "guideline"
+            ? !!(c.guidelineMeta?.footnote || c.suggestedText.trim())
+            : !!c.suggestedText.trim())
   );
   const reportChanged =
     !!session &&
@@ -174,7 +195,7 @@ export const ReportEnrichmentPanel: React.FC<ReportEnrichmentPanelProps> = ({
             </h3>
             <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
               {isRunning || session?.status === "running"
-                ? "Auditando scorecard, negatividades, segundo lector y clasificaciones; integrando cambios seguros…"
+                ? "Auditando scorecard, negatividades, segundo lector, clasificaciones y guías ACR/Fleischner; integrando cambios seguros…"
                 : session?.status === "error"
                   ? session.error || "Error en el pulido."
                   : applied.length || pending.length

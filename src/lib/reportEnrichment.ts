@@ -12,11 +12,17 @@ import {
   refreshNegativityChecklistClosure,
 } from "./negativityChecklist";
 import { normalizeSecondReaderData } from "./secondReader";
+import {
+  bindGuidelinesToReport,
+  matchGuidelinesForReport,
+  selectGuidelineBinderChanges,
+} from "./guidelineBinder";
 
 export const MAX_AUTO_ENRICHMENT_CHANGES = 6;
 export const MAX_AUTO_CLASSIFICATIONS = 2;
 export const MAX_AUTO_SCORECARD_PROSE = 4;
 export const MAX_AUTO_MEASUREMENTS = 4;
+export { MAX_AUTO_GUIDELINES } from "./guidelineBinder";
 
 /** Row from /api/analyze-measurements `structures`. */
 export interface AnalyzedMeasurementStructure {
@@ -427,7 +433,8 @@ export function buildEnrichmentMergeInstruction(changes: ReportEnrichmentChange[
         c.autoSafe &&
         c.suggestedText.trim() &&
         c.source !== "classification" &&
-        c.source !== "measurement"
+        c.source !== "measurement" &&
+        c.source !== "guideline"
     )
     .map((c, idx) => {
       const origen =
@@ -521,6 +528,8 @@ export function enrichmentSourceLabel(source: ReportEnrichmentChange["source"]):
       return "Scorecard";
     case "measurement":
       return "Medidas";
+    case "guideline":
+      return "Guía";
     default:
       return "Segundo lector";
   }
@@ -598,7 +607,7 @@ async function assignMeasurementsToReport(opts: {
 
 /**
  * Generate checklist + second reader + classifications + scorecard + measurements in parallel.
- * Weave safe gaps (scorecard prose, missing medidas), then classifications.
+ * Weave safe gaps (scorecard prose, missing medidas), then classifications, then Guideline Binder footnotes.
  */
 export async function runReportEnrichmentPipeline(opts: {
   report: string;
@@ -792,7 +801,10 @@ export async function runReportEnrichmentPipeline(opts: {
         workingReport = String(modJson.report).trim() || workingReport;
       } else {
         changes = changes.map((c) =>
-          c.source !== "classification" && c.source !== "measurement" && c.autoSafe
+          c.source !== "classification" &&
+          c.source !== "measurement" &&
+          c.source !== "guideline" &&
+          c.autoSafe
             ? { ...c, status: "pending" as const, autoSafe: false }
             : c
         );
@@ -860,6 +872,30 @@ export async function runReportEnrichmentPipeline(opts: {
       return hit ? { ...rec, alreadyIncorporated: true } : rec;
     });
 
+    // Pass D: Guideline Binder — ACR / Fleischner footnotes for applied classifications + report cues
+    const guidelineMatches = matchGuidelinesForReport(workingReport, classifications);
+    const guidelineChanges = selectGuidelineBinderChanges(guidelineMatches);
+    if (guidelineChanges.length) {
+      changes = [...changes, ...guidelineChanges];
+      const toBind = guidelineChanges.filter(
+        (c) => c.autoSafe && c.status === "applied"
+      );
+      if (toBind.length) {
+        workingReport = bindGuidelinesToReport(workingReport, toBind);
+        changes = changes.map((c) => {
+          if (c.source !== "guideline") return c;
+          const hit = toBind.find((t) => t.id === c.id);
+          if (!hit) return c;
+          return {
+            ...c,
+            guidelineMeta: c.guidelineMeta
+              ? { ...c.guidelineMeta, alreadyBound: true }
+              : c.guidelineMeta,
+          };
+        });
+      }
+    }
+
     const marked = markSourcesAfterAutoEnrichment(checklist, reader, changes);
 
     return {
@@ -917,7 +953,9 @@ export async function applyPendingEnrichmentChanges(opts: {
         ? !!c.classificationMeta?.name
         : c.source === "measurement"
           ? !!(c.measurementMeta?.structure && c.measurementMeta?.value)
-          : !!c.suggestedText.trim())
+          : c.source === "guideline"
+            ? !!(c.guidelineMeta?.footnote || c.suggestedText.trim())
+            : !!c.suggestedText.trim())
   );
 
   if (!selected.length) {
@@ -935,7 +973,10 @@ export async function applyPendingEnrichmentChanges(opts: {
   const measModel = opts.measurementsModel || opts.modifyModel;
 
   const proseSelected = selected.filter(
-    (c) => c.source !== "classification" && c.source !== "measurement"
+    (c) =>
+      c.source !== "classification" &&
+      c.source !== "measurement" &&
+      c.source !== "guideline"
   );
   if (proseSelected.length) {
     const toApply = proseSelected.map((c) => ({
@@ -1011,6 +1052,61 @@ export async function applyPendingEnrichmentChanges(opts: {
           }
         : c
     );
+  }
+
+  // After classifications: bind any pending guideline rows the user selected
+  const guidelineSelected = selected.filter((c) => c.source === "guideline");
+  if (guidelineSelected.length) {
+    const toBind = guidelineSelected.map((c) => ({
+      ...c,
+      autoSafe: true,
+      status: "applied" as const,
+    }));
+    workingReport = bindGuidelinesToReport(workingReport, toBind);
+    nextChanges = nextChanges.map((c) => {
+      const hit = toBind.find((t) => t.id === c.id);
+      return hit
+        ? {
+            ...c,
+            autoSafe: true,
+            status: "applied" as const,
+            guidelineMeta: c.guidelineMeta
+              ? { ...c.guidelineMeta, alreadyBound: true }
+              : c.guidelineMeta,
+          }
+        : c;
+    });
+  }
+
+  // If a classification was just applied, auto-bind newly matched guidelines not yet in the session
+  if (classSelected.length) {
+    const appliedClassNames = nextChanges
+      .filter((c) => c.source === "classification" && c.status === "applied")
+      .map((c) => ({
+        name: c.classificationMeta?.name || c.title,
+        whyRecommended: c.classificationMeta?.whyRecommended || "",
+        contentToAppend: c.classificationMeta?.contentToAppend || "",
+        alreadyIncorporated: true,
+      }));
+    const matches = matchGuidelinesForReport(workingReport, appliedClassNames);
+    const existingIds = new Set(
+      nextChanges.filter((c) => c.source === "guideline").map((c) => c.sourceItemId)
+    );
+    const fresh = selectGuidelineBinderChanges(
+      matches.filter((m) => !existingIds.has(m.guideline.id) && !m.alreadyInReport)
+    ).filter((c) => c.autoSafe);
+    if (fresh.length) {
+      workingReport = bindGuidelinesToReport(workingReport, fresh);
+      nextChanges = [
+        ...nextChanges,
+        ...fresh.map((c) => ({
+          ...c,
+          guidelineMeta: c.guidelineMeta
+            ? { ...c.guidelineMeta, alreadyBound: true }
+            : c.guidelineMeta,
+        })),
+      ];
+    }
   }
 
   const marked = markSourcesAfterAutoEnrichment(opts.checklist, opts.reader, nextChanges);
