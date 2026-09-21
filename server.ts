@@ -5595,7 +5595,7 @@ app.post("/api/analyze-measurements", async (req: express.Request, res: express.
       "   - Si detectas que es un DOPPLER RENAL: Incluye velocidades pico sistólicas y los Índices de Resistencia (IR) renales arteriales principales.\n" +
       "   - Si detectas que es un ULTRASONIDO DE ABDOMEN (o riñón/vías urinarias está involucrado) o ULTRASONIDO ABDOMINAL COMPLETO: Debes incluir de manera obligatoria las 8 mediciones renales específicas (Riñón Derecho Largo, Ancho, Grosor Cortical e IR; Riñón Izquierdo Largo, Ancho, Grosor Cortical e IR) con sus rangos de referencia estándares. Además, para los estudios de abdomen, debes incluir de manera obligatoria los siguientes parámetros con sus rangos y valores predeterminados exactos:\n" +
       "     * Hígado [Rango: 120 - 154 mm, Default: 135 mm]\n" +
-      "     * Bazo [Rango: 9 - 11,8 mm, Default: 10,5 mm]\n" +
+      "     * Bazo [Rango: 90 - 120 mm, Default: 105 mm]\n" +
       "     * Rigidez Hepática (Elastografía) [Rango: 4 - 5,4 kPa, Default: 4,7 kPa]\n" +
       "   - Si detectas que es un ULTRASONIDO DE TIROIDES o US DE CUELLO / ULTRASONIDO DE CUELLO: Incluye medidas de lóbulos (ej. 'Lóbulo Derecho (Longitudinal)', 'Lóbulo Derecho (Anteroposterior)', 'Lóbulo Derecho (Transverso)', 'Lóbulo Izquierdo...', 'Istmo (Espesor)'). Rango normal de espesor de istmo: < 4 mm, lóbulos longitud: 37 - 44 mm, lóbulos anteroposterior: 10 - 20 mm, lóbulos transverso: 15 - 20 mm. Está ESTRICTAMENTE PROHIBIDO incluir vasos sanguíneos o parámetros del sistema carotídeo (Arterias Carótidas Comunes, Internas, Externas, Arterias Vertebrales, Grosor Miointimal (GIM), o Relación ACC/ACI) en este estudio, ya que esas estructuras corresponden única y exclusivamente al Doppler de Carótidas.\n" +
       "   - Si detectas que es un ULTRASONIDO PÉLVICO/GINECOLÓGICO: Incluye 'Útero (Longitudinal)', 'Útero (Anteroposterior)', 'Útero (Transversal)', 'Endometrio (Espesor)', 'Ovario Derecho (Volumen)', 'Ovario Izquierdo (Volumen)'.\n" +
@@ -7510,8 +7510,8 @@ Devuelve el JSON estructurado según el esquema solicitado.`;
         {
           key: "bazo",
           name: "Bazo",
-          range: "9 - 11,8 mm",
-          defaultVal: "10,5 mm",
+          range: "90 - 120 mm",
+          defaultVal: "105 mm",
           matchRegex: /bazo/i,
           negativeRegex: /arteria|vena|espl[eé]nic/i
         },
@@ -7553,13 +7553,16 @@ Devuelve el JSON estructurado según el esquema solicitado.`;
                 const valLower = s.measuredValue.toLowerCase();
                 if (valLower.includes("cm") && m.key !== "rigidez") {
                   numVal = numVal * 10;
+                } else if (m.key === "bazo" && numVal > 0 && numVal < 20) {
+                  // Valores tipo 10–12 suelen venir en cm; el rango canónico es mm
+                  numVal = numVal * 10;
                 }
 
                 let isNormal = false;
                 if (m.key === "higado") {
                   isNormal = numVal >= 120 && numVal <= 154;
                 } else if (m.key === "bazo") {
-                  isNormal = numVal >= 9 && numVal <= 11.8;
+                  isNormal = numVal >= 90 && numVal <= 120;
                 } else if (m.key === "rigidez") {
                   isNormal = numVal >= 4 && numVal <= 5.4;
                 }
@@ -7572,7 +7575,7 @@ Devuelve el JSON estructurado según el esquema solicitado.`;
                   if (m.key === "higado") {
                     s.interpretation = numVal < 120 ? "Hígado disminuido de tamaño" : "Hepatomegalia";
                   } else if (m.key === "bazo") {
-                    s.interpretation = numVal < 9 ? "Bazo disminuido de tamaño" : "Esplenomegalia";
+                    s.interpretation = numVal < 90 ? "Bazo disminuido de tamaño" : "Esplenomegalia";
                   } else {
                     s.interpretation = numVal < 4 ? "Rigidez hepática disminuida" : "Rigidez hepática aumentada (Sugerente de Fibrosis)";
                   }
