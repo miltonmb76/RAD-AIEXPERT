@@ -195,7 +195,7 @@ export const ReportEnrichmentPanel: React.FC<ReportEnrichmentPanelProps> = ({
             </h3>
             <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
               {isRunning || session?.status === "running"
-                ? "Auditando scorecard, negatividades, segundo lector, clasificaciones y guías; integrando cambios seguros (las clasificaciones quedan pendientes)…"
+                ? "Auditando scorecard, negatividades, segundo lector, clasificaciones y guías; integrando cambios seguros y revisando redacción anti-duplicados…"
                 : session?.status === "error"
                   ? session.error || "Error en el pulido."
                   : applied.length || pending.length

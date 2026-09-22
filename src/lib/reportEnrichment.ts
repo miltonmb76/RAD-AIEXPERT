@@ -463,9 +463,163 @@ REGLAS OBLIGATORIAS:
 1) Integra CADA cambio DENTRO del flujo narrativo (junto a la anatomía relacionada), no al final genérico de "HALLAZGOS:".
 2) Si hace falta, reordena o fusiona 1-2 oraciones vecinas para que el texto fluya como si siempre hubiera estado ahí.
 3) PROHIBIDO: encabezados nuevos, bloques "NEGATIVIDADES DIRIGIDAS", viñetas de "agregado", "checklist", "segundo lector", "scorecard", "pulido", "auditoría" o cualquier meta-comentario.
-4) PROHIBIDO: duplicar si el concepto ya está dicho; en ese caso solo refuerza o aclara en el mismo sitio.
+4) PROHIBIDO: duplicar si el concepto ya está dicho (aunque lo digan con otras palabras checklist, scorecard o segundo lector); en ese caso omite el cambio redundante o fusiónalo en una sola frase en el mismo sitio.
 5) Conserva el resto del informe intacto en sentido clínico (mismas conclusiones salvo los ajustes locales).
 6) Devuelve el informe completo ya reescrito.`;
+}
+
+/** True when two clinical snippets convey essentially the same idea. */
+export function textsAreNearDuplicate(a: string, b: string): boolean {
+  const na = normalizeForMatch(a);
+  const nb = normalizeForMatch(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  const shorter = na.length <= nb.length ? na : nb;
+  const longer = na.length <= nb.length ? nb : na;
+  if (shorter.length >= 20 && longer.includes(shorter)) return true;
+
+  const tokensA = na.split(" ").filter((w) => w.length > 3);
+  const tokensB = nb.split(" ").filter((w) => w.length > 3);
+  if (tokensA.length < 3 || tokensB.length < 3) return false;
+  const setB = new Set(tokensB);
+  let hits = 0;
+  for (const t of tokensA) if (setB.has(t)) hits += 1;
+  const overlap = hits / Math.min(tokensA.length, tokensB.length);
+  if (overlap >= 0.72) return true;
+
+  // Same rare clinical stem (e.g. apendicolito/apendicolitos) + same negation polarity
+  const negRe = /\b(no se|no se identific|no se apreci|ausencia|sin |tampoco|descart|no hay|no existen)\b/;
+  const negA = negRe.test(na);
+  const negB = negRe.test(nb);
+  const longA = tokensA.filter((t) => t.length >= 8);
+  const longB = tokensB.filter((t) => t.length >= 8);
+  const stemsMatch = (x: string, y: string) => {
+    if (x === y) return true;
+    const sx = x.length >= 9 ? x.slice(0, -1) : x;
+    const sy = y.length >= 9 ? y.slice(0, -1) : y;
+    return sx === sy || x.startsWith(sy) || y.startsWith(sx);
+  };
+  let sharedLong = 0;
+  for (const t of longA) {
+    if (longB.some((u) => stemsMatch(t, u))) sharedLong += 1;
+  }
+  if (sharedLong >= 1 && negA && negB) return true;
+  if (sharedLong >= 2) return true;
+
+  return false;
+}
+
+function suggestionAlreadyInReport(report: string, suggestion: string): boolean {
+  const r = normalizeForMatch(report);
+  const s = normalizeForMatch(suggestion);
+  if (!r || !s || s.length < 18) return false;
+  if (r.includes(s.slice(0, Math.min(48, s.length)))) return true;
+  const tokens = s.split(" ").filter((w) => w.length > 4);
+  if (tokens.length < 4) return false;
+  const hits = tokens.filter((t) => r.includes(t)).length;
+  return hits / tokens.length >= 0.78;
+}
+
+/**
+ * Drop redundant prose suggestions across checklist / scorecard / second reader
+ * so the weave step does not inject the same clinical idea twice.
+ */
+export function dedupeEnrichmentChanges(
+  changes: ReportEnrichmentChange[],
+  report: string
+): ReportEnrichmentChange[] {
+  const kept: ReportEnrichmentChange[] = [];
+
+  for (const c of changes) {
+    if (
+      c.reviewOnly ||
+      c.source === "classification" ||
+      c.source === "measurement" ||
+      c.source === "guideline"
+    ) {
+      kept.push(c);
+      continue;
+    }
+
+    const text = String(c.suggestedText || "").trim();
+    if (!text) {
+      kept.push(c);
+      continue;
+    }
+
+    if (suggestionAlreadyInReport(report, text)) {
+      kept.push({
+        ...c,
+        status: "skipped",
+        autoSafe: false,
+        reason: `${c.reason || "Sugerencia"} — ya cubierto en el informe (omitido).`,
+      });
+      continue;
+    }
+
+    const dupOf = kept.find(
+      (k) =>
+        !k.reviewOnly &&
+        k.source !== "classification" &&
+        k.source !== "measurement" &&
+        k.source !== "guideline" &&
+        textsAreNearDuplicate(k.suggestedText, text)
+    );
+    if (dupOf) {
+      kept.push({
+        ...c,
+        status: "skipped",
+        autoSafe: false,
+        reason: `Duplicado de «${dupOf.title}» — no se insertará.`,
+      });
+      continue;
+    }
+
+    kept.push(c);
+  }
+
+  return kept;
+}
+
+/** Final AI pass: remove repetitions, fix nonsense, keep clinical content. */
+export function buildCoherencePassInstruction(): string {
+  return `Eres el radiólogo autor de este informe. Debes RELEER el informe completo y devolver UNA versión limpia, coherente y sin redundancias.
+
+TAREAS OBLIGATORIAS:
+1) Elimina oraciones o cláusulas que repitan el mismo concepto clínico (ej. mencionar dos veces la ausencia de apendicolito, calcificación, gas libre, líquido libre, o el mismo negativo). Quédate con la formulación más precisa y completa; borra la duplicada.
+2) Fusiona formulaciones casi idénticas (checklist / scorecard / segundo lector) que digan lo mismo con otras palabras.
+3) Corrige frases sin sentido, mal redactadas, cortadas o contradictorias dentro del mismo párrafo o sección.
+4) Mantén TODO el contenido clínico real (medidas, localizaciones, impresiones, clasificaciones ya asignadas, pies de página). NO inventes hallazgos nuevos ni borres información única.
+5) Conserva la estructura y secciones del informe (Técnica, Hallazgos, Impresión, notas/pies si existen).
+6) PROHIBIDO meta-comentarios ("se eliminó duplicado", "revisión de auditoría", "pulido clínico", etc.).
+7) Devuelve únicamente el informe completo ya limpio.`;
+}
+
+async function runCoherencePass(opts: {
+  report: string;
+  model: string;
+}): Promise<string> {
+  const report = String(opts.report || "").trim();
+  if (!report) return report;
+  try {
+    const modResp = await fetch("/api/modify-report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: opts.model,
+        currentReport: report,
+        instruction: buildCoherencePassInstruction(),
+      }),
+    });
+    const modJson = await modResp.json().catch(() => ({}));
+    if (modJson?.success && modJson.report) {
+      const next = String(modJson.report).trim();
+      if (next.length >= Math.min(80, report.length * 0.5)) return next;
+    }
+  } catch (err) {
+    console.warn("[Pulido] Pase de coherencia falló;", err);
+  }
+  return report;
 }
 
 export function markSourcesAfterAutoEnrichment(
@@ -607,7 +761,8 @@ async function assignMeasurementsToReport(opts: {
 
 /**
  * Generate checklist + second reader + classifications + scorecard + measurements in parallel.
- * Weave safe gaps (scorecard prose, missing medidas), then classifications, then Guideline Binder footnotes.
+ * Weave safe gaps, classifications, Guideline Binder footnotes, then a final coherence pass
+ * that removes cross-module repetitions and fixes bad drafting.
  */
 export async function runReportEnrichmentPipeline(opts: {
   report: string;
@@ -783,10 +938,13 @@ export async function runReportEnrichmentPipeline(opts: {
       MAX_AUTO_MEASUREMENTS,
       opts.studyType || ""
     );
-    const proseChanges = [
-      ...selectEnrichmentChanges(checklist, reader),
-      ...selectScorecardProseChanges(scorecard, beforeReport),
-    ];
+    const proseChanges = dedupeEnrichmentChanges(
+      [
+        ...selectEnrichmentChanges(checklist, reader),
+        ...selectScorecardProseChanges(scorecard, beforeReport),
+      ],
+      beforeReport
+    );
     const classChanges = selectClassificationChanges(classifications);
     let changes = [...proseChanges, ...classChanges, ...measChanges];
     let workingReport = beforeReport;
@@ -902,6 +1060,15 @@ export async function runReportEnrichmentPipeline(opts: {
           };
         });
       }
+    }
+
+    // Pass E: final coherence — drop repetitions / nonsense after multi-module weave
+    const anyApplied = changes.some((c) => c.status === "applied" && c.autoSafe);
+    if (anyApplied || workingReport.trim() !== beforeReport.trim()) {
+      workingReport = await runCoherencePass({
+        report: workingReport,
+        model: opts.modifyModel,
+      });
     }
 
     const marked = markSourcesAfterAutoEnrichment(checklist, reader, changes);
@@ -1119,6 +1286,12 @@ export async function applyPendingEnrichmentChanges(opts: {
   }
 
   const marked = markSourcesAfterAutoEnrichment(opts.checklist, opts.reader, nextChanges);
+  if (workingReport.trim() !== opts.report.trim()) {
+    workingReport = await runCoherencePass({
+      report: workingReport,
+      model: opts.modifyModel,
+    });
+  }
   workingReport = stripProtocolCategoryImpressionLines(workingReport);
 
   return {
