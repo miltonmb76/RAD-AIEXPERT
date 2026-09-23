@@ -54,7 +54,7 @@ export function normalizeSemioticsConductMatrixData(
     studyRegion: String(raw?.studyRegion || "").trim() || undefined,
     clinicalQuestion: String(raw?.clinicalQuestion || "").trim() || undefined,
     rows: rows.length ? rows : [emptySemioticsRow()],
-    footnote: String(raw?.footnote || "").trim() || undefined,
+    footnote: undefined,
     generatedAt: String(raw?.generatedAt || new Date().toISOString()),
   };
 }

@@ -9973,12 +9973,13 @@ REGLAS:
 5. title: "Matriz semiología → conducta" o variante breve.
 6. focusTopic: repite el enfoque priorizado.
 7. clinicalQuestion: 1 frase con la pregunta clínica que responde la matriz.
-8. footnote: 1 frase de caveat (no sustituye criterio clínico).
-9. NO inventes hallazgos ausentes del informe. Si falta dato, dilo en signs o omitel fila.
+8. NO inventes hallazgos ausentes del informe. Si falta dato, dilo en signs o omite la fila.
+9. NO agregues disclaimer ni nota al pie (footnote debe ser "").
 
 Claves JSON obligatorias en inglés:
 title, focusTopic, studyRegion, clinicalQuestion, rows, footnote.
 Cada row: id, finding, signs, category, conduct, anchor.
+footnote: siempre "".
 
 INFORME:
 """
@@ -10086,6 +10087,7 @@ ${report}
     }
 
     const data = normalizeSemioticsConductMatrixData(parsed, focus);
+    data.footnote = undefined;
     const realRows = data.rows.filter(
       (r) => r.finding.trim() || r.signs.trim() || r.category.trim() || r.conduct.trim()
     );
