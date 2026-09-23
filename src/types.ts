@@ -1256,3 +1256,31 @@ export interface SemioticsConductMatrixData {
   generatedAt?: string;
 }
 
+/** Visual layout modes for the diagnostic-justification infographic. */
+export type FindingsInfographicLayout = "convergence" | "constellation" | "cascade";
+
+/** One finding node that supports the anchored diagnosis. */
+export interface FindingsInfographicNode {
+  id: string;
+  /** Short finding label (shown as primary text). */
+  label: string;
+  /** Optional one-line elaboration. */
+  detail?: string;
+  /** Visual weight. */
+  weight?: "primary" | "secondary";
+}
+
+/**
+ * Diagnostic justification infographic (manual module).
+ * First-person radiologist voice — findings only, no management, no "not mentioned".
+ */
+export interface FindingsInfographicData {
+  title: string;
+  /** Anchored diagnosis the findings justify. */
+  diagnosis: string;
+  studyRegion?: string;
+  layout: FindingsInfographicLayout;
+  nodes: FindingsInfographicNode[];
+  generatedAt?: string;
+}
+

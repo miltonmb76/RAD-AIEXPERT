@@ -11,6 +11,7 @@ import { normalizeReasoningChainData, extractJsonObject } from "./src/lib/reason
 import { normalizeNegativityChecklistData } from "./src/lib/negativityChecklist";
 import { normalizeDifferentialTreeData } from "./src/lib/differentialTree";
 import { normalizeSemioticsConductMatrixData } from "./src/lib/semioticsConductMatrix";
+import { normalizeFindingsInfographicData } from "./src/lib/findingsInfographic";
 import { normalizeSecondReaderData } from "./src/lib/secondReader";
 import {
   classifyMeasurementStudyFamily,
@@ -10112,6 +10113,156 @@ ${report}
     res.json({ success: true, data });
   } catch (error: any) {
     console.error("Error en /api/generate-semiotics-conduct-matrix:", error);
+    res.status(500).json({ success: false, error: handleGeminiError(error) });
+  }
+});
+
+/**
+ * API: INFOGRAFÍA DE JUSTIFICACIÓN DIAGNÓSTICA
+ * POST /api/generate-findings-infographic
+ * Hallazgos que sostienen el diagnóstico — sin manejo, sin "no mencionado".
+ */
+app.post("/api/generate-findings-infographic", async (req: express.Request, res: express.Response) => {
+  try {
+    const { model, report, studyType, clinicalHistory, diagnosis, diagnosisPreset, layout } = req.body;
+    if (!report || !String(report).trim()) {
+      return res.status(400).json({ success: false, error: "Se requiere el parámetro 'report'." });
+    }
+
+    const ai = getGeminiClient();
+    const modelToUse = getModelName(model);
+    const dx = (diagnosis || "").toString().trim();
+    const preset = (diagnosisPreset || "auto").toString().trim();
+    const history = (clinicalHistory || "").toString().trim();
+    const layoutHint = (layout || "convergence").toString().trim();
+
+    const prompt = `Eres el mismo radiólogo hispanohablante que redactó este informe.
+Construye una INFOGRAFÍA DE JUSTIFICACIÓN DIAGNÓSTICA: los hallazgos del informe que sostienen el diagnóstico ancla.
+
+IDIOMA: TODO el texto visible en ESPAÑOL médico, voz del radiólogo (primera persona profesional / afirmaciones del informe). Nunca suenes como revisor externo.
+
+ESTUDIO: ${studyType || "No especificado"}
+PRESET: ${preset}
+${dx ? `DIAGNÓSTICO ANCLA: "${dx}"` : "Deriva el diagnóstico principal del informe."}
+LAYOUT PREFERIDO: ${layoutHint}
+${history ? `HISTORIA CLINICA:\n"""\n${history}\n"""` : ""}
+
+REGLAS ESTRICTAS:
+1. Genera 4 a 7 nodes (hallazgos) que JUSTIFIQUEN el diagnóstico. Solo lo afirmado en el informe.
+2. PROHIBIDO: manejo, conducta, seguimiento, recomendaciones, tratamiento, biopsia, "correlacionar con clínica" como plan.
+3. PROHIBIDO absoluto: "no mencionado", "no documentado", "ausente del informe", "pendiente", "faltante", "no referido", cualquier juicio sobre omisiones del reporte.
+4. Cada node: id, label (corto, 3-8 palabras), detail (opcional, 1 frase semiológica), weight ("primary" para 1-2 hallazgos clave, resto "secondary").
+5. title: "Justificación diagnóstica" o variante breve.
+6. diagnosis: diagnóstico ancla limpio (sin signos de interrogación).
+7. studyRegion: región anatómica breve.
+8. layout: uno de "convergence" | "constellation" | "cascade". Si el hint es "auto", elige "convergence" salvo que haya 6+ hallazgos (entonces "constellation").
+9. NO inventes hallazgos. Si el informe es negativo respecto al diagnóstico pedido, usa hallazgos negativos afirmados (ej. "sin líquido libre") solo si están escritos; no digas que algo "no se mencionó".
+
+Claves JSON en inglés:
+title, diagnosis, studyRegion, layout, nodes.
+Cada node: id, label, detail, weight.
+
+INFORME:
+"""
+${report}
+"""
+`;
+
+    const nodeSchema = {
+      type: Type.OBJECT,
+      properties: {
+        id: { type: Type.STRING },
+        label: { type: Type.STRING },
+        detail: { type: Type.STRING },
+        weight: { type: Type.STRING },
+      },
+      required: ["id", "label"],
+    };
+
+    const fullSchema = {
+      type: Type.OBJECT,
+      properties: {
+        title: { type: Type.STRING },
+        diagnosis: { type: Type.STRING },
+        studyRegion: { type: Type.STRING },
+        layout: { type: Type.STRING },
+        nodes: { type: Type.ARRAY, items: nodeSchema },
+      },
+      required: ["title", "diagnosis", "layout", "nodes"],
+    };
+
+    const readModelText = (response: any): string => {
+      if (response?.text && String(response.text).trim()) return String(response.text);
+      const parts = response?.candidates?.[0]?.content?.parts;
+      if (Array.isArray(parts)) {
+        return parts
+          .map((p: any) => (typeof p?.text === "string" ? p.text : ""))
+          .filter(Boolean)
+          .join("\n");
+      }
+      return "";
+    };
+
+    let rawText = "";
+    let parsed: any = null;
+
+    try {
+      const response = await ai.models.generateContent({
+        model: modelToUse,
+        contents: prompt,
+        config: {
+          temperature: 0.25,
+          responseMimeType: "application/json",
+          responseSchema: fullSchema,
+        },
+      });
+      rawText = readModelText(response);
+      parsed = extractJsonObject(rawText);
+    } catch (schemaErr: any) {
+      console.warn(
+        "generate-findings-infographic: schema attempt failed:",
+        schemaErr?.message || schemaErr
+      );
+    }
+
+    if (!parsed || !(parsed.nodes || parsed.findings || parsed.hallazgos)?.length) {
+      try {
+        const response2 = await ai.models.generateContent({
+          model: modelToUse,
+          contents: prompt + `\n\nResponde ÚNICAMENTE JSON válido. nodes DEBE tener >=4 hallazgos.`,
+          config: { temperature: 0.3, responseMimeType: "application/json" },
+        });
+        rawText = readModelText(response2) || rawText;
+        parsed = extractJsonObject(rawText) || parsed;
+      } catch (e: any) {
+        console.warn("generate-findings-infographic: mime retry failed:", e?.message || e);
+      }
+    }
+
+    if (!parsed) {
+      console.error(
+        "generate-findings-infographic: unparseable output:",
+        String(rawText || "").slice(0, 800)
+      );
+      return res.status(500).json({
+        success: false,
+        error: "No se pudo interpretar la respuesta de la IA (JSON inválido). Reintenta.",
+      });
+    }
+
+    const data = normalizeFindingsInfographicData(parsed, dx, layoutHint as any);
+    const realNodes = data.nodes.filter((n) => n.label.trim());
+    if (!realNodes.length) {
+      return res.status(500).json({
+        success: false,
+        error: "La IA no devolvió hallazgos utilizables. Reintenta.",
+      });
+    }
+    data.nodes = realNodes;
+
+    res.json({ success: true, data });
+  } catch (error: any) {
+    console.error("Error en /api/generate-findings-infographic:", error);
     res.status(500).json({ success: false, error: handleGeminiError(error) });
   }
 });

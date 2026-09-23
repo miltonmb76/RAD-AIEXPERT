@@ -18,6 +18,7 @@ const ReportEnrichmentPanel = React.lazy(() => import("./components/ReportEnrich
 const ReportQaGateModal = React.lazy(() => import("./components/ReportQaGateModal").then(m => ({ default: m.ReportQaGateModal })));
 const DifferentialTreeModule = React.lazy(() => import("./components/DifferentialTreeModule").then(m => ({ default: m.DifferentialTreeModule })));
 const SemioticsConductMatrixModule = React.lazy(() => import("./components/SemioticsConductMatrixModule").then(m => ({ default: m.SemioticsConductMatrixModule })));
+const FindingsInfographicModule = React.lazy(() => import("./components/FindingsInfographicModule").then(m => ({ default: m.FindingsInfographicModule })));
 const MeasurementsGaugeModule = React.lazy(() => import("./components/MeasurementsGaugeModule").then(m => ({ default: m.MeasurementsGaugeModule })));
 const CreadorCuadroSinoptico = React.lazy(() => import("./components/CreadorCuadroSinoptico").then(m => ({ default: m.CreadorCuadroSinoptico })));
 const CreadorSinopsisFracturas = React.lazy(() => import("./components/CreadorSinopsisFracturas").then(m => ({ default: m.CreadorSinopsisFracturas })));
@@ -29,8 +30,9 @@ import { renderReasoningChainAnnexToPDF } from "./utils/reasoningChainPdfRendere
 import { renderNegativityChecklistAnnexToPDF } from "./utils/negativityChecklistPdfRenderer";
 import { renderDifferentialTreeAnnexToPDF } from "./utils/differentialTreePdfRenderer";
 import { renderSemioticsConductMatrixAnnexToPDF } from "./utils/semioticsConductMatrixPdfRenderer";
+import { renderFindingsInfographicAnnexToPDF } from "./utils/findingsInfographicPdfRenderer";
 import { renderMeasurementsGaugeAnnexToPDF } from "./utils/measurementsGaugePdfRenderer";
-import { Atlas3DData, Vascular3DData, FocalLesion3DData, Thyroid3DData, Breast3DData, Shoulder3DData, Knee3DData, Ankle3DData, Kidney3DData, Abdomen3DData, AbdominalWall3DData, Scrotum3DData, MuscleTendon3DData, Wrist3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData, SemioticsConductMatrixData, NegativityChecklistData, SecondReaderData, ReportEnrichmentSession } from "./types";
+import { Atlas3DData, Vascular3DData, FocalLesion3DData, Thyroid3DData, Breast3DData, Shoulder3DData, Knee3DData, Ankle3DData, Kidney3DData, Abdomen3DData, AbdominalWall3DData, Scrotum3DData, MuscleTendon3DData, Wrist3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData, SemioticsConductMatrixData, FindingsInfographicData, NegativityChecklistData, SecondReaderData, ReportEnrichmentSession } from "./types";
 import { buildAtlasDirectivesFromScorecard, buildAtlasPanelFindingAssignments, buildVascularDirectivesFromScorecard, buildThyroidDirectivesFromScorecard, buildBreastDirectivesFromScorecard, buildShoulderDirectivesFromScorecard, buildKneeDirectivesFromScorecard, buildAnkleDirectivesFromScorecard, buildKidneyDirectivesFromScorecard, buildAbdomenDirectivesFromScorecard, buildAbdominalWallDirectivesFromScorecard, buildScrotumDirectivesFromScorecard, buildMuscleTendonDirectivesFromScorecard, buildWristDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
 import {
   applyPendingEnrichmentChanges,
@@ -154,7 +156,8 @@ import {
   Crosshair,
   GitBranch,
   GitFork,
-  Table2
+  Table2,
+  Hexagon
 } from "lucide-react";
 import { initAuth, googleSignIn, logout as googleLogout, anonymousSignIn, emailSignIn, emailSignUp, getFirebaseConfig } from "./firebaseAuth";
 import { CloudStudy, saveStudyToCloud, getStudiesFromCloud, deleteStudyFromCloud, Worklist, WorklistPatient, saveWorklistToCloud, getWorklistFromCloud, getSingleStudyFromCloud, testFirebaseConfigConnection, saveUserSettingsToCloud, getUserSettingsFromCloud } from "./firebaseDb";
@@ -2923,6 +2926,9 @@ export default function App() {
   const [semioticsConductMatrixData, setSemioticsConductMatrixData] = useState<SemioticsConductMatrixData | null>(null);
   const [includeSemioticsConductMatrixInReport, setIncludeSemioticsConductMatrixInReport] = useState<boolean>(true);
   const [isSemioticsConductMatrixOpen, setIsSemioticsConductMatrixOpen] = useState<boolean>(false);
+  const [findingsInfographicData, setFindingsInfographicData] = useState<FindingsInfographicData | null>(null);
+  const [includeFindingsInfographicInReport, setIncludeFindingsInfographicInReport] = useState<boolean>(true);
+  const [isFindingsInfographicOpen, setIsFindingsInfographicOpen] = useState<boolean>(false);
   const [atlasDirectivesFromScorecard, setAtlasDirectivesFromScorecard] = useState<string>("");
   const [measurementGaugeData, setMeasurementGaugeData] = useState<MeasurementGaugeData | null>(null);
   const [includeMeasurementGaugesInReport, setIncludeMeasurementGaugesInReport] = useState<boolean>(true);
@@ -3014,6 +3020,8 @@ export default function App() {
     includeDifferentialTreeInReport,
     semioticsConductMatrixData,
     includeSemioticsConductMatrixInReport,
+    findingsInfographicData,
+    includeFindingsInfographicInReport,
     measurementGaugeData,
     includeMeasurementGaugesInReport,
     includeMeasurementNormalsInPdf,
@@ -3691,6 +3699,7 @@ Ejemplo:
     second_reader: false,
     differential_tree: false,
     semiotics_conduct_matrix: false,
+    findings_infographic: false,
     atlas3d: false,
     vascular3d: false,
     thyroid3d: false,
@@ -3945,6 +3954,7 @@ Ejemplo:
       second_reader: select,
       differential_tree: select,
       semiotics_conduct_matrix: select,
+      findings_infographic: select,
       atlas3d: select,
       vascular3d: select,
       thyroid3d: select,
@@ -4001,6 +4011,7 @@ Ejemplo:
     if (modules.second_reader) setIsSecondReaderOpen(true);
     if (modules.differential_tree) setIsDifferentialTreeOpen(true);
     if (modules.semiotics_conduct_matrix) setIsSemioticsConductMatrixOpen(true);
+    if (modules.findings_infographic) setIsFindingsInfographicOpen(true);
     // 2. Trigger async AI generation processes concurrently
     const promises: Promise<any>[] = [];
 
@@ -4643,6 +4654,36 @@ Ejemplo:
           }
         } catch (e) {
           console.error("Error al generar matriz semiologia-conducta en lote:", e);
+        }
+      })());
+    }
+
+    if (modules.findings_infographic) {
+      promises.push((async () => {
+        setIsFindingsInfographicOpen(true);
+        try {
+          const resp = await fetch("/api/generate-findings-infographic", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: modelFor("findings_infographic"),
+              report: activeReport,
+              studyType: specificStudy || studyType || "",
+              clinicalHistory: clinicalHistory || "",
+              diagnosis: "Diagnóstico del informe",
+              diagnosisPreset: "auto",
+              layout: "convergence",
+            }),
+          });
+          const j = await resp.json();
+          if (j.success && j.data) {
+            setFindingsInfographicData(j.data);
+            setIncludeFindingsInfographicInReport(true);
+          } else {
+            console.error("Infografia de hallazgos en lote fallo:", j.error);
+          }
+        } catch (e) {
+          console.error("Error al generar infografia de hallazgos en lote:", e);
         }
       })());
     }
@@ -11082,6 +11123,28 @@ Ejemplo:
         activeSemioticsMatrix.rows.length > 0
       ) {
         renderSemioticsConductMatrixAnnexToPDF(doc, activeSemioticsMatrix, {
+          marginX,
+          pageWidth,
+          pageHeight,
+          contentWidth,
+          factor,
+        });
+      }
+
+      // --- ANEXO: INFOGRAFIA DE JUSTIFICACION DIAGNOSTICA ---
+      const activeFindingsInfographic = studyOverride
+        ? (studyOverride as any).findingsInfographicData
+        : (pdfStateRef.current?.findingsInfographicData || findingsInfographicData);
+      const shouldIncludeFindingsInfographic = studyOverride
+        ? ((studyOverride as any).includeFindingsInfographicInReport !== false)
+        : ((pdfStateRef.current?.includeFindingsInfographicInReport !== false) && includeFindingsInfographicInReport);
+      if (
+        activeFindingsInfographic &&
+        shouldIncludeFindingsInfographic &&
+        Array.isArray(activeFindingsInfographic.nodes) &&
+        activeFindingsInfographic.nodes.length > 0
+      ) {
+        renderFindingsInfographicAnnexToPDF(doc, activeFindingsInfographic, {
           marginX,
           pageWidth,
           pageHeight,
@@ -21178,10 +21241,17 @@ const splitReportAndAnnex = (text: string) => {
                                 },
                                 {
                                   id: "semiotics_conduct_matrix",
-                                  label: "Matriz semiologia ? conducta",
+                                  label: "Matriz semiologia / conducta",
                                   badge: "MATRIZ",
-                                  desc: "Tabla editable hallazgo ? signos ? categoria ? conducta; enfoque por patologia e inclusion opcional en PDF.",
+                                  desc: "Tabla editable hallazgo / signos / conducta; enfoque por patologia e inclusion opcional en PDF.",
                                   color: "text-fuchsia-400 border-fuchsia-500/30 bg-fuchsia-950/20"
+                                },
+                                {
+                                  id: "findings_infographic",
+                                  label: "Infografia de justificacion diagnostica",
+                                  badge: "INFOGRAFIA",
+                                  desc: "Lamina visual (convergencia / constelacion / cascada) con hallazgos que sostienen el diagnostico. Sin manejo.",
+                                  color: "text-teal-400 border-teal-500/30 bg-teal-950/20"
                                 },
 {
                                   id: "atlas3d",
@@ -22398,6 +22468,31 @@ const splitReportAndAnnex = (text: string) => {
                               </button>
                             </div>
 
+                            <div className="p-4 rounded-2xl bg-slate-950/60 border border-teal-900/40 space-y-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <h4 className="text-sm font-semibold text-teal-200 flex items-center gap-2">
+                                    <Hexagon className="h-4 w-4 text-teal-400" />
+                                    Infografia de justificacion
+                                  </h4>
+                                  <p className="text-[11px] text-slate-400 mt-1">
+                                    Hallazgos que sostienen el diagnostico en lamina visual (sin manejo).
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setIsFindingsInfographicOpen((v) => !v)}
+                                className={`w-full px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
+                                  isFindingsInfographicOpen
+                                    ? "bg-teal-700 text-white"
+                                    : "bg-teal-600/80 hover:bg-teal-500 text-white"
+                                }`}
+                              >
+                                {isFindingsInfographicOpen ? "Ocultar infografia" : "Abrir infografia"}
+                              </button>
+                            </div>
+
                             {/* Card: Corte Focal 3D */}
                             <div className="p-4 rounded-2xl bg-slate-950/60 border border-cyan-900/40 space-y-3">
                               <div className="flex items-start justify-between gap-3">
@@ -22621,6 +22716,23 @@ const splitReportAndAnnex = (text: string) => {
                                   setMatrixData={setSemioticsConductMatrixData}
                                   includeInReport={includeSemioticsConductMatrixInReport}
                                   setIncludeInReport={setIncludeSemioticsConductMatrixInReport}
+                                />
+                              </React.Suspense>
+                            </div>
+                          )}
+
+                          {isFindingsInfographicOpen && (
+                            <div className="my-6">
+                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-teal-400 bg-slate-900/60 rounded-xl border border-teal-900/40 animate-pulse">Cargando infografia...</div>}>
+                                <FindingsInfographicModule
+                                  selectedModel={modelFor("findings_infographic")}
+                                  reportText={isEditingReportManual ? editedReportText : generatedReport}
+                                  studyType={specificStudy || studyType}
+                                  clinicalHistory={clinicalHistory}
+                                  infographicData={findingsInfographicData}
+                                  setInfographicData={setFindingsInfographicData}
+                                  includeInReport={includeFindingsInfographicInReport}
+                                  setIncludeInReport={setIncludeFindingsInfographicInReport}
                                 />
                               </React.Suspense>
                             </div>

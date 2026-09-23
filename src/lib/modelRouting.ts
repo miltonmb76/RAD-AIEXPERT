@@ -52,6 +52,7 @@ export type ModelTask =
   | "reasoning_chain"
   | "differential_tree"
   | "semiotics_conduct_matrix"
+  | "findings_infographic"
   | "negativity_checklist"
   | "second_reader"
   | "chat"
@@ -86,6 +87,7 @@ const QUALITY_TASKS: ReadonlySet<ModelTask> = new Set([
   "reasoning_chain",
   "differential_tree",
   "semiotics_conduct_matrix",
+  "findings_infographic",
   "negativity_checklist",
   "second_reader",
   "default",
