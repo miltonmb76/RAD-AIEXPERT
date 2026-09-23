@@ -17,6 +17,7 @@ const SecondReaderModule = React.lazy(() => import("./components/SecondReaderMod
 const ReportEnrichmentPanel = React.lazy(() => import("./components/ReportEnrichmentPanel").then(m => ({ default: m.ReportEnrichmentPanel })));
 const ReportQaGateModal = React.lazy(() => import("./components/ReportQaGateModal").then(m => ({ default: m.ReportQaGateModal })));
 const DifferentialTreeModule = React.lazy(() => import("./components/DifferentialTreeModule").then(m => ({ default: m.DifferentialTreeModule })));
+const SemioticsConductMatrixModule = React.lazy(() => import("./components/SemioticsConductMatrixModule").then(m => ({ default: m.SemioticsConductMatrixModule })));
 const MeasurementsGaugeModule = React.lazy(() => import("./components/MeasurementsGaugeModule").then(m => ({ default: m.MeasurementsGaugeModule })));
 const CreadorCuadroSinoptico = React.lazy(() => import("./components/CreadorCuadroSinoptico").then(m => ({ default: m.CreadorCuadroSinoptico })));
 const CreadorSinopsisFracturas = React.lazy(() => import("./components/CreadorSinopsisFracturas").then(m => ({ default: m.CreadorSinopsisFracturas })));
@@ -27,8 +28,9 @@ import { renderScorecardAnnexToPDF } from "./utils/scorecardPdfRenderer";
 import { renderReasoningChainAnnexToPDF } from "./utils/reasoningChainPdfRenderer";
 import { renderNegativityChecklistAnnexToPDF } from "./utils/negativityChecklistPdfRenderer";
 import { renderDifferentialTreeAnnexToPDF } from "./utils/differentialTreePdfRenderer";
+import { renderSemioticsConductMatrixAnnexToPDF } from "./utils/semioticsConductMatrixPdfRenderer";
 import { renderMeasurementsGaugeAnnexToPDF } from "./utils/measurementsGaugePdfRenderer";
-import { Atlas3DData, Vascular3DData, FocalLesion3DData, Thyroid3DData, Breast3DData, Shoulder3DData, Knee3DData, Ankle3DData, Kidney3DData, Abdomen3DData, AbdominalWall3DData, Scrotum3DData, MuscleTendon3DData, Wrist3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData, NegativityChecklistData, SecondReaderData, ReportEnrichmentSession } from "./types";
+import { Atlas3DData, Vascular3DData, FocalLesion3DData, Thyroid3DData, Breast3DData, Shoulder3DData, Knee3DData, Ankle3DData, Kidney3DData, Abdomen3DData, AbdominalWall3DData, Scrotum3DData, MuscleTendon3DData, Wrist3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData, SemioticsConductMatrixData, NegativityChecklistData, SecondReaderData, ReportEnrichmentSession } from "./types";
 import { buildAtlasDirectivesFromScorecard, buildAtlasPanelFindingAssignments, buildVascularDirectivesFromScorecard, buildThyroidDirectivesFromScorecard, buildBreastDirectivesFromScorecard, buildShoulderDirectivesFromScorecard, buildKneeDirectivesFromScorecard, buildAnkleDirectivesFromScorecard, buildKidneyDirectivesFromScorecard, buildAbdomenDirectivesFromScorecard, buildAbdominalWallDirectivesFromScorecard, buildScrotumDirectivesFromScorecard, buildMuscleTendonDirectivesFromScorecard, buildWristDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
 import {
   applyPendingEnrichmentChanges,
@@ -151,7 +153,8 @@ import {
   Box,
   Crosshair,
   GitBranch,
-  GitFork
+  GitFork,
+  Table2
 } from "lucide-react";
 import { initAuth, googleSignIn, logout as googleLogout, anonymousSignIn, emailSignIn, emailSignUp, getFirebaseConfig } from "./firebaseAuth";
 import { CloudStudy, saveStudyToCloud, getStudiesFromCloud, deleteStudyFromCloud, Worklist, WorklistPatient, saveWorklistToCloud, getWorklistFromCloud, getSingleStudyFromCloud, testFirebaseConfigConnection, saveUserSettingsToCloud, getUserSettingsFromCloud } from "./firebaseDb";
@@ -2917,6 +2920,9 @@ export default function App() {
   const [differentialTreeData, setDifferentialTreeData] = useState<DifferentialTreeData | null>(null);
   const [includeDifferentialTreeInReport, setIncludeDifferentialTreeInReport] = useState<boolean>(true);
   const [isDifferentialTreeOpen, setIsDifferentialTreeOpen] = useState<boolean>(false);
+  const [semioticsConductMatrixData, setSemioticsConductMatrixData] = useState<SemioticsConductMatrixData | null>(null);
+  const [includeSemioticsConductMatrixInReport, setIncludeSemioticsConductMatrixInReport] = useState<boolean>(true);
+  const [isSemioticsConductMatrixOpen, setIsSemioticsConductMatrixOpen] = useState<boolean>(false);
   const [atlasDirectivesFromScorecard, setAtlasDirectivesFromScorecard] = useState<string>("");
   const [measurementGaugeData, setMeasurementGaugeData] = useState<MeasurementGaugeData | null>(null);
   const [includeMeasurementGaugesInReport, setIncludeMeasurementGaugesInReport] = useState<boolean>(true);
@@ -3006,6 +3012,8 @@ export default function App() {
     secondReaderData,
     differentialTreeData,
     includeDifferentialTreeInReport,
+    semioticsConductMatrixData,
+    includeSemioticsConductMatrixInReport,
     measurementGaugeData,
     includeMeasurementGaugesInReport,
     includeMeasurementNormalsInPdf,
@@ -3682,6 +3690,7 @@ Ejemplo:
     negativity_checklist: false,
     second_reader: false,
     differential_tree: false,
+    semiotics_conduct_matrix: false,
     atlas3d: false,
     vascular3d: false,
     thyroid3d: false,
@@ -3935,6 +3944,7 @@ Ejemplo:
       negativity_checklist: select,
       second_reader: select,
       differential_tree: select,
+      semiotics_conduct_matrix: select,
       atlas3d: select,
       vascular3d: select,
       thyroid3d: select,
@@ -3990,6 +4000,7 @@ Ejemplo:
     if (modules.negativity_checklist) setIsNegativityChecklistOpen(true);
     if (modules.second_reader) setIsSecondReaderOpen(true);
     if (modules.differential_tree) setIsDifferentialTreeOpen(true);
+    if (modules.semiotics_conduct_matrix) setIsSemioticsConductMatrixOpen(true);
     // 2. Trigger async AI generation processes concurrently
     const promises: Promise<any>[] = [];
 
@@ -4603,6 +4614,35 @@ Ejemplo:
           }
         } catch (e) {
           console.error("Error al generar arbol de diferenciales en lote:", e);
+        }
+      })());
+    }
+
+    if (modules.semiotics_conduct_matrix) {
+      promises.push((async () => {
+        setIsSemioticsConductMatrixOpen(true);
+        try {
+          const resp = await fetch("/api/generate-semiotics-conduct-matrix", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: modelFor("semiotics_conduct_matrix"),
+              report: activeReport,
+              studyType: specificStudy || studyType || "",
+              clinicalHistory: clinicalHistory || "",
+              focusTopic: "Auto (del informe)",
+              focusPreset: "auto",
+            }),
+          });
+          const j = await resp.json();
+          if (j.success && j.data) {
+            setSemioticsConductMatrixData(j.data);
+            setIncludeSemioticsConductMatrixInReport(true);
+          } else {
+            console.error("Matriz semiologia-conducta en lote fallo:", j.error);
+          }
+        } catch (e) {
+          console.error("Error al generar matriz semiologia-conducta en lote:", e);
         }
       })());
     }
@@ -11020,6 +11060,28 @@ Ejemplo:
         activeDifferentialTree.branches.length > 0
       ) {
         renderDifferentialTreeAnnexToPDF(doc, activeDifferentialTree, {
+          marginX,
+          pageWidth,
+          pageHeight,
+          contentWidth,
+          factor,
+        });
+      }
+
+      // --- ANEXO: MATRIZ SEMIOLOGIA ? CONDUCTA ---
+      const activeSemioticsMatrix = studyOverride
+        ? (studyOverride as any).semioticsConductMatrixData
+        : (pdfStateRef.current?.semioticsConductMatrixData || semioticsConductMatrixData);
+      const shouldIncludeSemioticsMatrix = studyOverride
+        ? ((studyOverride as any).includeSemioticsConductMatrixInReport !== false)
+        : ((pdfStateRef.current?.includeSemioticsConductMatrixInReport !== false) && includeSemioticsConductMatrixInReport);
+      if (
+        activeSemioticsMatrix &&
+        shouldIncludeSemioticsMatrix &&
+        Array.isArray(activeSemioticsMatrix.rows) &&
+        activeSemioticsMatrix.rows.length > 0
+      ) {
+        renderSemioticsConductMatrixAnnexToPDF(doc, activeSemioticsMatrix, {
           marginX,
           pageWidth,
           pageHeight,
@@ -21111,8 +21173,15 @@ const splitReportAndAnnex = (text: string) => {
                                   id: "differential_tree",
                                   label: "Arbol de diferenciales con poda",
                                   badge: "DIFERENCIALES",
-                                  desc: "HipÃ³tesis a favor/en contra, poda de ramas incompatibles y diagnostico mas probable.",
+                                  desc: "Hipótesis a favor/en contra, poda de ramas incompatibles y diagnostico mas probable.",
                                   color: "text-orange-400 border-orange-500/30 bg-orange-950/20"
+                                },
+                                {
+                                  id: "semiotics_conduct_matrix",
+                                  label: "Matriz semiologia ? conducta",
+                                  badge: "MATRIZ",
+                                  desc: "Tabla editable hallazgo ? signos ? categoria ? conducta; enfoque por patologia e inclusion opcional en PDF.",
+                                  color: "text-fuchsia-400 border-fuchsia-500/30 bg-fuchsia-950/20"
                                 },
 {
                                   id: "atlas3d",
@@ -22300,7 +22369,32 @@ const splitReportAndAnnex = (text: string) => {
                                     : "bg-orange-600/80 hover:bg-orange-500 text-white"
                                 }`}
                               >
-                                {isDifferentialTreeOpen ? "Ocultar ï¿½rbol" : "Abrir ï¿½rbol de diferenciales"}
+                                {isDifferentialTreeOpen ? "Ocultar arbol" : "Abrir arbol de diferenciales"}
+                              </button>
+                            </div>
+
+                            <div className="p-4 rounded-2xl bg-slate-950/60 border border-fuchsia-900/40 space-y-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <h4 className="text-sm font-semibold text-fuchsia-200 flex items-center gap-2">
+                                    <Table2 className="h-4 w-4 text-fuchsia-400" />
+                                    Matriz semiologia ? conducta
+                                  </h4>
+                                  <p className="text-[11px] text-slate-400 mt-1">
+                                    Enfoque por patologia, filas editables e inclusion opcional en el PDF.
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setIsSemioticsConductMatrixOpen((v) => !v)}
+                                className={`w-full px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
+                                  isSemioticsConductMatrixOpen
+                                    ? "bg-fuchsia-700 text-white"
+                                    : "bg-fuchsia-600/80 hover:bg-fuchsia-500 text-white"
+                                }`}
+                              >
+                                {isSemioticsConductMatrixOpen ? "Ocultar matriz" : "Abrir matriz"}
                               </button>
                             </div>
 
@@ -22500,7 +22594,7 @@ const splitReportAndAnnex = (text: string) => {
 
                           {isDifferentialTreeOpen && (
                             <div className="my-6">
-                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-orange-400 bg-slate-900/60 rounded-xl border border-orange-900/40 animate-pulse">Cargando ï¿½rbol de diferenciales...</div>}>
+                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-orange-400 bg-slate-900/60 rounded-xl border border-orange-900/40 animate-pulse">Cargando arbol de diferenciales...</div>}>
                                 <DifferentialTreeModule
                                   selectedModel={modelFor("differential_tree")}
                                   reportText={isEditingReportManual ? editedReportText : generatedReport}
@@ -22510,6 +22604,23 @@ const splitReportAndAnnex = (text: string) => {
                                   setTreeData={setDifferentialTreeData}
                                   includeInReport={includeDifferentialTreeInReport}
                                   setIncludeInReport={setIncludeDifferentialTreeInReport}
+                                />
+                              </React.Suspense>
+                            </div>
+                          )}
+
+                          {isSemioticsConductMatrixOpen && (
+                            <div className="my-6">
+                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-fuchsia-400 bg-slate-900/60 rounded-xl border border-fuchsia-900/40 animate-pulse">Cargando matriz semiologia-conducta...</div>}>
+                                <SemioticsConductMatrixModule
+                                  selectedModel={modelFor("semiotics_conduct_matrix")}
+                                  reportText={isEditingReportManual ? editedReportText : generatedReport}
+                                  studyType={specificStudy || studyType}
+                                  clinicalHistory={clinicalHistory}
+                                  matrixData={semioticsConductMatrixData}
+                                  setMatrixData={setSemioticsConductMatrixData}
+                                  includeInReport={includeSemioticsConductMatrixInReport}
+                                  setIncludeInReport={setIncludeSemioticsConductMatrixInReport}
                                 />
                               </React.Suspense>
                             </div>

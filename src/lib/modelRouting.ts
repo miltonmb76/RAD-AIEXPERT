@@ -51,6 +51,7 @@ export type ModelTask =
   | "clinical_scorecard"
   | "reasoning_chain"
   | "differential_tree"
+  | "semiotics_conduct_matrix"
   | "negativity_checklist"
   | "second_reader"
   | "chat"
@@ -84,6 +85,7 @@ const QUALITY_TASKS: ReadonlySet<ModelTask> = new Set([
   "clinical_scorecard",
   "reasoning_chain",
   "differential_tree",
+  "semiotics_conduct_matrix",
   "negativity_checklist",
   "second_reader",
   "default",

@@ -10,6 +10,7 @@ import { registerAtlas3DRoutes } from "./server_atlas3d";
 import { normalizeReasoningChainData, extractJsonObject } from "./src/lib/reasoningChain";
 import { normalizeNegativityChecklistData } from "./src/lib/negativityChecklist";
 import { normalizeDifferentialTreeData } from "./src/lib/differentialTree";
+import { normalizeSemioticsConductMatrixData } from "./src/lib/semioticsConductMatrix";
 import { normalizeSecondReaderData } from "./src/lib/secondReader";
 import {
   classifyMeasurementStudyFamily,
@@ -9933,6 +9934,172 @@ ${report}
     res.json({ success: true, data });
   } catch (error: any) {
     console.error("Error en /api/generate-differential-tree:", error);
+    res.status(500).json({ success: false, error: handleGeminiError(error) });
+  }
+});
+
+/**
+ * API: MATRIZ SEMIOLOGÍA → CONDUCTA
+ * POST /api/generate-semiotics-conduct-matrix
+ */
+app.post("/api/generate-semiotics-conduct-matrix", async (req: express.Request, res: express.Response) => {
+  try {
+    const { model, report, studyType, clinicalHistory, focusTopic, focusPreset } = req.body;
+    if (!report || !String(report).trim()) {
+      return res.status(400).json({ success: false, error: "Se requiere el parámetro 'report'." });
+    }
+
+    const ai = getGeminiClient();
+    const modelToUse = getModelName(model);
+    const focus = (focusTopic || "").toString().trim();
+    const preset = (focusPreset || "auto").toString().trim();
+    const history = (clinicalHistory || "").toString().trim();
+
+    const prompt = `Eres un radiólogo hispanohablante experto en semiología y conducta clínica basada en imagen.
+Construye una MATRIZ DE DECISIÓN: hallazgo → signos/criterios → categoría de escala → conducta recomendada.
+
+IDIOMA: TODO el texto visible en ESPAÑOL médico.
+
+ESTUDIO: ${studyType || "No especificado"}
+PRESET DE ENFOQUE: ${preset}
+${focus ? `ENFOQUE / PATOLOGÍA PRIORITARIA: "${focus}"` : "Sin enfoque libre: deriva del informe."}
+${history ? `HISTORIA CLINICA:\n"""\n${history}\n"""` : "Sin historia adicional."}
+
+REGLAS:
+1. Genera 3 a 6 filas (rows) relevantes al enfoque. No rellenes con hallazgos inventados.
+2. Cada fila: finding (hallazgo clave), signs (signos/criterios presentes o descartados), category (BI-RADS, Fleischner, TI-RADS, Bosniak, equivalente clínico o "N/A"), conduct (acción concreta: alta, control, biopsia, cirugía, correlación clínica…), anchor (opcional: panel/sección del informe).
+3. La conducta debe ser accionable y coherente con la categoría/signos.
+4. Si el enfoque es una escala (BI-RADS, Fleischner…), úsala de forma explícita en category.
+5. title: "Matriz semiología → conducta" o variante breve.
+6. focusTopic: repite el enfoque priorizado.
+7. clinicalQuestion: 1 frase con la pregunta clínica que responde la matriz.
+8. footnote: 1 frase de caveat (no sustituye criterio clínico).
+9. NO inventes hallazgos ausentes del informe. Si falta dato, dilo en signs o omitel fila.
+
+Claves JSON obligatorias en inglés:
+title, focusTopic, studyRegion, clinicalQuestion, rows, footnote.
+Cada row: id, finding, signs, category, conduct, anchor.
+
+INFORME:
+"""
+${report}
+"""
+`;
+
+    const rowSchema = {
+      type: Type.OBJECT,
+      properties: {
+        id: { type: Type.STRING },
+        finding: { type: Type.STRING },
+        signs: { type: Type.STRING },
+        category: { type: Type.STRING },
+        conduct: { type: Type.STRING },
+        anchor: { type: Type.STRING },
+      },
+      required: ["id", "finding", "signs", "category", "conduct"],
+    };
+
+    const fullSchema = {
+      type: Type.OBJECT,
+      properties: {
+        title: { type: Type.STRING },
+        focusTopic: { type: Type.STRING },
+        studyRegion: { type: Type.STRING },
+        clinicalQuestion: { type: Type.STRING },
+        rows: { type: Type.ARRAY, items: rowSchema },
+        footnote: { type: Type.STRING },
+      },
+      required: ["title", "focusTopic", "rows"],
+    };
+
+    const readModelText = (response: any): string => {
+      if (response?.text && String(response.text).trim()) return String(response.text);
+      const parts = response?.candidates?.[0]?.content?.parts;
+      if (Array.isArray(parts)) {
+        return parts
+          .map((p: any) => (typeof p?.text === "string" ? p.text : ""))
+          .filter(Boolean)
+          .join("\n");
+      }
+      return "";
+    };
+
+    let rawText = "";
+    let parsed: any = null;
+
+    try {
+      const response = await ai.models.generateContent({
+        model: modelToUse,
+        contents: prompt,
+        config: {
+          temperature: 0.2,
+          responseMimeType: "application/json",
+          responseSchema: fullSchema,
+        },
+      });
+      rawText = readModelText(response);
+      parsed = extractJsonObject(rawText);
+    } catch (schemaErr: any) {
+      console.warn(
+        "generate-semiotics-conduct-matrix: schema attempt failed:",
+        schemaErr?.message || schemaErr
+      );
+    }
+
+    if (!parsed || !(parsed.rows || parsed.filas)?.length) {
+      try {
+        const response2 = await ai.models.generateContent({
+          model: modelToUse,
+          contents: prompt + `\n\nResponde ÚNICAMENTE JSON válido. rows DEBE tener >=3 filas.`,
+          config: { temperature: 0.25, responseMimeType: "application/json" },
+        });
+        rawText = readModelText(response2) || rawText;
+        parsed = extractJsonObject(rawText) || parsed;
+      } catch (e: any) {
+        console.warn("generate-semiotics-conduct-matrix: mime retry failed:", e?.message || e);
+      }
+    }
+
+    if (!parsed || !(parsed.rows || parsed.filas)?.length) {
+      try {
+        const response3 = await ai.models.generateContent({
+          model: modelToUse,
+          contents: prompt + `\n\nSOLO JSON (sin markdown).`,
+          config: { temperature: 0.3 },
+        });
+        rawText = readModelText(response3) || rawText;
+        parsed = extractJsonObject(rawText) || parsed;
+      } catch (e: any) {
+        console.warn("generate-semiotics-conduct-matrix: freeform retry failed:", e?.message || e);
+      }
+    }
+
+    if (!parsed) {
+      console.error(
+        "generate-semiotics-conduct-matrix: unparseable output:",
+        String(rawText || "").slice(0, 800)
+      );
+      return res.status(500).json({
+        success: false,
+        error: "No se pudo interpretar la respuesta de la IA (JSON inválido). Reintenta.",
+      });
+    }
+
+    const data = normalizeSemioticsConductMatrixData(parsed, focus);
+    const realRows = data.rows.filter(
+      (r) => r.finding.trim() || r.signs.trim() || r.category.trim() || r.conduct.trim()
+    );
+    if (!realRows.length) {
+      return res.status(500).json({
+        success: false,
+        error: "La IA no devolvió filas utilizables. Reintenta.",
+      });
+    }
+    data.rows = realRows;
+
+    res.json({ success: true, data });
+  } catch (error: any) {
+    console.error("Error en /api/generate-semiotics-conduct-matrix:", error);
     res.status(500).json({ success: false, error: handleGeminiError(error) });
   }
 });

@@ -1225,3 +1225,31 @@ export interface ClassificationRecommendation {
   alreadyIncorporated?: boolean;
 }
 
+/** One row of the semiotics → conduct decision matrix. */
+export interface SemioticsConductRow {
+  id: string;
+  /** Main imaging finding. */
+  finding: string;
+  /** Key signs / criteria met or ruled out. */
+  signs: string;
+  /** Scale category (BI-RADS, Fleischner, clinical equivalent…). */
+  category: string;
+  /** Recommended clinical action / follow-up. */
+  conduct: string;
+  /** PDF / report anchor (panel, section…). */
+  anchor?: string;
+}
+
+/** Semiology → conduct matrix annex (manual module). */
+export interface SemioticsConductMatrixData {
+  title: string;
+  /** User-selected pathology / topic focus. */
+  focusTopic: string;
+  studyRegion?: string;
+  clinicalQuestion?: string;
+  rows: SemioticsConductRow[];
+  /** Short footer note under the table. */
+  footnote?: string;
+  generatedAt?: string;
+}
+
