@@ -359,8 +359,11 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
 
       {infographicData && scene && (
         <div className="space-y-4">
-          <div className="rounded-2xl border border-teal-500/25 overflow-hidden bg-slate-950">
-            <FindingsInfographicCanvas scene={scene} />
+          <div className="rounded-2xl border border-teal-500/25 overflow-hidden bg-slate-950 -mx-1 sm:mx-0">
+            <FindingsInfographicCanvas
+              scene={scene}
+              className="w-full h-auto block min-h-[420px] sm:min-h-[520px]"
+            />
           </div>
 
           <div className="rounded-2xl border border-teal-500/20 bg-gradient-to-br from-teal-950/20 via-slate-950/80 to-slate-950 p-4 space-y-2">

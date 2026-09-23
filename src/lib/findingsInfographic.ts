@@ -292,26 +292,86 @@ export interface InfographicScene {
 }
 
 function wrapEstimate(text: string, charsPerLine: number, maxLines: number): number {
-  const words = text.split(/\s+/).filter(Boolean);
-  let lines = 1;
-  let cur = 0;
+  return wrapTextLines(text, charsPerLine, maxLines).length;
+}
+
+/** Shared wrap used by layout sizing, SVG preview and PDF markup — keep in sync. */
+export function wrapTextLines(
+  text: string,
+  charsPerLine: number,
+  maxLines = 99
+): string[] {
+  const cpl = Math.max(6, charsPerLine);
+  const words = String(text || "")
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!words.length) return [];
+  const lines: string[] = [];
+  let cur = "";
   for (const w of words) {
-    if (cur + w.length + (cur ? 1 : 0) > charsPerLine) {
-      lines++;
-      cur = w.length;
-      if (lines >= maxLines) break;
-    } else {
-      cur += (cur ? 1 : 0) + w.length;
+    // Break very long tokens so they don't blow the box width
+    const chunks =
+      w.length > cpl
+        ? w.match(new RegExp(`.{1,${cpl}}`, "g")) || [w]
+        : [w];
+    for (const chunk of chunks) {
+      const next = cur ? `${cur} ${chunk}` : chunk;
+      if (next.length > cpl && cur) {
+        lines.push(cur);
+        cur = chunk;
+        if (lines.length >= maxLines) {
+          return lines.slice(0, maxLines);
+        }
+      } else {
+        cur = next;
+      }
     }
   }
-  return Math.min(maxLines, Math.max(1, lines));
+  if (cur && lines.length < maxLines) lines.push(cur);
+  return lines.slice(0, maxLines);
+}
+
+const LABEL_FONT = 15;
+const DETAIL_FONT = 12;
+const LABEL_LH = 1.28;
+const DETAIL_LH = 1.3;
+
+export function findingBoxMetrics(
+  label: string,
+  detail: string | undefined,
+  baseW: number
+) {
+  const innerW = Math.max(40, baseW - 28);
+  const labelCpl = Math.max(8, Math.floor(innerW / (LABEL_FONT * 0.52)));
+  const detailCpl = Math.max(8, Math.floor(innerW / (DETAIL_FONT * 0.5)));
+  const labelLines = wrapTextLines(label, labelCpl, 5);
+  const detailLines = detail ? wrapTextLines(detail, detailCpl, 6) : [];
+  const padTop = 20;
+  const padBottom = 16;
+  const gap = detailLines.length ? 8 : 0;
+  const h =
+    padTop +
+    labelLines.length * LABEL_FONT * LABEL_LH +
+    gap +
+    detailLines.length * DETAIL_FONT * DETAIL_LH +
+    padBottom;
+  return {
+    w: baseW,
+    h: Math.max(72, Math.ceil(h)),
+    labelLines,
+    detailLines,
+    labelFont: LABEL_FONT,
+    detailFont: DETAIL_FONT,
+    labelLh: LABEL_LH,
+    detailLh: DETAIL_LH,
+    padTop,
+    gap,
+  };
 }
 
 function findingBoxSize(label: string, detail: string | undefined, baseW: number) {
-  const labelLines = wrapEstimate(label, Math.floor(baseW / 11), 3);
-  const detailLines = detail ? wrapEstimate(detail, Math.floor(baseW / 10), 2) : 0;
-  const h = 36 + labelLines * 18 + detailLines * 15 + 16;
-  return { w: baseW, h };
+  const m = findingBoxMetrics(label, detail, baseW);
+  return { w: m.w, h: m.h };
 }
 
 function pushFinding(
@@ -355,8 +415,8 @@ function edgeTo(
 }
 
 export function buildInfographicScene(data: FindingsInfographicData): InfographicScene {
-  const width = 1000;
-  let height = 720;
+  const width = 1280;
+  let height = 860;
   const nodes = (data.nodes || []).filter((n) => n.label.trim()).slice(0, 10);
   const layout = data.layout || "convergence";
   const contentMode = data.contentMode || "justify_diagnosis";
@@ -389,66 +449,68 @@ export function buildInfographicScene(data: FindingsInfographicData): Infographi
     boxes.push({
       id: "sec-present",
       kind: "section",
-      x: 60,
+      x: 70,
       y: 78,
-      w: 400,
-      h: 36,
+      w: 520,
+      h: 40,
       label: "PRESENTES",
       polarity: "present",
     });
     boxes.push({
       id: "sec-ruled",
       kind: "section",
-      x: 540,
+      x: 690,
       y: 78,
-      w: 400,
-      h: 36,
+      w: 520,
+      h: 40,
       label: "DESCARTADOS",
       polarity: "ruled_out",
     });
 
-    let yL = 130;
+    let yL = 140;
     left.forEach((node) => {
-      const { w, h } = findingBoxSize(node.label, node.detail, 380);
-      pushFinding(boxes, { ...node, polarity: node.polarity || "present" }, 70, yL, w, h);
+      const { w, h } = findingBoxSize(node.label, node.detail, 500);
+      pushFinding(boxes, { ...node, polarity: node.polarity || "present" }, 80, yL, w, h);
       yL += h + 18;
     });
-    let yR = 130;
+    let yR = 140;
     right.forEach((node) => {
-      const { w, h } = findingBoxSize(node.label, node.detail, 380);
-      pushFinding(boxes, { ...node, polarity: "ruled_out" }, 550, yR, w, h);
+      const { w, h } = findingBoxSize(node.label, node.detail, 500);
+      pushFinding(boxes, { ...node, polarity: "ruled_out" }, 700, yR, w, h);
       yR += h + 18;
     });
 
-    const dxW = 360;
-    const dxH = 88;
-    const dxY = Math.max(yL, yR) + 24;
+    const dxW = 420;
+    const dxH = 96;
+    const dxY = Math.max(yL, yR) + 28;
     addAnchor((width - dxW) / 2, dxY, dxW, dxH);
-    height = Math.max(height, dxY + dxH + 40);
+    height = Math.max(height, dxY + dxH + 48);
   } else if (layout === "timeline") {
-    addAnchor((width - 320) / 2, 90, 320, 80);
+    addAnchor((width - 380) / 2, 90, 380, 90);
     const n = Math.max(nodes.length, 1);
     const usableW = width - 80;
-    const boxW = Math.min(180, (usableW - 12 * (n - 1)) / n);
-    const totalW = n * boxW + (n - 1) * 12;
+    const boxW = Math.min(230, (usableW - 14 * (n - 1)) / n);
+    const totalW = n * boxW + (n - 1) * 14;
     const startX = (width - totalW) / 2;
-    const lineY = 280;
+    const lineY = 300;
+    let maxH = 0;
     nodes.forEach((node, i) => {
       const { w, h } = findingBoxSize(node.label, node.detail, boxW);
-      const x = startX + i * (boxW + 12);
+      const x = startX + i * (boxW + 14);
       const y = lineY;
       pushFinding(boxes, node, x, y, w, h);
-      edgeTo(edges, x + w / 2, 170, x + w / 2, y, 0);
+      edgeTo(edges, x + w / 2, 180, x + w / 2, y, 0);
       if (i > 0) {
-        const prevX = startX + (i - 1) * (boxW + 12) + boxW;
+        const prevX = startX + (i - 1) * (boxW + 14) + boxW;
         edgeTo(edges, prevX, lineY + h / 2, x, lineY + h / 2, 0);
       }
+      maxH = Math.max(maxH, h);
     });
-    height = Math.max(height, lineY + 200);
+    height = Math.max(height, lineY + maxH + 48);
   } else if (layout === "funnel") {
     let y = 90;
     nodes.forEach((node, i) => {
-      const shrink = Math.max(280, 620 - i * 40);
+      const shrink = Math.max(360, 760 - i * 48);
       const { w, h } = findingBoxSize(node.label, node.detail, shrink);
       const x = (width - w) / 2;
       pushFinding(boxes, node, x, y, w, h);
@@ -458,32 +520,32 @@ export function buildInfographicScene(data: FindingsInfographicData): Infographi
       }
       y += h + 28;
     });
-    const dxW = 300;
-    const dxH = 92;
+    const dxW = 360;
+    const dxH = 100;
     const dx = (width - dxW) / 2;
     addAnchor(dx, y, dxW, dxH);
     if (nodes.length) {
       const last = boxes[boxes.length - 2];
       edgeTo(edges, last.x + last.w / 2, last.y + last.h, dx + dxW / 2, y, 12);
     }
-    height = Math.max(height, y + dxH + 40);
+    height = Math.max(height, y + dxH + 48);
   } else if (layout === "pillars" || layout === "stack") {
     const n = Math.max(nodes.length, 1);
     if (layout === "stack") {
       let y = 90;
       nodes.forEach((node) => {
-        const { w, h } = findingBoxSize(node.label, node.detail, 560);
+        const { w, h } = findingBoxSize(node.label, node.detail, 700);
         const x = (width - w) / 2;
         pushFinding(boxes, node, x, y, w, h);
         y += h + 16;
       });
-      const dxW = 340;
-      const dxH = 88;
+      const dxW = 400;
+      const dxH = 96;
       addAnchor((width - dxW) / 2, y + 12, dxW, dxH);
       height = Math.max(height, y + dxH + 60);
     } else {
-      const gap = 14;
-      const boxW = Math.min(200, (width - 60 - gap * (n - 1)) / n);
+      const gap = 16;
+      const boxW = Math.min(250, (width - 72 - gap * (n - 1)) / n);
       const totalW = n * boxW + (n - 1) * gap;
       const startX = (width - totalW) / 2;
       let maxH = 0;
@@ -492,8 +554,8 @@ export function buildInfographicScene(data: FindingsInfographicData): Infographi
         pushFinding(boxes, node, startX + i * (boxW + gap), 100, w, h);
         maxH = Math.max(maxH, h);
       });
-      const dxW = 320;
-      const dxH = 90;
+      const dxW = 380;
+      const dxH = 96;
       const dxY = 100 + maxH + 50;
       addAnchor((width - dxW) / 2, dxY, dxW, dxH);
       boxes
@@ -501,7 +563,7 @@ export function buildInfographicScene(data: FindingsInfographicData): Infographi
         .forEach((b) => {
           edgeTo(edges, b.x + b.w / 2, b.y + b.h, width / 2, dxY, 30);
         });
-      height = Math.max(height, dxY + dxH + 40);
+      height = Math.max(height, dxY + dxH + 48);
     }
   } else if (layout === "tree") {
     const dxW = 340;
@@ -520,71 +582,80 @@ export function buildInfographicScene(data: FindingsInfographicData): Infographi
 
     if (hasGroups && groups.size >= 2) {
       const entries = Array.from(groups.entries()).slice(0, 4);
-      const gap = 20;
-      const colW = Math.min(220, (width - 60 - gap * (entries.length - 1)) / entries.length);
+      const gap = 22;
+      const colW = Math.min(
+        300,
+        Math.max(240, (width - 72 - gap * (entries.length - 1)) / entries.length)
+      );
       const totalW = entries.length * colW + (entries.length - 1) * gap;
       const startX = (width - totalW) / 2;
-      let maxBottom = 260;
+      let maxBottom = 280;
       entries.forEach(([gLabel, gNodes], gi) => {
         const x0 = startX + gi * (colW + gap);
         boxes.push({
           id: `sec-g-${gi}`,
           kind: "section",
           x: x0,
-          y: 210,
+          y: 220,
           w: colW,
-          h: 32,
-          label: gLabel.toUpperCase().slice(0, 22),
+          h: 36,
+          label: gLabel.toUpperCase().slice(0, 28),
           polarity: "present",
         });
-        edgeTo(edges, width / 2, 178, x0 + colW / 2, 210, 10);
-        let y = 256;
-        gNodes.slice(0, 3).forEach((node) => {
+        edgeTo(edges, width / 2, 188, x0 + colW / 2, 220, 10);
+        let y = 270;
+        gNodes.slice(0, 4).forEach((node) => {
           const { w, h } = findingBoxSize(node.label, node.detail, colW);
           pushFinding(boxes, node, x0, y, w, h);
-          y += h + 12;
+          y += h + 14;
         });
         maxBottom = Math.max(maxBottom, y);
       });
-      height = Math.max(height, maxBottom + 40);
+      height = Math.max(height, maxBottom + 48);
     } else {
       const n = Math.max(nodes.length, 1);
-      const gap = 14;
-      const boxW = Math.min(210, (width - 60 - gap * (n - 1)) / n);
+      const gap = 16;
+      const boxW = Math.min(260, (width - 72 - gap * (n - 1)) / n);
       const totalW = n * boxW + (n - 1) * gap;
       const startX = (width - totalW) / 2;
-      const y = 260;
+      const y = 270;
+      let maxH = 0;
       nodes.forEach((node, i) => {
         const { w, h } = findingBoxSize(node.label, node.detail, boxW);
         const x = startX + i * (boxW + gap);
         pushFinding(boxes, node, x, y, w, h);
-        edgeTo(edges, width / 2, 178, x + w / 2, y, 20);
+        edgeTo(edges, width / 2, 188, x + w / 2, y, 20);
+        maxH = Math.max(maxH, h);
       });
-      height = Math.max(height, y + 220);
+      height = Math.max(height, y + maxH + 48);
     }
   } else if (layout === "radial" || layout === "constellation") {
     const cx = width / 2;
-    const cy = height / 2 + 10;
-    const dxW = 280;
-    const dxH = 88;
+    const cy = height / 2 + 20;
+    const dxW = 340;
+    const dxH = 96;
     addAnchor(cx - dxW / 2, cy - dxH / 2, dxW, dxH);
     const n = Math.max(nodes.length, 1);
-    const radiusX = layout === "radial" ? 360 : 340;
-    const radiusY = layout === "radial" ? 250 : 240;
+    const radiusX = layout === "radial" ? 460 : 430;
+    const radiusY = layout === "radial" ? 300 : 280;
     nodes.forEach((node, i) => {
       const angle = -Math.PI / 2 + (i * 2 * Math.PI) / n;
-      const { w, h } = findingBoxSize(node.label, node.detail, layout === "radial" ? 190 : 200);
+      const { w, h } = findingBoxSize(
+        node.label,
+        node.detail,
+        layout === "radial" ? 240 : 250
+      );
       const bx = cx + Math.cos(angle) * radiusX - w / 2;
       const by = cy + Math.sin(angle) * radiusY - h / 2;
-      const x = Math.max(20, Math.min(width - w - 20, bx));
-      const y = Math.max(70, Math.min(height - h - 20, by));
+      const x = Math.max(24, Math.min(width - w - 24, bx));
+      const y = Math.max(70, by);
       pushFinding(boxes, node, x, y, w, h);
       edgeTo(edges, x + w / 2, y + h / 2, cx, cy, 0);
     });
   } else if (layout === "cascade") {
     let y = 90;
     nodes.forEach((node, i) => {
-      const { w, h } = findingBoxSize(node.label, node.detail, 520);
+      const { w, h } = findingBoxSize(node.label, node.detail, 640);
       const x = (width - w) / 2;
       pushFinding(boxes, node, x, y, w, h);
       if (i > 0) {
@@ -593,26 +664,26 @@ export function buildInfographicScene(data: FindingsInfographicData): Infographi
       }
       y += h + 36;
     });
-    const dxW = 420;
-    const dxH = 92;
+    const dxW = 480;
+    const dxH = 100;
     const dx = (width - dxW) / 2;
     addAnchor(dx, y, dxW, dxH);
     if (nodes.length) {
       const last = boxes[boxes.length - 2];
       edgeTo(edges, last.x + last.w / 2, last.y + last.h, dx + dxW / 2, y, 0);
     }
-    height = Math.max(height, y + dxH + 40);
+    height = Math.max(height, y + dxH + 48);
   } else {
     // convergence
-    const dxW = 320;
-    const dxH = 96;
+    const dxW = 380;
+    const dxH = 104;
     const dxX = (width - dxW) / 2;
-    const dxY = height - dxH - 40;
+    const dxY = height - dxH - 48;
     addAnchor(dxX, dxY, dxW, dxH);
     const n = Math.max(nodes.length, 1);
-    const usableW = width - 48;
-    const gap = 16;
-    const boxW = Math.min(210, (usableW - gap * (n - 1)) / n);
+    const usableW = width - 64;
+    const gap = 18;
+    const boxW = Math.min(250, (usableW - gap * (n - 1)) / n);
     const totalW = n * boxW + (n - 1) * gap;
     const startX = (width - totalW) / 2;
     const topY = 88;

@@ -1,50 +1,30 @@
 import React from "react";
 import type { InfographicScene } from "../lib/findingsInfographic";
-import { layoutDisplayLabel } from "../lib/findingsInfographic";
+import {
+  findingBoxMetrics,
+  layoutDisplayLabel,
+  wrapTextLines,
+} from "../lib/findingsInfographic";
 
-function SvgWrappedText({
-  text,
+function SvgLines({
+  lines,
   x,
   y,
-  width,
   fontSize,
   fill,
   fontWeight,
-  lineHeight = 1.25,
-  maxLines = 4,
+  lineHeight = 1.28,
   anchor = "middle",
 }: {
-  text: string;
+  lines: string[];
   x: number;
   y: number;
-  width: number;
   fontSize: number;
   fill: string;
   fontWeight?: string | number;
   lineHeight?: number;
-  maxLines?: number;
   anchor?: "start" | "middle" | "end";
 }) {
-  const charsPerLine = Math.max(8, Math.floor(width / (fontSize * 0.55)));
-  const words = String(text || "").split(/\s+/).filter(Boolean);
-  const lines: string[] = [];
-  let cur = "";
-  for (const w of words) {
-    const next = cur ? `${cur} ${w}` : w;
-    if (next.length > charsPerLine && cur) {
-      lines.push(cur);
-      cur = w;
-      if (lines.length >= maxLines) break;
-    } else {
-      cur = next;
-    }
-  }
-  if (cur && lines.length < maxLines) lines.push(cur);
-  if (lines.length === maxLines && words.join(" ").length > lines.join(" ").length) {
-    const last = lines[maxLines - 1];
-    lines[maxLines - 1] = last.length > 3 ? `${last.slice(0, -1)}…` : last;
-  }
-
   return (
     <text
       x={x}
@@ -91,7 +71,7 @@ export const FindingsInfographicCanvas: React.FC<FindingsInfographicCanvasProps>
   return (
     <svg
       viewBox={`0 0 ${width} ${height}`}
-      className={className || "w-full h-auto"}
+      className={className || "w-full h-auto block"}
       role="img"
       aria-label={headerLabel}
     >
@@ -126,14 +106,14 @@ export const FindingsInfographicCanvas: React.FC<FindingsInfographicCanvasProps>
       </defs>
 
       <rect width={width} height={height} fill="url(#fig-bg)" rx="18" />
-      <circle cx="120" cy="100" r="90" fill="#14b8a6" opacity="0.07" />
-      <circle cx="880" cy="560" r="120" fill="#2dd4bf" opacity="0.06" />
+      <circle cx="140" cy="120" r="110" fill="#14b8a6" opacity="0.07" />
+      <circle cx={width - 140} cy={height - 140} r="140" fill="#2dd4bf" opacity="0.06" />
 
       <text
-        x={40}
-        y={42}
+        x={48}
+        y={48}
         fill="#99f6e4"
-        fontSize={12}
+        fontSize={14}
         fontWeight={700}
         letterSpacing="2"
         fontFamily="ui-sans-serif, system-ui, sans-serif"
@@ -141,10 +121,10 @@ export const FindingsInfographicCanvas: React.FC<FindingsInfographicCanvasProps>
         {headerLabel}
       </text>
       <text
-        x={width - 40}
-        y={42}
+        x={width - 48}
+        y={48}
         fill="#64748b"
-        fontSize={12}
+        fontSize={13}
         textAnchor="end"
         fontFamily="ui-sans-serif, system-ui, sans-serif"
       >
@@ -158,7 +138,7 @@ export const FindingsInfographicCanvas: React.FC<FindingsInfographicCanvasProps>
           d={`M ${e.x1} ${e.y1} Q ${e.cx} ${e.cy} ${e.x2} ${e.y2}`}
           fill="none"
           stroke="#5eead4"
-          strokeWidth={2.2}
+          strokeWidth={2.4}
           opacity={0.75}
           markerEnd="url(#fig-arrow)"
         />
@@ -172,11 +152,11 @@ export const FindingsInfographicCanvas: React.FC<FindingsInfographicCanvasProps>
               <rect x={b.x} y={b.y} width={b.w} height={b.h} rx={8} fill={fill} opacity={0.9} />
               <text
                 x={b.x + b.w / 2}
-                y={b.y + 24}
+                y={b.y + b.h / 2 + 5}
                 fill="#ecfeff"
                 fontSize={13}
                 fontWeight={700}
-                letterSpacing="2"
+                letterSpacing="1.5"
                 textAnchor="middle"
                 fontFamily="ui-sans-serif, system-ui, sans-serif"
               >
@@ -186,6 +166,11 @@ export const FindingsInfographicCanvas: React.FC<FindingsInfographicCanvasProps>
           );
         }
         if (b.kind === "diagnosis") {
+          const labelLines = wrapTextLines(
+            b.label,
+            Math.max(8, Math.floor((b.w - 32) / (20 * 0.52))),
+            3
+          );
           return (
             <g key={b.id} filter="url(#fig-shadow)">
               <rect
@@ -202,7 +187,7 @@ export const FindingsInfographicCanvas: React.FC<FindingsInfographicCanvasProps>
                 x={b.x + b.w / 2}
                 y={b.y + 28}
                 fill="#ccfbf1"
-                fontSize={11}
+                fontSize={12}
                 fontWeight={700}
                 letterSpacing="2"
                 textAnchor="middle"
@@ -210,21 +195,27 @@ export const FindingsInfographicCanvas: React.FC<FindingsInfographicCanvasProps>
               >
                 ANCLA
               </text>
-              <SvgWrappedText
-                text={b.label}
+              <SvgLines
+                lines={labelLines}
                 x={b.x + b.w / 2}
                 y={b.y + 52}
-                width={b.w - 28}
                 fontSize={20}
                 fill="#f0fdfa"
                 fontWeight={700}
-                maxLines={2}
+                lineHeight={1.25}
               />
             </g>
           );
         }
 
+        const metrics = findingBoxMetrics(b.label, b.detail, b.w);
         const accent = accentFor(b.polarity, b.weight);
+        const labelY = b.y + metrics.padTop + metrics.labelFont * 0.85;
+        const detailY =
+          labelY +
+          Math.max(0, metrics.labelLines.length - 1) * metrics.labelFont * metrics.labelLh +
+          (metrics.detailLines.length ? metrics.gap + metrics.detailFont * 0.85 : 0);
+
         return (
           <g key={b.id} filter="url(#fig-shadow)">
             <rect
@@ -238,25 +229,24 @@ export const FindingsInfographicCanvas: React.FC<FindingsInfographicCanvasProps>
               strokeWidth={b.weight === "primary" ? 2 : 1.2}
             />
             <rect x={b.x} y={b.y} width={5} height={b.h} rx={2} fill={barFor(b.polarity)} />
-            <SvgWrappedText
-              text={b.label}
+            <SvgLines
+              lines={metrics.labelLines}
               x={b.x + b.w / 2}
-              y={b.y + 28}
-              width={b.w - 24}
-              fontSize={14}
+              y={labelY}
+              fontSize={metrics.labelFont}
               fill="#f1f5f9"
               fontWeight={700}
-              maxLines={3}
+              lineHeight={metrics.labelLh}
             />
-            {b.detail && (
-              <SvgWrappedText
-                text={b.detail}
+            {metrics.detailLines.length > 0 && (
+              <SvgLines
+                lines={metrics.detailLines}
                 x={b.x + b.w / 2}
-                y={b.y + b.h - 28}
-                width={b.w - 24}
-                fontSize={11}
+                y={detailY}
+                fontSize={metrics.detailFont}
                 fill="#94a3b8"
-                maxLines={2}
+                fontWeight={400}
+                lineHeight={metrics.detailLh}
               />
             )}
           </g>

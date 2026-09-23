@@ -1,7 +1,9 @@
 import { FindingsInfographicData } from "../types";
 import {
   buildInfographicScene,
+  findingBoxMetrics,
   layoutDisplayLabel,
+  wrapTextLines,
   type InfographicScene,
 } from "../lib/findingsInfographic";
 import { sanitizePdfText } from "./sanitizePdfText";
@@ -13,26 +15,6 @@ function escapeXml(s: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&apos;");
-}
-
-function wrapLines(text: string, charsPerLine: number, maxLines: number): string[] {
-  const words = String(text || "")
-    .split(/\s+/)
-    .filter(Boolean);
-  const lines: string[] = [];
-  let cur = "";
-  for (const w of words) {
-    const next = cur ? `${cur} ${w}` : w;
-    if (next.length > charsPerLine && cur) {
-      lines.push(cur);
-      cur = w;
-      if (lines.length >= maxLines) break;
-    } else {
-      cur = next;
-    }
-  }
-  if (cur && lines.length < maxLines) lines.push(cur);
-  return lines.slice(0, maxLines);
 }
 
 function tspans(
@@ -60,7 +42,7 @@ export function buildInfographicSvgMarkup(scene: InfographicScene): string {
   const edgePaths = edges
     .map(
       (e) =>
-        `<path d="M ${e.x1} ${e.y1} Q ${e.cx} ${e.cy} ${e.x2} ${e.y2}" fill="none" stroke="#5eead4" stroke-width="2.2" opacity="0.75" marker-end="url(#fig-arrow)"/>`
+        `<path d="M ${e.x1} ${e.y1} Q ${e.cx} ${e.cy} ${e.x2} ${e.y2}" fill="none" stroke="#5eead4" stroke-width="2.4" opacity="0.75" marker-end="url(#fig-arrow)"/>`
     )
     .join("");
 
@@ -70,17 +52,22 @@ export function buildInfographicSvgMarkup(scene: InfographicScene): string {
         const fill = b.polarity === "ruled_out" ? "#881337" : "#115e59";
         return `<g>
           <rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="8" fill="${fill}" opacity="0.9"/>
-          <text x="${b.x + b.w / 2}" y="${b.y + 24}" fill="#ecfeff" font-size="13" font-weight="700" letter-spacing="2" text-anchor="middle" font-family="ui-sans-serif, system-ui, sans-serif">${escapeXml(b.label)}</text>
+          <text x="${b.x + b.w / 2}" y="${b.y + b.h / 2 + 5}" fill="#ecfeff" font-size="13" font-weight="700" letter-spacing="1.5" text-anchor="middle" font-family="ui-sans-serif, system-ui, sans-serif">${escapeXml(b.label)}</text>
         </g>`;
       }
       if (b.kind === "diagnosis") {
-        const labelLines = wrapLines(b.label, Math.floor((b.w - 28) / 11), 2);
+        const labelLines = wrapTextLines(
+          b.label,
+          Math.max(8, Math.floor((b.w - 32) / (20 * 0.52))),
+          3
+        );
         return `<g>
           <rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="16" fill="url(#fig-diag)" stroke="#5eead4" stroke-width="1.5"/>
-          <text x="${b.x + b.w / 2}" y="${b.y + 28}" fill="#ccfbf1" font-size="11" font-weight="700" letter-spacing="2" text-anchor="middle" font-family="ui-sans-serif, system-ui, sans-serif">ANCLA</text>
+          <text x="${b.x + b.w / 2}" y="${b.y + 28}" fill="#ccfbf1" font-size="12" font-weight="700" letter-spacing="2" text-anchor="middle" font-family="ui-sans-serif, system-ui, sans-serif">ANCLA</text>
           ${tspans(labelLines, b.x + b.w / 2, b.y + 52, 20, "#f0fdfa", 700)}
         </g>`;
       }
+      const metrics = findingBoxMetrics(b.label, b.detail, b.w);
       const accent =
         b.polarity === "ruled_out"
           ? "#fb7185"
@@ -96,18 +83,26 @@ export function buildInfographicSvgMarkup(scene: InfographicScene): string {
             ? "#8b5cf6"
             : "#14b8a6";
       const strokeW = b.weight === "primary" ? 2 : 1.2;
-      const labelLines = wrapLines(b.label, Math.floor((b.w - 24) / 8), 3);
-      const detailLines = b.detail
-        ? wrapLines(b.detail, Math.floor((b.w - 24) / 7), 2)
-        : [];
-      const detailStartY = b.y + b.h - 18 - Math.max(0, detailLines.length - 1) * 14;
+      const labelY = b.y + metrics.padTop + metrics.labelFont * 0.85;
+      const detailY =
+        labelY +
+        Math.max(0, metrics.labelLines.length - 1) * metrics.labelFont * metrics.labelLh +
+        (metrics.detailLines.length ? metrics.gap + metrics.detailFont * 0.85 : 0);
       return `<g>
         <rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="12" fill="url(#fig-find)" stroke="${accent}" stroke-width="${strokeW}"/>
         <rect x="${b.x}" y="${b.y}" width="5" height="${b.h}" rx="2" fill="${bar}"/>
-        ${tspans(labelLines, b.x + b.w / 2, b.y + 28, 14, "#f1f5f9", 700)}
+        ${tspans(metrics.labelLines, b.x + b.w / 2, labelY, metrics.labelFont, "#f1f5f9", 700, metrics.labelLh)}
         ${
-          detailLines.length
-            ? tspans(detailLines, b.x + b.w / 2, detailStartY, 11, "#94a3b8", 400)
+          metrics.detailLines.length
+            ? tspans(
+                metrics.detailLines,
+                b.x + b.w / 2,
+                detailY,
+                metrics.detailFont,
+                "#94a3b8",
+                400,
+                metrics.detailLh
+              )
             : ""
         }
       </g>`;
@@ -135,10 +130,10 @@ export function buildInfographicSvgMarkup(scene: InfographicScene): string {
     </marker>
   </defs>
   <rect width="${width}" height="${height}" fill="url(#fig-bg)" rx="18"/>
-  <circle cx="120" cy="100" r="90" fill="#14b8a6" opacity="0.07"/>
-  <circle cx="880" cy="560" r="120" fill="#2dd4bf" opacity="0.06"/>
-  <text x="40" y="42" fill="#99f6e4" font-size="12" font-weight="700" letter-spacing="2" font-family="ui-sans-serif, system-ui, sans-serif">${escapeXml(headerLabel)}</text>
-  <text x="${width - 40}" y="42" fill="#64748b" font-size="12" text-anchor="end" font-family="ui-sans-serif, system-ui, sans-serif">${escapeXml(modeLabel)}${studyRegion ? `  ·  ${escapeXml(studyRegion)}` : ""}</text>
+  <circle cx="140" cy="120" r="110" fill="#14b8a6" opacity="0.07"/>
+  <circle cx="${width - 140}" cy="${height - 140}" r="140" fill="#2dd4bf" opacity="0.06"/>
+  <text x="48" y="48" fill="#99f6e4" font-size="14" font-weight="700" letter-spacing="2" font-family="ui-sans-serif, system-ui, sans-serif">${escapeXml(headerLabel)}</text>
+  <text x="${width - 48}" y="48" fill="#64748b" font-size="13" text-anchor="end" font-family="ui-sans-serif, system-ui, sans-serif">${escapeXml(modeLabel)}${studyRegion ? `  ·  ${escapeXml(studyRegion)}` : ""}</text>
   ${edgePaths}
   ${boxMarkup}
 </svg>`;
@@ -344,14 +339,14 @@ export async function renderFindingsInfographicAnnexToPDF(
 
   doc.addPage();
 
-  const topSafe = 26 * factor;
-  const bottomSafe = 16 * factor;
+  const topSafe = 18 * factor;
+  const bottomSafe = 12 * factor;
   const availH = pageHeight - topSafe - bottomSafe;
-  const scale = Math.min(contentWidth / scene.width, availH / scene.height);
+  const scale = Math.min(contentWidth / scene.width, availH / scene.height) * 1.02;
   const drawW = scene.width * scale;
   const drawH = scene.height * scale;
   const ox = marginX + (contentWidth - drawW) / 2;
-  const oy = topSafe + Math.max(0, (availH - drawH) * 0.05);
+  const oy = topSafe + Math.max(0, (availH - drawH) * 0.02);
 
   try {
     const svg = buildInfographicSvgMarkup(scene);
