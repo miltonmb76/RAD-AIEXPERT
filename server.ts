@@ -11,7 +11,13 @@ import { normalizeReasoningChainData, extractJsonObject } from "./src/lib/reason
 import { normalizeNegativityChecklistData } from "./src/lib/negativityChecklist";
 import { normalizeDifferentialTreeData } from "./src/lib/differentialTree";
 import { normalizeSemioticsConductMatrixData } from "./src/lib/semioticsConductMatrix";
-import { normalizeFindingsInfographicData } from "./src/lib/findingsInfographic";
+import {
+  buildContentModePromptInstructions,
+  contentModeMeta,
+  INFOGRAPHIC_CONTENT_MODES,
+  INFOGRAPHIC_LAYOUT_OPTIONS,
+  normalizeFindingsInfographicData,
+} from "./src/lib/findingsInfographic";
 import { normalizeSecondReaderData } from "./src/lib/secondReader";
 import {
   classifyMeasurementStudyFamily,
@@ -10118,13 +10124,23 @@ ${report}
 });
 
 /**
- * API: INFOGRAFÍA DE JUSTIFICACIÓN DIAGNÓSTICA
+ * API: INFOGRAFÍA DE HALLAZGOS (contenido flexible + layouts)
  * POST /api/generate-findings-infographic
- * Hallazgos que sostienen el diagnóstico — sin manejo, sin "no mencionado".
+ * Tipos: justificación, presentes, descartados, criterios, signos, comparativa, por estructura, severidad.
+ * Sin manejo clínico; sin voz de auditoría ("no mencionado").
  */
 app.post("/api/generate-findings-infographic", async (req: express.Request, res: express.Response) => {
   try {
-    const { model, report, studyType, clinicalHistory, diagnosis, diagnosisPreset, layout } = req.body;
+    const {
+      model,
+      report,
+      studyType,
+      clinicalHistory,
+      diagnosis,
+      diagnosisPreset,
+      layout,
+      contentMode,
+    } = req.body;
     if (!report || !String(report).trim()) {
       return res.status(400).json({ success: false, error: "Se requiere el parámetro 'report'." });
     }
@@ -10134,33 +10150,46 @@ app.post("/api/generate-findings-infographic", async (req: express.Request, res:
     const dx = (diagnosis || "").toString().trim();
     const preset = (diagnosisPreset || "auto").toString().trim();
     const history = (clinicalHistory || "").toString().trim();
-    const layoutHint = (layout || "convergence").toString().trim();
+    const layoutHint = (layout || "auto").toString().trim();
+    const modeId =
+      INFOGRAPHIC_CONTENT_MODES.find((m) => m.id === contentMode)?.id || "justify_diagnosis";
+    const modeMeta = contentModeMeta(modeId);
+    const contentInstructions = buildContentModePromptInstructions(modeId, dx);
+    const layoutCatalog = INFOGRAPHIC_LAYOUT_OPTIONS.filter((o) => o.id !== "auto")
+      .map((o) => `"${o.id}"`)
+      .join(" | ");
+    const suggestedLayouts = modeMeta.suggestedLayouts.join(", ");
 
     const prompt = `Eres el mismo radiólogo hispanohablante que redactó este informe.
-Construye una INFOGRAFÍA DE JUSTIFICACIÓN DIAGNÓSTICA: los hallazgos del informe que sostienen el diagnóstico ancla.
+Construye una INFOGRAFÍA DE HALLAZGOS para PDF/consola: nodos visuales según el TIPO DE CONTENIDO pedido.
 
-IDIOMA: TODO el texto visible en ESPAÑOL médico, voz del radiólogo (primera persona profesional / afirmaciones del informe). Nunca suenes como revisor externo.
+IDIOMA: TODO el texto visible en ESPAÑOL médico, voz del radiólogo (afirmaciones del informe). Nunca suenes como revisor externo.
 
 ESTUDIO: ${studyType || "No especificado"}
 PRESET: ${preset}
-${dx ? `DIAGNÓSTICO ANCLA: "${dx}"` : "Deriva el diagnóstico principal del informe."}
+${dx ? `ANCLA / TEMA: "${dx}"` : "Deriva el diagnóstico o tema principal del informe."}
+TIPO DE CONTENIDO (contentMode): ${modeId} — ${modeMeta.label}
+${contentInstructions}
 LAYOUT PREFERIDO: ${layoutHint}
+Layouts sugeridos para este contenido: ${suggestedLayouts}
+Layouts válidos: ${layoutCatalog}
 ${history ? `HISTORIA CLINICA:\n"""\n${history}\n"""` : ""}
 
 REGLAS ESTRICTAS:
-1. Genera 4 a 7 nodes (hallazgos) que JUSTIFIQUEN el diagnóstico. Solo lo afirmado en el informe.
+1. Genera el número de nodes indicado en CONTENIDO. Solo lo afirmado o negado EXPLÍCITAMENTE en el informe.
 2. PROHIBIDO: manejo, conducta, seguimiento, recomendaciones, tratamiento, biopsia, "correlacionar con clínica" como plan.
 3. PROHIBIDO absoluto: "no mencionado", "no documentado", "ausente del informe", "pendiente", "faltante", "no referido", cualquier juicio sobre omisiones del reporte.
-4. Cada node: id, label (corto, 3-8 palabras), detail (opcional, 1 frase semiológica), weight ("primary" para 1-2 hallazgos clave, resto "secondary").
-5. title: "Justificación diagnóstica" o variante breve.
-6. diagnosis: diagnóstico ancla limpio (sin signos de interrogación).
+4. Cada node: id, label (corto, 3-8 palabras), detail (opcional, 1 frase semiológica), weight ("primary" para 1-2 hallazgos clave, resto "secondary"), polarity ("present" | "ruled_out" | "criterion" | "neutral"), group (opcional: estructura o familia de criterio).
+5. title: "${modeMeta.defaultTitle}" o variante breve coherente con el contentMode.
+6. diagnosis: ancla limpia (diagnóstico, categoría BI-RADS/TI-RADS, tema). Sin signos de interrogación.
 7. studyRegion: región anatómica breve.
-8. layout: uno de "convergence" | "constellation" | "cascade". Si el hint es "auto", elige "convergence" salvo que haya 6+ hallazgos (entonces "constellation").
-9. NO inventes hallazgos. Si el informe es negativo respecto al diagnóstico pedido, usa hallazgos negativos afirmados (ej. "sin líquido libre") solo si están escritos; no digas que algo "no se mencionó".
+8. contentMode: debe ser exactamente "${modeId}".
+9. layout: uno de los layouts válidos. Si el hint es "auto", elige el más adecuado entre los sugeridos (${suggestedLayouts}).
+10. NO inventes hallazgos. Negaciones solo si están escritas (ej. "sin líquido libre"); nunca digas que algo "no se mencionó".
 
 Claves JSON en inglés:
-title, diagnosis, studyRegion, layout, nodes.
-Cada node: id, label, detail, weight.
+title, diagnosis, studyRegion, contentMode, layout, nodes.
+Cada node: id, label, detail, weight, polarity, group.
 
 INFORME:
 """
@@ -10175,6 +10204,8 @@ ${report}
         label: { type: Type.STRING },
         detail: { type: Type.STRING },
         weight: { type: Type.STRING },
+        polarity: { type: Type.STRING },
+        group: { type: Type.STRING },
       },
       required: ["id", "label"],
     };
@@ -10185,6 +10216,7 @@ ${report}
         title: { type: Type.STRING },
         diagnosis: { type: Type.STRING },
         studyRegion: { type: Type.STRING },
+        contentMode: { type: Type.STRING },
         layout: { type: Type.STRING },
         nodes: { type: Type.ARRAY, items: nodeSchema },
       },
@@ -10250,7 +10282,12 @@ ${report}
       });
     }
 
-    const data = normalizeFindingsInfographicData(parsed, dx, layoutHint as any);
+    const data = normalizeFindingsInfographicData(
+      { ...parsed, contentMode: parsed?.contentMode || modeId },
+      dx,
+      layoutHint as any,
+      modeId
+    );
     const realNodes = data.nodes.filter((n) => n.label.trim());
     if (!realNodes.length) {
       return res.status(500).json({
@@ -10259,6 +10296,8 @@ ${report}
       });
     }
     data.nodes = realNodes;
+    data.contentMode = modeId;
+    if (!data.title?.trim()) data.title = modeMeta.defaultTitle;
 
     res.json({ success: true, data });
   } catch (error: any) {

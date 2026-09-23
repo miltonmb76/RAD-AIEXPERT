@@ -4672,7 +4672,8 @@ Ejemplo:
               clinicalHistory: clinicalHistory || "",
               diagnosis: "Diagnóstico del informe",
               diagnosisPreset: "auto",
-              layout: "convergence",
+              layout: "auto",
+              contentMode: "justify_diagnosis",
             }),
           });
           const j = await resp.json();

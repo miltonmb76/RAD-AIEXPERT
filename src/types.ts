@@ -1256,10 +1256,37 @@ export interface SemioticsConductMatrixData {
   generatedAt?: string;
 }
 
-/** Visual layout modes for the diagnostic-justification infographic. */
-export type FindingsInfographicLayout = "convergence" | "constellation" | "cascade";
+/** Visual layout modes for findings infographics. */
+export type FindingsInfographicLayout =
+  | "convergence"
+  | "constellation"
+  | "cascade"
+  | "split_compare"
+  | "timeline"
+  | "funnel"
+  | "pillars"
+  | "stack"
+  | "radial"
+  | "tree";
 
-/** One finding node that supports the anchored diagnosis. */
+/** What clinical content the infographic should extract. */
+export type FindingsInfographicContentMode =
+  | "justify_diagnosis"
+  | "present_findings"
+  | "ruled_out"
+  | "classification_criteria"
+  | "key_signs"
+  | "present_vs_ruled"
+  | "by_structure"
+  | "severity_ladder";
+
+export type FindingsInfographicPolarity =
+  | "present"
+  | "ruled_out"
+  | "criterion"
+  | "neutral";
+
+/** One finding node on the infographic. */
 export interface FindingsInfographicNode {
   id: string;
   /** Short finding label (shown as primary text). */
@@ -1268,17 +1295,22 @@ export interface FindingsInfographicNode {
   detail?: string;
   /** Visual weight. */
   weight?: "primary" | "secondary";
+  /** Semantic role for coloring / split layouts. */
+  polarity?: FindingsInfographicPolarity;
+  /** Optional group (structure, scale criterion family…). */
+  group?: string;
 }
 
 /**
- * Diagnostic justification infographic (manual module).
+ * Findings infographic (manual module).
  * First-person radiologist voice — findings only, no management, no "not mentioned".
  */
 export interface FindingsInfographicData {
   title: string;
-  /** Anchored diagnosis the findings justify. */
+  /** Anchored diagnosis / topic focus. */
   diagnosis: string;
   studyRegion?: string;
+  contentMode: FindingsInfographicContentMode;
   layout: FindingsInfographicLayout;
   nodes: FindingsInfographicNode[];
   generatedAt?: string;

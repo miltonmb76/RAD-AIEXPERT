@@ -1,7 +1,7 @@
 import React from "react";
 import type { InfographicScene } from "../lib/findingsInfographic";
+import { layoutDisplayLabel } from "../lib/findingsInfographic";
 
-/** Soft-wrap text into tspans for SVG. */
 function SvgWrappedText({
   text,
   x,
@@ -64,26 +64,36 @@ function SvgWrappedText({
   );
 }
 
+function accentFor(polarity?: string, weight?: string): string {
+  if (polarity === "ruled_out") return "#fb7185";
+  if (polarity === "criterion") return "#a78bfa";
+  if (weight === "primary") return "#2dd4bf";
+  return "#334155";
+}
+
+function barFor(polarity?: string): string {
+  if (polarity === "ruled_out") return "#e11d48";
+  if (polarity === "criterion") return "#8b5cf6";
+  return "#14b8a6";
+}
+
 interface FindingsInfographicCanvasProps {
   scene: InfographicScene;
   className?: string;
 }
 
-/**
- * Elegant vector preview of the diagnostic-justification infographic.
- */
 export const FindingsInfographicCanvas: React.FC<FindingsInfographicCanvasProps> = ({
   scene,
   className,
 }) => {
-  const { width, height, boxes, edges, title, studyRegion, layout } = scene;
+  const { width, height, boxes, edges, headerLabel, studyRegion, layout } = scene;
 
   return (
     <svg
       viewBox={`0 0 ${width} ${height}`}
       className={className || "w-full h-auto"}
       role="img"
-      aria-label={title}
+      aria-label={headerLabel}
     >
       <defs>
         <linearGradient id="fig-bg" x1="0" y1="0" x2="1" y2="1">
@@ -116,7 +126,6 @@ export const FindingsInfographicCanvas: React.FC<FindingsInfographicCanvasProps>
       </defs>
 
       <rect width={width} height={height} fill="url(#fig-bg)" rx="18" />
-
       <circle cx="120" cy="100" r="90" fill="#14b8a6" opacity="0.07" />
       <circle cx="880" cy="560" r="120" fill="#2dd4bf" opacity="0.06" />
 
@@ -124,12 +133,12 @@ export const FindingsInfographicCanvas: React.FC<FindingsInfographicCanvasProps>
         x={40}
         y={42}
         fill="#99f6e4"
-        fontSize={13}
+        fontSize={12}
         fontWeight={700}
-        letterSpacing="3"
+        letterSpacing="2"
         fontFamily="ui-sans-serif, system-ui, sans-serif"
       >
-        JUSTIFICACIÓN DIAGNÓSTICA
+        {headerLabel}
       </text>
       <text
         x={width - 40}
@@ -139,11 +148,7 @@ export const FindingsInfographicCanvas: React.FC<FindingsInfographicCanvasProps>
         textAnchor="end"
         fontFamily="ui-sans-serif, system-ui, sans-serif"
       >
-        {layout === "convergence"
-          ? "Convergencia"
-          : layout === "constellation"
-            ? "Constelación"
-            : "Cascada"}
+        {layoutDisplayLabel(layout)}
         {studyRegion ? `  ·  ${studyRegion}` : ""}
       </text>
 
@@ -160,6 +165,26 @@ export const FindingsInfographicCanvas: React.FC<FindingsInfographicCanvasProps>
       ))}
 
       {boxes.map((b) => {
+        if (b.kind === "section") {
+          const fill = b.polarity === "ruled_out" ? "#881337" : "#115e59";
+          return (
+            <g key={b.id}>
+              <rect x={b.x} y={b.y} width={b.w} height={b.h} rx={8} fill={fill} opacity={0.9} />
+              <text
+                x={b.x + b.w / 2}
+                y={b.y + 24}
+                fill="#ecfeff"
+                fontSize={13}
+                fontWeight={700}
+                letterSpacing="2"
+                textAnchor="middle"
+                fontFamily="ui-sans-serif, system-ui, sans-serif"
+              >
+                {b.label}
+              </text>
+            </g>
+          );
+        }
         if (b.kind === "diagnosis") {
           return (
             <g key={b.id} filter="url(#fig-shadow)">
@@ -183,7 +208,7 @@ export const FindingsInfographicCanvas: React.FC<FindingsInfographicCanvasProps>
                 textAnchor="middle"
                 fontFamily="ui-sans-serif, system-ui, sans-serif"
               >
-                DIAGNÓSTICO
+                ANCLA
               </text>
               <SvgWrappedText
                 text={b.label}
@@ -199,7 +224,7 @@ export const FindingsInfographicCanvas: React.FC<FindingsInfographicCanvasProps>
           );
         }
 
-        const accent = b.weight === "primary" ? "#2dd4bf" : "#334155";
+        const accent = accentFor(b.polarity, b.weight);
         return (
           <g key={b.id} filter="url(#fig-shadow)">
             <rect
@@ -212,7 +237,7 @@ export const FindingsInfographicCanvas: React.FC<FindingsInfographicCanvasProps>
               stroke={accent}
               strokeWidth={b.weight === "primary" ? 2 : 1.2}
             />
-            <rect x={b.x} y={b.y} width={5} height={b.h} rx={2} fill="#14b8a6" />
+            <rect x={b.x} y={b.y} width={5} height={b.h} rx={2} fill={barFor(b.polarity)} />
             <SvgWrappedText
               text={b.label}
               x={b.x + b.w / 2}

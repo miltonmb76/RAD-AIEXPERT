@@ -9,15 +9,19 @@ import {
   Hexagon,
 } from "lucide-react";
 import type {
+  FindingsInfographicContentMode,
   FindingsInfographicData,
   FindingsInfographicLayout,
   FindingsInfographicNode,
 } from "../types";
 import {
+  INFOGRAPHIC_CONTENT_MODES,
   INFOGRAPHIC_DIAGNOSIS_PRESETS,
   INFOGRAPHIC_LAYOUT_OPTIONS,
   buildInfographicScene,
+  contentModeMeta,
   emptyInfographicNode,
+  layoutDisplayLabel,
   normalizeFindingsInfographicData,
   resolveInfographicDiagnosis,
 } from "../lib/findingsInfographic";
@@ -34,6 +38,19 @@ interface FindingsInfographicModuleProps {
   setIncludeInReport: (include: boolean) => void;
 }
 
+const QUICK_LAYOUTS: FindingsInfographicLayout[] = [
+  "convergence",
+  "constellation",
+  "radial",
+  "cascade",
+  "funnel",
+  "pillars",
+  "stack",
+  "timeline",
+  "split_compare",
+  "tree",
+];
+
 export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps> = ({
   selectedModel,
   reportText,
@@ -48,16 +65,37 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
   const [error, setError] = useState<string | null>(null);
   const [presetId, setPresetId] = useState("auto");
   const [customDiagnosis, setCustomDiagnosis] = useState("");
+  const [contentMode, setContentMode] =
+    useState<FindingsInfographicContentMode>("justify_diagnosis");
   const [layoutChoice, setLayoutChoice] = useState<FindingsInfographicLayout | "auto">(
     "convergence"
   );
 
   const diagnosisLabel = resolveInfographicDiagnosis(presetId, customDiagnosis);
+  const modeMeta = contentModeMeta(contentMode);
 
   const scene = useMemo(
     () => (infographicData ? buildInfographicScene(infographicData) : null),
     [infographicData]
   );
+
+  const handleContentModeChange = (mode: FindingsInfographicContentMode) => {
+    setContentMode(mode);
+    const meta = contentModeMeta(mode);
+    if (layoutChoice !== "auto" && meta.suggestedLayouts[0]) {
+      setLayoutChoice(meta.suggestedLayouts[0]);
+      if (infographicData) {
+        setInfographicData({
+          ...infographicData,
+          contentMode: mode,
+          layout: meta.suggestedLayouts[0],
+          title: meta.defaultTitle,
+        });
+      }
+    } else if (infographicData) {
+      setInfographicData({ ...infographicData, contentMode: mode, title: meta.defaultTitle });
+    }
+  };
 
   const handleGenerate = async () => {
     if (!reportText.trim()) {
@@ -78,6 +116,7 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
           diagnosis: diagnosisLabel,
           diagnosisPreset: presetId,
           layout: layoutChoice,
+          contentMode,
         }),
       });
       const json = await response.json();
@@ -85,7 +124,12 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
         throw new Error(json.error || "No se pudo generar la infografía.");
       }
       setInfographicData(
-        normalizeFindingsInfographicData(json.data, diagnosisLabel, layoutChoice)
+        normalizeFindingsInfographicData(
+          json.data,
+          diagnosisLabel,
+          layoutChoice,
+          contentMode
+        )
       );
       setIncludeInReport(true);
     } catch (err: any) {
@@ -118,18 +162,20 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
       setInfographicData(
         normalizeFindingsInfographicData(
           {
-            title: "Justificación diagnóstica",
+            title: modeMeta.defaultTitle,
             diagnosis: diagnosisLabel,
+            contentMode,
             layout: layoutChoice === "auto" ? "convergence" : layoutChoice,
             nodes: [],
           },
           diagnosisLabel,
-          layoutChoice
+          layoutChoice,
+          contentMode
         )
       );
       return;
     }
-    if (infographicData.nodes.length >= 8) return;
+    if (infographicData.nodes.length >= 10) return;
     setInfographicData({
       ...infographicData,
       nodes: [...infographicData.nodes, emptyInfographicNode()],
@@ -156,14 +202,14 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-sm md:text-base font-black uppercase tracking-wider text-slate-100 font-mono">
-                Infografía de justificación diagnóstica
+                Infografía de hallazgos
               </h3>
               <span className="text-[9px] font-black uppercase tracking-widest bg-teal-950/50 text-teal-300 border border-teal-700/40 px-2 py-0.5 rounded">
-                Hallazgos
+                Flexible
               </span>
             </div>
             <p className="text-[11px] text-slate-400 mt-0.5 max-w-xl leading-relaxed">
-              Lámina visual de los hallazgos que sostienen el diagnóstico. Sin manejo ni recomendaciones.
+              Elige el tipo de contenido y la representación. Sin manejo ni «no mencionado».
             </p>
           </div>
         </div>
@@ -178,10 +224,28 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
         </label>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="space-y-1.5 md:col-span-2">
+          <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+            Tipo de contenido
+          </label>
+          <select
+            value={contentMode}
+            onChange={(e) =>
+              handleContentModeChange(e.target.value as FindingsInfographicContentMode)
+            }
+            className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-slate-200 outline-none focus:border-teal-500 cursor-pointer"
+          >
+            {INFOGRAPHIC_CONTENT_MODES.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label} — {m.desc}
+              </option>
+            ))}
+          </select>
+        </div>
         <div className="space-y-1.5">
           <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">
-            Diagnóstico ancla
+            Diagnóstico / tema ancla
           </label>
           <select
             value={presetId}
@@ -197,21 +261,19 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
         </div>
         <div className="space-y-1.5">
           <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">
-            {presetId === "custom" || presetId === "auto"
-              ? "Detalle del diagnóstico"
-              : "Matiz (opcional)"}
+            Detalle del ancla
           </label>
           <input
             type="text"
             value={customDiagnosis}
             onChange={(e) => setCustomDiagnosis(e.target.value)}
-            placeholder="Ej. colecistitis aguda litiásica…"
+            placeholder="Ej. colecistitis aguda / BI-RADS 4…"
             className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-slate-200 outline-none focus:border-teal-500"
           />
         </div>
-        <div className="space-y-1.5">
+        <div className="space-y-1.5 md:col-span-2">
           <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">
-            Modo visual
+            Representación visual
           </label>
           <select
             value={layoutChoice}
@@ -226,7 +288,7 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
           >
             {INFOGRAPHIC_LAYOUT_OPTIONS.map((o) => (
               <option key={o.id} value={o.id}>
-                {o.label}
+                {o.label} — {o.desc}
               </option>
             ))}
           </select>
@@ -251,28 +313,22 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
               className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-teal-700/50 text-teal-300 hover:bg-teal-950/40 text-[10px] font-bold uppercase cursor-pointer"
             >
               <Plus className="h-3.5 w-3.5" />
-              Hallazgo
+              Nodo
             </button>
-            {(["convergence", "constellation", "cascade"] as FindingsInfographicLayout[]).map(
-              (m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => changeLayout(m)}
-                  className={`px-3 py-2 rounded-xl text-[10px] font-bold uppercase cursor-pointer border ${
-                    infographicData.layout === m
-                      ? "bg-teal-700/40 border-teal-500 text-teal-100"
-                      : "border-slate-700 text-slate-400 hover:text-slate-200"
-                  }`}
-                >
-                  {m === "convergence"
-                    ? "Convergencia"
-                    : m === "constellation"
-                      ? "Constelación"
-                      : "Cascada"}
-                </button>
-              )
-            )}
+            {QUICK_LAYOUTS.map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => changeLayout(m)}
+                className={`px-3 py-2 rounded-xl text-[10px] font-bold uppercase cursor-pointer border ${
+                  infographicData.layout === m
+                    ? "bg-teal-700/40 border-teal-500 text-teal-100"
+                    : "border-slate-700 text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                {layoutDisplayLabel(m)}
+              </button>
+            ))}
             <button
               type="button"
               onClick={() => {
@@ -297,7 +353,7 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
       {isLoading && !infographicData && (
         <div className="flex items-center gap-3 text-teal-300 text-xs font-mono py-8 justify-center">
           <Loader2 className="h-5 w-5 animate-spin" />
-          Componiendo la justificación visual…
+          Componiendo la lámina ({modeMeta.label})…
         </div>
       )}
 
@@ -318,7 +374,7 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
               onChange={(e) =>
                 setInfographicData({ ...infographicData, diagnosis: e.target.value })
               }
-              placeholder="Diagnóstico"
+              placeholder="Ancla / diagnóstico"
               className="w-full bg-transparent border-b border-teal-800/40 pb-1 text-sm font-black text-slate-100 outline-none focus:border-teal-400"
             />
             <input
@@ -340,7 +396,7 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
               >
                 <div className="flex items-center justify-between gap-2 px-3.5 py-2 border-b border-slate-800/80 bg-slate-900/50">
                   <span className="text-[10px] font-black uppercase tracking-widest text-teal-400/90 font-mono">
-                    Hallazgo {idx + 1}
+                    Nodo {idx + 1}
                   </span>
                   <button
                     type="button"
@@ -351,8 +407,8 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
                     Eliminar
                   </button>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 p-3.5">
-                  <label className="space-y-1">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 p-3.5">
+                  <label className="space-y-1 md:col-span-2">
                     <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">
                       Etiqueta
                     </span>
@@ -365,19 +421,21 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
                   </label>
                   <label className="space-y-1">
                     <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">
-                      Peso visual
+                      Polaridad
                     </span>
                     <select
-                      value={node.weight || "secondary"}
+                      value={node.polarity || "neutral"}
                       onChange={(e) =>
                         updateNode(node.id, {
-                          weight: e.target.value as "primary" | "secondary",
+                          polarity: e.target.value as FindingsInfographicNode["polarity"],
                         })
                       }
                       className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-[11px] text-slate-200 outline-none focus:border-teal-500 cursor-pointer"
                     >
-                      <option value="primary">Primario</option>
-                      <option value="secondary">Secundario</option>
+                      <option value="present">Presente</option>
+                      <option value="ruled_out">Descartado</option>
+                      <option value="criterion">Criterio</option>
+                      <option value="neutral">Neutro</option>
                     </select>
                   </label>
                   <label className="space-y-1 md:col-span-2">
@@ -389,6 +447,18 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
                       onChange={(e) => updateNode(node.id, { detail: e.target.value })}
                       rows={2}
                       className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-[11px] text-slate-300 outline-none focus:border-teal-500 resize-y"
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">
+                      Grupo / estructura
+                    </span>
+                    <input
+                      type="text"
+                      value={node.group || ""}
+                      onChange={(e) => updateNode(node.id, { group: e.target.value })}
+                      placeholder="Ej. vesícula, lóbulo dcho…"
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-[11px] text-slate-200 outline-none focus:border-teal-500"
                     />
                   </label>
                 </div>

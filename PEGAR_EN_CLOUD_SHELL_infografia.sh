@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # PEGAR TODO EN CLOUD SHELL
-# Infografía de justificación diagnóstica (convergencia / constelación / cascada)
+# Infografía de hallazgos: 8 tipos de contenido + 10 layouts (convergencia, radial, embudo…)
 set -euo pipefail
 
 if [ -f package.json ] && [ -d src ]; then
@@ -22,7 +22,11 @@ git checkout cursor/clinical-polish-0681
 git pull origin cursor/clinical-polish-0681
 
 echo ""
-echo "==> Verificando infografía..."
+echo "==> Verificando infografía (contentMode + layouts)..."
+rg -n "contentMode|INFOGRAPHIC_CONTENT_MODES|split_compare|buildContentModePromptInstructions" \
+  src/lib/findingsInfographic.ts server.ts \
+  src/components/FindingsInfographicModule.tsx | head -40
+
 rg -n "findings_infographic|generate-findings-infographic|FindingsInfographic" \
   src/App.tsx server.ts src/lib/modelRouting.ts \
   src/lib/findingsInfographic.ts \
