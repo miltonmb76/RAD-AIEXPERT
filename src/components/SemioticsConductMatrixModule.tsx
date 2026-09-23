@@ -341,19 +341,6 @@ export const SemioticsConductMatrixModule: React.FC<SemioticsConductMatrixModule
             ))}
           </div>
 
-          <label className="block space-y-1">
-            <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">
-              Nota al pie del anexo (opcional)
-            </span>
-            <textarea
-              value={matrixData.footnote || ""}
-              onChange={(e) => setMatrixData({ ...matrixData, footnote: e.target.value })}
-              rows={2}
-              placeholder="Ej. Conductas orientativas según ACR / Fleischner; correlacionar con clínica."
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-[11px] text-slate-400 outline-none focus:border-fuchsia-500 resize-y"
-            />
-          </label>
-
           {!includeInReport && (
             <p className="text-[10px] text-amber-300/90 bg-amber-950/30 border border-amber-800/40 rounded-xl px-3 py-2">
               La matriz está generada pero <strong>no se incluirá en el PDF</strong> hasta que actives «Incluir en PDF».

@@ -3,6 +3,7 @@ import { sanitizePdfText } from "./sanitizePdfText";
 
 /**
  * Annex: semiology → conduct decision matrix for the PDF.
+ * Larger type + roomy cells; no footnote disclaimer box.
  */
 export function renderSemioticsConductMatrixAnnexToPDF(
   doc: any,
@@ -27,24 +28,29 @@ export function renderSemioticsConductMatrixAnnexToPDF(
   if (!usableRows.length) return;
 
   const { marginX, pageWidth, pageHeight, contentWidth, factor } = options;
-  const pageBottom = pageHeight - 16 * factor;
-  const fsTitle = 13 * factor;
-  const fsBanner = 10 * factor;
-  const fsMeta = 8.4 * factor;
-  const fsBody = 8.6 * factor;
-  const fsHead = 7.8 * factor;
-  const lineBody = 3.9 * factor;
+  const pageBottom = pageHeight - 14 * factor;
 
-  let y = 20 * factor;
+  // Slightly larger type for readability; line height keeps wrapped sentences inside cells.
+  const fsTitle = 14.5 * factor;
+  const fsBanner = 11 * factor;
+  const fsMeta = 9.4 * factor;
+  const fsBody = 10 * factor;
+  const fsHead = 8.8 * factor;
+  const lineBody = 4.8 * factor;
+  const cellPadX = 3 * factor;
+  const cellPadY = 5.5 * factor;
+  const minRowH = 14 * factor;
+
+  let y = 18 * factor;
 
   const ensureSpace = (needed: number) => {
     if (y + needed <= pageBottom) return;
     doc.addPage();
-    y = 18 * factor;
+    y = 16 * factor;
   };
 
   doc.addPage();
-  y = 20 * factor;
+  y = 18 * factor;
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(fsTitle);
@@ -59,12 +65,12 @@ export function renderSemioticsConductMatrixAnnexToPDF(
     marginX,
     y
   );
-  y += 5.5 * factor;
+  y += 6.5 * factor;
 
   doc.setDrawColor(192, 38, 211);
-  doc.setLineWidth(0.9);
+  doc.setLineWidth(1.1);
   doc.line(marginX, y, pageWidth - marginX, y);
-  y += 7 * factor;
+  y += 8 * factor;
 
   const focusLine = sanitizePdfText(
     `Enfoque: ${matrix.focusTopic || "Del informe"}${
@@ -74,74 +80,81 @@ export function renderSemioticsConductMatrixAnnexToPDF(
   const qLine = matrix.clinicalQuestion
     ? sanitizePdfText(matrix.clinicalQuestion)
     : "";
-  const focusLines = doc.splitTextToSize(focusLine, contentWidth - 14 * factor);
+  const focusLines = doc.splitTextToSize(focusLine, contentWidth - 16 * factor);
   const qLines = qLine
-    ? doc.splitTextToSize(qLine, contentWidth - 14 * factor)
+    ? doc.splitTextToSize(qLine, contentWidth - 16 * factor)
     : [];
   const bannerH = Math.max(
-    14 * factor,
-    (focusLines.length + qLines.length) * 4.6 * factor + 9 * factor
+    16 * factor,
+    (focusLines.length + qLines.length) * 5.2 * factor + 11 * factor
   );
 
   doc.setFillColor(253, 244, 255);
   doc.setDrawColor(233, 213, 255);
-  doc.roundedRect(marginX, y, contentWidth, bannerH, 2, 2, "FD");
+  doc.roundedRect(marginX, y, contentWidth, bannerH, 2.5, 2.5, "FD");
   doc.setFillColor(192, 38, 211);
-  doc.rect(marginX, y, 3.5 * factor, bannerH, "F");
+  doc.rect(marginX, y, 4 * factor, bannerH, "F");
 
-  let ty = y + 5.5 * factor;
+  let ty = y + 6.5 * factor;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(fsBanner);
   doc.setTextColor(112, 26, 117);
   focusLines.forEach((line: string) => {
-    doc.text(line, marginX + 7 * factor, ty);
-    ty += 4.6 * factor;
+    doc.text(line, marginX + 8 * factor, ty);
+    ty += 5.2 * factor;
   });
   if (qLines.length) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(fsMeta);
     doc.setTextColor(91, 33, 182);
     qLines.forEach((line: string) => {
-      doc.text(line, marginX + 7 * factor, ty);
-      ty += 4.3 * factor;
+      doc.text(line, marginX + 8 * factor, ty);
+      ty += 4.8 * factor;
     });
   }
-  y += bannerH + 6 * factor;
+  y += bannerH + 7 * factor;
 
-  // Column proportions (finding | signs | category | conduct | optional anchor)
+  // Wider text columns so wrapped sentences stay readable.
   const hasAnchor = usableRows.some((r) => r.anchor && r.anchor.trim());
   const cols = hasAnchor
     ? [
-        { key: "finding", label: "HALLAZGO", w: 0.22 },
-        { key: "signs", label: "SIGNOS / CRITERIOS", w: 0.28 },
-        { key: "category", label: "CATEGORIA", w: 0.14 },
-        { key: "conduct", label: "CONDUCTA", w: 0.24 },
+        { key: "finding", label: "HALLAZGO", w: 0.2 },
+        { key: "signs", label: "SIGNOS / CRITERIOS", w: 0.3 },
+        { key: "category", label: "CATEGORIA", w: 0.12 },
+        { key: "conduct", label: "CONDUCTA", w: 0.26 },
         { key: "anchor", label: "ANCLA", w: 0.12 },
       ]
     : [
-        { key: "finding", label: "HALLAZGO", w: 0.24 },
-        { key: "signs", label: "SIGNOS / CRITERIOS", w: 0.3 },
-        { key: "category", label: "CATEGORIA", w: 0.16 },
-        { key: "conduct", label: "CONDUCTA", w: 0.3 },
+        { key: "finding", label: "HALLAZGO", w: 0.22 },
+        { key: "signs", label: "SIGNOS / CRITERIOS", w: 0.32 },
+        { key: "category", label: "CATEGORIA", w: 0.14 },
+        { key: "conduct", label: "CONDUCTA", w: 0.32 },
       ];
 
   const colWidths = cols.map((c) => c.w * contentWidth);
-  const pad = 2.2 * factor;
+
+  const wrapCell = (raw: string, colW: number): string[] => {
+    const text = sanitizePdfText((raw || "").trim() || "-");
+    const maxW = Math.max(12 * factor, colW - cellPadX * 2);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(fsBody);
+    return doc.splitTextToSize(text, maxW);
+  };
 
   const drawHeader = () => {
-    const headerH = 8 * factor;
+    const headerH = 10 * factor;
     ensureSpace(headerH + 4 * factor);
     doc.setFillColor(88, 28, 135);
-    doc.roundedRect(marginX, y, contentWidth, headerH, 1.2, 1.2, "F");
+    doc.roundedRect(marginX, y, contentWidth, headerH, 1.5, 1.5, "F");
     let x = marginX;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(fsHead);
     doc.setTextColor(250, 245, 255);
     cols.forEach((col, i) => {
-      doc.text(col.label, x + pad, y + 5.2 * factor);
+      doc.text(col.label, x + cellPadX, y + 6.5 * factor);
       x += colWidths[i];
     });
-    y += headerH + 1.5 * factor;
+    y += headerH + 2 * factor;
   };
 
   drawHeader();
@@ -158,29 +171,27 @@ export function renderSemioticsConductMatrixAnnexToPDF(
               : col.key === "conduct"
                 ? row.conduct
                 : row.anchor || "";
-      return doc.splitTextToSize(
-        sanitizePdfText(raw || "-"),
-        colWidths[colIdx] - pad * 2
-      );
+      return wrapCell(raw, colWidths[colIdx]);
     });
     const maxLines = Math.max(...cellTexts.map((t: string[]) => t.length), 1);
-    const rowH = Math.max(10 * factor, maxLines * lineBody + 5 * factor);
+    const rowH = Math.max(minRowH, maxLines * lineBody + cellPadY * 2);
 
     if (y + rowH > pageBottom) {
       doc.addPage();
-      y = 18 * factor;
+      y = 16 * factor;
       drawHeader();
     }
 
     const bg =
       idx % 2 === 0 ? ([250, 245, 255] as const) : ([255, 255, 255] as const);
     doc.setFillColor(bg[0], bg[1], bg[2]);
-    doc.setDrawColor(233, 213, 255);
-    doc.rect(marginX, y, contentWidth, rowH, "FD");
+    doc.setDrawColor(216, 180, 254);
+    doc.setLineWidth(0.4);
+    doc.roundedRect(marginX, y, contentWidth, rowH, 1.2, 1.2, "FD");
 
     // Left accent stripe
     doc.setFillColor(192, 38, 211);
-    doc.rect(marginX, y, 1.4 * factor, rowH, "F");
+    doc.rect(marginX, y, 2 * factor, rowH, "F");
 
     let x = marginX;
     cellTexts.forEach((lines: string[], i: number) => {
@@ -192,35 +203,15 @@ export function renderSemioticsConductMatrixAnnexToPDF(
       else if (isCategory) doc.setTextColor(157, 23, 77);
       else doc.setTextColor(30, 41, 59);
 
-      let cy = y + 4.5 * factor;
+      let cy = y + cellPadY + 1.2 * factor;
       lines.forEach((line: string) => {
-        doc.text(line, x + pad, cy);
+        doc.text(line, x + cellPadX, cy);
         cy += lineBody;
       });
       x += colWidths[i];
     });
 
-    y += rowH;
+    y += rowH + 2.2 * factor;
   });
-
-  if (matrix.footnote) {
-    y += 5 * factor;
-    const footLines = doc.splitTextToSize(
-      sanitizePdfText(matrix.footnote),
-      contentWidth - 12 * factor
-    );
-    const boxH = 7 * factor + footLines.length * lineBody;
-    ensureSpace(boxH);
-    doc.setFillColor(248, 250, 252);
-    doc.setDrawColor(203, 213, 225);
-    doc.roundedRect(marginX, y, contentWidth, boxH, 1.5, 1.5, "FD");
-    let fy = y + 5 * factor;
-    doc.setFont("helvetica", "italic");
-    doc.setFontSize(fsMeta);
-    doc.setTextColor(71, 85, 105);
-    footLines.forEach((line: string) => {
-      doc.text(line, marginX + 5 * factor, fy);
-      fy += lineBody;
-    });
-  }
+  // Footnote / disclaimer box intentionally omitted.
 }
