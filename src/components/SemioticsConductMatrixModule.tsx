@@ -128,7 +128,7 @@ export const SemioticsConductMatrixModule: React.FC<SemioticsConductMatrixModule
               </span>
             </div>
             <p className="text-[11px] text-slate-400 mt-0.5 max-w-xl leading-relaxed">
-              Hallazgo → signos/criterios → categoría de escala → conducta recomendada. Editable y opcional en el PDF.
+              Hallazgo → signos/criterios → conducta recomendada. Editable y opcional en el PDF.
             </p>
           </div>
         </div>
@@ -305,27 +305,16 @@ export const SemioticsConductMatrixModule: React.FC<SemioticsConductMatrixModule
                   </label>
                   <label className="space-y-1">
                     <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">
-                      Categoría / escala
-                    </span>
-                    <textarea
-                      value={row.category}
-                      onChange={(e) => updateRow(row.id, { category: e.target.value })}
-                      rows={2}
-                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-[11px] text-violet-200 outline-none focus:border-violet-500 resize-y"
-                    />
-                  </label>
-                  <label className="space-y-1">
-                    <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">
                       Conducta
                     </span>
                     <textarea
                       value={row.conduct}
                       onChange={(e) => updateRow(row.id, { conduct: e.target.value })}
-                      rows={2}
+                      rows={3}
                       className="w-full bg-slate-900 border border-emerald-900/40 rounded-xl px-3 py-2 text-[11px] text-emerald-200 outline-none focus:border-emerald-500 resize-y"
                     />
                   </label>
-                  <label className="space-y-1">
+                  <label className="space-y-1 md:col-span-2">
                     <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">
                       Ancla (panel / sección)
                     </span>

@@ -9967,9 +9967,9 @@ ${history ? `HISTORIA CLINICA:\n"""\n${history}\n"""` : "Sin historia adicional.
 
 REGLAS:
 1. Genera 3 a 6 filas (rows) relevantes al enfoque. No rellenes con hallazgos inventados.
-2. Cada fila: finding (hallazgo clave), signs (signos/criterios presentes o descartados), category (BI-RADS, Fleischner, TI-RADS, Bosniak, equivalente clínico o "N/A"), conduct (acción concreta: alta, control, biopsia, cirugía, correlación clínica…), anchor (opcional: panel/sección del informe).
-3. La conducta debe ser accionable y coherente con la categoría/signos.
-4. Si el enfoque es una escala (BI-RADS, Fleischner…), úsala de forma explícita en category.
+2. Cada fila: finding (hallazgo clave), signs (signos/criterios; si aplica escala BI-RADS/Fleischner/TI-RADS/Bosniak, menciónala AQUÍ dentro de signs, no en columna aparte), category (déjalo ""), conduct (acción concreta: alta, control, biopsia, cirugía, correlación clínica…), anchor (opcional: panel/sección del informe).
+3. La conducta debe ser accionable y coherente con los signos.
+4. NO uses columna de categoría separada: category siempre "". Integra la escala en signs (ej. "BI-RADS 1 — sin hallazgos sospechosos").
 5. title: "Matriz semiología → conducta" o variante breve.
 6. focusTopic: repite el enfoque priorizado.
 7. priorityConduct: 1 frase ACCIONABLE (sin signo de interrogación) con la conducta prioritaria del caso (ej. "Control habitual BI-RADS 1; sin biopsia ni estudio adicional").

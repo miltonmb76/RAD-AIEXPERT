@@ -117,31 +117,44 @@ export function renderSemioticsConductMatrixAnnexToPDF(
   }
   y += bannerH + 7 * factor;
 
-  // Wider text columns so wrapped sentences stay readable.
+  // Three wide columns (no category — it was too narrow and clipped words).
   const hasAnchor = usableRows.some((r) => r.anchor && r.anchor.trim());
   const cols = hasAnchor
     ? [
-        { key: "finding", label: "HALLAZGO", w: 0.2 },
-        { key: "signs", label: "SIGNOS / CRITERIOS", w: 0.3 },
-        { key: "category", label: "CATEGORIA", w: 0.12 },
-        { key: "conduct", label: "CONDUCTA", w: 0.26 },
+        { key: "finding", label: "HALLAZGO", w: 0.26 },
+        { key: "signs", label: "SIGNOS / CRITERIOS", w: 0.34 },
+        { key: "conduct", label: "CONDUCTA", w: 0.28 },
         { key: "anchor", label: "ANCLA", w: 0.12 },
       ]
     : [
-        { key: "finding", label: "HALLAZGO", w: 0.22 },
-        { key: "signs", label: "SIGNOS / CRITERIOS", w: 0.32 },
-        { key: "category", label: "CATEGORIA", w: 0.14 },
-        { key: "conduct", label: "CONDUCTA", w: 0.32 },
+        { key: "finding", label: "HALLAZGO", w: 0.28 },
+        { key: "signs", label: "SIGNOS / CRITERIOS", w: 0.38 },
+        { key: "conduct", label: "CONDUCTA", w: 0.34 },
       ];
 
   const colWidths = cols.map((c) => c.w * contentWidth);
 
+  /** Soft-break very long tokens so Helvetica wrap does not clip mid-word awkwardly. */
+  const softBreakLongWords = (text: string): string =>
+    text.replace(/\S{16,}/g, (token) =>
+      token.match(/.{1,14}/g)?.join("\u00AD") || token
+    );
+
   const wrapCell = (raw: string, colW: number): string[] => {
-    const text = sanitizePdfText((raw || "").trim() || "-");
-    const maxW = Math.max(12 * factor, colW - cellPadX * 2);
+    const text = softBreakLongWords(sanitizePdfText((raw || "").trim() || "-"));
+    const maxW = Math.max(18 * factor, colW - cellPadX * 2);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(fsBody);
-    return doc.splitTextToSize(text, maxW);
+    // Prefer soft-hyphen breaks; fall back to space-inserted chunks.
+    let lines = doc.splitTextToSize(text, maxW) as string[];
+    if (lines.some((ln: string) => doc.getTextWidth(ln) > maxW + 0.5)) {
+      const spaced = sanitizePdfText((raw || "").trim() || "-").replace(
+        /\S{14,}/g,
+        (token) => token.match(/.{1,12}/g)?.join(" ") || token
+      );
+      lines = doc.splitTextToSize(spaced, maxW);
+    }
+    return lines.map((ln: string) => ln.replace(/\u00AD/g, ""));
   };
 
   const drawHeader = () => {
@@ -169,11 +182,9 @@ export function renderSemioticsConductMatrixAnnexToPDF(
           ? row.finding
           : col.key === "signs"
             ? row.signs
-            : col.key === "category"
-              ? row.category
-              : col.key === "conduct"
-                ? row.conduct
-                : row.anchor || "";
+            : col.key === "conduct"
+              ? row.conduct
+              : row.anchor || "";
       return wrapCell(raw, colWidths[colIdx]);
     });
     const maxLines = Math.max(...cellTexts.map((t: string[]) => t.length), 1);
@@ -199,11 +210,9 @@ export function renderSemioticsConductMatrixAnnexToPDF(
     let x = marginX;
     cellTexts.forEach((lines: string[], i: number) => {
       const isConduct = cols[i].key === "conduct";
-      const isCategory = cols[i].key === "category";
-      doc.setFont("helvetica", isConduct || isCategory ? "bold" : "normal");
+      doc.setFont("helvetica", isConduct ? "bold" : "normal");
       doc.setFontSize(fsBody);
       if (isConduct) doc.setTextColor(109, 40, 217);
-      else if (isCategory) doc.setTextColor(157, 23, 77);
       else doc.setTextColor(30, 41, 59);
 
       let cy = y + cellPadY + 1.2 * factor;
