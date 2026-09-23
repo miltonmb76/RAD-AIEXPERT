@@ -342,7 +342,7 @@ export async function renderFindingsInfographicAnnexToPDF(
   const topSafe = 18 * factor;
   const bottomSafe = 12 * factor;
   const availH = pageHeight - topSafe - bottomSafe;
-  const scale = Math.min(contentWidth / scene.width, availH / scene.height) * 1.02;
+  const scale = Math.min(contentWidth / scene.width, availH / scene.height);
   const drawW = scene.width * scale;
   const drawH = scene.height * scale;
   const ox = marginX + (contentWidth - drawW) / 2;
