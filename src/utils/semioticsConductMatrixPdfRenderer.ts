@@ -52,35 +52,18 @@ export function renderSemioticsConductMatrixAnnexToPDF(
   };
 
   const formatAnnexTitle = (): string => {
-    const focus = String(matrix.focusTopic || "").trim();
-    let raw = String(matrix.title || "Matriz semiologia / conducta").trim();
-    // Helvetica cannot draw →; "->" looks broken — use a clean slash separator.
-    raw = raw
-      .replace(/\u2192|\u21D2/g, "/")
-      .replace(/->/g, "/")
-      .replace(/=>/g, "/")
-      .replace(/\s*\/\s*/g, " / ")
-      .replace(/\s{2,}/g, " ")
-      .trim();
-    let titled = sanitizePdfText(raw).toUpperCase();
-    // Normalize any leftover arrow-like leftovers after sanitize.
-    titled = titled.replace(/\s*->\s*/g, " / ").replace(/\s*=>\s*/g, " / ");
-    if (!/SEMIOLOG/i.test(titled)) {
-      titled = "MATRIZ SEMIOLOGIA / CONDUCTA";
-    } else {
-      titled = titled
-        .replace(/MATRIZ\s+SEMIOLOG[IÍ]A\s*\/\s*CONDUCTA/i, "MATRIZ SEMIOLOGIA / CONDUCTA")
-        .replace(/MATRIZ\s+SEMIOLOG[IÍ]A\s*-\s*CONDUCTA/i, "MATRIZ SEMIOLOGIA / CONDUCTA");
-    }
-    // Keep focus in the banner below; strip long ": FOCO" tails that crowd the header line.
-    titled = titled.replace(/\s*:\s*.+$/, "").trim();
-    if (focus && titled.length < 42) {
-      const focusShort = sanitizePdfText(focus).toUpperCase().slice(0, 28);
-      if (focusShort && !titled.includes(focusShort.slice(0, 10))) {
-        titled = `${titled}: ${focusShort}`;
-      }
-    }
-    return titled.slice(0, 58);
+    // Helvetica cannot draw →; "->" looks broken — fixed slash label.
+    const raw = String(matrix.title || "").trim();
+    const hasMatrix = /semiolog/i.test(raw) || /conducta/i.test(raw);
+    const base = hasMatrix
+      ? "MATRIZ SEMIOLOGIA / CONDUCTA"
+      : sanitizePdfText(raw || "MATRIZ SEMIOLOGIA / CONDUCTA")
+          .replace(/\u2192|\u21D2|->|=>/g, "/")
+          .replace(/\s*\/\s*/g, " / ")
+          .toUpperCase()
+          .replace(/\s*:\s*.+$/, "")
+          .trim();
+    return (base || "MATRIZ SEMIOLOGIA / CONDUCTA").slice(0, 52);
   };
 
   doc.addPage();
