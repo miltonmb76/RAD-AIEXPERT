@@ -134,27 +134,16 @@ export function renderSemioticsConductMatrixAnnexToPDF(
 
   const colWidths = cols.map((c) => c.w * contentWidth);
 
-  /** Soft-break very long tokens so Helvetica wrap does not clip mid-word awkwardly. */
-  const softBreakLongWords = (text: string): string =>
-    text.replace(/\S{16,}/g, (token) =>
-      token.match(/.{1,14}/g)?.join("\u00AD") || token
-    );
-
+  /** Insert soft breaks in long tokens so wrap never clips mid-cell. */
   const wrapCell = (raw: string, colW: number): string[] => {
-    const text = softBreakLongWords(sanitizePdfText((raw || "").trim() || "-"));
+    const spaced = sanitizePdfText((raw || "").trim() || "-").replace(
+      /\S{15,}/g,
+      (token) => token.match(/.{1,12}/g)?.join(" ") || token
+    );
     const maxW = Math.max(18 * factor, colW - cellPadX * 2);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(fsBody);
-    // Prefer soft-hyphen breaks; fall back to space-inserted chunks.
-    let lines = doc.splitTextToSize(text, maxW) as string[];
-    if (lines.some((ln: string) => doc.getTextWidth(ln) > maxW + 0.5)) {
-      const spaced = sanitizePdfText((raw || "").trim() || "-").replace(
-        /\S{14,}/g,
-        (token) => token.match(/.{1,12}/g)?.join(" ") || token
-      );
-      lines = doc.splitTextToSize(spaced, maxW);
-    }
-    return lines.map((ln: string) => ln.replace(/\u00AD/g, ""));
+    return doc.splitTextToSize(spaced, maxW);
   };
 
   const drawHeader = () => {
