@@ -51,20 +51,8 @@ export function renderSemioticsConductMatrixAnnexToPDF(
     y = topSafe;
   };
 
-  const formatAnnexTitle = (): string => {
-    // Helvetica cannot draw →; "->" looks broken — fixed slash label.
-    const raw = String(matrix.title || "").trim();
-    const hasMatrix = /semiolog/i.test(raw) || /conducta/i.test(raw);
-    const base = hasMatrix
-      ? "MATRIZ SEMIOLOGIA / CONDUCTA"
-      : sanitizePdfText(raw || "MATRIZ SEMIOLOGIA / CONDUCTA")
-          .replace(/\u2192|\u21D2|->|=>/g, "/")
-          .replace(/\s*\/\s*/g, " / ")
-          .toUpperCase()
-          .replace(/\s*:\s*.+$/, "")
-          .trim();
-    return (base || "MATRIZ SEMIOLOGIA / CONDUCTA").slice(0, 52);
-  };
+  // Fixed annex label — never append/truncate focus here (avoids dangling "(").
+  const annexTitle = "MATRIZ SEMIOLOGIA / CONDUCTA";
 
   doc.addPage();
   y = topSafe;
@@ -72,7 +60,7 @@ export function renderSemioticsConductMatrixAnnexToPDF(
   doc.setFont("helvetica", "bold");
   doc.setFontSize(fsTitle);
   doc.setTextColor(15, 23, 42);
-  doc.text(formatAnnexTitle(), marginX, y);
+  doc.text(annexTitle, marginX, y);
   y += 7.5 * factor;
 
   doc.setDrawColor(192, 38, 211);
