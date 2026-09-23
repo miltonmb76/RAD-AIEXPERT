@@ -41,31 +41,56 @@ export function renderSemioticsConductMatrixAnnexToPDF(
   const cellPadY = 5.5 * factor;
   const minRowH = 14 * factor;
 
-  let y = 18 * factor;
+  // Clear of running header ("ULTRASONIDO… / Pág. …") + separator line (~12–14 mm).
+  const topSafe = 26 * factor;
+  let y = topSafe;
 
   const ensureSpace = (needed: number) => {
     if (y + needed <= pageBottom) return;
     doc.addPage();
-    y = 16 * factor;
+    y = topSafe;
+  };
+
+  const formatAnnexTitle = (): string => {
+    const focus = String(matrix.focusTopic || "").trim();
+    let raw = String(matrix.title || "Matriz semiologia / conducta").trim();
+    // Helvetica cannot draw →; "->" looks broken — use a clean slash separator.
+    raw = raw
+      .replace(/\u2192|\u21D2/g, "/")
+      .replace(/->/g, "/")
+      .replace(/=>/g, "/")
+      .replace(/\s*\/\s*/g, " / ")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+    let titled = sanitizePdfText(raw).toUpperCase();
+    // Normalize any leftover arrow-like leftovers after sanitize.
+    titled = titled.replace(/\s*->\s*/g, " / ").replace(/\s*=>\s*/g, " / ");
+    if (!/SEMIOLOG/i.test(titled)) {
+      titled = "MATRIZ SEMIOLOGIA / CONDUCTA";
+    } else {
+      titled = titled
+        .replace(/MATRIZ\s+SEMIOLOG[IÍ]A\s*\/\s*CONDUCTA/i, "MATRIZ SEMIOLOGIA / CONDUCTA")
+        .replace(/MATRIZ\s+SEMIOLOG[IÍ]A\s*-\s*CONDUCTA/i, "MATRIZ SEMIOLOGIA / CONDUCTA");
+    }
+    // Keep focus in the banner below; strip long ": FOCO" tails that crowd the header line.
+    titled = titled.replace(/\s*:\s*.+$/, "").trim();
+    if (focus && titled.length < 42) {
+      const focusShort = sanitizePdfText(focus).toUpperCase().slice(0, 28);
+      if (focusShort && !titled.includes(focusShort.slice(0, 10))) {
+        titled = `${titled}: ${focusShort}`;
+      }
+    }
+    return titled.slice(0, 58);
   };
 
   doc.addPage();
-  y = 18 * factor;
+  y = topSafe;
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(fsTitle);
   doc.setTextColor(15, 23, 42);
-  doc.text(
-    sanitizePdfText(
-      (matrix.title || "MATRIZ SEMIOLOGIA → CONDUCTA")
-        .replace(/→/g, "->")
-        .toUpperCase()
-        .slice(0, 64)
-    ),
-    marginX,
-    y
-  );
-  y += 6.5 * factor;
+  doc.text(formatAnnexTitle(), marginX, y);
+  y += 7.5 * factor;
 
   doc.setDrawColor(192, 38, 211);
   doc.setLineWidth(1.1);
@@ -178,7 +203,7 @@ export function renderSemioticsConductMatrixAnnexToPDF(
 
     if (y + rowH > pageBottom) {
       doc.addPage();
-      y = 16 * factor;
+      y = topSafe;
       drawHeader();
     }
 
