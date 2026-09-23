@@ -1,6 +1,160 @@
 import { FindingsInfographicData } from "../types";
-import { buildInfographicScene } from "../lib/findingsInfographic";
+import {
+  buildInfographicScene,
+  type InfographicScene,
+} from "../lib/findingsInfographic";
 import { sanitizePdfText } from "./sanitizePdfText";
+
+function escapeXml(s: string): string {
+  return String(s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function wrapLines(text: string, charsPerLine: number, maxLines: number): string[] {
+  const words = String(text || "")
+    .split(/\s+/)
+    .filter(Boolean);
+  const lines: string[] = [];
+  let cur = "";
+  for (const w of words) {
+    const next = cur ? `${cur} ${w}` : w;
+    if (next.length > charsPerLine && cur) {
+      lines.push(cur);
+      cur = w;
+      if (lines.length >= maxLines) break;
+    } else {
+      cur = next;
+    }
+  }
+  if (cur && lines.length < maxLines) lines.push(cur);
+  return lines.slice(0, maxLines);
+}
+
+function tspans(
+  lines: string[],
+  x: number,
+  startY: number,
+  fontSize: number,
+  fill: string,
+  fontWeight = 700,
+  lineHeight = 1.25
+): string {
+  return lines
+    .map((line, i) => {
+      const y = startY + i * fontSize * lineHeight;
+      return `<text x="${x}" y="${y}" fill="${fill}" font-size="${fontSize}" font-weight="${fontWeight}" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif">${escapeXml(line)}</text>`;
+    })
+    .join("");
+}
+
+/** Same visual language as the on-screen SVG preview. */
+export function buildInfographicSvgMarkup(scene: InfographicScene): string {
+  const { width, height, boxes, edges, studyRegion, layout } = scene;
+  const modeLabel =
+    layout === "convergence"
+      ? "Convergencia"
+      : layout === "constellation"
+        ? "Constelación"
+        : "Cascada";
+
+  const edgePaths = edges
+    .map(
+      (e) =>
+        `<path d="M ${e.x1} ${e.y1} Q ${e.cx} ${e.cy} ${e.x2} ${e.y2}" fill="none" stroke="#5eead4" stroke-width="2.2" opacity="0.75" marker-end="url(#fig-arrow)"/>`
+    )
+    .join("");
+
+  const boxMarkup = boxes
+    .map((b) => {
+      if (b.kind === "diagnosis") {
+        const labelLines = wrapLines(b.label, Math.floor((b.w - 28) / 11), 2);
+        return `<g>
+          <rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="16" fill="url(#fig-diag)" stroke="#5eead4" stroke-width="1.5"/>
+          <text x="${b.x + b.w / 2}" y="${b.y + 28}" fill="#ccfbf1" font-size="11" font-weight="700" letter-spacing="2" text-anchor="middle" font-family="ui-sans-serif, system-ui, sans-serif">DIAGNÓSTICO</text>
+          ${tspans(labelLines, b.x + b.w / 2, b.y + 52, 20, "#f0fdfa", 700)}
+        </g>`;
+      }
+      const accent = b.weight === "primary" ? "#2dd4bf" : "#334155";
+      const strokeW = b.weight === "primary" ? 2 : 1.2;
+      const labelLines = wrapLines(b.label, Math.floor((b.w - 24) / 8), 3);
+      const detailLines = b.detail
+        ? wrapLines(b.detail, Math.floor((b.w - 24) / 7), 2)
+        : [];
+      const detailStartY = b.y + b.h - 18 - Math.max(0, detailLines.length - 1) * 14;
+      return `<g>
+        <rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="12" fill="url(#fig-find)" stroke="${accent}" stroke-width="${strokeW}"/>
+        <rect x="${b.x}" y="${b.y}" width="5" height="${b.h}" rx="2" fill="#14b8a6"/>
+        ${tspans(labelLines, b.x + b.w / 2, b.y + 28, 14, "#f1f5f9", 700)}
+        ${
+          detailLines.length
+            ? tspans(detailLines, b.x + b.w / 2, detailStartY, 11, "#94a3b8", 400)
+            : ""
+        }
+      </g>`;
+    })
+    .join("");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  <defs>
+    <linearGradient id="fig-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="55%" stop-color="#134e4a"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+    <linearGradient id="fig-diag" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0d9488"/>
+      <stop offset="100%" stop-color="#0f766e"/>
+    </linearGradient>
+    <linearGradient id="fig-find" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+    <marker id="fig-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#5eead4"/>
+    </marker>
+  </defs>
+  <rect width="${width}" height="${height}" fill="url(#fig-bg)" rx="18"/>
+  <circle cx="120" cy="100" r="90" fill="#14b8a6" opacity="0.07"/>
+  <circle cx="880" cy="560" r="120" fill="#2dd4bf" opacity="0.06"/>
+  <text x="40" y="42" fill="#99f6e4" font-size="13" font-weight="700" letter-spacing="3" font-family="ui-sans-serif, system-ui, sans-serif">JUSTIFICACIÓN DIAGNÓSTICA</text>
+  <text x="${width - 40}" y="42" fill="#64748b" font-size="12" text-anchor="end" font-family="ui-sans-serif, system-ui, sans-serif">${escapeXml(modeLabel)}${studyRegion ? `  ·  ${escapeXml(studyRegion)}` : ""}</text>
+  ${edgePaths}
+  ${boxMarkup}
+</svg>`;
+}
+
+async function rasterizeSvgToPng(
+  svgMarkup: string,
+  pixelWidth: number,
+  pixelHeight: number
+): Promise<string> {
+  const blob = new Blob([svgMarkup], { type: "image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error("No se pudo rasterizar la infografía SVG."));
+      image.src = url;
+    });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(800, Math.round(pixelWidth));
+    canvas.height = Math.max(600, Math.round(pixelHeight));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas 2D no disponible.");
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/png");
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
 
 function wrapPdfText(
   doc: any,
@@ -16,10 +170,123 @@ function wrapPdfText(
   return sliced;
 }
 
+/** Fallback vector draw if browser rasterization fails. */
+function renderVectorFallback(
+  doc: any,
+  scene: InfographicScene,
+  ox: number,
+  oy: number,
+  scale: number,
+  factor: number
+) {
+  const sx = (x: number) => ox + x * scale;
+  const sy = (y: number) => oy + y * scale;
+  const ss = (v: number) => v * scale;
+
+  doc.setFillColor(15, 23, 42);
+  doc.roundedRect(ox, oy, scene.width * scale, scene.height * scale, 2.5, 2.5, "F");
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(Math.max(8, 13 * scale));
+  doc.setTextColor(153, 246, 228);
+  doc.text("JUSTIFICACION DIAGNOSTICA", sx(40), sy(42));
+
+  scene.edges.forEach((e) => {
+    doc.setDrawColor(94, 234, 212);
+    doc.setLineWidth(Math.max(0.5, 2.2 * scale));
+    const steps = 16;
+    let prevX = sx(e.x1);
+    let prevY = sy(e.y1);
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      const mt = 1 - t;
+      const x = mt * mt * e.x1 + 2 * mt * t * e.cx + t * t * e.x2;
+      const y = mt * mt * e.y1 + 2 * mt * t * e.cy + t * t * e.y2;
+      const nx = sx(x);
+      const ny = sy(y);
+      doc.line(prevX, prevY, nx, ny);
+      prevX = nx;
+      prevY = ny;
+    }
+    const angle = Math.atan2(e.y2 - e.cy, e.x2 - e.cx);
+    const size = ss(12);
+    const ax = sx(e.x2);
+    const ay = sy(e.y2);
+    doc.setFillColor(94, 234, 212);
+    doc.triangle(
+      ax,
+      ay,
+      ax - size * Math.cos(angle - Math.PI / 7),
+      ay - size * Math.sin(angle - Math.PI / 7),
+      ax - size * Math.cos(angle + Math.PI / 7),
+      ay - size * Math.sin(angle + Math.PI / 7),
+      "F"
+    );
+  });
+
+  scene.boxes.forEach((b) => {
+    const x = sx(b.x);
+    const y = sy(b.y);
+    const w = ss(b.w);
+    const h = ss(b.h);
+    const r = Math.max(2, ss(12));
+    if (b.kind === "diagnosis") {
+      doc.setFillColor(13, 148, 136);
+      doc.setDrawColor(94, 234, 212);
+      doc.setLineWidth(0.7);
+      doc.roundedRect(x, y, w, h, r, r, "FD");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(Math.max(7, 11 * scale));
+      doc.setTextColor(204, 251, 241);
+      doc.text("DIAGNOSTICO", x + w / 2, y + ss(24), { align: "center" });
+      const labelLines = wrapPdfText(doc, b.label, w - ss(24), 2);
+      doc.setFontSize(Math.max(9, 18 * scale));
+      doc.setTextColor(240, 253, 250);
+      let ty = y + ss(48);
+      labelLines.forEach((line: string) => {
+        doc.text(line, x + w / 2, ty, { align: "center" });
+        ty += Math.max(10, 16 * scale);
+      });
+    } else {
+      doc.setFillColor(30, 41, 59);
+      doc.setDrawColor(
+        b.weight === "primary" ? 45 : 51,
+        b.weight === "primary" ? 212 : 65,
+        b.weight === "primary" ? 191 : 85
+      );
+      doc.setLineWidth(b.weight === "primary" ? 0.9 : 0.5);
+      doc.roundedRect(x, y, w, h, r * 0.8, r * 0.8, "FD");
+      doc.setFillColor(20, 184, 166);
+      doc.rect(x, y, Math.max(1.5, ss(5)), h, "F");
+      const labelLines = wrapPdfText(doc, b.label, w - ss(20), 3);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(Math.max(8, 13 * scale));
+      doc.setTextColor(241, 245, 249);
+      let ty = y + ss(24);
+      labelLines.forEach((line: string) => {
+        doc.text(line, x + w / 2, ty, { align: "center" });
+        ty += Math.max(9, 13 * scale);
+      });
+      if (b.detail) {
+        const detailLines = wrapPdfText(doc, b.detail, w - ss(20), 2);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(Math.max(6.5, 10 * scale));
+        doc.setTextColor(148, 163, 184);
+        let dy = y + h - ss(12) - (detailLines.length - 1) * Math.max(8, 11 * scale);
+        detailLines.forEach((line: string) => {
+          doc.text(line, x + w / 2, dy, { align: "center" });
+          dy += Math.max(8, 11 * scale);
+        });
+      }
+    }
+  });
+  void factor;
+}
+
 /**
- * Vector annex: diagnostic-justification infographic (findings only).
+ * Annex: rasterizes the same SVG used on-screen so PDF matches the console preview.
  */
-export function renderFindingsInfographicAnnexToPDF(
+export async function renderFindingsInfographicAnnexToPDF(
   doc: any,
   data: FindingsInfographicData | null,
   options: {
@@ -39,143 +306,26 @@ export function renderFindingsInfographicAnnexToPDF(
 
   doc.addPage();
 
-  // Map scene coords (1000 x H) onto page content area below running header.
-  const topSafe = 24 * factor;
-  const bottomSafe = 14 * factor;
+  const topSafe = 26 * factor;
+  const bottomSafe = 16 * factor;
   const availH = pageHeight - topSafe - bottomSafe;
   const scale = Math.min(contentWidth / scene.width, availH / scene.height);
   const drawW = scene.width * scale;
   const drawH = scene.height * scale;
   const ox = marginX + (contentWidth - drawW) / 2;
-  const oy = topSafe + Math.max(0, (availH - drawH) * 0.08);
+  const oy = topSafe + Math.max(0, (availH - drawH) * 0.05);
 
-  const sx = (x: number) => ox + x * scale;
-  const sy = (y: number) => oy + y * scale;
-  const ss = (v: number) => v * scale;
+  try {
+    const svg = buildInfographicSvgMarkup(scene);
+    // High-DPI raster so print/PDF stays sharp
+    const pxW = Math.round(scene.width * 2);
+    const pxH = Math.round(scene.height * 2);
+    const png = await rasterizeSvgToPng(svg, pxW, pxH);
+    doc.addImage(png, "PNG", ox, oy, drawW, drawH, undefined, "FAST");
+  } catch (err) {
+    console.warn("Infografía: raster SVG falló, usando vector fallback:", err);
+    renderVectorFallback(doc, scene, ox, oy, scale, factor);
+  }
 
-  // Background panel
-  doc.setFillColor(15, 23, 42);
-  doc.roundedRect(ox - 2, oy - 2, drawW + 4, drawH + 4, 3, 3, "F");
-
-  // Accent wash
-  doc.setFillColor(19, 78, 74);
-  doc.setGState?.(doc.GState?.({ opacity: 0.25 }));
-  // Fallback without GState: draw subtle rect
-  doc.setFillColor(20, 40, 48);
-  doc.roundedRect(ox, oy, drawW, drawH, 2.5, 2.5, "F");
-
-  // Header label
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(8 * factor);
-  doc.setTextColor(153, 246, 228);
-  doc.text("JUSTIFICACION DIAGNOSTICA", sx(40), sy(38));
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7.5 * factor);
-  doc.setTextColor(100, 116, 139);
-  const modeLabel =
-    scene.layout === "convergence"
-      ? "Convergencia"
-      : scene.layout === "constellation"
-        ? "Constelacion"
-        : "Cascada";
-  const rightMeta = sanitizePdfText(
-    `${modeLabel}${scene.studyRegion ? `  |  ${scene.studyRegion}` : ""}`
-  );
-  doc.text(rightMeta, sx(scene.width - 40), sy(38), { align: "right" });
-
-  // Edges (curves approximated as polylines)
-  scene.edges.forEach((e) => {
-    doc.setDrawColor(94, 234, 212);
-    doc.setLineWidth(0.7 * factor);
-    const steps = 12;
-    let prevX = sx(e.x1);
-    let prevY = sy(e.y1);
-    for (let i = 1; i <= steps; i++) {
-      const t = i / steps;
-      const mt = 1 - t;
-      const x = mt * mt * e.x1 + 2 * mt * t * e.cx + t * t * e.x2;
-      const y = mt * mt * e.y1 + 2 * mt * t * e.cy + t * t * e.y2;
-      const nx = sx(x);
-      const ny = sy(y);
-      doc.line(prevX, prevY, nx, ny);
-      prevX = nx;
-      prevY = ny;
-    }
-    // Arrow head
-    const angle = Math.atan2(e.y2 - e.cy, e.x2 - e.cx);
-    const size = ss(11);
-    const ax = sx(e.x2);
-    const ay = sy(e.y2);
-    const p1x = ax - size * Math.cos(angle - Math.PI / 7);
-    const p1y = ay - size * Math.sin(angle - Math.PI / 7);
-    const p2x = ax - size * Math.cos(angle + Math.PI / 7);
-    const p2y = ay - size * Math.sin(angle + Math.PI / 7);
-    doc.setFillColor(94, 234, 212);
-    doc.triangle(ax, ay, p1x, p1y, p2x, p2y, "F");
-  });
-
-  // Boxes
-  scene.boxes.forEach((b) => {
-    const x = sx(b.x);
-    const y = sy(b.y);
-    const w = ss(b.w);
-    const h = ss(b.h);
-    const r = ss(10);
-
-    if (b.kind === "diagnosis") {
-      doc.setFillColor(13, 148, 136);
-      doc.setDrawColor(94, 234, 212);
-      doc.setLineWidth(0.6);
-      doc.roundedRect(x, y, w, h, r, r, "FD");
-
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(7 * factor);
-      doc.setTextColor(204, 251, 241);
-      doc.text("DIAGNOSTICO", x + w / 2, y + ss(22), { align: "center" });
-
-      const labelLines = wrapPdfText(doc, b.label, w - ss(24), 2);
-      doc.setFontSize(11 * factor);
-      doc.setTextColor(240, 253, 250);
-      let ty = y + ss(44);
-      labelLines.forEach((line: string) => {
-        doc.text(line, x + w / 2, ty, { align: "center" });
-        ty += ss(16);
-      });
-    } else {
-      doc.setFillColor(15, 23, 42);
-      doc.setDrawColor(b.weight === "primary" ? 45 : 51, b.weight === "primary" ? 212 : 65, b.weight === "primary" ? 191 : 85);
-      doc.setLineWidth(b.weight === "primary" ? 0.8 : 0.45);
-      doc.roundedRect(x, y, w, h, r * 0.8, r * 0.8, "FD");
-
-      // Left accent
-      doc.setFillColor(20, 184, 166);
-      doc.rect(x, y, ss(5), h, "F");
-
-      const labelLines = wrapPdfText(doc, b.label, w - ss(22), 3);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(8.5 * factor);
-      doc.setTextColor(241, 245, 249);
-      let ty = y + ss(22);
-      labelLines.forEach((line: string) => {
-        doc.text(line, x + w / 2, ty, { align: "center" });
-        ty += ss(12);
-      });
-
-      if (b.detail) {
-        const detailLines = wrapPdfText(doc, b.detail, w - ss(22), 2);
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(7 * factor);
-        doc.setTextColor(148, 163, 184);
-        let dy = y + h - ss(14) - (detailLines.length - 1) * ss(10);
-        detailLines.forEach((line: string) => {
-          doc.text(line, x + w / 2, dy, { align: "center" });
-          dy += ss(10);
-        });
-      }
-    }
-  });
-
-  // Silence unused pageWidth lint-ish
   void pageWidth;
 }

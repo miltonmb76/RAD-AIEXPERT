@@ -11144,7 +11144,7 @@ Ejemplo:
         Array.isArray(activeFindingsInfographic.nodes) &&
         activeFindingsInfographic.nodes.length > 0
       ) {
-        renderFindingsInfographicAnnexToPDF(doc, activeFindingsInfographic, {
+        await renderFindingsInfographicAnnexToPDF(doc, activeFindingsInfographic, {
           marginX,
           pageWidth,
           pageHeight,
