@@ -52,7 +52,14 @@ export function normalizeSemioticsConductMatrixData(
     title: String(raw?.title || "Matriz semiología → conducta").trim(),
     focusTopic: String(raw?.focusTopic || focusFallback || "").trim(),
     studyRegion: String(raw?.studyRegion || "").trim() || undefined,
-    clinicalQuestion: String(raw?.clinicalQuestion || "").trim() || undefined,
+    priorityConduct:
+      String(
+        raw?.priorityConduct ||
+          raw?.conductaPrioritaria ||
+          raw?.priorityAction ||
+          ""
+      ).trim() || undefined,
+    clinicalQuestion: undefined,
     rows: rows.length ? rows : [emptySemioticsRow()],
     footnote: undefined,
     generatedAt: String(raw?.generatedAt || new Date().toISOString()),

@@ -73,16 +73,23 @@ export function renderSemioticsConductMatrixAnnexToPDF(
       matrix.studyRegion ? `  |  Region: ${matrix.studyRegion}` : ""
     }`
   );
-  const qLine = matrix.clinicalQuestion
-    ? sanitizePdfText(matrix.clinicalQuestion)
+  const priorityRaw = String(
+    matrix.priorityConduct || matrix.clinicalQuestion || ""
+  ).trim();
+  const priorityLine = priorityRaw
+    ? sanitizePdfText(
+        /^conducta prioritaria\s*:/i.test(priorityRaw)
+          ? priorityRaw
+          : `Conducta prioritaria: ${priorityRaw}`
+      )
     : "";
   const focusLines = doc.splitTextToSize(focusLine, contentWidth - 16 * factor);
-  const qLines = qLine
-    ? doc.splitTextToSize(qLine, contentWidth - 16 * factor)
+  const priorityLines = priorityLine
+    ? doc.splitTextToSize(priorityLine, contentWidth - 16 * factor)
     : [];
   const bannerH = Math.max(
     16 * factor,
-    (focusLines.length + qLines.length) * 5.2 * factor + 11 * factor
+    (focusLines.length + priorityLines.length) * 5.2 * factor + 11 * factor
   );
 
   doc.setFillColor(253, 244, 255);
@@ -99,11 +106,11 @@ export function renderSemioticsConductMatrixAnnexToPDF(
     doc.text(line, marginX + 8 * factor, ty);
     ty += 5.2 * factor;
   });
-  if (qLines.length) {
-    doc.setFont("helvetica", "normal");
+  if (priorityLines.length) {
+    doc.setFont("helvetica", "bold");
     doc.setFontSize(fsMeta);
     doc.setTextColor(91, 33, 182);
-    qLines.forEach((line: string) => {
+    priorityLines.forEach((line: string) => {
       doc.text(line, marginX + 8 * factor, ty);
       ty += 4.8 * factor;
     });

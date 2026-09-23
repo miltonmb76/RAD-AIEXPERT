@@ -1246,6 +1246,9 @@ export interface SemioticsConductMatrixData {
   /** User-selected pathology / topic focus. */
   focusTopic: string;
   studyRegion?: string;
+  /** One-line actionable priority conduct (banner; replaces clinical question). */
+  priorityConduct?: string;
+  /** @deprecated Prefer priorityConduct. Kept for older sessions. */
   clinicalQuestion?: string;
   rows: SemioticsConductRow[];
   /** Short footer note under the table. */

@@ -251,11 +251,11 @@ export const SemioticsConductMatrixModule: React.FC<SemioticsConductMatrixModule
               />
               <input
                 type="text"
-                value={matrixData.clinicalQuestion || ""}
+                value={matrixData.priorityConduct || ""}
                 onChange={(e) =>
-                  setMatrixData({ ...matrixData, clinicalQuestion: e.target.value })
+                  setMatrixData({ ...matrixData, priorityConduct: e.target.value })
                 }
-                placeholder="Pregunta clínica (opcional)"
+                placeholder="Conducta prioritaria (1 frase accionable)"
                 className="bg-slate-950/80 border border-slate-800 rounded-lg px-2.5 py-1.5 text-[11px] text-slate-300 outline-none focus:border-fuchsia-500"
               />
             </div>

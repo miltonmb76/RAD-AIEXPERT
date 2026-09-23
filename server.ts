@@ -9972,14 +9972,16 @@ REGLAS:
 4. Si el enfoque es una escala (BI-RADS, Fleischner…), úsala de forma explícita en category.
 5. title: "Matriz semiología → conducta" o variante breve.
 6. focusTopic: repite el enfoque priorizado.
-7. clinicalQuestion: 1 frase con la pregunta clínica que responde la matriz.
+7. priorityConduct: 1 frase ACCIONABLE (sin signo de interrogación) con la conducta prioritaria del caso (ej. "Control habitual BI-RADS 1; sin biopsia ni estudio adicional").
 8. NO inventes hallazgos ausentes del informe. Si falta dato, dilo en signs o omite la fila.
 9. NO agregues disclaimer ni nota al pie (footnote debe ser "").
+10. NO uses clinicalQuestion; deja clinicalQuestion como "".
 
 Claves JSON obligatorias en inglés:
-title, focusTopic, studyRegion, clinicalQuestion, rows, footnote.
+title, focusTopic, studyRegion, priorityConduct, clinicalQuestion, rows, footnote.
 Cada row: id, finding, signs, category, conduct, anchor.
 footnote: siempre "".
+clinicalQuestion: siempre "".
 
 INFORME:
 """
@@ -10006,11 +10008,12 @@ ${report}
         title: { type: Type.STRING },
         focusTopic: { type: Type.STRING },
         studyRegion: { type: Type.STRING },
+        priorityConduct: { type: Type.STRING },
         clinicalQuestion: { type: Type.STRING },
         rows: { type: Type.ARRAY, items: rowSchema },
         footnote: { type: Type.STRING },
       },
-      required: ["title", "focusTopic", "rows"],
+      required: ["title", "focusTopic", "priorityConduct", "rows"],
     };
 
     const readModelText = (response: any): string => {
@@ -10088,6 +10091,13 @@ ${report}
 
     const data = normalizeSemioticsConductMatrixData(parsed, focus);
     data.footnote = undefined;
+    data.clinicalQuestion = undefined;
+    if (!data.priorityConduct) {
+      const legacyQ = String(parsed?.clinicalQuestion || "").trim();
+      if (legacyQ && !legacyQ.includes("?")) {
+        data.priorityConduct = legacyQ;
+      }
+    }
     const realRows = data.rows.filter(
       (r) => r.finding.trim() || r.signs.trim() || r.category.trim() || r.conduct.trim()
     );
