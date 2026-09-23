@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # PEGAR TODO EN CLOUD SHELL
-# Matriz semiología → conducta (módulo manual)
-# Paso único: pull + deploy
+# Matriz: tipografía más grande + sin cuadro disclaimer final
 set -euo pipefail
 
 if [ -f package.json ] && [ -d src ]; then
@@ -23,16 +22,11 @@ git checkout cursor/clinical-polish-0681
 git pull origin cursor/clinical-polish-0681
 
 echo ""
-echo "==> Verificando matriz..."
-rg -n "semiotics_conduct_matrix|generate-semiotics-conduct-matrix|SemioticsConductMatrix" \
-  src/App.tsx server.ts src/lib/modelRouting.ts \
+echo "==> Verificando matriz PDF (sin footnote)..."
+rg -n "Footnote / disclaimer|fsBody = 10|footnote = undefined" \
+  src/utils/semioticsConductMatrixPdfRenderer.ts \
   src/lib/semioticsConductMatrix.ts \
-  src/components/SemioticsConductMatrixModule.tsx \
-  src/utils/semioticsConductMatrixPdfRenderer.ts | head -40
-
-test -f src/components/SemioticsConductMatrixModule.tsx
-test -f src/utils/semioticsConductMatrixPdfRenderer.ts
-test -f src/lib/semioticsConductMatrix.ts
+  server.ts | head -20
 
 echo ""
 echo "==> Desplegando..."
