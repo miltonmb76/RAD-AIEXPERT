@@ -373,9 +373,11 @@ export function buildInfographicCompanion(
     default:
       synthesisEyebrow = "Lectura de soporte";
       listEyebrow = "Elementos de soporte";
-      synthesis = `En conjunto, ${
-        focusProse || "los hallazgos del diagrama"
-      } sustentan el diagnóstico de ${dx}. La composición visual enlaza el soporte; el inventario detalla cada elemento.`;
+      synthesis = focus.length
+        ? `En conjunto, ${focusProse} ${
+            focus.length === 1 ? "sustenta" : "sustentan"
+          } el diagnóstico de ${dx}. La composición visual enlaza el soporte; el inventario detalla cada elemento.`
+        : `Los hallazgos del diagrama sustentan el diagnóstico de ${dx}.`;
       break;
   }
 
