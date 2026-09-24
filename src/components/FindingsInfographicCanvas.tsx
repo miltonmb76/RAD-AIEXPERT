@@ -1,9 +1,9 @@
 import React from "react";
 import type { InfographicScene } from "../lib/findingsInfographic";
 import {
+  anchorBoxMetrics,
   findingBoxMetrics,
   layoutDisplayLabel,
-  wrapTextLines,
 } from "../lib/findingsInfographic";
 
 function SvgLines({
@@ -166,11 +166,8 @@ export const FindingsInfographicCanvas: React.FC<FindingsInfographicCanvasProps>
           );
         }
         if (b.kind === "diagnosis") {
-          const labelLines = wrapTextLines(
-            b.label,
-            Math.max(8, Math.floor((b.w - 32) / (20 * 0.52))),
-            3
-          );
+          const am = anchorBoxMetrics(b.label, b.w);
+          const textY = b.y + am.headerH + am.font * 0.85;
           return (
             <g key={b.id} filter="url(#fig-shadow)">
               <rect
@@ -185,7 +182,7 @@ export const FindingsInfographicCanvas: React.FC<FindingsInfographicCanvasProps>
               />
               <text
                 x={b.x + b.w / 2}
-                y={b.y + 28}
+                y={b.y + 24}
                 fill="#ccfbf1"
                 fontSize={12}
                 fontWeight={700}
@@ -196,13 +193,13 @@ export const FindingsInfographicCanvas: React.FC<FindingsInfographicCanvasProps>
                 ANCLA
               </text>
               <SvgLines
-                lines={labelLines}
+                lines={am.lines}
                 x={b.x + b.w / 2}
-                y={b.y + 52}
-                fontSize={20}
+                y={textY}
+                fontSize={am.font}
                 fill="#f0fdfa"
                 fontWeight={700}
-                lineHeight={1.25}
+                lineHeight={am.lh}
               />
             </g>
           );

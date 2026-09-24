@@ -1,9 +1,9 @@
 import { FindingsInfographicData } from "../types";
 import {
+  anchorBoxMetrics,
   buildInfographicScene,
   findingBoxMetrics,
   layoutDisplayLabel,
-  wrapTextLines,
   type InfographicScene,
 } from "../lib/findingsInfographic";
 import { sanitizePdfText } from "./sanitizePdfText";
@@ -56,15 +56,12 @@ export function buildInfographicSvgMarkup(scene: InfographicScene): string {
         </g>`;
       }
       if (b.kind === "diagnosis") {
-        const labelLines = wrapTextLines(
-          b.label,
-          Math.max(8, Math.floor((b.w - 32) / (20 * 0.52))),
-          3
-        );
+        const am = anchorBoxMetrics(b.label, b.w);
+        const textY = b.y + am.headerH + am.font * 0.85;
         return `<g>
           <rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="16" fill="url(#fig-diag)" stroke="#5eead4" stroke-width="1.5"/>
-          <text x="${b.x + b.w / 2}" y="${b.y + 28}" fill="#ccfbf1" font-size="12" font-weight="700" letter-spacing="2" text-anchor="middle" font-family="ui-sans-serif, system-ui, sans-serif">ANCLA</text>
-          ${tspans(labelLines, b.x + b.w / 2, b.y + 52, 20, "#f0fdfa", 700)}
+          <text x="${b.x + b.w / 2}" y="${b.y + 24}" fill="#ccfbf1" font-size="12" font-weight="700" letter-spacing="2" text-anchor="middle" font-family="ui-sans-serif, system-ui, sans-serif">ANCLA</text>
+          ${tspans(am.lines, b.x + b.w / 2, textY, am.font, "#f0fdfa", 700, am.lh)}
         </g>`;
       }
       const metrics = findingBoxMetrics(b.label, b.detail, b.w);
@@ -253,14 +250,14 @@ function renderVectorFallback(
       doc.setFont("helvetica", "bold");
       doc.setFontSize(Math.max(7, 11 * scale));
       doc.setTextColor(204, 251, 241);
-      doc.text("DIAGNOSTICO", x + w / 2, y + ss(24), { align: "center" });
-      const labelLines = wrapPdfText(doc, b.label, w - ss(24), 2);
-      doc.setFontSize(Math.max(9, 18 * scale));
+      doc.text("ANCLA", x + w / 2, y + ss(22), { align: "center" });
+      const labelLines = wrapPdfText(doc, b.label, w - ss(28), 5);
+      doc.setFontSize(Math.max(9, 16 * scale));
       doc.setTextColor(240, 253, 250);
-      let ty = y + ss(48);
+      let ty = y + ss(44);
       labelLines.forEach((line: string) => {
         doc.text(line, x + w / 2, ty, { align: "center" });
-        ty += Math.max(10, 16 * scale);
+        ty += Math.max(10, 15 * scale);
       });
     } else if (b.kind === "section") {
       const isRuled = b.polarity === "ruled_out";
@@ -339,14 +336,14 @@ export async function renderFindingsInfographicAnnexToPDF(
 
   doc.addPage();
 
-  const topSafe = 18 * factor;
-  const bottomSafe = 12 * factor;
+  const topSafe = 14 * factor;
+  const bottomSafe = 10 * factor;
   const availH = pageHeight - topSafe - bottomSafe;
   const scale = Math.min(contentWidth / scene.width, availH / scene.height);
   const drawW = scene.width * scale;
   const drawH = scene.height * scale;
   const ox = marginX + (contentWidth - drawW) / 2;
-  const oy = topSafe + Math.max(0, (availH - drawH) * 0.02);
+  const oy = topSafe + Math.max(0, (availH - drawH) * 0.08);
 
   try {
     const svg = buildInfographicSvgMarkup(scene);
