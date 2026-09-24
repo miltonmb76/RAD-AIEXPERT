@@ -436,12 +436,9 @@ function edgeTo(
   });
 }
 
-export function buildInfographicScene(
-  data: FindingsInfographicData,
-  opts?: { frameHeight?: number; frameAspect?: number }
-): InfographicScene {
+export function buildInfographicScene(data: FindingsInfographicData): InfographicScene {
   const width = 1280;
-  // Tight canvas: crop to content so PDF/preview scale fills more of the page.
+  // Packed canvas — keep original box/line proportions; height follows content.
   let height = 280;
   const nodes = (data.nodes || []).filter((n) => n.label.trim()).slice(0, 10);
   const layout = data.layout || "convergence";
@@ -714,7 +711,7 @@ export function buildInfographicScene(
     height = Math.ceil(bottom + 36);
   }
 
-  const packed: InfographicScene = {
+  return {
     width,
     height,
     boxes,
@@ -725,96 +722,6 @@ export function buildInfographicScene(
     headerLabel: meta.headerLabel,
     diagnosis,
     studyRegion: data.studyRegion,
-  };
-
-  // Expand vertically to a page-like frame so PDF/preview fill most of the sheet.
-  const aspect =
-    opts?.frameAspect && opts.frameAspect > 0
-      ? opts.frameAspect
-      : opts?.frameHeight && opts.frameHeight > 0
-        ? opts.frameHeight / width
-        : 1.3; // ~A4 content area (height/width)
-  const targetH = Math.max(
-    packed.height,
-    Math.ceil(opts?.frameHeight || width * aspect)
-  );
-  return expandSceneToFillFrame(packed, targetH);
-}
-
-/**
- * Spread content vertically to fill targetHeight without stretching glyphs.
- * Keeps box sizes; redistributes gaps so the lamina occupies the page.
- */
-export function expandSceneToFillFrame(
-  scene: InfographicScene,
-  targetHeight: number
-): InfographicScene {
-  if (!scene.boxes.length) {
-    return { ...scene, height: Math.max(scene.height, Math.ceil(targetHeight)) };
-  }
-
-  const topPad = 56;
-  const bottomPad = 40;
-  const targetH = Math.max(scene.height, Math.ceil(targetHeight));
-
-  // Already fills most of the frame — just ensure height.
-  if (scene.height >= targetH * 0.93) {
-    return { ...scene, height: Math.max(scene.height, targetH) };
-  }
-
-  const oldTop = Math.min(...scene.boxes.map((b) => b.y));
-  const oldBot = Math.max(...scene.boxes.map((b) => b.y + b.h));
-  const oldSpan = Math.max(1, oldBot - oldTop);
-
-  const maxBoxH = Math.max(...scene.boxes.map((b) => b.h));
-  const newTop = topPad;
-  const newBot = targetH - bottomPad;
-  // Leave room so the tallest box still fits inside the padded frame
-  const usableTop = newTop;
-  const usableBot = Math.max(usableTop + maxBoxH, newBot);
-  const newSpan = Math.max(oldSpan, usableBot - usableTop);
-
-  const mapY = (y: number) => usableTop + ((y - oldTop) / oldSpan) * newSpan;
-
-  // Move boxes by their vertical center so sizes stay readable
-  const boxes = scene.boxes.map((b) => {
-    const center = b.y + b.h / 2;
-    const mappedCenter = mapY(center);
-    return {
-      ...b,
-      y: Math.max(topPad * 0.5, mappedCenter - b.h / 2),
-    };
-  });
-
-  const edgeOldTop = oldTop;
-  const edgeOldBot = oldBot;
-  const edgeNewTop = Math.min(...boxes.map((b) => b.y));
-  const edgeNewBot = Math.max(...boxes.map((b) => b.y + b.h));
-  const mapEdgeY = (y: number) => {
-    if (edgeOldBot === edgeOldTop) return edgeNewTop;
-    return (
-      edgeNewTop + ((y - edgeOldTop) / (edgeOldBot - edgeOldTop)) * (edgeNewBot - edgeNewTop)
-    );
-  };
-
-  const edges = scene.edges.map((e) => ({
-    ...e,
-    y1: mapEdgeY(e.y1),
-    y2: mapEdgeY(e.y2),
-    cy: mapEdgeY(e.cy),
-  }));
-
-  // Clamp any box that drifted past the bottom pad
-  const clamped = boxes.map((b) => {
-    const maxY = targetH - bottomPad - b.h;
-    return { ...b, y: Math.min(b.y, Math.max(topPad * 0.5, maxY)) };
-  });
-
-  return {
-    ...scene,
-    boxes: clamped,
-    edges,
-    height: targetH,
   };
 }
 

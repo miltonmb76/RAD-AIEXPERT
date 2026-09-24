@@ -332,25 +332,23 @@ export async function renderFindingsInfographicAnnexToPDF(
   }
 
   const { marginX, pageWidth, pageHeight, contentWidth, factor } = options;
+  // Packed scene with original proportions (no vertical stretch).
+  const scene = buildInfographicScene(data);
 
   doc.addPage();
 
-  // Near-full page: small safe margins, expand scene to page aspect, scale to fill.
-  const topSafe = 8 * factor;
-  const bottomSafe = 8 * factor;
+  const topSafe = 16 * factor;
+  const bottomSafe = 14 * factor;
   const availH = Math.max(120, pageHeight - topSafe - bottomSafe);
-  const frameAspect = availH / contentWidth; // height/width of printable area
-  const scene = buildInfographicScene(data, { frameAspect });
-
+  // Prefer full width; keep aspect — leaves space below for optional companion content.
   const scale = Math.min(contentWidth / scene.width, availH / scene.height);
   const drawW = scene.width * scale;
   const drawH = scene.height * scale;
   const ox = marginX + (contentWidth - drawW) / 2;
-  const oy = topSafe + Math.max(0, (availH - drawH) / 2);
+  const oy = topSafe;
 
   try {
     const svg = buildInfographicSvgMarkup(scene);
-    // High-DPI raster so print/PDF stays sharp
     const pxW = Math.round(scene.width * 2.25);
     const pxH = Math.round(scene.height * 2.25);
     const png = await rasterizeSvgToPng(svg, pxW, pxH);
@@ -361,4 +359,5 @@ export async function renderFindingsInfographicAnnexToPDF(
   }
 
   void pageWidth;
+  void availH;
 }
