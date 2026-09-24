@@ -1,6 +1,7 @@
 import { FindingsInfographicData } from "../types";
 import {
   anchorBoxMetrics,
+  buildInfographicCompanion,
   buildInfographicScene,
   findingBoxMetrics,
   layoutDisplayLabel,
@@ -314,7 +315,7 @@ function renderVectorFallback(
 }
 
 /**
- * Annex: rasterizes the same SVG used on-screen so PDF matches the console preview.
+ * Annex: packed infographic (original proportions) + elegant companion copy below.
  */
 export async function renderFindingsInfographicAnnexToPDF(
   doc: any,
@@ -332,16 +333,19 @@ export async function renderFindingsInfographicAnnexToPDF(
   }
 
   const { marginX, pageWidth, pageHeight, contentWidth, factor } = options;
-  // Packed scene with original proportions (no vertical stretch).
   const scene = buildInfographicScene(data);
+  const companion = buildInfographicCompanion(data);
 
   doc.addPage();
 
-  const topSafe = 16 * factor;
-  const bottomSafe = 14 * factor;
+  const topSafe = 14 * factor;
+  const bottomSafe = 12 * factor;
   const availH = Math.max(120, pageHeight - topSafe - bottomSafe);
-  // Prefer full width; keep aspect — leaves space below for optional companion content.
-  const scale = Math.min(contentWidth / scene.width, availH / scene.height);
+
+  // Reserve ~38% of page for companion when possible; graphic keeps natural aspect.
+  const companionBudget = Math.min(availH * 0.42, 110 * factor);
+  const graphicBudget = Math.max(availH - companionBudget - 8 * factor, availH * 0.48);
+  const scale = Math.min(contentWidth / scene.width, graphicBudget / scene.height);
   const drawW = scene.width * scale;
   const drawH = scene.height * scale;
   const ox = marginX + (contentWidth - drawW) / 2;
@@ -358,6 +362,104 @@ export async function renderFindingsInfographicAnnexToPDF(
     renderVectorFallback(doc, scene, ox, oy, scale, factor);
   }
 
+  let y = oy + drawH + 9 * factor;
+  const maxY = pageHeight - bottomSafe;
+  const textW = contentWidth;
+
+  // Divider
+  doc.setDrawColor(45, 212, 191);
+  doc.setLineWidth(0.35);
+  doc.line(marginX, y, marginX + textW, y);
+  y += 7 * factor;
+
+  // Synthesis
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(Math.max(7.5, 8.5 * factor));
+  doc.setTextColor(13, 148, 136);
+  doc.text(sanitizePdfText(companion.synthesisEyebrow).toUpperCase(), marginX, y);
+  y += 5 * factor;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(Math.max(8.5, 9.5 * factor));
+  doc.setTextColor(51, 65, 85);
+  const synthLines = doc.splitTextToSize(
+    sanitizePdfText(companion.synthesis),
+    textW
+  ) as string[];
+  const lineH = 4.4 * factor;
+  for (const line of synthLines) {
+    if (y + lineH > maxY) break;
+    doc.text(line, marginX, y);
+    y += lineH;
+  }
+  y += 5 * factor;
+
+  // Inventory
+  if (y + 10 * factor < maxY) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(Math.max(7.5, 8.5 * factor));
+    doc.setTextColor(13, 148, 136);
+    doc.text(sanitizePdfText(companion.listEyebrow).toUpperCase(), marginX, y);
+    y += 5.5 * factor;
+
+    doc.setFont("helvetica", "normal");
+    const itemTitleSize = Math.max(8, 9 * factor);
+    const itemNoteSize = Math.max(7, 8 * factor);
+    const numW = 6 * factor;
+
+    for (const item of companion.items) {
+      if (y + 8 * factor > maxY) break;
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(itemTitleSize);
+      doc.setTextColor(30, 41, 59);
+      doc.text(`${item.index}.`, marginX, y);
+
+      const titleMaxW = textW - numW - (item.tag ? 28 * factor : 0);
+      const titleLines = doc.splitTextToSize(
+        sanitizePdfText(item.title),
+        titleMaxW
+      ) as string[];
+      doc.text(titleLines[0] || "", marginX + numW, y);
+
+      if (item.tag) {
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(Math.max(6.5, 7.2 * factor));
+        doc.setTextColor(100, 116, 139);
+        doc.text(sanitizePdfText(item.tag), marginX + textW, y, { align: "right" });
+      }
+
+      y += 4.2 * factor;
+
+      if (titleLines.length > 1) {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(itemTitleSize);
+        doc.setTextColor(30, 41, 59);
+        for (let i = 1; i < Math.min(titleLines.length, 2); i++) {
+          if (y + 4 * factor > maxY) break;
+          doc.text(titleLines[i], marginX + numW, y);
+          y += 3.8 * factor;
+        }
+      }
+
+      if (item.note) {
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(itemNoteSize);
+        doc.setTextColor(100, 116, 139);
+        const noteLines = doc.splitTextToSize(
+          sanitizePdfText(item.note),
+          textW - numW
+        ) as string[];
+        for (const nl of noteLines.slice(0, 2)) {
+          if (y + 3.6 * factor > maxY) break;
+          doc.text(nl, marginX + numW, y);
+          y += 3.5 * factor;
+        }
+      }
+
+      y += 2.2 * factor;
+    }
+  }
+
   void pageWidth;
-  void availH;
 }

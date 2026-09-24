@@ -251,8 +251,152 @@ export function normalizeFindingsInfographicData(
     contentMode,
     layout,
     nodes: nodes.length ? nodes : [emptyInfographicNode()],
+    synthesis: String(raw?.synthesis || raw?.sintesis || "").trim() || undefined,
     generatedAt: String(raw?.generatedAt || new Date().toISOString()),
   };
+}
+
+export interface InfographicCompanionItem {
+  index: number;
+  title: string;
+  note?: string;
+  tag?: string;
+  polarity?: FindingsInfographicPolarity;
+}
+
+export interface InfographicCompanion {
+  synthesisEyebrow: string;
+  synthesis: string;
+  listEyebrow: string;
+  items: InfographicCompanionItem[];
+}
+
+function joinProse(parts: string[]): string {
+  const clean = parts.map((p) => p.trim()).filter(Boolean);
+  if (clean.length <= 1) return clean[0] || "";
+  if (clean.length === 2) return `${clean[0]} y ${clean[1]}`;
+  return `${clean.slice(0, -1).join(", ")} y ${clean[clean.length - 1]}`;
+}
+
+function detailAddsValue(label: string, detail?: string): string | undefined {
+  const d = (detail || "").trim();
+  if (!d) return undefined;
+  const l = label.trim().toLowerCase();
+  if (d.toLowerCase() === l) return undefined;
+  // Skip if detail is almost the same as label
+  if (l.length > 12 && d.toLowerCase().includes(l)) return d;
+  return d;
+}
+
+function polarityTag(
+  mode: FindingsInfographicContentMode,
+  polarity?: FindingsInfographicPolarity
+): string | undefined {
+  if (mode === "present_vs_ruled") {
+    if (polarity === "ruled_out") return "Descartado";
+    if (polarity === "present") return "Presente";
+  }
+  if (mode === "classification_criteria" || polarity === "criterion") return "Criterio";
+  if (polarity === "ruled_out") return "Descartado";
+  return undefined;
+}
+
+/** Mode-aware synthesis + inventory for the space under the diagram (PDF/UI). */
+export function buildInfographicCompanion(
+  data: FindingsInfographicData
+): InfographicCompanion {
+  const mode = data.contentMode || "justify_diagnosis";
+  const dx = (data.diagnosis || "").trim() || "el diagnóstico del informe";
+  const nodes = (data.nodes || []).filter((n) => n.label.trim());
+  const primaries = nodes.filter((n) => n.weight === "primary");
+  const focus = (primaries.length ? primaries : nodes.slice(0, 3)).map((n) => n.label);
+  const focusProse = joinProse(focus);
+
+  let synthesisEyebrow = "En síntesis";
+  let listEyebrow = "Inventario";
+  let synthesis = "";
+
+  switch (mode) {
+    case "ruled_out":
+      synthesisEyebrow = "Lectura de exclusiones";
+      listEyebrow = "Negaciones explícitas";
+      synthesis = `Respecto a ${dx}, el informe descarta de forma explícita ${
+        focusProse || "los elementos listados"
+      }. Solo se incluyen negaciones escritas; no se infieren omisiones.`;
+      break;
+    case "classification_criteria":
+      synthesisEyebrow = "Lectura de escala";
+      listEyebrow = "Criterios aplicados";
+      synthesis = `Los criterios documentados sitúan el caso en ${dx}${
+        focusProse ? `, con peso en ${focusProse}` : ""
+      }. La lámina resume la categoría; debajo, el detalle de cada criterio.`;
+      break;
+    case "key_signs":
+      synthesisEyebrow = "Lectura semiológica";
+      listEyebrow = "Signos de referencia";
+      synthesis = `Los signos guía del estudio${
+        focusProse ? ` —${focusProse}—` : ""
+      } orientan hacia ${dx}. El diagrama muestra la relación; el inventario concreta cada signo.`;
+      break;
+    case "present_vs_ruled": {
+      synthesisEyebrow = "Lectura contrastada";
+      listEyebrow = "Afirmado · descartado";
+      const presentN = nodes.filter((n) => n.polarity !== "ruled_out").length;
+      const ruledN = nodes.filter((n) => n.polarity === "ruled_out").length;
+      synthesis = `El perfil de ${dx} queda delimitado por ${presentN} afirmación${
+        presentN === 1 ? "" : "es"
+      } y ${ruledN} exclusión${ruledN === 1 ? "" : "es"} explícitas del informe.`;
+      break;
+    }
+    case "by_structure":
+      synthesisEyebrow = "Lectura topográfica";
+      listEyebrow = "Por estructura";
+      synthesis = `El mapa por estructuras organiza lo documentado en torno a ${dx}. Cada ítem conserva su anclaje anatómico para una lectura ordenada.`;
+      break;
+    case "severity_ladder":
+      synthesisEyebrow = "Lectura graduada";
+      listEyebrow = "De menor a mayor peso";
+      synthesis = `Ordenados por relevancia, los hallazgos culminan hacia ${dx}${
+        focusProse ? `, con mayor peso en ${focusProse}` : ""
+      }.`;
+      break;
+    case "present_findings":
+      synthesisEyebrow = "Lectura afirmativa";
+      listEyebrow = "Afirmaciones del informe";
+      synthesis = `En relación con ${dx}, el informe deja constancia de ${nodes.length} hallazgo${
+        nodes.length === 1 ? "" : "s"
+      } positivo${nodes.length === 1 ? "" : "s"}${
+        focusProse ? `, destacando ${focusProse}` : ""
+      }.`;
+      break;
+    case "justify_diagnosis":
+    default:
+      synthesisEyebrow = "Lectura de soporte";
+      listEyebrow = "Elementos de soporte";
+      synthesis = `En conjunto, ${
+        focusProse || "los hallazgos del diagrama"
+      } sustentan el diagnóstico de ${dx}. La composición visual enlaza el soporte; el inventario detalla cada elemento.`;
+      break;
+  }
+
+  const custom = (data.synthesis || "").trim();
+  if (custom) synthesis = custom;
+
+  const items: InfographicCompanionItem[] = nodes.map((n, i) => {
+    const note = detailAddsValue(n.label, n.detail);
+    const group = (n.group || "").trim();
+    const pol = polarityTag(mode, n.polarity);
+    const tag = [group, pol].filter(Boolean).join(" · ") || undefined;
+    return {
+      index: i + 1,
+      title: n.label.trim(),
+      note,
+      tag,
+      polarity: n.polarity,
+    };
+  });
+
+  return { synthesisEyebrow, synthesis, listEyebrow, items };
 }
 
 /** Shared layout geometry for SVG preview and PDF. Units are abstract (0–1000 viewBox). */

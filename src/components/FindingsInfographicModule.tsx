@@ -18,6 +18,7 @@ import {
   INFOGRAPHIC_CONTENT_MODES,
   INFOGRAPHIC_DIAGNOSIS_PRESETS,
   INFOGRAPHIC_LAYOUT_OPTIONS,
+  buildInfographicCompanion,
   buildInfographicScene,
   contentModeMeta,
   emptyInfographicNode,
@@ -76,6 +77,11 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
 
   const scene = useMemo(
     () => (infographicData ? buildInfographicScene(infographicData) : null),
+    [infographicData]
+  );
+
+  const companion = useMemo(
+    () => (infographicData ? buildInfographicCompanion(infographicData) : null),
     [infographicData]
   );
 
@@ -365,6 +371,58 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
               className="w-full h-auto block min-h-[420px] sm:min-h-[520px]"
             />
           </div>
+
+          {companion && (
+            <div className="rounded-2xl border border-slate-700/60 bg-slate-50 text-slate-800 p-4 md:p-5 space-y-4 shadow-inner">
+              <div className="space-y-1.5">
+                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-teal-700">
+                  {companion.synthesisEyebrow}
+                </p>
+                <textarea
+                  value={infographicData.synthesis ?? ""}
+                  onChange={(e) =>
+                    setInfographicData({
+                      ...infographicData,
+                      synthesis: e.target.value,
+                    })
+                  }
+                  placeholder={companion.synthesis}
+                  rows={3}
+                  className="w-full bg-white/80 border border-slate-200 rounded-xl px-3 py-2 text-[12px] leading-relaxed text-slate-700 outline-none focus:border-teal-500 resize-y placeholder:text-slate-400"
+                />
+                <p className="text-[10px] text-slate-500">
+                  Editable · vacío = texto sugerido según {modeMeta.label.toLowerCase()}.
+                </p>
+              </div>
+              <div className="border-t border-slate-200 pt-3 space-y-2">
+                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-teal-700">
+                  {companion.listEyebrow}
+                </p>
+                <ol className="space-y-2">
+                  {companion.items.map((item) => (
+                    <li key={item.index} className="flex gap-2.5 text-[12px] leading-snug">
+                      <span className="font-mono text-teal-700/80 shrink-0 w-5 text-right">
+                        {item.index}.
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                          <span className="font-semibold text-slate-800">{item.title}</span>
+                          {item.tag && (
+                            <span className="text-[10px] uppercase tracking-wider text-slate-500">
+                              {item.tag}
+                            </span>
+                          )}
+                        </div>
+                        {item.note && (
+                          <p className="text-[11px] text-slate-500 mt-0.5">{item.note}</p>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            </div>
+          )}
 
           <div className="rounded-2xl border border-teal-500/20 bg-gradient-to-br from-teal-950/20 via-slate-950/80 to-slate-950 p-4 space-y-2">
             <div className="flex items-center gap-2 text-teal-300/90">

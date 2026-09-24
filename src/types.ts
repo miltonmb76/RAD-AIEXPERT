@@ -1313,6 +1313,11 @@ export interface FindingsInfographicData {
   contentMode: FindingsInfographicContentMode;
   layout: FindingsInfographicLayout;
   nodes: FindingsInfographicNode[];
+  /**
+   * Optional short prose under the diagram (editable).
+   * If empty, PDF/UI derive a mode-aware synthesis from the nodes.
+   */
+  synthesis?: string;
   generatedAt?: string;
 }
 
