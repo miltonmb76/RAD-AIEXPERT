@@ -338,13 +338,14 @@ export async function renderFindingsInfographicAnnexToPDF(
 
   doc.addPage();
 
-  const topSafe = 14 * factor;
-  const bottomSafe = 12 * factor;
+  // Clear of running header ("ULTRASONIDO… / Pág. …") + separator line (~12–14 mm).
+  const topSafe = 28 * factor;
+  const bottomSafe = 14 * factor;
   const availH = Math.max(120, pageHeight - topSafe - bottomSafe);
 
-  // Reserve ~38% of page for companion when possible; graphic keeps natural aspect.
-  const companionBudget = Math.min(availH * 0.42, 110 * factor);
-  const graphicBudget = Math.max(availH - companionBudget - 8 * factor, availH * 0.48);
+  // Prefer a larger diagram; companion keeps a modest band under it.
+  const companionBudget = Math.min(availH * 0.3, 88 * factor);
+  const graphicBudget = Math.max(availH - companionBudget - 5 * factor, availH * 0.58);
   const scale = Math.min(contentWidth / scene.width, graphicBudget / scene.height);
   const drawW = scene.width * scale;
   const drawH = scene.height * scale;
@@ -362,7 +363,7 @@ export async function renderFindingsInfographicAnnexToPDF(
     renderVectorFallback(doc, scene, ox, oy, scale, factor);
   }
 
-  let y = oy + drawH + 9 * factor;
+  let y = oy + drawH + 6 * factor;
   const maxY = pageHeight - bottomSafe;
   const textW = contentWidth;
 
