@@ -18,6 +18,7 @@ import {
   INFOGRAPHIC_LAYOUT_OPTIONS,
   normalizeFindingsInfographicData,
 } from "./src/lib/findingsInfographic";
+import { buildUsAutoLabelAnatomyHints } from "./src/lib/usAutoLabelHints";
 import { normalizeSecondReaderData } from "./src/lib/secondReader";
 import {
   classifyMeasurementStudyFamily,
@@ -4461,6 +4462,8 @@ app.post("/api/classify-and-label-image", async (req: express.Request, res: expr
       });
     }
 
+    const anatomyHints = buildUsAutoLabelAnatomyHints(studyType, clinicalHistory, findings);
+
     const queryText = `Analiza esta imagen médica y clasifícala.
 Nombre de archivo: ${filename || "Desconocido"}
 Tipo de estudio/Solicitud: ${studyType || "Mamografía y Ultrasonido"}
@@ -4473,10 +4476,13 @@ INSTRUCCIONES:
 2. Si es MMG:
    - Determina la PROYECCIÓN: "CC" (Proyecciones Cráneo Caudales / Craneocaudales) o "MLO" (Proyecciones Medio Lateral Oblicuas / Mediolateral Oblicuas) u "OTRO".
    - Determina la LATERALIDAD: "Bilateral" (si muestra ambas mamas / proyecciones pareadas), "Derecha", "Izquierda" o "Bilateral".
-3. Redacta un RÓTULO / LEYENDA CLÍNICA (pie de foto profesional en español, de 12 a 25 palabras) sintetizando la modalidad, proyección y hallazgos clave o estado del tejido fibroglandular/mamas.
+3. Redacta un RÓTULO / LEYENDA CLÍNICA (pie de foto profesional en español, de 12 a 25 palabras) sintetizando la modalidad, anatomía y hallazgos clave correlacionados con el informe.
    - Si la proyección es "CC" (Cráneo Caudales): Inicia el rótulo OBLIGATORIAMENTE con "Proyecciones Cráneo Caudales (CC)." seguido de la descripción sintética del tejido, distribución simétrica y ausencia/presencia de lesiones o calcificaciones. Ej: "Proyecciones Cráneo Caudales (CC). Tejido fibroglandular de distribución simétrica sin evidencia de nódulos ni microcalcificaciones sospechosas."
    - Si la proyección es "MLO" (Medio Lateral Oblicuas): Inicia el rótulo OBLIGATORIAMENTE con "Proyecciones Medio Lateral Oblicuas (MLO)." seguido de la descripción sintética del tejido, región axilar y profundidad pectoral. Ej: "Proyecciones Medio Lateral Oblicuas (MLO). Adecuada visualización de los planos pectorales sin distorsiones ni adenopatías axilares."
-   - Para US: "Ultrasonido mamario, cuadrante superior externo derecho mostrando quiste anecoico simple de 10 mm."
+   - Para US de mama: "Ultrasonido mamario, cuadrante superior externo derecho mostrando quiste anecoico simple de 10 mm."
+   - Para US de abdomen/renal: identifica órgano real (hígado, vesícula, riñones, bazo, páncreas…). Si hay pantalla partida con ambos riñones, usa el patrón de comparativa renal bilateral (ver abajo).
+
+${anatomyHints}
 
 Responde EXCLUSIVAMENTE en formato JSON estricto con la siguiente estructura:
 {
@@ -4561,21 +4567,29 @@ app.post("/api/auto-label-us-photo", async (req: express.Request, res: express.R
       });
     }
 
+    const anatomyHints = buildUsAutoLabelAnatomyHints(studyType, clinicalHistory, findings);
+
     let queryText = `Analiza con extrema precisión esta imagen de ecografía (ultrasonido) médica o captura clínica.
 Tipo de estudio: ${studyType || "No especificado"}
 Antecedentes clínicos/Sospecha: ${clinicalHistory || "No especificado"}
 Texto del Informe/Hallazgos redactados: ${findings || "No especificado"}
 
 Tu principal tarea es:
-1. Identificar si hay algún texto impreso, rotulado, etiqueta u anotación quemada dentro de la imagen (por ejemplo, palabras cortas escritas en la pantalla como 'Vesícula', 'LIVER', 'KIDNEY', 'AO', 'VESICULA BILIAR', 'QUISTE', marcas de medición o distancias impresas, etc.).
-2. Hacer correlación inteligente entre lo visualizado en la foto, cualquier texto/rótulo quemado que detectes dentro de ella, y el texto del informe/hallazgos redactados en busca del hallazgo descrito que esté más relacionado, para sintetizar el rótulo final más representativo.
-3. Si el texto del informe menciona hallazgos patológicos o medidas específicas (por ejemplo, "colelitiasis de 12mm", "quiste cortical de 20mm en polo superior", "esteatosis hepática grado II"), correlaciónalos de inmediato con la anatomía observada y el rótulo quemado en la imagen para formular un título coherente que vincule de forma óptima ambos mundos.
-4. Si no hay texto legible en la imagen, analiza la anatomía y propón una descripción clínica o hallazgo en español basado en la correlación con el reporte.
+1. Identificar si hay algún texto impreso, rotulado, etiqueta u anotación quemada dentro de la imagen (por ejemplo, palabras cortas escritas en la pantalla como 'Vesícula', 'LIVER', 'KIDNEY', 'RT', 'LT', 'RD', 'RI', 'AO', 'VESICULA BILIAR', 'QUISTE', marcas de medición o distancias impresas, etc.).
+2. Detectar si la captura es PANTALLA PARTIDA / DUAL VIEW (divisor vertical u horizontal con dos paneles). Si cada panel muestra un riñón, el rótulo DEBE indicar comparativa renal bilateral — no lo confundas con hígado, bazo ni abdomen genérico.
+3. Hacer correlación inteligente entre lo visualizado en la foto, cualquier texto/rótulo quemado que detectes dentro de ella, y el texto del informe/hallazgos redactados en busca del hallazgo descrito que esté más relacionado, para sintetizar el rótulo final más representativo.
+4. Si el texto del informe menciona hallazgos patológicos o medidas específicas (por ejemplo, "colelitiasis de 12mm", "quiste cortical de 20mm en polo superior", "esteatosis hepática grado II"), correlaciónalos de inmediato con la anatomía observada y el rótulo quemado en la imagen para formular un título coherente que vincule de forma óptima ambos mundos.
+5. Si no hay texto legible en la imagen, analiza la anatomía y propón una descripción clínica o hallazgo en español basado en la correlación con el reporte.
+
+${anatomyHints}
 
 REGLAS DE RESPUESTA:
 - El rótulo sugerido debe ser sumamente limpio, claro y profesional, al estilo del pie de foto o descripción de figura en un artículo de revista médica o científica (menciona la estructura anatómica, el hallazgo clave o patología y algún detalle clínico o medida relevante, sin exceder de 1 a 2 líneas breves, unas 10 a 20 palabras en total).
 - Evita redundancias excesivas y sé sumamente descriptivo pero conciso.
-- La respuesta debe ser una descripción fluida y directa (ejemplo: "Vesícula biliar distendida con presencia de un lito hiperecogénico de 12 mm en su interior que proyecta sombra acústica" o "Bifurcación carotídea derecha con placa de ateroma calcificada que genera estenosis leve de aproximadamente el 25%").
+- La respuesta debe ser una descripción fluida y directa (ejemplos:
+  "Comparativa renal bilateral en pantalla partida: riñones derecho e izquierdo en corte longitudinal sin ectasia"
+  o "Vesícula biliar distendida con presencia de un lito hiperecogénico de 12 mm en su interior que proyecta sombra acústica"
+  o "Bifurcación carotídea derecha con placa de ateroma calcificada que genera estenosis leve de aproximadamente el 25%").
 - Debe estar enteramente en ESPAÑOL.
 - No incluyas prefijos como "Figura X." ni comillas, introducciones, explicaciones, ni puntos finales. Devuelve únicamente la descripción limpia.`;
 

@@ -16,6 +16,7 @@ import {
   type LabelQueueItem,
   type LabelQueueStatus,
 } from "../lib/labelingQueue";
+import { quickChipsForStudy } from "../lib/usAutoLabelHints";
 
 export interface LabelingQueuePanelProps {
   isOpen: boolean;
@@ -243,6 +244,11 @@ export const LabelingQueuePanel: React.FC<LabelingQueuePanelProps> = ({
     return { total, confirmed, pending, working };
   }, [items, attachedImages]);
 
+  const quickChips = useMemo(
+    () => quickChipsForStudy(studyType, clinicalHistory, reportText),
+    [studyType, clinicalHistory, reportText]
+  );
+
   if (!reportText.trim()) return null;
 
   return (
@@ -318,6 +324,27 @@ export const LabelingQueuePanel: React.FC<LabelingQueuePanelProps> = ({
                           placeholder="Rotulo clinico..."
                           className="w-full rounded-lg border border-slate-700 bg-slate-950/80 px-2.5 py-2 text-[11px] text-slate-200 resize-none focus:outline-none focus:border-violet-500/40 disabled:opacity-60"
                         />
+
+                        {item.status !== "confirmed" && quickChips.length > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            {quickChips.map((chip) => (
+                              <button
+                                key={chip.id}
+                                type="button"
+                                onClick={() =>
+                                  updateItem(item.imageId, {
+                                    editedLabel: chip.caption,
+                                    keyword: chip.label,
+                                  })
+                                }
+                                className="rounded-md border border-slate-700/80 bg-slate-950/70 px-2 py-1 text-[8px] font-black uppercase tracking-wider text-slate-400 hover:text-teal-200 hover:border-teal-600/40 transition cursor-pointer"
+                                title={chip.caption}
+                              >
+                                {chip.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
 
                         {item.status !== "confirmed" && (
                           <div className="flex gap-1.5">
