@@ -10980,6 +10980,85 @@ Ejemplo:
         await renderAbdomen3DPageToPdf(doc, activeAbdomenData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
       }
 
+      // --- ANEXO: ELASTOGRAFIA & QUS (pagina dedicada, tras Suite Abdomen 3D) ---
+      // Only include when the user explicitly enabled "Adjuntar al PDF" in the Elastografia module.
+      const activeElastoInclude = studyOverride
+        ? (studyOverride as any).includeElastographyInReport === true
+        : (pdfStateRef.current?.includeElastographyInReport === true || includeElastographyInReport === true);
+      if (activeElastoInclude) {
+        const elastoKpa: number = studyOverride ? ((studyOverride as any).elastographyStiffness ?? elastographyStiffness) : (pdfStateRef.current?.elastographyStiffness ?? elastographyStiffness);
+        const elastoCap: number = studyOverride ? ((studyOverride as any).elastographyCAP ?? elastographyCAP) : (pdfStateRef.current?.elastographyCAP ?? elastographyCAP);
+        const elastoFat: number = studyOverride ? ((studyOverride as any).elastographyFatFraction ?? elastographyFatFraction) : (pdfStateRef.current?.elastographyFatFraction ?? elastographyFatFraction);
+        const elastoImg3d: string | null = studyOverride ? ((studyOverride as any).elastographyImage3d ?? null) : (pdfStateRef.current?.elastographyImage3d ?? elastographyImage3d);
+        const elastoOriginalImg: string | null = studyOverride ? ((studyOverride as any).elastographyOriginalImage ?? null) : (pdfStateRef.current?.elastographyOriginalImage ?? elastographyOriginalImage);
+        const elastoEtiology: string = studyOverride ? ((studyOverride as any).elastographyEtiology ?? "masld") : (pdfStateRef.current?.elastographyEtiology ?? elastographyEtiology);
+
+        {
+          let elastoFibrosisStage: "F0" | "F1" | "F2" | "F3" | "F4" = "F0";
+          if (elastoKpa < 6.0) elastoFibrosisStage = "F0";
+          else if (elastoKpa < 7.2) elastoFibrosisStage = "F1";
+          else if (elastoKpa < 9.5) elastoFibrosisStage = "F2";
+          else if (elastoKpa < 12.5) elastoFibrosisStage = "F3";
+          else elastoFibrosisStage = "F4";
+
+          let elastoSteatosisGrade: "S0" | "S1" | "S2" | "S3" = "S0";
+          if (elastoFat < 5.0) elastoSteatosisGrade = "S0";
+          else if (elastoFat <= 12.0) elastoSteatosisGrade = "S1";
+          else if (elastoFat <= 20.0) elastoSteatosisGrade = "S2";
+          else elastoSteatosisGrade = "S3";
+
+          let elastoBaveno = "";
+          if (elastoKpa < 5.0) elastoBaveno = "Parenquima Hepatico Sano (< 5.0 kPa): Sin sospecha de dano hepatico.";
+          else if (elastoKpa < 10.0) elastoBaveno = "Zona de Seguridad (< 10.0 kPa): Se descarta cACLD con alta certeza.";
+          else if (elastoKpa < 15.0) elastoBaveno = "Zona Gris (10.0-14.9 kPa): Sospecha de cACLD. Requiere test confirmatorio (FIB-4 / ELF).";
+          else if (elastoKpa < 20.0) elastoBaveno = "cACLD Sugestiva (15.0-19.9 kPa): Riesgo intermedio de Hipertension Portal Clinicamente Significativa (CSPH).";
+          else if (elastoKpa <= 25.0) elastoBaveno = "CSPH Altamente Probable (20.0-25.0 kPa): Cumple criterios Baveno VII para hipertension portal clinicamente relevante.";
+          else elastoBaveno = "Riesgo Severo (> 25.0 kPa): Marcada hipertension portal con indicacion de tamizaje endoscopico y profilaxis.";
+
+          const elastoHistoMap: Record<string, string> = {
+            F0: "Microarquitectura lobulillar preservada. Sin expansion fibrosa ni distorsion sinusoidal.",
+            F1: "Fibrosis portal inicial con discreta expansion periportal. Sin puentes conectivos.",
+            F2: "Fibrosis periportal con escasos puentes septales incompletos. Orientacion lobulillar conservada.",
+            F3: "Fibrosis avanzada en puentes porto-centrales y porto-portales multiples.",
+            F4: "Cirrosis establecida (F4): Nodulos regenerativos rodeados por bandas densas de tejido conectivo fibrilar.",
+          };
+          let elastoHisto = elastoHistoMap[elastoFibrosisStage] || "";
+          if (elastoSteatosisGrade !== "S0") {
+            elastoHisto += ` Coexiste esteatosis ${elastoSteatosisGrade === "S1" ? "leve (5-33%)" : elastoSteatosisGrade === "S2" ? "moderada (33-66%)" : "severa (>66%)"} de hepatocitos.`;
+          }
+
+          const elastoVelocity = parseFloat(Math.sqrt((elastoKpa * 1000) / 3000).toFixed(2));
+          const elastoIqr = parseFloat((elastoKpa * 0.12).toFixed(1));
+          const elastoIqrRatio = parseFloat(((elastoIqr / elastoKpa) * 100).toFixed(1));
+
+          const elastoEtiologyLabels: Record<string, string> = {
+            masld: "MASLD / Esteatosis Metabolica",
+            viral_c: "Hepatitis Viral C (VHC)",
+            viral_b: "Hepatitis Viral B (VHB)",
+            ald: "Alcohol / ARLD",
+            cholestatic: "Colestasica / CBP / CEP",
+            general: "Hepatopatia Indeterminada / General",
+          };
+
+          renderElastographyAnnexToPdf(doc, {
+            stiffnessKpa: elastoKpa,
+            capDbM: elastoCap,
+            fatFractionPercent: elastoFat,
+            etiology: elastoEtiologyLabels[elastoEtiology] || elastoEtiology,
+            fibrosisStage: elastoFibrosisStage,
+            steatosisGrade: elastoSteatosisGrade,
+            bavenoClassification: elastoBaveno,
+            histologicalCorrelation: elastoHisto,
+            velocityMs: elastoVelocity,
+            iqrKpa: elastoIqr,
+            iqrMedianRatioPercent: elastoIqrRatio,
+            image3dBase64: elastoImg3d,
+            originalImageBase64: elastoOriginalImg,
+          }, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter");
+        }
+      }
+
+
       const activeAbdominalWallData = studyOverride ? studyOverride.abdominalWall3dData : (pdfStateRef.current?.abdominalWall3dData || abdominalWall3dData);
       const shouldIncludeAbdominalWall = studyOverride ? (studyOverride.includeAbdominalWall3dInReport !== false) : (pdfStateRef.current?.includeAbdominalWall3dInReport !== false && includeAbdominalWall3dInReport);
       if (activeAbdominalWallData && shouldIncludeAbdominalWall && (activeAbdominalWallData.panels?.length || activeAbdominalWallData.findingTable?.length)) {
@@ -11194,84 +11273,6 @@ Ejemplo:
         });
       }
 
-
-      // --- 5.7. ANEXO: EVALUACION MULTIPARAMETRICA - ELASTOGRAFIA & QUS (PAGINA DEDICADA) ---
-      // Only include when the user explicitly enabled "Adjuntar al PDF" in the Elastografia module.
-      const activeElastoInclude = studyOverride
-        ? (studyOverride as any).includeElastographyInReport === true
-        : (pdfStateRef.current?.includeElastographyInReport === true || includeElastographyInReport === true);
-      if (activeElastoInclude) {
-        const elastoKpa: number = studyOverride ? ((studyOverride as any).elastographyStiffness ?? elastographyStiffness) : (pdfStateRef.current?.elastographyStiffness ?? elastographyStiffness);
-        const elastoCap: number = studyOverride ? ((studyOverride as any).elastographyCAP ?? elastographyCAP) : (pdfStateRef.current?.elastographyCAP ?? elastographyCAP);
-        const elastoFat: number = studyOverride ? ((studyOverride as any).elastographyFatFraction ?? elastographyFatFraction) : (pdfStateRef.current?.elastographyFatFraction ?? elastographyFatFraction);
-        const elastoImg3d: string | null = studyOverride ? ((studyOverride as any).elastographyImage3d ?? null) : (pdfStateRef.current?.elastographyImage3d ?? elastographyImage3d);
-        const elastoOriginalImg: string | null = studyOverride ? ((studyOverride as any).elastographyOriginalImage ?? null) : (pdfStateRef.current?.elastographyOriginalImage ?? elastographyOriginalImage);
-        const elastoEtiology: string = studyOverride ? ((studyOverride as any).elastographyEtiology ?? "masld") : (pdfStateRef.current?.elastographyEtiology ?? elastographyEtiology);
-
-        {
-          let elastoFibrosisStage: "F0" | "F1" | "F2" | "F3" | "F4" = "F0";
-          if (elastoKpa < 6.0) elastoFibrosisStage = "F0";
-          else if (elastoKpa < 7.2) elastoFibrosisStage = "F1";
-          else if (elastoKpa < 9.5) elastoFibrosisStage = "F2";
-          else if (elastoKpa < 12.5) elastoFibrosisStage = "F3";
-          else elastoFibrosisStage = "F4";
-
-          let elastoSteatosisGrade: "S0" | "S1" | "S2" | "S3" = "S0";
-          if (elastoFat < 5.0) elastoSteatosisGrade = "S0";
-          else if (elastoFat <= 12.0) elastoSteatosisGrade = "S1";
-          else if (elastoFat <= 20.0) elastoSteatosisGrade = "S2";
-          else elastoSteatosisGrade = "S3";
-
-          let elastoBaveno = "";
-          if (elastoKpa < 5.0) elastoBaveno = "Parenquima Hepatico Sano (< 5.0 kPa): Sin sospecha de dano hepatico.";
-          else if (elastoKpa < 10.0) elastoBaveno = "Zona de Seguridad (< 10.0 kPa): Se descarta cACLD con alta certeza.";
-          else if (elastoKpa < 15.0) elastoBaveno = "Zona Gris (10.0-14.9 kPa): Sospecha de cACLD. Requiere test confirmatorio (FIB-4 / ELF).";
-          else if (elastoKpa < 20.0) elastoBaveno = "cACLD Sugestiva (15.0-19.9 kPa): Riesgo intermedio de Hipertension Portal Clinicamente Significativa (CSPH).";
-          else if (elastoKpa <= 25.0) elastoBaveno = "CSPH Altamente Probable (20.0-25.0 kPa): Cumple criterios Baveno VII para hipertension portal clinicamente relevante.";
-          else elastoBaveno = "Riesgo Severo (> 25.0 kPa): Marcada hipertension portal con indicacion de tamizaje endoscopico y profilaxis.";
-
-          const elastoHistoMap: Record<string, string> = {
-            F0: "Microarquitectura lobulillar preservada. Sin expansion fibrosa ni distorsion sinusoidal.",
-            F1: "Fibrosis portal inicial con discreta expansion periportal. Sin puentes conectivos.",
-            F2: "Fibrosis periportal con escasos puentes septales incompletos. Orientacion lobulillar conservada.",
-            F3: "Fibrosis avanzada en puentes porto-centrales y porto-portales multiples.",
-            F4: "Cirrosis establecida (F4): Nodulos regenerativos rodeados por bandas densas de tejido conectivo fibrilar.",
-          };
-          let elastoHisto = elastoHistoMap[elastoFibrosisStage] || "";
-          if (elastoSteatosisGrade !== "S0") {
-            elastoHisto += ` Coexiste esteatosis ${elastoSteatosisGrade === "S1" ? "leve (5-33%)" : elastoSteatosisGrade === "S2" ? "moderada (33-66%)" : "severa (>66%)"} de hepatocitos.`;
-          }
-
-          const elastoVelocity = parseFloat(Math.sqrt((elastoKpa * 1000) / 3000).toFixed(2));
-          const elastoIqr = parseFloat((elastoKpa * 0.12).toFixed(1));
-          const elastoIqrRatio = parseFloat(((elastoIqr / elastoKpa) * 100).toFixed(1));
-
-          const elastoEtiologyLabels: Record<string, string> = {
-            masld: "MASLD / Esteatosis Metabolica",
-            viral_c: "Hepatitis Viral C (VHC)",
-            viral_b: "Hepatitis Viral B (VHB)",
-            ald: "Alcohol / ARLD",
-            cholestatic: "Colestasica / CBP / CEP",
-            general: "Hepatopatia Indeterminada / General",
-          };
-
-          renderElastographyAnnexToPdf(doc, {
-            stiffnessKpa: elastoKpa,
-            capDbM: elastoCap,
-            fatFractionPercent: elastoFat,
-            etiology: elastoEtiologyLabels[elastoEtiology] || elastoEtiology,
-            fibrosisStage: elastoFibrosisStage,
-            steatosisGrade: elastoSteatosisGrade,
-            bavenoClassification: elastoBaveno,
-            histologicalCorrelation: elastoHisto,
-            velocityMs: elastoVelocity,
-            iqrKpa: elastoIqr,
-            iqrMedianRatioPercent: elastoIqrRatio,
-            image3dBase64: elastoImg3d,
-            originalImageBase64: elastoOriginalImg,
-          }, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter");
-        }
-      }
 
       // --- 6. ANEXOS DE IMÁGENES DIAGNÓSTICAS (MAMOGRAFÍA Y ULTRASONIDO) ---
       if (attachedImages.length > 0) {
