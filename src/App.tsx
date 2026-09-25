@@ -22617,6 +22617,16 @@ const splitReportAndAnnex = (text: string) => {
                                   atlasData={atlas3dData}
                                   setAtlasData={setAtlas3dData}
                                   onAtlasDirectivesSuggested={setAtlasDirectivesFromScorecard}
+                                  onSendToInfographic={(data) => {
+                                    setFindingsInfographicData(data);
+                                    setIncludeFindingsInfographicInReport(true);
+                                    setIsFindingsInfographicOpen(true);
+                                    window.setTimeout(() => {
+                                      document
+                                        .getElementById("findings-infographic-module")
+                                        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                                    }, 80);
+                                  }}
                                 />
                               </React.Suspense>
                             </div>
@@ -22659,6 +22669,16 @@ const splitReportAndAnnex = (text: string) => {
                                     }
                                     setGeneratedReport(next);
                                     setEditedReportText(next);
+                                  }}
+                                  onSendToInfographic={(data) => {
+                                    setFindingsInfographicData(data);
+                                    setIncludeFindingsInfographicInReport(true);
+                                    setIsFindingsInfographicOpen(true);
+                                    window.setTimeout(() => {
+                                      document
+                                        .getElementById("findings-infographic-module")
+                                        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                                    }, 80);
                                   }}
                                 />
                               </React.Suspense>

@@ -8,8 +8,9 @@ import {
   Layers,
   FileText,
   Sparkles,
+  Hexagon,
 } from "lucide-react";
-import { ClinicalScorecardData, Atlas3DData } from "../types";
+import { ClinicalScorecardData, Atlas3DData, FindingsInfographicData } from "../types";
 import {
   SCORECARD_PROTOCOL_OPTIONS,
   buildAtlasDirectivesFromScorecard,
@@ -19,6 +20,7 @@ import {
   mergeOverlaysOntoAtlas,
   scorecardTrafficLabel,
 } from "../lib/clinicalIntelligence";
+import { infographicFromScorecard } from "../lib/infographicFromModules";
 
 interface ClinicalScorecardModuleProps {
   selectedModel: string;
@@ -33,6 +35,8 @@ interface ClinicalScorecardModuleProps {
   setAtlasData?: (data: Atlas3DData | null) => void;
   /** Prefills Atlas custom directives when regenerating */
   onAtlasDirectivesSuggested?: (directives: string) => void;
+  /** One-click: open Findings Infographic with criteria mapped from this scorecard */
+  onSendToInfographic?: (data: FindingsInfographicData) => void;
 }
 
 const statusStyle = (status: string) => {
@@ -72,6 +76,7 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
   atlasData,
   setAtlasData,
   onAtlasDirectivesSuggested,
+  onSendToInfographic,
 }) => {
   const [protocolId, setProtocolId] = useState("auto");
   const [pathologyFocus, setPathologyFocus] = useState("");
@@ -156,6 +161,16 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
     }
   };
 
+  const handleSendToInfographic = () => {
+    if (!scorecardData || !onSendToInfographic) return;
+    const mapped = infographicFromScorecard(scorecardData);
+    if (!mapped.nodes.some((n) => n.label.trim())) {
+      setError("No hay criterios utilizables para armar la infografía.");
+      return;
+    }
+    onSendToInfographic(mapped);
+  };
+
   return (
     <div className="rounded-2xl border border-teal-900/50 bg-gradient-to-br from-slate-950 via-slate-900 to-teal-950/40 p-4 md:p-5 shadow-xl shadow-teal-950/20">
       <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
@@ -218,6 +233,17 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
           >
             <Layers className="w-3.5 h-3.5" />
             {synced ? "Tabla Atlas actualizada" : "Sincronizar con Atlas"}
+          </button>
+        )}
+        {scorecardData && onSendToInfographic && (
+          <button
+            type="button"
+            onClick={handleSendToInfographic}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-teal-500/40 bg-teal-500/10 hover:bg-teal-500/20 text-teal-100 text-xs font-medium"
+            title="Abre la infografía con los criterios cumplidos / equívocos"
+          >
+            <Hexagon className="w-3.5 h-3.5" />
+            Infografía de criterios
           </button>
         )}
         {scorecardData && (
