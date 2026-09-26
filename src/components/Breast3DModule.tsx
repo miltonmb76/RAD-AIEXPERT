@@ -284,12 +284,24 @@ export const Breast3DModule: React.FC<Breast3DModuleProps> = ({
     });
   };
 
-  const handleRegenerateSinglePanel = async (panel: Breast3DPanel) => {
+  const handleRegenerateSinglePanel = async (
+    panel: Breast3DPanel,
+    explicitDirectiveOverride?: string
+  ) => {
     if (!breastData) return;
     setRegeneratingPanelLetter(panel.panelLetter);
     setErrorMessage(null);
 
-    const directive = panelDirectives[panel.panelLetter] || "";
+    const directive =
+      (explicitDirectiveOverride && explicitDirectiveOverride.trim()) ||
+      panelDirectives[panel.panelLetter] ||
+      "";
+    if (explicitDirectiveOverride && explicitDirectiveOverride.trim()) {
+      setPanelDirectives((prev) => ({
+        ...prev,
+        [panel.panelLetter]: explicitDirectiveOverride.trim(),
+      }));
+    }
     const mergedDirectives = mergeMandatoryDirectives(directive);
 
     try {
@@ -703,9 +715,63 @@ export const Breast3DModule: React.FC<Breast3DModuleProps> = ({
                                 [panel.panelLetter]: e.target.value
                               }))
                             }
-                            placeholder="Ej: Mostrar trombo oclusivo más oscuro..."
+                            placeholder="Ej: Mama derecha eje 10 (CSE) — NO eje 2..."
                             className="w-full text-xs text-slate-900 placeholder:text-slate-400 bg-white border border-slate-300 rounded px-2 py-1"
                           />
+                          <div className="flex flex-wrap gap-1">
+                            {[
+                              "Mama derecha eje 10 CSE (superior externo / lateral — IZQUIERDA del pezón; NUNCA eje 2)",
+                              "Mama derecha eje 2 CSI (superior interno / medial — DERECHA del pezón)",
+                              "Mama derecha eje 3 medial (esternón)",
+                              "Mama derecha eje 9 lateral (axila)",
+                              "Mama izquierda eje 10 CSI (medial)",
+                              "Mama izquierda eje 2 CSE (lateral)",
+                              "Mama izquierda eje 3 lateral (axila)",
+                              "Mama izquierda eje 9 medial (esternón)",
+                            ].map((chip) => (
+                              <button
+                                key={chip}
+                                type="button"
+                                onClick={() =>
+                                  setPanelDirectives((prev) => ({
+                                    ...prev,
+                                    [panel.panelLetter]: chip,
+                                  }))
+                                }
+                                className="text-[9px] bg-white hover:bg-pink-50 border border-slate-200 hover:border-pink-400 text-slate-600 hover:text-pink-800 px-1.5 py-0.5 rounded font-mono"
+                              >
+                                + {chip.split(" — ")[0]}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="grid grid-cols-2 gap-1">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleRegenerateSinglePanel(
+                                  panel,
+                                  "CORRECCIÓN ESTRICTA MAMA DERECHA AP: reloj manecillas IDÉNTICAS. Lesión en eje/hora 10 = CSE superior externo = LATERAL/axila = IZQUIERDA del pezón en la imagen (entre 9 y 12). PROHIBIDO ponerla en eje 2 (eso es el espejo). 3=medial/esternón; 9=lateral/axila."
+                                )
+                              }
+                              disabled={regeneratingPanelLetter === panel.panelLetter}
+                              className="text-[9px] bg-pink-900/10 hover:bg-pink-100 border border-pink-300 text-pink-900 p-1.5 rounded text-left font-mono"
+                            >
+                              Mama Der: forzar eje 10 (no 2)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleRegenerateSinglePanel(
+                                  panel,
+                                  "CORRECCIÓN ESTRICTA MAMA DERECHA AP: reloj manecillas IDÉNTICAS. 12 arriba. 3 = derecha del pezón = MEDIAL/esternón. 9 = izquierda del pezón = LATERAL/axila. NUNCA espejar el reloj ni intercambiar 10↔2."
+                                )
+                              }
+                              disabled={regeneratingPanelLetter === panel.panelLetter}
+                              className="text-[9px] bg-pink-900/10 hover:bg-pink-100 border border-pink-300 text-pink-900 p-1.5 rounded text-left font-mono"
+                            >
+                              Mama Der: 3 medial / 9 lateral
+                            </button>
+                          </div>
                           <div className="flex items-center justify-end gap-1.5">
                             <button
                               onClick={() => setEditingPanelLetter(null)}
