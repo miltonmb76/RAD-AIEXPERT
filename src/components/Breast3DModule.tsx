@@ -637,38 +637,9 @@ export const Breast3DModule: React.FC<Breast3DModuleProps> = ({
                       </div>
                     )}
 
-                    {/* Badge */}
-                    <div className="absolute top-2 left-2 flex flex-col gap-1 items-start">
-                      <div className="bg-pink-600 text-white font-bold text-[10px] px-2 py-0.5 rounded shadow">
-                        PANEL {panel.panelLetter}
-                      </div>
-                      {(panel.lockedClockHour != null || panel.clockPositionOrSite) && (
-                        <div className="bg-slate-950/85 text-pink-100 font-mono text-[9px] px-2 py-0.5 rounded shadow border border-pink-500/40">
-                          Reloj:{" "}
-                          {panel.lockedBreastSide === "right"
-                            ? "MD "
-                            : panel.lockedBreastSide === "left"
-                              ? "MI "
-                              : ""}
-                          {panel.lockedClockHour != null
-                            ? `${panel.lockedClockHour}h`
-                            : panel.clockPositionOrSite}
-                        </div>
-                      )}
-                      {panel.clockQa && (
-                        <div
-                          className={`font-mono text-[9px] px-2 py-0.5 rounded shadow border ${
-                            panel.clockQa.pass
-                              ? "bg-emerald-950/90 text-emerald-200 border-emerald-500/50"
-                              : "bg-amber-950/90 text-amber-100 border-amber-500/50"
-                          }`}
-                          title={(panel.clockQa.issues || []).join(", ")}
-                        >
-                          {panel.clockQa.pass
-                            ? `QA OK · ${panel.clockQa.targetHour}h`
-                            : `QA: vio ${panel.clockQa.observedHour ?? "?"}h (pedido ${panel.clockQa.targetHour}h) · ${panel.clockQa.attempts}x`}
-                        </div>
-                      )}
+                    {/* Badge — only panel letter; never overlay clock/QA labels on the drawing */}
+                    <div className="absolute top-2 left-2 bg-pink-600 text-white font-bold text-[10px] px-2 py-0.5 rounded shadow">
+                      PANEL {panel.panelLetter}
                     </div>
 
                     {/* Quick Tools Overlay */}

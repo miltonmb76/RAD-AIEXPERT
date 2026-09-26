@@ -414,30 +414,56 @@ function isBreastContext(...parts: Array<string | undefined | null>): boolean {
   return false;
 }
 
-/** Extract clock-face hour (1-12) from a single Spanish/English phrase. */
+/**
+ * Extract clock-face hour (1-12) from clinical Spanish/English.
+ * Prefers "eje de las 7" / "7h" over polluted English "12 o'clock" landmarks.
+ */
 function extractBreastClockHourFromText(text: string): number | null {
   const t = String(text || "");
   if (!t.trim()) return null;
-  const patterns = [
-    /\b(?:eje|hora|hours?|o['’]?clock|h)\s*[:\-]?\s*(1[0-2]|[1-9])\b/i,
-    /\b(?:a\s+las|en\s+las|las)\s+(1[0-2]|[1-9])\b/i,
-    /\b(1[0-2]|[1-9])\s*(?:h|hrs?|horas?|o['’]?clock|:00)\b/i,
+
+  // Ignore pure geometry/boilerplate blobs (they always mention 12 o'clock as a landmark)
+  if (
+    /BREAST CLOCK GEOMETRY|ASCII DIAL|degreesFrom12|LESION CLOCK PIN|superior breast\s*\/\s*12|inferior breast\s*\/\s*6/i.test(
+      t
+    ) &&
+    !/\beje\b|\bhora\b|\bradio\b|\b\d{1,2}\s*h\b/i.test(t)
+  ) {
+    return null;
+  }
+
+  // HIGH PRIORITY — clinical report phrasing (Spanish)
+  const clinicalPatterns = [
+    /\beje\s+(?:de\s+)?(?:las?\s+)?(1[0-2]|[1-9])\b/i, // eje 7 | eje de las 7
+    /\b(?:a\s+las|en\s+las|de\s+las)\s+(1[0-2]|[1-9])\b/i, // de las 7
+    /\bhora\s*[:\-]?\s*(1[0-2]|[1-9])\b/i,
+    /\b(1[0-2]|[1-9])\s*h(?:oras?)?\b(?!\s*o['’]?clock)/i, // 7h / 7 horas (not "12 o'clock")
     /\bradio\s*(1[0-2]|[1-9])\b/i,
-    /\b(?:clock|reloj)\s*[:\-]?\s*(1[0-2]|[1-9])\b/i,
+    /\b(?:en|a)\s+(1[0-2]|[1-9])\s*(?:h|horas?|:00)\b/i,
   ];
-  for (const re of patterns) {
+  for (const re of clinicalPatterns) {
     const m = t.match(re);
     if (m) {
       const n = Number(m[1]);
       if (n >= 1 && n <= 12) return n;
     }
   }
+
+  // LOW PRIORITY — English "N o'clock" only if tied to lesion/site wording (not landmark lists)
+  const en = t.match(
+    /\b(?:lesion|finding|nodule|mass|target|at|placed?(?:\s+at)?)\s+[^\n.]{0,40}?\b(1[0-2]|[1-9])\s*o['’]?clock\b/i
+  );
+  if (en) {
+    const n = Number(en[1]);
+    if (n >= 1 && n <= 12) return n;
+  }
+
   return null;
 }
 
 /**
- * Extract clock-face hour (1-12). Parts are scanned in order — first hit wins —
- * so callers should put user directives / scorecard before stale panel labels.
+ * Extract clock-face hour (1-12). Parts are scanned in order — first hit wins.
+ * Callers MUST put report / user directive / scorecard BEFORE panel focus fluff.
  */
 function extractBreastClockHour(...parts: Array<string | undefined | null>): number | null {
   for (const p of parts) {
@@ -445,6 +471,46 @@ function extractBreastClockHour(...parts: Array<string | undefined | null>): num
     if (n != null) return n;
   }
   return null;
+}
+
+/** Resolve locked hour for breast suite: clinical sources beat stale panel locks (e.g. wrong 12h). */
+function resolveBreastLockedHour(args: {
+  userDirective?: string;
+  customDirectives?: string;
+  reportText?: string;
+  lesionLocations?: string[];
+  clockPositionOrSite?: string;
+  anatomicalFocus?: string;
+  panelTitle?: string;
+  previousLockedHour?: number | null;
+}): number | null {
+  const report = String(args.reportText || "").slice(0, 2500);
+  const fromClinical = extractBreastClockHour(
+    args.userDirective,
+    args.customDirectives,
+    report,
+    ...(args.lesionLocations || [])
+  );
+  if (fromClinical != null) return fromClinical;
+
+  // Panel site label only if it looks clinical (contains eje/hora/Nh), not English landmark prose
+  const site = String(args.clockPositionOrSite || "");
+  if (/\beje\b|\bhora\b|\b\d{1,2}\s*h\b/i.test(site)) {
+    const fromSite = extractBreastClockHourFromText(site);
+    if (fromSite != null) return fromSite;
+  }
+
+  if (
+    args.previousLockedHour != null &&
+    args.previousLockedHour >= 1 &&
+    args.previousLockedHour <= 12
+  ) {
+    // Only keep previous lock if report/directives did not contradict — already handled above
+    return args.previousLockedHour;
+  }
+
+  // Last resort: focus/title (often polluted — lowest trust)
+  return extractBreastClockHour(args.anatomicalFocus, args.panelTitle);
 }
 
 /** Circular distance on a 12-hour clock (0..6). */
@@ -696,9 +762,10 @@ function enforceBreastClockOnContract(
   const hourBag = [
     ctx.customDirectives,
     contract.pathologySite,
-    ctx.anatomicalFocus,
-    ctx.panelTitle,
     ctx.studyRegion,
+    ctx.panelTitle,
+    // anatomicalFocus last — often polluted with English "12 o'clock" landmarks
+    ctx.anatomicalFocus,
     contract.pathologyAppearance,
     ctx.laterality,
     contract.laterality,
@@ -706,7 +773,13 @@ function enforceBreastClockOnContract(
   if (!isBreastContext(...sideBag, ...hourBag)) return contract;
 
   const side = detectBreastSide(...sideBag);
-  const hour = extractBreastClockHour(...hourBag);
+  const hour = resolveBreastLockedHour({
+    customDirectives: ctx.customDirectives,
+    reportText: [contract.pathologySite, ctx.studyRegion].filter(Boolean).join(" "),
+    clockPositionOrSite: contract.pathologySite,
+    anatomicalFocus: ctx.anatomicalFocus,
+    panelTitle: ctx.panelTitle,
+  });
   const next: SpatialContract = {
     ...contract,
     mustShowLandmarks: [...(contract.mustShowLandmarks || [])],
@@ -1233,16 +1306,43 @@ Rules:
           : extractBreastClockHourFromText(String(observedRaw || ""));
       const distance =
         observedHour != null ? clockHourDistance(targetHour, observedHour) : null;
-      const pass = observedHour === targetHour;
       const issues = Array.isArray(json.issues)
         ? json.issues.map((x: any) => String(x))
         : [];
+
+      // Geometry cross-check: model often claims pass while lesion sits on the mirror half
+      const reportedHalf = String(json.viewerHalf || "").toLowerCase();
+      const reportedVert = String(json.vertical || "").toLowerCase();
+      const halfOk =
+        !reportedHalf ||
+        reportedHalf === g.viewerHalf ||
+        (g.viewerHalf === "midline" && reportedHalf === "midline");
+      const vertOk =
+        !reportedVert ||
+        reportedVert === g.vertical ||
+        (g.vertical === "horizontal" &&
+          (reportedVert === "horizontal" || reportedVert === "mid"));
+
+      let pass = observedHour === targetHour && halfOk && vertOk;
+      if (observedHour === targetHour && (!halfOk || !vertOk)) {
+        pass = false;
+        issues.push("geometry_mismatch_half_or_vertical");
+      }
       if (!pass && observedHour != null && g.mirrorHour === observedHour) {
         issues.push("mirrored_clock");
       }
       if (!pass && observedHour == null) issues.push("hour_unreadable");
       if (!pass && observedHour != null && observedHour !== targetHour) {
         issues.push(`observed_${observedHour}_expected_${targetHour}`);
+      }
+      // Never trust a "pass" for hour 12 when the model also reports a clear left/right half lesion
+      if (
+        pass &&
+        targetHour === 12 &&
+        (reportedHalf === "left" || reportedHalf === "right")
+      ) {
+        pass = false;
+        issues.push("false_12_with_lateral_lesion");
       }
       return { pass, observedHour, targetHour, distance, issues };
     } catch (err: any) {
@@ -5137,18 +5237,22 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
         };
       }
 
-      // Lock clock hour from scorecard/report before image gen (planner often mirrors 10→2)
-      const reportClockSource = String(reportText || "").slice(0, 2000);
-      const globalBreastHour = extractBreastClockHour(
-        customDirectives,
-        reportClockSource,
-        ...(planJson.lesionTable || planJson.noduleTable || []).map((r: any) => r?.location)
+      // Lock clock hour from report/scorecard FIRST — never trust panel focus "12 o'clock" landmarks
+      const reportClockSource = String(reportText || "").slice(0, 2500);
+      const lesionLocations = (planJson.lesionTable || planJson.noduleTable || []).map(
+        (r: any) => String(r?.location || "")
       );
+      const globalBreastHour = resolveBreastLockedHour({
+        customDirectives,
+        reportText: reportClockSource,
+        lesionLocations,
+      });
       const globalBreastSide = detectBreastSide(
         customDirectives,
         laterality,
         planJson.laterality,
-        reportClockSource
+        reportClockSource,
+        ...lesionLocations
       );
 
       // Generate images in parallel for each breast panel
@@ -5158,21 +5262,21 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
           const side = detectBreastSide(
             customDirectives,
             panel.clockPositionOrSite,
-            panel.anatomicalFocus,
-            panel.panelTitle,
             panelLat,
-            globalBreastSide !== "unknown" ? (globalBreastSide === "right" ? "Mama derecha" : "Mama izquierda") : ""
-          );
-          const hour = extractBreastClockHour(
-            customDirectives,
-            panel.clockPositionOrSite,
-            panel.anatomicalFocus,
-            panel.panelTitle,
-            ...(planJson.lesionTable || []).map((r: any) => r?.location),
+            globalBreastSide !== "unknown" ? (globalBreastSide === "right" ? "Mama derecha" : "Mama izquierda") : "",
             reportClockSource,
-            globalBreastHour != null ? `eje ${globalBreastHour}` : ""
+            panel.anatomicalFocus,
+            panel.panelTitle
           );
-          const effectiveHour = hour ?? globalBreastHour;
+          const effectiveHour = resolveBreastLockedHour({
+            customDirectives,
+            reportText: reportClockSource,
+            lesionLocations,
+            clockPositionOrSite: panel.clockPositionOrSite,
+            anatomicalFocus: panel.anatomicalFocus,
+            panelTitle: panel.panelTitle,
+            previousLockedHour: globalBreastHour,
+          });
           const effectiveSide = side !== "unknown" ? side : globalBreastSide;
           const panelRoleStr = String(panel.panelRole || panel.panelTitle || "").toLowerCase();
           const isOverviewPanel =
@@ -5360,25 +5464,29 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
       const ai = getGeminiClient();
       const model = getModelName(requestedModel || "gemini-3.7-flash");
 
-      // Lock hour/side from surgeon directive FIRST so refine cannot rewrite 10→2
+      // Lock hour/side from surgeon directive + report FIRST.
+      // Never keep a stale wrong lock (e.g. panel.lockedClockHour=12 when report says eje 7).
+      const reportSlice = String(reportText || "").slice(0, 2500);
       const lockedSide = detectBreastSide(
         userDirective,
         customDirectives,
         laterality,
         panel.laterality,
         panel.clockPositionOrSite,
+        reportSlice,
         panel.anatomicalFocus,
-        panel.panelTitle,
-        String(reportText || "").slice(0, 800)
+        panel.panelTitle
       );
-      const lockedHour = extractBreastClockHour(
+      const lockedHour = resolveBreastLockedHour({
         userDirective,
         customDirectives,
-        panel.clockPositionOrSite,
-        panel.anatomicalFocus,
-        panel.panelTitle,
-        String(reportText || "").slice(0, 800)
-      );
+        reportText: reportSlice,
+        clockPositionOrSite: panel.clockPositionOrSite,
+        anatomicalFocus: panel.anatomicalFocus,
+        panelTitle: panel.panelTitle,
+        // Ignore previousLockedHour when directive/report provide a hour — resolveBreastLockedHour already prefers clinical
+        previousLockedHour: undefined,
+      });
       const lockedClockSite = lockBreastClockSiteLabel(
         lockedSide,
         lockedHour,

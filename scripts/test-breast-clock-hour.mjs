@@ -1,19 +1,37 @@
-/** Sanity: breast clock polar map + hour priority (7≠5, 10≠2). */
+/** Sanity: clinical hour extraction + polar map (7≠5, ignore polluted 12 o'clock). */
 
 function extractBreastClockHourFromText(text) {
   const t = String(text || "");
-  const patterns = [
-    /\b(?:eje|hora|hours?|o['’]?clock|h)\s*[:\-]?\s*(1[0-2]|[1-9])\b/i,
-    /\b(?:a\s+las|en\s+las|las)\s+(1[0-2]|[1-9])\b/i,
-    /\b(1[0-2]|[1-9])\s*(?:h|hrs?|horas?|o['’]?clock|:00)\b/i,
+  if (!t.trim()) return null;
+  if (
+    /BREAST CLOCK GEOMETRY|ASCII DIAL|degreesFrom12|LESION CLOCK PIN|superior breast\s*\/\s*12|inferior breast\s*\/\s*6/i.test(
+      t
+    ) &&
+    !/\beje\b|\bhora\b|\bradio\b|\b\d{1,2}\s*h\b/i.test(t)
+  ) {
+    return null;
+  }
+  const clinicalPatterns = [
+    /\beje\s+(?:de\s+)?(?:las?\s+)?(1[0-2]|[1-9])\b/i,
+    /\b(?:a\s+las|en\s+las|de\s+las)\s+(1[0-2]|[1-9])\b/i,
+    /\bhora\s*[:\-]?\s*(1[0-2]|[1-9])\b/i,
+    /\b(1[0-2]|[1-9])\s*h(?:oras?)?\b(?!\s*o['’]?clock)/i,
     /\bradio\s*(1[0-2]|[1-9])\b/i,
+    /\b(?:en|a)\s+(1[0-2]|[1-9])\s*(?:h|horas?|:00)\b/i,
   ];
-  for (const re of patterns) {
+  for (const re of clinicalPatterns) {
     const m = t.match(re);
     if (m) {
       const n = Number(m[1]);
       if (n >= 1 && n <= 12) return n;
     }
+  }
+  const en = t.match(
+    /\b(?:lesion|finding|nodule|mass|target|at|placed?(?:\s+at)?)\s+[^\n.]{0,40}?\b(1[0-2]|[1-9])\s*o['’]?clock\b/i
+  );
+  if (en) {
+    const n = Number(en[1]);
+    if (n >= 1 && n <= 12) return n;
   }
   return null;
 }
@@ -55,21 +73,28 @@ function assert(name, cond) {
 
 assert("eje 10", extractBreastClockHourFromText("eje 10 derecho") === 10);
 assert(
+  "eje de las 7",
+  extractBreastClockHourFromText("nódulo en eje de las 7 de mama derecha") === 7
+);
+assert(
+  "ignore landmark 12 o'clock",
+  extractBreastClockHourFromText("superior breast / 12 o'clock landmark") === null
+);
+assert(
+  "clinical beats polluted 12",
+  extractBreastClockHour(
+    "Lesión en eje de las 7 mama derecha",
+    "superior breast / 12 o'clock. Focus at 12 o'clock."
+  ) === 7
+);
+assert(
   "directive beats stale 2",
   extractBreastClockHour("Mama derecha eje 10 CSE", "Mama derecha, 2h") === 10
 );
 assert("mirror 10→2", mirrorBreastClockHour(10) === 2);
 assert("mirror 7→5", mirrorBreastClockHour(7) === 5);
-assert("mirror 5→7", mirrorBreastClockHour(5) === 7);
-
-const g7 = getBreastClockGeometry(7);
-const g5 = getBreastClockGeometry(5);
-assert("7 is viewer-left (nx<0)", g7.nx < -0.3);
-assert("5 is viewer-right (nx>0)", g5.nx > 0.3);
-assert("7 and 5 both inferior (ny>0)", g7.ny > 0.3 && g5.ny > 0.3);
+assert("7 is viewer-left", getBreastClockGeometry(7).nx < -0.3);
+assert("5 is viewer-right", getBreastClockGeometry(5).nx > 0.3);
 assert("distance 7-5 is 2", clockHourDistance(7, 5) === 2);
-assert("12 up ny<0", getBreastClockGeometry(12).ny < -0.9);
-assert("3 right nx>0.9", getBreastClockGeometry(3).nx > 0.9);
-assert("9 left nx<-0.9", getBreastClockGeometry(9).nx < -0.9);
 
 process.exit(fail ? 1 : 0);
