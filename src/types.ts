@@ -356,6 +356,15 @@ export type BreastStudyType =
   | "mama_axilas"
   | "general_breast";
 
+export interface BreastClockQa {
+  pass: boolean;
+  observedHour: number | null;
+  targetHour: number;
+  distance: number | null;
+  issues: string[];
+  attempts: number;
+}
+
 export interface Breast3DPanel {
   id?: string;
   panelLetter: string;
@@ -363,10 +372,16 @@ export interface Breast3DPanel {
   anatomicalFocus: string;
   laterality?: string;
   clockPositionOrSite?: string;
+  /** Locked clinical clock hour (1–12) — source of truth for render/QA. */
+  lockedClockHour?: number;
+  /** Locked breast side for clock geometry. */
+  lockedBreastSide?: "left" | "right";
   panelRole?: "both_breasts" | "lesion" | "axilla";
   imageUrl?: string;
   isCustomFlipped?: boolean;
   promptUsed?: string;
+  /** Vision QA of lesion clock position after generate/regen. */
+  clockQa?: BreastClockQa | null;
 }
 
 export interface BreastLesionRow {

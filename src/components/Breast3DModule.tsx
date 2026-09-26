@@ -186,7 +186,9 @@ export const Breast3DModule: React.FC<Breast3DModuleProps> = ({
     }
   };
 
-  // Flip horizontal — bake into imageUrl so PDF/export see the same laterality fix as the UI
+  // Flip horizontal — bake into imageUrl so PDF/export see the same laterality fix as the UI.
+  // WARNING: flip mirrors clock hours (7↔5, 10↔2). Keep lockedClockHour as clinical target;
+  // invalidate QA so the user regenerates if the flip was accidental.
   const handleFlipHorizontal = async (panelLetter: string) => {
     if (!breastData) return;
     const panel = breastData.panels.find((p) => p.panelLetter === panelLetter);
@@ -195,11 +197,25 @@ export const Breast3DModule: React.FC<Breast3DModuleProps> = ({
       const flippedDataUrl = await flipImageDataUrl(panel.imageUrl);
       const updatedPanels = breastData.panels.map((p) => {
         if (p.panelLetter !== panelLetter) return p;
+        const hasClockLock = p.lockedClockHour != null;
         return {
           ...p,
           imageUrl: flippedDataUrl,
           isCustomFlipped: !p.isCustomFlipped,
-          laterality: swapLateralityLabel(p.laterality) || p.laterality,
+          // Do not swap laterality label when clock is locked — flip is a screen fix, not a side change
+          laterality: hasClockLock
+            ? p.laterality
+            : swapLateralityLabel(p.laterality) || p.laterality,
+          clockQa: hasClockLock
+            ? {
+                pass: false,
+                observedHour: null,
+                targetHour: p.lockedClockHour!,
+                distance: null,
+                issues: ["flipped_image_invalidates_clock_qa"],
+                attempts: p.clockQa?.attempts || 0,
+              }
+            : p.clockQa,
         };
       });
       setBreastData({
@@ -209,6 +225,11 @@ export const Breast3DModule: React.FC<Breast3DModuleProps> = ({
       if (zoomPanel?.panelLetter === panelLetter) {
         const updated = updatedPanels.find((p) => p.panelLetter === panelLetter);
         if (updated) setZoomPanel(updated);
+      }
+      if (panel.lockedClockHour != null) {
+        setErrorMessage(
+          `Flip horizontal espeja el reloj (${panel.lockedClockHour}h ↔ espejo). El objetivo clínico sigue en ${panel.lockedClockHour}h — regenera el panel si el eje quedó mal.`
+        );
       }
     } catch (flipErr) {
       console.error("Error al voltear panel vascular:", flipErr);
@@ -617,8 +638,37 @@ export const Breast3DModule: React.FC<Breast3DModuleProps> = ({
                     )}
 
                     {/* Badge */}
-                    <div className="absolute top-2 left-2 bg-pink-600 text-white font-bold text-[10px] px-2 py-0.5 rounded shadow">
-                      PANEL {panel.panelLetter}
+                    <div className="absolute top-2 left-2 flex flex-col gap-1 items-start">
+                      <div className="bg-pink-600 text-white font-bold text-[10px] px-2 py-0.5 rounded shadow">
+                        PANEL {panel.panelLetter}
+                      </div>
+                      {(panel.lockedClockHour != null || panel.clockPositionOrSite) && (
+                        <div className="bg-slate-950/85 text-pink-100 font-mono text-[9px] px-2 py-0.5 rounded shadow border border-pink-500/40">
+                          Reloj:{" "}
+                          {panel.lockedBreastSide === "right"
+                            ? "MD "
+                            : panel.lockedBreastSide === "left"
+                              ? "MI "
+                              : ""}
+                          {panel.lockedClockHour != null
+                            ? `${panel.lockedClockHour}h`
+                            : panel.clockPositionOrSite}
+                        </div>
+                      )}
+                      {panel.clockQa && (
+                        <div
+                          className={`font-mono text-[9px] px-2 py-0.5 rounded shadow border ${
+                            panel.clockQa.pass
+                              ? "bg-emerald-950/90 text-emerald-200 border-emerald-500/50"
+                              : "bg-amber-950/90 text-amber-100 border-amber-500/50"
+                          }`}
+                          title={(panel.clockQa.issues || []).join(", ")}
+                        >
+                          {panel.clockQa.pass
+                            ? `QA OK · ${panel.clockQa.targetHour}h`
+                            : `QA: vio ${panel.clockQa.observedHour ?? "?"}h (pedido ${panel.clockQa.targetHour}h) · ${panel.clockQa.attempts}x`}
+                        </div>
+                      )}
                     </div>
 
                     {/* Quick Tools Overlay */}
