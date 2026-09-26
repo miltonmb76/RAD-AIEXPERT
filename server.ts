@@ -10,7 +10,23 @@ import { registerAtlas3DRoutes } from "./server_atlas3d";
 import { normalizeReasoningChainData, extractJsonObject } from "./src/lib/reasoningChain";
 import { normalizeNegativityChecklistData } from "./src/lib/negativityChecklist";
 import { normalizeDifferentialTreeData } from "./src/lib/differentialTree";
+import { normalizeSemioticsConductMatrixData } from "./src/lib/semioticsConductMatrix";
+import {
+  buildContentModePromptInstructions,
+  contentModeMeta,
+  INFOGRAPHIC_CONTENT_MODES,
+  INFOGRAPHIC_LAYOUT_OPTIONS,
+  normalizeFindingsInfographicData,
+} from "./src/lib/findingsInfographic";
+import { buildUsAutoLabelAnatomyHints } from "./src/lib/usAutoLabelHints";
 import { normalizeSecondReaderData } from "./src/lib/secondReader";
+import {
+  classifyMeasurementStudyFamily,
+  filterStructuresForStudyType,
+  isPeripheralArterialStructure,
+  shouldEnforceAbdomenProtocol,
+  shouldEnforceArterialMmiiProtocol,
+} from "./src/lib/measurementStudyGuard";
 
 // Lazy-loaded GenAI client to prevent crash on startup if API key is missing
 let aiClient: GoogleGenAI | null = null;
@@ -4446,6 +4462,8 @@ app.post("/api/classify-and-label-image", async (req: express.Request, res: expr
       });
     }
 
+    const anatomyHints = buildUsAutoLabelAnatomyHints(studyType, clinicalHistory, findings);
+
     const queryText = `Analiza esta imagen médica y clasifícala.
 Nombre de archivo: ${filename || "Desconocido"}
 Tipo de estudio/Solicitud: ${studyType || "Mamografía y Ultrasonido"}
@@ -4458,10 +4476,13 @@ INSTRUCCIONES:
 2. Si es MMG:
    - Determina la PROYECCIÓN: "CC" (Proyecciones Cráneo Caudales / Craneocaudales) o "MLO" (Proyecciones Medio Lateral Oblicuas / Mediolateral Oblicuas) u "OTRO".
    - Determina la LATERALIDAD: "Bilateral" (si muestra ambas mamas / proyecciones pareadas), "Derecha", "Izquierda" o "Bilateral".
-3. Redacta un RÓTULO / LEYENDA CLÍNICA (pie de foto profesional en español, de 12 a 25 palabras) sintetizando la modalidad, proyección y hallazgos clave o estado del tejido fibroglandular/mamas.
+3. Redacta un RÓTULO / LEYENDA CLÍNICA (pie de foto profesional en español, de 12 a 25 palabras) sintetizando la modalidad, anatomía y hallazgos clave correlacionados con el informe.
    - Si la proyección es "CC" (Cráneo Caudales): Inicia el rótulo OBLIGATORIAMENTE con "Proyecciones Cráneo Caudales (CC)." seguido de la descripción sintética del tejido, distribución simétrica y ausencia/presencia de lesiones o calcificaciones. Ej: "Proyecciones Cráneo Caudales (CC). Tejido fibroglandular de distribución simétrica sin evidencia de nódulos ni microcalcificaciones sospechosas."
    - Si la proyección es "MLO" (Medio Lateral Oblicuas): Inicia el rótulo OBLIGATORIAMENTE con "Proyecciones Medio Lateral Oblicuas (MLO)." seguido de la descripción sintética del tejido, región axilar y profundidad pectoral. Ej: "Proyecciones Medio Lateral Oblicuas (MLO). Adecuada visualización de los planos pectorales sin distorsiones ni adenopatías axilares."
-   - Para US: "Ultrasonido mamario, cuadrante superior externo derecho mostrando quiste anecoico simple de 10 mm."
+   - Para US de mama: "Ultrasonido mamario, cuadrante superior externo derecho mostrando quiste anecoico simple de 10 mm."
+   - Para US de abdomen/renal: identifica órgano real (hígado, vesícula, riñones, bazo, páncreas…). Si hay pantalla partida con ambos riñones, usa el patrón de comparativa renal bilateral (ver abajo).
+
+${anatomyHints}
 
 Responde EXCLUSIVAMENTE en formato JSON estricto con la siguiente estructura:
 {
@@ -4546,21 +4567,29 @@ app.post("/api/auto-label-us-photo", async (req: express.Request, res: express.R
       });
     }
 
+    const anatomyHints = buildUsAutoLabelAnatomyHints(studyType, clinicalHistory, findings);
+
     let queryText = `Analiza con extrema precisión esta imagen de ecografía (ultrasonido) médica o captura clínica.
 Tipo de estudio: ${studyType || "No especificado"}
 Antecedentes clínicos/Sospecha: ${clinicalHistory || "No especificado"}
 Texto del Informe/Hallazgos redactados: ${findings || "No especificado"}
 
 Tu principal tarea es:
-1. Identificar si hay algún texto impreso, rotulado, etiqueta u anotación quemada dentro de la imagen (por ejemplo, palabras cortas escritas en la pantalla como 'Vesícula', 'LIVER', 'KIDNEY', 'AO', 'VESICULA BILIAR', 'QUISTE', marcas de medición o distancias impresas, etc.).
-2. Hacer correlación inteligente entre lo visualizado en la foto, cualquier texto/rótulo quemado que detectes dentro de ella, y el texto del informe/hallazgos redactados en busca del hallazgo descrito que esté más relacionado, para sintetizar el rótulo final más representativo.
-3. Si el texto del informe menciona hallazgos patológicos o medidas específicas (por ejemplo, "colelitiasis de 12mm", "quiste cortical de 20mm en polo superior", "esteatosis hepática grado II"), correlaciónalos de inmediato con la anatomía observada y el rótulo quemado en la imagen para formular un título coherente que vincule de forma óptima ambos mundos.
-4. Si no hay texto legible en la imagen, analiza la anatomía y propón una descripción clínica o hallazgo en español basado en la correlación con el reporte.
+1. Identificar si hay algún texto impreso, rotulado, etiqueta u anotación quemada dentro de la imagen (por ejemplo, palabras cortas escritas en la pantalla como 'Vesícula', 'LIVER', 'KIDNEY', 'RT', 'LT', 'RD', 'RI', 'AO', 'VESICULA BILIAR', 'QUISTE', marcas de medición o distancias impresas, etc.).
+2. Detectar si la captura es PANTALLA PARTIDA / DUAL VIEW (divisor vertical u horizontal con dos paneles). Si cada panel muestra un riñón, el rótulo DEBE indicar comparativa renal bilateral — no lo confundas con hígado, bazo ni abdomen genérico.
+3. Hacer correlación inteligente entre lo visualizado en la foto, cualquier texto/rótulo quemado que detectes dentro de ella, y el texto del informe/hallazgos redactados en busca del hallazgo descrito que esté más relacionado, para sintetizar el rótulo final más representativo.
+4. Si el texto del informe menciona hallazgos patológicos o medidas específicas (por ejemplo, "colelitiasis de 12mm", "quiste cortical de 20mm en polo superior", "esteatosis hepática grado II"), correlaciónalos de inmediato con la anatomía observada y el rótulo quemado en la imagen para formular un título coherente que vincule de forma óptima ambos mundos.
+5. Si no hay texto legible en la imagen, analiza la anatomía y propón una descripción clínica o hallazgo en español basado en la correlación con el reporte.
+
+${anatomyHints}
 
 REGLAS DE RESPUESTA:
 - El rótulo sugerido debe ser sumamente limpio, claro y profesional, al estilo del pie de foto o descripción de figura en un artículo de revista médica o científica (menciona la estructura anatómica, el hallazgo clave o patología y algún detalle clínico o medida relevante, sin exceder de 1 a 2 líneas breves, unas 10 a 20 palabras en total).
 - Evita redundancias excesivas y sé sumamente descriptivo pero conciso.
-- La respuesta debe ser una descripción fluida y directa (ejemplo: "Vesícula biliar distendida con presencia de un lito hiperecogénico de 12 mm en su interior que proyecta sombra acústica" o "Bifurcación carotídea derecha con placa de ateroma calcificada que genera estenosis leve de aproximadamente el 25%").
+- La respuesta debe ser una descripción fluida y directa (ejemplos:
+  "Comparativa renal bilateral en pantalla partida: riñones derecho e izquierdo en corte longitudinal sin ectasia"
+  o "Vesícula biliar distendida con presencia de un lito hiperecogénico de 12 mm en su interior que proyecta sombra acústica"
+  o "Bifurcación carotídea derecha con placa de ateroma calcificada que genera estenosis leve de aproximadamente el 25%").
 - Debe estar enteramente en ESPAÑOL.
 - No incluyas prefijos como "Figura X." ni comillas, introducciones, explicaciones, ni puntos finales. Devuelve únicamente la descripción limpia.`;
 
@@ -5548,8 +5577,10 @@ app.post("/api/analyze-measurements", async (req: express.Request, res: express.
 
     const systemInstruction = 
       "Eres un radiólogo senior y experto en anatometría clínica y hemodinámica vascular. Tu tarea es analizar rigurosamente el informe radiológico proporcionado para:\n" +
-      "1. Determinar con la máxima precisión posible el tipo de estudio radiológico realizado basándote en el contenido del reporte (por ejemplo: 'Doppler de Carótidas', 'Ultrasonido Abdominal Completo', 'Doppler Renal', 'Doppler Venoso de Miembros Inferiores', 'Ultrasonido de Tiroides', 'Ultrasonido Pélvico', 'Ultrasonido de Partes Blandas', etc.) y guardarlo en el campo 'detectedStudyType'.\n" +
+      "1. Determinar el tipo de estudio radiológico. Si el usuario/sistema indica un TIPO DE ESTUDIO DECLARADO, ese valor es AUTORITATIVO y debe usarse como 'detectedStudyType' (no lo cambies por alucinación del texto). Solo infiere el tipo desde el informe cuando NO hay tipo declarado.\n" +
+      "   Ejemplos: 'Doppler de Carótidas', 'Ultrasonido Abdominal Completo', 'Doppler Renal', 'Doppler Venoso de Miembros Inferiores', 'Ultrasonido de Tiroides', etc.\n" +
       "2. Identificar de manera dinámica todas las estructuras anatómicas, vasos sanguíneos, velocidades o parámetros que son típicamente susceptibles de medición clínica e indispensables para ese tipo de estudio específico:\n" +
+      "   - REGLA DE EXCLUSIÓN CRUZADA: Si el estudio es ABDOMEN / VÍAS URINARIAS / RENAL (no Doppler arterial de extremidades), está ESTRICTAMENTE PROHIBIDO incluir arterias de miembro inferior (ilíaca, femoral, poplítea, tibiales, peronea, pedía) ni venas de MMII. No uses la palabra 'inferior' (vena cava inferior, polo inferior) como señal de Doppler de extremidades.\n" +
       "   - Si detectas que es un DOPPLER DE CARÓTIDAS o DOPPLER CAROTÍDEO: Debes incluir de forma obligatoria y exhaustiva las siguientes 22 mediciones y parámetros bilateralmente, buscando sus valores reales en el reporte, o sugiriendo sus valores normales por defecto correspondientes si no se mencionan:\n" +
       "     1. Arteria Carótida Común Derecha (VPS) [Rango: 50 - 100 cm/s, Default: 75 cm/s]\n" +
       "     2. Arteria Carótida Común Derecha (VED) [Rango: < 35 cm/s, Default: 20 cm/s]\n" +
@@ -5586,7 +5617,7 @@ app.post("/api/analyze-measurements", async (req: express.Request, res: express.
       "   - Si detectas que es un DOPPLER RENAL: Incluye velocidades pico sistólicas y los Índices de Resistencia (IR) renales arteriales principales.\n" +
       "   - Si detectas que es un ULTRASONIDO DE ABDOMEN (o riñón/vías urinarias está involucrado) o ULTRASONIDO ABDOMINAL COMPLETO: Debes incluir de manera obligatoria las 8 mediciones renales específicas (Riñón Derecho Largo, Ancho, Grosor Cortical e IR; Riñón Izquierdo Largo, Ancho, Grosor Cortical e IR) con sus rangos de referencia estándares. Además, para los estudios de abdomen, debes incluir de manera obligatoria los siguientes parámetros con sus rangos y valores predeterminados exactos:\n" +
       "     * Hígado [Rango: 120 - 154 mm, Default: 135 mm]\n" +
-      "     * Bazo [Rango: 9 - 11,8 mm, Default: 10,5 mm]\n" +
+      "     * Bazo [Rango: 90 - 120 mm, Default: 105 mm]\n" +
       "     * Rigidez Hepática (Elastografía) [Rango: 4 - 5,4 kPa, Default: 4,7 kPa]\n" +
       "   - Si detectas que es un ULTRASONIDO DE TIROIDES o US DE CUELLO / ULTRASONIDO DE CUELLO: Incluye medidas de lóbulos (ej. 'Lóbulo Derecho (Longitudinal)', 'Lóbulo Derecho (Anteroposterior)', 'Lóbulo Derecho (Transverso)', 'Lóbulo Izquierdo...', 'Istmo (Espesor)'). Rango normal de espesor de istmo: < 4 mm, lóbulos longitud: 37 - 44 mm, lóbulos anteroposterior: 10 - 20 mm, lóbulos transverso: 15 - 20 mm. Está ESTRICTAMENTE PROHIBIDO incluir vasos sanguíneos o parámetros del sistema carotídeo (Arterias Carótidas Comunes, Internas, Externas, Arterias Vertebrales, Grosor Miointimal (GIM), o Relación ACC/ACI) en este estudio, ya que esas estructuras corresponden única y exclusivamente al Doppler de Carótidas.\n" +
       "   - Si detectas que es un ULTRASONIDO PÉLVICO/GINECOLÓGICO: Incluye 'Útero (Longitudinal)', 'Útero (Anteroposterior)', 'Útero (Transversal)', 'Endometrio (Espesor)', 'Ovario Derecho (Volumen)', 'Ovario Izquierdo (Volumen)'.\n" +
@@ -5598,13 +5629,17 @@ app.post("/api/analyze-measurements", async (req: express.Request, res: express.
       "   - Proponer un valor normal por defecto representativo y saludable ('defaultNormalValue') con unidades (ej. '105 mm', '12 mm', '75 cm/s', '0.60', etc.) que cumpla el rango normal y se pueda asignar directamente si el usuario lo desea.\n" +
       "Debes estructurar la respuesta exclusivamente como un objeto JSON con tres propiedades: 'detectedStudyType', 'detectedSide' y 'structures'.";
 
+    const declaredStudy = String(studyType || "").trim();
     const promptText = `Analiza detenidamente este informe radiológico para el Asistente de Medidas:
+
+TIPO DE ESTUDIO DECLARADO POR EL USUARIO (autoritativo si no está vacío): "${declaredStudy || "No especificado — infiere solo del informe"}"
 
 """
 ${report}
 """
 
-Detecta el tipo de estudio médico, el lado analizado si es unilateral (der, izq, both), identifica todas las estructuras, vasos o parámetros relevantes a medir para dicho estudio, indica sus rangos normales, busca si el reporte ya contiene medidas para ellos, califica su estado e interpretación, y sugiere un valor normal predeterminado saludable.
+Si hay tipo declarado, úsalo como detectedStudyType y limita las estructuras SOLO a ese protocolo. No mezcles protocolos (p. ej. no inventes Doppler arterial de MMII en un ultrasonido de abdomen).
+Detecta el lado analizado si es unilateral (der, izq, both), identifica todas las estructuras, vasos o parámetros relevantes a medir para dicho estudio, indica sus rangos normales, busca si el reporte ya contiene medidas para ellos, califica su estado e interpretación, y sugiere un valor normal predeterminado saludable.
 Devuelve el JSON estructurado según el esquema solicitado.`;
 
     const response = await ai.models.generateContent({
@@ -6261,13 +6296,13 @@ Devuelve el JSON estructurado según el esquema solicitado.`;
     }
 
     // Post-processing to enforce the 14 mandatory lower limb arterial Doppler parameters
-    let isArterialMiembrosInferiores = false;
-    if (
-      (studyLower.includes("arterial") && (studyLower.includes("miembro") || studyLower.includes("pierna") || studyLower.includes("inferior") || studyLower.includes("extre"))) ||
-      (reportLower.includes("doppler") && reportLower.includes("arterial") && (reportLower.includes("miembro") || reportLower.includes("pierna") || reportLower.includes("inferior") || reportLower.includes("extremidad") || reportLower.includes("femoral") || reportLower.includes("poplítea") || reportLower.includes("pedio")))
-    ) {
-      isArterialMiembrosInferiores = true;
-    }
+    // CRITICAL: do NOT trigger on bare "inferior" (vena cava inferior / polo inferior in abdomen).
+    // User-declared studyType (Abdomen, etc.) wins over mis-detection.
+    let isArterialMiembrosInferiores = shouldEnforceArterialMmiiProtocol({
+      studyType: studyType || "",
+      detectedStudyType: parsedData.detectedStudyType || "",
+      report: report || "",
+    });
 
     if (isArterialMiembrosInferiores) {
       // Determine if study is unilateral (and which side) or bilateral
@@ -6891,12 +6926,36 @@ Devuelve el JSON estructurado según el esquema solicitado.`;
     }
 
     // --- DOPPLER VENOSO DE MIEMBROS INFERIORES POST-PROCESSING ---
+    // Same trap as arterial: bare "inferior" must not trigger on abdomen reports.
+    const inputFamily = classifyMeasurementStudyFamily(studyType || "");
     let isVenosoMiembrosInferiores = false;
     if (
-      (studyLower.includes("venoso") && (studyLower.includes("miembro") || studyLower.includes("pierna") || studyLower.includes("inferior") || studyLower.includes("extre"))) ||
-      (reportLower.includes("doppler") && reportLower.includes("venoso") && (reportLower.includes("miembro") || reportLower.includes("pierna") || reportLower.includes("inferior") || reportLower.includes("extremidad") || reportLower.includes("femoral") || reportLower.includes("poplítea") || reportLower.includes("safena")))
+      inputFamily !== "abdomen" &&
+      inputFamily !== "renal_vias" &&
+      inputFamily !== "tiroides_cuello" &&
+      inputFamily !== "mama" &&
+      inputFamily !== "pelvico" &&
+      inputFamily !== "arterial_mmii"
     ) {
-      isVenosoMiembrosInferiores = true;
+      if (inputFamily === "venoso_mmii") {
+        isVenosoMiembrosInferiores = true;
+      } else if (
+        (studyLower.includes("venoso") &&
+          (studyLower.includes("miembro") ||
+            studyLower.includes("pierna") ||
+            studyLower.includes("extrem"))) ||
+        (reportLower.includes("doppler") &&
+          reportLower.includes("venoso") &&
+          (reportLower.includes("miembro inferior") ||
+            reportLower.includes("miembros inferiores") ||
+            reportLower.includes("extremidad inferior") ||
+            reportLower.includes("safena") ||
+            reportLower.includes("vena femoral") ||
+            reportLower.includes("vena poplítea") ||
+            reportLower.includes("vena poplitea")))
+      ) {
+        isVenosoMiembrosInferiores = true;
+      }
     }
 
     if (isVenosoMiembrosInferiores) {
@@ -7442,16 +7501,23 @@ Devuelve el JSON estructurado según el esquema solicitado.`;
     }
 
     // --- ABDOMEN POST-PROCESSING ---
-    let isAbdomenStudy = 
-      (parsedData.detectedStudyType || "").toLowerCase().includes("abdomen") ||
-      (parsedData.detectedStudyType || "").toLowerCase().includes("abdominal") ||
-      (report || "").toLowerCase().includes("abdomen") ||
-      (report || "").toLowerCase().includes("abdominal") ||
-      (report || "").toLowerCase().includes("hígado") ||
-      (report || "").toLowerCase().includes("higado") ||
-      (report || "").toLowerCase().includes("bazo") ||
-      (report || "").toLowerCase().includes("hepática") ||
-      (report || "").toLowerCase().includes("hepatica");
+    let isAbdomenStudy = shouldEnforceAbdomenProtocol({
+      studyType: studyType || "",
+      detectedStudyType: parsedData.detectedStudyType || "",
+      report: report || "",
+    });
+
+    // If the user declared Abdomen, lock detectedStudyType even if the model hallucinated MMII
+    if (
+      classifyMeasurementStudyFamily(studyType || "") === "abdomen" ||
+      classifyMeasurementStudyFamily(studyType || "") === "renal_vias"
+    ) {
+      isAbdomenStudy = true;
+      if (!(parsedData.detectedStudyType || "").toLowerCase().includes("abdomen") &&
+          !(parsedData.detectedStudyType || "").toLowerCase().includes("urin")) {
+        parsedData.detectedStudyType = String(studyType || "Ultrasonido de Abdomen").trim();
+      }
+    }
 
     if (isAbdomenStudy) {
       const mandatoryAbdomen = [
@@ -7466,8 +7532,8 @@ Devuelve el JSON estructurado según el esquema solicitado.`;
         {
           key: "bazo",
           name: "Bazo",
-          range: "9 - 11,8 mm",
-          defaultVal: "10,5 mm",
+          range: "90 - 120 mm",
+          defaultVal: "105 mm",
           matchRegex: /bazo/i,
           negativeRegex: /arteria|vena|espl[eé]nic/i
         },
@@ -7509,13 +7575,16 @@ Devuelve el JSON estructurado según el esquema solicitado.`;
                 const valLower = s.measuredValue.toLowerCase();
                 if (valLower.includes("cm") && m.key !== "rigidez") {
                   numVal = numVal * 10;
+                } else if (m.key === "bazo" && numVal > 0 && numVal < 20) {
+                  // Valores tipo 10–12 suelen venir en cm; el rango canónico es mm
+                  numVal = numVal * 10;
                 }
 
                 let isNormal = false;
                 if (m.key === "higado") {
                   isNormal = numVal >= 120 && numVal <= 154;
                 } else if (m.key === "bazo") {
-                  isNormal = numVal >= 9 && numVal <= 11.8;
+                  isNormal = numVal >= 90 && numVal <= 120;
                 } else if (m.key === "rigidez") {
                   isNormal = numVal >= 4 && numVal <= 5.4;
                 }
@@ -7528,7 +7597,7 @@ Devuelve el JSON estructurado según el esquema solicitado.`;
                   if (m.key === "higado") {
                     s.interpretation = numVal < 120 ? "Hígado disminuido de tamaño" : "Hepatomegalia";
                   } else if (m.key === "bazo") {
-                    s.interpretation = numVal < 9 ? "Bazo disminuido de tamaño" : "Esplenomegalia";
+                    s.interpretation = numVal < 90 ? "Bazo disminuido de tamaño" : "Esplenomegalia";
                   } else {
                     s.interpretation = numVal < 4 ? "Rigidez hepática disminuida" : "Rigidez hepática aumentada (Sugerente de Fibrosis)";
                   }
@@ -7541,8 +7610,11 @@ Devuelve el JSON estructurado según el esquema solicitado.`;
 
         if (matchedKey) {
           matchedKeys.add(matchedKey);
+          updatedStructures.push(s);
+        } else if (!isPeripheralArterialStructure(s.structure || "")) {
+          // Keep non-MMII structures (kidneys, gallbladder, etc.); drop leaked arterial vessels
+          updatedStructures.push(s);
         }
-        updatedStructures.push(s);
       });
 
       // Add missing ones
@@ -7560,6 +7632,14 @@ Devuelve el JSON estructurado según el esquema solicitado.`;
       });
 
       parsedData.structures = updatedStructures;
+    }
+
+    // Final hard filter by declared studyType (defense in depth)
+    if (parsedData.structures && Array.isArray(parsedData.structures) && studyType) {
+      parsedData.structures = filterStructuresForStudyType(
+        parsedData.structures,
+        String(studyType)
+      );
     }
 
     // Enforce standard medical ranges for thyroid (lobes and isthmus) and recalculate status if present
@@ -9875,6 +9955,367 @@ ${report}
     res.json({ success: true, data });
   } catch (error: any) {
     console.error("Error en /api/generate-differential-tree:", error);
+    res.status(500).json({ success: false, error: handleGeminiError(error) });
+  }
+});
+
+/**
+ * API: MATRIZ SEMIOLOGÍA → CONDUCTA
+ * POST /api/generate-semiotics-conduct-matrix
+ */
+app.post("/api/generate-semiotics-conduct-matrix", async (req: express.Request, res: express.Response) => {
+  try {
+    const { model, report, studyType, clinicalHistory, focusTopic, focusPreset } = req.body;
+    if (!report || !String(report).trim()) {
+      return res.status(400).json({ success: false, error: "Se requiere el parámetro 'report'." });
+    }
+
+    const ai = getGeminiClient();
+    const modelToUse = getModelName(model);
+    const focus = (focusTopic || "").toString().trim();
+    const preset = (focusPreset || "auto").toString().trim();
+    const history = (clinicalHistory || "").toString().trim();
+
+    const prompt = `Eres un radiólogo hispanohablante experto en semiología y conducta clínica basada en imagen.
+Construye una MATRIZ DE DECISIÓN: hallazgo → signos/criterios → categoría de escala → conducta recomendada.
+
+IDIOMA: TODO el texto visible en ESPAÑOL médico.
+
+ESTUDIO: ${studyType || "No especificado"}
+PRESET DE ENFOQUE: ${preset}
+${focus ? `ENFOQUE / PATOLOGÍA PRIORITARIA: "${focus}"` : "Sin enfoque libre: deriva del informe."}
+${history ? `HISTORIA CLINICA:\n"""\n${history}\n"""` : "Sin historia adicional."}
+
+REGLAS:
+1. Genera 3 a 6 filas (rows) relevantes al enfoque. No rellenes con hallazgos inventados.
+2. Cada fila: finding (hallazgo clave), signs (signos/criterios; si aplica escala BI-RADS/Fleischner/TI-RADS/Bosniak, menciónala AQUÍ dentro de signs, no en columna aparte), category (déjalo ""), conduct (acción concreta: alta, control, biopsia, cirugía, correlación clínica…), anchor (opcional: panel/sección del informe).
+3. La conducta debe ser accionable y coherente con los signos.
+4. NO uses columna de categoría separada: category siempre "". Integra la escala en signs (ej. "BI-RADS 1 — sin hallazgos sospechosos").
+5. title: "Matriz semiología → conducta" o variante breve.
+6. focusTopic: repite el enfoque priorizado.
+7. priorityConduct: 1 frase ACCIONABLE (sin signo de interrogación) con la conducta prioritaria del caso (ej. "Control habitual BI-RADS 1; sin biopsia ni estudio adicional").
+8. NO inventes hallazgos ausentes del informe. Si falta dato, dilo en signs o omite la fila.
+9. NO agregues disclaimer ni nota al pie (footnote debe ser "").
+10. NO uses clinicalQuestion; deja clinicalQuestion como "".
+
+Claves JSON obligatorias en inglés:
+title, focusTopic, studyRegion, priorityConduct, clinicalQuestion, rows, footnote.
+Cada row: id, finding, signs, category, conduct, anchor.
+footnote: siempre "".
+clinicalQuestion: siempre "".
+
+INFORME:
+"""
+${report}
+"""
+`;
+
+    const rowSchema = {
+      type: Type.OBJECT,
+      properties: {
+        id: { type: Type.STRING },
+        finding: { type: Type.STRING },
+        signs: { type: Type.STRING },
+        category: { type: Type.STRING },
+        conduct: { type: Type.STRING },
+        anchor: { type: Type.STRING },
+      },
+      required: ["id", "finding", "signs", "category", "conduct"],
+    };
+
+    const fullSchema = {
+      type: Type.OBJECT,
+      properties: {
+        title: { type: Type.STRING },
+        focusTopic: { type: Type.STRING },
+        studyRegion: { type: Type.STRING },
+        priorityConduct: { type: Type.STRING },
+        clinicalQuestion: { type: Type.STRING },
+        rows: { type: Type.ARRAY, items: rowSchema },
+        footnote: { type: Type.STRING },
+      },
+      required: ["title", "focusTopic", "priorityConduct", "rows"],
+    };
+
+    const readModelText = (response: any): string => {
+      if (response?.text && String(response.text).trim()) return String(response.text);
+      const parts = response?.candidates?.[0]?.content?.parts;
+      if (Array.isArray(parts)) {
+        return parts
+          .map((p: any) => (typeof p?.text === "string" ? p.text : ""))
+          .filter(Boolean)
+          .join("\n");
+      }
+      return "";
+    };
+
+    let rawText = "";
+    let parsed: any = null;
+
+    try {
+      const response = await ai.models.generateContent({
+        model: modelToUse,
+        contents: prompt,
+        config: {
+          temperature: 0.2,
+          responseMimeType: "application/json",
+          responseSchema: fullSchema,
+        },
+      });
+      rawText = readModelText(response);
+      parsed = extractJsonObject(rawText);
+    } catch (schemaErr: any) {
+      console.warn(
+        "generate-semiotics-conduct-matrix: schema attempt failed:",
+        schemaErr?.message || schemaErr
+      );
+    }
+
+    if (!parsed || !(parsed.rows || parsed.filas)?.length) {
+      try {
+        const response2 = await ai.models.generateContent({
+          model: modelToUse,
+          contents: prompt + `\n\nResponde ÚNICAMENTE JSON válido. rows DEBE tener >=3 filas.`,
+          config: { temperature: 0.25, responseMimeType: "application/json" },
+        });
+        rawText = readModelText(response2) || rawText;
+        parsed = extractJsonObject(rawText) || parsed;
+      } catch (e: any) {
+        console.warn("generate-semiotics-conduct-matrix: mime retry failed:", e?.message || e);
+      }
+    }
+
+    if (!parsed || !(parsed.rows || parsed.filas)?.length) {
+      try {
+        const response3 = await ai.models.generateContent({
+          model: modelToUse,
+          contents: prompt + `\n\nSOLO JSON (sin markdown).`,
+          config: { temperature: 0.3 },
+        });
+        rawText = readModelText(response3) || rawText;
+        parsed = extractJsonObject(rawText) || parsed;
+      } catch (e: any) {
+        console.warn("generate-semiotics-conduct-matrix: freeform retry failed:", e?.message || e);
+      }
+    }
+
+    if (!parsed) {
+      console.error(
+        "generate-semiotics-conduct-matrix: unparseable output:",
+        String(rawText || "").slice(0, 800)
+      );
+      return res.status(500).json({
+        success: false,
+        error: "No se pudo interpretar la respuesta de la IA (JSON inválido). Reintenta.",
+      });
+    }
+
+    const data = normalizeSemioticsConductMatrixData(parsed, focus);
+    data.footnote = undefined;
+    data.clinicalQuestion = undefined;
+    if (!data.priorityConduct) {
+      const legacyQ = String(parsed?.clinicalQuestion || "").trim();
+      if (legacyQ && !legacyQ.includes("?")) {
+        data.priorityConduct = legacyQ;
+      }
+    }
+    const realRows = data.rows.filter(
+      (r) => r.finding.trim() || r.signs.trim() || r.category.trim() || r.conduct.trim()
+    );
+    if (!realRows.length) {
+      return res.status(500).json({
+        success: false,
+        error: "La IA no devolvió filas utilizables. Reintenta.",
+      });
+    }
+    data.rows = realRows;
+
+    res.json({ success: true, data });
+  } catch (error: any) {
+    console.error("Error en /api/generate-semiotics-conduct-matrix:", error);
+    res.status(500).json({ success: false, error: handleGeminiError(error) });
+  }
+});
+
+/**
+ * API: INFOGRAFÍA DE HALLAZGOS (contenido flexible + layouts)
+ * POST /api/generate-findings-infographic
+ * Tipos: justificación, presentes, descartados, criterios, signos, comparativa, por estructura, severidad.
+ * Sin manejo clínico; sin voz de auditoría ("no mencionado").
+ */
+app.post("/api/generate-findings-infographic", async (req: express.Request, res: express.Response) => {
+  try {
+    const {
+      model,
+      report,
+      studyType,
+      clinicalHistory,
+      diagnosis,
+      diagnosisPreset,
+      layout,
+      contentMode,
+    } = req.body;
+    if (!report || !String(report).trim()) {
+      return res.status(400).json({ success: false, error: "Se requiere el parámetro 'report'." });
+    }
+
+    const ai = getGeminiClient();
+    const modelToUse = getModelName(model);
+    const dx = (diagnosis || "").toString().trim();
+    const preset = (diagnosisPreset || "auto").toString().trim();
+    const history = (clinicalHistory || "").toString().trim();
+    const layoutHint = (layout || "auto").toString().trim();
+    const modeId =
+      INFOGRAPHIC_CONTENT_MODES.find((m) => m.id === contentMode)?.id || "justify_diagnosis";
+    const modeMeta = contentModeMeta(modeId);
+    const contentInstructions = buildContentModePromptInstructions(modeId, dx);
+    const layoutCatalog = INFOGRAPHIC_LAYOUT_OPTIONS.filter((o) => o.id !== "auto")
+      .map((o) => `"${o.id}"`)
+      .join(" | ");
+    const suggestedLayouts = modeMeta.suggestedLayouts.join(", ");
+
+    const prompt = `Eres el mismo radiólogo hispanohablante que redactó este informe.
+Construye una INFOGRAFÍA DE HALLAZGOS para PDF/consola: nodos visuales según el TIPO DE CONTENIDO pedido.
+
+IDIOMA: TODO el texto visible en ESPAÑOL médico, voz del radiólogo (afirmaciones del informe). Nunca suenes como revisor externo.
+
+ESTUDIO: ${studyType || "No especificado"}
+PRESET: ${preset}
+${dx ? `ANCLA / TEMA: "${dx}"` : "Deriva el diagnóstico o tema principal del informe."}
+TIPO DE CONTENIDO (contentMode): ${modeId} — ${modeMeta.label}
+${contentInstructions}
+LAYOUT PREFERIDO: ${layoutHint}
+Layouts sugeridos para este contenido: ${suggestedLayouts}
+Layouts válidos: ${layoutCatalog}
+${history ? `HISTORIA CLINICA:\n"""\n${history}\n"""` : ""}
+
+REGLAS ESTRICTAS:
+1. Genera el número de nodes indicado en CONTENIDO. Solo lo afirmado o negado EXPLÍCITAMENTE en el informe.
+2. PROHIBIDO: manejo, conducta, seguimiento, recomendaciones, tratamiento, biopsia, "correlacionar con clínica" como plan.
+3. PROHIBIDO absoluto: "no mencionado", "no documentado", "ausente del informe", "pendiente", "faltante", "no referido", cualquier juicio sobre omisiones del reporte.
+4. Cada node: id, label (corto, 3-8 palabras), detail (opcional, 1 frase semiológica), weight ("primary" para 1-2 hallazgos clave, resto "secondary"), polarity ("present" | "ruled_out" | "criterion" | "neutral"), group (opcional: estructura o familia de criterio).
+5. title: "${modeMeta.defaultTitle}" o variante breve coherente con el contentMode.
+6. diagnosis: ancla limpia (diagnóstico, categoría BI-RADS/TI-RADS, tema). Sin signos de interrogación.
+7. studyRegion: región anatómica breve.
+8. contentMode: debe ser exactamente "${modeId}".
+9. layout: uno de los layouts válidos. Si el hint es "auto", elige el más adecuado entre los sugeridos (${suggestedLayouts}).
+10. NO inventes hallazgos. Negaciones solo si están escritas (ej. "sin líquido libre"); nunca digas que algo "no se mencionó".
+
+Claves JSON en inglés:
+title, diagnosis, studyRegion, contentMode, layout, nodes.
+Cada node: id, label, detail, weight, polarity, group.
+
+INFORME:
+"""
+${report}
+"""
+`;
+
+    const nodeSchema = {
+      type: Type.OBJECT,
+      properties: {
+        id: { type: Type.STRING },
+        label: { type: Type.STRING },
+        detail: { type: Type.STRING },
+        weight: { type: Type.STRING },
+        polarity: { type: Type.STRING },
+        group: { type: Type.STRING },
+      },
+      required: ["id", "label"],
+    };
+
+    const fullSchema = {
+      type: Type.OBJECT,
+      properties: {
+        title: { type: Type.STRING },
+        diagnosis: { type: Type.STRING },
+        studyRegion: { type: Type.STRING },
+        contentMode: { type: Type.STRING },
+        layout: { type: Type.STRING },
+        nodes: { type: Type.ARRAY, items: nodeSchema },
+      },
+      required: ["title", "diagnosis", "layout", "nodes"],
+    };
+
+    const readModelText = (response: any): string => {
+      if (response?.text && String(response.text).trim()) return String(response.text);
+      const parts = response?.candidates?.[0]?.content?.parts;
+      if (Array.isArray(parts)) {
+        return parts
+          .map((p: any) => (typeof p?.text === "string" ? p.text : ""))
+          .filter(Boolean)
+          .join("\n");
+      }
+      return "";
+    };
+
+    let rawText = "";
+    let parsed: any = null;
+
+    try {
+      const response = await ai.models.generateContent({
+        model: modelToUse,
+        contents: prompt,
+        config: {
+          temperature: 0.25,
+          responseMimeType: "application/json",
+          responseSchema: fullSchema,
+        },
+      });
+      rawText = readModelText(response);
+      parsed = extractJsonObject(rawText);
+    } catch (schemaErr: any) {
+      console.warn(
+        "generate-findings-infographic: schema attempt failed:",
+        schemaErr?.message || schemaErr
+      );
+    }
+
+    if (!parsed || !(parsed.nodes || parsed.findings || parsed.hallazgos)?.length) {
+      try {
+        const response2 = await ai.models.generateContent({
+          model: modelToUse,
+          contents: prompt + `\n\nResponde ÚNICAMENTE JSON válido. nodes DEBE tener >=4 hallazgos.`,
+          config: { temperature: 0.3, responseMimeType: "application/json" },
+        });
+        rawText = readModelText(response2) || rawText;
+        parsed = extractJsonObject(rawText) || parsed;
+      } catch (e: any) {
+        console.warn("generate-findings-infographic: mime retry failed:", e?.message || e);
+      }
+    }
+
+    if (!parsed) {
+      console.error(
+        "generate-findings-infographic: unparseable output:",
+        String(rawText || "").slice(0, 800)
+      );
+      return res.status(500).json({
+        success: false,
+        error: "No se pudo interpretar la respuesta de la IA (JSON inválido). Reintenta.",
+      });
+    }
+
+    const data = normalizeFindingsInfographicData(
+      { ...parsed, contentMode: parsed?.contentMode || modeId },
+      dx,
+      layoutHint as any,
+      modeId
+    );
+    const realNodes = data.nodes.filter((n) => n.label.trim());
+    if (!realNodes.length) {
+      return res.status(500).json({
+        success: false,
+        error: "La IA no devolvió hallazgos utilizables. Reintenta.",
+      });
+    }
+    data.nodes = realNodes;
+    data.contentMode = modeId;
+    if (!data.title?.trim()) data.title = modeMeta.defaultTitle;
+
+    res.json({ success: true, data });
+  } catch (error: any) {
+    console.error("Error en /api/generate-findings-infographic:", error);
     res.status(500).json({ success: false, error: handleGeminiError(error) });
   }
 });

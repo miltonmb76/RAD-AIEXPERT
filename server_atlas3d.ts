@@ -414,24 +414,295 @@ function isBreastContext(...parts: Array<string | undefined | null>): boolean {
   return false;
 }
 
-/** Extract clock-face hour (1-12) from Spanish/English report phrasing. */
-function extractBreastClockHour(...parts: Array<string | undefined | null>): number | null {
-  const t = parts.map((p) => String(p || "")).join(" ");
-  const patterns = [
-    /\b(?:eje|hora|hours?|o['’]?clock|h)\s*[:\-]?\s*(1[0-2]|[1-9])\b/i,
-    /\b(?:a\s+las|en\s+las|las)\s+(1[0-2]|[1-9])\b/i,
-    /\b(1[0-2]|[1-9])\s*(?:h|hrs?|horas?|o['’]?clock|:00)\b/i,
+/**
+ * Extract clock-face hour (1-12) from clinical Spanish/English.
+ * Prefers "eje de las 7" / "7h" over polluted English "12 o'clock" landmarks.
+ */
+function extractBreastClockHourFromText(text: string): number | null {
+  const t = String(text || "");
+  if (!t.trim()) return null;
+
+  // Ignore pure geometry/boilerplate blobs (they always mention 12 o'clock as a landmark)
+  if (
+    /BREAST CLOCK GEOMETRY|ASCII DIAL|degreesFrom12|LESION CLOCK PIN|superior breast\s*\/\s*12|inferior breast\s*\/\s*6/i.test(
+      t
+    ) &&
+    !/\beje\b|\bhora\b|\bradio\b|\b\d{1,2}\s*h\b/i.test(t)
+  ) {
+    return null;
+  }
+
+  // HIGH PRIORITY — clinical report phrasing (Spanish)
+  const clinicalPatterns = [
+    /\beje\s+(?:de\s+)?(?:las?\s+)?(1[0-2]|[1-9])\b/i, // eje 7 | eje de las 7
+    /\b(?:a\s+las|en\s+las|de\s+las)\s+(1[0-2]|[1-9])\b/i, // de las 7
+    /\bhora\s*[:\-]?\s*(1[0-2]|[1-9])\b/i,
+    /\b(1[0-2]|[1-9])\s*h(?:oras?)?\b(?!\s*o['’]?clock)/i, // 7h / 7 horas (not "12 o'clock")
     /\bradio\s*(1[0-2]|[1-9])\b/i,
-    /\b(?:clock|reloj)\s*[:\-]?\s*(1[0-2]|[1-9])\b/i,
+    /\b(?:en|a)\s+(1[0-2]|[1-9])\s*(?:h|horas?|:00)\b/i,
   ];
-  for (const re of patterns) {
+  for (const re of clinicalPatterns) {
     const m = t.match(re);
     if (m) {
       const n = Number(m[1]);
       if (n >= 1 && n <= 12) return n;
     }
   }
+
+  // LOW PRIORITY — English "N o'clock" only if tied to lesion/site wording (not landmark lists)
+  const en = t.match(
+    /\b(?:lesion|finding|nodule|mass|target|at|placed?(?:\s+at)?)\s+[^\n.]{0,40}?\b(1[0-2]|[1-9])\s*o['’]?clock\b/i
+  );
+  if (en) {
+    const n = Number(en[1]);
+    if (n >= 1 && n <= 12) return n;
+  }
+
   return null;
+}
+
+/**
+ * Extract clock-face hour (1-12). Parts are scanned in order — first hit wins.
+ * Callers MUST put report / user directive / scorecard BEFORE panel focus fluff.
+ */
+function extractBreastClockHour(...parts: Array<string | undefined | null>): number | null {
+  for (const p of parts) {
+    const n = extractBreastClockHourFromText(String(p || ""));
+    if (n != null) return n;
+  }
+  return null;
+}
+
+/** Resolve locked hour for breast suite: clinical sources beat stale panel locks (e.g. wrong 12h). */
+function resolveBreastLockedHour(args: {
+  userDirective?: string;
+  customDirectives?: string;
+  reportText?: string;
+  lesionLocations?: string[];
+  clockPositionOrSite?: string;
+  anatomicalFocus?: string;
+  panelTitle?: string;
+  previousLockedHour?: number | null;
+}): number | null {
+  const report = String(args.reportText || "").slice(0, 2500);
+  const fromClinical = extractBreastClockHour(
+    args.userDirective,
+    args.customDirectives,
+    report,
+    ...(args.lesionLocations || [])
+  );
+  if (fromClinical != null) return fromClinical;
+
+  // Panel site label only if it looks clinical (contains eje/hora/Nh), not English landmark prose
+  const site = String(args.clockPositionOrSite || "");
+  if (/\beje\b|\bhora\b|\b\d{1,2}\s*h\b/i.test(site)) {
+    const fromSite = extractBreastClockHourFromText(site);
+    if (fromSite != null) return fromSite;
+  }
+
+  if (
+    args.previousLockedHour != null &&
+    args.previousLockedHour >= 1 &&
+    args.previousLockedHour <= 12
+  ) {
+    // Only keep previous lock if report/directives did not contradict — already handled above
+    return args.previousLockedHour;
+  }
+
+  // Last resort: focus/title (often polluted — lowest trust)
+  return extractBreastClockHour(args.anatomicalFocus, args.panelTitle);
+}
+
+/** Circular distance on a 12-hour clock (0..6). */
+function clockHourDistance(a: number, b: number): number {
+  const d = Math.abs(((a % 12) + 12) % 12 - ((b % 12) + 12) % 12);
+  return Math.min(d, 12 - d);
+}
+
+function mirrorBreastClockHour(hour: number): number | null {
+  if (hour === 12 || hour === 6) return null;
+  return (12 - (hour % 12)) || 12;
+}
+
+type BreastClockGeo = {
+  hour: number;
+  degreesFrom12: number;
+  /** +1 = viewer RIGHT of nipple, -1 = viewer LEFT (screen x). */
+  nx: number;
+  /** +1 = DOWN from nipple, -1 = UP (screen y). */
+  ny: number;
+  viewerHalf: "left" | "right" | "midline";
+  vertical: "superior" | "inferior" | "horizontal";
+  mirrorHour: number | null;
+  anatomyRightBreast: string;
+  anatomyLeftBreast: string;
+};
+
+/** Deterministic polar map: identical dial both breasts (12 up, 3 viewer-right, 9 viewer-left). */
+function getBreastClockGeometry(hour: number): BreastClockGeo {
+  const h = Math.min(12, Math.max(1, Math.round(hour)));
+  const degreesFrom12 = (h % 12) * 30;
+  const rad = (degreesFrom12 * Math.PI) / 180;
+  const nx = Math.sin(rad);
+  const ny = -Math.cos(rad);
+  const viewerHalf: BreastClockGeo["viewerHalf"] =
+    Math.abs(nx) < 0.2 ? "midline" : nx > 0 ? "right" : "left";
+  const vertical: BreastClockGeo["vertical"] =
+    Math.abs(ny) < 0.2 ? "horizontal" : ny < 0 ? "superior" : "inferior";
+  const mirrorHour = mirrorBreastClockHour(h);
+  const medialLateralRight =
+    viewerHalf === "midline"
+      ? "midline"
+      : viewerHalf === "right"
+        ? "MEDIAL / STERNAL / INNER"
+        : "LATERAL / AXILLARY / OUTER";
+  const medialLateralLeft =
+    viewerHalf === "midline"
+      ? "midline"
+      : viewerHalf === "right"
+        ? "LATERAL / AXILLARY / OUTER"
+        : "MEDIAL / STERNAL / INNER";
+  return {
+    hour: h,
+    degreesFrom12,
+    nx,
+    ny,
+    viewerHalf,
+    vertical,
+    mirrorHour,
+    anatomyRightBreast: medialLateralRight,
+    anatomyLeftBreast: medialLateralLeft,
+  };
+}
+
+/**
+ * Hard geometric contract for image models — polar offset from nipple + ASCII dial.
+ * This is the primary anti-confusion system (7≠5, 10≠2, etc.).
+ */
+function buildBreastClockGeometryBlock(
+  side: "left" | "right" | "unknown",
+  hour: number | null
+): string {
+  if (hour == null || hour < 1 || hour > 12) return "";
+  const g = getBreastClockGeometry(hour);
+  const sideLabel =
+    side === "right" ? "RIGHT breast" : side === "left" ? "LEFT breast" : "breast";
+  const anatomy =
+    side === "right"
+      ? g.anatomyRightBreast
+      : side === "left"
+        ? g.anatomyLeftBreast
+        : "identical-dial anatomy";
+  const dxPct = Math.round(g.nx * 55);
+  const dyPct = Math.round(g.ny * 55);
+  const dxWords =
+    g.viewerHalf === "midline"
+      ? "0% horizontal (on vertical meridian through nipple)"
+      : g.viewerHalf === "right"
+        ? `${Math.abs(dxPct)}% of breast radius toward VIEWER'S RIGHT of nipple`
+        : `${Math.abs(dxPct)}% of breast radius toward VIEWER'S LEFT of nipple`;
+  const dyWords =
+    g.vertical === "horizontal"
+      ? "0% vertical (nipple height)"
+      : g.vertical === "superior"
+        ? `${Math.abs(dyPct)}% of breast radius ABOVE nipple (toward 12)`
+        : `${Math.abs(dyPct)}% of breast radius BELOW nipple (toward 6)`;
+  const mirrorBan =
+    g.mirrorHour != null
+      ? `FORBIDDEN MIRROR HOUR: ${g.mirrorHour} (left–right mirror of ${g.hour}). Placing at ${g.mirrorHour} is an automatic FAIL.`
+      : "";
+
+  const dial = [
+    "        12",
+    "   11        1",
+    " 10            2",
+    "9       •       3",
+    " 8            4",
+    "   7        5",
+    "        6",
+    `ASCII DIAL: nipple=• ; TARGET HOUR=${g.hour} ; MIRROR/FORBIDDEN=${g.mirrorHour ?? "none (12/6)"}.`,
+  ].join("\n");
+
+  return (
+    `BREAST CLOCK GEOMETRY LOCK (deterministic — obey numbers, not intuition):\n` +
+    `(G0) Identical dial both breasts: 12=UP, 6=DOWN, 3=VIEWER RIGHT of nipple, 9=VIEWER LEFT of nipple.\n` +
+    `(G1) TARGET: ${sideLabel} at EXACTLY ${g.hour} o'clock = ${g.degreesFrom12}° clockwise from 12.\n` +
+    `(G2) From nipple, place lesion center at: ${dxWords}; AND ${dyWords}.\n` +
+    `(G3) Anatomy on ${sideLabel}: ${anatomy}. Vertical=${g.vertical}; horizontal half=${g.viewerHalf}.\n` +
+    `(G4) ${mirrorBan || "Stay on the vertical meridian (12/6)."}\n` +
+    `(G5) Do NOT invent a different hour. Ignore any other hour numbers elsewhere in the prompt.\n` +
+    `${dial}`
+  );
+}
+
+/** Explicit lesion pin for a breast clock hour (geometry + natural language). */
+function buildBreastLesionClockPin(
+  side: "left" | "right" | "unknown",
+  hour: number | null
+): string {
+  if (hour == null || hour < 1 || hour > 12) return "";
+  const g = getBreastClockGeometry(hour);
+  const sideLabel =
+    side === "right" ? "RIGHT breast" : side === "left" ? "LEFT breast" : "breast";
+  const anatomy =
+    side === "right"
+      ? g.anatomyRightBreast
+      : side === "left"
+        ? g.anatomyLeftBreast
+        : "identical-dial anatomy";
+  const viewerHalf =
+    g.viewerHalf === "midline"
+      ? "on the vertical midline through the nipple"
+      : g.viewerHalf === "right"
+        ? "VIEWER'S RIGHT of the nipple"
+        : "VIEWER'S LEFT of the nipple";
+  const antiMirror =
+    g.mirrorHour != null
+      ? ` CRITICAL FAIL if placed at ${g.mirrorHour} o'clock (left–right mirror of ${g.hour}).`
+      : "";
+  return (
+    `LESION CLOCK PIN (CRITICAL): Place the finding at EXACTLY ${g.hour} o'clock (${g.degreesFrom12}° from 12) on the ${sideLabel} — ` +
+    `${g.vertical}, ${viewerHalf}, anatomy=${anatomy}.` +
+    antiMirror
+  );
+}
+
+function buildBreastClockRetryCorrection(
+  side: "left" | "right" | "unknown",
+  targetHour: number,
+  observedHour: number | null
+): string {
+  const g = getBreastClockGeometry(targetHour);
+  const obs =
+    observedHour != null
+      ? `Previous render wrongly placed the lesion at ${observedHour} o'clock (distance=${clockHourDistance(targetHour, observedHour)}).`
+      : `Previous render missed target hour ${targetHour}.`;
+  const mirrorNote =
+    observedHour != null && g.mirrorHour === observedHour
+      ? ` You mirrored left↔right (${observedHour} is the mirror of ${targetHour}). Flip the lesion across the vertical nipple meridian.`
+      : "";
+  return (
+    `CLOCK RETRY CORRECTION: ${obs}${mirrorNote} ` +
+    `MOVE the lesion to EXACTLY ${targetHour} o'clock on the ${side} breast. ` +
+    buildBreastClockGeometryBlock(side, targetHour)
+  );
+}
+
+/** Normalize a clock/site label to locked side + hour so regen cannot rewrite 10→2. */
+function lockBreastClockSiteLabel(
+  side: "left" | "right" | "unknown",
+  hour: number | null,
+  fallback: string
+): string {
+  if (hour == null) return fallback || "";
+  const sideEs =
+    side === "right" ? "Mama derecha" : side === "left" ? "Mama izquierda" : "";
+  const base = String(fallback || "").trim();
+  const existingHour = extractBreastClockHourFromText(base);
+  if (existingHour === hour && (!sideEs || new RegExp(sideEs.replace(" ", "\\s+"), "i").test(base))) {
+    return base;
+  }
+  return sideEs ? `${sideEs}, ${hour}h` : `${hour}h`;
 }
 
 function detectBreastSide(...parts: Array<string | undefined | null>): "left" | "right" | "unknown" {
@@ -474,22 +745,41 @@ function enforceBreastClockOnContract(
     customDirectives?: string;
   } = {}
 ): SpatialContract {
-  const bag = [
+  // Priority: user/scorecard directives first, then structured site, then loose prose
+  // (stale panel labels like "eje 2" must NOT beat a directive that says "eje 10").
+  const sideBag = [
+    ctx.customDirectives,
+    ctx.laterality,
     contract.laterality,
     contract.pathologySite,
+    ctx.anatomicalFocus,
+    ctx.panelTitle,
+    ctx.studyRegion,
     contract.pathologyAppearance,
     contract.imageLeftStructure,
     contract.imageRightStructure,
-    ctx.laterality,
-    ctx.anatomicalFocus,
+  ];
+  const hourBag = [
+    ctx.customDirectives,
+    contract.pathologySite,
     ctx.studyRegion,
     ctx.panelTitle,
-    ctx.customDirectives,
+    // anatomicalFocus last — often polluted with English "12 o'clock" landmarks
+    ctx.anatomicalFocus,
+    contract.pathologyAppearance,
+    ctx.laterality,
+    contract.laterality,
   ];
-  if (!isBreastContext(...bag)) return contract;
+  if (!isBreastContext(...sideBag, ...hourBag)) return contract;
 
-  const side = detectBreastSide(...bag);
-  const hour = extractBreastClockHour(...bag);
+  const side = detectBreastSide(...sideBag);
+  const hour = resolveBreastLockedHour({
+    customDirectives: ctx.customDirectives,
+    reportText: [contract.pathologySite, ctx.studyRegion].filter(Boolean).join(" "),
+    clockPositionOrSite: contract.pathologySite,
+    anatomicalFocus: ctx.anatomicalFocus,
+    panelTitle: ctx.panelTitle,
+  });
   const next: SpatialContract = {
     ...contract,
     mustShowLandmarks: [...(contract.mustShowLandmarks || [])],
@@ -510,6 +800,8 @@ function enforceBreastClockOnContract(
   addGuard("left-breast 3 placed medially");
   addGuard("clock 3/9 swap");
   addGuard("mirrored breast clock between sides");
+  addGuard("right-breast 10 placed at 2");
+  addGuard("left-right mirror of clock hour");
   addLandmark("nipple");
   addLandmark("sternum / medial margin");
   addLandmark("axilla / lateral margin");
@@ -601,7 +893,13 @@ function buildBreastClockConstraint(opts: {
   const isRight = side === "right";
   const isLeft = side === "left";
 
-  const hour = extractBreastClockHour(opts.pathologySite, opts.anatomicalFocus, opts.panelTitle, opts.studyRegion);
+  const hour = extractBreastClockHour(
+    opts.pathologySite,
+    opts.anatomicalFocus,
+    opts.panelTitle,
+    opts.studyRegion,
+    opts.laterality
+  );
 
   const common =
     "BREAST CLOCK-HANDS HARD RULES (AP / patient facing examiner — identical dial on BOTH breasts): " +
@@ -609,7 +907,8 @@ function buildBreastClockConstraint(opts: {
     "(B1) This dial is THE SAME for left and right breasts — do NOT mirror the map between sides. " +
     "(B2) NEVER place left-breast 3 o'clock medially. Left-breast 3 = LATERAL/axilla. " +
     "(B3) NEVER swap 3 with 9. Confusing eje/hora 3 with 9 is a CRITICAL FAIL. " +
-    "(B4) Quadrants still mean anatomy: CSE/UO = upper OUTER (lateral); CSI/UI = upper INNER (medial). ";
+    "(B4) NEVER left–right mirror clock hours: 10≠2, 1≠11, 4≠8, 5≠7. Right-breast 10 = UPPER OUTER (viewer-LEFT of nipple); right-breast 2 = UPPER INNER (viewer-RIGHT of nipple). " +
+    "(B5) Quadrants still mean anatomy: CSE/UO = upper OUTER (lateral); CSI/UI = upper INNER (medial). ";
 
   let sideRules = "";
   if (isLeft) {
@@ -634,28 +933,7 @@ function buildBreastClockConstraint(opts: {
       "LEFT: 3=LATERAL, 9=MEDIAL. RIGHT: 3=MEDIAL, 9=LATERAL. Do NOT use mirrored clinical map. ";
   }
 
-  let hourRule = "";
-  if (hour != null) {
-    if (isLeft) {
-      if (hour === 3) {
-        hourRule = `MANDATORY TARGET CLOCK: ${hour} o'clock on LEFT breast = LATERAL/axillary side of the nipple (VIEWER'S RIGHT of nipple). Do NOT place medially / at 9. `;
-      } else if (hour === 9) {
-        hourRule = `MANDATORY TARGET CLOCK: ${hour} o'clock on LEFT breast = MEDIAL/sternal side of the nipple (VIEWER'S LEFT of nipple). Do NOT place at 3. `;
-      } else {
-        hourRule = `MANDATORY TARGET CLOCK: place lesion at ${hour} o'clock on LEFT breast with identical clock-hands dial (3=viewer-right/LATERAL; 9=viewer-left/MEDIAL). `;
-      }
-    } else if (isRight) {
-      if (hour === 3) {
-        hourRule = `MANDATORY TARGET CLOCK: ${hour} o'clock on RIGHT breast = MEDIAL/sternal side of the nipple (VIEWER'S RIGHT of nipple). Do NOT place at 9. `;
-      } else if (hour === 9) {
-        hourRule = `MANDATORY TARGET CLOCK: ${hour} o'clock on RIGHT breast = LATERAL/axillary side of the nipple (VIEWER'S LEFT of nipple). Do NOT place at 3. `;
-      } else {
-        hourRule = `MANDATORY TARGET CLOCK: place lesion at ${hour} o'clock on RIGHT breast with identical clock-hands dial (3=viewer-right/MEDIAL; 9=viewer-left/LATERAL). `;
-      }
-    } else {
-      hourRule = `MANDATORY TARGET CLOCK: lesion at ${hour} o'clock using identical clock-hands on both breasts (3=viewer-right of nipple; 9=viewer-left of nipple). `;
-    }
-  }
+  const hourRule = hour != null ? buildBreastLesionClockPin(isLeft ? "left" : isRight ? "right" : "unknown", hour) + " " : "";
 
   return common + sideRules + hourRule;
 }
@@ -670,8 +948,9 @@ const BREAST_CLOCK_PLAN_RULES_ES =
   "- En spatialContract mama izquierda: imageLeftStructure = medial/esternón (lado 9); imageRightStructure = lateral/axila (lado 3).\n" +
   "- En spatialContract mama derecha: imageLeftStructure = lateral/axila (lado 9); imageRightStructure = medial/esternón (lado 3).\n" +
   "- CSE = superior externo/lateral; CSI = superior interno/medial (anatomía, no espejar).\n" +
+  "- NUNCA espejar horas: eje 10 ≠ eje 2. Mama derecha eje 10 = CSE / superior externo = IZQUIERDA del pezón en la imagen; mama derecha eje 2 = CSI / superior interno = DERECHA del pezón.\n" +
   "- pathologySite debe incluir lado + eje/hora o cuadrante exactos del informe.\n" +
-  "- doNotInvent DEBE incluir: \"left-breast 3 placed medially\", \"clock 3/9 swap\", \"mirrored breast clock between sides\".";
+  "- doNotInvent DEBE incluir: \"left-breast 3 placed medially\", \"clock 3/9 swap\", \"mirrored breast clock between sides\", \"right-breast 10 placed at 2\".";
 
 /**
  * Clinical prose for Focal corte cards must NEVER explain how the AI placed the lesion
@@ -847,32 +1126,31 @@ function buildImagePromptFromContract(args: {
     panelTitle: args.panelTitle,
   });
 
-  const side = detectBreastSide(laterality, c.pathologySite, args.anatomicalFocus, args.studyRegion, args.panelTitle);
-  const hour = extractBreastClockHour(c.pathologySite, args.anatomicalFocus, args.panelTitle, args.studyRegion);
-  let lesionHalfPin = "";
-  if (breastClock && hour != null) {
-    if (side === "left" && (hour === 3 || hour === 2 || hour === 4)) {
-      lesionHalfPin =
-        "LESION HALF-OF-BREAST PIN (CRITICAL): On the LEFT breast the finding at ~3 o'clock MUST sit on the LATERAL/AXILLARY side of the nipple = RIGHT half of the breast in the image (toward the axilla). It is a CRITICAL FAIL if the lesion is drawn toward the sternum/medial half.";
-    } else if (side === "left" && (hour === 9 || hour === 8 || hour === 10)) {
-      lesionHalfPin =
-        "LESION HALF-OF-BREAST PIN (CRITICAL): On the LEFT breast the finding at ~9 o'clock MUST sit on the MEDIAL/STERNAL side of the nipple = LEFT half of the breast in the image (toward the sternum).";
-    } else if (side === "right" && (hour === 3 || hour === 2 || hour === 4)) {
-      lesionHalfPin =
-        "LESION HALF-OF-BREAST PIN (CRITICAL): On the RIGHT breast the finding at ~3 o'clock MUST sit on the MEDIAL/STERNAL side of the nipple = RIGHT half of the breast in the image (toward the sternum).";
-    } else if (side === "right" && (hour === 9 || hour === 8 || hour === 10)) {
-      lesionHalfPin =
-        "LESION HALF-OF-BREAST PIN (CRITICAL): On the RIGHT breast the finding at ~9 o'clock MUST sit on the LATERAL/AXILLARY side of the nipple = LEFT half of the breast in the image (toward the axilla).";
-    } else {
-      lesionHalfPin =
-        `LESION CLOCK PIN: place the finding at ${hour} o'clock using identical clock-hands on both breasts (12 up; 3=viewer's right of nipple; 9=viewer's left of nipple).`;
-    }
-  }
+  const side = detectBreastSide(
+    args.customDirectives,
+    args.surgicalCorrection,
+    laterality,
+    c.pathologySite,
+    args.anatomicalFocus,
+    args.studyRegion,
+    args.panelTitle
+  );
+  const hour = extractBreastClockHour(
+    args.surgicalCorrection,
+    args.customDirectives,
+    c.pathologySite,
+    args.anatomicalFocus,
+    args.panelTitle,
+    args.studyRegion
+  );
+  const lesionHalfPin = breastClock ? buildBreastLesionClockPin(side, hour) : "";
+  const geometryBlock = breastClock ? buildBreastClockGeometryBlock(side, hour) : "";
 
   const parts = [
     FAITHFUL_STYLE,
     LATERALITY_HARD_RULES,
     buildScreenLateralityConstraint(laterality, c.view),
+    geometryBlock,
     breastClock,
     lesionHalfPin,
     `Subject: ${args.studyRegion}. Panel: ${args.panelTitle}.`,
@@ -946,6 +1224,193 @@ export function registerAtlas3DRoutes(app: express.Express) {
       if (!b64) throw new Error("Fallback imagen-3.0 no devolvió imagen.");
       return `data:image/jpeg;base64,${b64}`;
     }
+  }
+
+  type BreastClockQaResult = {
+    pass: boolean;
+    observedHour: number | null;
+    targetHour: number;
+    distance: number | null;
+    issues: string[];
+    attempts: number;
+  };
+
+  /**
+   * Vision QA: ask the model what clock hour the lesion is at; fail unless exact match.
+   * This is what stops 7↔5 / 10↔2 silent failures.
+   */
+  async function verifyBreastClockHour(
+    ai: any,
+    model: string,
+    imageUrl: string,
+    side: "left" | "right" | "unknown",
+    targetHour: number
+  ): Promise<Omit<BreastClockQaResult, "attempts">> {
+    const parsed = stripDataUrl(imageUrl);
+    if (!parsed) {
+      return {
+        pass: false,
+        observedHour: null,
+        targetHour,
+        distance: null,
+        issues: ["no_image"],
+      };
+    }
+    const g = getBreastClockGeometry(targetHour);
+    const sideLabel =
+      side === "right" ? "RIGHT" : side === "left" ? "LEFT" : "UNKNOWN";
+    try {
+      const resp = await ai.models.generateContent({
+        model,
+        contents: {
+          parts: [
+            {
+              text: `You are a breast-imaging QA radiologist. Look ONLY at the lesion position relative to the nipple on this 3D render.
+
+CLOCK DIAL (identical both breasts, viewer facing patient):
+- 12 = UP (superior), 6 = DOWN (inferior)
+- 3 = VIEWER'S RIGHT of nipple, 9 = VIEWER'S LEFT of nipple
+- Do NOT use a mirrored map. 7 ≠ 5. 10 ≠ 2. 8 ≠ 4.
+
+TARGET (must match): ${sideLabel} breast, hour ${targetHour} (${g.degreesFrom12}° clockwise from 12).
+Forbidden mirror of target: ${g.mirrorHour ?? "none"}.
+
+Return STRICT JSON:
+{
+  "observedHour": <integer 1-12 or null if no clear lesion>,
+  "viewerHalf": "left"|"right"|"midline",
+  "vertical": "superior"|"inferior"|"horizontal",
+  "pass": true/false,
+  "issues": ["..."]
+}
+Rules:
+- pass=true ONLY if observedHour === ${targetHour} exactly.
+- If lesion is on the mirror hour (${g.mirrorHour ?? "n/a"}), pass=false and mention "mirrored_clock".
+- If unsure between two hours, pick the closer one and pass=false unless exact.`
+            },
+            { inlineData: { mimeType: parsed.mime, data: parsed.data } },
+          ],
+        },
+        config: { responseMimeType: "application/json" },
+      });
+      let json: any = {};
+      try {
+        json = JSON.parse(resp.text || "{}");
+      } catch {
+        json = {};
+      }
+      const observedRaw = json.observedHour;
+      const observedHour =
+        typeof observedRaw === "number" && observedRaw >= 1 && observedRaw <= 12
+          ? Math.round(observedRaw)
+          : extractBreastClockHourFromText(String(observedRaw || ""));
+      const distance =
+        observedHour != null ? clockHourDistance(targetHour, observedHour) : null;
+      const issues = Array.isArray(json.issues)
+        ? json.issues.map((x: any) => String(x))
+        : [];
+
+      // Geometry cross-check: model often claims pass while lesion sits on the mirror half
+      const reportedHalf = String(json.viewerHalf || "").toLowerCase();
+      const reportedVert = String(json.vertical || "").toLowerCase();
+      const halfOk =
+        !reportedHalf ||
+        reportedHalf === g.viewerHalf ||
+        (g.viewerHalf === "midline" && reportedHalf === "midline");
+      const vertOk =
+        !reportedVert ||
+        reportedVert === g.vertical ||
+        (g.vertical === "horizontal" &&
+          (reportedVert === "horizontal" || reportedVert === "mid"));
+
+      let pass = observedHour === targetHour && halfOk && vertOk;
+      if (observedHour === targetHour && (!halfOk || !vertOk)) {
+        pass = false;
+        issues.push("geometry_mismatch_half_or_vertical");
+      }
+      if (!pass && observedHour != null && g.mirrorHour === observedHour) {
+        issues.push("mirrored_clock");
+      }
+      if (!pass && observedHour == null) issues.push("hour_unreadable");
+      if (!pass && observedHour != null && observedHour !== targetHour) {
+        issues.push(`observed_${observedHour}_expected_${targetHour}`);
+      }
+      // Never trust a "pass" for hour 12 when the model also reports a clear left/right half lesion
+      if (
+        pass &&
+        targetHour === 12 &&
+        (reportedHalf === "left" || reportedHalf === "right")
+      ) {
+        pass = false;
+        issues.push("false_12_with_lateral_lesion");
+      }
+      return { pass, observedHour, targetHour, distance, issues };
+    } catch (err: any) {
+      console.warn("verifyBreastClockHour failed:", err?.message || err);
+      return {
+        pass: false,
+        observedHour: null,
+        targetHour,
+        distance: null,
+        issues: ["qa_error"],
+      };
+    }
+  }
+
+  /** Generate breast image, verify clock hour, auto-retry up to maxAttempts with geometry correction. */
+  async function generateBreastImageWithClockQa(args: {
+    ai: any;
+    model: string;
+    basePrompt: string;
+    side: "left" | "right" | "unknown";
+    hour: number | null;
+    maxAttempts?: number;
+  }): Promise<{ imageUrl: string; promptUsed: string; clockQa: BreastClockQaResult | null }> {
+    const maxAttempts = args.maxAttempts ?? 3;
+    const geo =
+      args.hour != null ? buildBreastClockGeometryBlock(args.side, args.hour) : "";
+    const pin = buildBreastLesionClockPin(args.side, args.hour);
+    let promptUsed = [geo, pin, args.basePrompt, pin ? `FINAL CHECK: ${pin}` : ""]
+      .filter(Boolean)
+      .join("\n");
+    let imageUrl = "";
+    let clockQa: BreastClockQaResult | null = null;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      imageUrl = await generateMedicalImage(args.ai, promptUsed);
+      if (args.hour == null) {
+        return { imageUrl, promptUsed, clockQa: null };
+      }
+      const qa = await verifyBreastClockHour(
+        args.ai,
+        args.model,
+        imageUrl,
+        args.side,
+        args.hour
+      );
+      clockQa = { ...qa, attempts: attempt };
+      if (qa.pass) break;
+      if (attempt >= maxAttempts) break;
+      const correction = buildBreastClockRetryCorrection(
+        args.side,
+        args.hour,
+        qa.observedHour
+      );
+      promptUsed = [
+        correction,
+        geo,
+        pin,
+        args.basePrompt,
+        `FINAL CHECK: lesion MUST be at ${args.hour} o'clock — previous attempt was ${qa.observedHour ?? "wrong"}.`,
+      ]
+        .filter(Boolean)
+        .join("\n");
+      console.warn(
+        `[breast-clock-qa] retry ${attempt}/${maxAttempts}: target=${args.hour} observed=${qa.observedHour}`
+      );
+    }
+
+    return { imageUrl, promptUsed, clockQa };
   }
 
   // 1. Full 3D Atlas Generation (2 to 3 panels + Synoptic Correlation + Biomechanical Synthesis)
@@ -4651,6 +5116,8 @@ paneles con "panelRole" y "clockPositionOrSite".
 REGLAS ESPECÍFICAS MAMA / BI-RADS:
 - 2–3 paneles: (A) ambas mamas vista frontal con pezones y cuadrantes/reloj; (B) corte macro del nódulo dominante; (C opcional) axila ipsilateral.
 - Contrato de reloj OBLIGATORIO: manos idénticas en ambas mamas; las 3 = derecha del pezón en la imagen (derecha del observador); las 9 = izquierda del pezón. Nunca invertir por estética.
+- ${BREAST_CLOCK_PLAN_RULES_ES}
+- clockPositionOrSite y location DEBEN copiar el eje/hora EXACTO del informe/directiva (si dice eje 10 derecho, NUNCA escribir 2h ni espejar).
 - laterality por panel = lado anatómico del paciente (Derecha|Izquierda|Bilateral).
 - lesionTable filas con: location (reloj + distancia al pezón), composition (quística/sólida/mixta), size (mm/cm), shape, margins, echogenicity, orientation, vascularity, biradsCategory, clinicalImpact.
 - NUNCA intercambiar composition y size. size solo medidas (ej. "8 × 5 mm"); composition solo morfología (ej. "Quística pura").
@@ -4770,50 +5237,132 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
         };
       }
 
-      // Generate images in parallel for each vascular panel
+      // Lock clock hour from report/scorecard FIRST — never trust panel focus "12 o'clock" landmarks
+      const reportClockSource = String(reportText || "").slice(0, 2500);
+      const lesionLocations = (planJson.lesionTable || planJson.noduleTable || []).map(
+        (r: any) => String(r?.location || "")
+      );
+      const globalBreastHour = resolveBreastLockedHour({
+        customDirectives,
+        reportText: reportClockSource,
+        lesionLocations,
+      });
+      const globalBreastSide = detectBreastSide(
+        customDirectives,
+        laterality,
+        planJson.laterality,
+        reportClockSource,
+        ...lesionLocations
+      );
+
+      // Generate images in parallel for each breast panel
       const breastPanelsWithImages = await Promise.all(
         (planJson.panels || []).map(async (panel: any, idx: number) => {
-          let promptToUse = panel.imagePrompt || `Ultra-realistic 3D medical breast gland render of ${panel.clockPositionOrSite || panel.panelTitle}, octane render, no text.`;
-          if (customDirectives && customDirectives.trim()) {
-            promptToUse = `${promptToUse} [MANDATORY CLINICAL DIRECTIVE: ${customDirectives.trim()}].`;
-          }
-          {
-            const screenMap = buildScreenLateralityConstraint(panel.laterality || planJson.laterality || laterality, "AP / coronal");
-            if (panel.laterality && panel.laterality !== "auto") {
-              promptToUse = `[MANDATORY PATIENT LATERALITY: ${panel.laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${screenMap} ${promptToUse}`;
-            } else {
-              promptToUse = `${LATERALITY_HARD_RULES} ${screenMap} ${promptToUse}`;
+          const panelLat = panel.laterality || planJson.laterality || laterality || "";
+          const side = detectBreastSide(
+            customDirectives,
+            panel.clockPositionOrSite,
+            panelLat,
+            globalBreastSide !== "unknown" ? (globalBreastSide === "right" ? "Mama derecha" : "Mama izquierda") : "",
+            reportClockSource,
+            panel.anatomicalFocus,
+            panel.panelTitle
+          );
+          const effectiveHour = resolveBreastLockedHour({
+            customDirectives,
+            reportText: reportClockSource,
+            lesionLocations,
+            clockPositionOrSite: panel.clockPositionOrSite,
+            anatomicalFocus: panel.anatomicalFocus,
+            panelTitle: panel.panelTitle,
+            previousLockedHour: globalBreastHour,
+          });
+          const effectiveSide = side !== "unknown" ? side : globalBreastSide;
+          const panelRoleStr = String(panel.panelRole || panel.panelTitle || "").toLowerCase();
+          const isOverviewPanel =
+            /both_breasts|ambas|bilateral|overview|panorama/.test(panelRoleStr) ||
+            /ambas\s+mamas|both\s+breasts/i.test(String(panel.clockPositionOrSite || ""));
+          const isLesionPanel =
+            /lesion|nodule|n[oó]dul/.test(panelRoleStr) ||
+            extractBreastClockHour(panel.clockPositionOrSite) != null;
+          let lockedClockSite = panel.clockPositionOrSite || panel.panelTitle || "";
+          if (effectiveHour != null && (isLesionPanel || !isOverviewPanel)) {
+            lockedClockSite = lockBreastClockSiteLabel(effectiveSide, effectiveHour, lockedClockSite);
+          } else if (effectiveHour != null && isOverviewPanel) {
+            const sideEs =
+              effectiveSide === "right"
+                ? "mama derecha"
+                : effectiveSide === "left"
+                  ? "mama izquierda"
+                  : "mama";
+            if (!new RegExp(`\\b${effectiveHour}\\s*h\\b|eje\\s*${effectiveHour}\\b`, "i").test(lockedClockSite)) {
+              lockedClockSite = `${lockedClockSite || "Ambas mamas"}; lesión dominante ${sideEs} ${effectiveHour}h`;
             }
           }
 
+          let basePrompt =
+            panel.imagePrompt ||
+            `Ultra-realistic 3D medical breast gland render of ${lockedClockSite}, octane render, no text.`;
+          if (customDirectives && customDirectives.trim()) {
+            basePrompt = `${basePrompt} [MANDATORY CLINICAL DIRECTIVE: ${customDirectives.trim()}].`;
+          }
+          {
+            const screenMap = buildScreenLateralityConstraint(panelLat, "AP / coronal");
+            if (panelLat && panelLat !== "auto") {
+              basePrompt = `[MANDATORY PATIENT LATERALITY: ${String(panelLat).toUpperCase()}]. ${LATERALITY_HARD_RULES} ${screenMap} ${basePrompt}`;
+            } else {
+              basePrompt = `${LATERALITY_HARD_RULES} ${screenMap} ${basePrompt}`;
+            }
+          }
+          const breastClock = buildBreastClockConstraint({
+            laterality: panelLat || (side === "right" ? "Derecha" : side === "left" ? "Izquierda" : ""),
+            view: "AP / coronal",
+            pathologySite: lockedClockSite,
+            anatomicalFocus: panel.anatomicalFocus,
+            studyRegion: "breast / mama",
+            panelTitle: panel.panelTitle,
+          });
+          if (breastClock) basePrompt = `${breastClock} ${basePrompt}`;
+
+          // Any panel with a locked hour: geometry + vision QA with auto-retry (stops 7↔5 / 10↔2)
+          const runClockQa = effectiveHour != null;
+
+          const panelPayload: any = {
+            id: `breast-panel-${idx}-${Date.now()}`,
+            panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
+            panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
+            clockPositionOrSite: lockedClockSite,
+            anatomicalFocus: panel.anatomicalFocus || "Evaluación mamaria anatómica y BI-RADS",
+            laterality: panelLat,
+            lockedClockHour: effectiveHour ?? undefined,
+            lockedBreastSide: effectiveSide !== "unknown" ? effectiveSide : undefined,
+            promptUsed: basePrompt,
+            isCustomFlipped: false,
+            panelRole: panel.panelRole || (idx === 0 ? "both_breasts" : idx === 1 ? "lesion" : "axilla")
+          };
+
           try {
+            if (runClockQa) {
+              const { imageUrl, promptUsed, clockQa } = await generateBreastImageWithClockQa({
+                ai,
+                model,
+                basePrompt,
+                side: effectiveSide,
+                hour: effectiveHour,
+                maxAttempts: 3,
+              });
+              return { ...panelPayload, imageUrl, promptUsed, clockQa };
+            }
+            const geo = buildBreastClockGeometryBlock(effectiveSide, effectiveHour);
+            const pin = buildBreastLesionClockPin(effectiveSide, effectiveHour);
+            const promptToUse = [geo, pin, basePrompt, pin ? `FINAL CHECK: ${pin}` : ""]
+              .filter(Boolean)
+              .join("\n");
             const imageUrl = await generateMedicalImage(ai, promptToUse);
-            return {
-              id: `breast-panel-${idx}-${Date.now()}`,
-              panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
-              panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
-              clockPositionOrSite: panel.clockPositionOrSite || panel.panelTitle || "",
-              anatomicalFocus: panel.anatomicalFocus || "Evaluación vascular anatómica y tiroidea",
-              laterality: panel.laterality || planJson.laterality || laterality || "",
-              imageUrl: imageUrl,
-              promptUsed: promptToUse,
-              isCustomFlipped: false,
-              panelRole: panel.panelRole || (idx === 0 ? "both_breasts" : idx === 1 ? "lesion" : "axilla")
-            };
+            return { ...panelPayload, imageUrl, promptUsed: promptToUse };
           } catch (imgErr) {
-            console.error(`Error generando imagen para panel vascular ${panel.panelLetter}:`, imgErr);
-            return {
-              id: `breast-panel-${idx}-${Date.now()}`,
-              panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
-              panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
-              clockPositionOrSite: panel.clockPositionOrSite || panel.panelTitle || "",
-              anatomicalFocus: panel.anatomicalFocus || "Evaluación vascular anatómica y tiroidea",
-              laterality: panel.laterality || planJson.laterality || laterality || "",
-              imageUrl: "",
-              promptUsed: promptToUse,
-              isCustomFlipped: false,
-              panelRole: panel.panelRole || (idx === 0 ? "both_breasts" : idx === 1 ? "lesion" : "axilla")
-            };
+            console.error(`Error generando imagen para panel mama ${panel.panelLetter}:`, imgErr);
+            return { ...panelPayload, imageUrl: "" };
           }
         })
       );
@@ -4857,8 +5406,21 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
             size = rawComposition;
             composition = rawSize;
           }
+          let location = String(row.location || "");
+          // If scorecard/report locks a single clock hour, stop the planner from mirroring it in the table
+          if (globalBreastHour != null) {
+            const rowHour = extractBreastClockHour(location);
+            if (rowHour != null && rowHour !== globalBreastHour) {
+              const rowSide = detectBreastSide(location, customDirectives, laterality, planJson.laterality);
+              location = lockBreastClockSiteLabel(
+                rowSide !== "unknown" ? rowSide : globalBreastSide,
+                globalBreastHour,
+                location
+              );
+            }
+          }
           return {
-            location: row.location || "",
+            location,
             size: size || "",
             composition: composition || row.shape || "",
             shape: row.shape || composition || "",
@@ -4902,28 +5464,69 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
       const ai = getGeminiClient();
       const model = getModelName(requestedModel || "gemini-3.7-flash");
 
+      // Lock hour/side from surgeon directive + report FIRST.
+      // Never keep a stale wrong lock (e.g. panel.lockedClockHour=12 when report says eje 7).
+      const reportSlice = String(reportText || "").slice(0, 2500);
+      const lockedSide = detectBreastSide(
+        userDirective,
+        customDirectives,
+        laterality,
+        panel.laterality,
+        panel.clockPositionOrSite,
+        reportSlice,
+        panel.anatomicalFocus,
+        panel.panelTitle
+      );
+      const lockedHour = resolveBreastLockedHour({
+        userDirective,
+        customDirectives,
+        reportText: reportSlice,
+        clockPositionOrSite: panel.clockPositionOrSite,
+        anatomicalFocus: panel.anatomicalFocus,
+        panelTitle: panel.panelTitle,
+        // Ignore previousLockedHour when directive/report provide a hour — resolveBreastLockedHour already prefers clinical
+        previousLockedHour: undefined,
+      });
+      const lockedClockSite = lockBreastClockSiteLabel(
+        lockedSide,
+        lockedHour,
+        panel.clockPositionOrSite || panel.panelTitle || ""
+      );
+      const lockedLatLabel =
+        laterality && laterality !== "auto"
+          ? laterality
+          : lockedSide === "right"
+            ? "Derecha"
+            : lockedSide === "left"
+              ? "Izquierda"
+              : panel.laterality || "";
+
       const refinePrompt = `Eres un Radiólogo experto en mama y Director de Arte Médico 3D.
 Diseña un prompt en inglés superdetallado para re-generar una única imagen breast macrofotorrealista 3D correspondiente al PANEL ${panel.panelLetter}.
 
 DATOS DEL CASO:
 - Territorio: "${breastType || "Ecografía de mama"}"
-- Posición reloj / cuadrante / sitio: "${panel.clockPositionOrSite || panel.panelTitle || ""}"
+- Posición reloj / cuadrante / sitio BLOQUEADA: "${lockedClockSite}"
+- Hora de reloj BLOQUEADA (no cambiar): "${lockedHour != null ? lockedHour + "h" : "según sitio"}"
 - Foco actual: "${panel.anatomicalFocus || ""}"
-- Lateralidad requerida: "${laterality || panel.laterality || ""}"
+- Lateralidad requerida: "${lockedLatLabel}"
 - Instrucción / Corrección del médico: "${userDirective || "Mejorar precisión anatomopatológica mamaria y BI-RADS"}"
 - DIRECTIVA CLÍNICA OBLIGATORIA (Scorecard BI-RADS / mama): "${customDirectives || "Ninguna"}"
 - Contexto del informe: """${(reportText || "").slice(0, 800)}"""
+
+${BREAST_CLOCK_PLAN_RULES_ES}
 
 REGLAS DE ESTILO:
 - Ultra-realistic 3D medical macro breast cross-section render, cinema 4D octane render style, accurate breast parenchyma and nipple-areola complex, dominant nodule cutaway with composition/margins/orientation cues, soft surgical studio lighting, pure clean background.
 - STRICTLY NO text, NO numbers, NO letters, NO arrows inside the image.
 - Respect patient laterality (AP: patient RIGHT on viewer's LEFT).
+- clockPositionOrSite en la respuesta DEBE ser exactamente "${lockedClockSite}" — PROHIBIDO cambiar la hora (p. ej. 10→2).
 
 RESPONDE EN JSON:
 {
   "panelTitle": "Título actualizado o confirmado para el panel",
-  "clockPositionOrSite": "Reloj / sitio anatómico",
-  "anatomicalFocus": "Foco anatomopatológico mamario de 1 a 2 líneas",
+  "clockPositionOrSite": "${lockedClockSite}",
+  "anatomicalFocus": "Foco anatomopatológico mamario de 1 a 2 líneas (sin explicar método de pantalla)",
   "imagePrompt": "Detailed English image generation prompt..."
 }`;
 
@@ -4939,37 +5542,68 @@ RESPONDE EN JSON:
       } catch (e) {
         refineJson = {
           panelTitle: panel.panelTitle,
-          clockPositionOrSite: panel.clockPositionOrSite || panel.panelTitle,
+          clockPositionOrSite: lockedClockSite,
           anatomicalFocus: panel.anatomicalFocus,
-          imagePrompt: `Ultra-realistic 3D medical macro breast render of ${panel.clockPositionOrSite || panel.panelTitle}, octane render, studio lighting, no text.`
+          imagePrompt: `Ultra-realistic 3D medical macro breast render of ${lockedClockSite}, octane render, studio lighting, no text.`
         };
       }
 
-      let finalPrompt = refineJson.imagePrompt || panel.promptUsed || `3D macro breast render of ${panel.panelTitle}, no text.`;
-      if (customDirectives && String(customDirectives).trim()) {
-        finalPrompt = `${finalPrompt} [MANDATORY CLINICAL DIRECTIVE: ${String(customDirectives).trim()}].`;
-      }
-      if (userDirective && userDirective.trim()) {
-        finalPrompt = `${finalPrompt} [MANDATORY SURGICAL CORRECTION: ${userDirective.trim()}].`;
-      }
-      if (laterality && laterality !== "auto") {
-        const screenMap = buildScreenLateralityConstraint(laterality, "AP / coronal");
-        finalPrompt = `[MANDATORY PATIENT LATERALITY: ${laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${screenMap} ${finalPrompt}`;
+      // Programmatic lock — ignore model if it rewrites hour/side
+      const refineHour = extractBreastClockHour(refineJson.clockPositionOrSite);
+      if (lockedHour != null && refineHour != null && refineHour !== lockedHour) {
+        refineJson.clockPositionOrSite = lockedClockSite;
       } else {
-        const screenMap = buildScreenLateralityConstraint(laterality, "AP / coronal");
-        finalPrompt = `${LATERALITY_HARD_RULES} ${screenMap} ${finalPrompt}`;
+        refineJson.clockPositionOrSite = lockedClockSite;
       }
 
-      const imageUrl = await generateMedicalImage(ai, finalPrompt);
+      let basePrompt =
+        refineJson.imagePrompt ||
+        panel.promptUsed ||
+        `3D macro breast render of ${lockedClockSite}, no text.`;
+      if (customDirectives && String(customDirectives).trim()) {
+        basePrompt = `${basePrompt} [MANDATORY CLINICAL DIRECTIVE: ${String(customDirectives).trim()}].`;
+      }
+      if (userDirective && userDirective.trim()) {
+        basePrompt = `${basePrompt} [MANDATORY SURGICAL CORRECTION: ${userDirective.trim()}].`;
+      }
+      {
+        const screenMap = buildScreenLateralityConstraint(lockedLatLabel, "AP / coronal");
+        if (lockedLatLabel && lockedLatLabel !== "auto") {
+          basePrompt = `[MANDATORY PATIENT LATERALITY: ${String(lockedLatLabel).toUpperCase()}]. ${LATERALITY_HARD_RULES} ${screenMap} ${basePrompt}`;
+        } else {
+          basePrompt = `${LATERALITY_HARD_RULES} ${screenMap} ${basePrompt}`;
+        }
+      }
+      const breastClock = buildBreastClockConstraint({
+        laterality: lockedLatLabel,
+        view: "AP / coronal",
+        pathologySite: lockedClockSite,
+        anatomicalFocus: [refineJson.anatomicalFocus, userDirective, customDirectives].filter(Boolean).join(" "),
+        studyRegion: "breast / mama",
+        panelTitle: refineJson.panelTitle || panel.panelTitle,
+      });
+      if (breastClock) basePrompt = `${breastClock} ${basePrompt}`;
+
+      const { imageUrl, promptUsed, clockQa } = await generateBreastImageWithClockQa({
+        ai,
+        model,
+        basePrompt,
+        side: lockedSide,
+        hour: lockedHour,
+        maxAttempts: 3,
+      });
 
       const updatedPanel = {
         ...panel,
         panelTitle: refineJson.panelTitle || panel.panelTitle,
-        clockPositionOrSite: refineJson.clockPositionOrSite || panel.clockPositionOrSite,
+        clockPositionOrSite: lockedClockSite,
         anatomicalFocus: refineJson.anatomicalFocus || panel.anatomicalFocus,
-        laterality: laterality || panel.laterality,
+        laterality: lockedLatLabel || panel.laterality,
+        lockedClockHour: lockedHour ?? panel.lockedClockHour,
+        lockedBreastSide: lockedSide !== "unknown" ? lockedSide : panel.lockedBreastSide,
         imageUrl: imageUrl,
-        promptUsed: finalPrompt,
+        promptUsed,
+        clockQa,
         isCustomFlipped: false
       };
 

@@ -10,8 +10,13 @@ import {
   FilePlus2,
   ShieldAlert,
   Trash2,
+  Hexagon,
 } from "lucide-react";
-import { NegativityChecklistData, NegativityChecklistItem } from "../types";
+import {
+  FindingsInfographicData,
+  NegativityChecklistData,
+  NegativityChecklistItem,
+} from "../types";
 import {
   insertNegativityIntoReport,
   negativityInsertTargetLabel,
@@ -19,6 +24,7 @@ import {
   normalizeNegativityChecklistData,
   refreshNegativityChecklistClosure,
 } from "../lib/negativityChecklist";
+import { infographicFromNegativity } from "../lib/infographicFromModules";
 
 interface NegativityChecklistModuleProps {
   selectedModel: string;
@@ -32,6 +38,8 @@ interface NegativityChecklistModuleProps {
   setIncludeInReport: (include: boolean) => void;
   /** Apply rewritten report text after narrative weave. */
   onInsertIntoReport: (nextReportText: string) => void;
+  /** One-click: open Findings Infographic from discarded / positive signs */
+  onSendToInfographic?: (data: FindingsInfographicData) => void;
 }
 
 const statusStyles = (status: NegativityChecklistItem["status"]) => {
@@ -60,6 +68,7 @@ export const NegativityChecklistModule: React.FC<NegativityChecklistModuleProps>
   includeInReport,
   setIncludeInReport,
   onInsertIntoReport,
+  onSendToInfographic,
 }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -253,6 +262,16 @@ REGLAS OBLIGATORIAS:
     setError(null);
   };
 
+  const handleSendToInfographic = () => {
+    if (!checklistData || !onSendToInfographic) return;
+    const mapped = infographicFromNegativity(checklistData);
+    if (!mapped.nodes.some((n) => n.label.trim())) {
+      setError("No hay ítems utilizables para armar la infografía.");
+      return;
+    }
+    onSendToInfographic(mapped);
+  };
+
   return (
     <div
       id="negativity-checklist-module"
@@ -292,6 +311,17 @@ REGLAS OBLIGATORIAS:
             {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
             {checklistData ? "Re-generar" : "Generar checklist"}
           </button>
+          {checklistData && onSendToInfographic && (
+            <button
+              type="button"
+              onClick={handleSendToInfographic}
+              className="px-3 py-2 rounded-xl border border-teal-500/40 bg-teal-500/10 hover:bg-teal-500/20 text-teal-100 text-[10px] font-black uppercase tracking-wide flex items-center gap-1.5"
+              title="Abre la infografía con signos descartados / presentes"
+            >
+              <Hexagon className="h-3.5 w-3.5" />
+              Infografía
+            </button>
+          )}
         </div>
       </div>
 

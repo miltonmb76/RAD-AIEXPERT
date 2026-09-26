@@ -356,6 +356,15 @@ export type BreastStudyType =
   | "mama_axilas"
   | "general_breast";
 
+export interface BreastClockQa {
+  pass: boolean;
+  observedHour: number | null;
+  targetHour: number;
+  distance: number | null;
+  issues: string[];
+  attempts: number;
+}
+
 export interface Breast3DPanel {
   id?: string;
   panelLetter: string;
@@ -363,10 +372,16 @@ export interface Breast3DPanel {
   anatomicalFocus: string;
   laterality?: string;
   clockPositionOrSite?: string;
+  /** Locked clinical clock hour (1–12) — source of truth for render/QA. */
+  lockedClockHour?: number;
+  /** Locked breast side for clock geometry. */
+  lockedBreastSide?: "left" | "right";
   panelRole?: "both_breasts" | "lesion" | "axilla";
   imageUrl?: string;
   isCustomFlipped?: boolean;
   promptUsed?: string;
+  /** Vision QA of lesion clock position after generate/regen. */
+  clockQa?: BreastClockQa | null;
 }
 
 export interface BreastLesionRow {
@@ -1146,6 +1161,178 @@ export interface SecondReaderData {
   sustain: SecondReaderSustain[];
   additions: SecondReaderAddition[];
   reviewSummary: string;
+  generatedAt?: string;
+}
+
+/** Clinical polish / enrichment orchestrator (auto-apply safe gaps into the report). */
+export type ReportEnrichmentSource =
+  | "negativity_checklist"
+  | "second_reader"
+  | "classification"
+  | "scorecard"
+  | "measurement"
+  | "guideline";
+export type ReportEnrichmentChangeStatus = "applied" | "pending" | "rejected" | "skipped";
+export type ReportEnrichmentRunStatus = "idle" | "running" | "done" | "error";
+
+export interface ReportEnrichmentClassificationMeta {
+  name: string;
+  whyRecommended: string;
+  contentToAppend: string;
+  alreadyIncorporated?: boolean;
+}
+
+/** Payload for /api/assign-measurements when source is measurement. */
+export interface ReportEnrichmentMeasurementMeta {
+  structure: string;
+  value: string;
+}
+
+/** ACR / Fleischner (etc.) citation bound as report footnote + panel tooltip. */
+export interface ReportEnrichmentGuidelineMeta {
+  id: string;
+  title: string;
+  footnote: string;
+  source: string;
+  tooltip: string;
+  viaClassification?: string;
+  alreadyBound?: boolean;
+}
+
+export interface ReportEnrichmentChange {
+  id: string;
+  source: ReportEnrichmentSource;
+  sourceItemId: string;
+  title: string;
+  reason: string;
+  suggestedText: string;
+  insertTarget: "findings" | "impression";
+  placementHint?: string;
+  status: ReportEnrichmentChangeStatus;
+  /** True when the orchestrator considered this safe for automatic weave. */
+  autoSafe: boolean;
+  /** High-severity second-reader objections are review-only (no prose weave). */
+  reviewOnly?: boolean;
+  /** Payload for /api/incorporate-classification when source is classification. */
+  classificationMeta?: ReportEnrichmentClassificationMeta;
+  /** Payload for /api/assign-measurements when source is measurement. */
+  measurementMeta?: ReportEnrichmentMeasurementMeta;
+  /** Payload for Guideline Binder footnotes when source is guideline. */
+  guidelineMeta?: ReportEnrichmentGuidelineMeta;
+}
+
+export interface ReportEnrichmentSession {
+  id: string;
+  status: ReportEnrichmentRunStatus;
+  beforeReport: string;
+  afterReport: string;
+  changes: ReportEnrichmentChange[];
+  error?: string;
+  startedAt: string;
+  finishedAt?: string;
+}
+
+/** Raw recommendation row from /api/recommend-classifications. */
+export interface ClassificationRecommendation {
+  name: string;
+  whyRecommended: string;
+  contentToAppend: string;
+  alreadyIncorporated?: boolean;
+}
+
+/** One row of the semiotics → conduct decision matrix. */
+export interface SemioticsConductRow {
+  id: string;
+  /** Main imaging finding. */
+  finding: string;
+  /** Key signs / criteria met or ruled out. */
+  signs: string;
+  /** Scale category (BI-RADS, Fleischner, clinical equivalent…). */
+  category: string;
+  /** Recommended clinical action / follow-up. */
+  conduct: string;
+  /** PDF / report anchor (panel, section…). */
+  anchor?: string;
+}
+
+/** Semiology → conduct matrix annex (manual module). */
+export interface SemioticsConductMatrixData {
+  title: string;
+  /** User-selected pathology / topic focus. */
+  focusTopic: string;
+  studyRegion?: string;
+  /** One-line actionable priority conduct (banner; replaces clinical question). */
+  priorityConduct?: string;
+  /** @deprecated Prefer priorityConduct. Kept for older sessions. */
+  clinicalQuestion?: string;
+  rows: SemioticsConductRow[];
+  /** Short footer note under the table. */
+  footnote?: string;
+  generatedAt?: string;
+}
+
+/** Visual layout modes for findings infographics. */
+export type FindingsInfographicLayout =
+  | "convergence"
+  | "constellation"
+  | "cascade"
+  | "split_compare"
+  | "timeline"
+  | "funnel"
+  | "pillars"
+  | "stack"
+  | "radial"
+  | "tree";
+
+/** What clinical content the infographic should extract. */
+export type FindingsInfographicContentMode =
+  | "justify_diagnosis"
+  | "present_findings"
+  | "ruled_out"
+  | "classification_criteria"
+  | "key_signs"
+  | "present_vs_ruled"
+  | "by_structure"
+  | "severity_ladder";
+
+export type FindingsInfographicPolarity =
+  | "present"
+  | "ruled_out"
+  | "criterion"
+  | "neutral";
+
+/** One finding node on the infographic. */
+export interface FindingsInfographicNode {
+  id: string;
+  /** Short finding label (shown as primary text). */
+  label: string;
+  /** Optional one-line elaboration. */
+  detail?: string;
+  /** Visual weight. */
+  weight?: "primary" | "secondary";
+  /** Semantic role for coloring / split layouts. */
+  polarity?: FindingsInfographicPolarity;
+  /** Optional group (structure, scale criterion family…). */
+  group?: string;
+}
+
+/**
+ * Findings infographic (manual module).
+ * First-person radiologist voice — findings only, no management, no "not mentioned".
+ */
+export interface FindingsInfographicData {
+  title: string;
+  /** Anchored diagnosis / topic focus. */
+  diagnosis: string;
+  studyRegion?: string;
+  contentMode: FindingsInfographicContentMode;
+  layout: FindingsInfographicLayout;
+  nodes: FindingsInfographicNode[];
+  /**
+   * Optional short prose under the diagram (editable).
+   * If empty, PDF/UI derive a mode-aware synthesis from the nodes.
+   */
+  synthesis?: string;
   generatedAt?: string;
 }
 

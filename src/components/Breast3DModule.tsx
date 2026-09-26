@@ -186,7 +186,9 @@ export const Breast3DModule: React.FC<Breast3DModuleProps> = ({
     }
   };
 
-  // Flip horizontal — bake into imageUrl so PDF/export see the same laterality fix as the UI
+  // Flip horizontal — bake into imageUrl so PDF/export see the same laterality fix as the UI.
+  // WARNING: flip mirrors clock hours (7↔5, 10↔2). Keep lockedClockHour as clinical target;
+  // invalidate QA so the user regenerates if the flip was accidental.
   const handleFlipHorizontal = async (panelLetter: string) => {
     if (!breastData) return;
     const panel = breastData.panels.find((p) => p.panelLetter === panelLetter);
@@ -195,11 +197,25 @@ export const Breast3DModule: React.FC<Breast3DModuleProps> = ({
       const flippedDataUrl = await flipImageDataUrl(panel.imageUrl);
       const updatedPanels = breastData.panels.map((p) => {
         if (p.panelLetter !== panelLetter) return p;
+        const hasClockLock = p.lockedClockHour != null;
         return {
           ...p,
           imageUrl: flippedDataUrl,
           isCustomFlipped: !p.isCustomFlipped,
-          laterality: swapLateralityLabel(p.laterality) || p.laterality,
+          // Do not swap laterality label when clock is locked — flip is a screen fix, not a side change
+          laterality: hasClockLock
+            ? p.laterality
+            : swapLateralityLabel(p.laterality) || p.laterality,
+          clockQa: hasClockLock
+            ? {
+                pass: false,
+                observedHour: null,
+                targetHour: p.lockedClockHour!,
+                distance: null,
+                issues: ["flipped_image_invalidates_clock_qa"],
+                attempts: p.clockQa?.attempts || 0,
+              }
+            : p.clockQa,
         };
       });
       setBreastData({
@@ -209,6 +225,11 @@ export const Breast3DModule: React.FC<Breast3DModuleProps> = ({
       if (zoomPanel?.panelLetter === panelLetter) {
         const updated = updatedPanels.find((p) => p.panelLetter === panelLetter);
         if (updated) setZoomPanel(updated);
+      }
+      if (panel.lockedClockHour != null) {
+        setErrorMessage(
+          `Flip horizontal espeja el reloj (${panel.lockedClockHour}h ↔ espejo). El objetivo clínico sigue en ${panel.lockedClockHour}h — regenera el panel si el eje quedó mal.`
+        );
       }
     } catch (flipErr) {
       console.error("Error al voltear panel vascular:", flipErr);
@@ -284,12 +305,24 @@ export const Breast3DModule: React.FC<Breast3DModuleProps> = ({
     });
   };
 
-  const handleRegenerateSinglePanel = async (panel: Breast3DPanel) => {
+  const handleRegenerateSinglePanel = async (
+    panel: Breast3DPanel,
+    explicitDirectiveOverride?: string
+  ) => {
     if (!breastData) return;
     setRegeneratingPanelLetter(panel.panelLetter);
     setErrorMessage(null);
 
-    const directive = panelDirectives[panel.panelLetter] || "";
+    const directive =
+      (explicitDirectiveOverride && explicitDirectiveOverride.trim()) ||
+      panelDirectives[panel.panelLetter] ||
+      "";
+    if (explicitDirectiveOverride && explicitDirectiveOverride.trim()) {
+      setPanelDirectives((prev) => ({
+        ...prev,
+        [panel.panelLetter]: explicitDirectiveOverride.trim(),
+      }));
+    }
     const mergedDirectives = mergeMandatoryDirectives(directive);
 
     try {
@@ -604,7 +637,7 @@ export const Breast3DModule: React.FC<Breast3DModuleProps> = ({
                       </div>
                     )}
 
-                    {/* Badge */}
+                    {/* Badge — only panel letter; never overlay clock/QA labels on the drawing */}
                     <div className="absolute top-2 left-2 bg-pink-600 text-white font-bold text-[10px] px-2 py-0.5 rounded shadow">
                       PANEL {panel.panelLetter}
                     </div>
@@ -703,9 +736,63 @@ export const Breast3DModule: React.FC<Breast3DModuleProps> = ({
                                 [panel.panelLetter]: e.target.value
                               }))
                             }
-                            placeholder="Ej: Mostrar trombo oclusivo más oscuro..."
+                            placeholder="Ej: Mama derecha eje 10 (CSE) — NO eje 2..."
                             className="w-full text-xs text-slate-900 placeholder:text-slate-400 bg-white border border-slate-300 rounded px-2 py-1"
                           />
+                          <div className="flex flex-wrap gap-1">
+                            {[
+                              "Mama derecha eje 10 CSE (superior externo / lateral — IZQUIERDA del pezón; NUNCA eje 2)",
+                              "Mama derecha eje 2 CSI (superior interno / medial — DERECHA del pezón)",
+                              "Mama derecha eje 3 medial (esternón)",
+                              "Mama derecha eje 9 lateral (axila)",
+                              "Mama izquierda eje 10 CSI (medial)",
+                              "Mama izquierda eje 2 CSE (lateral)",
+                              "Mama izquierda eje 3 lateral (axila)",
+                              "Mama izquierda eje 9 medial (esternón)",
+                            ].map((chip) => (
+                              <button
+                                key={chip}
+                                type="button"
+                                onClick={() =>
+                                  setPanelDirectives((prev) => ({
+                                    ...prev,
+                                    [panel.panelLetter]: chip,
+                                  }))
+                                }
+                                className="text-[9px] bg-white hover:bg-pink-50 border border-slate-200 hover:border-pink-400 text-slate-600 hover:text-pink-800 px-1.5 py-0.5 rounded font-mono"
+                              >
+                                + {chip.split(" — ")[0]}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="grid grid-cols-2 gap-1">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleRegenerateSinglePanel(
+                                  panel,
+                                  "CORRECCIÓN ESTRICTA MAMA DERECHA AP: reloj manecillas IDÉNTICAS. Lesión en eje/hora 10 = CSE superior externo = LATERAL/axila = IZQUIERDA del pezón en la imagen (entre 9 y 12). PROHIBIDO ponerla en eje 2 (eso es el espejo). 3=medial/esternón; 9=lateral/axila."
+                                )
+                              }
+                              disabled={regeneratingPanelLetter === panel.panelLetter}
+                              className="text-[9px] bg-pink-900/10 hover:bg-pink-100 border border-pink-300 text-pink-900 p-1.5 rounded text-left font-mono"
+                            >
+                              Mama Der: forzar eje 10 (no 2)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleRegenerateSinglePanel(
+                                  panel,
+                                  "CORRECCIÓN ESTRICTA MAMA DERECHA AP: reloj manecillas IDÉNTICAS. 12 arriba. 3 = derecha del pezón = MEDIAL/esternón. 9 = izquierda del pezón = LATERAL/axila. NUNCA espejar el reloj ni intercambiar 10↔2."
+                                )
+                              }
+                              disabled={regeneratingPanelLetter === panel.panelLetter}
+                              className="text-[9px] bg-pink-900/10 hover:bg-pink-100 border border-pink-300 text-pink-900 p-1.5 rounded text-left font-mono"
+                            >
+                              Mama Der: 3 medial / 9 lateral
+                            </button>
+                          </div>
                           <div className="flex items-center justify-end gap-1.5">
                             <button
                               onClick={() => setEditingPanelLetter(null)}

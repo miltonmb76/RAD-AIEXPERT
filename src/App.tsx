@@ -14,7 +14,11 @@ const ClinicalScorecardModule = React.lazy(() => import("./components/ClinicalSc
 const ReasoningChainModule = React.lazy(() => import("./components/ReasoningChainModule").then(m => ({ default: m.ReasoningChainModule })));
 const NegativityChecklistModule = React.lazy(() => import("./components/NegativityChecklistModule").then(m => ({ default: m.NegativityChecklistModule })));
 const SecondReaderModule = React.lazy(() => import("./components/SecondReaderModule").then(m => ({ default: m.SecondReaderModule })));
+const ReportEnrichmentPanel = React.lazy(() => import("./components/ReportEnrichmentPanel").then(m => ({ default: m.ReportEnrichmentPanel })));
+const ReportQaGateModal = React.lazy(() => import("./components/ReportQaGateModal").then(m => ({ default: m.ReportQaGateModal })));
 const DifferentialTreeModule = React.lazy(() => import("./components/DifferentialTreeModule").then(m => ({ default: m.DifferentialTreeModule })));
+const SemioticsConductMatrixModule = React.lazy(() => import("./components/SemioticsConductMatrixModule").then(m => ({ default: m.SemioticsConductMatrixModule })));
+const FindingsInfographicModule = React.lazy(() => import("./components/FindingsInfographicModule").then(m => ({ default: m.FindingsInfographicModule })));
 const MeasurementsGaugeModule = React.lazy(() => import("./components/MeasurementsGaugeModule").then(m => ({ default: m.MeasurementsGaugeModule })));
 const CreadorCuadroSinoptico = React.lazy(() => import("./components/CreadorCuadroSinoptico").then(m => ({ default: m.CreadorCuadroSinoptico })));
 const CreadorSinopsisFracturas = React.lazy(() => import("./components/CreadorSinopsisFracturas").then(m => ({ default: m.CreadorSinopsisFracturas })));
@@ -25,9 +29,20 @@ import { renderScorecardAnnexToPDF } from "./utils/scorecardPdfRenderer";
 import { renderReasoningChainAnnexToPDF } from "./utils/reasoningChainPdfRenderer";
 import { renderNegativityChecklistAnnexToPDF } from "./utils/negativityChecklistPdfRenderer";
 import { renderDifferentialTreeAnnexToPDF } from "./utils/differentialTreePdfRenderer";
+import { renderSemioticsConductMatrixAnnexToPDF } from "./utils/semioticsConductMatrixPdfRenderer";
+import { renderFindingsInfographicAnnexToPDF } from "./utils/findingsInfographicPdfRenderer";
 import { renderMeasurementsGaugeAnnexToPDF } from "./utils/measurementsGaugePdfRenderer";
-import { Atlas3DData, Vascular3DData, FocalLesion3DData, Thyroid3DData, Breast3DData, Shoulder3DData, Knee3DData, Ankle3DData, Kidney3DData, Abdomen3DData, AbdominalWall3DData, Scrotum3DData, MuscleTendon3DData, Wrist3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData, NegativityChecklistData, SecondReaderData } from "./types";
+import { Atlas3DData, Vascular3DData, FocalLesion3DData, Thyroid3DData, Breast3DData, Shoulder3DData, Knee3DData, Ankle3DData, Kidney3DData, Abdomen3DData, AbdominalWall3DData, Scrotum3DData, MuscleTendon3DData, Wrist3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData, SemioticsConductMatrixData, FindingsInfographicData, NegativityChecklistData, SecondReaderData, ReportEnrichmentSession } from "./types";
 import { buildAtlasDirectivesFromScorecard, buildAtlasPanelFindingAssignments, buildVascularDirectivesFromScorecard, buildThyroidDirectivesFromScorecard, buildBreastDirectivesFromScorecard, buildShoulderDirectivesFromScorecard, buildKneeDirectivesFromScorecard, buildAnkleDirectivesFromScorecard, buildKidneyDirectivesFromScorecard, buildAbdomenDirectivesFromScorecard, buildAbdominalWallDirectivesFromScorecard, buildScrotumDirectivesFromScorecard, buildMuscleTendonDirectivesFromScorecard, buildWristDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
+import {
+  applyPendingEnrichmentChanges,
+  createRunningEnrichmentSession,
+  runReportEnrichmentPipeline,
+} from "./lib/reportEnrichment";
+import {
+  runReportQaGate,
+  type ReportQaGateResult,
+} from "./lib/reportQaGate";
 import { Vascular3DModule } from "./components/Vascular3DModule";
 import { FocalLesion3DModule } from "./components/FocalLesion3DModule";
 import { Thyroid3DModule } from "./components/Thyroid3DModule";
@@ -140,7 +155,9 @@ import {
   Box,
   Crosshair,
   GitBranch,
-  GitFork
+  GitFork,
+  Table2,
+  Hexagon
 } from "lucide-react";
 import { initAuth, googleSignIn, logout as googleLogout, anonymousSignIn, emailSignIn, emailSignUp, getFirebaseConfig } from "./firebaseAuth";
 import { CloudStudy, saveStudyToCloud, getStudiesFromCloud, deleteStudyFromCloud, Worklist, WorklistPatient, saveWorklistToCloud, getWorklistFromCloud, getSingleStudyFromCloud, testFirebaseConfigConnection, saveUserSettingsToCloud, getUserSettingsFromCloud } from "./firebaseDb";
@@ -1275,13 +1292,13 @@ const getSpecificSuiteShortcut = (
     selected.includes("pantorrilla") ||
     selected.includes("aquiles")
   ) {
-    return { id: "muscleTendon3d", label: "Suite M˙sculo-TendÛn 3D" };
+    return { id: "muscleTendon3d", label: "Suite M√∫sculo-Tend√≥n 3D" };
   }
   if (selected.includes("muneca") || selected.includes("carpo")) {
-    return { id: "wrist3d", label: "Suite MuÒeca 3D" };
+    return { id: "wrist3d", label: "Suite Mu√±eca 3D" };
   }
   if (selected.includes("vias urinarias") || selected.includes("renal") || selected.includes("rinon")) {
-    return { id: "kidney3d", label: "Suite RiÒÛn 3D" };
+    return { id: "kidney3d", label: "Suite Ri√±√≥n 3D" };
   }
   if (selected.includes("pared abdominal")) {
     return { id: "abdominalWall3d", label: "Suite Pared Abdominal 3D" };
@@ -2897,9 +2914,21 @@ export default function App() {
   const [isNegativityChecklistOpen, setIsNegativityChecklistOpen] = useState<boolean>(false);
   const [secondReaderData, setSecondReaderData] = useState<SecondReaderData | null>(null);
   const [isSecondReaderOpen, setIsSecondReaderOpen] = useState<boolean>(false);
+  const [reportEnrichmentSession, setReportEnrichmentSession] = useState<ReportEnrichmentSession | null>(null);
+  const [isEnrichingReport, setIsEnrichingReport] = useState<boolean>(false);
+  const [applyingEnrichmentIds, setApplyingEnrichmentIds] = useState<string[]>([]);
+  const [qaGateResult, setQaGateResult] = useState<ReportQaGateResult | null>(null);
+  const [qaGateAckFingerprint, setQaGateAckFingerprint] = useState<string>("");
+  const qaGatePendingActionRef = useRef<null | (() => void)>(null);
   const [differentialTreeData, setDifferentialTreeData] = useState<DifferentialTreeData | null>(null);
   const [includeDifferentialTreeInReport, setIncludeDifferentialTreeInReport] = useState<boolean>(true);
   const [isDifferentialTreeOpen, setIsDifferentialTreeOpen] = useState<boolean>(false);
+  const [semioticsConductMatrixData, setSemioticsConductMatrixData] = useState<SemioticsConductMatrixData | null>(null);
+  const [includeSemioticsConductMatrixInReport, setIncludeSemioticsConductMatrixInReport] = useState<boolean>(true);
+  const [isSemioticsConductMatrixOpen, setIsSemioticsConductMatrixOpen] = useState<boolean>(false);
+  const [findingsInfographicData, setFindingsInfographicData] = useState<FindingsInfographicData | null>(null);
+  const [includeFindingsInfographicInReport, setIncludeFindingsInfographicInReport] = useState<boolean>(true);
+  const [isFindingsInfographicOpen, setIsFindingsInfographicOpen] = useState<boolean>(false);
   const [atlasDirectivesFromScorecard, setAtlasDirectivesFromScorecard] = useState<string>("");
   const [measurementGaugeData, setMeasurementGaugeData] = useState<MeasurementGaugeData | null>(null);
   const [includeMeasurementGaugesInReport, setIncludeMeasurementGaugesInReport] = useState<boolean>(true);
@@ -2989,6 +3018,10 @@ export default function App() {
     secondReaderData,
     differentialTreeData,
     includeDifferentialTreeInReport,
+    semioticsConductMatrixData,
+    includeSemioticsConductMatrixInReport,
+    findingsInfographicData,
+    includeFindingsInfographicInReport,
     measurementGaugeData,
     includeMeasurementGaugesInReport,
     includeMeasurementNormalsInPdf,
@@ -3665,6 +3698,8 @@ Ejemplo:
     negativity_checklist: false,
     second_reader: false,
     differential_tree: false,
+    semiotics_conduct_matrix: false,
+    findings_infographic: false,
     atlas3d: false,
     vascular3d: false,
     thyroid3d: false,
@@ -3699,7 +3734,217 @@ Ejemplo:
   const [isActivatingBatch, setIsActivatingBatch] = useState<boolean>(false);
   const [batchSuccessMessage, setBatchSuccessMessage] = useState<string | null>(null);
   const [autoActivateSpecificSuite, setAutoActivateSpecificSuite] = useState<boolean>(true);
+  const [autoClinicalPolish, setAutoClinicalPolish] = useState<boolean>(true);
   const selectedSpecificSuite = getSpecificSuiteShortcut(specificStudy, modality);
+
+  const applyEnrichedReportToEditor = (nextReport: string, previousReport?: string) => {
+    const prev = (previousReport ?? generatedReport ?? "").trim();
+    if (prev && prev !== nextReport) {
+      setReportHistory((h) => [...h, prev]);
+      setReportRedoHistory([]);
+    }
+    setGeneratedReport(nextReport);
+    setEditedReportText(nextReport);
+  };
+
+  const runClinicalPolishForReport = async (reportText: string) => {
+    const draft = String(reportText || "").trim();
+    if (!draft || !autoClinicalPolish) return;
+
+    setIsEnrichingReport(true);
+    setReportEnrichmentSession(createRunningEnrichmentSession(draft));
+    setIsNegativityChecklistOpen(true);
+    setIsSecondReaderOpen(true);
+    setIsClinicalScorecardOpen(true);
+
+    try {
+      const result = await runReportEnrichmentPipeline({
+        report: draft,
+        studyType: specificStudy || studyType || "",
+        clinicalHistory: clinicalHistory || "",
+        checklistModel: modelFor("negativity_checklist"),
+        readerModel: modelFor("second_reader"),
+        modifyModel: modelFor("report_modify"),
+        classificationsModel: modelFor("classifications"),
+        scorecardModel: modelFor("clinical_scorecard"),
+        measurementsModel: modelFor("measurements"),
+        includeManagementRecommendations: true,
+        existingScorecard: clinicalScorecardData,
+      });
+
+      if (result.checklist) {
+        setNegativityChecklistData(result.checklist);
+        setIncludeNegativityChecklistInReport(true);
+      }
+      if (result.reader) {
+        setSecondReaderData(result.reader);
+      }
+      if (result.scorecard) {
+        setClinicalScorecardData(result.scorecard);
+        setIncludeScorecardInReport(true);
+      }
+      if (result.measurements && result.measurements.length > 0) {
+        setIsAsistenteMedidasOpen(true);
+      }
+      if (result.classifications && result.classifications.length > 0) {
+        setClassRecommendations(result.classifications);
+        const incorporated: Record<number, boolean> = {};
+        result.classifications.forEach((rec, idx) => {
+          if (rec.alreadyIncorporated) incorporated[idx] = true;
+        });
+        setIncorporatedRecs(incorporated);
+      }
+
+      setReportEnrichmentSession(result.session);
+
+      if (
+        result.session.status === "done" &&
+        result.report.trim() &&
+        result.report.trim() !== draft
+      ) {
+        applyEnrichedReportToEditor(result.report, draft);
+      }
+    } catch (err: any) {
+      console.error("Pulido cl√≠nico fall√≥:", err);
+      setReportEnrichmentSession((prev) =>
+        prev
+          ? {
+              ...prev,
+              status: "error",
+              error: err?.message || String(err),
+              finishedAt: new Date().toISOString(),
+            }
+          : null
+      );
+    } finally {
+      setIsEnrichingReport(false);
+    }
+  };
+
+  const handleUndoClinicalPolish = () => {
+    if (!reportEnrichmentSession?.beforeReport) return;
+    const before = reportEnrichmentSession.beforeReport;
+    applyEnrichedReportToEditor(before, generatedReport || undefined);
+    setReportEnrichmentSession({
+      ...reportEnrichmentSession,
+      afterReport: before,
+      changes: reportEnrichmentSession.changes.map((c) =>
+        c.status === "applied"
+          ? { ...c, status: "pending" as const, autoSafe: false }
+          : c
+      ),
+    });
+  };
+
+  const handleRejectEnrichmentChange = (changeId: string) => {
+    setReportEnrichmentSession((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        changes: prev.changes.map((c) =>
+          c.id === changeId ? { ...c, status: "rejected" as const } : c
+        ),
+      };
+    });
+  };
+
+  const handleApplyEnrichmentChange = async (changeId: string) => {
+    if (!reportEnrichmentSession || !generatedReport) return;
+    setApplyingEnrichmentIds([changeId]);
+    try {
+      const result = await applyPendingEnrichmentChanges({
+        report: generatedReport,
+        modifyModel: modelFor("report_modify"),
+        classificationsModel: modelFor("classifications"),
+        measurementsModel: modelFor("measurements"),
+        studyType: specificStudy || studyType || "",
+        includeManagementRecommendations: true,
+        session: reportEnrichmentSession,
+        changeIds: [changeId],
+        checklist: negativityChecklistData,
+        reader: secondReaderData,
+      });
+      if (result.checklist) setNegativityChecklistData(result.checklist);
+      if (result.reader) setSecondReaderData(result.reader);
+      setReportEnrichmentSession(result.session);
+      if (result.report.trim() && result.report !== generatedReport) {
+        applyEnrichedReportToEditor(result.report);
+      }
+      // Keep classRecommendations board in sync when a classification was applied
+      setClassRecommendations((prev) => {
+        if (!prev) return prev;
+        return prev.map((rec) => {
+          const hit = result.session.changes.find(
+            (c) =>
+              c.source === "classification" &&
+              c.status === "applied" &&
+              c.classificationMeta?.name === rec.name
+          );
+          return hit ? { ...rec, alreadyIncorporated: true } : rec;
+        });
+      });
+    } catch (err: any) {
+      console.error("Error aplicando cambio de pulido:", err);
+      setModifyError(err?.message || String(err));
+    } finally {
+      setApplyingEnrichmentIds([]);
+    }
+  };
+
+  const handleApplyRemainingEnrichment = async () => {
+    if (!reportEnrichmentSession || !generatedReport) return;
+    const ids = reportEnrichmentSession.changes
+      .filter(
+        (c) =>
+          c.status === "pending" &&
+          !c.reviewOnly &&
+          (c.source === "classification"
+            ? !!c.classificationMeta?.name
+            : c.source === "measurement"
+              ? !!(c.measurementMeta?.structure && c.measurementMeta?.value)
+              : !!c.suggestedText.trim())
+      )
+      .map((c) => c.id);
+    if (!ids.length) return;
+    setApplyingEnrichmentIds(ids);
+    try {
+      const result = await applyPendingEnrichmentChanges({
+        report: generatedReport,
+        modifyModel: modelFor("report_modify"),
+        classificationsModel: modelFor("classifications"),
+        measurementsModel: modelFor("measurements"),
+        studyType: specificStudy || studyType || "",
+        includeManagementRecommendations: true,
+        session: reportEnrichmentSession,
+        changeIds: ids,
+        checklist: negativityChecklistData,
+        reader: secondReaderData,
+      });
+      if (result.checklist) setNegativityChecklistData(result.checklist);
+      if (result.reader) setSecondReaderData(result.reader);
+      setReportEnrichmentSession(result.session);
+      if (result.report.trim() && result.report !== generatedReport) {
+        applyEnrichedReportToEditor(result.report);
+      }
+      setClassRecommendations((prev) => {
+        if (!prev) return prev;
+        return prev.map((rec) => {
+          const hit = result.session.changes.find(
+            (c) =>
+              c.source === "classification" &&
+              c.status === "applied" &&
+              c.classificationMeta?.name === rec.name
+          );
+          return hit ? { ...rec, alreadyIncorporated: true } : rec;
+        });
+      });
+    } catch (err: any) {
+      console.error("Error aplicando cambios restantes de pulido:", err);
+      setModifyError(err?.message || String(err));
+    } finally {
+      setApplyingEnrichmentIds([]);
+    }
+  };
 
   const handleToggleAllBatchModules = (select: boolean) => {
     setSelectedBatchModules({
@@ -3708,6 +3953,8 @@ Ejemplo:
       negativity_checklist: select,
       second_reader: select,
       differential_tree: select,
+      semiotics_conduct_matrix: select,
+      findings_infographic: select,
       atlas3d: select,
       vascular3d: select,
       thyroid3d: select,
@@ -3763,6 +4010,8 @@ Ejemplo:
     if (modules.negativity_checklist) setIsNegativityChecklistOpen(true);
     if (modules.second_reader) setIsSecondReaderOpen(true);
     if (modules.differential_tree) setIsDifferentialTreeOpen(true);
+    if (modules.semiotics_conduct_matrix) setIsSemioticsConductMatrixOpen(true);
+    if (modules.findings_infographic) setIsFindingsInfographicOpen(true);
     // 2. Trigger async AI generation processes concurrently
     const promises: Promise<any>[] = [];
 
@@ -4380,6 +4629,66 @@ Ejemplo:
       })());
     }
 
+    if (modules.semiotics_conduct_matrix) {
+      promises.push((async () => {
+        setIsSemioticsConductMatrixOpen(true);
+        try {
+          const resp = await fetch("/api/generate-semiotics-conduct-matrix", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: modelFor("semiotics_conduct_matrix"),
+              report: activeReport,
+              studyType: specificStudy || studyType || "",
+              clinicalHistory: clinicalHistory || "",
+              focusTopic: "Auto (del informe)",
+              focusPreset: "auto",
+            }),
+          });
+          const j = await resp.json();
+          if (j.success && j.data) {
+            setSemioticsConductMatrixData(j.data);
+            setIncludeSemioticsConductMatrixInReport(true);
+          } else {
+            console.error("Matriz semiologia-conducta en lote fallo:", j.error);
+          }
+        } catch (e) {
+          console.error("Error al generar matriz semiologia-conducta en lote:", e);
+        }
+      })());
+    }
+
+    if (modules.findings_infographic) {
+      promises.push((async () => {
+        setIsFindingsInfographicOpen(true);
+        try {
+          const resp = await fetch("/api/generate-findings-infographic", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: modelFor("findings_infographic"),
+              report: activeReport,
+              studyType: specificStudy || studyType || "",
+              clinicalHistory: clinicalHistory || "",
+              diagnosis: "DiagnÛstico del informe",
+              diagnosisPreset: "auto",
+              layout: "auto",
+              contentMode: "justify_diagnosis",
+            }),
+          });
+          const j = await resp.json();
+          if (j.success && j.data) {
+            setFindingsInfographicData(j.data);
+            setIncludeFindingsInfographicInReport(true);
+          } else {
+            console.error("Infografia de hallazgos en lote fallo:", j.error);
+          }
+        } catch (e) {
+          console.error("Error al generar infografia de hallazgos en lote:", e);
+        }
+      })());
+    }
+
     try {
       await Promise.allSettled(promises);
       const activeCount = Object.values(modules).filter(Boolean).length;
@@ -4958,6 +5267,7 @@ Ejemplo:
         }
         setGeneratedReport(data.report);
         setOriginalBaseReport(data.report);
+        setReportEnrichmentSession(null);
 
         if (attachedImages.length > 0) {
           void autoLabelImagesAfterReport(String(data.report || ""));
@@ -4978,6 +5288,9 @@ Ejemplo:
           const reportText = String(data.report || "").trim();
           setSelectedBatchModules(batchSelection);
           void handleActivateBatchModules(reportText, batchSelection);
+          if (autoClinicalPolish) {
+            void runClinicalPolishForReport(reportText);
+          }
         } else {
           setSelectedBatchModules({ ...DEFAULT_BATCH_MODULES });
         }
@@ -6686,16 +6999,71 @@ Ejemplo:
     }
   };
 
-  // PDF Printing Utilities
-  const handlePrintPDF = () => {
-    if (!generatedReport) return;
-    setShowPrintModal(true);
-    // Attempt window.print() but also show the on-screen helper modal
-    try {
-      window.print();
-    } catch (e) {
-      console.warn("window.print block protected", e);
+  // PDF Printing Utilities ? QA Gate before export / print / share
+  const buildReportQaFingerprint = () => {
+    const pending =
+      reportEnrichmentSession?.changes?.filter((c) => c.status === "pending").length || 0;
+    return [
+      (generatedReport || "").length,
+      laterality || "",
+      studyType || "",
+      clinicalScorecardData?.categoryAssigned || "",
+      clinicalScorecardData?.recommendation?.slice(0, 40) || "",
+      String(pending),
+    ].join("|");
+  };
+
+  const guardReportPdfExport = (action: () => void | Promise<void>) => {
+    if (!generatedReport) {
+      void action();
+      return;
     }
+    const fingerprint = buildReportQaFingerprint();
+    if (qaGateAckFingerprint && qaGateAckFingerprint === fingerprint) {
+      void action();
+      return;
+    }
+    const result = runReportQaGate({
+      reportText: generatedReport,
+      laterality,
+      studyType,
+      scorecard: clinicalScorecardData,
+      enrichmentSession: reportEnrichmentSession,
+    });
+    if (result.ok) {
+      void action();
+      return;
+    }
+    qaGatePendingActionRef.current = () => {
+      setQaGateAckFingerprint(fingerprint);
+      setQaGateResult(null);
+      qaGatePendingActionRef.current = null;
+      void action();
+    };
+    setQaGateResult(result);
+  };
+
+  const handleDismissQaGate = () => {
+    qaGatePendingActionRef.current = null;
+    setQaGateResult(null);
+  };
+
+  const handleProceedQaGateAnyway = () => {
+    const pending = qaGatePendingActionRef.current;
+    if (pending) pending();
+    else setQaGateResult(null);
+  };
+
+  const handlePrintPDF = () => {
+    guardReportPdfExport(() => {
+      if (!generatedReport) return;
+      setShowPrintModal(true);
+      try {
+        window.print();
+      } catch (e) {
+        console.warn("window.print block protected", e);
+      }
+    });
   };
 
   const ensureCompatibleImageFormat = compressImageForAttachment;
@@ -10612,6 +10980,85 @@ Ejemplo:
         await renderAbdomen3DPageToPdf(doc, activeAbdomenData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
       }
 
+      // --- ANEXO: ELASTOGRAFIA & QUS (pagina dedicada, tras Suite Abdomen 3D) ---
+      // Only include when the user explicitly enabled "Adjuntar al PDF" in the Elastografia module.
+      const activeElastoInclude = studyOverride
+        ? (studyOverride as any).includeElastographyInReport === true
+        : (pdfStateRef.current?.includeElastographyInReport === true || includeElastographyInReport === true);
+      if (activeElastoInclude) {
+        const elastoKpa: number = studyOverride ? ((studyOverride as any).elastographyStiffness ?? elastographyStiffness) : (pdfStateRef.current?.elastographyStiffness ?? elastographyStiffness);
+        const elastoCap: number = studyOverride ? ((studyOverride as any).elastographyCAP ?? elastographyCAP) : (pdfStateRef.current?.elastographyCAP ?? elastographyCAP);
+        const elastoFat: number = studyOverride ? ((studyOverride as any).elastographyFatFraction ?? elastographyFatFraction) : (pdfStateRef.current?.elastographyFatFraction ?? elastographyFatFraction);
+        const elastoImg3d: string | null = studyOverride ? ((studyOverride as any).elastographyImage3d ?? null) : (pdfStateRef.current?.elastographyImage3d ?? elastographyImage3d);
+        const elastoOriginalImg: string | null = studyOverride ? ((studyOverride as any).elastographyOriginalImage ?? null) : (pdfStateRef.current?.elastographyOriginalImage ?? elastographyOriginalImage);
+        const elastoEtiology: string = studyOverride ? ((studyOverride as any).elastographyEtiology ?? "masld") : (pdfStateRef.current?.elastographyEtiology ?? elastographyEtiology);
+
+        {
+          let elastoFibrosisStage: "F0" | "F1" | "F2" | "F3" | "F4" = "F0";
+          if (elastoKpa < 6.0) elastoFibrosisStage = "F0";
+          else if (elastoKpa < 7.2) elastoFibrosisStage = "F1";
+          else if (elastoKpa < 9.5) elastoFibrosisStage = "F2";
+          else if (elastoKpa < 12.5) elastoFibrosisStage = "F3";
+          else elastoFibrosisStage = "F4";
+
+          let elastoSteatosisGrade: "S0" | "S1" | "S2" | "S3" = "S0";
+          if (elastoFat < 5.0) elastoSteatosisGrade = "S0";
+          else if (elastoFat <= 12.0) elastoSteatosisGrade = "S1";
+          else if (elastoFat <= 20.0) elastoSteatosisGrade = "S2";
+          else elastoSteatosisGrade = "S3";
+
+          let elastoBaveno = "";
+          if (elastoKpa < 5.0) elastoBaveno = "Parenquima Hepatico Sano (< 5.0 kPa): Sin sospecha de dano hepatico.";
+          else if (elastoKpa < 10.0) elastoBaveno = "Zona de Seguridad (< 10.0 kPa): Se descarta cACLD con alta certeza.";
+          else if (elastoKpa < 15.0) elastoBaveno = "Zona Gris (10.0-14.9 kPa): Sospecha de cACLD. Requiere test confirmatorio (FIB-4 / ELF).";
+          else if (elastoKpa < 20.0) elastoBaveno = "cACLD Sugestiva (15.0-19.9 kPa): Riesgo intermedio de Hipertension Portal Clinicamente Significativa (CSPH).";
+          else if (elastoKpa <= 25.0) elastoBaveno = "CSPH Altamente Probable (20.0-25.0 kPa): Cumple criterios Baveno VII para hipertension portal clinicamente relevante.";
+          else elastoBaveno = "Riesgo Severo (> 25.0 kPa): Marcada hipertension portal con indicacion de tamizaje endoscopico y profilaxis.";
+
+          const elastoHistoMap: Record<string, string> = {
+            F0: "Microarquitectura lobulillar preservada. Sin expansion fibrosa ni distorsion sinusoidal.",
+            F1: "Fibrosis portal inicial con discreta expansion periportal. Sin puentes conectivos.",
+            F2: "Fibrosis periportal con escasos puentes septales incompletos. Orientacion lobulillar conservada.",
+            F3: "Fibrosis avanzada en puentes porto-centrales y porto-portales multiples.",
+            F4: "Cirrosis establecida (F4): Nodulos regenerativos rodeados por bandas densas de tejido conectivo fibrilar.",
+          };
+          let elastoHisto = elastoHistoMap[elastoFibrosisStage] || "";
+          if (elastoSteatosisGrade !== "S0") {
+            elastoHisto += ` Coexiste esteatosis ${elastoSteatosisGrade === "S1" ? "leve (5-33%)" : elastoSteatosisGrade === "S2" ? "moderada (33-66%)" : "severa (>66%)"} de hepatocitos.`;
+          }
+
+          const elastoVelocity = parseFloat(Math.sqrt((elastoKpa * 1000) / 3000).toFixed(2));
+          const elastoIqr = parseFloat((elastoKpa * 0.12).toFixed(1));
+          const elastoIqrRatio = parseFloat(((elastoIqr / elastoKpa) * 100).toFixed(1));
+
+          const elastoEtiologyLabels: Record<string, string> = {
+            masld: "MASLD / Esteatosis Metabolica",
+            viral_c: "Hepatitis Viral C (VHC)",
+            viral_b: "Hepatitis Viral B (VHB)",
+            ald: "Alcohol / ARLD",
+            cholestatic: "Colestasica / CBP / CEP",
+            general: "Hepatopatia Indeterminada / General",
+          };
+
+          renderElastographyAnnexToPdf(doc, {
+            stiffnessKpa: elastoKpa,
+            capDbM: elastoCap,
+            fatFractionPercent: elastoFat,
+            etiology: elastoEtiologyLabels[elastoEtiology] || elastoEtiology,
+            fibrosisStage: elastoFibrosisStage,
+            steatosisGrade: elastoSteatosisGrade,
+            bavenoClassification: elastoBaveno,
+            histologicalCorrelation: elastoHisto,
+            velocityMs: elastoVelocity,
+            iqrKpa: elastoIqr,
+            iqrMedianRatioPercent: elastoIqrRatio,
+            image3dBase64: elastoImg3d,
+            originalImageBase64: elastoOriginalImg,
+          }, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter");
+        }
+      }
+
+
       const activeAbdominalWallData = studyOverride ? studyOverride.abdominalWall3dData : (pdfStateRef.current?.abdominalWall3dData || abdominalWall3dData);
       const shouldIncludeAbdominalWall = studyOverride ? (studyOverride.includeAbdominalWall3dInReport !== false) : (pdfStateRef.current?.includeAbdominalWall3dInReport !== false && includeAbdominalWall3dInReport);
       if (activeAbdominalWallData && shouldIncludeAbdominalWall && (activeAbdominalWallData.panels?.length || activeAbdominalWallData.findingTable?.length)) {
@@ -10742,6 +11189,50 @@ Ejemplo:
         });
       }
 
+      // --- ANEXO: MATRIZ SEMIOLOGIA ? CONDUCTA ---
+      const activeSemioticsMatrix = studyOverride
+        ? (studyOverride as any).semioticsConductMatrixData
+        : (pdfStateRef.current?.semioticsConductMatrixData || semioticsConductMatrixData);
+      const shouldIncludeSemioticsMatrix = studyOverride
+        ? ((studyOverride as any).includeSemioticsConductMatrixInReport !== false)
+        : ((pdfStateRef.current?.includeSemioticsConductMatrixInReport !== false) && includeSemioticsConductMatrixInReport);
+      if (
+        activeSemioticsMatrix &&
+        shouldIncludeSemioticsMatrix &&
+        Array.isArray(activeSemioticsMatrix.rows) &&
+        activeSemioticsMatrix.rows.length > 0
+      ) {
+        renderSemioticsConductMatrixAnnexToPDF(doc, activeSemioticsMatrix, {
+          marginX,
+          pageWidth,
+          pageHeight,
+          contentWidth,
+          factor,
+        });
+      }
+
+      // --- ANEXO: INFOGRAFIA DE JUSTIFICACION DIAGNOSTICA ---
+      const activeFindingsInfographic = studyOverride
+        ? (studyOverride as any).findingsInfographicData
+        : (pdfStateRef.current?.findingsInfographicData || findingsInfographicData);
+      const shouldIncludeFindingsInfographic = studyOverride
+        ? ((studyOverride as any).includeFindingsInfographicInReport !== false)
+        : ((pdfStateRef.current?.includeFindingsInfographicInReport !== false) && includeFindingsInfographicInReport);
+      if (
+        activeFindingsInfographic &&
+        shouldIncludeFindingsInfographic &&
+        Array.isArray(activeFindingsInfographic.nodes) &&
+        activeFindingsInfographic.nodes.length > 0
+      ) {
+        await renderFindingsInfographicAnnexToPDF(doc, activeFindingsInfographic, {
+          marginX,
+          pageWidth,
+          pageHeight,
+          contentWidth,
+          factor,
+        });
+      }
+
       // --- ANEXO: MEDICIONES CUANTITATIVAS vs RANGO ---
       const activeMeasurementGauges = studyOverride
         ? (studyOverride as any).measurementGaugeData
@@ -10782,84 +11273,6 @@ Ejemplo:
         });
       }
 
-
-      // --- 5.7. ANEXO: EVALUACION MULTIPARAMETRICA - ELASTOGRAFIA & QUS (PAGINA DEDICADA) ---
-      // Only include when the user explicitly enabled "Adjuntar al PDF" in the Elastografia module.
-      const activeElastoInclude = studyOverride
-        ? (studyOverride as any).includeElastographyInReport === true
-        : (pdfStateRef.current?.includeElastographyInReport === true || includeElastographyInReport === true);
-      if (activeElastoInclude) {
-        const elastoKpa: number = studyOverride ? ((studyOverride as any).elastographyStiffness ?? elastographyStiffness) : (pdfStateRef.current?.elastographyStiffness ?? elastographyStiffness);
-        const elastoCap: number = studyOverride ? ((studyOverride as any).elastographyCAP ?? elastographyCAP) : (pdfStateRef.current?.elastographyCAP ?? elastographyCAP);
-        const elastoFat: number = studyOverride ? ((studyOverride as any).elastographyFatFraction ?? elastographyFatFraction) : (pdfStateRef.current?.elastographyFatFraction ?? elastographyFatFraction);
-        const elastoImg3d: string | null = studyOverride ? ((studyOverride as any).elastographyImage3d ?? null) : (pdfStateRef.current?.elastographyImage3d ?? elastographyImage3d);
-        const elastoOriginalImg: string | null = studyOverride ? ((studyOverride as any).elastographyOriginalImage ?? null) : (pdfStateRef.current?.elastographyOriginalImage ?? elastographyOriginalImage);
-        const elastoEtiology: string = studyOverride ? ((studyOverride as any).elastographyEtiology ?? "masld") : (pdfStateRef.current?.elastographyEtiology ?? elastographyEtiology);
-
-        {
-          let elastoFibrosisStage: "F0" | "F1" | "F2" | "F3" | "F4" = "F0";
-          if (elastoKpa < 6.0) elastoFibrosisStage = "F0";
-          else if (elastoKpa < 7.2) elastoFibrosisStage = "F1";
-          else if (elastoKpa < 9.5) elastoFibrosisStage = "F2";
-          else if (elastoKpa < 12.5) elastoFibrosisStage = "F3";
-          else elastoFibrosisStage = "F4";
-
-          let elastoSteatosisGrade: "S0" | "S1" | "S2" | "S3" = "S0";
-          if (elastoFat < 5.0) elastoSteatosisGrade = "S0";
-          else if (elastoFat <= 12.0) elastoSteatosisGrade = "S1";
-          else if (elastoFat <= 20.0) elastoSteatosisGrade = "S2";
-          else elastoSteatosisGrade = "S3";
-
-          let elastoBaveno = "";
-          if (elastoKpa < 5.0) elastoBaveno = "Parenquima Hepatico Sano (< 5.0 kPa): Sin sospecha de dano hepatico.";
-          else if (elastoKpa < 10.0) elastoBaveno = "Zona de Seguridad (< 10.0 kPa): Se descarta cACLD con alta certeza.";
-          else if (elastoKpa < 15.0) elastoBaveno = "Zona Gris (10.0-14.9 kPa): Sospecha de cACLD. Requiere test confirmatorio (FIB-4 / ELF).";
-          else if (elastoKpa < 20.0) elastoBaveno = "cACLD Sugestiva (15.0-19.9 kPa): Riesgo intermedio de Hipertension Portal Clinicamente Significativa (CSPH).";
-          else if (elastoKpa <= 25.0) elastoBaveno = "CSPH Altamente Probable (20.0-25.0 kPa): Cumple criterios Baveno VII para hipertension portal clinicamente relevante.";
-          else elastoBaveno = "Riesgo Severo (> 25.0 kPa): Marcada hipertension portal con indicacion de tamizaje endoscopico y profilaxis.";
-
-          const elastoHistoMap: Record<string, string> = {
-            F0: "Microarquitectura lobulillar preservada. Sin expansion fibrosa ni distorsion sinusoidal.",
-            F1: "Fibrosis portal inicial con discreta expansion periportal. Sin puentes conectivos.",
-            F2: "Fibrosis periportal con escasos puentes septales incompletos. Orientacion lobulillar conservada.",
-            F3: "Fibrosis avanzada en puentes porto-centrales y porto-portales multiples.",
-            F4: "Cirrosis establecida (F4): Nodulos regenerativos rodeados por bandas densas de tejido conectivo fibrilar.",
-          };
-          let elastoHisto = elastoHistoMap[elastoFibrosisStage] || "";
-          if (elastoSteatosisGrade !== "S0") {
-            elastoHisto += ` Coexiste esteatosis ${elastoSteatosisGrade === "S1" ? "leve (5-33%)" : elastoSteatosisGrade === "S2" ? "moderada (33-66%)" : "severa (>66%)"} de hepatocitos.`;
-          }
-
-          const elastoVelocity = parseFloat(Math.sqrt((elastoKpa * 1000) / 3000).toFixed(2));
-          const elastoIqr = parseFloat((elastoKpa * 0.12).toFixed(1));
-          const elastoIqrRatio = parseFloat(((elastoIqr / elastoKpa) * 100).toFixed(1));
-
-          const elastoEtiologyLabels: Record<string, string> = {
-            masld: "MASLD / Esteatosis Metabolica",
-            viral_c: "Hepatitis Viral C (VHC)",
-            viral_b: "Hepatitis Viral B (VHB)",
-            ald: "Alcohol / ARLD",
-            cholestatic: "Colestasica / CBP / CEP",
-            general: "Hepatopatia Indeterminada / General",
-          };
-
-          renderElastographyAnnexToPdf(doc, {
-            stiffnessKpa: elastoKpa,
-            capDbM: elastoCap,
-            fatFractionPercent: elastoFat,
-            etiology: elastoEtiologyLabels[elastoEtiology] || elastoEtiology,
-            fibrosisStage: elastoFibrosisStage,
-            steatosisGrade: elastoSteatosisGrade,
-            bavenoClassification: elastoBaveno,
-            histologicalCorrelation: elastoHisto,
-            velocityMs: elastoVelocity,
-            iqrKpa: elastoIqr,
-            iqrMedianRatioPercent: elastoIqrRatio,
-            image3dBase64: elastoImg3d,
-            originalImageBase64: elastoOriginalImg,
-          }, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter");
-        }
-      }
 
       // --- 6. ANEXOS DE IM√ÅGENES DIAGN√ìSTICAS (MAMOGRAF√çA Y ULTRASONIDO) ---
       if (attachedImages.length > 0) {
@@ -18957,12 +19370,29 @@ const splitReportAndAnnex = (text: string) => {
                       />
                       <div className="min-w-0">
                         <p className="text-[10px] font-black uppercase tracking-wider text-slate-200">
-                          Activar suite 3D especÌfica con Reporte completo
+                          Activar suite 3D espec√≠fica con Reporte completo
                         </p>
                         <p className="mt-0.5 text-[9px] leading-relaxed text-slate-500">
                           {selectedSpecificSuite
-                            ? `${selectedSpecificSuite.label} se generar· autom·ticamente porque seleccionaste ?${specificStudy}?.`
-                            : "El estudio seleccionado no tiene una suite 3D especÌfica; podr·s elegir Atlas u otros mÛdulos despuÈs."}
+                            ? `${selectedSpecificSuite.label} se generar√° autom√°ticamente porque seleccionaste ¬´${specificStudy}¬ª.`
+                            : "El estudio seleccionado no tiene una suite 3D espec√≠fica; podr√°s elegir Atlas u otros m√≥dulos despu√©s."}
+                        </p>
+                      </div>
+                    </label>
+
+                    <label className="flex items-center gap-3 rounded-xl border border-cyan-500/25 bg-cyan-950/20 px-4 py-3 cursor-pointer transition-colors hover:border-cyan-500/40">
+                      <input
+                        type="checkbox"
+                        checked={autoClinicalPolish}
+                        onChange={(e) => setAutoClinicalPolish(e.target.checked)}
+                        className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-cyan-500 focus:ring-cyan-500"
+                      />
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-black uppercase tracking-wider text-slate-200">
+                          Pulido cl√≠nico autom√°tico con Reporte completo
+                        </p>
+                        <p className="mt-0.5 text-[9px] leading-relaxed text-slate-500">
+                          Scorecard ‚Üí prosa, medidas ‚Üí cuerpo, gu√≠as en pie; clasificaciones pendientes; pase final anti-duplicados y redacci√≥n.
                         </p>
                       </div>
                     </label>
@@ -18997,7 +19427,7 @@ const splitReportAndAnnex = (text: string) => {
                         onClick={() => handleGenerateReport("full")}
                         disabled={isGenerating || !studyType.trim()}
                         className="w-full bg-indigo-600 hover:bg-indigo-550 text-white font-black py-4 px-5 rounded-xl text-[11px] uppercase tracking-widest shadow-[0_4px_16px_rgba(99,102,241,0.4)] disabled:opacity-50 disabled:cursor-not-allowed transition-all flex flex-col items-center justify-center gap-1.5 cursor-pointer border border-indigo-400/30"
-                        title="Informe + mÛdulos predeterminados y suite 3D del estudio seleccionado"
+                        title="Informe + m√≥dulos predeterminados, suite 3D del estudio y pulido cl√≠nico autom√°tico"
                       >
                         {isGenerating ? (
                           <>
@@ -19009,7 +19439,7 @@ const splitReportAndAnnex = (text: string) => {
                             <Sparkles className="h-4 w-4 text-amber-200" />
                             <span>Reporte completo</span>
                             <span className="text-[8px] font-bold normal-case tracking-normal text-indigo-100/80 text-center leading-snug">
-                              + Scorecard, Res˙menes y suite 3D seleccionada
+                              + Scorecard, suite 3D y pulido cl√≠nico
                             </span>
                           </>
                         )}
@@ -19289,21 +19719,21 @@ const splitReportAndAnnex = (text: string) => {
                             <Printer className="h-3.5 w-3.5" /> PDF / Imprimir
                           </button>
                           <button
-                            onClick={() => handleDownloadNativePDF(false)}
+                            onClick={() => guardReportPdfExport(() => handleDownloadNativePDF(false))}
                             className="px-3 md:px-4 py-1.5 md:py-2 bg-slate-900 border-2 border-slate-800 hover:border-slate-700 hover:bg-slate-850 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider text-slate-200 transition-all flex items-center gap-1.5 md:gap-2 shadow-lg select-none cursor-pointer whitespace-nowrap"
                             title="Descargar archivo PDF limpio directo sin URL ni hora"
                           >
                             <Download className="h-3.5 w-3.5 text-indigo-400" /> Descargar PDF
                           </button>
                           <button
-                            onClick={() => handleOpenWhatsAppShare('report_pdf')}
+                            onClick={() => guardReportPdfExport(() => handleOpenWhatsAppShare('report_pdf'))}
                             className="px-3 md:px-4 py-1.5 md:py-2 bg-emerald-600 hover:bg-emerald-550 border-2 border-emerald-500/30 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider text-white transition-all flex items-center gap-1.5 md:gap-2 shadow-lg select-none whitespace-nowrap cursor-pointer"
                             title="Enviar reporte PDF firmado directamente a WhatsApp"
                           >
                             <MessageSquare className="h-3.5 w-3.5 text-white" /> WhatsApp PDF
                           </button>
                           <button
-                            onClick={() => handleOpenGmailShare('report_pdf')}
+                            onClick={() => guardReportPdfExport(() => handleOpenGmailShare('report_pdf'))}
                             className="px-3 md:px-4 py-1.5 md:py-2 bg-red-700 hover:bg-red-650 border-2 border-red-500/30 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider text-white transition-all flex items-center gap-1.5 md:gap-2 shadow-lg select-none whitespace-nowrap cursor-pointer"
                             title="Enviar reporte PDF firmado directamente por Correo usando Gmail"
                           >
@@ -19535,7 +19965,29 @@ const splitReportAndAnnex = (text: string) => {
                             </div>
                           </div>
 
-                          {/* üõ†Ô∏è ADVANCED MEDICAL REPORT HUD TOOLING BAR */}
+                          {(isEnrichingReport || reportEnrichmentSession) && (
+                            <div className="my-2">
+                              <React.Suspense
+                                fallback={
+                                  <div className="p-4 text-xs font-mono text-cyan-400 bg-slate-900/60 rounded-xl border border-cyan-900/40 animate-pulse">
+                                    Cargando pulido cl√≠nico...
+                                  </div>
+                                }
+                              >
+                                <ReportEnrichmentPanel
+                                  session={reportEnrichmentSession}
+                                  isRunning={isEnrichingReport}
+                                  onUndoAll={handleUndoClinicalPolish}
+                                  onApplyChange={handleApplyEnrichmentChange}
+                                  onApplyRemaining={handleApplyRemainingEnrichment}
+                                  onRejectChange={handleRejectEnrichmentChange}
+                                  applyingIds={applyingEnrichmentIds}
+                                />
+                              </React.Suspense>
+                            </div>
+                          )}
+
+                          {/* ADVANCED MEDICAL REPORT HUD TOOLING BAR */}
                           {!isEditingReportManual && (
                             <div className="space-y-4 bg-slate-900/95 border-2 border-slate-850 rounded-2xl p-5 shadow-xl select-none">
                               {/* AI Style & Format Modifiers Row */}
@@ -20664,7 +21116,7 @@ const splitReportAndAnnex = (text: string) => {
                             </div>
 
                             <p className="text-[10px] text-slate-500 leading-snug px-1">
-                              El botÛn <strong className="text-slate-300">Reporte completo</strong> activa por defecto Scorecard clÌnico, Resumen operacional y Resumen del paciente. El Cuadro sinÛptico de Ûrgano ya no se genera autom·ticamente. Si habilitaste el acceso r·pido, tambiÈn se activa la suite 3D correspondiente al estudio que seleccionaste manualmente. Marca otros mÛdulos aquÌ y pulsa ACTIVAR.
+                              El bot√≥n <strong className="text-slate-300">Reporte completo</strong> activa por defecto Scorecard cl√≠nico, Resumen operacional y Resumen del paciente. El Cuadro sin√≥ptico de √≥rgano ya no se genera autom√°ticamente. Si habilitaste el acceso r√°pido, tambi√©n se activa la suite 3D correspondiente al estudio que seleccionaste manualmente. Marca otros m√≥dulos aqu√≠ y pulsa ACTIVAR.
                             </p>
 
                             {/* Catalog Grid */}
@@ -20788,6 +21240,20 @@ const splitReportAndAnnex = (text: string) => {
                                   badge: "DIFERENCIALES",
                                   desc: "HipÛtesis a favor/en contra, poda de ramas incompatibles y diagnostico mas probable.",
                                   color: "text-orange-400 border-orange-500/30 bg-orange-950/20"
+                                },
+                                {
+                                  id: "semiotics_conduct_matrix",
+                                  label: "Matriz semiologia / conducta",
+                                  badge: "MATRIZ",
+                                  desc: "Tabla editable hallazgo / signos / conducta; enfoque por patologia e inclusion opcional en PDF.",
+                                  color: "text-fuchsia-400 border-fuchsia-500/30 bg-fuchsia-950/20"
+                                },
+                                {
+                                  id: "findings_infographic",
+                                  label: "Infografia de justificacion diagnostica",
+                                  badge: "INFOGRAFIA",
+                                  desc: "Lamina visual (convergencia / constelacion / cascada) con hallazgos que sostienen el diagnostico. Sin manejo.",
+                                  color: "text-teal-400 border-teal-500/30 bg-teal-950/20"
                                 },
 {
                                   id: "atlas3d",
@@ -21975,7 +22441,57 @@ const splitReportAndAnnex = (text: string) => {
                                     : "bg-orange-600/80 hover:bg-orange-500 text-white"
                                 }`}
                               >
-                                {isDifferentialTreeOpen ? "Ocultar ÔøΩrbol" : "Abrir ÔøΩrbol de diferenciales"}
+                                {isDifferentialTreeOpen ? "Ocultar arbol" : "Abrir arbol de diferenciales"}
+                              </button>
+                            </div>
+
+                            <div className="p-4 rounded-2xl bg-slate-950/60 border border-fuchsia-900/40 space-y-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <h4 className="text-sm font-semibold text-fuchsia-200 flex items-center gap-2">
+                                    <Table2 className="h-4 w-4 text-fuchsia-400" />
+                                    Matriz semiologia ? conducta
+                                  </h4>
+                                  <p className="text-[11px] text-slate-400 mt-1">
+                                    Enfoque por patologia, filas editables e inclusion opcional en el PDF.
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setIsSemioticsConductMatrixOpen((v) => !v)}
+                                className={`w-full px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
+                                  isSemioticsConductMatrixOpen
+                                    ? "bg-fuchsia-700 text-white"
+                                    : "bg-fuchsia-600/80 hover:bg-fuchsia-500 text-white"
+                                }`}
+                              >
+                                {isSemioticsConductMatrixOpen ? "Ocultar matriz" : "Abrir matriz"}
+                              </button>
+                            </div>
+
+                            <div className="p-4 rounded-2xl bg-slate-950/60 border border-teal-900/40 space-y-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <h4 className="text-sm font-semibold text-teal-200 flex items-center gap-2">
+                                    <Hexagon className="h-4 w-4 text-teal-400" />
+                                    Infografia de justificacion
+                                  </h4>
+                                  <p className="text-[11px] text-slate-400 mt-1">
+                                    Hallazgos que sostienen el diagnostico en lamina visual (sin manejo).
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setIsFindingsInfographicOpen((v) => !v)}
+                                className={`w-full px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
+                                  isFindingsInfographicOpen
+                                    ? "bg-teal-700 text-white"
+                                    : "bg-teal-600/80 hover:bg-teal-500 text-white"
+                                }`}
+                              >
+                                {isFindingsInfographicOpen ? "Ocultar infografia" : "Abrir infografia"}
                               </button>
                             </div>
 
@@ -22101,6 +22617,16 @@ const splitReportAndAnnex = (text: string) => {
                                   atlasData={atlas3dData}
                                   setAtlasData={setAtlas3dData}
                                   onAtlasDirectivesSuggested={setAtlasDirectivesFromScorecard}
+                                  onSendToInfographic={(data) => {
+                                    setFindingsInfographicData(data);
+                                    setIncludeFindingsInfographicInReport(true);
+                                    setIsFindingsInfographicOpen(true);
+                                    window.setTimeout(() => {
+                                      document
+                                        .getElementById("findings-infographic-module")
+                                        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                                    }, 80);
+                                  }}
                                 />
                               </React.Suspense>
                             </div>
@@ -22144,6 +22670,16 @@ const splitReportAndAnnex = (text: string) => {
                                     setGeneratedReport(next);
                                     setEditedReportText(next);
                                   }}
+                                  onSendToInfographic={(data) => {
+                                    setFindingsInfographicData(data);
+                                    setIncludeFindingsInfographicInReport(true);
+                                    setIsFindingsInfographicOpen(true);
+                                    window.setTimeout(() => {
+                                      document
+                                        .getElementById("findings-infographic-module")
+                                        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                                    }, 80);
+                                  }}
                                 />
                               </React.Suspense>
                             </div>
@@ -22175,7 +22711,7 @@ const splitReportAndAnnex = (text: string) => {
 
                           {isDifferentialTreeOpen && (
                             <div className="my-6">
-                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-orange-400 bg-slate-900/60 rounded-xl border border-orange-900/40 animate-pulse">Cargando ÔøΩrbol de diferenciales...</div>}>
+                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-orange-400 bg-slate-900/60 rounded-xl border border-orange-900/40 animate-pulse">Cargando arbol de diferenciales...</div>}>
                                 <DifferentialTreeModule
                                   selectedModel={modelFor("differential_tree")}
                                   reportText={isEditingReportManual ? editedReportText : generatedReport}
@@ -22185,6 +22721,40 @@ const splitReportAndAnnex = (text: string) => {
                                   setTreeData={setDifferentialTreeData}
                                   includeInReport={includeDifferentialTreeInReport}
                                   setIncludeInReport={setIncludeDifferentialTreeInReport}
+                                />
+                              </React.Suspense>
+                            </div>
+                          )}
+
+                          {isSemioticsConductMatrixOpen && (
+                            <div className="my-6">
+                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-fuchsia-400 bg-slate-900/60 rounded-xl border border-fuchsia-900/40 animate-pulse">Cargando matriz semiologia-conducta...</div>}>
+                                <SemioticsConductMatrixModule
+                                  selectedModel={modelFor("semiotics_conduct_matrix")}
+                                  reportText={isEditingReportManual ? editedReportText : generatedReport}
+                                  studyType={specificStudy || studyType}
+                                  clinicalHistory={clinicalHistory}
+                                  matrixData={semioticsConductMatrixData}
+                                  setMatrixData={setSemioticsConductMatrixData}
+                                  includeInReport={includeSemioticsConductMatrixInReport}
+                                  setIncludeInReport={setIncludeSemioticsConductMatrixInReport}
+                                />
+                              </React.Suspense>
+                            </div>
+                          )}
+
+                          {isFindingsInfographicOpen && (
+                            <div className="my-6">
+                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-teal-400 bg-slate-900/60 rounded-xl border border-teal-900/40 animate-pulse">Cargando infografia...</div>}>
+                                <FindingsInfographicModule
+                                  selectedModel={modelFor("findings_infographic")}
+                                  reportText={isEditingReportManual ? editedReportText : generatedReport}
+                                  studyType={specificStudy || studyType}
+                                  clinicalHistory={clinicalHistory}
+                                  infographicData={findingsInfographicData}
+                                  setInfographicData={setFindingsInfographicData}
+                                  includeInReport={includeFindingsInfographicInReport}
+                                  setIncludeInReport={setIncludeFindingsInfographicInReport}
                                 />
                               </React.Suspense>
                             </div>
@@ -24152,7 +24722,13 @@ const splitReportAndAnnex = (text: string) => {
                               
                               <button
                                 type="button"
-                                onClick={() => printModalDocType === 'report' ? handleDownloadNativePDF(true) : handleDownloadPatientSummaryPDF(true)}
+                                onClick={() => {
+                      if (printModalDocType === 'report') {
+                        guardReportPdfExport(() => handleDownloadNativePDF(true));
+                      } else {
+                        handleDownloadPatientSummaryPDF(true);
+                      }
+                    }}
                                 className="p-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 rounded-lg text-slate-400 hover:text-slate-200 transition-all cursor-pointer"
                                 title="Abrir PDF en pesta√±a nueva"
                               >
@@ -25438,7 +26014,17 @@ const splitReportAndAnnex = (text: string) => {
         />
       )}
 
-      {/* üì• MODELO DE ASISTENCIA PARA IMPRESI√ìN Y EXPORTACI√ìN PDF (ESPECIAL IPHONE/MOBILE & IFRAME) */}
+      {qaGateResult && (
+        <React.Suspense fallback={null}>
+          <ReportQaGateModal
+            result={qaGateResult}
+            onClose={handleDismissQaGate}
+            onProceedAnyway={handleProceedQaGateAnyway}
+          />
+        </React.Suspense>
+      )}
+
+      {/* MODELO DE ASISTENCIA PARA IMPRESI√ìN Y EXPORTACI√ìN PDF (ESPECIAL IPHONE/MOBILE & IFRAME) */}
       {showPrintModal && (
         <div className="no-print fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
           <motion.div 
@@ -25541,14 +26127,26 @@ const splitReportAndAnnex = (text: string) => {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                   <button
-                    onClick={() => printModalDocType === 'report' ? handleDownloadNativePDF(false) : handleDownloadPatientSummaryPDF(false)}
+                    onClick={() => {
+                      if (printModalDocType === 'report') {
+                        guardReportPdfExport(() => handleDownloadNativePDF(false));
+                      } else {
+                        handleDownloadPatientSummaryPDF(false);
+                      }
+                    }}
                     className="flex items-center justify-center gap-2.5 p-3 bg-indigo-600 hover:bg-indigo-550 border-2 border-indigo-500/10 rounded-xl text-xs font-black text-white uppercase tracking-wider transition-all shadow-md active:scale-95 text-center cursor-pointer"
                   >
                     <Download className="h-4 w-4" />
                     <span>Descargar PDF Limpio (Sin URL/Hora)</span>
                   </button>
                   <button
-                    onClick={() => printModalDocType === 'report' ? handleDownloadNativePDF(true) : handleDownloadPatientSummaryPDF(true)}
+                    onClick={() => {
+                      if (printModalDocType === 'report') {
+                        guardReportPdfExport(() => handleDownloadNativePDF(true));
+                      } else {
+                        handleDownloadPatientSummaryPDF(true);
+                      }
+                    }}
                     className="flex items-center justify-center gap-2.5 p-3 bg-sky-700 hover:bg-sky-650 border-2 border-sky-600/10 rounded-xl text-xs font-black text-white uppercase tracking-wider transition-all shadow-md active:scale-95 text-center cursor-pointer"
                   >
                     <ExternalLink className="h-4 w-4" />
@@ -25726,7 +26324,13 @@ const splitReportAndAnnex = (text: string) => {
                           Este navegador no soporta visualizador de PDF incrustado o se ha denegado el permiso. Puedes descargarlo directamente para visualizarlo o imprimirlo:
                         </p>
                         <button
-                          onClick={() => printModalDocType === 'report' ? handleDownloadNativePDF(false) : handleDownloadPatientSummaryPDF(false)}
+                          onClick={() => {
+                      if (printModalDocType === 'report') {
+                        guardReportPdfExport(() => handleDownloadNativePDF(false));
+                      } else {
+                        handleDownloadPatientSummaryPDF(false);
+                      }
+                    }}
                           className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-550 border border-indigo-500/20 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer"
                         >
                           Descargar Documento F√≠sico
@@ -26298,7 +26902,7 @@ const splitReportAndAnnex = (text: string) => {
                   <button
                     type="button"
                     onClick={() => {
-                      handleDownloadNativePDF(false);
+                      guardReportPdfExport(() => handleDownloadNativePDF(false));
                     }}
                     className="p-3 bg-slate-950/80 hover:bg-slate-900 border border-slate-850 hover:border-slate-750 text-slate-200 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer select-none"
                     title="Descargar el reporte m√©dico oficial firmado en PDF"
@@ -26597,7 +27201,13 @@ const splitReportAndAnnex = (text: string) => {
                   <div className="pt-2">
                     <button
                       type="button"
-                      onClick={handleSendGmailAction}
+                      onClick={() => {
+                        if (gmailAttachReport) {
+                          guardReportPdfExport(() => handleSendGmailAction());
+                        } else {
+                          handleSendGmailAction();
+                        }
+                      }}
                       disabled={isSendingGmail || !gmailTo.trim() || !gmailSubject.trim()}
                       className="w-full p-3 bg-red-600 hover:bg-red-550 disabled:opacity-50 border-2 border-red-500/10 rounded-xl text-xs font-black text-white uppercase tracking-wider transition-all shadow-md active:scale-95 text-center cursor-pointer flex items-center justify-center gap-2 font-mono"
                     >

@@ -15,6 +15,7 @@ import {
   Zap,
   ChevronDown
 } from "lucide-react";
+import { filterStructuresForStudyType } from "../lib/measurementStudyGuard";
 
 interface MeasurementStructure {
   structure: string;
@@ -159,7 +160,11 @@ export const AsistenteMedidas: React.FC<AsistenteMedidasProps> = ({
         const studyTitle = data.detectedStudyType || "Estudio Radiológico";
         setDetectedStudyType(studyTitle);
         // Initialize custom values for assigning and setup pre-selected state
-        const processed: MeasurementStructure[] = data.structures.map((s: any) => {
+        const safeStructures = filterStructuresForStudyType(
+          data.structures,
+          studyType || studyTitle || ""
+        );
+        const processed: MeasurementStructure[] = safeStructures.map((s: any) => {
           const convertedVal = convertValue(s.defaultNormalValue, defaultUnit, decimalPrecision);
           const wasNotFound = s.status === "not_found";
 

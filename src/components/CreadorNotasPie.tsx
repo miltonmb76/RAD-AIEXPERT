@@ -23,6 +23,15 @@ import {
   Search,
   Activity
 } from "lucide-react";
+import {
+  separateReportBodyAndAnnexes,
+  updateFootnotesInReport,
+} from "../lib/reportFootnotes";
+
+export {
+  separateReportBodyAndAnnexes,
+  updateFootnotesInReport,
+} from "../lib/reportFootnotes";
 
 interface FootnoteSuggestion {
   id: string;
@@ -188,79 +197,18 @@ const PRACTICE_GUIDELINES: ClinicalGuideline[] = [
     requiredAnatomy: ["apéndice", "apendice", "ciego", "fosa ilíaca", "fosa iliaca"],
     requiredAny: ["apendicitis", "diámetro apendicular", "diametro apendicular", "coprolito", "plastrón", "plastron", "apendicofito", "inflamatorio"],
     excludeAny: ["mama", "mamari", "tiroides", "carótida", "carotida", "vesícula", "vesicula"]
+  },
+  {
+    id: "gpc-fleischner",
+    title: "Fleischner Society 2017",
+    description: "Seguimiento de nódulos pulmonares incidentales en adultos.",
+    text: "Conducta de seguimiento de nódulo(s) pulmonar(es) incidental(es) según las guías de la Fleischner Society 2017.",
+    source: "Fleischner Society",
+    requiredAnatomy: ["pulmón", "pulmon", "pulmonar", "pulmonares", "tórax", "torax", "lobar", "segmentario"],
+    requiredAny: ["fleischner", "nódulo", "nodulo", "nódulos", "nodulos", "micronódulo", "micronodulo", "vidrio deslustrado", "subsólido", "subsolido"],
+    excludeAny: ["mama", "mamari", "tiroides", "carótida", "carotida", "quiste renal", "riñón", "riñon"]
   }
 ];
-
-/**
- * Helper to split full report text into:
- * 1. bodyText: The main report content (and its optional footnote section)
- * 2. annexesText: Any annexes appended after the main report body (e.g. ### CLASIFICACIÓN DE..., ### ANEXO..., ### CUADRO SINÓPTICO...)
- */
-export const separateReportBodyAndAnnexes = (fullText: string): { bodyText: string; annexesText: string } => {
-  if (!fullText) return { bodyText: "", annexesText: "" };
-
-  const annexPattern = /(?:\n\s*---\s*)?\n(?:\s*(?:#{1,6}\s+|\*\*\s*)(?:ANEXO|DESGLOSE Y JUSTIFICACIÓN|CLASIFICACIÓN DE|ESQUEMA CLÍNICO DE HALLAZGOS|CUADRO SINÓPTICO|MATRIZ SEMIÓTICA|SINOPSIS CLÍNICA|SINOPSIS POR ÓRGANO|SINOPSIS DE ÓRGANO|ASISTENTE DE MEDIDAS|TABLA DE MEDIDAS|MEDICIONES Y PARÁMETROS|PARÁMETROS Y MEDIDAS|SÍNTESIS VASCULAR|SÍNTESIS DE ANATOMÍA|SINOPSIS DE FRACTURAS|EXPLICACIÓN DE INFORME|INFOGRAFÍA EXPLICATIVA)|(?:\s*ANEXO\s*:|\s*ANEXO DIAGNÓSTICO|\s*DESGLOSE Y JUSTIFICACIÓN DE CLASIFICACIÓN))\b/i;
-
-  const match = fullText.match(annexPattern);
-  if (match && match.index !== undefined) {
-    const bodyText = fullText.substring(0, match.index).trimEnd();
-    let annexesText = fullText.substring(match.index);
-    if (!annexesText.startsWith("\n")) {
-      annexesText = "\n\n" + annexesText.trimStart();
-    }
-    return { bodyText, annexesText };
-  }
-
-  return { bodyText: fullText.trimEnd(), annexesText: "" };
-};
-
-/**
- * Helper to insert or remove footnote lines specifically in the main report body.
- */
-export const updateFootnotesInReport = (
-  fullText: string,
-  linesToAdd: string[],
-  linesToRemove: string[] = []
-): string => {
-  const { bodyText, annexesText } = separateReportBodyAndAnnexes(fullText);
-
-  // Split bodyText into main content (before ---) and existing footnotes (after --- inside bodyText)
-  let mainContent = bodyText;
-  let existingFootnotes: string[] = [];
-
-  const dashParts = bodyText.split(/\n\s*---\s*\n/);
-  if (dashParts.length > 1) {
-    mainContent = dashParts[0].trimEnd();
-    const footnoteSectionRaw = dashParts.slice(1).join("\n\n");
-    existingFootnotes = footnoteSectionRaw
-      .split(/\n\n+/)
-      .map(s => s.trim())
-      .filter(s => s.length > 0);
-  } else {
-    mainContent = bodyText.trimEnd();
-  }
-
-  // Filter out any footnote that should be removed
-  let updatedFootnotes = existingFootnotes.filter(fn => {
-    return !linesToRemove.some(rem => fn.includes(rem.trim()) || rem.trim().includes(fn));
-  });
-
-  // Add new footnote lines if not already present
-  linesToAdd.forEach(line => {
-    const trimmed = line.trim();
-    if (trimmed && !updatedFootnotes.some(fn => fn.includes(trimmed) || trimmed.includes(fn))) {
-      updatedFootnotes.push(trimmed);
-    }
-  });
-
-  // Reconstruct bodyText
-  let newBodyText = mainContent;
-  if (updatedFootnotes.length > 0) {
-    newBodyText += `\n\n---\n\n${updatedFootnotes.join("\n\n")}`;
-  }
-
-  return newBodyText + annexesText;
-};
 
 export const CreadorNotasPie: React.FC<CreadorNotasPieProps> = ({
   selectedModel,
@@ -600,7 +548,7 @@ export const CreadorNotasPie: React.FC<CreadorNotasPieProps> = ({
           </div>
 
           <p className="text-[10.5px] font-medium text-slate-400 leading-normal">
-            El sistema evalúa continuamente su reporte en busca de hallazgos para asociar consensos de la <strong>ACR, SRU o Kellgren</strong> y agregarlos automáticamente al pie de página.
+            El sistema evalúa continuamente su reporte en busca de hallazgos para asociar consensos de la <strong>ACR, Fleischner, SRU o Kellgren</strong> y agregarlos automáticamente al pie de página.
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
