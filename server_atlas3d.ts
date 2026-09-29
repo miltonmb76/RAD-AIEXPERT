@@ -7241,6 +7241,426 @@ RESPONDE SOLO JSON:
     }
   });
 
+  // ========================================================================
+  // ULTRASOUND PLANE SIMULATOR (auto plane + 2 panels + chip corrections)
+  // ========================================================================
+
+  type UsPlaneKind = "longitudinal" | "transverse" | "oblique";
+
+  function detectUsAcquisitionPlane(...parts: Array<string | undefined | null>): UsPlaneKind {
+    const t = parts.map((p) => String(p || "").toLowerCase()).join(" ");
+    if (/oblicu|oblique|coronal\s+oblic/.test(t)) return "oblique";
+    if (/transvers|axial|eje\s+corto|short[\s-]?axis|corte\s+corto/.test(t)) return "transverse";
+    if (/longitud|sagital|eje\s+largo|long[\s-]?axis|corte\s+largo|longitudinal/.test(t)) return "longitudinal";
+    // MSK / vessel defaults
+    if (/tend[oó]n|manguito|supraespin|aquiles|patelar/.test(t)) return "longitudinal";
+    if (/tiroides|n[oó]dulo|mama|quiste/.test(t)) return "transverse";
+    return "longitudinal";
+  }
+
+  function usPlaneLabelEs(plane: UsPlaneKind): string {
+    if (plane === "transverse") return "Transversal / eje corto";
+    if (plane === "oblique") return "Oblicuo";
+    return "Longitudinal / eje largo";
+  }
+
+  function usPlanePromptLock(plane: UsPlaneKind, laterality: string, structure: string): string {
+    const planeEn =
+      plane === "transverse"
+        ? "TRANSVERSE / short-axis ultrasound acquisition plane"
+        : plane === "oblique"
+          ? "OBLIQUE ultrasound acquisition plane"
+          : "LONGITUDINAL / long-axis ultrasound acquisition plane";
+    return (
+      `US ACQUISITION PLANE LOCK (CRITICAL): ${planeEn}. ` +
+      `Patient laterality: ${laterality || "as in report"}. ` +
+      `Target structure: ${structure || "reported anatomy"}. ` +
+      `Show a thin translucent cyan cutting plane (= transducer scan plane) intersecting the anatomy; ` +
+      `optional subtle probe footprint on skin. NO text, NO numbers, NO arrows, NO clock dial overlays inside the image. ` +
+      `Do NOT swap left/right. Do NOT invent a different plane.`
+    );
+  }
+
+  app.post("/api/generate-us-plane-simulator", async (req: express.Request, res: express.Response) => {
+    try {
+      const { reportText, organOrStudy, laterality, requestedModel, customDirectives, forcedPlane } = req.body;
+      if (!reportText || !String(reportText).trim()) {
+        return res.status(400).json({ success: false, error: "Se requiere el texto del informe." });
+      }
+
+      const ai = getGeminiClient();
+      const model = getModelName(requestedModel || "gemini-3.8-flash");
+      const lockedPlane: UsPlaneKind =
+        forcedPlane === "transverse" || forcedPlane === "oblique" || forcedPlane === "longitudinal"
+          ? forcedPlane
+          : detectUsAcquisitionPlane(customDirectives, organOrStudy, reportText);
+
+      const planPrompt = `Eres un radiólogo experto en ecografía y director de arte médico 3D.
+Diseña el "SIMULADOR DE PLANO ECOGRÁFICO": dos paneles que muestran el plano de adquisición del transductor anclado al informe.
+
+INFORME:
+"""
+${String(reportText).slice(0, 3500)}
+"""
+Estudio/protocolo: "${organOrStudy || ""}"
+Lateralidad pedida: "${laterality || "auto"}"
+Directiva clínica: "${customDirectives || "Ninguna"}"
+PLANO BLOQUEADO (no cambiar): "${lockedPlane}" = ${usPlaneLabelEs(lockedPlane)}
+
+Devuelve JSON estricto:
+{
+  "studyRegion": "órgano/región",
+  "detectedLaterality": "Derecha|Izquierda|Bilateral|Línea media",
+  "acquisitionPlane": "${lockedPlane}",
+  "planeLabelEs": "${usPlaneLabelEs(lockedPlane)}",
+  "targetStructure": "estructura principal del corte",
+  "structuresCrossed": ["estructura 1", "estructura 2", "estructura 3"],
+  "planeSummary": "2-4 líneas clínicas: qué plano, qué lado, qué cruza, relación con el hallazgo. Sin método de pantalla.",
+  "keyPoints": ["punto 1", "punto 2", "punto 3"],
+  "figureTitle": "FIGURA. PLANO DE ADQUISICIÓN ECOGRÁFICA 3D",
+  "panels": [
+    {
+      "panelLetter": "A",
+      "panelRole": "anatomy_with_plane",
+      "panelTitle": "Anatomía 3D con plano del transductor",
+      "anatomicalFocus": "…",
+      "laterality": "…",
+      "spatialContract": {
+        "view": "AP / clinical 3D",
+        "laterality": "…",
+        "imageLeftStructure": "…",
+        "imageRightStructure": "…",
+        "pathologySite": "sitio del hallazgo si existe",
+        "pathologyAppearance": "…",
+        "mustShowLandmarks": ["…"],
+        "doNotInvent": ["wrong acquisition plane", "mirrored laterality", "clock numbers in image"]
+      }
+    },
+    {
+      "panelLetter": "B",
+      "panelRole": "in_plane_cut",
+      "panelTitle": "Corte en el plano de adquisición",
+      "anatomicalFocus": "…",
+      "laterality": "…",
+      "spatialContract": { }
+    }
+  ]
+}
+
+Reglas:
+- acquisitionPlane DEBE ser exactamente "${lockedPlane}".
+- Lateralidad = lado del PACIENTE (AP: derecha del paciente a la izquierda del cuadro).
+- Panel A: volumen 3D + plano translúcido del eco.
+- Panel B: vista “cara del corte” (como el plano del eco).
+- No inventes patología ausente del informe/directiva.`;
+
+      const planResp = await ai.models.generateContent({
+        model,
+        contents: [{ text: planPrompt }],
+        config: { responseMimeType: "application/json" },
+      });
+
+      let planJson: any = {};
+      try {
+        planJson = JSON.parse(planResp.text || "{}");
+      } catch {
+        planJson = {};
+      }
+
+      const plane: UsPlaneKind =
+        planJson.acquisitionPlane === "transverse" ||
+        planJson.acquisitionPlane === "oblique" ||
+        planJson.acquisitionPlane === "longitudinal"
+          ? planJson.acquisitionPlane
+          : lockedPlane;
+
+      const lat =
+        (laterality && laterality !== "auto" ? laterality : "") ||
+        planJson.detectedLaterality ||
+        "";
+      const structure = String(planJson.targetStructure || organOrStudy || "anatomía ecográfica");
+      const planeLock = usPlanePromptLock(plane, lat, structure);
+
+      let panels = Array.isArray(planJson.panels) ? planJson.panels : [];
+      if (panels.length < 2) {
+        panels = [
+          {
+            panelLetter: "A",
+            panelRole: "anatomy_with_plane",
+            panelTitle: "Anatomía 3D con plano del transductor",
+            anatomicalFocus: `${usPlaneLabelEs(plane)} sobre ${structure}`,
+            laterality: lat,
+            spatialContract: {
+              view: "AP / clinical 3D",
+              laterality: lat,
+              pathologySite: structure,
+              mustShowLandmarks: ["skin surface", "key osseous/soft-tissue landmarks"],
+              doNotInvent: ["wrong acquisition plane", "mirrored laterality"],
+            },
+          },
+          {
+            panelLetter: "B",
+            panelRole: "in_plane_cut",
+            panelTitle: "Corte en el plano de adquisición",
+            anatomicalFocus: `Cara del corte ${usPlaneLabelEs(plane)}`,
+            laterality: lat,
+            spatialContract: {
+              view: "in-plane cut face",
+              laterality: lat,
+              pathologySite: structure,
+              doNotInvent: ["wrong acquisition plane", "mirrored laterality"],
+            },
+          },
+        ];
+      }
+
+      const builtPanels = await Promise.all(
+        panels.slice(0, 2).map(async (panel: any, idx: number) => {
+          const role =
+            panel.panelRole === "in_plane_cut" || idx === 1
+              ? "in_plane_cut"
+              : "anatomy_with_plane";
+          let contract = normalizeSpatialContract(
+            panel.spatialContract,
+            panel.laterality || lat
+          );
+          contract = enforceBreastClockOnContract(contract, {
+            laterality: panel.laterality || lat,
+            anatomicalFocus: panel.anatomicalFocus,
+            studyRegion: planJson.studyRegion || organOrStudy,
+            panelTitle: panel.panelTitle,
+            customDirectives,
+          });
+
+          const roleHint =
+            role === "anatomy_with_plane"
+              ? "PANEL ROLE: external/3D anatomy view WITH a translucent cyan ultrasound cutting plane and subtle probe footprint on skin."
+              : "PANEL ROLE: looking at the CUT FACE of the ultrasound acquisition plane (in-plane anatomic section), clean medical CGI.";
+
+          let promptToUse = buildImagePromptFromContract({
+            panelTitle: panel.panelTitle || (role === "anatomy_with_plane" ? "Anatomy + US plane" : "In-plane cut"),
+            anatomicalFocus: panel.anatomicalFocus || structure,
+            studyRegion: planJson.studyRegion || organOrStudy || "ultrasound anatomy",
+            contract,
+            customDirectives: [planeLock, roleHint, customDirectives].filter(Boolean).join("\n"),
+            forcedLaterality: panel.laterality || lat,
+          });
+
+          try {
+            const imageUrl = await generateMedicalImage(ai, promptToUse);
+            return {
+              id: `us-plane-${idx}-${Date.now()}`,
+              panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
+              panelTitle:
+                panel.panelTitle ||
+                (role === "anatomy_with_plane"
+                  ? "Anatomía 3D con plano del transductor"
+                  : "Corte en el plano de adquisición"),
+              anatomicalFocus: panel.anatomicalFocus || "",
+              laterality: panel.laterality || lat,
+              panelRole: role,
+              spatialContract: contract,
+              imageUrl,
+              promptUsed: promptToUse,
+              isCustomFlipped: false,
+            };
+          } catch (imgErr) {
+            console.error("Error imagen us-plane panel:", imgErr);
+            return {
+              id: `us-plane-${idx}-${Date.now()}`,
+              panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
+              panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
+              anatomicalFocus: panel.anatomicalFocus || "",
+              laterality: panel.laterality || lat,
+              panelRole: role,
+              spatialContract: contract,
+              imageUrl: "",
+              promptUsed: promptToUse,
+              isCustomFlipped: false,
+            };
+          }
+        })
+      );
+
+      // Light laterality/plane vision QA + one retry
+      let qualityAudit: any = { verified: false, panelNotes: [] };
+      try {
+        const verifiable = builtPanels.filter((p) => p.imageUrl && stripDataUrl(p.imageUrl));
+        if (verifiable.length) {
+          const parts: any[] = [
+            {
+              text: `QA de simulador de plano ecográfico.
+Plano EXIGIDO: ${plane} (${usPlaneLabelEs(plane)}).
+Lateralidad paciente: ${lat || "según informe"}.
+Estructura: ${structure}.
+Para cada panel: pass=false si el plano visible no es el exigido, si hay espejo de lado, o si aparecen números/reloj en la imagen.
+JSON:
+{ "panels": [ { "panelLetter":"A", "pass":true/false, "lateralityOk":true/false, "planeOk":true/false, "issues":[], "surgicalCorrection":"English fix if fail" } ] }`,
+            },
+          ];
+          for (const p of verifiable) {
+            const img = stripDataUrl(p.imageUrl);
+            if (!img) continue;
+            parts.push({ text: `PANEL ${p.panelLetter} role=${p.panelRole}` });
+            parts.push({ inlineData: { mimeType: img.mime, data: img.data } });
+          }
+          const qaResp = await ai.models.generateContent({
+            model,
+            contents: { parts },
+            config: { responseMimeType: "application/json" },
+          });
+          let qaJson: any = {};
+          try {
+            qaJson = JSON.parse(qaResp.text || "{}");
+          } catch {
+            qaJson = {};
+          }
+          qualityAudit.verified = true;
+          qualityAudit.panelNotes = Array.isArray(qaJson.panels) ? qaJson.panels : [];
+
+          for (const note of qualityAudit.panelNotes) {
+            if (note?.pass !== false) continue;
+            const idx = builtPanels.findIndex(
+              (p) => String(p.panelLetter).toUpperCase() === String(note.panelLetter || "").toUpperCase()
+            );
+            if (idx < 0) continue;
+            const p = builtPanels[idx];
+            const correction = reinforceLateralityCorrection(
+              String(note.surgicalCorrection || "Fix acquisition plane and laterality."),
+              p.laterality || lat,
+              p.spatialContract?.view,
+              note?.lateralityOk !== true,
+              `${plane} ${structure}`
+            );
+            const retryPrompt = `${usPlanePromptLock(plane, p.laterality || lat, structure)} ${correction} ${p.promptUsed}`;
+            try {
+              const imageUrl = await generateMedicalImage(ai, retryPrompt);
+              builtPanels[idx] = {
+                ...p,
+                imageUrl,
+                promptUsed: retryPrompt,
+                isCustomFlipped: false,
+              };
+            } catch (retryErr) {
+              console.warn("us-plane QA retry failed:", retryErr);
+            }
+          }
+        }
+      } catch (qaErr: any) {
+        qualityAudit.error = String(qaErr?.message || qaErr);
+      }
+
+      res.json({
+        success: true,
+        data: {
+          studyRegion: planJson.studyRegion || organOrStudy || "",
+          figureTitle:
+            planJson.figureTitle || "FIGURA. PLANO DE ADQUISICIÓN ECOGRÁFICA 3D",
+          detectedLaterality: lat,
+          acquisitionPlane: plane,
+          planeLabelEs: usPlaneLabelEs(plane),
+          targetStructure: structure,
+          structuresCrossed: Array.isArray(planJson.structuresCrossed)
+            ? planJson.structuresCrossed.map((x: any) => String(x)).slice(0, 8)
+            : [],
+          planeSummary: planJson.planeSummary || "",
+          keyPoints: Array.isArray(planJson.keyPoints)
+            ? planJson.keyPoints.map((x: any) => String(x)).slice(0, 6)
+            : [],
+          panels: builtPanels,
+          qualityAudit,
+        },
+      });
+    } catch (error: any) {
+      console.error("Error en /api/generate-us-plane-simulator:", error);
+      res.status(500).json({ success: false, error: handleGeminiError(error) });
+    }
+  });
+
+  app.post("/api/regenerate-us-plane-panel", async (req: express.Request, res: express.Response) => {
+    try {
+      const {
+        reportText,
+        panel,
+        laterality,
+        acquisitionPlane,
+        targetStructure,
+        userDirective,
+        customDirectives,
+        requestedModel,
+      } = req.body;
+      if (!panel) {
+        return res.status(400).json({ success: false, error: "Se requiere el panel a regenerar." });
+      }
+
+      const ai = getGeminiClient();
+      const model = getModelName(requestedModel || "gemini-3.8-flash");
+      const plane: UsPlaneKind = detectUsAcquisitionPlane(
+        userDirective,
+        acquisitionPlane,
+        customDirectives,
+        panel.anatomicalFocus
+      );
+      const lat =
+        (laterality && laterality !== "auto" ? laterality : "") ||
+        panel.laterality ||
+        "";
+      const structure = String(targetStructure || panel.anatomicalFocus || "anatomía ecográfica");
+      const role =
+        panel.panelRole === "in_plane_cut" ? "in_plane_cut" : "anatomy_with_plane";
+
+      let contract = normalizeSpatialContract(panel.spatialContract, lat);
+      contract = enforceBreastClockOnContract(contract, {
+        laterality: lat,
+        anatomicalFocus: [panel.anatomicalFocus, userDirective].filter(Boolean).join(" "),
+        studyRegion: structure,
+        panelTitle: panel.panelTitle,
+        customDirectives: [customDirectives, userDirective].filter(Boolean).join(" "),
+      });
+
+      const roleHint =
+        role === "anatomy_with_plane"
+          ? "PANEL ROLE: 3D anatomy WITH translucent cyan US cutting plane + subtle probe footprint. NO text in image."
+          : "PANEL ROLE: in-plane cut face of the US acquisition plane. NO text in image.";
+
+      const finalPrompt = buildImagePromptFromContract({
+        panelTitle: panel.panelTitle,
+        anatomicalFocus: panel.anatomicalFocus || structure,
+        studyRegion: structure,
+        contract,
+        customDirectives: [
+          usPlanePromptLock(plane, lat, structure),
+          roleHint,
+          customDirectives,
+          userDirective ? `SURGEON CHIP CORRECTION: ${userDirective}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        forcedLaterality: lat,
+        surgicalCorrection: userDirective,
+      });
+
+      const imageUrl = await generateMedicalImage(ai, finalPrompt);
+
+      res.json({
+        success: true,
+        panel: {
+          ...panel,
+          laterality: lat,
+          panelRole: role,
+          spatialContract: contract,
+          imageUrl,
+          promptUsed: finalPrompt,
+          isCustomFlipped: false,
+        },
+        acquisitionPlane: plane,
+        planeLabelEs: usPlaneLabelEs(plane),
+      });
+    } catch (error: any) {
+      console.error("Error en /api/regenerate-us-plane-panel:", error);
+      res.status(500).json({ success: false, error: handleGeminiError(error) });
+    }
+  });
 
 }
 
