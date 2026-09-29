@@ -25749,8 +25749,10 @@ const splitReportAndAnnex = (text: string) => {
                         if (viewingCloudStudy.includeWrist3dInReport !== undefined) setIncludeWrist3dInReport(viewingCloudStudy.includeWrist3dInReport);
                         if (viewingCloudStudy.includeThyroid3dInReport !== undefined) setIncludeThyroid3dInReport(viewingCloudStudy.includeThyroid3dInReport);
                         if (viewingCloudStudy.focalLesion3dData) setFocalLesion3dData(viewingCloudStudy.focalLesion3dData);
+                        if (viewingCloudStudy.usPlaneSimulatorData) setUsPlaneSimulatorData(viewingCloudStudy.usPlaneSimulatorData);
                         if (viewingCloudStudy.includeVascular3dInReport !== undefined) setIncludeVascular3dInReport(viewingCloudStudy.includeVascular3dInReport);
                         if (viewingCloudStudy.includeFocalLesion3dInReport !== undefined) setIncludeFocalLesion3dInReport(viewingCloudStudy.includeFocalLesion3dInReport);
+                        if (viewingCloudStudy.includeUsPlaneSimulatorInReport !== undefined) setIncludeUsPlaneSimulatorInReport(viewingCloudStudy.includeUsPlaneSimulatorInReport);
                         if (viewingCloudStudy.usImagesGridMode) setUsImagesGridMode(viewingCloudStudy.usImagesGridMode as any);
                         setFindings3dRenders(viewingCloudStudy.findings3dRenders || []);
                         setPatientSummary(viewingCloudStudy.patientSummary || null);
