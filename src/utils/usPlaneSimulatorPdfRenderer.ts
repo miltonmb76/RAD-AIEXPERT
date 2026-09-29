@@ -126,6 +126,9 @@ export function renderUsPlaneSimulatorAnnexToPDF(
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.5 * factor);
     doc.setTextColor(30, 41, 59);
-    doc.text(sanitizePdfText(crossed.join(" · ")).slice(0, 220), marginX, y);
+    const crossedText = sanitizePdfText(crossed.join(" · "));
+    const maxLines = Math.max(2, Math.floor((pageBottom - y) / (3.4 * factor)));
+    const crossedLines = doc.splitTextToSize(crossedText, contentWidth).slice(0, maxLines);
+    doc.text(crossedLines, marginX, y);
   }
 }

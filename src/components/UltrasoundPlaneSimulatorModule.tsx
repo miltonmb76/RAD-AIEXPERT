@@ -469,15 +469,15 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
                   </div>
                 )}
                 {(planeData.structuresCrossed || []).length > 0 && (
-                  <div className="rounded-xl border border-slate-700/50 bg-slate-950/50 p-4">
+                  <div className="rounded-xl border border-slate-700/50 bg-slate-950/50 p-4 min-w-0">
                     <p className="text-[10px] font-mono uppercase tracking-widest text-slate-400 mb-2">
                       Estructuras cruzadas
                     </p>
-                    <ul className="space-y-1">
+                    <ul className="space-y-1 min-w-0">
                       {planeData.structuresCrossed!.map((s, i) => (
-                        <li key={i} className="text-[13px] text-slate-200 flex gap-2">
-                          <span className="text-cyan-400">▹</span>
-                          {s}
+                        <li key={i} className="text-[13px] text-slate-200 flex gap-2 min-w-0">
+                          <span className="text-cyan-400 shrink-0">▹</span>
+                          <span className="break-words whitespace-normal min-w-0">{s}</span>
                         </li>
                       ))}
                     </ul>
