@@ -291,6 +291,38 @@ export interface FocalLesion3DData {
   qualityAudit?: AtlasQualityAudit;
 }
 
+/** Canonical ultrasound acquisition plane for the plane simulator. */
+export type UsAcquisitionPlane = "longitudinal" | "transverse" | "oblique";
+
+export interface UsPlaneSimulatorPanel {
+  id?: string;
+  panelLetter: string;
+  panelTitle: string;
+  anatomicalFocus: string;
+  laterality?: string;
+  /** anatomy_with_plane = 3D + transducer plane; in_plane_cut = face of the cut */
+  panelRole?: "anatomy_with_plane" | "in_plane_cut";
+  imageUrl?: string;
+  isCustomFlipped?: boolean;
+  promptUsed?: string;
+  spatialContract?: AtlasSpatialContract;
+}
+
+export interface UsPlaneSimulatorData {
+  studyRegion?: string;
+  figureTitle?: string;
+  detectedLaterality?: string;
+  /** Locked acquisition plane from report / correction chips */
+  acquisitionPlane: UsAcquisitionPlane;
+  planeLabelEs?: string;
+  targetStructure?: string;
+  structuresCrossed?: string[];
+  planeSummary?: string;
+  keyPoints?: string[];
+  panels: UsPlaneSimulatorPanel[];
+  qualityAudit?: AtlasQualityAudit;
+}
+
 
 export type ThyroidStudyType =
   | "tiroides_b_mode"

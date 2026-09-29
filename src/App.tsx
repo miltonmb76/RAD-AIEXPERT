@@ -32,7 +32,7 @@ import { renderDifferentialTreeAnnexToPDF } from "./utils/differentialTreePdfRen
 import { renderSemioticsConductMatrixAnnexToPDF } from "./utils/semioticsConductMatrixPdfRenderer";
 import { renderFindingsInfographicAnnexToPDF } from "./utils/findingsInfographicPdfRenderer";
 import { renderMeasurementsGaugeAnnexToPDF } from "./utils/measurementsGaugePdfRenderer";
-import { Atlas3DData, Vascular3DData, FocalLesion3DData, Thyroid3DData, Breast3DData, Shoulder3DData, Knee3DData, Ankle3DData, Kidney3DData, Abdomen3DData, AbdominalWall3DData, Scrotum3DData, MuscleTendon3DData, Wrist3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData, SemioticsConductMatrixData, FindingsInfographicData, NegativityChecklistData, SecondReaderData, ReportEnrichmentSession } from "./types";
+import { Atlas3DData, Vascular3DData, FocalLesion3DData, UsPlaneSimulatorData, Thyroid3DData, Breast3DData, Shoulder3DData, Knee3DData, Ankle3DData, Kidney3DData, Abdomen3DData, AbdominalWall3DData, Scrotum3DData, MuscleTendon3DData, Wrist3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData, SemioticsConductMatrixData, FindingsInfographicData, NegativityChecklistData, SecondReaderData, ReportEnrichmentSession } from "./types";
 import { buildAtlasDirectivesFromScorecard, buildAtlasPanelFindingAssignments, buildVascularDirectivesFromScorecard, buildThyroidDirectivesFromScorecard, buildBreastDirectivesFromScorecard, buildShoulderDirectivesFromScorecard, buildKneeDirectivesFromScorecard, buildAnkleDirectivesFromScorecard, buildKidneyDirectivesFromScorecard, buildAbdomenDirectivesFromScorecard, buildAbdominalWallDirectivesFromScorecard, buildScrotumDirectivesFromScorecard, buildMuscleTendonDirectivesFromScorecard, buildWristDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
 import {
   applyPendingEnrichmentChanges,
@@ -45,6 +45,7 @@ import {
 } from "./lib/reportQaGate";
 import { Vascular3DModule } from "./components/Vascular3DModule";
 import { FocalLesion3DModule } from "./components/FocalLesion3DModule";
+import { UltrasoundPlaneSimulatorModule } from "./components/UltrasoundPlaneSimulatorModule";
 import { Thyroid3DModule } from "./components/Thyroid3DModule";
 import { Breast3DModule } from "./components/Breast3DModule";
 import { Shoulder3DModule } from "./components/Shoulder3DModule";
@@ -58,6 +59,7 @@ import { MuscleTendon3DModule } from "./components/MuscleTendon3DModule";
 import { Wrist3DModule } from "./components/Wrist3DModule";
 import { renderVascular3DPageToPdf } from "./utils/vascular3dPdfRenderer";
 import { renderFocalLesion3DAnnexToPDF } from "./utils/focalLesion3dPdfRenderer";
+import { renderUsPlaneSimulatorAnnexToPDF } from "./utils/usPlaneSimulatorPdfRenderer";
 import { renderThyroid3DPageToPdf } from "./utils/thyroid3dPdfRenderer";
 import { renderBreast3DPageToPdf } from "./utils/breast3dPdfRenderer";
 import { renderShoulder3DPageToPdf } from "./utils/shoulder3dPdfRenderer";
@@ -154,6 +156,7 @@ import {
   Bookmark,
   Box,
   Crosshair,
+  Scan,
   GitBranch,
   GitFork,
   Table2,
@@ -1664,6 +1667,8 @@ export default function App() {
         if (localStudy.atlas3dData) setAtlas3dData(localStudy.atlas3dData);
         if (localStudy.vascular3dData) setVascular3dData(localStudy.vascular3dData);
         if (localStudy.focalLesion3dData) setFocalLesion3dData(localStudy.focalLesion3dData);
+        if (localStudy.usPlaneSimulatorData) setUsPlaneSimulatorData(localStudy.usPlaneSimulatorData);
+        if (localStudy.includeUsPlaneSimulatorInReport !== undefined) setIncludeUsPlaneSimulatorInReport(localStudy.includeUsPlaneSimulatorInReport);
         if (localStudy.thyroid3dData) setThyroid3dData(localStudy.thyroid3dData);
         if (localStudy.breast3dData) setBreast3dData(localStudy.breast3dData);
         if (localStudy.shoulder3dData) setShoulder3dData(localStudy.shoulder3dData);
@@ -2942,6 +2947,9 @@ export default function App() {
   // Focal Lesion Corte 3D (on-demand)
   const [focalLesion3dData, setFocalLesion3dData] = useState<FocalLesion3DData | null>(null);
   const [includeFocalLesion3dInReport, setIncludeFocalLesion3dInReport] = useState<boolean>(true);
+  // Ultrasound acquisition plane simulator (auto + chip corrections)
+  const [usPlaneSimulatorData, setUsPlaneSimulatorData] = useState<UsPlaneSimulatorData | null>(null);
+  const [includeUsPlaneSimulatorInReport, setIncludeUsPlaneSimulatorInReport] = useState<boolean>(true);
   const [thyroid3dData, setThyroid3dData] = useState<Thyroid3DData | null>(null);
   const [includeThyroid3dInReport, setIncludeThyroid3dInReport] = useState<boolean>(true);
   const [breast3dData, setBreast3dData] = useState<Breast3DData | null>(null);
@@ -3051,6 +3059,8 @@ export default function App() {
     includeWrist3dInReport,
     focalLesion3dData,
     includeFocalLesion3dInReport,
+    usPlaneSimulatorData,
+    includeUsPlaneSimulatorInReport,
     usImagesGridMode,
     includeElastographyInReport,
     elastographyStiffness,
@@ -5368,6 +5378,8 @@ Ejemplo:
             includeWrist3dInReport: includeWrist3dInReport,
             focalLesion3dData: focalLesion3dData || null,
             includeFocalLesion3dInReport: includeFocalLesion3dInReport,
+            usPlaneSimulatorData: usPlaneSimulatorData || null,
+            includeUsPlaneSimulatorInReport: includeUsPlaneSimulatorInReport,
             usImagesGridMode: usImagesGridMode || "auto",
             createdAt: new Date().toISOString(),
             specificStudy: specificStudy || "General",
@@ -5409,6 +5421,7 @@ Ejemplo:
                 muscleTendon3dData: null,
                 wrist3dData: null,
                 focalLesion3dData: null,
+                usPlaneSimulatorData: null,
                 customLogoUrl: "",
                 customSignatureUrl: "",
               };
@@ -6413,6 +6426,8 @@ Ejemplo:
             includeWrist3dInReport: includeWrist3dInReport,
             focalLesion3dData: focalLesion3dData || null,
             includeFocalLesion3dInReport: includeFocalLesion3dInReport,
+            usPlaneSimulatorData: usPlaneSimulatorData || null,
+            includeUsPlaneSimulatorInReport: includeUsPlaneSimulatorInReport,
             usImagesGridMode: usImagesGridMode || "auto",
             patientSummary: patientSummary || null
           });
@@ -11265,6 +11280,19 @@ Ejemplo:
       const shouldIncludeFocalLesion = studyOverride ? (studyOverride.includeFocalLesion3dInReport !== false) : (pdfStateRef.current?.includeFocalLesion3dInReport !== false && includeFocalLesion3dInReport);
       if (activeFocalLesionData && shouldIncludeFocalLesion && activeFocalLesionData.panels && activeFocalLesionData.panels.length > 0) {
         renderFocalLesion3DAnnexToPDF(doc, activeFocalLesionData, {
+          marginX,
+          pageWidth,
+          pageHeight,
+          contentWidth,
+          factor
+        });
+      }
+
+      // --- 5.66. ANEXO: SIMULADOR DE PLANO ECOGRÁFICO 3D ---
+      const activeUsPlaneData = studyOverride ? studyOverride.usPlaneSimulatorData : (pdfStateRef.current?.usPlaneSimulatorData || usPlaneSimulatorData);
+      const shouldIncludeUsPlane = studyOverride ? (studyOverride.includeUsPlaneSimulatorInReport !== false) : (pdfStateRef.current?.includeUsPlaneSimulatorInReport !== false && includeUsPlaneSimulatorInReport);
+      if (activeUsPlaneData && shouldIncludeUsPlane && activeUsPlaneData.panels && activeUsPlaneData.panels.length > 0) {
+        renderUsPlaneSimulatorAnnexToPDF(doc, activeUsPlaneData, {
           marginX,
           pageWidth,
           pageHeight,
@@ -21033,6 +21061,21 @@ const splitReportAndAnnex = (text: string) => {
                           />
                           </div>
 
+                          <div id="us-plane-simulator-module-wrap" className="mt-4">
+                          <UltrasoundPlaneSimulatorModule
+                            reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
+                            activeProtocol={specificStudy || studyType || ""}
+                            laterality=""
+                            selectedModel={modelFor("us_plane_simulator")}
+                            planeData={usPlaneSimulatorData}
+                            setPlaneData={setUsPlaneSimulatorData}
+                            includeInReport={includeUsPlaneSimulatorInReport}
+                            setIncludeInReport={setIncludeUsPlaneSimulatorInReport}
+                            scorecardData={clinicalScorecardData}
+                            externalDirectives={atlasDirectivesFromScorecard}
+                          />
+                          </div>
+
 
                           {/* === 3D SCHEMATIC RENDERS FOR ULTRASOUND FINDINGS === */}
                           <Findings3dRenderModule
@@ -22517,6 +22560,31 @@ const splitReportAndAnnex = (text: string) => {
                                 className="w-full px-3 py-2 rounded-xl text-xs font-semibold transition-colors bg-cyan-600/80 hover:bg-cyan-500 text-white"
                               >
                                 Ir a Corte Focal 3D
+                              </button>
+                            </div>
+
+                            {/* Card: Simulador de plano ecográfico */}
+                            <div className="p-4 rounded-2xl bg-slate-950/60 border border-cyan-900/40 space-y-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <h4 className="text-sm font-semibold text-cyan-200 flex items-center gap-2">
+                                    <Scan className="h-4 w-4 text-cyan-400" />
+                                    Simulador de plano eco
+                                  </h4>
+                                  <p className="text-[11px] text-slate-400 mt-1">
+                                    Auto-detecta el plano del informe, lo dibuja en 3D y permite correcciones por chips.
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const el = document.getElementById("us-plane-simulator-module-wrap");
+                                  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+                                }}
+                                className="w-full px-3 py-2 rounded-xl text-xs font-semibold transition-colors bg-cyan-600/80 hover:bg-cyan-500 text-white"
+                              >
+                                Ir a Simulador de plano
                               </button>
                             </div>
 
