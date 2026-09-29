@@ -4,6 +4,7 @@ import {
   buildInfographicCompanion,
   buildInfographicScene,
   findingBoxMetrics,
+  infographicAnnexTitle,
   layoutDisplayLabel,
   type InfographicScene,
 } from "../lib/findingsInfographic";
@@ -339,9 +340,24 @@ export async function renderFindingsInfographicAnnexToPDF(
   doc.addPage();
 
   // Clear of running header ("ULTRASONIDO… / Pág. …") + separator line (~12–14 mm).
-  const topSafe = 28 * factor;
+  const topSafe = 22 * factor;
   const bottomSafe = 14 * factor;
-  const availH = Math.max(120, pageHeight - topSafe - bottomSafe);
+
+  // Annex chrome — same pattern as scorecard / reasoning: title + rule
+  let yChrome = topSafe;
+  const annexTitle = sanitizePdfText(infographicAnnexTitle(data.contentMode));
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12 * factor);
+  doc.setTextColor(15, 23, 42);
+  doc.text(annexTitle, marginX, yChrome);
+  yChrome += 5 * factor;
+
+  doc.setDrawColor(20, 184, 166);
+  doc.setLineWidth(0.85);
+  doc.line(marginX, yChrome, pageWidth - marginX, yChrome);
+  yChrome += 6 * factor;
+
+  const availH = Math.max(110, pageHeight - yChrome - bottomSafe);
 
   // Prefer a larger diagram; companion keeps a modest band under it.
   const companionBudget = Math.min(availH * 0.3, 88 * factor);
@@ -350,7 +366,7 @@ export async function renderFindingsInfographicAnnexToPDF(
   const drawW = scene.width * scale;
   const drawH = scene.height * scale;
   const ox = marginX + (contentWidth - drawW) / 2;
-  const oy = topSafe;
+  const oy = yChrome;
 
   try {
     const svg = buildInfographicSvgMarkup(scene);
