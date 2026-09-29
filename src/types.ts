@@ -530,6 +530,9 @@ export interface Knee3DPanel {
   laterality?: string;
   structureOrSite?: string;
   panelRole?: "overview" | "meniscus_ligament" | "extensor_effusion" | "baker_cartilage";
+  /** Locked meniscus compartment: medial=interno/tibial, lateral=externo/peroné */
+  meniscusCompartment?: "medial" | "lateral";
+  meniscusHorn?: "anterior" | "body" | "posterior";
   imageUrl?: string;
   isCustomFlipped?: boolean;
   promptUsed?: string;

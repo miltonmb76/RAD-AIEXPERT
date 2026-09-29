@@ -652,14 +652,15 @@ export type KneeRadarDirectiveInput = {
 /** Hard topography rules for knee menisci (shared with suite prompts). */
 export const KNEE_MENISCUS_TOPOGRAPHY_DIRECTIVE = [
   "TOPOGRAFÍA MENISCAL OBLIGATORIA (nunca intercambiar):",
-  "- Menisco INTERNO = MEDIAL = lado TIBIAL (contrario al peroné).",
-  "- Menisco EXTERNO = LATERAL = lado del PERONÉ / fibular.",
+  "- Menisco INTERNO = MEDIAL = lado TIBIAL (contrario al peroné). Ancla: lesión OPUESTA a la cabeza del peroné.",
+  "- Menisco EXTERNO = LATERAL = lado del PERONÉ / fibular. Ancla: lesión JUNTO a la cabeza del peroné (debe verse).",
   "- Cuerno ANTERIOR ≠ CUERPO ≠ cuerno POSTERIOR.",
   "- Lateralidad de la RODILLA (derecha/izquierda del paciente) es independiente del compartimento medial/lateral.",
   "- Rodilla derecha AP: compartimento lateral/peroné a la IZQUIERDA del cuadro; medial a la DERECHA.",
   "- Rodilla izquierda AP: compartimento lateral/peroné a la DERECHA del cuadro; medial a la IZQUIERDA.",
   "- En paneles, ficha y tabla nombra siempre: menisco medial|lateral + cuerno anterior|cuerpo|posterior + lado de rodilla.",
   "- LCL y menisco externo viven del lado del peroné; LCM y menisco interno del lado tibial.",
+  "- FALLO CRÍTICO dibujar menisco interno junto al peroné o menisco externo en el lado tibial.",
 ].join("\n");
 
 export function buildKneeDirectivesFromScorecard(
