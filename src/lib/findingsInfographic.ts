@@ -25,6 +25,8 @@ export const INFOGRAPHIC_CONTENT_MODES: {
   desc: string;
   defaultTitle: string;
   headerLabel: string;
+  /** PDF annex page title (ANEXO: …), same chrome as other annexes */
+  annexTitle: string;
   suggestedLayouts: FindingsInfographicLayout[];
 }[] = [
   {
@@ -33,6 +35,7 @@ export const INFOGRAPHIC_CONTENT_MODES: {
     desc: "Hallazgos que sostienen el diagnóstico ancla",
     defaultTitle: "Justificación diagnóstica",
     headerLabel: "JUSTIFICACIÓN DIAGNÓSTICA",
+    annexTitle: "ANEXO: JUSTIFICACIÓN DE DIAGNÓSTICO",
     suggestedLayouts: ["convergence", "constellation", "funnel", "tree"],
   },
   {
@@ -41,6 +44,7 @@ export const INFOGRAPHIC_CONTENT_MODES: {
     desc: "Lo afirmado / positivo en el informe",
     defaultTitle: "Hallazgos presentes",
     headerLabel: "HALLAZGOS PRESENTES",
+    annexTitle: "ANEXO: HALLAZGOS PRESENTES",
     suggestedLayouts: ["pillars", "stack", "constellation", "radial"],
   },
   {
@@ -49,6 +53,7 @@ export const INFOGRAPHIC_CONTENT_MODES: {
     desc: "Negaciones explícitas del informe (sin X, se descarta…)",
     defaultTitle: "Hallazgos descartados",
     headerLabel: "HALLAZGOS DESCARTADOS",
+    annexTitle: "ANEXO: HALLAZGOS DESCARTADOS",
     suggestedLayouts: ["cascade", "stack", "pillars", "timeline"],
   },
   {
@@ -57,6 +62,7 @@ export const INFOGRAPHIC_CONTENT_MODES: {
     desc: "Criterios de escala presentes (BI-RADS, TI-RADS, Bosniak…)",
     defaultTitle: "Criterios de clasificación",
     headerLabel: "CRITERIOS DE CLASIFICACIÓN",
+    annexTitle: "ANEXO: JUSTIFICACIÓN DE CLASIFICACIÓN",
     suggestedLayouts: ["pillars", "tree", "funnel", "stack"],
   },
   {
@@ -65,6 +71,7 @@ export const INFOGRAPHIC_CONTENT_MODES: {
     desc: "Semiología mayor / signos guía del caso",
     defaultTitle: "Signos clave",
     headerLabel: "SIGNOS CLAVE",
+    annexTitle: "ANEXO: SIGNOS CLAVE",
     suggestedLayouts: ["convergence", "radial", "constellation", "tree"],
   },
   {
@@ -73,6 +80,7 @@ export const INFOGRAPHIC_CONTENT_MODES: {
     desc: "Dos columnas: afirmados frente a negados explícitos",
     defaultTitle: "Presentes y descartados",
     headerLabel: "PRESENTES  ·  DESCARTADOS",
+    annexTitle: "ANEXO: PRESENTES Y DESCARTADOS",
     suggestedLayouts: ["split_compare", "pillars"],
   },
   {
@@ -81,6 +89,7 @@ export const INFOGRAPHIC_CONTENT_MODES: {
     desc: "Agrupa hallazgos por anatomía citada en el informe",
     defaultTitle: "Hallazgos por estructura",
     headerLabel: "POR ESTRUCTURA",
+    annexTitle: "ANEXO: HALLAZGOS POR ESTRUCTURA",
     suggestedLayouts: ["tree", "pillars", "stack", "timeline"],
   },
   {
@@ -89,9 +98,17 @@ export const INFOGRAPHIC_CONTENT_MODES: {
     desc: "Ordena hallazgos de menor a mayor relevancia",
     defaultTitle: "Gradación de hallazgos",
     headerLabel: "GRADACIÓN DE HALLAZGOS",
+    annexTitle: "ANEXO: GRADACIÓN DE HALLAZGOS",
     suggestedLayouts: ["funnel", "cascade", "timeline", "stack"],
   },
 ];
+
+/** Elegant PDF annex title for the active content mode. */
+export function infographicAnnexTitle(
+  mode: FindingsInfographicContentMode | string | undefined
+): string {
+  return contentModeMeta(mode).annexTitle || "ANEXO: INFOGRAFÍA DE HALLAZGOS";
+}
 
 export const INFOGRAPHIC_LAYOUT_OPTIONS: {
   id: FindingsInfographicLayout | "auto";
