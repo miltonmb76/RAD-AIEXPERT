@@ -171,6 +171,205 @@ const KNEE_MENISCUS_TOPOGRAPHY_RULES_ES =
   "9) PROHIBIDO confundir LCM (medial) con LCL (lateral/peroné). LCL y menisco externo viven del lado del peroné.\n" +
   "10) Una imagen/tabla bella con menisco o cuerno equivocado es FALLO CRÍTICO.";
 
+function isKneeMeniscusContext(...parts: Array<string | undefined | null>): boolean {
+  const t = parts.map((p) => String(p || "").toLowerCase()).join(" ");
+  return /rodilla|knee|menisco|meniscus|\blcm\b|\blcl\b|peron[eé]|fibula|fibular|platillo\s+tibial|c[oó]ndilo/.test(
+    t
+  );
+}
+
+/** Medial(interno/tibial) vs lateral(externo/peroné) — never use bare "lateralidad". */
+function detectKneeMeniscusCompartment(
+  ...parts: Array<string | undefined | null>
+): "medial" | "lateral" | "unknown" {
+  for (const p of parts) {
+    const t = String(p || "").toLowerCase();
+    if (!t.trim()) continue;
+    const lat =
+      /\bmenisco\s+(?:externo|lateral)\b/.test(t) ||
+      /\b(?:externo|lateral)\s+(?:del\s+)?menisco\b/.test(t) ||
+      /\b(?:external|lateral)\s+meniscus\b/.test(t) ||
+      /\bmeniscus\s+(?:external|lateral)\b/.test(t) ||
+      /\bcompartimento\s+lateral\b/.test(t) ||
+      /\blado\s+(?:del\s+)?peron/.test(t) ||
+      /\b(?:junto|junto\s+a|next\s+to)\s+(?:el\s+)?peron/.test(t) ||
+      /\bfibular\s+(?:side|compartment|meniscus)\b/.test(t) ||
+      (/\blcl\b/.test(t) && !/\blcm\b/.test(t));
+    const med =
+      /\bmenisco\s+(?:interno|medial)\b/.test(t) ||
+      /\b(?:interno|medial)\s+(?:del\s+)?menisco\b/.test(t) ||
+      /\b(?:internal|medial)\s+meniscus\b/.test(t) ||
+      /\bmeniscus\s+(?:internal|medial)\b/.test(t) ||
+      /\bcompartimento\s+medial\b/.test(t) ||
+      /\blado\s+tibial\b/.test(t) ||
+      (/\blcm\b/.test(t) && !/\blcl\b/.test(t));
+    if (lat && !med) return "lateral";
+    if (med && !lat) return "medial";
+    if (lat && med) {
+      // Prefer the first explicit menisco phrase
+      const latIdx = t.search(/\bmenisco\s+(?:externo|lateral)\b|\b(?:external|lateral)\s+meniscus\b/);
+      const medIdx = t.search(/\bmenisco\s+(?:interno|medial)\b|\b(?:internal|medial)\s+meniscus\b/);
+      if (latIdx >= 0 && (medIdx < 0 || latIdx < medIdx)) return "lateral";
+      if (medIdx >= 0) return "medial";
+    }
+  }
+  return "unknown";
+}
+
+function detectKneeMeniscusHorn(
+  ...parts: Array<string | undefined | null>
+): "anterior" | "body" | "posterior" | "unknown" {
+  for (const p of parts) {
+    const t = String(p || "").toLowerCase();
+    if (!t.trim()) continue;
+    if (/\bcuerno\s+posterior\b|\bposterior\s+horn\b|\bhorn\s+posterior\b/.test(t)) return "posterior";
+    if (/\bcuerno\s+anterior\b|\banterior\s+horn\b|\bhorn\s+anterior\b/.test(t)) return "anterior";
+    if (/\bcuerpo\s+(?:del\s+)?menisco\b|\bmeniscus\s+body\b|\bbody\s+of\s+(?:the\s+)?meniscus\b/.test(t)) {
+      return "body";
+    }
+  }
+  return "unknown";
+}
+
+function detectKneePatientSide(
+  ...parts: Array<string | undefined | null>
+): "right" | "left" | "unknown" {
+  // Reuse breast-side detector vocabulary (derecha/izquierda)
+  return detectBreastSide(...parts);
+}
+
+/**
+ * Deterministic pin: fibular head locks EXTERNAL/lateral; opposite tibial side = INTERNAL/medial.
+ */
+function buildKneeMeniscusPin(
+  kneeSide: "right" | "left" | "unknown",
+  compartment: "medial" | "lateral" | "unknown",
+  horn: "anterior" | "body" | "posterior" | "unknown" = "unknown"
+): string {
+  if (compartment === "unknown" && horn === "unknown") return "";
+
+  const sideLabel =
+    kneeSide === "right" ? "RIGHT knee" : kneeSide === "left" ? "LEFT knee" : "knee";
+  const hornLabel =
+    horn === "anterior"
+      ? "ANTERIOR horn"
+      : horn === "posterior"
+        ? "POSTERIOR horn"
+        : horn === "body"
+          ? "BODY (mid-portion)"
+          : "horn/body as reported";
+
+  let compartmentBlock = "";
+  if (compartment === "lateral") {
+    const viewerHalf =
+      kneeSide === "right"
+        ? "VIEWER'S LEFT of frame (next to fibular head)"
+        : kneeSide === "left"
+          ? "VIEWER'S RIGHT of frame (next to fibular head)"
+          : "the FIBULAR half of the joint (next to fibular head)";
+    compartmentBlock =
+      `TARGET = EXTERNAL / LATERAL meniscus = FIBULAR side (${viewerHalf}). ` +
+      `MUST show fibular head / peroneal landmark on the SAME side as the lesion. ` +
+      `CRITICAL FAIL if lesion is drawn on the tibial/medial side (INTERNAL meniscus). `;
+  } else if (compartment === "medial") {
+    const viewerHalf =
+      kneeSide === "right"
+        ? "VIEWER'S RIGHT of frame (tibial / opposite the fibula)"
+        : kneeSide === "left"
+          ? "VIEWER'S LEFT of frame (tibial / opposite the fibula)"
+          : "the TIBIAL half of the joint (OPPOSITE the fibular head)";
+    compartmentBlock =
+      `TARGET = INTERNAL / MEDIAL meniscus = TIBIAL side (${viewerHalf}). ` +
+      `Fibular head must remain on the OPPOSITE side of the lesion (landmark only). ` +
+      `CRITICAL FAIL if lesion is drawn next to the fibula (that would be EXTERNAL/lateral). `;
+  }
+
+  const apMap =
+    kneeSide === "right"
+      ? "RIGHT knee AP map: lateral/fibula = VIEWER LEFT; medial/tibial = VIEWER RIGHT. "
+      : kneeSide === "left"
+        ? "LEFT knee AP map: lateral/fibula = VIEWER RIGHT; medial/tibial = VIEWER LEFT. "
+        : "AP map: fibular head locks the EXTERNAL compartment. ";
+
+  return (
+    `KNEE MENISCUS COMPARTMENT PIN (CRITICAL): ${sideLabel}. ${compartmentBlock}` +
+    `Horn zone: ${hornLabel}. ${apMap}` +
+    `INTERNAL≠EXTERNAL. MEDIAL≠LATERAL. Do not confuse patient knee side with medial/lateral compartment.`
+  );
+}
+
+function lockKneeMeniscusSiteLabel(
+  kneeSide: "right" | "left" | "unknown",
+  compartment: "medial" | "lateral" | "unknown",
+  horn: "anterior" | "body" | "posterior" | "unknown",
+  fallback: string
+): string {
+  if (compartment === "unknown" && horn === "unknown") return fallback || "";
+  const sideEs =
+    kneeSide === "right" ? "Rodilla derecha" : kneeSide === "left" ? "Rodilla izquierda" : "";
+  const compEs =
+    compartment === "lateral"
+      ? "Menisco externo/lateral (peroné)"
+      : compartment === "medial"
+        ? "Menisco interno/medial (tibial)"
+        : "Menisco";
+  const hornEs =
+    horn === "anterior"
+      ? "cuerno anterior"
+      : horn === "posterior"
+        ? "cuerno posterior"
+        : horn === "body"
+          ? "cuerpo"
+          : "";
+  const parts = [sideEs, compEs, hornEs].filter(Boolean);
+  return parts.join(", ") || fallback || "";
+}
+
+function resolveKneeMeniscusTarget(args: {
+  userDirective?: string;
+  customDirectives?: string;
+  reportText?: string;
+  structureOrSite?: string;
+  anatomicalFocus?: string;
+  panelTitle?: string;
+  laterality?: string;
+  findingStructures?: string[];
+}): {
+  kneeSide: "right" | "left" | "unknown";
+  compartment: "medial" | "lateral" | "unknown";
+  horn: "anterior" | "body" | "posterior" | "unknown";
+  pin: string;
+  siteLabel: string;
+} {
+  const clinical = [
+    args.userDirective,
+    args.customDirectives,
+    args.reportText,
+    ...(args.findingStructures || []),
+  ];
+  const panelBag = [args.structureOrSite, args.anatomicalFocus, args.panelTitle];
+  let compartment = detectKneeMeniscusCompartment(...clinical);
+  if (compartment === "unknown") compartment = detectKneeMeniscusCompartment(...panelBag);
+  let horn = detectKneeMeniscusHorn(...clinical);
+  if (horn === "unknown") horn = detectKneeMeniscusHorn(...panelBag);
+  const kneeSide = detectKneePatientSide(
+    args.userDirective,
+    args.laterality,
+    args.customDirectives,
+    args.structureOrSite,
+    args.reportText,
+    args.anatomicalFocus
+  );
+  const siteLabel = lockKneeMeniscusSiteLabel(
+    kneeSide,
+    compartment,
+    horn,
+    args.structureOrSite || ""
+  );
+  const pin = buildKneeMeniscusPin(kneeSide, compartment, horn);
+  return { kneeSide, compartment, horn, pin, siteLabel };
+}
+
 
 /**
  * Ankle ligament / Achilles topography: lateral (fibular) vs medial (deltoid), midportion vs insertional Achilles.
@@ -1146,10 +1345,33 @@ function buildImagePromptFromContract(args: {
   const lesionHalfPin = breastClock ? buildBreastLesionClockPin(side, hour) : "";
   const geometryBlock = breastClock ? buildBreastClockGeometryBlock(side, hour) : "";
 
+  const kneeCtx = isKneeMeniscusContext(
+    args.studyRegion,
+    args.panelTitle,
+    args.anatomicalFocus,
+    c.pathologySite,
+    args.customDirectives,
+    args.surgicalCorrection
+  );
+  const kneeTarget = kneeCtx
+    ? resolveKneeMeniscusTarget({
+        userDirective: args.surgicalCorrection,
+        customDirectives: args.customDirectives,
+        structureOrSite: c.pathologySite,
+        anatomicalFocus: args.anatomicalFocus,
+        panelTitle: args.panelTitle,
+        laterality,
+        reportText: args.studyRegion,
+      })
+    : null;
+  const kneePin = kneeTarget?.pin || "";
+
   const parts = [
     FAITHFUL_STYLE,
     LATERALITY_HARD_RULES,
     buildScreenLateralityConstraint(laterality, c.view),
+    kneeCtx ? KNEE_MENISCUS_TOPOGRAPHY_HARD_RULES : "",
+    kneePin,
     geometryBlock,
     breastClock,
     lesionHalfPin,
@@ -1169,6 +1391,7 @@ function buildImagePromptFromContract(args: {
     args.surgicalCorrection ? `[MANDATORY SURGICAL CORRECTION: ${args.surgicalCorrection}]` : "",
     // Repeat pin at the end — image models overweight trailing instructions
     lesionHalfPin ? `FINAL CHECK: ${lesionHalfPin}` : "",
+    kneePin ? `FINAL CHECK: ${kneePin}` : "",
   ].filter(Boolean);
 
   return parts.join(" ");
@@ -6090,9 +6313,9 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
     },
     {
       "panelLetter": "B",
-      "panelTitle": "Panel B: Corte del menisco medial — patología dominante",
-      "structureOrSite": "Menisco medial",
-      "anatomicalFocus": "Detalle del menisco medial y surco coronario con patrón ecográfico correlacionado...",
+      "panelTitle": "Panel B: Corte meniscal — según informe (interno/externo + cuerno)",
+      "structureOrSite": "Menisco externo/lateral (peroné), cuerno posterior — EJEMPLO; usar el del informe",
+      "anatomicalFocus": "Detalle del menisco indicado (interno=tibial / externo=peroné) y cuerno exacto; NUNCA intercambiar...",
       "laterality": "Derecha",
       "panelRole": "meniscus_ligament",
       "imagePrompt": "Ultra-realistic 3D medical knee ligaments-menisci cutaway render..."
@@ -6100,12 +6323,12 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
   ],
   "findingTable": [
     {
-      "location": "Rodilla derecho, cara anterolateral",
-      "structure": "Menisco medial",
+      "location": "Rodilla derecha",
+      "structure": "Menisco externo/lateral (peroné), cuerno posterior — EJEMPLO; copiar del informe",
       "thicknessOrGap": "5,2 mm (sin gap)",
-      "echoPattern": "Tendinosis hipoecoica sin solución de continuidad",
+      "echoPattern": "Rotura/degeneración según informe",
       "effusionStatus": "Sin derrame articular significativo",
-      "dynamicFinding": "Estrés valgo leve en arco medio",
+      "dynamicFinding": "Según informe",
       "severity": "Leve-moderada",
       "clinicalImpact": "Correlacionar con clínica; rehabilitación dirigida"
     }
@@ -6171,50 +6394,72 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
         };
       }
 
+      const findingStructures = (planJson.findingTable || planJson.lesionTable || []).map(
+        (r: any) => String(r?.structure || r?.location || "")
+      );
+      const reportSlice = String(reportText || "").slice(0, 2500);
+
       const kneePanelsWithImages = await Promise.all(
         (planJson.panels || []).map(async (panel: any, idx: number) => {
-          let promptToUse = panel.imagePrompt || `Ultra-realistic 3D medical knee / knee ligaments-menisci render of ${panel.structureOrSite || panel.panelTitle}, octane render, no text.`;
+          const panelLat = panel.laterality || planJson.laterality || laterality || "";
+          const target = resolveKneeMeniscusTarget({
+            customDirectives,
+            reportText: reportSlice,
+            structureOrSite: panel.structureOrSite,
+            anatomicalFocus: panel.anatomicalFocus,
+            panelTitle: panel.panelTitle,
+            laterality: panelLat,
+            findingStructures,
+          });
+          const lockedSite =
+            target.compartment !== "unknown"
+              ? target.siteLabel
+              : panel.structureOrSite || panel.panelTitle || "";
+
+          let promptToUse =
+            panel.imagePrompt ||
+            `Ultra-realistic 3D medical knee / knee ligaments-menisci render of ${lockedSite}, octane render, no text.`;
           if (customDirectives && customDirectives.trim()) {
             promptToUse = `${promptToUse} [MANDATORY CLINICAL DIRECTIVE: ${customDirectives.trim()}].`;
           }
           {
-            const screenMap = buildScreenLateralityConstraint(panel.laterality || planJson.laterality || laterality, "AP / coronal");
-            if (panel.laterality && panel.laterality !== "auto") {
-              promptToUse = `[MANDATORY PATIENT LATERALITY: ${panel.laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${KNEE_MENISCUS_TOPOGRAPHY_HARD_RULES} ${screenMap} ${promptToUse}`;
+            const screenMap = buildScreenLateralityConstraint(panelLat, "AP / coronal");
+            if (panelLat && panelLat !== "auto") {
+              promptToUse = `[MANDATORY PATIENT LATERALITY: ${String(panelLat).toUpperCase()}]. ${LATERALITY_HARD_RULES} ${KNEE_MENISCUS_TOPOGRAPHY_HARD_RULES} ${screenMap} ${promptToUse}`;
             } else {
               promptToUse = `${LATERALITY_HARD_RULES} ${KNEE_MENISCUS_TOPOGRAPHY_HARD_RULES} ${screenMap} ${promptToUse}`;
             }
           }
+          if (target.pin) {
+            promptToUse = `${target.pin} ${promptToUse} FINAL CHECK: ${target.pin}`;
+          }
+          // Strip planner bias toward wrong compartment if we locked the opposite
+          if (target.compartment === "lateral") {
+            promptToUse = promptToUse.replace(/\bmedial meniscus\b/gi, "LATERAL (fibular) meniscus");
+          } else if (target.compartment === "medial") {
+            promptToUse = promptToUse.replace(/\blateral meniscus\b/gi, "MEDIAL (tibial) meniscus");
+          }
 
           const defaultRole = idx === 0 ? "overview" : idx === 1 ? "meniscus_ligament" : "extensor_effusion";
+          const panelPayload = {
+            id: `knee-panel-${idx}-${Date.now()}`,
+            panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
+            panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
+            structureOrSite: lockedSite,
+            anatomicalFocus: panel.anatomicalFocus || "Evaluación anatómica de la rodilla y ligamentos y meniscos",
+            laterality: panelLat,
+            promptUsed: promptToUse,
+            isCustomFlipped: false,
+            panelRole: panel.panelRole || defaultRole,
+            meniscusCompartment: target.compartment !== "unknown" ? target.compartment : undefined,
+            meniscusHorn: target.horn !== "unknown" ? target.horn : undefined,
+          };
           try {
             const imageUrl = await generateMedicalImage(ai, promptToUse);
-            return {
-              id: `knee-panel-${idx}-${Date.now()}`,
-              panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
-              panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
-              structureOrSite: panel.structureOrSite || panel.panelTitle || "",
-              anatomicalFocus: panel.anatomicalFocus || "Evaluación anatómica de la rodilla y ligamentos y meniscos",
-              laterality: panel.laterality || planJson.laterality || laterality || "",
-              imageUrl: imageUrl,
-              promptUsed: promptToUse,
-              isCustomFlipped: false,
-              panelRole: panel.panelRole || defaultRole
-            };
+            return { ...panelPayload, imageUrl };
           } catch (imgErr) {
             console.error(`Error generando imagen para panel knee ${panel.panelLetter}:`, imgErr);
-            return {
-              id: `knee-panel-${idx}-${Date.now()}`,
-              panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
-              panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
-              structureOrSite: panel.structureOrSite || panel.panelTitle || "",
-              anatomicalFocus: panel.anatomicalFocus || "Evaluación anatómica de la rodilla y ligamentos y meniscos",
-              laterality: panel.laterality || planJson.laterality || laterality || "",
-              imageUrl: "",
-              promptUsed: promptToUse,
-              isCustomFlipped: false,
-              panelRole: panel.panelRole || defaultRole
-            };
+            return { ...panelPayload, imageUrl: "" };
           }
         })
       );
@@ -6238,16 +6483,31 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
         tableTitle: planJson.tableTitle || "TABLA ECOGRÁFICA DEL LIGAMENTOS Y MENISCOS Y ESTRUCTURAS PERIARTICULARES:",
         tableHeaders: forcedHeaders,
         panels: kneePanelsWithImages,
-        findingTable: (planJson.findingTable || planJson.lesionTable || planJson.noduleTable || []).map((row: any) => ({
-          location: row.location || "",
-          structure: row.structure || row.tendon || row.composition || "",
-          thicknessOrGap: row.thicknessOrGap || row.size || row.gap || "",
-          echoPattern: row.echoPattern || row.echogenicity || row.pattern || "",
-          effusionStatus: row.effusionStatus || row.bursa || "",
-          dynamicFinding: row.dynamicFinding || row.dynamic || row.stressFinding || "",
-          severity: row.severity || row.grade || "",
-          clinicalImpact: row.clinicalImpact || ""
-        })),
+        findingTable: (planJson.findingTable || planJson.lesionTable || planJson.noduleTable || []).map((row: any) => {
+          const rawStructure = String(row.structure || row.tendon || row.composition || "");
+          const rowTarget = resolveKneeMeniscusTarget({
+            customDirectives,
+            reportText: reportSlice,
+            structureOrSite: rawStructure,
+            anatomicalFocus: row.location,
+            laterality: planJson.laterality || laterality,
+            findingStructures,
+          });
+          const structure =
+            rowTarget.compartment !== "unknown"
+              ? rowTarget.siteLabel || rawStructure
+              : rawStructure;
+          return {
+            location: row.location || "",
+            structure,
+            thicknessOrGap: row.thicknessOrGap || row.size || row.gap || "",
+            echoPattern: row.echoPattern || row.echogenicity || row.pattern || "",
+            effusionStatus: row.effusionStatus || row.bursa || "",
+            dynamicFinding: row.dynamicFinding || row.dynamic || row.stressFinding || "",
+            severity: row.severity || row.grade || "",
+            clinicalImpact: row.clinicalImpact || ""
+          };
+        }),
         kneeSummary: planJson.kneeSummary || "",
         morphologyNotes: planJson.morphologyNotes || "",
         ligamentMeniscusStatus: planJson.ligamentMeniscusStatus || "",
@@ -6330,19 +6590,47 @@ RESPONDE EN JSON:
         };
       }
 
-      let finalPrompt = refineJson.imagePrompt || panel.promptUsed || `3D macro knee / meniscus-ligament render of ${panel.panelTitle}, no text.`;
+      const lockedLat = laterality || panel.laterality || "";
+      const target = resolveKneeMeniscusTarget({
+        userDirective,
+        customDirectives,
+        reportText: String(reportText || "").slice(0, 2500),
+        structureOrSite: refineJson.structureOrSite || panel.structureOrSite,
+        anatomicalFocus: refineJson.anatomicalFocus || panel.anatomicalFocus,
+        panelTitle: refineJson.panelTitle || panel.panelTitle,
+        laterality: lockedLat,
+      });
+      // Lock site so refine cannot rewrite externo→interno
+      const lockedSite =
+        target.compartment !== "unknown"
+          ? target.siteLabel
+          : refineJson.structureOrSite || panel.structureOrSite;
+
+      let finalPrompt =
+        refineJson.imagePrompt ||
+        panel.promptUsed ||
+        `3D macro knee / meniscus-ligament render of ${lockedSite || panel.panelTitle}, no text.`;
       if (customDirectives && String(customDirectives).trim()) {
         finalPrompt = `${finalPrompt} [MANDATORY CLINICAL DIRECTIVE: ${String(customDirectives).trim()}].`;
       }
       if (userDirective && userDirective.trim()) {
         finalPrompt = `${finalPrompt} [MANDATORY SURGICAL CORRECTION: ${userDirective.trim()}].`;
       }
-      if (laterality && laterality !== "auto") {
-        const screenMap = buildScreenLateralityConstraint(laterality, "AP / coronal");
-        finalPrompt = `[MANDATORY PATIENT LATERALITY: ${laterality.toUpperCase()}]. ${LATERALITY_HARD_RULES} ${KNEE_MENISCUS_TOPOGRAPHY_HARD_RULES} ${screenMap} ${finalPrompt}`;
-      } else {
-        const screenMap = buildScreenLateralityConstraint(laterality, "AP / coronal");
-        finalPrompt = `${LATERALITY_HARD_RULES} ${KNEE_MENISCUS_TOPOGRAPHY_HARD_RULES} ${screenMap} ${finalPrompt}`;
+      {
+        const screenMap = buildScreenLateralityConstraint(lockedLat, "AP / coronal");
+        if (lockedLat && lockedLat !== "auto") {
+          finalPrompt = `[MANDATORY PATIENT LATERALITY: ${String(lockedLat).toUpperCase()}]. ${LATERALITY_HARD_RULES} ${KNEE_MENISCUS_TOPOGRAPHY_HARD_RULES} ${screenMap} ${finalPrompt}`;
+        } else {
+          finalPrompt = `${LATERALITY_HARD_RULES} ${KNEE_MENISCUS_TOPOGRAPHY_HARD_RULES} ${screenMap} ${finalPrompt}`;
+        }
+      }
+      if (target.pin) {
+        finalPrompt = `${target.pin} ${finalPrompt} FINAL CHECK: ${target.pin}`;
+      }
+      if (target.compartment === "lateral") {
+        finalPrompt = finalPrompt.replace(/\bmedial meniscus\b/gi, "LATERAL (fibular) meniscus");
+      } else if (target.compartment === "medial") {
+        finalPrompt = finalPrompt.replace(/\blateral meniscus\b/gi, "MEDIAL (tibial) meniscus");
       }
 
       const imageUrl = await generateMedicalImage(ai, finalPrompt);
@@ -6350,12 +6638,14 @@ RESPONDE EN JSON:
       const updatedPanel = {
         ...panel,
         panelTitle: refineJson.panelTitle || panel.panelTitle,
-        structureOrSite: refineJson.structureOrSite || panel.structureOrSite,
+        structureOrSite: lockedSite,
         anatomicalFocus: refineJson.anatomicalFocus || panel.anatomicalFocus,
-        laterality: laterality || panel.laterality,
+        laterality: lockedLat || panel.laterality,
         imageUrl: imageUrl,
         promptUsed: finalPrompt,
-        isCustomFlipped: false
+        isCustomFlipped: false,
+        meniscusCompartment: target.compartment !== "unknown" ? target.compartment : panel.meniscusCompartment,
+        meniscusHorn: target.horn !== "unknown" ? target.horn : panel.meniscusHorn,
       };
 
       res.json({

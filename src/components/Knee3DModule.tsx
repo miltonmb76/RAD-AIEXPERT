@@ -266,12 +266,24 @@ export const Knee3DModule: React.FC<Knee3DModuleProps> = ({
     });
   };
 
-  const handleRegenerateSinglePanel = async (panel: Knee3DPanel) => {
+  const handleRegenerateSinglePanel = async (
+    panel: Knee3DPanel,
+    explicitDirectiveOverride?: string
+  ) => {
     if (!kneeData) return;
     setRegeneratingPanelLetter(panel.panelLetter);
     setErrorMessage(null);
 
-    const directive = panelDirectives[panel.panelLetter] || "";
+    const directive =
+      (explicitDirectiveOverride && explicitDirectiveOverride.trim()) ||
+      panelDirectives[panel.panelLetter] ||
+      "";
+    if (explicitDirectiveOverride?.trim()) {
+      setPanelDirectives((prev) => ({
+        ...prev,
+        [panel.panelLetter]: explicitDirectiveOverride.trim(),
+      }));
+    }
     const mergedDirectives = mergeMandatoryDirectives(directive);
 
     try {
@@ -662,9 +674,63 @@ export const Knee3DModule: React.FC<Knee3DModuleProps> = ({
                                 [panel.panelLetter]: e.target.value
                               }))
                             }
-                            placeholder="Ej: Menisco LATERAL/peroné, cuerno POSTERIOR — mantener lado y A/P exactos..."
+                            placeholder="Ej: Menisco EXTERNO (peroné) — no confundir con interno/tibial..."
                             className="w-full text-xs text-slate-900 placeholder:text-slate-400 bg-white border border-slate-300 rounded px-2 py-1"
                           />
+                          <div className="grid grid-cols-2 gap-1">
+                            <button
+                              type="button"
+                              disabled={regeneratingPanelLetter === panel.panelLetter}
+                              onClick={() =>
+                                handleRegenerateSinglePanel(
+                                  panel,
+                                  "CORRECCIÓN ESTRICTA: Rodilla Derecha AP. MENISCO INTERNO/MEDIAL (tibial) = lado DERECHO de la imagen. Peroné a la IZQUIERDA (solo landmark). PROHIBIDO poner la lesión junto al peroné."
+                                )
+                              }
+                              className="text-[9px] bg-sky-900/10 hover:bg-sky-100 border border-sky-300 text-sky-900 p-1.5 rounded text-left font-mono"
+                            >
+                              Der · Interno (tibial)
+                            </button>
+                            <button
+                              type="button"
+                              disabled={regeneratingPanelLetter === panel.panelLetter}
+                              onClick={() =>
+                                handleRegenerateSinglePanel(
+                                  panel,
+                                  "CORRECCIÓN ESTRICTA: Rodilla Derecha AP. MENISCO EXTERNO/LATERAL (peroné) = lado IZQUIERDO de la imagen JUNTO a la cabeza del peroné (debe verse). PROHIBIDO dibujarlo en el lado tibial/medial."
+                                )
+                              }
+                              className="text-[9px] bg-sky-900/10 hover:bg-sky-100 border border-sky-300 text-sky-900 p-1.5 rounded text-left font-mono"
+                            >
+                              Der · Externo (peroné)
+                            </button>
+                            <button
+                              type="button"
+                              disabled={regeneratingPanelLetter === panel.panelLetter}
+                              onClick={() =>
+                                handleRegenerateSinglePanel(
+                                  panel,
+                                  "CORRECCIÓN ESTRICTA: Rodilla Izquierda AP. MENISCO INTERNO/MEDIAL (tibial) = lado IZQUIERDO de la imagen. Peroné a la DERECHA (solo landmark). PROHIBIDO poner la lesión junto al peroné."
+                                )
+                              }
+                              className="text-[9px] bg-indigo-900/10 hover:bg-indigo-100 border border-indigo-300 text-indigo-900 p-1.5 rounded text-left font-mono"
+                            >
+                              Izq · Interno (tibial)
+                            </button>
+                            <button
+                              type="button"
+                              disabled={regeneratingPanelLetter === panel.panelLetter}
+                              onClick={() =>
+                                handleRegenerateSinglePanel(
+                                  panel,
+                                  "CORRECCIÓN ESTRICTA: Rodilla Izquierda AP. MENISCO EXTERNO/LATERAL (peroné) = lado DERECHO de la imagen JUNTO a la cabeza del peroné (debe verse). PROHIBIDO dibujarlo en el lado tibial/medial."
+                                )
+                              }
+                              className="text-[9px] bg-indigo-900/10 hover:bg-indigo-100 border border-indigo-300 text-indigo-900 p-1.5 rounded text-left font-mono"
+                            >
+                              Izq · Externo (peroné)
+                            </button>
+                          </div>
                           <div className="flex items-center justify-end gap-1.5">
                             <button
                               onClick={() => setEditingPanelLetter(null)}
