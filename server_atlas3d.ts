@@ -1284,6 +1284,28 @@ function normalizeSpatialContract(raw: any, fallbackLaterality?: string): Spatia
   };
 }
 
+function buildUsPlaneMeniscusCutFaceLock(
+  compartment: "medial" | "lateral" | "unknown",
+  role: string
+): string {
+  if (String(role || "") !== "in_plane_cut" || compartment === "unknown") return "";
+  if (compartment === "medial") {
+    return (
+      "US IN-PLANE CUT MENISCUS LOCK (CRITICAL): This panel is the CUT FACE of the acquisition plane. " +
+      "Lesion/tear MUST sit only on the INTERNAL/MEDIAL meniscus (tibial side, OPPOSITE the fibula). " +
+      "If both menisci appear in the section, mark ONLY the medial one; leave the lateral/external meniscus unmarked. " +
+      "CRITICAL FAIL: placing the lesion on the EXTERNAL/LATERAL (fibular) meniscus when the report is medial/internal. " +
+      "Keep the fibular head landmark on the OPPOSITE side of the lesion."
+    );
+  }
+  return (
+    "US IN-PLANE CUT MENISCUS LOCK (CRITICAL): This panel is the CUT FACE of the acquisition plane. " +
+    "Lesion/tear MUST sit only on the EXTERNAL/LATERAL meniscus (fibular/peroneal side, NEXT TO the fibular head). " +
+    "If both menisci appear in the section, mark ONLY the lateral one; leave the medial/internal meniscus unmarked. " +
+    "CRITICAL FAIL: placing the lesion on the INTERNAL/MEDIAL (tibial) meniscus when the report is lateral/external."
+  );
+}
+
 function buildImagePromptFromContract(args: {
   panelTitle: string;
   anatomicalFocus: string;
@@ -1292,6 +1314,8 @@ function buildImagePromptFromContract(args: {
   customDirectives?: string;
   forcedLaterality?: string;
   surgicalCorrection?: string;
+  reportText?: string;
+  panelRole?: string;
 }): string {
   const lateralityHint = (args.forcedLaterality && args.forcedLaterality !== "auto"
     ? args.forcedLaterality
@@ -1346,6 +1370,7 @@ function buildImagePromptFromContract(args: {
   const geometryBlock = breastClock ? buildBreastClockGeometryBlock(side, hour) : "";
 
   const kneeCtx = isKneeMeniscusContext(
+    args.reportText,
     args.studyRegion,
     args.panelTitle,
     args.anatomicalFocus,
@@ -1361,10 +1386,13 @@ function buildImagePromptFromContract(args: {
         anatomicalFocus: args.anatomicalFocus,
         panelTitle: args.panelTitle,
         laterality,
-        reportText: args.studyRegion,
+        reportText: args.reportText || args.studyRegion,
       })
     : null;
   const kneePin = kneeTarget?.pin || "";
+  const cutFaceMeniscusLock = kneeTarget
+    ? buildUsPlaneMeniscusCutFaceLock(kneeTarget.compartment, args.panelRole || "")
+    : "";
 
   const parts = [
     FAITHFUL_STYLE,
@@ -1372,6 +1400,7 @@ function buildImagePromptFromContract(args: {
     buildScreenLateralityConstraint(laterality, c.view),
     kneeCtx ? KNEE_MENISCUS_TOPOGRAPHY_HARD_RULES : "",
     kneePin,
+    cutFaceMeniscusLock,
     geometryBlock,
     breastClock,
     lesionHalfPin,
@@ -1392,6 +1421,7 @@ function buildImagePromptFromContract(args: {
     // Repeat pin at the end — image models overweight trailing instructions
     lesionHalfPin ? `FINAL CHECK: ${lesionHalfPin}` : "",
     kneePin ? `FINAL CHECK: ${kneePin}` : "",
+    cutFaceMeniscusLock ? `FINAL CHECK: ${cutFaceMeniscusLock}` : "",
   ].filter(Boolean);
 
   return parts.join(" ");
@@ -7580,23 +7610,41 @@ RESPONDE SOLO JSON:
 
       const ai = getGeminiClient();
       const model = getModelName(requestedModel || "gemini-3.8-flash");
+      const reportSlice = String(reportText).slice(0, 3500);
       const lockedPlane: UsPlaneKind =
         forcedPlane === "transverse" || forcedPlane === "oblique" || forcedPlane === "longitudinal"
           ? forcedPlane
           : detectUsAcquisitionPlane(customDirectives, organOrStudy, reportText);
+
+      const kneePlanTarget = isKneeMeniscusContext(reportSlice, organOrStudy, customDirectives)
+        ? resolveKneeMeniscusTarget({
+            customDirectives,
+            reportText: reportSlice,
+            structureOrSite: organOrStudy,
+            laterality,
+          })
+        : null;
+      const kneePlanBlock = kneePlanTarget?.compartment !== "unknown" && kneePlanTarget
+        ? `\n${KNEE_MENISCUS_TOPOGRAPHY_RULES_ES}\nMENISCO BLOQUEADO DEL INFORME: ${kneePlanTarget.siteLabel}.\n` +
+          `targetStructure, anatomicalFocus y pathologySite de AMBOS paneles DEBEN nombrar exactamente ese menisco (interno/medial ≠ externo/lateral). ` +
+          `Panel B (cara del corte) NUNCA puede mover la lesión al menisco contralateral.\n` +
+          (kneePlanTarget.pin ? `PIN: ${kneePlanTarget.pin}\n` : "")
+        : isKneeMeniscusContext(reportSlice, organOrStudy)
+          ? `\n${KNEE_MENISCUS_TOPOGRAPHY_RULES_ES}\n`
+          : "";
 
       const planPrompt = `Eres un radiólogo experto en ecografía y director de arte médico 3D.
 Diseña el "SIMULADOR DE PLANO ECOGRÁFICO": dos paneles que muestran el plano de adquisición del transductor anclado al informe.
 
 INFORME:
 """
-${String(reportText).slice(0, 3500)}
+${reportSlice}
 """
 Estudio/protocolo: "${organOrStudy || ""}"
 Lateralidad pedida: "${laterality || "auto"}"
 Directiva clínica: "${customDirectives || "Ninguna"}"
 PLANO BLOQUEADO (no cambiar): "${lockedPlane}" = ${usPlaneLabelEs(lockedPlane)}
-
+${kneePlanBlock}
 Devuelve JSON estricto:
 {
   "studyRegion": "órgano/región",
@@ -7642,7 +7690,8 @@ Reglas:
 - Lateralidad = lado del PACIENTE (AP: derecha del paciente a la izquierda del cuadro).
 - Panel A: volumen 3D + plano translúcido del eco.
 - Panel B: vista “cara del corte” (como el plano del eco).
-- No inventes patología ausente del informe/directiva.`;
+- No inventes patología ausente del informe/directiva.
+- Si hay menisco: panel A y panel B DEBEN coincidir en interno/medial vs externo/lateral (peroné ancla el externo).`;
 
       const planResp = await ai.models.generateContent({
         model,
@@ -7668,8 +7717,34 @@ Reglas:
         (laterality && laterality !== "auto" ? laterality : "") ||
         planJson.detectedLaterality ||
         "";
-      const structure = String(planJson.targetStructure || organOrStudy || "anatomía ecográfica");
+      const kneeTarget = resolveKneeMeniscusTarget({
+        customDirectives,
+        reportText: reportSlice,
+        structureOrSite: planJson.targetStructure || organOrStudy,
+        laterality: lat,
+        findingStructures: Array.isArray(planJson.structuresCrossed)
+          ? planJson.structuresCrossed.map((x: any) => String(x))
+          : [],
+      });
+      const structure =
+        kneeTarget.compartment !== "unknown" && kneeTarget.siteLabel
+          ? kneeTarget.siteLabel
+          : String(planJson.targetStructure || organOrStudy || "anatomía ecográfica");
       const planeLock = usPlanePromptLock(plane, lat, structure);
+      const meniscusForbid =
+        kneeTarget.compartment === "medial"
+          ? [
+              "external/lateral meniscus lesion when report is internal/medial",
+              "fibular-side meniscus tear for a medial finding",
+              "swapping internal↔external meniscus on the cut face",
+            ]
+          : kneeTarget.compartment === "lateral"
+            ? [
+                "internal/medial meniscus lesion when report is external/lateral",
+                "tibial-side meniscus tear for a lateral finding",
+                "swapping internal↔external meniscus on the cut face",
+              ]
+            : [];
 
       let panels = Array.isArray(planJson.panels) ? planJson.panels : [];
       if (panels.length < 2) {
@@ -7685,20 +7760,20 @@ Reglas:
               laterality: lat,
               pathologySite: structure,
               mustShowLandmarks: ["skin surface", "key osseous/soft-tissue landmarks"],
-              doNotInvent: ["wrong acquisition plane", "mirrored laterality"],
+              doNotInvent: ["wrong acquisition plane", "mirrored laterality", ...meniscusForbid],
             },
           },
           {
             panelLetter: "B",
             panelRole: "in_plane_cut",
             panelTitle: "Corte en el plano de adquisición",
-            anatomicalFocus: `Cara del corte ${usPlaneLabelEs(plane)}`,
+            anatomicalFocus: `Cara del corte ${usPlaneLabelEs(plane)} — ${structure}`,
             laterality: lat,
             spatialContract: {
               view: "in-plane cut face",
               laterality: lat,
               pathologySite: structure,
-              doNotInvent: ["wrong acquisition plane", "mirrored laterality"],
+              doNotInvent: ["wrong acquisition plane", "mirrored laterality", ...meniscusForbid],
             },
           },
         ];
@@ -7710,13 +7785,46 @@ Reglas:
             panel.panelRole === "in_plane_cut" || idx === 1
               ? "in_plane_cut"
               : "anatomy_with_plane";
+          const panelKnee = resolveKneeMeniscusTarget({
+            customDirectives,
+            reportText: reportSlice,
+            structureOrSite: panel.anatomicalFocus || structure,
+            anatomicalFocus: panel.anatomicalFocus,
+            panelTitle: panel.panelTitle,
+            laterality: panel.laterality || lat,
+            findingStructures: [structure, planJson.targetStructure],
+          });
+          const lockedFocus =
+            panelKnee.compartment !== "unknown" && panelKnee.siteLabel
+              ? panelKnee.siteLabel
+              : panel.anatomicalFocus || structure;
+
           let contract = normalizeSpatialContract(
             panel.spatialContract,
             panel.laterality || lat
           );
+          if (panelKnee.compartment !== "unknown" && panelKnee.siteLabel) {
+            contract.pathologySite = panelKnee.siteLabel;
+            contract.doNotInvent = Array.from(
+              new Set([...(contract.doNotInvent || []), ...meniscusForbid])
+            );
+            if (panelKnee.compartment === "lateral") {
+              contract.mustShowLandmarks = Array.from(
+                new Set([...(contract.mustShowLandmarks || []), "fibular head / peroneal landmark"])
+              );
+            } else if (panelKnee.compartment === "medial") {
+              contract.mustShowLandmarks = Array.from(
+                new Set([
+                  ...(contract.mustShowLandmarks || []),
+                  "tibial plateau medial compartment",
+                  "fibular head only as opposite-side landmark",
+                ])
+              );
+            }
+          }
           contract = enforceBreastClockOnContract(contract, {
             laterality: panel.laterality || lat,
-            anatomicalFocus: panel.anatomicalFocus,
+            anatomicalFocus: lockedFocus,
             studyRegion: planJson.studyRegion || organOrStudy,
             panelTitle: panel.panelTitle,
             customDirectives,
@@ -7725,15 +7833,17 @@ Reglas:
           const roleHint =
             role === "anatomy_with_plane"
               ? "PANEL ROLE: external/3D anatomy view WITH a translucent cyan ultrasound cutting plane and subtle probe footprint on skin."
-              : "PANEL ROLE: looking at the CUT FACE of the ultrasound acquisition plane (in-plane anatomic section), clean medical CGI.";
+              : "PANEL ROLE: looking at the CUT FACE of the ultrasound acquisition plane (in-plane anatomic section), clean medical CGI. Same meniscus compartment as Panel A — never swap internal↔external.";
 
           let promptToUse = buildImagePromptFromContract({
             panelTitle: panel.panelTitle || (role === "anatomy_with_plane" ? "Anatomy + US plane" : "In-plane cut"),
-            anatomicalFocus: panel.anatomicalFocus || structure,
+            anatomicalFocus: lockedFocus,
             studyRegion: planJson.studyRegion || organOrStudy || "ultrasound anatomy",
             contract,
             customDirectives: [planeLock, roleHint, customDirectives].filter(Boolean).join("\n"),
             forcedLaterality: panel.laterality || lat,
+            reportText: reportSlice,
+            panelRole: role,
           });
 
           try {
@@ -7746,7 +7856,7 @@ Reglas:
                 (role === "anatomy_with_plane"
                   ? "Anatomía 3D con plano del transductor"
                   : "Corte en el plano de adquisición"),
-              anatomicalFocus: panel.anatomicalFocus || "",
+              anatomicalFocus: lockedFocus,
               laterality: panel.laterality || lat,
               panelRole: role,
               spatialContract: contract,
@@ -7760,7 +7870,7 @@ Reglas:
               id: `us-plane-${idx}-${Date.now()}`,
               panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
               panelTitle: panel.panelTitle || `Panel ${String.fromCharCode(65 + idx)}`,
-              anatomicalFocus: panel.anatomicalFocus || "",
+              anatomicalFocus: lockedFocus,
               laterality: panel.laterality || lat,
               panelRole: role,
               spatialContract: contract,
@@ -7777,15 +7887,21 @@ Reglas:
       try {
         const verifiable = builtPanels.filter((p) => p.imageUrl && stripDataUrl(p.imageUrl));
         if (verifiable.length) {
+          const meniscusQa =
+            kneeTarget.compartment !== "unknown"
+              ? `\nMENISCO EXIGIDO: ${kneeTarget.siteLabel} (${kneeTarget.compartment === "medial" ? "INTERNAL/MEDIAL = tibial, opposite fibula" : "EXTERNAL/LATERAL = fibular side"}).\n` +
+                `pass=false if Panel B (or any panel) puts the lesion on the contralateral meniscus.\n` +
+                `meniscusOk=false when internal↔external is swapped.\n`
+              : "";
           const parts: any[] = [
             {
               text: `QA de simulador de plano ecográfico.
 Plano EXIGIDO: ${plane} (${usPlaneLabelEs(plane)}).
 Lateralidad paciente: ${lat || "según informe"}.
 Estructura: ${structure}.
-Para cada panel: pass=false si el plano visible no es el exigido, si hay espejo de lado, o si aparecen números/reloj en la imagen.
+${meniscusQa}Para cada panel: pass=false si el plano visible no es el exigido, si hay espejo de lado, si el menisco interno/externo está invertido, o si aparecen números/reloj en la imagen.
 JSON:
-{ "panels": [ { "panelLetter":"A", "pass":true/false, "lateralityOk":true/false, "planeOk":true/false, "issues":[], "surgicalCorrection":"English fix if fail" } ] }`,
+{ "panels": [ { "panelLetter":"A", "pass":true/false, "lateralityOk":true/false, "planeOk":true/false, "meniscusOk":true/false, "issues":[], "surgicalCorrection":"English fix if fail" } ] }`,
             },
           ];
           for (const p of verifiable) {
@@ -7809,19 +7925,32 @@ JSON:
           qualityAudit.panelNotes = Array.isArray(qaJson.panels) ? qaJson.panels : [];
 
           for (const note of qualityAudit.panelNotes) {
-            if (note?.pass !== false) continue;
+            const meniscusFail = note?.meniscusOk === false;
+            if (note?.pass !== false && !meniscusFail) continue;
             const idx = builtPanels.findIndex(
               (p) => String(p.panelLetter).toUpperCase() === String(note.panelLetter || "").toUpperCase()
             );
             if (idx < 0) continue;
             const p = builtPanels[idx];
-            const correction = reinforceLateralityCorrection(
-              String(note.surgicalCorrection || "Fix acquisition plane and laterality."),
-              p.laterality || lat,
-              p.spatialContract?.view,
-              note?.lateralityOk !== true,
-              `${plane} ${structure}`
-            );
+            const meniscusFix =
+              meniscusFail || /menisc|interno|externo|medial|lateral|fibul|peron/i.test(String(note.surgicalCorrection || ""))
+                ? buildUsPlaneMeniscusCutFaceLock(kneeTarget.compartment, p.panelRole || "") ||
+                  kneeTarget.pin ||
+                  "Fix meniscus compartment: INTERNAL/medial ≠ EXTERNAL/lateral (fibula locks external)."
+                : "";
+            const correction = [
+              reinforceLateralityCorrection(
+                String(note.surgicalCorrection || "Fix acquisition plane and laterality."),
+                p.laterality || lat,
+                p.spatialContract?.view,
+                note?.lateralityOk !== true,
+                `${plane} ${structure}`
+              ),
+              meniscusFix,
+              kneeTarget.pin,
+            ]
+              .filter(Boolean)
+              .join(" ");
             const retryPrompt = `${usPlanePromptLock(plane, p.laterality || lat, structure)} ${correction} ${p.promptUsed}`;
             try {
               const imageUrl = await generateMedicalImage(ai, retryPrompt);
@@ -7885,6 +8014,7 @@ JSON:
 
       const ai = getGeminiClient();
       const model = getModelName(requestedModel || "gemini-3.8-flash");
+      const reportSlice = String(reportText || "").slice(0, 3500);
       const plane: UsPlaneKind = detectUsAcquisitionPlane(
         userDirective,
         acquisitionPlane,
@@ -7895,14 +8025,46 @@ JSON:
         (laterality && laterality !== "auto" ? laterality : "") ||
         panel.laterality ||
         "";
-      const structure = String(targetStructure || panel.anatomicalFocus || "anatomía ecográfica");
+      const kneeTarget = resolveKneeMeniscusTarget({
+        userDirective,
+        customDirectives,
+        reportText: reportSlice,
+        structureOrSite: targetStructure || panel.anatomicalFocus,
+        anatomicalFocus: panel.anatomicalFocus,
+        panelTitle: panel.panelTitle,
+        laterality: lat,
+      });
+      const structure =
+        kneeTarget.compartment !== "unknown" && kneeTarget.siteLabel
+          ? kneeTarget.siteLabel
+          : String(targetStructure || panel.anatomicalFocus || "anatomía ecográfica");
       const role =
         panel.panelRole === "in_plane_cut" ? "in_plane_cut" : "anatomy_with_plane";
+      const lockedFocus =
+        kneeTarget.compartment !== "unknown" && kneeTarget.siteLabel
+          ? kneeTarget.siteLabel
+          : panel.anatomicalFocus || structure;
 
       let contract = normalizeSpatialContract(panel.spatialContract, lat);
+      if (kneeTarget.compartment !== "unknown" && kneeTarget.siteLabel) {
+        contract.pathologySite = kneeTarget.siteLabel;
+        const meniscusForbid =
+          kneeTarget.compartment === "medial"
+            ? [
+                "external/lateral meniscus lesion when report is internal/medial",
+                "swapping internal↔external meniscus on the cut face",
+              ]
+            : [
+                "internal/medial meniscus lesion when report is external/lateral",
+                "swapping internal↔external meniscus on the cut face",
+              ];
+        contract.doNotInvent = Array.from(
+          new Set([...(contract.doNotInvent || []), ...meniscusForbid])
+        );
+      }
       contract = enforceBreastClockOnContract(contract, {
         laterality: lat,
-        anatomicalFocus: [panel.anatomicalFocus, userDirective].filter(Boolean).join(" "),
+        anatomicalFocus: [lockedFocus, userDirective].filter(Boolean).join(" "),
         studyRegion: structure,
         panelTitle: panel.panelTitle,
         customDirectives: [customDirectives, userDirective].filter(Boolean).join(" "),
@@ -7911,23 +8073,25 @@ JSON:
       const roleHint =
         role === "anatomy_with_plane"
           ? "PANEL ROLE: 3D anatomy WITH translucent cyan US cutting plane + subtle probe footprint. NO text in image."
-          : "PANEL ROLE: in-plane cut face of the US acquisition plane. NO text in image.";
+          : "PANEL ROLE: in-plane cut face of the US acquisition plane. Same meniscus compartment as the report — never swap internal↔external. NO text in image.";
 
       const finalPrompt = buildImagePromptFromContract({
         panelTitle: panel.panelTitle,
-        anatomicalFocus: panel.anatomicalFocus || structure,
+        anatomicalFocus: lockedFocus,
         studyRegion: structure,
         contract,
         customDirectives: [
           usPlanePromptLock(plane, lat, structure),
           roleHint,
           customDirectives,
-          userDirective ? `SURGEON CHIP CORRECTION: ${userDirective}` : "",
+          userDirective ? `SURGEON MODIFICATION: ${userDirective}` : "",
         ]
           .filter(Boolean)
           .join("\n"),
         forcedLaterality: lat,
         surgicalCorrection: userDirective,
+        reportText: reportSlice,
+        panelRole: role,
       });
 
       const imageUrl = await generateMedicalImage(ai, finalPrompt);
@@ -7936,6 +8100,7 @@ JSON:
         success: true,
         panel: {
           ...panel,
+          anatomicalFocus: lockedFocus,
           laterality: lat,
           panelRole: role,
           spatialContract: contract,

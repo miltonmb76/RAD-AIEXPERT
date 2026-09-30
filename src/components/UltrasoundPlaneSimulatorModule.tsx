@@ -81,6 +81,7 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
   const [zoomPanel, setZoomPanel] = useState<UsPlaneSimulatorPanel | null>(null);
   const [regeneratingLetter, setRegeneratingLetter] = useState<string | null>(null);
   const [forcedPlane, setForcedPlane] = useState<UsAcquisitionPlane | "auto">("auto");
+  const [panelDirectives, setPanelDirectives] = useState<Record<string, string>>({});
 
   const mergedDirectives = useMemo(() => {
     const fromScore = buildAtlasDirectivesFromScorecard(scorecardData || null);
@@ -149,6 +150,10 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
     nextPlane?: UsAcquisitionPlane
   ) => {
     if (!planeData) return;
+    const freeText = (panelDirectives[panel.panelLetter] || "").trim();
+    const combinedDirective = [directive, freeText ? `MODIFICACIÓN DEL USUARIO: ${freeText}` : ""]
+      .filter(Boolean)
+      .join("\n");
     setRegeneratingLetter(panel.panelLetter);
     setErrorMessage(null);
     try {
@@ -161,7 +166,7 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
           laterality: panel.laterality || planeData.detectedLaterality,
           acquisitionPlane: nextPlane || planeData.acquisitionPlane,
           targetStructure: planeData.targetStructure,
-          userDirective: directive,
+          userDirective: combinedDirective,
           customDirectives: mergedDirectives || undefined,
           requestedModel: selectedModel,
         }),
@@ -429,20 +434,60 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
                       </div>
                     )}
                   </div>
-                  <div className="p-3 space-y-1 border-t border-cyan-900/30">
+                  <div className="p-3 space-y-2 border-t border-cyan-900/30">
                     <p className="text-xs font-semibold text-slate-100 line-clamp-2">
                       {panel.panelTitle}
                     </p>
                     <p className="text-[11px] text-slate-400 line-clamp-2">
                       {panel.anatomicalFocus}
                     </p>
+                    <label className="block text-[10px] uppercase tracking-widest text-slate-500 font-semibold">
+                      Modificación al regenerar
+                    </label>
+                    <textarea
+                      value={panelDirectives[panel.panelLetter] || ""}
+                      onChange={(e) =>
+                        setPanelDirectives((prev) => ({
+                          ...prev,
+                          [panel.panelLetter]: e.target.value,
+                        }))
+                      }
+                      rows={2}
+                      placeholder="Ej. Lesión en menisco interno/medial (tibial), no en el externo/peroné…"
+                      className="w-full min-w-0 bg-slate-950/80 border border-slate-700 focus:border-cyan-500 rounded-lg px-2.5 py-2 text-[11px] text-slate-200 placeholder:text-slate-500 outline-none resize-none"
+                    />
+                    <div className="flex flex-wrap gap-1">
+                      {[
+                        "Menisco interno/medial (tibial), no externo",
+                        "Menisco externo/lateral (peroné), no interno",
+                        "Mantener mismo plano y lado",
+                      ].map((chip) => (
+                        <button
+                          key={chip}
+                          type="button"
+                          disabled={!!regeneratingLetter}
+                          onClick={() =>
+                            setPanelDirectives((prev) => {
+                              const cur = (prev[panel.panelLetter] || "").trim();
+                              return {
+                                ...prev,
+                                [panel.panelLetter]: cur ? `${cur}; ${chip}` : chip,
+                              };
+                            })
+                          }
+                          className="text-[9px] px-2 py-0.5 rounded border border-slate-700 text-slate-400 hover:border-cyan-500/50 hover:text-cyan-100"
+                        >
+                          {chip}
+                        </button>
+                      ))}
+                    </div>
                     <button
                       type="button"
                       disabled={!!regeneratingLetter}
                       onClick={() =>
                         handleRegeneratePanel(
                           panel,
-                          "Refine this panel only; keep locked acquisition plane and laterality."
+                          "Refine this panel only; keep locked acquisition plane, patient laterality, and meniscus compartment (internal/medial ≠ external/lateral)."
                         )
                       }
                       className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold text-cyan-300 hover:text-cyan-200"
@@ -469,15 +514,15 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
                   </div>
                 )}
                 {(planeData.structuresCrossed || []).length > 0 && (
-                  <div className="rounded-xl border border-slate-700/50 bg-slate-950/50 p-4">
+                  <div className="rounded-xl border border-slate-700/50 bg-slate-950/50 p-4 min-w-0">
                     <p className="text-[10px] font-mono uppercase tracking-widest text-slate-400 mb-2">
                       Estructuras cruzadas
                     </p>
-                    <ul className="space-y-1">
+                    <ul className="space-y-1 min-w-0">
                       {planeData.structuresCrossed!.map((s, i) => (
-                        <li key={i} className="text-[13px] text-slate-200 flex gap-2">
-                          <span className="text-cyan-400">▹</span>
-                          {s}
+                        <li key={i} className="text-[13px] text-slate-200 flex gap-2 min-w-0">
+                          <span className="text-cyan-400 shrink-0">▹</span>
+                          <span className="break-words whitespace-normal min-w-0">{s}</span>
                         </li>
                       ))}
                     </ul>
