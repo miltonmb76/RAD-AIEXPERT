@@ -3701,6 +3701,41 @@ Ejemplo:
   const [isWrist3dSuiteOpen, setIsWrist3dSuiteOpen] = useState<boolean>(false);
   const [includeRadarInReport, setIncludeRadarInReport] = useState<boolean>(true);
 
+  const suiteHasUiContent = (data: any): boolean =>
+    !!(
+      data &&
+      ((Array.isArray(data.panels) && data.panels.length > 0) ||
+        (Array.isArray(data.hemodynamicTable) && data.hemodynamicTable.length > 0) ||
+        (Array.isArray(data.noduleTable) && data.noduleTable.length > 0) ||
+        (Array.isArray(data.lesionTable) && data.lesionTable.length > 0) ||
+        (Array.isArray(data.findingTable) && data.findingTable.length > 0))
+    );
+  /** Suite 3D en uso (abierta o con datos). Atlas no cuenta. */
+  const anySuiteUsedUi =
+    isThyroid3dSuiteOpen ||
+    isBreast3dSuiteOpen ||
+    isShoulder3dSuiteOpen ||
+    isKnee3dSuiteOpen ||
+    isAnkle3dSuiteOpen ||
+    isKidney3dSuiteOpen ||
+    isAbdomen3dSuiteOpen ||
+    isAbdominalWall3dSuiteOpen ||
+    isScrotum3dSuiteOpen ||
+    isMuscleTendon3dSuiteOpen ||
+    isWrist3dSuiteOpen ||
+    suiteHasUiContent(vascular3dData) ||
+    suiteHasUiContent(thyroid3dData) ||
+    suiteHasUiContent(breast3dData) ||
+    suiteHasUiContent(shoulder3dData) ||
+    suiteHasUiContent(knee3dData) ||
+    suiteHasUiContent(ankle3dData) ||
+    suiteHasUiContent(kidney3dData) ||
+    suiteHasUiContent(abdomen3dData) ||
+    suiteHasUiContent(abdominalWall3dData) ||
+    suiteHasUiContent(scrotum3dData) ||
+    suiteHasUiContent(muscleTendon3dData) ||
+    suiteHasUiContent(wrist3dData);
+
   // States & Handlers for Sistema de Activación Rápida de Módulos (Procesamiento en Lote)
   const DEFAULT_BATCH_MODULES: Record<string, boolean> = {
     clinical_scorecard: true,
@@ -10948,6 +10983,76 @@ Ejemplo:
 
       // --- 4. SUITES ESPECÍFICAS DE ÓRGANO (vascular/tiroides/mama/hombro) ---
       // Después de la sinopsis por órgano si está presente; si no, después del cuerpo/cuadro.
+      // Corte Focal 3D: justo después de la suite usada; si no hay suite, justo después del reporte/sinopsis.
+      const pdfSnap = pdfStateRef.current;
+      const pdfSuiteData = <T,>(overrideKey: string, live: T): T =>
+        (studyOverride ? (studyOverride as any)[overrideKey] : (pdfSnap as any)?.[overrideKey] ?? live) as T;
+      const pdfSuiteInclude = (overrideKey: string, live: boolean): boolean =>
+        studyOverride
+          ? (studyOverride as any)[overrideKey] !== false
+          : ((pdfSnap as any)?.[overrideKey] !== false && live);
+      const suiteHasRenderableContent = (data: any): boolean =>
+        !!(
+          data &&
+          ((Array.isArray(data.panels) && data.panels.length > 0) ||
+            (Array.isArray(data.hemodynamicTable) && data.hemodynamicTable.length > 0) ||
+            (Array.isArray(data.noduleTable) && data.noduleTable.length > 0) ||
+            (Array.isArray(data.lesionTable) && data.lesionTable.length > 0) ||
+            (Array.isArray(data.findingTable) && data.findingTable.length > 0))
+        );
+      const anySuiteInPdf =
+        (pdfSuiteInclude("includeVascular3dInReport", includeVascular3dInReport) &&
+          suiteHasRenderableContent(pdfSuiteData("vascular3dData", vascular3dData))) ||
+        (pdfSuiteInclude("includeThyroid3dInReport", includeThyroid3dInReport) &&
+          suiteHasRenderableContent(pdfSuiteData("thyroid3dData", thyroid3dData))) ||
+        (pdfSuiteInclude("includeBreast3dInReport", includeBreast3dInReport) &&
+          suiteHasRenderableContent(pdfSuiteData("breast3dData", breast3dData))) ||
+        (pdfSuiteInclude("includeShoulder3dInReport", includeShoulder3dInReport) &&
+          suiteHasRenderableContent(pdfSuiteData("shoulder3dData", shoulder3dData))) ||
+        (pdfSuiteInclude("includeKnee3dInReport", includeKnee3dInReport) &&
+          suiteHasRenderableContent(pdfSuiteData("knee3dData", knee3dData))) ||
+        (pdfSuiteInclude("includeAnkle3dInReport", includeAnkle3dInReport) &&
+          suiteHasRenderableContent(pdfSuiteData("ankle3dData", ankle3dData))) ||
+        (pdfSuiteInclude("includeKidney3dInReport", includeKidney3dInReport) &&
+          suiteHasRenderableContent(pdfSuiteData("kidney3dData", kidney3dData))) ||
+        (pdfSuiteInclude("includeAbdomen3dInReport", includeAbdomen3dInReport) &&
+          suiteHasRenderableContent(pdfSuiteData("abdomen3dData", abdomen3dData))) ||
+        (pdfSuiteInclude("includeAbdominalWall3dInReport", includeAbdominalWall3dInReport) &&
+          suiteHasRenderableContent(pdfSuiteData("abdominalWall3dData", abdominalWall3dData))) ||
+        (pdfSuiteInclude("includeScrotum3dInReport", includeScrotum3dInReport) &&
+          suiteHasRenderableContent(pdfSuiteData("scrotum3dData", scrotum3dData))) ||
+        (pdfSuiteInclude("includeMuscleTendon3dInReport", includeMuscleTendon3dInReport) &&
+          suiteHasRenderableContent(pdfSuiteData("muscleTendon3dData", muscleTendon3dData))) ||
+        (pdfSuiteInclude("includeWrist3dInReport", includeWrist3dInReport) &&
+          suiteHasRenderableContent(pdfSuiteData("wrist3dData", wrist3dData)));
+
+      const renderFocalLesionAnnexHere = () => {
+        const activeFocalLesionData = studyOverride
+          ? studyOverride.focalLesion3dData
+          : (pdfSnap?.focalLesion3dData || focalLesion3dData);
+        const shouldIncludeFocalLesion = studyOverride
+          ? studyOverride.includeFocalLesion3dInReport !== false
+          : pdfSnap?.includeFocalLesion3dInReport !== false && includeFocalLesion3dInReport;
+        if (
+          activeFocalLesionData &&
+          shouldIncludeFocalLesion &&
+          activeFocalLesionData.panels &&
+          activeFocalLesionData.panels.length > 0
+        ) {
+          renderFocalLesion3DAnnexToPDF(doc, activeFocalLesionData, {
+            marginX,
+            pageWidth,
+            pageHeight,
+            contentWidth,
+            factor,
+          });
+        }
+      };
+
+      if (!anySuiteInPdf) {
+        // Sin suite: Corte Focal inmediatamente después del reporte / sinopsis
+        renderFocalLesionAnnexHere();
+      }
 
       // --- 5.6. ANEXO: SUITE VASCULAR 3D & MAPA ANATOMO-HEMODINÁMICO (PÁGINA DEDICADA) ---
       
@@ -11100,6 +11205,11 @@ Ejemplo:
       const shouldIncludeWrist = studyOverride ? (studyOverride.includeWrist3dInReport !== false) : (pdfStateRef.current?.includeWrist3dInReport !== false && includeWrist3dInReport);
       if (activeWristData && shouldIncludeWrist && (activeWristData.panels?.length || activeWristData.findingTable?.length)) {
         await renderWrist3DPageToPdf(doc, activeWristData, doc.internal.pageSize.getHeight() > 280 ? "a4" : "letter", pdfLayoutType);
+      }
+
+      if (anySuiteInPdf) {
+        // Con suite: Corte Focal inmediatamente después de la(s) suite(s) 3D
+        renderFocalLesionAnnexHere();
       }
 
       // Restore standard margins and content widths for any diagrams, annexes, and signature block
@@ -11281,18 +11391,7 @@ Ejemplo:
       }
 
 
-      // --- 5.65. ANEXO: CORTE FOCAL 3D DE LA LESIÓN (ON DEMAND) ---
-      const activeFocalLesionData = studyOverride ? studyOverride.focalLesion3dData : (pdfStateRef.current?.focalLesion3dData || focalLesion3dData);
-      const shouldIncludeFocalLesion = studyOverride ? (studyOverride.includeFocalLesion3dInReport !== false) : (pdfStateRef.current?.includeFocalLesion3dInReport !== false && includeFocalLesion3dInReport);
-      if (activeFocalLesionData && shouldIncludeFocalLesion && activeFocalLesionData.panels && activeFocalLesionData.panels.length > 0) {
-        renderFocalLesion3DAnnexToPDF(doc, activeFocalLesionData, {
-          marginX,
-          pageWidth,
-          pageHeight,
-          contentWidth,
-          factor
-        });
-      }
+      // Corte Focal 3D ya se insertó tras reporte (sin suite) o tras suites (con suite).
 
       // --- 5.66. ANEXO: SIMULADOR DE PLANO ECOGR�FICO 3D ---
       const activeUsPlaneData = studyOverride ? studyOverride.usPlaneSimulatorData : (pdfStateRef.current?.usPlaneSimulatorData || usPlaneSimulatorData);
@@ -21020,6 +21119,24 @@ const splitReportAndAnnex = (text: string) => {
                             )}
                           </div>
 
+                          {/* Sin suite 3D: Corte Focal justo después del reporte */}
+                          {!anySuiteUsedUi && (
+                            <div id="focal-lesion-3d-module" className="my-4">
+                              <FocalLesion3DModule
+                                reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
+                                activeProtocol={specificStudy || studyType || ""}
+                                laterality=""
+                                selectedModel={modelFor("focal_lesion3d")}
+                                focalData={focalLesion3dData}
+                                setFocalData={setFocalLesion3dData}
+                                includeInReport={includeFocalLesion3dInReport}
+                                setIncludeInReport={setIncludeFocalLesion3dInReport}
+                                scorecardData={clinicalScorecardData}
+                                externalDirectives={atlasDirectivesFromScorecard}
+                              />
+                            </div>
+                          )}
+
                           {/* === ATLAS 3D FOTORREALISTA Y CORRELACIÓN ANATÓMICA === */}
                           <Atlas3DModule
                             reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
@@ -21047,25 +21164,6 @@ const splitReportAndAnnex = (text: string) => {
                             scorecardData={clinicalScorecardData}
                             externalDirectives={buildVascularDirectivesFromScorecard(clinicalScorecardData) || atlasDirectivesFromScorecard}
                           />
-
-                          {/* === CORTE FOCAL 3D DE LA LESI�N (ON DEMAND) === */}
-                          {/* Suite Tiroides: tarjeta colapsable en módulos */}
-
-
-<div id="focal-lesion-3d-module">
-                          <FocalLesion3DModule
-                            reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
-                            activeProtocol={specificStudy || studyType || ""}
-                            laterality=""
-                            selectedModel={modelFor("focal_lesion3d")}
-                            focalData={focalLesion3dData}
-                            setFocalData={setFocalLesion3dData}
-                            includeInReport={includeFocalLesion3dInReport}
-                            setIncludeInReport={setIncludeFocalLesion3dInReport}
-                            scorecardData={clinicalScorecardData}
-                            externalDirectives={atlasDirectivesFromScorecard}
-                          />
-                          </div>
 
                           <div id="us-plane-simulator-module-wrap" className="mt-4">
                           <UltrasoundPlaneSimulatorModule
@@ -23210,6 +23308,24 @@ const splitReportAndAnnex = (text: string) => {
                                     : undefined
                                 ) || atlasDirectivesFromScorecard}
                                 onClose={() => setIsWrist3dSuiteOpen(false)}
+                              />
+                            </div>
+                          )}
+
+                          {/* Con suite 3D: Corte Focal justo despues de la(s) suite(s) */}
+                          {anySuiteUsedUi && (
+                            <div id="focal-lesion-3d-module" className="my-6">
+                              <FocalLesion3DModule
+                                reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
+                                activeProtocol={specificStudy || studyType || ""}
+                                laterality=""
+                                selectedModel={modelFor("focal_lesion3d")}
+                                focalData={focalLesion3dData}
+                                setFocalData={setFocalLesion3dData}
+                                includeInReport={includeFocalLesion3dInReport}
+                                setIncludeInReport={setIncludeFocalLesion3dInReport}
+                                scorecardData={clinicalScorecardData}
+                                externalDirectives={atlasDirectivesFromScorecard}
                               />
                             </div>
                           )}
