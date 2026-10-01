@@ -116,7 +116,7 @@ export const NegativityChecklistModule: React.FC<NegativityChecklistModuleProps>
       const data = normalizeNegativityChecklistData(json.data);
       const requestedFocus = checklistFocus.trim();
       setChecklistData(requestedFocus ? { ...data, requestedFocus } : data);
-      setIncludeInReport(true);
+      // PDF annex is opt-in; keep checkbox as the user left it
       setDraftInserts({});
       setTechDrafts({});
     } catch (e: any) {

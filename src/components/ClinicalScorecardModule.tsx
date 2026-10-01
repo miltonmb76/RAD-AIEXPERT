@@ -121,7 +121,7 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
       }
       const data = json.data as ClinicalScorecardData;
       setScorecardData(data);
-      setIncludeInReport(true);
+      // PDF annex is opt-in; keep checkbox as the user left it
 
       const directives = buildAtlasDirectivesFromScorecard(data);
       if (directives && onAtlasDirectivesSuggested) {
