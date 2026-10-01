@@ -2909,13 +2909,13 @@ export default function App() {
   const [atlas3dData, setAtlas3dData] = useState<Atlas3DData | null>(null);
   const [includeAtlas3dInReport, setIncludeAtlas3dInReport] = useState<boolean>(true);
   const [clinicalScorecardData, setClinicalScorecardData] = useState<ClinicalScorecardData | null>(null);
-  const [includeScorecardInReport, setIncludeScorecardInReport] = useState<boolean>(true);
+  const [includeScorecardInReport, setIncludeScorecardInReport] = useState<boolean>(false);
   const [isClinicalScorecardOpen, setIsClinicalScorecardOpen] = useState<boolean>(false);
   const [reasoningChainData, setReasoningChainData] = useState<ReasoningChainData | null>(null);
   const [includeReasoningChainInReport, setIncludeReasoningChainInReport] = useState<boolean>(true);
   const [isReasoningChainOpen, setIsReasoningChainOpen] = useState<boolean>(false);
   const [negativityChecklistData, setNegativityChecklistData] = useState<NegativityChecklistData | null>(null);
-  const [includeNegativityChecklistInReport, setIncludeNegativityChecklistInReport] = useState<boolean>(true);
+  const [includeNegativityChecklistInReport, setIncludeNegativityChecklistInReport] = useState<boolean>(false);
   const [isNegativityChecklistOpen, setIsNegativityChecklistOpen] = useState<boolean>(false);
   const [secondReaderData, setSecondReaderData] = useState<SecondReaderData | null>(null);
   const [isSecondReaderOpen, setIsSecondReaderOpen] = useState<boolean>(false);
@@ -3704,7 +3704,7 @@ Ejemplo:
   // States & Handlers for Sistema de Activación Rápida de Módulos (Procesamiento en Lote)
   const DEFAULT_BATCH_MODULES: Record<string, boolean> = {
     clinical_scorecard: true,
-    reasoning_chain: false,
+    reasoning_chain: true,
     negativity_checklist: false,
     second_reader: false,
     differential_tree: false,
@@ -3766,6 +3766,7 @@ Ejemplo:
     setIsNegativityChecklistOpen(true);
     setIsSecondReaderOpen(true);
     setIsClinicalScorecardOpen(true);
+    setIsReasoningChainOpen(true);
 
     try {
       const result = await runReportEnrichmentPipeline({
@@ -3784,14 +3785,16 @@ Ejemplo:
 
       if (result.checklist) {
         setNegativityChecklistData(result.checklist);
-        setIncludeNegativityChecklistInReport(true);
+        // Keep PDF opt-in: generate/activate for other modules, do not auto-include annex
+        setIncludeNegativityChecklistInReport(false);
       }
       if (result.reader) {
         setSecondReaderData(result.reader);
       }
       if (result.scorecard) {
         setClinicalScorecardData(result.scorecard);
-        setIncludeScorecardInReport(true);
+        // Keep PDF opt-in: scorecard still feeds Atlas/directives, not PDF by default
+        setIncludeScorecardInReport(false);
       }
       if (result.measurements && result.measurements.length > 0) {
         setIsAsistenteMedidasOpen(true);
@@ -4116,7 +4119,8 @@ Ejemplo:
             if (scJson.success && scJson.data) {
               scorecardForModules = scJson.data;
               setClinicalScorecardData(scJson.data);
-              setIncludeScorecardInReport(true);
+              // Scorecard activates for directives/Atlas; PDF annex stays opt-in
+              setIncludeScorecardInReport(false);
               const directives = buildAtlasDirectivesFromScorecard(scJson.data);
               if (directives) setAtlasDirectivesFromScorecard(directives);
             } else {
@@ -4575,7 +4579,8 @@ Ejemplo:
           const j = await resp.json();
           if (j.success && j.data) {
             setNegativityChecklistData(j.data);
-            setIncludeNegativityChecklistInReport(true);
+            // Checklist activates for clinical polish; PDF annex stays opt-in
+            setIncludeNegativityChecklistInReport(false);
           } else {
             console.error("Checklist de negatividad en lote fallo:", j.error);
           }
@@ -11126,8 +11131,8 @@ Ejemplo:
       // --- ANEXO: SCORECARD DE CRITERIOS CLINICOS ---
       const activeScorecard = studyOverride ? (studyOverride as any).clinicalScorecardData : (pdfStateRef.current?.clinicalScorecardData || clinicalScorecardData);
       const shouldIncludeScorecard = studyOverride
-        ? ((studyOverride as any).includeScorecardInReport !== false)
-        : ((pdfStateRef.current?.includeScorecardInReport !== false) && includeScorecardInReport);
+        ? (studyOverride as any).includeScorecardInReport === true
+        : (pdfStateRef.current?.includeScorecardInReport ?? includeScorecardInReport) === true;
       if (activeScorecard && shouldIncludeScorecard && Array.isArray(activeScorecard.criteria) && activeScorecard.criteria.length > 0) {
         renderScorecardAnnexToPDF(doc, activeScorecard, {
           marginX,
@@ -11165,8 +11170,9 @@ Ejemplo:
         ? (studyOverride as any).negativityChecklistData
         : (pdfStateRef.current?.negativityChecklistData || negativityChecklistData);
       const shouldIncludeNegativityChecklist = studyOverride
-        ? ((studyOverride as any).includeNegativityChecklistInReport !== false)
-        : ((pdfStateRef.current?.includeNegativityChecklistInReport !== false) && includeNegativityChecklistInReport);
+        ? (studyOverride as any).includeNegativityChecklistInReport === true
+        : (pdfStateRef.current?.includeNegativityChecklistInReport ??
+            includeNegativityChecklistInReport) === true;
       if (
         activeNegativityChecklist &&
         shouldIncludeNegativityChecklist &&
