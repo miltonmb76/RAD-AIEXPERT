@@ -9,6 +9,7 @@ import {
   softFillFromAccent,
   computeSuitePanelLayout
 } from "./pdfAnnexChrome";
+import { drawSuiteImageAnnotationsOnPdf } from "./suiteImageAnnotationsPdf";
 
 /**
  * Renders an exclusive, two-page "ANEXO: SUITE TIROIDES 3D & FICHA TI-RADS Y CORRELACIÓN 3D" into the provided jsPDF document.
@@ -149,7 +150,19 @@ export async function renderThyroid3DPageToPdf(
         doc.text("Reconstrucción 3D Tiroidea", imgX + (imgWidth / 2) - 18, imgY + (imgHeight / 2));
       }
 
-      const badgeLabel = `PANEL ${p.panelLetter || String.fromCharCode(65 + idx)}`;
+      
+      drawSuiteImageAnnotationsOnPdf(
+        doc,
+        thyroidData.imageAnnotations || [],
+        p.panelLetter || String.fromCharCode(65 + idx),
+        imgX,
+        imgY,
+        imgWidth,
+        imgHeight,
+        factor
+      );
+
+const badgeLabel = `PANEL ${p.panelLetter || String.fromCharCode(65 + idx)}`;
       drawAnnexPanelBadge(doc, {
         label: badgeLabel,
         x: imgX + 2,

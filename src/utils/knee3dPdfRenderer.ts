@@ -9,6 +9,7 @@ import {
   softFillFromAccent,
   computeSuitePanelLayout
 } from "./pdfAnnexChrome";
+import { drawSuiteImageAnnotationsOnPdf } from "./suiteImageAnnotationsPdf";
 
 /**
  * Renders a two-page "ANEXO: SUITE RODILLA 3D & FICHA LIGAMENTOS Y MENISCOS" into the provided jsPDF document.
@@ -130,7 +131,19 @@ export async function renderKnee3DPageToPdf(
         doc.text("Reconstrucción 3D Rodilla", imgX + (imgWidth / 2) - 18, imgY + (imgHeight / 2));
       }
 
-      const badgeLabel = `PANEL ${p.panelLetter || String.fromCharCode(65 + idx)}`;
+      
+      drawSuiteImageAnnotationsOnPdf(
+        doc,
+        kneeData.imageAnnotations || [],
+        p.panelLetter || String.fromCharCode(65 + idx),
+        imgX,
+        imgY,
+        imgWidth,
+        imgHeight,
+        factor
+      );
+
+const badgeLabel = `PANEL ${p.panelLetter || String.fromCharCode(65 + idx)}`;
       drawAnnexPanelBadge(doc, {
         label: badgeLabel,
         x: imgX + 2,

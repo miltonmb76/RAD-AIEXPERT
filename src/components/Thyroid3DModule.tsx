@@ -28,7 +28,16 @@ import {
   ThyroidNoduleRow,
   ThyroidStudyType,
   ClinicalScorecardData
+,
+  SuiteImageAnnotation
 } from "../types";
+import {
+  remapAnnotationsPanelLetters,
+  suggestFromTableRows,
+  withSuggestedImageAnnotations,
+} from "../lib/suiteImageAnnotations";
+import { SuiteImageAnnotationLayer } from "./SuiteImageAnnotationLayer";
+
 import { runBackgroundTask } from "../lib/backgroundTasks";
 import { buildThyroidDirectivesFromScorecard } from "../lib/clinicalIntelligence";
 import { flipImageDataUrl, swapLateralityLabel } from "../lib/imageFlip";
@@ -137,6 +146,7 @@ export const Thyroid3DModule: React.FC<Thyroid3DModuleProps> = ({
   const [editingPanelLetter, setEditingPanelLetter] = useState<string | null>(null);
   const [panelDirectives, setPanelDirectives] = useState<{ [letter: string]: string }>({});
   const [regeneratingPanelLetter, setRegeneratingPanelLetter] = useState<string | null>(null);
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [editingFocusLetter, setEditingFocusLetter] = useState<string | null>(null);
 
   // Generate Vascular Suite with AI
@@ -173,7 +183,16 @@ export const Thyroid3DModule: React.FC<Thyroid3DModuleProps> = ({
           throw new Error(resData.error || "Error al generar la Suite Tiroides 3D.");
         }
 
-        setThyroidData(resData.data);
+        const data = resData.data as Thyroid3DData;
+        const letters = (data.panels || []).map((p) => p.panelLetter).filter(Boolean);
+        const suggested = suggestFromTableRows(
+          (data as any).noduleTable || [],
+          letters,
+          ["location", "composition", "echogenicity"],
+          ["size"],
+          3
+        );
+        setThyroidData(withSuggestedImageAnnotations(data, suggested));
         setIncludeInReport(true);
       });
       setGenerationStep("");
@@ -280,8 +299,19 @@ export const Thyroid3DModule: React.FC<Thyroid3DModuleProps> = ({
     setThyroidData({
       ...thyroidData,
       figureTitle: updatedTitle,
-      panels: updatedPanels
+      panels: updatedPanels,
+      imageAnnotations: remapAnnotationsPanelLetters(
+        thyroidData.imageAnnotations,
+        letterMap,
+        panelLetter
+      ),
     });
+  };
+
+  
+  const setImageAnnotations = (next: SuiteImageAnnotation[]) => {
+    if (!thyroidData) return;
+    setThyroidData({ ...thyroidData, imageAnnotations: next });
   };
 
   const handleRegenerateSinglePanel = async (panel: Thyroid3DPanel) => {
@@ -576,10 +606,37 @@ export const Thyroid3DModule: React.FC<Thyroid3DModuleProps> = ({
 
           {/* Section: 3D Vascular Panels */}
           <div>
-            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
               <Layers className="w-3.5 h-3.5 text-teal-600" />
               Reconstrucción Volumétrica 3D de Vasos ({thyroidData.panels?.length || 0} Paneles)
             </h4>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!thyroidData) return;
+                  const letters = (thyroidData.panels || []).map((p) => p.panelLetter);
+                  const suggested = suggestFromTableRows(
+                    ((thyroidData as any).noduleTable) || [],
+                    letters,
+                    ["location", "composition", "echogenicity"],
+                    ["size"],
+                    3
+                  );
+                  if (!suggested.length) return;
+                  setThyroidData({
+                    ...thyroidData,
+                    imageAnnotations: [
+                      ...(thyroidData.imageAnnotations || []),
+                      ...suggested,
+                    ],
+                  });
+                }}
+                className="text-[10px] font-bold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-lg px-2.5 py-1"
+              >
+                Sugerir anotaciones desde tabla
+              </button>
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {thyroidData.panels.map((panel, idx) => (
@@ -602,13 +659,24 @@ export const Thyroid3DModule: React.FC<Thyroid3DModuleProps> = ({
                       </div>
                     )}
 
+                    {panel.imageUrl && (
+                      <SuiteImageAnnotationLayer
+                        panelLetter={panel.panelLetter}
+                        annotations={thyroidData.imageAnnotations || []}
+                        onChange={setImageAnnotations}
+                        mode="layer"
+                        editable
+                        selectedId={selectedAnnotationId}
+                        onSelectId={setSelectedAnnotationId}
+                      />
+                    )}
                     {/* Badge */}
-                    <div className="absolute top-2 left-2 bg-teal-600 text-white font-bold text-[10px] px-2 py-0.5 rounded shadow">
+                    <div className="absolute top-2 left-2 z-10 bg-teal-600 text-white font-bold text-[10px] px-2 py-0.5 rounded shadow">
                       PANEL {panel.panelLetter}
                     </div>
 
                     {/* Quick Tools Overlay */}
-                    <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 backdrop-blur-sm p-1 rounded-lg">
+                    <div className="absolute top-2 right-2 z-10 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 backdrop-blur-sm p-1 rounded-lg">
                       <button
                         onClick={() => handleFlipHorizontal(panel.panelLetter)}
                         className={`p-1 rounded text-white hover:bg-white/20 transition-colors ${
@@ -647,6 +715,17 @@ export const Thyroid3DModule: React.FC<Thyroid3DModuleProps> = ({
 
                   {/* Panel Details */}
                   <div className="p-3 space-y-2">
+                    {panel.imageUrl && (
+                      <SuiteImageAnnotationLayer
+                        panelLetter={panel.panelLetter}
+                        annotations={thyroidData.imageAnnotations || []}
+                        onChange={setImageAnnotations}
+                        mode="toolbar"
+                        editable
+                        selectedId={selectedAnnotationId}
+                        onSelectId={setSelectedAnnotationId}
+                      />
+                    )}
                     <div>
                       {isEditingText ? (
                         <input

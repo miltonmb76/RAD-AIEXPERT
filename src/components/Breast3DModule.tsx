@@ -28,7 +28,16 @@ import {
   BreastLesionRow,
   BreastStudyType,
   ClinicalScorecardData
+,
+  SuiteImageAnnotation
 } from "../types";
+import {
+  remapAnnotationsPanelLetters,
+  suggestFromTableRows,
+  withSuggestedImageAnnotations,
+} from "../lib/suiteImageAnnotations";
+import { SuiteImageAnnotationLayer } from "./SuiteImageAnnotationLayer";
+
 import { runBackgroundTask } from "../lib/backgroundTasks";
 import { buildBreastDirectivesFromScorecard } from "../lib/clinicalIntelligence";
 import { flipImageDataUrl, swapLateralityLabel } from "../lib/imageFlip";
@@ -137,6 +146,7 @@ export const Breast3DModule: React.FC<Breast3DModuleProps> = ({
   const [editingPanelLetter, setEditingPanelLetter] = useState<string | null>(null);
   const [panelDirectives, setPanelDirectives] = useState<{ [letter: string]: string }>({});
   const [regeneratingPanelLetter, setRegeneratingPanelLetter] = useState<string | null>(null);
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [editingFocusLetter, setEditingFocusLetter] = useState<string | null>(null);
 
   // Generate Vascular Suite with AI
@@ -173,7 +183,16 @@ export const Breast3DModule: React.FC<Breast3DModuleProps> = ({
           throw new Error(resData.error || "Error al generar la Suite Mama 3D.");
         }
 
-        setBreastData(resData.data);
+        const data = resData.data as Breast3DData;
+        const letters = (data.panels || []).map((p) => p.panelLetter).filter(Boolean);
+        const suggested = suggestFromTableRows(
+          (data as any).lesionTable || [],
+          letters,
+          ["location", "shape", "echogenicity"],
+          ["size"],
+          3
+        );
+        setBreastData(withSuggestedImageAnnotations(data, suggested));
         setIncludeInReport(true);
       });
       setGenerationStep("");
@@ -301,8 +320,19 @@ export const Breast3DModule: React.FC<Breast3DModuleProps> = ({
     setBreastData({
       ...breastData,
       figureTitle: updatedTitle,
-      panels: updatedPanels
+      panels: updatedPanels,
+      imageAnnotations: remapAnnotationsPanelLetters(
+        breastData.imageAnnotations,
+        letterMap,
+        panelLetter
+      ),
     });
+  };
+
+  
+  const setImageAnnotations = (next: SuiteImageAnnotation[]) => {
+    if (!breastData) return;
+    setBreastData({ ...breastData, imageAnnotations: next });
   };
 
   const handleRegenerateSinglePanel = async (
@@ -611,10 +641,37 @@ export const Breast3DModule: React.FC<Breast3DModuleProps> = ({
 
           {/* Section: 3D Vascular Panels */}
           <div>
-            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
               <Layers className="w-3.5 h-3.5 text-pink-600" />
               Reconstrucción Volumétrica 3D de Vasos ({breastData.panels?.length || 0} Paneles)
             </h4>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!breastData) return;
+                  const letters = (breastData.panels || []).map((p) => p.panelLetter);
+                  const suggested = suggestFromTableRows(
+                    ((breastData as any).lesionTable) || [],
+                    letters,
+                    ["location", "shape", "echogenicity"],
+                    ["size"],
+                    3
+                  );
+                  if (!suggested.length) return;
+                  setBreastData({
+                    ...breastData,
+                    imageAnnotations: [
+                      ...(breastData.imageAnnotations || []),
+                      ...suggested,
+                    ],
+                  });
+                }}
+                className="text-[10px] font-bold text-pink-800 bg-pink-50 hover:bg-pink-100 border border-pink-200 rounded-lg px-2.5 py-1"
+              >
+                Sugerir anotaciones desde tabla
+              </button>
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {breastData.panels.map((panel, idx) => (
@@ -638,12 +695,23 @@ export const Breast3DModule: React.FC<Breast3DModuleProps> = ({
                     )}
 
                     {/* Badge — only panel letter; never overlay clock/QA labels on the drawing */}
-                    <div className="absolute top-2 left-2 bg-pink-600 text-white font-bold text-[10px] px-2 py-0.5 rounded shadow">
+                    {panel.imageUrl && (
+                      <SuiteImageAnnotationLayer
+                        panelLetter={panel.panelLetter}
+                        annotations={breastData.imageAnnotations || []}
+                        onChange={setImageAnnotations}
+                        mode="layer"
+                        editable
+                        selectedId={selectedAnnotationId}
+                        onSelectId={setSelectedAnnotationId}
+                      />
+                    )}
+                    <div className="absolute top-2 left-2 z-10 bg-pink-600 text-white font-bold text-[10px] px-2 py-0.5 rounded shadow">
                       PANEL {panel.panelLetter}
                     </div>
 
                     {/* Quick Tools Overlay */}
-                    <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 backdrop-blur-sm p-1 rounded-lg">
+                    <div className="absolute top-2 right-2 z-10 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 backdrop-blur-sm p-1 rounded-lg">
                       <button
                         onClick={() => handleFlipHorizontal(panel.panelLetter)}
                         className={`p-1 rounded text-white hover:bg-white/20 transition-colors ${
@@ -682,6 +750,17 @@ export const Breast3DModule: React.FC<Breast3DModuleProps> = ({
 
                   {/* Panel Details */}
                   <div className="p-3 space-y-2">
+                    {panel.imageUrl && (
+                      <SuiteImageAnnotationLayer
+                        panelLetter={panel.panelLetter}
+                        annotations={breastData.imageAnnotations || []}
+                        onChange={setImageAnnotations}
+                        mode="toolbar"
+                        editable
+                        selectedId={selectedAnnotationId}
+                        onSelectId={setSelectedAnnotationId}
+                      />
+                    )}
                     <div>
                       {isEditingText ? (
                         <input

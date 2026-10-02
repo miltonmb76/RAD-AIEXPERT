@@ -24,7 +24,16 @@ import {
   ScrotumFindingRow,
   ScrotumStudyType,
   ClinicalScorecardData
+,
+  SuiteImageAnnotation
 } from "../types";
+import {
+  remapAnnotationsPanelLetters,
+  suggestFromTableRows,
+  withSuggestedImageAnnotations,
+} from "../lib/suiteImageAnnotations";
+import { SuiteImageAnnotationLayer } from "./SuiteImageAnnotationLayer";
+
 import { runBackgroundTask } from "../lib/backgroundTasks";
 import { buildScrotumDirectivesFromScorecard, SCROTUM_TOPOGRAPHY_DIRECTIVE } from "../lib/clinicalIntelligence";
 import { flipImageDataUrl, swapLateralityLabel } from "../lib/imageFlip";
@@ -129,6 +138,7 @@ export const Scrotum3DModule: React.FC<Scrotum3DModuleProps> = ({
   const [editingPanelLetter, setEditingPanelLetter] = useState<string | null>(null);
   const [panelDirectives, setPanelDirectives] = useState<{ [letter: string]: string }>({});
   const [regeneratingPanelLetter, setRegeneratingPanelLetter] = useState<string | null>(null);
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
 
   const handleGenerate = async () => {
     if (!reportText || !reportText.trim()) {
@@ -163,7 +173,16 @@ export const Scrotum3DModule: React.FC<Scrotum3DModuleProps> = ({
           throw new Error(resData.error || "Error al generar la Suite Escroto 3D.");
         }
 
-        setScrotumData(resData.data);
+        const data = resData.data as Scrotum3DData;
+        const letters = (data.panels || []).map((p) => p.panelLetter).filter(Boolean);
+        const suggested = suggestFromTableRows(
+          (data as any).findingTable || [],
+          letters,
+          ["structure", "location"],
+          ["sizeOrThickness", "size"],
+          3
+        );
+        setScrotumData(withSuggestedImageAnnotations(data, suggested));
         setIncludeInReport(true);
       });
       setGenerationStep("");
@@ -263,8 +282,19 @@ export const Scrotum3DModule: React.FC<Scrotum3DModuleProps> = ({
     setScrotumData({
       ...scrotumData,
       figureTitle: updatedTitle,
-      panels: updatedPanels
+      panels: updatedPanels,
+      imageAnnotations: remapAnnotationsPanelLetters(
+        scrotumData.imageAnnotations,
+        letterMap,
+        panelLetter
+      ),
     });
+  };
+
+  
+  const setImageAnnotations = (next: SuiteImageAnnotation[]) => {
+    if (!scrotumData) return;
+    setScrotumData({ ...scrotumData, imageAnnotations: next });
   };
 
   const handleRegenerateSinglePanel = async (panel: Scrotum3DPanel) => {
@@ -544,10 +574,37 @@ export const Scrotum3DModule: React.FC<Scrotum3DModuleProps> = ({
           </div>
 
           <div>
-            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
               <Layers className="w-3.5 h-3.5 text-amber-600" />
               Reconstrucción Volumétrica 3D Escroto ({scrotumData.panels?.length || 0} Paneles)
             </h4>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!scrotumData) return;
+                  const letters = (scrotumData.panels || []).map((p) => p.panelLetter);
+                  const suggested = suggestFromTableRows(
+                    ((scrotumData as any).findingTable) || [],
+                    letters,
+                    ["structure", "location"],
+                    ["sizeOrThickness", "size"],
+                    3
+                  );
+                  if (!suggested.length) return;
+                  setScrotumData({
+                    ...scrotumData,
+                    imageAnnotations: [
+                      ...(scrotumData.imageAnnotations || []),
+                      ...suggested,
+                    ],
+                  });
+                }}
+                className="text-[10px] font-bold text-violet-800 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-lg px-2.5 py-1"
+              >
+                Sugerir anotaciones desde tabla
+              </button>
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {(scrotumData.panels || []).map((panel, idx) => (
@@ -569,11 +626,22 @@ export const Scrotum3DModule: React.FC<Scrotum3DModuleProps> = ({
                       </div>
                     )}
 
-                    <div className="absolute top-2 left-2 bg-amber-600 text-white font-bold text-[10px] px-2 py-0.5 rounded shadow">
+                    {panel.imageUrl && (
+                      <SuiteImageAnnotationLayer
+                        panelLetter={panel.panelLetter}
+                        annotations={scrotumData.imageAnnotations || []}
+                        onChange={setImageAnnotations}
+                        mode="layer"
+                        editable
+                        selectedId={selectedAnnotationId}
+                        onSelectId={setSelectedAnnotationId}
+                      />
+                    )}
+                    <div className="absolute top-2 left-2 z-10 bg-amber-600 text-white font-bold text-[10px] px-2 py-0.5 rounded shadow">
                       PANEL {panel.panelLetter}
                     </div>
 
-                    <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 backdrop-blur-sm p-1 rounded-lg">
+                    <div className="absolute top-2 right-2 z-10 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 backdrop-blur-sm p-1 rounded-lg">
                       <button
                         onClick={() => handleFlipHorizontal(panel.panelLetter)}
                         className={`p-1 rounded text-white hover:bg-white/20 transition-colors ${
@@ -611,6 +679,17 @@ export const Scrotum3DModule: React.FC<Scrotum3DModuleProps> = ({
 
                   <div className="p-3 space-y-2">
                     <div>
+                    {panel.imageUrl && (
+                      <SuiteImageAnnotationLayer
+                        panelLetter={panel.panelLetter}
+                        annotations={scrotumData.imageAnnotations || []}
+                        onChange={setImageAnnotations}
+                        mode="toolbar"
+                        editable
+                        selectedId={selectedAnnotationId}
+                        onSelectId={setSelectedAnnotationId}
+                      />
+                    )}
                       {isEditingText ? (
                         <input
                           type="text"
