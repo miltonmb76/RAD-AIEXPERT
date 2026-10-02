@@ -9,6 +9,7 @@ import {
   softFillFromAccent,
   computeSuitePanelLayout
 } from "./pdfAnnexChrome";
+import { drawSuiteImageAnnotationsOnPdf } from "./suiteImageAnnotationsPdf";
 import { vascularDossierLabels } from "./vascularDossierLabels";
 
 /**
@@ -149,7 +150,19 @@ export async function renderVascular3DPageToPdf(
         doc.text("Reconstrucción 3D Vascular", imgX + (imgWidth / 2) - 18, imgY + (imgHeight / 2));
       }
 
-      const badgeLabel = `PANEL ${p.panelLetter || String.fromCharCode(65 + idx)}`;
+      
+      drawSuiteImageAnnotationsOnPdf(
+        doc,
+        vascularData.imageAnnotations || [],
+        p.panelLetter || String.fromCharCode(65 + idx),
+        imgX,
+        imgY,
+        imgWidth,
+        imgHeight,
+        factor
+      );
+
+const badgeLabel = `PANEL ${p.panelLetter || String.fromCharCode(65 + idx)}`;
       drawAnnexPanelBadge(doc, {
         label: badgeLabel,
         x: imgX + 2,

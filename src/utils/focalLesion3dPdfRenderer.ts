@@ -3,6 +3,7 @@ import { sanitizeFocalClinicalProse } from "./sanitizeFocalClinicalProse";
 import { pdfCutawayToCorte } from "./pdfCutawayToCorte";
 import { sanitizePdfText } from "./sanitizePdfText";
 import { ANNEX_CAPTION_GAP } from "./pdfAnnexChrome";
+import { drawSuiteImageAnnotationsOnPdf } from "./suiteImageAnnotationsPdf";
 
 /**
  * Annex for Focal Lesion Corte 3D — always ONE page.
@@ -290,6 +291,17 @@ export function renderFocalLesion3DAnnexToPDF(
         doc.rect(imgX, imgY, imgW, imgH, "F");
       }
     }
+
+    drawSuiteImageAnnotationsOnPdf(
+      doc,
+      data.imageAnnotations || [],
+      p.panelLetter,
+      imgX,
+      imgY,
+      imgW,
+      imgH,
+      factor
+    );
 
     const roleTag = p.panelRole === "macro" ? "MACRO" : "CTX";
     const badgeLabel = `PANEL ${p.panelLetter} · ${roleTag}`;

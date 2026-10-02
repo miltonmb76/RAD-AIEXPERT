@@ -1,6 +1,7 @@
 import { Atlas3DData } from "../types";
 import { pdfCutawayToCorte } from "./pdfCutawayToCorte";
 import { sanitizePdfText } from "./sanitizePdfText";
+import { drawSuiteImageAnnotationsOnPdf } from "./suiteImageAnnotationsPdf";
 
 export function renderAtlas3DAnnexToPDF(
   doc: any,
@@ -164,6 +165,20 @@ export function renderAtlas3DAnnexToPDF(
       }
     } catch (imgError) {
       console.warn("Error rendering panel image in PDF:", imgError);
+    }
+
+    {
+      const imgInset = 0.4 * factor;
+      drawSuiteImageAnnotationsOnPdf(
+        doc,
+        atlasData.imageAnnotations || [],
+        panel.panelLetter,
+        panelX + imgInset,
+        imgY + imgInset,
+        panelWidth - imgInset * 2,
+        imgBoxH - imgInset * 2,
+        factor
+      );
     }
 
     // Caption Footer (Dark bottom box with Foco: description)

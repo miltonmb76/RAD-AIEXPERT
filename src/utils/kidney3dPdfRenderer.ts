@@ -9,6 +9,7 @@ import {
   softFillFromAccent,
   computeSuitePanelLayout
 } from "./pdfAnnexChrome";
+import { drawSuiteImageAnnotationsOnPdf } from "./suiteImageAnnotationsPdf";
 
 /**
  * Renders a two-page "ANEXO: SUITE RIÑÓN 3D & FICHA VÍAS URINARIAS" into the provided jsPDF document.
@@ -130,7 +131,19 @@ export async function renderKidney3DPageToPdf(
         doc.text("Reconstrucción 3D Renal", imgX + (imgWidth / 2) - 18, imgY + (imgHeight / 2));
       }
 
-      const badgeLabel = `PANEL ${p.panelLetter || String.fromCharCode(65 + idx)}`;
+      
+      drawSuiteImageAnnotationsOnPdf(
+        doc,
+        kidneyData.imageAnnotations || [],
+        p.panelLetter || String.fromCharCode(65 + idx),
+        imgX,
+        imgY,
+        imgWidth,
+        imgHeight,
+        factor
+      );
+
+const badgeLabel = `PANEL ${p.panelLetter || String.fromCharCode(65 + idx)}`;
       drawAnnexPanelBadge(doc, {
         label: badgeLabel,
         x: imgX + 2,

@@ -566,10 +566,35 @@ export const Abdomen3DModule: React.FC<Abdomen3DModuleProps> = ({
           </div>
 
           <div>
-            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-              <Layers className="w-3.5 h-3.5 text-amber-600" />
-              Reconstrucción Volumétrica 3D Abdomen ({abdomenData.panels?.length || 0} Paneles)
-            </h4>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5 text-amber-600" />
+                Reconstrucción Volumétrica 3D Abdomen ({abdomenData.panels?.length || 0} Paneles)
+              </h4>
+              <button
+                type="button"
+                onClick={() => {
+                  const letters = (abdomenData.panels || []).map((p) => p.panelLetter);
+                  const suggested = suggestAbdomenImageAnnotations(
+                    abdomenData.findingTable,
+                    letters,
+                    3
+                  );
+                  if (!suggested.length) return;
+                  setAbdomenData({
+                    ...abdomenData,
+                    imageAnnotations: [
+                      ...(abdomenData.imageAnnotations || []),
+                      ...suggested,
+                    ],
+                  });
+                }}
+                className="text-[10px] font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg px-2.5 py-1"
+                title="Propone etiquetas (nombre/tamaño) desde la ficha multi-órgano"
+              >
+                Sugerir anotaciones desde tabla
+              </button>
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {(abdomenData.panels || []).map((panel, idx) => (

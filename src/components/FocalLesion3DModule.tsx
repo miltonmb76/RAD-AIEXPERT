@@ -13,11 +13,17 @@ import {
   Wand2,
   Info
 } from "lucide-react";
-import { FocalLesion3DData, FocalLesion3DPanel, ClinicalScorecardData } from "../types";
+import { FocalLesion3DData, FocalLesion3DPanel, ClinicalScorecardData, SuiteImageAnnotation } from "../types";
 import { buildAtlasDirectivesFromScorecard } from "../lib/clinicalIntelligence";
 import { runBackgroundTask } from "../lib/backgroundTasks";
 import { flipImageDataUrl, swapLateralityLabel } from "../lib/imageFlip";
 import { sanitizeFocalClinicalProse } from "../utils/sanitizeFocalClinicalProse";
+import {
+  remapAnnotationsPanelLetters,
+  suggestFocalImageAnnotations,
+  withSuggestedImageAnnotations,
+} from "../lib/suiteImageAnnotations";
+import { SuiteImageAnnotationLayer } from "./SuiteImageAnnotationLayer";
 
 interface FocalLesion3DModuleProps {
   reportText: string;
@@ -60,6 +66,7 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
   const [editingPanelLetter, setEditingPanelLetter] = useState<string | null>(null);
   const [panelDirectives, setPanelDirectives] = useState<Record<string, string>>({});
   const [regeneratingPanelLetter, setRegeneratingPanelLetter] = useState<string | null>(null);
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
 
   React.useEffect(() => {
     if (externalDirectives && externalDirectives.trim()) {
@@ -125,7 +132,15 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
         if (!resData.success) {
           throw new Error(resData.error || "Error al generar el corte focal 3D.");
         }
-        setFocalData(resData.data);
+        const data = resData.data as FocalLesion3DData;
+        const letters = (data.panels || []).map((p) => p.panelLetter).filter(Boolean);
+        const suggested = suggestFocalImageAnnotations({
+          panelLetters: letters,
+          lesionLabel: data.lesionLabel,
+          lesionSite: data.lesionSite,
+          lesionSize: data.lesionSize,
+        });
+        setFocalData(withSuggestedImageAnnotations(data, suggested));
         setIncludeInReport(true);
       });
     } catch (err: any) {
@@ -228,7 +243,17 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
       ...focalData,
       figureTitle: updatedTitle,
       panels: updatedPanels,
+      imageAnnotations: remapAnnotationsPanelLetters(
+        focalData.imageAnnotations,
+        letterMap,
+        panelLetter
+      ),
     });
+  };
+
+  const setImageAnnotations = (next: SuiteImageAnnotation[]) => {
+    if (!focalData) return;
+    setFocalData({ ...focalData, imageAnnotations: next });
   };
 
   const handleRegeneratePanel = async (panel: FocalLesion3DPanel) => {
@@ -567,6 +592,32 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
             </div>
           </div>
 
+          <div className="mb-3 flex justify-end">
+            <button
+              type="button"
+              onClick={() => {
+                if (!focalData) return;
+                const letters = (focalData.panels || []).map((p) => p.panelLetter);
+                const suggested = suggestFocalImageAnnotations({
+                  panelLetters: letters,
+                  lesionLabel: focalData.lesionLabel,
+                  lesionSite: focalData.lesionSite,
+                  lesionSize: focalData.lesionSize,
+                });
+                if (!suggested.length) return;
+                setFocalData({
+                  ...focalData,
+                  imageAnnotations: [
+                    ...(focalData.imageAnnotations || []),
+                    ...suggested,
+                  ],
+                });
+              }}
+              className="text-[10px] font-bold text-teal-200 bg-teal-950/60 hover:bg-teal-900/80 border border-teal-500/40 rounded-lg px-2.5 py-1"
+            >
+              Sugerir anotaciones desde lesión
+            </button>
+          </div>
           <div
             className={`grid gap-4 ${
               focalData.panels.length > 1 ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1 max-w-xl mx-auto"
@@ -589,7 +640,18 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
                       Sin imagen
                     </div>
                   )}
-                  <div className="absolute top-2 left-2 flex gap-1.5 max-w-[calc(100%-3rem)] flex-wrap">
+                  {panel.imageUrl && (
+                    <SuiteImageAnnotationLayer
+                      panelLetter={panel.panelLetter}
+                      annotations={focalData.imageAnnotations || []}
+                      onChange={setImageAnnotations}
+                      mode="layer"
+                      editable
+                      selectedId={selectedAnnotationId}
+                      onSelectId={setSelectedAnnotationId}
+                    />
+                  )}
+                  <div className="absolute top-2 left-2 z-10 flex gap-1.5 max-w-[calc(100%-3rem)] flex-wrap">
                     <span className="text-[9px] font-black uppercase bg-teal-700/90 text-white px-2 py-0.5 rounded-md font-mono whitespace-nowrap shrink-0">
                       Panel {panel.panelLetter}
                     </span>
@@ -597,7 +659,7 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
                       {panel.panelRole === "macro" ? "Macro" : "Contexto"}
                     </span>
                   </div>
-                  <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="absolute top-2 right-2 z-10 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
                       type="button"
                       onClick={() => setZoomPanel(panel)}
@@ -632,6 +694,17 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
                   )}
                 </div>
                 <div className="px-3.5 pt-4 pb-3 space-y-2 border-t border-slate-800">
+                  {panel.imageUrl && (
+                    <SuiteImageAnnotationLayer
+                      panelLetter={panel.panelLetter}
+                      annotations={focalData.imageAnnotations || []}
+                      onChange={setImageAnnotations}
+                      mode="toolbar"
+                      editable
+                      selectedId={selectedAnnotationId}
+                      onSelectId={setSelectedAnnotationId}
+                    />
+                  )}
                   <p className="text-xs font-bold text-slate-100 leading-snug">{panel.panelTitle}</p>
                   <p className="text-[11px] text-slate-400 leading-snug">
                     {sanitizeFocalClinicalProse(panel.anatomicalFocus || "")}

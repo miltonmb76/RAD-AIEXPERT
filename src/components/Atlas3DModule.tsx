@@ -23,7 +23,7 @@ import {
   ShieldAlert,
   Plus
 } from "lucide-react";
-import { Atlas3DData, Atlas3DPanel, Atlas3DSynopticItem, AtlasPanelFindingAssignment, ClinicalScorecardData, AtlasPathologyOverlay } from "../types";
+import { Atlas3DData, Atlas3DPanel, Atlas3DSynopticItem, AtlasPanelFindingAssignment, ClinicalScorecardData, AtlasPathologyOverlay, SuiteImageAnnotation } from "../types";
 import { runBackgroundTask } from "../lib/backgroundTasks";
 import {
   buildAtlasDirectivesFromScorecard,
@@ -31,6 +31,12 @@ import {
   mergeOverlaysOntoAtlas,
 } from "../lib/clinicalIntelligence";
 import { flipImageDataUrl, swapLateralityLabel } from "../lib/imageFlip";
+import {
+  remapAnnotationsPanelLetters,
+  suggestAtlasImageAnnotations,
+  withSuggestedImageAnnotations,
+} from "../lib/suiteImageAnnotations";
+import { SuiteImageAnnotationLayer } from "./SuiteImageAnnotationLayer";
 
 // Helper to extract uppercase panel letters referenced in a string (e.g. "(Panel A)" -> ["A"], "Paneles A y B" -> ["A", "B"])
 const extractReferencedLetters = (panelRef?: string): string[] => {
@@ -127,6 +133,7 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
   const [editingPanelLetter, setEditingPanelLetter] = useState<string | null>(null);
   const [panelDirectives, setPanelDirectives] = useState<{ [letter: string]: string }>({});
   const [regeneratingPanelLetter, setRegeneratingPanelLetter] = useState<string | null>(null);
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [editingFocusLetter, setEditingFocusLetter] = useState<string | null>(null);
   const [isSyncingOverlay, setIsSyncingOverlay] = useState(false);
 
@@ -285,7 +292,13 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
         if (scorecardData?.atlasOverlays?.length) {
           nextData = mergeOverlaysOntoAtlas(nextData, scorecardData.atlasOverlays, "shared") || nextData;
         }
-        setAtlasData(nextData);
+        const letters = (nextData.panels || []).map((p) => p.panelLetter).filter(Boolean);
+        const suggested = suggestAtlasImageAnnotations(
+          (nextData.synopticExplanation as any) || nextData.pathologyOverlays || [],
+          letters,
+          3
+        );
+        setAtlasData(withSuggestedImageAnnotations(nextData, suggested));
         setIncludeInReport(true);
       });
     } catch (err: any) {
@@ -537,7 +550,17 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
       synopticExplanation: updatedSynoptic,
       pathologyOverlays: updatedOverlays,
       panelFindingAssignments: updatedAssignments,
+      imageAnnotations: remapAnnotationsPanelLetters(
+        atlasData.imageAnnotations,
+        letterMap,
+        panelLetter
+      ),
     });
+  };
+
+  const setImageAnnotations = (next: SuiteImageAnnotation[]) => {
+    if (!atlasData) return;
+    setAtlasData({ ...atlasData, imageAnnotations: next });
   };
 
   const handleUpdateFigureTitle = (title: string) => {
@@ -955,6 +978,31 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
           </div>
 
           {/* 3D Panels Grid */}
+          <div className="mb-3 flex justify-end">
+            <button
+              type="button"
+              onClick={() => {
+                if (!atlasData) return;
+                const letters = (atlasData.panels || []).map((p) => p.panelLetter);
+                const suggested = suggestAtlasImageAnnotations(
+                  (atlasData.synopticExplanation as any) || atlasData.pathologyOverlays || [],
+                  letters,
+                  3
+                );
+                if (!suggested.length) return;
+                setAtlasData({
+                  ...atlasData,
+                  imageAnnotations: [
+                    ...(atlasData.imageAnnotations || []),
+                    ...suggested,
+                  ],
+                });
+              }}
+              className="text-[10px] font-bold text-indigo-200 bg-indigo-950/60 hover:bg-indigo-900/80 border border-indigo-500/40 rounded-lg px-2.5 py-1"
+            >
+              Sugerir anotaciones desde sinopsis
+            </button>
+          </div>
           <div className={`grid gap-5 ${
             atlasData.panels.length === 1 
               ? "grid-cols-1 max-w-xl mx-auto" 
@@ -1102,6 +1150,18 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
                       </div>
                     )}
 
+                    {panel.imageUrl && (
+                      <SuiteImageAnnotationLayer
+                        panelLetter={panel.panelLetter}
+                        annotations={atlasData.imageAnnotations || []}
+                        onChange={setImageAnnotations}
+                        mode="layer"
+                        editable
+                        selectedId={selectedAnnotationId}
+                        onSelectId={setSelectedAnnotationId}
+                      />
+                    )}
+
                     {/* On-image pathology pins intentionally disabled:
                         imprecise AI placement would cost consult time to fix.
                         Scorecard sync updates the synoptic table only. */}
@@ -1134,6 +1194,20 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
                       </div>
                     )}
                   </div>
+
+                  {panel.imageUrl && (
+                    <div className="px-3 py-2 border-t border-slate-800 bg-slate-950/40">
+                      <SuiteImageAnnotationLayer
+                        panelLetter={panel.panelLetter}
+                        annotations={atlasData.imageAnnotations || []}
+                        onChange={setImageAnnotations}
+                        mode="toolbar"
+                        editable
+                        selectedId={selectedAnnotationId}
+                        onSelectId={setSelectedAnnotationId}
+                      />
+                    </div>
+                  )}
 
                   {/* Inline Single-Panel Adjustment Drawer */}
                   {isEditingThisPanel && (

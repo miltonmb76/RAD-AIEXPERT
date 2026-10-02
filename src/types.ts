@@ -135,6 +135,8 @@ export interface Atlas3DData {
   biomechanicalSynthesis?: string;
   /** Intelligent pathology overlays synced from Scorecard / clinical engine */
   pathologyOverlays?: AtlasPathologyOverlay[];
+  /** Callouts over panel images (names / sizes); never baked into the 3D PNG */
+  imageAnnotations?: SuiteImageAnnotation[];
   overlaySource?: "scorecard" | "atlas" | "shared";
   qualityAudit?: AtlasQualityAudit;
   /** Per-panel Scorecard finding lock used at generation time. */
@@ -260,6 +262,8 @@ export interface Vascular3DData {
   };
   panels: Vascular3DPanel[];
   hemodynamicTable: VascularHemodynamicRow[];
+  /** Callouts over panel images (names / sizes); never baked into the 3D PNG */
+  imageAnnotations?: SuiteImageAnnotation[];
   /** Page-1 clinical dossier under the 3D figure (carotid / arterial / venous). */
   vascularSummary?: string;
   wallPlaqueNotes?: string;
@@ -288,6 +292,8 @@ export interface FocalLesion3DData {
   figureTitle?: string;
   detectedLaterality?: string;
   panels: FocalLesion3DPanel[];
+  /** Callouts over panel images (names / sizes); never baked into the 3D PNG */
+  imageAnnotations?: SuiteImageAnnotation[];
   qualityAudit?: AtlasQualityAudit;
 }
 
@@ -372,6 +378,8 @@ export interface Thyroid3DData {
   };
   panels: Thyroid3DPanel[];
   noduleTable: ThyroidNoduleRow[];
+  /** Callouts over panel images (names / sizes); never baked into the 3D PNG */
+  imageAnnotations?: SuiteImageAnnotation[];
   /** Rich clinical blocks under / with the figure */
   glandSummary?: string;
   morphologyNotes?: string;
@@ -448,6 +456,8 @@ export interface Breast3DData {
   };
   panels: Breast3DPanel[];
   lesionTable: BreastLesionRow[];
+  /** Callouts over panel images (names / sizes); never baked into the 3D PNG */
+  imageAnnotations?: SuiteImageAnnotation[];
   /** Rich clinical blocks under / with the figure */
   breastSummary?: string;
   morphologyNotes?: string;
@@ -506,6 +516,8 @@ export interface Shoulder3DData {
   };
   panels: Shoulder3DPanel[];
   findingTable: ShoulderFindingRow[];
+  /** Callouts over panel images (names / sizes); never baked into the 3D PNG */
+  imageAnnotations?: SuiteImageAnnotation[];
   /** Rich clinical blocks under / with the figure */
   shoulderSummary?: string;
   morphologyNotes?: string;
@@ -567,6 +579,8 @@ export interface Knee3DData {
   };
   panels: Knee3DPanel[];
   findingTable: KneeFindingRow[];
+  /** Callouts over panel images (names / sizes); never baked into the 3D PNG */
+  imageAnnotations?: SuiteImageAnnotation[];
   /** Rich clinical blocks under / with the figure */
   kneeSummary?: string;
   morphologyNotes?: string;
@@ -625,6 +639,8 @@ export interface Ankle3DData {
   };
   panels: Ankle3DPanel[];
   findingTable: AnkleFindingRow[];
+  /** Callouts over panel images (names / sizes); never baked into the 3D PNG */
+  imageAnnotations?: SuiteImageAnnotation[];
   /** Rich clinical blocks under / with the figure */
   ankleSummary?: string;
   morphologyNotes?: string;
@@ -683,6 +699,8 @@ export interface Kidney3DData {
   };
   panels: Kidney3DPanel[];
   findingTable: KidneyFindingRow[];
+  /** Callouts over panel images (names / sizes); never baked into the 3D PNG */
+  imageAnnotations?: SuiteImageAnnotation[];
   /** Rich clinical blocks under / with the figure */
   kidneySummary?: string;
   morphologyNotes?: string;
@@ -816,6 +834,8 @@ export interface AbdominalWall3DData {
   };
   panels: AbdominalWall3DPanel[];
   findingTable: AbdominalWallFindingRow[];
+  /** Callouts over panel images (names / sizes); never baked into the 3D PNG */
+  imageAnnotations?: SuiteImageAnnotation[];
   /** Rich clinical blocks under / with the figure */
   wallSummary?: string;
   morphologyNotes?: string;
@@ -873,6 +893,8 @@ export interface Scrotum3DData {
   };
   panels: Scrotum3DPanel[];
   findingTable: ScrotumFindingRow[];
+  /** Callouts over panel images (names / sizes); never baked into the 3D PNG */
+  imageAnnotations?: SuiteImageAnnotation[];
   /** Rich clinical blocks under / with the figure */
   scrotumSummary?: string;
   morphologyNotes?: string;
@@ -930,6 +952,8 @@ export interface MuscleTendon3DData {
   };
   panels: MuscleTendon3DPanel[];
   findingTable: MuscleTendonFindingRow[];
+  /** Callouts over panel images (names / sizes); never baked into the 3D PNG */
+  imageAnnotations?: SuiteImageAnnotation[];
   /** Rich clinical blocks under / with the figure */
   muscleTendonSummary?: string;
   morphologyNotes?: string;
@@ -991,6 +1015,8 @@ export interface Wrist3DData {
   };
   panels: Wrist3DPanel[];
   findingTable: WristFindingRow[];
+  /** Callouts over panel images (names / sizes); never baked into the 3D PNG */
+  imageAnnotations?: SuiteImageAnnotation[];
   /** Rich clinical blocks under / with the figure */
   wristSummary?: string;
   morphologyNotes?: string;
