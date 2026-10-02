@@ -23,11 +23,17 @@ import {
   Abdomen3DPanel,
   AbdomenFindingRow,
   AbdomenStudyType,
-  ClinicalScorecardData
+  ClinicalScorecardData,
+  SuiteImageAnnotation,
 } from "../types";
 import { runBackgroundTask } from "../lib/backgroundTasks";
 import { buildAbdomenDirectivesFromScorecard, ABDOMEN_TOPOGRAPHY_DIRECTIVE } from "../lib/clinicalIntelligence";
 import { flipImageDataUrl, swapLateralityLabel } from "../lib/imageFlip";
+import {
+  remapAnnotationsPanelLetters,
+  suggestAbdomenImageAnnotations,
+} from "../lib/suiteImageAnnotations";
+import { SuiteImageAnnotationLayer } from "./SuiteImageAnnotationLayer";
 
 interface Abdomen3DModuleProps {
   reportText: string;
@@ -128,6 +134,7 @@ export const Abdomen3DModule: React.FC<Abdomen3DModuleProps> = ({
   const [editingPanelLetter, setEditingPanelLetter] = useState<string | null>(null);
   const [panelDirectives, setPanelDirectives] = useState<{ [letter: string]: string }>({});
   const [regeneratingPanelLetter, setRegeneratingPanelLetter] = useState<string | null>(null);
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
 
   const handleGenerate = async () => {
     if (!reportText || !reportText.trim()) {
@@ -162,7 +169,13 @@ export const Abdomen3DModule: React.FC<Abdomen3DModuleProps> = ({
           throw new Error(resData.error || "Error al generar la Suite Abdomen 3D.");
         }
 
-        setAbdomenData(resData.data);
+        const data = resData.data as Abdomen3DData;
+        const letters = (data.panels || []).map((p) => p.panelLetter).filter(Boolean);
+        const suggested =
+          data.imageAnnotations?.length
+            ? data.imageAnnotations
+            : suggestAbdomenImageAnnotations(data.findingTable, letters, 3);
+        setAbdomenData({ ...data, imageAnnotations: suggested });
         setIncludeInReport(true);
       });
       setGenerationStep("");
@@ -262,8 +275,18 @@ export const Abdomen3DModule: React.FC<Abdomen3DModuleProps> = ({
     setAbdomenData({
       ...abdomenData,
       figureTitle: updatedTitle,
-      panels: updatedPanels
+      panels: updatedPanels,
+      imageAnnotations: remapAnnotationsPanelLetters(
+        abdomenData.imageAnnotations,
+        letterMap,
+        panelLetter
+      ),
     });
+  };
+
+  const setImageAnnotations = (next: SuiteImageAnnotation[]) => {
+    if (!abdomenData) return;
+    setAbdomenData({ ...abdomenData, imageAnnotations: next });
   };
 
   const handleRegenerateSinglePanel = async (panel: Abdomen3DPanel) => {
@@ -568,11 +591,23 @@ export const Abdomen3DModule: React.FC<Abdomen3DModuleProps> = ({
                       </div>
                     )}
 
-                    <div className="absolute top-2 left-2 bg-amber-600 text-white font-bold text-[10px] px-2 py-0.5 rounded shadow">
+                    {panel.imageUrl && (
+                      <SuiteImageAnnotationLayer
+                        panelLetter={panel.panelLetter}
+                        annotations={abdomenData.imageAnnotations || []}
+                        onChange={setImageAnnotations}
+                        mode="layer"
+                        editable
+                        selectedId={selectedAnnotationId}
+                        onSelectId={setSelectedAnnotationId}
+                      />
+                    )}
+
+                    <div className="absolute top-2 left-2 z-10 bg-amber-600 text-white font-bold text-[10px] px-2 py-0.5 rounded shadow">
                       PANEL {panel.panelLetter}
                     </div>
 
-                    <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 backdrop-blur-sm p-1 rounded-lg">
+                    <div className="absolute top-2 right-2 z-10 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 backdrop-blur-sm p-1 rounded-lg">
                       <button
                         onClick={() => handleFlipHorizontal(panel.panelLetter)}
                         className={`p-1 rounded text-white hover:bg-white/20 transition-colors ${
@@ -601,7 +636,7 @@ export const Abdomen3DModule: React.FC<Abdomen3DModuleProps> = ({
                     </div>
 
                     {regeneratingPanelLetter === panel.panelLetter && (
-                      <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-xs flex flex-col items-center justify-center text-white p-4 text-center">
+                      <div className="absolute inset-0 z-20 bg-slate-900/80 backdrop-blur-xs flex flex-col items-center justify-center text-white p-4 text-center">
                         <Loader2 className="w-6 h-6 animate-spin text-amber-400 mb-2" />
                         <span className="text-xs font-semibold">Regenerando modelo 3D...</span>
                       </div>
@@ -609,6 +644,17 @@ export const Abdomen3DModule: React.FC<Abdomen3DModuleProps> = ({
                   </div>
 
                   <div className="p-3 space-y-2">
+                    {panel.imageUrl && (
+                      <SuiteImageAnnotationLayer
+                        panelLetter={panel.panelLetter}
+                        annotations={abdomenData.imageAnnotations || []}
+                        onChange={setImageAnnotations}
+                        mode="toolbar"
+                        editable
+                        selectedId={selectedAnnotationId}
+                        onSelectId={setSelectedAnnotationId}
+                      />
+                    )}
                     <div>
                       {isEditingText ? (
                         <input
@@ -858,9 +904,20 @@ export const Abdomen3DModule: React.FC<Abdomen3DModuleProps> = ({
                 alt={zoomPanel.panelTitle}
                 className="w-full h-full object-contain"
               />
+              {zoomPanel.imageUrl && (
+                <SuiteImageAnnotationLayer
+                  panelLetter={zoomPanel.panelLetter}
+                  annotations={abdomenData?.imageAnnotations || []}
+                  onChange={setImageAnnotations}
+                  mode="layer"
+                  editable
+                  selectedId={selectedAnnotationId}
+                  onSelectId={setSelectedAnnotationId}
+                />
+              )}
               <button
                 onClick={() => setZoomPanel(null)}
-                className="absolute top-4 right-4 bg-black/60 text-white p-2 rounded-full hover:bg-black transition-colors"
+                className="absolute top-4 right-4 z-20 bg-black/60 text-white p-2 rounded-full hover:bg-black transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>

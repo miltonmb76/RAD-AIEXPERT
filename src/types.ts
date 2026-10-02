@@ -699,6 +699,22 @@ export type AbdomenStudyType =
   | "abdomen_agudo"
   | "general_abdomen";
 
+/** Editable callout drawn ON TOP of a suite 3D panel image (not baked into the render). */
+export interface SuiteImageAnnotation {
+  id: string;
+  panelLetter: string;
+  /** Primary label, e.g. structure / organ name */
+  text: string;
+  /** Optional size / measure line, e.g. "12 mm" */
+  sizeLabel?: string;
+  /** Anchor X as % of image width (0–100) */
+  xPct: number;
+  /** Anchor Y as % of image height (0–100) */
+  yPct: number;
+  /** Soft accent for the pill */
+  color?: "amber" | "cyan" | "rose" | "emerald";
+}
+
 export interface Abdomen3DPanel {
   id?: string;
   panelLetter: string;
@@ -741,6 +757,8 @@ export interface Abdomen3DData {
   };
   panels: Abdomen3DPanel[];
   findingTable: AbdomenFindingRow[];
+  /** Callouts over panel images (names / sizes); never baked into the 3D PNG */
+  imageAnnotations?: SuiteImageAnnotation[];
   /** Rich clinical blocks under / with the figure */
   abdomenSummary?: string;
   morphologyNotes?: string;
