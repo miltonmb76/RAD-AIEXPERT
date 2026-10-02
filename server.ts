@@ -6,7 +6,7 @@ import path from "path";
 import fs from "fs";
 import { GoogleGenAI, Type } from "@google/genai";
 import sharp from "sharp";
-import { registerAtlas3DRoutes } from "./server_atlas3d";
+import { registerAtlas3DRoutes, reinforceCleanRenderPrompt } from "./server_atlas3d";
 import { normalizeReasoningChainData, extractJsonObject } from "./src/lib/reasoningChain";
 import { normalizeNegativityChecklistData } from "./src/lib/negativityChecklist";
 import { normalizeDifferentialTreeData } from "./src/lib/differentialTree";
@@ -4112,7 +4112,9 @@ Responde ESTRICTAMENTE en JSON:
 
     // Helper for image generation with fallback
     const generateImageHelper = async (promptText: string, extraIsolationPrefix = "") => {
-      const fullReinforcedPrompt = `${extraIsolationPrefix}${anatomicalConstraintPrefix}${lateralityConstraintPrefix}${topographyConstraintPrefix}${promptText}. Medical 3D volumetric cross-section, clean studio render, elegant translucent materials, no text, hyperrealistic medical CGI.`;
+      const fullReinforcedPrompt = reinforceCleanRenderPrompt(
+        `${extraIsolationPrefix}${anatomicalConstraintPrefix}${lateralityConstraintPrefix}${topographyConstraintPrefix}${promptText}. Medical 3D volumetric cross-section, clean studio render, elegant translucent materials, UNLABELED anatomy only, hyperrealistic medical CGI.`
+      );
       try {
         const imageGenResponse = await ai.models.generateContent({
           model: "gemini-3.1-flash-image",
@@ -4133,7 +4135,9 @@ Responde ESTRICTAMENTE en JSON:
         console.warn("Fallback a gemini-3.1-flash-lite-image...", genErr);
         const fallbackResponse = await ai.models.generateContent({
           model: "gemini-3.1-flash-lite-image",
-          contents: `${extraIsolationPrefix}${anatomicalConstraintPrefix}${lateralityConstraintPrefix}${topographyConstraintPrefix}${promptText}. 3D medical volumetric render, clean anatomy, no text.`,
+          contents: reinforceCleanRenderPrompt(
+            `${extraIsolationPrefix}${anatomicalConstraintPrefix}${lateralityConstraintPrefix}${topographyConstraintPrefix}${promptText}. 3D medical volumetric render, clean unlabeled anatomy.`
+          ),
           config: {
             imageConfig: { aspectRatio: "4:3" }
           }

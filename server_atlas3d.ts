@@ -108,8 +108,37 @@ function handleGeminiError(error: any): string {
 }
 
 
+/**
+ * Hard ban on baked-in diagram labeling. Image models often paint SCREEN MAP /
+ * laterality instruction words (PATIENT'S RIGHT, PATELLA, ACL…) into the PNG —
+ * those belong only in the editable overlay layer, never in the render pixels.
+ */
+export const CLEAN_RENDER_HARD_RULES =
+  "CLEAN RENDER HARD RULES (CRITICAL — never violate): " +
+  "Produce a CLEAN unlabeled photorealistic anatomical 3D render ONLY. " +
+  "STRICTLY FORBIDDEN inside the image pixels: any text in ANY language (English or Spanish), " +
+  "letters, digits, captions, titles, subtitles, watermarks, logos, UI chrome, " +
+  "anatomical name labels (examples FORBIDDEN: PATELLA, ACL, PCL, MCL, LCL, TIBIA, FIBULA, MENISCUS, " +
+  "FEMUR, QUADRICEPS, PATIENT'S RIGHT, PATIENT'S LEFT, VIEWER'S LEFT, VIEWER'S RIGHT), " +
+  "leader lines, callout lines, arrows, pins, bullets, numbered markers, " +
+  "textbook/atlas diagram labeling, legends, or pointing sticks with text. " +
+  "Laterality / SCREEN MAP / topology phrases in this prompt are COMPOSITION INSTRUCTIONS ONLY " +
+  "for camera placement and anatomy orientation — NEVER paint those words or lines onto the image. " +
+  "The application adds editable callouts AFTER generation — leave the PNG completely blank of text and markers.";
+
+export function reinforceCleanRenderPrompt(prompt: string): string {
+  const base = String(prompt || "").trim();
+  if (!base) return CLEAN_RENDER_HARD_RULES;
+  // Avoid stacking the block if a caller already appended it.
+  if (base.includes("CLEAN RENDER HARD RULES")) {
+    return base;
+  }
+  return `${base}\n\n${CLEAN_RENDER_HARD_RULES}`;
+}
+
 const FAITHFUL_STYLE =
-  "High-fidelity photorealistic 3D medical anatomical render, volumetric surgical cutaway, accurate topographic relationships and true anatomical scale. Premium tissue materials: realistic fascia, muscle fiber microtexture, visceral parenchyma, periosteum and serosa with physically based subsurface scattering. Soft cinematic clinical studio lighting with gentle rim light and shallow depth cues for clarity—NOT neon, NOT bioluminescent, NOT exaggerated glow. Pathology highlighted with restrained chromatic accent ONLY where the report describes it. No invented lesions. Pure clean background. STRICTLY NO text, NO letters, NO numbers, NO arrows, NO labels inside the image.";
+  "High-fidelity photorealistic 3D medical anatomical render, volumetric surgical cutaway, accurate topographic relationships and true anatomical scale. Premium tissue materials: realistic fascia, muscle fiber microtexture, visceral parenchyma, periosteum and serosa with physically based subsurface scattering. Soft cinematic clinical studio lighting with gentle rim light and shallow depth cues for clarity—NOT neon, NOT bioluminescent, NOT exaggerated glow. Pathology highlighted with restrained chromatic accent ONLY where the report describes it. No invented lesions. Pure clean background. " +
+  "STRICTLY NO text, NO letters, NO numbers, NO arrows, NO leader lines, NO callouts, NO anatomical name labels (English or Spanish), NO 'PATIENT\\'S RIGHT/LEFT' captions inside the image. Unlabeled clean anatomy only.";
 
 /**
  * Radiographic AP laterality (shared by Atlas / Focal / Vascular).
@@ -125,7 +154,9 @@ const LATERALITY_HARD_RULES =
   "(2) POSTERIOR / DORSAL view only (explicit): patient right → viewer right; patient left → viewer left. " +
   "(3) imageLeftStructure / imageRightStructure are VIEWER-left / VIEWER-right anchors and MUST obey (1) or (2) for the chosen view. " +
   "(4) Do NOT mirror anatomy for aesthetics; bilateral: never swap sides between panels. " +
-  "(5) A beautiful but laterality-wrong image is a CRITICAL FAIL.";
+  "(5) A beautiful but laterality-wrong image is a CRITICAL FAIL. " +
+  "(6) These laterality / SCREEN MAP phrases are CAMERA COMPOSITION instructions ONLY — " +
+  "NEVER render them as on-image text, captions, leader lines or English anatomical labels.";
 
 /** Spanish planning block for Atlas / Focal planners. */
 const LATERALITY_PLAN_RULES_ES =
@@ -1438,10 +1469,12 @@ function stripDataUrl(imageUrl: string): { mime: string; data: string } | null {
 export function registerAtlas3DRoutes(app: express.Express) {
   // Helper to generate a medical image using gemini-3.1-flash-image-preview or imagen-3.0
   async function generateMedicalImage(ai: any, prompt: string): Promise<string> {
+    // Central choke-point: every suite / atlas / vascular / focal render gets clean-PNG rules.
+    const reinforcedPrompt = reinforceCleanRenderPrompt(prompt);
     try {
       const response = await ai.models.generateContent({
         model: "gemini-3.1-flash-image-preview",
-        contents: prompt,
+        contents: reinforcedPrompt,
         config: {
           imageConfig: { aspectRatio: "4:3", imageSize: "2K" }
         }
@@ -1466,7 +1499,7 @@ export function registerAtlas3DRoutes(app: express.Express) {
       // Fallback
       const response = await ai.models.generateImages({
         model: "imagen-3.0-generate-002",
-        prompt: prompt,
+        prompt: reinforcedPrompt,
         config: {
           numberOfImages: 1,
           outputMimeType: "image/jpeg",
@@ -2296,7 +2329,7 @@ DISEÑO DE PANELES 3D VASCULARES (Generar 2 o 3 Paneles):
   - NUNCA intercambiar lados entre paneles ni espejar por estética. Si hay contralateral sano, márcalo explícitamente como el lado opuesto correcto.
   - doNotInvent implícito: mirrored laterality, side swap, patient-right on viewer-right in AP, inventing contralateral disease.
 - PROMPT EN INGLÉS para cada panel:
-  "Ultra-realistic 3D medical macro vascular cross-section render of [PATIENT SIDE + detailed vessel name], exact wall layer cutaway, exact plaque/thrombus morphology (lipid core, fibrous cap, calcifications, ulceration, or clean healthy intima), intraluminal lumen opening with glowing chromatic laminar blood flow vectors, anatomical bone/soft tissue landmark background that locks laterality, cinema 4D octane render style, soft surgical studio lighting, clean background, strictly NO text, NO numbers, NO arrows, NO letters inside the image. Do NOT mirror anatomy."
+  "Ultra-realistic 3D medical macro vascular cross-section render of [PATIENT SIDE + detailed vessel name], exact wall layer cutaway, exact plaque/thrombus morphology (lipid core, fibrous cap, calcifications, ulceration, or clean healthy intima), intraluminal lumen opening with glowing chromatic laminar blood flow vectors, anatomical bone/soft tissue landmark background that locks laterality, cinema 4D octane render style, soft surgical studio lighting, clean background, UNLABELED clean anatomy only: strictly NO text, NO English/Spanish anatomical labels, NO numbers, NO arrows, NO leader lines, NO callouts, NO letters inside the image. Do NOT mirror anatomy."
 
 ========================================================================
 FICHA CLÍNICA BAJO LA FIGURA 3D (OBLIGATORIA — carótidas / arterial / venoso):
@@ -2403,14 +2436,14 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
               panelTitle: "Panel A: Reconstrucción Vascular de Alta Resolución",
               anatomicalFocus: "Evaluación morfológica parietal y luminal del eje vascular principal.",
               laterality: "Derecha",
-              imagePrompt: "Ultra-realistic 3D medical macro vascular cross-section render showing blood vessel wall, translucent lumen with chromatic laminar flow vectors, studio lighting, octane render, no text."
+              imagePrompt: "Ultra-realistic 3D medical macro vascular cross-section render showing blood vessel wall, translucent lumen with chromatic laminar flow vectors, studio lighting, octane render, UNLABELED anatomy only (no text, no English labels, no leader lines)."
             },
             {
               panelLetter: "B",
               panelTitle: "Panel B: Eje Complementario / Contralateral",
               anatomicalFocus: "Permeabilidad y morfología parietal del vaso complementario.",
               laterality: "Izquierda",
-              imagePrompt: "Ultra-realistic 3D medical macro vascular render of contralateral blood vessel, smooth endothelial intima, clean studio background, octane render, no text."
+              imagePrompt: "Ultra-realistic 3D medical macro vascular render of contralateral blood vessel, smooth endothelial intima, clean studio background, octane render, UNLABELED anatomy only (no text, no English labels, no leader lines)."
             }
           ],
           hemodynamicTable: [
@@ -2435,7 +2468,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
       // Generate images in parallel for each vascular panel
       const panelsWithImages = await Promise.all(
         (planJson.panels || []).map(async (panel: any, idx: number) => {
-          let promptToUse = panel.imagePrompt || `Ultra-realistic 3D medical macro vascular render of ${panel.vesselName || panel.panelTitle}, octane render, no text.`;
+          let promptToUse = panel.imagePrompt || `Ultra-realistic 3D medical macro vascular render of ${panel.vesselName || panel.panelTitle}, octane render, UNLABELED anatomy only (no text, no English labels, no leader lines).`;
           if (customDirectives && customDirectives.trim()) {
             promptToUse = `${promptToUse} [MANDATORY CLINICAL DIRECTIVE: ${customDirectives.trim()}].`;
           }
@@ -2543,7 +2576,7 @@ REGLA DE TOPOGRAFÍA VASCULAR:
 
 REGLAS DE ESTILO:
 - Ultra-realistic 3D medical macro vascular cross-section render, cinema 4D octane render style, accurate vascular wall layers (intima, media, adventitia), realistic plaque/thrombus (lipid core, fibrous cap, calcium) or smooth clean lumen, glowing chromatic laminar blood flow vectors, soft surgical studio lighting, pure clean background.
-- STRICTLY NO text, NO numbers, NO letters, NO arrows inside the image.
+- STRICTLY NO text, NO English/Spanish anatomical labels, NO numbers, NO letters, NO arrows, NO leader lines, NO callouts inside the image (labels are added later by the app overlay).
 
 RESPONDE EN JSON:
 {
@@ -2567,7 +2600,7 @@ RESPONDE EN JSON:
           panelTitle: panel.panelTitle,
           vesselName: panel.vesselName || panel.panelTitle,
           anatomicalFocus: panel.anatomicalFocus,
-          imagePrompt: `Ultra-realistic 3D medical macro vascular render of ${panel.vesselName || panel.panelTitle}, octane render, studio lighting, no text.`
+          imagePrompt: `Ultra-realistic 3D medical macro vascular render of ${panel.vesselName || panel.panelTitle}, octane render, studio lighting, UNLABELED anatomy only (no text, no English labels, no leader lines).`
         };
       }
 
@@ -2676,7 +2709,7 @@ DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
   - El imagePrompt DEBE empezar con el lado del paciente y anclas de pantalla.
   - NUNCA intercambiar lados entre paneles ni espejar por estética.
 - PROMPT EN INGLÉS para cada panel:
-  "Ultra-realistic 3D medical kidney anatomy render of [PATIENT SIDE + MEDIAL(tibial)/LATERAL(fibular) compartment + meniscus ANTERIOR horn/BODY/POSTERIOR horn or ligament], accurate femoral condyles/tibial plateau/patella/fibular head landmarks, exact named meniscus topography (never swap medial↔lateral or anterior↔posterior), exact collateral ligament morphology, optional joint effusion or Baker cyst when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, strictly NO text, NO numbers, NO arrows, NO letters inside the image. Do NOT mirror anatomy. Obey KIDNEY & URINARY TRACT TOPOGRAPHY HARD RULES."
+  "Ultra-realistic 3D medical kidney anatomy render of [PATIENT SIDE + MEDIAL(tibial)/LATERAL(fibular) compartment + meniscus ANTERIOR horn/BODY/POSTERIOR horn or ligament], accurate femoral condyles/tibial plateau/patella/fibular head landmarks, exact named meniscus topography (never swap medial↔lateral or anterior↔posterior), exact collateral ligament morphology, optional joint effusion or Baker cyst when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, UNLABELED clean anatomy only: strictly NO text, NO English/Spanish anatomical labels, NO numbers, NO arrows, NO leader lines, NO callouts, NO letters inside the image. Do NOT mirror anatomy. Obey KIDNEY & URINARY TRACT TOPOGRAPHY HARD RULES."
 
 ========================================================================
 TABLA Y FICHA CLÍNICA:
@@ -2779,7 +2812,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
               anatomicalFocus: "Reconstrucción anatómica renal con riñones y vías urinarias.",
               laterality: laterality || "Derecha",
               panelRole: "overview",
-              imagePrompt: "Ultra-realistic 3D medical kidney anatomy render showing cóndilo femoral, patella, quadriceps and kidney urinary-tract footprint, studio lighting, octane render, no text."
+              imagePrompt: "Ultra-realistic 3D medical kidney anatomy render showing cóndilo femoral, patella, quadriceps and kidney urinary-tract footprint, studio lighting, octane render, UNLABELED anatomy only (no text, no English labels, no leader lines)."
             },
             {
               panelLetter: "B",
@@ -2788,7 +2821,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
               anatomicalFocus: "Corte macro del riñón indicado en el informe (interno/externo y cuerno anterior/posterior), sin intercambiar lados.",
               laterality: laterality || "Derecha",
               panelRole: "collecting_obstruction",
-              imagePrompt: "Ultra-realistic 3D medical kidney meniscus cutaway with explicit medial or lateral (fibular) compartment and anterior or posterior horn per report, fibular head landmark visible for lateral side, cinema 4D octane render, no text."
+              imagePrompt: "Ultra-realistic 3D medical kidney meniscus cutaway with explicit medial or lateral (fibular) compartment and anterior or posterior horn per report, fibular head landmark visible for lateral side, cinema 4D octane render, UNLABELED anatomy only (no text, no English labels, no leader lines)."
             }
           ],
           findingTable: [],
@@ -2799,7 +2832,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
 
       const kidneyPanelsWithImages = await Promise.all(
         (planJson.panels || []).map(async (panel: any, idx: number) => {
-          let promptToUse = panel.imagePrompt || `Ultra-realistic 3D medical kidney / kidney urinary-tract render of ${panel.structureOrSite || panel.panelTitle}, octane render, no text.`;
+          let promptToUse = panel.imagePrompt || `Ultra-realistic 3D medical kidney / kidney urinary-tract render of ${panel.structureOrSite || panel.panelTitle}, octane render, UNLABELED anatomy only (no text, no English labels, no leader lines).`;
           if (customDirectives && customDirectives.trim()) {
             promptToUse = `${promptToUse} [MANDATORY CLINICAL DIRECTIVE: ${customDirectives.trim()}].`;
           }
@@ -2927,7 +2960,7 @@ REGLAS DE ESTILO:
 - Ultra-realistic 3D medical kidney / urinary-tract macro render, cinema 4D octane, with accurate renal cortex, medulla, sinus, pelvis, calyces, ureter and bladder landmarks as applicable.
 - Preserve exact side and level in the English imagePrompt (right|left + superior|interpolar|inferior + cortex|sinus|collecting system|ureter|bladder).
 - Depict only report-supported morphology (hydronephrosis/ectasia, calculus, cyst/Bosniak features, mass or parenchymal change); soft surgical studio lighting; pure clean background.
-- STRICTLY NO text, NO numbers, NO letters, NO arrows inside the image.
+- STRICTLY NO text, NO English/Spanish anatomical labels, NO numbers, NO letters, NO arrows, NO leader lines, NO callouts inside the image (labels are added later by the app overlay).
 - Respect patient laterality (AP: patient RIGHT on viewer's LEFT).
 
 RESPONDE EN JSON:
@@ -2952,7 +2985,7 @@ RESPONDE EN JSON:
           panelTitle: panel.panelTitle,
           structureOrSite: panel.structureOrSite || panel.panelTitle,
           anatomicalFocus: panel.anatomicalFocus,
-          imagePrompt: `Ultra-realistic 3D medical kidney / kidney urinary-tract render of ${panel.structureOrSite || panel.panelTitle}, octane render, studio lighting, no text.`
+          imagePrompt: `Ultra-realistic 3D medical kidney / kidney urinary-tract render of ${panel.structureOrSite || panel.panelTitle}, octane render, studio lighting, UNLABELED anatomy only (no text, no English labels, no leader lines).`
         };
       }
 
@@ -3060,7 +3093,7 @@ DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
   - El imagePrompt DEBE empezar con el órgano/lado del paciente y anclas de pantalla.
   - NUNCA intercambiar hígado↔bazo ni riñón derecho↔izquierdo.
 - PROMPT EN INGLÉS para cada panel:
-  "Ultra-realistic 3D medical complete abdomen anatomy render of [ORGAN + PATIENT SIDE], accurate liver/gallbladder/pancreas/spleen/kidneys landmarks, exact pathology only when clinically indicated (steatosis, gallstones, hydronephrosis, free fluid), cinema 4D octane render, soft surgical studio lighting, clean background, strictly NO text, NO numbers, NO arrows, NO letters inside the image. Do NOT mirror anatomy. Obey ABDOMEN TOPOGRAPHY HARD RULES."
+  "Ultra-realistic 3D medical complete abdomen anatomy render of [ORGAN + PATIENT SIDE], accurate liver/gallbladder/pancreas/spleen/kidneys landmarks, exact pathology only when clinically indicated (steatosis, gallstones, hydronephrosis, free fluid), cinema 4D octane render, soft surgical studio lighting, clean background, UNLABELED clean anatomy only: strictly NO text, NO English/Spanish anatomical labels, NO numbers, NO arrows, NO leader lines, NO callouts, NO letters inside the image. Do NOT mirror anatomy. Obey ABDOMEN TOPOGRAPHY HARD RULES."
 
 ========================================================================
 TABLA Y FICHA CLÍNICA:
@@ -3162,7 +3195,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
               anatomicalFocus: "Reconstrucción de abdomen superior: hígado, vesícula, páncreas y bazo con anclas de lateralidad.",
               laterality: laterality || "Bilateral",
               panelRole: "overview",
-              imagePrompt: "Ultra-realistic 3D medical complete abdomen anatomy render showing liver, gallbladder, pancreas and spleen with clear patient right/left landmarks, cinema 4D octane render, soft surgical studio lighting, clean background, no text."
+              imagePrompt: "Ultra-realistic 3D medical complete abdomen anatomy render showing liver, gallbladder, pancreas and spleen with clear patient right/left landmarks, cinema 4D octane render, soft surgical studio lighting, clean background, UNLABELED anatomy only (no text, no English labels, no leader lines)."
             },
             {
               panelLetter: "B",
@@ -3171,7 +3204,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
               anatomicalFocus: "Corte macro del hallazgo dominante (hígado, vesícula/vías o páncreas) sin intercambiar órganos ni lados.",
               laterality: laterality || "Bilateral",
               panelRole: "hepatobiliary",
-              imagePrompt: "Ultra-realistic 3D medical abdomen hepatobiliary cutaway render with accurate liver/gallbladder/bile duct landmarks and pathology only when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, no text."
+              imagePrompt: "Ultra-realistic 3D medical abdomen hepatobiliary cutaway render with accurate liver/gallbladder/bile duct landmarks and pathology only when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, UNLABELED anatomy only (no text, no English labels, no leader lines)."
             }
           ],
           findingTable: [],
@@ -3182,7 +3215,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
 
       const abdomenPanelsWithImages = await Promise.all(
         (planJson.panels || []).map(async (panel: any, idx: number) => {
-          let promptToUse = panel.imagePrompt || `Ultra-realistic 3D medical abdomen / abdomen multi-organ render of ${panel.structureOrSite || panel.panelTitle}, octane render, no text.`;
+          let promptToUse = panel.imagePrompt || `Ultra-realistic 3D medical abdomen / abdomen multi-organ render of ${panel.structureOrSite || panel.panelTitle}, octane render, UNLABELED anatomy only (no text, no English labels, no leader lines).`;
           if (customDirectives && customDirectives.trim()) {
             promptToUse = `${promptToUse} [MANDATORY CLINICAL DIRECTIVE: ${customDirectives.trim()}].`;
           }
@@ -3309,7 +3342,7 @@ REGLAS DE ESTILO:
 - Ultra-realistic 3D medical abdomen / visceral macro render, cinema 4D octane, accurate organ landmarks.
 - Exact named organ and laterality in the English imagePrompt.
 - Exact morphology only if indicated; soft surgical studio lighting; pure clean background.
-- STRICTLY NO text, NO numbers, NO letters, NO arrows inside the image.
+- STRICTLY NO text, NO English/Spanish anatomical labels, NO numbers, NO letters, NO arrows, NO leader lines, NO callouts inside the image (labels are added later by the app overlay).
 - Respect patient laterality (AP: patient RIGHT on viewer's LEFT).
 
 RESPONDE EN JSON:
@@ -3334,7 +3367,7 @@ RESPONDE EN JSON:
           panelTitle: panel.panelTitle,
           structureOrSite: panel.structureOrSite || panel.panelTitle,
           anatomicalFocus: panel.anatomicalFocus,
-          imagePrompt: `Ultra-realistic 3D medical abdomen / abdomen multi-organ render of ${panel.structureOrSite || panel.panelTitle}, octane render, studio lighting, no text.`
+          imagePrompt: `Ultra-realistic 3D medical abdomen / abdomen multi-organ render of ${panel.structureOrSite || panel.panelTitle}, octane render, studio lighting, UNLABELED anatomy only (no text, no English labels, no leader lines).`
         };
       }
 
@@ -3439,7 +3472,7 @@ DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
   - El imagePrompt DEBE empezar con el sitio/lado del paciente y anclas de pantalla.
   - NUNCA intercambiar ingle derecha↔izquierda ni umbilical↔epigástrico sin respaldo.
 - PROMPT EN INGLÉS para cada panel:
-  "Ultra-realistic 3D medical abdominal wall anatomy render of [SITE + PATIENT SIDE], accurate skin/subcutaneous/fascia/rectus landmarks, exact hernia orifice/diastasis/content only when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, strictly NO text, NO numbers, NO arrows, NO letters inside the image. Do NOT mirror anatomy. Obey ABDOMINAL WALL TOPOGRAPHY HARD RULES."
+  "Ultra-realistic 3D medical abdominal wall anatomy render of [SITE + PATIENT SIDE], accurate skin/subcutaneous/fascia/rectus landmarks, exact hernia orifice/diastasis/content only when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, UNLABELED clean anatomy only: strictly NO text, NO English/Spanish anatomical labels, NO numbers, NO arrows, NO leader lines, NO callouts, NO letters inside the image. Do NOT mirror anatomy. Obey ABDOMINAL WALL TOPOGRAPHY HARD RULES."
 
 ========================================================================
 TABLA Y FICHA CLÍNICA:
@@ -3541,7 +3574,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
               anatomicalFocus: "Reconstrucción de pared abdominal: capas, línea alba/rectos o ingle con anclas de lateralidad.",
               laterality: laterality || "Bilateral",
               panelRole: "overview",
-              imagePrompt: "Ultra-realistic 3D medical abdominal wall anatomy render showing skin, fascia, rectus muscles and linea alba with clear patient right/left landmarks, cinema 4D octane render, soft surgical studio lighting, clean background, no text."
+              imagePrompt: "Ultra-realistic 3D medical abdominal wall anatomy render showing skin, fascia, rectus muscles and linea alba with clear patient right/left landmarks, cinema 4D octane render, soft surgical studio lighting, clean background, UNLABELED anatomy only (no text, no English labels, no leader lines)."
             },
             {
               panelLetter: "B",
@@ -3550,7 +3583,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
               anatomicalFocus: "Corte macro del orificio fascial y saco herniario sin intercambiar lados ni sitios.",
               laterality: laterality || "Bilateral",
               panelRole: "defect_orifice",
-              imagePrompt: "Ultra-realistic 3D medical abdominal wall hernia orifice cutaway render with accurate fascia/rectus landmarks and pathology only when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, no text."
+              imagePrompt: "Ultra-realistic 3D medical abdominal wall hernia orifice cutaway render with accurate fascia/rectus landmarks and pathology only when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, UNLABELED anatomy only (no text, no English labels, no leader lines)."
             }
           ],
           findingTable: [],
@@ -3561,7 +3594,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
 
       const abdominalWallPanelsWithImages = await Promise.all(
         (planJson.panels || []).map(async (panel: any, idx: number) => {
-          let promptToUse = panel.imagePrompt || `Ultra-realistic 3D medical abdominal wall render of ${panel.structureOrSite || panel.panelTitle}, octane render, no text.`;
+          let promptToUse = panel.imagePrompt || `Ultra-realistic 3D medical abdominal wall render of ${panel.structureOrSite || panel.panelTitle}, octane render, UNLABELED anatomy only (no text, no English labels, no leader lines).`;
           if (customDirectives && customDirectives.trim()) {
             promptToUse = `${promptToUse} [MANDATORY CLINICAL DIRECTIVE: ${customDirectives.trim()}].`;
           }
@@ -3688,7 +3721,7 @@ REGLAS DE ESTILO:
 - Ultra-realistic 3D medical abdominal wall macro render, cinema 4D octane, accurate fascia/rectus/hernia landmarks.
 - Exact named site, orifice and laterality in the English imagePrompt.
 - Exact morphology only if indicated; soft surgical studio lighting; pure clean background.
-- STRICTLY NO text, NO numbers, NO letters, NO arrows inside the image.
+- STRICTLY NO text, NO English/Spanish anatomical labels, NO numbers, NO letters, NO arrows, NO leader lines, NO callouts inside the image (labels are added later by the app overlay).
 - Respect patient laterality (AP: patient RIGHT on viewer's LEFT).
 
 RESPONDE EN JSON:
@@ -3713,7 +3746,7 @@ RESPONDE EN JSON:
           panelTitle: panel.panelTitle,
           structureOrSite: panel.structureOrSite || panel.panelTitle,
           anatomicalFocus: panel.anatomicalFocus,
-          imagePrompt: `Ultra-realistic 3D medical abdominal wall render of ${panel.structureOrSite || panel.panelTitle}, octane render, studio lighting, no text.`
+          imagePrompt: `Ultra-realistic 3D medical abdominal wall render of ${panel.structureOrSite || panel.panelTitle}, octane render, studio lighting, UNLABELED anatomy only (no text, no English labels, no leader lines).`
         };
       }
 
@@ -3818,7 +3851,7 @@ DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
   - El imagePrompt DEBE empezar con el sitio/lado del paciente y anclas de pantalla.
   - NUNCA intercambiar testículo derecho↔izquierdo ni testículo↔epidídimo↔cordón sin respaldo.
 - PROMPT EN INGLÉS para cada panel:
-  "Ultra-realistic 3D medical scrotal anatomy render of [SITE + PATIENT SIDE], accurate testis/epididymis/cord/mediastinum landmarks, exact Doppler or pathology only when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, strictly NO text, NO numbers, NO arrows, NO letters inside the image. Do NOT mirror anatomy. Obey SCROTUM TOPOGRAPHY HARD RULES."
+  "Ultra-realistic 3D medical scrotal anatomy render of [SITE + PATIENT SIDE], accurate testis/epididymis/cord/mediastinum landmarks, exact Doppler or pathology only when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, UNLABELED clean anatomy only: strictly NO text, NO English/Spanish anatomical labels, NO numbers, NO arrows, NO leader lines, NO callouts, NO letters inside the image. Do NOT mirror anatomy. Obey SCROTUM TOPOGRAPHY HARD RULES."
 
 ========================================================================
 TABLA Y FICHA CLÍNICA:
@@ -3920,7 +3953,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
               anatomicalFocus: "Reconstrucción escrotal: ambos testículos, bolsa y anclas de lateralidad.",
               laterality: laterality || "Bilateral",
               panelRole: "overview",
-              imagePrompt: "Ultra-realistic 3D medical scrotal anatomy render showing both testes, scrotal sac and clear patient right/left landmarks, cinema 4D octane render, soft surgical studio lighting, clean background, no text."
+              imagePrompt: "Ultra-realistic 3D medical scrotal anatomy render showing both testes, scrotal sac and clear patient right/left landmarks, cinema 4D octane render, soft surgical studio lighting, clean background, UNLABELED anatomy only (no text, no English labels, no leader lines)."
             },
             {
               panelLetter: "B",
@@ -3929,7 +3962,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
               anatomicalFocus: "Corte macro del parénquima con mediastino/rete sin intercambiar lados.",
               laterality: laterality || "Bilateral",
               panelRole: "testis_parenchyma",
-              imagePrompt: "Ultra-realistic 3D medical testis parenchyma cutaway render with accurate mediastinum testis landmarks and pathology only when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, no text."
+              imagePrompt: "Ultra-realistic 3D medical testis parenchyma cutaway render with accurate mediastinum testis landmarks and pathology only when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, UNLABELED anatomy only (no text, no English labels, no leader lines)."
             }
           ],
           findingTable: [],
@@ -3940,7 +3973,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
 
       const scrotumPanelsWithImages = await Promise.all(
         (planJson.panels || []).map(async (panel: any, idx: number) => {
-          let promptToUse = panel.imagePrompt || `Ultra-realistic 3D medical scrotal render of ${panel.structureOrSite || panel.panelTitle}, octane render, no text.`;
+          let promptToUse = panel.imagePrompt || `Ultra-realistic 3D medical scrotal render of ${panel.structureOrSite || panel.panelTitle}, octane render, UNLABELED anatomy only (no text, no English labels, no leader lines).`;
           if (customDirectives && customDirectives.trim()) {
             promptToUse = `${promptToUse} [MANDATORY CLINICAL DIRECTIVE: ${customDirectives.trim()}].`;
           }
@@ -4067,7 +4100,7 @@ REGLAS DE ESTILO:
 - Ultra-realistic 3D medical scrotal macro render, cinema 4D octane, accurate testis/epididymis/cord/mediastinum landmarks.
 - Exact named site, structure and laterality in the English imagePrompt.
 - Exact morphology only if indicated; soft surgical studio lighting; pure clean background.
-- STRICTLY NO text, NO numbers, NO letters, NO arrows inside the image.
+- STRICTLY NO text, NO English/Spanish anatomical labels, NO numbers, NO letters, NO arrows, NO leader lines, NO callouts inside the image (labels are added later by the app overlay).
 - Respect patient laterality (AP: patient RIGHT on viewer's LEFT).
 
 RESPONDE EN JSON:
@@ -4092,7 +4125,7 @@ RESPONDE EN JSON:
           panelTitle: panel.panelTitle,
           structureOrSite: panel.structureOrSite || panel.panelTitle,
           anatomicalFocus: panel.anatomicalFocus,
-          imagePrompt: `Ultra-realistic 3D medical scrotal render of ${panel.structureOrSite || panel.panelTitle}, octane render, studio lighting, no text.`
+          imagePrompt: `Ultra-realistic 3D medical scrotal render of ${panel.structureOrSite || panel.panelTitle}, octane render, studio lighting, UNLABELED anatomy only (no text, no English labels, no leader lines).`
         };
       }
 
@@ -4202,7 +4235,7 @@ DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
   - El imagePrompt DEBE empezar con el sitio/lado del paciente y anclas de pantalla.
   - NUNCA intercambiar lado D↔I ni vientre↔MTJ↔tendón sin respaldo.
 - PROMPT EN INGLÉS para cada panel:
-  "Ultra-realistic 3D medical muscle-tendon anatomy render of [SITE + PATIENT SIDE], accurate muscle belly/MTJ/tendon/Achilles landmarks, exact tear gap hematoma or pathology only when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, strictly NO text, NO numbers, NO arrows, NO letters inside the image. Do NOT mirror anatomy. Obey MUSCLE/TENDON TOPOGRAPHY HARD RULES."
+  "Ultra-realistic 3D medical muscle-tendon anatomy render of [SITE + PATIENT SIDE], accurate muscle belly/MTJ/tendon/Achilles landmarks, exact tear gap hematoma or pathology only when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, UNLABELED clean anatomy only: strictly NO text, NO English/Spanish anatomical labels, NO numbers, NO arrows, NO leader lines, NO callouts, NO letters inside the image. Do NOT mirror anatomy. Obey MUSCLE/TENDON TOPOGRAPHY HARD RULES."
 
 ========================================================================
 TABLA Y FICHA CLÍNICA:
@@ -4304,7 +4337,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
               anatomicalFocus: "Reconstrucción músculo-tendinosa: ambos testículos, bolsa y anclas de lateralidad.",
               laterality: laterality || "Bilateral",
               panelRole: "overview",
-              imagePrompt: "Ultra-realistic 3D medical muscle-tendon anatomy render showing both testes, scrotal sac and clear patient right/left landmarks, cinema 4D octane render, soft surgical studio lighting, clean background, no text."
+              imagePrompt: "Ultra-realistic 3D medical muscle-tendon anatomy render showing both testes, scrotal sac and clear patient right/left landmarks, cinema 4D octane render, soft surgical studio lighting, clean background, UNLABELED anatomy only (no text, no English labels, no leader lines)."
             },
             {
               panelLetter: "B",
@@ -4313,7 +4346,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
               anatomicalFocus: "Corte macro del parénquima con mediastino/rete sin intercambiar lados.",
               laterality: laterality || "Bilateral",
               panelRole: "tear_myotendinous",
-              imagePrompt: "Ultra-realistic 3D medical muscle tear / MTJ corte render with accurate muscle belly / MTJ landmarks and pathology only when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, no text."
+              imagePrompt: "Ultra-realistic 3D medical muscle tear / MTJ corte render with accurate muscle belly / MTJ landmarks and pathology only when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, UNLABELED anatomy only (no text, no English labels, no leader lines)."
             }
           ],
           findingTable: [],
@@ -4324,7 +4357,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
 
       const muscleTendonPanelsWithImages = await Promise.all(
         (planJson.panels || []).map(async (panel: any, idx: number) => {
-          let promptToUse = panel.imagePrompt || `Ultra-realistic 3D medical scrotal render of ${panel.structureOrSite || panel.panelTitle}, octane render, no text.`;
+          let promptToUse = panel.imagePrompt || `Ultra-realistic 3D medical scrotal render of ${panel.structureOrSite || panel.panelTitle}, octane render, UNLABELED anatomy only (no text, no English labels, no leader lines).`;
           if (customDirectives && customDirectives.trim()) {
             promptToUse = `${promptToUse} [MANDATORY CLINICAL DIRECTIVE: ${customDirectives.trim()}].`;
           }
@@ -4451,7 +4484,7 @@ REGLAS DE ESTILO:
 - Ultra-realistic 3D medical muscle-tendon macro render, cinema 4D octane, accurate muscle belly/MTJ/tendon/Achilles landmarks.
 - Exact named site, structure and laterality in the English imagePrompt.
 - Exact morphology only if indicated; soft surgical studio lighting; pure clean background.
-- STRICTLY NO text, NO numbers, NO letters, NO arrows inside the image.
+- STRICTLY NO text, NO English/Spanish anatomical labels, NO numbers, NO letters, NO arrows, NO leader lines, NO callouts inside the image (labels are added later by the app overlay).
 - Respect patient laterality (AP: patient RIGHT on viewer's LEFT).
 
 RESPONDE EN JSON:
@@ -4476,7 +4509,7 @@ RESPONDE EN JSON:
           panelTitle: panel.panelTitle,
           structureOrSite: panel.structureOrSite || panel.panelTitle,
           anatomicalFocus: panel.anatomicalFocus,
-          imagePrompt: `Ultra-realistic 3D medical muscle-tendon render of ${panel.structureOrSite || panel.panelTitle}, octane render, studio lighting, no text.`
+          imagePrompt: `Ultra-realistic 3D medical muscle-tendon render of ${panel.structureOrSite || panel.panelTitle}, octane render, studio lighting, UNLABELED anatomy only (no text, no English labels, no leader lines).`
         };
       }
 
@@ -4581,7 +4614,7 @@ DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
   - El imagePrompt DEBE empezar con el sitio/lado del paciente y anclas de pantalla.
   - NUNCA intercambiar lado D↔I ni compartimento dorsal↔túnel↔TFCC sin respaldo.
 - PROMPT EN INGLÉS para cada panel:
-  "Ultra-realistic 3D medical wrist anatomy render of [SITE + PATIENT SIDE], accurate extensor compartments / flexor retinaculum / carpal tunnel / TFCC / carpal ligament landmarks, exact tenosynovitis fluid or pathology only when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, strictly NO text, NO numbers, NO arrows, NO letters inside the image. Do NOT mirror anatomy. Obey WRIST TOPOGRAPHY HARD RULES."
+  "Ultra-realistic 3D medical wrist anatomy render of [SITE + PATIENT SIDE], accurate extensor compartments / flexor retinaculum / carpal tunnel / TFCC / carpal ligament landmarks, exact tenosynovitis fluid or pathology only when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, UNLABELED clean anatomy only: strictly NO text, NO English/Spanish anatomical labels, NO numbers, NO arrows, NO leader lines, NO callouts, NO letters inside the image. Do NOT mirror anatomy. Obey WRIST TOPOGRAPHY HARD RULES."
 
 ========================================================================
 TABLA Y FICHA CLÍNICA:
@@ -4683,7 +4716,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
               anatomicalFocus: "Reconstrucción de muñeca con retináculos y anclas de lateralidad.",
               laterality: laterality || "Bilateral",
               panelRole: "overview",
-              imagePrompt: "Ultra-realistic 3D medical wrist anatomy render showing dorsal and volar landmarks with clear patient right/left anchors, cinema 4D octane render, soft surgical studio lighting, clean background, no text."
+              imagePrompt: "Ultra-realistic 3D medical wrist anatomy render showing dorsal and volar landmarks with clear patient right/left anchors, cinema 4D octane render, soft surgical studio lighting, clean background, UNLABELED anatomy only (no text, no English labels, no leader lines)."
             },
             {
               panelLetter: "B",
@@ -4692,7 +4725,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
               anatomicalFocus: "Corte macro del territorio dominante sin intercambiar lados.",
               laterality: laterality || "Bilateral",
               panelRole: "tendons_extensor",
-              imagePrompt: "Ultra-realistic 3D medical wrist pathology corte render with accurate extensor/flexor/TFCC landmarks and pathology only when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, no text."
+              imagePrompt: "Ultra-realistic 3D medical wrist pathology corte render with accurate extensor/flexor/TFCC landmarks and pathology only when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, UNLABELED anatomy only (no text, no English labels, no leader lines)."
             }
           ],
           findingTable: [],
@@ -4703,7 +4736,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
 
       const wristPanelsWithImages = await Promise.all(
         (planJson.panels || []).map(async (panel: any, idx: number) => {
-          let promptToUse = panel.imagePrompt || `Ultra-realistic 3D medical wrist render of ${panel.structureOrSite || panel.panelTitle}, octane render, no text.`;
+          let promptToUse = panel.imagePrompt || `Ultra-realistic 3D medical wrist render of ${panel.structureOrSite || panel.panelTitle}, octane render, UNLABELED anatomy only (no text, no English labels, no leader lines).`;
           if (customDirectives && customDirectives.trim()) {
             promptToUse = `${promptToUse} [MANDATORY CLINICAL DIRECTIVE: ${customDirectives.trim()}].`;
           }
@@ -4830,7 +4863,7 @@ REGLAS DE ESTILO:
 - Ultra-realistic 3D medical wrist macro render, cinema 4D octane, accurate extensor/flexor/TFCC/carpal landmarks.
 - Exact named site, structure and laterality in the English imagePrompt.
 - Exact morphology only if indicated; soft surgical studio lighting; pure clean background.
-- STRICTLY NO text, NO numbers, NO letters, NO arrows inside the image.
+- STRICTLY NO text, NO English/Spanish anatomical labels, NO numbers, NO letters, NO arrows, NO leader lines, NO callouts inside the image (labels are added later by the app overlay).
 - Respect patient laterality (AP: patient RIGHT on viewer's LEFT).
 
 RESPONDE EN JSON:
@@ -4855,7 +4888,7 @@ RESPONDE EN JSON:
           panelTitle: panel.panelTitle,
           structureOrSite: panel.structureOrSite || panel.panelTitle,
           anatomicalFocus: panel.anatomicalFocus,
-          imagePrompt: `Ultra-realistic 3D medical wrist render of ${panel.structureOrSite || panel.panelTitle}, octane render, studio lighting, no text.`
+          imagePrompt: `Ultra-realistic 3D medical wrist render of ${panel.structureOrSite || panel.panelTitle}, octane render, studio lighting, UNLABELED anatomy only (no text, no English labels, no leader lines).`
         };
       }
 
@@ -4967,7 +5000,7 @@ DISEÑO DE PANELES 3D VASCULARES (Generar 2 o 3 Paneles):
   - NUNCA intercambiar lados entre paneles ni espejar por estética. Si hay contralateral sano, márcalo explícitamente como el lado opuesto correcto.
   - doNotInvent implícito: mirrored laterality, side swap, patient-right on viewer-right in AP, inventing contralateral disease.
 - PROMPT EN INGLÉS para cada panel:
-  "Ultra-realistic 3D medical thyroid gland cross-section render of [PATIENT SIDE + detailed location name], exact wall layer cutaway, exact thyroid nodule morphology (lipid core, fibrous cap, calcifications, ulceration, or clean healthy intima), intraluminal lumen opening with glowing chromatic laminar blood flow vectors, anatomical bone/soft tissue landmark background that locks laterality, cinema 4D octane render style, soft surgical studio lighting, clean background, strictly NO text, NO numbers, NO arrows, NO letters inside the image. Do NOT mirror anatomy."
+  "Ultra-realistic 3D medical thyroid gland cross-section render of [PATIENT SIDE + detailed location name], exact wall layer cutaway, exact thyroid nodule morphology (lipid core, fibrous cap, calcifications, ulceration, or clean healthy intima), intraluminal lumen opening with glowing chromatic laminar blood flow vectors, anatomical bone/soft tissue landmark background that locks laterality, cinema 4D octane render style, soft surgical studio lighting, clean background, UNLABELED clean anatomy only: strictly NO text, NO English/Spanish anatomical labels, NO numbers, NO arrows, NO leader lines, NO callouts, NO letters inside the image. Do NOT mirror anatomy."
 
 ========================================================================
 SÍNTESIS MORFOLÓGICA Y HEMODINÁMICA:
@@ -5070,14 +5103,14 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
               panelTitle: "Panel A: Reconstrucción Vascular de Alta Resolución",
               anatomicalFocus: "Evaluación morfológica parietal y luminal del eje vascular principal.",
               laterality: "Derecha",
-              imagePrompt: "Ultra-realistic 3D medical thyroid gland cross-section render showing blood location wall, translucent lumen with chromatic laminar flow vectors, studio lighting, octane render, no text."
+              imagePrompt: "Ultra-realistic 3D medical thyroid gland cross-section render showing blood location wall, translucent lumen with chromatic laminar flow vectors, studio lighting, octane render, UNLABELED anatomy only (no text, no English labels, no leader lines)."
             },
             {
               panelLetter: "B",
               panelTitle: "Panel B: Eje Complementario / Contralateral",
               anatomicalFocus: "Permeabilidad y morfología parietal del vaso complementario.",
               laterality: "Izquierda",
-              imagePrompt: "Ultra-realistic 3D medical thyroid gland render of contralateral blood location, smooth endothelial intima, clean studio background, octane render, no text."
+              imagePrompt: "Ultra-realistic 3D medical thyroid gland render of contralateral blood location, smooth endothelial intima, clean studio background, octane render, UNLABELED anatomy only (no text, no English labels, no leader lines)."
             }
           ],
           noduleTable: [
@@ -5098,7 +5131,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
       // Generate images in parallel for each vascular panel
       const thyroidPanelsWithImages = await Promise.all(
         (planJson.panels || []).map(async (panel: any, idx: number) => {
-          let promptToUse = panel.imagePrompt || `Ultra-realistic 3D medical thyroid gland render of ${panel.lobeOrNode || panel.panelTitle}, octane render, no text.`;
+          let promptToUse = panel.imagePrompt || `Ultra-realistic 3D medical thyroid gland render of ${panel.lobeOrNode || panel.panelTitle}, octane render, UNLABELED anatomy only (no text, no English labels, no leader lines).`;
           if (customDirectives && customDirectives.trim()) {
             promptToUse = `${promptToUse} [MANDATORY CLINICAL DIRECTIVE: ${customDirectives.trim()}].`;
           }
@@ -5207,7 +5240,7 @@ DATOS DEL CASO:
 
 REGLAS DE ESTILO:
 - Ultra-realistic 3D medical macro thyroid cross-section render, cinema 4D octane render style, accurate thyroid parenchyma and capsule, dominant nodule cutaway with composition/margins/echogenic foci cues, tracheal and carotid landmarks for laterality, soft surgical studio lighting, pure clean background.
-- STRICTLY NO text, NO numbers, NO letters, NO arrows inside the image.
+- STRICTLY NO text, NO English/Spanish anatomical labels, NO numbers, NO letters, NO arrows, NO leader lines, NO callouts inside the image (labels are added later by the app overlay).
 
 RESPONDE EN JSON:
 {
@@ -5231,7 +5264,7 @@ RESPONDE EN JSON:
           panelTitle: panel.panelTitle,
           lobeOrNode: panel.lobeOrNode || panel.panelTitle,
           anatomicalFocus: panel.anatomicalFocus,
-          imagePrompt: `Ultra-realistic 3D medical macro thyroid render of ${panel.lobeOrNode || panel.panelTitle}, octane render, studio lighting, no text.`
+          imagePrompt: `Ultra-realistic 3D medical macro thyroid render of ${panel.lobeOrNode || panel.panelTitle}, octane render, studio lighting, UNLABELED anatomy only (no text, no English labels, no leader lines).`
         };
       }
 
@@ -5340,7 +5373,7 @@ DISEÑO DE PANELES 3D VASCULARES (Generar 2 o 3 Paneles):
   - NUNCA intercambiar lados entre paneles ni espejar por estética. Si hay contralateral sano, márcalo explícitamente como el lado opuesto correcto.
   - doNotInvent implícito: mirrored laterality, side swap, patient-right on viewer-right in AP, inventing contralateral disease.
 - PROMPT EN INGLÉS para cada panel:
-  "Ultra-realistic 3D medical breast gland cross-section render of [PATIENT SIDE + detailed location name], exact wall layer cutaway, exact breast nodule morphology (lipid core, fibrous cap, calcifications, ulceration, or clean healthy intima), intraluminal lumen opening with glowing chromatic laminar blood flow vectors, anatomical bone/soft tissue landmark background that locks laterality, cinema 4D octane render style, soft surgical studio lighting, clean background, strictly NO text, NO numbers, NO arrows, NO letters inside the image. Do NOT mirror anatomy."
+  "Ultra-realistic 3D medical breast gland cross-section render of [PATIENT SIDE + detailed location name], exact wall layer cutaway, exact breast nodule morphology (lipid core, fibrous cap, calcifications, ulceration, or clean healthy intima), intraluminal lumen opening with glowing chromatic laminar blood flow vectors, anatomical bone/soft tissue landmark background that locks laterality, cinema 4D octane render style, soft surgical studio lighting, clean background, UNLABELED clean anatomy only: strictly NO text, NO English/Spanish anatomical labels, NO numbers, NO arrows, NO leader lines, NO callouts, NO letters inside the image. Do NOT mirror anatomy."
 
 ========================================================================
 SÍNTESIS MORFOLÓGICA Y HEMODINÁMICA:
@@ -5465,14 +5498,14 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
               panelTitle: "Panel A: Reconstrucción Vascular de Alta Resolución",
               anatomicalFocus: "Evaluación morfológica parietal y luminal del eje vascular principal.",
               laterality: "Derecha",
-              imagePrompt: "Ultra-realistic 3D medical breast gland cross-section render showing blood location wall, translucent lumen with chromatic laminar flow vectors, studio lighting, octane render, no text."
+              imagePrompt: "Ultra-realistic 3D medical breast gland cross-section render showing blood location wall, translucent lumen with chromatic laminar flow vectors, studio lighting, octane render, UNLABELED anatomy only (no text, no English labels, no leader lines)."
             },
             {
               panelLetter: "B",
               panelTitle: "Panel B: Eje Complementario / Contralateral",
               anatomicalFocus: "Permeabilidad y morfología parietal del vaso complementario.",
               laterality: "Izquierda",
-              imagePrompt: "Ultra-realistic 3D medical breast gland render of contralateral blood location, smooth endothelial intima, clean studio background, octane render, no text."
+              imagePrompt: "Ultra-realistic 3D medical breast gland render of contralateral blood location, smooth endothelial intima, clean studio background, octane render, UNLABELED anatomy only (no text, no English labels, no leader lines)."
             }
           ],
           lesionTable: [
@@ -5555,7 +5588,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
 
           let basePrompt =
             panel.imagePrompt ||
-            `Ultra-realistic 3D medical breast gland render of ${lockedClockSite}, octane render, no text.`;
+            `Ultra-realistic 3D medical breast gland render of ${lockedClockSite}, octane render, UNLABELED anatomy only (no text, no English labels, no leader lines).`;
           if (customDirectives && customDirectives.trim()) {
             basePrompt = `${basePrompt} [MANDATORY CLINICAL DIRECTIVE: ${customDirectives.trim()}].`;
           }
@@ -5771,7 +5804,7 @@ ${BREAST_CLOCK_PLAN_RULES_ES}
 
 REGLAS DE ESTILO:
 - Ultra-realistic 3D medical macro breast cross-section render, cinema 4D octane render style, accurate breast parenchyma and nipple-areola complex, dominant nodule cutaway with composition/margins/orientation cues, soft surgical studio lighting, pure clean background.
-- STRICTLY NO text, NO numbers, NO letters, NO arrows inside the image.
+- STRICTLY NO text, NO English/Spanish anatomical labels, NO numbers, NO letters, NO arrows, NO leader lines, NO callouts inside the image (labels are added later by the app overlay).
 - Respect patient laterality (AP: patient RIGHT on viewer's LEFT).
 - clockPositionOrSite en la respuesta DEBE ser exactamente "${lockedClockSite}" — PROHIBIDO cambiar la hora (p. ej. 10→2).
 
@@ -5797,7 +5830,7 @@ RESPONDE EN JSON:
           panelTitle: panel.panelTitle,
           clockPositionOrSite: lockedClockSite,
           anatomicalFocus: panel.anatomicalFocus,
-          imagePrompt: `Ultra-realistic 3D medical macro breast render of ${lockedClockSite}, octane render, studio lighting, no text.`
+          imagePrompt: `Ultra-realistic 3D medical macro breast render of ${lockedClockSite}, octane render, studio lighting, UNLABELED anatomy only (no text, no English labels, no leader lines).`
         };
       }
 
@@ -5927,7 +5960,7 @@ DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
   - El imagePrompt DEBE empezar con el lado del paciente y anclas de pantalla.
   - NUNCA intercambiar lados entre paneles ni espejar por estética.
 - PROMPT EN INGLÉS para cada panel:
-  "Ultra-realistic 3D medical shoulder / rotator cuff anatomy render of [PATIENT SIDE + tendon/site], accurate deltoid/acromion/humeral head landmarks, exact cuff tendon morphology (intact fibrillar pattern, tendinosis thickening, partial tear cleavage, or full-thickness gap with retraction), optional subacromial bursa fluid or AC joint osteophytes when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, strictly NO text, NO numbers, NO arrows, NO letters inside the image. Do NOT mirror anatomy."
+  "Ultra-realistic 3D medical shoulder / rotator cuff anatomy render of [PATIENT SIDE + tendon/site], accurate deltoid/acromion/humeral head landmarks, exact cuff tendon morphology (intact fibrillar pattern, tendinosis thickening, partial tear cleavage, or full-thickness gap with retraction), optional subacromial bursa fluid or AC joint osteophytes when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, UNLABELED clean anatomy only: strictly NO text, NO English/Spanish anatomical labels, NO numbers, NO arrows, NO leader lines, NO callouts, NO letters inside the image. Do NOT mirror anatomy."
 
 ========================================================================
 TABLA Y FICHA CLÍNICA:
@@ -6030,7 +6063,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
               anatomicalFocus: "Reconstrucción anatómica del hombro con manguito rotador.",
               laterality: laterality || "Derecha",
               panelRole: "overview",
-              imagePrompt: "Ultra-realistic 3D medical shoulder anatomy render showing acromion, humeral head, deltoid and rotator cuff footprint, studio lighting, octane render, no text."
+              imagePrompt: "Ultra-realistic 3D medical shoulder anatomy render showing acromion, humeral head, deltoid and rotator cuff footprint, studio lighting, octane render, UNLABELED anatomy only (no text, no English labels, no leader lines)."
             },
             {
               panelLetter: "B",
@@ -6039,7 +6072,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
               anatomicalFocus: "Corte macro del tendón supraespinoso según hallazgos del informe.",
               laterality: laterality || "Derecha",
               panelRole: "cuff",
-              imagePrompt: "Ultra-realistic 3D medical rotator cuff cutaway of supraspinatus tendon, fibrillar pattern, cinema 4D octane render, no text."
+              imagePrompt: "Ultra-realistic 3D medical rotator cuff cutaway of supraspinatus tendon, fibrillar pattern, cinema 4D octane render, UNLABELED anatomy only (no text, no English labels, no leader lines)."
             }
           ],
           findingTable: [],
@@ -6050,7 +6083,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
 
       const shoulderPanelsWithImages = await Promise.all(
         (planJson.panels || []).map(async (panel: any, idx: number) => {
-          let promptToUse = panel.imagePrompt || `Ultra-realistic 3D medical shoulder / rotator cuff render of ${panel.tendonOrSite || panel.panelTitle}, octane render, no text.`;
+          let promptToUse = panel.imagePrompt || `Ultra-realistic 3D medical shoulder / rotator cuff render of ${panel.tendonOrSite || panel.panelTitle}, octane render, UNLABELED anatomy only (no text, no English labels, no leader lines).`;
           if (customDirectives && customDirectives.trim()) {
             promptToUse = `${promptToUse} [MANDATORY CLINICAL DIRECTIVE: ${customDirectives.trim()}].`;
           }
@@ -6170,7 +6203,7 @@ DATOS DEL CASO:
 
 REGLAS DE ESTILO:
 - Ultra-realistic 3D medical shoulder / rotator cuff macro render, cinema 4D octane, accurate acromion/humeral head/deltoid landmarks, exact tendon morphology (intact / tendinosis / partial tear / full-thickness gap), optional SAD bursa fluid or AC joint changes only if indicated, soft surgical studio lighting, pure clean background.
-- STRICTLY NO text, NO numbers, NO letters, NO arrows inside the image.
+- STRICTLY NO text, NO English/Spanish anatomical labels, NO numbers, NO letters, NO arrows, NO leader lines, NO callouts inside the image (labels are added later by the app overlay).
 - Respect patient laterality (AP: patient RIGHT on viewer's LEFT).
 
 RESPONDE EN JSON:
@@ -6195,7 +6228,7 @@ RESPONDE EN JSON:
           panelTitle: panel.panelTitle,
           tendonOrSite: panel.tendonOrSite || panel.panelTitle,
           anatomicalFocus: panel.anatomicalFocus,
-          imagePrompt: `Ultra-realistic 3D medical shoulder / rotator cuff render of ${panel.tendonOrSite || panel.panelTitle}, octane render, studio lighting, no text.`
+          imagePrompt: `Ultra-realistic 3D medical shoulder / rotator cuff render of ${panel.tendonOrSite || panel.panelTitle}, octane render, studio lighting, UNLABELED anatomy only (no text, no English labels, no leader lines).`
         };
       }
 
@@ -6302,8 +6335,8 @@ DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
   - Vista AP/frontal por defecto: lado DERECHO del paciente a la IZQUIERDA del cuadro; lado IZQUIERDO del paciente a la DERECHA del cuadro.
   - El imagePrompt DEBE empezar con el lado del paciente y anclas de pantalla.
   - NUNCA intercambiar lados entre paneles ni espejar por estética.
-- PROMPT EN INGLÉS para cada panel:
-  "Ultra-realistic 3D medical knee anatomy render of [PATIENT SIDE + MEDIAL(tibial)/LATERAL(fibular) compartment + meniscus ANTERIOR horn/BODY/POSTERIOR horn or ligament], accurate femoral condyles/tibial plateau/patella/fibular head landmarks, exact named meniscus topography (never swap medial↔lateral or anterior↔posterior), exact collateral ligament morphology, optional joint effusion or Baker cyst when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, strictly NO text, NO numbers, NO arrows, NO letters inside the image. Do NOT mirror anatomy. Obey KNEE MENISCUS TOPOGRAPHY HARD RULES."
+- PROMPT EN INGLÉS para cada panel (PNG LIMPIO — sin rótulos horneados):
+  "Ultra-realistic 3D medical knee anatomy render of [PATIENT SIDE + MEDIAL(tibial)/LATERAL(fibular) compartment + meniscus ANTERIOR horn/BODY/POSTERIOR horn or ligament], accurate femoral condyles/tibial plateau/patella/fibular head landmarks, exact named meniscus topography (never swap medial↔lateral or anterior↔posterior), exact collateral ligament morphology, optional joint effusion or Baker cyst when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, UNLABELED anatomy only: strictly NO text, NO English/Spanish labels, NO numbers, NO arrows, NO leader lines, NO callouts, NO diagram captions (no PATELLA/ACL/PCL/TIBIA text) inside the image. Do NOT mirror anatomy. Obey KNEE MENISCUS TOPOGRAPHY HARD RULES."
 
 ========================================================================
 TABLA Y FICHA CLÍNICA:
@@ -6406,7 +6439,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
               anatomicalFocus: "Reconstrucción anatómica de la rodilla con ligamentos y meniscos.",
               laterality: laterality || "Derecha",
               panelRole: "overview",
-              imagePrompt: "Ultra-realistic 3D medical knee anatomy render showing cóndilo femoral, patella, quadriceps and knee ligaments-menisci footprint, studio lighting, octane render, no text."
+              imagePrompt: "Ultra-realistic 3D medical knee anatomy render showing cóndilo femoral, patella, quadriceps and knee ligaments-menisci footprint, studio lighting, octane render, UNLABELED anatomy only (no text, no English labels, no leader lines)."
             },
             {
               panelLetter: "B",
@@ -6415,7 +6448,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
               anatomicalFocus: "Corte macro del menisco indicado en el informe (interno/externo y cuerno anterior/posterior), sin intercambiar lados.",
               laterality: laterality || "Derecha",
               panelRole: "meniscus_ligament",
-              imagePrompt: "Ultra-realistic 3D medical knee meniscus cutaway with explicit medial or lateral (fibular) compartment and anterior or posterior horn per report, fibular head landmark visible for lateral side, cinema 4D octane render, no text."
+              imagePrompt: "Ultra-realistic 3D medical knee meniscus cutaway with explicit medial or lateral (fibular) compartment and anterior or posterior horn per report, fibular head landmark visible for lateral side, cinema 4D octane render, UNLABELED anatomy only (no text, no English labels, no leader lines)."
             }
           ],
           findingTable: [],
@@ -6448,7 +6481,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
 
           let promptToUse =
             panel.imagePrompt ||
-            `Ultra-realistic 3D medical knee / knee ligaments-menisci render of ${lockedSite}, octane render, no text.`;
+            `Ultra-realistic 3D medical knee / knee ligaments-menisci render of ${lockedSite}, octane render, UNLABELED anatomy only (no text, no English labels, no leader lines).`;
           if (customDirectives && customDirectives.trim()) {
             promptToUse = `${promptToUse} [MANDATORY CLINICAL DIRECTIVE: ${customDirectives.trim()}].`;
           }
@@ -6591,7 +6624,7 @@ REGLAS DE ESTILO:
 - Ultra-realistic 3D medical knee / meniscus-ligament macro render, cinema 4D octane, accurate femoral condyle/tibial plateau/patella/fibular head landmarks.
 - Exact named meniscus topography in the English imagePrompt (medial|lateral + anterior|body|posterior + patient knee side).
 - Exact morphology (intact / degeneration / partial tear / extrusion / full-thickness gap); optional effusion/Baker cyst only if indicated; soft surgical studio lighting; pure clean background.
-- STRICTLY NO text, NO numbers, NO letters, NO arrows inside the image.
+- STRICTLY NO text, NO English/Spanish anatomical labels, NO numbers, NO letters, NO arrows, NO leader lines, NO callouts inside the image (labels are added later by the app overlay).
 - Respect patient laterality (AP: patient RIGHT on viewer's LEFT).
 
 RESPONDE EN JSON:
@@ -6616,7 +6649,7 @@ RESPONDE EN JSON:
           panelTitle: panel.panelTitle,
           structureOrSite: panel.structureOrSite || panel.panelTitle,
           anatomicalFocus: panel.anatomicalFocus,
-          imagePrompt: `Ultra-realistic 3D medical knee / knee ligaments-menisci render of ${panel.structureOrSite || panel.panelTitle}, octane render, studio lighting, no text.`
+          imagePrompt: `Ultra-realistic 3D medical knee / knee ligaments-menisci render of ${panel.structureOrSite || panel.panelTitle}, octane render, studio lighting, UNLABELED anatomy only (no text, no English labels, no leader lines).`
         };
       }
 
@@ -6754,7 +6787,7 @@ DISEÑO DE PANELES 3D (Generar 2 o 3 Paneles):
   - El imagePrompt DEBE empezar con el lado del paciente y anclas de pantalla.
   - NUNCA intercambiar lados entre paneles ni espejar por estética.
 - PROMPT EN INGLÉS para cada panel:
-  "Ultra-realistic 3D medical ankle anatomy render of [PATIENT SIDE + LATERAL(fibular) ATFL/CFL/PTFL or MEDIAL deltoid or ACHILLES midportion/insertional], accurate distal tibia/fibula/talus/calcaneus landmarks, exact named ligament/Achilles topography (never swap lateral↔deltoid or midportion↔insertional), optional joint effusion or retrocalcaneal bursa when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, strictly NO text, NO numbers, NO arrows, NO letters inside the image. Do NOT mirror anatomy. Obey ANKLE LIGAMENT & ACHILLES TOPOGRAPHY HARD RULES."
+  "Ultra-realistic 3D medical ankle anatomy render of [PATIENT SIDE + LATERAL(fibular) ATFL/CFL/PTFL or MEDIAL deltoid or ACHILLES midportion/insertional], accurate distal tibia/fibula/talus/calcaneus landmarks, exact named ligament/Achilles topography (never swap lateral↔deltoid or midportion↔insertional), optional joint effusion or retrocalcaneal bursa when clinically indicated, cinema 4D octane render, soft surgical studio lighting, clean background, UNLABELED clean anatomy only: strictly NO text, NO English/Spanish anatomical labels, NO numbers, NO arrows, NO leader lines, NO callouts, NO letters inside the image. Do NOT mirror anatomy. Obey ANKLE LIGAMENT & ACHILLES TOPOGRAPHY HARD RULES."
 
 ========================================================================
 TABLA Y FICHA CLÍNICA:
@@ -6857,7 +6890,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
               anatomicalFocus: "Reconstrucción anatómica del tobillo con ligamentos laterales/mediales y Aquiles.",
               laterality: laterality || "Derecha",
               panelRole: "overview",
-              imagePrompt: "Ultra-realistic 3D medical ankle anatomy render showing distal tibia, fibula, talus, calcaneus, lateral and medial ligament complexes and Achilles footprint, studio lighting, octane render, no text."
+              imagePrompt: "Ultra-realistic 3D medical ankle anatomy render showing distal tibia, fibula, talus, calcaneus, lateral and medial ligament complexes and Achilles footprint, studio lighting, octane render, UNLABELED anatomy only (no text, no English labels, no leader lines)."
             },
             {
               panelLetter: "B",
@@ -6866,7 +6899,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
               anatomicalFocus: "Corte macro del ligamento indicado en el informe (LPAA/ATFL, LPC/CFL o deltoides), sin intercambiar lados.",
               laterality: laterality || "Derecha",
               panelRole: "ligaments_lateral_medial",
-              imagePrompt: "Ultra-realistic 3D medical ankle ligament cutaway with explicit lateral (fibular) ATFL/CFL or medial deltoid per report, fibular landmark visible for lateral side, cinema 4D octane render, no text."
+              imagePrompt: "Ultra-realistic 3D medical ankle ligament cutaway with explicit lateral (fibular) ATFL/CFL or medial deltoid per report, fibular landmark visible for lateral side, cinema 4D octane render, UNLABELED anatomy only (no text, no English labels, no leader lines)."
             }
           ],
           findingTable: [],
@@ -6877,7 +6910,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
 
       const anklePanelsWithImages = await Promise.all(
         (planJson.panels || []).map(async (panel: any, idx: number) => {
-          let promptToUse = panel.imagePrompt || `Ultra-realistic 3D medical ankle / ankle ligaments-Achilles render of ${panel.structureOrSite || panel.panelTitle}, octane render, no text.`;
+          let promptToUse = panel.imagePrompt || `Ultra-realistic 3D medical ankle / ankle ligaments-Achilles render of ${panel.structureOrSite || panel.panelTitle}, octane render, UNLABELED anatomy only (no text, no English labels, no leader lines).`;
           if (customDirectives && customDirectives.trim()) {
             promptToUse = `${promptToUse} [MANDATORY CLINICAL DIRECTIVE: ${customDirectives.trim()}].`;
           }
@@ -7005,7 +7038,7 @@ REGLAS DE ESTILO:
 - Ultra-realistic 3D medical ankle / ligament-Achilles macro render, cinema 4D octane, accurate distal tibia/fibula/talus/calcaneus landmarks.
 - Exact named ligament/Achilles topography in the English imagePrompt (lateral|medial|Achilles + ATFL/CFL/deltoid/midportion/insertional + patient ankle side).
 - Exact morphology (intact / sprain / partial tear / full-thickness gap / tendinopathy); optional effusion/bursa only if indicated; soft surgical studio lighting; pure clean background.
-- STRICTLY NO text, NO numbers, NO letters, NO arrows inside the image.
+- STRICTLY NO text, NO English/Spanish anatomical labels, NO numbers, NO letters, NO arrows, NO leader lines, NO callouts inside the image (labels are added later by the app overlay).
 - Respect patient laterality (AP: patient RIGHT on viewer's LEFT).
 
 RESPONDE EN JSON:
@@ -7030,7 +7063,7 @@ RESPONDE EN JSON:
           panelTitle: panel.panelTitle,
           structureOrSite: panel.structureOrSite || panel.panelTitle,
           anatomicalFocus: panel.anatomicalFocus,
-          imagePrompt: `Ultra-realistic 3D medical ankle / ankle ligaments-Achilles render of ${panel.structureOrSite || panel.panelTitle}, octane render, studio lighting, no text.`
+          imagePrompt: `Ultra-realistic 3D medical ankle / ankle ligaments-Achilles render of ${panel.structureOrSite || panel.panelTitle}, octane render, studio lighting, UNLABELED anatomy only (no text, no English labels, no leader lines).`
         };
       }
 
