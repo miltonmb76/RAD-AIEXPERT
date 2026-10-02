@@ -1,31 +1,39 @@
 import React, { useRef, useState } from "react";
 import { Plus, Trash2, Tag } from "lucide-react";
 import { SuiteImageAnnotation } from "../types";
-import { newAnnotationId } from "../lib/suiteImageAnnotations";
+import {
+  buildAnnotation,
+  clampPct,
+  resolveAnnotationGeometry,
+} from "../lib/suiteImageAnnotations";
 
 const COLOR_STYLES: Record<
   NonNullable<SuiteImageAnnotation["color"]>,
-  { pill: string; dot: string; ring: string }
+  { pill: string; tip: string; ring: string; stroke: string }
 > = {
   amber: {
-    pill: "bg-amber-950/85 border-amber-400/70 text-amber-50",
-    dot: "bg-amber-400",
-    ring: "ring-amber-300/50",
+    pill: "bg-amber-950/88 border-amber-400/70 text-amber-50",
+    tip: "bg-amber-400 border-amber-100",
+    ring: "ring-amber-300/60",
+    stroke: "#fbbf24",
   },
   cyan: {
-    pill: "bg-cyan-950/85 border-cyan-400/70 text-cyan-50",
-    dot: "bg-cyan-400",
-    ring: "ring-cyan-300/50",
+    pill: "bg-cyan-950/88 border-cyan-400/70 text-cyan-50",
+    tip: "bg-cyan-400 border-cyan-100",
+    ring: "ring-cyan-300/60",
+    stroke: "#22d3ee",
   },
   rose: {
-    pill: "bg-rose-950/85 border-rose-400/70 text-rose-50",
-    dot: "bg-rose-400",
-    ring: "ring-rose-300/50",
+    pill: "bg-rose-950/88 border-rose-400/70 text-rose-50",
+    tip: "bg-rose-400 border-rose-100",
+    ring: "ring-rose-300/60",
+    stroke: "#fb7185",
   },
   emerald: {
-    pill: "bg-emerald-950/85 border-emerald-400/70 text-emerald-50",
-    dot: "bg-emerald-400",
-    ring: "ring-emerald-300/50",
+    pill: "bg-emerald-950/88 border-emerald-400/70 text-emerald-50",
+    tip: "bg-emerald-400 border-emerald-100",
+    ring: "ring-emerald-300/60",
+    stroke: "#34d399",
   },
 };
 
@@ -40,8 +48,11 @@ interface Props {
   onSelectId?: (id: string | null) => void;
 }
 
+type DragHandle = "tip" | "label";
+
 /**
- * Absolute layer of draggable callouts over a 3D panel image.
+ * Absolute layer of callouts with a thin leader line:
+ * tip on the structure + label parked aside (each independently draggable).
  * Layer mode requires a `position: relative` parent.
  */
 export const SuiteImageAnnotationLayer: React.FC<Props> = ({
@@ -64,6 +75,7 @@ export const SuiteImageAnnotationLayer: React.FC<Props> = ({
   };
   const dragRef = useRef<{
     id: string;
+    handle: DragHandle;
     offsetX: number;
     offsetY: number;
   } | null>(null);
@@ -71,9 +83,7 @@ export const SuiteImageAnnotationLayer: React.FC<Props> = ({
   const mine = annotations.filter((a) => a.panelLetter === panelLetter);
 
   const updateOne = (id: string, patch: Partial<SuiteImageAnnotation>) => {
-    onChange(
-      annotations.map((a) => (a.id === id ? { ...a, ...patch } : a))
-    );
+    onChange(annotations.map((a) => (a.id === id ? { ...a, ...patch } : a)));
   };
 
   const removeOne = (id: string) => {
@@ -82,20 +92,24 @@ export const SuiteImageAnnotationLayer: React.FC<Props> = ({
   };
 
   const addBlank = () => {
-    const created: SuiteImageAnnotation = {
-      id: newAnnotationId(),
+    const created = buildAnnotation({
       panelLetter,
       text: "Nueva anotación",
       sizeLabel: "",
-      xPct: 50,
-      yPct: 45,
+      tipX: 48,
+      tipY: 52,
       color: "amber",
-    };
+      offsetIndex: mine.length,
+    });
     onChange([...annotations, created]);
     setSelectedId(created.id);
   };
 
-  const onPointerDown = (e: React.PointerEvent, ann: SuiteImageAnnotation) => {
+  const onPointerDown = (
+    e: React.PointerEvent,
+    ann: SuiteImageAnnotation,
+    handle: DragHandle
+  ) => {
     if (!editable) return;
     e.preventDefault();
     e.stopPropagation();
@@ -104,10 +118,14 @@ export const SuiteImageAnnotationLayer: React.FC<Props> = ({
     const rect = el.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
+    const geo = resolveAnnotationGeometry(ann);
+    const ax = handle === "tip" ? geo.tipX : geo.labelX;
+    const ay = handle === "tip" ? geo.tipY : geo.labelY;
     dragRef.current = {
       id: ann.id,
-      offsetX: x - ann.xPct,
-      offsetY: y - ann.yPct,
+      handle,
+      offsetX: x - ax,
+      offsetY: y - ay,
     };
     setSelectedId(ann.id);
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -118,9 +136,13 @@ export const SuiteImageAnnotationLayer: React.FC<Props> = ({
     const rect = layerRef.current.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
-    const nextX = Math.min(92, Math.max(8, x - dragRef.current.offsetX));
-    const nextY = Math.min(92, Math.max(8, y - dragRef.current.offsetY));
-    updateOne(dragRef.current.id, { xPct: nextX, yPct: nextY });
+    const nextX = clampPct(x - dragRef.current.offsetX);
+    const nextY = clampPct(y - dragRef.current.offsetY);
+    if (dragRef.current.handle === "tip") {
+      updateOne(dragRef.current.id, { xPct: nextX, yPct: nextY });
+    } else {
+      updateOne(dragRef.current.id, { labelXPct: nextX, labelYPct: nextY });
+    }
   };
 
   const onPointerUp = (e: React.PointerEvent) => {
@@ -142,35 +164,94 @@ export const SuiteImageAnnotationLayer: React.FC<Props> = ({
           className="absolute inset-0 z-[5] pointer-events-none"
           onPointerMove={onPointerMove}
         >
+          {/* Leader lines behind interactive handles (0–100 viewBox = % of panel) */}
+          <svg
+            className="absolute inset-0 w-full h-full overflow-visible pointer-events-none"
+            viewBox="0 0 100 100"
+            preserveAspectRatio="none"
+            aria-hidden
+          >
+            {mine.map((ann) => {
+              const geo = resolveAnnotationGeometry(ann);
+              const style = COLOR_STYLES[ann.color || "amber"];
+              const selected = selectedId === ann.id;
+              const dx = geo.labelX - geo.tipX;
+              const dy = geo.labelY - geo.tipY;
+              const len = Math.sqrt(dx * dx + dy * dy) || 1;
+              const ux = dx / len;
+              const uy = dy / len;
+              const tipPad = 1.1;
+              const labelPad = 3.0;
+              const x1 = geo.tipX + ux * tipPad;
+              const y1 = geo.tipY + uy * tipPad;
+              const x2 = geo.labelX - ux * labelPad;
+              const y2 = geo.labelY - uy * labelPad;
+              const ah = arrowHeadCoords(geo.tipX, geo.tipY, ux, uy);
+              return (
+                <g key={`line-${ann.id}`}>
+                  <line
+                    x1={x1}
+                    y1={y1}
+                    x2={x2}
+                    y2={y2}
+                    stroke={style.stroke}
+                    strokeWidth={selected ? 0.55 : 0.4}
+                    vectorEffect="non-scaling-stroke"
+                    strokeOpacity={selected ? 0.95 : 0.82}
+                    strokeLinecap="round"
+                  />
+                  <polygon
+                    points={`${ah.noseX},${ah.noseY} ${ah.leftX},${ah.leftY} ${ah.rightX},${ah.rightY}`}
+                    fill={style.stroke}
+                    opacity={selected ? 0.95 : 0.88}
+                  />
+                </g>
+              );
+            })}
+          </svg>
+
           {mine.map((ann) => {
+            const geo = resolveAnnotationGeometry(ann);
             const style = COLOR_STYLES[ann.color || "amber"];
             const selected = selectedId === ann.id;
             return (
-              <div
-                key={ann.id}
-                className={`absolute pointer-events-auto select-none ${
-                  editable ? "cursor-grab active:cursor-grabbing" : ""
-                }`}
-                style={{
-                  left: `${ann.xPct}%`,
-                  top: `${ann.yPct}%`,
-                  transform: "translate(-50%, -50%)",
-                }}
-                onPointerDown={(e) => onPointerDown(e, ann)}
-                onPointerUp={onPointerUp}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setSelectedId(ann.id);
-                }}
-              >
-                <div className="flex flex-col items-center gap-0.5">
-                  <span
-                    className={`w-2 h-2 rounded-full shadow ${style.dot} ${
-                      selected ? `ring-2 ${style.ring}` : ""
-                    }`}
-                  />
+              <React.Fragment key={ann.id}>
+                {/* Tip handle — place on the structure */}
+                <button
+                  type="button"
+                  className={`absolute pointer-events-auto select-none z-[6] -translate-x-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full border shadow ${
+                    style.tip
+                  } ${selected ? `ring-2 ${style.ring}` : ""} ${
+                    editable ? "cursor-grab active:cursor-grabbing" : "cursor-default"
+                  }`}
+                  style={{ left: `${geo.tipX}%`, top: `${geo.tipY}%` }}
+                  title={editable ? "Arrastra la punta sobre la estructura" : undefined}
+                  onPointerDown={(e) => onPointerDown(e, ann, "tip")}
+                  onPointerUp={onPointerUp}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedId(ann.id);
+                  }}
+                />
+
+                {/* Label pill — park away from anatomy */}
+                <div
+                  className={`absolute pointer-events-auto select-none z-[6] -translate-x-1/2 -translate-y-1/2 ${
+                    editable ? "cursor-grab active:cursor-grabbing" : ""
+                  }`}
+                  style={{ left: `${geo.labelX}%`, top: `${geo.labelY}%` }}
+                  onPointerDown={(e) => onPointerDown(e, ann, "label")}
+                  onPointerUp={onPointerUp}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedId(ann.id);
+                  }}
+                  title={editable ? "Arrastra el rótulo a zona libre" : undefined}
+                >
                   <div
-                    className={`max-w-[140px] rounded-md border px-1.5 py-0.5 shadow-lg backdrop-blur-sm ${style.pill}`}
+                    className={`max-w-[148px] rounded-md border px-1.5 py-0.5 shadow-lg backdrop-blur-sm ${
+                      style.pill
+                    } ${selected ? `ring-2 ${style.ring}` : ""}`}
                   >
                     <p className="text-[9px] font-bold leading-tight break-words">
                       {ann.text || "—"}
@@ -182,7 +263,7 @@ export const SuiteImageAnnotationLayer: React.FC<Props> = ({
                     ) : null}
                   </div>
                 </div>
-              </div>
+              </React.Fragment>
             );
           })}
         </div>
@@ -250,14 +331,16 @@ export const SuiteImageAnnotationLayer: React.FC<Props> = ({
                       Borrar
                     </button>
                   </div>
-                  <p className="text-[8px] text-slate-400">
-                    Arrastra la etiqueta sobre la imagen para reposicionarla.
+                  <p className="text-[8px] text-slate-400 leading-snug">
+                    Arrastra la <span className="font-semibold text-slate-500">punta</span> sobre la
+                    estructura y el <span className="font-semibold text-slate-500">rótulo</span> a
+                    zona libre. La línea se actualiza sola.
                   </p>
                 </div>
               ))}
           {!selectedId && mine.length > 0 && (
             <p className="text-[9px] text-slate-400">
-              Pulsa una etiqueta para editarla o arrástrala.
+              Pulsa la punta o el rótulo para editarlos; cada uno se arrastra por separado.
             </p>
           )}
         </div>
@@ -265,3 +348,21 @@ export const SuiteImageAnnotationLayer: React.FC<Props> = ({
     </>
   );
 };
+
+/** Tiny arrowhead in viewBox % coords; nose at tip, base back toward the label. */
+function arrowHeadCoords(tipX: number, tipY: number, ux: number, uy: number) {
+  const len = 2.0;
+  const half = 0.95;
+  const baseX = tipX + ux * len;
+  const baseY = tipY + uy * len;
+  const px = -uy;
+  const py = ux;
+  return {
+    noseX: tipX,
+    noseY: tipY,
+    leftX: baseX + px * half,
+    leftY: baseY + py * half,
+    rightX: baseX - px * half,
+    rightY: baseY - py * half,
+  };
+}

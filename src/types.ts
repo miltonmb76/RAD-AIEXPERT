@@ -725,10 +725,21 @@ export interface SuiteImageAnnotation {
   text: string;
   /** Optional size / measure line, e.g. "12 mm" */
   sizeLabel?: string;
-  /** Anchor X as % of image width (0–100) */
+  /** Tip / pointer X as % of image width (0–100) — sits on the structure */
   xPct: number;
-  /** Anchor Y as % of image height (0–100) */
+  /** Tip / pointer Y as % of image height (0–100) — sits on the structure */
   yPct: number;
+  /**
+   * Label pill X as % of image width (0–100).
+   * Kept apart from the tip so the text does not cover anatomy.
+   * If omitted, UI/PDF fall back to an offset from the tip.
+   */
+  labelXPct?: number;
+  /**
+   * Label pill Y as % of image height (0–100).
+   * If omitted, UI/PDF fall back to an offset from the tip.
+   */
+  labelYPct?: number;
   /** Soft accent for the pill */
   color?: "amber" | "cyan" | "rose" | "emerald";
 }
