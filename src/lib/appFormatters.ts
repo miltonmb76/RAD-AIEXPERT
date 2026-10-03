@@ -43,3 +43,15 @@ export const formatCostaRicaPhone = (rawPhone: string): string => {
   }
   return clean;
 };
+
+/** dd/mm/yyyy variant used by some on-screen / EHR date displays */
+export const formatDateSlashDMY = (dateStr: string): string => {
+  if (!dateStr) return "";
+  if (dateStr.includes("-")) {
+    const parts = dateStr.split("-");
+    if (parts.length === 3) {
+      return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+  }
+  return dateStr;
+};
