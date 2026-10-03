@@ -158,7 +158,6 @@ import {
 import { initAuth, googleSignIn, logout as googleLogout, anonymousSignIn, emailSignIn, emailSignUp, getFirebaseConfig } from "./firebaseAuth";
 import { CloudStudy, saveStudyToCloud, getStudiesFromCloud, deleteStudyFromCloud, Worklist, WorklistPatient, saveWorklistToCloud, getWorklistFromCloud, getSingleStudyFromCloud, testFirebaseConfigConnection, saveUserSettingsToCloud, getUserSettingsFromCloud } from "./firebaseDb";
 import { idbSaveWorklist, idbGetWorklist, idbClearWorklist, idbSaveStudy, idbGetAllStudies, idbDeleteStudy, idbSaveHistory, idbGetHistory, idbSaveUserSettings, idbGetUserSettings, idbSaveBranding, idbGetBranding, getActiveWorklistId } from "./localDb";
-import { uploadPdfToDrive } from "./lib/googleDrive";
 import { Mail, LogOut, Clock, Calendar, ListTodo, UserCheck, ImagePlus, Wifi, HelpCircle, Info, Laptop, Network, ChevronDown, Link } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
@@ -213,6 +212,8 @@ import { compressImageBase64 } from "./lib/compressImageBase64";
 import { detectImageMetaFromFilename as detectImageMetaFromFilenameLib } from "./lib/detectImageMetaFromFilename";
 import { persistBrandingAssets as persistBrandingAssetsLib } from "./lib/brandingPersistence";
 import { createGmailSendAction } from "./lib/gmailSend";
+import { createDriveSaveAction } from "./lib/driveSave";
+import { buildWhatsAppTextPreview, buildWhatsAppSendUrl } from "./lib/whatsappShare";
 import { copyReportToClipboard } from "./lib/copyReportToClipboard";
 import { persistUserSettings as persistUserSettingsToStores } from "./lib/persistUserSettings";
 import { buildReportQaFingerprint as buildReportQaFingerprintValue } from "./lib/reportQaFingerprint";
@@ -4529,58 +4530,23 @@ Ejemplo:
     }
   };
 
-  const getWhatsAppTextPreview = (overrideId?: string) => {
-    let text = `*REPORTE RADIOLÓGICO DIGITAL*\n`;
-    text += `*━━━━━━━━━━━━━━━━━━━━━*\n\n`;
-
-    if (patientName) text += `*Paciente:* ${patientName}\n`;
-    if (patientAge) text += `*Edad:* ${patientAge}\n`;
-    if (patientGender) text += `*Género:* ${patientGender}\n`;
-    if (patientId) text += `*ID/Cédula:* ${patientId}\n`;
-    if (studyType) text += `*Estudio:* ${studyType}\n`;
-    if (reportDate) text += `*Fecha:* ${formatDateToDMY(reportDate)}\n`;
-    if (doctorName) text += `*Especialista:* ${doctorName}\n`;
-    text += `\n`;
-
-    // 1. Resumen Clínico Operativo (Conclusions)
-    if (whatsappIncludeOperationalSummary && operationalSummaryText) {
-      const cleanOperationalSummary = operationalSummaryText
-        .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F900}-\u{1F9FF}\u{1F1E6}-\u{1F1FF}\u{1F191}-\u{1F251}\u{1F004}\u{1F0CF}\u{1F170}-\u{1F171}\u{1F17E}-\u{1F17F}\u{1F18E}\u{3030}\u{2B50}\u{2B55}\u{2934}-\u{2935}\u{2B05}-\u{2B07}\u{2B1B}-\u{2B1C}\u{3297}\u{3299}\u{303D}\u{00A9}\u{00AE}\u{2122}\u{2139}\u{24C2}\u{25AA}-\u{25AB}\u{25B6}\u{25C0}\u{25FB}-\u{25FE}\u{1F000}-\u{1F9FF}]/gu, "")
-        .replace(/\p{Emoji_Presentation}/gu, "")
-        .replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD00-\uDFFF]/g, "")
-        .replace(/  +/g, ' ')
-        .trim();
-
-      text += `*RESUMEN CLÍNICO OPERATIVO*\n`;
-      text += `*━━━━━━━━━━━━━━━━━━━━━*\n`;
-      text += `${cleanOperationalSummary}\n\n`;
-    }
-
-    // 2. Acompañamiento Explicativo para el Paciente
-    if (whatsappIncludePatientSummary && patientSummary) {
-      text += `*EXPLICACIÓN PARA EL PACIENTE*\n`;
-      text += `_Traducción de hallazgos médicos a un lenguaje claro_\n`;
-      text += `*━━━━━━━━━━━━━━━━━━━━━*\n\n`;
-
-      if (patientSummary.summary) {
-        text += `*Resumen de su estado:*\n${patientSummary.summary.trim()}\n\n`;
-      }
-
-      if (patientSummary.keyFindings && patientSummary.keyFindings.length > 0) {
-        text += `*Hallazgos Principales:*\n`;
-        patientSummary.keyFindings.forEach((finding: any, idx: number) => {
-          const title = finding.finding || finding.title || "";
-          const desc = finding.explanation || finding.description || "";
-          text += `${idx + 1}. *${title}:* ${desc}\n`;
-        });
-        text += `\n`;
-      }
-    }
-
-    text += `*━━━━━━━━━━━━━━━━━━━━━*\n`;
-    text += `_Por favor, descargue y conserve los documentos PDF oficiales adjuntos para presentarlos en su próxima consulta de seguimiento._`;
-    return text;
+  const getWhatsAppTextPreview = (_overrideId?: string) => {
+    return buildWhatsAppTextPreview({
+      patientName,
+      patientAge,
+      patientGender,
+      patientId,
+      studyType,
+      reportDate,
+      doctorName,
+      formatDateToDMY,
+      whatsappIncludeOperationalSummary,
+      operationalSummaryText,
+      whatsappIncludePatientSummary,
+      patientSummary,
+    });
   };
+
 
   const handleSendWhatsAppAction = async () => {
     let studyIdToUse = currentCloudStudyId;
@@ -4598,13 +4564,7 @@ Ejemplo:
     }
 
     const text = getWhatsAppTextPreview(studyIdToUse);
-    const cleanPhone = whatsappPhone ? whatsappPhone.replace(/\D/g, "") : "";
-    const urlEncoded = encodeURIComponent(text);
-    
-    // Construct WhatsApp Send URL
-    const url = cleanPhone 
-      ? `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${urlEncoded}`
-      : `https://api.whatsapp.com/send?text=${urlEncoded}`;
+    const url = buildWhatsAppSendUrl(whatsappPhone || "", text);
 
     // 1. OPEN WHATSAPP ENTIRELY SYNCHRONOUSLY!
     // This is the absolute key to bypass the browser's popup blocker.
@@ -10902,82 +10862,17 @@ Ejemplo:
   };
 
   const handleSaveToDrive = async () => {
-    try {
-      setIsUploadingToDrive(true);
-      setDriveUploadStatus("Verificando sesión...");
-      
-      const { getAccessToken, googleSignIn } = await import("./firebaseAuth");
-      let token = await getAccessToken();
-      
-      if (!token) {
-        setDriveUploadStatus("Autenticando con Google...");
-        try {
-          const authRes = await googleSignIn();
-          if (authRes) {
-            token = authRes.accessToken;
-          }
-        } catch (e) {
-          console.error(e);
-          setDriveUploadStatus("Error: No se pudo autenticar.");
-          setTimeout(() => setDriveUploadStatus(""), 3000);
-          return;
-        }
-      }
-      
-      if (!token) {
-        setDriveUploadStatus("Error: No autenticado.");
-        setTimeout(() => setDriveUploadStatus(""), 3000);
-        return;
-      }
-      
-      setDriveUploadStatus("Generando Reporte Oficial...");
-      const reportBlob = await handleDownloadNativePDF(false, false, false, false, undefined, true);
-      
-      if (!reportBlob) {
-        setDriveUploadStatus("Error: No se pudo generar el reporte.");
-        setTimeout(() => setDriveUploadStatus(""), 3000);
-        return;
-      }
-      
-      setDriveUploadStatus("Subiendo a Google Drive...");
-      const reportName = patientName ? `${patientName.trim()}_reporte.pdf` : "reporte_radiologico.pdf";
-      
-      try {
-        await uploadPdfToDrive(reportBlob, reportName, token, "BASE DE DATOS");
-      } catch (uploadError: any) {
-        if (uploadError.message && (uploadError.message.includes('401') || uploadError.message.includes('403'))) {
-           setDriveUploadStatus("Permisos insuficientes. Re-autenticando...");
-           const authRes = await googleSignIn();
-           if (authRes && authRes.accessToken) {
-             token = authRes.accessToken;
-             await uploadPdfToDrive(reportBlob, reportName, token, "BASE DE DATOS");
-           } else {
-             throw new Error("No se pudo re-autenticar.");
-           }
-        } else {
-           throw uploadError;
-        }
-      }
-
-      if (patientSummary) {
-        setDriveUploadStatus("Subiendo Explicación a Drive...");
-        const summaryBlob = await handleDownloadPatientSummaryPDF(false, false, false, false, true);
-        if (summaryBlob) {
-          const summaryName = patientName ? `Explicacion_${patientName.trim().replace(/\s+/gi, "_")}.pdf` : "explicacion_paciente.pdf";
-          await uploadPdfToDrive(summaryBlob, summaryName, token, "BASE DE DATOS");
-        }
-      }
-
-      setDriveUploadStatus("¡Guardado Exitosamente en Drive!");
-      setTimeout(() => setDriveUploadStatus(""), 4000);
-    } catch (error) {
-      console.error("Error al subir a Google Drive:", error);
-      setDriveUploadStatus("Error al subir a Google Drive.");
-      setTimeout(() => setDriveUploadStatus(""), 4000);
-    } finally {
-      setIsUploadingToDrive(false);
-    }
+    const save = createDriveSaveAction({
+      patientName,
+      patientSummary,
+      handleDownloadNativePDF,
+      handleDownloadPatientSummaryPDF,
+      setIsUploadingToDrive,
+      setDriveUploadStatus,
+    });
+    await save();
   };
+
   useEffect(() => {
     if (!showPrintModal && !isSplitPdfActive) {
       if (generatedNativePdfUrl) {
