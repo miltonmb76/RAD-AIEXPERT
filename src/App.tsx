@@ -180,6 +180,8 @@ import { buildWhatsAppTextPreview, buildWhatsAppSendUrl } from "./lib/whatsappSh
 import { buildSettingsBackup, downloadSettingsBackupJson, createImportAllDataHandler } from "./lib/settingsBackup";
 import { createBatchModuleActivator } from "./lib/batchModuleActivator";
 import { createNativePdfDownload } from "./lib/nativePdfDownload";
+import { createAttachedFilesHandler } from "./lib/attachedFilesHandler";
+import { createGenerateReportHandler } from "./lib/generateReportHandler";
 import { copyReportToClipboard } from "./lib/copyReportToClipboard";
 import { persistUserSettings as persistUserSettingsToStores } from "./lib/persistUserSettings";
 import { buildReportQaFingerprint as buildReportQaFingerprintValue } from "./lib/reportQaFingerprint";
@@ -3083,273 +3085,115 @@ Ejemplo:
 
   // 1. ACTION: SEND PAYLOAD TO GENERATE REPORT
   const handleGenerateReport = async (mode: "simple" | "full" = "full") => {
-    if (!studyType.trim()) {
-      setReportError("Por favor, especifica el Tipo de Estudio solicitado.");
-      return;
-    }
-
-    // Reset current cloud study ID for the newly generated report
-    setCurrentCloudStudyId("");
-
-    // Open the report workspace immediately so generation progress and the result stay in focus.
-    setIsMainReportExpanded(true);
-    setIsGenerating(true);
-    setReportError(null);
-    setGeneratedReport("");
-    setClassRecommendations(null);
-    setIncorporatedRecs({});
-    setImageEvaluation("");
-    setAdditionalEvaluation("");
-    setCurrentModInstruction("");
-    setModifyError(null);
-    setAdditionalEvalError(null);
-    setCaseAnalysis("");
-    setCaseAnalysisError(null);
-    setBibliography("");
-    setBibliographyError(null);
-    setBibliographySources([]);
-    setOperationalSummaryText("");
-    setPatientSummary(null);
-    setPatientSummaryError(null);
-
-    // Setup visual steps for medical analysis feeling
-    const steps = [
-      "Extrayendo metadatos clínicos...",
-      "Estableciendo canal seguro con Gemini...",
-      selectedFile ? "Renderizando densidades anatómicas complejas..." : "Analizando concordancia sintáctica...",
-      "Aplicando reglas de redacción radiológica...",
-      "Compilando informe estructurado..."
-    ];
-
-    let currentStepIndex = 0;
-    setGenerationSteps(steps[0]);
-
-    const stepInterval = setInterval(() => {
-      if (currentStepIndex < steps.length - 1) {
-        currentStepIndex++;
-        setGenerationSteps(steps[currentStepIndex]);
-      }
-    }, 1200);
-
-    try {
-      const response = await fetch("/api/analyze", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: modelFor("report"),
-          image: base64Image || undefined,
-          mimeType: selectedFile ? selectedFile.type : undefined,
-          studyType,
-          clinicalHistory,
-          findings,
-          inputReport,
-          uploadedReportContent: uploadedReportContent || undefined,
-          uploadedReportMimeType: uploadedReportMimeType || undefined,
-          systemInstruction: systemInstruction || undefined,
-          annotations: annotations.length > 0 ? annotations : undefined,
-          attachedImages: attachedImages && attachedImages.length > 0 ? attachedImages.map((img, idx) => ({
-            id: img.id,
-            index: idx + 1,
-            caption: img.caption || ""
-          })) : undefined,
-        }),
-      });
-
-      let data: any;
-      try {
-        data = await response.json();
-      } catch (jsonErr) {
-        const textResponse = await response.text().catch(() => "");
-        throw new Error(`La respuesta del servidor no es JSON válido (Código HTTP ${response.status}). Detalle: ${textResponse.slice(0, 200) || "Sin respuesta del servidor"}`);
-      }
-
-      clearInterval(stepInterval);
-
-      if (response.ok && data.success) {
-        if (generatedReport) {
-          setReportHistory((prev) => [...prev, generatedReport]);
-          setReportRedoHistory([]);
-        }
-        setGeneratedReport(data.report);
-        setOriginalBaseReport(data.report);
-        setReportEnrichmentSession(null);
-
-        if (attachedImages.length > 0) {
-          void autoLabelImagesAfterReport(String(data.report || ""));
-          // Lleva al usuario a la galeria donde veran las fotos ya rotuladas.
-          window.setTimeout(() => {
-            document.getElementById("attached-images-gallery")?.scrollIntoView({ behavior: "smooth", block: "start" });
-          }, 250);
-        }
-
-        if (mode === "full") {
-          const batchSelection = { ...FULL_REPORT_BATCH_MODULES };
-          const suiteShortcut = autoActivateSpecificSuite
-            ? getSpecificSuiteShortcut(specificStudy, modality)
-            : null;
-          if (suiteShortcut) {
-            batchSelection[suiteShortcut.id] = true;
-          }
-          const reportText = String(data.report || "").trim();
-          setSelectedBatchModules(batchSelection);
-          void handleActivateBatchModules(reportText, batchSelection);
-          if (autoClinicalPolish) {
-            void runClinicalPolishForReport(reportText);
-          }
-        } else {
-          setSelectedBatchModules({ ...DEFAULT_BATCH_MODULES });
-        }
-
-        // Auto-detect specific study protocol (e.g. Muslo Posterior, Hombro, Rodilla, etc.) and switch active components
-        autoDetectSpecificStudyAndModality(data.report, studyType);
-        
-        // Save to History Log
-        const newReport: SavedReport = {
-          id: Math.random().toString(36).substring(2, 11),
-          timestamp: new Date().toLocaleDateString("es-ES", {
-            hour: "2-digit",
-            minute: "2-digit",
-            second: "2-digit"
-          }),
-          studyType,
-          clinicalHistory: clinicalHistory || "No especificada",
-          reportText: data.report
-        };
-
-        const updatedHistory = [newReport, ...savedReports.slice(0, 49)]; // Keep up to 50 reports in history
-        setSavedReports(updatedHistory);
-        localStorage.setItem("radiology_reports_history", JSON.stringify(updatedHistory));
-        idbSaveHistory(updatedHistory);
-
-        // Auto-save generated report into local studies database (IndexedDB + localStorage)
-        try {
-          const autoStudy: CloudStudy = {
-            id: newReport.id,
-            userId: gmailUser?.uid || "local",
-            userEmail: gmailUser?.email || "anon@local.com",
-            timestamp: newReport.timestamp,
-            patientName: patientName || "Paciente Local",
-            patientEmail: patientEmail || "No especificado",
-            patientAge: patientAge || "",
-            patientGender: patientGender || "",
-            patientId: patientId || "",
-            reportDate: reportDate || new Date().toISOString().split('T')[0],
-            doctorName: doctorName || "Médico Radiólogo",
-            doctorLicense: doctorLicense || "No especificada",
-            clinicName: clinicName || "Clínica Privada",
-            studyType,
-            clinicalHistory: clinicalHistory || "No especificada",
-            findings: findings || "Hallazgos guardados automáticamente.",
-            reportText: data.report,
-            attachedImages: attachedImages || [],
-            operationalSummaryText: "",
-            pdfBase64: "",
-            patientSummary: null,
-            atlas3dData: atlas3dData || null,
-            includeAtlas3dInReport: includeAtlas3dInReport,
-            vascular3dData: vascular3dData || null,
-            includeVascular3dInReport: includeVascular3dInReport,
-            thyroid3dData: thyroid3dData || null,
-            includeThyroid3dInReport: includeThyroid3dInReport,
-            breast3dData: breast3dData || null,
-            includeBreast3dInReport: includeBreast3dInReport,
-            shoulder3dData: shoulder3dData || null,
-            includeShoulder3dInReport: includeShoulder3dInReport,
-            knee3dData: knee3dData || null,
-            ankle3dData: ankle3dData || null,
-            kidney3dData: kidney3dData || null,
-            abdomen3dData: abdomen3dData || null,
-            abdominalWall3dData: abdominalWall3dData || null,
-            scrotum3dData: scrotum3dData || null,
-            muscleTendon3dData: muscleTendon3dData || null,
-            wrist3dData: wrist3dData || null,
-            includeKnee3dInReport: includeKnee3dInReport,
-            includeAnkle3dInReport: includeAnkle3dInReport,
-            includeKidney3dInReport: includeKidney3dInReport,
-            includeAbdomen3dInReport: includeAbdomen3dInReport,
-            includeAbdominalWall3dInReport: includeAbdominalWall3dInReport,
-            includeScrotum3dInReport: includeScrotum3dInReport,
-            includeMuscleTendon3dInReport: includeMuscleTendon3dInReport,
-            includeWrist3dInReport: includeWrist3dInReport,
-            focalLesion3dData: focalLesion3dData || null,
-            includeFocalLesion3dInReport: includeFocalLesion3dInReport,
-            usPlaneSimulatorData: usPlaneSimulatorData || null,
-            includeUsPlaneSimulatorInReport: includeUsPlaneSimulatorInReport,
-            usImagesGridMode: usImagesGridMode || "auto",
-            createdAt: new Date().toISOString(),
-            specificStudy: specificStudy || "General",
-            pdfLayoutType: pdfLayoutType || "classic",
-            selectedLogo: selectedLogo || "none",
-            selectedLogoRight: selectedLogoRight || "none",
-            customLogoStyle: customLogoStyle || "left",
-            customLogoUrl: customLogoUrl || "",
-            customLogoRightUrl: customLogoRightUrl || "",
-          };
-
-          // Save into IndexedDB reliably
-          await idbSaveStudy(autoStudy);
-
-          const storedStudies = localStorage.getItem("rad_local_studies");
-          let studiesList: CloudStudy[] = storedStudies ? JSON.parse(storedStudies) : [];
-          studiesList = [autoStudy, ...studiesList.filter(s => s.id !== autoStudy.id)];
-          try {
-            localStorage.setItem("rad_local_studies", JSON.stringify(studiesList));
-          } catch (e) {}
-
-          if (gmailUser?.uid) {
-            try {
-              const cloudStudy = {
-                ...autoStudy,
-                attachedImages: [],
-                findings3dRenders: [],
-                atlas3dData: null,
-                vascular3dData: null,
-                thyroid3dData: null,
-                breast3dData: null,
-                shoulder3dData: null,
-                knee3dData: null,
-                ankle3dData: null,
-                kidney3dData: null,
-                abdomen3dData: null,
-                abdominalWall3dData: null,
-                scrotum3dData: null,
-                muscleTendon3dData: null,
-                wrist3dData: null,
-                focalLesion3dData: null,
-                usPlaneSimulatorData: null,
-                customLogoUrl: "",
-                customSignatureUrl: "",
-              };
-              const { userId: _userId, userEmail: _userEmail, ...studyPayload } = cloudStudy;
-              await saveStudyToCloud(gmailUser.uid, gmailUser.email || "", studyPayload);
-            } catch (cloudError) {
-              console.warn("El reporte se guard� localmente pero no pudo sincronizarse:", cloudError);
-            }
-          }
-
-          // Re-fetch cloud/local studies to update UI
-          fetchCloudStudies(gmailUser?.uid);
-        } catch (autoErr) {
-          console.warn("Error auto-saving study to local archive:", autoErr);
-        }
-
-        // If base64Image is present, automatically trigger image evaluation
-        if (base64Image) {
-          triggerAutoImageEvaluation(base64Image, selectedFile?.type, studyType, clinicalHistory, findings, annotations);
-        }
-      } else {
-        setReportError(data.error || `Error del servidor (Código ${response.status}): ${JSON.stringify(data)}`);
-      }
-    } catch (error: any) {
-      clearInterval(stepInterval);
-      setReportError(`Falla de red o de servidor: ${error?.message || String(error)}. Asegúrate de que el servidor está encendido y que tu API Key en la pestaña de Configuración es correcta.`);
-      console.error(error);
-    } finally {
-      setIsGenerating(false);
-    }
+    const generate = createGenerateReportHandler({
+    DEFAULT_BATCH_MODULES,
+    FULL_REPORT_BATCH_MODULES,
+    abdomen3dData,
+    abdominalWall3dData,
+    ankle3dData,
+    annotations,
+    atlas3dData,
+    attachedImages,
+    autoActivateSpecificSuite,
+    autoClinicalPolish,
+    autoDetectSpecificStudyAndModality,
+    base64Image,
+    breast3dData,
+    clinicName,
+    clinicalHistory,
+    customLogoRightUrl,
+    customLogoStyle,
+    customLogoUrl,
+    customSignatureUrl,
+    doctorLicense,
+    doctorName,
+    findings,
+    findings3dRenders,
+    focalLesion3dData,
+    generatedReport,
+    gmailUser,
+    handleActivateBatchModules,
+    includeAbdomen3dInReport,
+    includeAbdominalWall3dInReport,
+    includeAnkle3dInReport,
+    includeAtlas3dInReport,
+    includeBreast3dInReport,
+    includeFocalLesion3dInReport,
+    includeKidney3dInReport,
+    includeKnee3dInReport,
+    includeMuscleTendon3dInReport,
+    includeScrotum3dInReport,
+    includeShoulder3dInReport,
+    includeThyroid3dInReport,
+    includeUsPlaneSimulatorInReport,
+    includeVascular3dInReport,
+    includeWrist3dInReport,
+    inputReport,
+    kidney3dData,
+    knee3dData,
+    modality,
+    modelFor,
+    muscleTendon3dData,
+    operationalSummaryText,
+    patientAge,
+    patientEmail,
+    patientGender,
+    patientId,
+    patientName,
+    patientSummary,
+    pdfLayoutType,
+    reportDate,
+    runClinicalPolishForReport,
+    savedReports,
+    scrotum3dData,
+    selectedFile,
+    selectedLogo,
+    selectedLogoRight,
+    setAdditionalEvalError,
+    setAdditionalEvaluation,
+    setBibliography,
+    setBibliographyError,
+    setBibliographySources,
+    setCaseAnalysis,
+    setCaseAnalysisError,
+    setClassRecommendations,
+    setCurrentCloudStudyId,
+    setCurrentModInstruction,
+    setGeneratedReport,
+    setGenerationSteps,
+    setImageEvaluation,
+    setIncorporatedRecs,
+    setIsGenerating,
+    setIsMainReportExpanded,
+    setModifyError,
+    setOperationalSummaryText,
+    setOriginalBaseReport,
+    setPatientSummary,
+    setPatientSummaryError,
+    setReportEnrichmentSession,
+    setReportError,
+    setReportHistory,
+    setReportRedoHistory,
+    setSavedReports,
+    setSelectedBatchModules,
+    shoulder3dData,
+    specificStudy,
+    studyType,
+    systemInstruction,
+    thyroid3dData,
+    uploadedReportContent,
+    uploadedReportMimeType,
+    usImagesGridMode,
+    usPlaneSimulatorData,
+    vascular3dData,
+    wrist3dData
+    ,
+    autoLabelImagesAfterReport,
+    fetchCloudStudies,
+    triggerAutoImageEvaluation});
+    return generate(mode);
   };
+
 
   // Helper to trigger standard image clinical assessment automatically
   const triggerAutoImageEvaluation = async (
@@ -5002,229 +4846,12 @@ Ejemplo:
     }
   };
 
-  const handleAttachedFiles = async (filesList: FileList | File[] | null) => {
-    if (!filesList) return;
-    const filesArray = Array.from(filesList);
-    const loaded: {
-      id: string;
-      name: string;
-      url: string;
-      base64: string;
-      caption: string;
-      isDicom: boolean;
-      dicomMetaData?: Record<string, string>;
-      width?: number;
-      height?: number;
-      modality?: "MMG" | "US";
-      projection?: "MLO" | "CC" | "OTRO";
-      side?: "Derecha" | "Izquierda" | "Bilateral";
-    }[] = [];
-    
-    const promises = filesArray.map((file) => {
-      if (file.size === 0) return Promise.resolve();
-      
-      const nameLower = file.name.toLowerCase();
-      // Skip Mac OS metadata files, DICOMDIR metadata records, thumbs.db, and XML files
-      if (
-        nameLower.startsWith(".") || 
-        nameLower.startsWith("_") || 
-        nameLower === "thumbs.db" || 
-        nameLower === "dicomdir" || 
-        nameLower.endsWith(".xml")
-      ) {
-        return Promise.resolve();
-      }
-      
-      const fileExt = file.name.split('.').pop()?.toLowerCase() || "";
-      const isZip = fileExt === "zip" || file.type === "application/zip" || file.type === "application/x-zip-compressed";
-      const isKnownImage = file.type.startsWith("image/") || ["jpg", "jpeg", "png", "webp", "gif"].includes(fileExt);
-      const isDicomExt = ["dcm", "dicom"].includes(fileExt);
-      
-      return new Promise<void>((resolve) => {
-        const reader = new FileReader();
-        
-        if (isZip) {
-          (async () => {
-            try {
-              const jszip = new JSZip();
-              const zipContent = await jszip.loadAsync(file);
-              const zipPromises: Promise<void>[] = [];
-              
-              const localUint8ToBase64 = (arr: Uint8Array): string => {
-                let binary = "";
-                const len = arr.byteLength;
-                const chunkSize = 0x4000;
-                for (let i = 0; i < len; i += chunkSize) {
-                  const subset = arr.subarray(i, i + chunkSize);
-                  binary += String.fromCharCode.apply(null, subset as any);
-                }
-                return btoa(binary);
-              };
+  const handleAttachedFiles = createAttachedFilesHandler({
+    detectImageMetaFromFilename,
+    modality,
+    setAttachedImages,
+  });
 
-              for (const [filename, fileObj] of Object.entries(zipContent.files)) {
-                if ((fileObj as any).dir) continue;
-                
-                const innerNameLower = filename.toLowerCase();
-                if (
-                  innerNameLower.startsWith(".") || 
-                  innerNameLower.startsWith("_") || 
-                  innerNameLower.endsWith("thumbs.db") || 
-                  innerNameLower.endsWith("dicomdir") || 
-                  innerNameLower.endsWith(".xml")
-                ) {
-                  continue;
-                }
-                
-                const innerExt = filename.split('.').pop()?.toLowerCase() || "";
-                const isInnerImage = ["png", "jpg", "jpeg", "webp", "gif"].includes(innerExt);
-                const isInnerDicomExt = ["dcm", "dicom"].includes(innerExt);
-                
-                const p = (async () => {
-                  const u8Array = await (fileObj as any).async("uint8array");
-                  if (u8Array.length === 0) return;
-                  
-                  const hasDicomHeader = u8Array.length > 132 && 
-                                         u8Array[128] === 68 && 
-                                         u8Array[129] === 73 && 
-                                         u8Array[130] === 67 && 
-                                         u8Array[131] === 77; // "DICM"
-                  const isInnerDicom = isInnerDicomExt || hasDicomHeader;
-                  
-                  if (isInnerImage) {
-                    const mime = innerExt === "jpg" || innerExt === "jpeg" ? "image/jpeg" : (innerExt === "gif" ? "image/gif" : (innerExt === "webp" ? "image/webp" : "image/png"));
-                    const base64Str = `data:${mime};base64,${localUint8ToBase64(u8Array)}`;
-                    const res = await ensureCompatibleImageFormat(base64Str);
-                    const fname = filename.split("/").pop() || filename;
-                    const meta = detectImageMetaFromFilename(fname);
-                    loaded.push({
-                      id: "attached-" + Math.random().toString(36).substring(2, 11),
-                      name: fname,
-                      url: res.dataUrl,
-                      base64: res.dataUrl,
-                      caption: "",
-                      isDicom: false,
-                      width: res.width,
-                      height: res.height,
-                      modality: meta.modality,
-                      projection: meta.projection,
-                      side: meta.side
-                    });
-                  } else if (isInnerDicom) {
-                    try {
-                      const cleanDcmBuffer = u8Array.buffer.slice(u8Array.byteOffset, u8Array.byteOffset + u8Array.byteLength);
-                      const dicomFileName = filename.split("/").pop() || filename;
-                      const { visualUrl, meta } = await decodeDicomForDisplay(cleanDcmBuffer, dicomFileName);
-                      const res = await compressImageForAttachment(visualUrl);
-                      const appMeta = detectImageMetaFromFilename(dicomFileName, meta as any);
-                      loaded.push({
-                        id: "attached-" + Math.random().toString(36).substring(2, 11),
-                        name: dicomFileName,
-                        url: res.dataUrl,
-                        base64: res.dataUrl,
-                        caption: "",
-                        isDicom: true,
-                        dicomMetaData: meta as any,
-                        width: res.width,
-                        height: res.height,
-                        modality: appMeta.modality,
-                        projection: appMeta.projection,
-                        side: appMeta.side
-                      });
-                    } catch (err) {
-                      console.error("Error decoding inner ZIP DICOM:", err);
-                    }
-                  }
-                })();
-                zipPromises.push(p);
-              }
-              await Promise.all(zipPromises);
-            } catch (zipErr) {
-              console.error("Error unpacking ZIP attachment:", zipErr);
-            } finally {
-              resolve();
-            }
-          })();
-        } else if (isKnownImage) {
-          reader.onload = (e) => {
-            const base64Str = e.target?.result as string;
-            if (base64Str) {
-              ensureCompatibleImageFormat(base64Str).then((res) => {
-                const meta = detectImageMetaFromFilename(file.name);
-                loaded.push({
-                  id: "attached-" + Math.random().toString(36).substring(2, 11),
-                  name: file.name,
-                  url: res.dataUrl,
-                  base64: res.dataUrl,
-                  caption: "", // Starts completely empty as requested by the user
-                  isDicom: false,
-                  width: res.width,
-                  height: res.height,
-                  modality: meta.modality,
-                  projection: meta.projection,
-                  side: meta.side
-                });
-                resolve();
-              });
-            } else {
-              resolve();
-            }
-          };
-          reader.readAsDataURL(file);
-        } else if (isDicomExt || file.size >= 132) {
-          // Candidates for DICOM (try to check tags or fallback by extension / header)
-          reader.onload = (e) => {
-            const buf = e.target?.result as ArrayBuffer;
-            if (buf) {
-              const uint8 = new Uint8Array(buf);
-              let isRealDicom = isDicomExt;
-              if (uint8.length > 132) {
-                if (uint8[128] === 68 && uint8[129] === 73 && uint8[130] === 67 && uint8[131] === 77) {
-                  isRealDicom = true;
-                }
-              }
-              
-              if (isRealDicom) {
-                (async () => {
-                  const dicomFileName = file.name;
-                  const { visualUrl, meta } = await decodeDicomForDisplay(buf, dicomFileName);
-                  const res = await compressImageForAttachment(visualUrl);
-                  const appMeta = detectImageMetaFromFilename(dicomFileName, meta as any);
-                  loaded.push({
-                    id: "attached-" + Math.random().toString(36).substring(2, 11),
-                    name: dicomFileName,
-                    url: res.dataUrl,
-                    base64: res.dataUrl,
-                    caption: "", // Starts completely empty as requested by the user
-                    isDicom: true,
-                    dicomMetaData: meta as any,
-                    width: res.width,
-                    height: res.height,
-                    modality: appMeta.modality,
-                    projection: appMeta.projection,
-                    side: appMeta.side
-                  });
-                  resolve();
-                })();
-              } else {
-                resolve();
-              }
-            } else {
-              resolve();
-            }
-          };
-          reader.readAsArrayBuffer(file);
-        } else {
-          resolve();
-        }
-      });
-    });
-    
-    await Promise.all(promises);
-    
-    if (loaded.length > 0) {
-      setAttachedImages((prev) => [...prev, ...loaded]);
-    }
-  };
 
   // Clipboard Paste (Ctrl+V) handler for screenshot or diagnostic images mapping
   useEffect(() => {
