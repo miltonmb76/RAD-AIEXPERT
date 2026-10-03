@@ -214,6 +214,7 @@ import { persistBrandingAssets as persistBrandingAssetsLib } from "./lib/brandin
 import { createGmailSendAction } from "./lib/gmailSend";
 import { createDriveSaveAction } from "./lib/driveSave";
 import { buildWhatsAppTextPreview, buildWhatsAppSendUrl } from "./lib/whatsappShare";
+import { buildSettingsBackup, downloadSettingsBackupJson, createImportAllDataHandler } from "./lib/settingsBackup";
 import { copyReportToClipboard } from "./lib/copyReportToClipboard";
 import { persistUserSettings as persistUserSettingsToStores } from "./lib/persistUserSettings";
 import { buildReportQaFingerprint as buildReportQaFingerprintValue } from "./lib/reportQaFingerprint";
@@ -11096,141 +11097,44 @@ Ejemplo:
 
   const handleExportAllData = () => {
     try {
-      const dataToBackup = {
-        rad_local_studies: localStorage.getItem("rad_local_studies"),
-        radiology_reports_history: localStorage.getItem("radiology_reports_history"),
-        rad_worklist_current: localStorage.getItem("rad_worklist_current"),
-        doctorName: localStorage.getItem("radiology_doctor_name"),
-        doctorLicense: localStorage.getItem("radiology_doctor_license"),
-        clinicName: localStorage.getItem("radiology_clinic_name"),
-        // Prefer in-memory logos (IndexedDB-backed) ? localStorage may be empty after quota overflow.
-        customLogos: JSON.stringify(customLogos),
-        selectedLogo: selectedLogo || localStorage.getItem("rad_selected_logo"),
-        selectedLogoRight: selectedLogoRight || localStorage.getItem("rad_selected_logo_right"),
-        customLogoStyle: customLogoStyle || localStorage.getItem("rad_custom_logo_style"),
-        customSignature: customSignatureUrl || localStorage.getItem("rad_custom_signature"),
-        pdfLayoutType: localStorage.getItem("radiology_pdf_layout"),
-        radiology_sys_inst: localStorage.getItem("radiology_sys_inst"),
-        radiology_chat_inst: localStorage.getItem("radiology_chat_inst"),
-        radiology_class_inst: localStorage.getItem("radiology_class_inst"),
-      };
-      
-      const blob = new Blob([JSON.stringify(dataToBackup, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `respaldo_radiologia_${new Date().toISOString().split('T')[0]}.json`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      const dataToBackup = buildSettingsBackup({
+        customLogos,
+        selectedLogo,
+        selectedLogoRight,
+        customLogoStyle,
+        customSignatureUrl,
+      });
+      downloadSettingsBackupJson(dataToBackup);
     } catch (err: any) {
       alert("Error al exportar los datos: " + err.message);
     }
   };
 
-  const handleImportAllData = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const content = e.target?.result as string;
-        const backup = JSON.parse(content);
-        
-        if (backup.rad_local_studies) {
-          localStorage.setItem("rad_local_studies", backup.rad_local_studies);
-        }
-        if (backup.radiology_reports_history) {
-          localStorage.setItem("radiology_reports_history", backup.radiology_reports_history);
-        }
-        if (backup.rad_worklist_current) {
-          localStorage.setItem("rad_worklist_current", backup.rad_worklist_current);
-          try {
-            setWorklist(JSON.parse(backup.rad_worklist_current));
-          } catch (e) {}
-        }
-        if (backup.doctorName) {
-          localStorage.setItem("radiology_doctor_name", backup.doctorName);
-          setDoctorName(backup.doctorName);
-        }
-        if (backup.doctorLicense) {
-          localStorage.setItem("radiology_doctor_license", backup.doctorLicense);
-          setDoctorLicense(backup.doctorLicense);
-        }
-        if (backup.clinicName) {
-          localStorage.setItem("radiology_clinic_name", backup.clinicName);
-          setClinicName(backup.clinicName);
-        }
-        if (backup.customLogos) {
-          try {
-            localStorage.setItem("rad_custom_logos", backup.customLogos);
-          } catch (e) {
-            console.warn("Backup logos too large for localStorage; restoring via IndexedDB only:", e);
-          }
-          try {
-            const parsedLogos = JSON.parse(backup.customLogos);
-            setCustomLogos(parsedLogos);
-            void persistBrandingAssets({
-              customLogos: parsedLogos,
-              selectedLogo: backup.selectedLogo || selectedLogo,
-              selectedLogoRight: backup.selectedLogoRight || selectedLogoRight,
-              customLogoStyle: backup.customLogoStyle || customLogoStyle,
-              customSignatureUrl: backup.customSignature || customSignatureUrl,
-            });
-          } catch (e) {}
-        }
-        if (backup.selectedLogo) {
-          try { localStorage.setItem("rad_selected_logo", backup.selectedLogo); } catch (e) {}
-          setSelectedLogo(backup.selectedLogo);
-        }
-        if (backup.selectedLogoRight) {
-          try { localStorage.setItem("rad_selected_logo_right", backup.selectedLogoRight); } catch (e) {}
-          setSelectedLogoRight(backup.selectedLogoRight);
-        }
-        if (backup.customLogoStyle) {
-          try { localStorage.setItem("rad_custom_logo_style", backup.customLogoStyle); } catch (e) {}
-          setCustomLogoStyle(backup.customLogoStyle);
-        }
-        if (backup.customSignature) {
-          try { localStorage.setItem("rad_custom_signature", backup.customSignature); } catch (e) {}
-          setCustomSignatureUrl(backup.customSignature);
-          void persistBrandingAssets({ customSignatureUrl: backup.customSignature });
-        }
-        if (backup.pdfLayoutType) {
-          localStorage.setItem("radiology_pdf_layout", backup.pdfLayoutType);
-          setPdfLayoutType(backup.pdfLayoutType as any);
-        }
-        if (backup.radiology_sys_inst) {
-          localStorage.setItem("radiology_sys_inst", backup.radiology_sys_inst);
-          setSystemInstruction(backup.radiology_sys_inst);
-        }
-        if (backup.radiology_chat_inst) {
-          localStorage.setItem("radiology_chat_inst", backup.radiology_chat_inst);
-          setChatInstruction(backup.radiology_chat_inst);
-        }
-        if (backup.radiology_class_inst) {
-          localStorage.setItem("radiology_class_inst", backup.radiology_class_inst);
-          setClassifyInstruction(backup.radiology_class_inst);
-        }
-        if (backup.radiology_sys_inst || backup.radiology_chat_inst || backup.radiology_class_inst) {
-          void idbSaveUserSettings({
-            systemInstruction: backup.radiology_sys_inst || systemInstruction,
-            chatInstruction: backup.radiology_chat_inst || chatInstruction,
-            classifyInstruction: backup.radiology_class_inst || classifyInstruction,
-            updatedAt: Date.now(),
-          });
-        }
+  const handleImportAllData = createImportAllDataHandler({
+    selectedLogo,
+    selectedLogoRight,
+    customLogoStyle,
+    customSignatureUrl,
+    systemInstruction,
+    chatInstruction,
+    classifyInstruction,
+    setWorklist,
+    setDoctorName,
+    setDoctorLicense,
+    setClinicName,
+    setCustomLogos,
+    setSelectedLogo,
+    setSelectedLogoRight,
+    setCustomLogoStyle,
+    setCustomSignatureUrl,
+    setPdfLayoutType,
+    setSystemInstruction,
+    setChatInstruction,
+    setClassifyInstruction,
+    persistBrandingAssets,
+  });
 
-        alert("��xito! Respaldo de datos importado y restaurado correctamente.");
-        window.location.reload();
-      } catch (err: any) {
-        alert("El archivo de respaldo no es válido o está corrupto: " + err.message);
-      }
-    };
-    reader.readAsText(file);
-  };
 
   const {
     bridgeOnline,
