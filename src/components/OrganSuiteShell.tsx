@@ -307,29 +307,36 @@ export const OrganSuiteShell: React.FC<OrganSuiteShellProps> = ({
     }
   };
 
+  const strField = (key: string): string => String(data?.[key] ?? "");
+
+  const tableRows = (): Array<Record<string, string>> => {
+    const rows = data?.[config.tableProperty];
+    return Array.isArray(rows) ? (rows as Array<Record<string, string>>) : [];
+  };
+
+  const withTableRows = (rows: Array<Record<string, string>>): OrganSuiteData => {
+    if (!data) return data as any;
+    return { ...data, [config.tableProperty]: rows };
+  };
+
   const handleAddTableRow = () => {
     if (!data) return;
-    setData({
-      ...data,
-      findingTable: [...(data.findingTable || []), { ...config.newRowDefaults }],
-    });
+    setData(withTableRows([...tableRows(), { ...config.newRowDefaults }]));
   };
 
   const handleDeleteTableRow = (idx: number) => {
     if (!data) return;
-    const updated = [...(data.findingTable || [])];
+    const updated = [...tableRows()];
     updated.splice(idx, 1);
-    setData({ ...data, findingTable: updated });
+    setData(withTableRows(updated));
   };
 
   const handleUpdateTableRow = (idx: number, field: string, value: string) => {
     if (!data) return;
-    const updated = [...(data.findingTable || [])];
+    const updated = [...tableRows()];
     updated[idx] = { ...updated[idx], [field]: value };
-    setData({ ...data, findingTable: updated });
+    setData(withTableRows(updated));
   };
-
-  const strField = (key: string): string => String(data?.[key] ?? "");
 
   return (
     <div
@@ -796,14 +803,14 @@ export const OrganSuiteShell: React.FC<OrganSuiteShellProps> = ({
                   <textarea
                     rows={5}
                     className="w-full text-xs bg-slate-900 border border-slate-700 rounded p-2 text-slate-100"
-                    value={data.morphologyNotes || ""}
+                    value={strField(config.morphologyField)}
                     onChange={(e) =>
-                      setData({ ...data, morphologyNotes: e.target.value })
+                      setData({ ...data, [config.morphologyField]: e.target.value })
                     }
                   />
                 ) : (
                   <p className="text-[13px] text-slate-200 leading-relaxed whitespace-pre-wrap">
-                    {data.morphologyNotes || "Sin notas morfológicas."}
+                    {strField(config.morphologyField) || "Sin notas morfológicas."}
                   </p>
                 )}
               </div>
@@ -828,43 +835,45 @@ export const OrganSuiteShell: React.FC<OrganSuiteShellProps> = ({
                   </p>
                 )}
               </div>
-              <div className="md:col-span-2 rounded-xl border border-emerald-800/40 bg-slate-950/70 p-3">
-                <p
-                  className={`text-[10px] font-mono font-black uppercase tracking-widest ${config.keyPointsAccent} mb-2`}
-                >
-                  Puntos clave
-                </p>
-                {isEditingText ? (
-                  <textarea
-                    rows={4}
-                    className="w-full text-xs bg-slate-900 border border-slate-700 rounded p-2 text-slate-100"
-                    value={(data.keyPoints || []).join("\n")}
-                    onChange={(e) =>
-                      setData({
-                        ...data,
-                        keyPoints: e.target.value
-                          .split("\n")
-                          .map((s) => s.trim())
-                          .filter(Boolean),
-                      })
-                    }
-                    placeholder="Un punto por línea"
-                  />
-                ) : (
-                  <ul className="space-y-1.5">
-                    {(data.keyPoints || []).length ? (
-                      data.keyPoints!.map((kp, i) => (
-                        <li key={i} className="text-[13px] text-slate-200 flex gap-2">
-                          <span className="text-emerald-400">•</span>
-                          <span>{kp}</span>
-                        </li>
-                      ))
-                    ) : (
-                      <li className="text-[13px] text-slate-400">Sin puntos clave.</li>
-                    )}
-                  </ul>
-                )}
-              </div>
+              {config.hasKeyPoints !== false && (
+                <div className="md:col-span-2 rounded-xl border border-emerald-800/40 bg-slate-950/70 p-3">
+                  <p
+                    className={`text-[10px] font-mono font-black uppercase tracking-widest ${config.keyPointsAccent} mb-2`}
+                  >
+                    Puntos clave
+                  </p>
+                  {isEditingText ? (
+                    <textarea
+                      rows={4}
+                      className="w-full text-xs bg-slate-900 border border-slate-700 rounded p-2 text-slate-100"
+                      value={(data.keyPoints || []).join("\n")}
+                      onChange={(e) =>
+                        setData({
+                          ...data,
+                          keyPoints: e.target.value
+                            .split("\n")
+                            .map((s) => s.trim())
+                            .filter(Boolean),
+                        })
+                      }
+                      placeholder="Un punto por línea"
+                    />
+                  ) : (
+                    <ul className="space-y-1.5">
+                      {(data.keyPoints || []).length ? (
+                        data.keyPoints!.map((kp, i) => (
+                          <li key={i} className="text-[13px] text-slate-200 flex gap-2">
+                            <span className="text-emerald-400">•</span>
+                            <span>{kp}</span>
+                          </li>
+                        ))
+                      ) : (
+                        <li className="text-[13px] text-slate-400">Sin puntos clave.</li>
+                      )}
+                    </ul>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -888,11 +897,13 @@ export const OrganSuiteShell: React.FC<OrganSuiteShellProps> = ({
                 <thead>
                   <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 text-[11px]">
                     {config.tableFields.map((field, i) => {
-                      const colKey = `col${i + 1}` as `col${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8}`;
+                      const colKey = `col${i + 1}`;
+                      const fromData =
+                        data.tableHeaders &&
+                        (data.tableHeaders as Record<string, string | undefined>)[colKey];
                       return (
-                        <th key={field} className="py-2.5 px-3">
-                          {data.tableHeaders?.[colKey] ||
-                            config.defaultTableHeaders[colKey]}
+                        <th key={field} className="py-2.5 px-3 whitespace-nowrap">
+                          {fromData || config.defaultColumnHeaders[i] || field}
                         </th>
                       );
                     })}
@@ -900,7 +911,7 @@ export const OrganSuiteShell: React.FC<OrganSuiteShellProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {(data.findingTable || []).map((row, idx) => (
+                  {tableRows().map((row, idx) => (
                     <tr key={idx} className={idx % 2 === 1 ? "bg-slate-50/70" : "bg-white"}>
                       {config.tableFields.map((field) => (
                         <td
