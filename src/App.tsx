@@ -20,12 +20,27 @@ import {
   CreadorCuadroSinoptico,
   CreadorSinopsisFracturas,
   ElastographyQUSPresentationModule,
+  Atlas3DModule,
+  Vascular3DModule,
+  FocalLesion3DModule,
+  UltrasoundPlaneSimulatorModule,
+  Thyroid3DModule,
+  Breast3DModule,
+  Shoulder3DModule,
+  Knee3DModule,
+  Ankle3DModule,
+  Kidney3DModule,
+  Abdomen3DModule,
+  AbdominalWall3DModule,
+  Scrotum3DModule,
+  MuscleTendon3DModule,
+  Wrist3DModule,
+  Suite3DSuspense,
 } from "./appLazyModules";
 import "./lib/safeLocalStorage";
 import JSZip from "jszip";
 import type { ExtractedFile } from "./components/ZipDicomExtractor";
 
-import { Atlas3DModule } from "./components/Atlas3DModule";
 import { Atlas3DData, Vascular3DData, FocalLesion3DData, UsPlaneSimulatorData, Thyroid3DData, Breast3DData, Shoulder3DData, Knee3DData, Ankle3DData, Kidney3DData, Abdomen3DData, AbdominalWall3DData, Scrotum3DData, MuscleTendon3DData, Wrist3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData, SemioticsConductMatrixData, FindingsInfographicData, NegativityChecklistData, SecondReaderData, ReportEnrichmentSession } from "./types";
 import { buildAtlasDirectivesFromScorecard, buildAtlasPanelFindingAssignments, buildVascularDirectivesFromScorecard, buildThyroidDirectivesFromScorecard, buildBreastDirectivesFromScorecard, buildShoulderDirectivesFromScorecard, buildKneeDirectivesFromScorecard, buildAnkleDirectivesFromScorecard, buildKidneyDirectivesFromScorecard, buildAbdomenDirectivesFromScorecard, buildAbdominalWallDirectivesFromScorecard, buildScrotumDirectivesFromScorecard, buildMuscleTendonDirectivesFromScorecard, buildWristDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
 import {
@@ -37,20 +52,6 @@ import {
   runReportQaGate,
   type ReportQaGateResult,
 } from "./lib/reportQaGate";
-import { Vascular3DModule } from "./components/Vascular3DModule";
-import { FocalLesion3DModule } from "./components/FocalLesion3DModule";
-import { UltrasoundPlaneSimulatorModule } from "./components/UltrasoundPlaneSimulatorModule";
-import { Thyroid3DModule } from "./components/Thyroid3DModule";
-import { Breast3DModule } from "./components/Breast3DModule";
-import { Shoulder3DModule } from "./components/Shoulder3DModule";
-import { Knee3DModule } from "./components/Knee3DModule";
-import { Ankle3DModule } from "./components/Ankle3DModule";
-import { Kidney3DModule } from "./components/Kidney3DModule";
-import { Abdomen3DModule } from "./components/Abdomen3DModule";
-import { AbdominalWall3DModule } from "./components/AbdominalWall3DModule";
-import { Scrotum3DModule } from "./components/Scrotum3DModule";
-import { MuscleTendon3DModule } from "./components/MuscleTendon3DModule";
-import { Wrist3DModule } from "./components/Wrist3DModule";
 import { getPanelLetter } from "./utils/usImagesPdfRenderer";
 import { decodeDicomForDisplay, compressImageForAttachment } from "./lib/dicomHelpers";
 import { runBackgroundTask } from "./lib/backgroundTasks";
@@ -8764,7 +8765,8 @@ Ejemplo:
                           {/* Sin suite 3D: Corte Focal justo después del reporte */}
                           {!anySuiteUsedUi && (
                             <div id="focal-lesion-3d-module" className="my-4">
-                              <FocalLesion3DModule
+                              <Suite3DSuspense label="Corte Focal 3D">
+                                <FocalLesion3DModule
                                 reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
                                 activeProtocol={specificStudy || studyType || ""}
                                 laterality=""
@@ -8776,11 +8778,13 @@ Ejemplo:
                                 scorecardData={clinicalScorecardData}
                                 externalDirectives={atlasDirectivesFromScorecard}
                               />
+                              </Suite3DSuspense>
                             </div>
                           )}
 
                           {/* === ATLAS 3D FOTORREALISTA Y CORRELACIÓN ANATÓMICA === */}
-                          <Atlas3DModule
+                          <Suite3DSuspense label="Atlas 3D">
+                            <Atlas3DModule
                             reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
                             activeProtocol={specificStudy || studyType || ""}
                             laterality=""
@@ -8792,9 +8796,11 @@ Ejemplo:
                             scorecardData={clinicalScorecardData}
                             externalDirectives={atlasDirectivesFromScorecard}
                           />
+                          </Suite3DSuspense>
 
                           {/* === SUITE VASCULAR 3D & MAPA ÁNATOMO-HEMODINÁMICO === */}
-                          <Vascular3DModule
+                          <Suite3DSuspense label="Suite Vascular 3D">
+                            <Vascular3DModule
                             reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
                             activeProtocol={specificStudy || studyType || ""}
                             laterality=""
@@ -8806,9 +8812,11 @@ Ejemplo:
                             scorecardData={clinicalScorecardData}
                             externalDirectives={buildVascularDirectivesFromScorecard(clinicalScorecardData) || atlasDirectivesFromScorecard}
                           />
+                          </Suite3DSuspense>
 
                           <div id="us-plane-simulator-module-wrap" className="mt-4">
-                          <UltrasoundPlaneSimulatorModule
+                          <Suite3DSuspense label="Simulador de planos US">
+                            <UltrasoundPlaneSimulatorModule
                             reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
                             activeProtocol={specificStudy || studyType || ""}
                             laterality=""
@@ -8820,6 +8828,7 @@ Ejemplo:
                             scorecardData={clinicalScorecardData}
                             externalDirectives={atlasDirectivesFromScorecard}
                           />
+                          </Suite3DSuspense>
                           </div>
 
 
@@ -10659,7 +10668,8 @@ Ejemplo:
                           
                           {isThyroid3dSuiteOpen && (
                             <div id="thyroid-3d-suite-module" className="my-6">
-                              <Thyroid3DModule
+                              <Suite3DSuspense label="Suite Tiroides 3D">
+                                <Thyroid3DModule
                                 reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
                                 activeProtocol={specificStudy || studyType || ""}
                                 laterality=""
@@ -10672,12 +10682,14 @@ Ejemplo:
                                 externalDirectives={buildThyroidDirectivesFromScorecard(clinicalScorecardData) || atlasDirectivesFromScorecard}
                                 onClose={() => setIsThyroid3dSuiteOpen(false)}
                               />
+                              </Suite3DSuspense>
                             </div>
                           )}
 
                           {isBreast3dSuiteOpen && (
                             <div id="breast-3d-suite-module" className="my-6">
-                              <Breast3DModule
+                              <Suite3DSuspense label="Suite Mama 3D">
+                                <Breast3DModule
                                 reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
                                 activeProtocol={specificStudy || studyType || ""}
                                 laterality=""
@@ -10690,12 +10702,14 @@ Ejemplo:
                                 externalDirectives={buildBreastDirectivesFromScorecard(clinicalScorecardData) || atlasDirectivesFromScorecard}
                                 onClose={() => setIsBreast3dSuiteOpen(false)}
                               />
+                              </Suite3DSuspense>
                             </div>
                           )}
 
                           {isShoulder3dSuiteOpen && (
                             <div id="shoulder-3d-suite-module" className="my-6">
-                              <Shoulder3DModule
+                              <Suite3DSuspense label="Suite Hombro 3D">
+                                <Shoulder3DModule
                                 reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
                                 activeProtocol={specificStudy || studyType || ""}
                                 laterality=""
@@ -10719,12 +10733,14 @@ Ejemplo:
                                 ) || atlasDirectivesFromScorecard}
                                 onClose={() => setIsShoulder3dSuiteOpen(false)}
                               />
+                              </Suite3DSuspense>
                             </div>
                           )}
 
 {isKnee3dSuiteOpen && (
                             <div id="knee-3d-suite-module" className="my-6">
-                              <Knee3DModule
+                              <Suite3DSuspense label="Suite Rodilla 3D">
+                                <Knee3DModule
                                 reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
                                 activeProtocol={specificStudy || studyType || ""}
                                 laterality=""
@@ -10748,12 +10764,14 @@ Ejemplo:
                                 ) || atlasDirectivesFromScorecard}
                                 onClose={() => setIsKnee3dSuiteOpen(false)}
                               />
+                              </Suite3DSuspense>
                             </div>
                           )}
 
                           {isAnkle3dSuiteOpen && (
                             <div id="ankle-3d-suite-module" className="my-6">
-                              <Ankle3DModule
+                              <Suite3DSuspense label="Suite Tobillo 3D">
+                                <Ankle3DModule
                                 reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
                                 activeProtocol={specificStudy || studyType || ""}
                                 laterality=""
@@ -10777,12 +10795,14 @@ Ejemplo:
                                 ) || atlasDirectivesFromScorecard}
                                 onClose={() => setIsAnkle3dSuiteOpen(false)}
                               />
+                              </Suite3DSuspense>
                             </div>
                           )}
 
                           {isKidney3dSuiteOpen && (
                             <div id="kidney-3d-suite-module" className="my-6">
-                              <Kidney3DModule
+                              <Suite3DSuspense label="Suite Rinon 3D">
+                                <Kidney3DModule
                                 reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
                                 activeProtocol={specificStudy || studyType || ""}
                                 laterality=""
@@ -10806,12 +10826,14 @@ Ejemplo:
                                 ) || atlasDirectivesFromScorecard}
                                 onClose={() => setIsKidney3dSuiteOpen(false)}
                               />
+                              </Suite3DSuspense>
                             </div>
                           )}
 
                           {isAbdomen3dSuiteOpen && (
                             <div id="abdomen-3d-suite-module" className="my-6">
-                              <Abdomen3DModule
+                              <Suite3DSuspense label="Suite Abdomen 3D">
+                                <Abdomen3DModule
                                 reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
                                 activeProtocol={specificStudy || studyType || ""}
                                 laterality=""
@@ -10835,12 +10857,14 @@ Ejemplo:
                                 ) || atlasDirectivesFromScorecard}
                                 onClose={() => setIsAbdomen3dSuiteOpen(false)}
                               />
+                              </Suite3DSuspense>
                             </div>
                           )}
 
                           {isAbdominalWall3dSuiteOpen && (
                             <div id="abdominal-wall-3d-suite-module" className="my-6">
-                              <AbdominalWall3DModule
+                              <Suite3DSuspense label="Suite Pared Abdominal 3D">
+                                <AbdominalWall3DModule
                                 reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
                                 activeProtocol={specificStudy || studyType || ""}
                                 laterality=""
@@ -10864,12 +10888,14 @@ Ejemplo:
                                 ) || atlasDirectivesFromScorecard}
                                 onClose={() => setIsAbdominalWall3dSuiteOpen(false)}
                               />
+                              </Suite3DSuspense>
                             </div>
                           )}
 
                           {isScrotum3dSuiteOpen && (
                             <div id="scrotum-3d-suite-module" className="my-6">
-                              <Scrotum3DModule
+                              <Suite3DSuspense label="Suite Escroto 3D">
+                                <Scrotum3DModule
                                 reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
                                 activeProtocol={specificStudy || studyType || ""}
                                 laterality=""
@@ -10893,12 +10919,14 @@ Ejemplo:
                                 ) || atlasDirectivesFromScorecard}
                                 onClose={() => setIsScrotum3dSuiteOpen(false)}
                               />
+                              </Suite3DSuspense>
                             </div>
                           )}
 
                           {isMuscleTendon3dSuiteOpen && (
                             <div id="muscle-tendon-3d-suite-module" className="my-6">
-                              <MuscleTendon3DModule
+                              <Suite3DSuspense label="Suite Musculo-Tendon 3D">
+                                <MuscleTendon3DModule
                                 reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
                                 activeProtocol={specificStudy || studyType || ""}
                                 laterality=""
@@ -10922,12 +10950,14 @@ Ejemplo:
                                 ) || atlasDirectivesFromScorecard}
                                 onClose={() => setIsMuscleTendon3dSuiteOpen(false)}
                               />
+                              </Suite3DSuspense>
                             </div>
                           )}
 
                           {isWrist3dSuiteOpen && (
                             <div id="wrist-3d-suite-module" className="my-6">
-                              <Wrist3DModule
+                              <Suite3DSuspense label="Suite Muneca 3D">
+                                <Wrist3DModule
                                 reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
                                 activeProtocol={specificStudy || studyType || ""}
                                 laterality=""
@@ -10951,13 +10981,15 @@ Ejemplo:
                                 ) || atlasDirectivesFromScorecard}
                                 onClose={() => setIsWrist3dSuiteOpen(false)}
                               />
+                              </Suite3DSuspense>
                             </div>
                           )}
 
                           {/* Con suite 3D: Corte Focal justo despues de la(s) suite(s) */}
                           {anySuiteUsedUi && (
                             <div id="focal-lesion-3d-module" className="my-6">
-                              <FocalLesion3DModule
+                              <Suite3DSuspense label="Corte Focal 3D">
+                                <FocalLesion3DModule
                                 reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
                                 activeProtocol={specificStudy || studyType || ""}
                                 laterality=""
@@ -10969,6 +11001,7 @@ Ejemplo:
                                 scorecardData={clinicalScorecardData}
                                 externalDirectives={atlasDirectivesFromScorecard}
                               />
+                              </Suite3DSuspense>
                             </div>
                           )}
 
