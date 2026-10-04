@@ -838,7 +838,9 @@ export default function App() {
   const [pdfLayoutType, setPdfLayoutType] = useState<"classic" | "clinical_slate" | "executive_medical">("classic");
   
   // PDF Real-Time Preview States
-  const [printModalDocType, setPrintModalDocType] = useState<'report' | 'patient_summary'>('report');
+  const [printModalDocType, setPrintModalDocType] = useState<'report' | 'patient_summary' | 'both'>('report');
+  /** formal = solo informe; both = informe + pack explicación paciente */
+  const [generateDocumentScope, setGenerateDocumentScope] = useState<'formal' | 'both'>('formal');
   const [printModalViewType, setPrintModalViewType] = useState<'html_simulator' | 'pdf_viewer'>('html_simulator');
   const [generatedNativePdfUrl, setGeneratedNativePdfUrl] = useState<string | null>(null);
   const [generatedSummaryPdfUrl, setGeneratedSummaryPdfUrl] = useState<string | null>(null);
@@ -3538,24 +3540,37 @@ Ejemplo:
   };
 
   // Gmail API Integrated Share Handlers (Google Workspace Integration)
-  const handleOpenGmailShare = async (type: 'report_pdf' | 'patient_summary' | 'patient_infographic' | 'both_pdfs') => {
-    setGmailAttachedType('report_pdf');
+    const handleOpenGmailShare = async (type: 'report_pdf' | 'patient_summary' | 'patient_infographic' | 'both_pdfs') => {
+    const attachedKind = type === 'patient_infographic' ? 'patient_summary' : type;
+    setGmailAttachedType(attachedKind as 'report_pdf' | 'patient_summary' | 'both_pdfs');
     setGmailTo(patientEmail || "");
     setGmailSuccessMessage(null);
     setGmailErrorMessage(null);
 
-    // Only select the official report PDF (as other elements are now included directly in the report)
-    setGmailAttachReport(true);
-    setGmailAttachSummary(false);
-    setGmailAttachInfographic(false);
-    
-    // Construct default subject & email body nicely for the official report
+    const attachReport = type === 'report_pdf' || type === 'both_pdfs';
+    const attachSummary = type === 'patient_summary' || type === 'both_pdfs';
+    const attachInfographic = type === 'patient_infographic';
+    setGmailAttachReport(attachReport);
+    setGmailAttachSummary(attachSummary);
+    setGmailAttachInfographic(attachInfographic);
+
     const clientName = patientName || "Paciente";
     let subject = `Reporte de Estudio Clínico - ${clientName}`;
     let body = `Estimado(a) ${clientName},\n\nLe enviamos adjunto a este correo el Reporte de Estudio Clínico Oficial realizado.\n\n`;
 
+    if (type === 'patient_summary') {
+      subject = `Explicación de su estudio - ${clientName}`;
+      body = `Estimado(a) ${clientName},\n\nLe enviamos una explicación en lenguaje claro de su estudio. El informe radiológico formal, dirigido a su médico tratante, se entrega por separado.\n\n`;
+    } else if (type === 'both_pdfs') {
+      subject = `Informe y explicación de su estudio - ${clientName}`;
+      body = `Estimado(a) ${clientName},\n\nLe enviamos dos documentos adjuntos:\n1) El informe radiológico formal (para su médico tratante).\n2) Una explicación en lenguaje claro para usted.\n\nEl informe formal es el documento que debe presentar en consulta.\n\n`;
+    } else if (type === 'patient_infographic') {
+      subject = `Infografía de su estudio - ${clientName}`;
+      body = `Estimado(a) ${clientName},\n\nLe enviamos la infografía explicativa de su estudio.\n\n`;
+    }
+
     body += `Quedamos a su entera disposición para cualquier aclaración o consulta adicional.\n\nAtentamente,\n${doctorName || "Médico Especialista"}`;
-    
+
     setGmailSubject(subject);
     setGmailBody(body);
     setShowGmailModal(true);
@@ -3813,7 +3828,22 @@ Ejemplo:
       });
       const data = await response.json();
       if (data.success && data.data) {
-        setPatientSummary(data.data);
+        const raw = data.data;
+        const findings = Array.isArray(raw.keyFindings)
+          ? raw.keyFindings.map((f: any) => ({
+              title: f?.title || "",
+              originalTerm: f?.originalTerm || "",
+              simplifiedExplanation: f?.simplifiedExplanation || "",
+              analogy: f?.analogy || "",
+              clinicalContext: f?.clinicalContext || f?.reassurance || "",
+              reassurance: f?.clinicalContext || f?.reassurance || "",
+            }))
+          : [];
+        setPatientSummary({
+          studyOverview: raw.studyOverview || "",
+          summary: raw.summary || "",
+          keyFindings: findings,
+        });
       } else {
         setPatientSummaryError(data.error || "Error al generar el resumen del paciente.");
       }
@@ -4180,16 +4210,8 @@ Ejemplo:
         <p style="margin: 0 0 12px 0; font-size: 11px; font-style: italic; color: #4b5563; font-family: monospace;">Término original en informe técnico: "${finding.originalTerm}"</p>
         <p style="margin: 0 0 12px 0; font-size: 13.5px; font-family: system-ui, sans-serif; color: #1f2937; line-height: 1.55;"><strong>Explicación:</strong> ${finding.simplifiedExplanation}</p>
         <p style="margin: 0 0 8px 0; font-size: 12.5px; font-family: system-ui, sans-serif; color: #7c2d12; background-color: #fff7ed; padding: 10px; border-radius: 6px; border-left: 3px solid #f97316;">🔍 <strong>Analogía de comprensión:</strong> ${finding.analogy}</p>
-        <p style="margin: 0; font-size: 12.5px; font-family: system-ui, sans-serif; color: #1e3a8a; font-weight: 600; background-color: #eff6ff; padding: 10px; border-radius: 6px; border-left: 3px solid #3b82f6;">🩺 <strong>Contexto Clínico y Perspectiva Médica:</strong> ${finding.reassurance}</p>
+        <p style="margin: 0; font-size: 12.5px; font-family: system-ui, sans-serif; color: #1e3a8a; font-weight: 600; background-color: #eff6ff; padding: 10px; border-radius: 6px; border-left: 3px solid #3b82f6;">🩺 <strong>Contexto descriptivo:</strong> ${finding.clinicalContext || finding.reassurance}</p>
       </div>
-    `).join("");
-
-    const carePointsHtml = (patientSummary.carePoints || []).map((point: string) => `
-      <li style="margin-bottom: 10px; font-size: 13.5px; font-family: system-ui, sans-serif; color: #374151; line-height: 1.5;">${point}</li>
-    `).join("");
-
-    const questionsHtml = (patientSummary.suggestedQuestions || []).map((q: string) => `
-      <li style="margin-bottom: 12px; font-size: 13.5px; font-family: system-ui, sans-serif; color: #111827; line-height: 1.4; font-weight: 600;">"${q}"</li>
     `).join("");
 
     printWindow.document.write(`
@@ -4280,13 +4302,16 @@ Ejemplo:
             <button class="btn-print" onclick="window.print()">Imprimir de Inmediato</button>
           </div>
           <div class="header-banner">
-            <h1>Guía Médica Explicativa para el Paciente</h1>
-            <p style="margin: 0; font-size: 14px; font-weight: 500; color: #4b5563;">Traducción Empática y Comprensión Humana Asistida por Inteligencia Artificial</p>
+            <h1>Explicación para usted</h1>
+            <p style="margin: 0; font-size: 14px; font-weight: 500; color: #4b5563;">Documento complementario · Lenguaje claro</p>
           </div>
           
-          <div style="font-size: 13.5px; margin-bottom: 25px; color: #4b5563;">
-            Estimado paciente: La siguiente guía interactiva simplifica y explica los hallazgos descritos en el reporte clínico oficial de su estudio diagnóstico. Este material tiene carácter informativo y educativo; está diseñado para calmar su inquietud y dotarlo de pautas saludables de conversación con su especialista tratante.
+          <div style="font-size: 13px; margin-bottom: 20px; color: #713f12; background: #fefce8; border: 1px solid #ca8a04; border-radius: 8px; padding: 12px 14px;">
+            <strong>IMPORTANTE:</strong> Este documento es una explicación en lenguaje claro para usted. El informe radiológico formal, dirigido a su médico tratante, se entrega por separado y es el documento que debe presentar en consulta.
           </div>
+
+          ${patientSummary.studyOverview ? `<div class="section-title">Qué estudio se le realizó</div><p style="font-size: 14px; color: #334155; line-height: 1.55;">${patientSummary.studyOverview}</p>` : ""}
+          ${patientSummary.summary ? `<div class="section-title">En pocas palabras</div><p style="font-size: 14px; color: #334155; line-height: 1.55;">${patientSummary.summary}</p>` : ""}
           
           <div class="meta-grid">
             <div>
@@ -4303,7 +4328,7 @@ Ejemplo:
           ${findingsHtml}
           
           <div class="footer">
-            <strong>ADVERTENCIA CLÍNICA IMPORTANTE:</strong> Esta guía simplificada de orientación formativa complementa -pero nunca invalida- el informe radiológico oficial firmado digitalmente por el especialista médico ni sustituye la indicación prescriptiva del cirujano o médico clínico.
+            <strong>IMPORTANTE:</strong> Esta explicación complementa —pero nunca sustituye— el informe radiológico formal. Presente el informe formal en su consulta médica.
           </div>
         </body>
       </html>
@@ -5053,6 +5078,7 @@ Ejemplo:
         studyType,
         selectedLogo,
         formatDateToDMY,
+        infographicUrl,
       },
       openInNewTab,
       shareViaWebShare,
@@ -5668,8 +5694,17 @@ Ejemplo:
                 </h3>
               </div>
               
+              {patientSummary.studyOverview && (
+                <div className="p-4 bg-sky-500/5 border-l-4 border-sky-500/70 rounded-r-xl">
+                  <h5 className="text-[10px] font-black tracking-widest uppercase text-sky-400">Qué estudio se le realizó</h5>
+                  <p className="text-xs text-slate-300 leading-relaxed font-sans font-medium mt-1">
+                    {patientSummary.studyOverview}
+                  </p>
+                </div>
+              )}
+
               <div className="p-4 bg-amber-500/5 border-l-4 border-amber-500/70 rounded-r-xl">
-                <h5 className="text-[10px] font-black tracking-widest uppercase text-amber-400">Resumen de Bienvenida y Propósito</h5>
+                <h5 className="text-[10px] font-black tracking-widest uppercase text-amber-400">En pocas palabras</h5>
                 <p className="text-xs text-slate-300 leading-relaxed font-sans font-medium mt-1">
                   {patientSummary.summary}
                 </p>
@@ -5699,48 +5734,15 @@ Ejemplo:
                           <strong>Analogía sencilla:</strong> "{finding.analogy}"
                         </p>
                       )}
-                      {finding.reassurance && (
+                      {(finding.clinicalContext || finding.reassurance) && (
                         <p className="text-[11.5px] text-sky-300/90 leading-relaxed font-sans bg-sky-950/20 px-3 py-2 border-l-2 border-sky-500 rounded-r">
-                          <strong>Sugerencia médica:</strong> {finding.reassurance}
+                          <strong>Contexto descriptivo:</strong> {finding.clinicalContext || finding.reassurance}
                         </p>
                       )}
                     </div>
                   ))}
                 </div>
               </div>
-
-              {/* Care Points */}
-              {patientSummary.carePoints && patientSummary.carePoints.length > 0 && (
-                <div className="space-y-2">
-                  <h4 className="text-[11px] font-black tracking-wider uppercase text-slate-300 border-b border-slate-850 pb-1.5 flex items-center gap-1.5 font-mono">
-                    <span>🩺</span> RECOMENDACIONES Y CUIDADOS GENERALES
-                  </h4>
-                  <ul className="list-disc pl-5 text-xs text-slate-300 space-y-1.5 font-sans">
-                    {patientSummary.carePoints.map((point: string, idx: number) => (
-                      <li key={idx} className="leading-relaxed">{point}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Suggested Questions */}
-              {patientSummary.suggestedQuestions && patientSummary.suggestedQuestions.length > 0 && (
-                <div className="space-y-3">
-                  <h4 className="text-[11px] font-black tracking-wider uppercase text-slate-300 border-b border-slate-850 pb-1.5 flex items-center gap-1.5 font-mono">
-                    <span>💬</span> PREGUNTAS SUGERIDAS PARA SU MÉDICO TRATANTE
-                  </h4>
-                  <p className="text-[10px] text-slate-500 leading-normal font-mono uppercase tracking-wide">
-                    Le sugerimos llevar estas preguntas anotadas a su siguiente consulta con su médico de cabecera:
-                  </p>
-                  <div className="grid grid-cols-1 gap-2">
-                    {patientSummary.suggestedQuestions.map((q: string, idx: number) => (
-                      <div key={idx} className="p-3 bg-indigo-950/25 border-l-2 border-indigo-500 rounded-r text-xs text-indigo-300 font-sans italic font-medium leading-relaxed">
-                        {idx + 1}. {q}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           )}
 
@@ -7173,12 +7175,50 @@ Ejemplo:
                       </div>
                     </label>
 
+                    {/* Alcance documental: formal vs pack paciente */}
+                    <div className="flex flex-col gap-2 rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-300 font-mono">
+                        Documentos a generar
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setGenerateDocumentScope('formal')}
+                          className={`px-3 py-2.5 rounded-lg text-left border transition-all cursor-pointer ${
+                            generateDocumentScope === 'formal'
+                              ? 'bg-indigo-600/30 border-indigo-500/50 text-white'
+                              : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          <span className="block text-[10px] font-black uppercase tracking-wider">Solo informe formal</span>
+                          <span className="block text-[8px] mt-0.5 text-slate-400 normal-case tracking-normal">Para el médico tratante</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setGenerateDocumentScope('both')}
+                          className={`px-3 py-2.5 rounded-lg text-left border transition-all cursor-pointer ${
+                            generateDocumentScope === 'both'
+                              ? 'bg-emerald-600/25 border-emerald-500/45 text-white'
+                              : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          <span className="block text-[10px] font-black uppercase tracking-wider">Informe + pack paciente</span>
+                          <span className="block text-[8px] mt-0.5 text-slate-400 normal-case tracking-normal">Formal + explicación en lenguaje claro</span>
+                        </button>
+                      </div>
+                    </div>
+
                     {/* Submit Buttons: simple vs completo */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <button
                         type="button"
-                        onClick={() => handleGenerateReport("simple")}
-                        disabled={isGenerating || !studyType.trim()}
+                        onClick={async () => {
+                          const reportText = await handleGenerateReport("simple");
+                          if (generateDocumentScope === 'both' && reportText) {
+                            await handleGeneratePatientSummary(reportText);
+                          }
+                        }}
+                        disabled={isGenerating || isGeneratingPatientSummary || !studyType.trim()}
                         className="w-full bg-slate-800 hover:bg-slate-750 text-slate-100 font-black py-4 px-5 rounded-xl text-[11px] uppercase tracking-widest border border-slate-600/80 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all flex flex-col items-center justify-center gap-1.5 cursor-pointer"
                         title="Solo redacta el informe, sin modulos adicionales (ideal para radiografias simples)"
                       >
@@ -7200,8 +7240,13 @@ Ejemplo:
 
                       <button
                         type="button"
-                        onClick={() => handleGenerateReport("full")}
-                        disabled={isGenerating || !studyType.trim()}
+                        onClick={async () => {
+                          const reportText = await handleGenerateReport("full");
+                          if (generateDocumentScope === 'both' && reportText) {
+                            await handleGeneratePatientSummary(reportText);
+                          }
+                        }}
+                        disabled={isGenerating || isGeneratingPatientSummary || !studyType.trim()}
                         className="w-full bg-indigo-600 hover:bg-indigo-550 text-white font-black py-4 px-5 rounded-xl text-[11px] uppercase tracking-widest shadow-[0_4px_16px_rgba(99,102,241,0.4)] disabled:opacity-50 disabled:cursor-not-allowed transition-all flex flex-col items-center justify-center gap-1.5 cursor-pointer border border-indigo-400/30"
                         title="Informe + módulos predeterminados, suite 3D del estudio y pulido clínico automático"
                       >
@@ -7495,9 +7540,14 @@ Ejemplo:
                             <Printer className="h-3.5 w-3.5" /> PDF / Imprimir
                           </button>
                           <button
-                            onClick={() => guardReportPdfExport(() => handleDownloadNativePDF(false))}
+                            onClick={() => guardReportPdfExport(async () => {
+                              await handleDownloadNativePDF(false);
+                              if (generateDocumentScope === 'both' && patientSummary) {
+                                await handleDownloadPatientSummaryPDF(false);
+                              }
+                            })}
                             className="px-3 md:px-4 py-1.5 md:py-2 bg-slate-900 border-2 border-slate-800 hover:border-slate-700 hover:bg-slate-850 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider text-slate-200 transition-all flex items-center gap-1.5 md:gap-2 shadow-lg select-none cursor-pointer whitespace-nowrap"
-                            title="Descargar archivo PDF limpio directo sin URL ni hora"
+                            title="Descargar PDF formal (y pack paciente si el alcance es ambos)"
                           >
                             <Download className="h-3.5 w-3.5 text-indigo-400" /> Descargar PDF
                           </button>
@@ -7509,7 +7559,7 @@ Ejemplo:
                             <MessageSquare className="h-3.5 w-3.5 text-white" /> WhatsApp PDF
                           </button>
                           <button
-                            onClick={() => guardReportPdfExport(() => handleOpenGmailShare('report_pdf'))}
+                            onClick={() => guardReportPdfExport(() => handleOpenGmailShare(generateDocumentScope === 'both' && patientSummary ? 'both_pdfs' : 'report_pdf'))}
                             className="px-3 md:px-4 py-1.5 md:py-2 bg-red-700 hover:bg-red-650 border-2 border-red-500/30 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider text-white transition-all flex items-center gap-1.5 md:gap-2 shadow-lg select-none whitespace-nowrap cursor-pointer"
                             title="Enviar reporte PDF firmado directamente por Correo usando Gmail"
                           >
@@ -9036,7 +9086,7 @@ Ejemplo:
                                   id: "differential_tree",
                                   label: "Arbol de diferenciales con poda",
                                   badge: "DIFERENCIALES",
-                                  desc: "Hip�tesis a favor/en contra, poda de ramas incompatibles y diagnostico mas probable.",
+                                  desc: "Hipótesis a favor/en contra, poda de ramas incompatibles y diagnostico mas probable.",
                                   color: "text-orange-400 border-orange-500/30 bg-orange-950/20"
                                 },
                                 {
@@ -9323,7 +9373,7 @@ Ejemplo:
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Traduce la jerga compleja del reporte en un resumen empático y tranquilizador con analogías cotidianas y hábitos de bienestar físico.
+                                Traduce el informe a una explicación educativa: qué estudio se realizó y qué significan los hallazgos, sin recomendaciones ni pasos a seguir.
                               </p>
                               <button
                                 onClick={handleGeneratePatientSummary}
@@ -10318,7 +10368,7 @@ Ejemplo:
                               </button>
                             </div>
 
-                            {/* Card: Simulador de plano ecogr�fico */}
+                            {/* Card: Simulador de plano ecográfico */}
                             <div className="p-4 rounded-2xl bg-slate-950/60 border border-cyan-900/40 space-y-3">
                               <div className="flex items-start justify-between gap-3">
                                 <div>
@@ -11580,7 +11630,7 @@ Ejemplo:
                                 Traduciendo informe radiológico para el paciente...
                               </p>
                               <p className="text-[9px] font-medium text-slate-500 uppercase tracking-wider max-w-sm">
-                                Se está traduciendo la terminología técnica a un tono empático, cálido y comprensible con analogías cotidianas y pautas de bienestar general.
+                                Se está traduciendo la terminología técnica a una explicación clara del estudio y de los hallazgos, sin recomendaciones.
                               </p>
                             </div>
                           )}
@@ -11749,10 +11799,10 @@ Ejemplo:
 
                                             <div className="p-3.5 bg-blue-950/20 border-l-2 border-blue-500/40 rounded-r-xl space-y-1">
                                               <p className="text-[8px] font-black text-blue-400 uppercase tracking-widest font-mono flex items-center gap-1.5">
-                                                <span>🩺</span> Contexto Clínico y Perspectiva Médica:
+                                                <span>🩺</span> Contexto descriptivo:
                                               </p>
                                               <p className="text-[11px] text-blue-200 leading-relaxed font-sans">
-                                                {finding.reassurance}
+                                                {finding.clinicalContext || finding.reassurance}
                                               </p>
                                             </div>
                                           </div>
@@ -12553,7 +12603,7 @@ Ejemplo:
                                     : 'bg-transparent text-slate-400 hover:text-slate-200'
                                 }`}
                               >
-                                Reporte
+                                Formal
                               </button>
                               <button
                                 type="button"
@@ -12561,12 +12611,25 @@ Ejemplo:
                                 disabled={!patientSummary}
                                 className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer ${
                                   printModalDocType === 'patient_summary'
-                                    ? 'bg-indigo-600 text-white shadow-md'
+                                    ? 'bg-emerald-600 text-white shadow-md'
                                     : 'bg-transparent text-slate-400 hover:text-slate-200 disabled:opacity-30'
                                 }`}
                                 title={!patientSummary ? "Primero genera la explicación al paciente abajo" : ""}
                               >
-                                Explicación Paciente
+                                Paciente
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setPrintModalDocType('both')}
+                                disabled={!patientSummary}
+                                className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer ${
+                                  printModalDocType === 'both'
+                                    ? 'bg-amber-600 text-white shadow-md'
+                                    : 'bg-transparent text-slate-400 hover:text-slate-200 disabled:opacity-30'
+                                }`}
+                                title={!patientSummary ? "Primero genera la explicación al paciente" : "Descargar informe formal + pack paciente"}
+                              >
+                                Ambos
                               </button>
                             </div>
 
@@ -12590,6 +12653,9 @@ Ejemplo:
                                 onClick={() => {
                       if (printModalDocType === 'report') {
                         guardReportPdfExport(() => handleDownloadNativePDF(true));
+                      } else if (printModalDocType === 'both') {
+                        guardReportPdfExport(() => handleDownloadNativePDF(true));
+                        handleDownloadPatientSummaryPDF(true);
                       } else {
                         handleDownloadPatientSummaryPDF(true);
                       }
@@ -12605,17 +12671,17 @@ Ejemplo:
 
                         {/* PDF Display IFrame */}
                         <div className="flex-1 bg-slate-950 p-2 md:p-3 relative flex flex-col">
-                          {isGeneratingPdfPreview && !(printModalDocType === 'report' ? generatedNativePdfUrl : generatedSummaryPdfUrl) ? (
+                          {isGeneratingPdfPreview && !(printModalDocType === 'patient_summary' ? generatedSummaryPdfUrl : generatedNativePdfUrl) ? (
                             <div className="flex-1 flex flex-col items-center justify-center text-center space-y-3">
                               <RefreshCw className="h-8 w-8 text-indigo-400 animate-spin" />
                               <p className="text-[10px] font-mono font-black text-slate-400 uppercase tracking-widest animate-pulse">
                                 Generando Previsualización PDF...
                               </p>
                             </div>
-                          ) : (printModalDocType === 'report' ? generatedNativePdfUrl : generatedSummaryPdfUrl) ? (
+                          ) : (printModalDocType === 'patient_summary' ? generatedSummaryPdfUrl : generatedNativePdfUrl) ? (
                             <div className="w-full h-full flex-1 rounded-xl overflow-hidden border border-slate-850 bg-slate-900/40 relative">
                               <iframe
-                                src={`${printModalDocType === 'report' ? generatedNativePdfUrl : generatedSummaryPdfUrl}#toolbar=1&navpanes=0`}
+                                src={`${printModalDocType === 'patient_summary' ? generatedSummaryPdfUrl : generatedNativePdfUrl}#toolbar=1&navpanes=0`}
                                 className="w-full h-full border-0 rounded-lg"
                                 title="Live PDF Viewer"
                                 referrerPolicy="no-referrer"
@@ -12625,12 +12691,12 @@ Ejemplo:
                             <div className="flex-1 flex flex-col items-center justify-center text-center p-6 space-y-3">
                               <AlertCircle className="h-8 w-8 text-amber-500" />
                               <p className="text-[10px] font-mono font-black text-amber-400 uppercase tracking-widest">
-                                {printModalDocType === 'report' ? 'Reporte no disponible' : 'Explicación de Paciente no disponible'}
+                                {printModalDocType === 'patient_summary' ? 'Explicación de Paciente no disponible' : 'Reporte no disponible'}
                               </p>
                               <p className="text-[9px] text-slate-500 max-w-xs leading-relaxed uppercase">
-                                {printModalDocType === 'report' 
-                                  ? 'Genera un reporte clínico para visualizar el PDF' 
-                                  : 'Haz clic en "Explicar para el paciente" en la tarjeta de abajo para generar esta versión'}
+                                {printModalDocType === 'patient_summary'
+                                  ? 'Haz clic en "Explicar para el paciente" en la tarjeta de abajo para generar esta versión'
+                                  : 'Genera un reporte clínico para visualizar el PDF'}
                               </p>
                             </div>
                           )}
@@ -13661,7 +13727,7 @@ Ejemplo:
                   <p className="text-xs font-black text-slate-100 uppercase tracking-wider font-mono">Documento a generar</p>
                   <p className="text-[10px] text-slate-450 leading-none">Selecciona cuál documento deseas descargar, previsualizar o mandar a imprimir.</p>
                 </div>
-                <div className="flex gap-2 shrink-0">
+                <div className="flex flex-wrap gap-2 shrink-0">
                   <button
                     onClick={() => setPrintModalDocType('report')}
                     className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all uppercase cursor-pointer ${
@@ -13670,7 +13736,7 @@ Ejemplo:
                         : 'bg-slate-850 hover:bg-slate-800 text-slate-400 hover:text-white'
                     }`}
                   >
-                    📋 Reporte Clínico
+                    Informe formal
                   </button>
                   {patientSummary && (
                     <button
@@ -13681,7 +13747,19 @@ Ejemplo:
                           : 'bg-slate-850 hover:bg-slate-800 text-slate-400 hover:text-white'
                       }`}
                     >
-                      🌱 Explicación Paciente
+                      Pack paciente
+                    </button>
+                  )}
+                  {patientSummary && (
+                    <button
+                      onClick={() => setPrintModalDocType('both')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all uppercase cursor-pointer ${
+                        printModalDocType === 'both'
+                          ? 'bg-amber-600 font-black text-white shadow-md shadow-amber-500/20'
+                          : 'bg-slate-850 hover:bg-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Ambos PDFs
                     </button>
                   )}
                 </div>
@@ -13737,6 +13815,9 @@ Ejemplo:
                     onClick={() => {
                       if (printModalDocType === 'report') {
                         guardReportPdfExport(() => handleDownloadNativePDF(false));
+                      } else if (printModalDocType === 'both') {
+                        guardReportPdfExport(() => handleDownloadNativePDF(false));
+                        handleDownloadPatientSummaryPDF(false);
                       } else {
                         handleDownloadPatientSummaryPDF(false);
                       }
@@ -13750,6 +13831,9 @@ Ejemplo:
                     onClick={() => {
                       if (printModalDocType === 'report') {
                         guardReportPdfExport(() => handleDownloadNativePDF(true));
+                      } else if (printModalDocType === 'both') {
+                        guardReportPdfExport(() => handleDownloadNativePDF(true));
+                        handleDownloadPatientSummaryPDF(true);
                       } else {
                         handleDownloadPatientSummaryPDF(true);
                       }
@@ -13757,13 +13841,16 @@ Ejemplo:
                     className="flex items-center justify-center gap-2.5 p-3 bg-sky-700 hover:bg-sky-650 border-2 border-sky-600/10 rounded-xl text-xs font-black text-white uppercase tracking-wider transition-all shadow-md active:scale-95 text-center cursor-pointer"
                   >
                     <ExternalLink className="h-4 w-4" />
-                    <span>Abrir PDF en {printModalDocType === 'report' ? "Informe" : "Explicación"} (Pestaña Limpia)</span>
+                    <span>Abrir PDF en {printModalDocType === 'patient_summary' ? "Explicación" : printModalDocType === 'both' ? "Ambos" : "Informe"} (Pestaña Limpia)</span>
                   </button>
                   <button
                     onClick={() => {
                       if (printModalDocType === 'report') {
                         const appUrl = window.location.href;
                         window.open(appUrl, "_blank");
+                      } else if (printModalDocType === 'both') {
+                        guardReportPdfExport(() => handleDownloadNativePDF(false));
+                        handleDownloadPatientSummaryPDF(false);
                       } else {
                         handlePrintPatientSummary();
                       }
@@ -13771,20 +13858,20 @@ Ejemplo:
                     className="flex items-center justify-center gap-2.5 p-3 bg-slate-800 hover:bg-slate-750 border-2 border-slate-700/10 rounded-xl text-xs font-bold text-slate-300 uppercase tracking-wider transition-all shadow-md active:scale-95 text-center cursor-pointer"
                   >
                     <Printer className="h-4 w-4 text-indigo-400" />
-                    <span>{printModalDocType === 'report' ? "Imprimir original en Pestaña Nueva" : "Abrir cuadro de Impresión Nativo"}</span>
+                    <span>{printModalDocType === 'patient_summary' ? "Abrir cuadro de Impresión Nativo" : printModalDocType === 'both' ? "Descargar ambos PDFs" : "Imprimir original en Pestaña Nueva"}</span>
                   </button>
                   <button
                     onClick={() => {
-                      if (printModalDocType === 'report') {
-                        copyToClipboard(generatedReport, true);
-                      } else {
+                      if (printModalDocType === 'patient_summary') {
                         copyToClipboard(JSON.stringify(patientSummary, null, 2), true);
+                      } else {
+                        copyToClipboard(generatedReport, true);
                       }
                     }}
                     className="flex items-center justify-center gap-2.5 p-3 bg-emerald-600 hover:bg-emerald-550 border-2 border-emerald-500/10 rounded-xl text-xs font-black text-white uppercase tracking-wider transition-all shadow-md active:scale-95 text-center cursor-pointer"
                   >
                     <Copy className="h-4 w-4" />
-                    <span>Copiar Texto del {printModalDocType === 'report' ? "Reporte" : "Resumen"}</span>
+                    <span>Copiar Texto del {printModalDocType === 'patient_summary' ? "Resumen" : "Reporte"}</span>
                   </button>
                 </div>
                 <p className="text-[10px] text-indigo-300 font-medium font-mono uppercase tracking-wide text-center">
@@ -13917,9 +14004,9 @@ Ejemplo:
                           </p>
                         </div>
                       </div>
-                    ) : (printModalDocType === 'report' ? generatedNativePdfUrl : generatedSummaryPdfUrl) ? (
+                    ) : (printModalDocType === 'patient_summary' ? generatedSummaryPdfUrl : generatedNativePdfUrl) ? (
                       <iframe
-                        src={printModalDocType === 'report' ? generatedNativePdfUrl! : generatedSummaryPdfUrl!}
+                        src={printModalDocType === 'patient_summary' ? generatedSummaryPdfUrl! : generatedNativePdfUrl!}
                         className="w-full h-full border-0 absolute inset-0 bg-white pt-14"
                         title="Vista Previa de Impresión Real en Vivo"
                       />
@@ -13934,6 +14021,9 @@ Ejemplo:
                           onClick={() => {
                       if (printModalDocType === 'report') {
                         guardReportPdfExport(() => handleDownloadNativePDF(false));
+                      } else if (printModalDocType === 'both') {
+                        guardReportPdfExport(() => handleDownloadNativePDF(false));
+                        handleDownloadPatientSummaryPDF(false);
                       } else {
                         handleDownloadPatientSummaryPDF(false);
                       }
@@ -13948,7 +14038,7 @@ Ejemplo:
                 </div>
               ) : (
                 <div className="space-y-4 text-left">
-                  {printModalDocType === 'report' ? (
+                  {printModalDocType !== 'patient_summary' ? (
                     <div className="space-y-2 text-left">
                       <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest font-mono">Vista Previa del Documento (Formato Físico):</span>
                       <div className="w-full max-w-[210mm] min-h-[297mm] mx-auto bg-white text-black p-6 sm:p-[20mm] rounded-sm border border-slate-300 shadow-[0_12px_36px_rgba(0,0,0,0.18)] text-left relative overflow-x-auto">
@@ -14232,8 +14322,17 @@ Ejemplo:
                 {/* Contenido de la Traducción */}
                 {patientSummary ? (
                   <div className="space-y-6 font-sans text-left">
+                    {patientSummary.studyOverview && (
+                      <div className="space-y-1.5 p-4 bg-sky-50/40 border-l-4 border-sky-500 rounded-r-xl text-left">
+                        <h5 className="text-[10px] font-black tracking-widest uppercase text-sky-800">Qué estudio se le realizó</h5>
+                        <p className="text-xs text-gray-700 leading-relaxed font-sans font-medium text-left">
+                          {patientSummary.studyOverview}
+                        </p>
+                      </div>
+                    )}
+
                     <div className="space-y-1.5 p-4 bg-orange-50/20 border-l-4 border-orange-500 rounded-r-xl text-left">
-                      <h5 className="text-[10px] font-black tracking-widest uppercase text-orange-700">Resumen de Bienvenida y Propósito</h5>
+                      <h5 className="text-[10px] font-black tracking-widest uppercase text-orange-700">En pocas palabras</h5>
                       <p className="text-xs text-gray-700 leading-relaxed font-sans font-medium text-left">
                         {patientSummary.summary}
                       </p>
@@ -14259,43 +14358,12 @@ Ejemplo:
                               <strong>Analogía:</strong> "{finding.analogy}"
                             </p>
                             <p className="text-[11px] text-blue-800 leading-relaxed font-sans bg-blue-50/55 px-2.5 py-1.5 border-l-2 border-blue-400 rounded-r text-left">
-                              <strong>Sugerencia médica:</strong> {finding.reassurance}
+                              <strong>Contexto descriptivo:</strong> {finding.clinicalContext || finding.reassurance}
                             </p>
                           </div>
                         ))}
                       </div>
                     </div>
-
-                    {patientSummary.carePoints && patientSummary.carePoints.length > 0 && (
-                      <div className="space-y-2 text-left">
-                        <h5 className="text-[10.5px] font-black tracking-wider uppercase text-slate-800 border-b border-gray-200 pb-1 flex items-center gap-1">
-                          <span>🩺</span> RECOMENDACIONES Y CUIDADOS GENERALES
-                        </h5>
-                        <ul className="list-disc pl-5 text-xs text-gray-700 space-y-1 font-sans text-left">
-                          {patientSummary.carePoints.map((point: string, idx: number) => (
-                            <li key={idx} className="leading-relaxed text-left">{point}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-
-                    {patientSummary.suggestedQuestions && patientSummary.suggestedQuestions.length > 0 && (
-                      <div className="space-y-2 text-left">
-                        <h5 className="text-[10.5px] font-black tracking-wider uppercase text-[#0d0e14] border-b border-gray-200 pb-1 flex items-center gap-1">
-                          <span>💬</span> PREGUNTAS SUGERIDAS PARA SU MÉDICO TRATANTE
-                        </h5>
-                        <p className="text-[10px] text-gray-500 leading-normal text-left">
-                          Le sugerimos llevar estas preguntas anotadas a su siguiente consulta con su médico de cabecera:
-                        </p>
-                        <div className="grid grid-cols-1 gap-1.5 pt-1 text-left bg-transparent">
-                          {patientSummary.suggestedQuestions.map((q: string, idx: number) => (
-                            <div key={idx} className="p-2.5 bg-indigo-50/35 border-l-2 border-indigo-400 rounded-r text-xs text-indigo-900 font-sans italic font-medium leading-relaxed text-left">
-                              {idx + 1}. {q}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
 
                     {/* Firma de Validación Médica Integrada a la explicación */}
                     {(doctorName || customSignatureUrl) && (
@@ -14355,20 +14423,23 @@ Ejemplo:
         </button>
         <button
           onClick={() => {
-            if (printModalDocType === 'report') {
+            if (printModalDocType === 'patient_summary') {
+              handlePrintPatientSummary();
+            } else if (printModalDocType === 'both') {
+              guardReportPdfExport(() => handleDownloadNativePDF(false));
+              handleDownloadPatientSummaryPDF(false);
+            } else {
               try {
                 window.print();
               } catch (e) {
                 console.error(e);
               }
-            } else {
-              handlePrintPatientSummary();
             }
           }}
           className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-550 border border-indigo-500/30 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 shadow-lg cursor-pointer"
         >
           <Printer className="h-4 w-4" />
-          <span>{printModalDocType === 'report' ? "Ejecutar Impresión" : "Imprimir Explicación"}</span>
+          <span>{printModalDocType === 'patient_summary' ? "Imprimir Explicación" : printModalDocType === 'both' ? "Descargar Ambos PDFs" : "Ejecutar Impresión"}</span>
         </button>
       </div>
           </motion.div>
@@ -14767,29 +14838,64 @@ Ejemplo:
                     />
                   </div>
 
-                  {/* Archivo Adjunto (Fijo al Reporte Clínico Oficial) */}
+                  {/* Selectores de adjuntos: formal / pack paciente / ambos */}
                   <div className="space-y-2">
                     <label className="text-[9px] font-black text-slate-300 uppercase tracking-widest font-mono">
-                      Archivo Adjunto:
+                      Documentos a adjuntar:
                     </label>
-                    <div className="p-4 bg-slate-950/80 border-2 border-red-500/20 rounded-2xl flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <span className="text-[18px]">📄</span>
-                        <div className="text-left">
-                          <p className="text-[11px] font-black text-slate-100 uppercase tracking-wider font-mono">
-                            Reporte Clínico Oficial
-                          </p>
-                          <p className="text-[9px] text-slate-400 font-sans leading-normal">
-                            Documento PDF completo que incluye traducción empática e infografía (según corresponda).
-                          </p>
-                        </div>
-                      </div>
-                      <span className="shrink-0 text-[8px] font-black font-mono text-emerald-400 bg-emerald-950/80 px-2 py-1 rounded-lg border border-emerald-500/30 uppercase tracking-wider">
-                        ✓ Adjunto
-                      </span>
+                    <div className="grid grid-cols-1 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setGmailAttachReport(true);
+                          setGmailAttachSummary(false);
+                          setGmailAttachedType('report_pdf');
+                        }}
+                        className={`p-3 rounded-xl border-2 text-left transition-all cursor-pointer ${
+                          gmailAttachReport && !gmailAttachSummary
+                            ? 'bg-indigo-950/40 border-indigo-500/40'
+                            : 'bg-slate-950/80 border-slate-800 hover:border-slate-700'
+                        }`}
+                      >
+                        <p className="text-[11px] font-black text-slate-100 uppercase tracking-wider font-mono">Solo informe formal</p>
+                        <p className="text-[9px] text-slate-400 mt-0.5">PDF del reporte radiológico para el médico tratante.</p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setGmailAttachReport(false);
+                          setGmailAttachSummary(true);
+                          setGmailAttachedType('patient_summary');
+                        }}
+                        disabled={!patientSummary}
+                        className={`p-3 rounded-xl border-2 text-left transition-all cursor-pointer disabled:opacity-40 ${
+                          !gmailAttachReport && gmailAttachSummary
+                            ? 'bg-emerald-950/40 border-emerald-500/40'
+                            : 'bg-slate-950/80 border-slate-800 hover:border-slate-700'
+                        }`}
+                      >
+                        <p className="text-[11px] font-black text-slate-100 uppercase tracking-wider font-mono">Solo pack paciente</p>
+                        <p className="text-[9px] text-slate-400 mt-0.5">Explicación en lenguaje claro (el formal va por separado).</p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setGmailAttachReport(true);
+                          setGmailAttachSummary(true);
+                          setGmailAttachedType('both_pdfs');
+                        }}
+                        disabled={!patientSummary}
+                        className={`p-3 rounded-xl border-2 text-left transition-all cursor-pointer disabled:opacity-40 ${
+                          gmailAttachReport && gmailAttachSummary
+                            ? 'bg-amber-950/40 border-amber-500/40'
+                            : 'bg-slate-950/80 border-slate-800 hover:border-slate-700'
+                        }`}
+                      >
+                        <p className="text-[11px] font-black text-slate-100 uppercase tracking-wider font-mono">Ambos PDFs</p>
+                        <p className="text-[9px] text-slate-400 mt-0.5">Informe formal + explicación para el paciente.</p>
+                      </button>
                     </div>
                   </div>
-
                   {/* Body text */}
                   <div className="space-y-1.5">
                     <label className="text-[9px] font-black text-slate-300 uppercase tracking-widest font-mono">

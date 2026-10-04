@@ -475,6 +475,7 @@ export function createGenerateReportHandler(d: GenerateReportHandlerDeps) {
         if (base64Image) {
           triggerAutoImageEvaluation(base64Image, selectedFile?.type, studyType, clinicalHistory, findings, annotations);
         }
+        return String(data.report || "");
       } else {
         setReportError(data.error || `Error del servidor (Código ${response.status}): ${JSON.stringify(data)}`);
       }
@@ -485,6 +486,6 @@ export function createGenerateReportHandler(d: GenerateReportHandlerDeps) {
     } finally {
       setIsGenerating(false);
     }
-  
+    return undefined;
   };
 }

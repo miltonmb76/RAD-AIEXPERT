@@ -3368,10 +3368,6 @@ CRÍTICO: No inventes URLs bajo ninguna circunstancia. Tampoco intercambies ni m
   }
 });
 
-/**
- * NEW API: GENERATE DEMOCRATIZED AND SIMPLIFIED PATIENT KEY FINDINGS & SUMMARY
- * POST /api/generate-patient-summary
- */
 app.post("/api/generate-patient-summary", async (req: express.Request, res: express.Response) => {
   try {
     const { model, report, studyType, clinicalHistory } = req.body;
@@ -3391,26 +3387,26 @@ Reporte Radiológico formal:
 ${report}
 """
 
-Por favor, traduce este reporte radiológico formal de alta complejidad médica en un objeto JSON estructurado diseñado para el paciente. 
+Traduce este informe radiológico formal a un objeto JSON para el paciente (explicación educativa, NO un plan de manejo).
 
-PAUTAS DE TONO Y ESTILO REDACCIONAL (CRÍTICAS):
-- Tono neutral y profesional: Toda la información debe ser explicada con claridad y precisión clínica elemental, pero con un tono estrictamente neutro, objetivo y profesional. 
-- Evita el paternalismo y la condescendencia: No intentes "tranquilizar", "calmar" o "consolar" de manera activa ni forzada. El objetivo es que el paciente entienda sus hallazgos anatómicos concretos, no disminuir su percepción del reporte restándole seriedad.
-- Vocabulario sencillo pero formal: Utiliza términos accesibles y de fácil lectura pero evita a toda costa expresiones que resulten innecesariamente coloquiales, infantiles o informales. 
-- Honestidad y veracidad científica: Transmite la realidad de las descripciones médicas de manera directa, clara y sobria.
-- Omisión de Recomendaciones: NO se debe incluir ningún tipo de recomendación práctica de salud, ejercicio, hábitos, postura o bienestar que sugiera al paciente qué debe hacer. Concéntrate EXCLUSIVAMENTE en la explicación objetiva de los hallazgos ya descritos.
+PAUTAS OBLIGATORIAS:
+- Tono neutral, profesional y claro. Sin paternalismo ni consuelos forzados.
+- Vocabulario accesible pero formal.
+- PROHIBIDO incluir recomendaciones, cuidados, "qué hacer", hábitos, ejercicios, señales de alarma, plan de seguimiento o preguntas sugeridas para la consulta. Eso lo decide el médico tratante.
+- Concéntrate solo en: qué estudio se realizó y qué significan los hallazgos descritos.
 
-Devuelve un objeto JSON con las siguientes propiedades:
-1. "summary": Una descripción objetiva de 2 a 3 párrafos explicando qué tipo de estudio se le realizó, qué estructuras principales se detallan o resultan normales, y una síntesis descriptiva y neutral de los hallazgos principales identificados. NO debe contener recomendaciones, sugerencias de preguntas, pautas de conducta ni consejos de ningún tipo.
-2. "keyFindings": Una lista de los hallazgos identificados, donde para cada uno se entrega:
-   - "title": Nombre claro o región anatómica afectada en lenguaje accesible (ej: "Articulación del Hombro" o "Zonas inferiores del Pulmón").
-   - "originalTerm": El término radiológico técnico original tal cual aparece en el informe (ej: "Opacidad basal", "Osteonecrosis", o "Rotura parcial").
-   - "simplifiedExplanation": Una explicación clara, objetiva e intuitiva de qué significa físicamente a nivel anatómico, expresada de manera comprensible pero formal (sin adjetivos tranquilizadores redundantes, sugerencias ni recomendaciones).
-   - "analogy": Una analogía física, estructural u operativa de la vida diaria estrictamente con fines ilustrativos y didácticos (por ejemplo: filtros, conductos, elasticidad de cables, desgaste de componentes) que facilite la comprensión mecánica sin caer en términos infantiles o excesivamente coloquiales.
-   - "reassurance": Contexto clínico objetivo y neutral sobre el hallazgo. Describe la perspectiva médica estándar para este hallazgo (por ejemplo, si se asocia comúnmente con cambios crónicos, hallazgos incidentales típicos o si requiere una revisión cronológica simple, redactado de forma neutral y absolutamente libre de indicaciones, recomendaciones terapéuticas, pautas o preguntas sugeridas).
+Devuelve JSON con:
+1. "studyOverview": 3–5 oraciones sobre qué estudio se le realizó y qué permite evaluar (sin decir qué debe hacer después).
+2. "summary": 2–3 párrafos con la síntesis objetiva de lo encontrado (y lo descrito como normal, si aplica). Sin recomendaciones.
+3. "keyFindings": lista de hallazgos, cada uno con:
+   - "title": nombre accesible de la región o hallazgo
+   - "originalTerm": término técnico del informe
+   - "simplifiedExplanation": qué significa anatómicamente, en lenguaje claro
+   - "analogy": analogía estructural breve solo didáctica (opcionalmente "")
+   - "clinicalContext": contexto descriptivo neutro del hallazgo (sin indicaciones terapéuticas ni "debe/debería")
 `;
 
-    const systemInstruction = "Eres un especialista en comunicación médica institucional, traducción clínica orientada al paciente y radiodiagnóstico. Tu meta es transcribir informes complejos en términos comprensibles pero formales, manteniendo un tono completamente neutro, científico, maduro y objetivo. Evitas por completo el paternalismo, frases de alivio auto-complacientes, consuelos, rodeos coloquiales innecesarios, preguntas sugeridas o recomendaciones de salud o bienestar de cualquier índole. REQUISITO CRÍTICO: El JSON de salida solo debe contener la explicación descriptiva y científica simplificada de los hallazgos, libre de cualquier tipo de recomendación o sugerencia de preguntas para la consulta.";
+    const systemInstruction = "Eres especialista en comunicación radiológica orientada al paciente. Explicas hallazgos con claridad científica y tono neutro. Nunca das recomendaciones, cuidados, preguntas sugeridas ni pasos a seguir: eso corresponde al médico tratante. El JSON solo contiene explicación del estudio y de los hallazgos.";
 
     const response = await ai.models.generateContent({
       model: selectedModel,
@@ -3422,6 +3418,7 @@ Devuelve un objeto JSON con las siguientes propiedades:
         responseSchema: {
           type: Type.OBJECT,
           properties: {
+            studyOverview: { type: Type.STRING },
             summary: { type: Type.STRING },
             keyFindings: {
               type: Type.ARRAY,
@@ -3432,13 +3429,13 @@ Devuelve un objeto JSON con las siguientes propiedades:
                   originalTerm: { type: Type.STRING },
                   simplifiedExplanation: { type: Type.STRING },
                   analogy: { type: Type.STRING },
-                  reassurance: { type: Type.STRING }
+                  clinicalContext: { type: Type.STRING }
                 },
-                required: ["title", "originalTerm", "simplifiedExplanation", "analogy", "reassurance"]
+                required: ["title", "originalTerm", "simplifiedExplanation"]
               }
             }
           },
-          required: ["summary", "keyFindings"]
+          required: ["studyOverview", "summary", "keyFindings"]
         }
       }
     });
@@ -3456,9 +3453,24 @@ Devuelve un objeto JSON con las siguientes propiedades:
     }
 
     const parsedJson = JSON.parse(jsonText);
+    // Normalize + hard-strip recommendation fields if the model still emits them
+    const findings = Array.isArray(parsedJson.keyFindings)
+      ? parsedJson.keyFindings.map((f: any) => ({
+          title: f?.title || "",
+          originalTerm: f?.originalTerm || "",
+          simplifiedExplanation: f?.simplifiedExplanation || "",
+          analogy: f?.analogy || "",
+          clinicalContext: f?.clinicalContext || f?.reassurance || "",
+          reassurance: f?.clinicalContext || f?.reassurance || "",
+        }))
+      : [];
     res.json({
       success: true,
-      data: parsedJson
+      data: {
+        studyOverview: parsedJson.studyOverview || "",
+        summary: parsedJson.summary || "",
+        keyFindings: findings,
+      }
     });
   } catch (error: any) {
     console.error("Error en /api/generate-patient-summary:", error);
