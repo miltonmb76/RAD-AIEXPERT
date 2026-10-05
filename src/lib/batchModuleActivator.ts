@@ -283,7 +283,31 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
           });
           const data = await response.json();
           if (data.success && data.data) {
-            setPatientSummary(data.data);
+            const raw = data.data;
+            const findings = Array.isArray(raw.keyFindings)
+              ? raw.keyFindings.map((f: any) => ({
+                  title: f?.title || "",
+                  originalTerm: f?.originalTerm || "",
+                  simplifiedExplanation: f?.simplifiedExplanation || "",
+                  analogy: f?.analogy || "",
+                  clinicalContext: f?.clinicalContext || f?.reassurance || "",
+                  reassurance: f?.clinicalContext || f?.reassurance || "",
+                }))
+              : [];
+            const glossary = Array.isArray(raw.glossary)
+              ? raw.glossary
+                  .map((g: any) => ({
+                    term: String(g?.term || "").trim(),
+                    plainDefinition: String(g?.plainDefinition || g?.definition || "").trim(),
+                  }))
+                  .filter((g: any) => g.term && g.plainDefinition)
+              : [];
+            setPatientSummary({
+              studyOverview: raw.studyOverview || "",
+              summary: raw.summary || "",
+              keyFindings: findings,
+              glossary,
+            });
           } else {
             setPatientSummaryError(data.error || "Error al generar el resumen del paciente.");
           }
