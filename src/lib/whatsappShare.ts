@@ -65,6 +65,16 @@ export function buildWhatsAppTextPreview(input: WhatsAppPreviewInput): string {
       });
       text += `\n`;
     }
+
+    if (Array.isArray(input.patientSummary.glossary) && input.patientSummary.glossary.length > 0) {
+      text += `*Glosario de términos:*\n`;
+      input.patientSummary.glossary.forEach((entry: any, idx: number) => {
+        const term = entry.term || "";
+        const def = entry.plainDefinition || entry.definition || "";
+        text += `${idx + 1}. *${term}:* ${def}\n`;
+      });
+      text += `\n`;
+    }
   }
 
   text += `*${BOX_LINE}*\n`;

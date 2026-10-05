@@ -54,6 +54,9 @@ export async function downloadPatientSummaryPdf(
   const keyFindings = Array.isArray(patientSummary.keyFindings)
     ? patientSummary.keyFindings
     : [];
+  const glossary = Array.isArray(patientSummary.glossary)
+    ? patientSummary.glossary.filter((g: any) => String(g?.term || "").trim() && String(g?.plainDefinition || g?.definition || "").trim())
+    : [];
 
   const displayClinicName = clinicName && clinicName.trim().toUpperCase() !== "CLÍNICA PRIVADA" && clinicName.trim().toUpperCase() !== "CLINICA PRIVADA" ? clinicName.toUpperCase() : "";
 
@@ -170,6 +173,19 @@ export async function downloadPatientSummaryPdf(
                              (splitAnalogy.length * 4.5) +
                              (splitContext.length * 4.5) + 20;
         estimatedHeight += neededHeight + 2;
+      });
+      estimatedHeight += 4;
+    }
+
+    // 5b. Glossary
+    if (glossary.length > 0) {
+      estimatedHeight += 22;
+      glossary.forEach((entry: any) => {
+        const term = stripEmojis(entry.term || "");
+        const definition = stripEmojis(entry.plainDefinition || entry.definition || "");
+        const splitTerm = tempDoc.splitTextToSize(term, contentWidth - 10);
+        const splitDef = tempDoc.splitTextToSize(definition, contentWidth - 10);
+        estimatedHeight += (splitTerm.length * 5) + (splitDef.length * 4.8) + 8;
       });
       estimatedHeight += 4;
     }
@@ -662,6 +678,61 @@ export async function downloadPatientSummaryPdf(
         }
 
         yCoord += neededHeight + 2 * factor;
+      });
+      yCoord += 4 * factor;
+    }
+
+    // Glossary section
+    if (glossary.length > 0) {
+      const first = glossary[0];
+      const term0 = stripEmojis(first.term || "");
+      const def0 = stripEmojis(first.plainDefinition || first.definition || "");
+      const splitTerm0 = doc.splitTextToSize(term0, contentWidth - 10);
+      const splitDef0 = doc.splitTextToSize(def0, contentWidth - 10);
+      const firstH = ((splitTerm0.length * 5) + (splitDef0.length * 4.8) + 8) * factor;
+      checkPageBreak(18 * factor + firstH);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(15, 23, 42);
+      doc.text("GLOSARIO DE TÉRMINOS", marginX, yCoord);
+      yCoord += 5 * factor;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text("Palabras del informe formal, explicadas en lenguaje claro", marginX, yCoord);
+      yCoord += 7 * factor;
+
+      glossary.forEach((entry: any) => {
+        const term = stripEmojis(entry.term || "");
+        const definition = stripEmojis(entry.plainDefinition || entry.definition || "");
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(10);
+        const splitTerm = doc.splitTextToSize(term, contentWidth - 10);
+        doc.setFont("times", "normal");
+        doc.setFontSize(10);
+        const splitDef = doc.splitTextToSize(definition, contentWidth - 10);
+        const needed = ((splitTerm.length * 5) + (splitDef.length * 4.8) + 8) * factor;
+        checkPageBreak(needed);
+        doc.setFillColor(248, 250, 252);
+        doc.setDrawColor(226, 232, 240);
+        doc.setLineWidth(0.3);
+        doc.roundedRect(marginX, yCoord, contentWidth, needed - 2 * factor, 1.2, 1.2, "FD");
+        let iy = yCoord + 5 * factor;
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(10);
+        doc.setTextColor(15, 23, 42);
+        splitTerm.forEach((line: string) => {
+          doc.text(line, marginX + 4, iy);
+          iy += 5 * factor;
+        });
+        doc.setFont("times", "normal");
+        doc.setFontSize(10);
+        doc.setTextColor(51, 65, 85);
+        splitDef.forEach((line: string) => {
+          doc.text(line, marginX + 4, iy);
+          iy += 4.8 * factor;
+        });
+        yCoord += needed;
       });
       yCoord += 4 * factor;
     }

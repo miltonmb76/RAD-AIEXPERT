@@ -3839,10 +3839,19 @@ Ejemplo:
               reassurance: f?.clinicalContext || f?.reassurance || "",
             }))
           : [];
+        const glossary = Array.isArray(raw.glossary)
+          ? raw.glossary
+              .map((g: any) => ({
+                term: String(g?.term || "").trim(),
+                plainDefinition: String(g?.plainDefinition || g?.definition || "").trim(),
+              }))
+              .filter((g: any) => g.term && g.plainDefinition)
+          : [];
         setPatientSummary({
           studyOverview: raw.studyOverview || "",
           summary: raw.summary || "",
           keyFindings: findings,
+          glossary,
         });
       } else {
         setPatientSummaryError(data.error || "Error al generar el resumen del paciente.");
@@ -4212,6 +4221,13 @@ Ejemplo:
         <p style="margin: 0 0 8px 0; font-size: 12.5px; font-family: system-ui, sans-serif; color: #7c2d12; background-color: #fff7ed; padding: 10px; border-radius: 6px; border-left: 3px solid #f97316;">🔍 <strong>Analogía de comprensión:</strong> ${finding.analogy}</p>
         <p style="margin: 0; font-size: 12.5px; font-family: system-ui, sans-serif; color: #1e3a8a; font-weight: 600; background-color: #eff6ff; padding: 10px; border-radius: 6px; border-left: 3px solid #3b82f6;">🩺 <strong>Contexto descriptivo:</strong> ${finding.clinicalContext || finding.reassurance}</p>
       </div>
+`).join("");
+
+    const glossaryHtml = (Array.isArray(patientSummary.glossary) ? patientSummary.glossary : []).map((entry: any) => `
+      <div style="margin-bottom: 12px; padding: 12px 14px; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc;">
+        <p style="margin: 0 0 6px 0; font-size: 13px; font-weight: 700; color: #065f46; text-transform: uppercase; letter-spacing: 0.03em;">${entry.term || ""}</p>
+        <p style="margin: 0; font-size: 13px; color: #334155; line-height: 1.5;">${entry.plainDefinition || entry.definition || ""}</p>
+      </div>
     `).join("");
 
     printWindow.document.write(`
@@ -4326,6 +4342,8 @@ Ejemplo:
           
           <div class="section-title">Desglose Detallado de Hallazgos Clínicos Explicados</div>
           ${findingsHtml}
+
+          ${glossaryHtml ? `<div class="section-title">Glosario de términos</div><p style="font-size: 12px; color: #64748b; margin-top: -8px; margin-bottom: 14px;">Palabras del informe formal, explicadas en lenguaje claro.</p>${glossaryHtml}` : ""}
           
           <div class="footer">
             <strong>IMPORTANTE:</strong> Esta explicación complementa —pero nunca sustituye— el informe radiológico formal. Presente el informe formal en su consulta médica.
@@ -5713,7 +5731,7 @@ Ejemplo:
               {/* Glossary/Findings */}
               <div className="space-y-4">
                 <h4 className="text-[11px] font-black tracking-wider uppercase text-slate-300 border-b border-slate-850 pb-1.5 flex items-center gap-1.5 font-mono">
-                  <span>🔍</span> GLOSARIO DE HALLAZGOS EXPLICADOS
+                  <span>🔍</span> SUS HALLAZGOS, EXPLICADOS
                 </h4>
                 <div className="grid grid-cols-1 gap-4">
                   {patientSummary.keyFindings?.map((finding: any, idx: number) => (
@@ -5743,6 +5761,29 @@ Ejemplo:
                   ))}
                 </div>
               </div>
+
+              {Array.isArray(patientSummary.glossary) && patientSummary.glossary.length > 0 && (
+                <div className="space-y-3">
+                  <h4 className="text-[11px] font-black tracking-wider uppercase text-slate-300 border-b border-slate-850 pb-1.5 flex items-center gap-1.5 font-mono">
+                    GLOSARIO DE TÉRMINOS
+                  </h4>
+                  <p className="text-[10px] text-slate-500 leading-relaxed">
+                    Palabras del informe formal, explicadas en lenguaje claro.
+                  </p>
+                  <div className="grid grid-cols-1 gap-2.5">
+                    {patientSummary.glossary.map((entry: any, idx: number) => (
+                      <div key={idx} className="p-3.5 border border-slate-850 rounded-xl bg-slate-900/40 space-y-1.5">
+                        <p className="text-xs font-black text-emerald-300 uppercase tracking-wide">
+                          {entry.term}
+                        </p>
+                        <p className="text-xs text-slate-300 leading-relaxed font-sans">
+                          {entry.plainDefinition || entry.definition}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -11811,6 +11852,24 @@ Ejemplo:
                                     );
                                   })}
                                 </div>
+
+                              {Array.isArray(patientSummary.glossary) && patientSummary.glossary.length > 0 && (
+                                <div className="space-y-3 text-left pt-2">
+                                  <div className="flex items-center gap-1.5 border-b border-orange-950/20 pb-2">
+                                    <h5 className="text-[10px] font-black text-slate-300 uppercase tracking-widest font-mono">
+                                      Glosario de términos (lenguaje claro)
+                                    </h5>
+                                  </div>
+                                  <div className="grid grid-cols-1 gap-2">
+                                    {patientSummary.glossary.map((entry: any, gIdx: number) => (
+                                      <div key={gIdx} className="p-3 border border-slate-850 rounded-xl bg-slate-950/50 space-y-1">
+                                        <p className="text-xs font-black text-emerald-300 uppercase tracking-wide">{entry.term}</p>
+                                        <p className="text-xs text-slate-300 leading-relaxed font-sans">{entry.plainDefinition || entry.definition}</p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                               </div>
                             </div>
                           )}
@@ -14340,7 +14399,7 @@ Ejemplo:
 
                     <div className="space-y-3">
                       <h5 className="text-[10.5px] font-black tracking-wider uppercase text-slate-800 border-b border-gray-200 pb-1 flex items-center gap-1">
-                        <span>🔍</span> GLOSARIO DE HALLAZGOS EXPLICADOS
+                        <span>🔍</span> SUS HALLAZGOS, EXPLICADOS
                       </h5>
                       <div className="space-y-3.5 text-left bg-transparent">
                         {patientSummary.keyFindings?.map((finding: any, idx: number) => (
@@ -14364,6 +14423,26 @@ Ejemplo:
                         ))}
                       </div>
                     </div>
+
+
+                    {Array.isArray(patientSummary.glossary) && patientSummary.glossary.length > 0 && (
+                      <div className="space-y-2 text-left">
+                        <h5 className="text-[10.5px] font-black tracking-wider uppercase text-slate-800 border-b border-gray-200 pb-1">
+                          GLOSARIO DE TÉRMINOS
+                        </h5>
+                        <p className="text-[10px] text-gray-500 leading-normal text-left">
+                          Palabras del informe formal, explicadas en lenguaje claro.
+                        </p>
+                        <div className="space-y-2">
+                          {patientSummary.glossary.map((entry: any, idx: number) => (
+                            <div key={idx} className="p-3 border border-gray-200 rounded-xl bg-slate-50/70 space-y-1 text-left">
+                              <p className="text-xs font-black text-emerald-800 uppercase">{entry.term}</p>
+                              <p className="text-xs text-gray-700 leading-relaxed font-sans">{entry.plainDefinition || entry.definition}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     {/* Firma de Validación Médica Integrada a la explicación */}
                     {(doctorName || customSignatureUrl) && (

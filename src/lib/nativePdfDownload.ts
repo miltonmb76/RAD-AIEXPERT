@@ -4803,6 +4803,51 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
           yCoord += 4 * factor;
         }
 
+        const annexGlossary = Array.isArray(patientSummary.glossary)
+          ? patientSummary.glossary.filter((g: any) => String(g?.term || "").trim() && String(g?.plainDefinition || g?.definition || "").trim())
+          : [];
+        if (annexGlossary.length > 0) {
+          const first = annexGlossary[0];
+          const term0 = stripEmojis(first.term || "");
+          const def0 = stripEmojis(first.plainDefinition || first.definition || "");
+          const splitTerm0 = doc.splitTextToSize(term0, contentWidth - 10);
+          const splitDef0 = doc.splitTextToSize(def0, contentWidth - 10);
+          checkPageBreak(18 * factor + ((splitTerm0.length * 5) + (splitDef0.length * 4.8) + 8) * factor);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(11);
+          doc.setTextColor(15, 23, 42);
+          doc.text("GLOSARIO DE TÉRMINOS:", marginX, yCoord);
+          yCoord += 7 * factor;
+          annexGlossary.forEach((entry: any) => {
+            const term = stripEmojis(entry.term || "");
+            const definition = stripEmojis(entry.plainDefinition || entry.definition || "");
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(10);
+            const splitTerm = doc.splitTextToSize(term, contentWidth - 10);
+            doc.setFont("times", "normal");
+            doc.setFontSize(10);
+            const splitDef = doc.splitTextToSize(definition, contentWidth - 10);
+            const needed = ((splitTerm.length * 5) + (splitDef.length * 4.8) + 8) * factor;
+            checkPageBreak(needed);
+            let iy = yCoord;
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(10);
+            doc.setTextColor(15, 23, 42);
+            splitTerm.forEach((line: string) => {
+              doc.text(line, marginX + 2, iy);
+              iy += 5 * factor;
+            });
+            doc.setFont("times", "normal");
+            doc.setFontSize(10);
+            doc.setTextColor(51, 65, 85);
+            splitDef.forEach((line: string) => {
+              doc.text(line, marginX + 2, iy);
+              iy += 4.8 * factor;
+            });
+            yCoord = iy + 3 * factor;
+          });
+        }
+
       }
 
       // --- 10. INFOGRAFÍA DEL PACIENTE (SI CORRESPONDE) ---

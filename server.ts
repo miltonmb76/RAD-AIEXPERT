@@ -3404,9 +3404,12 @@ Devuelve JSON con:
    - "simplifiedExplanation": qué significa anatómicamente, en lenguaje claro
    - "analogy": analogía estructural breve solo didáctica (opcionalmente "")
    - "clinicalContext": contexto descriptivo neutro del hallazgo (sin indicaciones terapéuticas ni "debe/debería")
+4. "glossary": lista de 4 a 10 términos técnicos del informe que el paciente suele no entender, cada uno con:
+   - "term": término tal como aparece o su forma habitual
+   - "plainDefinition": definición breve en lenguaje claro (1–3 oraciones). Sin recomendaciones ni "qué hacer".
 `;
 
-    const systemInstruction = "Eres especialista en comunicación radiológica orientada al paciente. Explicas hallazgos con claridad científica y tono neutro. Nunca das recomendaciones, cuidados, preguntas sugeridas ni pasos a seguir: eso corresponde al médico tratante. El JSON solo contiene explicación del estudio y de los hallazgos.";
+    const systemInstruction = "Eres especialista en comunicación radiológica orientada al paciente. Explicas hallazgos y términos con claridad científica y tono neutro. Nunca das recomendaciones, cuidados, preguntas sugeridas ni pasos a seguir: eso corresponde al médico tratante. El JSON solo contiene explicación del estudio, de los hallazgos y un glosario de términos.";
 
     const response = await ai.models.generateContent({
       model: selectedModel,
@@ -3433,9 +3436,20 @@ Devuelve JSON con:
                 },
                 required: ["title", "originalTerm", "simplifiedExplanation"]
               }
+            },
+            glossary: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  term: { type: Type.STRING },
+                  plainDefinition: { type: Type.STRING }
+                },
+                required: ["term", "plainDefinition"]
+              }
             }
           },
-          required: ["studyOverview", "summary", "keyFindings"]
+          required: ["studyOverview", "summary", "keyFindings", "glossary"]
         }
       }
     });
@@ -3464,12 +3478,21 @@ Devuelve JSON con:
           reassurance: f?.clinicalContext || f?.reassurance || "",
         }))
       : [];
+    const glossary = Array.isArray(parsedJson.glossary)
+      ? parsedJson.glossary
+          .map((g: any) => ({
+            term: String(g?.term || "").trim(),
+            plainDefinition: String(g?.plainDefinition || g?.definition || "").trim(),
+          }))
+          .filter((g: any) => g.term && g.plainDefinition)
+      : [];
     res.json({
       success: true,
       data: {
         studyOverview: parsedJson.studyOverview || "",
         summary: parsedJson.summary || "",
         keyFindings: findings,
+        glossary,
       }
     });
   } catch (error: any) {
