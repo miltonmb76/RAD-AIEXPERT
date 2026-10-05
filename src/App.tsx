@@ -229,6 +229,8 @@ export default function App() {
   const [infographicUrl, setInfographicUrl] = useState<string | null>(null);
   const [infographicError, setInfographicError] = useState<string | null>(null);
   const [attachInfographicToOfficialReport, setAttachInfographicToOfficialReport] = useState<boolean>(false);
+  /** Opt-in: include generated infographic in the patient explanation PDF */
+  const [attachInfographicToPatientSummary, setAttachInfographicToPatientSummary] = useState<boolean>(false);
   // Local storage customizable instructions
   const [systemInstruction, setSystemInstruction] = useState<string>(() => {
     if (typeof window === "undefined") return GENERAL_SYSTEM_INSTRUCTION;
@@ -4393,6 +4395,8 @@ Ejemplo:
     setIsGeneratingInfographic(true);
     setInfographicError(null);
     setInfographicUrl(null);
+    setAttachInfographicToOfficialReport(false);
+    setAttachInfographicToPatientSummary(false);
     try {
       const response = await fetch("/api/generate-infographic", {
         method: "POST",
@@ -5096,7 +5100,7 @@ Ejemplo:
         studyType,
         selectedLogo,
         formatDateToDMY,
-        infographicUrl,
+        infographicUrl: attachInfographicToPatientSummary && infographicUrl ? infographicUrl : undefined,
       },
       openInNewTab,
       shareViaWebShare,
@@ -5198,7 +5202,9 @@ Ejemplo:
     customSignatureUrl,
     selectedLogo,
     patientName,
-    pdfLayoutType
+    pdfLayoutType,
+    infographicUrl,
+    attachInfographicToPatientSummary
   ]);
 
   const renderPrintReportBody = (reportText: string) =>
@@ -7646,30 +7652,59 @@ Ejemplo:
                       <div className={`flex-1 p-6 overflow-y-auto leading-relaxed text-sm select-text text-slate-300 relative scrollbar-thin ${isSplitPdfActive && generatedReport ? "md:border-r md:border-slate-800" : ""}`}>
                         {infographicUrl && (
                           <div className="mb-6 p-4 bg-slate-800 rounded-xl border border-pink-600/30">
-                             <div className="flex justify-between items-center mb-2 flex-wrap gap-2">
-                               <h4 className="text-sm font-bold text-pink-300">Infografía Generada:</h4>
-                               <button
-                                 type="button"
-                                 onClick={() => setAttachInfographicToOfficialReport(prev => !prev)}
-                                 className={`text-[9px] font-black px-3 py-1.5 rounded-xl uppercase tracking-wider font-mono transition-all flex items-center gap-1.5 cursor-pointer border ${
-                                   attachInfographicToOfficialReport
-                                     ? "bg-emerald-950/80 border-emerald-500/50 text-emerald-350 shadow-[0_2px_8px_rgba(16,185,129,0.2)]"
-                                     : "bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-100"
-                                 }`}
-                                 title={attachInfographicToOfficialReport ? "La infografía se incluirá al final del reporte original como un anexo" : "Adjuntar esta infografía como un anexo al reporte original"}
-                               >
-                                 {attachInfographicToOfficialReport ? (
-                                   <>
-                                     <Check className="h-3 w-3 text-emerald-400" />
-                                     Adjunto a reporte original
-                                   </>
-                                 ) : (
-                                   <>
-                                     <Plus className="h-3 w-3 text-slate-400" />
-                                     Adjuntar a reporte original
-                                   </>
-                                 )}
-                               </button>
+                             <div className="flex justify-between items-start mb-2 flex-wrap gap-2">
+                               <div className="min-w-0">
+                                 <h4 className="text-sm font-bold text-pink-300">Infografía Generada:</h4>
+                                 <p className="text-[9px] text-slate-500 mt-0.5 leading-relaxed">
+                                   Elija si desea incluirla. Si no le gusta el resultado, déjela sin adjuntar.
+                                 </p>
+                               </div>
+                               <div className="flex flex-wrap items-center justify-end gap-1.5">
+                                 <button
+                                   type="button"
+                                   onClick={() => setAttachInfographicToPatientSummary(prev => !prev)}
+                                   className={`text-[9px] font-black px-3 py-1.5 rounded-xl uppercase tracking-wider font-mono transition-all flex items-center gap-1.5 cursor-pointer border ${
+                                     attachInfographicToPatientSummary
+                                       ? "bg-orange-950/80 border-orange-500/50 text-orange-300 shadow-[0_2px_8px_rgba(249,115,22,0.2)]"
+                                       : "bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-100"
+                                   }`}
+                                   title={attachInfographicToPatientSummary ? "La infografía se incluirá en el PDF de explicación al paciente" : "Incluir esta infografía en el documento de explicación al paciente"}
+                                 >
+                                   {attachInfographicToPatientSummary ? (
+                                     <>
+                                       <Check className="h-3 w-3 text-orange-400" />
+                                       En explicación paciente
+                                     </>
+                                   ) : (
+                                     <>
+                                       <Plus className="h-3 w-3 text-slate-400" />
+                                       Incluir en explicación
+                                     </>
+                                   )}
+                                 </button>
+                                 <button
+                                   type="button"
+                                   onClick={() => setAttachInfographicToOfficialReport(prev => !prev)}
+                                   className={`text-[9px] font-black px-3 py-1.5 rounded-xl uppercase tracking-wider font-mono transition-all flex items-center gap-1.5 cursor-pointer border ${
+                                     attachInfographicToOfficialReport
+                                       ? "bg-emerald-950/80 border-emerald-500/50 text-emerald-350 shadow-[0_2px_8px_rgba(16,185,129,0.2)]"
+                                       : "bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-100"
+                                   }`}
+                                   title={attachInfographicToOfficialReport ? "La infografía se incluirá al final del reporte original como un anexo" : "Adjuntar esta infografía como un anexo al reporte original"}
+                                 >
+                                   {attachInfographicToOfficialReport ? (
+                                     <>
+                                       <Check className="h-3 w-3 text-emerald-400" />
+                                       Adjunto a reporte original
+                                     </>
+                                   ) : (
+                                     <>
+                                       <Plus className="h-3 w-3 text-slate-400" />
+                                       Adjuntar a reporte original
+                                     </>
+                                   )}
+                                 </button>
+                               </div>
                              </div>
                              <img src={infographicUrl} alt="Infografía Paciente" className="w-full rounded-lg" referrerPolicy="no-referrer" />
                              <div className="mt-3 flex justify-end gap-2">
