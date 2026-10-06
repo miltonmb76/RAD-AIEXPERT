@@ -14782,6 +14782,30 @@ Ejemplo:
                     </div>
                   </button>
                 </div>
+
+                <button
+                  type="button"
+                  disabled={!patientSummary}
+                  onClick={() => {
+                    if (!patientSummary) return;
+                    guardReportPdfExport(async () => {
+                      await handleDownloadNativePDF(false);
+                      await handleDownloadPatientSummaryPDF(false);
+                    });
+                  }}
+                  className={`w-full p-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 select-none ${
+                    patientSummary
+                      ? "bg-amber-950/40 hover:bg-amber-950/60 border border-amber-500/40 text-amber-100 cursor-pointer"
+                      : "bg-slate-950/20 border-slate-900 text-slate-500 cursor-not-allowed"
+                  }`}
+                  title={patientSummary ? "Descargar informe formal y explicación del paciente en un solo paso" : "Primero genera la explicación para el paciente"}
+                >
+                  <Download className="h-4 w-4 text-amber-400" />
+                  <div className="text-left">
+                    <span className="text-[10px] font-black uppercase tracking-wider block">Descargar ambos PDFs</span>
+                    <span className="text-[8.5px] text-slate-400 font-mono leading-none block uppercase">Formal + explicación paciente</span>
+                  </div>
+                </button>
               </div>
 
               {/* PASO 3: RESPALDAR EN GOOGLE DRIVE */}
