@@ -134,6 +134,7 @@ import {
 import { initAuth, googleSignIn, logout as googleLogout, anonymousSignIn, emailSignIn, emailSignUp, getFirebaseConfig } from "./firebaseAuth";
 import { CloudStudy, saveStudyToCloud, getStudiesFromCloud, deleteStudyFromCloud, Worklist, WorklistPatient, saveWorklistToCloud, getWorklistFromCloud, getSingleStudyFromCloud, testFirebaseConfigConnection, saveUserSettingsToCloud, getUserSettingsFromCloud } from "./firebaseDb";
 import { idbSaveWorklist, idbGetWorklist, idbClearWorklist, idbSaveStudy, idbGetAllStudies, idbDeleteStudy, idbClearAllStudies, idbSaveHistory, idbGetHistory, idbSaveUserSettings, idbGetUserSettings, idbSaveBranding, idbGetBranding, getActiveWorklistId } from "./localDb";
+import { markStudiesDeleted, filterOutDeletedStudies } from "./lib/deletedStudyTombstones";
 import { Mail, LogOut, Clock, Calendar, ListTodo, UserCheck, ImagePlus, Wifi, HelpCircle, Info, Laptop, Network, ChevronDown, Link } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
@@ -5549,8 +5550,9 @@ Ejemplo:
     }
   };
 
-  // Delete individual historical report (+ matching local study copy)
+  // Delete individual historical report (+ matching local/cloud study copies)
   const handleDeleteReport = async (id: string) => {
+    markStudiesDeleted([id]);
     const updated = savedReports.filter(r => r.id !== id);
     setSavedReports(updated);
     localStorage.setItem("radiology_reports_history", JSON.stringify(updated));
@@ -5563,20 +5565,46 @@ Ejemplo:
         localStorage.setItem("rad_local_studies", JSON.stringify(studiesList));
       }
       localStorage.removeItem(`fallback_single_study_${id}`);
+      try {
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith("fallback_studies_")) {
+            const raw = localStorage.getItem(key);
+            if (!raw) continue;
+            const list = (JSON.parse(raw) as CloudStudy[]).filter((s) => s.id !== id);
+            localStorage.setItem(key, JSON.stringify(list));
+          }
+        }
+      } catch (_) {}
       setCloudStudies((prev) => prev.filter((s) => s.id !== id));
+      if (gmailUser?.uid) {
+        try {
+          await deleteStudyFromCloud(id);
+        } catch (e) {
+          console.warn("No se pudo eliminar la copia en la nube (quedó bloqueada localmente):", id, e);
+        }
+      }
     } catch (e) {
       console.warn("No se pudo eliminar la copia local del estudio:", e);
     }
   };
 
   const handleClearHistory = async () => {
-    if (!confirm("Â¿Vaciar todo el historial local de reportes y estudios guardados en este navegador? (No afectarÃ¡ el informe que tengas abierto ahora)")) {
+    const loggedIn = Boolean(gmailUser?.uid);
+    if (
+      !confirm(
+        loggedIn
+          ? "¿Vaciar TODO el historial de reportes y estudios (local y nube)? Si solo se borra en este navegador, al reiniciar pueden volver a aparecer desde la nube."
+          : "¿Vaciar todo el historial local de reportes y estudios guardados en este navegador? (No afectará el informe que tengas abierto ahora)"
+      )
+    ) {
       return;
     }
 
-    // Collect IDs before wipe so we can optionally remove cloud copies
+    // Collect IDs before wipe so we can remove cloud copies and tombstone them
     const ids = new Set<string>();
     savedReports.forEach((r) => ids.add(r.id));
+    cloudStudies.forEach((s) => ids.add(s.id));
     try {
       const idbStudies = await idbGetAllStudies();
       idbStudies.forEach((s) => ids.add(s.id));
@@ -5588,6 +5616,8 @@ Ejemplo:
       }
     } catch (_) {}
 
+    markStudiesDeleted(ids);
+
     setSavedReports([]);
     setCloudStudies([]);
     localStorage.removeItem("radiology_reports_history");
@@ -5596,7 +5626,12 @@ Ejemplo:
       const keysToRemove: string[] = [];
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key && key.startsWith("fallback_single_study_")) keysToRemove.push(key);
+        if (
+          key &&
+          (key.startsWith("fallback_single_study_") || key.startsWith("fallback_studies_"))
+        ) {
+          keysToRemove.push(key);
+        }
       }
       keysToRemove.forEach((k) => localStorage.removeItem(k));
     } catch (_) {}
@@ -5604,18 +5639,29 @@ Ejemplo:
     await idbSaveHistory([]);
     await idbClearAllStudies();
 
-    if (gmailUser?.uid && ids.size > 0) {
-      const alsoCloud = confirm(
-        `Se vaciÃ³ el historial local (${ids.size} estudio(s)). Â¿Eliminar tambiÃ©n las copias sincronizadas en la nube para que no vuelvan a cargarse al reiniciar?`
-      );
-      if (alsoCloud) {
-        for (const id of ids) {
-          try {
-            await deleteStudyFromCloud(id);
-          } catch (e) {
-            console.warn("No se pudo eliminar estudio de la nube:", id, e);
+    if (loggedIn && ids.size > 0) {
+      for (const id of ids) {
+        try {
+          await deleteStudyFromCloud(id);
+        } catch (e) {
+          console.warn("No se pudo eliminar estudio de la nube:", id, e);
+        }
+      }
+      // Also purge any remaining remote studies for this user (IDs we might not have known locally)
+      try {
+        const remote = await getStudiesFromCloud(gmailUser!.uid);
+        if (remote.length > 0) {
+          markStudiesDeleted(remote.map((s) => s.id));
+          for (const study of remote) {
+            try {
+              await deleteStudyFromCloud(study.id);
+            } catch (e) {
+              console.warn("No se pudo eliminar estudio remoto restante:", study.id, e);
+            }
           }
         }
+      } catch (e) {
+        console.warn("No se pudo listar estudios remotos al vaciar historial:", e);
       }
     }
   };
@@ -5779,8 +5825,11 @@ Ejemplo:
             } catch (_) {}
           }
         }
+        reports = filterOutDeletedStudies(reports);
         if (!cancelled && reports.length > 0) {
           setSavedReports(reports.slice(0, 50));
+        } else if (!cancelled) {
+          setSavedReports([]);
         }
       } catch (e) {
         console.warn("No se pudo hidratar el historial local:", e);
