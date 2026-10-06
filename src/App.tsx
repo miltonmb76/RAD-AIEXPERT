@@ -2737,7 +2737,59 @@ Ejemplo:
   };
 
   const resetGeneratorForm = () => {
+    if (
+      !confirm(
+        "¿Iniciar un estudio nuevo desde cero?\n\nSe borrará el paciente, el informe, las imágenes, la explicación, la infografía, los módulos 3D y el resto de datos de esta sesión. No se modifican la marca, el médico ni la configuración de la clínica."
+      )
+    ) {
+      return;
+    }
+
+    // --- Identidad de sesión / worklist activa ---
     setCurrentCloudStudyId("");
+    if (worklist?.patients?.length) {
+      const shouldDemote = worklist.patients.some(
+        (p) => p.status === "current" || p.id === selectedWorklistPatientId
+      );
+      if (shouldDemote) {
+        saveWorklist(
+          worklist.patients.map((p) =>
+            p.status === "current" || p.id === selectedWorklistPatientId
+              ? { ...p, status: "pending" as const }
+              : p
+          )
+        );
+      }
+    }
+    setSelectedWorklistPatientId(null);
+    setLoadedCloudPdfBase64("");
+    setViewingCloudStudy(null);
+    setBridgeCaptureMismatch(null);
+    setBridgePatientCount(0);
+    setDicomNotification(null);
+    setActiveTab("generator");
+
+    // --- Paciente (no tocar branding/médico/clínica) ---
+    setPatientName("");
+    setPatientAge("");
+    setPatientGender("");
+    setPatientId("");
+    setPatientEmail("");
+    try {
+      localStorage.removeItem("rad_patient_email");
+    } catch (_) {}
+    setPatientLogoUrl("");
+    setPatientLogoRightUrl("");
+    setShowPatientDetails(false);
+    {
+      const today = new Date();
+      const yyyy = today.getFullYear();
+      const mm = String(today.getMonth() + 1).padStart(2, "0");
+      const dd = String(today.getDate()).padStart(2, "0");
+      setReportDate(`${yyyy}-${mm}-${dd}`);
+    }
+
+    // --- Parámetros del estudio ---
     setModality("Radiografía");
     setSpecificStudy("Tórax");
     setCustomStudy("");
@@ -2752,15 +2804,45 @@ Ejemplo:
     setUploadedReportName(null);
     setUploadedReportMimeType("");
     setCustomPrompt("");
+    setSelectedPresetId("");
+
+    // --- Imagen principal / ZIP ---
     setSelectedFile(null);
     setBase64Image(null);
+    if (imagePreviewUrl && imagePreviewUrl.startsWith("blob:")) {
+      try {
+        URL.revokeObjectURL(imagePreviewUrl);
+      } catch (_) {}
+    }
+    setImagePreviewUrl(null);
+    setDragActive(false);
+    setZipFile(null);
+    setIsZipExtractorOpen(false);
+    setZipExtractedFileForAnalysis(null);
+    setExportedImage(null);
+    setExportedMimeType("");
+
+    // --- Adjuntos US / renders 3D de hallazgos ---
+    setAttachedImages([]);
+    setFindings3dRenders([]);
+    setUsImagesGridMode("auto");
+
+    // --- Informe generado y edición ---
+    setIsGenerating(false);
+    setGenerationSteps("");
     setGeneratedReport("");
+    setOriginalBaseReport("");
     setReportError(null);
     setReportHistory([]);
     setReportRedoHistory([]);
     setIsEditingReportManual(false);
     setEditedReportText("");
-    setSelectedPresetId("");
+    setShowVersionComparison(false);
+    setManualSeverityOverrides({});
+    setAiSeverityCache({});
+    setIsAnalyzingParagraphs(false);
+
+    // --- Evaluaciones / modificaciones / bibliografía / análisis ---
     setImageEvaluation("");
     setIsEvaluatingImage(false);
     setCurrentModInstruction("");
@@ -2774,14 +2856,143 @@ Ejemplo:
     setCaseAnalysisError(null);
     setBibliography("");
     setIsSearchingBibliography(false);
+    setIsSearchingMoreBibliography(false);
     setBibliographyError(null);
     setBibliographySources([]);
+
+    // --- Anotaciones en imagen ---
     setAnnotations([]);
     setIsDrawingBox(false);
     setDrawStartPercent(null);
     setTempBox(null);
     setPendingAnnotation(null);
     setPendingLabel("");
+
+    // --- Explicación al paciente / glosario / operativo / esquema / semiología ---
+    setPatientSummary(null);
+    setPatientSummaryError(null);
+    setIsGeneratingPatientSummary(false);
+    setIsPatientSummaryExpanded(false);
+    setExpandedFindings({});
+    setAttachSummaryToOfficialReport(false);
+    setIncludeManagementRecs({});
+    setDynamicGlossary(null);
+    setDynamicGlossaryError(null);
+    setIsGeneratingDynamicGlossary(false);
+    setGlossaryLitSearch({});
+    setOperationalSummaryText("");
+    setIsGeneratingOperationalSummary(false);
+    setSchematicSummary(null);
+    setSchematicSummaryError(null);
+    setIsGeneratingSchematicSummary(false);
+    setSchematicFormat("blocks");
+    setSemiologyData(null);
+    setSemiologyError(null);
+    setIsGeneratingSemiology(false);
+
+    // --- Infografía paciente ---
+    setInfographicUrl(null);
+    setInfographicError(null);
+    setIsGeneratingInfographic(false);
+    setAttachInfographicToOfficialReport(false);
+    setAttachInfographicToPatientSummary(false);
+    setInfographicCorrectionNotes("");
+
+    // --- Módulos clínicos auxiliares ---
+    setClinicalScorecardData(null);
+    setIncludeScorecardInReport(false);
+    setIsClinicalScorecardOpen(false);
+    setReasoningChainData(null);
+    setIncludeReasoningChainInReport(true);
+    setIsReasoningChainOpen(false);
+    setNegativityChecklistData(null);
+    setIncludeNegativityChecklistInReport(false);
+    setIsNegativityChecklistOpen(false);
+    setSecondReaderData(null);
+    setIsSecondReaderOpen(false);
+    setDifferentialTreeData(null);
+    setIncludeDifferentialTreeInReport(true);
+    setIsDifferentialTreeOpen(false);
+    setSemioticsConductMatrixData(null);
+    setIncludeSemioticsConductMatrixInReport(true);
+    setIsSemioticsConductMatrixOpen(false);
+    setFindingsInfographicData(null);
+    setIncludeFindingsInfographicInReport(true);
+    setIsFindingsInfographicOpen(false);
+    setAtlasDirectivesFromScorecard("");
+    setMeasurementGaugeData(null);
+    setIncludeMeasurementGaugesInReport(true);
+    setIncludeMeasurementNormalsInPdf(false);
+    setIsMeasurementsGaugeOpen(false);
+    setBiomechanicalRadarData(null);
+    setIncludeRadarInReport(true);
+    setIsBiomechanicalRadarOpen(false);
+    setIsAsistenteMedidasOpen(false);
+    setIsCreadorNotasOpen(false);
+    setIsCreadorCuadroSinopticoOpen(false);
+    setIsCreadorSinopsisFracturasOpen(false);
+
+    // --- Suites 3D / atlas / vascular / focal / plano US ---
+    setAtlas3dData(null);
+    setIncludeAtlas3dInReport(true);
+    setVascular3dData(null);
+    setIncludeVascular3dInReport(true);
+    setFocalLesion3dData(null);
+    setIncludeFocalLesion3dInReport(true);
+    setUsPlaneSimulatorData(null);
+    setIncludeUsPlaneSimulatorInReport(true);
+    setThyroid3dData(null);
+    setIncludeThyroid3dInReport(true);
+    setIsThyroid3dSuiteOpen(false);
+    setBreast3dData(null);
+    setIncludeBreast3dInReport(true);
+    setIsBreast3dSuiteOpen(false);
+    setShoulder3dData(null);
+    setIncludeShoulder3dInReport(true);
+    setIsShoulder3dSuiteOpen(false);
+    setKnee3dData(null);
+    setIncludeKnee3dInReport(true);
+    setIsKnee3dSuiteOpen(false);
+    setAnkle3dData(null);
+    setIncludeAnkle3dInReport(true);
+    setIsAnkle3dSuiteOpen(false);
+    setKidney3dData(null);
+    setIncludeKidney3dInReport(true);
+    setIsKidney3dSuiteOpen(false);
+    setAbdomen3dData(null);
+    setIncludeAbdomen3dInReport(true);
+    setIsAbdomen3dSuiteOpen(false);
+    setAbdominalWall3dData(null);
+    setIncludeAbdominalWall3dInReport(true);
+    setIsAbdominalWall3dSuiteOpen(false);
+    setScrotum3dData(null);
+    setIncludeScrotum3dInReport(true);
+    setIsScrotum3dSuiteOpen(false);
+    setMuscleTendon3dData(null);
+    setIncludeMuscleTendon3dInReport(true);
+    setIsMuscleTendon3dSuiteOpen(false);
+    setWrist3dData(null);
+    setIncludeWrist3dInReport(true);
+    setIsWrist3dSuiteOpen(false);
+
+    // --- Elastografía ---
+    setIncludeElastographyInReport(false);
+    setElastographyStiffness(5.2);
+    setElastographyCAP(230);
+    setElastographyFatFraction(6.2);
+    setElastographyImage3d(null);
+    setElastographyOriginalImage(null);
+    setElastographyEtiology("masld");
+    setIsElastographyQUSModuleOpen(false);
+
+    // --- Lote de módulos / modales de envío ---
+    setSelectedBatchModules({ ...DEFAULT_BATCH_MODULES });
+    setIsActivatingBatch(false);
+    setBatchSuccessMessage(null);
+    setShowPrintModal(false);
+    setShowWhatsAppModal(false);
+    setShowGmailModal(false);
+    setWhatsappShareType("report_pdf");
   };
 
   // Convert File to base64
@@ -6340,7 +6551,7 @@ Ejemplo:
                         onClick={resetGeneratorForm}
                         className="text-[10px] font-black uppercase text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition tracking-wider"
                       >
-                        <RefreshCw className="h-3 w-3" /> Limpiar Todo
+                        <RefreshCw className="h-3 w-3" /> Nuevo estudio
                       </button>
                     </div>
 
