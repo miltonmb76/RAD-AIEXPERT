@@ -1681,16 +1681,26 @@ Devuelve de manera estricta y exclusiva el reporte radiológico COMPLETO resulta
  * Payload: {
  *   report: string
  *   studyType: string
+ *   correctionNotes?: string
  * }
  */
 app.post("/api/generate-infographic", async (req: express.Request, res: express.Response) => {
   try {
-    const { report, studyType } = req.body;
+    const { report, studyType, correctionNotes } = req.body;
     if (!report || !studyType) {
       return res.status(400).json({ success: false, error: "Se requieren el reporte y el tipo de estudio." });
     }
 
     const ai = getGeminiClient();
+    const correctionBlock = String(correctionNotes || "").trim()
+      ? `
+
+CORRECCIONES OBLIGATORIAS DEL MÉDICO PARA ESTA REGENERACIÓN (prioridad máxima; aplícalas todas):
+"""
+${String(correctionNotes).trim()}
+"""
+`
+      : "";
 
     const promptText = `
 Genera una infografía médica sencilla, clara y amable para un paciente, basada en este reporte radiológico sobre un estudio de ${studyType}.
@@ -1699,6 +1709,18 @@ La infografía debe explicar de manera didáctica y visualmente comprensible exc
 """
 ${report}
 """
+${correctionBlock}
+
+REGLA CRÍTICA DE LATERALIDAD — PACIENTE VISTO DE FRENTE (vista AP / coronal / anterior):
+- La figura muestra al paciente MIRANDO HACIA EL OBSERVADOR (como una radiografía AP de frente).
+- "Derecha" / "Izquierda" = lado ANATÓMICO DEL PACIENTE, NUNCA el lado de la mano del dibujante.
+- El LADO DERECHO DEL PACIENTE queda a la IZQUIERDA DEL CUADRO; el LADO IZQUIERDO DEL PACIENTE queda a la DERECHA DEL CUADRO.
+- Hombros, rodillas, caderas, tobillos, muñecas, riñones y cualquier estructura bilateral: NUNCA inviertas lados.
+- Ejemplos correctos:
+  • Lesión en hombro DERECHO → dibújalo en el hombro que aparece a la IZQUIERDA de la imagen y etiquétalo "Hombro derecho (del paciente)".
+  • Lesión en rodilla IZQUIERDA → dibújala en la rodilla que aparece a la DERECHA de la imagen y etiquétala "Rodilla izquierda (del paciente)".
+- Etiqueta siempre con el lado del paciente. PROHIBIDO espejar anatomía "para que quede bonito".
+- Una imagen bella con lateralidad incorrecta es un FALLO CRÍTICO.
 
 La infografía debe centrarse única y exclusivamente en explicar qué hallazgos patológicos se encontraron en el estudio para que el paciente los entienda de forma sencilla y clara. NO debes incluir ningún tipo de recomendación médica, indicaciones, tratamientos, pasos a seguir o sugerencias sobre qué hacer a continuación ni derivaciones. Omitir por completo cualquier recomendación o pautas de acción. Mantén el estilo visual limpio y profesional, adecuado para un paciente.
 Diseño: Ilustración médica 2D clara, estilo didáctico, amable y enfocado enteramente en la explicación de los hallazgos patológicos del reporte.

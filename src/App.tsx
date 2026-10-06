@@ -231,6 +231,8 @@ export default function App() {
   const [attachInfographicToOfficialReport, setAttachInfographicToOfficialReport] = useState<boolean>(false);
   /** Opt-in: include generated infographic in the patient explanation PDF */
   const [attachInfographicToPatientSummary, setAttachInfographicToPatientSummary] = useState<boolean>(false);
+  /** Free-text corrections applied on regenerate (laterality, labels, anatomy, etc.) */
+  const [infographicCorrectionNotes, setInfographicCorrectionNotes] = useState<string>("");
   // Local storage customizable instructions
   const [systemInstruction, setSystemInstruction] = useState<string>(() => {
     if (typeof window === "undefined") return GENERAL_SYSTEM_INSTRUCTION;
@@ -4390,18 +4392,25 @@ Ejemplo:
   };
 
   // ACTION FOR INFOGRAPHIC GENERATION
-  const handleGenerateInfographic = async () => {
+  const handleGenerateInfographic = async (opts?: { keepAttachments?: boolean }) => {
     if (!generatedReport || !studyType) return;
     setIsGeneratingInfographic(true);
     setInfographicError(null);
     setInfographicUrl(null);
-    setAttachInfographicToOfficialReport(false);
-    setAttachInfographicToPatientSummary(false);
+    if (!opts?.keepAttachments) {
+      setAttachInfographicToOfficialReport(false);
+      setAttachInfographicToPatientSummary(false);
+    }
     try {
+      const notes = infographicCorrectionNotes.trim();
       const response = await fetch("/api/generate-infographic", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ report: generatedReport, studyType }),
+        body: JSON.stringify({
+          report: generatedReport,
+          studyType,
+          ...(notes ? { correctionNotes: notes } : {}),
+        }),
       });
       const data = await response.json();
       if (data.success) {
@@ -7650,6 +7659,20 @@ Ejemplo:
                     <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative bg-[#090D1A]">
                       {/* Left Column: Report content, editor, and tools */}
                       <div className={`flex-1 p-6 overflow-y-auto leading-relaxed text-sm select-text text-slate-300 relative scrollbar-thin ${isSplitPdfActive && generatedReport ? "md:border-r md:border-slate-800" : ""}`}>
+                        {generatedReport && !infographicUrl && !isGeneratingInfographic && (
+                          <div className="mb-4 p-3 bg-slate-900/70 rounded-xl border border-pink-600/20 space-y-2">
+                            <label className="block text-[9px] font-black uppercase tracking-widest text-pink-300/80 font-mono">
+                              Notas de lateralidad / correcciones (opcional)
+                            </label>
+                            <textarea
+                              value={infographicCorrectionNotes}
+                              onChange={(e) => setInfographicCorrectionNotes(e.target.value)}
+                              rows={2}
+                              placeholder="Ej.: enfatizar hombro derecho del paciente a la izquierda del dibujo (vista de frente)."
+                              className="w-full px-3 py-2 bg-slate-950 border border-slate-700 focus:border-pink-500/40 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none resize-y leading-relaxed"
+                            />
+                          </div>
+                        )}
                         {infographicUrl && (
                           <div className="mb-6 p-4 bg-slate-800 rounded-xl border border-pink-600/30">
                              <div className="flex justify-between items-start mb-2 flex-wrap gap-2">
@@ -7707,7 +7730,38 @@ Ejemplo:
                                </div>
                              </div>
                              <img src={infographicUrl} alt="Infografía Paciente" className="w-full rounded-lg" referrerPolicy="no-referrer" />
-                             <div className="mt-3 flex justify-end gap-2">
+                             <div className="mt-3 space-y-2">
+                               <label className="block text-[9px] font-black uppercase tracking-widest text-pink-300/90 font-mono">
+                                 Correcciones para regenerar
+                               </label>
+                               <textarea
+                                 value={infographicCorrectionNotes}
+                                 onChange={(e) => setInfographicCorrectionNotes(e.target.value)}
+                                 rows={3}
+                                 placeholder="Ej.: El hallazgo es en el hombro DERECHO del paciente (debe verse a la izquierda del dibujo). Corrige la etiqueta y no lo dibujes en el lado izquierdo."
+                                 className="w-full px-3 py-2 bg-slate-950 border border-slate-700 focus:border-pink-500/50 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none resize-y leading-relaxed"
+                               />
+                               <p className="text-[9px] text-slate-500 leading-relaxed">
+                                 Vista de frente (AP): lado derecho del paciente a la izquierda del cuadro; izquierdo a la derecha.
+                               </p>
+                               <div className="flex flex-wrap justify-end gap-2">
+                               <button
+                                 type="button"
+                                 onClick={() => handleGenerateInfographic({ keepAttachments: true })}
+                                 disabled={isGeneratingInfographic}
+                                 className="px-4 py-2 bg-pink-700 hover:bg-pink-600 disabled:opacity-50 border-2 border-pink-500/30 rounded-xl text-xs font-black uppercase tracking-wider text-white transition-all flex items-center gap-2 shadow-lg cursor-pointer"
+                                 title="Regenerar la infografía aplicando el texto de correcciones"
+                               >
+                                 {isGeneratingInfographic ? (
+                                   <>
+                                     <Loader2 className="h-4 w-4 animate-spin" /> Regenerando...
+                                   </>
+                                 ) : (
+                                   <>
+                                     <RefreshCw className="h-4 w-4" /> Regenerar con correcciones
+                                   </>
+                                 )}
+                               </button>
                                <button
                                  onClick={() => handleOpenWhatsAppShare('patient_infographic')}
                                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-550 border-2 border-emerald-500/30 rounded-xl text-xs font-black uppercase tracking-wider text-white transition-all flex items-center gap-2 shadow-lg cursor-pointer"
@@ -7723,6 +7777,7 @@ Ejemplo:
                                 >
                                   <Mail className="h-4 w-4 text-white" /> Enviar por Gmail
                                 </button>
+                               </div>
                              </div>
                           </div>
                         )}
