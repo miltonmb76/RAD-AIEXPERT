@@ -133,7 +133,7 @@ import {
 } from "lucide-react";
 import { initAuth, googleSignIn, logout as googleLogout, anonymousSignIn, emailSignIn, emailSignUp, getFirebaseConfig } from "./firebaseAuth";
 import { CloudStudy, saveStudyToCloud, getStudiesFromCloud, deleteStudyFromCloud, Worklist, WorklistPatient, saveWorklistToCloud, getWorklistFromCloud, getSingleStudyFromCloud, testFirebaseConfigConnection, saveUserSettingsToCloud, getUserSettingsFromCloud } from "./firebaseDb";
-import { idbSaveWorklist, idbGetWorklist, idbClearWorklist, idbSaveStudy, idbGetAllStudies, idbDeleteStudy, idbSaveHistory, idbGetHistory, idbSaveUserSettings, idbGetUserSettings, idbSaveBranding, idbGetBranding, getActiveWorklistId } from "./localDb";
+import { idbSaveWorklist, idbGetWorklist, idbClearWorklist, idbSaveStudy, idbGetAllStudies, idbDeleteStudy, idbClearAllStudies, idbSaveHistory, idbGetHistory, idbSaveUserSettings, idbGetUserSettings, idbSaveBranding, idbGetBranding, getActiveWorklistId } from "./localDb";
 import { Mail, LogOut, Clock, Calendar, ListTodo, UserCheck, ImagePlus, Wifi, HelpCircle, Info, Laptop, Network, ChevronDown, Link } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
@@ -5338,19 +5338,74 @@ Ejemplo:
     }
   };
 
-  // Delete individual historical report
-  const handleDeleteReport = (id: string) => {
+  // Delete individual historical report (+ matching local study copy)
+  const handleDeleteReport = async (id: string) => {
     const updated = savedReports.filter(r => r.id !== id);
     setSavedReports(updated);
     localStorage.setItem("radiology_reports_history", JSON.stringify(updated));
-    idbSaveHistory(updated);
+    await idbSaveHistory(updated);
+    try {
+      await idbDeleteStudy(id);
+      const stored = localStorage.getItem("rad_local_studies");
+      if (stored) {
+        const studiesList = (JSON.parse(stored) as CloudStudy[]).filter((s) => s.id !== id);
+        localStorage.setItem("rad_local_studies", JSON.stringify(studiesList));
+      }
+      localStorage.removeItem(`fallback_single_study_${id}`);
+      setCloudStudies((prev) => prev.filter((s) => s.id !== id));
+    } catch (e) {
+      console.warn("No se pudo eliminar la copia local del estudio:", e);
+    }
   };
 
-  const handleClearHistory = () => {
-    if (confirm("¿Deseas vacilar todo el historial local de reportes guardados? (No afectará tu trabajo actual)")) {
-      setSavedReports([]);
-      localStorage.removeItem("radiology_reports_history");
-      idbSaveHistory([]);
+  const handleClearHistory = async () => {
+    if (!confirm("¿Vaciar todo el historial local de reportes y estudios guardados en este navegador? (No afectará el informe que tengas abierto ahora)")) {
+      return;
+    }
+
+    // Collect IDs before wipe so we can optionally remove cloud copies
+    const ids = new Set<string>();
+    savedReports.forEach((r) => ids.add(r.id));
+    try {
+      const idbStudies = await idbGetAllStudies();
+      idbStudies.forEach((s) => ids.add(s.id));
+    } catch (_) {}
+    try {
+      const stored = localStorage.getItem("rad_local_studies");
+      if (stored) {
+        (JSON.parse(stored) as CloudStudy[]).forEach((s) => ids.add(s.id));
+      }
+    } catch (_) {}
+
+    setSavedReports([]);
+    setCloudStudies([]);
+    localStorage.removeItem("radiology_reports_history");
+    localStorage.removeItem("rad_local_studies");
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith("fallback_single_study_")) keysToRemove.push(key);
+      }
+      keysToRemove.forEach((k) => localStorage.removeItem(k));
+    } catch (_) {}
+
+    await idbSaveHistory([]);
+    await idbClearAllStudies();
+
+    if (gmailUser?.uid && ids.size > 0) {
+      const alsoCloud = confirm(
+        `Se vació el historial local (${ids.size} estudio(s)). ¿Eliminar también las copias sincronizadas en la nube para que no vuelvan a cargarse al reiniciar?`
+      );
+      if (alsoCloud) {
+        for (const id of ids) {
+          try {
+            await deleteStudyFromCloud(id);
+          } catch (e) {
+            console.warn("No se pudo eliminar estudio de la nube:", id, e);
+          }
+        }
+      }
     }
   };
 
@@ -5492,6 +5547,38 @@ Ejemplo:
     setCurrentCloudStudyId,
     setCopiedEhrStudyId,
   });
+
+  // Hydrate lightweight report history from localStorage / IndexedDB on boot
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        let reports: SavedReport[] = [];
+        const stored = localStorage.getItem("radiology_reports_history");
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed)) reports = parsed;
+        }
+        if (reports.length === 0) {
+          const fromIdb = await idbGetHistory();
+          if (Array.isArray(fromIdb) && fromIdb.length > 0) {
+            reports = fromIdb;
+            try {
+              localStorage.setItem("radiology_reports_history", JSON.stringify(fromIdb.slice(0, 50)));
+            } catch (_) {}
+          }
+        }
+        if (!cancelled && reports.length > 0) {
+          setSavedReports(reports.slice(0, 50));
+        }
+      } catch (e) {
+        console.warn("No se pudo hidratar el historial local:", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     fetchCloudStudies(gmailUser?.uid);
@@ -6213,7 +6300,7 @@ Ejemplo:
                 ))
               )}
             </div>
-            {savedReports.length > 0 && (
+            {(savedReports.length > 0 || cloudStudies.length > 0) && (
               <button
                 onClick={handleClearHistory}
                 className="w-full text-center text-[10px] text-slate-505 hover:text-rose-455 mt-2 py-1.5 block transition underline font-mono font-bold uppercase tracking-widest"
@@ -13486,7 +13573,7 @@ Ejemplo:
                         </p>
                       </div>
                     </div>
-                    {savedReports.length > 0 && (
+                    {(savedReports.length > 0 || cloudStudies.length > 0) && (
                       <button
                         onClick={handleClearHistory}
                         className="bg-rose-950/30 hover:bg-rose-900/50 text-rose-300 border border-rose-800/60 font-bold text-xs uppercase tracking-wider px-4 py-2.5 rounded-xl transition flex items-center gap-2 cursor-pointer shrink-0"
