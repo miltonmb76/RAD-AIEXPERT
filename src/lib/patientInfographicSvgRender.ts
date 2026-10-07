@@ -4,6 +4,7 @@
  */
 
 import fs from "fs";
+import path from "path";
 import sharp from "sharp";
 import type { InfographicCard, InfographicTone, PatientInfographicBrief } from "./patientInfographicBrief";
 
@@ -11,8 +12,46 @@ const W = 1080;
 const H = 1620;
 const SIGNATURE_BAND = 170;
 
+/** Bundled fonts ship with the repo so Cloud Run does not depend on OS packages. */
+function resolveFontsDir(): string {
+  const guesses: string[] = [
+    path.join(process.cwd(), "assets", "fonts"),
+    path.join(process.cwd(), "..", "assets", "fonts"),
+  ];
+  try {
+    // CJS bundle (server.cjs): __dirname is typically project root or dist/
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const dirname = typeof __dirname !== "undefined" ? __dirname : "";
+    if (dirname) {
+      guesses.push(path.join(dirname, "assets", "fonts"));
+      guesses.push(path.join(dirname, "..", "assets", "fonts"));
+    }
+  } catch (_) {}
+  for (const dir of guesses) {
+    if (fs.existsSync(path.join(dir, "LiberationSans-Regular.ttf"))) return dir;
+    if (fs.existsSync(path.join(dir, "DejaVuSans.ttf"))) return dir;
+    if (fs.existsSync(path.join(dir, "Inter-Regular.ttf"))) return dir;
+  }
+  return path.join(process.cwd(), "assets", "fonts");
+}
+
 function pickFontFamily(): { regular: string; bold: string } {
-  const candidates = [
+  const fontsDir = resolveFontsDir();
+  const bundled = [
+    {
+      regular: path.join(fontsDir, "Inter-Regular.ttf"),
+      bold: path.join(fontsDir, "Inter-SemiBold.ttf"),
+    },
+    {
+      regular: path.join(fontsDir, "LiberationSans-Regular.ttf"),
+      bold: path.join(fontsDir, "LiberationSans-Bold.ttf"),
+    },
+    {
+      regular: path.join(fontsDir, "DejaVuSans.ttf"),
+      bold: path.join(fontsDir, "DejaVuSans-Bold.ttf"),
+    },
+  ];
+  const system = [
     {
       regular: "/usr/share/fonts/truetype/macos/Inter-Regular.ttf",
       bold: "/usr/share/fonts/truetype/macos/Inter-SemiBold.ttf",
@@ -26,13 +65,12 @@ function pickFontFamily(): { regular: string; bold: string } {
       bold: "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     },
   ];
-  for (const c of candidates) {
+  for (const c of [...bundled, ...system]) {
     if (fs.existsSync(c.regular) && fs.existsSync(c.bold)) return c;
   }
-  return {
-    regular: "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    bold: "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-  };
+  throw new Error(
+    `No se encontraron fuentes para la infografía. Se esperaba assets/fonts/ (p. ej. LiberationSans-Regular.ttf). Buscado en: ${fontsDir}`
+  );
 }
 
 function esc(s: string): string {

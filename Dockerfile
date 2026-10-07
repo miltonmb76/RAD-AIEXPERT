@@ -20,6 +20,8 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/server.cjs ./server.cjs
 COPY --from=build /app/server.cjs.map ./server.cjs.map
 COPY firebase-applet-config.json ./
+# Bundled fonts for patient infographic SVG→PNG (Cloud Run has no DejaVu/Inter by default)
+COPY --from=build /app/assets/fonts ./assets/fonts
 
 USER node
 EXPOSE 8080
