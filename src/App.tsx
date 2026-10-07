@@ -235,9 +235,7 @@ export default function App() {
   /** Free-text corrections applied on regenerate (laterality, labels, anatomy, etc.) */
   const [infographicCorrectionNotes, setInfographicCorrectionNotes] = useState<string>("");
   /** Which engine produced the last patient infographic */
-  const [infographicProvider, setInfographicProvider] = useState<"openai" | "gemini" | null>(null);
-  /** Server reports OPENAI_API_KEY present ? prefer ChatGPT Image for patient posters */
-  const [openaiInfographicReady, setOpenaiInfographicReady] = useState<boolean>(false);
+  const [infographicProvider, setInfographicProvider] = useState<"render" | "openai" | "gemini" | null>(null);
   // Local storage customizable instructions
   const [systemInstruction, setSystemInstruction] = useState<string>(() => {
     if (typeof window === "undefined") return GENERAL_SYSTEM_INSTRUCTION;
@@ -4607,24 +4605,8 @@ Ejemplo:
     }
   };
 
-  // Probe whether OpenAI Secret Key is configured for patient infographics
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/infographic-providers");
-        const data = await res.json();
-        if (!cancelled && data?.success) {
-          setOpenaiInfographicReady(Boolean(data.openai));
-        }
-      } catch (_) {}
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   // ACTION FOR INFOGRAPHIC GENERATION
+  // Default: structured brief + SVG render (perfect Spanish). Avoids painted gibberish text.
   const handleGenerateInfographic = async (opts?: { keepAttachments?: boolean }) => {
     if (!generatedReport || !studyType) return;
     setIsGeneratingInfographic(true);
@@ -4644,16 +4626,16 @@ Ejemplo:
           report: generatedReport,
           studyType,
           reportDate: reportDate || "",
-          // Prefer ChatGPT/OpenAI when secret is present; server also auto-detects
-          ...(openaiInfographicReady ? { provider: "openai" } : {}),
+          provider: "render",
+          model: modelFor("patient_summary"),
           ...(notes ? { correctionNotes: notes } : {}),
         }),
       });
       const data = await response.json();
       if (data.success) {
         setInfographicUrl(data.imageUrl);
-        setInfographicProvider(data.provider === "openai" ? "openai" : "gemini");
-        if (data.provider === "openai") setOpenaiInfographicReady(true);
+        const p = data.provider;
+        setInfographicProvider(p === "openai" || p === "gemini" ? p : "render");
       } else {
         setInfographicError(data.error || "Error generando la infografía.");
       }
@@ -7939,25 +7921,14 @@ Ejemplo:
                             onClick={handleGenerateInfographic}
                             disabled={isGeneratingInfographic}
                             className="px-3 md:px-4 py-1.5 md:py-2 bg-pink-700 hover:bg-pink-600 border-2 border-pink-500/30 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider text-white transition-all flex items-center gap-1.5 md:gap-2 shadow-lg select-none whitespace-nowrap cursor-pointer"
-                            title={
-                              openaiInfographicReady
-                                ? "Generar infografía para el paciente con ChatGPT (OpenAI, calidad media)"
-                                : "Generar infografía explicativa para el paciente"
-                            }
+                            title="Generar infografía para el paciente (texto nítido + layout elegido por IA)"
                           >
                             {isGeneratingInfographic ? (
                               <>
                                 <Loader2 className="h-3.5 w-3.5 animate-spin" /> Generando...
                               </>
                             ) : (
-                              <>
-                                Infografía Paciente
-                                {openaiInfographicReady && (
-                                  <span className="text-[8px] font-black tracking-wider bg-white/15 px-1.5 py-0.5 rounded-md">
-                                    ChatGPT
-                                  </span>
-                                )}
-                              </>
+                              "Infografía Paciente"
                             )}
                           </button>
                           <button
@@ -8064,14 +8035,19 @@ Ejemplo:
                                <div className="min-w-0">
                                  <h4 className="text-sm font-bold text-pink-300 flex flex-wrap items-center gap-2">
                                    Infografía Generada:
+                                   {infographicProvider === "render" && (
+                                     <span className="text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-sky-950/80 border border-sky-500/40 text-sky-300">
+                                       Texto nÃ­tido
+                                     </span>
+                                   )}
                                    {infographicProvider === "openai" && (
                                      <span className="text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-emerald-950/80 border border-emerald-500/40 text-emerald-300">
-                                       ChatGPT · media
+                                       ChatGPT imagen
                                      </span>
                                    )}
                                    {infographicProvider === "gemini" && (
                                      <span className="text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-slate-950 border border-slate-700 text-slate-400">
-                                       Gemini
+                                       Gemini imagen
                                      </span>
                                    )}
                                  </h4>
