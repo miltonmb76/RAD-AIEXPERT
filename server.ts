@@ -18,6 +18,11 @@ import {
   INFOGRAPHIC_LAYOUT_OPTIONS,
   normalizeFindingsInfographicData,
 } from "./src/lib/findingsInfographic";
+import {
+  generatePatientSummaryOpenAI,
+  hasOpenAiApiKey,
+  normalizePatientSummaryPayload,
+} from "./src/lib/openaiPatientSummary";
 import { buildUsAutoLabelAnatomyHints } from "./src/lib/usAutoLabelHints";
 import { normalizeSecondReaderData } from "./src/lib/secondReader";
 import {
@@ -3431,9 +3436,6 @@ app.post("/api/generate-patient-summary", async (req: express.Request, res: expr
       return res.status(400).json({ success: false, error: "Se requiere el reporte médico para generar el resumen del paciente." });
     }
 
-    const ai = getGeminiClient();
-    const selectedModel = getModelName(model);
-
     const promptText = `
 Estudio clínico / tipo de estudio: ${studyType || "No especificado"}
 Indicación clínica / Sospecha: ${clinicalHistory || "No específica"}
@@ -3466,6 +3468,34 @@ Devuelve JSON con:
 `;
 
     const systemInstruction = "Eres especialista en comunicación radiológica orientada al paciente. Explicas hallazgos y términos con claridad científica y tono neutro. Nunca das recomendaciones, cuidados, preguntas sugeridas ni pasos a seguir: eso corresponde al médico tratante. El JSON solo contiene explicación del estudio, de los hallazgos y un glosario de términos.";
+
+    // Optional: prefer ChatGPT for patient-facing prose when OPENAI_API_KEY is set.
+    // On any failure, fall back to Gemini so the feature never breaks.
+    if (hasOpenAiApiKey()) {
+      try {
+        const openaiResult = await generatePatientSummaryOpenAI({
+          report: String(report),
+          studyType: studyType || "",
+          clinicalHistory: clinicalHistory || "",
+          systemInstruction,
+          userPrompt: promptText,
+        });
+        return res.json({
+          success: true,
+          data: openaiResult.data,
+          provider: "openai",
+          model: openaiResult.model,
+        });
+      } catch (openaiErr: any) {
+        console.warn(
+          "Explicación paciente: OpenAI falló; usando Gemini.",
+          openaiErr?.message || openaiErr
+        );
+      }
+    }
+
+    const ai = getGeminiClient();
+    const selectedModel = getModelName(model);
 
     const response = await ai.models.generateContent({
       model: selectedModel,
@@ -3523,33 +3553,11 @@ Devuelve JSON con:
     }
 
     const parsedJson = JSON.parse(jsonText);
-    // Normalize + hard-strip recommendation fields if the model still emits them
-    const findings = Array.isArray(parsedJson.keyFindings)
-      ? parsedJson.keyFindings.map((f: any) => ({
-          title: f?.title || "",
-          originalTerm: f?.originalTerm || "",
-          simplifiedExplanation: f?.simplifiedExplanation || "",
-          analogy: f?.analogy || "",
-          clinicalContext: f?.clinicalContext || f?.reassurance || "",
-          reassurance: f?.clinicalContext || f?.reassurance || "",
-        }))
-      : [];
-    const glossary = Array.isArray(parsedJson.glossary)
-      ? parsedJson.glossary
-          .map((g: any) => ({
-            term: String(g?.term || "").trim(),
-            plainDefinition: String(g?.plainDefinition || g?.definition || "").trim(),
-          }))
-          .filter((g: any) => g.term && g.plainDefinition)
-      : [];
     res.json({
       success: true,
-      data: {
-        studyOverview: parsedJson.studyOverview || "",
-        summary: parsedJson.summary || "",
-        keyFindings: findings,
-        glossary,
-      }
+      data: normalizePatientSummaryPayload(parsedJson),
+      provider: "gemini",
+      model: selectedModel,
     });
   } catch (error: any) {
     console.error("Error en /api/generate-patient-summary:", error);

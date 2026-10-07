@@ -2635,6 +2635,8 @@ Ejemplo:
   const [isCaseAnalysisExpanded, setIsCaseAnalysisExpanded] = useState<boolean>(false);
   const [isBibliographyExpanded, setIsBibliographyExpanded] = useState<boolean>(false);
   const [isPatientSummaryExpanded, setIsPatientSummaryExpanded] = useState<boolean>(false);
+  /** Which text engine produced the last patient explanation (openai | gemini) */
+  const [patientSummaryProvider, setPatientSummaryProvider] = useState<"openai" | "gemini" | null>(null);
   const [isGlossaryExpanded, setIsGlossaryExpanded] = useState<boolean>(false);
   const [isSchematicSummaryExpanded, setIsSchematicSummaryExpanded] = useState<boolean>(false);
   
@@ -4030,6 +4032,7 @@ Ejemplo:
     setIsGeneratingPatientSummary(true);
     setPatientSummaryError(null);
     setPatientSummary(null);
+    setPatientSummaryProvider(null);
     setExpandedFindings({});
     try {
       const response = await fetch("/api/generate-patient-summary", {
@@ -4069,6 +4072,7 @@ Ejemplo:
           keyFindings: findings,
           glossary,
         });
+        setPatientSummaryProvider(data.provider === "openai" ? "openai" : "gemini");
       } else {
         setPatientSummaryError(data.error || "Error al generar el resumen del paciente.");
       }
@@ -12132,8 +12136,18 @@ Ejemplo:
                                 <div className="flex items-center gap-2">
                                   <User className="h-5 w-5 text-orange-400" />
                                   <div className="text-left">
-                                    <h4 className="text-xs font-black text-orange-400 uppercase tracking-widest font-mono">
+                                    <h4 className="text-xs font-black text-orange-400 uppercase tracking-widest font-mono flex flex-wrap items-center gap-2">
                                       TRADUCCIÓN EMPÁTICA Y EXPLICACIÓN DE INFORME
+                                      {patientSummaryProvider === "openai" && (
+                                        <span className="text-[8px] font-black normal-case tracking-wider px-2 py-0.5 rounded-md bg-emerald-950/80 border border-emerald-500/40 text-emerald-300">
+                                          ChatGPT
+                                        </span>
+                                      )}
+                                      {patientSummaryProvider === "gemini" && (
+                                        <span className="text-[8px] font-black normal-case tracking-wider px-2 py-0.5 rounded-md bg-slate-950 border border-slate-700 text-slate-400">
+                                          Gemini
+                                        </span>
+                                      )}
                                     </h4>
                                     <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wide mt-0.5">
                                       Acompañamiento personalizado y traducción de conceptos clínicos a analogías amigables.
