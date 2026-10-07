@@ -268,7 +268,8 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
       setPatientSummary(null);
       setPatientSummaryError(null);
       setIsGeneratingPatientSummary(true);
-      setIsPatientSummaryExpanded(true);
+      // Keep inline (not fullscreen) so auto-generation after report does not interrupt the workspace
+      setIsPatientSummaryExpanded(false);
       promises.push((async () => {
         try {
           const response = await fetch("/api/generate-patient-summary", {
