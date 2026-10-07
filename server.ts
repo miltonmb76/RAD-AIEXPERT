@@ -31,6 +31,7 @@ import {
   generatePatientInfographicOpenAI,
   handleOpenAiError,
   hasOpenAiApiKey,
+  truncateReportForImagePrompt,
 } from "./src/lib/openaiPatientInfographic";
 
 // Lazy-loaded GenAI client to prevent crash on startup if API key is missing
@@ -1715,6 +1716,7 @@ app.post("/api/generate-infographic", async (req: express.Request, res: express.
     } catch (_) {}
 
     const dateHint = String(reportDate || "").trim();
+    const reportForImage = truncateReportForImagePrompt(String(report || ""));
     const correctionBlock = String(correctionNotes || "").trim()
       ? `
 
@@ -1731,9 +1733,15 @@ Haz UNA infografía para el paciente basada en este reporte radiológico de ${st
 
 REPORTE (usa solo hallazgos clínicos; no reproduzcas nombre, cédula ni datos identificables del paciente si aparecieran):
 """
-${report}
+${reportForImage}
 """
 ${correctionBlock}
+
+CALIDAD DE TEXTO (crítico):
+- Todo el texto visible debe ser ESPAÑOL real, ortográficamente correcto y perfectamente legible.
+- PROHIBIDO texto inventado, letras deformadas, “lorem”, palabras sin sentido o tipografía ilegible.
+- Usa pocas frases cortas y números exactos del reporte. Menos texto = más claridad.
+- Títulos y etiquetas nítidos, alto contraste, sin solaparse con ilustraciones.
 
 LIBERTAD DE DISEÑO (importante):
 - Tú eliges el layout, la jerarquía visual y cómo acomodar los hallazgos.
@@ -1766,13 +1774,12 @@ Entrega una sola imagen vertical, lista para compartir con el paciente.
 
     const requested = String(provider || "").toLowerCase();
     const openaiReady = hasOpenAiApiKey();
-    const preferOpenAI =
-      requested === "openai" ||
-      requested === "chatgpt" ||
-      (requested !== "gemini" && openaiReady);
+    // If OpenAI key is configured, ChatGPT Image is mandatory (no silent Gemini fallback).
+    // Gemini only when key absent or provider=gemini explicitly.
+    const useOpenAI =
+      openaiReady && requested !== "gemini";
 
-    // --- Primary: OpenAI GPT Image (ChatGPT-class posters) when key is present ---
-    if (preferOpenAI && openaiReady) {
+    if (useOpenAI) {
       try {
         const openaiResult = await generatePatientInfographicOpenAI(promptText);
         return res.json({
@@ -1784,15 +1791,12 @@ Entrega una sola imagen vertical, lista para compartir con el paciente.
           size: openaiResult.size,
         });
       } catch (openaiErr: any) {
-        console.warn("Infografía OpenAI falló; intentando Gemini...", openaiErr?.message || openaiErr);
-        if (requested === "openai" || requested === "chatgpt") {
-          return res.status(500).json({
-            success: false,
-            error: handleOpenAiError(openaiErr),
-            provider: "openai",
-          });
-        }
-        // else fall through to Gemini
+        console.error("Infografía OpenAI falló (sin fallback a Gemini):", openaiErr?.message || openaiErr);
+        return res.status(500).json({
+          success: false,
+          error: handleOpenAiError(openaiErr),
+          provider: "openai",
+        });
       }
     }
 

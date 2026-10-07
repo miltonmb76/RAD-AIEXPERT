@@ -58,8 +58,15 @@ export type OpenAiInfographicResult = {
   size: string;
 };
 
+/** Keep prompt under image-API comfort zone while preserving findings. */
+export function truncateReportForImagePrompt(report: string, maxChars = 5500): string {
+  const text = String(report || "").trim();
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, maxChars)}\n\n[…informe truncado para la infografía; usa solo lo anterior…]`;
+}
+
 /**
- * Medium-quality vertical poster — good typography/layout at ~Gemini Flash cost.
+ * Medium-quality vertical poster via gpt-image-1 (ChatGPT-class typography).
  */
 export async function generatePatientInfographicOpenAI(
   promptText: string
@@ -77,38 +84,54 @@ export async function generatePatientInfographicOpenAI(
   }
 
   const openai = new OpenAI({ apiKey });
-  const model = process.env.OPENAI_IMAGE_MODEL?.trim() || "gpt-image-1.5";
+  // SDK / API stable model id. Do NOT default to gpt-image-1.5 (often rejected → silent Gemini fallback).
+  const model = process.env.OPENAI_IMAGE_MODEL?.trim() || "gpt-image-1";
   const quality = (process.env.OPENAI_IMAGE_QUALITY?.trim() || "medium") as
     | "low"
     | "medium"
-    | "high";
+    | "high"
+    | "auto";
   const size = (process.env.OPENAI_IMAGE_SIZE?.trim() || "1024x1536") as
     | "1024x1024"
     | "1024x1536"
     | "1536x1024"
     | "auto";
 
-  const result = await openai.images.generate({
-    model,
-    prompt: promptText,
-    size,
-    quality,
-    output_format: "png",
-    n: 1,
-  });
+  const modelsToTry = Array.from(
+    new Set([model, "gpt-image-1"].filter(Boolean))
+  );
 
-  const b64 = result.data?.[0]?.b64_json;
-  if (!b64) {
-    throw new Error("OpenAI no devolvió imagen (b64_json vacío).");
+  let lastError: any = null;
+  for (const tryModel of modelsToTry) {
+    try {
+      const result = await openai.images.generate({
+        model: tryModel,
+        prompt: promptText,
+        size,
+        quality,
+        output_format: "png",
+        n: 1,
+      });
+
+      const b64 = result.data?.[0]?.b64_json;
+      if (!b64) {
+        throw new Error("OpenAI no devolvió imagen (b64_json vacío).");
+      }
+
+      return {
+        base64: b64,
+        mimeType: "image/png",
+        model: tryModel,
+        quality,
+        size: String(size),
+      };
+    } catch (err) {
+      lastError = err;
+      console.warn(`OpenAI images.generate falló con modelo ${tryModel}:`, (err as any)?.message || err);
+    }
   }
 
-  return {
-    base64: b64,
-    mimeType: "image/png",
-    model,
-    quality,
-    size: String(size),
-  };
+  throw lastError || new Error("No se pudo generar la infografía con OpenAI.");
 }
 
 export function handleOpenAiError(error: any): string {
@@ -129,5 +152,8 @@ export function handleOpenAiError(error: any): string {
   if (lower.includes("rate_limit") || lower.includes("429")) {
     return "Límite de ritmo de OpenAI alcanzado. Espera un momento y vuelve a generar la infografía.";
   }
-  return msg || "Error al generar la infografía con OpenAI.";
+  if (lower.includes("model") && (lower.includes("not found") || lower.includes("does not exist") || lower.includes("invalid"))) {
+    return `Modelo de imagen OpenAI no disponible (${msg}). Usa gpt-image-1 en OPENAI_IMAGE_MODEL.`;
+  }
+  return `Error OpenAI (ChatGPT Image): ${msg || "fallo desconocido"}`;
 }
