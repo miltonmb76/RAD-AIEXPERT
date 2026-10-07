@@ -234,8 +234,6 @@ export default function App() {
   const [attachInfographicToPatientSummary, setAttachInfographicToPatientSummary] = useState<boolean>(false);
   /** Free-text corrections applied on regenerate (laterality, labels, anatomy, etc.) */
   const [infographicCorrectionNotes, setInfographicCorrectionNotes] = useState<string>("");
-  /** Which engine produced the last patient infographic */
-  const [infographicProvider, setInfographicProvider] = useState<"render" | "openai" | "gemini" | null>(null);
   // Local storage customizable instructions
   const [systemInstruction, setSystemInstruction] = useState<string>(() => {
     if (typeof window === "undefined") return GENERAL_SYSTEM_INSTRUCTION;
@@ -4605,14 +4603,12 @@ Ejemplo:
     }
   };
 
-  // ACTION FOR INFOGRAPHIC GENERATION
-  // Default: structured brief + SVG render (perfect Spanish). Avoids painted gibberish text.
+  // ACTION FOR INFOGRAPHIC GENERATION (Gemini image ? full-page poster)
   const handleGenerateInfographic = async (opts?: { keepAttachments?: boolean }) => {
     if (!generatedReport || !studyType) return;
     setIsGeneratingInfographic(true);
     setInfographicError(null);
     setInfographicUrl(null);
-    setInfographicProvider(null);
     if (!opts?.keepAttachments) {
       setAttachInfographicToOfficialReport(false);
       setAttachInfographicToPatientSummary(false);
@@ -4626,16 +4622,12 @@ Ejemplo:
           report: generatedReport,
           studyType,
           reportDate: reportDate || "",
-          provider: "render",
-          model: modelFor("patient_summary"),
           ...(notes ? { correctionNotes: notes } : {}),
         }),
       });
       const data = await response.json();
       if (data.success) {
         setInfographicUrl(data.imageUrl);
-        const p = data.provider;
-        setInfographicProvider(p === "openai" || p === "gemini" ? p : "render");
       } else {
         setInfographicError(data.error || "Error generando la infografía.");
       }
@@ -8033,24 +8025,7 @@ Ejemplo:
                           <div className="mb-6 p-4 bg-slate-800 rounded-xl border border-pink-600/30">
                              <div className="flex justify-between items-start mb-2 flex-wrap gap-2">
                                <div className="min-w-0">
-                                 <h4 className="text-sm font-bold text-pink-300 flex flex-wrap items-center gap-2">
-                                   Infografía Generada:
-                                   {infographicProvider === "render" && (
-                                     <span className="text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-sky-950/80 border border-sky-500/40 text-sky-300">
-                                       Texto nÃ­tido
-                                     </span>
-                                   )}
-                                   {infographicProvider === "openai" && (
-                                     <span className="text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-emerald-950/80 border border-emerald-500/40 text-emerald-300">
-                                       ChatGPT imagen
-                                     </span>
-                                   )}
-                                   {infographicProvider === "gemini" && (
-                                     <span className="text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-slate-950 border border-slate-700 text-slate-400">
-                                       Gemini imagen
-                                     </span>
-                                   )}
-                                 </h4>
+                                 <h4 className="text-sm font-bold text-pink-300">Infografía Generada:</h4>
                                  <p className="text-[9px] text-slate-500 mt-0.5 leading-relaxed">
                                    Elija si desea incluirla. Si no le gusta el resultado, déjela sin adjuntar.
                                  </p>

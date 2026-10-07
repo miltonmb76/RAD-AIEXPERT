@@ -27,18 +27,6 @@ import {
   shouldEnforceAbdomenProtocol,
   shouldEnforceArterialMmiiProtocol,
 } from "./src/lib/measurementStudyGuard";
-import {
-  generatePatientInfographicOpenAI,
-  handleOpenAiError,
-  hasOpenAiApiKey,
-  truncateReportForImagePrompt,
-} from "./src/lib/openaiPatientInfographic";
-import {
-  buildPatientInfographicBriefPrompt,
-  normalizePatientInfographicBrief,
-} from "./src/lib/patientInfographicBrief";
-import { renderPatientInfographicPng } from "./src/lib/patientInfographicSvgRender";
-
 // Lazy-loaded GenAI client to prevent crash on startup if API key is missing
 let aiClient: GoogleGenAI | null = null;
 let lastUsedKey: string | undefined = undefined;
@@ -1695,149 +1683,112 @@ Devuelve de manera estricta y exclusiva el reporte radiológico COMPLETO resulta
  *   correctionNotes?: string
  * }
  */
-app.get("/api/infographic-providers", (_req: express.Request, res: express.Response) => {
-  try {
-    dotenv.config({ override: true });
-  } catch (_) {}
-  const openai = hasOpenAiApiKey();
-  res.json({
-    success: true,
-    // Default engine: structured SVG render (perfect Spanish text). Paint engines are optional.
-    preferred: "render",
-    render: true,
-    openai,
-    gemini: Boolean(cleanGeminiKey(process.env.GEMINI_API_KEY || "")),
-    openaiQuality: process.env.OPENAI_IMAGE_QUALITY?.trim() || "medium",
-  });
-});
-
 app.post("/api/generate-infographic", async (req: express.Request, res: express.Response) => {
   try {
-    const { report, studyType, correctionNotes, reportDate, provider, model } = req.body;
+    const { report, studyType, correctionNotes, reportDate } = req.body;
     if (!report || !studyType) {
       return res.status(400).json({ success: false, error: "Se requieren el reporte y el tipo de estudio." });
     }
 
-    try {
-      dotenv.config({ override: true });
-    } catch (_) {}
-
-    const requested = String(provider || "render").toLowerCase();
-    const reportForBrief = truncateReportForImagePrompt(String(report || ""), 9000);
+    const ai = getGeminiClient();
     const dateHint = String(reportDate || "").trim();
-    const notes = String(correctionNotes || "").trim();
+    const correctionBlock = String(correctionNotes || "").trim()
+      ? `
 
-    // ========== DEFAULT: AI brief (content/layout) + SVG render (real fonts) ==========
-    // This avoids painted gibberish text from image models.
-    if (requested === "render" || requested === "auto" || requested === "" || requested === "svg") {
-      const ai = getGeminiClient();
-      const briefPrompt = buildPatientInfographicBriefPrompt({
-        report: reportForBrief,
-        studyType: String(studyType),
-        reportDate: dateHint,
-        correctionNotes: notes,
-      });
-      const briefResp = await ai.models.generateContent({
-        model: getModelName(model),
-        contents: { parts: [{ text: briefPrompt }] },
-        config: {
-          temperature: 0.35,
-          responseMimeType: "application/json",
-        },
-      });
-      const briefText =
-        briefResp.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join("") || "";
-      const parsed = extractJsonObject(briefText) || (() => {
-        try { return JSON.parse(briefText); } catch { return null; }
-      })();
-      if (!parsed) {
-        throw new Error("No se pudo estructurar la infografía del paciente (JSON inválido).");
-      }
-      const brief = normalizePatientInfographicBrief(parsed);
-      const rendered = await renderPatientInfographicPng(brief);
-      return res.json({
-        success: true,
-        imageUrl: `data:image/png;base64,${rendered.pngBase64}`,
-        provider: "render",
-        layout: rendered.layout,
-        brief,
-      });
-    }
-
-    // ========== OPTIONAL: painted image engines (openai / gemini) ==========
-    const reportForImage = truncateReportForImagePrompt(String(report || ""));
-    const correctionBlock = notes
-      ? `\n\nCORRECCIONES OBLIGATORIAS DEL MÉDICO:\n"""\n${notes}\n"""\n`
+CORRECCIONES OBLIGATORIAS DEL MÉDICO PARA ESTA REGENERACIÓN (prioridad máxima; aplícalas todas):
+"""
+${String(correctionNotes).trim()}
+"""
+`
       : "";
+
+    // Freeform patient poster: quality bar + medical guardrails, but NO fixed layout template.
+    // Gemini image invents the composition that best fits THIS report.
     const promptText = `
-Haz UNA infografía para el paciente basada en este reporte de ${studyType}${dateHint ? ` (${dateHint})` : ""}.
+Haz UNA infografía para el paciente basada en este reporte radiológico de ${studyType}${dateHint ? ` (${dateHint})` : ""}.
+
 REPORTE:
 """
-${reportForImage}
+${report}
 """
 ${correctionBlock}
-Texto en español perfecto y legible. Sin recomendaciones. Layout libre, moderno y limpio.
-Banda inferior vacía (~12-15%) para firma médica.
-Laterality AP: derecha del paciente a la izquierda del cuadro.
+
+LIBERTAD DE DISEÑO (importante):
+- Tú eliges el layout, la jerarquía visual y cómo acomodar los hallazgos.
+- NO uses una plantilla fija ni un esquema rígido de secciones.
+- Diseña la composición que MEJOR se ajuste a ESTE reporte concreto (puede ser 1 hallazgo dominante, 2 métricas lado a lado, un callout central, un bloque de “resto del estudio”, iconos anatómicos, etc., solo si aportan).
+- Prioriza limpieza, modernismo, aire/espaciado generoso, tipografía clara y un look de ficha educativa premium (estilo app de salud contemporánea).
+- Español para paciente: cercano, preciso y sin tecnicismos innecesarios. Si hay números del reporte (%, kPa, mm, cm), muéstralos con claridad cuando ayuden a entender.
+- Título amable orientado al paciente (p. ej. “Tu ultrasonido abdominal”, “Tu radiografía de tórax”), no jerga de informe.
+- Si hay hallazgos normales relevantes del resto del estudio, puedes resumirlos con elegancia; no inventes órganos ni hallazgos ausentes del reporte.
+- Incluye un pie breve de disclaimer informativo (no sustituye la valoración médica). Sin logo de clínica inventado ni marca comercial inventada.
+
+CONTENIDO — QUÉ SÍ / QUÉ NO:
+- SÍ: explicar de forma visual los hallazgos principales del reporte para que el paciente entienda qué se encontró.
+- NO: recomendaciones, tratamientos, “qué hacer después”, derivaciones, alarmismo ni consejos clínicos.
+- NO inventes mediciones, gradaciones ni hallazgos que no estén en el reporte.
+
+REGLA CRÍTICA DE LATERALIDAD — PACIENTE VISTO DE FRENTE (vista AP / coronal / anterior):
+- La figura muestra al paciente MIRANDO HACIA EL OBSERVADOR.
+- "Derecha" / "Izquierda" = lado ANATÓMICO DEL PACIENTE.
+- El LADO DERECHO DEL PACIENTE queda a la IZQUIERDA DEL CUADRO; el LADO IZQUIERDO DEL PACIENTE queda a la DERECHA DEL CUADRO.
+- Etiqueta siempre con el lado del paciente. PROHIBIDO espejar anatomía.
+- Una imagen bella con lateralidad incorrecta es un FALLO CRÍTICO.
+
+Entrega una sola imagen vertical, lista para compartir con el paciente.
 `;
 
-    if (requested === "openai" || requested === "chatgpt") {
-      if (!hasOpenAiApiKey()) {
-        return res.status(400).json({
-          success: false,
-          error: "OPENAI_API_KEY no configurada. Usa el modo render (recomendado) o configura la Secret Key.",
-          provider: "openai",
-        });
-      }
-      try {
-        const openaiResult = await generatePatientInfographicOpenAI(promptText);
-        return res.json({
-          success: true,
-          imageUrl: `data:${openaiResult.mimeType};base64,${openaiResult.base64}`,
-          provider: "openai",
-          model: openaiResult.model,
-          quality: openaiResult.quality,
-          size: openaiResult.size,
-        });
-      } catch (openaiErr: any) {
-        return res.status(500).json({
-          success: false,
-          error: handleOpenAiError(openaiErr),
-          provider: "openai",
-        });
-      }
-    }
-
-    // Gemini image paint
-    const ai = getGeminiClient();
-    let base64Image = "";
-    let lastError: any = null;
-    for (const [aspectRatio, imageSize] of [["3:4", "2K"], ["3:4", "1K"], ["1:1", "1K"]] as Array<[string, string]>) {
-      try {
-        const response = await ai.models.generateContent({
-          model: "gemini-3.1-flash-image-preview",
-          contents: { parts: [{ text: promptText }] },
-          config: { imageConfig: { aspectRatio, imageSize } },
-        });
-        for (const part of response.candidates?.[0]?.content?.parts || []) {
-          if (part.inlineData?.data) {
-            base64Image = part.inlineData.data;
-            break;
-          }
+    const tryGenerate = async (aspectRatio: string, imageSize: string) => {
+      const response = await ai.models.generateContent({
+        model: "gemini-3.1-flash-image-preview",
+        contents: {
+          parts: [{ text: promptText }],
+        },
+        config: {
+          imageConfig: {
+            aspectRatio,
+            imageSize,
+          },
+        },
+      });
+      let base64Image = "";
+      const parts = response.candidates?.[0]?.content?.parts || [];
+      for (const part of parts) {
+        if (part.inlineData?.data) {
+          base64Image = part.inlineData.data;
+          break;
         }
+      }
+      return base64Image;
+    };
+
+    // Prefer a vertical poster; fall back if the size/ratio is rejected.
+    let base64Image = "";
+    const attempts: Array<[string, string]> = [
+      ["3:4", "2K"],
+      ["3:4", "1K"],
+      ["4:5", "1K"],
+      ["1:1", "1K"],
+    ];
+    let lastError: any = null;
+    for (const [aspectRatio, imageSize] of attempts) {
+      try {
+        base64Image = await tryGenerate(aspectRatio, imageSize);
         if (base64Image) break;
       } catch (err) {
         lastError = err;
+        console.warn(`Infografía paciente: fallo con ${aspectRatio}/${imageSize}, reintentando...`, err?.message || err);
       }
     }
+
     if (!base64Image) {
       if (lastError) throw lastError;
       throw new Error("No se pudo generar la imagen de la infografía.");
     }
+
     res.json({
       success: true,
       imageUrl: `data:image/jpeg;base64,${base64Image}`,
-      provider: "gemini",
     });
   } catch (error: any) {
     console.error("Error en /api/generate-infographic:", error);
