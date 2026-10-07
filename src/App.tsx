@@ -234,6 +234,10 @@ export default function App() {
   const [attachInfographicToPatientSummary, setAttachInfographicToPatientSummary] = useState<boolean>(false);
   /** Free-text corrections applied on regenerate (laterality, labels, anatomy, etc.) */
   const [infographicCorrectionNotes, setInfographicCorrectionNotes] = useState<string>("");
+  /** Which engine produced the last patient infographic */
+  const [infographicProvider, setInfographicProvider] = useState<"openai" | "gemini" | null>(null);
+  /** Server reports OPENAI_API_KEY present ? prefer ChatGPT Image for patient posters */
+  const [openaiInfographicReady, setOpenaiInfographicReady] = useState<boolean>(false);
   // Local storage customizable instructions
   const [systemInstruction, setSystemInstruction] = useState<string>(() => {
     if (typeof window === "undefined") return GENERAL_SYSTEM_INSTRUCTION;
@@ -4603,12 +4607,30 @@ Ejemplo:
     }
   };
 
+  // Probe whether OpenAI Secret Key is configured for patient infographics
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/infographic-providers");
+        const data = await res.json();
+        if (!cancelled && data?.success) {
+          setOpenaiInfographicReady(Boolean(data.openai));
+        }
+      } catch (_) {}
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // ACTION FOR INFOGRAPHIC GENERATION
   const handleGenerateInfographic = async (opts?: { keepAttachments?: boolean }) => {
     if (!generatedReport || !studyType) return;
     setIsGeneratingInfographic(true);
     setInfographicError(null);
     setInfographicUrl(null);
+    setInfographicProvider(null);
     if (!opts?.keepAttachments) {
       setAttachInfographicToOfficialReport(false);
       setAttachInfographicToPatientSummary(false);
@@ -4622,17 +4644,21 @@ Ejemplo:
           report: generatedReport,
           studyType,
           reportDate: reportDate || "",
+          // Prefer ChatGPT/OpenAI when secret is present; server also auto-detects
+          ...(openaiInfographicReady ? { provider: "openai" } : {}),
           ...(notes ? { correctionNotes: notes } : {}),
         }),
       });
       const data = await response.json();
       if (data.success) {
         setInfographicUrl(data.imageUrl);
+        setInfographicProvider(data.provider === "openai" ? "openai" : "gemini");
+        if (data.provider === "openai") setOpenaiInfographicReady(true);
       } else {
-        setInfographicError(data.error || "Error generando la infografÃ­a.");
+        setInfographicError(data.error || "Error generando la infografía.");
       }
     } catch (err: any) {
-      setInfographicError(err.message || "Error al conectar con la API de infografÃ­as.");
+      setInfographicError(err.message || "Error al conectar con la API de infografías.");
     } finally {
       setIsGeneratingInfographic(false);
     }
@@ -7913,14 +7939,25 @@ Ejemplo:
                             onClick={handleGenerateInfographic}
                             disabled={isGeneratingInfographic}
                             className="px-3 md:px-4 py-1.5 md:py-2 bg-pink-700 hover:bg-pink-600 border-2 border-pink-500/30 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider text-white transition-all flex items-center gap-1.5 md:gap-2 shadow-lg select-none whitespace-nowrap cursor-pointer"
-                            title="Generar infografÃ­a explicativa para el paciente"
+                            title={
+                              openaiInfographicReady
+                                ? "Generar infografía para el paciente con ChatGPT (OpenAI, calidad media)"
+                                : "Generar infografía explicativa para el paciente"
+                            }
                           >
                             {isGeneratingInfographic ? (
                               <>
                                 <Loader2 className="h-3.5 w-3.5 animate-spin" /> Generando...
                               </>
                             ) : (
-                                "InfografÃ­a Paciente"
+                              <>
+                                Infografía Paciente
+                                {openaiInfographicReady && (
+                                  <span className="text-[8px] font-black tracking-wider bg-white/15 px-1.5 py-0.5 rounded-md">
+                                    ChatGPT
+                                  </span>
+                                )}
+                              </>
                             )}
                           </button>
                           <button
@@ -8025,9 +8062,21 @@ Ejemplo:
                           <div className="mb-6 p-4 bg-slate-800 rounded-xl border border-pink-600/30">
                              <div className="flex justify-between items-start mb-2 flex-wrap gap-2">
                                <div className="min-w-0">
-                                 <h4 className="text-sm font-bold text-pink-300">InfografÃ­a Generada:</h4>
+                                 <h4 className="text-sm font-bold text-pink-300 flex flex-wrap items-center gap-2">
+                                   Infografía Generada:
+                                   {infographicProvider === "openai" && (
+                                     <span className="text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-emerald-950/80 border border-emerald-500/40 text-emerald-300">
+                                       ChatGPT · media
+                                     </span>
+                                   )}
+                                   {infographicProvider === "gemini" && (
+                                     <span className="text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-slate-950 border border-slate-700 text-slate-400">
+                                       Gemini
+                                     </span>
+                                   )}
+                                 </h4>
                                  <p className="text-[9px] text-slate-500 mt-0.5 leading-relaxed">
-                                   Elija si desea incluirla. Si no le gusta el resultado, dÃ©jela sin adjuntar.
+                                   Elija si desea incluirla. Si no le gusta el resultado, déjela sin adjuntar.
                                  </p>
                                </div>
                                <div className="flex flex-wrap items-center justify-end gap-1.5">

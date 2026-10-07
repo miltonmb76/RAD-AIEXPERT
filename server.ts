@@ -27,6 +27,11 @@ import {
   shouldEnforceAbdomenProtocol,
   shouldEnforceArterialMmiiProtocol,
 } from "./src/lib/measurementStudyGuard";
+import {
+  generatePatientInfographicOpenAI,
+  handleOpenAiError,
+  hasOpenAiApiKey,
+} from "./src/lib/openaiPatientInfographic";
 
 // Lazy-loaded GenAI client to prevent crash on startup if API key is missing
 let aiClient: GoogleGenAI | null = null;
@@ -1684,14 +1689,31 @@ Devuelve de manera estricta y exclusiva el reporte radiológico COMPLETO resulta
  *   correctionNotes?: string
  * }
  */
+app.get("/api/infographic-providers", (_req: express.Request, res: express.Response) => {
+  try {
+    dotenv.config({ override: true });
+  } catch (_) {}
+  const openai = hasOpenAiApiKey();
+  res.json({
+    success: true,
+    openai,
+    gemini: Boolean(cleanGeminiKey(process.env.GEMINI_API_KEY || "")),
+    preferred: openai ? "openai" : "gemini",
+    openaiQuality: process.env.OPENAI_IMAGE_QUALITY?.trim() || "medium",
+  });
+});
+
 app.post("/api/generate-infographic", async (req: express.Request, res: express.Response) => {
   try {
-    const { report, studyType, correctionNotes, reportDate } = req.body;
+    const { report, studyType, correctionNotes, reportDate, provider } = req.body;
     if (!report || !studyType) {
       return res.status(400).json({ success: false, error: "Se requieren el reporte y el tipo de estudio." });
     }
 
-    const ai = getGeminiClient();
+    try {
+      dotenv.config({ override: true });
+    } catch (_) {}
+
     const dateHint = String(reportDate || "").trim();
     const correctionBlock = String(correctionNotes || "").trim()
       ? `
@@ -1704,11 +1726,10 @@ ${String(correctionNotes).trim()}
       : "";
 
     // Freeform patient poster: quality bar + medical guardrails, but NO fixed layout template.
-    // The model should invent the composition that best fits THIS report (like ChatGPT image design).
     const promptText = `
 Haz UNA infografía para el paciente basada en este reporte radiológico de ${studyType}${dateHint ? ` (${dateHint})` : ""}.
 
-REPORTE:
+REPORTE (usa solo hallazgos clínicos; no reproduzcas nombre, cédula ni datos identificables del paciente si aparecieran):
 """
 ${report}
 """
@@ -1719,10 +1740,14 @@ LIBERTAD DE DISEÑO (importante):
 - NO uses una plantilla fija ni un esquema rígido de secciones.
 - Diseña la composición que MEJOR se ajuste a ESTE reporte concreto (puede ser 1 hallazgo dominante, 2 métricas lado a lado, un callout central, un bloque de “resto del estudio”, iconos anatómicos, etc., solo si aportan).
 - Prioriza limpieza, modernismo, aire/espaciado generoso, tipografía clara y un look de ficha educativa premium (estilo app de salud contemporánea).
-- Español para paciente: cercano, preciso y sin tecnicismos innecesarios. Si hay números del reporte (%, kPa, mm, cm), muéstralos con claridad cuando ayuden a entender.
-- Título amable orientado al paciente (p. ej. “Tu ultrasonido abdominal”, “Tu radiografía de tórax”), no jerga de informe.
+- Español para paciente: cercano, preciso y sin tecnicismos innecesarios. Si hay números del reporte (%, kPa, mm, cm, mL), muéstralos con claridad cuando ayuden a entender.
+- Título amable orientado al paciente (p. ej. “Tu ultrasonido abdominal”, “Tu ultrasonido de vías urinarias”), no jerga de informe.
 - Si hay hallazgos normales relevantes del resto del estudio, puedes resumirlos con elegancia; no inventes órganos ni hallazgos ausentes del reporte.
 - Incluye un pie breve de disclaimer informativo (no sustituye la valoración médica). Sin logo de clínica inventado ni marca comercial inventada.
+
+ESPACIO PARA FIRMA (obligatorio):
+- Reserva una BANDA INFERIOR clara/vacía (~12–15% de la altura total) debajo del disclaimer.
+- Esa franja debe quedar limpia para que el médico pueda estampar firma o sello al imprimir; no pongas allí iconos ni texto denso.
 
 CONTENIDO — QUÉ SÍ / QUÉ NO:
 - SÍ: explicar de forma visual los hallazgos principales del reporte para que el paciente entienda qué se encontró.
@@ -1739,6 +1764,40 @@ REGLA CRÍTICA DE LATERALIDAD — PACIENTE VISTO DE FRENTE (vista AP / coronal /
 Entrega una sola imagen vertical, lista para compartir con el paciente.
 `;
 
+    const requested = String(provider || "").toLowerCase();
+    const openaiReady = hasOpenAiApiKey();
+    const preferOpenAI =
+      requested === "openai" ||
+      requested === "chatgpt" ||
+      (requested !== "gemini" && openaiReady);
+
+    // --- Primary: OpenAI GPT Image (ChatGPT-class posters) when key is present ---
+    if (preferOpenAI && openaiReady) {
+      try {
+        const openaiResult = await generatePatientInfographicOpenAI(promptText);
+        return res.json({
+          success: true,
+          imageUrl: `data:${openaiResult.mimeType};base64,${openaiResult.base64}`,
+          provider: "openai",
+          model: openaiResult.model,
+          quality: openaiResult.quality,
+          size: openaiResult.size,
+        });
+      } catch (openaiErr: any) {
+        console.warn("Infografía OpenAI falló; intentando Gemini...", openaiErr?.message || openaiErr);
+        if (requested === "openai" || requested === "chatgpt") {
+          return res.status(500).json({
+            success: false,
+            error: handleOpenAiError(openaiErr),
+            provider: "openai",
+          });
+        }
+        // else fall through to Gemini
+      }
+    }
+
+    // --- Fallback / explicit Gemini ---
+    const ai = getGeminiClient();
     const tryGenerate = async (aspectRatio: string, imageSize: string) => {
       const response = await ai.models.generateContent({
         model: "gemini-3.1-flash-image-preview",
@@ -1763,7 +1822,6 @@ Entrega una sola imagen vertical, lista para compartir con el paciente.
       return base64Image;
     };
 
-    // Prefer a vertical poster (like ChatGPT patient one-pagers); fall back if the size/ratio is rejected.
     let base64Image = "";
     const attempts: Array<[string, string]> = [
       ["3:4", "2K"],
@@ -1778,7 +1836,7 @@ Entrega una sola imagen vertical, lista para compartir con el paciente.
         if (base64Image) break;
       } catch (err) {
         lastError = err;
-        console.warn(`Infografía paciente: fallo con ${aspectRatio}/${imageSize}, reintentando...`, err?.message || err);
+        console.warn(`Infografía Gemini: fallo con ${aspectRatio}/${imageSize}, reintentando...`, err?.message || err);
       }
     }
 
@@ -1790,6 +1848,7 @@ Entrega una sola imagen vertical, lista para compartir con el paciente.
     res.json({
       success: true,
       imageUrl: `data:image/jpeg;base64,${base64Image}`,
+      provider: "gemini",
     });
   } catch (error: any) {
     console.error("Error en /api/generate-infographic:", error);

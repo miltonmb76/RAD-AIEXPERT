@@ -69,6 +69,31 @@ printf %s "$GEMINI_KEY" | gcloud secrets versions add gemini-api-key --data-file
 unset GEMINI_KEY
 ```
 
+### OpenAI (opcional — Infografía Paciente con ChatGPT)
+
+Crea el secreto con tu **Secret Key** de [platform.openai.com/api-keys](https://platform.openai.com/api-keys).  
+**No pegues la clave en chats ni en el historial del shell** (usa `read -s`):
+
+```bash
+read -s OPENAI_KEY
+printf %s "$OPENAI_KEY" | gcloud secrets create openai-api-key --data-file=-
+unset OPENAI_KEY
+```
+
+Si el secreto ya existe:
+
+```bash
+read -s OPENAI_KEY
+printf %s "$OPENAI_KEY" | gcloud secrets versions add openai-api-key --data-file=-
+unset OPENAI_KEY
+```
+
+En el deploy, añade el secreto junto a Gemini:
+
+```bash
+--set-secrets GEMINI_API_KEY=gemini-api-key:latest,OPENAI_API_KEY=openai-api-key:latest
+```
+
 ## 4. Desplegar Cloud Run
 
 La variable `FIREBASE_CONFIG` debe contener el objeto JSON de Firebase en una
