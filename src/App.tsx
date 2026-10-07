@@ -4621,6 +4621,7 @@ Ejemplo:
         body: JSON.stringify({
           report: generatedReport,
           studyType,
+          reportDate: reportDate || "",
           ...(notes ? { correctionNotes: notes } : {}),
         }),
       });

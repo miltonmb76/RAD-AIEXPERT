@@ -1686,12 +1686,13 @@ Devuelve de manera estricta y exclusiva el reporte radiológico COMPLETO resulta
  */
 app.post("/api/generate-infographic", async (req: express.Request, res: express.Response) => {
   try {
-    const { report, studyType, correctionNotes } = req.body;
+    const { report, studyType, correctionNotes, reportDate } = req.body;
     if (!report || !studyType) {
       return res.status(400).json({ success: false, error: "Se requieren el reporte y el tipo de estudio." });
     }
 
     const ai = getGeminiClient();
+    const dateHint = String(reportDate || "").trim();
     const correctionBlock = String(correctionNotes || "").trim()
       ? `
 
@@ -1702,53 +1703,87 @@ ${String(correctionNotes).trim()}
 `
       : "";
 
+    // Freeform patient poster: quality bar + medical guardrails, but NO fixed layout template.
+    // The model should invent the composition that best fits THIS report (like ChatGPT image design).
     const promptText = `
-Genera una infografía médica sencilla, clara y amable para un paciente, basada en este reporte radiológico sobre un estudio de ${studyType}.
-La infografía debe explicar de manera didáctica y visualmente comprensible exclusivamente los hallazgos patológicos o anormalidades principales encontradas en el siguiente informe, evitando tecnicismos complejos:
+Haz UNA infografía para el paciente basada en este reporte radiológico de ${studyType}${dateHint ? ` (${dateHint})` : ""}.
 
+REPORTE:
 """
 ${report}
 """
 ${correctionBlock}
 
+LIBERTAD DE DISEÑO (importante):
+- Tú eliges el layout, la jerarquía visual y cómo acomodar los hallazgos.
+- NO uses una plantilla fija ni un esquema rígido de secciones.
+- Diseña la composición que MEJOR se ajuste a ESTE reporte concreto (puede ser 1 hallazgo dominante, 2 métricas lado a lado, un callout central, un bloque de “resto del estudio”, iconos anatómicos, etc., solo si aportan).
+- Prioriza limpieza, modernismo, aire/espaciado generoso, tipografía clara y un look de ficha educativa premium (estilo app de salud contemporánea).
+- Español para paciente: cercano, preciso y sin tecnicismos innecesarios. Si hay números del reporte (%, kPa, mm, cm), muéstralos con claridad cuando ayuden a entender.
+- Título amable orientado al paciente (p. ej. “Tu ultrasonido abdominal”, “Tu radiografía de tórax”), no jerga de informe.
+- Si hay hallazgos normales relevantes del resto del estudio, puedes resumirlos con elegancia; no inventes órganos ni hallazgos ausentes del reporte.
+- Incluye un pie breve de disclaimer informativo (no sustituye la valoración médica). Sin logo de clínica inventado ni marca comercial inventada.
+
+CONTENIDO — QUÉ SÍ / QUÉ NO:
+- SÍ: explicar de forma visual los hallazgos principales del reporte para que el paciente entienda qué se encontró.
+- NO: recomendaciones, tratamientos, “qué hacer después”, derivaciones, alarmismo ni consejos clínicos.
+- NO inventes mediciones, gradaciones ni hallazgos que no estén en el reporte.
+
 REGLA CRÍTICA DE LATERALIDAD — PACIENTE VISTO DE FRENTE (vista AP / coronal / anterior):
-- La figura muestra al paciente MIRANDO HACIA EL OBSERVADOR (como una radiografía AP de frente).
-- "Derecha" / "Izquierda" = lado ANATÓMICO DEL PACIENTE, NUNCA el lado de la mano del dibujante.
+- La figura muestra al paciente MIRANDO HACIA EL OBSERVADOR.
+- "Derecha" / "Izquierda" = lado ANATÓMICO DEL PACIENTE.
 - El LADO DERECHO DEL PACIENTE queda a la IZQUIERDA DEL CUADRO; el LADO IZQUIERDO DEL PACIENTE queda a la DERECHA DEL CUADRO.
-- Hombros, rodillas, caderas, tobillos, muñecas, riñones y cualquier estructura bilateral: NUNCA inviertas lados.
-- Ejemplos correctos:
-  • Lesión en hombro DERECHO → dibújalo en el hombro que aparece a la IZQUIERDA de la imagen y etiquétalo "Hombro derecho (del paciente)".
-  • Lesión en rodilla IZQUIERDA → dibújala en la rodilla que aparece a la DERECHA de la imagen y etiquétala "Rodilla izquierda (del paciente)".
-- Etiqueta siempre con el lado del paciente. PROHIBIDO espejar anatomía "para que quede bonito".
+- Etiqueta siempre con el lado del paciente. PROHIBIDO espejar anatomía.
 - Una imagen bella con lateralidad incorrecta es un FALLO CRÍTICO.
 
-La infografía debe centrarse única y exclusivamente en explicar qué hallazgos patológicos se encontraron en el estudio para que el paciente los entienda de forma sencilla y clara. NO debes incluir ningún tipo de recomendación médica, indicaciones, tratamientos, pasos a seguir o sugerencias sobre qué hacer a continuación ni derivaciones. Omitir por completo cualquier recomendación o pautas de acción. Mantén el estilo visual limpio y profesional, adecuado para un paciente.
-Diseño: Ilustración médica 2D clara, estilo didáctico, amable y enfocado enteramente en la explicación de los hallazgos patológicos del reporte.
+Entrega una sola imagen vertical, lista para compartir con el paciente.
 `;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.1-flash-image-preview",
-      contents: {
-        parts: [{ text: promptText }],
-      },
-      config: {
-        imageConfig: {
-          aspectRatio: "1:1",
-          imageSize: "1K"
+    const tryGenerate = async (aspectRatio: string, imageSize: string) => {
+      const response = await ai.models.generateContent({
+        model: "gemini-3.1-flash-image-preview",
+        contents: {
+          parts: [{ text: promptText }],
         },
-      },
-    });
+        config: {
+          imageConfig: {
+            aspectRatio,
+            imageSize,
+          },
+        },
+      });
+      let base64Image = "";
+      const parts = response.candidates?.[0]?.content?.parts || [];
+      for (const part of parts) {
+        if (part.inlineData?.data) {
+          base64Image = part.inlineData.data;
+          break;
+        }
+      }
+      return base64Image;
+    };
 
-    // Find the image part in the response
+    // Prefer a vertical poster (like ChatGPT patient one-pagers); fall back if the size/ratio is rejected.
     let base64Image = "";
-    for (const part of response.candidates[0].content.parts) {
-      if (part.inlineData) {
-        base64Image = part.inlineData.data;
-        break;
+    const attempts: Array<[string, string]> = [
+      ["3:4", "2K"],
+      ["3:4", "1K"],
+      ["4:5", "1K"],
+      ["1:1", "1K"],
+    ];
+    let lastError: any = null;
+    for (const [aspectRatio, imageSize] of attempts) {
+      try {
+        base64Image = await tryGenerate(aspectRatio, imageSize);
+        if (base64Image) break;
+      } catch (err) {
+        lastError = err;
+        console.warn(`Infografía paciente: fallo con ${aspectRatio}/${imageSize}, reintentando...`, err?.message || err);
       }
     }
 
     if (!base64Image) {
+      if (lastError) throw lastError;
       throw new Error("No se pudo generar la imagen de la infografía.");
     }
 
