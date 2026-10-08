@@ -33,6 +33,17 @@ export const getFormattedProjections = (projs: string[], customProj: string) => 
 // Helper to build the studyType string dynamically
 export const buildStudyTypeString = (mod: string, spec: string, lat: string, custom: string, projs: string[], customProj: string) => {
   let mainStudy = spec === "Otro" ? (custom || "") : spec;
+  const modNorm = String(mod || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+  // Combined mammo + breast US modality already names the study; don't append "de Mamas".
+  if (/mamografia y ultrasonido|ultrasonido de mamas/.test(modNorm)) {
+    const gLat = getGenderedLaterality(lat, "Mamas");
+    return gLat ? `${mod} ${gLat}` : mod;
+  }
+
   if (!mainStudy) {
     return mod;
   }

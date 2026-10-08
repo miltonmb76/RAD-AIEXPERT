@@ -323,7 +323,8 @@ export function createGenerateReportHandler(d: GenerateReportHandlerDeps) {
         if (mode === "full") {
           const batchSelection = { ...FULL_REPORT_BATCH_MODULES };
           const suiteShortcut = autoActivateSpecificSuite
-            ? getSpecificSuiteShortcut(specificStudy, modality)
+            ? getSpecificSuiteShortcut(specificStudy, modality) ||
+              getSpecificSuiteShortcut(studyType || "", "")
             : null;
           if (suiteShortcut) {
             batchSelection[suiteShortcut.id] = true;

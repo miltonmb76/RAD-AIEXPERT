@@ -1231,7 +1231,9 @@ export default function App() {
 
     // 1. Detect Modality
     let detectedModality = "Radiografía";
-    if (/ultrasonido|ecografía|eco|ud|usg/i.test(fullStudy)) {
+    if (/mamograf[ií]a\s*y\s*ultrasonido|ultrasonido de mamas/i.test(fullStudy)) {
+      detectedModality = "Mamografía y Ultrasonido de Mamas";
+    } else if (/ultrasonido|ecografía|eco|ud|usg/i.test(fullStudy)) {
       detectedModality = "Ultrasonido";
     } else if (/mamografía|mamografia|momografía|momografia/i.test(fullStudy)) {
       detectedModality = "Mamografía";
@@ -6622,8 +6624,11 @@ Ejemplo:
                               type="button"
                               onClick={() => {
                                 setModality(mod);
-                                if (mod === "Mamografía y Ultrasonido de Mamas") {
-                                  setSpecificStudy("");
+                                if (/mamograf[ií]a\s*y\s*ultrasonido/i.test(mod)) {
+                                  setSpecificStudy("Mamas");
+                                  setAutoActivateSpecificSuite(true);
+                                  setSelectedBatchModules((prev) => ({ ...prev, breast3d: true }));
+                                  setIsBreast3dSuiteOpen(true);
                                 }
                               }}
                               className={`py-2 px-2 rounded-xl text-[10px] font-black transition-all duration-200 tracking-wider uppercase border-2 text-center cursor-pointer select-none active:scale-97 ${
@@ -7560,7 +7565,7 @@ Ejemplo:
                         </p>
                         <p className="mt-0.5 text-[9px] leading-relaxed text-slate-500">
                           {selectedSpecificSuite
-                            ? `${selectedSpecificSuite.label} se generará automáticamente porque seleccionaste «${specificStudy}».`
+                            ? `${selectedSpecificSuite.label} se generará automáticamente porque seleccionaste «${specificStudy || modality}».`
                             : "El estudio seleccionado no tiene una suite 3D específica; podrás elegir Atlas u otros módulos después."}
                         </p>
                       </div>
