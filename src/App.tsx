@@ -60,6 +60,10 @@ import { ActivePatientPanel } from "./components/ActivePatientPanel";
 import { autoLabelAttachedImages, type AttachedImageForLabeling } from "./lib/labelingQueue";
 import { applyReorderedImageIds } from "./lib/figureCorrelation";
 import {
+  detectInfographicViewOrientation,
+  type InfographicViewOrientation,
+} from "./lib/infographicLaterality";
+import {
   describeActiveRouting,
   MODEL_OPTIONS,
   normalizeModelPreference,
@@ -235,6 +239,8 @@ export default function App() {
   const [attachInfographicToPatientSummary, setAttachInfographicToPatientSummary] = useState<boolean>(false);
   /** Free-text corrections applied on regenerate (laterality, labels, anatomy, etc.) */
   const [infographicCorrectionNotes, setInfographicCorrectionNotes] = useState<string>("");
+  /** AP = de frente (espejo); PA = de espaldas (mismos lados del cuadro) */
+  const [infographicViewOrientation, setInfographicViewOrientation] = useState<InfographicViewOrientation>("AP");
   // Local storage customizable instructions
   const [systemInstruction, setSystemInstruction] = useState<string>(() => {
     if (typeof window === "undefined") return GENERAL_SYSTEM_INSTRUCTION;
@@ -1353,6 +1359,17 @@ export default function App() {
     const computed = buildStudyTypeString(modality, specificStudy, laterality, customStudy, projections, customProjection);
     setStudyType(computed);
   }, [modality, specificStudy, laterality, customStudy, projections, customProjection]);
+
+  // Sync infographic AP/PA laterality from selected radiography projections / study text
+  useEffect(() => {
+    const detected = detectInfographicViewOrientation({
+      studyType,
+      projections,
+      report: generatedReport || inputReport || "",
+      correctionNotes: infographicCorrectionNotes,
+    });
+    setInfographicViewOrientation(detected);
+  }, [projections, studyType]);
 
   // Auto-detect specific study from pasted/draft report, findings, or clinical history if specificStudy is the default "TÃ³rax"
   useEffect(() => {
@@ -4636,10 +4653,10 @@ Ejemplo:
       if (data.success) {
         setInfographicUrl(data.imageUrl);
       } else {
-        setInfographicError(data.error || "Error generando la infografía.");
+        setInfographicError(data.error || "Error generando la infografï¿½a.");
       }
     } catch (err: any) {
-      setInfographicError(err.message || "Error al conectar con la API de infografías.");
+      setInfographicError(err.message || "Error al conectar con la API de infografï¿½as.");
     } finally {
       setIsGeneratingInfographic(false);
     }
@@ -5109,7 +5126,7 @@ Ejemplo:
     }
     if (sourceImages.length === 0) {
       if (!opts?.silent) {
-        alert("No hay imágenes cargadas para correlacionar. Por favor sube imágenes primero.");
+        alert("No hay imï¿½genes cargadas para correlacionar. Por favor sube imï¿½genes primero.");
       }
       return;
     }
@@ -5164,7 +5181,7 @@ Ejemplo:
           return applyReorderedImageIds(merged, data.reorderedImageIds, data.report || reportToUse);
         });
       } else if (!opts?.silent) {
-        alert(data.error || "Ocurrió un error al intentar correlacionar las figuras.");
+        alert(data.error || "Ocurriï¿½ un error al intentar correlacionar las figuras.");
       }
     } catch (err) {
       console.error("Error al correlacionar figuras:", err);
@@ -5658,7 +5675,7 @@ Ejemplo:
         try {
           await deleteStudyFromCloud(id);
         } catch (e) {
-          console.warn("No se pudo eliminar la copia en la nube (quedó bloqueada localmente):", id, e);
+          console.warn("No se pudo eliminar la copia en la nube (quedï¿½ bloqueada localmente):", id, e);
         }
       }
     } catch (e) {
@@ -5671,8 +5688,8 @@ Ejemplo:
     if (
       !confirm(
         loggedIn
-          ? "¿Vaciar TODO el historial de reportes y estudios (local y nube)? Si solo se borra en este navegador, al reiniciar pueden volver a aparecer desde la nube."
-          : "¿Vaciar todo el historial local de reportes y estudios guardados en este navegador? (No afectará el informe que tengas abierto ahora)"
+          ? "ï¿½Vaciar TODO el historial de reportes y estudios (local y nube)? Si solo se borra en este navegador, al reiniciar pueden volver a aparecer desde la nube."
+          : "ï¿½Vaciar todo el historial local de reportes y estudios guardados en este navegador? (No afectarï¿½ el informe que tengas abierto ahora)"
       )
     ) {
       return;
@@ -7992,14 +8009,14 @@ Ejemplo:
                             onClick={handleGenerateInfographic}
                             disabled={isGeneratingInfographic}
                             className="px-3 md:px-4 py-1.5 md:py-2 bg-pink-700 hover:bg-pink-600 border-2 border-pink-500/30 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider text-white transition-all flex items-center gap-1.5 md:gap-2 shadow-lg select-none whitespace-nowrap cursor-pointer"
-                            title="Generar infografía para el paciente (texto nítido + layout elegido por IA)"
+                            title="Generar infografï¿½a para el paciente (texto nï¿½tido + layout elegido por IA)"
                           >
                             {isGeneratingInfographic ? (
                               <>
                                 <Loader2 className="h-3.5 w-3.5 animate-spin" /> Generando...
                               </>
                             ) : (
-                              "Infografía Paciente"
+                              "Infografï¿½a Paciente"
                             )}
                           </button>
                           <button
@@ -8089,13 +8106,47 @@ Ejemplo:
                         {generatedReport && !infographicUrl && !isGeneratingInfographic && (
                           <div className="mb-4 p-3 bg-slate-900/70 rounded-xl border border-pink-600/20 space-y-2">
                             <label className="block text-[9px] font-black uppercase tracking-widest text-pink-300/80 font-mono">
+                              Vista del dibujo (lateralidad)
+                            </label>
+                            <div className="grid grid-cols-2 gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setInfographicViewOrientation("AP")}
+                                className={`py-2 px-2 rounded-lg text-[9px] font-black uppercase tracking-wider border-2 cursor-pointer ${
+                                  infographicViewOrientation === "AP"
+                                    ? "bg-pink-700/40 border-pink-500 text-pink-100"
+                                    : "bg-slate-950 border-slate-700 text-slate-400 hover:text-slate-200"
+                                }`}
+                              >
+                                AP Â· de frente
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setInfographicViewOrientation("PA")}
+                                className={`py-2 px-2 rounded-lg text-[9px] font-black uppercase tracking-wider border-2 cursor-pointer ${
+                                  infographicViewOrientation === "PA"
+                                    ? "bg-pink-700/40 border-pink-500 text-pink-100"
+                                    : "bg-slate-950 border-slate-700 text-slate-400 hover:text-slate-200"
+                                }`}
+                              >
+                                PA Â· de espaldas
+                              </button>
+                            </div>
+                            <p className="text-[9px] text-slate-500 leading-relaxed">
+                              {infographicViewOrientation === "PA"
+                                ? "PA: derecha del paciente a la derecha del cuadro; izquierda a la izquierda."
+                                : "AP: derecha del paciente a la izquierda del cuadro; izquierda a la derecha."}
+                            </p>
+                            <label className="block text-[9px] font-black uppercase tracking-widest text-pink-300/80 font-mono">
                               Notas de lateralidad / correcciones (opcional)
                             </label>
                             <textarea
                               value={infographicCorrectionNotes}
                               onChange={(e) => setInfographicCorrectionNotes(e.target.value)}
                               rows={2}
-                              placeholder="Ej.: enfatizar hombro derecho del paciente a la izquierda del dibujo (vista de frente)."
+                              placeholder={infographicViewOrientation === "PA"
+                                ? "Ej.: hallazgo en hombro DERECHO del paciente (debe verse a la DERECHA del dibujo, vista de espaldas)."
+                                : "Ej.: hallazgo en hombro DERECHO del paciente (debe verse a la IZQUIERDA del dibujo, vista de frente)."}
                               className="w-full px-3 py-2 bg-slate-950 border border-slate-700 focus:border-pink-500/40 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none resize-y leading-relaxed"
                             />
                           </div>
@@ -8104,9 +8155,9 @@ Ejemplo:
                           <div className="mb-6 p-4 bg-slate-800 rounded-xl border border-pink-600/30">
                              <div className="flex justify-between items-start mb-2 flex-wrap gap-2">
                                <div className="min-w-0">
-                                 <h4 className="text-sm font-bold text-pink-300">Infografía Generada:</h4>
+                                 <h4 className="text-sm font-bold text-pink-300">Infografï¿½a Generada:</h4>
                                  <p className="text-[9px] text-slate-500 mt-0.5 leading-relaxed">
-                                   Elija si desea incluirla. Si no le gusta el resultado, déjela sin adjuntar.
+                                   Elija si desea incluirla. Si no le gusta el resultado, dï¿½jela sin adjuntar.
                                  </p>
                                </div>
                                <div className="flex flex-wrap items-center justify-end gap-1.5">
@@ -8165,11 +8216,39 @@ Ejemplo:
                                  value={infographicCorrectionNotes}
                                  onChange={(e) => setInfographicCorrectionNotes(e.target.value)}
                                  rows={3}
-                                 placeholder="Ej.: El hallazgo es en el hombro DERECHO del paciente (debe verse a la izquierda del dibujo). Corrige la etiqueta y no lo dibujes en el lado izquierdo."
+                                 placeholder={infographicViewOrientation === "PA"
+                                   ? "Ej.: El hallazgo es en el hombro DERECHO del paciente (en PA debe verse a la DERECHA del dibujo)."
+                                   : "Ej.: El hallazgo es en el hombro DERECHO del paciente (en AP debe verse a la IZQUIERDA del dibujo)."}
                                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 focus:border-pink-500/50 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none resize-y leading-relaxed"
                                />
+                               <div className="grid grid-cols-2 gap-2">
+                                 <button
+                                   type="button"
+                                   onClick={() => setInfographicViewOrientation("AP")}
+                                   className={`py-1.5 px-2 rounded-lg text-[9px] font-black uppercase tracking-wider border cursor-pointer ${
+                                     infographicViewOrientation === "AP"
+                                       ? "bg-pink-700/40 border-pink-500 text-pink-100"
+                                       : "bg-slate-950 border-slate-700 text-slate-400"
+                                   }`}
+                                 >
+                                   AP Â· de frente
+                                 </button>
+                                 <button
+                                   type="button"
+                                   onClick={() => setInfographicViewOrientation("PA")}
+                                   className={`py-1.5 px-2 rounded-lg text-[9px] font-black uppercase tracking-wider border cursor-pointer ${
+                                     infographicViewOrientation === "PA"
+                                       ? "bg-pink-700/40 border-pink-500 text-pink-100"
+                                       : "bg-slate-950 border-slate-700 text-slate-400"
+                                   }`}
+                                 >
+                                   PA Â· de espaldas
+                                 </button>
+                               </div>
                                <p className="text-[9px] text-slate-500 leading-relaxed">
-                                 Vista de frente (AP): lado derecho del paciente a la izquierda del cuadro; izquierdo a la derecha.
+                                 {infographicViewOrientation === "PA"
+                                   ? "PA (de espaldas): derecha del paciente = derecha del cuadro; izquierda = izquierda."
+                                   : "AP (de frente): derecha del paciente = izquierda del cuadro; izquierda = derecha."}
                                </p>
                                <div className="flex flex-wrap justify-end gap-2">
                                <button

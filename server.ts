@@ -23,6 +23,11 @@ import {
   hasOpenAiApiKey,
   normalizePatientSummaryPayload,
 } from "./src/lib/openaiPatientSummary";
+import {
+  buildInfographicLateralityPromptBlock,
+  detectInfographicViewOrientation,
+  type InfographicViewOrientation,
+} from "./src/lib/infographicLaterality";
 import { buildUsAutoLabelAnatomyHints } from "./src/lib/usAutoLabelHints";
 import { normalizeSecondReaderData } from "./src/lib/secondReader";
 import {
@@ -1695,13 +1700,27 @@ Devuelve de manera estricta y exclusiva el reporte radiológico COMPLETO resulta
  */
 app.post("/api/generate-infographic", async (req: express.Request, res: express.Response) => {
   try {
-    const { report, studyType, correctionNotes, reportDate } = req.body;
+    const { report, studyType, correctionNotes, reportDate, projections, viewOrientation } = req.body;
     if (!report || !studyType) {
       return res.status(400).json({ success: false, error: "Se requieren el reporte y el tipo de estudio." });
     }
 
     const ai = getGeminiClient();
     const dateHint = String(reportDate || "").trim();
+    const preferredView =
+      String(viewOrientation || "").toUpperCase() === "PA"
+        ? ("PA" as InfographicViewOrientation)
+        : String(viewOrientation || "").toUpperCase() === "AP"
+          ? ("AP" as InfographicViewOrientation)
+          : null;
+    const orientation = detectInfographicViewOrientation({
+      studyType: String(studyType || ""),
+      projections,
+      report: String(report || ""),
+      correctionNotes: String(correctionNotes || ""),
+      preferred: preferredView,
+    });
+    const lateralityBlock = buildInfographicLateralityPromptBlock(orientation);
     const correctionBlock = String(correctionNotes || "").trim()
       ? `
 
@@ -1723,6 +1742,9 @@ ${report}
 """
 ${correctionBlock}
 
+ORIENTACIÓN DE LA FIGURA CORPORAL (obligatoria): ${orientation === "PA" ? "PA — paciente DE ESPALDAS" : "AP — paciente DE FRENTE"}.
+Aplica SOLO la regla de lateralidad correspondiente a esa orientación.
+
 LIBERTAD DE DISEÑO (importante):
 - Tú eliges el layout, la jerarquía visual y cómo acomodar los hallazgos.
 - NO uses una plantilla fija ni un esquema rígido de secciones.
@@ -1738,12 +1760,7 @@ CONTENIDO — QUÉ SÍ / QUÉ NO:
 - NO: recomendaciones, tratamientos, “qué hacer después”, derivaciones, alarmismo ni consejos clínicos.
 - NO inventes mediciones, gradaciones ni hallazgos que no estén en el reporte.
 
-REGLA CRÍTICA DE LATERALIDAD — PACIENTE VISTO DE FRENTE (vista AP / coronal / anterior):
-- La figura muestra al paciente MIRANDO HACIA EL OBSERVADOR.
-- "Derecha" / "Izquierda" = lado ANATÓMICO DEL PACIENTE.
-- El LADO DERECHO DEL PACIENTE queda a la IZQUIERDA DEL CUADRO; el LADO IZQUIERDO DEL PACIENTE queda a la DERECHA DEL CUADRO.
-- Etiqueta siempre con el lado del paciente. PROHIBIDO espejar anatomía.
-- Una imagen bella con lateralidad incorrecta es un FALLO CRÍTICO.
+${lateralityBlock}
 
 Entrega una sola imagen vertical, lista para compartir con el paciente.
 `;
@@ -1799,6 +1816,7 @@ Entrega una sola imagen vertical, lista para compartir con el paciente.
     res.json({
       success: true,
       imageUrl: `data:image/jpeg;base64,${base64Image}`,
+      viewOrientation: orientation,
     });
   } catch (error: any) {
     console.error("Error en /api/generate-infographic:", error);
