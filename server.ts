@@ -19,6 +19,10 @@ import {
   normalizeFindingsInfographicData,
 } from "./src/lib/findingsInfographic";
 import {
+  normalizeFindingsMapData,
+  templateCatalogForPrompt,
+} from "./src/lib/findingsMap";
+import {
   generatePatientSummaryOpenAI,
   hasOpenAiApiKey,
   normalizePatientSummaryPayload,
@@ -10444,6 +10448,188 @@ ${report}
     res.json({ success: true, data });
   } catch (error: any) {
     console.error("Error en /api/generate-findings-infographic:", error);
+    res.status(500).json({ success: false, error: handleGeminiError(error) });
+  }
+});
+
+/**
+ * POST /api/generate-findings-map
+ * Generic numbered findings map (silhouette + pins) for any study.
+ * Accepts optional priorInstructions, templateHint, viewOrientation.
+ */
+app.post("/api/generate-findings-map", async (req: express.Request, res: express.Response) => {
+  try {
+    const {
+      model,
+      report,
+      studyType,
+      clinicalHistory,
+      priorInstructions,
+      templateHint,
+      viewOrientation,
+    } = req.body;
+    if (!report || !String(report).trim()) {
+      return res.status(400).json({ success: false, error: "Se requiere el parámetro 'report'." });
+    }
+
+    const ai = getGeminiClient();
+    const modelToUse = getModelName(model);
+    const study = (studyType || "").toString().trim();
+    const history = (clinicalHistory || "").toString().trim();
+    const priors = (priorInstructions || "").toString().trim();
+    const templatePref = (templateHint || "auto").toString().trim();
+    const orientPref = (viewOrientation || "auto").toString().trim().toUpperCase();
+    const catalog = templateCatalogForPrompt();
+
+    const prompt = `Eres un radiólogo hispanohablante. Construye un MAPA DE HALLAZGOS NUMERADOS genérico para PDF/consola.
+
+IDIOMA: ESPAÑOL médico. Solo hallazgos afirmados o claramente relevantes del informe. No inventes.
+NO incluyas manejo, recomendaciones ni juicios sobre omisiones del informe.
+
+ESTUDIO: ${study || "Detectar del informe"}
+${history ? `HISTORIA CLÍNICA:\n"""\n${history}\n"""` : "Sin historia adicional."}
+${priors
+  ? `\nINSTRUCCIONES PREVIAS DEL MÉDICO (prioridad alta — respétalas):\n"""\n${priors}\n"""`
+  : "\nSin instrucciones previas; elige plantilla y pins según el estudio."}
+
+PREFERENCIA DE PLANTILLA: ${templatePref}
+PREFERENCIA DE VISTA (lateralidad): ${orientPref === "AP" || orientPref === "PA" ? orientPref : "auto (elige AP o PA según el estudio; tórax de espaldas → PA)"}
+
+CATÁLOGO DE PLANTILLAS Y SLOTS (usa exactamente estos templateId y regionKey):
+${catalog}
+
+REGLAS:
+1. Elige UN templateId del catálogo. Si hay preferencia distinta de "auto", úsala salvo que sea claramente inadecuada.
+2. Extrae 3–10 hallazgos significativos (máx. 12). Orden = orden de mención / importancia clínica (lesión dominante primero).
+3. Cada item: n (1..N), label (corto), detail (opcional, 1 frase), side (Derecha/Izquierda/Bilateral/""), regionKey (slot del template), figureRef (número si el informe dice "Figura N" o similar; si no, null), severity ("primary" solo 1–2 claves, resto "secondary").
+4. Opcional: x,y (0–100) solo si necesitas afinar posición dentro del slot; si no, omítelos.
+5. title breve (ej. "Mapa de hallazgos"), studyRegion anatómica breve, viewOrientation "AP" o "PA".
+6. Si hay instrucciones previas sobre qué enfatizar, filtrar normales, forzar plantilla o lateralidad: cúmplelas.
+
+JSON OBLIGATORIO (claves en inglés):
+{
+  "title": "Mapa de hallazgos",
+  "studyRegion": "...",
+  "templateId": "abdomen",
+  "viewOrientation": "AP",
+  "items": [
+    {
+      "n": 1,
+      "label": "...",
+      "detail": "...",
+      "side": "Derecha",
+      "regionKey": "ruq",
+      "figureRef": 1,
+      "severity": "primary"
+    }
+  ]
+}
+
+INFORME:
+"""
+${report}
+"""
+`;
+
+    const itemSchema = {
+      type: Type.OBJECT,
+      properties: {
+        n: { type: Type.NUMBER },
+        label: { type: Type.STRING },
+        detail: { type: Type.STRING },
+        side: { type: Type.STRING },
+        regionKey: { type: Type.STRING },
+        figureRef: { type: Type.NUMBER },
+        severity: { type: Type.STRING },
+        x: { type: Type.NUMBER },
+        y: { type: Type.NUMBER },
+      },
+      required: ["label", "regionKey"],
+    };
+
+    const fullSchema = {
+      type: Type.OBJECT,
+      properties: {
+        title: { type: Type.STRING },
+        studyRegion: { type: Type.STRING },
+        templateId: { type: Type.STRING },
+        viewOrientation: { type: Type.STRING },
+        items: { type: Type.ARRAY, items: itemSchema },
+      },
+      required: ["title", "templateId", "items"],
+    };
+
+    const readModelText = (response: any): string => {
+      if (response?.text && String(response.text).trim()) return String(response.text);
+      const parts = response?.candidates?.[0]?.content?.parts;
+      if (Array.isArray(parts)) {
+        return parts
+          .map((p: any) => (typeof p?.text === "string" ? p.text : ""))
+          .filter(Boolean)
+          .join("\n");
+      }
+      return "";
+    };
+
+    let rawText = "";
+    let parsed: any = null;
+
+    try {
+      const response = await ai.models.generateContent({
+        model: modelToUse,
+        contents: prompt,
+        config: {
+          temperature: 0.2,
+          responseMimeType: "application/json",
+          responseSchema: fullSchema,
+        },
+      });
+      rawText = readModelText(response);
+      parsed = extractJsonObject(rawText);
+    } catch (schemaErr: any) {
+      console.warn("generate-findings-map: schema attempt failed:", schemaErr?.message || schemaErr);
+    }
+
+    if (!parsed || !(parsed.items || parsed.findings || parsed.hallazgos)?.length) {
+      try {
+        const response2 = await ai.models.generateContent({
+          model: modelToUse,
+          contents: prompt + "\n\nResponde ÚNICAMENTE JSON válido con items[].",
+          config: { temperature: 0.25, responseMimeType: "application/json" },
+        });
+        rawText = readModelText(response2) || rawText;
+        parsed = extractJsonObject(rawText) || parsed;
+      } catch (e: any) {
+        console.warn("generate-findings-map: mime retry failed:", e?.message || e);
+      }
+    }
+
+    if (!parsed) {
+      console.error("generate-findings-map: unparseable output:", String(rawText || "").slice(0, 800));
+      return res.status(500).json({
+        success: false,
+        error: "No se pudo interpretar la respuesta de la IA (JSON inválido). Reintenta.",
+      });
+    }
+
+    if (templatePref && templatePref !== "auto" && !parsed.templateId) {
+      parsed.templateId = templatePref;
+    }
+    if ((orientPref === "AP" || orientPref === "PA") && !parsed.viewOrientation) {
+      parsed.viewOrientation = orientPref;
+    }
+
+    const data = normalizeFindingsMapData(parsed, priors);
+    if (!data.items.length) {
+      return res.status(500).json({
+        success: false,
+        error: "La IA no devolvió hallazgos mapeables. Reintenta o ajusta las instrucciones previas.",
+      });
+    }
+
+    res.json({ success: true, data });
+  } catch (error: any) {
+    console.error("Error en /api/generate-findings-map:", error);
     res.status(500).json({ success: false, error: handleGeminiError(error) });
   }
 });
