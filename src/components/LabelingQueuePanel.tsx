@@ -111,7 +111,7 @@ export const LabelingQueuePanel: React.FC<LabelingQueuePanelProps> = ({
       });
 
       try {
-        const label = await fetchSuggestedLabel({
+        const suggested = await fetchSuggestedLabel({
           image,
           reportText: report,
           studyType: studyTypeRef.current,
@@ -119,6 +119,7 @@ export const LabelingQueuePanel: React.FC<LabelingQueuePanelProps> = ({
           keyword,
           model: selectedModelRef.current,
         });
+        const label = suggested.label;
 
         if (generation !== undefined && generation !== processingGenerationRef.current) {
           return;

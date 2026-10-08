@@ -156,6 +156,22 @@ export async function idbDeleteStudy(id: string): Promise<void> {
   } catch (e) {}
 }
 
+/** Wipe every persisted local study (IndexedDB). Used by "Limpiar historial". */
+export async function idbClearAllStudies(): Promise<void> {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORES.STUDIES, "readwrite");
+    const store = tx.objectStore(STORES.STUDIES);
+    store.clear();
+    return new Promise((resolve) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    });
+  } catch (e) {
+    console.warn("[IndexedDB] Error clearing studies:", e);
+  }
+}
+
 // --- REPORTS HISTORY OPERATIONS ---
 export async function idbSaveHistory(reports: any[]): Promise<void> {
   try {

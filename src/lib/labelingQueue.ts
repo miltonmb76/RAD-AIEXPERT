@@ -64,6 +64,13 @@ function resolveImagePayload(image: AttachedImageForLabeling): string {
   return payload;
 }
 
+export type SuggestedLabelResult = {
+  label: string;
+  modality?: "MMG" | "US" | string;
+  projection?: string;
+  side?: string;
+};
+
 export async function fetchSuggestedLabel(params: {
   image: AttachedImageForLabeling;
   reportText: string;
@@ -71,7 +78,7 @@ export async function fetchSuggestedLabel(params: {
   clinicalHistory: string;
   keyword?: string;
   model: string;
-}): Promise<string> {
+}): Promise<SuggestedLabelResult> {
   const { image, reportText, studyType, clinicalHistory, keyword, model } = params;
   const imageData = resolveImagePayload(image);
 
@@ -90,7 +97,7 @@ export async function fetchSuggestedLabel(params: {
     if (!response.ok || !data.success || !data.label) {
       throw new Error(String(data.error || "No se pudo reorientar la rotulacion."));
     }
-    return String(data.label).trim();
+    return { label: String(data.label).trim() };
   }
 
   // Same primary endpoint used by manual "Rotular con IA" in App.tsx.
@@ -113,7 +120,12 @@ export async function fetchSuggestedLabel(params: {
 
   const label = String(data.label || "").trim();
   if (label) {
-    return label;
+    return {
+      label,
+      modality: data.modality === "MMG" ? "MMG" : data.modality === "US" ? "US" : image.modality,
+      projection: typeof data.projection === "string" ? data.projection : undefined,
+      side: typeof data.side === "string" ? data.side : undefined,
+    };
   }
 
   // Fallback for US captures when classify returns empty label.
@@ -133,7 +145,10 @@ export async function fetchSuggestedLabel(params: {
     throw new Error(String(fallback.data.error || "No se pudo sugerir la rotulacion."));
   }
 
-  return String(fallback.data.label).trim();
+  return {
+    label: String(fallback.data.label).trim(),
+    modality: image.modality || "US",
+  };
 }
 
 
@@ -158,7 +173,7 @@ export async function autoLabelAttachedImages(params: {
   concurrency?: number;
   shouldCancel?: () => boolean;
   onProgress?: (progress: AutoLabelProgress) => void;
-  onLabeled?: (imageId: string, label: string) => void;
+  onLabeled?: (imageId: string, result: SuggestedLabelResult) => void;
 }): Promise<{ labeled: number; failed: number }> {
   const {
     images,
@@ -192,7 +207,7 @@ export async function autoLabelAttachedImages(params: {
       const image = targets[index];
       onProgress?.({ done: labeled + failed, total: targets.length, currentImageId: image.id });
       try {
-        const label = await fetchSuggestedLabel({
+        const result = await fetchSuggestedLabel({
           image,
           reportText,
           studyType,
@@ -200,8 +215,8 @@ export async function autoLabelAttachedImages(params: {
           model,
         });
         if (shouldCancel?.()) return;
-        if (label.trim()) {
-          onLabeled?.(image.id, label.trim());
+        if (result.label.trim()) {
+          onLabeled?.(image.id, result);
           labeled += 1;
         } else {
           failed += 1;

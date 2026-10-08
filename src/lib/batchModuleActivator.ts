@@ -268,7 +268,8 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
       setPatientSummary(null);
       setPatientSummaryError(null);
       setIsGeneratingPatientSummary(true);
-      setIsPatientSummaryExpanded(true);
+      // Keep inline (not fullscreen) so auto-generation after report does not interrupt the workspace
+      setIsPatientSummaryExpanded(false);
       promises.push((async () => {
         try {
           const response = await fetch("/api/generate-patient-summary", {
@@ -283,7 +284,31 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
           });
           const data = await response.json();
           if (data.success && data.data) {
-            setPatientSummary(data.data);
+            const raw = data.data;
+            const findings = Array.isArray(raw.keyFindings)
+              ? raw.keyFindings.map((f: any) => ({
+                  title: f?.title || "",
+                  originalTerm: f?.originalTerm || "",
+                  simplifiedExplanation: f?.simplifiedExplanation || "",
+                  analogy: f?.analogy || "",
+                  clinicalContext: f?.clinicalContext || f?.reassurance || "",
+                  reassurance: f?.clinicalContext || f?.reassurance || "",
+                }))
+              : [];
+            const glossary = Array.isArray(raw.glossary)
+              ? raw.glossary
+                  .map((g: any) => ({
+                    term: String(g?.term || "").trim(),
+                    plainDefinition: String(g?.plainDefinition || g?.definition || "").trim(),
+                  }))
+                  .filter((g: any) => g.term && g.plainDefinition)
+              : [];
+            setPatientSummary({
+              studyOverview: raw.studyOverview || "",
+              summary: raw.summary || "",
+              keyFindings: findings,
+              glossary,
+            });
           } else {
             setPatientSummaryError(data.error || "Error al generar el resumen del paciente.");
           }
@@ -297,8 +322,24 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
 
     if (modules.glossary) promises.push(handleGenerateDynamicGlossary());
     if (modules.schematic) promises.push(handleGenerateSchematicSummary());
-    // Scorecard first (findings-based), then Atlas and/or Vascular guided by scorecard directives
-    if (modules.clinical_scorecard || modules.atlas3d || modules.vascular3d) {
+    // Scorecard first (findings-based), then organ suites guided by scorecard directives.
+    // Organ suites must NOT require atlas/vascular to be checked — e.g. Suite Mama alone.
+    const anyOrganSuite = Boolean(
+      modules.atlas3d ||
+        modules.vascular3d ||
+        modules.thyroid3d ||
+        modules.breast3d ||
+        modules.shoulder3d ||
+        modules.knee3d ||
+        modules.ankle3d ||
+        modules.kidney3d ||
+        modules.abdomen3d ||
+        modules.abdominalWall3d ||
+        modules.scrotum3d ||
+        modules.muscleTendon3d ||
+        modules.wrist3d
+    );
+    if (modules.clinical_scorecard || anyOrganSuite) {
       promises.push((async () => {
         let scorecardForModules = clinicalScorecardData;
 

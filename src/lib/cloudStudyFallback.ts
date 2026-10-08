@@ -1,22 +1,27 @@
 import type { CloudStudy } from "../firebaseDb";
 import type { SavedReport } from "./appLocalTypes";
+import { getDeletedStudyIds } from "./deletedStudyTombstones";
 
 export function convertLocalReportsToFallbackCloudStudies(
   uid: string,
   deps: { userEmail?: string; doctorName?: string; doctorLicense?: string; clinicName?: string }
 ): CloudStudy[] {
   try {
+    const deletedIds = getDeletedStudyIds();
     const localKey = `fallback_studies_${uid}`;
     const cached = localStorage.getItem(localKey);
     let cachedStudies: CloudStudy[] = [];
     if (cached) {
       try { cachedStudies = JSON.parse(cached); } catch (e) {}
     }
+    cachedStudies = cachedStudies.filter((s) => !deletedIds.has(s.id));
     
     const storedReports = localStorage.getItem("radiology_reports_history");
     if (storedReports) {
       try {
-        const localReports = JSON.parse(storedReports) as SavedReport[];
+        const localReports = (JSON.parse(storedReports) as SavedReport[]).filter(
+          (rep) => !deletedIds.has(rep.id)
+        );
         let updated = [...cachedStudies];
         let changed = false;
         

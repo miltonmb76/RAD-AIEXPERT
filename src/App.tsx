@@ -58,6 +58,11 @@ import { runBackgroundTask } from "./lib/backgroundTasks";
 import { BackgroundTasksBar } from "./components/BackgroundTasksBar";
 import { ActivePatientPanel } from "./components/ActivePatientPanel";
 import { autoLabelAttachedImages, type AttachedImageForLabeling } from "./lib/labelingQueue";
+import { applyReorderedImageIds } from "./lib/figureCorrelation";
+import {
+  detectInfographicViewOrientation,
+  type InfographicViewOrientation,
+} from "./lib/infographicLaterality";
 import {
   describeActiveRouting,
   MODEL_OPTIONS,
@@ -133,7 +138,8 @@ import {
 } from "lucide-react";
 import { initAuth, googleSignIn, logout as googleLogout, anonymousSignIn, emailSignIn, emailSignUp, getFirebaseConfig } from "./firebaseAuth";
 import { CloudStudy, saveStudyToCloud, getStudiesFromCloud, deleteStudyFromCloud, Worklist, WorklistPatient, saveWorklistToCloud, getWorklistFromCloud, getSingleStudyFromCloud, testFirebaseConfigConnection, saveUserSettingsToCloud, getUserSettingsFromCloud } from "./firebaseDb";
-import { idbSaveWorklist, idbGetWorklist, idbClearWorklist, idbSaveStudy, idbGetAllStudies, idbDeleteStudy, idbSaveHistory, idbGetHistory, idbSaveUserSettings, idbGetUserSettings, idbSaveBranding, idbGetBranding, getActiveWorklistId } from "./localDb";
+import { idbSaveWorklist, idbGetWorklist, idbClearWorklist, idbSaveStudy, idbGetAllStudies, idbDeleteStudy, idbClearAllStudies, idbSaveHistory, idbGetHistory, idbSaveUserSettings, idbGetUserSettings, idbSaveBranding, idbGetBranding, getActiveWorklistId } from "./localDb";
+import { markStudiesDeleted, filterOutDeletedStudies } from "./lib/deletedStudyTombstones";
 import { Mail, LogOut, Clock, Calendar, ListTodo, UserCheck, ImagePlus, Wifi, HelpCircle, Info, Laptop, Network, ChevronDown, Link } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
@@ -229,6 +235,12 @@ export default function App() {
   const [infographicUrl, setInfographicUrl] = useState<string | null>(null);
   const [infographicError, setInfographicError] = useState<string | null>(null);
   const [attachInfographicToOfficialReport, setAttachInfographicToOfficialReport] = useState<boolean>(false);
+  /** Opt-in: include generated infographic in the patient explanation PDF */
+  const [attachInfographicToPatientSummary, setAttachInfographicToPatientSummary] = useState<boolean>(false);
+  /** Free-text corrections applied on regenerate (laterality, labels, anatomy, etc.) */
+  const [infographicCorrectionNotes, setInfographicCorrectionNotes] = useState<string>("");
+  /** AP = de frente (espejo); PA = de espaldas (mismos lados del cuadro) */
+  const [infographicViewOrientation, setInfographicViewOrientation] = useState<InfographicViewOrientation>("AP");
   // Local storage customizable instructions
   const [systemInstruction, setSystemInstruction] = useState<string>(() => {
     if (typeof window === "undefined") return GENERAL_SYSTEM_INSTRUCTION;
@@ -838,7 +850,9 @@ export default function App() {
   const [pdfLayoutType, setPdfLayoutType] = useState<"classic" | "clinical_slate" | "executive_medical">("classic");
   
   // PDF Real-Time Preview States
-  const [printModalDocType, setPrintModalDocType] = useState<'report' | 'patient_summary'>('report');
+  const [printModalDocType, setPrintModalDocType] = useState<'report' | 'patient_summary' | 'both'>('report');
+  /** formal = solo informe; both = informe + pack explicación paciente */
+  const [generateDocumentScope, setGenerateDocumentScope] = useState<'formal' | 'both'>('formal');
   const [printModalViewType, setPrintModalViewType] = useState<'html_simulator' | 'pdf_viewer'>('html_simulator');
   const [generatedNativePdfUrl, setGeneratedNativePdfUrl] = useState<string | null>(null);
   const [generatedSummaryPdfUrl, setGeneratedSummaryPdfUrl] = useState<string | null>(null);
@@ -1224,7 +1238,9 @@ export default function App() {
 
     // 1. Detect Modality
     let detectedModality = "Radiografía";
-    if (/ultrasonido|ecografía|eco|ud|usg/i.test(fullStudy)) {
+    if (/mamograf[ií]a\s*y\s*ultrasonido|ultrasonido de mamas/i.test(fullStudy)) {
+      detectedModality = "Mamografía y Ultrasonido de Mamas";
+    } else if (/ultrasonido|ecografía|eco|ud|usg/i.test(fullStudy)) {
       detectedModality = "Ultrasonido";
     } else if (/mamografía|mamografia|momografía|momografia/i.test(fullStudy)) {
       detectedModality = "Mamografía";
@@ -1343,6 +1359,17 @@ export default function App() {
     const computed = buildStudyTypeString(modality, specificStudy, laterality, customStudy, projections, customProjection);
     setStudyType(computed);
   }, [modality, specificStudy, laterality, customStudy, projections, customProjection]);
+
+  // Sync infographic AP/PA laterality from selected radiography projections / study text
+  useEffect(() => {
+    const detected = detectInfographicViewOrientation({
+      studyType,
+      projections,
+      report: generatedReport || inputReport || "",
+      correctionNotes: infographicCorrectionNotes,
+    });
+    setInfographicViewOrientation(detected);
+  }, [projections, studyType]);
 
   // Auto-detect specific study from pasted/draft report, findings, or clinical history if specificStudy is the default "Tórax"
   useEffect(() => {
@@ -2628,6 +2655,8 @@ Ejemplo:
   const [isCaseAnalysisExpanded, setIsCaseAnalysisExpanded] = useState<boolean>(false);
   const [isBibliographyExpanded, setIsBibliographyExpanded] = useState<boolean>(false);
   const [isPatientSummaryExpanded, setIsPatientSummaryExpanded] = useState<boolean>(false);
+  /** Which text engine produced the last patient explanation (openai | gemini) */
+  const [patientSummaryProvider, setPatientSummaryProvider] = useState<"openai" | "gemini" | null>(null);
   const [isGlossaryExpanded, setIsGlossaryExpanded] = useState<boolean>(false);
   const [isSchematicSummaryExpanded, setIsSchematicSummaryExpanded] = useState<boolean>(false);
   
@@ -2731,7 +2760,59 @@ Ejemplo:
   };
 
   const resetGeneratorForm = () => {
+    if (
+      !confirm(
+        "¿Iniciar un estudio nuevo desde cero?\n\nSe borrará el paciente, el informe, las imágenes, la explicación, la infografía, los módulos 3D y el resto de datos de esta sesión. No se modifican la marca, el médico ni la configuración de la clínica."
+      )
+    ) {
+      return;
+    }
+
+    // --- Identidad de sesión / worklist activa ---
     setCurrentCloudStudyId("");
+    if (worklist?.patients?.length) {
+      const shouldDemote = worklist.patients.some(
+        (p) => p.status === "current" || p.id === selectedWorklistPatientId
+      );
+      if (shouldDemote) {
+        saveWorklist(
+          worklist.patients.map((p) =>
+            p.status === "current" || p.id === selectedWorklistPatientId
+              ? { ...p, status: "pending" as const }
+              : p
+          )
+        );
+      }
+    }
+    setSelectedWorklistPatientId(null);
+    setLoadedCloudPdfBase64("");
+    setViewingCloudStudy(null);
+    setBridgeCaptureMismatch(null);
+    setBridgePatientCount(0);
+    setDicomNotification(null);
+    setActiveTab("generator");
+
+    // --- Paciente (no tocar branding/médico/clínica) ---
+    setPatientName("");
+    setPatientAge("");
+    setPatientGender("");
+    setPatientId("");
+    setPatientEmail("");
+    try {
+      localStorage.removeItem("rad_patient_email");
+    } catch (_) {}
+    setPatientLogoUrl("");
+    setPatientLogoRightUrl("");
+    setShowPatientDetails(false);
+    {
+      const today = new Date();
+      const yyyy = today.getFullYear();
+      const mm = String(today.getMonth() + 1).padStart(2, "0");
+      const dd = String(today.getDate()).padStart(2, "0");
+      setReportDate(`${yyyy}-${mm}-${dd}`);
+    }
+
+    // --- Parámetros del estudio ---
     setModality("Radiografía");
     setSpecificStudy("Tórax");
     setCustomStudy("");
@@ -2746,15 +2827,45 @@ Ejemplo:
     setUploadedReportName(null);
     setUploadedReportMimeType("");
     setCustomPrompt("");
+    setSelectedPresetId("");
+
+    // --- Imagen principal / ZIP ---
     setSelectedFile(null);
     setBase64Image(null);
+    if (imagePreviewUrl && imagePreviewUrl.startsWith("blob:")) {
+      try {
+        URL.revokeObjectURL(imagePreviewUrl);
+      } catch (_) {}
+    }
+    setImagePreviewUrl(null);
+    setDragActive(false);
+    setZipFile(null);
+    setIsZipExtractorOpen(false);
+    setZipExtractedFileForAnalysis(null);
+    setExportedImage(null);
+    setExportedMimeType("");
+
+    // --- Adjuntos US / renders 3D de hallazgos ---
+    setAttachedImages([]);
+    setFindings3dRenders([]);
+    setUsImagesGridMode("auto");
+
+    // --- Informe generado y edición ---
+    setIsGenerating(false);
+    setGenerationSteps("");
     setGeneratedReport("");
+    setOriginalBaseReport("");
     setReportError(null);
     setReportHistory([]);
     setReportRedoHistory([]);
     setIsEditingReportManual(false);
     setEditedReportText("");
-    setSelectedPresetId("");
+    setShowVersionComparison(false);
+    setManualSeverityOverrides({});
+    setAiSeverityCache({});
+    setIsAnalyzingParagraphs(false);
+
+    // --- Evaluaciones / modificaciones / bibliografía / análisis ---
     setImageEvaluation("");
     setIsEvaluatingImage(false);
     setCurrentModInstruction("");
@@ -2768,14 +2879,143 @@ Ejemplo:
     setCaseAnalysisError(null);
     setBibliography("");
     setIsSearchingBibliography(false);
+    setIsSearchingMoreBibliography(false);
     setBibliographyError(null);
     setBibliographySources([]);
+
+    // --- Anotaciones en imagen ---
     setAnnotations([]);
     setIsDrawingBox(false);
     setDrawStartPercent(null);
     setTempBox(null);
     setPendingAnnotation(null);
     setPendingLabel("");
+
+    // --- Explicación al paciente / glosario / operativo / esquema / semiología ---
+    setPatientSummary(null);
+    setPatientSummaryError(null);
+    setIsGeneratingPatientSummary(false);
+    setIsPatientSummaryExpanded(false);
+    setExpandedFindings({});
+    setAttachSummaryToOfficialReport(false);
+    setIncludeManagementRecs({});
+    setDynamicGlossary(null);
+    setDynamicGlossaryError(null);
+    setIsGeneratingDynamicGlossary(false);
+    setGlossaryLitSearch({});
+    setOperationalSummaryText("");
+    setIsGeneratingOperationalSummary(false);
+    setSchematicSummary(null);
+    setSchematicSummaryError(null);
+    setIsGeneratingSchematicSummary(false);
+    setSchematicFormat("blocks");
+    setSemiologyData(null);
+    setSemiologyError(null);
+    setIsGeneratingSemiology(false);
+
+    // --- Infografía paciente ---
+    setInfographicUrl(null);
+    setInfographicError(null);
+    setIsGeneratingInfographic(false);
+    setAttachInfographicToOfficialReport(false);
+    setAttachInfographicToPatientSummary(false);
+    setInfographicCorrectionNotes("");
+
+    // --- Módulos clínicos auxiliares ---
+    setClinicalScorecardData(null);
+    setIncludeScorecardInReport(false);
+    setIsClinicalScorecardOpen(false);
+    setReasoningChainData(null);
+    setIncludeReasoningChainInReport(true);
+    setIsReasoningChainOpen(false);
+    setNegativityChecklistData(null);
+    setIncludeNegativityChecklistInReport(false);
+    setIsNegativityChecklistOpen(false);
+    setSecondReaderData(null);
+    setIsSecondReaderOpen(false);
+    setDifferentialTreeData(null);
+    setIncludeDifferentialTreeInReport(true);
+    setIsDifferentialTreeOpen(false);
+    setSemioticsConductMatrixData(null);
+    setIncludeSemioticsConductMatrixInReport(true);
+    setIsSemioticsConductMatrixOpen(false);
+    setFindingsInfographicData(null);
+    setIncludeFindingsInfographicInReport(true);
+    setIsFindingsInfographicOpen(false);
+    setAtlasDirectivesFromScorecard("");
+    setMeasurementGaugeData(null);
+    setIncludeMeasurementGaugesInReport(true);
+    setIncludeMeasurementNormalsInPdf(false);
+    setIsMeasurementsGaugeOpen(false);
+    setBiomechanicalRadarData(null);
+    setIncludeRadarInReport(true);
+    setIsBiomechanicalRadarOpen(false);
+    setIsAsistenteMedidasOpen(false);
+    setIsCreadorNotasOpen(false);
+    setIsCreadorCuadroSinopticoOpen(false);
+    setIsCreadorSinopsisFracturasOpen(false);
+
+    // --- Suites 3D / atlas / vascular / focal / plano US ---
+    setAtlas3dData(null);
+    setIncludeAtlas3dInReport(true);
+    setVascular3dData(null);
+    setIncludeVascular3dInReport(true);
+    setFocalLesion3dData(null);
+    setIncludeFocalLesion3dInReport(true);
+    setUsPlaneSimulatorData(null);
+    setIncludeUsPlaneSimulatorInReport(true);
+    setThyroid3dData(null);
+    setIncludeThyroid3dInReport(true);
+    setIsThyroid3dSuiteOpen(false);
+    setBreast3dData(null);
+    setIncludeBreast3dInReport(true);
+    setIsBreast3dSuiteOpen(false);
+    setShoulder3dData(null);
+    setIncludeShoulder3dInReport(true);
+    setIsShoulder3dSuiteOpen(false);
+    setKnee3dData(null);
+    setIncludeKnee3dInReport(true);
+    setIsKnee3dSuiteOpen(false);
+    setAnkle3dData(null);
+    setIncludeAnkle3dInReport(true);
+    setIsAnkle3dSuiteOpen(false);
+    setKidney3dData(null);
+    setIncludeKidney3dInReport(true);
+    setIsKidney3dSuiteOpen(false);
+    setAbdomen3dData(null);
+    setIncludeAbdomen3dInReport(true);
+    setIsAbdomen3dSuiteOpen(false);
+    setAbdominalWall3dData(null);
+    setIncludeAbdominalWall3dInReport(true);
+    setIsAbdominalWall3dSuiteOpen(false);
+    setScrotum3dData(null);
+    setIncludeScrotum3dInReport(true);
+    setIsScrotum3dSuiteOpen(false);
+    setMuscleTendon3dData(null);
+    setIncludeMuscleTendon3dInReport(true);
+    setIsMuscleTendon3dSuiteOpen(false);
+    setWrist3dData(null);
+    setIncludeWrist3dInReport(true);
+    setIsWrist3dSuiteOpen(false);
+
+    // --- Elastografía ---
+    setIncludeElastographyInReport(false);
+    setElastographyStiffness(5.2);
+    setElastographyCAP(230);
+    setElastographyFatFraction(6.2);
+    setElastographyImage3d(null);
+    setElastographyOriginalImage(null);
+    setElastographyEtiology("masld");
+    setIsElastographyQUSModuleOpen(false);
+
+    // --- Lote de módulos / modales de envío ---
+    setSelectedBatchModules({ ...DEFAULT_BATCH_MODULES });
+    setIsActivatingBatch(false);
+    setBatchSuccessMessage(null);
+    setShowPrintModal(false);
+    setShowWhatsAppModal(false);
+    setShowGmailModal(false);
+    setWhatsappShareType("report_pdf");
   };
 
   // Convert File to base64
@@ -3538,24 +3778,37 @@ Ejemplo:
   };
 
   // Gmail API Integrated Share Handlers (Google Workspace Integration)
-  const handleOpenGmailShare = async (type: 'report_pdf' | 'patient_summary' | 'patient_infographic' | 'both_pdfs') => {
-    setGmailAttachedType('report_pdf');
+    const handleOpenGmailShare = async (type: 'report_pdf' | 'patient_summary' | 'patient_infographic' | 'both_pdfs') => {
+    const attachedKind = type === 'patient_infographic' ? 'patient_summary' : type;
+    setGmailAttachedType(attachedKind as 'report_pdf' | 'patient_summary' | 'both_pdfs');
     setGmailTo(patientEmail || "");
     setGmailSuccessMessage(null);
     setGmailErrorMessage(null);
 
-    // Only select the official report PDF (as other elements are now included directly in the report)
-    setGmailAttachReport(true);
-    setGmailAttachSummary(false);
-    setGmailAttachInfographic(false);
-    
-    // Construct default subject & email body nicely for the official report
+    const attachReport = type === 'report_pdf' || type === 'both_pdfs';
+    const attachSummary = type === 'patient_summary' || type === 'both_pdfs';
+    const attachInfographic = type === 'patient_infographic';
+    setGmailAttachReport(attachReport);
+    setGmailAttachSummary(attachSummary);
+    setGmailAttachInfographic(attachInfographic);
+
     const clientName = patientName || "Paciente";
     let subject = `Reporte de Estudio Clínico - ${clientName}`;
     let body = `Estimado(a) ${clientName},\n\nLe enviamos adjunto a este correo el Reporte de Estudio Clínico Oficial realizado.\n\n`;
 
+    if (type === 'patient_summary') {
+      subject = `Explicación de su estudio - ${clientName}`;
+      body = `Estimado(a) ${clientName},\n\nLe enviamos una explicación en lenguaje claro de su estudio. El informe radiológico formal, dirigido a su médico tratante, se entrega por separado.\n\n`;
+    } else if (type === 'both_pdfs') {
+      subject = `Informe y explicación de su estudio - ${clientName}`;
+      body = `Estimado(a) ${clientName},\n\nLe enviamos dos documentos adjuntos:\n1) El informe radiológico formal (para su médico tratante).\n2) Una explicación en lenguaje claro para usted.\n\nEl informe formal es el documento que debe presentar en consulta.\n\n`;
+    } else if (type === 'patient_infographic') {
+      subject = `Infografía de su estudio - ${clientName}`;
+      body = `Estimado(a) ${clientName},\n\nLe enviamos la infografía explicativa de su estudio.\n\n`;
+    }
+
     body += `Quedamos a su entera disposición para cualquier aclaración o consulta adicional.\n\nAtentamente,\n${doctorName || "Médico Especialista"}`;
-    
+
     setGmailSubject(subject);
     setGmailBody(body);
     setShowGmailModal(true);
@@ -3799,6 +4052,7 @@ Ejemplo:
     setIsGeneratingPatientSummary(true);
     setPatientSummaryError(null);
     setPatientSummary(null);
+    setPatientSummaryProvider(null);
     setExpandedFindings({});
     try {
       const response = await fetch("/api/generate-patient-summary", {
@@ -3813,7 +4067,32 @@ Ejemplo:
       });
       const data = await response.json();
       if (data.success && data.data) {
-        setPatientSummary(data.data);
+        const raw = data.data;
+        const findings = Array.isArray(raw.keyFindings)
+          ? raw.keyFindings.map((f: any) => ({
+              title: f?.title || "",
+              originalTerm: f?.originalTerm || "",
+              simplifiedExplanation: f?.simplifiedExplanation || "",
+              analogy: f?.analogy || "",
+              clinicalContext: f?.clinicalContext || f?.reassurance || "",
+              reassurance: f?.clinicalContext || f?.reassurance || "",
+            }))
+          : [];
+        const glossary = Array.isArray(raw.glossary)
+          ? raw.glossary
+              .map((g: any) => ({
+                term: String(g?.term || "").trim(),
+                plainDefinition: String(g?.plainDefinition || g?.definition || "").trim(),
+              }))
+              .filter((g: any) => g.term && g.plainDefinition)
+          : [];
+        setPatientSummary({
+          studyOverview: raw.studyOverview || "",
+          summary: raw.summary || "",
+          keyFindings: findings,
+          glossary,
+        });
+        setPatientSummaryProvider(data.provider === "openai" ? "openai" : "gemini");
       } else {
         setPatientSummaryError(data.error || "Error al generar el resumen del paciente.");
       }
@@ -4180,16 +4459,15 @@ Ejemplo:
         <p style="margin: 0 0 12px 0; font-size: 11px; font-style: italic; color: #4b5563; font-family: monospace;">Término original en informe técnico: "${finding.originalTerm}"</p>
         <p style="margin: 0 0 12px 0; font-size: 13.5px; font-family: system-ui, sans-serif; color: #1f2937; line-height: 1.55;"><strong>Explicación:</strong> ${finding.simplifiedExplanation}</p>
         <p style="margin: 0 0 8px 0; font-size: 12.5px; font-family: system-ui, sans-serif; color: #7c2d12; background-color: #fff7ed; padding: 10px; border-radius: 6px; border-left: 3px solid #f97316;">🔍 <strong>Analogía de comprensión:</strong> ${finding.analogy}</p>
-        <p style="margin: 0; font-size: 12.5px; font-family: system-ui, sans-serif; color: #1e3a8a; font-weight: 600; background-color: #eff6ff; padding: 10px; border-radius: 6px; border-left: 3px solid #3b82f6;">🩺 <strong>Contexto Clínico y Perspectiva Médica:</strong> ${finding.reassurance}</p>
+        <p style="margin: 0; font-size: 12.5px; font-family: system-ui, sans-serif; color: #1e3a8a; font-weight: 600; background-color: #eff6ff; padding: 10px; border-radius: 6px; border-left: 3px solid #3b82f6;">🩺 <strong>Contexto descriptivo:</strong> ${finding.clinicalContext || finding.reassurance}</p>
       </div>
-    `).join("");
+`).join("");
 
-    const carePointsHtml = (patientSummary.carePoints || []).map((point: string) => `
-      <li style="margin-bottom: 10px; font-size: 13.5px; font-family: system-ui, sans-serif; color: #374151; line-height: 1.5;">${point}</li>
-    `).join("");
-
-    const questionsHtml = (patientSummary.suggestedQuestions || []).map((q: string) => `
-      <li style="margin-bottom: 12px; font-size: 13.5px; font-family: system-ui, sans-serif; color: #111827; line-height: 1.4; font-weight: 600;">"${q}"</li>
+    const glossaryHtml = (Array.isArray(patientSummary.glossary) ? patientSummary.glossary : []).map((entry: any) => `
+      <div style="margin-bottom: 12px; padding: 12px 14px; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc;">
+        <p style="margin: 0 0 6px 0; font-size: 13px; font-weight: 700; color: #065f46; text-transform: uppercase; letter-spacing: 0.03em;">${entry.term || ""}</p>
+        <p style="margin: 0; font-size: 13px; color: #334155; line-height: 1.5;">${entry.plainDefinition || entry.definition || ""}</p>
+      </div>
     `).join("");
 
     printWindow.document.write(`
@@ -4280,13 +4558,16 @@ Ejemplo:
             <button class="btn-print" onclick="window.print()">Imprimir de Inmediato</button>
           </div>
           <div class="header-banner">
-            <h1>Guía Médica Explicativa para el Paciente</h1>
-            <p style="margin: 0; font-size: 14px; font-weight: 500; color: #4b5563;">Traducción Empática y Comprensión Humana Asistida por Inteligencia Artificial</p>
+            <h1>Explicación para usted</h1>
+            <p style="margin: 0; font-size: 14px; font-weight: 500; color: #4b5563;">Documento complementario · Lenguaje claro</p>
           </div>
           
-          <div style="font-size: 13.5px; margin-bottom: 25px; color: #4b5563;">
-            Estimado paciente: La siguiente guía interactiva simplifica y explica los hallazgos descritos en el reporte clínico oficial de su estudio diagnóstico. Este material tiene carácter informativo y educativo; está diseñado para calmar su inquietud y dotarlo de pautas saludables de conversación con su especialista tratante.
+          <div style="font-size: 13px; margin-bottom: 20px; color: #713f12; background: #fefce8; border: 1px solid #ca8a04; border-radius: 8px; padding: 12px 14px;">
+            <strong>IMPORTANTE:</strong> Este documento es una explicación en lenguaje claro para usted. El informe radiológico formal, dirigido a su médico tratante, se entrega por separado y es el documento que debe presentar en consulta.
           </div>
+
+          ${patientSummary.studyOverview ? `<div class="section-title">Qué estudio se le realizó</div><p style="font-size: 14px; color: #334155; line-height: 1.55;">${patientSummary.studyOverview}</p>` : ""}
+          ${patientSummary.summary ? `<div class="section-title">En pocas palabras</div><p style="font-size: 14px; color: #334155; line-height: 1.55;">${patientSummary.summary}</p>` : ""}
           
           <div class="meta-grid">
             <div>
@@ -4301,9 +4582,11 @@ Ejemplo:
           
           <div class="section-title">Desglose Detallado de Hallazgos Clínicos Explicados</div>
           ${findingsHtml}
+
+          ${glossaryHtml ? `<div class="section-title">Glosario de términos</div><p style="font-size: 12px; color: #64748b; margin-top: -8px; margin-bottom: 14px;">Palabras del informe formal, explicadas en lenguaje claro.</p>${glossaryHtml}` : ""}
           
           <div class="footer">
-            <strong>ADVERTENCIA CLÍNICA IMPORTANTE:</strong> Esta guía simplificada de orientación formativa complementa -pero nunca invalida- el informe radiológico oficial firmado digitalmente por el especialista médico ni sustituye la indicación prescriptiva del cirujano o médico clínico.
+            <strong>IMPORTANTE:</strong> Esta explicación complementa —pero nunca sustituye— el informe radiológico formal. Presente el informe formal en su consulta médica.
           </div>
         </body>
       </html>
@@ -4344,26 +4627,41 @@ Ejemplo:
     }
   };
 
-  // ACTION FOR INFOGRAPHIC GENERATION
-  const handleGenerateInfographic = async () => {
+  // ACTION FOR INFOGRAPHIC GENERATION (Gemini image ? full-page poster)
+  const handleGenerateInfographic = async (opts?: { keepAttachments?: boolean }) => {
     if (!generatedReport || !studyType) return;
     setIsGeneratingInfographic(true);
     setInfographicError(null);
     setInfographicUrl(null);
+    if (!opts?.keepAttachments) {
+      setAttachInfographicToOfficialReport(false);
+      setAttachInfographicToPatientSummary(false);
+    }
     try {
+      const notes = infographicCorrectionNotes.trim();
       const response = await fetch("/api/generate-infographic", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ report: generatedReport, studyType }),
+        body: JSON.stringify({
+          report: generatedReport,
+          studyType,
+          reportDate: reportDate || "",
+          projections,
+          viewOrientation: infographicViewOrientation,
+          ...(notes ? { correctionNotes: notes } : {}),
+        }),
       });
       const data = await response.json();
       if (data.success) {
         setInfographicUrl(data.imageUrl);
+        if (data.viewOrientation === "AP" || data.viewOrientation === "PA") {
+          setInfographicViewOrientation(data.viewOrientation);
+        }
       } else {
-        setInfographicError(data.error || "Error generando la infografía.");
+        setInfographicError(data.error || "Error generando la infograf�a.");
       }
     } catch (err: any) {
-      setInfographicError(err.message || "Error al conectar con la API de infografías.");
+      setInfographicError(err.message || "Error al conectar con la API de infograf�as.");
     } finally {
       setIsGeneratingInfographic(false);
     }
@@ -4614,6 +4912,10 @@ Ejemplo:
 
     const runId = ++autoLabelRunIdRef.current;
     const imagesSnapshot = [...attachedImages];
+    const labelUpdates = new Map<
+      string,
+      { label: string; modality?: string; projection?: string; side?: string }
+    >();
     const unlabeledCount = imagesSnapshot.filter((img) => !(img as { caption?: string }).caption?.trim()).length;
     const total = unlabeledCount > 0 ? unlabeledCount : imagesSnapshot.length;
     setIsLabelingAll(true);
@@ -4646,15 +4948,46 @@ Ejemplo:
               if (autoLabelRunIdRef.current !== runId) return;
               setLabelingStats({ confirmed: done, total: t });
             },
-            onLabeled: (imageId, label) => {
+            onLabeled: (imageId, result) => {
               if (autoLabelRunIdRef.current !== runId) return;
+              labelUpdates.set(imageId, result);
               setAttachedImages((prev) =>
-                prev.map((item) => (item.id === imageId ? { ...item, caption: label } : item))
+                prev.map((item) =>
+                  item.id === imageId
+                    ? {
+                        ...item,
+                        caption: result.label,
+                        ...(result.modality ? { modality: result.modality } : {}),
+                        ...(result.projection ? { projection: result.projection } : {}),
+                        ...(result.side ? { side: result.side } : {}),
+                      }
+                    : item
+                )
               );
             },
           });
         }
       );
+
+      // After labeling, link + reorder by report mention (MMG + US in combined studies).
+      if (autoLabelRunIdRef.current === runId) {
+        const mergedForCorrelation = imagesSnapshot.map((img) => {
+          const u = labelUpdates.get(img.id);
+          if (!u) return img;
+          return {
+            ...img,
+            caption: u.label,
+            ...(u.modality ? { modality: u.modality } : {}),
+            ...(u.projection ? { projection: u.projection } : {}),
+            ...(u.side ? { side: u.side } : {}),
+          };
+        });
+        await handleCorrelateFigures({
+          reportOverride: report,
+          silent: true,
+          imagesOverride: mergedForCorrelation,
+        });
+      }
     } catch (err) {
       console.error("Error en rotulado automatico post-reporte:", err);
     } finally {
@@ -4783,19 +5116,39 @@ Ejemplo:
   };
 
 
-  const handleCorrelateFigures = async () => {
-    const reportToUse = generatedReport || inputReport || findings;
+  const handleCorrelateFigures = async (opts?: {
+    reportOverride?: string;
+    silent?: boolean;
+    imagesOverride?: typeof attachedImages;
+  }) => {
+    const reportToUse = String(opts?.reportOverride || generatedReport || inputReport || findings || "").trim();
+    const sourceImages = opts?.imagesOverride || attachedImages;
     if (!reportToUse) {
-      alert("Por favor, genera un reporte o redacta un borrador primero para poder correlacionar las figuras.");
+      if (!opts?.silent) {
+        alert("Por favor, genera un reporte o redacta un borrador primero para poder correlacionar las figuras.");
+      }
       return;
     }
-    if (attachedImages.length === 0) {
-      alert("No hay imágenes cargadas para correlacionar. Por favor sube imágenes primero.");
+    if (sourceImages.length === 0) {
+      if (!opts?.silent) {
+        alert("No hay im�genes cargadas para correlacionar. Por favor sube im�genes primero.");
+      }
       return;
     }
 
     setIsCorrelatingFigures(true);
     try {
+      // Include MMG/US modality + projection so mammo frames link to the MMG section.
+      const imagesForCorrelation = sourceImages.map((img, idx) => ({
+        id: img.id,
+        index: idx + 1,
+        name: (img as { name?: string }).name || "",
+        caption: (img as { caption?: string }).caption || (img as { name?: string }).name || "",
+        modality: (img as { modality?: string }).modality || "",
+        projection: (img as { projection?: string }).projection || "",
+        side: (img as { side?: string }).side || "",
+      }));
+
       const response = await fetch("/api/correlate-figures-retroactive", {
         method: "POST",
         headers: {
@@ -4804,11 +5157,8 @@ Ejemplo:
         body: JSON.stringify({
           model: modelFor("report_modify"),
           currentReport: reportToUse,
-          attachedImages: attachedImages.map((img, idx) => ({
-            id: img.id,
-            index: idx + 1,
-            caption: img.caption || img.name || ""
-          })),
+          studyType: studyType || specificStudy || modality || "",
+          attachedImages: imagesForCorrelation,
         }),
       });
 
@@ -4820,28 +5170,45 @@ Ejemplo:
         }
         setGeneratedReport(data.report);
 
-        if (data.reorderedImageIds && Array.isArray(data.reorderedImageIds) && data.reorderedImageIds.length > 0) {
-          setAttachedImages(prev => {
-            const map = new Map(prev.map(img => [img.id, img]));
-            const reordered: typeof prev = [];
-            data.reorderedImageIds.forEach((id: string) => {
-              const found = map.get(id);
-              if (found) {
-                reordered.push(found);
-                map.delete(id);
-              }
-            });
-            // Append any remaining images not explicitly listed in reorderedImageIds
-            map.forEach(img => reordered.push(img));
-            return reordered;
+        setAttachedImages((prev) => {
+          const overrideById = new Map((opts?.imagesOverride || []).map((img) => [img.id, img]));
+          const merged = prev.map((p) => {
+            const o = overrideById.get(p.id) as any;
+            if (!o) return p;
+            return {
+              ...p,
+              caption: o.caption ?? (p as any).caption,
+              modality: o.modality ?? (p as any).modality,
+              projection: o.projection ?? (p as any).projection,
+              side: o.side ?? (p as any).side,
+            };
           });
-        }
-      } else {
-        alert(data.error || "Ocurrió un error al intentar correlacionar las figuras.");
+          return applyReorderedImageIds(merged, data.reorderedImageIds, data.report || reportToUse);
+        });
+      } else if (!opts?.silent) {
+        alert(data.error || "Ocurri� un error al intentar correlacionar las figuras.");
       }
     } catch (err) {
       console.error("Error al correlacionar figuras:", err);
-      alert("Error de red al intentar correlacionar las figuras.");
+      // Local fallback: still reorder gallery by mention order (MMG before/with US as in report).
+      setAttachedImages((prev) => {
+        const overrideById = new Map((opts?.imagesOverride || []).map((img) => [img.id, img]));
+        const merged = prev.map((p) => {
+          const o = overrideById.get(p.id) as any;
+          if (!o) return p;
+          return {
+            ...p,
+            caption: o.caption ?? (p as any).caption,
+            modality: o.modality ?? (p as any).modality,
+            projection: o.projection ?? (p as any).projection,
+            side: o.side ?? (p as any).side,
+          };
+        });
+        return applyReorderedImageIds(merged, null, reportToUse);
+      });
+      if (!opts?.silent) {
+        alert("Error de red al intentar correlacionar las figuras.");
+      }
     } finally {
       setIsCorrelatingFigures(false);
     }
@@ -5053,6 +5420,7 @@ Ejemplo:
         studyType,
         selectedLogo,
         formatDateToDMY,
+        infographicUrl: attachInfographicToPatientSummary && infographicUrl ? infographicUrl : undefined,
       },
       openInNewTab,
       shareViaWebShare,
@@ -5154,7 +5522,9 @@ Ejemplo:
     customSignatureUrl,
     selectedLogo,
     patientName,
-    pdfLayoutType
+    pdfLayoutType,
+    infographicUrl,
+    attachInfographicToPatientSummary
   ]);
 
   const renderPrintReportBody = (reportText: string) =>
@@ -5279,19 +5649,119 @@ Ejemplo:
     }
   };
 
-  // Delete individual historical report
-  const handleDeleteReport = (id: string) => {
+  // Delete individual historical report (+ matching local/cloud study copies)
+  const handleDeleteReport = async (id: string) => {
+    markStudiesDeleted([id]);
     const updated = savedReports.filter(r => r.id !== id);
     setSavedReports(updated);
     localStorage.setItem("radiology_reports_history", JSON.stringify(updated));
-    idbSaveHistory(updated);
+    await idbSaveHistory(updated);
+    try {
+      await idbDeleteStudy(id);
+      const stored = localStorage.getItem("rad_local_studies");
+      if (stored) {
+        const studiesList = (JSON.parse(stored) as CloudStudy[]).filter((s) => s.id !== id);
+        localStorage.setItem("rad_local_studies", JSON.stringify(studiesList));
+      }
+      localStorage.removeItem(`fallback_single_study_${id}`);
+      try {
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith("fallback_studies_")) {
+            const raw = localStorage.getItem(key);
+            if (!raw) continue;
+            const list = (JSON.parse(raw) as CloudStudy[]).filter((s) => s.id !== id);
+            localStorage.setItem(key, JSON.stringify(list));
+          }
+        }
+      } catch (_) {}
+      setCloudStudies((prev) => prev.filter((s) => s.id !== id));
+      if (gmailUser?.uid) {
+        try {
+          await deleteStudyFromCloud(id);
+        } catch (e) {
+          console.warn("No se pudo eliminar la copia en la nube (qued� bloqueada localmente):", id, e);
+        }
+      }
+    } catch (e) {
+      console.warn("No se pudo eliminar la copia local del estudio:", e);
+    }
   };
 
-  const handleClearHistory = () => {
-    if (confirm("¿Deseas vacilar todo el historial local de reportes guardados? (No afectará tu trabajo actual)")) {
-      setSavedReports([]);
-      localStorage.removeItem("radiology_reports_history");
-      idbSaveHistory([]);
+  const handleClearHistory = async () => {
+    const loggedIn = Boolean(gmailUser?.uid);
+    if (
+      !confirm(
+        loggedIn
+          ? "�Vaciar TODO el historial de reportes y estudios (local y nube)? Si solo se borra en este navegador, al reiniciar pueden volver a aparecer desde la nube."
+          : "�Vaciar todo el historial local de reportes y estudios guardados en este navegador? (No afectar� el informe que tengas abierto ahora)"
+      )
+    ) {
+      return;
+    }
+
+    // Collect IDs before wipe so we can remove cloud copies and tombstone them
+    const ids = new Set<string>();
+    savedReports.forEach((r) => ids.add(r.id));
+    cloudStudies.forEach((s) => ids.add(s.id));
+    try {
+      const idbStudies = await idbGetAllStudies();
+      idbStudies.forEach((s) => ids.add(s.id));
+    } catch (_) {}
+    try {
+      const stored = localStorage.getItem("rad_local_studies");
+      if (stored) {
+        (JSON.parse(stored) as CloudStudy[]).forEach((s) => ids.add(s.id));
+      }
+    } catch (_) {}
+
+    markStudiesDeleted(ids);
+
+    setSavedReports([]);
+    setCloudStudies([]);
+    localStorage.removeItem("radiology_reports_history");
+    localStorage.removeItem("rad_local_studies");
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (
+          key &&
+          (key.startsWith("fallback_single_study_") || key.startsWith("fallback_studies_"))
+        ) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach((k) => localStorage.removeItem(k));
+    } catch (_) {}
+
+    await idbSaveHistory([]);
+    await idbClearAllStudies();
+
+    if (loggedIn && ids.size > 0) {
+      for (const id of ids) {
+        try {
+          await deleteStudyFromCloud(id);
+        } catch (e) {
+          console.warn("No se pudo eliminar estudio de la nube:", id, e);
+        }
+      }
+      // Also purge any remaining remote studies for this user (IDs we might not have known locally)
+      try {
+        const remote = await getStudiesFromCloud(gmailUser!.uid);
+        if (remote.length > 0) {
+          markStudiesDeleted(remote.map((s) => s.id));
+          for (const study of remote) {
+            try {
+              await deleteStudyFromCloud(study.id);
+            } catch (e) {
+              console.warn("No se pudo eliminar estudio remoto restante:", study.id, e);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("No se pudo listar estudios remotos al vaciar historial:", e);
+      }
     }
   };
 
@@ -5433,6 +5903,41 @@ Ejemplo:
     setCurrentCloudStudyId,
     setCopiedEhrStudyId,
   });
+
+  // Hydrate lightweight report history from localStorage / IndexedDB on boot
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        let reports: SavedReport[] = [];
+        const stored = localStorage.getItem("radiology_reports_history");
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed)) reports = parsed;
+        }
+        if (reports.length === 0) {
+          const fromIdb = await idbGetHistory();
+          if (Array.isArray(fromIdb) && fromIdb.length > 0) {
+            reports = fromIdb;
+            try {
+              localStorage.setItem("radiology_reports_history", JSON.stringify(fromIdb.slice(0, 50)));
+            } catch (_) {}
+          }
+        }
+        reports = filterOutDeletedStudies(reports);
+        if (!cancelled && reports.length > 0) {
+          setSavedReports(reports.slice(0, 50));
+        } else if (!cancelled) {
+          setSavedReports([]);
+        }
+      } catch (e) {
+        console.warn("No se pudo hidratar el historial local:", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     fetchCloudStudies(gmailUser?.uid);
@@ -5668,8 +6173,17 @@ Ejemplo:
                 </h3>
               </div>
               
+              {patientSummary.studyOverview && (
+                <div className="p-4 bg-sky-500/5 border-l-4 border-sky-500/70 rounded-r-xl">
+                  <h5 className="text-[10px] font-black tracking-widest uppercase text-sky-400">Qué estudio se le realizó</h5>
+                  <p className="text-xs text-slate-300 leading-relaxed font-sans font-medium mt-1">
+                    {patientSummary.studyOverview}
+                  </p>
+                </div>
+              )}
+
               <div className="p-4 bg-amber-500/5 border-l-4 border-amber-500/70 rounded-r-xl">
-                <h5 className="text-[10px] font-black tracking-widest uppercase text-amber-400">Resumen de Bienvenida y Propósito</h5>
+                <h5 className="text-[10px] font-black tracking-widest uppercase text-amber-400">En pocas palabras</h5>
                 <p className="text-xs text-slate-300 leading-relaxed font-sans font-medium mt-1">
                   {patientSummary.summary}
                 </p>
@@ -5678,7 +6192,7 @@ Ejemplo:
               {/* Glossary/Findings */}
               <div className="space-y-4">
                 <h4 className="text-[11px] font-black tracking-wider uppercase text-slate-300 border-b border-slate-850 pb-1.5 flex items-center gap-1.5 font-mono">
-                  <span>🔍</span> GLOSARIO DE HALLAZGOS EXPLICADOS
+                  <span>🔍</span> SUS HALLAZGOS, EXPLICADOS
                 </h4>
                 <div className="grid grid-cols-1 gap-4">
                   {patientSummary.keyFindings?.map((finding: any, idx: number) => (
@@ -5699,9 +6213,9 @@ Ejemplo:
                           <strong>Analogía sencilla:</strong> "{finding.analogy}"
                         </p>
                       )}
-                      {finding.reassurance && (
+                      {(finding.clinicalContext || finding.reassurance) && (
                         <p className="text-[11.5px] text-sky-300/90 leading-relaxed font-sans bg-sky-950/20 px-3 py-2 border-l-2 border-sky-500 rounded-r">
-                          <strong>Sugerencia médica:</strong> {finding.reassurance}
+                          <strong>Contexto descriptivo:</strong> {finding.clinicalContext || finding.reassurance}
                         </p>
                       )}
                     </div>
@@ -5709,33 +6223,23 @@ Ejemplo:
                 </div>
               </div>
 
-              {/* Care Points */}
-              {patientSummary.carePoints && patientSummary.carePoints.length > 0 && (
-                <div className="space-y-2">
-                  <h4 className="text-[11px] font-black tracking-wider uppercase text-slate-300 border-b border-slate-850 pb-1.5 flex items-center gap-1.5 font-mono">
-                    <span>🩺</span> RECOMENDACIONES Y CUIDADOS GENERALES
-                  </h4>
-                  <ul className="list-disc pl-5 text-xs text-slate-300 space-y-1.5 font-sans">
-                    {patientSummary.carePoints.map((point: string, idx: number) => (
-                      <li key={idx} className="leading-relaxed">{point}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Suggested Questions */}
-              {patientSummary.suggestedQuestions && patientSummary.suggestedQuestions.length > 0 && (
+              {Array.isArray(patientSummary.glossary) && patientSummary.glossary.length > 0 && (
                 <div className="space-y-3">
                   <h4 className="text-[11px] font-black tracking-wider uppercase text-slate-300 border-b border-slate-850 pb-1.5 flex items-center gap-1.5 font-mono">
-                    <span>💬</span> PREGUNTAS SUGERIDAS PARA SU MÉDICO TRATANTE
+                    GLOSARIO DE TÉRMINOS
                   </h4>
-                  <p className="text-[10px] text-slate-500 leading-normal font-mono uppercase tracking-wide">
-                    Le sugerimos llevar estas preguntas anotadas a su siguiente consulta con su médico de cabecera:
+                  <p className="text-[10px] text-slate-500 leading-relaxed">
+                    Palabras del informe formal, explicadas en lenguaje claro.
                   </p>
-                  <div className="grid grid-cols-1 gap-2">
-                    {patientSummary.suggestedQuestions.map((q: string, idx: number) => (
-                      <div key={idx} className="p-3 bg-indigo-950/25 border-l-2 border-indigo-500 rounded-r text-xs text-indigo-300 font-sans italic font-medium leading-relaxed">
-                        {idx + 1}. {q}
+                  <div className="grid grid-cols-1 gap-2.5">
+                    {patientSummary.glossary.map((entry: any, idx: number) => (
+                      <div key={idx} className="p-3.5 border border-slate-850 rounded-xl bg-slate-900/40 space-y-1.5">
+                        <p className="text-xs font-black text-emerald-300 uppercase tracking-wide">
+                          {entry.term}
+                        </p>
+                        <p className="text-xs text-slate-300 leading-relaxed font-sans">
+                          {entry.plainDefinition || entry.definition}
+                        </p>
                       </div>
                     ))}
                   </div>
@@ -6155,7 +6659,7 @@ Ejemplo:
                 ))
               )}
             </div>
-            {savedReports.length > 0 && (
+            {(savedReports.length > 0 || cloudStudies.length > 0) && (
               <button
                 onClick={handleClearHistory}
                 className="w-full text-center text-[10px] text-slate-505 hover:text-rose-455 mt-2 py-1.5 block transition underline font-mono font-bold uppercase tracking-widest"
@@ -6195,7 +6699,7 @@ Ejemplo:
                         onClick={resetGeneratorForm}
                         className="text-[10px] font-black uppercase text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition tracking-wider"
                       >
-                        <RefreshCw className="h-3 w-3" /> Limpiar Todo
+                        <RefreshCw className="h-3 w-3" /> Nuevo estudio
                       </button>
                     </div>
 
@@ -6212,8 +6716,11 @@ Ejemplo:
                               type="button"
                               onClick={() => {
                                 setModality(mod);
-                                if (mod === "Mamografía y Ultrasonido de Mamas") {
-                                  setSpecificStudy("");
+                                if (/mamograf[ií]a\s*y\s*ultrasonido/i.test(mod)) {
+                                  setSpecificStudy("Mamas");
+                                  setAutoActivateSpecificSuite(true);
+                                  setSelectedBatchModules((prev) => ({ ...prev, breast3d: true }));
+                                  setIsBreast3dSuiteOpen(true);
                                 }
                               }}
                               className={`py-2 px-2 rounded-xl text-[10px] font-black transition-all duration-200 tracking-wider uppercase border-2 text-center cursor-pointer select-none active:scale-97 ${
@@ -7150,7 +7657,7 @@ Ejemplo:
                         </p>
                         <p className="mt-0.5 text-[9px] leading-relaxed text-slate-500">
                           {selectedSpecificSuite
-                            ? `${selectedSpecificSuite.label} se generará automáticamente porque seleccionaste «${specificStudy}».`
+                            ? `${selectedSpecificSuite.label} se generará automáticamente porque seleccionaste «${specificStudy || modality}».`
                             : "El estudio seleccionado no tiene una suite 3D específica; podrás elegir Atlas u otros módulos después."}
                         </p>
                       </div>
@@ -7173,12 +7680,50 @@ Ejemplo:
                       </div>
                     </label>
 
+                    {/* Alcance documental: formal vs pack paciente */}
+                    <div className="flex flex-col gap-2 rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-300 font-mono">
+                        Documentos a generar
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setGenerateDocumentScope('formal')}
+                          className={`px-3 py-2.5 rounded-lg text-left border transition-all cursor-pointer ${
+                            generateDocumentScope === 'formal'
+                              ? 'bg-indigo-600/30 border-indigo-500/50 text-white'
+                              : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          <span className="block text-[10px] font-black uppercase tracking-wider">Solo informe formal</span>
+                          <span className="block text-[8px] mt-0.5 text-slate-400 normal-case tracking-normal">Para el médico tratante</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setGenerateDocumentScope('both')}
+                          className={`px-3 py-2.5 rounded-lg text-left border transition-all cursor-pointer ${
+                            generateDocumentScope === 'both'
+                              ? 'bg-emerald-600/25 border-emerald-500/45 text-white'
+                              : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          <span className="block text-[10px] font-black uppercase tracking-wider">Informe + pack paciente</span>
+                          <span className="block text-[8px] mt-0.5 text-slate-400 normal-case tracking-normal">Formal + explicación en lenguaje claro</span>
+                        </button>
+                      </div>
+                    </div>
+
                     {/* Submit Buttons: simple vs completo */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <button
                         type="button"
-                        onClick={() => handleGenerateReport("simple")}
-                        disabled={isGenerating || !studyType.trim()}
+                        onClick={async () => {
+                          const reportText = await handleGenerateReport("simple");
+                          if (generateDocumentScope === 'both' && reportText) {
+                            await handleGeneratePatientSummary(reportText);
+                          }
+                        }}
+                        disabled={isGenerating || isGeneratingPatientSummary || !studyType.trim()}
                         className="w-full bg-slate-800 hover:bg-slate-750 text-slate-100 font-black py-4 px-5 rounded-xl text-[11px] uppercase tracking-widest border border-slate-600/80 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all flex flex-col items-center justify-center gap-1.5 cursor-pointer"
                         title="Solo redacta el informe, sin modulos adicionales (ideal para radiografias simples)"
                       >
@@ -7200,8 +7745,13 @@ Ejemplo:
 
                       <button
                         type="button"
-                        onClick={() => handleGenerateReport("full")}
-                        disabled={isGenerating || !studyType.trim()}
+                        onClick={async () => {
+                          const reportText = await handleGenerateReport("full");
+                          if (generateDocumentScope === 'both' && reportText) {
+                            await handleGeneratePatientSummary(reportText);
+                          }
+                        }}
+                        disabled={isGenerating || isGeneratingPatientSummary || !studyType.trim()}
                         className="w-full bg-indigo-600 hover:bg-indigo-550 text-white font-black py-4 px-5 rounded-xl text-[11px] uppercase tracking-widest shadow-[0_4px_16px_rgba(99,102,241,0.4)] disabled:opacity-50 disabled:cursor-not-allowed transition-all flex flex-col items-center justify-center gap-1.5 cursor-pointer border border-indigo-400/30"
                         title="Informe + módulos predeterminados, suite 3D del estudio y pulido clínico automático"
                       >
@@ -7464,14 +8014,14 @@ Ejemplo:
                             onClick={handleGenerateInfographic}
                             disabled={isGeneratingInfographic}
                             className="px-3 md:px-4 py-1.5 md:py-2 bg-pink-700 hover:bg-pink-600 border-2 border-pink-500/30 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider text-white transition-all flex items-center gap-1.5 md:gap-2 shadow-lg select-none whitespace-nowrap cursor-pointer"
-                            title="Generar infografía explicativa para el paciente"
+                            title="Generar infograf�a para el paciente (texto n�tido + layout elegido por IA)"
                           >
                             {isGeneratingInfographic ? (
                               <>
                                 <Loader2 className="h-3.5 w-3.5 animate-spin" /> Generando...
                               </>
                             ) : (
-                                "Infografía Paciente"
+                              "Infograf�a Paciente"
                             )}
                           </button>
                           <button
@@ -7495,9 +8045,14 @@ Ejemplo:
                             <Printer className="h-3.5 w-3.5" /> PDF / Imprimir
                           </button>
                           <button
-                            onClick={() => guardReportPdfExport(() => handleDownloadNativePDF(false))}
+                            onClick={() => guardReportPdfExport(async () => {
+                              await handleDownloadNativePDF(false);
+                              if (generateDocumentScope === 'both' && patientSummary) {
+                                await handleDownloadPatientSummaryPDF(false);
+                              }
+                            })}
                             className="px-3 md:px-4 py-1.5 md:py-2 bg-slate-900 border-2 border-slate-800 hover:border-slate-700 hover:bg-slate-850 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider text-slate-200 transition-all flex items-center gap-1.5 md:gap-2 shadow-lg select-none cursor-pointer whitespace-nowrap"
-                            title="Descargar archivo PDF limpio directo sin URL ni hora"
+                            title="Descargar PDF formal (y pack paciente si el alcance es ambos)"
                           >
                             <Download className="h-3.5 w-3.5 text-indigo-400" /> Descargar PDF
                           </button>
@@ -7509,7 +8064,7 @@ Ejemplo:
                             <MessageSquare className="h-3.5 w-3.5 text-white" /> WhatsApp PDF
                           </button>
                           <button
-                            onClick={() => guardReportPdfExport(() => handleOpenGmailShare('report_pdf'))}
+                            onClick={() => guardReportPdfExport(() => handleOpenGmailShare(generateDocumentScope === 'both' && patientSummary ? 'both_pdfs' : 'report_pdf'))}
                             className="px-3 md:px-4 py-1.5 md:py-2 bg-red-700 hover:bg-red-650 border-2 border-red-500/30 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider text-white transition-all flex items-center gap-1.5 md:gap-2 shadow-lg select-none whitespace-nowrap cursor-pointer"
                             title="Enviar reporte PDF firmado directamente por Correo usando Gmail"
                           >
@@ -7553,35 +8108,171 @@ Ejemplo:
                     <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative bg-[#090D1A]">
                       {/* Left Column: Report content, editor, and tools */}
                       <div className={`flex-1 p-6 overflow-y-auto leading-relaxed text-sm select-text text-slate-300 relative scrollbar-thin ${isSplitPdfActive && generatedReport ? "md:border-r md:border-slate-800" : ""}`}>
+                        {generatedReport && !infographicUrl && !isGeneratingInfographic && (
+                          <div className="mb-4 p-3 bg-slate-900/70 rounded-xl border border-pink-600/20 space-y-2">
+                            <label className="block text-[9px] font-black uppercase tracking-widest text-pink-300/80 font-mono">
+                              Vista del dibujo (lateralidad)
+                            </label>
+                            <div className="grid grid-cols-2 gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setInfographicViewOrientation("AP")}
+                                className={`py-2 px-2 rounded-lg text-[9px] font-black uppercase tracking-wider border-2 cursor-pointer ${
+                                  infographicViewOrientation === "AP"
+                                    ? "bg-pink-700/40 border-pink-500 text-pink-100"
+                                    : "bg-slate-950 border-slate-700 text-slate-400 hover:text-slate-200"
+                                }`}
+                              >
+                                AP · de frente
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setInfographicViewOrientation("PA")}
+                                className={`py-2 px-2 rounded-lg text-[9px] font-black uppercase tracking-wider border-2 cursor-pointer ${
+                                  infographicViewOrientation === "PA"
+                                    ? "bg-pink-700/40 border-pink-500 text-pink-100"
+                                    : "bg-slate-950 border-slate-700 text-slate-400 hover:text-slate-200"
+                                }`}
+                              >
+                                PA · de espaldas
+                              </button>
+                            </div>
+                            <p className="text-[9px] text-slate-500 leading-relaxed">
+                              {infographicViewOrientation === "PA"
+                                ? "PA: derecha del paciente a la derecha del cuadro; izquierda a la izquierda."
+                                : "AP: derecha del paciente a la izquierda del cuadro; izquierda a la derecha."}
+                            </p>
+                            <label className="block text-[9px] font-black uppercase tracking-widest text-pink-300/80 font-mono">
+                              Notas de lateralidad / correcciones (opcional)
+                            </label>
+                            <textarea
+                              value={infographicCorrectionNotes}
+                              onChange={(e) => setInfographicCorrectionNotes(e.target.value)}
+                              rows={2}
+                              placeholder={infographicViewOrientation === "PA"
+                                ? "Ej.: hallazgo en hombro DERECHO del paciente (debe verse a la DERECHA del dibujo, vista de espaldas)."
+                                : "Ej.: hallazgo en hombro DERECHO del paciente (debe verse a la IZQUIERDA del dibujo, vista de frente)."}
+                              className="w-full px-3 py-2 bg-slate-950 border border-slate-700 focus:border-pink-500/40 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none resize-y leading-relaxed"
+                            />
+                          </div>
+                        )}
                         {infographicUrl && (
                           <div className="mb-6 p-4 bg-slate-800 rounded-xl border border-pink-600/30">
-                             <div className="flex justify-between items-center mb-2 flex-wrap gap-2">
-                               <h4 className="text-sm font-bold text-pink-300">Infografía Generada:</h4>
+                             <div className="flex justify-between items-start mb-2 flex-wrap gap-2">
+                               <div className="min-w-0">
+                                 <h4 className="text-sm font-bold text-pink-300">Infograf�a Generada:</h4>
+                                 <p className="text-[9px] text-slate-500 mt-0.5 leading-relaxed">
+                                   Elija si desea incluirla. Si no le gusta el resultado, d�jela sin adjuntar.
+                                 </p>
+                               </div>
+                               <div className="flex flex-wrap items-center justify-end gap-1.5">
+                                 <button
+                                   type="button"
+                                   onClick={() => setAttachInfographicToPatientSummary(prev => !prev)}
+                                   className={`text-[9px] font-black px-3 py-1.5 rounded-xl uppercase tracking-wider font-mono transition-all flex items-center gap-1.5 cursor-pointer border ${
+                                     attachInfographicToPatientSummary
+                                       ? "bg-orange-950/80 border-orange-500/50 text-orange-300 shadow-[0_2px_8px_rgba(249,115,22,0.2)]"
+                                       : "bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-100"
+                                   }`}
+                                   title={attachInfographicToPatientSummary ? "La infografía se incluirá en el PDF de explicación al paciente" : "Incluir esta infografía en el documento de explicación al paciente"}
+                                 >
+                                   {attachInfographicToPatientSummary ? (
+                                     <>
+                                       <Check className="h-3 w-3 text-orange-400" />
+                                       En explicación paciente
+                                     </>
+                                   ) : (
+                                     <>
+                                       <Plus className="h-3 w-3 text-slate-400" />
+                                       Incluir en explicación
+                                     </>
+                                   )}
+                                 </button>
+                                 <button
+                                   type="button"
+                                   onClick={() => setAttachInfographicToOfficialReport(prev => !prev)}
+                                   className={`text-[9px] font-black px-3 py-1.5 rounded-xl uppercase tracking-wider font-mono transition-all flex items-center gap-1.5 cursor-pointer border ${
+                                     attachInfographicToOfficialReport
+                                       ? "bg-emerald-950/80 border-emerald-500/50 text-emerald-350 shadow-[0_2px_8px_rgba(16,185,129,0.2)]"
+                                       : "bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-100"
+                                   }`}
+                                   title={attachInfographicToOfficialReport ? "La infografía se incluirá al final del reporte original como un anexo" : "Adjuntar esta infografía como un anexo al reporte original"}
+                                 >
+                                   {attachInfographicToOfficialReport ? (
+                                     <>
+                                       <Check className="h-3 w-3 text-emerald-400" />
+                                       Adjunto a reporte original
+                                     </>
+                                   ) : (
+                                     <>
+                                       <Plus className="h-3 w-3 text-slate-400" />
+                                       Adjuntar a reporte original
+                                     </>
+                                   )}
+                                 </button>
+                               </div>
+                             </div>
+                             <img src={infographicUrl} alt="Infografía Paciente" className="w-full rounded-lg" referrerPolicy="no-referrer" />
+                             <div className="mt-3 space-y-2">
+                               <label className="block text-[9px] font-black uppercase tracking-widest text-pink-300/90 font-mono">
+                                 Correcciones para regenerar
+                               </label>
+                               <textarea
+                                 value={infographicCorrectionNotes}
+                                 onChange={(e) => setInfographicCorrectionNotes(e.target.value)}
+                                 rows={3}
+                                 placeholder={infographicViewOrientation === "PA"
+                                   ? "Ej.: El hallazgo es en el hombro DERECHO del paciente (en PA debe verse a la DERECHA del dibujo)."
+                                   : "Ej.: El hallazgo es en el hombro DERECHO del paciente (en AP debe verse a la IZQUIERDA del dibujo)."}
+                                 className="w-full px-3 py-2 bg-slate-950 border border-slate-700 focus:border-pink-500/50 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none resize-y leading-relaxed"
+                               />
+                               <div className="grid grid-cols-2 gap-2">
+                                 <button
+                                   type="button"
+                                   onClick={() => setInfographicViewOrientation("AP")}
+                                   className={`py-1.5 px-2 rounded-lg text-[9px] font-black uppercase tracking-wider border cursor-pointer ${
+                                     infographicViewOrientation === "AP"
+                                       ? "bg-pink-700/40 border-pink-500 text-pink-100"
+                                       : "bg-slate-950 border-slate-700 text-slate-400"
+                                   }`}
+                                 >
+                                   AP · de frente
+                                 </button>
+                                 <button
+                                   type="button"
+                                   onClick={() => setInfographicViewOrientation("PA")}
+                                   className={`py-1.5 px-2 rounded-lg text-[9px] font-black uppercase tracking-wider border cursor-pointer ${
+                                     infographicViewOrientation === "PA"
+                                       ? "bg-pink-700/40 border-pink-500 text-pink-100"
+                                       : "bg-slate-950 border-slate-700 text-slate-400"
+                                   }`}
+                                 >
+                                   PA · de espaldas
+                                 </button>
+                               </div>
+                               <p className="text-[9px] text-slate-500 leading-relaxed">
+                                 {infographicViewOrientation === "PA"
+                                   ? "PA (de espaldas): derecha del paciente = derecha del cuadro; izquierda = izquierda."
+                                   : "AP (de frente): derecha del paciente = izquierda del cuadro; izquierda = derecha."}
+                               </p>
+                               <div className="flex flex-wrap justify-end gap-2">
                                <button
                                  type="button"
-                                 onClick={() => setAttachInfographicToOfficialReport(prev => !prev)}
-                                 className={`text-[9px] font-black px-3 py-1.5 rounded-xl uppercase tracking-wider font-mono transition-all flex items-center gap-1.5 cursor-pointer border ${
-                                   attachInfographicToOfficialReport
-                                     ? "bg-emerald-950/80 border-emerald-500/50 text-emerald-350 shadow-[0_2px_8px_rgba(16,185,129,0.2)]"
-                                     : "bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-100"
-                                 }`}
-                                 title={attachInfographicToOfficialReport ? "La infografía se incluirá al final del reporte original como un anexo" : "Adjuntar esta infografía como un anexo al reporte original"}
+                                 onClick={() => handleGenerateInfographic({ keepAttachments: true })}
+                                 disabled={isGeneratingInfographic}
+                                 className="px-4 py-2 bg-pink-700 hover:bg-pink-600 disabled:opacity-50 border-2 border-pink-500/30 rounded-xl text-xs font-black uppercase tracking-wider text-white transition-all flex items-center gap-2 shadow-lg cursor-pointer"
+                                 title="Regenerar la infografía aplicando el texto de correcciones"
                                >
-                                 {attachInfographicToOfficialReport ? (
+                                 {isGeneratingInfographic ? (
                                    <>
-                                     <Check className="h-3 w-3 text-emerald-400" />
-                                     Adjunto a reporte original
+                                     <Loader2 className="h-4 w-4 animate-spin" /> Regenerando...
                                    </>
                                  ) : (
                                    <>
-                                     <Plus className="h-3 w-3 text-slate-400" />
-                                     Adjuntar a reporte original
+                                     <RefreshCw className="h-4 w-4" /> Regenerar con correcciones
                                    </>
                                  )}
                                </button>
-                             </div>
-                             <img src={infographicUrl} alt="Infografía Paciente" className="w-full rounded-lg" referrerPolicy="no-referrer" />
-                             <div className="mt-3 flex justify-end gap-2">
                                <button
                                  onClick={() => handleOpenWhatsAppShare('patient_infographic')}
                                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-550 border-2 border-emerald-500/30 rounded-xl text-xs font-black uppercase tracking-wider text-white transition-all flex items-center gap-2 shadow-lg cursor-pointer"
@@ -7597,6 +8288,7 @@ Ejemplo:
                                 >
                                   <Mail className="h-4 w-4 text-white" /> Enviar por Gmail
                                 </button>
+                               </div>
                              </div>
                           </div>
                         )}
@@ -9036,7 +9728,7 @@ Ejemplo:
                                   id: "differential_tree",
                                   label: "Arbol de diferenciales con poda",
                                   badge: "DIFERENCIALES",
-                                  desc: "Hip�tesis a favor/en contra, poda de ramas incompatibles y diagnostico mas probable.",
+                                  desc: "Hipótesis a favor/en contra, poda de ramas incompatibles y diagnostico mas probable.",
                                   color: "text-orange-400 border-orange-500/30 bg-orange-950/20"
                                 },
                                 {
@@ -9323,7 +10015,7 @@ Ejemplo:
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Traduce la jerga compleja del reporte en un resumen empático y tranquilizador con analogías cotidianas y hábitos de bienestar físico.
+                                Traduce el informe a una explicación educativa: qué estudio se realizó y qué significan los hallazgos, sin recomendaciones ni pasos a seguir.
                               </p>
                               <button
                                 onClick={handleGeneratePatientSummary}
@@ -10318,7 +11010,7 @@ Ejemplo:
                               </button>
                             </div>
 
-                            {/* Card: Simulador de plano ecogr�fico */}
+                            {/* Card: Simulador de plano ecográfico */}
                             <div className="p-4 rounded-2xl bg-slate-950/60 border border-cyan-900/40 space-y-3">
                               <div className="flex items-start justify-between gap-3">
                                 <div>
@@ -11580,7 +12272,7 @@ Ejemplo:
                                 Traduciendo informe radiológico para el paciente...
                               </p>
                               <p className="text-[9px] font-medium text-slate-500 uppercase tracking-wider max-w-sm">
-                                Se está traduciendo la terminología técnica a un tono empático, cálido y comprensible con analogías cotidianas y pautas de bienestar general.
+                                Se está traduciendo la terminología técnica a una explicación clara del estudio y de los hallazgos, sin recomendaciones.
                               </p>
                             </div>
                           )}
@@ -11603,8 +12295,18 @@ Ejemplo:
                                 <div className="flex items-center gap-2">
                                   <User className="h-5 w-5 text-orange-400" />
                                   <div className="text-left">
-                                    <h4 className="text-xs font-black text-orange-400 uppercase tracking-widest font-mono">
+                                    <h4 className="text-xs font-black text-orange-400 uppercase tracking-widest font-mono flex flex-wrap items-center gap-2">
                                       TRADUCCIÓN EMPÁTICA Y EXPLICACIÓN DE INFORME
+                                      {patientSummaryProvider === "openai" && (
+                                        <span className="text-[8px] font-black normal-case tracking-wider px-2 py-0.5 rounded-md bg-emerald-950/80 border border-emerald-500/40 text-emerald-300">
+                                          ChatGPT
+                                        </span>
+                                      )}
+                                      {patientSummaryProvider === "gemini" && (
+                                        <span className="text-[8px] font-black normal-case tracking-wider px-2 py-0.5 rounded-md bg-slate-950 border border-slate-700 text-slate-400">
+                                          Gemini
+                                        </span>
+                                      )}
                                     </h4>
                                     <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wide mt-0.5">
                                       Acompañamiento personalizado y traducción de conceptos clínicos a analogías amigables.
@@ -11749,10 +12451,10 @@ Ejemplo:
 
                                             <div className="p-3.5 bg-blue-950/20 border-l-2 border-blue-500/40 rounded-r-xl space-y-1">
                                               <p className="text-[8px] font-black text-blue-400 uppercase tracking-widest font-mono flex items-center gap-1.5">
-                                                <span>🩺</span> Contexto Clínico y Perspectiva Médica:
+                                                <span>🩺</span> Contexto descriptivo:
                                               </p>
                                               <p className="text-[11px] text-blue-200 leading-relaxed font-sans">
-                                                {finding.reassurance}
+                                                {finding.clinicalContext || finding.reassurance}
                                               </p>
                                             </div>
                                           </div>
@@ -11761,6 +12463,24 @@ Ejemplo:
                                     );
                                   })}
                                 </div>
+
+                              {Array.isArray(patientSummary.glossary) && patientSummary.glossary.length > 0 && (
+                                <div className="space-y-3 text-left pt-2">
+                                  <div className="flex items-center gap-1.5 border-b border-orange-950/20 pb-2">
+                                    <h5 className="text-[10px] font-black text-slate-300 uppercase tracking-widest font-mono">
+                                      Glosario de términos (lenguaje claro)
+                                    </h5>
+                                  </div>
+                                  <div className="grid grid-cols-1 gap-2">
+                                    {patientSummary.glossary.map((entry: any, gIdx: number) => (
+                                      <div key={gIdx} className="p-3 border border-slate-850 rounded-xl bg-slate-950/50 space-y-1">
+                                        <p className="text-xs font-black text-emerald-300 uppercase tracking-wide">{entry.term}</p>
+                                        <p className="text-xs text-slate-300 leading-relaxed font-sans">{entry.plainDefinition || entry.definition}</p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                               </div>
                             </div>
                           )}
@@ -12553,7 +13273,7 @@ Ejemplo:
                                     : 'bg-transparent text-slate-400 hover:text-slate-200'
                                 }`}
                               >
-                                Reporte
+                                Formal
                               </button>
                               <button
                                 type="button"
@@ -12561,12 +13281,25 @@ Ejemplo:
                                 disabled={!patientSummary}
                                 className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer ${
                                   printModalDocType === 'patient_summary'
-                                    ? 'bg-indigo-600 text-white shadow-md'
+                                    ? 'bg-emerald-600 text-white shadow-md'
                                     : 'bg-transparent text-slate-400 hover:text-slate-200 disabled:opacity-30'
                                 }`}
                                 title={!patientSummary ? "Primero genera la explicación al paciente abajo" : ""}
                               >
-                                Explicación Paciente
+                                Paciente
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setPrintModalDocType('both')}
+                                disabled={!patientSummary}
+                                className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer ${
+                                  printModalDocType === 'both'
+                                    ? 'bg-amber-600 text-white shadow-md'
+                                    : 'bg-transparent text-slate-400 hover:text-slate-200 disabled:opacity-30'
+                                }`}
+                                title={!patientSummary ? "Primero genera la explicación al paciente" : "Descargar informe formal + pack paciente"}
+                              >
+                                Ambos
                               </button>
                             </div>
 
@@ -12590,6 +13323,9 @@ Ejemplo:
                                 onClick={() => {
                       if (printModalDocType === 'report') {
                         guardReportPdfExport(() => handleDownloadNativePDF(true));
+                      } else if (printModalDocType === 'both') {
+                        guardReportPdfExport(() => handleDownloadNativePDF(true));
+                        handleDownloadPatientSummaryPDF(true);
                       } else {
                         handleDownloadPatientSummaryPDF(true);
                       }
@@ -12605,17 +13341,17 @@ Ejemplo:
 
                         {/* PDF Display IFrame */}
                         <div className="flex-1 bg-slate-950 p-2 md:p-3 relative flex flex-col">
-                          {isGeneratingPdfPreview && !(printModalDocType === 'report' ? generatedNativePdfUrl : generatedSummaryPdfUrl) ? (
+                          {isGeneratingPdfPreview && !(printModalDocType === 'patient_summary' ? generatedSummaryPdfUrl : generatedNativePdfUrl) ? (
                             <div className="flex-1 flex flex-col items-center justify-center text-center space-y-3">
                               <RefreshCw className="h-8 w-8 text-indigo-400 animate-spin" />
                               <p className="text-[10px] font-mono font-black text-slate-400 uppercase tracking-widest animate-pulse">
                                 Generando Previsualización PDF...
                               </p>
                             </div>
-                          ) : (printModalDocType === 'report' ? generatedNativePdfUrl : generatedSummaryPdfUrl) ? (
+                          ) : (printModalDocType === 'patient_summary' ? generatedSummaryPdfUrl : generatedNativePdfUrl) ? (
                             <div className="w-full h-full flex-1 rounded-xl overflow-hidden border border-slate-850 bg-slate-900/40 relative">
                               <iframe
-                                src={`${printModalDocType === 'report' ? generatedNativePdfUrl : generatedSummaryPdfUrl}#toolbar=1&navpanes=0`}
+                                src={`${printModalDocType === 'patient_summary' ? generatedSummaryPdfUrl : generatedNativePdfUrl}#toolbar=1&navpanes=0`}
                                 className="w-full h-full border-0 rounded-lg"
                                 title="Live PDF Viewer"
                                 referrerPolicy="no-referrer"
@@ -12625,12 +13361,12 @@ Ejemplo:
                             <div className="flex-1 flex flex-col items-center justify-center text-center p-6 space-y-3">
                               <AlertCircle className="h-8 w-8 text-amber-500" />
                               <p className="text-[10px] font-mono font-black text-amber-400 uppercase tracking-widest">
-                                {printModalDocType === 'report' ? 'Reporte no disponible' : 'Explicación de Paciente no disponible'}
+                                {printModalDocType === 'patient_summary' ? 'Explicación de Paciente no disponible' : 'Reporte no disponible'}
                               </p>
                               <p className="text-[9px] text-slate-500 max-w-xs leading-relaxed uppercase">
-                                {printModalDocType === 'report' 
-                                  ? 'Genera un reporte clínico para visualizar el PDF' 
-                                  : 'Haz clic en "Explicar para el paciente" en la tarjeta de abajo para generar esta versión'}
+                                {printModalDocType === 'patient_summary'
+                                  ? 'Haz clic en "Explicar para el paciente" en la tarjeta de abajo para generar esta versión'
+                                  : 'Genera un reporte clínico para visualizar el PDF'}
                               </p>
                             </div>
                           )}
@@ -13271,7 +14007,7 @@ Ejemplo:
                         </p>
                       </div>
                     </div>
-                    {savedReports.length > 0 && (
+                    {(savedReports.length > 0 || cloudStudies.length > 0) && (
                       <button
                         onClick={handleClearHistory}
                         className="bg-rose-950/30 hover:bg-rose-900/50 text-rose-300 border border-rose-800/60 font-bold text-xs uppercase tracking-wider px-4 py-2.5 rounded-xl transition flex items-center gap-2 cursor-pointer shrink-0"
@@ -13661,7 +14397,7 @@ Ejemplo:
                   <p className="text-xs font-black text-slate-100 uppercase tracking-wider font-mono">Documento a generar</p>
                   <p className="text-[10px] text-slate-450 leading-none">Selecciona cuál documento deseas descargar, previsualizar o mandar a imprimir.</p>
                 </div>
-                <div className="flex gap-2 shrink-0">
+                <div className="flex flex-wrap gap-2 shrink-0">
                   <button
                     onClick={() => setPrintModalDocType('report')}
                     className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all uppercase cursor-pointer ${
@@ -13670,7 +14406,7 @@ Ejemplo:
                         : 'bg-slate-850 hover:bg-slate-800 text-slate-400 hover:text-white'
                     }`}
                   >
-                    📋 Reporte Clínico
+                    Informe formal
                   </button>
                   {patientSummary && (
                     <button
@@ -13681,7 +14417,19 @@ Ejemplo:
                           : 'bg-slate-850 hover:bg-slate-800 text-slate-400 hover:text-white'
                       }`}
                     >
-                      🌱 Explicación Paciente
+                      Pack paciente
+                    </button>
+                  )}
+                  {patientSummary && (
+                    <button
+                      onClick={() => setPrintModalDocType('both')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all uppercase cursor-pointer ${
+                        printModalDocType === 'both'
+                          ? 'bg-amber-600 font-black text-white shadow-md shadow-amber-500/20'
+                          : 'bg-slate-850 hover:bg-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Ambos PDFs
                     </button>
                   )}
                 </div>
@@ -13737,6 +14485,9 @@ Ejemplo:
                     onClick={() => {
                       if (printModalDocType === 'report') {
                         guardReportPdfExport(() => handleDownloadNativePDF(false));
+                      } else if (printModalDocType === 'both') {
+                        guardReportPdfExport(() => handleDownloadNativePDF(false));
+                        handleDownloadPatientSummaryPDF(false);
                       } else {
                         handleDownloadPatientSummaryPDF(false);
                       }
@@ -13750,6 +14501,9 @@ Ejemplo:
                     onClick={() => {
                       if (printModalDocType === 'report') {
                         guardReportPdfExport(() => handleDownloadNativePDF(true));
+                      } else if (printModalDocType === 'both') {
+                        guardReportPdfExport(() => handleDownloadNativePDF(true));
+                        handleDownloadPatientSummaryPDF(true);
                       } else {
                         handleDownloadPatientSummaryPDF(true);
                       }
@@ -13757,13 +14511,16 @@ Ejemplo:
                     className="flex items-center justify-center gap-2.5 p-3 bg-sky-700 hover:bg-sky-650 border-2 border-sky-600/10 rounded-xl text-xs font-black text-white uppercase tracking-wider transition-all shadow-md active:scale-95 text-center cursor-pointer"
                   >
                     <ExternalLink className="h-4 w-4" />
-                    <span>Abrir PDF en {printModalDocType === 'report' ? "Informe" : "Explicación"} (Pestaña Limpia)</span>
+                    <span>Abrir PDF en {printModalDocType === 'patient_summary' ? "Explicación" : printModalDocType === 'both' ? "Ambos" : "Informe"} (Pestaña Limpia)</span>
                   </button>
                   <button
                     onClick={() => {
                       if (printModalDocType === 'report') {
                         const appUrl = window.location.href;
                         window.open(appUrl, "_blank");
+                      } else if (printModalDocType === 'both') {
+                        guardReportPdfExport(() => handleDownloadNativePDF(false));
+                        handleDownloadPatientSummaryPDF(false);
                       } else {
                         handlePrintPatientSummary();
                       }
@@ -13771,20 +14528,20 @@ Ejemplo:
                     className="flex items-center justify-center gap-2.5 p-3 bg-slate-800 hover:bg-slate-750 border-2 border-slate-700/10 rounded-xl text-xs font-bold text-slate-300 uppercase tracking-wider transition-all shadow-md active:scale-95 text-center cursor-pointer"
                   >
                     <Printer className="h-4 w-4 text-indigo-400" />
-                    <span>{printModalDocType === 'report' ? "Imprimir original en Pestaña Nueva" : "Abrir cuadro de Impresión Nativo"}</span>
+                    <span>{printModalDocType === 'patient_summary' ? "Abrir cuadro de Impresión Nativo" : printModalDocType === 'both' ? "Descargar ambos PDFs" : "Imprimir original en Pestaña Nueva"}</span>
                   </button>
                   <button
                     onClick={() => {
-                      if (printModalDocType === 'report') {
-                        copyToClipboard(generatedReport, true);
-                      } else {
+                      if (printModalDocType === 'patient_summary') {
                         copyToClipboard(JSON.stringify(patientSummary, null, 2), true);
+                      } else {
+                        copyToClipboard(generatedReport, true);
                       }
                     }}
                     className="flex items-center justify-center gap-2.5 p-3 bg-emerald-600 hover:bg-emerald-550 border-2 border-emerald-500/10 rounded-xl text-xs font-black text-white uppercase tracking-wider transition-all shadow-md active:scale-95 text-center cursor-pointer"
                   >
                     <Copy className="h-4 w-4" />
-                    <span>Copiar Texto del {printModalDocType === 'report' ? "Reporte" : "Resumen"}</span>
+                    <span>Copiar Texto del {printModalDocType === 'patient_summary' ? "Resumen" : "Reporte"}</span>
                   </button>
                 </div>
                 <p className="text-[10px] text-indigo-300 font-medium font-mono uppercase tracking-wide text-center">
@@ -13917,9 +14674,9 @@ Ejemplo:
                           </p>
                         </div>
                       </div>
-                    ) : (printModalDocType === 'report' ? generatedNativePdfUrl : generatedSummaryPdfUrl) ? (
+                    ) : (printModalDocType === 'patient_summary' ? generatedSummaryPdfUrl : generatedNativePdfUrl) ? (
                       <iframe
-                        src={printModalDocType === 'report' ? generatedNativePdfUrl! : generatedSummaryPdfUrl!}
+                        src={printModalDocType === 'patient_summary' ? generatedSummaryPdfUrl! : generatedNativePdfUrl!}
                         className="w-full h-full border-0 absolute inset-0 bg-white pt-14"
                         title="Vista Previa de Impresión Real en Vivo"
                       />
@@ -13934,6 +14691,9 @@ Ejemplo:
                           onClick={() => {
                       if (printModalDocType === 'report') {
                         guardReportPdfExport(() => handleDownloadNativePDF(false));
+                      } else if (printModalDocType === 'both') {
+                        guardReportPdfExport(() => handleDownloadNativePDF(false));
+                        handleDownloadPatientSummaryPDF(false);
                       } else {
                         handleDownloadPatientSummaryPDF(false);
                       }
@@ -13948,7 +14708,7 @@ Ejemplo:
                 </div>
               ) : (
                 <div className="space-y-4 text-left">
-                  {printModalDocType === 'report' ? (
+                  {printModalDocType !== 'patient_summary' ? (
                     <div className="space-y-2 text-left">
                       <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest font-mono">Vista Previa del Documento (Formato Físico):</span>
                       <div className="w-full max-w-[210mm] min-h-[297mm] mx-auto bg-white text-black p-6 sm:p-[20mm] rounded-sm border border-slate-300 shadow-[0_12px_36px_rgba(0,0,0,0.18)] text-left relative overflow-x-auto">
@@ -14232,8 +14992,17 @@ Ejemplo:
                 {/* Contenido de la Traducción */}
                 {patientSummary ? (
                   <div className="space-y-6 font-sans text-left">
+                    {patientSummary.studyOverview && (
+                      <div className="space-y-1.5 p-4 bg-sky-50/40 border-l-4 border-sky-500 rounded-r-xl text-left">
+                        <h5 className="text-[10px] font-black tracking-widest uppercase text-sky-800">Qué estudio se le realizó</h5>
+                        <p className="text-xs text-gray-700 leading-relaxed font-sans font-medium text-left">
+                          {patientSummary.studyOverview}
+                        </p>
+                      </div>
+                    )}
+
                     <div className="space-y-1.5 p-4 bg-orange-50/20 border-l-4 border-orange-500 rounded-r-xl text-left">
-                      <h5 className="text-[10px] font-black tracking-widest uppercase text-orange-700">Resumen de Bienvenida y Propósito</h5>
+                      <h5 className="text-[10px] font-black tracking-widest uppercase text-orange-700">En pocas palabras</h5>
                       <p className="text-xs text-gray-700 leading-relaxed font-sans font-medium text-left">
                         {patientSummary.summary}
                       </p>
@@ -14241,7 +15010,7 @@ Ejemplo:
 
                     <div className="space-y-3">
                       <h5 className="text-[10.5px] font-black tracking-wider uppercase text-slate-800 border-b border-gray-200 pb-1 flex items-center gap-1">
-                        <span>🔍</span> GLOSARIO DE HALLAZGOS EXPLICADOS
+                        <span>🔍</span> SUS HALLAZGOS, EXPLICADOS
                       </h5>
                       <div className="space-y-3.5 text-left bg-transparent">
                         {patientSummary.keyFindings?.map((finding: any, idx: number) => (
@@ -14259,38 +15028,27 @@ Ejemplo:
                               <strong>Analogía:</strong> "{finding.analogy}"
                             </p>
                             <p className="text-[11px] text-blue-800 leading-relaxed font-sans bg-blue-50/55 px-2.5 py-1.5 border-l-2 border-blue-400 rounded-r text-left">
-                              <strong>Sugerencia médica:</strong> {finding.reassurance}
+                              <strong>Contexto descriptivo:</strong> {finding.clinicalContext || finding.reassurance}
                             </p>
                           </div>
                         ))}
                       </div>
                     </div>
 
-                    {patientSummary.carePoints && patientSummary.carePoints.length > 0 && (
-                      <div className="space-y-2 text-left">
-                        <h5 className="text-[10.5px] font-black tracking-wider uppercase text-slate-800 border-b border-gray-200 pb-1 flex items-center gap-1">
-                          <span>🩺</span> RECOMENDACIONES Y CUIDADOS GENERALES
-                        </h5>
-                        <ul className="list-disc pl-5 text-xs text-gray-700 space-y-1 font-sans text-left">
-                          {patientSummary.carePoints.map((point: string, idx: number) => (
-                            <li key={idx} className="leading-relaxed text-left">{point}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
 
-                    {patientSummary.suggestedQuestions && patientSummary.suggestedQuestions.length > 0 && (
+                    {Array.isArray(patientSummary.glossary) && patientSummary.glossary.length > 0 && (
                       <div className="space-y-2 text-left">
-                        <h5 className="text-[10.5px] font-black tracking-wider uppercase text-[#0d0e14] border-b border-gray-200 pb-1 flex items-center gap-1">
-                          <span>💬</span> PREGUNTAS SUGERIDAS PARA SU MÉDICO TRATANTE
+                        <h5 className="text-[10.5px] font-black tracking-wider uppercase text-slate-800 border-b border-gray-200 pb-1">
+                          GLOSARIO DE TÉRMINOS
                         </h5>
                         <p className="text-[10px] text-gray-500 leading-normal text-left">
-                          Le sugerimos llevar estas preguntas anotadas a su siguiente consulta con su médico de cabecera:
+                          Palabras del informe formal, explicadas en lenguaje claro.
                         </p>
-                        <div className="grid grid-cols-1 gap-1.5 pt-1 text-left bg-transparent">
-                          {patientSummary.suggestedQuestions.map((q: string, idx: number) => (
-                            <div key={idx} className="p-2.5 bg-indigo-50/35 border-l-2 border-indigo-400 rounded-r text-xs text-indigo-900 font-sans italic font-medium leading-relaxed text-left">
-                              {idx + 1}. {q}
+                        <div className="space-y-2">
+                          {patientSummary.glossary.map((entry: any, idx: number) => (
+                            <div key={idx} className="p-3 border border-gray-200 rounded-xl bg-slate-50/70 space-y-1 text-left">
+                              <p className="text-xs font-black text-emerald-800 uppercase">{entry.term}</p>
+                              <p className="text-xs text-gray-700 leading-relaxed font-sans">{entry.plainDefinition || entry.definition}</p>
                             </div>
                           ))}
                         </div>
@@ -14355,20 +15113,23 @@ Ejemplo:
         </button>
         <button
           onClick={() => {
-            if (printModalDocType === 'report') {
+            if (printModalDocType === 'patient_summary') {
+              handlePrintPatientSummary();
+            } else if (printModalDocType === 'both') {
+              guardReportPdfExport(() => handleDownloadNativePDF(false));
+              handleDownloadPatientSummaryPDF(false);
+            } else {
               try {
                 window.print();
               } catch (e) {
                 console.error(e);
               }
-            } else {
-              handlePrintPatientSummary();
             }
           }}
           className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-550 border border-indigo-500/30 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 shadow-lg cursor-pointer"
         >
           <Printer className="h-4 w-4" />
-          <span>{printModalDocType === 'report' ? "Ejecutar Impresión" : "Imprimir Explicación"}</span>
+          <span>{printModalDocType === 'patient_summary' ? "Imprimir Explicación" : printModalDocType === 'both' ? "Descargar Ambos PDFs" : "Ejecutar Impresión"}</span>
         </button>
       </div>
           </motion.div>
@@ -14542,6 +15303,30 @@ Ejemplo:
                     </div>
                   </button>
                 </div>
+
+                <button
+                  type="button"
+                  disabled={!patientSummary}
+                  onClick={() => {
+                    if (!patientSummary) return;
+                    guardReportPdfExport(async () => {
+                      await handleDownloadNativePDF(false);
+                      await handleDownloadPatientSummaryPDF(false);
+                    });
+                  }}
+                  className={`w-full p-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 select-none ${
+                    patientSummary
+                      ? "bg-amber-950/40 hover:bg-amber-950/60 border border-amber-500/40 text-amber-100 cursor-pointer"
+                      : "bg-slate-950/20 border-slate-900 text-slate-500 cursor-not-allowed"
+                  }`}
+                  title={patientSummary ? "Descargar informe formal y explicación del paciente en un solo paso" : "Primero genera la explicación para el paciente"}
+                >
+                  <Download className="h-4 w-4 text-amber-400" />
+                  <div className="text-left">
+                    <span className="text-[10px] font-black uppercase tracking-wider block">Descargar ambos PDFs</span>
+                    <span className="text-[8.5px] text-slate-400 font-mono leading-none block uppercase">Formal + explicación paciente</span>
+                  </div>
+                </button>
               </div>
 
               {/* PASO 3: RESPALDAR EN GOOGLE DRIVE */}
@@ -14767,29 +15552,64 @@ Ejemplo:
                     />
                   </div>
 
-                  {/* Archivo Adjunto (Fijo al Reporte Clínico Oficial) */}
+                  {/* Selectores de adjuntos: formal / pack paciente / ambos */}
                   <div className="space-y-2">
                     <label className="text-[9px] font-black text-slate-300 uppercase tracking-widest font-mono">
-                      Archivo Adjunto:
+                      Documentos a adjuntar:
                     </label>
-                    <div className="p-4 bg-slate-950/80 border-2 border-red-500/20 rounded-2xl flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <span className="text-[18px]">📄</span>
-                        <div className="text-left">
-                          <p className="text-[11px] font-black text-slate-100 uppercase tracking-wider font-mono">
-                            Reporte Clínico Oficial
-                          </p>
-                          <p className="text-[9px] text-slate-400 font-sans leading-normal">
-                            Documento PDF completo que incluye traducción empática e infografía (según corresponda).
-                          </p>
-                        </div>
-                      </div>
-                      <span className="shrink-0 text-[8px] font-black font-mono text-emerald-400 bg-emerald-950/80 px-2 py-1 rounded-lg border border-emerald-500/30 uppercase tracking-wider">
-                        ✓ Adjunto
-                      </span>
+                    <div className="grid grid-cols-1 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setGmailAttachReport(true);
+                          setGmailAttachSummary(false);
+                          setGmailAttachedType('report_pdf');
+                        }}
+                        className={`p-3 rounded-xl border-2 text-left transition-all cursor-pointer ${
+                          gmailAttachReport && !gmailAttachSummary
+                            ? 'bg-indigo-950/40 border-indigo-500/40'
+                            : 'bg-slate-950/80 border-slate-800 hover:border-slate-700'
+                        }`}
+                      >
+                        <p className="text-[11px] font-black text-slate-100 uppercase tracking-wider font-mono">Solo informe formal</p>
+                        <p className="text-[9px] text-slate-400 mt-0.5">PDF del reporte radiológico para el médico tratante.</p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setGmailAttachReport(false);
+                          setGmailAttachSummary(true);
+                          setGmailAttachedType('patient_summary');
+                        }}
+                        disabled={!patientSummary}
+                        className={`p-3 rounded-xl border-2 text-left transition-all cursor-pointer disabled:opacity-40 ${
+                          !gmailAttachReport && gmailAttachSummary
+                            ? 'bg-emerald-950/40 border-emerald-500/40'
+                            : 'bg-slate-950/80 border-slate-800 hover:border-slate-700'
+                        }`}
+                      >
+                        <p className="text-[11px] font-black text-slate-100 uppercase tracking-wider font-mono">Solo pack paciente</p>
+                        <p className="text-[9px] text-slate-400 mt-0.5">Explicación en lenguaje claro (el formal va por separado).</p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setGmailAttachReport(true);
+                          setGmailAttachSummary(true);
+                          setGmailAttachedType('both_pdfs');
+                        }}
+                        disabled={!patientSummary}
+                        className={`p-3 rounded-xl border-2 text-left transition-all cursor-pointer disabled:opacity-40 ${
+                          gmailAttachReport && gmailAttachSummary
+                            ? 'bg-amber-950/40 border-amber-500/40'
+                            : 'bg-slate-950/80 border-slate-800 hover:border-slate-700'
+                        }`}
+                      >
+                        <p className="text-[11px] font-black text-slate-100 uppercase tracking-wider font-mono">Ambos PDFs</p>
+                        <p className="text-[9px] text-slate-400 mt-0.5">Informe formal + explicación para el paciente.</p>
+                      </button>
                     </div>
                   </div>
-
                   {/* Body text */}
                   <div className="space-y-1.5">
                     <label className="text-[9px] font-black text-slate-300 uppercase tracking-widest font-mono">

@@ -4630,6 +4630,26 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
         doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
         yCoord += 11;
 
+        const studyOverviewAnnex = String(patientSummary.studyOverview || "").trim();
+        if (studyOverviewAnnex) {
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(10);
+          doc.setTextColor(15, 23, 42);
+          doc.text("QUÉ ESTUDIO SE LE REALIZÓ", marginX, yCoord);
+          yCoord += 6 * factor;
+          const cleanOverview = stripEmojis(studyOverviewAnnex);
+          doc.setFont("times", "normal");
+          doc.setFontSize(10.5);
+          doc.setTextColor(51, 65, 85);
+          const splitOverview = doc.splitTextToSize(cleanOverview, contentWidth);
+          splitOverview.forEach((line: string) => {
+            checkPageBreak(5.5 * factor);
+            doc.text(line, marginX, yCoord);
+            yCoord += 5.5 * factor;
+          });
+          yCoord += 4 * factor;
+        }
+
         // Introduction Summary
         if (patientSummary.summary) {
           const cleanSummary = stripEmojis(patientSummary.summary);
@@ -4654,13 +4674,13 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
           const originalTerm0 = stripEmojis(firstFinding.originalTerm || "");
           const simplifiedExplanation0 = stripEmojis(firstFinding.simplifiedExplanation || "");
           const analogy0 = stripEmojis(firstFinding.analogy || "");
-          const reassurance0 = stripEmojis(firstFinding.reassurance || "");
+          const reassurance0 = stripEmojis(firstFinding.clinicalContext || firstFinding.reassurance || "");
 
           const splitTitle0 = doc.splitTextToSize(title0, contentWidth - 10);
           const splitOrig0 = doc.splitTextToSize(`Término original en informe técnico: "${originalTerm0}"`, contentWidth - 10);
           const splitExp0 = doc.splitTextToSize(`Explicación: ${simplifiedExplanation0}`, contentWidth - 14);
           const splitAnalogy0 = doc.splitTextToSize(`Analogía de comprensión: ${analogy0}`, contentWidth - 14);
-          const splitReassurance0 = doc.splitTextToSize(`Contexto Clínico y Perspectiva Médica: ${reassurance0}`, contentWidth - 14);
+          const splitReassurance0 = doc.splitTextToSize(`Contexto descriptivo: ${reassurance0}`, contentWidth - 14);
 
           const neededHeight0 = ((splitTitle0.length * 5) + 
                                (splitOrig0.length * 4) + 
@@ -4680,7 +4700,7 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
             const originalTerm = stripEmojis(finding.originalTerm || "");
             const simplifiedExplanation = stripEmojis(finding.simplifiedExplanation || "");
             const analogy = stripEmojis(finding.analogy || "");
-            const reassurance = stripEmojis(finding.reassurance || "");
+            const reassurance = stripEmojis(finding.clinicalContext || finding.reassurance || "");
 
             doc.setFont("helvetica", "bold");
             doc.setFontSize(10);
@@ -4783,76 +4803,51 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
           yCoord += 4 * factor;
         }
 
-        // Care Points Section
-        if (patientSummary.carePoints && patientSummary.carePoints.length > 0) {
-          // Estimate first point height
-          const firstPoint = stripEmojis(patientSummary.carePoints[0]);
-          const splitPoint0 = doc.splitTextToSize(firstPoint, contentWidth - 8);
-          const firstPointHeight = ((splitPoint0.length * 4.8) + 2.5) * factor;
-
-          checkPageBreak(22 * factor + firstPointHeight);
+        const annexGlossary = Array.isArray(patientSummary.glossary)
+          ? patientSummary.glossary.filter((g: any) => String(g?.term || "").trim() && String(g?.plainDefinition || g?.definition || "").trim())
+          : [];
+        if (annexGlossary.length > 0) {
+          const first = annexGlossary[0];
+          const term0 = stripEmojis(first.term || "");
+          const def0 = stripEmojis(first.plainDefinition || first.definition || "");
+          const splitTerm0 = doc.splitTextToSize(term0, contentWidth - 10);
+          const splitDef0 = doc.splitTextToSize(def0, contentWidth - 10);
+          checkPageBreak(18 * factor + ((splitTerm0.length * 5) + (splitDef0.length * 4.8) + 8) * factor);
           doc.setFont("helvetica", "bold");
           doc.setFontSize(11);
           doc.setTextColor(15, 23, 42);
-          doc.text("PAUTAS Y RECOMENDACIONES DE BIENESTAR:", marginX, yCoord);
+          doc.text("GLOSARIO DE TÉRMINOS:", marginX, yCoord);
           yCoord += 7 * factor;
-
-          patientSummary.carePoints.forEach((point: string) => {
-            const cleanPoint = stripEmojis(point);
-            const splitPoint = doc.splitTextToSize(cleanPoint, contentWidth - 8);
-            
-            checkPageBreak(((splitPoint.length * 5) + 3) * factor);
+          annexGlossary.forEach((entry: any) => {
+            const term = stripEmojis(entry.term || "");
+            const definition = stripEmojis(entry.plainDefinition || entry.definition || "");
             doc.setFont("helvetica", "bold");
-            doc.setFontSize(10.5);
-            doc.setTextColor(15, 23, 42);
-            doc.text("•", marginX + 2, yCoord);
-
+            doc.setFontSize(10);
+            const splitTerm = doc.splitTextToSize(term, contentWidth - 10);
             doc.setFont("times", "normal");
-            doc.setFontSize(10.5);
-            doc.setTextColor(51, 65, 85);
-
-            splitPoint.forEach((line: string, i: number) => {
-              doc.text(line, marginX + 6, yCoord + (i * 4.8 * factor));
-            });
-            yCoord += (splitPoint.length * 4.8 * factor) + 2.5 * factor;
-          });
-          yCoord += 4 * factor;
-        }
-
-        // Suggested Questions Section
-        if (patientSummary.suggestedQuestions && patientSummary.suggestedQuestions.length > 0) {
-          // Estimate first question height
-          const firstQ = stripEmojis(patientSummary.suggestedQuestions[0]);
-          const splitQ0 = doc.splitTextToSize(`"${firstQ}"`, contentWidth - 8);
-          const firstQHeight = ((splitQ0.length * 4.8) + 3) * factor;
-
-          checkPageBreak(22 * factor + firstQHeight);
-          doc.setFont("helvetica", "bold");
-          doc.setFontSize(11);
-          doc.setTextColor(15, 23, 42);
-          doc.text("PREGUNTAS SUGERIDAS PARA SU CONSULTA MÉDICA:", marginX, yCoord);
-          yCoord += 7 * factor;
-
-          patientSummary.suggestedQuestions.forEach((q: string, idx: number) => {
-            const cleanQ = stripEmojis(q);
-            const splitQ = doc.splitTextToSize(`"${cleanQ}"`, contentWidth - 8);
-
-            checkPageBreak(((splitQ.length * 5) + 3) * factor);
+            doc.setFontSize(10);
+            const splitDef = doc.splitTextToSize(definition, contentWidth - 10);
+            const needed = ((splitTerm.length * 5) + (splitDef.length * 4.8) + 8) * factor;
+            checkPageBreak(needed);
+            let iy = yCoord;
             doc.setFont("helvetica", "bold");
             doc.setFontSize(10);
             doc.setTextColor(15, 23, 42);
-            doc.text(`${idx + 1}.`, marginX + 2, yCoord);
-
-            doc.setFont("times", "bold");
-            doc.setFontSize(10);
-            doc.setTextColor(30, 41, 59);
-
-            splitQ.forEach((line: string, i: number) => {
-              doc.text(line, marginX + 7, yCoord + (i * 4.8 * factor));
+            splitTerm.forEach((line: string) => {
+              doc.text(line, marginX + 2, iy);
+              iy += 5 * factor;
             });
-            yCoord += (splitQ.length * 4.8 * factor) + 3 * factor;
+            doc.setFont("times", "normal");
+            doc.setFontSize(10);
+            doc.setTextColor(51, 65, 85);
+            splitDef.forEach((line: string) => {
+              doc.text(line, marginX + 2, iy);
+              iy += 4.8 * factor;
+            });
+            yCoord = iy + 3 * factor;
           });
         }
+
       }
 
       // --- 10. INFOGRAFÍA DEL PACIENTE (SI CORRESPONDE) ---

@@ -3,6 +3,12 @@ import { getStudiesFromCloud, saveStudyToCloud, deleteStudyFromCloud } from "../
 import type { SavedReport } from "./appLocalTypes";
 import { idbGetAllStudies, idbSaveStudy, idbSaveHistory, idbDeleteStudy } from "../localDb";
 import { downloadPdfFromBase64 } from "./downloadPdfFromBase64";
+import {
+  filterOutDeletedStudies,
+  getDeletedStudyIds,
+  markStudiesDeleted,
+  unmarkStudyDeleted,
+} from "./deletedStudyTombstones";
 
 export type CloudStudyActionsDeps = {
   gmailUser: { uid?: string; email?: string } | null;
@@ -50,28 +56,53 @@ export function createCloudStudyActions(d: CloudStudyActionsDeps) {
     d.setIsLoadingCloudStudies(true);
     d.setCloudStudiesError(null);
     try {
+      const deletedIds = getDeletedStudyIds();
+
       // 1. Fetch from IndexedDB persistent storage
-      const idbStudies = await idbGetAllStudies();
+      const idbStudies = filterOutDeletedStudies(await idbGetAllStudies());
 
       // 2. Fetch from LocalStorage fallback
       let stored = localStorage.getItem("rad_local_studies");
       let localStudies: CloudStudy[] = stored ? JSON.parse(stored) : [];
+      localStudies = filterOutDeletedStudies(localStudies);
+
+      // Purge tombstoned leftovers still sitting in local caches
+      if (deletedIds.size > 0) {
+        for (const id of deletedIds) {
+          try {
+            await idbDeleteStudy(id);
+            localStorage.removeItem(`fallback_single_study_${id}`);
+          } catch (_) {}
+        }
+        try {
+          localStorage.setItem("rad_local_studies", JSON.stringify(localStudies));
+        } catch (_) {}
+      }
 
       // Merge IDB studies and LocalStorage studies without duplicates (IDB has rich full data)
       const studyMap = new Map<string, CloudStudy>();
-      localStudies.forEach(s => studyMap.set(s.id, s));
-      idbStudies.forEach(s => studyMap.set(s.id, s));
+      localStudies.forEach((s) => studyMap.set(s.id, s));
+      idbStudies.forEach((s) => studyMap.set(s.id, s));
 
       let studies: CloudStudy[] = Array.from(studyMap.values());
 
       // Continuous sync from radiology_reports_history so no generated study is ever lost
+      // (never resurrect studies the user already deleted)
       const storedReports = localStorage.getItem("radiology_reports_history");
       if (storedReports) {
         try {
           const oldReports = JSON.parse(storedReports) as SavedReport[];
           if (Array.isArray(oldReports) && oldReports.length > 0) {
-            oldReports.forEach(rep => {
-              if (!studies.some(s => s.id === rep.id)) {
+            const keptReports = oldReports.filter((rep) => !deletedIds.has(rep.id));
+            if (keptReports.length !== oldReports.length) {
+              try {
+                localStorage.setItem("radiology_reports_history", JSON.stringify(keptReports.slice(0, 50)));
+                await idbSaveHistory(keptReports.slice(0, 50));
+              } catch (_) {}
+              d.setSavedReports(keptReports.slice(0, 50));
+            }
+            for (const rep of keptReports) {
+              if (!studies.some((s) => s.id === rep.id)) {
                 const syncedStudy: CloudStudy = {
                   id: rep.id,
                   userId: "local",
@@ -82,7 +113,7 @@ export function createCloudStudyActions(d: CloudStudyActionsDeps) {
                   patientAge: "",
                   patientGender: "",
                   patientId: "",
-                  reportDate: new Date().toISOString().split('T')[0],
+                  reportDate: new Date().toISOString().split("T")[0],
                   doctorName: d.doctorName || "Médico Radiólogo",
                   doctorLicense: d.doctorLicense || "No especificada",
                   clinicName: d.clinicName || "Clínica Privada",
@@ -94,12 +125,13 @@ export function createCloudStudyActions(d: CloudStudyActionsDeps) {
                   operationalSummaryText: "",
                   pdfBase64: "",
                   patientSummary: null,
-                  createdAt: new Date().toISOString()
+                  createdAt: new Date().toISOString(),
                 };
                 studies.unshift(syncedStudy);
+                studyMap.set(syncedStudy.id, syncedStudy);
                 idbSaveStudy(syncedStudy);
               }
-            });
+            }
           }
         } catch (e) {
           console.error("Error migrating old reports:", e);
@@ -108,21 +140,31 @@ export function createCloudStudyActions(d: CloudStudyActionsDeps) {
 
       // Merge the authenticated user's Firestore studies. Local copies win
       // when they contain richer browser-only data such as source images.
+      // Tombstoned IDs are skipped and removed from the cloud so they stay gone.
       if (uid && uid !== "local") {
         try {
           const remoteStudies = await getStudiesFromCloud(uid);
-          remoteStudies.forEach((study) => {
+          for (const study of remoteStudies) {
+            if (deletedIds.has(study.id)) {
+              try {
+                await deleteStudyFromCloud(study.id);
+              } catch (e) {
+                console.warn("No se pudo purgar estudio tombstone de la nube:", study.id, e);
+              }
+              continue;
+            }
             if (!studyMap.has(study.id)) {
               studyMap.set(study.id, study);
             }
-          });
-          studies = Array.from(studyMap.values());
+          }
+          studies = filterOutDeletedStudies(Array.from(studyMap.values()));
 
           // Make synchronized text reports visible in the existing History UI
           // on every computer without duplicating locally generated entries.
           d.setSavedReports((currentReports) => {
             const mergedReports = new Map<string, SavedReport>();
             remoteStudies.forEach((study) => {
+              if (deletedIds.has(study.id)) return;
               mergedReports.set(study.id, {
                 id: study.id,
                 timestamp: study.timestamp,
@@ -131,7 +173,10 @@ export function createCloudStudyActions(d: CloudStudyActionsDeps) {
                 reportText: study.reportText,
               });
             });
-            currentReports.forEach((report) => mergedReports.set(report.id, report));
+            currentReports.forEach((report) => {
+              if (deletedIds.has(report.id)) return;
+              mergedReports.set(report.id, report);
+            });
             const synchronizedReports = Array.from(mergedReports.values()).slice(0, 50);
             localStorage.setItem("radiology_reports_history", JSON.stringify(synchronizedReports));
             idbSaveHistory(synchronizedReports);
@@ -143,6 +188,7 @@ export function createCloudStudyActions(d: CloudStudyActionsDeps) {
         }
       }
 
+      studies = filterOutDeletedStudies(studies);
       studies.sort((a, b) => {
         const tA = new Date(a.createdAt || a.timestamp || 0).getTime();
         const tB = new Date(b.createdAt || b.timestamp || 0).getTime();
@@ -219,6 +265,8 @@ export function createCloudStudyActions(d: CloudStudyActionsDeps) {
           console.error("Error compressing signature inside save to cloud:", compErr);
         }
       }
+
+      unmarkStudyDeleted(idToSave);
 
       const newStudy: CloudStudy = {
         id: idToSave,
@@ -322,6 +370,7 @@ export function createCloudStudyActions(d: CloudStudyActionsDeps) {
     d.setCloudStudiesError(null);
     d.setCloudStudiesSuccess(null);
     try {
+      markStudiesDeleted([studyId]);
       await idbDeleteStudy(studyId);
       const stored = localStorage.getItem("rad_local_studies");
       if (stored) {
@@ -331,12 +380,22 @@ export function createCloudStudyActions(d: CloudStudyActionsDeps) {
           localStorage.setItem("rad_local_studies", JSON.stringify(studiesList));
         } catch (e) {}
       }
+      // Also remove from lightweight history so boot sync cannot recreate it
+      d.setSavedReports((prev) => {
+        const next = prev.filter((r) => r.id !== studyId);
+        try {
+          localStorage.setItem("radiology_reports_history", JSON.stringify(next));
+          idbSaveHistory(next);
+        } catch (_) {}
+        return next;
+      });
+      d.setCloudStudies((prev) => prev.filter((s) => s.id !== studyId));
       if (d.gmailUser?.uid) {
         try {
           await deleteStudyFromCloud(studyId);
         } catch (cloudError) {
           console.warn("No se pudo eliminar la copia de Firestore:", cloudError);
-          d.setCloudStudiesError("Se eliminó la copia local, pero no la copia sincronizada.");
+          d.setCloudStudiesError("Se eliminó la copia local, pero no la copia sincronizada. Quedó bloqueada para no reaparecer al reiniciar.");
         }
       }
       d.setCloudStudiesSuccess("Estudio eliminado de tu archivo.");

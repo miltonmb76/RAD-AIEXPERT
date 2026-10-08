@@ -18,6 +18,16 @@ import {
   INFOGRAPHIC_LAYOUT_OPTIONS,
   normalizeFindingsInfographicData,
 } from "./src/lib/findingsInfographic";
+import {
+  generatePatientSummaryOpenAI,
+  hasOpenAiApiKey,
+  normalizePatientSummaryPayload,
+} from "./src/lib/openaiPatientSummary";
+import {
+  buildInfographicLateralityPromptBlock,
+  detectInfographicViewOrientation,
+  type InfographicViewOrientation,
+} from "./src/lib/infographicLaterality";
 import { buildUsAutoLabelAnatomyHints } from "./src/lib/usAutoLabelHints";
 import { normalizeSecondReaderData } from "./src/lib/secondReader";
 import {
@@ -27,7 +37,6 @@ import {
   shouldEnforceAbdomenProtocol,
   shouldEnforceArterialMmiiProtocol,
 } from "./src/lib/measurementStudyGuard";
-
 // Lazy-loaded GenAI client to prevent crash on startup if API key is missing
 let aiClient: GoogleGenAI | null = null;
 let lastUsedKey: string | undefined = undefined;
@@ -703,13 +712,18 @@ Indicación médica: ${clinicalHistory || "No proporcionada"}
 
     if (attachedImages && attachedImages.length > 0) {
       promptText += `\n⚠️ REFERENCIAS BIDIRECCIONALES A IMÁGENES ADJUNTAS:
-El informe tiene las siguientes capturas diagnósticas adjuntas:
+El informe tiene las siguientes capturas diagnósticas adjuntas (pueden ser MMG y/o US). Ordénalas mentalmente según el orden en que las menciones en el texto:
 `;
       attachedImages.forEach((img: any) => {
-        promptText += `- Imagen ${img.index}: "${img.caption || "Sin descripción aún"}"\n`;
+        const meta = [img.modality, img.projection, img.side].filter(Boolean).join(" · ");
+        promptText += `- Imagen ${img.index}${meta ? ` [${meta}]` : ""}: "${img.caption || "Sin descripción aún"}"\n`;
       });
       promptText += `
-Cuando redactes o describas los HALLAZGOS o la IMPRESIÓN DIAGNÓSTICA del reporte, si describes un hallazgo, estructura, lesión o anomalía que corresponda directamente con alguna de las imágenes adjuntas anteriores (basándote en su descripción/rótulo), estás obligado a insertar de manera natural la indicación entre paréntesis para el lector, por ejemplo: "(ver Imagen ${attachedImages[0].index})" o "(ver Imagen ${attachedImages[1].index})" al final de la oración pertinente. Esto permite una correlación bidireccional perfecta para que el lector busque la imagen si lo desea.
+Cuando redactes HALLAZGOS o IMPRESIÓN DIAGNÓSTICA, si describes un hallazgo que corresponda a una imagen adjunta, inserta "(ver Imagen N)" al final de esa oración.
+- Imágenes MMG / proyecciones CC o MLO deben referenciarse en el bloque de MAMOGRAFÍA.
+- Imágenes US deben referenciarse en el bloque de ULTRASONIDO / ecografía.
+- Las menciones deben aparecer en orden ascendente (Imagen 1, luego 2, etc.) según el orden del listado anterior, o reordena mentalmente el listado para que coincida con el orden de mención en tu texto.
+Ejemplos: "(ver Imagen ${attachedImages[0].index})"${attachedImages[1] ? `, "(ver Imagen ${attachedImages[1].index})"` : ""}.
 `;
     }
 
@@ -1681,58 +1695,128 @@ Devuelve de manera estricta y exclusiva el reporte radiológico COMPLETO resulta
  * Payload: {
  *   report: string
  *   studyType: string
+ *   correctionNotes?: string
  * }
  */
 app.post("/api/generate-infographic", async (req: express.Request, res: express.Response) => {
   try {
-    const { report, studyType } = req.body;
+    const { report, studyType, correctionNotes, reportDate, projections, viewOrientation } = req.body;
     if (!report || !studyType) {
       return res.status(400).json({ success: false, error: "Se requieren el reporte y el tipo de estudio." });
     }
 
     const ai = getGeminiClient();
+    const dateHint = String(reportDate || "").trim();
+    const preferredView =
+      String(viewOrientation || "").toUpperCase() === "PA"
+        ? ("PA" as InfographicViewOrientation)
+        : String(viewOrientation || "").toUpperCase() === "AP"
+          ? ("AP" as InfographicViewOrientation)
+          : null;
+    const orientation = detectInfographicViewOrientation({
+      studyType: String(studyType || ""),
+      projections,
+      report: String(report || ""),
+      correctionNotes: String(correctionNotes || ""),
+      preferred: preferredView,
+    });
+    const lateralityBlock = buildInfographicLateralityPromptBlock(orientation);
+    const correctionBlock = String(correctionNotes || "").trim()
+      ? `
 
+CORRECCIONES OBLIGATORIAS DEL MÉDICO PARA ESTA REGENERACIÓN (prioridad máxima; aplícalas todas):
+"""
+${String(correctionNotes).trim()}
+"""
+`
+      : "";
+
+    // Freeform patient poster: quality bar + medical guardrails, but NO fixed layout template.
+    // Gemini image invents the composition that best fits THIS report.
     const promptText = `
-Genera una infografía médica sencilla, clara y amable para un paciente, basada en este reporte radiológico sobre un estudio de ${studyType}.
-La infografía debe explicar de manera didáctica y visualmente comprensible exclusivamente los hallazgos patológicos o anormalidades principales encontradas en el siguiente informe, evitando tecnicismos complejos:
+Haz UNA infografía para el paciente basada en este reporte radiológico de ${studyType}${dateHint ? ` (${dateHint})` : ""}.
 
+REPORTE:
 """
 ${report}
 """
+${correctionBlock}
 
-La infografía debe centrarse única y exclusivamente en explicar qué hallazgos patológicos se encontraron en el estudio para que el paciente los entienda de forma sencilla y clara. NO debes incluir ningún tipo de recomendación médica, indicaciones, tratamientos, pasos a seguir o sugerencias sobre qué hacer a continuación ni derivaciones. Omitir por completo cualquier recomendación o pautas de acción. Mantén el estilo visual limpio y profesional, adecuado para un paciente.
-Diseño: Ilustración médica 2D clara, estilo didáctico, amable y enfocado enteramente en la explicación de los hallazgos patológicos del reporte.
+ORIENTACIÓN DE LA FIGURA CORPORAL (obligatoria): ${orientation === "PA" ? "PA — paciente DE ESPALDAS" : "AP — paciente DE FRENTE"}.
+Aplica SOLO la regla de lateralidad correspondiente a esa orientación.
+
+LIBERTAD DE DISEÑO (importante):
+- Tú eliges el layout, la jerarquía visual y cómo acomodar los hallazgos.
+- NO uses una plantilla fija ni un esquema rígido de secciones.
+- Diseña la composición que MEJOR se ajuste a ESTE reporte concreto (puede ser 1 hallazgo dominante, 2 métricas lado a lado, un callout central, un bloque de “resto del estudio”, iconos anatómicos, etc., solo si aportan).
+- Prioriza limpieza, modernismo, aire/espaciado generoso, tipografía clara y un look de ficha educativa premium (estilo app de salud contemporánea).
+- Español para paciente: cercano, preciso y sin tecnicismos innecesarios. Si hay números del reporte (%, kPa, mm, cm), muéstralos con claridad cuando ayuden a entender.
+- Título amable orientado al paciente (p. ej. “Tu ultrasonido abdominal”, “Tu radiografía de tórax”), no jerga de informe.
+- Si hay hallazgos normales relevantes del resto del estudio, puedes resumirlos con elegancia; no inventes órganos ni hallazgos ausentes del reporte.
+- Incluye un pie breve de disclaimer informativo (no sustituye la valoración médica). Sin logo de clínica inventado ni marca comercial inventada.
+
+CONTENIDO — QUÉ SÍ / QUÉ NO:
+- SÍ: explicar de forma visual los hallazgos principales del reporte para que el paciente entienda qué se encontró.
+- NO: recomendaciones, tratamientos, “qué hacer después”, derivaciones, alarmismo ni consejos clínicos.
+- NO inventes mediciones, gradaciones ni hallazgos que no estén en el reporte.
+
+${lateralityBlock}
+
+Entrega una sola imagen vertical, lista para compartir con el paciente.
 `;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.1-flash-image-preview",
-      contents: {
-        parts: [{ text: promptText }],
-      },
-      config: {
-        imageConfig: {
-          aspectRatio: "1:1",
-          imageSize: "1K"
+    const tryGenerate = async (aspectRatio: string, imageSize: string) => {
+      const response = await ai.models.generateContent({
+        model: "gemini-3.1-flash-image-preview",
+        contents: {
+          parts: [{ text: promptText }],
         },
-      },
-    });
+        config: {
+          imageConfig: {
+            aspectRatio,
+            imageSize,
+          },
+        },
+      });
+      let base64Image = "";
+      const parts = response.candidates?.[0]?.content?.parts || [];
+      for (const part of parts) {
+        if (part.inlineData?.data) {
+          base64Image = part.inlineData.data;
+          break;
+        }
+      }
+      return base64Image;
+    };
 
-    // Find the image part in the response
+    // Prefer a vertical poster; fall back if the size/ratio is rejected.
     let base64Image = "";
-    for (const part of response.candidates[0].content.parts) {
-      if (part.inlineData) {
-        base64Image = part.inlineData.data;
-        break;
+    const attempts: Array<[string, string]> = [
+      ["3:4", "2K"],
+      ["3:4", "1K"],
+      ["4:5", "1K"],
+      ["1:1", "1K"],
+    ];
+    let lastError: any = null;
+    for (const [aspectRatio, imageSize] of attempts) {
+      try {
+        base64Image = await tryGenerate(aspectRatio, imageSize);
+        if (base64Image) break;
+      } catch (err) {
+        lastError = err;
+        console.warn(`Infografía paciente: fallo con ${aspectRatio}/${imageSize}, reintentando...`, err?.message || err);
       }
     }
 
     if (!base64Image) {
+      if (lastError) throw lastError;
       throw new Error("No se pudo generar la imagen de la infografía.");
     }
 
     res.json({
       success: true,
       imageUrl: `data:image/jpeg;base64,${base64Image}`,
+      viewOrientation: orientation,
     });
   } catch (error: any) {
     console.error("Error en /api/generate-infographic:", error);
@@ -3368,19 +3452,12 @@ CRÍTICO: No inventes URLs bajo ninguna circunstancia. Tampoco intercambies ni m
   }
 });
 
-/**
- * NEW API: GENERATE DEMOCRATIZED AND SIMPLIFIED PATIENT KEY FINDINGS & SUMMARY
- * POST /api/generate-patient-summary
- */
 app.post("/api/generate-patient-summary", async (req: express.Request, res: express.Response) => {
   try {
     const { model, report, studyType, clinicalHistory } = req.body;
     if (!report) {
       return res.status(400).json({ success: false, error: "Se requiere el reporte médico para generar el resumen del paciente." });
     }
-
-    const ai = getGeminiClient();
-    const selectedModel = getModelName(model);
 
     const promptText = `
 Estudio clínico / tipo de estudio: ${studyType || "No especificado"}
@@ -3391,26 +3468,57 @@ Reporte Radiológico formal:
 ${report}
 """
 
-Por favor, traduce este reporte radiológico formal de alta complejidad médica en un objeto JSON estructurado diseñado para el paciente. 
+Traduce este informe radiológico formal a un objeto JSON para el paciente (explicación educativa, NO un plan de manejo).
 
-PAUTAS DE TONO Y ESTILO REDACCIONAL (CRÍTICAS):
-- Tono neutral y profesional: Toda la información debe ser explicada con claridad y precisión clínica elemental, pero con un tono estrictamente neutro, objetivo y profesional. 
-- Evita el paternalismo y la condescendencia: No intentes "tranquilizar", "calmar" o "consolar" de manera activa ni forzada. El objetivo es que el paciente entienda sus hallazgos anatómicos concretos, no disminuir su percepción del reporte restándole seriedad.
-- Vocabulario sencillo pero formal: Utiliza términos accesibles y de fácil lectura pero evita a toda costa expresiones que resulten innecesariamente coloquiales, infantiles o informales. 
-- Honestidad y veracidad científica: Transmite la realidad de las descripciones médicas de manera directa, clara y sobria.
-- Omisión de Recomendaciones: NO se debe incluir ningún tipo de recomendación práctica de salud, ejercicio, hábitos, postura o bienestar que sugiera al paciente qué debe hacer. Concéntrate EXCLUSIVAMENTE en la explicación objetiva de los hallazgos ya descritos.
+PAUTAS OBLIGATORIAS:
+- Tono neutral, profesional y claro. Sin paternalismo ni consuelos forzados.
+- Vocabulario accesible pero formal.
+- PROHIBIDO incluir recomendaciones, cuidados, "qué hacer", hábitos, ejercicios, señales de alarma, plan de seguimiento o preguntas sugeridas para la consulta. Eso lo decide el médico tratante.
+- Concéntrate solo en: qué estudio se realizó y qué significan los hallazgos descritos.
 
-Devuelve un objeto JSON con las siguientes propiedades:
-1. "summary": Una descripción objetiva de 2 a 3 párrafos explicando qué tipo de estudio se le realizó, qué estructuras principales se detallan o resultan normales, y una síntesis descriptiva y neutral de los hallazgos principales identificados. NO debe contener recomendaciones, sugerencias de preguntas, pautas de conducta ni consejos de ningún tipo.
-2. "keyFindings": Una lista de los hallazgos identificados, donde para cada uno se entrega:
-   - "title": Nombre claro o región anatómica afectada en lenguaje accesible (ej: "Articulación del Hombro" o "Zonas inferiores del Pulmón").
-   - "originalTerm": El término radiológico técnico original tal cual aparece en el informe (ej: "Opacidad basal", "Osteonecrosis", o "Rotura parcial").
-   - "simplifiedExplanation": Una explicación clara, objetiva e intuitiva de qué significa físicamente a nivel anatómico, expresada de manera comprensible pero formal (sin adjetivos tranquilizadores redundantes, sugerencias ni recomendaciones).
-   - "analogy": Una analogía física, estructural u operativa de la vida diaria estrictamente con fines ilustrativos y didácticos (por ejemplo: filtros, conductos, elasticidad de cables, desgaste de componentes) que facilite la comprensión mecánica sin caer en términos infantiles o excesivamente coloquiales.
-   - "reassurance": Contexto clínico objetivo y neutral sobre el hallazgo. Describe la perspectiva médica estándar para este hallazgo (por ejemplo, si se asocia comúnmente con cambios crónicos, hallazgos incidentales típicos o si requiere una revisión cronológica simple, redactado de forma neutral y absolutamente libre de indicaciones, recomendaciones terapéuticas, pautas o preguntas sugeridas).
+Devuelve JSON con:
+1. "studyOverview": 3–5 oraciones sobre qué estudio se le realizó y qué permite evaluar (sin decir qué debe hacer después).
+2. "summary": 2–3 párrafos con la síntesis objetiva de lo encontrado (y lo descrito como normal, si aplica). Sin recomendaciones.
+3. "keyFindings": lista de hallazgos, cada uno con:
+   - "title": nombre accesible de la región o hallazgo
+   - "originalTerm": término técnico del informe
+   - "simplifiedExplanation": qué significa anatómicamente, en lenguaje claro
+   - "analogy": analogía estructural breve solo didáctica (opcionalmente "")
+   - "clinicalContext": contexto descriptivo neutro del hallazgo (sin indicaciones terapéuticas ni "debe/debería")
+4. "glossary": lista de 4 a 10 términos técnicos del informe que el paciente suele no entender, cada uno con:
+   - "term": término tal como aparece o su forma habitual
+   - "plainDefinition": definición breve en lenguaje claro (1–3 oraciones). Sin recomendaciones ni "qué hacer".
 `;
 
-    const systemInstruction = "Eres un especialista en comunicación médica institucional, traducción clínica orientada al paciente y radiodiagnóstico. Tu meta es transcribir informes complejos en términos comprensibles pero formales, manteniendo un tono completamente neutro, científico, maduro y objetivo. Evitas por completo el paternalismo, frases de alivio auto-complacientes, consuelos, rodeos coloquiales innecesarios, preguntas sugeridas o recomendaciones de salud o bienestar de cualquier índole. REQUISITO CRÍTICO: El JSON de salida solo debe contener la explicación descriptiva y científica simplificada de los hallazgos, libre de cualquier tipo de recomendación o sugerencia de preguntas para la consulta.";
+    const systemInstruction = "Eres especialista en comunicación radiológica orientada al paciente. Explicas hallazgos y términos con claridad científica y tono neutro. Nunca das recomendaciones, cuidados, preguntas sugeridas ni pasos a seguir: eso corresponde al médico tratante. El JSON solo contiene explicación del estudio, de los hallazgos y un glosario de términos.";
+
+    // Optional: prefer ChatGPT for patient-facing prose when OPENAI_API_KEY is set.
+    // On any failure, fall back to Gemini so the feature never breaks.
+    if (hasOpenAiApiKey()) {
+      try {
+        const openaiResult = await generatePatientSummaryOpenAI({
+          report: String(report),
+          studyType: studyType || "",
+          clinicalHistory: clinicalHistory || "",
+          systemInstruction,
+          userPrompt: promptText,
+        });
+        return res.json({
+          success: true,
+          data: openaiResult.data,
+          provider: "openai",
+          model: openaiResult.model,
+        });
+      } catch (openaiErr: any) {
+        console.warn(
+          "Explicación paciente: OpenAI falló; usando Gemini.",
+          openaiErr?.message || openaiErr
+        );
+      }
+    }
+
+    const ai = getGeminiClient();
+    const selectedModel = getModelName(model);
 
     const response = await ai.models.generateContent({
       model: selectedModel,
@@ -3422,6 +3530,7 @@ Devuelve un objeto JSON con las siguientes propiedades:
         responseSchema: {
           type: Type.OBJECT,
           properties: {
+            studyOverview: { type: Type.STRING },
             summary: { type: Type.STRING },
             keyFindings: {
               type: Type.ARRAY,
@@ -3432,13 +3541,24 @@ Devuelve un objeto JSON con las siguientes propiedades:
                   originalTerm: { type: Type.STRING },
                   simplifiedExplanation: { type: Type.STRING },
                   analogy: { type: Type.STRING },
-                  reassurance: { type: Type.STRING }
+                  clinicalContext: { type: Type.STRING }
                 },
-                required: ["title", "originalTerm", "simplifiedExplanation", "analogy", "reassurance"]
+                required: ["title", "originalTerm", "simplifiedExplanation"]
+              }
+            },
+            glossary: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  term: { type: Type.STRING },
+                  plainDefinition: { type: Type.STRING }
+                },
+                required: ["term", "plainDefinition"]
               }
             }
           },
-          required: ["summary", "keyFindings"]
+          required: ["studyOverview", "summary", "keyFindings", "glossary"]
         }
       }
     });
@@ -3458,7 +3578,9 @@ Devuelve un objeto JSON con las siguientes propiedades:
     const parsedJson = JSON.parse(jsonText);
     res.json({
       success: true,
-      data: parsedJson
+      data: normalizePatientSummaryPayload(parsedJson),
+      provider: "gemini",
+      model: selectedModel,
     });
   } catch (error: any) {
     console.error("Error en /api/generate-patient-summary:", error);
@@ -4677,7 +4799,7 @@ REGLAS DE GENERACIÓN PARA EL RÓTULO:
  */
 app.post("/api/correlate-figures-retroactive", async (req: express.Request, res: express.Response) => {
   try {
-    const { model, currentReport, attachedImages } = req.body;
+    const { model, currentReport, attachedImages, studyType } = req.body;
     if (!currentReport) {
       return res.status(400).json({ success: false, error: "Se requiere el reporte actual." });
     }
@@ -4687,23 +4809,25 @@ app.post("/api/correlate-figures-retroactive", async (req: express.Request, res:
 
     const ai = getGeminiClient();
     const selectedModel = getModelName(model || "gemini-3.7-flash");
+    const studyHint = String(studyType || "").trim();
 
     let promptText = `
 Eres un radiólogo experto y un editor de informes médicos de alta precisión.
-Se te proporciona un informe de radiología/ecografía estructurado en formato Markdown, y un listado de imágenes/capturas de ultrasonido adjuntas que han sido rotuladas/etiquetadas por el médico o mediante IA.
+Se te proporciona un informe de radiología/ecografía estructurado en formato Markdown, y un listado de imágenes diagnósticas adjuntas (pueden ser MMG / mamografía Y/O US / ultrasonido) ya rotuladas.
+${studyHint ? `Tipo de estudio declarado: ${studyHint}` : ""}
 
 TU MISIÓN PASO A PASO:
-1. Lee atentamente el INFORME DE RADIOLOGÍA de principio a fin (especialmente las secciones de HALLAZGOS e IMPRESIÓN DIAGNÓSTICA).
-2. Para cada una de las IMÁGENES ADJUNTAS (identificadas por su "id" y su "caption"), determina en qué lugar del texto del informe se menciona por primera vez el hallazgo, estructura u órgano correspondiente a esa imagen.
-3. REORDENA la lista de imágenes para que queden en el orden exacto de su primera aparición cronológica en el texto del informe (de arriba a abajo):
-   - La imagen cuyo hallazgo se describe PRIMERO en el reporte será la Figura 1.
-   - La imagen cuyo hallazgo se describe SEGUNDO en el reporte será la Figura 2.
-   - La imagen cuyo hallazgo se describe TERCERO será la Figura 3, y así sucesivamente.
-   - Si alguna imagen no coincide claramente con el reporte, colócala al final de la lista conservando su orden relativo.
-4. Una vez determinado el nuevo orden de las imágenes (y por ende su nuevo número de Figura 1, 2, 3...):
-   - Inserta la referencia "(ver Figura 1)", "(ver Figura 2)", etc. en el texto del informe en la ubicación exacta donde se describe dicho hallazgo específico.
-   - Esto garantiza que las menciones "(ver Figura 1)", "(ver Figura 2)", "(ver Figura 3)" dentro del texto del informe aparezcan en ORDEN ESTRICTAMENTE ASCENDENTE (1, 2, 3...) a medida que el lector lee el documento de arriba a abajo.
-5. NO alteres, elimines ni resumas el texto original del reporte. Únicamente debes insertar los paréntesis de referencia como "(ver Figura 1)" en el lugar exacto que corresponda. Mantén intacto el formato de secciones.
+1. Lee atentamente el INFORME completo (especialmente HALLAZGOS e IMPRESIÓN DIAGNÓSTICA). En estudios combinados "Mamografía y Ultrasonido de Mamas", suele haber un bloque de MAMOGRAFÍA y otro de ULTRASONIDO: respeta ese orden textual.
+2. Para CADA imagen adjunta (por "id", modalidad, proyección y caption), localiza la PRIMERA mención coherente en el informe:
+   - Imágenes modality "MMG" o rótulos con CC/MLO/proyecciones craneocaudales/mediolaterales → sección o frases de MAMOGRAFÍA / mamograma (NO las trates como ultrasonido).
+   - Imágenes modality "US" o rótulos de ecografía mamaria → sección o frases de ULTRASONIDO / ecografía de mamas.
+   - Usa proyección (CC vs MLO) y lateralidad (Derecha/Izquierda/Bilateral) para desambiguar.
+3. REORDENA las imágenes según esa primera aparición (arriba → abajo):
+   - Primera mención = Figura 1, segunda = Figura 2, etc.
+   - Si una imagen no encaja, al final, conservando orden relativo.
+   - Debes incluir TODOS los IDs en "reorderedImageIds" (ni omitas MMG ni US).
+4. Inserta "(ver Figura 1)", "(ver Figura 2)", … en el lugar exacto de cada hallazgo. Las menciones deben aparecer en orden estrictamente ascendente al leer de arriba a abajo.
+5. Si el informe ya tiene "(ver Imagen N)" o "(ver Figura N)" antiguos, sustitúyelos/reenuméralos para que coincidan con el nuevo orden. No borres ni resumas el resto del texto.
 
 LISTADO DE IMÁGENES ADJUNTAS DISPONIBLES:
 `;
@@ -4722,8 +4846,8 @@ ${currentReport}
 """
 
 Debes devolver un objeto JSON estricto con:
-- "reorderedImageIds": un arreglo con todos los IDs de las imágenes en el nuevo orden cronológico de aparición en el informe (ej: ["id1", "id2", "id3"]).
-- "report": el texto completo del informe con los paréntesis "(ver Figura 1)", "(ver Figura 2)", etc. insertados en orden estrictamente ascendente.
+- "reorderedImageIds": arreglo con TODOS los IDs en el nuevo orden de mención (ej: ["id1", "id2", "id3"]).
+- "report": texto completo del informe con "(ver Figura 1)", "(ver Figura 2)", etc. en orden estrictamente ascendente.
 `;
 
     const response = await ai.models.generateContent({

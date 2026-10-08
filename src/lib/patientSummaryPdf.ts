@@ -16,7 +16,12 @@ export type PatientSummaryPdfDeps = {
   studyType: string;
   selectedLogo: string;
   formatDateToDMY: (dateStr: string) => string;
+  /** Optional patient infographic data-URL or http(s) URL */
+  infographicUrl?: string;
 };
+
+const FORMAL_REPORT_DISCLAIMER =
+  "IMPORTANTE: Este documento es una explicación en lenguaje claro para usted. El informe radiológico formal, dirigido a su médico tratante, se entrega por separado y es el documento que debe presentar en consulta.";
 
 export async function downloadPatientSummaryPdf(
   deps: PatientSummaryPdfDeps,
@@ -40,8 +45,18 @@ export async function downloadPatientSummaryPdf(
     studyType,
     selectedLogo,
     formatDateToDMY,
+    infographicUrl,
   } = deps;
   if (!patientSummary) return;
+
+  // Hard-ignore recommendation-style fields even if present in older saved data
+  const studyOverview = String(patientSummary.studyOverview || "").trim();
+  const keyFindings = Array.isArray(patientSummary.keyFindings)
+    ? patientSummary.keyFindings
+    : [];
+  const glossary = Array.isArray(patientSummary.glossary)
+    ? patientSummary.glossary.filter((g: any) => String(g?.term || "").trim() && String(g?.plainDefinition || g?.definition || "").trim())
+    : [];
 
   const displayClinicName = clinicName && clinicName.trim().toUpperCase() !== "CLÍNICA PRIVADA" && clinicName.trim().toUpperCase() !== "CLINICA PRIVADA" ? clinicName.toUpperCase() : "";
 
@@ -126,54 +141,62 @@ export async function downloadPatientSummaryPdf(
       estimatedHeight += splitSummaryLocal.length * 5.5 + 4;
     }
 
-    // 5. Key Findings
-    if (patientSummary.keyFindings && patientSummary.keyFindings.length > 0) {
+    // 4b. Study overview
+    if (studyOverview) {
+      const splitOverview = tempDoc.splitTextToSize(stripEmojis(studyOverview), contentWidth);
+      estimatedHeight += splitOverview.length * 5.5 + 14;
+    }
+
+    // 5. Key Findings (no care points / suggested questions)
+    if (keyFindings.length > 0) {
       estimatedHeight += 22;
-      patientSummary.keyFindings.forEach((finding: any) => {
+      keyFindings.forEach((finding: any) => {
         const title = stripEmojis(finding.title || "");
         const originalTerm = stripEmojis(finding.originalTerm || "");
         const simplifiedExplanation = stripEmojis(finding.simplifiedExplanation || "");
         const analogy = stripEmojis(finding.analogy || "");
-        const reassurance = stripEmojis(finding.reassurance || "");
+        const clinicalContext = stripEmojis(finding.clinicalContext || finding.reassurance || "");
 
         const splitTitle = tempDoc.splitTextToSize(title, contentWidth - 10);
         const splitOrig = tempDoc.splitTextToSize(`Término original en informe técnico: "${originalTerm}"`, contentWidth - 10);
         const splitExp = tempDoc.splitTextToSize(`Explicación: ${simplifiedExplanation}`, contentWidth - 14);
-        const splitAnalogy = tempDoc.splitTextToSize(`Analogía de comprensión: ${analogy}`, contentWidth - 14);
-        const splitReassurance = tempDoc.splitTextToSize(`Contexto Clínico y Perspectiva Médica: ${reassurance}`, contentWidth - 14);
+        const splitAnalogy = analogy
+          ? tempDoc.splitTextToSize(`Analogía de comprensión: ${analogy}`, contentWidth - 14)
+          : [];
+        const splitContext = clinicalContext
+          ? tempDoc.splitTextToSize(`Contexto descriptivo: ${clinicalContext}`, contentWidth - 14)
+          : [];
 
-        const neededHeight = (splitTitle.length * 5) + 
-                             (splitOrig.length * 4) + 
-                             (splitExp.length * 5) + 
-                             (splitAnalogy.length * 4.5) + 
-                             (splitReassurance.length * 4.5) + 20;
+        const neededHeight = (splitTitle.length * 5) +
+                             (splitOrig.length * 4) +
+                             (splitExp.length * 5) +
+                             (splitAnalogy.length * 4.5) +
+                             (splitContext.length * 4.5) + 20;
         estimatedHeight += neededHeight + 2;
       });
       estimatedHeight += 4;
     }
 
-    // 6. Care Points
-    if (patientSummary.carePoints && patientSummary.carePoints.length > 0) {
+    // 5b. Glossary
+    if (glossary.length > 0) {
       estimatedHeight += 22;
-      patientSummary.carePoints.forEach((point: string) => {
-        const cleanPoint = stripEmojis(point);
-        const splitPoint = tempDoc.splitTextToSize(cleanPoint, contentWidth - 8);
-        estimatedHeight += (splitPoint.length * 4.8) + 2.5;
+      glossary.forEach((entry: any) => {
+        const term = stripEmojis(entry.term || "");
+        const definition = stripEmojis(entry.plainDefinition || entry.definition || "");
+        const splitTerm = tempDoc.splitTextToSize(term, contentWidth - 10);
+        const splitDef = tempDoc.splitTextToSize(definition, contentWidth - 10);
+        estimatedHeight += (splitTerm.length * 5) + (splitDef.length * 4.8) + 8;
       });
       estimatedHeight += 4;
     }
 
-    // 7. Suggested Questions
-    if (patientSummary.suggestedQuestions && patientSummary.suggestedQuestions.length > 0) {
-      estimatedHeight += 22;
-      patientSummary.suggestedQuestions.forEach((q: string) => {
-        const cleanQ = stripEmojis(q);
-        const splitQ = tempDoc.splitTextToSize(`"${cleanQ}"`, contentWidth - 8);
-        estimatedHeight += (splitQ.length * 4.8) + 3;
-      });
+    // Disclaimer + optional infographic page budget
+    estimatedHeight += 28;
+    if (infographicUrl) {
+      estimatedHeight += 120;
     }
 
-    // 8. Sign-off block
+    // Sign-off block
     estimatedHeight += 38;
 
     // 9. Calculate pages and remainder for widow/orphan detection
@@ -444,18 +467,70 @@ export async function downloadPatientSummaryPdf(
     // Title of the Document
     checkPageBreak(12 * factor);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(12);
+    doc.setFontSize(13);
     doc.setTextColor(15, 23, 42);
-    doc.text("INFORME DE ACOMPAÑAMIENTO Y EXPLICACIÓN SIMPLIFICADA", pageWidth / 2, yCoord, { align: "center" });
-    yCoord += 8 * factor;
+    doc.text("EXPLICACIÓN PARA USTED", pageWidth / 2, yCoord, { align: "center" });
+    yCoord += 5 * factor;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(100, 116, 139);
+    doc.text("Documento complementario · Lenguaje claro", pageWidth / 2, yCoord, { align: "center" });
+    yCoord += 7 * factor;
+
+    // Formal-report disclaimer (top)
+    {
+      const discLines = doc.splitTextToSize(FORMAL_REPORT_DISCLAIMER, contentWidth - 10);
+      const discH = discLines.length * 4.2 * factor + 8 * factor;
+      checkPageBreak(discH);
+      doc.setFillColor(254, 252, 232);
+      doc.setDrawColor(202, 138, 4);
+      doc.setLineWidth(0.4);
+      doc.roundedRect(marginX, yCoord, contentWidth, discH, 1.5, 1.5, "FD");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8.5);
+      doc.setTextColor(113, 63, 18);
+      let dy = yCoord + 5 * factor;
+      discLines.forEach((line: string) => {
+        doc.text(line, marginX + 5, dy);
+        dy += 4.2 * factor;
+      });
+      yCoord += discH + 6 * factor;
+    }
+
+    // Qué estudio se realizó
+    if (studyOverview) {
+      checkPageBreak(18 * factor);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(15, 23, 42);
+      doc.text("QUÉ ESTUDIO SE LE REALIZÓ", marginX, yCoord);
+      yCoord += 6 * factor;
+      const cleanOverview = stripEmojis(studyOverview);
+      doc.setFont("times", "normal");
+      doc.setFontSize(10.5);
+      doc.setTextColor(51, 65, 85);
+      const splitOverview = doc.splitTextToSize(cleanOverview, contentWidth);
+      splitOverview.forEach((line: string) => {
+        checkPageBreak(5.5 * factor);
+        doc.text(line, marginX, yCoord);
+        yCoord += 5.5 * factor;
+      });
+      yCoord += 5 * factor;
+    }
 
     // Introduction Summary
     if (patientSummary.summary) {
+      checkPageBreak(14 * factor);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(15, 23, 42);
+      doc.text("EN POCAS PALABRAS", marginX, yCoord);
+      yCoord += 6 * factor;
       const cleanSummary = stripEmojis(patientSummary.summary);
       doc.setFont("times", "normal");
       doc.setFontSize(10.5);
       doc.setTextColor(51, 65, 85);
-      
+
       const splitSummary = doc.splitTextToSize(cleanSummary, contentWidth);
       splitSummary.forEach((line: string) => {
         checkPageBreak(5.5 * factor);
@@ -466,65 +541,70 @@ export async function downloadPatientSummaryPdf(
     }
 
     // Key Findings section
-    if (patientSummary.keyFindings && patientSummary.keyFindings.length > 0) {
-      // Calculate the height of the first finding to check combined page break
-      const firstFinding = patientSummary.keyFindings[0];
+    if (keyFindings.length > 0) {
+      const firstFinding = keyFindings[0];
       const title0 = stripEmojis(firstFinding.title || "");
       const originalTerm0 = stripEmojis(firstFinding.originalTerm || "");
       const simplifiedExplanation0 = stripEmojis(firstFinding.simplifiedExplanation || "");
       const analogy0 = stripEmojis(firstFinding.analogy || "");
-      const reassurance0 = stripEmojis(firstFinding.reassurance || "");
+      const context0 = stripEmojis(firstFinding.clinicalContext || firstFinding.reassurance || "");
 
       const splitTitle0 = doc.splitTextToSize(title0, contentWidth - 10);
       const splitOrig0 = doc.splitTextToSize(`Término original en informe técnico: "${originalTerm0}"`, contentWidth - 10);
       const splitExp0 = doc.splitTextToSize(`Explicación: ${simplifiedExplanation0}`, contentWidth - 14);
-      const splitAnalogy0 = doc.splitTextToSize(`Analogía de comprensión: ${analogy0}`, contentWidth - 14);
-      const splitReassurance0 = doc.splitTextToSize(`Contexto Clínico y Perspectiva Médica: ${reassurance0}`, contentWidth - 14);
+      const splitAnalogy0 = analogy0
+        ? doc.splitTextToSize(`Analogía de comprensión: ${analogy0}`, contentWidth - 14)
+        : [];
+      const splitContext0 = context0
+        ? doc.splitTextToSize(`Contexto descriptivo: ${context0}`, contentWidth - 14)
+        : [];
 
-      const neededHeight0 = ((splitTitle0.length * 5) + 
-                           (splitOrig0.length * 4) + 
-                           (splitExp0.length * 5) + 
-                           (splitAnalogy0.length * 4.5) + 
-                           (splitReassurance0.length * 4.5) + 20) * factor;
+      const neededHeight0 = ((splitTitle0.length * 5) +
+                           (splitOrig0.length * 4) +
+                           (splitExp0.length * 5) +
+                           (splitAnalogy0.length * 4.5) +
+                           (splitContext0.length * 4.5) + 20) * factor;
 
-      // Ensure title + first item fit on the current page together!
       checkPageBreak(15 * factor + neededHeight0);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(11);
       doc.setTextColor(15, 23, 42);
-      doc.text("HALLAZGOS IDENTIFICADOS Y TRADUCIDOS:", marginX, yCoord);
+      doc.text("SUS HALLAZGOS, EXPLICADOS", marginX, yCoord);
       yCoord += 7 * factor;
 
-      patientSummary.keyFindings.forEach((finding: any) => {
+      keyFindings.forEach((finding: any) => {
         const title = stripEmojis(finding.title || "");
         const originalTerm = stripEmojis(finding.originalTerm || "");
         const simplifiedExplanation = stripEmojis(finding.simplifiedExplanation || "");
         const analogy = stripEmojis(finding.analogy || "");
-        const reassurance = stripEmojis(finding.reassurance || "");
+        const clinicalContext = stripEmojis(finding.clinicalContext || finding.reassurance || "");
 
         doc.setFont("helvetica", "bold");
         doc.setFontSize(10);
         const splitTitle = doc.splitTextToSize(title, contentWidth - 10);
-        
+
         doc.setFont("times", "italic");
         doc.setFontSize(9);
         const splitOrig = doc.splitTextToSize(`Término original en informe técnico: "${originalTerm}"`, contentWidth - 10);
-        
+
         doc.setFont("times", "normal");
         doc.setFontSize(10);
         const splitExp = doc.splitTextToSize(`Explicación: ${simplifiedExplanation}`, contentWidth - 14);
 
         doc.setFont("times", "normal");
         doc.setFontSize(9.5);
-        const splitAnalogy = doc.splitTextToSize(`Analogía de comprensión: ${analogy}`, contentWidth - 14);
+        const splitAnalogy = analogy
+          ? doc.splitTextToSize(`Analogía de comprensión: ${analogy}`, contentWidth - 14)
+          : [];
+        const splitContext = clinicalContext
+          ? doc.splitTextToSize(`Contexto descriptivo: ${clinicalContext}`, contentWidth - 14)
+          : [];
 
-        const splitReassurance = doc.splitTextToSize(`Contexto Clínico y Perspectiva Médica: ${reassurance}`, contentWidth - 14);
-
-        const neededHeight = ((splitTitle.length * 5) + 
-                             (splitOrig.length * 4) + 
-                             (splitExp.length * 5) + 
-                             (splitAnalogy.length * 4.5) + 
-                             (splitReassurance.length * 4.5) + 20) * factor;
+        const neededHeight = ((splitTitle.length * 5) +
+                             (splitOrig.length * 4) +
+                             (splitExp.length * 5) +
+                             (splitAnalogy.length * 4.5) +
+                             (splitContext.length * 4.5) + 20) * factor;
 
         checkPageBreak(neededHeight);
 
@@ -536,142 +616,192 @@ export async function downloadPatientSummaryPdf(
 
         let interiorY = yCoord + 6 * factor;
 
-        // Title
         doc.setFont("helvetica", "bold");
         doc.setFontSize(10);
-        doc.setTextColor(30, 58, 138); 
+        doc.setTextColor(30, 58, 138);
         splitTitle.forEach((line: string) => {
           doc.text(line, marginX + 5, interiorY);
           interiorY += 5 * factor;
         });
 
-        // Original term
         doc.setFont("times", "italic");
         doc.setFontSize(9);
-        doc.setTextColor(75, 85, 99); 
+        doc.setTextColor(75, 85, 99);
         splitOrig.forEach((line: string) => {
           doc.text(line, marginX + 5, interiorY);
           interiorY += 4.5 * factor;
         });
         interiorY += 2 * factor;
 
-        // Explanation
         doc.setFont("times", "normal");
         doc.setFontSize(10);
-        doc.setTextColor(15, 23, 42); 
+        doc.setTextColor(15, 23, 42);
         splitExp.forEach((line: string) => {
           doc.text(line, marginX + 7, interiorY);
           interiorY += 4.8 * factor;
         });
         interiorY += 2 * factor;
 
-        // Analogy (orange border bar)
-        const analogyHeight = (splitAnalogy.length * 4.2 * factor) + 4 * factor;
-        doc.setFillColor(255, 247, 237); 
-        doc.rect(marginX + 5, interiorY - 3 * factor, contentWidth - 10, analogyHeight, "F");
-        doc.setDrawColor(249, 115, 22); 
-        doc.setLineWidth(0.5);
-        doc.line(marginX + 5, interiorY - 3 * factor, marginX + 5, interiorY - 3 * factor + analogyHeight);
+        if (splitAnalogy.length > 0) {
+          const analogyHeight = (splitAnalogy.length * 4.2 * factor) + 4 * factor;
+          doc.setFillColor(255, 247, 237);
+          doc.rect(marginX + 5, interiorY - 3 * factor, contentWidth - 10, analogyHeight, "F");
+          doc.setDrawColor(249, 115, 22);
+          doc.setLineWidth(0.5);
+          doc.line(marginX + 5, interiorY - 3 * factor, marginX + 5, interiorY - 3 * factor + analogyHeight);
 
-        doc.setFont("times", "normal");
-        doc.setFontSize(9.5);
-        doc.setTextColor(124, 45, 18); 
-        splitAnalogy.forEach((line: string) => {
-          doc.text(line, marginX + 8, interiorY);
-          interiorY += 4.2 * factor;
-        });
-        interiorY += 4 * factor;
+          doc.setFont("times", "normal");
+          doc.setFontSize(9.5);
+          doc.setTextColor(124, 45, 18);
+          splitAnalogy.forEach((line: string) => {
+            doc.text(line, marginX + 8, interiorY);
+            interiorY += 4.2 * factor;
+          });
+          interiorY += 4 * factor;
+        }
 
-        // Context (blue border bar)
-        const contextHeight = (splitReassurance.length * 4.2 * factor) + 4 * factor;
-        doc.setFillColor(239, 246, 255); 
-        doc.rect(marginX + 5, interiorY - 3 * factor, contentWidth - 10, contextHeight, "F");
-        doc.setDrawColor(59, 130, 246); 
-        doc.setLineWidth(0.5);
-        doc.line(marginX + 5, interiorY - 3 * factor, marginX + 5, interiorY - 3 * factor + contextHeight);
+        if (splitContext.length > 0) {
+          const contextHeight = (splitContext.length * 4.2 * factor) + 4 * factor;
+          doc.setFillColor(239, 246, 255);
+          doc.rect(marginX + 5, interiorY - 3 * factor, contentWidth - 10, contextHeight, "F");
+          doc.setDrawColor(59, 130, 246);
+          doc.setLineWidth(0.5);
+          doc.line(marginX + 5, interiorY - 3 * factor, marginX + 5, interiorY - 3 * factor + contextHeight);
 
-        doc.setFont("times", "normal");
-        doc.setFontSize(9.5);
-        doc.setTextColor(30, 58, 138); 
-        splitReassurance.forEach((line: string) => {
-          doc.text(line, marginX + 8, interiorY);
-          interiorY += 4.2 * factor;
-        });
+          doc.setFont("times", "normal");
+          doc.setFontSize(9.5);
+          doc.setTextColor(30, 58, 138);
+          splitContext.forEach((line: string) => {
+            doc.text(line, marginX + 8, interiorY);
+            interiorY += 4.2 * factor;
+          });
+        }
 
         yCoord += neededHeight + 2 * factor;
       });
       yCoord += 4 * factor;
     }
 
-    // Care Points Section
-    if (patientSummary.carePoints && patientSummary.carePoints.length > 0) {
-      // Estimate the first point height to avoid orphan header
-      const firstPoint = stripEmojis(patientSummary.carePoints[0]);
-      const splitPoint0 = doc.splitTextToSize(firstPoint, contentWidth - 8);
-      const firstPointHeight = ((splitPoint0.length * 4.8) + 2.5) * factor;
-
-      checkPageBreak(22 * factor + firstPointHeight);
+    // Glossary section
+    if (glossary.length > 0) {
+      const first = glossary[0];
+      const term0 = stripEmojis(first.term || "");
+      const def0 = stripEmojis(first.plainDefinition || first.definition || "");
+      const splitTerm0 = doc.splitTextToSize(term0, contentWidth - 10);
+      const splitDef0 = doc.splitTextToSize(def0, contentWidth - 10);
+      const firstH = ((splitTerm0.length * 5) + (splitDef0.length * 4.8) + 8) * factor;
+      checkPageBreak(18 * factor + firstH);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(11);
       doc.setTextColor(15, 23, 42);
-      doc.text("PAUTAS Y RECOMENDACIONES DE BIENESTAR:", marginX, yCoord);
+      doc.text("GLOSARIO DE TÉRMINOS", marginX, yCoord);
+      yCoord += 5 * factor;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text("Palabras del informe formal, explicadas en lenguaje claro", marginX, yCoord);
       yCoord += 7 * factor;
 
-      patientSummary.carePoints.forEach((point: string) => {
-        const cleanPoint = stripEmojis(point);
-        const splitPoint = doc.splitTextToSize(cleanPoint, contentWidth - 8);
-        
-        checkPageBreak(((splitPoint.length * 5) + 3) * factor);
+      glossary.forEach((entry: any) => {
+        const term = stripEmojis(entry.term || "");
+        const definition = stripEmojis(entry.plainDefinition || entry.definition || "");
         doc.setFont("helvetica", "bold");
-        doc.setFontSize(10.5);
-        doc.setTextColor(15, 23, 42);
-        doc.text("•", marginX + 2, yCoord);
-
+        doc.setFontSize(10);
+        const splitTerm = doc.splitTextToSize(term, contentWidth - 10);
         doc.setFont("times", "normal");
-        doc.setFontSize(10.5);
-        doc.setTextColor(51, 65, 85);
-
-        splitPoint.forEach((line: string, i: number) => {
-          doc.text(line, marginX + 6, yCoord + (i * 4.8 * factor));
+        doc.setFontSize(10);
+        const splitDef = doc.splitTextToSize(definition, contentWidth - 10);
+        const needed = ((splitTerm.length * 5) + (splitDef.length * 4.8) + 8) * factor;
+        checkPageBreak(needed);
+        doc.setFillColor(248, 250, 252);
+        doc.setDrawColor(226, 232, 240);
+        doc.setLineWidth(0.3);
+        doc.roundedRect(marginX, yCoord, contentWidth, needed - 2 * factor, 1.2, 1.2, "FD");
+        let iy = yCoord + 5 * factor;
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(10);
+        doc.setTextColor(15, 23, 42);
+        splitTerm.forEach((line: string) => {
+          doc.text(line, marginX + 4, iy);
+          iy += 5 * factor;
         });
-        yCoord += (splitPoint.length * 4.8 * factor) + 2.5 * factor;
+        doc.setFont("times", "normal");
+        doc.setFontSize(10);
+        doc.setTextColor(51, 65, 85);
+        splitDef.forEach((line: string) => {
+          doc.text(line, marginX + 4, iy);
+          iy += 4.8 * factor;
+        });
+        yCoord += needed;
       });
       yCoord += 4 * factor;
     }
 
-    // Suggested Questions Section
-    if (patientSummary.suggestedQuestions && patientSummary.suggestedQuestions.length > 0) {
-      // Estimate the first question height to avoid orphan header
-      const firstQ = stripEmojis(patientSummary.suggestedQuestions[0]);
-      const splitQ0 = doc.splitTextToSize(`"${firstQ}"`, contentWidth - 8);
-      const firstQHeight = ((splitQ0.length * 4.8) + 3) * factor;
+    // Patient infographic (optional dedicated page)
+    if (infographicUrl && typeof infographicUrl === "string") {
+      try {
+        let imgData = infographicUrl;
+        if (!imgData.startsWith("data:")) {
+          const res = await fetch(imgData);
+          const blob = await res.blob();
+          imgData = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ""));
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+        }
+        if (imgData.startsWith("data:image")) {
+          doc.addPage();
+          yCoord = 20;
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(12);
+          doc.setTextColor(15, 23, 42);
+          doc.text("INFOGRAFÍA EXPLICATIVA", pageWidth / 2, yCoord, { align: "center" });
+          yCoord += 8;
+          const maxW = contentWidth;
+          const maxH = pageHeight - yCoord - 28;
+          const dims = await getImageDimensionsVirtual(imgData);
+          let drawW = maxW;
+          let drawH = maxH;
+          if (dims.width && dims.height) {
+            const aspect = dims.width / dims.height;
+            if (aspect > maxW / maxH) {
+              drawW = maxW;
+              drawH = maxW / aspect;
+            } else {
+              drawH = maxH;
+              drawW = maxH * aspect;
+            }
+          }
+          const format = imgData.toLowerCase().includes("image/png") ? "PNG" : "JPEG";
+          const drawX = (pageWidth - drawW) / 2;
+          doc.addImage(imgData, format, drawX, yCoord, drawW, drawH);
+          yCoord += drawH + 8;
+        }
+      } catch (infographicErr) {
+        console.warn("Could not embed patient infographic in PDF:", infographicErr);
+      }
+    }
 
-      checkPageBreak(22 * factor + firstQHeight);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(11);
-      doc.setTextColor(15, 23, 42);
-      doc.text("PREGUNTAS SUGERIDAS PARA SU CONSULTA MÉDICA:", marginX, yCoord);
-      yCoord += 7 * factor;
-
-      patientSummary.suggestedQuestions.forEach((q: string, idx: number) => {
-        const cleanQ = stripEmojis(q);
-        const splitQ = doc.splitTextToSize(`"${cleanQ}"`, contentWidth - 8);
-
-        checkPageBreak(((splitQ.length * 5) + 3) * factor);
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(10);
-        doc.setTextColor(15, 23, 42);
-        doc.text(`${idx + 1}.`, marginX + 2, yCoord);
-
-        doc.setFont("times", "bold");
-        doc.setFontSize(10);
-        doc.setTextColor(30, 41, 59);
-
-        splitQ.forEach((line: string, i: number) => {
-          doc.text(line, marginX + 7, yCoord + (i * 4.8 * factor));
-        });
-        yCoord += (splitQ.length * 4.8 * factor) + 3 * factor;
+    // Closing disclaimer (repeated for clarity)
+    {
+      const discLines = doc.splitTextToSize(FORMAL_REPORT_DISCLAIMER, contentWidth - 10);
+      const discH = discLines.length * 4.2 * factor + 8 * factor;
+      checkPageBreak(discH + 4);
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(148, 163, 184);
+      doc.setLineWidth(0.35);
+      doc.roundedRect(marginX, yCoord, contentWidth, discH, 1.5, 1.5, "FD");
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(51, 65, 85);
+      let dy = yCoord + 5 * factor;
+      discLines.forEach((line: string) => {
+        doc.text(line, marginX + 5, dy);
+        dy += 4.2 * factor;
       });
+      yCoord += discH + 6 * factor;
     }
 
     // Signature / Sign-off block

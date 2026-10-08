@@ -288,7 +288,10 @@ export function createGenerateReportHandler(d: GenerateReportHandlerDeps) {
           attachedImages: attachedImages && attachedImages.length > 0 ? attachedImages.map((img, idx) => ({
             id: img.id,
             index: idx + 1,
-            caption: img.caption || ""
+            caption: img.caption || "",
+            modality: img.modality || "",
+            projection: img.projection || "",
+            side: img.side || "",
           })) : undefined,
         }),
       });
@@ -323,7 +326,8 @@ export function createGenerateReportHandler(d: GenerateReportHandlerDeps) {
         if (mode === "full") {
           const batchSelection = { ...FULL_REPORT_BATCH_MODULES };
           const suiteShortcut = autoActivateSpecificSuite
-            ? getSpecificSuiteShortcut(specificStudy, modality)
+            ? getSpecificSuiteShortcut(specificStudy, modality) ||
+              getSpecificSuiteShortcut(studyType || "", "")
             : null;
           if (suiteShortcut) {
             batchSelection[suiteShortcut.id] = true;
@@ -475,6 +479,7 @@ export function createGenerateReportHandler(d: GenerateReportHandlerDeps) {
         if (base64Image) {
           triggerAutoImageEvaluation(base64Image, selectedFile?.type, studyType, clinicalHistory, findings, annotations);
         }
+        return String(data.report || "");
       } else {
         setReportError(data.error || `Error del servidor (Código ${response.status}): ${JSON.stringify(data)}`);
       }
@@ -485,6 +490,6 @@ export function createGenerateReportHandler(d: GenerateReportHandlerDeps) {
     } finally {
       setIsGenerating(false);
     }
-  
+    return undefined;
   };
 }

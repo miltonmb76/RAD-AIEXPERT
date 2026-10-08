@@ -17,7 +17,15 @@ export const getSpecificSuiteShortcut = (
   if (selected.includes("doppler") || selected.includes("carotid")) {
     return { id: "vascular3d", label: "Suite Vascular 3D" };
   }
-  if (selected.includes("mama") || selected.includes("momografia")) {
+  // Mamografía + ultrasonido (modalidad combinada) and plain breast studies
+  if (
+    selected.includes("mamografia y ultrasonido") ||
+    selected.includes("ultrasonido de mamas") ||
+    selected.includes("mamografia / ecografia") ||
+    selected.includes("mama") ||
+    selected.includes("momografia") ||
+    selected.includes("mamograf")
+  ) {
     return { id: "breast3d", label: "Suite Mama 3D" };
   }
   if (selected.includes("cuello") || selected.includes("tiroid")) {
