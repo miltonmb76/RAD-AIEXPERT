@@ -4646,14 +4646,19 @@ Ejemplo:
           report: generatedReport,
           studyType,
           reportDate: reportDate || "",
+          projections,
+          viewOrientation: infographicViewOrientation,
           ...(notes ? { correctionNotes: notes } : {}),
         }),
       });
       const data = await response.json();
       if (data.success) {
         setInfographicUrl(data.imageUrl);
+        if (data.viewOrientation === "AP" || data.viewOrientation === "PA") {
+          setInfographicViewOrientation(data.viewOrientation);
+        }
       } else {
-        setInfographicError(data.error || "Error generando la infografï¿½a.");
+        setInfographicError(data.error || "Error generando la infografía.");
       }
     } catch (err: any) {
       setInfographicError(err.message || "Error al conectar con la API de infografï¿½as.");
