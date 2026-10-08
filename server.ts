@@ -22,6 +22,7 @@ import {
   normalizeFindingsMapData,
   templateCatalogForPrompt,
 } from "./src/lib/findingsMap";
+import { normalizeDominantLesionCardData } from "./src/lib/dominantLesionCard";
 import {
   generatePatientSummaryOpenAI,
   hasOpenAiApiKey,
@@ -10630,6 +10631,181 @@ ${report}
     res.json({ success: true, data });
   } catch (error: any) {
     console.error("Error en /api/generate-findings-map:", error);
+    res.status(500).json({ success: false, error: handleGeminiError(error) });
+  }
+});
+
+/**
+ * POST /api/generate-dominant-lesion-card
+ * One-page dominant lesion sheet: measures, category, figure hint, clinician phrase.
+ */
+app.post("/api/generate-dominant-lesion-card", async (req: express.Request, res: express.Response) => {
+  try {
+    const {
+      model,
+      report,
+      studyType,
+      clinicalHistory,
+      priorInstructions,
+      focusText,
+      hasAttachedImages,
+      hasFocal3d,
+    } = req.body;
+    if (!report || !String(report).trim()) {
+      return res.status(400).json({ success: false, error: "Se requiere el parámetro 'report'." });
+    }
+
+    const ai = getGeminiClient();
+    const modelToUse = getModelName(model);
+    const study = (studyType || "").toString().trim();
+    const history = (clinicalHistory || "").toString().trim();
+    const priors = (priorInstructions || "").toString().trim();
+    const focus = (focusText || "").toString().trim();
+
+    const prompt = `Eres un radiólogo hispanohablante. Extrae la LESIÓN DOMINANTE del informe y construye una FICHA DE UNA PÁGINA para el clínico tratante.
+
+IDIOMA: ESPAÑOL médico. Solo datos afirmados en el informe. No inventes medidas ni categorías.
+NO incluyas manejo largo ni recomendaciones genéricas tipo "correlacionar con clínica" salvo que el informe ya las diga; la "clinicianPhrase" debe ser útil y concreta.
+
+ESTUDIO: ${study || "Detectar del informe"}
+${history ? `HISTORIA CLÍNICA:\n"""\n${history}\n"""` : "Sin historia adicional."}
+${focus ? `\nFOCO MANUAL (prioridad): la lesión dominante DEBE ser: "${focus}"` : "\nSelecciona automáticamente la lesión más clínicamente relevante (tamaño, categoría, sospecha)."}
+${priors ? `\nINSTRUCCIONES PREVIAS DEL MÉDICO (prioridad alta):\n"""\n${priors}\n"""` : ""}
+Imágenes adjuntas disponibles: ${hasAttachedImages ? "sí" : "no"}
+Corte 3D focal ya generado: ${hasFocal3d ? "sí" : "no"}
+
+REGLAS:
+1. Una sola lesión dominante.
+2. measurements: ejes/diámetros explícitos del informe (label + value). Si solo hay un tamaño, úsalo en sizeSummary y opcionalmente en measurements.
+3. categorySystem + categoryValue solo si el informe asigna BI-RADS, TI-RADS, LI-RADS, Bosniak, ACR, etc. Si no hay categoría, déjalos vacíos.
+4. figureRef: número si el informe menciona "(ver Figura N)" o similar para ESA lesión; si no, null.
+5. figureCaptionHint: 3–8 palabras para emparejar con captions de imágenes (proyección, lado, órgano).
+6. modalityHint: "US" | "MMG" | "US+MMG" | "CT" | "MR" | "other".
+7. clinicianPhrase: 1–2 frases en español para el médico tratante (qué es, dónde, tamaño/categoría, mensaje clínico breve).
+8. keyDescriptors: 2–5 rasgos semiológicos clave (sólido, márgenes, vascularidad, etc.) solo si están en el informe.
+9. title: "Ficha de lesión dominante" o variante breve.
+
+JSON OBLIGATORIO (claves en inglés):
+{
+  "title": "Ficha de lesión dominante",
+  "lesionLabel": "...",
+  "site": "...",
+  "laterality": "Derecha|Izquierda|Bilateral|",
+  "sizeSummary": "18 × 12 mm",
+  "measurements": [{ "label": "Eje mayor", "value": "18 mm" }],
+  "categorySystem": "BI-RADS",
+  "categoryValue": "4A",
+  "categoryRationale": "...",
+  "modalityHint": "US",
+  "figureRef": 1,
+  "figureCaptionHint": "nódulo mama derecha",
+  "clinicianPhrase": "...",
+  "keyDescriptors": ["...", "..."],
+  "studyRegion": "..."
+}
+
+INFORME:
+"""
+${report}
+"""
+`;
+
+    const fullSchema = {
+      type: Type.OBJECT,
+      properties: {
+        title: { type: Type.STRING },
+        lesionLabel: { type: Type.STRING },
+        site: { type: Type.STRING },
+        laterality: { type: Type.STRING },
+        sizeSummary: { type: Type.STRING },
+        measurements: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              label: { type: Type.STRING },
+              value: { type: Type.STRING },
+            },
+            required: ["label", "value"],
+          },
+        },
+        categorySystem: { type: Type.STRING },
+        categoryValue: { type: Type.STRING },
+        categoryRationale: { type: Type.STRING },
+        modalityHint: { type: Type.STRING },
+        figureRef: { type: Type.NUMBER },
+        figureCaptionHint: { type: Type.STRING },
+        clinicianPhrase: { type: Type.STRING },
+        keyDescriptors: { type: Type.ARRAY, items: { type: Type.STRING } },
+        studyRegion: { type: Type.STRING },
+      },
+      required: ["lesionLabel", "site", "clinicianPhrase"],
+    };
+
+    const readModelText = (response: any): string => {
+      if (response?.text && String(response.text).trim()) return String(response.text);
+      const parts = response?.candidates?.[0]?.content?.parts;
+      if (Array.isArray(parts)) {
+        return parts
+          .map((p: any) => (typeof p?.text === "string" ? p.text : ""))
+          .filter(Boolean)
+          .join("\n");
+      }
+      return "";
+    };
+
+    let rawText = "";
+    let parsed: any = null;
+
+    try {
+      const response = await ai.models.generateContent({
+        model: modelToUse,
+        contents: prompt,
+        config: {
+          temperature: 0.2,
+          responseMimeType: "application/json",
+          responseSchema: fullSchema,
+        },
+      });
+      rawText = readModelText(response);
+      parsed = extractJsonObject(rawText);
+    } catch (schemaErr: any) {
+      console.warn("generate-dominant-lesion-card: schema attempt failed:", schemaErr?.message || schemaErr);
+    }
+
+    if (!parsed || !parsed.lesionLabel) {
+      try {
+        const response2 = await ai.models.generateContent({
+          model: modelToUse,
+          contents: prompt + "\n\nResponde ÚNICAMENTE JSON válido con lesionLabel y clinicianPhrase.",
+          config: { temperature: 0.25, responseMimeType: "application/json" },
+        });
+        rawText = readModelText(response2) || rawText;
+        parsed = extractJsonObject(rawText) || parsed;
+      } catch (e: any) {
+        console.warn("generate-dominant-lesion-card: mime retry failed:", e?.message || e);
+      }
+    }
+
+    if (!parsed) {
+      console.error("generate-dominant-lesion-card: unparseable:", String(rawText || "").slice(0, 800));
+      return res.status(500).json({
+        success: false,
+        error: "No se pudo interpretar la respuesta de la IA (JSON inválido). Reintenta.",
+      });
+    }
+
+    const data = normalizeDominantLesionCardData(parsed, priors);
+    if (!data.lesionLabel.trim() || !data.clinicianPhrase.trim()) {
+      return res.status(500).json({
+        success: false,
+        error: "La IA no devolvió una ficha utilizable. Reintenta o indica un foco manual.",
+      });
+    }
+
+    res.json({ success: true, data });
+  } catch (error: any) {
+    console.error("Error en /api/generate-dominant-lesion-card:", error);
     res.status(500).json({ success: false, error: handleGeminiError(error) });
   }
 });

@@ -1434,3 +1434,9 @@ export type {
   FindingsMapViewOrientation,
 } from "./lib/findingsMap";
 
+/** One-page dominant lesion clinical card. */
+export type {
+  DominantLesionCardData,
+  DominantLesionMeasurement,
+} from "./lib/dominantLesionCard";
+
