@@ -62,8 +62,18 @@ export const FindingsMapModule: React.FC<FindingsMapModuleProps> = ({
           viewOrientation: viewOrientation === "auto" ? undefined : viewOrientation,
         }),
       });
-      const json = await response.json();
-      if (!json.success || !json.data) {
+      const raw = await response.text();
+      let json: any = {};
+      try {
+        json = raw ? JSON.parse(raw) : {};
+      } catch {
+        throw new Error(
+          response.ok
+            ? "Respuesta inválida del servidor al generar el mapa."
+            : `Error ${response.status} al generar el mapa de hallazgos.`
+        );
+      }
+      if (!response.ok || !json.success || !json.data) {
         throw new Error(json.error || "No se pudo generar el mapa de hallazgos.");
       }
       setMapData(json.data as FindingsMapData);
