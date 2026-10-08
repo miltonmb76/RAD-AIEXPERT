@@ -16,6 +16,7 @@ const ReportQaGateModal = React.lazy(() => import("./components/ReportQaGateModa
 const DifferentialTreeModule = React.lazy(() => import("./components/DifferentialTreeModule").then(m => ({ default: m.DifferentialTreeModule })));
 const SemioticsConductMatrixModule = React.lazy(() => import("./components/SemioticsConductMatrixModule").then(m => ({ default: m.SemioticsConductMatrixModule })));
 const FindingsInfographicModule = React.lazy(() => import("./components/FindingsInfographicModule").then(m => ({ default: m.FindingsInfographicModule })));
+const FindingsMapModule = React.lazy(() => import("./components/FindingsMapModule").then(m => ({ default: m.FindingsMapModule })));
 const MeasurementsGaugeModule = React.lazy(() => import("./components/MeasurementsGaugeModule").then(m => ({ default: m.MeasurementsGaugeModule })));
 const CreadorCuadroSinoptico = React.lazy(() => import("./components/CreadorCuadroSinoptico").then(m => ({ default: m.CreadorCuadroSinoptico })));
 const CreadorSinopsisFracturas = React.lazy(() => import("./components/CreadorSinopsisFracturas").then(m => ({ default: m.CreadorSinopsisFracturas })));
@@ -75,6 +76,7 @@ export {
   DifferentialTreeModule,
   SemioticsConductMatrixModule,
   FindingsInfographicModule,
+  FindingsMapModule,
   MeasurementsGaugeModule,
   CreadorCuadroSinoptico,
   CreadorSinopsisFracturas,
