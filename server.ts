@@ -707,13 +707,18 @@ Indicación médica: ${clinicalHistory || "No proporcionada"}
 
     if (attachedImages && attachedImages.length > 0) {
       promptText += `\n⚠️ REFERENCIAS BIDIRECCIONALES A IMÁGENES ADJUNTAS:
-El informe tiene las siguientes capturas diagnósticas adjuntas:
+El informe tiene las siguientes capturas diagnósticas adjuntas (pueden ser MMG y/o US). Ordénalas mentalmente según el orden en que las menciones en el texto:
 `;
       attachedImages.forEach((img: any) => {
-        promptText += `- Imagen ${img.index}: "${img.caption || "Sin descripción aún"}"\n`;
+        const meta = [img.modality, img.projection, img.side].filter(Boolean).join(" · ");
+        promptText += `- Imagen ${img.index}${meta ? ` [${meta}]` : ""}: "${img.caption || "Sin descripción aún"}"\n`;
       });
       promptText += `
-Cuando redactes o describas los HALLAZGOS o la IMPRESIÓN DIAGNÓSTICA del reporte, si describes un hallazgo, estructura, lesión o anomalía que corresponda directamente con alguna de las imágenes adjuntas anteriores (basándote en su descripción/rótulo), estás obligado a insertar de manera natural la indicación entre paréntesis para el lector, por ejemplo: "(ver Imagen ${attachedImages[0].index})" o "(ver Imagen ${attachedImages[1].index})" al final de la oración pertinente. Esto permite una correlación bidireccional perfecta para que el lector busque la imagen si lo desea.
+Cuando redactes HALLAZGOS o IMPRESIÓN DIAGNÓSTICA, si describes un hallazgo que corresponda a una imagen adjunta, inserta "(ver Imagen N)" al final de esa oración.
+- Imágenes MMG / proyecciones CC o MLO deben referenciarse en el bloque de MAMOGRAFÍA.
+- Imágenes US deben referenciarse en el bloque de ULTRASONIDO / ecografía.
+- Las menciones deben aparecer en orden ascendente (Imagen 1, luego 2, etc.) según el orden del listado anterior, o reordena mentalmente el listado para que coincida con el orden de mención en tu texto.
+Ejemplos: "(ver Imagen ${attachedImages[0].index})"${attachedImages[1] ? `, "(ver Imagen ${attachedImages[1].index})"` : ""}.
 `;
     }
 
@@ -4776,7 +4781,7 @@ REGLAS DE GENERACIÓN PARA EL RÓTULO:
  */
 app.post("/api/correlate-figures-retroactive", async (req: express.Request, res: express.Response) => {
   try {
-    const { model, currentReport, attachedImages } = req.body;
+    const { model, currentReport, attachedImages, studyType } = req.body;
     if (!currentReport) {
       return res.status(400).json({ success: false, error: "Se requiere el reporte actual." });
     }
@@ -4786,23 +4791,25 @@ app.post("/api/correlate-figures-retroactive", async (req: express.Request, res:
 
     const ai = getGeminiClient();
     const selectedModel = getModelName(model || "gemini-3.7-flash");
+    const studyHint = String(studyType || "").trim();
 
     let promptText = `
 Eres un radiólogo experto y un editor de informes médicos de alta precisión.
-Se te proporciona un informe de radiología/ecografía estructurado en formato Markdown, y un listado de imágenes/capturas de ultrasonido adjuntas que han sido rotuladas/etiquetadas por el médico o mediante IA.
+Se te proporciona un informe de radiología/ecografía estructurado en formato Markdown, y un listado de imágenes diagnósticas adjuntas (pueden ser MMG / mamografía Y/O US / ultrasonido) ya rotuladas.
+${studyHint ? `Tipo de estudio declarado: ${studyHint}` : ""}
 
 TU MISIÓN PASO A PASO:
-1. Lee atentamente el INFORME DE RADIOLOGÍA de principio a fin (especialmente las secciones de HALLAZGOS e IMPRESIÓN DIAGNÓSTICA).
-2. Para cada una de las IMÁGENES ADJUNTAS (identificadas por su "id" y su "caption"), determina en qué lugar del texto del informe se menciona por primera vez el hallazgo, estructura u órgano correspondiente a esa imagen.
-3. REORDENA la lista de imágenes para que queden en el orden exacto de su primera aparición cronológica en el texto del informe (de arriba a abajo):
-   - La imagen cuyo hallazgo se describe PRIMERO en el reporte será la Figura 1.
-   - La imagen cuyo hallazgo se describe SEGUNDO en el reporte será la Figura 2.
-   - La imagen cuyo hallazgo se describe TERCERO será la Figura 3, y así sucesivamente.
-   - Si alguna imagen no coincide claramente con el reporte, colócala al final de la lista conservando su orden relativo.
-4. Una vez determinado el nuevo orden de las imágenes (y por ende su nuevo número de Figura 1, 2, 3...):
-   - Inserta la referencia "(ver Figura 1)", "(ver Figura 2)", etc. en el texto del informe en la ubicación exacta donde se describe dicho hallazgo específico.
-   - Esto garantiza que las menciones "(ver Figura 1)", "(ver Figura 2)", "(ver Figura 3)" dentro del texto del informe aparezcan en ORDEN ESTRICTAMENTE ASCENDENTE (1, 2, 3...) a medida que el lector lee el documento de arriba a abajo.
-5. NO alteres, elimines ni resumas el texto original del reporte. Únicamente debes insertar los paréntesis de referencia como "(ver Figura 1)" en el lugar exacto que corresponda. Mantén intacto el formato de secciones.
+1. Lee atentamente el INFORME completo (especialmente HALLAZGOS e IMPRESIÓN DIAGNÓSTICA). En estudios combinados "Mamografía y Ultrasonido de Mamas", suele haber un bloque de MAMOGRAFÍA y otro de ULTRASONIDO: respeta ese orden textual.
+2. Para CADA imagen adjunta (por "id", modalidad, proyección y caption), localiza la PRIMERA mención coherente en el informe:
+   - Imágenes modality "MMG" o rótulos con CC/MLO/proyecciones craneocaudales/mediolaterales → sección o frases de MAMOGRAFÍA / mamograma (NO las trates como ultrasonido).
+   - Imágenes modality "US" o rótulos de ecografía mamaria → sección o frases de ULTRASONIDO / ecografía de mamas.
+   - Usa proyección (CC vs MLO) y lateralidad (Derecha/Izquierda/Bilateral) para desambiguar.
+3. REORDENA las imágenes según esa primera aparición (arriba → abajo):
+   - Primera mención = Figura 1, segunda = Figura 2, etc.
+   - Si una imagen no encaja, al final, conservando orden relativo.
+   - Debes incluir TODOS los IDs en "reorderedImageIds" (ni omitas MMG ni US).
+4. Inserta "(ver Figura 1)", "(ver Figura 2)", … en el lugar exacto de cada hallazgo. Las menciones deben aparecer en orden estrictamente ascendente al leer de arriba a abajo.
+5. Si el informe ya tiene "(ver Imagen N)" o "(ver Figura N)" antiguos, sustitúyelos/reenuméralos para que coincidan con el nuevo orden. No borres ni resumas el resto del texto.
 
 LISTADO DE IMÁGENES ADJUNTAS DISPONIBLES:
 `;
@@ -4821,8 +4828,8 @@ ${currentReport}
 """
 
 Debes devolver un objeto JSON estricto con:
-- "reorderedImageIds": un arreglo con todos los IDs de las imágenes en el nuevo orden cronológico de aparición en el informe (ej: ["id1", "id2", "id3"]).
-- "report": el texto completo del informe con los paréntesis "(ver Figura 1)", "(ver Figura 2)", etc. insertados en orden estrictamente ascendente.
+- "reorderedImageIds": arreglo con TODOS los IDs en el nuevo orden de mención (ej: ["id1", "id2", "id3"]).
+- "report": texto completo del informe con "(ver Figura 1)", "(ver Figura 2)", etc. en orden estrictamente ascendente.
 `;
 
     const response = await ai.models.generateContent({

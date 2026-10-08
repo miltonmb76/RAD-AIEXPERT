@@ -288,7 +288,10 @@ export function createGenerateReportHandler(d: GenerateReportHandlerDeps) {
           attachedImages: attachedImages && attachedImages.length > 0 ? attachedImages.map((img, idx) => ({
             id: img.id,
             index: idx + 1,
-            caption: img.caption || ""
+            caption: img.caption || "",
+            modality: img.modality || "",
+            projection: img.projection || "",
+            side: img.side || "",
           })) : undefined,
         }),
       });

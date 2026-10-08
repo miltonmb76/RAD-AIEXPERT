@@ -58,6 +58,7 @@ import { runBackgroundTask } from "./lib/backgroundTasks";
 import { BackgroundTasksBar } from "./components/BackgroundTasksBar";
 import { ActivePatientPanel } from "./components/ActivePatientPanel";
 import { autoLabelAttachedImages, type AttachedImageForLabeling } from "./lib/labelingQueue";
+import { applyReorderedImageIds } from "./lib/figureCorrelation";
 import {
   describeActiveRouting,
   MODEL_OPTIONS,
@@ -4889,6 +4890,10 @@ Ejemplo:
 
     const runId = ++autoLabelRunIdRef.current;
     const imagesSnapshot = [...attachedImages];
+    const labelUpdates = new Map<
+      string,
+      { label: string; modality?: string; projection?: string; side?: string }
+    >();
     const unlabeledCount = imagesSnapshot.filter((img) => !(img as { caption?: string }).caption?.trim()).length;
     const total = unlabeledCount > 0 ? unlabeledCount : imagesSnapshot.length;
     setIsLabelingAll(true);
@@ -4921,15 +4926,46 @@ Ejemplo:
               if (autoLabelRunIdRef.current !== runId) return;
               setLabelingStats({ confirmed: done, total: t });
             },
-            onLabeled: (imageId, label) => {
+            onLabeled: (imageId, result) => {
               if (autoLabelRunIdRef.current !== runId) return;
+              labelUpdates.set(imageId, result);
               setAttachedImages((prev) =>
-                prev.map((item) => (item.id === imageId ? { ...item, caption: label } : item))
+                prev.map((item) =>
+                  item.id === imageId
+                    ? {
+                        ...item,
+                        caption: result.label,
+                        ...(result.modality ? { modality: result.modality } : {}),
+                        ...(result.projection ? { projection: result.projection } : {}),
+                        ...(result.side ? { side: result.side } : {}),
+                      }
+                    : item
+                )
               );
             },
           });
         }
       );
+
+      // After labeling, link + reorder by report mention (MMG + US in combined studies).
+      if (autoLabelRunIdRef.current === runId) {
+        const mergedForCorrelation = imagesSnapshot.map((img) => {
+          const u = labelUpdates.get(img.id);
+          if (!u) return img;
+          return {
+            ...img,
+            caption: u.label,
+            ...(u.modality ? { modality: u.modality } : {}),
+            ...(u.projection ? { projection: u.projection } : {}),
+            ...(u.side ? { side: u.side } : {}),
+          };
+        });
+        await handleCorrelateFigures({
+          reportOverride: report,
+          silent: true,
+          imagesOverride: mergedForCorrelation,
+        });
+      }
     } catch (err) {
       console.error("Error en rotulado automatico post-reporte:", err);
     } finally {
@@ -5058,19 +5094,39 @@ Ejemplo:
   };
 
 
-  const handleCorrelateFigures = async () => {
-    const reportToUse = generatedReport || inputReport || findings;
+  const handleCorrelateFigures = async (opts?: {
+    reportOverride?: string;
+    silent?: boolean;
+    imagesOverride?: typeof attachedImages;
+  }) => {
+    const reportToUse = String(opts?.reportOverride || generatedReport || inputReport || findings || "").trim();
+    const sourceImages = opts?.imagesOverride || attachedImages;
     if (!reportToUse) {
-      alert("Por favor, genera un reporte o redacta un borrador primero para poder correlacionar las figuras.");
+      if (!opts?.silent) {
+        alert("Por favor, genera un reporte o redacta un borrador primero para poder correlacionar las figuras.");
+      }
       return;
     }
-    if (attachedImages.length === 0) {
-      alert("No hay imÃ¡genes cargadas para correlacionar. Por favor sube imÃ¡genes primero.");
+    if (sourceImages.length === 0) {
+      if (!opts?.silent) {
+        alert("No hay imágenes cargadas para correlacionar. Por favor sube imágenes primero.");
+      }
       return;
     }
 
     setIsCorrelatingFigures(true);
     try {
+      // Include MMG/US modality + projection so mammo frames link to the MMG section.
+      const imagesForCorrelation = sourceImages.map((img, idx) => ({
+        id: img.id,
+        index: idx + 1,
+        name: (img as { name?: string }).name || "",
+        caption: (img as { caption?: string }).caption || (img as { name?: string }).name || "",
+        modality: (img as { modality?: string }).modality || "",
+        projection: (img as { projection?: string }).projection || "",
+        side: (img as { side?: string }).side || "",
+      }));
+
       const response = await fetch("/api/correlate-figures-retroactive", {
         method: "POST",
         headers: {
@@ -5079,11 +5135,8 @@ Ejemplo:
         body: JSON.stringify({
           model: modelFor("report_modify"),
           currentReport: reportToUse,
-          attachedImages: attachedImages.map((img, idx) => ({
-            id: img.id,
-            index: idx + 1,
-            caption: img.caption || img.name || ""
-          })),
+          studyType: studyType || specificStudy || modality || "",
+          attachedImages: imagesForCorrelation,
         }),
       });
 
@@ -5095,28 +5148,45 @@ Ejemplo:
         }
         setGeneratedReport(data.report);
 
-        if (data.reorderedImageIds && Array.isArray(data.reorderedImageIds) && data.reorderedImageIds.length > 0) {
-          setAttachedImages(prev => {
-            const map = new Map(prev.map(img => [img.id, img]));
-            const reordered: typeof prev = [];
-            data.reorderedImageIds.forEach((id: string) => {
-              const found = map.get(id);
-              if (found) {
-                reordered.push(found);
-                map.delete(id);
-              }
-            });
-            // Append any remaining images not explicitly listed in reorderedImageIds
-            map.forEach(img => reordered.push(img));
-            return reordered;
+        setAttachedImages((prev) => {
+          const overrideById = new Map((opts?.imagesOverride || []).map((img) => [img.id, img]));
+          const merged = prev.map((p) => {
+            const o = overrideById.get(p.id) as any;
+            if (!o) return p;
+            return {
+              ...p,
+              caption: o.caption ?? (p as any).caption,
+              modality: o.modality ?? (p as any).modality,
+              projection: o.projection ?? (p as any).projection,
+              side: o.side ?? (p as any).side,
+            };
           });
-        }
-      } else {
-        alert(data.error || "OcurriÃ³ un error al intentar correlacionar las figuras.");
+          return applyReorderedImageIds(merged, data.reorderedImageIds, data.report || reportToUse);
+        });
+      } else if (!opts?.silent) {
+        alert(data.error || "Ocurrió un error al intentar correlacionar las figuras.");
       }
     } catch (err) {
       console.error("Error al correlacionar figuras:", err);
-      alert("Error de red al intentar correlacionar las figuras.");
+      // Local fallback: still reorder gallery by mention order (MMG before/with US as in report).
+      setAttachedImages((prev) => {
+        const overrideById = new Map((opts?.imagesOverride || []).map((img) => [img.id, img]));
+        const merged = prev.map((p) => {
+          const o = overrideById.get(p.id) as any;
+          if (!o) return p;
+          return {
+            ...p,
+            caption: o.caption ?? (p as any).caption,
+            modality: o.modality ?? (p as any).modality,
+            projection: o.projection ?? (p as any).projection,
+            side: o.side ?? (p as any).side,
+          };
+        });
+        return applyReorderedImageIds(merged, null, reportToUse);
+      });
+      if (!opts?.silent) {
+        alert("Error de red al intentar correlacionar las figuras.");
+      }
     } finally {
       setIsCorrelatingFigures(false);
     }
