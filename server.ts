@@ -10391,8 +10391,20 @@ ${INFOGRAPHIC_PRIVACY_PROMPT_BLOCK}
 
 ESTUDIO: ${studyType || "No especificado"}
 PRESET: ${preset}
-${dx ? `ANCLA / TEMA: "${dx}"` : "Deriva el diagnóstico o tema principal del informe."}
-${scCat ? `CATEGORÍA SCORECARD (debe reflejarse en diagnosis): «${scCat}».` : ""}
+${
+  dx
+    ? `ANCLA OBLIGATORIA (centro del gráfico): "${dx}".
+El campo diagnosis DEBE ser esta ancla (o equivalencia limpia idéntica en sentido).
+Los nodes DEBEN ser factores del INFORME que JUSTIFICAN esta ancla — no otro diagnóstico.`
+    : "Deriva el diagnóstico o tema principal del informe y úsalo como ancla."
+}
+${
+  scCat
+    ? dx
+      ? `CATEGORÍA SCORECARD (solo referencia; NO sustituye la ancla «${dx}»): «${scCat}».`
+      : `CATEGORÍA SCORECARD (debe reflejarse en diagnosis si no hay ancla manual): «${scCat}».`
+    : ""
+}
 TIPO DE CONTENIDO (contentMode): ${modeId} — ${modeMeta.label}
 ${contentInstructions}
 LAYOUT PREFERIDO: ${layoutHint}
@@ -10540,6 +10552,13 @@ ${reportForFindings}
     data.nodes = realNodes;
     data.contentMode = modeId;
     if (!data.title?.trim()) data.title = modeMeta.defaultTitle;
+    // Clinician-chosen ancla always wins over model/scorecard drift.
+    if (dx) {
+      data.diagnosis = dx;
+      if (!data.patientDiagnosis?.trim()) data.patientDiagnosis = dx;
+    } else if (scCat && modeId === "classification_criteria") {
+      data.diagnosis = scCat;
+    }
 
     res.json({ success: true, data });
   } catch (error: any) {

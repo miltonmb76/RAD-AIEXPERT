@@ -79,11 +79,26 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
   );
 
   const scoreGov = getScorecardGovernance(scorecardData);
-  const diagnosisLabel =
-    presetId === "auto" && scoreGov?.categoryAssigned
-      ? scoreGov.categoryAssigned
-      : resolveInfographicDiagnosis(presetId, customDiagnosis);
+  /** Manual Detalle / preset always wins; scorecard only fills empty auto. */
+  const diagnosisLabel = (() => {
+    const custom = customDiagnosis.trim();
+    if (custom) return custom;
+    if (presetId === "auto" && scoreGov?.categoryAssigned) {
+      return scoreGov.categoryAssigned;
+    }
+    return resolveInfographicDiagnosis(presetId, customDiagnosis);
+  })();
   const modeMeta = contentModeMeta(contentMode);
+
+  const syncAnchorToScene = (anchor: string) => {
+    const next = anchor.trim();
+    if (!infographicData || !next || infographicData.diagnosis === next) return;
+    setInfographicData({
+      ...infographicData,
+      diagnosis: next,
+      patientDiagnosis: next,
+    });
+  };
 
   // Clinician-only justification sheet (classic pink explainer stays dual elsewhere).
   const scene = useMemo(
@@ -171,21 +186,29 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
       if (!json.success || !json.data) {
         throw new Error(json.error || "No se pudo generar la infografía.");
       }
-      const lockedDiagnosis = scoreGov?.categoryAssigned || diagnosisLabel;
+      // Keep the clinician's ancla at center (never overwrite with scorecard).
+      const anchorUsed =
+        diagnosisLabel.trim() ||
+        String(json.data?.diagnosis || "").trim() ||
+        "Diagnóstico del informe";
       setInfographicData(
         normalizeFindingsInfographicData(
           {
             ...json.data,
-            diagnosis: lockedDiagnosis,
+            diagnosis: anchorUsed,
+            patientDiagnosis: anchorUsed,
             activeAudience: "clinician",
             includeClinicianInPdf: true,
             includePatientInPdf: false,
           },
-          lockedDiagnosis,
+          anchorUsed,
           layoutChoice,
           contentMode
         )
       );
+      if (!customDiagnosis.trim() && anchorUsed) {
+        setCustomDiagnosis(anchorUsed);
+      }
       setIncludeInReport(true);
     } catch (err: any) {
       console.error("Error generando infografía de hallazgos:", err);
@@ -307,7 +330,15 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
           </label>
           <select
             value={presetId}
-            onChange={(e) => setPresetId(e.target.value)}
+            onChange={(e) => {
+              const next = e.target.value;
+              setPresetId(next);
+              const resolved =
+                next === "auto" && !customDiagnosis.trim() && scoreGov?.categoryAssigned
+                  ? scoreGov.categoryAssigned
+                  : resolveInfographicDiagnosis(next, customDiagnosis);
+              syncAnchorToScene(resolved);
+            }}
             className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-slate-200 outline-none focus:border-teal-500 cursor-pointer"
           >
             {INFOGRAPHIC_DIAGNOSIS_PRESETS.map((p) => (
@@ -324,10 +355,24 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
           <input
             type="text"
             value={customDiagnosis}
-            onChange={(e) => setCustomDiagnosis(e.target.value)}
-            placeholder="Ej. colecistitis aguda / BI-RADS 4…"
+            onChange={(e) => {
+              const v = e.target.value;
+              setCustomDiagnosis(v);
+              if (v.trim()) {
+                if (presetId === "auto") setPresetId("custom");
+                syncAnchorToScene(v);
+              }
+            }}
+            onBlur={() => {
+              if (customDiagnosis.trim()) syncAnchorToScene(customDiagnosis);
+            }}
+            placeholder="Ej. adenitis mesentérica / colecistitis aguda…"
             className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-slate-200 outline-none focus:border-teal-500"
           />
+          <p className="text-[10px] text-slate-500 leading-snug">
+            El ancla va al centro del gráfico. Pulsa «Regenerar» para que la IA extraiga del
+            informe los factores que justifican este diagnóstico.
+          </p>
         </div>
         <div className="space-y-1.5 md:col-span-2">
           <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">
@@ -494,12 +539,16 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
             <input
               type="text"
               value={infographicData.diagnosis}
-              onChange={(e) =>
+              onChange={(e) => {
+                const v = e.target.value;
+                setCustomDiagnosis(v);
+                if (v.trim() && presetId === "auto") setPresetId("custom");
                 setInfographicData({
                   ...infographicData,
-                  diagnosis: e.target.value,
-                })
-              }
+                  diagnosis: v,
+                  patientDiagnosis: v.trim() || infographicData.patientDiagnosis,
+                });
+              }}
               placeholder="Ancla / diagnóstico (médico)"
               className="w-full bg-transparent border-b border-teal-800/40 pb-1 text-sm font-black text-slate-100 outline-none focus:border-teal-400"
             />
