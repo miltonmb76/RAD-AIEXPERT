@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# PEGAR EN CLOUD SHELL — Ficha de lesión dominante (+ mapa de hallazgos)
-# Incluye: cursor/dominant-lesion-card-0681 (ficha + mapa numerado)
+# PEGAR EN CLOUD SHELL — Ficha de lesión dominante 
+# Incluye: cursor/dominant-lesion-card-0681 (ficha de lesión dominante)
 # Importante: NO pegar esto en ~ sin el cd/clone de abajo.
 set -euo pipefail
 
@@ -32,10 +32,10 @@ if gcloud secrets describe openai-api-key >/dev/null 2>&1; then
   SECRETS="${SECRETS},OPENAI_API_KEY=openai-api-key:latest"
 fi
 
-echo ">>> Desplegando $SERVICE ($REGION) — ficha lesión dominante + mapa..."
+echo ">>> Desplegando $SERVICE ($REGION) — ficha lesión dominante..."
 gcloud run deploy "$SERVICE" \
   --source . \
   --region "$REGION" \
   --update-secrets="$SECRETS"
 
-echo ">>> Listo. En la app: Ficha lesión dominante + Mapa de hallazgos."
+echo ">>> Listo. En la app: Ficha lesión dominante."

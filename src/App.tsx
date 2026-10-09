@@ -16,7 +16,6 @@ import {
   DifferentialTreeModule,
   SemioticsConductMatrixModule,
   FindingsInfographicModule,
-  FindingsMapModule,
   DominantLesionCardModule,
   MeasurementsGaugeModule,
   CreadorCuadroSinoptico,
@@ -43,7 +42,7 @@ import "./lib/safeLocalStorage";
 import JSZip from "jszip";
 import type { ExtractedFile } from "./components/ZipDicomExtractor";
 
-import { Atlas3DData, Vascular3DData, FocalLesion3DData, UsPlaneSimulatorData, Thyroid3DData, Breast3DData, Shoulder3DData, Knee3DData, Ankle3DData, Kidney3DData, Abdomen3DData, AbdominalWall3DData, Scrotum3DData, MuscleTendon3DData, Wrist3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData, SemioticsConductMatrixData, FindingsInfographicData, FindingsMapData, DominantLesionCardData, NegativityChecklistData, SecondReaderData, ReportEnrichmentSession } from "./types";
+import { Atlas3DData, Vascular3DData, FocalLesion3DData, UsPlaneSimulatorData, Thyroid3DData, Breast3DData, Shoulder3DData, Knee3DData, Ankle3DData, Kidney3DData, Abdomen3DData, AbdominalWall3DData, Scrotum3DData, MuscleTendon3DData, Wrist3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData, SemioticsConductMatrixData, FindingsInfographicData, DominantLesionCardData, NegativityChecklistData, SecondReaderData, ReportEnrichmentSession } from "./types";
 import { buildAtlasDirectivesFromScorecard, buildAtlasPanelFindingAssignments, buildVascularDirectivesFromScorecard, buildThyroidDirectivesFromScorecard, buildBreastDirectivesFromScorecard, buildShoulderDirectivesFromScorecard, buildKneeDirectivesFromScorecard, buildAnkleDirectivesFromScorecard, buildKidneyDirectivesFromScorecard, buildAbdomenDirectivesFromScorecard, buildAbdominalWallDirectivesFromScorecard, buildScrotumDirectivesFromScorecard, buildMuscleTendonDirectivesFromScorecard, buildWristDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
 import {
   applyPendingEnrichmentChanges,
@@ -137,7 +136,6 @@ import {
   GitFork,
   Table2,
   Hexagon,
-  MapPinned,
   FileSpreadsheet
 } from "lucide-react";
 import { initAuth, googleSignIn, logout as googleLogout, anonymousSignIn, emailSignIn, emailSignUp, getFirebaseConfig } from "./firebaseAuth";
@@ -1448,9 +1446,6 @@ export default function App() {
   const [findingsInfographicData, setFindingsInfographicData] = useState<FindingsInfographicData | null>(null);
   const [includeFindingsInfographicInReport, setIncludeFindingsInfographicInReport] = useState<boolean>(true);
   const [isFindingsInfographicOpen, setIsFindingsInfographicOpen] = useState<boolean>(false);
-  const [findingsMapData, setFindingsMapData] = useState<FindingsMapData | null>(null);
-  const [includeFindingsMapInReport, setIncludeFindingsMapInReport] = useState<boolean>(true);
-  const [isFindingsMapOpen, setIsFindingsMapOpen] = useState<boolean>(false);
   const [dominantLesionCardData, setDominantLesionCardData] = useState<DominantLesionCardData | null>(null);
   const [includeDominantLesionCardInReport, setIncludeDominantLesionCardInReport] = useState<boolean>(true);
   const [isDominantLesionCardOpen, setIsDominantLesionCardOpen] = useState<boolean>(false);
@@ -1550,8 +1545,6 @@ export default function App() {
     includeSemioticsConductMatrixInReport,
     findingsInfographicData,
     includeFindingsInfographicInReport,
-    findingsMapData,
-    includeFindingsMapInReport,
     dominantLesionCardData,
     includeDominantLesionCardInReport,
     measurementGaugeData,
@@ -2956,9 +2949,6 @@ Ejemplo:
     setFindingsInfographicData(null);
     setIncludeFindingsInfographicInReport(true);
     setIsFindingsInfographicOpen(false);
-    setFindingsMapData(null);
-    setIncludeFindingsMapInReport(true);
-    setIsFindingsMapOpen(false);
     setDominantLesionCardData(null);
     setIncludeDominantLesionCardInReport(true);
     setIsDominantLesionCardOpen(false);
@@ -5366,7 +5356,6 @@ Ejemplo:
     elastographyStiffness,
     findings3dRenders,
     findingsInfographicData,
-    findingsMapData,
     dominantLesionCardData,
     focalLesion3dData,
     getParagraphSeverity,
@@ -5378,7 +5367,6 @@ Ejemplo:
     includeDifferentialTreeInReport,
     includeElastographyInReport,
     includeFindingsInfographicInReport,
-    includeFindingsMapInReport,
     includeDominantLesionCardInReport,
     includeFocalLesion3dInReport,
     includeKidney3dInReport,
@@ -11009,31 +10997,6 @@ Ejemplo:
                               </button>
                             </div>
 
-                            <div className="p-4 rounded-2xl bg-slate-950/60 border border-amber-900/40 space-y-3">
-                              <div className="flex items-start justify-between gap-3">
-                                <div>
-                                  <h4 className="text-sm font-semibold text-amber-200 flex items-center gap-2">
-                                    <MapPinned className="h-4 w-4 text-amber-400" />
-                                    Mapa de hallazgos
-                                  </h4>
-                                  <p className="text-[11px] text-slate-400 mt-1">
-                                    Esquema genérico con pins numerados; admite instrucciones previas.
-                                  </p>
-                                </div>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => setIsFindingsMapOpen((v) => !v)}
-                                className={`w-full px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
-                                  isFindingsMapOpen
-                                    ? "bg-amber-700 text-white"
-                                    : "bg-amber-600/80 hover:bg-amber-500 text-slate-950"
-                                }`}
-                              >
-                                {isFindingsMapOpen ? "Ocultar mapa" : "Abrir mapa"}
-                              </button>
-                            </div>
-
                             <div className="p-4 rounded-2xl bg-slate-950/60 border border-rose-900/40 space-y-3">
                               <div className="flex items-start justify-between gap-3">
                                 <div>
@@ -11344,24 +11307,6 @@ Ejemplo:
                                   setInfographicData={setFindingsInfographicData}
                                   includeInReport={includeFindingsInfographicInReport}
                                   setIncludeInReport={setIncludeFindingsInfographicInReport}
-                                />
-                              </React.Suspense>
-                            </div>
-                          )}
-
-                          {isFindingsMapOpen && (
-                            <div className="my-6">
-                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-amber-400 bg-slate-900/60 rounded-xl border border-amber-900/40 animate-pulse">Cargando mapa de hallazgos...</div>}>
-                                <FindingsMapModule
-                                  selectedModel={modelFor("findings_map")}
-                                  reportText={isEditingReportManual ? editedReportText : generatedReport}
-                                  studyType={specificStudy || studyType}
-                                  clinicalHistory={clinicalHistory}
-                                  mapData={findingsMapData}
-                                  setMapData={setFindingsMapData}
-                                  includeInReport={includeFindingsMapInReport}
-                                  setIncludeInReport={setIncludeFindingsMapInReport}
-                                  attachedImageCount={attachedImages?.length || 0}
                                 />
                               </React.Suspense>
                             </div>
