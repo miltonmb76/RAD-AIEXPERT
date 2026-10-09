@@ -801,6 +801,8 @@ export default function App() {
   const [uploadedReportName, setUploadedReportName] = useState<string | null>(null);
   const [uploadedReportMimeType, setUploadedReportMimeType] = useState<string>("");
   const reportFileInputRef = useRef<HTMLInputElement>(null);
+  const [showPriorCapturePicker, setShowPriorCapturePicker] = useState<boolean>(false);
+  const [isLoadingPriorCapture, setIsLoadingPriorCapture] = useState<boolean>(false);
 
   const handleCustomSignatureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -844,6 +846,68 @@ export default function App() {
         reader.readAsDataURL(file);
     } else {
         reader.readAsText(file);
+    }
+  };
+
+  const resolveCaptureUrlToDataUrl = async (url: string): Promise<string> => {
+    if (url.startsWith("data:")) return url;
+    const response = await fetch(url);
+    const blob = await response.blob();
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(String(reader.result || ""));
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  };
+
+  const handleUseAttachedCaptureAsPriorStudy = async (img: {
+    id: string;
+    url?: string;
+    preview?: string;
+    label?: string;
+    caption?: string;
+    name?: string;
+  }) => {
+    const src = (img.url || img.preview || "").trim();
+    if (!src) {
+      alert("Esa captura no tiene imagen disponible.");
+      return;
+    }
+    setIsLoadingPriorCapture(true);
+    try {
+      const dataUrl = await resolveCaptureUrlToDataUrl(src);
+      if (!dataUrl.startsWith("data:")) {
+        throw new Error("No se pudo convertir la captura a data URL.");
+      }
+      const mimeMatch = dataUrl.match(/^data:([^;]+);/);
+      const mime = mimeMatch?.[1] || "image/jpeg";
+      const label =
+        (img as { caption?: string }).caption ||
+        img.label ||
+        img.name ||
+        `captura_${img.id}`;
+      const safeName = String(label)
+        .replace(/[^\w.\-áéíóúüñÁÉÍÓÚÜÑ ]+/gi, "_")
+        .trim()
+        .slice(0, 80) || `captura_${img.id}`;
+      const ext = mime.includes("png")
+        ? "png"
+        : mime.includes("webp")
+          ? "webp"
+          : "jpg";
+      setUploadedReportContent(dataUrl);
+      setUploadedReportMimeType(mime);
+      setUploadedReportName(`Estudio_${safeName}.${ext}`);
+      setShowPriorCapturePicker(false);
+      if (reportFileInputRef.current) {
+        reportFileInputRef.current.value = "";
+      }
+    } catch (err) {
+      console.error("Error using attached capture as prior study:", err);
+      alert("No se pudo cargar esa captura como estudio previo.");
+    } finally {
+      setIsLoadingPriorCapture(false);
     }
   };
 
@@ -7149,31 +7213,104 @@ Ejemplo:
                              ref={reportFileInputRef}
                              className="hidden"
                              onChange={handleReportFileUpload}
-                             accept=".txt,.md,.pdf,.doc,.docx,.png" 
+                             accept=".txt,.md,.pdf,.doc,.docx,.png,.jpg,.jpeg,.webp" 
                          />
-                         <div className="flex gap-2">
-                           <button
-                             onClick={() => reportFileInputRef.current?.click()}
-                             className="flex-grow text-[10px] font-black text-slate-400 uppercase tracking-tighter flex items-center justify-center gap-2 py-3 bg-slate-950 border-2 border-dashed border-slate-800 hover:border-indigo-500/50 rounded-xl transition-all font-mono"
-                           >
-                             <FileText className="h-4 w-4" />
-                             {uploadedReportName ? `Archivo adjunto: ${uploadedReportName}` : "Subir Informe Previo o Estudio (PDF/TXT/MD/DOCX/PNG)"}
-                           </button>
-                           {uploadedReportName && (
+                         <div className="flex flex-col gap-2">
+                           <div className="flex gap-2">
                              <button
-                               onClick={() => {
-                                 setUploadedReportContent("");
-                                 setUploadedReportName(null);
-                                 setUploadedReportMimeType("");
-                                 if (reportFileInputRef.current) {
-                                   reportFileInputRef.current.value = "";
-                                 }
-                               }}
-                               className="px-3 bg-rose-950/20 hover:bg-rose-950/40 border-2 border-rose-950 hover:border-rose-900 rounded-xl text-rose-400 transition-all flex items-center justify-center cursor-pointer"
-                               title="Eliminar archivo adjunto"
+                               type="button"
+                               onClick={() => reportFileInputRef.current?.click()}
+                               className="flex-grow text-[10px] font-black text-slate-400 uppercase tracking-tighter flex items-center justify-center gap-2 py-3 bg-slate-950 border-2 border-dashed border-slate-800 hover:border-indigo-500/50 rounded-xl transition-all font-mono cursor-pointer"
                              >
-                               <Trash2 className="h-4 w-4" />
+                               <FileText className="h-4 w-4" />
+                               {uploadedReportName ? `Archivo adjunto: ${uploadedReportName}` : "Subir Informe Previo o Estudio (PDF/TXT/MD/DOCX/PNG)"}
                              </button>
+                             {uploadedReportName && (
+                               <button
+                                 type="button"
+                                 onClick={() => {
+                                   setUploadedReportContent("");
+                                   setUploadedReportName(null);
+                                   setUploadedReportMimeType("");
+                                   if (reportFileInputRef.current) {
+                                     reportFileInputRef.current.value = "";
+                                   }
+                                 }}
+                                 className="px-3 bg-rose-950/20 hover:bg-rose-950/40 border-2 border-rose-950 hover:border-rose-900 rounded-xl text-rose-400 transition-all flex items-center justify-center cursor-pointer"
+                                 title="Eliminar archivo adjunto"
+                               >
+                                 <Trash2 className="h-4 w-4" />
+                               </button>
+                             )}
+                           </div>
+                           <button
+                             type="button"
+                             onClick={() => setShowPriorCapturePicker((v) => !v)}
+                             disabled={attachedImages.length === 0 || isLoadingPriorCapture}
+                             className={`w-full text-[10px] font-black uppercase tracking-tighter flex items-center justify-center gap-2 py-2.5 rounded-xl transition-all font-mono border-2 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                               showPriorCapturePicker
+                                 ? "bg-cyan-950/50 border-cyan-500/50 text-cyan-200"
+                                 : "bg-slate-950 border-slate-800 hover:border-cyan-500/40 text-slate-300 hover:text-cyan-200"
+                             }`}
+                             title={
+                               attachedImages.length === 0
+                                 ? "Primero asocia fotos al estudio"
+                                 : "Elegir una captura ya asociada (p. ej. hoja de elastografía del equipo)"
+                             }
+                           >
+                             {isLoadingPriorCapture ? (
+                               <Loader2 className="h-4 w-4 animate-spin text-cyan-400" />
+                             ) : (
+                               <ImageIcon className="h-4 w-4 text-cyan-400" />
+                             )}
+                             {showPriorCapturePicker
+                               ? "Ocultar capturas del estudio"
+                               : `Usar captura del estudio${attachedImages.length ? ` (${attachedImages.length})` : ""}`}
+                           </button>
+                           {showPriorCapturePicker && (
+                             <div className="rounded-xl border border-cyan-800/40 bg-slate-950/80 p-3 space-y-2 animate-fadeIn">
+                               <p className="text-[10px] text-slate-400 leading-relaxed">
+                                 Toca la foto que corresponde a la hoja de reporte (p. ej. elastografía del equipo). Se cargará como estudio previo para que la IA la incorpore al generar el informe.
+                               </p>
+                               {attachedImages.length === 0 ? (
+                                 <p className="text-[10px] text-amber-300/90 font-mono">No hay capturas asociadas todavía.</p>
+                               ) : (
+                                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-64 overflow-y-auto pr-1">
+                                   {attachedImages.map((img, idx) => {
+                                     const thumb = img.url || img.preview || "";
+                                     const caption =
+                                       (img as { caption?: string }).caption ||
+                                       img.label ||
+                                       img.name ||
+                                       `Figura ${idx + 1}`;
+                                     return (
+                                       <button
+                                         key={img.id}
+                                         type="button"
+                                         disabled={isLoadingPriorCapture || !thumb}
+                                         onClick={() => handleUseAttachedCaptureAsPriorStudy(img)}
+                                         className="text-left rounded-xl border border-slate-800 hover:border-cyan-500/50 bg-slate-900/70 overflow-hidden cursor-pointer disabled:opacity-40 transition-colors"
+                                         title={String(caption)}
+                                       >
+                                         <div className="aspect-[4/3] bg-black relative">
+                                           {thumb ? (
+                                             <img src={thumb} alt={String(caption)} className="w-full h-full object-cover" />
+                                           ) : (
+                                             <div className="w-full h-full flex items-center justify-center text-[9px] text-slate-600">Sin imagen</div>
+                                           )}
+                                           <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-slate-950/85 text-[8px] font-black font-mono text-cyan-300 border border-cyan-700/40">
+                                             FIG {idx + 1}
+                                           </span>
+                                         </div>
+                                         <div className="px-2 py-1.5 text-[9px] text-slate-300 font-mono truncate">
+                                           {String(caption)}
+                                         </div>
+                                       </button>
+                                     );
+                                   })}
+                                 </div>
+                               )}
+                             </div>
                            )}
                          </div>
                      </div>
