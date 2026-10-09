@@ -17,9 +17,10 @@ export function redactPatientIdentifiersForInfographic(text: string): string {
 
 /** Hard ban for Gemini image / dual findings copy — no name, ID, or identity placeholders. */
 export const INFOGRAPHIC_PRIVACY_PROMPT_BLOCK = `
-PRIVACIDAD Y ANONIMATO (OBLIGATORIO — si se incumple la imagen no sirve):
+PRIVACIDAD (OBLIGATORIO — si se incumple la imagen no sirve):
 - PROHIBIDO incluir nombre del paciente, apellidos, iniciales (p. ej. "M. García"), ID, cédula, HC/MRN, fecha de nacimiento, teléfono, correo, dirección u otro dato identificable.
 - PROHIBIDO dibujar campos o etiquetas tipo "PACIENTE:", "Nombre:", "Patient:", placeholders "[Nombre/ID del Paciente…]" o ejemplos inventados de identidad.
-- La infografía es ANÓNIMA: solo título del estudio/hallazgos, fecha del examen si aplica, anatomía y hallazgos clínicos.
+- PROHIBIDO escribir en la imagen frases como "estudio anónimo", "paciente anónimo", "anonymous", "de-identified", "sin identificar" o cualquier sello/etiqueta de anonimato.
+- Simplemente OMITE la identidad: solo título del estudio/hallazgos, fecha del examen si aplica, anatomía y hallazgos clínicos. No menciones el anonimato.
 - No copies del reporte ninguna línea de identificación del paciente aunque aparezca en el texto fuente.
 `.trim();
