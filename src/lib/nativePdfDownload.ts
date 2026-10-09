@@ -2986,6 +2986,9 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
         await renderDominantLesionCardAnnexToPDF(doc, activeDominantCard, {
           clinicName: pdfStateRef.current?.clinicName,
           imageDataUrl: picked?.url || null,
+          imageCaption: picked
+            ? `${picked.modality ? `${picked.modality} · ` : ""}${picked.caption || ""}`.trim()
+            : null,
           focal3dDataUrl: focalUrl || null,
         });
       }

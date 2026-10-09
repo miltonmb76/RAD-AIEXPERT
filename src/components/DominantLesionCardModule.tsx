@@ -1,9 +1,11 @@
 import React, { useMemo, useState } from "react";
-import { FileSpreadsheet, Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { FileSpreadsheet, ImageIcon, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import {
+  listSelectableDominantImages,
   normalizeDominantLesionCardData,
   pickDominantLesionImage,
   type DominantLesionCardData,
+  type DominantLesionPickedImage,
 } from "../lib/dominantLesionCard";
 import type { FocalLesion3DData } from "../types";
 
@@ -26,7 +28,6 @@ interface DominantLesionCardModuleProps {
   includeInReport: boolean;
   setIncludeInReport: (include: boolean) => void;
   attachedImages?: AttachedImage[];
-  /** Reuse existing focal 3D cut if available */
   focalLesion3dData?: FocalLesion3DData | null;
 }
 
@@ -47,6 +48,11 @@ export const DominantLesionCardModule: React.FC<DominantLesionCardModuleProps> =
   const [priorInstructions, setPriorInstructions] = useState("");
   const [focusText, setFocusText] = useState("");
 
+  const selectableImages = useMemo(
+    () => listSelectableDominantImages(attachedImages),
+    [attachedImages]
+  );
+
   const linkedImage = useMemo(
     () => pickDominantLesionImage(attachedImages, cardData),
     [attachedImages, cardData]
@@ -61,6 +67,25 @@ export const DominantLesionCardModule: React.FC<DominantLesionCardModuleProps> =
       title: withUrl.panelTitle || focalLesion3dData?.lesionLabel || "Corte 3D",
     };
   }, [focalLesion3dData]);
+
+  const selectImage = (img: DominantLesionPickedImage) => {
+    if (!cardData) {
+      // Seed a minimal card shell so the picker sticks before generate
+      setCardData(
+        normalizeDominantLesionCardData(
+          {
+            lesionLabel: "Lesión dominante",
+            site: studyType || "Sitio pendiente",
+            clinicianPhrase: "Genera la ficha para completar el resumen clínico.",
+            selectedImageId: img.id,
+          },
+          priorInstructions.trim()
+        )
+      );
+      return;
+    }
+    setCardData({ ...cardData, selectedImageId: img.id || null });
+  };
 
   const handleGenerate = async () => {
     if (!reportText.trim()) {
@@ -82,6 +107,12 @@ export const DominantLesionCardModule: React.FC<DominantLesionCardModuleProps> =
           focusText: focusText.trim() || undefined,
           hasAttachedImages: attachedImages.length > 0,
           hasFocal3d: Boolean(focalThumb),
+          imageCaptions: selectableImages.map((i, n) => ({
+            n: n + 1,
+            id: i.id,
+            caption: i.caption,
+            modality: i.modality || "",
+          })),
         }),
       });
       const raw = await response.text();
@@ -98,7 +129,15 @@ export const DominantLesionCardModule: React.FC<DominantLesionCardModuleProps> =
       if (!response.ok || !json.success || !json.data) {
         throw new Error(json.error || "No se pudo generar la ficha de lesión dominante.");
       }
-      setCardData(normalizeDominantLesionCardData(json.data, priorInstructions.trim()));
+      const next = normalizeDominantLesionCardData(json.data, priorInstructions.trim(), {
+        selectedImageId: cardData?.selectedImageId ?? null,
+      });
+      // If no manual pick yet, lock auto-picked image so PDF stays stable
+      if (!next.selectedImageId) {
+        const auto = pickDominantLesionImage(attachedImages, next);
+        if (auto?.id) next.selectedImageId = auto.id;
+      }
+      setCardData(next);
       setIncludeInReport(true);
     } catch (err: any) {
       console.error("Error generando ficha de lesión dominante:", err);
@@ -120,8 +159,7 @@ export const DominantLesionCardModule: React.FC<DominantLesionCardModuleProps> =
               Ficha de lesión dominante
             </h3>
             <p className="text-[11px] text-slate-400 mt-1 leading-relaxed max-w-xl">
-              Una página: medidas, categoría, imagen US/MMG, corte 3D (si existe) y frase para el
-              clínico. Sirve para cualquier estudio con un hallazgo principal.
+              Una página elegante: imagen clínica, medidas, categoría y frase para el tratante.
             </p>
           </div>
         </div>
@@ -136,38 +174,80 @@ export const DominantLesionCardModule: React.FC<DominantLesionCardModuleProps> =
         </label>
       </div>
 
-      <div className="space-y-2">
-        <label className="block text-[9px] font-black uppercase tracking-widest text-rose-300/80 font-mono">
-          Instrucciones previas (opcional)
-        </label>
-        <textarea
-          value={priorInstructions}
-          onChange={(e) => setPriorInstructions(e.target.value)}
-          rows={2}
-          placeholder="Ej.: La dominante es el nódulo CSE derecha; ignora quistes simples; usa BI-RADS del informe; frase corta para el mastólogo."
-          className="w-full px-3 py-2.5 bg-slate-950 border border-slate-700 focus:border-rose-500/40 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none resize-y leading-relaxed"
-        />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="space-y-2">
+          <label className="block text-[9px] font-black uppercase tracking-widest text-rose-300/80 font-mono">
+            Instrucciones previas
+          </label>
+          <textarea
+            value={priorInstructions}
+            onChange={(e) => setPriorInstructions(e.target.value)}
+            rows={2}
+            placeholder="Ej.: dominante = nódulo CSE derecha; frase corta para mastólogo."
+            className="w-full px-3 py-2.5 bg-slate-950 border border-slate-700 focus:border-rose-500/40 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none resize-y leading-relaxed"
+          />
+        </div>
+        <div className="space-y-2">
+          <label className="block text-[9px] font-black uppercase tracking-widest text-slate-500 font-mono">
+            Foco manual
+          </label>
+          <input
+            type="text"
+            value={focusText}
+            onChange={(e) => setFocusText(e.target.value)}
+            placeholder="Ej.: nódulo sólido CSE mama derecha 14 mm"
+            className="w-full px-3 py-2.5 bg-slate-950 border border-slate-700 focus:border-rose-500/40 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none"
+          />
+        </div>
       </div>
 
-      <div className="space-y-2">
-        <label className="block text-[9px] font-black uppercase tracking-widest text-slate-500 font-mono">
-          Foco manual (si hay varias lesiones)
-        </label>
-        <input
-          type="text"
-          value={focusText}
-          onChange={(e) => setFocusText(e.target.value)}
-          placeholder="Ej.: nódulo sólido CSE mama derecha 14 mm"
-          className="w-full px-3 py-2 bg-slate-950 border border-slate-700 focus:border-rose-500/40 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none"
-        />
-      </div>
+      {selectableImages.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <ImageIcon className="h-3.5 w-3.5 text-rose-300" />
+            <p className="text-[9px] font-black uppercase tracking-widest text-rose-300/80 font-mono">
+              Imagen asociada
+            </p>
+            <span className="text-[10px] text-slate-500">
+              {linkedImage
+                ? `Fig. ${linkedImage.index + 1}${linkedImage.modality ? ` · ${linkedImage.modality}` : ""}`
+                : "Elige una captura"}
+            </span>
+          </div>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {selectableImages.map((img) => {
+              const active = linkedImage?.id === img.id;
+              return (
+                <button
+                  key={img.id || img.index}
+                  type="button"
+                  onClick={() => selectImage(img)}
+                  className={`shrink-0 w-24 rounded-xl overflow-hidden border transition-all ${
+                    active
+                      ? "border-rose-400 ring-2 ring-rose-500/40"
+                      : "border-slate-700 hover:border-slate-500"
+                  }`}
+                  title={img.caption}
+                >
+                  <div className="aspect-square bg-black">
+                    <img src={img.url} alt={img.caption} className="w-full h-full object-cover" />
+                  </div>
+                  <p className="px-1.5 py-1 text-[9px] text-slate-300 truncate bg-slate-900">
+                    {img.index + 1}. {img.modality || "IMG"}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
-      <div className="flex flex-wrap gap-2 text-[10px] text-slate-500">
-        {attachedImages.length > 0 && (
-          <span>{attachedImages.length} imagen(es) adjunta(s) · se intentará vincular Figura N</span>
-        )}
-        {focalThumb && <span>· Corte 3D disponible para miniatura</span>}
-      </div>
+      {selectableImages.length === 0 && (
+        <p className="text-[10px] text-amber-200/80 bg-amber-950/30 border border-amber-800/40 rounded-xl px-3 py-2">
+          Sin capturas adjuntas. Adjunta una imagen US/MMG (y correlaciona figuras) para que la ficha
+          lleve foto clínica.
+        </p>
+      )}
 
       <div className="flex flex-wrap gap-2">
         <button
@@ -180,7 +260,7 @@ export const DominantLesionCardModule: React.FC<DominantLesionCardModuleProps> =
             <>
               <Loader2 className="h-4 w-4 animate-spin" /> Generando ficha...
             </>
-          ) : cardData ? (
+          ) : cardData?.lesionLabel && cardData.lesionLabel !== "Lesión dominante" ? (
             <>
               <RefreshCw className="h-4 w-4" /> Regenerar ficha
             </>
@@ -190,6 +270,9 @@ export const DominantLesionCardModule: React.FC<DominantLesionCardModuleProps> =
             </>
           )}
         </button>
+        {focalThumb && (
+          <span className="self-center text-[10px] text-teal-300/80">Corte 3D disponible</span>
+        )}
       </div>
 
       {error && (
@@ -211,7 +294,7 @@ export const DominantLesionCardModule: React.FC<DominantLesionCardModuleProps> =
 
 export const DominantLesionCardPreview: React.FC<{
   data: DominantLesionCardData;
-  linkedImage?: { url: string; caption: string; modality?: string } | null;
+  linkedImage?: DominantLesionPickedImage | null;
   focalThumb?: { url: string; title: string } | null;
 }> = ({ data, linkedImage = null, focalThumb = null }) => {
   const categoryBadge =
@@ -220,123 +303,140 @@ export const DominantLesionCardPreview: React.FC<{
       : null;
 
   return (
-    <div className="rounded-2xl border border-slate-700/60 bg-gradient-to-b from-slate-950 to-slate-900 overflow-hidden">
-      <div className="px-4 py-3 border-b border-slate-800 flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-widest text-rose-300/90 font-mono">
-            {data.title}
-          </p>
-          <p className="text-sm font-semibold text-slate-100 mt-1">{data.lesionLabel}</p>
-          <p className="text-[11px] text-slate-400 mt-0.5">
-            {[data.site, data.laterality, data.studyRegion].filter(Boolean).join(" · ")}
-          </p>
+    <div className="rounded-2xl overflow-hidden border border-slate-700/50 bg-[#f8fafc] text-slate-900 shadow-2xl shadow-black/40">
+      {/* Masthead */}
+      <div className="relative px-5 pt-5 pb-4 bg-gradient-to-br from-slate-900 via-slate-900 to-rose-950 text-white">
+        <div className="absolute inset-0 opacity-30 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-rose-500/40 via-transparent to-transparent" />
+        <div className="relative flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-rose-200/90">
+              Lesión dominante
+            </p>
+            <h4 className="mt-1.5 text-xl md:text-2xl font-semibold tracking-tight leading-snug">
+              {data.lesionLabel}
+            </h4>
+            <p className="mt-1.5 text-sm text-slate-300">
+              {[data.site, data.laterality, data.studyRegion].filter(Boolean).join(" · ")}
+            </p>
+          </div>
+          {categoryBadge && (
+            <div className="shrink-0 rounded-2xl bg-white text-rose-900 px-4 py-2.5 text-center shadow-lg shadow-rose-950/30">
+              <p className="text-[9px] font-bold uppercase tracking-widest text-rose-500/80">
+                Categoría
+              </p>
+              <p className="text-lg font-black tracking-tight leading-none mt-0.5">{categoryBadge}</p>
+            </div>
+          )}
         </div>
-        {categoryBadge && (
-          <span className="shrink-0 px-3 py-1.5 rounded-lg bg-rose-500/20 border border-rose-400/40 text-rose-100 text-xs font-black uppercase tracking-wide">
-            {categoryBadge}
-          </span>
-        )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] gap-0">
-        <div className="p-4 space-y-3 border-b lg:border-b-0 lg:border-r border-slate-800">
-          <div className="rounded-xl border border-slate-800 bg-slate-950/80 overflow-hidden aspect-[4/3] flex items-center justify-center">
-            {linkedImage ? (
+      {/* Body: image + clinical facts */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_0.85fr]">
+        <div className="relative bg-slate-950 min-h-[280px] lg:min-h-[340px]">
+          {linkedImage ? (
+            <>
               <img
                 src={linkedImage.url}
                 alt={linkedImage.caption}
-                className="w-full h-full object-contain bg-black"
+                className="absolute inset-0 w-full h-full object-contain"
               />
-            ) : (
-              <p className="text-[11px] text-slate-500 px-4 text-center">
-                Sin imagen US/MMG vinculada. Adjunta capturas o correlaciona figuras.
-              </p>
-            )}
-          </div>
-          {linkedImage && (
-            <p className="text-[10px] text-slate-500 font-mono">
-              {data.figureRef ? `Fig. ${data.figureRef} · ` : ""}
-              {linkedImage.caption}
-              {linkedImage.modality ? ` · ${linkedImage.modality}` : ""}
-            </p>
-          )}
-
-          {focalThumb && (
-            <div className="rounded-xl border border-teal-900/50 bg-teal-950/20 p-2 flex gap-3 items-center">
-              <img
-                src={focalThumb.url}
-                alt={focalThumb.title}
-                className="h-20 w-28 object-cover rounded-lg border border-teal-800/60"
-              />
-              <div>
-                <p className="text-[9px] font-black uppercase tracking-widest text-teal-300/90 font-mono">
-                  Corte 3D
+              <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-4 py-3">
+                <p className="text-[11px] text-white/95 font-medium">
+                  {data.figureRef ? `Figura ${data.figureRef}` : `Figura ${linkedImage.index + 1}`}
+                  {linkedImage.modality ? ` · ${linkedImage.modality}` : ""}
                 </p>
-                <p className="text-[11px] text-slate-300 mt-0.5 leading-snug">{focalThumb.title}</p>
+                {linkedImage.caption && (
+                  <p className="text-[10px] text-white/70 truncate mt-0.5">{linkedImage.caption}</p>
+                )}
               </div>
+            </>
+          ) : (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-500 px-6 text-center">
+              <ImageIcon className="h-8 w-8 opacity-50" />
+              <p className="text-xs">Sin imagen asociada</p>
+              <p className="text-[10px] text-slate-600">Adjunta una captura y selecciónala arriba</p>
             </div>
           )}
         </div>
 
-        <div className="p-4 space-y-4">
-          {(data.sizeSummary || data.measurements.length > 0) && (
-            <div>
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 font-mono mb-2">
-                Medidas
-              </p>
-              {data.sizeSummary && (
-                <p className="text-lg font-semibold text-slate-100 tabular-nums mb-2">
-                  {data.sizeSummary}
-                </p>
-              )}
-              {data.measurements.length > 0 && (
-                <div className="grid grid-cols-2 gap-2">
-                  {data.measurements.map((m) => (
-                    <div
-                      key={`${m.label}-${m.value}`}
-                      className="rounded-lg border border-slate-800 bg-slate-950/70 px-2.5 py-2"
-                    >
-                      <p className="text-[9px] uppercase tracking-wide text-slate-500">{m.label}</p>
-                      <p className="text-sm font-semibold text-slate-100 tabular-nums">{m.value}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+        <div className="p-5 space-y-5 bg-white">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
+              Tamaño
+            </p>
+            <p className="mt-1 text-3xl font-semibold tracking-tight text-slate-900 tabular-nums">
+              {data.sizeSummary || "—"}
+            </p>
+            {data.measurements.length > 0 && (
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                {data.measurements.map((m) => (
+                  <div
+                    key={`${m.label}-${m.value}`}
+                    className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2"
+                  >
+                    <p className="text-[9px] uppercase tracking-wide text-slate-400">{m.label}</p>
+                    <p className="text-sm font-semibold text-slate-800 tabular-nums mt-0.5">
+                      {m.value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           {data.categoryRationale && (
             <div>
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 font-mono mb-1">
-                Categoría
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                Fundamento
               </p>
-              <p className="text-[11px] text-slate-300 leading-relaxed">{data.categoryRationale}</p>
+              <p className="mt-1.5 text-sm text-slate-600 leading-relaxed">{data.categoryRationale}</p>
             </div>
           )}
 
           {data.keyDescriptors && data.keyDescriptors.length > 0 && (
             <div>
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 font-mono mb-1.5">
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400 mb-2">
                 Descriptores
               </p>
-              <ul className="space-y-1">
+              <div className="flex flex-wrap gap-1.5">
                 {data.keyDescriptors.map((d) => (
-                  <li key={d} className="text-[11px] text-slate-300 flex gap-2">
-                    <span className="text-rose-400 shrink-0">·</span>
-                    <span>{d}</span>
-                  </li>
+                  <span
+                    key={d}
+                    className="inline-flex items-center rounded-full bg-slate-100 text-slate-700 text-[11px] px-2.5 py-1 border border-slate-200/80"
+                  >
+                    {d}
+                  </span>
                 ))}
-              </ul>
+              </div>
             </div>
           )}
 
-          <div className="rounded-xl border border-rose-500/30 bg-rose-950/25 px-3 py-3">
-            <p className="text-[9px] font-black uppercase tracking-widest text-rose-300/90 font-mono mb-1.5">
-              Frase para el clínico
-            </p>
-            <p className="text-sm text-rose-50 leading-relaxed">{data.clinicianPhrase}</p>
-          </div>
+          {focalThumb && (
+            <div className="flex gap-3 items-center rounded-xl border border-teal-100 bg-teal-50/70 p-2">
+              <img
+                src={focalThumb.url}
+                alt={focalThumb.title}
+                className="h-16 w-24 object-cover rounded-lg border border-teal-200"
+              />
+              <div>
+                <p className="text-[9px] font-bold uppercase tracking-widest text-teal-700">
+                  Corte 3D
+                </p>
+                <p className="text-[11px] text-teal-900/80 mt-0.5 leading-snug">{focalThumb.title}</p>
+              </div>
+            </div>
+          )}
         </div>
+      </div>
+
+      {/* Clinician phrase — full bleed footer */}
+      <div className="border-t border-rose-100 bg-gradient-to-r from-rose-50 via-white to-rose-50 px-5 py-4">
+        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-rose-500">
+          Para el clínico
+        </p>
+        <p className="mt-1.5 text-[15px] leading-relaxed text-slate-800 font-medium">
+          {data.clinicianPhrase}
+        </p>
       </div>
     </div>
   );

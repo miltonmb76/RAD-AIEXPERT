@@ -25,12 +25,22 @@ export type DominantLesionCardData = {
   figureRef?: number | null;
   /** Hint to match attached image caption */
   figureCaptionHint?: string;
+  /** Manual override: attached image id chosen by the physician */
+  selectedImageId?: string | null;
   /** 1–2 sentences for the referring clinician */
   clinicianPhrase: string;
   keyDescriptors?: string[];
   studyRegion?: string;
   priorInstructions?: string;
   generatedAt?: string;
+};
+
+export type DominantLesionPickedImage = {
+  id?: string;
+  url: string;
+  caption: string;
+  modality?: string;
+  index: number;
 };
 
 function cleanText(v: unknown, max = 220): string {
@@ -50,7 +60,8 @@ function cleanList(v: unknown, maxItems = 6, maxLen = 80): string[] {
 
 export function normalizeDominantLesionCardData(
   raw: any,
-  priorInstructions?: string
+  priorInstructions?: string,
+  preserve?: Partial<Pick<DominantLesionCardData, "selectedImageId">>
 ): DominantLesionCardData {
   const measurementsRaw = Array.isArray(raw?.measurements)
     ? raw.measurements
@@ -89,6 +100,14 @@ export function normalizeDominantLesionCardData(
       320
     ) || `Hallazgo dominante: ${lesionLabel}.`;
 
+  const selectedFromRaw = raw?.selectedImageId;
+  const selectedImageId =
+    preserve?.selectedImageId !== undefined
+      ? preserve.selectedImageId
+      : selectedFromRaw === null || selectedFromRaw === undefined || selectedFromRaw === ""
+        ? null
+        : String(selectedFromRaw);
+
   return {
     title: cleanText(raw?.title, 80) || "Ficha de lesión dominante",
     lesionLabel,
@@ -102,6 +121,7 @@ export function normalizeDominantLesionCardData(
     modalityHint,
     figureRef,
     figureCaptionHint: cleanText(raw?.figureCaptionHint || raw?.imageHint, 120) || undefined,
+    selectedImageId,
     clinicianPhrase,
     keyDescriptors: cleanList(raw?.keyDescriptors || raw?.descriptors || raw?.features, 6, 90),
     studyRegion: cleanText(raw?.studyRegion || raw?.region, 80) || undefined,
@@ -110,35 +130,55 @@ export function normalizeDominantLesionCardData(
   };
 }
 
-/** Pick best attached image for the card (by figure order / caption / modality). */
-export function pickDominantLesionImage(
-  attachedImages: Array<{
-    id?: string;
-    url?: string;
-    preview?: string;
-    caption?: string;
-    name?: string;
-    modality?: string;
-  }> | null | undefined,
-  data: DominantLesionCardData | null
-): { url: string; caption: string; modality?: string } | null {
-  if (!data || !Array.isArray(attachedImages) || !attachedImages.length) return null;
+type AttachedLike = {
+  id?: string;
+  url?: string;
+  preview?: string;
+  caption?: string;
+  name?: string;
+  modality?: string;
+};
 
-  const withUrl = attachedImages
+function listImagesWithUrl(attachedImages: AttachedLike[] | null | undefined) {
+  if (!Array.isArray(attachedImages)) return [];
+  return attachedImages
     .map((img, idx) => ({
+      id: img.id ? String(img.id) : `idx-${idx}`,
       idx,
       url: String(img.url || img.preview || "").trim(),
       caption: String(img.caption || img.name || "").trim(),
       modality: String(img.modality || "").toUpperCase(),
     }))
     .filter((img) => img.url);
+}
 
+/** Pick best attached image for the card (manual id → figure → caption → modality). */
+export function pickDominantLesionImage(
+  attachedImages: AttachedLike[] | null | undefined,
+  data: DominantLesionCardData | null
+): DominantLesionPickedImage | null {
+  const withUrl = listImagesWithUrl(attachedImages);
   if (!withUrl.length) return null;
 
-  // 1) Explicit figure N → N-th image in report order (0-based: figure 1 = index 0)
+  const toPicked = (hit: (typeof withUrl)[0]): DominantLesionPickedImage => ({
+    id: hit.id,
+    url: hit.url,
+    caption: hit.caption || (hit.idx >= 0 ? `Figura ${hit.idx + 1}` : "Imagen adjunta"),
+    modality: hit.modality || undefined,
+    index: hit.idx,
+  });
+
+  // 0) Manual selection
+  if (data?.selectedImageId) {
+    const byId = withUrl.find((i) => i.id === data.selectedImageId);
+    if (byId) return toPicked(byId);
+  }
+
+  if (!data) return toPicked(withUrl[0]);
+
+  // 1) Explicit figure N → N-th image in report order
   if (data.figureRef && data.figureRef >= 1 && data.figureRef <= withUrl.length) {
-    const hit = withUrl[data.figureRef - 1];
-    return { url: hit.url, caption: hit.caption || `Figura ${data.figureRef}`, modality: hit.modality };
+    return toPicked(withUrl[data.figureRef - 1]);
   }
 
   // 2) Caption hint overlap
@@ -152,10 +192,7 @@ export function pickDominantLesionImage(
         return { img, score };
       })
       .sort((a, b) => b.score - a.score);
-    if (scored[0]?.score > 0) {
-      const hit = scored[0].img;
-      return { url: hit.url, caption: hit.caption, modality: hit.modality };
-    }
+    if (scored[0]?.score > 0) return toPicked(scored[0].img);
   }
 
   // 3) Modality preference
@@ -163,14 +200,24 @@ export function pickDominantLesionImage(
   const preferMmg = data.modalityHint === "MMG";
   if (preferUs) {
     const us = withUrl.find((i) => i.modality === "US" || /eco|ultrason/i.test(i.caption));
-    if (us) return { url: us.url, caption: us.caption, modality: us.modality };
+    if (us) return toPicked(us);
   }
   if (preferMmg) {
     const mmg = withUrl.find((i) => i.modality === "MMG" || /mamograf/i.test(i.caption));
-    if (mmg) return { url: mmg.url, caption: mmg.caption, modality: mmg.modality };
+    if (mmg) return toPicked(mmg);
   }
 
-  // 4) First image
-  const first = withUrl[0];
-  return { url: first.url, caption: first.caption || "Imagen adjunta", modality: first.modality };
+  return toPicked(withUrl[0]);
+}
+
+export function listSelectableDominantImages(
+  attachedImages: AttachedLike[] | null | undefined
+): DominantLesionPickedImage[] {
+  return listImagesWithUrl(attachedImages).map((hit) => ({
+    id: hit.id,
+    url: hit.url,
+    caption: hit.caption || `Figura ${hit.idx + 1}`,
+    modality: hit.modality || undefined,
+    index: hit.idx,
+  }));
 }
