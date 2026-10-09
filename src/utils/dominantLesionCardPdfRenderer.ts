@@ -24,9 +24,7 @@ function loadImage(dataUrl: string): Promise<HTMLImageElement | null> {
   });
 }
 
-/**
- * Cover-crop into the box via canvas (fills frame, no letterboxing, no overflow).
- */
+/** Fill tile exactly (cover-crop via canvas). No letterbox bars. */
 function coverCropDataUrl(
   img: HTMLImageElement,
   boxWmm: number,
@@ -45,9 +43,8 @@ function coverCropDataUrl(
     }
     const sx = Math.max(0, (iw - srcW) / 2);
     const sy = Math.max(0, (ih - srcH) / 2);
-
     const outW = Math.min(maxPx, Math.max(240, Math.round(boxWmm * 8)));
-    const outH = Math.max(160, Math.round(outW / targetAspect));
+    const outH = Math.max(120, Math.round(outW / targetAspect));
     const canvas = document.createElement("canvas");
     canvas.width = outW;
     canvas.height = outH;
@@ -56,10 +53,23 @@ function coverCropDataUrl(
     ctx.fillStyle = "#0f172a";
     ctx.fillRect(0, 0, outW, outH);
     ctx.drawImage(img, sx, sy, srcW, srcH, 0, 0, outW, outH);
-    return canvas.toDataURL("image/jpeg", 0.88);
+    return canvas.toDataURL("image/jpeg", 0.9);
   } catch {
     return null;
   }
+}
+
+/**
+ * Snug height for a tile: prefer image aspect so US isn't floating in a tall well.
+ * Falls back to a compact default when no image.
+ */
+function snugTileHeight(img: HTMLImageElement | null, boxW: number, maxH: number, minH = 36): number {
+  if (!img) return Math.min(maxH, 48);
+  const iw = img.naturalWidth || img.width || 1;
+  const ih = img.naturalHeight || img.height || 1;
+  const aspectH = boxW * (ih / iw);
+  // Cap extreme panoramas / portraits
+  return Math.max(minH, Math.min(maxH, aspectH));
 }
 
 async function drawMediaTile(
@@ -70,53 +80,52 @@ async function drawMediaTile(
   y: number,
   w: number,
   h: number,
-  emptyLabel: string
+  emptyLabel: string,
+  preloaded?: HTMLImageElement | null
 ): Promise<void> {
-  const capH = 5.2;
-  const imgH = Math.max(18, h - capH);
-  const pad = 1;
+  const capH = 5;
+  const imgH = Math.max(16, h - capH);
+  const pad = 0.8;
 
   doc.setFillColor(15, 23, 42);
-  doc.roundedRect(x, y, w, h, 1.6, 1.6, "F");
+  doc.roundedRect(x, y, w, h, 1.4, 1.4, "F");
 
-  if (dataUrl) {
-    const img = await loadImage(dataUrl);
-    if (img) {
-      try {
-        const boxW = w - pad * 2;
-        const boxH = imgH - pad * 2;
-        const cropped = coverCropDataUrl(img, boxW, boxH);
-        if (cropped) {
-          doc.addImage(cropped, "JPEG", x + pad, y + pad, boxW, boxH);
-        } else {
-          // Fallback: contain (may letterbox)
-          const iw = img.width || 1;
-          const ih = img.height || 1;
-          const s = Math.min(boxW / iw, boxH / ih);
-          const dw = iw * s;
-          const dh = ih * s;
-          const fmt = dataUrl.startsWith("data:image/jpeg") ? "JPEG" : "PNG";
-          doc.addImage(
-            dataUrl,
-            fmt,
-            x + pad + (boxW - dw) / 2,
-            y + pad + (boxH - dh) / 2,
-            dw,
-            dh
-          );
-        }
-      } catch {
-        /* ignore */
+  const img = preloaded !== undefined ? preloaded : dataUrl ? await loadImage(dataUrl) : null;
+  if (dataUrl && img) {
+    try {
+      const boxW = w - pad * 2;
+      const boxH = imgH - pad * 2;
+      const cropped = coverCropDataUrl(img, boxW, boxH);
+      if (cropped) {
+        doc.addImage(cropped, "JPEG", x + pad, y + pad, boxW, boxH);
+      } else {
+        const iw = img.width || 1;
+        const ih = img.height || 1;
+        // Contain into snug box (should nearly fill when h was sized from aspect)
+        const s = Math.min(boxW / iw, boxH / ih);
+        const dw = iw * s;
+        const dh = ih * s;
+        const fmt = dataUrl.startsWith("data:image/jpeg") ? "JPEG" : "PNG";
+        doc.addImage(
+          dataUrl,
+          fmt,
+          x + pad + (boxW - dw) / 2,
+          y + pad + (boxH - dh) / 2,
+          dw,
+          dh
+        );
       }
-      doc.setFillColor(15, 23, 42);
-      doc.rect(x, y + imgH, w, capH, "F");
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(6);
-      doc.setTextColor(226, 232, 240);
-      const cap = wrapText(doc, caption || emptyLabel, w - 3.5, 1)[0] || emptyLabel;
-      doc.text(cap, x + 1.8, y + imgH + 3.4);
-      return;
+    } catch {
+      /* ignore */
     }
+    doc.setFillColor(15, 23, 42);
+    doc.rect(x, y + imgH, w, capH, "F");
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(6);
+    doc.setTextColor(226, 232, 240);
+    const cap = wrapText(doc, caption || emptyLabel, w - 3.2, 1)[0] || emptyLabel;
+    doc.text(cap, x + 1.6, y + imgH + 3.3);
+    return;
   }
 
   doc.setFont("helvetica", "normal");
@@ -126,8 +135,9 @@ async function drawMediaTile(
 }
 
 /**
- * One-page annex — clear of running header, snug media (cover crop),
- * side panel sized to content, text clipped inside boxes.
+ * One-page annex — clear of running header (line at y=14), snug US tiles
+ * (height from image aspect + cover fill), side panel = content height,
+ * phrase clear of global footer at pageH-10.
  */
 export async function renderDominantLesionCardAnnexToPDF(
   doc: jsPDF,
@@ -148,16 +158,17 @@ export async function renderDominantLesionCardAnnexToPDF(
   const margin = 14;
   const contentW = pageW - margin * 2;
   const layout = data.imageLayout || "single";
-  // Global footer sits at pageH - 10; keep clear.
-  const footerClear = 16;
+  // Footer text at pageH-10; keep content above
+  const footerClear = 18;
 
-  // Soft wash only below running header line (y=14)
+  // Soft wash only below running-header separator
   doc.setFillColor(248, 250, 252);
-  doc.rect(0, 15, pageW, pageH - 15, "F");
+  doc.rect(0, 15.2, pageW, pageH - 15.2, "F");
 
-  // Match other annexes: start below running header + separator
+  // Same clearance as vascular/thyroid annexes
   let y = 22;
 
+  // Compact masthead (never under the y=14 running header line)
   const headH = 20;
   doc.setFillColor(15, 23, 42);
   doc.roundedRect(margin, y, contentW, headH, 2.2, 2.2, "F");
@@ -199,24 +210,33 @@ export async function renderDominantLesionCardAnnexToPDF(
   y += headH + 4;
 
   const gap = 4.5;
-  const mediaW = contentW * 0.5;
+  const mediaW = contentW * 0.52;
   const sideW = contentW - mediaW - gap;
   const mediaX = margin;
   const sideX = margin + mediaW + gap;
   const sidePadX = 3.5;
   const innerW = sideW - sidePadX * 2;
+  const sideTop = y;
 
-  // Compact media heights — do not stretch toward page bottom
-  let mediaH = 70;
-  if (layout === "clinical_3d") mediaH = 88;
-  else if (layout === "mmg_us") mediaH = 64;
+  // Preload images to size tiles from real aspect ratios
+  const [imgA, imgB, img3d] = await Promise.all([
+    opts?.imageDataUrl ? loadImage(opts.imageDataUrl) : Promise.resolve(null),
+    opts?.imageBDataUrl ? loadImage(opts.imageBDataUrl) : Promise.resolve(null),
+    opts?.focal3dDataUrl ? loadImage(opts.focal3dDataUrl) : Promise.resolve(null),
+  ]);
 
-  const phraseBudget = 30;
-  const maxMediaH = pageH - y - phraseBudget - footerClear - 4;
-  mediaH = Math.min(mediaH, Math.max(48, maxMediaH));
+  const phraseBudget = 32;
+  const maxStackH = pageH - y - phraseBudget - footerClear;
+
+  let mediaColumnH = 0;
 
   if (layout === "mmg_us") {
     const cellW = (mediaW - 2.5) / 2;
+    const maxCellH = Math.min(78, maxStackH);
+    const hA = snugTileHeight(imgA, cellW, maxCellH, 40);
+    const hB = snugTileHeight(imgB, cellW, maxCellH, 40);
+    const cellH = Math.max(hA, hB);
+    mediaColumnH = cellH;
     await drawMediaTile(
       doc,
       opts?.imageDataUrl,
@@ -224,8 +244,9 @@ export async function renderDominantLesionCardAnnexToPDF(
       mediaX,
       y,
       cellW,
-      mediaH,
-      "Sin MMG"
+      cellH,
+      "Sin MMG",
+      imgA
     );
     await drawMediaTile(
       doc,
@@ -234,35 +255,42 @@ export async function renderDominantLesionCardAnnexToPDF(
       mediaX + cellW + 2.5,
       y,
       cellW,
-      mediaH,
-      "Sin US"
+      cellH,
+      "Sin US",
+      imgB
     );
   } else if (layout === "clinical_3d") {
-    // Side-by-side: US | 3D — avoids a tall empty US well
-    const cellW = (mediaW - 2.5) / 2;
-    const pairH = Math.min(mediaH, 72);
-    mediaH = pairH;
+    // Stacked like the on-screen preview, but each row snug to its image
+    const rowGap = 2.2;
+    const maxEach = Math.min(58, (maxStackH - rowGap) / 2);
+    const topH = snugTileHeight(imgA, mediaW, maxEach, 38);
+    const botH = snugTileHeight(img3d, mediaW, maxEach, 38);
+    mediaColumnH = topH + rowGap + botH;
     await drawMediaTile(
       doc,
       opts?.imageDataUrl,
       opts?.imageCaption || "Imagen clínica",
       mediaX,
       y,
-      cellW,
-      pairH,
-      "Sin imagen clínica"
+      mediaW,
+      topH,
+      "Sin imagen clínica",
+      imgA
     );
     await drawMediaTile(
       doc,
       opts?.focal3dDataUrl,
       opts?.focal3dCaption || "Corte 3D",
-      mediaX + cellW + 2.5,
-      y,
-      cellW,
-      pairH,
-      "Sin corte 3D"
+      mediaX,
+      y + topH + rowGap,
+      mediaW,
+      botH,
+      "Sin corte 3D",
+      img3d
     );
   } else {
+    const maxH = Math.min(86, maxStackH);
+    mediaColumnH = snugTileHeight(imgA, mediaW, maxH, 44);
     await drawMediaTile(
       doc,
       opts?.imageDataUrl,
@@ -270,20 +298,20 @@ export async function renderDominantLesionCardAnnexToPDF(
       mediaX,
       y,
       mediaW,
-      mediaH,
-      "Sin imagen asociada"
+      mediaColumnH,
+      "Sin imagen asociada",
+      imgA
     );
   }
 
-  // Side facts — height follows content (no tall empty white card)
-  const sideTop = y;
+  // Side facts — height follows content (not stretched to media column)
   let plannedH = 7;
-  plannedH += 4.5; // TAMAÑO label
+  plannedH += 4.5;
   const sizeLines = wrapText(doc, data.sizeSummary || "—", innerW, 2);
   plannedH += sizeLines.length * 5 + 3;
 
   const measCount = Math.min(4, data.measurements.length);
-  const measRows = Math.ceil(measCount / 2);
+  const measRows = Math.ceil(measCount / 2) || 0;
   if (measCount) plannedH += measRows * 12 + 2;
 
   doc.setFontSize(7);
@@ -295,8 +323,8 @@ export async function renderDominantLesionCardAnnexToPDF(
   const descriptors = (data.keyDescriptors || []).slice(0, 4);
   if (descriptors.length) plannedH += 4.5 + descriptors.length * 6 + 2;
 
-  // Prefer content height; never exceed media column or leave a giant empty box
-  const sideH = Math.min(mediaH, Math.max(42, plannedH + 3));
+  // Content-sized only — never stretch to media column (avoids empty white)
+  const sideH = Math.min(maxStackH, Math.max(42, plannedH + 3));
 
   doc.setFillColor(255, 255, 255);
   doc.setDrawColor(226, 232, 240);
@@ -387,11 +415,11 @@ export async function renderDominantLesionCardAnnexToPDF(
     }
   }
 
-  // Phrase band tight under media/facts — never into footer zone
-  y = Math.max(sideTop + mediaH, sideTop + sideH) + 4;
-  const phraseMaxH = 28;
+  // Phrase tight under content — never into footer
+  y = Math.max(sideTop + mediaColumnH, sideTop + sideH) + 4;
+  const phraseMaxH = 26;
   const phraseH = Math.min(phraseMaxH, pageH - y - footerClear);
-  if (phraseH >= 18 && data.clinicianPhrase) {
+  if (phraseH >= 16 && data.clinicianPhrase) {
     doc.setFillColor(255, 241, 242);
     doc.setDrawColor(254, 205, 211);
     doc.setLineWidth(0.3);
