@@ -1,4 +1,5 @@
 import type {
+  FindingsInfographicAudience,
   FindingsInfographicContentMode,
   FindingsInfographicData,
   FindingsInfographicLayout,
@@ -105,9 +106,119 @@ export const INFOGRAPHIC_CONTENT_MODES: {
 
 /** Elegant PDF annex title for the active content mode. */
 export function infographicAnnexTitle(
-  mode: FindingsInfographicContentMode | string | undefined
+  mode: FindingsInfographicContentMode | string | undefined,
+  audience: FindingsInfographicAudience = "clinician"
 ): string {
+  if (audience === "patient") return "ANEXO: INFOGRAFÍA PARA EL PACIENTE";
   return contentModeMeta(mode).annexTitle || "ANEXO: INFOGRAFÍA DE HALLAZGOS";
+}
+
+/** Light plain-language rewrite when the model did not supply patient copy. */
+export function toPatientPlainLanguage(text: string | undefined): string {
+  let t = String(text || "").trim();
+  if (!t) return "";
+  const pairs: Array<[RegExp, string]> = [
+    [/\bBI-?RADS\b/gi, "categoría de mama"],
+    [/\bTI-?RADS\b/gi, "categoría de tiroides"],
+    [/\bBosniak\b/gi, "categoría de quiste renal"],
+    [/\bACR\b/gi, ""],
+    [/\becogenicidad\b/gi, "brillo en la ecografía"],
+    [/\bhipoecoico\b/gi, "más oscuro en la ecografía"],
+    [/\bhiperecoico\b/gi, "más brillante en la ecografía"],
+    [/\baneico\b/gi, "sin ecos internos"],
+    [/\bheterogéneo\b/gi, "de aspecto irregular"],
+    [/\bhomogéneo\b/gi, "de aspecto uniforme"],
+    [/\bretracción\b/gi, "acortamiento"],
+    [/\bespesor completo\b/gi, "rotura de todo el grosor"],
+    [/\banchura parcial\b/gi, "rotura parcial"],
+    [/\blateralidad\b/gi, "lado"],
+    [/\bipsilateral\b/gi, "del mismo lado"],
+    [/\bcontralateral\b/gi, "del otro lado"],
+    [/\bmorfología\b/gi, "forma"],
+    [/\bsemiología\b/gi, "signos"],
+    [/\bcriterios?\b/gi, "puntos clave"],
+  ];
+  for (const [re, rep] of pairs) t = t.replace(re, rep);
+  t = t.replace(/\s{2,}/g, " ").replace(/\s+([,.;])/g, "$1").trim();
+  // Soften category tone
+  t = t.replace(/\bcategoría de mama\s+(\w+)/gi, "resultado de mama $1");
+  t = t.replace(/\bcategoría de tiroides\s+(\w+)/gi, "resultado de tiroides $1");
+  return t;
+}
+
+/** True when patient-facing copy is present (or can be derived). */
+export function hasPatientInfographicCopy(data: FindingsInfographicData | null | undefined): boolean {
+  if (!data?.nodes?.length) return false;
+  if (data.patientTitle || data.patientDiagnosis || data.patientSynthesis) return true;
+  return data.nodes.some((n) => n.patientLabel || n.patientDetail);
+}
+
+/**
+ * Fill missing patient fields from clinician text (heuristic).
+ * Keeps layout/ids/polarities identical — same anatomy.
+ */
+export function ensureDualAudienceCopy(data: FindingsInfographicData): FindingsInfographicData {
+  const nodes = (data.nodes || []).map((n) => ({
+    ...n,
+    patientLabel: (n.patientLabel || "").trim() || toPatientPlainLanguage(n.label) || n.label,
+    patientDetail: (n.patientDetail || "").trim()
+      || (n.detail ? toPatientPlainLanguage(n.detail) : undefined),
+  }));
+  return {
+    ...data,
+    nodes,
+    patientTitle:
+      (data.patientTitle || "").trim() ||
+      toPatientPlainLanguage(data.title) ||
+      "Sus hallazgos en imágenes",
+    patientDiagnosis:
+      (data.patientDiagnosis || "").trim() ||
+      toPatientPlainLanguage(data.diagnosis) ||
+      data.diagnosis,
+    patientSynthesis:
+      (data.patientSynthesis || "").trim() ||
+      (data.synthesis ? toPatientPlainLanguage(data.synthesis) : undefined),
+    includeClinicianInPdf: data.includeClinicianInPdf !== false,
+    includePatientInPdf: data.includePatientInPdf !== false,
+    activeAudience: data.activeAudience || "clinician",
+  };
+}
+
+/**
+ * Project dual data onto a single-audience view for scene / companion / PDF.
+ * Structure (layout, polarity, weights) stays identical.
+ */
+export function projectInfographicForAudience(
+  data: FindingsInfographicData,
+  audience: FindingsInfographicAudience
+): FindingsInfographicData {
+  const dual = ensureDualAudienceCopy(data);
+  if (audience === "clinician") {
+    return {
+      ...dual,
+      title: dual.title,
+      diagnosis: dual.diagnosis,
+      synthesis: dual.synthesis,
+      nodes: dual.nodes.map((n) => ({
+        ...n,
+        label: n.label,
+        detail: n.detail,
+      })),
+      activeAudience: "clinician",
+    };
+  }
+  return {
+    ...dual,
+    title: dual.patientTitle || dual.title,
+    diagnosis: dual.patientDiagnosis || dual.diagnosis,
+    synthesis: dual.patientSynthesis || dual.synthesis,
+    nodes: dual.nodes.map((n) => ({
+      ...n,
+      label: n.patientLabel || n.label,
+      detail: n.patientDetail || n.detail,
+    })),
+    activeAudience: "patient",
+  };
 }
 
 export const INFOGRAPHIC_LAYOUT_OPTIONS: {
@@ -241,6 +352,12 @@ export function normalizeFindingsInfographicData(
       id: String(n?.id || `fig-${idx + 1}`),
       label: String(n?.label || n?.finding || n?.hallazgo || n?.title || "").trim(),
       detail: String(n?.detail || n?.detalle || n?.description || "").trim() || undefined,
+      patientLabel:
+        String(n?.patientLabel || n?.labelPaciente || n?.patient_label || "").trim() ||
+        undefined,
+      patientDetail:
+        String(n?.patientDetail || n?.detallePaciente || n?.patient_detail || "").trim() ||
+        undefined,
       weight:
         n?.weight === "primary" || n?.peso === "primary" || idx === 0
           ? ("primary" as const)
@@ -259,7 +376,7 @@ export function normalizeFindingsInfographicData(
 
   const meta = contentModeMeta(contentMode);
 
-  return {
+  const base: FindingsInfographicData = {
     title: String(raw?.title || meta.defaultTitle).trim(),
     diagnosis: String(
       raw?.diagnosis || raw?.diagnostico || diagnosisFallback || ""
@@ -269,8 +386,24 @@ export function normalizeFindingsInfographicData(
     layout,
     nodes: nodes.length ? nodes : [emptyInfographicNode()],
     synthesis: String(raw?.synthesis || raw?.sintesis || "").trim() || undefined,
+    patientTitle:
+      String(raw?.patientTitle || raw?.tituloPaciente || "").trim() || undefined,
+    patientDiagnosis:
+      String(raw?.patientDiagnosis || raw?.diagnosticoPaciente || "").trim() ||
+      undefined,
+    patientSynthesis:
+      String(raw?.patientSynthesis || raw?.sintesisPaciente || "").trim() ||
+      undefined,
+    includeClinicianInPdf: raw?.includeClinicianInPdf !== false,
+    includePatientInPdf: raw?.includePatientInPdf !== false,
+    activeAudience:
+      raw?.activeAudience === "patient" || raw?.activeAudience === "clinician"
+        ? raw.activeAudience
+        : "clinician",
     generatedAt: String(raw?.generatedAt || new Date().toISOString()),
   };
+
+  return ensureDualAudienceCopy(base);
 }
 
 export interface InfographicCompanionItem {

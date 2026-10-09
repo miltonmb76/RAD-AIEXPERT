@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import type {
   ClinicalScorecardData,
+  FindingsInfographicAudience,
   FindingsInfographicContentMode,
   FindingsInfographicData,
   FindingsInfographicLayout,
@@ -23,8 +24,10 @@ import {
   buildInfographicScene,
   contentModeMeta,
   emptyInfographicNode,
+  ensureDualAudienceCopy,
   layoutDisplayLabel,
   normalizeFindingsInfographicData,
+  projectInfographicForAudience,
   resolveInfographicDiagnosis,
 } from "../lib/findingsInfographic";
 import { getScorecardGovernance } from "../lib/clinicalIntelligence";
@@ -84,16 +87,34 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
       ? scoreGov.categoryAssigned
       : resolveInfographicDiagnosis(presetId, customDiagnosis);
   const modeMeta = contentModeMeta(contentMode);
+  const audience: FindingsInfographicAudience =
+    infographicData?.activeAudience === "patient" ? "patient" : "clinician";
+
+  const projected = useMemo(
+    () =>
+      infographicData
+        ? projectInfographicForAudience(ensureDualAudienceCopy(infographicData), audience)
+        : null,
+    [infographicData, audience]
+  );
 
   const scene = useMemo(
-    () => (infographicData ? buildInfographicScene(infographicData) : null),
-    [infographicData]
+    () => (projected ? buildInfographicScene(projected) : null),
+    [projected]
   );
 
   const companion = useMemo(
-    () => (infographicData ? buildInfographicCompanion(infographicData) : null),
-    [infographicData]
+    () => (projected ? buildInfographicCompanion(projected) : null),
+    [projected]
   );
+
+  const setAudience = (next: FindingsInfographicAudience) => {
+    if (!infographicData) return;
+    setInfographicData({
+      ...ensureDualAudienceCopy(infographicData),
+      activeAudience: next,
+    });
+  };
 
   const handleContentModeChange = (mode: FindingsInfographicContentMode) => {
     setContentMode(mode);
@@ -265,19 +286,53 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
               </span>
             </div>
             <p className="text-[11px] text-slate-400 mt-0.5 max-w-xl leading-relaxed">
-              Elige el tipo de contenido y la representación. Sin manejo ni «no mencionado».
+              Misma anatomía, dos lecturas: médico (técnica) y paciente (lenguaje llano).
             </p>
           </div>
         </div>
-        <label className="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer select-none shrink-0">
-          <input
-            type="checkbox"
-            checked={includeInReport}
-            onChange={(e) => setIncludeInReport(e.target.checked)}
-            className="rounded border-slate-600 bg-slate-800 text-teal-500 focus:ring-teal-500"
-          />
-          Incluir en PDF
-        </label>
+        <div className="flex flex-col items-end gap-2 shrink-0">
+          <label className="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={includeInReport}
+              onChange={(e) => setIncludeInReport(e.target.checked)}
+              className="rounded border-slate-600 bg-slate-800 text-teal-500 focus:ring-teal-500"
+            />
+            Incluir en PDF
+          </label>
+          {infographicData && includeInReport && (
+            <div className="flex flex-col items-end gap-1 text-[10px] text-slate-400">
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={infographicData.includeClinicianInPdf !== false}
+                  onChange={(e) =>
+                    setInfographicData({
+                      ...infographicData,
+                      includeClinicianInPdf: e.target.checked,
+                    })
+                  }
+                  className="rounded border-slate-600 bg-slate-800 text-teal-500"
+                />
+                Anexo médico
+              </label>
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={infographicData.includePatientInPdf !== false}
+                  onChange={(e) =>
+                    setInfographicData({
+                      ...infographicData,
+                      includePatientInPdf: e.target.checked,
+                    })
+                  }
+                  className="rounded border-slate-600 bg-slate-800 text-teal-500"
+                />
+                Anexo paciente
+              </label>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -415,6 +470,39 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
 
       {infographicData && scene && (
         <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+              Vista previa
+            </span>
+            <div className="inline-flex rounded-xl border border-slate-700 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setAudience("clinician")}
+                className={`px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider cursor-pointer ${
+                  audience === "clinician"
+                    ? "bg-teal-600 text-white"
+                    : "bg-slate-950 text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                Médico
+              </button>
+              <button
+                type="button"
+                onClick={() => setAudience("patient")}
+                className={`px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider cursor-pointer ${
+                  audience === "patient"
+                    ? "bg-cyan-600 text-white"
+                    : "bg-slate-950 text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                Paciente
+              </button>
+            </div>
+            <span className="text-[10px] text-slate-500">
+              Misma lámina · {audience === "patient" ? "lenguaje llano" : "léxico técnico"}
+            </span>
+          </div>
+
           <div className="rounded-2xl border border-teal-500/25 overflow-hidden bg-slate-950 -mx-1 sm:mx-0">
             <FindingsInfographicCanvas
               scene={scene}
@@ -427,13 +515,21 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
               <div className="space-y-1.5">
                 <p className="text-[10px] font-black uppercase tracking-[0.18em] text-teal-700">
                   {companion.synthesisEyebrow}
+                  {" · "}
+                  {audience === "patient" ? "Paciente" : "Médico"}
                 </p>
                 <textarea
-                  value={infographicData.synthesis ?? ""}
+                  value={
+                    audience === "patient"
+                      ? infographicData.patientSynthesis ?? ""
+                      : infographicData.synthesis ?? ""
+                  }
                   onChange={(e) =>
                     setInfographicData({
                       ...infographicData,
-                      synthesis: e.target.value,
+                      ...(audience === "patient"
+                        ? { patientSynthesis: e.target.value }
+                        : { synthesis: e.target.value }),
                     })
                   }
                   placeholder={companion.synthesis}
@@ -477,16 +573,49 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
           <div className="rounded-2xl border border-teal-500/20 bg-gradient-to-br from-teal-950/20 via-slate-950/80 to-slate-950 p-4 space-y-2">
             <div className="flex items-center gap-2 text-teal-300/90">
               <Pencil className="h-3.5 w-3.5" />
-              <span className="text-[10px] font-black uppercase tracking-widest">Editable</span>
+              <span className="text-[10px] font-black uppercase tracking-widest">
+                Editable · {audience === "patient" ? "Paciente" : "Médico"}
+              </span>
             </div>
             <input
               type="text"
-              value={infographicData.diagnosis}
-              onChange={(e) =>
-                setInfographicData({ ...infographicData, diagnosis: e.target.value })
+              value={
+                audience === "patient"
+                  ? infographicData.patientDiagnosis || ""
+                  : infographicData.diagnosis
               }
-              placeholder="Ancla / diagnóstico"
+              onChange={(e) =>
+                setInfographicData({
+                  ...infographicData,
+                  ...(audience === "patient"
+                    ? { patientDiagnosis: e.target.value }
+                    : { diagnosis: e.target.value }),
+                })
+              }
+              placeholder={
+                audience === "patient"
+                  ? "Ancla en lenguaje llano"
+                  : "Ancla / diagnóstico (médico)"
+              }
               className="w-full bg-transparent border-b border-teal-800/40 pb-1 text-sm font-black text-slate-100 outline-none focus:border-teal-400"
+            />
+            <input
+              type="text"
+              value={
+                audience === "patient"
+                  ? infographicData.patientTitle || ""
+                  : infographicData.title
+              }
+              onChange={(e) =>
+                setInfographicData({
+                  ...infographicData,
+                  ...(audience === "patient"
+                    ? { patientTitle: e.target.value }
+                    : { title: e.target.value }),
+                })
+              }
+              placeholder={audience === "patient" ? "Título paciente" : "Título médico"}
+              className="w-full bg-slate-950/80 border border-slate-800 rounded-lg px-2.5 py-1.5 text-[11px] text-slate-300 outline-none focus:border-teal-500"
             />
             <input
               type="text"
@@ -494,7 +623,7 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
               onChange={(e) =>
                 setInfographicData({ ...infographicData, studyRegion: e.target.value })
               }
-              placeholder="Región (opcional)"
+              placeholder="Región (opcional, compartida)"
               className="w-full bg-slate-950/80 border border-slate-800 rounded-lg px-2.5 py-1.5 text-[11px] text-slate-300 outline-none focus:border-teal-500"
             />
           </div>
@@ -521,13 +650,26 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 p-3.5">
                   <label className="space-y-1 md:col-span-2">
                     <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">
-                      Etiqueta
+                      Etiqueta médico
                     </span>
                     <input
                       type="text"
                       value={node.label}
                       onChange={(e) => updateNode(node.id, { label: e.target.value })}
                       className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-[11px] text-slate-200 outline-none focus:border-teal-500"
+                    />
+                  </label>
+                  <label className="space-y-1 md:col-span-2">
+                    <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">
+                      Etiqueta paciente
+                    </span>
+                    <input
+                      type="text"
+                      value={node.patientLabel || ""}
+                      onChange={(e) =>
+                        updateNode(node.id, { patientLabel: e.target.value })
+                      }
+                      className="w-full bg-slate-900 border border-cyan-900/40 rounded-xl px-3 py-2 text-[11px] text-slate-200 outline-none focus:border-cyan-500"
                     />
                   </label>
                   <label className="space-y-1">
@@ -551,13 +693,26 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
                   </label>
                   <label className="space-y-1 md:col-span-2">
                     <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">
-                      Detalle (opcional)
+                      Detalle médico
                     </span>
                     <textarea
                       value={node.detail || ""}
                       onChange={(e) => updateNode(node.id, { detail: e.target.value })}
                       rows={2}
                       className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-[11px] text-slate-300 outline-none focus:border-teal-500 resize-y"
+                    />
+                  </label>
+                  <label className="space-y-1 md:col-span-2">
+                    <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">
+                      Detalle paciente
+                    </span>
+                    <textarea
+                      value={node.patientDetail || ""}
+                      onChange={(e) =>
+                        updateNode(node.id, { patientDetail: e.target.value })
+                      }
+                      rows={2}
+                      className="w-full bg-slate-900 border border-cyan-900/40 rounded-xl px-3 py-2 text-[11px] text-slate-300 outline-none focus:border-cyan-500 resize-y"
                     />
                   </label>
                   <label className="space-y-1">

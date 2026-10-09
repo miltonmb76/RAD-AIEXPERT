@@ -2948,13 +2948,22 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
         Array.isArray(activeFindingsInfographic.nodes) &&
         activeFindingsInfographic.nodes.length > 0
       ) {
-        await renderFindingsInfographicAnnexToPDF(doc, activeFindingsInfographic, {
-          marginX,
-          pageWidth,
-          pageHeight,
-          contentWidth,
-          factor,
-        });
+        const includeClinician = activeFindingsInfographic.includeClinicianInPdf !== false;
+        const includePatient = activeFindingsInfographic.includePatientInPdf !== false;
+        const audiences: Array<"clinician" | "patient"> = [];
+        if (includeClinician) audiences.push("clinician");
+        if (includePatient) audiences.push("patient");
+        if (!audiences.length) audiences.push("clinician");
+        for (const audience of audiences) {
+          await renderFindingsInfographicAnnexToPDF(doc, activeFindingsInfographic, {
+            marginX,
+            pageWidth,
+            pageHeight,
+            contentWidth,
+            factor,
+            audience,
+          });
+        }
       }
 
       // --- ANEXO: FICHA DE LESIÓN DOMINANTE ---
