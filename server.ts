@@ -1771,6 +1771,7 @@ CONTENIDO — QUÉ SÍ / QUÉ NO:
 - NO: recomendaciones, tratamientos, “qué hacer después”, alarmismo, consejos clínicos.
 - NO inventes mediciones ni hallazgos ausentes del reporte.
 - NO: nombre del paciente ni ningún identificador personal (ni reales ni de ejemplo).
+- NO: escribir "estudio anónimo", "paciente anónimo" ni sellos de anonimato; omite la identidad sin mencionarlo.
 
 ${lateralityBlock}
 
@@ -1805,6 +1806,7 @@ CONTENIDO — QUÉ SÍ / QUÉ NO:
 - NO: recomendaciones, tratamientos, “qué hacer después”, derivaciones, alarmismo ni consejos clínicos.
 - NO inventes mediciones, gradaciones ni hallazgos que no estén en el reporte.
 - NO: nombre del paciente ni ningún identificador personal (ni reales ni de ejemplo / placeholder).
+- NO: escribir "estudio anónimo", "paciente anónimo" ni sellos de anonimato; omite la identidad sin mencionarlo.
 
 ${lateralityBlock}
 
@@ -10419,7 +10421,7 @@ REGLAS ESTRICTAS:
 13. layout: uno de los layouts válidos. Si el hint es "auto", elige el más adecuado entre los sugeridos (${suggestedLayouts}).
 14. NO inventes hallazgos. Negaciones solo si están escritas (ej. "sin líquido libre"); nunca digas que algo "no se mencionó".
 15. DUAL: patientLabel/patientDetail DEBEN describir el MISMO hallazgo anatómico que label/detail (misma disposición visual).
-16. PRIVACIDAD: ningún texto de la infografía (títulos, síntesis, nodos) puede incluir nombre, iniciales, ID u otros identificadores del paciente.
+16. PRIVACIDAD: ningún texto de la infografía (títulos, síntesis, nodos) puede incluir nombre, iniciales, ID u otros identificadores del paciente, ni frases como "estudio anónimo" / "paciente anónimo".
 
 Claves JSON en inglés:
 title, diagnosis, studyRegion, contentMode, layout, nodes, synthesis, patientTitle, patientDiagnosis, patientSynthesis.
