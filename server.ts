@@ -29,6 +29,10 @@ import {
   detectInfographicViewOrientation,
   type InfographicViewOrientation,
 } from "./src/lib/infographicLaterality";
+import {
+  INFOGRAPHIC_PRIVACY_PROMPT_BLOCK,
+  redactPatientIdentifiersForInfographic,
+} from "./src/lib/infographicPrivacy";
 import { buildUsAutoLabelAnatomyHints } from "./src/lib/usAutoLabelHints";
 import { normalizeSecondReaderData } from "./src/lib/secondReader";
 import {
@@ -1725,6 +1729,7 @@ app.post("/api/generate-infographic", async (req: express.Request, res: express.
       preferred: preferredView,
     });
     const lateralityBlock = buildInfographicLateralityPromptBlock(orientation);
+    const reportForInfographic = redactPatientIdentifiersForInfographic(String(report || ""));
     const correctionBlock = String(correctionNotes || "").trim()
       ? `
 
@@ -1744,12 +1749,14 @@ Haz UNA infografía CLÍNICA formal, elegante y científica para el MÉDICO, bas
 
 REPORTE:
 """
-${report}
+${reportForInfographic}
 """
 ${correctionBlock}
 
 ORIENTACIÓN DE LA FIGURA CORPORAL (obligatoria): ${orientation === "PA" ? "PA — paciente DE ESPALDAS" : "AP — paciente DE FRENTE"}.
 Aplica SOLO la regla de lateralidad correspondiente a esa orientación.
+
+${INFOGRAPHIC_PRIVACY_PROMPT_BLOCK}
 
 ESTILO (médico / científico):
 - Look de atlas o ficha clínica premium: tipografía sobria (sans geométrica o serif editorial), paleta fría o neutra (slate/azul médico), sin tono infantil ni “app de wellness”.
@@ -1763,6 +1770,7 @@ CONTENIDO — QUÉ SÍ / QUÉ NO:
 - SÍ: hallazgos principales del reporte, lateralidad, medidas si constan.
 - NO: recomendaciones, tratamientos, “qué hacer después”, alarmismo, consejos clínicos.
 - NO inventes mediciones ni hallazgos ausentes del reporte.
+- NO: nombre del paciente ni ningún identificador personal (ni reales ni de ejemplo).
 
 ${lateralityBlock}
 
@@ -1773,12 +1781,14 @@ Haz UNA infografía para el paciente basada en este reporte radiológico de ${st
 
 REPORTE:
 """
-${report}
+${reportForInfographic}
 """
 ${correctionBlock}
 
 ORIENTACIÓN DE LA FIGURA CORPORAL (obligatoria): ${orientation === "PA" ? "PA — paciente DE ESPALDAS" : "AP — paciente DE FRENTE"}.
 Aplica SOLO la regla de lateralidad correspondiente a esa orientación.
+
+${INFOGRAPHIC_PRIVACY_PROMPT_BLOCK}
 
 LIBERTAD DE DISEÑO (importante):
 - Tú eliges el layout, la jerarquía visual y cómo acomodar los hallazgos.
@@ -1794,6 +1804,7 @@ CONTENIDO — QUÉ SÍ / QUÉ NO:
 - SÍ: explicar de forma visual los hallazgos principales del reporte para que el paciente entienda qué se encontró.
 - NO: recomendaciones, tratamientos, “qué hacer después”, derivaciones, alarmismo ni consejos clínicos.
 - NO inventes mediciones, gradaciones ni hallazgos que no estén en el reporte.
+- NO: nombre del paciente ni ningún identificador personal (ni reales ni de ejemplo / placeholder).
 
 ${lateralityBlock}
 
@@ -10364,10 +10375,17 @@ app.post("/api/generate-findings-infographic", async (req: express.Request, res:
     const wantDual = dualAudience !== false;
     const scCat = (scorecardCategory || "").toString().trim();
 
+    const reportForFindings = redactPatientIdentifiersForInfographic(String(report || ""));
+    const historyForFindings = history
+      ? redactPatientIdentifiersForInfographic(history)
+      : "";
+
     const prompt = `Eres el mismo radiólogo hispanohablante que redactó este informe.
 Construye una INFOGRAFÍA DE HALLAZGOS para PDF/consola: nodos visuales según el TIPO DE CONTENIDO pedido.
 
 IDIOMA: TODO el texto visible en ESPAÑOL médico, voz del radiólogo (afirmaciones del informe). Nunca suenes como revisor externo.
+
+${INFOGRAPHIC_PRIVACY_PROMPT_BLOCK}
 
 ESTUDIO: ${studyType || "No especificado"}
 PRESET: ${preset}
@@ -10378,7 +10396,7 @@ ${contentInstructions}
 LAYOUT PREFERIDO: ${layoutHint}
 Layouts sugeridos para este contenido: ${suggestedLayouts}
 Layouts válidos: ${layoutCatalog}
-${history ? `HISTORIA CLINICA:\n"""\n${history}\n"""` : ""}
+${historyForFindings ? `HISTORIA CLINICA:\n"""\n${historyForFindings}\n"""` : ""}
 ${
   wantDual
     ? `MODO DUAL OBLIGATORIO: además del texto médico, rellena patientTitle, patientDiagnosis, patientSynthesis y patientLabel/patientDetail en CADA node. El lenguaje paciente debe ser claramente distinto (llano, sin jerga); la anatomía/hallazgo es el mismo.`
@@ -10401,6 +10419,7 @@ REGLAS ESTRICTAS:
 13. layout: uno de los layouts válidos. Si el hint es "auto", elige el más adecuado entre los sugeridos (${suggestedLayouts}).
 14. NO inventes hallazgos. Negaciones solo si están escritas (ej. "sin líquido libre"); nunca digas que algo "no se mencionó".
 15. DUAL: patientLabel/patientDetail DEBEN describir el MISMO hallazgo anatómico que label/detail (misma disposición visual).
+16. PRIVACIDAD: ningún texto de la infografía (títulos, síntesis, nodos) puede incluir nombre, iniciales, ID u otros identificadores del paciente.
 
 Claves JSON en inglés:
 title, diagnosis, studyRegion, contentMode, layout, nodes, synthesis, patientTitle, patientDiagnosis, patientSynthesis.
@@ -10408,7 +10427,7 @@ Cada node: id, label, detail, patientLabel, patientDetail, weight, polarity, gro
 
 INFORME:
 """
-${report}
+${reportForFindings}
 """
 `;
 
