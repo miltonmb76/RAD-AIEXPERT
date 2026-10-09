@@ -1429,6 +1429,7 @@ export interface FindingsInfographicData {
 /** One-page dominant lesion clinical card. */
 export type {
   DominantLesionCardData,
+  DominantLesionImageLayout,
   DominantLesionMeasurement,
 } from "./lib/dominantLesionCard";
 
