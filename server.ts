@@ -10502,10 +10502,11 @@ ${catalog}
 REGLAS:
 1. Elige UN templateId del catálogo. Si hay preferencia distinta de "auto", úsala salvo que sea claramente inadecuada.
 2. Extrae 3–10 hallazgos significativos (máx. 12). Orden = orden de mención / importancia clínica (lesión dominante primero).
-3. Cada item: n (1..N), label (corto), detail (opcional, 1 frase), side (Derecha/Izquierda/Bilateral/""), regionKey (slot del template), figureRef (número si el informe dice "Figura N" o similar; si no, null), severity ("primary" solo 1–2 claves, resto "secondary").
-4. Opcional: x,y (0–100) solo si necesitas afinar posición dentro del slot; si no, omítelos.
+3. Cada item: n (1..N), label (corto), detail (opcional, 1 frase), side (Derecha/Izquierda/Bilateral/""), regionKey (slot EXACTO del template), figureRef (número si el informe dice "Figura N" o similar; si no, null), severity ("primary" solo 1–2 claves, resto "secondary").
+4. NO envíes x,y: el servidor coloca los pins en los slots del template (evita que se amontonen).
 5. title breve (ej. "Mapa de hallazgos"), studyRegion anatómica breve, viewOrientation "AP" o "PA".
 6. Si hay instrucciones previas sobre qué enfatizar, filtrar normales, forzar plantilla o lateralidad: cúmplelas.
+7. En cuello/tiroides usa regionKey: lobe_r, lobe_l, isthmus, node_r, node_l (no inventes claves).
 
 JSON OBLIGATORIO (claves en inglés):
 {
