@@ -150,17 +150,25 @@ const TEMPLATES: FindingsMapTemplate[] = [
     id: "neck",
     label: "Cuello / tiroides",
     silhouette: `
-      <ellipse cx="50" cy="18" rx="14" ry="12" fill="#1e293b" stroke="#64748b" stroke-width="1.2"/>
-      <path d="M40 28 L60 28 L64 70 L36 70 Z" fill="#1e293b" stroke="#64748b" stroke-width="1.2"/>
-      <path d="M42 48 Q50 40 58 48 Q50 58 42 48" fill="#334155" stroke="#94a3b8" stroke-width="1"/>
+      <ellipse cx="50" cy="16" rx="13" ry="11" fill="#1e293b" stroke="#64748b" stroke-width="1.2"/>
+      <path d="M38 26 L62 26 L68 78 L32 78 Z" fill="#1e293b" stroke="#64748b" stroke-width="1.2"/>
+      <ellipse cx="38" cy="52" rx="11" ry="16" fill="#334155" stroke="#94a3b8" stroke-width="1"/>
+      <ellipse cx="62" cy="52" rx="11" ry="16" fill="#334155" stroke="#94a3b8" stroke-width="1"/>
+      <rect x="46" y="48" width="8" height="10" rx="2" fill="#475569" stroke="#94a3b8" stroke-width="0.8"/>
+      <circle cx="20" cy="46" r="5" fill="none" stroke="#64748b" stroke-width="0.9" stroke-dasharray="1.5 1.5"/>
+      <circle cx="80" cy="46" r="5" fill="none" stroke="#64748b" stroke-width="0.9" stroke-dasharray="1.5 1.5"/>
+      <text x="38" y="92" text-anchor="middle" fill="#64748b" font-size="4.5">DER</text>
+      <text x="62" y="92" text-anchor="middle" fill="#64748b" font-size="4.5">IZQ</text>
     `,
     slots: [
-      { key: "lobe_r", label: "Lóbulo der.", x: 42, y: 48 },
-      { key: "lobe_l", label: "Lóbulo izq.", x: 58, y: 48 },
-      { key: "isthmus", label: "Istmo", x: 50, y: 50 },
-      { key: "node_r", label: "Ganglios der.", x: 30, y: 44 },
-      { key: "node_l", label: "Ganglios izq.", x: 70, y: 44 },
-      { key: "midline", label: "Línea media", x: 50, y: 36 },
+      { key: "lobe_r", label: "Lóbulo der.", x: 38, y: 52 },
+      { key: "lobe_l", label: "Lóbulo izq.", x: 62, y: 52 },
+      { key: "isthmus", label: "Istmo", x: 50, y: 54 },
+      { key: "node_r", label: "Ganglios der.", x: 20, y: 46 },
+      { key: "node_l", label: "Ganglios izq.", x: 80, y: 46 },
+      { key: "midline", label: "Línea media", x: 50, y: 34 },
+      { key: "node_r_low", label: "Ganglios der. bajos", x: 24, y: 68 },
+      { key: "node_l_low", label: "Ganglios izq. bajos", x: 76, y: 68 },
     ],
   },
   {
@@ -247,25 +255,53 @@ function resolveSlot(
   regionKey: string,
   side?: string
 ): FindingsMapSlot {
-  const key = String(regionKey || "").trim().toLowerCase();
+  const key = String(regionKey || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
   const direct = template.slots.find((s) => s.key === key);
   if (direct) return direct;
 
-  // Fuzzy helpers
-  const sideNorm = String(side || "").toLowerCase();
-  const preferRight = /derech/.test(sideNorm) || key.includes("_r") || key.endsWith("r");
-  const preferLeft = /izquier/.test(sideNorm) || key.includes("_l") || key.endsWith("l");
+  const sideNorm = String(side || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  const preferRight =
+    /derech|\bderecho\b|\bderecha\b|\bright\b/.test(sideNorm) ||
+    /_r\b|_r$|right|der/.test(key);
+  const preferLeft =
+    /izquier|\bleft\b/.test(sideNorm) || /_l\b|_l$|left|izq/.test(key);
+
+  // Anatomy-aware aliases (esp. cuello / tiroides)
+  const aliases: Array<{ test: RegExp; keys: string[] }> = [
+    { test: /istmo|isthmus/, keys: ["isthmus"] },
+    { test: /lobulo.*der|lobe_r|right.?lobe|tiroides?\s*der/, keys: ["lobe_r"] },
+    { test: /lobulo.*izq|lobe_l|left.?lobe|tiroides?\s*izq/, keys: ["lobe_l"] },
+    { test: /ganglio|node|linf/, keys: preferLeft ? ["node_l", "node_l_low"] : preferRight ? ["node_r", "node_r_low"] : ["node_r", "node_l"] },
+    { test: /lobulo|lobe|tiroides/, keys: preferLeft ? ["lobe_l"] : preferRight ? ["lobe_r"] : ["lobe_r", "lobe_l", "midline"] },
+  ];
+  for (const a of aliases) {
+    if (!a.test.test(key) && !a.test.test(sideNorm)) continue;
+    for (const k of a.keys) {
+      const hit = template.slots.find((s) => s.key === k);
+      if (hit) return hit;
+    }
+  }
 
   if (preferRight) {
-    const hit = template.slots.find((s) => /_r$|right|der|medial/.test(s.key) === false && /_r|der|right/.test(s.key));
+    const hit = template.slots.find((s) => /_r$|_r_|right|der/.test(s.key));
     if (hit) return hit;
   }
   if (preferLeft) {
-    const hit = template.slots.find((s) => /_l|izq|left/.test(s.key));
+    const hit = template.slots.find((s) => /_l$|_l_|left|izq/.test(s.key));
     if (hit) return hit;
   }
 
-  return template.slots.find((s) => s.key === "center" || s.key === "mc" || s.key === "midline") || template.slots[0];
+  return (
+    template.slots.find((s) => s.key === "center" || s.key === "mc" || s.key === "midline") ||
+    template.slots[0]
+  );
 }
 
 export function normalizeFindingsMapData(raw: any, priorInstructions?: string): FindingsMapData {
@@ -295,8 +331,6 @@ export function normalizeFindingsMapData(raw: any, priorInstructions?: string): 
         fig === null || fig === undefined || fig === ""
           ? null
           : Number(fig) || null;
-      const x = Number(it?.x);
-      const y = Number(it?.y);
       return {
         n,
         label,
@@ -305,8 +339,9 @@ export function normalizeFindingsMapData(raw: any, priorInstructions?: string): 
         regionKey: slot.key,
         figureRef,
         severity: String(it?.severity || "").toLowerCase() === "primary" ? "primary" : "secondary",
-        x: Number.isFinite(x) && x >= 0 && x <= 100 ? x : slot.x,
-        y: Number.isFinite(y) && y >= 0 && y <= 100 ? y : slot.y,
+        // Always anchor to template slots (AI xy tended to cluster pins in PDF)
+        x: slot.x,
+        y: slot.y,
       } as FindingsMapItem;
     })
     .filter(Boolean) as FindingsMapItem[];
@@ -316,15 +351,46 @@ export function normalizeFindingsMapData(raw: any, priorInstructions?: string): 
     it.n = i + 1;
   });
 
+  const spread = spreadOverlappingPins(items);
+
   return {
     title: cleanText(raw?.title, 80) || "Mapa de hallazgos",
     studyRegion: cleanText(raw?.studyRegion || raw?.region, 80) || template.label,
     templateId,
     viewOrientation,
-    items: items.slice(0, 12),
+    items: spread.slice(0, 12),
     priorInstructions: cleanText(priorInstructions || raw?.priorInstructions, 500) || undefined,
     generatedAt: new Date().toISOString(),
   };
+}
+
+/** Nudge pins that share nearly the same slot so they don't stack. */
+export function spreadOverlappingPins(items: FindingsMapItem[]): FindingsMapItem[] {
+  const byKey = new Map<string, FindingsMapItem[]>();
+  for (const it of items) {
+    const key = `${Math.round(it.x ?? 50)},${Math.round(it.y ?? 50)}`;
+    const list = byKey.get(key) || [];
+    list.push(it);
+    byKey.set(key, list);
+  }
+  const out: FindingsMapItem[] = [];
+  for (const group of byKey.values()) {
+    if (group.length === 1) {
+      out.push(group[0]);
+      continue;
+    }
+    group.forEach((it, i) => {
+      const angle = (i / group.length) * Math.PI * 2 - Math.PI / 2;
+      const radius = 6 + Math.floor(i / 4) * 3;
+      out.push({
+        ...it,
+        x: Math.min(96, Math.max(4, (it.x ?? 50) + Math.cos(angle) * radius)),
+        y: Math.min(114, Math.max(6, (it.y ?? 50) + Math.sin(angle) * radius)),
+      });
+    });
+  }
+  // Preserve original order by n
+  return out.sort((a, b) => a.n - b.n);
 }
 
 export function positionedItems(data: FindingsMapData): Array<FindingsMapItem & { slotLabel: string }> {
