@@ -62,6 +62,16 @@ export interface ElastographyPresentationData {
   clinicalRecommendations: string[];
 }
 
+type ElastographyAttachedCapture = {
+  id: string;
+  url?: string;
+  preview?: string;
+  label?: string;
+  caption?: string;
+  name?: string;
+  notes?: string;
+};
+
 interface ElastographyQUSPresentationModuleProps {
   selectedModel?: string;
   reportText: string;
@@ -77,6 +87,24 @@ interface ElastographyQUSPresentationModuleProps {
   onImageChanged?: (base64: string | null) => void;
   onOriginalImageChanged?: (base64: string | null) => void;
   onEtiologyChanged?: (etiology: string) => void;
+  /** Capturas del estudio; si alguna está rotulada como Hígado, se ofrece / auto-inserta en el panel Modo B. */
+  attachedImages?: ElastographyAttachedCapture[];
+}
+
+const LIVER_LABEL_RE =
+  /\b(h[ií]gado|higado|hep[aá]tic[oa]|par[eé]nquima\s+hep|liver)\b/i;
+
+function captureTextBlob(img: ElastographyAttachedCapture): string {
+  return [img.label, img.caption, img.name, img.notes].filter(Boolean).join(" ");
+}
+
+function isLiverLabeledCapture(img: ElastographyAttachedCapture): boolean {
+  return LIVER_LABEL_RE.test(captureTextBlob(img));
+}
+
+function captureSrc(img: ElastographyAttachedCapture): string | null {
+  const src = (img.url || img.preview || "").trim();
+  return src || null;
 }
 
 const ETIOLOGY_OPTIONS = [
@@ -103,6 +131,7 @@ export const ElastographyQUSPresentationModule: React.FC<ElastographyQUSPresenta
   onImageChanged,
   onOriginalImageChanged,
   onEtiologyChanged,
+  attachedImages = [],
 }) => {
   const [stiffnessKpa, setStiffnessKpa] = useState<number>(initialStiffness);
   const [capDbM, setCapDbM] = useState<number>(initialCAP);
@@ -114,6 +143,8 @@ export const ElastographyQUSPresentationModule: React.FC<ElastographyQUSPresenta
   const [activeTabVisual, setActiveTabVisual] = useState<"triptych" | "scatter" | "guidelines">("triptych");
   const [isSyncingWithReport, setIsSyncingWithReport] = useState<boolean>(false);
   const [customImageBase64, setCustomImageBase64] = useState<string | null>(null);
+  /** When the Modo B slot came from a gallery capture labeled Hígado */
+  const [originalFromLiverCaptureId, setOriginalFromLiverCaptureId] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState<boolean>(false);
   const [injectedSuccess, setInjectedSuccess] = useState<boolean>(false);
   const [view3DAngle, setView3DAngle] = useState<number>(0);
@@ -122,8 +153,38 @@ export const ElastographyQUSPresentationModule: React.FC<ElastographyQUSPresenta
   
   const [generated3dImageBase64, setGenerated3dImageBase64] = useState<string | null>(null);
   const [isGenerating3d, setIsGenerating3d] = useState<boolean>(false);
+  const autoInsertedLiverRef = useRef<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const liverCaptures = useMemo(
+    () =>
+      (attachedImages || []).filter(
+        (img) => isLiverLabeledCapture(img) && Boolean(captureSrc(img))
+      ),
+    [attachedImages]
+  );
+
+  const applyOriginalCapture = (src: string, fromLiverId?: string | null) => {
+    setCustomImageBase64(src);
+    onOriginalImageChanged?.(src);
+    setOriginalFromLiverCaptureId(fromLiverId || null);
+    setGenerated3dImageBase64(null);
+    onImageChanged?.(null);
+  };
+
+  // Auto-insert first capture rotulada como Hígado into the Modo B slot when empty.
+  useEffect(() => {
+    if (customImageBase64) return;
+    if (!liverCaptures.length) return;
+    const first = liverCaptures[0];
+    const src = captureSrc(first);
+    if (!src) return;
+    if (autoInsertedLiverRef.current === first.id) return;
+    autoInsertedLiverRef.current = first.id;
+    applyOriginalCapture(src, first.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when liver gallery / empty slot changes
+  }, [liverCaptures, customImageBase64]);
 
   // Sync initial props when they change
   useEffect(() => {
@@ -455,10 +516,7 @@ export const ElastographyQUSPresentationModule: React.FC<ElastographyQUSPresenta
     const reader = new FileReader();
     reader.onload = (ev) => {
       if (typeof ev.target?.result === "string") {
-        setCustomImageBase64(ev.target.result);
-        onOriginalImageChanged?.(ev.target.result);
-        setGenerated3dImageBase64(null); // Reset generated image when new ultrasound is loaded
-        onImageChanged?.(null);
+        applyOriginalCapture(ev.target.result, null);
       }
     };
     reader.readAsDataURL(file);
@@ -751,14 +809,21 @@ export const ElastographyQUSPresentationModule: React.FC<ElastographyQUSPresenta
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-          {/* PANEL 1: FOTO MODO B (Original) */}
+          {/* PANEL 1: FOTO MODO B (Original) — US hígado / mapa elastográfico */}
           <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between relative overflow-hidden group">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-800/80 mb-2">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800/80 mb-2 gap-2">
               <span className="text-[10px] font-black uppercase tracking-wider text-cyan-400 font-mono flex items-center gap-1.5">
                 <Camera className="h-3.5 w-3.5" />
                 Evidencia Ecográfica Original
               </span>
-              <span className="text-[9px] font-mono text-slate-500">Mapeo Elastográfico 2D</span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {originalFromLiverCaptureId && (
+                  <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-950/70 text-emerald-300 border border-emerald-700/50">
+                    Hígado
+                  </span>
+                )}
+                <span className="text-[9px] font-mono text-slate-500">US / SWE 2D</span>
+              </div>
             </div>
 
             <div className="relative w-full h-[280px] bg-[#020617] rounded-xl border border-slate-800 overflow-hidden flex items-center justify-center">
@@ -766,7 +831,7 @@ export const ElastographyQUSPresentationModule: React.FC<ElastographyQUSPresenta
                 <img 
                   id="elastography-original-img"
                   src={customImageBase64} 
-                  alt="Ecografía Original" 
+                  alt={originalFromLiverCaptureId ? "US Hígado" : "Ecografía Original"} 
                   className="w-full h-full object-contain"
                 />
               ) : (
@@ -774,12 +839,16 @@ export const ElastographyQUSPresentationModule: React.FC<ElastographyQUSPresenta
                   <div className="p-4 bg-slate-900 rounded-full border border-slate-700/50 mb-3">
                     <Upload className="h-6 w-6 text-slate-500" />
                   </div>
-                  <p className="text-xs text-slate-400 mb-1">Cargar mapa elastográfico</p>
+                  <p className="text-xs text-slate-400 mb-1">
+                    {liverCaptures.length
+                      ? "Usar captura rotulada Hígado o cargar archivo"
+                      : "Cargar US de hígado / mapa elastográfico"}
+                  </p>
                   <p className="text-[10px] text-slate-600 font-mono">Requerido para generar modelo 3D</p>
                 </div>
               )}
 
-              <div className="absolute top-2 right-2 flex items-center gap-1">
+              <div className="absolute top-2 right-2 flex items-center gap-1 flex-wrap justify-end max-w-[90%]">
                 <input 
                   type="file" 
                   ref={fileInputRef} 
@@ -787,6 +856,21 @@ export const ElastographyQUSPresentationModule: React.FC<ElastographyQUSPresenta
                   accept="image/*" 
                   className="hidden" 
                 />
+                {liverCaptures.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const pick = liverCaptures[0];
+                      const src = captureSrc(pick);
+                      if (src) applyOriginalCapture(src, pick.id);
+                    }}
+                    className="p-1.5 bg-emerald-950/90 hover:bg-emerald-900 text-emerald-200 rounded-lg border border-emerald-700/60 text-[9px] font-mono flex items-center gap-1 cursor-pointer"
+                    title="Insertar la captura del estudio rotulada como Hígado"
+                  >
+                    <Camera className="h-3 w-3 text-emerald-400" />
+                    <span>US Hígado</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
@@ -800,6 +884,9 @@ export const ElastographyQUSPresentationModule: React.FC<ElastographyQUSPresenta
                     type="button"
                     onClick={() => {
                       setCustomImageBase64(null);
+                      setOriginalFromLiverCaptureId(null);
+                      // Prevent immediate re-auto-insert after manual clear
+                      autoInsertedLiverRef.current = "__cleared__";
                       onOriginalImageChanged?.(null);
                       setGenerated3dImageBase64(null);
                       onImageChanged?.(null);
@@ -811,9 +898,38 @@ export const ElastographyQUSPresentationModule: React.FC<ElastographyQUSPresenta
                 )}
               </div>
             </div>
+
+            {liverCaptures.length > 1 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {liverCaptures.map((img, idx) => {
+                  const src = captureSrc(img);
+                  if (!src) return null;
+                  const active = originalFromLiverCaptureId === img.id;
+                  return (
+                    <button
+                      key={img.id}
+                      type="button"
+                      onClick={() => applyOriginalCapture(src, img.id)}
+                      className={`px-2 py-1 rounded-lg text-[9px] font-mono border cursor-pointer ${
+                        active
+                          ? "bg-emerald-900/60 border-emerald-500 text-emerald-100"
+                          : "bg-slate-950 border-slate-700 text-slate-400 hover:text-slate-200"
+                      }`}
+                      title={img.caption || img.label || img.name || "Hígado"}
+                    >
+                      Hígado {idx + 1}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             
             <div className="mt-2 text-[10px] text-slate-400 font-mono flex justify-between items-center">
-              <span>Biometría de superficie</span>
+              <span>
+                {originalFromLiverCaptureId
+                  ? "Desde galería · rotulado Hígado"
+                  : "Biometría de superficie"}
+              </span>
               <span className="text-cyan-400 font-bold">Ventana intercostal</span>
             </div>
           </div>

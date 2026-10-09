@@ -11502,6 +11502,7 @@ Ejemplo:
                                   initialFatFraction={elastographyFatFraction}
                                   includeInReport={includeElastographyInReport}
                                   onToggleIncludeInReport={setIncludeElastographyInReport}
+                                  attachedImages={attachedImages}
                                   onValuesChanged={(stiffness, cap, fatFraction) => {
                                     setElastographyStiffness(stiffness);
                                     setElastographyCAP(cap);
