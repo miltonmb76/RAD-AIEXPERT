@@ -9,6 +9,7 @@ import {
   Hexagon,
 } from "lucide-react";
 import type {
+  ClinicalScorecardData,
   FindingsInfographicContentMode,
   FindingsInfographicData,
   FindingsInfographicLayout,
@@ -26,6 +27,8 @@ import {
   normalizeFindingsInfographicData,
   resolveInfographicDiagnosis,
 } from "../lib/findingsInfographic";
+import { getScorecardGovernance } from "../lib/clinicalIntelligence";
+import { infographicFromScorecard } from "../lib/infographicFromModules";
 import { FindingsInfographicCanvas } from "./FindingsInfographicCanvas";
 
 interface FindingsInfographicModuleProps {
@@ -37,6 +40,8 @@ interface FindingsInfographicModuleProps {
   setInfographicData: (data: FindingsInfographicData | null) => void;
   includeInReport: boolean;
   setIncludeInReport: (include: boolean) => void;
+  /** When present, categoryAssigned governs diagnosis / criteria nodes. */
+  scorecardData?: ClinicalScorecardData | null;
 }
 
 const QUICK_LAYOUTS: FindingsInfographicLayout[] = [
@@ -61,6 +66,7 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
   setInfographicData,
   includeInReport,
   setIncludeInReport,
+  scorecardData = null,
 }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -72,7 +78,11 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
     "convergence"
   );
 
-  const diagnosisLabel = resolveInfographicDiagnosis(presetId, customDiagnosis);
+  const scoreGov = getScorecardGovernance(scorecardData);
+  const diagnosisLabel =
+    presetId === "auto" && scoreGov?.categoryAssigned
+      ? scoreGov.categoryAssigned
+      : resolveInfographicDiagnosis(presetId, customDiagnosis);
   const modeMeta = contentModeMeta(contentMode);
 
   const scene = useMemo(
@@ -111,6 +121,39 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
     setIsLoading(true);
     setError(null);
     try {
+      // Prefer scorecard bridge when category governs classification criteria
+      if (
+        scorecardData &&
+        scoreGov?.categoryAssigned &&
+        (contentMode === "classification_criteria" || presetId === "auto")
+      ) {
+        const fromScore = infographicFromScorecard(scorecardData);
+        setInfographicData(
+          normalizeFindingsInfographicData(
+            {
+              ...fromScore,
+              contentMode:
+                contentMode === "classification_criteria"
+                  ? "classification_criteria"
+                  : fromScore.contentMode,
+              layout:
+                layoutChoice === "auto" ? fromScore.layout : layoutChoice,
+              title:
+                contentMode === "classification_criteria"
+                  ? modeMeta.defaultTitle
+                  : fromScore.title,
+            },
+            scoreGov.categoryAssigned,
+            layoutChoice === "auto" ? fromScore.layout : layoutChoice,
+            contentMode === "classification_criteria"
+              ? "classification_criteria"
+              : fromScore.contentMode
+          )
+        );
+        setIncludeInReport(true);
+        return;
+      }
+
       const response = await fetch("/api/generate-findings-infographic", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -123,16 +166,23 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
           diagnosisPreset: presetId,
           layout: layoutChoice,
           contentMode,
+          scorecardCategory: scoreGov?.categoryAssigned || undefined,
+          scorecardProtocol: scoreGov?.protocolName || undefined,
+          scorecardRecommendation: scoreGov?.recommendation || undefined,
         }),
       });
       const json = await response.json();
       if (!json.success || !json.data) {
         throw new Error(json.error || "No se pudo generar la infografía.");
       }
+      const lockedDiagnosis = scoreGov?.categoryAssigned || diagnosisLabel;
       setInfographicData(
         normalizeFindingsInfographicData(
-          json.data,
-          diagnosisLabel,
+          {
+            ...json.data,
+            diagnosis: lockedDiagnosis,
+          },
+          lockedDiagnosis,
           layoutChoice,
           contentMode
         )

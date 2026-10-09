@@ -1,4 +1,5 @@
 import {
+  applyScorecardGovernanceToFigurePack,
   buildAtlasDirectivesFromScorecard,
   buildAtlasPanelFindingAssignments,
   buildVascularDirectivesFromScorecard,
@@ -229,6 +230,13 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
     // 2. Trigger async AI generation processes concurrently
     const promises: Promise<any>[] = [];
 
+    // Scorecard bridge: downstream modules await this gate so categoryAssigned is ready
+    let scorecardBridge: any = clinicalScorecardData;
+    let releaseScorecardGate: (v?: any) => void = () => {};
+    const scorecardGate = new Promise<any>((resolve) => {
+      releaseScorecardGate = resolve;
+    });
+
     if (modules.case_analysis) promises.push(handleAnalyzeCase());
     if (modules.bibliography) promises.push(handleSearchBibliography());
 
@@ -360,6 +368,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
             const scJson = await scResp.json();
             if (scJson.success && scJson.data) {
               scorecardForModules = scJson.data;
+              scorecardBridge = scJson.data;
               setClinicalScorecardData(scJson.data);
               // Scorecard activates for directives/Atlas; PDF annex stays opt-in
               setIncludeScorecardInReport(false);
@@ -372,6 +381,9 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
             console.error("Error al generar Scorecard en lote:", scErr);
           }
         }
+
+        // Unlock diferencial / infografía as soon as category is known (suites can continue)
+        releaseScorecardGate(scorecardBridge);
 
         if (modules.atlas3d) {
           try {
@@ -398,6 +410,8 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
               if (scorecardForModules?.atlasOverlays?.length) {
                 nextAtlas = mergeOverlaysOntoAtlas(nextAtlas, scorecardForModules.atlasOverlays, "shared") || nextAtlas;
               }
+              nextAtlas =
+                applyScorecardGovernanceToFigurePack(nextAtlas, scorecardForModules) || nextAtlas;
               setAtlas3dData(nextAtlas);
               setIncludeAtlas3dInReport(true);
             }
@@ -420,7 +434,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
             });
             const j = await resp.json();
             if (j.success && j.data) {
-              setVascular3dData(j.data);
+              setVascular3dData(applyScorecardGovernanceToFigurePack(j.data, scorecardForModules) || j.data);
               setIncludeVascular3dInReport(true);
             }
           } catch (e) {
@@ -443,7 +457,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
             });
             const j = await resp.json();
             if (j.success && j.data) {
-              setThyroid3dData(j.data);
+              setThyroid3dData(applyScorecardGovernanceToFigurePack(j.data, scorecardForModules) || j.data);
               setIncludeThyroid3dInReport(true);
               setIsThyroid3dSuiteOpen(true);
             }
@@ -467,7 +481,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
             });
             const j = await resp.json();
             if (j.success && j.data) {
-              setBreast3dData(j.data);
+              setBreast3dData(applyScorecardGovernanceToFigurePack(j.data, scorecardForModules) || j.data);
               setIncludeBreast3dInReport(true);
               setIsBreast3dSuiteOpen(true);
             }
@@ -500,7 +514,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
             });
             const j = await resp.json();
             if (j.success && j.data) {
-              setShoulder3dData(j.data);
+              setShoulder3dData(applyScorecardGovernanceToFigurePack(j.data, scorecardForModules) || j.data);
               setIncludeShoulder3dInReport(true);
               setIsShoulder3dSuiteOpen(true);
             }
@@ -533,7 +547,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
             });
             const j = await resp.json();
             if (j.success && j.data) {
-              setKnee3dData(j.data);
+              setKnee3dData(applyScorecardGovernanceToFigurePack(j.data, scorecardForModules) || j.data);
               setIncludeKnee3dInReport(true);
               setIsKnee3dSuiteOpen(true);
             }
@@ -566,7 +580,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
             });
             const jAnkle = await resp.json();
             if (jAnkle.success && jAnkle.data) {
-              setAnkle3dData(jAnkle.data);
+              setAnkle3dData(applyScorecardGovernanceToFigurePack(jAnkle.data, scorecardForModules) || jAnkle.data);
               setIncludeAnkle3dInReport(true);
               setIsAnkle3dSuiteOpen(true);
             }
@@ -599,7 +613,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
             });
             const jKid = await resp.json();
             if (jKid.success && jKid.data) {
-              setKidney3dData(jKid.data);
+              setKidney3dData(applyScorecardGovernanceToFigurePack(jKid.data, scorecardForModules) || jKid.data);
               setIncludeKidney3dInReport(true);
               setIsKidney3dSuiteOpen(true);
             }
@@ -632,7 +646,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
             });
             const jAbd = await resp.json();
             if (jAbd.success && jAbd.data) {
-              setAbdomen3dData(jAbd.data);
+              setAbdomen3dData(applyScorecardGovernanceToFigurePack(jAbd.data, scorecardForModules) || jAbd.data);
               setIncludeAbdomen3dInReport(true);
               setIsAbdomen3dSuiteOpen(true);
             }
@@ -665,7 +679,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
             });
             const jWall = await resp.json();
             if (jWall.success && jWall.data) {
-              setAbdominalWall3dData(jWall.data);
+              setAbdominalWall3dData(applyScorecardGovernanceToFigurePack(jWall.data, scorecardForModules) || jWall.data);
               setIncludeAbdominalWall3dInReport(true);
               setIsAbdominalWall3dSuiteOpen(true);
             }
@@ -698,7 +712,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
             });
             const jScr = await resp.json();
             if (jScr.success && jScr.data) {
-              setScrotum3dData(jScr.data);
+              setScrotum3dData(applyScorecardGovernanceToFigurePack(jScr.data, scorecardForModules) || jScr.data);
               setIncludeScrotum3dInReport(true);
               setIsScrotum3dSuiteOpen(true);
             }
@@ -731,7 +745,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
             });
             const jMt = await resp.json();
             if (jMt.success && jMt.data) {
-              setMuscleTendon3dData(jMt.data);
+              setMuscleTendon3dData(applyScorecardGovernanceToFigurePack(jMt.data, scorecardForModules) || jMt.data);
               setIncludeMuscleTendon3dInReport(true);
               setIsMuscleTendon3dSuiteOpen(true);
             }
@@ -764,7 +778,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
             });
             const jWr = await resp.json();
             if (jWr.success && jWr.data) {
-              setWrist3dData(jWr.data);
+              setWrist3dData(applyScorecardGovernanceToFigurePack(jWr.data, scorecardForModules) || jWr.data);
               setIncludeWrist3dInReport(true);
               setIsWrist3dSuiteOpen(true);
             }
@@ -774,6 +788,8 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
         }
 
       })());
+    } else {
+      releaseScorecardGate(scorecardBridge);
     }
 
     if (modules.reasoning_chain) {
@@ -862,6 +878,15 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
       promises.push((async () => {
         setIsDifferentialTreeOpen(true);
         try {
+          await scorecardGate;
+          const sc = scorecardBridge;
+          const {
+            alignDifferentialTreeToScorecard,
+            differentialFocusFromScorecard,
+            getScorecardGovernance,
+          } = await import("./clinicalIntelligence");
+          const gov = getScorecardGovernance(sc);
+          const scoreFocus = differentialFocusFromScorecard(sc);
           const resp = await fetch("/api/generate-differential-tree", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -871,11 +896,17 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
               studyType: specificStudy || studyType || "",
               clinicalHistory: clinicalHistory || "",
               includeManagement: false,
+              focusText: scoreFocus || undefined,
+              scorecardCategory: gov?.categoryAssigned || undefined,
+              scorecardProtocol: gov?.protocolName || undefined,
+              scorecardRecommendation: gov?.recommendation || undefined,
             }),
           });
           const j = await resp.json();
           if (j.success && j.data) {
-            setDifferentialTreeData(j.data);
+            setDifferentialTreeData(
+              alignDifferentialTreeToScorecard(j.data, sc) || j.data
+            );
             setIncludeDifferentialTreeInReport(true);
           } else {
             console.error("Arbol de diferenciales en lote fallo:", j.error);
@@ -919,6 +950,16 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
       promises.push((async () => {
         setIsFindingsInfographicOpen(true);
         try {
+          await scorecardGate;
+          const sc = scorecardBridge;
+          const { getScorecardGovernance } = await import("./clinicalIntelligence");
+          const { infographicFromScorecard } = await import("./infographicFromModules");
+          const gov = getScorecardGovernance(sc);
+          if (sc && gov?.categoryAssigned) {
+            setFindingsInfographicData(infographicFromScorecard(sc));
+            setIncludeFindingsInfographicInReport(true);
+            return;
+          }
           const resp = await fetch("/api/generate-findings-infographic", {
             method: "POST",
             headers: { "Content-Type": "application/json" },

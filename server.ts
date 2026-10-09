@@ -9904,7 +9904,17 @@ JSON OBLIGATORIO:
  */
 app.post("/api/generate-differential-tree", async (req: express.Request, res: express.Response) => {
   try {
-    const { model, report, studyType, clinicalHistory, focusText, includeManagement } = req.body;
+    const {
+      model,
+      report,
+      studyType,
+      clinicalHistory,
+      focusText,
+      includeManagement,
+      scorecardCategory,
+      scorecardProtocol,
+      scorecardRecommendation,
+    } = req.body;
     if (!report || !String(report).trim()) {
       return res.status(400).json({ success: false, error: "Se requiere el parámetro 'report'." });
     }
@@ -9914,6 +9924,9 @@ app.post("/api/generate-differential-tree", async (req: express.Request, res: ex
     const focus = (focusText || "").toString().trim();
     const history = (clinicalHistory || "").toString().trim();
     const withManagement = includeManagement === true;
+    const scCat = (scorecardCategory || "").toString().trim();
+    const scProto = (scorecardProtocol || "").toString().trim();
+    const scReco = (scorecardRecommendation || "").toString().trim();
 
     const prompt = `Eres un radiólogo hispanohablante experto en diagnóstico diferencial.
 Construye un ÁRBOL DE DIFERENCIALES CON PODA a partir del informe: hipótesis iniciales, criterios a favor/en contra, y poda explícita de ramas incompatibles hasta el diagnóstico más probable.
@@ -9923,6 +9936,14 @@ IDIOMA: TODO el texto visible en ESPAÑOL médico.
 ESTUDIO: ${studyType || "No especificado"}
 ${history ? `HISTORIA CLINICA:\n"""\n${history}\n"""` : "Sin historia adicional."}
 ${focus ? `ENFOQUE DEL MEDICO (prioridad): "${focus}"` : "Sin enfoque libre: deriva del informe."}
+${
+  scCat
+    ? `SCORECARD (GOBIERNA EL LEADING): categoría «${scCat}»${scProto ? ` (${scProto})` : ""}.${
+        scReco ? ` Conducta scorecard: ${scReco}` : ""
+      }
+El leadingDiagnosis y la rama status "leading" DEBEN alinearse con «${scCat}». Poda lo incompatible con esa categoría.`
+    : ""
+}
 
 REGLAS:
 1. Genera 3 a 5 branches (hipótesis). Exactamente UNA con status "leading".

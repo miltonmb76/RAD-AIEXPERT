@@ -26,6 +26,7 @@ import {
 import { Atlas3DData, Atlas3DPanel, Atlas3DSynopticItem, AtlasPanelFindingAssignment, ClinicalScorecardData, AtlasPathologyOverlay, SuiteImageAnnotation } from "../types";
 import { runBackgroundTask } from "../lib/backgroundTasks";
 import {
+  applyScorecardGovernanceToFigurePack,
   buildAtlasDirectivesFromScorecard,
   buildAtlasPanelFindingAssignments,
   mergeOverlaysOntoAtlas,
@@ -298,7 +299,10 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
           letters,
           3
         );
-        setAtlasData(withSuggestedImageAnnotations(nextData, suggested));
+        const withAnns = withSuggestedImageAnnotations(nextData, suggested);
+        setAtlasData(
+          applyScorecardGovernanceToFigurePack(withAnns, scorecardData || null) as Atlas3DData
+        );
         setIncludeInReport(true);
       });
     } catch (err: any) {

@@ -81,10 +81,13 @@ export function infographicFromScorecard(
           scorecard.scoreTotal
             ? `Criterios cumplidos: ${scorecard.scoreMet}/${scorecard.scoreTotal}.`
             : "",
+          scorecard.recommendation
+            ? `Conducta: ${String(scorecard.recommendation).trim()}`
+            : "",
         ]
           .filter(Boolean)
           .join(" "),
-        320
+        360
       ),
     },
     diagnosis,
