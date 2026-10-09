@@ -1059,6 +1059,11 @@ export function buildContentModePromptInstructions(
       return `CONTENIDO: ESCALERA DE SEVERIDAD. Ordena 4-7 hallazgos de "${dx}" de menor a mayor relevancia clínica (el último/más grave con weight=primary).`;
     case "justify_diagnosis":
     default:
-      return `CONTENIDO: JUSTIFICACIÓN DIAGNÓSTICA. Extrae 4-7 hallazgos que sostienen "${dx}". polarity="present".`;
+      return `CONTENIDO: JUSTIFICACIÓN DIAGNÓSTICA.
+- diagnosis DEBE ser exactamente el ancla que se está defendiendo: "${dx}" (redacción limpia, sin signos de interrogación).
+- Extrae 4-7 hallazgos/factores EXPLÍCITOS del informe que SUSTENTAN ese diagnóstico (no otro).
+- Cada node = un factor de soporte (semiología, medida, signo, localización) con polarity="present".
+- Si el informe menciona diagnósticos diferenciales o hallazgos ajenos a "${dx}", NO los uses como nodos de soporte salvo que refuercen "${dx}".
+- Prioriza lo más específico del informe para justificar "${dx}" (ej. si ancla = adenitis mesentérica → ganglios mesentéricos, tamaño, distribución, grasa, exclusión de apendicitis solo si consta y refuerza el ancla).`;
   }
 }
