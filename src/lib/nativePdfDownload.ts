@@ -8,7 +8,6 @@ import { renderBreast3DPageToPdf } from "../utils/breast3dPdfRenderer";
 import { renderDifferentialTreeAnnexToPDF } from "../utils/differentialTreePdfRenderer";
 import { renderElastographyAnnexToPdf } from "../utils/elastographyPdfRenderer";
 import { renderFindingsInfographicAnnexToPDF } from "../utils/findingsInfographicPdfRenderer";
-import { renderFindingsMapAnnexToPDF } from "../utils/findingsMapPdfRenderer";
 import { pickDominantLesionImage } from "./dominantLesionCard";
 import { renderDominantLesionCardAnnexToPDF } from "../utils/dominantLesionCardPdfRenderer";
 import { renderFocalLesion3DAnnexToPDF } from "../utils/focalLesion3dPdfRenderer";
@@ -58,7 +57,6 @@ export type NativePdfDownloadDeps = {
   elastographyStiffness: any;
   findings3dRenders: any;
   findingsInfographicData: any;
-  findingsMapData: any;
   dominantLesionCardData: any;
   focalLesion3dData: any;
   getParagraphSeverity: (text: string) => "critical" | "altered" | "normal";
@@ -70,7 +68,6 @@ export type NativePdfDownloadDeps = {
   includeDifferentialTreeInReport: boolean;
   includeElastographyInReport: boolean;
   includeFindingsInfographicInReport: boolean;
-  includeFindingsMapInReport: boolean;
   includeDominantLesionCardInReport: boolean;
   includeFocalLesion3dInReport: boolean;
   includeKidney3dInReport: boolean;
@@ -142,7 +139,6 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
       elastographyStiffness,
       findings3dRenders,
       findingsInfographicData,
-      findingsMapData,
       dominantLesionCardData,
       focalLesion3dData,
       getParagraphSeverity,
@@ -154,7 +150,6 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
       includeDifferentialTreeInReport,
       includeElastographyInReport,
       includeFindingsInfographicInReport,
-      includeFindingsMapInReport,
       includeDominantLesionCardInReport,
       includeFocalLesion3dInReport,
       includeKidney3dInReport,
@@ -2959,24 +2954,6 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
           pageHeight,
           contentWidth,
           factor,
-        });
-      }
-
-      // --- ANEXO: MAPA DE HALLAZGOS NUMERADOS ---
-      const activeFindingsMap = studyOverride
-        ? (studyOverride as any).findingsMapData
-        : (pdfStateRef.current?.findingsMapData || findingsMapData);
-      const shouldIncludeFindingsMap = studyOverride
-        ? ((studyOverride as any).includeFindingsMapInReport !== false)
-        : ((pdfStateRef.current?.includeFindingsMapInReport !== false) && includeFindingsMapInReport);
-      if (
-        activeFindingsMap &&
-        shouldIncludeFindingsMap &&
-        Array.isArray(activeFindingsMap.items) &&
-        activeFindingsMap.items.length > 0
-      ) {
-        await renderFindingsMapAnnexToPDF(doc, activeFindingsMap, {
-          clinicName: pdfStateRef.current?.clinicName,
         });
       }
 

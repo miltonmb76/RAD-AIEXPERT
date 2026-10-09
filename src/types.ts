@@ -1426,14 +1426,6 @@ export interface FindingsInfographicData {
   generatedAt?: string;
 }
 
-/** Generic numbered findings map (any study). */
-export type {
-  FindingsMapData,
-  FindingsMapItem,
-  FindingsMapTemplateId,
-  FindingsMapViewOrientation,
-} from "./lib/findingsMap";
-
 /** One-page dominant lesion clinical card. */
 export type {
   DominantLesionCardData,
