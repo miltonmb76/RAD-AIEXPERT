@@ -11212,11 +11212,11 @@ Ejemplo:
                                 <div>
                                   <h4 className="text-sm font-semibold text-cyan-200 flex items-center gap-2">
                                     <Hexagon className="h-4 w-4 text-cyan-400" />
-                                    Infografía dual (Médico + Paciente)
+                                    Infografía de justificación
                                   </h4>
                                   <p className="text-[11px] text-slate-400 mt-1">
-                                    Misma lámina, dos voces por pestaña (tamaño completo). No confundir
-                                    con la infografía rosa del informe paciente.
+                                    Lámina clínica de hallazgos (solo médico). La explicación dual
+                                    paciente/médico es la infografía rosa del informe.
                                   </p>
                                 </div>
                               </div>
@@ -11230,8 +11230,8 @@ Ejemplo:
                                 }`}
                               >
                                 {isFindingsInfographicOpen
-                                  ? "Ocultar infografía dual"
-                                  : "Abrir infografía dual"}
+                                  ? "Ocultar infografía de justificación"
+                                  : "Abrir infografía de justificación"}
                               </button>
                             </div>
 

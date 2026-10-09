@@ -116,7 +116,7 @@ export function infographicFromScorecard(
         patientDiagnosis,
         patientSynthesis,
         includeClinicianInPdf: true,
-        includePatientInPdf: true,
+        includePatientInPdf: false,
       },
       diagnosis,
       layout,

@@ -194,7 +194,7 @@ export function ensureDualAudienceCopy(data: FindingsInfographicData): FindingsI
           ? `Esto resume lo que se vio en el estudio en relación con ${patientDiagnosis}.`
           : undefined),
     includeClinicianInPdf: data.includeClinicianInPdf !== false,
-    includePatientInPdf: data.includePatientInPdf !== false,
+    includePatientInPdf: data.includePatientInPdf === true,
     activeAudience: data.activeAudience || "clinician",
   };
 }
@@ -410,7 +410,7 @@ export function normalizeFindingsInfographicData(
       String(raw?.patientSynthesis || raw?.sintesisPaciente || "").trim() ||
       undefined,
     includeClinicianInPdf: raw?.includeClinicianInPdf !== false,
-    includePatientInPdf: raw?.includePatientInPdf !== false,
+    includePatientInPdf: raw?.includePatientInPdf === true,
     activeAudience:
       raw?.activeAudience === "patient" || raw?.activeAudience === "clinician"
         ? raw.activeAudience

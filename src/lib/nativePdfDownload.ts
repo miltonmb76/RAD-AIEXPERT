@@ -2952,7 +2952,7 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
         activeFindingsInfographic.nodes.length > 0
       ) {
         const includeClinician = activeFindingsInfographic.includeClinicianInPdf !== false;
-        const includePatient = activeFindingsInfographic.includePatientInPdf !== false;
+        const includePatient = activeFindingsInfographic.includePatientInPdf === true;
         const audiences: Array<"clinician" | "patient"> = [];
         if (includeClinician) audiences.push("clinician");
         if (includePatient) audiences.push("patient");
