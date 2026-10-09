@@ -90,8 +90,8 @@ export function normalizeDominantLesionCardData(
 
   const measurements: DominantLesionMeasurement[] = measurementsRaw
     .map((m: any) => {
-      const label = cleanText(m?.label || m?.name || m?.axis, 40);
-      const value = cleanText(m?.value || m?.valor || m?.size, 40);
+      const label = cleanText(m?.label || m?.name || m?.axis, 72);
+      const value = cleanText(m?.value || m?.valor || m?.size, 48);
       if (!label || !value) return null;
       return { label, value };
     })
@@ -127,11 +127,12 @@ export function normalizeDominantLesionCardData(
     lesionLabel,
     site: cleanText(raw?.site || raw?.location || raw?.lesionSite, 100) || "Sitio no especificado",
     laterality: cleanText(raw?.laterality || raw?.side, 40) || undefined,
-    sizeSummary: cleanText(raw?.sizeSummary || raw?.size || raw?.lesionSize, 60) || undefined,
+    sizeSummary: cleanText(raw?.sizeSummary || raw?.size || raw?.lesionSize, 160) || undefined,
     measurements: measurements.slice(0, 6),
     categorySystem: cleanText(raw?.categorySystem || raw?.system || raw?.scoreSystem, 40) || undefined,
     categoryValue: cleanText(raw?.categoryValue || raw?.category || raw?.score, 40) || undefined,
-    categoryRationale: cleanText(raw?.categoryRationale || raw?.rationale, 200) || undefined,
+    // Keep full clinical rationale — was truncating mid-sentence at 200 chars in the UI/PDF.
+    categoryRationale: cleanText(raw?.categoryRationale || raw?.rationale, 720) || undefined,
     modalityHint,
     figureRef,
     figureCaptionHint: cleanText(raw?.figureCaptionHint || raw?.imageHint, 120) || undefined,

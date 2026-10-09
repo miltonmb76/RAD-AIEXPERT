@@ -335,7 +335,7 @@ export async function renderDominantLesionCardAnnexToPDF(
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7);
   const rationaleLines = data.categoryRationale
-    ? wrapText(doc, data.categoryRationale, innerW, 3)
+    ? wrapText(doc, data.categoryRationale, innerW, 8)
     : [];
   if (rationaleLines.length) plannedH += 4.5 + rationaleLines.length * 3.2 + 2;
 
@@ -385,13 +385,16 @@ export async function renderDominantLesionCardAnnexToPDF(
       doc.setFont("helvetica", "normal");
       doc.setFontSize(5);
       doc.setTextColor(148, 163, 184);
-      const label = wrapText(doc, sanitizePdfText(m.label).toUpperCase(), cellW - 4, 1)[0] || "";
-      doc.text(label, cx + 1.6, cy + 3.4);
+      const labelLines = wrapText(doc, sanitizePdfText(m.label).toUpperCase(), cellW - 4, 2);
+      doc.text(labelLines[0] || "", cx + 1.6, cy + 2.8);
+      if (labelLines[1]) {
+        doc.text(labelLines[1], cx + 1.6, cy + 5.0);
+      }
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8);
       doc.setTextColor(30, 41, 59);
       const val = wrapText(doc, m.value, cellW - 4, 1)[0] || "";
-      doc.text(val, cx + 1.6, cy + 8);
+      doc.text(val, cx + 1.6, labelLines[1] ? cy + 8.6 : cy + 8);
       cx += cellW;
     });
     sy += measRows * 12 + 2;
