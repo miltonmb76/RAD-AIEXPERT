@@ -17,6 +17,7 @@ import {
   SemioticsConductMatrixModule,
   FindingsInfographicModule,
   FindingsMapModule,
+  DominantLesionCardModule,
   MeasurementsGaugeModule,
   CreadorCuadroSinoptico,
   CreadorSinopsisFracturas,
@@ -42,7 +43,7 @@ import "./lib/safeLocalStorage";
 import JSZip from "jszip";
 import type { ExtractedFile } from "./components/ZipDicomExtractor";
 
-import { Atlas3DData, Vascular3DData, FocalLesion3DData, UsPlaneSimulatorData, Thyroid3DData, Breast3DData, Shoulder3DData, Knee3DData, Ankle3DData, Kidney3DData, Abdomen3DData, AbdominalWall3DData, Scrotum3DData, MuscleTendon3DData, Wrist3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData, SemioticsConductMatrixData, FindingsInfographicData, FindingsMapData, NegativityChecklistData, SecondReaderData, ReportEnrichmentSession } from "./types";
+import { Atlas3DData, Vascular3DData, FocalLesion3DData, UsPlaneSimulatorData, Thyroid3DData, Breast3DData, Shoulder3DData, Knee3DData, Ankle3DData, Kidney3DData, Abdomen3DData, AbdominalWall3DData, Scrotum3DData, MuscleTendon3DData, Wrist3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData, SemioticsConductMatrixData, FindingsInfographicData, FindingsMapData, DominantLesionCardData, NegativityChecklistData, SecondReaderData, ReportEnrichmentSession } from "./types";
 import { buildAtlasDirectivesFromScorecard, buildAtlasPanelFindingAssignments, buildVascularDirectivesFromScorecard, buildThyroidDirectivesFromScorecard, buildBreastDirectivesFromScorecard, buildShoulderDirectivesFromScorecard, buildKneeDirectivesFromScorecard, buildAnkleDirectivesFromScorecard, buildKidneyDirectivesFromScorecard, buildAbdomenDirectivesFromScorecard, buildAbdominalWallDirectivesFromScorecard, buildScrotumDirectivesFromScorecard, buildMuscleTendonDirectivesFromScorecard, buildWristDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
 import {
   applyPendingEnrichmentChanges,
@@ -136,7 +137,8 @@ import {
   GitFork,
   Table2,
   Hexagon,
-  MapPinned
+  MapPinned,
+  FileSpreadsheet
 } from "lucide-react";
 import { initAuth, googleSignIn, logout as googleLogout, anonymousSignIn, emailSignIn, emailSignUp, getFirebaseConfig } from "./firebaseAuth";
 import { CloudStudy, saveStudyToCloud, getStudiesFromCloud, deleteStudyFromCloud, Worklist, WorklistPatient, saveWorklistToCloud, getWorklistFromCloud, getSingleStudyFromCloud, testFirebaseConfigConnection, saveUserSettingsToCloud, getUserSettingsFromCloud } from "./firebaseDb";
@@ -1449,6 +1451,9 @@ export default function App() {
   const [findingsMapData, setFindingsMapData] = useState<FindingsMapData | null>(null);
   const [includeFindingsMapInReport, setIncludeFindingsMapInReport] = useState<boolean>(true);
   const [isFindingsMapOpen, setIsFindingsMapOpen] = useState<boolean>(false);
+  const [dominantLesionCardData, setDominantLesionCardData] = useState<DominantLesionCardData | null>(null);
+  const [includeDominantLesionCardInReport, setIncludeDominantLesionCardInReport] = useState<boolean>(true);
+  const [isDominantLesionCardOpen, setIsDominantLesionCardOpen] = useState<boolean>(false);
   const [atlasDirectivesFromScorecard, setAtlasDirectivesFromScorecard] = useState<string>("");
   const [measurementGaugeData, setMeasurementGaugeData] = useState<MeasurementGaugeData | null>(null);
   const [includeMeasurementGaugesInReport, setIncludeMeasurementGaugesInReport] = useState<boolean>(true);
@@ -1547,6 +1552,8 @@ export default function App() {
     includeFindingsInfographicInReport,
     findingsMapData,
     includeFindingsMapInReport,
+    dominantLesionCardData,
+    includeDominantLesionCardInReport,
     measurementGaugeData,
     includeMeasurementGaugesInReport,
     includeMeasurementNormalsInPdf,
@@ -2952,6 +2959,9 @@ Ejemplo:
     setFindingsMapData(null);
     setIncludeFindingsMapInReport(true);
     setIsFindingsMapOpen(false);
+    setDominantLesionCardData(null);
+    setIncludeDominantLesionCardInReport(true);
+    setIsDominantLesionCardOpen(false);
     setAtlasDirectivesFromScorecard("");
     setMeasurementGaugeData(null);
     setIncludeMeasurementGaugesInReport(true);
@@ -5357,6 +5367,7 @@ Ejemplo:
     findings3dRenders,
     findingsInfographicData,
     findingsMapData,
+    dominantLesionCardData,
     focalLesion3dData,
     getParagraphSeverity,
     includeAbdomen3dInReport,
@@ -5368,6 +5379,7 @@ Ejemplo:
     includeElastographyInReport,
     includeFindingsInfographicInReport,
     includeFindingsMapInReport,
+    includeDominantLesionCardInReport,
     includeFocalLesion3dInReport,
     includeKidney3dInReport,
     includeKnee3dInReport,
@@ -11022,6 +11034,31 @@ Ejemplo:
                               </button>
                             </div>
 
+                            <div className="p-4 rounded-2xl bg-slate-950/60 border border-rose-900/40 space-y-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <h4 className="text-sm font-semibold text-rose-200 flex items-center gap-2">
+                                    <FileSpreadsheet className="h-4 w-4 text-rose-400" />
+                                    Ficha lesión dominante
+                                  </h4>
+                                  <p className="text-[11px] text-slate-400 mt-1">
+                                    Una página: medidas, categoría, imagen, corte 3D y frase clínica.
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setIsDominantLesionCardOpen((v) => !v)}
+                                className={`w-full px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
+                                  isDominantLesionCardOpen
+                                    ? "bg-rose-700 text-white"
+                                    : "bg-rose-600/80 hover:bg-rose-500 text-white"
+                                }`}
+                              >
+                                {isDominantLesionCardOpen ? "Ocultar ficha" : "Abrir ficha"}
+                              </button>
+                            </div>
+
                             {/* Card: Corte Focal 3D */}
                             <div className="p-4 rounded-2xl bg-slate-950/60 border border-cyan-900/40 space-y-3">
                               <div className="flex items-start justify-between gap-3">
@@ -11325,6 +11362,25 @@ Ejemplo:
                                   includeInReport={includeFindingsMapInReport}
                                   setIncludeInReport={setIncludeFindingsMapInReport}
                                   attachedImageCount={attachedImages?.length || 0}
+                                />
+                              </React.Suspense>
+                            </div>
+                          )}
+
+                          {isDominantLesionCardOpen && (
+                            <div className="my-6">
+                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-rose-400 bg-slate-900/60 rounded-xl border border-rose-900/40 animate-pulse">Cargando ficha de lesión dominante...</div>}>
+                                <DominantLesionCardModule
+                                  selectedModel={modelFor("dominant_lesion_card")}
+                                  reportText={isEditingReportManual ? editedReportText : generatedReport}
+                                  studyType={specificStudy || studyType}
+                                  clinicalHistory={clinicalHistory}
+                                  cardData={dominantLesionCardData}
+                                  setCardData={setDominantLesionCardData}
+                                  includeInReport={includeDominantLesionCardInReport}
+                                  setIncludeInReport={setIncludeDominantLesionCardInReport}
+                                  attachedImages={attachedImages}
+                                  focalLesion3dData={focalLesion3dData}
                                 />
                               </React.Suspense>
                             </div>

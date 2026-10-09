@@ -9,6 +9,8 @@ import { renderDifferentialTreeAnnexToPDF } from "../utils/differentialTreePdfRe
 import { renderElastographyAnnexToPdf } from "../utils/elastographyPdfRenderer";
 import { renderFindingsInfographicAnnexToPDF } from "../utils/findingsInfographicPdfRenderer";
 import { renderFindingsMapAnnexToPDF } from "../utils/findingsMapPdfRenderer";
+import { pickDominantLesionImage } from "./dominantLesionCard";
+import { renderDominantLesionCardAnnexToPDF } from "../utils/dominantLesionCardPdfRenderer";
 import { renderFocalLesion3DAnnexToPDF } from "../utils/focalLesion3dPdfRenderer";
 import { renderKidney3DPageToPdf } from "../utils/kidney3dPdfRenderer";
 import { renderKnee3DPageToPdf } from "../utils/knee3dPdfRenderer";
@@ -57,6 +59,7 @@ export type NativePdfDownloadDeps = {
   findings3dRenders: any;
   findingsInfographicData: any;
   findingsMapData: any;
+  dominantLesionCardData: any;
   focalLesion3dData: any;
   getParagraphSeverity: (text: string) => "critical" | "altered" | "normal";
   includeAbdomen3dInReport: boolean;
@@ -68,6 +71,7 @@ export type NativePdfDownloadDeps = {
   includeElastographyInReport: boolean;
   includeFindingsInfographicInReport: boolean;
   includeFindingsMapInReport: boolean;
+  includeDominantLesionCardInReport: boolean;
   includeFocalLesion3dInReport: boolean;
   includeKidney3dInReport: boolean;
   includeKnee3dInReport: boolean;
@@ -139,6 +143,7 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
       findings3dRenders,
       findingsInfographicData,
       findingsMapData,
+      dominantLesionCardData,
       focalLesion3dData,
       getParagraphSeverity,
       includeAbdomen3dInReport,
@@ -150,6 +155,7 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
       includeElastographyInReport,
       includeFindingsInfographicInReport,
       includeFindingsMapInReport,
+      includeDominantLesionCardInReport,
       includeFocalLesion3dInReport,
       includeKidney3dInReport,
       includeKnee3dInReport,
@@ -2971,6 +2977,39 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
       ) {
         await renderFindingsMapAnnexToPDF(doc, activeFindingsMap, {
           clinicName: pdfStateRef.current?.clinicName,
+        });
+      }
+
+      // --- ANEXO: FICHA DE LESIÓN DOMINANTE ---
+      const activeDominantCard = studyOverride
+        ? (studyOverride as any).dominantLesionCardData
+        : (pdfStateRef.current?.dominantLesionCardData || dominantLesionCardData);
+      const shouldIncludeDominantCard = studyOverride
+        ? ((studyOverride as any).includeDominantLesionCardInReport !== false)
+        : ((pdfStateRef.current?.includeDominantLesionCardInReport !== false) && includeDominantLesionCardInReport);
+      if (
+        activeDominantCard &&
+        shouldIncludeDominantCard &&
+        String(activeDominantCard.lesionLabel || "").trim()
+      ) {
+        const imgs =
+          (studyOverride as any)?.attachedImages ||
+          pdfStateRef.current?.attachedImages ||
+          attachedImages ||
+          [];
+        const picked = pickDominantLesionImage(imgs, activeDominantCard);
+        const focalPanels =
+          (studyOverride as any)?.focalLesion3dData?.panels ||
+          pdfStateRef.current?.focalLesion3dData?.panels ||
+          focalLesion3dData?.panels ||
+          [];
+        const focalUrl = Array.isArray(focalPanels)
+          ? focalPanels.find((p: any) => p?.imageUrl)?.imageUrl
+          : null;
+        await renderDominantLesionCardAnnexToPDF(doc, activeDominantCard, {
+          clinicName: pdfStateRef.current?.clinicName,
+          imageDataUrl: picked?.url || null,
+          focal3dDataUrl: focalUrl || null,
         });
       }
 
