@@ -4034,7 +4034,7 @@ Ejemplo:
     }
 
     // 2. Perform the heavy infographic processing in the background (No PDF downloads to local device)
-        if (whatsappShareType === 'patient_infographic') {
+    if (whatsappShareType === 'patient_infographic') {
       const shareUrl =
         infographicAudienceTab === "clinician"
           ? (infographicClinicianUrl || infographicUrl)
@@ -4058,8 +4058,6 @@ Ejemplo:
         } catch (err) {
           console.warn("Could not share infographic image as file:", err);
         }
-      }
-    }
       }
     }
 
