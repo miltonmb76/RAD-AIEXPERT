@@ -305,15 +305,34 @@ export async function renderDominantLesionCardAnnexToPDF(
   }
 
   // Side facts — height follows content (not stretched to media column)
+  const sizeMaxW = Math.max(20, innerW - 1.5);
+  // Must set the draw font BEFORE wrap — splitTextToSize uses current font metrics
+  doc.setFont("helvetica", "bold");
+  let sizeFont = 10.5;
+  doc.setFontSize(sizeFont);
+  let sizeLines = wrapText(doc, data.sizeSummary || "—", sizeMaxW, 3);
+  // Shrink font until every line fits the box (prevents “se sale del cuadro”)
+  while (sizeFont > 7.5) {
+    const widest = sizeLines.reduce((m, ln) => Math.max(m, doc.getTextWidth(ln)), 0);
+    if (widest <= sizeMaxW && sizeLines.length <= 3) break;
+    sizeFont -= 0.5;
+    doc.setFontSize(sizeFont);
+    sizeLines = wrapText(doc, data.sizeSummary || "—", sizeMaxW, 3);
+  }
+  // Final clamp: re-wrap at settled size
+  doc.setFontSize(sizeFont);
+  sizeLines = wrapText(doc, data.sizeSummary || "—", sizeMaxW, 3);
+  const sizeLineH = sizeFont >= 9.5 ? 4.8 : 4.2;
+
   let plannedH = 7;
   plannedH += 4.5;
-  const sizeLines = wrapText(doc, data.sizeSummary || "—", innerW, 2);
-  plannedH += sizeLines.length * 5 + 3;
+  plannedH += sizeLines.length * sizeLineH + 3;
 
   const measCount = Math.min(4, data.measurements.length);
   const measRows = Math.ceil(measCount / 2) || 0;
   if (measCount) plannedH += measRows * 12 + 2;
 
+  doc.setFont("helvetica", "normal");
   doc.setFontSize(7);
   const rationaleLines = data.categoryRationale
     ? wrapText(doc, data.categoryRationale, innerW, 3)
@@ -341,12 +360,12 @@ export async function renderDominantLesionCardAnnexToPDF(
   sy += 4.5;
 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(10.5);
+  doc.setFontSize(sizeFont);
   doc.setTextColor(15, 23, 42);
   for (const line of sizeLines) {
     if (sy > bottomLimit - 3) break;
     doc.text(line, sideX + sidePadX, sy);
-    sy += 4.8;
+    sy += sizeLineH;
   }
   sy += 2;
 

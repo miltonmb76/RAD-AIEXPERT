@@ -553,7 +553,7 @@ export const DominantLesionCardPreview: React.FC<{
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
               Tamaño
             </p>
-            <p className="mt-1 text-3xl font-semibold tracking-tight text-slate-900 tabular-nums">
+            <p className="mt-1 text-lg md:text-xl font-semibold tracking-tight text-slate-900 leading-snug break-words [overflow-wrap:anywhere]">
               {data.sizeSummary || "—"}
             </p>
             {data.measurements.length > 0 && (
@@ -561,10 +561,12 @@ export const DominantLesionCardPreview: React.FC<{
                 {data.measurements.map((m) => (
                   <div
                     key={`${m.label}-${m.value}`}
-                    className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2"
+                    className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2 min-w-0"
                   >
-                    <p className="text-[9px] uppercase tracking-wide text-slate-400">{m.label}</p>
-                    <p className="text-sm font-semibold text-slate-800 tabular-nums mt-0.5">
+                    <p className="text-[9px] uppercase tracking-wide text-slate-400 leading-tight break-words">
+                      {m.label}
+                    </p>
+                    <p className="text-sm font-semibold text-slate-800 tabular-nums mt-0.5 break-words">
                       {m.value}
                     </p>
                   </div>
