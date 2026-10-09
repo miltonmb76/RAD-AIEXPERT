@@ -11317,6 +11317,7 @@ Ejemplo:
                               <React.Suspense fallback={<div className="p-4 text-xs font-mono text-rose-400 bg-slate-900/60 rounded-xl border border-rose-900/40 animate-pulse">Cargando ficha de lesión dominante...</div>}>
                                 <DominantLesionCardModule
                                   selectedModel={modelFor("dominant_lesion_card")}
+                                  focalSelectedModel={modelFor("focal_lesion3d")}
                                   reportText={isEditingReportManual ? editedReportText : generatedReport}
                                   studyType={specificStudy || studyType}
                                   clinicalHistory={clinicalHistory}
@@ -11326,6 +11327,8 @@ Ejemplo:
                                   setIncludeInReport={setIncludeDominantLesionCardInReport}
                                   attachedImages={attachedImages}
                                   focalLesion3dData={focalLesion3dData}
+                                  setFocalLesion3dData={setFocalLesion3dData}
+                                  setIncludeFocalLesion3dInReport={setIncludeFocalLesion3dInReport}
                                 />
                               </React.Suspense>
                             </div>

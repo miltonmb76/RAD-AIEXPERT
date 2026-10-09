@@ -8,7 +8,7 @@ import { renderBreast3DPageToPdf } from "../utils/breast3dPdfRenderer";
 import { renderDifferentialTreeAnnexToPDF } from "../utils/differentialTreePdfRenderer";
 import { renderElastographyAnnexToPdf } from "../utils/elastographyPdfRenderer";
 import { renderFindingsInfographicAnnexToPDF } from "../utils/findingsInfographicPdfRenderer";
-import { pickDominantLesionImage } from "./dominantLesionCard";
+import { pickDominantLesionImage, pickDominantLesionImageB } from "./dominantLesionCard";
 import { renderDominantLesionCardAnnexToPDF } from "../utils/dominantLesionCardPdfRenderer";
 import { renderFocalLesion3DAnnexToPDF } from "../utils/focalLesion3dPdfRenderer";
 import { renderKidney3DPageToPdf } from "../utils/kidney3dPdfRenderer";
@@ -2975,21 +2975,28 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
           attachedImages ||
           [];
         const picked = pickDominantLesionImage(imgs, activeDominantCard);
+        const pickedB = pickDominantLesionImageB(imgs, activeDominantCard);
         const focalPanels =
           (studyOverride as any)?.focalLesion3dData?.panels ||
           pdfStateRef.current?.focalLesion3dData?.panels ||
           focalLesion3dData?.panels ||
           [];
-        const focalUrl = Array.isArray(focalPanels)
-          ? focalPanels.find((p: any) => p?.imageUrl)?.imageUrl
+        const focalPanel = Array.isArray(focalPanels)
+          ? focalPanels.find((p: any) => p?.imageUrl)
           : null;
+        const focalUrl = focalPanel?.imageUrl || null;
         await renderDominantLesionCardAnnexToPDF(doc, activeDominantCard, {
           clinicName: pdfStateRef.current?.clinicName,
           imageDataUrl: picked?.url || null,
           imageCaption: picked
             ? `${picked.modality ? `${picked.modality} · ` : ""}${picked.caption || ""}`.trim()
             : null,
+          imageBDataUrl: pickedB?.url || null,
+          imageBCaption: pickedB
+            ? `${pickedB.modality ? `${pickedB.modality} · ` : ""}${pickedB.caption || ""}`.trim()
+            : null,
           focal3dDataUrl: focalUrl || null,
+          focal3dCaption: focalPanel?.panelTitle || "Corte 3D",
         });
       }
 

@@ -40,8 +40,42 @@ function drawContainedImage(
   doc.addImage(dataUrl, fmt, dx, dy, dw, dh);
 }
 
+async function drawImagePanel(
+  doc: jsPDF,
+  dataUrl: string | null | undefined,
+  caption: string | undefined,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  emptyLabel: string
+) {
+  doc.setFillColor(15, 23, 42);
+  doc.roundedRect(x, y, w, h, 2, 2, "F");
+  const pad = 2.5;
+  if (dataUrl) {
+    const img = await loadImage(dataUrl);
+    if (img) {
+      try {
+        drawContainedImage(doc, dataUrl, img, x + pad, y + pad, w - pad * 2, h - pad * 2 - 6);
+      } catch {
+        /* ignore */
+      }
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(6.5);
+      doc.setTextColor(226, 232, 240);
+      doc.text(sanitizePdfText(caption || "").slice(0, 55), x + 3, y + h - 2.5);
+      return;
+    }
+  }
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(148, 163, 184);
+  doc.text(emptyLabel, x + w / 2, y + h / 2, { align: "center" });
+}
+
 /**
- * One-page elegant annex: hero image + clinical summary + clinician phrase.
+ * One-page elegant annex with single or dual image layouts.
  */
 export async function renderDominantLesionCardAnnexToPDF(
   doc: jsPDF,
@@ -50,7 +84,10 @@ export async function renderDominantLesionCardAnnexToPDF(
     clinicName?: string;
     imageDataUrl?: string | null;
     imageCaption?: string | null;
+    imageBDataUrl?: string | null;
+    imageBCaption?: string | null;
     focal3dDataUrl?: string | null;
+    focal3dCaption?: string | null;
   }
 ): Promise<void> {
   doc.addPage();
@@ -58,12 +95,11 @@ export async function renderDominantLesionCardAnnexToPDF(
   const pageH = doc.internal.pageSize.getHeight();
   const margin = 12;
   const contentW = pageW - margin * 2;
+  const layout = data.imageLayout || "single";
 
-  // Soft page wash
   doc.setFillColor(248, 250, 252);
   doc.rect(0, 0, pageW, pageH, "F");
 
-  // Dark masthead band
   const headH = 28;
   doc.setFillColor(15, 23, 42);
   doc.rect(0, 0, pageW, headH, "F");
@@ -103,59 +139,83 @@ export async function renderDominantLesionCardAnnexToPDF(
     doc.setFontSize(10);
     const catW = Math.min(50, Math.max(28, doc.getTextWidth(cat) + 10));
     const catX = pageW - margin - catW;
-    const catY = 10;
     doc.setFillColor(255, 255, 255);
-    doc.roundedRect(catX, catY, catW, 12, 2, 2, "F");
+    doc.roundedRect(catX, 10, catW, 12, 2, 2, "F");
     doc.setTextColor(159, 18, 57);
-    doc.text(sanitizePdfText(cat), catX + catW / 2, catY + 7.8, { align: "center" });
+    doc.text(sanitizePdfText(cat), catX + catW / 2, 17.8, { align: "center" });
   }
 
-  // Main stage
   const stageTop = headH + 6;
-  const phraseH = 32;
+  const phraseH = 30;
   const footerNoteY = pageH - 8;
   const stageBottom = footerNoteY - phraseH - 6;
   const stageH = stageBottom - stageTop;
 
-  const gap = 6;
-  const imgW = contentW * 0.56;
-  const sideW = contentW - imgW - gap;
-  const imgX = margin;
-  const sideX = margin + imgW + gap;
+  const gap = 5;
+  const mediaW = contentW * (layout === "single" ? 0.56 : 0.58);
+  const sideW = contentW - mediaW - gap;
+  const mediaX = margin;
+  const sideX = margin + mediaW + gap;
 
-  // Image panel
-  doc.setFillColor(15, 23, 42);
-  doc.roundedRect(imgX, stageTop, imgW, stageH, 3, 3, "F");
-
-  const imgPad = 3;
-  const clinicalImg = opts?.imageDataUrl ? await loadImage(opts.imageDataUrl) : null;
-  if (clinicalImg && opts?.imageDataUrl) {
-    try {
-      drawContainedImage(
-        doc,
-        opts.imageDataUrl,
-        clinicalImg,
-        imgX + imgPad,
-        stageTop + imgPad,
-        imgW - imgPad * 2,
-        stageH - imgPad * 2 - 8
-      );
-    } catch {
-      /* fall through */
-    }
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(7);
-    doc.setTextColor(226, 232, 240);
-    const cap = opts.imageCaption || (data.figureRef ? `Figura ${data.figureRef}` : "Imagen clínica");
-    doc.text(sanitizePdfText(cap).slice(0, 70), imgX + 4, stageTop + stageH - 3);
+  if (layout === "mmg_us") {
+    const cellW = (mediaW - 3) / 2;
+    await drawImagePanel(
+      doc,
+      opts?.imageDataUrl,
+      opts?.imageCaption || "MMG",
+      mediaX,
+      stageTop,
+      cellW,
+      stageH,
+      "Sin MMG"
+    );
+    await drawImagePanel(
+      doc,
+      opts?.imageBDataUrl,
+      opts?.imageBCaption || "US",
+      mediaX + cellW + 3,
+      stageTop,
+      cellW,
+      stageH,
+      "Sin US"
+    );
+  } else if (layout === "clinical_3d") {
+    const topH = stageH * 0.55;
+    const botH = stageH - topH - 3;
+    await drawImagePanel(
+      doc,
+      opts?.imageDataUrl,
+      opts?.imageCaption || "Imagen clínica",
+      mediaX,
+      stageTop,
+      mediaW,
+      topH,
+      "Sin imagen clínica"
+    );
+    await drawImagePanel(
+      doc,
+      opts?.focal3dDataUrl,
+      opts?.focal3dCaption || "Corte 3D",
+      mediaX,
+      stageTop + topH + 3,
+      mediaW,
+      botH,
+      "Sin corte 3D"
+    );
   } else {
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.setTextColor(148, 163, 184);
-    doc.text("Sin imagen asociada", imgX + imgW / 2, stageTop + stageH / 2, { align: "center" });
+    await drawImagePanel(
+      doc,
+      opts?.imageDataUrl,
+      opts?.imageCaption || (data.figureRef ? `Figura ${data.figureRef}` : "Imagen clínica"),
+      mediaX,
+      stageTop,
+      mediaW,
+      stageH,
+      "Sin imagen asociada"
+    );
   }
 
-  // Side panel (white card)
+  // Side facts
   doc.setFillColor(255, 255, 255);
   doc.setDrawColor(226, 232, 240);
   doc.roundedRect(sideX, stageTop, sideW, stageH, 3, 3, "FD");
@@ -168,10 +228,10 @@ export async function renderDominantLesionCardAnnexToPDF(
   y += 7;
 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(16);
+  doc.setFontSize(15);
   doc.setTextColor(15, 23, 42);
   doc.text(sanitizePdfText(data.sizeSummary || "—"), sideX + 5, y);
-  y += 8;
+  y += 7;
 
   if (data.measurements.length) {
     const cellW = (sideW - 14) / 2;
@@ -182,21 +242,20 @@ export async function renderDominantLesionCardAnnexToPDF(
         cx = sideX + 5;
         row += 1;
       }
-      const cy = y + row * 12;
+      const cy = y + row * 11.5;
       doc.setFillColor(248, 250, 252);
-      doc.setDrawColor(241, 245, 249);
-      doc.roundedRect(cx, cy, cellW - 2, 10.5, 1.5, 1.5, "FD");
+      doc.roundedRect(cx, cy, cellW - 2, 10, 1.4, 1.4, "F");
       doc.setFont("helvetica", "normal");
       doc.setFontSize(6);
       doc.setTextColor(148, 163, 184);
-      doc.text(sanitizePdfText(m.label).toUpperCase(), cx + 2.2, cy + 3.6);
+      doc.text(sanitizePdfText(m.label).toUpperCase(), cx + 2, cy + 3.4);
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(9);
+      doc.setFontSize(8.5);
       doc.setTextColor(30, 41, 59);
-      doc.text(sanitizePdfText(m.value), cx + 2.2, cy + 8.2);
+      doc.text(sanitizePdfText(m.value), cx + 2, cy + 7.8);
       cx += cellW;
     });
-    y += Math.ceil(Math.min(4, data.measurements.length) / 2) * 12 + 4;
+    y += Math.ceil(Math.min(4, data.measurements.length) / 2) * 11.5 + 4;
   }
 
   if (data.categoryRationale) {
@@ -210,7 +269,7 @@ export async function renderDominantLesionCardAnnexToPDF(
     doc.setTextColor(51, 65, 85);
     wrapText(doc, data.categoryRationale, sideW - 10, 3).forEach((line) => {
       doc.text(line, sideX + 5, y);
-      y += 3.6;
+      y += 3.5;
     });
     y += 3;
   }
@@ -222,48 +281,19 @@ export async function renderDominantLesionCardAnnexToPDF(
     doc.text("DESCRIPTORES", sideX + 5, y);
     y += 5;
     data.keyDescriptors.slice(0, 5).forEach((d) => {
-      if (y > stageTop + stageH - 28) return;
-      const label = sanitizePdfText(d).slice(0, 28);
+      if (y > stageTop + stageH - 8) return;
+      const label = sanitizePdfText(d).slice(0, 26);
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(7.5);
-      const tw = doc.getTextWidth(label) + 6;
-      if (sideX + 5 + tw > sideX + sideW - 4) return;
+      doc.setFontSize(7);
+      const tw = Math.min(sideW - 12, doc.getTextWidth(label) + 6);
       doc.setFillColor(241, 245, 249);
-      doc.roundedRect(sideX + 5, y - 3.2, tw, 6.5, 1.5, 1.5, "F");
+      doc.roundedRect(sideX + 5, y - 3, tw, 6, 1.4, 1.4, "F");
       doc.setTextColor(51, 65, 85);
-      doc.text(label, sideX + 8, y);
-      y += 8;
+      doc.text(label, sideX + 7.5, y + 0.8);
+      y += 7.5;
     });
   }
 
-  // Optional 3D thumb in remaining side space
-  if (opts?.focal3dDataUrl) {
-    const thumbMaxH = Math.max(22, stageTop + stageH - y - 6);
-    if (thumbMaxH > 24) {
-      const focalImg = await loadImage(opts.focal3dDataUrl);
-      if (focalImg) {
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(7);
-        doc.setTextColor(13, 148, 136);
-        doc.text("CORTE 3D", sideX + 5, y + 2);
-        try {
-          drawContainedImage(
-            doc,
-            opts.focal3dDataUrl,
-            focalImg,
-            sideX + 5,
-            y + 4,
-            sideW - 10,
-            thumbMaxH - 6
-          );
-        } catch {
-          /* ignore */
-        }
-      }
-    }
-  }
-
-  // Full-width clinician phrase band
   const phraseY = stageBottom + 3;
   doc.setFillColor(255, 241, 242);
   doc.setDrawColor(254, 205, 211);
@@ -277,10 +307,10 @@ export async function renderDominantLesionCardAnnexToPDF(
   doc.text("PARA EL CLÍNICO", margin + 7, phraseY + 6);
 
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
+  doc.setFontSize(9.5);
   doc.setTextColor(30, 41, 59);
   wrapText(doc, data.clinicianPhrase, contentW - 16, 3).forEach((line, i) => {
-    doc.text(line, margin + 7, phraseY + 13 + i * 5);
+    doc.text(line, margin + 7, phraseY + 13 + i * 4.8);
   });
 
   doc.setFont("helvetica", "normal");
