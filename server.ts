@@ -10304,6 +10304,8 @@ app.post("/api/generate-findings-infographic", async (req: express.Request, res:
       diagnosisPreset,
       layout,
       contentMode,
+      dualAudience,
+      scorecardCategory,
     } = req.body;
     if (!report || !String(report).trim()) {
       return res.status(400).json({ success: false, error: "Se requiere el parámetro 'report'." });
@@ -10324,6 +10326,9 @@ app.post("/api/generate-findings-infographic", async (req: express.Request, res:
       .join(" | ");
     const suggestedLayouts = modeMeta.suggestedLayouts.join(", ");
 
+    const wantDual = dualAudience !== false;
+    const scCat = (scorecardCategory || "").toString().trim();
+
     const prompt = `Eres el mismo radiólogo hispanohablante que redactó este informe.
 Construye una INFOGRAFÍA DE HALLAZGOS para PDF/consola: nodos visuales según el TIPO DE CONTENIDO pedido.
 
@@ -10332,28 +10337,39 @@ IDIOMA: TODO el texto visible en ESPAÑOL médico, voz del radiólogo (afirmacio
 ESTUDIO: ${studyType || "No especificado"}
 PRESET: ${preset}
 ${dx ? `ANCLA / TEMA: "${dx}"` : "Deriva el diagnóstico o tema principal del informe."}
+${scCat ? `CATEGORÍA SCORECARD (debe reflejarse en diagnosis): «${scCat}».` : ""}
 TIPO DE CONTENIDO (contentMode): ${modeId} — ${modeMeta.label}
 ${contentInstructions}
 LAYOUT PREFERIDO: ${layoutHint}
 Layouts sugeridos para este contenido: ${suggestedLayouts}
 Layouts válidos: ${layoutCatalog}
 ${history ? `HISTORIA CLINICA:\n"""\n${history}\n"""` : ""}
+${
+  wantDual
+    ? `MODO DUAL OBLIGATORIO: además del texto médico, rellena patientTitle, patientDiagnosis, patientSynthesis y patientLabel/patientDetail en CADA node. El lenguaje paciente debe ser claramente distinto (llano, sin jerga); la anatomía/hallazgo es el mismo.`
+    : ""
+}
 
 REGLAS ESTRICTAS:
 1. Genera el número de nodes indicado en CONTENIDO. Solo lo afirmado o negado EXPLÍCITAMENTE en el informe.
 2. PROHIBIDO: manejo, conducta, seguimiento, recomendaciones, tratamiento, biopsia, "correlacionar con clínica" como plan.
 3. PROHIBIDO absoluto: "no mencionado", "no documentado", "ausente del informe", "pendiente", "faltante", "no referido", cualquier juicio sobre omisiones del reporte.
-4. Cada node: id, label (corto, 3-8 palabras), detail (opcional, 1 frase semiológica), weight ("primary" para 1-2 hallazgos clave, resto "secondary"), polarity ("present" | "ruled_out" | "criterion" | "neutral"), group (opcional: estructura o familia de criterio).
-5. title: "${modeMeta.defaultTitle}" o variante breve coherente con el contentMode.
+4. Cada node: id, label (corto, 3-8 palabras, léxico médico), detail (opcional, 1 frase semiológica), patientLabel (mismo hallazgo en lenguaje llano para el paciente, 3-10 palabras), patientDetail (opcional, 1 frase sencilla sin jerga), weight ("primary" para 1-2 hallazgos clave, resto "secondary"), polarity ("present" | "ruled_out" | "criterion" | "neutral"), group (opcional: estructura o familia de criterio).
+5. title: "${modeMeta.defaultTitle}" o variante breve coherente con el contentMode (voz médico).
 6. diagnosis: ancla limpia (diagnóstico, categoría BI-RADS/TI-RADS, tema). Sin signos de interrogación.
-7. studyRegion: región anatómica breve.
-8. contentMode: debe ser exactamente "${modeId}".
-9. layout: uno de los layouts válidos. Si el hint es "auto", elige el más adecuado entre los sugeridos (${suggestedLayouts}).
-10. NO inventes hallazgos. Negaciones solo si están escritas (ej. "sin líquido libre"); nunca digas que algo "no se mencionó".
+7. patientTitle: título corto para el paciente (ej. "Sus hallazgos en imágenes").
+8. patientDiagnosis: misma ancla en lenguaje llano (sin códigos crudos si se puede evitar; explica la categoría).
+9. patientSynthesis: 1-2 frases para el paciente (qué se vio; sin plan de tratamiento extenso).
+10. synthesis: 1-2 frases técnicas para el médico (opcional pero recomendado).
+11. studyRegion: región anatómica breve.
+12. contentMode: debe ser exactamente "${modeId}".
+13. layout: uno de los layouts válidos. Si el hint es "auto", elige el más adecuado entre los sugeridos (${suggestedLayouts}).
+14. NO inventes hallazgos. Negaciones solo si están escritas (ej. "sin líquido libre"); nunca digas que algo "no se mencionó".
+15. DUAL: patientLabel/patientDetail DEBEN describir el MISMO hallazgo anatómico que label/detail (misma disposición visual).
 
 Claves JSON en inglés:
-title, diagnosis, studyRegion, contentMode, layout, nodes.
-Cada node: id, label, detail, weight, polarity, group.
+title, diagnosis, studyRegion, contentMode, layout, nodes, synthesis, patientTitle, patientDiagnosis, patientSynthesis.
+Cada node: id, label, detail, patientLabel, patientDetail, weight, polarity, group.
 
 INFORME:
 """
@@ -10367,11 +10383,13 @@ ${report}
         id: { type: Type.STRING },
         label: { type: Type.STRING },
         detail: { type: Type.STRING },
+        patientLabel: { type: Type.STRING },
+        patientDetail: { type: Type.STRING },
         weight: { type: Type.STRING },
         polarity: { type: Type.STRING },
         group: { type: Type.STRING },
       },
-      required: ["id", "label"],
+      required: ["id", "label", "patientLabel"],
     };
 
     const fullSchema = {
@@ -10382,9 +10400,13 @@ ${report}
         studyRegion: { type: Type.STRING },
         contentMode: { type: Type.STRING },
         layout: { type: Type.STRING },
+        synthesis: { type: Type.STRING },
+        patientTitle: { type: Type.STRING },
+        patientDiagnosis: { type: Type.STRING },
+        patientSynthesis: { type: Type.STRING },
         nodes: { type: Type.ARRAY, items: nodeSchema },
       },
-      required: ["title", "diagnosis", "layout", "nodes"],
+      required: ["title", "diagnosis", "layout", "nodes", "patientTitle", "patientDiagnosis"],
     };
 
     const readModelText = (response: any): string => {
