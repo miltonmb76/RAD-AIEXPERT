@@ -10304,6 +10304,8 @@ app.post("/api/generate-findings-infographic", async (req: express.Request, res:
       diagnosisPreset,
       layout,
       contentMode,
+      dualAudience,
+      scorecardCategory,
     } = req.body;
     if (!report || !String(report).trim()) {
       return res.status(400).json({ success: false, error: "Se requiere el parámetro 'report'." });
@@ -10324,6 +10326,9 @@ app.post("/api/generate-findings-infographic", async (req: express.Request, res:
       .join(" | ");
     const suggestedLayouts = modeMeta.suggestedLayouts.join(", ");
 
+    const wantDual = dualAudience !== false;
+    const scCat = (scorecardCategory || "").toString().trim();
+
     const prompt = `Eres el mismo radiólogo hispanohablante que redactó este informe.
 Construye una INFOGRAFÍA DE HALLAZGOS para PDF/consola: nodos visuales según el TIPO DE CONTENIDO pedido.
 
@@ -10332,12 +10337,18 @@ IDIOMA: TODO el texto visible en ESPAÑOL médico, voz del radiólogo (afirmacio
 ESTUDIO: ${studyType || "No especificado"}
 PRESET: ${preset}
 ${dx ? `ANCLA / TEMA: "${dx}"` : "Deriva el diagnóstico o tema principal del informe."}
+${scCat ? `CATEGORÍA SCORECARD (debe reflejarse en diagnosis): «${scCat}».` : ""}
 TIPO DE CONTENIDO (contentMode): ${modeId} — ${modeMeta.label}
 ${contentInstructions}
 LAYOUT PREFERIDO: ${layoutHint}
 Layouts sugeridos para este contenido: ${suggestedLayouts}
 Layouts válidos: ${layoutCatalog}
 ${history ? `HISTORIA CLINICA:\n"""\n${history}\n"""` : ""}
+${
+  wantDual
+    ? `MODO DUAL OBLIGATORIO: además del texto médico, rellena patientTitle, patientDiagnosis, patientSynthesis y patientLabel/patientDetail en CADA node. El lenguaje paciente debe ser claramente distinto (llano, sin jerga); la anatomía/hallazgo es el mismo.`
+    : ""
+}
 
 REGLAS ESTRICTAS:
 1. Genera el número de nodes indicado en CONTENIDO. Solo lo afirmado o negado EXPLÍCITAMENTE en el informe.

@@ -142,33 +142,31 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
     setIsLoading(true);
     setError(null);
     try {
-      // Prefer scorecard bridge when category governs classification criteria
+      // Scorecard bridge only for classification-criteria mode (keeps dual copy).
+      // Other modes call the API so patientLabel/patientDiagnosis are generated.
       if (
         scorecardData &&
         scoreGov?.categoryAssigned &&
-        (contentMode === "classification_criteria" || presetId === "auto")
+        contentMode === "classification_criteria"
       ) {
         const fromScore = infographicFromScorecard(scorecardData);
         setInfographicData(
-          normalizeFindingsInfographicData(
-            {
-              ...fromScore,
-              contentMode:
-                contentMode === "classification_criteria"
-                  ? "classification_criteria"
-                  : fromScore.contentMode,
-              layout:
-                layoutChoice === "auto" ? fromScore.layout : layoutChoice,
-              title:
-                contentMode === "classification_criteria"
-                  ? modeMeta.defaultTitle
-                  : fromScore.title,
-            },
-            scoreGov.categoryAssigned,
-            layoutChoice === "auto" ? fromScore.layout : layoutChoice,
-            contentMode === "classification_criteria"
-              ? "classification_criteria"
-              : fromScore.contentMode
+          ensureDualAudienceCopy(
+            normalizeFindingsInfographicData(
+              {
+                ...fromScore,
+                contentMode: "classification_criteria",
+                layout:
+                  layoutChoice === "auto" ? fromScore.layout : layoutChoice,
+                title: modeMeta.defaultTitle,
+                activeAudience: "clinician",
+                includeClinicianInPdf: true,
+                includePatientInPdf: true,
+              },
+              scoreGov.categoryAssigned,
+              layoutChoice === "auto" ? fromScore.layout : layoutChoice,
+              "classification_criteria"
+            )
           )
         );
         setIncludeInReport(true);
@@ -187,6 +185,7 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
           diagnosisPreset: presetId,
           layout: layoutChoice,
           contentMode,
+          dualAudience: true,
           scorecardCategory: scoreGov?.categoryAssigned || undefined,
           scorecardProtocol: scoreGov?.protocolName || undefined,
           scorecardRecommendation: scoreGov?.recommendation || undefined,
@@ -198,14 +197,19 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
       }
       const lockedDiagnosis = scoreGov?.categoryAssigned || diagnosisLabel;
       setInfographicData(
-        normalizeFindingsInfographicData(
-          {
-            ...json.data,
-            diagnosis: lockedDiagnosis,
-          },
-          lockedDiagnosis,
-          layoutChoice,
-          contentMode
+        ensureDualAudienceCopy(
+          normalizeFindingsInfographicData(
+            {
+              ...json.data,
+              diagnosis: lockedDiagnosis,
+              activeAudience: "clinician",
+              includeClinicianInPdf: true,
+              includePatientInPdf: true,
+            },
+            lockedDiagnosis,
+            layoutChoice,
+            contentMode
+          )
         )
       );
       setIncludeInReport(true);
@@ -406,6 +410,73 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
         </div>
       </div>
 
+      {infographicData && (
+        <div className="rounded-2xl border border-cyan-500/30 bg-gradient-to-r from-teal-950/50 via-slate-950 to-cyan-950/40 p-3 md:p-4 space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-cyan-300">
+                Dos versiones · misma anatomía
+              </p>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Cambia la voz del texto. El diagrama conserva la misma disposición.
+              </p>
+            </div>
+            <div className="inline-flex rounded-xl border border-slate-600 overflow-hidden shadow-lg">
+              <button
+                type="button"
+                onClick={() => setAudience("clinician")}
+                className={`px-4 py-2 text-[11px] font-black uppercase tracking-wider cursor-pointer ${
+                  audience === "clinician"
+                    ? "bg-teal-600 text-white"
+                    : "bg-slate-950 text-slate-400 hover:text-white"
+                }`}
+              >
+                Médico
+              </button>
+              <button
+                type="button"
+                onClick={() => setAudience("patient")}
+                className={`px-4 py-2 text-[11px] font-black uppercase tracking-wider cursor-pointer ${
+                  audience === "patient"
+                    ? "bg-cyan-600 text-white"
+                    : "bg-slate-950 text-slate-400 hover:text-white"
+                }`}
+              >
+                Paciente
+              </button>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+            <div
+              className={`rounded-xl border px-3 py-2 ${
+                audience === "clinician"
+                  ? "border-teal-400/50 bg-teal-950/40 text-teal-100"
+                  : "border-slate-700 bg-slate-950/60 text-slate-400"
+              }`}
+            >
+              <p className="text-[9px] font-black uppercase tracking-wider opacity-80">Médico</p>
+              <p className="font-semibold mt-0.5 leading-snug">
+                {infographicData.diagnosis || "—"}
+              </p>
+            </div>
+            <div
+              className={`rounded-xl border px-3 py-2 ${
+                audience === "patient"
+                  ? "border-cyan-400/50 bg-cyan-950/40 text-cyan-100"
+                  : "border-slate-700 bg-slate-950/60 text-slate-400"
+              }`}
+            >
+              <p className="text-[9px] font-black uppercase tracking-wider opacity-80">Paciente</p>
+              <p className="font-semibold mt-0.5 leading-snug">
+                {infographicData.patientDiagnosis ||
+                  projected?.diagnosis ||
+                  "—"}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
@@ -414,7 +485,7 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
           className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 disabled:opacity-60 text-white text-xs font-black uppercase tracking-wider cursor-pointer"
         >
           {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-          {infographicData ? "Regenerar infografía" : "Generar infografía"}
+          {infographicData ? "Regenerar infografía dual" : "Generar infografía dual"}
         </button>
         {infographicData && (
           <>
@@ -470,44 +541,33 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
 
       {infographicData && scene && (
         <div className="space-y-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
-              Vista previa
-            </span>
-            <div className="inline-flex rounded-xl border border-slate-700 overflow-hidden">
-              <button
-                type="button"
-                onClick={() => setAudience("clinician")}
-                className={`px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider cursor-pointer ${
-                  audience === "clinician"
-                    ? "bg-teal-600 text-white"
-                    : "bg-slate-950 text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                Médico
-              </button>
-              <button
-                type="button"
-                onClick={() => setAudience("patient")}
-                className={`px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider cursor-pointer ${
-                  audience === "patient"
-                    ? "bg-cyan-600 text-white"
-                    : "bg-slate-950 text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                Paciente
-              </button>
+          <div
+            className={`rounded-2xl overflow-hidden border -mx-1 sm:mx-0 ${
+              audience === "patient"
+                ? "border-cyan-400/40"
+                : "border-teal-500/25"
+            }`}
+          >
+            <div
+              className={`px-3 py-2 flex items-center justify-between gap-2 text-[10px] font-black uppercase tracking-widest ${
+                audience === "patient"
+                  ? "bg-cyan-600 text-white"
+                  : "bg-teal-700 text-white"
+              }`}
+            >
+              <span>
+                Vista {audience === "patient" ? "paciente" : "médico"}
+              </span>
+              <span className="opacity-80 normal-case tracking-normal font-semibold">
+                {projected?.diagnosis}
+              </span>
             </div>
-            <span className="text-[10px] text-slate-500">
-              Misma lámina · {audience === "patient" ? "lenguaje llano" : "léxico técnico"}
-            </span>
-          </div>
-
-          <div className="rounded-2xl border border-teal-500/25 overflow-hidden bg-slate-950 -mx-1 sm:mx-0">
-            <FindingsInfographicCanvas
-              scene={scene}
-              className="w-full h-auto block min-h-[420px] sm:min-h-[520px]"
-            />
+            <div className="bg-slate-950">
+              <FindingsInfographicCanvas
+                scene={scene}
+                className="w-full h-auto block min-h-[420px] sm:min-h-[520px]"
+              />
+            </div>
           </div>
 
           {companion && (

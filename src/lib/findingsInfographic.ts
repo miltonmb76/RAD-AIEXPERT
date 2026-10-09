@@ -164,6 +164,20 @@ export function ensureDualAudienceCopy(data: FindingsInfographicData): FindingsI
     patientDetail: (n.patientDetail || "").trim()
       || (n.detail ? toPatientPlainLanguage(n.detail) : undefined),
   }));
+  const clinDx = (data.diagnosis || "").trim();
+  let patientDiagnosis =
+    (data.patientDiagnosis || "").trim() ||
+    toPatientPlainLanguage(clinDx) ||
+    clinDx;
+  // If plain rewrite barely changed, frame it so the patient view is visibly distinct
+  if (
+    patientDiagnosis &&
+    clinDx &&
+    patientDiagnosis.toLowerCase() === clinDx.toLowerCase()
+  ) {
+    patientDiagnosis = `En sus imágenes: ${patientDiagnosis}`;
+  }
+
   return {
     ...data,
     nodes,
@@ -171,13 +185,14 @@ export function ensureDualAudienceCopy(data: FindingsInfographicData): FindingsI
       (data.patientTitle || "").trim() ||
       toPatientPlainLanguage(data.title) ||
       "Sus hallazgos en imágenes",
-    patientDiagnosis:
-      (data.patientDiagnosis || "").trim() ||
-      toPatientPlainLanguage(data.diagnosis) ||
-      data.diagnosis,
+    patientDiagnosis,
     patientSynthesis:
       (data.patientSynthesis || "").trim() ||
-      (data.synthesis ? toPatientPlainLanguage(data.synthesis) : undefined),
+      (data.synthesis
+        ? toPatientPlainLanguage(data.synthesis)
+        : patientDiagnosis
+          ? `Esto resume lo que se vio en el estudio en relación con ${patientDiagnosis}.`
+          : undefined),
     includeClinicianInPdf: data.includeClinicianInPdf !== false,
     includePatientInPdf: data.includePatientInPdf !== false,
     activeAudience: data.activeAudience || "clinician",
