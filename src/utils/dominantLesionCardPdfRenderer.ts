@@ -3,8 +3,12 @@ import type { DominantLesionCardData } from "../lib/dominantLesionCard";
 import { sanitizePdfText } from "./sanitizePdfText";
 
 function wrapText(doc: jsPDF, text: string, maxW: number, maxLines: number): string[] {
-  const lines = doc.splitTextToSize(sanitizePdfText(text), maxW) as string[];
-  return lines.slice(0, maxLines);
+  const lines = doc.splitTextToSize(sanitizePdfText(text || ""), maxW) as string[];
+  if (lines.length <= maxLines) return lines;
+  const sliced = lines.slice(0, maxLines);
+  const last = sliced[maxLines - 1] || "";
+  sliced[maxLines - 1] = last.length > 3 ? `${last.slice(0, -2)}…` : last;
+  return sliced;
 }
 
 function loadImage(dataUrl: string): Promise<HTMLImageElement | null> {
@@ -20,62 +24,110 @@ function loadImage(dataUrl: string): Promise<HTMLImageElement | null> {
   });
 }
 
-function drawContainedImage(
-  doc: jsPDF,
-  dataUrl: string,
+/**
+ * Cover-crop into the box via canvas (fills frame, no letterboxing, no overflow).
+ */
+function coverCropDataUrl(
   img: HTMLImageElement,
-  boxX: number,
-  boxY: number,
-  boxW: number,
-  boxH: number
-) {
-  const iw = img.width || 1;
-  const ih = img.height || 1;
-  const scale = Math.min(boxW / iw, boxH / ih);
-  const dw = iw * scale;
-  const dh = ih * scale;
-  const dx = boxX + (boxW - dw) / 2;
-  const dy = boxY + (boxH - dh) / 2;
-  const fmt = dataUrl.startsWith("data:image/jpeg") ? "JPEG" : "PNG";
-  doc.addImage(dataUrl, fmt, dx, dy, dw, dh);
+  boxWmm: number,
+  boxHmm: number,
+  maxPx = 1400
+): string | null {
+  try {
+    const iw = img.naturalWidth || img.width || 1;
+    const ih = img.naturalHeight || img.height || 1;
+    const targetAspect = boxWmm / Math.max(0.1, boxHmm);
+    let srcW = iw;
+    let srcH = iw / targetAspect;
+    if (srcH > ih) {
+      srcH = ih;
+      srcW = ih * targetAspect;
+    }
+    const sx = Math.max(0, (iw - srcW) / 2);
+    const sy = Math.max(0, (ih - srcH) / 2);
+
+    const outW = Math.min(maxPx, Math.max(240, Math.round(boxWmm * 8)));
+    const outH = Math.max(160, Math.round(outW / targetAspect));
+    const canvas = document.createElement("canvas");
+    canvas.width = outW;
+    canvas.height = outH;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(0, 0, outW, outH);
+    ctx.drawImage(img, sx, sy, srcW, srcH, 0, 0, outW, outH);
+    return canvas.toDataURL("image/jpeg", 0.88);
+  } catch {
+    return null;
+  }
 }
 
-async function drawImagePanel(
+async function drawMediaTile(
   doc: jsPDF,
   dataUrl: string | null | undefined,
-  caption: string | undefined,
+  caption: string,
   x: number,
   y: number,
   w: number,
   h: number,
   emptyLabel: string
-) {
+): Promise<void> {
+  const capH = 5.2;
+  const imgH = Math.max(18, h - capH);
+  const pad = 1;
+
   doc.setFillColor(15, 23, 42);
-  doc.roundedRect(x, y, w, h, 2, 2, "F");
-  const pad = 2.5;
+  doc.roundedRect(x, y, w, h, 1.6, 1.6, "F");
+
   if (dataUrl) {
     const img = await loadImage(dataUrl);
     if (img) {
       try {
-        drawContainedImage(doc, dataUrl, img, x + pad, y + pad, w - pad * 2, h - pad * 2 - 6);
+        const boxW = w - pad * 2;
+        const boxH = imgH - pad * 2;
+        const cropped = coverCropDataUrl(img, boxW, boxH);
+        if (cropped) {
+          doc.addImage(cropped, "JPEG", x + pad, y + pad, boxW, boxH);
+        } else {
+          // Fallback: contain (may letterbox)
+          const iw = img.width || 1;
+          const ih = img.height || 1;
+          const s = Math.min(boxW / iw, boxH / ih);
+          const dw = iw * s;
+          const dh = ih * s;
+          const fmt = dataUrl.startsWith("data:image/jpeg") ? "JPEG" : "PNG";
+          doc.addImage(
+            dataUrl,
+            fmt,
+            x + pad + (boxW - dw) / 2,
+            y + pad + (boxH - dh) / 2,
+            dw,
+            dh
+          );
+        }
       } catch {
         /* ignore */
       }
+      doc.setFillColor(15, 23, 42);
+      doc.rect(x, y + imgH, w, capH, "F");
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(6.5);
+      doc.setFontSize(6);
       doc.setTextColor(226, 232, 240);
-      doc.text(sanitizePdfText(caption || "").slice(0, 55), x + 3, y + h - 2.5);
+      const cap = wrapText(doc, caption || emptyLabel, w - 3.5, 1)[0] || emptyLabel;
+      doc.text(cap, x + 1.8, y + imgH + 3.4);
       return;
     }
   }
+
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
+  doc.setFontSize(7.5);
   doc.setTextColor(148, 163, 184);
   doc.text(emptyLabel, x + w / 2, y + h / 2, { align: "center" });
 }
 
 /**
- * One-page elegant annex with single or dual image layouts.
+ * One-page annex — clear of running header, snug media (cover crop),
+ * side panel sized to content, text clipped inside boxes.
  */
 export async function renderDominantLesionCardAnnexToPDF(
   doc: jsPDF,
@@ -93,232 +145,281 @@ export async function renderDominantLesionCardAnnexToPDF(
   doc.addPage();
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
-  const margin = 12;
+  const margin = 14;
   const contentW = pageW - margin * 2;
   const layout = data.imageLayout || "single";
+  // Global footer sits at pageH - 10; keep clear.
+  const footerClear = 16;
 
+  // Soft wash only below running header line (y=14)
   doc.setFillColor(248, 250, 252);
-  doc.rect(0, 0, pageW, pageH, "F");
+  doc.rect(0, 15, pageW, pageH - 15, "F");
 
-  const headH = 28;
+  // Match other annexes: start below running header + separator
+  let y = 22;
+
+  const headH = 20;
   doc.setFillColor(15, 23, 42);
-  doc.rect(0, 0, pageW, headH, "F");
+  doc.roundedRect(margin, y, contentW, headH, 2.2, 2.2, "F");
   doc.setFillColor(190, 18, 60);
-  doc.rect(0, headH - 1.6, pageW, 1.6, "F");
+  doc.rect(margin, y + headH - 1.3, contentW, 1.3, "F");
 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(8);
+  doc.setFontSize(6.5);
   doc.setTextColor(251, 113, 133);
-  doc.text("LESIÓN DOMINANTE", margin, 9);
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(14);
-  doc.setTextColor(255, 255, 255);
-  const titleLines = wrapText(doc, data.lesionLabel, contentW - 52, 2);
-  let ty = 15.5;
-  titleLines.forEach((line) => {
-    doc.text(line, margin, ty);
-    ty += 5.2;
-  });
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
-  doc.setTextColor(203, 213, 225);
-  const meta = [data.site, data.laterality, data.studyRegion].filter(Boolean).join("  ·  ");
-  doc.text(sanitizePdfText(meta).slice(0, 90), margin, headH - 4);
-
-  if (opts?.clinicName) {
-    doc.setFontSize(7);
-    doc.setTextColor(148, 163, 184);
-    doc.text(sanitizePdfText(opts.clinicName).slice(0, 40), pageW - margin, 9, { align: "right" });
-  }
+  doc.text("LESIÓN DOMINANTE", margin + 3.5, y + 5.2);
 
   const cat = [data.categorySystem, data.categoryValue].filter(Boolean).join(" ");
+  let titleMaxW = contentW - 8;
   if (cat) {
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-    const catW = Math.min(50, Math.max(28, doc.getTextWidth(cat) + 10));
-    const catX = pageW - margin - catW;
+    doc.setFontSize(8.5);
+    const catLabel = sanitizePdfText(cat).slice(0, 16);
+    const catW = Math.min(40, Math.max(20, doc.getTextWidth(catLabel) + 7));
+    const catX = margin + contentW - catW - 2.5;
     doc.setFillColor(255, 255, 255);
-    doc.roundedRect(catX, 10, catW, 12, 2, 2, "F");
+    doc.roundedRect(catX, y + 4.5, catW, 8, 1.4, 1.4, "F");
     doc.setTextColor(159, 18, 57);
-    doc.text(sanitizePdfText(cat), catX + catW / 2, 17.8, { align: "center" });
+    doc.text(catLabel, catX + catW / 2, y + 9.8, { align: "center" });
+    titleMaxW = contentW - catW - 12;
   }
 
-  const stageTop = headH + 6;
-  const phraseH = 30;
-  const footerNoteY = pageH - 8;
-  const stageBottom = footerNoteY - phraseH - 6;
-  const stageH = stageBottom - stageTop;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(255, 255, 255);
+  const titleLine = wrapText(doc, data.lesionLabel, titleMaxW, 1)[0] || "Lesión dominante";
+  doc.text(titleLine, margin + 3.5, y + 12);
 
-  const gap = 5;
-  const mediaW = contentW * (layout === "single" ? 0.56 : 0.58);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7);
+  doc.setTextColor(203, 213, 225);
+  const meta = [data.site, data.laterality, data.studyRegion].filter(Boolean).join(" · ");
+  doc.text(wrapText(doc, meta, titleMaxW, 1)[0] || "", margin + 3.5, y + 16.8);
+
+  y += headH + 4;
+
+  const gap = 4.5;
+  const mediaW = contentW * 0.5;
   const sideW = contentW - mediaW - gap;
   const mediaX = margin;
   const sideX = margin + mediaW + gap;
+  const sidePadX = 3.5;
+  const innerW = sideW - sidePadX * 2;
+
+  // Compact media heights — do not stretch toward page bottom
+  let mediaH = 70;
+  if (layout === "clinical_3d") mediaH = 88;
+  else if (layout === "mmg_us") mediaH = 64;
+
+  const phraseBudget = 30;
+  const maxMediaH = pageH - y - phraseBudget - footerClear - 4;
+  mediaH = Math.min(mediaH, Math.max(48, maxMediaH));
 
   if (layout === "mmg_us") {
-    const cellW = (mediaW - 3) / 2;
-    await drawImagePanel(
+    const cellW = (mediaW - 2.5) / 2;
+    await drawMediaTile(
       doc,
       opts?.imageDataUrl,
       opts?.imageCaption || "MMG",
       mediaX,
-      stageTop,
+      y,
       cellW,
-      stageH,
+      mediaH,
       "Sin MMG"
     );
-    await drawImagePanel(
+    await drawMediaTile(
       doc,
       opts?.imageBDataUrl,
       opts?.imageBCaption || "US",
-      mediaX + cellW + 3,
-      stageTop,
+      mediaX + cellW + 2.5,
+      y,
       cellW,
-      stageH,
+      mediaH,
       "Sin US"
     );
   } else if (layout === "clinical_3d") {
-    const topH = stageH * 0.55;
-    const botH = stageH - topH - 3;
-    await drawImagePanel(
+    // Side-by-side: US | 3D — avoids a tall empty US well
+    const cellW = (mediaW - 2.5) / 2;
+    const pairH = Math.min(mediaH, 72);
+    mediaH = pairH;
+    await drawMediaTile(
       doc,
       opts?.imageDataUrl,
       opts?.imageCaption || "Imagen clínica",
       mediaX,
-      stageTop,
-      mediaW,
-      topH,
+      y,
+      cellW,
+      pairH,
       "Sin imagen clínica"
     );
-    await drawImagePanel(
+    await drawMediaTile(
       doc,
       opts?.focal3dDataUrl,
       opts?.focal3dCaption || "Corte 3D",
-      mediaX,
-      stageTop + topH + 3,
-      mediaW,
-      botH,
+      mediaX + cellW + 2.5,
+      y,
+      cellW,
+      pairH,
       "Sin corte 3D"
     );
   } else {
-    await drawImagePanel(
+    await drawMediaTile(
       doc,
       opts?.imageDataUrl,
       opts?.imageCaption || (data.figureRef ? `Figura ${data.figureRef}` : "Imagen clínica"),
       mediaX,
-      stageTop,
+      y,
       mediaW,
-      stageH,
+      mediaH,
       "Sin imagen asociada"
     );
   }
 
-  // Side facts
+  // Side facts — height follows content (no tall empty white card)
+  const sideTop = y;
+  let plannedH = 7;
+  plannedH += 4.5; // TAMAÑO label
+  const sizeLines = wrapText(doc, data.sizeSummary || "—", innerW, 2);
+  plannedH += sizeLines.length * 5 + 3;
+
+  const measCount = Math.min(4, data.measurements.length);
+  const measRows = Math.ceil(measCount / 2);
+  if (measCount) plannedH += measRows * 12 + 2;
+
+  doc.setFontSize(7);
+  const rationaleLines = data.categoryRationale
+    ? wrapText(doc, data.categoryRationale, innerW, 3)
+    : [];
+  if (rationaleLines.length) plannedH += 4.5 + rationaleLines.length * 3.2 + 2;
+
+  const descriptors = (data.keyDescriptors || []).slice(0, 4);
+  if (descriptors.length) plannedH += 4.5 + descriptors.length * 6 + 2;
+
+  // Prefer content height; never exceed media column or leave a giant empty box
+  const sideH = Math.min(mediaH, Math.max(42, plannedH + 3));
+
   doc.setFillColor(255, 255, 255);
   doc.setDrawColor(226, 232, 240);
-  doc.roundedRect(sideX, stageTop, sideW, stageH, 3, 3, "FD");
+  doc.setLineWidth(0.3);
+  doc.roundedRect(sideX, sideTop, sideW, sideH, 2, 2, "FD");
 
-  let y = stageTop + 7;
+  const bottomLimit = sideTop + sideH - 2.5;
+  let sy = sideTop + 4.5;
+
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(7.5);
+  doc.setFontSize(6.5);
   doc.setTextColor(148, 163, 184);
-  doc.text("TAMAÑO", sideX + 5, y);
-  y += 7;
+  doc.text("TAMAÑO", sideX + sidePadX, sy);
+  sy += 4.5;
 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(15);
+  doc.setFontSize(10.5);
   doc.setTextColor(15, 23, 42);
-  doc.text(sanitizePdfText(data.sizeSummary || "—"), sideX + 5, y);
-  y += 7;
+  for (const line of sizeLines) {
+    if (sy > bottomLimit - 3) break;
+    doc.text(line, sideX + sidePadX, sy);
+    sy += 4.8;
+  }
+  sy += 2;
 
-  if (data.measurements.length) {
-    const cellW = (sideW - 14) / 2;
-    let cx = sideX + 5;
+  if (measCount && sy < bottomLimit - 11) {
+    const cellW = (innerW - 2) / 2;
+    let cx = sideX + sidePadX;
     let row = 0;
     data.measurements.slice(0, 4).forEach((m, i) => {
       if (i > 0 && i % 2 === 0) {
-        cx = sideX + 5;
+        cx = sideX + sidePadX;
         row += 1;
       }
-      const cy = y + row * 11.5;
+      const cy = sy + row * 12;
+      if (cy + 10 > bottomLimit) return;
       doc.setFillColor(248, 250, 252);
-      doc.roundedRect(cx, cy, cellW - 2, 10, 1.4, 1.4, "F");
+      doc.roundedRect(cx, cy, cellW - 1.5, 10.5, 1.1, 1.1, "F");
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(6);
+      doc.setFontSize(5);
       doc.setTextColor(148, 163, 184);
-      doc.text(sanitizePdfText(m.label).toUpperCase(), cx + 2, cy + 3.4);
+      const label = wrapText(doc, sanitizePdfText(m.label).toUpperCase(), cellW - 4, 1)[0] || "";
+      doc.text(label, cx + 1.6, cy + 3.4);
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(8.5);
+      doc.setFontSize(8);
       doc.setTextColor(30, 41, 59);
-      doc.text(sanitizePdfText(m.value), cx + 2, cy + 7.8);
+      const val = wrapText(doc, m.value, cellW - 4, 1)[0] || "";
+      doc.text(val, cx + 1.6, cy + 8);
       cx += cellW;
     });
-    y += Math.ceil(Math.min(4, data.measurements.length) / 2) * 11.5 + 4;
+    sy += measRows * 12 + 2;
   }
 
-  if (data.categoryRationale) {
+  if (rationaleLines.length && sy < bottomLimit - 9) {
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(7.5);
+    doc.setFontSize(6.5);
     doc.setTextColor(148, 163, 184);
-    doc.text("FUNDAMENTO", sideX + 5, y);
-    y += 4;
+    doc.text("FUNDAMENTO", sideX + sidePadX, sy);
+    sy += 3.8;
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
+    doc.setFontSize(7);
     doc.setTextColor(51, 65, 85);
-    wrapText(doc, data.categoryRationale, sideW - 10, 3).forEach((line) => {
-      doc.text(line, sideX + 5, y);
-      y += 3.5;
-    });
-    y += 3;
+    for (const line of rationaleLines) {
+      if (sy > bottomLimit - 2.5) break;
+      doc.text(line, sideX + sidePadX, sy);
+      sy += 3.1;
+    }
+    sy += 1.5;
   }
 
-  if (data.keyDescriptors?.length) {
+  if (descriptors.length && sy < bottomLimit - 7) {
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(7.5);
+    doc.setFontSize(6.5);
     doc.setTextColor(148, 163, 184);
-    doc.text("DESCRIPTORES", sideX + 5, y);
-    y += 5;
-    data.keyDescriptors.slice(0, 5).forEach((d) => {
-      if (y > stageTop + stageH - 8) return;
-      const label = sanitizePdfText(d).slice(0, 26);
+    doc.text("DESCRIPTORES", sideX + sidePadX, sy);
+    sy += 4.2;
+    for (const d of descriptors) {
+      if (sy > bottomLimit - 2.5) break;
+      const label = wrapText(doc, d, innerW - 4, 1)[0] || "";
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(7);
-      const tw = Math.min(sideW - 12, doc.getTextWidth(label) + 6);
+      doc.setFontSize(6);
+      const tw = Math.min(innerW, doc.getTextWidth(label) + 4.5);
       doc.setFillColor(241, 245, 249);
-      doc.roundedRect(sideX + 5, y - 3, tw, 6, 1.4, 1.4, "F");
+      doc.roundedRect(sideX + sidePadX, sy - 2.5, tw, 5, 1.1, 1.1, "F");
       doc.setTextColor(51, 65, 85);
-      doc.text(label, sideX + 7.5, y + 0.8);
-      y += 7.5;
-    });
+      doc.text(label, sideX + sidePadX + 2, sy + 0.5);
+      sy += 5.8;
+    }
   }
 
-  const phraseY = stageBottom + 3;
-  doc.setFillColor(255, 241, 242);
-  doc.setDrawColor(254, 205, 211);
-  doc.roundedRect(margin, phraseY, contentW, phraseH, 2.5, 2.5, "FD");
-  doc.setFillColor(225, 29, 72);
-  doc.rect(margin, phraseY, 2.2, phraseH, "F");
+  // Phrase band tight under media/facts — never into footer zone
+  y = Math.max(sideTop + mediaH, sideTop + sideH) + 4;
+  const phraseMaxH = 28;
+  const phraseH = Math.min(phraseMaxH, pageH - y - footerClear);
+  if (phraseH >= 18 && data.clinicianPhrase) {
+    doc.setFillColor(255, 241, 242);
+    doc.setDrawColor(254, 205, 211);
+    doc.setLineWidth(0.3);
+    doc.roundedRect(margin, y, contentW, phraseH, 1.8, 1.8, "FD");
+    doc.setFillColor(225, 29, 72);
+    doc.rect(margin, y, 1.8, phraseH, "F");
 
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(7.5);
-  doc.setTextColor(190, 18, 60);
-  doc.text("PARA EL CLÍNICO", margin + 7, phraseY + 6);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(6.5);
+    doc.setTextColor(190, 18, 60);
+    doc.text("PARA EL CLÍNICO", margin + 5.5, y + 5);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    doc.setTextColor(30, 41, 59);
+    const maxPhraseLines = Math.max(1, Math.floor((phraseH - 9) / 3.9));
+    wrapText(doc, data.clinicianPhrase, contentW - 12, maxPhraseLines).forEach((line, i) => {
+      doc.text(line, margin + 5.5, y + 10.5 + i * 3.9);
+    });
+    y += phraseH + 3;
+  }
 
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(9.5);
-  doc.setTextColor(30, 41, 59);
-  wrapText(doc, data.clinicianPhrase, contentW - 16, 3).forEach((line, i) => {
-    doc.text(line, margin + 7, phraseY + 13 + i * 4.8);
-  });
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(6.5);
+  doc.setFontSize(6);
   doc.setTextColor(148, 163, 184);
   doc.text(
-    "Ficha orientativa de la lesión dominante · no sustituye el informe completo",
+    "Ficha orientativa · no sustituye el informe completo",
     margin,
-    footerNoteY
+    Math.min(pageH - footerClear + 2, y + 1.5)
   );
 }
