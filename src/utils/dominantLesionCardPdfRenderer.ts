@@ -20,8 +20,28 @@ function loadImage(dataUrl: string): Promise<HTMLImageElement | null> {
   });
 }
 
+function drawContainedImage(
+  doc: jsPDF,
+  dataUrl: string,
+  img: HTMLImageElement,
+  boxX: number,
+  boxY: number,
+  boxW: number,
+  boxH: number
+) {
+  const iw = img.width || 1;
+  const ih = img.height || 1;
+  const scale = Math.min(boxW / iw, boxH / ih);
+  const dw = iw * scale;
+  const dh = ih * scale;
+  const dx = boxX + (boxW - dw) / 2;
+  const dy = boxY + (boxH - dh) / 2;
+  const fmt = dataUrl.startsWith("data:image/jpeg") ? "JPEG" : "PNG";
+  doc.addImage(dataUrl, fmt, dx, dy, dw, dh);
+}
+
 /**
- * One-page annex: dominant lesion card (measures, category, image, 3D thumb, clinician phrase).
+ * One-page elegant annex: hero image + clinical summary + clinician phrase.
  */
 export async function renderDominantLesionCardAnnexToPDF(
   doc: jsPDF,
@@ -29,271 +49,246 @@ export async function renderDominantLesionCardAnnexToPDF(
   opts?: {
     clinicName?: string;
     imageDataUrl?: string | null;
+    imageCaption?: string | null;
     focal3dDataUrl?: string | null;
   }
 ): Promise<void> {
   doc.addPage();
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
-  const margin = 14;
+  const margin = 12;
   const contentW = pageW - margin * 2;
 
+  // Soft page wash
   doc.setFillColor(248, 250, 252);
   doc.rect(0, 0, pageW, pageH, "F");
 
-  // Header
+  // Dark masthead band
+  const headH = 28;
+  doc.setFillColor(15, 23, 42);
+  doc.rect(0, 0, pageW, headH, "F");
+  doc.setFillColor(190, 18, 60);
+  doc.rect(0, headH - 1.6, pageW, 1.6, "F");
+
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
-  doc.setTextColor(15, 23, 42);
-  doc.text("ANEXO: FICHA DE LESIÓN DOMINANTE", margin, 16);
+  doc.setFontSize(8);
+  doc.setTextColor(251, 113, 133);
+  doc.text("LESIÓN DOMINANTE", margin, 9);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(14);
+  doc.setTextColor(255, 255, 255);
+  const titleLines = wrapText(doc, data.lesionLabel, contentW - 52, 2);
+  let ty = 15.5;
+  titleLines.forEach((line) => {
+    doc.text(line, margin, ty);
+    ty += 5.2;
+  });
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
-  doc.setTextColor(100, 116, 139);
-  const sub = [data.studyRegion, data.laterality].filter(Boolean).join(" · ");
-  if (sub) doc.text(sanitizePdfText(sub), margin, 21);
+  doc.setTextColor(203, 213, 225);
+  const meta = [data.site, data.laterality, data.studyRegion].filter(Boolean).join("  ·  ");
+  doc.text(sanitizePdfText(meta).slice(0, 90), margin, headH - 4);
+
   if (opts?.clinicName) {
-    doc.text(sanitizePdfText(opts.clinicName).slice(0, 50), pageW - margin, 16, { align: "right" });
+    doc.setFontSize(7);
+    doc.setTextColor(148, 163, 184);
+    doc.text(sanitizePdfText(opts.clinicName).slice(0, 40), pageW - margin, 9, { align: "right" });
   }
-
-  // Title row + category badge
-  let y = 28;
-  doc.setFillColor(255, 255, 255);
-  doc.setDrawColor(226, 232, 240);
-  doc.roundedRect(margin, y, contentW, 16, 2.5, 2.5, "FD");
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
-  doc.setTextColor(15, 23, 42);
-  doc.text(sanitizePdfText(data.lesionLabel).slice(0, 70), margin + 4, y + 7);
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
-  doc.setTextColor(71, 85, 105);
-  doc.text(sanitizePdfText(data.site).slice(0, 90), margin + 4, y + 12.5);
 
   const cat = [data.categorySystem, data.categoryValue].filter(Boolean).join(" ");
   if (cat) {
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(9);
-    const catW = Math.min(48, doc.getTextWidth(cat) + 8);
-    const catX = margin + contentW - catW - 3;
-    doc.setFillColor(255, 228, 230);
-    doc.setDrawColor(251, 113, 133);
-    doc.roundedRect(catX, y + 3.5, catW, 9, 1.5, 1.5, "FD");
+    doc.setFontSize(10);
+    const catW = Math.min(50, Math.max(28, doc.getTextWidth(cat) + 10));
+    const catX = pageW - margin - catW;
+    const catY = 10;
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(catX, catY, catW, 12, 2, 2, "F");
     doc.setTextColor(159, 18, 57);
-    doc.text(sanitizePdfText(cat), catX + catW / 2, y + 9.5, { align: "center" });
+    doc.text(sanitizePdfText(cat), catX + catW / 2, catY + 7.8, { align: "center" });
   }
-  y += 20;
 
-  const colGap = 8;
-  const leftW = contentW * 0.48;
-  const rightW = contentW - leftW - colGap;
-  const leftX = margin;
-  const rightX = margin + leftW + colGap;
-  const blockTop = y;
-  const blockBottom = pageH - 18;
-  const blockH = blockBottom - blockTop;
+  // Main stage
+  const stageTop = headH + 6;
+  const phraseH = 32;
+  const footerNoteY = pageH - 8;
+  const stageBottom = footerNoteY - phraseH - 6;
+  const stageH = stageBottom - stageTop;
 
-  // Left column: clinical image + optional 3D
-  doc.setFillColor(255, 255, 255);
-  doc.setDrawColor(226, 232, 240);
-  doc.roundedRect(leftX, blockTop, leftW, blockH, 2.5, 2.5, "FD");
+  const gap = 6;
+  const imgW = contentW * 0.56;
+  const sideW = contentW - imgW - gap;
+  const imgX = margin;
+  const sideX = margin + imgW + gap;
 
-  const imgPad = 4;
-  let imgAreaH = blockH * (opts?.focal3dDataUrl ? 0.62 : 0.88);
-  const imgBoxY = blockTop + imgPad + 4;
-  const imgBoxW = leftW - imgPad * 2;
-  const imgBoxH = imgAreaH - 8;
+  // Image panel
+  doc.setFillColor(15, 23, 42);
+  doc.roundedRect(imgX, stageTop, imgW, stageH, 3, 3, "F");
 
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(7);
-  doc.setTextColor(100, 116, 139);
-  doc.text("IMAGEN US / MMG", leftX + imgPad, blockTop + 5);
-
+  const imgPad = 3;
   const clinicalImg = opts?.imageDataUrl ? await loadImage(opts.imageDataUrl) : null;
-  if (clinicalImg) {
-    const iw = clinicalImg.width || 1;
-    const ih = clinicalImg.height || 1;
-    const scale = Math.min(imgBoxW / iw, imgBoxH / ih);
-    const dw = iw * scale;
-    const dh = ih * scale;
-    const dx = leftX + imgPad + (imgBoxW - dw) / 2;
-    const dy = imgBoxY + (imgBoxH - dh) / 2;
+  if (clinicalImg && opts?.imageDataUrl) {
     try {
-      const fmt = opts!.imageDataUrl!.startsWith("data:image/jpeg") ? "JPEG" : "PNG";
-      doc.addImage(opts!.imageDataUrl!, fmt, dx, dy, dw, dh);
+      drawContainedImage(
+        doc,
+        opts.imageDataUrl,
+        clinicalImg,
+        imgX + imgPad,
+        stageTop + imgPad,
+        imgW - imgPad * 2,
+        stageH - imgPad * 2 - 8
+      );
     } catch {
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8);
-      doc.setTextColor(148, 163, 184);
-      doc.text("No se pudo embeber la imagen", leftX + leftW / 2, imgBoxY + imgBoxH / 2, {
-        align: "center",
-      });
+      /* fall through */
     }
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(226, 232, 240);
+    const cap = opts.imageCaption || (data.figureRef ? `Figura ${data.figureRef}` : "Imagen clínica");
+    doc.text(sanitizePdfText(cap).slice(0, 70), imgX + 4, stageTop + stageH - 3);
   } else {
-    doc.setFillColor(241, 245, 249);
-    doc.roundedRect(leftX + imgPad, imgBoxY, imgBoxW, imgBoxH, 2, 2, "F");
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
+    doc.setFontSize(9);
     doc.setTextColor(148, 163, 184);
-    doc.text("Sin imagen vinculada", leftX + leftW / 2, imgBoxY + imgBoxH / 2, { align: "center" });
+    doc.text("Sin imagen asociada", imgX + imgW / 2, stageTop + stageH / 2, { align: "center" });
   }
 
-  if (data.figureRef) {
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(7);
-    doc.setTextColor(100, 116, 139);
-    doc.text(`Fig. ${data.figureRef}`, leftX + imgPad, imgBoxY + imgBoxH + 4);
-  }
-
-  if (opts?.focal3dDataUrl) {
-    const thumbY = blockTop + imgAreaH + 2;
-    const thumbH = blockH - imgAreaH - 8;
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(7);
-    doc.setTextColor(13, 148, 136);
-    doc.text("CORTE 3D", leftX + imgPad, thumbY + 3);
-    const focalImg = await loadImage(opts.focal3dDataUrl);
-    if (focalImg) {
-      const tw = leftW - imgPad * 2;
-      const th = Math.max(18, thumbH - 6);
-      const iw = focalImg.width || 1;
-      const ih = focalImg.height || 1;
-      const scale = Math.min(tw / iw, th / ih);
-      const dw = iw * scale;
-      const dh = ih * scale;
-      try {
-        const fmt = opts.focal3dDataUrl.startsWith("data:image/jpeg") ? "JPEG" : "PNG";
-        doc.addImage(
-          opts.focal3dDataUrl,
-          fmt,
-          leftX + imgPad + (tw - dw) / 2,
-          thumbY + 5,
-          dw,
-          dh
-        );
-      } catch {
-        /* ignore */
-      }
-    }
-  }
-
-  // Right column: measures, category, descriptors, phrase
-  let ry = blockTop;
+  // Side panel (white card)
   doc.setFillColor(255, 255, 255);
   doc.setDrawColor(226, 232, 240);
-  doc.roundedRect(rightX, blockTop, rightW, blockH, 2.5, 2.5, "FD");
-  ry += 6;
+  doc.roundedRect(sideX, stageTop, sideW, stageH, 3, 3, "FD");
+
+  let y = stageTop + 7;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7.5);
+  doc.setTextColor(148, 163, 184);
+  doc.text("TAMAÑO", sideX + 5, y);
+  y += 7;
 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(8);
-  doc.setTextColor(100, 116, 139);
-  doc.text("MEDIDAS", rightX + 4, ry);
-  ry += 5;
-
-  if (data.sizeSummary) {
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(14);
-    doc.setTextColor(15, 23, 42);
-    doc.text(sanitizePdfText(data.sizeSummary), rightX + 4, ry + 2);
-    ry += 8;
-  }
+  doc.setFontSize(16);
+  doc.setTextColor(15, 23, 42);
+  doc.text(sanitizePdfText(data.sizeSummary || "—"), sideX + 5, y);
+  y += 8;
 
   if (data.measurements.length) {
-    const cellW = (rightW - 12) / 2;
-    let cx = rightX + 4;
-    let cy = ry;
-    data.measurements.slice(0, 6).forEach((m, i) => {
+    const cellW = (sideW - 14) / 2;
+    let cx = sideX + 5;
+    let row = 0;
+    data.measurements.slice(0, 4).forEach((m, i) => {
       if (i > 0 && i % 2 === 0) {
-        cx = rightX + 4;
-        cy += 12;
+        cx = sideX + 5;
+        row += 1;
       }
+      const cy = y + row * 12;
       doc.setFillColor(248, 250, 252);
-      doc.setDrawColor(226, 232, 240);
-      doc.roundedRect(cx, cy, cellW - 2, 10, 1.2, 1.2, "FD");
+      doc.setDrawColor(241, 245, 249);
+      doc.roundedRect(cx, cy, cellW - 2, 10.5, 1.5, 1.5, "FD");
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(6.5);
-      doc.setTextColor(100, 116, 139);
-      doc.text(sanitizePdfText(m.label).toUpperCase(), cx + 2, cy + 3.5);
+      doc.setFontSize(6);
+      doc.setTextColor(148, 163, 184);
+      doc.text(sanitizePdfText(m.label).toUpperCase(), cx + 2.2, cy + 3.6);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(9);
-      doc.setTextColor(15, 23, 42);
-      doc.text(sanitizePdfText(m.value), cx + 2, cy + 8);
+      doc.setTextColor(30, 41, 59);
+      doc.text(sanitizePdfText(m.value), cx + 2.2, cy + 8.2);
       cx += cellW;
     });
-    ry = cy + 14;
-  } else if (!data.sizeSummary) {
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
-    doc.setTextColor(148, 163, 184);
-    doc.text("Sin medidas explícitas en el informe", rightX + 4, ry);
-    ry += 6;
+    y += Math.ceil(Math.min(4, data.measurements.length) / 2) * 12 + 4;
   }
 
-  if (data.categoryRationale || cat) {
-    ry += 2;
+  if (data.categoryRationale) {
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(8);
-    doc.setTextColor(100, 116, 139);
-    doc.text("CATEGORÍA", rightX + 4, ry);
-    ry += 4;
+    doc.setFontSize(7.5);
+    doc.setTextColor(148, 163, 184);
+    doc.text("FUNDAMENTO", sideX + 5, y);
+    y += 4;
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8);
     doc.setTextColor(51, 65, 85);
-    const rationale = data.categoryRationale || cat || "";
-    wrapText(doc, rationale, rightW - 8, 3).forEach((line) => {
-      doc.text(line, rightX + 4, ry);
-      ry += 3.6;
+    wrapText(doc, data.categoryRationale, sideW - 10, 3).forEach((line) => {
+      doc.text(line, sideX + 5, y);
+      y += 3.6;
     });
-    ry += 2;
+    y += 3;
   }
 
   if (data.keyDescriptors?.length) {
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(8);
-    doc.setTextColor(100, 116, 139);
-    doc.text("DESCRIPTORES", rightX + 4, ry);
-    ry += 4;
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
-    doc.setTextColor(51, 65, 85);
+    doc.setFontSize(7.5);
+    doc.setTextColor(148, 163, 184);
+    doc.text("DESCRIPTORES", sideX + 5, y);
+    y += 5;
     data.keyDescriptors.slice(0, 5).forEach((d) => {
-      const lines = wrapText(doc, `• ${d}`, rightW - 8, 2);
-      lines.forEach((line) => {
-        if (ry > blockBottom - 28) return;
-        doc.text(line, rightX + 4, ry);
-        ry += 3.5;
-      });
+      if (y > stageTop + stageH - 28) return;
+      const label = sanitizePdfText(d).slice(0, 28);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+      const tw = doc.getTextWidth(label) + 6;
+      if (sideX + 5 + tw > sideX + sideW - 4) return;
+      doc.setFillColor(241, 245, 249);
+      doc.roundedRect(sideX + 5, y - 3.2, tw, 6.5, 1.5, 1.5, "F");
+      doc.setTextColor(51, 65, 85);
+      doc.text(label, sideX + 8, y);
+      y += 8;
     });
-    ry += 2;
   }
 
-  // Clinician phrase — pinned near bottom of right column
-  const phraseMaxH = 28;
-  let phraseY = Math.max(ry + 4, blockBottom - phraseMaxH - 4);
-  if (phraseY + phraseMaxH > blockBottom - 2) phraseY = blockBottom - phraseMaxH - 2;
+  // Optional 3D thumb in remaining side space
+  if (opts?.focal3dDataUrl) {
+    const thumbMaxH = Math.max(22, stageTop + stageH - y - 6);
+    if (thumbMaxH > 24) {
+      const focalImg = await loadImage(opts.focal3dDataUrl);
+      if (focalImg) {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(7);
+        doc.setTextColor(13, 148, 136);
+        doc.text("CORTE 3D", sideX + 5, y + 2);
+        try {
+          drawContainedImage(
+            doc,
+            opts.focal3dDataUrl,
+            focalImg,
+            sideX + 5,
+            y + 4,
+            sideW - 10,
+            thumbMaxH - 6
+          );
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }
 
+  // Full-width clinician phrase band
+  const phraseY = stageBottom + 3;
   doc.setFillColor(255, 241, 242);
-  doc.setDrawColor(251, 113, 133);
-  doc.roundedRect(rightX + 3, phraseY, rightW - 6, phraseMaxH, 2, 2, "FD");
+  doc.setDrawColor(254, 205, 211);
+  doc.roundedRect(margin, phraseY, contentW, phraseH, 2.5, 2.5, "FD");
+  doc.setFillColor(225, 29, 72);
+  doc.rect(margin, phraseY, 2.2, phraseH, "F");
+
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(7);
-  doc.setTextColor(159, 18, 57);
-  doc.text("FRASE PARA EL CLÍNICO", rightX + 6, phraseY + 5);
+  doc.setFontSize(7.5);
+  doc.setTextColor(190, 18, 60);
+  doc.text("PARA EL CLÍNICO", margin + 7, phraseY + 6);
+
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5);
+  doc.setFontSize(10);
   doc.setTextColor(30, 41, 59);
-  wrapText(doc, data.clinicianPhrase, rightW - 14, 4).forEach((line, i) => {
-    doc.text(line, rightX + 6, phraseY + 11 + i * 4);
+  wrapText(doc, data.clinicianPhrase, contentW - 16, 3).forEach((line, i) => {
+    doc.text(line, margin + 7, phraseY + 13 + i * 5);
   });
 
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(7);
+  doc.setFontSize(6.5);
   doc.setTextColor(148, 163, 184);
   doc.text(
-    "Ficha orientativa de la lesión dominante. No sustituye el informe completo.",
+    "Ficha orientativa de la lesión dominante · no sustituye el informe completo",
     margin,
-    pageH - 8
+    footerNoteY
   );
 }

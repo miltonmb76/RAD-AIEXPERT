@@ -10464,6 +10464,7 @@ app.post("/api/generate-dominant-lesion-card", async (req: express.Request, res:
       focusText,
       hasAttachedImages,
       hasFocal3d,
+      imageCaptions,
     } = req.body;
     if (!report || !String(report).trim()) {
       return res.status(400).json({ success: false, error: "Se requiere el parámetro 'report'." });
@@ -10475,6 +10476,17 @@ app.post("/api/generate-dominant-lesion-card", async (req: express.Request, res:
     const history = (clinicalHistory || "").toString().trim();
     const priors = (priorInstructions || "").toString().trim();
     const focus = (focusText || "").toString().trim();
+    const captionList = Array.isArray(imageCaptions)
+      ? imageCaptions
+          .slice(0, 12)
+          .map((c: any, i: number) => {
+            const n = Number(c?.n) || i + 1;
+            const cap = String(c?.caption || "").trim().slice(0, 80);
+            const mod = String(c?.modality || "").trim().slice(0, 12);
+            return `- Figura ${n}${mod ? ` [${mod}]` : ""}: ${cap || "(sin caption)"}`;
+          })
+          .join("\n")
+      : "";
 
     const prompt = `Eres un radiólogo hispanohablante. Extrae la LESIÓN DOMINANTE del informe y construye una FICHA DE UNA PÁGINA para el clínico tratante.
 
@@ -10487,12 +10499,13 @@ ${focus ? `\nFOCO MANUAL (prioridad): la lesión dominante DEBE ser: "${focus}"`
 ${priors ? `\nINSTRUCCIONES PREVIAS DEL MÉDICO (prioridad alta):\n"""\n${priors}\n"""` : ""}
 Imágenes adjuntas disponibles: ${hasAttachedImages ? "sí" : "no"}
 Corte 3D focal ya generado: ${hasFocal3d ? "sí" : "no"}
+${captionList ? `\nCAPTIONS DE IMÁGENES ADJUNTAS (elige figureRef que mejor muestre la lesión dominante):\n${captionList}` : ""}
 
 REGLAS:
 1. Una sola lesión dominante.
 2. measurements: ejes/diámetros explícitos del informe (label + value). Si solo hay un tamaño, úsalo en sizeSummary y opcionalmente en measurements.
 3. categorySystem + categoryValue solo si el informe asigna BI-RADS, TI-RADS, LI-RADS, Bosniak, ACR, etc. Si no hay categoría, déjalos vacíos.
-4. figureRef: número si el informe menciona "(ver Figura N)" o similar para ESA lesión; si no, null.
+4. figureRef: número de la imagen adjunta que mejor ilustra ESA lesión (usa la lista de captions si existe; si el informe dice "Figura N", priorízalo).
 5. figureCaptionHint: 3–8 palabras para emparejar con captions de imágenes (proyección, lado, órgano).
 6. modalityHint: "US" | "MMG" | "US+MMG" | "CT" | "MR" | "other".
 7. clinicianPhrase: 1–2 frases en español para el médico tratante (qué es, dónde, tamaño/categoría, mensaje clínico breve).
