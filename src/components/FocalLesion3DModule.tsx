@@ -620,7 +620,7 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
           </div>
           <div
             className={`grid gap-4 ${
-              focalData.panels.length > 1 ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1 max-w-xl mx-auto"
+              focalData.panels.length > 1 ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1 max-w-lg mx-auto"
             }`}
           >
             {focalData.panels.map((panel) => (
