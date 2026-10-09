@@ -1391,13 +1391,20 @@ export type FindingsInfographicPolarity =
   | "criterion"
   | "neutral";
 
+/** Audience for dual infographic projection (same anatomy, different wording). */
+export type FindingsInfographicAudience = "clinician" | "patient";
+
 /** One finding node on the infographic. */
 export interface FindingsInfographicNode {
   id: string;
-  /** Short finding label (shown as primary text). */
+  /** Short finding label (shown as primary text) — clinician / technical. */
   label: string;
-  /** Optional one-line elaboration. */
+  /** Optional one-line elaboration — clinician / technical. */
   detail?: string;
+  /** Plain-language label for the patient audience (same node / anatomy). */
+  patientLabel?: string;
+  /** Plain-language detail for the patient audience. */
+  patientDetail?: string;
   /** Visual weight. */
   weight?: "primary" | "secondary";
   /** Semantic role for coloring / split layouts. */
@@ -1409,6 +1416,7 @@ export interface FindingsInfographicNode {
 /**
  * Findings infographic (manual module).
  * First-person radiologist voice — findings only, no management, no "not mentioned".
+ * Dual audience: clinician (technical) + patient (plain language), same layout/nodes.
  */
 export interface FindingsInfographicData {
   title: string;
@@ -1423,6 +1431,18 @@ export interface FindingsInfographicData {
    * If empty, PDF/UI derive a mode-aware synthesis from the nodes.
    */
   synthesis?: string;
+  /** Patient-facing title (same diagram). */
+  patientTitle?: string;
+  /** Patient-facing diagnosis / topic. */
+  patientDiagnosis?: string;
+  /** Patient-facing synthesis under the diagram. */
+  patientSynthesis?: string;
+  /** Which audience is shown in the module preview. */
+  activeAudience?: FindingsInfographicAudience;
+  /** Include clinician annex in the clinical PDF (default true). */
+  includeClinicianInPdf?: boolean;
+  /** Include patient annex in the clinical PDF (default true when patient copy exists). */
+  includePatientInPdf?: boolean;
   generatedAt?: string;
 }
 

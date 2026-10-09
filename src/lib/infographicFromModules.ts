@@ -6,7 +6,11 @@ import type {
   FindingsInfographicNode,
   NegativityChecklistData,
 } from "../types";
-import { normalizeFindingsInfographicData } from "./findingsInfographic";
+import {
+  ensureDualAudienceCopy,
+  normalizeFindingsInfographicData,
+  toPatientPlainLanguage,
+} from "./findingsInfographic";
 
 function clip(text: string | undefined, max = 160): string | undefined {
   const t = String(text || "").trim();
@@ -67,29 +71,57 @@ export function infographicFromScorecard(
     nodes.length >= 5 ? "funnel" : "pillars";
   const contentMode: FindingsInfographicContentMode = "classification_criteria";
 
-  return normalizeFindingsInfographicData(
-    {
-      title: "Criterios de clasificación",
+  const synthesis = clip(
+    [
+      scorecard.clinicalSummary,
+      scorecard.scoreTotal
+        ? `Criterios cumplidos: ${scorecard.scoreMet}/${scorecard.scoreTotal}.`
+        : "",
+      scorecard.recommendation
+        ? `Conducta: ${String(scorecard.recommendation).trim()}`
+        : "",
+    ]
+      .filter(Boolean)
+      .join(" "),
+    360
+  );
+  const patientDiagnosis = toPatientPlainLanguage(diagnosis) || diagnosis;
+  const patientSynthesis = clip(
+    [
+      toPatientPlainLanguage(scorecard.clinicalSummary || ""),
+      scorecard.recommendation
+        ? `Qué sigue: ${toPatientPlainLanguage(String(scorecard.recommendation).trim())}`
+        : "",
+    ]
+      .filter(Boolean)
+      .join(" "),
+    360
+  );
+
+  return ensureDualAudienceCopy(
+    normalizeFindingsInfographicData(
+      {
+        title: "Criterios de clasificación",
+        diagnosis,
+        studyRegion: scorecard.studyRegion,
+        contentMode,
+        layout,
+        nodes: nodes.map((n) => ({
+          ...n,
+          patientLabel: toPatientPlainLanguage(n.label) || n.label,
+          patientDetail: n.detail ? toPatientPlainLanguage(n.detail) : undefined,
+        })),
+        synthesis,
+        patientTitle: "Sus hallazgos en imágenes",
+        patientDiagnosis,
+        patientSynthesis,
+        includeClinicianInPdf: true,
+        includePatientInPdf: true,
+      },
       diagnosis,
-      studyRegion: scorecard.studyRegion,
-      contentMode,
       layout,
-      nodes,
-      synthesis: clip(
-        [
-          scorecard.clinicalSummary,
-          scorecard.scoreTotal
-            ? `Criterios cumplidos: ${scorecard.scoreMet}/${scorecard.scoreTotal}.`
-            : "",
-        ]
-          .filter(Boolean)
-          .join(" "),
-        320
-      ),
-    },
-    diagnosis,
-    layout,
-    contentMode
+      contentMode
+    )
   );
 }
 

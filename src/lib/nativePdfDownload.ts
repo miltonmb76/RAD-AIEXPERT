@@ -87,6 +87,8 @@ export type NativePdfDownloadDeps = {
   includeVascular3dInReport: boolean;
   includeWrist3dInReport: boolean;
   infographicUrl: any;
+  /** Formal clinician classic poster; preferred for official-report annex when present. */
+  infographicClinicianUrl?: any;
   isEditingReportManual: boolean;
   isSyntacticHighlightingActive: boolean;
   kidney3dData: any;
@@ -169,6 +171,7 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
       includeVascular3dInReport,
       includeWrist3dInReport,
       infographicUrl,
+      infographicClinicianUrl,
       isEditingReportManual,
       isSyntacticHighlightingActive,
       kidney3dData,
@@ -2948,13 +2951,22 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
         Array.isArray(activeFindingsInfographic.nodes) &&
         activeFindingsInfographic.nodes.length > 0
       ) {
-        await renderFindingsInfographicAnnexToPDF(doc, activeFindingsInfographic, {
-          marginX,
-          pageWidth,
-          pageHeight,
-          contentWidth,
-          factor,
-        });
+        const includeClinician = activeFindingsInfographic.includeClinicianInPdf !== false;
+        const includePatient = activeFindingsInfographic.includePatientInPdf !== false;
+        const audiences: Array<"clinician" | "patient"> = [];
+        if (includeClinician) audiences.push("clinician");
+        if (includePatient) audiences.push("patient");
+        if (!audiences.length) audiences.push("clinician");
+        for (const audience of audiences) {
+          await renderFindingsInfographicAnnexToPDF(doc, activeFindingsInfographic, {
+            marginX,
+            pageWidth,
+            pageHeight,
+            contentWidth,
+            factor,
+            audience,
+          });
+        }
       }
 
       // --- ANEXO: FICHA DE LESIÓN DOMINANTE ---
@@ -4899,13 +4911,18 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
 
       }
 
-      // --- 10. INFOGRAFÍA DEL PACIENTE (SI CORRESPONDE) ---
-      if (attachInfographicToOfficialReport && infographicUrl) {
+      // --- 10. INFOGRAFÍA CLÁSICA (prefer clinician poster on official report) ---
+      const officialInfographicUrl =
+        (infographicClinicianUrl as string | null | undefined) ||
+        (infographicUrl as string | null | undefined) ||
+        null;
+      const officialInfographicIsClinician = Boolean(infographicClinicianUrl);
+      if (attachInfographicToOfficialReport && officialInfographicUrl) {
         try {
-          let base64Image = infographicUrl;
-          if (!infographicUrl.startsWith("data:")) {
+          let base64Image = officialInfographicUrl;
+          if (!officialInfographicUrl.startsWith("data:")) {
             // It's a blob or normal URL. Let's fetch it and convert to data URL
-            const response = await fetch(infographicUrl);
+            const response = await fetch(officialInfographicUrl);
             const blob = await response.blob();
             base64Image = await new Promise<string>((resolve, reject) => {
               const reader = new FileReader();
@@ -4921,7 +4938,13 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
           doc.setFont("helvetica", "bold");
           doc.setFontSize(11);
           doc.setTextColor(15, 23, 42); // slate 900
-          doc.text("ANEXO: INFOGRAFÍA EXPLICATIVA PARA EL PACIENTE", marginX, yCoord);
+          doc.text(
+            officialInfographicIsClinician
+              ? "ANEXO: INFOGRAFÍA CLÍNICA (CORRELACIÓN ANATÓMICA)"
+              : "ANEXO: INFOGRAFÍA EXPLICATIVA PARA EL PACIENTE",
+            marginX,
+            yCoord
+          );
 
           // Simple divider
           yCoord += 4;

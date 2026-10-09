@@ -232,9 +232,16 @@ export default function App() {
     setExportedMimeType("");
   };
   
-  // Patient Infographic generation states
+  // Patient Infographic generation states (classic anatomical poster — dual audience)
   const [isGeneratingInfographic, setIsGeneratingInfographic] = useState<boolean>(false);
+  /** Patient-facing warm poster */
   const [infographicUrl, setInfographicUrl] = useState<string | null>(null);
+  /** Formal clinician poster (same anatomy, scientific style) */
+  const [infographicClinicianUrl, setInfographicClinicianUrl] = useState<string | null>(null);
+  /** Which classic poster tab is visible (full size — never side by side) */
+  const [infographicAudienceTab, setInfographicAudienceTab] = useState<"patient" | "clinician">(
+    "patient"
+  );
   const [infographicError, setInfographicError] = useState<string | null>(null);
   const [attachInfographicToOfficialReport, setAttachInfographicToOfficialReport] = useState<boolean>(false);
   /** Opt-in: include generated infographic in the patient explanation PDF */
@@ -2920,8 +2927,10 @@ Ejemplo:
     setSemiologyError(null);
     setIsGeneratingSemiology(false);
 
-    // --- Infografía paciente ---
+    // --- Infografía clásica (paciente + médico) ---
     setInfographicUrl(null);
+    setInfographicClinicianUrl(null);
+    setInfographicAudienceTab("patient");
     setInfographicError(null);
     setIsGeneratingInfographic(false);
     setAttachInfographicToOfficialReport(false);
@@ -4026,16 +4035,21 @@ Ejemplo:
 
     // 2. Perform the heavy infographic processing in the background (No PDF downloads to local device)
     if (whatsappShareType === 'patient_infographic') {
-      if (infographicUrl && (infographicUrl.startsWith("data:") || infographicUrl.startsWith("blob:") || infographicUrl.startsWith("http"))) {
+      const shareUrl =
+        infographicAudienceTab === "clinician"
+          ? (infographicClinicianUrl || infographicUrl)
+          : (infographicUrl || infographicClinicianUrl);
+      if (shareUrl && (shareUrl.startsWith("data:") || shareUrl.startsWith("blob:") || shareUrl.startsWith("http"))) {
         try {
-          const response = await fetch(infographicUrl);
+          const response = await fetch(shareUrl);
           const blob = await response.blob();
-          const format = infographicUrl.includes("image/png") ? "png" : "jpeg";
-          const file = new File([blob], `infografia_paciente.${format}`, { type: blob.type });
+          const format = shareUrl.includes("image/png") ? "png" : "jpeg";
+          const audienceLabel = infographicAudienceTab === "clinician" ? "medico" : "paciente";
+          const file = new File([blob], `infografia_${audienceLabel}.${format}`, { type: blob.type });
           if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
             navigator.share({
               files: [file],
-              title: "Infografía Paciente",
+              title: infographicAudienceTab === "clinician" ? "Infografía médico" : "Infografía paciente",
               text: `Infografía de ${patientName || "Paciente"}`
             }).catch(err => {
               console.warn("Native Share failed for infographic image:", err);
@@ -4637,41 +4651,75 @@ Ejemplo:
     }
   };
 
-  // ACTION FOR INFOGRAPHIC GENERATION (Gemini image ? full-page poster)
+  // ACTION FOR INFOGRAPHIC GENERATION — dual posters (patient + clinician), full-size tabs in UI
   const handleGenerateInfographic = async (opts?: { keepAttachments?: boolean }) => {
     if (!generatedReport || !studyType) return;
     setIsGeneratingInfographic(true);
     setInfographicError(null);
     setInfographicUrl(null);
+    setInfographicClinicianUrl(null);
     if (!opts?.keepAttachments) {
       setAttachInfographicToOfficialReport(false);
       setAttachInfographicToPatientSummary(false);
     }
     try {
       const notes = infographicCorrectionNotes.trim();
-      const response = await fetch("/api/generate-infographic", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          report: generatedReport,
-          studyType,
-          reportDate: reportDate || "",
-          projections,
-          viewOrientation: infographicViewOrientation,
-          ...(notes ? { correctionNotes: notes } : {}),
+      const baseBody = {
+        report: generatedReport,
+        studyType,
+        reportDate: reportDate || "",
+        projections,
+        viewOrientation: infographicViewOrientation,
+        ...(notes ? { correctionNotes: notes } : {}),
+      };
+      const [patientRes, clinicianRes] = await Promise.all([
+        fetch("/api/generate-infographic", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...baseBody, audience: "patient" }),
         }),
-      });
-      const data = await response.json();
-      if (data.success) {
-        setInfographicUrl(data.imageUrl);
-        if (data.viewOrientation === "AP" || data.viewOrientation === "PA") {
-          setInfographicViewOrientation(data.viewOrientation);
-        }
-      } else {
-        setInfographicError(data.error || "Error generando la infograf�a.");
+        fetch("/api/generate-infographic", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...baseBody, audience: "clinician" }),
+        }),
+      ]);
+      const patientData = await patientRes.json();
+      const clinicianData = await clinicianRes.json();
+
+      if (!patientData.success && !clinicianData.success) {
+        throw new Error(
+          patientData.error ||
+            clinicianData.error ||
+            "Error generando las infografías."
+        );
+      }
+
+      if (patientData.success && patientData.imageUrl) {
+        setInfographicUrl(patientData.imageUrl);
+      }
+      if (clinicianData.success && clinicianData.imageUrl) {
+        setInfographicClinicianUrl(clinicianData.imageUrl);
+      }
+      // Prefer patient tab if available; else clinician
+      if (patientData.success) setInfographicAudienceTab("patient");
+      else if (clinicianData.success) setInfographicAudienceTab("clinician");
+
+      const orient =
+        patientData.viewOrientation || clinicianData.viewOrientation;
+      if (orient === "AP" || orient === "PA") {
+        setInfographicViewOrientation(orient);
+      }
+
+      if (!patientData.success || !clinicianData.success) {
+        setInfographicError(
+          !patientData.success
+            ? `Versión paciente: ${patientData.error || "falló"}. Se muestra la disponible.`
+            : `Versión médico: ${clinicianData.error || "falló"}. Se muestra la disponible.`
+        );
       }
     } catch (err: any) {
-      setInfographicError(err.message || "Error al conectar con la API de infograf�as.");
+      setInfographicError(err.message || "Error al conectar con la API de infografías.");
     } finally {
       setIsGeneratingInfographic(false);
     }
@@ -5386,6 +5434,7 @@ Ejemplo:
     includeVascular3dInReport,
     includeWrist3dInReport,
     infographicUrl,
+    infographicClinicianUrl,
     isEditingReportManual,
     isSyntacticHighlightingActive,
     kidney3dData,
@@ -8022,18 +8071,18 @@ Ejemplo:
                       
                        {generatedReport && (
                         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-start md:justify-end">
-                          <button
+                                                    <button
                             onClick={handleGenerateInfographic}
                             disabled={isGeneratingInfographic}
                             className="px-3 md:px-4 py-1.5 md:py-2 bg-pink-700 hover:bg-pink-600 border-2 border-pink-500/30 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider text-white transition-all flex items-center gap-1.5 md:gap-2 shadow-lg select-none whitespace-nowrap cursor-pointer"
-                            title="Generar infograf�a para el paciente (texto n�tido + layout elegido por IA)"
+                            title="Generar dos infografías clásicas (paciente + médico); se ven a tamaño completo por pestaña"
                           >
                             {isGeneratingInfographic ? (
                               <>
                                 <Loader2 className="h-3.5 w-3.5 animate-spin" /> Generando...
                               </>
                             ) : (
-                              "Infograf�a Paciente"
+                              "Infografías (Paciente + Médico)"
                             )}
                           </button>
                           <button
@@ -8120,7 +8169,7 @@ Ejemplo:
                     <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative bg-[#090D1A]">
                       {/* Left Column: Report content, editor, and tools */}
                       <div className={`flex-1 p-6 overflow-y-auto leading-relaxed text-sm select-text text-slate-300 relative scrollbar-thin ${isSplitPdfActive && generatedReport ? "md:border-r md:border-slate-800" : ""}`}>
-                        {generatedReport && !infographicUrl && !isGeneratingInfographic && (
+                        {generatedReport && !infographicUrl && !infographicClinicianUrl && !isGeneratingInfographic && (
                           <div className="mb-4 p-3 bg-slate-900/70 rounded-xl border border-pink-600/20 space-y-2">
                             <label className="block text-[9px] font-black uppercase tracking-widest text-pink-300/80 font-mono">
                               Vista del dibujo (lateralidad)
@@ -8168,25 +8217,26 @@ Ejemplo:
                             />
                           </div>
                         )}
-                        {infographicUrl && (
+                        {(infographicUrl || infographicClinicianUrl) && (
                           <div className="mb-6 p-4 bg-slate-800 rounded-xl border border-pink-600/30">
                              <div className="flex justify-between items-start mb-2 flex-wrap gap-2">
                                <div className="min-w-0">
-                                 <h4 className="text-sm font-bold text-pink-300">Infograf�a Generada:</h4>
+                                 <h4 className="text-sm font-bold text-pink-300">Infografías generadas</h4>
                                  <p className="text-[9px] text-slate-500 mt-0.5 leading-relaxed">
-                                   Elija si desea incluirla. Si no le gusta el resultado, d�jela sin adjuntar.
+                                   Una a la vez a tamaño completo. Elija destino PDF por versión; si no le gusta el resultado, déjela sin adjuntar.
                                  </p>
                                </div>
                                <div className="flex flex-wrap items-center justify-end gap-1.5">
                                  <button
                                    type="button"
                                    onClick={() => setAttachInfographicToPatientSummary(prev => !prev)}
-                                   className={`text-[9px] font-black px-3 py-1.5 rounded-xl uppercase tracking-wider font-mono transition-all flex items-center gap-1.5 cursor-pointer border ${
+                                   disabled={!infographicUrl}
+                                   className={`text-[9px] font-black px-3 py-1.5 rounded-xl uppercase tracking-wider font-mono transition-all flex items-center gap-1.5 cursor-pointer border disabled:opacity-40 disabled:cursor-not-allowed ${
                                      attachInfographicToPatientSummary
                                        ? "bg-orange-950/80 border-orange-500/50 text-orange-300 shadow-[0_2px_8px_rgba(249,115,22,0.2)]"
                                        : "bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-100"
                                    }`}
-                                   title={attachInfographicToPatientSummary ? "La infografía se incluirá en el PDF de explicación al paciente" : "Incluir esta infografía en el documento de explicación al paciente"}
+                                   title={attachInfographicToPatientSummary ? "La versión paciente se incluirá en el PDF de explicación al paciente" : "Incluir la versión paciente en el documento de explicación al paciente"}
                                  >
                                    {attachInfographicToPatientSummary ? (
                                      <>
@@ -8203,12 +8253,13 @@ Ejemplo:
                                  <button
                                    type="button"
                                    onClick={() => setAttachInfographicToOfficialReport(prev => !prev)}
-                                   className={`text-[9px] font-black px-3 py-1.5 rounded-xl uppercase tracking-wider font-mono transition-all flex items-center gap-1.5 cursor-pointer border ${
+                                   disabled={!infographicClinicianUrl && !infographicUrl}
+                                   className={`text-[9px] font-black px-3 py-1.5 rounded-xl uppercase tracking-wider font-mono transition-all flex items-center gap-1.5 cursor-pointer border disabled:opacity-40 disabled:cursor-not-allowed ${
                                      attachInfographicToOfficialReport
                                        ? "bg-emerald-950/80 border-emerald-500/50 text-emerald-350 shadow-[0_2px_8px_rgba(16,185,129,0.2)]"
                                        : "bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-100"
                                    }`}
-                                   title={attachInfographicToOfficialReport ? "La infografía se incluirá al final del reporte original como un anexo" : "Adjuntar esta infografía como un anexo al reporte original"}
+                                   title={attachInfographicToOfficialReport ? "Se adjuntará al reporte oficial (preferencia: versión médico)" : "Adjuntar al reporte oficial (preferencia: versión médico)"}
                                  >
                                    {attachInfographicToOfficialReport ? (
                                      <>
@@ -8224,7 +8275,54 @@ Ejemplo:
                                  </button>
                                </div>
                              </div>
-                             <img src={infographicUrl} alt="Infografía Paciente" className="w-full rounded-lg" referrerPolicy="no-referrer" />
+
+                             <div className="mb-3 inline-flex rounded-xl border border-slate-600 overflow-hidden shadow-lg">
+                               <button
+                                 type="button"
+                                 disabled={!infographicUrl}
+                                 onClick={() => setInfographicAudienceTab("patient")}
+                                 className={`px-4 py-2 text-[11px] font-black uppercase tracking-wider cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                                   infographicAudienceTab === "patient"
+                                     ? "bg-pink-600 text-white"
+                                     : "bg-slate-950 text-slate-400 hover:text-white"
+                                 }`}
+                               >
+                                 Paciente
+                               </button>
+                               <button
+                                 type="button"
+                                 disabled={!infographicClinicianUrl}
+                                 onClick={() => setInfographicAudienceTab("clinician")}
+                                 className={`px-4 py-2 text-[11px] font-black uppercase tracking-wider cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                                   infographicAudienceTab === "clinician"
+                                     ? "bg-slate-200 text-slate-900"
+                                     : "bg-slate-950 text-slate-400 hover:text-white"
+                                 }`}
+                               >
+                                 Médico
+                               </button>
+                             </div>
+
+                             {(() => {
+                               const activeUrl =
+                                 infographicAudienceTab === "clinician"
+                                   ? infographicClinicianUrl || infographicUrl
+                                   : infographicUrl || infographicClinicianUrl;
+                               if (!activeUrl) return null;
+                               return (
+                                 <img
+                                   src={activeUrl}
+                                   alt={
+                                     infographicAudienceTab === "clinician"
+                                       ? "Infografía médico"
+                                       : "Infografía paciente"
+                                   }
+                                   className="w-full rounded-lg"
+                                   referrerPolicy="no-referrer"
+                                 />
+                               );
+                             })()}
+
                              <div className="mt-3 space-y-2">
                                <label className="block text-[9px] font-black uppercase tracking-widest text-pink-300/90 font-mono">
                                  Correcciones para regenerar
@@ -8273,7 +8371,7 @@ Ejemplo:
                                  onClick={() => handleGenerateInfographic({ keepAttachments: true })}
                                  disabled={isGeneratingInfographic}
                                  className="px-4 py-2 bg-pink-700 hover:bg-pink-600 disabled:opacity-50 border-2 border-pink-500/30 rounded-xl text-xs font-black uppercase tracking-wider text-white transition-all flex items-center gap-2 shadow-lg cursor-pointer"
-                                 title="Regenerar la infografía aplicando el texto de correcciones"
+                                 title="Regenerar ambas infografías aplicando el texto de correcciones"
                                >
                                  {isGeneratingInfographic ? (
                                    <>
@@ -8288,7 +8386,7 @@ Ejemplo:
                                <button
                                  onClick={() => handleOpenWhatsAppShare('patient_infographic')}
                                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-550 border-2 border-emerald-500/30 rounded-xl text-xs font-black uppercase tracking-wider text-white transition-all flex items-center gap-2 shadow-lg cursor-pointer"
-                                 title="Compartir infografía visual por WhatsApp directamente"
+                                 title="Compartir la infografía visible por WhatsApp"
                                >
                                  <MessageSquare className="h-4 w-4" /> Enviar por WhatsApp
                                 </button>
@@ -8296,7 +8394,7 @@ Ejemplo:
                                   type="button"
                                   onClick={() => handleOpenGmailShare('patient_infographic')}
                                   className="px-4 py-2 bg-red-750 hover:bg-red-700 border-2 border-red-500/30 rounded-xl text-xs font-black uppercase tracking-wider text-white transition-all flex items-center gap-2 shadow-lg cursor-pointer animate-fadeIn"
-                                  title="Compartir infografía visual por Correo Electrónico usando Gmail"
+                                  title="Compartir la infografía visible por Gmail"
                                 >
                                   <Mail className="h-4 w-4 text-white" /> Enviar por Gmail
                                 </button>
@@ -10972,15 +11070,16 @@ Ejemplo:
                               </button>
                             </div>
 
-                            <div className="p-4 rounded-2xl bg-slate-950/60 border border-teal-900/40 space-y-3">
+                            <div className="p-4 rounded-2xl bg-slate-950/60 border border-cyan-900/40 space-y-3">
                               <div className="flex items-start justify-between gap-3">
                                 <div>
-                                  <h4 className="text-sm font-semibold text-teal-200 flex items-center gap-2">
-                                    <Hexagon className="h-4 w-4 text-teal-400" />
-                                    Infografia de justificacion
+                                  <h4 className="text-sm font-semibold text-cyan-200 flex items-center gap-2">
+                                    <Hexagon className="h-4 w-4 text-cyan-400" />
+                                    Infografía dual (Médico + Paciente)
                                   </h4>
                                   <p className="text-[11px] text-slate-400 mt-1">
-                                    Hallazgos que sostienen el diagnostico en lamina visual (sin manejo).
+                                    Misma lámina, dos voces por pestaña (tamaño completo). No confundir
+                                    con la infografía rosa del informe paciente.
                                   </p>
                                 </div>
                               </div>
@@ -10989,11 +11088,13 @@ Ejemplo:
                                 onClick={() => setIsFindingsInfographicOpen((v) => !v)}
                                 className={`w-full px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
                                   isFindingsInfographicOpen
-                                    ? "bg-teal-700 text-white"
-                                    : "bg-teal-600/80 hover:bg-teal-500 text-white"
+                                    ? "bg-cyan-700 text-white"
+                                    : "bg-cyan-600/80 hover:bg-cyan-500 text-white"
                                 }`}
                               >
-                                {isFindingsInfographicOpen ? "Ocultar infografia" : "Abrir infografia"}
+                                {isFindingsInfographicOpen
+                                  ? "Ocultar infografía dual"
+                                  : "Abrir infografía dual"}
                               </button>
                             </div>
 
@@ -11002,10 +11103,10 @@ Ejemplo:
                                 <div>
                                   <h4 className="text-sm font-semibold text-rose-200 flex items-center gap-2">
                                     <FileSpreadsheet className="h-4 w-4 text-rose-400" />
-                                    Ficha lesi�n dominante
+                                    Ficha lesión dominante
                                   </h4>
                                   <p className="text-[11px] text-slate-400 mt-1">
-                                    Una p�gina: medidas, categor�a, imagen, corte 3D y frase cl�nica.
+                                    Una página: medidas, categoría, imagen, corte 3D y frase clínica.
                                   </p>
                                 </div>
                               </div>
@@ -11273,6 +11374,7 @@ Ejemplo:
                                   setTreeData={setDifferentialTreeData}
                                   includeInReport={includeDifferentialTreeInReport}
                                   setIncludeInReport={setIncludeDifferentialTreeInReport}
+                                  scorecardData={clinicalScorecardData}
                                 />
                               </React.Suspense>
                             </div>
@@ -11307,6 +11409,7 @@ Ejemplo:
                                   setInfographicData={setFindingsInfographicData}
                                   includeInReport={includeFindingsInfographicInReport}
                                   setIncludeInReport={setIncludeFindingsInfographicInReport}
+                                  scorecardData={clinicalScorecardData}
                                 />
                               </React.Suspense>
                             </div>
@@ -11314,7 +11417,7 @@ Ejemplo:
 
                           {isDominantLesionCardOpen && (
                             <div className="my-6">
-                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-rose-400 bg-slate-900/60 rounded-xl border border-rose-900/40 animate-pulse">Cargando ficha de lesi�n dominante...</div>}>
+                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-rose-400 bg-slate-900/60 rounded-xl border border-rose-900/40 animate-pulse">Cargando ficha de lesión dominante...</div>}>
                                 <DominantLesionCardModule
                                   selectedModel={modelFor("dominant_lesion_card")}
                                   focalSelectedModel={modelFor("focal_lesion3d")}
@@ -11329,6 +11432,7 @@ Ejemplo:
                                   focalLesion3dData={focalLesion3dData}
                                   setFocalLesion3dData={setFocalLesion3dData}
                                   setIncludeFocalLesion3dInReport={setIncludeFocalLesion3dInReport}
+                                  scorecardData={clinicalScorecardData}
                                 />
                               </React.Suspense>
                             </div>

@@ -236,10 +236,20 @@ export function renderFocalLesion3DAnnexToPDF(
     return Math.max(maxH, 5 * factor);
   };
 
-  let panelWidth = isSingle ? contentWidth * 0.9 : (contentWidth - panelGap) / 2;
+  // Single panel: a bit smaller than full-bleed (aligns closer to Atlas/suite singles)
+  let panelWidth = isSingle ? contentWidth * 0.68 : (contentWidth - panelGap) / 2;
   let captionH = measureCaption(panelWidth);
   let imgW = panelWidth - cardPad * 2;
   let imgH = imgW * (3 / 4);
+  if (isSingle) {
+    const maxSingleImgH = 64 * factor;
+    if (imgH > maxSingleImgH) {
+      imgH = maxSingleImgH;
+      imgW = imgH * (4 / 3);
+      panelWidth = imgW + cardPad * 2;
+      captionH = measureCaption(panelWidth);
+    }
+  }
   let cardH = cardPad + imgH + captionH;
 
   if (cardH > availableForFigures) {

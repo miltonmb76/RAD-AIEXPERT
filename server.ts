@@ -1701,13 +1701,16 @@ Devuelve de manera estricta y exclusiva el reporte radiológico COMPLETO resulta
  */
 app.post("/api/generate-infographic", async (req: express.Request, res: express.Response) => {
   try {
-    const { report, studyType, correctionNotes, reportDate, projections, viewOrientation } = req.body;
+    const { report, studyType, correctionNotes, reportDate, projections, viewOrientation, audience } =
+      req.body;
     if (!report || !studyType) {
       return res.status(400).json({ success: false, error: "Se requieren el reporte y el tipo de estudio." });
     }
 
     const ai = getGeminiClient();
     const dateHint = String(reportDate || "").trim();
+    const audienceMode =
+      String(audience || "patient").toLowerCase() === "clinician" ? "clinician" : "patient";
     const preferredView =
       String(viewOrientation || "").toUpperCase() === "PA"
         ? ("PA" as InfographicViewOrientation)
@@ -1732,9 +1735,40 @@ ${String(correctionNotes).trim()}
 `
       : "";
 
-    // Freeform patient poster: quality bar + medical guardrails, but NO fixed layout template.
-    // Gemini image invents the composition that best fits THIS report.
-    const promptText = `
+    // Freeform poster: quality bar + medical guardrails, but NO fixed layout template.
+    // Gemini image invents the composition that best fits THIS report + audience.
+    const promptText =
+      audienceMode === "clinician"
+        ? `
+Haz UNA infografía CLÍNICA formal, elegante y científica para el MÉDICO, basada en este reporte radiológico de ${studyType}${dateHint ? ` (${dateHint})` : ""}.
+
+REPORTE:
+"""
+${report}
+"""
+${correctionBlock}
+
+ORIENTACIÓN DE LA FIGURA CORPORAL (obligatoria): ${orientation === "PA" ? "PA — paciente DE ESPALDAS" : "AP — paciente DE FRENTE"}.
+Aplica SOLO la regla de lateralidad correspondiente a esa orientación.
+
+ESTILO (médico / científico):
+- Look de atlas o ficha clínica premium: tipografía sobria (sans geométrica o serif editorial), paleta fría o neutra (slate/azul médico), sin tono infantil ni “app de wellness”.
+- Título formal (p. ej. “Correlación anatomopatológica — ultrasonido abdominal”, “Mapa de hallazgos — mama”).
+- Léxico médico preciso (colelitiasis, BI-RADS, TI-RADS, etc. cuando consten en el reporte).
+- Callouts limpios, reglas finas, jerarquía clara; aire generoso; sin clutter.
+- Misma anatomía / mismos hallazgos que se explicarían al paciente, pero con voz profesional.
+- Pie breve: “Anexo visual · no sustituye el informe completo”. Sin logo inventado.
+
+CONTENIDO — QUÉ SÍ / QUÉ NO:
+- SÍ: hallazgos principales del reporte, lateralidad, medidas si constan.
+- NO: recomendaciones, tratamientos, “qué hacer después”, alarmismo, consejos clínicos.
+- NO inventes mediciones ni hallazgos ausentes del reporte.
+
+${lateralityBlock}
+
+Entrega una sola imagen vertical, lista como anexo clínico.
+`
+        : `
 Haz UNA infografía para el paciente basada en este reporte radiológico de ${studyType}${dateHint ? ` (${dateHint})` : ""}.
 
 REPORTE:
@@ -1818,6 +1852,7 @@ Entrega una sola imagen vertical, lista para compartir con el paciente.
       success: true,
       imageUrl: `data:image/jpeg;base64,${base64Image}`,
       viewOrientation: orientation,
+      audience: audienceMode,
     });
   } catch (error: any) {
     console.error("Error en /api/generate-infographic:", error);
@@ -9904,7 +9939,17 @@ JSON OBLIGATORIO:
  */
 app.post("/api/generate-differential-tree", async (req: express.Request, res: express.Response) => {
   try {
-    const { model, report, studyType, clinicalHistory, focusText, includeManagement } = req.body;
+    const {
+      model,
+      report,
+      studyType,
+      clinicalHistory,
+      focusText,
+      includeManagement,
+      scorecardCategory,
+      scorecardProtocol,
+      scorecardRecommendation,
+    } = req.body;
     if (!report || !String(report).trim()) {
       return res.status(400).json({ success: false, error: "Se requiere el parámetro 'report'." });
     }
@@ -9914,6 +9959,9 @@ app.post("/api/generate-differential-tree", async (req: express.Request, res: ex
     const focus = (focusText || "").toString().trim();
     const history = (clinicalHistory || "").toString().trim();
     const withManagement = includeManagement === true;
+    const scCat = (scorecardCategory || "").toString().trim();
+    const scProto = (scorecardProtocol || "").toString().trim();
+    const scReco = (scorecardRecommendation || "").toString().trim();
 
     const prompt = `Eres un radiólogo hispanohablante experto en diagnóstico diferencial.
 Construye un ÁRBOL DE DIFERENCIALES CON PODA a partir del informe: hipótesis iniciales, criterios a favor/en contra, y poda explícita de ramas incompatibles hasta el diagnóstico más probable.
@@ -9923,6 +9971,14 @@ IDIOMA: TODO el texto visible en ESPAÑOL médico.
 ESTUDIO: ${studyType || "No especificado"}
 ${history ? `HISTORIA CLINICA:\n"""\n${history}\n"""` : "Sin historia adicional."}
 ${focus ? `ENFOQUE DEL MEDICO (prioridad): "${focus}"` : "Sin enfoque libre: deriva del informe."}
+${
+  scCat
+    ? `SCORECARD (GOBIERNA EL LEADING): categoría «${scCat}»${scProto ? ` (${scProto})` : ""}.${
+        scReco ? ` Conducta scorecard: ${scReco}` : ""
+      }
+El leadingDiagnosis y la rama status "leading" DEBEN alinearse con «${scCat}». Poda lo incompatible con esa categoría.`
+    : ""
+}
 
 REGLAS:
 1. Genera 3 a 5 branches (hipótesis). Exactamente UNA con status "leading".
@@ -10283,6 +10339,8 @@ app.post("/api/generate-findings-infographic", async (req: express.Request, res:
       diagnosisPreset,
       layout,
       contentMode,
+      dualAudience,
+      scorecardCategory,
     } = req.body;
     if (!report || !String(report).trim()) {
       return res.status(400).json({ success: false, error: "Se requiere el parámetro 'report'." });
@@ -10303,6 +10361,9 @@ app.post("/api/generate-findings-infographic", async (req: express.Request, res:
       .join(" | ");
     const suggestedLayouts = modeMeta.suggestedLayouts.join(", ");
 
+    const wantDual = dualAudience !== false;
+    const scCat = (scorecardCategory || "").toString().trim();
+
     const prompt = `Eres el mismo radiólogo hispanohablante que redactó este informe.
 Construye una INFOGRAFÍA DE HALLAZGOS para PDF/consola: nodos visuales según el TIPO DE CONTENIDO pedido.
 
@@ -10311,28 +10372,39 @@ IDIOMA: TODO el texto visible en ESPAÑOL médico, voz del radiólogo (afirmacio
 ESTUDIO: ${studyType || "No especificado"}
 PRESET: ${preset}
 ${dx ? `ANCLA / TEMA: "${dx}"` : "Deriva el diagnóstico o tema principal del informe."}
+${scCat ? `CATEGORÍA SCORECARD (debe reflejarse en diagnosis): «${scCat}».` : ""}
 TIPO DE CONTENIDO (contentMode): ${modeId} — ${modeMeta.label}
 ${contentInstructions}
 LAYOUT PREFERIDO: ${layoutHint}
 Layouts sugeridos para este contenido: ${suggestedLayouts}
 Layouts válidos: ${layoutCatalog}
 ${history ? `HISTORIA CLINICA:\n"""\n${history}\n"""` : ""}
+${
+  wantDual
+    ? `MODO DUAL OBLIGATORIO: además del texto médico, rellena patientTitle, patientDiagnosis, patientSynthesis y patientLabel/patientDetail en CADA node. El lenguaje paciente debe ser claramente distinto (llano, sin jerga); la anatomía/hallazgo es el mismo.`
+    : ""
+}
 
 REGLAS ESTRICTAS:
 1. Genera el número de nodes indicado en CONTENIDO. Solo lo afirmado o negado EXPLÍCITAMENTE en el informe.
 2. PROHIBIDO: manejo, conducta, seguimiento, recomendaciones, tratamiento, biopsia, "correlacionar con clínica" como plan.
 3. PROHIBIDO absoluto: "no mencionado", "no documentado", "ausente del informe", "pendiente", "faltante", "no referido", cualquier juicio sobre omisiones del reporte.
-4. Cada node: id, label (corto, 3-8 palabras), detail (opcional, 1 frase semiológica), weight ("primary" para 1-2 hallazgos clave, resto "secondary"), polarity ("present" | "ruled_out" | "criterion" | "neutral"), group (opcional: estructura o familia de criterio).
-5. title: "${modeMeta.defaultTitle}" o variante breve coherente con el contentMode.
+4. Cada node: id, label (corto, 3-8 palabras, léxico médico), detail (opcional, 1 frase semiológica), patientLabel (mismo hallazgo en lenguaje llano para el paciente, 3-10 palabras), patientDetail (opcional, 1 frase sencilla sin jerga), weight ("primary" para 1-2 hallazgos clave, resto "secondary"), polarity ("present" | "ruled_out" | "criterion" | "neutral"), group (opcional: estructura o familia de criterio).
+5. title: "${modeMeta.defaultTitle}" o variante breve coherente con el contentMode (voz médico).
 6. diagnosis: ancla limpia (diagnóstico, categoría BI-RADS/TI-RADS, tema). Sin signos de interrogación.
-7. studyRegion: región anatómica breve.
-8. contentMode: debe ser exactamente "${modeId}".
-9. layout: uno de los layouts válidos. Si el hint es "auto", elige el más adecuado entre los sugeridos (${suggestedLayouts}).
-10. NO inventes hallazgos. Negaciones solo si están escritas (ej. "sin líquido libre"); nunca digas que algo "no se mencionó".
+7. patientTitle: título corto para el paciente (ej. "Sus hallazgos en imágenes").
+8. patientDiagnosis: misma ancla en lenguaje llano (sin códigos crudos si se puede evitar; explica la categoría).
+9. patientSynthesis: 1-2 frases para el paciente (qué se vio; sin plan de tratamiento extenso).
+10. synthesis: 1-2 frases técnicas para el médico (opcional pero recomendado).
+11. studyRegion: región anatómica breve.
+12. contentMode: debe ser exactamente "${modeId}".
+13. layout: uno de los layouts válidos. Si el hint es "auto", elige el más adecuado entre los sugeridos (${suggestedLayouts}).
+14. NO inventes hallazgos. Negaciones solo si están escritas (ej. "sin líquido libre"); nunca digas que algo "no se mencionó".
+15. DUAL: patientLabel/patientDetail DEBEN describir el MISMO hallazgo anatómico que label/detail (misma disposición visual).
 
 Claves JSON en inglés:
-title, diagnosis, studyRegion, contentMode, layout, nodes.
-Cada node: id, label, detail, weight, polarity, group.
+title, diagnosis, studyRegion, contentMode, layout, nodes, synthesis, patientTitle, patientDiagnosis, patientSynthesis.
+Cada node: id, label, detail, patientLabel, patientDetail, weight, polarity, group.
 
 INFORME:
 """
@@ -10346,11 +10418,13 @@ ${report}
         id: { type: Type.STRING },
         label: { type: Type.STRING },
         detail: { type: Type.STRING },
+        patientLabel: { type: Type.STRING },
+        patientDetail: { type: Type.STRING },
         weight: { type: Type.STRING },
         polarity: { type: Type.STRING },
         group: { type: Type.STRING },
       },
-      required: ["id", "label"],
+      required: ["id", "label", "patientLabel"],
     };
 
     const fullSchema = {
@@ -10361,9 +10435,13 @@ ${report}
         studyRegion: { type: Type.STRING },
         contentMode: { type: Type.STRING },
         layout: { type: Type.STRING },
+        synthesis: { type: Type.STRING },
+        patientTitle: { type: Type.STRING },
+        patientDiagnosis: { type: Type.STRING },
+        patientSynthesis: { type: Type.STRING },
         nodes: { type: Type.ARRAY, items: nodeSchema },
       },
-      required: ["title", "diagnosis", "layout", "nodes"],
+      required: ["title", "diagnosis", "layout", "nodes", "patientTitle", "patientDiagnosis"],
     };
 
     const readModelText = (response: any): string => {

@@ -6,6 +6,7 @@ import {
   findingBoxMetrics,
   infographicAnnexTitle,
   layoutDisplayLabel,
+  projectInfographicForAudience,
   type InfographicScene,
 } from "../lib/findingsInfographic";
 import { sanitizePdfText } from "./sanitizePdfText";
@@ -327,6 +328,8 @@ export async function renderFindingsInfographicAnnexToPDF(
     pageHeight: number;
     contentWidth: number;
     factor: number;
+    /** Which audience wording to render (same anatomy). */
+    audience?: "clinician" | "patient";
   }
 ) {
   if (!data || !Array.isArray(data.nodes) || !data.nodes.some((n) => n.label?.trim())) {
@@ -334,8 +337,10 @@ export async function renderFindingsInfographicAnnexToPDF(
   }
 
   const { marginX, pageWidth, pageHeight, contentWidth, factor } = options;
-  const scene = buildInfographicScene(data);
-  const companion = buildInfographicCompanion(data);
+  const audience = options.audience || "clinician";
+  const view = projectInfographicForAudience(data, audience);
+  const scene = buildInfographicScene(view);
+  const companion = buildInfographicCompanion(view);
 
   doc.addPage();
 
@@ -345,7 +350,7 @@ export async function renderFindingsInfographicAnnexToPDF(
 
   // Annex chrome — same pattern as scorecard / reasoning: title + rule
   let yChrome = topSafe;
-  const annexTitle = sanitizePdfText(infographicAnnexTitle(data.contentMode));
+  const annexTitle = sanitizePdfText(infographicAnnexTitle(view.contentMode, audience));
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12 * factor);
   doc.setTextColor(15, 23, 42);

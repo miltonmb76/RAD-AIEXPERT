@@ -14,7 +14,10 @@ import {
   Info
 } from "lucide-react";
 import { FocalLesion3DData, FocalLesion3DPanel, ClinicalScorecardData, SuiteImageAnnotation } from "../types";
-import { buildAtlasDirectivesFromScorecard } from "../lib/clinicalIntelligence";
+import {
+  applyScorecardGovernanceToFigurePack,
+  buildAtlasDirectivesFromScorecard,
+} from "../lib/clinicalIntelligence";
 import { runBackgroundTask } from "../lib/backgroundTasks";
 import { flipImageDataUrl, swapLateralityLabel } from "../lib/imageFlip";
 import { sanitizeFocalClinicalProse } from "../utils/sanitizeFocalClinicalProse";
@@ -140,7 +143,10 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
           lesionSite: data.lesionSite,
           lesionSize: data.lesionSize,
         });
-        setFocalData(withSuggestedImageAnnotations(data, suggested));
+        const withAnns = withSuggestedImageAnnotations(data, suggested);
+        setFocalData(
+          applyScorecardGovernanceToFigurePack(withAnns, scorecardData || null) as FocalLesion3DData
+        );
         setIncludeInReport(true);
       });
     } catch (err: any) {
@@ -620,7 +626,7 @@ export const FocalLesion3DModule: React.FC<FocalLesion3DModuleProps> = ({
           </div>
           <div
             className={`grid gap-4 ${
-              focalData.panels.length > 1 ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1 max-w-xl mx-auto"
+              focalData.panels.length > 1 ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1 max-w-lg mx-auto"
             }`}
           >
             {focalData.panels.map((panel) => (

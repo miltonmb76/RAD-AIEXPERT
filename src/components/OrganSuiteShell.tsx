@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { ClinicalScorecardData, SuiteImageAnnotation } from "../types";
 import { runBackgroundTask } from "../lib/backgroundTasks";
+import { applyScorecardGovernanceToFigurePack } from "../lib/clinicalIntelligence";
 import { flipImageDataUrl, swapLateralityLabel } from "../lib/imageFlip";
 import { remapAnnotationsPanelLetters } from "../lib/suiteImageAnnotations";
 import {
@@ -157,7 +158,11 @@ export const OrganSuiteShell: React.FC<OrganSuiteShellProps> = ({
         if (!resData.success) {
           throw new Error(resData.error || `Error al generar ${config.title}.`);
         }
-        setData(config.attachSuggestions(resData.data as OrganSuiteData));
+        const stamped = applyScorecardGovernanceToFigurePack(
+          config.attachSuggestions(resData.data as OrganSuiteData),
+          scorecardData || null
+        ) as OrganSuiteData;
+        setData(stamped);
         setIncludeInReport(true);
       });
     } catch (err: any) {
@@ -296,7 +301,11 @@ export const OrganSuiteShell: React.FC<OrganSuiteShellProps> = ({
       const updatedPanels = data.panels.map((p) =>
         p.panelLetter === panel.panelLetter ? resData.panel : p
       );
-      setData({ ...data, panels: updatedPanels });
+      const stamped = applyScorecardGovernanceToFigurePack(
+        { ...data, panels: updatedPanels },
+        scorecardData || null
+      ) as OrganSuiteData;
+      setData(stamped);
       setEditingPanelLetter(null);
       setPanelDirectives((prev) => ({ ...prev, [panel.panelLetter]: "" }));
     } catch (err: any) {
