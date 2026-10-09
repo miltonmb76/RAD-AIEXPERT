@@ -10972,15 +10972,16 @@ Ejemplo:
                               </button>
                             </div>
 
-                            <div className="p-4 rounded-2xl bg-slate-950/60 border border-teal-900/40 space-y-3">
+                            <div className="p-4 rounded-2xl bg-slate-950/60 border border-cyan-900/40 space-y-3">
                               <div className="flex items-start justify-between gap-3">
                                 <div>
-                                  <h4 className="text-sm font-semibold text-teal-200 flex items-center gap-2">
-                                    <Hexagon className="h-4 w-4 text-teal-400" />
-                                    Infografia de justificacion
+                                  <h4 className="text-sm font-semibold text-cyan-200 flex items-center gap-2">
+                                    <Hexagon className="h-4 w-4 text-cyan-400" />
+                                    Infografía dual (Médico + Paciente)
                                   </h4>
                                   <p className="text-[11px] text-slate-400 mt-1">
-                                    Hallazgos que sostienen el diagnostico en lamina visual (sin manejo).
+                                    Misma lámina, dos textos. No confundir con la infografía rosa del
+                                    informe paciente.
                                   </p>
                                 </div>
                               </div>
@@ -10989,11 +10990,13 @@ Ejemplo:
                                 onClick={() => setIsFindingsInfographicOpen((v) => !v)}
                                 className={`w-full px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
                                   isFindingsInfographicOpen
-                                    ? "bg-teal-700 text-white"
-                                    : "bg-teal-600/80 hover:bg-teal-500 text-white"
+                                    ? "bg-cyan-700 text-white"
+                                    : "bg-cyan-600/80 hover:bg-cyan-500 text-white"
                                 }`}
                               >
-                                {isFindingsInfographicOpen ? "Ocultar infografia" : "Abrir infografia"}
+                                {isFindingsInfographicOpen
+                                  ? "Ocultar infografía dual"
+                                  : "Abrir infografía dual"}
                               </button>
                             </div>
 

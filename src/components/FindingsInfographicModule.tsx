@@ -90,19 +90,30 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
   const audience: FindingsInfographicAudience =
     infographicData?.activeAudience === "patient" ? "patient" : "clinician";
 
-  const projected = useMemo(
-    () =>
-      infographicData
-        ? projectInfographicForAudience(ensureDualAudienceCopy(infographicData), audience)
-        : null,
-    [infographicData, audience]
+  const dualBase = useMemo(
+    () => (infographicData ? ensureDualAudienceCopy(infographicData) : null),
+    [infographicData]
   );
 
-  const scene = useMemo(
-    () => (projected ? buildInfographicScene(projected) : null),
-    [projected]
+  const clinicianView = useMemo(
+    () => (dualBase ? projectInfographicForAudience(dualBase, "clinician") : null),
+    [dualBase]
+  );
+  const patientView = useMemo(
+    () => (dualBase ? projectInfographicForAudience(dualBase, "patient") : null),
+    [dualBase]
   );
 
+  const clinicianScene = useMemo(
+    () => (clinicianView ? buildInfographicScene(clinicianView) : null),
+    [clinicianView]
+  );
+  const patientScene = useMemo(
+    () => (patientView ? buildInfographicScene(patientView) : null),
+    [patientView]
+  );
+
+  const projected = audience === "patient" ? patientView : clinicianView;
   const companion = useMemo(
     () => (projected ? buildInfographicCompanion(projected) : null),
     [projected]
@@ -283,14 +294,15 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-sm md:text-base font-black uppercase tracking-wider text-slate-100 font-mono">
-                Infografía de hallazgos
+                Infografía dual
               </h3>
-              <span className="text-[9px] font-black uppercase tracking-widest bg-teal-950/50 text-teal-300 border border-teal-700/40 px-2 py-0.5 rounded">
-                Flexible
+              <span className="text-[9px] font-black uppercase tracking-widest bg-cyan-950/60 text-cyan-300 border border-cyan-500/40 px-2 py-0.5 rounded">
+                Médico + Paciente
               </span>
             </div>
             <p className="text-[11px] text-slate-400 mt-0.5 max-w-xl leading-relaxed">
-              Misma anatomía, dos lecturas: médico (técnica) y paciente (lenguaje llano).
+              Abajo verás las dos versiones juntas (misma lámina, distinto texto). No es la
+              “Infografía paciente” rosa del informe.
             </p>
           </div>
         </div>
@@ -410,73 +422,6 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
         </div>
       </div>
 
-      {infographicData && (
-        <div className="rounded-2xl border border-cyan-500/30 bg-gradient-to-r from-teal-950/50 via-slate-950 to-cyan-950/40 p-3 md:p-4 space-y-2">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-cyan-300">
-                Dos versiones · misma anatomía
-              </p>
-              <p className="text-[11px] text-slate-400 mt-0.5">
-                Cambia la voz del texto. El diagrama conserva la misma disposición.
-              </p>
-            </div>
-            <div className="inline-flex rounded-xl border border-slate-600 overflow-hidden shadow-lg">
-              <button
-                type="button"
-                onClick={() => setAudience("clinician")}
-                className={`px-4 py-2 text-[11px] font-black uppercase tracking-wider cursor-pointer ${
-                  audience === "clinician"
-                    ? "bg-teal-600 text-white"
-                    : "bg-slate-950 text-slate-400 hover:text-white"
-                }`}
-              >
-                Médico
-              </button>
-              <button
-                type="button"
-                onClick={() => setAudience("patient")}
-                className={`px-4 py-2 text-[11px] font-black uppercase tracking-wider cursor-pointer ${
-                  audience === "patient"
-                    ? "bg-cyan-600 text-white"
-                    : "bg-slate-950 text-slate-400 hover:text-white"
-                }`}
-              >
-                Paciente
-              </button>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
-            <div
-              className={`rounded-xl border px-3 py-2 ${
-                audience === "clinician"
-                  ? "border-teal-400/50 bg-teal-950/40 text-teal-100"
-                  : "border-slate-700 bg-slate-950/60 text-slate-400"
-              }`}
-            >
-              <p className="text-[9px] font-black uppercase tracking-wider opacity-80">Médico</p>
-              <p className="font-semibold mt-0.5 leading-snug">
-                {infographicData.diagnosis || "—"}
-              </p>
-            </div>
-            <div
-              className={`rounded-xl border px-3 py-2 ${
-                audience === "patient"
-                  ? "border-cyan-400/50 bg-cyan-950/40 text-cyan-100"
-                  : "border-slate-700 bg-slate-950/60 text-slate-400"
-              }`}
-            >
-              <p className="text-[9px] font-black uppercase tracking-wider opacity-80">Paciente</p>
-              <p className="font-semibold mt-0.5 leading-snug">
-                {infographicData.patientDiagnosis ||
-                  projected?.diagnosis ||
-                  "—"}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
@@ -485,7 +430,7 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
           className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 disabled:opacity-60 text-white text-xs font-black uppercase tracking-wider cursor-pointer"
         >
           {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-          {infographicData ? "Regenerar infografía dual" : "Generar infografía dual"}
+          {infographicData ? "Regenerar ambas versiones" : "Generar ambas versiones"}
         </button>
         {infographicData && (
           <>
@@ -539,34 +484,90 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
         </div>
       )}
 
-      {infographicData && scene && (
+      {infographicData && clinicianScene && patientScene && (
         <div className="space-y-4">
-          <div
-            className={`rounded-2xl overflow-hidden border -mx-1 sm:mx-0 ${
-              audience === "patient"
-                ? "border-cyan-400/40"
-                : "border-teal-500/25"
-            }`}
-          >
-            <div
-              className={`px-3 py-2 flex items-center justify-between gap-2 text-[10px] font-black uppercase tracking-widest ${
-                audience === "patient"
-                  ? "bg-cyan-600 text-white"
-                  : "bg-teal-700 text-white"
-              }`}
-            >
-              <span>
-                Vista {audience === "patient" ? "paciente" : "médico"}
-              </span>
-              <span className="opacity-80 normal-case tracking-normal font-semibold">
-                {projected?.diagnosis}
-              </span>
+          <div className="rounded-2xl border-2 border-cyan-400/40 bg-slate-950/80 p-3 md:p-4 space-y-3">
+            <div className="flex flex-wrap items-end justify-between gap-2">
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-300">
+                  Aquí están las dos versiones
+                </p>
+                <p className="text-xs text-slate-400 mt-1">
+                  Izquierda = médico · Derecha = paciente. Pulsa una tarjeta para editar esa voz.
+                </p>
+              </div>
+              <div className="inline-flex rounded-xl border border-slate-600 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setAudience("clinician")}
+                  className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider cursor-pointer ${
+                    audience === "clinician"
+                      ? "bg-teal-600 text-white"
+                      : "bg-slate-950 text-slate-400"
+                  }`}
+                >
+                  Editar médico
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAudience("patient")}
+                  className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider cursor-pointer ${
+                    audience === "patient"
+                      ? "bg-cyan-600 text-white"
+                      : "bg-slate-950 text-slate-400"
+                  }`}
+                >
+                  Editar paciente
+                </button>
+              </div>
             </div>
-            <div className="bg-slate-950">
-              <FindingsInfographicCanvas
-                scene={scene}
-                className="w-full h-auto block min-h-[420px] sm:min-h-[520px]"
-              />
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setAudience("clinician")}
+                className={`text-left rounded-2xl overflow-hidden border-2 transition-colors cursor-pointer ${
+                  audience === "clinician"
+                    ? "border-teal-400 ring-2 ring-teal-500/30"
+                    : "border-teal-800/50 hover:border-teal-500/60"
+                }`}
+              >
+                <div className="bg-teal-700 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white flex justify-between gap-2">
+                  <span>Versión médico</span>
+                  <span className="opacity-80 normal-case tracking-normal font-semibold truncate">
+                    {clinicianView?.diagnosis}
+                  </span>
+                </div>
+                <div className="bg-slate-950">
+                  <FindingsInfographicCanvas
+                    scene={clinicianScene}
+                    className="w-full h-auto block min-h-[280px] sm:min-h-[340px]"
+                  />
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setAudience("patient")}
+                className={`text-left rounded-2xl overflow-hidden border-2 transition-colors cursor-pointer ${
+                  audience === "patient"
+                    ? "border-cyan-400 ring-2 ring-cyan-500/30"
+                    : "border-cyan-800/50 hover:border-cyan-500/60"
+                }`}
+              >
+                <div className="bg-cyan-600 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white flex justify-between gap-2">
+                  <span>Versión paciente</span>
+                  <span className="opacity-80 normal-case tracking-normal font-semibold truncate">
+                    {patientView?.diagnosis}
+                  </span>
+                </div>
+                <div className="bg-slate-950">
+                  <FindingsInfographicCanvas
+                    scene={patientScene}
+                    className="w-full h-auto block min-h-[280px] sm:min-h-[340px]"
+                  />
+                </div>
+              </button>
             </div>
           </div>
 
@@ -575,7 +576,7 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
               <div className="space-y-1.5">
                 <p className="text-[10px] font-black uppercase tracking-[0.18em] text-teal-700">
                   {companion.synthesisEyebrow}
-                  {" · "}
+                  {" · editando "}
                   {audience === "patient" ? "Paciente" : "Médico"}
                 </p>
                 <textarea
