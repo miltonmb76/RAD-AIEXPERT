@@ -1701,13 +1701,16 @@ Devuelve de manera estricta y exclusiva el reporte radiológico COMPLETO resulta
  */
 app.post("/api/generate-infographic", async (req: express.Request, res: express.Response) => {
   try {
-    const { report, studyType, correctionNotes, reportDate, projections, viewOrientation } = req.body;
+    const { report, studyType, correctionNotes, reportDate, projections, viewOrientation, audience } =
+      req.body;
     if (!report || !studyType) {
       return res.status(400).json({ success: false, error: "Se requieren el reporte y el tipo de estudio." });
     }
 
     const ai = getGeminiClient();
     const dateHint = String(reportDate || "").trim();
+    const audienceMode =
+      String(audience || "patient").toLowerCase() === "clinician" ? "clinician" : "patient";
     const preferredView =
       String(viewOrientation || "").toUpperCase() === "PA"
         ? ("PA" as InfographicViewOrientation)
@@ -1732,9 +1735,40 @@ ${String(correctionNotes).trim()}
 `
       : "";
 
-    // Freeform patient poster: quality bar + medical guardrails, but NO fixed layout template.
-    // Gemini image invents the composition that best fits THIS report.
-    const promptText = `
+    // Freeform poster: quality bar + medical guardrails, but NO fixed layout template.
+    // Gemini image invents the composition that best fits THIS report + audience.
+    const promptText =
+      audienceMode === "clinician"
+        ? `
+Haz UNA infografía CLÍNICA formal, elegante y científica para el MÉDICO, basada en este reporte radiológico de ${studyType}${dateHint ? ` (${dateHint})` : ""}.
+
+REPORTE:
+"""
+${report}
+"""
+${correctionBlock}
+
+ORIENTACIÓN DE LA FIGURA CORPORAL (obligatoria): ${orientation === "PA" ? "PA — paciente DE ESPALDAS" : "AP — paciente DE FRENTE"}.
+Aplica SOLO la regla de lateralidad correspondiente a esa orientación.
+
+ESTILO (médico / científico):
+- Look de atlas o ficha clínica premium: tipografía sobria (sans geométrica o serif editorial), paleta fría o neutra (slate/azul médico), sin tono infantil ni “app de wellness”.
+- Título formal (p. ej. “Correlación anatomopatológica — ultrasonido abdominal”, “Mapa de hallazgos — mama”).
+- Léxico médico preciso (colelitiasis, BI-RADS, TI-RADS, etc. cuando consten en el reporte).
+- Callouts limpios, reglas finas, jerarquía clara; aire generoso; sin clutter.
+- Misma anatomía / mismos hallazgos que se explicarían al paciente, pero con voz profesional.
+- Pie breve: “Anexo visual · no sustituye el informe completo”. Sin logo inventado.
+
+CONTENIDO — QUÉ SÍ / QUÉ NO:
+- SÍ: hallazgos principales del reporte, lateralidad, medidas si constan.
+- NO: recomendaciones, tratamientos, “qué hacer después”, alarmismo, consejos clínicos.
+- NO inventes mediciones ni hallazgos ausentes del reporte.
+
+${lateralityBlock}
+
+Entrega una sola imagen vertical, lista como anexo clínico.
+`
+        : `
 Haz UNA infografía para el paciente basada en este reporte radiológico de ${studyType}${dateHint ? ` (${dateHint})` : ""}.
 
 REPORTE:
@@ -1818,6 +1852,7 @@ Entrega una sola imagen vertical, lista para compartir con el paciente.
       success: true,
       imageUrl: `data:image/jpeg;base64,${base64Image}`,
       viewOrientation: orientation,
+      audience: audienceMode,
     });
   } catch (error: any) {
     console.error("Error en /api/generate-infographic:", error);

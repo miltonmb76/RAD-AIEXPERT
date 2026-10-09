@@ -301,8 +301,8 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
               </span>
             </div>
             <p className="text-[11px] text-slate-400 mt-0.5 max-w-xl leading-relaxed">
-              Abajo verás las dos versiones juntas (misma lámina, distinto texto). No es la
-              “Infografía paciente” rosa del informe.
+              Misma lámina, dos voces: cambia de pestaña para ver médico o paciente a tamaño
+              completo. No es la “Infografía paciente” rosa del informe.
             </p>
           </div>
         </div>
@@ -490,84 +490,65 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
             <div className="flex flex-wrap items-end justify-between gap-2">
               <div>
                 <p className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-300">
-                  Aquí están las dos versiones
+                  Dos versiones · una a la vez
                 </p>
                 <p className="text-xs text-slate-400 mt-1">
-                  Izquierda = médico · Derecha = paciente. Pulsa una tarjeta para editar esa voz.
+                  Toca una pestaña para pasar de médico a paciente a tamaño legible.
                 </p>
               </div>
-              <div className="inline-flex rounded-xl border border-slate-600 overflow-hidden">
+              <div className="inline-flex rounded-xl border border-slate-600 overflow-hidden shadow-lg">
                 <button
                   type="button"
                   onClick={() => setAudience("clinician")}
-                  className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider cursor-pointer ${
+                  className={`px-4 py-2 text-[11px] font-black uppercase tracking-wider cursor-pointer ${
                     audience === "clinician"
                       ? "bg-teal-600 text-white"
-                      : "bg-slate-950 text-slate-400"
+                      : "bg-slate-950 text-slate-400 hover:text-white"
                   }`}
                 >
-                  Editar médico
+                  Médico
                 </button>
                 <button
                   type="button"
                   onClick={() => setAudience("patient")}
-                  className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider cursor-pointer ${
+                  className={`px-4 py-2 text-[11px] font-black uppercase tracking-wider cursor-pointer ${
                     audience === "patient"
                       ? "bg-cyan-600 text-white"
-                      : "bg-slate-950 text-slate-400"
+                      : "bg-slate-950 text-slate-400 hover:text-white"
                   }`}
                 >
-                  Editar paciente
+                  Paciente
                 </button>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => setAudience("clinician")}
-                className={`text-left rounded-2xl overflow-hidden border-2 transition-colors cursor-pointer ${
-                  audience === "clinician"
-                    ? "border-teal-400 ring-2 ring-teal-500/30"
-                    : "border-teal-800/50 hover:border-teal-500/60"
+            <div
+              className={`rounded-2xl overflow-hidden border-2 ${
+                audience === "patient"
+                  ? "border-cyan-400 ring-2 ring-cyan-500/30"
+                  : "border-teal-400 ring-2 ring-teal-500/30"
+              }`}
+            >
+              <div
+                className={`px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white flex justify-between gap-2 ${
+                  audience === "patient" ? "bg-cyan-600" : "bg-teal-700"
                 }`}
               >
-                <div className="bg-teal-700 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white flex justify-between gap-2">
-                  <span>Versión médico</span>
-                  <span className="opacity-80 normal-case tracking-normal font-semibold truncate">
-                    {clinicianView?.diagnosis}
-                  </span>
-                </div>
-                <div className="bg-slate-950">
-                  <FindingsInfographicCanvas
-                    scene={clinicianScene}
-                    className="w-full h-auto block min-h-[280px] sm:min-h-[340px]"
-                  />
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setAudience("patient")}
-                className={`text-left rounded-2xl overflow-hidden border-2 transition-colors cursor-pointer ${
-                  audience === "patient"
-                    ? "border-cyan-400 ring-2 ring-cyan-500/30"
-                    : "border-cyan-800/50 hover:border-cyan-500/60"
-                }`}
-              >
-                <div className="bg-cyan-600 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white flex justify-between gap-2">
-                  <span>Versión paciente</span>
-                  <span className="opacity-80 normal-case tracking-normal font-semibold truncate">
-                    {patientView?.diagnosis}
-                  </span>
-                </div>
-                <div className="bg-slate-950">
-                  <FindingsInfographicCanvas
-                    scene={patientScene}
-                    className="w-full h-auto block min-h-[280px] sm:min-h-[340px]"
-                  />
-                </div>
-              </button>
+                <span>
+                  {audience === "patient" ? "Versión paciente" : "Versión médico"}
+                </span>
+                <span className="opacity-80 normal-case tracking-normal font-semibold truncate">
+                  {audience === "patient"
+                    ? patientView?.diagnosis
+                    : clinicianView?.diagnosis}
+                </span>
+              </div>
+              <div className="bg-slate-950">
+                <FindingsInfographicCanvas
+                  scene={audience === "patient" ? patientScene : clinicianScene}
+                  className="w-full h-auto block min-h-[360px] sm:min-h-[420px]"
+                />
+              </div>
             </div>
           </div>
 
