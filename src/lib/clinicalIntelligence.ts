@@ -337,13 +337,41 @@ export function dominantCategoryFromScorecard(
   categoryValue: string;
   categoryRationale?: string;
 } | null {
+  // Only real scorecard categories (e.g. BI-RADS 4A) — never the protocol title alone.
+  const assigned = String(scorecard?.categoryAssigned || "").trim();
+  if (!assigned) return null;
   const g = getScorecardGovernance(scorecard);
   if (!g) return null;
+  const parsed = parseScorecardCategory(assigned);
   return {
-    categorySystem: g.categorySystem,
-    categoryValue: g.categoryValue,
+    categorySystem: parsed.system || "Clasificación",
+    categoryValue: parsed.value || assigned,
     categoryRationale: g.clinicalSummary || undefined,
   };
+}
+
+/**
+ * Compact label for the ficha CATEGORÍA chip.
+ * Avoids gluing a long protocol name onto the value (overflow in header/PDF).
+ */
+export function formatDominantCategoryBadge(
+  categorySystem?: string | null,
+  categoryValue?: string | null
+): string | null {
+  const s = String(categorySystem || "").trim();
+  const v = String(categoryValue || "").trim();
+  if (!s && !v) return null;
+  const looksLikeProtocol =
+    s.length > 28 ||
+    /evaluaci[oó]n|ecogr[aá]fic|protocolo|musculoesquel|ultrason|radiograf/i.test(s);
+  if (looksLikeProtocol) return v || null;
+  if (!v) return s.length > 40 ? null : s;
+  if (s.toLowerCase() === v.toLowerCase()) return v;
+  if (v.toLowerCase().includes(s.toLowerCase())) return v;
+  const joined = `${s} ${v}`;
+  // Prefer short codes in a chip; long prose belongs in Fundamento, not CATEGORÍA.
+  if (joined.length > 48) return v.length <= 48 ? v : v.slice(0, 45).trimEnd() + "…";
+  return joined;
 }
 
 /** focusText seed so differential tree leads with the scorecard category. */

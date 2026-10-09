@@ -1,5 +1,6 @@
 import type { jsPDF } from "jspdf";
 import type { DominantLesionCardData } from "../lib/dominantLesionCard";
+import { formatDominantCategoryBadge } from "../lib/clinicalIntelligence";
 import { sanitizePdfText } from "./sanitizePdfText";
 
 function wrapText(doc: jsPDF, text: string, maxW: number, maxLines: number): string[] {
@@ -180,20 +181,8 @@ export async function renderDominantLesionCardAnnexToPDF(
   doc.setTextColor(251, 113, 133);
   doc.text("LESIÓN DOMINANTE", margin + 3.5, y + 5.2);
 
-  const cat = [data.categorySystem, data.categoryValue].filter(Boolean).join(" ");
-  let titleMaxW = contentW - 8;
-  if (cat) {
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(8.5);
-    const catLabel = sanitizePdfText(cat).slice(0, 16);
-    const catW = Math.min(40, Math.max(20, doc.getTextWidth(catLabel) + 7));
-    const catX = margin + contentW - catW - 2.5;
-    doc.setFillColor(255, 255, 255);
-    doc.roundedRect(catX, y + 4.5, catW, 8, 1.4, 1.4, "F");
-    doc.setTextColor(159, 18, 57);
-    doc.text(catLabel, catX + catW / 2, y + 9.8, { align: "center" });
-    titleMaxW = contentW - catW - 12;
-  }
+  // Category lives in the facts column (not a clipped masthead pill).
+  const titleMaxW = contentW - 8;
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(11);
@@ -324,7 +313,18 @@ export async function renderDominantLesionCardAnnexToPDF(
   sizeLines = wrapText(doc, data.sizeSummary || "—", sizeMaxW, 3);
   const sizeLineH = sizeFont >= 9.5 ? 4.8 : 4.2;
 
+  const categoryLabel = formatDominantCategoryBadge(
+    data.categorySystem,
+    data.categoryValue
+  );
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  const categoryLines = categoryLabel
+    ? wrapText(doc, categoryLabel, innerW, 3)
+    : [];
+
   let plannedH = 7;
+  if (categoryLines.length) plannedH += 4.5 + categoryLines.length * 4.2 + 3;
   plannedH += 4.5;
   plannedH += sizeLines.length * sizeLineH + 3;
 
@@ -352,6 +352,23 @@ export async function renderDominantLesionCardAnnexToPDF(
 
   const bottomLimit = sideTop + sideH - 2.5;
   let sy = sideTop + 4.5;
+
+  if (categoryLines.length) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(6.5);
+    doc.setTextColor(148, 163, 184);
+    doc.text("CATEGORÍA", sideX + sidePadX, sy);
+    sy += 4.2;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(159, 18, 57);
+    for (const line of categoryLines) {
+      if (sy > bottomLimit - 3) break;
+      doc.text(line, sideX + sidePadX, sy);
+      sy += 4.0;
+    }
+    sy += 2.5;
+  }
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(6.5);
