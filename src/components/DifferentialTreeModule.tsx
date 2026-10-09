@@ -9,7 +9,12 @@ import {
   CircleDot,
   Scissors,
 } from "lucide-react";
-import { DifferentialTreeData, DifferentialBranchStatus } from "../types";
+import { ClinicalScorecardData, DifferentialTreeData, DifferentialBranchStatus } from "../types";
+import {
+  alignDifferentialTreeToScorecard,
+  differentialFocusFromScorecard,
+  getScorecardGovernance,
+} from "../lib/clinicalIntelligence";
 import { differentialStatusLabel } from "../lib/differentialTree";
 
 interface DifferentialTreeModuleProps {
@@ -21,6 +26,8 @@ interface DifferentialTreeModuleProps {
   setTreeData: (data: DifferentialTreeData | null) => void;
   includeInReport: boolean;
   setIncludeInReport: (include: boolean) => void;
+  /** When present, categoryAssigned governs leading diagnosis / focus. */
+  scorecardData?: ClinicalScorecardData | null;
 }
 
 const statusStyles = (status: DifferentialBranchStatus) => {
@@ -61,11 +68,13 @@ export const DifferentialTreeModule: React.FC<DifferentialTreeModuleProps> = ({
   setTreeData,
   includeInReport,
   setIncludeInReport,
+  scorecardData = null,
 }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [focusText, setFocusText] = useState("");
   const [includeManagement, setIncludeManagement] = useState(false);
+  const scoreGov = getScorecardGovernance(scorecardData);
 
   const handleGenerate = async () => {
     if (!reportText.trim()) {
@@ -75,6 +84,8 @@ export const DifferentialTreeModule: React.FC<DifferentialTreeModuleProps> = ({
     setIsLoading(true);
     setError(null);
     try {
+      const scoreFocus = differentialFocusFromScorecard(scorecardData);
+      const mergedFocus = [focusText.trim(), scoreFocus].filter(Boolean).join("\n");
       const response = await fetch("/api/generate-differential-tree", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -83,15 +94,23 @@ export const DifferentialTreeModule: React.FC<DifferentialTreeModuleProps> = ({
           report: reportText,
           studyType: studyType || "",
           clinicalHistory: clinicalHistory || "",
-          focusText: focusText.trim() || undefined,
+          focusText: mergedFocus || undefined,
           includeManagement,
+          scorecardCategory: scoreGov?.categoryAssigned || undefined,
+          scorecardProtocol: scoreGov?.protocolName || undefined,
+          scorecardRecommendation: scoreGov?.recommendation || undefined,
         }),
       });
       const json = await response.json();
       if (!json.success || !json.data) {
         throw new Error(json.error || "No se pudo generar el árbol de diferenciales.");
       }
-      setTreeData(json.data as DifferentialTreeData);
+      setTreeData(
+        alignDifferentialTreeToScorecard(
+          json.data as DifferentialTreeData,
+          scorecardData
+        ) as DifferentialTreeData
+      );
       setIncludeInReport(true);
     } catch (err: any) {
       console.error("Error generando árbol de diferenciales:", err);
@@ -161,6 +180,13 @@ export const DifferentialTreeModule: React.FC<DifferentialTreeModuleProps> = ({
           </label>
         </div>
       </div>
+
+      {scoreGov?.categoryAssigned && (
+        <p className="text-[11px] text-orange-200/90 bg-orange-950/40 border border-orange-500/30 rounded-xl px-3 py-2">
+          Scorecard gobierna el leading: <span className="font-semibold">{scoreGov.shortLabel}</span>
+          {scoreGov.protocolName ? ` · ${scoreGov.protocolName}` : ""}
+        </p>
+      )}
 
       <div className="flex flex-col sm:flex-row gap-2">
         <input

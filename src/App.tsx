@@ -11273,6 +11273,7 @@ Ejemplo:
                                   setTreeData={setDifferentialTreeData}
                                   includeInReport={includeDifferentialTreeInReport}
                                   setIncludeInReport={setIncludeDifferentialTreeInReport}
+                                  scorecardData={clinicalScorecardData}
                                 />
                               </React.Suspense>
                             </div>
@@ -11307,6 +11308,7 @@ Ejemplo:
                                   setInfographicData={setFindingsInfographicData}
                                   includeInReport={includeFindingsInfographicInReport}
                                   setIncludeInReport={setIncludeFindingsInfographicInReport}
+                                  scorecardData={clinicalScorecardData}
                                 />
                               </React.Suspense>
                             </div>
@@ -11329,6 +11331,7 @@ Ejemplo:
                                   focalLesion3dData={focalLesion3dData}
                                   setFocalLesion3dData={setFocalLesion3dData}
                                   setIncludeFocalLesion3dInReport={setIncludeFocalLesion3dInReport}
+                                  scorecardData={clinicalScorecardData}
                                 />
                               </React.Suspense>
                             </div>

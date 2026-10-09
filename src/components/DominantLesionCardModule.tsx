@@ -18,7 +18,8 @@ import {
   type DominantLesionImageLayout,
   type DominantLesionPickedImage,
 } from "../lib/dominantLesionCard";
-import type { FocalLesion3DData } from "../types";
+import type { ClinicalScorecardData, FocalLesion3DData } from "../types";
+import { dominantCategoryFromScorecard, getScorecardGovernance } from "../lib/clinicalIntelligence";
 
 type AttachedImage = {
   id?: string;
@@ -44,6 +45,8 @@ interface DominantLesionCardModuleProps {
   focalLesion3dData?: FocalLesion3DData | null;
   setFocalLesion3dData?: (data: FocalLesion3DData | null) => void;
   setIncludeFocalLesion3dInReport?: (include: boolean) => void;
+  /** When present, BI-RADS / TI-RADS / Bosniak from scorecard stamps the ficha category. */
+  scorecardData?: ClinicalScorecardData | null;
 }
 
 export const DominantLesionCardModule: React.FC<DominantLesionCardModuleProps> = ({
@@ -60,6 +63,7 @@ export const DominantLesionCardModule: React.FC<DominantLesionCardModuleProps> =
   focalLesion3dData = null,
   setFocalLesion3dData,
   setIncludeFocalLesion3dInReport,
+  scorecardData = null,
 }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [isGenerating3d, setIsGenerating3d] = useState(false);
@@ -130,6 +134,18 @@ export const DominantLesionCardModule: React.FC<DominantLesionCardModuleProps> =
     setIsLoading(true);
     setError(null);
     try {
+      const gov = getScorecardGovernance(scorecardData);
+      const scoreCat = dominantCategoryFromScorecard(scorecardData);
+      const scorePrior = gov
+        ? [
+            `CATEGORÍA OBLIGATORIA DEL SCORECARD: ${gov.shortLabel}`,
+            gov.protocolName ? `Protocolo: ${gov.protocolName}.` : "",
+            gov.clinicalSummary ? `Síntesis: ${gov.clinicalSummary}` : "",
+            "Usa esta categoría en categorySystem/categoryValue; no inventes otra.",
+          ]
+            .filter(Boolean)
+            .join(" ")
+        : "";
       const response = await fetch("/api/generate-dominant-lesion-card", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -138,7 +154,8 @@ export const DominantLesionCardModule: React.FC<DominantLesionCardModuleProps> =
           report: reportText,
           studyType: studyType || "",
           clinicalHistory: clinicalHistory || "",
-          priorInstructions: priorInstructions.trim() || undefined,
+          priorInstructions:
+            [priorInstructions.trim(), scorePrior].filter(Boolean).join("\n") || undefined,
           focusText: focusText.trim() || undefined,
           hasAttachedImages: attachedImages.length > 0,
           hasFocal3d: Boolean(focalThumb),
@@ -148,6 +165,8 @@ export const DominantLesionCardModule: React.FC<DominantLesionCardModuleProps> =
             caption: i.caption,
             modality: i.modality || "",
           })),
+          scorecardCategory: gov?.categoryAssigned || undefined,
+          scorecardProtocol: gov?.protocolName || undefined,
         }),
       });
       const raw = await response.text();
@@ -169,6 +188,14 @@ export const DominantLesionCardModule: React.FC<DominantLesionCardModuleProps> =
         selectedImageIdB: cardData?.selectedImageIdB ?? null,
         imageLayout: cardData?.imageLayout || "single",
       });
+      // Scorecard wins on category (single source of truth)
+      if (scoreCat) {
+        next.categorySystem = scoreCat.categorySystem;
+        next.categoryValue = scoreCat.categoryValue;
+        if (scoreCat.categoryRationale) {
+          next.categoryRationale = scoreCat.categoryRationale;
+        }
+      }
       if (!next.selectedImageId) {
         const auto = pickDominantLesionImage(attachedImages, next);
         if (auto?.id) next.selectedImageId = auto.id;

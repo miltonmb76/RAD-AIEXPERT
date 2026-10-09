@@ -227,6 +227,177 @@ export function formatAtlasFindingAssignmentPlan(
   ].join("\n");
 }
 
+/** Parsed governance fields from a clinical scorecard (single source of truth). */
+export type ScorecardGovernance = {
+  protocolName: string;
+  categoryAssigned: string;
+  categorySystem: string;
+  categoryValue: string;
+  /** Compact label for captions, e.g. "BI-RADS 4A". */
+  shortLabel: string;
+  clinicalSummary: string;
+  recommendation: string;
+  trafficLight: string;
+};
+
+/** Split "BI-RADS 4A" / "TI-RADS 4" / "Bosniak IIF" into system + value. */
+export function parseScorecardCategory(categoryAssigned: string): {
+  system: string;
+  value: string;
+} {
+  const raw = String(categoryAssigned || "").trim();
+  if (!raw) return { system: "", value: "" };
+  const m = raw.match(
+    /^(.*?)\s+((?:[IVX]+(?:-[IVX]+)?)|(?:[A-Za-z]?\d+[A-Za-z]?)|(?:[A-Za-z]+))$/
+  );
+  if (m && m[1].trim()) {
+    return { system: m[1].trim(), value: m[2].trim() };
+  }
+  return { system: "", value: raw };
+}
+
+/** Normalized governance block; null if scorecard has no usable category. */
+export function getScorecardGovernance(
+  scorecard: ClinicalScorecardData | null | undefined
+): ScorecardGovernance | null {
+  if (!scorecard) return null;
+  const categoryAssigned = String(scorecard.categoryAssigned || "").trim();
+  const protocolName = String(scorecard.protocolName || "").trim();
+  if (!categoryAssigned && !protocolName) return null;
+  const parsed = parseScorecardCategory(categoryAssigned);
+  const shortLabel = categoryAssigned || protocolName;
+  return {
+    protocolName,
+    categoryAssigned: categoryAssigned || protocolName,
+    categorySystem: parsed.system || protocolName || "Clasificación",
+    categoryValue: parsed.value || categoryAssigned || protocolName,
+    shortLabel,
+    clinicalSummary: String(scorecard.clinicalSummary || "").trim(),
+    recommendation: String(scorecard.recommendation || "").trim(),
+    trafficLight: String(scorecard.trafficLight || "").trim(),
+  };
+}
+
+/**
+ * Append category to a figure title / pie de imagen if missing.
+ * Does not rewrite captions that already mention the category.
+ */
+export function applyScorecardToCaption(
+  base: string,
+  scorecard: ClinicalScorecardData | null | undefined
+): string {
+  const g = getScorecardGovernance(scorecard);
+  if (!g?.shortLabel) return base || "";
+  const trimmed = String(base || "").trim();
+  const label = g.shortLabel;
+  const hay = trimmed.toLowerCase();
+  const needle = label.toLowerCase();
+  if (hay.includes(needle)) return trimmed;
+  // Also treat "BI-RADS" + "4A" as already present when split across text
+  if (g.categorySystem && g.categoryValue) {
+    if (
+      hay.includes(g.categorySystem.toLowerCase()) &&
+      hay.includes(g.categoryValue.toLowerCase())
+    ) {
+      return trimmed;
+    }
+  }
+  if (!trimmed) return label;
+  return `${trimmed} · ${label}`;
+}
+
+/** Stamp figureTitle + panel anatomicalFocus with scorecard category when absent. */
+export function applyScorecardGovernanceToFigurePack<T extends object>(
+  data: T | null | undefined,
+  scorecard: ClinicalScorecardData | null | undefined
+): T | null | undefined {
+  if (!data || !getScorecardGovernance(scorecard)) return data;
+  const anyData = data as T & {
+    figureTitle?: string;
+    panels?: Array<{ anatomicalFocus?: string } & Record<string, unknown>>;
+  };
+  const panels = Array.isArray(anyData.panels)
+    ? anyData.panels.map((p) => ({
+        ...p,
+        anatomicalFocus: applyScorecardToCaption(String(p.anatomicalFocus || ""), scorecard),
+      }))
+    : anyData.panels;
+  return {
+    ...anyData,
+    figureTitle: applyScorecardToCaption(String(anyData.figureTitle || ""), scorecard),
+    panels,
+  } as T;
+}
+
+/** Category fields for the dominant-lesion card (ficha). */
+export function dominantCategoryFromScorecard(
+  scorecard: ClinicalScorecardData | null | undefined
+): {
+  categorySystem: string;
+  categoryValue: string;
+  categoryRationale?: string;
+} | null {
+  const g = getScorecardGovernance(scorecard);
+  if (!g) return null;
+  return {
+    categorySystem: g.categorySystem,
+    categoryValue: g.categoryValue,
+    categoryRationale: g.clinicalSummary || undefined,
+  };
+}
+
+/** focusText seed so differential tree leads with the scorecard category. */
+export function differentialFocusFromScorecard(
+  scorecard: ClinicalScorecardData | null | undefined
+): string {
+  const g = getScorecardGovernance(scorecard);
+  if (!g) return "";
+  const parts = [
+    `CATEGORÍA OBLIGATORIA DEL SCORECARD: ${g.shortLabel}`,
+    g.protocolName ? `Protocolo: ${g.protocolName}.` : "",
+    `El leadingDiagnosis DEBE alinearse con «${g.categoryAssigned}» (no inventes otra categoría).`,
+    g.clinicalSummary ? `Síntesis scorecard: ${g.clinicalSummary}` : "",
+    g.recommendation ? `Conducta scorecard: ${g.recommendation}` : "",
+    "Poda las ramas incompatibles con esta categoría.",
+  ];
+  return parts.filter(Boolean).join(" ");
+}
+
+/** After generate: nudge leadingDiagnosis / leading branch toward scorecard category. */
+export function alignDifferentialTreeToScorecard<T extends object>(
+  tree: T | null | undefined,
+  scorecard: ClinicalScorecardData | null | undefined
+): T | null | undefined {
+  if (!tree) return tree;
+  const g = getScorecardGovernance(scorecard);
+  if (!g?.categoryAssigned) return tree;
+  const target = g.categoryAssigned;
+  const anyTree = tree as T & {
+    leadingDiagnosis?: string;
+    branches?: Array<{ status?: string; name?: string } & Record<string, unknown>>;
+  };
+  const nextBranches = Array.isArray(anyTree.branches)
+    ? anyTree.branches.map((b) => {
+        if (b.status !== "leading") return b;
+        const name = String(b.name || "").trim();
+        if (!name) return { ...b, name: target };
+        if (name.toLowerCase().includes(target.toLowerCase())) return b;
+        if (target.toLowerCase().includes(name.toLowerCase()) && name.length >= 4) return b;
+        return { ...b, name: `${target} (${name})` };
+      })
+    : anyTree.branches;
+  let leadingDiagnosis = String(anyTree.leadingDiagnosis || "").trim();
+  if (!leadingDiagnosis) {
+    leadingDiagnosis = target;
+  } else if (
+    !leadingDiagnosis.toLowerCase().includes(target.toLowerCase()) &&
+    !target.toLowerCase().includes(leadingDiagnosis.toLowerCase())
+  ) {
+    leadingDiagnosis = `${target} — ${leadingDiagnosis}`;
+  }
+  return { ...anyTree, leadingDiagnosis, branches: nextBranches } as T;
+}
+
 /** Build Atlas customDirectives from scorecard so 3D generation focuses on active pathology. */
 export function buildAtlasDirectivesFromScorecard(
   scorecard: ClinicalScorecardData | null | undefined
@@ -234,7 +405,11 @@ export function buildAtlasDirectivesFromScorecard(
   if (!scorecard) return "";
   const lesions = collectAtlasLesionFindings(scorecard);
   const active = rankActiveScorecardFindings(scorecard);
-  if (!lesions.length && !active.length) return "";
+  const summary = String(scorecard.clinicalSummary || "").trim();
+  const reco = String(scorecard.recommendation || "").trim();
+  if (!lesions.length && !active.length && !summary && !reco && !scorecard.categoryAssigned) {
+    return "";
+  }
 
   const lesionLines = lesions.slice(0, 5).map((f, i) => formatLesionLine(f, i));
   const criterionLines = active.slice(0, 8).map((c, i) => formatFindingLine(c, i));
@@ -242,6 +417,9 @@ export function buildAtlasDirectivesFromScorecard(
   return [
     `PATOLOGÍA ACTIVA DEL SCORECARD (${scorecard.protocolName} — ${scorecard.categoryAssigned}):`,
     `Semáforo: ${scorecard.trafficLight}. Criterios positivos: ${scorecard.scoreMet}/${scorecard.scoreTotal}.`,
+    summary ? `Síntesis clínica: ${summary}` : "",
+    reco ? `Recomendación / conducta: ${reco}` : "",
+    "La categoría del scorecard gobierna títulos, pies de figura y foco 3D; no inventes otra clasificación.",
     lesionLines.length
       ? "Lesiones localizables del informe (inventario Atlas — principales y secundarias):"
       : "",
