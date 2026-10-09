@@ -19,7 +19,11 @@ import {
   type DominantLesionPickedImage,
 } from "../lib/dominantLesionCard";
 import type { ClinicalScorecardData, FocalLesion3DData } from "../types";
-import { dominantCategoryFromScorecard, getScorecardGovernance } from "../lib/clinicalIntelligence";
+import {
+  dominantCategoryFromScorecard,
+  formatDominantCategoryBadge,
+  getScorecardGovernance,
+} from "../lib/clinicalIntelligence";
 
 type AttachedImage = {
   id?: string;
@@ -481,10 +485,10 @@ export const DominantLesionCardPreview: React.FC<{
   focalThumb?: { url: string; title: string } | null;
 }> = ({ data, imageA = null, imageB = null, focalThumb = null }) => {
   const layout = data.imageLayout || "single";
-  const categoryBadge =
-    data.categorySystem || data.categoryValue
-      ? [data.categorySystem, data.categoryValue].filter(Boolean).join(" ")
-      : null;
+  const categoryBadge = formatDominantCategoryBadge(
+    data.categorySystem,
+    data.categoryValue
+  );
 
   const showDualClinical = layout === "mmg_us";
   const showClinical3d = layout === "clinical_3d";
@@ -493,26 +497,16 @@ export const DominantLesionCardPreview: React.FC<{
     <div className="rounded-2xl overflow-hidden border border-slate-700/50 bg-[#f8fafc] text-slate-900 shadow-2xl shadow-black/40">
       <div className="relative px-5 pt-5 pb-4 bg-gradient-to-br from-slate-900 via-slate-900 to-rose-950 text-white">
         <div className="absolute inset-0 opacity-30 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-rose-500/40 via-transparent to-transparent" />
-        <div className="relative flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-rose-200/90">
-              Lesión dominante
-            </p>
-            <h4 className="mt-1.5 text-xl md:text-2xl font-semibold tracking-tight leading-snug">
-              {data.lesionLabel}
-            </h4>
-            <p className="mt-1.5 text-sm text-slate-300">
-              {[data.site, data.laterality, data.studyRegion].filter(Boolean).join(" · ")}
-            </p>
-          </div>
-          {categoryBadge && (
-            <div className="shrink-0 rounded-2xl bg-white text-rose-900 px-4 py-2.5 text-center shadow-lg shadow-rose-950/30">
-              <p className="text-[9px] font-bold uppercase tracking-widest text-rose-500/80">
-                Categoría
-              </p>
-              <p className="text-lg font-black tracking-tight leading-none mt-0.5">{categoryBadge}</p>
-            </div>
-          )}
+        <div className="relative min-w-0">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-rose-200/90">
+            Lesión dominante
+          </p>
+          <h4 className="mt-1.5 text-xl md:text-2xl font-semibold tracking-tight leading-snug break-words">
+            {data.lesionLabel}
+          </h4>
+          <p className="mt-1.5 text-sm text-slate-300 break-words">
+            {[data.site, data.laterality, data.studyRegion].filter(Boolean).join(" · ")}
+          </p>
         </div>
       </div>
 
@@ -576,6 +570,18 @@ export const DominantLesionCardPreview: React.FC<{
 
         {/* Facts */}
         <div className="p-5 space-y-5 bg-white">
+          {categoryBadge && (
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                Categoría
+              </p>
+              <div className="mt-1.5 inline-flex max-w-full rounded-xl bg-rose-50 border border-rose-100 px-3 py-2">
+                <p className="text-base md:text-lg font-black tracking-tight text-rose-900 leading-snug break-words [overflow-wrap:anywhere]">
+                  {categoryBadge}
+                </p>
+              </div>
+            </div>
+          )}
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
               Tamaño
