@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Sparkles,
   Loader2,
@@ -42,6 +42,9 @@ interface FindingsInfographicModuleProps {
   setIncludeInReport: (include: boolean) => void;
   /** When present, categoryAssigned governs diagnosis / criteria nodes. */
   scorecardData?: ClinicalScorecardData | null;
+  /** Session-level ancla (gobierna Detalle / generate). */
+  diagnosisAnchor?: string;
+  onDiagnosisAnchorChange?: (anchor: string) => void;
 }
 
 const QUICK_LAYOUTS: FindingsInfographicLayout[] = [
@@ -67,21 +70,35 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
   includeInReport,
   setIncludeInReport,
   scorecardData = null,
+  diagnosisAnchor = "",
+  onDiagnosisAnchorChange,
 }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [presetId, setPresetId] = useState("auto");
-  const [customDiagnosis, setCustomDiagnosis] = useState("");
+  const [customDiagnosis, setCustomDiagnosis] = useState(() =>
+    String(diagnosisAnchor || "").trim()
+  );
   const [contentMode, setContentMode] =
     useState<FindingsInfographicContentMode>("justify_diagnosis");
   const [layoutChoice, setLayoutChoice] = useState<FindingsInfographicLayout | "auto">(
     "convergence"
   );
 
+  // Keep Detalle synced with session ancla when parent changes it.
+  useEffect(() => {
+    const next = String(diagnosisAnchor || "").trim();
+    if (next && next !== customDiagnosis.trim()) {
+      setCustomDiagnosis(next);
+      if (presetId === "auto") setPresetId("custom");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only react to external ancla
+  }, [diagnosisAnchor]);
+
   const scoreGov = getScorecardGovernance(scorecardData);
-  /** Manual Detalle / preset always wins; scorecard only fills empty auto. */
+  /** Manual Detalle / session ancla / preset; scorecard only fills empty auto. */
   const diagnosisLabel = (() => {
-    const custom = customDiagnosis.trim();
+    const custom = customDiagnosis.trim() || String(diagnosisAnchor || "").trim();
     if (custom) return custom;
     if (presetId === "auto" && scoreGov?.categoryAssigned) {
       return scoreGov.categoryAssigned;
@@ -89,6 +106,13 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
     return resolveInfographicDiagnosis(presetId, customDiagnosis);
   })();
   const modeMeta = contentModeMeta(contentMode);
+
+  const pushAnchorUp = (anchor: string) => {
+    const next = anchor.trim();
+    if (onDiagnosisAnchorChange && next !== String(diagnosisAnchor || "").trim()) {
+      onDiagnosisAnchorChange(next);
+    }
+  };
 
   const syncAnchorToScene = (anchor: string) => {
     const next = anchor.trim();
@@ -361,10 +385,14 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
               if (v.trim()) {
                 if (presetId === "auto") setPresetId("custom");
                 syncAnchorToScene(v);
+                pushAnchorUp(v);
               }
             }}
             onBlur={() => {
-              if (customDiagnosis.trim()) syncAnchorToScene(customDiagnosis);
+              if (customDiagnosis.trim()) {
+                syncAnchorToScene(customDiagnosis);
+                pushAnchorUp(customDiagnosis);
+              }
             }}
             placeholder="Ej. adenitis mesentérica / colecistitis aguda…"
             className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-slate-200 outline-none focus:border-teal-500"

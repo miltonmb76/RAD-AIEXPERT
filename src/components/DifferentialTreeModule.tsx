@@ -28,6 +28,8 @@ interface DifferentialTreeModuleProps {
   setIncludeInReport: (include: boolean) => void;
   /** When present, categoryAssigned governs leading diagnosis / focus. */
   scorecardData?: ClinicalScorecardData | null;
+  /** Session ancla — prepended to focus when generating. */
+  diagnosisAnchor?: string;
 }
 
 const statusStyles = (status: DifferentialBranchStatus) => {
@@ -69,6 +71,7 @@ export const DifferentialTreeModule: React.FC<DifferentialTreeModuleProps> = ({
   includeInReport,
   setIncludeInReport,
   scorecardData = null,
+  diagnosisAnchor = "",
 }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -85,7 +88,12 @@ export const DifferentialTreeModule: React.FC<DifferentialTreeModuleProps> = ({
     setError(null);
     try {
       const scoreFocus = differentialFocusFromScorecard(scorecardData);
-      const mergedFocus = [focusText.trim(), scoreFocus].filter(Boolean).join("\n");
+      const anchorLine = diagnosisAnchor.trim()
+        ? `ANCLA DIAGNÓSTICA DE LA SESIÓN: ${diagnosisAnchor.trim()}. El leadingDiagnosis debe alinearse con este ancla.`
+        : "";
+      const mergedFocus = [anchorLine, focusText.trim(), scoreFocus]
+        .filter(Boolean)
+        .join("\n");
       const response = await fetch("/api/generate-differential-tree", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

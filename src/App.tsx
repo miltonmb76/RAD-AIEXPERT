@@ -17,6 +17,9 @@ import {
   SemioticsConductMatrixModule,
   FindingsInfographicModule,
   DominantLesionCardModule,
+  DiagnosticPackModule,
+  FindingsMapModule,
+  DiagnosisAnchorBar,
   MeasurementsGaugeModule,
   CreadorCuadroSinoptico,
   CreadorSinopsisFracturas,
@@ -136,7 +139,9 @@ import {
   GitFork,
   Table2,
   Hexagon,
-  FileSpreadsheet
+  FileSpreadsheet,
+  FileStack,
+  MapPinned
 } from "lucide-react";
 import { initAuth, googleSignIn, logout as googleLogout, anonymousSignIn, emailSignIn, emailSignUp, getFirebaseConfig } from "./firebaseAuth";
 import { CloudStudy, saveStudyToCloud, getStudiesFromCloud, deleteStudyFromCloud, Worklist, WorklistPatient, saveWorklistToCloud, getWorklistFromCloud, getSingleStudyFromCloud, testFirebaseConfigConnection, saveUserSettingsToCloud, getUserSettingsFromCloud } from "./firebaseDb";
@@ -1517,6 +1522,12 @@ export default function App() {
   const [findingsInfographicData, setFindingsInfographicData] = useState<FindingsInfographicData | null>(null);
   const [includeFindingsInfographicInReport, setIncludeFindingsInfographicInReport] = useState<boolean>(true);
   const [isFindingsInfographicOpen, setIsFindingsInfographicOpen] = useState<boolean>(false);
+  /** Session-level diagnosis ancla — governs justification, pack, map, Atlas. */
+  const [diagnosisAnchor, setDiagnosisAnchor] = useState<string>("");
+  const [diagnosticPackData, setDiagnosticPackData] = useState<import("./lib/diagnosticPack").DiagnosticPackData | null>(null);
+  const [includeDiagnosticPackInReport, setIncludeDiagnosticPackInReport] = useState<boolean>(true);
+  const [isDiagnosticPackOpen, setIsDiagnosticPackOpen] = useState<boolean>(false);
+  const [isFindingsMapOpen, setIsFindingsMapOpen] = useState<boolean>(false);
   const [dominantLesionCardData, setDominantLesionCardData] = useState<DominantLesionCardData | null>(null);
   const [includeDominantLesionCardInReport, setIncludeDominantLesionCardInReport] = useState<boolean>(true);
   const [isDominantLesionCardOpen, setIsDominantLesionCardOpen] = useState<boolean>(false);
@@ -1616,6 +1627,9 @@ export default function App() {
     includeSemioticsConductMatrixInReport,
     findingsInfographicData,
     includeFindingsInfographicInReport,
+    diagnosisAnchor,
+    diagnosticPackData,
+    includeDiagnosticPackInReport,
     dominantLesionCardData,
     includeDominantLesionCardInReport,
     measurementGaugeData,
@@ -3022,6 +3036,11 @@ Ejemplo:
     setFindingsInfographicData(null);
     setIncludeFindingsInfographicInReport(true);
     setIsFindingsInfographicOpen(false);
+    setDiagnosisAnchor("");
+    setDiagnosticPackData(null);
+    setIncludeDiagnosticPackInReport(true);
+    setIsDiagnosticPackOpen(false);
+    setIsFindingsMapOpen(false);
     setDominantLesionCardData(null);
     setIncludeDominantLesionCardInReport(true);
     setIsDominantLesionCardOpen(false);
@@ -5468,6 +5487,7 @@ Ejemplo:
     elastographyStiffness,
     findings3dRenders,
     findingsInfographicData,
+    diagnosticPackData,
     dominantLesionCardData,
     focalLesion3dData,
     getParagraphSeverity,
@@ -5479,6 +5499,7 @@ Ejemplo:
     includeDifferentialTreeInReport,
     includeElastographyInReport,
     includeFindingsInfographicInReport,
+    includeDiagnosticPackInReport,
     includeDominantLesionCardInReport,
     includeFocalLesion3dInReport,
     includeKidney3dInReport,
@@ -9734,6 +9755,7 @@ Ejemplo:
                             setIncludeInReport={setIncludeAtlas3dInReport}
                             scorecardData={clinicalScorecardData}
                             externalDirectives={atlasDirectivesFromScorecard}
+                            diagnosisAnchor={diagnosisAnchor}
                           />
                           </Suite3DSuspense>
 
@@ -11061,7 +11083,17 @@ Ejemplo:
                             </div>
 
                             
-                            {/* Card: Scorecard de Criterios + sync Atlas Overlay */}
+                                                        <div className="md:col-span-2 my-1">
+                              <React.Suspense fallback={null}>
+                                <DiagnosisAnchorBar
+                                  diagnosisAnchor={diagnosisAnchor}
+                                  setDiagnosisAnchor={setDiagnosisAnchor}
+                                  scorecardData={clinicalScorecardData}
+                                />
+                              </React.Suspense>
+                            </div>
+
+{/* Card: Scorecard de Criterios + sync Atlas Overlay */}
                             <div className="p-4 rounded-2xl bg-slate-950/60 border border-teal-900/40 space-y-3">
                               <div className="flex items-start justify-between gap-3">
                                 <div>
@@ -11235,7 +11267,58 @@ Ejemplo:
                               </button>
                             </div>
 
-                            <div className="p-4 rounded-2xl bg-slate-950/60 border border-rose-900/40 space-y-3">
+                            
+                            <div className="p-4 rounded-2xl bg-slate-950/60 border border-amber-900/40 space-y-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <h4 className="text-sm font-semibold text-amber-200 flex items-center gap-2">
+                                    <FileStack className="h-4 w-4 text-amber-400" />
+                                    Pack diagnostico (1 pagina)
+                                  </h4>
+                                  <p className="text-[11px] text-slate-400 mt-1">
+                                    Ancla + factores + imagen (focal / suite 3D del estudio / Atlas) en una lamina PDF.
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setIsDiagnosticPackOpen((v) => !v)}
+                                className={`w-full px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
+                                  isDiagnosticPackOpen
+                                    ? "bg-amber-700 text-white"
+                                    : "bg-amber-600/80 hover:bg-amber-500 text-white"
+                                }`}
+                              >
+                                {isDiagnosticPackOpen ? "Ocultar pack" : "Abrir pack diagnostico"}
+                              </button>
+                            </div>
+
+                            <div className="p-4 rounded-2xl bg-slate-950/60 border border-indigo-900/40 space-y-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <h4 className="text-sm font-semibold text-indigo-200 flex items-center gap-2">
+                                    <MapPinned className="h-4 w-4 text-indigo-400" />
+                                    Mapa de hallazgos (Atlas)
+                                  </h4>
+                                  <p className="text-[11px] text-slate-400 mt-1">
+                                    Pins sobre Corte Focal, suite 3D del estudio o Atlas; lista sincronizada.
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setIsFindingsMapOpen((v) => !v)}
+                                className={`w-full px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
+                                  isFindingsMapOpen
+                                    ? "bg-indigo-700 text-white"
+                                    : "bg-indigo-600/80 hover:bg-indigo-500 text-white"
+                                }`}
+                              >
+                                {isFindingsMapOpen ? "Ocultar mapa" : "Abrir mapa de hallazgos"}
+                              </button>
+                            </div>
+
+<div className="p-4 rounded-2xl bg-slate-950/60 border border-rose-900/40 space-y-3">
                               <div className="flex items-start justify-between gap-3">
                                 <div>
                                   <h4 className="text-sm font-semibold text-rose-200 flex items-center gap-2">
@@ -11409,6 +11492,7 @@ Ejemplo:
                                   onAtlasDirectivesSuggested={setAtlasDirectivesFromScorecard}
                                   onSendToInfographic={(data) => {
                                     setFindingsInfographicData(data);
+                                    if (data?.diagnosis) setDiagnosisAnchor(String(data.diagnosis));
                                     setIncludeFindingsInfographicInReport(true);
                                     setIsFindingsInfographicOpen(true);
                                     window.setTimeout(() => {
@@ -11462,6 +11546,7 @@ Ejemplo:
                                   }}
                                   onSendToInfographic={(data) => {
                                     setFindingsInfographicData(data);
+                                    if (data?.diagnosis) setDiagnosisAnchor(String(data.diagnosis));
                                     setIncludeFindingsInfographicInReport(true);
                                     setIsFindingsInfographicOpen(true);
                                     window.setTimeout(() => {
@@ -11512,6 +11597,7 @@ Ejemplo:
                                   includeInReport={includeDifferentialTreeInReport}
                                   setIncludeInReport={setIncludeDifferentialTreeInReport}
                                   scorecardData={clinicalScorecardData}
+                                  diagnosisAnchor={diagnosisAnchor}
                                 />
                               </React.Suspense>
                             </div>
@@ -11547,6 +11633,98 @@ Ejemplo:
                                   includeInReport={includeFindingsInfographicInReport}
                                   setIncludeInReport={setIncludeFindingsInfographicInReport}
                                   scorecardData={clinicalScorecardData}
+                                  diagnosisAnchor={diagnosisAnchor}
+                                  onDiagnosisAnchorChange={setDiagnosisAnchor}
+                                />
+                              </React.Suspense>
+                            </div>
+                          )}
+
+                          {isDiagnosticPackOpen && (
+                            <div className="my-6">
+                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-amber-400 bg-slate-900/60 rounded-xl border border-amber-900/40 animate-pulse">Cargando pack diagnostico...</div>}>
+                                <DiagnosticPackModule
+                                  diagnosisAnchor={diagnosisAnchor}
+                                  findingsInfographic={findingsInfographicData}
+                                  scorecardData={clinicalScorecardData}
+                                  atlas3dData={atlas3dData}
+                                  focalLesion3dData={focalLesion3dData}
+                                  dominantLesionCard={dominantLesionCardData}
+                                  preferredSuiteId={selectedSpecificSuite?.id || null}
+                                  preferredSuiteLabel={selectedSpecificSuite?.label || null}
+                                  suiteSources={[
+                                    { id: "vascular3d", label: "Suite Vascular 3D", panels: vascular3dData?.panels, findingTable: vascular3dData?.hemodynamicTable },
+                                    { id: "thyroid3d", label: "Suite Tiroides 3D", panels: thyroid3dData?.panels, findingTable: thyroid3dData?.noduleTable },
+                                    { id: "breast3d", label: "Suite Mama 3D", panels: breast3dData?.panels, findingTable: breast3dData?.lesionTable },
+                                    { id: "shoulder3d", label: "Suite Hombro 3D", panels: shoulder3dData?.panels, findingTable: shoulder3dData?.findingTable },
+                                    { id: "knee3d", label: "Suite Rodilla 3D", panels: knee3dData?.panels, findingTable: knee3dData?.findingTable },
+                                    { id: "ankle3d", label: "Suite Tobillo 3D", panels: ankle3dData?.panels, findingTable: ankle3dData?.findingTable },
+                                    { id: "kidney3d", label: "Suite Rinon 3D", panels: kidney3dData?.panels, findingTable: kidney3dData?.findingTable },
+                                    { id: "abdomen3d", label: "Suite Abdomen 3D", panels: abdomen3dData?.panels, findingTable: abdomen3dData?.findingTable },
+                                    { id: "abdominalWall3d", label: "Suite Pared Abdominal 3D", panels: abdominalWall3dData?.panels, findingTable: abdominalWall3dData?.findingTable },
+                                    { id: "scrotum3d", label: "Suite Escroto 3D", panels: scrotum3dData?.panels, findingTable: scrotum3dData?.findingTable },
+                                    { id: "muscleTendon3d", label: "Suite Musculo-Tendon 3D", panels: muscleTendon3dData?.panels, findingTable: muscleTendon3dData?.findingTable },
+                                    { id: "wrist3d", label: "Suite Muneca 3D", panels: wrist3dData?.panels, findingTable: wrist3dData?.findingTable },
+                                  ]}
+                                  packData={diagnosticPackData}
+                                  setPackData={setDiagnosticPackData}
+                                  includeInReport={includeDiagnosticPackInReport}
+                                  setIncludeInReport={setIncludeDiagnosticPackInReport}
+                                />
+                              </React.Suspense>
+                            </div>
+                          )}
+
+                          {isFindingsMapOpen && (
+                            <div className="my-6">
+                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-indigo-400 bg-slate-900/60 rounded-xl border border-indigo-900/40 animate-pulse">Cargando mapa de hallazgos...</div>}>
+                                <FindingsMapModule
+                                  diagnosisAnchor={diagnosisAnchor}
+                                  atlasData={atlas3dData}
+                                  setAtlasData={setAtlas3dData}
+                                  focalLesion3dData={focalLesion3dData}
+                                  setFocalLesion3dData={setFocalLesion3dData}
+                                  preferredSuiteId={selectedSpecificSuite?.id || null}
+                                  preferredSuiteLabel={selectedSpecificSuite?.label || null}
+                                  suiteSources={[
+                                    { id: "vascular3d", label: "Suite Vascular 3D", panels: vascular3dData?.panels, imageAnnotations: vascular3dData?.imageAnnotations },
+                                    { id: "thyroid3d", label: "Suite Tiroides 3D", panels: thyroid3dData?.panels, imageAnnotations: thyroid3dData?.imageAnnotations },
+                                    { id: "breast3d", label: "Suite Mama 3D", panels: breast3dData?.panels, imageAnnotations: breast3dData?.imageAnnotations },
+                                    { id: "shoulder3d", label: "Suite Hombro 3D", panels: shoulder3dData?.panels, imageAnnotations: shoulder3dData?.imageAnnotations },
+                                    { id: "knee3d", label: "Suite Rodilla 3D", panels: knee3dData?.panels, imageAnnotations: knee3dData?.imageAnnotations },
+                                    { id: "ankle3d", label: "Suite Tobillo 3D", panels: ankle3dData?.panels, imageAnnotations: ankle3dData?.imageAnnotations },
+                                    { id: "kidney3d", label: "Suite Rinon 3D", panels: kidney3dData?.panels, imageAnnotations: kidney3dData?.imageAnnotations },
+                                    { id: "abdomen3d", label: "Suite Abdomen 3D", panels: abdomen3dData?.panels, imageAnnotations: abdomen3dData?.imageAnnotations },
+                                    { id: "abdominalWall3d", label: "Suite Pared Abdominal 3D", panels: abdominalWall3dData?.panels, imageAnnotations: abdominalWall3dData?.imageAnnotations },
+                                    { id: "scrotum3d", label: "Suite Escroto 3D", panels: scrotum3dData?.panels, imageAnnotations: scrotum3dData?.imageAnnotations },
+                                    { id: "muscleTendon3d", label: "Suite Musculo-Tendon 3D", panels: muscleTendon3dData?.panels, imageAnnotations: muscleTendon3dData?.imageAnnotations },
+                                    { id: "wrist3d", label: "Suite Muneca 3D", panels: wrist3dData?.panels, imageAnnotations: wrist3dData?.imageAnnotations },
+                                  ]}
+                                  onUpdateSourceAnnotations={(sourceId, annotations) => {
+                                    if (sourceId === "atlas3d") {
+                                      if (atlas3dData) setAtlas3dData({ ...atlas3dData, imageAnnotations: annotations });
+                                      return;
+                                    }
+                                    if (sourceId === "focal") {
+                                      if (focalLesion3dData) setFocalLesion3dData({ ...focalLesion3dData, imageAnnotations: annotations });
+                                      return;
+                                    }
+                                    const patch = { imageAnnotations: annotations };
+                                    if (sourceId === "vascular3d" && vascular3dData) setVascular3dData({ ...vascular3dData, ...patch });
+                                    else if (sourceId === "thyroid3d" && thyroid3dData) setThyroid3dData({ ...thyroid3dData, ...patch });
+                                    else if (sourceId === "breast3d" && breast3dData) setBreast3dData({ ...breast3dData, ...patch });
+                                    else if (sourceId === "shoulder3d" && shoulder3dData) setShoulder3dData({ ...shoulder3dData, ...patch });
+                                    else if (sourceId === "knee3d" && knee3dData) setKnee3dData({ ...knee3dData, ...patch });
+                                    else if (sourceId === "ankle3d" && ankle3dData) setAnkle3dData({ ...ankle3dData, ...patch });
+                                    else if (sourceId === "kidney3d" && kidney3dData) setKidney3dData({ ...kidney3dData, ...patch });
+                                    else if (sourceId === "abdomen3d" && abdomen3dData) setAbdomen3dData({ ...abdomen3dData, ...patch });
+                                    else if (sourceId === "abdominalWall3d" && abdominalWall3dData) setAbdominalWall3dData({ ...abdominalWall3dData, ...patch });
+                                    else if (sourceId === "scrotum3d" && scrotum3dData) setScrotum3dData({ ...scrotum3dData, ...patch });
+                                    else if (sourceId === "muscleTendon3d" && muscleTendon3dData) setMuscleTendon3dData({ ...muscleTendon3dData, ...patch });
+                                    else if (sourceId === "wrist3d" && wrist3dData) setWrist3dData({ ...wrist3dData, ...patch });
+                                  }}
+                                  scorecardData={clinicalScorecardData}
+                                  findingsInfographic={findingsInfographicData}
                                 />
                               </React.Suspense>
                             </div>
