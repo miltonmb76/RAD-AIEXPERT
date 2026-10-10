@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { FileStack, RefreshCw, ImageOff, AlertTriangle } from "lucide-react";
 import type {
   Atlas3DData,
@@ -11,6 +11,7 @@ import {
   buildDiagnosticPack,
   diagnosticPackIsRenderable,
   diagnosticPackMissingRequirements,
+  listPackImageCandidates,
   type DiagnosticPackData,
   type PackImageSource,
 } from "../lib/diagnosticPack";
@@ -46,6 +47,42 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
   includeInReport,
   setIncludeInReport,
 }) => {
+  const candidates = useMemo(
+    () =>
+      listPackImageCandidates({
+        focalLesion3dData,
+        atlas3dData,
+        suiteSources,
+      }),
+    [focalLesion3dData, atlas3dData, suiteSources]
+  );
+
+  const [slotAId, setSlotAId] = useState<string>("");
+  const [slotBId, setSlotBId] = useState<string>("");
+
+  // Seed defaults when candidates / preferred suite change
+  useEffect(() => {
+    if (!candidates.length) {
+      setSlotAId("");
+      setSlotBId("");
+      return;
+    }
+    const preferred = String(preferredSuiteId || "").trim();
+    const pool = preferred
+      ? candidates.filter((c) => c.sourceId === preferred)
+      : candidates;
+    const use = pool.length ? pool : candidates;
+    setSlotAId((prev) =>
+      prev && candidates.some((c) => c.id === prev) ? prev : use[0]?.id || ""
+    );
+    setSlotBId((prev) => {
+      if (prev && candidates.some((c) => c.id === prev) && prev !== use[0]?.id) {
+        return prev;
+      }
+      return use[1]?.id || candidates.find((c) => c.id !== use[0]?.id)?.id || "";
+    });
+  }, [candidates, preferredSuiteId]);
+
   const packOpts = {
     diagnosisAnchor,
     findingsInfographic,
@@ -55,6 +92,9 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
     dominantLesionCard,
     suiteSources,
     preferredSuiteId,
+    imageSlotAId: slotAId || null,
+    // "" = Ninguna (explicit); do not coerce to null or defaults kick in.
+    imageSlotBId: slotBId,
   };
 
   const preview = useMemo(
@@ -69,12 +109,17 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
       dominantLesionCard,
       suiteSources,
       preferredSuiteId,
+      slotAId,
+      slotBId,
     ]
   );
 
   const display = packData && diagnosticPackIsRenderable(packData) ? packData : preview;
+  const hasJustification = (findingsInfographic?.nodes || []).some((n) =>
+    String(n.label || "").trim()
+  );
   const canBuild = diagnosticPackIsRenderable(preview);
-  const missing = diagnosticPackMissingRequirements(preview);
+  const missing = diagnosticPackMissingRequirements(preview, { hasJustification });
 
   const handleBuild = () => {
     const next = buildDiagnosticPack(packOpts);
@@ -86,6 +131,36 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
     setPackData(next);
     setIncludeInReport(true);
   };
+
+  const slotSelect = (
+    label: string,
+    value: string,
+    onChange: (v: string) => void,
+    excludeId?: string
+  ) => (
+    <label className="flex flex-col gap-1 min-w-[200px] flex-1">
+      <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">
+        {label}
+      </span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={!candidates.length}
+        className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-2 text-[11px] text-slate-200 outline-none focus:border-amber-500 cursor-pointer disabled:opacity-40"
+      >
+        {!candidates.length && <option value="">Sin imágenes disponibles</option>}
+        {label.startsWith("Imagen B") && candidates.length > 0 && (
+          <option value="">Ninguna</option>
+        )}
+        {candidates.map((c) => (
+          <option key={c.id} value={c.id} disabled={c.id === excludeId}>
+            {c.sourceLabel} · Panel {c.panelLetter}
+            {c.caption ? ` — ${c.caption.slice(0, 40)}` : ""}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
 
   return (
     <div
@@ -107,8 +182,9 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
               </span>
             </div>
             <p className="text-[11px] text-slate-400 mt-0.5 max-w-xl leading-relaxed">
-              Lámina densa: ancla, síntesis, 6 factores (mín. 4) e imagen obligatoria (Focal → suite
-              {preferredSuiteLabel ? ` «${preferredSuiteLabel}»` : ""} → Atlas).
+              Factores desde la justificación del ancla · mini-ficha · 2 imágenes elegibles por
+              separado
+              {preferredSuiteLabel ? ` (suite preferida: ${preferredSuiteLabel})` : ""}.
             </p>
           </div>
         </div>
@@ -125,6 +201,11 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
           />
           Incluir en PDF
         </label>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {slotSelect("Imagen A (obligatoria)", slotAId, setSlotAId, slotBId)}
+        {slotSelect("Imagen B (recomendada)", slotBId, setSlotBId, slotAId)}
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -155,7 +236,7 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
         <div className="text-[11px] text-amber-100/95 bg-amber-950/35 border border-amber-700/40 rounded-xl px-3 py-2.5 space-y-1">
           <p className="font-semibold flex items-center gap-1.5 text-amber-200">
             <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-            Requisitos para armar / incluir en PDF
+            Requisitos
           </p>
           <ul className="list-disc pl-4 space-y-0.5 text-amber-100/85">
             {missing.map((m) => (
@@ -167,8 +248,7 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
 
       {display.diagnosis && (
         <div className="rounded-2xl overflow-hidden border border-stone-600/40 bg-[#fafaf9] text-stone-900 shadow-inner">
-          {/* Header strip preview */}
-          <div className="bg-stone-900 px-4 py-2.5 flex justify-between gap-2 items-center">
+          <div className="mx-4 mt-4 rounded-lg bg-stone-900 px-4 py-2.5 flex justify-between gap-2 items-center">
             <span className="text-[10px] font-black uppercase tracking-widest text-amber-50">
               Anexo · Justificación diagnóstica
             </span>
@@ -176,7 +256,7 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
               {[display.categoryLabel, display.studyRegion].filter(Boolean).join(" · ")}
             </span>
           </div>
-          <div className="h-1 bg-amber-500" />
+          <div className="mx-4 h-1 bg-amber-500 rounded-b" />
 
           <div className="p-5 md:p-6 space-y-4">
             <div className="space-y-2">
@@ -189,22 +269,34 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
               <div className="w-16 h-0.5 bg-amber-400 rounded-full" />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-[1.15fr_0.85fr] gap-6 md:gap-8 items-start">
+            <div className="grid grid-cols-1 md:grid-cols-[1.1fr_0.9fr] gap-6 md:gap-8 items-start">
               <div className="space-y-4 min-w-0">
                 {display.synthesis && (
                   <p className="text-[13px] text-stone-600 leading-relaxed">{display.synthesis}</p>
                 )}
-                {display.categoryLabel && (
-                  <span className="inline-block text-[10px] font-bold uppercase tracking-wider text-amber-900 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded">
-                    {display.categoryLabel}
-                  </span>
+
+                {display.factSheet && (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50/80 px-3.5 py-3 space-y-2">
+                    <p className="text-[9px] font-black uppercase tracking-[0.18em] text-amber-800">
+                      Mini-ficha · {display.factSheet.title}
+                    </p>
+                    <dl className="grid grid-cols-1 gap-1.5">
+                      {display.factSheet.rows.map((r) => (
+                        <div key={`${r.label}-${r.value}`} className="flex gap-2 text-[12px]">
+                          <dt className="font-semibold text-stone-500 w-20 shrink-0">{r.label}</dt>
+                          <dd className="text-stone-800 min-w-0">{r.value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
                 )}
+
                 <div>
                   <p className="text-[9px] font-black uppercase tracking-[0.18em] text-amber-700 mb-2.5">
                     Factores que definen el diagnóstico
                     <span className="text-stone-400 font-semibold normal-case tracking-normal ml-2">
                       {display.factors.length}
-                      {display.factors.length >= 6 ? "/6" : " (mín. 4)"}
+                      {display.factorsFromJustification ? " · justificación" : ""}
                     </span>
                   </p>
                   <ol className="space-y-3">
@@ -237,29 +329,30 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
                 </div>
               </div>
 
-              <div className="min-w-0">
-                {display.imageDataUrl ? (
-                  <div className="rounded-xl border border-stone-200 bg-stone-50 overflow-hidden">
-                    <div className="aspect-[4/3] bg-stone-100 flex items-center justify-center">
-                      <img
-                        src={display.imageDataUrl}
-                        alt={display.imageCaption || "Imagen del pack"}
-                        className="w-full h-full object-contain"
-                      />
-                    </div>
-                    {(display.imageCaption || display.imageSourceLabel) && (
-                      <p className="text-[10px] text-stone-500 px-3 py-2 border-t border-stone-200 italic">
-                        {[display.imageCaption, display.imageSourceLabel]
-                          .filter(Boolean)
-                          .join(" · ")}
+              <div className="min-w-0 space-y-3">
+                {[display.imageA, display.imageB].filter(Boolean).length ? (
+                  [display.imageA, display.imageB].filter(Boolean).map((slot) => (
+                    <div
+                      key={slot!.candidateId}
+                      className="rounded-xl border border-stone-200 bg-stone-50 overflow-hidden"
+                    >
+                      <div className="aspect-[4/3] bg-stone-100 flex items-center justify-center">
+                        <img
+                          src={slot!.url}
+                          alt={slot!.caption}
+                          className="max-w-full max-h-full object-contain"
+                        />
+                      </div>
+                      <p className="text-[10px] text-stone-500 px-3 py-1.5 border-t border-stone-200 italic">
+                        {[slot!.caption, slot!.sourceLabel].filter(Boolean).join(" · ")}
                       </p>
-                    )}
-                  </div>
+                    </div>
+                  ))
                 ) : (
                   <div className="rounded-xl border border-dashed border-stone-300 bg-stone-50 aspect-[4/3] flex flex-col items-center justify-center gap-2 text-stone-400 px-4 text-center">
                     <ImageOff className="h-7 w-7 opacity-50" />
                     <p className="text-[11px] leading-snug">
-                      Imagen obligatoria. Genera Focal, suite 3D o Atlas.
+                      Elige imagen A (y B) desde Focal / suite / Atlas.
                     </p>
                   </div>
                 )}

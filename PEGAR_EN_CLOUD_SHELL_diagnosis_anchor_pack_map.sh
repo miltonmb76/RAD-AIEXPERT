@@ -29,6 +29,12 @@ grep -q 'DiagnosisAnchorBar' src/components/DiagnosisAnchorBar.tsx \
   || { echo "ERROR: falta DiagnosisAnchorBar. Aborto."; exit 1; }
 grep -q 'buildDiagnosticPack' src/lib/diagnosticPack.ts \
   || { echo "ERROR: falta buildDiagnosticPack. Aborto."; exit 1; }
+grep -q 'listPackImageCandidates' src/lib/diagnosticPack.ts \
+  || { echo "ERROR: falta listPackImageCandidates. Aborto."; exit 1; }
+grep -q 'factSheet' src/lib/diagnosticPack.ts \
+  || { echo "ERROR: falta mini-ficha (factSheet). Aborto."; exit 1; }
+grep -q 'Imagen A' src/components/DiagnosticPackModule.tsx \
+  || { echo "ERROR: faltan selectores Imagen A/B. Aborto."; exit 1; }
 grep -q 'placeFindingsAsAnnotations' src/lib/findingsMap.ts \
   || { echo "ERROR: falta placeFindingsAsAnnotations. Aborto."; exit 1; }
 grep -q 'diagnosisAnchor' src/App.tsx \
