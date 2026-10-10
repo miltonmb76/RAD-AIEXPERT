@@ -49,7 +49,7 @@ function closingNote(pack: DiagnosticPackData, factors: { label: string }[]): st
 }
 
 /**
- * One-page clinician pack — images left (snug to aspect), factors right (spaced), closing note.
+ * One-page clinician pack — text left (spaced factors), images right (snug to aspect), closing note.
  */
 export async function renderDiagnosticPackAnnexToPDF(
   doc: any,
@@ -119,12 +119,12 @@ export async function renderDiagnosticPackAnnexToPDF(
   doc.line(marginX, y, marginX + 36, y);
   y += 6;
 
-  // Columns: images LEFT · text RIGHT
+  // Columns: text LEFT · images RIGHT
   const colGap = 10;
   const imgColW = contentWidth * 0.42;
   const textColW = contentWidth - imgColW - colGap;
-  const imgX = marginX;
-  const textX = marginX + imgColW + colGap;
+  const textX = marginX;
+  const imgX = marginX + textColW + colGap;
   const colsTop = y;
   const footerReserve = 20;
   const usableBottom = bottom - footerReserve;
