@@ -8092,12 +8092,6 @@ JSON:
                   kneeTarget.pin ||
                   "Fix meniscus compartment: INTERNAL/medial ≠ EXTERNAL/lateral (fibula locks external)."
                 : "";
-            const slabFail =
-              onlyFocal || p.panelRole === "in_plane_cut"
-                ? /slab|cutting.?plane|translucent|floating plane|overview|transverse|perpendicular/i.test(
-                    `${note?.issues || ""} ${note?.surgicalCorrection || ""}`
-                  )
-                : false;
             const noSlabFix =
               onlyFocal || p.panelRole === "in_plane_cut"
                 ? "REMOVE any cyan/green translucent cutting-plane slab. Render the injured structure IN the locked ultrasound axis only — same orientation as the US photo, no floating plane, no whole-joint overview."
