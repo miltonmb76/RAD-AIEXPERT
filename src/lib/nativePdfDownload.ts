@@ -10,6 +10,8 @@ import { renderElastographyAnnexToPdf } from "../utils/elastographyPdfRenderer";
 import { renderFindingsInfographicAnnexToPDF } from "../utils/findingsInfographicPdfRenderer";
 import { pickDominantLesionImage, pickDominantLesionImageB } from "./dominantLesionCard";
 import { renderDominantLesionCardAnnexToPDF } from "../utils/dominantLesionCardPdfRenderer";
+import { renderDiagnosticPackAnnexToPDF } from "../utils/diagnosticPackPdfRenderer";
+import { diagnosticPackIsRenderable } from "./diagnosticPack";
 import { renderFocalLesion3DAnnexToPDF } from "../utils/focalLesion3dPdfRenderer";
 import { renderKidney3DPageToPdf } from "../utils/kidney3dPdfRenderer";
 import { renderKnee3DPageToPdf } from "../utils/knee3dPdfRenderer";
@@ -57,6 +59,7 @@ export type NativePdfDownloadDeps = {
   elastographyStiffness: any;
   findings3dRenders: any;
   findingsInfographicData: any;
+  diagnosticPackData?: any;
   dominantLesionCardData: any;
   focalLesion3dData: any;
   getParagraphSeverity: (text: string) => "critical" | "altered" | "normal";
@@ -68,6 +71,7 @@ export type NativePdfDownloadDeps = {
   includeDifferentialTreeInReport: boolean;
   includeElastographyInReport: boolean;
   includeFindingsInfographicInReport: boolean;
+  includeDiagnosticPackInReport?: boolean;
   includeDominantLesionCardInReport: boolean;
   includeFocalLesion3dInReport: boolean;
   includeKidney3dInReport: boolean;
@@ -141,6 +145,7 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
       elastographyStiffness,
       findings3dRenders,
       findingsInfographicData,
+      diagnosticPackData,
       dominantLesionCardData,
       focalLesion3dData,
       getParagraphSeverity,
@@ -152,6 +157,7 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
       includeDifferentialTreeInReport,
       includeElastographyInReport,
       includeFindingsInfographicInReport,
+      includeDiagnosticPackInReport,
       includeDominantLesionCardInReport,
       includeFocalLesion3dInReport,
       includeKidney3dInReport,
@@ -2967,6 +2973,22 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
             audience,
           });
         }
+      }
+
+      // --- ANEXO: PACK DIAGNÓSTICO (1 PÁGINA) ---
+      const activeDiagnosticPack = studyOverride
+        ? (studyOverride as any).diagnosticPackData
+        : (pdfStateRef.current?.diagnosticPackData || diagnosticPackData);
+      const shouldIncludeDiagnosticPack = studyOverride
+        ? ((studyOverride as any).includeDiagnosticPackInReport !== false)
+        : ((pdfStateRef.current?.includeDiagnosticPackInReport !== false) &&
+            includeDiagnosticPackInReport !== false);
+      if (shouldIncludeDiagnosticPack && diagnosticPackIsRenderable(activeDiagnosticPack)) {
+        await renderDiagnosticPackAnnexToPDF(doc, activeDiagnosticPack, {
+          marginX,
+          pageWidth,
+          pageHeight,
+        });
       }
 
       // --- ANEXO: FICHA DE LESIÓN DOMINANTE ---

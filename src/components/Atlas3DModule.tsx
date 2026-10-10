@@ -31,6 +31,7 @@ import {
   buildAtlasPanelFindingAssignments,
   mergeOverlaysOntoAtlas,
 } from "../lib/clinicalIntelligence";
+import { mergeAnchorIntoDirectives } from "../lib/diagnosisAnchor";
 import { flipImageDataUrl, swapLateralityLabel } from "../lib/imageFlip";
 import {
   remapAnnotationsPanelLetters,
@@ -104,6 +105,8 @@ interface Atlas3DModuleProps {
   /** Intelligent link: Scorecard feeds pathology overlays + generation directives */
   scorecardData?: ClinicalScorecardData | null;
   externalDirectives?: string;
+  /** Session diagnosis ancla — merged into generation directives. */
+  diagnosisAnchor?: string;
 }
 
 export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
@@ -118,6 +121,7 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
   onClose,
   scorecardData,
   externalDirectives,
+  diagnosisAnchor = "",
 }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStep, setGenerationStep] = useState("");
@@ -267,7 +271,10 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
       const scorecardDirectives = panelAssignments.length
         ? ""
         : buildAtlasDirectivesFromScorecard(scorecardData || null);
-      const doctorDirectives = [externalDirectives, customDirectives.trim()].filter(Boolean).join("\n\n");
+      const doctorDirectives = mergeAnchorIntoDirectives(
+        [externalDirectives, customDirectives.trim()].filter(Boolean).join("\n\n"),
+        diagnosisAnchor
+      );
       const mergedDirectives = [scorecardDirectives, doctorDirectives].filter(Boolean).join("\n\n");
 
       await runBackgroundTask("atlas-3d", "Generando Atlas 3D", async () => {
@@ -334,7 +341,10 @@ export const Atlas3DModule: React.FC<Atlas3DModuleProps> = ({
         ? rebuilt.find((a) => a.findingId === panel.assignedFindingId)
         : undefined);
     // Doctor nuance only — scoped Scorecard accuracy travels via panelAssignment.directive
-    const doctorDirectives = [externalDirectives, customDirectives.trim()].filter(Boolean).join("\n\n");
+    const doctorDirectives = mergeAnchorIntoDirectives(
+      [externalDirectives, customDirectives.trim()].filter(Boolean).join("\n\n"),
+      diagnosisAnchor
+    );
 
     try {
       const response = await fetch("/api/regenerate-3d-panel", {

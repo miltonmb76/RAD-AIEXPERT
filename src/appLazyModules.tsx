@@ -17,6 +17,9 @@ const DifferentialTreeModule = React.lazy(() => import("./components/Differentia
 const SemioticsConductMatrixModule = React.lazy(() => import("./components/SemioticsConductMatrixModule").then(m => ({ default: m.SemioticsConductMatrixModule })));
 const FindingsInfographicModule = React.lazy(() => import("./components/FindingsInfographicModule").then(m => ({ default: m.FindingsInfographicModule })));
 const DominantLesionCardModule = React.lazy(() => import("./components/DominantLesionCardModule").then(m => ({ default: m.DominantLesionCardModule })));
+const DiagnosticPackModule = React.lazy(() => import("./components/DiagnosticPackModule").then(m => ({ default: m.DiagnosticPackModule })));
+const FindingsMapModule = React.lazy(() => import("./components/FindingsMapModule").then(m => ({ default: m.FindingsMapModule })));
+const DiagnosisAnchorBar = React.lazy(() => import("./components/DiagnosisAnchorBar").then(m => ({ default: m.DiagnosisAnchorBar })));
 const MeasurementsGaugeModule = React.lazy(() => import("./components/MeasurementsGaugeModule").then(m => ({ default: m.MeasurementsGaugeModule })));
 const CreadorCuadroSinoptico = React.lazy(() => import("./components/CreadorCuadroSinoptico").then(m => ({ default: m.CreadorCuadroSinoptico })));
 const CreadorSinopsisFracturas = React.lazy(() => import("./components/CreadorSinopsisFracturas").then(m => ({ default: m.CreadorSinopsisFracturas })));
@@ -77,6 +80,9 @@ export {
   SemioticsConductMatrixModule,
   FindingsInfographicModule,
   DominantLesionCardModule,
+  DiagnosticPackModule,
+  FindingsMapModule,
+  DiagnosisAnchorBar,
   MeasurementsGaugeModule,
   CreadorCuadroSinoptico,
   CreadorSinopsisFracturas,
