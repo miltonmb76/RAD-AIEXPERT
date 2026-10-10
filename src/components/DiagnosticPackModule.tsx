@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { FileStack, Loader2, RefreshCw } from "lucide-react";
+import { FileStack, RefreshCw, ImageOff, AlertTriangle } from "lucide-react";
 import type {
   Atlas3DData,
   ClinicalScorecardData,
@@ -10,6 +10,7 @@ import type {
 import {
   buildDiagnosticPack,
   diagnosticPackIsRenderable,
+  diagnosticPackMissingRequirements,
   type DiagnosticPackData,
   type PackImageSource,
 } from "../lib/diagnosticPack";
@@ -21,9 +22,7 @@ interface DiagnosticPackModuleProps {
   atlas3dData?: Atlas3DData | null;
   focalLesion3dData?: FocalLesion3DData | null;
   dominantLesionCard?: DominantLesionCardData | null;
-  /** Organ suites (abdomen, mama, tiroides, …) with panels. */
   suiteSources?: PackImageSource[];
-  /** Suite id matching the study (e.g. abdomen3d) — preferred image source. */
   preferredSuiteId?: string | null;
   preferredSuiteLabel?: string | null;
   packData: DiagnosticPackData | null;
@@ -60,7 +59,7 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
 
   const preview = useMemo(
     () => buildDiagnosticPack(packOpts),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- packOpts fields listed below
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       diagnosisAnchor,
       findingsInfographic,
@@ -73,11 +72,17 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
     ]
   );
 
-  const display = packData || preview;
+  const display = packData && diagnosticPackIsRenderable(packData) ? packData : preview;
   const canBuild = diagnosticPackIsRenderable(preview);
+  const missing = diagnosticPackMissingRequirements(preview);
 
   const handleBuild = () => {
     const next = buildDiagnosticPack(packOpts);
+    if (!diagnosticPackIsRenderable(next)) {
+      setPackData(null);
+      setIncludeInReport(false);
+      return;
+    }
     setPackData(next);
     setIncludeInReport(true);
   };
@@ -98,22 +103,25 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
                 Pack diagnóstico (1 página)
               </h3>
               <span className="text-[9px] font-black uppercase tracking-widest bg-amber-950/50 text-amber-300 border border-amber-700/40 px-2 py-0.5 rounded">
-                Compuesto
+                Solo médico
               </span>
             </div>
             <p className="text-[11px] text-slate-400 mt-0.5 max-w-xl leading-relaxed">
-              Ancla + factores de justificación + imagen (Corte Focal → suite 3D del estudio
-              {preferredSuiteLabel ? ` «${preferredSuiteLabel}»` : ""} → Atlas) en una lámina PDF.
-              Reutiliza lo ya generado; no llama a la IA.
+              Lámina densa: ancla, síntesis, 6 factores (mín. 4) e imagen obligatoria (Focal → suite
+              {preferredSuiteLabel ? ` «${preferredSuiteLabel}»` : ""} → Atlas).
             </p>
           </div>
         </div>
         <label className="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer select-none shrink-0">
           <input
             type="checkbox"
-            checked={includeInReport}
-            onChange={(e) => setIncludeInReport(e.target.checked)}
-            className="rounded border-slate-600 bg-slate-800 text-amber-500 focus:ring-amber-500"
+            checked={includeInReport && canBuild && !!packData}
+            onChange={(e) => {
+              if (!canBuild || !packData) return;
+              setIncludeInReport(e.target.checked);
+            }}
+            disabled={!canBuild || !packData}
+            className="rounded border-slate-600 bg-slate-800 text-amber-500 focus:ring-amber-500 disabled:opacity-40"
           />
           Incluir en PDF
         </label>
@@ -143,86 +151,127 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
         )}
       </div>
 
-      {!canBuild && (
-        <p className="text-[11px] text-amber-200/90 bg-amber-950/30 border border-amber-800/40 rounded-xl px-3 py-2">
-          Define un <strong>ancla</strong> y genera la infografía de justificación (y/o scorecard /
-          suite 3D / Atlas / corte focal) para armar el pack.
-        </p>
+      {missing.length > 0 && (
+        <div className="text-[11px] text-amber-100/95 bg-amber-950/35 border border-amber-700/40 rounded-xl px-3 py-2.5 space-y-1">
+          <p className="font-semibold flex items-center gap-1.5 text-amber-200">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            Requisitos para armar / incluir en PDF
+          </p>
+          <ul className="list-disc pl-4 space-y-0.5 text-amber-100/85">
+            {missing.map((m) => (
+              <li key={m}>{m}</li>
+            ))}
+          </ul>
+        </div>
       )}
 
-      {display && canBuild && (
-        <div className="rounded-2xl overflow-hidden border border-amber-500/25 bg-slate-950">
-          <div className="bg-amber-800/90 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white flex justify-between gap-2">
-            <span>{display.title}</span>
-            {display.categoryLabel && (
-              <span className="opacity-90 normal-case tracking-normal font-semibold truncate">
-                {display.categoryLabel}
-              </span>
-            )}
+      {display.diagnosis && (
+        <div className="rounded-2xl overflow-hidden border border-stone-600/40 bg-[#fafaf9] text-stone-900 shadow-inner">
+          {/* Header strip preview */}
+          <div className="bg-stone-900 px-4 py-2.5 flex justify-between gap-2 items-center">
+            <span className="text-[10px] font-black uppercase tracking-widest text-amber-50">
+              Anexo · Justificación diagnóstica
+            </span>
+            <span className="text-[10px] text-amber-200/90 truncate font-medium">
+              {[display.categoryLabel, display.studyRegion].filter(Boolean).join(" · ")}
+            </span>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-0">
-            <div className="p-4 md:p-5 space-y-3 border-b md:border-b-0 md:border-r border-slate-800">
-              <p className="text-[9px] font-black uppercase tracking-[0.2em] text-amber-400/90">
+          <div className="h-1 bg-amber-500" />
+
+          <div className="p-5 md:p-6 space-y-4">
+            <div className="space-y-2">
+              <p className="text-[9px] font-black uppercase tracking-[0.2em] text-amber-700">
                 Diagnóstico ancla
               </p>
-              <h4 className="text-lg md:text-xl font-black text-slate-50 leading-snug">
+              <h4 className="text-xl md:text-2xl font-black text-stone-900 leading-snug tracking-tight">
                 {display.diagnosis}
               </h4>
-              {display.studyRegion && (
-                <p className="text-[11px] text-slate-500">{display.studyRegion}</p>
-              )}
-              {display.synthesis && (
-                <p className="text-[12px] text-slate-300 leading-relaxed border-t border-slate-800 pt-3">
-                  {display.synthesis}
-                </p>
-              )}
-              <ol className="space-y-2 pt-1">
-                {display.factors.map((f, i) => (
-                  <li key={f.id} className="flex gap-2.5 text-[12px]">
-                    <span className="font-mono text-amber-500/80 shrink-0 w-5 text-right">
-                      {i + 1}.
-                    </span>
-                    <div className="min-w-0">
-                      <span
-                        className={
-                          f.weight === "primary"
-                            ? "font-semibold text-slate-100"
-                            : "font-medium text-slate-300"
-                        }
-                      >
-                        {f.label}
-                      </span>
-                      {f.detail && (
-                        <p className="text-[11px] text-slate-500 mt-0.5">{f.detail}</p>
-                      )}
-                    </div>
-                  </li>
-                ))}
-              </ol>
+              <div className="w-16 h-0.5 bg-amber-400 rounded-full" />
             </div>
-            <div className="bg-slate-900/80 min-h-[200px] flex flex-col">
-              {display.imageDataUrl ? (
-                <>
-                  <img
-                    src={display.imageDataUrl}
-                    alt={display.imageCaption || "Imagen del pack"}
-                    className="w-full h-auto object-contain max-h-[320px]"
-                  />
-                  {display.imageCaption && (
-                    <p className="text-[10px] text-slate-400 px-3 py-2 border-t border-slate-800">
-                      {display.imageCaption}
-                    </p>
-                  )}
-                </>
-              ) : (
-                <div className="flex-1 flex items-center justify-center text-[11px] text-slate-500 p-6 text-center">
-                  <span className="inline-flex items-center gap-2">
-                    <Loader2 className="h-4 w-4 opacity-40" />
-                    Sin imagen aún (focal / suite 3D / Atlas) — el pack irá solo con factores.
+
+            <div className="grid grid-cols-1 md:grid-cols-[1.15fr_0.85fr] gap-6 md:gap-8 items-start">
+              <div className="space-y-4 min-w-0">
+                {display.synthesis && (
+                  <p className="text-[13px] text-stone-600 leading-relaxed">{display.synthesis}</p>
+                )}
+                {display.categoryLabel && (
+                  <span className="inline-block text-[10px] font-bold uppercase tracking-wider text-amber-900 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded">
+                    {display.categoryLabel}
                   </span>
+                )}
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-[0.18em] text-amber-700 mb-2.5">
+                    Factores que definen el diagnóstico
+                    <span className="text-stone-400 font-semibold normal-case tracking-normal ml-2">
+                      {display.factors.length}
+                      {display.factors.length >= 6 ? "/6" : " (mín. 4)"}
+                    </span>
+                  </p>
+                  <ol className="space-y-3">
+                    {display.factors.map((f, i) => (
+                      <li key={f.id} className="flex gap-3 text-[13px]">
+                        <span
+                          className={`w-1 shrink-0 rounded-full self-stretch min-h-[1.25rem] ${
+                            f.weight === "primary" ? "bg-amber-500" : "bg-stone-300"
+                          }`}
+                        />
+                        <div className="min-w-0">
+                          <span
+                            className={
+                              f.weight === "primary"
+                                ? "font-semibold text-stone-900"
+                                : "font-medium text-stone-700"
+                            }
+                          >
+                            {i + 1}. {f.label}
+                          </span>
+                          {f.detail && (
+                            <p className="text-[11.5px] text-stone-500 mt-0.5 leading-snug">
+                              {f.detail}
+                            </p>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
                 </div>
-              )}
+              </div>
+
+              <div className="min-w-0">
+                {display.imageDataUrl ? (
+                  <div className="rounded-xl border border-stone-200 bg-stone-50 overflow-hidden">
+                    <div className="aspect-[4/3] bg-stone-100 flex items-center justify-center">
+                      <img
+                        src={display.imageDataUrl}
+                        alt={display.imageCaption || "Imagen del pack"}
+                        className="w-full h-full object-contain"
+                      />
+                    </div>
+                    {(display.imageCaption || display.imageSourceLabel) && (
+                      <p className="text-[10px] text-stone-500 px-3 py-2 border-t border-stone-200 italic">
+                        {[display.imageCaption, display.imageSourceLabel]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-stone-300 bg-stone-50 aspect-[4/3] flex flex-col items-center justify-center gap-2 text-stone-400 px-4 text-center">
+                    <ImageOff className="h-7 w-7 opacity-50" />
+                    <p className="text-[11px] leading-snug">
+                      Imagen obligatoria. Genera Focal, suite 3D o Atlas.
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
+
+            <p className="text-[10px] text-stone-400 border-t border-stone-200 pt-3">
+              Factores del informe que sustentan «{display.diagnosis}»
+              {display.factors.length
+                ? ` · ${display.factors.length} factor${display.factors.length === 1 ? "" : "es"}`
+                : ""}
+            </p>
           </div>
         </div>
       )}
