@@ -7617,13 +7617,29 @@ RESPONDE SOLO JSON:
     return "Longitudinal / eje largo";
   }
 
-  function usPlanePromptLock(plane: UsPlaneKind, laterality: string, structure: string): string {
+  function usPlanePromptLock(
+    plane: UsPlaneKind,
+    laterality: string,
+    structure: string,
+    opts?: { bridgeFocalNoSlab?: boolean }
+  ): string {
     const planeEn =
       plane === "transverse"
         ? "TRANSVERSE / short-axis ultrasound acquisition plane"
         : plane === "oblique"
           ? "OBLIQUE ultrasound acquisition plane"
           : "LONGITUDINAL / long-axis ultrasound acquisition plane";
+    if (opts?.bridgeFocalNoSlab) {
+      return (
+        `US BRIDGE FOCAL LOCK (CRITICAL): render the injured structure as seen IN the ${planeEn} — ` +
+        `same orientation/axis as the real ultrasound image (NOT a perpendicular overview). ` +
+        `Patient laterality: ${laterality || "as in report"}. Target: ${structure || "reported anatomy"}. ` +
+        `FORBIDDEN: translucent cyan/green cutting-plane slab, floating plane graphic, probe footprint overlay, ` +
+        `external 3/4 overview with a plane slicing through the joint. ` +
+        `Show clean anatomic CGI of the structure in that US axis only. NO text, NO numbers, NO arrows in image. ` +
+        `Do NOT swap left/right. Do NOT invent a different plane (especially do NOT force transverse if locked longitudinal).`
+      );
+    }
     return (
       `US ACQUISITION PLANE LOCK (CRITICAL): ${planeEn}. ` +
       `Patient laterality: ${laterality || "as in report"}. ` +
@@ -7636,7 +7652,17 @@ RESPONDE SOLO JSON:
 
   app.post("/api/generate-us-plane-simulator", async (req: express.Request, res: express.Response) => {
     try {
-      const { reportText, organOrStudy, laterality, requestedModel, customDirectives, forcedPlane } = req.body;
+      const {
+        reportText,
+        organOrStudy,
+        laterality,
+        requestedModel,
+        customDirectives,
+        forcedPlane,
+        bridgeOnlyFocal,
+        lesionTarget,
+      } = req.body;
+      const lesionFocus = String(lesionTarget || "").trim();
       if (!reportText || !String(reportText).trim()) {
         return res.status(400).json({ success: false, error: "Se requiere el texto del informe." });
       }
@@ -7644,6 +7670,7 @@ RESPONDE SOLO JSON:
       const ai = getGeminiClient();
       const model = getModelName(requestedModel || "gemini-3.8-flash");
       const reportSlice = String(reportText).slice(0, 3500);
+      const onlyFocal = bridgeOnlyFocal === true || bridgeOnlyFocal === "true";
       const lockedPlane: UsPlaneKind =
         forcedPlane === "transverse" || forcedPlane === "oblique" || forcedPlane === "longitudinal"
           ? forcedPlane
@@ -7666,7 +7693,62 @@ RESPONDE SOLO JSON:
           ? `\n${KNEE_MENISCUS_TOPOGRAPHY_RULES_ES}\n`
           : "";
 
-      const planPrompt = `Eres un radiólogo experto en ecografía y director de arte médico 3D.
+      const lesionBlock = lesionFocus
+        ? `\nESTRUCTURA LESIONADA OBJETIVO (OBLIGATORIO centrar el corte aquí): "${lesionFocus}".\n` +
+          `targetStructure, anatomicalFocus y pathologySite DEBEN nombrar esa estructura/lesión.\n` +
+          `El corte 3D muestra esa estructura en el mismo eje que la eco real — no un overview de toda la articulación/órgano.\n`
+        : "";
+
+      const planPrompt = onlyFocal
+        ? `Eres un radiólogo experto en ecografía y director de arte médico 3D.
+Diseña el BRIDGE ECO-ANATOMIA: UN solo panel = corte 3D focal (cara del plano) en el MISMO eje que la eco, centrado en la ESTRUCTURA LESIONADA.
+
+INFORME:
+"""
+${reportSlice}
+"""
+Estudio/protocolo: "${organOrStudy || ""}"
+Lateralidad pedida: "${laterality || "auto"}"
+Directiva clínica: "${customDirectives || "Ninguna"}"
+PLANO BLOQUEADO (no cambiar): "${lockedPlane}" = ${usPlaneLabelEs(lockedPlane)}
+${lesionBlock}${kneePlanBlock}
+Devuelve JSON estricto:
+{
+  "studyRegion": "órgano/región",
+  "detectedLaterality": "Derecha|Izquierda|Bilateral|Línea media",
+  "acquisitionPlane": "${lockedPlane}",
+  "planeLabelEs": "${usPlaneLabelEs(lockedPlane)}",
+  "targetStructure": "${lesionFocus || "estructura / lesión del corte"}",
+  "structuresCrossed": ["estructura 1", "estructura 2"],
+  "planeSummary": "2-4 líneas: plano, lado, hallazgos sobre la estructura lesionada. Sin método de pantalla.",
+  "keyPoints": ["punto 1", "punto 2", "punto 3"],
+  "figureTitle": "FIGURA. ECO REAL Y CORTE 3D FOCAL",
+  "panels": [
+    {
+      "panelLetter": "A",
+      "panelRole": "in_plane_cut",
+      "panelTitle": "Corte 3D focal (estructura lesionada)",
+      "anatomicalFocus": "${lesionFocus || "lesión / estructura en el plano de la eco"}",
+      "laterality": "…",
+      "spatialContract": {
+        "view": "in-plane cut face matching US axis on injured structure",
+        "laterality": "…",
+        "pathologySite": "${lesionFocus || "sitio del hallazgo"}",
+        "pathologyAppearance": "…",
+        "mustShowLandmarks": ["…"],
+        "doNotInvent": ["wrong acquisition plane", "overview anatomy with floating plane", "mirrored laterality", "unrelated structures as primary focus"]
+      }
+    }
+  ]
+}
+
+Reglas:
+- Solo UN panel con panelRole="in_plane_cut". PROHIBIDO anatomy_with_plane / vista general con plano flotante.
+- El corte 3D debe coincidir en orientación con el plano ${usPlaneLabelEs(lockedPlane)} de la eco.
+- CENTRAR en la estructura lesionada${lesionFocus ? ` («${lesionFocus}»)` : ""} visible / referida en la eco e informe.
+- Lateralidad = lado del PACIENTE (AP).
+- No inventes patología ausente.`
+        : `Eres un radiólogo experto en ecografía y director de arte médico 3D.
 Diseña el "SIMULADOR DE PLANO ECOGRÁFICO": dos paneles que muestran el plano de adquisición del transductor anclado al informe.
 
 INFORME:
@@ -7688,7 +7770,7 @@ Devuelve JSON estricto:
   "structuresCrossed": ["estructura 1", "estructura 2", "estructura 3"],
   "planeSummary": "2-4 líneas clínicas: qué plano, qué lado, qué cruza, relación con el hallazgo. Sin método de pantalla.",
   "keyPoints": ["punto 1", "punto 2", "punto 3"],
-  "figureTitle": "FIGURA. PLANO DE ADQUISICIÓN ECOGRÁFICA 3D",
+  "figureTitle": "FIGURA. PLANO DE ADQUISICION ECOGRAFICA 3D",
   "panels": [
     {
       "panelLetter": "A",
@@ -7760,10 +7842,13 @@ Reglas:
           : [],
       });
       const structure =
-        kneeTarget.compartment !== "unknown" && kneeTarget.siteLabel
+        lesionFocus ||
+        (kneeTarget.compartment !== "unknown" && kneeTarget.siteLabel
           ? kneeTarget.siteLabel
-          : String(planJson.targetStructure || organOrStudy || "anatomía ecográfica");
-      const planeLock = usPlanePromptLock(plane, lat, structure);
+          : String(planJson.targetStructure || organOrStudy || "anatomía ecográfica"));
+      const planeLock = usPlanePromptLock(plane, lat, structure, {
+        bridgeFocalNoSlab: onlyFocal,
+      });
       const meniscusForbid =
         kneeTarget.compartment === "medial"
           ? [
@@ -7780,7 +7865,33 @@ Reglas:
             : [];
 
       let panels = Array.isArray(planJson.panels) ? planJson.panels : [];
-      if (panels.length < 2) {
+      if (onlyFocal) {
+        const focal =
+          panels.find((p: any) => p?.panelRole === "in_plane_cut") ||
+          panels[0] ||
+          null;
+        panels = [
+          {
+            panelLetter: "A",
+            panelRole: "in_plane_cut",
+            panelTitle: "Corte 3D focal (mismo eje que la eco)",
+            anatomicalFocus:
+              focal?.anatomicalFocus || `Cara del corte ${usPlaneLabelEs(plane)} — ${structure}`,
+            laterality: focal?.laterality || lat,
+            spatialContract: focal?.spatialContract || {
+              view: "in-plane cut face matching US axis",
+              laterality: lat,
+              pathologySite: structure,
+              doNotInvent: [
+                "wrong acquisition plane",
+                "overview anatomy with floating plane",
+                "mirrored laterality",
+                ...meniscusForbid,
+              ],
+            },
+          },
+        ];
+      } else if (panels.length < 2) {
         panels = [
           {
             panelLetter: "A",
@@ -7813,9 +7924,10 @@ Reglas:
       }
 
       const builtPanels = await Promise.all(
-        panels.slice(0, 2).map(async (panel: any, idx: number) => {
-          const role =
-            panel.panelRole === "in_plane_cut" || idx === 1
+        panels.slice(0, onlyFocal ? 1 : 2).map(async (panel: any, idx: number) => {
+          const role = onlyFocal
+            ? "in_plane_cut"
+            : panel.panelRole === "in_plane_cut" || idx === 1
               ? "in_plane_cut"
               : "anatomy_with_plane";
           const panelKnee = resolveKneeMeniscusTarget({
@@ -7866,7 +7978,12 @@ Reglas:
           const roleHint =
             role === "anatomy_with_plane"
               ? "PANEL ROLE: external/3D anatomy view WITH a translucent cyan ultrasound cutting plane and subtle probe footprint on skin."
-              : "PANEL ROLE: looking at the CUT FACE of the ultrasound acquisition plane (in-plane anatomic section), clean medical CGI. Same meniscus compartment as Panel A — never swap internal↔external.";
+              : onlyFocal
+                ? `PANEL ROLE: anatomic CGI of the injured structure${lesionFocus ? ` («${lesionFocus}»)` : ""} as viewed along the SAME axis as the US photo (${usPlaneLabelEs(plane)}). ` +
+                  `CENTER and fill the frame with that structure/pathology. ` +
+                  `STRICTLY FORBIDDEN: green/cyan translucent cutting-plane slab, floating plane line, probe icon, whole-joint overview with a plane cutting through. ` +
+                  `If plane is longitudinal, do NOT draw a transverse slab.`
+                : "PANEL ROLE: looking at the CUT FACE of the ultrasound acquisition plane (in-plane anatomic section), clean medical CGI. Same meniscus compartment as Panel A — never swap internal↔external.";
 
           let promptToUse = buildImagePromptFromContract({
             panelTitle: panel.panelTitle || (role === "anatomy_with_plane" ? "Anatomy + US plane" : "In-plane cut"),
@@ -7926,13 +8043,17 @@ Reglas:
                 `pass=false if Panel B (or any panel) puts the lesion on the contralateral meniscus.\n` +
                 `meniscusOk=false when internal↔external is swapped.\n`
               : "";
+          const noSlabQa = onlyFocal
+            ? `\nBRIDGE FOCAL (no-slab): pass=false if any panel shows a translucent cyan/green cutting-plane slab, floating plane graphic, or whole-joint overview sliced by a plane. ` +
+              `The image must show the injured structure along the SAME ${plane} axis as the ultrasound — NOT a perpendicular overview with a cut line.\n`
+            : "";
           const parts: any[] = [
             {
               text: `QA de simulador de plano ecográfico.
 Plano EXIGIDO: ${plane} (${usPlaneLabelEs(plane)}).
 Lateralidad paciente: ${lat || "según informe"}.
 Estructura: ${structure}.
-${meniscusQa}Para cada panel: pass=false si el plano visible no es el exigido, si hay espejo de lado, si el menisco interno/externo está invertido, o si aparecen números/reloj en la imagen.
+${meniscusQa}${noSlabQa}Para cada panel: pass=false si el plano visible no es el exigido, si hay espejo de lado, si el menisco interno/externo está invertido, o si aparecen números/reloj en la imagen.
 JSON:
 { "panels": [ { "panelLetter":"A", "pass":true/false, "lateralityOk":true/false, "planeOk":true/false, "meniscusOk":true/false, "issues":[], "surgicalCorrection":"English fix if fail" } ] }`,
             },
@@ -7971,6 +8092,10 @@ JSON:
                   kneeTarget.pin ||
                   "Fix meniscus compartment: INTERNAL/medial ≠ EXTERNAL/lateral (fibula locks external)."
                 : "";
+            const noSlabFix =
+              onlyFocal || p.panelRole === "in_plane_cut"
+                ? "REMOVE any cyan/green translucent cutting-plane slab. Render the injured structure IN the locked ultrasound axis only — same orientation as the US photo, no floating plane, no whole-joint overview."
+                : "";
             const correction = [
               reinforceLateralityCorrection(
                 String(note.surgicalCorrection || "Fix acquisition plane and laterality."),
@@ -7980,11 +8105,14 @@ JSON:
                 `${plane} ${structure}`
               ),
               meniscusFix,
+              noSlabFix,
               kneeTarget.pin,
             ]
               .filter(Boolean)
               .join(" ");
-            const retryPrompt = `${usPlanePromptLock(plane, p.laterality || lat, structure)} ${correction} ${p.promptUsed}`;
+            const retryPrompt = `${usPlanePromptLock(plane, p.laterality || lat, structure, {
+              bridgeFocalNoSlab: onlyFocal || p.panelRole === "in_plane_cut",
+            })} ${correction} ${p.promptUsed}`;
             try {
               const imageUrl = await generateMedicalImage(ai, retryPrompt);
               builtPanels[idx] = {
@@ -8006,8 +8134,9 @@ JSON:
         success: true,
         data: {
           studyRegion: planJson.studyRegion || organOrStudy || "",
-          figureTitle:
-            planJson.figureTitle || "FIGURA. PLANO DE ADQUISICIÓN ECOGRÁFICA 3D",
+          figureTitle: onlyFocal
+            ? planJson.figureTitle || "FIGURA. ECO REAL Y CORTE 3D FOCAL"
+            : planJson.figureTitle || "FIGURA. PLANO DE ADQUISICION ECOGRAFICA 3D",
           detectedLaterality: lat,
           acquisitionPlane: plane,
           planeLabelEs: usPlaneLabelEs(plane),
@@ -8103,10 +8232,11 @@ JSON:
         customDirectives: [customDirectives, userDirective].filter(Boolean).join(" "),
       });
 
-      const roleHint =
-        role === "anatomy_with_plane"
-          ? "PANEL ROLE: 3D anatomy WITH translucent cyan US cutting plane + subtle probe footprint. NO text in image."
-          : "PANEL ROLE: in-plane cut face of the US acquisition plane. Same meniscus compartment as the report — never swap internal↔external. NO text in image.";
+      const bridgeFocal = role === "in_plane_cut";
+      const roleHint = bridgeFocal
+        ? `PANEL ROLE: anatomic CGI of the target structure along the SAME axis as the US (${usPlaneLabelEs(plane)}). ` +
+          `FORBIDDEN: cyan/green translucent cutting-plane slab, floating plane line, probe icon, whole-joint overview. NO text in image.`
+        : "PANEL ROLE: 3D anatomy WITH translucent cyan US cutting plane + subtle probe footprint. NO text in image.";
 
       const finalPrompt = buildImagePromptFromContract({
         panelTitle: panel.panelTitle,
@@ -8114,7 +8244,7 @@ JSON:
         studyRegion: structure,
         contract,
         customDirectives: [
-          usPlanePromptLock(plane, lat, structure),
+          usPlanePromptLock(plane, lat, structure, { bridgeFocalNoSlab: bridgeFocal }),
           roleHint,
           customDirectives,
           userDirective ? `SURGEON MODIFICATION: ${userDirective}` : "",
