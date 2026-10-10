@@ -5039,7 +5039,10 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
         doc.text(footerLeftText, marginX, pageHeight - 10);
 
         // Header for page 2 onwards (Running Header)
+        // Keep label baseline clear of the rule (was y=11 / line=14 — glyphs kissed the gray line).
         if (i >= 2) {
+          const headerTextY = 10;
+          const headerRuleY = 15.5;
           // Draw thin horizontal line
           if (pdfLayoutType === "clinical_slate") {
             doc.setDrawColor(148, 163, 184); // slate-400
@@ -5051,7 +5054,7 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
             doc.setDrawColor(226, 232, 240); // slate-200
             doc.setLineWidth(0.2);
           }
-          doc.line(marginX, 14, pageWidth - marginX, 14);
+          doc.line(marginX, headerRuleY, pageWidth - marginX, headerRuleY);
 
           // Draw study name on the left of the header
           doc.setFont("helvetica", "bold");
@@ -5066,13 +5069,13 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
           
           let studyLabel = studyType ? studyType.toUpperCase() : "REPORTE DE RADIODIAGNÓSTICO";
           
-          doc.text(studyLabel, marginX, 11);
+          doc.text(studyLabel, marginX, headerTextY);
 
           // Draw pagination aligned to the right inside the running header
           doc.setFont("helvetica", "normal");
           const runningHeaderPageStr = `Pág. ${i} de ${totalPages}`;
           const rWidth = doc.getTextWidth(runningHeaderPageStr);
-          doc.text(runningHeaderPageStr, pageWidth - marginX - rWidth, 11);
+          doc.text(runningHeaderPageStr, pageWidth - marginX - rWidth, headerTextY);
         }
       }
 

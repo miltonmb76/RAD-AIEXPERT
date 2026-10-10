@@ -38,7 +38,7 @@ function drawContained(
 }
 
 /**
- * One-page PDF: ECO REAL | CORTE 3D FOCAL with suite-style arrows + dense footer.
+ * One-page PDF: ECO REAL | CORTE 3D FOCAL with suite arrows + readable footer.
  */
 export function renderUsPlaneSimulatorAnnexToPDF(
   doc: any,
@@ -58,41 +58,42 @@ export function renderUsPlaneSimulatorAnnexToPDF(
   if (!realUs && !focal?.imageUrl && !validFallback.length) return;
 
   const { marginX, pageWidth, pageHeight, contentWidth, factor } = options;
-  const pageBottom = pageHeight - 11 * factor;
+  const pageBottom = pageHeight - 12 * factor;
 
   doc.addPage();
-  let y = 16 * factor;
+  // Clear of running header + gray rule (rule at ~15.5; was colliding at ~16)
+  let y = 26 * factor;
 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(11 * factor);
+  doc.setFontSize(11.5 * factor);
   doc.setTextColor(15, 23, 42);
   doc.text("ANEXO: CORRELACION ECO-ANATOMICA 3D", marginX, y);
-  y += 3.8 * factor;
+  y += 4.5 * factor;
 
   doc.setDrawColor(8, 145, 178);
   doc.setLineWidth(0.7);
   doc.line(marginX, y, pageWidth - marginX, y);
-  y += 3.8 * factor;
+  y += 4.5 * factor;
 
   const figTitle = sanitizePdfText(
     data.figureTitle || "FIGURA. ECO REAL Y CORTE 3D FOCAL"
   );
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(9 * factor);
+  doc.setFontSize(9.2 * factor);
   const titleLines = doc.splitTextToSize(figTitle, contentWidth - 10 * factor).slice(0, 2);
-  const bannerH = Math.max(6.5 * factor, titleLines.length * 3.4 * factor + 2.8 * factor);
+  const bannerH = Math.max(7 * factor, titleLines.length * 3.5 * factor + 3 * factor);
   doc.setFillColor(236, 254, 255);
   doc.setDrawColor(165, 243, 252);
   doc.roundedRect(marginX, y, contentWidth, bannerH, 1.5, 1.5, "FD");
   doc.setFillColor(8, 145, 178);
   doc.rect(marginX, y, 2.4 * factor, bannerH, "F");
   doc.setTextColor(30, 41, 59);
-  let ty = y + 3.8 * factor;
+  let ty = y + 4 * factor;
   titleLines.forEach((line: string) => {
     doc.text(line, marginX + 5.5 * factor, ty);
-    ty += 3.4 * factor;
+    ty += 3.5 * factor;
   });
-  y += bannerH + 2.8 * factor;
+  y += bannerH + 3.5 * factor;
 
   const meta = [
     data.planeLabelEs ? `Plano: ${data.planeLabelEs}` : "",
@@ -107,13 +108,13 @@ export function renderUsPlaneSimulatorAnnexToPDF(
     .join("   ·   ");
   if (meta) {
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.5 * factor);
+    doc.setFontSize(8 * factor);
     doc.setTextColor(51, 65, 85);
     doc.text(sanitizePdfText(meta).slice(0, 150), marginX, y);
-    y += 4 * factor;
+    y += 5 * factor;
   }
 
-  const gap = 3.2 * factor;
+  const gap = 3.5 * factor;
   const annotations =
     data.imageAnnotations?.length
       ? data.imageAnnotations
@@ -126,7 +127,7 @@ export function renderUsPlaneSimulatorAnnexToPDF(
 
   if (realUs && focal?.imageUrl) {
     const imgW = (contentWidth - gap) / 2;
-    const imgH = Math.min(70 * factor, imgW * 0.78);
+    const imgH = Math.min(66 * factor, imgW * 0.76);
     const slots = [
       {
         url: realUs.url,
@@ -139,10 +140,10 @@ export function renderUsPlaneSimulatorAnnexToPDF(
         url: focal.imageUrl!,
         badge: "CORTE 3D FOCAL",
         caption:
-          focal.panelTitle ||
           data.lesionTarget ||
+          focal.panelTitle ||
           focal.anatomicalFocus ||
-          "Mismo eje / estructura lesionada",
+          "Mismo eje que la eco",
         letter: focal.panelLetter || "A",
         color: [8, 145, 178] as [number, number, number],
       },
@@ -164,28 +165,27 @@ export function renderUsPlaneSimulatorAnnexToPDF(
         imgH - 2,
         factor
       );
-      // Also try "A" if focal letter differs
       if (slot.letter !== "A" && i === 1) {
         drawSuiteImageAnnotationsOnPdf(doc, annotations, "A", x + 1, y + 1, imgW - 2, imgH - 2, factor);
       }
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(6.8 * factor);
+      doc.setFontSize(7.2 * factor);
       doc.setTextColor(slot.color[0], slot.color[1], slot.color[2]);
-      doc.text(slot.badge, x, y + imgH + 3 * factor);
+      doc.text(slot.badge, x, y + imgH + 3.4 * factor);
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(6.3 * factor);
+      doc.setFontSize(6.8 * factor);
       doc.setTextColor(51, 65, 85);
       const cap = doc
         .splitTextToSize(sanitizePdfText(slot.caption), imgW)
         .slice(0, 2);
-      doc.text(cap, x, y + imgH + 5.6 * factor);
+      doc.text(cap, x, y + imgH + 6.2 * factor);
     });
-    y += imgH + 11 * factor;
+    y += imgH + 13 * factor;
   } else {
     const panels = focal?.imageUrl ? [focal] : validFallback.slice(0, 2);
     const n = Math.max(1, panels.length);
     const imgW = (contentWidth - gap * (n - 1)) / n;
-    const imgH = Math.min(68 * factor, imgW * 0.75);
+    const imgH = Math.min(64 * factor, imgW * 0.75);
     panels.forEach((p, i) => {
       const x = marginX + i * (imgW + gap);
       drawContained(doc, p.imageUrl!, x, y, imgW, imgH);
@@ -200,30 +200,28 @@ export function renderUsPlaneSimulatorAnnexToPDF(
         factor
       );
     });
-    y += imgH + 10 * factor;
+    y += imgH + 12 * factor;
   }
 
+  const sectionGap = 6.2 * factor;
   const writeSection = (title: string, body: string, maxLines: number) => {
-    if (!body.trim() || y > pageBottom - 12 * factor) return;
+    if (!body.trim() || y > pageBottom - 14 * factor) return;
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(7.8 * factor);
+    doc.setFontSize(9 * factor);
     doc.setTextColor(8, 145, 178);
     doc.text(title, marginX, y);
-    y += 3.4 * factor;
+    y += 4.6 * factor;
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.2 * factor);
+    doc.setFontSize(8.5 * factor);
     doc.setTextColor(30, 41, 59);
+    const lineH = 3.9 * factor;
     const lines = doc.splitTextToSize(sanitizePdfText(body), contentWidth).slice(0, maxLines);
     doc.text(lines, marginX, y);
-    y += lines.length * 3.15 * factor + 2.4 * factor;
+    y += lines.length * lineH + sectionGap;
   };
 
   if (data.lesionTarget) {
-    writeSection(
-      "Estructura lesionada (objetivo del corte)",
-      data.lesionTarget,
-      2
-    );
+    writeSection("Estructura lesionada", data.lesionTarget, 2);
   }
 
   writeSection("Sintesis del plano", data.planeSummary || "", 5);
@@ -235,7 +233,11 @@ export function renderUsPlaneSimulatorAnnexToPDF(
 
   const keys = (data.keyPoints || []).filter(Boolean);
   if (keys.length) {
-    writeSection("Puntos clave", keys.map((k, i) => `${i + 1}. ${k}`).join("  "), 4);
+    writeSection(
+      "Puntos clave",
+      keys.map((k, i) => `${i + 1}. ${k}`).join("\n"),
+      5
+    );
   }
 
   const context =
@@ -245,11 +247,12 @@ export function renderUsPlaneSimulatorAnnexToPDF(
           plane: data,
           lesionTarget: data.lesionTarget,
         });
-  if (context.length && y < pageBottom - 14 * factor) {
+  // Prefer short useful notes — one paragraph each, not a pipe-joined dump
+  if (context.length && y < pageBottom - 16 * factor) {
     writeSection(
-      "Contexto clinico (informe / scorecard / rotulacion)",
-      context.join(" | "),
-      Math.max(3, Math.floor((pageBottom - y) / (3.15 * factor)))
+      "Nota clinica",
+      context.slice(0, 3).join("\n\n"),
+      Math.max(4, Math.floor((pageBottom - y) / (3.7 * factor)))
     );
   }
 }

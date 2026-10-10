@@ -41,6 +41,12 @@ grep -q 'lesionTarget' src/components/UltrasoundPlaneSimulatorModule.tsx \
   || { echo "ERROR: falta cuadro estructura lesionada. Aborto."; exit 1; }
 grep -q 'drawSuiteImageAnnotationsOnPdf' src/utils/usPlaneSimulatorPdfRenderer.ts \
   || { echo "ERROR: PDF sin flechas suite. Aborto."; exit 1; }
+grep -q 'bridgeFocalNoSlab' server_atlas3d.ts \
+  || { echo "ERROR: falta prompt sin placa de corte. Aborto."; exit 1; }
+grep -q 'Nota clinica' src/utils/usPlaneSimulatorPdfRenderer.ts \
+  || { echo "ERROR: falta Nota clinica (contexto no repetitivo). Aborto."; exit 1; }
+grep -q 'buildBridgeClinicalContext' src/lib/usPlaneBridge.ts \
+  || { echo "ERROR: falta buildBridgeClinicalContext. Aborto."; exit 1; }
 grep -q 'galleryImages={attachedImages' src/App.tsx \
   || { echo "ERROR: falta cableado galería→simulador. Aborto."; exit 1; }
 

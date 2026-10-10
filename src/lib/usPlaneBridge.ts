@@ -107,32 +107,65 @@ export function suggestLesionTarget(opts: {
   return candidates[0] || "";
 }
 
-/** Clinical lines to densify the PDF footer. */
+function normDedupKey(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/** Useful, non-repetitive clinical notes for the PDF footer (not a dump of duplicates). */
 export function buildBridgeClinicalContext(opts: {
   scorecardData?: ClinicalScorecardData | null;
   plane?: UsPlaneSimulatorData | null;
   lesionTarget?: string | null;
 }): string[] {
   const lines: string[] = [];
+  const seen = new Set<string>();
   const push = (s?: string | null) => {
-    const t = String(s || "").trim();
-    if (!t) return;
-    if (lines.some((x) => x.toLowerCase() === t.toLowerCase())) return;
-    if (lines.length < 8) lines.push(t);
+    const t = String(s || "").replace(/\s+/g, " ").trim();
+    if (!t || t.length < 12) return;
+    const key = normDedupKey(t).slice(0, 80);
+    // Skip near-duplicates / repeats of lesion title already shown above
+    if (seen.has(key)) return;
+    for (const prev of seen) {
+      if (key.includes(prev) || prev.includes(key)) return;
+    }
+    const lesionKey = normDedupKey(String(opts.lesionTarget || ""));
+    if (lesionKey && (key === lesionKey || key.includes(lesionKey) && key.length < lesionKey.length + 24)) {
+      return;
+    }
+    seen.add(key);
+    if (lines.length < 4) lines.push(t.slice(0, 220));
   };
 
-  if (opts.lesionTarget) push(`Estructura lesionada (objetivo del corte): ${opts.lesionTarget}`);
   const sc = opts.scorecardData;
-  if (sc?.categoryAssigned) push(`Categoría / scorecard: ${sc.categoryAssigned}`);
-  if (sc?.clinicalSummary) push(sc.clinicalSummary.slice(0, 280));
-  (sc?.atlasOverlays || []).slice(0, 3).forEach((o) => {
-    const blob = [o.structure, o.finding, o.evidence].filter(Boolean).join(" — ");
-    push(blob.slice(0, 160));
-  });
-  (opts.plane?.keyPoints || []).slice(0, 4).forEach((k) => push(k));
-  (opts.plane?.structuresCrossed || []).slice(0, 4).forEach((s) =>
-    push(`Estructura cruzada: ${s}`)
-  );
+  if (sc?.clinicalSummary) push(sc.clinicalSummary);
+  if (sc?.recommendation) push(`Conducta: ${sc.recommendation}`);
+  if (sc?.categoryAssigned && sc?.protocolName) {
+    push(`${sc.protocolName}: ${sc.categoryAssigned}`);
+  } else if (sc?.categoryAssigned) {
+    push(`Categoria clinica: ${sc.categoryAssigned}`);
+  }
+
+  // One distinctive overlay with evidence (not the same lesion name alone)
+  for (const o of sc?.atlasOverlays || []) {
+    const finding = String(o.finding || "").trim();
+    const evidence = String(o.evidence || "").trim();
+    if (evidence && finding) {
+      push(`${finding}: ${evidence}`);
+      break;
+    }
+    if (evidence) {
+      push(evidence);
+      break;
+    }
+  }
+
+  // Do NOT re-add planeSummary / keyPoints — those already have their own sections above.
+
   return lines;
 }
 
