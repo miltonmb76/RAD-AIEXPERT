@@ -1,14 +1,19 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { MapPinned, Crosshair, RefreshCw } from "lucide-react";
 import type {
   Atlas3DData,
   ClinicalScorecardData,
   FindingsInfographicData,
+  FocalLesion3DData,
+  SuiteImageAnnotation,
 } from "../types";
 import {
   collectFindingsForMap,
   findingsMapSummary,
+  listFindingsMapCanvases,
   placeFindingsAsAnnotations,
+  resolveFindingsMapCanvas,
+  type FindingsMapSuiteSource,
 } from "../lib/findingsMap";
 import { SuiteImageAnnotationLayer } from "./SuiteImageAnnotationLayer";
 
@@ -16,6 +21,16 @@ interface FindingsMapModuleProps {
   diagnosisAnchor?: string;
   atlasData: Atlas3DData | null;
   setAtlasData: (data: Atlas3DData | null) => void;
+  focalLesion3dData?: FocalLesion3DData | null;
+  setFocalLesion3dData?: (data: FocalLesion3DData | null) => void;
+  suiteSources?: FindingsMapSuiteSource[];
+  preferredSuiteId?: string | null;
+  preferredSuiteLabel?: string | null;
+  /** Persist pins onto the active source (focal / suite id / atlas3d). */
+  onUpdateSourceAnnotations?: (
+    sourceId: string,
+    annotations: SuiteImageAnnotation[]
+  ) => void;
   scorecardData?: ClinicalScorecardData | null;
   findingsInfographic?: FindingsInfographicData | null;
 }
@@ -24,11 +39,59 @@ export const FindingsMapModule: React.FC<FindingsMapModuleProps> = ({
   diagnosisAnchor = "",
   atlasData,
   setAtlasData,
+  focalLesion3dData = null,
+  setFocalLesion3dData,
+  suiteSources = [],
+  preferredSuiteId = null,
+  preferredSuiteLabel = null,
+  onUpdateSourceAnnotations,
   scorecardData = null,
   findingsInfographic = null,
 }) => {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activePanel, setActivePanel] = useState<string>("");
+  const [forcedSourceId, setForcedSourceId] = useState<string>("");
+
+  const availableCanvases = useMemo(
+    () =>
+      listFindingsMapCanvases({
+        focalLesion3dData,
+        atlas3dData: atlasData,
+        suiteSources,
+      }),
+    [focalLesion3dData, atlasData, suiteSources]
+  );
+
+  const canvas = useMemo(
+    () =>
+      resolveFindingsMapCanvas({
+        focalLesion3dData,
+        atlas3dData: atlasData,
+        suiteSources,
+        preferredSuiteId,
+        forcedSourceId: forcedSourceId || null,
+      }),
+    [
+      focalLesion3dData,
+      atlasData,
+      suiteSources,
+      preferredSuiteId,
+      forcedSourceId,
+    ]
+  );
+
+  // Keep forced source valid when sources change.
+  useEffect(() => {
+    if (!forcedSourceId) return;
+    if (!availableCanvases.some((c) => c.sourceId === forcedSourceId)) {
+      setForcedSourceId("");
+    }
+  }, [availableCanvases, forcedSourceId]);
+
+  const panelLetters = useMemo(
+    () => (canvas?.panels || []).map((p) => p.panelLetter),
+    [canvas]
+  );
 
   const findings = useMemo(
     () =>
@@ -36,22 +99,40 @@ export const FindingsMapModule: React.FC<FindingsMapModuleProps> = ({
         atlasData,
         scorecardData,
         findingsInfographic,
+        panelLetters,
       }),
-    [atlasData, scorecardData, findingsInfographic]
+    [atlasData, scorecardData, findingsInfographic, panelLetters]
   );
 
-  const panels = atlasData?.panels?.filter((p) => p.imageUrl) || [];
+  const panels = canvas?.panels || [];
   const panelLetter =
     activePanel ||
     panels[0]?.panelLetter ||
     findings[0]?.panelLetter ||
     "A";
   const panel = panels.find((p) => p.panelLetter === panelLetter) || panels[0];
+  const annotations = canvas?.imageAnnotations || [];
+
+  const persistAnnotations = (next: SuiteImageAnnotation[]) => {
+    if (!canvas) return;
+    const id = canvas.sourceId;
+    if (onUpdateSourceAnnotations) {
+      onUpdateSourceAnnotations(id, next);
+      return;
+    }
+    if (id === "atlas3d" && atlasData) {
+      setAtlasData({ ...atlasData, imageAnnotations: next });
+      return;
+    }
+    if (id === "focal" && focalLesion3dData && setFocalLesion3dData) {
+      setFocalLesion3dData({ ...focalLesion3dData, imageAnnotations: next });
+    }
+  };
 
   const handlePlacePins = () => {
-    if (!atlasData || !findings.length) return;
-    const next = placeFindingsAsAnnotations(atlasData, findings);
-    setAtlasData(next);
+    if (!canvas || !findings.length) return;
+    const next = placeFindingsAsAnnotations(canvas, findings);
+    persistAnnotations(next);
     if (!activePanel && findings[0]) setActivePanel(findings[0].panelLetter);
   };
 
@@ -73,15 +154,17 @@ export const FindingsMapModule: React.FC<FindingsMapModuleProps> = ({
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-sm md:text-base font-black uppercase tracking-wider text-slate-100 font-mono">
-                Mapa de hallazgos sobre Atlas
+                Mapa de hallazgos
               </h3>
               <span className="text-[9px] font-black uppercase tracking-widest bg-indigo-950/50 text-indigo-300 border border-indigo-700/40 px-2 py-0.5 rounded">
                 Pins 3D
               </span>
             </div>
             <p className="text-[11px] text-slate-400 mt-0.5 max-w-xl leading-relaxed">
-              Coloca los hallazgos del scorecard / justificación como pines sobre los paneles del
-              Atlas. Arrastra tip y etiqueta para afinar.
+              Coloca hallazgos del scorecard / justificación como pines sobre Corte Focal, la suite
+              3D del estudio
+              {preferredSuiteLabel ? ` («${preferredSuiteLabel}»)` : ""} o el Atlas. Arrastra tip y
+              etiqueta para afinar.
               {diagnosisAnchor.trim() ? (
                 <span className="text-indigo-300/90"> Ancla: «{diagnosisAnchor.trim()}».</span>
               ) : null}
@@ -90,14 +173,33 @@ export const FindingsMapModule: React.FC<FindingsMapModuleProps> = ({
         </div>
       </div>
 
-      {!atlasData || !panels.length ? (
+      {!canvas || !panels.length ? (
         <p className="text-[11px] text-indigo-200/90 bg-indigo-950/30 border border-indigo-800/40 rounded-xl px-3 py-2">
-          Genera primero el <strong>Atlas 3D</strong> (con al menos un panel con imagen) para mapear
-          hallazgos.
+          Genera primero el <strong>Corte Focal 3D</strong>, la{" "}
+          <strong>suite 3D del estudio</strong>
+          {preferredSuiteLabel ? ` (${preferredSuiteLabel})` : ""} o el <strong>Atlas 3D</strong>{" "}
+          (con al menos un panel con imagen) para mapear hallazgos.
         </p>
       ) : (
         <>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
+            <label className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Fuente imagen
+              <select
+                value={canvas.sourceId}
+                onChange={(e) => {
+                  setForcedSourceId(e.target.value);
+                  setActivePanel("");
+                }}
+                className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-[11px] text-slate-200 outline-none focus:border-indigo-500 cursor-pointer normal-case tracking-normal font-semibold"
+              >
+                {availableCanvases.map((c) => (
+                  <option key={c.sourceId} value={c.sourceId}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </label>
             <button
               type="button"
               onClick={handlePlacePins}
@@ -105,7 +207,7 @@ export const FindingsMapModule: React.FC<FindingsMapModuleProps> = ({
               className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-black uppercase tracking-wider cursor-pointer"
             >
               <Crosshair className="h-4 w-4" />
-              Colocar pines en Atlas
+              Colocar pines en {canvas.label}
             </button>
             <button
               type="button"
@@ -116,8 +218,8 @@ export const FindingsMapModule: React.FC<FindingsMapModuleProps> = ({
               <RefreshCw className="h-3.5 w-3.5" />
               Reubicar
             </button>
-            <span className="text-[10px] text-slate-500 font-mono ml-auto">
-              {findingsMapSummary(findings)}
+            <span className="text-[10px] text-slate-500 font-mono sm:ml-auto">
+              {findingsMapSummary(findings)} · {canvas.label}
             </span>
           </div>
 
@@ -195,10 +297,8 @@ export const FindingsMapModule: React.FC<FindingsMapModuleProps> = ({
                     />
                     <SuiteImageAnnotationLayer
                       panelLetter={panel.panelLetter}
-                      annotations={atlasData.imageAnnotations || []}
-                      onChange={(next) =>
-                        setAtlasData({ ...atlasData, imageAnnotations: next })
-                      }
+                      annotations={annotations}
+                      onChange={persistAnnotations}
                       mode="layer"
                       editable
                       selectedId={selectedId}
@@ -207,10 +307,8 @@ export const FindingsMapModule: React.FC<FindingsMapModuleProps> = ({
                   </div>
                   <SuiteImageAnnotationLayer
                     panelLetter={panel.panelLetter}
-                    annotations={atlasData.imageAnnotations || []}
-                    onChange={(next) =>
-                      setAtlasData({ ...atlasData, imageAnnotations: next })
-                    }
+                    annotations={annotations}
+                    onChange={persistAnnotations}
                     mode="toolbar"
                     editable
                     selectedId={selectedId}
