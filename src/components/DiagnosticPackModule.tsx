@@ -269,8 +269,35 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
               <div className="w-16 h-0.5 bg-amber-400 rounded-full" />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-[1.1fr_0.9fr] gap-6 md:gap-8 items-start">
-              <div className="space-y-4 min-w-0">
+            <div className="grid grid-cols-1 md:grid-cols-[0.9fr_1.1fr] gap-6 md:gap-8 items-start">
+              {/* Images LEFT — snug to aspect, no letterbox */}
+              <div className="min-w-0 space-y-4 order-2 md:order-1">
+                {[display.imageA, display.imageB].filter(Boolean).length ? (
+                  [display.imageA, display.imageB].filter(Boolean).map((slot) => (
+                    <figure key={slot!.candidateId} className="m-0">
+                      <div className="rounded-lg border border-stone-200 bg-stone-50 overflow-hidden leading-none">
+                        <img
+                          src={slot!.url}
+                          alt={slot!.caption}
+                          className="w-full h-auto block"
+                        />
+                      </div>
+                      <figcaption className="text-[10px] text-stone-500 px-0.5 pt-1.5 italic">
+                        {[slot!.caption, slot!.sourceLabel].filter(Boolean).join(" · ")}
+                      </figcaption>
+                    </figure>
+                  ))
+                ) : (
+                  <div className="rounded-xl border border-dashed border-stone-300 bg-stone-50 aspect-[4/3] flex flex-col items-center justify-center gap-2 text-stone-400 px-4 text-center">
+                    <ImageOff className="h-7 w-7 opacity-50" />
+                    <p className="text-[11px] leading-snug">
+                      Elige imagen A (y B) desde Focal / suite / Atlas.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-5 min-w-0 order-1 md:order-2">
                 {display.synthesis && (
                   <p className="text-[13px] text-stone-600 leading-relaxed">{display.synthesis}</p>
                 )}
@@ -292,14 +319,14 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
                 )}
 
                 <div>
-                  <p className="text-[9px] font-black uppercase tracking-[0.18em] text-amber-700 mb-2.5">
+                  <p className="text-[9px] font-black uppercase tracking-[0.18em] text-amber-700 mb-3">
                     Factores que definen el diagnóstico
                     <span className="text-stone-400 font-semibold normal-case tracking-normal ml-2">
                       {display.factors.length}
                       {display.factorsFromJustification ? " · justificación" : ""}
                     </span>
                   </p>
-                  <ol className="space-y-3">
+                  <ol className="space-y-4">
                     {display.factors.map((f, i) => (
                       <li key={f.id} className="flex gap-3 text-[13px]">
                         <span
@@ -328,42 +355,12 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
                   </ol>
                 </div>
               </div>
-
-              <div className="min-w-0 space-y-3">
-                {[display.imageA, display.imageB].filter(Boolean).length ? (
-                  [display.imageA, display.imageB].filter(Boolean).map((slot) => (
-                    <div
-                      key={slot!.candidateId}
-                      className="rounded-xl border border-stone-200 bg-stone-50 overflow-hidden"
-                    >
-                      <div className="aspect-[4/3] bg-stone-100 flex items-center justify-center">
-                        <img
-                          src={slot!.url}
-                          alt={slot!.caption}
-                          className="max-w-full max-h-full object-contain"
-                        />
-                      </div>
-                      <p className="text-[10px] text-stone-500 px-3 py-1.5 border-t border-stone-200 italic">
-                        {[slot!.caption, slot!.sourceLabel].filter(Boolean).join(" · ")}
-                      </p>
-                    </div>
-                  ))
-                ) : (
-                  <div className="rounded-xl border border-dashed border-stone-300 bg-stone-50 aspect-[4/3] flex flex-col items-center justify-center gap-2 text-stone-400 px-4 text-center">
-                    <ImageOff className="h-7 w-7 opacity-50" />
-                    <p className="text-[11px] leading-snug">
-                      Elige imagen A (y B) desde Focal / suite / Atlas.
-                    </p>
-                  </div>
-                )}
-              </div>
             </div>
 
-            <p className="text-[10px] text-stone-400 border-t border-stone-200 pt-3">
-              Factores del informe que sustentan «{display.diagnosis}»
-              {display.factors.length
-                ? ` · ${display.factors.length} factor${display.factors.length === 1 ? "" : "es"}`
-                : ""}
+            <p className="text-[11px] text-stone-500 border-t border-stone-200 pt-3 leading-relaxed">
+              En conjunto, estos hallazgos permiten sostener el diagnóstico de «{display.diagnosis}
+              »{display.categoryLabel ? ` (${display.categoryLabel})` : ""}. Esta lámina resume la
+              justificación clínica del ancla para revisión del informe.
             </p>
           </div>
         </div>
