@@ -23,7 +23,6 @@ export type BatchModuleActivatorDeps = {
   clinicalScorecardData: any;
   editedReportText: string;
   generatedReport: string;
-  handleAnalyzeCase: (...args: any[]) => any;
   handleGenerateDynamicGlossary: (...args: any[]) => any;
   handleGenerateSchematicSummary: (...args: any[]) => any;
   handleSearchBibliography: (...args: any[]) => any;
@@ -118,7 +117,6 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
       clinicalScorecardData,
       editedReportText,
       generatedReport,
-      handleAnalyzeCase,
       handleGenerateDynamicGlossary,
       handleGenerateSchematicSummary,
       handleSearchBibliography,
@@ -237,7 +235,6 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
       releaseScorecardGate = resolve;
     });
 
-    if (modules.case_analysis) promises.push(handleAnalyzeCase());
     if (modules.bibliography) promises.push(handleSearchBibliography());
 
     if (modules.operational_summary) {
