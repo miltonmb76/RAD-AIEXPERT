@@ -11,28 +11,30 @@ import {
   Layers,
   Image as ImageIcon,
   Link2,
-  Tag,
-  Plus,
-  Trash2,
+  Focus,
 } from "lucide-react";
 import {
   UsAcquisitionPlane,
-  UsPlaneBridgeLabel,
   UsPlaneSimulatorData,
   UsPlaneSimulatorPanel,
   ClinicalScorecardData,
+  SuiteImageAnnotation,
 } from "../types";
 import { buildAtlasDirectivesFromScorecard } from "../lib/clinicalIntelligence";
 import { runBackgroundTask } from "../lib/backgroundTasks";
 import { flipImageDataUrl, swapLateralityLabel } from "../lib/imageFlip";
 import {
-  buildUsPlaneBridgeLabels,
+  bridgeLabelsToAnnotations,
+  buildBridgeClinicalContext,
   galleryToRealUs,
   keepFocalPanelsOnly,
   pickBridgeFocalPanel,
+  seedBridgeArrowAnnotations,
+  suggestLesionTarget,
   suggestRealUsFromGallery,
   type GalleryImage,
 } from "../lib/usPlaneBridge";
+import { SuiteImageAnnotationLayer } from "./SuiteImageAnnotationLayer";
 
 interface Props {
   reportText: string;
@@ -77,52 +79,6 @@ const FINE_CHIPS = [
   { label: "Acercar hallazgo", directive: "Tighten framing on the reported finding; keep the same acquisition plane." },
 ];
 
-function LabelOverlay({
-  labels,
-  tone,
-}: {
-  labels: UsPlaneBridgeLabel[];
-  tone: "us" | "anatomy";
-}) {
-  if (!labels.length) return null;
-  return (
-    <>
-      {labels
-        .filter((l) => typeof l.xPct === "number" && typeof l.yPct === "number")
-        .map((l) => (
-          <span
-            key={l.id}
-            className={`absolute z-10 text-[9px] font-bold px-1.5 py-0.5 rounded shadow border pointer-events-none ${
-              tone === "us"
-                ? "bg-black/80 text-emerald-100 border-emerald-500/50"
-                : "bg-black/80 text-cyan-100 border-cyan-500/50"
-            }`}
-            style={{ left: `${l.xPct}%`, top: `${l.yPct}%`, transform: "translate(-10%, -100%)" }}
-          >
-            {l.text}
-          </span>
-        ))}
-      <div className="absolute bottom-2 left-2 right-2 flex flex-wrap gap-1 z-10 pointer-events-none">
-        {labels
-          .filter((l) => !(typeof l.xPct === "number" && typeof l.yPct === "number"))
-          .slice(0, 5)
-          .map((l) => (
-            <span
-              key={l.id}
-              className={`text-[9px] font-semibold px-1.5 py-0.5 rounded border ${
-                tone === "us"
-                  ? "bg-black/75 text-emerald-100 border-emerald-500/40"
-                  : "bg-black/75 text-cyan-100 border-cyan-500/40"
-              }`}
-            >
-              {l.text}
-            </span>
-          ))}
-      </div>
-    </>
-  );
-}
-
 export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
   reportText,
   activeProtocol,
@@ -145,9 +101,8 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
   const [forcedPlane, setForcedPlane] = useState<UsAcquisitionPlane | "auto">("longitudinal");
   const [panelDirectives, setPanelDirectives] = useState<Record<string, string>>({});
   const [pendingRealUsId, setPendingRealUsId] = useState<string>("");
-  const [draftUsLabel, setDraftUsLabel] = useState("");
-  const [draftAnatomyLabel, setDraftAnatomyLabel] = useState("");
-  const [placeMode, setPlaceMode] = useState<"us" | "anatomy" | null>(null);
+  const [lesionTarget, setLesionTarget] = useState<string>("");
+  const [annSelectedId, setAnnSelectedId] = useState<string | null>(null);
 
   const gallery = useMemo(
     () => (galleryImages || []).filter((g) => g?.id && g?.url),
@@ -171,45 +126,74 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
   const selectedGallery = gallery.find((g) => g.id === pendingRealUsId) || null;
   const focalPanel = pickBridgeFocalPanel(planeData);
 
-  const labels = planeData?.bridgeLabels?.length
-    ? planeData.bridgeLabels
-    : buildUsPlaneBridgeLabels(planeData, planeData?.realUsImage);
+  // Suggest lesion target from US caption / report / scorecard when empty
+  useEffect(() => {
+    if (planeData?.lesionTarget) {
+      setLesionTarget((prev) => prev || planeData.lesionTarget || "");
+      return;
+    }
+    setLesionTarget((prev) => {
+      if (prev.trim()) return prev;
+      return suggestLesionTarget({
+        galleryCaption: selectedGallery?.caption,
+        galleryLabel: selectedGallery?.label,
+        reportText,
+        scorecardData,
+        planeTarget: planeData?.targetStructure,
+      });
+    });
+  }, [
+    selectedGallery?.caption,
+    selectedGallery?.label,
+    reportText,
+    scorecardData,
+    planeData?.lesionTarget,
+    planeData?.targetStructure,
+  ]);
 
-  const usLabels = labels.filter((l) => l.side !== "anatomy");
-  const anatomyLabels = labels.filter((l) => l.side !== "us");
+  const annotations: SuiteImageAnnotation[] = planeData?.imageAnnotations?.length
+    ? planeData.imageAnnotations
+    : bridgeLabelsToAnnotations(planeData?.bridgeLabels);
 
-  const setLabels = (next: UsPlaneBridgeLabel[]) => {
+  const setAnnotations = (next: SuiteImageAnnotation[]) => {
     if (!planeData) return;
-    setPlaneData({ ...planeData, bridgeLabels: next });
+    setPlaneData({ ...planeData, imageAnnotations: next, bridgeLabels: undefined });
   };
 
   const applyRealUsToPlane = (img: GalleryImage | null) => {
     if (!planeData) return;
     const real = img ? galleryToRealUs(img) : null;
-    const bridgeLabels =
-      planeData.bridgeLabels?.length
-        ? planeData.bridgeLabels
-        : buildUsPlaneBridgeLabels(planeData, real);
-    setPlaneData({ ...planeData, realUsImage: real, bridgeLabels });
+    const suggested = suggestLesionTarget({
+      galleryCaption: real?.caption,
+      galleryLabel: real?.label,
+      reportText,
+      scorecardData,
+      planeTarget: planeData.targetStructure || lesionTarget,
+    });
+    if (suggested && !lesionTarget.trim()) setLesionTarget(suggested);
+    setPlaneData({
+      ...planeData,
+      realUsImage: real,
+      lesionTarget: lesionTarget.trim() || suggested || planeData.lesionTarget,
+    });
   };
 
   const mergedDirectives = useMemo(() => {
     const fromScore = buildAtlasDirectivesFromScorecard(scorecardData || null);
-    const usHint = selectedGallery
-      ? [
-          "BRIDGE ECO-ANATOMIA: genera SOLO el corte 3D focal (cara del plano), mismo eje/dirección que la eco real.",
-          "PROHIBIDO panel overview con plano flotante / anatomy_with_plane.",
-          selectedGallery.caption
-            ? `Caption de la eco: ${selectedGallery.caption}`
-            : selectedGallery.label
-              ? `Label de la eco: ${selectedGallery.label}`
-              : "",
-        ]
-          .filter(Boolean)
-          .join("\n")
-      : "BRIDGE: solo corte 3D focal in_plane_cut, mismo eje que la eco.";
+    const target = lesionTarget.trim();
+    const usHint = [
+      "BRIDGE ECO-ANATOMIA: genera SOLO el corte 3D focal (cara del plano), mismo eje que la eco real.",
+      "PROHIBIDO panel overview con plano flotante / anatomy_with_plane.",
+      target
+        ? `ESTRUCTURA LESIONADA OBJETIVO: ${target}. Centrar el corte 3D en esa estructura.`
+        : "",
+      selectedGallery?.caption ? `Rotulacion / caption eco: ${selectedGallery.caption}` : "",
+      selectedGallery?.label ? `Label eco: ${selectedGallery.label}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
     return [fromScore, externalDirectives, usHint].filter(Boolean).join("\n").trim();
-  }, [scorecardData, externalDirectives, selectedGallery]);
+  }, [scorecardData, externalDirectives, selectedGallery, lesionTarget]);
 
   const handleGenerate = async (planeOverride?: UsAcquisitionPlane | "auto") => {
     if (!reportText?.trim()) {
@@ -246,6 +230,7 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
             customDirectives: mergedDirectives || undefined,
             forcedPlane: plane,
             bridgeOnlyFocal: true,
+            lesionTarget: lesionTarget.trim() || undefined,
           }),
         });
         const resData = await response.json();
@@ -256,11 +241,38 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
           suggestRealUsFromGallery(gallery) ||
           raw.realUsImage ||
           null;
-        const prevLabels = planeData?.bridgeLabels || [];
-        const bridgeLabels = prevLabels.length
-          ? prevLabels
-          : buildUsPlaneBridgeLabels(raw, real);
-        setPlaneData({ ...raw, realUsImage: real, bridgeLabels });
+        const target =
+          lesionTarget.trim() ||
+          suggestLesionTarget({
+            galleryCaption: real?.caption,
+            galleryLabel: real?.label,
+            reportText,
+            scorecardData,
+            planeTarget: raw.targetStructure,
+          });
+        const imageAnnotations =
+          planeData?.imageAnnotations?.length
+            ? planeData.imageAnnotations
+            : seedBridgeArrowAnnotations({
+                lesionTarget: target,
+                realUs: real,
+                structuresCrossed: raw.structuresCrossed,
+              });
+        const clinicalContextLines = buildBridgeClinicalContext({
+          scorecardData,
+          plane: raw,
+          lesionTarget: target,
+        });
+        setPlaneData({
+          ...raw,
+          realUsImage: real,
+          lesionTarget: target,
+          targetStructure: target || raw.targetStructure,
+          imageAnnotations,
+          clinicalContextLines,
+          bridgeLabels: undefined,
+        });
+        if (target) setLesionTarget(target);
         setIncludeInReport(true);
         if (raw?.acquisitionPlane) setForcedPlane(raw.acquisitionPlane);
         if (real?.id) setPendingRealUsId(real.id);
@@ -301,7 +313,14 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
           laterality: panel.laterality || planeData.detectedLaterality,
           acquisitionPlane: nextPlane || planeData.acquisitionPlane,
           targetStructure: planeData.targetStructure,
-          userDirective: combinedDirective,
+          userDirective: [
+            combinedDirective,
+            lesionTarget.trim()
+              ? `ESTRUCTURA LESIONADA OBJETIVO: ${lesionTarget.trim()}. Centrar el corte ahí.`
+              : "",
+          ]
+            .filter(Boolean)
+            .join("\n"),
           customDirectives: mergedDirectives || undefined,
           requestedModel: selectedModel,
         }),
@@ -311,12 +330,15 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
       const updatedPanel = {
         ...resData.panel,
         panelRole: "in_plane_cut" as const,
+        anatomicalFocus: lesionTarget.trim() || resData.panel?.anatomicalFocus,
       };
       const updated = keepFocalPanelsOnly({
         ...planeData,
         panels: [updatedPanel],
         acquisitionPlane: resData.acquisitionPlane || nextPlane || planeData.acquisitionPlane,
         planeLabelEs: resData.planeLabelEs || planeData.planeLabelEs,
+        lesionTarget: lesionTarget.trim() || planeData.lesionTarget,
+        targetStructure: lesionTarget.trim() || planeData.targetStructure,
       });
       setPlaneData(updated);
       if (nextPlane) setForcedPlane(nextPlane);
@@ -358,38 +380,6 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
     }
   };
 
-  const addLabel = (side: "us" | "anatomy", text: string, xPct?: number, yPct?: number) => {
-    const t = text.trim();
-    if (!t || !planeData) return;
-    const next: UsPlaneBridgeLabel[] = [
-      ...(planeData.bridgeLabels || labels),
-      {
-        id: `lbl-${side}-${Date.now()}`,
-        text: t.slice(0, 48),
-        side,
-        ...(typeof xPct === "number" ? { xPct, yPct } : {}),
-      },
-    ].slice(0, 16);
-    setLabels(next);
-    if (side === "us") setDraftUsLabel("");
-    else setDraftAnatomyLabel("");
-  };
-
-  const removeLabel = (id: string) => {
-    setLabels(labels.filter((l) => l.id !== id));
-  };
-
-  const onImageClick = (side: "us" | "anatomy", e: React.MouseEvent<HTMLDivElement>) => {
-    if (placeMode !== side) return;
-    const draft = side === "us" ? draftUsLabel : draftAnatomyLabel;
-    if (!draft.trim()) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const xPct = ((e.clientX - rect.left) / rect.width) * 100;
-    const yPct = ((e.clientY - rect.top) / rect.height) * 100;
-    addLabel(side, draft, xPct, yPct);
-    setPlaceMode(null);
-  };
-
   return (
     <div
       id="us-plane-simulator-module"
@@ -416,8 +406,8 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
               Corte eco - anatomia
             </h3>
             <p className="mt-2 text-sm text-slate-300/90 leading-relaxed max-w-xl">
-              Eco real + corte 3D focal en el mismo eje. Elige el tipo de corte y añade rótulos
-              en cada imagen.
+              Eco real + corte 3D centrado en la estructura lesionada. Rótulos con flecha (como
+              en las suites).
             </p>
           </div>
 
@@ -513,6 +503,44 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
           )}
         </div>
 
+        <div className="rounded-xl border border-amber-700/40 bg-amber-950/20 p-3 space-y-2">
+          <p className="text-[10px] uppercase tracking-[0.18em] text-amber-200/90 font-semibold flex items-center gap-1.5">
+            <Focus className="w-3.5 h-3.5" />
+            Estructura lesionada (objetivo del corte 3D)
+          </p>
+          <textarea
+            value={lesionTarget}
+            onChange={(e) => {
+              setLesionTarget(e.target.value);
+              if (planeData) {
+                setPlaneData({ ...planeData, lesionTarget: e.target.value.trim() });
+              }
+            }}
+            rows={2}
+            placeholder="Ej. Tendón rotuliano proximal / menisco medial… (se sugiere desde rotulación US, informe y scorecard)"
+            className="w-full bg-slate-950/80 border border-amber-700/40 focus:border-amber-400 rounded-lg px-3 py-2 text-[12px] text-slate-100 placeholder:text-slate-500 outline-none resize-none"
+          />
+          <button
+            type="button"
+            className="text-[10px] font-semibold text-amber-300 hover:text-amber-200"
+            onClick={() => {
+              const s = suggestLesionTarget({
+                galleryCaption: selectedGallery?.caption,
+                galleryLabel: selectedGallery?.label,
+                reportText,
+                scorecardData,
+                planeTarget: planeData?.targetStructure,
+              });
+              if (s) {
+                setLesionTarget(s);
+                if (planeData) setPlaneData({ ...planeData, lesionTarget: s });
+              }
+            }}
+          >
+            Autocompletar desde US / informe / scorecard
+          </button>
+        </div>
+
         <div className="space-y-2">
           <p className="text-[10px] uppercase tracking-[0.18em] text-slate-400 font-semibold flex items-center gap-1.5">
             <Crosshair className="w-3.5 h-3.5 text-cyan-400" />
@@ -595,12 +623,7 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
               </p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
                 <div className="relative overflow-hidden rounded-xl border border-cyan-700/40 bg-black/50">
-                  <div
-                    className={`relative aspect-[4/3] overflow-hidden ${
-                      placeMode === "us" ? "cursor-crosshair ring-2 ring-emerald-400/60" : ""
-                    }`}
-                    onClick={(e) => onImageClick("us", e)}
-                  >
+                  <div className="relative aspect-[4/3] overflow-hidden">
                     {planeData.realUsImage?.url ? (
                       <img
                         src={planeData.realUsImage.url}
@@ -613,37 +636,48 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
                         Elige una captura
                       </div>
                     )}
-                    <div className="absolute top-2 left-2 bg-emerald-600 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow">
+                    <div className="absolute top-2 left-2 z-20 bg-emerald-600 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow">
                       ECO REAL
                     </div>
                     {planeData.realUsImage?.url && (
                       <button
                         type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setZoomUsUrl(planeData.realUsImage!.url);
-                        }}
-                        className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/60 text-white"
+                        onClick={() => setZoomUsUrl(planeData.realUsImage!.url)}
+                        className="absolute top-2 right-2 z-20 p-1.5 rounded-lg bg-black/60 text-white"
                       >
                         <Maximize2 className="w-3.5 h-3.5" />
                       </button>
                     )}
-                    <LabelOverlay labels={usLabels} tone="us" />
+                    <SuiteImageAnnotationLayer
+                      panelLetter="US"
+                      annotations={annotations}
+                      onChange={setAnnotations}
+                      mode="layer"
+                      editable
+                      selectedId={annSelectedId}
+                      onSelectId={setAnnSelectedId}
+                    />
                   </div>
                   <p className="text-[11px] text-slate-400 px-3 py-2 border-t border-cyan-900/30 italic truncate">
                     {planeData.realUsImage?.caption ||
                       planeData.realUsImage?.label ||
                       "Captura del estudio"}
                   </p>
+                  <div className="px-3 pb-3">
+                    <SuiteImageAnnotationLayer
+                      panelLetter="US"
+                      annotations={annotations}
+                      onChange={setAnnotations}
+                      mode="toolbar"
+                      editable
+                      selectedId={annSelectedId}
+                      onSelectId={setAnnSelectedId}
+                    />
+                  </div>
                 </div>
 
                 <div className="relative overflow-hidden rounded-xl border border-cyan-700/40 bg-black/50">
-                  <div
-                    className={`relative aspect-[4/3] overflow-hidden ${
-                      placeMode === "anatomy" ? "cursor-crosshair ring-2 ring-cyan-400/60" : ""
-                    }`}
-                    onClick={(e) => onImageClick("anatomy", e)}
-                  >
+                  <div className="relative aspect-[4/3] overflow-hidden">
                     {focalPanel?.imageUrl ? (
                       <img
                         src={focalPanel.imageUrl}
@@ -655,27 +689,21 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
                         Genera el corte 3D
                       </div>
                     )}
-                    <div className="absolute top-2 left-2 bg-cyan-600 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow">
+                    <div className="absolute top-2 left-2 z-20 bg-cyan-600 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow">
                       CORTE 3D FOCAL
                     </div>
                     {focalPanel && (
-                      <div className="absolute top-2 right-2 flex gap-1">
+                      <div className="absolute top-2 right-2 z-20 flex gap-1">
                         <button
                           type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void handleFlip();
-                          }}
+                          onClick={() => void handleFlip()}
                           className="p-1.5 rounded-lg bg-black/60 text-white"
                         >
                           <FlipHorizontal className="w-3.5 h-3.5" />
                         </button>
                         <button
                           type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setZoomPanel(focalPanel);
-                          }}
+                          onClick={() => setZoomPanel(focalPanel)}
                           className="p-1.5 rounded-lg bg-black/60 text-white"
                         >
                           <Maximize2 className="w-3.5 h-3.5" />
@@ -683,134 +711,37 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
                       </div>
                     )}
                     {regeneratingLetter && (
-                      <div className="absolute inset-0 bg-slate-950/75 flex flex-col items-center justify-center gap-2">
+                      <div className="absolute inset-0 z-30 bg-slate-950/75 flex flex-col items-center justify-center gap-2">
                         <Loader2 className="w-6 h-6 animate-spin text-cyan-300" />
                         <span className="text-xs text-cyan-100">Re-renderizando…</span>
                       </div>
                     )}
-                    <LabelOverlay labels={anatomyLabels} tone="anatomy" />
+                    <SuiteImageAnnotationLayer
+                      panelLetter="A"
+                      annotations={annotations}
+                      onChange={setAnnotations}
+                      mode="layer"
+                      editable
+                      selectedId={annSelectedId}
+                      onSelectId={setAnnSelectedId}
+                    />
                   </div>
                   <p className="text-[11px] text-slate-400 px-3 py-2 border-t border-cyan-900/30 italic truncate">
-                    {focalPanel?.panelTitle || "Corte 3D en el mismo eje"}
+                    {lesionTarget || focalPanel?.panelTitle || "Corte 3D de la estructura lesionada"}
                   </p>
+                  <div className="px-3 pb-3">
+                    <SuiteImageAnnotationLayer
+                      panelLetter="A"
+                      annotations={annotations}
+                      onChange={setAnnotations}
+                      mode="toolbar"
+                      editable
+                      selectedId={annSelectedId}
+                      onSelectId={setAnnSelectedId}
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
-
-            {/* Editable rótulos */}
-            <div className="rounded-xl border border-cyan-900/40 bg-slate-950/50 p-4 space-y-3">
-              <p className="text-[10px] uppercase tracking-[0.18em] text-cyan-300 font-semibold flex items-center gap-1.5">
-                <Tag className="w-3.5 h-3.5" />
-                Rótulos (US y 3D)
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <p className="text-[11px] text-emerald-300 font-semibold">Sobre eco real</p>
-                  <div className="flex gap-1.5">
-                    <input
-                      value={draftUsLabel}
-                      onChange={(e) => setDraftUsLabel(e.target.value)}
-                      placeholder="Ej. Tendón rotuliano"
-                      className="flex-1 min-w-0 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-[12px] text-slate-100"
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") addLabel("us", draftUsLabel);
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => addLabel("us", draftUsLabel)}
-                      className="px-2 rounded-lg bg-emerald-700/40 border border-emerald-600/50 text-emerald-100"
-                      title="Añadir como leyenda"
-                    >
-                      <Plus className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!draftUsLabel.trim()}
-                      onClick={() => setPlaceMode(placeMode === "us" ? null : "us")}
-                      className={`px-2 rounded-lg border text-[10px] font-bold ${
-                        placeMode === "us"
-                          ? "bg-emerald-500 text-slate-950 border-emerald-400"
-                          : "bg-slate-900 border-slate-700 text-slate-300"
-                      }`}
-                      title="Clic en la imagen para ubicar"
-                    >
-                      Ubicar
-                    </button>
-                  </div>
-                  <ul className="space-y-1">
-                    {usLabels.map((l) => (
-                      <li
-                        key={l.id}
-                        className="flex items-center justify-between gap-2 text-[11px] text-slate-300 bg-slate-900/60 rounded px-2 py-1"
-                      >
-                        <span className="truncate">
-                          {l.text}
-                          {typeof l.xPct === "number" ? " · pin" : ""}
-                        </span>
-                        <button type="button" onClick={() => removeLabel(l.id)} className="text-rose-400">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-[11px] text-cyan-300 font-semibold">Sobre corte 3D</p>
-                  <div className="flex gap-1.5">
-                    <input
-                      value={draftAnatomyLabel}
-                      onChange={(e) => setDraftAnatomyLabel(e.target.value)}
-                      placeholder="Ej. Menisco medial"
-                      className="flex-1 min-w-0 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-[12px] text-slate-100"
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") addLabel("anatomy", draftAnatomyLabel);
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => addLabel("anatomy", draftAnatomyLabel)}
-                      className="px-2 rounded-lg bg-cyan-700/40 border border-cyan-600/50 text-cyan-100"
-                    >
-                      <Plus className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!draftAnatomyLabel.trim()}
-                      onClick={() => setPlaceMode(placeMode === "anatomy" ? null : "anatomy")}
-                      className={`px-2 rounded-lg border text-[10px] font-bold ${
-                        placeMode === "anatomy"
-                          ? "bg-cyan-500 text-slate-950 border-cyan-400"
-                          : "bg-slate-900 border-slate-700 text-slate-300"
-                      }`}
-                    >
-                      Ubicar
-                    </button>
-                  </div>
-                  <ul className="space-y-1">
-                    {anatomyLabels.map((l) => (
-                      <li
-                        key={l.id}
-                        className="flex items-center justify-between gap-2 text-[11px] text-slate-300 bg-slate-900/60 rounded px-2 py-1"
-                      >
-                        <span className="truncate">
-                          {l.text}
-                          {typeof l.xPct === "number" ? " · pin" : ""}
-                        </span>
-                        <button type="button" onClick={() => removeLabel(l.id)} className="text-rose-400">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-              {placeMode && (
-                <p className="text-[11px] text-amber-200/90">
-                  Modo ubicar ({placeMode === "us" ? "eco" : "3D"}): haz clic sobre la imagen para fijar el
-                  rótulo.
-                </p>
-              )}
             </div>
 
             {focalPanel && (

@@ -340,15 +340,24 @@ export interface UsPlaneSimulatorData {
   acquisitionPlane: UsAcquisitionPlane;
   planeLabelEs?: string;
   targetStructure?: string;
+  /**
+   * Injured / focal structure the 3D cut must center on
+   * (from US caption, report, scorecard, or manual box).
+   */
+  lesionTarget?: string;
   structuresCrossed?: string[];
   planeSummary?: string;
   keyPoints?: string[];
+  /** Extra clinical lines for dense PDF footer (scorecard / report). */
+  clinicalContextLines?: string[];
   panels: UsPlaneSimulatorPanel[];
   qualityAudit?: AtlasQualityAudit;
   /** Eco real from study gallery for side-by-side bridge. */
   realUsImage?: UsPlaneBridgeRealImage | null;
-  /** Auto / curated labels for the bridge view. */
+  /** @deprecated prefer imageAnnotations (suite-style arrows) */
   bridgeLabels?: UsPlaneBridgeLabel[];
+  /** Suite-style arrow callouts: panelLetter "US" | "A" (3D focal). */
+  imageAnnotations?: SuiteImageAnnotation[];
 }
 
 
