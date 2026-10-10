@@ -31,12 +31,16 @@ grep -q 'buildUsPlaneBridgeLabels' src/lib/usPlaneBridge.ts \
   || { echo "ERROR: falta usPlaneBridge.ts. Aborto."; exit 1; }
 grep -q 'galleryImages' src/components/UltrasoundPlaneSimulatorModule.tsx \
   || { echo "ERROR: falta galleryImages en simulador. Aborto."; exit 1; }
-grep -q 'CORTE ECO - ANATOMIA' src/utils/usPlaneSimulatorPdfRenderer.ts \
-  || { echo "ERROR: falta titulo ASCII del anexo bridge. Aborto."; exit 1; }
+grep -q 'CORRELACION ECO-ANATOMICA' src/utils/usPlaneSimulatorPdfRenderer.ts \
+  || { echo "ERROR: falta titulo del anexo. Aborto."; exit 1; }
 grep -q 'bridgeOnlyFocal' src/components/UltrasoundPlaneSimulatorModule.tsx \
   || { echo "ERROR: falta bridgeOnlyFocal (solo corte focal). Aborto."; exit 1; }
-grep -q 'Rótulos' src/components/UltrasoundPlaneSimulatorModule.tsx \
-  || { echo "ERROR: faltan rotulos editables. Aborto."; exit 1; }
+grep -q 'SuiteImageAnnotationLayer' src/components/UltrasoundPlaneSimulatorModule.tsx \
+  || { echo "ERROR: faltan flechas tipo suite. Aborto."; exit 1; }
+grep -q 'lesionTarget' src/components/UltrasoundPlaneSimulatorModule.tsx \
+  || { echo "ERROR: falta cuadro estructura lesionada. Aborto."; exit 1; }
+grep -q 'drawSuiteImageAnnotationsOnPdf' src/utils/usPlaneSimulatorPdfRenderer.ts \
+  || { echo "ERROR: PDF sin flechas suite. Aborto."; exit 1; }
 grep -q 'galleryImages={attachedImages' src/App.tsx \
   || { echo "ERROR: falta cableado galería→simulador. Aborto."; exit 1; }
 
