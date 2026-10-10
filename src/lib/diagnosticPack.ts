@@ -152,6 +152,7 @@ function factorsFromFindingRow(
     "vesselName",
     "site",
     "lesionLabel",
+    "lobeOrNode",
   ]);
   const pattern = field(r, [
     "echoPattern",
@@ -160,6 +161,11 @@ function factorsFromFindingRow(
     "plaqueOrThrombus",
     "composition",
     "shape",
+    "margins",
+    "echogenicity",
+    "tiradsCategory",
+    "biradsCategory",
+    "patternOrVelocity",
     "clinicalImpact",
   ]);
   const measure = field(r, [
@@ -167,6 +173,7 @@ function factorsFromFindingRow(
     "thicknessOrGap",
     "size",
     "stenosisPercent",
+    "hemodynamicIndex",
     "value",
   ]);
   const label = structure || pattern;
