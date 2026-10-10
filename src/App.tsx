@@ -11276,7 +11276,7 @@ Ejemplo:
                                     Pack diagnostico (1 pagina)
                                   </h4>
                                   <p className="text-[11px] text-slate-400 mt-1">
-                                    Ancla + factores de justificacion + imagen 3D/focal en una lamina PDF.
+                                    Ancla + factores + imagen (focal / suite 3D del estudio / Atlas) en una lamina PDF.
                                   </p>
                                 </div>
                               </div>
@@ -11650,6 +11650,22 @@ Ejemplo:
                                   atlas3dData={atlas3dData}
                                   focalLesion3dData={focalLesion3dData}
                                   dominantLesionCard={dominantLesionCardData}
+                                  preferredSuiteId={selectedSpecificSuite?.id || null}
+                                  preferredSuiteLabel={selectedSpecificSuite?.label || null}
+                                  suiteSources={[
+                                    { id: "vascular3d", label: "Suite Vascular 3D", panels: vascular3dData?.panels },
+                                    { id: "thyroid3d", label: "Suite Tiroides 3D", panels: thyroid3dData?.panels },
+                                    { id: "breast3d", label: "Suite Mama 3D", panels: breast3dData?.panels },
+                                    { id: "shoulder3d", label: "Suite Hombro 3D", panels: shoulder3dData?.panels },
+                                    { id: "knee3d", label: "Suite Rodilla 3D", panels: knee3dData?.panels },
+                                    { id: "ankle3d", label: "Suite Tobillo 3D", panels: ankle3dData?.panels },
+                                    { id: "kidney3d", label: "Suite Rinon 3D", panels: kidney3dData?.panels },
+                                    { id: "abdomen3d", label: "Suite Abdomen 3D", panels: abdomen3dData?.panels },
+                                    { id: "abdominalWall3d", label: "Suite Pared Abdominal 3D", panels: abdominalWall3dData?.panels },
+                                    { id: "scrotum3d", label: "Suite Escroto 3D", panels: scrotum3dData?.panels },
+                                    { id: "muscleTendon3d", label: "Suite Musculo-Tendon 3D", panels: muscleTendon3dData?.panels },
+                                    { id: "wrist3d", label: "Suite Muneca 3D", panels: wrist3dData?.panels },
+                                  ]}
                                   packData={diagnosticPackData}
                                   setPackData={setDiagnosticPackData}
                                   includeInReport={includeDiagnosticPackInReport}

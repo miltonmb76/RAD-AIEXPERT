@@ -11,6 +11,7 @@ import {
   buildDiagnosticPack,
   diagnosticPackIsRenderable,
   type DiagnosticPackData,
+  type PackImageSource,
 } from "../lib/diagnosticPack";
 
 interface DiagnosticPackModuleProps {
@@ -20,6 +21,11 @@ interface DiagnosticPackModuleProps {
   atlas3dData?: Atlas3DData | null;
   focalLesion3dData?: FocalLesion3DData | null;
   dominantLesionCard?: DominantLesionCardData | null;
+  /** Organ suites (abdomen, mama, tiroides, …) with panels. */
+  suiteSources?: PackImageSource[];
+  /** Suite id matching the study (e.g. abdomen3d) — preferred image source. */
+  preferredSuiteId?: string | null;
+  preferredSuiteLabel?: string | null;
   packData: DiagnosticPackData | null;
   setPackData: (data: DiagnosticPackData | null) => void;
   includeInReport: boolean;
@@ -33,21 +39,28 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
   atlas3dData = null,
   focalLesion3dData = null,
   dominantLesionCard = null,
+  suiteSources = [],
+  preferredSuiteId = null,
+  preferredSuiteLabel = null,
   packData,
   setPackData,
   includeInReport,
   setIncludeInReport,
 }) => {
+  const packOpts = {
+    diagnosisAnchor,
+    findingsInfographic,
+    scorecardData,
+    atlas3dData,
+    focalLesion3dData,
+    dominantLesionCard,
+    suiteSources,
+    preferredSuiteId,
+  };
+
   const preview = useMemo(
-    () =>
-      buildDiagnosticPack({
-        diagnosisAnchor,
-        findingsInfographic,
-        scorecardData,
-        atlas3dData,
-        focalLesion3dData,
-        dominantLesionCard,
-      }),
+    () => buildDiagnosticPack(packOpts),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- packOpts fields listed below
     [
       diagnosisAnchor,
       findingsInfographic,
@@ -55,6 +68,8 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
       atlas3dData,
       focalLesion3dData,
       dominantLesionCard,
+      suiteSources,
+      preferredSuiteId,
     ]
   );
 
@@ -62,14 +77,7 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
   const canBuild = diagnosticPackIsRenderable(preview);
 
   const handleBuild = () => {
-    const next = buildDiagnosticPack({
-      diagnosisAnchor,
-      findingsInfographic,
-      scorecardData,
-      atlas3dData,
-      focalLesion3dData,
-      dominantLesionCard,
-    });
+    const next = buildDiagnosticPack(packOpts);
     setPackData(next);
     setIncludeInReport(true);
   };
@@ -94,8 +102,9 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
               </span>
             </div>
             <p className="text-[11px] text-slate-400 mt-0.5 max-w-xl leading-relaxed">
-              Ancla + factores de justificación + imagen 3D/focal en una lámina PDF. Reutiliza lo
-              ya generado; no llama a la IA.
+              Ancla + factores de justificación + imagen (Corte Focal → suite 3D del estudio
+              {preferredSuiteLabel ? ` «${preferredSuiteLabel}»` : ""} → Atlas) en una lámina PDF.
+              Reutiliza lo ya generado; no llama a la IA.
             </p>
           </div>
         </div>
@@ -136,8 +145,8 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
 
       {!canBuild && (
         <p className="text-[11px] text-amber-200/90 bg-amber-950/30 border border-amber-800/40 rounded-xl px-3 py-2">
-          Define un <strong>ancla</strong> y genera la infografía de justificación (o el scorecard /
-          Atlas) para armar el pack.
+          Define un <strong>ancla</strong> y genera la infografía de justificación (y/o scorecard /
+          suite 3D / Atlas / corte focal) para armar el pack.
         </p>
       )}
 
@@ -209,7 +218,7 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
                 <div className="flex-1 flex items-center justify-center text-[11px] text-slate-500 p-6 text-center">
                   <span className="inline-flex items-center gap-2">
                     <Loader2 className="h-4 w-4 opacity-40" />
-                    Sin imagen 3D/focal aún — el pack irá solo con factores.
+                    Sin imagen aún (focal / suite 3D / Atlas) — el pack irá solo con factores.
                   </span>
                 </div>
               )}

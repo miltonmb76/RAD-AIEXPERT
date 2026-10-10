@@ -29,27 +29,64 @@ export interface DiagnosticPackData {
   generatedAt?: string;
 }
 
-/** Pick best available image: focal panel → atlas panel A → dominant-style atlas. */
+/** Panel-like shape shared by Atlas, Focal and organ suites. */
+export type PackImagePanel = {
+  imageUrl?: string;
+  panelTitle?: string;
+  anatomicalFocus?: string;
+} | null;
+
+export type PackImageSource = {
+  id: string;
+  label: string;
+  panels?: PackImagePanel[] | null;
+};
+
+function firstPanelImage(
+  panels: PackImagePanel[] | null | undefined,
+  fallbackCaption: string
+): { url: string; caption: string } | null {
+  const hit = (panels || []).find((p) => p?.imageUrl);
+  if (!hit?.imageUrl) return null;
+  return {
+    url: hit.imageUrl,
+    caption: hit.panelTitle || hit.anatomicalFocus || fallbackCaption,
+  };
+}
+
+/**
+ * Pick best available image:
+ * 1) Corte Focal 3D
+ * 2) Suite 3D correspondiente al estudio (preferredSuiteId)
+ * 3) Atlas 3D
+ * 4) Cualquier otra suite 3D con imagen
+ */
 export function pickPackImage(opts: {
   focalLesion3dData?: FocalLesion3DData | null;
   atlas3dData?: Atlas3DData | null;
+  suiteSources?: PackImageSource[];
+  preferredSuiteId?: string | null;
 }): { url: string | null; caption: string | null } {
-  const focalPanels = opts.focalLesion3dData?.panels || [];
-  const focal = focalPanels.find((p) => p?.imageUrl);
-  if (focal?.imageUrl) {
-    return {
-      url: focal.imageUrl,
-      caption: focal.panelTitle || focal.anatomicalFocus || "Corte 3D",
-    };
+  const focal = firstPanelImage(opts.focalLesion3dData?.panels, "Corte 3D");
+  if (focal) return focal;
+
+  const suites = opts.suiteSources || [];
+  const preferredId = String(opts.preferredSuiteId || "").trim();
+  if (preferredId) {
+    const preferred = suites.find((s) => s.id === preferredId);
+    const fromPreferred = firstPanelImage(preferred?.panels, preferred?.label || "Suite 3D");
+    if (fromPreferred) return fromPreferred;
   }
-  const atlasPanels = opts.atlas3dData?.panels || [];
-  const atlas = atlasPanels.find((p) => p?.imageUrl);
-  if (atlas?.imageUrl) {
-    return {
-      url: atlas.imageUrl,
-      caption: atlas.panelTitle || atlas.anatomicalFocus || "Atlas 3D",
-    };
+
+  const atlas = firstPanelImage(opts.atlas3dData?.panels, "Atlas 3D");
+  if (atlas) return atlas;
+
+  for (const suite of suites) {
+    if (preferredId && suite.id === preferredId) continue;
+    const hit = firstPanelImage(suite.panels, suite.label || "Suite 3D");
+    if (hit) return hit;
   }
+
   return { url: null, caption: null };
 }
 
@@ -64,6 +101,8 @@ export function buildDiagnosticPack(opts: {
   atlas3dData?: Atlas3DData | null;
   focalLesion3dData?: FocalLesion3DData | null;
   dominantLesionCard?: DominantLesionCardData | null;
+  suiteSources?: PackImageSource[];
+  preferredSuiteId?: string | null;
 }): DiagnosticPackData {
   const gov = getScorecardGovernance(opts.scorecardData);
   const diagnosis = resolveDiagnosisAnchor({
@@ -104,6 +143,8 @@ export function buildDiagnosticPack(opts: {
   const img = pickPackImage({
     focalLesion3dData: opts.focalLesion3dData,
     atlas3dData: opts.atlas3dData,
+    suiteSources: opts.suiteSources,
+    preferredSuiteId: opts.preferredSuiteId,
   });
 
   const synthesis =
