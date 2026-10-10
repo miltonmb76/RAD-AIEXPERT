@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Scan,
   Sparkles,
@@ -9,6 +9,8 @@ import {
   FlipHorizontal,
   Crosshair,
   Layers,
+  Image as ImageIcon,
+  Link2,
 } from "lucide-react";
 import {
   UsAcquisitionPlane,
@@ -19,6 +21,13 @@ import {
 import { buildAtlasDirectivesFromScorecard } from "../lib/clinicalIntelligence";
 import { runBackgroundTask } from "../lib/backgroundTasks";
 import { flipImageDataUrl, swapLateralityLabel } from "../lib/imageFlip";
+import {
+  buildUsPlaneBridgeLabels,
+  galleryToRealUs,
+  pickBridgeAnatomyPanel,
+  suggestRealUsFromGallery,
+  type GalleryImage,
+} from "../lib/usPlaneBridge";
 
 interface Props {
   reportText: string;
@@ -31,6 +40,8 @@ interface Props {
   setIncludeInReport: (v: boolean) => void;
   scorecardData?: ClinicalScorecardData | null;
   externalDirectives?: string;
+  /** Capturas del estudio (galería) para el bridge eco ↔ 3D. */
+  galleryImages?: GalleryImage[];
 }
 
 const PLANE_CHIPS: { id: UsAcquisitionPlane; label: string; directive: string }[] = [
@@ -74,19 +85,64 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
   setIncludeInReport,
   scorecardData,
   externalDirectives,
+  galleryImages = [],
 }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStep, setGenerationStep] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [zoomPanel, setZoomPanel] = useState<UsPlaneSimulatorPanel | null>(null);
+  const [zoomUsUrl, setZoomUsUrl] = useState<string | null>(null);
   const [regeneratingLetter, setRegeneratingLetter] = useState<string | null>(null);
   const [forcedPlane, setForcedPlane] = useState<UsAcquisitionPlane | "auto">("auto");
   const [panelDirectives, setPanelDirectives] = useState<Record<string, string>>({});
+  const [pendingRealUsId, setPendingRealUsId] = useState<string>("");
+
+  const gallery = useMemo(
+    () => (galleryImages || []).filter((g) => g?.id && g?.url),
+    [galleryImages]
+  );
+
+  // Seed eco real when gallery arrives / plane has none
+  useEffect(() => {
+    if (!gallery.length) {
+      setPendingRealUsId("");
+      return;
+    }
+    setPendingRealUsId((prev) => {
+      if (prev && gallery.some((g) => g.id === prev)) return prev;
+      if (planeData?.realUsImage?.id && gallery.some((g) => g.id === planeData.realUsImage!.id)) {
+        return planeData.realUsImage.id;
+      }
+      return suggestRealUsFromGallery(gallery)?.id || gallery[0].id;
+    });
+  }, [gallery, planeData?.realUsImage?.id]);
+
+  const selectedGallery = gallery.find((g) => g.id === pendingRealUsId) || null;
+
+  const applyRealUsToPlane = (img: GalleryImage | null) => {
+    if (!planeData) return;
+    const real = img ? galleryToRealUs(img) : null;
+    const bridgeLabels = buildUsPlaneBridgeLabels(planeData, real);
+    setPlaneData({ ...planeData, realUsImage: real, bridgeLabels });
+  };
 
   const mergedDirectives = useMemo(() => {
     const fromScore = buildAtlasDirectivesFromScorecard(scorecardData || null);
-    return [fromScore, externalDirectives].filter(Boolean).join("\n").trim();
-  }, [scorecardData, externalDirectives]);
+    const usHint = selectedGallery
+      ? [
+          "BRIDGE ECO↔ANATOMÍA: el plano 3D debe corresponder a la eco real seleccionada de la galería.",
+          selectedGallery.caption
+            ? `Caption de la eco: ${selectedGallery.caption}`
+            : selectedGallery.label
+              ? `Label de la eco: ${selectedGallery.label}`
+              : "",
+          "Mantén la misma orientación / lateralidad que implica el informe y la captura.",
+        ]
+          .filter(Boolean)
+          .join("\n")
+      : "";
+    return [fromScore, externalDirectives, usHint].filter(Boolean).join("\n").trim();
+  }, [scorecardData, externalDirectives, selectedGallery]);
 
   const handleGenerate = async (planeOverride?: UsAcquisitionPlane | "auto") => {
     if (!reportText?.trim()) {
@@ -128,11 +184,19 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
         });
         const resData = await response.json();
         if (!resData.success) throw new Error(resData.error || "No se pudo generar el simulador.");
-        setPlaneData(resData.data);
+        const raw = resData.data as UsPlaneSimulatorData;
+        const real =
+          (selectedGallery && galleryToRealUs(selectedGallery)) ||
+          suggestRealUsFromGallery(gallery) ||
+          raw.realUsImage ||
+          null;
+        const bridgeLabels = buildUsPlaneBridgeLabels(raw, real);
+        setPlaneData({ ...raw, realUsImage: real, bridgeLabels });
         setIncludeInReport(true);
-        if (resData.data?.acquisitionPlane) {
-          setForcedPlane(resData.data.acquisitionPlane);
+        if (raw?.acquisitionPlane) {
+          setForcedPlane(raw.acquisitionPlane);
         }
+        if (real?.id) setPendingRealUsId(real.id);
       });
     } catch (err: any) {
       console.error(err);
@@ -251,17 +315,17 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
         <header className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
           <div className="max-w-2xl">
             <p className="font-[family-name:ui-serif] text-[11px] tracking-[0.22em] uppercase text-cyan-300/90 mb-2">
-              Simulador de plano
+              Corte eco ↔ anatomía
             </p>
             <h3
               className="text-2xl md:text-3xl font-semibold tracking-tight text-white"
               style={{ fontFamily: '"Fraunces", "Iowan Old Style", Georgia, serif' }}
             >
-              Plano de adquisición ecográfica
+              Bridge US–3D
             </h3>
             <p className="mt-2 text-sm text-slate-300/90 leading-relaxed max-w-xl">
-              Detecta solo el plano del informe, lo dibuja en 3D y deja chips para corregir
-              sin pelear con el modelo.
+              Eco real de la galería + plano 3D del mismo corte, con labels automáticos para
+              mostrar dónde está el hallazgo.
             </p>
           </div>
 
@@ -312,6 +376,52 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
             {errorMessage}
           </div>
         )}
+
+        {/* Gallery: pick real US for the bridge */}
+        <div className="space-y-2">
+          <p className="text-[10px] uppercase tracking-[0.18em] text-slate-400 font-semibold flex items-center gap-1.5">
+            <ImageIcon className="w-3.5 h-3.5 text-cyan-400" />
+            Eco real (galería del estudio)
+          </p>
+          {gallery.length === 0 ? (
+            <p className="text-[12px] text-slate-500 rounded-xl border border-dashed border-slate-700 px-3 py-3">
+              No hay capturas en la galería. Sube imágenes del estudio para emparejar eco ↔ 3D.
+            </p>
+          ) : (
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {gallery.map((img, idx) => {
+                const active = img.id === pendingRealUsId;
+                return (
+                  <button
+                    key={img.id}
+                    type="button"
+                    onClick={() => {
+                      setPendingRealUsId(img.id);
+                      if (planeData) applyRealUsToPlane(img);
+                    }}
+                    className={`relative shrink-0 w-[88px] rounded-lg overflow-hidden border-2 transition-all ${
+                      active
+                        ? "border-cyan-400 ring-2 ring-cyan-500/30"
+                        : "border-slate-700 hover:border-cyan-600/60"
+                    }`}
+                    title={img.caption || img.label || `Captura ${idx + 1}`}
+                  >
+                    <div className="aspect-[4/3] bg-slate-900">
+                      <img
+                        src={img.preview || img.url}
+                        alt={img.label || `US ${idx + 1}`}
+                        className="h-full w-full object-cover"
+                      />
+                    </div>
+                    <span className="absolute bottom-0 inset-x-0 bg-black/70 text-[8px] text-cyan-100 px-1 py-0.5 truncate">
+                      {img.caption || img.label || `US ${idx + 1}`}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
         {/* Correction chips — always visible for effective fixes */}
         <div className="space-y-2">
@@ -388,7 +498,131 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
               </label>
             </div>
 
-            {/* Full-bleed visual plane */}
+            {/* Bridge: eco real | anatomía 3D */}
+            {(() => {
+              const real = planeData.realUsImage;
+              const anatomy = pickBridgeAnatomyPanel(planeData);
+              const labels =
+                planeData.bridgeLabels?.length
+                  ? planeData.bridgeLabels
+                  : buildUsPlaneBridgeLabels(planeData, real);
+              if (!real?.url && !anatomy?.imageUrl) return null;
+              return (
+                <div className="space-y-2">
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-cyan-300/90 font-semibold flex items-center gap-1.5">
+                    <Link2 className="w-3.5 h-3.5" />
+                    Bridge eco ↔ anatomía
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
+                    <div className="relative overflow-hidden rounded-xl border border-cyan-700/40 bg-black/50">
+                      <div className="relative aspect-[4/3] overflow-hidden">
+                        {real?.url ? (
+                          <img
+                            src={real.url}
+                            alt={real.caption || real.label || "Eco real"}
+                            className="h-full w-full object-contain bg-black"
+                          />
+                        ) : (
+                          <div className="flex h-full flex-col items-center justify-center gap-2 text-slate-500 text-sm px-4 text-center">
+                            <ImageIcon className="w-6 h-6 opacity-50" />
+                            Elige una captura de la galería
+                          </div>
+                        )}
+                        <div className="absolute top-2 left-2 bg-emerald-600 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow">
+                          ECO REAL
+                        </div>
+                        {real?.url && (
+                          <button
+                            type="button"
+                            onClick={() => setZoomUsUrl(real.url)}
+                            className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/60 text-white hover:bg-black/80"
+                          >
+                            <Maximize2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {labels.filter((l) => l.side !== "anatomy").length > 0 && (
+                          <div className="absolute bottom-2 left-2 right-2 flex flex-wrap gap-1">
+                            {labels
+                              .filter((l) => l.side !== "anatomy")
+                              .slice(0, 5)
+                              .map((l) => (
+                                <span
+                                  key={l.id}
+                                  className="text-[9px] font-semibold bg-black/75 text-emerald-100 border border-emerald-500/40 px-1.5 py-0.5 rounded"
+                                >
+                                  {l.text}
+                                </span>
+                              ))}
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-400 px-3 py-2 border-t border-cyan-900/30 italic truncate">
+                        {real?.caption || real?.label || "Captura del estudio"}
+                      </p>
+                    </div>
+
+                    <div className="relative overflow-hidden rounded-xl border border-cyan-700/40 bg-black/50">
+                      <div className="relative aspect-[4/3] overflow-hidden">
+                        {anatomy?.imageUrl ? (
+                          <img
+                            src={anatomy.imageUrl}
+                            alt={anatomy.panelTitle}
+                            className="h-full w-full object-contain bg-black"
+                          />
+                        ) : (
+                          <div className="flex h-full items-center justify-center text-slate-500 text-sm">
+                            Genera el plano 3D
+                          </div>
+                        )}
+                        <div className="absolute top-2 left-2 bg-cyan-600 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow">
+                          ANATOMÍA 3D
+                          {anatomy?.panelLetter ? ` · ${anatomy.panelLetter}` : ""}
+                        </div>
+                        {anatomy && (
+                          <div className="absolute top-2 right-2 flex gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleFlip(anatomy.panelLetter)}
+                              className="p-1.5 rounded-lg bg-black/60 text-white hover:bg-black/80"
+                              title="Flip horizontal"
+                            >
+                              <FlipHorizontal className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setZoomPanel(anatomy)}
+                              className="p-1.5 rounded-lg bg-black/60 text-white hover:bg-black/80"
+                            >
+                              <Maximize2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
+                        {labels.filter((l) => l.side !== "us").length > 0 && (
+                          <div className="absolute bottom-2 left-2 right-2 flex flex-wrap gap-1">
+                            {labels
+                              .filter((l) => l.side !== "us")
+                              .slice(0, 5)
+                              .map((l) => (
+                                <span
+                                  key={l.id}
+                                  className="text-[9px] font-semibold bg-black/75 text-cyan-100 border border-cyan-500/40 px-1.5 py-0.5 rounded"
+                                >
+                                  {l.text}
+                                </span>
+                              ))}
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-400 px-3 py-2 border-t border-cyan-900/30 italic truncate">
+                        {anatomy?.panelTitle || anatomy?.anatomicalFocus || "Plano 3D"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Remaining / detail 3D panels */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
               {planeData.panels.map((panel) => (
                 <div
@@ -537,16 +771,19 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
           <div className="rounded-xl border border-dashed border-cyan-800/50 bg-slate-950/40 px-6 py-10 text-center">
             <Scan className="w-8 h-8 mx-auto mb-3 text-cyan-500/80" />
             <p className="text-sm text-slate-300">
-              Genera para anclar automáticamente el plano del informe en anatomía 3D.
+              Elige una eco de la galería y genera el plano 3D para ver el bridge lado a lado.
             </p>
           </div>
         )}
       </div>
 
-      {zoomPanel && (
+      {(zoomPanel || zoomUsUrl) && (
         <div
           className="fixed inset-0 z-[80] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={() => setZoomPanel(null)}
+          onClick={() => {
+            setZoomPanel(null);
+            setZoomUsUrl(null);
+          }}
         >
           <div
             className="relative max-w-5xl w-full"
@@ -554,15 +791,18 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
           >
             <button
               type="button"
-              onClick={() => setZoomPanel(null)}
+              onClick={() => {
+                setZoomPanel(null);
+                setZoomUsUrl(null);
+              }}
               className="absolute -top-10 right-0 text-white/80 hover:text-white"
             >
               <X className="w-6 h-6" />
             </button>
-            {zoomPanel.imageUrl && (
+            {(zoomUsUrl || zoomPanel?.imageUrl) && (
               <img
-                src={zoomPanel.imageUrl}
-                alt={zoomPanel.panelTitle}
+                src={zoomUsUrl || zoomPanel!.imageUrl}
+                alt={zoomPanel?.panelTitle || "Eco real"}
                 className="w-full rounded-xl border border-cyan-700/40"
               />
             )}
