@@ -11,9 +11,13 @@ import {
   Layers,
   Image as ImageIcon,
   Link2,
+  Tag,
+  Plus,
+  Trash2,
 } from "lucide-react";
 import {
   UsAcquisitionPlane,
+  UsPlaneBridgeLabel,
   UsPlaneSimulatorData,
   UsPlaneSimulatorPanel,
   ClinicalScorecardData,
@@ -24,7 +28,8 @@ import { flipImageDataUrl, swapLateralityLabel } from "../lib/imageFlip";
 import {
   buildUsPlaneBridgeLabels,
   galleryToRealUs,
-  pickBridgeAnatomyPanel,
+  keepFocalPanelsOnly,
+  pickBridgeFocalPanel,
   suggestRealUsFromGallery,
   type GalleryImage,
 } from "../lib/usPlaneBridge";
@@ -40,7 +45,6 @@ interface Props {
   setIncludeInReport: (v: boolean) => void;
   scorecardData?: ClinicalScorecardData | null;
   externalDirectives?: string;
-  /** Capturas del estudio (galería) para el bridge eco ↔ 3D. */
   galleryImages?: GalleryImage[];
 }
 
@@ -48,17 +52,17 @@ const PLANE_CHIPS: { id: UsAcquisitionPlane; label: string; directive: string }[
   {
     id: "longitudinal",
     label: "Longitudinal",
-    directive: "CORRECCIÓN: forzar plano LONGITUDINAL / eje largo del transductor.",
+    directive: "CORRECCIÓN: forzar plano LONGITUDINAL / eje largo del transductor. El corte 3D debe coincidir con ese eje.",
   },
   {
     id: "transverse",
     label: "Transversal",
-    directive: "CORRECCIÓN: forzar plano TRANSVERSAL / eje corto del transductor.",
+    directive: "CORRECCIÓN: forzar plano TRANSVERSAL / eje corto del transductor. El corte 3D debe coincidir con ese eje.",
   },
   {
     id: "oblique",
     label: "Oblicuo",
-    directive: "CORRECCIÓN: forzar plano OBLICUO de adquisición.",
+    directive: "CORRECCIÓN: forzar plano OBLICUO de adquisición. El corte 3D debe coincidir con ese eje.",
   },
 ];
 
@@ -68,11 +72,56 @@ const SIDE_CHIPS = [
 ];
 
 const FINE_CHIPS = [
-  { label: "Girar +15°", directive: "Rotate acquisition plane +15° around the target structure; keep laterality." },
-  { label: "Girar −15°", directive: "Rotate acquisition plane -15° around the target structure; keep laterality." },
+  { label: "Girar +15°", directive: "Rotate acquisition plane +15°; keep same axis family and laterality." },
+  { label: "Girar −15°", directive: "Rotate acquisition plane -15°; keep same axis family and laterality." },
   { label: "Acercar hallazgo", directive: "Tighten framing on the reported finding; keep the same acquisition plane." },
-  { label: "Plano del informe", directive: "FORCE plane exactly as stated in the report; discard aesthetic alternatives." },
 ];
+
+function LabelOverlay({
+  labels,
+  tone,
+}: {
+  labels: UsPlaneBridgeLabel[];
+  tone: "us" | "anatomy";
+}) {
+  if (!labels.length) return null;
+  return (
+    <>
+      {labels
+        .filter((l) => typeof l.xPct === "number" && typeof l.yPct === "number")
+        .map((l) => (
+          <span
+            key={l.id}
+            className={`absolute z-10 text-[9px] font-bold px-1.5 py-0.5 rounded shadow border pointer-events-none ${
+              tone === "us"
+                ? "bg-black/80 text-emerald-100 border-emerald-500/50"
+                : "bg-black/80 text-cyan-100 border-cyan-500/50"
+            }`}
+            style={{ left: `${l.xPct}%`, top: `${l.yPct}%`, transform: "translate(-10%, -100%)" }}
+          >
+            {l.text}
+          </span>
+        ))}
+      <div className="absolute bottom-2 left-2 right-2 flex flex-wrap gap-1 z-10 pointer-events-none">
+        {labels
+          .filter((l) => !(typeof l.xPct === "number" && typeof l.yPct === "number"))
+          .slice(0, 5)
+          .map((l) => (
+            <span
+              key={l.id}
+              className={`text-[9px] font-semibold px-1.5 py-0.5 rounded border ${
+                tone === "us"
+                  ? "bg-black/75 text-emerald-100 border-emerald-500/40"
+                  : "bg-black/75 text-cyan-100 border-cyan-500/40"
+              }`}
+            >
+              {l.text}
+            </span>
+          ))}
+      </div>
+    </>
+  );
+}
 
 export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
   reportText,
@@ -93,16 +142,18 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
   const [zoomPanel, setZoomPanel] = useState<UsPlaneSimulatorPanel | null>(null);
   const [zoomUsUrl, setZoomUsUrl] = useState<string | null>(null);
   const [regeneratingLetter, setRegeneratingLetter] = useState<string | null>(null);
-  const [forcedPlane, setForcedPlane] = useState<UsAcquisitionPlane | "auto">("auto");
+  const [forcedPlane, setForcedPlane] = useState<UsAcquisitionPlane | "auto">("longitudinal");
   const [panelDirectives, setPanelDirectives] = useState<Record<string, string>>({});
   const [pendingRealUsId, setPendingRealUsId] = useState<string>("");
+  const [draftUsLabel, setDraftUsLabel] = useState("");
+  const [draftAnatomyLabel, setDraftAnatomyLabel] = useState("");
+  const [placeMode, setPlaceMode] = useState<"us" | "anatomy" | null>(null);
 
   const gallery = useMemo(
     () => (galleryImages || []).filter((g) => g?.id && g?.url),
     [galleryImages]
   );
 
-  // Seed eco real when gallery arrives / plane has none
   useEffect(() => {
     if (!gallery.length) {
       setPendingRealUsId("");
@@ -118,11 +169,27 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
   }, [gallery, planeData?.realUsImage?.id]);
 
   const selectedGallery = gallery.find((g) => g.id === pendingRealUsId) || null;
+  const focalPanel = pickBridgeFocalPanel(planeData);
+
+  const labels = planeData?.bridgeLabels?.length
+    ? planeData.bridgeLabels
+    : buildUsPlaneBridgeLabels(planeData, planeData?.realUsImage);
+
+  const usLabels = labels.filter((l) => l.side !== "anatomy");
+  const anatomyLabels = labels.filter((l) => l.side !== "us");
+
+  const setLabels = (next: UsPlaneBridgeLabel[]) => {
+    if (!planeData) return;
+    setPlaneData({ ...planeData, bridgeLabels: next });
+  };
 
   const applyRealUsToPlane = (img: GalleryImage | null) => {
     if (!planeData) return;
     const real = img ? galleryToRealUs(img) : null;
-    const bridgeLabels = buildUsPlaneBridgeLabels(planeData, real);
+    const bridgeLabels =
+      planeData.bridgeLabels?.length
+        ? planeData.bridgeLabels
+        : buildUsPlaneBridgeLabels(planeData, real);
     setPlaneData({ ...planeData, realUsImage: real, bridgeLabels });
   };
 
@@ -130,17 +197,17 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
     const fromScore = buildAtlasDirectivesFromScorecard(scorecardData || null);
     const usHint = selectedGallery
       ? [
-          "BRIDGE ECO↔ANATOMÍA: el plano 3D debe corresponder a la eco real seleccionada de la galería.",
+          "BRIDGE ECO-ANATOMIA: genera SOLO el corte 3D focal (cara del plano), mismo eje/dirección que la eco real.",
+          "PROHIBIDO panel overview con plano flotante / anatomy_with_plane.",
           selectedGallery.caption
             ? `Caption de la eco: ${selectedGallery.caption}`
             : selectedGallery.label
               ? `Label de la eco: ${selectedGallery.label}`
               : "",
-          "Mantén la misma orientación / lateralidad que implica el informe y la captura.",
         ]
           .filter(Boolean)
           .join("\n")
-      : "";
+      : "BRIDGE: solo corte 3D focal in_plane_cut, mismo eje que la eco.";
     return [fromScore, externalDirectives, usHint].filter(Boolean).join("\n").trim();
   }, [scorecardData, externalDirectives, selectedGallery]);
 
@@ -151,7 +218,7 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
     }
     setIsGenerating(true);
     setErrorMessage(null);
-    setGenerationStep("Detectando órgano, lado y plano del informe...");
+    setGenerationStep("Detectando órgano, lado y plano...");
 
     const plane =
       planeOverride && planeOverride !== "auto"
@@ -163,13 +230,11 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
     const timers: ReturnType<typeof setTimeout>[] = [];
     try {
       timers.push(
-        setTimeout(() => setGenerationStep("Renderizando anatomía 3D + plano del transductor..."), 1800)
+        setTimeout(() => setGenerationStep("Renderizando corte 3D focal (mismo eje que la eco)..."), 1600)
       );
-      timers.push(
-        setTimeout(() => setGenerationStep("Verificando plano y lateralidad..."), 7000)
-      );
+      timers.push(setTimeout(() => setGenerationStep("Verificando plano y lateralidad..."), 6500));
 
-      await runBackgroundTask("us-plane-sim", "Simulador de plano ecográfico", async () => {
+      await runBackgroundTask("us-plane-sim", "Bridge eco-anatomia", async () => {
         const response = await fetch("/api/generate-us-plane-simulator", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -180,27 +245,29 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
             requestedModel: selectedModel,
             customDirectives: mergedDirectives || undefined,
             forcedPlane: plane,
+            bridgeOnlyFocal: true,
           }),
         });
         const resData = await response.json();
-        if (!resData.success) throw new Error(resData.error || "No se pudo generar el simulador.");
-        const raw = resData.data as UsPlaneSimulatorData;
+        if (!resData.success) throw new Error(resData.error || "No se pudo generar el bridge.");
+        const raw = keepFocalPanelsOnly(resData.data as UsPlaneSimulatorData);
         const real =
           (selectedGallery && galleryToRealUs(selectedGallery)) ||
           suggestRealUsFromGallery(gallery) ||
           raw.realUsImage ||
           null;
-        const bridgeLabels = buildUsPlaneBridgeLabels(raw, real);
+        const prevLabels = planeData?.bridgeLabels || [];
+        const bridgeLabels = prevLabels.length
+          ? prevLabels
+          : buildUsPlaneBridgeLabels(raw, real);
         setPlaneData({ ...raw, realUsImage: real, bridgeLabels });
         setIncludeInReport(true);
-        if (raw?.acquisitionPlane) {
-          setForcedPlane(raw.acquisitionPlane);
-        }
+        if (raw?.acquisitionPlane) setForcedPlane(raw.acquisitionPlane);
         if (real?.id) setPendingRealUsId(real.id);
       });
     } catch (err: any) {
       console.error(err);
-      setErrorMessage(err?.message || "Error al generar el simulador de plano.");
+      setErrorMessage(err?.message || "Error al generar el bridge.");
     } finally {
       timers.forEach(clearTimeout);
       setIsGenerating(false);
@@ -215,7 +282,11 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
   ) => {
     if (!planeData) return;
     const freeText = (panelDirectives[panel.panelLetter] || "").trim();
-    const combinedDirective = [directive, freeText ? `MODIFICACIÓN DEL USUARIO: ${freeText}` : ""]
+    const combinedDirective = [
+      directive,
+      "SOLO corte focal in_plane_cut; mismo eje que la eco real; sin overview.",
+      freeText ? `MODIFICACIÓN DEL USUARIO: ${freeText}` : "",
+    ]
       .filter(Boolean)
       .join("\n");
     setRegeneratingLetter(panel.panelLetter);
@@ -226,7 +297,7 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           reportText,
-          panel,
+          panel: { ...panel, panelRole: "in_plane_cut" },
           laterality: panel.laterality || planeData.detectedLaterality,
           acquisitionPlane: nextPlane || planeData.acquisitionPlane,
           targetStructure: planeData.targetStructure,
@@ -236,44 +307,43 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
         }),
       });
       const resData = await response.json();
-      if (!resData.success) throw new Error(resData.error || "Error al regenerar panel.");
-      const updated = planeData.panels.map((p) =>
-        p.panelLetter === panel.panelLetter ? resData.panel : p
-      );
-      setPlaneData({
+      if (!resData.success) throw new Error(resData.error || "Error al regenerar.");
+      const updatedPanel = {
+        ...resData.panel,
+        panelRole: "in_plane_cut" as const,
+      };
+      const updated = keepFocalPanelsOnly({
         ...planeData,
-        panels: updated,
+        panels: [updatedPanel],
         acquisitionPlane: resData.acquisitionPlane || nextPlane || planeData.acquisitionPlane,
         planeLabelEs: resData.planeLabelEs || planeData.planeLabelEs,
       });
+      setPlaneData(updated);
       if (nextPlane) setForcedPlane(nextPlane);
-      if (zoomPanel?.panelLetter === panel.panelLetter) setZoomPanel(resData.panel);
+      if (zoomPanel?.panelLetter === panel.panelLetter) setZoomPanel(updatedPanel);
     } catch (err: any) {
-      setErrorMessage(err?.message || "No se pudo regenerar el panel.");
+      setErrorMessage(err?.message || "No se pudo regenerar el corte 3D.");
     } finally {
       setRegeneratingLetter(null);
     }
   };
 
-  const applyChipToAll = async (directive: string, nextPlane?: UsAcquisitionPlane) => {
+  const applyChip = async (directive: string, nextPlane?: UsAcquisitionPlane) => {
+    if (nextPlane) setForcedPlane(nextPlane);
     if (!planeData?.panels?.length) {
-      await handleGenerate(nextPlane || "auto");
+      await handleGenerate(nextPlane || forcedPlane);
       return;
     }
-    if (nextPlane) setForcedPlane(nextPlane);
-    for (const panel of planeData.panels) {
-      await handleRegeneratePanel(panel, directive, nextPlane);
-    }
+    const panel = pickBridgeFocalPanel(planeData);
+    if (panel) await handleRegeneratePanel(panel, directive, nextPlane);
   };
 
-  const handleFlip = async (letter: string) => {
-    if (!planeData) return;
-    const panel = planeData.panels.find((p) => p.panelLetter === letter);
-    if (!panel?.imageUrl) return;
+  const handleFlip = async () => {
+    if (!planeData || !focalPanel?.imageUrl) return;
     try {
-      const flipped = await flipImageDataUrl(panel.imageUrl);
+      const flipped = await flipImageDataUrl(focalPanel.imageUrl);
       const panels = planeData.panels.map((p) =>
-        p.panelLetter !== letter
+        p.panelLetter !== focalPanel.panelLetter
           ? p
           : {
               ...p,
@@ -288,50 +358,72 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
     }
   };
 
+  const addLabel = (side: "us" | "anatomy", text: string, xPct?: number, yPct?: number) => {
+    const t = text.trim();
+    if (!t || !planeData) return;
+    const next: UsPlaneBridgeLabel[] = [
+      ...(planeData.bridgeLabels || labels),
+      {
+        id: `lbl-${side}-${Date.now()}`,
+        text: t.slice(0, 48),
+        side,
+        ...(typeof xPct === "number" ? { xPct, yPct } : {}),
+      },
+    ].slice(0, 16);
+    setLabels(next);
+    if (side === "us") setDraftUsLabel("");
+    else setDraftAnatomyLabel("");
+  };
+
+  const removeLabel = (id: string) => {
+    setLabels(labels.filter((l) => l.id !== id));
+  };
+
+  const onImageClick = (side: "us" | "anatomy", e: React.MouseEvent<HTMLDivElement>) => {
+    if (placeMode !== side) return;
+    const draft = side === "us" ? draftUsLabel : draftAnatomyLabel;
+    if (!draft.trim()) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const xPct = ((e.clientX - rect.left) / rect.width) * 100;
+    const yPct = ((e.clientY - rect.top) / rect.height) * 100;
+    addLabel(side, draft, xPct, yPct);
+    setPlaceMode(null);
+  };
+
   return (
     <div
       id="us-plane-simulator-module"
       className="relative overflow-hidden rounded-2xl border border-cyan-800/40 bg-slate-950 text-slate-100 shadow-[0_0_0_1px_rgba(8,145,178,0.12)]"
     >
-      {/* Atmosphere */}
       <div
         className="pointer-events-none absolute inset-0 opacity-90"
         style={{
           background:
-            "radial-gradient(1200px 480px at 10% -10%, rgba(8,145,178,0.28), transparent 55%), radial-gradient(900px 420px at 90% 0%, rgba(14,116,144,0.18), transparent 50%), linear-gradient(165deg, #020617 0%, #0b1220 48%, #082f3a 100%)",
-        }}
-      />
-      <div
-        className="pointer-events-none absolute inset-0 opacity-[0.07]"
-        style={{
-          backgroundImage:
-            "linear-gradient(rgba(165,243,252,0.35) 1px, transparent 1px), linear-gradient(90deg, rgba(165,243,252,0.35) 1px, transparent 1px)",
-          backgroundSize: "28px 28px",
-          maskImage: "linear-gradient(to bottom, black, transparent 85%)",
+            "radial-gradient(1200px 480px at 10% -10%, rgba(8,145,178,0.28), transparent 55%), linear-gradient(165deg, #020617 0%, #0b1220 48%, #082f3a 100%)",
         }}
       />
 
       <div className="relative p-5 md:p-6 space-y-5">
         <header className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
           <div className="max-w-2xl">
-            <p className="font-[family-name:ui-serif] text-[11px] tracking-[0.22em] uppercase text-cyan-300/90 mb-2">
-              Corte eco ↔ anatomía
+            <p className="text-[11px] tracking-[0.22em] uppercase text-cyan-300/90 mb-2">
+              Bridge US-3D
             </p>
             <h3
               className="text-2xl md:text-3xl font-semibold tracking-tight text-white"
               style={{ fontFamily: '"Fraunces", "Iowan Old Style", Georgia, serif' }}
             >
-              Bridge US–3D
+              Corte eco - anatomia
             </h3>
             <p className="mt-2 text-sm text-slate-300/90 leading-relaxed max-w-xl">
-              Eco real de la galería + plano 3D del mismo corte, con labels automáticos para
-              mostrar dónde está el hallazgo.
+              Eco real + corte 3D focal en el mismo eje. Elige el tipo de corte y añade rótulos
+              en cada imagen.
             </p>
           </div>
 
-          <div className="flex flex-col items-stretch gap-2 min-w-[200px]">
+          <div className="flex flex-col items-stretch gap-2 min-w-[220px]">
             <label className="text-[10px] uppercase tracking-widest text-cyan-200/80 font-semibold">
-              Plano preferido
+              Tipo de corte 3D
             </label>
             <select
               value={forcedPlane}
@@ -339,8 +431,8 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
               className="bg-slate-900/80 border border-cyan-700/50 rounded-lg px-3 py-2 text-sm text-slate-100"
             >
               <option value="auto">Auto (del informe)</option>
-              <option value="longitudinal">Longitudinal</option>
-              <option value="transverse">Transversal</option>
+              <option value="longitudinal">Longitudinal / eje largo</option>
+              <option value="transverse">Transversal / eje corto</option>
               <option value="oblique">Oblicuo</option>
             </select>
             <button
@@ -357,7 +449,7 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
               ) : (
                 <>
                   <Sparkles className="w-4 h-4" />
-                  {planeData ? "Re-generar automático" : "Generar plano 3D"}
+                  {planeData ? "Re-generar corte 3D" : "Generar corte 3D focal"}
                 </>
               )}
             </button>
@@ -377,15 +469,14 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
           </div>
         )}
 
-        {/* Gallery: pick real US for the bridge */}
         <div className="space-y-2">
           <p className="text-[10px] uppercase tracking-[0.18em] text-slate-400 font-semibold flex items-center gap-1.5">
             <ImageIcon className="w-3.5 h-3.5 text-cyan-400" />
-            Eco real (galería del estudio)
+            Eco real (galería)
           </p>
           {gallery.length === 0 ? (
             <p className="text-[12px] text-slate-500 rounded-xl border border-dashed border-slate-700 px-3 py-3">
-              No hay capturas en la galería. Sube imágenes del estudio para emparejar eco ↔ 3D.
+              Sube capturas del estudio para emparejar eco y corte 3D.
             </p>
           ) : (
             <div className="flex gap-2 overflow-x-auto pb-1">
@@ -404,7 +495,6 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
                         ? "border-cyan-400 ring-2 ring-cyan-500/30"
                         : "border-slate-700 hover:border-cyan-600/60"
                     }`}
-                    title={img.caption || img.label || `Captura ${idx + 1}`}
                   >
                     <div className="aspect-[4/3] bg-slate-900">
                       <img
@@ -423,11 +513,10 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
           )}
         </div>
 
-        {/* Correction chips — always visible for effective fixes */}
         <div className="space-y-2">
           <p className="text-[10px] uppercase tracking-[0.18em] text-slate-400 font-semibold flex items-center gap-1.5">
             <Crosshair className="w-3.5 h-3.5 text-cyan-400" />
-            Corrección quirúrgica
+            Tipo de corte / correcciones
           </p>
           <div className="flex flex-wrap gap-1.5">
             {PLANE_CHIPS.map((chip) => (
@@ -435,11 +524,11 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
                 key={chip.id}
                 type="button"
                 disabled={isGenerating || !!regeneratingLetter}
-                onClick={() => applyChipToAll(chip.directive, chip.id)}
+                onClick={() => applyChip(chip.directive, chip.id)}
                 className={`text-[11px] px-2.5 py-1 rounded-lg border font-medium transition-colors ${
                   (planeData?.acquisitionPlane || forcedPlane) === chip.id
                     ? "bg-cyan-500/20 border-cyan-400 text-cyan-100"
-                    : "bg-slate-900/70 border-slate-700 text-slate-300 hover:border-cyan-500/60 hover:text-cyan-100"
+                    : "bg-slate-900/70 border-slate-700 text-slate-300 hover:border-cyan-500/60"
                 }`}
               >
                 {chip.label}
@@ -450,8 +539,8 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
                 key={chip.label}
                 type="button"
                 disabled={isGenerating || !!regeneratingLetter}
-                onClick={() => applyChipToAll(chip.directive)}
-                className="text-[11px] px-2.5 py-1 rounded-lg border bg-slate-900/70 border-slate-700 text-slate-300 hover:border-cyan-500/60 hover:text-cyan-100 font-medium"
+                onClick={() => applyChip(chip.directive)}
+                className="text-[11px] px-2.5 py-1 rounded-lg border bg-slate-900/70 border-slate-700 text-slate-300 hover:border-cyan-500/60 font-medium"
               >
                 {chip.label}
               </button>
@@ -461,8 +550,8 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
                 key={chip.label}
                 type="button"
                 disabled={isGenerating || !!regeneratingLetter || !planeData}
-                onClick={() => applyChipToAll(chip.directive)}
-                className="text-[11px] px-2.5 py-1 rounded-lg border bg-slate-900/70 border-slate-700 text-slate-400 hover:border-cyan-500/50 hover:text-cyan-100"
+                onClick={() => applyChip(chip.directive)}
+                className="text-[11px] px-2.5 py-1 rounded-lg border bg-slate-900/70 border-slate-700 text-slate-400 hover:border-cyan-500/50"
               >
                 {chip.label}
               </button>
@@ -498,241 +587,265 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
               </label>
             </div>
 
-            {/* Bridge: eco real | anatomía 3D */}
-            {(() => {
-              const real = planeData.realUsImage;
-              const anatomy = pickBridgeAnatomyPanel(planeData);
-              const labels =
-                planeData.bridgeLabels?.length
-                  ? planeData.bridgeLabels
-                  : buildUsPlaneBridgeLabels(planeData, real);
-              if (!real?.url && !anatomy?.imageUrl) return null;
-              return (
-                <div className="space-y-2">
-                  <p className="text-[10px] uppercase tracking-[0.18em] text-cyan-300/90 font-semibold flex items-center gap-1.5">
-                    <Link2 className="w-3.5 h-3.5" />
-                    Bridge eco ↔ anatomía
-                  </p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
-                    <div className="relative overflow-hidden rounded-xl border border-cyan-700/40 bg-black/50">
-                      <div className="relative aspect-[4/3] overflow-hidden">
-                        {real?.url ? (
-                          <img
-                            src={real.url}
-                            alt={real.caption || real.label || "Eco real"}
-                            className="h-full w-full object-contain bg-black"
-                          />
-                        ) : (
-                          <div className="flex h-full flex-col items-center justify-center gap-2 text-slate-500 text-sm px-4 text-center">
-                            <ImageIcon className="w-6 h-6 opacity-50" />
-                            Elige una captura de la galería
-                          </div>
-                        )}
-                        <div className="absolute top-2 left-2 bg-emerald-600 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow">
-                          ECO REAL
-                        </div>
-                        {real?.url && (
-                          <button
-                            type="button"
-                            onClick={() => setZoomUsUrl(real.url)}
-                            className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/60 text-white hover:bg-black/80"
-                          >
-                            <Maximize2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                        {labels.filter((l) => l.side !== "anatomy").length > 0 && (
-                          <div className="absolute bottom-2 left-2 right-2 flex flex-wrap gap-1">
-                            {labels
-                              .filter((l) => l.side !== "anatomy")
-                              .slice(0, 5)
-                              .map((l) => (
-                                <span
-                                  key={l.id}
-                                  className="text-[9px] font-semibold bg-black/75 text-emerald-100 border border-emerald-500/40 px-1.5 py-0.5 rounded"
-                                >
-                                  {l.text}
-                                </span>
-                              ))}
-                          </div>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-slate-400 px-3 py-2 border-t border-cyan-900/30 italic truncate">
-                        {real?.caption || real?.label || "Captura del estudio"}
-                      </p>
-                    </div>
-
-                    <div className="relative overflow-hidden rounded-xl border border-cyan-700/40 bg-black/50">
-                      <div className="relative aspect-[4/3] overflow-hidden">
-                        {anatomy?.imageUrl ? (
-                          <img
-                            src={anatomy.imageUrl}
-                            alt={anatomy.panelTitle}
-                            className="h-full w-full object-contain bg-black"
-                          />
-                        ) : (
-                          <div className="flex h-full items-center justify-center text-slate-500 text-sm">
-                            Genera el plano 3D
-                          </div>
-                        )}
-                        <div className="absolute top-2 left-2 bg-cyan-600 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow">
-                          ANATOMÍA 3D
-                          {anatomy?.panelLetter ? ` · ${anatomy.panelLetter}` : ""}
-                        </div>
-                        {anatomy && (
-                          <div className="absolute top-2 right-2 flex gap-1">
-                            <button
-                              type="button"
-                              onClick={() => handleFlip(anatomy.panelLetter)}
-                              className="p-1.5 rounded-lg bg-black/60 text-white hover:bg-black/80"
-                              title="Flip horizontal"
-                            >
-                              <FlipHorizontal className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setZoomPanel(anatomy)}
-                              className="p-1.5 rounded-lg bg-black/60 text-white hover:bg-black/80"
-                            >
-                              <Maximize2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        )}
-                        {labels.filter((l) => l.side !== "us").length > 0 && (
-                          <div className="absolute bottom-2 left-2 right-2 flex flex-wrap gap-1">
-                            {labels
-                              .filter((l) => l.side !== "us")
-                              .slice(0, 5)
-                              .map((l) => (
-                                <span
-                                  key={l.id}
-                                  className="text-[9px] font-semibold bg-black/75 text-cyan-100 border border-cyan-500/40 px-1.5 py-0.5 rounded"
-                                >
-                                  {l.text}
-                                </span>
-                              ))}
-                          </div>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-slate-400 px-3 py-2 border-t border-cyan-900/30 italic truncate">
-                        {anatomy?.panelTitle || anatomy?.anatomicalFocus || "Plano 3D"}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* Remaining / detail 3D panels */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
-              {planeData.panels.map((panel) => (
-                <div
-                  key={panel.id || panel.panelLetter}
-                  className="group relative overflow-hidden rounded-xl border border-cyan-800/30 bg-black/40"
-                >
-                  <div className="relative aspect-[4/3] overflow-hidden">
-                    {panel.imageUrl ? (
+            {/* Bridge: only US | focal 3D */}
+            <div className="space-y-2">
+              <p className="text-[10px] uppercase tracking-[0.18em] text-cyan-300/90 font-semibold flex items-center gap-1.5">
+                <Link2 className="w-3.5 h-3.5" />
+                Eco real | Corte 3D focal (mismo eje)
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
+                <div className="relative overflow-hidden rounded-xl border border-cyan-700/40 bg-black/50">
+                  <div
+                    className={`relative aspect-[4/3] overflow-hidden ${
+                      placeMode === "us" ? "cursor-crosshair ring-2 ring-emerald-400/60" : ""
+                    }`}
+                    onClick={(e) => onImageClick("us", e)}
+                  >
+                    {planeData.realUsImage?.url ? (
                       <img
-                        src={panel.imageUrl}
-                        alt={panel.panelTitle}
-                        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                        src={planeData.realUsImage.url}
+                        alt="Eco real"
+                        className="h-full w-full object-contain bg-black"
                       />
                     ) : (
-                      <div className="flex h-full items-center justify-center text-slate-500 text-sm">
-                        Sin imagen
+                      <div className="flex h-full flex-col items-center justify-center gap-2 text-slate-500 text-sm">
+                        <ImageIcon className="w-6 h-6 opacity-50" />
+                        Elige una captura
                       </div>
                     )}
-                    <div className="absolute top-2 left-2 bg-cyan-600 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow">
-                      PANEL {panel.panelLetter}
+                    <div className="absolute top-2 left-2 bg-emerald-600 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow">
+                      ECO REAL
                     </div>
-                    <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {planeData.realUsImage?.url && (
                       <button
                         type="button"
-                        onClick={() => handleFlip(panel.panelLetter)}
-                        className="p-1.5 rounded-lg bg-black/60 text-white hover:bg-black/80"
-                        title="Flip horizontal"
-                      >
-                        <FlipHorizontal className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setZoomPanel(panel)}
-                        className="p-1.5 rounded-lg bg-black/60 text-white hover:bg-black/80"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setZoomUsUrl(planeData.realUsImage!.url);
+                        }}
+                        className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/60 text-white"
                       >
                         <Maximize2 className="w-3.5 h-3.5" />
                       </button>
-                    </div>
-                    {regeneratingLetter === panel.panelLetter && (
-                      <div className="absolute inset-0 bg-slate-950/75 flex flex-col items-center justify-center gap-2">
-                        <Loader2 className="w-6 h-6 animate-spin text-cyan-300" />
-                        <span className="text-xs text-cyan-100">Re-renderizando plano…</span>
+                    )}
+                    <LabelOverlay labels={usLabels} tone="us" />
+                  </div>
+                  <p className="text-[11px] text-slate-400 px-3 py-2 border-t border-cyan-900/30 italic truncate">
+                    {planeData.realUsImage?.caption ||
+                      planeData.realUsImage?.label ||
+                      "Captura del estudio"}
+                  </p>
+                </div>
+
+                <div className="relative overflow-hidden rounded-xl border border-cyan-700/40 bg-black/50">
+                  <div
+                    className={`relative aspect-[4/3] overflow-hidden ${
+                      placeMode === "anatomy" ? "cursor-crosshair ring-2 ring-cyan-400/60" : ""
+                    }`}
+                    onClick={(e) => onImageClick("anatomy", e)}
+                  >
+                    {focalPanel?.imageUrl ? (
+                      <img
+                        src={focalPanel.imageUrl}
+                        alt="Corte 3D focal"
+                        className="h-full w-full object-contain bg-black"
+                      />
+                    ) : (
+                      <div className="flex h-full items-center justify-center text-slate-500 text-sm">
+                        Genera el corte 3D
                       </div>
                     )}
-                  </div>
-                  <div className="p-3 space-y-2 border-t border-cyan-900/30">
-                    <p className="text-xs font-semibold text-slate-100 line-clamp-2">
-                      {panel.panelTitle}
-                    </p>
-                    <p className="text-[11px] text-slate-400 line-clamp-2">
-                      {panel.anatomicalFocus}
-                    </p>
-                    <label className="block text-[10px] uppercase tracking-widest text-slate-500 font-semibold">
-                      Modificación al regenerar
-                    </label>
-                    <textarea
-                      value={panelDirectives[panel.panelLetter] || ""}
-                      onChange={(e) =>
-                        setPanelDirectives((prev) => ({
-                          ...prev,
-                          [panel.panelLetter]: e.target.value,
-                        }))
-                      }
-                      rows={2}
-                      placeholder="Ej. Lesión en menisco interno/medial (tibial), no en el externo/peroné…"
-                      className="w-full min-w-0 bg-slate-950/80 border border-slate-700 focus:border-cyan-500 rounded-lg px-2.5 py-2 text-[11px] text-slate-200 placeholder:text-slate-500 outline-none resize-none"
-                    />
-                    <div className="flex flex-wrap gap-1">
-                      {[
-                        "Menisco interno/medial (tibial), no externo",
-                        "Menisco externo/lateral (peroné), no interno",
-                        "Mantener mismo plano y lado",
-                      ].map((chip) => (
-                        <button
-                          key={chip}
-                          type="button"
-                          disabled={!!regeneratingLetter}
-                          onClick={() =>
-                            setPanelDirectives((prev) => {
-                              const cur = (prev[panel.panelLetter] || "").trim();
-                              return {
-                                ...prev,
-                                [panel.panelLetter]: cur ? `${cur}; ${chip}` : chip,
-                              };
-                            })
-                          }
-                          className="text-[9px] px-2 py-0.5 rounded border border-slate-700 text-slate-400 hover:border-cyan-500/50 hover:text-cyan-100"
-                        >
-                          {chip}
-                        </button>
-                      ))}
+                    <div className="absolute top-2 left-2 bg-cyan-600 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow">
+                      CORTE 3D FOCAL
                     </div>
+                    {focalPanel && (
+                      <div className="absolute top-2 right-2 flex gap-1">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleFlip();
+                          }}
+                          className="p-1.5 rounded-lg bg-black/60 text-white"
+                        >
+                          <FlipHorizontal className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setZoomPanel(focalPanel);
+                          }}
+                          className="p-1.5 rounded-lg bg-black/60 text-white"
+                        >
+                          <Maximize2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                    {regeneratingLetter && (
+                      <div className="absolute inset-0 bg-slate-950/75 flex flex-col items-center justify-center gap-2">
+                        <Loader2 className="w-6 h-6 animate-spin text-cyan-300" />
+                        <span className="text-xs text-cyan-100">Re-renderizando…</span>
+                      </div>
+                    )}
+                    <LabelOverlay labels={anatomyLabels} tone="anatomy" />
+                  </div>
+                  <p className="text-[11px] text-slate-400 px-3 py-2 border-t border-cyan-900/30 italic truncate">
+                    {focalPanel?.panelTitle || "Corte 3D en el mismo eje"}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Editable rótulos */}
+            <div className="rounded-xl border border-cyan-900/40 bg-slate-950/50 p-4 space-y-3">
+              <p className="text-[10px] uppercase tracking-[0.18em] text-cyan-300 font-semibold flex items-center gap-1.5">
+                <Tag className="w-3.5 h-3.5" />
+                Rótulos (US y 3D)
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <p className="text-[11px] text-emerald-300 font-semibold">Sobre eco real</p>
+                  <div className="flex gap-1.5">
+                    <input
+                      value={draftUsLabel}
+                      onChange={(e) => setDraftUsLabel(e.target.value)}
+                      placeholder="Ej. Tendón rotuliano"
+                      className="flex-1 min-w-0 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-[12px] text-slate-100"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") addLabel("us", draftUsLabel);
+                      }}
+                    />
                     <button
                       type="button"
-                      disabled={!!regeneratingLetter}
-                      onClick={() =>
-                        handleRegeneratePanel(
-                          panel,
-                          "Refine this panel only; keep locked acquisition plane, patient laterality, and meniscus compartment (internal/medial ≠ external/lateral)."
-                        )
-                      }
-                      className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold text-cyan-300 hover:text-cyan-200"
+                      onClick={() => addLabel("us", draftUsLabel)}
+                      className="px-2 rounded-lg bg-emerald-700/40 border border-emerald-600/50 text-emerald-100"
+                      title="Añadir como leyenda"
                     >
-                      <RefreshCw className="w-3 h-3" />
-                      Regenerar solo este panel
+                      <Plus className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!draftUsLabel.trim()}
+                      onClick={() => setPlaceMode(placeMode === "us" ? null : "us")}
+                      className={`px-2 rounded-lg border text-[10px] font-bold ${
+                        placeMode === "us"
+                          ? "bg-emerald-500 text-slate-950 border-emerald-400"
+                          : "bg-slate-900 border-slate-700 text-slate-300"
+                      }`}
+                      title="Clic en la imagen para ubicar"
+                    >
+                      Ubicar
                     </button>
                   </div>
+                  <ul className="space-y-1">
+                    {usLabels.map((l) => (
+                      <li
+                        key={l.id}
+                        className="flex items-center justify-between gap-2 text-[11px] text-slate-300 bg-slate-900/60 rounded px-2 py-1"
+                      >
+                        <span className="truncate">
+                          {l.text}
+                          {typeof l.xPct === "number" ? " · pin" : ""}
+                        </span>
+                        <button type="button" onClick={() => removeLabel(l.id)} className="text-rose-400">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-              ))}
+                <div className="space-y-2">
+                  <p className="text-[11px] text-cyan-300 font-semibold">Sobre corte 3D</p>
+                  <div className="flex gap-1.5">
+                    <input
+                      value={draftAnatomyLabel}
+                      onChange={(e) => setDraftAnatomyLabel(e.target.value)}
+                      placeholder="Ej. Menisco medial"
+                      className="flex-1 min-w-0 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-[12px] text-slate-100"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") addLabel("anatomy", draftAnatomyLabel);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => addLabel("anatomy", draftAnatomyLabel)}
+                      className="px-2 rounded-lg bg-cyan-700/40 border border-cyan-600/50 text-cyan-100"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!draftAnatomyLabel.trim()}
+                      onClick={() => setPlaceMode(placeMode === "anatomy" ? null : "anatomy")}
+                      className={`px-2 rounded-lg border text-[10px] font-bold ${
+                        placeMode === "anatomy"
+                          ? "bg-cyan-500 text-slate-950 border-cyan-400"
+                          : "bg-slate-900 border-slate-700 text-slate-300"
+                      }`}
+                    >
+                      Ubicar
+                    </button>
+                  </div>
+                  <ul className="space-y-1">
+                    {anatomyLabels.map((l) => (
+                      <li
+                        key={l.id}
+                        className="flex items-center justify-between gap-2 text-[11px] text-slate-300 bg-slate-900/60 rounded px-2 py-1"
+                      >
+                        <span className="truncate">
+                          {l.text}
+                          {typeof l.xPct === "number" ? " · pin" : ""}
+                        </span>
+                        <button type="button" onClick={() => removeLabel(l.id)} className="text-rose-400">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+              {placeMode && (
+                <p className="text-[11px] text-amber-200/90">
+                  Modo ubicar ({placeMode === "us" ? "eco" : "3D"}): haz clic sobre la imagen para fijar el
+                  rótulo.
+                </p>
+              )}
             </div>
+
+            {focalPanel && (
+              <div className="rounded-xl border border-slate-700/50 bg-slate-950/40 p-3 space-y-2">
+                <label className="block text-[10px] uppercase tracking-widest text-slate-500 font-semibold">
+                  Modificación al regenerar el corte 3D
+                </label>
+                <textarea
+                  value={panelDirectives[focalPanel.panelLetter] || ""}
+                  onChange={(e) =>
+                    setPanelDirectives((prev) => ({
+                      ...prev,
+                      [focalPanel.panelLetter]: e.target.value,
+                    }))
+                  }
+                  rows={2}
+                  placeholder="Ej. Enfocar tendón rotuliano proximal, mismo eje longitudinal…"
+                  className="w-full bg-slate-950/80 border border-slate-700 focus:border-cyan-500 rounded-lg px-2.5 py-2 text-[11px] text-slate-200 outline-none resize-none"
+                />
+                <button
+                  type="button"
+                  disabled={!!regeneratingLetter}
+                  onClick={() =>
+                    handleRegeneratePanel(
+                      focalPanel,
+                      "Refine focal in-plane cut only; match US axis; no overview panel."
+                    )
+                  }
+                  className="inline-flex items-center gap-1 text-[10px] font-semibold text-cyan-300"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  Regenerar solo corte 3D
+                </button>
+              </div>
+            )}
 
             {(planeData.planeSummary || (planeData.structuresCrossed || []).length > 0) && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -748,15 +861,15 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
                   </div>
                 )}
                 {(planeData.structuresCrossed || []).length > 0 && (
-                  <div className="rounded-xl border border-slate-700/50 bg-slate-950/50 p-4 min-w-0">
+                  <div className="rounded-xl border border-slate-700/50 bg-slate-950/50 p-4">
                     <p className="text-[10px] font-mono uppercase tracking-widest text-slate-400 mb-2">
                       Estructuras cruzadas
                     </p>
-                    <ul className="space-y-1 min-w-0">
+                    <ul className="space-y-1">
                       {planeData.structuresCrossed!.map((s, i) => (
-                        <li key={i} className="text-[13px] text-slate-200 flex gap-2 min-w-0">
-                          <span className="text-cyan-400 shrink-0">▹</span>
-                          <span className="break-words whitespace-normal min-w-0">{s}</span>
+                        <li key={i} className="text-[13px] text-slate-200 flex gap-2">
+                          <span className="text-cyan-400">▹</span>
+                          <span>{s}</span>
                         </li>
                       ))}
                     </ul>
@@ -771,7 +884,7 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
           <div className="rounded-xl border border-dashed border-cyan-800/50 bg-slate-950/40 px-6 py-10 text-center">
             <Scan className="w-8 h-8 mx-auto mb-3 text-cyan-500/80" />
             <p className="text-sm text-slate-300">
-              Elige una eco de la galería y genera el plano 3D para ver el bridge lado a lado.
+              Elige eco + tipo de corte 3D y genera el par lado a lado.
             </p>
           </div>
         )}
@@ -785,17 +898,14 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
             setZoomUsUrl(null);
           }}
         >
-          <div
-            className="relative max-w-5xl w-full"
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div className="relative max-w-5xl w-full" onClick={(e) => e.stopPropagation()}>
             <button
               type="button"
               onClick={() => {
                 setZoomPanel(null);
                 setZoomUsUrl(null);
               }}
-              className="absolute -top-10 right-0 text-white/80 hover:text-white"
+              className="absolute -top-10 right-0 text-white/80"
             >
               <X className="w-6 h-6" />
             </button>

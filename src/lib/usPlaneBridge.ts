@@ -77,12 +77,34 @@ export function galleryToRealUs(img: GalleryImage): UsPlaneBridgeRealImage {
   };
 }
 
-/** Primary 3D panel for the bridge pair (prefer anatomy_with_plane). */
-export function pickBridgeAnatomyPanel(data: UsPlaneSimulatorData | null | undefined) {
+/** Focal 3D cut for the bridge pair (prefer in_plane_cut — same axis as US). */
+export function pickBridgeFocalPanel(data: UsPlaneSimulatorData | null | undefined) {
   const panels = data?.panels || [];
   return (
-    panels.find((p) => p.panelRole === "anatomy_with_plane" && p.imageUrl) ||
+    panels.find((p) => p.panelRole === "in_plane_cut" && p.imageUrl) ||
     panels.find((p) => p.imageUrl) ||
     null
   );
+}
+
+/** @deprecated use pickBridgeFocalPanel */
+export function pickBridgeAnatomyPanel(data: UsPlaneSimulatorData | null | undefined) {
+  return pickBridgeFocalPanel(data);
+}
+
+/** Keep only the focal cut panel for bridge mode. */
+export function keepFocalPanelsOnly(data: UsPlaneSimulatorData): UsPlaneSimulatorData {
+  const focal = (data.panels || []).filter((p) => p.panelRole === "in_plane_cut" && p.imageUrl);
+  const fallback = (data.panels || []).filter((p) => p.imageUrl).slice(0, 1);
+  const panels = (focal.length ? focal : fallback).map((p, i) => ({
+    ...p,
+    panelLetter: p.panelLetter || String.fromCharCode(65 + i),
+    panelRole: "in_plane_cut" as const,
+    panelTitle: p.panelTitle || "Corte 3D focal (mismo eje que la eco)",
+  }));
+  return {
+    ...data,
+    panels,
+    figureTitle: data.figureTitle || "FIGURA. ECO REAL Y CORTE 3D FOCAL",
+  };
 }

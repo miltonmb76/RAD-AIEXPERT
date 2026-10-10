@@ -11081,10 +11081,10 @@ Ejemplo:
                                 <div>
                                   <h4 className="text-sm font-semibold text-cyan-200 flex items-center gap-2">
                                     <Scan className="h-4 w-4 text-cyan-400" />
-                                    Bridge eco ? anatomía
+                                    Corte eco - anatomia
                                   </h4>
                                   <p className="text-[11px] text-slate-400 mt-1">
-                                    Eco real de la galería + plano 3D del mismo corte, con labels automáticos.
+                                    Eco real + corte 3D focal en el mismo eje, con rotulos editables.
                                   </p>
                                 </div>
                               </div>
@@ -11096,7 +11096,7 @@ Ejemplo:
                                 }}
                                 className="w-full px-3 py-2 rounded-xl text-xs font-semibold transition-colors bg-cyan-600/80 hover:bg-cyan-500 text-white"
                               >
-                                Ir a Bridge US?3D
+                                Ir a Bridge US-3D
                               </button>
                             </div>
 

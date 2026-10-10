@@ -1,5 +1,5 @@
 import { UsPlaneSimulatorData } from "../types";
-import { buildUsPlaneBridgeLabels, pickBridgeAnatomyPanel } from "../lib/usPlaneBridge";
+import { buildUsPlaneBridgeLabels, pickBridgeFocalPanel } from "../lib/usPlaneBridge";
 import { sanitizePdfText } from "./sanitizePdfText";
 
 function drawContained(
@@ -31,8 +31,58 @@ function drawContained(
   }
 }
 
+function drawLabelChips(
+  doc: any,
+  labels: { text: string; xPct?: number; yPct?: number }[],
+  boxX: number,
+  boxY: number,
+  boxW: number,
+  boxH: number,
+  factor: number,
+  color: [number, number, number]
+) {
+  const placed = labels.filter(
+    (l) => typeof l.xPct === "number" && typeof l.yPct === "number"
+  );
+  const legend = labels.filter(
+    (l) => !(typeof l.xPct === "number" && typeof l.yPct === "number")
+  );
+
+  placed.slice(0, 6).forEach((l) => {
+    const px = boxX + (Math.min(95, Math.max(5, l.xPct!)) / 100) * boxW;
+    const py = boxY + (Math.min(95, Math.max(5, l.yPct!)) / 100) * boxH;
+    const text = sanitizePdfText(l.text).slice(0, 36);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(6.2 * factor);
+    const tw = doc.getTextWidth(text) + 3 * factor;
+    const th = 3.6 * factor;
+    doc.setFillColor(15, 23, 42);
+    doc.setDrawColor(color[0], color[1], color[2]);
+    doc.setLineWidth(0.35);
+    doc.roundedRect(px - 1, py - th + 0.8, tw, th, 0.6, 0.6, "FD");
+    doc.setTextColor(255, 255, 255);
+    doc.text(text, px + 0.8, py - 0.6);
+  });
+
+  if (legend.length) {
+    let ly = boxY + boxH - 2.2 * factor;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(6 * factor);
+    legend.slice(0, 4).forEach((l) => {
+      const text = sanitizePdfText(l.text).slice(0, 42);
+      const tw = doc.getTextWidth(text) + 2.5 * factor;
+      doc.setFillColor(15, 23, 42);
+      doc.setDrawColor(color[0], color[1], color[2]);
+      doc.roundedRect(boxX + 1.5 * factor, ly - 2.8 * factor, Math.min(tw, boxW - 3 * factor), 3.2 * factor, 0.5, 0.5, "FD");
+      doc.setTextColor(248, 250, 252);
+      doc.text(text, boxX + 2.2 * factor, ly - 0.6 * factor);
+      ly -= 3.6 * factor;
+    });
+  }
+}
+
 /**
- * One-page PDF annex: US↔3D bridge (eco real | anatomía) + detail panels if room.
+ * One-page PDF: only ECO REAL | CORTE 3D FOCAL (same axis). No overview panel.
  */
 export function renderUsPlaneSimulatorAnnexToPDF(
   doc: any,
@@ -45,46 +95,47 @@ export function renderUsPlaneSimulatorAnnexToPDF(
     factor: number;
   }
 ) {
-  if (!data?.panels?.length && !data?.realUsImage?.url) return;
-  const valid = (data.panels || []).filter((p) => p?.imageUrl);
+  if (!data) return;
   const realUs = data.realUsImage?.url ? data.realUsImage : null;
-  const anatomy = pickBridgeAnatomyPanel(data);
-  if (!valid.length && !realUs) return;
+  const focal = pickBridgeFocalPanel(data);
+  const validFallback = (data.panels || []).filter((p) => p?.imageUrl);
+
+  if (!realUs && !focal?.imageUrl && !validFallback.length) return;
 
   const { marginX, pageWidth, pageHeight, contentWidth, factor } = options;
   const pageBottom = pageHeight - 12 * factor;
 
   doc.addPage();
-  let y = 20 * factor;
+  let y = 18 * factor;
 
+  // ASCII-safe title (jsPDF Helvetica breaks on ↔ and some accents)
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(11.5 * factor);
+  doc.setFontSize(11 * factor);
   doc.setTextColor(15, 23, 42);
   doc.text(
     realUs
-      ? "ANEXO: CORTE ECO ↔ ANATOMÍA (BRIDGE US–3D)"
-      : "ANEXO: SIMULADOR DE PLANO ECOGRÁFICO 3D",
+      ? "ANEXO: CORTE ECO - ANATOMIA (BRIDGE US-3D)"
+      : "ANEXO: SIMULADOR DE PLANO ECOGRAFICO 3D",
     marginX,
     y
   );
-  y += 4.2 * factor;
+  y += 4 * factor;
 
   doc.setDrawColor(8, 145, 178);
   doc.setLineWidth(0.7);
   doc.line(marginX, y, pageWidth - marginX, y);
-  y += 4.5 * factor;
+  y += 4 * factor;
 
-  const figTitle =
+  const figTitle = sanitizePdfText(
     data.figureTitle ||
-    (realUs
-      ? "FIGURA. ECO REAL Y PLANO ANATÓMICO 3D"
-      : "FIGURA. PLANO DE ADQUISICIÓN ECOGRÁFICA 3D");
+      (realUs
+        ? "FIGURA. ECO REAL Y CORTE 3D FOCAL"
+        : "FIGURA. PLANO DE ADQUISICION ECOGRAFICA 3D")
+  );
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(9.2 * factor);
-  const titleLines = doc
-    .splitTextToSize(sanitizePdfText(figTitle), contentWidth - 10 * factor)
-    .slice(0, 2);
-  const bannerH = Math.max(7 * factor, titleLines.length * 3.6 * factor + 3 * factor);
+  doc.setFontSize(9 * factor);
+  const titleLines = doc.splitTextToSize(figTitle, contentWidth - 10 * factor).slice(0, 2);
+  const bannerH = Math.max(7 * factor, titleLines.length * 3.5 * factor + 3 * factor);
   doc.setFillColor(236, 254, 255);
   doc.setDrawColor(165, 243, 252);
   doc.roundedRect(marginX, y, contentWidth, bannerH, 1.5, 1.5, "FD");
@@ -94,7 +145,7 @@ export function renderUsPlaneSimulatorAnnexToPDF(
   let ty = y + 4 * factor;
   titleLines.forEach((line: string) => {
     doc.text(line, marginX + 5.5 * factor, ty);
-    ty += 3.6 * factor;
+    ty += 3.5 * factor;
   });
   y += bannerH + 3 * factor;
 
@@ -107,122 +158,89 @@ export function renderUsPlaneSimulatorAnnexToPDF(
     .join("   ·   ");
   if (meta) {
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.8 * factor);
+    doc.setFontSize(7.6 * factor);
     doc.setTextColor(51, 65, 85);
     doc.text(sanitizePdfText(meta).slice(0, 140), marginX, y);
-    y += 4.5 * factor;
+    y += 4.2 * factor;
   }
 
   const gap = 3.5 * factor;
-  const labels =
+  const allLabels =
     data.bridgeLabels?.length
       ? data.bridgeLabels
       : buildUsPlaneBridgeLabels(data, realUs);
 
-  // Bridge row: eco | 3D (preferred when real US present)
-  if (realUs && anatomy?.imageUrl) {
-    const n = 2;
-    const imgW = (contentWidth - gap) / n;
-    const imgH = Math.min(68 * factor, imgW * 0.78);
+  // Exactly two images when bridge: US | focal 3D
+  if (realUs && focal?.imageUrl) {
+    const imgW = (contentWidth - gap) / 2;
+    const imgH = Math.min(78 * factor, imgW * 0.82);
     const slots = [
       {
         url: realUs.url,
         badge: "ECO REAL",
         caption: realUs.caption || realUs.label || "Captura del estudio",
+        labels: allLabels.filter((l) => l.side !== "anatomy"),
+        color: [16, 185, 129] as [number, number, number],
       },
       {
-        url: anatomy.imageUrl,
-        badge: `ANATOMÍA 3D · ${anatomy.panelLetter || "A"}`,
-        caption: anatomy.panelTitle || anatomy.anatomicalFocus || "Plano 3D",
+        url: focal.imageUrl!,
+        badge: "CORTE 3D FOCAL",
+        caption: focal.panelTitle || focal.anatomicalFocus || "Mismo eje que la eco",
+        labels: allLabels.filter((l) => l.side !== "us"),
+        color: [8, 145, 178] as [number, number, number],
       },
     ];
+
     slots.forEach((slot, i) => {
       const x = marginX + i * (imgW + gap);
       doc.setFillColor(248, 250, 252);
       doc.setDrawColor(203, 213, 225);
       doc.roundedRect(x, y, imgW, imgH, 1.2, 1.2, "FD");
       drawContained(doc, slot.url, x + 1.2, y + 1.2, imgW - 2.4, imgH - 2.4);
+      drawLabelChips(doc, slot.labels, x, y, imgW, imgH, factor, slot.color);
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(6.8 * factor);
-      doc.setTextColor(i === 0 ? 5 : 8, i === 0 ? 150 : 145, i === 0 ? 105 : 178);
-      doc.text(slot.badge, x, y + imgH + 3 * factor);
+      doc.setFontSize(7 * factor);
+      doc.setTextColor(slot.color[0], slot.color[1], slot.color[2]);
+      doc.text(slot.badge, x, y + imgH + 3.2 * factor);
       doc.setFont("helvetica", "normal");
       doc.setFontSize(6.5 * factor);
       doc.setTextColor(51, 65, 85);
       const cap = doc
         .splitTextToSize(sanitizePdfText(slot.caption), imgW)
         .slice(0, 2);
-      doc.text(cap, x, y + imgH + 5.8 * factor);
+      doc.text(cap, x, y + imgH + 6 * factor);
     });
     y += imgH + 12 * factor;
-
-    if (labels.length && y < pageBottom - 16 * factor) {
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(7.5 * factor);
-      doc.setTextColor(8, 145, 178);
-      doc.text("Labels del bridge", marginX, y);
-      y += 3.5 * factor;
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(7.2 * factor);
-      doc.setTextColor(30, 41, 59);
-      const labelLine = sanitizePdfText(labels.map((l) => l.text).join("  ·  "));
-      const ll = doc.splitTextToSize(labelLine, contentWidth).slice(0, 2);
-      doc.text(ll, marginX, y);
-      y += ll.length * 3.2 * factor + 3 * factor;
-    }
-
-    // Optional second 3D panel if different from anatomy and space remains
-    const other = valid.find(
-      (p) => p.panelLetter !== anatomy.panelLetter && p.imageUrl
-    );
-    if (other && y < pageBottom - 40 * factor) {
-      const detailW = Math.min(contentWidth * 0.55, 95 * factor);
-      const detailH = Math.min(36 * factor, detailW * 0.7);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(7.2 * factor);
-      doc.setTextColor(8, 145, 178);
-      doc.text(`Panel ${other.panelLetter} (detalle)`, marginX, y);
-      y += 2.5 * factor;
-      drawContained(doc, other.imageUrl!, marginX, y, detailW, detailH);
-      y += detailH + 4 * factor;
-    }
   } else {
-    // Fallback: classic 2-panel 3D layout
-    const n = Math.min(2, valid.length);
+    // Fallback single/dual 3D without US
+    const panels = focal?.imageUrl ? [focal] : validFallback.slice(0, 2);
+    const n = Math.max(1, panels.length);
     const imgW = (contentWidth - gap * (n - 1)) / n;
     const imgH = Math.min(72 * factor, imgW * 0.75);
-    for (let i = 0; i < n; i++) {
-      const p = valid[i];
+    panels.forEach((p, i) => {
       const x = marginX + i * (imgW + gap);
       drawContained(doc, p.imageUrl!, x, y, imgW, imgH);
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(7.2 * factor);
+      doc.setFontSize(7 * factor);
       doc.setTextColor(8, 145, 178);
-      doc.text(`Panel ${p.panelLetter}`, x, y + imgH + 3.2 * factor);
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(6.8 * factor);
-      doc.setTextColor(51, 65, 85);
-      const cap = doc
-        .splitTextToSize(sanitizePdfText(p.panelTitle || p.anatomicalFocus || ""), imgW)
-        .slice(0, 2);
-      doc.text(cap, x, y + imgH + 6.2 * factor);
-    }
-    y += imgH + 14 * factor;
+      doc.text(`Panel ${p.panelLetter || String.fromCharCode(65 + i)}`, x, y + imgH + 3 * factor);
+    });
+    y += imgH + 12 * factor;
   }
 
   const summary = sanitizePdfText(data.planeSummary || "");
-  if (summary && y < pageBottom - 18 * factor) {
+  if (summary && y < pageBottom - 16 * factor) {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(8 * factor);
     doc.setTextColor(8, 145, 178);
-    doc.text("Síntesis del plano", marginX, y);
-    y += 3.8 * factor;
+    doc.text("Sintesis del plano", marginX, y);
+    y += 3.6 * factor;
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.4 * factor);
+    doc.setFontSize(7.3 * factor);
     doc.setTextColor(30, 41, 59);
     const lines = doc.splitTextToSize(summary, contentWidth).slice(0, 5);
     doc.text(lines, marginX, y);
-    y += lines.length * 3.3 * factor + 2.5 * factor;
+    y += lines.length * 3.2 * factor + 2.5 * factor;
   }
 
   const crossed = (data.structuresCrossed || []).filter(Boolean);
@@ -231,13 +249,13 @@ export function renderUsPlaneSimulatorAnnexToPDF(
     doc.setFontSize(8 * factor);
     doc.setTextColor(8, 145, 178);
     doc.text("Estructuras cruzadas por el plano", marginX, y);
-    y += 3.8 * factor;
+    y += 3.6 * factor;
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.4 * factor);
+    doc.setFontSize(7.3 * factor);
     doc.setTextColor(30, 41, 59);
-    const crossedText = sanitizePdfText(crossed.join(" · "));
-    const maxLines = Math.max(2, Math.floor((pageBottom - y) / (3.3 * factor)));
-    const crossedLines = doc.splitTextToSize(crossedText, contentWidth).slice(0, maxLines);
+    const crossedLines = doc
+      .splitTextToSize(sanitizePdfText(crossed.join(" · ")), contentWidth)
+      .slice(0, Math.max(2, Math.floor((pageBottom - y) / (3.2 * factor))));
     doc.text(crossedLines, marginX, y);
   }
 }
