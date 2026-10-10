@@ -75,10 +75,7 @@ import {
   type ModelTask,
 } from "./lib/modelRouting";
 import { Findings3dRenderModule, Create3dRenderModal, Finding3dRender } from "./components/Findings3dRenderModule";
-import CaseAnalysisRenderer from "./components/CaseAnalysisRenderer";
-import InteractiveCaseEditor from "./components/InteractiveCaseEditor";
 import { ClassificationBreakdownModule } from "./components/ClassificationBreakdownModule";
-import { CaseAnalysisData, CaseAnalysisFormatOption, CaseAnalysisElementsConfig } from "./types";
 import { 
   Activity, 
   ShieldCheck,
@@ -2120,158 +2117,6 @@ Ejemplo:
   const [isEvaluatingAdditional, setIsEvaluatingAdditional] = useState<boolean>(false);
   const [additionalEvalError, setAdditionalEvalError] = useState<string | null>(null);
 
-  // States for Complete Case Analysis & Intelligent Medical Bibliography Search
-  const [caseAnalysis, setCaseAnalysis] = useState<string>("");
-  const [isAnalyzingCase, setIsAnalyzingCase] = useState<boolean>(false);
-  const [caseAnalysisError, setCaseAnalysisError] = useState<string | null>(null);
-  const [isIncorporatingDiffs, setIsIncorporatingDiffs] = useState<boolean>(false);
-  const [diffsIncorporated, setDiffsIncorporated] = useState<boolean>(false);
-  const [diffsError, setDiffsError] = useState<string | null>(null);
-  const [selectedCaseFormat, setSelectedCaseFormat] = useState<CaseAnalysisFormatOption>("flujograma_semiologico");
-  const [caseElements, setCaseElements] = useState<CaseAnalysisElementsConfig>({
-    includeSonographic: true,
-    includeSonographicDetails: true,
-    includeClinicalCorr: true,
-    includeCertainty: false,
-    includeDifferentials: true,
-    includeDiscardedDifferentials: true,
-    includeManagement: true,
-  });
-  const [isFormattingCaseJSON, setIsFormattingCaseJSON] = useState<boolean>(false);
-
-  // States to hold the structured case data editable in real-time on the main screen
-  const [editableCaseData, setEditableCaseData] = useState<CaseAnalysisData | null>(null);
-  const [checkedDetails, setCheckedDetails] = useState<boolean[]>([]);
-  const [checkedDifferentials, setCheckedDifferentials] = useState<boolean[]>([]);
-  const [checkedDecisionSteps, setCheckedDecisionSteps] = useState<boolean[]>([]);
-  const [isExtractingCaseData, setIsExtractingCaseData] = useState<boolean>(false);
-  const [caseDataError, setCaseDataError] = useState<string | null>(null);
-
-  // Automatically load/extract the structured Case Analysis components whenever caseAnalysis is populated or format changes
-  React.useEffect(() => {
-    if (caseAnalysis) {
-      const loadCaseAnalysisData = async () => {
-        setIsExtractingCaseData(true);
-        setCaseDataError(null);
-        try {
-          const response = await fetch("/api/extract-essential-findings", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ 
-              model: modelFor("case_analysis"),
-              analysisText: caseAnalysis,
-              requestedFormat: selectedCaseFormat,
-              elementsConfig: caseElements
-            }),
-          });
-          const data = await response.json();
-          if (response.ok && data.success && data.caseAnalysisData) {
-            setEditableCaseData(data.caseAnalysisData);
-            
-            // Initialize sub-level checkmarks
-            if (data.caseAnalysisData.sonographicPillar?.details) {
-              setCheckedDetails(data.caseAnalysisData.sonographicPillar.details.map(() => true));
-            } else {
-              setCheckedDetails([]);
-            }
-            if (data.caseAnalysisData.diagnostics) {
-              setCheckedDifferentials(data.caseAnalysisData.diagnostics.map(() => true));
-            } else {
-              setCheckedDifferentials([]);
-            }
-            if (data.caseAnalysisData.decisionFlow) {
-              setCheckedDecisionSteps(data.caseAnalysisData.decisionFlow.map(() => true));
-            } else {
-              setCheckedDecisionSteps([]);
-            }
-          } else {
-            setCaseDataError(data.error || "No se pudo extraer los componentes estructurados del caso actual.");
-          }
-        } catch (err: any) {
-          console.error("Error al estructurar el caso:", err);
-          setCaseDataError("Error de comunicación/red al estructurar el flujograma.");
-        } finally {
-          setIsExtractingCaseData(false);
-        }
-      };
-
-      loadCaseAnalysisData();
-    } else {
-      setEditableCaseData(null);
-      setCaseDataError(null);
-      setCheckedDetails([]);
-      setCheckedDifferentials([]);
-      setCheckedDecisionSteps([]);
-    }
-  }, [caseAnalysis, selectedCaseFormat]);
-
-  const handleFormatAndIncorporateCaseAnalysis = () => {
-    if (!editableCaseData) return;
-
-    setIsFormattingCaseJSON(true);
-    setDiffsError(null);
-    try {
-      // Clone the editableCaseData to avoid modifying active state before saving
-      const finalCaseData = JSON.parse(JSON.stringify(editableCaseData)) as CaseAnalysisData;
-
-      // 1. Filter sonographic details based on checkedDetails checkbox states
-      if (finalCaseData.sonographicPillar?.details) {
-        finalCaseData.sonographicPillar.details = finalCaseData.sonographicPillar.details.filter((_, i) => checkedDetails[i]);
-      }
-
-      // 2. Filter diagnostics based on checkedDifferentials checkbox states
-      if (finalCaseData.diagnostics) {
-        finalCaseData.diagnostics = finalCaseData.diagnostics.filter((_, i) => checkedDifferentials[i]);
-      }
-
-      // 3. Filter decision flow steps based on checkedDecisionSteps checkbox states
-      if (finalCaseData.decisionFlow) {
-        finalCaseData.decisionFlow = finalCaseData.decisionFlow.filter((_, i) => checkedDecisionSteps[i]);
-      }
-
-      // 4. Update elementsConfig in final data
-      finalCaseData.elementsConfig = {
-        ...caseElements,
-        includeSonographicDetails: caseElements.includeSonographic && (finalCaseData.sonographicPillar?.details?.length ?? 0) > 0,
-        includeDiscardedDifferentials: caseElements.includeDifferentials && (finalCaseData.diagnostics?.filter((d: any, idx: number) => d.refutingCriteria && idx > 0).length ?? 0) > 0
-      };
-
-      // Construct the standard [CASE_ANALYSIS_JSON] wrapping block
-      const jsonBlock = `[CASE_ANALYSIS_JSON]\n${JSON.stringify(finalCaseData, null, 2)}\n[/CASE_ANALYSIS_JSON]\n\n`;
-
-      // Construct the formatted markdown text summary accompanying the JSON
-      let textSummary = `**ANÁLISIS INTEGRADO DE CASO (${selectedCaseFormat.toUpperCase().replace("_", " ")})**\n\n`;
-      if (caseElements.includeSonographic && finalCaseData.sonographicPillar) {
-        textSummary += `• **Pilar Sonográfico Fundamental**: ${finalCaseData.sonographicPillar.primaryFinding}\n`;
-      }
-      if (caseElements.includeClinicalCorr && finalCaseData.clinicalCorrelation) {
-        textSummary += `• **Correlación Clínica/Lab**: ${finalCaseData.clinicalCorrelation}\n`;
-      }
-      if (caseElements.includeDifferentials && finalCaseData.diagnostics?.length) {
-        textSummary += `• **Diagnóstico Principal**: ${finalCaseData.diagnostics[0]?.name}\n`;
-      }
-      if (caseElements.includeManagement && finalCaseData.managementRecommendation) {
-        textSummary += `• **Conducta Recomendada**: ${finalCaseData.managementRecommendation}\n`;
-      }
-
-      setGeneratedReport(prev => {
-        return mergeCaseAnalysisBlock(prev || "", finalCaseData.format || "custom", jsonBlock, textSummary);
-      });
-      setEditedReportText(prev => {
-        return mergeCaseAnalysisBlock(prev || "", finalCaseData.format || "custom", jsonBlock, textSummary);
-      });
-      setDiffsIncorporated(true);
-      setTimeout(() => {
-        setDiffsIncorporated(false);
-      }, 3000);
-    } catch (err: any) {
-      console.error("Error al formatear e incorporar el análisis:", err);
-      setDiffsError(err?.message || "Error al procesar la inserción de datos.");
-    } finally {
-      setIsFormattingCaseJSON(false);
-    }
-  };
-
   const [bibliography, setBibliography] = useState<string>("");
   const [isSearchingBibliography, setIsSearchingBibliography] = useState<boolean>(false);
   const [isSearchingMoreBibliography, setIsSearchingMoreBibliography] = useState<boolean>(false);
@@ -2361,7 +2206,6 @@ Ejemplo:
     muscleTendon3d: false,
     wrist3d: false,
     radar: false,
-    case_analysis: false,
     bibliography: false,
     operational_summary: true,
     patient_summary: true,
@@ -2619,7 +2463,6 @@ Ejemplo:
       muscleTendon3d: select,
       wrist3d: select,
       radar: select,
-      case_analysis: select,
       bibliography: select,
       operational_summary: select,
       patient_summary: select,
@@ -2643,7 +2486,6 @@ Ejemplo:
     clinicalScorecardData,
     editedReportText,
     generatedReport,
-    handleAnalyzeCase,
     handleGenerateDynamicGlossary,
     handleGenerateSchematicSummary,
     handleSearchBibliography,
@@ -2744,7 +2586,6 @@ Ejemplo:
   // States for expanding sections (maximizing read size)
   const [isMainReportExpanded, setIsMainReportExpanded] = useState<boolean>(false);
   const [isSmartChatExpanded, setIsSmartChatExpanded] = useState<boolean>(false);
-  const [isCaseAnalysisExpanded, setIsCaseAnalysisExpanded] = useState<boolean>(false);
   const [isBibliographyExpanded, setIsBibliographyExpanded] = useState<boolean>(false);
   const [isPatientSummaryExpanded, setIsPatientSummaryExpanded] = useState<boolean>(false);
   /** Which text engine produced the last patient explanation (openai | gemini) */
@@ -2966,9 +2807,6 @@ Ejemplo:
     setAdditionalEvaluation("");
     setIsEvaluatingAdditional(false);
     setAdditionalEvalError(null);
-    setCaseAnalysis("");
-    setIsAnalyzingCase(false);
-    setCaseAnalysisError(null);
     setBibliography("");
     setIsSearchingBibliography(false);
     setIsSearchingMoreBibliography(false);
@@ -3497,8 +3335,6 @@ Ejemplo:
     setBibliography,
     setBibliographyError,
     setBibliographySources,
-    setCaseAnalysis,
-    setCaseAnalysisError,
     setClassRecommendations,
     setCurrentCloudStudyId,
     setCurrentModInstruction,
@@ -3732,75 +3568,6 @@ Ejemplo:
       setAdditionalEvalError(err?.message || String(err));
     } finally {
       setIsEvaluatingAdditional(false);
-    }
-  };
-
-  // ACTION: COMPLETE CASE ANALYSIS
-  const handleAnalyzeCase = async () => {
-    if (!generatedReport) return;
-    setIsAnalyzingCase(true);
-    setCaseAnalysisError(null);
-    setCaseAnalysis("");
-    setDiffsIncorporated(false);
-    setDiffsError(null);
-    try {
-      const response = await fetch("/api/analyze-case", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: modelFor("case_analysis"),
-          report: generatedReport,
-          studyType: studyType || "Estudio Radiológico",
-          clinicalHistory: clinicalHistory || "",
-          findings: findings || "",
-        }),
-      });
-      const data = await response.json();
-      if (data.success && data.analysis) {
-        setCaseAnalysis(data.analysis);
-      } else {
-        setCaseAnalysisError(data.error || "Error al realizar el análisis del caso.");
-      }
-    } catch (err: any) {
-      console.error("Error al analizar caso:", err);
-      setCaseAnalysisError(err?.message || String(err));
-    } finally {
-      setIsAnalyzingCase(false);
-    }
-  };
-
-  // ACTIONS FOR ADVANCED VASCULAR ANALYSIS & DIAGRAMS
-
-  const handleIncorporateDifferentialDiagnostics = async () => {
-    if (!generatedReport || !caseAnalysis) return;
-    setIsIncorporatingDiffs(true);
-    setDiffsError(null);
-    try {
-      const response = await fetch("/api/incorporate-differentials", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: modelFor("case_analysis"),
-          currentReport: generatedReport,
-          caseAnalysis: caseAnalysis,
-        }),
-      });
-      const data = await response.json();
-      if (data.success && data.report) {
-        if (generatedReport) {
-          setReportHistory((prev) => [...prev, generatedReport]);
-          setReportRedoHistory([]);
-        }
-        setGeneratedReport(data.report);
-        setDiffsIncorporated(true);
-      } else {
-        setDiffsError(data.error || "Error al incorporar los diagnósticos diferenciales sintetizados.");
-      }
-    } catch (err: any) {
-      console.error("Error al incorporar diagnósticos diferenciales:", err);
-      setDiffsError(err?.message || String(err));
-    } finally {
-      setIsIncorporatingDiffs(false);
     }
   };
 
@@ -4427,7 +4194,7 @@ Ejemplo:
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: modelFor("case_analysis"),
+          model: modelFor("pathology"),
           report: reportText,
           studyType: studyType || "Estudio Radiológico"
         }),
@@ -10029,13 +9796,6 @@ Ejemplo:
                                   color: "text-indigo-400 border-indigo-500/30 bg-indigo-950/20"
                                 },
                                 {
-                                  id: "case_analysis",
-                                  label: "🩺 Análisis de Caso Clinico / Diagnóstico Avanzado (Anexo de Correlación PDF)",
-                                  badge: "CORRELACIÓN & PDF",
-                                  desc: "Desarrolla correlación fisiopatológica y flujograma para exportar al PDF.",
-                                  color: "text-emerald-400 border-emerald-500/30 bg-emerald-950/20"
-                                },
-                                {
                                   id: "bibliography",
                                   label: "📚 Búsqueda Bibliográfica de Soporte (Grounding)",
                                   badge: "GROUNDING",
@@ -10177,69 +9937,8 @@ Ejemplo:
                             </div>
                           </div>
 
-                          {/* --- NUEVA SECCIÓN DE ANÁLISIS DE CASO Y BÚSQUEDA DE BIBLIOGRAFÍA --- */}
+                          {/* --- Búsqueda bibliográfica y módulos auxiliares --- */}
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {/* Card 1: Caso Clínico completo */}
-                            <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-emerald-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
-                              <div className="flex items-center gap-2 justify-between">
-                                <div className="flex items-center gap-2">
-                                  <Activity className="h-4 w-4 text-emerald-400" />
-                                  <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
-                                    Diagnóstico Avanzado
-                                  </h4>
-                                </div>
-                                <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-emerald-950 text-emerald-400 border border-emerald-900/30 px-2 py-0.5 rounded">
-                                  CORRELACIÓN & FORMATOS PDF
-                                </span>
-                              </div>
-                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Desarrolla una correlación fisiopatológica sobre los hallazgos principales y permite elegir el formato de exportación a PDF (Flujograma Semiológico, Flujograma Algorítmico, Pilares o Mapa).
-                              </p>
-
-                              {/* Formats Selection Buttons */}
-                              <div className="space-y-1.5">
-                                <span className="text-[9px] font-mono font-bold text-emerald-400 uppercase tracking-wider block">
-                                  Elegir Formato para Exportar al PDF:
-                                </span>
-                                <div className="grid grid-cols-2 gap-1.5">
-                                  {[
-                                    { id: "flujograma_semiologico", label: "Opción 1: Semiológico", desc: "Ciclo Pensamiento" },
-                                    { id: "flujograma_algoritmico", label: "Opción 2: Flujograma", desc: "Árbol de Decisión" },
-                                    { id: "esquema_pilares", label: "Opción 3: Pilares", desc: "Integración" },
-                                    { id: "mapa_diferenciales", label: "Opción 4: Mapa", desc: "Diferenciales" },
-                                    { id: "matriz_semiotica", label: "Opción 5: Matriz", desc: "Semiótica Comparativa" },
-                                  ].map(fmt => (
-                                    <button
-                                      key={fmt.id}
-                                      type="button"
-                                      onClick={() => setSelectedCaseFormat(fmt.id as CaseAnalysisFormatOption)}
-                                      className={`p-2 rounded-lg border text-left transition-all cursor-pointer ${
-                                        selectedCaseFormat === fmt.id
-                                          ? "bg-emerald-950/80 border-emerald-400 text-emerald-300 ring-1 ring-emerald-500/40"
-                                          : "bg-slate-950/80 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200"
-                                      }`}
-                                    >
-                                      <div className="text-[9.5px] font-mono font-black uppercase tracking-tight">{fmt.label}</div>
-                                      <div className="text-[8px] font-medium text-slate-500 truncate">{fmt.desc}</div>
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-
-                              <button
-                                onClick={handleAnalyzeCase}
-                                disabled={isAnalyzingCase}
-                                className="w-full py-3 bg-slate-950 hover:bg-slate-900/60 disabled:opacity-50 border-2 border-slate-800 hover:border-emerald-500/30 text-emerald-400 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2 font-mono cursor-pointer"
-                              >
-                                {isAnalyzingCase ? (
-                                  <RefreshCw className="h-4 w-4 animate-spin text-emerald-450" />
-                                ) : (
-                                  <Sparkles className="h-4 w-4 text-emerald-400" />
-                                )}
-                                Análisis de Caso (Generar)
-                              </button>
-                            </div>
-
                             {/* Card 2: Búsqueda bibliográfica inteligente */}
                             <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-teal-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
                               <div className="flex items-center gap-2 justify-between">
@@ -12364,210 +12063,6 @@ Ejemplo:
                                 <pre className="text-[10px] text-slate-300 font-mono overflow-x-auto whitespace-pre-wrap p-2 bg-slate-950 rounded border border-slate-900 leading-relaxed max-h-40">
                                   {buildDynamicSemiologyMarkdownTable()}
                                 </pre>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Render Case Analysis Panel */}
-                          {isAnalyzingCase && (
-                            <div className="bg-[#0b1219]/60 border-2 border-emerald-500/10 rounded-2xl p-6 flex flex-col items-center justify-center py-10 text-center space-y-3 shadow-lg animate-pulse">
-                              <Activity className="h-6 w-6 text-emerald-450 animate-spin" />
-                              <p className="text-[10px] font-mono font-black text-slate-300 uppercase tracking-widest">
-                                Estructurando análisis caso clínico completo...
-                              </p>
-                              <p className="text-[9px] font-medium text-slate-500 uppercase tracking-wider max-w-sm">
-                                Se están evaluando los diagnósticos diferenciales prioritarios y correlaciones fisiopatológicas del informe.
-                              </p>
-                            </div>
-                          )}
-
-                          {caseAnalysisError && (
-                            <div className="p-3 bg-rose-950/10 border border-rose-900/30 rounded-xl text-rose-400 text-[10px] font-mono font-bold uppercase tracking-tight">
-                              {caseAnalysisError}
-                            </div>
-                          )}
-
-                          {caseAnalysis && (
-                            <div className={isCaseAnalysisExpanded
-                              ? "fixed inset-4 md:inset-10 z-50 bg-[#0a1114]/95 backdrop-blur-2xl border-2 border-emerald-500/40 rounded-3xl p-6 md:p-8 flex flex-col space-y-4 shadow-2xl overflow-y-auto transition-all duration-355"
-                              : "bg-[#0a1114] border-2 border-emerald-500/10 rounded-2xl p-6 space-y-4 shadow-2xl relative overflow-hidden animate-fade-in transition-all duration-355"
-                            }>
-                              <div className="flex items-center justify-between border-b border-slate-850 pb-3 font-sans">
-                                <div className="flex items-center gap-2">
-                                  <Activity className="h-4 w-4 text-emerald-400" />
-                                  <h4 className="text-xs font-black text-emerald-400 uppercase tracking-widest font-mono">
-                                    INFORME DE ANÁLISIS DE CASO COMPLETO
-                                  </h4>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => setIsCaseAnalysisExpanded(p => !p)}
-                                    className={`p-2 rounded-xl border transition-all duration-200 cursor-pointer flex items-center justify-center ${
-                                      isCaseAnalysisExpanded
-                                        ? "bg-emerald-950/90 border-emerald-500/50 text-emerald-300 ring-1 ring-emerald-500/30"
-                                        : "bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-100"
-                                    }`}
-                                    title={isCaseAnalysisExpanded ? "Restaurar tamaño estándar de componente" : "Maximizar área de lectura (Modo Expandido)"}
-                                  >
-                                    {isCaseAnalysisExpanded ? (
-                                      <Minimize2 className="h-4.5 w-4.5" />
-                                    ) : (
-                                      <Maximize2 className="h-4.5 w-4.5" />
-                                    )}
-                                  </button>
-                                  <button
-                                    onClick={() => copyToClipboard(caseAnalysis, false)}
-                                    className="text-[9px] font-black text-slate-400 hover:text-emerald-400 border border-slate-800 hover:border-emerald-500/20 px-2.5 py-1 rounded bg-slate-950/40 uppercase tracking-wider font-mono transition-all cursor-pointer"
-                                  >
-                                    Copiar Análisis
-                                  </button>
-                                </div>
-                              </div>
-
-                              {diffsError && (
-                                <div className="p-3 bg-rose-950/20 border border-rose-500/30 rounded-xl text-rose-200 text-[10.5px] font-semibold leading-relaxed font-sans select-none">
-                                  ⚠️ Error al incorporar: {diffsError}
-                                </div>
-                              )}
-
-                              {/* Format Configurator & PDF Export Inserter Card */}
-                              <div className="bg-[#05110d] border-2 border-emerald-500/30 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
-                                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-emerald-900/40 pb-3">
-                                  <div className="flex items-center gap-2">
-                                    <Sparkles className="h-4.5 w-4.5 text-emerald-400 animate-pulse" />
-                                    <h5 className="text-xs font-black uppercase font-mono tracking-wider text-emerald-300">
-                                      OPCIONES DE FORMATO E INSERCIÓN PARA PDF Y REPORTE
-                                    </h5>
-                                  </div>
-                                  <span className="text-[9px] font-mono text-emerald-400 font-extrabold bg-emerald-950 border border-emerald-800 px-2.5 py-0.5 rounded uppercase tracking-wider">
-                                    FORMATOS EXPORTABLES INTERACTIVOS
-                                  </span>
-                                </div>
-
-                                <p className="text-[11px] text-slate-300 font-medium leading-relaxed">
-                                  Selecciona el formato deseado para estructurar este análisis de caso. Cada elemento e hipótesis tendrá su propia casilla para que puedas aceptarlo o desecharlo, y podrás ver la representación gráfica del PDF en tiempo real antes de insertarla:
-                                </p>
-
-                                {/* Grid of 4 Formats */}
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
-                                  {[
-                                    { id: "flujograma_semiologico", label: "Opción 1: Flujograma Semiológico", icon: "✨", desc: "Ciclo de Pensamiento Radiológico" },
-                                    { id: "flujograma_algoritmico", label: "Opción 2: Flujograma", icon: "🔀", desc: "Árbol Algorítmico de Decisión" },
-                                    { id: "esquema_pilares", label: "Opción 3: Esquema por Pilares", icon: "🏛️", desc: "Integración Multidisciplinaria" },
-                                    { id: "mapa_diferenciales", label: "Opción 4: Mapa Diferencial", icon: "🗺️", desc: "Mapa de Diagnósticos" },
-                                    { id: "matriz_semiotica", label: "Opción 5: Matriz Semiótica", icon: "⚖️", desc: "Matriz Semiótica Comparativa" },
-                                  ].map(fmt => (
-                                    <button
-                                      key={fmt.id}
-                                      type="button"
-                                      onClick={() => {
-                                        setSelectedCaseFormat(fmt.id as CaseAnalysisFormatOption);
-                                        setDiffsIncorporated(false);
-                                      }}
-                                      className={`p-3 rounded-xl border text-left transition-all flex flex-col justify-between cursor-pointer ${
-                                        selectedCaseFormat === fmt.id
-                                          ? "bg-emerald-950/80 border-emerald-400 text-emerald-200 ring-2 ring-emerald-500/30 shadow-md"
-                                          : "bg-slate-900/60 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200"
-                                      }`}
-                                    >
-                                      <div className="flex items-center gap-1.5 mb-1">
-                                        <span className="text-base">{fmt.icon}</span>
-                                        <span className="text-[10px] font-black uppercase font-mono tracking-tight leading-tight">{fmt.label}</span>
-                                      </div>
-                                      <span className="text-[8.5px] font-medium text-slate-400 leading-tight block">{fmt.desc}</span>
-                                    </button>
-                                  ))}
-                                </div>
-
-                                {/* Interactive Editor State Handlers */}
-                                {isExtractingCaseData ? (
-                                  <div className="bg-slate-950/80 border border-emerald-500/10 rounded-2xl p-8 flex flex-col items-center justify-center text-center space-y-3 py-10 animate-pulse">
-                                    <Loader2 className="h-6 w-6 text-emerald-400 animate-spin" />
-                                    <p className="text-[10px] font-mono font-bold uppercase tracking-widest text-emerald-300">Estructurando campos interactivos del formato...</p>
-                                    <p className="text-[9px] font-mono text-slate-500">Separando afirmaciones, criterios y pilares para control total</p>
-                                  </div>
-                                ) : caseDataError ? (
-                                  <div className="p-4 bg-rose-950/10 border border-rose-900/35 rounded-2xl text-rose-400 text-[10px] font-mono font-bold uppercase tracking-tight flex items-center gap-2">
-                                    <span>⚠️</span>
-                                    <span>{caseDataError} (Puedes regenerar el análisis para reintentar)</span>
-                                  </div>
-                                ) : editableCaseData ? (
-                                  <div className="pt-2">
-                                    <InteractiveCaseEditor
-                                      selectedCaseFormat={selectedCaseFormat}
-                                      editableCaseData={editableCaseData}
-                                      setEditableCaseData={setEditableCaseData}
-                                      caseElements={caseElements}
-                                      setCaseElements={setCaseElements}
-                                      checkedDetails={checkedDetails}
-                                      setCheckedDetails={setCheckedDetails}
-                                      checkedDifferentials={checkedDifferentials}
-                                      setCheckedDifferentials={setCheckedDifferentials}
-                                      checkedDecisionSteps={checkedDecisionSteps}
-                                      setCheckedDecisionSteps={setCheckedDecisionSteps}
-                                    />
-                                  </div>
-                                ) : (
-                                  <div className="bg-[#0b1219]/30 border border-slate-800/50 rounded-2xl p-6 text-center text-slate-400 text-[11px] font-medium">
-                                    Genera un análisis completo de caso arriba para habilitar el editor interactivo y la previsualización del PDF.
-                                  </div>
-                                )}
-
-                                {/* Action Buttons */}
-                                <div className="flex flex-col sm:flex-row gap-2 pt-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleFormatAndIncorporateCaseAnalysis()}
-                                    disabled={isFormattingCaseJSON || !editableCaseData || diffsIncorporated}
-                                    className={`flex-1 py-3 px-4 rounded-xl font-mono text-[10.5px] font-black uppercase tracking-widest border transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                                      diffsIncorporated
-                                        ? "bg-emerald-950/40 border-emerald-500/40 text-emerald-300 cursor-not-allowed"
-                                        : isFormattingCaseJSON
-                                        ? "bg-emerald-900/40 border-emerald-500/50 text-emerald-200 animate-pulse cursor-wait"
-                                        : !editableCaseData
-                                        ? "bg-slate-900 border-slate-850 text-slate-600 cursor-not-allowed"
-                                        : "bg-emerald-600 hover:bg-emerald-500 text-slate-950 border-emerald-400 font-extrabold shadow-lg hover:shadow-emerald-500/20 active:scale-[0.99]"
-                                    }`}
-                                  >
-                                    {isFormattingCaseJSON ? (
-                                      <>
-                                        <Loader2 className="h-4 w-4 animate-spin text-slate-950" />
-                                        <span>Insertando en Reporte / PDF...</span>
-                                      </>
-                                    ) : diffsIncorporated ? (
-                                      <>
-                                        <Check className="h-4 w-4 text-emerald-400" />
-                                        <span>Análisis Estructurado Insertado (Para PDF)</span>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Sparkles className="h-4 w-4 text-slate-950" />
-                                        <span>Insertar Análisis Estructurado en Reporte Activo (PDF)</span>
-                                      </>
-                                    )}
-                                  </button>
-
-                                  <button
-                                    type="button"
-                                    onClick={handleIncorporateDifferentialDiagnostics}
-                                    disabled={isIncorporatingDiffs || diffsIncorporated}
-                                    className={`py-3 px-4 rounded-xl font-mono text-[10px] font-black uppercase tracking-widest border transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                                      diffsIncorporated
-                                        ? "bg-slate-950 border-slate-800 text-slate-500 cursor-not-allowed"
-                                        : "bg-slate-900 hover:bg-slate-850 text-emerald-300 border-emerald-500/30"
-                                    }`}
-                                  >
-                                    <Sparkles className="h-3.5 w-3.5 text-emerald-400" />
-                                    <span>Texto Plano al Reporte</span>
-                                  </button>
-                                </div>
-                              </div>
-
-                              <div className={`bg-[#05090b] p-6 rounded-xl border border-slate-850 shadow-inner overflow-x-auto overflow-y-auto ${
-                                isCaseAnalysisExpanded ? "flex-1 max-h-none" : "max-h-[500px]"
-                              }`}>
-                                {renderElegantResponse(caseAnalysis, "text-emerald-400")}
                               </div>
                             </div>
                           )}

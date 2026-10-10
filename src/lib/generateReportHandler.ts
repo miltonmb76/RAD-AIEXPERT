@@ -75,8 +75,6 @@ export type GenerateReportHandlerDeps = {
   setBibliography: (...args: any[]) => void;
   setBibliographyError: (...args: any[]) => void;
   setBibliographySources: (...args: any[]) => void;
-  setCaseAnalysis: (...args: any[]) => void;
-  setCaseAnalysisError: (...args: any[]) => void;
   setClassRecommendations: (...args: any[]) => void;
   setCurrentCloudStudyId: (...args: any[]) => void;
   setCurrentModInstruction: (...args: any[]) => void;
@@ -181,8 +179,6 @@ export function createGenerateReportHandler(d: GenerateReportHandlerDeps) {
       setBibliography,
       setBibliographyError,
       setBibliographySources,
-      setCaseAnalysis,
-      setCaseAnalysisError,
       setClassRecommendations,
       setCurrentCloudStudyId,
       setCurrentModInstruction,
@@ -239,8 +235,6 @@ export function createGenerateReportHandler(d: GenerateReportHandlerDeps) {
     setCurrentModInstruction("");
     setModifyError(null);
     setAdditionalEvalError(null);
-    setCaseAnalysis("");
-    setCaseAnalysisError(null);
     setBibliography("");
     setBibliographyError(null);
     setBibliographySources([]);
