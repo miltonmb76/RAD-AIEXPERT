@@ -140,17 +140,13 @@ export function collectFindingsForMap(opts: {
 }): FindingsMapItem[] {
   const items: FindingsMapItem[] = [];
   const seen = new Set<string>();
-  const panelLetters =
-    (opts.panelLetters || []).map((p) => p.toUpperCase()).filter(Boolean) ||
-    (opts.atlasData?.panels || [])
-      .map((p) => (p.panelLetter || "").toUpperCase())
-      .filter(Boolean);
-  const letters =
-    panelLetters.length > 0
-      ? panelLetters
-      : (opts.atlasData?.panels || [])
-          .map((p) => (p.panelLetter || "").toUpperCase())
-          .filter(Boolean);
+  const fromOpts = (opts.panelLetters || [])
+    .map((p) => p.toUpperCase())
+    .filter(Boolean);
+  const fromAtlas = (opts.atlasData?.panels || [])
+    .map((p) => (p.panelLetter || "").toUpperCase())
+    .filter(Boolean);
+  const letters = fromOpts.length ? fromOpts : fromAtlas;
   const fallbackPanel = letters[0] || "A";
 
   const push = (item: FindingsMapItem) => {
