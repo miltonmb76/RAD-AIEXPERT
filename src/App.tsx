@@ -10920,7 +10920,7 @@ Ejemplo:
                                     Pack diagnostico (1 pagina)
                                   </h4>
                                   <p className="text-[11px] text-slate-400 mt-1">
-                                    Ancla + factores + imagen (focal / suite 3D del estudio / Atlas) en una lamina PDF.
+                                    Ancla + factores + imagenes focales on-demand (motor Corte Focal) o suite/Atlas.
                                   </p>
                                 </div>
                               </div>
@@ -11422,9 +11422,14 @@ Ejemplo:
                                   scorecardData={clinicalScorecardData}
                                   atlas3dData={atlas3dData}
                                   focalLesion3dData={focalLesion3dData}
+                                  setFocalLesion3dData={setFocalLesion3dData}
+                                  setIncludeFocalLesion3dInReport={setIncludeFocalLesion3dInReport}
                                   dominantLesionCard={dominantLesionCardData}
                                   preferredSuiteId={selectedSpecificSuite?.id || null}
                                   preferredSuiteLabel={selectedSpecificSuite?.label || null}
+                                  reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
+                                  studyType={specificStudy || studyType || ""}
+                                  selectedModel={modelFor("focal_lesion3d")}
                                   suiteSources={[
                                     { id: "vascular3d", label: "Suite Vascular 3D", panels: vascular3dData?.panels, findingTable: vascular3dData?.hemodynamicTable },
                                     { id: "thyroid3d", label: "Suite Tiroides 3D", panels: thyroid3dData?.panels, findingTable: thyroid3dData?.noduleTable },
