@@ -11,6 +11,8 @@ import { renderFindingsInfographicAnnexToPDF } from "../utils/findingsInfographi
 import { pickDominantLesionImage, pickDominantLesionImageB } from "./dominantLesionCard";
 import { renderDominantLesionCardAnnexToPDF } from "../utils/dominantLesionCardPdfRenderer";
 import { renderDiagnosticPackAnnexToPDF } from "../utils/diagnosticPackPdfRenderer";
+import { renderCaseStoryboardAnnexesToPDF } from "../utils/caseStoryboardPdfRenderer";
+import { caseStoryboardIsRenderable } from "../lib/caseStoryboard";
 import { diagnosticPackIsRenderable } from "./diagnosticPack";
 import { renderFocalLesion3DAnnexToPDF } from "../utils/focalLesion3dPdfRenderer";
 import { renderKidney3DPageToPdf } from "../utils/kidney3dPdfRenderer";
@@ -60,6 +62,7 @@ export type NativePdfDownloadDeps = {
   findings3dRenders: any;
   findingsInfographicData: any;
   diagnosticPackData?: any;
+  caseStoryboardData?: any;
   dominantLesionCardData: any;
   focalLesion3dData: any;
   getParagraphSeverity: (text: string) => "critical" | "altered" | "normal";
@@ -72,6 +75,7 @@ export type NativePdfDownloadDeps = {
   includeElastographyInReport: boolean;
   includeFindingsInfographicInReport: boolean;
   includeDiagnosticPackInReport?: boolean;
+  includeCaseStoryboardInReport?: boolean;
   includeDominantLesionCardInReport: boolean;
   includeFocalLesion3dInReport: boolean;
   includeKidney3dInReport: boolean;
@@ -146,6 +150,7 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
       findings3dRenders,
       findingsInfographicData,
       diagnosticPackData,
+      caseStoryboardData,
       dominantLesionCardData,
       focalLesion3dData,
       getParagraphSeverity,
@@ -158,6 +163,7 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
       includeElastographyInReport,
       includeFindingsInfographicInReport,
       includeDiagnosticPackInReport,
+      includeCaseStoryboardInReport,
       includeDominantLesionCardInReport,
       includeFocalLesion3dInReport,
       includeKidney3dInReport,
@@ -2988,6 +2994,24 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
           marginX,
           pageWidth,
           pageHeight,
+        });
+      }
+
+      // --- ANEXO: STORYBOARD DEL CASO (secuencia narrativa, dual tono) ---
+      const activeCaseStoryboard = studyOverride
+        ? (studyOverride as any).caseStoryboardData
+        : (pdfStateRef.current?.caseStoryboardData || caseStoryboardData);
+      const shouldIncludeCaseStoryboard = studyOverride
+        ? ((studyOverride as any).includeCaseStoryboardInReport !== false)
+        : ((pdfStateRef.current?.includeCaseStoryboardInReport !== false) &&
+            includeCaseStoryboardInReport !== false);
+      if (shouldIncludeCaseStoryboard && caseStoryboardIsRenderable(activeCaseStoryboard)) {
+        renderCaseStoryboardAnnexesToPDF(doc, activeCaseStoryboard, {
+          marginX,
+          pageWidth,
+          pageHeight,
+          contentWidth,
+          factor,
         });
       }
 

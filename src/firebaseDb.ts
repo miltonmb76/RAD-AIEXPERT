@@ -88,6 +88,8 @@ export interface CloudStudy {
   includeFocalLesion3dInReport?: boolean;
   usPlaneSimulatorData?: any;
   includeUsPlaneSimulatorInReport?: boolean;
+  caseStoryboardData?: any;
+  includeCaseStoryboardInReport?: boolean;
   thyroid3dData?: any;
   includeThyroid3dInReport?: boolean;
   breast3dData?: any;
