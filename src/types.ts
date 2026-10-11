@@ -1477,14 +1477,6 @@ export interface FindingsInfographicData {
   generatedAt?: string;
 }
 
-/** Case storyboard narrative frames (clinician + patient). */
-export type {
-  CaseStoryboardAudience,
-  CaseStoryboardData,
-  CaseStoryboardFrame,
-  CaseStoryboardRole,
-} from "./lib/caseStoryboard";
-
 /** One-page dominant lesion clinical card. */
 export type {
   DominantLesionCardData,

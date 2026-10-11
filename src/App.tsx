@@ -18,7 +18,6 @@ import {
   FindingsInfographicModule,
   DominantLesionCardModule,
   DiagnosticPackModule,
-  CaseStoryboardModule,
   FindingsMapModule,
   DiagnosisAnchorBar,
   MeasurementsGaugeModule,
@@ -46,7 +45,7 @@ import "./lib/safeLocalStorage";
 import JSZip from "jszip";
 import type { ExtractedFile } from "./components/ZipDicomExtractor";
 
-import { Atlas3DData, Vascular3DData, FocalLesion3DData, UsPlaneSimulatorData, Thyroid3DData, Breast3DData, Shoulder3DData, Knee3DData, Ankle3DData, Kidney3DData, Abdomen3DData, AbdominalWall3DData, Scrotum3DData, MuscleTendon3DData, Wrist3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData, SemioticsConductMatrixData, FindingsInfographicData, CaseStoryboardData, DominantLesionCardData, NegativityChecklistData, SecondReaderData, ReportEnrichmentSession } from "./types";
+import { Atlas3DData, Vascular3DData, FocalLesion3DData, UsPlaneSimulatorData, Thyroid3DData, Breast3DData, Shoulder3DData, Knee3DData, Ankle3DData, Kidney3DData, Abdomen3DData, AbdominalWall3DData, Scrotum3DData, MuscleTendon3DData, Wrist3DData, UsImagesGridMode, ClinicalScorecardData, MeasurementGaugeData, ReasoningChainData, DifferentialTreeData, SemioticsConductMatrixData, FindingsInfographicData, DominantLesionCardData, NegativityChecklistData, SecondReaderData, ReportEnrichmentSession } from "./types";
 import { buildAtlasDirectivesFromScorecard, buildAtlasPanelFindingAssignments, buildVascularDirectivesFromScorecard, buildThyroidDirectivesFromScorecard, buildBreastDirectivesFromScorecard, buildShoulderDirectivesFromScorecard, buildKneeDirectivesFromScorecard, buildAnkleDirectivesFromScorecard, buildKidneyDirectivesFromScorecard, buildAbdomenDirectivesFromScorecard, buildAbdominalWallDirectivesFromScorecard, buildScrotumDirectivesFromScorecard, buildMuscleTendonDirectivesFromScorecard, buildWristDirectivesFromScorecard, mergeOverlaysOntoAtlas } from "./lib/clinicalIntelligence";
 import {
   applyPendingEnrichmentChanges,
@@ -139,8 +138,7 @@ import {
   Hexagon,
   FileSpreadsheet,
   FileStack,
-  MapPinned,
-  Clapperboard
+  MapPinned
 } from "lucide-react";
 import { initAuth, googleSignIn, logout as googleLogout, anonymousSignIn, emailSignIn, emailSignUp, getFirebaseConfig } from "./firebaseAuth";
 import { CloudStudy, saveStudyToCloud, getStudiesFromCloud, deleteStudyFromCloud, Worklist, WorklistPatient, saveWorklistToCloud, getWorklistFromCloud, getSingleStudyFromCloud, testFirebaseConfigConnection, saveUserSettingsToCloud, getUserSettingsFromCloud } from "./firebaseDb";
@@ -545,8 +543,6 @@ export default function App() {
         if (localStudy.focalLesion3dData) setFocalLesion3dData(localStudy.focalLesion3dData);
         if (localStudy.usPlaneSimulatorData) setUsPlaneSimulatorData(localStudy.usPlaneSimulatorData);
         if (localStudy.includeUsPlaneSimulatorInReport !== undefined) setIncludeUsPlaneSimulatorInReport(localStudy.includeUsPlaneSimulatorInReport);
-        if (localStudy.caseStoryboardData) setCaseStoryboardData(localStudy.caseStoryboardData);
-        if (localStudy.includeCaseStoryboardInReport !== undefined) setIncludeCaseStoryboardInReport(localStudy.includeCaseStoryboardInReport);
         if (localStudy.thyroid3dData) setThyroid3dData(localStudy.thyroid3dData);
         if (localStudy.breast3dData) setBreast3dData(localStudy.breast3dData);
         if (localStudy.shoulder3dData) setShoulder3dData(localStudy.shoulder3dData);
@@ -1528,9 +1524,6 @@ export default function App() {
   const [diagnosticPackData, setDiagnosticPackData] = useState<import("./lib/diagnosticPack").DiagnosticPackData | null>(null);
   const [includeDiagnosticPackInReport, setIncludeDiagnosticPackInReport] = useState<boolean>(true);
   const [isDiagnosticPackOpen, setIsDiagnosticPackOpen] = useState<boolean>(false);
-  const [caseStoryboardData, setCaseStoryboardData] = useState<CaseStoryboardData | null>(null);
-  const [includeCaseStoryboardInReport, setIncludeCaseStoryboardInReport] = useState<boolean>(true);
-  const [isCaseStoryboardOpen, setIsCaseStoryboardOpen] = useState<boolean>(false);
   const [isFindingsMapOpen, setIsFindingsMapOpen] = useState<boolean>(false);
   const [dominantLesionCardData, setDominantLesionCardData] = useState<DominantLesionCardData | null>(null);
   const [includeDominantLesionCardInReport, setIncludeDominantLesionCardInReport] = useState<boolean>(true);
@@ -1634,8 +1627,6 @@ export default function App() {
     diagnosisAnchor,
     diagnosticPackData,
     includeDiagnosticPackInReport,
-    caseStoryboardData,
-    includeCaseStoryboardInReport,
     dominantLesionCardData,
     includeDominantLesionCardInReport,
     measurementGaugeData,
@@ -4105,8 +4096,6 @@ Ejemplo:
             includeFocalLesion3dInReport: includeFocalLesion3dInReport,
             usPlaneSimulatorData: usPlaneSimulatorData || null,
             includeUsPlaneSimulatorInReport: includeUsPlaneSimulatorInReport,
-            caseStoryboardData: caseStoryboardData || null,
-            includeCaseStoryboardInReport: includeCaseStoryboardInReport,
             usImagesGridMode: usImagesGridMode || "auto",
             patientSummary: patientSummary || null
           });
@@ -5266,7 +5255,6 @@ Ejemplo:
     findings3dRenders,
     findingsInfographicData,
     diagnosticPackData,
-    caseStoryboardData,
     dominantLesionCardData,
     focalLesion3dData,
     getParagraphSeverity,
@@ -5279,7 +5267,6 @@ Ejemplo:
     includeElastographyInReport,
     includeFindingsInfographicInReport,
     includeDiagnosticPackInReport,
-    includeCaseStoryboardInReport,
     includeDominantLesionCardInReport,
     includeFocalLesion3dInReport,
     includeKidney3dInReport,
@@ -11013,31 +11000,6 @@ Ejemplo:
                               </button>
                             </div>
 
-                            <div className="p-4 rounded-2xl bg-slate-950/60 border border-teal-900/40 space-y-3">
-                              <div className="flex items-start justify-between gap-3">
-                                <div>
-                                  <h4 className="text-sm font-semibold text-teal-200 flex items-center gap-2">
-                                    <Clapperboard className="h-4 w-4 text-teal-400" />
-                                    Storyboard del caso
-                                  </h4>
-                                  <p className="text-[11px] text-slate-400 mt-1">
-                                    Secuencia narrativa (clinico / paciente) con eco real y anatomia 3D.
-                                  </p>
-                                </div>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => setIsCaseStoryboardOpen((v) => !v)}
-                                className={`w-full px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
-                                  isCaseStoryboardOpen
-                                    ? "bg-teal-700 text-white"
-                                    : "bg-teal-600/80 hover:bg-teal-500 text-white"
-                                }`}
-                              >
-                                {isCaseStoryboardOpen ? "Ocultar storyboard" : "Abrir storyboard"}
-                              </button>
-                            </div>
-
                             <div className="p-4 rounded-2xl bg-slate-950/60 border border-indigo-900/40 space-y-3">
                               <div className="flex items-start justify-between gap-3">
                                 <div>
@@ -11415,27 +11377,6 @@ Ejemplo:
                                   setPackData={setDiagnosticPackData}
                                   includeInReport={includeDiagnosticPackInReport}
                                   setIncludeInReport={setIncludeDiagnosticPackInReport}
-                                />
-                              </React.Suspense>
-                            </div>
-                          )}
-
-                          {isCaseStoryboardOpen && (
-                            <div className="my-6">
-                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-teal-400 bg-slate-900/60 rounded-xl border border-teal-900/40 animate-pulse">Cargando storyboard...</div>}>
-                                <CaseStoryboardModule
-                                  selectedModel={modelFor("case_storyboard")}
-                                  reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
-                                  studyType={studyType}
-                                  clinicalHistory={clinicalHistory}
-                                  diagnosisAnchor={diagnosisAnchor}
-                                  scorecardData={clinicalScorecardData}
-                                  usPlaneData={usPlaneSimulatorData}
-                                  galleryImages={attachedImages}
-                                  storyboardData={caseStoryboardData}
-                                  setStoryboardData={setCaseStoryboardData}
-                                  includeInReport={includeCaseStoryboardInReport}
-                                  setIncludeInReport={setIncludeCaseStoryboardInReport}
                                 />
                               </React.Suspense>
                             </div>
@@ -14324,11 +14265,9 @@ Ejemplo:
                         if (viewingCloudStudy.includeThyroid3dInReport !== undefined) setIncludeThyroid3dInReport(viewingCloudStudy.includeThyroid3dInReport);
                         if (viewingCloudStudy.focalLesion3dData) setFocalLesion3dData(viewingCloudStudy.focalLesion3dData);
                         if (viewingCloudStudy.usPlaneSimulatorData) setUsPlaneSimulatorData(viewingCloudStudy.usPlaneSimulatorData);
-                        if (viewingCloudStudy.caseStoryboardData) setCaseStoryboardData(viewingCloudStudy.caseStoryboardData);
                         if (viewingCloudStudy.includeVascular3dInReport !== undefined) setIncludeVascular3dInReport(viewingCloudStudy.includeVascular3dInReport);
                         if (viewingCloudStudy.includeFocalLesion3dInReport !== undefined) setIncludeFocalLesion3dInReport(viewingCloudStudy.includeFocalLesion3dInReport);
                         if (viewingCloudStudy.includeUsPlaneSimulatorInReport !== undefined) setIncludeUsPlaneSimulatorInReport(viewingCloudStudy.includeUsPlaneSimulatorInReport);
-                        if (viewingCloudStudy.includeCaseStoryboardInReport !== undefined) setIncludeCaseStoryboardInReport(viewingCloudStudy.includeCaseStoryboardInReport);
                         if (viewingCloudStudy.usImagesGridMode) setUsImagesGridMode(viewingCloudStudy.usImagesGridMode as any);
                         setFindings3dRenders(viewingCloudStudy.findings3dRenders || []);
                         setPatientSummary(viewingCloudStudy.patientSummary || null);
