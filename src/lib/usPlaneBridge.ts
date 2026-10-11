@@ -107,6 +107,66 @@ export function suggestLesionTarget(opts: {
   return candidates[0] || "";
 }
 
+export type BridgeGalleryOffer = {
+  imageId: string;
+  url: string;
+  caption: string;
+  label?: string;
+  lesionTarget: string;
+};
+
+/** True when caption looks like a finding (not empty / generic placeholder). */
+export function captionLooksLikeFinding(caption?: string | null): boolean {
+  const t = String(caption || "").replace(/\s+/g, " ").trim();
+  if (t.length < 6) return false;
+  if (/^(imagen|foto|figura|sin rotulo|sin rótulo|us|mmg|eco)\b/i.test(t) && t.length < 14) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * After labeling a gallery eco: if we can infer lesionTarget, return a Bridge offer payload.
+ * Skips mammography and empty/generic captions.
+ */
+export function inferBridgeOfferFromGalleryImage(
+  img: {
+    id?: string;
+    url?: string;
+    caption?: string;
+    label?: string;
+    modality?: string;
+    name?: string;
+  } | null | undefined,
+  opts?: {
+    reportText?: string | null;
+    scorecardData?: ClinicalScorecardData | null;
+  }
+): BridgeGalleryOffer | null {
+  if (!img?.id || !img?.url) return null;
+  const modality = String(img.modality || "").toUpperCase();
+  const name = String(img.name || "").toLowerCase();
+  if (modality === "MMG" || /\bmmg\b|mamograf/.test(name)) return null;
+  const caption = String(img.caption || "").trim();
+  if (!captionLooksLikeFinding(caption)) return null;
+
+  const lesionTarget = suggestLesionTarget({
+    galleryCaption: caption,
+    galleryLabel: img.label,
+    reportText: opts?.reportText,
+    scorecardData: opts?.scorecardData,
+  });
+  if (!lesionTarget) return null;
+
+  return {
+    imageId: img.id,
+    url: img.url,
+    caption,
+    label: img.label,
+    lesionTarget,
+  };
+}
+
 function normDedupKey(s: string): string {
   return s
     .toLowerCase()

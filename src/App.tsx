@@ -173,6 +173,12 @@ import {
   type ScorecardOrchestrationPlan,
   type ScorecardOrchestratorAction,
 } from "./lib/scorecardOrchestrator";
+import {
+  galleryToRealUs,
+  inferBridgeOfferFromGalleryImage,
+  suggestRealUsFromGallery,
+  type BridgeGalleryOffer,
+} from "./lib/usPlaneBridge";
 import { WorklistSidebar } from "./components/WorklistSidebar";
 import { useWorklistPersistence } from "./lib/useWorklistPersistence";
 import { useLocalBridge } from "./lib/useLocalBridge";
@@ -1550,6 +1556,9 @@ export default function App() {
   // Ultrasound acquisition plane simulator (auto + chip corrections)
   const [usPlaneSimulatorData, setUsPlaneSimulatorData] = useState<UsPlaneSimulatorData | null>(null);
   const [includeUsPlaneSimulatorInReport, setIncludeUsPlaneSimulatorInReport] = useState<boolean>(true);
+  /** After labeling a gallery eco with inferable lesionTarget ? offer Bridge instantly. */
+  const [bridgeGalleryOffer, setBridgeGalleryOffer] = useState<BridgeGalleryOffer | null>(null);
+  const bridgeOfferDismissedRef = useRef<Record<string, number>>({});
   const [thyroid3dData, setThyroid3dData] = useState<Thyroid3DData | null>(null);
   const [includeThyroid3dInReport, setIncludeThyroid3dInReport] = useState<boolean>(true);
   const [breast3dData, setBreast3dData] = useState<Breast3DData | null>(null);
@@ -1675,6 +1684,12 @@ export default function App() {
     elastographyOriginalImage,
     elastographyEtiology,
   };
+
+  useEffect(() => {
+    if (!bridgeGalleryOffer) return;
+    const tmr = window.setTimeout(() => setBridgeGalleryOffer(null), 14000);
+    return () => window.clearTimeout(tmr);
+  }, [bridgeGalleryOffer?.imageId]);
 
   useEffect(() => {
     if (!generatedReport) return;
@@ -2784,6 +2799,7 @@ Ejemplo:
 
     // --- Adjuntos US / renders 3D de hallazgos ---
     setAttachedImages([]);
+    setBridgeGalleryOffer(null);
     setFindings3dRenders([]);
     setUsImagesGridMode("auto");
 
@@ -4805,6 +4821,17 @@ Ejemplo:
           silent: true,
           imagesOverride: mergedForCorrelation,
         });
+        // One Bridge offer for the best US eco with inferable lesionTarget (avoid toast spam).
+        for (const img of mergedForCorrelation) {
+          const offer = inferBridgeOfferFromGalleryImage(img as any, {
+            reportText: report,
+            scorecardData: clinicalScorecardData,
+          });
+          if (offer) {
+            maybeOfferBridgeFromGalleryImage(img);
+            break;
+          }
+        }
       }
     } catch (err) {
       console.error("Error en rotulado automatico post-reporte:", err);
@@ -4820,9 +4847,73 @@ Ejemplo:
   };
 
   const handleLabelQueueCaptionUpdate = (id: string, caption: string) => {
-    setAttachedImages((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, caption } : item))
-    );
+    setAttachedImages((prev) => {
+      const next = prev.map((item) => (item.id === id ? { ...item, caption } : item));
+      const hit = next.find((item) => item.id === id);
+      if (hit) {
+        window.setTimeout(() => maybeOfferBridgeFromGalleryImage(hit), 0);
+      }
+      return next;
+    });
+  };
+
+  const maybeOfferBridgeFromGalleryImage = (img: any) => {
+    const offer = inferBridgeOfferFromGalleryImage(img, {
+      reportText: generatedReport || inputReport || findings || "",
+      scorecardData: clinicalScorecardData,
+    });
+    if (!offer) return;
+    const dismissedAt = bridgeOfferDismissedRef.current[offer.imageId] || 0;
+    if (Date.now() - dismissedAt < 45_000) return;
+    setBridgeGalleryOffer(offer);
+  };
+
+  const acceptBridgeGalleryOffer = (offer?: BridgeGalleryOffer | null) => {
+    const active = offer || bridgeGalleryOffer;
+    if (!active) return;
+    const img = attachedImages.find((i) => i.id === active.imageId);
+    if (!img?.url) {
+      setBridgeGalleryOffer(null);
+      return;
+    }
+    const realUs = galleryToRealUs({
+      id: img.id,
+      url: img.url,
+      caption: String((img as any).caption || active.caption || "").trim() || undefined,
+      label: String((img as any).label || active.label || "").trim() || undefined,
+    });
+    setUsPlaneSimulatorData((prev) => ({
+      acquisitionPlane: prev?.acquisitionPlane || "longitudinal",
+      planeLabelEs: prev?.planeLabelEs,
+      studyRegion: prev?.studyRegion,
+      figureTitle: prev?.figureTitle || "FIGURA. ECO REAL Y CORTE 3D FOCAL",
+      detectedLaterality: prev?.detectedLaterality,
+      targetStructure: prev?.targetStructure || active.lesionTarget,
+      lesionTarget: active.lesionTarget,
+      structuresCrossed: prev?.structuresCrossed || [],
+      planeSummary: prev?.planeSummary || "",
+      keyPoints: prev?.keyPoints || [],
+      clinicalContextLines: prev?.clinicalContextLines,
+      panels: prev?.panels || [],
+      qualityAudit: prev?.qualityAudit,
+      realUsImage: realUs,
+      bridgeLabels: prev?.bridgeLabels,
+      imageAnnotations: prev?.imageAnnotations,
+    }));
+    setIncludeUsPlaneSimulatorInReport(true);
+    setBridgeGalleryOffer(null);
+    window.setTimeout(() => {
+      document
+        .getElementById("us-plane-simulator-module-wrap")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 80);
+  };
+
+  const dismissBridgeGalleryOffer = () => {
+    if (bridgeGalleryOffer?.imageId) {
+      bridgeOfferDismissedRef.current[bridgeGalleryOffer.imageId] = Date.now();
+    }
+    setBridgeGalleryOffer(null);
   };
 
   const handleAiLabelImage = async (id: string) => {
@@ -4849,13 +4940,15 @@ Ejemplo:
 
         const data = await response.json();
         if (response.ok && data.success) {
-          setAttachedImages(prev => prev.map(item => item.id === id ? {
-            ...item,
-            caption: data.label || item.caption,
-            modality: data.modality || item.modality || "US",
-            projection: data.projection || item.projection || "OTRO",
-            side: data.side || item.side || "Derecha"
-          } : item));
+          const nextImg = {
+            ...imgItem,
+            caption: data.label || imgItem.caption,
+            modality: data.modality || (imgItem as any).modality || "US",
+            projection: data.projection || (imgItem as any).projection || "OTRO",
+            side: data.side || (imgItem as any).side || "Derecha",
+          };
+          setAttachedImages(prev => prev.map(item => item.id === id ? nextImg : item));
+          maybeOfferBridgeFromGalleryImage(nextImg);
         } else {
           throw new Error(data.error || "No se pudo generar la rotulaci�n con IA.");
         }
@@ -4906,7 +4999,9 @@ Ejemplo:
 
         const data = await response.json();
         if (response.ok && data.success && data.label) {
-          setAttachedImages(prev => prev.map(item => item.id === id ? { ...item, caption: data.label } : item));
+          const nextImg = { ...imgItem, caption: data.label };
+          setAttachedImages(prev => prev.map(item => item.id === id ? nextImg : item));
+          maybeOfferBridgeFromGalleryImage(nextImg);
         } else {
           throw new Error(data.error || "No se pudo autocompletar la rotulaci�n.");
         }
@@ -9328,6 +9423,12 @@ Ejemplo:
                                               const val = e.target.value;
                                               setAttachedImages(prev => prev.map(item => item.id === img.id ? { ...item, caption: val } : item));
                                             }}
+                                            onBlur={(e) => {
+                                              maybeOfferBridgeFromGalleryImage({
+                                                ...img,
+                                                caption: e.target.value,
+                                              });
+                                            }}
                                             className="w-full bg-slate-900 border border-slate-800 focus:border-indigo-500 px-2.5 py-1.5 text-[11px] font-medium text-slate-200 outline-none rounded-lg transition-all focus:ring-1 focus:ring-indigo-500/30"
                                             placeholder="Escribe 'vesícula' o 'lito' y haz clic en Completar de Reporte"
                                           />
@@ -11089,6 +11190,41 @@ Ejemplo:
                                     };
 
                                     const openBridge = () => {
+                                      const lesion =
+                                        plan.bridge?.lesionTarget ||
+                                        plan.diagnosisAnchor ||
+                                        "";
+                                      const suggested = suggestRealUsFromGallery(
+                                        (attachedImages || []).map((g: any) => ({
+                                          id: g.id,
+                                          url: g.url,
+                                          label: g.label,
+                                          caption: g.caption,
+                                          isSelected: g.isSelected,
+                                        }))
+                                      );
+                                      if (suggested || lesion) {
+                                        setUsPlaneSimulatorData((prev) => ({
+                                          acquisitionPlane: prev?.acquisitionPlane || "longitudinal",
+                                          planeLabelEs: prev?.planeLabelEs,
+                                          studyRegion: prev?.studyRegion,
+                                          figureTitle:
+                                            prev?.figureTitle || "FIGURA. ECO REAL Y CORTE 3D FOCAL",
+                                          detectedLaterality: prev?.detectedLaterality,
+                                          targetStructure: prev?.targetStructure || lesion || undefined,
+                                          lesionTarget: lesion || prev?.lesionTarget,
+                                          structuresCrossed: prev?.structuresCrossed || [],
+                                          planeSummary: prev?.planeSummary || "",
+                                          keyPoints: prev?.keyPoints || [],
+                                          clinicalContextLines: prev?.clinicalContextLines,
+                                          panels: prev?.panels || [],
+                                          qualityAudit: prev?.qualityAudit,
+                                          realUsImage: suggested || prev?.realUsImage || null,
+                                          bridgeLabels: prev?.bridgeLabels,
+                                          imageAnnotations: prev?.imageAnnotations,
+                                        }));
+                                        setIncludeUsPlaneSimulatorInReport(true);
+                                      }
                                       window.setTimeout(() => {
                                         document
                                           .getElementById("us-plane-simulator-module-wrap")
@@ -15630,6 +15766,51 @@ Ejemplo:
               </>
             );
           })()}
+        </div>
+      )}
+      {bridgeGalleryOffer && (
+        <div className="fixed bottom-20 left-1/2 z-[70] w-[min(32rem,calc(100vw-1.5rem))] -translate-x-1/2 animate-fadeIn">
+          <div className="rounded-2xl border border-cyan-500/40 bg-slate-950/95 shadow-2xl shadow-cyan-950/40 backdrop-blur-md px-4 py-3 flex items-start gap-3">
+            <div className="p-2 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 shrink-0">
+              <Scan className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-black uppercase tracking-widest text-cyan-300">
+                Bridge US?3D listo
+              </p>
+              <p className="text-xs text-slate-100 font-medium mt-0.5 line-clamp-2">
+                {bridgeGalleryOffer.lesionTarget}
+              </p>
+              <p className="text-[11px] text-slate-400 mt-0.5 line-clamp-1">
+                Eco rotulada: {bridgeGalleryOffer.caption}
+              </p>
+              <div className="flex flex-wrap items-center gap-2 mt-2.5">
+                <button
+                  type="button"
+                  onClick={() => acceptBridgeGalleryOffer(bridgeGalleryOffer)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-[11px] font-bold uppercase tracking-wider"
+                >
+                  <Scan className="h-3.5 w-3.5" />
+                  Ir a Bridge US?3D
+                </button>
+                <button
+                  type="button"
+                  onClick={dismissBridgeGalleryOffer}
+                  className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-slate-400 hover:text-slate-200 border border-slate-700/60"
+                >
+                  Ahora no
+                </button>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={dismissBridgeGalleryOffer}
+              className="text-slate-500 hover:text-slate-200 p-1"
+              aria-label="Cerrar"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       )}
       <BackgroundTasksBar />
