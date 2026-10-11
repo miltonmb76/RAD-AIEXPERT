@@ -167,6 +167,12 @@ import {
   getBiomechanicalRadarDataFromReport,
 } from "./lib/radarPdfHelpers";
 import { getSpecificSuiteShortcut } from "./lib/suiteShortcuts";
+import { infographicFromScorecard } from "./lib/infographicFromModules";
+import {
+  suiteDomId,
+  type ScorecardOrchestrationPlan,
+  type ScorecardOrchestratorAction,
+} from "./lib/scorecardOrchestrator";
 import { WorklistSidebar } from "./components/WorklistSidebar";
 import { useWorklistPersistence } from "./lib/useWorklistPersistence";
 import { useLocalBridge } from "./lib/useLocalBridge";
@@ -2276,6 +2282,11 @@ Ejemplo:
         setClinicalScorecardData(result.scorecard);
         // Keep PDF opt-in: scorecard still feeds Atlas/directives, not PDF by default
         setIncludeScorecardInReport(false);
+        const polishDirectives = buildAtlasDirectivesFromScorecard(result.scorecard);
+        if (polishDirectives) setAtlasDirectivesFromScorecard(polishDirectives);
+        if (!String(diagnosisAnchor || "").trim() && result.scorecard.categoryAssigned) {
+          setDiagnosisAnchor(String(result.scorecard.categoryAssigned));
+        }
       }
       if (result.measurements && result.measurements.length > 0) {
         setIsAsistenteMedidasOpen(true);
@@ -9426,6 +9437,7 @@ Ejemplo:
                           </Suite3DSuspense>
 
                           {/* === SUITE VASCULAR 3D & MAPA ÁNATOMO-HEMODINÁMICO === */}
+                          <div id="vascular-3d-module">
                           <Suite3DSuspense label="Suite Vascular 3D">
                             <Vascular3DModule
                             reportText={isEditingReportManual ? editedReportText : (generatedReport || "")}
@@ -9440,6 +9452,7 @@ Ejemplo:
                             externalDirectives={buildVascularDirectivesFromScorecard(clinicalScorecardData) || atlasDirectivesFromScorecard}
                           />
                           </Suite3DSuspense>
+                          </div>
 
                           <div id="us-plane-simulator-module-wrap" className="mt-4">
                           <Suite3DSuspense label="Simulador de planos US">
@@ -11013,6 +11026,14 @@ Ejemplo:
                                   selectedModel={modelFor("clinical_scorecard")}
                                   reportText={isEditingReportManual ? editedReportText : generatedReport}
                                   studyType={specificStudy || studyType}
+                                  specificStudy={specificStudy}
+                                  modality={modality}
+                                  diagnosisAnchor={diagnosisAnchor}
+                                  hasGalleryUs={(attachedImages || []).some((img: any) => !!img?.url)}
+                                  hasUsPlaneData={!!(usPlaneSimulatorData?.panels?.length || usPlaneSimulatorData?.realUsImage?.url)}
+                                  hasInfographic={!!(findingsInfographicData?.nodes?.length)}
+                                  hasPack={!!diagnosticPackData}
+                                  hasSuitePanels={anySuiteUsedUi}
                                   scorecardData={clinicalScorecardData}
                                   setScorecardData={setClinicalScorecardData}
                                   includeInReport={includeScorecardInReport}
@@ -11020,6 +11041,11 @@ Ejemplo:
                                   atlasData={atlas3dData}
                                   setAtlasData={setAtlas3dData}
                                   onAtlasDirectivesSuggested={setAtlasDirectivesFromScorecard}
+                                  onDiagnosisAnchorSeeded={(anchor) => {
+                                    if (!String(diagnosisAnchor || "").trim() && anchor) {
+                                      setDiagnosisAnchor(anchor);
+                                    }
+                                  }}
                                   onSendToInfographic={(data) => {
                                     setFindingsInfographicData(data);
                                     if (data?.diagnosis) setDiagnosisAnchor(String(data.diagnosis));
@@ -11030,6 +11056,87 @@ Ejemplo:
                                         .getElementById("findings-infographic-module")
                                         ?.scrollIntoView({ behavior: "smooth", block: "start" });
                                     }, 80);
+                                  }}
+                                  onOrchestrate={(action: ScorecardOrchestratorAction, plan: ScorecardOrchestrationPlan) => {
+                                    const openSuite = (suiteId: string) => {
+                                      const openers: Record<string, (v: boolean) => void> = {
+                                        thyroid3d: setIsThyroid3dSuiteOpen,
+                                        breast3d: setIsBreast3dSuiteOpen,
+                                        shoulder3d: setIsShoulder3dSuiteOpen,
+                                        knee3d: setIsKnee3dSuiteOpen,
+                                        ankle3d: setIsAnkle3dSuiteOpen,
+                                        kidney3d: setIsKidney3dSuiteOpen,
+                                        abdomen3d: setIsAbdomen3dSuiteOpen,
+                                        abdominalWall3d: setIsAbdominalWall3dSuiteOpen,
+                                        scrotum3d: setIsScrotum3dSuiteOpen,
+                                        muscleTendon3d: setIsMuscleTendon3dSuiteOpen,
+                                        wrist3d: setIsWrist3dSuiteOpen,
+                                      };
+                                      openers[suiteId]?.(true);
+                                      const dom = suiteDomId(suiteId);
+                                      if (dom) {
+                                        window.setTimeout(() => {
+                                          document.getElementById(dom)?.scrollIntoView({
+                                            behavior: "smooth",
+                                            block: "start",
+                                          });
+                                        }, 100);
+                                      }
+                                    };
+
+                                    const seedAnchor = () => {
+                                      if (plan.diagnosisAnchor) setDiagnosisAnchor(plan.diagnosisAnchor);
+                                    };
+
+                                    const openBridge = () => {
+                                      window.setTimeout(() => {
+                                        document
+                                          .getElementById("us-plane-simulator-module-wrap")
+                                          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                                      }, action === "apply_all" ? 220 : 80);
+                                    };
+
+                                    const openPack = () => {
+                                      if (plan.diagnosisAnchor) setDiagnosisAnchor(plan.diagnosisAnchor);
+                                      setIsDiagnosticPackOpen(true);
+                                      window.setTimeout(() => {
+                                        document
+                                          .getElementById("diagnostic-pack-module")
+                                          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                                      }, action === "apply_all" ? 280 : 80);
+                                    };
+
+                                    const openInfographic = () => {
+                                      if (!clinicalScorecardData) return;
+                                      const mapped = infographicFromScorecard(clinicalScorecardData);
+                                      if (!mapped.nodes.some((n) => n.label.trim())) return;
+                                      setFindingsInfographicData(mapped);
+                                      if (mapped.diagnosis) setDiagnosisAnchor(String(mapped.diagnosis));
+                                      setIncludeFindingsInfographicInReport(true);
+                                      setIsFindingsInfographicOpen(true);
+                                      window.setTimeout(() => {
+                                        document
+                                          .getElementById("findings-infographic-module")
+                                          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                                      }, action === "apply_all" ? 340 : 80);
+                                    };
+
+                                    if (action === "seed_anchor" || action === "apply_all") seedAnchor();
+                                    if ((action === "open_suite" || action === "apply_all") && plan.suite) {
+                                      openSuite(plan.suite.id);
+                                    }
+                                    if ((action === "open_bridge" || action === "apply_all") && plan.bridge?.recommend) {
+                                      openBridge();
+                                    }
+                                    if ((action === "open_pack" || action === "apply_all") && plan.pack?.recommend) {
+                                      openPack();
+                                    }
+                                    if (
+                                      (action === "open_infographic" || action === "apply_all") &&
+                                      plan.infographic?.recommend
+                                    ) {
+                                      openInfographic();
+                                    }
                                   }}
                                 />
                               </React.Suspense>

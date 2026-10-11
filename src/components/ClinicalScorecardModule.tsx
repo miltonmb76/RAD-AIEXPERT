@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   ClipboardCheck,
   Loader2,
@@ -9,6 +9,11 @@ import {
   FileText,
   Sparkles,
   Hexagon,
+  Zap,
+  Scan,
+  FileStack,
+  Box,
+  Anchor,
 } from "lucide-react";
 import { ClinicalScorecardData, Atlas3DData, FindingsInfographicData } from "../types";
 import {
@@ -21,11 +26,30 @@ import {
   scorecardTrafficLabel,
 } from "../lib/clinicalIntelligence";
 import { infographicFromScorecard } from "../lib/infographicFromModules";
+import {
+  buildScorecardOrchestrationPlan,
+  orchestrationActionCount,
+  type ScorecardOrchestratorAction,
+  type ScorecardOrchestrationPlan,
+} from "../lib/scorecardOrchestrator";
+
+export type ScorecardOrchestrateHandler = (
+  action: ScorecardOrchestratorAction,
+  plan: ScorecardOrchestrationPlan
+) => void;
 
 interface ClinicalScorecardModuleProps {
   selectedModel: string;
   reportText: string;
   studyType?: string;
+  specificStudy?: string;
+  modality?: string;
+  diagnosisAnchor?: string;
+  hasGalleryUs?: boolean;
+  hasUsPlaneData?: boolean;
+  hasInfographic?: boolean;
+  hasPack?: boolean;
+  hasSuitePanels?: boolean;
   scorecardData: ClinicalScorecardData | null;
   setScorecardData: (data: ClinicalScorecardData | null) => void;
   includeInReport: boolean;
@@ -37,6 +61,10 @@ interface ClinicalScorecardModuleProps {
   onAtlasDirectivesSuggested?: (directives: string) => void;
   /** One-click: open Findings Infographic with criteria mapped from this scorecard */
   onSendToInfographic?: (data: FindingsInfographicData) => void;
+  /** Seed session ancla when scorecard finishes (only if empty upstream). */
+  onDiagnosisAnchorSeeded?: (anchor: string) => void;
+  /** Apply orchestration chips (suite / bridge / pack / infographic). */
+  onOrchestrate?: ScorecardOrchestrateHandler;
 }
 
 const statusStyle = (status: string) => {
@@ -69,6 +97,14 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
   selectedModel,
   reportText,
   studyType,
+  specificStudy,
+  modality,
+  diagnosisAnchor = "",
+  hasGalleryUs = false,
+  hasUsPlaneData = false,
+  hasInfographic = false,
+  hasPack = false,
+  hasSuitePanels = false,
   scorecardData,
   setScorecardData,
   includeInReport,
@@ -77,6 +113,8 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
   setAtlasData,
   onAtlasDirectivesSuggested,
   onSendToInfographic,
+  onDiagnosisAnchorSeeded,
+  onOrchestrate,
 }) => {
   const [protocolId, setProtocolId] = useState("auto");
   const [pathologyFocus, setPathologyFocus] = useState("");
@@ -84,6 +122,37 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [synced, setSynced] = useState(false);
+
+  const orchestrationPlan = useMemo(
+    () =>
+      buildScorecardOrchestrationPlan({
+        scorecard: scorecardData,
+        diagnosisAnchor,
+        specificStudy,
+        modality,
+        studyType,
+        reportText,
+        hasGalleryUs,
+        hasUsPlaneData,
+        hasInfographic,
+        hasPack,
+        hasSuitePanels,
+      }),
+    [
+      scorecardData,
+      diagnosisAnchor,
+      specificStudy,
+      modality,
+      studyType,
+      reportText,
+      hasGalleryUs,
+      hasUsPlaneData,
+      hasInfographic,
+      hasPack,
+      hasSuitePanels,
+    ]
+  );
+  const orchestrateCount = orchestrationActionCount(orchestrationPlan);
 
   const handleGenerate = async () => {
     if (!reportText.trim()) {
@@ -126,6 +195,24 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
       const directives = buildAtlasDirectivesFromScorecard(data);
       if (directives && onAtlasDirectivesSuggested) {
         onAtlasDirectivesSuggested(directives);
+      }
+
+      // Seed session ancla from category when clinician has not set one
+      const plan = buildScorecardOrchestrationPlan({
+        scorecard: data,
+        diagnosisAnchor,
+        specificStudy,
+        modality,
+        studyType,
+        reportText,
+        hasGalleryUs,
+        hasUsPlaneData,
+        hasInfographic,
+        hasPack,
+        hasSuitePanels,
+      });
+      if (plan?.diagnosisAnchor && !String(diagnosisAnchor || "").trim()) {
+        onDiagnosisAnchorSeeded?.(plan.diagnosisAnchor);
       }
 
       // Intelligent auto-sync: if Atlas already exists, merge overlays immediately
@@ -409,6 +496,123 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
               </div>
             ) : null}
           </div>
+
+          {orchestrationPlan && onOrchestrate && orchestrateCount > 0 && (
+            <div className="rounded-xl border border-amber-500/30 bg-gradient-to-br from-amber-950/30 via-slate-950/60 to-teal-950/30 p-3.5 space-y-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-amber-200">
+                    <Zap className="w-3.5 h-3.5" />
+                    Orquestación del caso
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1 max-w-xl leading-relaxed">
+                    La categoría del scorecard sugiere ancla, suite 3D, Bridge US–3D, pack e
+                    infografía. Un clic abre o arma cada pieza.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onOrchestrate("apply_all", orchestrationPlan)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-[11px] font-bold uppercase tracking-wider"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Aplicar todo ({orchestrateCount})
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {orchestrationPlan.diagnosisAnchor && (
+                  <button
+                    type="button"
+                    onClick={() => onOrchestrate("seed_anchor", orchestrationPlan)}
+                    className="text-left rounded-lg border border-slate-700/70 bg-slate-950/50 hover:border-teal-500/40 px-3 py-2.5 transition-colors"
+                  >
+                    <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-teal-300">
+                      <Anchor className="w-3 h-3" /> Ancla
+                    </div>
+                    <div className="text-xs text-slate-100 font-medium mt-1 line-clamp-2">
+                      {orchestrationPlan.diagnosisAnchor}
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-1">
+                      {String(diagnosisAnchor || "").trim()
+                        ? "Ya hay ancla — pulsa para reemplazar"
+                        : "Fijar ancla de sesión"}
+                    </div>
+                  </button>
+                )}
+
+                {orchestrationPlan.suite && (
+                  <button
+                    type="button"
+                    onClick={() => onOrchestrate("open_suite", orchestrationPlan)}
+                    className="text-left rounded-lg border border-slate-700/70 bg-slate-950/50 hover:border-sky-500/40 px-3 py-2.5 transition-colors"
+                  >
+                    <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-sky-300">
+                      <Box className="w-3 h-3" /> Suite 3D
+                    </div>
+                    <div className="text-xs text-slate-100 font-medium mt-1">
+                      {orchestrationPlan.suite.label}
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-1 line-clamp-2">
+                      {orchestrationPlan.suite.reason}
+                    </div>
+                  </button>
+                )}
+
+                {orchestrationPlan.bridge?.recommend && (
+                  <button
+                    type="button"
+                    onClick={() => onOrchestrate("open_bridge", orchestrationPlan)}
+                    className="text-left rounded-lg border border-slate-700/70 bg-slate-950/50 hover:border-cyan-500/40 px-3 py-2.5 transition-colors"
+                  >
+                    <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-cyan-300">
+                      <Scan className="w-3 h-3" /> Bridge US–3D
+                    </div>
+                    <div className="text-xs text-slate-100 font-medium mt-1 line-clamp-2">
+                      {orchestrationPlan.bridge.lesionTarget || "Eco real + corte 3D"}
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-1 line-clamp-2">
+                      {orchestrationPlan.bridge.reason}
+                    </div>
+                  </button>
+                )}
+
+                {orchestrationPlan.pack?.recommend && (
+                  <button
+                    type="button"
+                    onClick={() => onOrchestrate("open_pack", orchestrationPlan)}
+                    className="text-left rounded-lg border border-slate-700/70 bg-slate-950/50 hover:border-amber-500/40 px-3 py-2.5 transition-colors"
+                  >
+                    <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-amber-300">
+                      <FileStack className="w-3 h-3" /> Pack diagnóstico
+                    </div>
+                    <div className="text-xs text-slate-100 font-medium mt-1">1 página</div>
+                    <div className="text-[10px] text-slate-500 mt-1 line-clamp-2">
+                      {orchestrationPlan.pack.reason}
+                    </div>
+                  </button>
+                )}
+
+                {orchestrationPlan.infographic?.recommend && (
+                  <button
+                    type="button"
+                    onClick={() => onOrchestrate("open_infographic", orchestrationPlan)}
+                    className="text-left rounded-lg border border-slate-700/70 bg-slate-950/50 hover:border-teal-500/40 px-3 py-2.5 transition-colors"
+                  >
+                    <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-teal-300">
+                      <Hexagon className="w-3 h-3" /> Infografía
+                    </div>
+                    <div className="text-xs text-slate-100 font-medium mt-1">
+                      Criterios → justificación
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-1 line-clamp-2">
+                      {orchestrationPlan.infographic.reason}
+                    </div>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
 
           {synced && (
             <div className="text-[11px] text-indigo-300/90 flex items-center gap-2">
