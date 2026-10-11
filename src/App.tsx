@@ -2604,13 +2604,6 @@ Ejemplo:
   const [isImageEvaluationExpanded, setIsImageEvaluationExpanded] = useState<boolean>(false);
   const [isAdditionalEvaluationExpanded, setIsAdditionalEvaluationExpanded] = useState<boolean>(false);
 
-  // States for Semiology and Clinical Justification Table
-  const [semiologyData, setSemiologyData] = useState<any | null>(null);
-  const [selectedConfirmedDiagnoses, setSelectedConfirmedDiagnoses] = useState<boolean[]>([]);
-  const [selectedRuledOutPathologies, setSelectedRuledOutPathologies] = useState<boolean[]>([]);
-  const [isGeneratingSemiology, setIsGeneratingSemiology] = useState<boolean>(false);
-  const [semiologyError, setSemiologyError] = useState<string | null>(null);
-  const [isSemiologyExpanded, setIsSemiologyExpanded] = useState<boolean>(false);
 
   // States for Image Annotations / Marking regions
   const [annotations, setAnnotations] = useState<ImageAnnotation[]>([]);
@@ -2821,7 +2814,7 @@ Ejemplo:
     setPendingAnnotation(null);
     setPendingLabel("");
 
-    // --- Explicación al paciente / glosario / operativo / esquema / semiología ---
+    // --- Explicación al paciente / glosario / operativo / esquema ---
     setPatientSummary(null);
     setPatientSummaryError(null);
     setIsGeneratingPatientSummary(false);
@@ -2839,9 +2832,6 @@ Ejemplo:
     setSchematicSummaryError(null);
     setIsGeneratingSchematicSummary(false);
     setSchematicFormat("blocks");
-    setSemiologyData(null);
-    setSemiologyError(null);
-    setIsGeneratingSemiology(false);
 
     // --- Infografía clásica (paciente + médico) ---
     setInfographicUrl(null);
@@ -4181,97 +4171,6 @@ Ejemplo:
   };
 
   // ACTION: GENERATE SEMIOLOGY AND JUSTIFICATION TABLE
-  const handleGenerateSemiologyTable = async () => {
-    const reportText = isEditingReportManual ? editedReportText : generatedReport;
-    if (!reportText) return;
-    setIsGeneratingSemiology(true);
-    setSemiologyError(null);
-    setSemiologyData(null);
-    setSelectedConfirmedDiagnoses([]);
-    setSelectedRuledOutPathologies([]);
-    try {
-      const response = await fetch("/api/generate-semiology-table", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: modelFor("pathology"),
-          report: reportText,
-          studyType: studyType || "Estudio Radiológico"
-        }),
-      });
-      const data = await response.json();
-      if (data.success && data.data) {
-        setSemiologyData(data.data);
-        setSelectedConfirmedDiagnoses(new Array(data.data.confirmedDiagnoses?.length || 0).fill(true));
-        setSelectedRuledOutPathologies(new Array(data.data.ruledOutPathologies?.length || 0).fill(true));
-      } else {
-        setSemiologyError(data.error || "Error al estructurar el cuadro de semiología.");
-      }
-    } catch (err: any) {
-      console.error("Error al construir cuadro de semiología:", err);
-      setSemiologyError(err?.message || String(err));
-    } finally {
-      setIsGeneratingSemiology(false);
-    }
-  };
-
-  // Helper to build markdown dynamically based on user selections
-  const buildDynamicSemiologyMarkdownTable = () => {
-    if (!semiologyData) return "";
-    
-    let md = "### CUADRO DE SEMIOLOGÍA Y JUSTIFICACIÓN RADIOLÓGICA\n\n";
-    
-    const filteredDiagnoses = (semiologyData.confirmedDiagnoses || []).filter((_: any, idx: number) => selectedConfirmedDiagnoses[idx]);
-    const filteredRuledOut = (semiologyData.ruledOutPathologies || []).filter((_: any, idx: number) => selectedRuledOutPathologies[idx]);
-    
-    if (filteredDiagnoses.length > 0) {
-      md += "#### 1. Diagnósticos Confirmados y Justificación Semiológica\n\n";
-      md += "| INTERPRETACIÓN SEMIOLÓGICA | HALLAZGOS |\n";
-      md += "| :--- | :--- |\n";
-      filteredDiagnoses.forEach((d: any) => {
-        md += `| ${d.diagnosis.replace(/\|/g, "\\|")} | ${d.justification.replace(/\|/g, "\\|")} |\n`;
-      });
-      md += "\n";
-    }
-    
-    if (filteredRuledOut.length > 0) {
-      md += "#### 2. Patologías Diferenciales Descartadas y Evidencia de Exclusión\n\n";
-      md += "| INTERPRETACIÓN SEMIOLÓGICA | HALLAZGOS |\n";
-      md += "| :--- | :--- |\n";
-      filteredRuledOut.forEach((r: any) => {
-        md += `| ${r.pathology.replace(/\|/g, "\\|")} | ${r.exclusionCriteria.replace(/\|/g, "\\|")} |\n`;
-      });
-      md += "\n";
-    }
-    
-    return md.trim();
-  };
-
-  // ACTION: APPEND THE GENERATED SEMIOLOGY TABLE DIRECTLY TO THE ACTIVE REPORT
-  const handleAppendSemiologyToReport = () => {
-    if (!semiologyData) return;
-    
-    // Choose active text source (manual draft may be currently in edit)
-    const activeText = isEditingReportManual ? editedReportText : (generatedReport || "");
-
-    // Save history
-    if (activeText) {
-      setReportHistory((prev) => [...prev, activeText]);
-    }
-    
-    const contentToAppend = buildDynamicSemiologyMarkdownTable();
-    if (!contentToAppend) {
-      alert("No has seleccionado ningún punto para insertar.");
-      return;
-    }
-
-    const separator = "\n\n---\n\n";
-    const newReportText = activeText + separator + contentToAppend;
-    setGeneratedReport(newReportText);
-    setEditedReportText(newReportText);
-    alert("¡Cuadro de semiología por imágenes insertado con éxito al final de tu informe para el PDF formal!");
-  };
-
   // ACTION: SEARCH TECHNICAL LITERATURE FOR A GLOSSARY TERM DIRECTLY WITHIN PANEL
   const handleSearchGlossaryTermLiterature = async (term: string, query: string) => {
     setGlossaryLitSearch(prev => ({
@@ -10359,44 +10258,6 @@ Ejemplo:
                               </button>
                             </div>
 
-                            {/* Card 10: Cuadro de Semiología por Imágenes (IA) */}
-                            <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-cyan-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all animate-fade-in">
-                              <div className="flex items-center gap-2 justify-between">
-                                <div className="flex items-center gap-2">
-                                  <ShieldCheck className="h-4 w-4 text-cyan-400" />
-                                  <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
-                                    Semiología por Imágenes (IA)
-                                  </h4>
-                                </div>
-                                <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-cyan-950/40 text-cyan-400 border border-cyan-900/30 px-2 py-0.5 rounded">
-                                  SEMIOLOGÍA
-                                </span>
-                              </div>
-                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Realiza un cuadro de semiología por imágenes para justificar clínicamente cada uno de los diagnósticos establecidos y detallar las patologías descartadas.
-                              </p>
-                              <button
-                                onClick={handleGenerateSemiologyTable}
-                                disabled={isGeneratingSemiology || !(isEditingReportManual ? editedReportText : generatedReport)}
-                                className={`w-full py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2 font-mono cursor-pointer border-2 ${
-                                  semiologyData
-                                    ? "bg-cyan-600/15 border-cyan-500/60 text-cyan-200 font-bold"
-                                    : "bg-slate-950 border-slate-800 hover:border-cyan-500/30 text-cyan-450"
-                                }`}
-                              >
-                                {isGeneratingSemiology ? (
-                                  <RefreshCw className="h-4 w-4 animate-spin text-cyan-400" />
-                                ) : (
-                                  <ShieldCheck className="h-4 w-4" />
-                                )}
-                                {isGeneratingSemiology
-                                  ? "Confeccionando Cuadro..."
-                                  : semiologyData
-                                  ? "Cuadro Listo ✓ (Confeccionar Nuevo)"
-                                  : "Confeccionar Cuadro Semiológico"}
-                              </button>
-                            </div>
-
                             
                             {/* Card: Suite Rodilla 3D */}
                             <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-sky-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all">
@@ -10748,44 +10609,6 @@ Ejemplo:
                                   : operationalSummaryText
                                   ? "Resumen Listo ✓ (Generar de Nuevo)"
                                   : "Crear Resumen 📋"}
-                              </button>
-                            </div>
-
-                            {/* Card 10: Cuadro de Semiología por Imágenes (IA) */}
-                            <div className="bg-slate-900/40 border-2 border-slate-800 hover:border-cyan-500/20 rounded-2xl p-5 space-y-4 shadow-xl transition-all animate-fade-in">
-                              <div className="flex items-center gap-2 justify-between">
-                                <div className="flex items-center gap-2">
-                                  <ShieldCheck className="h-4 w-4 text-cyan-400" />
-                                  <h4 className="text-xs font-black text-slate-200 uppercase tracking-widest font-mono">
-                                    Semiología por Imágenes (IA)
-                                  </h4>
-                                </div>
-                                <span className="text-[8px] font-black uppercase font-mono tracking-widest bg-cyan-950/40 text-cyan-400 border border-cyan-900/30 px-2 py-0.5 rounded">
-                                  SEMIOLOGÍA
-                                </span>
-                              </div>
-                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-                                Realiza un cuadro de semiología por imágenes para justificar clínicamente cada uno de los diagnósticos establecidos y detallar las patologías descartadas.
-                              </p>
-                              <button
-                                onClick={handleGenerateSemiologyTable}
-                                disabled={isGeneratingSemiology || !(isEditingReportManual ? editedReportText : generatedReport)}
-                                className={`w-full py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2 font-mono cursor-pointer border-2 ${
-                                  semiologyData
-                                    ? "bg-cyan-600/15 border-cyan-500/60 text-cyan-200 font-bold"
-                                    : "bg-slate-950 border-slate-800 hover:border-cyan-500/30 text-cyan-450"
-                                }`}
-                              >
-                                {isGeneratingSemiology ? (
-                                  <RefreshCw className="h-4 w-4 animate-spin text-cyan-400" />
-                                ) : (
-                                  <ShieldCheck className="h-4 w-4" />
-                                )}
-                                {isGeneratingSemiology
-                                  ? "Confeccionando Cuadro..."
-                                  : semiologyData
-                                  ? "Cuadro Listo ✓ (Confeccionar Nuevo)"
-                                  : "Confeccionar Cuadro Semiológico"}
                               </button>
                             </div>
 
@@ -11899,183 +11722,7 @@ Ejemplo:
                             </div>
                           )}
 
-                          {/* ========================================================== */}
-                          {/* NEW PANEL: IMAGE SEMIOLOGY AND DIAGNOSTICS JUSTIFICATION */}
-                          {/* ========================================================== */}
-                          {isGeneratingSemiology && (
-                            <div className="bg-[#090d16]/60 border-2 border-cyan-500/10 rounded-2xl p-6 flex flex-col items-center justify-center py-10 text-center space-y-3 shadow-lg animate-pulse my-4">
-                              <Loader2 className="h-6 w-6 text-cyan-400 animate-spin" />
-                              <p className="text-[10px] font-mono font-black text-slate-300 uppercase tracking-widest">
-                                Confeccionando cuadro de semiología por imágenes...
-                              </p>
-                              <p className="text-[9px] font-medium text-slate-500 uppercase tracking-wider max-w-sm">
-                                Extrayendo signos radiológicos de soporte, ponderando hallazgos patológicos y deduciendo diagnósticos diferenciales excluidos basados en la evidencia clínica.
-                              </p>
-                            </div>
-                          )}
-
-                          {semiologyError && (
-                            <div className="p-3 bg-rose-950/10 border border-rose-900/30 rounded-xl text-rose-400 text-[10px] font-mono font-bold uppercase tracking-tight my-4">
-                              {semiologyError}
-                            </div>
-                          )}
-
-                          {semiologyData && (
-                            <div className={isSemiologyExpanded
-                              ? "fixed inset-4 md:inset-10 z-50 bg-[#070b12]/95 backdrop-blur-2xl border-2 border-cyan-500/40 rounded-3xl p-6 md:p-8 flex flex-col space-y-5 shadow-2xl overflow-y-auto transition-all duration-350 my-0"
-                              : "bg-[#070b12] border-2 border-cyan-500/15 rounded-2xl p-6 space-y-5 shadow-2xl relative overflow-hidden animate-fade-in my-4 transition-all duration-350"
-                            }>
-                              {/* Ambient highlight background blur */}
-                              <div className="absolute top-0 right-0 w-48 h-48 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none" />
-
-                              <div className="flex flex-col lg:flex-row lg:items-center justify-between border-b border-cyan-950/40 pb-3.5 gap-4 font-sans">
-                                <div className="flex items-center gap-2 text-left">
-                                  <ShieldCheck className="h-5 w-5 text-cyan-400" />
-                                  <div>
-                                    <h4 className="text-xs font-black text-cyan-400 uppercase tracking-widest font-mono">
-                                      Cuadro de Semiología por Imágenes y Justificación
-                                    </h4>
-                                    <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wide mt-0.5">
-                                      Correlación interpretativa formal entre signos radiográficos, confirmación diagnóstica y exclusiones diferenciales. Selecciona los puntos que deseas incluir.
-                                    </p>
-                                  </div>
-                                </div>
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => setIsSemiologyExpanded(p => !p)}
-                                    className={`p-2 rounded-xl border transition-all duration-200 cursor-pointer flex items-center justify-center ${
-                                      isSemiologyExpanded
-                                        ? "bg-cyan-950/90 border-cyan-500/50 text-cyan-300 ring-1 ring-cyan-500/30"
-                                        : "bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-100"
-                                    }`}
-                                    title={isSemiologyExpanded ? "Restaurar tamaño estándar de componente" : "Maximizar área de lectura (Modo Expandido)"}
-                                  >
-                                    {isSemiologyExpanded ? (
-                                      <Minimize2 className="h-4.5 w-4.5" />
-                                    ) : (
-                                      <Maximize2 className="h-4.5 w-4.5" />
-                                    )}
-                                  </button>
-
-                                  <button
-                                    onClick={() => copyToClipboard(buildDynamicSemiologyMarkdownTable(), false)}
-                                    className="text-[9px] font-black text-slate-400 hover:text-cyan-400 border border-slate-850 px-2.5 py-1.5 rounded-xl bg-slate-950/40 uppercase tracking-wider font-mono transition-all cursor-pointer"
-                                  >
-                                    Copiar en Markdown
-                                  </button>
-                                  <button
-                                    onClick={handleAppendSemiologyToReport}
-                                    className="text-[9px] font-black text-slate-950 hover:bg-cyan-400 bg-cyan-400 px-3.5 py-1.5 rounded-xl uppercase tracking-wider font-mono transition-all flex items-center gap-1.5 cursor-pointer font-bold"
-                                  >
-                                    <Plus className="h-3 w-3" />
-                                    Insertar en Reporte PDF
-                                  </button>
-                                </div>
-                              </div>
-
-                              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2 font-sans text-left">
-                                {/* Diagnósticos Confirmados */}
-                                <div className="space-y-3">
-                                  <div className="flex items-center gap-2 text-cyan-400 text-[10px] font-black uppercase tracking-wider font-mono">
-                                    <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
-                                    1. Diagnósticos Confirmados y Justificación
-                                  </div>
-                                  <div className="border border-slate-800/60 rounded-xl overflow-hidden bg-slate-950/20">
-                                    <table className="w-full text-xs border-collapse">
-                                      <thead>
-                                        <tr className="bg-slate-950 border-b border-slate-850/60 text-slate-400 text-[9px] font-bold uppercase tracking-wider">
-                                          <th className="p-3 text-center w-12">Inc.</th>
-                                          <th className="p-3 text-left w-1/3">INTERPRETACIÓN SEMIOLÓGICA</th>
-                                          <th className="p-3 text-left w-2/3 border-l border-slate-850/60">HALLAZGOS</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody className="divide-y divide-slate-850/40">
-                                        {semiologyData.confirmedDiagnoses && semiologyData.confirmedDiagnoses.map((d: any, idx: number) => (
-                                          <tr key={idx} className={`hover:bg-slate-900/10 transition-colors ${!selectedConfirmedDiagnoses[idx] ? 'opacity-45' : ''}`}>
-                                            <td className="p-3 text-center align-middle">
-                                              <input
-                                                type="checkbox"
-                                                checked={!!selectedConfirmedDiagnoses[idx]}
-                                                onChange={(e) => {
-                                                  const updated = [...selectedConfirmedDiagnoses];
-                                                  updated[idx] = e.target.checked;
-                                                  setSelectedConfirmedDiagnoses(updated);
-                                                }}
-                                                className="rounded border-slate-800 text-cyan-500 focus:ring-cyan-500 h-4 w-4 bg-slate-950 cursor-pointer"
-                                              />
-                                            </td>
-                                            <td className="p-3 text-slate-200 font-bold align-top">{d.diagnosis}</td>
-                                            <td className="p-3 text-slate-300 align-top border-l border-slate-850/40 leading-relaxed">{d.justification}</td>
-                                          </tr>
-                                        ))}
-                                        {(!semiologyData.confirmedDiagnoses || semiologyData.confirmedDiagnoses.length === 0) && (
-                                          <tr>
-                                            <td colSpan={3} className="p-4 text-center text-slate-500 italic text-[11px]">No se hallaron diagnósticos confirmados descritos.</td>
-                                          </tr>
-                                        )}
-                                      </tbody>
-                                    </table>
-                                  </div>
-                                </div>
-
-                                {/* Patologías Descartadas */}
-                                <div className="space-y-3">
-                                  <div className="flex items-center gap-2 text-slate-400 text-[10px] font-black uppercase tracking-wider font-mono">
-                                    <span className="h-1.5 w-1.5 rounded-full bg-slate-500" />
-                                    2. Diagnósticos Diferenciales Descartados
-                                  </div>
-                                  <div className="border border-slate-800/60 rounded-xl overflow-hidden bg-slate-950/20">
-                                    <table className="w-full text-xs border-collapse">
-                                      <thead>
-                                        <tr className="bg-slate-950 border-b border-slate-850/60 text-slate-400 text-[9px] font-bold uppercase tracking-wider">
-                                          <th className="p-3 text-center w-12">Inc.</th>
-                                          <th className="p-3 text-left w-1/3">INTERPRETACIÓN SEMIOLÓGICA</th>
-                                          <th className="p-3 text-left w-2/3 border-l border-slate-850/60">HALLAZGOS</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody className="divide-y divide-slate-850/40">
-                                        {semiologyData.ruledOutPathologies && semiologyData.ruledOutPathologies.map((r: any, idx: number) => (
-                                          <tr key={idx} className={`hover:bg-slate-900/10 transition-colors ${!selectedRuledOutPathologies[idx] ? 'opacity-45' : ''}`}>
-                                            <td className="p-3 text-center align-middle">
-                                              <input
-                                                type="checkbox"
-                                                checked={!!selectedRuledOutPathologies[idx]}
-                                                onChange={(e) => {
-                                                  const updated = [...selectedRuledOutPathologies];
-                                                  updated[idx] = e.target.checked;
-                                                  setSelectedRuledOutPathologies(updated);
-                                                }}
-                                                className="rounded border-slate-800 text-cyan-500 focus:ring-cyan-500 h-4 w-4 bg-slate-950 cursor-pointer"
-                                              />
-                                            </td>
-                                            <td className="p-3 text-slate-300 font-semibold align-top">{r.pathology}</td>
-                                            <td className="p-3 text-slate-400 align-top border-l border-slate-850/40 leading-relaxed">{r.exclusionCriteria}</td>
-                                          </tr>
-                                        ))}
-                                        {(!semiologyData.ruledOutPathologies || semiologyData.ruledOutPathologies.length === 0) && (
-                                          <tr>
-                                            <td colSpan={3} className="p-4 text-center text-slate-500 italic text-[11px]">No se listaron patologías descartadas en el análisis.</td>
-                                          </tr>
-                                        )}
-                                      </tbody>
-                                    </table>
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="pt-2 text-left bg-slate-950/40 border border-slate-850/50 rounded-xl p-4 space-y-1.5">
-                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider font-mono">
-                                  Representación en Tabla Formal para PDF (Dinámica):
-                                </span>
-                                <pre className="text-[10px] text-slate-300 font-mono overflow-x-auto whitespace-pre-wrap p-2 bg-slate-950 rounded border border-slate-900 leading-relaxed max-h-40">
-                                  {buildDynamicSemiologyMarkdownTable()}
-                                </pre>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Render Bibliography Search Panel */}
+                                                    {/* Render Bibliography Search Panel */}
                           {isSearchingBibliography && (
                             <div className="bg-[#0b1517]/60 border-2 border-teal-500/10 rounded-2xl p-6 flex flex-col items-center justify-center py-10 text-center space-y-3 shadow-lg animate-pulse">
                               <BookOpen className="h-6 w-6 text-teal-450 animate-spin" />
