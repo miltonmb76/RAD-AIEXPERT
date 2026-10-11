@@ -213,7 +213,13 @@ function defaultSlotIds(
   const preferredOnes = preferred
     ? candidates.filter((c) => c.sourceId === preferred)
     : [];
-  const pool = preferredOnes.length ? preferredOnes : candidates;
+  const focalOnes = candidates.filter((c) => c.sourceId === "focal");
+  // Prefer Corte Focal panels for pack imagery when available.
+  const pool = preferredOnes.length
+    ? preferredOnes
+    : focalOnes.length
+      ? focalOnes
+      : candidates;
   const a = pool[0]?.id || candidates[0]?.id;
   const b =
     pool[1]?.id ||

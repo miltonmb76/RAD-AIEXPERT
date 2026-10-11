@@ -1,5 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { FileStack, RefreshCw, ImageOff, AlertTriangle } from "lucide-react";
+import {
+  FileStack,
+  RefreshCw,
+  ImageOff,
+  AlertTriangle,
+  Loader2,
+  Sparkles,
+  Box,
+} from "lucide-react";
 import type {
   Atlas3DData,
   ClinicalScorecardData,
@@ -15,6 +23,15 @@ import {
   type DiagnosticPackData,
   type PackImageSource,
 } from "../lib/diagnosticPack";
+import {
+  applyScorecardGovernanceToFigurePack,
+  buildAtlasDirectivesFromScorecard,
+} from "../lib/clinicalIntelligence";
+import { mergeAnchorIntoDirectives } from "../lib/diagnosisAnchor";
+import {
+  suggestFocalImageAnnotations,
+  withSuggestedImageAnnotations,
+} from "../lib/suiteImageAnnotations";
 
 interface DiagnosticPackModuleProps {
   diagnosisAnchor: string;
@@ -22,10 +39,15 @@ interface DiagnosticPackModuleProps {
   scorecardData?: ClinicalScorecardData | null;
   atlas3dData?: Atlas3DData | null;
   focalLesion3dData?: FocalLesion3DData | null;
+  setFocalLesion3dData?: (data: FocalLesion3DData | null) => void;
+  setIncludeFocalLesion3dInReport?: (v: boolean) => void;
   dominantLesionCard?: DominantLesionCardData | null;
   suiteSources?: PackImageSource[];
   preferredSuiteId?: string | null;
   preferredSuiteLabel?: string | null;
+  reportText?: string;
+  studyType?: string;
+  selectedModel?: string;
   packData: DiagnosticPackData | null;
   setPackData: (data: DiagnosticPackData | null) => void;
   includeInReport: boolean;
@@ -38,10 +60,15 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
   scorecardData = null,
   atlas3dData = null,
   focalLesion3dData = null,
+  setFocalLesion3dData,
+  setIncludeFocalLesion3dInReport,
   dominantLesionCard = null,
   suiteSources = [],
   preferredSuiteId = null,
   preferredSuiteLabel = null,
+  reportText = "",
+  studyType = "",
+  selectedModel = "",
   packData,
   setPackData,
   includeInReport,
@@ -59,6 +86,9 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
 
   const [slotAId, setSlotAId] = useState<string>("");
   const [slotBId, setSlotBId] = useState<string>("");
+  const [isGeneratingImages, setIsGeneratingImages] = useState(false);
+  const [genError, setGenError] = useState<string | null>(null);
+  const [pendingAutoBuild, setPendingAutoBuild] = useState(false);
 
   // Seed defaults when candidates / preferred suite change
   useEffect(() => {
@@ -68,9 +98,12 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
       return;
     }
     const preferred = String(preferredSuiteId || "").trim();
+    const focalPool = candidates.filter((c) => c.sourceId === "focal");
     const pool = preferred
       ? candidates.filter((c) => c.sourceId === preferred)
-      : candidates;
+      : focalPool.length
+        ? focalPool
+        : candidates;
     const use = pool.length ? pool : candidates;
     setSlotAId((prev) =>
       prev && candidates.some((c) => c.id === prev) ? prev : use[0]?.id || ""
@@ -120,47 +153,124 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
   );
   const canBuild = diagnosticPackIsRenderable(preview);
   const missing = diagnosticPackMissingRequirements(preview, { hasJustification });
+  const canGenerateImages =
+    !!setFocalLesion3dData &&
+    !!String(reportText || "").trim() &&
+    !!(
+      String(diagnosisAnchor || "").trim() ||
+      String(scorecardData?.categoryAssigned || "").trim()
+    );
 
-  const handleBuild = () => {
-    const next = buildDiagnosticPack(packOpts);
+  const handleBuild = (optsOverride?: Partial<typeof packOpts>) => {
+    const next = buildDiagnosticPack({ ...packOpts, ...optsOverride });
     if (!diagnosticPackIsRenderable(next)) {
       setPackData(null);
       setIncludeInReport(false);
-      return;
+      return false;
     }
     setPackData(next);
     setIncludeInReport(true);
+    return true;
   };
 
-  const slotSelect = (
-    label: string,
-    value: string,
-    onChange: (v: string) => void,
-    excludeId?: string
-  ) => (
-    <label className="flex flex-col gap-1 min-w-[200px] flex-1">
-      <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">
-        {label}
-      </span>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={!candidates.length}
-        className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-2 text-[11px] text-slate-200 outline-none focus:border-amber-500 cursor-pointer disabled:opacity-40"
-      >
-        {!candidates.length && <option value="">Sin imágenes disponibles</option>}
-        {label.startsWith("Imagen B") && candidates.length > 0 && (
-          <option value="">Ninguna</option>
-        )}
-        {candidates.map((c) => (
-          <option key={c.id} value={c.id} disabled={c.id === excludeId}>
-            {c.sourceLabel} · Panel {c.panelLetter}
-            {c.caption ? ` — ${c.caption.slice(0, 40)}` : ""}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
+  // After focal images land and slots settle, auto-armar pack if possible
+  useEffect(() => {
+    if (!pendingAutoBuild) return;
+    if (!candidates.some((c) => c.sourceId === "focal" && c.imageUrl)) return;
+    const focalIds = candidates.filter((c) => c.sourceId === "focal").map((c) => c.id);
+    const a = focalIds[0] || slotAId || null;
+    const b = focalIds[1] || (slotBId === "" ? "" : slotBId || null);
+    if (!a) return;
+    setSlotAId(a);
+    if (b) setSlotBId(b);
+    const ok = handleBuild({
+      imageSlotAId: a,
+      imageSlotBId: b === "" ? "" : b,
+    });
+    setPendingAutoBuild(false);
+    if (!ok) {
+      setGenError(
+        "Imágenes listas. Completa ancla/justificación y pulsa «Armar pack»."
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingAutoBuild, candidates, slotAId, slotBId]);
+
+  const handleGenerateFocalImages = async () => {
+    if (!setFocalLesion3dData) {
+      setGenError("Falta cableado para guardar el Corte Focal.");
+      return;
+    }
+    if (!String(reportText || "").trim()) {
+      setGenError("Necesitas un informe para generar las imágenes del pack.");
+      return;
+    }
+    const focus =
+      String(diagnosisAnchor || "").trim() ||
+      String(scorecardData?.categoryAssigned || "").trim();
+    if (!focus) {
+      setGenError("Define el ancla o genera el Scorecard antes de pedir las imágenes.");
+      return;
+    }
+
+    setIsGeneratingImages(true);
+    setGenError(null);
+    try {
+      const scorecardDirectives = buildAtlasDirectivesFromScorecard(scorecardData);
+      const packDirective = [
+        "PACK DIAGNÓSTICO (lámina de justificación):",
+        `Ancla obligatoria: «${focus}».`,
+        "Genera cortes 3D focales centrados en esa lesión/diagnóstico (misma metodología que Corte Focal).",
+        "Panel A = contexto anatómico útil; Panel B = macro de la lesión dominante.",
+        "Sin texto ni números en la imagen.",
+      ].join("\n");
+      const mergedDirectives = mergeAnchorIntoDirectives(
+        [scorecardDirectives, packDirective].filter(Boolean).join("\n\n"),
+        focus
+      );
+
+      const response = await fetch("/api/generate-focal-lesion-3d", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reportText,
+          organOrStudy: studyType || "",
+          requestedModel: selectedModel || undefined,
+          customDirectives: mergedDirectives || undefined,
+          focusMode: "manual",
+          focusText: focus,
+          includeMacroPanel: true,
+        }),
+      });
+      const resData = await response.json();
+      if (!resData.success || !resData.data) {
+        throw new Error(resData.error || "Error al generar imágenes focales para el pack.");
+      }
+
+      const data = resData.data as FocalLesion3DData;
+      const letters = (data.panels || []).map((p) => p.panelLetter).filter(Boolean);
+      const suggested = suggestFocalImageAnnotations({
+        panelLetters: letters,
+        lesionLabel: data.lesionLabel || focus,
+        lesionSite: data.lesionSite,
+        lesionSize: data.lesionSize,
+      });
+      const withAnns = withSuggestedImageAnnotations(data, suggested);
+      const governed = applyScorecardGovernanceToFigurePack(
+        withAnns,
+        scorecardData
+      ) as FocalLesion3DData;
+
+      setFocalLesion3dData(governed);
+      setIncludeFocalLesion3dInReport?.(true);
+      setPendingAutoBuild(true);
+    } catch (err: any) {
+      console.error("Error generando imágenes del pack:", err);
+      setGenError(err?.message || "Error al generar las imágenes del pack.");
+    } finally {
+      setIsGeneratingImages(false);
+    }
+  };
 
   return (
     <div
@@ -182,8 +292,8 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
               </span>
             </div>
             <p className="text-[11px] text-slate-400 mt-0.5 max-w-xl leading-relaxed">
-              Factores desde la justificación del ancla · mini-ficha · 2 imágenes elegibles por
-              separado
+              Factores desde la justificación del ancla · mini-ficha · imágenes desde Corte Focal
+              (generables aquí) o suite/Atlas
               {preferredSuiteLabel ? ` (suite preferida: ${preferredSuiteLabel})` : ""}.
             </p>
           </div>
@@ -203,6 +313,56 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
         </label>
       </div>
 
+      <div className="rounded-xl border border-amber-500/25 bg-amber-950/20 px-3.5 py-3 space-y-2">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="text-[10px] font-black uppercase tracking-wider text-amber-200 flex items-center gap-1.5">
+              <Box className="h-3.5 w-3.5" />
+              Imágenes focales on-demand
+            </p>
+            <p className="text-[11px] text-slate-400 mt-1 leading-relaxed max-w-xl">
+              Usa el ancla + directrices del scorecard y el motor del Corte Focal para generar
+              contexto + macro sin abrir ese módulo antes.
+            </p>
+            {(diagnosisAnchor || scorecardData?.categoryAssigned) && (
+              <p className="text-[11px] text-amber-100/90 mt-1.5">
+                Foco:{" "}
+                <span className="font-semibold">
+                  {diagnosisAnchor || scorecardData?.categoryAssigned}
+                </span>
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={handleGenerateFocalImages}
+            disabled={!canGenerateImages || isGeneratingImages}
+            className="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 disabled:opacity-45 text-slate-950 text-[11px] font-black uppercase tracking-wider cursor-pointer shrink-0"
+            title={
+              !canGenerateImages
+                ? "Necesitas informe + ancla (o scorecard)"
+                : "Generar 2 paneles con metodología Corte Focal"
+            }
+          >
+            {isGeneratingImages ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Sparkles className="h-4 w-4" />
+            )}
+            {isGeneratingImages
+              ? "Generando 3D…"
+              : candidates.some((c) => c.sourceId === "focal")
+                ? "Regenerar imágenes focales"
+                : "Generar imágenes focales"}
+          </button>
+        </div>
+        {isGeneratingImages && (
+          <p className="text-[10px] text-amber-200/80 font-mono uppercase tracking-wider animate-pulse">
+            Anclando lesión → render focal → auto-selección A/B…
+          </p>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {slotSelect("Imagen A (obligatoria)", slotAId, setSlotAId, slotBId)}
         {slotSelect("Imagen B (recomendada)", slotBId, setSlotBId, slotAId)}
@@ -211,7 +371,7 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          onClick={handleBuild}
+          onClick={() => handleBuild()}
           disabled={!canBuild}
           className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-xs font-black uppercase tracking-wider cursor-pointer"
         >
@@ -231,6 +391,13 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
           </button>
         )}
       </div>
+
+      {genError && (
+        <div className="text-[11px] text-rose-200 bg-rose-950/35 border border-rose-800/40 rounded-xl px-3 py-2 flex items-start gap-2">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+          <span>{genError}</span>
+        </div>
+      )}
 
       {missing.length > 0 && (
         <div className="text-[11px] text-amber-100/95 bg-amber-950/35 border border-amber-700/40 rounded-xl px-3 py-2.5 space-y-1">
@@ -350,7 +517,7 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
                   <div className="rounded-xl border border-dashed border-stone-300 bg-stone-50 aspect-[4/3] flex flex-col items-center justify-center gap-2 text-stone-400 px-4 text-center">
                     <ImageOff className="h-7 w-7 opacity-50" />
                     <p className="text-[11px] leading-snug">
-                      Elige imagen A (y B) desde Focal / suite / Atlas.
+                      Genera imágenes focales o elige A/B desde Focal / suite / Atlas.
                     </p>
                   </div>
                 )}
@@ -367,6 +534,38 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
       )}
     </div>
   );
+
+  function slotSelect(
+    label: string,
+    value: string,
+    onChange: (v: string) => void,
+    excludeId?: string
+  ) {
+    return (
+      <label className="flex flex-col gap-1 min-w-[200px] flex-1">
+        <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">
+          {label}
+        </span>
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={!candidates.length}
+          className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-2 text-[11px] text-slate-200 outline-none focus:border-amber-500 cursor-pointer disabled:opacity-40"
+        >
+          {!candidates.length && <option value="">Sin imágenes disponibles</option>}
+          {label.startsWith("Imagen B") && candidates.length > 0 && (
+            <option value="">Ninguna</option>
+          )}
+          {candidates.map((c) => (
+            <option key={c.id} value={c.id} disabled={c.id === excludeId}>
+              {c.sourceLabel} · Panel {c.panelLetter}
+              {c.caption ? ` — ${c.caption.slice(0, 40)}` : ""}
+            </option>
+          ))}
+        </select>
+      </label>
+    );
+  }
 };
 
 export default DiagnosticPackModule;
