@@ -1695,18 +1695,33 @@ Devuelve de manera estricta y exclusiva el reporte radiológico COMPLETO resulta
 });
 
 /**
- * NEW API: GENERATE PATIENT INFOGRAPHIC
  * POST /api/generate-infographic
  * Payload: {
- *   report: string
- *   studyType: string
- *   correctionNotes?: string
+ *   report, studyType, correctionNotes?, reportDate?, projections?, viewOrientation?, audience?,
+ *   mode?: "general" | "directed",
+ *   topic?, orientationBrief?, sections?, includeRecommendations?: "none"|"clinician"|"both",
+ *   scorecardContext?, diagnosisAnchor?
  * }
+ * General and directed are independent products; the client may keep both.
  */
 app.post("/api/generate-infographic", async (req: express.Request, res: express.Response) => {
   try {
-    const { report, studyType, correctionNotes, reportDate, projections, viewOrientation, audience } =
-      req.body;
+    const {
+      report,
+      studyType,
+      correctionNotes,
+      reportDate,
+      projections,
+      viewOrientation,
+      audience,
+      mode,
+      topic,
+      orientationBrief,
+      sections,
+      includeRecommendations,
+      scorecardContext,
+      diagnosisAnchor,
+    } = req.body;
     if (!report || !studyType) {
       return res.status(400).json({ success: false, error: "Se requieren el reporte y el tipo de estudio." });
     }
@@ -1715,6 +1730,23 @@ app.post("/api/generate-infographic", async (req: express.Request, res: express.
     const dateHint = String(reportDate || "").trim();
     const audienceMode =
       String(audience || "patient").toLowerCase() === "clinician" ? "clinician" : "patient";
+    const isDirected = String(mode || "general").toLowerCase() === "directed";
+    const topicText = String(topic || diagnosisAnchor || "").trim();
+    const briefText = String(orientationBrief || "").trim();
+    const sectionList = Array.isArray(sections)
+      ? sections.map((s: any) => String(s || "").trim()).filter(Boolean).slice(0, 8)
+      : [];
+    const recoModeRaw = String(includeRecommendations || "none").toLowerCase();
+    const recoMode =
+      recoModeRaw === "both" || recoModeRaw === "clinician" ? recoModeRaw : "none";
+    const allowRecoThisAudience =
+      recoMode === "both" || (recoMode === "clinician" && audienceMode === "clinician");
+    if (isDirected && topicText.length < 3) {
+      return res.status(400).json({
+        success: false,
+        error: "La infografía dirigida requiere un tema / hallazgo (mín. 3 caracteres).",
+      });
+    }
     const preferredView =
       String(viewOrientation || "").toUpperCase() === "PA"
         ? ("PA" as InfographicViewOrientation)
@@ -1739,18 +1771,50 @@ ${String(correctionNotes).trim()}
 """
 `
       : "";
+    const scorecardBlock = String(scorecardContext || "").trim()
+      ? `
+
+EVIDENCIA DEL SCORECARD (úsala solo si refuerza el tema; no inventes):
+"""
+${String(scorecardContext).trim()}
+"""
+`
+      : "";
+    const directedBriefBlock = isDirected
+      ? `
+
+MODO DIRIGIDO (prioridad máxima sobre el resto del informe):
+- TEMA / HALLAZGO ÚNICO: «${topicText}».
+- ORIENTACIÓN DEL MÉDICO: ${briefText || "(sin orientación adicional — centra el póster en el tema)"}
+${sectionList.length ? `- SECCIONES A CUBRIR (si hay evidencia): ${sectionList.join(" · ")}.` : "- Secciones: las que mejor expliquen el tema con evidencia del informe."}
+- NO conviertas esto en un mapa general de todo el estudio. Si el informe menciona otros órganos/hallazgos, omítelos salvo que sean esenciales para entender ESTE tema.
+- Composición libre (no plantilla rígida), pero el contenido debe girar alrededor del tema.
+`
+      : "";
+    const recoBlock = allowRecoThisAudience
+      ? `
+RECOMENDACIONES / CONDUCTA:
+- SÍ puedes incluir conducta o seguimiento SOLO si consta en el informe, en el scorecard o en la orientación del médico.
+- Sé breve (1–3 bullets). No inventes tratamientos ni derivaciones ausentes.
+`
+      : `
+RECOMENDACIONES / CONDUCTA:
+- NO incluyas recomendaciones, tratamientos, “qué hacer después”, derivaciones ni consejos clínicos.
+`;
 
     // Freeform poster: quality bar + medical guardrails, but NO fixed layout template.
-    // Gemini image invents the composition that best fits THIS report + audience.
+    // Gemini image invents the composition that best fits THIS report + audience (+ directed brief).
     const promptText =
       audienceMode === "clinician"
         ? `
-Haz UNA infografía CLÍNICA formal, elegante y científica para el MÉDICO, basada en este reporte radiológico de ${studyType}${dateHint ? ` (${dateHint})` : ""}.
+Haz UNA infografía CLÍNICA formal, elegante y científica para el MÉDICO, basada en este reporte radiológico de ${studyType}${dateHint ? ` (${dateHint})` : ""}${isDirected ? ` — FOCO: ${topicText}` : ""}.
 
 REPORTE:
 """
 ${reportForInfographic}
 """
+${scorecardBlock}
+${directedBriefBlock}
 ${correctionBlock}
 
 ORIENTACIÓN DE LA FIGURA CORPORAL (obligatoria): ${orientation === "PA" ? "PA — paciente DE ESPALDAS" : "AP — paciente DE FRENTE"}.
@@ -1760,15 +1824,15 @@ ${INFOGRAPHIC_PRIVACY_PROMPT_BLOCK}
 
 ESTILO (médico / científico):
 - Look de atlas o ficha clínica premium: tipografía sobria (sans geométrica o serif editorial), paleta fría o neutra (slate/azul médico), sin tono infantil ni “app de wellness”.
-- Título formal (p. ej. “Correlación anatomopatológica — ultrasonido abdominal”, “Mapa de hallazgos — mama”).
+- Título formal${isDirected ? ` centrado en «${topicText}»` : " (p. ej. correlación anatomopatológica / mapa de hallazgos)"}.
 - Léxico médico preciso (colelitiasis, BI-RADS, TI-RADS, etc. cuando consten en el reporte).
 - Callouts limpios, reglas finas, jerarquía clara; aire generoso; sin clutter.
 - Misma anatomía / mismos hallazgos que se explicarían al paciente, pero con voz profesional.
 - Pie breve: “Anexo visual · no sustituye el informe completo”. Sin logo inventado.
 
 CONTENIDO — QUÉ SÍ / QUÉ NO:
-- SÍ: hallazgos principales del reporte, lateralidad, medidas si constan.
-- NO: recomendaciones, tratamientos, “qué hacer después”, alarmismo, consejos clínicos.
+- SÍ: ${isDirected ? "el hallazgo/tema indicado, sus rasgos, lateralidad y medidas si constan" : "hallazgos principales del reporte, lateralidad, medidas si constan"}.
+${recoBlock}
 - NO inventes mediciones ni hallazgos ausentes del reporte.
 - NO: nombre del paciente ni ningún identificador personal (ni reales ni de ejemplo).
 - NO: escribir "estudio anónimo", "paciente anónimo" ni sellos de anonimato; omite la identidad sin mencionarlo.
@@ -1778,12 +1842,14 @@ ${lateralityBlock}
 Entrega una sola imagen vertical, lista como anexo clínico.
 `
         : `
-Haz UNA infografía para el paciente basada en este reporte radiológico de ${studyType}${dateHint ? ` (${dateHint})` : ""}.
+Haz UNA infografía para el paciente basada en este reporte radiológico de ${studyType}${dateHint ? ` (${dateHint})` : ""}${isDirected ? ` — FOCO: ${topicText}` : ""}.
 
 REPORTE:
 """
 ${reportForInfographic}
 """
+${scorecardBlock}
+${directedBriefBlock}
 ${correctionBlock}
 
 ORIENTACIÓN DE LA FIGURA CORPORAL (obligatoria): ${orientation === "PA" ? "PA — paciente DE ESPALDAS" : "AP — paciente DE FRENTE"}.
@@ -1794,16 +1860,15 @@ ${INFOGRAPHIC_PRIVACY_PROMPT_BLOCK}
 LIBERTAD DE DISEÑO (importante):
 - Tú eliges el layout, la jerarquía visual y cómo acomodar los hallazgos.
 - NO uses una plantilla fija ni un esquema rígido de secciones.
-- Diseña la composición que MEJOR se ajuste a ESTE reporte concreto (puede ser 1 hallazgo dominante, 2 métricas lado a lado, un callout central, un bloque de “resto del estudio”, iconos anatómicos, etc., solo si aportan).
+- Diseña la composición que MEJOR se ajuste a ${isDirected ? "ESTE tema dirigido" : "ESTE reporte concreto"} (puede ser 1 hallazgo dominante, métricas, callout central, etc., solo si aportan).
 - Prioriza limpieza, modernismo, aire/espaciado generoso, tipografía clara y un look de ficha educativa premium (estilo app de salud contemporánea).
 - Español para paciente: cercano, preciso y sin tecnicismos innecesarios. Si hay números del reporte (%, kPa, mm, cm), muéstralos con claridad cuando ayuden a entender.
-- Título amable orientado al paciente (p. ej. “Tu ultrasonido abdominal”, “Tu radiografía de tórax”), no jerga de informe.
-- Si hay hallazgos normales relevantes del resto del estudio, puedes resumirlos con elegancia; no inventes órganos ni hallazgos ausentes del reporte.
+- Título amable orientado al paciente${isDirected ? ` sobre «${topicText}»` : ""}.
 - Incluye un pie breve de disclaimer informativo (no sustituye la valoración médica). Sin logo de clínica inventado ni marca comercial inventada.
 
 CONTENIDO — QUÉ SÍ / QUÉ NO:
-- SÍ: explicar de forma visual los hallazgos principales del reporte para que el paciente entienda qué se encontró.
-- NO: recomendaciones, tratamientos, “qué hacer después”, derivaciones, alarmismo ni consejos clínicos.
+- SÍ: explicar de forma visual ${isDirected ? "el hallazgo/tema indicado" : "los hallazgos principales del reporte"}.
+${recoBlock}
 - NO inventes mediciones, gradaciones ni hallazgos que no estén en el reporte.
 - NO: nombre del paciente ni ningún identificador personal (ni reales ni de ejemplo / placeholder).
 - NO: escribir "estudio anónimo", "paciente anónimo" ni sellos de anonimato; omite la identidad sin mencionarlo.
@@ -1866,6 +1931,7 @@ Entrega una sola imagen vertical, lista para compartir con el paciente.
       imageUrl: `data:image/jpeg;base64,${base64Image}`,
       viewOrientation: orientation,
       audience: audienceMode,
+      mode: isDirected ? "directed" : "general",
     });
   } catch (error: any) {
     console.error("Error en /api/generate-infographic:", error);

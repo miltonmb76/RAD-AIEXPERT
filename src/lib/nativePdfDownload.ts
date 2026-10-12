@@ -93,6 +93,10 @@ export type NativePdfDownloadDeps = {
   infographicUrl: any;
   /** Formal clinician classic poster; preferred for official-report annex when present. */
   infographicClinicianUrl?: any;
+  /** Directed classic poster (independent of general); patient + clinician. */
+  attachDirectedInfographicToOfficialReport?: boolean;
+  directedInfographicUrl?: any;
+  directedInfographicClinicianUrl?: any;
   isEditingReportManual: boolean;
   isSyntacticHighlightingActive: boolean;
   kidney3dData: any;
@@ -129,6 +133,7 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
       ankle3dData,
       atlas3dData,
       attachInfographicToOfficialReport,
+      attachDirectedInfographicToOfficialReport,
       attachSummaryToOfficialReport,
       attachedImages,
       biomechanicalRadarData,
@@ -178,6 +183,8 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
       includeWrist3dInReport,
       infographicUrl,
       infographicClinicianUrl,
+      directedInfographicUrl,
+      directedInfographicClinicianUrl,
       isEditingReportManual,
       isSyntacticHighlightingActive,
       kidney3dData,
@@ -4933,18 +4940,41 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
 
       }
 
-      // --- 10. INFOGRAFÍA CLÁSICA (prefer clinician poster on official report) ---
-      const officialInfographicUrl =
-        (infographicClinicianUrl as string | null | undefined) ||
-        (infographicUrl as string | null | undefined) ||
-        null;
-      const officialInfographicIsClinician = Boolean(infographicClinicianUrl);
-      if (attachInfographicToOfficialReport && officialInfographicUrl) {
+      // --- 10. INFOGRAFÍAS CLÁSICAS (general y/o dirigida; independientes) ---
+      const classicAnnexes: Array<{ url: string; title: string }> = [];
+      if (attachInfographicToOfficialReport) {
+        const url =
+          (infographicClinicianUrl as string | null | undefined) ||
+          (infographicUrl as string | null | undefined) ||
+          null;
+        if (url) {
+          classicAnnexes.push({
+            url,
+            title: infographicClinicianUrl
+              ? "ANEXO: INFOGRAFÍA CLÍNICA (CORRELACIÓN ANATÓMICA)"
+              : "ANEXO: INFOGRAFÍA EXPLICATIVA PARA EL PACIENTE",
+          });
+        }
+      }
+      if (attachDirectedInfographicToOfficialReport) {
+        const url =
+          (directedInfographicClinicianUrl as string | null | undefined) ||
+          (directedInfographicUrl as string | null | undefined) ||
+          null;
+        if (url) {
+          classicAnnexes.push({
+            url,
+            title: directedInfographicClinicianUrl
+              ? "ANEXO: INFOGRAFÍA DIRIGIDA (CLÍNICA)"
+              : "ANEXO: INFOGRAFÍA DIRIGIDA (PACIENTE)",
+          });
+        }
+      }
+      for (const annex of classicAnnexes) {
         try {
-          let base64Image = officialInfographicUrl;
-          if (!officialInfographicUrl.startsWith("data:")) {
-            // It's a blob or normal URL. Let's fetch it and convert to data URL
-            const response = await fetch(officialInfographicUrl);
+          let base64Image = annex.url;
+          if (!annex.url.startsWith("data:")) {
+            const response = await fetch(annex.url);
             const blob = await response.blob();
             base64Image = await new Promise<string>((resolve, reject) => {
               const reader = new FileReader();
@@ -4959,23 +4989,15 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
 
           doc.setFont("helvetica", "bold");
           doc.setFontSize(11);
-          doc.setTextColor(15, 23, 42); // slate 900
-          doc.text(
-            officialInfographicIsClinician
-              ? "ANEXO: INFOGRAFÍA CLÍNICA (CORRELACIÓN ANATÓMICA)"
-              : "ANEXO: INFOGRAFÍA EXPLICATIVA PARA EL PACIENTE",
-            marginX,
-            yCoord
-          );
+          doc.setTextColor(15, 23, 42);
+          doc.text(annex.title, marginX, yCoord);
 
-          // Simple divider
           yCoord += 4;
-          doc.setDrawColor(203, 213, 225); // slate 300
+          doc.setDrawColor(203, 213, 225);
           doc.setLineWidth(0.4);
           doc.line(marginX, yCoord, pageWidth - marginX, yCoord);
           yCoord += 11;
 
-          // Let's determine format
           let format = "PNG";
           if (base64Image.includes("image/jpeg") || base64Image.includes("image/jpg")) {
             format = "JPEG";
@@ -4983,20 +5005,19 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
             format = "WEBP";
           }
 
-          // Measure its aspect ratio to fit perfectly without distortion
           const imgAspect = await new Promise<number>((resolve) => {
             const tempImg = new Image();
             tempImg.onload = () => {
               resolve(tempImg.naturalWidth / tempImg.naturalHeight);
             };
             tempImg.onerror = () => {
-              resolve(1.0); // Fallback to square
+              resolve(1.0);
             };
             tempImg.src = base64Image;
           });
 
           const maxDrawWidth = contentWidth;
-          const maxDrawHeight = pageHeight - yCoord - 20; // 20mm margin bottom
+          const maxDrawHeight = pageHeight - yCoord - 20;
 
           let drawW = maxDrawWidth;
           let drawH = maxDrawWidth / imgAspect;
@@ -5006,7 +5027,6 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
             drawW = maxDrawHeight * imgAspect;
           }
 
-          // Center horizontally
           const drawX = marginX + (maxDrawWidth - drawW) / 2;
           const drawY = yCoord;
 

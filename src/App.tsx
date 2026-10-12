@@ -175,6 +175,14 @@ import {
 } from "./lib/scorecardOrchestrator";
 import { resolveScorecardFinalDiagnosis } from "./lib/diagnosisAnchor";
 import {
+  DIRECTED_SECTION_OPTIONS,
+  buildDirectedScorecardContext,
+  defaultDirectedSections,
+  directedBriefIsReady,
+  toggleDirectedSection,
+  type DirectedRecommendationMode,
+} from "./lib/directedInfographic";
+import {
   galleryToRealUs,
   inferBridgeOfferFromGalleryImage,
   suggestRealUsFromGallery,
@@ -265,6 +273,19 @@ export default function App() {
   const [infographicCorrectionNotes, setInfographicCorrectionNotes] = useState<string>("");
   /** AP = de frente (espejo); PA = de espaldas (mismos lados del cuadro) */
   const [infographicViewOrientation, setInfographicViewOrientation] = useState<InfographicViewOrientation>("AP");
+  // Directed classic poster (independent of general — can coexist and both attach)
+  const [isGeneratingDirectedInfographic, setIsGeneratingDirectedInfographic] = useState<boolean>(false);
+  const [directedInfographicUrl, setDirectedInfographicUrl] = useState<string | null>(null);
+  const [directedInfographicClinicianUrl, setDirectedInfographicClinicianUrl] = useState<string | null>(null);
+  const [directedInfographicAudienceTab, setDirectedInfographicAudienceTab] = useState<"patient" | "clinician">("patient");
+  const [directedInfographicError, setDirectedInfographicError] = useState<string | null>(null);
+  const [directedTopic, setDirectedTopic] = useState<string>("");
+  const [directedOrientation, setDirectedOrientation] = useState<string>("");
+  const [directedSections, setDirectedSections] = useState<string[]>(() => defaultDirectedSections());
+  const [directedRecommendations, setDirectedRecommendations] = useState<DirectedRecommendationMode>("clinician");
+  const [directedCorrectionNotes, setDirectedCorrectionNotes] = useState<string>("");
+  const [attachDirectedInfographicToOfficialReport, setAttachDirectedInfographicToOfficialReport] = useState<boolean>(false);
+  const [attachDirectedInfographicToPatientSummary, setAttachDirectedInfographicToPatientSummary] = useState<boolean>(false);
   // Local storage customizable instructions
   const [systemInstruction, setSystemInstruction] = useState<string>(() => {
     if (typeof window === "undefined") return GENERAL_SYSTEM_INSTRUCTION;
@@ -1488,6 +1509,17 @@ export default function App() {
   // --- INTERACTIVE SYNTACTIC HIGHLIGHTING AND DYNAMIC AESTHETIC STATES ---
   const [isSyntacticHighlightingActive, setIsSyntacticHighlightingActive] = useState<boolean>(true);
   const [manualSeverityOverrides, setManualSeverityOverrides] = useState<Record<string, "critical" | "altered" | "normal">>({});
+
+  // Prefill directed topic from session ancla / scorecard when empty
+  useEffect(() => {
+    if (String(directedTopic || "").trim()) return;
+    const seed =
+      String(diagnosisAnchor || "").trim() ||
+      resolveScorecardFinalDiagnosis(clinicalScorecardData);
+    if (seed) setDirectedTopic(seed);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only seed when ancla/scorecard lands
+  }, [diagnosisAnchor, clinicalScorecardData]);
+
   const [aiSeverityCache, setAiSeverityCache] = useState<Record<string, "critical" | "altered" | "normal">>({});
   const [isAnalyzingParagraphs, setIsAnalyzingParagraphs] = useState<boolean>(false);
 
@@ -2871,6 +2903,18 @@ Ejemplo:
     setAttachInfographicToOfficialReport(false);
     setAttachInfographicToPatientSummary(false);
     setInfographicCorrectionNotes("");
+    setIsGeneratingDirectedInfographic(false);
+    setDirectedInfographicUrl(null);
+    setDirectedInfographicClinicianUrl(null);
+    setDirectedInfographicAudienceTab("patient");
+    setDirectedInfographicError(null);
+    setDirectedTopic("");
+    setDirectedOrientation("");
+    setDirectedSections(defaultDirectedSections());
+    setDirectedRecommendations("clinician");
+    setDirectedCorrectionNotes("");
+    setAttachDirectedInfographicToOfficialReport(false);
+    setAttachDirectedInfographicToPatientSummary(false);
 
     // --- Módulos clínicos auxiliares ---
     setClinicalScorecardData(null);
@@ -4436,6 +4480,7 @@ Ejemplo:
     setInfographicError(null);
     setInfographicUrl(null);
     setInfographicClinicianUrl(null);
+    // Do NOT clear directed posters — general and directed coexist
     if (!opts?.keepAttachments) {
       setAttachInfographicToOfficialReport(false);
       setAttachInfographicToPatientSummary(false);
@@ -4448,6 +4493,8 @@ Ejemplo:
         reportDate: reportDate || "",
         projections,
         viewOrientation: infographicViewOrientation,
+        mode: "general" as const,
+        includeRecommendations: "none" as const,
         ...(notes ? { correctionNotes: notes } : {}),
       };
       const [patientRes, clinicianRes] = await Promise.all([
@@ -4500,6 +4547,89 @@ Ejemplo:
       setInfographicError(err.message || "Error al conectar con la API de infografías.");
     } finally {
       setIsGeneratingInfographic(false);
+    }
+  };
+
+  const handleGenerateDirectedInfographic = async (opts?: { keepAttachments?: boolean }) => {
+    if (!generatedReport || !studyType) return;
+    const topic =
+      directedTopic.trim() ||
+      String(diagnosisAnchor || "").trim() ||
+      resolveScorecardFinalDiagnosis(clinicalScorecardData);
+    if (!directedBriefIsReady({ topic, orientation: directedOrientation })) {
+      setDirectedInfographicError("Indica un tema / hallazgo (mín. 3 caracteres) para la infografía dirigida.");
+      return;
+    }
+    if (!directedTopic.trim() && topic) setDirectedTopic(topic);
+    setIsGeneratingDirectedInfographic(true);
+    setDirectedInfographicError(null);
+    setDirectedInfographicUrl(null);
+    setDirectedInfographicClinicianUrl(null);
+    // Do NOT clear general posters
+    if (!opts?.keepAttachments) {
+      setAttachDirectedInfographicToOfficialReport(false);
+      setAttachDirectedInfographicToPatientSummary(false);
+    }
+    try {
+      const notes = directedCorrectionNotes.trim();
+      const baseBody = {
+        report: generatedReport,
+        studyType,
+        reportDate: reportDate || "",
+        projections,
+        viewOrientation: infographicViewOrientation,
+        mode: "directed" as const,
+        topic,
+        orientationBrief: directedOrientation.trim(),
+        sections: directedSections,
+        includeRecommendations: directedRecommendations,
+        diagnosisAnchor: String(diagnosisAnchor || "").trim() || undefined,
+        scorecardContext: buildDirectedScorecardContext(clinicalScorecardData) || undefined,
+        ...(notes ? { correctionNotes: notes } : {}),
+      };
+      const [patientRes, clinicianRes] = await Promise.all([
+        fetch("/api/generate-infographic", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...baseBody, audience: "patient" }),
+        }),
+        fetch("/api/generate-infographic", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...baseBody, audience: "clinician" }),
+        }),
+      ]);
+      const patientData = await patientRes.json();
+      const clinicianData = await clinicianRes.json();
+
+      if (!patientData.success && !clinicianData.success) {
+        throw new Error(
+          patientData.error ||
+            clinicianData.error ||
+            "Error generando la infografía dirigida."
+        );
+      }
+
+      if (patientData.success && patientData.imageUrl) {
+        setDirectedInfographicUrl(patientData.imageUrl);
+      }
+      if (clinicianData.success && clinicianData.imageUrl) {
+        setDirectedInfographicClinicianUrl(clinicianData.imageUrl);
+      }
+      if (patientData.success) setDirectedInfographicAudienceTab("patient");
+      else if (clinicianData.success) setDirectedInfographicAudienceTab("clinician");
+
+      if (!patientData.success || !clinicianData.success) {
+        setDirectedInfographicError(
+          !patientData.success
+            ? `Versión paciente: ${patientData.error || "falló"}. Se muestra la disponible.`
+            : `Versión médico: ${clinicianData.error || "falló"}. Se muestra la disponible.`
+        );
+      }
+    } catch (err: any) {
+      setDirectedInfographicError(err.message || "Error al generar la infografía dirigida.");
+    } finally {
+      setIsGeneratingDirectedInfographic(false);
     }
   };
 
@@ -5245,6 +5375,7 @@ Ejemplo:
     ankle3dData,
     atlas3dData,
     attachInfographicToOfficialReport,
+    attachDirectedInfographicToOfficialReport,
     attachSummaryToOfficialReport,
     attachedImages,
     biomechanicalRadarData,
@@ -5294,6 +5425,8 @@ Ejemplo:
     includeWrist3dInReport,
     infographicUrl,
     infographicClinicianUrl,
+    directedInfographicUrl,
+    directedInfographicClinicianUrl,
     isEditingReportManual,
     isSyntacticHighlightingActive,
     kidney3dData,
@@ -5341,6 +5474,10 @@ Ejemplo:
         selectedLogo,
         formatDateToDMY,
         infographicUrl: attachInfographicToPatientSummary && infographicUrl ? infographicUrl : undefined,
+        directedInfographicUrl:
+          attachDirectedInfographicToPatientSummary && directedInfographicUrl
+            ? directedInfographicUrl
+            : undefined,
       },
       openInNewTab,
       shareViaWebShare,
@@ -8019,6 +8156,21 @@ Ejemplo:
                           </button>
                           <button
                             type="button"
+                            onClick={() => handleGenerateDirectedInfographic()}
+                            disabled={isGeneratingDirectedInfographic || !generatedReport}
+                            className="px-3 md:px-4 py-1.5 md:py-2 bg-fuchsia-800 hover:bg-fuchsia-700 border-2 border-fuchsia-500/30 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider text-white transition-all flex items-center gap-1.5 md:gap-2 shadow-lg select-none whitespace-nowrap cursor-pointer disabled:opacity-50"
+                            title="Infografía dirigida a un hallazgo (no sustituye la general)"
+                          >
+                            {isGeneratingDirectedInfographic ? (
+                              <>
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Dirigida...
+                              </>
+                            ) : (
+                              "Infografía dirigida"
+                            )}
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => setIsSplitPdfActive(p => !p)}
                             className={`px-3 md:px-4 py-1.5 md:py-2 border-2 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 md:gap-2 shadow-lg select-none whitespace-nowrap cursor-pointer ${
                               isSplitPdfActive
@@ -8153,7 +8305,7 @@ Ejemplo:
                           <div className="mb-6 p-4 bg-slate-800 rounded-xl border border-pink-600/30">
                              <div className="flex justify-between items-start mb-2 flex-wrap gap-2">
                                <div className="min-w-0">
-                                 <h4 className="text-sm font-bold text-pink-300">Infografías generadas</h4>
+                                 <h4 className="text-sm font-bold text-pink-300">Infografías generales</h4>
                                  <p className="text-[9px] text-slate-500 mt-0.5 leading-relaxed">
                                    Una a la vez a tamaño completo. Elija destino PDF por versión; si no le gusta el resultado, déjela sin adjuntar.
                                  </p>
@@ -8339,6 +8491,251 @@ Ejemplo:
                              {infographicError}
                           </div>
                         )}
+
+                        {/* Directed classic poster — independent of general */}
+                        {generatedReport && (
+                          <div className="mb-4 p-3 bg-slate-900/70 rounded-xl border border-fuchsia-600/25 space-y-2.5">
+                            <div className="flex flex-wrap items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <p className="text-[10px] font-black uppercase tracking-widest text-fuchsia-300/90 font-mono">
+                                  Infografía dirigida (hallazgo)
+                                </p>
+                                <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">
+                                  Póster imagen como la general, pero con tema y orientación. No sustituye ni borra la general; puedes adjuntar ambas.
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleGenerateDirectedInfographic()}
+                                disabled={isGeneratingDirectedInfographic}
+                                className="px-3 py-1.5 bg-fuchsia-800 hover:bg-fuchsia-700 disabled:opacity-50 border border-fuchsia-500/40 rounded-xl text-[10px] font-black uppercase tracking-wider text-white cursor-pointer flex items-center gap-1.5"
+                              >
+                                {isGeneratingDirectedInfographic ? (
+                                  <>
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Generando...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Sparkles className="h-3.5 w-3.5" /> Generar dirigida
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                            <label className="block text-[9px] font-black uppercase tracking-widest text-fuchsia-300/80 font-mono">
+                              Tema / hallazgo
+                            </label>
+                            <input
+                              type="text"
+                              value={directedTopic}
+                              onChange={(e) => setDirectedTopic(e.target.value)}
+                              placeholder={
+                                String(diagnosisAnchor || "").trim() ||
+                                "Ej. pólipos vesiculares"
+                              }
+                              className="w-full px-3 py-2 bg-slate-950 border border-slate-700 focus:border-fuchsia-500/40 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none"
+                            />
+                            <label className="block text-[9px] font-black uppercase tracking-widest text-fuchsia-300/80 font-mono">
+                              Orientación (qué quieres enfatizar)
+                            </label>
+                            <textarea
+                              value={directedOrientation}
+                              onChange={(e) => setDirectedOrientation(e.target.value)}
+                              rows={2}
+                              placeholder="Ej. características, tipo/clasificación y recomendación; no mezclar con litiasis ni hígado."
+                              className="w-full px-3 py-2 bg-slate-950 border border-slate-700 focus:border-fuchsia-500/40 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none resize-y leading-relaxed"
+                            />
+                            <div>
+                              <p className="text-[9px] font-black uppercase tracking-widest text-fuchsia-300/80 font-mono mb-1.5">
+                                Secciones
+                              </p>
+                              <div className="flex flex-wrap gap-1.5">
+                                {DIRECTED_SECTION_OPTIONS.map((sec) => {
+                                  const on = directedSections.includes(sec);
+                                  return (
+                                    <button
+                                      key={sec}
+                                      type="button"
+                                      onClick={() =>
+                                        setDirectedSections((prev) => toggleDirectedSection(prev, sec))
+                                      }
+                                      className={`px-2 py-1 rounded-lg text-[9px] font-bold border cursor-pointer ${
+                                        on
+                                          ? "bg-fuchsia-950/70 border-fuchsia-500/50 text-fuchsia-200"
+                                          : "bg-slate-950 border-slate-700 text-slate-500 hover:text-slate-300"
+                                      }`}
+                                    >
+                                      {sec}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                            <div>
+                              <p className="text-[9px] font-black uppercase tracking-widest text-fuchsia-300/80 font-mono mb-1.5">
+                                Recomendaciones
+                              </p>
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                                {(
+                                  [
+                                    ["none", "Sin recomendaciones"],
+                                    ["clinician", "Solo en médica"],
+                                    ["both", "En ambas"],
+                                  ] as const
+                                ).map(([id, label]) => (
+                                  <button
+                                    key={id}
+                                    type="button"
+                                    onClick={() => setDirectedRecommendations(id)}
+                                    className={`py-1.5 px-2 rounded-lg text-[9px] font-black uppercase tracking-wider border cursor-pointer ${
+                                      directedRecommendations === id
+                                        ? "bg-fuchsia-800/50 border-fuchsia-500 text-fuchsia-100"
+                                        : "bg-slate-950 border-slate-700 text-slate-500 hover:text-slate-300"
+                                    }`}
+                                  >
+                                    {label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {(directedInfographicUrl || directedInfographicClinicianUrl) && (
+                          <div className="mb-6 p-4 bg-slate-800 rounded-xl border border-fuchsia-600/30">
+                            <div className="flex justify-between items-start mb-2 flex-wrap gap-2">
+                              <div className="min-w-0">
+                                <h4 className="text-sm font-bold text-fuchsia-300">Infografía dirigida</h4>
+                                <p className="text-[9px] text-slate-500 mt-0.5 leading-relaxed">
+                                  Independiente de la general. Adjunta la que quieras (o ambas).
+                                  {directedTopic.trim() ? ` · Tema: ${directedTopic.trim()}` : ""}
+                                </p>
+                              </div>
+                              <div className="flex flex-wrap items-center justify-end gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => setAttachDirectedInfographicToPatientSummary((p) => !p)}
+                                  disabled={!directedInfographicUrl}
+                                  className={`text-[9px] font-black px-3 py-1.5 rounded-xl uppercase tracking-wider font-mono transition-all flex items-center gap-1.5 cursor-pointer border disabled:opacity-40 ${
+                                    attachDirectedInfographicToPatientSummary
+                                      ? "bg-orange-950/80 border-orange-500/50 text-orange-300"
+                                      : "bg-slate-950 border-slate-800 text-slate-400"
+                                  }`}
+                                >
+                                  {attachDirectedInfographicToPatientSummary ? (
+                                    <>
+                                      <Check className="h-3 w-3 text-orange-400" /> En explicación paciente
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Plus className="h-3 w-3" /> Incluir en explicación
+                                    </>
+                                  )}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setAttachDirectedInfographicToOfficialReport((p) => !p)}
+                                  disabled={!directedInfographicClinicianUrl && !directedInfographicUrl}
+                                  className={`text-[9px] font-black px-3 py-1.5 rounded-xl uppercase tracking-wider font-mono transition-all flex items-center gap-1.5 cursor-pointer border disabled:opacity-40 ${
+                                    attachDirectedInfographicToOfficialReport
+                                      ? "bg-emerald-950/80 border-emerald-500/50 text-emerald-300"
+                                      : "bg-slate-950 border-slate-800 text-slate-400"
+                                  }`}
+                                >
+                                  {attachDirectedInfographicToOfficialReport ? (
+                                    <>
+                                      <Check className="h-3 w-3 text-emerald-400" /> Adjunto a reporte
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Plus className="h-3 w-3" /> Adjuntar a reporte
+                                    </>
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+                            <div className="mb-3 inline-flex rounded-xl border border-slate-600 overflow-hidden shadow-lg">
+                              <button
+                                type="button"
+                                disabled={!directedInfographicUrl}
+                                onClick={() => setDirectedInfographicAudienceTab("patient")}
+                                className={`px-4 py-2 text-[11px] font-black uppercase tracking-wider cursor-pointer disabled:opacity-40 ${
+                                  directedInfographicAudienceTab === "patient"
+                                    ? "bg-fuchsia-600 text-white"
+                                    : "bg-slate-950 text-slate-400 hover:text-white"
+                                }`}
+                              >
+                                Paciente
+                              </button>
+                              <button
+                                type="button"
+                                disabled={!directedInfographicClinicianUrl}
+                                onClick={() => setDirectedInfographicAudienceTab("clinician")}
+                                className={`px-4 py-2 text-[11px] font-black uppercase tracking-wider cursor-pointer disabled:opacity-40 ${
+                                  directedInfographicAudienceTab === "clinician"
+                                    ? "bg-slate-200 text-slate-900"
+                                    : "bg-slate-950 text-slate-400 hover:text-white"
+                                }`}
+                              >
+                                Médico
+                              </button>
+                            </div>
+                            {(() => {
+                              const activeUrl =
+                                directedInfographicAudienceTab === "clinician"
+                                  ? directedInfographicClinicianUrl || directedInfographicUrl
+                                  : directedInfographicUrl || directedInfographicClinicianUrl;
+                              if (!activeUrl) return null;
+                              return (
+                                <img
+                                  src={activeUrl}
+                                  alt={
+                                    directedInfographicAudienceTab === "clinician"
+                                      ? "Infografía dirigida médico"
+                                      : "Infografía dirigida paciente"
+                                  }
+                                  className="w-full rounded-lg"
+                                  referrerPolicy="no-referrer"
+                                />
+                              );
+                            })()}
+                            <div className="mt-3 space-y-2">
+                              <label className="block text-[9px] font-black uppercase tracking-widest text-fuchsia-300/90 font-mono">
+                                Correcciones para regenerar (dirigida)
+                              </label>
+                              <textarea
+                                value={directedCorrectionNotes}
+                                onChange={(e) => setDirectedCorrectionNotes(e.target.value)}
+                                rows={2}
+                                placeholder="Ajustes de texto, énfasis o lateralidad para regenerar solo la dirigida."
+                                className="w-full px-3 py-2 bg-slate-950 border border-slate-700 focus:border-fuchsia-500/50 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none resize-y"
+                              />
+                              <div className="flex flex-wrap justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleGenerateDirectedInfographic({ keepAttachments: true })}
+                                  disabled={isGeneratingDirectedInfographic}
+                                  className="px-4 py-2 bg-fuchsia-800 hover:bg-fuchsia-700 disabled:opacity-50 border-2 border-fuchsia-500/30 rounded-xl text-xs font-black uppercase tracking-wider text-white flex items-center gap-2 cursor-pointer"
+                                >
+                                  {isGeneratingDirectedInfographic ? (
+                                    <>
+                                      <Loader2 className="h-4 w-4 animate-spin" /> Regenerando...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <RefreshCw className="h-4 w-4" /> Regenerar dirigida
+                                    </>
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        {directedInfographicError && (
+                          <div className="mb-6 p-4 bg-rose-900/20 text-rose-400 rounded-xl text-xs font-bold border border-rose-800">
+                            {directedInfographicError}
+                          </div>
+                        )}
+
                       {!generatedReport && !isGenerating && !reportError && (
                         <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center select-none">
                           <div className="p-4 bg-slate-900/60 rounded-2xl border-2 border-slate-800 mb-4 shadow-inner">
