@@ -249,15 +249,15 @@ export const SuiteImageAnnotationLayer: React.FC<Props> = ({
                   title={editable ? "Arrastra el rótulo a zona libre" : undefined}
                 >
                   <div
-                    className={`max-w-[148px] rounded-md border px-1.5 py-0.5 shadow-lg backdrop-blur-sm ${
+                    className={`max-w-[168px] min-w-0 rounded-md border px-1.5 py-1 shadow-lg backdrop-blur-sm ${
                       style.pill
                     } ${selected ? `ring-2 ${style.ring}` : ""}`}
                   >
-                    <p className="text-[9px] font-bold leading-tight break-words">
+                    <p className="text-[9px] font-bold leading-snug break-words whitespace-normal hyphens-auto">
                       {ann.text || "—"}
                     </p>
                     {ann.sizeLabel ? (
-                      <p className="text-[8px] font-semibold opacity-90 leading-tight mt-0.5">
+                      <p className="text-[8px] font-semibold opacity-90 leading-snug mt-0.5 break-words whitespace-normal">
                         {ann.sizeLabel}
                       </p>
                     ) : null}

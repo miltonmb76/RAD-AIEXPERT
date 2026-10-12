@@ -34,15 +34,28 @@ export function drawSuiteImageAnnotationsOnPdf(
     const palette = ANN_COLORS[ann.color || "amber"];
     const label = sanitizePdfText(
       [ann.text, ann.sizeLabel].filter(Boolean).join(" · ")
-    ).slice(0, 56);
+    ).slice(0, 72);
     if (!label) continue;
 
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(6.2 * factor);
+    const fontSize = 6.2 * factor;
+    doc.setFontSize(fontSize);
+
     const padX = 1.4 * factor;
-    const textW = Math.min(doc.getTextWidth(label), imgW * 0.55);
-    const boxW = textW + padX * 2;
-    const boxH = 4.2 * factor;
+    const padY = 1.05 * factor;
+    const lineH = fontSize * 0.42; // mm line height for helvetica at this size
+    const maxBoxW = Math.min(imgW * 0.58, 42 * factor);
+    const maxTextW = Math.max(8 * factor, maxBoxW - padX * 2);
+
+    // Wrap first, then size the pill to the wrapped lines (fixes multi-line overflow)
+    const lines = doc.splitTextToSize(label, maxTextW) as string[];
+    const wrapped: string[] = Array.isArray(lines) ? lines.slice(0, 4) : [label];
+    const contentW = Math.min(
+      maxTextW,
+      Math.max(...wrapped.map((ln) => doc.getTextWidth(ln)), 6 * factor)
+    );
+    const boxW = contentW + padX * 2;
+    const boxH = padY * 2 + wrapped.length * lineH;
     let boxX = labelCx - boxW / 2;
     let boxY = labelCy - boxH / 2;
     boxX = Math.max(imgX + 0.6, Math.min(boxX, imgX + imgW - boxW - 0.6));
@@ -90,15 +103,18 @@ export function drawSuiteImageAnnotationsOnPdf(
     // Tip marker
     doc.circle(tipX, tipY, 0.45 * factor, "F");
 
-    // Label pill
+    // Label pill — height grows with wrapped lines
     doc.setFillColor(palette.fill[0], palette.fill[1], palette.fill[2]);
     doc.setDrawColor(palette.border[0], palette.border[1], palette.border[2]);
     doc.setLineWidth(0.35);
     doc.roundedRect(boxX, boxY, boxW, boxH, 0.8, 0.8, "FD");
 
     doc.setTextColor(palette.text[0], palette.text[1], palette.text[2]);
-    doc.text(label, boxX + padX, boxY + boxH * 0.68, {
-      maxWidth: textW + 0.5,
-    });
+    // Baseline of first line sits just below top padding
+    let textY = boxY + padY + lineH * 0.78;
+    for (const ln of wrapped) {
+      doc.text(ln, boxX + padX, textY);
+      textY += lineH;
+    }
   }
 }
