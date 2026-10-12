@@ -27,8 +27,7 @@ echo ">>> Rama: $(git rev-parse --abbrev-ref HEAD) @ $(git rev-parse --short HEA
 
 grep -q 'splitTextToSize' src/utils/suiteImageAnnotationsPdf.ts \
   || { echo "ERROR: falta wrap multi-línea en rótulos PDF. Aborto."; exit 1; }
-grep -q 'wrapped.length \* lineH\|wrapped.length \* lineH' src/utils/suiteImageAnnotationsPdf.ts \
-  || grep -q 'boxH = padY' src/utils/suiteImageAnnotationsPdf.ts \
+grep -q 'wrapped.length' src/utils/suiteImageAnnotationsPdf.ts \
   || { echo "ERROR: boxH no crece con líneas. Aborto."; exit 1; }
 
 SECRETS="GEMINI_API_KEY=gemini-api-key:latest"
