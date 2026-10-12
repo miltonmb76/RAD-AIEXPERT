@@ -78,7 +78,14 @@ export function suggestLesionTarget(opts: {
 
   const sc = opts.scorecardData;
   if (sc) {
-    push(sc.categoryAssigned);
+    push(sc.finalDiagnosis);
+    const primaryLabel = (sc.atlasFindings || []).find((f) => f.role === "primary")?.label;
+    push(primaryLabel);
+    // Skip bare domain tags (e.g. "Musculoesquelético") as lesion targets
+    const cat = String(sc.categoryAssigned || "").trim();
+    if (cat && !/^(musculoesquel|msk|abdominal|abdomen|vascular|gen[eé]rico|general)/i.test(cat)) {
+      push(cat);
+    }
     (sc.atlasOverlays || []).slice(0, 4).forEach((o) => {
       push(o.finding || o.structure);
     });
@@ -202,6 +209,7 @@ export function buildBridgeClinicalContext(opts: {
   };
 
   const sc = opts.scorecardData;
+  if (sc?.finalDiagnosis) push(`Diagnostico final: ${sc.finalDiagnosis}`);
   if (sc?.clinicalSummary) push(sc.clinicalSummary);
   if (sc?.recommendation) push(`Conducta: ${sc.recommendation}`);
   if (sc?.categoryAssigned && sc?.protocolName) {

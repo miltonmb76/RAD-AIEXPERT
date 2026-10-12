@@ -27,7 +27,10 @@ import {
   applyScorecardGovernanceToFigurePack,
   buildAtlasDirectivesFromScorecard,
 } from "../lib/clinicalIntelligence";
-import { mergeAnchorIntoDirectives } from "../lib/diagnosisAnchor";
+import {
+  mergeAnchorIntoDirectives,
+  resolveScorecardFinalDiagnosis,
+} from "../lib/diagnosisAnchor";
 import {
   suggestFocalImageAnnotations,
   withSuggestedImageAnnotations,
@@ -153,13 +156,11 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
   );
   const canBuild = diagnosticPackIsRenderable(preview);
   const missing = diagnosticPackMissingRequirements(preview, { hasJustification });
+  const scorecardDx = resolveScorecardFinalDiagnosis(scorecardData);
   const canGenerateImages =
     !!setFocalLesion3dData &&
     !!String(reportText || "").trim() &&
-    !!(
-      String(diagnosisAnchor || "").trim() ||
-      String(scorecardData?.categoryAssigned || "").trim()
-    );
+    !!(String(diagnosisAnchor || "").trim() || scorecardDx);
 
   const handleBuild = (optsOverride?: Partial<typeof packOpts>) => {
     const next = buildDiagnosticPack({ ...packOpts, ...optsOverride });
@@ -206,8 +207,7 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
       return;
     }
     const focus =
-      String(diagnosisAnchor || "").trim() ||
-      String(scorecardData?.categoryAssigned || "").trim();
+      String(diagnosisAnchor || "").trim() || scorecardDx;
     if (!focus) {
       setGenError("Define el ancla o genera el Scorecard antes de pedir las imágenes.");
       return;
@@ -324,11 +324,11 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
               Usa el ancla + directrices del scorecard y el motor del Corte Focal para generar
               contexto + macro sin abrir ese módulo antes.
             </p>
-            {(diagnosisAnchor || scorecardData?.categoryAssigned) && (
+            {(diagnosisAnchor || scorecardDx) && (
               <p className="text-[11px] text-amber-100/90 mt-1.5">
                 Foco:{" "}
                 <span className="font-semibold">
-                  {diagnosisAnchor || scorecardData?.categoryAssigned}
+                  {diagnosisAnchor || scorecardDx}
                 </span>
               </p>
             )}

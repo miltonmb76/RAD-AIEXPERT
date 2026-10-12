@@ -1,8 +1,10 @@
 import React from "react";
 import { Anchor, Sparkles } from "lucide-react";
 import type { ClinicalScorecardData } from "../types";
-import { getScorecardGovernance } from "../lib/clinicalIntelligence";
-import { seedAnchorFromScorecard } from "../lib/diagnosisAnchor";
+import {
+  resolveScorecardFinalDiagnosis,
+  seedAnchorFromScorecard,
+} from "../lib/diagnosisAnchor";
 
 interface DiagnosisAnchorBarProps {
   diagnosisAnchor: string;
@@ -18,8 +20,8 @@ export const DiagnosisAnchorBar: React.FC<DiagnosisAnchorBarProps> = ({
   setDiagnosisAnchor,
   scorecardData = null,
 }) => {
-  const gov = getScorecardGovernance(scorecardData);
-  const suggestion = gov?.categoryAssigned || "";
+  const suggestion = resolveScorecardFinalDiagnosis(scorecardData);
+  const categoryHint = String(scorecardData?.categoryAssigned || "").trim();
 
   return (
     <div
@@ -40,8 +42,8 @@ export const DiagnosisAnchorBar: React.FC<DiagnosisAnchorBarProps> = ({
             </span>
           </div>
           <p className="text-[11px] text-slate-400 leading-relaxed max-w-2xl">
-            El diagnóstico que estás defendiendo (p. ej. adenitis mesentérica). Centra la
-            justificación, el pack de 1 página, el mapa sobre Atlas y las directivas 3D.
+            Diagnóstico final del scorecard (no el dominio del protocolo). Ej.: distensión del
+            LPAA — no «Musculoesquelético». Centra justificación, pack, mapa y Atlas.
           </p>
         </div>
       </div>
@@ -51,7 +53,7 @@ export const DiagnosisAnchorBar: React.FC<DiagnosisAnchorBarProps> = ({
           type="text"
           value={diagnosisAnchor}
           onChange={(e) => setDiagnosisAnchor(e.target.value)}
-          placeholder="Ej. adenitis mesentérica / colecistitis aguda / BI-RADS 4A…"
+          placeholder="Ej. distensión del LPAA / colecistitis aguda / nódulo BI-RADS 4A…"
           className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-teal-500 placeholder:text-slate-600"
         />
         {suggestion && suggestion !== diagnosisAnchor.trim() && (
@@ -61,7 +63,7 @@ export const DiagnosisAnchorBar: React.FC<DiagnosisAnchorBarProps> = ({
               setDiagnosisAnchor(seedAnchorFromScorecard("", scorecardData) || suggestion)
             }
             className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-teal-700/50 text-teal-300 hover:bg-teal-950/50 text-[10px] font-bold uppercase tracking-wider cursor-pointer shrink-0"
-            title="Usar categoría del scorecard"
+            title="Usar diagnóstico final del scorecard"
           >
             <Sparkles className="h-3.5 w-3.5" />
             Del scorecard
@@ -81,6 +83,14 @@ export const DiagnosisAnchorBar: React.FC<DiagnosisAnchorBarProps> = ({
       {diagnosisAnchor.trim() && (
         <p className="text-[10px] text-teal-400/90 font-mono">
           Activa: «{diagnosisAnchor.trim()}» → justificación · pack · mapa · Atlas
+        </p>
+      )}
+      {!diagnosisAnchor.trim() && suggestion && (
+        <p className="text-[10px] text-slate-500">
+          Sugerido del scorecard: «{suggestion}»
+          {categoryHint && categoryHint !== suggestion
+            ? ` · categoría protocolo: ${categoryHint}`
+            : ""}
         </p>
       )}
     </div>

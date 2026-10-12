@@ -197,7 +197,7 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
         onAtlasDirectivesSuggested(directives);
       }
 
-      // Seed session ancla from category when clinician has not set one
+      // Seed session ancla from finalDiagnosis (not protocol domain) when empty
       const plan = buildScorecardOrchestrationPlan({
         scorecard: data,
         diagnosisAnchor,
@@ -382,11 +382,22 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
 
       {scorecardData && (
         <div className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="rounded-xl border border-slate-700/60 bg-slate-950/50 p-3">
-              <div className="text-[10px] uppercase text-slate-500">Protocolo</div>
-              <div className="text-sm text-slate-100 font-medium mt-1">{scorecardData.protocolName}</div>
-              <div className="text-xs text-teal-300/90 mt-1">{scorecardData.categoryAssigned}</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="rounded-xl border border-teal-700/40 bg-teal-950/20 p-3 sm:col-span-2 lg:col-span-2">
+              <div className="text-[10px] uppercase text-teal-400/90 tracking-wider">
+                Diagnóstico final · ancla de sesión
+              </div>
+              <div className="text-sm text-slate-50 font-semibold mt-1 leading-snug">
+                {scorecardData.finalDiagnosis ||
+                  scorecardData.atlasFindings?.find((f) => f.role === "primary")?.label ||
+                  scorecardData.categoryAssigned}
+              </div>
+              <div className="text-[10px] text-slate-500 mt-1.5">
+                Protocolo: {scorecardData.protocolName}
+                {scorecardData.categoryAssigned
+                  ? ` · Categoría: ${scorecardData.categoryAssigned}`
+                  : ""}
+              </div>
             </div>
             <div className="rounded-xl border border-slate-700/60 bg-slate-950/50 p-3">
               <div className="text-[10px] uppercase text-slate-500">Criterios positivos</div>

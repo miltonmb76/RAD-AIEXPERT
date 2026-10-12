@@ -100,8 +100,13 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
   const diagnosisLabel = (() => {
     const custom = customDiagnosis.trim() || String(diagnosisAnchor || "").trim();
     if (custom) return custom;
-    if (presetId === "auto" && scoreGov?.categoryAssigned) {
-      return scoreGov.categoryAssigned;
+    if (presetId === "auto") {
+      const fromScorecard =
+        scoreGov?.finalDiagnosis ||
+        scoreGov?.shortLabel ||
+        scoreGov?.categoryAssigned ||
+        "";
+      if (fromScorecard) return fromScorecard;
     }
     return resolveInfographicDiagnosis(presetId, customDiagnosis);
   })();

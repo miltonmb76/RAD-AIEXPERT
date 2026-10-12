@@ -64,8 +64,12 @@ export function infographicFromScorecard(
   }
 
   const diagnosis =
-    String(scorecard.categoryAssigned || scorecard.protocolName || "").trim() ||
-    "Clasificación del protocolo";
+    String(
+      scorecard.finalDiagnosis ||
+        scorecard.categoryAssigned ||
+        scorecard.protocolName ||
+        ""
+    ).trim() || "Clasificación del protocolo";
 
   const layout: FindingsInfographicLayout =
     nodes.length >= 5 ? "funnel" : "pillars";

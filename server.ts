@@ -9021,7 +9021,7 @@ app.post("/api/generate-clinical-scorecard", async (req: express.Request, res: e
 Analiza el informe y genera UN Scorecard de criterios clínicos + inventario de lesiones para Atlas 3D.
 
 IDIOMA (OBLIGATORIO E INQUEBRANTABLE):
-- TODO el texto visible al médico DEBE estar en ESPAÑOL médico: protocolName, categoryAssigned, clinicalSummary, recommendation, studyRegion, criterion, value, evidence, atlasStructure, suggestedPanelFocus, structure, finding, label.
+- TODO el texto visible al médico DEBE estar en ESPAÑOL médico: protocolName, categoryAssigned, finalDiagnosis, clinicalSummary, recommendation, studyRegion, criterion, value, evidence, atlasStructure, suggestedPanelFocus, structure, finding, label.
 - PROHIBIDO inglés en esos campos (nada de "Tendon thickening", "Present", "Absent", "Major", "Critical", "Partial thickness tear", etc.).
 - Traduce criterios y valores al español aunque el protocolo interno sea anglosajón (ej. "Engrosamiento tendinoso (diámetro AP > 6 mm)", "Presente", "Ausente", "Rotura de espesor parcial").
 - Los ÚNICOS campos en inglés/código son: protocolId, status, weight, trafficLight, marker, panelLetter, id, linkedCriterionId, role.
@@ -9055,20 +9055,29 @@ REGLAS DE FIDELIDAD (OBLIGATORIAS):
 8. atlasOverlays: para lesiones localizables (máx 5). Textos en español. Vincula linkedCriterionId si aplica.
 9. panelLetter debe coincidir con un panel existente si hay lista; si no, usa A/B/C en orden de prioridad de atlasFindings.
 10. trafficLight: low | moderate | high | critical.
-11. protocolName y categoryAssigned en español (ej. "Valoración ecográfica del tendón de Aquiles", "Musculoesquelético").
-12. RECOMENDACIONES: ${withRecommendations
+11. protocolName en español (ej. "Valoración ecográfica de tobillo / LPAA", "ACR TI-RADS", "BI-RADS ecográfico").
+12. categoryAssigned = SOLO la categoría/grado del protocolo formal en español.
+    Ejemplos correctos: "BI-RADS 4A", "ACR TI-RADS 4", "Bosniak IIF", "Grado 2 (Bamberg)", "Rotura parcial de espesor".
+    PROHIBIDO poner dominios genéricos aquí: "Musculoesquelético", "Abdominal", "Vascular", "General".
+13. finalDiagnosis (OBLIGATORIO) = diagnóstico clínico FINAL conciso del caso (1 frase, ≤120 caracteres).
+    Es el ancla de toda la sesión (pack, justificación, bridge, Atlas). Debe nombrar la lesión/patología real.
+    Ejemplos: "Distensión del ligamento peroneo astragalino anterior (LPAA)", "Colecistitis aguda litiásica",
+    "Nódulo sólido BI-RADS 4A en CSE de mama derecha", "Nódulo tiroideo ACR TI-RADS 4 en lóbulo derecho".
+    NO uses el nombre del protocolo ni un dominio ("Musculoesquelético"). Si hay varios hallazgos, el primario del informe.
+14. RECOMENDACIONES: ${withRecommendations
   ? 'SÍ incluir "recommendation" con conducta/seguimiento breve en español (1-3 frases).'
   : 'NO incluir recomendaciones. El campo "recommendation" DEBE ser exactamente "" (cadena vacía). PROHIBIDO sugerir conducta, seguimiento, tratamiento o disclaimers.'}
-13. atlasFindings (OBLIGATORIO — inventario DISTINTO del checklist):
+15. atlasFindings (OBLIGATORIO — inventario DISTINTO del checklist):
    - Lista de lesiones/hallazgos LOCALIZABLES DISTINTOS del INFORME COMPLETO (no solo del protocolo).
    - 1 entrada por estructura/lesión distinta. Ejemplo: colecistitis + nódulo hepático = 2 entradas (vesícula / hígado).
-   - role: "primary" (foco del protocolo), "secondary" (patología asociada relevante), "incidental" (hallazgo incidental localizable).
+   - role: "primary" (foco del protocolo / mismo núcleo que finalDiagnosis), "secondary" (patología asociada relevante), "incidental" (hallazgo incidental localizable).
+   - El atlasFinding primary.label DEBE alinearse con finalDiagnosis (mismo diagnóstico, redacción breve).
    - Incluye SIEMPRE las secundarias/incidentales si constan en el informe, aunque NO entren en los criterios del protocolo.
    - NO inventes. Máximo 5. NO afectan scoreMet/scoreTotal.
    - Este inventario alimenta el Atlas 3D: si hay 2–3 lesiones → 1 panel por lesión.
 
 Responde JSON con:
-- protocolId, protocolName, categoryAssigned
+- protocolId, protocolName, categoryAssigned, finalDiagnosis
 - scoreMet, scoreTotal, trafficLight
 - clinicalSummary, recommendation, studyRegion
 - criteria: [{ id, criterion, status, value, evidence, weight, severity, atlasStructure, suggestedPanelFocus }]
@@ -9093,6 +9102,7 @@ const response = await ai.models.generateContent({
             protocolId: { type: Type.STRING },
             protocolName: { type: Type.STRING },
             categoryAssigned: { type: Type.STRING },
+            finalDiagnosis: { type: Type.STRING },
             scoreMet: { type: Type.INTEGER },
             scoreTotal: { type: Type.INTEGER },
             trafficLight: { type: Type.STRING },
@@ -9159,6 +9169,7 @@ const response = await ai.models.generateContent({
             "protocolId",
             "protocolName",
             "categoryAssigned",
+            "finalDiagnosis",
             "scoreMet",
             "scoreTotal",
             "trafficLight",
@@ -9342,10 +9353,40 @@ const response = await ai.models.generateContent({
     }
     atlasOverlays = atlasOverlays.slice(0, 5);
 
+    const rawCategory = localizeScorecardText(
+      (parsed.categoryAssigned || "Sin categoría").toString()
+    );
+    const primaryFindingLabel = localizeScorecardText(
+      String(
+        (atlasFindings.find((f: any) => f.role === "primary") || atlasFindings[0] || {})
+          .label || ""
+      )
+    );
+    let finalDiagnosis = localizeScorecardText(
+      String(parsed.finalDiagnosis || "").trim()
+    );
+    // Reject domain tags mistakenly put in finalDiagnosis; recover from primary finding
+    const genericDx =
+      /^(musculoesquel[eé]tico|msk|abdominal|abdomen|vascular|gen[eé]rico|general|sin\s*categor[ií]a)$/i;
+    if (!finalDiagnosis || genericDx.test(finalDiagnosis)) {
+      finalDiagnosis = primaryFindingLabel || finalDiagnosis;
+    }
+    if (!finalDiagnosis && rawCategory && !genericDx.test(rawCategory)) {
+      finalDiagnosis = rawCategory;
+    }
+    if (!finalDiagnosis) {
+      const summaryFirst = localizeScorecardText(String(parsed.clinicalSummary || ""))
+        .split(/(?<=[.!?])\s+/)[0]
+        ?.replace(/[.!?]+$/, "")
+        .trim();
+      finalDiagnosis = (summaryFirst || "").slice(0, 120);
+    }
+
     const data = {
       protocolId: (parsed.protocolId || requestedProtocol || "generic").toString(),
       protocolName: localizeScorecardText((parsed.protocolName || "Scorecard clínico").toString()),
-      categoryAssigned: localizeScorecardText((parsed.categoryAssigned || "Sin categoría").toString()),
+      categoryAssigned: rawCategory,
+      finalDiagnosis: finalDiagnosis || rawCategory,
       scoreMet,
       scoreTotal,
       trafficLight,

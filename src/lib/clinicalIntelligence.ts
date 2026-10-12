@@ -231,9 +231,11 @@ export function formatAtlasFindingAssignmentPlan(
 export type ScorecardGovernance = {
   protocolName: string;
   categoryAssigned: string;
+  /** Primary clinical diagnosis (session ancla source). */
+  finalDiagnosis: string;
   categorySystem: string;
   categoryValue: string;
-  /** Compact label for captions, e.g. "BI-RADS 4A". */
+  /** Compact label for captions: prefers finalDiagnosis, else category. */
   shortLabel: string;
   clinicalSummary: string;
   recommendation: string;
@@ -256,19 +258,21 @@ export function parseScorecardCategory(categoryAssigned: string): {
   return { system: "", value: raw };
 }
 
-/** Normalized governance block; null if scorecard has no usable category. */
+/** Normalized governance block; null if scorecard has no usable category/diagnosis. */
 export function getScorecardGovernance(
   scorecard: ClinicalScorecardData | null | undefined
 ): ScorecardGovernance | null {
   if (!scorecard) return null;
   const categoryAssigned = String(scorecard.categoryAssigned || "").trim();
   const protocolName = String(scorecard.protocolName || "").trim();
-  if (!categoryAssigned && !protocolName) return null;
+  const finalDiagnosis = String(scorecard.finalDiagnosis || "").trim();
+  if (!categoryAssigned && !protocolName && !finalDiagnosis) return null;
   const parsed = parseScorecardCategory(categoryAssigned);
-  const shortLabel = categoryAssigned || protocolName;
+  const shortLabel = finalDiagnosis || categoryAssigned || protocolName;
   return {
     protocolName,
     categoryAssigned: categoryAssigned || protocolName,
+    finalDiagnosis,
     categorySystem: parsed.system || protocolName || "Clasificación",
     categoryValue: parsed.value || categoryAssigned || protocolName,
     shortLabel,

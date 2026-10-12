@@ -173,6 +173,7 @@ import {
   type ScorecardOrchestrationPlan,
   type ScorecardOrchestratorAction,
 } from "./lib/scorecardOrchestrator";
+import { resolveScorecardFinalDiagnosis } from "./lib/diagnosisAnchor";
 import {
   galleryToRealUs,
   inferBridgeOfferFromGalleryImage,
@@ -2299,8 +2300,9 @@ Ejemplo:
         setIncludeScorecardInReport(false);
         const polishDirectives = buildAtlasDirectivesFromScorecard(result.scorecard);
         if (polishDirectives) setAtlasDirectivesFromScorecard(polishDirectives);
-        if (!String(diagnosisAnchor || "").trim() && result.scorecard.categoryAssigned) {
-          setDiagnosisAnchor(String(result.scorecard.categoryAssigned));
+        if (!String(diagnosisAnchor || "").trim()) {
+          const seededDx = resolveScorecardFinalDiagnosis(result.scorecard);
+          if (seededDx) setDiagnosisAnchor(seededDx);
         }
       }
       if (result.measurements && result.measurements.length > 0) {
