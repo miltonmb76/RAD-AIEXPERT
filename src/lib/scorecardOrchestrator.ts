@@ -101,11 +101,15 @@ export function buildScorecardOrchestrationPlan(opts: {
 }): ScorecardOrchestrationPlan | null {
   const sc = opts.scorecard;
   const gov = getScorecardGovernance(sc);
-  if (!sc || !gov?.categoryAssigned) return null;
+  if (!sc || !gov) return null;
 
   const seededAnchor =
     seedAnchorFromScorecard(String(opts.diagnosisAnchor || ""), sc) ||
+    gov.finalDiagnosis ||
+    gov.shortLabel ||
     gov.categoryAssigned;
+
+  if (!seededAnchor && !gov.categoryAssigned) return null;
 
   const fromStudy =
     getSpecificSuiteShortcut(
@@ -115,11 +119,13 @@ export function buildScorecardOrchestrationPlan(opts: {
 
   const fromScorecardText = suggestSuiteFromClinicalText(
     [
+      sc.finalDiagnosis,
       sc.protocolName,
       sc.protocolId,
       sc.studyRegion,
       sc.categoryAssigned,
       gov.categorySystem,
+      (sc.atlasFindings || []).map((f) => f.label || f.structure).join(" "),
       (sc.atlasOverlays || []).map((o) => o.structure || o.finding).join(" "),
     ]
       .filter(Boolean)
@@ -132,7 +138,7 @@ export function buildScorecardOrchestrationPlan(opts: {
         ...suiteBase,
         reason: fromStudy
           ? `Estudio seleccionado → ${suiteBase.label}`
-          : `Inferido del scorecard (${gov.categoryAssigned})`,
+          : `Inferido del scorecard (${gov.finalDiagnosis || gov.categoryAssigned})`,
       }
     : null;
 

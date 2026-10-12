@@ -51,7 +51,14 @@ export function renderScorecardAnnexToPDF(
   doc.line(marginX, y, pageWidth - marginX, y);
   y += 7 * factor;
 
-  const title = sanitizePdfText(`${scorecard.protocolName} — ${scorecard.categoryAssigned}`);
+  const dxTitle =
+    String(scorecard.finalDiagnosis || "").trim() ||
+    String(scorecard.categoryAssigned || "").trim();
+  const title = sanitizePdfText(
+    dxTitle
+      ? `${scorecard.protocolName} — ${dxTitle}`
+      : String(scorecard.protocolName || "Scorecard clínico")
+  );
   doc.setFont("helvetica", "bold");
   doc.setFontSize(fsBanner);
   const titleLines = doc.splitTextToSize(title, contentWidth - 16 * factor);

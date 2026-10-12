@@ -199,7 +199,17 @@ export interface AtlasLesionFinding {
 export interface ClinicalScorecardData {
   protocolId: string;
   protocolName: string;
+  /**
+   * Protocol category / grade only (BI-RADS 4A, ACR TI-RADS 4, Bosniak IIF, Grado 2).
+   * NOT the session ancla — use finalDiagnosis for that.
+   */
   categoryAssigned: string;
+  /**
+   * Concise primary clinical diagnosis for the case (session ancla source).
+   * E.g. "Distensión del ligamento peroneo astragalino anterior (LPAA)".
+   * Prefer this over categoryAssigned / protocol domain labels.
+   */
+  finalDiagnosis?: string;
   scoreMet: number;
   scoreTotal: number;
   trafficLight: "low" | "moderate" | "high" | "critical";
