@@ -10460,9 +10460,10 @@ ${
 }
 
 REGLAS ESTRICTAS:
-1. Genera el número de nodes indicado en CONTENIDO. Solo lo afirmado o negado EXPLÍCITAMENTE en el informe.
+1. Genera el número de nodes indicado en CONTENIDO. Solo lo afirmado o negado EXPLÍCITAMENTE en el informe. Si no hay suficientes aspectos DISTINTOS, devuelve menos nodes — NUNCA completes la cuota parafraseando el mismo hallazgo.
 2. PROHIBIDO: manejo, conducta, seguimiento, recomendaciones, tratamiento, biopsia, "correlacionar con clínica" como plan.
 3. PROHIBIDO absoluto: "no mencionado", "no documentado", "ausente del informe", "pendiente", "faltante", "no referido", cualquier juicio sobre omisiones del reporte.
+3b. PROHIBIDO duplicar aspectos: cada node debe ser un aspecto clínico distinto. No repitas la misma idea con sinónimos o redacción ligeramente distinta.
 4. Cada node: id, label (corto, 3-8 palabras, léxico médico), detail (opcional, 1 frase semiológica), patientLabel (mismo hallazgo en lenguaje llano para el paciente, 3-10 palabras), patientDetail (opcional, 1 frase sencilla sin jerga), weight ("primary" para 1-2 hallazgos clave, resto "secondary"), polarity ("present" | "ruled_out" | "criterion" | "neutral"), group (opcional: estructura o familia de criterio).
 5. title: "${modeMeta.defaultTitle}" o variante breve coherente con el contentMode (voz médico).
 6. diagnosis: ancla limpia (diagnóstico, categoría BI-RADS/TI-RADS, tema). Sin signos de interrogación.
