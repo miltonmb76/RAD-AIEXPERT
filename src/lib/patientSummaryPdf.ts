@@ -799,8 +799,6 @@ export async function downloadPatientSummaryPdf(
       }
     }
 
-  }
-
     // Closing disclaimer (repeated for clarity)
     {
       const discLines = doc.splitTextToSize(FORMAL_REPORT_DISCLAIMER, contentWidth - 10);
