@@ -166,12 +166,14 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
     setLesionTarget((prev) => (prev.trim() ? prev : anchor));
   }, [diagnosisAnchor]);
 
-  const annotations: SuiteImageAnnotation[] = planeData?.imageAnnotations?.length
-    ? planeData.imageAnnotations
+  // Array.isArray([]) = user cleared all rótulos — do NOT fall back to bridgeLabels/seed
+  const annotations: SuiteImageAnnotation[] = Array.isArray(planeData?.imageAnnotations)
+    ? planeData!.imageAnnotations!
     : bridgeLabelsToAnnotations(planeData?.bridgeLabels);
 
   const setAnnotations = (next: SuiteImageAnnotation[]) => {
     if (!planeData) return;
+    // Persist [] so PDF does not re-seed automatic rótulos
     setPlaneData({ ...planeData, imageAnnotations: next, bridgeLabels: undefined });
   };
 
@@ -278,14 +280,14 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
             scorecardData,
             planeTarget: raw.targetStructure,
           });
-        const imageAnnotations =
-          planeData?.imageAnnotations?.length
-            ? planeData.imageAnnotations
-            : seedBridgeArrowAnnotations({
-                lesionTarget: target,
-                realUs: real,
-                structuresCrossed: raw.structuresCrossed,
-              });
+        // Keep explicit [] (user cleared rótulos); only auto-seed when never set
+        const imageAnnotations = Array.isArray(planeData?.imageAnnotations)
+          ? planeData!.imageAnnotations!
+          : seedBridgeArrowAnnotations({
+              lesionTarget: target,
+              realUs: real,
+              structuresCrossed: raw.structuresCrossed,
+            });
         const clinicalContextLines = buildBridgeClinicalContext({
           scorecardData,
           plane: raw,
