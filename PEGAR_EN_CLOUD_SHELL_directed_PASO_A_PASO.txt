@@ -1,0 +1,29 @@
+================================================================================
+CLOUD SHELL — Infografía dirigida (PASO A PASO)
+Si la consola "se sale", NO pegues todo junto. Ejecuta BLOQUE 1, espera, luego 2, luego 3.
+Log completo: ~/deploy_dirigida.log
+================================================================================
+
+--- BLOQUE 1 (copiar y Enter) — actualizar código ---
+cd "$HOME/rad-ai-expert-deploy" 2>/dev/null || cd "$HOME/RAD-AIEXPERT" 2>/dev/null || cd "$HOME/rad-ai-expert" 2>/dev/null || (git clone https://github.com/miltonmb76/RAD-AIEXPERT.git "$HOME/rad-ai-expert-deploy" && cd "$HOME/rad-ai-expert-deploy")
+git fetch origin cursor/directed-classic-infographic-0681
+git checkout -B cursor/directed-classic-infographic-0681 origin/cursor/directed-classic-infographic-0681
+git reset --hard origin/cursor/directed-classic-infographic-0681
+git rev-parse --short HEAD
+grep -q handleGenerateDirectedInfographic src/App.tsx && echo "OK codigo dirigida" || echo "ERROR sin codigo"
+
+--- BLOQUE 2 (copiar y Enter) — probar build LOCAL (si falla aqui, NO desplegar) ---
+cd "$HOME/rad-ai-expert-deploy" 2>/dev/null || cd "$HOME/RAD-AIEXPERT" 2>/dev/null || cd "$HOME/rad-ai-expert"
+npm run build 2>&1 | tee -a ~/deploy_dirigida.log
+echo "Build termino con codigo: $?"
+
+--- BLOQUE 3 (copiar y Enter) — deploy (10-20 min, no cierres pestaña) ---
+cd "$HOME/rad-ai-expert-deploy" 2>/dev/null || cd "$HOME/RAD-AIEXPERT" 2>/dev/null || cd "$HOME/rad-ai-expert"
+SECRETS="GEMINI_API_KEY=gemini-api-key:latest"
+gcloud secrets describe openai-api-key >/dev/null 2>&1 && SECRETS="${SECRETS},OPENAI_API_KEY=openai-api-key:latest"
+gcloud run deploy rad-ai-expert --source . --region us-central1 --update-secrets="$SECRETS" 2>&1 | tee -a ~/deploy_dirigida.log
+echo "Deploy termino con codigo: $?"
+gcloud run services describe rad-ai-expert --region us-central1 --format='value(status.url)'
+
+--- Si algo falla ---
+cat ~/deploy_dirigida.log | tail -40

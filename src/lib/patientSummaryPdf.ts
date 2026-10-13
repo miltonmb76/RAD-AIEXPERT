@@ -16,8 +16,10 @@ export type PatientSummaryPdfDeps = {
   studyType: string;
   selectedLogo: string;
   formatDateToDMY: (dateStr: string) => string;
-  /** Optional patient infographic data-URL or http(s) URL */
+  /** Optional patient infographic data-URL or http(s) URL (general classic) */
   infographicUrl?: string;
+  /** Optional directed classic patient poster — independent of general */
+  directedInfographicUrl?: string;
 };
 
 const FORMAL_REPORT_DISCLAIMER =
@@ -46,6 +48,7 @@ export async function downloadPatientSummaryPdf(
     selectedLogo,
     formatDateToDMY,
     infographicUrl,
+    directedInfographicUrl,
   } = deps;
   if (!patientSummary) return;
 
@@ -193,6 +196,9 @@ export async function downloadPatientSummaryPdf(
     // Disclaimer + optional infographic page budget
     estimatedHeight += 28;
     if (infographicUrl) {
+      estimatedHeight += 120;
+    }
+    if (directedInfographicUrl) {
       estimatedHeight += 120;
     }
 
@@ -737,10 +743,20 @@ export async function downloadPatientSummaryPdf(
       yCoord += 4 * factor;
     }
 
-    // Patient infographic (optional dedicated page)
+// Patient infographics (general and/or directed — independent pages)
+    const patientAnnexes: Array<{ url: string; title: string }> = [];
     if (infographicUrl && typeof infographicUrl === "string") {
+      patientAnnexes.push({ url: infographicUrl, title: "INFOGRAFÍA EXPLICATIVA" });
+    }
+    if (directedInfographicUrl && typeof directedInfographicUrl === "string") {
+      patientAnnexes.push({
+        url: directedInfographicUrl,
+        title: "INFOGRAFÍA DIRIGIDA (HALLAZGO)",
+      });
+    }
+    for (const annex of patientAnnexes) {
       try {
-        let imgData = infographicUrl;
+        let imgData = annex.url;
         if (!imgData.startsWith("data:")) {
           const res = await fetch(imgData);
           const blob = await res.blob();
@@ -757,7 +773,7 @@ export async function downloadPatientSummaryPdf(
           doc.setFont("helvetica", "bold");
           doc.setFontSize(12);
           doc.setTextColor(15, 23, 42);
-          doc.text("INFOGRAFÍA EXPLICATIVA", pageWidth / 2, yCoord, { align: "center" });
+          doc.text(annex.title, pageWidth / 2, yCoord, { align: "center" });
           yCoord += 8;
           const maxW = contentWidth;
           const maxH = pageHeight - yCoord - 28;
@@ -777,10 +793,9 @@ export async function downloadPatientSummaryPdf(
           const format = imgData.toLowerCase().includes("image/png") ? "PNG" : "JPEG";
           const drawX = (pageWidth - drawW) / 2;
           doc.addImage(imgData, format, drawX, yCoord, drawW, drawH);
-          yCoord += drawH + 8;
         }
-      } catch (infographicErr) {
-        console.warn("Could not embed patient infographic in PDF:", infographicErr);
+      } catch (err) {
+        console.error("Error adding patient infographic to PDF:", err);
       }
     }
 
