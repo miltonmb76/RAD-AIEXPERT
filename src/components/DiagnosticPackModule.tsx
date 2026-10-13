@@ -415,22 +415,22 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
 
       {display.diagnosis && (
         <div className="rounded-2xl overflow-hidden border border-stone-600/40 bg-[#fafaf9] text-stone-900 shadow-inner">
-          <div className="mx-4 mt-4 rounded-lg bg-stone-900 px-4 py-2.5 flex justify-between gap-2 items-center">
-            <span className="text-[10px] font-black uppercase tracking-widest text-amber-50">
+          <div className="mx-4 mt-4 rounded-lg bg-stone-900 px-4 py-2.5 flex justify-between gap-3 items-start">
+            <span className="text-[10px] font-black uppercase tracking-widest text-amber-50 shrink-0 max-w-[55%]">
               Anexo · Justificación diagnóstica
             </span>
-            <span className="text-[10px] text-amber-200/90 truncate font-medium">
+            <span className="text-[10px] text-amber-200/90 font-medium text-right min-w-0 flex-1 line-clamp-2 break-words">
               {[display.categoryLabel, display.studyRegion].filter(Boolean).join(" · ")}
             </span>
           </div>
           <div className="mx-4 h-1 bg-amber-500 rounded-b" />
 
           <div className="p-5 md:p-6 space-y-4">
-            <div className="space-y-2">
+            <div className="space-y-2 min-w-0">
               <p className="text-[9px] font-black uppercase tracking-[0.2em] text-amber-700">
                 Diagnóstico ancla
               </p>
-              <h4 className="text-xl md:text-2xl font-black text-stone-900 leading-snug tracking-tight">
+              <h4 className="text-xl md:text-2xl font-black text-stone-900 leading-snug tracking-tight break-words hyphens-auto">
                 {display.diagnosis}
               </h4>
               <div className="w-16 h-0.5 bg-amber-400 rounded-full" />
