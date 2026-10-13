@@ -30,6 +30,7 @@ export type CloudStudyActionsDeps = {
   patientId: string;
   reportDate: string;
   findings: string;
+  diagnosisAnchor?: string;
   operationalSummaryText: string;
   specificStudy: string;
   pdfLayoutType: string;
@@ -288,6 +289,7 @@ export function createCloudStudyActions(d: CloudStudyActionsDeps) {
         studyType: studyTypeToSave,
         clinicalHistory: clinicalHistoryToSave,
         findings: d.findings || "No especificadas",
+        diagnosisAnchor: String(d.diagnosisAnchor || "").trim() || undefined,
         reportText: reportTextToSave,
         pdfBase64: pdfB64,
         operationalSummaryText: d.operationalSummaryText,

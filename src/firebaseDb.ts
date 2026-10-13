@@ -67,6 +67,8 @@ export interface CloudStudy {
   studyType: string;
   clinicalHistory: string;
   findings: string;
+  /** Session diagnosis ancla — optional; set pre-report or from scorecard. */
+  diagnosisAnchor?: string;
   reportText: string;
   pdfBase64?: string; // Stored compiled jsPDF Base64
   operationalSummaryText?: string;

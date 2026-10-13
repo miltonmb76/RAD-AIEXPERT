@@ -648,7 +648,7 @@ function formatImageAnnotations(annotations: any[] | undefined): string {
  */
 app.post("/api/analyze", async (req: express.Request, res: express.Response) => {
   try {
-    const { model, image, mimeType, studyType, clinicalHistory, findings, inputReport, uploadedReportContent, uploadedReportMimeType, systemInstruction, annotations, attachedImages } = req.body;
+    const { model, image, mimeType, studyType, clinicalHistory, findings, diagnosisAnchor, inputReport, uploadedReportContent, uploadedReportMimeType, systemInstruction, annotations, attachedImages } = req.body;
     const ai = getGeminiClient();
     const selectedModel = getModelName(model);
 
@@ -711,6 +711,13 @@ Indicación médica: ${clinicalHistory || "No proporcionada"}
 
     if (findings) {
       promptText += `Hallazgos descritos por el usuario: ${findings}\n`;
+    }
+
+    const anchorDx = String(diagnosisAnchor || "").trim();
+    if (anchorDx) {
+      promptText += `\n⚠️ ANCLA DIAGNÓSTICA DE LA SESIÓN (obligatoria): «${anchorDx}».
+Centra HALLAZGOS e IMPRESIÓN DIAGNÓSTICA en lo que sostiene este diagnóstico.
+No sustituyas el ancla por otra categoría o impresión distinta, salvo evidencia inequívoca en contra en la imagen o el texto.\n`;
     }
 
     if (inputReport) {
@@ -788,7 +795,7 @@ ${findings ? `Basados en los hallazgos descritos ("${findings}"), el estudio pre
 
 
 **IMPRESIÓN DIAGNÓSTICA:**
-**1. (La conclusión diagnóstica y cualquier recomendación o clasificación de consenso como BI-RADS, quistes de Bosniak, criterios de Fleischner, etc. DEBE estar ESCRITA COMPLETAMENTE EN NEGRITA. Cada línea de esta sección debe estar envuelta en asteriscos dobles. Ejemplo: '**1. Hallazgo de sospecha...**')**
+${anchorDx ? `**(Ancla de sesión: «${anchorDx}» — la impresión principal debe alinearse con este diagnóstico salvo evidencia inequívoca en contra.)**\n` : ""}**1. (La conclusión diagnóstica y cualquier recomendación o clasificación de consenso como BI-RADS, quistes de Bosniak, criterios de Fleischner, etc. DEBE estar ESCRITA COMPLETAMENTE EN NEGRITA. Cada línea de esta sección debe estar envuelta en asteriscos dobles. Ejemplo: '**1. Hallazgo de sospecha...**')**
 **2. (Toda esta sección debe estar completamente en negrita línea por línea)**
 
 [FIN DEL REPORTE]

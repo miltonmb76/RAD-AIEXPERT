@@ -42,8 +42,9 @@ export const DiagnosisAnchorBar: React.FC<DiagnosisAnchorBarProps> = ({
             </span>
           </div>
           <p className="text-[11px] text-slate-400 leading-relaxed max-w-2xl">
-            Diagnóstico final del scorecard (no el dominio del protocolo). Ej.: distensión del
-            LPAA — no «Musculoesquelético». Centra justificación, pack, mapa y Atlas.
+            Diagnóstico final (no el dominio del protocolo). Ej.: distensión del LPAA — no
+            «Musculoesquelético». Puedes fijarla bajo Hallazgos antes del informe; si ya está
+            escrita, el scorecard no la pisa. Centra justificación, pack, mapa y Atlas.
           </p>
         </div>
       </div>

@@ -138,7 +138,8 @@ import {
   Hexagon,
   FileSpreadsheet,
   FileStack,
-  MapPinned
+  MapPinned,
+  Anchor
 } from "lucide-react";
 import { initAuth, googleSignIn, logout as googleLogout, anonymousSignIn, emailSignIn, emailSignUp, getFirebaseConfig } from "./firebaseAuth";
 import { CloudStudy, saveStudyToCloud, getStudiesFromCloud, deleteStudyFromCloud, Worklist, WorklistPatient, saveWorklistToCloud, getWorklistFromCloud, getSingleStudyFromCloud, testFirebaseConfigConnection, saveUserSettingsToCloud, getUserSettingsFromCloud } from "./firebaseDb";
@@ -558,6 +559,7 @@ export default function App() {
         setStudyType(localStudy.studyType || "");
         setClinicalHistory(localStudy.clinicalHistory || "");
         setFindings(localStudy.findings || "");
+        setDiagnosisAnchor(localStudy.diagnosisAnchor || "");
         setGeneratedReport(localStudy.reportText || "");
         setLoadedCloudPdfBase64(localStudy.pdfBase64 || "");
         setPatientLogoUrl(localStudy.customLogoUrl || "");
@@ -619,6 +621,7 @@ export default function App() {
               setStudyType(study.studyType || "");
               setClinicalHistory(study.clinicalHistory || "");
               setFindings(study.findings || "");
+              setDiagnosisAnchor(study.diagnosisAnchor || "");
               setGeneratedReport(study.reportText || "");
               setLoadedCloudPdfBase64(study.pdfBase64 || "");
               setPatientLogoUrl(study.customLogoUrl || "");
@@ -3353,6 +3356,7 @@ Ejemplo:
     doctorLicense,
     doctorName,
     findings,
+    diagnosisAnchor,
     findings3dRenders,
     focalLesion3dData,
     generatedReport,
@@ -4119,6 +4123,7 @@ Ejemplo:
             studyType: studyType || "Estudio General",
             clinicalHistory: clinicalHistory || "No especificada",
             findings: findings || "No especificadas",
+            diagnosisAnchor: String(diagnosisAnchor || "").trim() || undefined,
             reportText: reportContent,
             pdfBase64: pdfB64,
             operationalSummaryText: summary,
@@ -5947,6 +5952,7 @@ Ejemplo:
     patientId,
     reportDate,
     findings,
+    diagnosisAnchor,
     operationalSummaryText,
     specificStudy,
     pdfLayoutType,
@@ -7142,6 +7148,26 @@ Ejemplo:
                           isListening ? "border-rose-500/60 ring-4 ring-rose-500/10 shadow-inner" : "border-slate-855 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
                         }`}
                       />
+                    </div>
+
+                    {/* Ancla diagnostica pre-reporte (opcional) - gobierna informe + modulos */}
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-teal-500/90 flex items-center gap-1.5 uppercase tracking-widest">
+                        <Anchor className="h-3 w-3 shrink-0" />
+                        {"Ancla diagn\u00f3stica"}
+                        <span className="text-slate-600 font-bold normal-case tracking-normal">(opcional)</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={diagnosisAnchor}
+                        onChange={(e) => setDiagnosisAnchor(e.target.value)}
+                        placeholder="Ej. distension del LPAA / colecistitis aguda / nodulo BI-RADS 4A..."
+                        className="w-full bg-slate-950/90 border-2 border-teal-900/40 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 rounded-xl py-2.5 px-4 text-xs font-bold text-slate-100 focus:outline-none placeholder-slate-600 transition-all duration-200"
+                      />
+                      <p className="text-[10px] text-slate-500 leading-relaxed">
+                        Si la defines aqui, guia el informe, scorecard, pack, Atlas y eco-anatomia.
+                        Vacia: se toma del scorecard al pulir, sin pisar lo que escribas despues.
+                      </p>
                     </div>
 
                      {/* Estudio Previo / Informe */}
@@ -11558,7 +11584,9 @@ Ejemplo:
                                   }}
                                   onSendToInfographic={(data) => {
                                     setFindingsInfographicData(data);
-                                    if (data?.diagnosis) setDiagnosisAnchor(String(data.diagnosis));
+                                    if (data?.diagnosis && !String(diagnosisAnchor || "").trim()) {
+                                      setDiagnosisAnchor(String(data.diagnosis));
+                                    }
                                     setIncludeFindingsInfographicInReport(true);
                                     setIsFindingsInfographicOpen(true);
                                     window.setTimeout(() => {
@@ -11595,7 +11623,12 @@ Ejemplo:
                                     };
 
                                     const seedAnchor = () => {
-                                      if (plan.diagnosisAnchor) setDiagnosisAnchor(plan.diagnosisAnchor);
+                                      if (
+                                        plan.diagnosisAnchor &&
+                                        !String(diagnosisAnchor || "").trim()
+                                      ) {
+                                        setDiagnosisAnchor(plan.diagnosisAnchor);
+                                      }
                                     };
 
                                     const openBridge = () => {
@@ -11642,7 +11675,12 @@ Ejemplo:
                                     };
 
                                     const openPack = () => {
-                                      if (plan.diagnosisAnchor) setDiagnosisAnchor(plan.diagnosisAnchor);
+                                      if (
+                                        plan.diagnosisAnchor &&
+                                        !String(diagnosisAnchor || "").trim()
+                                      ) {
+                                        setDiagnosisAnchor(plan.diagnosisAnchor);
+                                      }
                                       setIsDiagnosticPackOpen(true);
                                       window.setTimeout(() => {
                                         document
@@ -11656,7 +11694,9 @@ Ejemplo:
                                       const mapped = infographicFromScorecard(clinicalScorecardData);
                                       if (!mapped.nodes.some((n) => n.label.trim())) return;
                                       setFindingsInfographicData(mapped);
-                                      if (mapped.diagnosis) setDiagnosisAnchor(String(mapped.diagnosis));
+                                      if (mapped.diagnosis && !String(diagnosisAnchor || "").trim()) {
+                                        setDiagnosisAnchor(String(mapped.diagnosis));
+                                      }
                                       setIncludeFindingsInfographicInReport(true);
                                       setIsFindingsInfographicOpen(true);
                                       window.setTimeout(() => {
@@ -11728,7 +11768,9 @@ Ejemplo:
                                   }}
                                   onSendToInfographic={(data) => {
                                     setFindingsInfographicData(data);
-                                    if (data?.diagnosis) setDiagnosisAnchor(String(data.diagnosis));
+                                    if (data?.diagnosis && !String(diagnosisAnchor || "").trim()) {
+                                      setDiagnosisAnchor(String(data.diagnosis));
+                                    }
                                     setIncludeFindingsInfographicInReport(true);
                                     setIsFindingsInfographicOpen(true);
                                     window.setTimeout(() => {
@@ -14541,6 +14583,7 @@ Ejemplo:
                         if (viewingCloudStudy.doctorLicense) setDoctorLicense(viewingCloudStudy.doctorLicense);
                         if (viewingCloudStudy.clinicName) setClinicName(viewingCloudStudy.clinicName);
                         if (viewingCloudStudy.findings) setFindings(viewingCloudStudy.findings);
+                        setDiagnosisAnchor(viewingCloudStudy.diagnosisAnchor || "");
                         setAttachedImages(viewingCloudStudy.attachedImages || []);
                         if (viewingCloudStudy.atlas3dData) setAtlas3dData(viewingCloudStudy.atlas3dData);
                         if (viewingCloudStudy.includeAtlas3dInReport !== undefined) setIncludeAtlas3dInReport(viewingCloudStudy.includeAtlas3dInReport);
