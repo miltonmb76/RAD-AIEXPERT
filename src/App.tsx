@@ -258,6 +258,8 @@ export default function App() {
   
   // Patient Infographic generation states (classic anatomical poster — dual audience)
   const [isGeneratingInfographic, setIsGeneratingInfographic] = useState<boolean>(false);
+  /** Which classic poster audience is regenerating (null = idle). */
+  const [infographicRegenAudience, setInfographicRegenAudience] = useState<"patient" | "clinician" | "both" | null>(null);
   /** Patient-facing warm poster */
   const [infographicUrl, setInfographicUrl] = useState<string | null>(null);
   /** Formal clinician poster (same anatomy, scientific style) */
@@ -276,6 +278,8 @@ export default function App() {
   const [infographicViewOrientation, setInfographicViewOrientation] = useState<InfographicViewOrientation>("AP");
   // Directed classic poster (independent of general — can coexist and both attach)
   const [isGeneratingDirectedInfographic, setIsGeneratingDirectedInfographic] = useState<boolean>(false);
+  /** Which directed poster audience is regenerating (null = idle). */
+  const [directedInfographicRegenAudience, setDirectedInfographicRegenAudience] = useState<"patient" | "clinician" | "both" | null>(null);
   const [directedInfographicUrl, setDirectedInfographicUrl] = useState<string | null>(null);
   const [directedInfographicClinicianUrl, setDirectedInfographicClinicianUrl] = useState<string | null>(null);
   const [directedInfographicAudienceTab, setDirectedInfographicAudienceTab] = useState<"patient" | "clinician">("patient");
@@ -2907,6 +2911,7 @@ Ejemplo:
     setAttachInfographicToOfficialReport(false);
     setAttachInfographicToPatientSummary(false);
     setInfographicCorrectionNotes("");
+    setInfographicRegenAudience(null);
     setIsGeneratingDirectedInfographic(false);
     setDirectedInfographicUrl(null);
     setDirectedInfographicClinicianUrl(null);
@@ -2917,6 +2922,7 @@ Ejemplo:
     setDirectedSections(defaultDirectedSections());
     setDirectedRecommendations("clinician");
     setDirectedCorrectionNotes("");
+    setDirectedInfographicRegenAudience(null);
     setAttachDirectedInfographicToOfficialReport(false);
     setAttachDirectedInfographicToPatientSummary(false);
 
@@ -4480,13 +4486,28 @@ Ejemplo:
   };
 
   // ACTION FOR INFOGRAPHIC GENERATION — dual posters (patient + clinician), full-size tabs in UI
-  const handleGenerateInfographic = async (opts?: { keepAttachments?: boolean }) => {
+  const handleGenerateInfographic = async (opts?: {
+    keepAttachments?: boolean;
+    audience?: "patient" | "clinician" | "both";
+  }) => {
     if (!generatedReport || !studyType) return;
+    const target: "patient" | "clinician" | "both" = opts?.audience || "both";
+    const doPatient = target === "both" || target === "patient";
+    const doClinician = target === "both" || target === "clinician";
     setIsGeneratingInfographic(true);
+    setInfographicRegenAudience(target);
     setInfographicError(null);
-    setInfographicUrl(null);
-    setInfographicClinicianUrl(null);
-    // Do NOT clear directed posters — general and directed coexist
+    // Solo limpia la(s) version(es) que se regeneran; la otra se conserva
+    if (doPatient && doClinician) {
+      setInfographicUrl(null);
+      setInfographicClinicianUrl(null);
+    } else if (doPatient) {
+      setInfographicUrl(null);
+      setInfographicAudienceTab("patient");
+    } else if (doClinician) {
+      setInfographicClinicianUrl(null);
+      setInfographicAudienceTab("clinician");
+    }
     if (!opts?.keepAttachments) {
       setAttachInfographicToOfficialReport(false);
       setAttachInfographicToPatientSummary(false);
@@ -4503,75 +4524,107 @@ Ejemplo:
         includeRecommendations: "none" as const,
         ...(notes ? { correctionNotes: notes } : {}),
       };
-      const [patientRes, clinicianRes] = await Promise.all([
-        fetch("/api/generate-infographic", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...baseBody, audience: "patient" }),
-        }),
-        fetch("/api/generate-infographic", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...baseBody, audience: "clinician" }),
-        }),
-      ]);
-      const patientData = await patientRes.json();
-      const clinicianData = await clinicianRes.json();
-
-      if (!patientData.success && !clinicianData.success) {
-        throw new Error(
-          patientData.error ||
-            clinicianData.error ||
-            "Error generando las infografías."
+      const requests: Promise<Response>[] = [];
+      if (doPatient) {
+        requests.push(
+          fetch("/api/generate-infographic", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...baseBody, audience: "patient" }),
+          })
         );
       }
-
-      if (patientData.success && patientData.imageUrl) {
-        setInfographicUrl(patientData.imageUrl);
+      if (doClinician) {
+        requests.push(
+          fetch("/api/generate-infographic", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...baseBody, audience: "clinician" }),
+          })
+        );
       }
-      if (clinicianData.success && clinicianData.imageUrl) {
-        setInfographicClinicianUrl(clinicianData.imageUrl);
-      }
-      // Prefer patient tab if available; else clinician
-      if (patientData.success) setInfographicAudienceTab("patient");
-      else if (clinicianData.success) setInfographicAudienceTab("clinician");
+      const responses = await Promise.all(requests);
+      const payloads = await Promise.all(responses.map((r) => r.json()));
+      let patientData: any = null;
+      let clinicianData: any = null;
+      let pi = 0;
+      if (doPatient) patientData = payloads[pi++];
+      if (doClinician) clinicianData = payloads[pi++];
 
-      const orient =
-        patientData.viewOrientation || clinicianData.viewOrientation;
+      const patientOk = !!(patientData?.success && patientData?.imageUrl);
+      const clinicianOk = !!(clinicianData?.success && clinicianData?.imageUrl);
+      if (doPatient && doClinician && !patientOk && !clinicianOk) {
+        throw new Error(
+          patientData?.error ||
+            clinicianData?.error ||
+            "Error generando las infografias."
+        );
+      }
+      if (doPatient && !doClinician && !patientOk) {
+        throw new Error(patientData?.error || "Error regenerando la infografia del paciente.");
+      }
+      if (doClinician && !doPatient && !clinicianOk) {
+        throw new Error(clinicianData?.error || "Error regenerando la infografia del medico.");
+      }
+
+      if (patientOk) setInfographicUrl(patientData.imageUrl);
+      if (clinicianOk) setInfographicClinicianUrl(clinicianData.imageUrl);
+
+      if (target === "patient" && patientOk) setInfographicAudienceTab("patient");
+      else if (target === "clinician" && clinicianOk) setInfographicAudienceTab("clinician");
+      else if (patientOk) setInfographicAudienceTab("patient");
+      else if (clinicianOk) setInfographicAudienceTab("clinician");
+
+      const orient = patientData?.viewOrientation || clinicianData?.viewOrientation;
       if (orient === "AP" || orient === "PA") {
         setInfographicViewOrientation(orient);
       }
 
-      if (!patientData.success || !clinicianData.success) {
+      if (doPatient && doClinician && (!patientOk || !clinicianOk)) {
         setInfographicError(
-          !patientData.success
-            ? `Versión paciente: ${patientData.error || "falló"}. Se muestra la disponible.`
-            : `Versión médico: ${clinicianData.error || "falló"}. Se muestra la disponible.`
+          !patientOk
+            ? `Version paciente: ${patientData?.error || "fallo"}. Se muestra la disponible.`
+            : `Version medico: ${clinicianData?.error || "fallo"}. Se muestra la disponible.`
         );
       }
     } catch (err: any) {
-      setInfographicError(err.message || "Error al conectar con la API de infografías.");
+      setInfographicError(err.message || "Error al conectar con la API de infografias.");
     } finally {
       setIsGeneratingInfographic(false);
+      setInfographicRegenAudience(null);
     }
   };
 
-  const handleGenerateDirectedInfographic = async (opts?: { keepAttachments?: boolean }) => {
+  const handleGenerateDirectedInfographic = async (opts?: {
+    keepAttachments?: boolean;
+    audience?: "patient" | "clinician" | "both";
+  }) => {
     if (!generatedReport || !studyType) return;
     const topic =
       directedTopic.trim() ||
       String(diagnosisAnchor || "").trim() ||
       resolveScorecardFinalDiagnosis(clinicalScorecardData);
     if (!directedBriefIsReady({ topic, orientation: directedOrientation })) {
-      setDirectedInfographicError("Indica un tema / hallazgo (mín. 3 caracteres) para la infografía dirigida.");
+      setDirectedInfographicError("Indica un tema / hallazgo (min. 3 caracteres) para la infografia dirigida.");
       return;
     }
     if (!directedTopic.trim() && topic) setDirectedTopic(topic);
+    const target: "patient" | "clinician" | "both" = opts?.audience || "both";
+    const doPatient = target === "both" || target === "patient";
+    const doClinician = target === "both" || target === "clinician";
     setIsGeneratingDirectedInfographic(true);
+    setDirectedInfographicRegenAudience(target);
     setDirectedInfographicError(null);
-    setDirectedInfographicUrl(null);
-    setDirectedInfographicClinicianUrl(null);
-    // Do NOT clear general posters
+    if (doPatient && doClinician) {
+      setDirectedInfographicUrl(null);
+      setDirectedInfographicClinicianUrl(null);
+    } else if (doPatient) {
+      setDirectedInfographicUrl(null);
+      setDirectedInfographicAudienceTab("patient");
+    } else if (doClinician) {
+      setDirectedInfographicClinicianUrl(null);
+      setDirectedInfographicAudienceTab("clinician");
+    }
     if (!opts?.keepAttachments) {
       setAttachDirectedInfographicToOfficialReport(false);
       setAttachDirectedInfographicToPatientSummary(false);
@@ -4593,49 +4646,69 @@ Ejemplo:
         scorecardContext: buildDirectedScorecardContext(clinicalScorecardData) || undefined,
         ...(notes ? { correctionNotes: notes } : {}),
       };
-      const [patientRes, clinicianRes] = await Promise.all([
-        fetch("/api/generate-infographic", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...baseBody, audience: "patient" }),
-        }),
-        fetch("/api/generate-infographic", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...baseBody, audience: "clinician" }),
-        }),
-      ]);
-      const patientData = await patientRes.json();
-      const clinicianData = await clinicianRes.json();
-
-      if (!patientData.success && !clinicianData.success) {
-        throw new Error(
-          patientData.error ||
-            clinicianData.error ||
-            "Error generando la infografía dirigida."
+      const requests: Promise<Response>[] = [];
+      if (doPatient) {
+        requests.push(
+          fetch("/api/generate-infographic", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...baseBody, audience: "patient" }),
+          })
         );
       }
-
-      if (patientData.success && patientData.imageUrl) {
-        setDirectedInfographicUrl(patientData.imageUrl);
+      if (doClinician) {
+        requests.push(
+          fetch("/api/generate-infographic", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...baseBody, audience: "clinician" }),
+          })
+        );
       }
-      if (clinicianData.success && clinicianData.imageUrl) {
-        setDirectedInfographicClinicianUrl(clinicianData.imageUrl);
-      }
-      if (patientData.success) setDirectedInfographicAudienceTab("patient");
-      else if (clinicianData.success) setDirectedInfographicAudienceTab("clinician");
+      const responses = await Promise.all(requests);
+      const payloads = await Promise.all(responses.map((r) => r.json()));
+      let patientData: any = null;
+      let clinicianData: any = null;
+      let pi = 0;
+      if (doPatient) patientData = payloads[pi++];
+      if (doClinician) clinicianData = payloads[pi++];
 
-      if (!patientData.success || !clinicianData.success) {
+      const patientOk = !!(patientData?.success && patientData?.imageUrl);
+      const clinicianOk = !!(clinicianData?.success && clinicianData?.imageUrl);
+      if (doPatient && doClinician && !patientOk && !clinicianOk) {
+        throw new Error(
+          patientData?.error ||
+            clinicianData?.error ||
+            "Error generando la infografia dirigida."
+        );
+      }
+      if (doPatient && !doClinician && !patientOk) {
+        throw new Error(patientData?.error || "Error regenerando la dirigida (paciente).");
+      }
+      if (doClinician && !doPatient && !clinicianOk) {
+        throw new Error(clinicianData?.error || "Error regenerando la dirigida (medico).");
+      }
+
+      if (patientOk) setDirectedInfographicUrl(patientData.imageUrl);
+      if (clinicianOk) setDirectedInfographicClinicianUrl(clinicianData.imageUrl);
+
+      if (target === "patient" && patientOk) setDirectedInfographicAudienceTab("patient");
+      else if (target === "clinician" && clinicianOk) setDirectedInfographicAudienceTab("clinician");
+      else if (patientOk) setDirectedInfographicAudienceTab("patient");
+      else if (clinicianOk) setDirectedInfographicAudienceTab("clinician");
+
+      if (doPatient && doClinician && (!patientOk || !clinicianOk)) {
         setDirectedInfographicError(
-          !patientData.success
-            ? `Versión paciente: ${patientData.error || "falló"}. Se muestra la disponible.`
-            : `Versión médico: ${clinicianData.error || "falló"}. Se muestra la disponible.`
+          !patientOk
+            ? `Version paciente: ${patientData?.error || "fallo"}. Se muestra la disponible.`
+            : `Version medico: ${clinicianData?.error || "fallo"}. Se muestra la disponible.`
         );
       }
     } catch (err: any) {
-      setDirectedInfographicError(err.message || "Error al generar la infografía dirigida.");
+      setDirectedInfographicError(err.message || "Error al generar la infografia dirigida.");
     } finally {
       setIsGeneratingDirectedInfographic(false);
+      setDirectedInfographicRegenAudience(null);
     }
   };
 
@@ -8552,7 +8625,7 @@ Ejemplo:
 
                              <div className="mt-3 space-y-2">
                                <label className="block text-[9px] font-black uppercase tracking-widest text-pink-300/90 font-mono">
-                                 Correcciones para regenerar
+                                 Correcciones (opcional) · regenerar paciente, medico o ambas
                                </label>
                                <textarea
                                  value={infographicCorrectionNotes}
@@ -8595,18 +8668,52 @@ Ejemplo:
                                <div className="flex flex-wrap justify-end gap-2">
                                <button
                                  type="button"
-                                 onClick={() => handleGenerateInfographic({ keepAttachments: true })}
+                                 onClick={() => handleGenerateInfographic({ keepAttachments: true, audience: "patient" })}
                                  disabled={isGeneratingInfographic}
-                                 className="px-4 py-2 bg-pink-700 hover:bg-pink-600 disabled:opacity-50 border-2 border-pink-500/30 rounded-xl text-xs font-black uppercase tracking-wider text-white transition-all flex items-center gap-2 shadow-lg cursor-pointer"
-                                 title="Regenerar ambas infografías aplicando el texto de correcciones"
+                                 className="px-3 py-2 bg-pink-800/80 hover:bg-pink-700 disabled:opacity-50 border-2 border-pink-500/25 rounded-xl text-[10px] font-black uppercase tracking-wider text-white transition-all flex items-center gap-1.5 shadow-lg cursor-pointer"
+                                 title="Regenerar solo la version paciente (aplica notas de correccion si las hay)"
                                >
-                                 {isGeneratingInfographic ? (
+                                 {isGeneratingInfographic && infographicRegenAudience === "patient" ? (
                                    <>
-                                     <Loader2 className="h-4 w-4 animate-spin" /> Regenerando...
+                                     <Loader2 className="h-3.5 w-3.5 animate-spin" /> Paciente...
                                    </>
                                  ) : (
                                    <>
-                                     <RefreshCw className="h-4 w-4" /> Regenerar con correcciones
+                                     <RefreshCw className="h-3.5 w-3.5" /> Solo paciente
+                                   </>
+                                 )}
+                               </button>
+                               <button
+                                 type="button"
+                                 onClick={() => handleGenerateInfographic({ keepAttachments: true, audience: "clinician" })}
+                                 disabled={isGeneratingInfographic}
+                                 className="px-3 py-2 bg-slate-200 hover:bg-white disabled:opacity-50 border-2 border-slate-400/40 rounded-xl text-[10px] font-black uppercase tracking-wider text-slate-900 transition-all flex items-center gap-1.5 shadow-lg cursor-pointer"
+                                 title="Regenerar solo la version medico (aplica notas de correccion si las hay)"
+                               >
+                                 {isGeneratingInfographic && infographicRegenAudience === "clinician" ? (
+                                   <>
+                                     <Loader2 className="h-3.5 w-3.5 animate-spin" /> Medico...
+                                   </>
+                                 ) : (
+                                   <>
+                                     <RefreshCw className="h-3.5 w-3.5" /> Solo medico
+                                   </>
+                                 )}
+                               </button>
+                               <button
+                                 type="button"
+                                 onClick={() => handleGenerateInfographic({ keepAttachments: true, audience: "both" })}
+                                 disabled={isGeneratingInfographic}
+                                 className="px-3 py-2 bg-pink-700 hover:bg-pink-600 disabled:opacity-50 border-2 border-pink-500/30 rounded-xl text-[10px] font-black uppercase tracking-wider text-white transition-all flex items-center gap-1.5 shadow-lg cursor-pointer"
+                                 title="Regenerar ambas versiones aplicando el texto de correcciones"
+                               >
+                                 {isGeneratingInfographic && infographicRegenAudience === "both" ? (
+                                   <>
+                                     <Loader2 className="h-3.5 w-3.5 animate-spin" /> Ambas...
+                                   </>
+                                 ) : (
+                                   <>
+                                     <RefreshCw className="h-3.5 w-3.5" /> Ambas
                                    </>
                                  )}
                                </button>
@@ -8735,29 +8842,64 @@ Ejemplo:
                             })()}
                             <div className="mt-3 space-y-2">
                               <label className="block text-[9px] font-black uppercase tracking-widest text-fuchsia-300/90 font-mono">
-                                Correcciones para regenerar (dirigida)
+                                Correcciones (opcional) · regenerar paciente, medico o ambas
                               </label>
                               <textarea
                                 value={directedCorrectionNotes}
                                 onChange={(e) => setDirectedCorrectionNotes(e.target.value)}
                                 rows={2}
-                                placeholder="Ajustes de texto, énfasis o lateralidad para regenerar solo la dirigida."
+                                placeholder="Ajustes opcionales (texto, énfasis o lateralidad para regenerar solo la dirigida."
                                 className="w-full px-3 py-2 bg-slate-950 border border-slate-700 focus:border-fuchsia-500/50 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none resize-y"
                               />
                               <div className="flex flex-wrap justify-end gap-2">
                                 <button
                                   type="button"
-                                  onClick={() => handleGenerateDirectedInfographic({ keepAttachments: true })}
+                                  onClick={() => handleGenerateDirectedInfographic({ keepAttachments: true, audience: "patient" })}
                                   disabled={isGeneratingDirectedInfographic}
-                                  className="px-4 py-2 bg-fuchsia-800 hover:bg-fuchsia-700 disabled:opacity-50 border-2 border-fuchsia-500/30 rounded-xl text-xs font-black uppercase tracking-wider text-white flex items-center gap-2 cursor-pointer"
+                                  className="px-3 py-2 bg-fuchsia-900/80 hover:bg-fuchsia-800 disabled:opacity-50 border-2 border-fuchsia-500/25 rounded-xl text-[10px] font-black uppercase tracking-wider text-white flex items-center gap-1.5 cursor-pointer"
+                                  title="Regenerar solo la dirigida paciente (con notas si las hay)"
                                 >
-                                  {isGeneratingDirectedInfographic ? (
+                                  {isGeneratingDirectedInfographic && directedInfographicRegenAudience === "patient" ? (
                                     <>
-                                      <Loader2 className="h-4 w-4 animate-spin" /> Regenerando...
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Paciente...
                                     </>
                                   ) : (
                                     <>
-                                      <RefreshCw className="h-4 w-4" /> Regenerar dirigida
+                                      <RefreshCw className="h-3.5 w-3.5" /> Solo paciente
+                                    </>
+                                  )}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleGenerateDirectedInfographic({ keepAttachments: true, audience: "clinician" })}
+                                  disabled={isGeneratingDirectedInfographic}
+                                  className="px-3 py-2 bg-slate-200 hover:bg-white disabled:opacity-50 border-2 border-slate-400/40 rounded-xl text-[10px] font-black uppercase tracking-wider text-slate-900 flex items-center gap-1.5 cursor-pointer"
+                                  title="Regenerar solo la dirigida medico (con notas si las hay)"
+                                >
+                                  {isGeneratingDirectedInfographic && directedInfographicRegenAudience === "clinician" ? (
+                                    <>
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Medico...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <RefreshCw className="h-3.5 w-3.5" /> Solo medico
+                                    </>
+                                  )}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleGenerateDirectedInfographic({ keepAttachments: true, audience: "both" })}
+                                  disabled={isGeneratingDirectedInfographic}
+                                  className="px-3 py-2 bg-fuchsia-800 hover:bg-fuchsia-700 disabled:opacity-50 border-2 border-fuchsia-500/30 rounded-xl text-[10px] font-black uppercase tracking-wider text-white flex items-center gap-1.5 cursor-pointer"
+                                  title="Regenerar ambas versiones de la dirigida"
+                                >
+                                  {isGeneratingDirectedInfographic && directedInfographicRegenAudience === "both" ? (
+                                    <>
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Ambas...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <RefreshCw className="h-3.5 w-3.5" /> Ambas
                                     </>
                                   )}
                                 </button>
