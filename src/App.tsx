@@ -1510,16 +1510,6 @@ export default function App() {
   const [isSyntacticHighlightingActive, setIsSyntacticHighlightingActive] = useState<boolean>(true);
   const [manualSeverityOverrides, setManualSeverityOverrides] = useState<Record<string, "critical" | "altered" | "normal">>({});
 
-  // Prefill directed topic from session ancla / scorecard when empty
-  useEffect(() => {
-    if (String(directedTopic || "").trim()) return;
-    const seed =
-      String(diagnosisAnchor || "").trim() ||
-      resolveScorecardFinalDiagnosis(clinicalScorecardData);
-    if (seed) setDirectedTopic(seed);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only seed when ancla/scorecard lands
-  }, [diagnosisAnchor, clinicalScorecardData]);
-
   const [aiSeverityCache, setAiSeverityCache] = useState<Record<string, "critical" | "altered" | "normal">>({});
   const [isAnalyzingParagraphs, setIsAnalyzingParagraphs] = useState<boolean>(false);
 
@@ -1566,6 +1556,17 @@ export default function App() {
   const [isFindingsInfographicOpen, setIsFindingsInfographicOpen] = useState<boolean>(false);
   /** Session-level diagnosis ancla — governs justification, pack, map, Atlas. */
   const [diagnosisAnchor, setDiagnosisAnchor] = useState<string>("");
+
+  // Prefill directed topic from session ancla / scorecard when empty
+  useEffect(() => {
+    if (String(directedTopic || "").trim()) return;
+    const seed =
+      String(diagnosisAnchor || "").trim() ||
+      resolveScorecardFinalDiagnosis(clinicalScorecardData);
+    if (seed) setDirectedTopic(seed);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only seed when ancla/scorecard lands
+  }, [diagnosisAnchor, clinicalScorecardData]);
+
   const [diagnosticPackData, setDiagnosticPackData] = useState<import("./lib/diagnosticPack").DiagnosticPackData | null>(null);
   const [includeDiagnosticPackInReport, setIncludeDiagnosticPackInReport] = useState<boolean>(true);
   const [isDiagnosticPackOpen, setIsDiagnosticPackOpen] = useState<boolean>(false);
