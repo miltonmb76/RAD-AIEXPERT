@@ -29,6 +29,7 @@ export type GenerateReportHandlerDeps = {
   doctorLicense: any;
   doctorName: any;
   findings: any;
+  diagnosisAnchor?: string;
   findings3dRenders: any;
   focalLesion3dData: any;
   generatedReport: any;
@@ -133,6 +134,7 @@ export function createGenerateReportHandler(d: GenerateReportHandlerDeps) {
       doctorLicense,
       doctorName,
       findings,
+      diagnosisAnchor,
       findings3dRenders,
       focalLesion3dData,
       generatedReport,
@@ -274,6 +276,7 @@ export function createGenerateReportHandler(d: GenerateReportHandlerDeps) {
           studyType,
           clinicalHistory,
           findings,
+          diagnosisAnchor: String(diagnosisAnchor || "").trim() || undefined,
           inputReport,
           uploadedReportContent: uploadedReportContent || undefined,
           uploadedReportMimeType: uploadedReportMimeType || undefined,
@@ -376,6 +379,7 @@ export function createGenerateReportHandler(d: GenerateReportHandlerDeps) {
             studyType,
             clinicalHistory: clinicalHistory || "No especificada",
             findings: findings || "Hallazgos guardados automáticamente.",
+            diagnosisAnchor: String(diagnosisAnchor || "").trim() || undefined,
             reportText: data.report,
             attachedImages: attachedImages || [],
             operationalSummaryText: "",
