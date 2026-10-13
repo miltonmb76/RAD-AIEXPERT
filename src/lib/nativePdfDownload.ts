@@ -2601,7 +2601,8 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
 
       // --- 4. SUITES ESPECÍFICAS DE ÓRGANO (vascular/tiroides/mama/hombro) ---
       // Después de la sinopsis por órgano si está presente; si no, después del cuerpo/cuadro.
-      // Corte Focal 3D: justo después de la suite usada; si no hay suite, justo después del reporte/sinopsis.
+      // Pack: después de la suite; si no hay suite, después del Corte Focal.
+      // Corte Focal: tras suite(+pack) o, sin suite, tras reporte/sinopsis (antes del pack).
       const pdfSnap = pdfStateRef.current;
       const pdfSuiteData = <T,>(overrideKey: string, live: T): T =>
         (studyOverride ? (studyOverride as any)[overrideKey] : (pdfSnap as any)?.[overrideKey] ?? live) as T;
@@ -2658,9 +2659,27 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
         }
       };
 
+      const renderDiagnosticPackAnnexHere = async () => {
+        const activeDiagnosticPack = studyOverride
+          ? (studyOverride as any).diagnosticPackData
+          : (pdfSnap?.diagnosticPackData || diagnosticPackData);
+        const shouldIncludeDiagnosticPack = studyOverride
+          ? ((studyOverride as any).includeDiagnosticPackInReport !== false)
+          : ((pdfSnap?.includeDiagnosticPackInReport !== false) &&
+              includeDiagnosticPackInReport !== false);
+        if (shouldIncludeDiagnosticPack && diagnosticPackIsRenderable(activeDiagnosticPack)) {
+          await renderDiagnosticPackAnnexToPDF(doc, activeDiagnosticPack, {
+            marginX,
+            pageWidth,
+            pageHeight,
+          });
+        }
+      };
+
       if (!anySuiteInPdf) {
-        // Sin suite: Corte Focal inmediatamente después del reporte / sinopsis
+        // Sin suite: Corte Focal tras reporte/sinopsis, luego Pack diagnóstico
         renderFocalLesionAnnexHere();
+        await renderDiagnosticPackAnnexHere();
       }
 
       // --- 5.6. ANEXO: SUITE VASCULAR 3D & MAPA ANATOMO-HEMODINÁMICO (PÁGINA DEDICADA) ---
@@ -2817,7 +2836,8 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
       }
 
       if (anySuiteInPdf) {
-        // Con suite: Corte Focal inmediatamente después de la(s) suite(s) 3D
+        // Con suite: Pack justo después de la(s) suite(s); Corte Focal a continuación
+        await renderDiagnosticPackAnnexHere();
         renderFocalLesionAnnexHere();
       }
 
@@ -2982,21 +3002,7 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
         }
       }
 
-      // --- ANEXO: PACK DIAGNÓSTICO (1 PÁGINA) ---
-      const activeDiagnosticPack = studyOverride
-        ? (studyOverride as any).diagnosticPackData
-        : (pdfStateRef.current?.diagnosticPackData || diagnosticPackData);
-      const shouldIncludeDiagnosticPack = studyOverride
-        ? ((studyOverride as any).includeDiagnosticPackInReport !== false)
-        : ((pdfStateRef.current?.includeDiagnosticPackInReport !== false) &&
-            includeDiagnosticPackInReport !== false);
-      if (shouldIncludeDiagnosticPack && diagnosticPackIsRenderable(activeDiagnosticPack)) {
-        await renderDiagnosticPackAnnexToPDF(doc, activeDiagnosticPack, {
-          marginX,
-          pageWidth,
-          pageHeight,
-        });
-      }
+      // Pack diagnóstico: ya insertado tras suite (si hay) o tras Corte Focal (si no hay suite).
 
       // --- ANEXO: FICHA DE LESIÓN DOMINANTE ---
       const activeDominantCard = studyOverride
@@ -3068,7 +3074,7 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
       }
 
 
-      // Corte Focal 3D ya se insertó tras reporte (sin suite) o tras suites (con suite).
+      // Corte Focal 3D y Pack: tras reporte→focal→pack (sin suite) o tras suites→pack→focal (con suite).
 
       // --- 5.66. ANEXO: SIMULADOR DE PLANO ECOGRÁFICO 3D ---
       const activeUsPlaneData = studyOverride ? studyOverride.usPlaneSimulatorData : (pdfStateRef.current?.usPlaneSimulatorData || usPlaneSimulatorData);
