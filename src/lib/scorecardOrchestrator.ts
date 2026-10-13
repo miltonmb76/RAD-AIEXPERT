@@ -143,6 +143,7 @@ export function buildScorecardOrchestrationPlan(opts: {
     : null;
 
   const lesionTarget = suggestLesionTarget({
+    diagnosisAnchor: seededAnchor || opts.diagnosisAnchor,
     reportText: opts.reportText,
     scorecardData: sc,
   });

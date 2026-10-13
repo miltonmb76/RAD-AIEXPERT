@@ -46,6 +46,8 @@ interface Props {
   includeInReport: boolean;
   setIncludeInReport: (v: boolean) => void;
   scorecardData?: ClinicalScorecardData | null;
+  /** Session diagnosis ancla — used as the focal lesion for the 3D cut. */
+  diagnosisAnchor?: string;
   externalDirectives?: string;
   galleryImages?: GalleryImage[];
 }
@@ -89,6 +91,7 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
   includeInReport,
   setIncludeInReport,
   scorecardData,
+  diagnosisAnchor = "",
   externalDirectives,
   galleryImages = [],
 }) => {
@@ -126,15 +129,19 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
   const selectedGallery = gallery.find((g) => g.id === pendingRealUsId) || null;
   const focalPanel = pickBridgeFocalPanel(planeData);
 
-  // Suggest lesion target from US caption / report / scorecard when empty
+  // Lesión focal = ancla diagnóstica (prioridad). Si vacío, infiere de scorecard / eco / informe.
   useEffect(() => {
-    if (planeData?.lesionTarget) {
-      setLesionTarget((prev) => prev || planeData.lesionTarget || "");
-      return;
-    }
+    const anchor = String(diagnosisAnchor || "").trim();
     setLesionTarget((prev) => {
+      if (anchor) {
+        // Seed / refresh from ancla when field empty or still mirroring a previous auto value
+        if (!prev.trim()) return anchor;
+        return prev;
+      }
+      if (planeData?.lesionTarget && !prev.trim()) return planeData.lesionTarget;
       if (prev.trim()) return prev;
       return suggestLesionTarget({
+        diagnosisAnchor: anchor,
         galleryCaption: selectedGallery?.caption,
         galleryLabel: selectedGallery?.label,
         reportText,
@@ -143,6 +150,7 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
       });
     });
   }, [
+    diagnosisAnchor,
     selectedGallery?.caption,
     selectedGallery?.label,
     reportText,
@@ -150,6 +158,13 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
     planeData?.lesionTarget,
     planeData?.targetStructure,
   ]);
+
+  // When ancla arrives later, seed lesionTarget if still empty (no overwrite of edits)
+  useEffect(() => {
+    const anchor = String(diagnosisAnchor || "").trim();
+    if (!anchor) return;
+    setLesionTarget((prev) => (prev.trim() ? prev : anchor));
+  }, [diagnosisAnchor]);
 
   const annotations: SuiteImageAnnotation[] = planeData?.imageAnnotations?.length
     ? planeData.imageAnnotations
@@ -164,28 +179,36 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
     if (!planeData) return;
     const real = img ? galleryToRealUs(img) : null;
     const suggested = suggestLesionTarget({
+      diagnosisAnchor,
       galleryCaption: real?.caption,
       galleryLabel: real?.label,
       reportText,
       scorecardData,
       planeTarget: planeData.targetStructure || lesionTarget,
     });
-    if (suggested && !lesionTarget.trim()) setLesionTarget(suggested);
+    const target =
+      lesionTarget.trim() ||
+      String(diagnosisAnchor || "").trim() ||
+      suggested ||
+      planeData.lesionTarget;
+    if (target && !lesionTarget.trim()) setLesionTarget(target);
     setPlaneData({
       ...planeData,
       realUsImage: real,
-      lesionTarget: lesionTarget.trim() || suggested || planeData.lesionTarget,
+      lesionTarget: target,
+      targetStructure: target || planeData.targetStructure,
     });
   };
 
   const mergedDirectives = useMemo(() => {
     const fromScore = buildAtlasDirectivesFromScorecard(scorecardData || null);
-    const target = lesionTarget.trim();
+    const target =
+      lesionTarget.trim() || String(diagnosisAnchor || "").trim();
     const usHint = [
       "BRIDGE ECO-ANATOMIA: genera SOLO el corte 3D focal (cara del plano), mismo eje que la eco real.",
       "PROHIBIDO panel overview con plano flotante / anatomy_with_plane.",
       target
-        ? `ESTRUCTURA LESIONADA OBJETIVO: ${target}. Centrar el corte 3D en esa estructura.`
+        ? `ESTRUCTURA LESIONADA OBJETIVO (ancla diagnóstica): ${target}. Centrar el corte 3D en esa lesión/estructura — no en otra.`
         : "",
       selectedGallery?.caption ? `Rotulacion / caption eco: ${selectedGallery.caption}` : "",
       selectedGallery?.label ? `Label eco: ${selectedGallery.label}` : "",
@@ -193,7 +216,7 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
       .filter(Boolean)
       .join("\n");
     return [fromScore, externalDirectives, usHint].filter(Boolean).join("\n").trim();
-  }, [scorecardData, externalDirectives, selectedGallery, lesionTarget]);
+  }, [scorecardData, externalDirectives, selectedGallery, lesionTarget, diagnosisAnchor]);
 
   const handleGenerate = async (planeOverride?: UsAcquisitionPlane | "auto") => {
     if (!reportText?.trim()) {
@@ -230,7 +253,10 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
             customDirectives: mergedDirectives || undefined,
             forcedPlane: plane,
             bridgeOnlyFocal: true,
-            lesionTarget: lesionTarget.trim() || undefined,
+            lesionTarget:
+              lesionTarget.trim() ||
+              String(diagnosisAnchor || "").trim() ||
+              undefined,
           }),
         });
         const resData = await response.json();
@@ -243,7 +269,9 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
           null;
         const target =
           lesionTarget.trim() ||
+          String(diagnosisAnchor || "").trim() ||
           suggestLesionTarget({
+            diagnosisAnchor,
             galleryCaption: real?.caption,
             galleryLabel: real?.label,
             reportText,
@@ -315,8 +343,8 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
           targetStructure: planeData.targetStructure,
           userDirective: [
             combinedDirective,
-            lesionTarget.trim()
-              ? `ESTRUCTURA LESIONADA OBJETIVO: ${lesionTarget.trim()}. Centrar el corte ahí.`
+            (lesionTarget.trim() || String(diagnosisAnchor || "").trim())
+              ? `ESTRUCTURA LESIONADA OBJETIVO (ancla): ${lesionTarget.trim() || String(diagnosisAnchor || "").trim()}. Centrar el corte ahí.`
               : "",
           ]
             .filter(Boolean)
@@ -327,20 +355,22 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
       });
       const resData = await response.json();
       if (!resData.success) throw new Error(resData.error || "Error al regenerar.");
+      const focalTarget = lesionTarget.trim() || String(diagnosisAnchor || "").trim();
       const updatedPanel = {
         ...resData.panel,
         panelRole: "in_plane_cut" as const,
-        anatomicalFocus: lesionTarget.trim() || resData.panel?.anatomicalFocus,
+        anatomicalFocus: focalTarget || resData.panel?.anatomicalFocus,
       };
       const updated = keepFocalPanelsOnly({
         ...planeData,
         panels: [updatedPanel],
         acquisitionPlane: resData.acquisitionPlane || nextPlane || planeData.acquisitionPlane,
         planeLabelEs: resData.planeLabelEs || planeData.planeLabelEs,
-        lesionTarget: lesionTarget.trim() || planeData.lesionTarget,
-        targetStructure: lesionTarget.trim() || planeData.targetStructure,
+        lesionTarget: focalTarget || planeData.lesionTarget,
+        targetStructure: focalTarget || planeData.targetStructure,
       });
       setPlaneData(updated);
+      if (focalTarget) setLesionTarget(focalTarget);
       if (nextPlane) setForcedPlane(nextPlane);
       if (zoomPanel?.panelLetter === panel.panelLetter) setZoomPanel(updatedPanel);
     } catch (err: any) {
@@ -517,27 +547,36 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
               }
             }}
             rows={2}
-            placeholder="Ej. Tendón rotuliano proximal / menisco medial… (se sugiere desde rotulación US, informe y scorecard)"
+            placeholder="Ancla diagnóstica = lesión focal del corte 3D (ej. Flebitis safena mayor…)"
             className="w-full bg-slate-950/80 border border-amber-700/40 focus:border-amber-400 rounded-lg px-3 py-2 text-[12px] text-slate-100 placeholder:text-slate-500 outline-none resize-none"
           />
           <button
             type="button"
             className="text-[10px] font-semibold text-amber-300 hover:text-amber-200"
             onClick={() => {
-              const s = suggestLesionTarget({
-                galleryCaption: selectedGallery?.caption,
-                galleryLabel: selectedGallery?.label,
-                reportText,
-                scorecardData,
-                planeTarget: planeData?.targetStructure,
-              });
+              const s =
+                String(diagnosisAnchor || "").trim() ||
+                suggestLesionTarget({
+                  diagnosisAnchor,
+                  galleryCaption: selectedGallery?.caption,
+                  galleryLabel: selectedGallery?.label,
+                  reportText,
+                  scorecardData,
+                  planeTarget: planeData?.targetStructure,
+                });
               if (s) {
                 setLesionTarget(s);
-                if (planeData) setPlaneData({ ...planeData, lesionTarget: s });
+                if (planeData) {
+                  setPlaneData({
+                    ...planeData,
+                    lesionTarget: s,
+                    targetStructure: s,
+                  });
+                }
               }
             }}
           >
-            Autocompletar desde US / informe / scorecard
+            Usar ancla diagnóstica (o autocompletar)
           </button>
         </div>
 
