@@ -41,6 +41,8 @@ import {
   isPeripheralArterialStructure,
   shouldEnforceAbdomenProtocol,
   shouldEnforceArterialMmiiProtocol,
+  shouldEnforceRenalViasProtocol,
+  studyScopePromptClause,
 } from "./src/lib/measurementStudyGuard";
 // Lazy-loaded GenAI client to prevent crash on startup if API key is missing
 let aiClient: GoogleGenAI | null = null;
@@ -5763,7 +5765,8 @@ app.post("/api/analyze-measurements", async (req: express.Request, res: express.
       "       - 5. 'Flujo no detectable' o 'Flujo filiforme' o 'Oclusión' -> Status: 'altered'. Interpretation: 'Estenosis muy severa/oclusión'.\n" +
       "     * Si es DOPPLER VENOSO DE MIEMBROS INFERIORES: Evalúa el estado de las venas (Vena Femoral Común, Vena Femoral, Vena Poplítea, Venas Tibiales, Vena Safena Mayor, Vena Safena Menor). Mapea su estado de permeabilidad y competencia valvular.\n" +
       "   - Si detectas que es un DOPPLER RENAL: Incluye velocidades pico sistólicas y los Índices de Resistencia (IR) renales arteriales principales.\n" +
-      "   - Si detectas que es un ULTRASONIDO DE ABDOMEN (o riñón/vías urinarias está involucrado) o ULTRASONIDO ABDOMINAL COMPLETO: Debes incluir de manera obligatoria las 8 mediciones renales específicas (Riñón Derecho Largo, Ancho, Grosor Cortical e IR; Riñón Izquierdo Largo, Ancho, Grosor Cortical e IR) con sus rangos de referencia estándares. Además, para los estudios de abdomen, debes incluir de manera obligatoria los siguientes parámetros con sus rangos y valores predeterminados exactos:\n" +
+      "   - Si detectas que es un ULTRASONIDO DE VÍAS URINARIAS / RENAL (sin abdomen completo): Debes incluir de manera obligatoria las 8 mediciones renales específicas (Riñón Derecho Largo, Ancho, Grosor Cortical e IR; Riñón Izquierdo Largo, Ancho, Grosor Cortical e IR) y, si aplica, vejiga (volumen / residuo) y próstata. Está ESTRICTAMENTE PROHIBIDO incluir Hígado, Bazo, Vesícula, Páncreas, Vías biliares, Rigidez Hepática (Elastografía) u otros órganos abdominales no urinarios, SALVO que el informe los mencione explícitamente.\n" +
+      "   - Si detectas que es un ULTRASONIDO DE ABDOMEN o ULTRASONIDO ABDOMINAL COMPLETO (NO vías urinarias aisladas): Debes incluir de manera obligatoria las 8 mediciones renales específicas (Riñón Derecho Largo, Ancho, Grosor Cortical e IR; Riñón Izquierdo Largo, Ancho, Grosor Cortical e IR) con sus rangos de referencia estándares. Además, para los estudios de abdomen completo, debes incluir de manera obligatoria los siguientes parámetros con sus rangos y valores predeterminados exactos:\n" +
       "     * Hígado [Rango: 120 - 154 mm, Default: 135 mm]\n" +
       "     * Bazo [Rango: 90 - 120 mm, Default: 105 mm]\n" +
       "     * Rigidez Hepática (Elastografía) [Rango: 4 - 5,4 kPa, Default: 4,7 kPa]\n" +
@@ -5786,7 +5789,8 @@ TIPO DE ESTUDIO DECLARADO POR EL USUARIO (autoritativo si no está vacío): "${d
 ${report}
 """
 
-Si hay tipo declarado, úsalo como detectedStudyType y limita las estructuras SOLO a ese protocolo. No mezcles protocolos (p. ej. no inventes Doppler arterial de MMII en un ultrasonido de abdomen).
+Si hay tipo declarado, úsalo como detectedStudyType y limita las estructuras SOLO a ese protocolo. No mezcles protocolos (p. ej. no inventes Doppler arterial de MMII en un ultrasonido de abdomen; no inventes Hígado/Bazo en un ultrasonido de vías urinarias).
+Si el tipo declarado es Vías urinarias / renal: SOLO riñones, uréteres, vejiga y próstata (si aplica). PROHIBIDO Hígado, Bazo, Vesícula, Páncreas o elastografía hepática salvo mención explícita en el informe.
 Detecta el lado analizado si es unilateral (der, izq, both), identifica todas las estructuras, vasos o parámetros relevantes a medir para dicho estudio, indica sus rangos normales, busca si el reporte ya contiene medidas para ellos, califica su estado e interpretación, y sugiere un valor normal predeterminado saludable.
 Devuelve el JSON estructurado según el esquema solicitado.`;
 
@@ -7648,21 +7652,30 @@ Devuelve el JSON estructurado según el esquema solicitado.`;
       }
     }
 
-    // --- ABDOMEN POST-PROCESSING ---
-    let isAbdomenStudy = shouldEnforceAbdomenProtocol({
+    // --- ABDOMEN / VÍAS URINARIAS POST-PROCESSING ---
+    const declaredFamily = classifyMeasurementStudyFamily(studyType || "");
+    let isRenalViasStudy = shouldEnforceRenalViasProtocol({
       studyType: studyType || "",
       detectedStudyType: parsedData.detectedStudyType || "",
       report: report || "",
     });
+    let isAbdomenStudy =
+      !isRenalViasStudy &&
+      shouldEnforceAbdomenProtocol({
+        studyType: studyType || "",
+        detectedStudyType: parsedData.detectedStudyType || "",
+        report: report || "",
+      });
 
-    // If the user declared Abdomen, lock detectedStudyType even if the model hallucinated MMII
-    if (
-      classifyMeasurementStudyFamily(studyType || "") === "abdomen" ||
-      classifyMeasurementStudyFamily(studyType || "") === "renal_vias"
-    ) {
+    // Declared study type wins: never treat vías urinarias as full abdomen
+    if (declaredFamily === "renal_vias") {
+      isRenalViasStudy = true;
+      isAbdomenStudy = false;
+      parsedData.detectedStudyType = String(studyType || "Ultrasonido de Vías Urinarias").trim();
+    } else if (declaredFamily === "abdomen") {
       isAbdomenStudy = true;
-      if (!(parsedData.detectedStudyType || "").toLowerCase().includes("abdomen") &&
-          !(parsedData.detectedStudyType || "").toLowerCase().includes("urin")) {
+      isRenalViasStudy = false;
+      if (!(parsedData.detectedStudyType || "").toLowerCase().includes("abdomen")) {
         parsedData.detectedStudyType = String(studyType || "Ultrasonido de Abdomen").trim();
       }
     }
@@ -7782,11 +7795,21 @@ Devuelve el JSON estructurado según el esquema solicitado.`;
       parsedData.structures = updatedStructures;
     }
 
+    // Vías urinarias: strip hígado/bazo/etc. unless the report explicitly mentions them
+    if (isRenalViasStudy && parsedData.structures && Array.isArray(parsedData.structures)) {
+      parsedData.structures = filterStructuresForStudyType(
+        parsedData.structures,
+        String(studyType || "Vias urinarias"),
+        { report: String(report || "") }
+      );
+    }
+
     // Final hard filter by declared studyType (defense in depth)
     if (parsedData.structures && Array.isArray(parsedData.structures) && studyType) {
       parsedData.structures = filterStructuresForStudyType(
         parsedData.structures,
-        String(studyType)
+        String(studyType),
+        { report: String(report || "") }
       );
     }
 
@@ -9077,6 +9100,8 @@ app.post("/api/generate-clinical-scorecard", async (req: express.Request, res: e
     const ai = getGeminiClient();
     const modelToUse = getModelName(model);
     const requestedProtocol = (protocolId || "auto").toString();
+    const scoreScopeClause = studyScopePromptClause(String(studyType || ""));
+    const scoreFamily = classifyMeasurementStudyFamily(String(studyType || ""));
     const focusText = (pathologyFocus || "").toString().trim();
     const withRecommendations = includeRecommendations === true;
     const panelsHint = Array.isArray(atlasPanels) && atlasPanels.length
@@ -9093,10 +9118,11 @@ IDIOMA (OBLIGATORIO E INQUEBRANTABLE):
 - Los ÚNICOS campos en inglés/código son: protocolId, status, weight, trafficLight, marker, panelLetter, id, linkedCriterionId, role.
 
 ESTUDIO: ${studyType || "No especificado"}
-PROTOCOLO PREDEFINIDO: ${requestedProtocol === "auto" ? "Detección automática del protocolo más específico" : requestedProtocol}
+${scoreScopeClause ? `${scoreScopeClause}\n` : ""}PROTOCOLO PREDEFINIDO: ${requestedProtocol === "auto" ? "Detección automática del protocolo más específico" : requestedProtocol}
 ${focusText ? `ENFOQUE EXPLÍCITO DEL MÉDICO (PRIORIDAD MÁXIMA): "${focusText}"
 Debes construir el scorecard (checklist de criterios) alrededor de este órgano/región/patología. Si choca con el protocolo predefinido, prioriza el enfoque del médico.
 IMPORTANTE: aunque el checklist sea de ese enfoque, atlasFindings DEBE incluir también otras lesiones localizables del informe.` : "Sin enfoque libre adicional: usa el protocolo predefinido o auto-detecta."}
+${scoreFamily === "renal_vias" ? "Si AUTO: prioriza protocolo renal/bosniak según el informe; NO uses hepatic ni abdomen completo salvo mención explícita de hígado/bazo." : ""}
 
 PANELES ATLAS DISPONIBLES:
 ${panelsHint}
@@ -9731,6 +9757,7 @@ app.post("/api/generate-negativity-checklist", async (req: express.Request, res:
     const history = (clinicalHistory || "").toString().trim();
     const study = (studyType || protocolName || "").toString().trim();
     const focus = (focusText || "").toString().trim();
+    const scopeClause = studyScopePromptClause(study);
 
     const prompt = `Eres un radiólogo hispanohablante experto en protocolos y control de calidad del informe.
 Genera un CHECKLIST DE NEGATIVIDAD DIRIGIDA para el estudio.
@@ -9748,6 +9775,7 @@ IDIOMA: TODO el texto visible en ESPAÑOL médico.
 PROHIBIDO: lenguaje de "inserción automática", "acción", "checklist incompleto para el paciente" en discardedSynopsis.
 
 ESTUDIO / PROTOCOLO: ${study || "Detectar del informe"}
+${scopeClause ? `\n${scopeClause}\n` : ""}
 ${history ? `HISTORIA CLINICA:\n"""\n${history}\n"""` : "Sin historia adicional."}
 ${focus
   ? `\nORIENTACION MANUAL SELECCIONADA POR EL RADIOLOGO: "${focus}"
@@ -9863,11 +9891,13 @@ app.post("/api/generate-second-reader", async (req: express.Request, res: expres
     const modelToUse = getModelName(model);
     const history = (clinicalHistory || "").toString().trim();
     const study = (studyType || "").toString().trim();
+    const scopeClause = studyScopePromptClause(study);
 
     const prompt = `Eres un radiólogo senior hispanohablante que actúa como SEGUNDO LECTOR (peer review) del informe de un colega.
 NO reescribes el informe completo. Devuelves una revisión estructurada.
 
 ESTUDIO: ${study || "Detectar del informe"}
+${scopeClause ? `\n${scopeClause}\n` : ""}
 ${history ? `HISTORIA CLINICA:\n"""\n${history}\n"""` : "Sin historia adicional."}
 
 INFORME A REVISAR:

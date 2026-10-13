@@ -323,7 +323,8 @@ export function selectMeasurementBodyChanges(
 ): ReportEnrichmentChange[] {
   const list = filterStructuresForStudyType(
     Array.isArray(structures) ? structures : [],
-    studyType
+    studyType,
+    { report }
   );
   const changes: ReportEnrichmentChange[] = [];
   let autoCount = 0;
@@ -904,7 +905,8 @@ export async function runReportEnrichmentPipeline(opts: {
     if (measJson?.success) {
       measurements = filterStructuresForStudyType(
         normalizeAnalyzedMeasurements(measJson),
-        opts.studyType || ""
+        opts.studyType || "",
+        { report: beforeReport }
       );
     }
 

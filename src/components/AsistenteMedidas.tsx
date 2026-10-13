@@ -162,7 +162,8 @@ export const AsistenteMedidas: React.FC<AsistenteMedidasProps> = ({
         // Initialize custom values for assigning and setup pre-selected state
         const safeStructures = filterStructuresForStudyType(
           data.structures,
-          studyType || studyTitle || ""
+          studyType || studyTitle || "",
+          { report: reportText || "" }
         );
         const processed: MeasurementStructure[] = safeStructures.map((s: any) => {
           const convertedVal = convertValue(s.defaultNormalValue, defaultUnit, decimalPrecision);
