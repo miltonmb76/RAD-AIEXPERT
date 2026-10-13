@@ -115,15 +115,16 @@ export function renderUsPlaneSimulatorAnnexToPDF(
   }
 
   const gap = 3.5 * factor;
-  const annotations =
-    data.imageAnnotations?.length
-      ? data.imageAnnotations
-      : seedBridgeArrowAnnotations({
-          lesionTarget: data.lesionTarget || data.targetStructure,
-          realUs,
-          structuresCrossed: data.structuresCrossed,
-          existing: bridgeLabelsToAnnotations(data.bridgeLabels),
-        });
+  // Respect explicit empty array (user cleared rótulos in console).
+  // Only auto-seed when imageAnnotations was never set (undefined/null).
+  const annotations = Array.isArray(data.imageAnnotations)
+    ? data.imageAnnotations
+    : seedBridgeArrowAnnotations({
+        lesionTarget: data.lesionTarget || data.targetStructure,
+        realUs,
+        structuresCrossed: data.structuresCrossed,
+        existing: bridgeLabelsToAnnotations(data.bridgeLabels),
+      });
 
   if (realUs && focal?.imageUrl) {
     const imgW = (contentWidth - gap) / 2;

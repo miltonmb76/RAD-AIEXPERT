@@ -332,7 +332,8 @@ export function seedBridgeArrowAnnotations(opts: {
   structuresCrossed?: string[] | null;
   existing?: SuiteImageAnnotation[] | null;
 }): SuiteImageAnnotation[] {
-  if (opts.existing?.length) return opts.existing;
+  // If caller already resolved annotations (including explicit []), keep them
+  if (Array.isArray(opts.existing) && opts.existing.length > 0) return opts.existing;
 
   const rows: Array<{ text: string }> = [];
   const lesion = String(opts.lesionTarget || "").trim();
