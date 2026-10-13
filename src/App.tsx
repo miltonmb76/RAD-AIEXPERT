@@ -8253,6 +8253,116 @@ Ejemplo:
                     <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative bg-[#090D1A]">
                       {/* Left Column: Report content, editor, and tools */}
                       <div className={`flex-1 p-6 overflow-y-auto leading-relaxed text-sm select-text text-slate-300 relative scrollbar-thin ${isSplitPdfActive && generatedReport ? "md:border-r md:border-slate-800" : ""}`}>
+
+                        {/* Directed classic poster — independent of general */}
+                        {generatedReport && (
+                          <div className="mb-4 p-3 bg-slate-900/70 rounded-xl border-2 border-fuchsia-500/50 shadow-[0_0_24px_rgba(192,38,211,0.15)] space-y-2.5">
+                            <div className="flex flex-wrap items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <p className="text-[10px] font-black uppercase tracking-widest text-fuchsia-300/90 font-mono">
+                                  Infografía dirigida (hallazgo)
+                                </p>
+                                <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">
+                                  Póster imagen como la general, pero con tema y orientación. No sustituye ni borra la general; puedes adjuntar ambas.
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleGenerateDirectedInfographic()}
+                                disabled={isGeneratingDirectedInfographic}
+                                className="px-3 py-1.5 bg-fuchsia-800 hover:bg-fuchsia-700 disabled:opacity-50 border border-fuchsia-500/40 rounded-xl text-[10px] font-black uppercase tracking-wider text-white cursor-pointer flex items-center gap-1.5"
+                              >
+                                {isGeneratingDirectedInfographic ? (
+                                  <>
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Generando...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Sparkles className="h-3.5 w-3.5" /> Generar dirigida
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                            <label className="block text-[9px] font-black uppercase tracking-widest text-fuchsia-300/80 font-mono">
+                              Tema / hallazgo
+                            </label>
+                            <input
+                              type="text"
+                              value={directedTopic}
+                              onChange={(e) => setDirectedTopic(e.target.value)}
+                              placeholder={
+                                String(diagnosisAnchor || "").trim() ||
+                                "Ej. pólipos vesiculares"
+                              }
+                              className="w-full px-3 py-2 bg-slate-950 border border-slate-700 focus:border-fuchsia-500/40 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none"
+                            />
+                            <label className="block text-[9px] font-black uppercase tracking-widest text-fuchsia-300/80 font-mono">
+                              Orientación (qué quieres enfatizar)
+                            </label>
+                            <textarea
+                              value={directedOrientation}
+                              onChange={(e) => setDirectedOrientation(e.target.value)}
+                              rows={2}
+                              placeholder="Ej. características, tipo/clasificación y recomendación; no mezclar con litiasis ni hígado."
+                              className="w-full px-3 py-2 bg-slate-950 border border-slate-700 focus:border-fuchsia-500/40 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none resize-y leading-relaxed"
+                            />
+                            <div>
+                              <p className="text-[9px] font-black uppercase tracking-widest text-fuchsia-300/80 font-mono mb-1.5">
+                                Secciones
+                              </p>
+                              <div className="flex flex-wrap gap-1.5">
+                                {DIRECTED_SECTION_OPTIONS.map((sec) => {
+                                  const on = directedSections.includes(sec);
+                                  return (
+                                    <button
+                                      key={sec}
+                                      type="button"
+                                      onClick={() =>
+                                        setDirectedSections((prev) => toggleDirectedSection(prev, sec))
+                                      }
+                                      className={`px-2 py-1 rounded-lg text-[9px] font-bold border cursor-pointer ${
+                                        on
+                                          ? "bg-fuchsia-950/70 border-fuchsia-500/50 text-fuchsia-200"
+                                          : "bg-slate-950 border-slate-700 text-slate-500 hover:text-slate-300"
+                                      }`}
+                                    >
+                                      {sec}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                            <div>
+                              <p className="text-[9px] font-black uppercase tracking-widest text-fuchsia-300/80 font-mono mb-1.5">
+                                Recomendaciones
+                              </p>
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                                {(
+                                  [
+                                    ["none", "Sin recomendaciones"],
+                                    ["clinician", "Solo en médica"],
+                                    ["both", "En ambas"],
+                                  ] as const
+                                ).map(([id, label]) => (
+                                  <button
+                                    key={id}
+                                    type="button"
+                                    onClick={() => setDirectedRecommendations(id)}
+                                    className={`py-1.5 px-2 rounded-lg text-[9px] font-black uppercase tracking-wider border cursor-pointer ${
+                                      directedRecommendations === id
+                                        ? "bg-fuchsia-800/50 border-fuchsia-500 text-fuchsia-100"
+                                        : "bg-slate-950 border-slate-700 text-slate-500 hover:text-slate-300"
+                                    }`}
+                                  >
+                                    {label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        
                         {generatedReport && !infographicUrl && !infographicClinicianUrl && !isGeneratingInfographic && (
                           <div className="mb-4 p-3 bg-slate-900/70 rounded-xl border border-pink-600/20 space-y-2">
                             <label className="block text-[9px] font-black uppercase tracking-widest text-pink-300/80 font-mono">
@@ -8492,115 +8602,7 @@ Ejemplo:
                           </div>
                         )}
 
-                        {/* Directed classic poster — independent of general */}
-                        {generatedReport && (
-                          <div className="mb-4 p-3 bg-slate-900/70 rounded-xl border border-fuchsia-600/25 space-y-2.5">
-                            <div className="flex flex-wrap items-start justify-between gap-2">
-                              <div className="min-w-0">
-                                <p className="text-[10px] font-black uppercase tracking-widest text-fuchsia-300/90 font-mono">
-                                  Infografía dirigida (hallazgo)
-                                </p>
-                                <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">
-                                  Póster imagen como la general, pero con tema y orientación. No sustituye ni borra la general; puedes adjuntar ambas.
-                                </p>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => handleGenerateDirectedInfographic()}
-                                disabled={isGeneratingDirectedInfographic}
-                                className="px-3 py-1.5 bg-fuchsia-800 hover:bg-fuchsia-700 disabled:opacity-50 border border-fuchsia-500/40 rounded-xl text-[10px] font-black uppercase tracking-wider text-white cursor-pointer flex items-center gap-1.5"
-                              >
-                                {isGeneratingDirectedInfographic ? (
-                                  <>
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Generando...
-                                  </>
-                                ) : (
-                                  <>
-                                    <Sparkles className="h-3.5 w-3.5" /> Generar dirigida
-                                  </>
-                                )}
-                              </button>
-                            </div>
-                            <label className="block text-[9px] font-black uppercase tracking-widest text-fuchsia-300/80 font-mono">
-                              Tema / hallazgo
-                            </label>
-                            <input
-                              type="text"
-                              value={directedTopic}
-                              onChange={(e) => setDirectedTopic(e.target.value)}
-                              placeholder={
-                                String(diagnosisAnchor || "").trim() ||
-                                "Ej. pólipos vesiculares"
-                              }
-                              className="w-full px-3 py-2 bg-slate-950 border border-slate-700 focus:border-fuchsia-500/40 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none"
-                            />
-                            <label className="block text-[9px] font-black uppercase tracking-widest text-fuchsia-300/80 font-mono">
-                              Orientación (qué quieres enfatizar)
-                            </label>
-                            <textarea
-                              value={directedOrientation}
-                              onChange={(e) => setDirectedOrientation(e.target.value)}
-                              rows={2}
-                              placeholder="Ej. características, tipo/clasificación y recomendación; no mezclar con litiasis ni hígado."
-                              className="w-full px-3 py-2 bg-slate-950 border border-slate-700 focus:border-fuchsia-500/40 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none resize-y leading-relaxed"
-                            />
-                            <div>
-                              <p className="text-[9px] font-black uppercase tracking-widest text-fuchsia-300/80 font-mono mb-1.5">
-                                Secciones
-                              </p>
-                              <div className="flex flex-wrap gap-1.5">
-                                {DIRECTED_SECTION_OPTIONS.map((sec) => {
-                                  const on = directedSections.includes(sec);
-                                  return (
-                                    <button
-                                      key={sec}
-                                      type="button"
-                                      onClick={() =>
-                                        setDirectedSections((prev) => toggleDirectedSection(prev, sec))
-                                      }
-                                      className={`px-2 py-1 rounded-lg text-[9px] font-bold border cursor-pointer ${
-                                        on
-                                          ? "bg-fuchsia-950/70 border-fuchsia-500/50 text-fuchsia-200"
-                                          : "bg-slate-950 border-slate-700 text-slate-500 hover:text-slate-300"
-                                      }`}
-                                    >
-                                      {sec}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                            <div>
-                              <p className="text-[9px] font-black uppercase tracking-widest text-fuchsia-300/80 font-mono mb-1.5">
-                                Recomendaciones
-                              </p>
-                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
-                                {(
-                                  [
-                                    ["none", "Sin recomendaciones"],
-                                    ["clinician", "Solo en médica"],
-                                    ["both", "En ambas"],
-                                  ] as const
-                                ).map(([id, label]) => (
-                                  <button
-                                    key={id}
-                                    type="button"
-                                    onClick={() => setDirectedRecommendations(id)}
-                                    className={`py-1.5 px-2 rounded-lg text-[9px] font-black uppercase tracking-wider border cursor-pointer ${
-                                      directedRecommendations === id
-                                        ? "bg-fuchsia-800/50 border-fuchsia-500 text-fuchsia-100"
-                                        : "bg-slate-950 border-slate-700 text-slate-500 hover:text-slate-300"
-                                    }`}
-                                  >
-                                    {label}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {(directedInfographicUrl || directedInfographicClinicianUrl) && (
+{(directedInfographicUrl || directedInfographicClinicianUrl) && (
                           <div className="mb-6 p-4 bg-slate-800 rounded-xl border border-fuchsia-600/30">
                             <div className="flex justify-between items-start mb-2 flex-wrap gap-2">
                               <div className="min-w-0">
