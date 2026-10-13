@@ -92,7 +92,131 @@ const STOP = new Set([
   "sin", "con", "para", "del", "las", "los", "una", "uno", "por", "que", "the",
   "and", "de", "la", "el", "en", "al", "se", "su", "sus", "multiple", "multiples",
   "aguda", "agudo", "cronica", "cronico", "grado", "tipo", "hallazgo", "diagnostico",
+  "presencia", "ausencia", "signos", "signo", "leve", "moderada", "moderado",
+  "severa", "severo", "marcado", "marcada", "compatible", "sugestivo", "sugestiva",
+  "evidencia", "aspecto", "caracteristicas", "caracteristica", "asociado", "asociada",
 ]);
+
+/** Map near-synonyms so “pared engrosada” ≈ “engrosamiento parietal”. */
+const TOKEN_CANON: Record<string, string> = {
+  engrosada: "engros",
+  engrosado: "engros",
+  engrosamiento: "engros",
+  espesor: "engros",
+  grosor: "engros",
+  parietal: "pared",
+  vesicular: "vesicula",
+  colecistico: "vesicula",
+  colecistica: "vesicula",
+  litiasis: "calculo",
+  calculos: "calculo",
+  litos: "calculo",
+  lito: "calculo",
+  colelitiasis: "calculo",
+  sombra: "sombra",
+  acustica: "sombra",
+  acustico: "sombra",
+  murphy: "murphy",
+  hidrops: "hidrops",
+  hidropre: "hidrops",
+  edema: "edema",
+  liquido: "liquido",
+  fluido: "liquido",
+  nodulo: "nodulo",
+  nodular: "nodulo",
+  lesion: "lesion",
+  masa: "lesion",
+  trombo: "trombo",
+  trombosis: "trombo",
+  oclusion: "trombo",
+  estenosis: "estenosis",
+  estenosante: "estenosis",
+  ectasia: "ectasia",
+  dilatacion: "ectasia",
+  hidronefrosis: "ectasia",
+  quiste: "quiste",
+  quistica: "quiste",
+  quistico: "quiste",
+  ganglio: "ganglio",
+  ganglios: "ganglio",
+  adenopatia: "ganglio",
+  adenopatias: "ganglio",
+  adenopatico: "ganglio",
+  adenitis: "ganglio",
+  mesentericos: "mesenter",
+  mesentericas: "mesenter",
+  mesenterico: "mesenter",
+  mesenterica: "mesenter",
+  mesenterio: "mesenter",
+  aumentado: "aument",
+  aumentada: "aument",
+  aumentados: "aument",
+  aumentadas: "aument",
+  aumento: "aument",
+  tamano: "tamano",
+  diametro: "tamano",
+};
+
+function lightStem(token: string): string {
+  const t = TOKEN_CANON[token] || token;
+  if (t.length <= 5) return t;
+  return t
+    .replace(/(amientos|amiento|aciones|acion|idades|idad|mente)$/i, "")
+    .replace(/(adas|ados|idas|idos|ada|ado|ida|ido|ores|oras)$/i, "")
+    .replace(/(ares|eres|ires|ar|er|ir)$/i, "");
+}
+
+/** Significant stemmed tokens for near-duplicate comparison. */
+export function aspectTokens(text: string): Set<string> {
+  const n = normKey(text);
+  const out = new Set<string>();
+  for (const raw of n.split(/[^a-z0-9]+/)) {
+    if (raw.length < 4 || STOP.has(raw)) continue;
+    // Drop pure numbers / measures (4mm, 12cm) — keep clinical words
+    if (/^\d/.test(raw)) continue;
+    out.add(lightStem(raw));
+  }
+  return out;
+}
+
+function jaccard(a: Set<string>, b: Set<string>): number {
+  if (!a.size || !b.size) return 0;
+  let inter = 0;
+  for (const t of a) if (b.has(t)) inter += 1;
+  const union = a.size + b.size - inter;
+  return union > 0 ? inter / union : 0;
+}
+
+/**
+ * True when two factor texts describe the same clinical aspect
+ * (same idea with slightly different wording).
+ */
+export function factorsAreNearDuplicate(a: string, b: string): boolean {
+  const na = normKey(a);
+  const nb = normKey(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  if (na.length >= 8 && nb.length >= 8 && (na.includes(nb) || nb.includes(na))) {
+    return true;
+  }
+  const ta = aspectTokens(a);
+  const tb = aspectTokens(b);
+  if (ta.size < 2 || tb.size < 2) {
+    // Short labels: require strong overlap of the few tokens
+    if (!ta.size || !tb.size) return false;
+    let inter = 0;
+    for (const t of ta) if (tb.has(t)) inter += 1;
+    return inter >= 1 && inter === Math.min(ta.size, tb.size);
+  }
+  const jac = jaccard(ta, tb);
+  if (jac >= 0.5) return true;
+  // Subset: e.g. {pared,vesicula,engros} ⊂ {pared,vesicula,engros,mm}
+  let inter = 0;
+  for (const t of ta) if (tb.has(t)) inter += 1;
+  const smaller = Math.min(ta.size, tb.size);
+  if (smaller >= 2 && inter / smaller >= 0.8) return true;
+  return false;
+}
 
 /** Tokens from ancla used to keep only reinforcing factors. */
 export function anchorRelevanceTokens(diagnosis: string): string[] {
@@ -133,6 +257,10 @@ function textMatchesAnchor(text: string, tokens: string[]): boolean {
   return tokens.some((t) => t.length >= 4 && n.includes(t));
 }
 
+function factorBlob(factor: Pick<DiagnosticPackFactor, "label" | "detail">): string {
+  return `${factor.label || ""} ${factor.detail || ""}`.trim();
+}
+
 function pushFactor(
   factors: DiagnosticPackFactor[],
   seen: Set<string>,
@@ -142,6 +270,11 @@ function pushFactor(
   if (!label || factors.length >= 8) return;
   const key = normKey(label);
   if (!key || seen.has(key)) return;
+  const blob = factorBlob({ label, detail: factor.detail });
+  for (const existing of factors) {
+    if (factorsAreNearDuplicate(blob, factorBlob(existing))) return;
+    if (factorsAreNearDuplicate(label, existing.label)) return;
+  }
   for (const s of seen) {
     if (key.length >= 8 && (s.includes(key) || key.includes(s))) return;
   }
@@ -466,6 +599,7 @@ export function buildDiagnosticPack(opts: {
     });
   }
 
+  // Cap at 6 unique aspects — never pad with near-duplicates to hit 6
   const finalFactors = factors.slice(0, 6);
 
   const candidates = listPackImageCandidates({
@@ -560,11 +694,11 @@ export function diagnosticPackMissingRequirements(
   if (n < 4) {
     if (opts?.hasJustification === false || !pack?.factorsFromJustification) {
       missing.push(
-        `Hacen falta ≥4 factores del ancla (ahora ${n}). Genera la infografía de justificación con este diagnóstico.`
+        `Hacen falta ≥4 factores distintos del ancla (ahora ${n}). Genera la infografía de justificación con este diagnóstico.`
       );
     } else {
       missing.push(
-        `La justificación solo aportó ${n} factor(es). Regenera la infografía de justificación (ideal 6).`
+        `La justificación solo aportó ${n} factor(es) distinto(s). Regenera la justificación buscando más aspectos en el informe (sin repetir el mismo con otras palabras; ideal hasta 6 únicos).`
       );
     }
   }

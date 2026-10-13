@@ -6,6 +6,7 @@ import type {
   FindingsInfographicNode,
   FindingsInfographicPolarity,
 } from "../types";
+import { factorsAreNearDuplicate as findingsNodesNearDuplicate } from "./diagnosticPack";
 
 export const INFOGRAPHIC_DIAGNOSIS_PRESETS: { id: string; label: string }[] = [
   { id: "auto", label: "Auto (del informe)" },
@@ -362,7 +363,7 @@ export function normalizeFindingsInfographicData(
     (m) => m.id === (raw?.contentMode || contentModeHint)
   )?.id || contentModeHint) as FindingsInfographicContentMode;
 
-  const nodes: FindingsInfographicNode[] = nodesIn
+  const mappedNodes: FindingsInfographicNode[] = nodesIn
     .map((n: any, idx: number) => ({
       id: String(n?.id || `fig-${idx + 1}`),
       label: String(n?.label || n?.finding || n?.hallazgo || n?.title || "").trim(),
@@ -380,8 +381,19 @@ export function normalizeFindingsInfographicData(
       polarity: normalizePolarity(n, contentMode),
       group: String(n?.group || n?.grupo || n?.structure || "").trim() || undefined,
     }))
-    .filter((n: FindingsInfographicNode) => n.label)
-    .slice(0, 10);
+    .filter((n: FindingsInfographicNode) => n.label);
+
+  // Drop near-duplicate aspects (same idea, different wording) — prefer fewer unique over padded 6
+  const nodes: FindingsInfographicNode[] = [];
+  for (const n of mappedNodes) {
+    const blob = `${n.label} ${n.detail || ""}`.trim();
+    const dup = nodes.some((kept) => {
+      const kb = `${kept.label} ${kept.detail || ""}`.trim();
+      return findingsNodesNearDuplicate(blob, kb) || findingsNodesNearDuplicate(n.label, kept.label);
+    });
+    if (!dup) nodes.push(n);
+    if (nodes.length >= 10) break;
+  }
 
   const layout = pickLayout(
     String(raw?.layout || layoutHint || "convergence"),
@@ -1061,8 +1073,9 @@ export function buildContentModePromptInstructions(
     default:
       return `CONTENIDO: JUSTIFICACIÓN DIAGNÓSTICA.
 - diagnosis DEBE ser exactamente el ancla que se está defendiendo: "${dx}" (redacción limpia, sin signos de interrogación).
-- Extrae 4-7 hallazgos/factores EXPLÍCITOS del informe que SUSTENTAN ese diagnóstico (no otro).
-- Cada node = un factor de soporte (semiología, medida, signo, localización) con polarity="present".
+- Extrae 4-6 hallazgos/factores EXPLÍCITOS del informe que SUSTENTAN ese diagnóstico (no otro). Ideal 6 si hay aspectos DISTINTOS; si solo hay 4-5 únicos, devuelve esos — NO rellenes inventando ni parafraseando el mismo aspecto.
+- Cada node = un factor de soporte DISTINTO (semiología, medida, signo, localización) con polarity="present".
+- PROHIBIDO repetir el mismo aspecto con palabras distintas (ej. "pared engrosada" y "engrosamiento parietal" = 1 solo node).
 - Si el informe menciona diagnósticos diferenciales o hallazgos ajenos a "${dx}", NO los uses como nodos de soporte salvo que refuercen "${dx}".
 - Prioriza lo más específico del informe para justificar "${dx}" (ej. si ancla = adenitis mesentérica → ganglios mesentéricos, tamaño, distribución, grasa, exclusión de apendicitis solo si consta y refuerza el ancla).`;
   }
