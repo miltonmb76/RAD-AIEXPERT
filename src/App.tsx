@@ -4959,6 +4959,7 @@ Ejemplo:
           const offer = inferBridgeOfferFromGalleryImage(img as any, {
             reportText: report,
             scorecardData: clinicalScorecardData,
+            diagnosisAnchor,
           });
           if (offer) {
             maybeOfferBridgeFromGalleryImage(img);
@@ -4994,6 +4995,7 @@ Ejemplo:
     const offer = inferBridgeOfferFromGalleryImage(img, {
       reportText: generatedReport || inputReport || findings || "",
       scorecardData: clinicalScorecardData,
+      diagnosisAnchor,
     });
     if (!offer) return;
     const dismissedAt = bridgeOfferDismissedRef.current[offer.imageId] || 0;
@@ -5015,14 +5017,18 @@ Ejemplo:
       caption: String((img as any).caption || active.caption || "").trim() || undefined,
       label: String((img as any).label || active.label || "").trim() || undefined,
     });
+    const lesion =
+      String(diagnosisAnchor || "").trim() ||
+      active.lesionTarget ||
+      "";
     setUsPlaneSimulatorData((prev) => ({
       acquisitionPlane: prev?.acquisitionPlane || "longitudinal",
       planeLabelEs: prev?.planeLabelEs,
       studyRegion: prev?.studyRegion,
       figureTitle: prev?.figureTitle || "FIGURA. ECO REAL Y CORTE 3D FOCAL",
       detectedLaterality: prev?.detectedLaterality,
-      targetStructure: prev?.targetStructure || active.lesionTarget,
-      lesionTarget: active.lesionTarget,
+      targetStructure: prev?.targetStructure || lesion || undefined,
+      lesionTarget: lesion || prev?.lesionTarget,
       structuresCrossed: prev?.structuresCrossed || [],
       planeSummary: prev?.planeSummary || "",
       keyPoints: prev?.keyPoints || [],
@@ -9969,6 +9975,7 @@ Ejemplo:
                             includeInReport={includeUsPlaneSimulatorInReport}
                             setIncludeInReport={setIncludeUsPlaneSimulatorInReport}
                             scorecardData={clinicalScorecardData}
+                            diagnosisAnchor={diagnosisAnchor}
                             externalDirectives={atlasDirectivesFromScorecard}
                             galleryImages={attachedImages.map((img) => ({
                               id: img.id,

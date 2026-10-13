@@ -58,8 +58,10 @@ export function buildUsPlaneBridgeLabels(
   return out;
 }
 
-/** Suggest injured-structure target from US caption, report snippet, scorecard. */
+/** Suggest injured-structure target from diagnosis ancla, scorecard, US caption, report. */
 export function suggestLesionTarget(opts: {
+  /** Session diagnosis ancla — highest priority as focal lesion for eco-anatomía. */
+  diagnosisAnchor?: string | null;
   galleryCaption?: string | null;
   galleryLabel?: string | null;
   reportText?: string | null;
@@ -69,18 +71,29 @@ export function suggestLesionTarget(opts: {
   const candidates: string[] = [];
   const push = (s?: string | null) => {
     const t = String(s || "").trim();
-    if (t && t.length >= 3 && t.length <= 120) candidates.push(t);
+    if (t && t.length >= 3 && t.length <= 160) candidates.push(t);
   };
 
-  push(opts.galleryCaption);
-  push(opts.galleryLabel);
-  push(opts.planeTarget);
+  // 1) Ancla diagnóstica de sesión = lesión focal del corte eco-anatomía
+  push(opts.diagnosisAnchor);
 
   const sc = opts.scorecardData;
   if (sc) {
     push(sc.finalDiagnosis);
     const primaryLabel = (sc.atlasFindings || []).find((f) => f.role === "primary")?.label;
     push(primaryLabel);
+  }
+
+  // 2) Eco / plano solo si no hay ancla (caption a menudo es genérica o de otra estructura)
+  if (!String(opts.diagnosisAnchor || "").trim() && !String(sc?.finalDiagnosis || "").trim()) {
+    push(opts.galleryCaption);
+    push(opts.galleryLabel);
+    push(opts.planeTarget);
+  } else {
+    // Con ancla: caption/label solo como fallback al final
+  }
+
+  if (sc) {
     // Skip bare domain tags (e.g. "Musculoesquelético") as lesion targets
     const cat = String(sc.categoryAssigned || "").trim();
     if (cat && !/^(musculoesquel|msk|abdominal|abdomen|vascular|gen[eé]rico|general)/i.test(cat)) {
@@ -98,13 +111,20 @@ export function suggestLesionTarget(opts: {
       .forEach((c) => push(c.criterion));
   }
 
+  // Fallbacks when ancla vacío
+  if (!candidates.length) {
+    push(opts.galleryCaption);
+    push(opts.galleryLabel);
+    push(opts.planeTarget);
+  }
+
   const report = String(opts.reportText || "");
   // Prefer short diagnostic-ish lines from report
   const reportHits = report
     .split(/[\n.;]+/)
     .map((l) => l.trim())
     .filter((l) =>
-      /tend[oó]n|menisc|ligamento|rotul|patel|quiste|n[oó]dulo|lesi[oó]n|desgarro|engros|ruptura|colelit|c[aá]lculo|tromb/i.test(
+      /tend[oó]n|menisc|ligamento|rotul|patel|quiste|n[oó]dulo|lesi[oó]n|desgarro|engros|ruptura|colelit|c[aá]lculo|tromb|flebit|safen/i.test(
         l
       )
     )
@@ -148,6 +168,7 @@ export function inferBridgeOfferFromGalleryImage(
   opts?: {
     reportText?: string | null;
     scorecardData?: ClinicalScorecardData | null;
+    diagnosisAnchor?: string | null;
   }
 ): BridgeGalleryOffer | null {
   if (!img?.id || !img?.url) return null;
@@ -158,6 +179,7 @@ export function inferBridgeOfferFromGalleryImage(
   if (!captionLooksLikeFinding(caption)) return null;
 
   const lesionTarget = suggestLesionTarget({
+    diagnosisAnchor: opts?.diagnosisAnchor,
     galleryCaption: caption,
     galleryLabel: img.label,
     reportText: opts?.reportText,
