@@ -743,7 +743,8 @@ export async function downloadPatientSummaryPdf(
       yCoord += 4 * factor;
     }
 
-// Patient infographics (general and/or directed — independent pages)
+    // Patient infographics (general and/or directed) — dedicated pages BEFORE signature.
+    // Must advance yCoord / force a following page so firma never paints over the image.
     const patientAnnexes: Array<{ url: string; title: string }> = [];
     if (infographicUrl && typeof infographicUrl === "string") {
       patientAnnexes.push({ url: infographicUrl, title: "INFOGRAFÍA EXPLICATIVA" });
@@ -754,6 +755,7 @@ export async function downloadPatientSummaryPdf(
         title: "INFOGRAFÍA DIRIGIDA (HALLAZGO)",
       });
     }
+    let placedPatientInfographic = false;
     for (const annex of patientAnnexes) {
       try {
         let imgData = annex.url;
@@ -775,8 +777,9 @@ export async function downloadPatientSummaryPdf(
           doc.setTextColor(15, 23, 42);
           doc.text(annex.title, pageWidth / 2, yCoord, { align: "center" });
           yCoord += 8;
+          // Leave footer clearance; this page is image-only (no signature here)
           const maxW = contentWidth;
-          const maxH = pageHeight - yCoord - 28;
+          const maxH = pageHeight - yCoord - 18;
           const dims = await getImageDimensionsVirtual(imgData);
           let drawW = maxW;
           let drawH = maxH;
@@ -793,10 +796,18 @@ export async function downloadPatientSummaryPdf(
           const format = imgData.toLowerCase().includes("image/png") ? "PNG" : "JPEG";
           const drawX = (pageWidth - drawW) / 2;
           doc.addImage(imgData, format, drawX, yCoord, drawW, drawH);
+          yCoord = yCoord + drawH + 10;
+          placedPatientInfographic = true;
         }
       } catch (err) {
         console.error("Error adding patient infographic to PDF:", err);
       }
+    }
+
+    // Disclaimer + firma always start on a fresh page after any infographic annex
+    if (placedPatientInfographic) {
+      doc.addPage();
+      yCoord = 20;
     }
 
     // Closing disclaimer (repeated for clarity)
