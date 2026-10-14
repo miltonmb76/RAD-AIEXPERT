@@ -171,7 +171,7 @@ export const FindingsInfographicModule: React.FC<FindingsInfographicModuleProps>
         scoreGov?.categoryAssigned &&
         contentMode === "classification_criteria"
       ) {
-        const fromScore = infographicFromScorecard(scorecardData);
+        const fromScore = infographicFromScorecard(scorecardData, diagnosisAnchor);
         setInfographicData(
           normalizeFindingsInfographicData(
             {

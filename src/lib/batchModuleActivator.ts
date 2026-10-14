@@ -21,6 +21,7 @@ export type BatchModuleActivatorDeps = {
   biomechanicalRadarData: any;
   clinicalHistory: string;
   clinicalScorecardData: any;
+  diagnosisAnchor?: string;
   editedReportText: string;
   generatedReport: string;
   handleGenerateDynamicGlossary: (...args: any[]) => any;
@@ -115,6 +116,7 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
       biomechanicalRadarData,
       clinicalHistory,
       clinicalScorecardData,
+      diagnosisAnchor,
       editedReportText,
       generatedReport,
       handleGenerateDynamicGlossary,
@@ -952,8 +954,9 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
           const { getScorecardGovernance } = await import("./clinicalIntelligence");
           const { infographicFromScorecard } = await import("./infographicFromModules");
           const gov = getScorecardGovernance(sc);
+          const sessionDx = String(diagnosisAnchor || "").trim();
           if (sc && gov?.categoryAssigned) {
-            setFindingsInfographicData(infographicFromScorecard(sc));
+            setFindingsInfographicData(infographicFromScorecard(sc, sessionDx));
             setIncludeFindingsInfographicInReport(true);
             return;
           }
@@ -965,8 +968,8 @@ export function createBatchModuleActivator(d: BatchModuleActivatorDeps) {
               report: activeReport,
               studyType: specificStudy || studyType || "",
               clinicalHistory: clinicalHistory || "",
-              diagnosis: "Diagnóstico del informe",
-              diagnosisPreset: "auto",
+              diagnosis: sessionDx || "Diagnóstico del informe",
+              diagnosisPreset: sessionDx ? "custom" : "auto",
               layout: "auto",
               contentMode: "justify_diagnosis",
             }),

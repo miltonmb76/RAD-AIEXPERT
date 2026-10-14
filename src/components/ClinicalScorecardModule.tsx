@@ -250,7 +250,8 @@ export const ClinicalScorecardModule: React.FC<ClinicalScorecardModuleProps> = (
 
   const handleSendToInfographic = () => {
     if (!scorecardData || !onSendToInfographic) return;
-    const mapped = infographicFromScorecard(scorecardData);
+    // Pass session ancla as center label only — keep all met/equivocal criteria as nodes
+    const mapped = infographicFromScorecard(scorecardData, diagnosisAnchor);
     if (!mapped.nodes.some((n) => n.label.trim())) {
       setError("No hay criterios utilizables para armar la infografía.");
       return;

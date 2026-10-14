@@ -2552,6 +2552,7 @@ Ejemplo:
     biomechanicalRadarData,
     clinicalHistory,
     clinicalScorecardData,
+    diagnosisAnchor,
     editedReportText,
     generatedReport,
     handleGenerateDynamicGlossary,
@@ -11842,7 +11843,10 @@ Ejemplo:
 
                                     const openInfographic = () => {
                                       if (!clinicalScorecardData) return;
-                                      const mapped = infographicFromScorecard(clinicalScorecardData);
+                                      const mapped = infographicFromScorecard(
+                                        clinicalScorecardData,
+                                        diagnosisAnchor
+                                      );
                                       if (!mapped.nodes.some((n) => n.label.trim())) return;
                                       setFindingsInfographicData(mapped);
                                       if (mapped.diagnosis && !String(diagnosisAnchor || "").trim()) {
