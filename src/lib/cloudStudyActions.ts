@@ -172,10 +172,10 @@ export function createCloudStudyActions(d: CloudStudyActionsDeps) {
               if (deletedIds.has(study.id)) return;
               mergedReports.set(study.id, {
                 id: study.id,
-                timestamp: study.timestamp,
-                studyType: study.studyType,
-                clinicalHistory: study.clinicalHistory,
-                reportText: study.reportText,
+                timestamp: String(study.timestamp || ""),
+                studyType: String(study.studyType || "Estudio"),
+                clinicalHistory: String(study.clinicalHistory || ""),
+                reportText: String(study.reportText || ""),
               });
             });
             currentReports.forEach((report) => {

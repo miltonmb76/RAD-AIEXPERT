@@ -244,6 +244,7 @@ import {
   rememberActiveSessionDraft,
   saveActiveSessionDraft,
 } from "./lib/activeSessionDraft";
+import { runSafeAsync } from "./lib/safeAsync";
 
 export default function App() {
   // Soft-recover remounts App; hydrate critical fields from sessionStorage draft.
@@ -4358,7 +4359,7 @@ Ejemplo:
       let text = "### ESQUEMA CLÍNICO DE HALLAZGOS PRINCIPALES\n\n";
       schematicSummary.findings.forEach((f: any, idx: number) => {
         const id = f.findingId || `H${idx + 1}`;
-        text += `**[${id}] ${f.anatomicalSite.toUpperCase()}**\n`;
+        text += `**[${id}] ${String(f?.anatomicalSite || "").toUpperCase()}**\n`;
         text += `- **Hallazgo:** ${f.description}\n\n`;
       });
       return text.trim();
@@ -5020,13 +5021,21 @@ Ejemplo:
     });
 
   const guardReportPdfExport = (action: () => void | Promise<void>) => {
+    const run = () =>
+      runSafeAsync(action, (err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        try {
+          setGmailErrorMessage("Error al exportar/enviar: " + msg);
+        } catch (_) {}
+        console.error("Export/send action failed:", err);
+      });
     if (!generatedReport) {
-      void action();
+      run();
       return;
     }
     const fingerprint = buildReportQaFingerprint();
     if (qaGateAckFingerprint && qaGateAckFingerprint === fingerprint) {
-      void action();
+      run();
       return;
     }
     const result = runReportQaGate({
@@ -5037,14 +5046,14 @@ Ejemplo:
       enrichmentSession: reportEnrichmentSession,
     });
     if (result.ok) {
-      void action();
+      run();
       return;
     }
     qaGatePendingActionRef.current = () => {
       setQaGateAckFingerprint(fingerprint);
       setQaGateResult(null);
       qaGatePendingActionRef.current = null;
-      void action();
+      run();
     };
     setQaGateResult(result);
   };
@@ -5736,6 +5745,11 @@ Ejemplo:
       return;
     }
 
+    // Avoid racing a full PDF rebuild while Gmail/Drive is already generating one.
+    if (isSendingGmail || isUploadingToDrive || isSavingToCloud) {
+      return;
+    }
+
     let active = true;
     let timeoutId: any = null;
 
@@ -5790,6 +5804,9 @@ Ejemplo:
   }, [
     showPrintModal,
     isSplitPdfActive,
+    isSendingGmail,
+    isUploadingToDrive,
+    isSavingToCloud,
     isEditingReportManual,
     editedReportText,
     adaptivePDFContrast,
@@ -13129,7 +13146,7 @@ Ejemplo:
                                 </div>
 
                                 <div className="space-y-2.5">
-                                  {patientSummary.keyFindings.map((finding: any, idx: number) => {
+                                  {(Array.isArray(patientSummary.keyFindings) ? patientSummary.keyFindings : []).map((finding: any, idx: number) => {
                                     const isExpanded = !!expandedFindings[idx];
                                     return (
                                       <div 
@@ -13507,7 +13524,7 @@ Ejemplo:
                               {schematicFormat === "blocks" ? (
                                 /* Option 1: Copy-Paste Friendly Block layout preview */
                                 <div className="space-y-3 select-text text-left max-w-2xl mx-auto py-1">
-                                  {schematicSummary.findings.map((f: any, idx: number) => (
+                                  {(Array.isArray(schematicSummary.findings) ? schematicSummary.findings : []).map((f: any, idx: number) => (
                                     <div key={idx} className="bg-slate-950/30 border border-slate-850/40 rounded-xl p-3.5 space-y-1.5 relative animate-fade-in">
                                       <div className="flex items-center justify-between border-b border-slate-900/40 pb-1.5 font-sans">
                                         <div className="flex items-center gap-2">
@@ -13515,7 +13532,7 @@ Ejemplo:
                                             {f.findingId || `H${idx + 1}`}
                                           </span>
                                           <span className="font-sans font-bold text-slate-200 text-xs tracking-wide">
-                                            {f.anatomicalSite.toUpperCase()}
+                                            {String(f?.anatomicalSite || "").toUpperCase()}
                                           </span>
                                         </div>
                                       </div>
@@ -13540,7 +13557,7 @@ Ejemplo:
                                       </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-900/60 text-xs">
-                                      {schematicSummary.findings.map((f: any, idx: number) => {
+                                      {(Array.isArray(schematicSummary.findings) ? schematicSummary.findings : []).map((f: any, idx: number) => {
                                         return (
                                           <tr 
                                             key={idx}
@@ -14770,11 +14787,10 @@ Ejemplo:
                 {(() => {
                   const filtered = savedReports.filter(item => {
                     const query = cloudSearch.toLowerCase();
-                    return (
-                      item.studyType.toLowerCase().includes(query) ||
-                      item.clinicalHistory.toLowerCase().includes(query) ||
-                      item.reportText.toLowerCase().includes(query)
-                    );
+                    const study = String(item?.studyType || "").toLowerCase();
+                    const hx = String(item?.clinicalHistory || "").toLowerCase();
+                    const txt = String(item?.reportText || "").toLowerCase();
+                    return study.includes(query) || hx.includes(query) || txt.includes(query);
                   });
 
                   if (filtered.length === 0) {
@@ -15089,13 +15105,15 @@ Ejemplo:
       )}
 
       {qaGateResult && (
-        <React.Suspense fallback={null}>
-          <ReportQaGateModal
-            result={qaGateResult}
-            onClose={handleDismissQaGate}
-            onProceedAnyway={handleProceedQaGateAnyway}
-          />
-        </React.Suspense>
+        <AppErrorBoundary label="Control de calidad del informe">
+          <React.Suspense fallback={null}>
+            <ReportQaGateModal
+              result={qaGateResult}
+              onClose={handleDismissQaGate}
+              onProceedAnyway={handleProceedQaGateAnyway}
+            />
+          </React.Suspense>
+        </AppErrorBoundary>
       )}
 
       {/* MODELO DE ASISTENCIA PARA IMPRESIÓN Y EXPORTACIÓN PDF (ESPECIAL IPHONE/MOBILE & IFRAME) */}

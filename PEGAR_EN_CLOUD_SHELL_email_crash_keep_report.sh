@@ -33,6 +33,10 @@ grep -q 'flushActiveSessionDraftNow' src/lib/cloudStudyActions.ts \
   || { echo "ERROR: falta flush al guardar estudio. Aborto."; exit 1; }
 grep -q 'Reintentar y recuperar informe' src/components/AppErrorBoundary.tsx \
   || { echo "ERROR: falta botón de recuperación con informe. Aborto."; exit 1; }
+grep -q 'runSafeAsync' src/App.tsx \
+  || { echo "ERROR: falta runSafeAsync en exportaciones. Aborto."; exit 1; }
+grep -q 'withPdfGenerationLock' src/lib/nativePdfDownload.ts \
+  || { echo "ERROR: falta candado de PDF. Aborto."; exit 1; }
 
 SECRETS="GEMINI_API_KEY=gemini-api-key:latest"
 if gcloud secrets describe openai-api-key >/dev/null 2>&1; then

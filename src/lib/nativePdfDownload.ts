@@ -36,6 +36,7 @@ import { stripEmojisForPdf } from "./pdfTextUtils";
 import { getBiomechanicalRadarDataFromReport, getRadarTitle, getShortRadarAxisLabel, sanitizeRadarPdfText } from "./radarPdfHelpers";
 import { cleanRawClinicalText } from "./reportTextHelpers";
 import { jsPDF } from "jspdf";
+import { withPdfGenerationLock } from "./safeAsync";
 
 export type NativePdfDownloadDeps = {
   abdomen3dData: any;
@@ -121,7 +122,7 @@ export type NativePdfDownloadDeps = {
 };
 
 export function createNativePdfDownload(d: NativePdfDownloadDeps) {
-  return async (
+  const runOnce = async (
     openInNewTab: boolean = false,
     shareViaWebShare: boolean = false,
     returnBase64: boolean = false,
@@ -5166,4 +5167,24 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
     }
   
   };
+
+  // Serialize heavy PDF builds so Gmail/Drive/preview cannot OOM the tab together.
+  return (
+    openInNewTab: boolean = false,
+    shareViaWebShare: boolean = false,
+    returnBase64: boolean = false,
+    returnBlobUrl: boolean = false,
+    studyOverride?: Partial<CloudStudy>,
+    returnRawBlob: boolean = false
+  ): Promise<any> =>
+    withPdfGenerationLock(() =>
+      runOnce(
+        openInNewTab,
+        shareViaWebShare,
+        returnBase64,
+        returnBlobUrl,
+        studyOverride,
+        returnRawBlob
+      )
+    );
 }

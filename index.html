@@ -143,13 +143,29 @@
           if (/Loading chunk|Failed to fetch|Importing a module script failed|error loading dynamically imported module/i.test(msg)) {
             showRetry("No se pudo cargar un módulo de la app. Pulsa Reintentar.");
           }
+          // Soft log — do not wipe #root for routine script errors (React ErrorBoundary handles UI).
+          try {
+            console.warn("[rad-global-error]", msg);
+            if (typeof sessionStorage !== "undefined") {
+              sessionStorage.setItem(
+                "rad_last_ui_crash",
+                JSON.stringify({ at: new Date().toISOString(), message: msg.slice(0, 400), label: "window.error" })
+              );
+            }
+          } catch (_) {}
         });
         window.addEventListener("unhandledrejection", function (ev) {
           var reason = ev && ev.reason;
           var msg = String((reason && (reason.message || reason)) || "");
           if (/Loading chunk|Failed to fetch|Importing a module script failed|error loading dynamically imported module/i.test(msg)) {
             showRetry("No se pudo cargar un módulo de la app. Pulsa Reintentar.");
+            return;
           }
+          // Prevent "uncaught in promise" from escalating; keep the session alive.
+          try {
+            if (ev && typeof ev.preventDefault === "function") ev.preventDefault();
+            console.warn("[rad-unhandledrejection]", msg);
+          } catch (_) {}
         });
       })();
     </script>
