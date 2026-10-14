@@ -27,6 +27,7 @@ import {
 import {
   buildInfographicLateralityPromptBlock,
   detectInfographicViewOrientation,
+  extractInfographicLaterality,
   type InfographicViewOrientation,
 } from "./src/lib/infographicLaterality";
 import {
@@ -1719,7 +1720,7 @@ Devuelve de manera estricta y exclusiva el reporte radiológico COMPLETO resulta
  *   report, studyType, correctionNotes?, reportDate?, projections?, viewOrientation?, audience?,
  *   mode?: "general" | "directed",
  *   topic?, orientationBrief?, sections?, includeRecommendations?: "none"|"clinician"|"both",
- *   scorecardContext?, diagnosisAnchor?
+ *   scorecardContext?, diagnosisAnchor?, studyLaterality?
  * }
  * General and directed are independent products; the client may keep both.
  */
@@ -1740,6 +1741,7 @@ app.post("/api/generate-infographic", async (req: express.Request, res: express.
       includeRecommendations,
       scorecardContext,
       diagnosisAnchor,
+      studyLaterality,
     } = req.body;
     if (!report || !studyType) {
       return res.status(400).json({ success: false, error: "Se requieren el reporte y el tipo de estudio." });
@@ -1779,8 +1781,18 @@ app.post("/api/generate-infographic", async (req: express.Request, res: express.
       correctionNotes: String(correctionNotes || ""),
       preferred: preferredView,
     });
-    const lateralityBlock = buildInfographicLateralityPromptBlock(orientation);
     const reportForInfographic = redactPatientIdentifiersForInfographic(String(report || ""));
+    const lateralityExtract = extractInfographicLaterality({
+      report: reportForInfographic,
+      studyType: String(studyType || ""),
+      studyLaterality: String(studyLaterality || ""),
+      diagnosisAnchor: String(diagnosisAnchor || topic || "").trim(),
+      correctionNotes: String(correctionNotes || ""),
+    });
+    const lateralityBlock = buildInfographicLateralityPromptBlock(
+      orientation,
+      lateralityExtract
+    );
     const correctionBlock = String(correctionNotes || "").trim()
       ? `
 
@@ -1833,6 +1845,7 @@ RECOMENDACIONES / CONDUCTA:
         topicText,
         correctionNotes: String(correctionNotes || ""),
         allowRecommendations: allowRecoThisAudience,
+        lateralityBrief: lateralityBlock,
       });
       const planResp = await ai.models.generateContent({
         model: planModel,
@@ -1998,6 +2011,8 @@ Entrega una sola imagen vertical, lista para compartir con el paciente.
       audience: audienceMode,
       mode: isDirected ? "directed" : "general",
       copyPlanUsed: Boolean(copyPlan),
+      lateralitySide: lateralityExtract.side,
+      lateralitySummary: lateralityExtract.summary,
     });
   } catch (error: any) {
     console.error("Error en /api/generate-infographic:", error);
