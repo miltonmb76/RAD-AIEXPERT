@@ -35,6 +35,12 @@ grep -q 'studyLaterality' src/App.tsx \
   || { echo "ERROR: falta studyLaterality en App. Aborto."; exit 1; }
 grep -q 'lateralityBrief' src/lib/infographicCopyPlan.ts \
   || { echo "ERROR: falta lateralityBrief en copy plan. Aborto."; exit 1; }
+grep -q 'mergeLateralityIntoCopyPlan' src/lib/infographicLaterality.ts \
+  || { echo "ERROR: falta mergeLateralityIntoCopyPlan. Aborto."; exit 1; }
+grep -q 'lateralityLead' server.ts \
+  || { echo "ERROR: falta lateralityLead (prompt al inicio). Aborto."; exit 1; }
+grep -q 'describeLateralityPlacementForUi' src/App.tsx \
+  || { echo "ERROR: falta hint UI de lateralidad. Aborto."; exit 1; }
 
 SECRETS="GEMINI_API_KEY=gemini-api-key:latest"
 if gcloud secrets describe openai-api-key >/dev/null 2>&1; then

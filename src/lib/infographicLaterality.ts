@@ -316,6 +316,113 @@ export function buildLateralityPlacementBrief(
   return lines.join("\n");
 }
 
+/** Short UI line: where the finding must appear for current AP/PA + side. */
+export function describeLateralityPlacementForUi(
+  orientation: InfographicViewOrientation,
+  studyLaterality?: string,
+  reportHint?: string
+): string {
+  const extracted = extractInfographicLaterality({
+    studyLaterality,
+    report: reportHint,
+  });
+  if (extracted.side === "unspecified") {
+    return orientation === "PA"
+      ? "PA (de espaldas): derecha del paciente = derecha del cuadro."
+      : "AP (de frente): derecha del paciente = izquierda del cuadro.";
+  }
+  if (extracted.side === "bilateral") {
+    return `${orientation}: hallazgos bilaterales — ambos lados del cuadro, etiquetados derecho/izquierdo del paciente.`;
+  }
+  const canvas = canvasSideForPatientSide(orientation, extracted.side);
+  const patient = extracted.side === "right" ? "DERECHO" : "IZQUIERDO";
+  const frame =
+    canvas === "left_of_frame"
+      ? "IZQUIERDA del cuadro"
+      : canvas === "right_of_frame"
+        ? "DERECHA del cuadro"
+        : "ambos lados";
+  return `${orientation}: lado ${patient} del paciente → ${frame}.`;
+}
+
+/** Merge forced laterality labels into an existing copy plan. */
+export function mergeLateralityIntoCopyPlan<T extends {
+  title: string;
+  callouts: Array<{ label: string; detail?: string }>;
+  mustSpellExactly: string[];
+}>(
+  plan: T | null,
+  orientation: InfographicViewOrientation,
+  extracted: InfographicLateralityExtract
+): T | null {
+  if (!plan) return plan;
+  const must = [...(plan.mustSpellExactly || [])];
+  const callouts = [...(plan.callouts || [])];
+  const pushMust = (s: string) => {
+    const t = String(s || "").trim();
+    if (!t) return;
+    if (must.some((m) => m.toLowerCase() === t.toLowerCase())) return;
+    must.push(t);
+  };
+
+  if (extracted.side === "right") {
+    pushMust("derecho");
+    pushMust("derecha");
+    pushMust("(del paciente)");
+  } else if (extracted.side === "left") {
+    pushMust("izquierdo");
+    pushMust("izquierda");
+    pushMust("(del paciente)");
+  } else if (extracted.side === "bilateral") {
+    pushMust("bilateral");
+    pushMust("derecho");
+    pushMust("izquierdo");
+  }
+
+  for (const m of extracted.mentions.slice(0, 4)) {
+    if (m.side !== "right" && m.side !== "left") continue;
+    const struct = normalize(m.structure);
+    // Skip generic study-field placeholders — only anatomical labels help the image model.
+    if (!struct || struct === "estudio" || struct === "hallazgos" || struct === "hallazgo") continue;
+    const label = `${m.structure} ${sideLabelEs(m.side).toLowerCase()} (del paciente)`;
+    pushMust(label);
+    if (!callouts.some((c) => c.label.toLowerCase().includes(struct))) {
+      const canvas = canvasSideForPatientSide(orientation, m.side);
+      callouts.unshift({
+        label,
+        detail:
+          canvas === "left_of_frame"
+            ? "Dibujar a la izquierda del cuadro"
+            : canvas === "right_of_frame"
+              ? "Dibujar a la derecha del cuadro"
+              : undefined,
+      });
+    }
+  }
+
+  let title = plan.title;
+  if (
+    extracted.side === "right" &&
+    !/derech/i.test(title) &&
+    !/bilateral/i.test(title)
+  ) {
+    title = `${title} (lado derecho)`.slice(0, 90);
+  } else if (
+    extracted.side === "left" &&
+    !/izquierd/i.test(title) &&
+    !/bilateral/i.test(title)
+  ) {
+    title = `${title} (lado izquierdo)`.slice(0, 90);
+  }
+
+  return {
+    ...plan,
+    title,
+    callouts: callouts.slice(0, 6),
+    mustSpellExactly: must.slice(0, 16),
+  };
+}
+
 /** Prompt block injected into /api/generate-infographic */
 export function buildInfographicLateralityPromptBlock(
   orientation: InfographicViewOrientation,

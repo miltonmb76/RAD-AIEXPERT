@@ -28,6 +28,7 @@ import {
   buildInfographicLateralityPromptBlock,
   detectInfographicViewOrientation,
   extractInfographicLaterality,
+  mergeLateralityIntoCopyPlan,
   type InfographicViewOrientation,
 } from "./src/lib/infographicLaterality";
 import {
@@ -1867,6 +1868,9 @@ RECOMENDACIONES / CONDUCTA:
         planErr?.message || planErr
       );
     }
+    if (copyPlan) {
+      copyPlan = mergeLateralityIntoCopyPlan(copyPlan, orientation, lateralityExtract);
+    }
     const lockedCopyBlock = copyPlan
       ? `
 
@@ -1874,13 +1878,20 @@ ${buildLockedCopyPromptBlock(copyPlan)}
 `
       : "";
 
+    // Laterality FIRST — image models overweight early instructions.
+    const lateralityLead = `
+ANTES DE DIBUJAR — LATERALIDAD (si fallas esto la imagen NO sirve):
+ORIENTACIÓN: ${orientation === "PA" ? "PA — paciente DE ESPALDAS" : "AP — paciente DE FRENTE"}.
+${lateralityBlock}
+`;
+
     // Freeform poster: quality bar + medical guardrails, but NO fixed layout template.
     // Gemini image invents the composition that best fits THIS report + audience (+ directed brief).
     const promptText =
       audienceMode === "clinician"
         ? `
 Haz UNA infografía CLÍNICA formal, elegante y científica para el MÉDICO, basada en este reporte radiológico de ${studyType}${dateHint ? ` (${dateHint})` : ""}${isDirected ? ` — FOCO: ${topicText}` : ""}.
-
+${lateralityLead}
 REPORTE:
 """
 ${reportForInfographic}
@@ -1889,9 +1900,6 @@ ${scorecardBlock}
 ${directedBriefBlock}
 ${correctionBlock}
 ${lockedCopyBlock}
-
-ORIENTACIÓN DE LA FIGURA CORPORAL (obligatoria): ${orientation === "PA" ? "PA — paciente DE ESPALDAS" : "AP — paciente DE FRENTE"}.
-Aplica SOLO la regla de lateralidad correspondiente a esa orientación.
 
 ${INFOGRAPHIC_PRIVACY_PROMPT_BLOCK}
 
@@ -1911,14 +1919,13 @@ ${recoBlock}
 - NO inventes mediciones ni hallazgos ausentes del reporte.
 - NO: nombre del paciente ni ningún identificador personal (ni reales ni de ejemplo).
 - NO: escribir "estudio anónimo", "paciente anónimo" ni sellos de anonimato; omite la identidad sin mencionarlo.
-
-${lateralityBlock}
+- RELEE la LATERALIDAD del inicio: el hallazgo debe estar en el lado del CUADRO indicado (AP = espejo; PA = mismo lado).
 
 Entrega una sola imagen vertical, lista como anexo clínico.
 `
         : `
 Haz UNA infografía para el paciente basada en este reporte radiológico de ${studyType}${dateHint ? ` (${dateHint})` : ""}${isDirected ? ` — FOCO: ${topicText}` : ""}.
-
+${lateralityLead}
 REPORTE:
 """
 ${reportForInfographic}
@@ -1927,9 +1934,6 @@ ${scorecardBlock}
 ${directedBriefBlock}
 ${correctionBlock}
 ${lockedCopyBlock}
-
-ORIENTACIÓN DE LA FIGURA CORPORAL (obligatoria): ${orientation === "PA" ? "PA — paciente DE ESPALDAS" : "AP — paciente DE FRENTE"}.
-Aplica SOLO la regla de lateralidad correspondiente a esa orientación.
 
 ${INFOGRAPHIC_PRIVACY_PROMPT_BLOCK}
 
@@ -1950,8 +1954,7 @@ ${recoBlock}
 - NO inventes mediciones, gradaciones ni hallazgos que no estén en el reporte.
 - NO: nombre del paciente ni ningún identificador personal (ni reales ni de ejemplo / placeholder).
 - NO: escribir "estudio anónimo", "paciente anónimo" ni sellos de anonimato; omite la identidad sin mencionarlo.
-
-${lateralityBlock}
+- RELEE la LATERALIDAD del inicio: el hallazgo debe estar en el lado del CUADRO indicado (AP = espejo; PA = mismo lado).
 
 Entrega una sola imagen vertical, lista para compartir con el paciente.
 `;
