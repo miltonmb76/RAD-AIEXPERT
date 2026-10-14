@@ -235,8 +235,24 @@ import {
   convertHtmlToMarkdown,
   type ReportElement,
 } from "./lib/reportTextHelpers";
+import {
+  clearActiveSessionDraft,
+  draftHasReport,
+  flushActiveSessionDraftNow,
+  loadActiveSessionDraft,
+  registerActiveSessionDraftFlush,
+  rememberActiveSessionDraft,
+  saveActiveSessionDraft,
+} from "./lib/activeSessionDraft";
 
 export default function App() {
+  // Soft-recover remounts App; hydrate critical fields from sessionStorage draft.
+  const bootDraftRef = useRef(loadActiveSessionDraft());
+  const bootDraft = bootDraftRef.current;
+  const [showSessionDraftBanner, setShowSessionDraftBanner] = useState(() =>
+    draftHasReport(bootDraft)
+  );
+
   // Public Patient View System
   const [currentCloudStudyId, setCurrentCloudStudyId] = useState<string>("");
   const [isPatientPublicView, setIsPatientPublicView] = useState<boolean>(false);
@@ -312,20 +328,23 @@ export default function App() {
 
   // 1. STATE FOR REPORT GENERATOR
   const [selectedPresetId, setSelectedPresetId] = useState<string>("torax-rx");
-  const [studyType, setStudyType] = useState<string>("");
-  const [clinicalHistory, setClinicalHistory] = useState<string>("");
-  const [findings, setFindings] = useState<string>("");
-  const [inputReport, setInputReport] = useState<string>("");
+  const [studyType, setStudyType] = useState<string>(() => bootDraft?.studyType || "");
+  const [clinicalHistory, setClinicalHistory] = useState<string>(() => bootDraft?.clinicalHistory || "");
+  const [findings, setFindings] = useState<string>(() => bootDraft?.findings || "");
+  const [inputReport, setInputReport] = useState<string>(() => bootDraft?.inputReport || "");
   const [customPrompt, setCustomPrompt] = useState<string>("");
   
   // 1b. Patient & Corporate Header customization states for PDF/Print
-  const [patientName, setPatientName] = useState<string>("");
-  const [patientAge, setPatientAge] = useState<string>("");
-  const [patientGender, setPatientGender] = useState<string>("");
-  const [patientId, setPatientId] = useState<string>("");
+  const [patientName, setPatientName] = useState<string>(() => bootDraft?.patientName || "");
+  const [patientAge, setPatientAge] = useState<string>(() => bootDraft?.patientAge || "");
+  const [patientGender, setPatientGender] = useState<string>(() => bootDraft?.patientGender || "");
+  const [patientId, setPatientId] = useState<string>(() => bootDraft?.patientId || "");
   const [dicomNotification, setDicomNotification] = useState<string | null>(null);
-  const [patientEmail, setPatientEmail] = useState<string>(() => localStorage.getItem("rad_patient_email") || "");
+  const [patientEmail, setPatientEmail] = useState<string>(() =>
+    bootDraft?.patientEmail || localStorage.getItem("rad_patient_email") || ""
+  );
   const [reportDate, setReportDate] = useState<string>(() => {
+    if (bootDraft?.reportDate) return bootDraft.reportDate;
     const today = new Date();
     const yyyy = today.getFullYear();
     const mm = String(today.getMonth() + 1).padStart(2, '0');
@@ -1338,10 +1357,10 @@ export default function App() {
   }, []);
   
   // Custom smart selection states
-  const [modality, setModality] = useState<string>("Radiografía");
-  const [specificStudy, setSpecificStudy] = useState<string>("Tórax");
+  const [modality, setModality] = useState<string>(() => bootDraft?.modality || "Radiografía");
+  const [specificStudy, setSpecificStudy] = useState<string>(() => bootDraft?.specificStudy || "Tórax");
   const [customStudy, setCustomStudy] = useState<string>("");
-  const [laterality, setLaterality] = useState<string>(""); // "" | "Derecha" | "Izquierda" | "Bilateral"
+  const [laterality, setLaterality] = useState<string>(() => bootDraft?.laterality || ""); // "" | "Derecha" | "Izquierda" | "Bilateral"
   const [projections, setProjections] = useState<string[]>([]);
   const [customProjection, setCustomProjection] = useState<string>("");
   
@@ -1515,7 +1534,7 @@ export default function App() {
   // Loading & Generation results
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [generationSteps, setGenerationSteps] = useState<string>("");
-  const [generatedReport, setGeneratedReport] = useState<string>("");
+  const [generatedReport, setGeneratedReport] = useState<string>(() => bootDraft?.generatedReport || "");
 
   // --- INTERACTIVE SYNTACTIC HIGHLIGHTING AND DYNAMIC AESTHETIC STATES ---
   const [isSyntacticHighlightingActive, setIsSyntacticHighlightingActive] = useState<boolean>(true);
@@ -1823,11 +1842,97 @@ export default function App() {
   const [showTechnical, setShowTechnical] = useState<boolean>(true);
 
   // --- VERSION HISTORY AND MANUAL REPORT EDIT STATE ---
-  const [originalBaseReport, setOriginalBaseReport] = useState<string>("");
+  const [originalBaseReport, setOriginalBaseReport] = useState<string>(() => bootDraft?.originalBaseReport || "");
   const [reportHistory, setReportHistory] = useState<string[]>([]);
   const [reportRedoHistory, setReportRedoHistory] = useState<string[]>([]);
-  const [isEditingReportManual, setIsEditingReportManual] = useState<boolean>(false);
-  const [editedReportText, setEditedReportText] = useState<string>("");
+  const [isEditingReportManual, setIsEditingReportManual] = useState<boolean>(() =>
+    Boolean(bootDraft?.isEditingReportManual)
+  );
+  const [editedReportText, setEditedReportText] = useState<string>(() => bootDraft?.editedReportText || "");
+
+  // Keep informe + patient fields in sessionStorage so soft-recover / crash does not wipe them.
+  const activeSessionDraftRef = useRef({
+    generatedReport: bootDraft?.generatedReport || "",
+    editedReportText: bootDraft?.editedReportText || "",
+    isEditingReportManual: Boolean(bootDraft?.isEditingReportManual),
+    originalBaseReport: bootDraft?.originalBaseReport || "",
+    patientName: bootDraft?.patientName || "",
+    patientAge: bootDraft?.patientAge || "",
+    patientGender: bootDraft?.patientGender || "",
+    patientId: bootDraft?.patientId || "",
+    patientEmail: bootDraft?.patientEmail || "",
+    studyType: bootDraft?.studyType || "",
+    clinicalHistory: bootDraft?.clinicalHistory || "",
+    findings: bootDraft?.findings || "",
+    inputReport: bootDraft?.inputReport || "",
+    reportDate: bootDraft?.reportDate || "",
+    modality: bootDraft?.modality || "",
+    specificStudy: bootDraft?.specificStudy || "",
+    laterality: bootDraft?.laterality || "",
+  });
+  activeSessionDraftRef.current = {
+    generatedReport,
+    editedReportText,
+    isEditingReportManual,
+    originalBaseReport,
+    patientName,
+    patientAge,
+    patientGender,
+    patientId,
+    patientEmail,
+    studyType,
+    clinicalHistory,
+    findings,
+    inputReport,
+    reportDate,
+    modality,
+    specificStudy,
+    laterality,
+  };
+  rememberActiveSessionDraft(activeSessionDraftRef.current);
+  useEffect(() => {
+    const flush = () => {
+      const d = activeSessionDraftRef.current;
+      if (draftHasReport(d)) saveActiveSessionDraft(d);
+    };
+    registerActiveSessionDraftFlush(flush);
+    const onHide = () => flush();
+    window.addEventListener("pagehide", onHide);
+    window.addEventListener("beforeunload", onHide);
+    return () => {
+      registerActiveSessionDraftFlush(null);
+      window.removeEventListener("pagehide", onHide);
+      window.removeEventListener("beforeunload", onHide);
+    };
+  }, []);
+  useEffect(() => {
+    const d = activeSessionDraftRef.current;
+    if (!draftHasReport(d)) return;
+    const delay = generatedReport && !editedReportText ? 0 : 350;
+    const t = window.setTimeout(() => {
+      saveActiveSessionDraft(activeSessionDraftRef.current);
+    }, delay);
+    return () => window.clearTimeout(t);
+  }, [
+    generatedReport,
+    editedReportText,
+    isEditingReportManual,
+    originalBaseReport,
+    patientName,
+    patientAge,
+    patientGender,
+    patientId,
+    patientEmail,
+    studyType,
+    clinicalHistory,
+    findings,
+    inputReport,
+    reportDate,
+    modality,
+    specificStudy,
+    laterality,
+  ]);
+
 
   // --- SPECIAL INTERACTIVE AI PARAGRAPH ACTIONS STATES ---
   const [selectedParagraphText, setSelectedParagraphText] = useState<string | null>(null);
@@ -3038,6 +3143,8 @@ Ejemplo:
     setShowWhatsAppModal(false);
     setShowGmailModal(false);
     setWhatsappShareType("report_pdf");
+    clearActiveSessionDraft();
+    setShowSessionDraftBanner(false);
   };
 
   // Convert File to base64
@@ -3746,6 +3853,7 @@ Ejemplo:
 
   // Gmail API Integrated Share Handlers (Google Workspace Integration)
     const handleOpenGmailShare = async (type: 'report_pdf' | 'patient_summary' | 'patient_infographic' | 'both_pdfs') => {
+    flushActiveSessionDraftNow();
     const attachedKind = type === 'patient_infographic' ? 'patient_summary' : type;
     setGmailAttachedType(attachedKind as 'report_pdf' | 'patient_summary' | 'both_pdfs');
     setGmailTo(patientEmail || "");
@@ -3898,6 +4006,7 @@ Ejemplo:
   };
 
   const handleSendGmailAction = async () => {
+    flushActiveSessionDraftNow();
     const send = createGmailSendAction({
       gmailAccessToken,
       gmailTo,
@@ -3956,6 +4065,7 @@ Ejemplo:
 
 
   const handleSendWhatsAppAction = async () => {
+    flushActiveSessionDraftNow();
     let studyIdToUse = currentCloudStudyId;
 
     // Save/update to cloud automatically first to guarantee the link is always generated, saved and up to date! (skip if already saved)
@@ -5601,6 +5711,7 @@ Ejemplo:
   };
 
   const handleSaveToDrive = async () => {
+    flushActiveSessionDraftNow();
     const save = createDriveSaveAction({
       patientName,
       patientSummary,
@@ -6042,6 +6153,8 @@ Ejemplo:
     studyType,
     clinicalHistory,
     generatedReport,
+    editedReportText,
+    isEditingReportManual,
     customLogoUrl,
     customLogoRightUrl,
     customSignatureUrl,
@@ -6587,7 +6700,21 @@ Ejemplo:
         </div>
       </header>
 
-      <ActivePatientPanel
+      {showSessionDraftBanner && (
+                        <div className="mb-3 px-3 py-2 rounded-xl border border-emerald-500/40 bg-emerald-950/40 text-emerald-100 text-[11px] font-mono flex items-start justify-between gap-3">
+                          <span>
+                            Se restauró el informe y los datos del paciente tras la recuperación de pantalla (borrador de esta pestaña).
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setShowSessionDraftBanner(false)}
+                            className="shrink-0 text-emerald-300/80 hover:text-emerald-100 underline cursor-pointer"
+                          >
+                            Cerrar
+                          </button>
+                        </div>
+                      )}
+                      <ActivePatientPanel
         patient={activeWorklistPatient}
         bridgeOnline={bridgeOnline}
         bridgeDicomReady={bridgeDicomReady}
