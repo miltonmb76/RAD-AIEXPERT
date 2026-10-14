@@ -43,6 +43,8 @@ export interface DiagnosticPackImageSlot {
 }
 
 export interface DiagnosticPackData {
+  /** Stable id so multiple packs can coexist in one study. */
+  id?: string;
   title: string;
   diagnosis: string;
   studyRegion?: string;
@@ -60,9 +62,57 @@ export interface DiagnosticPackData {
   imageSourceLabel?: string | null;
   categoryLabel?: string;
   factorTarget: 4 | 6;
-  /** True when factors came only from justification (+ filtered scorecard). */
+  /**
+   * Legacy flag: true when factors were seeded from findings-infographic nodes.
+   * New packs prefer report/scorecard/suite and leave this false.
+   */
   factorsFromJustification: boolean;
+  /** Per-pack PDF inclusion (default true when omitted). */
+  includeInReport?: boolean;
   generatedAt?: string;
+}
+
+export const MAX_DIAGNOSTIC_PACKS = 4;
+
+export function newDiagnosticPackId(): string {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+  } catch {
+    /* ignore */
+  }
+  return `pack-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/** Normalize legacy single pack + new array into a stable list. */
+export function normalizeDiagnosticPackList(opts: {
+  packs?: DiagnosticPackData[] | null;
+  legacyPack?: DiagnosticPackData | null;
+  legacyInclude?: boolean;
+}): DiagnosticPackData[] {
+  const fromArray = Array.isArray(opts.packs)
+    ? opts.packs.filter((p) => p && String(p.diagnosis || "").trim())
+    : [];
+  if (fromArray.length) {
+    return fromArray.slice(0, MAX_DIAGNOSTIC_PACKS).map((p) => ({
+      ...p,
+      id: p.id || newDiagnosticPackId(),
+      includeInReport: p.includeInReport !== false,
+    }));
+  }
+  const legacy = opts.legacyPack;
+  if (legacy && String(legacy.diagnosis || "").trim()) {
+    return [
+      {
+        ...legacy,
+        id: legacy.id || newDiagnosticPackId(),
+        includeInReport:
+          legacy.includeInReport !== false && opts.legacyInclude !== false,
+      },
+    ];
+  }
+  return [];
 }
 
 export type PackImagePanel = {
@@ -469,11 +519,81 @@ function buildFactSheet(opts: {
 }
 
 /**
- * Compose clinician pack: justification-first factors, dual selectable images, mini-ficha.
+ * Pull short finding-like lines from the report that reinforce the diagnosis.
+ * Deterministic (no LLM) so the pack does not wait on the findings infographic.
+ */
+export function extractFactorsFromReportText(
+  reportText: string | null | undefined,
+  diagnosis: string,
+  max = 6
+): DiagnosticPackFactor[] {
+  const report = String(reportText || "").replace(/\r/g, "\n").trim();
+  if (!report || max <= 0) return [];
+  const tokens = anchorRelevanceTokens(diagnosis);
+  const dxKey = normKey(diagnosis);
+  const chunks = report
+    .split(/\n+|(?<=[.;:])\s+/)
+    .map((s) => s.replace(/^[\s•\-*–—\d.)]+/, "").trim())
+    .filter((s) => s.length >= 12 && s.length <= 180);
+
+  const scored: Array<{ label: string; detail?: string; score: number }> = [];
+  for (const chunk of chunks) {
+    const key = normKey(chunk);
+    if (!key || (dxKey && key === dxKey)) continue;
+    if (/^(tecnica|técnica|indicacion|indicación|paciente|nombre|fecha)\b/i.test(chunk)) {
+      continue;
+    }
+    let score = 0;
+    if (tokens.length) {
+      for (const t of tokens) {
+        if (t.length >= 4 && key.includes(t)) score += 2;
+      }
+      if (score < 2) continue;
+    } else {
+      score = 1;
+    }
+    if (/\d+\s*(mm|cm|kpa|%|hz)/i.test(chunk)) score += 1;
+    if (/^hallazgo|^impres|^conclusion|^conclusión/i.test(chunk)) score += 1;
+    // Prefer concise labels: first clause as label when long
+    let label = chunk;
+    let detail: string | undefined;
+    const dash = chunk.split(/\s+[—–-]\s+/);
+    if (dash.length >= 2 && dash[0].length <= 72) {
+      label = dash[0].trim();
+      detail = dash.slice(1).join(" — ").trim() || undefined;
+    } else if (chunk.length > 90) {
+      label = chunk.slice(0, 88).replace(/\s+\S*$/, "").trim();
+      detail = chunk;
+    }
+    scored.push({ label, detail, score });
+  }
+  scored.sort((a, b) => b.score - a.score);
+  const out: DiagnosticPackFactor[] = [];
+  const seen = new Set<string>();
+  for (const s of scored) {
+    pushFactor(out, seen, {
+      id: `pack-rep-${out.length + 1}`,
+      label: s.label,
+      detail: s.detail,
+      weight: out.length < 2 ? "primary" : "secondary",
+    });
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+/**
+ * Compose clinician pack from diagnosis base + report/scorecard/suite sources.
+ * Findings-infographic is optional reinforcement only (never required).
  */
 export function buildDiagnosticPack(opts: {
+  /** Editable base diagnosis for THIS pack (preferred). */
+  diagnosisBase?: string | null;
   diagnosisAnchor?: string | null;
+  reportText?: string | null;
   findingsInfographic?: FindingsInfographicData | null;
+  /** When true, seed factors from infographic nodes first (legacy). Default false. */
+  preferInfographicFactors?: boolean;
   scorecardData?: ClinicalScorecardData | null;
   atlas3dData?: Atlas3DData | null;
   focalLesion3dData?: FocalLesion3DData | null;
@@ -483,9 +603,11 @@ export function buildDiagnosticPack(opts: {
   /** Explicit image picks (candidate ids). */
   imageSlotAId?: string | null;
   imageSlotBId?: string | null;
+  packId?: string | null;
 }): DiagnosticPackData {
   const gov = getScorecardGovernance(opts.scorecardData);
   const diagnosis =
+    String(opts.diagnosisBase || "").trim() ||
     resolveDiagnosisAnchor({
       manualAnchor: opts.diagnosisAnchor,
       scorecardData: opts.scorecardData,
@@ -497,38 +619,36 @@ export function buildDiagnosticPack(opts: {
   const tokens = anchorRelevanceTokens(diagnosis);
   const fig = opts.findingsInfographic;
   const justNodes = (fig?.nodes || []).filter((n) => String(n.label || "").trim());
-  const hasJustification = justNodes.length > 0;
+  const preferFig = opts.preferInfographicFactors === true && justNodes.length > 0;
 
   const factors: DiagnosticPackFactor[] = [];
   const seen = new Set<string>();
-
-  // 1) Justification nodes — preferred source when present (skip nodes that only restate the ancla)
   const dxKey = normKey(diagnosis);
-  justNodes.forEach((n, i) => {
-    const label = String(n.label || "").trim();
-    if (!label) return;
-    // Don't let a lone "ancla restated as factor" crowd out real support signs
-    if (dxKey && normKey(label) === dxKey) return;
-    pushFactor(factors, seen, {
-      id: n.id || `pack-f-${i + 1}`,
-      label,
-      detail: n.detail?.trim() || undefined,
-      weight: n.weight || (i < 2 ? "primary" : "secondary"),
-    });
-  });
 
-  // 2) Scorecard met/equivocal always eligible as reinforcing factors.
-  // Token filter only when we already have a rich justification (≥4) — then avoid unrelated organs.
-  // If justification is thin (0–3), accept all met/equivocal so the graph isn't stuck at 1 factor.
-  const strictAnchorFilter = hasJustification && factors.length >= 4 && tokens.length > 0;
-  const maybeScorecard = (
+  // Optional legacy: infographic nodes first
+  if (preferFig) {
+    justNodes.forEach((n, i) => {
+      const label = String(n.label || "").trim();
+      if (!label || (dxKey && normKey(label) === dxKey)) return;
+      pushFactor(factors, seen, {
+        id: n.id || `pack-f-${i + 1}`,
+        label,
+        detail: n.detail?.trim() || undefined,
+        weight: n.weight || (i < 2 ? "primary" : "secondary"),
+      });
+    });
+  }
+
+  // 1) Scorecard overlays + met/equivocal criteria (filtered by diagnosis tokens when available)
+  const maybePush = (
     label: string,
     detail: string | undefined,
     id: string,
-    primary: boolean
+    primary: boolean,
+    requireTokenMatch: boolean
   ) => {
     const blob = `${label} ${detail || ""}`;
-    if (strictAnchorFilter && !textMatchesAnchor(blob, tokens)) return;
+    if (requireTokenMatch && tokens.length && !textMatchesAnchor(blob, tokens)) return;
     pushFactor(factors, seen, {
       id,
       label,
@@ -538,79 +658,100 @@ export function buildDiagnosticPack(opts: {
   };
 
   (opts.scorecardData?.atlasOverlays || []).forEach((o, i) => {
-    maybeScorecard(
+    maybePush(
       String(o.finding || o.structure || "").trim(),
       o.evidence || undefined,
       o.id || `pack-ov-${i + 1}`,
-      i < 2
+      i < 2,
+      tokens.length > 0
     );
   });
   (opts.scorecardData?.criteria || []).forEach((c, i) => {
     const status = String(c.status || "").toLowerCase();
     if (status !== "met" && status !== "equivocal") return;
-    maybeScorecard(
+    maybePush(
       String(c.criterion || "").trim(),
       String(c.evidence || c.value || "").trim() || undefined,
       c.id || `pack-crit-${i + 1}`,
-      c.weight === "critical" || c.weight === "major"
+      c.weight === "critical" || c.weight === "major",
+      // Soft filter: if thin factor list, accept more scorecard rows
+      factors.length >= 4 && tokens.length > 0
     );
   });
 
-  // 3) Only if NO justification: allow filtered suite / synoptic / dominant (still ancla-matched)
-  if (!hasJustification) {
-    const synoptic =
-      opts.atlas3dData?.synopticExplanation || opts.atlas3dData?.synopticTable || [];
-    synoptic.forEach((s, i) => {
-      const label = String(s.structure || "").trim();
-      const detail = String(s.findingDetail || "").trim() || undefined;
-      if (!textMatchesAnchor(`${label} ${detail || ""}`, tokens)) return;
+  // 2) Synoptic / suite / dominant — always available (no longer gated on infographic)
+  const synoptic =
+    opts.atlas3dData?.synopticExplanation || opts.atlas3dData?.synopticTable || [];
+  synoptic.forEach((s, i) => {
+    const label = String(s.structure || "").trim();
+    const detail = String(s.findingDetail || "").trim() || undefined;
+    if (tokens.length && !textMatchesAnchor(`${label} ${detail || ""}`, tokens)) return;
+    pushFactor(factors, seen, {
+      id: `pack-syn-${i + 1}`,
+      label,
+      detail,
+      weight: i < 2 ? "primary" : "secondary",
+    });
+  });
+
+  const preferredId = String(opts.preferredSuiteId || "").trim();
+  const suites = [
+    ...(opts.suiteSources || []).filter((s) => s.id === preferredId),
+    ...(opts.suiteSources || []).filter((s) => s.id !== preferredId),
+  ];
+  for (const suite of suites) {
+    (suite.findingTable || []).forEach((row, i) => {
+      if (!row || typeof row !== "object") return;
+      const r = row as Record<string, unknown>;
+      const structure = field(r, ["structure", "location", "vessel", "site", "lesionLabel"]);
+      const pattern = field(r, ["echoPattern", "finding", "composition", "plaqueOrThrombus"]);
+      const measure = field(r, ["sizeOrThickness", "thicknessOrGap", "size"]);
+      const label = structure || pattern;
+      if (!label) return;
+      const detail = [pattern && pattern !== label ? pattern : "", measure]
+        .filter(Boolean)
+        .join(" · ");
+      if (tokens.length && !textMatchesAnchor(`${label} ${detail}`, tokens)) return;
       pushFactor(factors, seen, {
-        id: `pack-syn-${i + 1}`,
+        id: `pack-suite-${suite.id}-${i + 1}`,
         label,
-        detail,
+        detail: detail || undefined,
         weight: i < 2 ? "primary" : "secondary",
       });
     });
+  }
 
-    const preferredId = String(opts.preferredSuiteId || "").trim();
-    const suites = [
-      ...(opts.suiteSources || []).filter((s) => s.id === preferredId),
-      ...(opts.suiteSources || []).filter((s) => s.id !== preferredId),
-    ];
-    for (const suite of suites) {
-      (suite.findingTable || []).forEach((row, i) => {
-        if (!row || typeof row !== "object") return;
-        const r = row as Record<string, unknown>;
-        const structure = field(r, ["structure", "location", "vessel", "site", "lesionLabel"]);
-        const pattern = field(r, ["echoPattern", "finding", "composition", "plaqueOrThrombus"]);
-        const measure = field(r, ["sizeOrThickness", "thicknessOrGap", "size"]);
-        const label = structure || pattern;
-        if (!label) return;
-        const detail = [pattern && pattern !== label ? pattern : "", measure]
-          .filter(Boolean)
-          .join(" · ");
-        if (!textMatchesAnchor(`${label} ${detail}`, tokens)) return;
-        pushFactor(factors, seen, {
-          id: `pack-suite-${suite.id}-${i + 1}`,
-          label,
-          detail: detail || undefined,
-          weight: i < 2 ? "primary" : "secondary",
-        });
-      });
+  (opts.dominantLesionCard?.keyDescriptors || []).forEach((d, i) => {
+    const label = String(d || "").trim();
+    if (tokens.length && !textMatchesAnchor(label, tokens)) return;
+    pushFactor(factors, seen, {
+      id: `pack-dom-${i + 1}`,
+      label,
+      weight: "secondary",
+    });
+  });
+
+  // 3) Report text extraction to fill remaining slots
+  if (factors.length < 6) {
+    for (const f of extractFactorsFromReportText(opts.reportText, diagnosis, 6 - factors.length)) {
+      pushFactor(factors, seen, f);
     }
+  }
 
-    (opts.dominantLesionCard?.keyDescriptors || []).forEach((d, i) => {
-      const label = String(d || "").trim();
-      if (!textMatchesAnchor(label, tokens)) return;
+  // 4) Optional infographic reinforcement (only if not already preferred first)
+  if (!preferFig && justNodes.length) {
+    justNodes.forEach((n, i) => {
+      const label = String(n.label || "").trim();
+      if (!label || (dxKey && normKey(label) === dxKey)) return;
       pushFactor(factors, seen, {
-        id: `pack-dom-${i + 1}`,
+        id: n.id || `pack-fig-${i + 1}`,
         label,
+        detail: n.detail?.trim() || undefined,
         weight: "secondary",
       });
     });
   }
 
-  // Cap at 6 unique aspects — never pad with near-duplicates to hit 6
   const finalFactors = factors.slice(0, 6);
 
   const candidates = listPackImageCandidates({
@@ -620,7 +761,6 @@ export function buildDiagnosticPack(opts: {
   });
   const defaults = defaultSlotIds(candidates, opts.preferredSuiteId);
   const imageA = resolveSlot(candidates, opts.imageSlotAId, defaults.a);
-  // B: "" means Ninguna; undefined/null → default second panel when available.
   let imageB = resolveSlot(candidates, opts.imageSlotBId, defaults.b, {
     allowEmpty: opts.imageSlotBId === "",
   });
@@ -646,9 +786,9 @@ export function buildDiagnosticPack(opts: {
   });
 
   const synthesis =
-    String(fig?.synthesis || "").trim() ||
     String(gov?.clinicalSummary || "").trim() ||
     String(opts.dominantLesionCard?.clinicianPhrase || "").trim() ||
+    String(fig?.synthesis || "").trim() ||
     (finalFactors.length
       ? `Los factores listados sustentan el diagnóstico de ${diagnosis}.`
       : undefined);
@@ -658,13 +798,14 @@ export function buildDiagnosticPack(opts: {
   );
 
   return {
+    id: String(opts.packId || "").trim() || newDiagnosticPackId(),
     title: "Pack de justificación diagnóstica",
     diagnosis,
     studyRegion:
-      fig?.studyRegion ||
       opts.atlas3dData?.studyRegion ||
       opts.focalLesion3dData?.studyRegion ||
       opts.dominantLesionCard?.studyRegion ||
+      fig?.studyRegion ||
       undefined,
     protocolLabel: gov?.protocolName || preferredSuite?.label || undefined,
     synthesis,
@@ -677,7 +818,8 @@ export function buildDiagnosticPack(opts: {
     imageSourceLabel: imageA?.sourceLabel || null,
     categoryLabel: gov?.shortLabel || undefined,
     factorTarget: finalFactors.length >= 6 ? 6 : 4,
-    factorsFromJustification: hasJustification,
+    factorsFromJustification: preferFig,
+    includeInReport: true,
     generatedAt: new Date().toISOString(),
   };
 }
@@ -692,26 +834,20 @@ export function diagnosticPackIsRenderable(pack: DiagnosticPackData | null | und
 
 export function diagnosticPackMissingRequirements(
   pack: DiagnosticPackData | null | undefined,
-  opts?: { hasJustification?: boolean }
+  _opts?: { hasJustification?: boolean }
 ): string[] {
   const missing: string[] = [];
   if (!pack || !String(pack.diagnosis || "").trim()) {
-    missing.push("Define el ancla diagnóstica.");
+    missing.push("Escribe el diagnóstico base del pack.");
   }
   if (!(pack?.imageA?.url || pack?.imageDataUrl)) {
     missing.push("Elige imagen A (Focal / suite 3D / Atlas).");
   }
   const n = pack?.factors?.length || 0;
   if (n < 4) {
-    if (opts?.hasJustification === false || !pack?.factorsFromJustification) {
-      missing.push(
-        `Hacen falta ≥4 factores distintos del ancla (ahora ${n}). Genera la infografía de justificación con este diagnóstico.`
-      );
-    } else {
-      missing.push(
-        `La justificación solo aportó ${n} factor(es) distinto(s). Regenera la justificación buscando más aspectos en el informe (sin repetir el mismo con otras palabras; ideal hasta 6 únicos).`
-      );
-    }
+    missing.push(
+      `Hacen falta ≥4 factores de justificación (ahora ${n}). Pulsa «Extraer factores» (informe + scorecard + suites) o edítalos a mano.`
+    );
   }
   return missing;
 }

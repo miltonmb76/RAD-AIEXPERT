@@ -1576,8 +1576,11 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only seed when ancla/scorecard lands
   }, [diagnosisAnchor, clinicalScorecardData]);
 
-  const [diagnosticPackData, setDiagnosticPackData] = useState<import("./lib/diagnosticPack").DiagnosticPackData | null>(null);
+  const [diagnosticPacks, setDiagnosticPacks] = useState<import("./lib/diagnosticPack").DiagnosticPackData[]>([]);
+  /** Global gate: when false, no pack annexes in PDF. Per-pack includeInReport still applies. */
   const [includeDiagnosticPackInReport, setIncludeDiagnosticPackInReport] = useState<boolean>(true);
+  /** @deprecated single-pack alias kept for PDF/cloud snapshots that still send diagnosticPackData */
+  const diagnosticPackData = diagnosticPacks[0] || null;
   const [isDiagnosticPackOpen, setIsDiagnosticPackOpen] = useState<boolean>(false);
   const [isFindingsMapOpen, setIsFindingsMapOpen] = useState<boolean>(false);
   const [dominantLesionCardData, setDominantLesionCardData] = useState<DominantLesionCardData | null>(null);
@@ -1684,6 +1687,7 @@ export default function App() {
     includeFindingsInfographicInReport,
     diagnosisAnchor,
     diagnosticPackData,
+    diagnosticPacks,
     includeDiagnosticPackInReport,
     dominantLesionCardData,
     includeDominantLesionCardInReport,
@@ -2951,7 +2955,7 @@ Ejemplo:
     setIncludeFindingsInfographicInReport(true);
     setIsFindingsInfographicOpen(false);
     setDiagnosisAnchor("");
-    setDiagnosticPackData(null);
+    setDiagnosticPacks([]);
     setIncludeDiagnosticPackInReport(true);
     setIsDiagnosticPackOpen(false);
     setIsFindingsMapOpen(false);
@@ -5496,6 +5500,7 @@ Ejemplo:
     findings3dRenders,
     findingsInfographicData,
     diagnosticPackData,
+    diagnosticPacks,
     dominantLesionCardData,
     focalLesion3dData,
     getParagraphSeverity,
@@ -11605,7 +11610,7 @@ Ejemplo:
                                 <div>
                                   <h4 className="text-sm font-semibold text-amber-200 flex items-center gap-2">
                                     <FileStack className="h-4 w-4 text-amber-400" />
-                                    Pack diagnostico (1 pagina)
+                                    Pack diagnostico (multi)
                                   </h4>
                                   <p className="text-[11px] text-slate-400 mt-1">
                                     Ancla + factores + imagenes focales on-demand (motor Corte Focal) o suite/Atlas.
@@ -11821,7 +11826,7 @@ Ejemplo:
                                   hasGalleryUs={(attachedImages || []).some((img: any) => !!img?.url)}
                                   hasUsPlaneData={!!(usPlaneSimulatorData?.panels?.length || usPlaneSimulatorData?.realUsImage?.url)}
                                   hasInfographic={!!(findingsInfographicData?.nodes?.length)}
-                                  hasPack={!!diagnosticPackData}
+                                  hasPack={diagnosticPacks.length > 0}
                                   hasSuitePanels={anySuiteUsedUi}
                                   scorecardData={clinicalScorecardData}
                                   setScorecardData={setClinicalScorecardData}
@@ -12151,10 +12156,8 @@ Ejemplo:
                                     { id: "muscleTendon3d", label: "Suite Musculo-Tendon 3D", panels: muscleTendon3dData?.panels, findingTable: muscleTendon3dData?.findingTable },
                                     { id: "wrist3d", label: "Suite Muneca 3D", panels: wrist3dData?.panels, findingTable: wrist3dData?.findingTable },
                                   ]}
-                                  packData={diagnosticPackData}
-                                  setPackData={setDiagnosticPackData}
-                                  includeInReport={includeDiagnosticPackInReport}
-                                  setIncludeInReport={setIncludeDiagnosticPackInReport}
+                                  packs={diagnosticPacks}
+                                  setPacks={setDiagnosticPacks}
                                 />
                               </React.Suspense>
                             </div>

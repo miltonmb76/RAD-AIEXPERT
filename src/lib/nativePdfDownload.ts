@@ -60,6 +60,8 @@ export type NativePdfDownloadDeps = {
   findings3dRenders: any;
   findingsInfographicData: any;
   diagnosticPackData?: any;
+  /** Multi-pack annexes (preferred over diagnosticPackData). */
+  diagnosticPacks?: any[];
   dominantLesionCardData: any;
   focalLesion3dData: any;
   getParagraphSeverity: (text: string) => "critical" | "altered" | "normal";
@@ -151,6 +153,7 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
       findings3dRenders,
       findingsInfographicData,
       diagnosticPackData,
+      diagnosticPacks,
       dominantLesionCardData,
       focalLesion3dData,
       getParagraphSeverity,
@@ -2660,18 +2663,36 @@ export function createNativePdfDownload(d: NativePdfDownloadDeps) {
       };
 
       const renderDiagnosticPackAnnexHere = async () => {
-        const activeDiagnosticPack = studyOverride
-          ? (studyOverride as any).diagnosticPackData
-          : (pdfSnap?.diagnosticPackData || diagnosticPackData);
         const shouldIncludeDiagnosticPack = studyOverride
           ? ((studyOverride as any).includeDiagnosticPackInReport !== false)
           : ((pdfSnap?.includeDiagnosticPackInReport !== false) &&
               includeDiagnosticPackInReport !== false);
-        if (shouldIncludeDiagnosticPack && diagnosticPackIsRenderable(activeDiagnosticPack)) {
-          await renderDiagnosticPackAnnexToPDF(doc, activeDiagnosticPack, {
+        if (!shouldIncludeDiagnosticPack) return;
+
+        const overridePacks = (studyOverride as any)?.diagnosticPacks;
+        const snapPacks = pdfSnap?.diagnosticPacks;
+        const livePacks = diagnosticPacks;
+        let list: any[] = [];
+        if (Array.isArray(overridePacks) && overridePacks.length) list = overridePacks;
+        else if (Array.isArray(snapPacks) && snapPacks.length) list = snapPacks;
+        else if (Array.isArray(livePacks) && livePacks.length) list = livePacks;
+        else {
+          const legacy = studyOverride
+            ? (studyOverride as any).diagnosticPackData
+            : (pdfSnap?.diagnosticPackData || diagnosticPackData);
+          if (legacy) list = [legacy];
+        }
+
+        const toRender = list.filter(
+          (p) => p && p.includeInReport !== false && diagnosticPackIsRenderable(p)
+        );
+        for (let i = 0; i < toRender.length; i++) {
+          await renderDiagnosticPackAnnexToPDF(doc, toRender[i], {
             marginX,
             pageWidth,
             pageHeight,
+            annexIndex: i + 1,
+            annexTotal: toRender.length,
           });
         }
       };
