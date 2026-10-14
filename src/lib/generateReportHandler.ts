@@ -109,8 +109,15 @@ export type GenerateReportHandlerDeps = {
   wrist3dData: any;
 };
 
+export type GenerateReportOpts = {
+  /** Force a model for THIS report call only (does not change the global selector). */
+  modelOverride?: string;
+  /** Skip gallery auto-label after report (useful for quick Argon rewrites). */
+  skipAutoLabel?: boolean;
+};
+
 export function createGenerateReportHandler(d: GenerateReportHandlerDeps) {
-  return async (mode: "simple" | "full" = "full") => {
+  return async (mode: "simple" | "full" = "full", opts?: GenerateReportOpts) => {
     const {
       DEFAULT_BATCH_MODULES,
       FULL_REPORT_BATCH_MODULES,
@@ -270,7 +277,7 @@ export function createGenerateReportHandler(d: GenerateReportHandlerDeps) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: modelFor("report"),
+          model: String(opts?.modelOverride || "").trim() || modelFor("report"),
           image: base64Image || undefined,
           mimeType: selectedFile ? selectedFile.type : undefined,
           studyType,
@@ -312,7 +319,7 @@ export function createGenerateReportHandler(d: GenerateReportHandlerDeps) {
         setOriginalBaseReport(data.report);
         setReportEnrichmentSession(null);
 
-        if (attachedImages.length > 0) {
+        if (attachedImages.length > 0 && !opts?.skipAutoLabel) {
           void autoLabelImagesAfterReport(String(data.report || ""));
           // Lleva al usuario a la galeria donde veran las fotos ya rotuladas.
           window.setTimeout(() => {

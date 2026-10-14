@@ -969,6 +969,8 @@ export default function App() {
   const [printModalDocType, setPrintModalDocType] = useState<'report' | 'patient_summary' | 'both'>('report');
   /** formal = solo informe; both = informe + pack explicación paciente */
   const [generateDocumentScope, setGenerateDocumentScope] = useState<'formal' | 'both'>('formal');
+  /** One-shot: Argon only for /api/analyze report text; selector unchanged for modules/batch. */
+  const [useArgonForBaseReport, setUseArgonForBaseReport] = useState(false);
   const [printModalViewType, setPrintModalViewType] = useState<'html_simulator' | 'pdf_viewer'>('html_simulator');
   const [generatedNativePdfUrl, setGeneratedNativePdfUrl] = useState<string | null>(null);
   const [generatedSummaryPdfUrl, setGeneratedSummaryPdfUrl] = useState<string | null>(null);
@@ -3339,7 +3341,10 @@ Ejemplo:
   };
 
   // 1. ACTION: SEND PAYLOAD TO GENERATE REPORT
-  const handleGenerateReport = async (mode: "simple" | "full" = "full") => {
+  const handleGenerateReport = async (
+    mode: "simple" | "full" = "full",
+    opts?: { modelOverride?: string; skipAutoLabel?: boolean }
+  ) => {
     const generate = createGenerateReportHandler({
     DEFAULT_BATCH_MODULES,
     FULL_REPORT_BATCH_MODULES,
@@ -3445,7 +3450,19 @@ Ejemplo:
     autoLabelImagesAfterReport,
     fetchCloudStudies,
     triggerAutoImageEvaluation});
-    return generate(mode);
+    return generate(mode, opts);
+  };
+
+  /** Opts for first generate: Argon only on the formal report call (not the global selector). */
+  const baseReportModelOpts = (): { modelOverride?: string } | undefined =>
+    useArgonForBaseReport ? { modelOverride: "gemini-4-argon" } : undefined;
+
+  /** Rewrite base report with Argon only ? no selector change, no full batch. */
+  const handleRegenerateBaseReportWithArgon = async () => {
+    await handleGenerateReport("simple", {
+      modelOverride: "gemini-4-argon",
+      skipAutoLabel: true,
+    });
   };
 
 
@@ -7959,19 +7976,49 @@ Ejemplo:
                       </div>
                     </div>
 
+                    {/* Modelo del informe base: selector global vs Argon one-shot */}
+                    <label
+                      className={`flex items-start gap-3 rounded-xl border p-3 cursor-pointer transition-all ${
+                        useArgonForBaseReport
+                          ? "border-amber-500/45 bg-amber-950/35"
+                          : "border-slate-800 bg-slate-950/60 hover:border-slate-700"
+                      }`}
+                      title="Gemini 4 Argon redacta solo el informe formal. El selector global no cambia: scorecard, suites y pulido siguen con Auto u el modelo elegido."
+                    >
+                      <input
+                        type="checkbox"
+                        checked={useArgonForBaseReport}
+                        onChange={(e) => setUseArgonForBaseReport(e.target.checked)}
+                        className="mt-0.5 h-4 w-4 rounded border-amber-600/60 bg-slate-950 text-amber-500 focus:ring-amber-500"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[10px] font-black uppercase tracking-wider text-amber-100 flex items-center gap-1.5">
+                          <Brain className="h-3.5 w-3.5 text-amber-300 shrink-0" />
+                          Argon solo para el informe
+                        </p>
+                        <p className="mt-0.5 text-[9px] leading-relaxed text-amber-200/70 normal-case tracking-normal">
+                          Casos complejos: Argon escribe el informe base desde el inicio. Simple o Completo; modulos siguen con el selector (p. ej. Auto).
+                        </p>
+                      </div>
+                    </label>
+
                     {/* Submit Buttons: simple vs completo */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <button
                         type="button"
                         onClick={async () => {
-                          const reportText = await handleGenerateReport("simple");
+                          const reportText = await handleGenerateReport("simple", baseReportModelOpts());
                           if (generateDocumentScope === 'both' && reportText) {
                             await handleGeneratePatientSummary(reportText);
                           }
                         }}
                         disabled={isGenerating || isGeneratingPatientSummary || !studyType.trim()}
                         className="w-full bg-slate-800 hover:bg-slate-750 text-slate-100 font-black py-4 px-5 rounded-xl text-[11px] uppercase tracking-widest border border-slate-600/80 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all flex flex-col items-center justify-center gap-1.5 cursor-pointer"
-                        title="Solo redacta el informe, sin modulos adicionales (ideal para radiografias simples)"
+                        title={
+                          useArgonForBaseReport
+                            ? "Redacta solo el informe con Gemini 4 Argon (sin modulos). No cambia el selector global."
+                            : "Solo redacta el informe, sin modulos adicionales (ideal para radiografias simples)"
+                        }
                       >
                         {isGenerating ? (
                           <>
@@ -7983,7 +8030,9 @@ Ejemplo:
                             <FileText className="h-4 w-4 text-slate-300" />
                             <span>Reporte simple</span>
                             <span className="text-[8px] font-bold normal-case tracking-normal text-slate-400">
-                              Solo el informe
+                              {useArgonForBaseReport
+                                ? "Solo el informe - Argon"
+                                : "Solo el informe - modelo del selector"}
                             </span>
                           </>
                         )}
@@ -7992,14 +8041,18 @@ Ejemplo:
                       <button
                         type="button"
                         onClick={async () => {
-                          const reportText = await handleGenerateReport("full");
+                          const reportText = await handleGenerateReport("full", baseReportModelOpts());
                           if (generateDocumentScope === 'both' && reportText) {
                             await handleGeneratePatientSummary(reportText);
                           }
                         }}
                         disabled={isGenerating || isGeneratingPatientSummary || !studyType.trim()}
                         className="w-full bg-indigo-600 hover:bg-indigo-550 text-white font-black py-4 px-5 rounded-xl text-[11px] uppercase tracking-widest shadow-[0_4px_16px_rgba(99,102,241,0.4)] disabled:opacity-50 disabled:cursor-not-allowed transition-all flex flex-col items-center justify-center gap-1.5 cursor-pointer border border-indigo-400/30"
-                        title="Informe + módulos predeterminados, suite 3D del estudio y pulido clínico automático"
+                        title={
+                          useArgonForBaseReport
+                            ? "Informe con Argon + modulos (scorecard/suite/pulido) con el selector global. El selector no cambia a Argon."
+                            : "Informe + módulos predeterminados, suite 3D del estudio y pulido clínico automático"
+                        }
                       >
                         {isGenerating ? (
                           <>
@@ -8011,7 +8064,9 @@ Ejemplo:
                             <Sparkles className="h-4 w-4 text-amber-200" />
                             <span>Reporte completo</span>
                             <span className="text-[8px] font-bold normal-case tracking-normal text-indigo-100/80 text-center leading-snug">
-                              + Scorecard, suite 3D y pulido clínico
+                              {useArgonForBaseReport
+                                ? "Informe Argon + Scorecard/suite/pulido (Auto)"
+                                : "+ Scorecard, suite 3D y pulido clínico"}
                             </span>
                           </>
                         )}
@@ -8981,6 +9036,16 @@ Ejemplo:
 
                             <div className="flex items-center gap-2 flex-wrap">
                               {/* Revert Button */}
+                              <button
+                                type="button"
+                                onClick={() => void handleRegenerateBaseReportWithArgon()}
+                                disabled={isGenerating || !studyType.trim()}
+                                className="px-3 py-2 bg-amber-950/50 hover:bg-amber-900/60 disabled:opacity-30 border border-amber-500/35 text-amber-200 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center gap-1.5 font-mono select-none cursor-pointer"
+                                title="Reescribe solo el informe base con Argon (sin batch de modulos; el selector global no cambia)"
+                              >
+                                {isGenerating ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Brain className="h-3.5 w-3.5" />}
+                                Informe Argon
+                              </button>
                               <button
                                 id="btn-revert-report"
                                 onClick={handleRevertReport}
