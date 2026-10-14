@@ -58,6 +58,8 @@ export async function renderDiagnosticPackAnnexToPDF(
     marginX?: number;
     pageWidth?: number;
     pageHeight?: number;
+    annexIndex?: number;
+    annexTotal?: number;
   }
 ): Promise<void> {
   if (!diagnosticPackIsRenderable(pack) || !pack) return;
@@ -74,7 +76,13 @@ export async function renderDiagnosticPackAnnexToPDF(
   let y = marginTop;
 
   // Header band — title left, meta right (never overlapping)
-  const titleLeft = "ANEXO: PACK DE JUSTIFICACIÓN DIAGNÓSTICA";
+  const multi =
+    typeof options?.annexTotal === "number" &&
+    options.annexTotal > 1 &&
+    typeof options?.annexIndex === "number"
+      ? ` (${options.annexIndex}/${options.annexTotal})`
+      : "";
+  const titleLeft = `ANEXO: PACK DE JUSTIFICACIÓN DIAGNÓSTICA${multi}`;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
   const titleW = Math.min(doc.getTextWidth(titleLeft) + 2, contentWidth * 0.58);
