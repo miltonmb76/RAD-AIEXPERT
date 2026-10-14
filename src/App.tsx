@@ -6488,11 +6488,13 @@ Ejemplo:
               const activeCls =
                 opt.id === "auto"
                   ? "bg-emerald-600 text-white shadow-[0_0_15px_rgba(16,185,129,0.45)]"
-                  : opt.id === "gemini-3.1-pro-preview"
-                    ? "bg-purple-600 text-white shadow-[0_0_15px_rgba(168,85,247,0.45)]"
-                    : opt.id === "gemini-3.8-flash"
-                      ? "bg-sky-600 text-white shadow-[0_0_15px_rgba(2,132,199,0.45)]"
-                      : "bg-indigo-600 text-white shadow-[0_0_15px_rgba(99,102,241,0.45)]";
+                  : opt.id === "gemini-4-argon"
+                    ? "bg-amber-600 text-white shadow-[0_0_15px_rgba(217,119,6,0.45)]"
+                    : opt.id === "gemini-3.1-pro-preview"
+                      ? "bg-purple-600 text-white shadow-[0_0_15px_rgba(168,85,247,0.45)]"
+                      : opt.id === "gemini-3.8-flash"
+                        ? "bg-sky-600 text-white shadow-[0_0_15px_rgba(2,132,199,0.45)]"
+                        : "bg-indigo-600 text-white shadow-[0_0_15px_rgba(99,102,241,0.45)]";
               return (
                 <button
                   key={opt.id}
@@ -6505,6 +6507,8 @@ Ejemplo:
                 >
                   {opt.id === "auto" ? (
                     <Sparkles className={`h-3.5 w-3.5 ${active ? "text-emerald-100 animate-pulse" : ""}`} />
+                  ) : opt.id === "gemini-4-argon" ? (
+                    <Brain className={`h-3.5 w-3.5 ${active ? "text-amber-100 animate-pulse" : ""}`} />
                   ) : opt.id === "gemini-3.1-pro-preview" ? (
                     <Brain className={`h-3.5 w-3.5 ${active ? "text-purple-200 animate-pulse" : ""}`} />
                   ) : (
@@ -6542,7 +6546,7 @@ Ejemplo:
               <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500 shadow-[0_0_10px_#10b981]"></span>
             </div>
             <span className="text-[10px] font-black text-emerald-400 tracking-widest uppercase font-mono">
-              {selectedModel === "auto" ? "Auto-Routing" : selectedModel === "gemini-3.1-pro-preview" ? "Pro-Active" : "Flash-Active"}
+              {selectedModel === "auto" ? "Auto-Routing" : selectedModel === "gemini-4-argon" ? "Argon-Active" : selectedModel === "gemini-3.1-pro-preview" ? "Pro-Active" : "Flash-Active"}
             </span>
           </div>
 
@@ -6720,19 +6724,23 @@ Ejemplo:
                 const activeWrap =
                   opt.id === "auto"
                     ? "bg-emerald-950/30 border-emerald-500/60 shadow-[0_2px_8px_rgba(16,185,129,0.1)]"
-                    : opt.id === "gemini-3.1-pro-preview"
-                      ? "bg-purple-950/30 border-purple-500/60 shadow-[0_2px_8px_rgba(168,85,247,0.1)]"
-                      : opt.id === "gemini-3.8-flash"
-                        ? "bg-sky-950/30 border-sky-500/60 shadow-[0_2px_8px_rgba(2,132,199,0.1)]"
-                        : "bg-indigo-950/30 border-indigo-500/60 shadow-[0_2px_8px_rgba(99,102,241,0.1)]";
+                    : opt.id === "gemini-4-argon"
+                      ? "bg-amber-950/30 border-amber-500/60 shadow-[0_2px_8px_rgba(217,119,6,0.1)]"
+                      : opt.id === "gemini-3.1-pro-preview"
+                        ? "bg-purple-950/30 border-purple-500/60 shadow-[0_2px_8px_rgba(168,85,247,0.1)]"
+                        : opt.id === "gemini-3.8-flash"
+                          ? "bg-sky-950/30 border-sky-500/60 shadow-[0_2px_8px_rgba(2,132,199,0.1)]"
+                          : "bg-indigo-950/30 border-indigo-500/60 shadow-[0_2px_8px_rgba(99,102,241,0.1)]";
                 const activeText =
                   opt.id === "auto"
                     ? "text-emerald-400"
-                    : opt.id === "gemini-3.1-pro-preview"
-                      ? "text-purple-400"
-                      : opt.id === "gemini-3.8-flash"
-                        ? "text-sky-400"
-                        : "text-indigo-400";
+                    : opt.id === "gemini-4-argon"
+                      ? "text-amber-400"
+                      : opt.id === "gemini-3.1-pro-preview"
+                        ? "text-purple-400"
+                        : opt.id === "gemini-3.8-flash"
+                          ? "text-sky-400"
+                          : "text-indigo-400";
                 return (
                   <button
                     key={opt.id}
@@ -6751,6 +6759,7 @@ Ejemplo:
                     </div>
                     {active && (
                       opt.id === "auto" ? <Sparkles className={`h-3.5 w-3.5 ${activeText} shrink-0`} /> :
+                      opt.id === "gemini-4-argon" ? <Brain className={`h-3.5 w-3.5 ${activeText} shrink-0`} /> :
                       opt.id === "gemini-3.1-pro-preview" ? <Brain className={`h-3.5 w-3.5 ${activeText} shrink-0`} /> :
                       <Zap className={`h-3.5 w-3.5 ${activeText} shrink-0`} />
                     )}
@@ -14247,19 +14256,23 @@ Ejemplo:
                         const border =
                           opt.id === "auto"
                             ? "bg-emerald-950/20 border-emerald-500/80 shadow-[0_0_12px_rgba(16,185,129,0.12)]"
-                            : opt.id === "gemini-3.1-pro-preview"
-                              ? "bg-purple-950/20 border-purple-500/80 shadow-[0_0_12px_rgba(168,85,247,0.12)]"
-                              : opt.id === "gemini-3.8-flash"
-                                ? "bg-sky-950/20 border-sky-500/80 shadow-[0_0_12px_rgba(2,132,199,0.12)]"
-                                : "bg-indigo-950/20 border-indigo-500/80 shadow-[0_0_12px_rgba(99,102,241,0.12)]";
+                            : opt.id === "gemini-4-argon"
+                              ? "bg-amber-950/20 border-amber-500/80 shadow-[0_0_12px_rgba(217,119,6,0.12)]"
+                              : opt.id === "gemini-3.1-pro-preview"
+                                ? "bg-purple-950/20 border-purple-500/80 shadow-[0_0_12px_rgba(168,85,247,0.12)]"
+                                : opt.id === "gemini-3.8-flash"
+                                  ? "bg-sky-950/20 border-sky-500/80 shadow-[0_0_12px_rgba(2,132,199,0.12)]"
+                                  : "bg-indigo-950/20 border-indigo-500/80 shadow-[0_0_12px_rgba(99,102,241,0.12)]";
                         const badge =
                           opt.id === "auto"
                             ? "bg-emerald-500 text-white"
-                            : opt.id === "gemini-3.1-pro-preview"
-                              ? "bg-purple-500 text-white"
-                              : opt.id === "gemini-3.8-flash"
-                                ? "bg-sky-500 text-white"
-                                : "bg-indigo-500 text-white";
+                            : opt.id === "gemini-4-argon"
+                              ? "bg-amber-500 text-white"
+                              : opt.id === "gemini-3.1-pro-preview"
+                                ? "bg-purple-500 text-white"
+                                : opt.id === "gemini-3.8-flash"
+                                  ? "bg-sky-500 text-white"
+                                  : "bg-indigo-500 text-white";
                         return (
                           <button
                             key={opt.id}

@@ -1,20 +1,23 @@
 /**
  * Model preference + automatic per-task routing for RAD-AI Expert.
  *
- * Auto mode never uses Pro (avoids surprise cost/latency).
- * Manual mode forces the same model on every task.
+ * Auto mode never uses Pro / Argon (avoids surprise cost/latency).
+ * Manual mode forces the same model on every task — use Argon on demand,
+ * then switch back to Auto.
  */
 
 export type ModelPreference =
   | "auto"
   | "gemini-3.7-flash"
   | "gemini-3.8-flash"
-  | "gemini-3.1-pro-preview";
+  | "gemini-3.1-pro-preview"
+  | "gemini-4-argon";
 
 export type ResolvedModelId =
   | "gemini-3.7-flash"
   | "gemini-3.8-flash"
-  | "gemini-3.1-pro-preview";
+  | "gemini-3.1-pro-preview"
+  | "gemini-4-argon";
 
 export type ModelTask =
   | "report"
@@ -120,7 +123,7 @@ export const MODEL_OPTIONS: Array<{
     id: "auto",
     shortLabel: "Auto",
     label: "Automático (recomendado)",
-    description: "Asigna 3.8 a tareas clínicas clave y 3.7 a volumen (rotulado, resúmenes cortos). Pro solo si lo eliges manualmente.",
+    description: "Asigna 3.8 a tareas clínicas clave y 3.7 a volumen (rotulado, resúmenes cortos). Pro/Argon solo a demanda.",
   },
   {
     id: "gemini-3.8-flash",
@@ -140,12 +143,22 @@ export const MODEL_OPTIONS: Array<{
     label: "Gemini 3.1 Pro",
     description: "Máximo rigor en casos difíciles. Más lento y costoso; úsalo a demanda.",
   },
+  {
+    id: "gemini-4-argon",
+    shortLabel: "Argon",
+    label: "Gemini 4 Argon",
+    description:
+      "Frontier a demanda: razonamiento profundo en casos difíciles. Regenera el módulo y vuelve a Auto.",
+  },
 ];
 
 export function normalizeModelPreference(raw?: string | null): ModelPreference {
   if (!raw) return "auto";
   if (raw === "auto") return "auto";
   if (raw === "gemini-3.8-flash") return "gemini-3.8-flash";
+  if (raw === "gemini-4-argon" || raw === "gemini-4-argon-latest") {
+    return "gemini-4-argon";
+  }
   if (raw === "gemini-3.1-pro-preview" || raw === "gemini-3.1-pro") {
     return "gemini-3.1-pro-preview";
   }
@@ -188,5 +201,6 @@ export function describeActiveRouting(preference: string | null | undefined): st
   if (pref === "auto") return "Auto: 3.8 calidad · 3.7 volumen";
   if (pref === "gemini-3.8-flash") return "Flash 3.8 fijo";
   if (pref === "gemini-3.7-flash") return "Flash 3.7 fijo";
+  if (pref === "gemini-4-argon") return "Argon 4 fijo (a demanda)";
   return "Pro 3.1 fijo";
 }
