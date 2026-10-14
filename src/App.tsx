@@ -3339,7 +3339,10 @@ Ejemplo:
   };
 
   // 1. ACTION: SEND PAYLOAD TO GENERATE REPORT
-  const handleGenerateReport = async (mode: "simple" | "full" = "full") => {
+  const handleGenerateReport = async (
+    mode: "simple" | "full" = "full",
+    opts?: { modelOverride?: string; skipAutoLabel?: boolean }
+  ) => {
     const generate = createGenerateReportHandler({
     DEFAULT_BATCH_MODULES,
     FULL_REPORT_BATCH_MODULES,
@@ -3445,7 +3448,15 @@ Ejemplo:
     autoLabelImagesAfterReport,
     fetchCloudStudies,
     triggerAutoImageEvaluation});
-    return generate(mode);
+    return generate(mode, opts);
+  };
+
+  /** Base report only with Argon ? does not change the global selector or run the full batch. */
+  const handleRegenerateBaseReportWithArgon = async () => {
+    await handleGenerateReport("simple", {
+      modelOverride: "gemini-4-argon",
+      skipAutoLabel: true,
+    });
   };
 
 
@@ -7983,7 +7994,7 @@ Ejemplo:
                             <FileText className="h-4 w-4 text-slate-300" />
                             <span>Reporte simple</span>
                             <span className="text-[8px] font-bold normal-case tracking-normal text-slate-400">
-                              Solo el informe
+                              Solo el informe - modelo del selector
                             </span>
                           </>
                         )}
@@ -8017,6 +8028,28 @@ Ejemplo:
                         )}
                       </button>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleRegenerateBaseReportWithArgon()}
+                      disabled={isGenerating || isGeneratingPatientSummary || !studyType.trim()}
+                      className="w-full mt-1 bg-amber-950/40 hover:bg-amber-900/50 text-amber-100 font-black py-3 px-5 rounded-xl text-[10px] uppercase tracking-widest border border-amber-500/35 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-all flex flex-wrap items-center justify-center gap-2 cursor-pointer"
+                      title="Regenera SOLO el informe base con Gemini 4 Argon. No cambia el selector global ni activa Scorecard/suites/pulido."
+                    >
+                      {isGenerating ? (
+                        <>
+                          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                          <span>Redactando con Argon...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Brain className="h-3.5 w-3.5 text-amber-300" />
+                          <span>Solo informe base con Argon</span>
+                          <span className="text-[8px] font-bold normal-case tracking-normal text-amber-200/70">
+                            sin modulos - no cambia el selector
+                          </span>
+                        </>
+                      )}
+                    </button>
                   </div>
 
                   {/* 💬 CHAT INTELIGENTE MÉDICO-RADIOLÓGICO */}
@@ -8981,6 +9014,16 @@ Ejemplo:
 
                             <div className="flex items-center gap-2 flex-wrap">
                               {/* Revert Button */}
+                              <button
+                                type="button"
+                                onClick={() => void handleRegenerateBaseReportWithArgon()}
+                                disabled={isGenerating || !studyType.trim()}
+                                className="px-3 py-2 bg-amber-950/50 hover:bg-amber-900/60 disabled:opacity-30 border border-amber-500/35 text-amber-200 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center gap-1.5 font-mono select-none cursor-pointer"
+                                title="Reescribe solo el informe base con Argon (sin batch de modulos; el selector global no cambia)"
+                              >
+                                {isGenerating ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Brain className="h-3.5 w-3.5" />}
+                                Informe Argon
+                              </button>
                               <button
                                 id="btn-revert-report"
                                 onClick={handleRevertReport}
