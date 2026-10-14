@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PEGAR EN CLOUD SHELL — Solo informe base con Argon (sin batch / sin cambiar selector)
+# PEGAR EN CLOUD SHELL — Argon solo para el informe (toggle desde el inicio + regen)
 set -euo pipefail
 
 REPO_URL="${REPO_URL:-https://github.com/miltonmb76/RAD-AIEXPERT.git}"
@@ -27,10 +27,12 @@ echo ">>> Rama: $(git rev-parse --abbrev-ref HEAD) @ $(git rev-parse --short HEA
 
 grep -q 'modelOverride' src/lib/generateReportHandler.ts \
   || { echo "ERROR: falta modelOverride. Aborto."; exit 1; }
+grep -q 'useArgonForBaseReport' src/App.tsx \
+  || { echo "ERROR: falta useArgonForBaseReport. Aborto."; exit 1; }
+grep -q 'Argon solo para el informe' src/App.tsx \
+  || { echo "ERROR: falta toggle Argon solo para el informe. Aborto."; exit 1; }
 grep -q 'handleRegenerateBaseReportWithArgon' src/App.tsx \
   || { echo "ERROR: falta handleRegenerateBaseReportWithArgon. Aborto."; exit 1; }
-grep -q 'Solo informe base con Argon' src/App.tsx \
-  || { echo "ERROR: falta boton Solo informe base con Argon. Aborto."; exit 1; }
 grep -q 'gemini-4-argon' src/App.tsx \
   || { echo "ERROR: falta override gemini-4-argon. Aborto."; exit 1; }
 
@@ -39,7 +41,7 @@ if gcloud secrets describe openai-api-key >/dev/null 2>&1; then
   SECRETS="${SECRETS},OPENAI_API_KEY=openai-api-key:latest"
 fi
 
-echo ">>> Desplegando $SERVICE ($REGION) — informe base Argon only..."
+echo ">>> Desplegando $SERVICE ($REGION) — Argon solo para el informe..."
 gcloud run deploy "$SERVICE" \
   --source . \
   --region "$REGION" \
@@ -47,4 +49,4 @@ gcloud run deploy "$SERVICE" \
 
 URL="$(gcloud run services describe "$SERVICE" --region "$REGION" --format='value(status.url)' 2>/dev/null || true)"
 echo ">>> Listo. URL Cloud Run: ${URL:-ver consola}"
-echo ">>> Hard-refresh → Solo informe base con Argon / Informe Argon (selector sigue en Auto)."
+echo ">>> Hard-refresh → marca 'Argon solo para el informe' y pulsa Simple o Completo (selector sigue en Auto)."
