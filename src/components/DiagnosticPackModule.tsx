@@ -7,6 +7,8 @@ import {
   Loader2,
   Sparkles,
   Box,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import type {
   Atlas3DData,
@@ -19,8 +21,10 @@ import {
   buildDiagnosticPack,
   diagnosticPackIsRenderable,
   diagnosticPackMissingRequirements,
+  factorsAreNearDuplicate,
   listPackImageCandidates,
   type DiagnosticPackData,
+  type DiagnosticPackFactor,
   type PackImageSource,
 } from "../lib/diagnosticPack";
 import {
@@ -150,12 +154,14 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
     ]
   );
 
-  const display = packData && diagnosticPackIsRenderable(packData) ? packData : preview;
+  // Prefer committed packData even if <4 factors after manual deletes (edits must not vanish).
+  const display =
+    packData && String(packData.diagnosis || "").trim() ? packData : preview;
   const hasJustification = (findingsInfographic?.nodes || []).some((n) =>
     String(n.label || "").trim()
   );
   const canBuild = diagnosticPackIsRenderable(preview);
-  const missing = diagnosticPackMissingRequirements(preview, { hasJustification });
+  const missing = diagnosticPackMissingRequirements(display, { hasJustification });
   const scorecardDx = resolveScorecardFinalDiagnosis(scorecardData);
   const canGenerateImages =
     !!setFocalLesion3dData &&
@@ -172,6 +178,77 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
     setPackData(next);
     setIncludeInReport(true);
     return true;
+  };
+
+  /** Commit preview → packData so factor edits persist. */
+  const ensureEditablePack = (): DiagnosticPackData | null => {
+    if (packData && String(packData.diagnosis || "").trim()) return packData;
+    if (String(preview.diagnosis || "").trim() && (preview.factors?.length || 0) > 0) {
+      setPackData(preview);
+      setIncludeInReport(true);
+      return preview;
+    }
+    return null;
+  };
+
+  const withFactorTarget = (factors: DiagnosticPackFactor[]): DiagnosticPackData["factorTarget"] =>
+    factors.length >= 6 ? 6 : 4;
+
+  const updateFactor = (id: string, patch: Partial<DiagnosticPackFactor>) => {
+    const base = ensureEditablePack();
+    if (!base) return;
+    const factors = base.factors.map((f) => (f.id === id ? { ...f, ...patch } : f));
+    const next = {
+      ...base,
+      factors,
+      factorTarget: withFactorTarget(factors),
+    };
+    setPackData(next);
+    if (diagnosticPackIsRenderable(next)) setIncludeInReport(true);
+  };
+
+  const removeFactor = (id: string) => {
+    const base = ensureEditablePack();
+    if (!base) return;
+    if (base.factors.length <= 1) return;
+    const factors = base.factors.filter((f) => f.id !== id);
+    const next = {
+      ...base,
+      factors,
+      factorTarget: withFactorTarget(factors),
+    };
+    setPackData(next);
+    if (!diagnosticPackIsRenderable(next)) {
+      setIncludeInReport(false);
+    }
+  };
+
+  const removeNearDuplicateFactors = () => {
+    const base = ensureEditablePack();
+    if (!base) return;
+    const kept: DiagnosticPackFactor[] = [];
+    for (const f of base.factors) {
+      const label = String(f.label || "").trim();
+      if (!label) continue;
+      const blob = `${label} ${String(f.detail || "").trim()}`;
+      const dup = kept.some(
+        (k) =>
+          factorsAreNearDuplicate(label, k.label) ||
+          factorsAreNearDuplicate(blob, `${k.label} ${String(k.detail || "").trim()}`)
+      );
+      if (dup) continue;
+      kept.push(f);
+    }
+    if (kept.length === base.factors.length) return;
+    const next = {
+      ...base,
+      factors: kept.length ? kept : base.factors.slice(0, 1),
+      factorTarget: withFactorTarget(kept.length ? kept : base.factors.slice(0, 1)),
+    };
+    setPackData(next);
+    if (!diagnosticPackIsRenderable(next)) {
+      setIncludeInReport(false);
+    }
   };
 
   // After focal images land and slots settle, auto-armar pack if possible
@@ -410,6 +487,102 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
               <li key={m}>{m}</li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {(display.factors?.length || 0) > 0 && (
+        <div className="rounded-2xl border border-amber-500/25 bg-gradient-to-br from-amber-950/25 via-slate-950/80 to-slate-950 p-4 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-amber-200/90">
+              <Pencil className="h-3.5 w-3.5" />
+              <span className="text-[10px] font-black uppercase tracking-widest">
+                Editar factores
+              </span>
+              <span className="text-[10px] text-slate-500 font-mono normal-case tracking-normal">
+                {display.factors.length} · PDF requiere ≥4
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={removeNearDuplicateFactors}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-amber-700/40 text-[10px] font-black uppercase tracking-wider text-amber-200/90 hover:bg-amber-950/50 cursor-pointer"
+              title="Elimina factores casi iguales (misma idea con otras palabras)"
+            >
+              <Trash2 className="h-3 w-3" />
+              Quitar duplicados
+            </button>
+          </div>
+          {(display.factors.length < 4) && (
+            <p className="text-[10px] text-amber-200/80 bg-amber-950/40 border border-amber-800/40 rounded-lg px-2.5 py-1.5">
+              Quedan {display.factors.length} factor(es). El pack no entra al PDF hasta tener ≥4
+              (o vuelve a armar / regenerar justificación).
+            </p>
+          )}
+          <div className="space-y-2.5">
+            {display.factors.map((f, idx) => (
+              <div
+                key={f.id}
+                className="rounded-xl border border-slate-800 bg-slate-950/70 overflow-hidden"
+              >
+                <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-slate-800/80 bg-slate-900/50">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-amber-400/90 font-mono">
+                    Factor {idx + 1}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => removeFactor(f.id)}
+                    disabled={display.factors.length <= 1}
+                    className="inline-flex items-center gap-1 text-[10px] text-slate-500 hover:text-rose-300 disabled:opacity-30 disabled:hover:text-slate-500 font-bold uppercase cursor-pointer"
+                    title="Eliminar este factor (p. ej. si esta repetido)"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                    Eliminar
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2 p-3">
+                  <label className="space-y-1 md:col-span-2">
+                    <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">
+                      Etiqueta
+                    </span>
+                    <input
+                      type="text"
+                      value={f.label}
+                      onChange={(e) => updateFactor(f.id, { label: e.target.value })}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-[11px] text-slate-200 outline-none focus:border-amber-500"
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">
+                      Peso
+                    </span>
+                    <select
+                      value={f.weight || "secondary"}
+                      onChange={(e) =>
+                        updateFactor(f.id, {
+                          weight: e.target.value as DiagnosticPackFactor["weight"],
+                        })
+                      }
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-[11px] text-slate-200 outline-none focus:border-amber-500 cursor-pointer"
+                    >
+                      <option value="primary">Primario</option>
+                      <option value="secondary">Secundario</option>
+                    </select>
+                  </label>
+                  <label className="space-y-1 md:col-span-3">
+                    <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">
+                      Detalle
+                    </span>
+                    <textarea
+                      value={f.detail || ""}
+                      onChange={(e) => updateFactor(f.id, { detail: e.target.value })}
+                      rows={2}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-[11px] text-slate-300 outline-none focus:border-amber-500 resize-y"
+                    />
+                  </label>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
