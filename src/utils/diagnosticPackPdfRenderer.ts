@@ -223,16 +223,18 @@ export async function renderDiagnosticPackAnnexToPDF(
     imgY += captionH + (i < slots.length - 1 ? imgGap - 1.2 : 0);
   });
 
-  // Right: synthesis + mini-ficha + spaced factors
+  // Left: synthesis + mini-ficha + spaced factors (wrap FULL text — never hard-cut mid sentence)
   let textY = colsTop;
   const factors = (pack.factors || []).slice(0, 6);
+  const labelW = 22;
+  const valueW = Math.max(28, textColW - labelW - 6);
 
   if (pack.synthesis) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
     doc.setTextColor(51, 65, 85);
     const synLines = doc.splitTextToSize(sanitizePdfText(pack.synthesis), textColW) as string[];
-    synLines.slice(0, 5).forEach((line) => {
+    synLines.forEach((line) => {
       doc.text(line, textX, textY);
       textY += 4;
     });
@@ -245,29 +247,56 @@ export async function renderDiagnosticPackAnnexToPDF(
     doc.setTextColor(180, 83, 9);
     doc.text("MINI-FICHA", textX, textY);
     textY += 2;
-    const rows = pack.factSheet.rows.slice(0, 5);
-    const sheetH = 6 + rows.length * 4.4 + 5;
+
+    const rows = pack.factSheet.rows.slice(0, 6);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.5);
+    const titleLines = doc.splitTextToSize(
+      sanitizePdfText(pack.factSheet.title),
+      textColW - 7
+    ) as string[];
+
+    type SheetRow = { label: string; valueLines: string[] };
+    const sheetRows: SheetRow[] = rows.map((r) => {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+      return {
+        label: sanitizePdfText(r.label),
+        valueLines: doc.splitTextToSize(sanitizePdfText(r.value), valueW) as string[],
+      };
+    });
+
+    const sheetH =
+      5 +
+      titleLines.length * 4 +
+      sheetRows.reduce((a, r) => a + Math.max(1, r.valueLines.length) * 4.1, 0) +
+      4;
     doc.setFillColor(255, 251, 235);
     doc.setDrawColor(253, 186, 116);
     doc.setLineWidth(0.3);
     doc.roundedRect(textX, textY, textColW, sheetH, 1.5, 1.5, "FD");
+
     let sy = textY + 5;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(8.5);
     doc.setTextColor(28, 25, 23);
-    doc.text(sanitizePdfText(pack.factSheet.title).slice(0, 42), textX + 3.5, sy);
-    sy += 5;
-    rows.forEach((r) => {
+    titleLines.forEach((line) => {
+      doc.text(line, textX + 3.5, sy);
+      sy += 4;
+    });
+    sy += 1;
+    sheetRows.forEach((r) => {
       doc.setFont("helvetica", "bold");
       doc.setFontSize(7.5);
       doc.setTextColor(120, 113, 108);
-      doc.text(sanitizePdfText(r.label) + ":", textX + 3.5, sy);
+      doc.text(`${r.label}:`, textX + 3.5, sy);
       doc.setFont("helvetica", "normal");
       doc.setTextColor(41, 37, 36);
-      const val = sanitizePdfText(r.value);
-      const lines = doc.splitTextToSize(val, textColW - 30) as string[];
-      doc.text(lines[0] || "", textX + 24, sy);
-      sy += 4.4;
+      r.valueLines.forEach((line, li) => {
+        doc.text(line, textX + labelW, sy);
+        if (li < r.valueLines.length - 1) sy += 4.1;
+      });
+      sy += 4.1;
     });
     textY += sheetH + 6;
   }
@@ -278,46 +307,92 @@ export async function renderDiagnosticPackAnnexToPDF(
   doc.text("FACTORES QUE DEFINEN EL DIAGNÓSTICO", textX, textY);
   textY += 6.5;
 
-  type FactorBlock = { labelLines: string[]; detailLines: string[]; accent: number[] };
-  const blocks: FactorBlock[] = factors.map((f, i) => {
-    const label = sanitizePdfText(`${i + 1}.  ${f.label}`);
-    const labelLines = doc.splitTextToSize(label, textColW - 5) as string[];
-    const detailLines = f.detail
-      ? (doc.splitTextToSize(sanitizePdfText(f.detail), textColW - 5) as string[]).slice(0, 2)
-      : [];
-    return {
-      labelLines,
-      detailLines,
-      accent: f.weight === "primary" ? [217, 119, 6] : [148, 163, 184],
-    };
-  });
+  type FactorBlock = {
+    labelLines: string[];
+    detailLines: string[];
+    accent: number[];
+    labelSize: number;
+    detailSize: number;
+  };
+
+  const buildBlocks = (labelSize: number, detailSize: number, maxDetailLines: number): FactorBlock[] =>
+    factors.map((f, i) => {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(labelSize);
+      const label = sanitizePdfText(`${i + 1}.  ${f.label}`);
+      const labelLines = doc.splitTextToSize(label, textColW - 5) as string[];
+      let detailLines: string[] = [];
+      if (f.detail) {
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(detailSize);
+        detailLines = doc.splitTextToSize(sanitizePdfText(f.detail), textColW - 5) as string[];
+        if (detailLines.length > maxDetailLines) {
+          detailLines = detailLines.slice(0, maxDetailLines);
+          const last = detailLines[detailLines.length - 1] || "";
+          if (!/[.…]$/.test(last)) {
+            detailLines[detailLines.length - 1] = `${last.replace(/\s+\S*$/, "").trim()}…`;
+          }
+        }
+      }
+      return {
+        labelLines,
+        detailLines,
+        accent: f.weight === "primary" ? [217, 119, 6] : [148, 163, 184],
+        labelSize,
+        detailSize,
+      };
+    });
 
   const contentH = (b: FactorBlock) =>
-    b.labelLines.length * 4.2 + b.detailLines.length * 3.6 + 1;
-  const factorsContentH = blocks.reduce((a, b) => a + contentH(b), 0);
-  // Leave room for closing note under factors when text column is taller than images
-  const factorsBudget = Math.max(0, usableBottom - textY - 18);
+    b.labelLines.length * (b.labelSize * 0.42 + 0.55) +
+    b.detailLines.length * (b.detailSize * 0.42 + 0.45) +
+    1;
+
+  // Prefer full detail text; only reduce font / detail-line cap if the column is too tall.
+  let labelSize = 9.2;
+  let detailSize = 7.8;
+  let maxDetailLines = 8;
+  let blocks = buildBlocks(labelSize, detailSize, maxDetailLines);
+  let factorsContentH = blocks.reduce((a, b) => a + contentH(b), 0);
+  const factorsBudget = Math.max(0, usableBottom - textY - 16);
+  if (factorsContentH > factorsBudget && factorsBudget > 0) {
+    for (const attempt of [
+      { labelSize: 8.6, detailSize: 7.4, maxDetailLines: 8 },
+      { labelSize: 8.2, detailSize: 7.1, maxDetailLines: 7 },
+      { labelSize: 8.0, detailSize: 6.9, maxDetailLines: 6 },
+    ] as const) {
+      blocks = buildBlocks(attempt.labelSize, attempt.detailSize, attempt.maxDetailLines);
+      factorsContentH = blocks.reduce((a, b) => a + contentH(b), 0);
+      labelSize = attempt.labelSize;
+      detailSize = attempt.detailSize;
+      maxDetailLines = attempt.maxDetailLines;
+      if (factorsContentH <= factorsBudget) break;
+    }
+  }
+
   const nGaps = Math.max(0, blocks.length - 1);
   let gap =
-    nGaps > 0 ? Math.max(5, (factorsBudget - factorsContentH) / nGaps) : 5;
-  gap = Math.min(gap, 12);
+    nGaps > 0 ? Math.max(3.5, (factorsBudget - factorsContentH) / nGaps) : 3.5;
+  gap = Math.min(gap, 10);
 
   blocks.forEach((b) => {
     const blockTop = textY;
+    const labelLH = b.labelSize * 0.42 + 0.55;
+    const detailLH = b.detailSize * 0.42 + 0.45;
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(9.2);
+    doc.setFontSize(b.labelSize);
     doc.setTextColor(15, 23, 42);
     b.labelLines.forEach((line) => {
       doc.text(line, textX + 4, textY);
-      textY += 4.2;
+      textY += labelLH;
     });
     if (b.detailLines.length) {
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(7.8);
+      doc.setFontSize(b.detailSize);
       doc.setTextColor(100, 116, 139);
       b.detailLines.forEach((line) => {
         doc.text(line, textX + 4, textY);
-        textY += 3.6;
+        textY += detailLH;
       });
     }
     const blockH = textY - blockTop + 1;
