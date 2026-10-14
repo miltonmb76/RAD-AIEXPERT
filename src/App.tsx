@@ -41,6 +41,7 @@ import {
   Wrist3DModule,
   Suite3DSuspense,
 } from "./appLazyModules";
+import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import "./lib/safeLocalStorage";
 import JSZip from "jszip";
 import type { ExtractedFile } from "./components/ZipDicomExtractor";
@@ -6228,7 +6229,7 @@ Ejemplo:
     };
 
     return (
-      <div className="min-h-screen bg-[#070A13] text-slate-100 font-sans flex flex-col antialiased">
+      <div data-rad-live="1" className="min-h-screen bg-[#070A13] text-slate-100 font-sans flex flex-col antialiased">
         {/* Patient Portal Header */}
         <header className="px-6 py-5 border-b border-slate-850 bg-slate-950/60 backdrop-blur-md flex items-center justify-between shadow-lg">
           <div className="flex items-center gap-3">
@@ -6457,7 +6458,7 @@ Ejemplo:
   }
 
   return (
-    <div className="min-h-screen bg-[#0F172A] text-slate-100 font-sans flex flex-col antialiased">
+    <div data-rad-live="1" className="min-h-screen bg-[#0F172A] text-slate-100 font-sans flex flex-col antialiased">
       <div className="no-print flex-1 flex flex-col">
       {/* 🚀 CLINICAL HEADER (Aesthetic Upgrade 1 - Premium Futuristic Glassmorphic Header with ECG heartwave visualizer) */}
       <header className="flex flex-col md:flex-row md:items-center justify-between px-8 py-5 border-b border-slate-800/80 bg-slate-950/40 backdrop-blur-md gap-4 shadow-2xl select-none relative overflow-hidden">
@@ -12127,6 +12128,7 @@ Ejemplo:
 
                           {isDiagnosticPackOpen && (
                             <div className="my-6">
+                              <AppErrorBoundary label="Pack diagnostico">
                               <React.Suspense fallback={<div className="p-4 text-xs font-mono text-amber-400 bg-slate-900/60 rounded-xl border border-amber-900/40 animate-pulse">Cargando pack diagnostico...</div>}>
                                 <DiagnosticPackModule
                                   diagnosisAnchor={diagnosisAnchor}
@@ -12160,6 +12162,7 @@ Ejemplo:
                                   setPacks={setDiagnosticPacks}
                                 />
                               </React.Suspense>
+                              </AppErrorBoundary>
                             </div>
                           )}
 
