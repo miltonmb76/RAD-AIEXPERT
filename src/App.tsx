@@ -65,6 +65,7 @@ import { ActivePatientPanel } from "./components/ActivePatientPanel";
 import { autoLabelAttachedImages, type AttachedImageForLabeling } from "./lib/labelingQueue";
 import { applyReorderedImageIds } from "./lib/figureCorrelation";
 import {
+  describeLateralityPlacementForUi,
   detectInfographicViewOrientation,
   type InfographicViewOrientation,
 } from "./lib/infographicLaterality";
@@ -4543,6 +4544,8 @@ Ejemplo:
         reportDate: reportDate || "",
         projections,
         viewOrientation: infographicViewOrientation,
+        studyLaterality: laterality || "",
+        diagnosisAnchor: String(diagnosisAnchor || "").trim(),
         mode: "general" as const,
         includeRecommendations: "none" as const,
         ...(notes ? { correctionNotes: notes } : {}),
@@ -4660,6 +4663,7 @@ Ejemplo:
         reportDate: reportDate || "",
         projections,
         viewOrientation: infographicViewOrientation,
+        studyLaterality: laterality || "",
         mode: "directed" as const,
         topic,
         orientationBrief: directedOrientation.trim(),
@@ -8569,10 +8573,15 @@ Ejemplo:
                                 PA Â· de espaldas
                               </button>
                             </div>
-                            <p className="text-[9px] text-slate-500 leading-relaxed">
-                              {infographicViewOrientation === "PA"
-                                ? "PA: derecha del paciente a la derecha del cuadro; izquierda a la izquierda."
-                                : "AP: derecha del paciente a la izquierda del cuadro; izquierda a la derecha."}
+                            <p className="text-[9px] text-pink-100/90 leading-relaxed bg-pink-950/30 border border-pink-800/30 rounded-lg px-2.5 py-1.5">
+                              {describeLateralityPlacementForUi(
+                                infographicViewOrientation,
+                                laterality,
+                                `${studyType || ""} ${generatedReport || ""}`
+                              )}
+                              {laterality
+                                ? ` · Estudio: ${laterality}`
+                                : " · Define Derecha/Izquierda en el estudio si aplica"}
                             </p>
                             <label className="block text-[9px] font-black uppercase tracking-widest text-pink-300/80 font-mono">
                               Notas de lateralidad / correcciones (opcional)
