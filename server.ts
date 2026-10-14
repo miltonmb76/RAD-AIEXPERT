@@ -33,6 +33,13 @@ import {
   INFOGRAPHIC_PRIVACY_PROMPT_BLOCK,
   redactPatientIdentifiersForInfographic,
 } from "./src/lib/infographicPrivacy";
+import {
+  INFOGRAPHIC_TEXT_ACCURACY_PROMPT_BLOCK,
+  buildInfographicCopyPlanPrompt,
+  buildLockedCopyPromptBlock,
+  normalizeInfographicCopyPlan,
+  type InfographicCopyPlan,
+} from "./src/lib/infographicCopyPlan";
 import { buildUsAutoLabelAnatomyHints } from "./src/lib/usAutoLabelHints";
 import { normalizeSecondReaderData } from "./src/lib/secondReader";
 import {
@@ -1814,6 +1821,46 @@ RECOMENDACIONES / CONDUCTA:
 - NO incluyas recomendaciones, tratamientos, “qué hacer después”, derivaciones ni consejos clínicos.
 `;
 
+    // Step 1: text LLM plans exact Spanish strings (reduces image-model spelling gibberish).
+    let copyPlan: InfographicCopyPlan | null = null;
+    try {
+      const planModel = getModelName(undefined); // 3.8 Flash — cheap, strong Spanish
+      const planPrompt = buildInfographicCopyPlanPrompt({
+        audience: audienceMode,
+        studyType: String(studyType || ""),
+        report: reportForInfographic.slice(0, 14000),
+        isDirected,
+        topicText,
+        correctionNotes: String(correctionNotes || ""),
+        allowRecommendations: allowRecoThisAudience,
+      });
+      const planResp = await ai.models.generateContent({
+        model: planModel,
+        contents: { parts: [{ text: planPrompt }] },
+        config: {
+          temperature: 0.2,
+          responseMimeType: "application/json",
+        },
+      });
+      const planRaw = extractJsonObject(String(planResp.text || "")) || planResp.text;
+      const parsed =
+        typeof planRaw === "string"
+          ? JSON.parse(planRaw)
+          : planRaw;
+      copyPlan = normalizeInfographicCopyPlan(parsed);
+    } catch (planErr: any) {
+      console.warn(
+        "Infografía: guion de texto no disponible, se sigue con prompt reforzado:",
+        planErr?.message || planErr
+      );
+    }
+    const lockedCopyBlock = copyPlan
+      ? `
+
+${buildLockedCopyPromptBlock(copyPlan)}
+`
+      : "";
+
     // Freeform poster: quality bar + medical guardrails, but NO fixed layout template.
     // Gemini image invents the composition that best fits THIS report + audience (+ directed brief).
     const promptText =
@@ -1828,22 +1875,25 @@ ${reportForInfographic}
 ${scorecardBlock}
 ${directedBriefBlock}
 ${correctionBlock}
+${lockedCopyBlock}
 
 ORIENTACIÓN DE LA FIGURA CORPORAL (obligatoria): ${orientation === "PA" ? "PA — paciente DE ESPALDAS" : "AP — paciente DE FRENTE"}.
 Aplica SOLO la regla de lateralidad correspondiente a esa orientación.
 
 ${INFOGRAPHIC_PRIVACY_PROMPT_BLOCK}
 
+${INFOGRAPHIC_TEXT_ACCURACY_PROMPT_BLOCK}
+
 ESTILO (médico / científico):
 - Look de atlas o ficha clínica premium: tipografía sobria (sans geométrica o serif editorial), paleta fría o neutra (slate/azul médico), sin tono infantil ni “app de wellness”.
-- Título formal${isDirected ? ` centrado en «${topicText}»` : " (p. ej. correlación anatomopatológica / mapa de hallazgos)"}.
-- Léxico médico preciso (colelitiasis, BI-RADS, TI-RADS, etc. cuando consten en el reporte).
+- Título formal${isDirected ? ` centrado en «${topicText}»` : " (p. ej. correlación anatomopatológica / mapa de hallazgos)"}${copyPlan ? ` — usa el TÍTULO del guion bloqueado` : ""}.
+- Léxico médico preciso (colelitiasis, BI-RADS, TI-RADS, etc. cuando consten en el reporte o en el guion).
 - Callouts limpios, reglas finas, jerarquía clara; aire generoso; sin clutter.
 - Misma anatomía / mismos hallazgos que se explicarían al paciente, pero con voz profesional.
-- Pie breve: “Anexo visual · no sustituye el informe completo”. Sin logo inventado.
+- Pie breve${copyPlan?.footer ? ` (usa el PIE del guion)` : ": “Anexo visual · no sustituye el informe completo”"}. Sin logo inventado.
 
 CONTENIDO — QUÉ SÍ / QUÉ NO:
-- SÍ: ${isDirected ? "el hallazgo/tema indicado, sus rasgos, lateralidad y medidas si constan" : "hallazgos principales del reporte, lateralidad, medidas si constan"}.
+- SÍ: ${isDirected ? "el hallazgo/tema indicado, sus rasgos, lateralidad y medidas si constan" : "hallazgos principales del reporte, lateralidad, medidas si constan"}${copyPlan ? " — prioriza el guion bloqueado" : ""}.
 ${recoBlock}
 - NO inventes mediciones ni hallazgos ausentes del reporte.
 - NO: nombre del paciente ni ningún identificador personal (ni reales ni de ejemplo).
@@ -1863,11 +1913,14 @@ ${reportForInfographic}
 ${scorecardBlock}
 ${directedBriefBlock}
 ${correctionBlock}
+${lockedCopyBlock}
 
 ORIENTACIÓN DE LA FIGURA CORPORAL (obligatoria): ${orientation === "PA" ? "PA — paciente DE ESPALDAS" : "AP — paciente DE FRENTE"}.
 Aplica SOLO la regla de lateralidad correspondiente a esa orientación.
 
 ${INFOGRAPHIC_PRIVACY_PROMPT_BLOCK}
+
+${INFOGRAPHIC_TEXT_ACCURACY_PROMPT_BLOCK}
 
 LIBERTAD DE DISEÑO (importante):
 - Tú eliges el layout, la jerarquía visual y cómo acomodar los hallazgos.
@@ -1875,11 +1928,11 @@ LIBERTAD DE DISEÑO (importante):
 - Diseña la composición que MEJOR se ajuste a ${isDirected ? "ESTE tema dirigido" : "ESTE reporte concreto"} (puede ser 1 hallazgo dominante, métricas, callout central, etc., solo si aportan).
 - Prioriza limpieza, modernismo, aire/espaciado generoso, tipografía clara y un look de ficha educativa premium (estilo app de salud contemporánea).
 - Español para paciente: cercano, preciso y sin tecnicismos innecesarios. Si hay números del reporte (%, kPa, mm, cm), muéstralos con claridad cuando ayuden a entender.
-- Título amable orientado al paciente${isDirected ? ` sobre «${topicText}»` : ""}.
-- Incluye un pie breve de disclaimer informativo (no sustituye la valoración médica). Sin logo de clínica inventado ni marca comercial inventada.
+- Título amable orientado al paciente${isDirected ? ` sobre «${topicText}»` : ""}${copyPlan ? " — usa el TÍTULO del guion bloqueado" : ""}.
+- Incluye un pie breve de disclaimer informativo${copyPlan?.footer ? " (usa el PIE del guion)" : " (no sustituye la valoración médica)"}. Sin logo de clínica inventado ni marca comercial inventada.
 
 CONTENIDO — QUÉ SÍ / QUÉ NO:
-- SÍ: explicar de forma visual ${isDirected ? "el hallazgo/tema indicado" : "los hallazgos principales del reporte"}.
+- SÍ: explicar de forma visual ${isDirected ? "el hallazgo/tema indicado" : "los hallazgos principales del reporte"}${copyPlan ? " — prioriza el guion bloqueado" : ""}.
 ${recoBlock}
 - NO inventes mediciones, gradaciones ni hallazgos que no estén en el reporte.
 - NO: nombre del paciente ni ningún identificador personal (ni reales ni de ejemplo / placeholder).
@@ -1944,6 +1997,7 @@ Entrega una sola imagen vertical, lista para compartir con el paciente.
       viewOrientation: orientation,
       audience: audienceMode,
       mode: isDirected ? "directed" : "general",
+      copyPlanUsed: Boolean(copyPlan),
     });
   } catch (error: any) {
     console.error("Error en /api/generate-infographic:", error);

@@ -8689,9 +8689,27 @@ Ejemplo:
                              })()}
 
                              <div className="mt-3 space-y-2">
+                               <div className="flex flex-wrap items-center justify-between gap-2">
                                <label className="block text-[9px] font-black uppercase tracking-widest text-pink-300/90 font-mono">
                                  Correcciones (opcional) · regenerar paciente, medico o ambas
                                </label>
+                               <button
+                                 type="button"
+                                 onClick={() => {
+                                   const tip =
+                                     "Corrige TODA la ortografia del texto en espanol: tildes, terminos medicos identicos al informe; evita palabras a medias o ilegibles; usa pocas etiquetas cortas.";
+                                   setInfographicCorrectionNotes((prev) => {
+                                     const cur = String(prev || "").trim();
+                                     if (/ortograf/i.test(cur)) return cur;
+                                     return cur ? `${cur}\n${tip}` : tip;
+                                   });
+                                 }}
+                                 className="px-2 py-1 rounded-lg border border-pink-700/40 text-[9px] font-black uppercase tracking-wider text-pink-200/90 hover:bg-pink-950/40 cursor-pointer"
+                                 title="Anade una nota para regenerar priorizando ortografia (luego Solo paciente / Solo medico / Ambas)"
+                               >
+                                 + Nota ortografia
+                               </button>
+                               </div>
                                <textarea
                                  value={infographicCorrectionNotes}
                                  onChange={(e) => setInfographicCorrectionNotes(e.target.value)}
@@ -8906,9 +8924,27 @@ Ejemplo:
                               );
                             })()}
                             <div className="mt-3 space-y-2">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
                               <label className="block text-[9px] font-black uppercase tracking-widest text-fuchsia-300/90 font-mono">
                                 Correcciones (opcional) · regenerar paciente, medico o ambas
                               </label>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const tip =
+                                    "Corrige TODA la ortografia del texto en espanol: tildes, terminos medicos identicos al informe; evita palabras a medias o ilegibles; usa pocas etiquetas cortas.";
+                                  setDirectedCorrectionNotes((prev) => {
+                                    const cur = String(prev || "").trim();
+                                    if (/ortograf/i.test(cur)) return cur;
+                                    return cur ? `${cur}\n${tip}` : tip;
+                                  });
+                                }}
+                                className="px-2 py-1 rounded-lg border border-fuchsia-700/40 text-[9px] font-black uppercase tracking-wider text-fuchsia-200/90 hover:bg-fuchsia-950/40 cursor-pointer"
+                                title="Anade una nota para regenerar la dirigida priorizando ortografia"
+                              >
+                                + Nota ortografia
+                              </button>
+                              </div>
                               <textarea
                                 value={directedCorrectionNotes}
                                 onChange={(e) => setDirectedCorrectionNotes(e.target.value)}
