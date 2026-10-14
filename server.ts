@@ -109,6 +109,9 @@ function cleanBase64(base64: string): string {
 }
 
 function getModelName(requestedModel?: string): string {
+  if (requestedModel === "gemini-4-argon" || requestedModel === "gemini-4-argon-latest") {
+    return "gemini-4-argon";
+  }
   if (requestedModel === "gemini-3.1-pro-preview" || requestedModel === "gemini-3.1-pro") {
     return "gemini-3.1-pro-preview";
   }
