@@ -1072,11 +1072,12 @@ export function buildContentModePromptInstructions(
     case "justify_diagnosis":
     default:
       return `CONTENIDO: JUSTIFICACIÓN DIAGNÓSTICA.
-- diagnosis DEBE ser exactamente el ancla que se está defendiendo: "${dx}" (redacción limpia, sin signos de interrogación).
-- Extrae 4-6 hallazgos/factores EXPLÍCITOS del informe que SUSTENTAN ese diagnóstico (no otro). Ideal 6 si hay aspectos DISTINTOS; si solo hay 4-5 únicos, devuelve esos — NO rellenes inventando ni parafraseando el mismo aspecto.
-- Cada node = un factor de soporte DISTINTO (semiología, medida, signo, localización) con polarity="present".
+- diagnosis (centro del gráfico) DEBE ser el ancla «${dx}» (redacción limpia, sin signos de interrogación).
+- OBLIGATORIO: genera 4-6 nodes de SOPORTE (ideal 6 si hay aspectos distintos). El ancla es el TÍTULO/centro — NO es un node y NO cuenta como único factor.
+- Cada node = un factor de soporte DISTINTO del informe que SUSTENTA «${dx}»: semiología, medida cuantitativa, signo, localización, morfología, Doppler, etc. polarity="present".
+- PROHIBIDO devolver 1 solo node. PROHIBIDO que un node sea solo la repetición del ancla («${dx}») sin semiológica adicional.
 - PROHIBIDO repetir el mismo aspecto con palabras distintas (ej. "pared engrosada" y "engrosamiento parietal" = 1 solo node).
-- Si el informe menciona diagnósticos diferenciales o hallazgos ajenos a "${dx}", NO los uses como nodos de soporte salvo que refuercen "${dx}".
-- Prioriza lo más específico del informe para justificar "${dx}" (ej. si ancla = adenitis mesentérica → ganglios mesentéricos, tamaño, distribución, grasa, exclusión de apendicitis solo si consta y refuerza el ancla).`;
+- Hallazgos ajenos a «${dx}» (otro órgano/otro diagnóstico) no van como nodos, SALVO que refuercen explícitamente «${dx}».
+- Interpreta el ancla en sentido clínico amplio: incluye TODOS los signos del informe que la sostienen aunque no repitan literalmente las mismas palabras del ancla (ej. ancla «distensión del LPAA» → fibras, morfología, comparación contralateral, dolor a la presión, etc. si constan).`;
   }
 }

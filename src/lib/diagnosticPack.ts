@@ -502,22 +502,33 @@ export function buildDiagnosticPack(opts: {
   const factors: DiagnosticPackFactor[] = [];
   const seen = new Set<string>();
 
-  // 1) Justification nodes — when present, these ARE the factor source of truth
+  // 1) Justification nodes — preferred source when present (skip nodes that only restate the ancla)
+  const dxKey = normKey(diagnosis);
   justNodes.forEach((n, i) => {
+    const label = String(n.label || "").trim();
+    if (!label) return;
+    // Don't let a lone "ancla restated as factor" crowd out real support signs
+    if (dxKey && normKey(label) === dxKey) return;
     pushFactor(factors, seen, {
       id: n.id || `pack-f-${i + 1}`,
-      label: String(n.label || "").trim(),
+      label,
       detail: n.detail?.trim() || undefined,
       weight: n.weight || (i < 2 ? "primary" : "secondary"),
     });
   });
 
-  // 2) Scorecard only if relevant to ancla (always filtered; never dumps unrelated organs)
-  const maybeScorecard = (label: string, detail: string | undefined, id: string, primary: boolean) => {
+  // 2) Scorecard met/equivocal always eligible as reinforcing factors.
+  // Token filter only when we already have a rich justification (≥4) — then avoid unrelated organs.
+  // If justification is thin (0–3), accept all met/equivocal so the graph isn't stuck at 1 factor.
+  const strictAnchorFilter = hasJustification && factors.length >= 4 && tokens.length > 0;
+  const maybeScorecard = (
+    label: string,
+    detail: string | undefined,
+    id: string,
+    primary: boolean
+  ) => {
     const blob = `${label} ${detail || ""}`;
-    if (hasJustification || tokens.length) {
-      if (!textMatchesAnchor(blob, tokens)) return;
-    }
+    if (strictAnchorFilter && !textMatchesAnchor(blob, tokens)) return;
     pushFactor(factors, seen, {
       id,
       label,

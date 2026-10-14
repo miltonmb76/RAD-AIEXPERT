@@ -20,9 +20,11 @@ function clip(text: string | undefined, max = 160): string | undefined {
 
 /**
  * Scorecard → infografía de criterios (met / equivocal → nodos).
+ * Optional sessionAncla sets the center diagnosis without dropping criteria nodes.
  */
 export function infographicFromScorecard(
-  scorecard: ClinicalScorecardData
+  scorecard: ClinicalScorecardData,
+  sessionAncla?: string | null
 ): FindingsInfographicData {
   const criteria = Array.isArray(scorecard.criteria) ? scorecard.criteria : [];
   let source = criteria.filter(
@@ -64,12 +66,14 @@ export function infographicFromScorecard(
   }
 
   const diagnosis =
+    String(sessionAncla || "").trim() ||
     String(
       scorecard.finalDiagnosis ||
         scorecard.categoryAssigned ||
         scorecard.protocolName ||
         ""
-    ).trim() || "Clasificación del protocolo";
+    ).trim() ||
+    "Clasificación del protocolo";
 
   const layout: FindingsInfographicLayout =
     nodes.length >= 5 ? "funnel" : "pillars";

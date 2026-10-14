@@ -10445,10 +10445,12 @@ ESTUDIO: ${studyType || "No especificado"}
 PRESET: ${preset}
 ${
   dx
-    ? `ANCLA OBLIGATORIA (centro del gráfico): "${dx}".
-El campo diagnosis DEBE ser esta ancla (o equivalencia limpia idéntica en sentido).
-Los nodes DEBEN ser factores del INFORME que JUSTIFICAN esta ancla — no otro diagnóstico.`
-    : "Deriva el diagnóstico o tema principal del informe y úsalo como ancla."
+    ? `ANCLA OBLIGATORIA (centro del gráfico / campo diagnosis): "${dx}".
+El ancla es el TÍTULO a defender — NO un node.
+Los nodes (OBLIGATORIO 4-6) son factores DISTINTOS del INFORME que JUSTIFICAN esta ancla (semiología, medidas, signos, localización).
+PROHIBIDO devolver un solo node o un node que solo repita el texto del ancla.
+Interpreta el ancla en sentido clínico amplio: incluye signos que la sostienen aunque no repitan sus palabras literales.`
+    : "Deriva el diagnóstico o tema principal del informe y úsalo como ancla. Genera 4-6 nodes de soporte."
 }
 ${
   scCat
@@ -10564,15 +10566,31 @@ ${reportForFindings}
       );
     }
 
-    if (!parsed || !(parsed.nodes || parsed.findings || parsed.hallazgos)?.length) {
+    const countInfographicNodes = (obj: any): number => {
+      const arr = obj?.nodes || obj?.findings || obj?.hallazgos;
+      return Array.isArray(arr) ? arr.filter((n: any) => String(n?.label || n?.finding || n?.hallazgo || "").trim()).length : 0;
+    };
+    // With a manual ancla the model sometimes returns 1 node (restating the dx). Retry if < 4.
+    const minNodes =
+      modeId === "justify_diagnosis" || modeId === "classification_criteria" || modeId === "present_findings"
+        ? 4
+        : 1;
+    if (!parsed || countInfographicNodes(parsed) < minNodes) {
       try {
         const response2 = await ai.models.generateContent({
           model: modelToUse,
-          contents: prompt + `\n\nResponde ÚNICAMENTE JSON válido. nodes DEBE tener >=4 hallazgos.`,
-          config: { temperature: 0.3, responseMimeType: "application/json" },
+          contents:
+            prompt +
+            `\n\nResponde ÚNICAMENTE JSON válido. nodes DEBE tener >=${minNodes} hallazgos DISTINTOS de soporte (el ancla/diagnosis NO cuenta como node). No parafrasees el mismo hallazgo.`,
+          config: { temperature: 0.35, responseMimeType: "application/json" },
         });
         rawText = readModelText(response2) || rawText;
-        parsed = extractJsonObject(rawText) || parsed;
+        const retryParsed = extractJsonObject(rawText);
+        if (retryParsed && countInfographicNodes(retryParsed) >= countInfographicNodes(parsed)) {
+          parsed = retryParsed;
+        } else if (!parsed) {
+          parsed = retryParsed;
+        }
       } catch (e: any) {
         console.warn("generate-findings-infographic: mime retry failed:", e?.message || e);
       }
