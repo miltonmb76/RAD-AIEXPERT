@@ -90,10 +90,54 @@
           if (spin) spin.style.display = "none";
           if (btn) btn.style.display = "inline-block";
         }
+        function injectRecovery(msg) {
+          if (window.__RAD_APP_MOUNTED__) return;
+          var root = document.getElementById("root");
+          if (!root) return;
+          // Avoid clobbering a live React tree.
+          if (root.querySelector("[data-rad-live]") || root.querySelector("nav") || root.querySelector("main")) {
+            return;
+          }
+          if (document.getElementById("rad-dead-ui-recovery")) return;
+          var wrap = document.createElement("div");
+          wrap.id = "rad-dead-ui-recovery";
+          wrap.setAttribute("role", "alert");
+          wrap.style.cssText = "min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px;background:#0f172a;color:#e2e8f0;font-family:ui-sans-serif,system-ui,sans-serif;text-align:center;box-sizing:border-box;";
+          wrap.innerHTML =
+            '<div style="font-size:15px;font-weight:700;color:#fecaca;letter-spacing:0.04em;text-transform:uppercase;">Pantalla bloqueada</div>' +
+            '<div style="font-size:13px;color:#94a3b8;max-width:28rem;line-height:1.45;">' +
+            (msg || "La interfaz dejó de responder. Puedes recuperar sin reiniciar el servidor.") +
+            "</div>" +
+            '<button type="button" onclick="window.location.reload()" style="margin-top:8px;padding:10px 16px;border-radius:10px;border:1px solid #6366f1;background:#312e81;color:#e0e7ff;font-size:13px;font-weight:600;cursor:pointer;">Recargar página</button>';
+          root.innerHTML = "";
+          root.appendChild(wrap);
+        }
         // If React never mounts (stale asset / cold start), offer an explicit retry.
         setTimeout(function () {
-          showRetry("La carga está tardando más de lo habitual (posible reinicio del servidor). Pulsa Reintentar.");
+          if (!window.__RAD_APP_MOUNTED__) {
+            showRetry("La carga está tardando más de lo habitual (posible reinicio del servidor). Pulsa Reintentar.");
+          }
         }, 12000);
+        // Mid-session dead UI: empty blue shell after a crash that tore down React.
+        var deadStrikes = 0;
+        setInterval(function () {
+          if (!window.__RAD_APP_MOUNTED__) return;
+          var root = document.getElementById("root");
+          if (!root) return;
+          var hasUi =
+            root.querySelector("[data-rad-live]") ||
+            root.querySelector("[role='alert']") ||
+            root.querySelector("nav") ||
+            root.querySelector("main");
+          if (hasUi) {
+            deadStrikes = 0;
+            return;
+          }
+          deadStrikes += 1;
+          if (deadStrikes >= 2) {
+            injectRecovery("Se detectó pantalla vacía (azul). Pulsa Recargar para volver.");
+          }
+        }, 3500);
         window.addEventListener("error", function (ev) {
           var msg = String((ev && ev.message) || "");
           if (/Loading chunk|Failed to fetch|Importing a module script failed|error loading dynamically imported module/i.test(msg)) {

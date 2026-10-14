@@ -1,4 +1,5 @@
 import React from "react";
+import { AppErrorBoundary } from "./components/AppErrorBoundary";
 
 const BibliographySearch = React.lazy(() => import("./components/BibliographySearch"));
 const ImageSearch = React.lazy(() => import("./components/ImageSearch"));
@@ -50,15 +51,17 @@ export function Suite3DSuspense({
   label?: string;
 }) {
   return (
-    <React.Suspense
-      fallback={
-        <div className="p-4 text-xs font-mono text-cyan-400 bg-slate-900/60 rounded-xl border border-cyan-900/40 animate-pulse">
-          {`Cargando ${label}...`}
-        </div>
-      }
-    >
-      {children}
-    </React.Suspense>
+    <AppErrorBoundary label={label}>
+      <React.Suspense
+        fallback={
+          <div className="p-4 text-xs font-mono text-cyan-400 bg-slate-900/60 rounded-xl border border-cyan-900/40 animate-pulse">
+            {`Cargando ${label}...`}
+          </div>
+        }
+      >
+        {children}
+      </React.Suspense>
+    </AppErrorBoundary>
   );
 }
 

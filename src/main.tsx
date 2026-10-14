@@ -1,6 +1,7 @@
 import { StrictMode, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import "./index.css";
 
 const BootFallback = () => (
@@ -27,14 +28,26 @@ if (!rootEl) {
   throw new Error("No se encontró #root");
 }
 
+function markMounted() {
+  try {
+    (window as any).__RAD_APP_MOUNTED__ = true;
+    sessionStorage.removeItem("rad_ui_crash_reload");
+  } catch {
+    /* ignore */
+  }
+}
+
 try {
   createRoot(rootEl).render(
     <StrictMode>
-      <Suspense fallback={<BootFallback />}>
-        <App />
-      </Suspense>
+      <AppErrorBoundary>
+        <Suspense fallback={<BootFallback />}>
+          <App />
+        </Suspense>
+      </AppErrorBoundary>
     </StrictMode>
   );
+  markMounted();
 } catch (err) {
   console.error("Fallo al montar la app:", err);
   rootEl.innerHTML = `

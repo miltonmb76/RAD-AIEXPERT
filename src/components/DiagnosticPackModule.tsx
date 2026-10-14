@@ -79,9 +79,10 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
   reportText = "",
   studyType = "",
   selectedModel = "",
-  packs,
+  packs: packsProp,
   setPacks,
 }) => {
+  const packs = Array.isArray(packsProp) ? packsProp : [];
   const scorecardDx = resolveScorecardFinalDiagnosis(scorecardData);
   const defaultDx =
     String(diagnosisAnchor || "").trim() ||
