@@ -4357,7 +4357,7 @@ Ejemplo:
     if (!schematicSummary) return "";
     if (schematicFormat === "blocks") {
       let text = "### ESQUEMA CLÍNICO DE HALLAZGOS PRINCIPALES\n\n";
-      schematicSummary.findings.forEach((f: any, idx: number) => {
+      (Array.isArray(schematicSummary.findings) ? schematicSummary.findings : []).forEach((f: any, idx: number) => {
         const id = f.findingId || `H${idx + 1}`;
         text += `**[${id}] ${String(f?.anatomicalSite || "").toUpperCase()}**\n`;
         text += `- **Hallazgo:** ${f.description}\n\n`;
@@ -4446,7 +4446,7 @@ Ejemplo:
       return;
     }
     
-    const findingsHtml = patientSummary.keyFindings.map((finding: any) => `
+    const findingsHtml = (Array.isArray(patientSummary.keyFindings) ? patientSummary.keyFindings : []).map((finding: any) => `
       <div style="margin-bottom: 22px; padding: 18px; border: 1px solid #e5e7eb; border-radius: 8px; page-break-inside: avoid; background-color: #fafafa;">
         <h3 style="margin: 0 0 6px 0; color: #1e3a8a; font-family: system-ui, sans-serif; font-size: 16px; font-weight: 700;">${finding.title}</h3>
         <p style="margin: 0 0 12px 0; font-size: 11px; font-style: italic; color: #4b5563; font-family: monospace;">Término original en informe técnico: "${finding.originalTerm}"</p>
