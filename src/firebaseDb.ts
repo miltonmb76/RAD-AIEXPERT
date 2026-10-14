@@ -440,12 +440,9 @@ export const saveWorklistToCloud = async (
 ): Promise<void> => {
   if (!userId) return;
 
-  // Always save to LocalStorage fallback first
+  // Always save to LocalStorage fallback first (active only — dated dumps resurrect stale agendas)
   try {
     localStorage.setItem(`fallback_worklist_${userId}_active`, JSON.stringify(worklist));
-    if (worklist.date) {
-      localStorage.setItem(`fallback_worklist_${userId}_${worklist.date}`, JSON.stringify(worklist));
-    }
   } catch (localErr) {
     console.warn("Could not save worklist to local fallback storage:", localErr);
   }
@@ -472,13 +469,17 @@ export const saveWorklistToCloud = async (
 
 /**
  * Loads a worklist for the given document id (e.g. userId_active).
+ * By default does NOT mirror into localStorage — callers merge by updatedAt first.
+ * Pass skipLocalMirror:false only when intentionally adopting cloud as local truth.
  */
 export const getWorklistFromCloud = async (
   userId: string,
-  worklistId: string
+  worklistId: string,
+  opts?: { skipLocalMirror?: boolean }
 ): Promise<Worklist | null> => {
   if (!userId) return null;
   const path = `worklists/${worklistId}`;
+  const skipLocalMirror = opts?.skipLocalMirror !== false;
   try {
     const docRef = doc(db, "worklists", worklistId);
     const docSnap = await promiseWithTimeout(
@@ -497,9 +498,11 @@ export const getWorklistFromCloud = async (
         updatedAt: data.updatedAt,
       };
 
-      try {
-        localStorage.setItem(`fallback_worklist_${userId}_active`, JSON.stringify(wlObj));
-      } catch (err) {}
+      if (!skipLocalMirror) {
+        try {
+          localStorage.setItem(`fallback_worklist_${userId}_active`, JSON.stringify(wlObj));
+        } catch (err) {}
+      }
 
       return wlObj;
     }
