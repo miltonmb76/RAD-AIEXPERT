@@ -515,7 +515,88 @@ function buildFactSheet(opts: {
     uniq.find((r) => r.label === "Estructura" || r.label === "Sitio")?.value ||
     "Ficha del hallazgo";
 
-  return { title: String(title).slice(0, 60), rows: uniq };
+  // Keep full values — PDF wraps them; do not mid-cut category/measure strings.
+  return {
+    title: stripHangingTail(String(title).slice(0, 80)) || "Ficha del hallazgo",
+    rows: uniq.map((r) => ({
+      label: r.label,
+      value: stripHangingTail(r.value) || r.value,
+    })),
+  };
+}
+
+/** Trailing glue words that mean a label/detail was cut mid-phrase. */
+const HANGING_TAIL =
+  /(?:\s+(?:y|e|o|u|de|del|la|el|los|las|un|una|unos|unas|en|con|por|para|al|a|se|su|sus|que|como|durante|entre|sobre|bajo|sin|tras|hacia|hace|hacen|evidencia|evidente|observa|observan|muestra|muestran|permite|permiten|asocia|asocian))\s*$/i;
+
+function stripHangingTail(text: string): string {
+  let t = String(text || "").trim();
+  while (HANGING_TAIL.test(t)) {
+    t = t.replace(HANGING_TAIL, "").trim();
+  }
+  return t.replace(/[,:;–—.-]+$/g, "").trim();
+}
+
+/** Build a short label + full detail without mid-sentence chopping. */
+export function shortFactorLabel(chunk: string): { label: string; detail?: string } {
+  const text = String(chunk || "").replace(/\s+/g, " ").trim();
+  if (!text) return { label: "" };
+  const colon = text.match(/^(.{8,80}?):\s+(.+)$/);
+  if (colon) {
+    return { label: stripHangingTail(colon[1]), detail: text };
+  }
+  const dash = text.split(/\s+[—–]\s+/);
+  if (dash.length >= 2 && dash[0].length >= 8 && dash[0].length <= 80) {
+    return { label: stripHangingTail(dash[0]), detail: text };
+  }
+  if (text.length <= 80 && !HANGING_TAIL.test(text)) {
+    return { label: text };
+  }
+  const clause = text.split(/[;.]/)[0]?.trim() || text;
+  if (clause.length >= 12 && clause.length <= 80 && clause.length < text.length) {
+    return { label: stripHangingTail(clause), detail: text };
+  }
+  const words = text.split(/\s+/);
+  let n = Math.min(12, words.length);
+  let label = words.slice(0, n).join(" ");
+  while (n > 4 && (HANGING_TAIL.test(label) || label.length > 80)) {
+    n -= 1;
+    label = words.slice(0, n).join(" ");
+  }
+  label = stripHangingTail(label);
+  return { label: label || text.slice(0, 80), detail: text };
+}
+
+/** Clean factors whose label/detail were truncated mid-phrase. */
+export function polishDiagnosticPackFactors(
+  factors: DiagnosticPackFactor[]
+): DiagnosticPackFactor[] {
+  return factors.map((f) => {
+    let label = String(f.label || "").trim();
+    let detail = String(f.detail || "").trim() || undefined;
+    if (!label) return f;
+
+    if (detail && (HANGING_TAIL.test(label) || label.length > 90)) {
+      const rebuilt = shortFactorLabel(detail.startsWith(label.slice(0, 24)) ? detail : `${label} ${detail}`);
+      label = rebuilt.label;
+      detail = rebuilt.detail || detail;
+    } else if (HANGING_TAIL.test(label)) {
+      label = stripHangingTail(label);
+    }
+
+    if (detail) {
+      detail = detail.replace(/\s+/g, " ").trim();
+      if (HANGING_TAIL.test(detail)) {
+        // Prefer dropping a hanging incomplete detail over showing "… y"
+        const cleaned = stripHangingTail(detail);
+        detail = cleaned.length >= 12 ? cleaned : undefined;
+      }
+      if (detail && factorsAreNearDuplicate(label, detail) && detail.length <= label.length + 12) {
+        detail = undefined;
+      }
+    }
+    return { ...f, label, detail };
+  });
 }
 
 /**
@@ -531,10 +612,11 @@ export function extractFactorsFromReportText(
   if (!report || max <= 0) return [];
   const tokens = anchorRelevanceTokens(diagnosis);
   const dxKey = normKey(diagnosis);
+  // Split on newlines / sentence ends — NOT on ":" (keeps "Estructura: valor" intact).
   const chunks = report
-    .split(/\n+|(?<=[.;:])\s+/)
+    .split(/\n+|(?<=[.;])\s+(?=[A-ZÁÉÍÓÚÑ]|durante|espacio|distensi|en\s+la|se\s+)/i)
     .map((s) => s.replace(/^[\s•\-*–—\d.)]+/, "").trim())
-    .filter((s) => s.length >= 12 && s.length <= 180);
+    .filter((s) => s.length >= 12 && s.length <= 420);
 
   const scored: Array<{ label: string; detail?: string; score: number }> = [];
   for (const chunk of chunks) {
@@ -554,17 +636,8 @@ export function extractFactorsFromReportText(
     }
     if (/\d+\s*(mm|cm|kpa|%|hz)/i.test(chunk)) score += 1;
     if (/^hallazgo|^impres|^conclusion|^conclusión/i.test(chunk)) score += 1;
-    // Prefer concise labels: first clause as label when long
-    let label = chunk;
-    let detail: string | undefined;
-    const dash = chunk.split(/\s+[—–-]\s+/);
-    if (dash.length >= 2 && dash[0].length <= 72) {
-      label = dash[0].trim();
-      detail = dash.slice(1).join(" — ").trim() || undefined;
-    } else if (chunk.length > 90) {
-      label = chunk.slice(0, 88).replace(/\s+\S*$/, "").trim();
-      detail = chunk;
-    }
+    const { label, detail } = shortFactorLabel(chunk);
+    if (!label || HANGING_TAIL.test(label)) continue;
     scored.push({ label, detail, score });
   }
   scored.sort((a, b) => b.score - a.score);
@@ -579,7 +652,7 @@ export function extractFactorsFromReportText(
     });
     if (out.length >= max) break;
   }
-  return out;
+  return polishDiagnosticPackFactors(out);
 }
 
 /**
@@ -752,7 +825,7 @@ export function buildDiagnosticPack(opts: {
     });
   }
 
-  const finalFactors = factors.slice(0, 6);
+  const finalFactors = polishDiagnosticPackFactors(factors.slice(0, 6));
 
   const candidates = listPackImageCandidates({
     focalLesion3dData: opts.focalLesion3dData,
