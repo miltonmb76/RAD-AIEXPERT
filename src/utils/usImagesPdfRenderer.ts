@@ -114,7 +114,9 @@ export function renderUsImagesToPdf(
   const gapX = cols > 1 ? 6 : 0;
   const gapY = 6;
 
-  const headerStartY = 18;
+  // Clear of global running header on pages 2+ (label ~10mm + gray rule 15.5mm).
+  // Baseline at 18mm was kissing that gray line (glyph ascent overlaps the rule).
+  const headerStartY = 22;
   const headerLineY = headerStartY + 4;
   const gridStartY = headerStartY + 9;
   const bottomMargin = 18;
