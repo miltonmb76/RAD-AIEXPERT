@@ -1466,20 +1466,26 @@ function stripDataUrl(imageUrl: string): { mime: string; data: string } | null {
 }
 
 
+/** Bridge: US photo guides plane/finding only — never US visual style. */
+const BRIDGE_US_REFERENCE_GUIDE =
+  "REFERENCE ULTRASOUND FRAME (spatial/clinical GUIDE only):\n" +
+  "- Match acquisition-plane axis, laterality, lesion location/depth and relative anatomy from this photo.\n" +
+  "- OUTPUT must remain premium photorealistic medical CGI / anatomic cutaway.\n" +
+  "STRICTLY FORBIDDEN in the output: ultrasound B-mode look, scan-line grain, sector/convex probe footprint as the image style, " +
+  "gain artifacts, copying or pasting the photo, desaturated US texture. Do NOT degrade CGI quality to resemble ultrasound.";
+
 export function registerAtlas3DRoutes(app: express.Express) {
   // Helper to generate a medical image using gemini-3.1-flash-image-preview or imagen-3.0
-  async function generateMedicalImage(ai: any, prompt: string): Promise<string> {
+  async function generateMedicalImage(
+    ai: any,
+    prompt: string,
+    opts?: { referenceImageUrl?: string | null }
+  ): Promise<string> {
     // Central choke-point: every suite / atlas / vascular / focal render gets clean-PNG rules.
     const reinforcedPrompt = reinforceCleanRenderPrompt(prompt);
-    try {
-      const response = await ai.models.generateContent({
-        model: "gemini-3.1-flash-image-preview",
-        contents: reinforcedPrompt,
-        config: {
-          imageConfig: { aspectRatio: "4:3", imageSize: "2K" }
-        }
-      });
+    const ref = opts?.referenceImageUrl ? stripDataUrl(opts.referenceImageUrl) : null;
 
+    const extractB64 = (response: any): string => {
       let base64Image = "";
       if (response.candidates?.[0]?.content?.parts) {
         for (const part of response.candidates[0].content.parts) {
@@ -1489,14 +1495,48 @@ export function registerAtlas3DRoutes(app: express.Express) {
           }
         }
       }
+      return base64Image;
+    };
 
+    const runFlashImage = async (contents: any) => {
+      const response = await ai.models.generateContent({
+        model: "gemini-3.1-flash-image-preview",
+        contents,
+        config: {
+          imageConfig: { aspectRatio: "4:3", imageSize: "2K" },
+        },
+      });
+      const base64Image = extractB64(response);
       if (!base64Image) {
         throw new Error("No inlineData image returned from gemini-3.1-flash-image-preview");
       }
       return `data:image/jpeg;base64,${base64Image}`;
+    };
+
+    // Prefer multimodal reference when available (Bridge US→3D fidelity).
+    if (ref) {
+      try {
+        return await runFlashImage({
+          parts: [
+            {
+              text: `${BRIDGE_US_REFERENCE_GUIDE}\n\n${reinforcedPrompt}`,
+            },
+            { inlineData: { mimeType: ref.mime, data: ref.data } },
+          ],
+        });
+      } catch (refErr: any) {
+        console.warn(
+          "generateMedicalImage: referencia US falló; reintento solo texto:",
+          refErr?.message || refErr
+        );
+      }
+    }
+
+    try {
+      return await runFlashImage(reinforcedPrompt);
     } catch (err: any) {
       console.warn("Error con gemini-3.1-flash-image-preview en generateMedicalImage, reintentando con fallback:", err?.message || err);
-      // Fallback
+      // Fallback (text-only — Imagen no acepta frame de referencia)
       const response = await ai.models.generateImages({
         model: "imagen-3.0-generate-002",
         prompt: reinforcedPrompt,
@@ -7673,6 +7713,7 @@ RESPONDE SOLO JSON:
         forcedPlane,
         bridgeOnlyFocal,
         lesionTarget,
+        realUsImageUrl,
       } = req.body;
       const lesionFocus = String(lesionTarget || "").trim();
       if (!reportText || !String(reportText).trim()) {
@@ -7683,6 +7724,7 @@ RESPONDE SOLO JSON:
       const model = getModelName(requestedModel || "gemini-3.8-flash");
       const reportSlice = String(reportText).slice(0, 3500);
       const onlyFocal = bridgeOnlyFocal === true || bridgeOnlyFocal === "true";
+      const usRef = stripDataUrl(String(realUsImageUrl || ""));
       const lockedPlane: UsPlaneKind =
         forcedPlane === "transverse" || forcedPlane === "oblique" || forcedPlane === "longitudinal"
           ? forcedPlane
@@ -7759,7 +7801,12 @@ Reglas:
 - El corte 3D debe coincidir en orientación con el plano ${usPlaneLabelEs(lockedPlane)} de la eco.
 - CENTRAR en la estructura lesionada${lesionFocus ? ` («${lesionFocus}»)` : ""} visible / referida en la eco e informe.
 - Lateralidad = lado del PACIENTE (AP).
-- No inventes patología ausente.`
+- No inventes patología ausente.
+${
+  usRef
+    ? "- Se adjunta la ECO REAL: úsala para alinear structuresCrossed, anatomicalFocus y pathologySite con lo VISIBLE en el frame (plano, lado, hallazgo). No copies el estilo US al 3D."
+    : ""
+}`
         : `Eres un radiólogo experto en ecografía y director de arte médico 3D.
 Diseña el "SIMULADOR DE PLANO ECOGRÁFICO": dos paneles que muestran el plano de adquisición del transductor anclado al informe.
 
@@ -7818,11 +7865,23 @@ Reglas:
 - Panel A: volumen 3D + plano translúcido del eco.
 - Panel B: vista “cara del corte” (como el plano del eco).
 - No inventes patología ausente del informe/directiva.
-- Si hay menisco: panel A y panel B DEBEN coincidir en interno/medial vs externo/lateral (peroné ancla el externo).`;
+- Si hay menisco: panel A y panel B DEBEN coincidir en interno/medial vs externo/lateral (peroné ancla el externo).
+${
+  usRef
+    ? "- Se adjunta la ECO REAL: alinea el plan (plano, lado, estructuras, hallazgo) con lo VISIBLE en el frame."
+    : ""
+}`;
+
+      const planContents = usRef
+        ? [
+            { text: planPrompt },
+            { inlineData: { mimeType: usRef.mime, data: usRef.data } },
+          ]
+        : [{ text: planPrompt }];
 
       const planResp = await ai.models.generateContent({
         model,
-        contents: [{ text: planPrompt }],
+        contents: planContents,
         config: { responseMimeType: "application/json" },
       });
 
@@ -7994,7 +8053,10 @@ Reglas:
                 ? `PANEL ROLE: anatomic CGI of the injured structure${lesionFocus ? ` («${lesionFocus}»)` : ""} as viewed along the SAME axis as the US photo (${usPlaneLabelEs(plane)}). ` +
                   `CENTER and fill the frame with that structure/pathology. ` +
                   `STRICTLY FORBIDDEN: green/cyan translucent cutting-plane slab, floating plane line, probe icon, whole-joint overview with a plane cutting through. ` +
-                  `If plane is longitudinal, do NOT draw a transverse slab.`
+                  `If plane is longitudinal, do NOT draw a transverse slab.` +
+                  (usRef
+                    ? ` A real US frame is attached as spatial reference — match plane/finding/laterality from it, but keep premium CGI (never US B-mode style).`
+                    : "")
                 : "PANEL ROLE: looking at the CUT FACE of the ultrasound acquisition plane (in-plane anatomic section), clean medical CGI. Same meniscus compartment as Panel A — never swap internal↔external.";
 
           let promptToUse = buildImagePromptFromContract({
@@ -8009,7 +8071,9 @@ Reglas:
           });
 
           try {
-            const imageUrl = await generateMedicalImage(ai, promptToUse);
+            const imageUrl = await generateMedicalImage(ai, promptToUse, {
+              referenceImageUrl: onlyFocal && usRef ? String(realUsImageUrl) : null,
+            });
             return {
               id: `us-plane-${idx}-${Date.now()}`,
               panelLetter: panel.panelLetter || String.fromCharCode(65 + idx),
@@ -8126,7 +8190,9 @@ JSON:
               bridgeFocalNoSlab: onlyFocal || p.panelRole === "in_plane_cut",
             })} ${correction} ${p.promptUsed}`;
             try {
-              const imageUrl = await generateMedicalImage(ai, retryPrompt);
+              const imageUrl = await generateMedicalImage(ai, retryPrompt, {
+                referenceImageUrl: onlyFocal && usRef ? String(realUsImageUrl) : null,
+              });
               builtPanels[idx] = {
                 ...p,
                 imageUrl,
@@ -8181,6 +8247,7 @@ JSON:
         userDirective,
         customDirectives,
         requestedModel,
+        realUsImageUrl,
       } = req.body;
       if (!panel) {
         return res.status(400).json({ success: false, error: "Se requiere el panel a regenerar." });
@@ -8189,6 +8256,7 @@ JSON:
       const ai = getGeminiClient();
       const model = getModelName(requestedModel || "gemini-3.8-flash");
       const reportSlice = String(reportText || "").slice(0, 3500);
+      const usRef = stripDataUrl(String(realUsImageUrl || ""));
       const plane: UsPlaneKind = detectUsAcquisitionPlane(
         userDirective,
         acquisitionPlane,
@@ -8247,7 +8315,10 @@ JSON:
       const bridgeFocal = role === "in_plane_cut";
       const roleHint = bridgeFocal
         ? `PANEL ROLE: anatomic CGI of the target structure along the SAME axis as the US (${usPlaneLabelEs(plane)}). ` +
-          `FORBIDDEN: cyan/green translucent cutting-plane slab, floating plane line, probe icon, whole-joint overview. NO text in image.`
+          `FORBIDDEN: cyan/green translucent cutting-plane slab, floating plane line, probe icon, whole-joint overview. NO text in image.` +
+          (usRef
+            ? ` A real US frame is attached as spatial reference — match plane/finding/laterality; keep premium CGI (never US B-mode style).`
+            : "")
         : "PANEL ROLE: 3D anatomy WITH translucent cyan US cutting plane + subtle probe footprint. NO text in image.";
 
       const finalPrompt = buildImagePromptFromContract({
@@ -8269,7 +8340,9 @@ JSON:
         panelRole: role,
       });
 
-      const imageUrl = await generateMedicalImage(ai, finalPrompt);
+      const imageUrl = await generateMedicalImage(ai, finalPrompt, {
+        referenceImageUrl: bridgeFocal && usRef ? String(realUsImageUrl) : null,
+      });
 
       res.json({
         success: true,
