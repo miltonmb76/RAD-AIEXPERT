@@ -37,6 +37,10 @@ grep -q 'runSafeAsync' src/App.tsx \
   || { echo "ERROR: falta runSafeAsync en exportaciones. Aborto."; exit 1; }
 grep -q 'withPdfGenerationLock' src/lib/nativePdfDownload.ts \
   || { echo "ERROR: falta candado de PDF. Aborto."; exit 1; }
+grep -q 'saveActiveSessionAnnexBundle' src/lib/activeSessionDraft.ts \
+  || { echo "ERROR: falta persistencia de anexos. Aborto."; exit 1; }
+grep -q 'activeSessionAnnexRef' src/App.tsx \
+  || { echo "ERROR: falta wiring de anexos en App. Aborto."; exit 1; }
 
 SECRETS="GEMINI_API_KEY=gemini-api-key:latest"
 if gcloud secrets describe openai-api-key >/dev/null 2>&1; then

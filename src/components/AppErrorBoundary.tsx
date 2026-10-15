@@ -127,7 +127,7 @@ export class AppErrorBoundary extends React.Component<Props, State> {
                 lineHeight: 1.45,
               }}
             >
-              Hay un borrador del informe en esta pestaña: al reintentar se restaurará el reporte y los datos del paciente.
+              Hay un borrador en esta pestaña: al reintentar se restaurarán el informe, los datos del paciente y los anexos generados (scorecard, suites, packs, infografías, etc.).
             </div>
           )}
           <div
