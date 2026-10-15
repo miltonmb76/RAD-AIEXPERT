@@ -7435,6 +7435,17 @@ ${JSON.stringify(panelsPlan.map((p: any, i: number) => ({
         qualityAudit.error = String(verifyErr?.message || verifyErr);
       }
 
+      const usablePanels = (panelsWithImages || []).filter(
+        (p: any) => p && typeof p.imageUrl === "string" && p.imageUrl.trim().length > 0
+      );
+      if (!usablePanels.length) {
+        return res.status(502).json({
+          success: false,
+          error:
+            "No se pudo generar ninguna imagen del corte focal (el modelo de imagen falló o devolvió vacío). Reintenta; si persiste, prueba con un solo panel o regenera más tarde.",
+        });
+      }
+
       const data = sanitizeFocalClinicalFields({
         lesionLabel: String(planJson.lesionLabel || focusText || "Lesión focal").trim(),
         lesionSite: String(planJson.lesionSite || "").trim(),
@@ -7450,7 +7461,8 @@ ${JSON.stringify(panelsPlan.map((p: any, i: number) => ({
         studyRegion: planJson.studyRegion || organOrStudy || "Estudio Actual",
         figureTitle: planJson.figureTitle || `FIGURA. DETALLE 3D DEL HALLAZGO: ${planJson.lesionLabel || "LESIÓN FOCAL"}`,
         detectedLaterality: planJson.detectedLaterality || laterality || "",
-        panels: panelsWithImages,
+        // Drop empty soft-fail panels so clients never treat blanks as success.
+        panels: usablePanels,
         qualityAudit
       });
 

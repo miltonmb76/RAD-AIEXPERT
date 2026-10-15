@@ -411,6 +411,43 @@ function defaultSlotIds(
   return { a, b };
 }
 
+/**
+ * Re-bind image A/B on an existing draft from current candidate slots
+ * without regenerating factors / diagnosis.
+ */
+export function applyPackImageSlots(
+  pack: DiagnosticPackData,
+  candidates: PackImageCandidate[],
+  slotAId: string | null | undefined,
+  slotBId: string | null | undefined,
+  preferredSuiteId?: string | null
+): DiagnosticPackData {
+  const defaults = defaultSlotIds(candidates, preferredSuiteId);
+  const imageA = resolveSlot(candidates, slotAId, defaults.a);
+  let imageB = resolveSlot(candidates, slotBId, defaults.b, {
+    allowEmpty: slotBId === "",
+  });
+  if (imageA && imageB && imageA.candidateId === imageB.candidateId) {
+    const other = candidates.find((c) => c.id !== imageA.candidateId);
+    imageB = other
+      ? {
+          candidateId: other.id,
+          url: other.url,
+          caption: other.caption,
+          sourceLabel: other.sourceLabel,
+        }
+      : null;
+  }
+  return {
+    ...pack,
+    imageA,
+    imageB,
+    imageDataUrl: imageA?.url || null,
+    imageCaption: imageA?.caption || null,
+    imageSourceLabel: imageA?.sourceLabel || null,
+  };
+}
+
 function resolveSlot(
   candidates: PackImageCandidate[],
   slotId: string | null | undefined,
