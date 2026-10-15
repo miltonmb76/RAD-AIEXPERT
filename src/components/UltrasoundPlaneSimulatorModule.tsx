@@ -11,7 +11,6 @@ import {
   Layers,
   Image as ImageIcon,
   Focus,
-  ArrowDown,
 } from "lucide-react";
 import {
   UsAcquisitionPlane,
@@ -830,13 +829,28 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
                       </div>
                     </figure>
 
-                    <div className="flex flex-col items-center py-2.5 gap-0.5">
-                      <div className="w-0.5 h-3 bg-amber-500 rounded-full" />
-                      <ArrowDown className="w-4 h-4 text-amber-600" strokeWidth={2.5} />
-                      <p className="text-[9px] font-black uppercase tracking-[0.14em] text-amber-700 text-center">
+                    <div className="flex flex-col items-center py-3 gap-1.5" aria-hidden>
+                      <div className="w-px h-3.5 bg-amber-700/70 rounded-full" />
+                      <svg
+                        width="18"
+                        height="12"
+                        viewBox="0 0 18 12"
+                        fill="none"
+                        className="text-amber-700"
+                      >
+                        <path
+                          d="M2 2.5 L9 9.5 L16 2.5"
+                          stroke="currentColor"
+                          strokeWidth="1.35"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                        <circle cx="9" cy="9.6" r="1.1" fill="currentColor" />
+                      </svg>
+                      <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-amber-800 text-center leading-none">
                         mismo hallazgo · mismo plano
                       </p>
-                      <div className="w-0.5 h-3 bg-amber-500 rounded-full" />
+                      <div className="w-px h-3.5 bg-amber-700/70 rounded-full" />
                     </div>
 
                     <figure className="m-0">

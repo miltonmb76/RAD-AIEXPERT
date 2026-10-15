@@ -209,7 +209,8 @@ export function renderUsPlaneSimulatorAnnexToPDF(
   const framePad = 1.2 * factor;
   const captionH = 5 * factor;
   const badgeH = 3.6 * factor;
-  const connectorH = imgSlots.length === 2 ? 9 * factor : 0;
+  // Room for stem + chevron + label (no overlap)
+  const connectorH = imgSlots.length === 2 ? 13.5 * factor : 0;
   const ratios = imgSlots.map((s) => imageRatio(doc, s.url));
   const maxInnerW = imgColW - framePad * 2;
   const naturalInnerHs = ratios.map((r) => maxInnerW / r);
@@ -277,31 +278,51 @@ export function renderUsPlaneSimulatorAnnexToPDF(
     doc.text(capLines[0] || "", imgX, imgY + 2 * factor);
     imgY += captionH;
 
-    // Connector between US and 3D
+    // Connector between US and 3D — elegant stem + open chevron, label below
     if (i === 0 && imgSlots.length === 2) {
       const midX = imgX + boxW / 2;
-      const lineTop = imgY + 0.8 * factor;
-      const lineBot = imgY + connectorH - 2.2 * factor;
-      doc.setDrawColor(217, 119, 6);
-      doc.setLineWidth(0.7);
-      doc.line(midX, lineTop, midX, lineBot);
-      // Arrow head
+      const stemTop = imgY + 1.2 * factor;
+      const stemBot = imgY + 4.2 * factor;
+      const chevronTipY = stemBot + 2.6 * factor;
+      const chevronHalfW = 2.2 * factor;
+      const chevronBaseY = stemBot + 0.35 * factor;
+      const labelY = chevronTipY + 3.6 * factor;
+      const stemOutTop = labelY + 1.6 * factor;
+      const stemOutBot = imgY + connectorH - 0.8 * factor;
+
+      doc.setDrawColor(180, 83, 9); // amber-700
+      doc.setLineWidth(0.45);
+      doc.setLineCap(1); // round
+      // Upper stem
+      doc.line(midX, stemTop, midX, stemBot);
+      // Open chevron (two strokes) — refined, not a filled triangle
+      doc.setLineWidth(0.55);
+      doc.line(midX - chevronHalfW, chevronBaseY, midX, chevronTipY);
+      doc.line(midX + chevronHalfW, chevronBaseY, midX, chevronTipY);
+      // Soft accent tip (tiny filled diamond at point)
       doc.setFillColor(217, 119, 6);
+      const tip = 0.55 * factor;
       doc.triangle(
         midX,
-        lineBot + 1.6 * factor,
-        midX - 1.4 * factor,
-        lineBot - 0.4 * factor,
-        midX + 1.4 * factor,
-        lineBot - 0.4 * factor,
+        chevronTipY + tip * 0.35,
+        midX - tip,
+        chevronTipY - tip * 0.55,
+        midX + tip,
+        chevronTipY - tip * 0.55,
         "F"
       );
+
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(5.8 * factor);
-      doc.setTextColor(180, 83, 9);
-      doc.text("mismo hallazgo · mismo plano", midX, imgY + connectorH / 2 + 0.5 * factor, {
-        align: "center",
-      });
+      doc.setFontSize(6.2 * factor);
+      doc.setTextColor(146, 64, 14); // amber-800
+      doc.text("mismo hallazgo · mismo plano", midX, labelY, { align: "center" });
+
+      // Short trailing stem under the label
+      doc.setDrawColor(180, 83, 9);
+      doc.setLineWidth(0.4);
+      if (stemOutBot > stemOutTop + 0.8 * factor) {
+        doc.line(midX, stemOutTop, midX, stemOutBot);
+      }
       imgY += connectorH;
     }
   });
