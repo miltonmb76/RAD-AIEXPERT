@@ -41,6 +41,8 @@ grep -q 'leftBodySize = 10' src/utils/usPlaneSimulatorPdfRenderer.ts \
   || { echo "ERROR: falta tipografía ampliada columna izq. Aborto."; exit 1; }
 grep -q 'leftSectionGap = 7' src/utils/usPlaneSimulatorPdfRenderer.ts \
   || { echo "ERROR: falta mayor espacio entre secciones. Aborto."; exit 1; }
+grep -q 'Open chevron' src/utils/usPlaneSimulatorPdfRenderer.ts \
+  || { echo "ERROR: falta flecha chevron elegante en PDF. Aborto."; exit 1; }
 grep -q 'SuiteImageAnnotationLayer' src/components/UltrasoundPlaneSimulatorModule.tsx \
   || { echo "ERROR: faltan flechas tipo suite. Aborto."; exit 1; }
 grep -q 'drawSuiteImageAnnotationsOnPdf' src/utils/usPlaneSimulatorPdfRenderer.ts \
