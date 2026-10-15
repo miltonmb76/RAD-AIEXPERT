@@ -10,8 +10,8 @@ import {
   Crosshair,
   Layers,
   Image as ImageIcon,
-  Link2,
   Focus,
+  ArrowDown,
 } from "lucide-react";
 import {
   UsAcquisitionPlane,
@@ -630,22 +630,8 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
 
         {planeData && (
           <>
-            <div className="flex flex-wrap items-center gap-3 text-[12px] text-slate-300">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-600/40 bg-cyan-950/50 px-3 py-1 text-cyan-100">
-                <Scan className="w-3.5 h-3.5" />
-                {planeData.planeLabelEs || planeData.acquisitionPlane}
-              </span>
-              {planeData.detectedLaterality && (
-                <span className="rounded-full border border-slate-600/60 px-3 py-1">
-                  {planeData.detectedLaterality}
-                </span>
-              )}
-              {planeData.targetStructure && (
-                <span className="rounded-full border border-slate-600/60 px-3 py-1 max-w-[280px] truncate">
-                  {planeData.targetStructure}
-                </span>
-              )}
-              <label className="ml-auto inline-flex items-center gap-2 text-[11px] text-slate-400 cursor-pointer">
+            <div className="flex items-center justify-end">
+              <label className="inline-flex items-center gap-2 text-[11px] text-slate-400 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={includeInReport}
@@ -656,138 +642,280 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
               </label>
             </div>
 
-            {/* Bridge: only US | focal 3D */}
-            <div className="space-y-2">
-              <p className="text-[10px] uppercase tracking-[0.18em] text-cyan-300/90 font-semibold flex items-center gap-1.5">
-                <Link2 className="w-3.5 h-3.5" />
-                Eco real | Corte 3D focal (mismo eje)
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
-                <div className="relative overflow-hidden rounded-xl border border-cyan-700/40 bg-black/50">
-                  <div className="relative aspect-[4/3] overflow-hidden">
-                    {planeData.realUsImage?.url ? (
-                      <img
-                        src={planeData.realUsImage.url}
-                        alt="Eco real"
-                        className="h-full w-full object-contain bg-black"
-                      />
-                    ) : (
-                      <div className="flex h-full flex-col items-center justify-center gap-2 text-slate-500 text-sm">
-                        <ImageIcon className="w-6 h-6 opacity-50" />
-                        Elige una captura
-                      </div>
-                    )}
-                    <div className="absolute top-2 left-2 z-20 bg-emerald-600 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow">
-                      ECO REAL
-                    </div>
-                    {planeData.realUsImage?.url && (
-                      <button
-                        type="button"
-                        onClick={() => setZoomUsUrl(planeData.realUsImage!.url)}
-                        className="absolute top-2 right-2 z-20 p-1.5 rounded-lg bg-black/60 text-white"
-                      >
-                        <Maximize2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                    <SuiteImageAnnotationLayer
-                      panelLetter="US"
-                      annotations={annotations}
-                      onChange={setAnnotations}
-                      mode="layer"
-                      editable
-                      selectedId={annSelectedId}
-                      onSelectId={setAnnSelectedId}
-                    />
-                  </div>
-                  <p className="text-[11px] text-slate-400 px-3 py-2 border-t border-cyan-900/30 italic truncate">
-                    {planeData.realUsImage?.caption ||
-                      planeData.realUsImage?.label ||
-                      "Captura del estudio"}
+            {/* Pack-style preview: text left · US → 3D stack right */}
+            <div className="rounded-2xl overflow-hidden border border-stone-600/40 bg-[#fafaf9] text-stone-900 shadow-inner">
+              <div className="mx-4 mt-4 rounded-lg bg-stone-900 px-4 py-2.5 flex justify-between gap-3 items-start">
+                <span className="text-[10px] font-black uppercase tracking-widest text-amber-50 shrink-0 max-w-[55%]">
+                  Vista previa · correlación eco-anatómica
+                </span>
+                <span className="text-[10px] text-amber-200/90 font-medium text-right min-w-0 flex-1 line-clamp-2 break-words">
+                  {[
+                    planeData.planeLabelEs || planeData.acquisitionPlane,
+                    planeData.detectedLaterality,
+                    planeData.lesionTarget || planeData.targetStructure,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
+              </div>
+              <div className="mx-4 h-1 bg-amber-500 rounded-b" />
+
+              <div className="p-5 md:p-6 space-y-4">
+                <div className="space-y-2 min-w-0">
+                  <p className="text-[9px] font-black uppercase tracking-[0.2em] text-amber-700">
+                    Hallazgo / plano
                   </p>
-                  <div className="px-3 pb-3">
-                    <SuiteImageAnnotationLayer
-                      panelLetter="US"
-                      annotations={annotations}
-                      onChange={setAnnotations}
-                      mode="toolbar"
-                      editable
-                      selectedId={annSelectedId}
-                      onSelectId={setAnnSelectedId}
-                    />
-                  </div>
+                  <h4 className="text-xl md:text-2xl font-black text-stone-900 leading-snug tracking-tight break-words hyphens-auto">
+                    {planeData.figureTitle ||
+                      planeData.lesionTarget ||
+                      planeData.targetStructure ||
+                      "Eco real y corte 3D focal"}
+                  </h4>
+                  <div className="w-16 h-0.5 bg-amber-400 rounded-full" />
                 </div>
 
-                <div className="relative overflow-hidden rounded-xl border border-cyan-700/40 bg-black/50">
-                  <div className="relative aspect-[4/3] overflow-hidden">
-                    {focalPanel?.imageUrl ? (
-                      <img
-                        src={focalPanel.imageUrl}
-                        alt="Corte 3D focal"
-                        className="h-full w-full object-contain bg-black"
-                      />
-                    ) : (
-                      <div className="flex h-full items-center justify-center text-slate-500 text-sm">
-                        Genera el corte 3D
+                <div className="grid grid-cols-1 md:grid-cols-[1.1fr_0.9fr] gap-6 md:gap-8 items-start">
+                  {/* LEFT — text */}
+                  <div className="space-y-5 min-w-0">
+                    {(planeData.planeLabelEs ||
+                      planeData.acquisitionPlane ||
+                      planeData.detectedLaterality ||
+                      planeData.lesionTarget ||
+                      planeData.targetStructure) && (
+                      <div className="rounded-xl border border-amber-200 bg-amber-50/80 px-3.5 py-3 space-y-2">
+                        <p className="text-[9px] font-black uppercase tracking-[0.18em] text-amber-800">
+                          Mini-ficha del plano
+                        </p>
+                        <dl className="grid grid-cols-1 gap-1.5">
+                          {(planeData.planeLabelEs || planeData.acquisitionPlane) && (
+                            <div className="flex gap-2 text-[12px]">
+                              <dt className="font-semibold text-stone-500 w-16 shrink-0">Plano</dt>
+                              <dd className="text-stone-800 min-w-0">
+                                {planeData.planeLabelEs || planeData.acquisitionPlane}
+                              </dd>
+                            </div>
+                          )}
+                          {planeData.detectedLaterality && (
+                            <div className="flex gap-2 text-[12px]">
+                              <dt className="font-semibold text-stone-500 w-16 shrink-0">Lado</dt>
+                              <dd className="text-stone-800 min-w-0">
+                                {planeData.detectedLaterality}
+                              </dd>
+                            </div>
+                          )}
+                          {(planeData.lesionTarget || planeData.targetStructure) && (
+                            <div className="flex gap-2 text-[12px]">
+                              <dt className="font-semibold text-stone-500 w-16 shrink-0">Foco</dt>
+                              <dd className="text-stone-800 min-w-0">
+                                {planeData.lesionTarget || planeData.targetStructure}
+                              </dd>
+                            </div>
+                          )}
+                        </dl>
                       </div>
                     )}
-                    <div className="absolute top-2 left-2 z-20 bg-cyan-600 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow">
-                      CORTE 3D FOCAL
-                    </div>
-                    {focalPanel && (
-                      <div className="absolute top-2 right-2 z-20 flex gap-1">
-                        <button
-                          type="button"
-                          onClick={() => void handleFlip()}
-                          className="p-1.5 rounded-lg bg-black/60 text-white"
-                        >
-                          <FlipHorizontal className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setZoomPanel(focalPanel)}
-                          className="p-1.5 rounded-lg bg-black/60 text-white"
-                        >
-                          <Maximize2 className="w-3.5 h-3.5" />
-                        </button>
+
+                    {planeData.planeSummary && (
+                      <div>
+                        <p className="text-[9px] font-black uppercase tracking-[0.18em] text-amber-700 mb-2 flex items-center gap-1.5">
+                          <Layers className="w-3 h-3" />
+                          Síntesis del plano
+                        </p>
+                        <p className="text-[13px] text-stone-600 leading-relaxed whitespace-pre-wrap">
+                          {planeData.planeSummary}
+                        </p>
                       </div>
                     )}
-                    {regeneratingLetter && (
-                      <div className="absolute inset-0 z-30 bg-slate-950/75 flex flex-col items-center justify-center gap-2">
-                        <Loader2 className="w-6 h-6 animate-spin text-cyan-300" />
-                        <span className="text-xs text-cyan-100">Re-renderizando…</span>
+
+                    {(planeData.structuresCrossed || []).length > 0 && (
+                      <div>
+                        <p className="text-[9px] font-black uppercase tracking-[0.18em] text-amber-700 mb-2">
+                          Estructuras cruzadas
+                        </p>
+                        <ol className="space-y-2">
+                          {planeData.structuresCrossed!.map((s, i) => (
+                            <li key={i} className="flex gap-3 text-[13px]">
+                              <span className="w-1 shrink-0 rounded-full self-stretch min-h-[1.25rem] bg-amber-500" />
+                              <span className="text-stone-800 min-w-0">
+                                {i + 1}. {s}
+                              </span>
+                            </li>
+                          ))}
+                        </ol>
                       </div>
                     )}
-                    <SuiteImageAnnotationLayer
-                      panelLetter="A"
-                      annotations={annotations}
-                      onChange={setAnnotations}
-                      mode="layer"
-                      editable
-                      selectedId={annSelectedId}
-                      onSelectId={setAnnSelectedId}
-                    />
+
+                    {(planeData.keyPoints || []).length > 0 && (
+                      <div>
+                        <p className="text-[9px] font-black uppercase tracking-[0.18em] text-amber-700 mb-2">
+                          Puntos clave
+                        </p>
+                        <ol className="space-y-2">
+                          {planeData.keyPoints!.map((k, i) => (
+                            <li key={i} className="flex gap-3 text-[13px]">
+                              <span className="w-1 shrink-0 rounded-full self-stretch min-h-[1.25rem] bg-stone-300" />
+                              <span className="text-stone-700 min-w-0">
+                                {i + 1}. {k}
+                              </span>
+                            </li>
+                          ))}
+                        </ol>
+                      </div>
+                    )}
+
+                    {!planeData.planeSummary &&
+                      !(planeData.structuresCrossed || []).length &&
+                      !(planeData.keyPoints || []).length && (
+                        <p className="text-[12px] text-stone-500 leading-relaxed italic">
+                          Dos representaciones del mismo hallazgo en el mismo plano de adquisición.
+                        </p>
+                      )}
                   </div>
-                  <p className="text-[11px] text-slate-400 px-3 py-2 border-t border-cyan-900/30 italic truncate">
-                    {lesionTarget || focalPanel?.panelTitle || "Corte 3D de la estructura lesionada"}
-                  </p>
-                  <div className="px-3 pb-3">
-                    <SuiteImageAnnotationLayer
-                      panelLetter="A"
-                      annotations={annotations}
-                      onChange={setAnnotations}
-                      mode="toolbar"
-                      editable
-                      selectedId={annSelectedId}
-                      onSelectId={setAnnSelectedId}
-                    />
+
+                  {/* RIGHT — US above, connector, 3D below */}
+                  <div className="min-w-0 space-y-0">
+                    <figure className="m-0">
+                      <p className="text-[9px] font-black uppercase tracking-[0.16em] text-amber-700 mb-1.5">
+                        Eco real (US)
+                      </p>
+                      <div className="relative rounded-lg border border-stone-200 bg-stone-50 overflow-hidden leading-none">
+                        <div className="relative aspect-[4/3] bg-black">
+                          {planeData.realUsImage?.url ? (
+                            <img
+                              src={planeData.realUsImage.url}
+                              alt="Eco real"
+                              className="h-full w-full object-contain"
+                            />
+                          ) : (
+                            <div className="flex h-full flex-col items-center justify-center gap-2 text-stone-400 text-sm px-4 text-center">
+                              <ImageIcon className="w-6 h-6 opacity-50" />
+                              Elige una captura
+                            </div>
+                          )}
+                          {planeData.realUsImage?.url && (
+                            <button
+                              type="button"
+                              onClick={() => setZoomUsUrl(planeData.realUsImage!.url)}
+                              className="absolute top-2 right-2 z-20 p-1.5 rounded-lg bg-black/60 text-white"
+                            >
+                              <Maximize2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          <SuiteImageAnnotationLayer
+                            panelLetter="US"
+                            annotations={annotations}
+                            onChange={setAnnotations}
+                            mode="layer"
+                            editable
+                            selectedId={annSelectedId}
+                            onSelectId={setAnnSelectedId}
+                          />
+                        </div>
+                      </div>
+                      <figcaption className="text-[10px] text-stone-500 px-0.5 pt-1.5 italic truncate">
+                        {planeData.realUsImage?.caption ||
+                          planeData.realUsImage?.label ||
+                          "Captura del estudio"}
+                      </figcaption>
+                      <div className="pt-1.5">
+                        <SuiteImageAnnotationLayer
+                          panelLetter="US"
+                          annotations={annotations}
+                          onChange={setAnnotations}
+                          mode="toolbar"
+                          editable
+                          selectedId={annSelectedId}
+                          onSelectId={setAnnSelectedId}
+                        />
+                      </div>
+                    </figure>
+
+                    <div className="flex flex-col items-center py-2.5 gap-0.5">
+                      <div className="w-0.5 h-3 bg-amber-500 rounded-full" />
+                      <ArrowDown className="w-4 h-4 text-amber-600" strokeWidth={2.5} />
+                      <p className="text-[9px] font-black uppercase tracking-[0.14em] text-amber-700 text-center">
+                        mismo hallazgo · mismo plano
+                      </p>
+                      <div className="w-0.5 h-3 bg-amber-500 rounded-full" />
+                    </div>
+
+                    <figure className="m-0">
+                      <p className="text-[9px] font-black uppercase tracking-[0.16em] text-amber-700 mb-1.5">
+                        Reconstrucción 3D
+                      </p>
+                      <div className="relative rounded-lg border border-stone-200 bg-stone-50 overflow-hidden leading-none">
+                        <div className="relative aspect-[4/3] bg-black">
+                          {focalPanel?.imageUrl ? (
+                            <img
+                              src={focalPanel.imageUrl}
+                              alt="Corte 3D focal"
+                              className="h-full w-full object-contain"
+                            />
+                          ) : (
+                            <div className="flex h-full items-center justify-center text-stone-400 text-sm px-4 text-center">
+                              Genera el corte 3D
+                            </div>
+                          )}
+                          {focalPanel && (
+                            <div className="absolute top-2 right-2 z-20 flex gap-1">
+                              <button
+                                type="button"
+                                onClick={() => void handleFlip()}
+                                className="p-1.5 rounded-lg bg-black/60 text-white"
+                              >
+                                <FlipHorizontal className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setZoomPanel(focalPanel)}
+                                className="p-1.5 rounded-lg bg-black/60 text-white"
+                              >
+                                <Maximize2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          )}
+                          {regeneratingLetter && (
+                            <div className="absolute inset-0 z-30 bg-stone-950/75 flex flex-col items-center justify-center gap-2">
+                              <Loader2 className="w-6 h-6 animate-spin text-amber-300" />
+                              <span className="text-xs text-amber-100">Re-renderizando…</span>
+                            </div>
+                          )}
+                          <SuiteImageAnnotationLayer
+                            panelLetter="A"
+                            annotations={annotations}
+                            onChange={setAnnotations}
+                            mode="layer"
+                            editable
+                            selectedId={annSelectedId}
+                            onSelectId={setAnnSelectedId}
+                          />
+                        </div>
+                      </div>
+                      <figcaption className="text-[10px] text-stone-500 px-0.5 pt-1.5 italic truncate">
+                        {lesionTarget ||
+                          focalPanel?.panelTitle ||
+                          "Corte 3D de la estructura lesionada"}
+                      </figcaption>
+                      <div className="pt-1.5">
+                        <SuiteImageAnnotationLayer
+                          panelLetter="A"
+                          annotations={annotations}
+                          onChange={setAnnotations}
+                          mode="toolbar"
+                          editable
+                          selectedId={annSelectedId}
+                          onSelectId={setAnnSelectedId}
+                        />
+                      </div>
+                    </figure>
                   </div>
                 </div>
               </div>
             </div>
 
             {focalPanel && (
-              <div className="rounded-xl border border-slate-700/50 bg-slate-950/40 p-3 space-y-2">
-                <label className="block text-[10px] uppercase tracking-widest text-slate-500 font-semibold">
+              <div className="rounded-xl border border-amber-500/25 bg-amber-950/15 p-3 space-y-2">
+                <label className="block text-[10px] uppercase tracking-widest text-amber-200/90 font-semibold">
                   Modificación al regenerar el corte 3D
                 </label>
                 <textarea
@@ -800,7 +928,7 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
                   }
                   rows={2}
                   placeholder="Ej. Enfocar tendón rotuliano proximal, mismo eje longitudinal…"
-                  className="w-full bg-slate-950/80 border border-slate-700 focus:border-cyan-500 rounded-lg px-2.5 py-2 text-[11px] text-slate-200 outline-none resize-none"
+                  className="w-full bg-slate-950/80 border border-slate-700 focus:border-amber-500 rounded-lg px-2.5 py-2 text-[11px] text-slate-200 outline-none resize-none"
                 />
                 <button
                   type="button"
@@ -811,52 +939,21 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
                       "Refine focal in-plane cut only; match US axis; no overview panel."
                     )
                   }
-                  className="inline-flex items-center gap-1 text-[10px] font-semibold text-cyan-300"
+                  className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-300"
                 >
                   <RefreshCw className="w-3 h-3" />
                   Regenerar solo corte 3D
                 </button>
               </div>
             )}
-
-            {(planeData.planeSummary || (planeData.structuresCrossed || []).length > 0) && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {planeData.planeSummary && (
-                  <div className="rounded-xl border border-cyan-900/40 bg-slate-950/50 p-4">
-                    <p className="text-[10px] font-mono uppercase tracking-widest text-cyan-300 mb-2 flex items-center gap-1.5">
-                      <Layers className="w-3.5 h-3.5" />
-                      Síntesis del plano
-                    </p>
-                    <p className="text-[13px] text-slate-200 leading-relaxed whitespace-pre-wrap">
-                      {planeData.planeSummary}
-                    </p>
-                  </div>
-                )}
-                {(planeData.structuresCrossed || []).length > 0 && (
-                  <div className="rounded-xl border border-slate-700/50 bg-slate-950/50 p-4">
-                    <p className="text-[10px] font-mono uppercase tracking-widest text-slate-400 mb-2">
-                      Estructuras cruzadas
-                    </p>
-                    <ul className="space-y-1">
-                      {planeData.structuresCrossed!.map((s, i) => (
-                        <li key={i} className="text-[13px] text-slate-200 flex gap-2">
-                          <span className="text-cyan-400">▹</span>
-                          <span>{s}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            )}
           </>
         )}
 
         {!planeData && !isGenerating && (
-          <div className="rounded-xl border border-dashed border-cyan-800/50 bg-slate-950/40 px-6 py-10 text-center">
-            <Scan className="w-8 h-8 mx-auto mb-3 text-cyan-500/80" />
+          <div className="rounded-xl border border-dashed border-amber-800/40 bg-slate-950/40 px-6 py-10 text-center">
+            <Scan className="w-8 h-8 mx-auto mb-3 text-amber-500/80" />
             <p className="text-sm text-slate-300">
-              Elige eco + tipo de corte 3D y genera el par lado a lado.
+              Elige eco + tipo de corte 3D y genera la vista Pack (texto + US → 3D).
             </p>
           </div>
         )}
