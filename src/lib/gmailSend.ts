@@ -210,6 +210,11 @@ export function createGmailSendAction(d: GmailSendDeps) {
         }
         const rawSummaryB64 =
           (await d.handleDownloadPatientSummaryPDF(false, false, true)) || "";
+        if (!String(rawSummaryB64).trim()) {
+          throw new Error(
+            "No se pudo generar el PDF de explicación. Reintenta el envío; el informe en pantalla no se perdió."
+          );
+        }
         explanationPDFBase64 = chunkBase64WithCRLF(rawSummaryB64);
       }
 
@@ -218,6 +223,11 @@ export function createGmailSendAction(d: GmailSendDeps) {
           throw new Error("Debe generar primero el 'Reporte de Estudio' para poder adjuntarlo.");
         }
         const rawReportB64 = (await d.handleDownloadNativePDF(false, false, true)) || "";
+        if (!String(rawReportB64).trim()) {
+          throw new Error(
+            "No se pudo generar el PDF del reporte (posible sobrecarga). Reintenta el envío; el informe en pantalla no se perdió."
+          );
+        }
         reportPDFBase64 = chunkBase64WithCRLF(rawReportB64);
       }
 

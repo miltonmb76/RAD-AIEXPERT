@@ -1,4 +1,9 @@
 import React from "react";
+import {
+  draftHasReport,
+  flushActiveSessionDraftNow,
+  loadActiveSessionDraft,
+} from "../lib/activeSessionDraft";
 
 type Props = {
   children: React.ReactNode;
@@ -45,6 +50,8 @@ export class AppErrorBoundary extends React.Component<Props, State> {
   }
 
   private handleSoftRecover = () => {
+    // Flush any last in-memory draft registered by App before remount wipes React state.
+    flushActiveSessionDraftNow();
     this.setState((s) => ({
       error: null,
       componentStack: "",
@@ -53,6 +60,7 @@ export class AppErrorBoundary extends React.Component<Props, State> {
   };
 
   private handleHardReload = () => {
+    flushActiveSessionDraftNow();
     try {
       sessionStorage.setItem("rad_ui_crash_reload", "1");
     } catch {
@@ -110,6 +118,18 @@ export class AppErrorBoundary extends React.Component<Props, State> {
               ? "Este módulo falló. Puedes reintentarlo sin cerrar el resto de la sesión."
               : "Pantalla azul / vacía por un error de React. No hace falta reiniciar el servidor: recupera aquí."}
           </div>
+          {!isModule && draftHasReport(loadActiveSessionDraft()) && (
+            <div
+              style={{
+                fontSize: 12,
+                color: "#6ee7b7",
+                maxWidth: "28rem",
+                lineHeight: 1.45,
+              }}
+            >
+              Hay un borrador en esta pestaña: al reintentar se restaurarán el informe, los datos del paciente y los anexos generados (scorecard, suites, packs, infografías, etc.).
+            </div>
+          )}
           <div
             style={{
               fontSize: 11,
@@ -136,7 +156,7 @@ export class AppErrorBoundary extends React.Component<Props, State> {
                 cursor: "pointer",
               }}
             >
-              Reintentar sin recargar
+              Reintentar y recuperar informe
             </button>
             {!isModule && (
               <button

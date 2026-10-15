@@ -9,6 +9,7 @@ import {
   markStudiesDeleted,
   unmarkStudyDeleted,
 } from "./deletedStudyTombstones";
+import { flushActiveSessionDraftNow } from "./activeSessionDraft";
 
 export type CloudStudyActionsDeps = {
   gmailUser: { uid?: string; email?: string } | null;
@@ -19,6 +20,9 @@ export type CloudStudyActionsDeps = {
   studyType: string;
   clinicalHistory: string;
   generatedReport: string;
+  /** Live editor text — preferred when the user is editing manually. */
+  editedReportText?: string;
+  isEditingReportManual?: boolean;
   customLogoUrl: string;
   customLogoRightUrl: string;
   customSignatureUrl: string;
@@ -168,10 +172,10 @@ export function createCloudStudyActions(d: CloudStudyActionsDeps) {
               if (deletedIds.has(study.id)) return;
               mergedReports.set(study.id, {
                 id: study.id,
-                timestamp: study.timestamp,
-                studyType: study.studyType,
-                clinicalHistory: study.clinicalHistory,
-                reportText: study.reportText,
+                timestamp: String(study.timestamp || ""),
+                studyType: String(study.studyType || "Estudio"),
+                clinicalHistory: String(study.clinicalHistory || ""),
+                reportText: String(study.reportText || ""),
               });
             });
             currentReports.forEach((report) => {
@@ -226,6 +230,9 @@ export function createCloudStudyActions(d: CloudStudyActionsDeps) {
   };
 
   const handleSaveToCloud = async (customReport?: SavedReport) => {
+    // Crash while saving (PDF/IDB/cloud) must not wipe the informe on soft-recover.
+    flushActiveSessionDraftNow();
+
     d.setIsSavingToCloud(true);
     d.setCloudStudiesError(null);
     d.setCloudStudiesSuccess(null);
@@ -234,7 +241,11 @@ export function createCloudStudyActions(d: CloudStudyActionsDeps) {
       const idToSave = customReport?.id || d.currentCloudStudyId || Math.random().toString(36).substring(2, 11);
       const studyTypeToSave = customReport?.studyType || d.studyType || "Estudio General";
       const clinicalHistoryToSave = customReport?.clinicalHistory || d.clinicalHistory || "No especificada";
-      const reportTextToSave = customReport?.reportText || d.generatedReport;
+      const liveReport =
+        d.isEditingReportManual && String(d.editedReportText || "").trim()
+          ? String(d.editedReportText)
+          : d.generatedReport;
+      const reportTextToSave = customReport?.reportText || liveReport;
 
       if (!reportTextToSave) {
         throw new Error("No hay contenido de reporte para guardar. Primero genera o redacta un reporte.");
@@ -355,12 +366,20 @@ export function createCloudStudyActions(d: CloudStudyActionsDeps) {
           ? "¡Estudio guardado y sincronizado con tu nube privada!"
           : "¡Estudio guardado con éxito en tu Archivo Local!"
       );
-      fetchCloudStudies(d.gmailUser?.uid);
+      try {
+        void Promise.resolve(fetchCloudStudies(d.gmailUser?.uid)).catch((refreshErr) => {
+          console.warn("Estudio guardado, pero falló el refresco de la lista:", refreshErr);
+        });
+      } catch (refreshErr) {
+        console.warn("Estudio guardado, pero falló el refresco de la lista:", refreshErr);
+      }
       setTimeout(() => d.setCloudStudiesSuccess(null), 4500);
       return idToSave;
     } catch (e: any) {
       console.error("Error saving to local storage:", e);
       d.setCloudStudiesError("No se pudo guardar localmente: " + (e.message || String(e)));
+      // Keep draft so soft-recover still restores the informe after a failed save crash.
+      flushActiveSessionDraftNow();
     } finally {
       d.setIsSavingToCloud(false);
     }
@@ -423,6 +442,8 @@ export function createCloudStudyActions(d: CloudStudyActionsDeps) {
   };
 
   const handleCopyEhrPortalLink = async () => {
+    flushActiveSessionDraftNow();
+
     if (!d.gmailUser) {
       alert("Debe iniciar sesión con Google para usar el archivo en la nube y generar enlaces.");
       return;

@@ -1,4 +1,5 @@
 import { uploadPdfToDrive } from "./googleDrive";
+import { flushActiveSessionDraftNow } from "./activeSessionDraft";
 
 export type DriveSaveDeps = {
   patientName: string;
@@ -11,6 +12,7 @@ export type DriveSaveDeps = {
 
 export function createDriveSaveAction(d: DriveSaveDeps) {
   return async () => {
+    flushActiveSessionDraftNow();
     try {
       d.setIsUploadingToDrive(true);
       d.setDriveUploadStatus("Verificando sesión...");
