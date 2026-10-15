@@ -48,20 +48,24 @@ export function renderReasoningChainAnnexToPDF(
   const fsBody = 9.2 * factor;
   const lineBody = 4.3 * factor;
 
+  // Clear of global running header on pages 2+ (label ~10mm + gray rule 15.5mm).
+  // Baseline at 20mm was kissing that gray line (glyph ascent overlaps the rule).
+  const topY = 22 * factor;
+
   const ensureSpace = (needed: number) => {
     if (y + needed <= pageBottom) return;
     doc.addPage();
-    y = 18 * factor;
+    y = topY;
   };
 
   doc.addPage();
-  let y = 20 * factor;
+  let y = topY;
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(fsTitle);
   doc.setTextColor(15, 23, 42);
   doc.text("ANEXO: CADENA DE RAZONAMIENTO RADIOLOGICO", marginX, y);
-  y += 5.5 * factor;
+  y += 6.5 * factor;
 
   doc.setDrawColor(139, 92, 246);
   doc.setLineWidth(0.9);
