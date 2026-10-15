@@ -37,6 +37,10 @@ grep -q 'mismo hallazgo · mismo plano' src/utils/usPlaneSimulatorPdfRenderer.ts
   || { echo "ERROR: falta conector en PDF Bridge. Aborto."; exit 1; }
 grep -q 'MINI-FICHA DEL PLANO' src/utils/usPlaneSimulatorPdfRenderer.ts \
   || { echo "ERROR: falta mini-ficha en PDF Bridge. Aborto."; exit 1; }
+grep -q 'leftBodySize = 10' src/utils/usPlaneSimulatorPdfRenderer.ts \
+  || { echo "ERROR: falta tipografía ampliada columna izq. Aborto."; exit 1; }
+grep -q 'leftSectionGap = 7' src/utils/usPlaneSimulatorPdfRenderer.ts \
+  || { echo "ERROR: falta mayor espacio entre secciones. Aborto."; exit 1; }
 grep -q 'SuiteImageAnnotationLayer' src/components/UltrasoundPlaneSimulatorModule.tsx \
   || { echo "ERROR: faltan flechas tipo suite. Aborto."; exit 1; }
 grep -q 'drawSuiteImageAnnotationsOnPdf' src/utils/usPlaneSimulatorPdfRenderer.ts \

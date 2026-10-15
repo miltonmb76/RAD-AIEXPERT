@@ -306,26 +306,29 @@ export function renderUsPlaneSimulatorAnnexToPDF(
     }
   });
 
-  // ── Left text column ─────────────────────────────────────────────────────
+  // ── Left text column (slightly larger type + airier section gaps) ─────────
   let textY = colsTop;
+  const leftTitleSize = 8.5 * factor;
+  const leftBodySize = 10 * factor;
+  const leftLineH = 4.4 * factor;
+  const leftSectionGap = 7 * factor;
   const writeLeft = (title: string, body: string, maxLines = 8) => {
     const clean = sanitizePdfText(body || "").trim();
     if (!clean || textY > usableBottom - 10 * factor) return;
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(7.5 * factor);
+    doc.setFontSize(leftTitleSize);
     doc.setTextColor(180, 83, 9);
     doc.text(title, textX, textY);
-    textY += 4.5 * factor;
+    textY += 5.2 * factor;
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(8.5 * factor);
+    doc.setFontSize(leftBodySize);
     doc.setTextColor(41, 37, 36);
-    const lineH = 3.7 * factor;
     const lines = (doc.splitTextToSize(clean, textColW) as string[]).slice(0, maxLines);
     lines.forEach((line) => {
       doc.text(line, textX, textY);
-      textY += lineH;
+      textY += leftLineH;
     });
-    textY += 4.5 * factor;
+    textY += leftSectionGap;
   };
 
   // Mini-ficha
@@ -346,44 +349,46 @@ export function renderUsPlaneSimulatorAnnexToPDF(
 
   if (sheetRows.length) {
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(7.5 * factor);
+    doc.setFontSize(leftTitleSize);
     doc.setTextColor(180, 83, 9);
     doc.text("MINI-FICHA DEL PLANO", textX, textY);
-    textY += 2.5 * factor;
+    textY += 3.2 * factor;
 
-    const labelW = 18 * factor;
+    const labelW = 20 * factor;
     const valueW = Math.max(24 * factor, textColW - labelW - 6 * factor);
+    const sheetRowH = 4.8 * factor;
+    const sheetFont = 8.5 * factor;
     type SheetRow = { label: string; valueLines: string[] };
     const built: SheetRow[] = sheetRows.map((r) => {
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(7.5 * factor);
+      doc.setFontSize(sheetFont);
       return {
         label: sanitizePdfText(r.label),
         valueLines: doc.splitTextToSize(sanitizePdfText(r.value), valueW) as string[],
       };
     });
     const sheetH =
-      built.reduce((a, r) => a + Math.max(1, r.valueLines.length) * 4.1 * factor, 0) +
-      6 * factor;
+      built.reduce((a, r) => a + Math.max(1, r.valueLines.length) * sheetRowH, 0) +
+      7.5 * factor;
     doc.setFillColor(255, 251, 235);
     doc.setDrawColor(253, 186, 116);
     doc.setLineWidth(0.3);
     doc.roundedRect(textX, textY, textColW, sheetH, 1.5, 1.5, "FD");
-    let sy = textY + 5 * factor;
+    let sy = textY + 5.8 * factor;
     built.forEach((r) => {
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(7.5 * factor);
+      doc.setFontSize(sheetFont);
       doc.setTextColor(120, 113, 108);
       doc.text(`${r.label}:`, textX + 3.5 * factor, sy);
       doc.setFont("helvetica", "normal");
       doc.setTextColor(41, 37, 36);
       r.valueLines.forEach((line, li) => {
         doc.text(line, textX + labelW, sy);
-        if (li < r.valueLines.length - 1) sy += 4.1 * factor;
+        if (li < r.valueLines.length - 1) sy += sheetRowH;
       });
-      sy += 4.1 * factor;
+      sy += sheetRowH;
     });
-    textY += sheetH + 6 * factor;
+    textY += sheetH + leftSectionGap;
   }
 
   writeLeft("SÍNTESIS DEL PLANO", data.planeSummary || "", 6);
