@@ -238,11 +238,22 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
     const timers: ReturnType<typeof setTimeout>[] = [];
     try {
       timers.push(
-        setTimeout(() => setGenerationStep("Renderizando corte 3D focal (mismo eje que la eco)..."), 1600)
+        setTimeout(
+          () =>
+            setGenerationStep(
+              "Renderizando corte 3D focal (guiado por la eco real, estilo CGI)..."
+            ),
+          1600
+        )
       );
       timers.push(setTimeout(() => setGenerationStep("Verificando plano y lateralidad..."), 6500));
 
       await runBackgroundTask("us-plane-sim", "Bridge eco-anatomia", async () => {
+        const realBefore =
+          (selectedGallery && galleryToRealUs(selectedGallery)) ||
+          suggestRealUsFromGallery(gallery) ||
+          planeData?.realUsImage ||
+          null;
         const response = await fetch("/api/generate-us-plane-simulator", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -258,12 +269,15 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
               lesionTarget.trim() ||
               String(diagnosisAnchor || "").trim() ||
               undefined,
+            // Pixels of the selected US — spatial guide for same plane/finding (not US style)
+            realUsImageUrl: realBefore?.url || undefined,
           }),
         });
         const resData = await response.json();
         if (!resData.success) throw new Error(resData.error || "No se pudo generar el bridge.");
         const raw = keepFocalPanelsOnly(resData.data as UsPlaneSimulatorData);
         const real =
+          realBefore ||
           (selectedGallery && galleryToRealUs(selectedGallery)) ||
           suggestRealUsFromGallery(gallery) ||
           raw.realUsImage ||
@@ -352,6 +366,7 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
             .join("\n"),
           customDirectives: mergedDirectives || undefined,
           requestedModel: selectedModel,
+          realUsImageUrl: planeData.realUsImage?.url || undefined,
         }),
       });
       const resData = await response.json();
@@ -437,8 +452,9 @@ export const UltrasoundPlaneSimulatorModule: React.FC<Props> = ({
               Corte eco - anatomia
             </h3>
             <p className="mt-2 text-sm text-slate-300/90 leading-relaxed max-w-xl">
-              Eco real + corte 3D centrado en la estructura lesionada. Rótulos con flecha (como
-              en las suites).
+              Eco real + corte 3D centrado en la estructura lesionada. La captura seleccionada
+              guía plano y hallazgo del CGI (sin copiar el look de ultrasonido). Rótulos con
+              flecha (como en las suites).
             </p>
           </div>
 
