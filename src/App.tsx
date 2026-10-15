@@ -65,6 +65,7 @@ import { ActivePatientPanel } from "./components/ActivePatientPanel";
 import { autoLabelAttachedImages, type AttachedImageForLabeling } from "./lib/labelingQueue";
 import { applyReorderedImageIds } from "./lib/figureCorrelation";
 import {
+  describeLateralityPlacementForUi,
   detectInfographicViewOrientation,
   type InfographicViewOrientation,
 } from "./lib/infographicLaterality";
@@ -234,8 +235,30 @@ import {
   convertHtmlToMarkdown,
   type ReportElement,
 } from "./lib/reportTextHelpers";
+import {
+  annexBundleHasContent,
+  buildReportFingerprint,
+  clearActiveSessionDraft,
+  draftHasReport,
+  flushActiveSessionDraftNow,
+  loadActiveSessionAnnexBundle,
+  loadActiveSessionDraft,
+  registerActiveSessionDraftFlush,
+  rememberActiveSessionAnnexes,
+  rememberActiveSessionDraft,
+  saveActiveSessionAnnexBundle,
+  saveActiveSessionDraft,
+} from "./lib/activeSessionDraft";
+import { runSafeAsync } from "./lib/safeAsync";
 
 export default function App() {
+  // Soft-recover remounts App; hydrate critical fields from sessionStorage draft.
+  const bootDraftRef = useRef(loadActiveSessionDraft());
+  const bootDraft = bootDraftRef.current;
+  const [showSessionDraftBanner, setShowSessionDraftBanner] = useState(() =>
+    draftHasReport(bootDraft)
+  );
+
   // Public Patient View System
   const [currentCloudStudyId, setCurrentCloudStudyId] = useState<string>("");
   const [isPatientPublicView, setIsPatientPublicView] = useState<boolean>(false);
@@ -311,20 +334,23 @@ export default function App() {
 
   // 1. STATE FOR REPORT GENERATOR
   const [selectedPresetId, setSelectedPresetId] = useState<string>("torax-rx");
-  const [studyType, setStudyType] = useState<string>("");
-  const [clinicalHistory, setClinicalHistory] = useState<string>("");
-  const [findings, setFindings] = useState<string>("");
-  const [inputReport, setInputReport] = useState<string>("");
+  const [studyType, setStudyType] = useState<string>(() => bootDraft?.studyType || "");
+  const [clinicalHistory, setClinicalHistory] = useState<string>(() => bootDraft?.clinicalHistory || "");
+  const [findings, setFindings] = useState<string>(() => bootDraft?.findings || "");
+  const [inputReport, setInputReport] = useState<string>(() => bootDraft?.inputReport || "");
   const [customPrompt, setCustomPrompt] = useState<string>("");
   
   // 1b. Patient & Corporate Header customization states for PDF/Print
-  const [patientName, setPatientName] = useState<string>("");
-  const [patientAge, setPatientAge] = useState<string>("");
-  const [patientGender, setPatientGender] = useState<string>("");
-  const [patientId, setPatientId] = useState<string>("");
+  const [patientName, setPatientName] = useState<string>(() => bootDraft?.patientName || "");
+  const [patientAge, setPatientAge] = useState<string>(() => bootDraft?.patientAge || "");
+  const [patientGender, setPatientGender] = useState<string>(() => bootDraft?.patientGender || "");
+  const [patientId, setPatientId] = useState<string>(() => bootDraft?.patientId || "");
   const [dicomNotification, setDicomNotification] = useState<string | null>(null);
-  const [patientEmail, setPatientEmail] = useState<string>(() => localStorage.getItem("rad_patient_email") || "");
+  const [patientEmail, setPatientEmail] = useState<string>(() =>
+    bootDraft?.patientEmail || localStorage.getItem("rad_patient_email") || ""
+  );
   const [reportDate, setReportDate] = useState<string>(() => {
+    if (bootDraft?.reportDate) return bootDraft.reportDate;
     const today = new Date();
     const yyyy = today.getFullYear();
     const mm = String(today.getMonth() + 1).padStart(2, '0');
@@ -1337,10 +1363,10 @@ export default function App() {
   }, []);
   
   // Custom smart selection states
-  const [modality, setModality] = useState<string>("Radiografía");
-  const [specificStudy, setSpecificStudy] = useState<string>("Tórax");
+  const [modality, setModality] = useState<string>(() => bootDraft?.modality || "Radiografía");
+  const [specificStudy, setSpecificStudy] = useState<string>(() => bootDraft?.specificStudy || "Tórax");
   const [customStudy, setCustomStudy] = useState<string>("");
-  const [laterality, setLaterality] = useState<string>(""); // "" | "Derecha" | "Izquierda" | "Bilateral"
+  const [laterality, setLaterality] = useState<string>(() => bootDraft?.laterality || ""); // "" | "Derecha" | "Izquierda" | "Bilateral"
   const [projections, setProjections] = useState<string[]>([]);
   const [customProjection, setCustomProjection] = useState<string>("");
   
@@ -1514,7 +1540,7 @@ export default function App() {
   // Loading & Generation results
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [generationSteps, setGenerationSteps] = useState<string>("");
-  const [generatedReport, setGeneratedReport] = useState<string>("");
+  const [generatedReport, setGeneratedReport] = useState<string>(() => bootDraft?.generatedReport || "");
 
   // --- INTERACTIVE SYNTACTIC HIGHLIGHTING AND DYNAMIC AESTHETIC STATES ---
   const [isSyntacticHighlightingActive, setIsSyntacticHighlightingActive] = useState<boolean>(true);
@@ -1822,11 +1848,111 @@ export default function App() {
   const [showTechnical, setShowTechnical] = useState<boolean>(true);
 
   // --- VERSION HISTORY AND MANUAL REPORT EDIT STATE ---
-  const [originalBaseReport, setOriginalBaseReport] = useState<string>("");
+  const [originalBaseReport, setOriginalBaseReport] = useState<string>(() => bootDraft?.originalBaseReport || "");
   const [reportHistory, setReportHistory] = useState<string[]>([]);
   const [reportRedoHistory, setReportRedoHistory] = useState<string[]>([]);
-  const [isEditingReportManual, setIsEditingReportManual] = useState<boolean>(false);
-  const [editedReportText, setEditedReportText] = useState<string>("");
+  const [isEditingReportManual, setIsEditingReportManual] = useState<boolean>(() =>
+    Boolean(bootDraft?.isEditingReportManual)
+  );
+  const [editedReportText, setEditedReportText] = useState<string>(() => bootDraft?.editedReportText || "");
+
+  // Keep informe + patient fields in sessionStorage so soft-recover / crash does not wipe them.
+  const activeSessionDraftRef = useRef({
+    generatedReport: bootDraft?.generatedReport || "",
+    editedReportText: bootDraft?.editedReportText || "",
+    isEditingReportManual: Boolean(bootDraft?.isEditingReportManual),
+    originalBaseReport: bootDraft?.originalBaseReport || "",
+    patientName: bootDraft?.patientName || "",
+    patientAge: bootDraft?.patientAge || "",
+    patientGender: bootDraft?.patientGender || "",
+    patientId: bootDraft?.patientId || "",
+    patientEmail: bootDraft?.patientEmail || "",
+    studyType: bootDraft?.studyType || "",
+    clinicalHistory: bootDraft?.clinicalHistory || "",
+    findings: bootDraft?.findings || "",
+    inputReport: bootDraft?.inputReport || "",
+    reportDate: bootDraft?.reportDate || "",
+    modality: bootDraft?.modality || "",
+    specificStudy: bootDraft?.specificStudy || "",
+    laterality: bootDraft?.laterality || "",
+  });
+  activeSessionDraftRef.current = {
+    generatedReport,
+    editedReportText,
+    isEditingReportManual,
+    originalBaseReport,
+    patientName,
+    patientAge,
+    patientGender,
+    patientId,
+    patientEmail,
+    studyType,
+    clinicalHistory,
+    findings,
+    inputReport,
+    reportDate,
+    modality,
+    specificStudy,
+    laterality,
+  };
+  rememberActiveSessionDraft({
+    ...activeSessionDraftRef.current,
+    reportFingerprint: buildReportFingerprint(activeSessionDraftRef.current),
+  });
+  useEffect(() => {
+    const flush = () => {
+      const d = activeSessionDraftRef.current;
+      if (!draftHasReport(d)) return;
+      const fingerprint = buildReportFingerprint(d);
+      saveActiveSessionDraft({
+        ...d,
+        reportFingerprint: fingerprint,
+        hasAnnexBundle: Boolean(loadActiveSessionDraft()?.hasAnnexBundle),
+      });
+    };
+    registerActiveSessionDraftFlush(flush);
+    const onHide = () => flush();
+    window.addEventListener("pagehide", onHide);
+    window.addEventListener("beforeunload", onHide);
+    return () => {
+      registerActiveSessionDraftFlush(null);
+      window.removeEventListener("pagehide", onHide);
+      window.removeEventListener("beforeunload", onHide);
+    };
+  }, []);
+  useEffect(() => {
+    const d = activeSessionDraftRef.current;
+    if (!draftHasReport(d)) return;
+    const delay = generatedReport && !editedReportText ? 0 : 350;
+    const t = window.setTimeout(() => {
+      const d = activeSessionDraftRef.current;
+      saveActiveSessionDraft({
+        ...d,
+        reportFingerprint: buildReportFingerprint(d),
+        hasAnnexBundle: Boolean(loadActiveSessionDraft()?.hasAnnexBundle),
+      });
+    }, delay);
+    return () => window.clearTimeout(t);
+  }, [
+    generatedReport,
+    editedReportText,
+    isEditingReportManual,
+    originalBaseReport,
+    patientName,
+    patientAge,
+    patientGender,
+    patientId,
+    patientEmail,
+    studyType,
+    clinicalHistory,
+    findings,
+    inputReport,
+    reportDate,
+    modality,
+    specificStudy,
+    laterality,
+  ]);
+
 
   // --- SPECIAL INTERACTIVE AI PARAGRAPH ACTIONS STATES ---
   const [selectedParagraphText, setSelectedParagraphText] = useState<string | null>(null);
@@ -2670,6 +2796,346 @@ Ejemplo:
   const [isSchematicSummaryExpanded, setIsSchematicSummaryExpanded] = useState<boolean>(false);
   
   const [attachedImages, setAttachedImages] = useState<Array<{ id: string; url: string; label?: string; preview?: string; metadata?: any; isSelected?: boolean; notes?: string }>>([]);
+
+  // Persist generated annexes (suites, packs, infographics, US images) in IndexedDB for crash recovery.
+  const activeSessionAnnexRef = useRef({
+    reportFingerprint: bootDraft?.reportFingerprint || "",
+    diagnosisAnchor: "",
+    operationalSummaryText: "",
+    patientSummary: null as any,
+    attachedImages: [] as any[],
+    findings3dRenders: [] as any[],
+    infographicUrl: null as string | null,
+    infographicClinicianUrl: null as string | null,
+    directedInfographicUrl: null as string | null,
+    directedInfographicClinicianUrl: null as string | null,
+    attachInfographicToOfficialReport: false,
+    attachInfographicToPatientSummary: false,
+    attachDirectedInfographicToOfficialReport: false,
+    attachDirectedInfographicToPatientSummary: false,
+    clinicalScorecardData: null as any,
+    includeScorecardInReport: false,
+    reasoningChainData: null as any,
+    includeReasoningChainInReport: true,
+    negativityChecklistData: null as any,
+    includeNegativityChecklistInReport: false,
+    secondReaderData: null as any,
+    differentialTreeData: null as any,
+    includeDifferentialTreeInReport: true,
+    findingsInfographicData: null as any,
+    includeFindingsInfographicInReport: true,
+    diagnosticPacks: [] as any[],
+    includeDiagnosticPackInReport: true,
+    dominantLesionCardData: null as any,
+    includeDominantLesionCardInReport: true,
+    measurementGaugeData: null as any,
+    includeMeasurementGaugesInReport: true,
+    biomechanicalRadarData: null as any,
+    atlas3dData: null as any,
+    includeAtlas3dInReport: true,
+    vascular3dData: null as any,
+    includeVascular3dInReport: true,
+    focalLesion3dData: null as any,
+    includeFocalLesion3dInReport: true,
+    usPlaneSimulatorData: null as any,
+    includeUsPlaneSimulatorInReport: true,
+    thyroid3dData: null as any,
+    includeThyroid3dInReport: true,
+    breast3dData: null as any,
+    includeBreast3dInReport: true,
+    shoulder3dData: null as any,
+    includeShoulder3dInReport: true,
+    knee3dData: null as any,
+    includeKnee3dInReport: true,
+    ankle3dData: null as any,
+    includeAnkle3dInReport: true,
+    kidney3dData: null as any,
+    includeKidney3dInReport: true,
+    abdomen3dData: null as any,
+    includeAbdomen3dInReport: true,
+    abdominalWall3dData: null as any,
+    includeAbdominalWall3dInReport: true,
+    scrotum3dData: null as any,
+    includeScrotum3dInReport: true,
+    muscleTendon3dData: null as any,
+    includeMuscleTendon3dInReport: true,
+    wrist3dData: null as any,
+    includeWrist3dInReport: true,
+    includeElastographyInReport: false,
+    elastographyStiffness: 5.2,
+    elastographyCAP: 230,
+    elastographyFatFraction: 6.2,
+    elastographyImage3d: null as string | null,
+    elastographyOriginalImage: null as string | null,
+    elastographyEtiology: "masld",
+  });
+  activeSessionAnnexRef.current = {
+    reportFingerprint: buildReportFingerprint({
+      patientName,
+      studyType,
+      generatedReport,
+      editedReportText,
+    }),
+    diagnosisAnchor,
+    operationalSummaryText,
+    patientSummary,
+    attachedImages,
+    findings3dRenders,
+    infographicUrl,
+    infographicClinicianUrl,
+    directedInfographicUrl,
+    directedInfographicClinicianUrl,
+    attachInfographicToOfficialReport,
+    attachInfographicToPatientSummary,
+    attachDirectedInfographicToOfficialReport,
+    attachDirectedInfographicToPatientSummary,
+    clinicalScorecardData,
+    includeScorecardInReport,
+    reasoningChainData,
+    includeReasoningChainInReport,
+    negativityChecklistData,
+    includeNegativityChecklistInReport,
+    secondReaderData,
+    differentialTreeData,
+    includeDifferentialTreeInReport,
+    findingsInfographicData,
+    includeFindingsInfographicInReport,
+    diagnosticPacks,
+    includeDiagnosticPackInReport,
+    dominantLesionCardData,
+    includeDominantLesionCardInReport,
+    measurementGaugeData,
+    includeMeasurementGaugesInReport,
+    biomechanicalRadarData,
+    atlas3dData,
+    includeAtlas3dInReport,
+    vascular3dData,
+    includeVascular3dInReport,
+    focalLesion3dData,
+    includeFocalLesion3dInReport,
+    usPlaneSimulatorData,
+    includeUsPlaneSimulatorInReport,
+    thyroid3dData,
+    includeThyroid3dInReport,
+    breast3dData,
+    includeBreast3dInReport,
+    shoulder3dData,
+    includeShoulder3dInReport,
+    knee3dData,
+    includeKnee3dInReport,
+    ankle3dData,
+    includeAnkle3dInReport,
+    kidney3dData,
+    includeKidney3dInReport,
+    abdomen3dData,
+    includeAbdomen3dInReport,
+    abdominalWall3dData,
+    includeAbdominalWall3dInReport,
+    scrotum3dData,
+    includeScrotum3dInReport,
+    muscleTendon3dData,
+    includeMuscleTendon3dInReport,
+    wrist3dData,
+    includeWrist3dInReport,
+    includeElastographyInReport,
+    elastographyStiffness,
+    elastographyCAP,
+    elastographyFatFraction,
+    elastographyImage3d,
+    elastographyOriginalImage,
+    elastographyEtiology,
+  };
+  rememberActiveSessionAnnexes(activeSessionAnnexRef.current);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      const annex = activeSessionAnnexRef.current;
+      if (!annexBundleHasContent(annex)) return;
+      void saveActiveSessionAnnexBundle(annex).then((ok) => {
+        if (!ok) return;
+        const d = activeSessionDraftRef.current;
+        if (draftHasReport(d)) {
+          saveActiveSessionDraft({
+            ...d,
+            reportFingerprint: annex.reportFingerprint,
+            hasAnnexBundle: true,
+          });
+        }
+      });
+    }, 700);
+    return () => window.clearTimeout(t);
+  }, [
+    diagnosisAnchor,
+    operationalSummaryText,
+    patientSummary,
+    attachedImages,
+    findings3dRenders,
+    infographicUrl,
+    infographicClinicianUrl,
+    directedInfographicUrl,
+    directedInfographicClinicianUrl,
+    attachInfographicToOfficialReport,
+    attachInfographicToPatientSummary,
+    attachDirectedInfographicToOfficialReport,
+    attachDirectedInfographicToPatientSummary,
+    clinicalScorecardData,
+    includeScorecardInReport,
+    reasoningChainData,
+    includeReasoningChainInReport,
+    negativityChecklistData,
+    includeNegativityChecklistInReport,
+    secondReaderData,
+    differentialTreeData,
+    includeDifferentialTreeInReport,
+    findingsInfographicData,
+    includeFindingsInfographicInReport,
+    diagnosticPacks,
+    includeDiagnosticPackInReport,
+    dominantLesionCardData,
+    includeDominantLesionCardInReport,
+    measurementGaugeData,
+    includeMeasurementGaugesInReport,
+    biomechanicalRadarData,
+    atlas3dData,
+    includeAtlas3dInReport,
+    vascular3dData,
+    includeVascular3dInReport,
+    focalLesion3dData,
+    includeFocalLesion3dInReport,
+    usPlaneSimulatorData,
+    includeUsPlaneSimulatorInReport,
+    thyroid3dData,
+    includeThyroid3dInReport,
+    breast3dData,
+    includeBreast3dInReport,
+    shoulder3dData,
+    includeShoulder3dInReport,
+    knee3dData,
+    includeKnee3dInReport,
+    ankle3dData,
+    includeAnkle3dInReport,
+    kidney3dData,
+    includeKidney3dInReport,
+    abdomen3dData,
+    includeAbdomen3dInReport,
+    abdominalWall3dData,
+    includeAbdominalWall3dInReport,
+    scrotum3dData,
+    includeScrotum3dInReport,
+    muscleTendon3dData,
+    includeMuscleTendon3dInReport,
+    wrist3dData,
+    includeWrist3dInReport,
+    includeElastographyInReport,
+    elastographyStiffness,
+    elastographyCAP,
+    elastographyFatFraction,
+    elastographyImage3d,
+    elastographyOriginalImage,
+    elastographyEtiology,
+    generatedReport,
+    editedReportText,
+    patientName,
+    studyType,
+  ]);
+
+  // Hydrate annexes after soft-recover / reload (async IndexedDB).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!bootDraft || !draftHasReport(bootDraft)) return;
+      const fp =
+        bootDraft.reportFingerprint ||
+        buildReportFingerprint(bootDraft);
+      const bundle = await loadActiveSessionAnnexBundle(fp);
+      if (cancelled || !bundle || !annexBundleHasContent(bundle)) return;
+
+      if (bundle.diagnosisAnchor) setDiagnosisAnchor(String(bundle.diagnosisAnchor));
+      if (bundle.operationalSummaryText) setOperationalSummaryText(String(bundle.operationalSummaryText));
+      if (bundle.patientSummary) setPatientSummary(bundle.patientSummary);
+      if (Array.isArray(bundle.attachedImages) && bundle.attachedImages.length) {
+        setAttachedImages(bundle.attachedImages as any);
+      }
+      if (Array.isArray(bundle.findings3dRenders) && bundle.findings3dRenders.length) {
+        setFindings3dRenders(bundle.findings3dRenders as any);
+      }
+      if (bundle.infographicUrl) setInfographicUrl(bundle.infographicUrl);
+      if (bundle.infographicClinicianUrl) setInfographicClinicianUrl(bundle.infographicClinicianUrl);
+      if (bundle.directedInfographicUrl) setDirectedInfographicUrl(bundle.directedInfographicUrl);
+      if (bundle.directedInfographicClinicianUrl) setDirectedInfographicClinicianUrl(bundle.directedInfographicClinicianUrl);
+      setAttachInfographicToOfficialReport(Boolean(bundle.attachInfographicToOfficialReport));
+      setAttachInfographicToPatientSummary(Boolean(bundle.attachInfographicToPatientSummary));
+      setAttachDirectedInfographicToOfficialReport(Boolean(bundle.attachDirectedInfographicToOfficialReport));
+      setAttachDirectedInfographicToPatientSummary(Boolean(bundle.attachDirectedInfographicToPatientSummary));
+
+      if (bundle.clinicalScorecardData) setClinicalScorecardData(bundle.clinicalScorecardData as any);
+      setIncludeScorecardInReport(Boolean(bundle.includeScorecardInReport));
+      if (bundle.reasoningChainData) setReasoningChainData(bundle.reasoningChainData as any);
+      setIncludeReasoningChainInReport(bundle.includeReasoningChainInReport !== false);
+      if (bundle.negativityChecklistData) setNegativityChecklistData(bundle.negativityChecklistData as any);
+      setIncludeNegativityChecklistInReport(Boolean(bundle.includeNegativityChecklistInReport));
+      if (bundle.secondReaderData) setSecondReaderData(bundle.secondReaderData as any);
+      if (bundle.differentialTreeData) setDifferentialTreeData(bundle.differentialTreeData as any);
+      setIncludeDifferentialTreeInReport(bundle.includeDifferentialTreeInReport !== false);
+      if (bundle.findingsInfographicData) setFindingsInfographicData(bundle.findingsInfographicData as any);
+      setIncludeFindingsInfographicInReport(bundle.includeFindingsInfographicInReport !== false);
+      if (Array.isArray(bundle.diagnosticPacks) && bundle.diagnosticPacks.length) {
+        setDiagnosticPacks(bundle.diagnosticPacks as any);
+      }
+      setIncludeDiagnosticPackInReport(bundle.includeDiagnosticPackInReport !== false);
+      if (bundle.dominantLesionCardData) setDominantLesionCardData(bundle.dominantLesionCardData as any);
+      setIncludeDominantLesionCardInReport(bundle.includeDominantLesionCardInReport !== false);
+      if (bundle.measurementGaugeData) setMeasurementGaugeData(bundle.measurementGaugeData as any);
+      setIncludeMeasurementGaugesInReport(bundle.includeMeasurementGaugesInReport !== false);
+      if (bundle.biomechanicalRadarData) setBiomechanicalRadarData(bundle.biomechanicalRadarData);
+
+      if (bundle.atlas3dData) setAtlas3dData(bundle.atlas3dData as any);
+      setIncludeAtlas3dInReport(bundle.includeAtlas3dInReport !== false);
+      if (bundle.vascular3dData) setVascular3dData(bundle.vascular3dData as any);
+      setIncludeVascular3dInReport(bundle.includeVascular3dInReport !== false);
+      if (bundle.focalLesion3dData) setFocalLesion3dData(bundle.focalLesion3dData as any);
+      setIncludeFocalLesion3dInReport(bundle.includeFocalLesion3dInReport !== false);
+      if (bundle.usPlaneSimulatorData) setUsPlaneSimulatorData(bundle.usPlaneSimulatorData as any);
+      setIncludeUsPlaneSimulatorInReport(bundle.includeUsPlaneSimulatorInReport !== false);
+      if (bundle.thyroid3dData) setThyroid3dData(bundle.thyroid3dData as any);
+      setIncludeThyroid3dInReport(bundle.includeThyroid3dInReport !== false);
+      if (bundle.breast3dData) setBreast3dData(bundle.breast3dData as any);
+      setIncludeBreast3dInReport(bundle.includeBreast3dInReport !== false);
+      if (bundle.shoulder3dData) setShoulder3dData(bundle.shoulder3dData as any);
+      setIncludeShoulder3dInReport(bundle.includeShoulder3dInReport !== false);
+      if (bundle.knee3dData) setKnee3dData(bundle.knee3dData as any);
+      setIncludeKnee3dInReport(bundle.includeKnee3dInReport !== false);
+      if (bundle.ankle3dData) setAnkle3dData(bundle.ankle3dData as any);
+      setIncludeAnkle3dInReport(bundle.includeAnkle3dInReport !== false);
+      if (bundle.kidney3dData) setKidney3dData(bundle.kidney3dData as any);
+      setIncludeKidney3dInReport(bundle.includeKidney3dInReport !== false);
+      if (bundle.abdomen3dData) setAbdomen3dData(bundle.abdomen3dData as any);
+      setIncludeAbdomen3dInReport(bundle.includeAbdomen3dInReport !== false);
+      if (bundle.abdominalWall3dData) setAbdominalWall3dData(bundle.abdominalWall3dData as any);
+      setIncludeAbdominalWall3dInReport(bundle.includeAbdominalWall3dInReport !== false);
+      if (bundle.scrotum3dData) setScrotum3dData(bundle.scrotum3dData as any);
+      setIncludeScrotum3dInReport(bundle.includeScrotum3dInReport !== false);
+      if (bundle.muscleTendon3dData) setMuscleTendon3dData(bundle.muscleTendon3dData as any);
+      setIncludeMuscleTendon3dInReport(bundle.includeMuscleTendon3dInReport !== false);
+      if (bundle.wrist3dData) setWrist3dData(bundle.wrist3dData as any);
+      setIncludeWrist3dInReport(bundle.includeWrist3dInReport !== false);
+
+      setIncludeElastographyInReport(Boolean(bundle.includeElastographyInReport));
+      if (typeof bundle.elastographyStiffness === "number") setElastographyStiffness(bundle.elastographyStiffness);
+      if (typeof bundle.elastographyCAP === "number") setElastographyCAP(bundle.elastographyCAP);
+      if (typeof bundle.elastographyFatFraction === "number") setElastographyFatFraction(bundle.elastographyFatFraction);
+      if (bundle.elastographyImage3d) setElastographyImage3d(bundle.elastographyImage3d);
+      if (bundle.elastographyOriginalImage) setElastographyOriginalImage(bundle.elastographyOriginalImage);
+      if (bundle.elastographyEtiology) setElastographyEtiology(String(bundle.elastographyEtiology));
+
+      setShowSessionDraftBanner(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot hydrate from boot draft
+  }, []);
+
   const [loadingAiLabelIds, setLoadingAiLabelIds] = useState<Record<string, true>>({});
   const [loadingAutocompleteIds, setLoadingAutocompleteIds] = useState<Record<string, true>>({});
   const [isLabelingAll, setIsLabelingAll] = useState<boolean>(false);
@@ -3037,6 +3503,8 @@ Ejemplo:
     setShowWhatsAppModal(false);
     setShowGmailModal(false);
     setWhatsappShareType("report_pdf");
+    clearActiveSessionDraft();
+    setShowSessionDraftBanner(false);
   };
 
   // Convert File to base64
@@ -3745,6 +4213,7 @@ Ejemplo:
 
   // Gmail API Integrated Share Handlers (Google Workspace Integration)
     const handleOpenGmailShare = async (type: 'report_pdf' | 'patient_summary' | 'patient_infographic' | 'both_pdfs') => {
+    flushActiveSessionDraftNow();
     const attachedKind = type === 'patient_infographic' ? 'patient_summary' : type;
     setGmailAttachedType(attachedKind as 'report_pdf' | 'patient_summary' | 'both_pdfs');
     setGmailTo(patientEmail || "");
@@ -3897,6 +4366,7 @@ Ejemplo:
   };
 
   const handleSendGmailAction = async () => {
+    flushActiveSessionDraftNow();
     const send = createGmailSendAction({
       gmailAccessToken,
       gmailTo,
@@ -3955,6 +4425,7 @@ Ejemplo:
 
 
   const handleSendWhatsAppAction = async () => {
+    flushActiveSessionDraftNow();
     let studyIdToUse = currentCloudStudyId;
 
     // Save/update to cloud automatically first to guarantee the link is always generated, saved and up to date! (skip if already saved)
@@ -4245,9 +4716,9 @@ Ejemplo:
     if (!schematicSummary) return "";
     if (schematicFormat === "blocks") {
       let text = "### ESQUEMA CLÍNICO DE HALLAZGOS PRINCIPALES\n\n";
-      schematicSummary.findings.forEach((f: any, idx: number) => {
+      (Array.isArray(schematicSummary.findings) ? schematicSummary.findings : []).forEach((f: any, idx: number) => {
         const id = f.findingId || `H${idx + 1}`;
-        text += `**[${id}] ${f.anatomicalSite.toUpperCase()}**\n`;
+        text += `**[${id}] ${String(f?.anatomicalSite || "").toUpperCase()}**\n`;
         text += `- **Hallazgo:** ${f.description}\n\n`;
       });
       return text.trim();
@@ -4334,7 +4805,7 @@ Ejemplo:
       return;
     }
     
-    const findingsHtml = patientSummary.keyFindings.map((finding: any) => `
+    const findingsHtml = (Array.isArray(patientSummary.keyFindings) ? patientSummary.keyFindings : []).map((finding: any) => `
       <div style="margin-bottom: 22px; padding: 18px; border: 1px solid #e5e7eb; border-radius: 8px; page-break-inside: avoid; background-color: #fafafa;">
         <h3 style="margin: 0 0 6px 0; color: #1e3a8a; font-family: system-ui, sans-serif; font-size: 16px; font-weight: 700;">${finding.title}</h3>
         <p style="margin: 0 0 12px 0; font-size: 11px; font-style: italic; color: #4b5563; font-family: monospace;">Término original en informe técnico: "${finding.originalTerm}"</p>
@@ -4543,6 +5014,8 @@ Ejemplo:
         reportDate: reportDate || "",
         projections,
         viewOrientation: infographicViewOrientation,
+        studyLaterality: laterality || "",
+        diagnosisAnchor: String(diagnosisAnchor || "").trim(),
         mode: "general" as const,
         includeRecommendations: "none" as const,
         ...(notes ? { correctionNotes: notes } : {}),
@@ -4660,6 +5133,7 @@ Ejemplo:
         reportDate: reportDate || "",
         projections,
         viewOrientation: infographicViewOrientation,
+        studyLaterality: laterality || "",
         mode: "directed" as const,
         topic,
         orientationBrief: directedOrientation.trim(),
@@ -4906,13 +5380,21 @@ Ejemplo:
     });
 
   const guardReportPdfExport = (action: () => void | Promise<void>) => {
+    const run = () =>
+      runSafeAsync(action, (err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        try {
+          setGmailErrorMessage("Error al exportar/enviar: " + msg);
+        } catch (_) {}
+        console.error("Export/send action failed:", err);
+      });
     if (!generatedReport) {
-      void action();
+      run();
       return;
     }
     const fingerprint = buildReportQaFingerprint();
     if (qaGateAckFingerprint && qaGateAckFingerprint === fingerprint) {
-      void action();
+      run();
       return;
     }
     const result = runReportQaGate({
@@ -4923,14 +5405,14 @@ Ejemplo:
       enrichmentSession: reportEnrichmentSession,
     });
     if (result.ok) {
-      void action();
+      run();
       return;
     }
     qaGatePendingActionRef.current = () => {
       setQaGateAckFingerprint(fingerprint);
       setQaGateResult(null);
       qaGatePendingActionRef.current = null;
-      void action();
+      run();
     };
     setQaGateResult(result);
   };
@@ -5597,6 +6079,7 @@ Ejemplo:
   };
 
   const handleSaveToDrive = async () => {
+    flushActiveSessionDraftNow();
     const save = createDriveSaveAction({
       patientName,
       patientSummary,
@@ -5618,6 +6101,11 @@ Ejemplo:
         try { URL.revokeObjectURL(generatedSummaryPdfUrl); } catch (_) {}
         setGeneratedSummaryPdfUrl(null);
       }
+      return;
+    }
+
+    // Avoid racing a full PDF rebuild while Gmail/Drive is already generating one.
+    if (isSendingGmail || isUploadingToDrive || isSavingToCloud) {
       return;
     }
 
@@ -5675,6 +6163,9 @@ Ejemplo:
   }, [
     showPrintModal,
     isSplitPdfActive,
+    isSendingGmail,
+    isUploadingToDrive,
+    isSavingToCloud,
     isEditingReportManual,
     editedReportText,
     adaptivePDFContrast,
@@ -6038,6 +6529,8 @@ Ejemplo:
     studyType,
     clinicalHistory,
     generatedReport,
+    editedReportText,
+    isEditingReportManual,
     customLogoUrl,
     customLogoRightUrl,
     customSignatureUrl,
@@ -6583,7 +7076,21 @@ Ejemplo:
         </div>
       </header>
 
-      <ActivePatientPanel
+      {showSessionDraftBanner && (
+                        <div className="mb-3 px-3 py-2 rounded-xl border border-emerald-500/40 bg-emerald-950/40 text-emerald-100 text-[11px] font-mono flex items-start justify-between gap-3">
+                          <span>
+                            Se restauró el informe, los datos del paciente y los anexos generados (si estaban guardados en esta pestaña).
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setShowSessionDraftBanner(false)}
+                            className="shrink-0 text-emerald-300/80 hover:text-emerald-100 underline cursor-pointer"
+                          >
+                            Cerrar
+                          </button>
+                        </div>
+                      )}
+                      <ActivePatientPanel
         patient={activeWorklistPatient}
         bridgeOnline={bridgeOnline}
         bridgeDicomReady={bridgeDicomReady}
@@ -8569,10 +9076,15 @@ Ejemplo:
                                 PA · de espaldas
                               </button>
                             </div>
-                            <p className="text-[9px] text-slate-500 leading-relaxed">
-                              {infographicViewOrientation === "PA"
-                                ? "PA: derecha del paciente a la derecha del cuadro; izquierda a la izquierda."
-                                : "AP: derecha del paciente a la izquierda del cuadro; izquierda a la derecha."}
+                            <p className="text-[9px] text-pink-100/90 leading-relaxed bg-pink-950/30 border border-pink-800/30 rounded-lg px-2.5 py-1.5">
+                              {describeLateralityPlacementForUi(
+                                infographicViewOrientation,
+                                laterality,
+                                `${studyType || ""} ${generatedReport || ""}`
+                              )}
+                              {laterality
+                                ? ` � Estudio: ${laterality}`
+                                : " � Define Derecha/Izquierda en el estudio si aplica"}
                             </p>
                             <label className="block text-[9px] font-black uppercase tracking-widest text-pink-300/80 font-mono">
                               Notas de lateralidad / correcciones (opcional)
@@ -12993,7 +13505,7 @@ Ejemplo:
                                 </div>
 
                                 <div className="space-y-2.5">
-                                  {patientSummary.keyFindings.map((finding: any, idx: number) => {
+                                  {(Array.isArray(patientSummary.keyFindings) ? patientSummary.keyFindings : []).map((finding: any, idx: number) => {
                                     const isExpanded = !!expandedFindings[idx];
                                     return (
                                       <div 
@@ -13371,7 +13883,7 @@ Ejemplo:
                               {schematicFormat === "blocks" ? (
                                 /* Option 1: Copy-Paste Friendly Block layout preview */
                                 <div className="space-y-3 select-text text-left max-w-2xl mx-auto py-1">
-                                  {schematicSummary.findings.map((f: any, idx: number) => (
+                                  {(Array.isArray(schematicSummary.findings) ? schematicSummary.findings : []).map((f: any, idx: number) => (
                                     <div key={idx} className="bg-slate-950/30 border border-slate-850/40 rounded-xl p-3.5 space-y-1.5 relative animate-fade-in">
                                       <div className="flex items-center justify-between border-b border-slate-900/40 pb-1.5 font-sans">
                                         <div className="flex items-center gap-2">
@@ -13379,7 +13891,7 @@ Ejemplo:
                                             {f.findingId || `H${idx + 1}`}
                                           </span>
                                           <span className="font-sans font-bold text-slate-200 text-xs tracking-wide">
-                                            {f.anatomicalSite.toUpperCase()}
+                                            {String(f?.anatomicalSite || "").toUpperCase()}
                                           </span>
                                         </div>
                                       </div>
@@ -13404,7 +13916,7 @@ Ejemplo:
                                       </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-900/60 text-xs">
-                                      {schematicSummary.findings.map((f: any, idx: number) => {
+                                      {(Array.isArray(schematicSummary.findings) ? schematicSummary.findings : []).map((f: any, idx: number) => {
                                         return (
                                           <tr 
                                             key={idx}
@@ -14634,11 +15146,10 @@ Ejemplo:
                 {(() => {
                   const filtered = savedReports.filter(item => {
                     const query = cloudSearch.toLowerCase();
-                    return (
-                      item.studyType.toLowerCase().includes(query) ||
-                      item.clinicalHistory.toLowerCase().includes(query) ||
-                      item.reportText.toLowerCase().includes(query)
-                    );
+                    const study = String(item?.studyType || "").toLowerCase();
+                    const hx = String(item?.clinicalHistory || "").toLowerCase();
+                    const txt = String(item?.reportText || "").toLowerCase();
+                    return study.includes(query) || hx.includes(query) || txt.includes(query);
                   });
 
                   if (filtered.length === 0) {
@@ -14953,13 +15464,15 @@ Ejemplo:
       )}
 
       {qaGateResult && (
-        <React.Suspense fallback={null}>
-          <ReportQaGateModal
-            result={qaGateResult}
-            onClose={handleDismissQaGate}
-            onProceedAnyway={handleProceedQaGateAnyway}
-          />
-        </React.Suspense>
+        <AppErrorBoundary label="Control de calidad del informe">
+          <React.Suspense fallback={null}>
+            <ReportQaGateModal
+              result={qaGateResult}
+              onClose={handleDismissQaGate}
+              onProceedAnyway={handleProceedQaGateAnyway}
+            />
+          </React.Suspense>
+        </AppErrorBoundary>
       )}
 
       {/* MODELO DE ASISTENCIA PARA IMPRESIÓN Y EXPORTACIÓN PDF (ESPECIAL IPHONE/MOBILE & IFRAME) */}

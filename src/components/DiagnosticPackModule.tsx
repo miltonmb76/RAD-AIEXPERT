@@ -20,6 +20,7 @@ import type {
   FocalLesion3DData,
 } from "../types";
 import {
+  applyPackImageSlots,
   buildDiagnosticPack,
   diagnosticPackIsRenderable,
   diagnosticPackMissingRequirements,
@@ -265,15 +266,46 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
     }
   };
 
+  // Keep draftPack.imageA/B in sync when the user picks from available images.
+  useEffect(() => {
+    setDraftPack((prev) => {
+      if (!prev || !String(prev.diagnosis || "").trim()) return prev;
+      const next = applyPackImageSlots(
+        prev,
+        candidates,
+        slotAId,
+        slotBId,
+        preferredSuiteId
+      );
+      if (
+        next.imageA?.candidateId === prev.imageA?.candidateId &&
+        next.imageB?.candidateId === prev.imageB?.candidateId &&
+        next.imageA?.url === prev.imageA?.url &&
+        next.imageB?.url === prev.imageB?.url
+      ) {
+        return prev;
+      }
+      return next;
+    });
+  }, [slotAId, slotBId, candidates, preferredSuiteId]);
+
   const handleInsertPack = () => {
     if (atPackLimit) {
       setGenError(`Maximo ${MAX_DIAGNOSTIC_PACKS} packs por estudio.`);
       return;
     }
+    // Always re-bind images from the current A/B selects so changing
+    // "imagenes disponibles" actually lands in the inserted annex/PDF.
     const built =
       draftPack && String(draftPack.diagnosis || "").trim()
         ? {
-            ...draftPack,
+            ...applyPackImageSlots(
+              draftPack,
+              candidates,
+              slotAId,
+              slotBId,
+              preferredSuiteId
+            ),
             diagnosis: String(diagnosisBase || draftPack.diagnosis).trim(),
             id: draftPack.id || draftId,
             includeInReport: true,
@@ -335,8 +367,21 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
 
   useEffect(() => {
     if (!pendingAutoBuild) return;
-    if (!candidates.some((c) => c.sourceId === "focal" && c.imageUrl)) return;
-    const focalIds = candidates.filter((c) => c.sourceId === "focal").map((c) => c.id);
+    const focalIds = candidates
+      .filter((c) => c.sourceId === "focal" && c.imageUrl)
+      .map((c) => c.id);
+    if (!focalIds.length) {
+      // Focal state landed empty or was cleared — don't spin forever.
+      const t = window.setTimeout(() => {
+        setPendingAutoBuild(false);
+        setGenError(
+          (prev) =>
+            prev ||
+            "No hay paneles focales con imagen. Reintenta generar o elige otra fuente (suite/Atlas)."
+        );
+      }, 8000);
+      return () => window.clearTimeout(t);
+    }
     const a = focalIds[0] || slotAId || null;
     const b = focalIds[1] || (slotBId === "" ? "" : slotBId || null);
     if (!a) return;
@@ -372,6 +417,7 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
 
     setIsGeneratingImages(true);
     setGenError(null);
+    setPendingAutoBuild(false);
     try {
       const scorecardDirectives = buildAtlasDirectivesFromScorecard(scorecardData);
       const packDirective = [
@@ -386,25 +432,55 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
         focus
       );
 
-      const response = await fetch("/api/generate-focal-lesion-3d", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          reportText,
-          organOrStudy: studyType || "",
-          requestedModel: selectedModel || undefined,
-          customDirectives: mergedDirectives || undefined,
-          focusMode: "manual",
-          focusText: focus,
-          includeMacroPanel: true,
-        }),
-      });
-      const resData = await response.json();
-      if (!resData.success || !resData.data) {
-        throw new Error(resData.error || "Error al generar imagenes focales para el pack.");
+      const requestFocal = async (includeMacroPanel: boolean) => {
+        const response = await fetch("/api/generate-focal-lesion-3d", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            reportText,
+            organOrStudy: studyType || "",
+            requestedModel: selectedModel || undefined,
+            customDirectives: mergedDirectives || undefined,
+            focusMode: "manual",
+            focusText: focus,
+            includeMacroPanel,
+          }),
+        });
+        let resData: any = null;
+        try {
+          resData = await response.json();
+        } catch {
+          resData = null;
+        }
+        if (!response.ok || !resData?.success || !resData?.data) {
+          throw new Error(
+            resData?.error ||
+              `Error al generar imagenes focales (HTTP ${response.status}).`
+          );
+        }
+        const data = resData.data as FocalLesion3DData;
+        const usable = (data.panels || []).filter(
+          (p) => p && String(p.imageUrl || "").trim()
+        );
+        return { data, usable };
+      };
+
+      // Prefer dual panel; if the image model fails, retry with a single panel
+      // so the pack still gets imagen A for the annex.
+      let result = await requestFocal(true);
+      if (!result.usable.length) {
+        result = await requestFocal(false);
+      }
+      if (!result.usable.length) {
+        throw new Error(
+          "El modelo no devolvió ninguna imagen usable. Reintenta en unos segundos o elige una imagen ya disponible (suite/Atlas)."
+        );
       }
 
-      const data = resData.data as FocalLesion3DData;
+      const data: FocalLesion3DData = {
+        ...result.data,
+        panels: result.usable,
+      };
       const letters = (data.panels || []).map((p) => p.panelLetter).filter(Boolean);
       const suggested = suggestFocalImageAnnotations({
         panelLetters: letters,
@@ -423,6 +499,7 @@ export const DiagnosticPackModule: React.FC<DiagnosticPackModuleProps> = ({
       setPendingAutoBuild(true);
     } catch (err: any) {
       console.error("Error generando imagenes del pack:", err);
+      setPendingAutoBuild(false);
       setGenError(err?.message || "Error al generar las imagenes del pack.");
     } finally {
       setIsGeneratingImages(false);

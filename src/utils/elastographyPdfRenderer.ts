@@ -146,7 +146,9 @@ export function renderElastographyAnnexToPdf(
 
   doc.addPage();
 
-  const topY = 18 * factor;
+  // Clear of global running header on pages 2+ (label ~10mm + gray rule 15.5mm).
+  // Title baseline at 18mm was kissing that gray line (glyph ascent overlaps the rule).
+  const topY = 22 * factor;
   const pageBottom = pageHeight - bottomSafe;
   const metavirLabel = fibrosisMetavirLabel(data.fibrosisStage);
 
@@ -214,7 +216,8 @@ export function renderElastographyAnnexToPdf(
   const techH = boxPadY + boxTitleH + techWrapped.height + boxPadY;
 
   // ── Layout budget: leftover space enlarges images + cards, not empty boxes ─
-  const titleH = 14 * factor;
+  // Matches title + accent rule + subtitle block starting at topY (clears header rule).
+  const titleH = 16 * factor;
   let scalesH = 29 * factor;
   let cardH = 32 * factor;
   let gap = 4.2 * factor;
@@ -251,7 +254,8 @@ export function renderElastographyAnnexToPdf(
     marginX,
     y
   );
-  y += 3.9 * factor;
+  // Extra gap so descenders / bold weight never sit on the accent rule
+  y += 5.2 * factor;
 
   doc.setDrawColor(56, 189, 248);
   doc.setLineWidth(0.5);

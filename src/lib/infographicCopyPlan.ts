@@ -119,6 +119,7 @@ export function buildInfographicCopyPlanPrompt(opts: {
   topicText?: string;
   correctionNotes?: string;
   allowRecommendations: boolean;
+  lateralityBrief?: string;
 }): string {
   const audienceLabel =
     opts.audience === "clinician" ? "MÉDICO (léxico técnico)" : "PACIENTE (lenguaje claro)";
@@ -128,6 +129,9 @@ export function buildInfographicCopyPlanPrompt(opts: {
   const corrections = opts.correctionNotes?.trim()
     ? `\nCORRECCIONES DEL MÉDICO (respétalas en el guion):\n"""\n${opts.correctionNotes.trim()}\n"""`
     : "";
+  const laterality = opts.lateralityBrief?.trim()
+    ? `\nLATERALIDAD (obligatoria en etiquetas; no la inviertas):\n${opts.lateralityBrief.trim()}\n`
+    : "";
   const reco = opts.allowRecommendations
     ? "- Puedes incluir 1 callout breve de seguimiento SOLO si consta en el informe."
     : "- NO incluyas recomendaciones ni consejos de tratamiento.";
@@ -135,6 +139,7 @@ export function buildInfographicCopyPlanPrompt(opts: {
   return `
 Eres redactor médico en español (Latinoamérica/España). Preparas el GUION DE TEXTO exacto para una infografía ${audienceLabel} de ${opts.studyType}.${focus}
 ${corrections}
+${laterality}
 
 REPORTE (fuente de verdad; no inventes hallazgos):
 """
@@ -156,6 +161,7 @@ REGLAS:
 - Español impecable: tildes (diagnóstico, médico, vesícula…), ñ, plurales correctos.
 - 3 a 6 callouts. Frases cortas. Sin párrafos.
 - Copia medidas y nombres diagnósticos del informe sin cambiar letras.
+- Si hay lateralidad (derecho/izquierdo/bilateral), INCLÚYELA en el título o en callouts y en mustSpellExactly (p. ej. "hombro derecho", "rodilla izquierda"). Nunca la omitas ni la inviertas.
 - ${reco}
 - Sin nombre del paciente ni identificadores.
 - Sin "paciente anónimo" ni sellos de anonimato.
