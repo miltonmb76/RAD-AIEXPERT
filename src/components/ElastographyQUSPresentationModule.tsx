@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { motion, AnimatePresence } from "motion/react";
 import {
   Activity,
   Maximize2,
@@ -165,24 +164,41 @@ export const ElastographyQUSPresentationModule: React.FC<ElastographyQUSPresenta
     [attachedImages]
   );
 
-  const applyOriginalCapture = (src: string, fromLiverId?: string | null) => {
+  /**
+   * Apply Modo B capture. syncParent=false for silent auto-insert so we do not
+   * push multi‑MB base64 into App/IndexedDB on module open (that froze the UI).
+   */
+  const applyOriginalCapture = (
+    src: string,
+    fromLiverId?: string | null,
+    syncParent = true
+  ) => {
     setCustomImageBase64(src);
-    onOriginalImageChanged?.(src);
     setOriginalFromLiverCaptureId(fromLiverId || null);
     setGenerated3dImageBase64(null);
     onImageChanged?.(null);
+    if (syncParent) {
+      // Skip parent sync for oversized payloads — keep preview local only
+      if (src.length <= 2_500_000) {
+        onOriginalImageChanged?.(src);
+      } else {
+        onOriginalImageChanged?.(null);
+      }
+    }
   };
 
   // Auto-insert first capture rotulada como Hígado into the Modo B slot when empty.
+  // Local-only (no parent sync) — avoids crashing the session annex saver on open.
   useEffect(() => {
     if (customImageBase64) return;
     if (!liverCaptures.length) return;
     const first = liverCaptures[0];
     const src = captureSrc(first);
     if (!src) return;
-    if (autoInsertedLiverRef.current === first.id) return;
-    autoInsertedLiverRef.current = first.id;
-    applyOriginalCapture(src, first.id);
+    const key = String(first.id || src.slice(0, 64));
+    if (autoInsertedLiverRef.current === key) return;
+    autoInsertedLiverRef.current = key;
+    applyOriginalCapture(src, first.id || null, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only when liver gallery / empty slot changes
   }, [liverCaptures, customImageBase64]);
 
@@ -319,6 +335,27 @@ export const ElastographyQUSPresentationModule: React.FC<ElastographyQUSPresenta
       histologicalCorrelation += ` Coexiste esteatosis ${steatosisGrade === "S1" ? "leve (5-33% de hepatocitos)" : steatosisGrade === "S2" ? "moderada (33-66% de hepatocitos)" : "severa (>66% de hepatocitos)"} con vacuolas lipídicas predominantemente macrovesiculares centradas en zona 3.`;
     }
 
+    const clinicalRecommendations: string[] =
+      bavenoRiskCategory === "normal" || bavenoRiskCategory === "rule_out_cacld"
+        ? [
+            "Seguimiento clínico habitual según contexto metabólico.",
+            "No hay indicación de cribado endoscópico de várices por elastografía sola.",
+          ]
+        : bavenoRiskCategory === "gray_zone"
+          ? [
+              "Correlacionar con FIB-4 / plaquetas y factores de riesgo.",
+              "Control evolutivo de rigidez hepática según juicio clínico.",
+            ]
+          : bavenoRiskCategory === "suggestive_csph"
+            ? [
+                "Valoración por hepatología.",
+                "Considerar cribado de várices según Baveno VII y comorbilidades.",
+              ]
+            : [
+                "Manejo especializado de hipertensión portal / cirrosis.",
+                "Tamizaje endoscópico y profilaxis según guías vigentes.",
+              ];
+
     return {
       medianKpa,
       iqr,
@@ -329,6 +366,7 @@ export const ElastographyQUSPresentationModule: React.FC<ElastographyQUSPresenta
       bavenoRiskCategory,
       bavenoClassification: bavenoText,
       histologicalCorrelation,
+      clinicalRecommendations,
       isQualityOptimal: iqrRatio <= 30
     };
   }, [measurements, stiffnessKpa, fatFractionPercent, capDbM]);
@@ -436,11 +474,14 @@ export const ElastographyQUSPresentationModule: React.FC<ElastographyQUSPresenta
 **3. ESTRATIFICACIÓN PRONÓSTICA Y GUÍAS DE CONSENSO (BAVENO VII / EFSUMB):**
 • Dictamen Baveno VII: ${stats.bavenoClassification}
 • Criterio de Riesgo: ${bavenoDetail}
-• Conducta Clínica Recomendada: ${stats.clinicalRecommendations.join(" | ")}`;
+• Conducta Clínica Recomendada: ${(stats.clinicalRecommendations || []).join(" | ")}`;
   };
 
   // Insert or update annex at the end of the report
   const handleInsertAnnexIntoReport = () => {
+    if (customImageBase64 && customImageBase64.length <= 2_500_000) {
+      onOriginalImageChanged?.(customImageBase64);
+    }
     const annexText = generateElastographyAnnexText();
     let clean = reportText || "";
 
@@ -525,6 +566,11 @@ export const ElastographyQUSPresentationModule: React.FC<ElastographyQUSPresenta
   const handleGenerate3dRender = async () => {
     setIsGenerating3d(true);
     try {
+      // Sync Modo B to parent only when the user actually needs it (3D / PDF)
+      if (customImageBase64 && customImageBase64.length <= 2_500_000) {
+        onOriginalImageChanged?.(customImageBase64);
+      }
+
       const fibStage = stiffnessKpa < 6.0 ? 'F0-F1' : stiffnessKpa < 8.0 ? 'F2' : stiffnessKpa < 12.5 ? 'F3' : 'F4';
       const steatosisStage = fatFractionPercent < 5.0 ? 'S0' : fatFractionPercent <= 12.0 ? 'S1' : fatFractionPercent <= 20.0 ? 'S2' : 'S3';
       

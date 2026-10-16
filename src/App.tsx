@@ -12885,31 +12885,47 @@ Ejemplo:
 
                           {isElastographyQUSModuleOpen && (
                             <div className="my-6">
-                              <React.Suspense fallback={<div className="p-4 text-xs font-mono text-amber-400 bg-slate-900/60 rounded-xl border border-amber-900/40 animate-pulse">Cargando Elastograf�a y QUS...</div>}>
-                                <ElastographyQUSPresentationModule
-                                  selectedModel={modelFor("default")}
-                                  reportText={isEditingReportManual ? editedReportText : generatedReport}
-                                  initialStiffness={elastographyStiffness}
-                                  initialCAP={elastographyCAP}
-                                  initialFatFraction={elastographyFatFraction}
-                                  includeInReport={includeElastographyInReport}
-                                  onToggleIncludeInReport={setIncludeElastographyInReport}
-                                  attachedImages={attachedImages}
-                                  onValuesChanged={(stiffness, cap, fatFraction) => {
-                                    setElastographyStiffness(stiffness);
-                                    setElastographyCAP(cap);
-                                    setElastographyFatFraction(fatFraction);
-                                  }}
-                                  onImageChanged={(img) => setElastographyImage3d(img)}
-                                  onOriginalImageChanged={(img) => setElastographyOriginalImage(img)}
-                                  onEtiologyChanged={(etiology) => setElastographyEtiology(etiology)}
-                                  onReportUpdated={(newReportText) => {
-                                    setEditedReportText(newReportText);
-                                    setGeneratedReport(newReportText);
-                                  }}
-                                  onClose={() => setIsElastographyQUSModuleOpen(false)}
-                                />
-                              </React.Suspense>
+                              <AppErrorBoundary label="Elastografia y QUS">
+                                <React.Suspense
+                                  fallback={
+                                    <div className="p-4 text-xs font-mono text-amber-400 bg-slate-900/60 rounded-xl border border-amber-900/40 animate-pulse">
+                                      Cargando Elastografia y QUS...
+                                    </div>
+                                  }
+                                >
+                                  <ElastographyQUSPresentationModule
+                                    selectedModel={modelFor("default")}
+                                    reportText={
+                                      isEditingReportManual
+                                        ? editedReportText
+                                        : generatedReport || ""
+                                    }
+                                    initialStiffness={elastographyStiffness}
+                                    initialCAP={elastographyCAP}
+                                    initialFatFraction={elastographyFatFraction}
+                                    includeInReport={includeElastographyInReport}
+                                    onToggleIncludeInReport={setIncludeElastographyInReport}
+                                    attachedImages={attachedImages}
+                                    onValuesChanged={(stiffness, cap, fatFraction) => {
+                                      setElastographyStiffness(stiffness);
+                                      setElastographyCAP(cap);
+                                      setElastographyFatFraction(fatFraction);
+                                    }}
+                                    onImageChanged={(img) => setElastographyImage3d(img)}
+                                    onOriginalImageChanged={(img) =>
+                                      setElastographyOriginalImage(img)
+                                    }
+                                    onEtiologyChanged={(etiology) =>
+                                      setElastographyEtiology(etiology)
+                                    }
+                                    onReportUpdated={(newReportText) => {
+                                      setEditedReportText(newReportText);
+                                      setGeneratedReport(newReportText);
+                                    }}
+                                    onClose={() => setIsElastographyQUSModuleOpen(false)}
+                                  />
+                                </React.Suspense>
+                              </AppErrorBoundary>
                             </div>
                           )}
 
