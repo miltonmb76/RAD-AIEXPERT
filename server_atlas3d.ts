@@ -644,13 +644,42 @@ function isBreastContext(...parts: Array<string | undefined | null>): boolean {
   return false;
 }
 
+const BREAST_HOUR_WORD: Record<string, number> = {
+  una: 1,
+  dos: 2,
+  tres: 3,
+  cuatro: 4,
+  cinco: 5,
+  seis: 6,
+  siete: 7,
+  ocho: 8,
+  nueve: 9,
+  diez: 10,
+  once: 11,
+  doce: 12,
+};
+
+function parseBreastHourToken(raw: string): number | null {
+  const s = String(raw || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+  if (!s) return null;
+  if (BREAST_HOUR_WORD[s] != null) return BREAST_HOUR_WORD[s];
+  const n = Number(s);
+  if (n >= 1 && n <= 12) return n;
+  return null;
+}
+
 /**
  * Extract clock-face hour (1-12) from clinical Spanish/English.
- * Prefers "eje de las 7" / "7h" over polluted English "12 o'clock" landmarks.
+ * Prefers "eje de las 7" / "7h" / "a las once" over polluted English "12 o'clock" landmarks.
  */
 function extractBreastClockHourFromText(text: string): number | null {
   const t = String(text || "");
   if (!t.trim()) return null;
+  const hourToken = "(1[0-2]|[1-9]|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce)";
 
   // Ignore pure geometry/boilerplate blobs (they always mention 12 o'clock as a landmark)
   if (
@@ -662,20 +691,20 @@ function extractBreastClockHourFromText(text: string): number | null {
     return null;
   }
 
-  // HIGH PRIORITY — clinical report phrasing (Spanish)
+  // HIGH PRIORITY — clinical report phrasing (Spanish + word hours)
   const clinicalPatterns = [
-    /\beje\s+(?:de\s+)?(?:las?\s+)?(1[0-2]|[1-9])\b/i, // eje 7 | eje de las 7
-    /\b(?:a\s+las|en\s+las|de\s+las)\s+(1[0-2]|[1-9])\b/i, // de las 7
+    new RegExp(`\\beje\\s+(?:de\\s+)?(?:las?\\s+)?${hourToken}\\b`, "i"),
+    new RegExp(`\\b(?:a\\s+las|en\\s+las|de\\s+las)\\s+${hourToken}\\b`, "i"),
     /\bhora\s*[:\-]?\s*(1[0-2]|[1-9])\b/i,
-    /\b(1[0-2]|[1-9])\s*h(?:oras?)?\b(?!\s*o['’]?clock)/i, // 7h / 7 horas (not "12 o'clock")
-    /\bradio\s*(1[0-2]|[1-9])\b/i,
+    /\b(1[0-2]|[1-9])\s*h(?:oras?)?\b(?!\s*o['’]?clock)/i,
+    new RegExp(`\\bradio\\s*(?:de\\s+las?\\s+)?${hourToken}\\b`, "i"),
     /\b(?:en|a)\s+(1[0-2]|[1-9])\s*(?:h|horas?|:00)\b/i,
   ];
   for (const re of clinicalPatterns) {
     const m = t.match(re);
     if (m) {
-      const n = Number(m[1]);
-      if (n >= 1 && n <= 12) return n;
+      const n = parseBreastHourToken(m[1]);
+      if (n != null) return n;
     }
   }
 
@@ -684,8 +713,8 @@ function extractBreastClockHourFromText(text: string): number | null {
     /\b(?:lesion|finding|nodule|mass|target|at|placed?(?:\s+at)?)\s+[^\n.]{0,40}?\b(1[0-2]|[1-9])\s*o['’]?clock\b/i
   );
   if (en) {
-    const n = Number(en[1]);
-    if (n >= 1 && n <= 12) return n;
+    const n = parseBreastHourToken(en[1]);
+    if (n != null) return n;
   }
 
   return null;
@@ -853,14 +882,42 @@ function buildBreastClockGeometryBlock(
     `ASCII DIAL: nipple=• ; TARGET HOUR=${g.hour} ; MIRROR/FORBIDDEN=${g.mirrorHour ?? "none (12/6)"}.`,
   ].join("\n");
 
+  // Compact anatomy table for the target hour + neighbors (anti 7↔5 / 10↔2)
+  const prevH = g.hour === 1 ? 12 : g.hour - 1;
+  const nextH = g.hour === 12 ? 1 : g.hour + 1;
+  const neighborHours = [g.hour, g.mirrorHour, prevH, nextH].filter(
+    (x): x is number => x != null && x >= 1 && x <= 12
+  );
+  const uniqNeighbors = Array.from(new Set(neighborHours));
+  const neighborLines = uniqNeighbors
+    .map((h) => {
+      const ng = getBreastClockGeometry(h);
+      const anat =
+        side === "right"
+          ? ng.anatomyRightBreast
+          : side === "left"
+            ? ng.anatomyLeftBreast
+            : "identical-dial";
+      const half =
+        ng.viewerHalf === "midline"
+          ? "midline"
+          : ng.viewerHalf === "right"
+            ? "VIEWER-RIGHT of nipple"
+            : "VIEWER-LEFT of nipple";
+      const mark = h === g.hour ? "← TARGET" : h === g.mirrorHour ? "← FORBIDDEN MIRROR" : "";
+      return `  ${h}h: ${ng.degreesFrom12}° · ${half} · ${ng.vertical} · ${anat} ${mark}`.trim();
+    })
+    .join("\n");
+
   return (
     `BREAST CLOCK GEOMETRY LOCK (deterministic — obey numbers, not intuition):\n` +
-    `(G0) Identical dial both breasts: 12=UP, 6=DOWN, 3=VIEWER RIGHT of nipple, 9=VIEWER LEFT of nipple.\n` +
+    `(G0) Identical dial BOTH breasts (clock-hands): 12=UP, 6=DOWN, 3=VIEWER RIGHT of nipple, 9=VIEWER LEFT of nipple. Do NOT mirror the dial between left and right breast.\n` +
     `(G1) TARGET: ${sideLabel} at EXACTLY ${g.hour} o'clock = ${g.degreesFrom12}° clockwise from 12.\n` +
     `(G2) From nipple, place lesion center at: ${dxWords}; AND ${dyWords}.\n` +
     `(G3) Anatomy on ${sideLabel}: ${anatomy}. Vertical=${g.vertical}; horizontal half=${g.viewerHalf}.\n` +
     `(G4) ${mirrorBan || "Stay on the vertical meridian (12/6)."}\n` +
     `(G5) Do NOT invent a different hour. Ignore any other hour numbers elsewhere in the prompt.\n` +
+    `(G6) HOUR CHEAT-SHEET (same dial both sides):\n${neighborLines}\n` +
     `${dial}`
   );
 }
@@ -1060,7 +1117,26 @@ function enforceBreastClockOnContract(
         .replace(/\s{2,}/g, " ")
         .trim();
 
-    let placement = "";
+    const g = getBreastClockGeometry(hour);
+    const anat =
+      side === "right"
+        ? g.anatomyRightBreast
+        : side === "left"
+          ? g.anatomyLeftBreast
+          : "identical-dial anatomy";
+    const viewer =
+      g.viewerHalf === "midline"
+        ? "on vertical meridian through nipple"
+        : g.viewerHalf === "right"
+          ? "VIEWER'S RIGHT of nipple"
+          : "VIEWER'S LEFT of nipple";
+    const sideLabel =
+      side === "right" ? "RIGHT" : side === "left" ? "LEFT" : "TARGET";
+    let placement =
+      `${sideLabel} breast ${hour} o'clock = ${g.degreesFrom12}° from 12; ${g.vertical}; ${viewer}; anatomy=${anat}` +
+      (g.mirrorHour != null ? `; FORBIDDEN mirror=${g.mirrorHour}h` : "") +
+      ". Identical clock-hands dial (3=viewer-right; 9=viewer-left).";
+
     if (side === "left" && hour === 3) {
       placement =
         "LEFT breast 3 o'clock = LATERAL/AXILLARY half (VIEWER'S RIGHT of nipple). NOT medial/sternal.";
@@ -1073,12 +1149,6 @@ function enforceBreastClockOnContract(
     } else if (side === "right" && hour === 9) {
       placement =
         "RIGHT breast 9 o'clock = LATERAL/AXILLARY half (VIEWER'S LEFT of nipple). NOT medial/sternal.";
-    } else if (side === "left") {
-      placement = `LEFT breast ${hour} o'clock on identical clock dial (3=viewer-right/LATERAL; 9=viewer-left/MEDIAL)`;
-    } else if (side === "right") {
-      placement = `RIGHT breast ${hour} o'clock on identical clock dial (3=viewer-right/MEDIAL; 9=viewer-left/LATERAL)`;
-    } else {
-      placement = `${hour} o'clock with identical clock-hands dial (3=viewer-right of nipple; 9=viewer-left)`;
     }
 
     const baseSite = stripWrongQuad(next.pathologySite || "");
@@ -1163,13 +1233,22 @@ function buildBreastClockConstraint(opts: {
       "LEFT: 3=LATERAL, 9=MEDIAL. RIGHT: 3=MEDIAL, 9=LATERAL. Do NOT use mirrored clinical map. ";
   }
 
-  const hourRule = hour != null ? buildBreastLesionClockPin(isLeft ? "left" : isRight ? "right" : "unknown", hour) + " " : "";
+  const sideKey: "left" | "right" | "unknown" = isLeft
+    ? "left"
+    : isRight
+      ? "right"
+      : "unknown";
+  const hourRule =
+    hour != null ? buildBreastLesionClockPin(sideKey, hour) + " " : "";
+  // Geometry block early — models overweight the start of the prompt
+  const geoRule =
+    hour != null ? buildBreastClockGeometryBlock(sideKey, hour) + "\n" : "";
 
-  return common + sideRules + hourRule;
+  return geoRule + common + sideRules + hourRule;
 }
 
 const BREAST_CLOCK_PLAN_RULES_ES =
-  "REGLAS DE RELOJ / EJES EN MAMA (manecillas IDÉNTICAS en ambas mamas, vista AP de frente):\n" +
+  "REGLAS DE RELOJ / EJES EN MAMA (manecillas IDÉNTICAS en ambas mamas, vista AP de frente — EXACTITUD OBLIGATORIA):\n" +
   "- Imagina un reloj dibujado sobre la mama con el 12 arriba: el 3 queda SIEMPRE a la DERECHA del pezón (derecha del observador); el 9 SIEMPRE a la IZQUIERDA del pezón.\n" +
   "- Esta dial es LA MISMA en mama izquierda y derecha (NO espejar el mapa entre lados).\n" +
   "- Mama IZQUIERDA: 3 = LATERAL/axila (derecha del pezón en la imagen); 9 = MEDIAL/esternón (izquierda del pezón).\n" +
@@ -1178,9 +1257,14 @@ const BREAST_CLOCK_PLAN_RULES_ES =
   "- En spatialContract mama izquierda: imageLeftStructure = medial/esternón (lado 9); imageRightStructure = lateral/axila (lado 3).\n" +
   "- En spatialContract mama derecha: imageLeftStructure = lateral/axila (lado 9); imageRightStructure = medial/esternón (lado 3).\n" +
   "- CSE = superior externo/lateral; CSI = superior interno/medial (anatomía, no espejar).\n" +
-  "- NUNCA espejar horas: eje 10 ≠ eje 2. Mama derecha eje 10 = CSE / superior externo = IZQUIERDA del pezón en la imagen; mama derecha eje 2 = CSI / superior interno = DERECHA del pezón.\n" +
-  "- pathologySite debe incluir lado + eje/hora o cuadrante exactos del informe.\n" +
-  "- doNotInvent DEBE incluir: \"left-breast 3 placed medially\", \"clock 3/9 swap\", \"mirrored breast clock between sides\", \"right-breast 10 placed at 2\".";
+  "- NUNCA espejar horas: eje 10 ≠ eje 2, 1≠11, 4≠8, 5≠7, 3≠9.\n" +
+  "- Tabla rápida (misma dial): 12=superior; 1–2 = superior + derecha del pezón; 3 = horizontal derecha del pezón; 4–5 = inferior + derecha; 6 = inferior; 7–8 = inferior + izquierda del pezón; 9 = horizontal izquierda; 10–11 = superior + izquierda.\n" +
+  "- Mama IZQ en esa tabla: derecha del pezón = LATERAL/axila; izquierda del pezón = MEDIAL/esternón.\n" +
+  "- Mama DER en esa tabla: derecha del pezón = MEDIAL/esternón; izquierda del pezón = LATERAL/axila.\n" +
+  "- Ejemplo: mama derecha eje 10 = CSE / superior externo = IZQUIERDA del pezón en la imagen (NO eje 2).\n" +
+  "- Ejemplo: mama izquierda eje 3 = LATERAL/axila = DERECHA del pezón en la imagen (NO medial).\n" +
+  "- pathologySite debe incluir lado + eje/hora o cuadrante exactos del informe (p. ej. «Mama izquierda, 7h»).\n" +
+  "- doNotInvent DEBE incluir: \"left-breast 3 placed medially\", \"clock 3/9 swap\", \"mirrored breast clock between sides\", \"right-breast 10 placed at 2\", \"left-right mirror of clock hour\".";
 
 /**
  * Clinical prose for Focal corte cards must NEVER explain how the AI placed the lesion
@@ -5675,7 +5759,7 @@ RESPONDE ESTRICTAMENTE EN FORMATO JSON VÁLIDO CON ESTA ESTRUCTURA:
                 basePrompt,
                 side: effectiveSide,
                 hour: effectiveHour,
-                maxAttempts: 3,
+                maxAttempts: 4,
               });
               return { ...panelPayload, imageUrl, promptUsed, clockQa };
             }
