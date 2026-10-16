@@ -80,6 +80,8 @@ export type ActiveSessionAnnexBundle = {
   includeFocalLesion3dInReport: boolean;
   usPlaneSimulatorData: unknown | null;
   includeUsPlaneSimulatorInReport: boolean;
+  /** Optional clickable annex index in the official PDF. */
+  includeAnnexIndexInReport?: boolean;
   thyroid3dData: unknown | null;
   includeThyroid3dInReport: boolean;
   breast3dData: unknown | null;
