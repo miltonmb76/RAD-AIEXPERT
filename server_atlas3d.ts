@@ -883,8 +883,11 @@ function buildBreastClockGeometryBlock(
   ].join("\n");
 
   // Compact anatomy table for the target hour + neighbors (anti 7↔5 / 10↔2)
-  const neighborHours = [g.hour, g.mirrorHour, ((g.hour + 10) % 12) || 12, ((g.hour % 12) + 1) || 1]
-    .filter((x): x is number => x != null && x >= 1 && x <= 12);
+  const prevH = g.hour === 1 ? 12 : g.hour - 1;
+  const nextH = g.hour === 12 ? 1 : g.hour + 1;
+  const neighborHours = [g.hour, g.mirrorHour, prevH, nextH].filter(
+    (x): x is number => x != null && x >= 1 && x <= 12
+  );
   const uniqNeighbors = Array.from(new Set(neighborHours));
   const neighborLines = uniqNeighbors
     .map((h) => {
