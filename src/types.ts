@@ -1494,3 +1494,9 @@ export type {
   DominantLesionMeasurement,
 } from "./lib/dominantLesionCard";
 
+/** Multi-finding explainer (eco + CGI + 3 bullets per card). */
+export type {
+  FindingExplainerCard,
+  FindingExplainerData,
+} from "./lib/findingExplainer";
+
