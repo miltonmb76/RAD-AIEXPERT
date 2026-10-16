@@ -8428,9 +8428,9 @@ Devuelve JSON estricto:
     {
       "label": "nombre corto del hallazgo",
       "site": "ubicacion + lateralidad",
-      "whatIs": "1 frase: que es",
-      "whereIs": "1 frase: donde esta",
-      "implies": "1 frase: implicacion clinica / conducta breve",
+      "whatIs": "1-2 frases: que es el hallazgo (naturaleza / tipo)",
+      "whereIs": "1 frase: donde esta (organo, lado, segmento)",
+      "implies": "2-3 frases: ampliar la explicacion del hallazgo (significado morfologico/fisiopatologico, por que se ve asi, relevancia diagnostica). PROHIBIDO recomendaciones, manejo, seguimiento, conducta o 'se sugiere'.",
       "cgiFocus": "descripcion anatomica breve para CGI 3D del hallazgo",
       "galleryIndex": null
     }
@@ -8441,7 +8441,8 @@ Reglas:
 - Maximo ${maxN} findings. Si el usuario listo hallazgos concretos, priorizalos.
 - No inventes patologia ausente del informe.
 - galleryIndex = indice entero de la galeria cuya caption/label mejor corresponde a ESE hallazgo, o null.
-- Cada finding debe ser distinto (no repetir el mismo con otro nombre).`;
+- Cada finding debe ser distinto (no repetir el mismo con otro nombre).
+- "implies" NO es manejo clinico: es ampliacion explicativa del hallazgo (que significa, como se interpreta morfologicamente). Nunca digas "control", "seguimiento", "biopsia", "se recomienda" ni equivalentes.`;
 
       const planResp = await ai.models.generateContent({
         model,

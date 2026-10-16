@@ -132,7 +132,8 @@ export const FindingExplainerModule: React.FC<Props> = ({
             </h3>
             <p className="text-[12px] text-slate-400 mt-1 leading-relaxed">
               Hasta {FINDING_EXPLAINER_MAX_CARDS} hallazgos apilados: eco + CGI 3D + 3 bullets
-              (que es / donde / que implica). Se generan en paralelo.
+              (que es / donde / que implica — explicación del hallazgo, sin manejo). Se generan
+              en paralelo.
             </p>
           </div>
         </div>
@@ -281,7 +282,7 @@ export const FindingExplainerModule: React.FC<Props> = ({
                   {[
                     { k: "Que es", v: card.whatIs },
                     { k: "Donde", v: card.whereIs },
-                    { k: "Que implica", v: card.implies },
+                    { k: "Que implica (explicacion)", v: card.implies },
                   ]
                     .filter((b) => b.v)
                     .map((b) => (

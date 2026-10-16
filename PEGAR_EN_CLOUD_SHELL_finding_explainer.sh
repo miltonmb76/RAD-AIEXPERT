@@ -37,6 +37,10 @@ grep -q 'Explainer de hallazgos' src/App.tsx \
   || { echo "ERROR: falta boton Explainer en UI. Aborto."; exit 1; }
 grep -q 'finding_explainer' src/lib/modelRouting.ts \
   || { echo "ERROR: falta task finding_explainer. Aborto."; exit 1; }
+grep -q 'fitContain' src/utils/findingExplainerPdfRenderer.ts \
+  || { echo "ERROR: falta fitContain (sin distorsion). Aborto."; exit 1; }
+grep -q 'PROHIBIDO recomendaciones' server_atlas3d.ts \
+  || { echo "ERROR: falta regla implies sin manejo. Aborto."; exit 1; }
 
 SECRETS="GEMINI_API_KEY=gemini-api-key:latest"
 if gcloud secrets describe openai-api-key >/dev/null 2>&1; then

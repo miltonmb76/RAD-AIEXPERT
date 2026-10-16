@@ -30,6 +30,21 @@ function imageRatio(doc: any, dataUrl: string): number {
   }
 }
 
+/** Fit image inside maxW×maxH preserving aspect ratio (no stretch). */
+function fitContain(
+  ratio: number,
+  maxW: number,
+  maxH: number
+): { w: number; h: number } {
+  let w = maxW;
+  let h = w / (ratio || 4 / 3);
+  if (h > maxH) {
+    h = maxH;
+    w = h * (ratio || 4 / 3);
+  }
+  return { w, h };
+}
+
 /**
  * One annex page (or more) — stacked finding explainers:
  * each card = eco | CGI + 3 bullets.
@@ -78,23 +93,30 @@ export function renderFindingExplainerAnnexToPDF(
   const gap = 5 * factor;
   const imgColW = (contentWidth - gap) / 2;
   const bulletColW = contentWidth;
+  const pad = 1.2 * factor;
+  const maxInnerW = imgColW - pad * 2;
+  const maxInnerH = 38 * factor;
+  const badgeH = 3.6 * factor;
+  const captionH = 5 * factor;
 
   for (let i = 0; i < cards.length; i++) {
     const card = cards[i];
-    const eco = card.ecoImageUrl && String(card.ecoImageUrl).startsWith("data:")
-      ? card.ecoImageUrl
-      : null;
-    const cgi = card.cgiImageUrl && String(card.cgiImageUrl).startsWith("data:")
-      ? card.cgiImageUrl
-      : null;
+    const eco =
+      card.ecoImageUrl && String(card.ecoImageUrl).startsWith("data:")
+        ? card.ecoImageUrl
+        : null;
+    const cgi =
+      card.cgiImageUrl && String(card.cgiImageUrl).startsWith("data:")
+        ? card.cgiImageUrl
+        : null;
 
-    // Estimate card height
-    const maxInnerW = imgColW - 2 * factor;
-    const ecoH = eco ? maxInnerW / imageRatio(doc, eco) : 28 * factor;
-    const cgiH = cgi ? maxInnerW / imageRatio(doc, cgi) : 28 * factor;
-    const imgBlockH = Math.max(ecoH, cgiH) + 10 * factor;
-    const textBlockH = 28 * factor;
-    const need = 10 * factor + imgBlockH + textBlockH;
+    const ecoFit = fitContain(eco ? imageRatio(doc, eco) : 4 / 3, maxInnerW, maxInnerH);
+    const cgiFit = fitContain(cgi ? imageRatio(doc, cgi) : 4 / 3, maxInnerW, maxInnerH);
+    // Shared frame height so both columns align; images letterboxed inside
+    const frameInnerH = Math.max(ecoFit.h, cgiFit.h, 22 * factor);
+    const slotH = badgeH + pad * 2 + frameInnerH + captionH;
+    const textBlockH = 32 * factor;
+    const need = 10 * factor + slotH + textBlockH;
 
     if (y + need > bottom && i > 0) {
       doc.addPage();
@@ -127,39 +149,45 @@ export function renderFindingExplainerAnnexToPDF(
     }
     y += headerH + 4 * factor;
 
-    // Images row
     const drawSlot = (
       x: number,
       badge: string,
       url: string | null,
       caption: string,
-      naturalH: number
+      fit: { w: number; h: number }
     ) => {
       doc.setFont("helvetica", "bold");
       doc.setFontSize(7 * factor);
       doc.setTextColor(180, 83, 9);
       doc.text(badge, x, y + 2.2 * factor);
-      const boxY = y + 3.6 * factor;
-      const drawH = Math.min(naturalH, 42 * factor);
-      const drawW = maxInnerW;
+
+      const boxY = y + badgeH;
+      const boxW = maxInnerW + pad * 2;
+      const boxH = frameInnerH + pad * 2;
+
       doc.setFillColor(250, 250, 249);
       doc.setDrawColor(214, 211, 209);
-      doc.roundedRect(x, boxY, drawW + 2 * factor, drawH + 2 * factor, 1.2, 1.2, "FD");
+      doc.setLineWidth(0.3);
+      doc.roundedRect(x, boxY, boxW, boxH, 1.2, 1.2, "FD");
+
       if (url) {
-        drawImage(doc, url, x + factor, boxY + factor, drawW, drawH);
+        const imgX = x + pad + (maxInnerW - fit.w) / 2;
+        const imgY = boxY + pad + (frameInnerH - fit.h) / 2;
+        drawImage(doc, url, imgX, imgY, fit.w, fit.h);
       } else {
         doc.setFont("helvetica", "italic");
         doc.setFontSize(7.5 * factor);
         doc.setTextColor(148, 163, 184);
-        doc.text("Sin imagen", x + 4 * factor, boxY + drawH / 2);
+        doc.text("Sin imagen", x + 4 * factor, boxY + boxH / 2);
       }
+
       doc.setFont("helvetica", "italic");
       doc.setFontSize(6.5 * factor);
       doc.setTextColor(100, 116, 139);
       const cap = sanitizePdfText(caption || "");
-      const capLines = doc.splitTextToSize(cap, drawW) as string[];
-      doc.text(capLines[0] || "", x, boxY + drawH + 2 * factor + 3 * factor);
-      return boxY + drawH + 2 * factor + 6 * factor;
+      const capLines = doc.splitTextToSize(cap, maxInnerW) as string[];
+      doc.text(capLines[0] || "", x, boxY + boxH + 3.2 * factor);
+      return boxY + boxH + captionH;
     };
 
     const yEco = drawSlot(
@@ -167,18 +195,18 @@ export function renderFindingExplainerAnnexToPDF(
       "ECO REAL",
       eco,
       card.ecoCaption || "Captura del estudio",
-      ecoH
+      ecoFit
     );
     const yCgi = drawSlot(
       marginX + imgColW + gap,
       "CGI 3D",
       cgi,
       card.cgiCaption || card.label,
-      cgiH
+      cgiFit
     );
     y = Math.max(yEco, yCgi) + 3 * factor;
 
-    // Three bullets
+    // Three bullets — "Que implica" = explanatory meaning, not management
     const bullets = [
       { k: "Que es", v: card.whatIs },
       { k: "Donde", v: card.whereIs },
@@ -199,7 +227,9 @@ export function renderFindingExplainerAnnexToPDF(
       doc.setFontSize(9 * factor);
       doc.setTextColor(41, 37, 36);
       const lines = doc.splitTextToSize(sanitizePdfText(b.v), bulletColW) as string[];
-      lines.slice(0, 3).forEach((line) => {
+      // Allow a bit more room for the explanatory "implies" paragraph
+      const maxLines = b.k === "Que implica" ? 5 : 3;
+      lines.slice(0, maxLines).forEach((line) => {
         doc.text(line, marginX, y);
         y += 3.8 * factor;
       });
@@ -208,7 +238,6 @@ export function renderFindingExplainerAnnexToPDF(
 
     y += 5 * factor;
 
-    // Separator between cards
     if (i < cards.length - 1) {
       doc.setDrawColor(231, 229, 228);
       doc.setLineWidth(0.3);
