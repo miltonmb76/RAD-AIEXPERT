@@ -31,6 +31,7 @@ import {
   mergeLateralityIntoCopyPlan,
   type InfographicViewOrientation,
 } from "./src/lib/infographicLaterality";
+import { buildInfographicBreastClockBrief } from "./src/lib/infographicBreastClock";
 import {
   INFOGRAPHIC_PRIVACY_PROMPT_BLOCK,
   redactPatientIdentifiersForInfographic,
@@ -1794,6 +1795,14 @@ app.post("/api/generate-infographic", async (req: express.Request, res: express.
       orientation,
       lateralityExtract
     );
+    const breastClockBlock = buildInfographicBreastClockBrief({
+      report: reportForInfographic,
+      studyType: String(studyType || ""),
+      studyLaterality: String(studyLaterality || ""),
+      diagnosisAnchor: String(diagnosisAnchor || topic || "").trim(),
+      correctionNotes: String(correctionNotes || ""),
+      topic: topicText,
+    });
     const correctionBlock = String(correctionNotes || "").trim()
       ? `
 
@@ -1846,7 +1855,7 @@ RECOMENDACIONES / CONDUCTA:
         topicText,
         correctionNotes: String(correctionNotes || ""),
         allowRecommendations: allowRecoThisAudience,
-        lateralityBrief: lateralityBlock,
+        lateralityBrief: [lateralityBlock, breastClockBlock].filter(Boolean).join("\n\n"),
       });
       const planResp = await ai.models.generateContent({
         model: planModel,
@@ -1870,6 +1879,23 @@ RECOMENDACIONES / CONDUCTA:
     }
     if (copyPlan) {
       copyPlan = mergeLateralityIntoCopyPlan(copyPlan, orientation, lateralityExtract);
+      if (breastClockBlock && copyPlan) {
+        const hourMatch = breastClockBlock.match(/a las (\d{1,2})h exactamente/i);
+        const must = [...(copyPlan.mustSpellExactly || [])];
+        const pushMust = (s: string) => {
+          const t = String(s || "").trim();
+          if (!t || must.some((m) => m.toLowerCase() === t.toLowerCase())) return;
+          must.push(t);
+        };
+        pushMust("eje");
+        if (hourMatch) {
+          pushMust(`${hourMatch[1]}h`);
+          pushMust(`eje ${hourMatch[1]}h`);
+        }
+        pushMust("mama derecha");
+        pushMust("mama izquierda");
+        copyPlan = { ...copyPlan, mustSpellExactly: must.slice(0, 16) };
+      }
     }
     const lockedCopyBlock = copyPlan
       ? `
@@ -1878,11 +1904,12 @@ ${buildLockedCopyPromptBlock(copyPlan)}
 `
       : "";
 
-    // Laterality FIRST — image models overweight early instructions.
+    // Laterality + breast clock FIRST — image models overweight early instructions.
     const lateralityLead = `
-ANTES DE DIBUJAR — LATERALIDAD (si fallas esto la imagen NO sirve):
+ANTES DE DIBUJAR — LATERALIDAD Y RELOJ DE MAMA (si fallas esto la imagen NO sirve):
 ORIENTACIÓN: ${orientation === "PA" ? "PA — paciente DE ESPALDAS" : "AP — paciente DE FRENTE"}.
 ${lateralityBlock}
+${breastClockBlock ? `\n${breastClockBlock}\n` : ""}
 `;
 
     // Freeform poster: quality bar + medical guardrails, but NO fixed layout template.
