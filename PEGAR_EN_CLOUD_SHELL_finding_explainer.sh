@@ -42,7 +42,9 @@ grep -q 'cardsPerPage' src/utils/findingExplainerPdfRenderer.ts \
 grep -q 'HALLAZGO' src/utils/findingExplainerPdfRenderer.ts \
   || { echo "ERROR: falta titulo estilo Pack. Aborto."; exit 1; }
 grep -q 'imageRatio' src/utils/findingExplainerPdfRenderer.ts \
-  || { echo "ERROR: falta altura natural (sin crop). Aborto."; exit 1; }
+  || { echo "ERROR: falta aspect ratio (sin distorsion). Aborto."; exit 1; }
+grep -q 'imgBudget' src/utils/findingExplainerPdfRenderer.ts \
+  || { echo "ERROR: falta escala para 2 hallazgos/pagina. Aborto."; exit 1; }
 grep -q 'PROHIBIDO recomendaciones' server_atlas3d.ts \
   || { echo "ERROR: falta regla implies sin manejo. Aborto."; exit 1; }
 
